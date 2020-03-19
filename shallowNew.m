@@ -1,19 +1,51 @@
-function t=shNewProject
+function shallowNew(varargin)
+% define new analysis project
+% varargin: 'Path' 'Filename' to input the location and path of the
+% project. 
 
-% make a difference beteen GUI mode and text mode 
+path=userpath; 
+filename='myproject';
 
-hf=figure('Position',[100 100 650 400]); 
+if nargin~=0
+for i=1:numel(varargin)
+    
+if strcmp(varargin{i},'path')
+path=varargin{i+1};
+end
 
-userparam= uitable('Parent',hf,'Position', [25 250 600 150], 'CellEditCallback',@celledit,'CellSelectionCallback',@cellselect);
+if strcmp(varargin{i},'filename')
+filename=varargin{i+1};
+end
+end
+else
+  [file,path,rep] = uiputfile('*.mat','File Selection',fullfile(userpath,[filename '.mat']))
+  if isequal(file,0)
+   disp('User selected Cancel');
+   return;
+   else
+   disp(['User selected ', fullfile(path, file)]);
+  end
+end
 
-set(userparam, 'ColumnName', {'Property', 'user Input'},'ColumnWidth',{150 400});
+shallowObj=shallow(path,filename);
 
-folder=pwd;
-Data={'Output Path',folder;'Number of channel', 2; 'PhyloCell-> 0; list of files->1', 1; 'Project file (phyloCell only)','' }
+mkdir(path,filename);
+
+save(fullfile(path,[filename '.mat']),'shallowObj');
 
 
-userparam.Data=Data;
-set(userparam, 'ColumnEditable', [false true])
+% hf=figure('Position',[100 100 650 400]); 
+% 
+% userparam= uitable('Parent',hf,'Position', [25 250 600 150], 'CellEditCallback',@celledit,'CellSelectionCallback',@cellselect);
+% 
+% set(userparam, 'ColumnName', {'Property', 'user Input'},'ColumnWidth',{150 400});
+% 
+% folder=pwd;
+% Data={'Output Path',folder;'Number of channel', 2; 'PhyloCell-> 0; list of files->1', 1; 'Project file (phyloCell only)','' }
+% 
+% 
+% userparam.Data=Data;
+% set(userparam, 'ColumnEditable', [false true])
 
 
 function celledit(handles, event, obj)

@@ -1,8 +1,8 @@
-classdef trap < handle
+classdef roi < handle
    properties
       % default properties with values
       id 
-      roi %
+      %roi %
       gfp % list of grayscale images that contain gfp data (m x n x time x channel)
       gfpchannel
       phasechannel
@@ -32,10 +32,10 @@ classdef trap < handle
       objtree % object trajectory classifier 
    end
    methods
-       function obj = trap(id,roi,gfp)
+       function obj = roi(id,roi,gfp)
            %%%% here
             obj.id=id;
-            obj.roi=roi;
+            %obj.roi=roi;
             obj.gfp=gfp;
             %obj.phc=phc;
             
