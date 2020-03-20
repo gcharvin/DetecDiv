@@ -1,4 +1,4 @@
-function shallowNew(varargin)
+function shallowObj=shallowNew(varargin)
 % define new analysis project
 % varargin: 'Path' 'Filename' to input the location and path of the
 % project. 
@@ -18,7 +18,7 @@ filename=varargin{i+1};
 end
 end
 else
-  [file,path,rep] = uiputfile('*.mat','File Selection',fullfile(userpath,[filename '.mat']))
+  [file,path,rep] = uiputfile('*.mat','File Selection',fullfile(userpath,[filename '.mat']));
   if isequal(file,0)
    disp('User selected Cancel');
    return;
@@ -27,13 +27,15 @@ else
   end
 end
 
-shallowObj=shallow(path,filename);
+shallowObj=shallow;
+shallowObj.setPath(path,file);
 
 mkdir(path,filename);
 
 save(fullfile(path,[filename '.mat']),'shallowObj');
 
-
+disp(['Shallow project ' fullfile(path,[filename '.mat']) ' is created and saved !']);
+disp([ 'To add image / phyloCell project to the data, use the addData function']);
 % hf=figure('Position',[100 100 650 400]); 
 % 
 % userparam= uitable('Parent',hf,'Position', [25 250 600 150], 'CellEditCallback',@celledit,'CellSelectionCallback',@cellselect);
@@ -46,12 +48,11 @@ save(fullfile(path,[filename '.mat']),'shallowObj');
 % 
 % userparam.Data=Data;
 % set(userparam, 'ColumnEditable', [false true])
-
-
-function celledit(handles, event, obj)
-
-
-function cellselect(handles, event, obj)
+% 
+% function celledit(handles, event, obj)
+% 
+% 
+% function cellselect(handles, event, obj)
 
 
 
