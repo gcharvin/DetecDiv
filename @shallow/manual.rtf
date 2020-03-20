@@ -1,0 +1,173 @@
+{\rtf1\ansi\ansicpg1252\cocoartf1504\cocoasubrtf830
+{\fonttbl\f0\froman\fcharset0 Times-Roman;\f1\fnil\fcharset0 HelveticaNeue;}
+{\colortbl;\red255\green255\blue255;\red0\green0\blue0;}
+{\*\expandedcolortbl;;\cssrgb\c0\c0\c0;}
+{\*\listtable{\list\listtemplateid1\listhybrid{\listlevel\levelnfc0\levelnfcn0\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{decimal\}.}{\leveltext\leveltemplateid1\'02\'00.;}{\levelnumbers\'01;}\fi-360\li720\lin720 }{\listname ;}\listid1}
+{\list\listtemplateid2\listhybrid{\listlevel\levelnfc0\levelnfcn0\leveljc0\leveljcn0\levelfollow0\levelstartat2\levelspace360\levelindent0{\*\levelmarker \{decimal\}.}{\leveltext\leveltemplateid101\'02\'00.;}{\levelnumbers\'01;}\fi-360\li720\lin720 }{\listname ;}\listid2}
+{\list\listtemplateid3\listhybrid{\listlevel\levelnfc0\levelnfcn0\leveljc0\leveljcn0\levelfollow0\levelstartat3\levelspace360\levelindent0{\*\levelmarker \{decimal\}.}{\leveltext\leveltemplateid201\'02\'00.;}{\levelnumbers\'01;}\fi-360\li720\lin720 }{\listname ;}\listid3}
+{\list\listtemplateid4\listhybrid{\listlevel\levelnfc0\levelnfcn0\leveljc0\leveljcn0\levelfollow0\levelstartat4\levelspace360\levelindent0{\*\levelmarker \{decimal\}.}{\leveltext\leveltemplateid301\'02\'00.;}{\levelnumbers\'01;}\fi-360\li720\lin720 }{\listname ;}\listid4}
+{\list\listtemplateid5\listhybrid{\listlevel\levelnfc0\levelnfcn0\leveljc0\leveljcn0\levelfollow0\levelstartat5\levelspace360\levelindent0{\*\levelmarker \{decimal\}.}{\leveltext\leveltemplateid401\'02\'00.;}{\levelnumbers\'01;}\fi-360\li720\lin720 }{\listname ;}\listid5}}
+{\*\listoverridetable{\listoverride\listid1\listoverridecount0\ls1}{\listoverride\listid2\listoverridecount0\ls2}{\listoverride\listid3\listoverridecount0\ls3}{\listoverride\listid4\listoverridecount0\ls4}{\listoverride\listid5\listoverridecount0\ls5}}
+\paperw11900\paperh16840\margl1440\margr1440\vieww18000\viewh17960\viewkind0
+\deftab720
+\pard\pardeftab720\sl280\partightenfactor0
+
+\f0\fs48 \cf2 \expnd0\expndtw0\kerning0
+Manual for RLS automated analysis :\'a0\
+
+\fs24 \
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sl280\partightenfactor0
+\ls1\ilvl0\cf2 \kerning1\expnd0\expndtw0 {\listtext	1.	}\expnd0\expndtw0\kerning0
+Create \'ab\'a0movi\'a0\'bb \'a0structure\'a0\
+\pard\pardeftab720\sl280\partightenfactor0
+\cf2 \
+>> testmovi=movi('180316-pos7_GFP-channel.avi','180316-pos7_phase-c.avi\'92);\
+\
+At any time, the structure can be saved using :\'a0\
+\
+save('testmovi.mat','testmovi')\
+\
+\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sl280\partightenfactor0
+\ls2\ilvl0\cf2 \kerning1\expnd0\expndtw0 {\listtext	2.	}\expnd0\expndtw0\kerning0
+Load images in computer RAM memory\'a0\
+\pard\pardeftab720\sl280\partightenfactor0
+\cf2 \
+GFP :\'a0\
+\
+>> testmovi.loadgfp\
+\
+Phase contrast\'a0\
+\
+>> testmovi.loadphc\
+\
+Optional : provide the list of frames to be loaded : testmovi.loadgfp(frames)\
+\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sl280\partightenfactor0
+\ls3\ilvl0
+\f1 \cf2 \kerning1\expnd0\expndtw0 {\listtext	3.	}\expnd0\expndtw0\kerning0
+Identify traps within movie\
+\pard\pardeftab720\sl280\partightenfactor0
+\cf2 \
+>>testmovi.loadtraps(1)\
+\
+This function allows to select the size and position of one ROI, and then identifies all other similar regions (i.e. all traps).\'a0\
+Option: if no argument is provided, then a default ROI is identified\'a0\
+\
+In addition :\'a0\
+\
+>>testmovi.viewtraps\
+Returns the location and numbers of all traps in the field of view\
+Click on a specific trap to display the movie for a particular trap\
+\
+\
+\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sl280\partightenfactor0
+\ls4\ilvl0\cf2 \kerning1\expnd0\expndtw0 {\listtext	4.	}\expnd0\expndtw0\kerning0
+Display sample trap:\'a0\
+\pard\pardeftab720\sl280\partightenfactor0
+\cf2 \
+>>testmovi.trap(n).view\
+\
+Where n is the number of the trap\'a0\
+\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sl280\partightenfactor0
+\ls5\ilvl0\cf2 \kerning1\expnd0\expndtw0 {\listtext	5.	}\expnd0\expndtw0\kerning0
+Nucleus segmentation (pixel classification)\'a0\
+\pard\pardeftab720\sl280\partightenfactor0
+\cf2 \
+Click \'ab\'a0Pixel train\'a0\'bb to enable the pixel training module \
+Left click to paint pixels that correspond to nuclear area\
+Right click to paint pixels that correspond to background\
+\
+Save training : collect all pixels in all traps of the movie and saves as \'91pixclassifier.mat\'92 file : \
+\
+>> testmovi.setpixclassifier('pixclassifier.mat,\'92save')\
+\
+\
+Load training : load previously saved training set : \
+\
+\pard\pardeftab720\sl280\partightenfactor0
+\cf2 >> testmovi.setpixclassifier('pixclassifier.mat,\'92load\'92)\
+\
+To clear the training set performed on a specific trap : \
+\
+>>testmovi.trap(n).cleartraining\
+\
+\
+Pixel classification : \
+\
+To classify pixels on a specific trap, type : \
+\
+>>testmovi.trap(n).pixclassify\
+\
+To classify pixels on list of traps, type : \
+\
+>>testmovi.pixclassify(list)\
+\
+To classify all traps : \
+\
+>>testmovi.pixclassify\cf2 \
+\
+6. Nuclear object tracking (object classification) \
+\
+Click \'91Object training\'92 and select the mother nucleus on each frame \
+\
+Once the training set is done , type : \
+\
+>> testmovi.setobjectclassifier('objectclassifier.mat','save')\
+\
+to save the training set into the objectclassifier.mat file \
+\
+\cf2 >> testmovi.setobjectclassifier('objectclassifier.mat\'92,\'92load\'92)\
+\
+to load the training set into the objectclassifier.mat file \
+\
+>> testmovi.objectclassify\
+\
+To classifi all traps \
+\
+\
+7.  division classification : \
+\
+To display the trajectory of successive divisions : \
+\
+>> testmovi.trap(n).traj\
+\
+Each red star display a potential \'91division frame\'92. \
+Click on each star to display the images \
+Press \'91r\'92 to reject the division, \'91d\'92 to indicate that it is a weird division, most likely a dead cell \
+\
+When ready with training, you can save the division classifier as follows : \
+\
+testmovi.setdivclassifier('divclassifier.mat','save')\
+\
+To load a classifier : \
+\
+testmovi.setdivclassifier('divclassifier.mat\'92,\'92load\'92)\
+\
+To classify a given trap : \
+\
+testmovi.trap(n).divclassify\
+\
+Obviously the classification should be run on a trap that was used as a training set \
+\
+To classify all traps : \
+\
+testmovi.divclassify\
+\
+8. Trajectories \
+\
+\
+\
+\
+\
+\
+\pard\pardeftab720\sl280\partightenfactor0
+\cf2 \
+\
+\
+\
+\
+\
+}
