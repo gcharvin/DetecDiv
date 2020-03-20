@@ -10,15 +10,17 @@ function setPattern(obj,fovid,roiid,frameid,channelid)
 % frameid: etc...
 % channel id: etc...
 
-if nargin==2
+if nargin<=3
     frameid=1;
     channelid=1;
 end
 
-roitmp=obj.fov(fovid).roi(roiid);
+    
+roitmp=obj.fov(fovid).roi(roiid).value;
 
 tmp=readImage(obj.fov(fovid),frameid,channelid);
+tmp=tmp(roitmp(2):roitmp(2)+roitmp(4)-1,roitmp(1):roitmp(1)+roitmp(3)-1);
 
-figure, imshow(tmp,[]);
+%figure, imshow(tmp,[]);
 
-%obj.pattern=pattern;
+obj.pattern=tmp;

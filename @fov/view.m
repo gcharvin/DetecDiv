@@ -165,7 +165,7 @@ end
 
 function resetZoom(handle,event, obj,him,hp)
 zoom out
-
+zoom off
 updatedisplay(obj,him,hp);
 end
 
@@ -266,7 +266,13 @@ roi=str2num(te);
 
 htext=findobj('Tag','roimenu');
 tmp=htext.String;
+
+if numel(tmp)==1 & numel(tmp{1})~=0
 tmp{end+1}=te;
+else
+tmp{1}=te;    
+end
+
 htext.String=tmp;
 htext.Value=numel(tmp);
 
@@ -277,18 +283,10 @@ end
 function removeROI(handles,event,obj,him,hp)
   val=handles.UserData;
   obj.removeROI(val);
-  h=findobj('Tag',['roitag_' num2str(val)]);
+  h=findobj('Tag',['roitag_' num2str(val)])
   delete(h);
   
-  str={''};
-    for i=1:numel(obj.roi)
-        if numel(obj.roi(1).id)~=0
-            str{i,1}=num2str(obj.roi(i).value);
-        end
-    end
-   
-    htext=findobj('Tag','roimenu');
-    htext.String=str;
+  
     
     
   updatedisplay(obj,him,hp);
@@ -389,6 +387,19 @@ for i=1:numel(obj.roi)
     %h.Vertices
     h.ButtonDownFcn={@vie,obj};
 end
+
+str={''};
+  
+    for i=1:numel(obj.roi)
+        if numel(obj.roi(1).id)~=0
+            str{i,1}=num2str(obj.roi(i).value);
+        end
+    end
+   
+    htext=findobj('Tag','roimenu');
+    htext.String=str;
+    
+    
 end
 
 function vie(handles,event,obj)
