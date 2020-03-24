@@ -1,7 +1,7 @@
 function removeROI(obj,roiid)
 % add roi object instance to field of view
 
-if ischar(roiid)
+if nargin==1
      obj.roi=roi('',[]);
     return;
 end

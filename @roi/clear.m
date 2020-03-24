@@ -2,9 +2,9 @@ function clear(obj)
 
 % remove attached variables from main movie project.
 
-obj.gfp=[];
+obj.image=[];
 
-obj.classi=[];
-obj.train=[];
-obj.traintrack=[];
-obj.track=[];
+% obj.classi=[];
+% obj.train=[];
+% obj.traintrack=[];
+% obj.track=[];

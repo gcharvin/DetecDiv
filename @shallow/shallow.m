@@ -5,7 +5,11 @@ classdef shallow < handle
       io=struct('path','','file','');
       
       fov=fov({''},1,'');%fov({},1,'');
-      pattern=[];
+      processing=struct('roi',[]);
+      
+      %processing.roi.pattern=[];
+      
+      %pattern=[];
 %       filename
 %       pathname
 %       path
@@ -43,12 +47,25 @@ classdef shallow < handle
             
             
        end
-       function obj = setPath(obj,path,file) % filename contains a list of path to images used in the movi project
+       function obj = setPath(obj,pathe,file) % filename contains a list of path to images used in the movi project
           %  obj.props.path=pathname;
            % obj.props.name=filename;
-            
-           obj.io.path=path;
+           
+           oldpath=obj.io.path;
+           obj.io.path=pathe;
            obj.io.file=file;
+           
+           % also adjust set path of dependencies 
+           
+           for i=1:numel(obj.fov)
+               for j=1:numel(obj.fov(i).roi)
+                   if numel(obj.fov(i).roi(j).path)~=0
+                  % oldpath
+                  % pathe
+                   obj.fov(i).roi(j).path = replace(obj.fov(i).roi(j).path,oldpath,pathe);
+                   end
+               end
+           end
        end
        function [path,file]= getPath(obj) % filename contains a list of path to images used in the movi project
           %  obj.props.path=pathname;

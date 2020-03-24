@@ -3,33 +3,43 @@ classdef roi < handle
       % default properties with values
       id='';
       value %
-      gfp % list of grayscale images that contain gfp data (m x n x time x channel)
-      gfpchannel
-      phasechannel
+      %gfp % list of grayscale images that contain gfp data (m x n x time x channel)
+      %gfpchannel
+      %phasechannel
       path
-      intensity=0.2; % intensity of fluoresecence displayed on view gui
-      brushSize=3;
+      %intensity=0.2; % intensity of fluoresecence displayed on view gui
+      %brushSize=3;
       %phc % list of grayscale images that contain ph data
       
-      train=[] % list of rgb images that contain pixel training data
-      classi=[] % list of rgb images that contain pixel classification RGB image , only second channel is useful
-      traintrack=[]; % list of grayscale images that contains training for nucleus tracking results
-      track=[] % array that contains 1) the nucleus index to be tracked (classification result) : 0 if no tracking 2) other information related to tracking : division etc...
+      image=[]; % . images for field of view
+      channelid=1;
+     % imagestr={}; % contains the description for each image
+      proc=[]; % sturct that contains all possible prcessing data
+      
+      parent=[] % reference of the parent field of view
+      
+      display=struct('intensity',[1],'frame',1,'selectedchannel',1,'binning',1,'rgb',[1],'channel',{'Channel 1'});
+      
+      % displays a list of channels in RGB channels 
+      %train=[] % list of rgb images that contain pixel training data
+      %classi=[] % list of rgb images that contain pixel classification RGB image , only second channel is useful
+      %traintrack=[]; % list of grayscale images that contains training for nucleus tracking results
+      %track=[] % array that contains 1) the nucleus index to be tracked (classification result) : 0 if no tracking 2) other information related to tracking : division etc...
       
       %cavity=[]; % geometrical information avout cavity 
       %area=[]; % area of nucleus in trajectory NOT USED
       %param=[]; % predictors used ? NOT USED
       
-      data=struct('fluo',[],'area',[]);
+      %data=struct('fluo',[],'area',[]);
       %data.fluo=[]; % quantification of total fluorescence in mother nucleus
       
-      rls=[];
+      %rls=[];
       
-      div=struct('reject',[],'raw',[],'classi',[],'tree',[],'dead',[],'daughter',[],'stop',[]) % structure that contains all relevant info about division, including training and classification
+      %div=struct('reject',[],'raw',[],'classi',[],'tree',[],'dead',[],'daughter',[],'stop',[]) % structure that contains all relevant info about division, including training and classification
       
-      frame=1; %current frame being displayed;
-      pixtree % pix classifier
-      objtree % object trajectory classifier 
+      %frame=1; %current frame being displayed;
+      %pixtree % pix classifier
+      %objtree % object trajectory classifier 
    end
    methods
        function obj = roi(id,roiarr)

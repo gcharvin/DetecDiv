@@ -1,8 +1,5 @@
 function saveCroppedImages(obj,fovid,frameid)
 
-
-
-
 fprintf('Cropping and saving images to folder....\n');
 
 if nargin==1
@@ -11,113 +8,107 @@ if nargin==1
 end
 
 for i=fovid
-    if numel(frameid==0)
+    
+    if numel(obj.fov(i).roi)==0
+        disp('thid FOV has no ROI ! Quitting ....');
+        %break
+        return
+    end
+    if numel(obj.fov(i).roi(1).id)==0
+        disp('thid FOV has no ROI ! Quitting ....');
+        %break 
+        return;
+    end
+    
+    if numel(frameid)==0
     nframes=1:numel(obj.fov(i).srclist{1}); % take the number of frames from the image list
     else
-    nframes=framesid;   % specify a number of images to be applied to all FOVs
+    nframes=frameid;   % specify a number of images to be applied to all FOVs
     end
 
  reverseStr = '';
  
+cc=1;
+
+% create fov specific directory 
+
+strpath=[obj.io.path '/' obj.io.file];
+mkdir(strpath,obj.fov(i).id);
+list={};
+
 for j=nframes 
+    for k=1:numel(obj.fov(i).srclist) % loop on channels
+        
+    im=obj.fov(i).readImage(j,k);
     
-%     if j==1
-%         list={};
-%         for k=1:numel(obj.pathname)
-%         [im tmp]=obj.readImage(j,k);
-%         
-%         if obj.GFPChannel==k
-%            imgfp=im; 
-%         end
-%         
-%         list{k}=tmp;
-%         end
-%     end
-%     
-%     %imgphase= obj.readImage(j,obj.PhaseChannel);
-%     %imgfp=obj.readImage(j,obj.GFPChannel);
-%     %imgphase=imresize(imgphase,[size(imgfp,1) size(imgfp,2)]);
-%     
-%     
-%     for k=1:numel(obj.pathname)
-%         
-%         tmp=obj.readImage(j,k,list{k});
-%        % size(tmp);
-%         
-%         if obj.PhaseChannel==k
-%             tmp=imresize(tmp,[size(imgfp,1) size(imgfp,2)]);
-%             %figure, imshow(tmp,[]); 
-%         end
-%         
-%        if j==1 && k==1
-%          reftmp=tmp;
-%        end
-%        
-% %        if j>1 % cropping and registering images
-% %           crop=1:100;
-% %           tform=registerImages(reftmp(crop,crop),tmp(crop,crop));
-% %           
-% %           moved = imwarp(tmp,tform,'OutputView',imref2d(size(reftmp)));
-% %   
-% %           %figure, imshowpair(reftmp,moved);
-% %          % pause
-% %           tmp=moved;
-% %        end
-%         
-%        % size(tmp)
-%         
-%         for i=1:size(positions,1)
-%             
-%             gfp=tmp(scaled(i,1):scaled(i,2),scaled(i,3):scaled(i,4));
-%             
-%            % size(gfp)
-%             %figure, imshow(gfp,[]); 
-%             %return;
-%             
-%            % size(obj.trap(i).gfp)
-%            
-%            
-%             obj.trap(i).gfp(:,:,j,k)=gfp;
-%             
-%         end
-%         
-%     end
+    im=imresize(im,obj.fov(i).display.binning(k));
     
-    msg = sprintf('Processing frame: %d / %d for FOV %d', i, obj.nframes,j); %Don't forget this semicolon
+    list{cc,k}=im;
+    
+    end
+    
+    msg = sprintf('Reading frame: %d / %d for FOV %s', cc, numel(nframes),obj.fov(i).id); %Don't forget this semicolon
     fprintf([reverseStr, msg]);
     reverseStr = repmat(sprintf('\b'), 1, length(msg));
+    
+    cc=cc+1;
 end
-
-end
-
 fprintf('\n');
 
-return;
-
-% save and clear memory
 reverseStr = '';
 
-for i=1:size(positions,1)
+for l=1:numel(obj.fov(i).roi)
+    obj.fov(i).roi(l).path=[strpath '/' obj.fov(i).id];
+    rroi=obj.fov(i).roi(l).value; % cropping data
+    obj.fov(i).roi(l).image=uint16(zeros(rroi(4),rroi(3),numel(obj.fov(i).srclist),numel(nframes)));
     
+    obj.fov(i).roi(l).display.channel={};
+    %obj.fov(i).roi(l).display.settings={};
+   temp=[1 1 1];
+   temp=temp';
+   
+    for k=1:numel(obj.fov(i).srclist)
+        obj.fov(i).roi(l).display.channel{k}=['Channel ' num2str(k)];
+        obj.fov(i).roi(l).display.intensity(1:3,k)=temp;
+        obj.fov(i).roi(l).channelid(k)=k;
+        obj.fov(i).roi(l).display.selectedchannel(k)=1;
+        obj.fov(i).roi(l).display.rgb(1:3,k)=temp;
+    end
+    
+    cc=1;
+    for j=nframes 
+    for k=1:numel(obj.fov(i).srclist)
+        
+        tmp=list{cc,k};
+        
+       % size(tmp)
+      %  size(obj.fov(i).roi(l).image)
+       % rroi
+        obj.fov(i).roi(l).image(:,:,k,cc)=tmp(rroi(2):rroi(2)+rroi(4)-1,rroi(1):rroi(1)+rroi(3)-1);
+        
+    end
+    cc=cc+1;
+    end
+
+
+% save and clear memory
     % create analysis matrices 
-    obj.trap(i).classi=uint8(zeros(size(obj.trap(i).gfp,1),size(obj.trap(i).gfp,2),3,size(obj.trap(i).gfp,3)));
-    obj.trap(i).train=uint8(zeros(size(obj.trap(i).gfp,1),size(obj.trap(i).gfp,2),3,size(obj.trap(i).gfp,3)));
-    obj.trap(i).traintrack=uint8(zeros(size(obj.trap(i).gfp,1),size(obj.trap(i).gfp,2),3,size(obj.trap(i).gfp,3)));
-    obj.trap(i).track=uint8(zeros(size(obj.trap(i).gfp,1),size(obj.trap(i).gfp,2),size(obj.trap(i).gfp,3)));
+  %  obj.trap(i).classi=uint8(zeros(size(obj.trap(i).gfp,1),size(obj.trap(i).gfp,2),3,size(obj.trap(i).gfp,3)));
+  %  obj.trap(i).train=uint8(zeros(size(obj.trap(i).gfp,1),size(obj.trap(i).gfp,2),3,size(obj.trap(i).gfp,3)));
+  %  obj.trap(i).traintrack=uint8(zeros(size(obj.trap(i).gfp,1),size(obj.trap(i).gfp,2),3,size(obj.trap(i).gfp,3)));
+  %  obj.trap(i).track=uint8(zeros(size(obj.trap(i).gfp,1),size(obj.trap(i).gfp,2),size(obj.trap(i).gfp,3)));
     
-    obj.trap(i).data.fluo=zeros(size(obj.trap(i).gfp,3),numel(obj.pathname));
+  %  obj.trap(i).data.fluo=zeros(size(obj.trap(i).gfp,3),numel(obj.pathname));
     
     
-    obj.trap(i).save;
-    obj.trap(i).clear;
-    %%% here : now I need to manage analysis images and then to manage all
-    %%% aspects at the movie level 
+    obj.fov(i).roi(l).save;
+    obj.fov(i).roi(l).clear;
     
-     msg = sprintf('%d / %d Traps saved', i , numel(obj.trap) ); %Don't forget this semicolon
+     msg = sprintf('Images in %d / %d ROIs saved for FOV %s', l , numel(obj.fov(i).roi), obj.fov(i).id); %Don't forget this semicolon
     fprintf([reverseStr, msg]);
     reverseStr = repmat(sprintf('\b'), 1, length(msg));
 end
 fprintf('\n');
-
 end
+
 
