@@ -5,7 +5,8 @@ classdef shallow < handle
       io=struct('path','','file','');
       
       fov=fov({''},1,'');%fov({},1,'');
-      processing=struct('roi',[]);
+      processing=struct('roi',[],'classification',classi());
+      
       
       %processing.roi.pattern=[];
       

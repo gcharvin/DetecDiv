@@ -65,14 +65,14 @@ for l=1:numel(obj.fov(i).roi)
     obj.fov(i).roi(l).display.channel={};
     %obj.fov(i).roi(l).display.settings={};
    temp=[1 1 1];
-   temp=temp';
+   %temp=temp';
    
     for k=1:numel(obj.fov(i).srclist)
         obj.fov(i).roi(l).display.channel{k}=['Channel ' num2str(k)];
-        obj.fov(i).roi(l).display.intensity(1:3,k)=temp;
+        obj.fov(i).roi(l).display.intensity(k,:)=temp;
         obj.fov(i).roi(l).channelid(k)=k;
         obj.fov(i).roi(l).display.selectedchannel(k)=1;
-        obj.fov(i).roi(l).display.rgb(1:3,k)=temp;
+        obj.fov(i).roi(l).display.rgb(k,:)=temp;
     end
     
     cc=1;

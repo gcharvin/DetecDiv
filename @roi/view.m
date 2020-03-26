@@ -15,8 +15,9 @@ frame=obj.display.frame;
 
 if numel(findobj('Tag',['ROI' obj.id])) % handle exists already
     h=findobj('Tag',['ROI' obj.id]);
+    draw(obj,h);
     
-    hp=findobj(h,'Type','Axes');
+    %hp=findobj(h,'Type','Axes');
     
     %     hp(1)=findobj(h,'Tag','Axe1');
     %     hp(2)=findobj(h,'Tag','Axe2');
@@ -31,9 +32,9 @@ if numel(findobj('Tag',['ROI' obj.id])) % handle exists already
     % hp(1:4)=h.Children(5:8);
     % end
     
-    him=h.UserData;
+    %him=h.UserData;
     
-    updatedisplay(obj,him,hp);
+    %updatedisplay(obj,him,hp);
 else
     %im=buildimage(obj); % returns a structure with all images to be displayed
     
@@ -165,8 +166,8 @@ for i=1:numel(obj.display.channel)
         set(hp(cc),'Tag',['Axe' num2str(cc)]);
         
         %axis equal square
-        tt=obj.display.intensity(:,i);
-        title(hp(cc),[obj.display.channel{i} ' -Intensity:' num2str(tt')]);
+        tt=obj.display.intensity(i,:);
+        title(hp(cc),[obj.display.channel{i} ' -Intensity:' num2str(tt)]);
         
         cc=cc+1;
     end
@@ -252,19 +253,26 @@ for i=1:numel(obj.display.channel)
             imout=imadjust(imout,[meangfp/65535 maxgfp/65535],[0 1]);
             imout =repmat(imout,[1 1 3]);
             for k=1:3
-                imout(:,:,k)=imout(:,:,k).*obj.display.rgb(k,i);
+                imout(:,:,k)=imout(:,:,k).*obj.display.rgb(i,k);
             end
         else
             imout=uint16(zeros(size(obj.image,1),size(obj.image,2),3));
             
+           % size(imout)
+            %i
+            
             for j=1:numel(pix)
+               % i,j,pix(j)
                 tmp=src(:,:,pix(j),:);
                 meangfp=0.5*double(mean(tmp(:)));
-                it=obj.display.intensity(pix(j),i);
+                it=obj.display.intensity(i,j);
                 maxgfp=double(meangfp+it*(max(tmp(:))-meangfp));
                 imtemp=obj.image(:,:,pix(j),frame);
+                %size(imtemp)
+                if meangfp>0 && maxgfp>0
                 imtemp = imadjust(imtemp,[meangfp/65535 maxgfp/65535],[0 1]);
-                imout(:,:,j)=imtemp.*obj.display(j,i);
+                end
+                imout(:,:,j)=imtemp.*obj.display.rgb(i,j);
             end
         end
         im(cc).data=imout;
@@ -281,7 +289,7 @@ function setframe(handle,event,obj,him,hp)
 
 frame=str2num(handle.String);
 
-if frame<numel(obj.srclist{1}) & frame > 0
+if frame<=size(obj.image,4) & frame > 0
     obj.display.frame=frame;
     updatedisplay(obj,him,hp)
 end
@@ -459,8 +467,8 @@ for i=1:numel(obj.display.channel)
     him.image(cc).CData=im(cc).data;
     
     % title(hp(i),['Channel ' num2str(i) ' -Intensity:' num2str(obj.display.intensity(i))]);
-    tt=obj.display.intensity(:,i);
-    title(hp(cc),[obj.display.channel{i} ' -Intensity:' num2str(tt')]);
+    tt=obj.display.intensity(i,:);
+    title(hp(cc),[obj.display.channel{i} ' -Intensity:' num2str(tt)]);
     cc=cc+1;
     end
 end

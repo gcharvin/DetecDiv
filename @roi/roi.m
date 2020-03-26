@@ -18,7 +18,7 @@ classdef roi < handle
       
       parent=[] % reference of the parent field of view
       
-      display=struct('intensity',[1],'frame',1,'selectedchannel',1,'binning',1,'rgb',[1],'channel',{'Channel 1'});
+      display=struct('intensity',[1 1 1],'frame',1,'selectedchannel',1,'binning',1,'rgb',[1 1 1],'channel',{'Channel 1'});
       
       % displays a list of channels in RGB channels 
       %train=[] % list of rgb images that contain pixel training data
