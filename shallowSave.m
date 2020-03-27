@@ -9,6 +9,13 @@ for i=1:numel(shallowObj.fov)
                   shallowObj.fov(i).roi(j).clear;
                end
 end
+
+for i=1:numel(shallowObj.processing.classification)
+               for j=1:numel(shallowObj.processing.classification(i).roi)
+                  shallowObj.processing.classification(i).roi(j).save;
+                  shallowObj.processing.classification(i).roi(j).clear;
+               end
+end
            
 
 save(fullfile(path,[file '.mat']),'shallowObj');

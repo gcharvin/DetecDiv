@@ -1,13 +1,21 @@
-function view(obj,frame)
+function view(obj,frame,category)
 % view for ROI objects
+% category defines what kind of menu is displayed in order to perform the
+% training on existing data 
+% category== 'Image' : Image classification can be performed using keyboard
+% category== 'Pixel' : Pixel classification can be performed using painting
+% tool 
+
 
 if numel(obj.image)==0
     obj.load
 end
 
-if nargin==2
+if nargin>=2
     obj.display.frame=frame;
 end
+
+
 
 frame=obj.display.frame;
 

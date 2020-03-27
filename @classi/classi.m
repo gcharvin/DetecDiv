@@ -6,49 +6,39 @@ classdef classi < handle
         trainingset=[]; % % list of ROI ids used for training
         path='' %  path where 
         strid='';
+        description='';
+        category='';
+        roi=roi('',[]); 
+        channel=1;
     end
     methods
         function obj = classi(path,name,id)
             
-            if nargin<2
-               name='myclassif'; 
+            if nargin<1
+               path='';
+               name=''; 
                id=1;
             end
-            % ask user which method he wants to use
-            str=which('shallowNew.m');
-            [pth file ext]=fileparts(str);
-            str=[pth '/classification/classlist.mat'];
-            load(str);
-            disp(classlist)
-            
-            prompt='Please enter the number associated with the classification you wish to do ?';
-            str= input(prompt);
-            
-            if str >0 && str< size(classlist,2)
-            
-            obj.typeid=str;
+            obj.path=path;
             obj.id=id;
             obj.strid=[name '_' num2str(id)];
             
+            if numel(path)>0
             mkdir(path,'classification');
             obj.path=[path '/classification'];
-            
             mkdir(obj.path,obj.strid);
-            
-            else
-                disp('Error: wrong clasification umber entered !');
-            return;    
+            obj.path=[obj.path '/' obj.strid];
             end
-            %obj.path=mkdir(
         end
         
         function addTrainingData(obj,list)
-           % list is provdided as a list  of FOVid x ROIs 
+           % list is provdided as a an array  FOVid // ROIs : [1 1 1 1; 1 2
+           % 3 4 ]
            % HERE add training data 
+
            obj.trainingset=list;
-           
-           % save roi dataset to local folder for training ?? --> make a
-           % list of mat files corresponding to local ROIs 
+
+           % copy files and ROI objects to training folder
            
            % update GUI to include classification capabilities
         end

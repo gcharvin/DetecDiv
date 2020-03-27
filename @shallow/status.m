@@ -99,4 +99,29 @@ if display(2)
         disp('5) crop and save images: myshallowproject.fov(FOVnumber).saveCroppedImages(FOVid)');
 end
     
+if display(3)
+    disp(' ');
+    disp('*------------------------------------------*');
+    disp('*--------------- Processing ---------------*');
+    disp('*------------------------------------------*');
+    disp(' ');
+    
+    disp('Classification')
+    disp('List of user defined classification tasks:');
+    disp(numel(obj.processing.classification))
+    disp('To add a new classification task, use the addClassification method: myshallowproject.addClassification');
+    disp('To train the classifier, use the trainClassifier method: myshallowproject.addClassification(classiid)');
+    disp(' ');
+    for i=1:numel(obj.processing.classification)
+    disp(['Classification properties for ' obj.processing.classification(i).strid]);
+    disp(['Description: ' obj.processing.classification(i).description{1}]);
+    disp(['Category: ' obj.processing.classification(i).category{1}]);
+    disp(' ');
+    disp(['Number of ROIs for training set: ' num2str(numel(obj.processing.classification(i).roi))]);
+    for j=1:numel(obj.processing.classification(i).roi)
+       disp( obj.processing.classification(i).roi(j).id);
+    end
+    end
+end
+    
     

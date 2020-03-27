@@ -8,3 +8,7 @@ function train(obj)
   %          'VariableNames',{'ID','Name','Description','Category','TrainingFun','ClassificationFun'});
   
   
+  obj.view
+  
+  % change the way view function behaves in order to allow pixel painting
+  % and image classification !!!!

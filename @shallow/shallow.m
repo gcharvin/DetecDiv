@@ -5,7 +5,7 @@ classdef shallow < handle
       io=struct('path','','file','');
       
       fov=fov({''},1,'');%fov({},1,'');
-      processing=struct('roi',[],'classification',classi());
+      processing=struct('roi',[],'classification',[]);%,'classification',classi());
       
       
       %processing.roi.pattern=[];
@@ -67,6 +67,11 @@ classdef shallow < handle
                    end
                end
            end
+           
+           for i=1:numel(obj.processing.classification)
+               obj.processing.classification(i).path = replace(obj.processing.classification(i).path,oldpath,pathe);
+           end
+           
        end
        function [path,file]= getPath(obj) % filename contains a list of path to images used in the movi project
           %  obj.props.path=pathname;
