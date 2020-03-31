@@ -23,6 +23,8 @@ classdef roi < handle
       classes={};
       train=[] ; %1D array that has the size of the 4rd dim of the image array and contains assigned classes; is defined when ROI is assigned to classification 
       
+      results=[]; %display results if based on classification-> an array that has the same size as the number of frames
+      
       % displays a list of channels in RGB channels 
       %train=[] % list of rgb images that contain pixel training data
       %classi=[] % list of rgb images that contain pixel classification RGB image , only second channel is useful

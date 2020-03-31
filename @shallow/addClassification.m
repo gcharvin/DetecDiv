@@ -64,6 +64,8 @@ if classitype >0 && classitype< size(classlist,2) % user chose a correct method
     obj.processing.classification(n+1).typeid=classitype;
     obj.processing.classification(n+1).description=[classlist{classitype,2} ' -' classlist{classitype,3}];
     obj.processing.classification(n+1).category=classlist{classitype,4};
+    obj.processing.classification(n+1).classifyFun=classlist{classitype,6}{1};
+    obj.processing.classification(n+1).trainingFun=classlist{classitype,5}{1};
     obj.processing.classification(n+1).channel=channeltype;
     obj.processing.classification(n+1).classes=classes;
 else
