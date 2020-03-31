@@ -10,6 +10,7 @@ classdef classi < handle
         category='';
         roi=roi('',[]); 
         channel=1;
+        classes={}; % names of the classes
     end
     methods
         function obj = classi(path,name,id)
@@ -36,7 +37,7 @@ classdef classi < handle
            % 3 4 ]
            % HERE add training data 
 
-           obj.trainingset=list;
+           obj.trainingset=[obj.trainingset list];
 
            % copy files and ROI objects to training folder
            

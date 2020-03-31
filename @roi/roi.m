@@ -20,6 +20,9 @@ classdef roi < handle
       
       display=struct('intensity',[1 1 1],'frame',1,'selectedchannel',1,'binning',1,'rgb',[1 1 1],'channel',{'Channel 1'});
       
+      classes={};
+      train=[] ; %1D array that has the size of the 4rd dim of the image array and contains assigned classes; is defined when ROI is assigned to classification 
+      
       % displays a list of channels in RGB channels 
       %train=[] % list of rgb images that contain pixel training data
       %classi=[] % list of rgb images that contain pixel classification RGB image , only second channel is useful
