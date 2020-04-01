@@ -11,6 +11,8 @@ classdef classi < handle
         roi=roi('',[]); 
         channel=1;
         classes={}; % names of the classes
+        classifyFun='';
+        trainingFun='';
     end
     methods
         function obj = classi(path,name,id)

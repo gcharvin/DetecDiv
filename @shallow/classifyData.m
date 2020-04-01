@@ -29,7 +29,10 @@ end
 for i=1:size(roilist,2) % loop on all ROIs
     
  roiobj=obj.fov(roilist(1,i)).roi(roilist(2,i));
- roiobj.results=zeros(1,size(roiobj.image,4)); % pre allocate results for labels
+ 
+%  if strcmp(classif.category{1},'Image') % in this case, the results are provided as a series of labels
+%  roiobj.results=zeros(1,size(roiobj.image,4)); % pre allocate results for labels
+%  end
  
 feval(classifyFun,roiobj,classif,classifier); % launch the training function for classification
 % since roiobj is a handle, no need to have an output to this the function

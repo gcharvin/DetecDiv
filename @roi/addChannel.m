@@ -1,6 +1,6 @@
 function addChannel(obj,matrix,str,rgb,intensity)
 
-% a channel is a matrick that has either 1 or 3 sub channels , other
+% a channel is a matrix that has either 1 or 3 sub channels , other
 % dimensions being like the obj.image.
 
 if numel(obj.image)==0

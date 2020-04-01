@@ -9,7 +9,7 @@ if n==0
 end
 
 % ask user which method he wants to use
-prompt='Please enter the name of the classification; Default: myclassi';
+prompt='Please enter the name of the classification (Default: myclassi): ';
 name= input(prompt,'s');
 if numel(name)==0
     name='myclassi';
@@ -24,19 +24,19 @@ disp(classlist)
 
 
 
-prompt='Please enter the number associated with the classification you wish to do ? Default:1';
+prompt='Please enter the number associated with the classification you wish to do ? (Default:1): ';
 classitype= input(prompt);
 if numel(classitype)==0
     classitype=1;
 end
 
-prompt='Please enter the channel on which to operate the classification ? Default:1';
+prompt='Please enter the channel on which to operate the classification ? (Default:1): ';
 channeltype= input(prompt);
 if numel(channeltype)==0
     channeltype=1;
 end
 
-prompt='Please enter the classes names that you want  (Default: class1 class2):';
+prompt='Please enter the classes names that you want  (Default: class1 class2): ';
 classes= input(prompt,'s');
 
 if isempty(classes)

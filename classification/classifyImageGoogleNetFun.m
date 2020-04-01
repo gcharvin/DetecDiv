@@ -38,12 +38,20 @@ numClasses = numel(classNames);
     
     [label,scores] = classify(net,gfp);
     
+    % upload results into roi obj;
+    
+    results=roiobj.results;
+    results.(classif.strid)=[];
+    results.(classif.strid).id=zeros(1,size(roiobj.image,4));
+    results.(classif.strid).labels=label;
+    
     for i=1:numel(classif.classes)
         
     pix=label==classif.classes{i};
+    roiobj.results.id(pix)=i;
     
-    roiobj.results(pix)=i;
     end
+    
     
 
 
