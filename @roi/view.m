@@ -1,4 +1,4 @@
-function view(obj,frame,category)
+function view(obj,frame,classif)
 % view for ROI objects
 % category defines what kind of menu is displayed in order to perform the
 % training on existing data 
@@ -16,7 +16,7 @@ if nargin>=2
 end
 
 if nargin<3 
-   category=[]; 
+   classif=[]; 
 end
     
 frame=obj.display.frame;
@@ -26,7 +26,7 @@ if numel(findobj('Tag',['ROI' obj.id])) % handle exists already
 else
     h=figure('Tag',['ROI' obj.id],'MenuBar','none','Toolbar','none');
 end
- draw(obj,h,category);
+ draw(obj,h,classif);
 end
 
 

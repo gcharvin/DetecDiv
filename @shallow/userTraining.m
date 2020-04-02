@@ -30,5 +30,20 @@ channel=obj.processing.classification(classiid).channel;
 
 obj.processing.classification(classiid).roi(classitype).display.selectedchannel=zeros(1,numel(obj.processing.classification(classiid).roi(classitype).display.selectedchannel));
 obj.processing.classification(classiid).roi(classitype).display.selectedchannel(channel)=1;
-obj.processing.classification(classiid).roi(classitype).view(obj.processing.classification(classiid).roi(classitype).display.frame,category); 
+
+ pix = strfind(obj.processing.classification(classiid).roi(classitype).display.channel, obj.processing.classification(classiid).strid);
+         cc=[];
+        for i=1:numel(pix)
+            if numel(pix{i})~=0
+                cc=i;
+               
+                break
+            end
+        end
+       
+        if numel(cc)
+            obj.processing.classification(classiid).roi(classitype).display.selectedchannel(i)=1;
+        end
+            
+obj.processing.classification(classiid).roi(classitype).view(obj.processing.classification(classiid).roi(classitype).display.frame,obj.processing.classification(classiid)); 
 
