@@ -179,7 +179,10 @@ end
 % display user classification status
 if numel(classif)>0
     
-    if strcmp(classif.category{1},'Image') % display user training and results
+    if strcmp(classif.category{1},'Image')  || strcmp(classif.category{1},'LSTM') % display user training and results
+        if numel(obj.train)==0 % new roi , training not yet used
+            obj.train=zeros(1,size(obj.image,4));
+        end
         
         if obj.train(obj.display.frame)==0 % user training
             str='not classified';
@@ -510,7 +513,7 @@ if numel(classif)>0
         
     end
     
-    if strcmp(classif.category{1},'Image')
+    if strcmp(classif.category{1},'Image') || strcmp(classif.category{1},'LSTM')
         cc=1;
         for i=1:numel(obj.display.channel)
             if obj.display.selectedchannel(i)==1
@@ -677,7 +680,7 @@ for i=1:numel(keys) % display the selected class for the current image
     end
     
     if strcmp(event.Key,keys{i})
-        if strcmp(classif.category{1},'Image') % if image classification, assign class to keypress event
+        if  strcmp(classif.category{1},'Image') || strcmp(classif.category{1},'LSTM')% if image classification, assign class to keypress event
             obj.train(obj.display.frame)=i;
             ok=1;
         end

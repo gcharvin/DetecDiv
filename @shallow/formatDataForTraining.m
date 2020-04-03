@@ -15,27 +15,54 @@ if isfolder([classif.path '/' foldername])
 end
 mkdir(classif.path,foldername)
 
-
-switch category
-    case 'Image'
+if strcmp(category,'Image') || strcmp(category,'LSTM')
+  
+        if ~isfolder([classif.path '/' foldername '/images'])
+            mkdir([classif.path '/' foldername], 'images');
+        end
+        
+        
+        
         for i=1:numel(classif.classes)
-            if ~isfolder([classif.path '/' foldername '/' classif.classes{i}])
-                mkdir([classif.path '/' foldername], classif.classes{i});
+            if ~isfolder([classif.path '/' foldername '/images/' classif.classes{i}])
+                mkdir([classif.path '/' foldername '/images'], classif.classes{i});
             end
         end
-    case 'Pixel'
+end
+
+if strcmp(category,'Pixel')
+
         mkdir([classif.path '/' foldername],'images')
         mkdir([classif.path '/' foldername],'labels')
         % in case of pixels, training data is a list of 3 channels from the
         % roi.image matrix with indexed colors
+end  
         
-    case 'LSTM'
-        for i=1:numel(classif.classes)
-            if ~isfolder([classif.path '/' foldername '/' classif.classes{i}])
-                mkdir([classif.path '/' foldername], classif.classes{i});
-            end
-        end
-    otherwise
+if strcmp(category,'LSTM')
+    
+    prompt='Train googlenet image classifier ? (y / n [Default]): ';
+imageclassifier= input(prompt);
+if numel(imageclassifier)==0
+    imageclassifier='y';
+end
+
+ prompt='Compute activation for google net ? (y / n [Default]): ';
+cactivations= input(prompt);
+if numel(cactivations)==0
+    cactivations='n';
+end
+
+ prompt='Assemble full LSTM network ? (y [Default]/ n ): ';
+assemblenet= input(prompt);
+if numel(assemblenet)==0
+    assemblenet='y';
+end
+
+save([classif.path '/options.mat'],'cactivations','imageclassifier','assemblenet'); % save options to be used in training function
+
+     if ~isfolder([classif.path '/' foldername '/timeseries'])
+            mkdir([classif.path '/' foldername], 'timeseries');
+     end
         
 end
 
@@ -62,11 +89,12 @@ for i=1:numel(classif.roi)
     if strcmp(category,'LSTM')
         vid=uint8(zeros(size(classif.roi(i).image,1),size(classif.roi(i).image,2),3,size(classif.roi(i).image,4)));
         
+        pixb=numel(classif.roi(i).train);
         pixa=find(classif.roi(i).train==0);
         
-        if numel(pix)==0 % some images are not labeled, quitting ...
-            disp('Error: some images are not labeled !');
-            return;
+        if numel(pixa)>0 || numel(pixa)==0 && pixb==0 % some images are not labeled, quitting ...
+            disp('Error: some images are not labeled in this ROI - LSTM requires all images to be labeled in the timeseries!');
+            continue
         end
     end
     
@@ -111,7 +139,7 @@ for i=1:numel(classif.roi)
         %labels=labtmp;
     end
     
-    if strcmp(category,'Image')
+    if strcmp(category,'Image') || strcmp(category,'LSTM')
         lab= categorical(classif.roi(i).train,1:numel(classif.classes),classif.classes); % creates labels for classification
     end
     
@@ -145,10 +173,10 @@ for i=1:numel(classif.roi)
             tr=['0' tr];
         end
         
-        if strcmp(category,'Image')
+        if strcmp(category,'Image') || strcmp(category,'LSTM')
             if classif.roi(i).train(j)~=0 % if training is done
                 % if ~isfile([str '/unbudded/im_' mov.trap(i).id '_frame_' tr '.tif'])
-                imwrite(tmp,[classif.path '/' foldername '/' classif.classes{classif.roi(i).train(j)} '/' classif.roi(i).id '_frame_' tr '.tif']);
+                imwrite(tmp,[classif.path '/' foldername '/images/' classif.classes{classif.roi(i).train(j)} '/' classif.roi(i).id '_frame_' tr '.tif']);
                 % end
             end
         end
@@ -177,7 +205,7 @@ for i=1:numel(classif.roi)
     
     if strcmp(category,'LSTM')
         deep=classif.roi(i).train;
-        save([classif.path '/' foldername '/labeled_video_' mov.trap(i).id '.mat'],'deep','vid','lab');
+        save([classif.path '/' foldername '/timeseries/lstm_labeled_' classif.roi(i).id '.mat'],'deep','vid','lab');
     end
     
 end

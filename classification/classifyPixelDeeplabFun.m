@@ -60,7 +60,6 @@ for fr=1:size(gfp,4)
     % figure, imshow(features(:,:,2),[]);
     %return;
     
-    
     %BW=logical(C=="Cell");
     
     BW=~BW;
@@ -93,8 +92,6 @@ for fr=1:size(gfp,4)
     
     
     %[label,scores] = classify(net,gfp);
-    
-  
 end
 %mov.trap(t).traintrack(:,:,2,:)=0.5*mov.trap(t).classi(:,:,2,:);
 fprintf('\n');

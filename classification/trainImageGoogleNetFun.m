@@ -6,7 +6,7 @@ function trainImageGoogleNetFun(path,name)
 
 fprintf('Loading data...\n');
 
-foldername=[path '/trainingdataset'];
+foldername=[path '/trainingdataset/images'];
 
 imds = imageDatastore(foldername, ...
     'IncludeSubfolders',true, ...
