@@ -13,7 +13,7 @@ foldername='trainingdataset';
 if isfolder([classif.path '/' foldername])
     rmdir([classif.path '/' foldername], 's')
 end
-    mkdir(classif.path,foldername)
+mkdir(classif.path,foldername)
 
 
 switch category
@@ -53,6 +53,7 @@ for i=1:numel(classif.roi)
     im=classif.roi(i).image(:,:,pix,:);
     
     if numel(pix)==1
+        % 'ok'
         totphc=im;
         meanphc=0.5*double(mean(totphc(:)));
         maxphc=double(meanphc+0.7*(max(totphc(:))-meanphc));
@@ -61,7 +62,7 @@ for i=1:numel(classif.roi)
     if strcmp(category,'LSTM')
         vid=uint8(zeros(size(classif.roi(i).image,1),size(classif.roi(i).image,2),3,size(classif.roi(i).image,4)));
         
-        pix=find(classif.roi(i).train==0);
+        pixa=find(classif.roi(i).train==0);
         
         if numel(pix)==0 % some images are not labeled, quitting ...
             disp('Error: some images are not labeled !');
@@ -70,9 +71,44 @@ for i=1:numel(classif.roi)
     end
     
     if strcmp(category,'Pixel') % get the training data for pixel classification
-         pixtraining=find(classif.roi(i).channelid=='Pixel'); % channel must be labeled as 'Pixel'
-         labels=classif.roi(i).image(:,:,pixtraining,:);
-         
+        
+        % find channel associated with training
+        pixe = strfind(classif.roi(i).display.channel, classif.strid);
+        cc=[];
+        for j=1:numel(pixe)
+            if numel(pixe{j})~=0
+                cc=j;
+                break
+            end
+        end
+        
+        pixcc=find(classif.roi(i).channelid==cc);
+        % size(classif.roi(i).image)
+        lab=classif.roi(i).image(:,:,pixcc,:);
+        
+        labels= double(zeros(size(lab,1),size(lab,2),3,size(lab,4)));
+        
+        %figure, imshow(lab(:,:,:,1),[]);
+        % return;
+        
+        for j=1:numel(classif.classes)
+            
+            pixz=lab(:,:,1,:)==j-1; % pixel with value zero is associated with class 1
+            
+            labtmp2=double(zeros(size(lab,1),size(lab,2),1,size(lab,4)));
+            labtmp2(pixz)=1;
+            
+            for  k=1:3
+                labels(:,:,k,:)=labels(:,:,k,:)+classif.colormap(j,k)*labtmp2;
+            end
+            
+        end
+        
+        
+        % figure, imshow(labels(:,:,:,2),[]);
+        % return;
+        
+        %labels=labtmp;
     end
     
     if strcmp(category,'Image')
@@ -84,12 +120,18 @@ for i=1:numel(classif.roi)
         tmp=im(:,:,:,j);
         
         if numel(pix)==1
+            
             tmp = double(imadjust(tmp,[meanphc/65535 maxphc/65535],[0 1]))/65535;
             tmp=repmat(tmp,[1 1 3]);
+            
+            
+            %max(tmp(:))
+            %return
         end
         
         if strcmp(category,'Pixel')
-        tmp=uint8(256*tmp);
+            %tmp=uint8(256*tmp);
+            
         end
         
         if strcmp(category,'LSTM')
@@ -99,35 +141,43 @@ for i=1:numel(classif.roi)
         % return;
         
         tr=num2str(j);
-            while numel(tr)<4
-                tr=['0' tr];
-            end
-            
+        while numel(tr)<4
+            tr=['0' tr];
+        end
+        
         if strcmp(category,'Image')
-            if classif.roi(i).train(j)~=0 % young budding cells
-               % if ~isfile([str '/unbudded/im_' mov.trap(i).id '_frame_' tr '.tif'])
-                    imwrite(tmp,[classif.path '/' foldername '/' classif.classes{classif.roi(i).train(j)} '/' classif.roi(i).id '_frame_' tr '.tif']);
-               % end
+            if classif.roi(i).train(j)~=0 % if training is done
+                % if ~isfile([str '/unbudded/im_' mov.trap(i).id '_frame_' tr '.tif'])
+                imwrite(tmp,[classif.path '/' foldername '/' classif.classes{classif.roi(i).train(j)} '/' classif.roi(i).id '_frame_' tr '.tif']);
+                % end
             end
-           
         end
         
         if strcmp(category,'Pixel')
-         if max(labels(:,:,:,j))>0 % test if image has been manually annotated
-         imwrite(tmp,[classif.path '/' foldername '/images/' classif.roi(i).id '_frame_' tr '.tif']);
-         imwrite(labels,[classif.path '/' foldername '/labels/' classif.roi(i).id '_frame_' tr '.tif']);
-         end
+            if max(lab(:,:,:,j))>0 % test if image has been manually annotated
+                imwrite(tmp,[classif.path '/' foldername '/images/' classif.roi(i).id '_frame_' tr '.tif']);
+                imwrite(labels(:,:,:,j),[classif.path '/' foldername '/labels/' classif.roi(i).id '_frame_' tr '.tif']);
+                
+                
+            end
         end
         
         msg = sprintf('Processing frame: %d / %d for ROI %s', j, size(im,4),classif.roi(i).id); %Don't forget this semicolon
         fprintf([reverseStr, msg]);
-        reverseStr = repmat(sprintf('\b'), 1, length(msg)); 
+        reverseStr = repmat(sprintf('\b'), 1, length(msg));
     end
+    
     fprintf('\n');
     
+    if strcmp(category,'Pixel') % saving classification  for training
+        classification=classif;
+        
+        save([classif.path '/classification.mat'],'classification');
+    end
+    
     if strcmp(category,'LSTM')
-    deep=classif.roi(i).train;
-    save([classif.path '/' foldername '/labeled_video_' mov.trap(i).id '.mat'],'deep','vid','lab');
+        deep=classif.roi(i).train;
+        save([classif.path '/' foldername '/labeled_video_' mov.trap(i).id '.mat'],'deep','vid','lab');
     end
     
 end
@@ -156,7 +206,7 @@ return;
 % end
 % str=[mov.path '/' foldername];
 % end
-% 
+%
 % for i=trapsid
 %     %     fprintf(['Processing trap' num2str(i) ':\n']);
 %     %     % generate an rgb image with previous and next frames as colors
@@ -164,48 +214,48 @@ return;
 %     %     if numel(mov.trap(i).gfp)==0
 %     %         mov.trap(i).load;
 %     %     end
-%     
+%
 %     totphc=mov.trap(i).gfp(:,:,:,phasechannel);
 %     meanphc=0.5*double(mean(totphc(:)));
 %     maxphc=double(meanphc+0.7*(max(totphc(:))-meanphc));
-%     
+%
 %     vid=uint8(zeros(size(mov.trap(i).gfp,1),size(mov.trap(i).gfp,2),3,size(mov.trap(i).gfp,4)));
-%     
+%
 %     if ~isfield(mov.trap(i).div,'deep') % this is not a training set !
 %         mov.trap(i).div.deep=[];
 %         mov.trap(i).div.deepLSTM=[];
 %         mov.trap(i).div.deepCNN=[];
 %         lab=[];
 %     else
-%         
+%
 %         lab= categorical(mov.trap(i).div.deep,[0 1 2],{'unbudded','smallbudded','largebudded'});
 %     end
-%     
+%
 %     for j=1:size(mov.trap(i).gfp,3)
 %         fprintf('.');
-%         
+%
 %         a=mov.trap(i).gfp(:,:,j,phasechannel);
 %         b=mov.trap(i).gfp(:,:,j,phasechannel);
 %         c=mov.trap(i).gfp(:,:,j,phasechannel);
-%         
+%
 %         a = double(imadjust(a,[meanphc/65535 maxphc/65535],[0 1]))/65535;
 %         b = a; %double(imadjust(b,[meanphc/65535 maxphc/65535],[0 1]))/65535;
 %         c = a; %double(imadjust(c,[meanphc/65535 maxphc/65535],[0 1]))/65535;
-%         
+%
 %         im=double(zeros(size(a,1),size(a,2),3));
-%         
+%
 %         im(:,:,1)=a;im(:,:,2)=b;im(:,:,3)=c;
 %         vid(:,:,:,j)=uint8(256*im);
 %         % figure, imshow(im,[])
-%         
+%
 %         % return;
-%         
+%
 %         if option==1
 %             tr=num2str(j);
 %             while numel(tr)<4
 %                 tr=['0' tr];
 %             end
-%             
+%
 %             if mov.trap(i).div.deep(j)==0 % young budding cells
 %                 if ~isfile([str '/unbudded/im_' mov.trap(i).id '_frame_' tr '.tif'])
 %                     imwrite(im,[str '/unbudded/im_' mov.trap(i).id '_frame_' tr '.tif']);
@@ -222,10 +272,10 @@ return;
 %                 end
 %             end
 %         end
-%         
+%
 %     end
 %    fprintf('\n');
 %    deep=mov.trap(i).div.deep;
 %    save([mov.path '/labeled_video_' mov.trap(i).id '.mat'],'deep','vid','lab');
-    
+
 %end

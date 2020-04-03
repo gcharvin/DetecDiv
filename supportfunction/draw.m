@@ -93,7 +93,7 @@ hp=[];
 
 pos=h.Position;
 
-cmap=colormap(lines(10)); % by defulat, 10 colors available
+cmap=classif.colormap; % by defulat, 10 colors available
 
 for i=1:numel(obj.display.channel)
     
@@ -496,9 +496,7 @@ for i=1:numel(obj.display.channel)
 end
 
 
-cmap=colormap(lines(10)); % by defulat, 10 colors available
-
-
+cmap=classif.colormap;
 
 if numel(classif)>0
     
@@ -511,9 +509,6 @@ if numel(classif)>0
         end
         
     end
-    
-    
-    
     
     if strcmp(classif.category{1},'Image')
         cc=1;

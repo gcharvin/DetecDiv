@@ -13,6 +13,7 @@ classdef classi < handle
         classes={}; % names of the classes
         classifyFun='';
         trainingFun='';
+        colormap=[];
     end
     methods
         function obj = classi(path,name,id)
@@ -25,6 +26,7 @@ classdef classi < handle
             obj.path=path;
             obj.id=id;
             obj.strid=[name '_' num2str(id)];
+            obj.colormap=lines(7); % colormaps currently allows only 7 classes ... 
             
             if numel(path)>0
             mkdir(path,'classification');
