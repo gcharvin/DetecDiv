@@ -8,6 +8,7 @@ function view(obj,frame,classif)
 
 
 if numel(obj.image)==0
+   % 'ok'
     obj.load
 end
 

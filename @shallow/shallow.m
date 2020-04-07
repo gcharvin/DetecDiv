@@ -74,6 +74,10 @@ classdef shallow < handle
            
            for i=1:numel(obj.processing.classification)
                obj.processing.classification(i).path = replace(obj.processing.classification(i).path,oldpath,pathe);
+               
+               for j=1:numel(obj.processing.classification(i).roi)
+                   obj.processing.classification(i).roi(j).path = replace(obj.processing.classification(i).roi(j).path,oldpath,pathe);
+               end
            end
            
        end

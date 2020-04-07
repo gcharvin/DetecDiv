@@ -575,7 +575,8 @@ for i=1:numel(obj.display.channel)
             if maxgfp==0
                 maxgfp=1;
             end
-            
+           % frame
+           % size(obj.image)
             imout=obj.image(:,:,pix,frame);
             
             if it~=0 % it=0 corresponds to binary or indexed images
