@@ -88,8 +88,12 @@ classdef shallow < handle
            % this function will be written to ensure that source image path
            % can be updated when necessary
            
+           %for i=1
            StringToBeReplaced='';
            StringToReplace='';
+           
+          % updates each FOV or all FOVs at once
+           
            
            % make a loop on all FOV objects to adjust the path for these
            % sources objects
