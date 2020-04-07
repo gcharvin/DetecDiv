@@ -52,7 +52,11 @@ classdef shallow < handle
           %  obj.props.path=pathname;
            % obj.props.name=filename;
            
+           
            oldpath=obj.io.path;
+           
+           %oldpath,pathe
+           
            obj.io.path=pathe;
            obj.io.file=file;
            

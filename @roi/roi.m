@@ -49,6 +49,11 @@ classdef roi < handle
    methods
        function obj = roi(id,roiarr)
            %%%% here
+           if nargin==0
+               id='';
+               roiarr=[];
+           end
+           
             obj.id=id;
             obj.value=roiarr;
           %  obj.gfp=gfp;

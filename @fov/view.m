@@ -180,7 +180,8 @@ frame=obj.display.frame;
 for i=1:obj.channels
     
     tmp=readImage(obj,frame,i);
-    tmp=imresize(tmp,obj.display.binning(i));
+    
+    tmp=imresize(tmp,obj.display.binning(i)/obj.display.binning(1));
     
     meangfp=0.5*double(mean(tmp(:)));
     maxgfp=double(meangfp+obj.display.intensity(i)*(max(tmp(:))-meangfp));
@@ -190,6 +191,7 @@ for i=1:obj.channels
     
     im(i).data=tmp; %=uint16(cat(3,zeros(size(rawphc)),zeros(size(rawphc)),zeros(size(rawphc))));
     
+   % size(tmp)
     %imphc(:,:,1)=rawphc;
     %imphc(:,:,2)=rawphc;
     %imphc(:,:,3)=rawphc;
@@ -276,7 +278,7 @@ end
 htext.String=tmp;
 htext.Value=numel(tmp);
 
-obj.addROI(roi);
+obj.addROI(roi,obj.id);
 updatedisplay(obj,him,hp);
 end
 

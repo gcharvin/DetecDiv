@@ -19,6 +19,13 @@ classdef fov < handle
        function obj = fov(pathname,number,comments) % filename contains a list of path to images used in the movi project
             %obj.props.path=pathname;
             %obj.props.name=filename;
+            
+            if nargin==0
+                pathname={''};
+                number=1;
+                comments='';
+            end
+            
             obj.srcpath=pathname;
             [path , file ]=fileparts(pathname{1});
             

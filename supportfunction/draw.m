@@ -93,7 +93,9 @@ hp=[];
 
 pos=h.Position;
 
+if numel(classif)>0
 cmap=classif.colormap; % by defulat, 10 colors available
+end
 
 for i=1:numel(obj.display.channel)
     
@@ -114,7 +116,7 @@ for i=1:numel(obj.display.channel)
         % dis
         
         if dis==0
-            him.image(cc)=imshow(im(cc).data,[]);
+            him.image(cc)=imshow(im(cc).data);
         else
             
             him.image(cc)=imshow(im(cc).data,cmap);
@@ -270,9 +272,6 @@ end
 
 end
 
-% HERE two problems :
-
-% 2) whenever the frame is changed, updates the painting window
 
 
 function classesMenuFcn(handles, event, h,obj,impaint1,impaint2,hpaint,classif)
@@ -499,9 +498,9 @@ for i=1:numel(obj.display.channel)
 end
 
 
-cmap=classif.colormap;
 
 if numel(classif)>0
+    cmap=classif.colormap;
     
     if strcmp(classif.category{1},'Pixel')
         htmp=findobj('Tag',classif.strid);
@@ -565,21 +564,26 @@ for i=1:numel(obj.display.channel)
         % for each channel perform normalization
         %pix
         if numel(pix)==1 % single channel to display
-            
+            %pix
             tmp=src(:,:,pix,:);
-            meangfp=0.5*double(mean(tmp(:)));
+            meangfp=0.3*double(mean(tmp(:)));
             % pix,i
             it=mean(obj.display.intensity(i,:));
             
-            maxgfp=double(meangfp+it*(max(tmp(:))-meangfp));
+            maxgfp=double(meangfp+1*it*(max(tmp(:))-meangfp));
+            
             if maxgfp==0
                 maxgfp=1;
             end
             
             imout=obj.image(:,:,pix,frame);
             
-            if it~=0
+            if it~=0 % it=0 corresponds to binary or indexed images
                 imout=imadjust(imout,[meangfp/65535 maxgfp/65535],[0 1]);
+                
+             
+               % imout=mat2gray(imout,[meangfp maxgfp]);
+                
                 % imout =repmat(imout,[1 1 3]);
                 % for k=1:3
                 %     imout(:,:,k)=imout(:,:,k).*obj.display.rgb(i,k);
@@ -588,6 +592,7 @@ for i=1:numel(obj.display.channel)
             
             
         else
+            %'ok'
             imout=uint16(zeros(size(obj.image,1),size(obj.image,2),3));
             
             % size(imout)

@@ -7,6 +7,10 @@ if nargin==1
     frameid=[];
 end
 
+if nargin==2
+    frameid=[];
+end
+
 for i=fovid
     
     if numel(obj.fov(i).roi)==0
@@ -32,7 +36,7 @@ cc=1;
 
 % create fov specific directory 
 
-strpath=[obj.io.path '/' obj.io.file];
+strpath=[obj.io.path obj.io.file];
 mkdir(strpath,obj.fov(i).id);
 list={};
 
@@ -41,7 +45,7 @@ for j=nframes
         
     im=obj.fov(i).readImage(j,k);
     
-    im=imresize(im,obj.fov(i).display.binning(k));
+    im=imresize(im,obj.fov(i).display.binning(k)/obj.fov(i).display.binning(1));
     
     list{cc,k}=im;
     

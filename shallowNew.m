@@ -18,17 +18,21 @@ filename=varargin{i+1};
 end
 end
 else
-  [file,path,rep] = uiputfile('*.mat','File Selection',fullfile(userpath,[filename '.mat']));
-  if isequal(file,0)
+  [filename,path,rep] = uiputfile('*.mat','File Selection',fullfile(userpath,[filename '.mat']));
+  if isequal(filename,0)
    disp('User selected Cancel');
    return;
    else
-   disp(['User selected ', fullfile(path, file)]);
+   disp(['User selected ', fullfile(path, filename)]);
   end
 end
 
+if numel(strfind(filename,'.mat'))
+    filename=replace(filename,'.mat','');
+end
+
 shallowObj=shallow;
-shallowObj.setPath(path,file);
+shallowObj.setPath(path,filename);
 
 mkdir(path,filename);
 
@@ -36,6 +40,8 @@ save(fullfile(path,[filename '.mat']),'shallowObj');
 
 disp(['Shallow project ' fullfile(path,[filename '.mat']) ' is created and saved !']);
 disp([ 'To add image / phyloCell project to the data, use the addData function']);
+
+
 % hf=figure('Position',[100 100 650 400]); 
 % 
 % userparam= uitable('Parent',hf,'Position', [25 250 600 150], 'CellEditCallback',@celledit,'CellSelectionCallback',@cellselect);

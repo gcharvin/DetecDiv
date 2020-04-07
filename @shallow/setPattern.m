@@ -19,6 +19,9 @@ channelid=1;   % find pattern must be done on channel 1, knowing that ROIs are d
 roitmp=obj.fov(fovid).roi(roiid).value;
 
 tmp=readImage(obj.fov(fovid),frameid,channelid);
+
+%size(tmp)
+
 tmp=tmp(roitmp(2):roitmp(2)+roitmp(4)-1,roitmp(1):roitmp(1)+roitmp(3)-1);
 
 %figure, imshow(tmp,[]);

@@ -14,7 +14,7 @@ end
 [path file ext]=fileparts(filename);
 load(filename);
 
-shallowObj.setPath(path,file); % adjust path
+shallowObj.setPath([path '/'],file); % adjust path
 disp(['Successfully loaded shallow project ' fullfile(path,[file '.mat']) '!']);
 disp('');
 
@@ -29,5 +29,6 @@ disp([shallowObj.fov(i).srcpath{1}]);
 end
 disp('* Need to update the path of the source images ?');
 disp('* To do so, use the setSrcPath function');
+disp('Not yet implemented !');
 end
 
