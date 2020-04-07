@@ -26,6 +26,8 @@ if numel(classifier)==0
     load(str); % load classifier 
 end
 
+%classifier
+
 for i=1:size(roilist,2) % loop on all ROIs
     
  roiobj=obj.fov(roilist(1,i)).roi(roilist(2,i));

@@ -45,10 +45,12 @@ numClasses = numel(classNames);
     results.(classif.strid).id=zeros(1,size(roiobj.image,4));
     results.(classif.strid).labels=label;
     
+    roiobj.results=results;
+    
     for i=1:numel(classif.classes)
         
     pix=label==classif.classes{i};
-    roiobj.results.id(pix)=i;
+    roiobj.results.(classif.strid).id(pix)=i;
     
     end
     
@@ -69,13 +71,13 @@ function im=formatImage(gfp)
     for j=1:size(gfp,4)
     fprintf('.');   
     
-    a=gfp(:,:,1,:);
+    a=gfp(:,:,1,j);
     
     a = double(imadjust(a,[meanphc/65535 maxphc/65535],[0 1]))/256;
     a= repmat(a,[1 1 3]);
     
    % im(:,:,1,j)=a;im(:,:,2,j)=b;im(:,:,3,j)=c;
-    im(:,:,1,j)=uint8(a);
+    im(:,:,:,j)=uint8(a);
     end
 
     fprintf('\n');

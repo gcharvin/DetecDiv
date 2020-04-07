@@ -2,7 +2,7 @@ function formatDataForTraining(obj,classiid) %mov,trapsid,option)
 % saves user annotated data to disk- works for Image, Pixel and LSTM
 % classification
 
-disp('Saving user training to disk...\n');
+disp('Saving user training to disk...');
 
 classif=obj.processing.classification(classiid);
 category=classif.category;

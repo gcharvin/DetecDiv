@@ -4,7 +4,7 @@ function trainImageGoogleNetFun(path,name)
 
 % load training data 
 
-fprintf('Loading data...\n');
+fprintf('Loading data repository...\n');
 
 foldername=[path '/trainingdataset/images'];
 
@@ -96,5 +96,6 @@ options = trainingOptions('sgdm', ...
 classifier = trainNetwork(augimdsTrain,lgraph,options);
 
 fprintf('Training is done...\n');
+fprintf('Saving googlenet classifier ...\n');
+
 save([path '/' name '.mat'],'classifier');
-fprintf('Saving netCNN.mat...\n');
