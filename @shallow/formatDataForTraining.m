@@ -40,20 +40,20 @@ end
         
 if strcmp(category,'LSTM')
     
-    prompt='Train googlenet image classifier ? (y / n [Default]): ';
-imageclassifier= input(prompt);
+    prompt='Train googlenet image classifier ? (y / n [Default y]): ';
+imageclassifier= input(prompt,'s');
 if numel(imageclassifier)==0
     imageclassifier='y';
 end
 
- prompt='Compute activation for google net ? (y / n [Default]): ';
-cactivations= input(prompt);
+ prompt='Compute activation for google net ? (y / n [Default n]): ';
+cactivations= input(prompt,'s');
 if numel(cactivations)==0
     cactivations='n';
 end
 
- prompt='Assemble full LSTM network ? (y [Default]/ n ): ';
-assemblenet= input(prompt);
+ prompt='Assemble full LSTM network ? (y [Default y]/ n ): ';
+assemblenet= input(prompt,'s');
 if numel(assemblenet)==0
     assemblenet='y';
 end

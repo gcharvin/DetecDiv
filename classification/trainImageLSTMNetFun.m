@@ -15,9 +15,12 @@ load([ path '/options.mat']); % loading options for training --> imageclassifier
 if strcmp(imageclassifier,'y')
     feval('trainImageGoogleNetFun',path,'netCNN'); % trainImageGoogle net first and saves it as netCNN.mat in the LSTM dir
     % corresponding variable is 'classifier'
-    netCNN=classifier;
 end
 
+  load([ path '/netCNN.mat']);
+  netCNN=classifier;
+    
+  
 %%%
 
 %%% Computer activations from the google net network based on the training
@@ -30,12 +33,12 @@ inputSize = netCNN.Layers(1).InputSize(1:2);
 layerName = "pool5-7x7_s1";
 
 % load all the files in the timeseries
-fol= [path '/trainingset/timeseries'];
+fol= [path '/trainingdataset/timeseries'];
 list=dir([fol '/*.mat']);
 
-for i=1:numel(list)
-    
-end
+% for i=1:numel(list)
+%     
+% end
 
 %%%% HERE need to gather files in correct folders
 numFiles = numel(list);
@@ -47,6 +50,8 @@ tempFile = [path '/' name '_googlenet_activations.mat']; % loads vid, lab, deep 
 % label in an array of categorical labels, vid is a video file of uint8
 
 %cc=1;
+% cactivations='n'; %warning !
+% list
 
 if ~strcmp(cactivations,'y') %exist(tempFile,'file')
     load(tempFile,"sequences","labels")
@@ -78,13 +83,17 @@ if strcmp(assemblenet,'y') % training of LSTM network
 
 numObservations = numel(sequences);
 idx = randperm(numObservations);
-N = floor(0.9 * numObservations);
+N = floor(0.5 * numObservations); % 0.9 replace
 
 idxTrain = idx(1:N);
+%idxTrain=1; % warning
+
 sequencesTrain = sequences(idxTrain);
 labelsTrain = labels(idxTrain);
 
 idxValidation = idx(N+1:end);
+%idxValidation = 1; %warning
+
 sequencesValidation = sequences(idxValidation);
 labelsValidation = labels(idxValidation);
 
@@ -93,9 +102,11 @@ labelsValidation = labels(idxValidation);
 numFeatures = size(sequencesTrain{1},1);
 numClasses = numel(categories(labelsTrain{1}));
 
+%return;
 layers = [
     sequenceInputLayer(numFeatures,'Name','sequence')
     bilstmLayer(2000,'OutputMode','sequence','Name','bilstm')
+   % lstmLayer(200,'OutputMode','sequence','Name','bilstm')
     dropoutLayer(0.5,'Name','drop')
     fullyConnectedLayer(numClasses,'Name','fc')
     softmaxLayer('Name','softmax')
@@ -117,6 +128,9 @@ options = trainingOptions('adam', ...
     'Plots','training-progress', ...
     'Verbose',false);
 
+%options.SequenceLength
+%options.SequencePaddingValue
+%return;
 % train network
 
 [netLSTM,info] = trainNetwork(sequencesTrain,labelsTrain,layers,options);

@@ -7,8 +7,11 @@ fprintf('Load videos...\n');
 
 %inputSize = netCNN.Layers(1).InputSize(1:2);
 
-inputSize=[size(roiobj.image,1) size(roiobj.image,2)];
-%inputSize = netFull.Layers(1).InputSize(1:2);
+%inputSize=[size(roiobj.image,1) size(roiobj.image,2)];
+inputSize = classifier.Layers(140).InputSize(1:2)
+
+%return;
+% x y size of the input movie (140th layer)
 
 
 %for i=id
@@ -20,7 +23,9 @@ if numel(roiobj.image)==0
 end
 
 pix=find(roiobj.channelid==classif.channel); % find channels corresponding to trained data
-im=roiobj.image(:,:,pix,:);
+im=roiobj.image(:,:,pix,1:225);
+
+size(im)
 
 if numel(pix)==1
     % 'ok'
@@ -29,7 +34,7 @@ if numel(pix)==1
     maxphc=double(meanphc+0.7*(max(totphc(:))-meanphc));
 end
 
-vid=uint8(zeros(size(roiobj.image,1),size(roiobj.image,2),3,size(roiobj.image,4)));
+vid=uint8(zeros(size(im,1),size(im,2),3,size(im,4)));
 
 for j=1:size(im,4)
     tmp=im(:,:,:,j);
@@ -45,23 +50,34 @@ for j=1:size(im,4)
     
 end
 
+%inputSize
+%size(vid)
 video = centerCrop(vid,inputSize);
 
-label = classify(netFull,{video});
+size(video)
+%aa=classifier.Layers
+
+label = classify(classifier,{video});
+
 label=label{1};
 
+size(label)
 
 results=roiobj.results;
-results.(classif.strid)=[];
-results.(classif.strid).id=zeros(1,size(roiobj.image,4));
-results.(classif.strid).labels=label;
-
-for i=1:numel(classif.classes)
+    results.(classif.strid)=[];
+    results.(classif.strid).id=zeros(1,size(im,4));
+    results.(classif.strid).labels=label;
     
+    roiobj.results=results;
+    
+    for i=1:numel(classif.classes)
+        
     pix=label==classif.classes{i};
-    roiobj.results.id(pix)=i;
+    roiobj.results.(classif.strid).id(pix)=i;
     
-end
+    end
+    
+    
 
 %
 % pix=label=='largebudded';

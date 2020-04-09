@@ -14,6 +14,7 @@ classdef classi < handle
         classifyFun='';
         trainingFun='';
         colormap=[];
+      %  inputsize=[]; %size of the network (required for lstm only
     end
     methods
         function obj = classi(path,name,id)
