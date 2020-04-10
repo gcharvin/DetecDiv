@@ -281,8 +281,10 @@ end
                     str= [str ' - ' obj.classes{obj.train(obj.display.frame)} ' (training)'];
                     %title(hp(cc),str, 'Color',cmap(obj.train(obj.display.frame),:),'FontSize',20);
                 end
+                end
                 
                % str=hp(cc).Title.String;
+               
                 if numel(obj.results)>0
                 pl = fieldnames(obj.results);
                 %aa=obj.results
@@ -297,9 +299,6 @@ end
                 cc=cc+1;
             end
             end
-        end
-
-
 end
 
 
@@ -577,8 +576,10 @@ end
                     str= [str ' - ' obj.classes{obj.train(obj.display.frame)} ' (training)'];
                     %title(hp(cc),str, 'Color',cmap(obj.train(obj.display.frame),:),'FontSize',20);
                 end
+                end
                 
                % str=hp(cc).Title.String;
+               
                 if numel(obj.results)>0
                 pl = fieldnames(obj.results);
                 %aa=obj.results
@@ -591,7 +592,6 @@ end
                 title(hp(cc),str,'FontSize',14);
                 %title(hp(cc),str, 'Color',colo,'FontSize',20);
                 cc=cc+1;
-            end
             end
         end
 
