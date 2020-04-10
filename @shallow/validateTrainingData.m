@@ -8,7 +8,8 @@ function validateTrainingData(obj,classiid,classifier)
 
 classifyFun=obj.processing.classification(classiid).classifyFun;
 
-disp(['Classifying training data using ' classifyFun]);
+
+disp(['Classifying training data for validation using ' classifyFun]);
 
 classif=obj.processing.classification(classiid);
 
@@ -21,6 +22,7 @@ end
 
 % first load classifier if not loadad to save some time 
 if numel(classifier)==0
+    disp(['Loading classifier: ' name]);
     str=[path '/' name '.mat'];
     load(str); % load classifier 
 end
@@ -28,8 +30,12 @@ end
 %classifier
 
 for i=1:numel(classif.roi) % loop on all ROIs
-    
+   
  roiobj=classif.roi(i);
+ 
+ disp('-----------');
+ disp(['Classifying ' num2str(roiobj.id)]);
+ 
  
 %  if strcmp(classif.category{1},'Image') % in this case, the results are provided as a series of labels
 %  roiobj.results=zeros(1,size(roiobj.image,4)); % pre allocate results for labels
@@ -40,3 +46,5 @@ feval(classifyFun,roiobj,classif,classifier); % launch the training function for
 % in roiobj.results
 
 end
+
+disp('Classification job is done...');
