@@ -9,7 +9,7 @@ end
 if nargin<=3
     frameid=1; 
 end
-if nargin <=2 
+if nargin <2 
     fovid=1:numel(obj.fov);
 end
 
