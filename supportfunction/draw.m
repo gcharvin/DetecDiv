@@ -8,7 +8,7 @@ function [him hp]=draw(obj,h,classif)
 
 if nargin<3
     classif=[];
-   % refresh='full';
+    % refresh='full';
 end
 % if nargin<4
 %     refresh='full';
@@ -94,7 +94,7 @@ hp=[];
 pos=h.Position;
 
 if numel(classif)>0
-cmap=classif.colormap; % by defulat, 10 colors available
+    cmap=classif.colormap; % by defulat, 10 colors available
 end
 
 for i=1:numel(obj.display.channel)
@@ -128,11 +128,11 @@ for i=1:numel(obj.display.channel)
         set(hp(cc),'UserData',obj.display.channel{i});
         
         %axis equal square
-        tt=obj.display.intensity(i,:);
+   %     tt=obj.display.intensity(i,:);
         
-        if numel(classif)==0
-            title(hp(cc),[obj.display.channel{i} ' -Intensity:' num2str(tt)]);
-        end
+%         if numel(classif)==0
+%             title(hp(cc),[obj.display.channel{i} ]); %' -Intensity:' num2str(tt)]);
+%         end
         
         cc=cc+1;
     end
@@ -186,30 +186,25 @@ if numel(classif)>0
             obj.train=zeros(1,size(obj.image,4));
         end
         
-        if obj.train(obj.display.frame)==0 % user training
-            str='not classified';
-            colo=[0 0 0];
-            
-        else
-            str= obj.classes{obj.train(obj.display.frame)};
-            colo=cmap(obj.train(obj.display.frame),:);
-        end
-        
-        % display results for image classification
-        pl = properties(obj.results);
-        for k = 1:length(pl)
-            str=[str ' ' pl{k} ' ' obj.results.(pl{k}).labels(obj.display.frame)];
-        end
+%         if obj.train(obj.display.frame)==0 % user training
+%             str='not classified';
+%             colo=[0 0 0];
+%             
+%         else
+%             str= obj.classes{obj.train(obj.display.frame)};
+%             colo=cmap(obj.train(obj.display.frame),:);
+%         end
         
         
-        
-        cc=1;
-        for i=1:numel(obj.display.channel)
-            if obj.display.selectedchannel(i)==1
-                title(hp(cc),str, 'Color',colo,'FontSize',20);
-                cc=cc+1;
-            end
-        end
+%         cc=1;
+%         for i=1:numel(obj.display.channel)
+%             if obj.display.selectedchannel(i)==1
+%                 tt=hp(cc).Title.String;
+%                 hp(cc).Title.String=[tt ' - ' str ' (training)'];
+%                 %title(hp(cc),str, 'Color',colo,'FontSize',20);
+%                 cc=cc+1;
+%             end
+%         end
     end
     
     if strcmp(classif.category{1},'Pixel') % display the axis associated with user training to paint on the channel
@@ -269,6 +264,41 @@ if numel(classif)>0
     %end
     
 end
+
+
+% display results for image classification
+
+ cc=1;
+        for i=1:numel(obj.display.channel)
+            if obj.display.selectedchannel(i)==1
+                str=obj.display.channel{i};
+                
+                if numel(obj.train)>0
+                if obj.train(obj.display.frame)==0
+                    str=[str ' - not classified'];
+                    %title(hp(cc),str, 'Color',[0 0 0],'FontSize',20);
+                else
+                    str= [str ' - ' obj.classes{obj.train(obj.display.frame)} ' (training)'];
+                    %title(hp(cc),str, 'Color',cmap(obj.train(obj.display.frame),:),'FontSize',20);
+                end
+                
+               % str=hp(cc).Title.String;
+                if numel(obj.results)>0
+                pl = fieldnames(obj.results);
+                %aa=obj.results
+                for k = 1:length(pl)
+                    tt=char(obj.results.(pl{k}).labels(obj.display.frame));
+                    str=[str ' - ' tt ' (' pl{k} ')'];
+                end
+                end
+                
+                title(hp(cc),str,'FontSize',14);
+                %title(hp(cc),str, 'Color',colo,'FontSize',20);
+                cc=cc+1;
+            end
+            end
+        end
+
 
 end
 
@@ -491,8 +521,9 @@ for i=1:numel(obj.display.channel)
         him.image(cc).CData=im(cc).data;
         
         % title(hp(i),['Channel ' num2str(i) ' -Intensity:' num2str(obj.display.intensity(i))]);
-        tt=obj.display.intensity(i,:);
-        title(hp(cc),[obj.display.channel{i} ' -Intensity:' num2str(tt)]);
+        %tt=obj.display.intensity(i,:);
+        
+        %title(hp(cc),[obj.display.channel{i} ' -Intensity:' num2str(tt)]);
         cc=cc+1;
     end
 end
@@ -512,24 +543,57 @@ if numel(classif)>0
         
     end
     
-    if strcmp(classif.category{1},'Image') || strcmp(classif.category{1},'LSTM')
-        cc=1;
+%     if strcmp(classif.category{1},'Image') || strcmp(classif.category{1},'LSTM')
+%         cc=1;
+%         for i=1:numel(obj.display.channel)
+%             if obj.display.selectedchannel(i)==1
+%                 str='';
+%                 if obj.train(obj.display.frame)==0
+%                     str='not classified';
+%                     title(hp(cc),str, 'Color',[0 0 0],'FontSize',20);
+%                 else
+%                     str= obj.classes{obj.train(obj.display.frame)};
+%                     title(hp(cc),str, 'Color',cmap(obj.train(obj.display.frame),:),'FontSize',20);
+%                 end
+%                 
+%                 cc=cc+1;
+%             end
+%         end
+%     end
+end
+
+% display results for image classification
+
+ cc=1;
         for i=1:numel(obj.display.channel)
             if obj.display.selectedchannel(i)==1
-                str='';
+                str=obj.display.channel{i};
+                
+                if numel(obj.train)>0
                 if obj.train(obj.display.frame)==0
-                    str='not classified';
-                    title(hp(cc),str, 'Color',[0 0 0],'FontSize',20);
+                    str=[str ' - not classified'];
+                    %title(hp(cc),str, 'Color',[0 0 0],'FontSize',20);
                 else
-                    str= obj.classes{obj.train(obj.display.frame)};
-                    title(hp(cc),str, 'Color',cmap(obj.train(obj.display.frame),:),'FontSize',20);
+                    str= [str ' - ' obj.classes{obj.train(obj.display.frame)} ' (training)'];
+                    %title(hp(cc),str, 'Color',cmap(obj.train(obj.display.frame),:),'FontSize',20);
                 end
                 
+               % str=hp(cc).Title.String;
+                if numel(obj.results)>0
+                pl = fieldnames(obj.results);
+                %aa=obj.results
+                for k = 1:length(pl)
+                    tt=char(obj.results.(pl{k}).labels(obj.display.frame));
+                    str=[str ' - ' tt ' (' pl{k} ')'];
+                end
+                end
+                
+                title(hp(cc),str,'FontSize',14);
+                %title(hp(cc),str, 'Color',colo,'FontSize',20);
                 cc=cc+1;
             end
+            end
         end
-    end
-end
 
 
 
@@ -575,15 +639,15 @@ for i=1:numel(obj.display.channel)
             if maxgfp==0
                 maxgfp=1;
             end
-           % frame
-           % size(obj.image)
+            % frame
+            % size(obj.image)
             imout=obj.image(:,:,pix,frame);
             
             if it~=0 % it=0 corresponds to binary or indexed images
                 imout=imadjust(imout,[meangfp/65535 maxgfp/65535],[0 1]);
                 
-             
-               % imout=mat2gray(imout,[meangfp maxgfp]);
+                
+                % imout=mat2gray(imout,[meangfp maxgfp]);
                 
                 % imout =repmat(imout,[1 1 3]);
                 % for k=1:3
@@ -692,16 +756,16 @@ for i=1:numel(keys) % display the selected class for the current image
         end
         
         if strcmp(classif.category{1},'Pixel') % for pixel classification enable painting function for the given class
-           
+            
             for j=1:numel(classif.classes)
                 ha=findobj('Tag',['classes_' num2str(j)]);
                 if numel(ha)
-                if j~=i
-                ha.Checked='off';
-                else
-                ha.Checked='on';  
-                %draw(obj,h);
-                end
+                    if j~=i
+                        ha.Checked='off';
+                    else
+                        ha.Checked='on';
+                        %draw(obj,h);
+                    end
                 end
             end
         end

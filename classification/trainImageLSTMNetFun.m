@@ -8,7 +8,7 @@ function trainImageLSTMNetFun(path,name)
 % end
 
 
-load([ path '/options.mat']); % loading options for training --> imageclassifier, cactivations,assemblenet
+load([ path '/options.mat']); % loading options for training --> imageclassifier, cactivations, lstm_training, assemblenet, validation
 
 %%% training google net classifier independtly
 
@@ -77,8 +77,9 @@ end
 
 %return;
 
-if strcmp(assemblenet,'y') % training of LSTM network
+if strcmp(lstm_training,'y') % training of LSTM network
     
+    disp('Preparing LSTM network ...');
 % prepare training data : 90% in training and 10% used for validation
 
 numObservations = numel(sequences);
@@ -132,19 +133,22 @@ options = trainingOptions('adam', ...
 %options.SequencePaddingValue
 %return;
 % train network
-
+ disp('Training LSTM network ...');
 [netLSTM,info] = trainNetwork(sequencesTrain,labelsTrain,layers,options);
 
 save([path '/netLSTM.mat'],'netLSTM','info');
+ disp('Training LSTM network is done and saved ...');
+ 
 else
  load([path '/netLSTM.mat']); 
+  disp('Loading LSTM network ...');
 end
 
 
 %%% assemble the full network
 %%%
 
-
+if strcmp(assemblenet,'y')
 %if numel(netFull)==0
 %load([mov.path '/netLSTM.mat']);
 
@@ -197,6 +201,17 @@ fprintf('Assemble full network\n');
 
 classifier = assembleNetwork(lgraph);
 save([path '/' name '.mat'],'classifier');
+
+
+fprintf('Full network is assembled !\n');
+
+else
+   load( [path '/' name '.mat']); % loading the fully assembled network
+end
+
+
+
+
 %end
 
 

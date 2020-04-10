@@ -1,4 +1,4 @@
-function formatDataForTraining(obj,classiid) %mov,trapsid,option)
+function formatDataForTraining(obj,classiid,option) %mov,trapsid,option)
 % saves user annotated data to disk- works for Image, Pixel and LSTM
 % classification
 
@@ -8,12 +8,17 @@ classif=obj.processing.classification(classiid);
 category=classif.category;
 category=category{1};
 
-% mk folder to store ground user trained data
 foldername='trainingdataset';
+
+if nargin<3  % removeand recreares all directoires
+    
+% mk folder to store ground user trained data
+
 if isfolder([classif.path '/' foldername])
     rmdir([classif.path '/' foldername], 's')
 end
 mkdir(classif.path,foldername)
+end
 
 if strcmp(category,'Image') || strcmp(category,'LSTM')
   
@@ -40,6 +45,7 @@ end
         
 if strcmp(category,'LSTM')
     
+    if nargin<3
     prompt='Train googlenet image classifier ? (y / n [Default y]): ';
 imageclassifier= input(prompt,'s');
 if numel(imageclassifier)==0
@@ -52,14 +58,27 @@ if numel(cactivations)==0
     cactivations='n';
 end
 
- prompt='Assemble full LSTM network ? (y [Default y]/ n ): ';
+ prompt='Train LSTM network ? (y [Default y]/ n ): ';
+lstmtraining= input(prompt,'s');
+if numel(lstmtraining)==0
+   lstmtraining='y';
+end
+
+ prompt='Assemble full network ? (y [Default y]/ n ): ';
 assemblenet= input(prompt,'s');
 if numel(assemblenet)==0
     assemblenet='y';
 end
 
-save([classif.path '/options.mat'],'cactivations','imageclassifier','assemblenet'); % save options to be used in training function
+%  prompt='Validate training data ? (y [Default y]/ n ): ';
+% assemblenet= input(prompt,'s');
+% if numel(assemblenet)==0
+%     validation='y';
+% end
 
+save([classif.path '/options.mat'],'cactivations','imageclassifier','lstmtraining','assemblenet'); % save options to be used in training function
+    end
+    
      if ~isfolder([classif.path '/' foldername '/timeseries'])
             mkdir([classif.path '/' foldername], 'timeseries');
      end
@@ -68,7 +87,13 @@ end
 
 % look on all ROIs
 
-for i=1:numel(classif.roi)
+if nargin<3
+rois=1:numel(classif.roi);
+else
+ rois=option ;  
+end
+
+for i=rois
     disp(['Processing ROI: ' num2str(i) ' ...'])
     
     if numel(classif.roi(i).image)==0

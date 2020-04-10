@@ -8,7 +8,7 @@ fprintf('Load videos...\n');
 %inputSize = netCNN.Layers(1).InputSize(1:2);
 
 %inputSize=[size(roiobj.image,1) size(roiobj.image,2)];
-inputSize = classifier.Layers(140).InputSize(1:2)
+inputSize = classifier.Layers(140).InputSize(1:2);
 
 %return;
 % x y size of the input movie (140th layer)
@@ -23,9 +23,10 @@ if numel(roiobj.image)==0
 end
 
 pix=find(roiobj.channelid==classif.channel); % find channels corresponding to trained data
-im=roiobj.image(:,:,pix,1:225);
+im=roiobj.image(:,:,pix,:); 
 
-size(im)
+disp('Formatting video before classification....');
+%size(im)
 
 if numel(pix)==1
     % 'ok'
@@ -54,14 +55,40 @@ end
 %size(vid)
 video = centerCrop(vid,inputSize);
 
-size(video)
+%size(video)
 %aa=classifier.Layers
 
-label = classify(classifier,{video});
+nframes=inputSize(1);
+narr=floor(size(im,4)/nframes);
+nrem=mod(size(im,4),nframes);
 
-label=label{1};
+if nrem>0
+    narr=narr+1;
+end
 
-size(label)
+videoout={};
+for i=1:narr
+    if i==narr
+        ende=(i-1)*nframes+nrem;
+    else
+        ende=i*nframes ;
+    end
+   videoout{i}=video(:,:,:,(i-1)*nframes+1:ende);
+end
+
+disp('Starting video classification...');
+label = classify(classifier,videoout);
+
+lab=[];
+for i=1:narr
+   lab = [lab label{i}];
+end
+
+label=lab(1:size(im,4));
+
+%label=label{1};
+
+%size(label)
 
 results=roiobj.results;
     results.(classif.strid)=[];
