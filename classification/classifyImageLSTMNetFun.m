@@ -104,7 +104,7 @@ results=roiobj.results;
     
     end
     
-    
+roiobj.clear;    
 
 %
 % pix=label=='largebudded';
