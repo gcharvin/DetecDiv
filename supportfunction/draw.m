@@ -100,6 +100,7 @@ end
 for i=1:numel(obj.display.channel)
     
     if obj.display.selectedchannel(i)==1
+        figure(h);
         hp(cc)=subplot(1,cd,cc);
         
         dis=0;
@@ -123,7 +124,7 @@ for i=1:numel(obj.display.channel)
             %return;
         end
         
-        set(hp(cc),'Tag',['Axe' num2str(cc)]);
+        set(hp(cc),'Tag',['AxeROI' num2str(cc)]);
         
         set(hp(cc),'UserData',obj.display.channel{i});
         
@@ -173,6 +174,7 @@ if numel(handles)==0
         'Callback', {@setframe,obj,him,hp,classif},'Tag','frametext') ;
 else
     handles.Callback=  {@setframe,obj,him,hp,classif};
+    handles.String=num2str(obj.display.frame);
 end
 
 % create training specific menus and graphics
@@ -294,6 +296,7 @@ end
                 end
                 end
                 
+                %test=get(hp(cc),'Parent')
                 title(hp(cc),str,'FontSize',14);
                 %title(hp(cc),str, 'Color',colo,'FontSize',20);
                 cc=cc+1;
@@ -598,8 +601,17 @@ end
 
 
 htext=findobj('Tag','frametext');
-
 htext.String=num2str(obj.display.frame);
+
+% if classif result is displayed, then update the position of the cursor
+
+htraj=findobj('Tag',['Traj' num2str(obj.id)]);
+if numel(htraj)~=0
+    hl=findobj(htraj,'Tag','track');
+    if numel(hl)>0
+    hl.XData=[obj.display.frame obj.display.frame];
+    end
+end
 
 %return;
 %axes(hp(1));
