@@ -115,4 +115,8 @@ end
 fprintf('\n');
 end
 
+disp('Saving project...');
+shallowSave(obj)
+
+
 

@@ -7,9 +7,9 @@ if numel(obj.processing.roi.pattern)==0
 end
 
 if nargin<=3
-    frameid=1; 
+    frameid=2; 
 end
-if nargin <=2 
+if nargin <2 
     fovid=1:numel(obj.fov);
 end
 
@@ -19,7 +19,9 @@ channelid=1;
 out=[];
 out.positions=[];
 out.scaled=[];
+out.fovid=[];
 scale=1;
+cc=1;
 
 for i=fovid % loop on all possible field of view
     
@@ -29,13 +31,13 @@ tmp=readImage(obj.fov(i),frameid,channelid);
 
 disp('Identifying traps using autocorrelation function....');
 
-out(i).positions=findTraps(tmp,obj.processing.roi.pattern);
-
-disp(['Found ' num2str(size(out(i).positions,1)) ' ROIs !']);
+out(cc).positions=findTraps(tmp,obj.processing.roi.pattern);
+out(cc).fovid=i;
+disp(['Found ' num2str(size(out(cc).positions,1)) ' ROIs !']);
 
 %scale=0.5;
 
-scaled=round(scale*out(i).positions);
+scaled=round(scale*out(cc).positions);
 
 % make all positions uniform
 x=round(mean(scaled(:,2)-scaled(:,1)));
@@ -61,7 +63,8 @@ for j=1:size(scaled,1)
    end
 end
 
-out(i).scaled=scaled;
+out(cc).scaled=scaled;
+cc=cc+1;
 end
 
 disp('Now creating ROIs for selected FOVs....');
@@ -69,17 +72,17 @@ disp('Now creating ROIs for selected FOVs....');
 %reverseStr = '';
 for j=1:numel(out)
     
-    existingROI=numel(obj.fov(j).roi);
+    existingROI=numel(obj.fov(out(j).fovid).roi);
     
     if existingROI==1
-        if numel(obj.fov(j).roi(1).id)==0
+        if numel(obj.fov(out(j).fovid).roi(1).id)==0
             existingROI=0;
         end
     end
     
     if existingROI>0
         
-       prompt=['There are ' num2str(existingROI) ' already existing ROIs in FOV ' obj.fov(j).id '. Delete (Y/N) [Y] ?'];
+       prompt=['There are ' num2str(existingROI) ' already existing ROIs in FOV ' obj.fov(out(j).fovid).id '. Delete (Y/N) [Y] ?'];
        
        str= input(prompt,'s');
        if isempty(str)
@@ -87,7 +90,7 @@ for j=1:numel(out)
        end
        
        if strcmp(str,'Y')
-          obj.fov(j).removeROI(1:numel(obj.fov(j).roi));
+          obj.fov(out(j).fovid).removeROI(1:numel(obj.fov(out(j).fovid).roi));
        end
            
     end
@@ -97,7 +100,7 @@ for i=1:size(out(j).scaled,1)
    
   % j,i
   %  aa=out(j).scaled(i,:)
-    obj.fov(j).addROI(out(j).scaled(i,:),j);
+    obj.fov(out(j).fovid).addROI(out(j).scaled(i,:),j);
    
  %   msg = sprintf('%d / %d Traps created', i , size(positions,1) ); %Don't forget this semicolon
  %   fprintf([reverseStr, msg]);

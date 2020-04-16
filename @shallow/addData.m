@@ -147,15 +147,20 @@ if answer==1 % phyloCell project
         end
         end
         
+       fprintf('.');
        
             obj.fov(n+1)=fov(pathname,n+1,''); % add fov to exisiting datasets
+            % THIS IS VERY SLOW BECAUSE THE DIR FUNCTION IS VERY SLOW ;
+            % SHOULD REPLACE BY FILE REAL NAME IF IT IS KNOWN !!!
+            
             obj.fov(n+1).display.binning=binning;
 
             n=n+1;
         %  cc=cc+1;
     end
 end
-
+ fprintf('\n');
+ 
 % prompt = {'Enter matrix size:','Enter colormap name:'};
 % dlg_title = 'Input';
 % num_lines = 1;
