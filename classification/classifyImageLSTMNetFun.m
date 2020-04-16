@@ -92,7 +92,7 @@ results=roiobj.results;
     results.(classif.strid)=[];
     results.(classif.strid).id=zeros(1,size(im,4));
     results.(classif.strid).labels=label;
-    
+    results.(classif.strid).classes=classif.classes;
 
     
     for i=1:numel(classif.classes)
@@ -113,7 +113,7 @@ results.parent=roiobj.parent;
 
 if exist([classif.path '/' classif.strid '_results.mat']) % this filles needs to be removed when classification starts ? 
     load([classif.path '/' classif.strid '_results.mat']) % load res variable
-    n=length(results);
+    n=length(res);
     res(n+1)={results};
 else
     
