@@ -8,18 +8,18 @@ function trainPixelDeeplabNetFun(path,name)
 
 fprintf('Loading data...\n');
 
-imagesfoldername=[path '/deepsegtrainingset/images'];
+imagesfoldername=[path '/trainingdataset/images'];
 
-labelsfoldername=[path '/deepsegtrainingset/labels'];
+labelsfoldername=[path '/trainingdataset/labels'];
 
 imds = imageDatastore(imagesfoldername);
 
-load(path '/classification.mat'); % load the classification variable 
+load([path '/classification.mat']); % load the classification variable 
 
 nclasses=numel(classification.classes);
 %colormap=classification.colormap(1:nclasses,:);
 
-classes=[];
+classes=string();
 labelsIDs={};
 
 for i=1:nclasses
@@ -31,7 +31,7 @@ end
 %classes=["Background" "Cell"];
 %labelIDs={[255 0 0] [0 255 0]};
 
-pxds = pixelLabelDatastore(labelsfoldername,classes,labelIDs);
+pxds = pixelLabelDatastore(labelsfoldername,classes,labelsIDs);
 
  I = readimage(imds,1);
 
@@ -52,7 +52,7 @@ pxds = pixelLabelDatastore(labelsfoldername,classes,labelIDs);
 % xtickangle(45)
 % ylabel('Frequency')
 
-[imdsTrain, imdsVal, pxdsTrain, pxdsVal] = partitionCamVidData(imds,pxds,classes,labelIDs);
+[imdsTrain, imdsVal, pxdsTrain, pxdsVal] = partitionCamVidData(imds,pxds,classes,labelsIDs);
 
 % Specify the network image size. This is typically the same as the traing image sizes.
 imageSize = size(I); %[720 960 3];

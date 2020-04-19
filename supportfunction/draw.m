@@ -114,6 +114,11 @@ for i=1:numel(obj.display.channel)
             end
         end
         
+        if sum(obj.display.intensity(i,:))==0 % A TESTER !!!
+           dis=1;
+           cmap=lines(10);
+        end
+        
         % dis
         
         if dis==0
@@ -121,6 +126,7 @@ for i=1:numel(obj.display.channel)
         else
             
             him.image(cc)=imshow(im(cc).data,cmap);
+            'ok'
             %return;
         end
         

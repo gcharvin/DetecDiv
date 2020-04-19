@@ -125,7 +125,7 @@ for i=rois
     
     if strcmp(category,'Pixel') % get the training data for pixel classification
         
-        % find channel associated with training
+        % find image channel associated with training
         pixe = strfind(classif.roi(i).display.channel, classif.strid);
         cc=[];
         for j=1:numel(pixe)
@@ -135,13 +135,16 @@ for i=rois
             end
         end
         
+        if numel(cc)>0
         pixcc=find(classif.roi(i).channelid==cc);
         % size(classif.roi(i).image)
         lab=classif.roi(i).image(:,:,pixcc,:);
         
+        
+        
         labels= double(zeros(size(lab,1),size(lab,2),3,size(lab,4)));
         
-        %figure, imshow(lab(:,:,:,1),[]);
+       % figure, imshow(lab(:,:,:,9),[]);
         % return;
         
         for j=1:numel(classif.classes)
@@ -156,9 +159,10 @@ for i=rois
             end
             
         end
+        end
         
         
-        % figure, imshow(labels(:,:,:,2),[]);
+        % figure, imshow(labels(:,:,:,10),[]);
         % return;
         
         %labels=labtmp;
@@ -207,32 +211,39 @@ for i=rois
         end
         
         if strcmp(category,'Pixel')
-            if max(lab(:,:,:,j))>0 % test if image has been manually annotated
+            if numel(cc)>0
+            tmplab=lab(:,:,:,j);
+            if max(tmplab(:))>0 % test if image has been manually annotated
+           %  'ok'
                 imwrite(tmp,[classif.path '/' foldername '/images/' classif.roi(i).id '_frame_' tr '.tif']);
                 imwrite(labels(:,:,:,j),[classif.path '/' foldername '/labels/' classif.roi(i).id '_frame_' tr '.tif']);
                 
                 
             end
+            end
         end
         
-        msg = sprintf('Processing frame: %d / %d for ROI %s', j, size(im,4),classif.roi(i).id); %Don't forget this semicolon
-        fprintf([reverseStr, msg]);
-        reverseStr = repmat(sprintf('\b'), 1, length(msg));
+       msg = sprintf('Processing frame: %d / %d for ROI %s', j, size(im,4),classif.roi(i).id); %Don't forget this semicolon
+       fprintf([reverseStr, msg]);
+       reverseStr = repmat(sprintf('\b'), 1, length(msg));
     end
     
     fprintf('\n');
     
-    if strcmp(category,'Pixel') % saving classification  for training
-        classification=classif;
-        
-        save([classif.path '/classification.mat'],'classification');
-    end
+    
     
     if strcmp(category,'LSTM')
         deep=classif.roi(i).train;
         save([classif.path '/' foldername '/timeseries/lstm_labeled_' classif.roi(i).id '.mat'],'deep','vid','lab');
     end
-    
+    classif.roi(i).save;
+    classif.roi(i).clear;
+end
+
+if strcmp(category,'Pixel') % saving classification  for training
+        classification=classif;
+        
+        save([classif.path '/classification.mat'],'classification');
 end
 
 return;

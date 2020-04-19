@@ -1,4 +1,4 @@
-function classifyPixelDeeplabFun(roiobj,classif,classifier)
+function classifyPixelDeeplaNetbFun(roiobj,classif,classifier)
 
 % this function can be used to classify any roi object, by providing the
 % classi object and the classifier
@@ -33,8 +33,30 @@ gfp = imresize(gfp,inputSize(1:2));
 % BEWARE : rather use formatted image in lstm .mat variable
 % need to distinguish between formating for training versus validation
 % function --> formatfordeepclassification
+pixe = strfind(roiobj.display.channel, ['results_' classif.strid]);
+        cc=[];
+        for j=1:numel(pixe)
+            if numel(pixe{j})~=0
+                cc=j;
+                break
+            end
+        end           
 
-for fr=1:size(gfp,4)
+if numel(cc)>0     
+pixresults=find(roiobj.channelid==cc); % find channels corresponding to trained data
+roiobj.image(:,:,pixresults,:)=uint16(zeros(size(gfp,1),size(gfp,2),1,size(gfp,4)));
+else
+   % add channel is necessary 
+   matrix=uint16(zeros(size(gfp,1),size(gfp,2),1,size(gfp,4)));
+   rgb=[1 1 1];
+   intensity=[0 0 0];
+   pixresults=size(gfp,3)+1;
+   roiobj.addChannel(matrix,['results_' classif.strid],rgb,intensity);
+end
+
+
+
+for fr=1:100%size(gfp,4)
     fprintf('.');
     % fr
     tmp=gfp(:,:,:,fr);
@@ -45,55 +67,64 @@ for fr=1:size(gfp,4)
     
     C = semanticseg(tmp, net); % this is no longer required if we extract the probabilities from the previous layer
     
-    features = activations(net,tmp,'softmax-out'); % this is used to get the probabilities rather than the classification itself
+    %class(C)
+    %size(C)
+   % C(1,1),C(1,2)
     
+    %features = activations(net,tmp,'softmax-out'); % this is used to get the probabilities rather than the classification itself
+    
+    %size(features)
+    %features(1,1,1)
+    %features(1,1,2)
     % to be troubleshooted from here , because each class will have a
     % probability , not onyl the cell class 
     
-    BW=features(:,:,2)>0.9; % mark as cell when probability is higher than 0.9
+    %BW=features(:,:,2)>0.9; % mark as cell when probability is higher than 0.9
+    
+    
     
     % post processing --> watershed segmentation to be performed in a later
     % step 
     
-    % class(features), size(features)
-    %figure, imshow(features(:,:,1),[]);
-    % figure, imshow(features(:,:,2),[]);
-    %return;
+  
+    for i=1:numel(classif.classes)
+        
+    BW=logical(C==string(classif.classes{i}));
+   % i
+   % size(BW)
+   % max(BW(:))
+   % figure, imshow(BW,[]);
     
-    %BW=logical(C=="Cell");
     
-    BW=~BW;
+    res=uint16(uint8(BW)*(i-1));
+    roiobj.image(:,:,pixresults,fr)=roiobj.image(:,:,pixresults,fr)+res;
+    end
     
-    imdist=bwdist(BW);
-    imdist = imclose(imdist, strel('disk',2));
-    imdist = imhmax(imdist,1);
-    
-    sous=- imdist;
-    
-    %figure, imshow(BW,[]);
-    
-    labels = double(watershed(sous,8)).* ~BW;% .* BW % .* param.mask; % watershed
-    warning off all
-    %tmp = imopen(labels > 0, strel('disk', 4));
-    warning on all
-    %tmp = bwareaopen(tmp, 50);
-    
-    newlabels = labels;% .* tmp; % remove small features
-    newlabels = newlabels>0;
+%     BW=~BW;
+%     
+%     imdist=bwdist(BW);
+%     imdist = imclose(imdist, strel('disk',2));
+%     imdist = imhmax(imdist,1);
+%     
+%     sous=- imdist;
+%     
+%     %figure, imshow(BW,[]);
+%     
+%     labels = double(watershed(sous,8)).* ~BW;% .* BW % .* param.mask; % watershed
+%     warning off all
+%     %tmp = imopen(labels > 0, strel('disk', 4));
+%     warning on all
+%     %tmp = bwareaopen(tmp, 50);
+%     
+%     newlabels = labels;% .* tmp; % remove small features
+%     newlabels = newlabels>0;
     
     %figure, imshow(newlabels,[]);
     %return
     
-    imtemp=255*uint8(newlabels);
-    mov.trap(t).classi(:,:,2,fr)=imtemp;
-    % imtemp=255*uint8(C=="Background");
-    imtemp=255*uint8(~newlabels);
-    mov.trap(t).classi(:,:,1,fr)=imtemp;
-    
-    
-    %[label,scores] = classify(net,gfp);
+
 end
-%mov.trap(t).traintrack(:,:,2,:)=0.5*mov.trap(t).classi(:,:,2,:);
+
 fprintf('\n');
 
 
@@ -109,13 +140,13 @@ im=zeros(size(gfp,1),size(gfp,2),3,size(gfp,4));
 for j=1:size(gfp,4)
     fprintf('.');
     
-    a=gfp(:,:,1,:);
+    a=gfp(:,:,1,j);
     
     a = double(imadjust(a,[meanphc/65535 maxphc/65535],[0 1]))/256;
     a= repmat(a,[1 1 3]);
     
     % im(:,:,1,j)=a;im(:,:,2,j)=b;im(:,:,3,j)=c;
-    im(:,:,1,j)=uint8(a);
+    im(:,:,:,j)=uint8(a);
 end
 
 fprintf('\n');
