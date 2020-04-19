@@ -6,7 +6,7 @@ im=obj.image;
 % save images
 
 if numel(im)~=0
- %  ['save  ' '''' obj.path '/im_' num2str(obj.id) '.mat' ''''  ' im']
+  %   ['save  ' '''' obj.path '/im_' num2str(obj.id) '.mat' ''''  ' im']
 eval(['save  ' '''' obj.path '/im_' num2str(obj.id) '.mat' ''''  ' im']); 
 end
 

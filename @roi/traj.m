@@ -34,15 +34,32 @@ end
 h=figure('Tag',['Traj' num2str(obj.id)],'Color','w','Position',[50 50 1000 500]);
 set(gca,'FontSize',20);
 
+% if roi was used for user training, display the training data first
+
+if numel(obj.train)~=0
+   
+    x=1:numel(obj.train);
+    y=obj.train;
+    
+    plot(x,y,'Color','b','LineWidth',1); hold on;
+end
+
+
+% then display the results
+
 x=1:numel(obj.results.(classistr).id);
 y=obj.results.(classistr).id;
 
 plot(x,y,'Color','k','LineWidth',2); hold on;
 
 
+
+
 pix=find(x==obj.display.frame);
 line([x(pix) x(pix)],[1 max(obj.results.(classistr).id)],'Color','r','LineWidth',2,'Tag','track');
 
+ hl=findobj(h,'Tag','track');
+ 
 ylim([0 max(obj.results.(classistr).id)+1]);
 set(gca,'YTick',1:max(obj.results.(classistr).id),'YTickLabel',classes,'Fontsize',14);
 xlabel('Time (frames)');
@@ -62,10 +79,10 @@ title([classistr ' classification results for ROI ' obj.id],'Interpreter','none'
 
 %set(h,'WindowButtonDownFcn',{@wbdcb,xdiff,fluodiff,obj.div.raw,obj.div.classi});
 
-h.KeyPressFcn={@changeframe2,obj};
+h.KeyPressFcn={@changeframe2,obj,h};
 end
 
-function changeframe2(handle,event,obj)
+function changeframe2(handle,event,obj,h)
 
 ok=0;
 
@@ -84,7 +101,7 @@ obj.display.frame=obj.display.frame+1;
 
     obj.view;
    
-    hl=findobj('Tag','track');
+    hl=findobj(h,'Tag','track');
     if numel(hl)>0
     hl.XData=[obj.display.frame obj.display.frame];
     end
@@ -99,14 +116,14 @@ if strcmp(event.Key,'leftarrow')
 obj.display.frame=obj.display.frame-1;
 obj.view;
    % obj.view(obj.frame-1);
-    hl=findobj('Tag','track');
+    hl=findobj(h,'Tag','track');
     if numel(hl)>0
     hl.XData=[obj.display.frame obj.display.frame];
     end
     %ok=1;
 end
-h=findobj('Tag',['Traj' num2str(obj.id)]);
-figure(h);
+hf=findobj('Tag',['Traj' num2str(obj.id)]);
+figure(hf);
 
 % if strcmp(event.Key,'l') % move left to previous division
 %      
