@@ -79,16 +79,14 @@ end
 disp('Starting video classification...');
 label = classify(classifier,videoout);
 
+%label=[];
+
 lab=[];
 for i=1:narr
    lab = [lab label{i}];
 end
 
 label=lab(1:size(im,4));
-
-%label=label{1};
-
-%size(label)
 
 results=roiobj.results;
     results.(classif.strid)=[];
@@ -100,12 +98,29 @@ results=roiobj.results;
     
     for i=1:numel(classif.classes)
         
-    pix=label==classif.classes{i};
-    roiobj.results.(classif.strid).id(pix)=i;
+   pix=label==classif.classes{i};
+   results.(classif.strid).id(pix)=i;
     
     end
-    
+
+roiobj.results=results; 
 roiobj.clear;    
+
+results.id=roiobj.id;
+results.path=roiobj.path;
+results.parent=roiobj.parent;
+
+% stores results locally during classification
+
+if exist([classif.path '/' classif.strid '_results.mat']) % this filles needs to be removed when classification starts ? 
+    load([classif.path '/' classif.strid '_results.mat']) % load res variable
+    n=length(res);
+    res(n+1)={results};
+else
+    
+   res={results}; 
+end
+save([classif.path '/' classif.strid '_results.mat'],'res');
 
 %
 % pix=label=='largebudded';
