@@ -32,7 +32,7 @@ end
 for i=1:size(rois,2)
     
     %rois(1,i),rois(2,i)
-    
+    disp(['Processing ROI ' num2str(i) '/' num2str(size(rois,2))]);
     roitocopy=obj.fov(rois(1,i)).roi(rois(2,i));
     
     obj.processing.classification(n).roi(cc+1)=roi('',[]);
