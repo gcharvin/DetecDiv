@@ -94,7 +94,7 @@ results=roiobj.results;
     results.(classif.strid).labels=label;
      results.(classif.strid).classes=classif.classes;
      
-    roiobj.results=results;
+  %  roiobj.results=results;
     
     for i=1:numel(classif.classes)
         
