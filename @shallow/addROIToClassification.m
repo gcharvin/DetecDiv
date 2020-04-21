@@ -45,9 +45,19 @@ for i=1:size(rois,2)
     obj.processing.classification(n).roi(cc+1).classes=obj.processing.classification(n).classes;
     
     if strcmp(obj.processing.classification(n).category{1},'Image')
-    obj.processing.classification(n).roi(cc+1).train= zeros(1,size(obj.processing.classification(n).roi(cc+1).image,4));
+    obj.processing.classification(n).roi(cc+1).train.(obj.processing.classification(n).strid)=[];
+    obj.processing.classification(n).roi(cc+1).train.(obj.processing.classification(n).strid).id= zeros(1,size(obj.processing.classification(n).roi(cc+1).image,4));
    % obj.processing.classification(n).roi(cc+1).train= zeros(1,size(obj.processing.classification(n).roi(cc+1).image,4));
     end
+    
+    if strcmp(obj.processing.classification(n).category{1},'Pixel')
+     im=obj.processing.classification(n).roi(cc+1).image;
+     matrix=uint16(zeros(size(im,1),size(im,2),1,size(im,4)));
+     obj.processing.classification(n).roi(cc+1).addChannel(matrix,obj.processing.classification(n).strid,[1 1 1],[0 0 0]); 
+     %pixelchannel=size(obj.image,3);
+    end
+    
+    
     
     obj.processing.classification(n).roi(cc+1).save;
     obj.processing.classification(n).roi(cc+1).clear; 

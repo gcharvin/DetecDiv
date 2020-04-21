@@ -33,17 +33,21 @@ gfp = imresize(gfp,inputSize(1:2));
 % BEWARE : rather use formatted image in lstm .mat variable
 % need to distinguish between formating for training versus validation
 % function --> formatfordeepclassification
-pixe = strfind(roiobj.display.channel, ['results_' classif.strid]);
-        cc=[];
-        for j=1:numel(pixe)
-            if numel(pixe{j})~=0
-                cc=j;
-                break
-            end
-        end           
 
-if numel(cc)>0     
-pixresults=find(roiobj.channelid==cc); % find channels corresponding to trained data
+pixresults=findChannelID(roiobj,['results_' classif.strid]);
+
+% pixe = strfind(roiobj.display.channel, ['results_' classif.strid]);
+%         cc=[];
+%         for j=1:numel(pixe)
+%             if numel(pixe{j})~=0
+%                 cc=j;
+%                 break
+%             end
+%         end           
+
+%if numel(cc)>0   
+if numel(pixresults)>0
+%pixresults=find(roiobj.channelid==cc); % find channels corresponding to trained data
 roiobj.image(:,:,pixresults,:)=uint16(zeros(size(gfp,1),size(gfp,2),1,size(gfp,4)));
 else
    % add channel is necessary 
@@ -55,8 +59,7 @@ else
 end
 
 
-
-for fr=1:100%size(gfp,4)
+for fr=1:size(gfp,4)
     fprintf('.');
     % fr
     tmp=gfp(:,:,:,fr);
@@ -86,7 +89,7 @@ for fr=1:100%size(gfp,4)
     % post processing --> watershed segmentation to be performed in a later
     % step 
     
-  
+    
     for i=1:numel(classif.classes)
         
     BW=logical(C==string(classif.classes{i}));

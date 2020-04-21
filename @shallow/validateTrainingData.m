@@ -8,7 +8,6 @@ function validateTrainingData(obj,classiid,classifier)
 
 classifyFun=obj.processing.classification(classiid).classifyFun;
 
-
 disp(['Classifying training data for validation using ' classifyFun]);
 
 classif=obj.processing.classification(classiid);

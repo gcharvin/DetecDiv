@@ -92,7 +92,7 @@ results=roiobj.results;
     results.(classif.strid)=[];
     results.(classif.strid).id=zeros(1,size(im,4));
     results.(classif.strid).labels=label;
-     results.(classif.strid).classes=classif.classes;
+    results.(classif.strid).classes=classif.classes;
      
   %  roiobj.results=results;
     
