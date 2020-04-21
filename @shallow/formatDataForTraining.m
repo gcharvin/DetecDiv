@@ -169,7 +169,7 @@ for i=rois
     end
     
     if strcmp(category,'Image') || strcmp(category,'LSTM')
-        lab= categorical(classif.roi(i).train,1:numel(classif.classes),classif.classes); % creates labels for classification
+        lab= categorical(classif.roi(i).train.(classif.strid).id,1:numel(classif.classes),classif.classes); % creates labels for classification
     end
     
     reverseStr = '';
@@ -203,7 +203,7 @@ for i=rois
         end
         
         if strcmp(category,'Image') || strcmp(category,'LSTM')
-            if classif.roi(i).train(j)~=0 % if training is done
+            if classif.roi(i).train.(classif.strid).id(j)~=0 % if training is done
                 % if ~isfile([str '/unbudded/im_' mov.trap(i).id '_frame_' tr '.tif'])
                 imwrite(tmp,[classif.path '/' foldername '/images/' classif.classes{classif.roi(i).train(j)} '/' classif.roi(i).id '_frame_' tr '.tif']);
                 % end
@@ -233,7 +233,7 @@ for i=rois
     
     
     if strcmp(category,'LSTM')
-        deep=classif.roi(i).train;
+        deep=classif.roi(i).train.(classif.strid).id;
         save([classif.path '/' foldername '/timeseries/lstm_labeled_' classif.roi(i).id '.mat'],'deep','vid','lab');
     end
     classif.roi(i).save;
