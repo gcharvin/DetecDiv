@@ -75,16 +75,16 @@ else
     fprintf('\n');
 end
 
-%return;
+%return; 
 
-if strcmp(lstm_training,'y') % training of LSTM network
+if strcmp(lstmtraining,'y') % training of LSTM network
     
     disp('Preparing LSTM network ...');
 % prepare training data : 90% in training and 10% used for validation
 
 numObservations = numel(sequences);
 idx = randperm(numObservations);
-N = floor(0.5 * numObservations); % 0.9 replace
+N = floor(0.9 * numObservations); % 0.9 replace
 
 idxTrain = idx(1:N);
 %idxTrain=1; % warning

@@ -52,19 +52,19 @@ if numel(imageclassifier)==0
     imageclassifier='y';
 end
 
- prompt='Compute activation for google net ? (y / n [Default n]): ';
+ prompt='Compute activation for google net ? (y / n [Default y]): ';
 cactivations= input(prompt,'s');
 if numel(cactivations)==0
-    cactivations='n';
+    cactivations='y';
 end
 
- prompt='Train LSTM network ? (y [Default y]/ n ): ';
+ prompt='Train LSTM network ? (y/n [Default y]): ';
 lstmtraining= input(prompt,'s');
 if numel(lstmtraining)==0
    lstmtraining='y';
 end
 
- prompt='Assemble full network ? (y [Default y]/ n ): ';
+ prompt='Assemble full network ? (y/n [Default y] ): ';
 assemblenet= input(prompt,'s');
 if numel(assemblenet)==0
     assemblenet='y';

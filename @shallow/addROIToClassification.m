@@ -44,7 +44,7 @@ for i=1:size(rois,2)
     
     obj.processing.classification(n).roi(cc+1).classes=obj.processing.classification(n).classes;
     
-    if strcmp(obj.processing.classification(n).category{1},'Image')
+    if strcmp(obj.processing.classification(n).category{1},'Image') | strcmp(obj.processing.classification(n).category{1},'LSTM')
     obj.processing.classification(n).roi(cc+1).train.(obj.processing.classification(n).strid)=[];
     obj.processing.classification(n).roi(cc+1).train.(obj.processing.classification(n).strid).id= zeros(1,size(obj.processing.classification(n).roi(cc+1).image,4));
    % obj.processing.classification(n).roi(cc+1).train= zeros(1,size(obj.processing.classification(n).roi(cc+1).image,4));
