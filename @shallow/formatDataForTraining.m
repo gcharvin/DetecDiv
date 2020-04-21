@@ -205,7 +205,7 @@ for i=rois
         if strcmp(category,'Image') || strcmp(category,'LSTM')
             if classif.roi(i).train.(classif.strid).id(j)~=0 % if training is done
                 % if ~isfile([str '/unbudded/im_' mov.trap(i).id '_frame_' tr '.tif'])
-                imwrite(tmp,[classif.path '/' foldername '/images/' classif.classes{classif.roi(i).train(j)} '/' classif.roi(i).id '_frame_' tr '.tif']);
+                imwrite(tmp,[classif.path '/' foldername '/images/' classif.classes{classif.roi(i).train.(classif.strid).id(j)} '/' classif.roi(i).id '_frame_' tr '.tif']);
                 % end
             end
         end
