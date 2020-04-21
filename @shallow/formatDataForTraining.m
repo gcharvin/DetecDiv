@@ -114,8 +114,8 @@ for i=rois
     if strcmp(category,'LSTM')
         vid=uint8(zeros(size(classif.roi(i).image,1),size(classif.roi(i).image,2),3,size(classif.roi(i).image,4)));
         
-        pixb=numel(classif.roi(i).train);
-        pixa=find(classif.roi(i).train==0);
+        pixb=numel(classif.roi(i).train.(classif.strid).id);
+        pixa=find(classif.roi(i).train.(classif.strid).id==0);
         
         if numel(pixa)>0 || numel(pixa)==0 && pixb==0 % some images are not labeled, quitting ...
             disp('Error: some images are not labeled in this ROI - LSTM requires all images to be labeled in the timeseries!');
