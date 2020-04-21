@@ -804,7 +804,7 @@ for i=1:numel(keys) % display the selected class for the current image
     
     if strcmp(event.Key,keys{i})
         if  strcmp(classif.category{1},'Image') || strcmp(classif.category{1},'LSTM')% if image classification, assign class to keypress event
-            obj.train(obj.display.frame)=i;
+            obj.train.(classif.strid).id(obj.display.frame)=i;
             ok=1;
         end
         
