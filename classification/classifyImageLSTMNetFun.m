@@ -67,6 +67,8 @@ if nrem>0
 end
 
 videoout={};
+
+if size(im,4)>nframes
 for i=1:narr
     if i==narr
         ende=(i-1)*nframes+nrem;
@@ -75,6 +77,9 @@ for i=1:narr
     end
    videoout{i}=video(:,:,:,(i-1)*nframes+1:ende);
 end
+else
+   videoout{1}=video;
+end
 
 disp('Starting video classification...');
 label = classify(classifier,videoout);
@@ -82,8 +87,12 @@ label = classify(classifier,videoout);
 %label=[];
 
 lab=[];
+if size(im,4)>nframes
 for i=1:narr
    lab = [lab label{i}];
+end
+else
+   lab=label{1}; 
 end
 
 label=lab(1:size(im,4));
