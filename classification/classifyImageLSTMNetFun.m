@@ -58,44 +58,48 @@ video = centerCrop(vid,inputSize);
 %size(video)
 %aa=classifier.Layers
 
-nframes=inputSize(1);
-narr=floor(size(im,4)/nframes);
-nrem=mod(size(im,4),nframes);
-
-if nrem>0
-    narr=narr+1;
-end
-
-videoout={};
-
-if size(im,4)>nframes
-for i=1:narr
-    if i==narr
-        ende=(i-1)*nframes+nrem;
-    else
-        ende=i*nframes ;
-    end
-   videoout{i}=video(:,:,:,(i-1)*nframes+1:ende);
-end
-else
-   videoout{1}=video;
-end
+% nframes=inputSize(1);
+% narr=floor(size(im,4)/nframes);
+% nrem=mod(size(im,4),nframes);
+% 
+% if nrem>0
+%     narr=narr+1;
+% end
+% 
+% videoout={};
+% 
+% %if size(im,4)>nframes
+% for i=1:narr
+%     if i==narr
+%         ende=(i-1)*nframes+nrem;
+%     else
+%         ende=i*nframes ;
+%     end
+%    videoout{i}=video(:,:,:,(i-1)*nframes+1:ende);
+% end
+% %else
+% %   videoout{1}=video;
+% %end
+% 
+% %size(videoout)
+% %size(videoout{1})
+% %size(videoout{3})
 
 disp('Starting video classification...');
-label = classify(classifier,videoout);
+label = classify(classifier,video);
 
 %label=[];
 
-lab=[];
-if size(im,4)>nframes
-for i=1:narr
-   lab = [lab label{i}];
-end
-else
-   lab=label{1}; 
-end
+% lab=[];
+% %if size(im,4)>nframes
+% for i=1:narr
+%    lab = [lab label{i}];
+% end
+%else
+   %label=label{1}; 
+%end
 
-label=lab(1:size(im,4));
+%label=lab(1:size(im,4));
 
 results=roiobj.results;
     results.(classif.strid)=[];
