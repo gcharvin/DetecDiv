@@ -92,6 +92,10 @@ myproject.formatDataForTraining(classifid)
 
 formats data to be used by the classifier; this function is called first when launching the trainClassifier function 
 
+myproject.validateTrainingData(classifid)
+
+uses the classifier to classify ROIs associated with user training in order to compare user training to classification results 
+
 myproject.classifyData(classifid,roilist,option) 
 
 allows one to start the classification reffered to as classifid on the roilist; You can provide the classifier as an option, so that it is not loaded each time you run the function 
