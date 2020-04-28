@@ -21,7 +21,7 @@ if numel(roiobj.image)==0
     roiobj.load;
 end
 
-pix=find(roiobj.channelid==classif.channel); % find channels corresponding to trained data
+pix=find(roiobj.channelid==classif.channel(1)); % find channels corresponding to trained data
 gfp=roiobj.image(:,:,pix,:);
 
 if numel(pix)==1
@@ -99,7 +99,7 @@ for fr=1:size(gfp,4)
    % figure, imshow(BW,[]);
     
     
-    res=uint16(uint8(BW)*(i-1));
+    res=uint16(uint8(BW)*(i));
     roiobj.image(:,:,pixresults,fr)=roiobj.image(:,:,pixresults,fr)+res;
     end
     

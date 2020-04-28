@@ -30,10 +30,13 @@ if numel(classitype)==0
     classitype=1;
 end
 
-prompt='Please enter the channel on which to operate the classification ? (Default:1): ';
-channeltype= input(prompt);
+disp('For object classification, you need to provide 1 channel for images and 1 for objects');
+prompt='Please enter the channel(s) on which to operate the classification ? (Default:1): ';
+channeltype= input(prompt,'s');
 if numel(channeltype)==0
     channeltype=1;
+else
+   channeltype=str2num(channeltype); 
 end
 
 prompt='Please enter the classes names that you want  (Default: class1 class2): ';
@@ -58,7 +61,7 @@ disp(classes);
 
 pth=[obj.io.path '/' obj.io.file];
 
-if classitype >0 && classitype< size(classlist,2) % user chose a correct method
+if classitype >0 && classitype<= size(classlist,1) % user chose a correct method
     
     obj.processing.classification(n+1) = classi(pth,name,n+1);
     obj.processing.classification(n+1).typeid=classitype;
@@ -68,8 +71,10 @@ if classitype >0 && classitype< size(classlist,2) % user chose a correct method
     obj.processing.classification(n+1).trainingFun=classlist{classitype,5}{1};
     obj.processing.classification(n+1).channel=channeltype;
     obj.processing.classification(n+1).classes=classes;
+    obj.processing.classification(n+1).colormap=shallowColormap(numel(classes));
 else
     disp('Error : wrong classification type number!');
+    return;
 end
 
 % add training data

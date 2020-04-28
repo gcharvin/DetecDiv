@@ -24,7 +24,7 @@ labelsIDs={};
 
 for i=1:nclasses
     classes(i)=string(classification.classes{i});
-    labelsIDs{i}=round(255*classification.colormap(i,:));
+    labelsIDs{i}=round(255*classification.colormap(i+1,:)); % !! +1 because the first index in the colormap is black color
 end
 
 

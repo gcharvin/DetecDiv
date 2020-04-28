@@ -16,7 +16,7 @@ if cc==0
 end
 
 obj.processing.classification(classiid).classes(end+1:end+n)=classnames;
-
+obj.processing.classification(classiid).colormap=shallowColormap(numel(obj.processing.classification(classiid).classes));
 
 for i=1:cc
     

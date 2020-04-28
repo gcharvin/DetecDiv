@@ -20,7 +20,7 @@ numClasses = numel(classNames);
     roiobj.load;
     end
     
-    pix=find(roiobj.channelid==classif.channel); % find channels corresponding to trained data
+    pix=find(roiobj.channelid==classif.channel(1)); % find channels corresponding to trained data
     gfp=roiobj.image(:,:,pix,:);
     
     if numel(pix)==1

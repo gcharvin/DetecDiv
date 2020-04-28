@@ -20,7 +20,7 @@ end
 mkdir(classif.path,foldername)
 end
 
-if strcmp(category,'Image') || strcmp(category,'LSTM')
+if strcmp(category,'Image') || strcmp(category,'LSTM') || strcmp(category,'Object')
   
         if ~isfolder([classif.path '/' foldername '/images'])
             mkdir([classif.path '/' foldername], 'images');
@@ -39,6 +39,13 @@ if strcmp(category,'Pixel')
 
         mkdir([classif.path '/' foldername],'images')
         mkdir([classif.path '/' foldername],'labels')
+        
+         prompt='If there are some unassigned pixels, to which class id number do you want to attribute it ? [Default 1]): ';
+defaultclass= input(prompt);
+if numel(defaultclass)==0
+    defaultclass=1;
+end
+
         % in case of pixels, training data is a list of 3 channels from the
         % roi.image matrix with indexed colors
 end  
@@ -101,8 +108,10 @@ for i=rois
     end
     
     % normalize intensity levels
-    pix=find(classif.roi(i).channelid==classif.channel); % find channel
+    pix=find(classif.roi(i).channelid==classif.channel(1)); % find channel
     im=classif.roi(i).image(:,:,pix,:);
+    
+    
     
     if numel(pix)==1
         % 'ok'
@@ -126,21 +135,13 @@ for i=rois
     if strcmp(category,'Pixel') % get the training data for pixel classification
         
         % find image channel associated with training
-        pixe = strfind(classif.roi(i).display.channel, classif.strid);
-        cc=[];
-        for j=1:numel(pixe)
-            if numel(pixe{j})~=0
-                cc=j;
-                break
-            end
-        end
+        %pixe = strfind(classif.roi(i).display.channel, classif.strid);
+        cc=classif.roi(i).findChannelID(classif.strid);
         
         if numel(cc)>0
         pixcc=find(classif.roi(i).channelid==cc);
         % size(classif.roi(i).image)
         lab=classif.roi(i).image(:,:,pixcc,:);
-        
-        
         
         labels= double(zeros(size(lab,1),size(lab,2),3,size(lab,4)));
         
@@ -149,13 +150,17 @@ for i=rois
         
         for j=1:numel(classif.classes)
             
-            pixz=lab(:,:,1,:)==j-1; % pixel with value zero is associated with class 1
+            if j==defaultclass % 
+            pixz=lab(:,:,1,:)==j | lab(:,:,1,:)==0; % WARNING !!!! add unassigned pixels to this class
+            else
+            pixz=lab(:,:,1,:)==j;   
+            end
             
             labtmp2=double(zeros(size(lab,1),size(lab,2),1,size(lab,4)));
             labtmp2(pixz)=1;
             
             for  k=1:3
-                labels(:,:,k,:)=labels(:,:,k,:)+classif.colormap(j,k)*labtmp2;
+                labels(:,:,k,:)=labels(:,:,k,:)+classif.colormap(j+1,k)*labtmp2;
             end
             
         end
@@ -173,6 +178,16 @@ for i=rois
     end
     
     reverseStr = '';
+    
+    if strcmp(category,'Object')
+    pixelchannel2=classif.roi(i).findChannelID(classif.strid);
+    pix2=find(classif.roi(i).channelid==pixelchannel2);
+                
+    % find channel associated with user classified objects
+    im2=classif.roi(i).image(:,:,pix2,:);
+    end
+    
+    
     for j=1:size(im,4)
         tmp=im(:,:,:,j);
         
@@ -209,6 +224,43 @@ for i=rois
                 % end
             end
         end
+        
+          if strcmp(category,'Object') 
+            %if classif.roi(i).train.(classif.strid).id(j)~=0 % if training is done
+                % if ~isfile([str '/unbudded/im_' mov.trap(i).id '_frame_' tr '.tif'])
+                %make a loop on all objects of each image
+                labeledobjects=im2(:,:,:,j);
+                
+                if max(labeledobjects(:))==0 % image is not annotated
+                    continue
+                end
+                
+               
+                [l no]=bwlabel(labeledobjects>0);
+                 pr=regionprops(l,'BoundingBox');
+                
+                for k=1:no % loop on all present objects
+                    
+                    bw=l==k;
+                    
+                  %  if j==16
+                    bbox=round(pr(k).BoundingBox);
+                    clas=round(mean(labeledobjects(bw)));
+                    
+                    imcrop=tmp(bbox(2):bbox(2)+bbox(4),bbox(1):bbox(1)+bbox(3));
+                    
+                   % figure, imshow(imcrop,[]);
+                   % figure, imshow(tmp,[]);
+                     imwrite(imcrop,[classif.path '/' foldername '/images/' classif.classes{clas} '/' classif.roi(i).id '_frame_' tr '_obj' num2str(k) '.tif']);
+                %    end
+                    
+                    
+                end
+                
+                 % end
+            %end
+          end
+        
         
         if strcmp(category,'Pixel')
             if numel(cc)>0

@@ -27,7 +27,7 @@ classdef classi < handle
             obj.path=path;
             obj.id=id;
             obj.strid=[name '_' num2str(id)];
-            obj.colormap=lines(7); % colormaps currently allows only 7 classes ... 
+            obj.colormap=shallowColormap(1); % default colormap
             
             if numel(path)>0
             mkdir(path,'classification');

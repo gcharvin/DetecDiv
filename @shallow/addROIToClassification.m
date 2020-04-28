@@ -30,19 +30,25 @@ if cc==1
 end
 
 for i=1:size(rois,2)
-    
+   % rois(1,i),rois(1,i)
     %rois(1,i),rois(2,i)
     disp(['Processing ROI ' num2str(i) '/' num2str(size(rois,2))]);
     roitocopy=obj.fov(rois(1,i)).roi(rois(2,i));
     
+   % aa=roitocopy
+    
     obj.processing.classification(n).roi(cc+1)=roi('',[]);
     
+    if numel(roitocopy.image)==0
     roitocopy.load;
+    end
     
     obj.processing.classification(n).roi(cc+1)=propValues(obj.processing.classification(n).roi(cc+1),roitocopy);
     obj.processing.classification(n).roi(cc+1).path = obj.processing.classification(n).path;
     
     obj.processing.classification(n).roi(cc+1).classes=obj.processing.classification(n).classes;
+    
+    %size(obj.processing.classification(n).roi(cc+1).image)
     
     if strcmp(obj.processing.classification(n).category{1},'Image') | strcmp(obj.processing.classification(n).category{1},'LSTM')
     obj.processing.classification(n).roi(cc+1).train.(obj.processing.classification(n).strid)=[];
@@ -57,6 +63,15 @@ for i=1:size(rois,2)
      %pixelchannel=size(obj.image,3);
     end
     
+    if strcmp(obj.processing.classification(n).category{1},'Object')
+     im=obj.processing.classification(n).roi(cc+1).image;
+     %size(im)
+     matrix=uint16(im(:,:,obj.processing.classification(n).channel(2),:)>0); 
+     
+     obj.processing.classification(n).roi(cc+1).addChannel(matrix,obj.processing.classification(n).strid,[1 1 1],[0 0 0]); 
+     %pixelchannel=size(obj.image,3);
+    end
+    
     
     
     obj.processing.classification(n).roi(cc+1).save;
@@ -64,6 +79,8 @@ for i=1:size(rois,2)
     
         cc=cc+1;   
 end
+
+%% to do : draw user training window for object classification !!! 
 
 %
 

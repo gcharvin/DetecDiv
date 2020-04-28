@@ -26,7 +26,7 @@ if numel(classitype)==0
     classitype=1;
 end
 
-channel=obj.processing.classification(classiid).channel;
+channel=obj.processing.classification(classiid).channel(1);
 
 obj.processing.classification(classiid).roi(classitype).display.selectedchannel=zeros(1,numel(obj.processing.classification(classiid).roi(classitype).display.selectedchannel));
 obj.processing.classification(classiid).roi(classitype).display.selectedchannel(channel)=1;

@@ -22,7 +22,7 @@ if numel(roiobj.image)==0
     roiobj.load;
 end
 
-pix=find(roiobj.channelid==classif.channel); % find channels corresponding to trained data
+pix=find(roiobj.channelid==classif.channel(1)); % find channels corresponding to trained data
 im=roiobj.image(:,:,pix,:); 
 
 disp('Formatting video before classification....');

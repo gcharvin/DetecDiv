@@ -15,7 +15,7 @@ end
 % end
 
 if numel(classif)>0
-    if strcmp(classif.category{1},'Pixel') % display properties for pixel classification
+    if strcmp(classif.category{1},'Pixel') | strcmp(classif.category{1},'Object') % display properties for pixel classification
         
         % first create a decidated channel in the image matrix for pixel
         % classification if it is not exisiting
@@ -44,11 +44,11 @@ if numel(classif)>0
             matrix=uint16(zeros(size(obj.image,1),size(obj.image,2),1,size(obj.image,4)));
             obj.addChannel(matrix,classif.strid,[1 1 1],[0 0 0]);
             
-            pixelchannel=size(obj.image,3);
+            %pixelchannel=size(obj.image,3);
             %else
             
         else
-            pixelchannel=cc;  
+            %pixelchannel=cc;  
         end
         
         
@@ -98,7 +98,7 @@ hp=[];
 pos=h.Position;
 
 if numel(classif)>0
-    cmap=classif.colormap; % by defulat, 10 colors available
+    cmap=classif.colormap;
 end
 
 for i=1:numel(obj.display.channel)
@@ -110,17 +110,21 @@ for i=1:numel(obj.display.channel)
         dis=0;
         % pixelchannel
         if numel(classif)>0
-            if strcmp(classif.category{1},'Pixel') % display user training and results
+            if strcmp(classif.category{1},'Pixel') | strcmp(classif.category{1},'Object')% display user training and results
                 % pixelchannel
-                if i==pixelchannel
+                if i==obj.findChannelID(classif.strid)
                     dis=1;
                 end
             end
         end
         
-        if sum(obj.display.intensity(i,:))==0 % A TESTER !!!
+        if dis==0 %  channel to be displayed is not that of the ongoing classification
+        if sum(obj.display.intensity(i,:))==0 % choose colormap to use to plot indexed data
            dis=1;
-           cmap=lines(10);
+           
+           maxe=max(im(cc).data(:));
+           cmap=shallowColormap(maxe);
+        end
         end
         
         % dis
@@ -167,7 +171,7 @@ h.WindowButtonUpFcn = '';
 
 
 % add buttons and fcn to chanfe frame
-keys={'a' 'z' 'e' 'r' 't' 'y' 'u' 'i' 'o' 'p'};
+keys={'a' 'z' 'e' 'r' 't' 'y' 'u' 'i' 'o' 'p' 'q' 's' 'd' 'f' 'g' 'h' 'j'};
 h.KeyPressFcn={@changeframe,obj,him,hp,keys,classif};
 
 handles=findobj('Tag','frametexttitle');
@@ -220,7 +224,7 @@ if numel(classif)>0
 %         end
     end
     
-    if strcmp(classif.category{1},'Pixel') % display the axis associated with user training to paint on the channel
+    if strcmp(classif.category{1},'Pixel') | strcmp(classif.category{1},'Object')  % display the axis associated with user training to paint on the channel
         
 %         pix = strfind(obj.display.channel, classif.strid);
 %         cc=[];
@@ -236,15 +240,18 @@ if numel(classif)>0
         
         if numel(cc)
             if obj.display.selectedchannel(i)==1
-                cha1= classif.channel; % axes where to copy the new axes
+                cha1= classif.channel(1); % axes where to copy the new axes
                 cha1pos=get(hp(cha1),'Position');
                 hcopy=findobj(hp,'UserData',classif.strid);
-                
+%                 
                 htmp = copyobj(hcopy,h);
                 htmp.Position=cha1pos;
+               % aa=classif.strid, 
+               % htmp
+                
                 set(htmp,'Tag',classif.strid);
                 axes(htmp);
-                alpha(0.7);
+                alpha(0.5);
             end
         end
         
@@ -260,15 +267,23 @@ if numel(classif)>0
     mitem=[];
     
     for i=1:numel(obj.classes)
-        mitem(i) = uimenu(m,'Text',obj.classes{i},'Checked','off','Tag',['classes_' num2str(i)],'ForegroundColor',cmap(i,:),'Accelerator',keys{i});
+        mitem(i) = uimenu(m,'Text',obj.classes{i},'Checked','off','Tag',['classes_' num2str(i)],'ForegroundColor',cmap(i+1,:),'Accelerator',keys{i});
         
-        if strcmp(classif.category{1},'Pixel') % only in pixel mode
+        if strcmp(classif.category{1},'Pixel') | strcmp(classif.category{1},'Object') % only in pixel mode
             hpaint=findobj('Tag',classif.strid); % if the painting axe is displayed
             if numel(hpaint)~=0
                 set(mitem(i),'MenuSelectedFcn',{@classesMenuFcn,h,obj,hpaint.Children(1),hcopy.Children(1),hpaint,classif});
                 
             end
         end
+        
+%         if strcmp(classif.category{1},'Object') % only in object mode
+%             hpaint=findobj('Tag',classif.strid); % if the painting axe is displayed
+%             if numel(hpaint)~=0
+%                 set(mitem(i),'MenuSelectedFcn',{@classesMenuFcnObject,h,obj,hpaint.Children(1),hcopy.Children(1),hpaint,classif});
+%                 
+%             end
+%         end
         
         %     if obj.display.selectedchannel(i)==1
         %         set(mitem(i),'Checked','on');
@@ -336,7 +351,7 @@ end
 function classesMenuFcn(handles, event, h,obj,impaint1,impaint2,hpaint,classif)
 
 if strcmp(handles.Checked,'off')
-    
+  
     for i=1:numel(classif.classes)
         ha=findobj('Tag',['classes_' num2str(i)]);
         
@@ -352,8 +367,13 @@ if strcmp(handles.Checked,'off')
     
     
     % set pixel painting mode
-    
+    if strcmp(classif.category{1},'Pixel')
     set(h,'WindowButtonDownFcn',@wbdcb);
+    end
+    
+    if strcmp(classif.category{1},'Object')
+    set(h,'WindowButtonDownFcn',@wbdcb2);
+    end
     
     %ah = hp(1); %axes('SortMethod','childorder');
 else
@@ -370,7 +390,66 @@ else
 end
 
 %[him hp]=draw(obj,h,classif);
-
+function wbdcb2(src,cbk)
+        seltype = src.SelectionType;
+        
+        if strcmp(seltype,'normal')
+            %src.Pointer = 'circle';
+            cp = hpaint.CurrentPoint;
+            
+            xinit = cp(1,1);
+            yinit = cp(1,2);
+            
+            if xinit>size(obj.image,2) | xinit<1 | yinit<1 | yinit>size(obj.image,1)
+                return;
+            end
+            
+            
+            hmenu = findobj('Tag','TrainingClassesMenu');
+            hclass=findobj(hmenu,'Checked','on');
+            strcolo=replace(hclass.Tag,'classes_','');
+            colo=str2num(strcolo);
+            
+            bw=impaint1.CData;
+            [l n]=bwlabel(bw>0);
+            
+            %xinit,yinit
+            val=l(round(yinit),round(xinit));
+            
+            if val>0
+                %tmp=bw;
+                sel=l==val;
+                bw(sel)=colo;
+                impaint1.CData=bw;
+                impaint2.CData=bw;
+                
+                pixelchannel=obj.findChannelID(classif.strid);
+                pix=find(obj.channelid==pixelchannel);
+                
+                obj.image(:,:,pix,obj.display.frame)=impaint2.CData;
+              % HERE
+            end
+            
+            
+            % hl = line('XData',xinit,'YData',yinit,...
+            % 'Marker','p','color','b');
+            %src.WindowButtonMotionFcn = {@wbmcb,1};
+            %src.WindowButtonUpFcn = @wbucb;
+            
+        end
+%         if strcmp(seltype,'alt')
+%             src.Pointer = 'circle';
+%             cp = hpaint.CurrentPoint;
+%             xinit = cp(1,1);
+%             yinit = cp(1,2);
+%             % hl = line('XData',xinit,'YData',yinit,...
+%             % 'Marker','p','color','b');
+%             src.WindowButtonMotionFcn = {@wbmcb,2};
+%             src.WindowButtonUpFcn = @wbucb;
+%             
+%         end
+end
+        
 % nested function, good luck ;-) ....
     function wbdcb(src,cbk)
         seltype = src.SelectionType;
@@ -460,8 +539,8 @@ end
                 %colortype*ones(1,length(finalX));
                 
                 linearInd = sub2ind(sz, int32(finalY), int32(finalX));%,1*ones(1,length(finalX)));
-                impaint1.CData(linearInd)=colo-1;
-                impaint2.CData(linearInd)=colo-1;
+                impaint1.CData(linearInd)=colo;
+                impaint2.CData(linearInd)=colo;
                 
                 
                 % dave data in obj.image object
@@ -504,7 +583,6 @@ end
             %end
         end
     end
-
 end
 
 
@@ -562,7 +640,7 @@ end
 if numel(classif)>0
     cmap=classif.colormap;
     
-    if strcmp(classif.category{1},'Pixel')
+    if strcmp(classif.category{1},'Pixel') | strcmp(classif.category{1},'Object')
         htmp=findobj('Tag',classif.strid);
         hpt=findobj(hp,'UserData',classif.strid);
         
@@ -808,7 +886,7 @@ for i=1:numel(keys) % display the selected class for the current image
             ok=1;
         end
         
-        if strcmp(classif.category{1},'Pixel') % for pixel classification enable painting function for the given class
+        if strcmp(classif.category{1},'Pixel') | strcmp(classif.category{1},'Object') % for pixel classification enable painting function for the given class
             
             for j=1:numel(classif.classes)
                 ha=findobj('Tag',['classes_' num2str(j)]);
