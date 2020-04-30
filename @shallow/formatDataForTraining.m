@@ -247,7 +247,7 @@ for i=rois
                     bbox=round(pr(k).BoundingBox);
                     clas=round(mean(labeledobjects(bw)));
                     
-                    imcrop=tmp(bbox(2):bbox(2)+bbox(4),bbox(1):bbox(1)+bbox(3));
+                    imcrop=tmp(bbox(2):bbox(2)+bbox(4),bbox(1):bbox(1)+bbox(3),:);
                     
                    % figure, imshow(imcrop,[]);
                    % figure, imshow(tmp,[]);
