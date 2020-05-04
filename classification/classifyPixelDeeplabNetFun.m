@@ -103,7 +103,7 @@ for fr=1:size(gfp,4)
     roiobj.image(:,:,pixresults,fr)=roiobj.image(:,:,pixresults,fr)+res;
     end
     
-    % TO DO add specific function to perform watershe don the result
+    % TO DO add specific function to perform watershed don the result
 %     BW=~BW;
 %     
 %     imdist=bwdist(BW);
