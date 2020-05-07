@@ -7,7 +7,7 @@ function load(obj)
 %%%%
 
 if exist([obj.path '/im_' obj.id '.mat'])
- fprintf(['Loading  %s' obj.path '/im_' obj.id '.mat image file for ROI ' obj.id '\n']);   
+ fprintf(['Loading ' obj.path '/im_' obj.id '.mat image file for ROI ' obj.id '\n']);   
  
 %eval(['load  ' obj.path '/im_' num2str(obj.id) '.mat']); 
 

@@ -126,8 +126,10 @@ for fr=1:size(gfp,4)
     %figure, imshow(newlabels,[]);
     %return
     
-
 end
+
+roiobj.save;
+roiobj.clear;
 
 fprintf('\n');
 

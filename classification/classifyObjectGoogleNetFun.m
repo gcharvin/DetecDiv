@@ -104,6 +104,9 @@ for j=1:size(roiobj.image,4)
      
      roiobj.image(:,:,pixresults,j)=ob2;
 end
+
+ roiobj.save;
+ roiobj.clear;
     
    
     fprintf('\n');

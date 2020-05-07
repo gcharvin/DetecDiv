@@ -86,7 +86,14 @@ video = centerCrop(vid,inputSize);
 % %size(videoout{3})
 
 disp('Starting video classification...');
-label = classify(classifier,video);
+
+test=predict(classifier,video);
+
+[~, idx] = max(test,[],2);
+labels = classifier.Layers(end).Classes;
+label = labels(idx);
+
+%label = classify(classifier,video);
 
 %label=[];
 
@@ -104,7 +111,7 @@ label = classify(classifier,video);
 results=roiobj.results;
     results.(classif.strid)=[];
     results.(classif.strid).id=zeros(1,size(im,4));
-    results.(classif.strid).labels=label;
+    results.(classif.strid).labels=label';
     results.(classif.strid).classes=classif.classes;
      
   %  roiobj.results=results;
@@ -119,21 +126,23 @@ results=roiobj.results;
 roiobj.results=results; 
 roiobj.clear;    
 
-results.id=roiobj.id;
-results.path=roiobj.path;
-results.parent=roiobj.parent;
+% results.id=roiobj.id;
+% results.path=roiobj.path;
+% results.parent=roiobj.parent;
+% 
+% % stores results locally during classification
+% 
+% if exist([classif.path '/' classif.strid '_results.mat']) % this filles needs to be removed when classification starts ? 
+%     load([classif.path '/' classif.strid '_results.mat']) % load res variable
+%     n=length(res);
+%     res(n+1)={results};
+% else
+%     
+%    res={results}; 
+% end
+% save([classif.path '/' classif.strid '_results.mat'],'res');
 
-% stores results locally during classification
 
-if exist([classif.path '/' classif.strid '_results.mat']) % this filles needs to be removed when classification starts ? 
-    load([classif.path '/' classif.strid '_results.mat']) % load res variable
-    n=length(res);
-    res(n+1)={results};
-else
-    
-   res={results}; 
-end
-save([classif.path '/' classif.strid '_results.mat'],'res');
 
 %
 % pix=label=='largebudded';

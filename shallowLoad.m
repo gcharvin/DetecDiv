@@ -1,9 +1,10 @@
 function shallowObj=shallowLoad(filename)
 
 if nargin==0
-   [file,path] = uigetfile('*.mat','Select a shallow project',userpath);
+   [file,path] = uigetfile('*.mat','Select a shallow project',pwd);
    if isequal(file,0)
    disp('User selected Cancel')
+   shallowObj=[];
    return;
    else
    disp(['User selected ', fullfile(path, file)]); 

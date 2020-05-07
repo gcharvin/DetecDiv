@@ -50,7 +50,9 @@ end
 
 disp([num2str(size(roilist,2)) ' ROIs to classify, be patient...']);
 
-for i=1:size(roilist,2) % loop on all ROIs
+%tmp=obj.fov; 
+
+parfor i=1:size(roilist,2) % loop on all ROIs
   %  aa=roilist(1,i),bb=roilist(2,i)
     
  roiobj=obj.fov(roilist(1,i)).roi(roilist(2,i));
@@ -67,3 +69,6 @@ feval(classifyFun,roiobj,classif,classifier); % launch the training function for
 % in roiobj.results
 
 end
+
+shallowSave(obj);
+

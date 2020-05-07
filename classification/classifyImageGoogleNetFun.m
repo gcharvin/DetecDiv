@@ -54,6 +54,8 @@ numClasses = numel(classNames);
     
     end
     
+    roiobj.clear;  
+    
     
 
 

@@ -4,7 +4,7 @@ classdef shallow < handle
       % default properties with values
       io=struct('path','','file','');
       
-      fov=fov({''},1,'');%fov({},1,'');
+      fov=fov();%fov({},1,'');
       processing=struct('roi',[],'classification',[]);%,'classification',classi());
       
       
