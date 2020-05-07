@@ -80,6 +80,15 @@ for i=1:size(im,4)
     
     [tracks, ~, ~, analysis] = tracker(tmp,i); % updates tracker with new detection
     
+%      if i==24
+%         tracks
+%         analysis
+%     end
+%     if i==25
+%         tracks
+%         analysis
+%     end
+
   %  tracks
     
 %     for k=1:numel(tracks)
@@ -101,7 +110,7 @@ for i=1:size(im,4)
           
           for j=1:size(pos,1) % loops on track
             
-          val=l(round(pos(j,1)),round(pos(j,2))); %object corresponding to track
+          val=l(round(pos(j,2)),round(pos(j,1))); %object corresponding to track
           
           if val>0 % track is located onto an actual object
               testim=l==val;
@@ -116,7 +125,10 @@ for i=1:size(im,4)
              % return;
               
               obj.image(:,:,pixresults,i)=uint16(testim);
+              
           end
+        %  obj.image(round(pos(j,2))-1:round(pos(j,2))+1,round(pos(j,1))-1:round(pos(j,1))+1,pixresults,i)=4;
+        %  to dispay the trajectory on the resulting image
           end
           
           

@@ -1,4 +1,4 @@
-(function identifyROIs(obj,fovid,frameid)
+function identifyROIs(obj,fovid,frameid)
 
 
 if numel(obj.processing.roi.pattern)==0

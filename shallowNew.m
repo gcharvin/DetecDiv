@@ -3,7 +3,7 @@ function shallowObj=shallowNew(varargin)
 % varargin: 'Path' 'Filename' to input the location and path of the
 % project. 
 
-path=userpath; 
+path=pwd; 
 filename='myproject';
 
 if nargin~=0
@@ -18,9 +18,10 @@ filename=varargin{i+1};
 end
 end
 else
-  [filename,path,rep] = uiputfile('*.mat','File Selection',fullfile(userpath,[filename '.mat']));
+  [filename,path,rep] = uiputfile('*.mat','File Selection',fullfile(path,[filename '.mat']));
   if isequal(filename,0)
    disp('User selected Cancel');
+   shallowObj=[];
    return;
    else
    disp(['User selected ', fullfile(path, filename)]);

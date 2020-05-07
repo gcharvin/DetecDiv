@@ -89,7 +89,7 @@ end
 
 if answer==1 % phyloCell project
     
-    [file,path] = uigetfile('*.mat','Select a phylocell/XG project',userpath);
+    [file,path] = uigetfile('*.mat','Select a phylocell/XG project',pwd);
     if isequal(file,0)
         disp('User selected Cancel')
         return;
@@ -121,46 +121,74 @@ if answer==1 % phyloCell project
     
     n=numel(obj.fov);
     
-    for i=npos
-        %timeLapse.position
-        strpos=[path timeLapse.filename '-pos' num2str(i)]; % add / here if necessary
-        
-        pathname={};
-        binning=[];
-        
-        
-        for j=1:numel(timeLapse.list) % sources files for each channel
-            pathname{j}= [strpos '/' timeLapse.filename '-pos' num2str(i) '-ch' num2str(j) '-' timeLapse.list(j).ID];
-            binning(j)=timeLapse.list(j).binning;
-        end
- 
-        
-        
-        
-        % now create fov objects
-        if n==1
+    if n==1
         if numel(obj.fov.srcpath{1})==0 % no fov present
-        %    'new project'
-          %  obj.fov=fov(pathname,1,'');
-          %  obj.fov.display.binning=binning;
             n=0;
         end
+    end
+    
+    
+    tmpfov=fov;
+    
+   pathname={};
+   binning=[];
+   
+   nid=n;
+   cc=1;
+    for i=npos
+        strpos=[path timeLapse.filename '-pos' num2str(i)]; % add / here if necessary
+
+        for j=1:numel(timeLapse.list) % sources files for each channel
+            pathname{i,j}= [strpos '/' timeLapse.filename '-pos' num2str(i) '-ch' num2str(j) '-' timeLapse.list(j).ID];
+            binning(i,j)=timeLapse.list(j).binning;
         end
         
-       fprintf('.');
-       
-            obj.fov(n+1)=fov(pathname,n+1,''); % add fov to exisiting datasets
-            % THIS IS VERY SLOW BECAUSE THE DIR FUNCTION IS VERY SLOW ;
-            % SHOULD REPLACE BY FILE REAL NAME IF IT IS KNOWN !!!
-            
-            obj.fov(n+1).display.binning=binning;
+        nid(i)=n+cc;
+        cc=cc+1;
+    end
+    
+    
+    parfor i=npos
+        
 
-            n=n+1;
+        %         % now create fov objects
+        %         if n==1
+        %         if numel(obj.fov.srcpath{1})==0 % no fov present
+        %         %    'new project'
+        %           %  obj.fov=fov(pathname,1,'');
+        %           %  obj.fov.display.binning=binning;
+        %             n=0;
+        %         end
+        %         end
+        
+        fprintf('.');
+        
+        tmpfov(i)=fov;
+        
+       % tic; 
+        tmpfov(i).setpathlist(pathname(i,:),nid(i));
+        %toc;
+        
+        % obj.fov(n+1)=fov(n+1,''); % add fov to exisiting datasets
+        % THIS IS VERY SLOW BECAUSE THE DIR FUNCTION IS VERY SLOW ;
+        % SHOULD REPLACE BY FILE REAL NAME IF IT IS KNOWN !!!
+        
+        
+        tmpfov(i).display.binning=binning(i,:);
+        
+        %  n=n+1;
         %  cc=cc+1;
     end
+    
+    
+    
+    for i=npos
+        obj.fov(n+1)=tmpfov(i);
+        n=n+1;
+    end
 end
- fprintf('\n');
- 
+fprintf('\n');
+
 % prompt = {'Enter matrix size:','Enter colormap name:'};
 % dlg_title = 'Input';
 % num_lines = 1;
