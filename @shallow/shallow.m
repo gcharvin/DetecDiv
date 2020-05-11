@@ -88,11 +88,57 @@ classdef shallow < handle
            path=obj.io.path;
            file=obj.io.file;
        end
-       function obj = setSrcPath(obj,path,file) % 
+       function obj = setSrcPath(obj) % 
            % this function will be written to ensure that source image path
            % can be updated when necessary
            
            %for i=1
+           
+           prompt='Reassign FOV path all at once? [Y/N] (Default: y)';
+            defaultclass= input(prompt,'s');
+            if numel(defaultclass)==0
+                 defaultclass='y';
+            end
+           
+           strpath=pwd;
+           for i=1:numel(obj.fov)
+              
+               for k=1:numel(obj.fov(i).srcpath)
+               if strcmp(defaultclass,'y')
+                   if i==1 && k==1
+                   strpath=uigetdir(strpath,'Input first list of files for channel 1');
+                   
+                   p=strfind(strpath,'/');
+                   
+                   basepath=strpath(1:p(end-1)-1); 
+                       
+                   end
+                   
+                   tmp=obj.fov(i).srcpath{k};
+                   p=strfind(tmp,'/');
+                   tmp=tmp(p(end-1):end);
+                   
+                   finalpath=[basepath tmp];
+                   
+                   if isfolder(finalpath)
+                      obj.fov(i).srcpath{k}=finalpath; 
+                   else
+                      disp('Warning : this path does not exsit: cannot change it !'); 
+                   end
+                   
+                   
+               else
+                   strpath=uigetdir(strpath);
+                   obj.fov(i).srcpath{k}=strpath;
+               end
+               
+               
+               
+               end
+               
+               
+           end
+           
            StringToBeReplaced='';
            StringToReplace='';
            

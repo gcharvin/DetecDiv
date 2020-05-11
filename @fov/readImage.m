@@ -6,11 +6,15 @@ im=[];
 
 %aa=isfolder(obj.path)
 
+%aa=obj.srcpath{channel}
+
 if isfolder(obj.srcpath{channel}) % folders are provided with image or based on phylocell project
 
 list=obj.srclist{channel};
     
 imstr=[fullfile(obj.srcpath{channel}, list(frame).name)];
+
+disp(imstr)
 
 if ~exist(imstr)
     disp('file does not exist ! Quitting....');

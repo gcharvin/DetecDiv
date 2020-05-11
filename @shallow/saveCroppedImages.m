@@ -21,7 +21,7 @@ end
 
 strpath=[obj.io.path obj.io.file];
 
-parfor i=fovid
+for i=fovid
     
     if numel(tmpfov(i).roi)==0
         disp('thid FOV has no ROI ! Quitting ....');
@@ -55,6 +55,8 @@ for j=1:numel(nframes)
     for k=1:numel(tmpfov(i).srclist) % loop on channels
         
     im=tmpfov(i).readImage(nframes(j),k);
+    
+    %size(im)
     
     im=imresize(im,tmpfov(i).display.binning(k)/tmpfov(i).display.binning(1));
     
