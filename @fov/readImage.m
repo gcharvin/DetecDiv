@@ -14,7 +14,7 @@ list=obj.srclist{channel};
     
 imstr=[fullfile(obj.srcpath{channel}, list(frame).name)];
 
-disp(imstr)
+%disp(imstr)
 
 if ~exist(imstr)
     disp('file does not exist ! Quitting....');
