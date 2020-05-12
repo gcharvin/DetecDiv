@@ -48,7 +48,10 @@ parfor i=fovid
 % 
 % % create fov specific directory 
 % 
+if ~exist([strpath '/' tmpfov(i).id],'dir')
  mkdir(strpath,tmpfov(i).id);
+end
+ 
 list={};
 
 for j=1:numel(nframes)

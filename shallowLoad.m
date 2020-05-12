@@ -37,7 +37,6 @@ for i=1:numel(shallowObj.fov)
 disp([shallowObj.fov(i).srcpath{1}]);
 end
 disp('* Need to update the path of the source images ?');
-disp('* To do so, use the setSrcPath function');
-disp('Not yet implemented !');
+disp('* To do so, use the shallowObj.setSrcPath function');
 end
 
