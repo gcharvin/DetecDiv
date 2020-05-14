@@ -105,7 +105,14 @@ for l=1:numel(tmpfov(i).roi)
        % size(tmp)
       %  size(tmpfov(i).roi(l).image)
        % rroi
-        tmpfov(i).roi(l).image(:,:,k,j)=tmp(rroi(2):rroi(2)+rroi(4)-1,rroi(1):rroi(1)+rroi(3)-1);
+       % make a test on ROI value
+       rroitmp=[];
+       rroitmp(1)=max(rroi(1),1);
+       rroitmp(2)=max(rroi(2),1);
+       rroitmp(3)=min(rroi(1)+rroi(3)-1,size(tmpfov(i).roi(l).image,2));
+       rroitmp(4)=min(rroi(2)+rroi(4)-1,size(tmpfov(i).roi(l).image,1));
+       
+        tmpfov(i).roi(l).image(:,:,k,j)=tmp(rroitmp(2):rroitmp(4),rroitmp(1):rroitmp(3));
         
     end
     %cc=cc+1;
