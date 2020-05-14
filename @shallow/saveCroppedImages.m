@@ -67,9 +67,9 @@ for j=1:numel(nframes)
     
     end
     
-  %  msg = sprintf('Reading frame: %d / %d for FOV %s', j, numel(nframes),tmpfov(i).id); %Don't forget this semicolon
-  %  fprintf([reverseStr, msg]);
-  %  reverseStr = repmat(sprintf('\b'), 1, length(msg));
+    msg = sprintf('Reading frame: %d / %d for FOV %s', j, numel(nframes),tmpfov(i).id); %Don't forget this semicolon
+    fprintf([reverseStr, msg]);
+    reverseStr = repmat(sprintf('\b'), 1, length(msg));
     
    % cc=cc+1;
 end
@@ -126,9 +126,9 @@ for l=1:numel(tmpfov(i).roi)
     tmpfov(i).roi(l).save;
     %tmpfov(i).roi(l).clear;
     
-    % msg = sprintf('Images in %d / %d ROIs saved for FOV %s', l , numel(tmpfov(i).roi), tmpfov(i).id); %Don't forget this semicolon
-    %fprintf([reverseStr, msg]);
-    %reverseStr = repmat(sprintf('\b'), 1, length(msg));
+     msg = sprintf('Images in %d / %d ROIs saved for FOV %s', l , numel(tmpfov(i).roi), tmpfov(i).id); %Don't forget this semicolon
+    fprintf([reverseStr, msg]);
+    reverseStr = repmat(sprintf('\b'), 1, length(msg));
 end
 fprintf('\n');
 end
