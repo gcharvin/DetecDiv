@@ -1,4 +1,4 @@
-function identifyROIs(obj,fovid,frameid)
+function identifyROIs(obj,fovid,frameid,thr)
 
 
 if numel(obj.processing.roi.pattern)==0
@@ -110,7 +110,7 @@ end
 end
 end
 
-function positions=findTraps(img,pattern)
+function positions=findTraps(img,pattern,thr)
 
 % position provides the list of boundaries for the traps
 %img = rgb2gray(img);
