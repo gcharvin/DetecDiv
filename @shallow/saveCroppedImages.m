@@ -67,9 +67,9 @@ for j=1:numel(nframes)
     
     end
     
-    msg = sprintf('Reading frame: %d / %d for FOV %s', j, numel(nframes),tmpfov(i).id); %Don't forget this semicolon
-    fprintf([reverseStr, msg]);
-    reverseStr = repmat(sprintf('\b'), 1, length(msg));
+  %  msg = sprintf('Reading frame: %d / %d for FOV %s', j, numel(nframes),tmpfov(i).id); %Don't forget this semicolon
+  %  fprintf([reverseStr, msg]);
+  %  reverseStr = repmat(sprintf('\b'), 1, length(msg));
     
    % cc=cc+1;
 end
@@ -107,10 +107,14 @@ for l=1:numel(tmpfov(i).roi)
        % rroi
        % make a test on ROI value
        rroitmp=[];
-       rroitmp(1)=max(rroi(1),1);
-       rroitmp(2)=max(rroi(2),1);
-       rroitmp(3)=min(rroi(1)+rroi(3)-1,size(tmpfov(i).roi(l).image,2));
-       rroitmp(4)=min(rroi(2)+rroi(4)-1,size(tmpfov(i).roi(l).image,1));
+       rroitmp(1)=max(rroi(1),1)
+       rroitmp(2)=max(rroi(2),1)
+       rroitmp(3)=min(rroi(1)+rroi(3)-1,size(tmp,2));
+       rroitmp(4)=min(rroi(2)+rroi(4)-1,size(tmp,1));
+       
+      
+      % rroitmp
+      % size(tmpfov(i).roi(l).image,1:2)
        
         tmpfov(i).roi(l).image(:,:,k,j)=tmp(rroitmp(2):rroitmp(4),rroitmp(1):rroitmp(3));
         
@@ -122,9 +126,9 @@ for l=1:numel(tmpfov(i).roi)
     tmpfov(i).roi(l).save;
     %tmpfov(i).roi(l).clear;
     
-     msg = sprintf('Images in %d / %d ROIs saved for FOV %s', l , numel(tmpfov(i).roi), tmpfov(i).id); %Don't forget this semicolon
-    fprintf([reverseStr, msg]);
-    reverseStr = repmat(sprintf('\b'), 1, length(msg));
+    % msg = sprintf('Images in %d / %d ROIs saved for FOV %s', l , numel(tmpfov(i).roi), tmpfov(i).id); %Don't forget this semicolon
+    %fprintf([reverseStr, msg]);
+    %reverseStr = repmat(sprintf('\b'), 1, length(msg));
 end
 fprintf('\n');
 end
