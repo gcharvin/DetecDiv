@@ -1,4 +1,4 @@
-function classifyPixelDeeplaNetbFun(roiobj,classif,classifier)
+function classifyPixelDeeplabNetFun(roiobj,classif,classifier)
 
 % this function can be used to classify any roi object, by providing the
 % classi object and the classifier
@@ -28,7 +28,11 @@ if numel(pix)==1
     gfp=formatImage(gfp);
 end
 
-gfp = imresize(gfp,inputSize(1:2));
+%size(gfp)
+%gfp = imresize(gfp,inputSize(1:2)); % do not resize image , deeplab
+%network can deal with differente sizes of images !
+
+%size(gfp)
 
 % BEWARE : rather use formatted image in lstm .mat variable
 % need to distinguish between formating for training versus validation
@@ -59,7 +63,7 @@ else
 end
 
 
-for fr=1:10%size(gfp,4)
+for fr=1:size(gfp,4)
     fprintf('.');
     % fr
     tmp=gfp(:,:,:,fr);
