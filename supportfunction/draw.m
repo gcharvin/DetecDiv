@@ -132,7 +132,7 @@ for i=1:numel(obj.display.channel)
         if dis==0
             him.image(cc)=imshow(im(cc).data);
         else
-            
+          %  'ok'
             him.image(cc)=imshow(im(cc).data,cmap);
            % 'ok'
             %return;
@@ -251,7 +251,9 @@ if numel(classif)>0
                 
                 set(htmp,'Tag',classif.strid);
                 axes(htmp);
-                alpha(0.5);
+                alpha(0.3);
+                
+                 linkaxes([hp htmp]);
             end
         end
         

@@ -39,7 +39,7 @@ else
    matrix=uint16(zeros(size(gfp,1),size(gfp,2),1,size(gfp,4)));
    rgb=[1 1 1];
    intensity=[0 0 0];
-   pixresults=size(gfp,3)+1;
+   pixresults=size(roiobj.image,3)+1;
    roiobj.addChannel(matrix,['results_' classif.strid],rgb,intensity);
 end
 

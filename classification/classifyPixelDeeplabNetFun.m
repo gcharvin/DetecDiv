@@ -54,12 +54,12 @@ else
    matrix=uint16(zeros(size(gfp,1),size(gfp,2),1,size(gfp,4)));
    rgb=[1 1 1];
    intensity=[0 0 0];
-   pixresults=size(gfp,3)+1;
+   pixresults=size(roiobj.image,3)+1;
    roiobj.addChannel(matrix,['results_' classif.strid],rgb,intensity);
 end
 
 
-for fr=1:size(gfp,4)
+for fr=1:10%size(gfp,4)
     fprintf('.');
     % fr
     tmp=gfp(:,:,:,fr);
@@ -68,13 +68,13 @@ for fr=1:size(gfp,4)
     % size(tmp)
     
     
-    C = semanticseg(tmp, net); % this is no longer required if we extract the probabilities from the previous layer
+    %C = semanticseg(tmp, net); % this is no longer required if we extract the probabilities from the previous layer
     
     %class(C)
     %size(C)
    % C(1,1),C(1,2)
     
-    %features = activations(net,tmp,'softmax-out'); % this is used to get the probabilities rather than the classification itself
+    features = activations(net,tmp,'softmax-out'); % this is used to get the probabilities rather than the classification itself
     
     %size(features)
     %features(1,1,1)
@@ -82,7 +82,8 @@ for fr=1:size(gfp,4)
     % to be troubleshooted from here , because each class will have a
     % probability , not onyl the cell class 
     
-    %BW=features(:,:,2)>0.9; % mark as cell when probability is higher than 0.9
+    
+     % mark as cell when probability is higher than 0.9
     
     
     
@@ -90,18 +91,32 @@ for fr=1:size(gfp,4)
     % step 
     
     
-    for i=1:numel(classif.classes)
-        
-    BW=logical(C==string(classif.classes{i}));
+    for i=2:numel(classif.classes) % 1 st class is considered default class
+       %if i>1
+     BW=features(:,:,i)>0.9;   
+     %  else
+     %BW=features(:,:,2)>0.9;         
+     %  end
+       %end
+       
+    %BW=logical(C==string(classif.classes{i}));
    % i
    % size(BW)
    % max(BW(:))
-   % figure, imshow(BW,[]);
-    
-    
+    %figure, imshow(BW,[]);
+
     res=uint16(uint8(BW)*(i));
+    
+    %pixresults
     roiobj.image(:,:,pixresults,fr)=roiobj.image(:,:,pixresults,fr)+res;
+
     end
+    
+    tm=roiobj.image(:,:,pixresults,fr); % assign 1 to defualt class
+    pix=roiobj.image(:,:,pixresults,fr)==0;
+    tm(pix)=1;
+    roiobj.image(:,:,pixresults,fr)=tm;
+    
     
     % TO DO add specific function to perform watershed don the result
 %     BW=~BW;

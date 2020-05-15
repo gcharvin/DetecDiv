@@ -161,8 +161,8 @@ numTrain = round(0.70 * numFiles);
 trainingIdx = shuffledIndices(1:numTrain);
 
 % Use 20% of the images for validation
-numVal = round(0.30 * numFiles);
-valIdx = shuffledIndices(numTrain+1:numTrain+numVal);
+numtot = min(numTrain+round(0.30 * numFiles),numel(shuffledIndices));
+valIdx = shuffledIndices(numTrain+1:numtot);
 
 % Use the rest for testing.
 %testIdx = shuffledIndices(numTrain+numVal+1:end);

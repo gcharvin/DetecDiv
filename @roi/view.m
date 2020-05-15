@@ -26,7 +26,7 @@ if numel(findobj('Tag',['ROI' obj.id])) % handle exists already
     h=findobj('Tag',['ROI' obj.id]);
     %'ok'
 else
-    h=figure('Tag',['ROI' obj.id],'MenuBar','none','Toolbar','none');
+    h=figure('Tag',['ROI' obj.id]);%'Toolbar','none');%,'MenuBar','none');%,'Toolbar','none');
 end
  draw(obj,h,classif);
 end

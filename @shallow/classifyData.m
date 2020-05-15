@@ -57,6 +57,11 @@ parfor i=1:size(roilist,2) % loop on all ROIs
     
  roiobj=obj.fov(roilist(1,i)).roi(roilist(2,i));
  
+ 
+ if numel(roiobj.id)==0
+     continue;
+ end
+ 
   disp('-----------');
   disp(['Classifying ' num2str(roiobj.id)]);
  

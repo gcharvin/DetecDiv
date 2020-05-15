@@ -105,6 +105,7 @@ cltmp=classif.roi;
 
 disp('Starting parallelized jobs for data formatting....')
 
+warning off all
 parfor i=rois
     disp(['Launching ROI: ' num2str(i) ' processing...'])
     
@@ -308,6 +309,7 @@ parfor i=rois
 
     disp(['Processing ROI: ' num2str(i) ' ... Done !'])
 end
+warning on all;
 
 for i=rois
     cltmp(i).clear;
