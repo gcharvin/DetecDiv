@@ -29,8 +29,6 @@ if numel(pix)==1
 end
 
 %size(gfp)
-%gfp = imresize(gfp,inputSize(1:2)); % do not resize image , deeplab
-%network can deal with differente sizes of images !
 
 %size(gfp)
 
@@ -63,7 +61,7 @@ else
 end
 
 
-for fr=1:size(gfp,4)
+for fr=1:1%size(gfp,4)
     fprintf('.');
     % fr
     tmp=gfp(:,:,:,fr);
@@ -71,7 +69,13 @@ for fr=1:size(gfp,4)
     % tmp=permute(tmp,[1 2 4 3]);
     % size(tmp)
     
+   % size(tmp)
     
+    if size(tmp,1)<inputSize(1) | size(tmp,2)<inputSize(2)
+       tmp=imresize(tmp,inputSize(1:2)); 
+    end
+    
+  %  size(tmp)
     %C = semanticseg(tmp, net); % this is no longer required if we extract the probabilities from the previous layer
     
     %class(C)
@@ -79,6 +83,14 @@ for fr=1:size(gfp,4)
    % C(1,1),C(1,2)
     
     features = activations(net,tmp,'softmax-out'); % this is used to get the probabilities rather than the classification itself
+    
+    %size(features)
+    
+    if size(gfp,1)<inputSize(1) | size(gfp,2)<inputSize(2)
+        features=imresize(features,size(gfp,1:2)); 
+    end
+    
+   % size(features)
     
     %size(features)
     %features(1,1,1)
