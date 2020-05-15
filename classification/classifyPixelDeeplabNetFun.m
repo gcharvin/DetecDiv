@@ -61,7 +61,7 @@ else
 end
 
 
-for fr=1:1%size(gfp,4)
+for fr=1:size(gfp,4)
     fprintf('.');
     % fr
     tmp=gfp(:,:,:,fr);
