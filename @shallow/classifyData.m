@@ -10,7 +10,7 @@ if nargin<=3
    classifier=[];
 end
 
-if nargin==2
+if nargin==2 | numel(roilist)==0
    % classify all ROIs
    roilist=[];
    roilist2=[];

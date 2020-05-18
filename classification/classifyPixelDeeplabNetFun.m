@@ -48,7 +48,9 @@ pixresults=findChannelID(roiobj,['results_' classif.strid]);
 %         end           
 
 %if numel(cc)>0   
-if numel(pixresults)>0
+
+if numel(pixresults)>0 
+    
 %pixresults=find(roiobj.channelid==cc); % find channels corresponding to trained data
 roiobj.image(:,:,pixresults,:)=uint16(zeros(size(gfp,1),size(gfp,2),1,size(gfp,4)));
 else
@@ -60,6 +62,9 @@ else
    roiobj.addChannel(matrix,['results_' classif.strid],rgb,intensity);
 end
 
+%pixresults
+%roiobj
+%return; 
 
 for fr=1:size(gfp,4)
     fprintf('.');
