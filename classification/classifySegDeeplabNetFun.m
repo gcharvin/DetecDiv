@@ -19,9 +19,9 @@ inputSize = net.Layers(1).InputSize;
 % classNames = net.Layers(end).ClassNames;
 % numClasses = numel(classNames);
 
-%if numel(roiobj.image)==0 % load stored image in any case
+if numel(roiobj.image)==0 % load stored image in any case
     roiobj.load;
-%end
+end
 
 pix=find(roiobj.channelid==classif.channel(1)); % find channels corresponding to trained data
 gfp=roiobj.image(:,:,pix,:);
@@ -68,7 +68,7 @@ end
 %roiobj
 %return; 
 
-for fr=1:size(gfp,4)
+for fr=1:1%size(gfp,4)
     fprintf('.');
     % fr
     tmp=gfp(:,:,:,fr);
@@ -105,8 +105,9 @@ for fr=1:size(gfp,4)
     % post processing --> watershed segmentation to be performed in a later
     % step 
     
+    tmpout=uint16(zeros(size(roiobj.image(:,:,pixresults,fr))));
     
-    for i=1:numel(classif.classes) % 1 st class is considered default class
+    for i=2:numel(classif.classes) % 1 st class is considered default class
        %if i>1
      BW=features(:,:,i)>0.9;   
      %  else
@@ -123,36 +124,40 @@ for fr=1:size(gfp,4)
     res=uint16(uint8(BW)*(i));
     
     %pixresults
-    roiobj.image(:,:,pixresults,fr)=roiobj.image(:,:,pixresults,fr)+res;
+    tmpout=tmpout+res;
 
     end
     
-%     tm=roiobj.image(:,:,pixresults,fr); % assign 1 to defualt class
-%     pix=roiobj.image(:,:,pixresults,fr)==0;
-%     tm(pix)=1;
-%     roiobj.image(:,:,pixresults,fr)=tm;
+    tm=tmpout; 
+    pix=tmpout==0; % pixel not classified
+    tm(pix)=1; % assign 1 to not classified pixels
+    BW=tm>1;
     
-    %figure, imshow(roiobj.image(:,:,pixresults,fr),[]);
+    %roiobj.image(:,:,pixresults,fr)=tm;
+    
+    %figure, imshow(tm,[]);
     
 %     % TO DO add specific function to perform watershed don the result
-% %     BW=~BW;
-% %     
-% %     imdist=bwdist(BW);
-% %     imdist = imclose(imdist, strel('disk',2));
-% %     imdist = imhmax(imdist,1);
-% %     
-% %     sous=- imdist;
-% %     
-% %     %figure, imshow(BW,[]);
-% %     
-% %     labels = double(watershed(sous,8)).* ~BW;% .* BW % .* param.mask; % watershed
-% %     warning off all
-% %     %tmp = imopen(labels > 0, strel('disk', 4));
-% %     warning on all
-% %     %tmp = bwareaopen(tmp, 50);
-% %     
-% %     newlabels = labels;% .* tmp; % remove small features
-% %     newlabels = newlabels>0;
+    BW=~BW;
+    
+    imdist=bwdist(BW);
+    imdist = imclose(imdist, strel('disk',2));
+    imdist = imhmax(imdist,1);
+    
+    sous=- imdist;
+    
+    %figure, imshow(BW,[]);
+    
+    labels = double(watershed(sous,8)).* ~BW;% .* BW % .* param.mask; % watershed
+    warning off all
+    %tmp = imopen(labels > 0, strel('disk', 4));
+    warning on all
+    %tmp = bwareaopen(tmp, 50);
+    
+    newlabels = labels;% .* tmp; % remove small features
+    newlabels = newlabels>0;
+    
+    roiobj.image(:,:,pixresults,fr)=newlabels;
     
     %figure, imshow(newlabels,[]);
     %return

@@ -10,7 +10,7 @@ category=category{1};
 
 foldername='trainingdataset';
 
-if nargin<3  % removeand recreares all directoires
+if nargin<3  % remove and recreates all directoires
     
 % mk folder to store ground user trained data
 

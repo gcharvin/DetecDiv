@@ -30,6 +30,11 @@ if numel(classitype)==0
     classitype=1;
 end
 
+if strcmp(classlist{classitype,2},'Cell segmentation')
+  
+    
+end
+
 disp('For object classification, you need to provide 1 channel for images and 1 for objects');
 prompt='Please enter the channel(s) on which to operate the classification ? (Default:1): ';
 channeltype= input(prompt,'s');
@@ -39,12 +44,18 @@ else
    channeltype=str2num(channeltype); 
 end
 
+
+if ~strcmp(classlist{classitype,2},'Cell segmentation') % if cell segmentation, then class number is bacjground and cell by default
+   
 prompt='Please enter the classes names that you want  (Default: class1 class2): ';
 classes= input(prompt,'s');
 
 if isempty(classes)
    % 'ok'
     classes=['class1 class2'];
+end
+else
+     classes=['background cell'];
 end
 
 classes = textscan(classes,'%s','Delimiter',' ')';
