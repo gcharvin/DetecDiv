@@ -83,5 +83,5 @@ obj.fov(roilist(1,i)).roi(roilist(2,i)).clear;
 end
 
 
-%shallowSave(obj);
+shallowSave(obj);
 
