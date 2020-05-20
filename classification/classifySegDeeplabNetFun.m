@@ -19,9 +19,9 @@ inputSize = net.Layers(1).InputSize;
 % classNames = net.Layers(end).ClassNames;
 % numClasses = numel(classNames);
 
-if numel(roiobj.image)==0 % load stored image in any case
+%if numel(roiobj.image)==0 % load stored image in any case
     roiobj.load;
-end
+%end
 
 pix=find(roiobj.channelid==classif.channel(1)); % find channels corresponding to trained data
 gfp=roiobj.image(:,:,pix,:);
@@ -68,7 +68,7 @@ end
 %roiobj
 %return; 
 
-for fr=1:1%size(gfp,4)
+for fr=1:size(gfp,4)
     fprintf('.');
     % fr
     tmp=gfp(:,:,:,fr);
