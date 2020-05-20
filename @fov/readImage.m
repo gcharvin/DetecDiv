@@ -14,14 +14,15 @@ list=obj.srclist{channel};
     
 imstr=[fullfile(obj.srcpath{channel}, list(frame).name)];
 
-%disp(imstr)
 
 if ~exist(imstr)
-    disp('file does not exist ! Quitting....');
+    disp('folder exists, but file does not  ! Quitting....');
 else
      im=imread(imstr);   
 end
 
+else
+   disp('folder does not exist ! Quitting....'); 
 end
 
 

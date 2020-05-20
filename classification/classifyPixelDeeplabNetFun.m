@@ -1,7 +1,9 @@
-function classifyPixelDeeplabNetFun(roiobj,classif,classifier)
+function roiout=classifyPixelDeeplabNetFun(roiobj,classif,classifier)
 
 % this function can be used to classify any roi object, by providing the
 % classi object and the classifier
+
+roiout=roiobj;
 
 if numel(classifier)==0 % loading the classifier // not recommende because it takes time
     path=classif.path;
@@ -17,9 +19,9 @@ inputSize = net.Layers(1).InputSize;
 % classNames = net.Layers(end).ClassNames;
 % numClasses = numel(classNames);
 
-if numel(roiobj.image)==0
+%if numel(roiobj.image)==0 % load stored image in any case
     roiobj.load;
-end
+%end
 
 pix=find(roiobj.channelid==classif.channel(1)); % find channels corresponding to trained data
 gfp=roiobj.image(:,:,pix,:);
@@ -70,22 +72,22 @@ for fr=1:size(gfp,4)
     fprintf('.');
     % fr
     tmp=gfp(:,:,:,fr);
-    % size(tmp)
-    % tmp=permute(tmp,[1 2 4 3]);
-    % size(tmp)
+
+
+    %roiobj.image(:,:,pixresults,fr)=2;
     
-   % size(tmp)
+    %mean(tmp(:))
+   % pixresults
+    
+    %roiobj
+    
+    %figure, imshow(roiobj.image(:,:,pixresults,fr),[]);
     
     if size(tmp,1)<inputSize(1) | size(tmp,2)<inputSize(2)
        tmp=imresize(tmp,inputSize(1:2)); 
     end
     
-  %  size(tmp)
     %C = semanticseg(tmp, net); % this is no longer required if we extract the probabilities from the previous layer
-    
-    %class(C)
-    %size(C)
-   % C(1,1),C(1,2)
     
    if numel(gpuDeviceCount)>0
     features = activations(net,tmp,'softmax-out'); % this is used to get the probabilities rather than the classification itself
@@ -97,20 +99,9 @@ for fr=1:size(gfp,4)
     if size(gfp,1)<inputSize(1) | size(gfp,2)<inputSize(2)
         features=imresize(features,size(gfp,1:2)); 
     end
-    
-   % size(features)
-    
-    %size(features)
-    %features(1,1,1)
-    %features(1,1,2)
-    % to be troubleshooted from here , because each class will have a
-    % probability , not onyl the cell class 
-    
-    
+
      % mark as cell when probability is higher than 0.9
-    
-    
-    
+
     % post processing --> watershed segmentation to be performed in a later
     % step 
     
@@ -141,34 +132,37 @@ for fr=1:size(gfp,4)
     tm(pix)=1;
     roiobj.image(:,:,pixresults,fr)=tm;
     
+    %figure, imshow(roiobj.image(:,:,pixresults,fr),[]);
     
-    % TO DO add specific function to perform watershed don the result
-%     BW=~BW;
-%     
-%     imdist=bwdist(BW);
-%     imdist = imclose(imdist, strel('disk',2));
-%     imdist = imhmax(imdist,1);
-%     
-%     sous=- imdist;
-%     
-%     %figure, imshow(BW,[]);
-%     
-%     labels = double(watershed(sous,8)).* ~BW;% .* BW % .* param.mask; % watershed
-%     warning off all
-%     %tmp = imopen(labels > 0, strel('disk', 4));
-%     warning on all
-%     %tmp = bwareaopen(tmp, 50);
-%     
-%     newlabels = labels;% .* tmp; % remove small features
-%     newlabels = newlabels>0;
+%     % TO DO add specific function to perform watershed don the result
+% %     BW=~BW;
+% %     
+% %     imdist=bwdist(BW);
+% %     imdist = imclose(imdist, strel('disk',2));
+% %     imdist = imhmax(imdist,1);
+% %     
+% %     sous=- imdist;
+% %     
+% %     %figure, imshow(BW,[]);
+% %     
+% %     labels = double(watershed(sous,8)).* ~BW;% .* BW % .* param.mask; % watershed
+% %     warning off all
+% %     %tmp = imopen(labels > 0, strel('disk', 4));
+% %     warning on all
+% %     %tmp = bwareaopen(tmp, 50);
+% %     
+% %     newlabels = labels;% .* tmp; % remove small features
+% %     newlabels = newlabels>0;
     
     %figure, imshow(newlabels,[]);
     %return
     
 end
 
-roiobj.save;
-roiobj.clear;
+
+roiout=roiobj;
+%roiobj.save;
+%roiobj.clear;
 
 fprintf('\n');
 

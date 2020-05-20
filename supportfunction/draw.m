@@ -121,8 +121,8 @@ for i=1:numel(obj.display.channel)
         if dis==0 %  channel to be displayed is not that of the ongoing classification
         if sum(obj.display.intensity(i,:))==0 % choose colormap to use to plot indexed data
            dis=1;
-           
-           maxe=max(im(cc).data(:));
+           tp=obj.image(:,:,i,:);
+           maxe=max(tp(:));
            cmap=shallowColormap(maxe);
         end
         end
@@ -132,7 +132,7 @@ for i=1:numel(obj.display.channel)
         if dis==0
             him.image(cc)=imshow(im(cc).data);
         else
-          %  'ok'
+            
             him.image(cc)=imshow(im(cc).data,cmap);
            % 'ok'
             %return;

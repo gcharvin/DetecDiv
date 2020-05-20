@@ -35,6 +35,11 @@ else
     
     im=buildimage(obj); % returns a structure with all images to be displayed
     
+    if numel(im.data)==0
+        disp('Could not load image. Quitting...');
+        return;
+    end
+    
     h=figure('Tag',['Fov' obj.id]);
     
     str={};
@@ -179,7 +184,12 @@ frame=obj.display.frame;
 
 for i=1:obj.channels
     
+   
     tmp=readImage(obj,frame,i);
+    
+    if numel(tmp)==0
+        return;
+    end
     
     tmp=imresize(tmp,obj.display.binning(i)/obj.display.binning(1));
     

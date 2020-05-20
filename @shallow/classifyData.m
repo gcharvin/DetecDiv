@@ -50,14 +50,15 @@ end
 
 disp([num2str(size(roilist,2)) ' ROIs to classify, be patient...']);
 
-%tmp=obj.fov; 
+tmp=roi; % build list of rois
+for i=1:size(roilist,2)
+tmp(i)=obj.fov(roilist(1,i)).roi(roilist(2,i));
+end
 
-parfor i=1:size(roilist,2) % loop on all ROIs
-  %  aa=roilist(1,i),bb=roilist(2,i)
+parfor i=1:size(roilist,2) % loop on all ROIs using parrallel computing
     
- roiobj=obj.fov(roilist(1,i)).roi(roilist(2,i));
- 
- 
+ roiobj=tmp(i);
+
  if numel(roiobj.id)==0
      continue;
  end
@@ -69,11 +70,18 @@ parfor i=1:size(roilist,2) % loop on all ROIs
 %  roiobj.results=zeros(1,size(roiobj.image,4)); % pre allocate results for labels
 %  end
  
-feval(classifyFun,roiobj,classif,classifier); % launch the training function for classification
+tmp(i)=feval(classifyFun,roiobj,classif,classifier); % launch the training function for classification
 % since roiobj is a handle, no need to have an output to this the function
 % in roiobj.results
 
 end
+
+for i=1:size(roilist,2)
+obj.fov(roilist(1,i)).roi(roilist(2,i))=tmp(i);
+obj.fov(roilist(1,i)).roi(roilist(2,i)).save;
+obj.fov(roilist(1,i)).roi(roilist(2,i)).clear;
+end
+
 
 shallowSave(obj);
 

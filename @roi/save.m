@@ -7,7 +7,10 @@ im=obj.image;
 
 if numel(im)~=0
   %   ['save  ' '''' obj.path '/im_' num2str(obj.id) '.mat' ''''  ' im']
-eval(['save  ' '''' obj.path '/im_' num2str(obj.id) '.mat' ''''  ' im']); 
+  disp('');
+ fprintf(['Saving ' obj.path '/im_' obj.id '.mat image file for ROI ' obj.id '\n']);
+ 
+eval(['save  ' '''' obj.path '/im_' obj.id '.mat' ''''  ' im']); 
 end
 
 % '''' allows one to use quotes !!!
