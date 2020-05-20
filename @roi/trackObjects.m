@@ -30,8 +30,9 @@ end
 
 % initializes tracker
 
-tracker=trackerTOMHT; %('FilterInitializationFcn',@initcvekf);
-%tracker=trackerGNN;
+%tracker=trackerTOMHT; %('FilterInitializationFcn',@initcvekf);
+tracker=trackerGNN;
+%tracker=trackerJPDA;
 
 % dataLog=[];
 % dataLog.Time=[];

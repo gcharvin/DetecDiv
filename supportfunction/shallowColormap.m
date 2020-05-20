@@ -17,6 +17,7 @@ switch n
       if n<8
          cmap=jet(10);
       else
+          
           cmap=jet(n);
       end
 

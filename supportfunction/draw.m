@@ -122,7 +122,8 @@ for i=1:numel(obj.display.channel)
         if sum(obj.display.intensity(i,:))==0 % choose colormap to use to plot indexed data
            dis=1;
            tp=obj.image(:,:,i,:);
-           maxe=max(tp(:));
+           maxe=double(max(tp(:)));
+           
            cmap=shallowColormap(maxe);
         end
         end

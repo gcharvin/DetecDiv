@@ -55,7 +55,7 @@ for i=1:size(roilist,2)
 tmp(i)=obj.fov(roilist(1,i)).roi(roilist(2,i));
 end
 
-parfor i=1:size(roilist,2) % loop on all ROIs using parrallel computing
+for i=1:size(roilist,2) % loop on all ROIs using parrallel computing
     
  roiobj=tmp(i);
 
