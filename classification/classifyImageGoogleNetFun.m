@@ -36,7 +36,13 @@ numClasses = numel(classNames);
     % need to distinguish between formating for training versus validation
     % function --> formatfordeepclassification
     
-    [label,scores] = classify(net,gfp);
+   % [label,scores] = classify(net,gfp);
+    
+       if numel(gpuDeviceCount)==0
+    [label,scores] = classify(net,gfp); % this is used to get the probabilities rather than the classification itself
+   else
+    [label,scores] = classify(net,gfp,'Acceleration','mex');   
+   end
     
     % upload results into roi obj;
     
