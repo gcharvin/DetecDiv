@@ -389,6 +389,7 @@ else
     h.WindowButtonMotionFcn = '';
     h.WindowButtonUpFcn = '';
     figure(h); % set focus
+
     
 end
 
@@ -456,11 +457,13 @@ end
 % nested function, good luck ;-) ....
     function wbdcb(src,cbk)
         seltype = src.SelectionType;
+        ma=zeros(size(obj.image,1),size(obj.image,2));
         
         if strcmp(seltype,'normal')
-            src.Pointer = 'circle';
-            cp = hpaint.CurrentPoint;
+            src.Pointer = 'cross';
             
+            cp = hpaint.CurrentPoint;
+ 
             xinit = cp(1,1);
             yinit = cp(1,2);
             
@@ -471,13 +474,25 @@ end
             
         end
         if strcmp(seltype,'alt')
-            src.Pointer = 'circle';
+            src.Pointer = 'cross';
             cp = hpaint.CurrentPoint;
             xinit = cp(1,1);
             yinit = cp(1,2);
             % hl = line('XData',xinit,'YData',yinit,...
             % 'Marker','p','color','b');
             src.WindowButtonMotionFcn = {@wbmcb,2};
+            src.WindowButtonUpFcn = @wbucb;
+            
+        end
+         if strcmp(seltype,'extend')
+            src.Pointer = 'cross';
+            
+            cp = hpaint.CurrentPoint;
+            xinit = cp(1,1);
+            yinit = cp(1,2);
+            % hl = line('XData',xinit,'YData',yinit,...
+            % 'Marker','p','color','b');
+            src.WindowButtonMotionFcn = {@wbmcb,3};
             src.WindowButtonUpFcn = @wbucb;
             
         end
@@ -490,15 +505,51 @@ end
             
             %xdat = [xinit,cp(1,1)]
             %ydat = [yinit,cp(1,2)]
-            if bsize==1 % fine brush
-                xdat = [cp(1,1) ];
-                ydat = [cp(1,2) ];
-            else % large brush
+            
+            
+            
+            
+            switch bsize
+                case 2 % fine brush
+               % xdat = [cp(1,1) ];
+                %ydat = [cp(1,2) ];
+
+                mix=max(1,cp(1,2));
+                miy=max(1,cp(1,1));
+                mux=min(size(ma,1),cp(1,2));
+                muy=min(size(ma,1),cp(1,1));
                 
+               
                 
-                xdat = [cp(1,1) cp(1,1)+1 cp(1,1)-1 cp(1,1)+1 cp(1,1)-1 cp(1,1) cp(1,1) cp(1,1)+1 cp(1,1)-1];
-                ydat = [cp(1,2) cp(1,2)+1 cp(1,2)-1 cp(1,2)-1 cp(1,2)+1 cp(1,2)+1 cp(1,2)-1 cp(1,2) cp(1,2)];
+                case 1 % large brush
+                %xdat = [cp(1,1) cp(1,1)+1 cp(1,1)-1 cp(1,1)+1 cp(1,1)-1 cp(1,1) cp(1,1) cp(1,1)+1 cp(1,1)-1];
+                %ydat = [cp(1,2) cp(1,2)+1 cp(1,2)-1 cp(1,2)-1 cp(1,2)+1 cp(1,2)+1 cp(1,2)-1 cp(1,2) cp(1,2)];
+                
+                mix=max(1,cp(1,2)-1);
+                miy=max(1,cp(1,1)-1);
+                mux=min(size(ma,1),cp(1,2)+1);
+                muy=min(size(ma,1),cp(1,1)+1);
+                
+                %ma(mix:mux,miy:muy)=1;
+               % pis=ma>0;
+                
+                case 3 % huge brush
+                
+               % ma=zeros(size(obj,image,1),size(obj.image,2));
+                mix=max(1,cp(1,2)-8);
+                miy=max(1,cp(1,1)-8);
+                mux=min(size(ma,1),cp(1,2)+8);
+                muy=min(size(ma,1),cp(1,1)+8);
+                
+                %ma(mix:mux,miy:muy)=1;
+                %pis=ma>0;
+                % HERE
+                
+                    
             end
+            
+             ma(round(mix):round(mux),round(miy):round(muy))=1;
+              pis=ma>0;
             
             % enlarge pixel size
             
@@ -510,15 +561,15 @@ end
             
             % interpolate results
             
-            finalX=round(xdat);
-            finalY=round(ydat);
+           % finalX=round(xdat);
+           % finalY=round(ydat);
             
             % size(obj.image)
             
-            in=finalX<=size(obj.image,2) & finalY<=size(obj.image,1) & finalX>0 & finalY>0;
+           % in=finalX<=size(obj.image,2) & finalY<=size(obj.image,1) & finalX>0 & finalY>0;
             
-            finalX=finalX(in);
-            finalY=finalY(in);
+           % finalX=finalX(in);
+           % finalY=finalY(in);
             
             % finalX
             % finalY
@@ -529,7 +580,7 @@ end
             strcolo=replace(hclass.Tag,'classes_','');
             colo=str2num(strcolo);
             
-            if numel(finalX)>=0
+            if numel(pis)>=0
                 
                 %imtemp=imobj.CData;
                 
@@ -541,9 +592,14 @@ end
                 % int32(finalX)
                 %colortype*ones(1,length(finalX));
                 
-                linearInd = sub2ind(sz, int32(finalY), int32(finalX));%,1*ones(1,length(finalX)));
-                impaint1.CData(linearInd)=colo;
-                impaint2.CData(linearInd)=colo;
+               % linearInd = sub2ind(sz, int32(finalY), int32(finalX));%,1*ones(1,length(finalX)));
+                
+                
+               % impaint1.CData(linearInd)=colo;
+               % impaint2.CData(linearInd)=colo;
+                
+                impaint1.CData(pis)=colo;
+                impaint2.CData(pis)=colo;
                 
                 
                 % dave data in obj.image object
@@ -775,6 +831,7 @@ for i=1:numel(obj.display.channel)
             end
             % frame
             % size(obj.image)
+            
             imout=obj.image(:,:,pix,frame);
             
             if it~=0 % it=0 corresponds to binary or indexed images
@@ -897,7 +954,17 @@ for i=1:numel(keys) % display the selected class for the current image
                     if j~=i
                         ha.Checked='off';
                     else
+                       % if strcmp(ha.Checked,'off')
                         ha.Checked='on';
+                       % else
+                       % ha.Checked='off';
+                        
+                        % h.WindowButtonDownFcn='';
+                        % h.Pointer = 'arrow';
+                        % h.WindowButtonMotionFcn = '';
+                        % h.WindowButtonUpFcn = '';
+    %figure(h); % set focus
+                       % end
                         %draw(obj,h);
                     end
                 end

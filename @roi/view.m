@@ -12,6 +12,11 @@ if numel(obj.image)==0
     obj.load
 end
 
+if numel(obj.image)==0
+    disp('Impossible to display object !');
+    return;
+end
+
 if nargin>=2
     obj.display.frame=frame;
 end

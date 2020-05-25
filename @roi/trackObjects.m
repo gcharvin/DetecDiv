@@ -31,8 +31,13 @@ end
 % initializes tracker
 
 %tracker=trackerTOMHT; %('FilterInitializationFcn',@initcvekf);
-tracker=trackerGNN;
-%tracker=trackerJPDA;
+%tracker=trackerGNN;
+tracker=trackerJPDA(...
+    'MaxNumTracks', 50, ...
+    'MaxNumSensors', 1, ...
+    'AssignmentThreshold',20, ...
+    'TrackLogic','Integrated',...
+    'DetectionProbability', 0.95); %'MaxNumTracks',100);
 
 % dataLog=[];
 % dataLog.Time=[];
@@ -61,6 +66,8 @@ for i=1:size(im,4)
     fprintf('.');
     
     l=bwlabel(im(:,:,1,i));
+    
+    %figure, imshow(l,[])
     p=regionprops(l,'Centroid');
     n=numel(p);
     
@@ -106,12 +113,15 @@ for i=1:size(im,4)
 %     
 %     
      [pos,cov] = getTrackPositions(tracks,[1 0 0 0 0 0;0 0 1 0 0 0;0 0 0 0 1 0]);
+     %pos
       
       if numel(pos)>0 % if there is an avaiable track for this time 
           
+          obj.image(:,:,pixresults,i)=0;
           for j=1:size(pos,1) % loops on track
             
-          val=l(round(pos(j,2)),round(pos(j,1))); %object corresponding to track
+          val=l(round(pos(j,2)),round(pos(j,1)));
+          %object corresponding to track
           
           if val>0 % track is located onto an actual object
               testim=l==val;
@@ -125,7 +135,7 @@ for i=1:size(im,4)
              % figure, imshow(testim,[]);
              % return;
               
-              obj.image(:,:,pixresults,i)=uint16(testim);
+              obj.image(:,:,pixresults,i)=obj.image(:,:,pixresults,i)+uint16(testim);
               
           end
         %  obj.image(round(pos(j,2))-1:round(pos(j,2))+1,round(pos(j,1))-1:round(pos(j,1))+1,pixresults,i)=4;
