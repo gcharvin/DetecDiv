@@ -60,6 +60,7 @@ for i=1:size(rois,2)
      im=obj.processing.classification(n).roi(cc+1).image;
      matrix=uint16(zeros(size(im,1),size(im,2),1,size(im,4)));
      obj.processing.classification(n).roi(cc+1).addChannel(matrix,obj.processing.classification(n).strid,[1 1 1],[0 0 0]); 
+     obj.processing.classification(n).roi(cc+1).display.selectedchannel(end)=1;
      %pixelchannel=size(obj.image,3);
     end
     

@@ -98,6 +98,7 @@ hp=[];
 pos=h.Position;
 
 if numel(classif)>0
+    %'ok'
     cmap=classif.colormap;
 end
 
@@ -123,7 +124,7 @@ for i=1:numel(obj.display.channel)
            dis=1;
            tp=obj.image(:,:,i,:);
            maxe=double(max(tp(:)));
-           
+         %  'pasok'
            cmap=shallowColormap(maxe);
         end
         end
@@ -270,6 +271,7 @@ if numel(classif)>0
     mitem=[];
     
     for i=1:numel(obj.classes)
+       
         mitem(i) = uimenu(m,'Text',obj.classes{i},'Checked','off','Tag',['classes_' num2str(i)],'ForegroundColor',cmap(i+1,:),'Accelerator',keys{i});
         
         if strcmp(classif.category{1},'Pixel') | strcmp(classif.category{1},'Object') % only in pixel mode
