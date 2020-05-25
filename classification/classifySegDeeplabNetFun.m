@@ -89,11 +89,11 @@ for fr=1:size(gfp,4)
     
     %C = semanticseg(tmp, net); % this is no longer required if we extract the probabilities from the previous layer
     
-   if numel(gpuDeviceCount)==0
+  % if numel(gpuDeviceCount)==0
     features = activations(net,tmp,'softmax-out'); % this is used to get the probabilities rather than the classification itself
-   else
-    features = activations(net,tmp,'softmax-out','Acceleration','mex');   
-   end
+ %  else
+ %   features = activations(net,tmp,'softmax-out','Acceleration','mex');   
+ %  end
     %size(features)
     
     if size(gfp,1)<inputSize(1) | size(gfp,2)<inputSize(2)
