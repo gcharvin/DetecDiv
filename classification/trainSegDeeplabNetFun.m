@@ -75,7 +75,8 @@ classWeights = median(imageFreq) ./ imageFreq;
 pxLayer = pixelClassificationLayer('Name','labels','Classes',tbl.Name); %,'ClassWeights',classWeights); % removing the weights helped increase the resolution 
 lgraph = replaceLayer(lgraph,"classification",pxLayer);
 
-pximdsVal = pixelLabelImageDatastore(imdsVal,pxdsVal,'OutputSize',imageSize,'OutputSizeMode','resize');
+
+pximdsVal = pixelLabelImageDatastore(imdsVal,pxdsVal,'OutputSize',imageSize(1:2),'OutputSizeMode','resize');
 
 % L2regularisation = 0.005;
 
@@ -128,7 +129,7 @@ augmenter = imageDataAugmenter('RandXReflection',true,'RandYReflection',true,...
 %   'RandXScale',[0.9 1.1],'RandYScale',[0.9 1.1],... 
 
 pximds = pixelLabelImageDatastore(imdsTrain,pxdsTrain, ...
-    'DataAugmentation',augmenter,'OutputSize',imageSize,'OutputSizeMode','resize'); % default input size imga for training 
+    'DataAugmentation',augmenter,'OutputSize',imageSize(1:2),'OutputSizeMode','resize'); % default input size imga for training 
 
 %if doTraining
  [classifier, info] = trainNetwork(pximds,lgraph,options);
