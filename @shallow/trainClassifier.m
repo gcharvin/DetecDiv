@@ -1,5 +1,6 @@
 function trainClassifier(obj,classiid)
 
+
 % first format data for training procedure and save to disk
 
 %obj.formatDataForTraining(classiid);
