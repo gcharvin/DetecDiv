@@ -101,13 +101,14 @@ else
  rois=option ;  
 end
 
+
 cltmp=classif.roi; 
 
 disp('Starting parallelized jobs for data formatting....')
 
 warning off all
 parfor i=rois
-    disp(['Launching ROI: ' num2str(i) ' processing...'])
+    disp(['Launching ROI ' num2str(i) :' processing...'])
     
     
     if numel(cltmp(i).image)==0
@@ -283,7 +284,18 @@ parfor i=rois
             tmplab=lab(:,:,:,j);
             if max(tmplab(:))>0 % test if image has been manually annotated
            %  'ok'
+           
+           % pads images - the traininer network expects images bigger or
+           % equal to 500 x 500. 
+           % For images smaller than that, image padding is achieved to
+           % enlarge it. 
+           
+         %  exptmp=tmp;
+           
+
+           
                 imwrite(tmp,[classif.path '/' foldername '/images/' cltmp(i).id '_frame_' tr '.tif']);
+                
                 imwrite(labels(:,:,:,j),[classif.path '/' foldername '/labels/' cltmp(i).id '_frame_' tr '.tif']);
                 
                 
