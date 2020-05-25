@@ -1,4 +1,4 @@
-function classifyImageLSTMNetFun(roiobj,classif,classifier)
+function roiout=classifyImageLSTMNetFun(roiobj,classif,classifier)
 
 %load([path '/netCNN.mat']); % load the googlenet to get the input size of image
 
@@ -124,7 +124,9 @@ results=roiobj.results;
     end
 
 roiobj.results=results; 
-roiobj.clear;    
+
+roiout=roiobj;
+%roiobj.clear;    
 
 % results.id=roiobj.id;
 % results.path=roiobj.path;

@@ -1,4 +1,4 @@
-function classifyImageGoogleNetFun(roiobj,classif,classifier)
+function roiout=classifyImageGoogleNetFun(roiobj,classif,classifier)
 
 % this function can be used to classify any roi object, by providing the
 % classi object and the classifier 
@@ -54,7 +54,8 @@ numClasses = numel(classNames);
     
     end
     
-    roiobj.clear;  
+    roiout=roiobj;
+   % roiobj.clear;  
     
     
 
