@@ -75,7 +75,7 @@ classWeights = median(imageFreq) ./ imageFreq;
 pxLayer = pixelClassificationLayer('Name','labels','Classes',tbl.Name); %,'ClassWeights',classWeights); % removing the weights helped increase the resolution 
 lgraph = replaceLayer(lgraph,"classification",pxLayer);
 
-pximdsVal = pixelLabelImageDatastore(imdsVal,pxdsVal);
+pximdsVal = pixelLabelImageDatastore(imdsVal,pxdsVal,'OutputSize',imageSize,'OutputSizeMode','resize');
 
 % L2regularisation = 0.005;
 
