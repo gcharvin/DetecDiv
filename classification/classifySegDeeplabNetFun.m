@@ -87,7 +87,7 @@ for fr=1:size(gfp,4)
        tmp=imresize(tmp,inputSize(1:2)); 
     end
     
-    C = semanticseg(tmp, net,'Acceleration','mex'); % this is no longer required if we extract the probabilities from the previous layer
+    C = semanticseg(tmp, net);%,'Acceleration','mex'); % this is no longer required if we extract the probabilities from the previous layer
     
     
   % if numel(gpuDeviceCount)==0
@@ -152,11 +152,11 @@ for fr=1:size(gfp,4)
     
     labels = double(watershed(sous,8)).* ~BW;% .* BW % .* param.mask; % watershed
     warning off all
-    %tmp = imopen(labels > 0, strel('disk', 4));
+    tmp = imopen(labels > 0, strel('disk', 4));
     warning on all
-    %tmp = bwareaopen(tmp, 50);
+    tmp = bwareaopen(tmp, 50);
     
-    newlabels = labels;% .* tmp; % remove small features
+    newlabels = labels.* tmp; % remove small features
     newlabels = newlabels>0;
     
     roiobj.image(:,:,pixresults,fr)=newlabels;
