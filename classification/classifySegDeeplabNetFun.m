@@ -98,7 +98,7 @@ for fr=1:size(gfp,4)
     %size(features)
     
     if size(gfp,1)<inputSize(1) | size(gfp,2)<inputSize(2)
-       % features=imresize(features,size(gfp,1:2)); 
+        features=imresize(features,size(gfp,1:2)); 
         C=imresize(C,size(gfp,1:2));
     end
 
@@ -108,6 +108,7 @@ for fr=1:size(gfp,4)
     % step 
     
     tmpout=uint16(zeros(size(roiobj.image(:,:,pixresults,fr))));
+    
     
     for i=2:numel(classif.classes) % 1 st class is considered default class
      
