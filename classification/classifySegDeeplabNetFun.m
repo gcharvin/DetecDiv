@@ -87,7 +87,7 @@ for fr=1:size(gfp,4)
        tmp=imresize(tmp,inputSize(1:2)); 
     end
     
-    C = semanticseg(tmp, net); % this is no longer required if we extract the probabilities from the previous layer
+    C = semanticseg(tmp, net,'Acceleration','mex'); % this is no longer required if we extract the probabilities from the previous layer
     
     
   % if numel(gpuDeviceCount)==0
@@ -99,7 +99,7 @@ for fr=1:size(gfp,4)
     
     if size(gfp,1)<inputSize(1) | size(gfp,2)<inputSize(2)
        % features=imresize(features,size(gfp,1:2)); 
-        C=imresize(C,size(gfp,1:2),'Acceleration','mex');
+        C=imresize(C,size(gfp,1:2));
     end
 
      % mark as cell when probability is higher than 0.9
