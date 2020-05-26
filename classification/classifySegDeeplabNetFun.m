@@ -87,7 +87,7 @@ for fr=1:size(gfp,4)
        tmp=imresize(tmp,inputSize(1:2)); 
     end
     
-    C = semanticseg(tmp, net);%,'Acceleration','mex'); % this is no longer required if we extract the probabilities from the previous layer
+    [C,score,features]= semanticseg(tmp, net);%,'Acceleration','mex'); % this is no longer required if we extract the probabilities from the previous layer
     
     
   % if numel(gpuDeviceCount)==0
@@ -111,10 +111,11 @@ for fr=1:size(gfp,4)
     
     for i=2:numel(classif.classes) % 1 st class is considered default class
      
-    % BW=features(:,:,i)>0.9;   
+     BW=features(:,:,i)>0.9;   
    
        
-    BW=logical(C==string(classif.classes{i}));
+    %BW=logical(C==string(classif.classes{i}));
+    
    % i
    % size(BW)
    % max(BW(:))
