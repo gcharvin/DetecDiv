@@ -73,7 +73,7 @@ imageFreq = tbl.PixelCount ./ tbl.ImagePixelCount;
 classWeights = median(imageFreq) ./ imageFreq;
 
 %analyzeNetwork(lgraph)
-pxLayer = pixelClassificationLayer('Name','labels','Classes',tbl.Name); %,'ClassWeights',classWeights); % removing the weights helped increase the resolution 
+pxLayer = pixelClassificationLayer('Name','labels','Classes',tbl.Name,'ClassWeights',classWeights); % removing the weights helped increase the resolution 
 lgraph = replaceLayer(lgraph,"classification",pxLayer);
 
 
@@ -181,11 +181,11 @@ numFiles = numel(imds.Files);
 shuffledIndices = randperm(numFiles);
 
 % Use 70% of the images for training.
-numTrain = round(0.70 * numFiles)
+numTrain = round(0.70 * numFiles);
 trainingIdx = shuffledIndices(1:numTrain);
 
 % Use 20% of the images for validation
-numtot = min(numTrain+round(0.30 * numFiles),numel(shuffledIndices))
+numtot = min(numTrain+round(0.30 * numFiles),numel(shuffledIndices));
 valIdx = shuffledIndices(numTrain+1:numtot);
 
 % Use the rest for testing.
