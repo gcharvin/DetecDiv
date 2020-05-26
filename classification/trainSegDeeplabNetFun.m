@@ -54,6 +54,7 @@ pxds = pixelLabelDatastore(labelsfoldername,classes,labelsIDs);
 
 [imdsTrain, imdsVal, pxdsTrain, pxdsVal] = partitionCamVidData(imds,pxds,classes,labelsIDs);
 
+
 % Specify the network image size. This is typically the same as the traing image sizes.
 imageSize = size(I); %[720 960 3];
 
@@ -180,11 +181,11 @@ numFiles = numel(imds.Files);
 shuffledIndices = randperm(numFiles);
 
 % Use 70% of the images for training.
-numTrain = round(0.70 * numFiles);
+numTrain = round(0.70 * numFiles)
 trainingIdx = shuffledIndices(1:numTrain);
 
 % Use 20% of the images for validation
-numtot = min(numTrain+round(0.30 * numFiles),numel(shuffledIndices));
+numtot = min(numTrain+round(0.30 * numFiles),numel(shuffledIndices))
 valIdx = shuffledIndices(numTrain+1:numtot);
 
 % Use the rest for testing.

@@ -149,20 +149,35 @@ parfor i=rois
         
         if numel(cc)>0
         pixcc=find(cltmp(i).channelid==cc);
-        % size(cltmp(i).image)
+        
         lab=cltmp(i).image(:,:,pixcc,:);
         
-        labels= double(zeros(size(lab,1),size(lab,2),3,size(lab,4)));
+        % changes from here
+        lab=lab>1; % takes only the second class into account
+        lab=~lab;
+        dist= double(zeros(size(lab,1),size(lab,2),1,size(lab,4)));
         
-       % figure, imshow(lab(:,:,:,9),[]);
-        % return;
+        for k=1:size(dist,4)
+            dist(:,:,1,k)=round(bwdist(lab(:,:,1,k))/2); % distance transform
+        end
+        
+         % distance transform
+        
+        labels= double(zeros(size(lab,1),size(lab,2),3,size(lab,4)));
+       
         
         for j=1:numel(classif.classes)
             
-            if j==defaultclass % 
-            pixz=lab(:,:,1,:)==j | lab(:,:,1,:)==0; % WARNING !!!! add unassigned pixels to this class
-            else
-            pixz=lab(:,:,1,:)==j;   
+            switch j
+                case numel(classif.classes) % las class contains all
+            pixz=dist(:,:,1,:)>=j-1 % WARNING !!!! add unassigned pixels to this class
+         
+                case 1
+            pixz=dist(:,:,1,:)==0;   
+            
+                otherwise
+            pixz=dist(:,:,1,:)==j-1;       
+            
             end
             
             labtmp2=double(zeros(size(lab,1),size(lab,2),1,size(lab,4)));
@@ -173,13 +188,35 @@ parfor i=rois
             end
             
         end
-        end
+
+
+        % to here 
+        
+%         
+%         labels= double(zeros(size(lab,1),size(lab,2),3,size(lab,4)));
+%        
+%         
+%         for j=1:numel(classif.classes)
+%             
+%             if j==defaultclass % 
+%             pixz=lab(:,:,1,:)==j | lab(:,:,1,:)==0; % WARNING !!!! add unassigned pixels to this class
+%             else
+%             pixz=lab(:,:,1,:)==j;   
+%             end
+%             
+%             labtmp2=double(zeros(size(lab,1),size(lab,2),1,size(lab,4)));
+%             labtmp2(pixz)=1;
+%             
+%             for  k=1:3
+%                 labels(:,:,k,:)=labels(:,:,k,:)+classif.colormap(j+1,k)*labtmp2;
+%             end
+%             
+%         end
+         end
         
         
-        % figure, imshow(labels(:,:,:,10),[]);
-        % return;
         
-        %labels=labtmp;
+ 
          
     end
     

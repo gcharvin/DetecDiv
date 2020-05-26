@@ -22,8 +22,6 @@ str=[pth '/classification/classlist.mat'];
 load(str);
 disp(classlist)
 
-
-
 prompt='Please enter the number associated with the classification you wish to do ? (Default:1): ';
 classitype= input(prompt);
 if numel(classitype)==0
@@ -55,7 +53,8 @@ if isempty(classes)
     classes=['class1 class2'];
 end
 else
-     classes=['background cell'];
+     %classes=['background cell'];
+     classes=['cl0 cl1 cl2 cl3 cl4 cl5'];
 end
 
 classes = textscan(classes,'%s','Delimiter',' ')';

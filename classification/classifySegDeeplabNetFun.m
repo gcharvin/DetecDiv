@@ -87,17 +87,19 @@ for fr=1:size(gfp,4)
        tmp=imresize(tmp,inputSize(1:2)); 
     end
     
-    %C = semanticseg(tmp, net); % this is no longer required if we extract the probabilities from the previous layer
+    C = semanticseg(tmp, net); % this is no longer required if we extract the probabilities from the previous layer
+    
     
   % if numel(gpuDeviceCount)==0
-    features = activations(net,tmp,'softmax-out'); % this is used to get the probabilities rather than the classification itself
+  %%%  features = activations(net,tmp,'softmax-out'); % this is used to get the probabilities rather than the classification itself
  %  else
  %   features = activations(net,tmp,'softmax-out','Acceleration','mex');   
  %  end
     %size(features)
     
     if size(gfp,1)<inputSize(1) | size(gfp,2)<inputSize(2)
-        features=imresize(features,size(gfp,1:2)); 
+       % features=imresize(features,size(gfp,1:2)); 
+        C=imresize(C,size(gfp,1:2));
     end
 
      % mark as cell when probability is higher than 0.9
@@ -108,14 +110,11 @@ for fr=1:size(gfp,4)
     tmpout=uint16(zeros(size(roiobj.image(:,:,pixresults,fr))));
     
     for i=2:numel(classif.classes) % 1 st class is considered default class
-       %if i>1
-     BW=features(:,:,i)>0.9;   
-     %  else
-     %BW=features(:,:,2)>0.9;         
-     %  end
-       %end
+     
+    % BW=features(:,:,i)>0.9;   
+   
        
-    %BW=logical(C==string(classif.classes{i}));
+    BW=logical(C==string(classif.classes{i}));
    % i
    % size(BW)
    % max(BW(:))
@@ -131,32 +130,34 @@ for fr=1:size(gfp,4)
     tm=tmpout; 
     pix=tmpout==0; % pixel not classified
     tm(pix)=1; % assign 1 to not classified pixels
-    BW=tm>1;
-    newlabels=BW;
     
-    %roiobj.image(:,:,pixresults,fr)=tm;
-    
-    %figure, imshow(tm,[]);
-    
-%     % TO DO add specific function to perform watershed don the result
-%     BW=~BW;
-%     
-%     imdist=bwdist(BW);
-%     imdist = imclose(imdist, strel('disk',2));
-%     imdist = imhmax(imdist,1);
-%     
-%     sous=- imdist;
-%     
-%     %figure, imshow(BW,[]);
-%     
-%     labels = double(watershed(sous,8)).* ~BW;% .* BW % .* param.mask; % watershed
-%     warning off all
-%     %tmp = imopen(labels > 0, strel('disk', 4));
-%     warning on all
-%     %tmp = bwareaopen(tmp, 50);
-%     
-%     newlabels = labels;% .* tmp; % remove small features
-%     newlabels = newlabels>0;
+    newlabels=tm;
+% %     BW=tm>1;
+% %     %newlabels=BW;
+% %     
+% %     %roiobj.image(:,:,pixresults,fr)=tm;
+% %     
+% %     %figure, imshow(tm,[]);
+% %     
+% %     % TO DO add specific function to perform watershed don the result
+% %     BW=~BW;
+% %     
+% %     imdist=bwdist(BW);
+% %     imdist = imclose(imdist, strel('disk',2));
+% %     imdist = imhmax(imdist,1);
+% %     
+% %     sous=- imdist;
+% %     
+% %     %figure, imshow(BW,[]);
+% %     
+% %     labels = double(watershed(sous,8)).* ~BW;% .* BW % .* param.mask; % watershed
+% %     warning off all
+% %     %tmp = imopen(labels > 0, strel('disk', 4));
+% %     warning on all
+% %     %tmp = bwareaopen(tmp, 50);
+% %     
+% %     newlabels = labels;% .* tmp; % remove small features
+% %     newlabels = newlabels>0;
     
     roiobj.image(:,:,pixresults,fr)=newlabels;
     
