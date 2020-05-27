@@ -72,7 +72,7 @@ imageFreq = tbl.PixelCount ./ tbl.ImagePixelCount;
 classWeights = median(imageFreq) ./ imageFreq;
 
 %analyzeNetwork(lgraph)
-pxLayer = pixelClassificationLayer('Name','labels','Classes',tbl.Name); %,'ClassWeights',classWeights); % removing the weights helped increase the resolution 
+pxLayer = pixelClassificationLayer('Name','labels','Classes',tbl.Name,'ClassWeights',classWeights); % removing the weights helped increase the resolution 
 lgraph = replaceLayer(lgraph,"classification",pxLayer);
 
 pximdsVal = pixelLabelImageDatastore(imdsVal,pxdsVal);

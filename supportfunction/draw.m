@@ -25,21 +25,21 @@ if numel(classif)>0
         %[pth fle ex]=fileparts(obj.path); % get the name of the current classification process
         % change here to use the reference to the classif being used
         
-%         pix = strfind(obj.display.channel, classif.strid);
-%         
-%         cc=[];
-%         for i=1:numel(pix)
-%             if numel(pix{i})~=0
-%                 cc=i;
-%                 
-%                 break
-%             end
-%         end
-%         
-%         pixelchannel=i;
+        %         pix = strfind(obj.display.channel, classif.strid);
+        %
+        %         cc=[];
+        %         for i=1:numel(pix)
+        %             if numel(pix{i})~=0
+        %                 cc=i;
+        %
+        %                 break
+        %             end
+        %         end
+        %
+        %         pixelchannel=i;
         
         cc=obj.findChannelID(classif.strid);
-         
+        
         if numel(cc)==0 % create new empty array for user training (painting)
             matrix=uint16(zeros(size(obj.image,1),size(obj.image,2),1,size(obj.image,4)));
             obj.addChannel(matrix,classif.strid,[1 1 1],[0 0 0]);
@@ -48,7 +48,7 @@ if numel(classif)>0
             %else
             
         else
-            %pixelchannel=cc;  
+            %pixelchannel=cc;
         end
         
         
@@ -120,13 +120,13 @@ for i=1:numel(obj.display.channel)
         end
         
         if dis==0 %  channel to be displayed is not that of the ongoing classification
-        if sum(obj.display.intensity(i,:))==0 % choose colormap to use to plot indexed data
-           dis=1;
-           tp=obj.image(:,:,i,:);
-           maxe=double(max(tp(:)));
-         %  'pasok'
-           cmap=shallowColormap(maxe);
-        end
+            if sum(obj.display.intensity(i,:))==0 % choose colormap to use to plot indexed data
+                dis=1;
+                tp=obj.image(:,:,i,:);
+                maxe=double(max(tp(:)));
+                %  'pasok'
+                cmap=shallowColormap(maxe);
+            end
         end
         
         % dis
@@ -136,7 +136,7 @@ for i=1:numel(obj.display.channel)
         else
             
             him.image(cc)=imshow(im(cc).data,cmap);
-           % 'ok'
+            % 'ok'
             %return;
         end
         
@@ -145,11 +145,11 @@ for i=1:numel(obj.display.channel)
         set(hp(cc),'UserData',obj.display.channel{i});
         
         %axis equal square
-   %     tt=obj.display.intensity(i,:);
+        %     tt=obj.display.intensity(i,:);
         
-%         if numel(classif)==0
-%             title(hp(cc),[obj.display.channel{i} ]); %' -Intensity:' num2str(tt)]);
-%         end
+        %         if numel(classif)==0
+        %             title(hp(cc),[obj.display.channel{i} ]); %' -Intensity:' num2str(tt)]);
+        %         end
         
         cc=cc+1;
     end
@@ -205,38 +205,38 @@ if numel(classif)>0
             obj.train.(classif.strid).id=zeros(1,size(obj.image,4));
         end
         
-%         if obj.train(obj.display.frame)==0 % user training
-%             str='not classified';
-%             colo=[0 0 0];
-%             
-%         else
-%             str= obj.classes{obj.train(obj.display.frame)};
-%             colo=cmap(obj.train(obj.display.frame),:);
-%         end
+        %         if obj.train(obj.display.frame)==0 % user training
+        %             str='not classified';
+        %             colo=[0 0 0];
+        %
+        %         else
+        %             str= obj.classes{obj.train(obj.display.frame)};
+        %             colo=cmap(obj.train(obj.display.frame),:);
+        %         end
         
         
-%         cc=1;
-%         for i=1:numel(obj.display.channel)
-%             if obj.display.selectedchannel(i)==1
-%                 tt=hp(cc).Title.String;
-%                 hp(cc).Title.String=[tt ' - ' str ' (training)'];
-%                 %title(hp(cc),str, 'Color',colo,'FontSize',20);
-%                 cc=cc+1;
-%             end
-%         end
+        %         cc=1;
+        %         for i=1:numel(obj.display.channel)
+        %             if obj.display.selectedchannel(i)==1
+        %                 tt=hp(cc).Title.String;
+        %                 hp(cc).Title.String=[tt ' - ' str ' (training)'];
+        %                 %title(hp(cc),str, 'Color',colo,'FontSize',20);
+        %                 cc=cc+1;
+        %             end
+        %         end
     end
     
     if strcmp(classif.category{1},'Pixel') | strcmp(classif.category{1},'Object')  % display the axis associated with user training to paint on the channel
         
-%         pix = strfind(obj.display.channel, classif.strid);
-%         cc=[];
-%         for i=1:numel(pix)
-%             if numel(pix{i})~=0
-%                 cc=i;
-%                 
-%                 break
-%             end
-%         end
+        %         pix = strfind(obj.display.channel, classif.strid);
+        %         cc=[];
+        %         for i=1:numel(pix)
+        %             if numel(pix{i})~=0
+        %                 cc=i;
+        %
+        %                 break
+        %             end
+        %         end
         
         cc=obj.findChannelID(classif.strid);
         
@@ -245,17 +245,17 @@ if numel(classif)>0
                 cha1= classif.channel(1); % axes where to copy the new axes
                 cha1pos=get(hp(cha1),'Position');
                 hcopy=findobj(hp,'UserData',classif.strid);
-%                 
+                %
                 htmp = copyobj(hcopy,h);
                 htmp.Position=cha1pos;
-               % aa=classif.strid, 
-               % htmp
+                % aa=classif.strid,
+                % htmp
                 
                 set(htmp,'Tag',classif.strid);
                 axes(htmp);
                 alpha(0.3);
                 
-                 linkaxes([hp htmp]);
+                linkaxes([hp htmp]);
             end
         end
         
@@ -271,7 +271,7 @@ if numel(classif)>0
     mitem=[];
     
     for i=1:numel(obj.classes)
-       
+        
         mitem(i) = uimenu(m,'Text',obj.classes{i},'Checked','off','Tag',['classes_' num2str(i)],'ForegroundColor',cmap(i+1,:),'Accelerator',keys{i});
         
         if strcmp(classif.category{1},'Pixel') | strcmp(classif.category{1},'Object') % only in pixel mode
@@ -282,13 +282,13 @@ if numel(classif)>0
             end
         end
         
-%         if strcmp(classif.category{1},'Object') % only in object mode
-%             hpaint=findobj('Tag',classif.strid); % if the painting axe is displayed
-%             if numel(hpaint)~=0
-%                 set(mitem(i),'MenuSelectedFcn',{@classesMenuFcnObject,h,obj,hpaint.Children(1),hcopy.Children(1),hpaint,classif});
-%                 
-%             end
-%         end
+        %         if strcmp(classif.category{1},'Object') % only in object mode
+        %             hpaint=findobj('Tag',classif.strid); % if the painting axe is displayed
+        %             if numel(hpaint)~=0
+        %                 set(mitem(i),'MenuSelectedFcn',{@classesMenuFcnObject,h,obj,hpaint.Children(1),hcopy.Children(1),hpaint,classif});
+        %
+        %             end
+        %         end
         
         %     if obj.display.selectedchannel(i)==1
         %         set(mitem(i),'Checked','on');
@@ -300,55 +300,84 @@ if numel(classif)>0
     
 end
 
+% display results for image classification & plot tracking results if
+% available 
 
-% display results for image classification
-
- cc=1;
-        for i=1:numel(obj.display.channel)
-            if obj.display.selectedchannel(i)==1
-                str=obj.display.channel{i};
+cc=1;
+for i=1:numel(obj.display.channel)
+    if obj.display.selectedchannel(i)==1
+        str=obj.display.channel{i};
+        
+        if numel(obj.train)>0
+            fields=fieldnames(obj.train);
+            
+            for k=1:numel(fields)
+                tt=obj.train.(fields{k}).id(obj.display.frame);
                 
-                if numel(obj.train)>0
-                   fields=fieldnames(obj.train);
-                   
-                    for k=1:numel(fields)
-                        tt=obj.train.(fields{k}).id(obj.display.frame);
-                        
-                        if tt==0
-                            tt='not classified';
-                        else
-                            tt=obj.classes{tt};  
-                        end
-                        str=[str ' - ' tt ' (training: ' fields{k} ')'];
-                        
-%                         if obj.train(obj.display.frame)==0
-%                             str=[str ' - not classified'];
-%                     %title(hp(cc),str, 'Color',[0 0 0],'FontSize',20);
-%                         else
-%                             str= [str ' - ' obj.classes{obj.train(obj.display.frame)} ' (training)'];
-%                     %title(hp(cc),str, 'Color',cmap(obj.train(obj.display.frame),:),'FontSize',20);
-%                         end
-                    end
-                
+                if tt==0
+                    tt='not classified';
+                else
+                    tt=obj.classes{tt};
                 end
+                str=[str ' - ' tt ' (training: ' fields{k} ')'];
                 
-               % str=hp(cc).Title.String;
-               
-                if numel(obj.results)>0
-                pl = fieldnames(obj.results);
-                %aa=obj.results
-                for k = 1:length(pl)
-                    tt=char(obj.results.(pl{k}).labels(obj.display.frame));
-                    str=[str ' - ' tt ' (' pl{k} ')'];
-                end
-                end
-                
-                %test=get(hp(cc),'Parent')
-                title(hp(cc),str,'FontSize',14,'interpreter','none');
-                %title(hp(cc),str, 'Color',colo,'FontSize',20);
-                cc=cc+1;
+                %                         if obj.train(obj.display.frame)==0
+                %                             str=[str ' - not classified'];
+                %                     %title(hp(cc),str, 'Color',[0 0 0],'FontSize',20);
+                %                         else
+                %                             str= [str ' - ' obj.classes{obj.train(obj.display.frame)} ' (training)'];
+                %                     %title(hp(cc),str, 'Color',cmap(obj.train(obj.display.frame),:),'FontSize',20);
+                %                         end
             end
+            
+        end
+        
+        % str=hp(cc).Title.String;
+        
+        if numel(obj.results)>0
+            pl = fieldnames(obj.results);
+            %aa=obj.results
+            for k = 1:length(pl)
+                tt=char(obj.results.(pl{k}).labels(obj.display.frame));
+                str=[str ' - ' tt ' (' pl{k} ')'];
             end
+        end
+        
+        % display tracking results as numbers on each cell 
+        %him.image(cc) are the Data 
+        
+          % display tracking numbers on cells
+         if numel(strfind(obj.display.channel{i},'track'))~=0
+           
+           im=him.image(cc).CData;
+           
+           [l n]=bwlabel(im);
+           r=regionprops(l,'Centroid');
+           
+           htext=findobj('Tag','tracktext');
+           
+           if numel(htext)>0
+              if ishandle(htext)
+                  delete(htext);
+              end
+           end
+           
+           for k=1:n
+               bw=l==k;
+               id=round(mean(im(bw)));
+               htext(k)=text(r(k).Centroid(1),r(k).Centroid(2),num2str(id),'Color',[1 1 1],'FontSize',20,'Tag','tracktext');
+           end
+           
+            
+         end
+        
+        
+        %test=get(hp(cc),'Parent')
+        title(hp(cc),str,'FontSize',14,'interpreter','none');
+        %title(hp(cc),str, 'Color',colo,'FontSize',20);
+        cc=cc+1;
+    end
+end
 end
 
 
@@ -356,7 +385,7 @@ end
 function classesMenuFcn(handles, event, h,obj,impaint1,impaint2,hpaint,classif)
 
 if strcmp(handles.Checked,'off')
-  
+    
     for i=1:numel(classif.classes)
         ha=findobj('Tag',['classes_' num2str(i)]);
         
@@ -373,11 +402,11 @@ if strcmp(handles.Checked,'off')
     
     % set pixel painting mode
     if strcmp(classif.category{1},'Pixel')
-    set(h,'WindowButtonDownFcn',@wbdcb);
+        set(h,'WindowButtonDownFcn',@wbdcb);
     end
     
     if strcmp(classif.category{1},'Object')
-    set(h,'WindowButtonDownFcn',@wbdcb2);
+        set(h,'WindowButtonDownFcn',@wbdcb2);
     end
     
     %ah = hp(1); %axes('SortMethod','childorder');
@@ -391,12 +420,12 @@ else
     h.WindowButtonMotionFcn = '';
     h.WindowButtonUpFcn = '';
     figure(h); % set focus
-
+    
     
 end
 
 %[him hp]=draw(obj,h,classif);
-function wbdcb2(src,cbk)
+    function wbdcb2(src,cbk)
         seltype = src.SelectionType;
         
         if strcmp(seltype,'normal')
@@ -433,7 +462,7 @@ function wbdcb2(src,cbk)
                 pix=find(obj.channelid==pixelchannel);
                 
                 obj.image(:,:,pix,obj.display.frame)=impaint2.CData;
-              % HERE
+                % HERE
             end
             
             
@@ -443,19 +472,19 @@ function wbdcb2(src,cbk)
             %src.WindowButtonUpFcn = @wbucb;
             
         end
-%         if strcmp(seltype,'alt')
-%             src.Pointer = 'circle';
-%             cp = hpaint.CurrentPoint;
-%             xinit = cp(1,1);
-%             yinit = cp(1,2);
-%             % hl = line('XData',xinit,'YData',yinit,...
-%             % 'Marker','p','color','b');
-%             src.WindowButtonMotionFcn = {@wbmcb,2};
-%             src.WindowButtonUpFcn = @wbucb;
-%             
-%         end
-end
-        
+        %         if strcmp(seltype,'alt')
+        %             src.Pointer = 'circle';
+        %             cp = hpaint.CurrentPoint;
+        %             xinit = cp(1,1);
+        %             yinit = cp(1,2);
+        %             % hl = line('XData',xinit,'YData',yinit,...
+        %             % 'Marker','p','color','b');
+        %             src.WindowButtonMotionFcn = {@wbmcb,2};
+        %             src.WindowButtonUpFcn = @wbucb;
+        %
+        %         end
+    end
+
 % nested function, good luck ;-) ....
     function wbdcb(src,cbk)
         seltype = src.SelectionType;
@@ -465,7 +494,7 @@ end
             src.Pointer = 'cross';
             
             cp = hpaint.CurrentPoint;
- 
+            
             xinit = cp(1,1);
             yinit = cp(1,2);
             
@@ -486,7 +515,7 @@ end
             src.WindowButtonUpFcn = @wbucb;
             
         end
-         if strcmp(seltype,'extend')
+        if strcmp(seltype,'extend')
             src.Pointer = 'cross';
             
             cp = hpaint.CurrentPoint;
@@ -513,45 +542,45 @@ end
             
             switch bsize
                 case 2 % fine brush
-               % xdat = [cp(1,1) ];
-                %ydat = [cp(1,2) ];
-
-                mix=max(1,cp(1,2));
-                miy=max(1,cp(1,1));
-                mux=min(size(ma,1),cp(1,2));
-                muy=min(size(ma,1),cp(1,1));
-                
-               
-                
+                    % xdat = [cp(1,1) ];
+                    %ydat = [cp(1,2) ];
+                    
+                    mix=max(1,cp(1,2));
+                    miy=max(1,cp(1,1));
+                    mux=min(size(ma,1),cp(1,2));
+                    muy=min(size(ma,1),cp(1,1));
+                    
+                    
+                    
                 case 1 % large brush
-                %xdat = [cp(1,1) cp(1,1)+1 cp(1,1)-1 cp(1,1)+1 cp(1,1)-1 cp(1,1) cp(1,1) cp(1,1)+1 cp(1,1)-1];
-                %ydat = [cp(1,2) cp(1,2)+1 cp(1,2)-1 cp(1,2)-1 cp(1,2)+1 cp(1,2)+1 cp(1,2)-1 cp(1,2) cp(1,2)];
-                
-                mix=max(1,cp(1,2)-1);
-                miy=max(1,cp(1,1)-1);
-                mux=min(size(ma,1),cp(1,2)+1);
-                muy=min(size(ma,1),cp(1,1)+1);
-                
-                %ma(mix:mux,miy:muy)=1;
-               % pis=ma>0;
-                
+                    %xdat = [cp(1,1) cp(1,1)+1 cp(1,1)-1 cp(1,1)+1 cp(1,1)-1 cp(1,1) cp(1,1) cp(1,1)+1 cp(1,1)-1];
+                    %ydat = [cp(1,2) cp(1,2)+1 cp(1,2)-1 cp(1,2)-1 cp(1,2)+1 cp(1,2)+1 cp(1,2)-1 cp(1,2) cp(1,2)];
+                    
+                    mix=max(1,cp(1,2)-1);
+                    miy=max(1,cp(1,1)-1);
+                    mux=min(size(ma,1),cp(1,2)+1);
+                    muy=min(size(ma,1),cp(1,1)+1);
+                    
+                    %ma(mix:mux,miy:muy)=1;
+                    % pis=ma>0;
+                    
                 case 3 % huge brush
-                
-               % ma=zeros(size(obj,image,1),size(obj.image,2));
-                mix=max(1,cp(1,2)-8);
-                miy=max(1,cp(1,1)-8);
-                mux=min(size(ma,1),cp(1,2)+8);
-                muy=min(size(ma,1),cp(1,1)+8);
-                
-                %ma(mix:mux,miy:muy)=1;
-                %pis=ma>0;
-                % HERE
-                
+                    
+                    % ma=zeros(size(obj,image,1),size(obj.image,2));
+                    mix=max(1,cp(1,2)-8);
+                    miy=max(1,cp(1,1)-8);
+                    mux=min(size(ma,1),cp(1,2)+8);
+                    muy=min(size(ma,1),cp(1,1)+8);
+                    
+                    %ma(mix:mux,miy:muy)=1;
+                    %pis=ma>0;
+                    % HERE
+                    
                     
             end
             
-             ma(round(mix):round(mux),round(miy):round(muy))=1;
-              pis=ma>0;
+            ma(round(mix):round(mux),round(miy):round(muy))=1;
+            pis=ma>0;
             
             % enlarge pixel size
             
@@ -563,15 +592,15 @@ end
             
             % interpolate results
             
-           % finalX=round(xdat);
-           % finalY=round(ydat);
+            % finalX=round(xdat);
+            % finalY=round(ydat);
             
             % size(obj.image)
             
-           % in=finalX<=size(obj.image,2) & finalY<=size(obj.image,1) & finalX>0 & finalY>0;
+            % in=finalX<=size(obj.image,2) & finalY<=size(obj.image,1) & finalX>0 & finalY>0;
             
-           % finalX=finalX(in);
-           % finalY=finalY(in);
+            % finalX=finalX(in);
+            % finalY=finalY(in);
             
             % finalX
             % finalY
@@ -594,11 +623,11 @@ end
                 % int32(finalX)
                 %colortype*ones(1,length(finalX));
                 
-               % linearInd = sub2ind(sz, int32(finalY), int32(finalX));%,1*ones(1,length(finalX)));
+                % linearInd = sub2ind(sz, int32(finalY), int32(finalX));%,1*ones(1,length(finalX)));
                 
                 
-               % impaint1.CData(linearInd)=colo;
-               % impaint2.CData(linearInd)=colo;
+                % impaint1.CData(linearInd)=colo;
+                % impaint2.CData(linearInd)=colo;
                 
                 impaint1.CData(pis)=colo;
                 impaint2.CData(pis)=colo;
@@ -606,17 +635,17 @@ end
                 
                 % dave data in obj.image object
                 
-%                 pix = strfind(obj.display.channel, classif.strid);
-%                 
-%                 %                first find the right channel
-%                 cc=[];
-%                 for k=1:numel(pix)
-%                     if numel(pix{k})~=0
-%                         cc=k;
-%                         
-%                         break
-%                     end
-%                 end
+                %                 pix = strfind(obj.display.channel, classif.strid);
+                %
+                %                 %                first find the right channel
+                %                 cc=[];
+                %                 for k=1:numel(pix)
+                %                     if numel(pix{k})~=0
+                %                         cc=k;
+                %
+                %                         break
+                %                     end
+                %                 end
                 
                 pixelchannel=obj.findChannelID(classif.strid);
                 pix=find(obj.channelid==pixelchannel);
@@ -645,8 +674,6 @@ end
         end
     end
 end
-
-
 
 function displayMenuFcn(handles, event, obj,h,classif)
 
@@ -692,6 +719,8 @@ for i=1:numel(obj.display.channel)
         %tt=obj.display.intensity(i,:);
         
         %title(hp(cc),[obj.display.channel{i} ' -Intensity:' num2str(tt)]);
+        
+        
         cc=cc+1;
     end
 end
@@ -711,74 +740,99 @@ if numel(classif)>0
         
     end
     
-%     if strcmp(classif.category{1},'Image') || strcmp(classif.category{1},'LSTM')
-%         cc=1;
-%         for i=1:numel(obj.display.channel)
-%             if obj.display.selectedchannel(i)==1
-%                 str='';
-%                 if obj.train(obj.display.frame)==0
-%                     str='not classified';
-%                     title(hp(cc),str, 'Color',[0 0 0],'FontSize',20);
-%                 else
-%                     str= obj.classes{obj.train(obj.display.frame)};
-%                     title(hp(cc),str, 'Color',cmap(obj.train(obj.display.frame),:),'FontSize',20);
-%                 end
-%                 
-%                 cc=cc+1;
-%             end
-%         end
-%     end
+    %     if strcmp(classif.category{1},'Image') || strcmp(classif.category{1},'LSTM')
+    %         cc=1;
+    %         for i=1:numel(obj.display.channel)
+    %             if obj.display.selectedchannel(i)==1
+    %                 str='';
+    %                 if obj.train(obj.display.frame)==0
+    %                     str='not classified';
+    %                     title(hp(cc),str, 'Color',[0 0 0],'FontSize',20);
+    %                 else
+    %                     str= obj.classes{obj.train(obj.display.frame)};
+    %                     title(hp(cc),str, 'Color',cmap(obj.train(obj.display.frame),:),'FontSize',20);
+    %                 end
+    %
+    %                 cc=cc+1;
+    %             end
+    %         end
+    %     end
 end
 
 % display results for image classification
 
- cc=1;
-        for i=1:numel(obj.display.channel)
-            if obj.display.selectedchannel(i)==1
-                str=obj.display.channel{i};
+cc=1;
+for i=1:numel(obj.display.channel)
+    if obj.display.selectedchannel(i)==1
+        str=obj.display.channel{i};
+        
+        if numel(obj.train)>0
+            fields=fieldnames(obj.train);
+            
+            for k=1:numel(fields)
+                tt=obj.train.(fields{k}).id(obj.display.frame);
                 
-                                 if numel(obj.train)>0
-                   fields=fieldnames(obj.train);
-                   
-                    for k=1:numel(fields)
-                        tt=obj.train.(fields{k}).id(obj.display.frame);
-                        
-                        if tt==0
-                            tt='not classified';
-                        else
-                            tt=obj.classes{tt};  
-                        end
-                        str=[str ' - ' tt ' (training: ' fields{k} ')'];
-                        
-%                         if obj.train(obj.display.frame)==0
-%                             str=[str ' - not classified'];
-%                     %title(hp(cc),str, 'Color',[0 0 0],'FontSize',20);
-%                         else
-%                             str= [str ' - ' obj.classes{obj.train(obj.display.frame)} ' (training)'];
-%                     %title(hp(cc),str, 'Color',cmap(obj.train(obj.display.frame),:),'FontSize',20);
-%                         end
-                    end
-                
+                if tt==0
+                    tt='not classified';
+                else
+                    tt=obj.classes{tt};
                 end
+                str=[str ' - ' tt ' (training: ' fields{k} ')'];
                 
-               % str=hp(cc).Title.String;
-               
-                if numel(obj.results)>0
-                pl = fieldnames(obj.results);
-                %aa=obj.results
-                for k = 1:length(pl)
-                    tt=char(obj.results.(pl{k}).labels(obj.display.frame));
-                    str=[str ' - ' tt ' (' pl{k} ')'];
-                end
-                end
-                
-                title(hp(cc),str,'FontSize',14,'interpreter','none');
-                %title(hp(cc),str, 'Color',colo,'FontSize',20);
-                cc=cc+1;
+                %                         if obj.train(obj.display.frame)==0
+                %                             str=[str ' - not classified'];
+                %                     %title(hp(cc),str, 'Color',[0 0 0],'FontSize',20);
+                %                         else
+                %                             str= [str ' - ' obj.classes{obj.train(obj.display.frame)} ' (training)'];
+                %                     %title(hp(cc),str, 'Color',cmap(obj.train(obj.display.frame),:),'FontSize',20);
+                %                         end
+            end
+            
+        end
+        
+        % str=hp(cc).Title.String;
+        
+        if numel(obj.results)>0
+            pl = fieldnames(obj.results);
+            %aa=obj.results
+            for k = 1:length(pl)
+                tt=char(obj.results.(pl{k}).labels(obj.display.frame));
+                str=[str ' - ' tt ' (' pl{k} ')'];
             end
         end
-
-
+        
+        % display tracking numbers on cells
+         if numel(strfind(obj.display.channel{i},'track'))~=0
+           
+           im=him.image(cc).CData;
+           
+           [l n]=bwlabel(im);
+           r=regionprops(l,'Centroid');
+           
+           htext=findobj('Tag','tracktext');
+           
+           if numel(htext)>0
+              if ishandle(htext)
+                  delete(htext);
+              end
+           end
+           
+           for k=1:n
+               bw=l==k;
+               id=round(mean(im(bw)));
+               htext(k)=text(r(k).Centroid(1),r(k).Centroid(2),num2str(id),'Color',[1 1 1],'FontSize',20,'Tag','tracktext');
+           end
+           
+            
+         end
+        
+         
+        
+        title(hp(cc),str,'FontSize',14,'interpreter','none');
+        %title(hp(cc),str, 'Color',colo,'FontSize',20);
+        cc=cc+1;
+    end
+end
 
 htext=findobj('Tag','frametext');
 htext.String=num2str(obj.display.frame);
@@ -789,9 +843,11 @@ htraj=findobj('Tag',['Traj' num2str(obj.id)]);
 if numel(htraj)~=0
     hl=findobj(htraj,'Tag','track');
     if numel(hl)>0
-    hl.XData=[obj.display.frame obj.display.frame];
+        hl.XData=[obj.display.frame obj.display.frame];
     end
 end
+
+
 
 %return;
 %axes(hp(1));
@@ -879,7 +935,6 @@ for i=1:numel(obj.display.channel)
     
     %   cc=cc+1;
 end
-
 end
 
 
@@ -956,17 +1011,17 @@ for i=1:numel(keys) % display the selected class for the current image
                     if j~=i
                         ha.Checked='off';
                     else
-                       % if strcmp(ha.Checked,'off')
+                        % if strcmp(ha.Checked,'off')
                         ha.Checked='on';
-                       % else
-                       % ha.Checked='off';
+                        % else
+                        % ha.Checked='off';
                         
                         % h.WindowButtonDownFcn='';
                         % h.Pointer = 'arrow';
                         % h.WindowButtonMotionFcn = '';
                         % h.WindowButtonUpFcn = '';
-    %figure(h); % set focus
-                       % end
+                        %figure(h); % set focus
+                        % end
                         %draw(obj,h);
                     end
                 end

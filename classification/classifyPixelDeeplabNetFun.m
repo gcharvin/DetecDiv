@@ -89,15 +89,20 @@ for fr=1:size(gfp,4)
     
     %C = semanticseg(tmp, net); % this is no longer required if we extract the probabilities from the previous layer
     
-   if numel(gpuDeviceCount)==0
-    features = activations(net,tmp,'softmax-out'); % this is used to get the probabilities rather than the classification itself
-   else
-    features = activations(net,tmp,'softmax-out','Acceleration','mex');   
-   end
+%    if numel(gpuDeviceCount)==0
+%     features = activations(net,tmp,'softmax-out'); % this is used to get the probabilities rather than the classification itself
+%    else
+%     features = activations(net,tmp,'softmax-out','Acceleration','mex');   
+%    end
+
+ [C,score,features]= semanticseg(tmp, net);%,'Acceleration','mex'); % this is no longer required if we extract the probabilities from the previous layer
+    
+ 
     %size(features)
     
     if size(gfp,1)<inputSize(1) | size(gfp,2)<inputSize(2)
-        features=imresize(features,size(gfp,1:2)); 
+         features=imresize(features,size(gfp,1:2));
+        C=imresize(C,size(gfp,1:2));
     end
 
      % mark as cell when probability is higher than 0.9
@@ -108,12 +113,13 @@ for fr=1:size(gfp,4)
     
     for i=1:numel(classif.classes) % 1 st class is considered default class
        %if i>1
-     BW=features(:,:,i)>0.9;   
+     %BW=features(:,:,i)>0.9;   
      %  else
      %BW=features(:,:,2)>0.9;         
      %  end
        %end
-       
+     BW=logical(C==string(classif.classes{i}));
+     
     %BW=logical(C==string(classif.classes{i}));
    % i
    % size(BW)

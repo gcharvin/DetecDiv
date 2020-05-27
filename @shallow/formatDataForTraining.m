@@ -212,12 +212,7 @@ parfor i=rois
             end
             
         end
-         end
-        
-        
-        
- 
-         
+        end  
     end
     
     
