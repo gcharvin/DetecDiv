@@ -1,17 +1,18 @@
-function trackObjects(obj,channelstr,inputchannelstr)
+function objout=trackObjects(obj,channelstr,inputchannelstr,frames,net)
 
 % channelstr: segmented objects channel
 % input image channel 
 
+
 channelID=obj.findChannelID(channelstr);
 
-if numel(channelID)==0
+if numel(channelID)==0 % this channel contains the segmented objects
    disp([' This channel ' channelstr ' does not exist ! Quitting ...']) ;
 end
 
 inputchannelID=obj.findChannelID(inputchannelstr);
 
-if numel(inputchannelID)==0
+if numel(inputchannelID)==0 % this channel contains the raw images used to segment objects or to characterize the object
    disp([' This channel ' inputchannelstr ' does not exist ! Quitting ...']) ;
 end
 
@@ -20,6 +21,19 @@ if numel(obj.image)==0
 end
 
 im=obj.image(:,:,channelID,:);
+
+if nargin<4
+    frames=1:size(im,4);
+end
+
+if numel(frames)==0
+   frames=1:size(im,4);  
+end
+
+if nargin<5
+   % net=googlenet; % load pretrained googlenet CNN; TO DO : train this network to detect cells vs non cell objects to get a better discrimination ? 
+    net=resnet50;
+end
 
 %creates an output channel to update results
 
@@ -37,21 +51,35 @@ else
    obj.addChannel(matrix,['track_' channelstr],rgb,intensity);
 end
 
-imref=im(:,:,1,1);
-obj.image(:,:,pixresults,1)=bwlabel(imref);
+% calculate the mean object size during the movie
+area=[];
 
-net=googlenet;
+for i=1:size(im,4)
+   
+    stats=regionprops(im(:,:,1,i)>0,'Area');
+    tmp=[stats.Area];
+   % size(tmp)
+    area=[area; tmp'];
+end
 
-cellsref=getCells(obj.image(:,:,pixresults,1),obj.image(:,:,inputchannelID,1),net);% ,im(:,:,channelID,1);
-% HERE : add image information --> googlent activation vector for each cell
+area=area';
+areamean=mean(area);
+distancemean=2*sqrt(areamean)*2/pi; % typical cell size in movie x 2 
 
-for i=2:20%:size(im,4) % loop on all frames
+%
+
+imref=im(:,:,1,frames(1));
+obj.image(:,:,pixresults,frames(1))=bwlabel(imref);
+cellsref=getCells(obj.image(:,:,pixresults,frames(1)),obj.image(:,:,inputchannelID,frames(1)),net);
+
+
+for i=frames(1)+1:frames(end) % loop on all frames
     
     imtest=im(:,:,1,i);
     [ltest,ntest]=bwlabel(imtest);
     
     cellstest=getCells(ltest,obj.image(:,:,inputchannelID,i),net);
-    cellsref=hungarianTracker(cellsref,cellstest);
+    cellsref=hungarianTracker(cellsref,cellstest,distancemean);
     
    % disp([cellstest.n]);
     
@@ -69,6 +97,9 @@ for i=2:20%:size(im,4) % loop on all frames
 fprintf('.');
 end
 fprintf('\n');
+
+objout=obj;
+
 disp('Tracking done !');
 
 
@@ -81,12 +112,15 @@ r=regionprops(l,'Centroid','Area','BoundingBox');
 cells=struct('ox',[],'oy',[],'area',[],'n',[],'ac',[]);
 
 inputSize = net.Layers(1).InputSize(1:2);
-layerName = "pool5-7x7_s1";
 
+%layerName = "pool5-7x7_s1"; % googlenet;
+layerName = "avg_pool"; %resnet50 or inceptionresnetv2
+%layerName = "pool5"; %resnet101
 
 %rawimage=repmat(rawimage,[1 1 3]);
 
 for i=1:max(l(:))
+    
     cells(i).ox=r(i).Centroid(1);
     cells(i).oy=r(i).Centroid(2);
     cells(i).area=r(i).Area;
@@ -94,10 +128,26 @@ for i=1:max(l(:))
     
     tmp=round(r(i).BoundingBox);
     im=rawimage(tmp(2):tmp(2)+tmp(4)-1,tmp(1):tmp(1)+tmp(3)-1);
-    im=repmat(im,[1 1 3]);
-   % size(im)
-    im=imresize(im,inputSize);
+    
+    nsize=100;
+    imout=uint16(zeros(nsize,nsize));
+    % adjust all cell masks into a 100x100 mask to preserve the respective
+    % sizes of images
+    % resize im if odd numbers
+    siz=size(im);
+    im=imresize(im,[siz(1) + mod(siz(1),2) , siz(2) + mod(siz(2),2)]);
+    
     %size(im)
+    arrx=nsize/2-size(im,1)/2:nsize/2+size(im,1)/2-1;
+    arry=nsize/2-size(im,2)/2:nsize/2+size(im,2)/2-1;
+    imout(arrx,arry)=im;
+    im=imout;
+    % adjust the image to fit the network input size (224 x 224 x 3for
+    % goooglenet)
+    
+    im=repmat(im,[1 1 3]);
+    im=imresize(im,inputSize);
+
     
     %figure, imshow(im,[]);
     cells(i).ac = activations(net,im,layerName,'OutputAs','rows');
@@ -109,7 +159,7 @@ end
 
 
 
-function newcell=hungarianTracker(cell0,cell1)
+function newcell=hungarianTracker(cell0,cell1,meancellsize)
 
 % this function performs the tracking of cell contours based on an
 % assignment cost matrix and the Hungarian method for assignment
@@ -139,7 +189,7 @@ ind1=find([cell1.ox]~=0);
 display=0;
 
 %areamean=mean([cell0.area]);
-meancellsize=30; % pixels sqrt(areamean/pi);
+%meancellsize=30; % pixels sqrt(areamean/pi);
 
 
 %weigth=10;
@@ -171,62 +221,10 @@ for i=1:length(ind0)
         if dist > 1 %sqrt(sqdist)>param.cellsize % 70 % impossible to join cells that are further than 70 pixels
             continue;
         end
-        
-        %calculate size difference
-        
-       % sizedist=-cell0(id).area+cell1(jd).area;
-        
-      
-%        if param.cellshrink==0
-%        if sizedist<0
-%            if abs(sizedist)>0.3*cell0(id).area
-%                continue
-%            end
-%        else
-%            if abs(sizedist)>cell0(id).area
-%              %  'ok'
-%                continue
-%            end
-%        end
-%        end
-       
-%         if cell0(id).area>pi*(param.cellsize/2)^2
-%         if sizedist>pi*(param.cellsize/2)^2/2
-%             continue
-%         end
-%         else
-%         if sizedist>pi*(param.cellsize/2)^2/2
-%             continue
-%         end    
-%         end
-        
-        
-        % put a penalty for cells close the image edge (likely to
-        % dissapear) --> requires image size
-        
-        %coef=0;
-        
-        %if  cell0(id).area<1200
-        %    coef=0;
-        %end
-       
-      %  coefdist*sqrt(sqdist)/100, coefsize*abs(sizedist)/(areamean)
-       % coefdist*sqrt(sqdist)/100,coefsize*abs(sizedist)/(areamean)
-       
-    %   coefdist*sqrt(sqdist)/meancellsize,coefsize*abs(sizedist)/(areamean)
-    
-    
-       % weight=1;
-%        if cell0(id).oy> 700
-%            weight=weight+10;
-%        end
-%        
-%        if cell1(jd).oy> 700
-%            weight=weight+10;
-%        end
-       
-        M(i,j)=(param.coefdist*dist+param.coefsize*codist);%+param.coefsize*abs(sizedist)/(areamean));
-        
+
+       % M(i,j)= codist*dist;
+       % M(i,j)=(param.coefdist*dist+param.coefsize*codist);%+param.coefsize*abs(sizedist)/(areamean));
+        M(i,j)=param.coefsize*codist;
     end
 end
 
