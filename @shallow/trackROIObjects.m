@@ -31,7 +31,7 @@ disp('Starting object tracking....');
 
 % first load classifier if not loadad to save some time 
 if numel(classifier)==0
-   classifier=googlenet;
+   classifier=resnet50;
 end
 
 disp([num2str(size(roilist,2)) ' ROIs to track, be patient...']);
