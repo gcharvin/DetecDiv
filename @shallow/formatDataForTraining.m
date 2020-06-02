@@ -51,8 +51,51 @@ end
         % roi.image matrix with indexed colors
 end  
         
-if strcmp(category,'LSTM')
+if strcmp(category,'Pedigree')
     
+    if nargin<3
+%     prompt='Train googlenet image classifier ? (y / n [Default y]): ';
+% imageclassifier= input(prompt,'s');
+% if numel(imageclassifier)==0
+%     imageclassifier='y';
+% end
+
+ prompt='Compute activation for google net ? (y / n [Default y]): ';
+cactivations= input(prompt,'s');
+if numel(cactivations)==0
+    cactivations='y';
+end
+
+ prompt='Train LSTM network ? (y/n [Default y]): ';
+lstmtraining= input(prompt,'s');
+if numel(lstmtraining)==0
+   lstmtraining='y';
+end
+
+ prompt='Assemble full network ? (y/n [Default y] ): ';
+assemblenet= input(prompt,'s');
+if numel(assemblenet)==0
+    assemblenet='y';
+end
+
+%  prompt='Validate training data ? (y [Default y]/ n ): ';
+% assemblenet= input(prompt,'s');
+% if numel(assemblenet)==0
+%     validation='y';
+% end
+
+%save([classif.path '/options.mat'],'cactivations','imageclassifier','lstmtraining','assemblenet'); % save options to be used in training function
+save([classif.path '/options.mat'],'cactivations','lstmtraining','assemblenet'); % save options to be used in training function
+    end
+    
+     if ~isfolder([classif.path '/' foldername '/timeseries'])
+            mkdir([classif.path '/' foldername], 'timeseries');
+     end
+        
+end
+
+
+if strcmp(category,'LSTM')
     if nargin<3
     prompt='Train googlenet image classifier ? (y / n [Default y]): ';
 imageclassifier= input(prompt,'s');
@@ -93,6 +136,8 @@ save([classif.path '/options.mat'],'cactivations','imageclassifier','lstmtrainin
         
 end
 
+
+
 % look on all ROIs
 
 if nargin<3
@@ -105,6 +150,8 @@ end
 cltmp=classif.roi; 
 
 disp('Starting parallelized jobs for data formatting....')
+
+
 
 warning off all
 parfor i=rois
@@ -140,6 +187,26 @@ parfor i=rois
         end
        % 'pasok'
     end
+    
+     if strcmp(category,'Pedigree')% test if ROI has been annotated
+       % 'ok'
+        %vid=uint8(zeros(size(cltmp(i).image,1),size(cltmp(i).image,2),3,size(cltmp(i).image,4)));
+        
+        %pixb=numel(cltmp(i).train.(classif.strid).id);
+        %pixa=find(cltmp(i).train.(classif.strid).id==0);
+        
+        if numel(cltmp(i).train.(classif.strid).mother)==0
+            disp('Error: ROI has not been annotated');
+            continue
+        end
+        
+        if sum(cltmp(i).train.(classif.strid).mother)==0
+            disp('Error: ROI has not been annotated');
+            continue
+        end
+       % 'pasok'
+     end
+    
     
     if strcmp(category,'Pixel') % get the training data for pixel classification
         
@@ -234,8 +301,6 @@ parfor i=rois
     im2=cltmp(i).image(:,:,pix2,:);
     end
     
-    
-
     
     for j=1:size(im,4)
         tmp=im(:,:,:,j);
@@ -346,17 +411,112 @@ parfor i=rois
     
     if strcmp(category,'LSTM')
         deep=cltmp(i).train.(classif.strid).id;
-        parsave([classif.path '/' foldername '/timeseries/lstm_labeled_' cltmp(i).id '.mat'],'deep','vid','lab');
+        parsave([classif.path '/' foldername '/timeseries/lstm_labeled_' cltmp(i).id '.mat'],deep,vid,lab);
+    end
+    
+    if strcmp(category,'Pedigree') %loop on all newly created objects, check if they have a mother assigned and save
+    
+        msize=[50 50];
+        timespan=[-1:4];
+        
+        for k=1:numel(cltmp(i).train.(classif.strid).mother)
+           if  cltmp(i).train.(classif.strid).mother(k)~=0 % cell has a mother
+                
+                
+                %im : image 
+                
+                  pixelchannel2=cltmp(i).findChannelID(classif.strid);
+                  pix2=find(cltmp(i).channelid==pixelchannel2);
+                
+                  im2=cltmp(i).image(:,:,pix2,:); % image for objects and annotated pedigree
+                  
+                  
+                  for ll=1:size(im,4) % find first frame at which it appears;
+                     tmp=im2(:,:,1,ll)==k;
+                    % k,sum(tmp(:))
+                     if sum(tmp(:))~=0
+                        fr=ll;
+                        break
+                     end
+                  end
+                  
+                  frtot=fr+timespan;
+                  minet=frtot>=1;
+                  frtot=frtot(minet);
+                  maxet=frtot<=size(im,4);
+                  frtot=frtot(maxet);
+                  
+                %  vid
+                  ccc=1;
+                  
+                  vid=uint8(zeros(msize(1),msize(2),3,numel(frtot)));
+                  
+                  %k,aa=cltmp(i).train.(classif.strid).mother(k),frtot
+                  
+                  for ll=frtot % extract 4D volume around bud
+                   
+                      if ll<fr %image is fixed
+                          tmp=im2(:,:,1,fr)==k;
+                      else % image moves following the bud
+                          tmp=im2(:,:,1,ll)==k;
+                      end
+                  
+                      stat=regionprops(tmp,'Centroid');
+                      ox=round(stat(1).Centroid(1));
+                      oy=round(stat(1).Centroid(2));
+                      %ll
+                      
+                      
+                      arrx=ox-msize(1)/2:ox+msize(1)/2-1;
+                      arry=oy-msize(2)/2:oy+msize(2)/2-1;
+                      imcrop=im(arry,arrx,1,ll);
+                      
+                      
+                      imcrop = double(imadjust(imcrop,[meanphc/65535 maxphc/65535],[0 1]))/65535;
+                      imcrop=repmat(imcrop,[1 1 3]);
+                      
+                     % figure, imshow(uint8(256*imcrop),[]);
+                    %  return;
+                      vid(:,:,:,ccc)=uint8(256*imcrop);
+                      ccc=ccc+1;
+                  end
+                  
+                  % compute angle between mother and daughter link 
+                  tmp1=im2(:,:,1,fr)==k;
+                  tmp2=im2(:,:,1,fr)==cltmp(i).train.(classif.strid).mother(k);
+                  
+                  stat1=regionprops(tmp1,'Centroid');
+                  ox1=round(stat1(1).Centroid(1));
+                  oy1=round(stat1(1).Centroid(2));
+                  
+                  stat2=regionprops(tmp2,'Centroid');
+                  ox2=round(stat2(1).Centroid(1));
+                  oy2=round(stat2(1).Centroid(2));
+                  
+                  %return;
+                  
+                  lab=360*atan2(oy2-oy1,ox2-ox1)/(2*pi);
+                  % angl in degrees
+                  
+                  deep=[];
+                  lab=[];
+                  
+                  size(vid)
+                  parsave([classif.path '/' foldername '/timeseries/lstm_labeled_' cltmp(i).id '_cell_' num2str(k) '.mat'],deep,vid,lab); %% HERE: change name for each bud !!!!
+           end
+        end
+        
     end
     
     cltmp(i).save;
 
     disp(['Processing ROI: ' num2str(i) ' ... Done !'])
 end
+
 warning on all;
 
 for i=rois
-    cltmp(i).clear;
+   % cltmp(i).clear; %%% remove !!!!
 end
 
 if strcmp(category,'Pixel') % saving classification  for training
@@ -367,8 +527,10 @@ end
 end
 
 function parsave(fname, deep,vid,lab)
-  save(fname, 'deep', 'vid','lab')
+eval(['save  '  fname  '  deep vid lab']); 
+  %eval(['save(' fname , deep, vid, lab');
 end
+
 
 
 

@@ -64,6 +64,19 @@ for i=1:size(rois,2)
    % obj.processing.classification(n).roi(cc+1).train= zeros(1,size(obj.processing.classification(n).roi(cc+1).image,4));
     end
     
+     if strcmp(obj.processing.classification(n).category{1},'Pedigree')
+    obj.processing.classification(n).roi(cc+1).train.(obj.processing.classification(n).strid)=[];
+    obj.processing.classification(n).roi(cc+1).train.(obj.processing.classification(n).strid).id= zeros(1,size(obj.processing.classification(n).roi(cc+1).image,4));
+    obj.processing.classification(n).roi(cc+1).train.(obj.processing.classification(n).strid).mother= [];%zeros(1,size(obj.processing.classification(n).roi(cc+1).image,4));
+   % obj.processing.classification(n).roi(cc+1).train= zeros(1,size(obj.processing.classification(n).roi(cc+1).image,4));
+   
+     im=obj.processing.classification(n).roi(cc+1).image;
+     %size(im)
+     matrix=im(:,:,obj.processing.classification(n).channel(2),:); 
+     
+     obj.processing.classification(n).roi(cc+1).addChannel(matrix,obj.processing.classification(n).strid,[1 1 1],[0 0 0]); 
+    end
+    
     if strcmp(obj.processing.classification(n).category{1},'Pixel')
      im=obj.processing.classification(n).roi(cc+1).image;
      matrix=uint16(zeros(size(im,1),size(im,2),1,size(im,4)));
@@ -80,7 +93,6 @@ for i=1:size(rois,2)
      obj.processing.classification(n).roi(cc+1).addChannel(matrix,obj.processing.classification(n).strid,[1 1 1],[0 0 0]); 
      %pixelchannel=size(obj.image,3);
     end
-    
     
     
     obj.processing.classification(n).roi(cc+1).save;

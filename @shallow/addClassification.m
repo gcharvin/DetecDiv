@@ -33,7 +33,7 @@ if strcmp(classlist{classitype,2},'Cell segmentation')
     
 end
 
-disp('For object classification, you need to provide 1 channel for images and 1 for objects');
+disp('For object classification and pedigree analysis, you need to provide 1 channel for images and 1 for (tracked) objects');
 prompt='Please enter the channel(s) on which to operate the classification ? (Default:1): ';
 channeltype= input(prompt,'s');
 if numel(channeltype)==0
@@ -42,9 +42,20 @@ else
    channeltype=str2num(channeltype); 
 end
 
+needClasses=1;
 
-if ~strcmp(classlist{classitype,2},'Cell segmentation') % if cell segmentation, then class number is bacjground and cell by default
-   
+if strcmp(classlist{classitype,2},'Cell segmentation') % classes are predefined, no need to ask user
+    needClasses=0;
+    classes=['background cell']; 
+end
+
+if strcmp(classlist{classitype,2},'Cell cluster lineage') % it s a regression analysis classes not required
+    needClasses=0;
+    %classes=['background cell']; 
+    classes=[];
+end
+
+if needClasses==1 % if cell segmentation, then class number is bacjground and cell by default
 prompt='Please enter the classes names that you want  (Default: class1 class2): ';
 classes= input(prompt,'s');
 
@@ -52,20 +63,25 @@ if isempty(classes)
    % 'ok'
     classes=['class1 class2'];
 end
-else
-     classes=['background cell'];
-     %classes=['cl0 cl1 cl2 cl3 cl4 cl5'];
+
+
 end
 
+if numel(classes)~=0
 classes = textscan(classes,'%s','Delimiter',' ')';
 if numel(classes)==0
     classes={};
 end
-
 classes=classes{1};
-
 disp('Classes entered:')
 disp(classes);
+else
+classes={};
+disp('No classes were entered');
+end
+
+
+
 
 % create new classi object
 

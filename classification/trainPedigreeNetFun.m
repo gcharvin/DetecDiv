@@ -2,23 +2,21 @@ function trainPedigreeNetFun(path,name)
 
 % first train googlenet network based on specific images
 
-% if nargin<4
-% load([mov.path '/netCNN.mat']); % loads pretrained googlenet, that has been retrained on
-% %specific images (transfer earning)
-% end
 
 
 load([ path '/options.mat']); % loading options for training --> imageclassifier, cactivations, lstm_training, assemblenet, validation
 
 %%% training google net classifier independtly
 
-if strcmp(imageclassifier,'y')
-    feval('trainImageGoogleNetFun',path,'netCNN'); % trainImageGoogle net first and saves it as netCNN.mat in the LSTM dir
-    % corresponding variable is 'classifier'
-end
+% if strcmp(imageclassifier,'y')
+%     feval('trainImageGoogleNetFun',path,'netCNN'); % trainImageGoogle net first and saves it as netCNN.mat in the LSTM dir
+%     % corresponding variable is 'classifier'
+% end
 
-  load([ path '/netCNN.mat']);
-  netCNN=classifier;
+ % load([ path '/netCNN.mat']);
+ % netCNN=classifier;
+ 
+ netCNN=googlenet;
     
   
 %%%
@@ -106,12 +104,14 @@ numClasses = numel(categories(labelsTrain{1}));
 %return;
 layers = [
     sequenceInputLayer(numFeatures,'Name','sequence')
-    bilstmLayer(2000,'OutputMode','sequence','Name','bilstm')
+    bilstmLayer(2000,'OutputMode','last','Name','bilstm')
    % lstmLayer(200,'OutputMode','sequence','Name','bilstm')
     dropoutLayer(0.5,'Name','drop')
-    fullyConnectedLayer(numClasses,'Name','fc')
+   % fullyConnectedLayer(numClasses,'Name','fc')
+    fullyConnectedLayer(1,'Name','fc')
     softmaxLayer('Name','softmax')
-    classificationLayer('Name','classification')];
+    regressionLayer('Name','regression')];
+    %classificationLayer('Name','classification')];
 
 % specifiy training options
 
