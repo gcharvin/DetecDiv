@@ -468,7 +468,7 @@ parfor i=rois
                       
                       if numel(stat)==0 % the cell is not present on that frame; quitting collecting data
                           pasok=1;
-                          continue
+                          break
                       end
                       
                       ox=round(stat(1).Centroid(1));
@@ -491,7 +491,7 @@ parfor i=rois
                   end
                   
                   if pasok==1 % cell is lost during tracking , go to next cell
-                      break
+                      continue;
                   end
                   
                   
