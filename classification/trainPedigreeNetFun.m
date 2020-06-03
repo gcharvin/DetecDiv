@@ -152,7 +152,7 @@ else
   disp('Loading LSTM network ...');
 end
 
-return;
+%return;
 %%% assemble the full network
 %%%
 
