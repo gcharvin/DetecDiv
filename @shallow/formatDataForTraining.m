@@ -468,7 +468,7 @@ parfor i=rois
                       
                       if numel(stat)==0 % the cell is not present on that frame; quitting collecting data
                           pasok=1;
-                          break
+                          continue
                       end
                       
                       ox=round(stat(1).Centroid(1));
