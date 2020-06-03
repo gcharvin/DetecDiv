@@ -1,4 +1,4 @@
-function roiout=classifyImageLSTMNetFun(roiobj,classif,classifier)
+function roiout=classifyPedigreeNetFun(roiobj,classif,classifier)
 
 %load([path '/netCNN.mat']); % load the googlenet to get the input size of image
 

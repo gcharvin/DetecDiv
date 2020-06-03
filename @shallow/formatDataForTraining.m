@@ -154,7 +154,7 @@ disp('Starting parallelized jobs for data formatting....')
 
 
 warning off all
-parfor i=rois
+for i=rois
     disp(['Launching ROI ' num2str(i) :' processing...'])
     
     
@@ -416,8 +416,9 @@ parfor i=rois
     
     if strcmp(category,'Pedigree') %loop on all newly created objects, check if they have a mother assigned and save
     
-        msize=[50 50];
-        timespan=[-1:4];
+        msize=[90 90]; % size of window surrounding the bud
+        timespan=[-2:5]; % time span before and after bud emergence
+        nrot=20; % number of random rotations added to augment datastore
         
         for k=1:numel(cltmp(i).train.(classif.strid).mother)
            if  cltmp(i).train.(classif.strid).mother(k)~=0 % cell has a mother
@@ -446,12 +447,14 @@ parfor i=rois
                   maxet=frtot<=size(im,4);
                   frtot=frtot(maxet);
                   
+                 % fr, frtot
                 %  vid
                   ccc=1;
                   
                   vid=uint8(zeros(msize(1),msize(2),3,numel(frtot)));
                   
                   %k,aa=cltmp(i).train.(classif.strid).mother(k),frtot
+                  pasok=0;
                   
                   for ll=frtot % extract 4D volume around bud
                    
@@ -462,6 +465,12 @@ parfor i=rois
                       end
                   
                       stat=regionprops(tmp,'Centroid');
+                      
+                      if numel(stat)==0 % the cell is not present on that frame; quitting collecting data
+                          pasok=1;
+                          break
+                      end
+                      
                       ox=round(stat(1).Centroid(1));
                       oy=round(stat(1).Centroid(2));
                       %ll
@@ -481,6 +490,12 @@ parfor i=rois
                       ccc=ccc+1;
                   end
                   
+                  if pasok==1 % cell is lost during tracking , go to next cell
+                      break
+                  end
+                  
+                  
+                  
                   % compute angle between mother and daughter link 
                   tmp1=im2(:,:,1,fr)==k;
                   tmp2=im2(:,:,1,fr)==cltmp(i).train.(classif.strid).mother(k);
@@ -496,13 +511,63 @@ parfor i=rois
                   %return;
                   
                   lab=360*atan2(oy2-oy1,ox2-ox1)/(2*pi);
-                  % angl in degrees
+                  
                   
                   deep=[];
-                  lab=[];
+                  parsave([classif.path '/' foldername '/timeseries/lstm_labeled_' cltmp(i).id '_cell_' num2str(k) '.mat'],deep,vid,lab);
+                  % saves original video
+                 
                   
-                  size(vid)
-                  parsave([classif.path '/' foldername '/timeseries/lstm_labeled_' cltmp(i).id '_cell_' num2str(k) '.mat'],deep,vid,lab); %% HERE: change name for each bud !!!!
+                  
+                  
+                  angle=360*rand(1,nrot);
+                  
+                  for jk=1:nrot % perform random rotation of this 4D volume to augment
+                     
+                      vidtmp=uint8(zeros(size(vid)));
+                      angletmp=angle(jk);
+                      
+                      if lab+angletmp>180
+                         labtmp=lab+angletmp-360; 
+                      else
+                         labtmp=lab+angletmp; 
+                      end
+                      
+                      
+                      for jkl=1:size(vidtmp,4)
+
+                          vidtmp(:,:,:,jkl)=imrotate(vid(:,:,:,jkl),-angletmp,'crop');
+                          
+                      end
+                      
+                      parsave([classif.path '/' foldername '/timeseries/lstm_labeled_' cltmp(i).id '_cell_' num2str(k) '_rotation_' num2str(jk) '.mat'],deep,vidtmp,labtmp);
+                      
+                     % frtmp=find(frtot==fr);
+                      
+                      
+                 % imtmp=vidtmp(:,:,:,frtmp);
+                  
+                 % size(imtmp)
+                  %figure, imshow(imtmp); hold on;
+                  %line([msize(1)/2 msize(1)/2+ox2-ox1 ],[msize(2)/2 msize(2)/2+oy2-oy1],'Color','r');
+                 % line([msize(1)/2 msize(1)/2+10*cos(2*pi*labtmp/360) ],[msize(2)/2 msize(1)/2+10*sin(2*pi*labtmp/360) ],'Color','g');
+                 % pause
+                 % close
+                  
+                  end
+                
+                  
+                  %fr=find(frtot==fr);
+                  %imtmp=vid(:,:,:,fr);
+                  
+                 % figure, imshow(imtmp); hold on;
+                  %line([msize(1)/2 msize(1)/2+ox2-ox1 ],[msize(2)/2 msize(2)/2+oy2-oy1],'Color','r');
+                  %line([msize(1)/2 msize(1)/2+10*cos(2*pi*lab/360) ],[msize(2)/2 msize(1)/2+10*sin(2*pi*lab/360) ],'Color','g');
+                  %pause
+                  %close
+                  % angl in degrees
+                  
+
            end
         end
         
@@ -516,7 +581,7 @@ end
 warning on all;
 
 for i=rois
-   % cltmp(i).clear; %%% remove !!!!
+    cltmp(i).clear; %%% remove !!!!
 end
 
 if strcmp(category,'Pixel') % saving classification  for training
@@ -528,7 +593,6 @@ end
 
 function parsave(fname, deep,vid,lab)
 eval(['save  '  fname  '  deep vid lab']); 
-  %eval(['save(' fname , deep, vid, lab');
 end
 
 

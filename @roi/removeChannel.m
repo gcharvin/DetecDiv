@@ -22,7 +22,7 @@ remainscha=setxor(1:numel(obj.display.channel),channel);
 % return;
 
  obj.image=obj.image(:,:,remainsdim,:);
- obj.channelid=obj.channelid(remainsdimid);
+ obj.channelid=1:1:numel(remainsdimid) %obj.channelid(remainsdimid); cautious this has not been tested !!!!
 % 
 
  obj.display.channel=obj.display.channel(remainscha);

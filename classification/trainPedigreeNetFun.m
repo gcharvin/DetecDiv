@@ -13,10 +13,10 @@ load([ path '/options.mat']); % loading options for training --> imageclassifier
 %     % corresponding variable is 'classifier'
 % end
 
- % load([ path '/netCNN.mat']);
- % netCNN=classifier;
+  load([ path '/netCNN.mat']);
+  netCNN=classifier;
  
- netCNN=googlenet;
+ %netCNN=googlenet;
     
   
 %%%
@@ -42,7 +42,7 @@ list=dir([fol '/*.mat']);
 numFiles = numel(list);
 
 sequences = cell(numFiles,1);
-labels = cell(numFiles,1);
+labels = [];%cell(numFiles,1);
 
 tempFile = [path '/' name '_googlenet_activations.mat']; % loads vid, lab, deep variables
 % label in an array of categorical labels, vid is a video file of uint8
@@ -59,12 +59,13 @@ else
         
         fprintf(['Processing movie ' num2str(i) '...']);
         
-        load([list(i).folder '/' list(i).name]); % loads deep, vid, lab (categories of labels)
+        load([list(i).folder '/' list(i).name]); % loads deep, vid, lab ( lab are numeric values)
         
         video = centerCrop(vid,inputSize);
         
         sequences{cc,1} = activations(netCNN,video,layerName,'OutputAs','columns');
-        labels{cc,1}= lab;
+        labels(cc)=lab;
+        %labels{cc,1}= lab;
         cc=cc+1;
         fprintf('\n');
     end
@@ -73,6 +74,7 @@ else
     fprintf('\n');
 end
 
+labels=labels';
 %return; 
 
 if strcmp(lstmtraining,'y') % training of LSTM network
@@ -99,17 +101,17 @@ labelsValidation = labels(idxValidation);
 % create LSTM network
 
 numFeatures = size(sequencesTrain{1},1);
-numClasses = numel(categories(labelsTrain{1}));
+%numClasses = numel(categories(labelsTrain{1}));
 
 %return;
 layers = [
     sequenceInputLayer(numFeatures,'Name','sequence')
-    bilstmLayer(2000,'OutputMode','last','Name','bilstm')
+    bilstmLayer(200,'OutputMode','last','Name','bilstm')
    % lstmLayer(200,'OutputMode','sequence','Name','bilstm')
     dropoutLayer(0.5,'Name','drop')
    % fullyConnectedLayer(numClasses,'Name','fc')
     fullyConnectedLayer(1,'Name','fc')
-    softmaxLayer('Name','softmax')
+  %  softmaxLayer('Name','softmax')
     regressionLayer('Name','regression')];
     %classificationLayer('Name','classification')];
 
@@ -119,9 +121,15 @@ miniBatchSize = 16;
 numObservations = numel(sequencesTrain);
 numIterationsPerEpoch = max(1,floor(numObservations / miniBatchSize));
 
+% 'MaxEpochs',maxEpochs, ...
+     
 options = trainingOptions('adam', ...
     'MiniBatchSize',miniBatchSize, ...
-    'InitialLearnRate',1e-4, ...
+    'InitialLearnRate',1e-2, ...
+    'LearnRateSchedule','piecewise',...
+     'LearnRateDropPeriod',30,...
+    'LearnRateDropFactor',0.7,...
+    'MaxEpochs',100, ...
     'GradientThreshold',2, ...
     'Shuffle','every-epoch', ...
     'ValidationData',{sequencesValidation,labelsValidation}, ...
@@ -144,7 +152,7 @@ else
   disp('Loading LSTM network ...');
 end
 
-
+return;
 %%% assemble the full network
 %%%
 
@@ -157,8 +165,8 @@ if strcmp(assemblenet,'y')
 fprintf(' remove output layers from CNN net\n');
 
 cnnLayers = layerGraph(netCNN);
-%layerNames = ["data" "pool5-drop_7x7_s1" "loss3-classifier" "prob" "output"];
-layerNames = ["data" "pool5-drop_7x7_s1" "new_fc" "prob" "new_classoutput"];
+%layerNames = ["data" "pool5-drop_7x7_s1" "loss3-classifier" "prob" "output"]; % for default goglenet network
+layerNames = ["data" "pool5-drop_7x7_s1" "new_fc" "prob" "new_classoutput"]; % for custom trainied googlenet
 cnnLayers = removeLayers(cnnLayers,layerNames);
 
 % create layers to adjust to CNN network layers
@@ -197,13 +205,13 @@ lgraph = connectLayers(lgraph,"fold/miniBatchSize","unfold/miniBatchSize");
 
 %analyzeNetwork(lgraph) 
 
-fprintf('Assemble full network\n');
+fprintf('Assembled full network; Now saving....\n');
 
 classifier = assembleNetwork(lgraph);
 save([path '/' name '.mat'],'classifier');
 
 
-fprintf('Full network is assembled !\n');
+fprintf('Full network is assembled and saved !\n');
 
 else
    load( [path '/' name '.mat']); % loading the fully assembled network

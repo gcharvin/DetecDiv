@@ -62,12 +62,13 @@ end
 
 % create display menu %
 
-handles=findobj('Tag','DisplayMenu');
+handles=findobj(h,'Tag','DisplayMenu');
 
 if numel(handles)==0
     m = uimenu(h,'Text','Display','Tag','DisplayMenu');
     mitem=[];
     
+
     for i=1:numel(obj.display.channel)
         mitem(i) = uimenu(m,'Text',obj.display.channel{i},'Checked','on','Tag',['channel_' num2str(i)]);
         set(mitem(i),'MenuSelectedFcn',{@displayMenuFcn,obj,h,classif});
@@ -309,6 +310,11 @@ if numel(classif)>0
         hpaint=findobj(hp,'UserData',classif.strid);
         ccpedigree=obj.findChannelID(classif.strid);
         set(h,'WindowButtonDownFcn',{@pedigree,h,hpaint,obj,ccpedigree,hp,classif});%%% HERE
+        
+              
+        plotLinks(obj,hp,classif);
+              
+    
     end
     
 end
@@ -360,7 +366,7 @@ for i=1:numel(obj.display.channel)
         %him.image(cc) are the Data
         
         % display tracking numbers on cells
-        if numel(strfind(obj.display.channel{i},'track'))~=0
+        if numel(strfind(obj.display.channel{i},'track'))~=0 | numel(strfind(obj.display.channel{i},'pedigree'))~=0
             
             im=him.image(cc).CData;
             
@@ -380,6 +386,9 @@ for i=1:numel(obj.display.channel)
                 id=round(mean(im(bw)));
                 htext(k)=text(r(k).Centroid(1),r(k).Centroid(2),num2str(id),'Color',[1 1 1],'FontSize',20,'Tag','tracktext');
             end
+            
+            
+      
             
             
         end
