@@ -68,8 +68,8 @@ fprintf('Training network...\n');
 % training network
 % augment dataset
 
-pixelRange = [-200 200];
-scaleRange = [0.5 2];
+pixelRange = [-10 10];
+scaleRange = [0.9 1.1];
 rotation=[-180 180];
 
 imageAugmenter = imageDataAugmenter( ...
