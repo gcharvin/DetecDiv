@@ -519,14 +519,18 @@ parfor i=rois
                       
                       %now save image in appropriate folder for googlenet
                       %training 
-                      if neighborsList(mm)==mother(k) && ll>=fr
+                      
+                      if ll>=fr % dont write image in folder if bud is not present
+                          
+                      if neighborsList(mm)==mother(k)
                          clas=2; % link class
                       else
                          clas=1; 
                       end
                       
                       imwrite(imcrop,[classif.path '/' foldername '/images/' classif.classes{clas} '/' cltmp(i).id '_frame_' num2str(ll) '_obj_' num2str(k) '_neighbor_' num2str(mm) '.tif']);
-
+                      end
+                      
                       %imcrop=im(arry,arrx,1,ll);
                       
                       

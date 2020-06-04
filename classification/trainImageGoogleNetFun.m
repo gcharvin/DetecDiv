@@ -106,6 +106,6 @@ classifier = trainNetwork(augimdsTrain,lgraph,options);
 fprintf('Training is done...\n');
 fprintf('Saving googlenet classifier ...\n');
 
-[path '/' name '.mat']
+%[path '/' name '.mat']
 
 save([path '/' name '.mat'],'classifier');

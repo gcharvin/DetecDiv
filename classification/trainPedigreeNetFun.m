@@ -18,7 +18,7 @@ end
  
  %netCNN=googlenet;
     
-  return;
+ 
 %%%
 
 %%% Computer activations from the google net network based on the training
@@ -39,10 +39,12 @@ list=dir([fol '/*.mat']);
 % end
 
 %%%% HERE need to gather files in correct folders
+
+%list=list(1:20);
 numFiles = numel(list);
 
 sequences = cell(numFiles,1);
-labels = [];%cell(numFiles,1);
+labels = categorical([]);%cell(numFiles,1);
 
 tempFile = [path '/' name '_googlenet_activations.mat']; % loads vid, lab, deep variables
 % label in an array of categorical labels, vid is a video file of uint8
@@ -59,13 +61,14 @@ else
         
         fprintf(['Processing movie ' num2str(i) '...']);
         
-        load([list(i).folder '/' list(i).name]); % loads deep, vid, lab ( lab are numeric values)
+        load([list(i).folder '/' list(i).name]); % loads deep, vid, lab ( lab are categorical values)
         
         video = centerCrop(vid,inputSize);
         
         sequences{cc,1} = activations(netCNN,video,layerName,'OutputAs','columns');
-        %labels(cc)=lab;
-        labels{cc,1}= lab;
+       % lab
+        labels(cc)=lab;
+        %labels{cc,1}= lab;
         cc=cc+1;
         fprintf('\n');
     end
@@ -74,8 +77,9 @@ else
     fprintf('\n');
 end
 
-%labels=labels';
+labels=labels';
 %return; 
+
 
 if strcmp(lstmtraining,'y') % training of LSTM network
     
@@ -101,7 +105,7 @@ labelsValidation = labels(idxValidation);
 % create LSTM network
 
 numFeatures = size(sequencesTrain{1},1);
-%numClasses = numel(categories(labelsTrain{1}));
+numClasses = numel(categories(labelsTrain));
 
 %return;
 layers = [
@@ -109,8 +113,8 @@ layers = [
     bilstmLayer(200,'OutputMode','last','Name','bilstm')
    % lstmLayer(200,'OutputMode','sequence','Name','bilstm')
     dropoutLayer(0.5,'Name','drop')
-   % fullyConnectedLayer(numClasses,'Name','fc')
-    fullyConnectedLayer(1,'Name','fc')
+    fullyConnectedLayer(numClasses,'Name','fc')
+   % fullyConnectedLayer(1,'Name','fc')
     softmaxLayer('Name','softmax')
   %  regressionLayer('Name','regression')];
     classificationLayer('Name','classification')];
