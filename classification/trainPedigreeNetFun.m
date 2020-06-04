@@ -18,7 +18,7 @@ end
  
  %netCNN=googlenet;
     
-  
+  return;
 %%%
 
 %%% Computer activations from the google net network based on the training
