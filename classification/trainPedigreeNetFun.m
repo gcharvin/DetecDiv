@@ -8,10 +8,10 @@ load([ path '/options.mat']); % loading options for training --> imageclassifier
 
 %%% training google net classifier independtly
 
-% if strcmp(imageclassifier,'y')
-%     feval('trainImageGoogleNetFun',path,'netCNN'); % trainImageGoogle net first and saves it as netCNN.mat in the LSTM dir
-%     % corresponding variable is 'classifier'
-% end
+if strcmp(imageclassifier,'y')
+    feval('trainImageGoogleNetFun',path,'netCNN'); % trainImageGoogle net first and saves it as netCNN.mat in the LSTM dir
+    % corresponding variable is 'classifier'
+end
 
   load([ path '/netCNN.mat']);
   netCNN=classifier;
@@ -111,9 +111,9 @@ layers = [
     dropoutLayer(0.5,'Name','drop')
    % fullyConnectedLayer(numClasses,'Name','fc')
     fullyConnectedLayer(1,'Name','fc')
-  %  softmaxLayer('Name','softmax')
-    regressionLayer('Name','regression')];
-    %classificationLayer('Name','classification')];
+    softmaxLayer('Name','softmax')
+  %  regressionLayer('Name','regression')];
+    classificationLayer('Name','classification')];
 
 % specifiy training options
 
