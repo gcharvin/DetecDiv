@@ -20,11 +20,29 @@ if numel(roiobj.image)==0
     roiobj.load;
 end
 
+
+
+
 pix=find(roiobj.channelid==classif.channel(1)); % find channels corresponding to trained data
 im=roiobj.image(:,:,pix,:);
 
 pix2=find(roiobj.channelid==classif.channel(2)); % find channels corresponding to trained data
 im2=roiobj.image(:,:,pix2,:);
+
+pixresults=findChannelID(roiobj,['results_' classif.strid]); 
+if numel(pixresults)>0 
+%pixresults=find(roiobj.channelid==cc); % find channels corresponding to trained data
+roiobj.image(:,:,pixresults,:)=im2;%uint16(zeros(size(im,1),size(im,2),1,size(im,4)));
+else
+   % add channel is necessary 
+   matrix=im2;
+   rgb=[1 1 1];
+   intensity=[0 0 0];
+   pixresults=size(roiobj.image,3)+1;
+   roiobj.addChannel(matrix,['results_' classif.strid],rgb,intensity);
+end
+
+return;
 
 disp('Formatting video before classification....');
 %size(im)
@@ -256,7 +274,22 @@ for mm=1:numel(neighborsList)
         imtmp2=im(:,:,1,ll);
         imtmp(bw)=imtmp2(bw); % image in which only pixells associated with the pair are non zeros
         
-        arry, arrx
+        %arrx=arrx(arrx>=1); arrx=arrx(arrx<=size(imtmp,2));
+        %arry=arry(arry>=1); arry=arry(arry<=size(imtmp,1));
+        
+        if sum(arrx<1)~=0
+            pasok=1; break;
+        end
+         if sum(arry<1)~=0
+            pasok=1; break;
+         end
+        if sum(arrx>size(imtmp,2))~=0
+            pasok=1; break;
+        end
+         if sum(arry>size(imtmp,1))~=0
+            pasok=1; break;
+        end
+        
         imcrop=imtmp(arry,arrx);
         imcrop=double(imadjust(imcrop,[meanphc/65535 maxphc/65535],[0 1]))/65535;
         imcrop=repmat(imcrop,[1 1 3]);

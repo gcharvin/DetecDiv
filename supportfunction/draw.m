@@ -357,8 +357,20 @@ for i=1:numel(obj.display.channel)
             pl = fieldnames(obj.results);
             %aa=obj.results
             for k = 1:length(pl)
+                if isfield(obj.results.(pl{k}),'labels')
                 tt=char(obj.results.(pl{k}).labels(obj.display.frame));
                 str=[str ' - ' tt ' (' pl{k} ')'];
+                end
+                
+                if isfield(obj.results.(pl{k}),'mother')
+                    % pedigree data available .  
+                    
+                    if strcmp(['results_' pl{k}],str) % identify channel
+                        
+                        plotLinksResults(obj,hp,pl{k})
+                        
+                    end
+                end
             end
         end
         
@@ -913,8 +925,20 @@ for i=1:numel(obj.display.channel)
             pl = fieldnames(obj.results);
             %aa=obj.results
             for k = 1:length(pl)
+                if isfield(obj.results.(pl{k}),'labels')
                 tt=char(obj.results.(pl{k}).labels(obj.display.frame));
                 str=[str ' - ' tt ' (' pl{k} ')'];
+                end
+                
+                if isfield(obj.results.(pl{k}),'mother')
+                    % pedigree data available .  
+                    
+                    if strcmp(['results_' pl{k}],str) % identify channel
+                        
+                        plotLinksResults(obj,hp,pl{k})
+                        
+                    end
+                end
             end
         end
         
@@ -1024,6 +1048,62 @@ mother=obj.train.(classif.strid).mother;
             end
         end
 end
+
+function plotLinksResults(obj,hp,strid)
+mother=obj.results.(strid).mother;
+        
+        hmother=findobj('Tag','mothertagresults');
+        hmother2=findobj('Tag','mothertagresults2');
+        
+        hpt=findobj(hp,'UserData',['results_' strid]);
+        hpt=findobj(hpt,'Type','Image');
+        
+        imtmp=hpt.CData;
+        %imtmp=im(cc).data;
+        
+        if numel(hmother)>0
+            if ishandle(hmother)
+                delete(hmother);
+            end
+        end
+        if numel(hmother2)>0
+            if ishandle(hmother2)
+                delete(hmother2);
+            end
+        end
+        
+        for i=1:numel(mother)
+            if mother(i)~=0
+                
+                bw=imtmp==i;
+                bw2=imtmp==mother(i);
+                
+                stat=regionprops(bw,'Centroid');
+                stat2=regionprops(bw2,'Centroid');
+                
+                if numel(stat)==1 && numel(stat2)==1
+                    x1=stat(1).Centroid(1);
+                    y1=stat(1).Centroid(2);
+                    
+                    x2=stat2(1).Centroid(1);
+                    y2=stat2(1).Centroid(2);
+                    
+                    
+                    
+                    hmother(i)=line([x1 x2],[y1 y2],'Color',[0.5 0.5 0.5],'Tag','mothertagresults','LineWidth',3);
+                    
+                    x=x2+0.8*(x1-x2);
+                    y=y2+0.8*(y1-y2);
+                    
+                    hmother2(i)=line([x x],[y y],'Color',[0.5 0.5 0.5],'Tag','mothertagresults2','LineWidth',3,'Marker','o','MarkerSize',10);
+                end
+                % HERE
+                
+            end
+        end
+end
+
+
 
 
 function im=buildimage(obj)
