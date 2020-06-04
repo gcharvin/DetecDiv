@@ -85,7 +85,7 @@ end
 % end
 
 %save([classif.path '/options.mat'],'cactivations','imageclassifier','lstmtraining','assemblenet'); % save options to be used in training function
-save([classif.path '/options.mat'],'cactivations','lstmtraining','assemblenet'); % save options to be used in training function
+save([classif.path '/options.mat'],'cactivations','lstmtraining','assemblenet','imageclassifier'); % save options to be used in training function
     end
     
      if ~isfolder([classif.path '/' foldername '/timeseries'])
