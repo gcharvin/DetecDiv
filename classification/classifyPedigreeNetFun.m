@@ -42,7 +42,7 @@ else
    roiobj.addChannel(matrix,['results_' classif.strid],rgb,intensity);
 end
 
-return;
+%return;
 
 disp('Formatting video before classification....');
 %size(im)
