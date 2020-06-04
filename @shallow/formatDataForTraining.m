@@ -562,9 +562,9 @@ parfor i=rois
 %                   lab=360*atan2(oy2-oy1,ox2-ox1)/(2*pi);
                   
                   if neighborsList(mm)==mother(k)
-                         lab= categorical(classif.classes{2}); % link class
+                         lab= {categorical(classif.classes{2})}; % link class
                       else
-                        lab= categorical(classif.classes{1}); % no link class
+                        lab= {categorical(classif.classes{1})}; % no link class
                   end
                       
                   deep=[];
