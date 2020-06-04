@@ -64,8 +64,8 @@ else
         video = centerCrop(vid,inputSize);
         
         sequences{cc,1} = activations(netCNN,video,layerName,'OutputAs','columns');
-        labels(cc)=lab;
-        %labels{cc,1}= lab;
+        %labels(cc)=lab;
+        labels{cc,1}= lab;
         cc=cc+1;
         fprintf('\n');
     end
