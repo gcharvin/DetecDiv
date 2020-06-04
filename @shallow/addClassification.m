@@ -51,8 +51,8 @@ end
 
 if strcmp(classlist{classitype,2},'Cell cluster lineage') % it s a regression analysis classes not required
     needClasses=0;
-    %classes=['background cell']; 
-    classes=[];
+    classes=['nolink link']; 
+    %classes=[];
 end
 
 if needClasses==1 % if cell segmentation, then class number is bacjground and cell by default

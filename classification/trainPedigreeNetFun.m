@@ -106,7 +106,7 @@ numFeatures = size(sequencesTrain{1},1);
 %return;
 layers = [
     sequenceInputLayer(numFeatures,'Name','sequence')
-    bilstmLayer(2000,'OutputMode','last','Name','bilstm')
+    bilstmLayer(200,'OutputMode','last','Name','bilstm')
    % lstmLayer(200,'OutputMode','sequence','Name','bilstm')
     dropoutLayer(0.5,'Name','drop')
    % fullyConnectedLayer(numClasses,'Name','fc')
@@ -119,7 +119,7 @@ layers = [
 
 %miniBatchSize = 16;
 
-miniBatchSize = 128;
+miniBatchSize = 64;
 
 numObservations = numel(sequencesTrain);
 numIterationsPerEpoch = max(1,floor(numObservations / miniBatchSize));
@@ -128,7 +128,7 @@ numIterationsPerEpoch = max(1,floor(numObservations / miniBatchSize));
      
 options = trainingOptions('adam', ...
     'MiniBatchSize',miniBatchSize, ...
-    'InitialLearnRate',1e-2, ...
+    'InitialLearnRate',1e-3, ...
     'LearnRateSchedule','piecewise',...
      'LearnRateDropPeriod',30,...
     'LearnRateDropFactor',0.7,...

@@ -20,7 +20,7 @@ end
 mkdir(classif.path,foldername)
 end
 
-if strcmp(category,'Image') || strcmp(category,'LSTM') || strcmp(category,'Object')
+if strcmp(category,'Image') || strcmp(category,'LSTM') || strcmp(category,'Object') || strcmp(category,'Pedigree')
   
         if ~isfolder([classif.path '/' foldername '/images'])
             mkdir([classif.path '/' foldername], 'images');
@@ -54,11 +54,11 @@ end
 if strcmp(category,'Pedigree')
     
     if nargin<3
-%     prompt='Train googlenet image classifier ? (y / n [Default y]): ';
-% imageclassifier= input(prompt,'s');
-% if numel(imageclassifier)==0
-%     imageclassifier='y';
-% end
+     prompt='Train googlenet image classifier ? (y / n [Default y]): ';
+ imageclassifier= input(prompt,'s');
+ if numel(imageclassifier)==0
+     imageclassifier='y';
+ end
 
  prompt='Compute activation for google net ? (y / n [Default y]): ';
 cactivations= input(prompt,'s');
@@ -154,7 +154,7 @@ disp('Starting parallelized jobs for data formatting....')
 
 
 warning off all
-parfor i=rois
+for i=rois
     disp(['Launching ROI ' num2str(i) :' processing...'])
     
     
@@ -281,8 +281,6 @@ parfor i=rois
         end
         end  
     end
-    
-    
     
     if strcmp(category,'Image') || strcmp(category,'LSTM')
       % classif
@@ -416,14 +414,16 @@ parfor i=rois
     
     if strcmp(category,'Pedigree') %loop on all newly created objects, check if they have a mother assigned and save
     
-        msize=[90 90]; % size of window surrounding the bud
-        timespan=[-2:5]; % time span before and after bud emergence
+        msize=[120 120]; % size of window surrounding the bud
+        timespan=[-1:2]; % time span before and after bud emergence
         nrot=20; % number of random rotations added to augment datastore
+        mother=cltmp(i).train.(classif.strid).mother;
+        reverseStr='';
         
-        for k=1:numel(cltmp(i).train.(classif.strid).mother)
+        for k=1:numel(mother)
            if  cltmp(i).train.(classif.strid).mother(k)~=0 % cell has a mother
                 
-                
+                 % imwrite(imcrop,[classif.path '/' foldername '/images/' classif.classes{clas} '/' cltmp(i).id '_frame_' tr '_obj' num2str(k) '.tif']);
                 %im : image 
                 
                   pixelchannel2=cltmp(i).findChannelID(classif.strid);
@@ -445,10 +445,19 @@ parfor i=rois
                   minet=frtot>=1;
                   frtot=frtot(minet);
                   maxet=frtot<=size(im,4);
-                  frtot=frtot(maxet);
+                  frtot=frtot(maxet); %  the collection of frame to extract 4D volume
                   
-                 % fr, frtot
-                %  vid
+                  
+                  
+                  % idetify neighbors on the frame of appearance 
+                  budBW=im2(:,:,1,fr)==k;
+                  dil=imdilate(budBW,strel('Disk',10));
+                  totObjects=im2(:,:,1,fr);
+                  neighbors=totObjects(dil);
+                  neighborsList=setxor(unique(neighbors(:)),0);
+                  
+                  for mm=1:numel(neighborsList)
+
                   ccc=1;
                   
                   vid=uint8(zeros(msize(1),msize(2),3,numel(frtot)));
@@ -456,7 +465,7 @@ parfor i=rois
                   %k,aa=cltmp(i).train.(classif.strid).mother(k),frtot
                   pasok=0;
                   
-                  for ll=frtot % extract 4D volume around bud
+                  for ll=frtot % for each bud , extract images with all possible neighbors %extract 4D volume around bud
                    
                       if ll<fr %image is fixed
                           tmp=im2(:,:,1,fr)==k;
@@ -466,7 +475,7 @@ parfor i=rois
                   
                       stat=regionprops(tmp,'Centroid');
                       
-                      if numel(stat)==0 % the cell is not present on that frame; quitting collecting data
+                      if numel(stat)==0 % the cell is not present on that frame; quitting collecting 4D data
                           pasok=1;
                           break
                       end
@@ -475,14 +484,54 @@ parfor i=rois
                       oy=round(stat(1).Centroid(2));
                       %ll
                       
-                      
                       arrx=ox-msize(1)/2:ox+msize(1)/2-1;
                       arry=oy-msize(2)/2:oy+msize(2)/2-1;
-                      imcrop=im(arry,arrx,1,ll);
                       
+                      if ll>=fr
+                         
+                      l1=im2(:,:,1,ll)==k;
+                      l2=im2(:,:,1,ll)==neighborsList(mm);
                       
-                      imcrop = double(imadjust(imcrop,[meanphc/65535 maxphc/65535],[0 1]))/65535;
+                      bw= l1 | l2; % bw image with pairs
+
+
+                      thr=5; % threshold to find regions of image close to neighbor
+                      bw1=bwdist(l1).*l2;
+                      bw1=bw1<thr & bw1>0;
+                      bw2=bwdist(l2).*l1;
+                      bw2=bw2<thr & bw2>0;
+                      bwtot= bw1 | bw2; % objects in close proximity
+                      bwtot=imdilate(bwtot,strel('Disk',3));
+                      bw= bw | bwtot; % mask with interestings pairs
+                      
+                      else % before bud emerges, takes only the mother into account
+                      
+                        bw=  im2(:,:,1,ll)==neighborsList(mm);
+                      end
+                    
+                      imtmp=uint16(zeros(size(im,1),size(im,2)));
+                      imtmp2=im(:,:,1,ll);
+                      imtmp(bw)=imtmp2(bw); % image in which only pixells associated with the pair are non zeros
+                      
+                      imcrop=imtmp(arry,arrx); 
+                      imcrop=double(imadjust(imcrop,[meanphc/65535 maxphc/65535],[0 1]))/65535;
                       imcrop=repmat(imcrop,[1 1 3]);
+                      
+                      %now save image in appropriate folder for googlenet
+                      %training 
+                      if neighborsList(mm)==mother(k) && ll>=fr
+                         clas=2; % link class
+                      else
+                         clas=1; 
+                      end
+                      
+                      imwrite(imcrop,[classif.path '/' foldername '/images/' classif.classes{clas} '/' cltmp(i).id '_frame_' num2str(ll) '_obj_' num2str(k) '_neighbor_' num2str(mm) '.tif']);
+
+                      %imcrop=im(arry,arrx,1,ll);
+                      
+                      
+                      %imcrop = double(imadjust(imcrop,[meanphc/65535 maxphc/65535],[0 1]))/65535;
+                      %imcrop=repmat(imcrop,[1 1 3]);
                       
                      % figure, imshow(uint8(256*imcrop),[]);
                     %  return;
@@ -497,64 +546,69 @@ parfor i=rois
                   
                   
                   % compute angle between mother and daughter link 
-                  tmp1=im2(:,:,1,fr)==k;
-                  tmp2=im2(:,:,1,fr)==cltmp(i).train.(classif.strid).mother(k);
+%                   tmp1=im2(:,:,1,fr)==k;
+%                   tmp2=im2(:,:,1,fr)==cltmp(i).train.(classif.strid).mother(k);
+%                   
+%                   stat1=regionprops(tmp1,'Centroid');
+%                   ox1=round(stat1(1).Centroid(1));
+%                   oy1=round(stat1(1).Centroid(2));
+%                   
+%                   stat2=regionprops(tmp2,'Centroid');
+%                   ox2=round(stat2(1).Centroid(1));
+%                   oy2=round(stat2(1).Centroid(2));
+%                   
+%                   %return;
+%                   
+%                   lab=360*atan2(oy2-oy1,ox2-ox1)/(2*pi);
                   
-                  stat1=regionprops(tmp1,'Centroid');
-                  ox1=round(stat1(1).Centroid(1));
-                  oy1=round(stat1(1).Centroid(2));
-                  
-                  stat2=regionprops(tmp2,'Centroid');
-                  ox2=round(stat2(1).Centroid(1));
-                  oy2=round(stat2(1).Centroid(2));
-                  
-                  %return;
-                  
-                  lab=360*atan2(oy2-oy1,ox2-ox1)/(2*pi);
-                  
-                  
+                  if neighborsList(mm)==mother(k)
+                         lab=2; % link class
+                      else
+                        lab=1; % no link class
+                  end
+                      
                   deep=[];
-                  parsave([classif.path '/' foldername '/timeseries/lstm_labeled_' cltmp(i).id '_cell_' num2str(k) '.mat'],deep,vid,lab);
+                  parsave([classif.path '/' foldername '/timeseries/lstm_labeled_' cltmp(i).id '_cell_' num2str(k) '_neighbor_' num2str(mm)  '.mat'],deep,vid,lab);
                   % saves original video
                  
                   
                   
                   
-                  angle=360*rand(1,nrot);
-                  
-                  for jk=1:nrot % perform random rotation of this 4D volume to augment
-                     
-                      vidtmp=uint8(zeros(size(vid)));
-                      angletmp=angle(jk);
-                      
-                      if lab+angletmp>180
-                         labtmp=lab+angletmp-360; 
-                      else
-                         labtmp=lab+angletmp; 
-                      end
-                      
-                      
-                      for jkl=1:size(vidtmp,4)
-
-                          vidtmp(:,:,:,jkl)=imrotate(vid(:,:,:,jkl),-angletmp,'crop');
-                          
-                      end
-                      
-                      parsave([classif.path '/' foldername '/timeseries/lstm_labeled_' cltmp(i).id '_cell_' num2str(k) '_rotation_' num2str(jk) '.mat'],deep,vidtmp,labtmp);
-                      
-                     % frtmp=find(frtot==fr);
-                      
-                      
-                 % imtmp=vidtmp(:,:,:,frtmp);
-                  
-                 % size(imtmp)
-                  %figure, imshow(imtmp); hold on;
-                  %line([msize(1)/2 msize(1)/2+ox2-ox1 ],[msize(2)/2 msize(2)/2+oy2-oy1],'Color','r');
-                 % line([msize(1)/2 msize(1)/2+10*cos(2*pi*labtmp/360) ],[msize(2)/2 msize(1)/2+10*sin(2*pi*labtmp/360) ],'Color','g');
-                 % pause
-                 % close
-                  
-                  end
+%                   angle=360*rand(1,nrot);
+%                   
+%                   for jk=1:nrot % perform random rotation of this 4D volume to augment
+%                      
+%                       vidtmp=uint8(zeros(size(vid)));
+%                       angletmp=angle(jk);
+%                       
+%                       if lab+angletmp>180
+%                          labtmp=lab+angletmp-360; 
+%                       else
+%                          labtmp=lab+angletmp; 
+%                       end
+%                       
+%                       
+%                       for jkl=1:size(vidtmp,4)
+% 
+%                           vidtmp(:,:,:,jkl)=imrotate(vid(:,:,:,jkl),-angletmp,'crop');
+%                           
+%                       end
+%                       
+%                       parsave([classif.path '/' foldername '/timeseries/lstm_labeled_' cltmp(i).id '_cell_' num2str(k) '_rotation_' num2str(jk) '.mat'],deep,vidtmp,labtmp);
+%                       
+%                      % frtmp=find(frtot==fr);
+%                       
+%                       
+%                  % imtmp=vidtmp(:,:,:,frtmp);
+%                   
+%                  % size(imtmp)
+%                   %figure, imshow(imtmp); hold on;
+%                   %line([msize(1)/2 msize(1)/2+ox2-ox1 ],[msize(2)/2 msize(2)/2+oy2-oy1],'Color','r');
+%                  % line([msize(1)/2 msize(1)/2+10*cos(2*pi*labtmp/360) ],[msize(2)/2 msize(1)/2+10*sin(2*pi*labtmp/360) ],'Color','g');
+%                  % pause
+%                  % close
+%                   
+%                   end
                 
                   
                   %fr=find(frtot==fr);
@@ -567,8 +621,11 @@ parfor i=rois
                   %close
                   % angl in degrees
                   
-
+                  end
            end
+           msg = sprintf('Pedigree: Processing bud: %d / %d for ROI %s', k, numel(mother),cltmp(i).id); %Don't forget this semicolon
+       fprintf([reverseStr, msg]);
+       reverseStr = repmat(sprintf('\b'), 1, length(msg));
         end
         
     end
