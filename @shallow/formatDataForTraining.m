@@ -503,7 +503,7 @@ parfor i=rois
                       bwtot= bw1 | bw2; % objects in close proximity
                       bwtot=imdilate(bwtot,strel('Disk',3));
                       bw= bw | bwtot; % mask with interestings pairs
-                      bw=imdilate(bw,strel('Disk',3)); % dilate the whole mask a bit
+                      bw=imdilate(bw,strel('Disk',10)); % dilate the whole mask a bit
                       
                       else % before bud emerges, takes only the mother into account
                       
