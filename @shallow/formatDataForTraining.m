@@ -454,7 +454,7 @@ parfor i=rois
                   dil=imdilate(budBW,strel('Disk',10));
                   totObjects=im2(:,:,1,fr);
                   neighbors=totObjects(dil);
-                  neighborsList=setxor(unique(neighbors(:)),0);
+                  neighborsList=setxor(unique(neighbors(:)),[0 k]); % remove background and own cell
                   
                   for mm=1:numel(neighborsList)
 
