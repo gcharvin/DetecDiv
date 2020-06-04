@@ -74,7 +74,7 @@ else
     fprintf('\n');
 end
 
-labels=labels';
+%labels=labels';
 %return; 
 
 if strcmp(lstmtraining,'y') % training of LSTM network
