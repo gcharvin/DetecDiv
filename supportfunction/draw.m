@@ -323,8 +323,23 @@ end
 % available
 
 cc=1;
+
+% delete text handle if present
+ htext=findobj('Tag','tracktext');
+            
+            if numel(htext)>0
+                if ishandle(htext)
+                    delete(htext);
+                end
+            end
+            
+cctext=1;
+
 for i=1:numel(obj.display.channel)
     if obj.display.selectedchannel(i)==1
+        
+        %hp=findobj('UserData',obj.display.channel{i});
+        axes(hp(cc));
         str=obj.display.channel{i};
         
         if numel(obj.train)>0
@@ -376,8 +391,11 @@ for i=1:numel(obj.display.channel)
         
         % display tracking results as numbers on each cell
         %him.image(cc) are the Data
+      
         
         % display tracking numbers on cells
+       % obj.display.channel{i}
+        
         if numel(strfind(obj.display.channel{i},'track'))~=0 | numel(strfind(obj.display.channel{i},'pedigree'))~=0
             
             im=him.image(cc).CData;
@@ -385,20 +403,14 @@ for i=1:numel(obj.display.channel)
             [l n]=bwlabel(im);
             r=regionprops(l,'Centroid');
             
-            htext=findobj('Tag','tracktext');
-            
-            if numel(htext)>0
-                if ishandle(htext)
-                    delete(htext);
-                end
-            end
-            
+           %'ok'
+           
             for k=1:n
                 bw=l==k;
                 id=round(mean(im(bw)));
-                htext(k)=text(r(k).Centroid(1),r(k).Centroid(2),num2str(id),'Color',[1 1 1],'FontSize',20,'Tag','tracktext');
+                htext(cctext)=text(r(k).Centroid(1),r(k).Centroid(2),num2str(id),'Color',[1 1 1],'FontSize',20,'Tag','tracktext');
+                cctext=cctext+1; % update handle counter
             end
-            
             
       
             
@@ -889,10 +901,19 @@ if numel(classif)>0
 end
 
 % display results for image classification
-
+htext=findobj('Tag','tracktext');
+            
+            if numel(htext)>0
+                if ishandle(htext)
+                    delete(htext);
+                end
+            end
+            
 cc=1;
+cctext=1;
 for i=1:numel(obj.display.channel)
     if obj.display.selectedchannel(i)==1
+        axes(hp(cc));
         str=obj.display.channel{i};
         
         if numel(obj.train)>0
@@ -949,19 +970,13 @@ for i=1:numel(obj.display.channel)
             
             [l n]=bwlabel(im);
             r=regionprops(l,'Centroid');
-            
-            htext=findobj('Tag','tracktext');
-            
-            if numel(htext)>0
-                if ishandle(htext)
-                    delete(htext);
-                end
-            end
+  
             
             for k=1:n
                 bw=l==k;
                 id=round(mean(im(bw)));
-                htext(k)=text(r(k).Centroid(1),r(k).Centroid(2),num2str(id),'Color',[1 1 1],'FontSize',20,'Tag','tracktext');
+                htext(cctext)=text(r(k).Centroid(1),r(k).Centroid(2),num2str(id),'Color',[1 1 1],'FontSize',20,'Tag','tracktext');
+                cctext=cctext+1;
             end
             
             

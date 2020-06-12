@@ -3,17 +3,20 @@ function objout=trackObjects(obj,channelstr,inputchannelstr,frames,net)
 % channelstr: segmented objects channel
 % input image channel 
 
+display=1;
 
 channelID=obj.findChannelID(channelstr);
 
 if numel(channelID)==0 % this channel contains the segmented objects
    disp([' This channel ' channelstr ' does not exist ! Quitting ...']) ;
+   return;
 end
 
 inputchannelID=obj.findChannelID(inputchannelstr);
 
 if numel(inputchannelID)==0 % this channel contains the raw images used to segment objects or to characterize the object
    disp([' This channel ' inputchannelstr ' does not exist ! Quitting ...']) ;
+   return;
 end
 
 if numel(obj.image)==0
@@ -21,6 +24,13 @@ if numel(obj.image)==0
 end
 
 im=obj.image(:,:,channelID,:);
+
+rawim=obj.image(:,:,inputchannelID,:);
+
+totphc=rawim;
+meanphc=0.5*double(mean(totphc(:)));
+maxphc=double(meanphc+0.5*(max(totphc(:))-meanphc));
+
 
 if nargin<4
     frames=1:size(im,4);
@@ -33,6 +43,7 @@ end
 if nargin<5
    % net=googlenet; % load pretrained googlenet CNN; TO DO : train this network to detect cells vs non cell objects to get a better discrimination ? 
     net=resnet50;
+    
 end
 
 %creates an output channel to update results
@@ -41,6 +52,7 @@ pixresults=findChannelID(obj,['track_' channelstr]);
 
 if numel(pixresults)>0
 %pixresults=find(roiobj.channelid==cc); % find channels corresponding to trained data
+
 obj.image(:,:,pixresults,:)=im; %uint16(zeros(size(obj.image,1),size(obj.image,2),1,size(obj.image,4)));
 else
    % add channel is necessary 
@@ -64,23 +76,58 @@ end
 
 area=area';
 areamean=mean(area);
-distancemean=2*sqrt(areamean)*2/pi; % typical cell size in movie x 2 
+distancemean=2*sqrt(areamean)*2/pi;
+
+% typical cell size in movie x 2 
 
 %
 
 imref=im(:,:,1,frames(1));
 obj.image(:,:,pixresults,frames(1))=bwlabel(imref);
-cellsref=getCells(obj.image(:,:,pixresults,frames(1)),obj.image(:,:,inputchannelID,frames(1)),net);
+cellsref=getCells(obj.image(:,:,pixresults,frames(1)),rawim(:,:,1,frames(1)),net,meanphc,maxphc);
 
-
+if display==1
+   figure; 
+   for i=1:numel(cellsref)
+      line(cellsref(i).ox,-cellsref(i).oy,'LineStyle','none','Marker','.','MarkerSize',40,'Color','b'); 
+      text(cellsref(i).ox,-0.5*cellsref(i).oy,num2str(i),'Color','b');
+   end
+end
+    
 for i=frames(1)+1:frames(end) % loop on all frames
     
     imtest=im(:,:,1,i);
     [ltest,ntest]=bwlabel(imtest);
     
-    cellstest=getCells(ltest,obj.image(:,:,inputchannelID,i),net);
-    cellsref=hungarianTracker(cellsref,cellstest,distancemean);
+    cellstest=getCells(ltest,obj.image(:,:,inputchannelID,i),net,meanphc,maxphc);
     
+    if display==1
+   
+   for j=1:numel(cellstest)
+      line(cellstest(j).ox,-cellstest(j).oy,'LineStyle','none','Marker','.','MarkerSize',35,'Color','r'); 
+       text(cellstest(j).ox,-0.5*cellstest(j).oy,num2str(j),'Color','r');
+      
+   end
+   
+   
+    end
+
+    
+    cellsrefstore=cellsref;
+    
+    [cellsref,cost]=hungarianTracker(cellsref,cellstest,distancemean);
+    
+    if display==1
+    for j=1:numel(cellsrefstore)
+        for k=1:numel(cellstest)
+            if ~isinf(cost(j,k))
+        line([cellsrefstore(j).ox cellstest(k).ox],[-cellsrefstore(j).oy -cellstest(k).oy],'Color','k');
+        
+        text(0.5*(cellsrefstore(j).ox+cellstest(k).ox),-0.5*(cellsrefstore(j).oy+cellstest(k).oy),num2str(double(round(1000*cost(j,k))/1000)));
+            end
+        end
+    end
+    end
    % disp([cellstest.n]);
     
     %disp('ok')
@@ -94,6 +141,7 @@ for i=frames(1)+1:frames(end) % loop on all frames
     end
 
     obj.image(:,:,pixresults,i)=bw;
+  
 fprintf('.');
 end
 fprintf('\n');
@@ -103,7 +151,7 @@ objout=obj;
 disp('Tracking done !');
 
 
-function cells=getCells(l,rawimage,net)
+function cells=getCells(l,rawimage,net,meanphc,maxphc)
 % create cell structure from image
 
 
@@ -118,6 +166,7 @@ layerName = "avg_pool"; %resnet50 or inceptionresnetv2
 %layerName = "pool5"; %resnet101
 
 %rawimage=repmat(rawimage,[1 1 3]);
+rawimage = double(imadjust(rawimage,[meanphc/65535 maxphc/65535],[0 1]))/256;
 
 for i=1:max(l(:))
     
@@ -127,29 +176,52 @@ for i=1:max(l(:))
     cells(i).n=i;%round(mean(l==i));
     
     tmp=round(r(i).BoundingBox);
-    im=rawimage(tmp(2):tmp(2)+tmp(4)-1,tmp(1):tmp(1)+tmp(3)-1);
     
-    nsize=100;
-    imout=uint16(zeros(nsize,nsize));
-    % adjust all cell masks into a 100x100 mask to preserve the respective
-    % sizes of images
-    % resize im if odd numbers
-    siz=size(im);
-    im=imresize(im,[siz(1) + mod(siz(1),2) , siz(2) + mod(siz(2),2)]);
+    %meanphc,maxphc,max(rawimage(:))
     
-    %size(im)
-    arrx=nsize/2-size(im,1)/2:nsize/2+size(im,1)/2-1;
-    arry=nsize/2-size(im,2)/2:nsize/2+size(im,2)/2-1;
-    imout(arrx,arry)=im;
-    im=imout;
+    offset=10;%5
+    %figure, imshow(rawimage,[]);
+    bw=imdilate(l==i,strel('Disk',offset));
+    %bw=l==i;
+    imtmp=rawimage;
+    imtmp(~bw)=0;
+    
+    minex=max(1,tmp(2)-offset);
+    maxex=min(size(imtmp,1),tmp(2)+tmp(4)-1+offset);
+    
+    miney=max(1,tmp(1)-offset);
+    maxey=min(size(imtmp,2),tmp(1)+tmp(3)-1+offset);
+    
+    im=imtmp(minex:maxex,miney:maxey);
+    
+    % figure, imshow(im,[]);
+     
+    % max(im(:))
+%     nsize=100;
+%     imout=uint8(zeros(nsize,nsize));
+%     % adjust all cell masks into a 100x100 mask to preserve the respective
+%     % sizes of images
+%     % resize im if odd numbers
+%     siz=size(im);
+%     im=imresize(im,[siz(1) + mod(siz(1),2) , siz(2) + mod(siz(2),2)]);
+%     
+%     %size(im)
+%     arrx=nsize/2-size(im,1)/2:nsize/2+size(im,1)/2-1;
+%     arry=nsize/2-size(im,2)/2:nsize/2+size(im,2)/2-1;
+%     imout(arrx,arry)=im;
+%     im=imout;
+
     % adjust the image to fit the network input size (224 x 224 x 3for
     % goooglenet)
+    
+    %figure, imshow(im,[]);
     
     im=repmat(im,[1 1 3]);
     im=imresize(im,inputSize);
 
+    % figure, imshow(im,[]);
+    %pause
     
-    %figure, imshow(im,[]);
     cells(i).ac = activations(net,im,layerName,'OutputAs','rows');
     % HERE : take an image of the same size for each cell to be able to compare for different sizes
     % of images , like 224 x 224
@@ -159,7 +231,7 @@ end
 
 
 
-function newcell=hungarianTracker(cell0,cell1,meancellsize)
+function [newcell,cost]=hungarianTracker(cell0,cell1,meancellsize)
 
 % this function performs the tracking of cell contours based on an
 % assignment cost matrix and the Hungarian method for assignment
@@ -167,7 +239,7 @@ function newcell=hungarianTracker(cell0,cell1,meancellsize)
 OK=0;
 newcell=[];
    
-param=struct('cellsize',70,'cellshrink',1,'coefdist',0.,'coefsize',1,'filterpos',0);
+param=struct('cellsize',70,'cellshrink',1,'coefdist',0,'coefsize',1,'filterpos',0);
   
 newcell=param;
 
@@ -218,13 +290,14 @@ for i=1:length(ind0)
         %i,j
         codist=pdist([cell0(id).ac;cell1(jd).ac], 'cosine');
         
-        if dist > 1 %sqrt(sqdist)>param.cellsize % 70 % impossible to join cells that are further than 70 pixels
+        if dist > 2 %sqrt(sqdist)>param.cellsize % 70 % impossible to join cells that are further than 70 pixels
             continue;
         end
+        % HERE : see if dist can be replaced by codist for the threshold
 
-       % M(i,j)= codist*dist;
+        %M(i,j)= codist*dist;
        % M(i,j)=(param.coefdist*dist+param.coefsize*codist);%+param.coefsize*abs(sizedist)/(areamean));
-        M(i,j)=param.coefsize*codist;
+        M(i,j)=param.coefdist*dist+param.coefsize*codist;
     end
 end
 
@@ -285,6 +358,8 @@ for i=1:length(newcell)
    end
    end
 end
+
+cost=M;
 
 OK=1;
 

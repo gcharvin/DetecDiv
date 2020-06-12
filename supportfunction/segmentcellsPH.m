@@ -41,7 +41,7 @@ end
 
 function BW=segmentPhaseContrast(img)
 
-param=struct('channel',1,'minSize',100,'maxSize',5000,'thresh',0.25,'display',0,'mask','');
+param=struct('channel',1,'minSize',100,'maxSize',5000,'thresh',0.25,'display',1,'mask','');
 
 img2=img;
 

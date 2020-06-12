@@ -366,8 +366,10 @@ for i=1:obj.channels
 end
 
 htext=findobj('Tag','frametext');
+%aa=obj.display.frame
 
-htext.String=num2str(obj.display.frame);
+
+set(htext,'String',num2str(obj.display.frame))
 
 axes(hp(1))
 for i=1:numel(obj.roi)

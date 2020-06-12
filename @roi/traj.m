@@ -38,10 +38,10 @@ set(gca,'FontSize',20);
 
 if numel(obj.train)~=0
    
-    x=1:numel(obj.train);
-    y=obj.train;
+    x=1:numel(obj.train.(classistr).id);
+    y=obj.train.(classistr).id;
     
-    plot(x,y,'Color','b','LineWidth',1); hold on;
+    plot(x,y,'Color','k','LineWidth',1); hold on;
 end
 
 
@@ -50,7 +50,7 @@ end
 x=1:numel(obj.results.(classistr).id);
 y=obj.results.(classistr).id;
 
-plot(x,y,'Color','k','LineWidth',2); hold on;
+plot(x,y,'Color','b','LineWidth',2); hold on;
 
 
 
