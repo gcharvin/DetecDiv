@@ -28,12 +28,8 @@ if numel(classitype)==0
     classitype=1;
 end
 
-if strcmp(classlist{classitype,2},'Cell segmentation')
-  
-    
-end
 
-disp('For object classification and pedigree analysis, you need to provide 1 channel for images and 1 for (tracked) objects');
+disp('For object classification, tracking and pedigree analysis, you need to provide 1 channel for images and 1 for (tracked) objects');
 prompt='Please enter the channel(s) on which to operate the classification ? (Default:1): ';
 channeltype= input(prompt,'s');
 if numel(channeltype)==0
@@ -49,7 +45,7 @@ if strcmp(classlist{classitype,2},'Cell segmentation') % classes are predefined,
     classes=['background cell']; 
 end
 
-if strcmp(classlist{classitype,2},'Cell cluster lineage') % it s a regression analysis classes not required
+if strcmp(classlist{classitype,2},'Cell cluster lineage') | strcmp(classlist{classitype,2},'Cell cluster tracking') % for pedigree and tracking , classes are predefined
     needClasses=0;
     classes=['nolink link']; 
     %classes=[];

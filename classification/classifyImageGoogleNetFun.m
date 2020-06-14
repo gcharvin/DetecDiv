@@ -1,4 +1,4 @@
-function roiout=classifyImageGoogleNetFun(roiobj,classif,classifier)
+function roiout=classifyTrackingNetFun(roiobj,classif,classifier)
 
 % this function can be used to classify any roi object, by providing the
 % classi object and the classifier 
@@ -38,11 +38,11 @@ numClasses = numel(classNames);
     
    % [label,scores] = classify(net,gfp);
     
-       if numel(gpuDeviceCount)==0
+   %    if numel(gpuDeviceCount)==0
     [label,scores] = classify(net,gfp); % this is used to get the probabilities rather than the classification itself
-   else
-    [label,scores] = classify(net,gfp,'Acceleration','mex');   
-   end
+  % else
+   % [label,scores] = classify(net,gfp,'Acceleration','mex');   
+   %end
     
     % upload results into roi obj;
     

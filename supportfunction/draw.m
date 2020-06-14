@@ -180,14 +180,14 @@ h.WindowButtonUpFcn = '';
 keys={'a' 'z' 'e' 'r' 't' 'y' 'u' 'i' 'o' 'p' 'q' 's' 'd' 'f' 'g' 'h' 'j'};
 h.KeyPressFcn={@changeframe,obj,him,hp,keys,classif};
 
-handles=findobj('Tag','frametexttitle');
+handles=findobj(h,'Tag','frametexttitle');
 if numel(handles)==0
     btnSetFrame = uicontrol('Style', 'text','FontSize',14, 'String', 'Enter frame number here, or use arrows <- ->',...
         'Position', [50 50 300 20],'HorizontalAlignment','left', ...
         'Tag','frametexttitle') ;
 end
 
-handles=findobj('Tag','frametext');
+handles=findobj(h,'Tag','frametext');
 if numel(handles)==0
     btnSetFrame = uicontrol('Style', 'edit','FontSize',14, 'String', num2str(obj.display.frame),...
         'Position', [50 20 80 20],...
@@ -325,7 +325,7 @@ end
 cc=1;
 
 % delete text handle if present
- htext=findobj('Tag','tracktext');
+ htext=findobj(gcf,'Tag','tracktext');
             
             if numel(htext)>0
                 if ishandle(htext)
@@ -901,7 +901,7 @@ if numel(classif)>0
 end
 
 % display results for image classification
-htext=findobj('Tag','tracktext');
+htext=findobj(gcf,'Tag','tracktext');
             
             if numel(htext)>0
                 if ishandle(htext)
@@ -990,7 +990,7 @@ for i=1:numel(obj.display.channel)
     end
 end
 
-htext=findobj('Tag','frametext');
+htext=findobj(gcf,'Tag','frametext');
 htext.String=num2str(obj.display.frame);
 
 % if classif result is displayed, then update the position of the cursor

@@ -70,7 +70,7 @@ fprintf('Training network...\n');
 % augment dataset
 
 pixelRange = [-100 100];
-scaleRange = [0.5 2];
+scaleRange = [0.7 1.3];
 rotation=[-180 180];
 
 imageAugmenter = imageDataAugmenter( ...
@@ -86,7 +86,7 @@ augimdsTrain = augmentedImageDatastore(inputSize(1:2),imdsTrain, ...
 
 augimdsValidation = augmentedImageDatastore(inputSize(1:2),imdsValidation);
 
-miniBatchSize = 32;
+miniBatchSize = 8;
 valFrequency = floor(numel(augimdsTrain.Files)/miniBatchSize);
 options = trainingOptions('sgdm', ...
     'MiniBatchSize',miniBatchSize, ...
