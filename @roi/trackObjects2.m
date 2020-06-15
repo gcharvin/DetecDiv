@@ -9,7 +9,7 @@ function objout=trackObjects2(obj,channelstr,inputchannelstr,frames,classiid,cla
 % channelstr: segmented objects channel
 % input image channel 
 
-display=0;
+display=1;
 
 channelID=obj.findChannelID(channelstr);
 
