@@ -11,6 +11,19 @@ for i=1:numel(classif.classes)
 end
 
 
+% for i=1:size(im,4)
+%    
+%     stats=regionprops(im(:,:,1,i)>0,'Area');
+%     tmp=[stats.Area];
+%    % size(tmp)
+%     area=[area; tmp'];
+% end
+% 
+% area=area';
+% areamean=mean(area);
+% distancemean=2*sqrt(areamean)*2/pi;
+
+
 cltmp=classif.roi;
 
 disp('Starting parallelized jobs for data formatting....')
@@ -116,7 +129,7 @@ for i=rois
                 
             dist=sqrt((stat2(l).Centroid(2)-stat1.Centroid(2)).^2+(stat2(l).Centroid(1)-stat1.Centroid(1)).^2);
 
-            if dist<150 % pixel, arbitrarily defined 
+            if dist<100 % pixel, arbitrarily defined 
                 
                % print image with appropriate masking
                % in case an effective mapping is observed put it in the
@@ -130,12 +143,14 @@ for i=rois
                tm(bw1dil)=tmp1(bw1dil); % write object of interest on image
                imout(:,:,1)=tm;
                
+               
               % figure, imshow(imout,[]);
                tm=uint8(zeros(size(im,1),size(im,2)));
                tm(bw2dil)=tmp2(bw2dil); % write object of interest on image
                imout(:,:,2)=tm;
                % test if objects correspond
                
+               imout(:,:,3)=tmp1;
                %l
                val1=round(mean(label1(bw1)));
                val2=round(mean(label2(bw2)));
