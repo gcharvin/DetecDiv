@@ -359,7 +359,7 @@ for i=1:length(ind0)
         [cost imout]=trackingComputeCost(iminput0,iminput1,cell0(id).bw,cell1(jd).bw,classifier,thr*meancellsize);
       % |
       
-      cost 
+     % cost 
       
         if i==4 & j==11
            % figure, imshow(imout); 

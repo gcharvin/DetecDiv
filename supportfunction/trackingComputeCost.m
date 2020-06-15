@@ -28,7 +28,7 @@ if dist<thr % pixel, arbitrarily defined
     imout(:,:,2)=tm;
     % test if objects correspond
    
-    imout(:,:,3)=iminput1;
+    %imout(:,:,3)=iminput1;
     
     cost=activations(classifier,imout,'prob');
     

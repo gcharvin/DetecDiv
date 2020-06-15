@@ -150,7 +150,7 @@ for i=rois
                imout(:,:,2)=tm;
                % test if objects correspond
                
-               imout(:,:,3)=tmp1;
+              % imout(:,:,3)=tmp1;
                %l
                val1=round(mean(label1(bw1)));
                val2=round(mean(label2(bw2)));
