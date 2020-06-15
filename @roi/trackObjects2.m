@@ -174,7 +174,7 @@ for i=frames(1)+1:frames(end) % loop on all frames
             if ~isinf(cost(j,k))
         line([cellsrefstore(j).ox cellstest(k).ox],[-cellsrefstore(j).oy -cellstest(k).oy],'Color','k');
         
-        text(0.5*(cellsrefstore(j).ox+cellstest(k).ox),-0.5*(cellsrefstore(j).oy+cellstest(k).oy),num2str(double(round(1000*cost(j,k))/1000)));
+        text(0.5*(cellsrefstore(j).ox+cellstest(k).ox),-0.5*(cellsrefstore(j).oy+cellstest(k).oy),num2str(double(round(1000*cost(j,k))/1000)),'FontSize',20);
             end
         end
     end
@@ -359,14 +359,15 @@ for i=1:length(ind0)
         [cost imout]=trackingComputeCost(iminput0,iminput1,cell0(id).bw,cell1(jd).bw,classifier,thr*meancellsize);
       % |
       
+      cost 
       
         if i==4 & j==11
-            figure, imshow(imout); 
-            i,j,cost
+           % figure, imshow(imout); 
+           % i,j,cost
             title([num2str(i) ' - ' num2str(j) ' - ' num2str(-log(double(cost)))]);
         end 
     
-        M(i,j)=-log(cost); % take the loglikelyhood of the probability 
+        M(i,j)=1./cost; % take the loglikelyhood of the probability 
         %param.coefdist*dist+param.coefsize*codist;
     end
    
