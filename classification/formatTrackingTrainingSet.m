@@ -10,6 +10,7 @@ for i=1:numel(classif.classes)
     end
 end
 
+offset=10; % offset used to increase image size around object
 
 % for i=1:size(im,4)
 %    
@@ -30,7 +31,7 @@ disp('Starting parallelized jobs for data formatting....')
 
 warning off all
 for i=rois
-    disp(['Launching ROI ' num2str(i) :' processing...'])
+    disp(['Launching ROI ' num2str(i) : ' processing...'])
     
     
     if numel(cltmp(i).image)==0
@@ -123,7 +124,8 @@ for i=rois
 
             
             bw1dil=imdilate(bw1,strel('Disk',10));
-            imout=uint8(zeros(size(im,1),size(im,2),3));
+            stat1b=regionprops(bw1dil,'BoundingBox');
+            %imout=uint8(zeros(size(im,1),size(im,2),3));
             
             for l=1:max(l2(:))
                 
@@ -138,16 +140,74 @@ for i=rois
                bw2=l2==l;
                bw2dil=imdilate(bw2,strel('Disk',10));
                
+               
+               stat2b=regionprops(bw2dil,'BoundingBox');
+               
+               % create image of the right size
+               wid=max(stat1b.BoundingBox(4),stat2b.BoundingBox(4));
+               hei=max(stat1b.BoundingBox(3),stat2b.BoundingBox(3));
+               
+               if mod(wid,2)==0
+                   wid=wid+ 1;
+               end
+               if mod(hei,2)==0
+                   hei=hei+ 1;
+               end
+               
+               tmcrop=uint8(zeros(wid,hei,3));
+               
                tm=uint8(zeros(size(im,1),size(im,2)));
                
                tm(bw1dil)=tmp1(bw1dil); % write object of interest on image
-               imout(:,:,1)=tm;
+               
+               if mod(stat1b.BoundingBox(4),2)==1
+                   stat1b.BoundingBox(4)=stat1b.BoundingBox(4)-1;
+               end
+               if mod(stat1b.BoundingBox(3),2)==1
+                   stat1b.BoundingBox(3)=stat1b.BoundingBox(3)-1;
+               end
+               
+               minex=stat1b.BoundingBox(2);
+               miney=stat1b.BoundingBox(1);
+               maxex=stat1b.BoundingBox(2)+stat1b.BoundingBox(4);
+               maxey=stat1b.BoundingBox(1)+stat1b.BoundingBox(3);
+               
+               midx=(wid-1)/2;
+               midy=(hei-1)/2;
+               
+               tmcrop(1+midx-stat1b.BoundingBox(4)/2:1+midx+stat1b.BoundingBox(4)/2,1+midy-stat1b.BoundingBox(3)/2:1+midy+stat1b.BoundingBox(3)/2,1)= tm(minex:maxex,miney:maxey);
+               
+               %imout(:,:,1)=tm;
                
                
               % figure, imshow(imout,[]);
                tm=uint8(zeros(size(im,1),size(im,2)));
                tm(bw2dil)=tmp2(bw2dil); % write object of interest on image
-               imout(:,:,2)=tm;
+               
+               if mod(stat2b.BoundingBox(4),2)==1
+                   stat2b.BoundingBox(4)=stat2b.BoundingBox(4)-1;
+               end
+               if mod(stat2b.BoundingBox(3),2)==1
+                   stat2b.BoundingBox(3)=stat2b.BoundingBox(3)-1;
+               end
+               
+               minex=stat2b.BoundingBox(2);
+               miney=stat2b.BoundingBox(1);
+               maxex=stat2b.BoundingBox(2)+stat2b.BoundingBox(4);
+               maxey=stat2b.BoundingBox(1)+stat2b.BoundingBox(3);
+               
+% midx-stat2(l).BoundingBox(4)/2
+% midx+stat2(l).BoundingBox(4)/2
+% midy-stat2(l).BoundingBox(3)/2
+% midy+stat2(l).BoundingBox(3)/2
+
+               tmcrop(midx-stat2b.BoundingBox(4)/2+1:midx+stat2b.BoundingBox(4)/2+1,1+midy-stat2b.BoundingBox(3)/2:1+midy+stat2b.BoundingBox(3)/2,2)= tm(minex:maxex,miney:maxey);
+               
+             % figure, imshow(tmcrop);
+             % pause
+             % close
+    
+    
                % test if objects correspond
                
               % imout(:,:,3)=tmp1;
@@ -162,7 +222,7 @@ for i=rois
                end
                
                %imcrop=uint8(256*imout);
-               imcrop=imout;
+               imcrop=tmcrop;
              %  figure, imshow(imcrop,[]);
                imwrite(imcrop,[classif.path '/' foldername '/images/' classif.classes{clas} '/' cltmp(i).id '_frame_' tr '_obj' num2str(val1) '_obj' num2str(val2) '.tif']);
                
@@ -207,7 +267,7 @@ end
 warning on all;
 
 for i=rois
-    %cltmp(i).clear; %%% remove !!!!
+    cltmp(i).clear; %%% remove !!!!
 end
 
 end

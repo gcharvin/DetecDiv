@@ -320,7 +320,7 @@ thr=2;
 
 %areamean=mean([cell0.area]);
 %meancellsize=30; % pixels sqrt(areamean/pi);
-thr*meancellsize
+%thr*meancellsize
 
 %weigth=10;
 
@@ -361,13 +361,13 @@ for i=1:length(ind0)
       
      % cost 
       
-        if i==4 & j==11
-           % figure, imshow(imout); 
-           % i,j,cost
-            title([num2str(i) ' - ' num2str(j) ' - ' num2str(-log(double(cost)))]);
-        end 
+%         if i==4 & j==11
+%            % figure, imshow(imout); 
+%            % i,j,cost
+%             title([num2str(i) ' - ' num2str(j) ' - ' num2str(-log(double(cost)))]);
+%         end 
     
-        M(i,j)=1./cost; % take the loglikelyhood of the probability 
+        M(i,j)=-log(cost); % take the loglikelyhood of the probability 
         %param.coefdist*dist+param.coefsize*codist;
     end
    

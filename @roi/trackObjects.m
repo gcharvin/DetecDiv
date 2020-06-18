@@ -41,6 +41,7 @@ if numel(frames)==0
 end
 
 if nargin<5
+    disp('Loading resnet classifier');
    % net=googlenet; % load pretrained googlenet CNN; TO DO : train this network to detect cells vs non cell objects to get a better discrimination ? 
     net=resnet50;
     
@@ -179,7 +180,7 @@ for i=1:max(l(:))
     
     %meanphc,maxphc,max(rawimage(:))
     
-    offset=10;%5
+    offset=5;%5
     %figure, imshow(rawimage,[]);
     bw=imdilate(l==i,strel('Disk',offset));
     %bw=l==i;
