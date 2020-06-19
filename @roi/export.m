@@ -1,165 +1,128 @@
 function [rgb fr]=export(obj,varargin)
+% generates an AVI movie file from ROI
+
+
 % export trap data as movie
-
-% option : single movie with rich data : division times, fluo values etc...
-
 % outputs rgb as a 4-D 8bits rgb matrix for inclusion into a bigger movie
 
-frames= 1:size(obj.gfp, 3);
 
-siz=100; % defaut movie size (sqaure)
+if numel(obj.image)==0
+    obj.load
+end
+if numel(obj.image)==0
+    disp('Could not load roi image : quitting...!');
+    return;
+end
+
+
+frames= 1:size(obj.image,4);
+%channelid=1;
+
+name=[];
+framerate=10;
 
 for i=1:numel(varargin)
     
-    if strcmp(varargin{i},'fluo')
-        
-    end
-
-    if strcmp(varargin{i},'frames')
+    if strcmp(varargin{i},'Frames')
         frames=varargin{i+1};
     end
     
-     if strcmp(varargin{i},'size')
-         siz=varargin{i+1};
-     end
+    if strcmp(varargin{i},'Name')
+        name=varargin{i+1};
+    end
+    
+    if strcmp(varargin{i},'Framerate')
+        framerate=varargin{i+1};
+    end
+    
 end
 
-if numel(obj.gfp)==0
-    obj.load;
+
+if numel(name)==0
+    filename =  [obj.path '/im_' obj.id '.mp4'];
+else
+    filename =  [obj.path '/' name '.mp4'];
 end
 
 
-v=VideoWriter([obj.path '/' obj.id '.mp4'],'MPEG-4');
+v=VideoWriter(filename,'MPEG-4');
 
-v.FrameRate=30;
+v.FrameRate=framerate;
 open(v);
 
 
-meangfp=[];
-maxgfp=[];
-
-for i=1:size(obj.gfp,4) % loop on all channels to calculate mean fluo values
-    
-    totgfp=double(obj.gfp(:,:,:,i));
-    meangfp(i)=0.8*double(mean(totgfp(:)));
-    
-    scale=0.3;
-    
-    if i==obj.gfpchannel
-        scale=obj.intensity;
-    end
-    
-    if i==obj.phasechannel
-        scale=0.7;
-    end
-    
-    maxgfp(i)=double(meangfp(i)+scale*(max(totgfp(:))-meangfp(i)));
-    
-end
-
-rgb=uint8(zeros(size(obj.gfp,1),size(obj.gfp,2),3,size(obj.gfp,3)));
-
-
-h=figure('Position',[100 100 siz siz],'Color','w'); 
-axis equal square
 ce=1;
 reverseStr='';
 
 
+% if numel(findobj('Tag',['ROI' obj.id])) % handle exists already
+%     h=findobj('Tag',['ROI' obj.id]);
+% else
+%     h=figure('Tag',['ROI' obj.id]);%'Toolbar','none');%,'MenuBar','none');%,'Toolbar','none');
+%     draw(obj,h);
+% end
+
 for frame=frames
     
     %imtemp=uint8(zeros(size(obj.gfp)));
-    
+    obj.view(frame);
+     h=findobj('Tag',['ROI' obj.id]);
+     
     %imtemp=permute(imtemp, [1 2 4 3]);
+    fr=[];
+    frame=[];
+    cc=1;
     
-    [B,L] = bwboundaries(obj.track(:,:,frame),'noholes'); % contours of nucleus
-    
-    
-    for k=1:size(obj.gfp,4)
+    for j=1:numel(obj.display.selectedchannel)
         
-        temp=obj.gfp(:,:,frame,k);
-        
-        temp=uint8(imadjust(temp,[meangfp(k)/65535 maxgfp(k)/65535],[0 1])/256);
-
-        if k==obj.phasechannel
-            rgb(:,:,:,frame)=imadd(rgb(:,:,:,frame),cat(3,temp,temp,temp));
-        elseif k==obj.gfpchannel
-            rgb(:,:,obj.gfpchannel,frame)=imadd(rgb(:,:,obj.gfpchannel,frame),temp);
-        else
-            rgb(:,:,3,frame)=imadd(rgb(:,:,3,frame),temp);
-        end
-    end
-    
-    % display frame
-     if frame==1
-        im=imshow(rgb(:,:,:,frame)); 
-        t=text(5,5,[num2str(10*frame) 'min'],'Color','w','FontSize',10*siz/100);
-        
-        %ide=regexprep(obj.id,'_','-');
-        t2=text(30,5,obj.id,'Color','w','FontSize',10*siz/100,'Interpreter','none');
-        
-        d=text(20,10,'','Color','r','FontSize',10*siz/100);
-        
-        if numel(B)
-        B=B{1};
-        xb=B(:,2); yb=B(:,1);
-        else
-        xb=-[10 ; 20 ; 5]; yb=-[10 ; 0 ; 20];    
-        end
-        
-        ver = [xb yb];
-        fac = 1:numel(xb);
-        
-        l=patch('Faces',fac,'Vertices',ver,'FaceColor',[1 0 0],'FaceAlpha',0.3,'EdgeColor',[1 0 0],'LineWidth',2*siz/100);
-       % l=patch(xb,yb);%,'FaceColor',[1 0 0],'FaceAlpha',0.3);
-
-        h.Position=[100 100 siz siz];
-        a=gca;
-        a.Position=[0.05 0.05 0.9 0.9];
-       % return;
-     else
-        im.CData=rgb(:,:,:,frame);
-        
-        
-        if numel(B)
-        B=B{1};
-        xb=B(:,2); yb=B(:,1);
-        else
-        xb=-[10 ; 20 ; 5]; yb=-[10 ; 0 ; 20];   
-        end
-        
-        l.XData=xb;
-        l.YData=yb;
-        
-        %aa=l.XData
-        
-        t.String=[num2str(10*frame) 'min'];
-     end
-     
-     if numel(find(find(obj.div.classi)==frame))
-
-         d.String='Division';
-     else
-         d.String='';
-     end
-    
-     fr(frame)=getframe;
-     
-     writeVideo(v,fr(frame));
-     
-      if mod(ce-1,50)==0
-     msg = sprintf('%d / %d Frames snapped', ce , size(obj.gfp, 3) ); %Don't forget this semicolon
-     msg=[msg ' for trap ' obj.id];
-     
-    fprintf([reverseStr, msg]);
-    reverseStr = repmat(sprintf('\b'), 1, length(msg));
-    end
-        ce=ce+1;  
-end
+        if obj.display.selectedchannel(j)==1
   
+            hp=findobj(h,'Tag',['AxeROI' num2str(cc)]);
+            axes(hp);
+           % if numel(hp)~=0
+                fr=getframe; % for each axe and then update
+            %    figure, imshow(fr.cdata);
+               % j,cc
+               % return;
+                
+                if cc==1
+                    frame.cdata=fr.cdata;
+                    frame.colormap=fr.colormap;
+                else
+                    x=size(frame.cdata,1);
+                    y=size(frame.cdata,2);
+                    
+                    frame.cdata(1:size(fr.cdata,1),y+1:y+size(fr.cdata,2),:)=fr.cdata;
+                    
+                 %   size(frame.cdata)
+                end
+                
+                cc=cc+1;
+                
+             %   cc
+              %  figure, imshow(frame.cdata);
+             %   pause
+            %end
+        end
+    end
+    
+    %return
+    writeVideo(v,frame);
+    
+    if mod(ce-1,50)==0
+%         msg = sprintf('%d / %d Frames snapped', ce , size(obj.image, 4) ); %Don't forget this semicolon
+%         msg=[msg ' for trap ' obj.id];
+%         
+%         fprintf([reverseStr, msg]);
+%         reverseStr = repmat(sprintf('\b'), 1, length(msg));
+    end
+    ce=ce+1;
+end
+
+
 fprintf('\n');
-close;
+
 
 close(v);
-        
-        
+
+

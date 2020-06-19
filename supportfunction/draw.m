@@ -14,6 +14,21 @@ end
 %     refresh='full';
 % end
 
+if numel(h.UserData)~=0 % window is already displayed; therefore just update the figure
+    him=h.UserData;
+    hp=findobj(h,'Type','Axes');
+    
+    % sort Axes !
+    s=[];
+    for i=1:numel(hp)
+        s(i)=str2num(hp(i).Tag(7:end));
+    end
+    [q ix]=sort(s); hp=hp(ix);
+    updatedisplay(obj,him,hp,classif);
+    return;
+end
+
+
 if numel(classif)>0
     if strcmp(classif.category{1},'Pixel') | strcmp(classif.category{1},'Object') % display properties for pixel classification
         
@@ -68,7 +83,7 @@ if numel(handles)==0
     m = uimenu(h,'Text','Display','Tag','DisplayMenu');
     mitem=[];
     
-
+    
     for i=1:numel(obj.display.channel)
         mitem(i) = uimenu(m,'Text',obj.display.channel{i},'Checked','on','Tag',['channel_' num2str(i)]);
         set(mitem(i),'MenuSelectedFcn',{@displayMenuFcn,obj,h,classif});
@@ -88,6 +103,25 @@ for i=1:numel(obj.display.channel)
         cd=cd+1;
     end
 end
+
+
+% create draw menu
+
+handles=findobj(h,'Tag','DrawMenu');
+
+if numel(handles)==0
+    dr = uimenu(h,'Text','Draw','Tag','DrawMenu');
+    dritem = uimenu(dr,'Text','Add Channel','Tag','AddChannel');
+    set(dritem,'MenuSelectedFcn',{@addChannel,obj});
+    
+    dritem(2) = uimenu(dr,'Text','Remove Channel','Tag','AddChannel');
+    set(dritem(2),'MenuSelectedFcn',{@removeChannel,obj});
+    
+    dritem(3) = uimenu(dr,'Text','Draw object','Tag','Draw object','Separator','on');
+    set(dritem(3),'MenuSelectedFcn',{@drawObject,obj});
+end
+
+
 
 % build display image object
 
@@ -311,10 +345,10 @@ if numel(classif)>0
         ccpedigree=obj.findChannelID(classif.strid);
         set(h,'WindowButtonDownFcn',{@pedigree,h,hpaint,obj,ccpedigree,hp,classif});%%% HERE
         
-              
+        
         plotLinks(obj,hp,classif);
-              
-    
+        
+        
     end
     
 end
@@ -325,14 +359,14 @@ end
 cc=1;
 
 % delete text handle if present
- htext=findobj(gcf,'Tag','tracktext');
-            
-            if numel(htext)>0
-                if ishandle(htext)
-                    delete(htext);
-                end
-            end
-            
+htext=findobj(gcf,'Tag','tracktext');
+
+if numel(htext)>0
+    if ishandle(htext)
+        delete(htext);
+    end
+end
+
 cctext=1;
 
 for i=1:numel(obj.display.channel)
@@ -373,12 +407,12 @@ for i=1:numel(obj.display.channel)
             %aa=obj.results
             for k = 1:length(pl)
                 if isfield(obj.results.(pl{k}),'labels')
-                tt=char(obj.results.(pl{k}).labels(obj.display.frame));
-                str=[str ' - ' tt ' (' pl{k} ')'];
+                    tt=char(obj.results.(pl{k}).labels(obj.display.frame));
+                    str=[str ' - ' tt ' (' pl{k} ')'];
                 end
                 
                 if isfield(obj.results.(pl{k}),'mother')
-                    % pedigree data available .  
+                    % pedigree data available .
                     
                     if strcmp(['results_' pl{k}],str) % identify channel
                         
@@ -391,10 +425,10 @@ for i=1:numel(obj.display.channel)
         
         % display tracking results as numbers on each cell
         %him.image(cc) are the Data
-      
+        
         
         % display tracking numbers on cells
-       % obj.display.channel{i}
+        % obj.display.channel{i}
         
         if numel(strfind(obj.display.channel{i},'track'))~=0 | numel(strfind(obj.display.channel{i},'pedigree'))~=0
             
@@ -403,20 +437,15 @@ for i=1:numel(obj.display.channel)
             [l n]=bwlabel(im);
             r=regionprops(l,'Centroid');
             
-           %'ok'
-           
+            %'ok'
+            
             for k=1:n
                 bw=l==k;
                 id=round(mean(im(bw)));
                 htext(cctext)=text(r(k).Centroid(1),r(k).Centroid(2),num2str(id),'Color',[1 1 1],'FontSize',20,'Tag','tracktext');
                 cctext=cctext+1; % update handle counter
             end
-            
-      
-            
-            
         end
-        
         
         %test=get(hp(cc),'Parent')
         title(hp(cc),str,'FontSize',14,'interpreter','none');
@@ -424,6 +453,72 @@ for i=1:numel(obj.display.channel)
         cc=cc+1;
     end
 end
+end
+
+function addChannel(handles, event,obj)
+matrix=uint16(zeros(size(obj.image,1),size(obj.image,2),1,size(obj.image,4)));
+rgb=[1 1 1];
+intensity=[0 0 0];
+answer = inputdlg({'Channel Name','RGB','Intensity'},'New CHannel',1,{'mychannel','[1 1 1]','[0 0 0]'});
+
+if numel(answer)==0
+    return;
+end
+
+h=findobj('Tag',['ROI' obj.id]);
+close(h);
+obj.addChannel(matrix,answer{1},str2num(answer{2}),str2num(answer{3}));
+obj.view;
+
+end
+
+function removeChannel(handles, event,obj)
+
+cha=numel(obj.channelid);
+answer = inputdlg({'Channel number to remove'},'Remove Channel',1,{num2str(cha)});
+
+if numel(answer)==0
+    return;
+end
+
+h=findobj('Tag',['ROI' obj.id]);
+close(h);
+
+obj.removeChannel(str2num(answer{1}));
+obj.view;
+end
+
+
+function drawObject(handles, event,obj)
+
+cha=1;
+answer = inputdlg({'Channel id on which to draw ?'},'Draw',1,{num2str(cha)});
+
+if numel(answer)==0
+    return;
+end
+
+h=findobj('Tag',['ROI' obj.id]);
+
+hp=findobj(h,'Tag','AxeROI1');
+
+xc=size(obj.image,2)/2;
+yc=size(obj.image,1)/2;
+sizx=40;
+sizy=30;
+
+windo=[xc-sizx yc-sizy 2*sizx 2*sizy];
+roi = imellipse(hp,windo);
+inputpoly = wait(roi);
+delete(roi);
+
+BW=poly2mask(inputpoly(:,1),inputpoly(:,2),size(obj.image,1),size(obj.image,2));
+BW=repmat(BW,[1 1 1 size(obj.image,4)]);
+
+obj.image(:,:,str2num(answer{1}),:)=uint16(obj.image(:,:,str2num(answer{1}),:) | BW);
+%h=findobj('Tag',['ROI' obj.id]);
+%close(h);
+obj.view;
 end
 
 
@@ -439,7 +534,7 @@ im=obj.image(:,:,ccpedigree,obj.display.frame);
 daughter=0;
 % find object if any is selected
 if yinit>0 && xinit>0 && xinit< size(im,2)+1 && yinit<size(im,1)+1
-daughter= im(round(yinit),round(xinit));
+    daughter= im(round(yinit),round(xinit));
 end
 
 if daughter==0
@@ -488,10 +583,10 @@ y=1;
         
         mother= im(round(y),round(x));
         
-       % if mother==0
-       %     
-          %  return;
-       % end
+        % if mother==0
+        %
+        %  return;
+        % end
         
         %             bw=im==mother;
         %             stat=regionprops(bw,'Centroid');
@@ -506,9 +601,9 @@ y=1;
         
         
         if numel(obj.train.(str).mother)>=mother & mother>0
-        if obj.train.(str).mother(mother)==daughter
-            obj.train.(str).mother(mother)=0;
-        end
+            if obj.train.(str).mother(mother)==daughter
+                obj.train.(str).mother(mother)=0;
+            end
         end
         %pix=find(
         %obj.train.(str).mother(mother)=mother;
@@ -902,13 +997,13 @@ end
 
 % display results for image classification
 htext=findobj(gcf,'Tag','tracktext');
-            
-            if numel(htext)>0
-                if ishandle(htext)
-                    delete(htext);
-                end
-            end
-            
+
+if numel(htext)>0
+    if ishandle(htext)
+        delete(htext);
+    end
+end
+
 cc=1;
 cctext=1;
 for i=1:numel(obj.display.channel)
@@ -947,12 +1042,12 @@ for i=1:numel(obj.display.channel)
             %aa=obj.results
             for k = 1:length(pl)
                 if isfield(obj.results.(pl{k}),'labels')
-                tt=char(obj.results.(pl{k}).labels(obj.display.frame));
-                str=[str ' - ' tt ' (' pl{k} ')'];
+                    tt=char(obj.results.(pl{k}).labels(obj.display.frame));
+                    str=[str ' - ' tt ' (' pl{k} ')'];
                 end
                 
                 if isfield(obj.results.(pl{k}),'mother')
-                    % pedigree data available .  
+                    % pedigree data available .
                     
                     if strcmp(['results_' pl{k}],str) % identify channel
                         
@@ -970,7 +1065,7 @@ for i=1:numel(obj.display.channel)
             
             [l n]=bwlabel(im);
             r=regionprops(l,'Centroid');
-  
+            
             
             for k=1:n
                 bw=l==k;
@@ -1012,110 +1107,110 @@ end
 
 function plotLinks(obj,hp,classif)
 mother=obj.train.(classif.strid).mother;
+
+hmother=findobj('Tag','mothertag');
+hmother2=findobj('Tag','mothertag2');
+
+hpt=findobj(hp,'UserData',classif.strid);
+hpt=findobj(hpt,'Type','Image');
+
+imtmp=hpt.CData;
+%imtmp=im(cc).data;
+
+if numel(hmother)>0
+    if ishandle(hmother)
+        delete(hmother);
+    end
+end
+if numel(hmother2)>0
+    if ishandle(hmother2)
+        delete(hmother2);
+    end
+end
+
+for i=1:numel(mother)
+    if mother(i)~=0
         
-        hmother=findobj('Tag','mothertag');
-        hmother2=findobj('Tag','mothertag2');
+        bw=imtmp==i;
+        bw2=imtmp==mother(i);
         
-        hpt=findobj(hp,'UserData',classif.strid);
-        hpt=findobj(hpt,'Type','Image');
+        stat=regionprops(bw,'Centroid');
+        stat2=regionprops(bw2,'Centroid');
         
-        imtmp=hpt.CData;
-        %imtmp=im(cc).data;
-        
-        if numel(hmother)>0
-            if ishandle(hmother)
-                delete(hmother);
-            end
+        if numel(stat)==1 && numel(stat2)==1
+            x1=stat(1).Centroid(1);
+            y1=stat(1).Centroid(2);
+            
+            x2=stat2(1).Centroid(1);
+            y2=stat2(1).Centroid(2);
+            
+            
+            
+            hmother(i)=line([x1 x2],[y1 y2],'Color',[0.9 0.9 0.9],'Tag','mothertag','LineWidth',3);
+            
+            x=x2+0.8*(x1-x2);
+            y=y2+0.8*(y1-y2);
+            
+            hmother2(i)=line([x x],[y y],'Color',[0.9 0.9 0.9],'Tag','mothertag2','LineWidth',3,'Marker','o','MarkerSize',10);
         end
-        if numel(hmother2)>0
-            if ishandle(hmother2)
-                delete(hmother2);
-            end
-        end
+        % HERE
         
-        for i=1:numel(mother)
-            if mother(i)~=0
-                
-                bw=imtmp==i;
-                bw2=imtmp==mother(i);
-                
-                stat=regionprops(bw,'Centroid');
-                stat2=regionprops(bw2,'Centroid');
-                
-                if numel(stat)==1 && numel(stat2)==1
-                    x1=stat(1).Centroid(1);
-                    y1=stat(1).Centroid(2);
-                    
-                    x2=stat2(1).Centroid(1);
-                    y2=stat2(1).Centroid(2);
-                    
-                    
-                    
-                    hmother(i)=line([x1 x2],[y1 y2],'Color',[0.9 0.9 0.9],'Tag','mothertag','LineWidth',3);
-                    
-                    x=x2+0.8*(x1-x2);
-                    y=y2+0.8*(y1-y2);
-                    
-                    hmother2(i)=line([x x],[y y],'Color',[0.9 0.9 0.9],'Tag','mothertag2','LineWidth',3,'Marker','o','MarkerSize',10);
-                end
-                % HERE
-                
-            end
-        end
+    end
+end
 end
 
 function plotLinksResults(obj,hp,strid)
 mother=obj.results.(strid).mother;
+
+hmother=findobj('Tag','mothertagresults');
+hmother2=findobj('Tag','mothertagresults2');
+
+hpt=findobj(hp,'UserData',['results_' strid]);
+hpt=findobj(hpt,'Type','Image');
+
+imtmp=hpt.CData;
+%imtmp=im(cc).data;
+
+if numel(hmother)>0
+    if ishandle(hmother)
+        delete(hmother);
+    end
+end
+if numel(hmother2)>0
+    if ishandle(hmother2)
+        delete(hmother2);
+    end
+end
+
+for i=1:numel(mother)
+    if mother(i)~=0
         
-        hmother=findobj('Tag','mothertagresults');
-        hmother2=findobj('Tag','mothertagresults2');
+        bw=imtmp==i;
+        bw2=imtmp==mother(i);
         
-        hpt=findobj(hp,'UserData',['results_' strid]);
-        hpt=findobj(hpt,'Type','Image');
+        stat=regionprops(bw,'Centroid');
+        stat2=regionprops(bw2,'Centroid');
         
-        imtmp=hpt.CData;
-        %imtmp=im(cc).data;
-        
-        if numel(hmother)>0
-            if ishandle(hmother)
-                delete(hmother);
-            end
+        if numel(stat)==1 && numel(stat2)==1
+            x1=stat(1).Centroid(1);
+            y1=stat(1).Centroid(2);
+            
+            x2=stat2(1).Centroid(1);
+            y2=stat2(1).Centroid(2);
+            
+            
+            
+            hmother(i)=line([x1 x2],[y1 y2],'Color',[0.5 0.5 0.5],'Tag','mothertagresults','LineWidth',3);
+            
+            x=x2+0.8*(x1-x2);
+            y=y2+0.8*(y1-y2);
+            
+            hmother2(i)=line([x x],[y y],'Color',[0.5 0.5 0.5],'Tag','mothertagresults2','LineWidth',3,'Marker','o','MarkerSize',10);
         end
-        if numel(hmother2)>0
-            if ishandle(hmother2)
-                delete(hmother2);
-            end
-        end
+        % HERE
         
-        for i=1:numel(mother)
-            if mother(i)~=0
-                
-                bw=imtmp==i;
-                bw2=imtmp==mother(i);
-                
-                stat=regionprops(bw,'Centroid');
-                stat2=regionprops(bw2,'Centroid');
-                
-                if numel(stat)==1 && numel(stat2)==1
-                    x1=stat(1).Centroid(1);
-                    y1=stat(1).Centroid(2);
-                    
-                    x2=stat2(1).Centroid(1);
-                    y2=stat2(1).Centroid(2);
-                    
-                    
-                    
-                    hmother(i)=line([x1 x2],[y1 y2],'Color',[0.5 0.5 0.5],'Tag','mothertagresults','LineWidth',3);
-                    
-                    x=x2+0.8*(x1-x2);
-                    y=y2+0.8*(y1-y2);
-                    
-                    hmother2(i)=line([x x],[y y],'Color',[0.5 0.5 0.5],'Tag','mothertagresults2','LineWidth',3,'Marker','o','MarkerSize',10);
-                end
-                % HERE
-                
-            end
-        end
+    end
+end
 end
 
 
@@ -1129,10 +1224,10 @@ im.data=[];
 
 frame=obj.display.frame;
 
- if numel(obj.image)==0
-            disp('Warning : image is no longer present. Try reloading ...');
-            obj.load
-  end
+if numel(obj.image)==0
+    disp('Warning : image is no longer present. Try reloading ...');
+    obj.load
+end
 
 cc=1;
 for i=1:numel(obj.display.channel)
@@ -1145,7 +1240,7 @@ for i=1:numel(obj.display.channel)
         pix=find(obj.channelid==i);
         src=obj.image;
         
-       
+        
         
         % for each channel perform normalization
         %pix

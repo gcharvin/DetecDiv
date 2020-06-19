@@ -3,13 +3,16 @@ function objout=trackObjects2(obj,channelstr,inputchannelstr,frames,classiid,cla
 % trackObjects used object apearance as a criterai for matching in the
 % distance matrix
 
-% treackObjet2 uses a purely classifiactio-based method to compute the
+% treackObjet2 uses a purely classifiaction-based method to compute the
 % likelyhood of associtation between two cells on consecutive images 
+
+% distance is taken into account as well. a threshold on distance is
+% calculated
 
 % channelstr: segmented objects channel
 % input image channel 
 
-display=1;
+display=0;
 
 channelID=obj.findChannelID(channelstr);
 
@@ -367,7 +370,8 @@ for i=1:length(ind0)
 %             title([num2str(i) ' - ' num2str(j) ' - ' num2str(-log(double(cost)))]);
 %         end 
     
-        M(i,j)=-log(cost); % take the loglikelyhood of the probability 
+        M(i,j)=dist + (1-cost);%-log(cost); % take the loglikelyhood of the probability 
+        
         %param.coefdist*dist+param.coefsize*codist;
     end
    
@@ -375,7 +379,7 @@ end
 
 
 
-[Matching,ost] = Hungarian(M);
+[Matching,~] = Hungarian(M);
 
 %Matching
 
