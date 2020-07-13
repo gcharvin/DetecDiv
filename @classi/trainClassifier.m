@@ -1,4 +1,4 @@
-function trainClassifier(obj,classiid)
+function trainClassifier(classif)
 
 
 % first format data for training procedure and save to disk
@@ -7,10 +7,10 @@ function trainClassifier(obj,classiid)
 
 % launch the classification-specific training procedure 
 
-trainingFun=obj.processing.classification(classiid).trainingFun;
+trainingFun=classif.trainingFun;
 
-path=obj.processing.classification(classiid).path;
-name=obj.processing.classification(classiid).strid;
+path=classif.path;
+name=classif.strid;
 
 disp(['Launching training procedure with ' trainingFun]);
 

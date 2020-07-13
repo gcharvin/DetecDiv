@@ -4,7 +4,6 @@ function addROIToClassification(obj,classid)
 %clas=obj.processing.classification;
 n=classid;
 
-
 prompt='Import ROIs from other classification [y/n] (Default: n): ';
 prevclas= input(prompt,'s');
 if numel(prevclas)==0

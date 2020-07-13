@@ -1,4 +1,6 @@
-function addClassification(obj)
+function addClassification(obj,option)
+% add a classification to an exisiting project
+% if option is provided, a classification from the repository is imported
 
 % get the number of exisiting classification
 clas=obj.processing.classification;
@@ -8,7 +10,12 @@ if n==0
     obj.processing.classification=classi;
 end
 
+
 % ask user which method he wants to use
+
+switch nargin
+case 1  % user inputs parameters of the classification
+    
 prompt='Please enter the name of the classification (Default: myclassi): ';
 name= input(prompt,'s');
 if numel(name)==0
@@ -77,8 +84,6 @@ disp('No classes were entered');
 end
 
 
-
-
 % create new classi object
 
 pth=[obj.io.path '/' obj.io.file];
@@ -102,5 +107,80 @@ end
 % add training data
 
 addROIToClassification(obj,n+1);
+
+    case 2 % in this case import classification from repository
+        % option is a string that refers to an exisiting classification
+        % object
+        
+        str=which('shallowLoad');
+[pth fle ext]=fileparts(str);
+filename=[pth '/@classi/repository.txt'];
+fileID=fopen(filename);
+C = textscan(fileID,'%s');
+fclose(fileID);
+str=C{1}{10}(1:end-1); % contains the path to the classi repository
+
+% now list all the classification variables available
+
+l=dir(str);
+
+id=[];
+idstr={};
+cc=1;
+
+for i=1:numel(l)
+    
+    if l(i).isdir==1
+        continue
+    end
+    
+    id=[id cc];
+    idstr(cc,1)={ i};
+    idstr(cc,2)={ l(i).name};
+    cc=cc+1;
+end
+
+disp('classification available on the repository:');
+disp(idstr)
+
+ok=0;
+for i=1:size(idstr,1)
+    [pt tmp ext]=fileparts(idstr{i,2});
+    if strcmp(tmp,option)
+         disp('Found requested repository');
+         ok=i;
+         break
+    end
+end
+
+if ok>0 % repository was found
+    
+    load([str idstr{ok,2}]);
+    [pt tmp ext]=fileparts(idstr{ok,2});
+    
+    pth=[obj.io.path '/' obj.io.file];
+    name=option;
+    obj.processing.classification(n+1) = classi(pth,name,n+1);
+    oldclassi=obj.processing.classification(n+1);
+    
+    %copyfile([str tmp '/' classification.strid '.mat'],[pth '/classification/' oldclassi.strid '/' oldclassi.strid '.mat']);
+    copyfile([str tmp '/' classification.strid '.mat'],[pth '/classification/' oldclassi.strid '/']);
+    
+    obj.processing.classification(n+1)=classification;
+    
+    obj.processing.classification(n+1).id=oldclassi.id;
+    obj.processing.classification(n+1).path=oldclassi.path;
+   % obj.processing.classification(n+1).strid=oldclassi.strid;
+    obj.processing.classification(n+1).roi=[]; % remove all rois associated to classification
+    
+    % copy classifier to directory
+    
+    
+else
+    disp('Could not find requested repository at this location:');
+    disp(str)
+    disp('Quitting....');
+end
+end
 
 

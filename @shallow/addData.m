@@ -1,10 +1,16 @@
-function addData(obj)
+function addData(obj,inputproject)
 
+name=-1;
 
-prompt='Data type: 0-->list of Images; 1--> PhyloCell project; 2-> 4D Tiff files (Default: 0)';
-name= input(prompt);
-if numel(name)==0
-    name=0;
+if nargin>1
+    name=1;
+else
+    
+    prompt='Data type: 0-->list of Images; 1--> PhyloCell project; 2-> 4D Tiff files (Default: 0)';
+    name= input(prompt);
+    if numel(name)==0
+        name=0;
+    end
 end
 
 
@@ -89,26 +95,38 @@ end
 
 if answer==1 % phyloCell project
     
-    [file,path] = uigetfile('*.mat','Select a phylocell/XG project',pwd);
-    if isequal(file,0)
-        disp('User selected Cancel')
-        return;
+    if nargin > 1
+        filename=inputproject;
+        [path fle ext]=fileparts(filename);
+        path=[path '/'];
     else
-        disp(['User selected ', fullfile(path, file)]);
-        filename=fullfile(path, file);
+        
+        [file,path] = uigetfile('*.mat','Select a phylocell/XG project',pwd);
+        if isequal(file,0)
+            disp('User selected Cancel')
+            return;
+        else
+            disp(['User selected ', fullfile(path, file)]);
+            filename=fullfile(path, file);
+        end
     end
-    
     
     load(filename) % load timeLapse variable
     
     if isfield(timeLapse,'position')
-        disp(['There are ' num2str(numel(timeLapse.position.list)) ' positions available in this timeLapse project'])
-        prompt=['Please enter the positions to import (in Matlab syntax); Default: 1:' num2str(numel(timeLapse.position.list)) ' '];
-        npos= input(prompt,'s');
-        if numel(npos)==0
+        disp(['There are ' num2str(numel(timeLapse.position.list)) ' positions available in this timeLapse project']);
+        
+        if nargin>1
             npos=1:numel(timeLapse.position.list);
+            npos=1;
         else
-            npos=eval(npos);
+            prompt=['Please enter the positions to import (in Matlab syntax); Default: 1:' num2str(numel(timeLapse.position.list)) ' '];
+            npos= input(prompt,'s');
+            if numel(npos)==0
+                npos=1:numel(timeLapse.position.list);
+            else
+                npos=eval(npos);
+            end
         end
     else
         disp('There are no positions available in this timeLapse project; Quitting...')
@@ -130,14 +148,14 @@ if answer==1 % phyloCell project
     
     tmpfov=fov;
     
-   pathname={};
-   binning=[];
-   
-   nid=n;
-   cc=1;
+    pathname={};
+    binning=[];
+    
+    nid=n;
+    cc=1;
     for i=npos
         strpos=[path timeLapse.filename '-pos' num2str(i)]; % add / here if necessary
-
+        
         for j=1:numel(timeLapse.list) % sources files for each channel
             pathname{i,j}= [strpos '/' timeLapse.filename '-pos' num2str(i) '-ch' num2str(j) '-' timeLapse.list(j).ID];
             binning(i,j)=timeLapse.list(j).binning;
@@ -150,7 +168,7 @@ if answer==1 % phyloCell project
     
     parfor i=npos
         
-
+        
         %         % now create fov objects
         %         if n==1
         %         if numel(obj.fov.srcpath{1})==0 % no fov present
@@ -165,7 +183,7 @@ if answer==1 % phyloCell project
         
         tmpfov(i)=fov;
         
-       % tic; 
+        % tic;
         tmpfov(i).setpathlist(pathname(i,:),nid(i));
         %toc;
         
