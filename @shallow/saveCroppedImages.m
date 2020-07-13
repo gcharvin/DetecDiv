@@ -1,6 +1,6 @@
 function saveCroppedImages(obj,fovid,frameid)
 
-fprintf('Cropping and saving images to folder....\n');
+disp('Cropping and saving images to folder....\n');
 
 if nargin==1
     fovid=1:numel(obj.fov); % All FOVs will be processed 
