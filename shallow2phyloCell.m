@@ -127,8 +127,11 @@ for i=positions
                 
                 strim=shallowObj.fov(i).roi(k).display.channel{ch};
                 
-                res=fieldnames(shallowObj.fov(i).roi(k).results);
+                
+                
                 mothers=[];
+                if numel(shallowObj.fov(i).roi(k).results)>0
+                res=fieldnames(shallowObj.fov(i).roi(k).results);
                 for n=1:numel(res)
                     % res{n},strim
                     if numel(strfind(strim,res{n}))>0
@@ -136,7 +139,7 @@ for i=positions
                         mothers=shallowObj.fov(i).roi(k).results.(res{n}).mother;
                     end
                 end
-                
+                end
                 
                 maxe=max(im(:));
                 

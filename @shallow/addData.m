@@ -118,7 +118,7 @@ if answer==1 % phyloCell project
         
         if nargin>1
             npos=1:numel(timeLapse.position.list);
-            npos=1;
+            %npos=1;
         else
             prompt=['Please enter the positions to import (in Matlab syntax); Default: 1:' num2str(numel(timeLapse.position.list)) ' '];
             npos= input(prompt,'s');
