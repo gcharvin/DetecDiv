@@ -61,7 +61,7 @@ segmentationarr(i)=phy_createSegmentation(timeLapse,positions(i));
 end
 
 
-for mn=1:numel(positions)
+parfor mn=1:numel(positions)
     i=positions(mn);
     fprintf(['Processing position: ' num2str(i)]);
     fprintf('\n');
@@ -77,6 +77,7 @@ for mn=1:numel(positions)
         chname=c{1};
         
         if numel(shallowObj.fov(i).roi(1).image)==0
+            i
             shallowObj.fov(i).roi(1).load;
         end
         
