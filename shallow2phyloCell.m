@@ -143,8 +143,10 @@ for i=positions
                 
                 maxe=max(im(:));
                 
+                alreadylabeled=0;
                 if maxe>1 % objects are already labeled, must keep the labeling
                     lab=im;
+                    alreadylabeled=1;
                 else
                     [lab maxe]=bwlabel(im);
                 end
@@ -154,7 +156,11 @@ for i=positions
                 for m=1:maxe
                     tmp=lab==m;
                     
+                    if alreadylabeled==1
                     idx=round(mean(im(tmp))); % cell index
+                    else
+                    idx=round(mean(lab(tmp)));    
+                    end
                     
                     cont= bwboundaries(tmp);
                     
