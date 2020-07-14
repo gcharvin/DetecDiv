@@ -61,7 +61,7 @@ segmentationarr(i)=phy_createSegmentation(timeLapse,positions(i));
 end
 
 
-parfor mn=1:numel(positions)
+for mn=1:numel(positions)
     i=positions(mn);
     fprintf(['Processing position: ' num2str(i)]);
     fprintf('\n');
