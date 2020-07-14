@@ -52,11 +52,21 @@ end
 
 npoints=32;
 
+segmentationarr=[];
+
+ccs=1;
 for i=positions
+segmentationarr(ccs)=phy_createSegmentation(timeLapse,i);
+ccs=ccs+1;
+end
+
+ccs=1;
+
+parfor i=positions
     fprintf(['Processing position: ' num2str(i)]);
     fprintf('\n');
-    segmentation=phy_createSegmentation(timeLapse,i);
-    segmentation.filename='segmentation-shallow.mat';
+    %segmentationarr(cc)=phy_createSegmentation(timeLapse,i);
+    segmentationarr(ccs).filename='segmentation-shallow.mat';
     maxe=0;
     
     for j=1:numel(contours)
@@ -109,7 +119,7 @@ for i=positions
             fprintf('.');
             cc=1;
             phy_Objects=phy_Object(1, [],[],0,0,0,0,0);
-            segmentation.(chname)(l,1)=phy_Objects;
+            segmentationarr(ccs).(chname)(l,1)=phy_Objects;
             
             for k=1:numel(shallowObj.fov(i).roi)
                 
@@ -193,14 +203,14 @@ for i=positions
                 end
             end
             
-            segmentation.(chname)(l,1:cc-1)=phy_Objects;
+            segmentationarr(ccs).(chname)(l,1:cc-1)=phy_Objects;
             
         end
         fprintf('\n');
         
         if maxe>0
             im=shallowObj.fov(i).roi(1).image;
-            segmentation.([chname 'Segmented'])(1:size(im,4))=1;
+            segmentationarr(ccs).([chname 'Segmented'])(1:size(im,4))=1;
             
             % plot pedigree --> assign mother cell and division times
             %         mothers={};
@@ -216,19 +226,31 @@ for i=positions
             % maxe
             if maxe>1 % objects are tracked , so create tObjects
                 %'ok'
-                segmentation.(['t' chname])=phy_makeTObject(segmentation.(chname));
-                segmentation.([chname 'Mapped'])(1:size(im,4))=1;
+                segmentationarr(ccs).(['t' chname])=phy_makeTObject(segmentationarr(ccs).(chname));
+                segmentationarr(ccs).([chname 'Mapped'])(1:size(im,4))=1;
                 
-                for kk=1:numel(segmentation.(['t' chname]))
-                    mcells=segmentation.(['t' chname])(kk).Obj(1).mother;
+                for kk=1:numel(segmentationarr(ccs).(['t' chname]))
+                    mcells=segmentationarr(ccs).(['t' chname])(kk).Obj(1).mother;
                     if mcells>0
-                        segmentation.(['t' chname])(kk).setMother(mcells);
-                        segmentation.(['t' chname])(mcells).addDaughter(kk,segmentation.(['t' chname])(kk).Obj(1).image,segmentation.(['t' chname])(kk).Obj(1).image); %add a new daughter to the mother
+                        segmentationarr(ccs).(['t' chname])(kk).setMother(mcells);
+                        segmentationarr(ccs).(['t' chname])(mcells).addDaughter(kk,segmentationarr(ccs).(['t' chname])(kk).Obj(1).image,segmentationarr(ccs).(['t' chname])(kk).Obj(1).image); %add a new daughter to the mother
                     end
                 end
             end
         end
     end
     
-    save(fullfile(timeLapse.realPath,timeLapse.pathList.position{segmentation.position},segmentation.filename),'segmentation');
+    
+   % parsave([classif.path '/' foldername '/timeseries/lstm_labeled_' cltmp(i).id '.mat'],deep,vid,lab);
+    ccs=ccs+1;
 end
+
+ccs=1;
+for i=positions
+save(fullfile(timeLapse.realPath,timeLapse.pathList.position{segmentationarr(ccs).position},segmentationarr(ccs).filename),'segmentation');
+ccs=ccs+1;
+end
+
+%function parsave(fname, deep,vid,lab)
+%eval(['save  '  fname  '  deep vid lab']);
+%end
