@@ -54,7 +54,7 @@ npoints=32;
 
 %segmentationarr=[];
 
-positions
+disp(positions)
 
 %ccs=1;
 for i=1:numel(positions)
@@ -65,8 +65,8 @@ end
 
 parfor mn=1:numel(positions)
     i=positions(mn);
-    fprintf(['Processing position: ' num2str(i)]);
-    fprintf('\n');
+    disp(['Processing position: ' num2str(i)]);
+    %fprintf('\n');
     %segmentationarr(cc)=phy_createSegmentation(timeLapse,i);
     segmentationarr(mn).filename='segmentation-shallow.mat';
     maxe=0;
@@ -79,7 +79,6 @@ parfor mn=1:numel(positions)
         chname=c{1};
         
         if numel(shallowObj.fov(i).roi(1).image)==0
-            i
             shallowObj.fov(i).roi(1).load;
         end
         
@@ -247,6 +246,7 @@ parfor mn=1:numel(positions)
 end
 
 for mn=1:numel(positions)
+   segmentation=segmentationarr(mn);
 save(fullfile(timeLapse.realPath,timeLapse.pathList.position{segmentationarr(mn).position},segmentationarr(mn).filename),'segmentation');
 end
 
