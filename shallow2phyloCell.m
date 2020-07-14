@@ -52,7 +52,7 @@ end
 
 npoints=32;
 
-segmentationarr=[];
+%segmentationarr=[];
 
 %ccs=1;
 for i=1:numel(positions)
