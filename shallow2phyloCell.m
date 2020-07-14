@@ -17,7 +17,7 @@ timeLapse.realName=file;
 contours={};
 cc=1;
 
-positions=1:numel(timeLapse.position);
+positions=1:numel(timeLapse.position.list);
 
 % if pedigree is present, the program will look into the results to
 % identify the link between cells
@@ -58,6 +58,7 @@ for i=positions
     segmentation=phy_createSegmentation(timeLapse,i);
     segmentation.filename='segmentation-shallow.mat';
     maxe=0;
+    
     for j=1:numel(contours)
         
         % loop on ROIs
@@ -65,11 +66,11 @@ for i=positions
         ch=c{2};
         chname=c{1};
         
-        if numel(shallowObj.fov(j).roi(1).image)==0
-            shallowObj.fov(j).roi(1).load;
+        if numel(shallowObj.fov(i).roi(1).image)==0
+            shallowObj.fov(i).roi(1).load;
         end
         
-        im=shallowObj.fov(j).roi(1).image;
+        im=shallowObj.fov(i).roi(1).image;
         
         %size(im)
         % first determine the total number of cells in each ROI
@@ -101,7 +102,7 @@ for i=positions
         
         maxecell=[0 maxecell];
         maxecell=maxecell(1:end-1);
-        im=shallowObj.fov(j).roi(1).image;
+        im=shallowObj.fov(i).roi(1).image;
         
         for l=1:size(im,4) % now determine cell contours
             %l
@@ -198,7 +199,7 @@ for i=positions
         fprintf('\n');
         
         if maxe>0
-            im=shallowObj.fov(j).roi(1).image;
+            im=shallowObj.fov(i).roi(1).image;
             segmentation.([chname 'Segmented'])(1:size(im,4))=1;
             
             % plot pedigree --> assign mother cell and division times
