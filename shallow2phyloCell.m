@@ -54,6 +54,8 @@ npoints=32;
 
 %segmentationarr=[];
 
+positions
+
 %ccs=1;
 for i=1:numel(positions)
 segmentationarr(i)=phy_createSegmentation(timeLapse,positions(i));
