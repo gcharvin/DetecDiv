@@ -72,14 +72,18 @@ if answer==0 % list of images
         end
     end
     
-    % now create fov objects
-    if numel(obj.fov.srcpath{1})==0 % no fov present
-        obj.fov=fov(pathlist,1,'');
-        obj.fov.display.binning=binning;
-    else
-        obj.fov(end+1)=fov(pathlist,numel(obj.fov)+1,''); % add fov to exisiting datasets
-        obj.fov(end+1).display.binning=binning;
+    n=numel(obj.fov);
+    
+    if n==1
+        if numel(obj.fov.srcpath{1})==0 % no fov present
+            n=0;
+            obj.fov=fov;
+        end
     end
+    
+        obj.fov(n+1)=fov; % add fov to exisiting datasets
+        obj.fov(n+1).setpathlist(pathlist,n+1);
+        obj.fov(n+1).display.binning=binning;
     
     %     mov.path=[outputPath '/' ofle '-pos' num2str(1)];
     %     mov.id=['pos' num2str(1)];
