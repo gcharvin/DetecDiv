@@ -18,8 +18,8 @@ numClasses = numel(categories(imdsTrain.Labels));
 fprintf('Loading googlenet...\n');
 
 % load google net
-%net = googlenet;
-net=resnet50;
+net = googlenet;
+%net=resnet50;
 
 inputSize = net.Layers(1).InputSize;
 
