@@ -158,7 +158,7 @@ for ii = 1:size(layers,1)
     end
 end
 
-end
+
 
 % lgraph = createLgraphUsingConnections(layers,connections) creates a layer
 % graph with the layers in the layer array |layers| connected by the
@@ -175,4 +175,4 @@ for c = 1:size(connections,1)
     lgraph = connectLayers(lgraph,connections.Source{c},connections.Destination{c});
 end
 
-end
+
