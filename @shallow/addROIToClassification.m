@@ -1,14 +1,19 @@
-function addROIToClassification(obj,classid)
+function addROIToClassification(obj,classid,option)
 
 
 %clas=obj.processing.classification;
 n=classid;
 
-prompt='Import ROIs from other classification [y/n] (Default: n): ';
+if nargin< 3 
+prompt='Import ROIs from other existing classification [y/n] (Default: n): ';
 prevclas= input(prompt,'s');
 if numel(prevclas)==0
     prevclas='n';
 end
+else
+    prevclas='y';
+end
+
 
 if strcmp(prevclas,'n')
     
@@ -101,10 +106,14 @@ for i=1:size(rois,2)
 end
 
 else % rois are imported from previous classiciation
+    if nargin<3 % specificy classif to import from 
     prompt='Enter the id number of the classification to import from (Default: 1): ';
     prevclas= input(prompt);
     if numel(prevclas)==0
         prevclas=1;
+    end
+    else
+        prevclas=option;
     end
     
     disp(' ');
@@ -145,6 +154,9 @@ end
     
    % aa=roitocopy
     
+    if cc==0
+    obj.processing.classification(n).roi=roi('',[]);    
+    end
     obj.processing.classification(n).roi(cc+1)=roi('',[]);
     
     if numel(roitocopy.image)==0
@@ -196,9 +208,7 @@ end
     
         cc=cc+1;   
     end
-
-    
-    
+  
 end
 
 

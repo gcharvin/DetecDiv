@@ -2,15 +2,15 @@
 
 % Installation procedure %
 
-You need Matlab R2019b installed with the following TB: 
+You need Matlab R2019b installed with the following TB:
 
 
 Image Processing Toolbox  
-Deep Learning Toolbox 
+Deep Learning Toolbox
 Computer Vision Toolbox
 
 
-Bugfix: the classify function of the @DAGNetwork class needs to be patched. On line 172 : 
+Bugfix: the classify function of the @DAGNetwork class needs to be patched. On line 172 :
 remove the " ' " after scores{ii} in the arguments of undummify function
 
 
@@ -20,11 +20,11 @@ remove the " ' " after scores{ii} in the arguments of undummify function
 Create/Save a project
 ---------------------
 
-myproject= shallowNew 
+myproject= shallowNew
 
- (then select a project name and place to save it) 
+ (then select a project name and place to save it)
 
-shallowSave(myproject) 
+shallowSave(myproject)
 
 (saves the project)
 
@@ -36,15 +36,15 @@ shallowLoad(path)
 Import Data
 ------------
 
-myproject.addData 
+myproject.addData
 
-allows to add new fields of view (FOV) to the project 
+allows to add new fields of view (FOV) to the project
 
 
 ROIs
 ----
 
-myproject.fov(myfovid).view 
+myproject.fov(myfovid).view
 
 allows to view the FOV myfovid and choose custom ROIs manually. For this, use the zoom & pan buttons and right click on the image
 
@@ -70,15 +70,21 @@ Classification
 
 myproject.addClassification
 
-create a new classifier
+create a new classifier  ( @classi object)
 
-myproject.processing.classification 
+myproject.processing.classification
 
 is an array that contains all classifiers created
 
+myproject.addClassification(index) will duplicate the object myproject.processing.classification(index) , where index the index of a valid classi object
+
+myproject.addClassification(string) will import an existing classifier from the reposiotry , where index the index of a valid classi object.
+
+myproject.removesClassification(id) will remove a classifier specified by the index id. 
+
 myproject.addROIToCLassification(classifid)
 
-add a series of ROIs to the classification classifid. By default this function is called when creating a classifier. 
+add a series of ROIs to the classification classifid. By default this function is called when creating a classifier.
 
 myproject.userTraining(classifid)
 
@@ -90,21 +96,12 @@ trains the classifier using the training defined by the user
 
 myproject.formatDataForTraining(classifid)
 
-formats data to be used by the classifier; this function is called first when launching the trainClassifier function 
+formats data to be used by the classifier; this function is called first when launching the trainClassifier function
 
 myproject.validateTrainingData(classifid)
 
-uses the classifier to classify ROIs associated with user training in order to compare user training to classification results 
+uses the classifier to classify ROIs associated with user training in order to compare user training to classification results
 
-myproject.classifyData(classifid,roilist,option) 
+myproject.classifyData(classifid,roilist,option)
 
-allows one to start the classification reffered to as classifid on the roilist; You can provide the classifier as an option, so that it is not loaded each time you run the function 
-
-
-
-
-
-
-
-
-
+allows one to start the classification reffered to as classifid on the roilist; You can provide the classifier as an option, so that it is not loaded each time you run the function
