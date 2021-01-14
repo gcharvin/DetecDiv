@@ -142,3 +142,37 @@ fprintf('Saving googlenet classifier ...\n');
 %[path '/' name '.mat']
 
 save([path '/' name '.mat'],'classifier');
+
+% layers = freezeWeights(layers) sets the learning rates of all the
+% parameters of the layers in the layer array |layers| to zero.
+
+function layers = freezeWeights(layers)
+
+for ii = 1:size(layers,1)
+    props = properties(layers(ii));
+    for p = 1:numel(props)
+        propName = props{p};
+        if ~isempty(regexp(propName, 'LearnRateFactor$', 'once'))
+            layers(ii).(propName) = 0;
+        end
+    end
+end
+
+end
+
+% lgraph = createLgraphUsingConnections(layers,connections) creates a layer
+% graph with the layers in the layer array |layers| connected by the
+% connections in |connections|.
+
+function lgraph = createLgraphUsingConnections(layers,connections)
+
+lgraph = layerGraph();
+for i = 1:numel(layers)
+    lgraph = addLayers(lgraph,layers(i));
+end
+
+for c = 1:size(connections,1)
+    lgraph = connectLayers(lgraph,connections.Source{c},connections.Destination{c});
+end
+
+end
