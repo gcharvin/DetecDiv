@@ -39,7 +39,7 @@ if ~strcmp(trai,'n')
     switch classif.typeid % type of classification used
         case 4 %image classification training options
             
-            disp('Select pptimization method (sgdm, adam): '); 
+            disp('Select optimization method (sgdm, adam, rmsprop): '); 
             trainingParam=setParam(trainingParam,{'method','sgdm'});
             
             disp('Select CNN (googlenet, resnet50): '); 
