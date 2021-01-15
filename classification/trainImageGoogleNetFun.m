@@ -5,6 +5,7 @@ function trainImageGoogleNetFun(path,name)
 % load training data 
 
 fprintf('Loading data repository...\n');
+fprintf('------\n');
 
 foldername=[path '/trainingdataset/images'];
 
@@ -15,15 +16,34 @@ imds = imageDatastore(foldername, ...
 
 numClasses = numel(categories(imdsTrain.Labels));
 
-fprintf('Loading googlenet...\n');
+
+fprintf('Loading training options...\n');
+fprintf('------\n');
+
+load([path '/trainingParam.mat']);
+disp(trainingParam);
+
+
+fprintf('Loading network...\n');
+fprintf('------\n');
 
 % load google net
+
+switch strcmp(trainingParam.network)
+    case 'googlenet'
 net = googlenet;
-%net=resnet50;
+    case 'resnet50'
+net=resnet50;
+    otherwise
+fprintf('Using googlenet as default CNN...\n');
+net = googlenet;        
+end
+%
 
 inputSize = net.Layers(1).InputSize;
 
 fprintf('Reformatting net for transfer learning...\n');
+fprintf('------\n');
 
 % formatting the net for transferred learning
 % extract the layer graph from the trained network 
