@@ -46,7 +46,7 @@ if ~strcmp(trai,'n')
             trainingParam=setParam(trainingParam,{'network','googlenet'});
             
             disp('Select Batch size (8-128): ');
-            trainingParam=setParam(trainingParam,{'miniBatchSize',8});
+            trainingParam=setParam(trainingParam,{'MiniBatchSize',8});
             
             disp('Select Number of Epochs (ie iterations): ');
             trainingParam=setParam(trainingParam,{'MaxEpochs',6}); 
