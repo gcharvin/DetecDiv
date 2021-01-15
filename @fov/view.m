@@ -386,7 +386,7 @@ for i=1:numel(obj.roi)
     roitmp=obj.roi(i).value;
     roitmp=[roitmp(1) roitmp(2) roitmp(1)+ roitmp(3) roitmp(2)+ roitmp(4)];
     h=patch([roitmp(1) roitmp(3) roitmp(3) roitmp(1) roitmp(1)],[roitmp(2) roitmp(2) roitmp(4) roitmp(4) roitmp(2)],[1 0 0],'FaceAlpha',0.3,'Tag',['roitag_' num2str(i)],'UserData',i);
-    htext=text([roitmp(1) roitmp(3)], num2str(i), 'Color','r','FontSize',14,'Tag',['roitext_' num2str(i)]);
+    htext=text(roitmp(1),roitmp(3), num2str(i), 'Color','r','FontSize',14,'Tag',['roitext_' num2str(i)]);
     %h=patch([10 100 100 10 10],[10 10 100 100 10],[1 0 0],'FaceAlpha',0.3,'Tag',['roitag_' num2str(i) ]);
     
     hCMZ = uicontextmenu;
