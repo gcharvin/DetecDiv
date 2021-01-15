@@ -39,7 +39,9 @@ if ~strcmp(trai,'n')
     switch classif.typeid % type of classification used
         case 4 %image classification training options
             
-            fi={'network','googlenet'}; str=findDefault(trainingParam,fi);
+            fi={'network','googlenet'}; 
+            trainingParam=setParam(trainingParam,fi);
+            
             prompt=[fi{1} ' (Default: ' str '): ']; answ= input(prompt,'s'); if numel(answ)==0  answ=str; end
             trainingParam.(fi{1})=answ;
             
@@ -79,7 +81,7 @@ disp(['Launching training procedure with ' trainingFun]);
 feval(trainingFun,path,name); % launch the training function for classification
 
 
-function str=findDefault(vari,fi)
+function trainingParam=findDefault(trainingParam,fi)
 
 str=fi{2};
 if isfield(vari,fi{1})   
