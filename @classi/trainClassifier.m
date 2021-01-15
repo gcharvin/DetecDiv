@@ -39,29 +39,46 @@ if ~strcmp(trai,'n')
     switch classif.typeid % type of classification used
         case 4 %image classification training options
             
-            fi={'network','googlenet'}; 
-            trainingParam=setParam(trainingParam,fi);
+            disp('Select pptimization method (sgdm, adam): '); 
+            trainingParam=setParam(trainingParam,{'method','sgdm'});
             
-            prompt=[fi{1} ' (Default: ' str '): ']; answ= input(prompt,'s'); if numel(answ)==0  answ=str; end
-            trainingParam.(fi{1})=answ;
+            disp('Select CNN (googlenet, resnet50): '); 
+            trainingParam=setParam(trainingParam,{'network','googlenet'});
             
-            fi={'MiniBatchSize',8}; str=findDefault(trainingParam,fi);
-            prompt=[fi{1} ' (Default: ' str '): ']; answ= input(prompt,'s'); if numel(answ)==0  answ=str; end
-            trainingParam.(fi{1})=answ;
+            disp('Select Batch size (8-128): ');
+            trainingParam=setParam(trainingParam,{'miniBatchSize',8});
             
-          
+            disp('Select Number of Epochs (ie iterations): ');
+            trainingParam=setParam(trainingParam,{'MaxEpochs',6}); 
             
-%                'MiniBatchSize',miniBatchSize, ...
-%     'MaxEpochs',6, ...
-%     'InitialLearnRate',3e-4, ... % 3e-4
-%     'Shuffle','every-epoch', ...
-%     'ValidationData',augimdsValidation, ...
-%     'ValidationFrequency',valFrequency, ...
-%      'VerboseFrequency',2,...
-%     'Plots','training-progress',...
-%     'ExecutionEnvironment','parallel');
+            disp('Select Learning rate: ');
+            trainingParam=setParam(trainingParam,{'InitialLearnRate',3e-4});
+            
+            disp('Select Data shuffling (once,never,every-epoch): ');
+            trainingParam=setParam(trainingParam,{'Shuffle','every-epoch'});
+            
+            if gpuDeviceCount>0
+            disp(['You have ' num2str(gpuDeviceCount) ' GPUs available']);
+            else
+            disp(['There is no GPU available']);    
+            end
+            
+            disp('Select the execution environment: ');
+            disp('''auto'' = Use a GPU if one is available. Otherwise, use the CPU');
+            disp('''cpu'' — Use the CPU');
+            disp('''gpu'' — Use the GPU');
+            disp('''multi-gpu'' — Multiple GPUs');
+            disp('''parallel'' — use a parallel pool, one GPU per worker if available  ');
+            trainingParam=setParam(trainingParam,{'ExecutionEnvironment','parallel'});
     end
 end
+
+disp('---------------');
+disp('Stored training parameters: ');
+
+disp(trainingParam)
+
+save([classif.path '/trainingParam.mat'],'trainingParam')
 
 % first format data for training procedure and save to disk
 
@@ -81,11 +98,22 @@ disp(['Launching training procedure with ' trainingFun]);
 feval(trainingFun,path,name); % launch the training function for classification
 
 
-function trainingParam=findDefault(trainingParam,fi)
+function trainingParam=setParam(trainingParam,fi)
+
 
 str=fi{2};
-if isfield(vari,fi{1})   
-if numel(vari.(fi{1}))>0
-    str=vari.(fi{1});
+if isfield(trainingParam,fi{1})   
+if numel(trainingParam.(fi{1}))>0
+    str=trainingParam.(fi{1});
 end
 end
+
+if ischar(str)
+prompt=[fi{1} ' (Default: ' str '): ']; answ= input(prompt,'s'); if numel(answ)==0  answ=str; end
+trainingParam.(fi{1})=answ;
+else
+
+prompt=[fi{1} ' (Default: ' num2str(str) '): ']; answ= input(prompt); if numel(answ)==0  answ=str; end
+trainingParam.(fi{1})=answ;    
+end
+            
