@@ -28,7 +28,7 @@ fprintf('------\n');
 
 % load google net
 
-switch strcmp(trainingParam.network)
+switch trainingParam.network
     case 'googlenet'
 net = googlenet;
     case 'resnet50'
