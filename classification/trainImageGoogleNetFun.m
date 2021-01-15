@@ -85,6 +85,8 @@ connections = lgraph.Connections;
  lgraph = createLgraphUsingConnections(layers,connections); % onlygooglnet
 
 fprintf('Training network...\n');
+fprintf('------\n');
+
 % training network
 % augment dataset
 
@@ -118,12 +120,12 @@ augimdsTrain = augmentedImageDatastore(inputSize(1:2),imdsTrain, ...
 
 augimdsValidation = augmentedImageDatastore(inputSize(1:2),imdsValidation);
 
-miniBatchSize = 10; %8
+miniBatchSize = trainingParam.MiniBatchSize; %8
 valFrequency = floor(numel(augimdsTrain.Files)/miniBatchSize);
 
 % if gpuDeviceCount>0
 % disp('Using GPUs and multiple workers');
-options = trainingOptions('sgdm', ...
+options = trainingOptions(trainingParam.method, ...
     'MiniBatchSize', trainingParam.MiniBatchSize, ...
     'MaxEpochs',trainingParam.MaxEpochs, ...
     'InitialLearnRate',trainingParam.InitialLearnRate, ... % 3e-4
@@ -157,6 +159,7 @@ classifier = trainNetwork(augimdsTrain,lgraph,options);
 
 fprintf('Training is done...\n');
 fprintf('Saving googlenet classifier ...\n');
+fprintf('------\n');
 
 %[path '/' name '.mat']
 
