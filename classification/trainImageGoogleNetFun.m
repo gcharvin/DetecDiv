@@ -77,12 +77,12 @@ lgraph = replaceLayer(lgraph,classLayer.Name,newClassLayer);
 
 %fprintf('Freezing layers...\n');
 
-% freezing layers
-layers = lgraph.Layers;
-connections = lgraph.Connections;
-
- layers(1:10) = freezeWeights(layers(1:10)); % only googlenet
- lgraph = createLgraphUsingConnections(layers,connections); % onlygooglnet
+% % freezing layers
+% layers = lgraph.Layers;
+% connections = lgraph.Connections;
+% 
+%  layers(1:10) = freezeWeights(layers(1:10)); % only googlenet
+%  lgraph = createLgraphUsingConnections(layers,connections); % onlygooglnet
 
 fprintf('Training network...\n');
 fprintf('------\n');
