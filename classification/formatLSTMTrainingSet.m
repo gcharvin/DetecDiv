@@ -53,7 +53,8 @@ cltmp=classif.roi;
 disp('Starting parallelized jobs for data formatting....')
 
 warning off all
-parfor i=rois
+for i=rois
+%parfor i=rois
     disp(['Launching ROI ' num2str(i) :' processing...'])
     
     
@@ -102,12 +103,26 @@ parfor i=rois
         
         if numel(pix)==1
             
-            tmp = double(imadjust(tmp,[meanphc/65535 maxphc/65535],[0 1]))/65535;
+            
+            %J = imtophat(tmp,strel('Disk',5));
+            %figure, imshow(J,[]);
+            
+            %mean(tmp(:))
+            tmp=uint16(tmp-mean(tmp(:)));
+            
+            %figure, imshow(tmp,[]);
+%             pause
+%             close
+            
+            %tmp = double(imadjust(tmp,[meanphc/65535 maxphc/65535],[0 1]))/65535;
+            tmp = double(imadjust(tmp,[0/65535 (maxphc-meanphc)/65535],[0 1]))/65535;
             tmp=repmat(tmp,[1 1 3]);
             
-            
+%             figure, imshow(tmp,[]);
+%              pause
+%             close
             %max(tmp(:))
-            %return
+            
         end
         
         
@@ -137,6 +152,7 @@ parfor i=rois
         fprintf([reverseStr, msg]);
         reverseStr = repmat(sprintf('\b'), 1, length(msg));
     end
+    %return;
     
     fprintf('\n');
 

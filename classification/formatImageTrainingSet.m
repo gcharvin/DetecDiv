@@ -1,4 +1,4 @@
-function formatImageTrainingSet(classif,rois)
+function formatImageTrainingSet(foldername,classif,rois)
 
 if ~isfolder([classif.path '/' foldername '/images'])
     mkdir([classif.path '/' foldername], 'images');
@@ -55,6 +55,8 @@ parfor i=rois
             %return
         end
         
+%         figure, imshow(tmp,[]);
+%         return;
         
         tr=num2str(j);
         while numel(tr)<4
