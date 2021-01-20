@@ -116,7 +116,7 @@ save([classif.path '/trainingParam.mat'],'trainingParam')
 % first format data for training procedure and save to disk
 
 if strcmp(fmt,'y')
-    obj.formatDataForTraining;
+    classif.formatDataForTraining;
 end
 
 % launch the classification-specific training procedure
