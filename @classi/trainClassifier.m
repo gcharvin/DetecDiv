@@ -42,7 +42,7 @@ if ~strcmp(trai,'n')
             disp('Select optimization method (sgdm, adam, rmsprop): '); 
             trainingParam=setParam(trainingParam,{'method','sgdm'});
             
-            disp('Select CNN (googlenet, resnet50): '); 
+            disp('Select CNN (googlenet, resnet50, resnet101, inceptionresnetv2, nasnetlarge): '); 
             trainingParam=setParam(trainingParam,{'network','googlenet'});
             
             disp('Select Batch size (8-128): ');

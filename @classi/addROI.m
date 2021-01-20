@@ -88,9 +88,12 @@ for i=1:length(rois)
                         if numel(preserv)==0
                             preserv='y';
                         end
+                        
+                        disp('This setting will apply to all ROIs');
                     end
 
                     if strcmp(preserv,'y')
+                        
                         
                         nclasses1=length(classif.classes);
                         nclasses2=length(obj.classes);
