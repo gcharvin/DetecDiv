@@ -53,11 +53,10 @@ cltmp=classif.roi;
 disp('Starting parallelized jobs for data formatting....')
 
 warning off all
-for i=rois
-%parfor i=rois
+%for i=rois
+parfor i=rois
     disp(['Launching ROI ' num2str(i) :' processing...'])
-    
-    
+
     if numel(cltmp(i).image)==0
         cltmp(i).load; % load image sequence
     end
@@ -108,6 +107,11 @@ for i=rois
             %figure, imshow(J,[]);
             
             %mean(tmp(:))
+            [tmp, Gdir] = imgradient(tmp,'prewitt');
+            %figure, imshow(tmp,[]);
+            
+            
+            
             tmp=uint16(tmp-mean(tmp(:)));
             
             %figure, imshow(tmp,[]);
@@ -115,8 +119,11 @@ for i=rois
 %             close
             
             %tmp = double(imadjust(tmp,[meanphc/65535 maxphc/65535],[0 1]))/65535;
-            tmp = double(imadjust(tmp,[0/65535 (maxphc-meanphc)/65535],[0 1]))/65535;
+            tmp = double(imadjust(tmp,[0/65535 max(tmp(:))/65535],[0 1]))/65535;
             tmp=repmat(tmp,[1 1 3]);
+            %figure, imshow(tmp,[]);
+            
+            %return;
             
 %             figure, imshow(tmp,[]);
 %              pause

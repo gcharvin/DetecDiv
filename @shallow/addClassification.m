@@ -18,6 +18,8 @@ end
 switch nargin
     case 1  % user inputs parameters of the classification
         
+        disp(['Creating new classification object']);
+        
         prompt='Please enter the name of the classification (Default: myclassi): ';
         name= input(prompt,'s');
         if numel(name)==0
@@ -105,9 +107,10 @@ switch nargin
             return;
         end
         
-        % add training data
+        % add training data--> this was removed from this function and must
+        % be done separateley
         
-        addROIToClassification(obj,n+1);
+       % obj.processing.classification(n+1).addROI(obj,n+1);
         
     case 2
 
@@ -188,7 +191,7 @@ switch nargin
         end
         
         if isnumeric(option)
-            
+            disp(['Duplicating classification #' num2str(option) ' and strid: ' obj.processing.classification(option).strid]);
             % option is a index that refers to an exisiting classification
             
             if option<=length(obj.processing.classification)
@@ -222,7 +225,7 @@ switch nargin
                     return;
                 end
                 
-                addROIToClassification(obj,n+1,option); % import ROis from classification option
+                obj.processing.classification(n+1).addROI(obj.processing.classification(option)); % import ROis from classification option
                 
                 
                 

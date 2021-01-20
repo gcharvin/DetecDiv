@@ -64,27 +64,33 @@ myproject.fov(myfovid).roi(myroiid).view
 
 allows to view the 4D volume in a GUI
 
-
 Classification
 --------------
 
 myproject.addClassification
-
 create a new classifier  ( @classi object)
+in this xase, no ROI is imported in the classi object
 
 myproject.processing.classification
 
 is an array that contains all classifiers created
 
 myproject.addClassification(index) will duplicate the object myproject.processing.classification(index) , where index the index of a valid classi object
+user is asked whether to import ROIs included in the original classi object
 
-myproject.addClassification(string) will import an existing classifier from the reposiotry , where index the index of a valid classi object.
+myproject.addClassification(string) will import an existing classifier (string) from a repository
 
-myproject.removesClassification(id) will remove a classifier specified by the index id. 
+myproject.removeClassification(id) will remove a classifier specified by the index id.
 
-myproject.addROIToCLassification(classifid)
+myproject.processing.classification(id).addROI(@classi object OR @fov object, ROIs IDs (optional) )
+adds ROIs to the classification myproject.processing.classification(id).
+ROIs come either from a fov or from an exisiting classi object
+This function will preserve training sets and reformat it if the number of classes are different
 
-add a series of ROIs to the classification classifid. By default this function is called when creating a classifier.
+myproject.processing.classification(index).setClasses(classnames)
+allows the user to define and to reassign classes in the classi object and dependencies (ROIs)
+number of classes can be extended or decreased
+
 
 myproject.userTraining(classifid)
 

@@ -33,9 +33,15 @@ switch trainingParam.network
 net = googlenet;
     case 'resnet50'
 net=resnet50;
+    case 'resnet101'
+net=resnet101;
+    case 'nasnetlarge'
+net=nasnetlarge;
+    case 'inceptionresnetv2'
+net=inceptionresnetv2;
     otherwise
-fprintf('Using googlenet as default CNN...\n');
-net = googlenet;        
+fprintf('User selected custom CNN...\n');
+eval(['net =' trainingParam.network]);        
 end
 %
 
