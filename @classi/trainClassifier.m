@@ -70,6 +70,39 @@ if ~strcmp(trai,'n')
             disp('''multi-gpu'' — Multiple GPUs');
             disp('''parallel'' — use a parallel pool, one GPU per worker if available  ');
             trainingParam=setParam(trainingParam,{'ExecutionEnvironment','parallel'});
+            
+        case 1 
+            disp('Select optimization method (sgdm, adam, rmsprop): '); 
+            trainingParam=setParam(trainingParam,{'method','sgdm'});
+            
+            disp('Select CNN (googlenet, resnet50, resnet101, inceptionresnetv2, nasnetlarge): '); 
+            trainingParam=setParam(trainingParam,{'network','googlenet'});
+            
+            disp('Select Batch size (8-128): ');
+            trainingParam=setParam(trainingParam,{'MiniBatchSize',8});
+            
+            disp('Select Number of Epochs (ie iterations): ');
+            trainingParam=setParam(trainingParam,{'MaxEpochs',6}); 
+            
+            disp('Select Learning rate: ');
+            trainingParam=setParam(trainingParam,{'InitialLearnRate',3e-4});
+            
+            disp('Select Data shuffling (once,never,every-epoch): ');
+            trainingParam=setParam(trainingParam,{'Shuffle','every-epoch'});
+            
+            if gpuDeviceCount>0
+            disp(['You have ' num2str(gpuDeviceCount) ' GPUs available']);
+            else
+            disp(['There is no GPU available']);    
+            end
+            
+            disp('Select the execution environment: ');
+            disp('''auto'' = Use a GPU if one is available. Otherwise, use the CPU');
+            disp('''cpu'' — Use the CPU');
+            disp('''gpu'' — Use the GPU');
+            disp('''multi-gpu'' — Multiple GPUs');
+            disp('''parallel'' — use a parallel pool, one GPU per worker if available  ');
+            trainingParam=setParam(trainingParam,{'ExecutionEnvironment','parallel'});
     end
 end
 
