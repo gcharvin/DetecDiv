@@ -58,6 +58,9 @@ if ~strcmp(trai,'n')
             disp('Image augmentation (rotation range in degrees): ');
             trainingParam=setParam(trainingParam,{'rotateAugmentation',[-180 180]});
             
+            disp('L2regularization (0.00001-0.1) : ');
+            trainingParam=setParam(trainingParam,{'regularization',0.00001});
+            
             if gpuDeviceCount>0
             disp(['You have ' num2str(gpuDeviceCount) ' GPUs available']);
             else
