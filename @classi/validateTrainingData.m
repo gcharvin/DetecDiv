@@ -1,16 +1,17 @@
-function validateTrainingData(obj,classiid,classifier)
-% high level function to classify data
+function validateTrainingData(classif,classifier)
+% high level function to classify data using a classifier on ROIs in a
+% @classi object.
 
-% classiid is the index of the classifier to be used 
+% classif is the ref to a @classi object
 
 % roilist is an 2 x N array containing FOV IDs and ROI IDs from the shallow
 % object to be classified 
 
-classifyFun=obj.processing.classification(classiid).classifyFun;
+classifyFun=classif.classifyFun;
 
-disp(['Classifying training data for validation using ' classifyFun]);
+disp(['Classifying data used as groundtruth in ' classif.strid ' for validation purposes using ' classifyFun]);
 
-classif=obj.processing.classification(classiid);
+%classif=obj.processing.classification(classiid);
 
 path=classif.path;
 name=classif.strid;
