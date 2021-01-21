@@ -112,7 +112,7 @@ pixelRange = trainingParam.translateAugmentation;
 %scaleRange = [0.7 1.3];
 
 %rotation=[180 180];
-rotation=trainingParam.rotationAugmentation;
+rotation=trainingParam.rotateAugmentation;
 
 % imageAugmenter = imageDataAugmenter( ...
 %     'RandXReflection',true, ...
