@@ -14,6 +14,7 @@ if isfile([classif.path '/trainingParam.mat'])
         trai='n';
     end
 else
+    disp('Training parameters do not exist. We must set them before going further:');
     trai='new';
 end
 
@@ -55,7 +56,7 @@ if ~strcmp(trai,'n')
             trainingParam=setParam(trainingParam,{'translateAugmentation',[-5 5]});
             
             disp('Image augmentation (rotation range in degrees): ');
-            trainingParam=setParam(trainingParam,{'translateAugmentation',[-180 180]});
+            trainingParam=setParam(trainingParam,{'rotateAugmentation',[-180 180]});
             
             if gpuDeviceCount>0
             disp(['You have ' num2str(gpuDeviceCount) ' GPUs available']);
@@ -81,3 +82,22 @@ disp('Stored training parameters: ');
 disp(trainingParam)
 
 save([classif.path '/trainingParam.mat'],'trainingParam')
+
+function trainingParam=setParam(trainingParam,fi)
+
+
+str=fi{2};
+if isfield(trainingParam,fi{1})   
+if numel(trainingParam.(fi{1}))>0
+    str=trainingParam.(fi{1});
+end
+end
+
+if ischar(str)
+prompt=[fi{1} ' (Default: ' str '): ']; answ= input(prompt,'s'); if numel(answ)==0  answ=str; end
+trainingParam.(fi{1})=answ;
+else
+
+prompt=[fi{1} ' (Default: ' num2str(str) '): ']; answ= input(prompt); if numel(answ)==0  answ=str; end
+trainingParam.(fi{1})=answ;    
+end

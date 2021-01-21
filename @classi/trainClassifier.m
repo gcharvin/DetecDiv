@@ -35,23 +35,4 @@ disp(['Launching training procedure with ' trainingFun]);
 
 feval(trainingFun,path,name); % launch the training function for classification
 
-
-function trainingParam=setParam(trainingParam,fi)
-
-
-str=fi{2};
-if isfield(trainingParam,fi{1})   
-if numel(trainingParam.(fi{1}))>0
-    str=trainingParam.(fi{1});
-end
-end
-
-if ischar(str)
-prompt=[fi{1} ' (Default: ' str '): ']; answ= input(prompt,'s'); if numel(answ)==0  answ=str; end
-trainingParam.(fi{1})=answ;
-else
-
-prompt=[fi{1} ' (Default: ' num2str(str) '): ']; answ= input(prompt); if numel(answ)==0  answ=str; end
-trainingParam.(fi{1})=answ;    
-end
             
