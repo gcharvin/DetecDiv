@@ -87,22 +87,24 @@ adds ROIs to the classification myproject.processing.classification(id).
 ROIs come either from a fov or from an exisiting classi object
 This function will preserve training sets and reformat it if the number of classes are different
 
-myproject.processing.classification(index).setClasses(classnames)
+myproject.processing.classification(id).setClasses(classnames)
 allows the user to define and to reassign classes in the classi object and dependencies (ROIs)
 number of classes can be extended or decreased
 
+myproject.myproject.processing.classification(id).userTraining
+launches a GUI to set the ground truth using a specific ROI
 
-myproject.userTraining(classifid)
+myproject.myproject.processing.classification(id).formatDataForTraining
+formats data to be used by the classifier;
+this must be done before launching the training procedure
 
-launches a GUI to train the classifier classifid using a specific ROIs
+myproject.myproject.processing.classification(id).setTrainingParam
+request parameters values for training the classifier; default values can be entered
 
-myproject.trainClassifier(classifid)
-
-trains the classifier using the training defined by the user
-
-myproject.formatDataForTraining(classifid)
-
-formats data to be used by the classifier; this function is called first when launching the trainClassifier function
+myproject.processing.classification(id).trainClassifier
+1) asks whether the trainingset needs to be formatted
+2) asks whether training parameters must be updated
+3) then trains the classifier
 
 myproject.validateTrainingData(classifid)
 
