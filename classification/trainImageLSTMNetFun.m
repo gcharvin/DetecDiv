@@ -29,10 +29,10 @@ netCNN=classifier;
 
 inputSize = netCNN.Layers(1).InputSize(1:2);
 
-if strcmp(trainingParam,'googlenet')
+if strcmp(trainingParam.network,'googlenet')
 layerName = "pool5-7x7_s1"; % layer id where the network will be connected 
 end
-if strcmp(trainingParam,'resnet50')
+if strcmp(trainingParam.network,'resnet50')
 layerName = "avg_pool"; % layer id where the network will be connected 
 end
 

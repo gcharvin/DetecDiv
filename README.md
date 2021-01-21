@@ -75,20 +75,21 @@ myproject.processing.classification
 
 is an array that contains all classifiers created
 
-myproject.addClassification(index) will duplicate the object myproject.processing.classification(index) , where index the index of a valid classi object
+myproject.addClassification(index) will duplicate the object myproject.processing.classification(index) , where index the index of a valid @classi object
 user is asked whether to import ROIs included in the original classi object
 
 myproject.addClassification(string) will import an existing classifier (string) from a repository
+%% not really implemented yet%%
 
 myproject.removeClassification(id) will remove a classifier specified by the index id.
 
-myproject.processing.classification(id).addROI(@classi object OR @fov object, ROIs IDs (optional) )
+myproject.processing.classification(id).addROI(@classi object OR @fov object, optional: ROIs IDs)
 adds ROIs to the classification myproject.processing.classification(id).
-ROIs come either from a fov or from an exisiting classi object
+ROIs may come either from a @fov or from an exisiting @classi object
 This function will preserve training sets and reformat it if the number of classes are different
 
 myproject.processing.classification(id).setClasses(classnames)
-allows the user to define and to reassign classes in the classi object and dependencies (ROIs)
+allows the user to define and to reassign classes in the @classi object and dependencies (ROIs)
 number of classes can be extended or decreased
 
 myproject.myproject.processing.classification(id).userTraining
@@ -106,10 +107,8 @@ myproject.processing.classification(id).trainClassifier
 2) asks whether training parameters must be updated
 3) then trains the classifier
 
-myproject.validateTrainingData(classifid)
-
-uses the classifier to classify ROIs associated with user training in order to compare user training to classification results
+myproject.processing.classification(id).validateTrainingData(optional: classifier)
+uses the classifier of the @classi object (optional: provide a classifier) to classify ROIs used to build the groundtruth in order to compare with classification results
 
 myproject.classifyData(classifid,roilist,option)
-
-allows one to start the classification reffered to as classifid on the roilist; You can provide the classifier as an option, so that it is not loaded each time you run the function
+allows one to start the classification referred to as classifid on the roilist; You can provide the classifier as an option, so that it is not loaded each time you run the function
