@@ -12,15 +12,17 @@ foldername=[path '/trainingdataset/images'];
 imds = imageDatastore(foldername, ...
     'IncludeSubfolders',true, ...
     'LabelSource','foldernames'); 
-[imdsTrain,imdsValidation] = splitEachLabel(imds,0.7);
-
-numClasses = numel(categories(imdsTrain.Labels));
 
 
 fprintf('Loading training options...\n');
 fprintf('------\n');
 
 load([path '/trainingParam.mat']);
+
+
+[imdsTrain,imdsValidation] = splitEachLabel(imds,trainingParam.split);
+
+numClasses = numel(categories(imdsTrain.Labels));
 
 
 fprintf('Loading network...\n');
@@ -31,6 +33,8 @@ fprintf('------\n');
 switch trainingParam.network
     case 'googlenet'
 net = googlenet;
+    case 'resnet18'
+net=resnet18;
     case 'resnet50'
 net=resnet50;
     case 'resnet101'
@@ -84,11 +88,13 @@ lgraph = replaceLayer(lgraph,classLayer.Name,newClassLayer);
 %fprintf('Freezing layers...\n');
 
 % freezing layers
-% layers = lgraph.Layers;
-% connections = lgraph.Connections;
-% 
-%  layers(1:10) = freezeWeights(layers(1:10)); % only googlenet
-%  lgraph = createLgraphUsingConnections(layers,connections); % onlygooglnet
+if strcmp(trainingParam.freeze,'y')
+layers = lgraph.Layers;
+connections = lgraph.Connections;
+
+ layers(1:10) = freezeWeights(layers(1:10)); % only googlenet
+ lgraph = createLgraphUsingConnections(layers,connections); % onlygooglnet
+end
 
 fprintf('Training network...\n');
 fprintf('------\n');
@@ -96,13 +102,17 @@ fprintf('------\n');
 % training network
 % augment dataset
 
-pixelRange = [-5 5];
+%pixelRange=[-5 5];
+
+pixelRange = trainingParam.translateAugmentation;
+
 %scaleRange = [0.9 1.1];
 
 %pixelRange = [-100 100];
 %scaleRange = [0.7 1.3];
 
-%rotation=[-180 180];
+%rotation=[180 180];
+rotation=trainingParam.rotationAugmentation;
 
 % imageAugmenter = imageDataAugmenter( ...
 %     'RandXReflection',true, ...
@@ -117,7 +127,9 @@ imageAugmenter = imageDataAugmenter( ...
     'RandXReflection',true, ...
     'RandYReflection',true, ...
     'RandXTranslation',pixelRange, ...
-    'RandYTranslation',pixelRange);% , ...
+    'RandYTranslation',pixelRange, ...
+     'RandRotation',rotation);% , ...
+
   %  'RandXScale',scaleRange, ...
   %  'RandYScale',scaleRange);
 
@@ -135,7 +147,7 @@ options = trainingOptions(trainingParam.method, ...
     'MiniBatchSize', trainingParam.MiniBatchSize, ...
     'MaxEpochs',trainingParam.MaxEpochs, ...
     'InitialLearnRate',trainingParam.InitialLearnRate, ...
-    'L2Regularization',0.005, ...
+    'L2Regularization',trainingParam.regularization, ...
     'Shuffle',trainingParam.Shuffle, ...
     'ValidationData',augimdsValidation, ...
     'ValidationFrequency',valFrequency, ...
@@ -167,7 +179,7 @@ options = trainingOptions(trainingParam.method, ...
 classifier = trainNetwork(augimdsTrain,lgraph,options);
 
 fprintf('Training is done...\n');
-fprintf('Saving googlenet classifier ...\n');
+fprintf('Saving image classifier ...\n');
 fprintf('------\n');
 
 %[path '/' name '.mat']

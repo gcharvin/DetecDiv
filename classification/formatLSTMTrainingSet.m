@@ -91,7 +91,6 @@ parfor i=rois
     lab= categorical(cltmp(i).train.(classif.strid).id,1:numel(classif.classes),classif.classes); % creates labels for classification
     
     
-    
     reverseStr = '';
     
     
