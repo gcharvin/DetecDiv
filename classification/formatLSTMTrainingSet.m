@@ -11,38 +11,6 @@ for i=1:numel(classif.classes)
 end
 
 
-prompt='Train googlenet image classifier ? (y / n [Default y]): ';
-imageclassifier= input(prompt,'s');
-if numel(imageclassifier)==0
-    imageclassifier='y';
-end
-
-prompt='Compute activation for google net ? (y / n [Default y]): ';
-cactivations= input(prompt,'s');
-if numel(cactivations)==0
-    cactivations='y';
-end
-
-prompt='Train LSTM network ? (y/n [Default y]): ';
-lstmtraining= input(prompt,'s');
-if numel(lstmtraining)==0
-    lstmtraining='y';
-end
-
-prompt='Assemble full network ? (y/n [Default y] ): ';
-assemblenet= input(prompt,'s');
-if numel(assemblenet)==0
-    assemblenet='y';
-end
-
-%  prompt='Validate training data ? (y [Default y]/ n ): ';
-% assemblenet= input(prompt,'s');
-% if numel(assemblenet)==0
-%     validation='y';
-% end
-
-save([classif.path '/options.mat'],'cactivations','imageclassifier','lstmtraining','assemblenet'); % save options to be used in training function
-
 if ~isfolder([classif.path '/' foldername '/timeseries'])
     mkdir([classif.path '/' foldername], 'timeseries');
 end

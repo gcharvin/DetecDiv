@@ -23,10 +23,46 @@ if ~strcmp(trai,'n')
             trainingParam=[];
     end
              
-    switch classif.typeid % type of classification used
-        case {1,4} %image classification training options
+    
+    if classif.typeid==4 % LSTM: ask which part needs to be trained 
+
+            disp('Train image classifier?'); 
+            trainingParam=setParam(trainingParam,{'imageclassifier','y'});
             
-            disp('*** Set training options for image classification ***'); 
+            disp('Compute activation for image classifier?'); 
+            trainingParam=setParam(trainingParam,{'cactivations','y'});
+
+            disp('Train LSTM network ?'); 
+            trainingParam=setParam(trainingParam,{'lstmtraining','y'});
+            
+             disp('Assemble full network ?'); 
+            trainingParam=setParam(trainingParam,{'assemblenet','y'});
+
+    end
+    
+    if classif.typeid==1 || (classif.typeid==4 & strcmp(trainingParam.imageclassifier,'y'))
+            trainingParam=imageTraining(trainingParam);
+    end
+    
+    if classif.typeid==4 % LSTM specific
+        trainingParam=LSTMTraining(trainingParam);
+    end
+            
+            
+        
+end
+
+disp('---------------');
+disp('Stored training parameters: ');
+
+disp(trainingParam)
+
+save([classif.path '/trainingParam.mat'],'trainingParam')
+
+
+function trainingParam=imageTraining(trainingParam)
+
+disp('*** Set training options for image classification ***'); 
             
             disp('Select optimization method (sgdm, adam, rmsprop): '); 
             trainingParam=setParam(trainingParam,{'method','sgdm'});
@@ -75,17 +111,25 @@ if ~strcmp(trai,'n')
             disp('''parallel'' — use a parallel pool, one GPU per worker if available  ');
             trainingParam=setParam(trainingParam,{'ExecutionEnvironment','parallel'});
             
-        
-    end
-end
 
-disp('---------------');
-disp('Stored training parameters: ');
 
-disp(trainingParam)
+function trainingParam=LSTMTraining(trainingParam)
 
-save([classif.path '/trainingParam.mat'],'trainingParam')
+disp('*** Set training options for LSTM classification ***'); 
 
+             disp('Split factor between training and validation: ');
+            trainingParam=setParam(trainingParam,{'lstmsplit',0.7});
+            
+             disp('Number of bilstm layers: ');
+            trainingParam=setParam(trainingParam,{'lstmlayers',2000});
+            
+            disp('Select Mini Batch size (1-128): ');
+            trainingParam=setParam(trainingParam,{'lstmMiniBatchSize',8});
+            
+             disp('Select Learning rate: ');
+            trainingParam=setParam(trainingParam,{'lstmInitialLearnRate',1e-4});
+            
+            
 function trainingParam=setParam(trainingParam,fi)
 
 
