@@ -74,19 +74,19 @@ parfor i=rois
             %figure, imshow(J,[]);
             
             %mean(tmp(:))
-            [tmp, Gdir] = imgradient(tmp,'prewitt');
+           % [tmp, Gdir] = imgradient(tmp,'prewitt');
             %figure, imshow(tmp,[]);
             
             
             
-            tmp=uint16(tmp-mean(tmp(:)));
+           % tmp=uint16(tmp-mean(tmp(:)));
             
             %figure, imshow(tmp,[]);
 %             pause
 %             close
             
-            %tmp = double(imadjust(tmp,[meanphc/65535 maxphc/65535],[0 1]))/65535;
-            tmp = double(imadjust(tmp,[0/65535 max(tmp(:))/65535],[0 1]))/65535;
+            tmp = double(imadjust(tmp,[meanphc/65535 maxphc/65535],[0 1]))/65535;
+           % tmp = double(imadjust(tmp,[0/65535 max(tmp(:))/65535],[0 1]))/65535;
             tmp=repmat(tmp,[1 1 3]);
             %figure, imshow(tmp,[]);
             
