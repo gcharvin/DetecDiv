@@ -50,6 +50,8 @@ end
 
 preserv='';
 
+arr={};
+
 for i=1:length(rois)
     disp(['Processing ROI ' num2str(i) '/' num2str(length(rois))]);
     
@@ -58,9 +60,9 @@ for i=1:length(rois)
     
     % aa=roitocopy
     if cc==0
-    classif.roi=roi('',[]);    
+        classif.roi=roi('',[]);
     else
-    classif.roi(cc+1)=roi('',[]);
+        classif.roi(cc+1)=roi('',[]);
     end
     
     if numel(roitocopy.image)==0
@@ -78,35 +80,39 @@ for i=1:length(rois)
         classif.roi(cc+1).train.(classif.strid)=[];
         classif.roi(cc+1).train.(classif.strid).id= zeros(1,size(classif.roi(cc+1).image,4));
         
-        if isa(obj,'classi') 
-                if isfield(roitocopy.train,obj.strid) % test if previous ROI has training
-
-                    if  numel(preserv)==0 % new class has different number of classes
-                        prompt='Preserve training set? (y/n); Default: y';
-                        preserv= input(prompt,'s');
-                        
-                        if numel(preserv)==0
-                            preserv='y';
-                        end
-                        
-                        disp('This setting will apply to all ROIs');
-                    end
-
-                    if strcmp(preserv,'y')
-                        
-                        
-                        nclasses1=length(classif.classes);
-                        nclasses2=length(obj.classes);
+        if isa(obj,'classi')
+            if isfield(roitocopy.train,obj.strid) % test if previous ROI has training
+                
+                if  numel(preserv)==0 % new class has different number of classes
+                    prompt='Preserve training set? (y/n); Default: y';
+                    preserv= input(prompt,'s');
                     
-                        if  nclasses1~=nclasses2 
-                        disp(['Warning: current @classi has ' num2str(nclasses1) 'classes:']);
+                    if numel(preserv)==0
+                        preserv='y';
+                    end
+                    
+                    disp('This setting will apply to all ROIs');
+                end
+                
+                if strcmp(preserv,'y')
+                    
+                    
+                    nclasses1=length(classif.classes);
+                    nclasses2=length(obj.classes);
+                    
+                    %if  nclasses1~=nclasses2
+                    if numel(arr)==0
+                        
+                        
+                        disp(['current @classi has ' num2str(nclasses1) 'classes:']);
                         disp(classif.classes);
-                        disp(['But @classi to import from has ' num2str(nclasses2) 'classes:']);
+                        
+                        disp(['@classi to import from has ' num2str(nclasses2) 'classes:']);
                         disp(obj.classes);
                         
-                        disp('I will try to preserve the existing trainingset....');
+                        disp('You must map the first set of classes to the second');
                         
-                        arr={};
+                        
                         for j=1:nclasses1
                             
                             str='';
@@ -125,87 +131,88 @@ for i=1:length(rois)
                             
                             arr{j}=idclass;
                         end
-                        
-                        %arr
-                        
-                        %classif.roi(cc+1).train.(classif.strid).id=roitocopy.train(obj.strid).id;
-                        
-                        for j=1:nclasses1
-                            for k=1:numel(arr{j})
-                                
-                                if arr{j}(k)~=0
-                                    pix=roitocopy.train.(obj.strid).id==arr{j}(k);
-                                    %j
-                                    %aa=classif.roi(cc+1).train.(classif.strid).id
-                                    
-                                    classif.roi(cc+1).train.(classif.strid).id(pix)=j;
-                                    
-                                    %bb=classif.roi(cc+1).train.(classif.strid).id
-                                end
-                                
-                            end
-                        end
-                        
-                        else % classes are identical betwen old and new classes
-                            classif.roi(cc+1).train.(classif.strid).id=roitocopy.train.(obj.strid).id;
-                        end
-                        
                     end
+                    
+                    %arr
+                    
+                    %classif.roi(cc+1).train.(classif.strid).id=roitocopy.train(obj.strid).id;
+                    
+                    for j=1:nclasses1
+                        for k=1:numel(arr{j})
+                            
+                            if arr{j}(k)~=0
+                                pix=roitocopy.train.(obj.strid).id==arr{j}(k);
+                                %j
+                                %aa=classif.roi(cc+1).train.(classif.strid).id
+                                
+                                classif.roi(cc+1).train.(classif.strid).id(pix)=j;
+                                
+                                %bb=classif.roi(cc+1).train.(classif.strid).id
+                            end
+                            
+                        end
+                    end
+                    
+               % else % classes are identical betwen old and new classes
+               %     classif.roi(cc+1).train.(classif.strid).id=roitocopy.train.(obj.strid).id;
+               % end
+                
             end
         end
-        % classif.roi(cc+1).train= zeros(1,size(classif.roi(cc+1).image,4));
     end
+    % classif.roi(cc+1).train= zeros(1,size(classif.roi(cc+1).image,4));
+end
+
+if strcmp(classif.category{1},'Pedigree')
+    classif.roi(cc+1).train.(classif.strid)=[];
+    classif.roi(cc+1).train.(classif.strid).id= zeros(1,size(classif.roi(cc+1).image,4));
+    classif.roi(cc+1).train.(classif.strid).mother= [];%zeros(1,size(classif.roi(cc+1).image,4));
+    % classif.roi(cc+1).train= zeros(1,size(classif.roi(cc+1).image,4));
     
-    if strcmp(classif.category{1},'Pedigree')
-        classif.roi(cc+1).train.(classif.strid)=[];
-        classif.roi(cc+1).train.(classif.strid).id= zeros(1,size(classif.roi(cc+1).image,4));
-        classif.roi(cc+1).train.(classif.strid).mother= [];%zeros(1,size(classif.roi(cc+1).image,4));
-        % classif.roi(cc+1).train= zeros(1,size(classif.roi(cc+1).image,4));
-        
-        im=classif.roi(cc+1).image;
-        %size(im)
-        matrix=im(:,:,classif.channel(2),:);
-        
-        classif.roi(cc+1).addChannel(matrix,classif.strid,[1 1 1],[0 0 0]);
-    end
+    im=classif.roi(cc+1).image;
+    %size(im)
+    matrix=im(:,:,classif.channel(2),:);
     
+    classif.roi(cc+1).addChannel(matrix,classif.strid,[1 1 1],[0 0 0]);
+end
+
+
+if strcmp(classif.category{1},'Pixel')
+    im=classif.roi(cc+1).image;
+    matrix=uint16(zeros(size(im,1),size(im,2),1,size(im,4)));
+    classif.roi(cc+1).addChannel(matrix,classif.strid,[1 1 1],[0 0 0]);
+    classif.roi(cc+1).display.selectedchannel(end)=1;
     
-    if strcmp(classif.category{1},'Pixel')
-        im=classif.roi(cc+1).image;
-        matrix=uint16(zeros(size(im,1),size(im,2),1,size(im,4)));
-        classif.roi(cc+1).addChannel(matrix,classif.strid,[1 1 1],[0 0 0]);
-        classif.roi(cc+1).display.selectedchannel(end)=1;
-        
-        if isa(obj,'classi')
-            if  strcmp(obj.category{1},'Pixel')
-                pixid=classif.roi(i).findChannelID(obj.strid);
-                classif.roi(i).display.channel{pixid}=classif.strid;
-            end
-        end
-        %pixelchannel=size(obj.image,3);
-    end
-    
-    
-    
-    if strcmp(classif.category{1},'Object')
-        im=classif.roi(cc+1).image;
-        %size(im)
-        matrix=uint16(im(:,:,classif.channel(2),:)>0);
-        
-        classif.roi(cc+1).addChannel(matrix,classif.strid,[1 1 1],[0 0 0]);
-        
-        if isa(obj,'classi')
+    if isa(obj,'classi')
+        if  strcmp(obj.category{1},'Pixel')
             pixid=classif.roi(i).findChannelID(obj.strid);
             classif.roi(i).display.channel{pixid}=classif.strid;
         end
-        %pixelchannel=size(obj.image,3);
     end
+    %pixelchannel=size(obj.image,3);
+end
+
+
+
+if strcmp(classif.category{1},'Object')
+    im=classif.roi(cc+1).image;
+    %size(im)
+    matrix=uint16(im(:,:,classif.channel(2),:)>0);
     
+    classif.roi(cc+1).addChannel(matrix,classif.strid,[1 1 1],[0 0 0]);
     
-    classif.roi(cc+1).save;
-    classif.roi(cc+1).clear;
-    
-    cc=cc+1;
+    if isa(obj,'classi')
+        pixid=classif.roi(i).findChannelID(obj.strid);
+        classif.roi(i).display.channel{pixid}=classif.strid;
+    end
+    %pixelchannel=size(obj.image,3);
+end
+
+
+classif.roi(cc+1).save;
+classif.roi(cc+1).clear;
+
+cc=cc+1;
 end
 
 

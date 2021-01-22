@@ -1,4 +1,4 @@
-function traj(obj,classistr)
+function f=traj(obj,classistr)
 
 % trajectory 
 
@@ -41,22 +41,26 @@ if numel(obj.train)~=0
     x=1:numel(obj.train.(classistr).id);
     y=obj.train.(classistr).id;
     
-    plot(x,y,'Color','k','LineWidth',1); hold on;
+    plot(x,y,'Color','k','LineWidth',3); hold on;
 end
-
 
 % then display the results
 
-x=1:numel(obj.results.(classistr).id);
-y=obj.results.(classistr).id;
+xr=1:numel(obj.results.(classistr).id);
+yr=obj.results.(classistr).id;
 
-plot(x,y,'Color','b','LineWidth',2); hold on;
+plot(xr,yr,'Color','r','LineWidth',2); hold on;
 
+% compute accuracy
 
+acc= 100*sum(yr==y)./length(y);
 
 
 pix=find(x==obj.display.frame);
-line([x(pix) x(pix)],[1 max(obj.results.(classistr).id)],'Color','r','LineWidth',2,'Tag','track');
+line([x(pix) x(pix)],[1 max(obj.results.(classistr).id)],'Color',[0.5 0.5 0.5],'LineWidth',2,'Tag','track');
+
+str={'Groundtruth',['Classification results; ' num2str(acc) '% accurate'],'Cursor position'};
+legend(str);
 
  hl=findobj(h,'Tag','track');
  
