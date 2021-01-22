@@ -91,7 +91,9 @@ xlabel('ROI #');
 title(['Mean accuracy: '  num2str(acctot)  '% - classifier: ' name],'interpreter','none');
 set(gca,'FontSize',20);
 
+disp(['Saving plot to ' strpath '_accuracy_ROIs.fig']);
 savefig([strpath '_accuracy_ROIs.fig']);
+disp(['Saving plot to ' strpath '_accuracy_ROIs.pdf']);
 saveas(gca,[strpath '_accuracy_ROIs.pdf']);
 
 %  accuracy per class for all ROIs
@@ -116,7 +118,9 @@ for i=1:numel(classif.classes)
     
     pix= sumyg==i;
     
-    acc(i)=100*sum(sumyr(pix)==i)./length(pix)
+    ss=sumyr(pix);
+    
+    acc(i)=100*sum(ss==i)./sum(pix);
     
 end
 
