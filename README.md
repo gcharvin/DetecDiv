@@ -128,7 +128,7 @@ This also provides basic statistics about the classification
 
 myproject.processing.classification(id).stats
 compute and stores (as a txt file) the statistics associated with the classification and comparison
-to groundtruth 
+to groundtruth
 
 myproject.classifyData(classifid,roilist,option)
 allows one to start the classification referred to as classifid on the roilist; You can provide the classifier as an option, so that it is not loaded each time you run the function

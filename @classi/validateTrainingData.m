@@ -48,8 +48,5 @@ feval(classifyFun,roiobj,classif,classifier); % launch the training function for
 end
 
 disp('Classification job is done...');
-
-shallowSave(obj);
-
-disp('Project is saved...');
+disp('You must save the shallow project to save these classified data');
 
