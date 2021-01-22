@@ -123,6 +123,7 @@ if strcmp(trainingParam.lstmtraining,'y') | ~exist([path '/netLSTM.mat']) % trai
     
     options = trainingOptions('adam', ...
             'MiniBatchSize',miniBatchSize, ...
+            'MaxEpochs',15,...
             'InitialLearnRate',trainingParam.lstmInitialLearnRate, ...
             'GradientThreshold',2, ...
             'Shuffle','every-epoch', ...
@@ -169,10 +170,10 @@ if strcmp(trainingParam.assemblenet,'y') | ~exist([path '/' name '.mat'])
     cnnLayers = layerGraph(netCNN);
     %layerNames = ["data" "pool5-drop_7x7_s1" "loss3-classifier" "prob" "output"];
     
-    if strcmp(trainingParam,'googlenet')
+    if strcmp(trainingParam.network,'googlenet')
     layerNames = ["data" "pool5-drop_7x7_s1" "new_fc" "prob" "new_classoutput"];
     end
-    if strcmp(trainingParam,'resnet50')
+    if strcmp(trainingParam.network,'resnet50')
     layerNames = ["data" "new_fc" "prob" "new_classoutput"];
     end
     
