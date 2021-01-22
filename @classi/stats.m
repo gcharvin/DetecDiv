@@ -114,6 +114,10 @@ end
 
 for i=1:numel(classif.classes)
     
+    pix= sumyg==i;
+    
+    acc(i)=100*sum(sumyr(pix)==i)./length(pix)
+    
 end
 
 acctot= 100*sum(sumyr==sumyg)./length(sumyg);
@@ -123,9 +127,9 @@ plot(acc,'Color','k','LineWidth',2,'Marker','o');
 ylim([0 100]);
 xlim([0 numel(classif.classes)+1]);
 ylabel('Validation accuracy (%)');
-xlabel('ROI #');
+xlabel('classes');
 title(['Mean accuracy: '  num2str(acctot)  '% - classifier: ' name],'interpreter','none');
-set(gca,'FontSize',20);
+set(gca,'FontSize',20,'XTick',1:numel(classif.classes),'XTickLabel',classif.classes);
 
-savefig([strpath '_accuracy_ROIs.fig']);
-saveas(gca,[strpath '_accuracy_ROIs.pdf']);
+savefig([strpath '_accuracy_classes.fig']);
+saveas(gca,[strpath '_accuracy_classes.pdf']);
