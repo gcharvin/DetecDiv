@@ -48,3 +48,8 @@ feval(classifyFun,roiobj,classif,classifier); % launch the training function for
 end
 
 disp('Classification job is done...');
+
+shallowSave(obj);
+
+disp('Project is saved...');
+

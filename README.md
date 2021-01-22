@@ -64,6 +64,15 @@ myproject.fov(myfovid).roi(myroiid).view
 
 allows to view the 4D volume in a GUI
 
+myproject.fov(myfovid).roi(myroiid).traj(classistr)
+shows the "trajectory", ie the sequences of classification done according to a given classifier in a @classi object
+classistr= project.processing.classification(id).strid;
+Also works with ROIs that belong to @classi objects
+
+
+
+
+
 Classification
 --------------
 
@@ -106,6 +115,9 @@ myproject.processing.classification(id).trainClassifier
 1) asks whether the trainingset needs to be formatted
 2) asks whether training parameters must be updated
 3) then trains the classifier
+
+myproject.processing.classification(id).loadClassifier
+loads the classifier associated with @classi object in the workspace
 
 myproject.processing.classification(id).validateTrainingData(optional: classifier)
 uses the classifier of the @classi object (optional: provide a classifier) to classify ROIs used to build the groundtruth in order to compare with classification results
