@@ -197,10 +197,10 @@ if strcmp(trainingParam.assemblenet,'y') | ~exist([path '/' name '.mat'])
     
     lgraph = addLayers(cnnLayers,layers);
     
-     if strcmp(trainingParam,'googlenet')
+     if strcmp(trainingParam.network,'googlenet')
     lgraph = connectLayers(lgraph,"fold/out","conv1-7x7_s2");
      end
-     if strcmp(trainingParam,'resnet50')
+     if strcmp(trainingParam.network,'resnet50')
     lgraph = connectLayers(lgraph,"fold/out","conv1");    
       end
     
