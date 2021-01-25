@@ -225,6 +225,10 @@ switch nargin
                     return;
                 end
                 
+                if exist([obj.processing.classification(option).path 'trainingParam.mat']) % copy the training param variable to the new classif
+                    copyfile([obj.processing.classification(option).path 'trainingParam.mat'],[obj.processing.classification(n+1).path 'trainingParam.mat']);
+                end
+                
                 obj.processing.classification(n+1).addROI(obj.processing.classification(option)); % import ROis from classification option
                 
                 

@@ -30,9 +30,12 @@ disp('Formatting video before classification....');
 
 if numel(pix)==1
     % 'ok'
+    param=[];
     totphc=im;
     meanphc=0.5*double(mean(totphc(:)));
     maxphc=double(meanphc+0.7*(max(totphc(:))-meanphc));
+    param.meanphc=meanphc;
+    param.maxphc=maxphc;
 end
 
 vid=uint8(zeros(size(im,1),size(im,2),3,size(im,4)));
@@ -42,9 +45,11 @@ for j=1:size(im,4)
     
     if numel(pix)==1
         
-        tmp = double(imadjust(tmp,[meanphc/65535 maxphc/65535],[0 1]))/65535;
-        tmp=repmat(tmp,[1 1 3]);
+        tmp=cltmp(i).preProcessROIData(pix,j,param);
         
+        %tmp = double(imadjust(tmp,[meanphc/65535 maxphc/65535],[0 1]))/65535;
+        %tmp=repmat(tmp,[1 1 3]);
+         
     end
     
     vid(:,:,:,j)=uint8(256*tmp);
