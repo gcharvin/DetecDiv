@@ -27,6 +27,7 @@ parfor i=rois
     
     % normalize intensity levels
     pix=find(cltmp(i).channelid==classif.channel(1)); % find channel
+    
     im=cltmp(i).image(:,:,pix,:);
     
     if numel(pix)==1

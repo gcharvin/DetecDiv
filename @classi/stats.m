@@ -2,7 +2,6 @@ function stats(classif)
 
 % compute, displays and stores statististics regarding the selected classification 
 
-
 disp(['Number of ROIs  in the @classi object: ' num2str(numel(classif.roi))]);
 
 idstat=[];
@@ -11,14 +10,11 @@ path=classif.path;
 name=classif.strid;
 strpath=[path '/' name];
 
- 
-
 classistr=classif.strid;
 
 for j=1:numel(classif.roi)
     
  obj=classif.roi(j);
- 
  disp([num2str(j) ' - '  obj.id ' - checking data']);
   
 % classiid represents the strid of the classifier to be displayed
@@ -66,6 +62,7 @@ acc=[];
 sumyr=[];
 sumyg=[];
 
+
 for i=idstat
     obj=classif.roi(i);
      
@@ -83,13 +80,13 @@ end
 
 acctot= 100*sum(sumyr==sumyg)./length(sumyg);
 
-figure('Color','w','Position',[100 100 1000 600]);
+figure('Color','w','Position',[100 100 600 300]);
 plot(acc,'Color','k','LineWidth',2,'Marker','o');
 ylim([0 100]);
 ylabel('Validation accuracy (%)');
 xlabel('ROI #');
 title(['Mean accuracy: '  num2str(acctot)  '% - classifier: ' name],'interpreter','none');
-set(gca,'FontSize',20);
+set(gca,'FontSize',14);
 
 disp(['Saving plot to ' strpath '_accuracy_ROIs.fig']);
 savefig([strpath '_accuracy_ROIs.fig']);
@@ -114,26 +111,53 @@ for i=idstat
     cc=cc+1;
 end
 
+freqg=[];
+freqr=[];
 for i=1:numel(classif.classes)
     
     pix= sumyg==i;
+    pixr= sumyr==i;
+    unio= sumyg==i | sumyr==i;
     
     ss=sumyr(pix);
     
-    acc(i)=100*sum(ss==i)./sum(pix);
+    acc(i)=100*sum(ss==i)./sum(unio);
+    
+    freqg(i)=100*sum(pix)./length(sumyg);
+    freqr(i)=100*sum(pixr)./length(sumyr);
     
 end
 
 acctot= 100*sum(sumyr==sumyg)./length(sumyg);
 
-figure('Color','w','Position',[100 100 1000 600]);
+figure('Color','w','Position',[100 700 600 600]);
+subplot(2,1,1);
 plot(acc,'Color','k','LineWidth',2,'Marker','o');
 ylim([0 100]);
 xlim([0 numel(classif.classes)+1]);
-ylabel('Validation accuracy (%)');
+ylabel('Validation IoU (%)'); 
+title(['Mean accuracy: '  num2str(acctot)  '% - ' num2str(length(sumyg)) ' events - classifier: ' name],'interpreter','none');
+set(gca,'FontSize',14,'XTick',1:numel(classif.classes),'XTickLabel',{});
+
+subplot(2,1,2);
+plot(freqg,'Color','k','LineWidth',2,'Marker','o'); hold on;
+plot(freqr,'Color','r','LineWidth',2,'Marker','o'); hold on;
+ylim([0 100]);
+xlim([0 numel(classif.classes)+1]);
+ylabel('Frequency');
 xlabel('classes');
-title(['Mean accuracy: '  num2str(acctot)  '% - classifier: ' name],'interpreter','none');
-set(gca,'FontSize',20,'XTick',1:numel(classif.classes),'XTickLabel',classif.classes);
+legend({'Groundtruth','Classification'});
+set(gca,'FontSize',14,'XTick',1:numel(classif.classes),'XTickLabel',classif.classes);
+
+
 
 savefig([strpath '_accuracy_classes.fig']);
 saveas(gca,[strpath '_accuracy_classes.pdf']);
+
+disp(['Saving plot to ' strpath '_accuracy_classes.fig']);
+savefig([strpath '_accuracy_classes.fig']);
+disp(['Saving plot to ' strpath '_accuracy_classes.pdf']);
+saveas(gca,[strpath '_accuracy_classes.pdf']);
+
+disp('Done!');
+

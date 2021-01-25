@@ -15,7 +15,6 @@ if ~isfolder([classif.path '/' foldername '/timeseries'])
     mkdir([classif.path '/' foldername], 'timeseries');
 end
 
-
 cltmp=classif.roi;
 
 disp('Starting parallelized jobs for data formatting....')
@@ -28,20 +27,21 @@ parfor i=rois
     if numel(cltmp(i).image)==0
         cltmp(i).load; % load image sequence
     end
-    
-    
+
     % normalize intensity levels
     pix=find(cltmp(i).channelid==classif.channel(1)); % find channel
     im=cltmp(i).image(:,:,pix,:);
     
     if numel(pix)==1
+        param=[];
         % 'ok'
         totphc=im;
         meanphc=0.5*double(mean(totphc(:)));
         maxphc=double(meanphc+0.7*(max(totphc(:))-meanphc));
+        
+        param.meanphc=meanphc;
+        param.maxphc=maxphc;
     end
-    
-    
     % 'ok'
     vid=uint8(zeros(size(cltmp(i).image,1),size(cltmp(i).image,2),3,size(cltmp(i).image,4)));
     
@@ -53,59 +53,22 @@ parfor i=rois
         continue
     end
     % 'pasok'
-    
-    
-    
+
     lab= categorical(cltmp(i).train.(classif.strid).id,1:numel(classif.classes),classif.classes); % creates labels for classification
-    
-    
     reverseStr = '';
-    
-    
-    
-    
+
     for j=1:size(im,4)
         tmp=im(:,:,:,j);
         
         if numel(pix)==1
-            
-            
-            %J = imtophat(tmp,strel('Disk',5));
-            %figure, imshow(J,[]);
-            
-            %mean(tmp(:))
-           % [tmp, Gdir] = imgradient(tmp,'prewitt');
-            %figure, imshow(tmp,[]);
-            
-            
-            
-           % tmp=uint16(tmp-mean(tmp(:)));
-            
-            %figure, imshow(tmp,[]);
-%             pause
-%             close
-            
-            tmp = double(imadjust(tmp,[meanphc/65535 maxphc/65535],[0 1]))/65535;
-           % tmp = double(imadjust(tmp,[0/65535 max(tmp(:))/65535],[0 1]))/65535;
-            tmp=repmat(tmp,[1 1 3]);
-            %figure, imshow(tmp,[]);
-            
-            %return;
-            
-%             figure, imshow(tmp,[]);
-%              pause
-%             close
-            %max(tmp(:))
-            
+            tmp=cltmp(i).preProcessROIData(pix,j,param);
         end
-        
-        
-        
+
+        %figure, imshow(tmp);
+        %pause; 
+        %close;
         
         vid(:,:,:,j)=uint8(256*tmp);
-        
-        % figure, imshow(im,[])
-        % return;
         
         tr=num2str(j);
         while numel(tr)<4
@@ -118,10 +81,7 @@ parfor i=rois
             imwrite(tmp,[classif.path '/' foldername '/images/' classif.classes{cltmp(i).train.(classif.strid).id(j)} '/' cltmp(i).id '_frame_' tr '.tif']);
             % end
         end
-        
-        
-        
-        
+       
         msg = sprintf('Processing frame: %d / %d for ROI %s', j, size(im,4),cltmp(i).id); %Don't forget this semicolon
         fprintf([reverseStr, msg]);
         reverseStr = repmat(sprintf('\b'), 1, length(msg));
