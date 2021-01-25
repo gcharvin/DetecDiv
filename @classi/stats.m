@@ -150,7 +150,6 @@ legend({'Groundtruth','Classification'});
 set(gca,'FontSize',14,'XTick',1:numel(classif.classes),'XTickLabel',classif.classes);
 
 
-
 savefig([strpath '_accuracy_classes.fig']);
 saveas(gca,[strpath '_accuracy_classes.pdf']);
 
@@ -159,5 +158,41 @@ savefig([strpath '_accuracy_classes.fig']);
 disp(['Saving plot to ' strpath '_accuracy_classes.pdf']);
 saveas(gca,[strpath '_accuracy_classes.pdf']);
 
+figure('Color','w','Position',[1000 700 600 600]);
+% check is if classes are not present
+
+classs={};
+cc=1;
+for i=1:numel(classif.classes)
+    if ~any(sumyr==i) && ~any(sumyg==i)
+       % remove class i
+       
+    else
+      classs{cc}=classif.classes{i};  
+      cc=cc+1;
+    end
+end
+
+% remove unclassified groundtruth events
+pix=sumyg~=0;
+sumyg=sumyg(pix);
+sumyr=sumyr(pix);
+
+cate=categorical(classs);
+mate=confusionmat(sumyg,sumyr);
+
+size(mate)
+size(cate)
+cm=confusionchart(mate,cate,'ColumnSummary','column-normalized','RowSummary','row-normalized');
+xlabel('Classification predictions');
+ylabel('Groundtruth');
+
+disp(['Saving plot to ' strpath '_confusion.fig']);
+savefig([strpath '_confusion.fig']);
+disp(['Saving plot to ' strpath '_confusion.pdf']);
+saveas(gca,[strpath '_confusion.pdf']);
+
+
+% plot confusion matrix for classification 
 disp('Done!');
 
