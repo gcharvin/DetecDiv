@@ -32,9 +32,12 @@ parfor i=rois
     
     if numel(pix)==1
         % 'ok'
+        param=[];
         totphc=im;
         meanphc=0.5*double(mean(totphc(:)));
         maxphc=double(meanphc+0.7*(max(totphc(:))-meanphc));
+        param.meanphc=meanphc;
+        param.maxphc=maxphc;
     end
     
     lab= categorical(cltmp(i).train.(classif.strid).id,1:numel(classif.classes),classif.classes); % creates labels for classification
@@ -45,32 +48,10 @@ parfor i=rois
         tmp=im(:,:,:,j);
         
         if numel(pix)==1
-            
-              % [tmp, Gdir] = imgradient(tmp,'prewitt');
-           % figure, imshow(tmp,[]);
-            
-            
-            
-            %tmp=uint16(tmp-mean(tmp(:)));
-            
-           % figure, imshow(tmp,[]);
-%             pause
-%             close
-           % max(tmp(:))
-            tmp = double(imadjust(tmp,[meanphc/65535 maxphc/65535],[0 1]))/65535;
-            %tmp = double(imadjust(tmp,[0/65535 max(double(tmp(:)))/65535],[0 1]))/65535;
-            
-            
-           % tmp = double(imadjust(tmp,[meanphc/65535 maxphc/65535],[0 1]))/65535;
-            tmp=repmat(tmp,[1 1 3]);
-            
-            
-            %max(tmp(:))
-            %return
+            tmp=cltmp(i).preProcessROIData(pix,j,param);
         end
         
-%         figure, imshow(tmp,[]);
-%         return;
+
         
         tr=num2str(j);
         while numel(tr)<4

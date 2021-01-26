@@ -181,8 +181,8 @@ sumyr=sumyr(pix);
 cate=categorical(classs);
 mate=confusionmat(sumyg,sumyr);
 
-size(mate)
-size(cate)
+%size(mate)
+%size(cate)
 cm=confusionchart(mate,cate,'ColumnSummary','column-normalized','RowSummary','row-normalized');
 xlabel('Classification predictions');
 ylabel('Groundtruth');

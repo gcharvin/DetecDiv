@@ -239,4 +239,7 @@ switch nargin
         end
 end
 
+disp(['Classification ' obj.processing.classification(n+1).strid ' has been created !']);
+
+
 
