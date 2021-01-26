@@ -34,14 +34,18 @@ if numel(pix)==1
     param.maxphc=maxphc;
 end
 
-im=zeros(size(gfp,1),size(gfp,2),3,size(gfp,4));
+im=uint8(zeros(size(gfp,1),size(gfp,2),3,size(gfp,4)));
    
 if numel(pix)==1
     for j=1:size(gfp,4)
         
         tmp=roiobj.preProcessROIData(pix,j,param);
         
-        im(:,:,:,j)=tmp;
+        im(:,:,:,j)=uint8(256*tmp);
+        
+        %figure, imshow(im(:,:,:,j));
+        %pause
+        %close
     end
     gfp=im;
 end
