@@ -57,26 +57,40 @@ classdef shallow < handle
             
             %oldpath,pathe
             
+            oldfile=obj.io.file;
+            
             obj.io.path=pathe;
             obj.io.file=file;
             
             % also adjust set path of dependencies
+            
+                        oldfullpath=fullfile(oldpath,oldfile);
+                        newpath=fullfile(pathe,file);
             
             for i=1:numel(obj.fov)
                 for j=1:numel(obj.fov(i).roi)
                     if numel(obj.fov(i).roi(j).path)~=0
                         % oldpath
                         % pathe
-                        obj.fov(i).roi(j).path = replace(obj.fov(i).roi(j).path,oldpath,pathe);
+
+                        
+                        obj.fov(i).roi(j).path=fullfile(obj.fov(i).roi(j).path);
+                        obj.fov(i).roi(j).path = replace(obj.fov(i).roi(j).path,oldfullpath,newpath);
                     end
                 end
             end
             
             for i=1:numel(obj.processing.classification)
-                obj.processing.classification(i).path = replace(obj.processing.classification(i).path,oldpath,pathe);
+                
+                obj.processing.classification(i).path=fullfile(obj.processing.classification(i).path);
+                obj.processing.classification(i).path = replace(obj.processing.classification(i).path,oldfullpath,newpath);
                 
                 for j=1:numel(obj.processing.classification(i).roi)
-                    obj.processing.classification(i).roi(j).path = replace(obj.processing.classification(i).roi(j).path,oldpath,pathe);
+                    
+                        
+                    obj.processing.classification(i).roi(j).path=fullfile(obj.processing.classification(i).roi(j).path);
+                        
+                    obj.processing.classification(i).roi(j).path = replace(obj.processing.classification(i).roi(j).path,oldfullpath,newpath);
                 end
             end
             

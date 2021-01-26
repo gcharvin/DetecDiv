@@ -23,6 +23,7 @@ filename=fullfile(abspath,[file ext]);
 load(filename);
 path=abspath;
 
+
 shallowObj.setPath([path '/'],file); % adjust path
 disp(['Successfully loaded shallow project ' fullfile(path,[file '.mat']) '!']);
 disp('');
