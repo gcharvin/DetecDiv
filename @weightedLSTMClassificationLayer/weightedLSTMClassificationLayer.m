@@ -37,22 +37,28 @@ classdef weightedLSTMClassificationLayer < nnet.layer.ClassificationLayer
     % entropy loss between the predictions Y and the training
     % targets T.
     % Find observation and sequence dimensions of Y
-% %     [~, N, S] = size(Y);
-% %     
-% %     % Reshape ClassWeights to KxNxS
-% %     W = repmat(layer.ClassWeights(:), 1, N, S);
-% %     
-% %     % Compute the loss
-% %     loss = -sum( W(:).*T(:).*log(Y(:)) )/N;
+    [~, N, S] = size(Y);
     
-size(Y),size(T)
-
-            N = size(Y,4)
-            Y = squeeze(Y);
-            T = squeeze(T);
-            W = layer.ClassWeights;
+    N,S
+    % Reshape ClassWeights to KxNxS
+    W = repmat(layer.ClassWeights(:), 1, N, S);
+    size(W)
+    size(T)
+    size(Y)
     
-            loss = -sum(W*(T.*log(Y)))/N;
+    % Compute the loss
+    loss = -sum( W(:).*T(:).*log(Y(:)) )/N
+    
+    a=tooto
+    
+% size(Y),size(T)
+% 
+%             N = size(Y,4)
+%             Y = squeeze(Y);
+%             T = squeeze(T);
+%             W = layer.ClassWeights;
+%     
+%             loss = -sum(W*(T.*log(Y)))/N;
             
         end
         
