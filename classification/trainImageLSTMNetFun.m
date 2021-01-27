@@ -109,12 +109,8 @@ if strcmp(trainingParam.lstmtraining,'y') | ~exist([path '/netLSTM.mat']) % trai
     %ntot=countcats(labelsTrain{1});
     %weights = double(ntot)/double(sum(ntot));
     
-    sucl=zeros(1,numObservations);
+    sucl=zeros(numObservations,1);
     
-   
-    size(labels{1})
-    class(labels{1})
-     labels{1}
      
     for i=1:numObservations
     sucl(i,:)=countcats(labels{i});
