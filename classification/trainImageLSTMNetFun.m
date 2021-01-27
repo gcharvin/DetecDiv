@@ -126,9 +126,8 @@ if strcmp(trainingParam.lstmtraining,'y') | ~exist([path '/netLSTM.mat']) % trai
         dropoutLayer(0.5,'Name','drop');
         fullyConnectedLayer(numClasses,'Name','fc')
         softmaxLayer('Name','softmax')
-        weightedClassificationLayer(weights,'Name','classification')];
+        weightedClassificationLayer(weights,'classification')];
     
-    %newClassLayer = weightedClassificationLayer(weights,'Name','new_classoutput');
     % specifiy training options
     
     miniBatchSize = trainingParam.lstmMiniBatchSize;

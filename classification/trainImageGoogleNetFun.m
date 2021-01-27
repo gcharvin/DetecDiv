@@ -84,7 +84,7 @@ end
 lgraph = replaceLayer(lgraph,learnableLayer.Name,newLearnableLayer);
 
 %newClassLayer = classificationLayer('Name','new_classoutput');
-newClassLayer = weightedClassificationLayer(weights,'Name','new_classoutput');
+newClassLayer = weightedClassificationLayer(weights,'new_classoutput');
 
 lgraph = replaceLayer(lgraph,classLayer.Name,newClassLayer);
 
