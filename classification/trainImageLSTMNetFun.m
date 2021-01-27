@@ -114,11 +114,12 @@ if strcmp(trainingParam.lstmtraining,'y') | ~exist([path '/netLSTM.mat']) % trai
     for i=1:numObservations
     sucl(i,:)=countcats(labels{i});
     end
-    sucl=sum(sucl,1)
+    sucl=sum(sucl,1);
     
+    sucl(sucl==0)=min(sucl(:));
     classWeights = 1./sucl;
     classWeights = classWeights'/mean(classWeights)
-    classWeights(isnan(classWeights))=0;
+    %classWeights(isnan(classWeights))=0;
     classWeights
     return;
 %     layers = [
