@@ -38,7 +38,7 @@ classdef weightedClassificationLayer < nnet.layer.ClassificationLayer
             T = squeeze(T);
             W = layer.ClassWeights;
     
-            loss = -sum(W.*(T.*log(Y)))/N;
+            loss = -sum(W*(T.*log(Y)))/N;
         end
         
         function dLdY = backwardLoss(layer, Y, T)
