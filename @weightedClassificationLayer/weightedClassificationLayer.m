@@ -40,6 +40,20 @@ classdef weightedClassificationLayer < nnet.layer.ClassificationLayer
     
             loss = -sum(W.*(T.*log(Y)))/N;
         end
+        
+        function dLdY = backwardLoss(layer, Y, T)
+            % dLdY = backwardLoss(layer, Y, T) returns the derivatives of
+            % the weighted cross entropy loss with respect to the
+            % predictions Y.
+            
+            [~,~,K,N] = size(Y);
+            Y = squeeze(Y);
+            T = squeeze(T);
+            W = layer.ClassWeights;
+			
+            dLdY = -(W'.*T./Y)/N;
+            dLdY = reshape(dLdY,[1 1 K N]);
+        end
 
      end 
     
