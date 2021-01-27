@@ -14,8 +14,11 @@ imds = imageDatastore(foldername, ...
 
 % calculate class frequency for each class 
 
-ntot=countcats(imds.Labels);
-weights = double(ntot)/double(sum(ntot));
+%ntot=countcats(imds.Labels);
+%weights = double(ntot)/double(sum(ntot));
+
+classWeights = 1./countcats(imds.Labels);
+classWeights = classWeights'/mean(classWeights);
 
 fprintf('Loading training options...\n');
 fprintf('------\n');
@@ -84,7 +87,7 @@ end
 lgraph = replaceLayer(lgraph,learnableLayer.Name,newLearnableLayer);
 
 %newClassLayer = classificationLayer('Name','new_classoutput');
-newClassLayer = weightedClassificationLayer(weights,'new_classoutput');
+newClassLayer = weightedClassificationLayer(classWeights,'new_classoutput');
 
 lgraph = replaceLayer(lgraph,classLayer.Name,newClassLayer);
 

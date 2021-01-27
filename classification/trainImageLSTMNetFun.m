@@ -106,8 +106,11 @@ if strcmp(trainingParam.lstmtraining,'y') | ~exist([path '/netLSTM.mat']) % trai
     numFeatures = size(sequencesTrain{1},1);
     numClasses = numel(categories(labelsTrain{1}));
     
-    ntot=countcats(labelsTrain{1});
-    weights = double(ntot)/double(sum(ntot));
+    %ntot=countcats(labelsTrain{1});
+    %weights = double(ntot)/double(sum(ntot));
+    
+    classWeights = 1./countcats(labelsTrain{1});
+    classWeights = classWeights'/mean(classWeights);
     
     %return;
 %     layers = [
@@ -126,7 +129,7 @@ if strcmp(trainingParam.lstmtraining,'y') | ~exist([path '/netLSTM.mat']) % trai
         dropoutLayer(0.5,'Name','drop');
         fullyConnectedLayer(numClasses,'Name','fc')
         softmaxLayer('Name','softmax')
-        weightedClassificationLayer(weights,'classification')];
+        weightedClassificationLayer(classWeights,'classification')];
     
     % specifiy training options
     
