@@ -45,7 +45,9 @@ classdef weightedLSTMClassificationLayer < nnet.layer.ClassificationLayer
 % %     % Compute the loss
 % %     loss = -sum( W(:).*T(:).*log(Y(:)) )/N;
     
-            N = size(Y,4);
+size(Y),size(T),size(W)
+
+            N = size(Y,4)
             Y = squeeze(Y);
             T = squeeze(T);
             W = layer.ClassWeights;
