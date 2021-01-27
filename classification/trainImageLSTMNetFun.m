@@ -129,7 +129,7 @@ if strcmp(trainingParam.lstmtraining,'y') | ~exist([path '/netLSTM.mat']) % trai
         dropoutLayer(0.5,'Name','drop');
         fullyConnectedLayer(numClasses,'Name','fc')
         softmaxLayer('Name','softmax')
-        weightedClassificationLayer(classWeights,'classification')];
+        weightedLSTMClassificationLayer(classWeights,'classification')];
     
     % specifiy training options
     
