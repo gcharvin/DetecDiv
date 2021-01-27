@@ -119,10 +119,10 @@ if strcmp(trainingParam.lstmtraining,'y') | ~exist([path '/netLSTM.mat']) % trai
     tempsucl=sucl(sucl>0);
     sucl(sucl==0)=min(tempsucl(:));
     classWeights = 1./sucl;
-    classWeights = classWeights'/mean(classWeights)
+    classWeights = classWeights'/mean(classWeights);
     %classWeights(isnan(classWeights))=0;
-    classWeights
-    return;
+    %classWeights
+    %return;
 %     layers = [
 %         sequenceInputLayer(numFeatures,'Name','sequence')
 %         bilstmLayer(trainingParam.lstmlayers,'OutputMode','sequence','Name','bilstm')
