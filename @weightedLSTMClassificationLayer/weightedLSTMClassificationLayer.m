@@ -45,9 +45,9 @@ classdef weightedLSTMClassificationLayer < nnet.layer.ClassificationLayer
     size(T)
     size(Y)
     
-    sum(isnan(W))
-    sum(isnan(T))
-    sum(isnan(Y))
+    sum(isnan(W(:)))
+    sum(isnan(T(:)))
+    sum(isnan(Y(:)))
     
     % Compute the loss
     loss = -sum( W(:).*T(:).*log(Y(:)) )/N
