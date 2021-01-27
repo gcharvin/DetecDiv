@@ -116,7 +116,8 @@ if strcmp(trainingParam.lstmtraining,'y') | ~exist([path '/netLSTM.mat']) % trai
     end
     sucl=sum(sucl,1);
     
-    sucl(sucl==0)=min(sucl(:));
+    tempsucl=sucl(sucl>0);
+    sucl(sucl==0)=min(tempsucl(:));
     classWeights = 1./sucl;
     classWeights = classWeights'/mean(classWeights)
     %classWeights(isnan(classWeights))=0;
