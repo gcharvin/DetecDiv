@@ -16,6 +16,7 @@ if strcmp(trainingParam.imageclassifier,'y')
     % corresponding variable name is 'classifier'
 end
 
+
 fprintf('Loading Image classifier...\n');
 fprintf('------\n');
 load([ path '/netCNN.mat']); % load the image classifier
@@ -105,7 +106,19 @@ if strcmp(trainingParam.lstmtraining,'y') | ~exist([path '/netLSTM.mat']) % trai
     numFeatures = size(sequencesTrain{1},1);
     numClasses = numel(categories(labelsTrain{1}));
     
+    ntot=countcats(labelsTrain{1});
+    weights = double(ntot)/double(sum(ntot));
+    
     %return;
+%     layers = [
+%         sequenceInputLayer(numFeatures,'Name','sequence')
+%         bilstmLayer(trainingParam.lstmlayers,'OutputMode','sequence','Name','bilstm')
+%         % lstmLayer(200,'OutputMode','sequence','Name','bilstm')
+%         dropoutLayer(0.5,'Name','drop');
+%         fullyConnectedLayer(numClasses,'Name','fc')
+%         softmaxLayer('Name','softmax')
+%         classificationLayer('Name','classification')];
+    
     layers = [
         sequenceInputLayer(numFeatures,'Name','sequence')
         bilstmLayer(trainingParam.lstmlayers,'OutputMode','sequence','Name','bilstm')
@@ -113,8 +126,9 @@ if strcmp(trainingParam.lstmtraining,'y') | ~exist([path '/netLSTM.mat']) % trai
         dropoutLayer(0.5,'Name','drop');
         fullyConnectedLayer(numClasses,'Name','fc')
         softmaxLayer('Name','softmax')
-        classificationLayer('Name','classification')];
+        weightedClassificationLayer(weights,'Name','classification')];
     
+    %newClassLayer = weightedClassificationLayer(weights,'Name','new_classoutput');
     % specifiy training options
     
     miniBatchSize = trainingParam.lstmMiniBatchSize;

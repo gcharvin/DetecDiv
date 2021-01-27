@@ -1,7 +1,6 @@
 function trainImageGoogleNetFun(path,name)
 
 % gather all classification images in each class and performs the training and outputs and saves the trained net 
-
 % load training data 
 
 fprintf('Loading data repository...\n');
@@ -13,17 +12,19 @@ imds = imageDatastore(foldername, ...
     'IncludeSubfolders',true, ...
     'LabelSource','foldernames'); 
 
+% calculate class frequency for each class 
+
+ntot=countcats(imds.Labels);
+weights = double(ntot)/double(sum(ntot));
 
 fprintf('Loading training options...\n');
 fprintf('------\n');
 
 load([path '/trainingParam.mat']);
 
-
 [imdsTrain,imdsValidation] = splitEachLabel(imds,trainingParam.split);
 
 numClasses = numel(categories(imdsTrain.Labels));
-
 
 fprintf('Loading network...\n');
 fprintf('------\n');
@@ -82,7 +83,9 @@ end
 
 lgraph = replaceLayer(lgraph,learnableLayer.Name,newLearnableLayer);
 
-newClassLayer = classificationLayer('Name','new_classoutput');
+%newClassLayer = classificationLayer('Name','new_classoutput');
+newClassLayer = weightedClassificationLayer(weights,'Name','new_classoutput');
+
 lgraph = replaceLayer(lgraph,classLayer.Name,newClassLayer);
 
 %fprintf('Freezing layers...\n');
