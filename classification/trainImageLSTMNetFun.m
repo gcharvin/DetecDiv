@@ -109,8 +109,9 @@ if strcmp(trainingParam.lstmtraining,'y') | ~exist([path '/netLSTM.mat']) % trai
     %ntot=countcats(labelsTrain{1});
     %weights = double(ntot)/double(sum(ntot));
     
+    aa=countcats(labelsTrain{1})
     classWeights = 1./countcats(labelsTrain{1});
-    classWeights = classWeights'/mean(classWeights);
+    classWeights = classWeights'/mean(classWeights)
     
     %return;
 %     layers = [

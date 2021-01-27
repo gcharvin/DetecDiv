@@ -41,13 +41,8 @@ classdef weightedLSTMClassificationLayer < nnet.layer.ClassificationLayer
     
     % Reshape ClassWeights to KxNxS
     W = repmat(layer.ClassWeights(:), 1, N, S);
-    size(W)
-    size(T)
-    size(Y)
     
     sum(isnan(W(:)))
-    sum(isnan(T(:)))
-    sum(isnan(Y(:)))
     
     % Compute the loss
     loss = -sum( W(:).*T(:).*log(Y(:)) )/N
