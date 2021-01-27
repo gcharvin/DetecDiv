@@ -109,11 +109,18 @@ if strcmp(trainingParam.lstmtraining,'y') | ~exist([path '/netLSTM.mat']) % trai
     %ntot=countcats(labelsTrain{1});
     %weights = double(ntot)/double(sum(ntot));
     
-    aa=countcats(labelsTrain{1})
-    classWeights = 1./countcats(labelsTrain{1});
-    classWeights = classWeights'/mean(classWeights)
+    sucl=zeros(1,numObservations);
     
-    %return;
+    for i=1:numObservations
+    sucl(i,:)=countcats(labels{i});
+    end
+    sucl=sum(sucl,1);
+    
+    classWeights = 1./sucl;
+    classWeights = classWeights'/mean(classWeights)
+    classWeights(isnan(classWeights))=0;
+    classWeights
+    return;
 %     layers = [
 %         sequenceInputLayer(numFeatures,'Name','sequence')
 %         bilstmLayer(trainingParam.lstmlayers,'OutputMode','sequence','Name','bilstm')
