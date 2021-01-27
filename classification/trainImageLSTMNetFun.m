@@ -111,6 +111,11 @@ if strcmp(trainingParam.lstmtraining,'y') | ~exist([path '/netLSTM.mat']) % trai
     
     sucl=zeros(1,numObservations);
     
+   
+    size(labels{1})
+    class(labels{1})
+     labels{1}
+     
     for i=1:numObservations
     sucl(i,:)=countcats(labels{i});
     end
