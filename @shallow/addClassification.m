@@ -190,13 +190,15 @@ switch nargin
             end
         end
         
-        if isnumeric(option)
-            disp(['Duplicating classification #' num2str(option) ' and strid: ' obj.processing.classification(option).strid]);
+        if isa(option,'classi')
+            classitocopy=option;
+            
+            disp(['Duplicating classification: ' num2str(classitocopy.strid)]);
             % option is a index that refers to an exisiting classification
             
-            if option<=length(obj.processing.classification)
+            %if option<=length(obj.processing.classification)
                 
-                prompt='Please enter the name of the classification (Default: myclassi): ';
+                prompt='Please enter the name of the new classification (Default: myclassi): ';
                 name= input(prompt,'s');
                 if numel(name)==0
                     name='myclassi';
@@ -209,24 +211,31 @@ switch nargin
                 
                 for i=1:numel(fi)
                     if ~strcmp(fi{i},'path') && ~strcmp(fi{i},'strid') && ~strcmp(fi{i},'id')
-                    obj.processing.classification(n+1).(fi{i})=obj.processing.classification(option).(fi{i});
+                    obj.processing.classification(n+1).(fi{i})=classitocopy.(fi{i});
                     end
                 end
                 
                 obj.processing.classification(n+1).roi=[]; % empty ROIs
                 
-                prompt='Import ROIs from this classification [y/n] (Default: y): ';
+                
+                if exist([classitocopy.path '/trainingParam.mat']) % copy the training param variable to the new classif
+                    disp('Found trainingParam.mat file; Copying parameters to new classification....');
+                    copyfile([classitocopy.path '/trainingParam.mat'],[obj.processing.classification(n+1).path '/trainingParam.mat']);  
+                end
+                
+                if exist([classitocopy.path '/' classitocopy.strid '.mat']) % copy the classifier variable to the new classif
+                    disp('Found classifier file; Copying classifier file to new classification....');
+                    copyfile([classitocopy.path '/' classitocopy.strid '.mat'],[obj.processing.classification(n+1).path '/' obj.processing.classification(n+1).strid '.mat']);  
+                end
+                  
+                prompt=['Import ROIs from ' num2str(classitocopy.strid) ' classification [y/n] (Default: y): '];
                 prevclas= input(prompt,'s');
                 if numel(prevclas)==0
                     prevclas='y';
                 end
-                
+ 
                 if strcmp(prevclas,'n')
                     return;
-                end
-                
-                if exist([obj.processing.classification(option).path 'trainingParam.mat']) % copy the training param variable to the new classif
-                    copyfile([obj.processing.classification(option).path 'trainingParam.mat'],[obj.processing.classification(n+1).path 'trainingParam.mat']);
                 end
                 
                 obj.processing.classification(n+1).addROI(obj.processing.classification(option)); % import ROis from classification option
@@ -234,9 +243,9 @@ switch nargin
                 
                 
             else
-                disp('there is no classification corresponding to this index');
+                disp('this is not a valid classi object');
             end
-        end
+        %end
 end
 
 disp(['Classification ' obj.processing.classification(n+1).strid ' has been created !']);
