@@ -250,5 +250,11 @@ end
 
 disp(['Classification ' obj.processing.classification(n+1).strid ' has been created !']);
 
+shallowSave(obj);
+
+disp(['Shallow project is saved !']);
+
+
+
 
 

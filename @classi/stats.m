@@ -5,7 +5,7 @@ function stats(classif,outputstr,roiid)
 % roiid is an array of roiid from the object classi 
 
 if nargin==1
-    disp(['You must provide an output name for the stat files!');
+    disp('You must provide an output name for the stat files!');
     return;
 end
 
@@ -23,7 +23,7 @@ idstat=[];
 
 path=classif.path;
 name=classif.strid;
-strpath=[path '/' outputstr '/' name];
+strpath=[path '/' outputstr '_' name]
 
 classistr=classif.strid;
 
@@ -78,7 +78,7 @@ acc=[];
 sumyr=[];
 sumyg=[];
 
-
+lab={};
 for i=idstat
     obj=classif.roi(i);
      
@@ -91,18 +91,22 @@ for i=idstat
     sumyr=[sumyr yr];
     sumyg=[sumyg yg];
     
+    lab{cc}=num2str(i);
     cc=cc+1;
 end
 
 acctot= 100*sum(sumyr==sumyg)./length(sumyg);
+
+%x=1:length(idstat)
 
 figure('Color','w','Position',[100 100 600 300]);
 plot(acc,'Color','k','LineWidth',2,'Marker','o');
 ylim([0 100]);
 ylabel('Validation accuracy (%)');
 xlabel('ROI #');
-title(['Mean accuracy: '  num2str(acctot)  '% - classifier: ' name],'interpreter','none');
-set(gca,'FontSize',14);
+title(['Mean acc.: '  num2str(acctot)  '% - ' name ' - ROIs:' num2str(idstat)],'interpreter','none');
+set(gca,'FontSize',14,'XTick',1:numel(idstat),'XTicklabel',lab);
+
 
 disp(['Saving plot to ' strpath '_accuracy_ROIs.fig']);
 savefig([strpath '_accuracy_ROIs.fig']);
@@ -152,7 +156,7 @@ plot(acc,'Color','k','LineWidth',2,'Marker','o');
 ylim([0 100]);
 xlim([0 numel(classif.classes)+1]);
 ylabel('Validation IoU (%)'); 
-title(['Mean accuracy: '  num2str(acctot)  '% - ' num2str(length(sumyg)) ' events - classifier: ' name],'interpreter','none');
+title(['Mean acc.: '  num2str(acctot)  '% - N=' num2str(length(sumyg)) ' - ' name ' - ROIs:' num2str(idstat)],'interpreter','none');
 set(gca,'FontSize',14,'XTick',1:numel(classif.classes),'XTickLabel',{});
 
 subplot(2,1,2);
@@ -202,6 +206,7 @@ mate=confusionmat(sumyg,sumyr);
 cm=confusionchart(mate,cate,'ColumnSummary','column-normalized','RowSummary','row-normalized');
 xlabel('Classification predictions');
 ylabel('Groundtruth');
+title(['N=' num2str(length(sumyg)) ' - ' name ' - ROIs:' num2str(idstat)]);
 
 disp(['Saving plot to ' strpath '_confusion.fig']);
 savefig([strpath '_confusion.fig']);
