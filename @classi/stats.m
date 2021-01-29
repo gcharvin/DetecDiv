@@ -1,8 +1,17 @@
-function stats(classif)
+function stats(classif,roiid)
 
 % compute, displays and stores statististics regarding the selected classification 
 
-disp(['Number of ROIs  in the @classi object: ' num2str(numel(classif.roi))]);
+% roiid is an array of roiid from the object classi 
+
+if nargin==1
+disp(['All ROIs in the @classi object will be used: ' num2str(numel(classif.roi))]);
+listroi=1:numel(classif.roi);
+end
+if nargin==2
+disp(['Stats will be done on the following ROIs: ' num2str(roiid)]);    
+listroi=roiid;
+end
 
 idstat=[];
 
@@ -12,7 +21,7 @@ strpath=[path '/' name];
 
 classistr=classif.strid;
 
-for j=1:numel(classif.roi)
+for j=listroi
     
  obj=classif.roi(j);
  disp([num2str(j) ' - '  obj.id ' - checking data']);
@@ -52,6 +61,7 @@ end
 if ground ==1 && resok==1 % list of rois used to compute stats
     idstat=[idstat j];
 end
+
 end
 
 cc=1;
