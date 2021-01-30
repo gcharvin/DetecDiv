@@ -7,7 +7,7 @@ if numel(obj.processing.roi.pattern)==0
 end
 
 if nargin<=3
-    frameid=2; 
+    frameid=1; 
 end
 if nargin <2 
     fovid=1:numel(obj.fov);

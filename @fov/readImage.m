@@ -13,7 +13,9 @@ im=[];
 if isfolder(obj.srcpath{channel}) % folders are provided with image or based on phylocell project
 
 list=obj.srclist{channel};
-    
+%    frame
+%
+
 imstr=[fullfile(obj.srcpath{channel}, list(frame).name)];
 
 
