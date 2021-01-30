@@ -385,7 +385,11 @@ for i=1:numel(obj.display.channel)
                 if tt==0
                     tt='not classified';
                 else
+                    if tt <= length(obj.classes)
                     tt=obj.classes{tt};
+                    else
+                    tt='class unavailable';    
+                    end
                 end
                 str=[str ' - ' tt ' (training: ' fields{k} ')'];
                 

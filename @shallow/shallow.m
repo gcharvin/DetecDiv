@@ -76,6 +76,12 @@ classdef shallow < handle
                         
                         obj.fov(i).roi(j).path=fullfile(obj.fov(i).roi(j).path);
                         obj.fov(i).roi(j).path = replace(obj.fov(i).roi(j).path,oldfullpath,newpath);
+                        
+                        if ispc
+                        obj.fov(i).roi(j).path = replace(obj.fov(i).roi(j).path,'/','\');
+                        else
+                        obj.fov(i).roi(j).path = replace(obj.fov(i).roi(j).path,'\','/');    
+                        end
                     end
                 end
             end
@@ -91,6 +97,13 @@ classdef shallow < handle
                     obj.processing.classification(i).roi(j).path=fullfile(obj.processing.classification(i).roi(j).path);
                         
                     obj.processing.classification(i).roi(j).path = replace(obj.processing.classification(i).roi(j).path,oldfullpath,newpath);
+                    
+                     if ispc
+                        obj.processing.classification(i).roi(j).path = replace(obj.processing.classification(i).roi(j).path,'/','\');
+                        else
+                        obj.processing.classification(i).roi(j).path = replace(obj.processing.classification(i).roi(j).path,'\','/');    
+                     end
+                        
                 end
             end
             
@@ -139,6 +152,13 @@ classdef shallow < handle
                             
                             if isfolder(finalpath)
                                 obj.fov(i).srcpath{k}=finalpath;
+                                
+                                 if ispc
+                        obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'/','\');
+                        else
+                        obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'\','/');    
+                     end
+                                
                             else
                                 disp('Warning : this path does not exsit: cannot change it !');
                             end
@@ -163,6 +183,13 @@ classdef shallow < handle
                             
                             % if isfolder(finalpath)
                             obj.fov(i).srcpath{k}=finalpath;
+                            
+                                if ispc
+                        obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'/','\');
+                        else
+                        obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'\','/');    
+                                end
+                     
                             %       else
                             %           disp('Warning : this path does not exsit: cannot change it !');
                             % end
@@ -176,6 +203,12 @@ classdef shallow < handle
                     for k=1:numel(obj.fov(i).srcpath)
                         strpath=uigetdir(strpath);
                         obj.fov(i).srcpath{k}=strpath;
+                        
+                           if ispc
+                        obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'/','\');
+                        else
+                        obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'\','/');    
+                                end
                     end
                 end
             end

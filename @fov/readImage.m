@@ -8,6 +8,8 @@ im=[];
 
 %aa=obj.srcpath{channel}
 
+%obj.srcpath{channel}
+
 if isfolder(obj.srcpath{channel}) % folders are provided with image or based on phylocell project
 
 list=obj.srclist{channel};

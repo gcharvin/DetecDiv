@@ -12,8 +12,6 @@ frame=obj.display.frame;
 if numel(findobj('Tag',['Fov' obj.id])) % handle exists already
     h=findobj('Tag',['Fov' obj.id]);
     
-    %h.Children(5).Tag
-    
     hp=findobj(h,'Type','Axes');
     
     %     hp(1)=findobj(h,'Tag','Axe1');
@@ -33,7 +31,10 @@ if numel(findobj('Tag',['Fov' obj.id])) % handle exists already
     %updatedisplay(obj,him,hp);
 else
     
+    
     im=buildimage(obj); % returns a structure with all images to be displayed
+    
+    
     
     if numel(im.data)==0
         disp('Could not load image. Quitting...');
