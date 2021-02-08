@@ -19,7 +19,7 @@ frames= 1:size(obj.image,4);
 %channelid=1;
 
 name=[];
-framerate=10;
+ips=10;
 
 for i=1:numel(varargin)
     
@@ -31,11 +31,16 @@ for i=1:numel(varargin)
         name=varargin{i+1};
     end
     
+    if strcmp(varargin{i},'IPS')
+        ips=varargin{i+1};
+    end
+    
     if strcmp(varargin{i},'Framerate')
         framerate=varargin{i+1};
     end
     
 end
+
 
 
 if numel(name)==0
@@ -47,7 +52,7 @@ end
 
 v=VideoWriter(filename,'MPEG-4');
 
-v.FrameRate=framerate;
+v.FrameRate=ips;
 open(v);
 
 
@@ -62,10 +67,9 @@ reverseStr='';
 %     draw(obj,h);
 % end
 
-for frame=frames
-    
+for f=frames
     %imtemp=uint8(zeros(size(obj.gfp)));
-    obj.view(frame);
+    obj.view(f);
      h=findobj('Tag',['ROI' obj.id]);
      
     %imtemp=permute(imtemp, [1 2 4 3]);
@@ -93,10 +97,17 @@ for frame=frames
                     y=size(frame.cdata,2);
                     
                     frame.cdata(1:size(fr.cdata,1),y+1:y+size(fr.cdata,2),:)=fr.cdata;
-                    
+                    %add black rectangle
+                    frame.cdata(1:size(fr.cdata,1),y+size(fr.cdata,2)+1:y+size(fr.cdata,2)+21,:)=0;
                  %   size(frame.cdata)
                 end
                 
+                % add a timestamp to the image
+                if numel(framerate)>0
+                timestamp=[num2str((f-1)*framerate) 'min'];
+                frame.cdata=insertText(frame.cdata,[1 1],timestamp,'Font','Arial Bold','FontSize',20,'TextColor','white');
+                end
+
                 cc=cc+1;
                 
              %   cc
