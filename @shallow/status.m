@@ -84,19 +84,18 @@ if display(2)
         disp('List of ROIs for each FOV:');
         disp(num2str(1:1:numel(nfov)));
         disp(num2str(nroi));
-        disp(['To display ROIs for a given FOV, use the view method: myshallowproject.fov(FOVnumber).view']);
-        disp(['To add ROIs to a given FOV, use the GUI (displayed by the view method above)']);
-        disp(['To remove ROIs from a given FOV, use the removeROI method: myshallowproject.fov(FOVnumber).removeROI(ROInumberstoberemoved)']);
-        disp('Crop and save list of images for a specific ROI using : myshallowproject.fov(FOVnumber).saveCroppedImages(FOVnumber)');
+ %       disp(['To display ROIs for a given FOV, use the view method: myshallowproject.fov(FOVnumber).view']);
+%        disp(['To add ROIs to a given FOV, use the GUI (displayed by the view method above)']);
+%        disp(['To remove ROIs from a given FOV, use the removeROI method: myshallowproject.fov(FOVnumber).removeROI(ROInumberstoberemoved)']);
+%        disp(' ');
+ %       disp(['Automated ROI detection:']);
         disp(' ');
-        disp(['Automated ROI detection:']);
-        disp(' ');
-        disp('1) Define an ROI using method above to create a pattern');
-        disp('2) Set a pattern using shallowObj method: myshallowObject.setPattern(FOVid,ROIid)');
-        disp('where FOVid is the id of the FOV in which the ROI was defined');
-        disp('where ROIid is the id of the defined ROI');
-        disp('3) automatically identify ROIs in a specfic FOV using: myshallowObject.identifyROIs(FOVid)');
-        disp('5) crop and save images: myshallowproject.fov(FOVnumber).saveCroppedImages(FOVid)');
+%        disp('1) Define an ROI using method above to create a pattern');
+ %       disp('2) Set a pattern using shallowObj method: myshallowObject.setPattern(FOVid,ROIid)');
+%        disp('where FOVid is the id of the FOV in which the ROI was defined');
+ %       disp('where ROIid is the id of the defined ROI');
+ %       disp('3) automatically identify ROIs in a specfic FOV using: myshallowObject.identifyROIs(FOVid)');
+ %       disp('5) crop and save images: myshallowproject.fov(FOVnumber).saveCroppedImages(FOVid)');
 end
     
 if display(3)
@@ -109,18 +108,40 @@ if display(3)
     disp('Classification')
     disp('List of user defined classification tasks:');
     disp(numel(obj.processing.classification))
-    disp('To add a new classification task, use the addClassification method: myshallowproject.addClassification');
-    disp('To train the classifier, use the trainClassifier method: myshallowproject.addClassification(classiid)');
-    disp(' ');
+  %  disp('To add a new classification task, use the addClassification method: myshallowproject.addClassification');
+  %  disp('To train the classifier, use the trainClassifier method: myshallowproject.trainClassifier(classiid)');
+        disp(' ');
+       disp('*------------------------------------------*');
+
     for i=1:numel(obj.processing.classification)
-    disp(['Classification properties for ' obj.processing.classification(i).strid]);
+    disp(['Classification ' num2str(i) ' :  ' obj.processing.classification(i).strid]);
     disp(['Description: ' obj.processing.classification(i).description{1}]);
     disp(['Category: ' obj.processing.classification(i).category{1}]);
-    disp(' ');
     disp(['Number of ROIs for training set: ' num2str(numel(obj.processing.classification(i).roi))]);
-    for j=1:numel(obj.processing.classification(i).roi)
-       disp( obj.processing.classification(i).roi(j).id);
-    end
+    
+  path=obj.processing.classification(i).path;
+ name=obj.processing.classification(i).strid;
+ 
+ if exist([path '/trainingParam.mat'])
+     disp('Training parameters are defined for this classification');
+ else
+      disp('There are no training parameters: use @classi.setTrainingParam first!');
+ end
+ 
+  str=[path '/' name '.mat'];
+  
+  if exist(str)
+      disp('A classifier file was found: ready to classify !');
+  else
+      disp('There is no classifier file yet. First train the classifier !');
+  end
+
+
+        disp(' ');
+           disp('*------------------------------------------*');
+     for j=1:numel(obj.processing.classification(i).roi)
+%         disp( obj.processing.classification(i).roi(j).id);
+     end
     end
 end
     

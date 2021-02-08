@@ -78,13 +78,13 @@ Classification
 
 myproject.addClassification
 create a new classifier  ( @classi object)
-in this xase, no ROI is imported in the classi object
+in this case, no ROI is imported in the classi object
 
 myproject.processing.classification
 
 is an array that contains all classifiers created
 
-myproject.addClassification(index) will duplicate the object myproject.processing.classification(index) , where index the index of a valid @classi object
+myproject.addClassification(classiobject) will duplicate the @classi object 
 user is asked whether to import ROIs included in the original classi object
 
 myproject.addClassification(string) will import an existing classifier (string) from a repository

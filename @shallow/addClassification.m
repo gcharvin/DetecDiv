@@ -238,7 +238,7 @@ switch nargin
                     return;
                 end
                 
-                obj.processing.classification(n+1).addROI(obj.processing.classification(option)); % import ROis from classification option
+                obj.processing.classification(n+1).addROI(classitocopy); % import ROis from classification option
                 
                 
                 
