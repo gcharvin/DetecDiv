@@ -76,12 +76,13 @@ Also works with ROIs that belong to @classi objects
 Classification
 --------------
 
+% Adding a new classification 
+
 myproject.addClassification
 create a new classifier  ( @classi object)
 in this case, no ROI is imported in the classi object
 
 myproject.processing.classification
-
 is an array that contains all classifiers created
 
 myproject.addClassification(classiobject) will duplicate the @classi object 
@@ -90,12 +91,18 @@ user is asked whether to import ROIs included in the original classi object
 myproject.addClassification(string) will import an existing classifier (string) from a repository
 %% not really implemented yet%%
 
+%removing a classification 
 myproject.removeClassification(id) will remove a classifier specified by the index id.
+
+
+% adding ROIs a to a classification 
 
 myproject.processing.classification(id).addROI(@classi object OR @fov object, optional: ROIs IDs)
 adds ROIs to the classification myproject.processing.classification(id).
 ROIs may come either from a @fov or from an exisiting @classi object
 This function will preserve training sets and reformat it if the number of classes are different
+
+% using classifications
 
 myproject.processing.classification(id).setClasses(classnames)
 allows the user to define and to reassign classes in the @classi object and dependencies (ROIs)

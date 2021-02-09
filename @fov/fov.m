@@ -10,6 +10,7 @@ classdef fov < handle
         %pathname={''};
         roi=roi('',[]);
         number=1;
+        crop=[]; %cropping area for fov
     end
     
     properties (Dependent)

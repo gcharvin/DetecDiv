@@ -14,7 +14,7 @@ for i=1:numel(varargin)
         display(2)=1;
     end
     if strcmp(varargin{i},'processing')
-        display(3)=1;
+        display(3)=1; 
     end
 end
 

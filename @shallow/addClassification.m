@@ -240,7 +240,10 @@ switch nargin
                 
                 obj.processing.classification(n+1).addROI(classitocopy); % import ROis from classification option
                 
-                
+                for i=1:numel(obj.processing.classification(n+1).roi) % remove irrelevant training and results data
+                   obj.processing.classification(n+1).roi(i).removeData('train',classitocopy.strid);
+                   obj.processing.classification(n+1).roi(i).removeData('results',classitocopy.strid);
+                end
                 
             else
                 disp('this is not a valid classi object');

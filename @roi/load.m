@@ -8,7 +8,7 @@ function load(obj)
 
 if exist([obj.path '/im_' obj.id '.mat'])
 
- fprintf(['Loading ' obj.path '/im_' obj.id '.mat image file for ROI ' obj.id '\n']);   
+ disp(['Loading ' obj.path '/im_' obj.id '.mat image file for ROI ' obj.id]);   
  
 %eval(['load  ' obj.path '/im_' num2str(obj.id) '.mat']); 
 

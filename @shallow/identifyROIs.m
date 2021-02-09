@@ -28,6 +28,10 @@ for i=fovid % loop on all possible field of view
 disp(['Loading source file for FOV ' num2str(i) '....']);
 
 tmp=readImage(obj.fov(i),frameid,channelid);
+if numel(tmp)==0
+    disp('unable to load image: quitting !');
+    return
+end
 
 disp('Identifying traps using autocorrelation function....');
 
@@ -54,6 +58,7 @@ rois(:,4)=x;
 
 scaled=rois;
 
+
 for j=1:size(scaled,1)
    if  scaled(j,1)+x-1>size(tmp,2)/2
        scaled(j,1)=scaled(j,1)-1;
@@ -63,7 +68,27 @@ for j=1:size(scaled,1)
    end
 end
 
-out(cc).scaled=scaled;
+ccc=1;
+
+scaled2=scaled;
+
+if  numel(obj.fov(i).crop)>0% include crop factor in ROI selection
+ scaled2=[];
+ 
+for j=1:size(scaled,1)
+   if  scaled(j,1)<=obj.fov(i).crop(1) | scaled(j,2)<=obj.fov(i).crop(2) |  scaled(j,1)+x>obj.fov(i).crop(1)+obj.fov(i).crop(3) | scaled(j,2)+y>obj.fov(i).crop(2)+obj.fov(i).crop(4)
+    continue
+   else
+   end
+   
+   scaled2(ccc,:)=scaled(j,:);
+   ccc=ccc+1;
+end
+disp(['FOV is cropped: only ' num2str(ccc-1) ' ROIs have been selected !']);
+end
+
+
+out(cc).scaled=scaled2;
 cc=cc+1;
 end
 
@@ -117,8 +142,8 @@ function positions=findTraps(img,pattern,thr)
 
 c = normxcorr2(pattern,img);
 
-figure, imshow(img)
-figure, surf(c), shading flat
+%figure, imshow(img)
+%figure, surf(c), shading flat
 
 thr=0.7; % threshold for detected peaks
 

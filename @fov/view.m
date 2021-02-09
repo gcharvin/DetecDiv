@@ -33,9 +33,7 @@ else
     
     
     im=buildimage(obj); % returns a structure with all images to be displayed
-    
-    
-    
+   
     if numel(im.data)==0
         disp('Could not load image. Quitting...');
         return;
@@ -71,6 +69,9 @@ else
         'Callback','pan(gcbf,''on'')');
     hZMenu = uimenu('Parent',hCMZ,'Label','Add current ROI',...
         'Callback',{@addROI,obj,him,hp});
+        hZMenu = uimenu('Parent',hCMZ,'Label','Set cropping area',...
+        'Callback',{@setCrop,obj,him,hp});
+    
     hZoom = zoom(h);
     hZoom.UIContextMenu = hCMZ;
     hZoom.ActionPostCallback={@adjustROI,hp};
@@ -293,6 +294,18 @@ obj.addROI(roi,obj.id);
 updatedisplay(obj,him,hp);
 end
 
+function setCrop(handle,event,obj,him,hp)
+% function in the context menu to add custom ROI
+htext=findobj('Tag','roivalue');
+te=htext.String;
+roi=str2num(te);
+
+%roi2=roi2;
+
+obj.crop=roi;
+end
+
+
 function removeROI(handles,event,obj,him,hp)
   val=handles.UserData;
   obj.removeROI(val);
@@ -310,6 +323,7 @@ end
 
 function changeframe(handle,event,obj,him,hp)
 
+disp('Loading new frame...');
 ok=0;
 h=findobj('Tag',['Fov' obj.id]);
 
@@ -356,6 +370,7 @@ if ok==1
     updatedisplay(obj,him,hp)
     
 end
+fprintf('Done ! \n');
 end
 
 function updatedisplay(obj,him,hp)

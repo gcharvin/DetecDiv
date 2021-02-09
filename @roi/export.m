@@ -5,7 +5,6 @@ function [rgb fr]=export(obj,varargin)
 % export trap data as movie
 % outputs rgb as a 4-D 8bits rgb matrix for inclusion into a bigger movie
 
-
 if numel(obj.image)==0
     obj.load
 end
@@ -14,12 +13,12 @@ if numel(obj.image)==0
     return;
 end
 
+%default parameters
 
 frames= 1:size(obj.image,4);
-%channelid=1;
-
 name=[];
 ips=10;
+framerate=10;
 
 for i=1:numel(varargin)
     
@@ -41,8 +40,6 @@ for i=1:numel(varargin)
     
 end
 
-
-
 if numel(name)==0
     filename =  [obj.path '/im_' obj.id '.mp4'];
 else
@@ -55,85 +52,35 @@ v=VideoWriter(filename,'MPEG-4');
 v.FrameRate=ips;
 open(v);
 
+cc=1;
 
-ce=1;
-reverseStr='';
-
-
-% if numel(findobj('Tag',['ROI' obj.id])) % handle exists already
-%     h=findobj('Tag',['ROI' obj.id]);
-% else
-%     h=figure('Tag',['ROI' obj.id]);%'Toolbar','none');%,'MenuBar','none');%,'Toolbar','none');
-%     draw(obj,h);
-% end
-
-for f=frames
-    %imtemp=uint8(zeros(size(obj.gfp)));
-    obj.view(f);
-     h=findobj('Tag',['ROI' obj.id]);
-     
-    %imtemp=permute(imtemp, [1 2 4 3]);
-    fr=[];
-    frame=[];
-    cc=1;
-    
-    for j=1:numel(obj.display.selectedchannel)
-        
-        if obj.display.selectedchannel(j)==1
+tmp=obj.image(:,:,1,:);
+meangfp=0.3*double(mean(tmp(:)));
+ maxgfp=double(meangfp+0.5*(max(tmp(:))-meangfp));
+  im=obj.image(:,:,1,:);
   
-            hp=findobj(h,'Tag',['AxeROI' num2str(cc)]);
-            axes(hp);
-           % if numel(hp)~=0
-                fr=getframe; % for each axe and then update
-            %    figure, imshow(fr.cdata);
-               % j,cc
-               % return;
-                
-                if cc==1
-                    frame.cdata=fr.cdata;
-                    frame.colormap=fr.colormap;
-                else
-                    x=size(frame.cdata,1);
-                    y=size(frame.cdata,2);
-                    
-                    frame.cdata(1:size(fr.cdata,1),y+1:y+size(fr.cdata,2),:)=fr.cdata;
-                    %add black rectangle
-                    frame.cdata(1:size(fr.cdata,1),y+size(fr.cdata,2)+1:y+size(fr.cdata,2)+21,:)=0;
-                 %   size(frame.cdata)
-                end
-                
-                % add a timestamp to the image
-                if numel(framerate)>0
-                timestamp=[num2str((f-1)*framerate) 'min'];
-                frame.cdata=insertText(frame.cdata,[1 1],timestamp,'Font','Arial Bold','FontSize',20,'TextColor','white');
-                end
-
-                cc=cc+1;
-                
-             %   cc
-              %  figure, imshow(frame.cdata);
-             %   pause
-            %end
-        end
-    end
-    
-    %return
-    writeVideo(v,frame);
-    
-    if mod(ce-1,50)==0
-%         msg = sprintf('%d / %d Frames snapped', ce , size(obj.image, 4) ); %Don't forget this semicolon
-%         msg=[msg ' for trap ' obj.id];
-%         
-%         fprintf([reverseStr, msg]);
-%         reverseStr = repmat(sprintf('\b'), 1, length(msg));
-    end
-    ce=ce+1;
+  disp('Writing video.... Wait!');
+for i=size(obj.image,4)
+  im(:,:,1,i)=imadjust(im(:,:,1,i),[meangfp/65535 maxgfp/65535],[0 1]);
 end
 
-
-fprintf('\n');
-
-
+im=uint8(double(im)/256);
+  
+ im(:,:,2,:)=im(:,:,1,:);
+ im(:,:,3,:)=im(:,:,1,:); 
+ 
+for f=frames
+    timestamp=[num2str((f-1)*framerate) 'min'];
+     im(:,:,:,f)=insertText( im(:,:,:,f),[1 10],timestamp,'Font','Arial','FontSize',10,'BoxColor',...
+    [1 1 1],'BoxOpacity',0.0,'TextColor','white','AnchorPoint','leftcenter');
+%fprintf('.');
+end
+  %  fprintf('\n');
+    
+im=im(:,:,:,frames);
+    %return
+    writeVideo(v,im);
 close(v);
+disp('Movie is done !')
 
 
