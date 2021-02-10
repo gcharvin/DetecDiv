@@ -18,7 +18,7 @@ end
 frames= 1:size(obj.image,4);
 name=[];
 ips=10;
-framerate=10;
+framerate=0;
 
 for i=1:numel(varargin)
     
@@ -60,20 +60,27 @@ meangfp=0.3*double(mean(tmp(:)));
   im=obj.image(:,:,1,:);
   
   disp('Writing video.... Wait!');
-for i=size(obj.image,4)
+  
+  %size(obj.image,4)
+  
+for i=1:size(obj.image,4)
   im(:,:,1,i)=imadjust(im(:,:,1,i),[meangfp/65535 maxgfp/65535],[0 1]);
+%  fprintf('.');
 end
-
+%  fprintf('\n');
+  
 im=uint8(double(im)/256);
   
  im(:,:,2,:)=im(:,:,1,:);
  im(:,:,3,:)=im(:,:,1,:); 
  
 for f=frames
+    if framerate >0
     timestamp=[num2str((f-1)*framerate) 'min'];
      im(:,:,:,f)=insertText( im(:,:,:,f),[1 10],timestamp,'Font','Arial','FontSize',10,'BoxColor',...
     [1 1 1],'BoxOpacity',0.0,'TextColor','white','AnchorPoint','leftcenter');
 %fprintf('.');
+    end
 end
   %  fprintf('\n');
     
