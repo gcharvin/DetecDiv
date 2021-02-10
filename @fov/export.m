@@ -10,6 +10,9 @@ name=[];
 ips=10;
 framerate=0;
 channels=1;
+fontsize=20;
+levels=[4000 15000; 500 1000; 500 1000; 500 1000];
+drawrois=-1;
 
 for i=1:numel(varargin)
     
@@ -21,7 +24,7 @@ for i=1:numel(varargin)
         name=varargin{i+1};
     end
     
-    if strcmp(varargin{i},'IPS')
+    if strcmp(varargin{i},'IPS') % number of frames displayed per second
         ips=varargin{i+1};
     end
     
@@ -29,17 +32,40 @@ for i=1:numel(varargin)
         framerate=varargin{i+1};
     end
     
-     if strcmp(varargin{i},'Channel')
+    if strcmp(varargin{i},'Channel') % an array that indicates the channels being displayed
         channels=varargin{i+1};
+    end
+    
+    if strcmp(varargin{i},'Levels') % defines output levels for display
+        levels=varargin{i+1};
+    end
+    
+    if strcmp(varargin{i},'FontSize')
+        fontsize=varargin{i+1};
+    end
+    
+    if strcmp(varargin{i},'DrawROIs') % draws the contour of ROIs on the movie
+        drawrois=varargin{i+1};
     end
     
 end
 
-if numel(name)==0
-    filename =  [obj.srcpath '/im_' obj.id '.mp4'];
-else
-    filename =  [obj.srcpath '/' name '.mp4'];
+if numel(drawrois)==0
+    drawrois=1:numel(obj.roi); % all rois are displayed
 end
+
+if any(drawrois==0)
+    drawrois=[];
+end
+
+
+if numel(name)==0
+    pth=pwd;
+    filename =  [pth '/im_' obj.id '.mp4'];
+else
+    filename =  [name '.mp4'];
+end
+
 
 v=VideoWriter(filename,'MPEG-4');
 
@@ -52,34 +78,27 @@ cc=1;
 % meangfp=0.3*double(mean(tmp(:)));
 % maxgfp=double(meangfp+0.5*(max(tmp(:))-meangfp));
 % im=obj.image(:,:,1,:);
-  
-  disp('Writing video.... Wait!');
-  
-   im=obj.readImage(1,1);
-  imtot=zeros(size(im,1),size(im,2)*numel(channels),1,numel(frames));
-  
-   reverseStr = '';
-   
-   cc=1;
-  for j=frames
+
+disp('Writing video.... Wait!');
+
+im=obj.readImage(1,1);
+imtot=zeros(size(im,1),size(im,2)*numel(channels),1,numel(frames));
+
+reverseStr = '';
+
+cc=1;
+for j=frames
     for k=1:numel(channels) % loop on channels
         
         ch=channels(k);
-    im=obj.readImage(nframes(j),ch);
-    
-    %size(im)
-    
-    imtot(:,(k-1)*size(im,2)+1:(k)*size(im,2),1,cc)=imresize(im,obj.display.binning(k)/obj.display.binning(1));
-   
-    
-    
-    end
-    
-     if framerate >0
-    timestamp=[num2str((j-1)*framerate) 'min'];
-     imtot(:,:,:,cc)=insertText( imtot(:,:,:,cc),[10 30],timestamp,'Font','Arial','FontSize',20,'BoxColor',...
-    [1 1 1],'BoxOpacity',0.0,'TextColor','white','AnchorPoint','leftcenter');
-%fprintf('.');
+        im=obj.readImage(j,ch);
+        
+        %size(im)
+        imtmp=imresize(im,obj.display.binning(k)/obj.display.binning(1));
+        imtmp=imadjust(imtmp,[levels(k,1)/65535 levels(k,2)/65535],[0 1]);
+        
+        imtot(:,(k-1)*size(im,2)+1:(k)*size(im,2),1,cc)=imtmp;
+        
     end
     
     msg = sprintf('Reading frame: %d / %d for FOV %s', j, numel(frames),obj.id); %Don't forget this semicolon
@@ -87,7 +106,9 @@ cc=1;
     reverseStr = repmat(sprintf('\b'), 1, length(msg));
     
     cc=cc+1;
-  end
+end
+
+fprintf('\n');
 
 %default parameter
 % for i=1:size(obj.image,4)
@@ -95,12 +116,49 @@ cc=1;
 % %  fprintf('.');
 % end
 %  fprintf('\n');
-  
-im=uint8(double(imtot)/256);
-  
- im(:,:,2,:)=im(:,:,1,:);
- im(:,:,3,:)=im(:,:,1,:); 
 
-    writeVideo(v,im);
+%   tmp=imtot(:,:,1,:);
+% meangfp=0.3*double(mean(tmp(:)));
+%  maxgfp=double(meangfp+0.5*(max(tmp(:))-meangfp));
+%
+%   for j=1:size(imtot,4)
+%
+%   end
+
+im=uint8(double(imtot)/256);
+
+im(:,:,2,:)=im(:,:,1,:);
+im(:,:,3,:)=im(:,:,1,:);
+
+for j=1:size(im,4)
+    if framerate >0
+        timestamp=[num2str((j-1)*framerate) 'min'];
+        
+        im(:,:,:,j)=insertText( im(:,:,:,j),[10 40],timestamp,'Font','Arial','FontSize',fontsize,'BoxColor',...
+            [1 1 1],'BoxOpacity',0.0,'TextColor','red','AnchorPoint','leftcenter');
+        %fprintf('.')
+    end
+    
+    if numel(drawrois)>0
+        for i=drawrois
+            if i<=length(obj.roi)
+        roitmp=obj.roi(i).value;
+       % roitmp=[roitmp(1) roitmp(2) roitmp(1)+ roitmp(3) roitmp(2)+ roitmp(4)];
+       % h=patch([roitmp(1) roitmp(3) roitmp(3) roitmp(1) roitmp(1)],[roitmp(2) roitmp(2) roitmp(4) roitmp(4) roitmp(2)],[1 0 0],'FaceAlpha',0.3,'Tag',['roitag_' num2str(i)],'UserData',i);
+        
+        im(:,:,:,j) = insertShape( im(:,:,:,j),'FilledRectangle',[roitmp(1) roitmp(2) roitmp(3) roitmp(4)],...
+    'Color', {'red'},'Opacity',0.3);
+
+        im(:,:,:,j)=insertText( im(:,:,:,j),[roitmp(1) roitmp(2)],num2str(i),'Font','Arial','FontSize',20,'BoxColor',...
+            [1 1 1],'BoxOpacity',0.0,'TextColor','red','AnchorPoint','leftcenter');
+        
+      %  htext=text(roitmp(1),roitmp(2), num2str(i), 'Color','r','FontSize',10,'Tag',['roitext_' num2str(i)]);
+            end
+        end
+        
+    end
+end
+
+writeVideo(v,im);
 close(v);
 disp('Movie is done !')
