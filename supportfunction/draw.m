@@ -280,18 +280,22 @@ if numel(classif)>0
         
         if numel(cc)
             if obj.display.selectedchannel(i)==1
-                cha1= classif.channel(1); % axes where to copy the new axes
-                cha1pos=get(hp(cha1),'Position');
-                hcopy=findobj(hp,'UserData',classif.strid);
+                cha1= classif.channel(1);
+                % axes where to copy the new axes
+                axes(hp(cha1))
+                alpha(0.5);
+                
+                cha1pos=get(hp(cha1),'Position')
+                hcopy=findobj(hp,'UserData',classif.strid)
                 %
                 htmp = copyobj(hcopy,h);
                 htmp.Position=cha1pos;
                 % aa=classif.strid,
-                % htmp
+              %  h.Childr
                 
                 set(htmp,'Tag',classif.strid);
                 axes(htmp);
-                alpha(0.3);
+                alpha(1);
                 
                 linkaxes([hp htmp]);
             end
@@ -1024,6 +1028,7 @@ for i=1:numel(obj.display.channel)
                 if tt==0
                     tt='not classified';
                 else
+                    tt
                     tt=obj.classes{tt};
                 end
                 str=[str ' - ' tt ' (training: ' fields{k} ')'];

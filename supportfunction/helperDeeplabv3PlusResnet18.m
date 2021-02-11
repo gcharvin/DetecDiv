@@ -28,17 +28,17 @@ function lgraph = helperDeeplabv3PlusResnet18(imageSize, numClasses,nettype)
 % Load pretrained network to use as the base network for DeepLab v3+.
 %lgraph = loadPretrainedResNet18();
 % Load ResNet-18 and return as LayerGraph.
-net50=nettype;
+%net50=nettype;
 
-if net50==1
-net=resnet50;
-else
-net = resnet18;
-end
+%if net50==1
+net=nettype;
+%else
+%net = resnet18;
+%end
 
 lgraph = layerGraph(net);
 
-if net50==1
+if strcmp(nettype,'resnet50')
     test=lgraph.Layers(5);
     test.PaddingSize=[1 1 1 1];
     lgraph=replaceLayer(lgraph,'max_pooling2d_1',test);
@@ -49,7 +49,7 @@ end
 % right before the classification layers.
 %featureExtractionLayer = 'res5b_relu';
 
-if net50==1
+if  strcmp(nettype,'resnet50')
 featureExtractionLayer = 'activation_49_relu';
 else
 featureExtractionLayer = 'res5b_relu';    
@@ -65,7 +65,7 @@ end
 
 %Remove all layers after the feature extraction layer in ResNet-18.
 
-if net50==1
+if  strcmp(nettype,'resnet50')
 layerToRemove = ["avg_pool","fc1000","fc1000_softmax","ClassificationLayer_fc1000"];
 else
 layerToRemove = ["pool5","fc1000","prob","ClassificationLayer_predictions"]; 
@@ -78,7 +78,7 @@ lgraph = removeLayers(lgraph,layerToRemove);
 % Change image input layer to support desired input image size. Set the
 % 'Normalization' to 'none' to match the value used in ResNet-18.
 
-if net50==1
+if  strcmp(nettype,'resnet50')
 imageInputLayerName = 'input_1';
 else
 imageInputLayerName = 'data';
@@ -86,7 +86,7 @@ end
 
 newLayer = imageInputLayer(imageSize,'Name',imageInputLayerName,'Normalization','none');
 
-if net50==1
+if  strcmp(nettype,'resnet50')
  lgraph = replaceLayer(lgraph,"input_1",newLayer);
 else
  lgraph = replaceLayer(lgraph,"data",newLayer);   
@@ -127,7 +127,7 @@ lgraph = addASPPLayers(lgraph,featureExtractionLayer);
 % the skip layer is typically a layer whose output size that is a factor of
 % 4 smaller than the input size.
 
-if net50==1
+if  strcmp(nettype,'resnet50')
   skipLayer = 'activation_7_relu'; 
 else
   skipLayer = 'res2b_relu';  
