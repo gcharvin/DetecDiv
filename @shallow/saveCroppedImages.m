@@ -1,6 +1,6 @@
 function saveCroppedImages(obj,fovid,frameid)
 
-disp('Cropping and saving images to folder...');
+disp('Processing raw images. Wait....');
 
 if nargin==1
     fovid=1:numel(obj.fov); % All FOVs will be processed 
@@ -54,6 +54,8 @@ end
  
 list={};
 
+disp('Loading raw images in memory ....');
+
 for j=1:numel(nframes)
     for k=1:numel(tmpfov(i).srclist) % loop on channels
         
@@ -74,6 +76,32 @@ for j=1:numel(nframes)
    % cc=cc+1;
 end
 fprintf('\n');
+
+disp('Correcting XY drift in images...');
+
+refframe=list{nframes(1),1};
+
+for j=1:numel(nframes)
+    c = normxcorr2(refframe,list{j,1});
+
+[mx ix]=max(c(:));
+ [row col]=ind2sub(size(c),ix);
+  row=row-size(refframe,1);
+  col=col-size(refframe,2);
+  
+  %tmp=list{j,k};
+  
+  for k=1:numel(tmpfov(i).srclist) 
+      
+  list{j,k}=circshift( list{j,k},-row,1);
+  list{j,k}=circshift( list{j,k},-col,2);
+  end
+  
+  % figure, imshowpair(refframe, list{j,1});
+%   figure, imshowpair(refframe, tmp);
+
+end
+
 
 reverseStr = '';
 

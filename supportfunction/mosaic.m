@@ -14,7 +14,6 @@ fontsize=20;
 levels=[4000 15000; 500 1000; 500 1000; 500 1000];
 training=[];
 results=[];
-mosaic=[];
 title=[];
 strid='';
 roititle=0;
@@ -23,10 +22,11 @@ rls=0;
 if isa(obj,'classi')
     frames=1:size(obj.roi(1).image,4); % take the number of frames from the image list
     strid=obj.strid;
+     mosaic=[1 2 3];
 end
 if isa(obj,'shallow')
     frames=1:numel(obj.fov(1).srclist{1}); % take the number of frames from the image list
-    
+    mosaic=[1 1 1; 1 2 3];
 end
 if isa(obj,'roi')
     frames=1:size(obj.image,4); % take the number of frames from the image list
@@ -118,6 +118,7 @@ if numel(mosaic)
     end
 else
     nsize=[1 1];
+    nmov=1;
 end
 
 % load template image to check image size
@@ -340,11 +341,23 @@ end
 % export parameters
 
 if numel(name)==0
-    name=[obj.path  '/ClassifMosaic'];
+ %   name=[obj.path  '/ClassifMosaic'];
     
-    for i=1:nmov
-        name=[name '_' num2str(mosaic(i)) '_' num2str(mosaic(i)) '-'];
+  %  for i=1:nmov
+ %       name=[name '_' num2str(mosaic(i)) '_' num2str(mosaic(i)) '-'];
+%    end
+    if isa(obj,'classi')
+        name=[obj.path '/mosaic'];
     end
+    
+    if isa(obj,'shallow')
+        name=[obj.io.path obj.io.file '/mosaic'];
+    end
+    
+    if isa(obj,'roi')
+        name=[obj.path '/' obj.id];
+    end
+
 else
     if isa(obj,'classi')
         name=[obj.path '/' name];

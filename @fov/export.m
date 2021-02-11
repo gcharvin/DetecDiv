@@ -13,6 +13,7 @@ channels=1;
 fontsize=20;
 levels=[4000 15000; 500 1000; 500 1000; 500 1000];
 drawrois=-1;
+drift=[];
 
 for i=1:numel(varargin)
     
@@ -46,6 +47,10 @@ for i=1:numel(varargin)
     
     if strcmp(varargin{i},'DrawROIs') % draws the contour of ROIs on the movie
         drawrois=varargin{i+1};
+    end
+    
+     if strcmp(varargin{i},'Drift') % correction of XY drift
+        drift=1;% varargin{i+1};
     end
     
 end
@@ -87,11 +92,34 @@ imtot=zeros(size(im,1),size(im,2)*numel(channels),1,numel(frames));
 reverseStr = '';
 
 cc=1;
+
+if numel(drift)
+    refframe= obj.readImage(frames(1),1);
+end
+
 for j=frames
+    
+    if numel(drift)
+    c = normxcorr2(refframe,obj.readImage(j,1));
+
+[mx ix]=max(c(:));
+ [row col]=ind2sub(size(c),ix);
+  row=row-size(refframe,1);
+  col=col-size(refframe,2);
+    end
+  
+  % figure, imshowpair(refframe, list{j,1});
+%   figure, imshowpair(refframe, tmp);
+
     for k=1:numel(channels) % loop on channels
         
         ch=channels(k);
         im=obj.readImage(j,ch);
+        
+        if numel(drift)
+         im=circshift( im,-row,1);
+         im=circshift( im,-col,2);
+        end
         
         %size(im)
         imtmp=imresize(im,obj.display.binning(k)/obj.display.binning(1));
@@ -139,7 +167,7 @@ for j=1:size(im,4)
         %fprintf('.')
     end
     
-    if numel(drawrois)>0
+    if numel(drawrois)>0 & drawrois>0
         for i=drawrois
             if i<=length(obj.roi)
         roitmp=obj.roi(i).value;
