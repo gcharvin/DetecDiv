@@ -91,10 +91,15 @@ classdef shallow < handle
                 obj.processing.classification(i).path=fullfile(obj.processing.classification(i).path);
                 obj.processing.classification(i).path = replace(obj.processing.classification(i).path,oldfullpath,newpath);
                 
+                   oldfullpath
+                   newpath
+                   
                 for j=1:numel(obj.processing.classification(i).roi)
                     
                     
                     obj.processing.classification(i).roi(j).path=fullfile(obj.processing.classification(i).roi(j).path);
+                    
+                 
                     
                     obj.processing.classification(i).roi(j).path = replace(obj.processing.classification(i).roi(j).path,oldfullpath,newpath);
                     
