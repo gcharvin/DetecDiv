@@ -76,7 +76,9 @@ classdef shallow < handle
                         
                         obj.fov(i).roi(j).path=fullfile(obj.fov(i).roi(j).path);
                         aa=obj.fov(i).roi(j).path
-                        
+                        oldfullpath
+            newpath
+            
                         obj.fov(i).roi(j).path = replace(obj.fov(i).roi(j).path,oldfullpath,newpath);
                         
                         if ispc
