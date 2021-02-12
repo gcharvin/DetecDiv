@@ -31,7 +31,7 @@ function lgraph = helperDeeplabv3PlusResnet18(imageSize, numClasses,nettype)
 %net50=nettype;
 
 %if net50==1
-net=nettype;
+net=eval(nettype);
 %else
 %net = resnet18;
 %end
@@ -135,7 +135,7 @@ end
 %
 
 % Add the decoder sub-network.
-lgraph = addDecoderToNetwork(lgraph,numClasses,skipLayer,net50);
+lgraph = addDecoderToNetwork(lgraph,numClasses,skipLayer,nettype);
 
 % Add the pixel classification layers.
 
@@ -196,7 +196,7 @@ end
 
 
 %--------------------------------------------------------------------------
-function lgraph = addDecoderToNetwork(lgraph,numClasses, lowLevelFeatureExtractor,net50)
+function lgraph = addDecoderToNetwork(lgraph,numClasses, lowLevelFeatureExtractor,nettype)
 % Add the decoder sub-network for DeepLab v3+. The decoder sub-network
 % restores the feature maps to their original resolution by upsampling them
 % by a factor of 16. Skip connections from low-level layers are used to
@@ -278,7 +278,7 @@ lgraph = connectLayers(lgraph,'dec_crop1','dec_cat1/in2');
 lgraph = connectLayers(lgraph,lowLevelFeatureExtractor,'dec_c2');
 lgraph = connectLayers(lgraph,'dec_relu2','dec_crop1/ref');
 
-if net50==1
+if strcmp(nettype,'resnet50')
 lgraph = connectLayers(lgraph,'input_1','dec_crop2/ref');
 else
  lgraph = connectLayers(lgraph,'data','dec_crop2/ref');  

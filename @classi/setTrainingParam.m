@@ -148,7 +148,7 @@ disp('Select Batch size (8-128): ');
 trainingParam=setParam(trainingParam,{'MiniBatchSize',8});
 
 disp('Select Number of Epochs (ie iterations): ');
-trainingParam=setParam(trainingParam,{'MaxEpochs',30});
+trainingParam=setParam(trainingParam,{'MaxEpochs',60});
 
 disp('Select Learning rate: ');
 trainingParam=setParam(trainingParam,{'InitialLearnRate',1e-2});
@@ -163,7 +163,7 @@ disp('Image augmentation (translation range in pixels): ');
 trainingParam=setParam(trainingParam,{'translateAugmentation',[-50 50]});
 
 disp('Image augmentation (rotation range in degrees): ');
-trainingParam=setParam(trainingParam,{'rotateAugmentation',[-180 180]});
+trainingParam=setParam(trainingParam,{'rotateAugmentation',[-0 0]});
 
 disp('L2regularization (0.00001-0.1) : ');
 trainingParam=setParam(trainingParam,{'regularization',0.005});
