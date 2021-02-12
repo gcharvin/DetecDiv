@@ -146,7 +146,7 @@ c = normxcorr2(pattern,img);
 %figure, imshow(img)
 %figure, surf(c), shading flat
 
-thr=0.7; % threshold for detected peaks
+thr=0.5; % threshold for detected peaks
 
 BW = im2bw(c,thr);
 
