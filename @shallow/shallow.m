@@ -64,8 +64,8 @@ classdef shallow < handle
             
             % also adjust set path of dependencies
             
-            oldfullpath=fullfile(oldpath,oldfile);
-            newpath=fullfile(pathe,file);
+            oldfullpath=fullfile(oldpath,oldfile)
+            newpath=fullfile(pathe,file)
             
             for i=1:numel(obj.fov)
                 for j=1:numel(obj.fov(i).roi)
@@ -75,6 +75,8 @@ classdef shallow < handle
                         
                         
                         obj.fov(i).roi(j).path=fullfile(obj.fov(i).roi(j).path);
+                        aa=obj.fov(i).roi(j).path
+                        
                         obj.fov(i).roi(j).path = replace(obj.fov(i).roi(j).path,oldfullpath,newpath);
                         
                         if ispc
@@ -91,8 +93,8 @@ classdef shallow < handle
                 obj.processing.classification(i).path=fullfile(obj.processing.classification(i).path);
                 obj.processing.classification(i).path = replace(obj.processing.classification(i).path,oldfullpath,newpath);
                 
-                   oldfullpath
-                   newpath
+                %   oldfullpath
+                %   newpath
                    
                 for j=1:numel(obj.processing.classification(i).roi)
                     
