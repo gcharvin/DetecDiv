@@ -64,23 +64,23 @@ classdef shallow < handle
             
             % also adjust set path of dependencies
             
-                        oldfullpath=fullfile(oldpath,oldfile);
-                        newpath=fullfile(pathe,file);
+            oldfullpath=fullfile(oldpath,oldfile);
+            newpath=fullfile(pathe,file);
             
             for i=1:numel(obj.fov)
                 for j=1:numel(obj.fov(i).roi)
                     if numel(obj.fov(i).roi(j).path)~=0
                         % oldpath
                         % pathe
-
+                        
                         
                         obj.fov(i).roi(j).path=fullfile(obj.fov(i).roi(j).path);
                         obj.fov(i).roi(j).path = replace(obj.fov(i).roi(j).path,oldfullpath,newpath);
                         
                         if ispc
-                        obj.fov(i).roi(j).path = replace(obj.fov(i).roi(j).path,'/','\');
+                            obj.fov(i).roi(j).path = replace(obj.fov(i).roi(j).path,'/','\');
                         else
-                        obj.fov(i).roi(j).path = replace(obj.fov(i).roi(j).path,'\','/');    
+                            obj.fov(i).roi(j).path = replace(obj.fov(i).roi(j).path,'\','/');
                         end
                     end
                 end
@@ -93,17 +93,17 @@ classdef shallow < handle
                 
                 for j=1:numel(obj.processing.classification(i).roi)
                     
-                        
+                    
                     obj.processing.classification(i).roi(j).path=fullfile(obj.processing.classification(i).roi(j).path);
-                        
+                    
                     obj.processing.classification(i).roi(j).path = replace(obj.processing.classification(i).roi(j).path,oldfullpath,newpath);
                     
-                     if ispc
+                    if ispc
                         obj.processing.classification(i).roi(j).path = replace(obj.processing.classification(i).roi(j).path,'/','\');
-                        else
-                        obj.processing.classification(i).roi(j).path = replace(obj.processing.classification(i).roi(j).path,'\','/');    
-                     end
-                        
+                    else
+                        obj.processing.classification(i).roi(j).path = replace(obj.processing.classification(i).roi(j).path,'\','/');
+                    end
+                    
                 end
             end
             
@@ -129,42 +129,54 @@ classdef shallow < handle
             end
             
             if strcmp(defaultclass,'y') % path is changed automatically for all FOVs
-%                 prompt='Use GUI to change path [y/n] (Default: n)';
-%                 guipath= input(prompt,'s');
-%                 if numel(defaultclass)==0
-%                     guipath='n';
-%                 end
+                prompt='Use GUI to change path [y/n] (Default: n)';
+                guipath= input(prompt,'s');
+                if numel(defaultclass)==0
+                    guipath='n';
+                end
                 
-%                 if strcmp(guipath,'y') % path is changed using GUI
-%                     for i=1:numel(obj.fov)
-%                         for k=1:numel(obj.fov(i).srcpath)
-%                             if i==1 && k==1
-%                                 strpath=uigetdir(strpath,'Input first list of files for channel 1');
-%                                 p=strfind(strpath,'/')
-%                                 basepath=strpath(1:p(end-1)-1);
-%                             end
-%                             
-%                             tmp=obj.fov(i).srcpath{k};
-%                             p=strfind(tmp,'/');
-%                             tmp=tmp(p(end-1):end);
-%                             
-%                             finalpath=[basepath tmp];
-%                             
-%                             if isfolder(finalpath)
-%                                 obj.fov(i).srcpath{k}=finalpath;
-%                                 
-%                                  if ispc
-%                         obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'/','\');
-%                         else
-%                         obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'\','/');    
-%                      end
-%                                 
-%                             else
-%                                 disp('Warning : this path does not exsit: cannot change it !');
-%                             end
-%                         end
-%                     end
-%                 else % path is changes as the command line
+                if strcmp(guipath,'y') % path is changed using GUI
+                    for i=1:numel(obj.fov)
+                        for k=1:numel(obj.fov(i).srcpath)
+                            if i==1 && k==1
+                                strpath=uigetdir(strpath,'Input first list of files for channel 1');
+                                
+                                if ispc
+                                    p=strfind(strpath,'\');
+                                else
+                                    p=strfind(strpath,'/') ;
+                                end
+                                basepath=strpath(1:p(end-1)-1);
+                                
+                            end
+                            
+                            tmp=obj.fov(i).srcpath{k};
+                            
+                            if ispc
+                                p=strfind(tmp,'\');
+                            else
+                                p=strfind(tmp,'/');
+                            end
+                            
+                            tmp=tmp(p(end-1):end);
+                            
+                            finalpath=[basepath tmp];
+                            
+                            if isfolder(finalpath)
+                                obj.fov(i).srcpath{k}=finalpath;
+                                
+                                if ispc
+                                    obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'/','\');
+                                else
+                                    obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'\','/');
+                                end
+                                
+                            else
+                                disp('Warning : this path does not exsit: cannot change it !');
+                            end
+                        end
+                    end
+                else % path is changes as the command line
                     disp('Current source path for the FOV:')
                     disp(obj.fov(1).srcpath{1})
                     prompt='Type the part of the path to be changed:';
@@ -186,19 +198,19 @@ classdef shallow < handle
                             % if isfolder(finalpath)
                             obj.fov(i).srcpath{k}=finalpath;
                             
-                                if ispc
-                        obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'/','\');
-                        else
-                        obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'\','/');    
-                                end
-                     
+                            if ispc
+                                obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'/','\');
+                            else
+                                obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'\','/');
+                            end
+                            
                             %       else
                             %           disp('Warning : this path does not exsit: cannot change it !');
                             % end
                         end
                     end
                     disp('Base path of FOVs succesfully changed! ');
-                %end
+                end
                 
             else % path is changed manually for all FOVs / each channel
                 for i=1:numel(obj.fov)
@@ -206,11 +218,11 @@ classdef shallow < handle
                         strpath=uigetdir(strpath);
                         obj.fov(i).srcpath{k}=strpath;
                         
-                           if ispc
-                        obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'/','\');
+                        if ispc
+                            obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'/','\');
                         else
-                        obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'\','/');    
-                                end
+                            obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'\','/');
+                        end
                     end
                 end
             end
