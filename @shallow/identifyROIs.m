@@ -6,7 +6,7 @@ if numel(obj.processing.roi.pattern)==0
     disp('First define a pattern using shallowObj.setPattern() method');
 end
 
-if nargin<=3
+if nargin<3
     frameid=1; 
 end
 if nargin <2 
@@ -15,6 +15,7 @@ end
 
 channelid=1;
 
+%frameid
 % read image 
 out=[];
 out.positions=[];
