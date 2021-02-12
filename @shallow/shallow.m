@@ -72,7 +72,7 @@ classdef shallow < handle
                      newpath=replace(newpath,'/','\');
                  else
                      oldfullpath=replace(oldfullpath,'\','/');
-                     newpath=replace(newpath,'/','\');
+                     newpath=replace(newpath,'\','/');
                  end
             
             
