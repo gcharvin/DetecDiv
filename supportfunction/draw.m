@@ -20,14 +20,17 @@ if numel(h.UserData)~=0 % window is already displayed; therefore just update the
     
     % sort Axes !
     s=[];
+    hp
     for i=1:numel(hp)
         s(i)=str2num(hp(i).Tag(7:end));
     end
-    [q ix]=sort(s); hp=hp(ix);
+    [q ix]=sort(s);
+    hp=hp(ix);
+    
+   
     updatedisplay(obj,him,hp,classif);
     return;
 end
-
 
 if numel(classif)>0
     if strcmp(classif.category{1},'Pixel') | strcmp(classif.category{1},'Object') % display properties for pixel classification
@@ -82,8 +85,7 @@ handles=findobj(h,'Tag','DisplayMenu');
 if numel(handles)==0
     m = uimenu(h,'Text','Display','Tag','DisplayMenu');
     mitem=[];
-    
-    
+
     for i=1:numel(obj.display.channel)
         mitem(i) = uimenu(m,'Text',obj.display.channel{i},'Checked','on','Tag',['channel_' num2str(i)]);
         set(mitem(i),'MenuSelectedFcn',{@displayMenuFcn,obj,h,classif});
@@ -92,6 +94,12 @@ if numel(handles)==0
             set(mitem(i),'Checked','on');
         else
             set(mitem(i),'Checked','off');
+        end
+        
+        if numel(classif)>0
+             set(mitem(i),'Enable','off');
+        else
+            
         end
     end
 end
@@ -120,8 +128,6 @@ if numel(handles)==0
     dritem(3) = uimenu(dr,'Text','Draw object','Tag','Draw object','Separator','on');
     set(dritem(3),'MenuSelectedFcn',{@drawObject,obj});
 end
-
-
 
 % build display image object
 
@@ -217,7 +223,7 @@ h.KeyPressFcn={@changeframe,obj,him,hp,keys,classif};
 handles=findobj(h,'Tag','frametexttitle');
 if numel(handles)==0
     btnSetFrame = uicontrol('Style', 'text','FontSize',14, 'String', 'Enter frame number here, or use arrows <- ->',...
-        'Position', [50 50 300 20],'HorizontalAlignment','left', ...
+        'Position', [50 50 450 20],'HorizontalAlignment','left', ...
         'Tag','frametexttitle') ;
 end
 
@@ -279,7 +285,7 @@ if numel(classif)>0
         cc=obj.findChannelID(classif.strid);
         
         if numel(cc)
-            if obj.display.selectedchannel(i)==1
+            if obj.display.selectedchannel(cc)==1
                 cha1= classif.channel(1);
                 % axes where to copy the new axes
                 axes(hp(cha1))
@@ -295,7 +301,7 @@ if numel(classif)>0
                 
                 set(htmp,'Tag',classif.strid);
                 axes(htmp);
-                alpha(1);
+                alpha(0.5);
                 
                 linkaxes([hp htmp]);
             end
@@ -932,6 +938,8 @@ else
     %  bb=obj.display.selectedchannel(i)
 end
 
+clf
+h.UserData=[];
 [him hp]=draw(obj,h,classif);
 end
 
@@ -947,19 +955,21 @@ function updatedisplay(obj,him,hp,classif)
 
 im=buildimage(obj);
 
+
 % need to update the painting window here hpaint.Children(1).CData...
 
 
 cc=1;
 for i=1:numel(obj.display.channel)
+
     if obj.display.selectedchannel(i)==1
+        
         him.image(cc).CData=im(cc).data;
         
         % title(hp(i),['Channel ' num2str(i) ' -Intensity:' num2str(obj.display.intensity(i))]);
         %tt=obj.display.intensity(i,:);
         
         %title(hp(cc),[obj.display.channel{i} ' -Intensity:' num2str(tt)]);
-        
         
         cc=cc+1;
     end

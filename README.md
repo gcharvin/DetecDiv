@@ -102,6 +102,9 @@ adds ROIs to the classification myproject.processing.classification(id).
 ROIs may come either from a @fov or from an exisiting @classi object
 This function will preserve training sets and reformat it if the number of classes are different
 
+myproject.processing.classification(id).clearTraining to remove training data 
+see function arguments for details 
+
 % using classifications
 
 myproject.processing.classification(id).setClasses(classnames)

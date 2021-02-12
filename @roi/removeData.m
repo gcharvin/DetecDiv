@@ -1,6 +1,6 @@
 function removeData(obj,type,option)
 % removes training / results fields from ROIs 
-% type : 'train' , 'results'
+% type : 'train' , 'results', 
 % option = strid to be removed  ; if no option provided, than all fields
 % are removed
 
