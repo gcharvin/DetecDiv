@@ -23,7 +23,7 @@ idstat=[];
 
 path=classif.path;
 name=classif.strid;
-strpath=[path '/' outputstr '_' name]
+strpath=[path '/' outputstr '_' name];
 
 classistr=classif.strid;
 
@@ -37,6 +37,9 @@ for j=listroi
 resok=0;
 ground=0;
 
+
+% switch based on classification type 
+if classif.typeid==1 | classif.typeid==4
 if numel(obj.results)==0
     disp('There is no result available for this roi');
 else
@@ -61,13 +64,29 @@ if numel(obj.train)~=0
        end
    end
 end
+end
+
+if classif.typeid==8 % cell segmentation
+    
+    % test if training and results exist
+    ng=obj.findChannelID(classif.strid);
+    if ng>0
+    ground=1;
+    end
+    
+    nr=obj.findChannelID(['results_' classif.strid]);
+    if nr>0
+    resok=1;
+    end
+
+end
+    
 
 % then display the results
 
 if ground ==1 && resok==1 % list of rois used to compute stats
     idstat=[idstat j];
 end
-
 end
 
 cc=1;
@@ -81,9 +100,41 @@ sumyg=[];
 lab={};
 for i=idstat
     obj=classif.roi(i);
+    
      
+    if classif.typeid==1 | classif.typeid==4
     yr=obj.results.(classistr).id;
     yg=obj.train.(classistr).id;
+    end
+    
+    if classif.typeid==8 % cell segmentation
+        
+        if numel(obj.image)==0
+            obj.load;
+        end
+   
+           fra=[];
+           for j=1:size(obj.image,4)
+   
+               tmp=obj.image(:,:,ng,j)>0; % & obj.image(:,:,nr,j)>0;
+               if sum(tmp(:))
+                   fra=[fra j];
+               end
+           end
+           
+            yg=obj.image(:,:,ng,fra);
+            
+            % find frames with at least one pixel painted in class 1 or 2;
+            % filter out other frames
+            yg=yg(:); yg=yg';
+            yg(yg==0)=1;
+    
+      yr=obj.image(:,:,nr,fra);
+      yr=yr(:); yr=yr';
+      yr(yr==1)=2;
+      yr(yr==0)=1;
+    
+    end
     
     acc(cc)= 100*sum(yr==yg)./length(yg);
     
@@ -122,8 +173,33 @@ sumyg=[];
 for i=idstat
     obj=classif.roi(i);
      
+        if classif.typeid==1 | classif.typeid==4
     yr=obj.results.(classistr).id;
     yg=obj.train.(classistr).id;
+        end
+    
+    if classif.typeid==8 % cell segmentation
+    fra=[];
+           for j=1:size(obj.image,4)
+                tmp=obj.image(:,:,ng,j)>0; % & >obj.image(:,:,nr,j)0;
+               if sum(tmp(:))
+                   fra=[fra j];
+               end
+           end
+           
+            yg=obj.image(:,:,ng,fra);
+            
+            % find frames with at least one pixel painted in class 1 or 2;
+            % filter out other frames
+            yg=yg(:); yg=yg';
+    yg(yg==0)=1;
+    
+      yr=obj.image(:,:,nr,fra);
+      yr=yr(:); yr=yr';
+      yr(yr==1)=2;
+      yr(yr==0)=1;
+    
+    end
     
     sumyr=[sumyr yr];
     sumyg=[sumyg yg];
@@ -201,8 +277,8 @@ sumyr=sumyr(pix);
 cate=categorical(classs);
 mate=confusionmat(sumyg,sumyr);
 
-%size(mate)
-%size(cate)
+size(mate)
+size(cate)
 cm=confusionchart(mate,cate,'ColumnSummary','column-normalized','RowSummary','row-normalized');
 xlabel('Classification predictions');
 ylabel('Groundtruth');
