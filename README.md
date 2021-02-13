@@ -1,4 +1,4 @@
-# shallow rethinks image processing pipelines, adding deeplearning enabled classification tools for segmentation and event detection
+# Shallow rethinks image processing pipelines, adding deeplearning enabled classification tools for segmentation and event detection
 
 ## Installation procedure ## 
 
@@ -90,7 +90,7 @@ user is asked whether to import ROIs included in the original classi object
 %% not really implemented yet%%
 
 
-#### removing a classification ####
+#### Removing a classification ####
 
 ```myproject.removeClassification(id)``` will remove a classifier specified by the index id.
 
