@@ -4,7 +4,7 @@ function validateTrainingData(classif,varargin)
 
 % classif is the ref to a @classi object
 
-% 'roilist' is an 2 x N array containing ROI  from the classi object
+% 'roilist' is a vector containing ROI  from the classi object
 %'Classifier' loads the classifier
 for i=1:numel(varargin)
     if strcmp(varargin{i},'Classifier')
@@ -37,7 +37,7 @@ for i=1:numel(varargin)
 end
 
 %classifier
-if exist('roilist','var')==0
+if exist('roilist','var')==0 %if no roilist is indicated
     for i=1:numel(classif.roi) % loop on all ROIs
 
      roiobj=classif.roi(i);
@@ -55,7 +55,7 @@ if exist('roilist','var')==0
 
     end
 else
-    for i=roilist % loop on all ROIs
+    for i=roilist % loop on indicated ROIs
      roiobj=classif.roi(i);
      disp('-----------');
      disp(['Classifying ' num2str(roiobj.id)]);
