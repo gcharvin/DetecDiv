@@ -51,7 +51,7 @@ cmapg(:,3)=(fliplr(l))';
     param.startY=0; % origin of Y axis for plot
     param.startX=0;
     param.figure=[];
-    param.figure.Position=[100 100 1000 300];
+    param.figure.Position=[500 500 1000 300];
     param.xlim=[];
     param.ylim=[];
     
