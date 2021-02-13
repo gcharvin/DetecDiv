@@ -1038,7 +1038,6 @@ for i=1:numel(obj.display.channel)
                 if tt==0
                     tt='not classified';
                 else
-                    tt
                     tt=obj.classes{tt};
                 end
                 str=[str ' - ' tt ' (training: ' fields{k} ')'];
