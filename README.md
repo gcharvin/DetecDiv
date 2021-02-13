@@ -90,9 +90,11 @@ user is asked whether to import ROIs included in the original classi object
 %% not really implemented yet%%
 
 
+
 #### Removing a classification ####
 
 ```myproject.removeClassification(id)``` will remove a classifier specified by the index id.
+
 
 
 #### Adding ROIs a to a classification ####
