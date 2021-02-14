@@ -16,6 +16,9 @@ function formatObjectTrainingSet(foldername,classif,rois)
 disp('Starting parallelized jobs for data formatting....')
 
 warning off all
+
+
+
 for i=rois
     disp(['Launching ROI ' num2str(i) :' processing...'])
     
@@ -99,14 +102,14 @@ for i=rois
                     maxex= min(bbox(1)+bbox(3),size(tmp,2));
                     maxey= min(bbox(2)+bbox(4),size(tmp,1));
                      
-                    imcrop=tmp(miney:maxey,minex:maxex);
+                    imcrop=tmp(miney:maxey,minex:maxex,:);
                     
+                 %   size(tmp)
                    % figure, imshow(imcrop,[]);
                    % figure, imshow(tmp,[]);
                      imwrite(imcrop,[classif.path '/' foldername '/images/' classif.classes{clas} '/' cltmp(i).id '_frame_' tr '_obj' num2str(k) '.tif']);
                 %    end
-                    
-                    
+
                 end
                 
                  % end
