@@ -84,7 +84,7 @@ for j=1:size(roiobj.image,4)
                      
                     imcrop=gfp(miney:maxey,minex:maxex,:,j);
                     
-        size(imcrop)
+       % size(imcrop)
         
       %  imcrop=gfp(bbox(2):bbox(2)+bbox(4),bbox(1):bbox(1)+bbox(3),:,j);
         
