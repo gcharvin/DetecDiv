@@ -56,8 +56,7 @@ for i=1:length(rois)
     disp(['Processing ROI ' num2str(i) '/' num2str(length(rois))]);
     
     roitocopy=obj.roi(rois(i));
-    
-    
+
     % aa=roitocopy
     if cc==0
         classif.roi=roi('',[]);
@@ -183,12 +182,12 @@ if strcmp(classif.category{1},'Pixel')
     classif.roi(cc+1).addChannel(matrix,classif.strid,[1 1 1],[0 0 0]);
     classif.roi(cc+1).display.selectedchannel(end)=1;
     
-    if isa(obj,'classi')
-        if  strcmp(obj.category{1},'Pixel')
-            pixid=classif.roi(i).findChannelID(obj.strid);
-            classif.roi(i).display.channel{pixid}=classif.strid;
-        end
-    end
+%     if isa(obj,'classi')
+%         if  strcmp(obj.category{1},'Pixel')
+%             pixid=classif.roi(i).findChannelID(obj.strid);
+%             classif.roi(i).display.channel{pixid}=classif.strid;
+%         end
+%     end
     %pixelchannel=size(obj.image,3);
 end
 
@@ -201,10 +200,10 @@ if strcmp(classif.category{1},'Object')
     
     classif.roi(cc+1).addChannel(matrix,classif.strid,[1 1 1],[0 0 0]);
     
-    if isa(obj,'classi')
-        pixid=classif.roi(i).findChannelID(obj.strid);
-        classif.roi(i).display.channel{pixid}=classif.strid;
-    end
+%     if isa(obj,'classi')
+%         pixid=classif.roi(i).findChannelID(obj.strid);
+%         classif.roi(i).display.channel{pixid}=classif.strid;
+%     end
     %pixelchannel=size(obj.image,3);
 end
 

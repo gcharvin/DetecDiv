@@ -16,7 +16,7 @@ function formatObjectTrainingSet(foldername,classif,rois)
 disp('Starting parallelized jobs for data formatting....')
 
 warning off all
-parfor i=rois
+for i=rois
     disp(['Launching ROI ' num2str(i) :' processing...'])
     
     
@@ -50,8 +50,7 @@ parfor i=rois
     im2=cltmp(i).image(:,:,pix2,:);
 
     
-    
-    for j=1:size(im,4)
+    parfor j=1:size(im,4)
         tmp=im(:,:,:,j);
         
         if numel(pix)==1
@@ -95,7 +94,12 @@ parfor i=rois
                     bbox=round(pr(k).BoundingBox);
                     clas=round(mean(labeledobjects(bw)));
                     
-                    imcrop=tmp(bbox(2):bbox(2)+bbox(4),bbox(1):bbox(1)+bbox(3),:);
+                    minex=max(bbox(1),1);
+                    miney=max(bbox(2),1);
+                    maxex= min(bbox(1)+bbox(3),size(tmp,2));
+                    maxey= min(bbox(2)+bbox(4),size(tmp,1));
+                     
+                    imcrop=tmp(miney:maxey,minex:maxex);
                     
                    % figure, imshow(imcrop,[]);
                    % figure, imshow(tmp,[]);
