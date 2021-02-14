@@ -40,7 +40,7 @@ for i=rois
     
   
     
-    reverseStr = '';
+    %reverseStr = '';
     
     
     pixelchannel2=cltmp(i).findChannelID(classif.strid);
@@ -112,9 +112,9 @@ for i=rois
                  % end
             %end
      
-       msg = sprintf('Processing frame: %d / %d for ROI %s', j, size(im,4),cltmp(i).id); %Don't forget this semicolon
-       fprintf([reverseStr, msg]);
-       reverseStr = repmat(sprintf('\b'), 1, length(msg));
+      % msg = sprintf('Processing frame: %d / %d for ROI %s', j, size(im,4),cltmp(i).id); %Don't forget this semicolon
+     %  fprintf([reverseStr, msg]);
+    %   reverseStr = repmat(sprintf('\b'), 1, length(msg));
     end
     
     fprintf('\n');
