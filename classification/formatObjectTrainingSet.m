@@ -19,7 +19,7 @@ warning off all
 
 
 
-for i=rois
+parfor i=rois
     disp(['Launching ROI ' num2str(i) :' processing...'])
     
     
@@ -43,7 +43,7 @@ for i=rois
     
   
     
-    %reverseStr = '';
+    reverseStr = '';
     
     
     pixelchannel2=cltmp(i).findChannelID(classif.strid);
@@ -52,8 +52,18 @@ for i=rois
     % find channel associated with user classified objects
     im2=cltmp(i).image(:,:,pix2,:);
 
+    t=im2>1; % at least one frame in this ROI must have an object of  class #2 otherwise this ROI is not annotated
+    pixannotation=sum(t(:))
     
-    parfor j=1:size(im,4)
+    if numel( pixannotation)==0
+        disp('This ROI is not annotated, skipping');
+        continue
+    else
+          disp('This ROI is at least partially annotated....');
+    end
+    
+    
+    for j=1:size(im,4)
         tmp=im(:,:,:,j);
         
         if numel(pix)==1
@@ -115,9 +125,9 @@ for i=rois
                  % end
             %end
      
-      % msg = sprintf('Processing frame: %d / %d for ROI %s', j, size(im,4),cltmp(i).id); %Don't forget this semicolon
-     %  fprintf([reverseStr, msg]);
-    %   reverseStr = repmat(sprintf('\b'), 1, length(msg));
+       msg = sprintf('Processing frame: %d / %d for ROI %s', j, size(im,4),cltmp(i).id); %Don't forget this semicolon
+       fprintf([reverseStr, msg]);
+       reverseStr = repmat(sprintf('\b'), 1, length(msg));
     end
     
     fprintf('\n');
