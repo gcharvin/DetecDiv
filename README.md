@@ -66,8 +66,6 @@ Also works with ROIs that belong to @classi objects
 
 
 
-
-
 ### Classification ###
 --------------
 
@@ -118,6 +116,10 @@ number of classes can be extended or decreased
 
 ```myproject.myproject.processing.classification(id).userTraining```
 launches a GUI to set the ground truth using a specific ROI
+
+
+```myproject.fov(myfovid).roi(myroiid).fillTraining()```
+Fills classes of the training of the ROI, using the last annotated frame as template. Ex: [1 0 0 0 2 0 0 3] --> [1 1 1 1 2 2 2 3]
 
 
 ```myproject.myproject.processing.classification(id).formatDataForTraining```
