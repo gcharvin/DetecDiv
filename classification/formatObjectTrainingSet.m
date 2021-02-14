@@ -53,13 +53,14 @@ parfor i=rois
     im2=cltmp(i).image(:,:,pix2,:);
 
     t=im2>1; % at least one frame in this ROI must have an object of  class #2 otherwise this ROI is not annotated
-    pixannotation=sum(t(:))
+    pixannotation=sum(t(:));
     
-    if numel( pixannotation)==0
+    if pixannotation==0
         disp('This ROI is not annotated, skipping');
         continue
     else
           disp('This ROI is at least partially annotated....');
+   %       continue
     end
     
     
