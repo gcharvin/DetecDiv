@@ -161,4 +161,7 @@ allows one to start the classification referred to as classifid on the roilist; 
 
 ### Exporting movies ###
 ---
-Coming soon
+Coming soon/In construction
+```myproject.fov.export('Frames',1:5,'Framerate',10,'FontSize',96,'Levels',[4000 14000],'DrawROIs',[],'Drift')```
+
+```myproject.processing.classification(3).export('Mosaic',1:9,'Name','test','Training','Results','Levels',[6000 20000],'Framerate',10,'Title','fob1','RLS')```
