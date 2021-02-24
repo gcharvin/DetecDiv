@@ -4,13 +4,13 @@ function [rls,rlsresults,rlsgroundtruth]=measureRLS2(roiarr,strid,classiftype)
 
 % strid is the strid of the @classi object
 
-%classiftype is the type of classif : 
+%classiftype is the type of classif :
 % classiftype='bud' : unbudded, small, large, dead etc.
 % classiftype='div' : nodiv, div, dead etc.
 
 % rls combines results and groundtruth is applicable
 % rlsresults only results
-%rlsgroundtruth only groundtruth 
+%rlsgroundtruth only groundtruth
 
 if nargin==2 % default classif method
     classiftype='bud';
@@ -63,7 +63,7 @@ for i=1:numel(roiarr)
     
     %   divtime
     rlsresults(cc).div=divtime;
-     rlsresults(cc).sep=[];
+    rlsresults(cc).sep=[];
     rlsresults(cc).fluo=[];
     rlsresults(cc).trap=roiarr(i).id;
     rlsresults(cc).ndiv=numel(divtime);
@@ -74,13 +74,13 @@ for i=1:numel(roiarr)
     
     if numel(idg) % addgroundtruth to the rls struct
         rlsgroundtruth(ccg).div=divtimeg;
-       rlsgroundtruth(ccg).sep=[];
+        rlsgroundtruth(ccg).sep=[];
         rlsgroundtruth(ccg).fluo=[];
-       rlsgroundtruth(ccg).trap=roiarr(i).id;
-       rlsgroundtruth(ccg).ndiv=numel(divtimeg);
+        rlsgroundtruth(ccg).trap=roiarr(i).id;
+        rlsgroundtruth(ccg).ndiv=numel(divtimeg);
         rlsgroundtruth(ccg).totaltime=cumsum(divtimeg);
         rlsgroundtruth(ccg).rules=[];
-       rlsgroundtruth(ccg).groundtruth=1;
+        rlsgroundtruth(ccg).groundtruth=1;
         ccg=ccg+1;
         
     end
@@ -98,111 +98,130 @@ divtime=[];
 % empty cavity)
 
 switch classiftype
+    
+    %BUD CLASSIF
     case 'bud'
-    
-deathid=findclassid(classes,'dead');
-clogid=findclassid(classes,'clog');
-lbid=findclassid(classes,'large');
-smid=findclassid(classes,'small');
-unbuddedid=findclassid(classes,'unbudded');
-emptyid=findclassid(classes,'empty');
-
-pixbirth=find(id==emptyid,1,'last');
-
-if numel(pixbirth)==0 % cavity was not empty;
-    pixbirth=1;
-end
-
-pixend=find(id==deathid | id==clogid);
-
-if numel(pixend)==0 % cell is not dead --> censored
-    pixend=numel(id);
-else
-    % find strech of dead cells
-    
-    bw=id==deathid;
-    l=bwlabel(bw);
-    
-    for k=1:max(l)
-        bw=l==k;
-        if sum(bw)> 5
-            pixend=find(bw,1,'first');
-            break
-        end
-    end
-end
-
-divtime=[];
-for j=pixbirth:pixend-1
-    % j
-    if (id(j)==lbid && id(j+1)==smid) | (id(j)==lbid && id(j+1)==unbuddedid) % cell has divided
-        %  j
-        divtime=[divtime j];
-    end
-end
-
-if numel(divtime)<3
-    %continue
-else
-    divtime=diff(divtime); % division times !
-end
-
-    case 'div'
-   
-deathid=findclassid(classes,'dead');
-clogid=findclassid(classes,'clog');
-div=findclassid(classes,'div');
-nodiv=findclassid(classes,'nodiv');
-
-
-%pixbirth=find(id==emptyid,1,'last');
-
-%if numel(pixbirth)==0 % cavity was not empty;
-    pixbirth=1;
-%end
-
-pixend=find(id==deathid | id==clogid);
-
-if numel(pixend)==0 % cell is not dead --> censored
-    pixend=numel(id);
-else
-    % find strech of dead cells
-    
-    bw=id==deathid;
-    l=bwlabel(bw);
-    
-    for k=1:max(l)
-        bw=l==k;
-        if sum(bw)> 5
-            pixend=find(bw,1,'first');
-            break
-        end
-    end
-end
-
-divtime=[];
-for j=pixbirth:pixend-1
-    % j
-    if id(j)==div % cell has divided
-        %  j
-        divtime=[divtime j];
-    end
-end
-
-if numel(divtime)<3
-    %continue
-else
-    divtime=diff(divtime); % division times !
-end        
+        deathid=findclassid(classes,'dead');
+        clogid=10;%findclassid(classes,'clog');
+        lbid=findclassid(classes,'large');
+        smid=findclassid(classes,'small');
+        unbuddedid=10;%findclassid(classes,'unbudded');
+        emptyid=findclassid(classes,'empty');
+        
+        %find BIRTH
+        firstsm=find(id==smid,1,'first');
+        firstlg=find(id==lbid,1,'first');
+        frameBirth=min(firstsm,firstlg);
         
         
+        %find potential the first EMPTY frame, after birth
+        frameEmptied=[];
+        bwEmpty=(id==emptyid);
+        bwEmptyLabeled=bwlabel(bwEmpty);
+        for k=1:max(bwEmptyLabeled)
+            bwEmpty=(bwEmptyLabeled==k);
+            if sum(bwEmpty)> 3 && find(bwEmpty,1,'first')>frameBirth
+                frameEmptied=find(bwEmpty,1,'first');
+                break               
+            end
+        end
+        if numel(frameEmptied)==0
+            frameEmptied=NaN;
+        end
+        
+        % find DEATH (need 5 frames to be validated)
+        frameDeath=NaN;
+        bwDeath=(id==deathid);
+        bwDeathLabeled=bwlabel(bwDeath);
+        
+        for k=1:max(bwDeathLabeled)
+            bwDeath=(bwDeathLabeled==k);
+            if sum(bwDeath)> 5
+                frameDeath=find(bwDeath,1,'first');
+                break               
+            end
+        end
+        
+        %find potential first CLOG
+        frameClog=find(id==clogid,1,'first');
+        if numel(frameClog)==0
+            frameClog=NaN;
+        end
+        
+        %find END
+        frameEnd=min([frameClog frameDeath frameEmptied]);
+        if isnan(frameEnd) % cell is not dead or clogged or empty, TO DO: SEPARATE BETWEEN DEATH AND CENSOR
+            frameEnd=numel(id);
+            %machin.censor=1;
+        end
+
+        divtime=[];
+        for j=frameBirth:frameEnd-1
+            if (id(j)==lbid && id(j+1)==smid) || (id(j)==lbid && id(j+1)==unbuddedid) % cell has divided
+                divtime=[divtime j];
+            end
+        end
+
+        if numel(divtime)<3
+            %continue
+        else
+            divtime=diff(divtime); % division times !
+        end
+                    
+            %DIV CLASSIF
+            case 'div'
+                deathid=findclassid(classes,'dead');
+                clogid=findclassid(classes,'clog');
+                div=findclassid(classes,'div');
+                nodiv=findclassid(classes,'nodiv');
+                
+                
+                %frameBirth=find(id==emptyid,1,'last');
+                
+                %if numel(frameBirth)==0 % cavity was not empty;
+                frameBirth=1;
+                %end
+                
+                frameEnd=find(id==deathid | id==clogid);
+                
+                if numel(frameEnd)==0 % cell is not dead --> censored
+                    frameEnd=numel(id);
+                else
+                    % find strech of dead cells
+                    
+                    bwDeath=id==deathid;
+                    l=bwlabel(bwDeath);
+                    
+                    for k=1:max(l)
+                        bwDeath=l==k;
+                        if sum(bwDeath)> 5
+                            frameEnd=find(bwDeath,1,'first');
+                            break
+                        end
+                    end
+                end
+                
+                divtime=[];
+                for j=frameBirth:frameEnd-1
+                    % j
+                    if id(j)==div % cell has divided
+                        %  j
+                        divtime=[divtime j];
+                    end
+                end
+                
+                if numel(divtime)<3
+                    %continue
+                else
+                    divtime=diff(divtime); % division times !
+                end         
 end
-
-
-
-
-
-
+        
+        
+        
+        
+        
+        
 function clid=findclassid(classes,str)
 clid=[];
 for i=1:numel(classes)
