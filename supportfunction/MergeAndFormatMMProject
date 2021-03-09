@@ -14,6 +14,7 @@ function mergeMMProjects(outputname,inputfolder)
 
 %To the dev: careful when dealing with string, convert to char when needed! Most
 %functions take char array as inputs, and NOT strings
+sortChannel=1;
 
 if nargin<2
     inputfolder=pwd;
@@ -69,9 +70,11 @@ mkdir(inputfolder,outputname);
 for i=1:numberOfPos
     %make the pos folders
     mkdir([inputfolder '/' outputname],sprintf('Pos%i',i-1));
-    for c=1:numberOfChannel
-        %make the channel folders
-        mkdir([inputfolder '/' outputname '/' sprintf('Pos%i',i-1)],sprintf('Channel%i',c));
+    if sortChannel==1
+        for c=1:numberOfChannel
+            %make the channel folders
+            mkdir([inputfolder '/' outputname '/' sprintf('Pos%i',i-1)],sprintf('Channel%i',c));
+        end
     end
 end
 %%
@@ -95,24 +98,25 @@ for i=1:numel(projectFolder) % loop on project
 %             end
 %             [~,SidxT] = sort(numsFile(3,:));
 %             sourceNames(:,c) = sourceNames(SidxT,c);
-        
-            for k=1:numberOfFrames(i)/numberOfChannel %loop on timepoint
+            if sortChannel==1
+                for k=1:numberOfFrames(i)/numberOfChannel %loop on timepoint
 
-                %create the sourcenames and destinames
-                posNumber=extractAfter(sourceNames(1,c),'Pos'); %useless now that pos are sorted
-                destiPosFolder=[inputfolder '/' outputname, '/', 'Pos', num2str(posi), '/' sprintf('Channel%i',c)];
-                
-                newtime=sprintf('New%05i',scannedFrames(posi,c));
-                sourcefile=char(strcat(sourcePosFolder(k).folder, '/', sourceNames(k,c)));
+                    %create the sourcenames and destinames
+                    posNumber=extractAfter(sourceNames(1,c),'Pos'); %useless now that pos are sorted
+                    destiPosFolder=[inputfolder '/' outputname, '/', 'Pos', num2str(posi-1), '/' sprintf('Channel%i',c)];
 
-                %copy the files into the new merged folder
-                copyfile(sourcefile, destiPosFolder)
-                %rename
-                destiFileName=replaceBetween(sourceNames(k,c),'_time','_z',newtime);
-                movefile([destiPosFolder '/' char(sourceNames(k,c))], [destiPosFolder '/' char(destiFileName)]);
- 
-                scannedFrames(posi,c)=scannedFrames(posi,c)+1;
-                fprintf('Processing project folder %02i, position %03i, channel%03i, frame %05i...ie %i/%i frames\n',i, posi, c-1,scannedFrames(posi,c),sum(sum(scannedFrames)),sum(numberOfFrames)*numberOfPos);
+                    newtime=sprintf('New%05i',scannedFrames(posi,c));
+                    sourcefile=char(strcat(sourcePosFolder(k).folder, '/', sourceNames(k,c)));
+
+                    %copy the files into the new merged folder
+                    copyfile(sourcefile, destiPosFolder)
+                    %rename
+                    destiFileName=replaceBetween(sourceNames(k,c),'_time','_z',newtime);
+                    movefile([destiPosFolder '/' char(sourceNames(k,c))], [destiPosFolder '/' char(destiFileName)]);
+
+                    scannedFrames(posi,c)=scannedFrames(posi,c)+1;
+                    fprintf('Processing project folder %02i, position %03i, channel%03i, frame %05i...ie %i/%i frames\n',i, posi, c-1,scannedFrames(posi,c),sum(sum(scannedFrames)),sum(numberOfFrames)*numberOfPos);
+                end
             end
         end
     end
