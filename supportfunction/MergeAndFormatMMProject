@@ -1,4 +1,4 @@
-function mergeMMProjects(outputname,inputfolder)
+function MergeAndFormatMMProject(outputname,inputfolder)
 %merge phylocell project into one output project and create channel
 %subfolders
 
@@ -121,11 +121,3 @@ for i=1:numel(projectFolder) % loop on project
         end
     end
 end
-
-
-
-
-
-
-
-
