@@ -158,6 +158,16 @@ to groundtruth
 ```myproject.classifyData(classifid,roilist,option)```
 allows one to start the classification referred to as classifid on the roilist; You can provide the classifier as an option, so that it is not loaded each time you run the function
 
+### Extract signal from ROIs ###
+```myproject.fov.extractFluo(cf arguments below)```
+or
+```myproject.processing.classification(id).extractFluo(cf arguments below)```
+Extract signal from the ROIs of the fov or classi object. 
+Arguments:
+'Method': 'maxPixels' computes the average of the kMaxPixels. // 'mean'
+'Channels'
+'Frames'
+'Rois'
 
 ### Exporting movies ###
 ---
