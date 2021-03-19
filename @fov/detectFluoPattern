@@ -5,7 +5,7 @@ function detectFluoPattern(obj,varargin)
 %obj.extractFluo must have been run beforehand.
 
 %Arguments:
-%*'Method': 'maxPixels' check .fluo.maxf // 'mean' checks the fluo.meanf
+%*'Method': 'maxPixels' checks .fluo.maxf // 'mean' checks the fluo.meanf
 %*'Channels'
 %*'Frames'
 %*'Rois'
