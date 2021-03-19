@@ -1,6 +1,6 @@
 function detectFluoPattern(obj,varargin)
 %This function detects if a fluoThreshold has been reached for at least
-%timeThreshold frames in obj.roi(r).results.classiid.fluo.methodf(c,t) for the 'Channels' c using the 'Method'.
+%frameThreshold frames in obj.roi(r).results.classiid.fluo.methodf(c,t) for the 'Channels' c using the 'Method'.
 %Stores the info in fov.flaggedROIs
 %obj.extractFluo must have been run beforehand.
 
@@ -10,10 +10,10 @@ function detectFluoPattern(obj,varargin)
 %*'Frames'
 %*'Rois'
 %*'fluoThreshold'
-%*'timeThreshold' number of frames to be above fluoThreshold
+%*'frameThreshold' number of frames to be above fluoThreshold
 
 fluoThreshold=1500;
-timeThreshold=5;
+frameThreshold=5;
 frames=1:numel(obj.srclist{1}); % take the number of frames from the image list 
 rois=1:numel(obj.roi);
 method='mean';
@@ -36,8 +36,8 @@ for i=1:numel(varargin)
     end
 
     %timeThresold
-    if strcmp(varargin{i},'timeThreshold')
-        timeThreshold=varargin{i+1};
+    if strcmp(varargin{i},'frameThreshold')
+        frameThreshold=varargin{i+1};
     end
     
     %Frames
@@ -84,15 +84,16 @@ if strcmp(method,'maxPixels')
                     flagFluo=flagFluo+1;
                 end
             end
-            if flagFluo>timeThreshold
+            if flagFluo>frameThreshold
                 if ~ismember(r,obj.flaggedROIs) % to avoid redundancy in case 2 channels are positive
                     obj.flaggedROIs=[obj.flaggedROIs r];
                 end
-                disp(['ROI' num2str(r) ' is positive for channel' num2str(c)])
+                disp(['ROI' num2str(r) ' is positive for channel ' num2str(c)])
             else
-                disp(['ROI' num2str(r) ' is negative for channel' num2str(c)])
+                disp(['ROI' num2str(r) ' is negative for channel ' num2str(c)])
             end
         end
+        fprintf('\n')
     end
 end
 
@@ -111,7 +112,7 @@ if strcmp(method,'mean')
                     flagFluo=flagFluo+1;
                 end
             end
-            if flagFluo>timeThreshold
+            if flagFluo>frameThreshold
                 if ~ismember(r,obj.flaggedROIs) % to avoid redundancy in case 2 channels are positive
                     obj.flaggedROIs=[obj.flaggedROIs r];
                 end
@@ -120,6 +121,6 @@ if strcmp(method,'mean')
                 disp(['ROI' num2str(r) ' is negative for channel ' num2str(c)])
             end
         end
-        
+        fprintf('\n')
     end
 end
