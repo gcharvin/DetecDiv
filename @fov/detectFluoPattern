@@ -1,6 +1,9 @@
 function detectFluoPattern(obj,varargin)
-%This function detects if a threshold has been reached for at least timeThreshold frames in obj.roi(r).results.classiid.fluo.maxf(c,t) for the 'Channels' using the 'Method' and
+%This function detects if a fluoThreshold has been reached for at least
+%timeThreshold frames in obj.roi(r).results.classiid.fluo.methodf(c,t) for the 'Channels' c using the 'Method'.
+%Stores the info in fov.flaggedROIs
 %obj.extractFluo must have been run beforehand.
+
 %Arguments:
 %*'Method': 'maxPixels' check .fluo.maxf // 'mean' checks the fluo.meanf
 %*'Channels'
