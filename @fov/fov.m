@@ -11,6 +11,7 @@ classdef fov < handle
         roi=roi('',[]);
         number=1;
         crop=[]; %cropping area for fov
+        flaggedROIs=[];
     end
     
     properties (Dependent)
