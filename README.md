@@ -144,6 +144,8 @@ loads the classifier associated with @classi object in the workspace
 ```myproject.processing.classification(id).validateTrainingData(optional: classifier)```
 uses the classifier of the @classi object (optional: provide a classifier) to classify ROIs used to build the groundtruth in order to compare with classification results
 
+```myproject.classifyData(classifid,roilist,option)```
+allows one to start the classification referred to as classifid on the roilist; You can provide the classifier as an option, so that it is not loaded each time you run the function
 
 ```myproject.processing.classification(id).displayValidation```
 loads a specific ROI along with the classification results and groundtruth if there are any
@@ -154,9 +156,12 @@ This also provides basic statistics about the classification
 compute and stores (as a txt file) the statistics associated with the classification and comparison
 to groundtruth
 
+### Quantify RLS ###
+```rls=measureRLS2(theo.processing.classification(1),theo.processing.classification(1).strid)```
 
-```myproject.classifyData(classifid,roilist,option)```
-allows one to start the classification referred to as classifid on the roilist; You can provide the classifier as an option, so that it is not loaded each time you run the function
+```plotRLS(rls)```
+
+```statRLS(rls)```
 
 ### Extract signal from ROIs ###
 ```myproject.fov.extractFluo(cf arguments below)```
