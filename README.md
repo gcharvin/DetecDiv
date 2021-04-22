@@ -157,13 +157,14 @@ compute and stores (as a txt file) the statistics associated with the classifica
 to groundtruth
 
 ### Quantify RLS ###
+---------------------
 ```rls=measureRLS2(theo.processing.classification(1),theo.processing.classification(1).strid)```
 
 ```plotRLS(rls)```
 
 ```statRLS(rls)```
-
 ### Extract signal from ROIs ###
+---------------------
 ```myproject.fov.extractFluo(cf arguments below)```
 or
 ```myproject.processing.classification(id).extractFluo(cf arguments below)```
@@ -175,7 +176,7 @@ Arguments:
 'Rois'
 
 ### Exporting movies ###
----
+------------------------
 Coming soon/In construction
 ```myproject.fov.export('Frames',1:5,'Framerate',10,'FontSize',96,'Levels',[4000 14000],'DrawROIs',[],'Drift')```
 
