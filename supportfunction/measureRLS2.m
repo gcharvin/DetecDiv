@@ -10,6 +10,7 @@ function [rls,rlsResults,rlsGroundtruth]=measureRLS2(classi,varargin)
 % rlsResults only results
 %rlsGroundtruth only groundtruth
 classiftype='bud';
+postProcessing=1;
 rois=1:numel(classi.roi);
 
 for i=1:numel(varargin)
@@ -49,11 +50,11 @@ classes=classi.classes;
 % classiid=(classiid{classiidsNum});
 classiid=classi.strid;
 
-rls.div=[];
+rls.divDuration=[];
 rls.framediv=[];
 rls.sep=[];
 rls.fluo=[];
-rls.trap='';
+rls.trapfov='';
 rls.ndiv=0;
 rls.totaltime=0;
 rls.rules=[];
@@ -66,7 +67,7 @@ cc=1;
 ccg=1;
 
 for r=rois
-    %RESULTS
+    %================RESULTS===============
     if isfield(classi.roi(r).results,classiid)
         if isfield(classi.roi(r).results.(classiid),'id')
             if sum(classi.roi(r).results.(classiid).id)>0
@@ -74,10 +75,11 @@ for r=rois
 
                 divTimes=computeDivtime(id,classes,classiftype);
                 
-                rlsResults(cc).div=divTimes.duration;
-                rlsResults(cc).framediv=divTimes.frame;
+                rlsResults(cc).divDuration=divTimes.duration;
+                rlsResults(cc).framediv=divTimes.framediv;
                 rlsResults(cc).sep=[];
-                rlsResults(cc).trap=classi.roi(r).id;
+                rlsResults(cc).trapfov=classi.roi(r).id;
+                rlsResults(cc).trapclassi=['classi(' num2str(classi.id) ').roi(' num2str(r) ')'];
                 rlsResults(cc).ndiv=numel(divTimes.duration);
                 rlsResults(cc).totaltime=cumsum(divTimes.duration);
                 rlsResults(cc).rules=[];
@@ -87,26 +89,27 @@ for r=rois
                 divFluo=computeFluoDiv(classi,r,classiid,rlsResults(cc));
                 rlsResults(cc).fluo=divFluo;
             else
-%                 disp(['there is no result available for ROI ' num2str(rois(r)) '=' num2str(classi.roi(r).id)]);
+                disp(['there is no result available for ROI ' num2str(r) '=' num2str(classi.roi(r).id)]);
             end
         end
     end
     cc=cc+1;
 
-    %GROUNDTRUTH
+    %==================GROUNDTRUTH===================
     %Groundtruth?
     idg=[];
     if isfield(classi.roi(r).train.(classiid),'id') % test if groundtruth data available
         if sum(classi.roi(r).train.(classiid).id)>0
             idg=classi.roi(r).train.(classiid).id; % results for classification
-%             disp(['Groundtruth data are available for ROI ' num2str(rois(r)) '=' num2str(classi.roi(r).id)]);
+             disp(['Groundtruth data are available for ROI ' num2str(r) '=' num2str(classi.roi(r).id)]);
             
             divTimesG=computeDivtime(idg,classes,classiftype); % groundtruth data
                         
-            rlsGroundtruth(ccg).div=divTimesG.duration;
-            rlsGroundtruth(ccg).framediv=divTimesG.frame;
+            rlsGroundtruth(ccg).divDuration=divTimesG.duration;
+            rlsGroundtruth(ccg).framediv=divTimesG.framediv;
             rlsGroundtruth(ccg).sep=[];
-            rlsGroundtruth(ccg).trap=classi.roi(r).id;
+            rlsGroundtruth(ccg).trapfov=classi.roi(r).id;
+            rlsGroundtruth(ccg).trapclassi=['classi(' num2str(classi.id) ').roi(' num2str(r) ')'];
             rlsGroundtruth(ccg).ndiv=numel(divTimesG.duration);
             rlsGroundtruth(ccg).totaltime=cumsum(divTimesG.duration);
             rlsGroundtruth(ccg).rules=[];
@@ -120,12 +123,17 @@ for r=rois
     ccg=ccg+1;
 end
 
-rls=[rlsResults ; rlsGroundtruth];
+rls=[rlsResults rlsGroundtruth];
 rls=rls(:);
+[p ix]= sort({rls(:).trapclassi});
+rls=rls(ix);
 
 
-%DIVTIMES
-function [divTimes]=computeDivtime(id,classes,classiftype)
+
+
+
+%=========================================DIVTIMES=================================================
+function [divTimes]=computeDivtime(id,classes,classiftype)%,postProcessing)
 
 divTimes=[];
 
@@ -134,7 +142,7 @@ divTimes=[];
 
 switch classiftype
     
-    %BUD CLASSIF
+    %========================CLASSIF BUD========================
     case 'bud'
         deathid=findclassid(classes,'dead');
         clogid=10;%findclassid(classes,'clog');
@@ -143,13 +151,13 @@ switch classiftype
         unbuddedid=10;%findclassid(classes,'unbudded');
         emptyid=findclassid(classes,'empty');
         
-        %find BIRTH
+        %==============find BIRTH===============
         firstsm=find(id==smid,1,'first');
         firstlg=find(id==lbid,1,'first');
         frameBirth=min(firstsm,firstlg);
         
         
-        %find potential the first EMPTY frame, after birth
+        %========find potential the first EMPTY frame, after birth=======
         frameEmptied=[];
         bwEmpty=(id==emptyid);
         bwEmptyLabeled=bwlabel(bwEmpty);
@@ -177,19 +185,20 @@ switch classiftype
             end
         end
         
-        %find potential first CLOG
+        %=================find potential first CLOG==============
         frameClog=find(id==clogid,1,'first');
         if numel(frameClog)==0
             frameClog=NaN;
         end
         
-        %find END
+        %===============find END===================
         frameEnd=min([frameClog frameDeath frameEmptied]);
         if isnan(frameEnd) % cell is not dead or clogged or empty, TO DO: SEPARATE BETWEEN DEATH AND CENSOR
             frameEnd=numel(id);
             %machin.censor=1;
         end
         
+        %==============detect divisions============
         divFrames=[];
         for j=frameBirth:frameEnd-1
             if (id(j)==lbid && id(j+1)==smid) || (id(j)==lbid && id(j+1)==unbuddedid) % cell has divided
@@ -197,16 +206,16 @@ switch classiftype
             end
         end
         
-        if numel(divFrames)<3
-            %continue
-        else
-            divFrames=diff(divFrames); % division times !
-        end
+%         if numel(divFrames)<3
+%             %continue
+%         else
+            divTimes.framediv=divFrames;
+            divTimes.duration=diff(divFrames); % division times !
+%         end
         
-        divTimes.frame=divFrames;
-        divTimes.duration=diff(divFrames); % division times !
+
         
-    %DIV CLASSIF
+    %====================CLASSIF DIV======================
     case 'div'
         deathid=findclassid(classes,'dead');
         censorid=findclassid(classes,'censor');
@@ -231,40 +240,40 @@ switch classiftype
                 divFrames=[divFrames j];
             end
         end
-        divTimes.frame=divFrames;
+        divTimes.framediv=divFrames;
         divTimes.duration=diff(divFrames); % division times ! 
 end
 
 
-%FLUO
+%==============================================FLUO======================================================
 function divFluo=computeFluoDiv(classi,r,classiid,rls)
-
+divFluo=[];
 if isfield(classi.roi(r).results,classiid)
     %essayer try catch
-    if isfield(classi.roi(r).results.(classiid).fluo,'maxf')
-        for chan=1:numel(classi.roi(r).results.(classiid).fluo.maxf(:,1))
-            tt=1;
-            for t=1:rls.ndiv
-                divFluo.maxf(chan,t)=mean(classi.roi(r).results.(classiid).fluo.maxf(chan,rls.framediv(tt):rls.framediv(tt+1)));
-                tt=tt+1;
+    if isfield(classi.roi(r).results.(classiid),'fluo')
+        if isfield(classi.roi(r).results.(classiid).fluo,'maxf')
+            for chan=1:numel(classi.roi(r).results.(classiid).fluo.maxf(:,1))
+                tt=1;
+                for t=1:rls.ndiv
+                    divFluo.maxf(chan,t)=mean(classi.roi(r).results.(classiid).fluo.maxf(chan,rls.framediv(tt):rls.framediv(tt+1)));
+                    tt=tt+1;
+                end
             end
+        else
+            disp(['There is no fluo.maxf data for this ROI' num2str(r)])
         end
-    else
-        disp(['There is no fluo.maxf data for this ROI' num2str(r)])
-    end
-end
 
-if isfield(classi.roi(r).results,classiid)
-    if isfield(classi.roi(r).results.(classiid).fluo,'meanf')
-        for chan=1:numel(classi.roi(r).results.(classiid).fluo.meanf(:,1))
-            tt=1;
-            for t=1:rls.ndiv
-                divFluo.meanf(chan,t)=mean(classi.roi(r).results.(classiid).fluo.meanf(chan,rls.framediv(tt):rls.framediv(tt+1)));
-                tt=tt+1;
+        if isfield(classi.roi(r).results.(classiid).fluo,'meanf')
+            for chan=1:numel(classi.roi(r).results.(classiid).fluo.meanf(:,1))
+                tt=1;
+                for t=1:rls.ndiv
+                    divFluo.meanf(chan,t)=mean(classi.roi(r).results.(classiid).fluo.meanf(chan,rls.framediv(tt):rls.framediv(tt+1)));
+                    tt=tt+1;
+                end
             end
+        else
+            disp(['There is no fluo.meanf data for this ROI' num2str(r)])
         end
-    else
-        disp(['There is no fluo.meanf data for this ROI' num2str(r)])
     end
 end
 

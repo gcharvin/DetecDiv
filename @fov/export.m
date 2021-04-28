@@ -11,7 +11,7 @@ ips=10;
 framerate=0;
 channels=1;
 fontsize=20;
-levels=[4000 15000; 500 1000; 500 1000; 500 1000];
+levels=[3500 23000; 500 1000; 500 1000; 500 1000];
 drawrois=-1;
 drift=[];
 
@@ -159,14 +159,17 @@ im(:,:,2,:)=im(:,:,1,:);
 im(:,:,3,:)=im(:,:,1,:);
 
 for j=1:size(im,4)
+    
+    %==TIMESTAMP==
     if framerate >0
         timestamp=[num2str((j-1)*framerate) 'min'];
         
         im(:,:,:,j)=insertText( im(:,:,:,j),[10 40],timestamp,'Font','Arial','FontSize',fontsize,'BoxColor',...
-            [1 1 1],'BoxOpacity',0.0,'TextColor','red','AnchorPoint','leftcenter');
+            [1 1 1],'BoxOpacity',0.5,'TextColor','white','AnchorPoint','leftcenter');
         %fprintf('.')
     end
     
+    %==ROIS==
     if numel(drawrois)>0 & drawrois>0
         for i=drawrois
             if i<=length(obj.roi)

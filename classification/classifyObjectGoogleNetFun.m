@@ -76,17 +76,7 @@ for j=1:size(roiobj.image,4)
         
         bbox=round(pr(k).BoundingBox);
         
-                    
-                    minex=max(bbox(1),1);
-                    miney=max(bbox(2),1);
-                    maxex= min(bbox(1)+bbox(3),size(tmp,2));
-                    maxey= min(bbox(2)+bbox(4),size(tmp,1));
-                     
-                    imcrop=gfp(miney:maxey,minex:maxex,:,j);
-                    
-       % size(imcrop)
-        
-      %  imcrop=gfp(bbox(2):bbox(2)+bbox(4),bbox(1):bbox(1)+bbox(3),:,j);
+        imcrop=gfp(bbox(2):bbox(2)+bbox(4),bbox(1):bbox(1)+bbox(3),:,j);
         
         imcrop = imresize(imcrop,inputSize(1:2));
         
@@ -100,11 +90,11 @@ for j=1:size(roiobj.image,4)
     
     % [label,scores] = classify(net,imlist);
      
-   %    if numel(gpuDeviceCount)==0
+       if numel(gpuDeviceCount)==0
     [label,scores] = classify(net,imlist); % this is used to get the probabilities rather than the classification itself
- %  else
-   % [label,scores] = classify(net,imlist,'Acceleration','mex');   
- %  end
+   else
+    [label,scores] = classify(net,imlist,'Acceleration','mex');   
+   end
      %label
      
      ob2=tmp;
