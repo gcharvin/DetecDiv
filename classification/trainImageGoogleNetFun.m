@@ -1,3 +1,5 @@
+
+
 function trainImageGoogleNetFun(path,name)
 
 % gather all classification images in each class and performs the training and outputs and saves the trained net 
@@ -19,6 +21,7 @@ imds = imageDatastore(foldername, ...
 
 classWeights = 1./countcats(imds.Labels);
 classWeights = classWeights'/mean(classWeights);
+
 
 fprintf('Loading training options...\n');
 fprintf('------\n');

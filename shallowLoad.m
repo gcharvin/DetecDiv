@@ -1,5 +1,6 @@
 function shallowObj=shallowLoad(filename)
 
+
 if nargin==0
    [file,path] = uigetfile('*.mat','Select a shallow project',pwd);
    if isequal(file,0)
