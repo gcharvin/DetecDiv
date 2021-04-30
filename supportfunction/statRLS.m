@@ -45,8 +45,8 @@ ylim([0 1.05]);
 rlsg=[rls.groundtruth]==1;
 rlst=[rls.groundtruth]==0;
 
-divg=[rls(rlsg).div];
-divt=[rls(rlst).div];
+divg=[rls(rlsg).divDuration];
+divt=[rls(rlst).divDuration];
 
 bins=0:1:40;
 [ng xg]=hist(divg,bins);
@@ -59,7 +59,7 @@ p=ranksum(divg,divt);
 legend({['Computed times; median= ' num2str(median(divg)) ' (N= ' num2str(length(divg)) ')'],['Groundtruth; median= ' num2str(median(divt)) ' (N= ' num2str(length(divt)) ')']});
 title(['Division times; p=' num2str(p)]);
 set(gca,'FontSize',16);
-xlabel('Divistion time (frames)');
+xlabel('Division time (frames)');
 ylabel('# Events');
 
 

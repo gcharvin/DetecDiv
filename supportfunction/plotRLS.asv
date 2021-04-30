@@ -51,7 +51,7 @@ if nargin<2 % no parameter provided build a param variable
 
     
     param.minmax=[2 25]; % min and max values for display;
-    param.startY=-15; % origin of Y axis for plot
+    param.startY=0; % origin of Y axis for plot
     param.startX=0;
     param.figure=[];
     param.figure.Position=[100 100 1000 300];
@@ -212,8 +212,7 @@ if numel(rls)>1
     text(30,50, ['Median RLS= ' num2str(med) ' (n=' num2str(numel(rls)) ')'],'FontSize',20);
 end
 
-%PLOT LABEL
-set(gca,'FontSize',14,'Ytick',ti(1:2:length(ti)),'YTickLabel',leg(1:2:length(leg)));
+set(gca,'FontSize',14,'Ytick',ti(1:,'YTickLabel',leg(1:2:length(leg));
 
 
 if param.time==0

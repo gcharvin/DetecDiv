@@ -16,9 +16,6 @@ function formatObjectTrainingSet(foldername,classif,rois)
 disp('Starting parallelized jobs for data formatting....')
 
 warning off all
-
-
-
 parfor i=rois
     disp(['Launching ROI ' num2str(i) :' processing...'])
     
@@ -52,16 +49,6 @@ parfor i=rois
     % find channel associated with user classified objects
     im2=cltmp(i).image(:,:,pix2,:);
 
-    t=im2>1; % at least one frame in this ROI must have an object of  class #2 otherwise this ROI is not annotated
-    pixannotation=sum(t(:));
-    
-    if pixannotation==0
-        disp('This ROI is not annotated, skipping');
-        continue
-    else
-          disp('This ROI is at least partially annotated....');
-   %       continue
-    end
     
     
     for j=1:size(im,4)
@@ -108,19 +95,14 @@ parfor i=rois
                     bbox=round(pr(k).BoundingBox);
                     clas=round(mean(labeledobjects(bw)));
                     
-                    minex=max(bbox(1),1);
-                    miney=max(bbox(2),1);
-                    maxex= min(bbox(1)+bbox(3),size(tmp,2));
-                    maxey= min(bbox(2)+bbox(4),size(tmp,1));
-                     
-                    imcrop=tmp(miney:maxey,minex:maxex,:);
+                    imcrop=tmp(bbox(2):bbox(2)+bbox(4),bbox(1):bbox(1)+bbox(3),:);
                     
-                 %   size(tmp)
                    % figure, imshow(imcrop,[]);
                    % figure, imshow(tmp,[]);
                      imwrite(imcrop,[classif.path '/' foldername '/images/' classif.classes{clas} '/' cltmp(i).id '_frame_' tr '_obj' num2str(k) '.tif']);
                 %    end
-
+                    
+                    
                 end
                 
                  % end

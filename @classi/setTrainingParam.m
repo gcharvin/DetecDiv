@@ -41,7 +41,7 @@ if ~strcmp(trai,'n')
         
     end
     
-    if classif.typeid==1 || (classif.typeid==4 & strcmp(trainingParam.imageclassifier,'y')) || classif.typeid==7 %(image,objects)
+    if classif.typeid==1 || (classif.typeid==4 & strcmp(trainingParam.imageclassifier,'y'))
         trainingParam=imageTraining(trainingParam);
     end
     

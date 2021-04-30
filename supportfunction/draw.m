@@ -20,7 +20,7 @@ if numel(h.UserData)~=0 % window is already displayed; therefore just update the
     
     % sort Axes !
     s=[];
-
+    hp
     for i=1:numel(hp)
         s(i)=str2num(hp(i).Tag(7:end));
     end
@@ -291,8 +291,8 @@ if numel(classif)>0
                 axes(hp(cha1))
                 alpha(0.5);
                 
-                cha1pos=get(hp(cha1),'Position');
-                hcopy=findobj(hp,'UserData',classif.strid);
+                cha1pos=get(hp(cha1),'Position')
+                hcopy=findobj(hp,'UserData',classif.strid)
                 %
                 htmp = copyobj(hcopy,h);
                 htmp.Position=cha1pos;
