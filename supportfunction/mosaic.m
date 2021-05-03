@@ -1,5 +1,5 @@
 function mosaic(obj,varargin)
-% generates a mosaic movie with multiple cavities and rich features
+% generates a rois movie with multiple cavities and rich features
 
 % obj is the reference object: it can be either a @shallow, a @classi, or a
 % @ROI.
@@ -10,7 +10,7 @@ name=[];
 ips=10;
 framerate=0;
 channels=1;
-fontsize=20;
+fontsize=15;
 levels=[4000 15000; 500 1000; 500 1000; 500 1000];
 training=[];
 results=[];
@@ -22,11 +22,11 @@ rls=0;
 if isa(obj,'classi')
     frames=1:size(obj.roi(1).image,4); % take the number of frames from the image list
     strid=obj.strid;
-     mosaic=[1 2 3];
+     rois=[1 2 3];
 end
 if isa(obj,'shallow')
     frames=1:numel(obj.fov(1).srclist{1}); % take the number of frames from the image list
-    mosaic=[1 1 1; 1 2 3];
+    rois=[1 1 1; 1 2 3];
 end
 if isa(obj,'roi')
     frames=1:size(obj.image,4); % take the number of frames from the image list
@@ -60,7 +60,7 @@ for i=1:numel(varargin)
     end
     
     if strcmp(varargin{i},'Mosaic') % draws the contour of ROIs on the movie
-        mosaic=varargin{i+1};
+        rois=varargin{i+1};
         
     end
     
@@ -84,17 +84,17 @@ for i=1:numel(varargin)
         roititle=1;
     end
     
-    if strcmp(varargin{i},'RLS') % display title for each roi
+    if strcmp(varargin{i},'RLS') %
         rls=1;
     end
     
 end
 
 
-% mosaic mode: displays specific ROIs from different FOVs
+% rois mode: displays specific ROIs from different FOVs
 % find number of lines and columns
 if isa(obj,'roi')
-    mosaic=[];
+    rois=[];
 end
 
 if isa(obj,'roi') |  isa(obj,'shallow')
@@ -107,8 +107,8 @@ if isa(obj,'roi') |  isa(obj,'shallow')
 end
 
 
-if numel(mosaic)
-    nmov=size(mosaic,2);
+if numel(rois)
+    nmov=size(rois,2);
     nsize=[1 1; 1 2; 1 3; 2 2; 2 3; 2 3; 3 3; 3 3; 3 3];
     if nmov>9
         nsize=floor(sqrt(nmov-1))+1;
@@ -123,16 +123,16 @@ end
 
 % load template image to check image size
 if isa(obj,'classi')
-    img=obj.roi(mosaic(1)).image;
+    img=obj.roi(rois(1)).image;
     if numel(img)==0
-        obj.roi(mosaic(1)).load;
+        obj.roi(rois(1)).load;
     end
 end
 
 if isa(obj,'shallow')
-    img=obj.fov(mosaic(1,1)).roi(mosaic(2,1)).image;
+    img=obj.fov(rois(1,1)).roi(rois(2,1)).image;
     if numel(img)==0
-        obj.fov(mosaic(1,1)).roi(mosaic(2,1)).load;
+        obj.fov(rois(1,1)).roi(rois(2,1)).load;
     end
 end
 
@@ -170,11 +170,11 @@ for k=1:nsize(1) % include all requested rois
     for j=1:nsize(2)
         
         if isa(obj,'classi')
-            roitmp=obj.roi(mosaic(cc));
+            roitmp=obj.roi(rois(cc));
         end
         
         if isa(obj,'shallow')
-            roitmp=obj.fov(mosaic(1,cc)).roi(mosaic(2,cc));
+            roitmp=obj.fov(rois(1,cc)).roi(rois(2,cc));
         end
         
         if isa(obj,'roi')
@@ -208,7 +208,7 @@ for k=1:nsize(1) % include all requested rois
         % insert features here
         % calculate RLS  based on measureRLS2
         if rls==1
-            [rlsout,rlsresults,rlstraining]=measureRLS2(roitmp,strid,'bud');
+            [rlsout,rlsresults,rlstraining]=measureRLS2(obj,strid,'bud','Rois',rois(cc));
         end
         
         % insert ROI title
@@ -288,6 +288,7 @@ for k=1:nsize(1) % include all requested rois
             end
         end
         
+        %===RECTANGLES===
         for ii=1:size(imout,4)
             if numel(training) && numel(idtrain)
                 for jj=1:ncla
@@ -311,7 +312,7 @@ for k=1:nsize(1) % include all requested rois
             end
             
         end
-        imgout(1+(k-1)*h:k*h,1+(j-1)*w:j*w,:,:)=imout; % assemble mosaic
+        imgout(1+(k-1)*h:k*h,1+(j-1)*w:j*w,:,:)=imout; % assemble rois
         cc=cc+1;
     end
 end
@@ -344,14 +345,14 @@ if numel(name)==0
  %   name=[obj.path  '/ClassifMosaic'];
     
   %  for i=1:nmov
- %       name=[name '_' num2str(mosaic(i)) '_' num2str(mosaic(i)) '-'];
+ %       name=[name '_' num2str(rois(i)) '_' num2str(rois(i)) '-'];
 %    end
     if isa(obj,'classi')
-        name=[obj.path '/mosaic'];
+        name=[obj.path '/rois'];
     end
     
     if isa(obj,'shallow')
-        name=[obj.io.path obj.io.file '/mosaic'];
+        name=[obj.io.path obj.io.file '/rois'];
     end
     
     if isa(obj,'roi')

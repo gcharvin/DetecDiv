@@ -87,7 +87,7 @@ cc=1;
 disp('Writing video.... Wait!');
 
 im=obj.readImage(1,1);
-imtot=zeros(size(im,1),size(im,2)*numel(channels),1,numel(frames));
+imtot=zeros(size(im,1),size(im,2)*numel(channels),1,numel(frames),'single');
 
 reverseStr = '';
 
