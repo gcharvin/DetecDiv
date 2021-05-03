@@ -126,7 +126,7 @@ obj.view;
     end
     %ok=1;
 end
-hf=findobj('Tag',['Traj' num2str(obj.id)])
+hf=findobj('Tag',['Traj' num2str(obj.id)]);
 figure(hf);
 
 % if strcmp(event.Key,'l') % move left to previous division

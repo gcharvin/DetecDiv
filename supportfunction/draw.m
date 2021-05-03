@@ -20,7 +20,7 @@ if numel(h.UserData)~=0 % window is already displayed; therefore just update the
     
     % sort Axes !
     s=[];
-    hp
+    %hp
     for i=1:numel(hp)
         s(i)=str2num(hp(i).Tag(7:end));
     end
@@ -150,7 +150,12 @@ for i=1:numel(obj.display.channel)
     
     if obj.display.selectedchannel(i)==1
         figure(h);
+        
+        if cd>1
         hp(cc)=subplot(1,cd,cc);
+        else
+        hp(cc)=axes('Units','normalized');    
+        end
         
         dis=0;
         % pixelchannel
@@ -195,7 +200,13 @@ for i=1:numel(obj.display.channel)
         %             title(hp(cc),[obj.display.channel{i} ]); %' -Intensity:' num2str(tt)]);
         %         end
         
+           if cd==1 % setting position in case of one axis, to adjust display size
+              set(gca,'Position',[0.2 0.2 0.7 0.7]  );
+           end
+        
         cc=cc+1;
+        
+
     end
 end
 
@@ -291,8 +302,8 @@ if numel(classif)>0
                 axes(hp(cha1))
                 alpha(0.5);
                 
-                cha1pos=get(hp(cha1),'Position')
-                hcopy=findobj(hp,'UserData',classif.strid)
+                cha1pos=get(hp(cha1),'Position');
+                hcopy=findobj(hp,'UserData',classif.strid);
                 %
                 htmp = copyobj(hcopy,h);
                 htmp.Position=cha1pos;
@@ -354,11 +365,9 @@ if numel(classif)>0
         hpaint=findobj(hp,'UserData',classif.strid);
         ccpedigree=obj.findChannelID(classif.strid);
         set(h,'WindowButtonDownFcn',{@pedigree,h,hpaint,obj,ccpedigree,hp,classif});%%% HERE
-        
-        
+  
         plotLinks(obj,hp,classif);
-        
-        
+
     end
     
 end
