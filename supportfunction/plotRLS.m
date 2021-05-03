@@ -20,8 +20,8 @@ if nargin<2 % no parameter provided build a param variable
     l=linspace(0.15,0.85,256);
     cmap2=zeros(256,3);
     cmap2(:,2)=1*(fliplr(l))';
-    cmap2(:,1)=1*(fliplr(l))';
-    cmap2(:,3)=1*(fliplr(l))';
+    cmap2(:,1)=0*(fliplr(l))';
+    cmap2(:,3)=0*(fliplr(l))';
     
     cmapg=zeros(256,3);
     cmapg(:,2)=(fliplr(l))';
@@ -50,7 +50,7 @@ if nargin<2 % no parameter provided build a param variable
     param.sepcolor=[1 0 0];
 
     
-    param.minmax=[2 25]; % min and max values for display;
+    param.minmax=[2 30]; % min and max values for display;
     param.startY=-15; % origin of Y axis for plot
     param.startX=0;
     param.figure=[];
