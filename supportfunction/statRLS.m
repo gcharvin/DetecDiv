@@ -27,12 +27,13 @@ set(gca,'FontSize',14);
 [yt,xt]=ecdf(rlst);
 [yg,xg]=ecdf(rlsg);
 
-figure('Color','w');
+figure;
+subplot(1,2,1)
 stairs([0 ; xg],[1 ; 1-yg],'Color','k','LineWidth',2);hold on,
-stairs([0 ; xt],[1 ; 1-yt],'Color','r','LineWidth',2); 
+stairs([0 ; xt],[1 ; 1-yt],'Color','g','LineWidth',2); 
 
-legend({['Groundtruth; median= ' num2str(median(rlsg)) ' (N= ' num2str(length(rlsg)) ')'],['Computed lifespan; median= ' num2str(median(rlst)) ' (N= ' num2str(length(rlst)) ')']});
-xlabel('Generations');
+legend({['Groundtruth; median= ' num2str(median(rlsg)) ' (N= ' num2str(length(rlsg)) ')'],['Computed; median= ' num2str(median(rlst)) ' (N= ' num2str(length(rlst)) ')']});
+xlabel('Divisions');
 ylabel('Survival');
 p=ranksum(rlst,rlsg);
 title(['Replicative lifespan; p=' num2str(p)]);
@@ -52,11 +53,13 @@ bins=0:1:40;
 [ng xg]=hist(divg,bins);
 [nt xt]=hist(divt,bins);
 
-figure('Color','w');
-stairs(xg,ng,'Color','k','LineWidth',2); hold on;
-stairs(xt,nt,'Color','r','LineWidth',2);
+subplot(1,2,2)
+stairs(xg,ng,'Color','k','LineWidth',2);hold on;
+stairs(xt,nt,'Color','g','LineWidth',2); 
+
+
 p=ranksum(divg,divt);
-legend({['Computed times; median= ' num2str(median(divg)) ' (N= ' num2str(length(divg)) ')'],['Groundtruth; median= ' num2str(median(divt)) ' (N= ' num2str(length(divt)) ')']});
+legend({['Groundtruth; median= ' num2str(median(divt)) ' (N= ' num2str(length(divt)) ')'],['Computed; median= ' num2str(median(divg)) ' (N= ' num2str(length(divg)) ')']});
 title(['Division times; p=' num2str(p)]);
 set(gca,'FontSize',16);
 xlabel('Division time (frames)');
