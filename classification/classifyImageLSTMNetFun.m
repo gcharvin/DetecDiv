@@ -118,11 +118,11 @@ end
 %    prob=prob';
 % end
 
- [~, idx] = max(prob,[],2);
- label = labels(idx);
-%label = classify(classifier,video,'ExecutionEnvironment', 'cpu'); % in case the gpu crashes because of out of memory
-% prob=activations(classifier,video,'softmax','OutputAs','channels','ExecutionEnvironment', 'cpu');
-end
+%  [~, idx] = max(prob,[],2);
+%  label = labels(idx);
+% %label = classify(classifier,video,'ExecutionEnvironment', 'cpu'); % in case the gpu crashes because of out of memory
+% % prob=activations(classifier,video,'softmax','OutputAs','channels','ExecutionEnvironment', 'cpu');
+% end
 
 
 %label=[];
