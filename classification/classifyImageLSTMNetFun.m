@@ -99,7 +99,7 @@ disp('Starting video classification...');
 % this function predict  is used instead of 'classify' function which causes an error
 % on R2019b
 
-try
+%try
 prob=predict(classifier,video); 
 labels = classifier.Layers(end).Classes;
 if size(prob,1) == numel(labels) % adjust matrix depending on matlab version 
@@ -108,15 +108,15 @@ end
  [~, idx] = max(prob,[],2);
  label = labels(idx);
 
-%label = classify(classifier,video);
-% prob=activations(classifier,video,'softmax','OutputAs','channels');
-catch
-   disp('Error with GPU classification : likely out of memory issue');
-   prob=predict(classifier,video,'ExecutionEnvironment', 'cpu');
- labels = classifier.Layers(end).Classes;
-if size(prob,1) == numel(labels)
-   prob=prob';
-end
+% %label = classify(classifier,video);
+% % prob=activations(classifier,video,'softmax','OutputAs','channels');
+% catch
+%    disp('Error with GPU classification : likely out of memory issue');
+%    prob=predict(classifier,video,'ExecutionEnvironment', 'cpu');
+%  labels = classifier.Layers(end).Classes;
+% if size(prob,1) == numel(labels)
+%    prob=prob';
+% end
 
  [~, idx] = max(prob,[],2);
  label = labels(idx);
