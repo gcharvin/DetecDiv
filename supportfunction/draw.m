@@ -388,6 +388,7 @@ end
 
 cctext=1;
 
+
 for i=1:numel(obj.display.channel)
     if obj.display.selectedchannel(i)==1
         
