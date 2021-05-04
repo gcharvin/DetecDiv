@@ -139,7 +139,12 @@ results=roiobj.results;
     results.(classif.strid).classes=classif.classes;
     results.(classif.strid).prob=[];
     
-    results.(classif.strid).prob=prob;
+%     if size(prob,1) == numel(labels) % adjust matrix depending on matlab version 
+%    prob=prob';
+%     end
+
+%prob
+    results.(classif.strid).prob=prob';
   %  roiobj.results=results;
     
     for i=1:numel(classif.classes)

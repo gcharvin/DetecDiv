@@ -93,11 +93,16 @@ end
 % then display the results
 
 if isfield(obj.results.(classistr),'prob')
-    
-xr=1:numel(obj.results.(classistr).prob(idclas,:));
-yr=obj.results.(classistr).prob(idclas,:);
+prob=obj.results.(classistr).prob;
 
-plot(xr,yr,'Color','r','LineWidth',2); hold on;
+  if   numel(obj.results.(classistr).classes)~=size(obj.results.(classistr).prob,1)
+      prob=prob';
+  end
+    
+xr=1:numel(prob(idclas,:));
+yr=prob(idclas,:);
+
+plot(xr,yr,'Color','r','LineWidth',1,'LineStyle','-','Marker','.','MarkerSize',15); hold on;
 
 ylim([0 1]);
 end

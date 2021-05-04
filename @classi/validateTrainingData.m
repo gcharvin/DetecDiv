@@ -94,11 +94,11 @@ tmp(i)=feval(classifyFun,roiobj,classif,classifier); % launch the training funct
 
 end
 
-for i=1:length(roilist)
-classif.roi(i)=tmp(i);
-classif.roi(i).save;
-end
+ for i=1:length(roilist)
+ classif.roi(i)=tmp(i);
+% classif.roi(i).save;
+ end
 
 % disp('Classification job is done and saved...');
-% %disp('You must save the shallow project to save these classified data');
+disp('You must save the shallow project to save these classified data !');
 

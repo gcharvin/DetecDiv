@@ -14,7 +14,6 @@ if exist([obj.path '/im_' obj.id '.mat'])
 
 eval(['load  ' '''' obj.path '/im_' obj.id '.mat' '''']); 
 
-
 obj.image=im;
 else
  fprintf(['ERROR: Loading  ' obj.path '/im_' obj.id '.mat failed for ROI ' obj.id '!!!\n']);   
