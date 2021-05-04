@@ -1,8 +1,11 @@
-function f=traj(obj,classistr)
+function f=traj(obj,classistr,option)
 
 % trajectory 
 
-% classiid represents the strid of the classifier to be displayed
+% classistr represents the strid of the classifier to be displayed
+
+% option is the particular class id to be be represented as probability;
+% default : 1
 
 
 if numel(obj.results)==0
@@ -72,25 +75,37 @@ ylabel('Classes');
 
 aprob=subplot(2,1,2);
 
+
+  if nargin==3
+        idclas=option;
+    else
+        idclas=1;
+  end
+    
 if numel(obj.train)~=0
    
     x=1:numel(obj.train.(classistr).id);
-    y=obj.train.(classistr).id==1;
+    y=obj.train.(classistr).id==idclas;
     
     plot(x,y,'Color','k','LineWidth',3); hold on;
 end
 
 % then display the results
 
-xr=1:numel(obj.results.(classistr).prob(1,:));
-yr=obj.results.(classistr).prob(1,:);
+if isfield(obj.results.(classistr),'prob')
+    
+xr=1:numel(obj.results.(classistr).prob(idclas,:));
+yr=obj.results.(classistr).prob(idclas,:);
 
 plot(xr,yr,'Color','r','LineWidth',2); hold on;
 
 ylim([0 1]);
+end
 
 xlabel('Time (frames)');
 ylabel(['P( class =  '  obj.results.(classistr).classes{1} ')']);
+
+set(gca,'FontSize',16);
 
 %ylabel('Budding state');
 %set(gca,'YTick',[0 1 2],'YTickLabel',{'unbbuded','small b','large b'})
