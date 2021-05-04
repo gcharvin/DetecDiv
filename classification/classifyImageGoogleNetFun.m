@@ -1,9 +1,9 @@
-function roiout=classifyTrackingNetFun(roiobj,classif,classifier)
+function roiout=classifyImageGoogleNetFun(roiobj,classif,classifier)
 
 % this function can be used to classify any roi object, by providing the
 % classi object and the classifier
 
-if numel(classifier)==0 % loading the classifier // not recommende because it takes time
+if numel(classifier)==0 % loading the classifier // not recommended because it takes time
     path=classif.path;
     name=classif.strid;
     str=[path '/' name '.mat'];

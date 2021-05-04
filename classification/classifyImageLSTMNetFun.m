@@ -1,4 +1,4 @@
-function roiout=classifyImageLSTMNetFun(roiobj,classif,classifier)
+function roiout=classifyImageLSTMNetFun(roiobj,classif,classifier,classifierCNN)
 
 %load([path '/netCNN.mat']); % load the googlenet to get the input size of image
 
@@ -9,6 +9,13 @@ fprintf('Load videos...\n');
 
 %inputSize=[size(roiobj.image,1) size(roiobj.image,2)];
 inputSize = classifier.Layers(140).InputSize(1:2);
+
+if nargin==4 % standard classification is requested 
+net=classifierCNN;
+inputSizeCNN = net.Layers(1).InputSize;
+classNamesCNN = net.Layers(end).ClassNames;
+numClassesCNN = numel(classNamesCNN);
+end
 
 %return;
 % x y size of the input movie (140th layer)
@@ -100,10 +107,16 @@ disp('Starting video classification...');
 % on R2019b
 
 try
+    
 prob=predict(classifier,video); 
+%probCNN=predict(classifierCNN,video);
+[labelCNN,probCNN] = classify(classifierCNN,video);
 catch 
+    
 disp('Error with predict function  : likely out of memory issue with GPU, trying CPU computing...');
 prob=predict(classifier,video,'ExecutionEnvironment', 'cpu');
+%probCNN=predict(classifierCNN,video,'ExecutionEnvironment', 'cpu');
+[labelCNN,probCNN] = classify(classifierCNN,video);
 end
   
 labels = classifier.Layers(end).Classes;
@@ -112,7 +125,14 @@ if size(prob,1) == numel(labels) % adjust matrix depending on matlab version
 end
  [~, idx] = max(prob,[],2);
  label = labels(idx);
-
+ 
+ 
+ %if size(probCNN,1) == numel(labels) % adjust matrix depending on matlab version 
+ %  probCNN=probCNN';
+%end
+ %[~, idx] = max(probCNN,[],2);
+ %labelCNN = labels(idx);
+ 
 %  [~, idx] = max(prob,[],2);
 %  label = labels(idx);
 % %label = classify(classifier,video,'ExecutionEnvironment', 'cpu'); % in case the gpu crashes because of out of memory
@@ -133,26 +153,28 @@ end
 %label=lab(1:size(im,4));
 
 results=roiobj.results;
+
     results.(classif.strid)=[];
     results.(classif.strid).id=zeros(1,size(im,4));
     results.(classif.strid).labels=label';
     results.(classif.strid).classes=classif.classes;
-    results.(classif.strid).prob=[];
-    
-%     if size(prob,1) == numel(labels) % adjust matrix depending on matlab version 
-%    prob=prob';
-%     end
-
-%prob
     results.(classif.strid).prob=prob';
-  %  roiobj.results=results;
     
     for i=1:numel(classif.classes)
-        
    pix=label==classif.classes{i};
    results.(classif.strid).id(pix)=i;
-    
     end
+    
+    results.(classif.strid).idCNN=zeros(1,size(im,4));
+    results.(classif.strid).labelsCNN=labelCNN';
+    results.(classif.strid).classesCNN=classif.classes;
+    results.(classif.strid).probCNN=flipud(probCNN'); % fix orientation of array here !!!!
+    
+    for i=1:numel(classif.classes)
+   pix=labelCNN==classif.classes{i};
+   results.(classif.strid).idCNN(pix)=i;
+    end
+    
     
 roiobj.results=results; 
 

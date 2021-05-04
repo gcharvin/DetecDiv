@@ -8,7 +8,10 @@ function validateTrainingData(classif,varargin)
 %'Classifier' loads the classifier
 for i=1:numel(varargin)
     if strcmp(varargin{i},'Classifier')
-        classifier=varargin{i+1};
+        classifierLSTM=varargin{i+1};
+    end
+     if strcmp(varargin{i},'ClassifierCNN')
+        classifierCNN=varargin{i+1};
     end
 end
 
@@ -21,11 +24,21 @@ disp(['Classifying data used as groundtruth in ' classif.strid ' for validation 
 path=classif.path;
 name=classif.strid;
 
+
+   % loading the CNN network as well for comparison purposes
+
 % first load classifier if not loadad to save some time 
-if exist('classifier','var')==0
+if exist('classifierLSTM','var')==0
     disp(['Loading classifier: ' name]);
     str=[path '/' name '.mat'];
     load(str); % load classifier 
+    classifierLSTM=classifier;
+end
+
+if exist('classifierCNN','var')==0 
+     str=[path '/netCNN.mat'];
+     load(str);
+     classifierCNN=classifier; 
 end
 
 
@@ -88,7 +101,7 @@ parfor i=1:length(roilist) % loop on all ROIs using parrallel computing
 %  roiobj.results=zeros(1,size(roiobj.image,4)); % pre allocate results for labels
 %  end
  
-tmp(i)=feval(classifyFun,roiobj,classif,classifier); % launch the training function for classification
+tmp(i)=feval(classifyFun,roiobj,classif,classifierLSTM,classifierCNN); % launch the training function for classification
 % since roiobj is a handle, no need to have an output to this the function
 % in roiobj.results
 
