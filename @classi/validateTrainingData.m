@@ -37,33 +37,68 @@ end
 
 %classifier
 if exist('roilist','var')==0 %if no roilist is indicated
-    for i=1:numel(classif.roi) % loop on all ROIs
-
-     roiobj=classif.roi(i);
-     disp('-----------');
-     disp(['Classifying ' num2str(roiobj.id)]);
-
-
-    %  if strcmp(classif.category{1},'Image') % in this case, the results are provided as a series of labels
-    %  roiobj.results=zeros(1,size(roiobj.image,4)); % pre allocate results for labels
-    %  end
-
-    feval(classifyFun,roiobj,classif,classifier); % launch the training function for classification
-    % since roiobj is a handle, no need to have an output to this the function
-    % in roiobj.results
-
-    end
-else
-    for i=roilist % loop on indicated ROIs
-     roiobj=classif.roi(i);
-     disp('-----------');
-     disp(['Classifying ' num2str(roiobj.id)]);
-     feval(classifyFun,roiobj,classif,classifier); % launch the training function for classification
-    end
+    roilist=1:numel(classif.roi);
 end
-    
-    
 
-disp('Classification job is done...');
-disp('You must save the shallow project to save these classified data');
+%     for i=1:numel(classif.roi) % loop on all ROIs
+% 
+%      roiobj=classif.roi(i);
+%      disp('-----------');
+%      disp(['Classifying ' num2str(roiobj.id)]);
+% 
+% 
+%     %  if strcmp(classif.category{1},'Image') % in this case, the results are provided as a series of labels
+%     %  roiobj.results=zeros(1,size(roiobj.image,4)); % pre allocate results for labels
+%     %  end
+% 
+%     feval(classifyFun,roiobj,classif,classifier); % launch the training function for classification
+%     % since roiobj is a handle, no need to have an output to this the function
+%     % in roiobj.results
+% 
+%     end
+% else
+%     for i=roilist % loop on indicated ROIs
+%      roiobj=classif.roi(i);
+%      disp('-----------');
+%      disp(['Classifying ' num2str(roiobj.id)]);
+%      feval(classifyFun,roiobj,classif,classifier); % launch the training function for classification
+%     end
+% end
+
+
+disp([num2str(size(roilist,1)) ' ROIs to classify, be patient...']);
+
+tmp=roi; % build list of rois
+for i=1:length(roilist)
+tmp(i)=classif.roi(i);
+end
+
+parfor i=1:length(roilist) % loop on all ROIs using parrallel computing
+    
+ roiobj=tmp(i);
+
+ if numel(roiobj.id)==0
+     continue;
+ end
+ 
+  disp('-----------');
+  disp(['Classifying ' num2str(roiobj.id)]);
+ 
+%  if strcmp(classif.category{1},'Image') % in this case, the results are provided as a series of labels
+%  roiobj.results=zeros(1,size(roiobj.image,4)); % pre allocate results for labels
+%  end
+ 
+tmp(i)=feval(classifyFun,roiobj,classif,classifier); % launch the training function for classification
+% since roiobj is a handle, no need to have an output to this the function
+% in roiobj.results
+
+end
+
+for i=1:length(roilist)
+classif.roi(i)=tmp(i);
+classif.roi(i).save;
+end
+
+% disp('Classification job is done and saved...');
+% %disp('You must save the shallow project to save these classified data');
 
