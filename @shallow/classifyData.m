@@ -47,7 +47,6 @@ end
 
 %classifier
 
-
 disp([num2str(size(roilist,2)) ' ROIs to classify, be patient...']);
 
 tmp=roi; % build list of rois

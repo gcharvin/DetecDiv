@@ -96,19 +96,32 @@ video = centerCrop(vid,inputSize);
 
 disp('Starting video classification...');
 
-% test=predict(classifier,video);
-% 
-% [~, idx] = max(test,[],2);
-% labels = classifier.Layers(end).Classes;
-% label = labels(idx);
+% this function predict  is used instead of 'classify' function which causes an error
+% on R2019b
 
 try
-label = classify(classifier,video);
- prob=activations(classifier,video,'softmax','OutputAs','channels','ExecutionEnvironment', 'cpu');
+prob=predict(classifier,video); 
+labels = classifier.Layers(end).Classes;
+if size(prob,1) == numel(labels) % adjust matrix depending on matlab version 
+   prob=prob';
+end
+ [~, idx] = max(prob,[],2);
+ label = labels(idx);
+
+%label = classify(classifier,video);
+% prob=activations(classifier,video,'softmax','OutputAs','channels');
 catch
    disp('Error with GPU classification : likely out of memory issue');
-label = classify(classifier,video,'ExecutionEnvironment', 'cpu'); % in case the gpu crashes because of out of memory
- prob=activations(classifier,video,'softmax','OutputAs','channels','ExecutionEnvironment', 'cpu');
+   prob=predict(classifier,video,'ExecutionEnvironment', 'cpu');
+ labels = classifier.Layers(end).Classes;
+if size(prob,1) == numel(labels)
+   prob=prob';
+end
+
+ [~, idx] = max(prob,[],2);
+ label = labels(idx);
+%label = classify(classifier,video,'ExecutionEnvironment', 'cpu'); % in case the gpu crashes because of out of memory
+% prob=activations(classifier,video,'softmax','OutputAs','channels','ExecutionEnvironment', 'cpu');
 end
 
 
@@ -132,7 +145,7 @@ results=roiobj.results;
     results.(classif.strid).classes=classif.classes;
     results.(classif.strid).prob=[];
     
-    results.(classif.strid).prob=prob{1};
+    results.(classif.strid).prob=prob;
   %  roiobj.results=results;
     
     for i=1:numel(classif.classes)

@@ -66,14 +66,14 @@ end
 % end
 
 
-disp([num2str(size(roilist,1)) ' ROIs to classify, be patient...']);
+disp([num2str(length(roilist)) ' ROIs to classify, be patient...']);
 
 tmp=roi; % build list of rois
 for i=1:length(roilist)
 tmp(i)=classif.roi(i);
 end
 
-parfor i=1:length(roilist) % loop on all ROIs using parrallel computing
+for i=1:length(roilist) % loop on all ROIs using parrallel computing
     
  roiobj=tmp(i);
 
