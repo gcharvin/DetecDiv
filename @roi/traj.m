@@ -30,8 +30,9 @@ for i=1:max(obj.results.(classistr).id)
 end
     
     
-    
 h=figure('Tag',['Traj' num2str(obj.id)],'Color','w','Position',[50 50 1000 500]);
+
+acla=subplot(2,1,1);
 set(gca,'FontSize',20);
 
 % if roi was used for user training, display the training data first
@@ -54,8 +55,6 @@ plot(xr,yr,'Color','r','LineWidth',2); hold on;
 % compute accuracy
 
 acc= 100*sum(yr==y)./length(y);
-
-
 pix=find(x==obj.display.frame);
 line([x(pix) x(pix)],[1 max(obj.results.(classistr).id)],'Color',[0.5 0.5 0.5],'LineWidth',2,'Tag','track');
 
@@ -65,11 +64,33 @@ legend(str);
  hl=findobj(h,'Tag','track');
  
 ylim([0 max(obj.results.(classistr).id)+1]);
-set(gca,'YTick',1:max(obj.results.(classistr).id),'YTickLabel',classes,'Fontsize',14);
-xlabel('Time (frames)');
-ylabel('Classes');
+set(acla,'YTick',1:max(obj.results.(classistr).id),'YTickLabel',classes,'Fontsize',14);
+
 
 title([classistr ' classification results for ROI ' obj.id],'Interpreter','none');
+ylabel('Classes');
+
+aprob=subplot(2,1,2);
+
+if numel(obj.train)~=0
+   
+    x=1:numel(obj.train.(classistr).id);
+    y=obj.train.(classistr).id==1;
+    
+    plot(x,y,'Color','k','LineWidth',3); hold on;
+end
+
+% then display the results
+
+xr=1:numel(obj.results.(classistr).prob(1,:));
+yr=obj.results.(classistr).prob(1,:);
+
+plot(xr,yr,'Color','r','LineWidth',2); hold on;
+
+ylim([0 1]);
+
+xlabel('Time (frames)');
+ylabel(['P( class =  '  obj.results.(classistr).classes{1} ')']);
 
 %ylabel('Budding state');
 %set(gca,'YTick',[0 1 2],'YTickLabel',{'unbbuded','small b','large b'})

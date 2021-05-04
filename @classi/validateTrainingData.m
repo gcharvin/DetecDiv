@@ -21,7 +21,6 @@ disp(['Classifying data used as groundtruth in ' classif.strid ' for validation 
 path=classif.path;
 name=classif.strid;
 
-
 % first load classifier if not loadad to save some time 
 if exist('classifier','var')==0
     disp(['Loading classifier: ' name]);

@@ -56,9 +56,13 @@ for j=1:size(im,4)
     
 end
 
+
+%vid=vid(:,:,:,1:388);
+
 %inputSize
 %size(vid)
 video = centerCrop(vid,inputSize);
+
 
 %size(video)
 %aa=classifier.Layers
@@ -92,13 +96,21 @@ video = centerCrop(vid,inputSize);
 
 disp('Starting video classification...');
 
-test=predict(classifier,video);
+% test=predict(classifier,video);
+% 
+% [~, idx] = max(test,[],2);
+% labels = classifier.Layers(end).Classes;
+% label = labels(idx);
 
-[~, idx] = max(test,[],2);
-labels = classifier.Layers(end).Classes;
-label = labels(idx);
+try
+label = classify(classifier,video);
+ prob=activations(classifier,video,'softmax','OutputAs','channels','ExecutionEnvironment', 'cpu');
+catch
+   disp('Error with GPU classification : likely out of memory issue');
+label = classify(classifier,video,'ExecutionEnvironment', 'cpu'); % in case the gpu crashes because of out of memory
+ prob=activations(classifier,video,'softmax','OutputAs','channels','ExecutionEnvironment', 'cpu');
+end
 
-%label = classify(classifier,video);
 
 %label=[];
 
@@ -118,7 +130,9 @@ results=roiobj.results;
     results.(classif.strid).id=zeros(1,size(im,4));
     results.(classif.strid).labels=label';
     results.(classif.strid).classes=classif.classes;
-     
+    results.(classif.strid).prob=[];
+    
+    results.(classif.strid).prob=prob{1};
   %  roiobj.results=results;
     
     for i=1:numel(classif.classes)
@@ -127,7 +141,7 @@ results=roiobj.results;
    results.(classif.strid).id(pix)=i;
     
     end
-
+    
 roiobj.results=results; 
 
 roiout=roiobj;
