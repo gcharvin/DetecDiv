@@ -401,6 +401,12 @@ for i=1:numel(obj.display.channel)
             for k=1:numel(fields)
                 tt=obj.train.(fields{k}).id(obj.display.frame);
                 
+                       if isfield(obj.train.(fields{k}),'classes')
+                classesspe=obj.train.(fields{k}).classes; % classes name specfic to training
+                else
+                classesspe=    obj.classes ;
+                       end
+                
                 if tt==0
                     tt='not classified';
                 else
@@ -1043,6 +1049,12 @@ for i=1:numel(obj.display.channel)
             
             for k=1:numel(fields)
                 tt=obj.train.(fields{k}).id(obj.display.frame);
+                
+                if isfield(obj.train.(fields{k}),'classes')
+                classesspe=obj.train.(fields{k}).classes; % classes name specfic to training
+                else
+                classesspe=    obj.classes ;
+                end
                 
                 if tt==0
                     tt='not classified';

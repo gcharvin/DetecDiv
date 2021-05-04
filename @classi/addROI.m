@@ -78,7 +78,8 @@ for i=1:length(rois)
     if strcmp(classif.category{1},'Image') | strcmp(classif.category{1},'LSTM')
         classif.roi(cc+1).train.(classif.strid)=[];
         classif.roi(cc+1).train.(classif.strid).id= zeros(1,size(classif.roi(cc+1).image,4));
-        
+        classif.roi(cc+1).train.(classif.strid).classes=classif.classes;
+         
         if isa(obj,'classi')
             if isfield(roitocopy.train,obj.strid) % test if previous ROI has training
                 
@@ -165,6 +166,7 @@ end
 if strcmp(classif.category{1},'Pedigree')
     classif.roi(cc+1).train.(classif.strid)=[];
     classif.roi(cc+1).train.(classif.strid).id= zeros(1,size(classif.roi(cc+1).image,4));
+    classif.roi(cc+1).train.(classif.strid).classes=classif.classes;
     classif.roi(cc+1).train.(classif.strid).mother= [];%zeros(1,size(classif.roi(cc+1).image,4));
     % classif.roi(cc+1).train= zeros(1,size(classif.roi(cc+1).image,4));
     
