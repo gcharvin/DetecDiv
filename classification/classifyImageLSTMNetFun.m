@@ -102,7 +102,7 @@ disp('Starting video classification...');
 try
 prob=predict(classifier,video); 
 catch 
-disp('Error with GPU classification : likely out of memory issue');
+disp('Error with predict function  : likely out of memory issue with GPU, trying CPU computing...');
 prob=predict(classifier,video,'ExecutionEnvironment', 'cpu');
 end
   
@@ -118,7 +118,6 @@ end
 % %label = classify(classifier,video,'ExecutionEnvironment', 'cpu'); % in case the gpu crashes because of out of memory
 % % prob=activations(classifier,video,'softmax','OutputAs','channels','ExecutionEnvironment', 'cpu');
 % end
-
 
 %label=[];
 

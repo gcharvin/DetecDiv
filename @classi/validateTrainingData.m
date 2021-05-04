@@ -73,7 +73,7 @@ for i=1:length(roilist)
 tmp(i)=classif.roi(i);
 end
 
-for i=1:length(roilist) % loop on all ROIs using parrallel computing
+parfor i=1:length(roilist) % loop on all ROIs using parrallel computing
     
  roiobj=tmp(i);
 
