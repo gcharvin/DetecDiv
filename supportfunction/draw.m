@@ -823,8 +823,8 @@ end
                     
                     mix=max(1,cp(1,2)-1);
                     miy=max(1,cp(1,1)-1);
-                    mux=min(size(ma,1),cp(1,2)+1);
-                    muy=min(size(ma,1),cp(1,1)+1);
+                    mux=min(size(ma,1),cp(1,2));
+                    muy=min(size(ma,1),cp(1,1));
                     
                     %ma(mix:mux,miy:muy)=1;
                     % pis=ma>0;
