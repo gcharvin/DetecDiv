@@ -83,7 +83,7 @@ disp([num2str(length(roilist)) ' ROIs to classify, be patient...']);
 
 tmp=roi; % build list of rois
 for i=1:length(roilist)
-tmp(i)=classif.roi(i);
+tmp(i)=classif.roi(roilist(i));
 end
 
 parfor i=1:length(roilist) % loop on all ROIs using parrallel computing
@@ -105,11 +105,14 @@ tmp(i)=feval(classifyFun,roiobj,classif,classifierLSTM,classifierCNN); % launch 
 % since roiobj is a handle, no need to have an output to this the function
 % in roiobj.results
 
+
 end
 
  for i=1:length(roilist)
- classif.roi(i)=tmp(i);
+ classif.roi(roilist(i))=tmp(i);
+ 
 % classif.roi(i).save;
+ %classif.roi(i).clear;
  end
 
 % disp('Classification job is done and saved...');

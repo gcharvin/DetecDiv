@@ -68,6 +68,8 @@ end
 
 %inputSize
 %size(vid)
+
+gfp = imresize(vid,inputSize(1:2));
 video = centerCrop(vid,inputSize);
 
 
@@ -110,13 +112,13 @@ try
     
 prob=predict(classifier,video); 
 %probCNN=predict(classifierCNN,video);
-[labelCNN,probCNN] = classify(classifierCNN,video);
+[labelCNN,probCNN] = classify(classifierCNN,gfp);
 catch 
     
 disp('Error with predict function  : likely out of memory issue with GPU, trying CPU computing...');
 prob=predict(classifier,video,'ExecutionEnvironment', 'cpu');
 %probCNN=predict(classifierCNN,video,'ExecutionEnvironment', 'cpu');
-[labelCNN,probCNN] = classify(classifierCNN,video);
+[labelCNN,probCNN] = classify(classifierCNN,gfp);
 end
   
 labels = classifier.Layers(end).Classes;
@@ -125,7 +127,6 @@ if size(prob,1) == numel(labels) % adjust matrix depending on matlab version
 end
  [~, idx] = max(prob,[],2);
  label = labels(idx);
- 
  
  %if size(probCNN,1) == numel(labels) % adjust matrix depending on matlab version 
  %  probCNN=probCNN';
@@ -168,17 +169,19 @@ results=roiobj.results;
     results.(classif.strid).idCNN=zeros(1,size(im,4));
     results.(classif.strid).labelsCNN=labelCNN';
     results.(classif.strid).classesCNN=classif.classes;
+    
     results.(classif.strid).probCNN=flipud(probCNN'); % fix orientation of array here !!!!
     
     for i=1:numel(classif.classes)
    pix=labelCNN==classif.classes{i};
    results.(classif.strid).idCNN(pix)=i;
-    end
+   end
     
     
 roiobj.results=results; 
 
 roiout=roiobj;
+
 %roiobj.clear;    
 
 % results.id=roiobj.id;
@@ -196,10 +199,6 @@ roiout=roiobj;
 %    res={results}; 
 % end
 % save([classif.path '/' classif.strid '_results.mat'],'res');
-
-
-
-%
 % pix=label=='largebudded';
 % mov.trap(i).div.deepLSTM(pix)=2;
 %
