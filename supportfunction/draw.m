@@ -214,9 +214,11 @@ if cd>0
     linkaxes(hp);
 end
 
-h.Position(1:2)=pos(1:2);
-h.Position(3)=800;
-h.Position(4)=800;
+
+%========POSITION IMAGE=========
+h.Position(1:2)=100;
+h.Position(3)=1200;
+h.Position(4)=750;
 
 h.UserData=him;
 
@@ -300,7 +302,7 @@ if numel(classif)>0
                 cha1= classif.channel(1);
                 % axes where to copy the new axes
                 axes(hp(cha1))
-                alpha(0.5);
+                alpha(0.7);
                 
                 cha1pos=get(hp(cha1),'Position');
                 hcopy=findobj(hp,'UserData',classif.strid);
@@ -312,7 +314,7 @@ if numel(classif)>0
                 
                 set(htmp,'Tag',classif.strid);
                 axes(htmp);
-                alpha(0.5);
+                alpha(0.4);
                 
                 linkaxes([hp htmp]);
             end
