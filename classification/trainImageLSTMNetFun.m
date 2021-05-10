@@ -37,7 +37,7 @@ if strcmp(trainingParam.network,'resnet50')
 layerName = "avg_pool"; % layer id where the network will be connected 
 end
 if strcmp(trainingParam.network,'efficientnetb0')
-layerName = "pool5-7x7_s1"; % layer id where the network will be connected 
+layerName = "efficientnet-b0|model|head|global_average_pooling2d|GlobAvgPool"; % layer id where the network will be connected 
 end
 
 tempFile = [path '/' name '_image_classifier_activations.mat']; 
@@ -206,6 +206,9 @@ if strcmp(trainingParam.assemblenet,'y') | ~exist([path '/' name '.mat'])
     if strcmp(trainingParam.network,'resnet50')
     layerNames = ["input_1" "new_fc" "fc1000_softmax" "new_classoutput"];
     end
+      if strcmp(trainingParam.network,'efficientnetb0')
+    layerNames = ["ImageInput" "new_fc" "Softmax" "new_classoutput"];
+      end
     
     cnnLayers = removeLayers(cnnLayers,layerNames);
     
@@ -232,8 +235,12 @@ if strcmp(trainingParam.assemblenet,'y') | ~exist([path '/' name '.mat'])
      end
      if strcmp(trainingParam.network,'resnet50')
     lgraph = connectLayers(lgraph,"fold/out","conv1");    
-      end
+     end
     
+      if strcmp(trainingParam.network,'efficientnetb0')
+    lgraph = connectLayers(lgraph,"fold/out","efficientnet-b0|model|stem|conv2d|Conv2D");    
+           end
+      
     % create lstm network and remove first layer (sequence)
     fprintf(' create LSTM network\n');
     
