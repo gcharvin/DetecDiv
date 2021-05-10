@@ -36,6 +36,9 @@ end
 if strcmp(trainingParam.network,'resnet50')
 layerName = "avg_pool"; % layer id where the network will be connected 
 end
+if strcmp(trainingParam.network,'efficientnetb0')
+layerName = "pool5-7x7_s1"; % layer id where the network will be connected 
+end
 
 tempFile = [path '/' name '_image_classifier_activations.mat']; 
 
@@ -201,7 +204,7 @@ if strcmp(trainingParam.assemblenet,'y') | ~exist([path '/' name '.mat'])
     layerNames = ["data" "pool5-drop_7x7_s1" "new_fc" "prob" "new_classoutput"];
     end
     if strcmp(trainingParam.network,'resnet50')
-    layerNames = ["input_1" "new_fc" "prob" "new_classoutput"];
+    layerNames = ["input_1" "new_fc" "fc1000_softmax" "new_classoutput"];
     end
     
     cnnLayers = removeLayers(cnnLayers,layerNames);

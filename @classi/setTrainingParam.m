@@ -38,7 +38,6 @@ if ~strcmp(trai,'n')
         
         disp('Assemble full network ?');
         trainingParam=setParam(trainingParam,{'assemblenet','y'});
-        
     end
     
     if classif.typeid==1 || (classif.typeid==4 & strcmp(trainingParam.imageclassifier,'y'))
@@ -71,7 +70,7 @@ disp('*** Set training options for image classification ***');
 disp('Select optimization method (sgdm, adam, rmsprop): ');
 trainingParam=setParam(trainingParam,{'method','sgdm'});
 
-disp('Select CNN (googlenet, resnet50, resnet101, inceptionresnetv2, nasnetlarge): ');
+disp('Select CNN (googlenet, resnet50, resnet101, inceptionresnetv2, nasnetlarge,efficientnetb0): ');
 trainingParam=setParam(trainingParam,{'network','googlenet'});
 
 disp('Select Batch size (8-128): ');

@@ -50,6 +50,8 @@ net=resnet101;
 net=nasnetlarge;
     case 'inceptionresnetv2'
 net=inceptionresnetv2;
+   case 'efficientnet'
+net=efficientnetb0;
     otherwise
 fprintf('User selected custom CNN...\n');
 eval(['net =' trainingParam.network]);        
