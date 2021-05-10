@@ -201,7 +201,7 @@ if strcmp(trainingParam.assemblenet,'y') | ~exist([path '/' name '.mat'])
     layerNames = ["data" "pool5-drop_7x7_s1" "new_fc" "prob" "new_classoutput"];
     end
     if strcmp(trainingParam.network,'resnet50')
-    layerNames = ["data" "new_fc" "prob" "new_classoutput"];
+    layerNames = ["input_1" "new_fc" "prob" "new_classoutput"];
     end
     
     cnnLayers = removeLayers(cnnLayers,layerNames);
