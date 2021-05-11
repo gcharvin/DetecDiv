@@ -8,7 +8,13 @@ fprintf('Load videos...\n');
 %inputSize = netCNN.Layers(1).InputSize(1:2);
 
 %inputSize=[size(roiobj.image,1) size(roiobj.image,2)];
-inputSize = classifier.Layers(140).InputSize(1:2);
+
+for i=1:numel(classifier.Layers)
+    if strcmp(class(classifier.Layers(i)), 'nnet.cnn.layer.SequenceInputLayer')
+inputSize = classifier.Layers(i).InputSize(1:2);
+break
+    end
+end
 
 if nargin==4 % standard classification is requested 
 net=classifierCNN;

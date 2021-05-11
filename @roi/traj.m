@@ -61,17 +61,16 @@ plot(xr,yr,'Color','r','LineWidth',2); hold on;
 acc= 100*sum(yr==y)./length(y);
  str{end+1}=['Classification results; ' num2str(acc) '% accurate'];
  
-
-
-% CNN results
-
-if isfield(obj.results.(classistr),'idCNN')
-    xrCNN=1:numel(obj.results.(classistr).idCNN);
-    yrCNN=obj.results.(classistr).idCNN;
-    plot(xrCNN,yrCNN,'Color','g','LineWidth',1); hold on;
-    accCNN= 100*sum(yrCNN==y)./length(y);
-    str{end+1}=['Classification results CNN; ' num2str(accCNN) '% accurate'];
-end
+% % CNN results
+% 
+% if isfield(obj.results.(classistr),'idCNN')
+%     xrCNN=1:numel(obj.results.(classistr).idCNN);
+%     yrCNN=obj.results.(classistr).idCNN;
+%     plot(xrCNN,yrCNN,'Color','g','LineWidth',1); hold on;
+%     accCNN= 100*sum(yrCNN==y)./length(y);
+%     str{end+1}=['Classification results CNN; ' num2str(accCNN) '% accurate'];
+% end
+str2=str;
 
 pix=find(x==obj.display.frame);
 line([x(pix) x(pix)],[1 max(obj.results.(classistr).id)],'Color',[0.5 0.5 0.5],'LineWidth',2,'Tag','track');
@@ -116,20 +115,37 @@ yr=prob(idclas,:);
 
 plot(xr,yr,'Color','r','LineWidth',1,'LineStyle','-','Marker','.','MarkerSize',15); hold on;
 
-if isfield(obj.results.(classistr),'probCNN')
-probCNN=obj.results.(classistr).probCNN;
+% if isfield(obj.results.(classistr),'probCNN')
+% probCNN=obj.results.(classistr).probCNN;
+% 
+%   if   numel(obj.results.(classistr).classes)~=size(obj.results.(classistr).probCNN,1)
+%       probCNN=probCNN';
+%   end
+%     
+% xr=1:numel(probCNN(idclas,:));
+% yr=probCNN(idclas,:);
+% 
+% plot(xr,yr,'Color','g','LineWidth',1,'LineStyle','-','Marker','.','MarkerSize',15); hold on;
+% end
 
-  if   numel(obj.results.(classistr).classes)~=size(obj.results.(classistr).probCNN,1)
-      probCNN=probCNN';
-  end
+% displays the result prab after lstm surclassification
+
+if isfield(obj.results.(classistr),'probcorr')
     
-xr=1:numel(probCNN(idclas,:));
-yr=probCNN(idclas,:);
+    probcorr=obj.results.(classistr).probcorr;
 
-plot(xr,yr,'Color','g','LineWidth',1,'LineStyle','-','Marker','.','MarkerSize',15); hold on;
+  %if   numel(obj.results.(classistr).classes)~=size(obj.results.(classistr).prob,1)
+  %    prob=prob';
+  %end
+    
+xr=1:numel(probcorr(idclas,:));
+yr=probcorr(idclas,:);
+
+plot(xr,yr,'Color','g','LineWidth',2,'LineStyle','-','Marker','.','MarkerSize',5); hold on;
+str2{end+1}='Reclassification LSTM';
 end
 
-
+legend(str2);
 
 ylim([0 1]);
 end
