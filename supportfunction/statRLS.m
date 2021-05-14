@@ -1,4 +1,4 @@
-function statRLS(rls)
+function [h1,h2,h3]=statRLS(rls)
 % plot statistics associated with automated RLS data
 % this assumes that groundtruth and test data are interwined.
 
@@ -10,7 +10,7 @@ rlsg=[rls(rlsg).ndiv];
 rlst=[rls.groundtruth]==0;
 rlst=[rls(rlst).ndiv];
 
-figure('Color','w');
+h1=figure('Color','w','Units', 'Normalized', 'Position',[0.1 0.1 0.5 0.5]);
 plot(rlsg,rlst,'Color','r','Marker','.','MarkerSize',30,'LineStyle','none'); hold on; 
 plot(0:max(max(rlst),max(rlsg)),0:max(max(rlst),max(rlsg)),'k','LineStyle','--','LineWidth',2);
 r=corrcoef(rlsg,rlst);
@@ -27,8 +27,8 @@ set(gca,'FontSize',14);
 [yt,xt]=ecdf(rlst);
 [yg,xg]=ecdf(rlsg);
 
-figure;
-subplot(1,2,1)
+
+h2=figure('Color','w','Units', 'Normalized', 'Position',[0.1 0.1 0.5 0.5]);
 stairs([0 ; xg],[1 ; 1-yg],'Color','k','LineWidth',2);hold on,
 stairs([0 ; xt],[1 ; 1-yt],'Color','g','LineWidth',2); 
 
@@ -53,13 +53,13 @@ bins=0:1:40;
 [ng xg]=hist(divg,bins);
 [nt xt]=hist(divt,bins);
 
-subplot(1,2,2)
+h3=figure('Color','w','Units', 'Normalized', 'Position',[0.1 0.1 0.5 0.5]);
 stairs(xg,ng,'Color','k','LineWidth',2);hold on;
 stairs(xt,nt,'Color','g','LineWidth',2); 
 
 
 p=ranksum(divg,divt);
-legend({['Groundtruth; median= ' num2str(median(divt)) ' (N= ' num2str(length(divt)) ')'],['Computed; median= ' num2str(median(divg)) ' (N= ' num2str(length(divg)) ')']});
+legend({['Groundtruth; median= ' num2str(median(divg)) ' (N= ' num2str(length(divg)) ')'],['Computed; median= ' num2str(median(divt)) ' (N= ' num2str(length(divt)) ')']});
 title(['Division times; p=' num2str(p)]);
 set(gca,'FontSize',16);
 xlabel('Division time (frames)');
