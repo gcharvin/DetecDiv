@@ -1,6 +1,5 @@
 function trainImageLSTMNetFun(path,name)
 
-
 fprintf('Loading training options...\n');
 fprintf('------\n');
 
@@ -37,7 +36,7 @@ if strcmp(trainingParam.network,'resnet50')
 layerName = "avg_pool"; % layer id where the network will be connected 
 end
 if strcmp(trainingParam.network,'efficientnetb0')
-layerName = "efficientnet-b0|model|head|global_average_pooling2d|GlobAvgPool"; % layer id where the network will be connected 
+layerName = "pool5-7x7_s1"; % layer id where the network will be connected 
 end
 
 tempFile = [path '/' name '_image_classifier_activations.mat']; 
@@ -151,17 +150,22 @@ if strcmp(trainingParam.lstmtraining,'y') | ~exist([path '/netLSTM.mat']) % trai
     numObservations = numel(sequencesTrain);
     numIterationsPerEpoch = max(1,floor(numObservations / miniBatchSize));
     
-    options = trainingOptions('adam', ...
+    options = trainingOptions('sgdm', ...
             'MiniBatchSize',miniBatchSize, ...
-            'MaxEpochs',100,...
+            'MaxEpochs',25,...
             'InitialLearnRate',trainingParam.lstmInitialLearnRate, ...
+            'LearnRateSchedule','piecewise',...
+            'LearnRateDropPeriod',10,...
+            'LearnRateDropFactor',0.25,...
             'GradientThreshold',2, ...
             'Shuffle','every-epoch', ...
             'ValidationData',{sequencesValidation,labelsValidation}, ...
             'ValidationFrequency',numIterationsPerEpoch, ...
             'Plots','training-progress', ...
             'ExecutionEnvironment','auto',...
-            'VerboseFrequency',10);
+            'VerboseFrequency',10,...
+            'Momentum', 0.9);
+                
   
         % warning : Parallel training of recurrent networks is not supported. 'ExecutionEnvironment' value in trainingOptions function must be 'auto',
 %'gpu', or 'cpu'.
@@ -206,9 +210,6 @@ if strcmp(trainingParam.assemblenet,'y') | ~exist([path '/' name '.mat'])
     if strcmp(trainingParam.network,'resnet50')
     layerNames = ["input_1" "new_fc" "fc1000_softmax" "new_classoutput"];
     end
-      if strcmp(trainingParam.network,'efficientnetb0')
-    layerNames = ["ImageInput" "new_fc" "Softmax" "new_classoutput"];
-      end
     
     cnnLayers = removeLayers(cnnLayers,layerNames);
     
@@ -235,12 +236,8 @@ if strcmp(trainingParam.assemblenet,'y') | ~exist([path '/' name '.mat'])
      end
      if strcmp(trainingParam.network,'resnet50')
     lgraph = connectLayers(lgraph,"fold/out","conv1");    
-     end
+      end
     
-      if strcmp(trainingParam.network,'efficientnetb0')
-    lgraph = connectLayers(lgraph,"fold/out","efficientnet-b0|model|stem|conv2d|Conv2D");    
-           end
-      
     % create lstm network and remove first layer (sequence)
     fprintf(' create LSTM network\n');
     
@@ -263,10 +260,12 @@ if strcmp(trainingParam.assemblenet,'y') | ~exist([path '/' name '.mat'])
     
     classifier = assembleNetwork(lgraph);
     save([path '/' name '.mat'],'classifier');
-    
+    LSTMOptions=struct(options);
+    save([path '/TrainingValidation/' 'LSTMOptions' '.mat'],'LSTMOptions');
     
     fprintf('Full network is assembled !\n');
     
+    SaveTrainingPlot(path); 
 else
     load( [path '/' name '.mat']); % loading the fully assembled network
 end
@@ -278,7 +277,16 @@ end
 
 
 
+function SaveTrainingPlot(path)
+    currentfig = findall(groot,'Type','Figure');
+    currentfig=currentfig(1);%take the last opened figure
+    %             ValAccuracy=info.ValidationAccuracy(end);
+    disp(['Saving figure...' '\n']);
+    %             savefig(currentfig, [path '/TrainingValidation/LSTMTraining.fig'],'compact')
+    %             saveas(currentfig, [path '/TrainingValidation/LSTMTraining.pdf'])
+    print(currentfig,[path '/TrainingValidation/LSTMTraining'],'-dpdf','-fillpage')
 
+        
 function videoResized = centerCrop(video,inputSize)
 
 sz = size(video);

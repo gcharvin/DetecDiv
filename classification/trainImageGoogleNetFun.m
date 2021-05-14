@@ -50,7 +50,7 @@ net=resnet101;
 net=nasnetlarge;
     case 'inceptionresnetv2'
 net=inceptionresnetv2;
-   case 'efficientnet'
+   case 'efficientnetb0'
 net=efficientnetb0;
     otherwise
 fprintf('User selected custom CNN...\n');
@@ -91,6 +91,7 @@ end
 
 lgraph = replaceLayer(lgraph,learnableLayer.Name,newLearnableLayer);
 
+%Change here to put or not class weighting
 %newClassLayer = classificationLayer('Name','new_classoutput');
 newClassLayer = weightedClassificationLayer(classWeights,'new_classoutput');
 
@@ -162,7 +163,7 @@ options = trainingOptions(trainingParam.method, ...
     'Shuffle',trainingParam.Shuffle, ...
     'ValidationData',augimdsValidation, ...
     'ValidationFrequency',valFrequency, ...
-     'VerboseFrequency',10,...
+    'VerboseFrequency',10,...
     'Plots','training-progress',...
     'ExecutionEnvironment',trainingParam.ExecutionEnvironment);
 
@@ -186,7 +187,6 @@ options = trainingOptions(trainingParam.method, ...
 %     'ExecutionEnvironment','auto');
 %  
 % end
-
 classifier = trainNetwork(augimdsTrain,lgraph,options);
 
 fprintf('Training is done...\n');
@@ -196,10 +196,16 @@ fprintf('------\n');
 %[path '/' name '.mat']
 
 save([path '/' name '.mat'],'classifier');
+CNNOptions=struct(options);
+
+CNNOptions.ValidationData=[];
+save([path '/TrainingValidation/' 'CNNOptions' '.mat'],'CNNOptions');
+save([path '/TrainingValidation/' 'tmpoptions' '.mat'],'options');
 
 % layers = freezeWeights(layers) sets the learning rates of all the
 % parameters of the layers in the layer array |layers| to zero.
-
+ SaveTrainingPlot(path);
+ 
 function layers = freezeWeights(layers)
 
 for ii = 1:size(layers,1)
@@ -212,12 +218,19 @@ for ii = 1:size(layers,1)
     end
 end
 
-
-
 % lgraph = createLgraphUsingConnections(layers,connections) creates a layer
 % graph with the layers in the layer array |layers| connected by the
 % connections in |connections|.
 
+function SaveTrainingPlot(path)
+    currentfig = findall(groot,'Type','Figure');
+    currentfig=currentfig(1);%take the last opened figure
+    %             ValAccuracy=info.ValidationAccuracy(end);
+    disp(['Saving figure...' '\n']);
+    %             savefig(currentfig, [path '/TrainingValidation/LSTMTraining.fig'],'compact')
+    %             saveas(currentfig, [path '/TrainingValidation/LSTMTraining.pdf'])
+    print(currentfig,[path '/TrainingValidation/CNNTraining'],'-dpdf','-fillpage')
+        
 function lgraph = createLgraphUsingConnections(layers,connections)
 
 lgraph = layerGraph();
