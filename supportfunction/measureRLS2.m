@@ -123,7 +123,11 @@ for r=rois
     ccg=ccg+1;
 end
 
+if numel([rlsResults.groundtruth])==numel([rlsGroundtruth.groundtruth])
 rls=[rlsResults rlsGroundtruth];
+else
+    rls=rlsGroundtruth;
+end
 rls=rls(:);
 [p ix]= sort({rls(:).trapclassi});
 rls=rls(ix);
