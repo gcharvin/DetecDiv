@@ -54,7 +54,7 @@ if nargin<2 % no parameter provided build a param variable
     param.startY=-15; % origin of Y axis for plot
     param.startX=0;
     param.figure=[];
-    param.figure.Position=[100 100 1000 300];
+    param.figure.Position=[0.1 0 0.5 0.9];
     param.xlim=[];
     param.ylim=[];
     
@@ -65,7 +65,7 @@ if nargin<2 % no parameter provided build a param variable
 end
 
 %if numel(handle)==0
-hrls=figure('Color','w','Position',param.figure.Position);
+hrls=figure('Color','w','Units', 'Normalized', 'Position', param.figure.Position);
 %else
 
 %axes(handle);
@@ -230,7 +230,6 @@ if param.colorbar==1
     
     h.Ticks=[0 1];
     h.TickLabels={num2str(param.minmax(1)) num2str(param.minmax(2))};
-    h.Location='east';
     set(h,'FontSize',14);
     ylabel(h,'Division time (frames)');
     %h.Position=[1 1 0.3 0.3]
