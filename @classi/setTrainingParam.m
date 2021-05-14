@@ -55,13 +55,18 @@ if ~strcmp(trai,'n')
     
 end
 
+for i=1:numel(classif.roi)
+    trainingParam.rois{1,i}=i;
+    trainingParam.rois{2,i}=classif.roi(i).id;
+end
+
 disp('---------------');
 disp('Stored training parameters: ');
 
 disp(trainingParam)
 
 save([classif.path '/trainingParam.mat'],'trainingParam')
-
+save([classif.path '/TrainingValidation' '/trainingParam.mat'],'trainingParam')
 
 function trainingParam=imageTraining(trainingParam)
 
@@ -70,7 +75,7 @@ disp('*** Set training options for image classification ***');
 disp('Select optimization method (sgdm, adam, rmsprop): ');
 trainingParam=setParam(trainingParam,{'method','sgdm'});
 
-disp('Select CNN (googlenet, resnet50, resnet101, inceptionresnetv2, nasnetlarge,efficientnetb0): ');
+disp('Select CNN (googlenet, resnet50, resnet101, inceptionresnetv2, nasnetlarge, efficientnetb0): ');
 trainingParam=setParam(trainingParam,{'network','googlenet'});
 
 disp('Select Batch size (8-128): ');
