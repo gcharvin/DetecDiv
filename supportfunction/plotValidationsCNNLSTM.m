@@ -8,23 +8,17 @@ folder=folder(contains({folder.name},string(dateT)));
 mkdir([path dateT]);
 
 commentsCNN="ND";
-<<<<<<< Updated upstream
-=======
+
 plottraj=1;
->>>>>>> Stashed changes
 for i=1:numel(varargin)
     %Comment
     if strcmp(varargin{i},'CommentCNN')
         commentsCNN=string(varargin{i+1});
     end
-<<<<<<< Updated upstream
-=======
-    
     %plotTraj
     if strcmp(varargin{i},'Traj')
     plottraj=varargin{i+1};
     end
->>>>>>> Stashed changes
 end
 
 commentsLSTM="ND";
@@ -69,11 +63,8 @@ tableCNN=table(string(datetime('now','Format','HH:mm:ss')),...
     string(num2str(trainingParam.translateAugmentation)),...
     CNNOptions.InitialLearnRate,...
     string(CNNOptions.LearnRateScheduleSettings.Method ),...
-<<<<<<< Updated upstream
-=======
     CNNOptions.LearnRateScheduleSettings.DropRateFactor,...
     CNNOptions.LearnRateScheduleSettings.DropPeriod,...
->>>>>>> Stashed changes
     CNNOptions.L2Regularization,...
     string(CNNOptions.Shuffle),...
     CNNOptions.MaxEpochs,...
@@ -94,11 +85,8 @@ tableCNN=table(string(datetime('now','Format','HH:mm:ss')),...
     'translateAugmentation',...
     'InitialLearnRate' ,...
     'LearnRateScheduleMethod',...
-<<<<<<< Updated upstream
-=======
     'LearnRateScheduleDropFactor',...
     'LearnRateScheduleDropPeriod',...
->>>>>>> Stashed changes
     'L2Reg',...
     'Shuffle',...
     'MaxEpochs',...
@@ -225,40 +213,21 @@ end
 roisTest=1:numel(classi.roi(:)); %take all the rois of the classi
 roisTest=setdiff(roisTest,roisTrain); %remove the training rois
 
-<<<<<<< Updated upstream
-[hClassiStats1, hClassiStats2, hClassiStats3] =classi.stats(roisTrain,'Dataset','Training');
-=======
 [hClassiStats1, hClassiStats2, hClassiStats3] =classi.stats(roisTrain,'Dataset','TRAINSET');
->>>>>>> Stashed changes
+
 export_fig(hClassiStats1, [path dateT '\accuracy_ROIs_Train.pdf']);
 export_fig(hClassiStats2, [path dateT '\accuracy_classes_Train.pdf']);
 export_fig(hClassiStats3, [path dateT '\confusion_Train.pdf']);
 
 if numel(roisTest)>0
-<<<<<<< Updated upstream
-    [hClassiStats_Test1, hClassiStats_Test2, hClassiStats_Test3] =classi.stats(roisTest,'Dataset','Test');
-=======
+
     [hClassiStats_Test1, hClassiStats_Test2, hClassiStats_Test3] =classi.stats(roisTest,'Dataset','TESTSET');
->>>>>>> Stashed changes
+
     export_fig(hClassiStats_Test1, [path dateT '\accuracy_ROIs_Test.pdf']);
     export_fig(hClassiStats_Test2, [path dateT '\accuracy_classes_Test.pdf']);
     export_fig(hClassiStats_Test3, [path dateT '\confusion_Test.pdf']);
 end
-<<<<<<< Updated upstream
-%% RLS
-[rls,~,~]=measureRLS2(classi,varargin);
 
-%% statRLS
-[hRlsStats1,hRlsStats2,hRlsStats3]=statRLS(rls);
-export_fig(hRlsStats1, [path dateT '\rlsStats1.pdf']);
-export_fig(hRlsStats2, [path dateT '\rlsStats2.pdf']);
-export_fig(hRlsStats3, [path dateT '\rlsStats3.pdf']);
-%% plotRLS
-hRls=plotRLS(rls);
-export_fig(hRls, [path dateT '\rls.pdf']);
-
-if exist([path  '\' dateT '\' 'Report_'  '.pdf'],'file')
-=======
 
 %% Traj
 if plottraj==1
@@ -300,17 +269,13 @@ hRlsTest=plotRLS(rlsTest,'Comment','TESTSET');
 export_fig(hRlsTest, [path dateT '\rlsTest.pdf']);
 %% Report
 if exist([path  '\' dateT '\' 'Report_' dateT '.pdf'],'file')
->>>>>>> Stashed changes
     error('Cant write PDF, file already exists');
 end
 
 if numel(roisTest)>0
     disp('test data available, printing them on the report')
-<<<<<<< Updated upstream
-append_pdfs([path  '\' dateT '\' 'Report_'  '.pdf'],...
-=======
+
 append_pdfs([path  '\' dateT '\' 'Report_' dateT  '.pdf'],...
->>>>>>> Stashed changes
     [path dateT '\CNNParam.pdf'],...
     [path dateT '\CNNTraining.pdf'],...
     [path dateT '\LSTMParam.pdf'],...
@@ -321,16 +286,6 @@ append_pdfs([path  '\' dateT '\' 'Report_' dateT  '.pdf'],...
     [path dateT '\accuracy_ROIs_Test.pdf'],...
     [path dateT '\accuracy_classes_Test.pdf'],...
     [path dateT '\confusion_Test.pdf'],...
-<<<<<<< Updated upstream
-    [path dateT '\rlsStats1.pdf'],...
-    [path dateT '\rlsStats2.pdf'],...
-    [path dateT '\rlsStats3.pdf'],...
-    [path dateT '\rls.pdf']);
-
-else
-    disp('no test data')
-append_pdfs([path  '\' dateT '\' 'Report_'  '.pdf'],...
-=======
     [path dateT '\rlsStats1Train.pdf'],...
     [path dateT '\rlsStats2Train.pdf'],...
     [path dateT '\rlsStats3Train.pdf'],...
@@ -343,7 +298,6 @@ append_pdfs([path  '\' dateT '\' 'Report_'  '.pdf'],...
 else
     disp('no test data')
 append_pdfs([path  '\' dateT '\' 'Report_' dateT '.pdf'],...
->>>>>>> Stashed changes
     [path dateT '\CNNParam.pdf'],...
     [path dateT '\CNNTraining.pdf'],...
     [path dateT '\LSTMParam.pdf'],...
@@ -351,12 +305,6 @@ append_pdfs([path  '\' dateT '\' 'Report_' dateT '.pdf'],...
     [path dateT '\accuracy_ROIs_Train.pdf'],...
     [path dateT '\accuracy_classes_Train.pdf'],...
     [path dateT '\confusion_Train.pdf'],...
-<<<<<<< Updated upstream
-    [path dateT '\rlsStats1.pdf'],...
-    [path dateT '\rlsStats2.pdf'],...
-    [path dateT '\rlsStats3.pdf'],...
-    [path dateT '\rls.pdf']);
-=======
     [path dateT '\rlsStats1Train.pdf'],...
     [path dateT '\rlsStats2Train.pdf'],...
     [path dateT '\rlsStats3Train.pdf'],...
@@ -365,7 +313,7 @@ append_pdfs([path  '\' dateT '\' 'Report_' dateT '.pdf'],...
     [path dateT '\rlsStats2Test.pdf'],...
     [path dateT '\rlsStats3Test.pdf'],...
     [path dateT '\rlsTest.pdf']);    
->>>>>>> Stashed changes
+
 end
 save([path dateT '\trainingParam.mat'],'trainingParam');
 
@@ -376,12 +324,6 @@ delete([path dateT '\LSTMTraining.pdf']);
 delete([path dateT '\accuracy_ROIs_Train.pdf']);
 delete([path dateT '\accuracy_classes_Train.pdf']);
 delete([path dateT '\confusion_Train.pdf']);
-<<<<<<< Updated upstream
-delete([path dateT '\rlsStats1.pdf']);
-delete([path dateT '\rlsStats2.pdf']);
-delete([path dateT '\rlsStats3.pdf']);
-delete([path dateT '\rls.pdf']);
-=======
 delete([path dateT '\rlsStats1Train.pdf']),...
 delete([path dateT '\rlsStats2Train.pdf']),...
 delete([path dateT '\rlsStats3Train.pdf']),...
@@ -390,7 +332,6 @@ delete([path dateT '\rlsStats1Test.pdf']),...
 delete([path dateT '\rlsStats2Test.pdf']),...
 delete([path dateT '\rlsStats3Test.pdf']),...
 delete([path dateT '\rlsTest.pdf']);
->>>>>>> Stashed changes
 
 if numel(roisTest)>0
     delete([path dateT '\accuracy_ROIs_Test.pdf']);
@@ -398,9 +339,6 @@ if numel(roisTest)>0
     delete([path dateT '\confusion_Test.pdf']);
 end
 
-<<<<<<< Updated upstream
-close all
-=======
 %===TRAJ===
 if plottraj==1
     cctraj=1;
@@ -421,6 +359,4 @@ end
 
         
 close all
-
->>>>>>> Stashed changes
 clear figCNN figLSTM uit uitCNN uitLSTM
