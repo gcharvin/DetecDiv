@@ -35,8 +35,6 @@ numClasses = numel(categories(imdsTrain.Labels));
 fprintf('Loading network...\n');
 fprintf('------\n');
 
-% load google net
-
 switch trainingParam.network
     case 'googlenet'
 net = googlenet;
