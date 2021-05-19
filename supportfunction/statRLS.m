@@ -1,8 +1,22 @@
+<<<<<<< Updated upstream
 function [h1,h2,h3]=statRLS(rls)
+=======
+function [h1,h2,h3]=statRLS(rls,varargin)
+>>>>>>> Stashed changes
 % plot statistics associated with automated RLS data
 % this assumes that groundtruth and test data are interwined.
 
 % plot correlation between groundtruth rls and observed rls 
+
+
+comment='';
+for i=1:numel(varargin)
+    if strcmp(varargin{i},'Comment')
+        comment=varargin{i+1};
+    end
+end
+
+
 
 rlsg=[rls.groundtruth]==1;
 rlsg=[rls(rlsg).ndiv];
@@ -19,7 +33,7 @@ xlim([0 max(max(rlst),max(rlsg))]);
 ylim([0 max(max(rlst),max(rlsg))]);
 xlabel('Ground truth lifespan (gen.)');
 ylabel('Computed lifespan (gen.)');
-title(['R^2 =' num2str(r(1,2))]);
+title([comment ' - R^2 =' num2str(r(1,2))]);
 set(gca,'FontSize',14);
 
 % plot ecdf for lifespan
@@ -36,7 +50,7 @@ legend({['Groundtruth; median= ' num2str(median(rlsg)) ' (N= ' num2str(length(rl
 xlabel('Divisions');
 ylabel('Survival');
 p=ranksum(rlst,rlsg);
-title(['Replicative lifespan; p=' num2str(p)]);
+title([comment ' - Replicative lifespan; p=' num2str(p)]);
 set(gca,'FontSize',16);
 xlim([0 max(max(rlst),max(rlsg))])
 ylim([0 1.05]);
@@ -60,7 +74,11 @@ stairs(xt,nt,'Color','g','LineWidth',2);
 
 p=ranksum(divg,divt);
 legend({['Groundtruth; median= ' num2str(median(divg)) ' (N= ' num2str(length(divg)) ')'],['Computed; median= ' num2str(median(divt)) ' (N= ' num2str(length(divt)) ')']});
+<<<<<<< Updated upstream
 title(['Division times; p=' num2str(p)]);
+=======
+title([comment ' - Division times; p=' num2str(p)]);
+>>>>>>> Stashed changes
 set(gca,'FontSize',16);
 xlabel('Division time (frames)');
 ylabel('# Events');
