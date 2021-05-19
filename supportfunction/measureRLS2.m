@@ -81,7 +81,11 @@ for r=rois
                 rlsResults(cc).trapfov=classi.roi(r).id;
                 rlsResults(cc).trapclassi=['classi(' num2str(classi.id) ').roi(' num2str(r) ')'];
                 rlsResults(cc).ndiv=numel(divTimes.duration);
-                rlsResults(cc).totaltime=[divTimes.framediv(1), cumsum(divTimes.duration)+divTimes.framediv(1)];
+                if numel(divTimes.framediv)>0
+                    rlsResults(cc).totaltime=[divTimes.framediv(1), cumsum(divTimes.duration)+divTimes.framediv(1)];
+                else
+                    rlsResults(cc).totaltime=0;
+                end
                 rlsResults(cc).rules=[];
                 rlsResults(cc).groundtruth=0;
                 rlsResults(cc).fluo=[];
@@ -157,11 +161,17 @@ switch classiftype
         
         %==============find BIRTH===============
         firstsm=find(id==smid,1,'first');
-        firstlg=find(id==lbid,1,'first');
+        firstlg=find(id==lbid,1,'first');        
+        if numel(firstsm)==0
+            firstsm=NaN;
+        end
+        if numel(firstlg)==0
+            firstlg=NaN;
+        end
+        
         frameBirth=min(firstsm,firstlg);
-        
-        
-        %========find potential the first EMPTY frame, after birth=======
+                
+        %========find potential first EMPTY frame, after birth=======
         frameEmptied=[];
         bwEmpty=(id==emptyid);
         bwEmptyLabeled=bwlabel(bwEmpty);

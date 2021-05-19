@@ -1,4 +1,4 @@
-function f=traj(obj,classistr,option)
+function h=traj(obj,classistr,varargin)
 
 % trajectory 
 
@@ -7,6 +7,23 @@ function f=traj(obj,classistr,option)
 % option is the particular class id to be be represented as probability;
 % default : 1
 
+idclas=1;
+hidefig=0;
+comment='';
+for i=1:numel(varargin)
+    %hide
+    if strcmp(varargin{i},'Hide')
+        hidefig=varargin{i+1};
+    end
+
+    if strcmp(varargin{i},'Comment')
+        comment=varargin{i+1};
+    end
+    
+    if strcmp(varargin{i},'option')
+        idclas=varargin{i+1};
+    end
+end
 
 if numel(obj.results)==0
     disp('There is no result available for this position');
@@ -23,7 +40,6 @@ if numel(obj.image)==0
 end
 
 % find class names
-
 classes={};
 cc=1;
 for i=1:max(obj.results.(classistr).id)
@@ -32,8 +48,11 @@ for i=1:max(obj.results.(classistr).id)
     cc=cc+1;
 end
     
-    
-h=figure('Tag',['Traj' num2str(obj.id)],'Color','w','Position',[50 50 1000 500]);
+if hidefig==1
+h=figure('Tag',['Traj' num2str(obj.id)],'Color','w','Units', 'Normalized', 'Position',[0 0 1 1],'Visible','off');
+else
+h=figure('Tag',['Traj' num2str(obj.id)],'Color','w','Units', 'Normalized', 'Position',[0 0 1 1]);
+end
 
 acla=subplot(2,1,1);
 set(gca,'FontSize',20);
@@ -56,11 +75,11 @@ xr=1:numel(obj.results.(classistr).id);
 yr=obj.results.(classistr).id;
 plot(xr,yr,'Color','r','LineWidth',2); hold on;
 
-% compute accuracy
-
+% ============compute accuracy================
 acc= 100*sum(yr==y)./length(y);
  str{end+1}=['Classification results; ' num2str(acc) '% accurate'];
  
+<<<<<<< Updated upstream
 % % CNN results
 % 
 % if isfield(obj.results.(classistr),'idCNN')
@@ -70,6 +89,16 @@ acc= 100*sum(yr==y)./length(y);
 %     accCNN= 100*sum(yrCNN==y)./length(y);
 %     str{end+1}=['Classification results CNN; ' num2str(accCNN) '% accurate'];
 % end
+=======
+% CNN results
+if isfield(obj.results.(classistr),'idCNN')
+    xrCNN=1:numel(obj.results.(classistr).idCNN);
+    yrCNN=obj.results.(classistr).idCNN;
+    plot(xrCNN,yrCNN,'Color','g','LineWidth',1); hold on;
+    accCNN= 100*sum(yrCNN==y)./length(y);
+    str{end+1}=['Classification results CNN; ' num2str(accCNN) '% accurate'];
+end
+>>>>>>> Stashed changes
 str2=str;
 
 pix=find(x==obj.display.frame);
@@ -83,17 +112,11 @@ legend(str);
 ylim([0 max(obj.results.(classistr).id)+1]);
 set(acla,'YTick',1:max(obj.results.(classistr).id),'YTickLabel',classes,'Fontsize',14);
 
-title([classistr ' classification results for ROI ' obj.id],'Interpreter','none');
+title([comment ' - ' classistr ' - classification results for ROI ' obj.id],'Interpreter','none');
 ylabel('Classes');
 
 aprob=subplot(2,1,2);
 
-
-  if nargin==3
-        idclas=option;
-    else
-        idclas=1;
-  end
     
 if numel(obj.train)~=0
     x=1:numel(obj.train.(classistr).id);
@@ -141,6 +164,22 @@ if isfield(obj.results.(classistr),'probcorr')
 xr=1:numel(probcorr(idclas,:));
 yr=probcorr(idclas,:);
 
+<<<<<<< Updated upstream
+=======
+% displays the result prab after lstm surclassification
+
+if isfield(obj.results.(classistr),'probcorr')
+    
+    probcorr=obj.results.(classistr).probcorr;
+
+  %if   numel(obj.results.(classistr).classes)~=size(obj.results.(classistr).prob,1)
+  %    prob=prob';
+  %end
+    
+xr=1:numel(probcorr(idclas,:));
+yr=probcorr(idclas,:);
+
+>>>>>>> Stashed changes
 plot(xr,yr,'Color','g','LineWidth',2,'LineStyle','-','Marker','.','MarkerSize',5); hold on;
 str2{end+1}='Reclassification LSTM';
 end
