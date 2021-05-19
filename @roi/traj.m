@@ -79,17 +79,6 @@ plot(xr,yr,'Color','r','LineWidth',2); hold on;
 acc= 100*sum(yr==y)./length(y);
  str{end+1}=['Classification results; ' num2str(acc) '% accurate'];
  
-<<<<<<< Updated upstream
-% % CNN results
-% 
-% if isfield(obj.results.(classistr),'idCNN')
-%     xrCNN=1:numel(obj.results.(classistr).idCNN);
-%     yrCNN=obj.results.(classistr).idCNN;
-%     plot(xrCNN,yrCNN,'Color','g','LineWidth',1); hold on;
-%     accCNN= 100*sum(yrCNN==y)./length(y);
-%     str{end+1}=['Classification results CNN; ' num2str(accCNN) '% accurate'];
-% end
-=======
 % CNN results
 if isfield(obj.results.(classistr),'idCNN')
     xrCNN=1:numel(obj.results.(classistr).idCNN);
@@ -98,7 +87,7 @@ if isfield(obj.results.(classistr),'idCNN')
     accCNN= 100*sum(yrCNN==y)./length(y);
     str{end+1}=['Classification results CNN; ' num2str(accCNN) '% accurate'];
 end
->>>>>>> Stashed changes
+
 str2=str;
 
 pix=find(x==obj.display.frame);
@@ -164,22 +153,6 @@ if isfield(obj.results.(classistr),'probcorr')
 xr=1:numel(probcorr(idclas,:));
 yr=probcorr(idclas,:);
 
-<<<<<<< Updated upstream
-=======
-% displays the result prab after lstm surclassification
-
-if isfield(obj.results.(classistr),'probcorr')
-    
-    probcorr=obj.results.(classistr).probcorr;
-
-  %if   numel(obj.results.(classistr).classes)~=size(obj.results.(classistr).prob,1)
-  %    prob=prob';
-  %end
-    
-xr=1:numel(probcorr(idclas,:));
-yr=probcorr(idclas,:);
-
->>>>>>> Stashed changes
 plot(xr,yr,'Color','g','LineWidth',2,'LineStyle','-','Marker','.','MarkerSize',5); hold on;
 str2{end+1}='Reclassification LSTM';
 end
@@ -187,7 +160,6 @@ end
 legend(str2);
 
 ylim([0 1]);
-end
 
 xlabel('Time (frames)');
 ylabel(['P( class =  '  obj.results.(classistr).classes{1} ')']);
@@ -210,8 +182,6 @@ h.KeyPressFcn={@changeframe2,obj,h};
 end
 
 function changeframe2(handle,event,obj,h)
-
-ok=0;
 
 % if strcmp(event.Key,'uparrow')
 % val=str2num(handle.Tag(5:end));
@@ -252,208 +222,6 @@ end
 hf=findobj('Tag',['Traj' num2str(obj.id)]);
 figure(hf);
 
-% if strcmp(event.Key,'l') % move left to previous division
-%      
-%     if numel(obj.div.raw)>0
-%     pix=find(obj.div.raw(1:obj.frame-2)==1,1,'last');
-%     
-%     if numel(pix)
-%         
-%         obj.frame=pix+1;
-%         
-%         obj.view(obj.frame);
-%     hl=findobj('Tag',['Trajline' num2str(obj.id)]);
-%     if numel(hl)>0
-%     hl.XData=[obj.frame obj.frame];
-%     end
-%     
-%     end
-%     
-%     ok=1;
-%     end
-%  end
-%  if strcmp(event.Key,'m') % move right to next division
-%      
-%     if numel(obj.div.raw)>0
-%     pix=find(obj.div.raw(obj.frame+1:end)==1,1,'first');
-%     
-%     if numel(pix)
-%         obj.frame=pix+obj.frame+1;
-%         
-%         obj.view(obj.frame);
-%     hl=findobj('Tag',['Trajline' num2str(obj.id)]);
-%     if numel(hl)>0
-%     hl.XData=[obj.frame obj.frame];
-%     end
-%     
-%     end
-%     
-%     ok=1;
-%     end
-%  end
-
-
-    
-%     if strcmp(event.Key,'r') % reject divisions
-%     if obj.frame>1
-%        % 'ok'
-%         if obj.div.raw(obj.frame-1)==1 % putative division
-%           %  'ok'
-%             if obj.div.reject(obj.frame-1)==0 % frame is not rejected
-%              %   'ok'
-%                 obj.div.reject(obj.frame-1)=1;
-%                 
-% %                 hreject=findobj('Tag',['Rejectplot' num2str(obj.id)]);
-% %                 hraw=findobj('Tag',['Rawplot' num2str(obj.id)]);
-% %                 hreject.XData=[hreject.XData obj.frame-1];
-% %                 hreject.YData=[hreject.YData hraw.YData(obj.frame-1)];
-%             else
-%                 obj.div.reject(obj.frame-1)=0;
-%                 
-%                 %hreject=findobj('Tag',['Rejectplot' num2str(obj.id)]);
-%                 %hraw=findobj('Tag',['Rawplot' num2str(obj.id)]);
-%                 
-% %                 pix=find(hreject.XData==obj.frame-1);
-% %                 
-% %                 hreject.XData=hreject.XData( setxor(1:length(hreject.XData),pix));
-% %                 hreject.YData=hreject.YData( setxor(1:length(hreject.YData),pix));
-%             end
-%             
-%             hr=findobj('Tag',['Traj' num2str(obj.id)]);
-%             if numel(hr)>0
-%             delete(hr);
-%             end
-%             
-%             obj.traj;
-%            %  h=findobj('Tag',['Trap' num2str(obj.id)]);
-%            % figure(h);
-%         end
-%     end
-%     ok=1;
-%     end
-%     
-%      if strcmp(event.Key,'r') || strcmp(event.Key,'d' ) % reject divisions
-%     if obj.frame>1
-%        % 'ok'
-%         if obj.div.raw(obj.frame-1)==1 % putative division
-%           %  'ok'
-%             if obj.div.reject(obj.frame-1)==0 % frame is not rejected
-%              %   'ok'
-%              
-%              if strcmp(event.Key,'r')
-%                 obj.div.reject(obj.frame-1)=1;
-%              else
-%                 obj.div.reject(obj.frame-1)=2; 
-%              end
-%                 
-% %                 hreject=findobj('Tag',['Rejectplot' num2str(obj.id)]);
-% %                 hraw=findobj('Tag',['Rawplot' num2str(obj.id)]);
-% %                 hreject.XData=[hreject.XData obj.frame-1];
-% %                 hreject.YData=[hreject.YData hraw.YData(obj.frame-1)];
-%             else
-%                 obj.div.reject(obj.frame-1)=0;
-%                 
-%                 %hreject=findobj('Tag',['Rejectplot' num2str(obj.id)]);
-%                 %hraw=findobj('Tag',['Rawplot' num2str(obj.id)]);
-%                 
-% %                 pix=find(hreject.XData==obj.frame-1);
-% %                 
-% %                 hreject.XData=hreject.XData( setxor(1:length(hreject.XData),pix));
-% %                 hreject.YData=hreject.YData( setxor(1:length(hreject.YData),pix));
-%             end
-%             
-%             hr=findobj('Tag',['Traj' num2str(obj.id)]);
-%             if numel(hr)>0
-%             delete(hr);
-%             end
-%             
-%             obj.traj;
-%            %  h=findobj('Tag',['Trap' num2str(obj.id)]);
-%            % figure(h);
-%         end
-%     end
-%     ok=1;
-%      end
-%      
-%      if strcmp(event.Key,'s') % stop training at given frame
-%         if obj.frame==obj.div.stop
-%             obj.div.stop=size(obj.gfp,3);
-%         else
-%             obj.div.stop=obj.frame;
-%         end
-%         
-%         hl=findobj('Tag',['Stopline' num2str(obj.id)]);
-%             if numel(hl)>0
-%                 hl.XData=[obj.div.stop obj.div.stop];
-%             end
-%             
-%         ok=1;
-%      end
-    
-    
-end
-
-
-% function wbdcb(src,callbackdata,x,y,TF,TC)
-%      seltype = src.SelectionType;
-%    
-%      tmp=x(TF);
-%      
-%      if strcmp(seltype,'normal')
-%        % src.Pointer = 'circle';
-%         cp = hp(2).CurrentPoint;
-%        
-%         xinit = cp(1,1);
-%        % x
-%         yinit = cp(1,2);
-%         
-%         [d,idx] = min(abs(tmp-xinit));
-%         
-%         if d<10
-%        
-%          
-%         obj.view(tmp(idx));
-%         
-%         hl=findobj('Tag',['Trajline' num2str(obj.id)]);
-%         if numel(hl)>0
-%         hl.XData=[obj.frame obj.frame];
-%         end
-%             
-%         %plot(hp(2),x(idx),y(idx),'g*');
-%         end
-%      end
-%      
-%      if strcmp(seltype,'alt')
-%        % src.Pointer = 'circle';
-%         cp = hp(2).CurrentPoint;
-%        
-%         xinit = cp(1,1);
-%        % x
-%         yinit = cp(1,2);
-%         
-%         [d,idx] = min(abs(tmp-xinit));
-% 
-%         if d<10 % cursor must be less than 10 frames away from division position 
-%             
-%            % tmp(idx)
-%         if obj.div.reject(tmp(idx))==1
-%             obj.div.reject(tmp(idx))=0;
-%         else
-%             obj.div.reject(tmp(idx))=1;
-%         end
-% 
-%        % class(TF), class(obj.div.reject)
-%         
-%         plot(hp(2),x(TF),y(TF),'r*'); hold on;
-%         plot(hp(2),x(TC),y(TC),'g*'); hold on;
-%         plot(hp(2),x(obj.div.reject==1),y(obj.div.reject==1),'b*');
-%         end
-%      end
-%      
-%  end
-%end
-     
-     
 
 
 

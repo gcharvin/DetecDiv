@@ -13,60 +13,10 @@ function hrls=plotRLS(rls,varargin)
 % display style : color map : name or custom colormap : limits for
 % colormap, color separation , linewidth spacing etc
 % time : generation or physical time
-<<<<<<< Updated upstream
 
-if nargin<2 % no parameter provided build a param variable
-    param=[];
-    
-    l=linspace(0.15,0.85,256);
-    cmap2=zeros(256,3);
-    cmap2(:,2)=1*(fliplr(l))';
-    cmap2(:,1)=0*(fliplr(l))';
-    cmap2(:,3)=0*(fliplr(l))';
-    
-    cmapg=zeros(256,3);
-    cmapg(:,2)=(fliplr(l))';
-    cmapg(:,1)=(fliplr(l))';
-    cmapg(:,3)=(fliplr(l))';
-    
-    
-    param.colormap=cmap2; % should be a colormap with 256 x 3 elements
-    param.colormapg=cmapg;% colormap for groundtruth data
-    
-    param.showgroundtruth=1; % display the groundtruth data
-    
-    param.spacing=1.25; % separation between traces
-    param.cellwidth=1;
-    param.interspacing=1.5; %separation between doublets
-    
-    param.colorbar=1 ; % or 1 if colorbar to be printed
-    param.colorbarlegend='';
-    
-    param.findSEP=0; % 1: use find sep to find SEP
-    param.align=0; % 1 : align with respect to SEP
-    param.time=0; %0 : generations; 1 : physical time
-    param.plotfluo=0 ; %1 if fluo to be plotted instead of divisions
-    param.gradientWidth=0;
-    param.sepwidth=0.1; % separation between events
-    param.sepcolor=[1 0 0];
-
-    
-    param.minmax=[2 30]; % min and max values for display;
-    param.startY=-15; % origin of Y axis for plot
-    param.startX=0;
-    param.figure=[];
-    param.figure.Position=[0.1 0 0.5 0.9];
-    param.xlim=[];
-    param.ylim=[];
-    
-    param.sort=1; % 1 if sorting of trajectories according to generations
-    
-=======
 param=[];
 comment='';
-for i=1:numel(varargin)
->>>>>>> Stashed changes
-    
+for i=1:numel(varargin)  
     if strcmp(varargin{i},'Comment')
         comment=varargin{i+1};
     end
@@ -123,10 +73,8 @@ param.sort=1; % 1 if sorting of trajectories according to generations
   
 %if numel(handle)==0
 hrls=figure('Color','w','Units', 'Normalized', 'Position', param.figure.Position);
-<<<<<<< Updated upstream
-=======
+
 title(comment)
->>>>>>> Stashed changes
 %else
 
 %axes(handle);
@@ -153,12 +101,12 @@ if param.sort==1
             dead(j)=rls(j).totaltime(end);
         end
         
-        [p ix]= sort(dead,'Descend');
+        [p, ix]= sort(dead,'Descend');
         % ix,numel(rls)
         rls=rls(ix);
     else
         gt=[rls.groundtruth];
-        [p ix]= sort([rls(gt==1).ndiv],'Descend');
+        [p, ix]= sort([rls(gt==1).ndiv],'Descend');
         ix=ix*2;      
         
         for i=1:length(ix)

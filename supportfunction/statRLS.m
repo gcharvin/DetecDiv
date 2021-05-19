@@ -1,8 +1,5 @@
-<<<<<<< Updated upstream
-function [h1,h2,h3]=statRLS(rls)
-=======
 function [h1,h2,h3]=statRLS(rls,varargin)
->>>>>>> Stashed changes
+
 % plot statistics associated with automated RLS data
 % this assumes that groundtruth and test data are interwined.
 
@@ -64,8 +61,8 @@ divg=[rls(rlsg).divDuration];
 divt=[rls(rlst).divDuration];
 
 bins=0:1:40;
-[ng xg]=hist(divg,bins);
-[nt xt]=hist(divt,bins);
+[ng, xg]=hist(divg,bins);
+[nt, xt]=hist(divt,bins);
 
 h3=figure('Color','w','Units', 'Normalized', 'Position',[0.1 0.1 0.5 0.5]);
 stairs(xg,ng,'Color','k','LineWidth',2);hold on;
@@ -74,11 +71,8 @@ stairs(xt,nt,'Color','g','LineWidth',2);
 
 p=ranksum(divg,divt);
 legend({['Groundtruth; median= ' num2str(median(divg)) ' (N= ' num2str(length(divg)) ')'],['Computed; median= ' num2str(median(divt)) ' (N= ' num2str(length(divt)) ')']});
-<<<<<<< Updated upstream
-title(['Division times; p=' num2str(p)]);
-=======
+
 title([comment ' - Division times; p=' num2str(p)]);
->>>>>>> Stashed changes
 set(gca,'FontSize',16);
 xlabel('Division time (frames)');
 ylabel('# Events');
