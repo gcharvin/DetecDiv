@@ -1,8 +1,10 @@
-function formatDataForTraining(classif,option) %mov,trapsid,option)
+function formatDataForTraining(classif) %mov,trapsid,option)
 % saves user annotated data to disk- works for Image, Pixel and LSTM
 % classification
 
 disp('Saving user training to disk...');
+
+load([classif.path '/trainingParam.mat']);
 
 %classif=obj.processing.classification(classiid);
 category=classif.category;
@@ -10,25 +12,24 @@ category=category{1};
 
 foldername='trainingdataset';
 
-if nargin<2  % remove and recreates all directoires
-    
+% remove and recreates all directoires
 % mk folder to store ground user trained data
 
 if isfolder([classif.path '/' foldername])
     try
-    rmdir([classif.path '/' foldername], 's')
+        rmdir([classif.path '/' foldername], 's')
     catch
-     disp('Error: did not manage to remove directory !');   
+        disp('Error: did not manage to remove directory !');
     end
 end
 mkdir(classif.path,foldername)
-end
 
-if nargin<3
-rois=1:numel(classif.roi);
-else
- rois=option ;  
-end
+rois=trainingParam.rois;
+% if nargin<3
+% rois=1:numel(classif.roi);
+% else
+%  rois=option ;  
+% end
 
 
 switch category
