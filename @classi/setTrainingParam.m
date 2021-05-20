@@ -25,8 +25,16 @@ if ~strcmp(trai,'n')
     end
     
     
+    
+    disp('Which ROIs to use?');
+    trainingParam=setParam(trainingParam,{'rois',1:numel(classif.roi)});
+    cc=1;
+    for i=1:numel(trainingParam.rois)
+    trainingParam.roisID{cc}=classif.roi(trainingParam.rois(i)).id;
+    cc=cc+1;
+    end
+
     if classif.typeid==4 % LSTM: ask which part needs to be trained
-        
         disp('Train image classifier?');
         trainingParam=setParam(trainingParam,{'imageclassifier','y'});
         
@@ -48,16 +56,10 @@ if ~strcmp(trai,'n')
         trainingParam=LSTMTraining(trainingParam);
     end
     
-    if classif.typeid==8 % LSTM specific
+    if classif.typeid==8 % seg specific
         trainingParam=SegTraining(trainingParam);
     end
-    
-    
-end
-
-for i=1:numel(classif.roi)
-    trainingParam.rois{1,i}=i;
-    trainingParam.rois{2,i}=classif.roi(i).id;
+        
 end
 
 disp('---------------');
@@ -65,6 +67,7 @@ disp('Stored training parameters: ');
 
 disp(trainingParam)
 
+mkdir([classif.path '/TrainingValidation'])
 save([classif.path '/trainingParam.mat'],'trainingParam')
 save([classif.path '/TrainingValidation' '/trainingParam.mat'],'trainingParam')
 
@@ -118,7 +121,6 @@ disp('''gpu'' — Use the GPU');
 disp('''multi-gpu'' — Multiple GPUs');
 disp('''parallel'' — use a parallel pool, one GPU per worker if available  ');
 trainingParam=setParam(trainingParam,{'ExecutionEnvironment','parallel'});
-
 
 
 function trainingParam=LSTMTraining(trainingParam)
@@ -189,8 +191,7 @@ trainingParam=setParam(trainingParam,{'ExecutionEnvironment','parallel'});
 
 function trainingParam=setParam(trainingParam,fi)
 
-
-str=fi{2};
+str=fi{2};%default value if not previously assigned
 if isfield(trainingParam,fi{1})
     if numel(trainingParam.(fi{1}))>0
         str=trainingParam.(fi{1});
@@ -198,10 +199,17 @@ if isfield(trainingParam,fi{1})
 end
 
 if ischar(str)
-    prompt=[fi{1} ' (Default: ' str '): ']; answ= input(prompt,'s'); if numel(answ)==0  answ=str; end
+    prompt=[fi{1} ' (Default: ' str '): '];
+    answ= input(prompt,'s'); 
+    if numel(answ)==0  
+        answ=str; 
+    end
     trainingParam.(fi{1})=answ;
 else
-    
-    prompt=[fi{1} ' (Default: ' num2str(str) '): ']; answ= input(prompt); if numel(answ)==0  answ=str; end
+    prompt=[fi{1} ' (Default: ' num2str(str) '): '];
+    answ= input(prompt);
+    if numel(answ)==0 
+        answ=str;
+    end
     trainingParam.(fi{1})=answ;
 end
