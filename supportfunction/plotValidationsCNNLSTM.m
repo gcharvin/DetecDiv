@@ -207,8 +207,8 @@ tableLSTM = table(tableLSTM{:,:}.','RowNames',tableLSTM.Properties.VariableNames
     copyfile([path  '\LSTMOptions.mat'],[path dateT '\LSTMOptions.mat']);
 
 %% Classif stats
-for i=1:numel([trainingParam.rois{1,:}])
-    roisTrain(i)=trainingParam.rois{1,i};
+for i=1:numel(trainingParam.rois)
+    roisTrain=trainingParam.rois;
 end
 roisTest=1:numel(classi.roi(:)); %take all the rois of the classi
 roisTest=setdiff(roisTest,roisTrain); %remove the training rois
@@ -233,7 +233,7 @@ end
 if plottraj==1
     cctraj=1;
     for i=roisTrain
-        trajiTrain(cctraj)=classi.roi(i).traj(classi.strid,'Hide',1,'Comment', 'TRAINSET');
+        trajiTrain(cctraj)=classi.roi(i).traj(classi.strid,'Hide',1,'Comment', ['TRAINSET, roi' num2str(i)]);
         export_fig(trajiTrain(cctraj), [path dateT '\traj_Train_' num2str(roisTrain(cctraj)) '.pdf']);
         close(trajiTrain(cctraj));
         cctraj=cctraj+1;
@@ -241,7 +241,7 @@ if plottraj==1
     
     cctraj=1;
     for i=roisTest
-        trajiTest(cctraj)=classi.roi(i).traj(classi.strid,'Hide',1,'Comment', 'TESTSET');
+        trajiTest(cctraj)=classi.roi(i).traj(classi.strid,'Hide',1,'Comment', ['TESTSET, roi' num2str(i)]);
         export_fig(trajiTest(cctraj), [path dateT '\traj_Test_' num2str(roisTest(cctraj)) '.pdf']);
         close(trajiTest(cctraj));
         cctraj=cctraj+1;
