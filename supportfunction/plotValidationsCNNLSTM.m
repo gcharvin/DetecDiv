@@ -41,7 +41,7 @@ CNNfile=folder(contains({folder.name},'CNNTraining.pdf'));
 
 %% LSTM Training
 copyfile([path 'LSTMTraining.pdf'],[path dateT '\LSTMTraining.pdf']);
-LSTMfile=folder(contains({folder.name},'CNNTraining.pdf'));
+LSTMfile=folder(contains({folder.name},'LSTMTraining.pdf'));
 
 %% CNNparam
 figCNN=figure('Name', CNNfile.date,'Units', 'Normalized', 'Position',[0.1, 0.1, 0.5, 0.5]);
@@ -231,10 +231,11 @@ end
 
 %% Traj
 if plottraj==1
+    tic
     cctraj=1;
     for i=roisTrain
         trajiTrain(cctraj)=classi.roi(i).traj(classi.strid,'Hide',1,'Comment', ['TRAINSET, roi' num2str(i)]);
-        export_fig(trajiTrain(cctraj), [path dateT '\traj_Train_' num2str(roisTrain(cctraj)) '.pdf']);
+        export_fig(trajiTrain(cctraj), [path dateT '\traj_Train_' num2str(i) '.pdf']);
         close(trajiTrain(cctraj));
         cctraj=cctraj+1;
     end
@@ -242,10 +243,11 @@ if plottraj==1
     cctraj=1;
     for i=roisTest
         trajiTest(cctraj)=classi.roi(i).traj(classi.strid,'Hide',1,'Comment', ['TESTSET, roi' num2str(i)]);
-        export_fig(trajiTest(cctraj), [path dateT '\traj_Test_' num2str(roisTest(cctraj)) '.pdf']);
+        export_fig(trajiTest(cctraj), [path dateT '\traj_Test_' num2str(i) '.pdf']);
         close(trajiTest(cctraj));
         cctraj=cctraj+1;
     end
+    toc
 end
 
 %% RLS
@@ -341,19 +343,15 @@ end
 
 %===TRAJ===
 if plottraj==1
-    cctraj=1;
     for i=roisTrain
         append_pdfs([path  '\' dateT '\' 'Report_' dateT '.pdf'],...
-            [path dateT '\traj_Train_' num2str(roisTrain(cctraj)) '.pdf']);
-        delete([path dateT '\traj_Train_' num2str(roisTrain(cctraj)) '.pdf'])
-        cctraj=cctraj+1;
+            [path dateT '\traj_Train_' num2str(i) '.pdf']);
+        delete([path dateT '\traj_Train_' num2str(i) '.pdf'])
     end
-    cctraj=1;
     for i=roisTest
         append_pdfs([path  '\' dateT '\' 'Report_' dateT '.pdf'],...
-            [path dateT '\traj_Test_' num2str(roisTest(cctraj)) '.pdf']);
-        delete([path dateT '\traj_Test_' num2str(roisTest(cctraj)) '.pdf'])
-        cctraj=cctraj+1;
+            [path dateT '\traj_Test_' num2str(i) '.pdf']);
+        delete([path dateT '\traj_Test_' num2str(i) '.pdf'])
     end    
 end
 
