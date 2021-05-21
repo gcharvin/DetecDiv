@@ -8,7 +8,7 @@ function validateTrainingData(classif,varargin)
 %'Classifier' loads the classifier
 for i=1:numel(varargin)
     if strcmp(varargin{i},'Classifier')
-        classifierLSTM=varargin{i+1};
+        classifierStore=varargin{i+1};
     end
      if strcmp(varargin{i},'ClassifierCNN')
         classifierCNN=varargin{i+1};
@@ -28,19 +28,24 @@ name=classif.strid;
    % loading the CNN network as well for comparison purposes
 
 % first load classifier if not loadad to save some time 
-if exist('classifierLSTM','var')==0
+if exist('classifierStore','var')==0
     disp(['Loading classifier: ' name]);
     str=[path '/' name '.mat'];
     load(str); % load classifier 
-    classifierLSTM=classifier;
+    classifierStore=classifier;
 end
 
 if exist('classifierCNN','var')==0 
      str=[path '/netCNN.mat'];
+     if exist(str)
      load(str);
      classifierCNN=classifier; 
+     else
+       classifierCNN=[];
+     end
 end
 
+classifier=classifierStore; %either loaded or provided as an argument 
 
 for i=1:numel(varargin)
     if strcmp(varargin{i},'roilist')
@@ -53,32 +58,6 @@ if exist('roilist','var')==0 %if no roilist is indicated
     roilist=1:numel(classif.roi);
 end
 
-%     for i=1:numel(classif.roi) % loop on all ROIs
-% 
-%      roiobj=classif.roi(i);
-%      disp('-----------');
-%      disp(['Classifying ' num2str(roiobj.id)]);
-% 
-% 
-%     %  if strcmp(classif.category{1},'Image') % in this case, the results are provided as a series of labels
-%     %  roiobj.results=zeros(1,size(roiobj.image,4)); % pre allocate results for labels
-%     %  end
-% 
-%     feval(classifyFun,roiobj,classif,classifier); % launch the training function for classification
-%     % since roiobj is a handle, no need to have an output to this the function
-%     % in roiobj.results
-% 
-%     end
-% else
-%     for i=roilist % loop on indicated ROIs
-%      roiobj=classif.roi(i);
-%      disp('-----------');
-%      disp(['Classifying ' num2str(roiobj.id)]);
-%      feval(classifyFun,roiobj,classif,classifier); % launch the training function for classification
-%     end
-% end
-
-
 disp([num2str(length(roilist)) ' ROIs to classify, be patient...']);
 
 tmp=roi; % build list of rois
@@ -86,7 +65,7 @@ for i=1:length(roilist)
 tmp(i)=classif.roi(roilist(i));
 end
 
-parfor i=1:length(roilist) % loop on all ROIs using parrallel computing
+for i=1:length(roilist) % loop on all ROIs using parrallel computing
     
  roiobj=tmp(i);
 
@@ -100,12 +79,13 @@ parfor i=1:length(roilist) % loop on all ROIs using parrallel computing
 %  if strcmp(classif.category{1},'Image') % in this case, the results are provided as a series of labels
 %  roiobj.results=zeros(1,size(roiobj.image,4)); % pre allocate results for labels
 %  end
+
+ if numel(classifierCNN) % in case an LSTM classification is done, validation is performed with a CNN classifier as well 
+tmp(i)=feval(classifyFun,roiobj,classif,classifier,classifierCNN); % launch the training function for classification
+ else
+ tmp(i)=feval(classifyFun,roiobj,classif,classifier); % launch the training function for classification   
+ end
  
-tmp(i)=feval(classifyFun,roiobj,classif,classifierLSTM,classifierCNN); % launch the training function for classification
-% since roiobj is a handle, no need to have an output to this the function
-% in roiobj.results
-
-
 end
 
  for i=1:length(roilist)

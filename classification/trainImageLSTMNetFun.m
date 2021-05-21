@@ -269,12 +269,7 @@ else
     load( [path '/' name '.mat']); % loading the fully assembled network
 end
 
-
-
-
 %end
-
-
 
 function SaveTrainingPlot(path)
     currentfig = findall(groot,'Type','Figure');
