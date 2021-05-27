@@ -122,6 +122,11 @@ pximds = pixelLabelImageDatastore(imdsTrain,pxdsTrain, ...
 save([path '/' name '.mat'],'classifier');
 fprintf('Saving DeepLab network classifier...\n');
 
+  CNNOptions=struct(options);
+    save([path '/TrainingValidation/' 'CNNOptions' '.mat'],'CNNOptions');
+    
+    saveTrainingPlot(path);
+    
 %else
 %  load([mov.path '/netDeepLab.mat'],'netDeepLab');  
 %end
@@ -196,3 +201,6 @@ valLabels = pxds.Files(valIdx);
 pxdsTrain = pixelLabelDatastore(trainingLabels, classes, labelIDs);
 pxdsVal = pixelLabelDatastore(valLabels, classes, labelIDs);
 %pxdsTest = pixelLabelDatastore(testLabels, classes, labelIDs);
+
+
+    

@@ -264,21 +264,12 @@ if strcmp(trainingParam.assemblenet,'y') | ~exist([path '/' name '.mat'])
     
     fprintf('Full network is assembled !\n');
     
-    SaveTrainingPlot(path); 
+    saveTrainingPlot(path); 
 else
     load( [path '/' name '.mat']); % loading the fully assembled network
 end
 
 %end
-
-function SaveTrainingPlot(path)
-    currentfig = findall(groot,'Type','Figure');
-    currentfig=currentfig(1);%take the last opened figure
-    %             ValAccuracy=info.ValidationAccuracy(end);
-    disp(['Saving figure...' '\n']);
-    %             savefig(currentfig, [path '/TrainingValidation/LSTMTraining.fig'],'compact')
-    %             saveas(currentfig, [path '/TrainingValidation/LSTMTraining.pdf'])
-    print(currentfig,[path '/TrainingValidation/LSTMTraining'],'-dpdf','-fillpage')
 
         
 function videoResized = centerCrop(video,inputSize)

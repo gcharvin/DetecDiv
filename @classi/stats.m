@@ -293,12 +293,19 @@ sumyg=sumyg(pix);
 sumyr=sumyr(pix);
  end
 
-
 if classif.typeid==4 
 sumyrCNN=sumyrCNN(pix);
 end
 
-cate=categorical(classs)
+cate=categorical(classs);
+
+if numel(sumyr)==0 & numel(sumyg)==0
+    disp('no comparison is possible between groundtruth and result because one of them is void!')
+   h3=figure;
+   return;
+end
+
+%sumyr,sumyg
 mate=confusionmat(sumyg,sumyr);
 
 if classif.typeid==4 
@@ -324,7 +331,6 @@ end
 % savefig([strpath '_confusion.fig']);
 % disp(['Saving plot to ' strpath '_confusion.pdf']);
 % saveas(gca,[strpath '_confusion.pdf']);
-
 
 % plot confusion matrix for classification
 disp('Done!');

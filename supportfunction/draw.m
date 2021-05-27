@@ -302,7 +302,7 @@ if numel(classif)>0
                 cha1= classif.channel(1);
                 % axes where to copy the new axes
                 axes(hp(cha1))
-                alpha(0.7);
+                alpha(0.8);
                 
                 cha1pos=get(hp(cha1),'Position');
                 hcopy=findobj(hp,'UserData',classif.strid);
@@ -314,7 +314,7 @@ if numel(classif)>0
                 
                 set(htmp,'Tag',classif.strid);
                 axes(htmp);
-                alpha(0.2);
+                alpha(0.7);
                 
                 linkaxes([hp htmp]);
             end

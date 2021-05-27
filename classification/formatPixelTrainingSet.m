@@ -93,6 +93,7 @@ parfor i=rois
         %
         labels= double(zeros(size(lab,1),size(lab,2),3,size(lab,4)));
         
+     %   size(labels)
         
         for j=1:numel(classif.classes)
             

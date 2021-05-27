@@ -197,7 +197,7 @@ save([path '/TrainingValidation/' 'tmpoptions' '.mat'],'options');
 
 % layers = freezeWeights(layers) sets the learning rates of all the
 % parameters of the layers in the layer array |layers| to zero.
- SaveTrainingPlot(path);
+ saveTrainingPlot(path);
  
 function layers = freezeWeights(layers)
 
@@ -214,15 +214,6 @@ end
 % lgraph = createLgraphUsingConnections(layers,connections) creates a layer
 % graph with the layers in the layer array |layers| connected by the
 % connections in |connections|.
-
-function SaveTrainingPlot(path)
-    currentfig = findall(groot,'Type','Figure');
-    currentfig=currentfig(1);%take the last opened figure
-    %             ValAccuracy=info.ValidationAccuracy(end);
-    disp(['Saving figure...' '\n']);
-    %             savefig(currentfig, [path '/TrainingValidation/LSTMTraining.fig'],'compact')
-    %             saveas(currentfig, [path '/TrainingValidation/LSTMTraining.pdf'])
-    print(currentfig,[path '/TrainingValidation/CNNTraining'],'-dpdf','-fillpage')
         
 function lgraph = createLgraphUsingConnections(layers,connections)
 

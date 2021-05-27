@@ -21,7 +21,7 @@ end
 if ~strcmp(trai,'n')
     if strcmp(trai,'new')
         trainingParam=[];
-        trainingParam.imageclassifier=[];
+   %     trainingParam.imageclassifier=[];
     end
     
     
@@ -29,6 +29,7 @@ if ~strcmp(trai,'n')
     disp('Which ROIs to use?');
     trainingParam=setParam(trainingParam,{'rois',1:numel(classif.roi)});
     cc=1;
+    trainingParam.roisID={};
     for i=1:numel(trainingParam.rois)
     trainingParam.roisID{cc}=classif.roi(trainingParam.rois(i)).id;
     cc=cc+1;

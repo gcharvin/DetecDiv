@@ -136,6 +136,10 @@ pximds = pixelLabelImageDatastore(imdsTrain,pxdsTrain, ...
 save([path '/' name '.mat'],'classifier');
 fprintf('Saving DeepLab netork classifier...\n');
 
+  CNNOptions=struct(options);
+  save([path '/TrainingValidation/' 'CNNOptions' '.mat'],'CNNOptions');
+    
+    saveTrainingPlot(path);
 %else
 %  load([mov.path '/netDeepLab.mat'],'netDeepLab');  
 %end

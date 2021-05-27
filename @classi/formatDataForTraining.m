@@ -2,10 +2,16 @@ function formatDataForTraining(classif) %mov,trapsid,option)
 % saves user annotated data to disk- works for Image, Pixel and LSTM
 % classification
 
-disp('Saving user training to disk...');
 
+
+if exist([classif.path '/trainingParam.mat'])
 load([classif.path '/trainingParam.mat']);
+else
+    disp('There are not training parameters defined yet: first use the classif.setTrainingParam function !');
+    return;
+end
 
+disp('Saving user training to disk...');
 %classif=obj.processing.classification(classiid);
 category=classif.category;
 category=category{1};

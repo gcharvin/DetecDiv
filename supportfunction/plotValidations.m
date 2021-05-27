@@ -1,6 +1,11 @@
-function []=plotValidationsCNNLSTM(classi,varargin)
+function []=plotValidations(classi,varargin)
 dateT=char( datetime('now','Format','yyyy-MM-dd-HH-mm-ss'));
 path=[classi.path '\TrainingValidation\'];
+
+if ~exist(path)
+    disp('TrainingValidation folder does not exist; Likely cause: no training has been done !');
+end
+
 folder=dir(path);
 folder=folder(contains({folder.name},string(dateT)));
 
@@ -9,7 +14,9 @@ mkdir([path dateT]);
 
 commentsCNN="ND";
 
-plottraj=1;
+plottraj=0;
+plotrls=0;
+
 for i=1:numel(varargin)
     %Comment
     if strcmp(varargin{i},'CommentCNN')
@@ -19,31 +26,69 @@ for i=1:numel(varargin)
     if strcmp(varargin{i},'Traj')
     plottraj=varargin{i+1};
     end
+    
+    if strcmp(varargin{i},'RLS')
+    plotrls=varargin{i+1};
+    end
 end
 
+
 commentsLSTM="ND";
+
+switch classi.typeid
+    case {2,8}
+        
+    case 4
 for i=1:numel(varargin)
     %Comment
     if strcmp(varargin{i},'CommentLSTM')
         commentsLSTM=string(varargin{i+1});
     end
 end
+end
 
 load([path  '\trainingParam.mat']);
 copyfile([classi.path '\' classi.strid '.mat'],[path  dateT '\' classi.strid '.mat']);
+
+switch classi.typeid
+    case {2,8}
+        
+    case 4
 copyfile([classi.path '\netCNN.mat'],[path dateT  '\netCNN.mat']);
 copyfile([classi.path '\netLSTM.mat'],[path dateT  '\netLSTM.mat']);
+end
 
  %% CNN Training
+ includeCNNTraining=0;
+ if exist([path 'CNNTraining.pdf'])
 copyfile([path 'CNNTraining.pdf'],[path dateT '\CNNTraining.pdf']);
+includeCNNTraining=1;
+ else
+     disp(['File ' path 'CNNTraining.pdf' ' does not exist! Skipping...' ])  
+ end
+ 
 folder=dir(path);
 CNNfile=folder(contains({folder.name},'CNNTraining.pdf'));
 
+ includeLSTMTraining=0;
+switch classi.typeid
+    case 4
 %% LSTM Training
+
+if exist([path 'LSTMTraining.pdf'])
 copyfile([path 'LSTMTraining.pdf'],[path dateT '\LSTMTraining.pdf']);
+ includeLSTMTraining=1;
+else
+disp(['File ' path 'LSTMTraining.pdf' ' does not exist ! Skipping ...' ])  
+
+end
+
 LSTMfile=folder(contains({folder.name},'LSTMTraining.pdf'));
+end
+
 
 %% CNNparam
+if includeCNNTraining
 figCNN=figure('Name', CNNfile.date,'Units', 'Normalized', 'Position',[0.1, 0.1, 0.5, 0.5]);
 load([path  '\CNNOptions.mat']);
 
@@ -131,8 +176,14 @@ uitCNN=uitable(figCNN,'Data',cellCNN,'RowName',tableCNN.Row,'ColumnWidth',{1500}
     'FontWeight', 'bold');
 export_fig(figCNN, [path dateT '\CNNParam.pdf']);
 copyfile([path  '\CNNOptions.mat'],[path dateT '\CNNOptions.mat']);
+end
 
-%% LSTMparam
+
+switch classi.typeid
+    case 4
+
+        if includeLSTMTraining
+        %% LSTMparam
 figLSTM=figure('Name', LSTMfile.date, 'Units', 'Normalized', 'Position',[0.1, 0.1, 0.5, 0.5],'HandleVisibility', 'on');
 load([path  'LSTMOptions.mat']);
 
@@ -205,15 +256,29 @@ tableLSTM = table(tableLSTM{:,:}.','RowNames',tableLSTM.Properties.VariableNames
         'FontWeight', 'bold');
     export_fig(figLSTM, [path dateT '\LSTMParam.pdf']);
     copyfile([path  '\LSTMOptions.mat'],[path dateT '\LSTMOptions.mat']);
+        end
+end
 
 %% Classif stats
-for i=1:numel(trainingParam.rois)
+
+if isfield(trainingParam,'rois')
+if iscell(trainingParam.rois)
+    roisTrain=[trainingParam.rois{1,:}];
+else
     roisTrain=trainingParam.rois;
 end
-roisTest=1:numel(classi.roi(:)); %take all the rois of the classi
-roisTest=setdiff(roisTest,roisTrain); %remove the training rois
+else
+   roisTrain=1:numel(classi.roi(:)); 
+end
+roisTest=1:numel(classi.roi(:));
+%take all the rois of the classi
 
-[hClassiStats1, hClassiStats2, hClassiStats3] =classi.stats(roisTrain,'Dataset','TRAINSET');
+%roisTrain
+roisTest=setdiff(roisTest,roisTrain);
+
+%remove the training rois
+
+[hClassiStats1, hClassiStats2, hClassiStats3] =classi.stats('ROI',roisTrain,'Dataset','TRAINSET');
 
 export_fig(hClassiStats1, [path dateT '\accuracy_ROIs_Train.pdf']);
 export_fig(hClassiStats2, [path dateT '\accuracy_classes_Train.pdf']);
@@ -221,13 +286,15 @@ export_fig(hClassiStats3, [path dateT '\confusion_Train.pdf']);
 
 if numel(roisTest)>0
 
-    [hClassiStats_Test1, hClassiStats_Test2, hClassiStats_Test3] =classi.stats(roisTest,'Dataset','TESTSET');
+    [hClassiStats_Test1, hClassiStats_Test2, hClassiStats_Test3] =classi.stats('ROI',roisTest,'Dataset','TESTSET');
 
     export_fig(hClassiStats_Test1, [path dateT '\accuracy_ROIs_Test.pdf']);
     export_fig(hClassiStats_Test2, [path dateT '\accuracy_classes_Test.pdf']);
     export_fig(hClassiStats_Test3, [path dateT '\confusion_Test.pdf']);
 end
 
+
+%% below validation is only for CNN+LSTM+RLS analysis 
 
 %% Traj
 if plottraj==1
@@ -250,6 +317,7 @@ if plottraj==1
     toc
 end
 
+if plotrls==1
 %% RLS
 [rlsTrain,~,~]=measureRLS2(classi,'Rois',roisTrain);
 [rlsTest,~,~]=measureRLS2(classi,'Rois',roisTest);
@@ -269,6 +337,9 @@ export_fig(hRlsTrain, [path dateT '\rlsTrain.pdf']);
 
 hRlsTest=plotRLS(rlsTest,'Comment','TESTSET');
 export_fig(hRlsTest, [path dateT '\rlsTest.pdf']);
+end
+
+
 %% Report
 if exist([path  '\' dateT '\' 'Report_' dateT '.pdf'],'file')
     error('Cant write PDF, file already exists');
@@ -279,15 +350,25 @@ if numel(roisTest)>0
 
 append_pdfs([path  '\' dateT '\' 'Report_' dateT  '.pdf'],...
     [path dateT '\CNNParam.pdf'],...
-    [path dateT '\CNNTraining.pdf'],...
+    [path dateT '\CNNTraining.pdf']);
+
+switch classi.typeid
+    case 4
+    append_pdfs([path  '\' dateT '\' 'Report_' dateT  '.pdf'],...  
     [path dateT '\LSTMParam.pdf'],...
-    [path dateT '\LSTMTraining.pdf'],...
+    [path dateT '\LSTMTraining.pdf']);
+end
+
+append_pdfs([path  '\' dateT '\' 'Report_' dateT  '.pdf'],...
     [path dateT '\accuracy_ROIs_Train.pdf'],...
     [path dateT '\accuracy_classes_Train.pdf'],...
     [path dateT '\confusion_Train.pdf'],...
     [path dateT '\accuracy_ROIs_Test.pdf'],...
     [path dateT '\accuracy_classes_Test.pdf'],...
-    [path dateT '\confusion_Test.pdf'],...
+    [path dateT '\confusion_Test.pdf']);
+    
+if plotrls==1
+append_pdfs([path  '\' dateT '\' 'Report_' dateT  '.pdf'],...
     [path dateT '\rlsStats1Train.pdf'],...
     [path dateT '\rlsStats2Train.pdf'],...
     [path dateT '\rlsStats3Train.pdf'],...
@@ -296,44 +377,61 @@ append_pdfs([path  '\' dateT '\' 'Report_' dateT  '.pdf'],...
     [path dateT '\rlsStats2Test.pdf'],...
     [path dateT '\rlsStats3Test.pdf'],...
     [path dateT '\rlsTest.pdf']);    
+end
 
 else
     disp('no test data')
-append_pdfs([path  '\' dateT '\' 'Report_' dateT '.pdf'],...
+append_pdfs([path  '\' dateT '\' 'Report_' dateT  '.pdf'],...
     [path dateT '\CNNParam.pdf'],...
-    [path dateT '\CNNTraining.pdf'],...
+    [path dateT '\CNNTraining.pdf']);
+
+switch classi.typeid
+    case 4
+    append_pdfs([path  '\' dateT '\' 'Report_' dateT  '.pdf'],...  
     [path dateT '\LSTMParam.pdf'],...
-    [path dateT '\LSTMTraining.pdf'],...
+    [path dateT '\LSTMTraining.pdf']);
+end
+
+append_pdfs([path  '\' dateT '\' 'Report_' dateT  '.pdf'],...
     [path dateT '\accuracy_ROIs_Train.pdf'],...
     [path dateT '\accuracy_classes_Train.pdf'],...
-    [path dateT '\confusion_Train.pdf'],...
+    [path dateT '\confusion_Train.pdf']);
+    
+if plotrls==1
+append_pdfs([path  '\' dateT '\' 'Report_' dateT  '.pdf'],...
     [path dateT '\rlsStats1Train.pdf'],...
     [path dateT '\rlsStats2Train.pdf'],...
     [path dateT '\rlsStats3Train.pdf'],...
-    [path dateT '\rlsTrain.pdf'],...
-    [path dateT '\rlsStats1Test.pdf'],...
-    [path dateT '\rlsStats2Test.pdf'],...
-    [path dateT '\rlsStats3Test.pdf'],...
-    [path dateT '\rlsTest.pdf']);    
+    [path dateT '\rlsTrain.pdf']); 
+end  
 
 end
+
 save([path dateT '\trainingParam.mat'],'trainingParam');
 
 delete([path dateT '\CNNParam.pdf']);
 delete([path dateT '\CNNTraining.pdf']);
+
+switch classi.typeid
+    case 4
 delete([path dateT '\LSTMParam.pdf']);
 delete([path dateT '\LSTMTraining.pdf']);
+end
+
 delete([path dateT '\accuracy_ROIs_Train.pdf']);
 delete([path dateT '\accuracy_classes_Train.pdf']);
 delete([path dateT '\confusion_Train.pdf']);
-delete([path dateT '\rlsStats1Train.pdf']),...
-delete([path dateT '\rlsStats2Train.pdf']),...
-delete([path dateT '\rlsStats3Train.pdf']),...
-delete([path dateT '\rlsTrain.pdf']),...
-delete([path dateT '\rlsStats1Test.pdf']),...
-delete([path dateT '\rlsStats2Test.pdf']),...
-delete([path dateT '\rlsStats3Test.pdf']),...
+
+if plotrls==1
+delete([path dateT '\rlsStats1Train.pdf']);
+delete([path dateT '\rlsStats2Train.pdf']);
+delete([path dateT '\rlsStats3Train.pdf']);
+delete([path dateT '\rlsTrain.pdf']);
+delete([path dateT '\rlsStats1Test.pdf']);
+delete([path dateT '\rlsStats2Test.pdf']);
+delete([path dateT '\rlsStats3Test.pdf']);
 delete([path dateT '\rlsTest.pdf']);
+end
 
 if numel(roisTest)>0
     delete([path dateT '\accuracy_ROIs_Test.pdf']);

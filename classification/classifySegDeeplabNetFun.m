@@ -177,8 +177,6 @@ fprintf('\n');
 
 
 function im=formatImage(gfp)
-
-
 totphc=gfp;
 meanphc=0.5*double(mean(totphc(:)));
 maxphc=double(meanphc+0.7*(max(totphc(:))-meanphc));
