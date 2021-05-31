@@ -105,28 +105,44 @@ sumyrCNN=[];
 
 lab={};
 
-             
+
 for i=idstat
     obj=classif.roi(i);
     
     switch classif.typeid
         case {2,8} % pixel classification
-           % select images in which at leat one pixel was manually
-           % classified
+            % select images in which at leat one pixel was manually
+            % classified
             chg=obj.findChannelID(classif.strid);
             chr=obj.findChannelID(['results_' classif.strid]);
-             im=obj.image;
-             
-             yr=[];
+            im=obj.image;
+            
+            yr=[];
             yg=[];
-
-            for i=1:size(im,4) % check all the frames 
+            
+            for i=1:size(im,4) % check all the frames
                 imchg=im(:,:,chg,i);
                 imchr=im(:,:,chr,i);
                 
+                %figure, imshow(imchg,[])
+                %return;
+                
                 if sum(imchg(:))>0
-                    yg=[yg (imchg(:)'==2)]; % wrning this will not work with an arbitrary number of classes
-                    yr=[yr   (imchr(:)'>0)];
+                    if classif.typeid==8 % Segmentation 
+                        yg=[yg (imchg(:)'==2)]; % wrning this will not work with an arbitrary number of classes
+                        yr=[yr   (imchr(:)'>0)];
+                    end
+                    if classif.typeid==2 % Pixel classif 
+                            temp=imchg(:);
+                            temp(temp==0)=1; % correct value for background class
+                            yg=[yg temp'];
+                            
+                            temp=imchr(:);
+                            temp(temp==0)=1; % correct value for background class
+                            yr=[yr temp'];
+                    end
+                    
+
                 end
             end
             
@@ -149,6 +165,8 @@ for i=idstat
     
     cc=cc+1;
 end
+
+
 
 acctot= 100*sum(sumyr==sumyg)./length(sumyg);
 if classif.typeid==4 %%if LSTM classif: compute CNN accuracy
@@ -275,41 +293,42 @@ end
 classs={};
 cc=1;
 
- switch classif.typeid
-        case {2,8} % pixel classification
-            classs=classif.classes;
-     otherwise % image classif
-for i=1:numel(classif.classes)
-    if ~any(sumyr==i) && ~any(sumyg==i)
-        % remove class i
-    else
-        classs{cc}=classif.classes{i};
-        cc=cc+1;
-    end
+switch classif.typeid
+    case {2,8} % pixel classification
+        classs=classif.classes;
+    otherwise % image classif
+        for i=1:numel(classif.classes)
+            if ~any(sumyr==i) && ~any(sumyg==i)
+                % remove class i
+            else
+                classs{cc}=classif.classes{i};
+                cc=cc+1;
+            end
+        end
+        
+        pix=sumyg~=0;
+        sumyg=sumyg(pix);
+        sumyr=sumyr(pix);
 end
 
-pix=sumyg~=0;
-sumyg=sumyg(pix);
-sumyr=sumyr(pix);
- end
-
-if classif.typeid==4 
-sumyrCNN=sumyrCNN(pix);
+if classif.typeid==4
+    sumyrCNN=sumyrCNN(pix);
 end
 
 cate=categorical(classs);
 
 if numel(sumyr)==0 & numel(sumyg)==0
     disp('no comparison is possible between groundtruth and result because one of them is void!')
-   h3=figure;
-   return;
+    h3=figure;
+    return;
 end
 
 %sumyr,sumyg
-mate=confusionmat(sumyg,sumyr);
+mate=confusionmat(sumyg,sumyr)
 
-if classif.typeid==4 
-mateCNN=confusionmat(sumyg,sumyrCNN);
+
+if classif.typeid==4
+    mateCNN=confusionmat(sumyg,sumyrCNN);
 end
 
 h3=figure('Color','w','Units', 'normalized', 'Position',[0.1, 0.1, 0.5, 0.5]);

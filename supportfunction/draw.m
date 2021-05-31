@@ -302,7 +302,7 @@ if numel(classif)>0
                 cha1= classif.channel(1);
                 % axes where to copy the new axes
                 axes(hp(cha1))
-                alpha(0.8);
+                alpha(0.6);
                 
                 cha1pos=get(hp(cha1),'Position');
                 hcopy=findobj(hp,'UserData',classif.strid);
@@ -360,6 +360,12 @@ if numel(classif)>0
             %         set(mitem(i),'Checked','off');
             %     end
         end
+        
+        % change keypressfcn if painting is allowed to allow more functions
+        % 
+        h.KeyPressFcn={@changeframe,obj,him,hp,keys,classif,hpaint.Children(1),hcopy.Children(1)};
+        
+        
         %end
     end
     if strcmp(classif.category{1},'Pedigree')
@@ -1364,7 +1370,9 @@ end
 end
 
 
-function changeframe(handle,event,obj,him,hp,keys,classif)
+function changeframe(handle,event,obj,him,hp,keys,classif,impaint1,impaint2)
+
+%hpaint.Children(1),hcopy.Children(1)
 
 ok=0;
 h=findobj('Tag',['ROI' obj.id]);
@@ -1386,6 +1394,16 @@ if strcmp(event.Key,'rightarrow')
     ok=1;
 end
 
+if strcmp(event.Key,'m') % move by 10 frames rights
+    if obj.display.frame+10>size(obj.image,4)
+        return;
+    end
+    
+    obj.display.frame=obj.display.frame+10;
+    frame=obj.display.frame+10;
+    ok=1;
+end
+
 if strcmp(event.Key,'leftarrow')
     if obj.display.frame-1<1
         return;
@@ -1396,16 +1414,69 @@ if strcmp(event.Key,'leftarrow')
     ok=1;
 end
 
+if strcmp(event.Key,'l') % move by 10 frames right
+    if obj.display.frame-10<1
+        return;
+    end
+    
+    obj.display.frame=obj.display.frame-10;
+    frame=obj.display.frame-10;
+    ok=1;
+end
+
+if nargin==9 % only if painting is allowed
+if strcmp(event.Key,'k') % fill up painted contours
+    
+        hmenu = findobj('Tag','TrainingClassesMenu');
+        hclass=findobj(hmenu,'Checked','on');
+        
+        if numel(hclass)==0
+            disp('first make sure that a given class is checked !');
+            return;
+        end
+        
+        strcolo=replace(hclass.Tag,'classes_','');
+        colo=str2num(strcolo);
+        
+        pix= impaint2.CData==colo;
+   
+        imend=imfill(pix,'holes');
+   
+        impaint1.CData(imend)= colo;
+        impaint2.CData(imend)= colo;               
+                pixelchannel=obj.findChannelID(classif.strid);
+                pix=find(obj.channelid==pixelchannel);
+                 obj.image(:,:,pix,obj.display.frame)=impaint2.CData;
+
+    ok=1;
+end
+end
+
+if nargin==9 % only if painting is allowed
 if strcmp(event.Key,'uparrow') % TO BE IMPLEMENTED
     
+    warning off all
+    ax=findobj('Tag',classif.strid);
+    al=ax.Children.AlphaData;
+    ax.Children.AlphaData=min(al+0.2,1);
+    warning on all
+      
     %obj.display.intensity(obj.display.selectedchannel)=max(0.01,obj.display.intensity(obj.display.selectedchannel)-0.01);
     ok=1;
 end
 
 if strcmp(event.Key,'downarrow') % TO BE IMPLEMENTED
+    
+    warning off all
+    ax=findobj('Tag',classif.strid);
+    al=ax.Children.AlphaData;
+    ax.Children.AlphaData=max(al-0.2,0);
+    warning on all
     % obj.display.intensity(obj.display.selectedchannel)=min(1,obj.display.intensity(obj.display.selectedchannel)+0.01);
     ok=1;
 end
+end
+
 
 for i=1:numel(keys) % display the selected class for the current image
     if i>numel(obj.classes)

@@ -23,10 +23,14 @@ end
 % ===launch the classification-specific training procedure===
 trainingFun=classif.trainingFun;
 
-path=classif.path;
+path=fullfile(classif.path);
 name=classif.strid;
 
+%class(trainingFun), class(path), class(name)
+
 disp(['Launching training procedure with ' trainingFun]);
+
+%trainingFun,path, name
 
 feval(trainingFun,path,name); % launch the training function for classification
 

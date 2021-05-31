@@ -160,7 +160,7 @@ legend(str2);
 ylim([0 1]);
 
 xlabel('Time (frames)');
-ylabel(['P( class =  '  obj.results.(classistr).classes{1} ')']);
+ylabel(['P( class =  '  obj.results.(classistr).classes{idclas} ')']);
 
 set(gca,'FontSize',16);
 

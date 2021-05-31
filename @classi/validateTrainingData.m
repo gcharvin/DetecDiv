@@ -36,6 +36,9 @@ if exist('classifierStore','var')==0
 end
 
 if exist('classifierCNN','var')==0 
+    
+    
+
      str=[path '/netCNN.mat'];
      if exist(str)
      load(str);

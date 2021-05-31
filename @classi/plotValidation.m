@@ -278,7 +278,9 @@ roisTest=setdiff(roisTest,roisTrain);
 
 %remove the training rois
 
+
 [hClassiStats1, hClassiStats2, hClassiStats3] =classi.stats('ROI',roisTrain,'Dataset','TRAINSET');
+
 
 export_fig(hClassiStats1, [path dateT '\accuracy_ROIs_Train.pdf']);
 export_fig(hClassiStats2, [path dateT '\accuracy_classes_Train.pdf']);

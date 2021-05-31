@@ -26,10 +26,15 @@ inputSize = net.Layers(1).InputSize;
 pix=find(roiobj.channelid==classif.channel(1)); % find channels corresponding to trained data
 gfp=roiobj.image(:,:,pix,:);
 
+ %figure, imshow(gfp(:,:,1,1));
+ 
 if numel(pix)==1
     gfp=formatImage(gfp);
 end
 
+% figure, imshow(gfp(:,:,:,1));
+% return;
+ 
 %size(gfp)
 
 %size(gfp)
@@ -74,6 +79,9 @@ for fr=1:size(gfp,4)
     tmp=gfp(:,:,:,fr);
 
 
+%    figure, imshow(tmp);
+   % return;
+    
     %roiobj.image(:,:,pixresults,fr)=2;
     
     %mean(tmp(:))
@@ -181,19 +189,25 @@ totphc=gfp;
 meanphc=0.5*double(mean(totphc(:)));
 maxphc=double(meanphc+0.7*(max(totphc(:))-meanphc));
 
-im=zeros(size(gfp,1),size(gfp,2),3,size(gfp,4));
+im=uint8(zeros(size(gfp,1),size(gfp,2),3,size(gfp,4)));
 
 for j=1:size(gfp,4)
     fprintf('.');
     
     a=gfp(:,:,1,j);
     
+ %   figure, imshow(a,[]);
     a = double(imadjust(a,[meanphc/65535 maxphc/65535],[0 1]))/256;
     a= repmat(a,[1 1 3]);
-    
+ %       figure, imshow(a);
+ %       class(a), max(a(:))
+       
     % im(:,:,1,j)=a;im(:,:,2,j)=b;im(:,:,3,j)=c;
     im(:,:,:,j)=uint8(a);
+  %  figure, imshow(im(:,:,1,j));
+  %   return;
 end
+
 
 fprintf('\n');
 

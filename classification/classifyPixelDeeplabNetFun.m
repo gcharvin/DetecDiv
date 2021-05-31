@@ -30,6 +30,9 @@ if numel(pix)==1
     gfp=formatImage(gfp);
 end
 
+ %figure, imshow(gfp(:,:,:,1));
+% return;
+
 %size(gfp)
 
 %size(gfp)
@@ -73,7 +76,9 @@ for fr=1:size(gfp,4)
     % fr
     tmp=gfp(:,:,:,fr);
 
-
+    %figure, imshow(tmp);
+    %return;
+   
     %roiobj.image(:,:,pixresults,fr)=2;
     
     %mean(tmp(:))
@@ -81,7 +86,8 @@ for fr=1:size(gfp,4)
     
     %roiobj
     
-    %figure, imshow(roiobj.image(:,:,pixresults,fr),[]);
+    %figure, imshow(tmp);
+    %return;
     
     if size(tmp,1)<inputSize(1) | size(tmp,2)<inputSize(2)
        tmp=imresize(tmp,inputSize(1:2)); 
@@ -97,7 +103,7 @@ for fr=1:size(gfp,4)
 
  [C,score,features]= semanticseg(tmp, net);%,'Acceleration','mex'); % this is no longer required if we extract the probabilities from the previous layer
     
- 
+
     %size(features)
     
     if size(gfp,1)<inputSize(1) | size(gfp,2)<inputSize(2)
@@ -111,15 +117,26 @@ for fr=1:size(gfp,4)
     % step 
     
     
-    for i=1:numel(classif.classes) % 1 st class is considered default class
+    tmpout=uint16(zeros(size(roiobj.image(:,:,pixresults,fr))));
+   
+    for i=2:numel(classif.classes) % 1 st class is considered default class
        %if i>1
-     %BW=features(:,:,i)>0.9;   
+     BW=features(:,:,i)>0.9;   
+     
+
+     
+    
+       %  if sum(BW(:))>0
+      %       'ok'
+    %     end
+  
      %  else
      %BW=features(:,:,2)>0.9;         
      %  end
        %end
-     BW=logical(C==string(classif.classes{i}));
+     %BW=logical(C==string(classif.classes{i}));
      
+       %   figure, imshow(BW,[]);
     %BW=logical(C==string(classif.classes{i}));
    % i
    % size(BW)
@@ -129,10 +146,12 @@ for fr=1:size(gfp,4)
     res=uint16(uint8(BW)*(i));
     
     %pixresults
-    roiobj.image(:,:,pixresults,fr)=roiobj.image(:,:,pixresults,fr)+res;
-
+    %roiobj.image(:,:,pixresults,fr)=roiobj.image(:,:,pixresults,fr)+res;
+    tmpout=tmpout+res;
     end
-    
+   % max(tmpout(:))
+roiobj.image(:,:,pixresults,fr)=tmpout;
+
 %     tm=roiobj.image(:,:,pixresults,fr); % assign 1 to defualt class
 %     pix=roiobj.image(:,:,pixresults,fr)==0;
 %     tm(pix)=1;
@@ -165,7 +184,6 @@ for fr=1:size(gfp,4)
     
 end
 
-
 roiout=roiobj;
 %roiobj.save;
 %roiobj.clear;
@@ -175,12 +193,11 @@ fprintf('\n');
 
 function im=formatImage(gfp)
 
-
 totphc=gfp;
 meanphc=0.5*double(mean(totphc(:)));
 maxphc=double(meanphc+0.7*(max(totphc(:))-meanphc));
 
-im=zeros(size(gfp,1),size(gfp,2),3,size(gfp,4));
+im=uint8(zeros(size(gfp,1),size(gfp,2),3,size(gfp,4)));
 
 for j=1:size(gfp,4)
     fprintf('.');

@@ -1,4 +1,4 @@
-function loadClassifier(classif)
+function classifierout=loadClassifier(classif)
 % load classifier (network) associated with a given @classi
 
 path=classif.path;
@@ -14,3 +14,5 @@ name=classif.strid;
  else
     disp('Classifier does not exist ! Has training been done?');
  end
+ 
+ classifierout=classifier;

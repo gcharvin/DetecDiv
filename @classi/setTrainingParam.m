@@ -21,7 +21,7 @@ end
 if ~strcmp(trai,'n')
     if strcmp(trai,'new')
         trainingParam=[];
-   %     trainingParam.imageclassifier=[];
+        trainingParam.imageclassifier=[];
     end
     
     
@@ -57,7 +57,7 @@ if ~strcmp(trai,'n')
         trainingParam=LSTMTraining(trainingParam);
     end
     
-    if classif.typeid==8 % seg specific
+    if classif.typeid==8 ||  classif.typeid==2 % seg specific
         trainingParam=SegTraining(trainingParam);
     end
         

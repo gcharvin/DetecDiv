@@ -30,7 +30,6 @@ for i=1:nclasses
     labelsIDs{i}=round(255*classification.colormap(i+1,:)); % !! +1 because the first index in the colormap is black color
 end
 
-
 %classes=["Background" "Cell"];
 %labelIDs={[255 0 0] [0 255 0]};
 
@@ -75,6 +74,7 @@ lgraph = helperDeeplabv3PlusResnet18(imageSize, numClasses,trainingParam.network
 imageFreq = tbl.PixelCount ./ tbl.ImagePixelCount;
 classWeights = median(imageFreq) ./ imageFreq;
 
+
 %analyzeNetwork(lgraph)
 pxLayer = pixelClassificationLayer('Name','labels','Classes',tbl.Name,'ClassWeights',classWeights); % removing the weights helped increase the resolution 
 lgraph = replaceLayer(lgraph,"classification",pxLayer);
@@ -102,8 +102,6 @@ options = trainingOptions(trainingParam.method, ...
     'ValidationFrequency', 10,...
     'ExecutionEnvironment',trainingParam.ExecutionEnvironment, ...
     'ValidationPatience', 10);
-
-
 
   %  'ValidationFrequency', 10,...
   
