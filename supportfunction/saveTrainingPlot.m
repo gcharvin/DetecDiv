@@ -10,5 +10,7 @@ function saveTrainingPlot(path)
   if strcmp(class(currentfig),'figure')
     print(currentfig,[path '/TrainingValidation/CNNTraining'],'-dpdf','-fillpage')
   else
+      if exist('exportapp')
      exportapp(currentfig,[path '/TrainingValidation/CNNTraining.pdf']);
+      end
   end
