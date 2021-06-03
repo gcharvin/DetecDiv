@@ -47,7 +47,7 @@ for i=1:numel(varargin)
 end
 end
 
-load([path  '\trainingParam.mat']);
+load(fullfile(path,'trainingParam.mat'));
 copyfile([classi.path '\' classi.strid '.mat'],[path  dateT '\' classi.strid '.mat']);
 
 switch classi.typeid
