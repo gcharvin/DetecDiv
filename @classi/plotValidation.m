@@ -48,7 +48,11 @@ end
 end
 
 load(fullfile(path,'trainingParam.mat'));
+
+test=fullfile(path,'trainingParam.mat')
 copyfile([classi.path '\' classi.strid '.mat'],[path  dateT '\' classi.strid '.mat']);
+
+return; 
 
 switch classi.typeid
     case {2,8}
@@ -58,7 +62,7 @@ copyfile([classi.path '\netCNN.mat'],[path dateT  '\netCNN.mat']);
 copyfile([classi.path '\netLSTM.mat'],[path dateT  '\netLSTM.mat']);
 end
 
- %% CNN Training
+ % CNN Training
  includeCNNTraining=0;
  if exist([path 'CNNTraining.pdf'])
 copyfile([path 'CNNTraining.pdf'],[path dateT '\CNNTraining.pdf']);
@@ -73,7 +77,7 @@ CNNfile=folder(contains({folder.name},'CNNTraining.pdf'));
  includeLSTMTraining=0;
 switch classi.typeid
     case 4
-%% LSTM Training
+% LSTM Training
 
 if exist([path 'LSTMTraining.pdf'])
 copyfile([path 'LSTMTraining.pdf'],[path dateT '\LSTMTraining.pdf']);
@@ -87,7 +91,7 @@ LSTMfile=folder(contains({folder.name},'LSTMTraining.pdf'));
 end
 
 
-%% CNNparam
+% CNNparam
 if includeCNNTraining
 figCNN=figure('Name', CNNfile.date,'Units', 'Normalized', 'Position',[0.1, 0.1, 0.5, 0.5]);
 
@@ -186,7 +190,7 @@ switch classi.typeid
     case 4
 
  if includeLSTMTraining
-        %% LSTMparam
+        % LSTMparam
 figLSTM=figure('Name', LSTMfile.date, 'Units', 'Normalized', 'Position',[0.1, 0.1, 0.5, 0.5],'HandleVisibility', 'on');
 if exist([path  '\LSTMOptions.mat'])
 load([path  'LSTMOptions.mat']);
@@ -264,7 +268,7 @@ tableLSTM = table(tableLSTM{:,:}.','RowNames',tableLSTM.Properties.VariableNames
         end
 end
 
-%% Classif stats
+%Classif stats
 
 if isfield(trainingParam,'rois')
 if iscell(trainingParam.rois)
@@ -301,9 +305,9 @@ if numel(roisTest)>0
 end
 
 
-%% below validation is only for CNN+LSTM+RLS analysis 
+% below validation is only for CNN+LSTM+RLS analysis 
 
-%% Traj
+% Traj
 if plottraj==1
     tic
     cctraj=1;
@@ -325,10 +329,10 @@ if plottraj==1
 end
 
 if plotrls==1
-%% RLS
+% RLS
 [rlsTrain,~,~]=measureRLS2(classi,'Rois',roisTrain);
 [rlsTest,~,~]=measureRLS2(classi,'Rois',roisTest);
-%% statRLS
+% statRLS
 [hRlsStats1Train,hRlsStats2Train,hRlsStats3Train]=statRLS(rlsTrain,'Comment','TRAINSET');
 export_fig(hRlsStats1Train, [path dateT '\rlsStats1Train.pdf']);
 export_fig(hRlsStats2Train, [path dateT '\rlsStats2Train.pdf']);
@@ -338,7 +342,7 @@ export_fig(hRlsStats3Train, [path dateT '\rlsStats3Train.pdf']);
 export_fig(hRlsStats1Test, [path dateT '\rlsStats1Test.pdf']);
 export_fig(hRlsStats2Test, [path dateT '\rlsStats2Test.pdf']);
 export_fig(hRlsStats3Test, [path dateT '\rlsStats3Test.pdf']);
-%% plotRLS
+% plotRLS
 hRlsTrain=plotRLS(rlsTrain,'Comment','TRAINSET');
 export_fig(hRlsTrain, [path dateT '\rlsTrain.pdf']);
 
@@ -347,7 +351,7 @@ export_fig(hRlsTest, [path dateT '\rlsTest.pdf']);
 end
 
 
-%% Report
+% Report
 if exist([path  '\' dateT '\' 'Report_' dateT '.pdf'],'file')
     error('Cant write PDF, file already exists');
 end
