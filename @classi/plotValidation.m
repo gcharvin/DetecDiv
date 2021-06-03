@@ -90,6 +90,8 @@ end
 %% CNNparam
 if includeCNNTraining
 figCNN=figure('Name', CNNfile.date,'Units', 'Normalized', 'Position',[0.1, 0.1, 0.5, 0.5]);
+
+if exist([path  '\CNNOptions.mat'])
 load([path  '\CNNOptions.mat']);
 
 if numel(CNNOptions.InitialLearnRate)==0
@@ -177,14 +179,16 @@ uitCNN=uitable(figCNN,'Data',cellCNN,'RowName',tableCNN.Row,'ColumnWidth',{1500}
 export_fig(figCNN, [path dateT '\CNNParam.pdf']);
 copyfile([path  '\CNNOptions.mat'],[path dateT '\CNNOptions.mat']);
 end
+end
 
 
 switch classi.typeid
     case 4
 
-        if includeLSTMTraining
+ if includeLSTMTraining
         %% LSTMparam
 figLSTM=figure('Name', LSTMfile.date, 'Units', 'Normalized', 'Position',[0.1, 0.1, 0.5, 0.5],'HandleVisibility', 'on');
+if exist([path  '\LSTMOptions.mat'])
 load([path  'LSTMOptions.mat']);
 
 tableLSTM=table(string(LSTMfile.date),...
@@ -256,6 +260,7 @@ tableLSTM = table(tableLSTM{:,:}.','RowNames',tableLSTM.Properties.VariableNames
         'FontWeight', 'bold');
     export_fig(figLSTM, [path dateT '\LSTMParam.pdf']);
     copyfile([path  '\LSTMOptions.mat'],[path dateT '\LSTMOptions.mat']);
+        end
         end
 end
 

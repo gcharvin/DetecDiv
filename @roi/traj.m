@@ -74,7 +74,12 @@ xr=1:numel(obj.results.(classistr).id);
 yr=obj.results.(classistr).id;
 plot(xr,yr,'Color','r','LineWidth',2); hold on;
 
+if numel(obj.train)~=0
 acc= 100*sum(yr==y)./length(y);
+else
+acc=0;    
+end
+
 str{end+1}=['Classification results; ' num2str(acc) '% accurate'];
 
 % CNN
@@ -88,8 +93,8 @@ end
 
 str2=str;
 
-pix=find(x==obj.display.frame);
-line([x(pix) x(pix)],[1 max(obj.results.(classistr).id)],'Color',[0.5 0.5 0.5],'LineWidth',2,'Tag','track');
+pix=find(xr==obj.display.frame);
+line([xr(pix) xr(pix)],[1 max(obj.results.(classistr).id)],'Color',[0.5 0.5 0.5],'LineWidth',2,'Tag','track');
 str{end+1}='Cursor position';
 
 legend(str);

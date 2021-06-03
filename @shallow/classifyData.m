@@ -45,6 +45,14 @@ if numel(classifier)==0
     load(str); % load classifier 
 end
 
+% str=[path '/netCNN.mat'];
+%      if exist(str)
+%      load(str);
+%      classifierCNN=classifier; 
+%      else
+%        classifierCNN=[];
+%      end
+
 %classifier
 
 disp([num2str(size(roilist,2)) ' ROIs to classify, be patient...']);
@@ -68,8 +76,13 @@ parfor i=1:size(roilist,2) % loop on all ROIs using parrallel computing
 %  if strcmp(classif.category{1},'Image') % in this case, the results are provided as a series of labels
 %  roiobj.results=zeros(1,size(roiobj.image,4)); % pre allocate results for labels
 %  end
- 
-tmp(i)=feval(classifyFun,roiobj,classif,classifier); % launch the training function for classification
+
+ %if numel(classifierCNN) % in case an LSTM classification is done, validation is performed with a CNN classifier as well 
+%mp(i)=feval(classifyFun,roiobj,classif,classifier,classifierCNN); % launch the training function for classification
+ %else
+ tmp(i)=feval(classifyFun,roiobj,classif,classifier); % launch the training function for classification   
+ %end
+
 % since roiobj is a handle, no need to have an output to this the function
 % in roiobj.results
 

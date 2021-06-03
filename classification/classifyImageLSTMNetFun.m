@@ -122,7 +122,9 @@ catch
 disp('Error with predict function  : likely out of memory issue with GPU, trying CPU computing...');
 prob=predict(classifier,video,'ExecutionEnvironment', 'cpu');
 %probCNN=predict(classifierCNN,video,'ExecutionEnvironment', 'cpu');
+if nargin==4
 [labelCNN,probCNN] = classify(classifierCNN,gfp);
+end
 end
   
 labels = classifier.Layers(end).Classes;
@@ -170,6 +172,7 @@ results=roiobj.results;
    results.(classif.strid).id(pix)=i;
     end
     
+    if nargin==4
     results.(classif.strid).idCNN=zeros(1,size(im,4));
     results.(classif.strid).labelsCNN=labelCNN';
     results.(classif.strid).classesCNN=classif.classes;
@@ -179,7 +182,8 @@ results=roiobj.results;
     for i=1:numel(classif.classes)
    pix=labelCNN==classif.classes{i};
    results.(classif.strid).idCNN(pix)=i;
-   end
+    end
+    end
     
     
 roiobj.results=results; 
