@@ -322,9 +322,10 @@ if numel(classif)>0
         
     end
     
-    if strcmp(classif.category{1},'Pixel') | strcmp(classif.category{1},'Object') | (strcmp(classif.category{1},'Image') & classif.typeid~=11)  | strcmp(classif.category{1},'LSTM')
+    if strcmp(classif.category{1},'Pixel') | strcmp(classif.category{1},'Object') | (strcmp(classif.category{1},'Image') & classif.typeid~=11) | (strcmp(classif.category{1},'LSTM') & classif.typeid~=12)
         % plotting classes menu for classification
-        
+   
+    
         handles=findobj('Tag','TrainingClassesMenu');
         
         if numel(handles)~=0
@@ -368,6 +369,7 @@ if numel(classif)>0
         
         %end
     end
+    
     if strcmp(classif.category{1},'Pedigree') % Pedigree analysis 
         % nothing here to do
         hpaint=findobj(hp,'UserData',classif.strid);
@@ -378,7 +380,7 @@ if numel(classif)>0
         
     end
     
-      if classif.typeid==11 % Regression training analysis 
+      if classif.typeid==(11 || 12) % Regression training analysis 
         %ccpedigree=obj.findChannelID(classif.strid);
         set(h,'WindowButtonDownFcn',{@regression,h,obj,him,hp,classif});%%% HERE
 

@@ -55,7 +55,7 @@ switch nargin
             classes=['background cell'];
         end
         
-         if strcmp(classlist{classitype,2},'Deep Image Regression') % classes are predefined, no need to ask user
+         if strcmp(classlist{classitype,2},'Deep Image Regression') || strcmp(classlist{classitype,2},'Deep image sequence regression')  % classes are predefined, no need to ask user
             needClasses=0;
             classes='';
          end

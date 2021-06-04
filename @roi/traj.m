@@ -92,7 +92,7 @@ if numel(obj.train)~=0
     if reg==0 % classif
 acc= 100*sum(yr==y)./length(y);
     else % regression
-    acc= mean( (yr-y).^2 );    
+    acc= mean( (yr(:)-y(:)).^2 );    
     end
 else
 acc=0;    
@@ -114,7 +114,7 @@ if isfield(obj.results.(classistr),'idCNN')
     accCNN= 100*sum(yrCNN==y)./length(y);
     str{end+1}=['Classification results CNN; ' num2str(accCNN) '% accurate'];
     else % regression
-           accCNN= mean( (yrCNN-y).^2 );    
+           accCNN= mean( (yrCNN(:)-y(:)).^2 );    
       str{end+1}=['Regression results; RMSE= ' num2str(accCNN)];  
     end
 end
@@ -129,12 +129,18 @@ legend(str);
 
 hl=findobj(h,'Tag','track');
 
+if reg==0
 ylim([0 max(obj.results.(classistr).id)+1]);
+else
+    
+ylim([min(obj.results.(classistr).id) max(obj.results.(classistr).id)]);
+end
 
 if reg==0 % classif 
 set(acla,'YTick',1:max(obj.results.(classistr).id),'YTickLabel',classes,'Fontsize',14);
 else % reg
-set(acla,'YTick',1:max(obj.results.(classistr).id),'Fontsize',14);   
+set(acla,'Fontsize',14);   
+%'YTick',0:max(obj.results.(classistr).id),
 end
 
 if reg==0
@@ -143,6 +149,7 @@ ylabel('Classes');
 else
   title([comment ' - ' classistr ' - Regression  results for ROI ' obj.id],'Interpreter','none');
 ylabel('Regression value');
+xlabel('Time (frames)');
 end
 
 
@@ -263,6 +270,9 @@ if strcmp(event.Key,'leftarrow')
     %ok=1;
 end
 hf=findobj('Tag',['Traj' num2str(obj.id)]);
+if numel(hf)>1
+    warndlg('You have more than 2 traj figure open with the same id (or roi); Please delete non necessary traj figures !');
+end
 figure(hf);
 
 

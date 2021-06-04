@@ -78,10 +78,10 @@ for i=1:length(rois)
     if strcmp(classif.category{1},'Image') | strcmp(classif.category{1},'LSTM')
         classif.roi(cc+1).train.(classif.strid)=[];
         
-        if classif.typied~=11
+        if classif.typeid~=11 || 12
         classif.roi(cc+1).train.(classif.strid).id= zeros(1,size(classif.roi(cc+1).image,4));
         else
-         classif.roi(cc+1).train.(classif.strid).id= -ones(1,size(classif.roi(cc+1).image,4));    
+         classif.roi(cc+1).train.(classif.strid).id= zeros(1,size(classif.roi(cc+1).image,4));    
         end
         
         classif.roi(cc+1).train.(classif.strid).classes=classif.classes;
