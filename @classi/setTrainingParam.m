@@ -28,12 +28,15 @@ if ~strcmp(trai,'n')
     
     disp('Which ROIs to use?');
     trainingParam=setParam(trainingParam,{'rois',1:numel(classif.roi)});
+    
+    disp('WARNING: if you change the number of ROIs, you must launch the formatDataFor Training function again !');
     cc=1;
     trainingParam.roisID={};
     for i=1:numel(trainingParam.rois)
     trainingParam.roisID{cc}=classif.roi(trainingParam.rois(i)).id;
     cc=cc+1;
     end
+    
 
     if classif.typeid==4 % LSTM: ask which part needs to be trained
         disp('Train image classifier?');
@@ -49,7 +52,7 @@ if ~strcmp(trai,'n')
         trainingParam=setParam(trainingParam,{'assemblenet','y'});
     end
     
-    if classif.typeid==1 || (classif.typeid==4 & strcmp(trainingParam.imageclassifier,'y'))
+    if classif.typeid==1 || (classif.typeid==4 & strcmp(trainingParam.imageclassifier,'y')) ||  classif.typeid==11
         trainingParam=imageTraining(trainingParam);
     end
     

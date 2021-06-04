@@ -322,7 +322,7 @@ if numel(classif)>0
         
     end
     
-    if strcmp(classif.category{1},'Pixel') | strcmp(classif.category{1},'Object') | strcmp(classif.category{1},'Image') | strcmp(classif.category{1},'LSTM')
+    if strcmp(classif.category{1},'Pixel') | strcmp(classif.category{1},'Object') | (strcmp(classif.category{1},'Image') & classif.typeid~=11)  | strcmp(classif.category{1},'LSTM')
         % plotting classes menu for classification
         
         handles=findobj('Tag','TrainingClassesMenu');
@@ -368,13 +368,22 @@ if numel(classif)>0
         
         %end
     end
-    if strcmp(classif.category{1},'Pedigree')
+    if strcmp(classif.category{1},'Pedigree') % Pedigree analysis 
         % nothing here to do
         hpaint=findobj(hp,'UserData',classif.strid);
         ccpedigree=obj.findChannelID(classif.strid);
         set(h,'WindowButtonDownFcn',{@pedigree,h,hpaint,obj,ccpedigree,hp,classif});%%% HERE
         
         plotLinks(obj,hp,classif);
+        
+    end
+    
+      if classif.typeid==11 % Regression training analysis 
+        %ccpedigree=obj.findChannelID(classif.strid);
+        set(h,'WindowButtonDownFcn',{@regression,h,obj,him,hp,classif});%%% HERE
+
+        
+      %  plotLinks(obj,hp,classif);
         
     end
     
@@ -417,558 +426,651 @@ for i=1:numel(obj.display.channel)
                     classesspe=    obj.classes ;
                 end
                 
-                if tt==0
-                    tt='not classified';
+                
+             
+                
+                if tt<=0
+                    tt='Not Clas.';
                 else
-                    if tt <= length(obj.classes)
-                        tt=obj.classes{tt};
-                    else
-                        tt='class unavailable';
+                       % if tt <= length(obj.classes) & tt>=0
+                       %     tt=obj.classes{tt};
+                       % else
+                       %     tt='N/A';
+                        %end
+                        tt=num2str(tt);
+                end
+                    
+               %     tt
+                    str=[str ' - ' tt ' (tr.: ' fields{k} ')'];
+                    
+                    %                         if obj.train(obj.display.frame)==0
+                    %                             str=[str ' - not classified'];
+                    %                     %title(hp(cc),str, 'Color',[0 0 0],'FontSize',20);
+                    %                         else
+                    %                             str= [str ' - ' obj.classes{obj.train(obj.display.frame)} ' (training)'];
+                    %                     %title(hp(cc),str, 'Color',cmap(obj.train(obj.display.frame),:),'FontSize',20);
+                    %                         end
+              %  end
+                
+            end
+        end
+            
+            % str=hp(cc).Title.String;
+            
+            if numel(obj.results)>0
+                pl = fieldnames(obj.results);
+                %aa=obj.results
+                for k = 1:length(pl)
+                    if isfield(obj.results.(pl{k}),'labels')
+                     %   tt=char(obj.results.(pl{k}).labels(obj.display.frame));
+                            tt=num2str(obj.results.(pl{k}).id(obj.display.frame));
+                        str=[str ' - ' tt ' (' pl{k} ')'];
                     end
-                end
-                str=[str ' - ' tt ' (training: ' fields{k} ')'];
-                
-                %                         if obj.train(obj.display.frame)==0
-                %                             str=[str ' - not classified'];
-                %                     %title(hp(cc),str, 'Color',[0 0 0],'FontSize',20);
-                %                         else
-                %                             str= [str ' - ' obj.classes{obj.train(obj.display.frame)} ' (training)'];
-                %                     %title(hp(cc),str, 'Color',cmap(obj.train(obj.display.frame),:),'FontSize',20);
-                %                         end
-            end
-            
-        end
-        
-        % str=hp(cc).Title.String;
-        
-        if numel(obj.results)>0
-            pl = fieldnames(obj.results);
-            %aa=obj.results
-            for k = 1:length(pl)
-                if isfield(obj.results.(pl{k}),'labels')
-                    tt=char(obj.results.(pl{k}).labels(obj.display.frame));
-                    str=[str ' - ' tt ' (' pl{k} ')'];
-                end
-                
-                if isfield(obj.results.(pl{k}),'mother')
-                    % pedigree data available .
                     
-                    if strcmp(['results_' pl{k}],str) % identify channel
+                    if isfield(obj.results.(pl{k}),'mother')
+                        % pedigree data available .
                         
-                        plotLinksResults(obj,hp,pl{k})
-                        
-                    end
-                end
-            end
-        end
-        
-        % display tracking results as numbers on each cell
-        %him.image(cc) are the Data
-        
-        
-        % display tracking numbers on cells
-        % obj.display.channel{i}
-        
-        if numel(strfind(obj.display.channel{i},'track'))~=0 | numel(strfind(obj.display.channel{i},'pedigree'))~=0
-            
-            im=him.image(cc).CData;
-            
-            [l n]=bwlabel(im);
-            r=regionprops(l,'Centroid');
-            
-            %'ok'
-            
-            for k=1:n
-                bw=l==k;
-                id=round(mean(im(bw)));
-                htext(cctext)=text(r(k).Centroid(1),r(k).Centroid(2),num2str(id),'Color',[1 1 1],'FontSize',20,'Tag','tracktext');
-                cctext=cctext+1; % update handle counter
-            end
-        end
-        
-        %test=get(hp(cc),'Parent')
-        title(hp(cc),str,'FontSize',14,'interpreter','none');
-        %title(hp(cc),str, 'Color',colo,'FontSize',20);
-        cc=cc+1;
-    end
-end
-end
-
-function addChannel(handles, event,obj)
-matrix=uint16(zeros(size(obj.image,1),size(obj.image,2),1,size(obj.image,4)));
-rgb=[1 1 1];
-intensity=[0 0 0];
-answer = inputdlg({'Channel Name','RGB','Intensity'},'New CHannel',1,{'mychannel','[1 1 1]','[0 0 0]'});
-
-if numel(answer)==0
-    return;
-end
-
-h=findobj('Tag',['ROI' obj.id]);
-close(h);
-obj.addChannel(matrix,answer{1},str2num(answer{2}),str2num(answer{3}));
-obj.view;
-
-end
-
-function removeChannel(handles, event,obj)
-
-cha=numel(obj.channelid);
-answer = inputdlg({'Channel number to remove'},'Remove Channel',1,{num2str(cha)});
-
-if numel(answer)==0
-    return;
-end
-
-h=findobj('Tag',['ROI' obj.id]);
-close(h);
-
-obj.removeChannel(str2num(answer{1}));
-obj.view;
-end
-
-
-function drawObject(handles, event,obj)
-
-cha=1;
-answer = inputdlg({'Channel id on which to draw ?'},'Draw',1,{num2str(cha)});
-
-if numel(answer)==0
-    return;
-end
-
-h=findobj('Tag',['ROI' obj.id]);
-
-hp=findobj(h,'Tag','AxeROI1');
-
-xc=size(obj.image,2)/2;
-yc=size(obj.image,1)/2;
-sizx=40;
-sizy=30;
-
-windo=[xc-sizx yc-sizy 2*sizx 2*sizy];
-roi = imellipse(hp,windo);
-inputpoly = wait(roi);
-delete(roi);
-
-BW=poly2mask(inputpoly(:,1),inputpoly(:,2),size(obj.image,1),size(obj.image,2));
-BW=repmat(BW,[1 1 1 size(obj.image,4)]);
-
-obj.image(:,:,str2num(answer{1}),:)=uint16(obj.image(:,:,str2num(answer{1}),:) | BW);
-%h=findobj('Tag',['ROI' obj.id]);
-%close(h);
-obj.view;
-end
-
-
-function pedigree(handles, event,h,hpaint,obj,ccpedigree,hp,classif)
-
-cp = hpaint.CurrentPoint;
-
-xinit = cp(1,1);
-yinit = cp(1,2);
-
-im=obj.image(:,:,ccpedigree,obj.display.frame);
-
-daughter=0;
-% find object if any is selected
-if yinit>0 && xinit>0 && xinit< size(im,2)+1 && yinit<size(im,1)+1
-    daughter= im(round(yinit),round(xinit));
-end
-
-if daughter==0
-    return;
-end
-
-bw=im==daughter;
-stat=regionprops(bw,'Centroid');
-
-xinit=stat(1).Centroid(1);
-yinit=stat(1).Centroid(2);
-
-hl = line('XData',[xinit xinit],'YData',[yinit yinit], 'Marker','p','color','w','LineWidth',3);
-
-%hl= annotation('arrow',[xinit xinit],[yinit yinit],'Color',[1 1 1],'Units','pixels');
-% hl = line('XData',xinit,'YData',yinit,...
-% 'Marker','p','color','b');
-handles.WindowButtonMotionFcn = {@wmp,1};
-handles.WindowButtonUpFcn = @wup;
-
-x=1;
-y=1;
-
-
-    function wmp(src,event,bsize)
-        cp = hpaint.CurrentPoint;
-        
-        x = cp(1,1);
-        y = cp(1,2);
-        
-        set(hl,'XData',[xinit x],'YData',[yinit y]);
-        %hl.X=[xinit x];
-        %hl.Y=[xinit y];
-        
-    end
-
-    function wup(src,callbackdata)
-        last_seltype = src.SelectionType;
-        src.Pointer = 'arrow';
-        src.WindowButtonMotionFcn = '';
-        src.WindowButtonUpFcn = '';
-        
-        if ishandle(hl)
-            delete(hl);
-        end
-        
-        mother= im(round(y),round(x));
-        
-        % if mother==0
-        %
-        %  return;
-        % end
-        
-        %             bw=im==mother;
-        %             stat=regionprops(bw,'Centroid');
-        %
-        %             xinit=stat(1).Centroid(1);
-        %             yinit=stat(1).Centroid(2);
-        %mother,daughter
-        str=hpaint.UserData;
-        
-        %pix=find(
-        obj.train.(str).mother(daughter)=mother;
-        
-        
-        if numel(obj.train.(str).mother)>=mother & mother>0
-            if obj.train.(str).mother(mother)==daughter
-                obj.train.(str).mother(mother)=0;
-            end
-        end
-        %pix=find(
-        %obj.train.(str).mother(mother)=mother;
-        
-        plotLinks(obj,hp,classif)
-    end
-
-
-end
-
-function classesMenuFcn(handles, event, h,obj,impaint1,impaint2,hpaint,classif)
-
-if strcmp(handles.Checked,'off')
-    
-    for i=1:numel(classif.classes)
-        ha=findobj('Tag',['classes_' num2str(i)]);
-        
-        if numel(ha)
-            ha.Checked='off';
-        end
-    end
-    
-    handles.Checked='on';
-    %aa=handles.Tag
-    %str=replace(handles.Tag,'classes_','');
-    %colo=str2num(str);
-    
-    
-    % set pixel painting mode
-    if strcmp(classif.category{1},'Pixel')
-        set(h,'WindowButtonDownFcn',@wbdcb);
-    end
-    
-    if strcmp(classif.category{1},'Object')
-        set(h,'WindowButtonDownFcn',@wbdcb2);
-    end
-    
-    %ah = hp(1); %axes('SortMethod','childorder');
-else
-    
-    handles.Checked='off';
-    str=handles.Tag;
-    
-    h.WindowButtonDownFcn='';
-    h.Pointer = 'arrow';
-    h.WindowButtonMotionFcn = '';
-    h.WindowButtonUpFcn = '';
-    figure(h); % set focus
-    
-    
-end
-
-%[him hp]=draw(obj,h,classif);
-    function wbdcb2(src,cbk)
-        seltype = src.SelectionType;
-        
-        if strcmp(seltype,'normal')
-            %src.Pointer = 'circle';
-            cp = hpaint.CurrentPoint;
-            
-            xinit = cp(1,1);
-            yinit = cp(1,2);
-            
-            if xinit>size(obj.image,2) | xinit<1 | yinit<1 | yinit>size(obj.image,1)
-                return;
-            end
-            
-            
-            hmenu = findobj('Tag','TrainingClassesMenu');
-            hclass=findobj(hmenu,'Checked','on');
-            strcolo=replace(hclass.Tag,'classes_','');
-            colo=str2num(strcolo);
-            
-            bw=impaint1.CData;
-            [l n]=bwlabel(bw>0);
-            
-            %xinit,yinit
-            val=l(round(yinit),round(xinit));
-            
-            if val>0
-                %tmp=bw;
-                sel=l==val;
-                bw(sel)=colo;
-                impaint1.CData=bw;
-                impaint2.CData=bw;
-                
-                pixelchannel=obj.findChannelID(classif.strid);
-                pix=find(obj.channelid==pixelchannel);
-                
-                obj.image(:,:,pix,obj.display.frame)=impaint2.CData;
-                % HERE
-            end
-            
-            
-            % hl = line('XData',xinit,'YData',yinit,...
-            % 'Marker','p','color','b');
-            %src.WindowButtonMotionFcn = {@wbmcb,1};
-            %src.WindowButtonUpFcn = @wbucb;
-            
-        end
-        %         if strcmp(seltype,'alt')
-        %             src.Pointer = 'circle';
-        %             cp = hpaint.CurrentPoint;
-        %             xinit = cp(1,1);
-        %             yinit = cp(1,2);
-        %             % hl = line('XData',xinit,'YData',yinit,...
-        %             % 'Marker','p','color','b');
-        %             src.WindowButtonMotionFcn = {@wbmcb,2};
-        %             src.WindowButtonUpFcn = @wbucb;
-        %
-        %         end
-    end
-
-% nested function, good luck ;-) ....
-    function wbdcb(src,cbk)
-        seltype = src.SelectionType;
-        ma=zeros(size(obj.image,1),size(obj.image,2));
-        
-        if strcmp(seltype,'normal') % paint with middle sized brush
-            src.Pointer = 'cross';
-            
-            cp = hpaint.CurrentPoint;
-            
-            xinit = cp(1,1);
-            yinit = cp(1,2);
-            
-            % hl = line('XData',xinit,'YData',yinit,...
-            % 'Marker','p','color','b');
-            src.WindowButtonMotionFcn = {@wbmcb,1};
-            src.WindowButtonUpFcn = @wbucb;
-            
-        end
-        if strcmp(seltype,'alt') % paint with middle small brush
-            src.Pointer = 'cross';
-            cp = hpaint.CurrentPoint;
-            xinit = cp(1,1);
-            yinit = cp(1,2);
-            % hl = line('XData',xinit,'YData',yinit,...
-            % 'Marker','p','color','b');
-            src.WindowButtonMotionFcn = {@wbmcb,2};
-            src.WindowButtonUpFcn = @wbucb;
-            
-        end
-        if strcmp(seltype,'extend') % paint with middle large brush
-            src.Pointer = 'cross';
-            
-            cp = hpaint.CurrentPoint;
-            xinit = cp(1,1);
-            yinit = cp(1,2);
-            % hl = line('XData',xinit,'YData',yinit,...
-            % 'Marker','p','color','b');
-            src.WindowButtonMotionFcn = {@wbmcb,3};
-            src.WindowButtonUpFcn = @wbucb;
-            
-        end
-        
-        if strcmp(seltype,'open') % paint whole connected area into the selected class color
-            
-            
-            % find the color to paint in
-            hmenu = findobj('Tag','TrainingClassesMenu');
-            hclass=findobj(hmenu,'Checked','on');
-            strcolo=replace(hclass.Tag,'classes_','');
-            colo=str2num(strcolo);
-            
-            % get the pointed pixel
-            cp = hpaint.CurrentPoint;
-            xinit = uint16(round(cp(1,1)));
-            yinit = uint16(round(cp(1,2)));
-            
-            %gather the list of pixel to paint
-            
-            val=impaint1.CData(yinit,xinit); %
-            
-            [L nlab]=bwlabel(impaint1.CData==val);
-            
-            for j=1:nlab
-                bwtemp=L==j;
-                if bwtemp(yinit,xinit)==1 % found the connected to which the init pixel belongs
-                    
-                    BW=~bwtemp;
-                    
-                    imdist=bwdist(BW);
-                    imdist = imclose(imdist, strel('disk',2));
-                    imdist = imhmax(imdist,1);
-                    
-                    sous=- imdist;
-                    
-                    %figure, imshow(BW,[]);
-                    
-                    labels = double(watershed(sous,8)).* ~BW; % do a watershed to cut objects
-                    
-                    for k=1:max(labels(:))
-                        bwtemp2=labels==k;
-                        
-                        if bwtemp2(yinit,xinit)==1
-                            impaint1.CData(bwtemp2)=colo;
-                            impaint2.CData(bwtemp2)=colo;
+                        if strcmp(['results_' pl{k}],str) % identify channel
                             
-                            pixelchannel=obj.findChannelID(classif.strid);
-                            pix=find(obj.channelid==pixelchannel);
+                            plotLinksResults(obj,hp,pl{k})
                             
-                            obj.image(:,:,pix,obj.display.frame)=impaint2.CData;
-                            
-                            drawnow
-                            break
                         end
                     end
                 end
             end
+            
+            % display tracking results as numbers on each cell
+            %him.image(cc) are the Data
+            
+            
+            % display tracking numbers on cells
+            % obj.display.channel{i}
+            
+            if numel(strfind(obj.display.channel{i},'track'))~=0 | numel(strfind(obj.display.channel{i},'pedigree'))~=0
+                
+                im=him.image(cc).CData;
+                
+                [l n]=bwlabel(im);
+                r=regionprops(l,'Centroid');
+                
+                %'ok'
+                
+                for k=1:n
+                    bw=l==k;
+                    id=round(mean(im(bw)));
+                    htext(cctext)=text(r(k).Centroid(1),r(k).Centroid(2),num2str(id),'Color',[1 1 1],'FontSize',20,'Tag','tracktext');
+                    cctext=cctext+1; % update handle counter
+                end
+            end
+            
+            %test=get(hp(cc),'Parent')
+            title(hp(cc),str,'FontSize',14,'interpreter','none');
+            %title(hp(cc),str, 'Color',colo,'FontSize',20);
+            cc=cc+1;
         end
-            
-            function wbmcb(src,event,bsize) % paint pixels while pressing left or right button
+    end
+end
+
+    function addChannel(handles, event,obj)
+        matrix=uint16(zeros(size(obj.image,1),size(obj.image,2),1,size(obj.image,4)));
+        rgb=[1 1 1];
+        intensity=[0 0 0];
+        answer = inputdlg({'Channel Name','RGB','Intensity'},'New CHannel',1,{'mychannel','[1 1 1]','[0 0 0]'});
+        
+        if numel(answer)==0
+            return;
+        end
+        
+        h=findobj('Tag',['ROI' obj.id]);
+        close(h);
+        obj.addChannel(matrix,answer{1},str2num(answer{2}),str2num(answer{3}));
+        obj.view;
+        
+    end
+
+    function removeChannel(handles, event,obj)
+        
+        cha=numel(obj.channelid);
+        answer = inputdlg({'Channel number to remove'},'Remove Channel',1,{num2str(cha)});
+        
+        if numel(answer)==0
+            return;
+        end
+        
+        h=findobj('Tag',['ROI' obj.id]);
+        close(h);
+        
+        obj.removeChannel(str2num(answer{1}));
+        obj.view;
+    end
+
+
+    function drawObject(handles, event,obj)
+        
+        cha=1;
+        answer = inputdlg({'Channel id on which to draw ?'},'Draw',1,{num2str(cha)});
+        
+        if numel(answer)==0
+            return;
+        end
+        
+        h=findobj('Tag',['ROI' obj.id]);
+        
+        hp=findobj(h,'Tag','AxeROI1');
+        
+        xc=size(obj.image,2)/2;
+        yc=size(obj.image,1)/2;
+        sizx=40;
+        sizy=30;
+        
+        windo=[xc-sizx yc-sizy 2*sizx 2*sizy];
+        roi = imellipse(hp,windo);
+        inputpoly = wait(roi);
+        delete(roi);
+        
+        BW=poly2mask(inputpoly(:,1),inputpoly(:,2),size(obj.image,1),size(obj.image,2));
+        BW=repmat(BW,[1 1 1 size(obj.image,4)]);
+        
+        obj.image(:,:,str2num(answer{1}),:)=uint16(obj.image(:,:,str2num(answer{1}),:) | BW);
+        %h=findobj('Tag',['ROI' obj.id]);
+        %close(h);
+        obj.view;
+    end
+
+
+    function pedigree(handles, event,h,hpaint,obj,ccpedigree,hp,classif)
+        
+        cp = hpaint.CurrentPoint;
+        
+        xinit = cp(1,1);
+        yinit = cp(1,2);
+        
+        im=obj.image(:,:,ccpedigree,obj.display.frame);
+        
+        daughter=0;
+        % find object if any is selected
+        if yinit>0 && xinit>0 && xinit< size(im,2)+1 && yinit<size(im,1)+1
+            daughter= im(round(yinit),round(xinit));
+        end
+        
+        if daughter==0
+            return;
+        end
+        
+        bw=im==daughter;
+        stat=regionprops(bw,'Centroid');
+        
+        xinit=stat(1).Centroid(1);
+        yinit=stat(1).Centroid(2);
+        
+        hl = line('XData',[xinit xinit],'YData',[yinit yinit], 'Marker','p','color','w','LineWidth',3);
+        
+        %hl= annotation('arrow',[xinit xinit],[yinit yinit],'Color',[1 1 1],'Units','pixels');
+        % hl = line('XData',xinit,'YData',yinit,...
+        % 'Marker','p','color','b');
+        handles.WindowButtonMotionFcn = {@wmp,1};
+        handles.WindowButtonUpFcn = @wup;
+        
+        x=1;
+        y=1;
+        
+        
+        function wmp(src,event,bsize)
             cp = hpaint.CurrentPoint;
-            % For R2014a and earlier:
-            % cp = get(ah,'CurrentPoint');
             
-            %xdat = [xinit,cp(1,1)]
-            %ydat = [yinit,cp(1,2)]
+            x = cp(1,1);
+            y = cp(1,2);
             
-            
-            switch bsize
-                case 2 % fine brush
-                    % xdat = [cp(1,1) ];
-                    %ydat = [cp(1,2) ];
-                    
-                    mix=max(1,cp(1,2));
-                    miy=max(1,cp(1,1));
-                    mux=min(size(ma,1),cp(1,2));
-                    muy=min(size(ma,1),cp(1,1));
-                    
-                    
-                    
-                case 1 % large brush
-                    %xdat = [cp(1,1) cp(1,1)+1 cp(1,1)-1 cp(1,1)+1 cp(1,1)-1 cp(1,1) cp(1,1) cp(1,1)+1 cp(1,1)-1];
-                    %ydat = [cp(1,2) cp(1,2)+1 cp(1,2)-1 cp(1,2)-1 cp(1,2)+1 cp(1,2)+1 cp(1,2)-1 cp(1,2) cp(1,2)];
-                    
-                    mix=max(1,cp(1,2)-1);
-                    miy=max(1,cp(1,1)-1);
-                    mux=min(size(ma,1),cp(1,2));
-                    muy=min(size(ma,1),cp(1,1));
-                    
-                    %ma(mix:mux,miy:muy)=1;
-                    % pis=ma>0;
-                    
-                case 3 % huge brush
-                    
-                    % ma=zeros(size(obj,image,1),size(obj.image,2));
-                    mix=max(1,cp(1,2)-8);
-                    miy=max(1,cp(1,1)-8);
-                    mux=min(size(ma,1),cp(1,2)+8);
-                    muy=min(size(ma,1),cp(1,1)+8);
-                    
-                    %ma(mix:mux,miy:muy)=1;
-                    %pis=ma>0;
-                    % HERE
-                    
-                    
-            end
-            
-            ma(round(mix):round(mux),round(miy):round(muy))=1;
-            pis=ma>0;
-            
-            
-            % find the right color
-            hmenu = findobj('Tag','TrainingClassesMenu');
-            hclass=findobj(hmenu,'Checked','on');
-            strcolo=replace(hclass.Tag,'classes_','');
-            colo=str2num(strcolo);
-            
-            if numel(pis)>=0
-                
-                %imtemp=imobj.CData;
-                
-                sz=size(obj.image);
-                sz=sz(1:2);
-                
-                
-                % impaint1.CData(linearInd)=colo;
-                % impaint2.CData(linearInd)=colo;
-                
-                impaint1.CData(pis)=colo;
-                impaint2.CData(pis)=colo;
-                
-                
-                % dave data in obj.image object
-                
-                %                 pix = strfind(obj.display.channel, classif.strid);
-                %
-                %                 %                first find the right channel
-                %                 cc=[];
-                %                 for k=1:numel(pix)
-                %                     if numel(pix{k})~=0
-                %                         cc=k;
-                %
-                %                         break
-                %                     end
-                %                 end
-                
-                pixelchannel=obj.findChannelID(classif.strid);
-                pix=find(obj.channelid==pixelchannel);
-                
-                obj.image(:,:,pix,obj.display.frame)=impaint2.CData;
-                
-                drawnow
-            end
-            end
-            
-            function wbucb(src,callbackdata)
+            set(hl,'XData',[xinit x],'YData',[yinit y]);
+            %hl.X=[xinit x];
+            %hl.Y=[xinit y];
+        end
+        
+        function wup(src,callbackdata)
             last_seltype = src.SelectionType;
-            % For R2014a and earlier:
-            % last_seltype = get(src,'SelectionType');
-            %if strcmp(last_seltype,'alt')
             src.Pointer = 'arrow';
             src.WindowButtonMotionFcn = '';
             src.WindowButtonUpFcn = '';
-            % For R2014a and earlier:
-            % set(src,'Pointer','arrow');
-            % set(src,'WindowButtonMotionFcn','');
-            % set(src,'WindowButtonUpFcn','');
-            % else
-            %    return
-            %end
+            
+            if ishandle(hl)
+                delete(hl);
+            end
+            
+            mother= im(round(y),round(x));
+            
+            % if mother==0
+            %
+            %  return;
+            % end
+            
+            %             bw=im==mother;
+            %             stat=regionprops(bw,'Centroid');
+            %
+            %             xinit=stat(1).Centroid(1);
+            %             yinit=stat(1).Centroid(2);
+            %mother,daughter
+            str=hpaint.UserData;
+            
+            %pix=find(
+            obj.train.(str).mother(daughter)=mother;
+            
+            
+            if numel(obj.train.(str).mother)>=mother & mother>0
+                if obj.train.(str).mother(mother)==daughter
+                    obj.train.(str).mother(mother)=0;
+                end
+            end
+            %pix=find(
+            %obj.train.(str).mother(mother)=mother;
+            
+            plotLinks(obj,hp,classif)
+        end
+        
+        
+    end
+
+    function classesMenuFcn(handles, event, h,obj,impaint1,impaint2,hpaint,classif)
+        
+        if strcmp(handles.Checked,'off')
+            
+            for i=1:numel(classif.classes)
+                ha=findobj('Tag',['classes_' num2str(i)]);
+                
+                if numel(ha)
+                    ha.Checked='off';
+                end
+            end
+            
+            handles.Checked='on';
+            %aa=handles.Tag
+            %str=replace(handles.Tag,'classes_','');
+            %colo=str2num(str);
+            
+            
+            % set pixel painting mode
+            if strcmp(classif.category{1},'Pixel')
+                set(h,'WindowButtonDownFcn',@wbdcb);
+            end
+            
+            if strcmp(classif.category{1},'Object')
+                set(h,'WindowButtonDownFcn',@wbdcb2);
+            end
+            
+            %ah = hp(1); %axes('SortMethod','childorder');
+        else
+            
+            handles.Checked='off';
+            str=handles.Tag;
+            
+            h.WindowButtonDownFcn='';
+            h.Pointer = 'arrow';
+            h.WindowButtonMotionFcn = '';
+            h.WindowButtonUpFcn = '';
+            figure(h); % set focus
+            
+            
+        end
+        
+        %[him hp]=draw(obj,h,classif);
+        function wbdcb2(src,cbk)
+            seltype = src.SelectionType;
+            
+            if strcmp(seltype,'normal')
+                %src.Pointer = 'circle';
+                cp = hpaint.CurrentPoint;
+                
+                xinit = cp(1,1);
+                yinit = cp(1,2);
+                
+                if xinit>size(obj.image,2) | xinit<1 | yinit<1 | yinit>size(obj.image,1)
+                    return;
+                end
+                
+                
+                hmenu = findobj('Tag','TrainingClassesMenu');
+                hclass=findobj(hmenu,'Checked','on');
+                strcolo=replace(hclass.Tag,'classes_','');
+                colo=str2num(strcolo);
+                
+                bw=impaint1.CData;
+                [l n]=bwlabel(bw>0);
+                
+                %xinit,yinit
+                val=l(round(yinit),round(xinit));
+                
+                if val>0
+                    %tmp=bw;
+                    sel=l==val;
+                    bw(sel)=colo;
+                    impaint1.CData=bw;
+                    impaint2.CData=bw;
+                    
+                    pixelchannel=obj.findChannelID(classif.strid);
+                    pix=find(obj.channelid==pixelchannel);
+                    
+                    obj.image(:,:,pix,obj.display.frame)=impaint2.CData;
+                    % HERE
+                end
+                
+                
+                % hl = line('XData',xinit,'YData',yinit,...
+                % 'Marker','p','color','b');
+                %src.WindowButtonMotionFcn = {@wbmcb,1};
+                %src.WindowButtonUpFcn = @wbucb;
+                
+            end
+            %         if strcmp(seltype,'alt')
+            %             src.Pointer = 'circle';
+            %             cp = hpaint.CurrentPoint;
+            %             xinit = cp(1,1);
+            %             yinit = cp(1,2);
+            %             % hl = line('XData',xinit,'YData',yinit,...
+            %             % 'Marker','p','color','b');
+            %             src.WindowButtonMotionFcn = {@wbmcb,2};
+            %             src.WindowButtonUpFcn = @wbucb;
+            %
+            %         end
+        end
+        
+        % nested function, good luck ;-) ....
+        function wbdcb(src,cbk)
+            seltype = src.SelectionType;
+            ma=zeros(size(obj.image,1),size(obj.image,2));
+            
+            if strcmp(seltype,'normal') % paint with middle sized brush
+                src.Pointer = 'cross';
+                
+                cp = hpaint.CurrentPoint;
+                
+                xinit = cp(1,1);
+                yinit = cp(1,2);
+                
+                % hl = line('XData',xinit,'YData',yinit,...
+                % 'Marker','p','color','b');
+                src.WindowButtonMotionFcn = {@wbmcb,1};
+                src.WindowButtonUpFcn = @wbucb;
+                
+            end
+            if strcmp(seltype,'alt') % paint with middle small brush
+                src.Pointer = 'cross';
+                cp = hpaint.CurrentPoint;
+                xinit = cp(1,1);
+                yinit = cp(1,2);
+                % hl = line('XData',xinit,'YData',yinit,...
+                % 'Marker','p','color','b');
+                src.WindowButtonMotionFcn = {@wbmcb,2};
+                src.WindowButtonUpFcn = @wbucb;
+                
+            end
+            if strcmp(seltype,'extend') % paint with middle large brush
+                src.Pointer = 'cross';
+                
+                cp = hpaint.CurrentPoint;
+                xinit = cp(1,1);
+                yinit = cp(1,2);
+                % hl = line('XData',xinit,'YData',yinit,...
+                % 'Marker','p','color','b');
+                src.WindowButtonMotionFcn = {@wbmcb,3};
+                src.WindowButtonUpFcn = @wbucb;
+                
+            end
+            
+            if strcmp(seltype,'open') % paint whole connected area into the selected class color
+                
+                
+                % find the color to paint in
+                hmenu = findobj('Tag','TrainingClassesMenu');
+                hclass=findobj(hmenu,'Checked','on');
+                strcolo=replace(hclass.Tag,'classes_','');
+                colo=str2num(strcolo);
+                
+                % get the pointed pixel
+                cp = hpaint.CurrentPoint;
+                xinit = uint16(round(cp(1,1)));
+                yinit = uint16(round(cp(1,2)));
+                
+                %gather the list of pixel to paint
+                
+                val=impaint1.CData(yinit,xinit); %
+                
+                [L nlab]=bwlabel(impaint1.CData==val);
+                
+                for j=1:nlab
+                    bwtemp=L==j;
+                    if bwtemp(yinit,xinit)==1 % found the connected to which the init pixel belongs
+                        
+                        BW=~bwtemp;
+                        
+                        imdist=bwdist(BW);
+                        imdist = imclose(imdist, strel('disk',2));
+                        imdist = imhmax(imdist,1);
+                        
+                        sous=- imdist;
+                        
+                        %figure, imshow(BW,[]);
+                        
+                        labels = double(watershed(sous,8)).* ~BW; % do a watershed to cut objects
+                        
+                        for k=1:max(labels(:))
+                            bwtemp2=labels==k;
+                            
+                            if bwtemp2(yinit,xinit)==1
+                                impaint1.CData(bwtemp2)=colo;
+                                impaint2.CData(bwtemp2)=colo;
+                                
+                                pixelchannel=obj.findChannelID(classif.strid);
+                                pix=find(obj.channelid==pixelchannel);
+                                
+                                obj.image(:,:,pix,obj.display.frame)=impaint2.CData;
+                                
+                                drawnow
+                                break
+                            end
+                        end
+                    end
+                end
+            end
+            
+            function wbmcb(src,event,bsize) % paint pixels while pressing left or right button
+                cp = hpaint.CurrentPoint;
+                % For R2014a and earlier:
+                % cp = get(ah,'CurrentPoint');
+                
+                %xdat = [xinit,cp(1,1)]
+                %ydat = [yinit,cp(1,2)]
+                
+                
+                switch bsize
+                    case 2 % fine brush
+                        % xdat = [cp(1,1) ];
+                        %ydat = [cp(1,2) ];
+                        
+                        mix=max(1,cp(1,2));
+                        miy=max(1,cp(1,1));
+                        mux=min(size(ma,1),cp(1,2));
+                        muy=min(size(ma,1),cp(1,1));
+                        
+                        
+                        
+                    case 1 % large brush
+                        %xdat = [cp(1,1) cp(1,1)+1 cp(1,1)-1 cp(1,1)+1 cp(1,1)-1 cp(1,1) cp(1,1) cp(1,1)+1 cp(1,1)-1];
+                        %ydat = [cp(1,2) cp(1,2)+1 cp(1,2)-1 cp(1,2)-1 cp(1,2)+1 cp(1,2)+1 cp(1,2)-1 cp(1,2) cp(1,2)];
+                        
+                        mix=max(1,cp(1,2)-1);
+                        miy=max(1,cp(1,1)-1);
+                        mux=min(size(ma,1),cp(1,2));
+                        muy=min(size(ma,1),cp(1,1));
+                        
+                        %ma(mix:mux,miy:muy)=1;
+                        % pis=ma>0;
+                        
+                    case 3 % huge brush
+                        
+                        % ma=zeros(size(obj,image,1),size(obj.image,2));
+                        mix=max(1,cp(1,2)-8);
+                        miy=max(1,cp(1,1)-8);
+                        mux=min(size(ma,1),cp(1,2)+8);
+                        muy=min(size(ma,1),cp(1,1)+8);
+                        
+                        %ma(mix:mux,miy:muy)=1;
+                        %pis=ma>0;
+                        % HERE
+                        
+                        
+                end
+                
+                ma(round(mix):round(mux),round(miy):round(muy))=1;
+                pis=ma>0;
+                
+                
+                % find the right color
+                hmenu = findobj('Tag','TrainingClassesMenu');
+                hclass=findobj(hmenu,'Checked','on');
+                strcolo=replace(hclass.Tag,'classes_','');
+                colo=str2num(strcolo);
+                
+                if numel(pis)>=0
+                    
+                    %imtemp=imobj.CData;
+                    
+                    sz=size(obj.image);
+                    sz=sz(1:2);
+                    
+                    
+                    % impaint1.CData(linearInd)=colo;
+                    % impaint2.CData(linearInd)=colo;
+                    
+                    impaint1.CData(pis)=colo;
+                    impaint2.CData(pis)=colo;
+                    
+                    
+                    % dave data in obj.image object
+                    
+                    %                 pix = strfind(obj.display.channel, classif.strid);
+                    %
+                    %                 %                first find the right channel
+                    %                 cc=[];
+                    %                 for k=1:numel(pix)
+                    %                     if numel(pix{k})~=0
+                    %                         cc=k;
+                    %
+                    %                         break
+                    %                     end
+                    %                 end
+                    
+                    pixelchannel=obj.findChannelID(classif.strid);
+                    pix=find(obj.channelid==pixelchannel);
+                    
+                    obj.image(:,:,pix,obj.display.frame)=impaint2.CData;
+                    
+                    drawnow
+                end
+            end
+            
+            function wbucb(src,callbackdata)
+                last_seltype = src.SelectionType;
+                % For R2014a and earlier:
+                % last_seltype = get(src,'SelectionType');
+                %if strcmp(last_seltype,'alt')
+                src.Pointer = 'arrow';
+                src.WindowButtonMotionFcn = '';
+                src.WindowButtonUpFcn = '';
+                % For R2014a and earlier:
+                % set(src,'Pointer','arrow');
+                % set(src,'WindowButtonMotionFcn','');
+                % set(src,'WindowButtonUpFcn','');
+                % else
+                %    return
+                %end
             end
         end
     end
+    
+            
+    function regression(handles,event,h,obj,him,hp,classif)
+        
+        cp = get(hp,'CurrentPoint');
+        
+        xinit = cp(1,1);
+        yinit = cp(1,2);
+        
+%         im=obj.image(:,:,ccpedigree,obj.display.frame);
+%         
+%         daughter=0;
+%         % find object if any is selected
+%         if yinit>0 && xinit>0 && xinit< size(im,2)+1 && yinit<size(im,1)+1
+%             daughter= im(round(yinit),round(xinit));
+%         end
+%         
+%         if daughter==0
+%             return;
+%         end
+%         
+%         bw=im==daughter;
+%         stat=regionprops(bw,'Centroid');
+%         
+%         xinit=stat(1).Centroid(1);
+%         yinit=stat(1).Centroid(2);
+        
+        hl = line('XData',[xinit xinit],'YData',[yinit yinit], 'Marker','p','color','w','LineWidth',3);
+        
+        %hl= annotation('arrow',[xinit xinit],[yinit yinit],'Color',[1 1 1],'Units','pixels');
+        % hl = line('XData',xinit,'YData',yinit,...
+        % 'Marker','p','color','b');
+        handles.WindowButtonMotionFcn = {@wmp,1};
+        handles.WindowButtonUpFcn = @wup;
+        
+        x=1;
+        y=1;
+        
+        
+        function wmp(src,event,bsize)
+          % cp = hpaint.CurrentPoint;
+            cp = get(hp,'CurrentPoint');
+            
+            x = cp(1,1);
+            y = cp(1,2);
+            
+            set(hl,'XData',[xinit x],'YData',[yinit y]);
+            %hl.X=[xinit x];
+            %hl.Y=[xinit y];
+        end
+        
+        function wup(src,callbackdata)
+            last_seltype = src.SelectionType;
+            src.Pointer = 'arrow';
+            src.WindowButtonMotionFcn = '';
+            src.WindowButtonUpFcn = '';
+            
+
+            if ishandle(hl)
+                
+               ax=hl.XData;
+               ay=hl.YData; 
+                            
+                delete(hl);
+            end
+            
+            dist=sqrt((ax(2)-ax(1)).^2+(ay(2)-ay(1)).^2);
+            %mother= im(round(y),round(x));
+            
+%            str=hpaint.UserData;
+ 
+            obj.train.(classif.strid).id(obj.display.frame)=round(dist);
+            
+             updatedisplay(obj,him,hp,classif)
+%             if numel(obj.train.(str).mother)>=mother & mother>0
+%                 if obj.train.(str).mother(mother)==daughter
+%                     obj.train.(str).mother(mother)=0;
+%                 end
+%             end
+            %pix=find(
+            %obj.train.(str).mother(mother)=mother;
+            
+           % plotLinks(obj,hp,classif)
+        end
+    end
+   
 
     function displayMenuFcn(handles, event, obj,h,classif)
         
@@ -1078,63 +1180,128 @@ end
                 axes(hp(cc));
                 str=obj.display.channel{i};
                 
-                if numel(obj.train)>0
-                    fields=fieldnames(obj.train);
-                    
-                    for k=1:numel(fields)
-                        tt=obj.train.(fields{k}).id(obj.display.frame);
-                        
-                        if isfield(obj.train.(fields{k}),'classes')
-                            classesspe=obj.train.(fields{k}).classes; % classes name specfic to training
-                        else
-                            classesspe=    obj.classes ;
-                        end
-                        
-                        if tt==0
-                            tt='not classified';
-                        else
-                            if tt <= length(obj.classes)
-                                tt=obj.classes{tt};
-                            else
-                                tt='class unavailable';
-                            end
-                        end
-                        str=[str ' - ' tt ' (training: ' fields{k} ')'];
-                        
-                        %                         if obj.train(obj.display.frame)==0
-                        %                             str=[str ' - not classified'];
-                        %                     %title(hp(cc),str, 'Color',[0 0 0],'FontSize',20);
-                        %                         else
-                        %                             str= [str ' - ' obj.classes{obj.train(obj.display.frame)} ' (training)'];
-                        %                     %title(hp(cc),str, 'Color',cmap(obj.train(obj.display.frame),:),'FontSize',20);
-                        %                         end
-                    end
-                    
+                 if numel(obj.train)>0
+            fields=fieldnames(obj.train);
+            
+            for k=1:numel(fields)
+                tt=obj.train.(fields{k}).id(obj.display.frame);
+                
+                if isfield(obj.train.(fields{k}),'classes')
+                    classesspe=obj.train.(fields{k}).classes; % classes name specfic to training
+                else
+                    classesspe=    obj.classes ;
                 end
                 
-                % str=hp(cc).Title.String;
                 
-                if numel(obj.results)>0
-                    pl = fieldnames(obj.results);
-                    %aa=obj.results
-                    for k = 1:length(pl)
-                        if isfield(obj.results.(pl{k}),'labels')
-                            tt=char(obj.results.(pl{k}).labels(obj.display.frame));
-                            str=[str ' - ' tt ' (' pl{k} ')'];
-                        end
+             
+                
+                if tt<=0
+                    tt='Not Clas.';
+                else
+                       % if tt <= length(obj.classes) & tt>=0
+                       %     tt=obj.classes{tt};
+                       % else
+                       %     tt='N/A';
+                        %end
+                        tt=num2str(tt);
+                end
+                    
+               %     tt
+                    str=[str ' - ' tt ' (tr.: ' fields{k} ')'];
+                    
+                    %                         if obj.train(obj.display.frame)==0
+                    %                             str=[str ' - not classified'];
+                    %                     %title(hp(cc),str, 'Color',[0 0 0],'FontSize',20);
+                    %                         else
+                    %                             str= [str ' - ' obj.classes{obj.train(obj.display.frame)} ' (training)'];
+                    %                     %title(hp(cc),str, 'Color',cmap(obj.train(obj.display.frame),:),'FontSize',20);
+                    %                         end
+              %  end
+                
+            end
+        end
+            
+            % str=hp(cc).Title.String;
+            
+            if numel(obj.results)>0
+                pl = fieldnames(obj.results);
+                %aa=obj.results
+                for k = 1:length(pl)
+                    if isfield(obj.results.(pl{k}),'labels')
+                     %   tt=char(obj.results.(pl{k}).labels(obj.display.frame));
+                            tt=num2str(obj.results.(pl{k}).id(obj.display.frame));
+                        str=[str ' - ' tt ' (' pl{k} ')'];
+                    end
+                    
+                    if isfield(obj.results.(pl{k}),'mother')
+                        % pedigree data available .
                         
-                        if isfield(obj.results.(pl{k}),'mother')
-                            % pedigree data available .
+                        if strcmp(['results_' pl{k}],str) % identify channel
                             
-                            if strcmp(['results_' pl{k}],str) % identify channel
-                                
-                                plotLinksResults(obj,hp,pl{k})
-                                
-                            end
+                            plotLinksResults(obj,hp,pl{k})
+                            
                         end
                     end
                 end
-                
+            end
+            
+%                 if numel(obj.train)>0
+%                     fields=fieldnames(obj.train);
+%                     
+%                     for k=1:numel(fields)
+%                         tt=obj.train.(fields{k}).id(obj.display.frame);
+%                         
+%                         if isfield(obj.train.(fields{k}),'classes')
+%                             classesspe=obj.train.(fields{k}).classes; % classes name specfic to training
+%                         else
+%                             classesspe=    obj.classes ;
+%                         end
+%                         
+%                         if tt==0
+%                             tt='not classified';
+%                         else
+%                             if tt <= length(obj.classes)
+%                                 tt=obj.classes{tt};
+%                             else
+%                                 tt='class unavailable';
+%                             end
+%                         end
+%                         str=[str ' - ' tt ' (training: ' fields{k} ')'];
+%                         
+%                         %                         if obj.train(obj.display.frame)==0
+%                         %                             str=[str ' - not classified'];
+%                         %                     %title(hp(cc),str, 'Color',[0 0 0],'FontSize',20);
+%                         %                         else
+%                         %                             str= [str ' - ' obj.classes{obj.train(obj.display.frame)} ' (training)'];
+%                         %                     %title(hp(cc),str, 'Color',cmap(obj.train(obj.display.frame),:),'FontSize',20);
+%                         %                         end
+%                     end
+%                     
+%                 end
+%                 
+%                 % str=hp(cc).Title.String;
+%                 
+%                 if numel(obj.results)>0
+%                     pl = fieldnames(obj.results);
+%                     %aa=obj.results
+%                     for k = 1:length(pl)
+%                         if isfield(obj.results.(pl{k}),'labels')
+%                             tt=char(obj.results.(pl{k}).labels(obj.display.frame));
+%                             str=[str ' - ' tt ' (' pl{k} ')'];
+%                         end
+%                         
+%                         if isfield(obj.results.(pl{k}),'mother')
+%                             % pedigree data available .
+%                             
+%                             if strcmp(['results_' pl{k}],str) % identify channel
+%                                 
+%                                 plotLinksResults(obj,hp,pl{k})
+%                                 
+%                             end
+%                         end
+%                     end
+%                 end
+%                 
                 % display tracking numbers on cells
                 if numel(strfind(obj.display.channel{i},'track'))~=0 | numel(strfind(obj.display.channel{i},'pedigree'))~=0
                     

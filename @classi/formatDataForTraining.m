@@ -40,7 +40,7 @@ rois=trainingParam.rois;
 
 switch category
     case 'Image'
-        formatImageTrainingSet(foldername,classif,rois)
+        formatImageTrainingSet(foldername,classif,rois)    
     case 'LSTM'
         formatLSTMTrainingSet(foldername,classif,rois)
     case 'Pixel'

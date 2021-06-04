@@ -55,6 +55,11 @@ switch nargin
             classes=['background cell'];
         end
         
+         if strcmp(classlist{classitype,2},'Deep Image Regression') % classes are predefined, no need to ask user
+            needClasses=0;
+            classes='';
+         end
+        
         if strcmp(classlist{classitype,2},'Cell cluster lineage') | strcmp(classlist{classitype,2},'Cell cluster tracking') % for pedigree and tracking , classes are predefined
             needClasses=0;
             classes=['nolink link'];
@@ -89,7 +94,7 @@ switch nargin
         
         % create new classi object
         
-        pth=[obj.io.path '/' obj.io.file];
+        pth=fullfile(obj.io.path,obj.io.file);
         
         if classitype >0 && classitype<= size(classlist,1) % user chose a correct method
             

@@ -1,16 +1,17 @@
 
-function saveTrainingPlot(path)
+function saveTrainingPlot(path,name)
     currentfig = findall(groot,'Type','Figure');
     currentfig=currentfig(1);%take the last opened figure
     %             ValAccuracy=info.ValidationAccuracy(end);
-    disp(['Saving figure...' '\n']);
+    disp('Saving figure...');
     %             savefig(currentfig, [path '/TrainingValidation/LSTMTraining.fig'],'compact')
     %             saveas(currentfig, [path '/TrainingValidation/LSTMTraining.pdf'])
 
-  if strcmp(class(currentfig),'figure')
-    print(currentfig,[path '/TrainingValidation/CNNTraining'],'-dpdf','-fillpage')
+  if ishandle(currentfig)
+      exportgraphics(currentfig,fullfile(path, 'TrainingValidation',[name '.pdf']));
+    %print(currentfig,fullfile(path, 'TrainingValidation',name),'-dpdf','-fillpage')
   else
       if exist('exportapp')
-     exportapp(currentfig,[path '/TrainingValidation/CNNTraining.pdf']);
+     exportapp(currentfig,fullfile(path, 'TrainingValidation',[name '.pdf']));
       end
   end

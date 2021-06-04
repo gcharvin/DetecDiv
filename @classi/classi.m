@@ -31,9 +31,9 @@ classdef classi < handle
             
             if numel(path)>0
             mkdir(path,'classification');
-            obj.path=[path '/classification'];
+            obj.path=fullfile(path,'classification');
             mkdir(obj.path,obj.strid);
-            obj.path=[obj.path '/' obj.strid];
+            obj.path=fullfile(obj.path,obj.strid);
             end
         end
         

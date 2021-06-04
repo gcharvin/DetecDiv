@@ -1,4 +1,4 @@
-function trainImageGoogleNetFun(path,name)
+function trainImageRegressionFun(path,name)
 
 % gather all classification images in each class and performs the training and outputs and saves the trained net 
 % load training data 
@@ -6,19 +6,50 @@ function trainImageGoogleNetFun(path,name)
 fprintf('Loading data repository...\n');
 fprintf('------\n');
 
-foldername=[path '/trainingdataset/images'];
+% load images at once
 
-imds = imageDatastore(foldername, ...
-    'IncludeSubfolders',true, ...
-    'LabelSource','foldernames'); 
+imfolder=fullfile(path, '/trainingdataset/images');
+list=dir([imfolder '/*.mat']);
+
+
+for i=1:numel(list)
+% aa=   list(i)
+    load(fullfile(imfolder,list(i).name));
+    
+    if i==1
+        imstore=im;
+    else
+        imstore(:,:,:,end+1:end+size(im,4))=im;
+    end
+end
+
+% load response at once
+
+imfolder=fullfile(path, '/trainingdataset/response');
+list=dir([imfolder '/*.mat']);
+
+for i=1:numel(list)
+% aa=   list(i)
+    load(fullfile(imfolder,list(i).name));
+    if i==1
+       restore=response;
+    else
+        restore(1,end+1:end+size(response,2))=response;
+    end
+end
+restore=restore';
+
+% imds = imageDatastore(foldername, ...
+%  %   'IncludeSubfolders',true, ...
+%     'LabelSource','foldernames'); 
 
 % calculate class frequency for each class 
 
 %ntot=countcats(imds.Labels);
 %weights = double(ntot)/double(sum(ntot));
 
-classWeights = 1./countcats(imds.Labels);
-classWeights = classWeights'/mean(classWeights);
+%classWeights = 1./countcats(imds.Labels);
+%classWeights = classWeights'/mean(classWeights);
 
 
 fprintf('Loading training options...\n');
@@ -26,9 +57,9 @@ fprintf('------\n');
 
 load([path '/trainingParam.mat']);
 
-[imdsTrain,imdsValidation] = splitEachLabel(imds,trainingParam.split);
+%[imdsTrain,imdsValidation] = splitEachLabel(imds,trainingParam.split);
 
-numClasses = numel(categories(imdsTrain.Labels));
+numClasses = 1;%numel(categories(imdsTrain.Labels));
 
 fprintf('Loading network...\n');
 fprintf('------\n');
@@ -56,6 +87,10 @@ end
 
 inputSize = net.Layers(1).InputSize;
 
+% adjusting data size to network 
+
+imstore=imresize(imstore,inputSize(1:2));
+
 fprintf('Reformatting net for transfer learning...\n');
 fprintf('------\n');
 
@@ -69,7 +104,9 @@ end
 
 [learnableLayer,classLayer] = findLayersToReplace(lgraph);
 
-numClasses = numel(categories(imdsTrain.Labels));
+%numClasses = numel(categories(imdsTrain.Labels));
+
+%numClasses=1;
 
 % adjust the final layers of the net
 if isa(learnableLayer,'nnet.cnn.layer.FullyConnectedLayer')
@@ -87,12 +124,27 @@ end
 
 lgraph = replaceLayer(lgraph,learnableLayer.Name,newLearnableLayer);
 
+% removes softmax layer
+
+for i=1:numel(lgraph.Layers)
+if isa(lgraph.Layers(i),'nnet.cnn.layer.SoftmaxLayer')
+    remLayerName=lgraph.Layers(i).Name; 
+    break;
+end
+end
+
+lgraph=removeLayers(lgraph, remLayerName);
+
+
 %Change here to put or not class weighting
 %newClassLayer = classificationLayer('Name','new_classoutput');
-newClassLayer = weightedClassificationLayer(classWeights,'new_classoutput');
 
-lgraph = replaceLayer(lgraph,classLayer.Name,newClassLayer);
+%newClassLayer = weightedClassificationLayer(classWeights,'new_classoutput');
 
+newRegLayer = regressionLayer('Name','new_regoutput'); % creates reg layer
+lgraph = replaceLayer(lgraph,classLayer.Name,newRegLayer); % replace classif layer by regresison layer
+ lgraph = connectLayers(lgraph,"new_fc","new_regoutput"); % connect fc to reg layer
+ 
 %fprintf('Freezing layers...\n');
 
 % freezing layers
@@ -110,17 +162,8 @@ fprintf('------\n');
 % training network
 % augment dataset
 
-%pixelRange=[-5 5];
-
-pixelRange = trainingParam.translateAugmentation;
-
-%scaleRange = [0.9 1.1];
-
-%pixelRange = [-100 100];
-%scaleRange = [0.7 1.3];
-
-%rotation=[180 180];
-rotation=trainingParam.rotateAugmentation;
+%pixelRange = trainingParam.translateAugmentation;
+%rotation=trainingParam.rotateAugmentation;
 
 % imageAugmenter = imageDataAugmenter( ...
 %     'RandXReflection',true, ...
@@ -131,23 +174,23 @@ rotation=trainingParam.rotateAugmentation;
 %     'RandXScale',scaleRange, ...
 %     'RandYScale',scaleRange);
 
-imageAugmenter = imageDataAugmenter( ...
-    'RandXReflection',true, ...
-    'RandYReflection',true, ...
-    'RandXTranslation',pixelRange, ...
-    'RandYTranslation',pixelRange, ...
-     'RandRotation',rotation);% , ...
+% imageAugmenter = imageDataAugmenter( ...
+%     'RandXReflection',true, ...
+%     'RandYReflection',true, ...
+%     'RandXTranslation',pixelRange, ...
+%     'RandYTranslation',pixelRange, ...
+%      'RandRotation',rotation);% , ...
 
   %  'RandXScale',scaleRange, ...
   %  'RandYScale',scaleRange);
 
-augimdsTrain = augmentedImageDatastore(inputSize(1:2),imdsTrain, ...
-    'DataAugmentation',imageAugmenter);
+% augimdsTrain = augmentedImageDatastore(inputSize(1:2),imdsTrain, ...
+%     'DataAugmentation',imageAugmenter);
 
-augimdsValidation = augmentedImageDatastore(inputSize(1:2),imdsValidation);
+%augimdsValidation = augmentedImageDatastore(inputSize(1:2),imdsValidation);
 
 miniBatchSize = trainingParam.MiniBatchSize; %8
-valFrequency = floor(numel(augimdsTrain.Files)/miniBatchSize);
+valFrequency = 10; %floor(numel(augimdsTrain.Files)/miniBatchSize);
 
 % if gpuDeviceCount>0
 % disp('Using GPUs and multiple workers');
@@ -161,12 +204,13 @@ options = trainingOptions(trainingParam.method, ...
     'GradientThreshold',0.5, ...
     'L2Regularization',trainingParam.regularization, ...
     'Shuffle',trainingParam.Shuffle, ...
-    'ValidationData',augimdsValidation, ...
     'ValidationFrequency',valFrequency, ...
     'VerboseFrequency',10,...
     'Plots','training-progress',...
     'ExecutionEnvironment',trainingParam.ExecutionEnvironment);
   
+ %   'ValidationData',augimdsValidation, ...
+ 
 % else
 %     disp('Using CPUs or whatever is available');
 %    options = trainingOptions('sgdm', ...
@@ -180,7 +224,11 @@ options = trainingOptions(trainingParam.method, ...
 %     'Plots','training-progress',...%     'ExecutionEnvironment','auto');
 %  
 % end
-classifier = trainNetwork(augimdsTrain,lgraph,options);
+
+%size(imstore), size(restore)
+%return;
+
+classifier = trainNetwork(imstore,restore,lgraph,options);
 
 fprintf('Training is done...\n');
 fprintf('Saving image classifier ...\n');

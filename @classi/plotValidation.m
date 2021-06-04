@@ -312,7 +312,7 @@ if plottraj==1
     cctraj=1;
     for i=roisTrain
         trajiTrain(cctraj)=classi.roi(i).traj(classi.strid,'Hide',1,'Comment', ['TRAINSET, roi' num2str(i)]);
-        export_fig(trajiTrain(cctraj), [path dateT '\traj_Train_' num2str(i) '.pdf']);
+        export_fig(trajiTrain(cctraj), fullfile(path,dateT,['traj_Train_' num2str(i) '.pdf']));
         close(trajiTrain(cctraj));
         cctraj=cctraj+1;
     end
@@ -320,7 +320,7 @@ if plottraj==1
     cctraj=1;
     for i=roisTest
         trajiTest(cctraj)=classi.roi(i).traj(classi.strid,'Hide',1,'Comment', ['TESTSET, roi' num2str(i)]);
-        export_fig(trajiTest(cctraj), [path dateT '\traj_Test_' num2str(i) '.pdf']);
+        export_fig(trajiTest(cctraj), fullfile(path, dateT, ['traj_Test_' num2str(i) '.pdf']));
         close(trajiTest(cctraj));
         cctraj=cctraj+1;
     end

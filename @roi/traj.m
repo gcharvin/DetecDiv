@@ -10,6 +10,7 @@ function h=traj(obj,classistr,varargin)
 idclas=1;
 hidefig=0;
 comment='';
+reg=0;
 for i=1:numel(varargin)
     %hide
     if strcmp(varargin{i},'Hide')
@@ -23,6 +24,11 @@ for i=1:numel(varargin)
     if strcmp(varargin{i},'option')
         idclas=varargin{i+1};
     end
+    
+       if strcmp(varargin{i},'Regression')
+       reg=1;
+    end
+    
 end
 
 if numel(obj.results)==0
@@ -39,6 +45,7 @@ if numel(obj.image)==0
     obj.load;
 end
 
+if reg==0 % this is a classification, not regression
 % find class names
 classes={};
 cc=1;
@@ -46,6 +53,7 @@ for i=1:max(obj.results.(classistr).id)
     pix=find(obj.results.(classistr).id==i,1,'first');
     classes{cc}=char(obj.results.(classistr).labels(pix));
     cc=cc+1;
+end
 end
 
 if hidefig==1
@@ -55,7 +63,13 @@ else
 end
 
 %===========CLASSES============
+
+if reg==0 % classif 
 acla=subplot(2,1,1);
+else % regression
+ acla=gca;
+ 
+end
 set(gca,'FontSize',20);
 
 
@@ -69,26 +83,40 @@ if numel(obj.train)~=0
     str{1}= 'Groundtruth';
 end
 
-% LSTM 
+% results
 xr=1:numel(obj.results.(classistr).id);
 yr=obj.results.(classistr).id;
 plot(xr,yr,'Color','r','LineWidth',2); hold on;
-
+ 
 if numel(obj.train)~=0
+    if reg==0 % classif
 acc= 100*sum(yr==y)./length(y);
+    else % regression
+    acc= mean( (yr-y).^2 );    
+    end
 else
 acc=0;    
 end
 
+if reg==0
 str{end+1}=['Classification results; ' num2str(acc) '% accurate'];
+else
+  str{end+1}=['Regression results; RMSE= ' num2str(acc)];  
+end
 
-% CNN
+% results in case a separate CNN is used
 if isfield(obj.results.(classistr),'idCNN')
     xrCNN=1:numel(obj.results.(classistr).idCNN);
     yrCNN=obj.results.(classistr).idCNN;
     plot(xrCNN,yrCNN,'Color','g','LineWidth',1); hold on;
+    
+    if reg==0 % classif
     accCNN= 100*sum(yrCNN==y)./length(y);
     str{end+1}=['Classification results CNN; ' num2str(accCNN) '% accurate'];
+    else % regression
+           accCNN= mean( (yrCNN-y).^2 );    
+      str{end+1}=['Regression results; RMSE= ' num2str(accCNN)];  
+    end
 end
 
 str2=str;
@@ -102,13 +130,23 @@ legend(str);
 hl=findobj(h,'Tag','track');
 
 ylim([0 max(obj.results.(classistr).id)+1]);
-set(acla,'YTick',1:max(obj.results.(classistr).id),'YTickLabel',classes,'Fontsize',14);
 
+if reg==0 % classif 
+set(acla,'YTick',1:max(obj.results.(classistr).id),'YTickLabel',classes,'Fontsize',14);
+else % reg
+set(acla,'YTick',1:max(obj.results.(classistr).id),'Fontsize',14);   
+end
+
+if reg==0
 title([comment ' - ' classistr ' - classification results for ROI ' obj.id],'Interpreter','none');
 ylabel('Classes');
+else
+  title([comment ' - ' classistr ' - Regression  results for ROI ' obj.id],'Interpreter','none');
+ylabel('Regression value');
+end
 
 
-
+if reg==0 % classi : display prbability of class as well 
 %========PROB===========
 aprob=subplot(2,1,2);
 
@@ -168,6 +206,7 @@ xlabel('Time (frames)');
 ylabel(['P( class =  '  obj.results.(classistr).classes{idclas} ')']);
 
 set(gca,'FontSize',16);
+end
 
 %ylabel('Budding state');
 %set(gca,'YTick',[0 1 2],'YTickLabel',{'unbbuded','small b','large b'})
