@@ -380,7 +380,7 @@ if numel(classif)>0
         
     end
     
-      if classif.typeid==(11 || 12) % Regression training analysis 
+      if classif.typeid==11 || classif.typeid==12 % Regression training analysis 
         %ccpedigree=obj.findChannelID(classif.strid);
         set(h,'WindowButtonDownFcn',{@regression,h,obj,him,hp,classif});%%% HERE
 
@@ -431,7 +431,7 @@ for i=1:numel(obj.display.channel)
                 
              
                 
-                if tt<=0
+                if tt<0
                     tt='Not Clas.';
                 else
                        % if tt <= length(obj.classes) & tt>=0
@@ -1197,7 +1197,7 @@ end
                 
              
                 
-                if tt<=0
+                if tt<0
                     tt='Not Clas.';
                 else
                        % if tt <= length(obj.classes) & tt>=0

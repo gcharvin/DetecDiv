@@ -133,7 +133,7 @@ if reg==0
 ylim([0 max(obj.results.(classistr).id)+1]);
 else
     
-ylim([min(obj.results.(classistr).id) max(obj.results.(classistr).id)]);
+%ylim([min(obj.results.(classistr).id) max(obj.results.(classistr).id)]);
 end
 
 if reg==0 % classif 
