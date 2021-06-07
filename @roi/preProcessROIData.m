@@ -24,8 +24,50 @@ function im=preProcessROIData(obj,ch,fr,param)
 % im(:,:,i)=tmp;
 % end
 
+if ~isfield(param,'nframes')
+    param.nframes=1;
+end
+
+switch  param.nframes % number of images to be stitched together
+    case 1
+    n=1; 
+    
+    case {2,3,4}
+      n=2;
+      
+    case {5,6,7,8,9}
+      n=3;
+      
+    otherwise
+      n=3;
+end
+
 tmp=obj.image(:,:,ch,fr);
-tmp = double(imadjust(tmp,[param.meanphc/65535 param.maxphc/65535],[0 1]))/65535;
-im=repmat(tmp,[1 1 3]);
+imout=zeros(n*size(tmp,1),n*size(tmp,2));
+
+cc=1;
+ccol=1;
+
+for i=1:param.nframes
+    frshift=fr-round(param.nframes/2)+i;
+  %  cc
+    if frshift>=1 && frshift<= size(obj.image,4)
+     %   'ok'
+     
+        crow=mod((cc-1),n);
+        ccol=floor((cc-1)/n);
+        
+        tmp=obj.image(:,:,ch,frshift);
+        tmp = double(imadjust(tmp,[param.meanphc/65535 param.maxphc/65535],[0 1]))/65535;
+
+        
+        imout(ccol*size(tmp,1)+1:(ccol+1)*size(tmp,1),crow*size(tmp,2)+1:(crow+1)*size(tmp,2))=tmp;
+       
+    end
+     cc=cc+1;
+end
+
+
+im=repmat(imout,[1 1 3]);
 
             
