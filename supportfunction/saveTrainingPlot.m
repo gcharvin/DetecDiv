@@ -8,10 +8,17 @@ function saveTrainingPlot(path,name)
     %             saveas(currentfig, [path '/TrainingValidation/LSTMTraining.pdf'])
 
   if ishandle(currentfig)
+      if exist('exportgraphics')
       exportgraphics(currentfig,fullfile(path, 'TrainingValidation',[name '.pdf']));
+      else
+       savefig(currentfig, [path '/TrainingValidation/LSTMTraining.fig'],'compact')
+       saveas(currentfig, [path '/TrainingValidation/LSTMTraining.pdf'])  
+      end
     %print(currentfig,fullfile(path, 'TrainingValidation',name),'-dpdf','-fillpage')
   else
       if exist('exportapp')
      exportapp(currentfig,fullfile(path, 'TrainingValidation',[name '.pdf']));
+      else
+      
       end
   end
