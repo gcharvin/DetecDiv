@@ -85,7 +85,13 @@ if strcmp(trainingParam.lstmtraining,'y') | ~exist([path '/netLSTM.mat']) % trai
     
     disp('Preparing LSTM network ...');
     fprintf('------\n');
-    % prepare training data : 90% in training and 10% used for validation
+    
+    %=====BLOCKs RNG====
+    stCPU= RandStream('Threefry','Seed',0,'NormalTransform','Inversion');
+    stGPU=parallel.gpu.RandStream('Threefry','Seed',0,'NormalTransform','Inversion');
+    RandStream.setGlobalStream(stCPU);
+    parallel.gpu.RandStream.setGlobalStream(stGPU);
+    %===================
     
     numObservations = numel(sequences);
     idx = randperm(numObservations);
