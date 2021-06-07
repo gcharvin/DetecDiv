@@ -27,7 +27,7 @@ disp('Starting parallelized jobs for data formatting....')
 
 warning off all
 %for i=rois
-for i=rois
+parfor i=rois
     disp(['Launching ROI ' num2str(i) :' processing...'])
     
     if numel(cltmp(i).image)==0
