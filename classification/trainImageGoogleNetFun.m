@@ -35,8 +35,8 @@ fprintf('------\n');
 
 switch trainingParam.network
     case 'googlenet'
-net = googlenet;
-%net=googlenet('Weights','places365'); trained on places rather than on
+%net = googlenet;
+net=googlenet('Weights','places365');% trained on places rather than on
 %imageNet
     case 'resnet18'
 net=resnet18;
