@@ -30,7 +30,14 @@ classdef fov < handle
             obj.comments=comments;
             
         end
-        function setpathlist(obj,pathname,number)
+        function setpathlist(obj,pathname,number,filtlist)
+            % pathname is a cell array of string with folder paths to
+            % channel images
+            
+            % number is the fov id number
+            
+            % filtlist is an extra argument to subselect files associated
+            % with different channels but in the same folder
             
             obj.srcpath=pathname;
             obj.number=number;
@@ -38,11 +45,21 @@ classdef fov < handle
             
             obj.id=[file '_' num2str(number)];
             
+            
             for i=1:numel(pathname)
                 
                 list=dir([obj.srcpath{i} '/*.jpg']);
                 list=[list dir([obj.srcpath{i} '/*.tif'])];
                 
+                if numel(filtlist{i})
+                clist=struct2cell(list);
+                clist=clist(1,:);
+                occ=regexp(clist,filtlist{i});
+                occ=arrayfun(@(x) numel(x{:}),occ)==1;
+                list=list(occ);
+                end
+                
+                % here loop to find actual files 
                 obj.srclist{i}=list;
                 obj.display.intensity(i)=1;
             end

@@ -60,6 +60,7 @@ if answer==0 % list of images
     end
     
     pathlist={};
+    filtlist={};
     
     for i=1:ncha% loop on channels to get directory location
         path = uigetdir(userpath,['Directory with all images for channel:' num2str(i)]);
@@ -70,6 +71,15 @@ if answer==0 % list of images
         else
             pathlist{i}=path;
         end
+        
+     prompt=['Use filter to subselect images in folder; Default: none'];
+    filt= input(prompt,'s');
+    
+    if numel(filt)==0
+        filt='';
+    end
+    
+    filtlist{i}=filt;
     end
     
     n=numel(obj.fov);
@@ -82,7 +92,7 @@ if answer==0 % list of images
     end
     
         obj.fov(n+1)=fov; % add fov to exisiting datasets
-        obj.fov(n+1).setpathlist(pathlist,n+1);
+        obj.fov(n+1).setpathlist(pathlist,n+1,filtlist);
         obj.fov(n+1).display.binning=binning;
     
     %     mov.path=[outputPath '/' ofle '-pos' num2str(1)];
