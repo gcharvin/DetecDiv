@@ -45,7 +45,6 @@ classdef fov < handle
             
             obj.id=[file '_' num2str(number)];
             
-            
             for i=1:numel(pathname)
                 
                 list=dir([obj.srcpath{i} '/*.jpg']);
@@ -54,9 +53,29 @@ classdef fov < handle
                 if numel(filtlist{i})
                 clist=struct2cell(list);
                 clist=clist(1,:);
-                occ=regexp(clist,filtlist{i});
+                
+                fi=true(ones(1,size(clist,2)));
+                temp=filtlist{i};
+                
+                for k=1:numel(filtlist{i})
+                   
+                  if ~iscell(filtlist{i})
+                      tmp=filtlist{i};
+                  else
+                     tmp= filtlist{i}{k};
+                     
+                     if iscell(tmp)
+                         tmp=tmp{1};
+                     end
+                  end
+                  
+                occ=regexp(clist,tmp);
                 occ=arrayfun(@(x) numel(x{:}),occ)==1;
-                list=list(occ);
+                fi = fi & occ; % filtering files repeatedly
+                end
+                
+                list=list(fi);
+             %   return;
                 end
                 
                 % here loop to find actual files 

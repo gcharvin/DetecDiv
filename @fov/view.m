@@ -39,7 +39,7 @@ else
         return;
     end
     
-    h=figure('Tag',['Fov' obj.id]);
+    h=figure('Tag',['Fov' obj.id],'Position',[100 100 1000 600]);
     
     str={};
     for i=1:obj.channels
@@ -59,6 +59,10 @@ else
     
     linkaxes(hp);
     
+%        if numel(obj.crop) % cropping area exists
+%         axes(hp(1);
+%         drawpolygon('Position',obj.crop);
+%        end
     
     %%%
     %creat zoom callbackas
@@ -69,8 +73,7 @@ else
         'Callback','pan(gcbf,''on'')');
     hZMenu = uimenu('Parent',hCMZ,'Label','Add current ROI',...
         'Callback',{@addROI,obj,him,hp});
-        hZMenu = uimenu('Parent',hCMZ,'Label','Set cropping area',...
-        'Callback',{@setCrop,obj,him,hp});
+    
     
     hZoom = zoom(h);
     hZoom.UIContextMenu = hCMZ;
@@ -101,6 +104,15 @@ else
     btnSetFrame = uicontrol('Style', 'edit','FontSize',14, 'String', num2str(obj.display.frame),...
         'Position', [50 20 80 20],...
         'Callback', {@setframe,obj,him,hp},'Tag','frametext') ;
+    
+        btnSetCrop = uicontrol('Style', 'pushbutton','FontSize',14, 'String', 'set crop',...
+        'Position', [50 80 80 20],...
+        'Callback', {@setCrop,obj,him,hp},'Tag','setCrop') ;
+    
+    
+   %         hZMenu = uimenu('Parent',hCMZ,'Label','Set cropping area',...
+   %     'Callback',{@setCrop,obj,him,hp});
+    
     
     A = cell(1,2);
     A{1,1} = 'Intensity adjust using';
@@ -142,6 +154,7 @@ else
     btnSetFrame = uicontrol('Style', 'edit','FontSize',14, 'String', num2str([xl(1) yl(1) xl(2)-xl(1) yl(2)-yl(1)]), 'Value',1,...
         'Position', [200 530 150 20],...
         'Callback', {@setROIValue,obj,him,hp},'Tag','roivalue') ;
+    
     
     updatedisplay(obj,him,hp)
     
@@ -296,15 +309,37 @@ end
 
 function setCrop(handle,event,obj,him,hp)
 % function in the context menu to add custom ROI
-htext=findobj('Tag','roivalue');
-te=htext.String;
-roi=str2num(te);
+%htext=findobj('Tag','roivalue');
+%te=htext.String;
+%roi=str2num(te);
 
 %roi2=roi2;
 
-obj.crop=roi;
+%obj.crop=roi;
+if numel(obj.crop)
+   temp=drawpolygon('Position',obj.crop); 
+   temp.UserData.OnCleanup = onCleanup(@()destroy);
+else
+temp=drawpolygon;
+  temp.UserData.OnCleanup = onCleanup(@()destroy);
 end
 
+addlistener(temp,'ROIMoved',@allevents);
+obj.crop=temp.Position;
+
+function allevents(src,evt)
+    evname = evt.EventName;
+    switch(evname)
+        case{'ROIMoved'}
+            obj.crop=src.Position;
+             case{'ROIDeleted'}
+    end
+end
+
+    function destroy
+        obj.crop=[];
+    end
+end
 
 function removeROI(handles,event,obj,him,hp)
   val=handles.UserData;
