@@ -35,9 +35,10 @@ fprintf('------\n');
 
 switch trainingParam.network
     case 'googlenet'
-%net = googlenet;
-net=googlenet('Weights','places365');% trained on places rather than on
-%imageNet
+net = googlenet;
+%net=googlenet('Weights','places365');% trained on places rather than on
+%imageNet; but is much worse than imagenet pretraining
+
     case 'resnet18'
 net=resnet18;
     case 'resnet50'
