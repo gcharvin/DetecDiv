@@ -50,6 +50,24 @@ switch answer
             ncha=1;
         end
         
+        str='';
+        for i=1:ncha
+            str=[str 'Channel' num2str(i)] 
+            if ncha>1
+                str=[str ','];
+            end
+        end
+        
+         prompt=['Enter channel names in a comma separated fashionl; Default: '  str];
+            filt= input(prompt,'s');
+            
+            if numel(filt)==0
+                filt='';
+            end
+            chanames = regexp(filt,'([^ ,:]*)','tokens');
+            chanames=cat(2,chanames{:});
+            
+        
         tmp=ones(1,ncha);
         
         prompt=['Binning for each channel in the format : channel1binning channel2binning etc ; Default: ' num2str(tmp) '; '];
@@ -100,6 +118,7 @@ switch answer
         obj.fov(n+1)=fov; % add fov to exisiting datasets
         obj.fov(n+1).setpathlist(pathlist,n+1,filtlist);
         obj.fov(n+1).display.binning=binning;
+        obj.fov(n+1).channel=chanames;
         
         %     mov.path=[outputPath '/' ofle '-pos' num2str(1)];
         %     mov.id=['pos' num2str(1)];
@@ -213,6 +232,7 @@ switch answer
             
             
             tmpfov(i).display.binning=binning(i,:);
+            tmpfov(i).channel=chanames;
             
             %  n=n+1;
             %  cc=cc+1;
@@ -388,7 +408,7 @@ for i=npos % loop on all the fov / positions / folders to be created
     % SHOULD REPLACE BY FILE REAL NAME IF IT IS KNOWN !!!
     
     tmpfov(i).display.binning=binning(i,:);
-    
+    tmpfov(i).channel=chanames;
     %  n=n+1;
     %  cc=cc+1;
 end

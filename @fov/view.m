@@ -332,7 +332,6 @@ function allevents(src,evt)
     switch(evname)
         case{'ROIMoved'}
             obj.crop=src.Position;
-             case{'ROIDeleted'}
     end
 end
 

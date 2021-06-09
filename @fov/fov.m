@@ -1,7 +1,8 @@
 classdef fov < handle
     properties
         srcpath={''}; % source directory that contains source images; may be updated each time the user loads the project
-        srclist={};
+        srclist={}; % source file names 
+        channel={}; %channel names when importing images 
         tag='Field of view';
         comments='';
         display=struct('intensity',1,'frame',1,'selectedchannel',1,'binning',1); % Intensity is the scaling applied for each channel
