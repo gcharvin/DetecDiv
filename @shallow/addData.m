@@ -44,7 +44,7 @@ switch answer
         %     defaultans = {'2','[1 2]'};
         %     answer = inputdlg(prompt,dlg_title,num_lines,defaultans);
         
-        prompt='Number of channels (Default: 1)';
+        prompt='Number of channels *or* zstacks (Default: 1)';
         ncha= input(prompt);
         if numel(ncha)==0
             ncha=1;
@@ -52,18 +52,21 @@ switch answer
         
         str='';
         for i=1:ncha
-            str=[str 'Channel' num2str(i)] 
-            if ncha>1
+            str=[str 'Channel' num2str(i)] ;
+            if ncha>1 & i<ncha
                 str=[str ','];
             end
         end
+        
+        
         
          prompt=['Enter channel names in a comma separated fashionl; Default: '  str];
             filt= input(prompt,'s');
             
             if numel(filt)==0
-                filt='';
+                filt=str;
             end
+
             chanames = regexp(filt,'([^ ,:]*)','tokens');
             chanames=cat(2,chanames{:});
             
@@ -326,12 +329,30 @@ switch answer
             ncha=1;
         end
         
-    %    filt={};
-        
+%         str='';
+%         for i=1:ncha
+%             str=[str 'Channel' num2str(i)] ;
+%             if ncha>1 & i<ncha
+%                 str=[str ','];
+%             end
+%         end
+% 
+%          prompt=['Enter channel names in a comma separated fashion; Default: '  str];
+%             filt= input(prompt,'s');
+%             
+%             if numel(filt)==0
+%                 filt=str;
+%             end
+% 
+%             chanames = regexp(filt,'([^ ,:]*)','tokens');
+%             chanames=cat(2,chanames{:});
+            
+            
         cc=1;
         outputfilt={};
         binning=[];
         binarray=[];
+        chanames={};
         
         for j=1:ncha
             
@@ -360,7 +381,16 @@ switch answer
             
             tmpfilt={};
             for k=1:nst
-                
+              
+               str=['Channel' num2str(j) '_z' num2str(k)];
+               prompt=['Enter channel/zstack combined name for channel  ' num2str(j) ' , stack ' num2str(k) '; Default: '  str];
+               filt= input(prompt,'s');
+             
+             if numel(filt)==0
+                 filt=str;
+             end
+
+             
               prompt=['Filter string for channel  ' num2str(j) ' , stack ' num2str(k) '; Default: z00' num2str(k-1)];
             nststr= input(prompt,'s');
             
@@ -369,7 +399,7 @@ switch answer
             end
                 
             tmpfilt(k)={nststr};
-            
+            chanames{cc}=filt;
             outputfilt{cc}={{chastr},{nststr}};
             binarray(cc)=binning;
             cc=cc+1;
@@ -377,10 +407,11 @@ switch answer
            %  filt(j,2)={tmpfilt};
         end
    
-disp('These filters will applied to all selected positions/folders !');
+disp('These filters will be applied to all selected positions/folders !');
 
 pathname={};
 binning=[];
+channelnames={};
 
 filt={};
 
@@ -388,17 +419,20 @@ cd=1;
 for i=npos
   
     for j=1:cc-1
-        pathname{i,j}= realfolders{2,i};
-        binning(i,j)=binarray(j);
-        filt{i,j}=outputfilt{j};
+        pathname{cd,j}= realfolders{2,i};
+     %   aa=realfolders{2,cd}
+        binning(cd,j)=binarray(j);
+        filt{cd,j}=outputfilt{j};
+        channelnames{cd,j}=chanames{j};
     end
     
     nid(cd)=n+cd;
     cd=cd+1;
 end
 
-for i=npos % loop on all the fov / positions / folders to be created 
-  
+%cc=1;
+parfor i=1:numel(npos) % loop on all the fov / positions / folders to be created 
+    
     fprintf('.');
     tmpfov(i)=fov;
     tmpfov(i).setpathlist(pathname(i,:),nid(i),filt(i,:));
@@ -408,14 +442,16 @@ for i=npos % loop on all the fov / positions / folders to be created
     % SHOULD REPLACE BY FILE REAL NAME IF IT IS KNOWN !!!
     
     tmpfov(i).display.binning=binning(i,:);
-    tmpfov(i).channel=chanames;
+    tmpfov(i).channel=channelnames(i,:);
     %  n=n+1;
     %  cc=cc+1;
 end
 
+cc=1;
 for i=npos
-    obj.fov(n+1)=tmpfov(i);
+    obj.fov(n+1)=tmpfov(cc);
     n=n+1;
+    cc=cc+1;
 end
 fprintf('\n');
 

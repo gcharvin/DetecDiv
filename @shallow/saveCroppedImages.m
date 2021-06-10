@@ -116,7 +116,7 @@ for l=1:numel(tmpfov(i).roi)
    %temp=temp';
    
     for k=1:numel(tmpfov(i).srclist)
-        tmpfov(i).roi(l).display.channel{k}=['Channel ' num2str(k)];
+        tmpfov(i).roi(l).display.channel{k}=tmpfov(i).channel{k}; %['Channel ' num2str(k)];
         tmpfov(i).roi(l).display.intensity(k,:)=temp;
         tmpfov(i).roi(l).channelid(k)=k;
         tmpfov(i).roi(l).display.selectedchannel(k)=1;

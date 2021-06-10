@@ -317,11 +317,20 @@ function setCrop(handle,event,obj,him,hp)
 
 %obj.crop=roi;
 if numel(obj.crop)
-   temp=drawpolygon('Position',obj.crop); 
-   temp.UserData.OnCleanup = onCleanup(@()destroy);
+ %   'ok'
+ hCMZ = uicontextmenu;
+hZMenu = uimenu('Parent',hCMZ,'Label','Delete cropping area',...
+        'Callback',@destroy);
+temp=drawpolygon('ContextMenu',hCMZ,'Tag','cropROI','Position',obj.crop);
+   
+  % temp.UserData.OnCleanup = onCleanup(@()destroy);
 else
-temp=drawpolygon;
-  temp.UserData.OnCleanup = onCleanup(@()destroy);
+ hCMZ = uicontextmenu;
+hZMenu = uimenu('Parent',hCMZ,'Label','Delete cropping area',...
+        'Callback',@destroy);
+temp=drawpolygon('ContextMenu',hCMZ,'Tag','cropROI');
+
+  %temp.UserData.OnCleanup = onCleanup(@()destroy);
 end
 
 addlistener(temp,'ROIMoved',@allevents);
@@ -335,9 +344,12 @@ function allevents(src,evt)
     end
 end
 
-    function destroy
-        obj.crop=[];
-    end
+     function destroy(src,event)
+        if ishandle(temp)
+            delete(temp)
+        end
+         obj.crop=[];
+     end
 end
 
 function removeROI(handles,event,obj,him,hp)

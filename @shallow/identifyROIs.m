@@ -4,6 +4,7 @@ function identifyROIs(obj,fovid,frameid,thr)
 if numel(obj.processing.roi.pattern)==0
     disp('There are no patterns available !');
     disp('First define a pattern using shallowObj.setPattern() method');
+    return;
 end
 
 if nargin<3
@@ -24,8 +25,30 @@ out.fovid=[];
 scale=1;
 cc=1;
 
+str='';
+arrcrop=[];
+for i=fovid
+if  numel(obj.fov(i).crop)>0
+
+    str=[str ' ' num2str(i)];
+    arrcrop=[arrcrop i];
+end
+end
+
+cr=0;
+if numel(str) 
+disp(['These FOVs have a crop region defined :' str]);
+disp('Please enter the reference crop FOV to be used for other uncropped FOVs; Type 0 if no crop should be used');
+prompt=['Reference FOV ID for cropping; Default: ' num2str(arrcrop(1))];
+cr=input(prompt);
+if numel(cr)==0
+    cr=arrcrop(1);
+end
+end
+
 for i=fovid % loop on all possible field of view
     
+ 
 disp(['Loading source file for FOV ' num2str(i) '....']);
 
 tmp=readImage(obj.fov(i),frameid,channelid);
@@ -73,11 +96,20 @@ ccc=1;
 
 scaled2=scaled;
 
-if  numel(obj.fov(i).crop)>0% include crop factor in ROI selection
+croppingarea=obj.fov(i).crop; % get the cropping area for the given fov 
+
+if cr>0 & numel(croppingarea)==0 % a reference FOV id has been defined for cropping 
+    croppingarea=obj.fov(cr).crop;
+end
+if  numel(croppingarea)>0% include crop factor in ROI selection
  scaled2=[];
  
 for j=1:size(scaled,1)
-   if  scaled(j,1)<=obj.fov(i).crop(1) | scaled(j,2)<=obj.fov(i).crop(2) |  scaled(j,1)+x>obj.fov(i).crop(1)+obj.fov(i).crop(3) | scaled(j,2)+y>obj.fov(i).crop(2)+obj.fov(i).crop(4)
+    xq=[scaled(j,1)  scaled(j,1) scaled(j,1)+x  scaled(j,1)+x ];
+    yq=[scaled(j,2) scaled(j,2)+y  scaled(j,2)   scaled(j,2)+y ];
+    
+%   if  scaled(j,1)<=obj.fov(i).crop(1) | scaled(j,2)<=obj.fov(i).crop(2) |  scaled(j,1)+x>obj.fov(i).crop(1)+obj.fov(i).crop(3) | scaled(j,2)+y>obj.fov(i).crop(2)+obj.fov(i).crop(4)
+if sum(inpolygon(xq,yq,croppingarea(:,1),croppingarea(:,2)))<4 % roi is not fully within cropped region
     continue
    else
    end
