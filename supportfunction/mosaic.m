@@ -18,6 +18,7 @@ title=[];
 strid='';
 roititle=0;
 rls=0;
+Flip=0;
 
 if isa(obj,'classi')
     frames=1:size(obj.roi(1).image,4); % take the number of frames from the image list
@@ -45,6 +46,10 @@ for i=1:numel(varargin)
     
     if strcmp(varargin{i},'Framerate') % used to diplay the time on the movie
         framerate=varargin{i+1};
+    end
+    
+    if strcmp(varargin{i},'Flip') % used to diplay the time on the movie
+        Flip=1;
     end
     
     if strcmp(varargin{i},'Channel') % an array that indicates the channels being displayed
@@ -193,6 +198,10 @@ for k=1:nsize(1) % include all requested rois
         
         for i=1:size(imtmp,4)
             imout(:,:,1,i)=imadjust(imout(:,:,1,i),[levels(1,1)/65535 levels(1,2)/65535],[0 1]);
+            if Flip==1
+                I=imout(:,:,1,i);
+                imout(:,:,1,i)=flip(I,1);
+            end
         end
         
         % add black frame around ROIs
@@ -322,17 +331,15 @@ imgout=uint8(double( imgout)/256);
 
 
 %rows on the top of the movie : framerate or title
-if framerate>0 | numel(title)
+if framerate>0 || numel(title)
     shifttitley=fontsize+10;
     imgout2=cat(1,uint8(zeros(shifttitley,size(imgout,2),size(imgout,3),size(imgout,4))),imgout);
     
     for j=1:numel(frames)
-        timestamp=[num2str((j-1)*framerate) 'min'];
-        
+        timestamp=[num2str((j-1)*framerate) 'min'];        
         if numel(title)>0
             timestamp=[timestamp ' - ' title];
-        end
-        
+        end        
         imgout2(:,:,:,j)=insertText( imgout2(:,:,:,j),[1 5],timestamp,'Font','Arial','FontSize',fontsize,'BoxColor',...
             [1 1 1],'BoxOpacity',0.0,'TextColor','white','AnchorPoint','LeftTop');
     end
