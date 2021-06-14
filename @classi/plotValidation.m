@@ -340,7 +340,7 @@ export_fig(hRlsStats3Train, fullfile(path,dateT, 'rlsStats3Train.pdf'));
 [hRlsStats1Test,hRlsStats2Test,hRlsStats3Test]=statRLS(rlsTest,'Comment','TESTSET');
 export_fig(hRlsStats1Test,fullfile(path,dateT, 'rlsStats1Test.pdf'));
 export_fig(hRlsStats2Test, fullfile(path,dateT, 'rlsStats2Test.pdf'));
-export_fig(hRlsStats3Test, fullfile(path,dateT, 'rlsStats3Test.pdf'));
+exposhrt_fig(hRlsStats3Test, fullfile(path,dateT, 'rlsStats3Test.pdf'));
 % plotRLS
 hRlsTrain=plotRLS(rlsTrain,'Comment','TRAINSET');
 export_fig(hRlsTrain,fullfile(path,dateT, 'rlsTrain.pdf'));

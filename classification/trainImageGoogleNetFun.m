@@ -107,6 +107,13 @@ end
 fprintf('Training network...\n');
 fprintf('------\n');
 
+    %=====BLOCKs RNG====
+    stCPU= RandStream('Threefry','Seed',0,'NormalTransform','Inversion');
+    stGPU=parallel.gpu.RandStream('Threefry','Seed',0,'NormalTransform','Inversion');
+    RandStream.setGlobalStream(stCPU);
+    parallel.gpu.RandStream.setGlobalStream(stGPU);
+    %===================
+    
 % training network
 % augment dataset
 

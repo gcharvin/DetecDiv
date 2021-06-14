@@ -27,7 +27,7 @@ disp('Starting parallelized jobs for data formatting....')
 
 warning off all
 %for i=rois
-for i=rois
+parfor i=rois
     disp(['Launching ROI ' num2str(i) :' processing...'])
     
     if numel(cltmp(i).image)==0
@@ -47,10 +47,22 @@ for i=rois
         
         param.meanphc=meanphc;
         param.maxphc=maxphc;
+        
+        if numel(classif.trainingset)==0
+        param.nframes=1; % number of temporal frames per frame
+        else
+        param.nframes=classif.trainingset; % number of temporal frames per frame  
+        end
+        
+       
     end
+    
+     imtest=cltmp(i).preProcessROIData(pix,1,param); % done to determine image size
+   %  figure, imshow(imtest,[]);
+   %  return;
     % 'ok'
     
-    vid=uint8(zeros(size(cltmp(i).image,1),size(cltmp(i).image,2),3,size(cltmp(i).image,4)));
+    vid=uint8(zeros(size(imtest,1),size(imtest,2),3,size(imtest,4)));
     
     if classif.typeid~=12 % only for  image classif
         pixb=numel(cltmp(i).train.(classif.strid).id);
