@@ -1539,7 +1539,7 @@ end
                         imtemp=obj.image(:,:,pix(j),frame);
                         %size(imtemp)
                         if meangfp>0 && maxgfp>0
-                            imtemp = imadjust(imtemp,[meangfp/65535 maxgfp/65535],[0 1]);
+                        %    imtemp = imadjust(imtemp,[meangfp/65535 maxgfp/65535],[0 1]);
                         end
                         imout(:,:,j)=imtemp.*obj.display.rgb(i,j);
                     end

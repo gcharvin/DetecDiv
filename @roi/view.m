@@ -6,7 +6,6 @@ function view(obj,frame,classif)
 % category== 'Pixel' : Pixel classification can be performed using painting
 % tool 
 
-
 if numel(obj.image)==0
    % 'ok'
     obj.load

@@ -36,6 +36,9 @@ fprintf('------\n');
 switch trainingParam.network
     case 'googlenet'
 net = googlenet;
+%net=googlenet('Weights','places365');% trained on places rather than on
+%imageNet; but is much worse than imagenet pretraining
+
     case 'resnet18'
 net=resnet18;
     case 'resnet50'
@@ -75,14 +78,14 @@ numClasses = numel(categories(imdsTrain.Labels));
 if isa(learnableLayer,'nnet.cnn.layer.FullyConnectedLayer')
     newLearnableLayer = fullyConnectedLayer(numClasses, ...
         'Name','new_fc', ...
-        'WeightLearnRateFactor',10, ...
-        'BiasLearnRateFactor',10);
+        'WeightLearnRateFactor',1, ...
+        'BiasLearnRateFactor',1);
     
 elseif isa(learnableLayer,'nnet.cnn.layer.Convolution2DLayer')
     newLearnableLayer = convolution2dLayer(1,numClasses, ...
         'Name','new_conv', ...
-        'WeightLearnRateFactor',10, ...
-        'BiasLearnRateFactor',10);
+        'WeightLearnRateFactor',1, ...
+        'BiasLearnRateFactor',1);
 end
 
 lgraph = replaceLayer(lgraph,learnableLayer.Name,newLearnableLayer);

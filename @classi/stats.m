@@ -333,17 +333,22 @@ end
 
 h3=figure('Color','w','Units', 'normalized', 'Position',[0.1, 0.1, 0.5, 0.5]);
 subplot(2,1,1)
+ if size(mate,1)==numel(cate)
 cm=confusionchart(mate,cate,'ColumnSummary','column-normalized','RowSummary','row-normalized');
 xlabel('Classification predictions');
 ylabel('Groundtruth');
 title({['Dataset:' datasetType ' - N=' num2str(length(sumyg)) ' - ' name] [' - ROIs:' num2str(idstat)]});
-
+ end
+ 
 subplot(2,1,2)
 if classif.typeid==4 %%if LSTM classif: compute CNN accuracy
+    
+    if size(mateCNN,1)==numel(cate)
     cmCNN=confusionchart(mateCNN,cate,'ColumnSummary','column-normalized','RowSummary','row-normalized');
     xlabel('Classification predictions CNN');
     ylabel('Groundtruth');
     title({['Dataset:' datasetType ' - N=' num2str(length(sumyg)) ' - ' name] [' - ROIs:' num2str(idstat)]});
+    end
 end
 
 % disp(['Saving plot to ' strpath '_confusion.fig']);
