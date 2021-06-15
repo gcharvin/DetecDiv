@@ -9,9 +9,9 @@ function mosaic(obj,varargin)
 name=[];
 ips=10;
 framerate=0;
-channels=1;
+channel=1;
 fontsize=15;
-levels=[4000 15000; 500 1000; 500 1000; 500 1000];
+levels=[];
 training=[];
 results=[];
 title=[];
@@ -52,11 +52,20 @@ for i=1:numel(varargin)
         Flip=1;
     end
     
-    if strcmp(varargin{i},'Channel') % an array that indicates the channels being displayed
-        channels=varargin{i+1};
+    if strcmp(varargin{i},'Channel') % an array that indicates the channels being displayed, can be scalar array or strid
+        channel=varargin{i+1};
+        
+      if ischar(channel)
+         channel=obj.findChannelID(channel);   
+      end
+      
+      if numel(channel)==0
+          disp('Channel is not found; quitting !');
+          return;
+      end
     end
     
-    if strcmp(varargin{i},'Levels') % defines output levels for display
+    if strcmp(varargin{i},'Levels') % defines output levels for display, only when exported a single channel image
         levels=varargin{i+1};
     end
     
@@ -132,6 +141,7 @@ if isa(obj,'classi')
     if numel(img)==0
         obj.roi(rois(1)).load;
     end
+    roitmp=obj.roi(rois(1));
 end
 
 if isa(obj,'shallow')
@@ -139,6 +149,7 @@ if isa(obj,'shallow')
     if numel(img)==0
         obj.fov(rois(1,1)).roi(rois(2,1)).load;
     end
+    roitmp=obj.fov(rois(1,1)).roi(rois(2,1));
 end
 
 if isa(obj,'roi')
@@ -146,6 +157,7 @@ if isa(obj,'roi')
     if numel(img)==0
         obj.load;
     end
+     roitmp=obj;
 end
 
 % set up extra display pixels
@@ -170,7 +182,15 @@ w=size(img,2)+shiftx;
 imgout=zeros(nsize(1)*h,nsize(2)*w,3,size(img,4));
 cc=1;
 
+  if numel(channel)==1
+               pix=find(roitmp.channelid==channel);
+               if numel(pix)>1 % multichannel
+                   channel=pix;
+               end
+  end
+        
 
+  
 for k=1:nsize(1) % include all requested rois
     for j=1:nsize(2)
         
@@ -186,8 +206,13 @@ for k=1:nsize(1) % include all requested rois
             roitmp=obj;
         end
         
+        if numel(roitmp.image)==0
         roitmp.load;
-        imtmp=roitmp.image;
+        end
+        
+        imtmp=roitmp.image(:,:,channel,:);
+        
+        
         disp(['ROI ' roitmp.id ' loaded']);
         
         imblack=uint16(zeros(size(imtmp,1),shiftx,size(imtmp,3),size(imtmp,4)));
@@ -196,24 +221,33 @@ for k=1:nsize(1) % include all requested rois
         imblack2=uint16(zeros(shifty,size(imout,2),size(imout,3),size(imout,4)));
         imout=cat(1,imblack2,imout);
         
+        
         for i=1:size(imtmp,4)
-            imout(:,:,1,i)=imadjust(imout(:,:,1,i),[levels(1,1)/65535 levels(1,2)/65535],[0 1]);
+          
+            if numel(channel)==1 & numel(levels)>0
+            imout(:,:,1,i)=imadjust(imout(:,:,1,i),[levels(1)/65535 levels(2)/65535],[0 1]);
+            end
             if Flip==1
-                I=imout(:,:,1,i);
-                imout(:,:,1,i)=flip(I,1);
+                I=imout(:,:,:,i);
+                imout(:,:,:,i)=flip(I,1);
             end
         end
         
         % add black frame around ROIs
         framesize=2;
-        imout(1:framesize,:,1,:)=0;
-        imout(end-framesize+1:end,:,1,:)=0;
-        imout(:,1:framesize,1,:)=0;
-        imout(:,end-framesize+1:end,1,:)=0;
+        imout(1:framesize,:,:,:)=0;
+        imout(end-framesize+1:end,:,:,:)=0;
+        imout(:,1:framesize,:,:)=0;
+        imout(:,end-framesize+1:end,:,:)=0;
         
-        imout(:,:,2,:)=imout(:,:,1,:);
-        imout(:,:,3,:)=imout(:,:,1,:);
+        if numel(channel)==1
+            imout=repmat(imout,[1 1 3 1]);
+        end
         
+        %imout(:,:,2,:)=imout(:,:,1,:);
+        %imout(:,:,3,:)=imout(:,:,1,:);
+        
+
         % insert features here
         % calculate RLS  based on measureRLS2
         if rls==1
@@ -250,9 +284,7 @@ for k=1:nsize(1) % include all requested rois
                     [1 1 1],'BoxOpacity',0.0,'TextColor','white','AnchorPoint','LeftTop');
             end
         end
-        
-        
-        
+
         startx=0;
         wid=7;
         offsettrain=0;
@@ -355,28 +387,28 @@ if numel(name)==0
  %       name=[name '_' num2str(rois(i)) '_' num2str(rois(i)) '-'];
 %    end
     if isa(obj,'classi')
-        name=[obj.path '/rois'];
+        name=fullfile(obj.path, 'rois');
     end
     
     if isa(obj,'shallow')
-        name=[obj.io.path obj.io.file '/rois'];
+        name=fullfile(obj.io.path,obj.io.file,'rois');
     end
     
     if isa(obj,'roi')
-        name=[obj.path '/' obj.id];
+        name=fullfile(obj.path,obj.id);
     end
 
 else
     if isa(obj,'classi')
-        name=[obj.path '/' name];
+        name=fullfile(obj.path,name);
     end
     
     if isa(obj,'shallow')
-        name=[obj.io.path obj.io.file '/' name];
+        name=fullfile(obj.io.path,obj.io.file,name);
     end
     
     if isa(obj,'roi')
-        name=[obj.path '/' name];
+        name=fullfile(obj.path,name);
     end
 end
 v=VideoWriter(name,'MPEG-4');
