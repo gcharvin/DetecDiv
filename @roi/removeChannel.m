@@ -11,13 +11,22 @@ if numel(obj.image)==0
     obj.load
 end
 
-pix=find(obj.channelid==channel);
+if iscell(channel) || ischar(channel)
+     pix=obj.findChannelID(channel);
+else
+    pix=find(obj.channelid==channel);
+end
+
+if numel(pix)==0
+    disp('Channel was not found; quitting !');
+    return;
+end
 
 remainsdim=setxor(1:size(obj.image,3),pix);
 
 remainsdimid=setxor(1:numel(obj.channelid),pix);
 
-remainscha=setxor(1:numel(obj.display.channel),channel);
+remainscha=setxor(1:numel(obj.display.channel),channel)
 
 % return;
 
