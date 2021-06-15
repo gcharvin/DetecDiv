@@ -1528,14 +1528,14 @@ end
                     %i
                     
                     for j=1:numel(pix)
-                        % i,j,pix(j)
-                        tmp=src(:,:,pix(j),:);
-                        meangfp=0.5*double(mean(tmp(:)));
-                        it=obj.display.intensity(i,j);
-                        maxgfp=double(meangfp+it*(max(tmp(:))-meangfp));
-                        if maxgfp==0
-                            maxgfp=1;
-                        end
+                      %   i,j,pix(j)
+                      %  tmp=src(:,:,pix(j),:);
+                      %  meangfp=0.5*double(mean(tmp(:)));
+                       % it=obj.display.intensity(i,j);
+%                         maxgfp=double(meangfp+it*(max(tmp(:))-meangfp));
+%                         if maxgfp==0
+%                             maxgfp=1;
+%                         end
                         imtemp=obj.image(:,:,pix(j),frame);
                         %size(imtemp)
                         if meangfp>0 && maxgfp>0
