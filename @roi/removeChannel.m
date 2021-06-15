@@ -22,9 +22,9 @@ if numel(pix)==0
     return;
 end
 
-remainsdim=setxor(1:size(obj.image,3),pix);
+remainsdim=setxor(1:size(obj.image,3),pix)
 
-remainsdimid=setxor(1:numel(obj.channelid),pix);
+remainsdimid=setxor(1:numel(obj.channelid),pix)
 
 remainscha=setxor(1:numel(obj.display.channel),channel)
 

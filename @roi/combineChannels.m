@@ -62,15 +62,15 @@ for i=1:numel(channels)
     if iscell(channels)
          pix2=obj.findChannelID(channels{i}); 
     else
-        pix2=channels(i);
+         pix2=find(obj.channelid==channels(i));
     end
     
     if numel(pix2)==0
         disp('Channel does not exist; quitting !');
         return;
     end
-    if numel(pix2)> size(obj.image,3)
-        dsp('Channel number does not exist; Quitting !');
+    if any(pix2> size(obj.image,3))
+        disp('Channel number does not exist; Quitting !');
         return;
     end
     
