@@ -1,6 +1,5 @@
 function removeChannel(obj,channel)
-
-% removes indicated channels from the list 
+%can only remove one channel at a time !
 
 % pix=[];
 % for i=1:numel(channels)
@@ -22,16 +21,22 @@ if numel(pix)==0
     return;
 end
 
-remainsdim=setxor(1:size(obj.image,3),pix)
+remainsdim=setxor(1:size(obj.image,3),pix);
 
-remainsdimid=setxor(1:numel(obj.channelid),pix)
+channelid=obj.channelid(pix(1));
+remainsdimid=obj.channelid==channelid;
 
-remainscha=setxor(1:numel(obj.display.channel),channel)
+obj.channelid=obj.channelid(~remainsdimid); %obj.channelid(remainsdimid); cautious this has not been tested !!!!
 
-% return;
+if pix<=max(obj.channelid)
+obj.channelid(pix:end)=obj.channelid(pix:end)-1;
+end
+
+remainscha=setxor(1:numel(obj.display.channel),channel);
+
 
  obj.image=obj.image(:,:,remainsdim,:);
- obj.channelid=1:1:numel(remainsdimid); %obj.channelid(remainsdimid); cautious this has not been tested !!!!
+ 
 % 
 
  obj.display.channel=obj.display.channel(remainscha);
