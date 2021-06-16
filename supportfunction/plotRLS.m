@@ -61,7 +61,7 @@ param.sepcolor=[1 0 0];
 
 
 param.minmax=[2 30]; % min and max values for display;
-param.startY=-15; % origin of Y axis for plot
+param.startY=3; % origin of Y axis for plot
 param.startX=0;
 param.figure=[];
 param.figure.Position=[0.1 0 0.5 0.9];
@@ -124,6 +124,7 @@ med=median([rls.ndiv]);
 %============PREPARE LINES========
 cc=1;
 inc=1;
+incG=1;
 for i=1:numel(rls)
     fprintf('.')
     
@@ -133,8 +134,8 @@ for i=1:numel(rls)
     div=rls(i).divDuration;
     
     %leg{i}=regexprep(rls(i).trap,'_','-');
-    leg{i}=rls(i).trapfov;
-
+    %leg{i}=rls(i).trapfov;
+    leg{i}=sprintf('#%i |',incG); %show number of the doublet
     %===========TIME=0=============
     if param.time==0
         rec2=0:1:1*length(div);
@@ -178,18 +179,17 @@ for i=1:numel(rls)
         ti(inc)=startY;
         
         Traj(rec2,'Color',param.colormap,'colorindex',cindex2,'width',param.cellwidth,'startX',startX,'startY',startY,'sepwidth',param.sepwidth,'sepColor',param.sepcolor,'edgeWidth',0.2,'gradientwidth',param.gradientWidth,'tag',['Trap - ' num2str(rls(i).trapfov)]);
-        startY=param.spacing+startY;
-        
+        startY=param.spacing+startY;       
         inc=inc+1;
     end
     
     if param.showgroundtruth==1 && rls(i).groundtruth==1
-        ti(inc)=startY;
-        
+        ti(inc)=startY;     
         Traj(rec2,'Color',param.colormapg,'colorindex',cindex2,'width',param.cellwidth,'startX',startX,'startY',startY,'sepwidth',param.sepwidth,'sepColor',param.sepcolor,'edgeWidth',0.2,'gradientwidth',param.gradientWidth,'tag',['Trap - ' num2str(rls(i).trapfov)]);
         startY=param.spacing+startY +param.interspacing;
         
-        inc=inc+1; 
+        inc=inc+1;
+        incG=incG+1;
     end
     
     if mod(cc,50)==0
@@ -215,11 +215,11 @@ end
 
 
 if numel(rls)>1
-    text(30,50, ['Median RLS= ' num2str(med) ' (n=' num2str(numel(rls)) ')'],'FontSize',20);
+    text(30,50, ['Median RLS= ' num2str(med) ' (n=' num2str(numel(rls)) ')'],'FontSize',25);
 end
 
 %PLOT LABEL
-set(gca,'FontSize',14,'Ytick',ti(1:2:length(ti)),'YTickLabel',leg(1:2:length(leg)));
+set(gca,'FontSize',25,'FontWeight','bold','Ytick',ti(1:2:length(ti))+1,'YTickLabel',leg(1:2:length(leg)),'LineWidth',3);
 
 
 if param.time==0
@@ -232,17 +232,17 @@ if param.colorbar==1
     colormap(param.colormap)
     h=colorbar;
     ylabel(h,param.colorbarlegend)
-    xlim([0 1.05*maxe])
+    xlim([0 1*maxe])
     
     h.Ticks=[0 1];
     h.TickLabels={num2str(param.minmax(1)) num2str(param.minmax(2))};
-    set(h,'FontSize',14);
+    set(h,'FontSize',25);
     ylabel(h,'Division time (frames)');
     %h.Position=[1 1 0.3 0.3]
 end
 
 %xlim([-30 10]);
-%ylim([0 spacing*length(results)+1]);
+ylim([0 (param.spacing*numel(rls)/2 +param.interspacing*numel(rls))]);
 
 
 
