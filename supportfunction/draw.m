@@ -1475,6 +1475,7 @@ end
             obj.load
         end
         
+        
         cc=1;
         for i=1:numel(obj.display.channel)
             

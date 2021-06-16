@@ -1,5 +1,7 @@
 function removeChannel(obj,channel)
 %can only remove one channel at a time !
+% channel is either a char represnting the name of the channel to delete,
+% or the channel id number as in @roi.channelid array 
 
 % pix=[];
 % for i=1:numel(channels)
