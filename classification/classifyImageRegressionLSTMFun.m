@@ -1,4 +1,4 @@
-function roiout=classifyImageLSTMNetFun(roiobj,classif,classifier,classifierCNN)
+function roiout=classifyImageRegressionLSTMFun(roiobj,classif,classifier,classifierCNN)
 
 %load([path '/netCNN.mat']); % load the googlenet to get the input size of image
 
@@ -16,9 +16,9 @@ end
 
 if nargin==4 % standard classification is requested 
 net=classifierCNN;
-inputSizeCNN = net.Layers(1).InputSize;
-classNamesCNN = net.Layers(end).ClassNames;
-numClassesCNN = numel(classNamesCNN);
+%inputSizeCNN = net.Layers(1).InputSize;
+%classNamesCNN = net.Layers(end).ClassNames;
+%numClassesCNN = numel(classNamesCNN);
 end
 
 %return;
@@ -64,7 +64,6 @@ for j=1:size(im,4)
     end
     
     vid(:,:,:,j)=uint8(256*tmp);
-    
 end
 
 
@@ -116,23 +115,23 @@ try
     
 prob=predict(classifier,video); 
 %probCNN=predict(classifierCNN,video);
-[labelCNN,probCNN] = classify(classifierCNN,gfp);
+probCNN =predict(classifierCNN,gfp);
 catch 
     
 disp('Error with predict function  : likely out of memory issue with GPU, trying CPU computing...');
 prob=predict(classifier,video,'ExecutionEnvironment', 'cpu');
 %probCNN=predict(classifierCNN,video,'ExecutionEnvironment', 'cpu');
 if nargin==4
-[labelCNN,probCNN] = classify(classifierCNN,gfp);
+probCNN = predict(classifierCNN,gfp);
 end
 end
   
-labels = classifier.Layers(end).Classes;
-if size(prob,1) == numel(labels) % adjust matrix depending on matlab version 
-   prob=prob';
-end
- [~, idx] = max(prob,[],2);
- label = labels(idx);
+% labels = classifier.Layers(end).Classes;
+% if size(prob,1) == numel(labels) % adjust matrix depending on matlab version 
+%    prob=prob';
+% end
+%  [~, idx] = max(prob,[],2);
+%  label = labels(idx);
  
  %if size(probCNN,1) == numel(labels) % adjust matrix depending on matlab version 
  %  probCNN=probCNN';
@@ -162,39 +161,28 @@ end
 results=roiobj.results;
 
     results.(classif.strid)=[];
+    results.(classif.strid).id=prob; %zeros(1,size(im,4));
+    %results.(classif.strid).labels=label';
+   % results.(classif.strid).classes=classif.classes;
+   % results.(classif.strid).prob=prob';
     
-    if classif.output==0
-    results.(classif.strid).id=zeros(1,size(im,4));
-    else
-    results.(classif.strid).id =0;  
-    end
-    
-    results.(classif.strid).labels=label';
-    results.(classif.strid).classes=classif.classes;
-    results.(classif.strid).prob=prob';
-    
-    for i=1:numel(classif.classes)
-   pix=label==classif.classes{i};
-   results.(classif.strid).id(pix)=i;
-    end
+%     for i=1:numel(classif.classes)
+%    pix=label==classif.classes{i};
+%    results.(classif.strid).id(pix)=i;
+%     end
     
     if nargin==4
-        if classif.output==0
-    results.(classif.strid).idCNN=zeros(1,size(im,4));
-        else
-            results.(classif.strid).idCNN=0;
-        end
-        
-    results.(classif.strid).labelsCNN=labelCNN';
-    results.(classif.strid).classesCNN=classif.classes;
+    results.(classif.strid).idCNN=probCNN'; %zeros(1,size(im,4));
+%     results.(classif.strid).labelsCNN=labelCNN';
+%     results.(classif.strid).classesCNN=classif.classes;
+%     
+%     results.(classif.strid).probCNN=flipud(probCNN'); % fix orientation of array here !!!!
     
-    results.(classif.strid).probCNN=flipud(probCNN'); % fix orientation of array here !!!!
-    
-    for i=1:numel(classif.classes)
-   pix=labelCNN==classif.classes{i};
-   results.(classif.strid).idCNN(pix)=i;
-    end
-    end
+%     for i=1:numel(classif.classes)
+%    pix=labelCNN==classif.classes{i};
+%    results.(classif.strid).idCNN(pix)=i;
+%     end
+     end
     
     
 roiobj.results=results; 

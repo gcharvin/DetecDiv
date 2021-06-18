@@ -1,4 +1,4 @@
-function trainImageLSTMNetFun(path,name)
+function trainImageRegressionLSTMFun(path,name)
 
 fprintf('Loading training options...\n');
 fprintf('------\n');
@@ -11,7 +11,7 @@ load([path '/trainingParam.mat']);
 %%% training image classifier
 
 if strcmp(trainingParam.imageclassifier,'y')
-    feval('trainImageGoogleNetFun',path,'netCNN'); % trainImageGoogle net first and saves it as netCNN.mat in the LSTM dir
+    feval('trainImageRegressionFun',path,'netCNN'); % trainImageGoogle net first and saves it as netCNN.mat in the LSTM dir
     % corresponding variable name is 'classifier'
 end
 
@@ -70,7 +70,7 @@ else % compute acitvations for input data
         video = centerCrop(vid,inputSize);
         
         sequences{cc,1} = activations(netCNN,video,layerName,'OutputAs','columns');
-        labels{cc,1}= lab;
+        labels{cc,1}= deep;
         cc=cc+1;
         fprintf('\n');
     end
@@ -85,13 +85,7 @@ if strcmp(trainingParam.lstmtraining,'y') | ~exist([path '/netLSTM.mat']) % trai
     
     disp('Preparing LSTM network ...');
     fprintf('------\n');
-    
-    %=====BLOCKs RNG====
-    stCPU= RandStream('Threefry','Seed',0,'NormalTransform','Inversion');
-    stGPU=parallel.gpu.RandStream('Threefry','Seed',0,'NormalTransform','Inversion');
-    RandStream.setGlobalStream(stCPU);
-    parallel.gpu.RandStream.setGlobalStream(stGPU);
-    %===================
+    % prepare training data : 90% in training and 10% used for validation
     
     numObservations = numel(sequences);
     idx = randperm(numObservations);
@@ -102,48 +96,37 @@ if strcmp(trainingParam.lstmtraining,'y') | ~exist([path '/netLSTM.mat']) % trai
     
     sequencesTrain = sequences(idxTrain);
     labelsTrain = labels(idxTrain);
-    %class(labelsTrain)
-    %size(labelsTrain)
-    %class(labelsTrain{:})
-    %size(labelsTrain{:})
-    %labelsTrain{1}= repmat(labelsTrain{1},[1 500])
-    %class(labels{1})
     
-    if trainingParam.output==1 % sequence to one classification
+        if trainingParam.output==1 % sequence to one classification
     labelsTrain=[labelsTrain{:}]';
-    end
+        end
     
     idxValidation = idx(N+1:end);
     %idxValidation = 1; %warning
     
+    
     sequencesValidation = sequences(idxValidation);
     labelsValidation = labels(idxValidation);
     
-    if trainingParam.output==1 % sequence to one classification
-    labelsValidation = [labelsValidation{:}]';
-    end
-    
-    
-   % labelsValidation{1}= repmat(labelsValidation{1},[1 500])
     % create LSTM network
     
     numFeatures = size(sequencesTrain{1},1);
-    numClasses = numel(trainingParam.classes); %numel(categories(labelsTrain{1}));
+    numClasses = 1;%numel(categories(labelsTrain{1}));
     
     %ntot=countcats(labelsTrain{1});
     %weights = double(ntot)/double(sum(ntot));
     
-    sucl=zeros(numObservations,numClasses);
+    %sucl=zeros(numObservations,numClasses);
     
-    for i=1:numObservations
-    sucl(i,:)=countcats(labels{i});
-    end
-    sucl=sum(sucl,1);
-    
-    tempsucl=sucl(sucl>0);
-    sucl(sucl==0)=min(tempsucl(:));
-    classWeights = 1./sucl;
-    classWeights = classWeights'/mean(classWeights);
+%     for i=1:numObservations
+%     sucl(i,:)=countcats(labels{i});
+%     end
+%     sucl=sum(sucl,1);
+%     
+%     tempsucl=sucl(sucl>0);
+%     sucl(sucl==0)=min(tempsucl(:));
+%     classWeights = 1./sucl;
+%     classWeights = classWeights'/mean(classWeights);
     
     %classWeights(isnan(classWeights))=0;
     %classWeights
@@ -157,26 +140,27 @@ if strcmp(trainingParam.lstmtraining,'y') | ~exist([path '/netLSTM.mat']) % trai
 %         softmaxLayer('Name','softmax')
 %         classificationLayer('Name','classification')];
 
-%==============OPTIONS=================  
-
-if trainingParam.output==0 % seuqence to sequence clssif
+%==============OPTIONS=================    
+if trainingParam.output==0
     layers = [
         sequenceInputLayer(numFeatures,'Name','sequence')
         bilstmLayer(trainingParam.lstmlayers,'OutputMode','sequence','Name','bilstm')
         % lstmLayer(200,'OutputMode','sequence','Name','bilstm')
         dropoutLayer(0.5,'Name','drop');
         fullyConnectedLayer(numClasses,'Name','fc')
-        softmaxLayer('Name','softmax')
-        weightedLSTMClassificationLayer(classWeights,'classification')];
-else % sequence to one classification
-   layers = [
+        regressionLayer];
+        %softmaxLayer('Name','softmax')
+        %weightedLSTMClassificationLayer(classWeights,'classification')];
+else
+    layers = [
         sequenceInputLayer(numFeatures,'Name','sequence')
         bilstmLayer(trainingParam.lstmlayers,'OutputMode','last','Name','bilstm')
         % lstmLayer(200,'OutputMode','sequence','Name','bilstm')
         dropoutLayer(0.5,'Name','drop');
         fullyConnectedLayer(numClasses,'Name','fc')
-        softmaxLayer('Name','softmax')
-        weightedLSTMClassificationLayer(classWeights,'classification')]; 
+        regressionLayer];
+        %softmaxLayer('Name','softmax')
+        %weightedLSTMClassificationLayer(classWeights,'classification')];
 end
     
     % specifiy training options
@@ -191,7 +175,7 @@ end
         'InitialLearnRate',trainingParam.lstmInitialLearnRate, ...
         'LearnRateSchedule','piecewise',...
         'LearnRateDropPeriod',10,...
-        'LearnRateDropFactor',0.9,...
+        'LearnRateDropFactor',0.95,...
         'GradientThreshold',2, ...
         'Shuffle','every-epoch', ...
         'ValidationData',{sequencesValidation,labelsValidation}, ...
@@ -238,10 +222,10 @@ if strcmp(trainingParam.assemblenet,'y') | ~exist([path '/' name '.mat'])
     %layerNames = ["data" "pool5-drop_7x7_s1" "loss3-classifier" "prob" "output"];
     
     if strcmp(trainingParam.network,'googlenet')
-    layerNames = ["data" "pool5-drop_7x7_s1" "new_fc" "prob" "new_classoutput"];
+    layerNames = ["data" "pool5-drop_7x7_s1" "new_fc" "new_regoutput"];
     end
     if strcmp(trainingParam.network,'resnet50')
-    layerNames = ["input_1" "new_fc" "fc1000_softmax" "new_classoutput"];
+    layerNames = ["input_1" "new_fc" "new_regoutput"];
     end
     
     cnnLayers = removeLayers(cnnLayers,layerNames);

@@ -81,8 +81,14 @@ for i=1:length(rois)
         if classif.typeid~=11 || 12
         classif.roi(cc+1).train.(classif.strid).id= zeros(1,size(classif.roi(cc+1).image,4));
         else
-         classif.roi(cc+1).train.(classif.strid).id= zeros(1,size(classif.roi(cc+1).image,4));    
+        classif.roi(cc+1).train.(classif.strid).id= zeros(1,size(classif.roi(cc+1).image,4));    
         end
+        
+        %if classif.typeid==4 % lstm
+            if classif.output==1 % sequence-to-one classification
+                classif.roi(cc+1).train.(classif.strid).id= 0;
+            end
+       % end
         
         classif.roi(cc+1).train.(classif.strid).classes=classif.classes;
          

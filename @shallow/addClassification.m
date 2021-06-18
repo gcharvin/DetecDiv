@@ -38,6 +38,14 @@ switch nargin
             classitype=1;
         end
         
+        seqone=0;
+        if classitype==4 % LSTM classification ; enter output type ; default : sequence
+            prompt='LSTM: Enter the type of classifcation output : sequence-to-sequence (0) or sequence-to-one (1) ? (Default:0): ';
+        seqone= input(prompt);
+        if numel(seqone)==0
+            seqone=1;
+        end
+        end
         
         disp('For object classification, tracking and pedigree analysis, you need to provide 1 channel for images and 1 for (tracked) objects');
         prompt='Please enter the channel(s) on which to operate the classification ? (Default:1): ';
@@ -52,7 +60,7 @@ switch nargin
         
         if strcmp(classlist{classitype,2},'Cell segmentation') % classes are predefined, no need to ask user
             needClasses=0;
-            classes=['background cell'];
+            classes='background cell';
         end
         
          if strcmp(classlist{classitype,2},'Deep Image Regression') || strcmp(classlist{classitype,2},'Deep image sequence regression')  % classes are predefined, no need to ask user
@@ -106,6 +114,7 @@ switch nargin
             obj.processing.classification(n+1).trainingFun=classlist{classitype,5}{1};
             obj.processing.classification(n+1).channel=channeltype;
             obj.processing.classification(n+1).classes=classes;
+            obj.processing.classification(n+1).output=seqone;
             obj.processing.classification(n+1).colormap=shallowColormap(numel(classes));
         else
             disp('Error : wrong classification type number!');

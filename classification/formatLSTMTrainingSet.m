@@ -16,7 +16,6 @@ else % regression
     end
 end
 
-
 if ~isfolder([classif.path '/' foldername '/timeseries'])
     mkdir([classif.path '/' foldername], 'timeseries');
 end
@@ -46,15 +45,13 @@ parfor i=rois
         maxphc=double(meanphc+0.7*(max(totphc(:))-meanphc));
         
         param.meanphc=meanphc;
-        param.maxphc=maxphc;
+        param.maxphc =maxphc;
         
         if numel(classif.trainingset)==0
         param.nframes=1; % number of temporal frames per frame
         else
         param.nframes=classif.trainingset; % number of temporal frames per frame  
         end
-        
-       
     end
     
      imtest=cltmp(i).preProcessROIData(pix,1,param); % done to determine image size
@@ -80,7 +77,6 @@ parfor i=rois
         lab=[];
     end
     
-    
     if classif.typeid~=12 % image classif
         reverseStr = '';
         for j=1:size(im,4)
@@ -101,10 +97,15 @@ parfor i=rois
                 tr=['0' tr];
             end
             
+            if classif.output==0
+                cmp=cltmp(i).train.(classif.strid).id(j); % seuquence-to-sequence classif
+            else
+                cmp=cltmp(i).train.(classif.strid).id; % sequence-to-one classif
+            end
             
-            if cltmp(i).train.(classif.strid).id(j)~=0 % if training is done
+            if cmp~=0 % if training is done
                 % if ~isfile([str '/unbudded/im_' mov.trap(i).id '_frame_' tr '.tif'])
-                imwrite(tmp,[classif.path '/' foldername '/images/' classif.classes{cltmp(i).train.(classif.strid).id(j)} '/' cltmp(i).id '_frame_' tr '.tif']);
+                imwrite(tmp,[classif.path '/' foldername '/images/' classif.classes{cmp} '/' cltmp(i).id '_frame_' tr '.tif']);
                 % end
             end
             
@@ -128,13 +129,12 @@ parfor i=rois
         
       %  if cltmp(i).train.(classif.strid).id(j)~=-1 % if training is done
             parsaveim([classif.path '/' foldername '/images/' cltmp(i).id '.mat'],tmp);
+            
             parsaveresp([classif.path '/' foldername '/response/' cltmp(i).id '.mat'],cltmp(i).train.(classif.strid).id);
      %   end
         
         
     end
-    
-    %return;
     
     fprintf('\n');
     
