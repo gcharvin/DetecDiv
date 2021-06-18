@@ -268,25 +268,40 @@ switch answer
         end
         
         list=dir(path);
-        list=struct2cell(list);
-        list=list(1,:);
+        folders=list(contains({list.name},{'Pos'}));
+        path=folders.folder;
+        realfolders=cellfun(@(x) fullfile(path , x),{folders.name},'UniformOutput',false);
+        %list=struct2cell(list);
+        %list=list(1,:);
         %folders=arrayfun(@isfolder,list);
- 
-        folders=arrayfun(@(x) fullfile(path , x{:}),list(1,:),'UniformOutput',false);
-        realfolders=arrayfun(@(x) numel(strfind(x{:},'.'))==0,folders,'UniformOutput',false);
-        realfolders=folders(cell2mat(realfolders));
-        realfolders(2,:)=num2cell(1:numel(realfolders));
-        realfolders=realfolders([2 1],:);
+        %folders=arrayfun(@(x) fullfile(path , x{:}),list(1,:),'UniformOutput',false);
         
-        tab=cell2table(realfolders','VariableNames',{'ID' 'Folders available'});
-        disp(tab)
+        %REORDER POS
+        cc=1;
+        for i=1:numel(realfolders)
+                posnum=str2double(cellfun(@(x) extractAfter(x,'Pos'), realfolders,'UniformOutput',false));
+                [~,Sidx] = sort(posnum);
+                realfolderstmp{cc}=realfolders{Sidx(cc)};
+                cc=cc+1;
+        end
+        realfolders=realfolderstmp;
+        realfolders=realfolders';
+        %END REORDER
         
-        if size(realfolders,2)==0
+        
+        %realfolders=arrayfun(@(x) numel(strfind(x{:},'.'))==0,folders,'UniformOutput',false);
+        %realfolders=folders(cell2mat(realfolders));
+        %realfolders(2,:)=num2cell(1:numel(realfolders));
+        %realfolders=realfolders([2 1],:);   
+        %         tab=cell2table(realfolders','VariableNames',{'ID' 'Folders available'});
+        %         disp(tab)
+        
+        if size(realfolders,1)==0
             disp('Error : there is no folder within the selected folder !')
             return;
         end
         
-        prompt=['Please enter the positions to import (using Matlab syntax); Default: 1:' num2str(size(realfolders,2)) ' '];
+        prompt=['Please enter the positions to import (using Matlab syntax); Default: 1:' num2str(size(realfolders,1)) ' '];
         npos= input(prompt,'s');
         if numel(npos)==0
             npos=1:numel(timeLapse.position.list);
@@ -312,19 +327,15 @@ switch answer
             end
         end
         
-        tmpfov=fov;
-        
+        tmpfov=fov; 
         pathname={};
-        binning=[];
-        
+        binning=[];      
         nid=n;
         cc=1;
         
-        disp(['Now we will set the channels/stacks to be imported !']);
-        
+        disp(['Now we will set the channels/stacks to be imported !']);      
         prompt=['How many channels?  Default: 1'];
         ncha= input(prompt);
-        
         if numel(ncha)==0
             ncha=1;
         end
@@ -354,15 +365,12 @@ switch answer
         binarray=[];
         chanames={};
         
-        for j=1:ncha
-            
-        prompt=['Binning for channel ' num2str(j) '?  Default: 1'];
-        binning= input(prompt);
-        
-        if numel(binning)==0
-            binning=1;
-        end
-        
+        for j=1:ncha     
+            prompt=['Binning for channel ' num2str(j) '?  Default: 1'];
+            binning= input(prompt);
+            if numel(binning)==0
+                binning=1;
+            end
             prompt=['Filter string for channel ' num2str(j) '  Default: l00' num2str(j-1)];
             chastr= input(prompt,'s');
             
@@ -370,7 +378,7 @@ switch answer
                 chastr=['l00' num2str(j-1)];
             end
             
-         %   filt(j)={chastr};
+            %   filt(j)={chastr};
             
             prompt=['How many stacks for channel ' num2str(j) '?  Default: 1'];
             nst= input(prompt);
@@ -380,31 +388,29 @@ switch answer
             end
             
             tmpfilt={};
-            for k=1:nst
-              
-               str=['Channel' num2str(j) '_z' num2str(k)];
-               prompt=['Enter channel/zstack combined name for channel  ' num2str(j) ' , stack ' num2str(k) '; Default: '  str];
-               filt= input(prompt,'s');
-             
-             if numel(filt)==0
-                 filt=str;
-             end
-
-             
-              prompt=['Filter string for channel  ' num2str(j) ' , stack ' num2str(k) '; Default: z00' num2str(k-1)];
-            nststr= input(prompt,'s');
-            
-            if numel(nststr)==0
-                nststr=['z00' num2str(k-1)];
-            end
+            for k=1:nst  
+                str=['Channel' num2str(j) '_z' num2str(k)];
+                prompt=['Enter channel/zstack combined name for channel ' num2str(j) ' , stack ' num2str(k) '; Default: '  str];
+                filt= input(prompt,'s');
                 
-            tmpfilt(k)={nststr};
-            chanames{cc}=filt;
-            outputfilt{cc}={{chastr},{nststr}};
-            binarray(cc)=binning;
-            cc=cc+1;
+                if numel(filt)==0
+                    filt=str;
+                end
+                          
+                prompt=['Filter string for channel  ' num2str(j) ' , stack ' num2str(k) '; Default: z00' num2str(k-1)];
+                nststr= input(prompt,'s');
+                
+                if numel(nststr)==0
+                    nststr=['z00' num2str(k-1)];
+                end
+                
+                tmpfilt(k)={nststr};
+                chanames{cc}=filt;
+                outputfilt{cc}={{chastr},{nststr}};
+                binarray(cc)=binning;
+                cc=cc+1;
             end
-           %  filt(j,2)={tmpfilt};
+            %  filt(j,2)={tmpfilt};
         end
    
 disp('These filters will be applied to all selected positions/folders !');
@@ -417,9 +423,8 @@ filt={};
 
 cd=1;
 for i=npos
-  
     for j=1:cc-1
-        pathname{cd,j}= realfolders{2,i};
+        pathname{cd,j}= realfolders{i};
      %   aa=realfolders{2,cd}
         binning(cd,j)=binarray(j);
         filt{cd,j}=outputfilt{j};
@@ -431,8 +436,7 @@ for i=npos
 end
 
 %cc=1;
-parfor i=1:numel(npos) % loop on all the fov / positions / folders to be created 
-    
+parfor i=1:numel(npos) % loop on all the fov / positions / folders to be created:::parfor useless, waste of time to launch the pool
     fprintf('.');
     tmpfov(i)=fov;
     tmpfov(i).setpathlist(pathname(i,:),nid(i),filt(i,:));
