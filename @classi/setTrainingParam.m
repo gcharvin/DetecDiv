@@ -37,7 +37,8 @@ if ~strcmp(trai,'n')
     cc=cc+1;
     end
     
-
+    trainingParam.classes=classif.classes; % saves the classes for use in the training fucntions
+    
     if classif.typeid==4 || classif.typeid == 12 % LSTM: ask which part needs to be trained
         disp('Train image classifier?');
         trainingParam=setParam(trainingParam,{'imageclassifier','y'});
@@ -50,6 +51,8 @@ if ~strcmp(trai,'n')
         
         disp('Assemble full network ?');
         trainingParam=setParam(trainingParam,{'assemblenet','y'});
+        
+        trainingParam.output=classif.output; % sequence-to-sequence vs sequence-to-one
     end
     
     if classif.typeid==1 || (classif.typeid==4 & strcmp(trainingParam.imageclassifier,'y')) ||  classif.typeid==11 || (classif.typeid==12 & strcmp(trainingParam.imageclassifier,'y'))
@@ -142,6 +145,7 @@ trainingParam=setParam(trainingParam,{'lstmMiniBatchSize',8});
 
 disp('Select Learning rate: ');
 trainingParam=setParam(trainingParam,{'lstmInitialLearnRate',1e-4});
+
 
 
 function trainingParam=SegTraining(trainingParam)

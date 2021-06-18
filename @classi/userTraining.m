@@ -10,7 +10,6 @@ disp(['Number of classes defined by user: ' num2str(numel(classif.classes))]);
        disp([num2str(j) '- '  classif.classes{j}]);
     end
     
-
 disp(' ');
     
 disp(['Number of ROIs available in the training set: ' num2str(numel(classif.roi))]);

@@ -1,0 +1,97 @@
+function roiout=classifyImageRegressionFun(roiobj,classif,classifier)
+
+% this function can be used to classify any roi object, by providing the
+% classi object and the classifier
+
+if numel(classifier)==0 % loading the classifier // not recommended because it takes time
+    path=classif.path;
+    name=classif.strid;
+    str=[path '/' name '.mat'];
+    load(str); % load classifier
+end
+% classify new images
+
+net=classifier;
+inputSize = net.Layers(1).InputSize;
+%classNames = net.Layers(end).ClassNames;
+numClasses = 1;%numel(classNames);
+
+if numel(roiobj.image)==0
+    roiobj.load;
+end
+
+pix=find(roiobj.channelid==classif.channel(1)); % find channels corresponding to trained data
+gfp=roiobj.image(:,:,pix,:);
+
+
+if numel(pix)==1
+    % 'ok'
+    param=[];
+    totphc=gfp;
+    meanphc=0.5*double(mean(totphc(:)));
+    maxphc=double(meanphc+0.7*(max(totphc(:))-meanphc));
+    param.meanphc=meanphc;
+    param.maxphc=maxphc;
+end
+
+im=uint8(zeros(size(gfp,1),size(gfp,2),3,size(gfp,4)));
+   
+if numel(pix)==1
+    for j=1:size(gfp,4)
+        
+        tmp=roiobj.preProcessROIData(pix,j,param);
+        
+        im(:,:,:,j)=uint8(256*tmp);
+        
+        %figure, imshow(im(:,:,:,j));
+        %pause
+        %close
+    end
+    gfp=im;
+end
+
+gfp = imresize(gfp,inputSize(1:2));
+
+%   class(gfp)
+%   trm=gfp(:,:,:,fr);
+%   max(trm(:))
+% BEWARE : rather use formatted image in lstm .mat variable
+% need to distinguish between formating for training versus validation
+% function --> formatfordeepclassification
+
+% [label,scores] = classify(net,gfp);
+
+%    if numel(gpuDeviceCount)==0
+predi= predict(net,gfp); % this is used to get the probabilities rather than the classification itself
+% else
+% [label,scores] = classify(net,gfp,'Acceleration','mex');
+%end
+
+% upload results into roi obj;
+
+results=roiobj.results;
+results.(classif.strid)=[];
+results.(classif.strid).id=predi;
+results.(classif.strid).labels=predi';
+
+roiobj.results=results;
+
+% for i=1:numel(classif.classes)
+%     
+%     pix=label==classif.classes{i};
+%     roiobj.results.(classif.strid).id(pix)=i;
+%     
+% end
+
+roiout=roiobj;
+% roiobj.clear;
+
+
+
+
+
+
+
+
+
+

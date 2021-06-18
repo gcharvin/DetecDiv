@@ -28,7 +28,7 @@ load([path '/trainingParam.mat']);
 
 [imdsTrain,imdsValidation] = splitEachLabel(imds,trainingParam.split);
 
-numClasses = numel(categories(imdsTrain.Labels));
+numClasses = trainingParam.classes; %numel(categories(imdsTrain.Labels));
 
 fprintf('Loading network...\n');
 fprintf('------\n');
