@@ -72,7 +72,7 @@ function annotateROIs(classif,rois)
 h=figure('Position',[100 100 800 400]);
 
 %tmp=getData(classif,rois,1);
-    
+ classif.roi(rois(1)).display.frame=1;
 plotData(h,classif,rois,1);
 
 %plotData(h,tmp,1,classif) 
@@ -132,19 +132,40 @@ clf
 
  data=getData(classif,rois,roiid);
  
+ if classif.output==1 % sequence to one
+     cond=0;
+ else
+     cond=1; % sequence to sequence
+ end
+ 
  for i=1:size(data,1)
      
-     subplot(size(data,1),1,i); hold on ; 
+     subplot(size(data,1)+cond,1,i); hold on ; 
+     
      if i==1
           
           str=['ROI ' num2str(roiid) '  -  ' classif.roi(roiid).id ];
-          if classif.output==1
+          if classif.output==1 % sequence to one
                if  classif.roi(rois(roiid)).train.(classif.strid).id>0
                    str=[str ' - ' classif.classes{classif.roi(rois(roiid)).train.(classif.strid).id}];
                else
                    str=[str ' - unclassified']; 
                end
                  
+          else % sequence to sequence
+               if  numel(classif.roi(rois(roiid)).train.(classif.strid).id)>=classif.roi(rois(roiid)).display.frame
+                    if classif.roi(rois(roiid)).train.(classif.strid).id(classif.roi(rois(roiid)).display.frame) >0
+                        str=[str ' - ' classif.classes{classif.roi(rois(roiid)).train.(classif.strid).id(classif.roi(rois(roiid)).display.frame)}];
+                    else
+                        str=[str ' - unclassified']; 
+                    end
+               else
+                   classif.roi(rois(roiid)).train.(classif.strid).id(classif.roi(rois(roiid)).display.frame)=0;
+                     str=[str ' - unclassified']; 
+               end
+               
+               str= [str ' - frame:' num2str(classif.roi(rois(roiid)).display.frame)];
+              
           end
           
           ht=title(str,'Interpreter','none');
@@ -155,12 +176,29 @@ clf
      
      plot(x,'Marker','.','MarkerSize',10,'Color','b'); hold on
      
+     if classif.output==0 % sequence to sequence
+         line([ classif.roi(rois(roiid)).display.frame classif.roi(rois(roiid)).display.frame], [0 max(x)],'Color','k');
+     end
+     
+     xlim([0 numel(x)]);
+     
      if i<size(data,1)
      set(gca,'FontSize',14,'XTickLabels',{});
      else
      set(gca,'FontSize',14);    
      end
  end
+ 
+ if classif.output==0 % seuqnece to sequence 
+      subplot(size(data,1)+cond,1,i+1); hold on ; 
+      plot( classif.roi(rois(roiid)).train.(classif.strid).id,'Color','r','LineWidth',2); hold on
+      line([ classif.roi(rois(roiid)).display.frame classif.roi(rois(roiid)).display.frame], [0 numel(classif.classes)+1],'Color','k');
+       xlim([0 numel(x)]);
+       ylim([0 numel(classif.classes)+1]);
+ end
+ 
+ 
+ 
  
  % if sequence to sequence, must add the value  for each frame ....
  
@@ -190,6 +228,25 @@ if strcmp(event.Key,'l')
     end
     roiid=roiid-1;
    refreshe=1;
+end
+
+if classif.output==0 % sequence to sequence // allow frame browsing
+    
+  if strcmp(event.Key,'rightarrow')
+       data=getData(classif,rois,roiid);
+       ma=size(data,2);
+       if classif.roi(rois(roiid)).display.frame<ma
+    classif.roi(rois(roiid)).display.frame=classif.roi(rois(roiid)).display.frame+1;
+    refreshe=1;
+       end
+  end
+    if strcmp(event.Key,'leftarrow')
+     if classif.roi(rois(roiid)).display.frame>1;
+    classif.roi(rois(roiid)).display.frame=classif.roi(rois(roiid)).display.frame-1;
+    refreshe=1;
+     end
+  end
+
 end
 
  % data=getData(classif,rois,roiid);
