@@ -29,7 +29,7 @@ if ~strcmp(trai,'n')
     disp('Which ROIs to use?');
     trainingParam=setParam(trainingParam,{'rois',1:numel(classif.roi)});
     
-    disp('WARNING: if you change the number of ROIs, you must launch the formatDataFor Training function again !');
+    disp('WARNING: if you change the number of ROIs, you must launch the formatDataForTraining function again !');
     cc=1;
     trainingParam.roisID={};
     for i=1:numel(trainingParam.rois)
@@ -65,6 +65,12 @@ if ~strcmp(trai,'n')
     
     if classif.typeid==8 ||  classif.typeid==2 % seg specific
         trainingParam=SegTraining(trainingParam);
+    end
+    
+    if classif.typeid==13 % timeseries trainingset
+       
+         trainingParam=LSTMTraining(trainingParam);
+            trainingParam.output=classif.output; % sequence-to-sequence vs sequence-to-one
     end
         
 end

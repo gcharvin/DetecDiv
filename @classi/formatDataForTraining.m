@@ -51,6 +51,8 @@ switch category
         formatPedigreeTrainingSet(foldername,classif,rois) 
     case 'Tracking'
         formatTrackingTrainingSet(foldername,classif,rois) 
+    case 'Timeseries'
+        formatTimeseriesTrainingSet(foldername,classif,rois)  
 end
 
 

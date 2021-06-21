@@ -39,14 +39,17 @@ switch nargin
         end
         
         seqone=0;
-        if classitype==4 % LSTM classification ; enter output type ; default : sequence
-            prompt='LSTM: Enter the type of classifcation output : sequence-to-sequence (0) or sequence-to-one (1) ? (Default:0): ';
+        if classitype==4 | classitype==13 % LSTM classification ; enter output type ; default : sequence
+            prompt='LSTM:  type of classif/reg output : sequence-to-sequence (0) or sequence-to-one (1) ? (Default:0): ';
         seqone= input(prompt);
         if numel(seqone)==0
-            seqone=1;
+            seqone=0;
         end
         end
         
+        % for image classif/regression only
+        channeltype=0;
+        if classitype~=13
         disp('For object classification, tracking and pedigree analysis, you need to provide 1 channel for images and 1 for (tracked) objects');
         prompt='Please enter the channel(s) on which to operate the classification ? (Default:1): ';
         channeltype= input(prompt,'s');
@@ -54,6 +57,7 @@ switch nargin
             channeltype=1;
         else
             channeltype=str2num(channeltype);
+        end
         end
         
         needClasses=1;
@@ -63,10 +67,39 @@ switch nargin
             classes='background cell';
         end
         
-         if strcmp(classlist{classitype,2},'Deep Image Regression') || strcmp(classlist{classitype,2},'Deep image sequence regression')  % classes are predefined, no need to ask user
+        cla=0;
+        fields=[];
+        
+        if classitype==13 % timeseries classification/regression
+            prompt='Timeseries Classification (0) or regression (1) ? (Default:0): ';
+        cla= input(prompt);
+        if numel(cla)==0
+            cla=0;
+        end
+        
+        if cla==1 % it s a regression problem, so no classes
+            needClasses=0;
+            classes='';
+        end
+        
+         prompt='subfield of ROI to classify/regress on ? (Default:results.testlstm_3.prob): ';
+        fields= input(prompt,'s');
+        if numel(fields)==0
+           fields='results.testlstm_3.prob';
+        end
+        
+        if cla==1 % it s a regression problem, so no classes
+            needClasses=0;
+            classes='';
+        end
+   
+        end
+            
+         if strcmp(classlist{classitype,2},'Deep Image Regression') || strcmp(classlist{classitype,2},'Deep image sequence regression') % classes are predefined, no need to ask user
             needClasses=0;
             classes='';
          end
+         
         
         if strcmp(classlist{classitype,2},'Cell cluster lineage') | strcmp(classlist{classitype,2},'Cell cluster tracking') % for pedigree and tracking , classes are predefined
             needClasses=0;
@@ -74,7 +107,7 @@ switch nargin
             %classes=[];
         end
         
-        if needClasses==1 % if cell segmentation, then class number is bacjground and cell by default
+        if needClasses==1 % % classes are needed
             prompt='Please enter the classes names that you want  (Default: class1 class2): ';
             classes= input(prompt,'s');
             
@@ -115,6 +148,7 @@ switch nargin
             obj.processing.classification(n+1).channel=channeltype;
             obj.processing.classification(n+1).classes=classes;
             obj.processing.classification(n+1).output=seqone;
+            obj.processing.classification(n+1).trainingset=fields;
             obj.processing.classification(n+1).colormap=shallowColormap(numel(classes));
         else
             disp('Error : wrong classification type number!');

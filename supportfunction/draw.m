@@ -364,7 +364,11 @@ if numel(classif)>0
         
         % change keypressfcn if painting is allowed to allow more functions
         %
+         if strcmp(classif.category{1},'Pixel') | strcmp(classif.category{1},'Object') % only in pixel mode
         h.KeyPressFcn={@changeframe,obj,him,hp,keys,classif,hpaint.Children(1),hcopy.Children(1)};
+         else
+        h.KeyPressFcn={@changeframe,obj,him,hp,keys,classif};   
+         end
         
         
         %end
@@ -1646,7 +1650,7 @@ end
         end
         
         if nargin==9 % only if painting is allowed
-            if strcmp(event.Key,'uparrow') % TO BE IMPLEMENTED
+            if strcmp(event.Key,'uparrow') % 
                 
                 warning off all
                 ax=findobj('Tag',classif.strid);
@@ -1658,7 +1662,7 @@ end
                 ok=1;
             end
             
-            if strcmp(event.Key,'downarrow') % TO BE IMPLEMENTED
+            if strcmp(event.Key,'downarrow') %
                 
                 warning off all
                 ax=findobj('Tag',classif.strid);

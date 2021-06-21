@@ -75,7 +75,7 @@ for i=1:length(rois)
     
     %size(classif.roi(cc+1).image)
     
-    if strcmp(classif.category{1},'Image') | strcmp(classif.category{1},'LSTM')
+    if strcmp(classif.category{1},'Image') | strcmp(classif.category{1},'LSTM') | strcmp(classif.category{1},'Timeseries')
         classif.roi(cc+1).train.(classif.strid)=[];
         
         if classif.typeid~=11 || 12
