@@ -64,18 +64,22 @@ classif.roi(classitype).display.selectedchannel(channel)=1;
 classif.roi(classitype).view(classif.roi(classitype).display.frame,classif); 
 
 end
+end
 
 
 function annotateROIs(classif,rois)
 
 h=figure('Position',[100 100 800 400]);
 
-tmp=getData(classif,rois,1);
+%tmp=getData(classif,rois,1);
     
-plotData(h,tmp,1,classif) 
+plotData(h,classif,rois,1);
 
-h.KeyPressFcn={@changeframe,classif,rois};
+%plotData(h,tmp,1,classif) 
 
+keys={'a' 'z' 'e' 'r' 't' 'y' 'u' 'i' 'o' 'p' 'q' 's' 'd' 'f' 'g' 'h' 'j'};
+h.KeyPressFcn={@changeframe,classif,rois,keys};
+end
     
 % if classif.output==0 % sequence to sequence 
 %     if numel(classif)>0 % classification
@@ -119,17 +123,32 @@ r=rois(id);
         tmp=tmp.(str{j});
     end    
     
-    
-function plotData(h,data,roiid,classif)
+end
+
+function plotData(h,classif,rois,roiid) % HERE : must display frame displayed and plot classes a function of rames
 
 figure(h);
 clf
 
+ data=getData(classif,rois,roiid);
+ 
  for i=1:size(data,1)
      
      subplot(size(data,1),1,i); hold on ; 
      if i==1
-          ht=title(['ROI ' num2str(roiid) '  -  ' classif.roi(roiid).id],'Interpreter','none');
+          
+          str=['ROI ' num2str(roiid) '  -  ' classif.roi(roiid).id ];
+          if classif.output==1
+               if  classif.roi(rois(roiid)).train.(classif.strid).id>0
+                   str=[str ' - ' classif.classes{classif.roi(rois(roiid)).train.(classif.strid).id}];
+               else
+                   str=[str ' - unclassified']; 
+               end
+                 
+          end
+          
+          ht=title(str,'Interpreter','none');
+          
      end
      
      x=data(i,:);
@@ -149,21 +168,20 @@ clf
  
  h.UserData=roiid;
  
+end
  
- 
-function changeframe(handle,event,classif,rois)
+function changeframe(handle,event,classif,rois,keys)
 
 roiid=handle.UserData;
+
+refreshe=0;
 
 if strcmp(event.Key,'m')
     if roiid>=numel(rois)
         return;
     end
     roiid=roiid+1;
-    
-    data=getData(classif,rois,roiid);
-    % ok=1;
-    plotData(handle,data,roiid,classif);
+    refreshe=1;
 end
 
 if strcmp(event.Key,'l')
@@ -171,12 +189,32 @@ if strcmp(event.Key,'l')
         return;
     end
     roiid=roiid-1;
-    
-    data=getData(classif,rois,roiid);
-    % ok=1;
-    plotData(handle,data,roiid,classif);
+   refreshe=1;
 end
 
+ % data=getData(classif,rois,roiid);
+    % ok=1;
+
+    
+   for i=1:numel(keys) % display the selected class for the current image
+            if i>numel(classif.classes)
+                break
+            end
+            
+            if strcmp(event.Key,keys{i})
+                     if classif.output==0
+                    classif.roi(rois(roiid)).train.(classif.strid).id(classif.roi(rois(roiid)).display.frame)=i;
+                     else
+                        classif.roi(rois(roiid)).train.(classif.strid).id=i;  
+                     end
+                    refreshe=1;
+                end
+   end
+
+   if refreshe==1
+    plotData(handle,classif,rois,roiid);
+   end
+end
 
 
 

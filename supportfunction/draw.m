@@ -366,15 +366,15 @@ if numel(classif)>0
         %
          if strcmp(classif.category{1},'Pixel') | strcmp(classif.category{1},'Object') % only in pixel mode
         h.KeyPressFcn={@changeframe,obj,him,hp,keys,classif,hpaint.Children(1),hcopy.Children(1)};
-<<<<<<< HEAD
+%<<<<<<< HEAD
          else
         h.KeyPressFcn={@changeframe,obj,him,hp,keys,classif};   
          end
         
         
-=======
+%=======
                 
->>>>>>> 589f21a9bbb3f84230a952fbece4d0e9d1d7fbf6
+%>>>>>>> 589f21a9bbb3f84230a952fbece4d0e9d1d7fbf6
         %end
     end
     
@@ -1600,12 +1600,12 @@ end
                 ok=1;
             end
             
-<<<<<<< HEAD
-            if strcmp(event.Key,'downarrow') %
+%<<<<<<< HEAD
+%            if strcmp(event.Key,'downarrow') %
                 
-=======
+%=======
             if strcmp(event.Key,'downarrow') % TO BE IMPLEMENTED      
->>>>>>> 589f21a9bbb3f84230a952fbece4d0e9d1d7fbf6
+%>>>>>>> 589f21a9bbb3f84230a952fbece4d0e9d1d7fbf6
                 warning off all
                 ax=findobj('Tag',classif.strid);
                 al=ax.Children.AlphaData;
