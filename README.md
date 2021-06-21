@@ -101,7 +101,8 @@ user is asked whether to import ROIs included in the original classi object
 adds ROIs to the classification myproject.processing.classification(id).
 ROIs may come either from a @fov or from an exisiting @classi object
 This function will preserve training sets and reformat it if the number of classes are different
-
+ex:  myproject.processing.classification(1).addROI(myproject.fov(1))
+myproject.processing.classification(1).addROI(myproject.processing.classifiction(1).roi(1))
 
 ```myproject.processing.classification(id).clearTraining``` to remove training data 
 see function arguments for details 

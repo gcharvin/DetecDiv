@@ -70,6 +70,27 @@ function annotateROIs(classif,rois)
 
 h=figure('Position',[100 100 800 400]);
 
+tmp=getData(classif,rois,1);
+    
+plotData(h,tmp,1,classif) 
+
+h.KeyPressFcn={@changeframe,classif,rois};
+
+    
+% if classif.output==0 % sequence to sequence 
+%     if numel(classif)>0 % classification
+%         
+%         
+%     else % regression 
+%         
+%         
+%     end
+%     
+% else % seuqnece to one 
+%     
+% end
+
+function tmp=getData(classif,rois,id)
 strfield=classif.trainingset; % datsaet to be trained on
 pix=strfind(strfield,'.');
 
@@ -90,44 +111,25 @@ str{cc+1}=strfield(pix(cc)+1:end);
 
 cc=1;
 
-roiid=rois(1);
+r=rois(id);
     
-    tmp=classif.roi(roiid);
+    tmp=classif.roi(r);
     
     for j=1:numel(str)
         tmp=tmp.(str{j});
     end    
     
-plotData(h,tmp,roiid,classif) 
-
-h.KeyPressFcn={@changeframe};
-
     
-% if classif.output==0 % sequence to sequence 
-%     if numel(classif)>0 % classification
-%         
-%         
-%     else % regression 
-%         
-%         
-%     end
-%     
-% else % seuqnece to one 
-%     
-% end
-
-
 function plotData(h,data,roiid,classif)
 
 figure(h);
-
-
+clf
 
  for i=1:size(data,1)
      
      subplot(size(data,1),1,i); hold on ; 
      if i==1
-          ht=title(['ROI ' num2str(roiid) '  -  ' classif.roi(roiid).id],'Interpreter','none')
+          ht=title(['ROI ' num2str(roiid) '  -  ' classif.roi(roiid).id],'Interpreter','none');
      end
      
      x=data(i,:);
@@ -141,66 +143,42 @@ figure(h);
      end
  end
  
+ % if sequence to sequence, must add the value  for each frame ....
+ 
  xlabel('Time (frames');
  
  h.UserData=roiid;
  
  
  
-function changeframe(handle,event)
+function changeframe(handle,event,classif,rois)
 
-
-% if strcmp(event.Key,'rightarrow')
-%     if obj.display.frame+1>size(obj.image,4)
-%         return;
-%     end
-%     obj.display.frame=obj.display.frame+1;
-%     
-%     obj.view;
-%     
-%     hl=findobj(h,'Tag','track');
-%     if numel(hl)>0
-%         hl.XData=[obj.display.frame obj.display.frame];
-%     end
-%     % ok=1;
-%     
-% end
-% 
-% if strcmp(event.Key,'leftarrow')
-%     if obj.display.frame-1<1
-%         return;
-%     end
-%     obj.display.frame=obj.display.frame-1;
-%     obj.view;
-%     % obj.view(obj.frame-1);
-%     hl=findobj(h,'Tag','track');
-%     if numel(hl)>0
-%         hl.XData=[obj.display.frame obj.display.frame];
-%     end
-%     %ok=1;
-% end
+roiid=handle.UserData;
 
 if strcmp(event.Key,'m')
-    if obj.display.frame+1>size(obj.image,4)
+    if roiid>=numel(rois)
         return;
     end
-    obj.display.frame=obj.display.frame+1;
+    roiid=roiid+1;
     
-    obj.view;
-    
-    hl=findobj(h,'Tag','track');
-    if numel(hl)>0
-        hl.XData=[obj.display.frame obj.display.frame];
-    end
+    data=getData(classif,rois,roiid);
     % ok=1;
-    
+    plotData(handle,data,roiid,classif);
 end
 
-hf=findobj('Tag',['Traj' num2str(obj.id)]);
-if numel(hf)>1
-    warndlg('You have more than 2 traj figure open with the same id (or roi); Please delete non necessary traj figures !');
+if strcmp(event.Key,'l')
+    if roiid<=1
+        return;
+    end
+    roiid=roiid-1;
+    
+    data=getData(classif,rois,roiid);
+    % ok=1;
+    plotData(handle,data,roiid,classif);
 end
-figure(hf);
+
+
+
 
  
  
