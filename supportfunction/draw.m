@@ -366,11 +366,15 @@ if numel(classif)>0
         %
          if strcmp(classif.category{1},'Pixel') | strcmp(classif.category{1},'Object') % only in pixel mode
         h.KeyPressFcn={@changeframe,obj,him,hp,keys,classif,hpaint.Children(1),hcopy.Children(1)};
+<<<<<<< HEAD
          else
         h.KeyPressFcn={@changeframe,obj,him,hp,keys,classif};   
          end
         
         
+=======
+                
+>>>>>>> 589f21a9bbb3f84230a952fbece4d0e9d1d7fbf6
         %end
     end
     
@@ -387,10 +391,8 @@ if numel(classif)>0
       if classif.typeid==11 || classif.typeid==12 % Regression training analysis 
         %ccpedigree=obj.findChannelID(classif.strid);
         set(h,'WindowButtonDownFcn',{@regression,h,obj,him,hp,classif});%%% HERE
-
-        
-      %  plotLinks(obj,hp,classif);
-        
+     
+      %  plotLinks(obj,hp,classif);     
     end
     
 end
@@ -411,7 +413,6 @@ end
 
 cctext=1;
 
-
 %test
 for i=1:numel(obj.display.channel)
     if obj.display.selectedchannel(i)==1
@@ -431,9 +432,6 @@ for i=1:numel(obj.display.channel)
                 else
                     classesspe=    obj.classes ;
                 end
-                
-                
-             
                 
                 if tt<0
                     tt='Not Clas.';
@@ -460,7 +458,7 @@ for i=1:numel(obj.display.channel)
                 
             end
         end
-            
+           
             % str=hp(cc).Title.String;
             
             if numel(obj.results)>0
@@ -530,8 +528,7 @@ end
         h=findobj('Tag',['ROI' obj.id]);
         close(h);
         obj.addChannel(matrix,answer{1},str2num(answer{2}),str2num(answer{3}));
-        obj.view;
-        
+        obj.view;  
     end
 
     function removeChannel(handles, event,obj)
@@ -670,9 +667,7 @@ end
             %obj.train.(str).mother(mother)=mother;
             
             plotLinks(obj,hp,classif)
-        end
-        
-        
+        end 
     end
 
     function classesMenuFcn(handles, event, h,obj,impaint1,impaint2,hpaint,classif)
@@ -712,9 +707,7 @@ end
             h.Pointer = 'arrow';
             h.WindowButtonMotionFcn = '';
             h.WindowButtonUpFcn = '';
-            figure(h); % set focus
-            
-            
+            figure(h); % set focus        
         end
         
         %[him hp]=draw(obj,h,classif);
@@ -895,9 +888,7 @@ end
                         miy=max(1,cp(1,1));
                         mux=min(size(ma,1),cp(1,2));
                         muy=min(size(ma,1),cp(1,1));
-                        
-                        
-                        
+                             
                     case 1 % large brush
                         %xdat = [cp(1,1) cp(1,1)+1 cp(1,1)-1 cp(1,1)+1 cp(1,1)-1 cp(1,1) cp(1,1) cp(1,1)+1 cp(1,1)-1];
                         %ydat = [cp(1,2) cp(1,2)+1 cp(1,2)-1 cp(1,2)-1 cp(1,2)+1 cp(1,2)+1 cp(1,2)-1 cp(1,2) cp(1,2)];
@@ -920,14 +911,11 @@ end
                         
                         %ma(mix:mux,miy:muy)=1;
                         %pis=ma>0;
-                        % HERE
-                        
-                        
+                        % HERE                                          
                 end
                 
                 ma(round(mix):round(mux),round(miy):round(muy))=1;
-                pis=ma>0;
-                
+                pis=ma>0;      
                 
                 % find the right color
                 hmenu = findobj('Tag','TrainingClassesMenu');
@@ -941,8 +929,7 @@ end
                     
                     sz=size(obj.image);
                     sz=sz(1:2);
-                    
-                    
+                              
                     % impaint1.CData(linearInd)=colo;
                     % impaint2.CData(linearInd)=colo;
                     
@@ -992,7 +979,7 @@ end
         end
     end
     
-            
+    
     function regression(handles,event,h,obj,him,hp,classif)
         
         cp = get(hp,'CurrentPoint');
@@ -1028,8 +1015,7 @@ end
         
         x=1;
         y=1;
-        
-        
+           
         function wmp(src,event,bsize)
           % cp = hpaint.CurrentPoint;
             cp = get(hp,'CurrentPoint');
@@ -1076,7 +1062,6 @@ end
            % plotLinks(obj,hp,classif)
         end
     end
-   
 
     function displayMenuFcn(handles, event, obj,h,classif)
         
@@ -1114,37 +1099,27 @@ end
         
         
         % need to update the painting window here hpaint.Children(1).CData...
-        
-        
+   
         cc=1;
-        for i=1:numel(obj.display.channel)
-            
-            if obj.display.selectedchannel(i)==1
-                
+        for i=1:numel(obj.display.channel)     
+            if obj.display.selectedchannel(i)==1         
                 him.image(cc).CData=im(cc).data;
-                
                 % title(hp(i),['Channel ' num2str(i) ' -Intensity:' num2str(obj.display.intensity(i))]);
-                %tt=obj.display.intensity(i,:);
-                
-                %title(hp(cc),[obj.display.channel{i} ' -Intensity:' num2str(tt)]);
-                
+                %tt=obj.display.intensity(i,:);        
+                %title(hp(cc),[obj.display.channel{i} ' -Intensity:' num2str(tt)]);   
                 cc=cc+1;
             end
         end
-        
-        
-        
+
         if numel(classif)>0
-            cmap=classif.colormap;
-            
+            cmap=classif.colormap;         
             if strcmp(classif.category{1},'Pixel') | strcmp(classif.category{1},'Object')
                 htmp=findobj('Tag',classif.strid);
                 hpt=findobj(hp,'UserData',classif.strid);
                 
                 if numel(htmp) && numel(hpt)
                     htmp.Children(1).CData=hpt.Children(1).CData; % updates data on the painting window
-                end
-                
+                end       
             end
             
             if strcmp(classif.category{1},'Pedigree')
@@ -1244,8 +1219,7 @@ end
                         
                         if strcmp(['results_' pl{k}],str) % identify channel
                             
-                            plotLinksResults(obj,hp,pl{k})
-                            
+                            plotLinksResults(obj,hp,pl{k})            
                         end
                     end
                 end
@@ -1309,26 +1283,20 @@ end
 %                 end
 %                 
                 % display tracking numbers on cells
-                if numel(strfind(obj.display.channel{i},'track'))~=0 | numel(strfind(obj.display.channel{i},'pedigree'))~=0
-                    
+                if numel(strfind(obj.display.channel{i},'track'))~=0 | numel(strfind(obj.display.channel{i},'pedigree'))~=0 
                     im=him.image(cc).CData;
                     
                     [l n]=bwlabel(im);
                     r=regionprops(l,'Centroid');
-                    
-                    
+              
                     for k=1:n
                         bw=l==k;
                         id=round(mean(im(bw)));
                         htext(cctext)=text(r(k).Centroid(1),r(k).Centroid(2),num2str(id),'Color',[1 1 1],'FontSize',20,'Tag','tracktext');
                         cctext=cctext+1;
-                    end
-                    
-                    
+                    end           
                 end
-                
-                
-                
+       
                 title(hp(cc),str,'FontSize',14,'interpreter','none');
                 %title(hp(cc),str, 'Color',colo,'FontSize',20);
                 cc=cc+1;
@@ -1347,12 +1315,9 @@ end
                 hl.XData=[obj.display.frame obj.display.frame];
             end
         end
-        
-        
-        
+
         %return;
-        %axes(hp(1));
-        
+        %axes(hp(1));    
     end
 
     function plotLinks(obj,hp,classif)
@@ -1393,9 +1358,7 @@ end
                     
                     x2=stat2(1).Centroid(1);
                     y2=stat2(1).Centroid(2);
-                    
-                    
-                    
+
                     hmother(i)=line([x1 x2],[y1 y2],'Color',[0.9 0.9 0.9],'Tag','mothertag','LineWidth',3);
                     
                     x=x2+0.8*(x1-x2);
@@ -1433,23 +1396,18 @@ end
         end
         
         for i=1:numel(mother)
-            if mother(i)~=0
-                
+            if mother(i)~=0           
                 bw=imtmp==i;
-                bw2=imtmp==mother(i);
-                
+                bw2=imtmp==mother(i);     
                 stat=regionprops(bw,'Centroid');
                 stat2=regionprops(bw2,'Centroid');
                 
                 if numel(stat)==1 && numel(stat2)==1
                     x1=stat(1).Centroid(1);
-                    y1=stat(1).Centroid(2);
-                    
+                    y1=stat(1).Centroid(2);         
                     x2=stat2(1).Centroid(1);
                     y2=stat2(1).Centroid(2);
-                    
-                    
-                    
+           
                     hmother(i)=line([x1 x2],[y1 y2],'Color',[0.5 0.5 0.5],'Tag','mothertagresults','LineWidth',3);
                     
                     x=x2+0.8*(x1-x2);
@@ -1464,8 +1422,6 @@ end
     end
 
 
-
-
     function im=buildimage(obj)
         
         % outputs a structure containing all displayed images
@@ -1478,31 +1434,28 @@ end
             disp('Warning : image is no longer present. Try reloading ...');
             obj.load
         end
-        
-        
+ 
         cc=1;
         for i=1:numel(obj.display.channel)
             
             if obj.display.selectedchannel(i)==1
-                
                 % get the righ data: there may be several matrices for one single
                 % channel in case of RGB images
-                
                 pix=find(obj.channelid==i);
                 src=obj.image;
-                
-                
                 
                 % for each channel perform normalization
                 %pix
                 if numel(pix)==1 % single channel to display
                     %pix
                     tmp=src(:,:,pix,:);
-                    meangfp=0.3*double(mean(tmp(:)));
-                    % pix,i
-                    it=mean(obj.display.intensity(i,:));
-                    
-                    maxgfp=double(meangfp+1*it*(max(tmp(:))-meangfp));
+                     meangfp=0.3*double(mean(tmp(:)));
+                      mingfp=double(min(tmp(:)));
+                      maxgfp=double(0.7*max(tmp(:)));
+                      
+%                     % pix,i
+                     it=mean(obj.display.intensity(i,:));
+%                     maxgfp=double(meangfp+1*it*(max(tmp(:))-meangfp));
                     
                     if maxgfp==0
                         maxgfp=1;
@@ -1513,25 +1466,18 @@ end
                     imout=obj.image(:,:,pix,frame);
                     
                     if it~=0 % it=0 corresponds to binary or indexed images
-                        imout=imadjust(imout,[meangfp/65535 maxgfp/65535],[0 1]);
-                        
-                        
+                        imout=imadjust(imout,[mingfp/65535 maxgfp/65535],[0 1]);
                         % imout=mat2gray(imout,[meangfp maxgfp]);
-                        
                         % imout =repmat(imout,[1 1 3]);
                         % for k=1:3
                         %     imout(:,:,k)=imout(:,:,k).*obj.display.rgb(i,k);
                         % end
                     end
-                    
-                    
                 else
                     %'ok'
-                    imout=uint16(zeros(size(obj.image,1),size(obj.image,2),3));
-                    
+                    imout=uint16(zeros(size(obj.image,1),size(obj.image,2),3));    
                     % size(imout)
-                    %i
-                    
+                    %i    
                     for j=1:numel(pix)
                       %   i,j,pix(j)
                       %  tmp=src(:,:,pix(j),:);
@@ -1552,21 +1498,17 @@ end
                 im(cc).data=imout;
                 cc=cc+1;
             end
-            
             %   cc=cc+1;
         end
     end
 
-    function setframe(handle,event,obj,him,hp,classif )
-        
-        frame=str2num(handle.String);
-        
+    function setframe(handle,event,obj,him,hp,classif )      
+        frame=str2num(handle.String);   
         if frame<=size(obj.image,4) & frame > 0
             obj.display.frame=frame;
             updatedisplay(obj,him,hp,classif)
         end
     end
-
 
     function changeframe(handle,event,obj,him,hp,keys,classif,impaint1,impaint2)
         
@@ -1623,8 +1565,7 @@ end
         end
         
         if nargin==9 % only if painting is allowed
-            if strcmp(event.Key,'k') % fill up painted contours
-                
+            if strcmp(event.Key,'k') % fill up painted contours     
                 hmenu = findobj('Tag','TrainingClassesMenu');
                 hclass=findobj(hmenu,'Checked','on');
                 
@@ -1634,12 +1575,9 @@ end
                 end
                 
                 strcolo=replace(hclass.Tag,'classes_','');
-                colo=str2num(strcolo);
-                
-                pix= impaint2.CData==colo;
-                
-                imend=imfill(pix,'holes');
-                
+                colo=str2num(strcolo);        
+                pix= impaint2.CData==colo;      
+                imend=imfill(pix,'holes');    
                 impaint1.CData(imend)= colo;
                 impaint2.CData(imend)= colo;
                 pixelchannel=obj.findChannelID(classif.strid);
@@ -1662,8 +1600,12 @@ end
                 ok=1;
             end
             
+<<<<<<< HEAD
             if strcmp(event.Key,'downarrow') %
                 
+=======
+            if strcmp(event.Key,'downarrow') % TO BE IMPLEMENTED      
+>>>>>>> 589f21a9bbb3f84230a952fbece4d0e9d1d7fbf6
                 warning off all
                 ax=findobj('Tag',classif.strid);
                 al=ax.Children.AlphaData;
@@ -1673,8 +1615,7 @@ end
                 ok=1;
             end
         end
-        
-        
+         
         for i=1:numel(keys) % display the selected class for the current image
             if i>numel(obj.classes)
                 break
@@ -1686,8 +1627,7 @@ end
                     ok=1;
                 end
                 
-                if strcmp(classif.category{1},'Pixel') | strcmp(classif.category{1},'Object') % for pixel classification enable painting function for the given class
-                    
+                if strcmp(classif.category{1},'Pixel') | strcmp(classif.category{1},'Object') % for pixel classification enable painting function for the given class                
                     for j=1:numel(classif.classes)
                         ha=findobj('Tag',['classes_' num2str(j)]);
                         if numel(ha)
@@ -1697,8 +1637,7 @@ end
                                 % if strcmp(ha.Checked,'off')
                                 ha.Checked='on';
                                 % else
-                                % ha.Checked='off';
-                                
+                                % ha.Checked='off';      
                                 % h.WindowButtonDownFcn='';
                                 % h.Pointer = 'arrow';
                                 % h.WindowButtonMotionFcn = '';
@@ -1709,16 +1648,9 @@ end
                             end
                         end
                     end
-                end
-                
-                
-            end
-            
-            
-            
-            
-        end
-        
+                end               
+            end    
+        end   
         if ok==1
             updatedisplay(obj,him,hp,classif)
         end
