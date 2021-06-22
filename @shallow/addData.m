@@ -254,23 +254,24 @@ switch answer
         
         if nargin > 1
             filename=inputproject;
-            [path fle ext]=fileparts(filename);
-            path=[path '/'];
+            [pathe fle ext]=fileparts(filename);
+            pathe=[pathe '/'];
         else
             
-            path= uigetdir('Select a Micromanager project folder',pwd);
-            if isequal(path,0)
+            pathe= uigetdir('Select a Micromanager project folder',pwd);
+            if isequal(pathe,0)
                 disp('User selected Cancel')
                 return;
             else
-                disp(['User selected ', fullfile(path)]);
+                disp(['User selected ', fullfile(pathe)]);
             end
         end
         
-        list=dir(path);
+        list=dir(pathe);
+        
         folders=list(contains({list.name},{'Pos'}));
-        path=folders.folder;
-        realfolders=cellfun(@(x) fullfile(path , x),{folders.name},'UniformOutput',false);
+        pathe=folders.folder;
+        realfolders=cellfun(@(x) fullfile(pathe , x),{folders.name},'UniformOutput',false);
         %list=struct2cell(list);
         %list=list(1,:);
         %folders=arrayfun(@isfolder,list);
@@ -301,6 +302,7 @@ switch answer
             return;
         end
         
+        disp(realfolders)
         prompt=['Please enter the positions to import (using Matlab syntax); Default: 1:' num2str(size(realfolders,1)) ' '];
         npos= input(prompt,'s');
         if numel(npos)==0

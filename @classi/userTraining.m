@@ -42,11 +42,16 @@ end
 
 channel=classif.channel(1);
 
-classif.roi(classitype).display.selectedchannel=zeros(1,numel(classif.roi(classitype).display.selectedchannel));
-classif.roi(classitype).display.selectedchannel(channel)=1;
+% comment : disable restrictions on channel display:
+%%classif.roi(classitype).display.selectedchannel=zeros(1,numel(classif.roi(classitype).display.selectedchannel));
+%%classif.roi(classitype).display.selectedchannel(channel)=1;
 
- pix = classif.roi(classitype).findChannelID(classif.strid);
+%%pix = classif.roi(classitype).findChannelID(classif.strid);
  
+%%classif.roi(classitype).display.selectedchannel(pix)=1;
+
+
+            
 %  strfind(obj.processing.classification(classiid).roi(classitype).display.channel, obj.processing.classification(classiid).strid);
 %          cc=[];
 %         for i=1:numel(pix)
@@ -58,7 +63,7 @@ classif.roi(classitype).display.selectedchannel(channel)=1;
 %         end
 %        
 %         if numel(cc)
-            classif.roi(classitype).display.selectedchannel(pix)=1;
+
    %     end
             
 classif.roi(classitype).view(classif.roi(classitype).display.frame,classif); 

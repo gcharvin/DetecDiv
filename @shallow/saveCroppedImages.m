@@ -1,4 +1,4 @@
-function saveCroppedImages(obj,fovid,frameid)
+[2 3 4 function saveCroppedImages(obj,fovid,frameid)
 
 disp('Processing raw images. Wait....');
 
