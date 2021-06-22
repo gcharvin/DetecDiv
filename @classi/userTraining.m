@@ -157,7 +157,7 @@ clf
                     if classif.roi(rois(roiid)).train.(classif.strid).id(classif.roi(rois(roiid)).display.frame) >0
                         str=[str ' - ' classif.classes{classif.roi(rois(roiid)).train.(classif.strid).id(classif.roi(rois(roiid)).display.frame)}];
                     else
-                        str=[str ' - unclassified']; 
+                        str=[str ' - unclasfied']; 
                     end
                else
                    classif.roi(rois(roiid)).train.(classif.strid).id(classif.roi(rois(roiid)).display.frame)=0;
