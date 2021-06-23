@@ -106,7 +106,7 @@ end
 reverseStr = '';
 
 for l=1:numel(tmpfov(i).roi)
-    tmpfov(i).roi(l).path=[strpath '/' tmpfov(i).id];
+    tmpfov(i).roi(l).path=fullfile(strpath,tmpfov(i).id);
     rroi=tmpfov(i).roi(l).value; % cropping data
     tmpfov(i).roi(l).image=uint16(zeros(rroi(4),rroi(3),numel(tmpfov(i).srclist),numel(nframes)));
     
