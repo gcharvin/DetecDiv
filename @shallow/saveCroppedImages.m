@@ -166,28 +166,27 @@ for i=fovid
         end
         
         % parfor here
-        parfor l=1:numel(tmpfov(i).roi)
+        parfor l=1:numel(tmpfov(i).roi) % loop on all rois
             
             tmproi(l).path=fullfile(strpath,tmpfov(i).id);
             rroi=tmproi(l).value; % cropping data
             
             init=0;
             
-            if ii~=1
+            if ii~=1 % if not the first group of frame, re-load the 4D im to append data
                % if numel(tmproi(l).image)==[]
                     tmproi(l).load;
               %  end
-            else %
+            else   % first group of frames, need to create structure 
                 init=1;
             end
             
-            % create new image if first item in group of frames
-            if numel(tmproi(l).image)==[]
-            %    init=1;
-            end
+%             % create new image if first item in group of frames
+%             if numel(tmproi(l).image)==[]
+%             %    init=1;
+%             end
             
             if init==1
-              
                 tmproi(l).image=uint16(zeros(rroi(4),rroi(3),numel(tmpfov(i).srclist),numel(nframestot)));
                 tmproi(l).display.channel={};
                 tmproi(l).display.frame=1;
