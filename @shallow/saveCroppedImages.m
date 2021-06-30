@@ -146,8 +146,8 @@ for i=fovid
             for k=1:numel(tmpfov(i).srclist)
                 
                 if strcmp(method,'circshift')
-                    list{j,k}=circshift( list{j,k},row,1);
-                    list{j,k}=circshift( list{j,k},col,2);
+                  %  list{j,k}=circshift( list{j,k},row,1);
+                %    list{j,k}=circshift( list{j,k},col,2);
                 end
                 if strcmp(method,'subpixel')
                     list{j,k}=imtranslate(list{j,k},[col row]);
