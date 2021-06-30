@@ -41,6 +41,7 @@ classdef shallow < handle
         tag='shallow project';
         
     end
+    
     methods
         function obj = shallow(pathname,filename) % filename contains a list of path to images used in the movi project
             %  obj.props.path=pathname;
@@ -67,13 +68,13 @@ classdef shallow < handle
             oldfullpath=fullfile(oldpath,oldfile);
             newpath=fullfile(pathe,file);
             
-                 if ispc
-                     oldfullpath=replace(oldfullpath,'/','\');
-                     newpath=replace(newpath,'/','\');
-                 else
-                     oldfullpath=replace(oldfullpath,'\','/');
-                     newpath=replace(newpath,'\','/');
-                 end
+            if ispc
+                oldfullpath=replace(oldfullpath,'/','\');
+                newpath=replace(newpath,'/','\');
+            else
+                oldfullpath=replace(oldfullpath,'\','/');
+                newpath=replace(newpath,'\','/');
+            end
             
             
             
@@ -86,16 +87,16 @@ classdef shallow < handle
                         
                         obj.fov(i).roi(j).path=fullfile(obj.fov(i).roi(j).path);
                         
-                         if ispc
+                        if ispc
                             obj.fov(i).roi(j).path = replace(obj.fov(i).roi(j).path,'/','\');
                         else
                             obj.fov(i).roi(j).path = replace(obj.fov(i).roi(j).path,'\','/');
-                         end
+                        end
                         
-                    %    aa=obj.fov(i).roi(j).path
-                 %       oldfullpath
-           % newpath
-            
+                        %    aa=obj.fov(i).roi(j).path
+                        %       oldfullpath
+                        % newpath
+                        
                         obj.fov(i).roi(j).path = replace(obj.fov(i).roi(j).path,oldfullpath,newpath);
                         
                         if ispc
@@ -110,30 +111,30 @@ classdef shallow < handle
             for i=1:numel(obj.processing.classification)
                 
                 obj.processing.classification(i).path=fullfile(obj.processing.classification(i).path);
-                  if ispc
-                           obj.processing.classification(i).path= replace( obj.processing.classification(i).path,'/','\');
-                        else
-                            obj.processing.classification(i).path = replace( obj.processing.classification(i).path,'\','/');
-                  end
-                         
+                if ispc
+                    obj.processing.classification(i).path= replace( obj.processing.classification(i).path,'/','\');
+                else
+                    obj.processing.classification(i).path = replace( obj.processing.classification(i).path,'\','/');
+                end
+                
                 
                 obj.processing.classification(i).path = replace(obj.processing.classification(i).path,oldfullpath,newpath);
                 
                 %   oldfullpath
                 %   newpath
-                   
+                
                 for j=1:numel(obj.processing.classification(i).roi)
                     
-   
+                    
                     obj.processing.classification(i).roi(j).path=fullfile(obj.processing.classification(i).roi(j).path);
                     
                     
-                     if ispc
-                             obj.processing.classification(i).roi(j).path = replace( obj.processing.classification(i).roi(j).path,'/','\');
-                        else
-                             obj.processing.classification(i).roi(j).path = replace( obj.processing.classification(i).roi(j).path,'\','/');
-                      end
-                 
+                    if ispc
+                        obj.processing.classification(i).roi(j).path = replace( obj.processing.classification(i).roi(j).path,'/','\');
+                    else
+                        obj.processing.classification(i).roi(j).path = replace( obj.processing.classification(i).roi(j).path,'\','/');
+                    end
+                    
                     
                     obj.processing.classification(i).roi(j).path = replace(obj.processing.classification(i).roi(j).path,oldfullpath,newpath);
                     
@@ -154,9 +155,23 @@ classdef shallow < handle
             path=obj.io.path;
             file=obj.io.file;
         end
+        
         function obj = setSrcPath(obj) %
             % this function will be written to ensure that source image path
             % can be updated when necessary
+            % display current path for first channel of each FOV
+            
+            if numel(obj.fov(1).srcpath{1})~=0 % srce path has been set for at leats one FOV; update ?
+                
+                for i=1:numel(obj.fov)
+                    disp(['Path for FOV: ' num2str(i)])
+                    disp([obj.fov(i).srcpath{1}]);
+                end
+            else
+                disp('there is no path for FOVs; Quitting !');
+                return
+            end
+            
             
             %for i=1
             strpath=pwd;
@@ -252,22 +267,87 @@ classdef shallow < handle
                 end
                 
             else % path is changed manually for all FOVs / each channel
-                for i=1:numel(obj.fov)
-                    for k=1:numel(obj.fov(i).srcpath)
-                        strpath=uigetdir(strpath);
-                        obj.fov(i).srcpath{k}=strpath;
-                        
-                        if ispc
-                            obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'/','\');
-                        else
-                            obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'\','/');
+                
+                prompt='Use GUI to change path [y/n] (Default: n)';
+                guipath= input(prompt,'s');
+                if numel(defaultclass)==0
+                    guipath='n';
+                end
+                
+                if strcmp(guipath,'y') % path is changed using GUI
+                    for i=1:numel(obj.fov)
+                        for k=1:numel(obj.fov(i).srcpath)
+                            strpath=uigetdir(strpath);
+                            obj.fov(i).srcpath{k}=strpath;
+                            
+                            if ispc
+                                obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'/','\');
+                            else
+                                obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'\','/');
+                            end
                         end
+                    end
+                else % path is changes at the command line 
+                    for i=1:numel(obj.fov)
+                        
+                        disp(['Path for FOV: ' num2str(i)])
+                        disp(obj.fov(i).srcpath{1})
+                    prompt='Type the part of the path to be changed:';
+                    oldpath= input(prompt,'s');
+                    if numel(oldpath)==0
+                        return;
+                    end
+                    prompt='Type the new base path:';
+                    newpath= input(prompt,'s');
+                    if numel(newpath)==0
+                        return;
+                    end
+                    
+                    for k=1:numel(obj.fov(i).srcpath)
+                            tmp=obj.fov(i).srcpath{k};
+                            finalpath=replace(tmp,oldpath,newpath);
+                            
+                            % if isfolder(finalpath)
+                            obj.fov(i).srcpath{k}=finalpath;
+                            
+                            if ispc
+                                obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'/','\');
+                            else
+                                obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'\','/');
+                            end
+                            
+                            %       else
+                            %           disp('Warning : this path does not exsit: cannot change it !');
+                            % end
+                    end
+                        
                     end
                 end
             end
             
+            % displays new path and check integrity by loading images
             
-            
+            if numel(obj.fov(1).srcpath{1})~=0 % srce path has been set for at leats one FOV; update ?
+                
+                for i=1:numel(obj.fov)
+                    disp(['Path for FOV: ' num2str(i)])
+                    disp([obj.fov(i).srcpath{1}]);
+                    
+                    disp('Loading first image to check path integrity....');
+                    
+                    im=obj.fov(i).readImage(1,1);
+                    
+                    if numel(im)>0
+                        disp('Path is OK for this FOV');
+                        disp('-------------------------');
+                    end
+                end
+                
+                
+            else
+                disp('there is no path for FOVs; Quitting !');
+                return
+            end
             
             
             % updates each FOV or all FOVs at once
