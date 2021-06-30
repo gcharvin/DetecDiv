@@ -32,6 +32,7 @@ for i=1:numel(varargin)
     
       if strcmp(varargin{i},'images') % cell array of images or single image
         images=varargin{i+1};
+        %size(images)
       end
       
       if strcmp(varargin{i},'framesid') %id of frames
@@ -45,6 +46,7 @@ for i=1:numel(varargin)
          if strcmp(varargin{i},'refframeid') % id of reference frame
         refframeid=varargin{i+1};
          end
+         
         
         if strcmp(varargin{i},'display') % id of reference frame
         display=1;
@@ -79,6 +81,7 @@ for j=framesid
     if numel(images)<cc % need to load images
       %  tic;
         images{cc}=obj.readImage(j,channel); 
+     %   disp('Reading image...');
      %   toc;
     end
     else
@@ -86,6 +89,8 @@ for j=framesid
     end
   
     im=images{cc};
+      %  size(im)
+    %    size(refimage)
         
         if strcmp(method, 'circshift')
            % tic;
@@ -100,27 +105,44 @@ for j=framesid
             if display==1
                 imout=circshift( im,-row,1);
                 imout=circshift( imout,-col,2);
+           %  imout=im;
                 figure, imshowpair(refimage,imout);
+                title(['Drift : row: ' num2str(row) ' - col: ' num2str(col)]); 
             end
         end
         
-         if strcmp(method, 'subpixel')
+         if strcmp(method, 'subpixel') % this method does not work so well , requires further troubleshooting
              c = normxcorr2(refimage,im);
-             thr=10;
-              sm=c(size(im,1)-thr:size(im,1)+thr,size(im,2)-thr:size(im,2)+thr);
-        
+             thr=2;
              
+             [mx ix]=max(c(:));
+            [row col]=ind2sub(size(c),ix);
+            %row=row-size(refimage,1);
+            %col=col-size(refimage,2);
+              sm=c(row-thr:row+thr,col-thr:col+thr);
+              
+            %  sm=c(size(im,1)-thr:size(im,1)+thr,size(im,2)-thr:size(im,2)+thr);
+        
+       %     figure, pcolor(sm)
         x =  1:size(sm,1);
         y =  1:size(sm,2);
         
         [X,Y] = meshgrid(x,y);
+
+        tmpx=mean(sum(sm.*X,2)./sum(sm,2));
+        tmpy=mean(sum(sm.*Y,1)./sum(sm,1));
         
-        col=mean(mean(X.*sm,2)./mean(sm,2))-thr-1;
-        row=mean(mean(Y.*sm,1)./mean(sm,1))-thr-1;
+      %  test=moment(sm(11,:),1)
+        
+        row=tmpx-thr-1+row-size(im,1);
+        col=tmpy-thr-1+col-  size(im,2);
+         %    row=row-size(refimage,1);
+         %    col=col-size(refimage,2);
         
          if display==1
-                imout=imtranslate(im,[col row]);
+                imout=imtranslate(im,[-col -row]);
                 figure, imshowpair(refimage,imout);
+                 title(['Drift : row: ' num2str(row) ' - col: ' num2str(col)]); 
             end
         
          end
@@ -137,6 +159,7 @@ for j=framesid
          if display==1
                 imout=imtranslate(im,[col row]);
                 figure, imshowpair(refimage,imout);
+                 title(['Drift : row: ' num2str(row) ' - col: ' num2str(col)]); 
          end
      end
     

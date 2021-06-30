@@ -23,6 +23,7 @@ if ~exist(imstr)
     disp('folder exists, but file does not  ! Quitting....');
 else
      im=imread(imstr);   
+     disp(['Reading FOV image ' imstr]);
 end
 
 else

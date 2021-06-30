@@ -93,18 +93,20 @@ for i=fovid
     
     refframe=framecell{1}(1);
     refframeid=refframe;
-    refframe=tmpfov(i).readImage(refframe,1);
+    refimage=tmpfov(i).readImage(refframe,1);
     
     disp('Loading raw images in memory ....');
     
     for ii=1:numel(framecell) % loop on all blocks of frames on a given FOV
         nframes= framecell{ii};
         list={};
-        refframe=framecell{1}(1);
+       % refframe=framecell{1}(1);
         
         disp(['Reading group of frames:  ' num2str(ii) ' / ' num2str(numel(framecell)) ]);
         
         for j=1:numel(nframes) % read all images for all channels in this group
+            
+            disp(['Reading frame: ' num2str(j) ' / '  num2str(numel(nframes)) ' in group of frame : ' num2str(ii) ' / ' num2str(numel(framecell)) ' for FOV:  ' num2str(tmpfov(i).id)]);
             
             for k=1:numel(tmpfov(i).srclist) % loop on channels
                 
@@ -120,7 +122,7 @@ for i=fovid
                 list{j,k}=im;
             end
             
-            disp(['Reading frame: ' num2str(j) ' / '  num2str(numel(nframes)) ' in group of frame : ' num2str(ii) ' / ' num2str(numel(framecell)) ' for FOV:  ' num2str(tmpfov(i).id)]);
+            
             % msg = sprintf('Reading frame: %d / %d for FOV %s', j, numel(nframes),tmpfov(i).id); %Don't forget this semicolon
             %  fprintf([reverseStr, msg]);
             %  reverseStr = repmat(sprintf('\b'), 1, length(msg));
@@ -133,8 +135,9 @@ for i=fovid
         disp('Correcting XY drift in images...');
         
         method='circshift';
+       % method='subpixel';
         
-        tmpfov(i).computeDrift(1,'framesid',nframes,'refframeid',refframeid,'method',method,'refframe',refframe); % compute drift and store in fov.drift
+        tmpfov(i).computeDrift('framesid',nframes,'refframeid',refframeid,'method',method,'refimage',refimage,'images',list(:,1)); % compute drift and store in fov.drift
         
         %a= tmpfov(i).drift.x
         
@@ -146,11 +149,12 @@ for i=fovid
             for k=1:numel(tmpfov(i).srclist)
                 
                 if strcmp(method,'circshift')
-                  %  list{j,k}=circshift( list{j,k},row,1);
-                %    list{j,k}=circshift( list{j,k},col,2);
+                    list{j,k}=circshift( list{j,k},row,1);
+                    list{j,k}=circshift( list{j,k},col,2);
                 end
                 if strcmp(method,'subpixel')
-                    list{j,k}=imtranslate(list{j,k},[col row]);
+                    list{j,k}=imtranslate(list{j,k},[-col -row]);
+                      %  list{j,k}=imtranslate(list{j,k},[row col]);
                 end
             end
         end
