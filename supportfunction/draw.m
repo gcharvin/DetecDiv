@@ -1451,7 +1451,7 @@ end
                     tmp=src(:,:,pix,:);
                      meangfp=0.3*double(mean(tmp(:)));
                       mingfp=double(min(tmp(:)));
-                      maxgfp=double(0.7*max(tmp(:)));
+                      maxgfp=double(0.8*max(tmp(:)));
                       
 %                     % pix,i
                      it=mean(obj.display.intensity(i,:));
