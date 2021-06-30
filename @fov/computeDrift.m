@@ -56,7 +56,7 @@ if numel(obj.drift)==0
 drift=[];
 drift.x=zeros(1,numel(obj.srclist{1}));
 drift.y=zeros(1,numel(obj.srclist{1}));
-obj.dift=drift;
+obj.drift=drift;
 else
    drift=obj.drift; 
 end
