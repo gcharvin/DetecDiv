@@ -306,7 +306,7 @@ switch answer
         prompt=['Please enter the positions to import (using Matlab syntax); Default: 1:' num2str(size(realfolders,1)) ' '];
         npos= input(prompt,'s');
         if numel(npos)==0
-            npos=1:numel(timeLapse.position.list);
+            npos=1:numel({realfolders});
         else
             npos=eval(npos);
         end
