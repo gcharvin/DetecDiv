@@ -306,7 +306,7 @@ switch answer
         prompt=['Please enter the positions to import (using Matlab syntax); Default: 1:' num2str(size(realfolders,1)) ' '];
         npos= input(prompt,'s');
         if numel(npos)==0
-            npos=1:numel(timeLapse.position.list);
+            npos=1:numel(realfolders);
         else
             npos=eval(npos);
         end
@@ -437,8 +437,9 @@ for i=npos
     cd=cd+1;
 end
 
+
 %cc=1;
-parfor i=1:numel(npos) % loop on all the fov / positions / folders to be created:::parfor useless, waste of time to launch the pool
+for i=1:numel(npos) % loop on all the fov / positions / folders to be created:::parfor useless, waste of time to launch the pool
     fprintf('.');
     tmpfov(i)=fov;
     tmpfov(i).setpathlist(pathname(i,:),nid(i),filt(i,:));
