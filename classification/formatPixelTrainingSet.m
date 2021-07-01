@@ -130,7 +130,9 @@ parfor i=rois
             
             %max(tmp(:))
             %return
-        end
+        else
+            tmp=double(tmp)/65535;
+         end
         
         
         %tmp=uint8(256*tmp);

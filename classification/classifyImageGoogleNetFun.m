@@ -39,7 +39,13 @@ im=uint8(zeros(size(gfp,1),size(gfp,2),3,size(gfp,4)));
 if numel(pix)==1
     for j=1:size(gfp,4)
         
+        if numel(pix)==1
         tmp=roiobj.preProcessROIData(pix,j,param);
+        
+        else
+        tmp=gfp(:,:,:,j);
+        tmp=double(tmp)/65535;   
+        end
         
         im(:,:,:,j)=uint8(256*tmp);
         

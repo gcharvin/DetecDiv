@@ -52,8 +52,7 @@ end
 vid=uint8(zeros(size(im,1),size(im,2),3,size(im,4)));
 
 for j=1:size(im,4)
-    tmp=im(:,:,:,j);
-    
+
     if numel(pix)==1
         
         tmp=roiobj.preProcessROIData(pix,j,param);
@@ -61,6 +60,9 @@ for j=1:size(im,4)
         %tmp = double(imadjust(tmp,[meanphc/65535 maxphc/65535],[0 1]))/65535;
         %tmp=repmat(tmp,[1 1 3]);
          
+    else
+        tmp=im(:,:,:,j);
+        tmp=double(tmp)/65535;
     end
     
     vid(:,:,:,j)=uint8(256*tmp);

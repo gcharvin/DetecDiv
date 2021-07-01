@@ -47,14 +47,23 @@ parfor i=rois
         param.meanphc=meanphc;
         param.maxphc =maxphc;
         
-        if numel(classif.trainingset)==0
+    end
+    
+    if numel(classif.trainingset)==0
         param.nframes=1; % number of temporal frames per frame
         else
         param.nframes=classif.trainingset; % number of temporal frames per frame  
-        end
     end
+        
     
+   if  numel(pix)==1
      imtest=cltmp(i).preProcessROIData(pix,1,param); % done to determine image size
+     % this preprocessing can only be performed on grayscale images
+     % numel(pix)=1
+   else
+     imtest=im;  
+   end
+    
    %  figure, imshow(imtest,[]);
    %  return;
     % 'ok'
@@ -80,10 +89,12 @@ parfor i=rois
     if classif.typeid~=12 % image classif
         reverseStr = '';
         for j=1:size(im,4)
-            tmp=im(:,:,:,j);
-            
+
             if numel(pix)==1
                 tmp=cltmp(i).preProcessROIData(pix,j,param);
+            else
+                tmp=im(:,:,:,j);
+                tmp=double(tmp)/65535;
             end
             
             %figure, imshow(tmp);
@@ -120,11 +131,14 @@ parfor i=rois
         for j=1:size(im,4)
             % tmp(:,:,:j)=im(:,:,:,j);
             
-            if numel(pix)==1
-                tmp(:,:,:,j)=cltmp(i).preProcessROIData(pix,j,param);
+             if numel(pix)==1
+                tmp=cltmp(i).preProcessROIData(pix,j,param);
+            else
+                tmp=im(:,:,:,j);
+                tmp=double(tmp)/65535;
             end
             
-             vid(:,:,:,j)=uint8(256*tmp(:,:,:,j));
+             vid(:,:,:,j)=uint8(256*tmp);
         end
         
       %  if cltmp(i).train.(classif.strid).id(j)~=-1 % if training is done

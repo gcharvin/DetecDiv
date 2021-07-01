@@ -246,11 +246,13 @@ switch nargin
             
             %if option<=length(obj.processing.classification)
                 
+            disp('WARNING : the name below should be different from that of the imported classification, otherwise the training set cannot be preserved');
                 prompt='Please enter the name of the new classification (Default: myclassi): ';
                 name= input(prompt,'s');
                 if numel(name)==0
                     name='myclassi';
                 end
+                
                 
                 pth=[obj.io.path '/' obj.io.file];
                 obj.processing.classification(n+1) = classi(pth,name,n+1);

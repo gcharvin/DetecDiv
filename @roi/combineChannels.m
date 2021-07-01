@@ -6,13 +6,12 @@ function combineChannels(obj,varargin)
 % number of channels must be either 2 or 3 at the most
 % rgb : cell array hat specifies the [r g b] triplet for each channel to be
 % added: { [1 1 0], [1 0 1] }
-% if channel is an indexed image , specify rgb by adding a colormap for each channel with an indexed image : { [1 1 1], [1 0
+% if channel is an indexed image , specify rgb color by adding a colormap for each channel with an indexed image : { [1 1 1], [1 0
 % 0; 0 1 0; 0 0 1]} , 
 % levels : cell array that specifies the levels of the target channel in
 % the final image: { [ 4000 40000] , [ 0 3 ] };
 
 % the output channel is an rgb image
-
 
 channels=[];
 rgb={};
@@ -31,6 +30,7 @@ for i=1:numel(varargin)
     end    
       if strcmp(varargin{i},'rgb')
         rgb=varargin{i+1};
+        
       end   
       
        if strcmp(varargin{i},'levels')
@@ -39,6 +39,12 @@ for i=1:numel(varargin)
        if strcmp(varargin{i},'name')
         name=varargin{i+1};
       end   
+end
+
+if numel(levels)==0
+     for j=1:numel(channels)
+           levels{j}=[0 65535];
+        end
 end
 
 if numel(channels)==0

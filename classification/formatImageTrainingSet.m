@@ -55,11 +55,15 @@ parfor i=rois
     
      if classif.typeid~=11 % image classif 
     for j=1:size(im,4)
-        tmp=im(:,:,:,j);
+     
         
-        if numel(pix)==1
-            tmp=cltmp(i).preProcessROIData(pix,j,param);
-        end
+         if numel(pix)==1
+                tmp=cltmp(i).preProcessROIData(pix,j,param);
+            else
+                tmp=im(:,:,:,j);
+                tmp=double(tmp)/65535;
+         end
+            
        
         tr=num2str(j);
         while numel(tr)<4
@@ -85,9 +89,13 @@ parfor i=rois
           for j=1:size(im,4)
        % tmp(:,:,:j)=im(:,:,:,j);
         
-        if numel(pix)==1
-            tmp(:,:,:,j)=cltmp(i).preProcessROIData(pix,j,param);
-        end
+       if numel(pix)==1
+                tmp=cltmp(i).preProcessROIData(pix,j,param);
+            else
+                tmp=im(:,:,:,j);
+                tmp=double(tmp)/65535;
+       end
+            
           end
           
           %   if cltmp(i).train.(classif.strid).id(j)~=-1 % if training is done
