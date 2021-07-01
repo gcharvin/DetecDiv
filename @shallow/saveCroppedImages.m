@@ -42,7 +42,7 @@ end
 
 strpath=[obj.io.path obj.io.file];
 
-parfor i=fovid
+for i=fovid
     
     if numel(tmpfov(i).roi)==0
         disp('thid FOV has no ROI ! Quitting ....');
@@ -170,7 +170,7 @@ parfor i=fovid
         end
         
         % parfor here
-        for l=1:numel(tmpfov(i).roi) % loop on all rois
+        parfor l=1:numel(tmpfov(i).roi) % loop on all rois
             
             tmproi(l).path=fullfile(strpath,tmpfov(i).id);
             rroi=tmproi(l).value; % cropping data
