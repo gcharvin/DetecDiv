@@ -170,7 +170,7 @@ for i=fovid
         end
         
         % parfor here
-        parfor l=1:numel(tmpfov(i).roi) % loop on all rois
+        for l=1:numel(tmpfov(i).roi) % loop on all rois
             
             tmproi(l).path=fullfile(strpath,tmpfov(i).id);
             rroi=tmproi(l).value; % cropping data
