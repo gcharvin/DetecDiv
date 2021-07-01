@@ -66,8 +66,8 @@ classdef shallow < handle
             
             % also adjust set path of dependencies
             
-            oldfullpath=fullfile(oldpath,oldfile)
-            newpath=fullfile(pathe,file)
+            oldfullpath=fullfile(oldpath,oldfile);
+            newpath=fullfile(pathe,file);
             
 %             if ispc
 %                 oldfullpath=replace(oldfullpath,'/','\');
