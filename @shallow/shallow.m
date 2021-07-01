@@ -116,13 +116,13 @@ classdef shallow < handle
             
             for i=1:numel(obj.processing.classification)
                 
-                aa=obj.processing.classification(i).path
+              %  aa=obj.processing.classification(i).path;
      
 
                 
                 obj.processing.classification(i).path=fixpath(fullfile(obj.processing.classification(i).path));
                 
-                bb=obj.processing.classification(i).path
+            %    bb=obj.processing.classification(i).path;
                 
             %    obj.processing.classification(i).path(
 %                 if ispc
