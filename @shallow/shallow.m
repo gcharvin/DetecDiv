@@ -68,13 +68,13 @@ classdef shallow < handle
             oldfullpath=fullfile(oldpath,oldfile);
             newpath=fullfile(pathe,file);
             
-            if ispc
-                oldfullpath=replace(oldfullpath,'/','\');
-                newpath=replace(newpath,'/','\');
-            else
-                oldfullpath=replace(oldfullpath,'\','/');
-                newpath=replace(newpath,'\','/');
-            end
+%             if ispc
+%                 oldfullpath=replace(oldfullpath,'/','\');
+%                 newpath=replace(newpath,'/','\');
+%             else
+%                 oldfullpath=replace(oldfullpath,'\','/');
+%                 newpath=replace(newpath,'\','/');
+%             end
             
             
             
@@ -87,11 +87,11 @@ classdef shallow < handle
                  
                         obj.fov(i).roi(j).path=fullfile(obj.fov(i).roi(j).path);
                         
-                        if ispc
-                            obj.fov(i).roi(j).path = replace(obj.fov(i).roi(j).path,'/','\');
-                        else
-                            obj.fov(i).roi(j).path = replace(obj.fov(i).roi(j).path,'\','/');
-                        end
+%                         if ispc
+%                             obj.fov(i).roi(j).path = replace(obj.fov(i).roi(j).path,'/','\');
+%                         else
+%                             obj.fov(i).roi(j).path = replace(obj.fov(i).roi(j).path,'\','/');
+%                         end
                         
                         %    aa=obj.fov(i).roi(j).path
                         %       oldfullpath
@@ -99,11 +99,12 @@ classdef shallow < handle
                         
                         obj.fov(i).roi(j).path = replace(obj.fov(i).roi(j).path,oldfullpath,newpath);
                         
-                        if ispc
-                            obj.fov(i).roi(j).path = replace(obj.fov(i).roi(j).path,'/','\');
-                        else
-                            obj.fov(i).roi(j).path = replace(obj.fov(i).roi(j).path,'\','/');
-                        end
+%                         if ispc
+%                             obj.fov(i).roi(j).path = replace(obj.fov(i).roi(j).path,'/','\');
+%                         else
+%                             obj.fov(i).roi(j).path = replace(obj.fov(i).roi(j).path,'\','/');
+%                         end
+
                     end
                 end
             end
@@ -115,11 +116,11 @@ classdef shallow < handle
                 
                 obj.processing.classification(i).path=fullfile(obj.processing.classification(i).path);
                 
-                if ispc
-                    obj.processing.classification(i).path= replace( obj.processing.classification(i).path,'/','\');
-                else
-                    obj.processing.classification(i).path = replace( obj.processing.classification(i).path,'\','/');
-                end
+%                 if ispc
+%                     obj.processing.classification(i).path= replace( obj.processing.classification(i).path,'/','\');
+%                 else
+%                     obj.processing.classification(i).path = replace( obj.processing.classification(i).path,'\','/');
+%                 end
                 
                 
                 obj.processing.classification(i).path = replace(obj.processing.classification(i).path,oldfullpath,newpath);
@@ -135,20 +136,20 @@ classdef shallow < handle
                     obj.processing.classification(i).roi(j).path=fullfile(obj.processing.classification(i).roi(j).path);
                     
                     
-                    if ispc
-                        obj.processing.classification(i).roi(j).path = replace( obj.processing.classification(i).roi(j).path,'/','\');
-                    else
-                        obj.processing.classification(i).roi(j).path = replace( obj.processing.classification(i).roi(j).path,'\','/');
-                    end
+%                     if ispc
+%                         obj.processing.classification(i).roi(j).path = replace( obj.processing.classification(i).roi(j).path,'/','\');
+%                     else
+%                         obj.processing.classification(i).roi(j).path = replace( obj.processing.classification(i).roi(j).path,'\','/');
+%                     end
                     
                     
                     obj.processing.classification(i).roi(j).path = replace(obj.processing.classification(i).roi(j).path,oldfullpath,newpath);
                     
-                    if ispc
-                        obj.processing.classification(i).roi(j).path = replace(obj.processing.classification(i).roi(j).path,'/','\');
-                    else
-                        obj.processing.classification(i).roi(j).path = replace(obj.processing.classification(i).roi(j).path,'\','/');
-                    end
+%                     if ispc
+%                         obj.processing.classification(i).roi(j).path = replace(obj.processing.classification(i).roi(j).path,'/','\');
+%                     else
+%                         obj.processing.classification(i).roi(j).path = replace(obj.processing.classification(i).roi(j).path,'\','/');
+%                     end
                     
                 end
             end
