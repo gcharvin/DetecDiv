@@ -54,7 +54,9 @@ classdef shallow < handle
             % obj.props.name=filename;
             
             
+   
             oldpath=fixpath(obj.io.path);
+            
            % oldpath(strfind(oldpath,'\'))='/';
             
             %oldpath,pathe
@@ -67,7 +69,9 @@ classdef shallow < handle
             % also adjust set path of dependencies
             
             oldfullpath=fullfile(oldpath,oldfile);
+            
             newpath=fullfile(pathe,file);
+            
             
 %             if ispc
 %                 oldfullpath=replace(oldfullpath,'/','\');
@@ -112,10 +116,14 @@ classdef shallow < handle
             
             for i=1:numel(obj.processing.classification)
                 
-               % aa=obj.processing.classification(i).path
+                aa=obj.processing.classification(i).path
      
+
                 
                 obj.processing.classification(i).path=fixpath(fullfile(obj.processing.classification(i).path));
+                
+                bb=obj.processing.classification(i).path
+                
             %    obj.processing.classification(i).path(
 %                 if ispc
 %                     obj.processing.classification(i).path= replace( obj.processing.classification(i).path,'/','\');
@@ -154,10 +162,22 @@ classdef shallow < handle
                 end
             end
             
-            
             function pathout=fixpath(pathin)
                 pathout=pathin;
+                if ~ispc
+                    
                 pathout(strfind(pathout,'\'))='/';
+                
+                else
+                    
+                pix=strfind(pathout,'\\');
+                
+                if numel(pix)
+                  pathout=pathout(pix+1:end);  
+                end
+                
+                pathout(strfind(pathout,'/'))='\';
+                end
             end
             
         end
