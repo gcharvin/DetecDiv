@@ -54,8 +54,8 @@ classdef shallow < handle
             % obj.props.name=filename;
             
             
-            oldpath=obj.io.path;
-            oldpath(strfind(oldpath,'\'))='/';
+            oldpath=fixpath(obj.io.path);
+           % oldpath(strfind(oldpath,'\'))='/';
             
             %oldpath,pathe
             
@@ -85,8 +85,8 @@ classdef shallow < handle
                         % oldpath
                         % pathe
                         
-                 
-                        obj.fov(i).roi(j).path=fullfile(obj.fov(i).roi(j).path);
+                        
+                        obj.fov(i).roi(j).path=fixpath(fullfile(obj.fov(i).roi(j).path));
                         
 %                         if ispc
 %                             obj.fov(i).roi(j).path = replace(obj.fov(i).roi(j).path,'/','\');
@@ -115,8 +115,8 @@ classdef shallow < handle
                % aa=obj.processing.classification(i).path
      
                 
-                obj.processing.classification(i).path=fullfile(obj.processing.classification(i).path);
-                
+                obj.processing.classification(i).path=fixpath(fullfile(obj.processing.classification(i).path));
+            %    obj.processing.classification(i).path(
 %                 if ispc
 %                     obj.processing.classification(i).path= replace( obj.processing.classification(i).path,'/','\');
 %                 else
@@ -133,7 +133,7 @@ classdef shallow < handle
                 for j=1:numel(obj.processing.classification(i).roi)
                     
                     
-                    obj.processing.classification(i).roi(j).path=fullfile(obj.processing.classification(i).roi(j).path);
+                    obj.processing.classification(i).roi(j).path=fixpath(fullfile(obj.processing.classification(i).roi(j).path));
                     
                     
 %                     if ispc
@@ -152,6 +152,12 @@ classdef shallow < handle
 %                     end
                     
                 end
+            end
+            
+            
+            function pathout=fixpath(pathin)
+                pathout=pathin;
+                pathout(strfind(pathout,'\'))='/';
             end
             
         end
