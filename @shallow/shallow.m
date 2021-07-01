@@ -84,7 +84,7 @@ classdef shallow < handle
                         % oldpath
                         % pathe
                         
-                        
+                 
                         obj.fov(i).roi(j).path=fullfile(obj.fov(i).roi(j).path);
                         
                         if ispc
@@ -110,7 +110,11 @@ classdef shallow < handle
             
             for i=1:numel(obj.processing.classification)
                 
+                aa=obj.processing.classification(i).path
+     
+                
                 obj.processing.classification(i).path=fullfile(obj.processing.classification(i).path);
+                
                 if ispc
                     obj.processing.classification(i).path= replace( obj.processing.classification(i).path,'/','\');
                 else
@@ -120,8 +124,10 @@ classdef shallow < handle
                 
                 obj.processing.classification(i).path = replace(obj.processing.classification(i).path,oldfullpath,newpath);
                 
-                %   oldfullpath
-                %   newpath
+                
+                bb=obj.processing.classification(i).path
+                   oldfullpath
+                   newpath
                 
                 for j=1:numel(obj.processing.classification(i).roi)
                     
