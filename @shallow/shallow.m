@@ -54,19 +54,19 @@ classdef shallow < handle
             % obj.props.name=filename;
             
             
-            oldpath=obj.io.path;
+            oldpath=obj.io.path
             
             %oldpath,pathe
             
-            oldfile=obj.io.file;
+            oldfile=obj.io.file
             
             obj.io.path=pathe;
             obj.io.file=file;
             
             % also adjust set path of dependencies
             
-            oldfullpath=fullfile(oldpath,oldfile);
-            newpath=fullfile(pathe,file);
+            oldfullpath=fullfile(oldpath,oldfile)
+            newpath=fullfile(pathe,file)
             
 %             if ispc
 %                 oldfullpath=replace(oldfullpath,'/','\');
@@ -111,7 +111,7 @@ classdef shallow < handle
             
             for i=1:numel(obj.processing.classification)
                 
-                aa=obj.processing.classification(i).path
+               % aa=obj.processing.classification(i).path
      
                 
                 obj.processing.classification(i).path=fullfile(obj.processing.classification(i).path);
@@ -126,9 +126,8 @@ classdef shallow < handle
                 obj.processing.classification(i).path = replace(obj.processing.classification(i).path,oldfullpath,newpath);
                 
                 
-                bb=obj.processing.classification(i).path
-                   oldfullpath
-                   newpath
+             %   bb=obj.processing.classification(i).path
+          
                 
                 for j=1:numel(obj.processing.classification(i).roi)
                     
