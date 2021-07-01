@@ -54,11 +54,12 @@ classdef shallow < handle
             % obj.props.name=filename;
             
             
-            oldpath=obj.io.path
+            oldpath=obj.io.path;
+            oldpath(strfind(oldpath,'\'))='/';
             
             %oldpath,pathe
             
-            oldfile=obj.io.file
+            oldfile=obj.io.file;
             
             obj.io.path=pathe;
             obj.io.file=file;
