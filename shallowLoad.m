@@ -24,11 +24,12 @@ filename=fullfile(abspath,[file ext]);
 load(filename);
 path=abspath;
 
-if isunix || ismac
+%if isunix || ismac
 shallowObj.setPath([path '/'],file); % adjust path
-else
-shallowObj.setPath([path '\'],file); % adjust path 
-end
+%else
+%shallowObj.setPath([path '\'],file); % adjust path 
+%end
+
 disp(['Successfully loaded shallow project ' fullfile(path,[file '.mat']) '!']);
 disp('');
 
