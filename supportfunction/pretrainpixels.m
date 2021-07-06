@@ -40,7 +40,7 @@ for i=frames
     
     %to adapt for
     %robustness!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    obj.image(:,:,channel+1,i)=255*BW;
+    obj.image(:,:,channel+1,i)=BW;
 end
 
 fprintf('\n');
@@ -334,9 +334,9 @@ T=graythresh(img2);
 
 BW2=imbinarize(img2,T*1);
 BW2 = bwareaopen(BW2, 3);
-
+BW2=2*BW2;
 if mean(BW2(:))>0.3
-    BW2(:,:)=0;
+    BW2(:,:)=1;
 end
 
 
