@@ -45,13 +45,13 @@ strpath=[obj.io.path obj.io.file];
 for i=fovid
     
     if numel(tmpfov(i).roi)==0
-        disp('thid FOV has no ROI ! Quitting ....');
+        disp('this FOV has no ROI ! Quitting ....');
         %break
         %return
         continue
     end
     if numel(tmpfov(i).roi(1).id)==0
-        disp('thid FOV has no ROI ! Quitting ....');
+        disp('this FOV has no ROI ! Quitting ....');
         %break
         continue
         %return;
