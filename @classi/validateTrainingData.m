@@ -48,7 +48,7 @@ end
 classifier=classifierStore; %either loaded or provided as an argument 
 
 for i=1:numel(varargin)
-    if strcmp(varargin{i},'roilist')
+    if strcmp(varargin{i},'Rois')
         roilist=varargin{i+1};
     end
 end
