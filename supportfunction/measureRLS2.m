@@ -153,10 +153,10 @@ switch classiftype
     %========================CLASSIF BUD========================
     case 'bud'
         deathid=findclassid(classes,'dead');
-        clogid=10;%findclassid(classes,'clog');
+        clogid=findclassid(classes,'clog');
         lbid=findclassid(classes,'large');
         smid=findclassid(classes,'small');
-        unbuddedid=10;%findclassid(classes,'unbudded');
+        unbuddedid=findclassid(classes,'unbud');
         emptyid=findclassid(classes,'empty');
         
         %==============find BIRTH===============
