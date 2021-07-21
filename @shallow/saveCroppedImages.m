@@ -108,21 +108,17 @@ for i=fovid
             
             disp(['Reading frame: ' num2str(j) ' / '  num2str(numel(nframes)) ' in group of frame : ' num2str(ii) ' / ' num2str(numel(framecell)) ' for FOV:  ' num2str(tmpfov(i).id)]);
             
-            for k=1:numel(tmpfov(i).srclist) % loop on channels
-                
+            for k=1:numel(tmpfov(i).srclist) % loop on channels            
                 frame=floor((nframes(j)-1)/channelint(k))+1; %  spacing frames when channels are not used with equal time interval
-                
                 im=tmpfov(i).readImage(frame,k);
-              
-                
+                            
                 if tmpfov(i).display.binning(k) ~= tmpfov(i).display.binning(1)
                     im=imresize(im,tmpfov(i).display.binning(k)/tmpfov(i).display.binning(1));
                 end
                 
                 list{j,k}=im;
             end
-            
-            
+                  
             % msg = sprintf('Reading frame: %d / %d for FOV %s', j, numel(nframes),tmpfov(i).id); %Don't forget this semicolon
             %  fprintf([reverseStr, msg]);
             %  reverseStr = repmat(sprintf('\b'), 1, length(msg));
@@ -142,8 +138,7 @@ for i=fovid
         %a= tmpfov(i).drift.x
         
         for j=1:numel(nframes)
-            row=tmpfov(i).drift.x(nframes(j));
-            
+            row=tmpfov(i).drift.x(nframes(j));           
             col=tmpfov(i).drift.y(nframes(j));
             
             for k=1:numel(tmpfov(i).srclist)
@@ -226,22 +221,18 @@ for i=fovid
                     rroitmp(2)=max(rroi(2),1);
                     rroitmp(3)=min(rroi(1)+rroi(3)-1,size(tmp,2));
                     rroitmp(4)=min(rroi(2)+rroi(4)-1,size(tmp,1));
-                    
-                    
+
                     % rroitmp
                     % size(tmpfov(i).roi(l).image,1:2)
                     
                     tmproi(l).image(:,:,k,nframes(j))=tmp(rroitmp(2):rroitmp(4),rroitmp(1):rroitmp(3));
-                 %   tt= tmproi(l).image(:,:,k,nframes(j));
-                   
+                 %   tt= tmproi(l).image(:,:,k,nframes(j));                
                 end
                 %cc=cc+1;
             end
             
-            
             tmproi(l).save;
-        %    tmproi(l).clear;
-           
+        %    tmproi(l).clear;          
             %tmpfov(i).roi(l).clear;
             
             disp(['Saved images for ROI ' tmproi(l).id ' in FOV : ' tmpfov(i).id]); %d / %d ROIs saved for FOV %s', l , numel(tmpfov(i).roi), tmpfov(i).id); %Don't forget this semicolon
@@ -257,8 +248,7 @@ for i=fovid
     for l=1:numel(tmpfov(i).roi)
         tmpfov(i).roi(l)=tmproi(l);
         %tmpfov(i)=propValues(tmpfov(i),obj.fov(i));
-    end
-    
+    end 
 end
 
 for i=fovid % restore obj structure
