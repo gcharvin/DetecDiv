@@ -2,9 +2,9 @@ function [rls,rlsResults,rlsGroundtruth]=measureRLS2(classi,varargin)
 
 %'Fluo' if =1, will computethe fluo of each channel over the divs
 
-%classiftype is the classiftype of classi :
-% classiftype='bud' : unbudded, small, large, dead etc.
-% classiftype='div' : nodiv, div, dead etc.
+%ClassiType is the classif type of classi :
+% ClassiType='bud' : unbudded, small, large, dead etc.
+% ClassiType='div' : nodiv, div, dead etc.
 
 % rls combines results and groundtruth is applicable
 % rlsResults only results
@@ -12,6 +12,8 @@ function [rls,rlsResults,rlsGroundtruth]=measureRLS2(classi,varargin)
 classiftype='bud';
 postProcessing=1;
 rois=1:numel(classi.roi);
+classiid=classi.strid;
+classiidfluo=classiid;
 
 for i=1:numel(varargin)
     %Method
@@ -26,6 +28,14 @@ for i=1:numel(varargin)
     if strcmp(varargin{i},'Rois')
         rois=varargin{i+1};
     end
+    %ClassID
+    if strcmp(varargin{i},'ClassID')
+        classiid=varargin{i+1};
+    end  
+    %ClassIDFluo
+    if strcmp(varargin{i},'ClassIDFluo')
+        classiidfluo=varargin{i+1};
+    end    
 end
 
 classes=classi.classes;
@@ -48,7 +58,7 @@ classes=classi.classes;
 %     classiidsNum=numel(classiid);
 % end
 % classiid=(classiid{classiidsNum});
-classiid=classi.strid;
+
 
 rls.divDuration=[];
 rls.framediv=[];
@@ -90,7 +100,7 @@ for r=rois
                 rlsResults(cc).groundtruth=0;
                 rlsResults(cc).fluo=[];
                 
-                divFluo=computeFluoDiv(classi,r,classiid,rlsResults(cc));
+                divFluo=computeFluoDiv(classi,r,classiidfluo,rlsResults(cc));
                 rlsResults(cc).fluo=divFluo;
             else
                 disp(['there is no result available for ROI ' num2str(r) '=' num2str(classi.roi(r).id)]);
@@ -260,28 +270,29 @@ end
 
 
 %==============================================FLUO======================================================
-function divFluo=computeFluoDiv(classi,r,classiid,rls)
+function divFluo=computeFluoDiv(classi,r,classiidfluo,rls)
 divFluo=[];
-if isfield(classi.roi(r).results,classiid)
+if isfield(classi.roi(r).results,classiidfluo)
     %essayer try catch
-    if isfield(classi.roi(r).results.(classiid),'fluo')
-        if isfield(classi.roi(r).results.(classiid).fluo,'maxf')
-            for chan=1:numel(classi.roi(r).results.(classiid).fluo.maxf(:,1))
+    if isfield(classi.roi(r).results.(classiidfluo),'fluo')
+        if isfield(classi.roi(r).results.(classiidfluo).fluo,'maxf')
+            for chan=1:numel(classi.roi(r).results.(classiidfluo).fluo.maxf(:,1))
                 tt=1;
                 for t=1:rls.ndiv
-                    divFluo.maxf(chan,t)=mean(classi.roi(r).results.(classiid).fluo.maxf(chan,rls.framediv(tt):rls.framediv(tt+1)));
+                    divFluo.maxf(chan,t)=mean(classi.roi(r).results.(classiidfluo).fluo.maxf(chan,rls.framediv(tt):rls.framediv(tt+1)));
                     tt=tt+1;
                 end
             end
         else
             disp(['There is no fluo.maxf data for this ROI' num2str(r)])
         end
-
-        if isfield(classi.roi(r).results.(classiid).fluo,'meanf')
-            for chan=1:numel(classi.roi(r).results.(classiid).fluo.meanf(:,1))
+        
+        
+        if isfield(classi.roi(r).results.(classiidfluo).fluo,'meanf')
+            for chan=1:numel(classi.roi(r).results.(classiidfluo).fluo.meanf(:,1))
                 tt=1;
                 for t=1:rls.ndiv
-                    divFluo.meanf(chan,t)=mean(classi.roi(r).results.(classiid).fluo.meanf(chan,rls.framediv(tt):rls.framediv(tt+1)));
+                    divFluo.meanf(chan,t)=mean(classi.roi(r).results.(classiidfluo).fluo.meanf(chan,rls.framediv(tt):rls.framediv(tt+1)));
                     tt=tt+1;
                 end
             end
