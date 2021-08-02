@@ -5,6 +5,7 @@ classdef fov < handle
         channel={}; %channel names when importing images 
         tag='Field of view';
         comments='';
+        flaggedROIs=[];
         display=struct('intensity',1,'frame',1,'selectedchannel',1,'binning',1); % Intensity is the scaling applied for each channel
         % binning=1;
         id=''; % id string that is specific of each field of view

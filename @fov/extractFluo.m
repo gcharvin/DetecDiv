@@ -21,7 +21,7 @@ function extractFluo(obj,varargin)
 
 kMaxPix=20;
 rois=1:numel(obj.roi);
-method='maxPixels';
+method='full';
 channelSegCell=3;
 channelSegNuc=4;
 
@@ -29,7 +29,7 @@ for i=1:numel(varargin)
     %Method
     if strcmp(varargin{i},'Method')
         method=varargin{i+1};
-        if strcmp(method,'maxPixels') && strcmp(method,'mean') && strcmp(method,'cell')
+        if strcmp(method,'full') && strcmp(method,'mean') && strcmp(method,'cell')
             error('Please enter a valide method');
         end
     end
@@ -64,23 +64,22 @@ for i=1:numel(varargin)
         channels=varargin{i+1};
     end
 end
-%%
 
-%if numel(obj.roi(rois(1)).results)~=0
-%     classiid=fieldnames(obj.roi(rois(1)).results);
-%     str=[];
-%     for i=1:numel(classiid)
-%         str=[str num2str(i) ' - ' classiid{i} ';'];
-%     end
-%     prompt=['Choose which classi : ' str];
-%     classiidsNum=input(prompt);
-%     if numel(classiidsNum)==0
-%        classiidsNum=numel(classiid);
-%     end
-%     classiid=classiid{classiidsNum};
-% else
-%     classiid='tmp';
-% end
+if numel(obj.roi(rois(1)).results)~=0
+    classiid=fieldnames(obj.roi(rois(1)).results);
+    str=[];
+    for i=1:numel(classiid)
+        str=[str num2str(i) ' - ' classiid{i} ';'];
+    end
+    prompt=['Choose which classi : ' str];
+    classiidsNum=input(prompt);
+    if numel(classiidsNum)==0
+       classiidsNum=numel(classiid);
+    end
+    classiid=classiid{classiidsNum};
+else
+    classiid='tmp';
+end
 
 %%
 if strcmp(method,'full')
