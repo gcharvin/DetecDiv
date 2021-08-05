@@ -170,16 +170,19 @@ switch classiftype
         emptyid=findclassid(classes,'empty');
         
         %==============find BIRTH===============
+        firstunb=find(id==unbuddedid,1,'first');
         firstsm=find(id==smid,1,'first');
         firstlg=find(id==lbid,1,'first');        
+        if numel(firstunb)==0
+            firstunb=NaN;
+        end
         if numel(firstsm)==0
             firstsm=NaN;
         end
         if numel(firstlg)==0
             firstlg=NaN;
         end
-        
-        frameBirth=min(firstsm,firstlg);
+        frameBirth=min([firstunb,firstsm,firstlg]);
                 
         %========find potential first EMPTY frame, after birth=======
         frameEmptied=[];
@@ -228,6 +231,9 @@ switch classiftype
             if (id(j)==lbid && id(j+1)==smid) || (id(j)==lbid && id(j+1)==unbuddedid) % cell has divided
                 divFrames=[divFrames j];
             end
+        end
+        if numel(divFrames)==0
+            divFrames=NaN;
         end
         
 %         if numel(divFrames)<3
