@@ -166,7 +166,7 @@ to groundtruth
 ```statRLS(rls)```
 ### Extract signal from ROIs ###
 ---------------------
-```myproject.fov.extractFluo(cf arguments below)```
+```myproject.fov(1).extractFluo(cf arguments below)```
 or
 ```myproject.processing.classification(id).extractFluo(cf arguments below)```
 Extract signal from the ROIs of the fov or classi object. 
@@ -175,6 +175,15 @@ Arguments:
 'Channels'
 'Frames'
 'Rois'
+
+```myproject.fov(1).detectFluoPattern('Channels',[4,5])```
+Arguments:
+*'Method': 'full' check .fluo.full.maxf // 'mean' checks the fluo.meanf
+*'Channels'
+*'Frames'
+*'Rois'
+*'fluoThreshold'
+*'frameThreshold' number of frames to be above fluoThreshold
 
 ### Exporting movies ###
 ------------------------
