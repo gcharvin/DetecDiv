@@ -5,18 +5,18 @@ function detectFluoPattern(obj,varargin)
 %obj.extractFluo must have been run beforehand.
 
 %Arguments:
-%*'Method': 'maxPixels' check .fluo.maxf // 'mean' checks the fluo.meanf
+%*'Method': 'full' check .fluo.full.maxf // 'mean' checks the fluo.meanf
 %*'Channels'
 %*'Frames'
 %*'Rois'
 %*'fluoThreshold'
 %*'frameThreshold' number of frames to be above fluoThreshold
 
-fluoThreshold=1500;
+fluoThreshold=500;
 frameThreshold=5;
 frames=1:numel(obj.srclist{1}); % take the number of frames from the image list 
 rois=1:numel(obj.roi);
-method='maxPixels';
+method='full';
 channels=1:numel(obj.srcpath);
 if numel(channels)>1
     channels=2:numel(obj.srcpath); %avoid channel 1 that is mostof the time not fluo
@@ -26,7 +26,7 @@ for i=1:numel(varargin)
     %Method
     if strcmp(varargin{i},'Method')
         method=varargin{i+1};
-        if strcmp(method,'maxPixels') && strcmp(method,'mean')
+        if strcmp(method,'full') && strcmp(method,'mean')
             error('Please enter a valide method');
         end
     end
@@ -73,15 +73,15 @@ else
 end
 
 %%
-if strcmp(method,'maxPixels')
+if strcmp(method,'full')
     obj.flaggedROIs=[];
     for r=rois %to parfor
         for c=channels
             flagFluo=0;
             for t=frames
-                if numel(obj.roi(r).results.(classiid).fluo.maxf)==0
+                if numel(obj.roi(r).results.(classiid).fluo.full.maxf)==0
                     error('You must extract the meanfluo of the ROI before running this method. See .extractFluo. At least one frame has not been extracted');
-                elseif obj.roi(r).results.(classiid).fluo.maxf(c,t)>fluoThreshold
+                elseif obj.roi(r).results.(classiid).fluo.full.maxf(c,t)>fluoThreshold
                     flagFluo=flagFluo+1;
                 end
             end
@@ -107,9 +107,9 @@ if strcmp(method,'mean')
         for c=channels
             flagFluo=0;
             for t=frames
-                if numel(obj.roi(r).results.(classiid).fluo.meanf)==0
+                if numel(obj.roi(r).results.(classiid).fluo.full.meanf)==0
                     error('You must extract the meanfluo of the ROI before running this method. See .extractFluo. At least one frame has not been extracted');
-                elseif obj.roi(r).results.(classiid).fluo.meanf(c,t)>fluoThreshold
+                elseif obj.roi(r).results.(classiid).fluo.full.meanf(c,t)>fluoThreshold
                     flagFluo=flagFluo+1;
                 end
             end
