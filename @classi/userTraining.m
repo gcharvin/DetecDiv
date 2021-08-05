@@ -1,8 +1,15 @@
-function userTraining(classif)
+function userTraining(classif,varargin)
 
 % this function load the training process for a specified classification
 % task
-
+classitype=[];
+for i=1:numel(varargin)
+    %Method
+    if strcmp(varargin{i},'Roi')
+        classitype=varargin{i+1};
+    end
+end
+        
 category=classif.category;
 
 disp(['Number of classes defined by user: ' num2str(numel(classif.classes))]);
@@ -32,15 +39,16 @@ rois=resp;
 annotateROIs(classif,rois);
 
 else % image based classification and regression 
-    
-prompt='Please enter the ROI number in which to do training; Default:1';
-classitype= input(prompt);
 
-if numel(classitype)==0
-    classitype=1;
-end
-
-channel=classif.channel(1);
+    if numel(classitype)==0
+        prompt='Please enter the ROI number in which to do training; Default:1';
+        classitype= input(prompt);
+        
+        if numel(classitype)==0
+            classitype=1;
+        end
+    end
+    channel=classif.channel(1);
 
 % comment : disable restrictions on channel display:
 %%classif.roi(classitype).display.selectedchannel=zeros(1,numel(classif.roi(classitype).display.selectedchannel));
