@@ -100,7 +100,7 @@ if numel(handles)==0
         end
         
         if numel(classif)>0
-            set(mitem(i),'Enable','off');
+        %    set(mitem(i),'Enable','off');
         else
             
         end
