@@ -231,11 +231,11 @@ end
 
 
 %========POSITION IMAGE=========
-h.Position(1:2)=100;
-h.Position(3)=1200;
-h.Position(4)=750;
+% h.Position(1:2)=100;
+% h.Position(3)=1200;
+% h.Position(4)=750;
 
-h.UserData=him;
+%h.UserData=him;
 
 % reset mouse interaction function
 h.WindowButtonDownFcn='';
