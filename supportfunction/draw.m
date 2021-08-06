@@ -318,7 +318,7 @@ if numel(classif)>0
                 cha1=1;
                 % axes where to copy the new axes
                 axes(hp(cha1));
-                alpha(0.6);
+                alpha(0.8);
                 
                 cha1pos=get(hp(cha1),'Position');
                 hcopy=findobj(hp,'UserData',classif.strid);
@@ -1484,12 +1484,13 @@ end
                 
                 % for each channel perform normalization
                 %pix
+                %INTENSITY
                 if numel(pix)==1 % single channel to display
                     %pix
                     tmp=src(:,:,pix,:);
                      meangfp=0.3*double(mean(tmp(:)));
                       mingfp=double(min(tmp(:)));
-                      maxgfp=double(0.8*max(tmp(:)));
+                      maxgfp=double(0.7*max(tmp(:)));
                       
 %                     % pix,i
                      it=mean(obj.display.intensity(i,:));
