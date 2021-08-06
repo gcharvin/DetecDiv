@@ -59,7 +59,7 @@ end
 if hidefig==1
     h=figure('Tag',['Traj' num2str(obj.id)],'Color','w','Units', 'Normalized', 'Position',[0 0 1 1],'Visible','off');
 else
-    h=figure('Tag',['Traj' num2str(obj.id)],'Color','w','Units', 'Normalized', 'Position',[0 0.4 1 0.5]);
+    h=figure('Tag',['Traj' num2str(obj.id)],'Color','w','Units', 'Normalized', 'Position',[0 0 1 1]);
 end
 
 %===========CLASSES============
