@@ -21,7 +21,7 @@ disp('Starting parallelized jobs for data formatting....')
 
 warning off all
 
-parfor i=rois
+for i=rois
     disp(['Launching ROI ' num2str(i) :' processing...'])
     
     
@@ -46,7 +46,9 @@ parfor i=rois
     cc=cltmp(i).findChannelID(classif.strid);
     
     if numel(cc)>0
-        pixcc=find(cltmp(i).channelid==cc);
+        
+        %pixcc=find(cltmp(i).channelid==cc)
+        pixcc=cc;
         
         lab=cltmp(i).image(:,:,pixcc,:);
         
