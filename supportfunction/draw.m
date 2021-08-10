@@ -1499,7 +1499,7 @@ end
                     if maxgfp==0
                         maxgfp=1;
                     end
-                    % frame
+                     frame
                     % size(obj.image)
                     
                     imout=obj.image(:,:,pix,frame);

@@ -4,8 +4,9 @@ function formatDataForTraining(classif) %mov,trapsid,option)
 
 
 
-if exist([classif.path '/trainingParam.mat'])
-load([classif.path '/trainingParam.mat']);
+str=fullfile(classif.path,'trainingParam.mat');
+if exist(str)
+load(str);
 else
     disp('There are not training parameters defined yet: first use the classif.setTrainingParam function !');
     return;
