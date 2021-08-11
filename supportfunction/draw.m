@@ -203,7 +203,7 @@ for i=1:numel(obj.display.channel)
        % size(im)
         
          aa=h.Position;
-         
+
         if dis==0
             him.image(cc)=imshow(im(cc).data);
         else
@@ -212,6 +212,7 @@ for i=1:numel(obj.display.channel)
             % 'ok'
         %    return;
         end
+
         h.Position=aa; % forcing positioning (in case cd==1)
 
         set(hp(cc),'Tag',['AxeROI' num2str(cc)]);
@@ -230,11 +231,13 @@ for i=1:numel(obj.display.channel)
            set(gca,'Position',[0.2 0.2 0.7 0.7]  );
         end
         
+ 
         cc=cc+1;
         
-        
+     
     end
 end
+
 
 
 
@@ -244,7 +247,7 @@ end
 
 
 %========POSITION IMAGE=========
-set(h,'Units', 'Normalized','Position',[0 0 1 1]);
+%set(h,'Units', 'Normalized','Position',[0 0 1 1]);
 
 
 h.UserData=him;

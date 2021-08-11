@@ -121,7 +121,7 @@ for fr=1:size(gfp,4)
    
     for i=2:numel(classif.classes) % 1 st class is considered default class
        %if i>1
-     BW=features(:,:,i)>0.9;   
+     BW=features(:,:,i)>0.7; % 0.9   
      
 
      
