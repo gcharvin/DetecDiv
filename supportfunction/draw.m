@@ -93,7 +93,9 @@ if numel(handles)==0
         pix=find(obj.channelid==i); % find matrix index associated with channel
         pix=pix(1); % there may be several items in case of a   multi-array channel
         
-        if obj.display.selectedchannel(pix)==1
+        % here !!!!!
+         if obj.display.selectedchannel(i)==1
+       % if obj.display.selectedchannel(pix)==1
             set(mitem(i),'Checked','on');
         else
             set(mitem(i),'Checked','off');
@@ -114,8 +116,9 @@ cd=0;
 for i=1:numel(obj.display.channel)
      pix=find(obj.channelid==i); % find matrix index associated with channel
  pix=pix(1); % there may be several items in case of a   multi-array channel
-        
-    if obj.display.selectedchannel(pix)==1
+ 
+          if obj.display.selectedchannel(i)==1
+ %   if obj.display.selectedchannel(pix)==1
         cd=cd+1;
     end
 end
@@ -154,20 +157,25 @@ if numel(classif)>0
     cmap=classif.colormap;
 end
 
+
 for i=1:numel(obj.display.channel)
     
     pix= find( obj.channelid==i);
     pix=pix(1);
     
-    if obj.display.selectedchannel(pix)==1
+    if obj.display.selectedchannel(i)==1
+   % if obj.display.selectedchannel(pix)==1
         figure(h);
         
+
         if cd>1
             hp(cc)=subplot(1,cd,cc);
         else
+            
             hp(cc)=axes('Units','normalized');
         end
-        
+       
+
         dis=0;
         % pixelchannel
         if numel(classif)>0
@@ -191,22 +199,25 @@ for i=1:numel(obj.display.channel)
                 cmap=shallowColormap(maxe);
             end
         end
-        % dis
-     %   cc
+  
        % size(im)
         
+         aa=h.Position;
+         
         if dis==0
             him.image(cc)=imshow(im(cc).data);
         else
             
             him.image(cc)=imshow(im(cc).data,cmap);
             % 'ok'
-            %return;
+        %    return;
         end
-        
+        h.Position=aa; % forcing positioning (in case cd==1)
+
         set(hp(cc),'Tag',['AxeROI' num2str(cc)]);
         
         set(hp(cc),'UserData',obj.display.channel{i});
+    
         
         %axis equal square
         %     tt=obj.display.intensity(i,:);
@@ -216,7 +227,7 @@ for i=1:numel(obj.display.channel)
         %         end
         
         if cd==1 % setting position in case of one axis, to adjust display size
-            set(gca,'Position',[0.2 0.2 0.7 0.7]  );
+           set(gca,'Position',[0.2 0.2 0.7 0.7]  );
         end
         
         cc=cc+1;
@@ -224,6 +235,8 @@ for i=1:numel(obj.display.channel)
         
     end
 end
+
+
 
 if cd>0
     linkaxes(hp);
@@ -436,7 +449,8 @@ for i=1:numel(obj.display.channel)
      pix=find(obj.channelid==i); % find matrix index associated with channel
      pix=pix(1); % there may be several items in case of a   multi-array channel
         
-    if obj.display.selectedchannel(pix)==1
+      if obj.display.selectedchannel(i)==1
+ %   if obj.display.selectedchannel(pix)==1
         
         %hp=findobj('UserData',obj.display.channel{i});
         axes(hp(cc));
@@ -1095,7 +1109,7 @@ end
              pix=find(obj.channelid==i); % find matrix index associated with channel
              pix=pix(1); % there may be several items in case of a   multi-array channel
         
-            obj.display.selectedchannel(pix)=1;
+            obj.display.selectedchannel(i)=1;
             % aa=obj.display.selectedchannel(i)
         else
             
@@ -1106,7 +1120,7 @@ end
             pix=find(obj.channelid==i); % find matrix index associated with channel
              pix=pix(1); % there may be several items in case of a   multi-array channel
             
-            obj.display.selectedchannel(pix)=0;
+            obj.display.selectedchannel(i)=0;
             %  bb=obj.display.selectedchannel(i)
         end
         
@@ -1135,7 +1149,8 @@ end
             pix=find(obj.channelid==i); % find matrix index associated with channel
             pix=pix(1); % there may be several items in case of a   multi-array channel
              
-            if obj.display.selectedchannel(pix)==1         
+             if obj.display.selectedchannel(i)==1 
+         %   if obj.display.selectedchannel(pix)==1         
                 him.image(cc).CData=im(cc).data;
                 % title(hp(i),['Channel ' num2str(i) ' -Intensity:' num2str(obj.display.intensity(i))]);
                 %tt=obj.display.intensity(i,:);        
@@ -1192,7 +1207,8 @@ end
         for i=1:numel(obj.display.channel)
             pix=find(obj.channelid==i); % find matrix index associated with channel
              pix=pix(1); % there may be several items in case of a   multi-array channel
-            if obj.display.selectedchannel(pix)==1
+              if obj.display.selectedchannel(i)==1
+           % if obj.display.selectedchannel(pix)==1
                 axes(hp(cc));
                 str=obj.display.channel{i};
                 
@@ -1476,7 +1492,8 @@ end
             pix=find(obj.channelid==i); % find matrix index associated with channel
             pix=pix(1); % there may be several items in case of a   multi-array channel
              
-            if obj.display.selectedchannel(pix)==1
+              if obj.display.selectedchannel(i)==1
+        %    if obj.display.selectedchannel(pix)==1
                 % get the righ data: there may be several matrices for one single
                 % channel in case of RGB images
                 pix=find(obj.channelid==i);
@@ -1499,7 +1516,7 @@ end
                     if maxgfp==0
                         maxgfp=1;
                     end
-                     frame
+                %     frame
                     % size(obj.image)
                     
                     imout=obj.image(:,:,pix,frame);

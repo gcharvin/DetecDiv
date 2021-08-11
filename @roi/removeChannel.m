@@ -36,8 +36,13 @@ end
 
 remainscha=setxor(1:numel(obj.display.channel),channel);
 
+val=[];
+for i=1:numel(remainscha)
+    pix=find(obj.channelid==remainscha(i));
+    val=[val pix];
+end
 
- obj.image=obj.image(:,:,remainsdim,:);
+ obj.image=obj.image(:,:,val,:);
  
 % 
 

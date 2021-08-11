@@ -5,6 +5,9 @@ function validateTrainingData(classif,varargin)
 % classif is the ref to a @classi object
 
 % 'roilist' is a vector containing ROI  from the classi object
+
+% 'roiwithgt' option only validates rois with  groundth data 
+
 %'Classifier' loads the classifier
 for i=1:numel(varargin)
     if strcmp(varargin{i},'Classifier')
@@ -47,9 +50,15 @@ end
 
 classifier=classifierStore; %either loaded or provided as an argument 
 
+roiwithgt=0;
 for i=1:numel(varargin)
     if strcmp(varargin{i},'Rois')
         roilist=varargin{i+1};
+    end
+    
+      if strcmp(varargin{i},'roiwithgt')
+       roiwithgt=1;
+       roilist=1:numel(classif.roi);
     end
 end
 
@@ -72,6 +81,49 @@ for i=1:length(roilist) % loop on all ROIs using parrallel computing
  if numel(roiobj.id)==0
      continue;
  end
+ 
+if roiwithgt==1 % chacks if ground truth data are avaiable for this ROI, otherwise skips the ROI
+    ground=0;
+    
+    switch classif.typeid
+        case {2,8} % pixel classification
+            ch= roiobj.findChannelID(classif.strid);
+            if numel(ch)>0 % groundtruth channel exists
+                % checks if at least one image has been annotated  first!
+                
+                if numel( roiobj.image)==0 % loads the image
+                     roiobj.load;
+                end
+                
+                im= roiobj.image;
+                
+                imch=im(:,:,ch,:);
+                if sum(imch(:))>0 % at least one image was annotated
+                    ground=1;
+                end
+            end
+            
+   
+            
+        otherwise % image classification
+            classistr=classif.strid;
+            % if roi was used for user training, display the training data first
+            if numel( roiobj.train)~=0
+                if isfield(roiobj.train,classistr)
+                    if numel(roiobj.train.(classistr).id) > 0
+                        if sum(roiobj.train.(classistr).id)>0 % training exists for this ROI !
+                            ground=1;
+                        end
+                    end
+                end
+            end
+    end
+    
+    if ground==0
+                  disp(['There is no groundtruth available for roi ' num2str(roiobj.id) ' , skipping roi...']);
+                  continue
+    end
+end
  
   disp('-----------');
   disp(['Classifying ' num2str(roiobj.id)]);

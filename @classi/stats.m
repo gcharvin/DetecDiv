@@ -56,8 +56,12 @@ for j=listroi
                     ground=1;
                 end
             end
+            
+            
             if numel(obj.findChannelID(['results_' classif.strid]))>0
                 resok=1;
+            else
+                  disp('There is no result available for this roi');
             end
             
         otherwise % image classification
