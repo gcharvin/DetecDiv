@@ -147,7 +147,7 @@ cc=1;
 him=[];
 hp=[];
 
-pos=h.Position;
+%pos=h.Position;
 
 if numel(classif)>0
     %'ok'
@@ -231,9 +231,8 @@ end
 
 
 %========POSITION IMAGE=========
-% h.Position(1:2)=100;
-% h.Position(3)=1200;
-% h.Position(4)=750;
+set(h,'Units', 'Normalized','Position',[0 0 1 1]);
+
 
 h.UserData=him;
 
