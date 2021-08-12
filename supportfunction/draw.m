@@ -326,6 +326,7 @@ if numel(classif)>0
         %         end
         
         cc=obj.findChannelID(classif.strid);
+        cc= obj.channelid(cc);
         
         if numel(cc)
             if obj.display.selectedchannel(cc)==1
