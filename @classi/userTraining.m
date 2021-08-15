@@ -44,6 +44,11 @@ else % image based classification and regression
         prompt='Please enter the ROI number in which to do training; Default:1';
         classitype= input(prompt);
         
+        if classitype>numel(classif.roi)
+            disp('This ROI is ot available; quitting ...');
+            return
+        end
+        
         if numel(classitype)==0
             classitype=1;
         end

@@ -375,6 +375,7 @@ if numel(classif)>0
             if strcmp(classif.category{1},'Pixel') | strcmp(classif.category{1},'Object') % only in pixel mode
                 hpaint=findobj('Tag',classif.strid); % if the painting axe is displayed
                 if numel(hpaint)~=0
+
                     set(mitem(i),'MenuSelectedFcn',{@classesMenuFcn,h,obj,hpaint.Children(1),hcopy.Children(1),hpaint,classif});
                     
                 end
