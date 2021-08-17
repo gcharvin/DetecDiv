@@ -300,6 +300,13 @@ switch classiftype
                     end
                 end
             end
+            
+            %small->unbud, can be improved by checking the islets size
+            for j=1:numel(id)-1
+                if (id(j)==smid && id(j+1)==unbuddedid)
+                    id(j)=lbid;
+                end
+            end
         end
         
         %=====Div counting=====
@@ -394,101 +401,95 @@ end
 
 %==============================================DIVERROR======================================================
 function [framedivNoFalseNeg, framedivNoFalsePos]=detectError(rlsGroundtruthr, rlsResultsr)
+framedivNoFalseNeg=NaN;
+framedivNoFalsePos=NaN;
+if numel(rlsGroundtruthr.framediv)>1 && numel(rlsResultsr.framediv)>1
+    %====1/false neg (groundtruth has a div that results doesnt)====
+    clear B IdxI IdxMinDist distance regiondup regiondupk firstdupk bwregiondup
+    for i=1:numel(rlsGroundtruthr.framediv)
+        for j=1:numel(rlsResultsr.framediv)
+            distance(i,j)=rlsGroundtruthr.framediv(i)-rlsResultsr.framediv(j);
+            pairij(i,j)=0;
+        end
+    end
 
+    %deal with cases where distance values are m and -m,make -m to 0 so its
+    %picked as the min
+    [B,I]=mink(abs(distance),2,2);
+    for l=1:size(B,1)
+        if B(l,1)==B(l,2)
+            [~,idxI]=min([distance(l,I(l,1)) distance(l,I(l,2))]);
+            distance(l,idxI)=0;%choose the negaitve value, put it to 0
+        end
+    end
 
-%====1/false neg (groundtruth has a div that results doesnt)====
-for i=1:numel(rlsGroundtruthr.framediv)
+    for i=1:numel(rlsGroundtruthr.framediv)
+            [~,idxmini]=min(abs(distance(i,:)));
+            pairij(i,idxmini)=1;
+    end
+
+    for i=1:numel(rlsGroundtruthr.framediv)
+        for j=1:numel(rlsResultsr.framediv)
+            if pairij(i,j)==1
+                distance2(i,j)=distance(i,j);
+            else distance2(i,j)=NaN;
+            end
+        end
+    end
+
     for j=1:numel(rlsResultsr.framediv)
-        distance(i,j)=rlsGroundtruthr.framediv(i)-rlsResultsr.framediv(j);
+        pairij(:,j)=(-1)*pairij(:,j);
+        [~, idx]=min(abs(distance2(:,j)));
+        pairij(idx,j)=1;
     end
-end
+    falsepair=sum((pairij==-1),2);
+    framedivNoFalseNeg=rlsGroundtruthr.framediv(not(falsepair'));
 
-%deal with cases where distance values are m and -m,make -m to 0 so its
-%picked as the min
-[B,I]=mink(abs(distance),2,2);
-for l=1:size(B,1)
-    if B(l,1)==B(l,2)
-        [~,idxI]=min([distance(l,I(l,1)) distance(l,I(l,2))]);
-        distance(l,idxI)=0;%choose the negaitve value, put it to 0
-    end
-end
-[~,IdxMinDist]=min(abs(distance),[],2);%min of each line=for a given gt, which res is the closer
-
-%find duplicates regions= more gt than res
-cc=1;
-d=1;
-while d<=numel(IdxMinDist)
-    if sum((IdxMinDist==IdxMinDist(d)))>1
-        regiondup(IdxMinDist==IdxMinDist(d))=cc;
-        cc=cc+1;
-        d=d+sum((IdxMinDist==IdxMinDist(d)))-1; %directly skip to the next region
-    else regiondup(IdxMinDist==IdxMinDist(d))=0;
-    end
-    d=d+1;
-end
-
-%find false neg
-bwregiondup=zeros(1,numel(rlsGroundtruthr.framediv));
-if max(regiondup)>0 %if there are duplicates
-    for k=1:max(regiondup)
-        regiondupk(k,:)=(regiondup==k);
-        firstdupk=find(regiondupk(k,:),1,'first');
-        NoFNegIdx=find(  distance(:,firstdupk)==min(distance(regiondupk(k,:),firstdupk))  );
-        regiondupk(k,NoFNegIdx)=0;
-    end
-    bwregiondup=sum(regiondupk,1);
-end
-
-framedivNoFalseNeg=rlsGroundtruthr.framediv(not(bwregiondup));
     
-clear B IdxI IdxMinDist distance regiondup regiondupk firstdupk bwregiondup
+    
+    clear B IdxI IdxMinDist distance pairij idx falsepair distance2
+    %====2/false pos (res has a div that gt doesnt)====
+    for i=1:numel(rlsResultsr.framediv)
+        for j=1:numel(framedivNoFalseNeg)
+            distance(i,j)=rlsResultsr.framediv(i)-framedivNoFalseNeg(j);
+            pairij(i,j)=0;
+        end
+    end
 
+    %deal with cases where distance values are m and -m,make -m to 0 so its
+    %picked as the min
+    [B,I]=mink(abs(distance),2,2);
+    for l=1:size(B,1)
+        if B(l,1)==B(l,2)
+            [~,idxI]=min([distance(l,I(l,1)) distance(l,I(l,2))]);
+            distance(l,idxI)=0;%choose the negaitve value, put it to 0
+        end
+    end
 
-%====2/false pos (res has a div that gt doesnt)====
-for i=1:numel(rlsResultsr.framediv)
+    %identify pairs, including false
+    for i=1:numel(rlsResultsr.framediv)
+            [~,idxmini]=min(abs(distance(i,:)));
+            pairij(i,idxmini)=1;
+    end
+
+    for i=1:numel(rlsResultsr.framediv)
+        for j=1:numel(framedivNoFalseNeg)
+            if pairij(i,j)==1
+                distance2(i,j)=distance(i,j);
+            else distance2(i,j)=NaN;
+            end
+        end
+    end
+
+    %identify false pairs
     for j=1:numel(framedivNoFalseNeg)
-        distance(i,j)=rlsResultsr.framediv(i)-rlsGroundtruthr.framediv(j);
+        pairij(:,j)=(-1)*pairij(:,j);
+        [~, idx]=min(abs(distance2(:,j)));
+        pairij(idx,j)=1;
     end
+    falsepair=sum((pairij==-1),2);
+    framedivNoFalsePos=rlsResultsr.framediv(not(falsepair'));
 end
-
-%deal with cases where distance values are m and -m,make -m to 0 so its
-%picked as the min
-[B,I]=mink(abs(distance),2,2);
-for l=1:size(B,1)
-    if B(l,1)==B(l,2)
-        [~,idxI]=min([distance(l,I(l,1)) distance(l,I(l,2))]);
-        distance(l,idxI)=0;%choose the negaitve value, put it to 0
-    end
-end
-
-[~,IdxMinDist]=min(abs(distance),[],2);%min of each line=for a given res, which gt is the closer
-
-%find duplicates regions= more res than gt
-cc=1;
-d=1;
-while d<=numel(IdxMinDist)
-    if sum((IdxMinDist==IdxMinDist(d)))>1
-        regiondup(IdxMinDist==IdxMinDist(d))=cc;
-        cc=cc+1;
-        d=d+sum((IdxMinDist==IdxMinDist(d)))-1; %directly skip to the next region
-    else regiondup(IdxMinDist==IdxMinDist(d))=0;
-    end
-    d=d+1;
-end
-
-%find false pos
-bwregiondup=zeros(1,numel(rlsResultsr.framediv));
-if max(regiondup)>0 %if there are duplicates
-    for k=1:max(regiondup)
-        regiondupk(k,:)=(regiondup==k);
-        firstdupk=find(regiondupk(k,:),1,'first');
-        NoFNegIdx=find(  distance(:,firstdupk)==min(distance(regiondupk(k,:),firstdupk))  );
-        regiondupk(k,NoFNegIdx)=0;
-    end
-    bwregiondup=sum(regiondupk,1);
-end
-framedivNoFalsePos=rlsResultsr.framediv(not(bwregiondup));
-
 
 
 
