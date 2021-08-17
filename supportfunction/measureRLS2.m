@@ -11,6 +11,9 @@ function [rls,rlsResults,rlsGroundtruth]=measureRLS2(classi,varargin)
 %rlsGroundtruth only groundtruth
 classiftype='bud';
 postProcessing=1;
+errorDetection=1;
+ArrestThreshold=100;
+DeathThreshold=5;
 rois=1:numel(classi.roi);
 classiid=classi.strid;
 classiidfluo=classiid;
@@ -35,7 +38,27 @@ for i=1:numel(varargin)
     %ClassIDFluo
     if strcmp(varargin{i},'ClassIDFluo')
         classiidfluo=varargin{i+1};
-    end    
+    end
+    
+    %ArrestThreshold
+    if strcmp(varargin{i},'ArrestThreshold')
+        ArrestThreshold=varargin{i+1};
+    end
+    
+    %DeathThreshold
+    if strcmp(varargin{i},'DeathThreshold')
+        DeathThreshold=varargin{i+1};
+    end
+    
+    %postProcessing
+    if strcmp(varargin{i},'PostProcessing')
+        postProcessing=varargin{i+1};
+    end
+    
+    %detectError
+    if strcmp(varargin{i},'ErrorDetection')
+        errorDetection=varargin{i+1};
+    end
 end
 
 classes=classi.classes;
@@ -83,9 +106,11 @@ for r=rois
             if sum(classi.roi(r).results.(classiid).id)>0
                 id=classi.roi(r).results.(classiid).id; % results for classification         
 
-                divTimes=computeDivtime(id,classes,classiftype);
+                divTimes=computeDivtime(id,classes,classiftype,DeathThreshold,ArrestThreshold,postProcessing);
                 
                 rlsResults(cc).divDuration=divTimes.duration;
+                rlsResults(cc).frameBirth=divTimes.frameBirth;
+                rlsResults(cc).frameEnd=divTimes.frameEnd;
                 rlsResults(cc).framediv=divTimes.framediv;
                 rlsResults(cc).sep=[];
                 rlsResults(cc).trapfov=classi.roi(r).id;
@@ -117,9 +142,11 @@ for r=rois
             idg=classi.roi(r).train.(classiid).id; % results for classification
              disp(['Groundtruth data are available for ROI ' num2str(r) '=' num2str(classi.roi(r).id)]);
             
-            divTimesG=computeDivtime(idg,classes,classiftype); % groundtruth data
+            divTimesG=computeDivtime(idg,classes,classiftype,DeathThreshold,ArrestThreshold,postProcessing); % groundtruth data
                         
             rlsGroundtruth(ccg).divDuration=divTimesG.duration;
+            rlsGroundtruth(ccg).frameBirth=divTimesG.frameBirth;
+            rlsGroundtruth(ccg).frameEnd=divTimesG.frameEnd;
             rlsGroundtruth(ccg).framediv=divTimesG.framediv;
             rlsGroundtruth(ccg).sep=[];
             rlsGroundtruth(ccg).trapfov=classi.roi(r).id;
@@ -137,6 +164,18 @@ for r=rois
     ccg=ccg+1;
 end
 
+if errorDetection==1
+    if numel([rlsResults.groundtruth])==numel([rlsGroundtruth.groundtruth])
+        disp('Proceeding to error detection')
+        for r=1:numel([rlsResults.groundtruth])
+            [rlsGroundtruth(r).noFalseDiv, rlsResults(r).noFalseDiv]=detectError(rlsGroundtruth(r),rlsResults(r));
+            rlsGroundtruth(r).falseDiv=setdiff(rlsGroundtruth(r).framediv,rlsGroundtruth(r).noFalseDiv);
+            rlsResults(r).falseDiv=setdiff(rlsResults(r).framediv,rlsResults(r).noFalseDiv);
+        end
+    else disp('Groundtruth and Result vectors dont match, quitting...') 
+    end
+end
+
 if numel([rlsResults.groundtruth])==numel([rlsGroundtruth.groundtruth])
 rls=[rlsResults rlsGroundtruth];
 else
@@ -150,8 +189,9 @@ rls=rls(ix);
 
 
 
+
 %=========================================DIVTIMES=================================================
-function [divTimes]=computeDivtime(id,classes,classiftype)%,postProcessing)
+function [divTimes]=computeDivtime(id,classes,classiftype,DeathThreshold,ArrestThreshold,postProcessing)
 
 divTimes=[];
 
@@ -169,7 +209,9 @@ switch classiftype
         unbuddedid=findclassid(classes,'unbud');
         emptyid=findclassid(classes,'empty');
         
-        %==============find BIRTH===============
+        
+        %==============1// find BIRTH===============
+        frameBirth=NaN;
         firstunb=find(id==unbuddedid,1,'first');
         firstsm=find(id==smid,1,'first');
         firstlg=find(id==lbid,1,'first');        
@@ -183,69 +225,111 @@ switch classiftype
             firstlg=NaN;
         end
         frameBirth=min([firstunb,firstsm,firstlg]);
-                
+        
+        %=======2// Identify potential END====
         %========find potential first EMPTY frame, after birth=======
-        frameEmptied=[];
+        frameEmptied=NaN;
         bwEmpty=(id==emptyid);
         bwEmptyLabeled=bwlabel(bwEmpty);
         for k=1:max(bwEmptyLabeled)
             bwEmpty=(bwEmptyLabeled==k);
-            if sum(bwEmpty)> 3 && find(bwEmpty,1,'first')>frameBirth
+            if sum(bwEmpty)> 2 && find(bwEmpty,1,'first')>frameBirth
                 frameEmptied=find(bwEmpty,1,'first');
                 break
             end
         end
-        if numel(frameEmptied)==0
-            frameEmptied=NaN;
-        end
         
-        % find DEATH (need 5 frames to be validated)
+        %======find DEATH (need 5 frames to be validated)======
         frameDeath=NaN;
         bwDeath=(id==deathid);
         bwDeathLabeled=bwlabel(bwDeath);
         
         for k=1:max(bwDeathLabeled)
             bwDeath=(bwDeathLabeled==k);
-            if sum(bwDeath)> 5
+            if sum(bwDeath)> DeathThreshold
                 frameDeath=find(bwDeath,1,'first');
                 break
             end
         end
         
         %=================find potential first CLOG==============
+        frameClog=NaN;
         frameClog=find(id==clogid,1,'first');
-        if numel(frameClog)==0
-            frameClog=NaN;
-        end
         
-        %===============find END===================
-        frameEnd=min([frameClog frameDeath frameEmptied]);
+        %=======find potential division arrest==========
+        frameArrest=NaN;
+        for arrestid=[unbuddedid,smid,lbid]
+            bwArrest=(id==arrestid);
+            bwArrestLabel=bwlabel(bwArrest);
+            for k=1:max(bwArrestLabel)
+                bwArrest=(bwArrestLabel==k);
+                if sum(bwArrest)> ArrestThreshold
+                    if numel(frameArrest)==1
+                        frameArrest=min(frameArrest,(find(bwArrest,1,'first')+ ArrestThreshold));
+                    else
+                        frameArrest=find(bwArrest,1,'first')+ ArrestThreshold;
+                    end
+                    break
+                end
+            end
+        end
+              
+        %===============3/ find END===================
+        frameEnd=min([frameClog, frameDeath, frameEmptied, frameArrest]);
         if isnan(frameEnd) % cell is not dead or clogged or empty, TO DO: SEPARATE BETWEEN DEATH AND CENSOR
             frameEnd=numel(id);
             %machin.censor=1;
         end
         
-        %==============detect divisions============
-        divFrames=[];
-        for j=frameBirth:frameEnd-1
-            if (id(j)==lbid && id(j+1)==smid) || (id(j)==lbid && id(j+1)==unbuddedid) % cell has divided
-                divFrames=[divFrames j];
+        %==============4/ detect divisions============
+        %==post-processing
+        if postProcessing==1
+            bwsmid=(id==smid);
+            bwsmidLabel=bwlabel(bwsmid); %find small islets
+            for k=1:max(bwsmidLabel)
+                bwsmidk(k,:)=(bwsmidLabel==k);
+            end
+            
+            for k=2:max(bwsmidLabel)
+                if sum(bwsmidk(k,:))==1 %if a smallid islet is of size 1, check the neighbours islets
+                    idx=find(bwsmidk(k,:),1);
+                    idxprev=find(bwsmidk(k-1,:),1,'last');%find previous islet end
+                    if k<max(bwsmidLabel),  idxnext=find(bwsmidk(k+1,:),1,'first');else, idxnext=NaN; end %find next islet start
+                    if (idx-idxprev<3) || (idxnext-idx <3) %if the potential false bud emergence is too close from another small islet -->correct it
+                        id(idx)=id(idx-1);
+                    end
+                end
             end
         end
+        
+        %=====Div counting=====
+        divFrames=[];
+        if ~isnan(frameBirth)
+        %===divided before start of timelapse==?
+            if id(frameBirth)==smid || id(frameBirth)==lbid
+                divFrames=frameBirth;
+            end
+            
+         %==detect bud emergence==
+            for j=frameBirth:frameEnd-1
+                if (id(j)==lbid && id(j+1)==smid) || (id(j)==unbuddedid && id(j+1)==smid) % bud has emerged
+                    divFrames=[divFrames j+1];
+                end
+            end
+        end
+        %
         if numel(divFrames)==0
             divFrames=NaN;
         end
-        
-%         if numel(divFrames)<3
-%             %continue
-%         else
-            divTimes.framediv=divFrames;
-            divTimes.duration=diff(divFrames); % division times !
-%         end
+        divTimes.frameBirth=frameBirth;
+        divTimes.frameEnd=frameEnd;
+        divTimes.framediv=divFrames;
+        divTimes.duration=diff(divFrames); % division times !
+
         
 
         
-    %====================CLASSIF DIV======================
+    %%=================================CLASSIF DIV======================================
     case 'div'
         deathid=findclassid(classes,'dead');
         censorid=findclassid(classes,'censor');
@@ -307,6 +391,104 @@ if isfield(classi.roi(r).results,classiidfluo)
         end
     end
 end
+
+%==============================================DIVERROR======================================================
+function [framedivNoFalseNeg, framedivNoFalsePos]=detectError(rlsGroundtruthr, rlsResultsr)
+
+
+%====1/false neg (groundtruth has a div that results doesnt)====
+for i=1:numel(rlsGroundtruthr.framediv)
+    for j=1:numel(rlsResultsr.framediv)
+        distance(i,j)=rlsGroundtruthr.framediv(i)-rlsResultsr.framediv(j);
+    end
+end
+
+%deal with cases where distance values are m and -m,make -m to 0 so its
+%picked as the min
+[B,I]=mink(abs(distance),2,2);
+for l=1:size(B,1)
+    if B(l,1)==B(l,2)
+        [~,idxI]=min([distance(l,I(l,1)) distance(l,I(l,2))]);
+        distance(l,idxI)=0;%choose the negaitve value, put it to 0
+    end
+end
+[~,IdxMinDist]=min(abs(distance),[],2);%min of each line=for a given gt, which res is the closer
+
+%find duplicates regions= more gt than res
+cc=1;
+d=1;
+while d<=numel(IdxMinDist)
+    if sum((IdxMinDist==IdxMinDist(d)))>1
+        regiondup(IdxMinDist==IdxMinDist(d))=cc;
+        cc=cc+1;
+        d=d+sum((IdxMinDist==IdxMinDist(d)))-1; %directly skip to the next region
+    else regiondup(IdxMinDist==IdxMinDist(d))=0;
+    end
+    d=d+1;
+end
+
+%find false neg
+bwregiondup=zeros(1,numel(rlsGroundtruthr.framediv));
+if max(regiondup)>0 %if there are duplicates
+    for k=1:max(regiondup)
+        regiondupk(k,:)=(regiondup==k);
+        firstdupk=find(regiondupk(k,:),1,'first');
+        NoFNegIdx=find(  distance(:,firstdupk)==min(distance(regiondupk(k,:),firstdupk))  );
+        regiondupk(k,NoFNegIdx)=0;
+    end
+    bwregiondup=sum(regiondupk,1);
+end
+
+framedivNoFalseNeg=rlsGroundtruthr.framediv(not(bwregiondup));
+    
+clear B IdxI IdxMinDist distance regiondup regiondupk firstdupk bwregiondup
+
+
+%====2/false pos (res has a div that gt doesnt)====
+for i=1:numel(rlsResultsr.framediv)
+    for j=1:numel(framedivNoFalseNeg)
+        distance(i,j)=rlsResultsr.framediv(i)-rlsGroundtruthr.framediv(j);
+    end
+end
+
+%deal with cases where distance values are m and -m,make -m to 0 so its
+%picked as the min
+[B,I]=mink(abs(distance),2,2);
+for l=1:size(B,1)
+    if B(l,1)==B(l,2)
+        [~,idxI]=min([distance(l,I(l,1)) distance(l,I(l,2))]);
+        distance(l,idxI)=0;%choose the negaitve value, put it to 0
+    end
+end
+
+[~,IdxMinDist]=min(abs(distance),[],2);%min of each line=for a given res, which gt is the closer
+
+%find duplicates regions= more res than gt
+cc=1;
+d=1;
+while d<=numel(IdxMinDist)
+    if sum((IdxMinDist==IdxMinDist(d)))>1
+        regiondup(IdxMinDist==IdxMinDist(d))=cc;
+        cc=cc+1;
+        d=d+sum((IdxMinDist==IdxMinDist(d)))-1; %directly skip to the next region
+    else regiondup(IdxMinDist==IdxMinDist(d))=0;
+    end
+    d=d+1;
+end
+
+%find false pos
+bwregiondup=zeros(1,numel(rlsResultsr.framediv));
+if max(regiondup)>0 %if there are duplicates
+    for k=1:max(regiondup)
+        regiondupk(k,:)=(regiondup==k);
+        firstdupk=find(regiondupk(k,:),1,'first');
+        NoFNegIdx=find(  distance(:,firstdupk)==min(distance(regiondupk(k,:),firstdupk))  );
+        regiondupk(k,NoFNegIdx)=0;
+    end
+    bwregiondup=sum(regiondupk,1);
+end
+framedivNoFalsePos=rlsResultsr.framediv(not(bwregiondup));
+
 
 
 
