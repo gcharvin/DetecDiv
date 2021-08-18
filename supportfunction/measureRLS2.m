@@ -171,6 +171,9 @@ if errorDetection==1
             [rlsGroundtruth(r).noFalseDiv, rlsResults(r).noFalseDiv]=detectError(rlsGroundtruth(r),rlsResults(r));
             rlsGroundtruth(r).falseDiv=setdiff(rlsGroundtruth(r).framediv,rlsGroundtruth(r).noFalseDiv);
             rlsResults(r).falseDiv=setdiff(rlsResults(r).framediv,rlsResults(r).noFalseDiv);
+            
+            rlsGroundtruth(r).divDurationNoFalseDiv=diff(rlsGroundtruth(r).noFalseDiv);
+            rlsResults(r).divDurationNoFalseDiv=diff(rlsResults(r).noFalseDiv);
         end
     else disp('Groundtruth and Result vectors dont match, quitting...') 
     end
