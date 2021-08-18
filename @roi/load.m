@@ -19,6 +19,8 @@ else
  fprintf(['ERROR: Loading  ' obj.path '/im_' obj.id '.mat failed for ROI ' obj.id '!!!\n']);   
 end
 
+obj.log(['Loading from ' obj.path],'Loading')
+
 % load  analyses matrices
 
 % if exist([obj.path '/an_' num2str(obj.id) '.mat'])

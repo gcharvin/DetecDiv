@@ -20,6 +20,8 @@ classdef roi < handle
       
       display=struct('intensity',[1 1 1],'frame',1,'selectedchannel',1,'binning',1,'rgb',[1 1 1],'channel',{'Channel 1'});
       
+      history=table('Size',[1 3],'VariableTypes',{'datetime','string','string'},'VariableNames',{'Date','Category','Message'});
+      
       classes={};
       train=[] ; %1D array that has the size of the 4rd dim of the image array and contains assigned classes; is defined when ROI is assigned to classification 
       

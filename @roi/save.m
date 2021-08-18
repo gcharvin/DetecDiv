@@ -13,5 +13,7 @@ if numel(im)~=0
 eval(['save  ' '''' obj.path '/im_' obj.id '.mat' ''''  ' im']); 
 end
 
+obj.log(['Saved to ' obj.path '/im_' obj.id '.mat'],'Saving')
+
 % '''' allows one to use quotes !!!
  
