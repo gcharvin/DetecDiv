@@ -33,13 +33,14 @@ classifyFun=obj.processing.classification(classiid).classifyFun;
 disp(['Classifying new data using ' classifyFun]);
 
 
+if numel(classifier)==0
 classif=obj.processing.classification(classiid);
 
 path=classif.path;
 name=classif.strid;
 
 % first load classifier if not loadad to save some time 
-if numel(classifier)==0
+
     disp(['Loading classifier: ' name '...']);
     str=[path '/' name '.mat'];
     load(str); % load classifier 

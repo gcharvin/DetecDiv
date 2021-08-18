@@ -5,17 +5,49 @@ function repository(classif)
 
 % to do -->  import classif to existing project
 
-str=which('shallowLoad');
-[pth fle ext]=fileparts(str);
-filename=[pth '/@classi/repository.txt'];
-fileID=fopen(filename);
-C = textscan(fileID,'%s');
-fclose(fileID);
-str=C{1}{10}(1:end-1); % contains the path to the classi repository
+filename=fullfile(userpath, 'classifier_repository_path.txt');
 
+
+if exist(filename)
+
+fileID=fopen(filename)
+C = textscan(fileID,'%s')
+fclose(fileID);
+
+str=C{1}{1} % contains the path to the classi repository
+
+disp(['Found repository folder : ' str]);
 % now list all the classification variables available
+else
+ prompt='Local file with repository path does not exist; Create? y/n ;  Default (y): '; 
+    classitype= input(prompt,'s');
+    if numel(classitype)==0
+        classitype='y';
+    end
+    
+    if strcmp(classitype,'y')
+         disp('You will now enter the path where the repository is located;   Default: \\space2.igbmc.u-strasbg.fr\charvin\matlab\shallow_classifier_repository' );
+         prompt='Enter path:';
+        classitype= input(prompt,'s');
+        if numel(classitype)==0
+        classitype=' \\space2.igbmc.u-strasbg.fr\charvin\matlab\shallow_classifier_repository';
+        end
+        
+        if numel(exist(classitype))==0
+            disp('This path is not valid; Quitting ...');
+            return;
+        end
+        
+        writecell({classitype},filename);
+        str=classitype;
+        
+     else
+        disp('Quitting !'); 
+     end
+end
 
 l=dir(str);
+
 
 id=[];
 idstr={};
@@ -81,13 +113,13 @@ for i=1:numel(classif.roi)
     classification.roi(i).path=[str '/' classiname '/' classif.roi(i).id];
 end
 
-else % in this case, only training sets and ROIs will be copied 
+else % in this case, only ROIs will be copied 
     % first copy existing training set data 
     disp('Loading existing target classification....Be patient !');
     load([str '/' classiname2]); % classification variable
     
     %classif.roi
-    disp('Copying training datasets....Be patient !');
+    disp('Copying  ROIs ....Be patient !');
     
     %copyfile([classif.path '/trainingdataset/*'],[str '/' classiname '/trainingdataset/']);
     
@@ -95,7 +127,7 @@ else % in this case, only training sets and ROIs will be copied
     % classif and chage path ! 
     
     for i=1:numel(classif.roi)
-        disp(['Copying ROI ' num2str(i) '/' num2str(numel(classif.roi)) '...']);
+        disp(['Copying/Updating ROI ' num2str(i) '/' num2str(numel(classif.roi)) '...']);
         
         notadd=0;
         
@@ -108,6 +140,8 @@ else % in this case, only training sets and ROIs will be copied
         
         copyfile([classif.roi(i).path '/im_' classif.roi(i).id '.mat'],[str '/' classiname '/im_' classif.roi(i).id '.mat']);
         
+        disp(['ROI ' str '/' classiname '/im_' classif.roi(i).id ' has been transferred']);
+        
         if notadd==0
             disp('adding ROI to classif object....'); 
             n=numel(classification.roi);
@@ -116,10 +150,12 @@ else % in this case, only training sets and ROIs will be copied
         end
     end
     
+    % also copy/update trainingdatset ? 
+    
     % add ROIs to classification object
 end
 
-save([str '/' classiname2],'classification');
+save([str '/' classiname2 '_classification'],'classification');
 
 
 
