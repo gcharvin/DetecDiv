@@ -8,7 +8,7 @@ function mosaic(obj,varargin)
 
 name=[];
 ips=10;
-framerate=0;
+framerate=5;
 channel=1;
 fontsize=15;
 levels=[];
@@ -19,6 +19,7 @@ strid='';
 roititle=0;
 rls=0;
 Flip=0;
+rgb={};
 
 if isa(obj,'classi')
     frames=1:size(obj.roi(1).image,4); % take the number of frames from the image list
@@ -52,12 +53,9 @@ for i=1:numel(varargin)
         Flip=1;
     end
     
-    if strcmp(varargin{i},'Channel') % an array that indicates the channels being displayed, can be scalar array or strid
+    if strcmp(varargin{i},'Channel') % an array that indicates the channels being displayed, can be scalar array or strid; Multiple channels will be overlaid on the same image 
         channel=varargin{i+1};
         
-      if ischar(channel)
-         channel=obj.findChannelID(channel);   
-      end
       
       if numel(channel)==0
           disp('Channel is not found; quitting !');
@@ -65,9 +63,18 @@ for i=1:numel(varargin)
       end
     end
     
-    if strcmp(varargin{i},'Levels') % defines output levels for display, only when exported a single channel image
+    if strcmp(varargin{i},'Levels') % defines output levels for display; must be a 2D vector [low high] for 1D channels (glike a grayscale image) , and a colormap for indexed channels:  jet(16): 
+        % if several channels are to be overlaid, then a cell array of
+        % string must be used : { [low high] , jet(16)}
+        
         levels=varargin{i+1};
     end
+    
+      if strcmp(varargin{i},'RGB') % defines the RGB levels for each channel / cell array of 3D vectors
+        
+       rgb=varargin{i+1};
+      end
+    
     
     if strcmp(varargin{i},'FontSize')
         fontsize=varargin{i+1};
@@ -78,11 +85,11 @@ for i=1:numel(varargin)
         
     end
     
-    if strcmp(varargin{i},'Training') % enters the strid of the classif to be included
+    if strcmp(varargin{i},'Training') % displays the training data (ground truth)
         training=1; %varargin{i+1};
     end
     
-    if strcmp(varargin{i},'Results') % enters the strid of the classif to be included
+    if strcmp(varargin{i},'Results') %displays the classi results
         results=1;%varargin{i+1};
     end
     
@@ -102,6 +109,10 @@ for i=1:numel(varargin)
         rls=1;
     end
     
+end
+
+if numel(levels)==0
+    disp('Display levels were not provided ! Will assume that all the channels are grayscale images and will normalize levels'); 
 end
 
 
@@ -130,6 +141,8 @@ if numel(rois)
     else
         nsize=nsize(nmov,:);
     end
+    
+  
 else
     nsize=[1 1];
     nmov=1;
@@ -150,6 +163,7 @@ if isa(obj,'shallow')
         obj.fov(rois(1,1)).roi(rois(2,1)).load;
     end
     roitmp=obj.fov(rois(1,1)).roi(rois(2,1));
+
 end
 
 if isa(obj,'roi')
@@ -160,6 +174,39 @@ if isa(obj,'roi')
      roitmp=obj;
 end
 
+   nframesref=size(roitmp.image,4);
+
+% find the right channel 
+cha={};
+
+if numel( rgb)==0
+    rgb=cell(numel(channel),1);
+end
+
+if numel(levels)==0
+    levels=cell(numel(channel),1);
+end
+
+
+for i=1:numel(channel)
+    if iscell(channel)
+         cha{i}=roitmp.findChannelID(channel{i});   
+      else
+         pix=find(roitmp.channelid==channel(i));
+        cha{i}=pix;
+    end
+  
+    if numel(rgb{i})==0
+        rgb{i}=[1 1 1];
+    end
+    
+    if numel(levels{i})==0
+        levels{i}=[0 1];
+    end
+        
+end
+
+  
 % set up extra display pixels
 % columns on the left of the movie
 
@@ -179,15 +226,15 @@ end
 
 h=size(img,1)+shifty;
 w=size(img,2)+shiftx;
-imgout=zeros(nsize(1)*h,nsize(2)*w,3,size(img,4));
+imgout=zeros(nsize(1)*h,nsize(2)*w,3,numel(frames));
 cc=1;
 
-  if numel(channel)==1
-               pix=find(roitmp.channelid==channel);
-               if numel(pix)>1 % multichannel
-                   channel=pix;
-               end
-  end
+%   if numel(channel)==1
+%                pix=find(roitmp.channelid==channel);
+%                if numel(pix)>1 % multichannel
+%                    channel=pix;
+%                end
+%   end
         
 
   
@@ -210,28 +257,104 @@ for k=1:nsize(1) % include all requested rois
         roitmp.load;
         end
         
-        imtmp=roitmp.image(:,:,channel,:);
+         disp(['ROI ' roitmp.id ' loaded']);
+         
+         if numel(intersect(1:size(roitmp.image,4) , frames)) < numel(frames)
+             disp('this ROI does not have enough frames, you must provide a compatible frames argument');
+         end
+                
+        imtmp=roitmp.image(:,:,:,frames);
         
+       
         
-        disp(['ROI ' roitmp.id ' loaded']);
+     %   imblack=uint16(zeros(size(imtmp,1),shiftx,size(imtmp,3),size(imtmp,4)));
+     %   imout=cat(2,imblack,imtmp);
         
-        imblack=uint16(zeros(size(imtmp,1),shiftx,size(imtmp,3),size(imtmp,4)));
-        imout=cat(2,imblack,imtmp);
+     %   imblack2=uint16(zeros(shifty,size(imout,2),size(imout,3),size(imout,4)));
+     %   imout=cat(1,imblack2,imout);
         
-        imblack2=uint16(zeros(shifty,size(imout,2),size(imout,3),size(imout,4)));
-        imout=cat(1,imblack2,imout);
+%         imout= uint16(zeros(size(imtmp,1),size(imtmp,2),3,size(imtmp,4)));
+%         
+%         imblack=uint16(zeros(size(imtmp,1),shiftx,3,size(imtmp,4)));
+%         imout=cat(2,imblack,imtmp);
+%         
+%         imblack2=uint16(zeros(shifty,size(imout,2),3,size(imout,4)));
+%         imout=cat(1,imblack2,imout);
         
+        imout=uint16(zeros(size(imtmp,1),size(imtmp,2),3,size(imtmp,4)));
         
-        for i=1:size(imtmp,4)
+        for i=1:size(imtmp,4) % loop on frames
           
-            if numel(channel)==1 & numel(levels)>0
-            imout(:,:,1,i)=imadjust(imout(:,:,1,i),[levels(1)/65535 levels(2)/65535],[0 1]);
+           imgRGBsum=uint16(zeros(size(imtmp,1),size(imtmp,2),3));
+           
+           for ii=1:numel(cha)
+               
+           
+           imtmp2=imtmp(:,:,cha{ii},i);
+           
+           
+           if numel(cha{ii})==1 % single dimension channel => levels can be readjusted 
+             
+             
+               
+           if numel(levels{ii})==2 % A 2D vector is provided, therefore image is not an indexed one
+               imtmp2 = imadjust(imtmp2,[levels{ii}(1)/65535 levels{ii}(2)/65535],[0 1]);
+               imtmp2= cat(3, imtmp2*rgb{ii}(1), imtmp2*rgb{ii}(2), imtmp2*rgb{ii}(3)); 
+           else % channel represents an indexed image , will use provided colormap 
+               maxe= max( imtmp2(:));
+               
+               imrgbbw=uint16(zeros(size(imgRGBsum)));
+               
+               for iii=1:maxe
+                   bw=65535*uint16(imtmp2==iii);
+                   imrgb=cat(3,bw*levels{ii}(iii,1)*rgb{ii}(1),bw*levels{ii}(iii,2)*rgb{ii}(2),bw*levels{ii}(iii,3)*rgb{ii}(3));
+                   imrgbbw=imlincomb(1,imrgbbw,1,imrgb);
+               end
+               
+               imtmp2=imrgbbw;
+           
+           end
+           end
+           
+            if numel(cha{ii})==3 % already a combined image ; no RGB adjustmeent is possible
+                
             end
-            if Flip==1
-                I=imout(:,:,:,i);
-                imout(:,:,:,i)=flip(I,1);
-            end
+           
+           
+           
+           if Flip==1 % flip image upside down
+               imtmp2=flip(imtmp2,1);
+           end
+              
+           imgRGBsum=imlincomb(1,imgRGBsum,1,imtmp2);  
+           end
+           
+           imout(:,:,:,i)=imgRGBsum;
+           
+         %  figure, imshow(imgRGBsum,[])
+         %  pause
         end
+            
+            
+         %   if numel(channel)==1 & numel(levels)>0
+        %    imout(:,:,1,i)=imadjust(imout(:,:,1,i),[levels(1)/65535 levels(2)/65535],[0 1]);
+       %     t=imout(:,:,1,:);
+       %     max(t(:))
+%             end
+%             if Flip==1
+%                 I=imout(:,:,:,i);
+%                 imout(:,:,:,i)=flip(I,1);
+%             end
+      %     end
+        
+      %  end
+        
+        
+        % imout= uint16(zeros(size(imtmp,1),size(imtmp,2),3,size(imtmp,4)));
+         imblack=uint16(zeros(size(imtmp,1),shiftx,3,size(imtmp,4)));
+         imout=cat(2,imblack,imout);         
+         imblack2=uint16(zeros(shifty,size(imout,2),3,size(imout,4)));
+         imout=cat(1,imblack2,imout);
         
         % add black frame around ROIs
         framesize=2;
@@ -240,9 +363,9 @@ for k=1:nsize(1) % include all requested rois
         imout(:,1:framesize,:,:)=0;
         imout(:,end-framesize+1:end,:,:)=0;
         
-        if numel(channel)==1
-            imout=repmat(imout,[1 1 3 1]);
-        end
+%         if numel(channel)==1
+%             imout=repmat(imout,[1 1 3 1]);
+%         end
         
         %imout(:,:,2,:)=imout(:,:,1,:);
         %imout(:,:,3,:)=imout(:,:,1,:);
@@ -261,14 +384,16 @@ for k=1:nsize(1) % include all requested rois
                 str=[roitmp.id ' - '];
             end
             
-            for i=1:size(imout,4)
-                str='';
+
+            
+            for i=1:numel(frames)
+               % str='';
                 if rls==1
-                    pir=find(rlsresults.totaltime>=i,1,'first')-1;
+                    pir=find(rlsresults.totaltime>=frames(i),1,'first')-1;
                     if numel(pir)==0
                         pir=length(rlsresults.totaltime); 
                     end
-                    pit=find(rlstraining.totaltime>=i,1,'first')-1;
+                    pit=find(rlstraining.totaltime>=frames(i),1,'first')-1;
                     if numel(pit)==0
                         pit=length(rlstraining.totaltime); 
                     end
@@ -280,6 +405,7 @@ for k=1:nsize(1) % include all requested rois
                     str=[str  num2str(pir)];
                 end
                 
+ 
                 imout(:,:,:,i)=insertText( imout(:,:,:,i),[1 1],str,'Font','Arial','FontSize',10,'BoxColor',...
                     [1 1 1],'BoxOpacity',0.0,'TextColor','white','AnchorPoint','LeftTop');
             end
@@ -330,12 +456,12 @@ for k=1:nsize(1) % include all requested rois
         end
         
         %===RECTANGLES===
-        for ii=1:size(imout,4)
+        for ii=1:numel(frames)
             if numel(training) && numel(idtrain)
                 for jj=1:ncla
                     imout(:,:,:,ii) = insertShape( imout(:,:,:,ii),'Rectangle',[startx inte*jj-inte/2+shifty wid wid],...
                         'Color', {'white'},'Opacity',1);
-                    if idtrain(ii)==jj
+                    if idtrain(frames(ii))==jj
                         col=round(65535*cmap(jj,:));
                         imout(:,:,:,ii) = insertShape( imout(:,:,:,ii),'FilledRectangle',[startx+1 inte*jj-inte/2+1+shifty wid-2 wid-2],'Color',col,'Opacity',1 );
                     end
@@ -345,7 +471,7 @@ for k=1:nsize(1) % include all requested rois
                 for jj=1:ncla
                     imout(:,:,:,ii) = insertShape( imout(:,:,:,ii),'Rectangle',[startx2 inte*jj-inte/2+shifty wid wid],...
                         'Color', {'white'},'Opacity',1);
-                    if idresults(ii)==jj
+                    if idresults(frames(ii))==jj
                         col=round(65535*cmap(jj,:));
                         imout(:,:,:,ii) = insertShape( imout(:,:,:,ii),'FilledRectangle',[startx2+1 inte*jj-inte/2+1+shifty wid-2 wid-2],'Color',col,'Opacity',1 );
                     end
@@ -358,7 +484,7 @@ for k=1:nsize(1) % include all requested rois
     end
 end
 
-imgout=imgout(:,:,:,frames);
+%imgout=imgout(:,:,:,frames);
 imgout=uint8(double( imgout)/256);
 
 
