@@ -41,5 +41,5 @@ end
 
 obj.image(:,:,ch1id,:)=im2;
 
-
+ obj.log(['Imported channel to ROI'],'Processing');
 

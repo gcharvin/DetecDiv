@@ -50,6 +50,8 @@ tmp=(max(obj.channelid)+1)*ones(1,size(matrix,3));
 
 obj.channelid=[obj.channelid tmp];
 
+ obj.log(['Added channel ' num2str(numel(obj.display.channel)) ' to ROI'],'Processing');
+
 
 % then create pipeline to make machine learning : training + classification
 % classi class that belongs to shallow object % can be either standard

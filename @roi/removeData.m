@@ -32,3 +32,4 @@ if numel(res)==0
     obj.(type)=[];
 end
     
+ obj.log(['Removed training data or classi results from ROI'],'Processing');

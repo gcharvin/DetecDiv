@@ -54,3 +54,5 @@ end
 
 obj.addChannel(imtot,str,[1 1 1],[1 1 1]);
 %addChannel(obj,matrix,str,rgb,intensity)
+
+ obj.log(['Overlayed channel'],'Processing');

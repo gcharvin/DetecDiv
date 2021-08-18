@@ -4,6 +4,8 @@ function clear(obj)
 
 obj.image=[];
 
+ obj.log(['Image was cleared off'],'Saving');
+ 
 % obj.classi=[];
 % obj.train=[];
 % obj.traintrack=[];

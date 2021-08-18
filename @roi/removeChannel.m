@@ -50,3 +50,4 @@ end
  obj.display.intensity=obj.display.intensity(remainscha,:);
  obj.display.rgb=obj.display.rgb(remainscha,:);
  obj.display.selectedchannel=obj.display.selectedchannel(remainscha);
+ obj.log(['Removed channel from ROI'],'Processing');

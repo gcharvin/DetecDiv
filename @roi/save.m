@@ -9,11 +9,12 @@ if numel(im)~=0
   %   ['save  ' '''' obj.path '/im_' num2str(obj.id) '.mat' ''''  ' im']
   disp('');
  disp(['Saving ' obj.path '/im_' obj.id '.mat image file for ROI ' obj.id]);
+ obj.log(['Saving ROI image to ' obj.path '/im_' obj.id '.mat'],'Saving')
  
 eval(['save  ' '''' obj.path '/im_' obj.id '.mat' ''''  ' im']); 
 end
 
-obj.log(['Saved to ' obj.path '/im_' obj.id '.mat'],'Saving')
+
 
 % '''' allows one to use quotes !!!
  

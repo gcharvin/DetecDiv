@@ -19,7 +19,7 @@ else
  fprintf(['ERROR: Loading  ' obj.path '/im_' obj.id '.mat failed for ROI ' obj.id '!!!\n']);   
 end
 
-obj.log(['Loading from ' obj.path],'Loading')
+obj.log(['Loading ROI image from ' obj.path],'Loading')
 
 % load  analyses matrices
 
