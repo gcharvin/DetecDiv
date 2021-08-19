@@ -7,14 +7,13 @@ function repository(classif)
 
 filename=fullfile(userpath, 'classifier_repository_path.txt');
 
-
 if exist(filename)
 
-fileID=fopen(filename)
+fileID=fopen(filename);
 C = textscan(fileID,'%s')
 fclose(fileID);
 
-str=C{1}{1} % contains the path to the classi repository
+str=C{1}{1}; % contains the path to the classi repository
 
 disp(['Found repository folder : ' str]);
 % now list all the classification variables available
@@ -119,36 +118,39 @@ else % in this case, only ROIs will be copied
     load([str '/' classiname2]); % classification variable
     
     %classif.roi
-    disp('Copying  ROIs ....Be patient !');
+    disp('We will now transfer ROIs to repository');
     
     %copyfile([classif.path '/trainingdataset/*'],[str '/' classiname '/trainingdataset/']);
     
     % copy ROIs used for generating training sets, add ROI to target
     % classif and chage path ! 
     
-    for i=1:numel(classif.roi)
-        disp(['Copying/Updating ROI ' num2str(i) '/' num2str(numel(classif.roi)) '...']);
+     classification.addROI(classif);
+     
+  %  for i=1:numel(classif.roi)
+   %     disp(['Copying/Updating ROI ' num2str(i) '/' num2str(numel(classif.roi)) '...']);
         
-        notadd=0;
-        
-        if exist([str '/' classiname '/im_' classif.roi(i).id '.mat'])
-           notadd=1;
-           disp('ROI is already present at destination; overwriting....'); 
-        end
-        
-      % aa= classif.roi(i).path
-        
-        copyfile([classif.roi(i).path '/im_' classif.roi(i).id '.mat'],[str '/' classiname '/im_' classif.roi(i).id '.mat']);
-        
-        disp(['ROI ' str '/' classiname '/im_' classif.roi(i).id ' has been transferred']);
-        
-        if notadd==0
-            disp('adding ROI to classif object....'); 
-            n=numel(classification.roi);
-            classification.roi(n+1)=classif.roi(i);
-            classification.roi(n+1).path=[str '/' classiname '/'];
-        end
-    end
+       
+%         notadd=0;
+%         
+%         if exist([str '/' classiname '/im_' classif.roi(i).id '.mat'])
+%            notadd=1;
+%            disp('ROI is already present at destination; overwriting....'); 
+%         end
+%         
+%       % aa= classif.roi(i).path
+%         
+%         copyfile([classif.roi(i).path '/im_' classif.roi(i).id '.mat'],[str '/' classiname '/im_' classif.roi(i).id '.mat']);
+%         
+%         disp(['ROI ' str '/' classiname '/im_' classif.roi(i).id ' has been transferred']);
+%         
+%         if notadd==0
+%             disp('adding ROI to classif object....'); 
+%             n=numel(classification.roi);
+%             classification.roi(n+1)=classif.roi(i);
+%             classification.roi(n+1).path=[str '/' classiname '/'];
+%         end
+ %   end
     
     % also copy/update trainingdatset ? 
     
