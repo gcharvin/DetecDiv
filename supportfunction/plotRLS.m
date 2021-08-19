@@ -3,7 +3,7 @@ function hrls=plotRLS(rls,varargin)
 % plot RLS data for one or several curves
 
 % input : rls :  array of struct that contains all division times for all cells
-% div.value contains division times, div.sep contains the position of the
+% divDur.value contains division times, divDur.sep contains the position of the
 % SEP; fuo values can be provided in addition to division times
 
 % param: parameters provided as a single object
@@ -27,41 +27,31 @@ for i=1:numel(varargin)
 end
 
 %===param===
-l=linspace(0.15,0.85,256);
-cmap2=zeros(256,3);
-cmap2(:,2)=1*(fliplr(l))';
-cmap2(:,1)=0*(fliplr(l))';
-cmap2(:,3)=0*(fliplr(l))';
-
-cmapg=zeros(256,3);
-cmapg(:,2)=(fliplr(l))';
-cmapg(:,1)=(fliplr(l))';
-cmapg(:,3)=(fliplr(l))';
-
-
-param.colormap=cmap2; % should be a colormap with 256 x 3 elements
-param.colormapg=cmapg;% colormap for groundtruth data
-
 param.showgroundtruth=1; % display the groundtruth data
 
-param.spacing=1.25; % separation between traces
-param.cellwidth=1;
-param.interspacing=1.5; %separation between doublets
+param.spacing=0.75; % separation between traces
+param.cellwidth=0.5;
+param.interspacing=1; %separation between doublets
 
-param.colorbar=1 ; % or 1 if colorbar to be printed
+param.colorbar=0 ; % or 1 if colorbar to be printed
 param.colorbarlegend='';
 
 param.findSEP=0; % 1: use find sep to find SEP
 param.align=0; % 1 : align with respect to SEP
-param.time=0; %0 : generations; 1 : physical time
+param.time=1; %0 : generations; 1 : physical time
 param.plotfluo=0 ; %1 if fluo to be plotted instead of divisions
 param.gradientWidth=0;
-param.sepwidth=0.1; % separation between events
+if param.time==1 %sepwidth=separation between rectangles
+    param.sepwidth=2; %unit is in x unit (?), so here in frame
+else
+    param.sepwidth=0.1; %here in generations
+end
+param.edgewidth=1;
 param.sepcolor=[1 0 0];
-
+param.edgeColorR=[20/255,200/255,50/255]; %edge color of Results. Should be a matrix of size 3xsizerec2
 
 param.minmax=[2 30]; % min and max values for display;
-param.startY=3; % origin of Y axis for plot
+param.startY=1; % origin of Y axis for plot
 param.startX=0;
 param.figure=[];
 param.figure.Position=[0.1 0 0.5 0.9];
@@ -69,8 +59,29 @@ param.xlim=[];
 param.ylim=[];
 
 param.sort=1; % 1 if sorting of trajectories according to generations
+
+if param.colorbar==1
+    l=linspace(0.15,0.85,256);
+    cmap2=zeros(256,3);
+    cmap2(:,2)=1*(fliplr(l))';
+    cmap2(:,1)=0*(fliplr(l))';
+    cmap2(:,3)=0*(fliplr(l))';
+
+    cmapg=zeros(256,3);
+    cmapg(:,2)=(fliplr(l))';
+    cmapg(:,1)=(fliplr(l))';
+    cmapg(:,3)=(fliplr(l))';
+
+else %no colored data, just filled rectangles with unique color
+    cmap2=(175/255)*ones(256,3);
+    cmapg=cmap2;
+end
+param.colormap=cmap2; % should be a colormap with 256 x 3 elements
+param.colormapg=cmapg;% colormap for groundtruth data  
 %===end param===   
   
+  
+
 %if numel(handle)==0
 hrls=figure('Color','w','Units', 'Normalized', 'Position', param.figure.Position);
 
@@ -91,29 +102,36 @@ maxe=0;
 ix=1:numel(rls);
 
 %========================SORT========================
-% sorting traj according to RLS, grouping by pair, not functional by time
-% yet
-if param.sort==1 
+% sorting traj according to RLS, grouping by pair
+if param.sort==1
     if param.time==1
-        
+        gt=[rls.groundtruth];
         dead=[];
+        cc=1;
         for j=1:numel(rls)
-            dead(j)=rls(j).totaltime(end);
+            if rls(j).groundtruth==1
+                dead(cc)=rls(j).totaltime(end);
+                cc=cc+1;
+            end
         end
-        
         [p, ix]= sort(dead,'Descend');
+        ix=ix*2;
         % ix,numel(rls)
-        rls=rls(ix);
+        for i=1:length(ix)
+            rlstmp(2*i-1)=rls(ix(i)-1);
+            rlstmp(2*i)=rls(ix(i));
+        end
+        rls=rlstmp;
     else
         gt=[rls.groundtruth];
         [p, ix]= sort([rls(gt==1).ndiv],'Descend');
         ix=ix*2;      
         
         for i=1:length(ix)
-            rlsm(2*i-1)=rls(ix(i)-1);
-            rlsm(2*i)=rls(ix(i));
+            rlstmp(2*i-1)=rls(ix(i)-1);
+            rlstmp(2*i)=rls(ix(i));
         end
-        rls=rlsm;
+        rls=rlstmp;
     end
 end
 
@@ -131,37 +149,35 @@ for i=1:numel(rls)
     %aa=rls(i).ndiv
     sep=rls(i).sep;
     fluo=rls(i).fluo;
-    div=rls(i).divDuration;
-    
+    divDur=rls(i).divDuration;
     %leg{i}=regexprep(rls(i).trap,'_','-');
     %leg{i}=rls(i).trapfov;
     leg{i}=sprintf('#%i |',incG); %show number of the doublet
     %===========TIME=0=============
     if param.time==0
-        rec2=0:1:1*length(div);
+        rec2=0:1:1*length(divDur);
         rec2=rec2';
         rec2(:,2)=rec2(:,1)+1;
-        rec2(end,2)=rec2(end,1)+0;
-        
+        %rec2(end,2)=rec2(end,1)+0;
         maxe=max(maxe,numel(rls(i).framediv));
     end
     
     %===========TIME=1=============
     if param.time==1
-        cdiv=cumsum(div);
-        rec2=[0 cdiv(1:end-1)];
+        fdiv=rls(i).framediv;
+        rec2=[0 fdiv(1:end)-rls(i).frameBirth];
+        %rec2=[0 fdiv(1:end-1)];
         rec2=rec2';
-
-        rec2(:,2)=rec2(:,1)+[div]';
+        rec2(:,2)=[fdiv(1:end)-rls(i).frameBirth, rls(i).frameEnd-rls(i).frameBirth]';
+        %rec2(:,2)=[fdiv(1:end)]';
         %rec2(end,2)=rec2(end,1)+0;
- 
-        maxe=max(maxe,max(cdiv));
+        maxe=max(maxe,max(fdiv));
     end
-    %===========FLUO=1=============
+    %===========ColorIndex=============
     if param.plotfluo==1
         cindex2=uint8(max(1,256*(fluo-param.minmax(1))/(param.minmax(2)-param.minmax(1))));
     else
-        cindex2=uint8(max(1,256*(div-param.minmax(1))/(param.minmax(2)-param.minmax(1))));
+        cindex2=uint8(max(1,256*(fdiv-param.minmax(1))/(param.minmax(2)-param.minmax(1))));
     end
     
     cindex2(end+1)=1;
@@ -178,14 +194,16 @@ for i=1:numel(rls)
     if rls(i).groundtruth==0
         ti(inc)=startY;
         
-        Traj(rec2,'Color',param.colormap,'colorindex',cindex2,'width',param.cellwidth,'startX',startX,'startY',startY,'sepwidth',param.sepwidth,'sepColor',param.sepcolor,'edgeWidth',0.2,'gradientwidth',param.gradientWidth,'tag',['Trap - ' num2str(rls(i).trapfov)]);
+        Traj(rec2,'Color',param.colormap,'colorindex',cindex2,'width',param.cellwidth,'startX',startX,'startY',startY,'sepwidth',param.sepwidth,'sepColor',param.sepcolor,'edgeWidth',param.edgewidth,...
+            'edgeColor',param.edgeColorR,...
+            'gradientwidth',param.gradientWidth,'tag',['Trap - ' num2str(rls(i).trapfov)]);
         startY=param.spacing+startY;       
         inc=inc+1;
     end
     
     if param.showgroundtruth==1 && rls(i).groundtruth==1
         ti(inc)=startY;     
-        Traj(rec2,'Color',param.colormapg,'colorindex',cindex2,'width',param.cellwidth,'startX',startX,'startY',startY,'sepwidth',param.sepwidth,'sepColor',param.sepcolor,'edgeWidth',0.2,'gradientwidth',param.gradientWidth,'tag',['Trap - ' num2str(rls(i).trapfov)]);
+        Traj(rec2,'Color',param.colormapg,'colorindex',cindex2,'width',param.cellwidth,'startX',startX,'startY',startY,'sepwidth',param.sepwidth,'sepColor',param.sepcolor,'edgeWidth',param.edgewidth,'gradientwidth',param.gradientWidth,'tag',['Trap - ' num2str(rls(i).trapfov)]);
         startY=param.spacing+startY +param.interspacing;
         
         inc=inc+1;

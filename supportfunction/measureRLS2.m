@@ -115,7 +115,7 @@ for r=rois
                 rlsResults(cc).sep=[];
                 rlsResults(cc).trapfov=classi.roi(r).id;
                 rlsResults(cc).trapclassi=['classi(' num2str(classi.id) ').roi(' num2str(r) ')'];
-                rlsResults(cc).ndiv=numel(divTimes.duration);
+                rlsResults(cc).ndiv=divTimes.ndiv;
                 if numel(divTimes.framediv)>0
                     rlsResults(cc).totaltime=[divTimes.framediv(1), cumsum(divTimes.duration)+divTimes.framediv(1)];
                 else
@@ -316,8 +316,9 @@ switch classiftype
         divFrames=[];
         if ~isnan(frameBirth)
         %===divided before start of timelapse==?
+        startAfterBudEmergence=0;
             if id(frameBirth)==smid || id(frameBirth)==lbid
-                divFrames=frameBirth;
+                startAfterBudEmergence=1;
             end
             
          %==detect bud emergence==
@@ -335,6 +336,11 @@ switch classiftype
         divTimes.frameEnd=frameEnd;
         divTimes.framediv=divFrames;
         divTimes.duration=diff(divFrames); % division times !
+        divTimes.ndiv=numel(divTimes.framediv);
+        %if timelapse started while the cell is small or large
+        if startAfterBudEmergence==1
+            divTimes.ndiv=divTimes.ndiv+1;
+        end
 
         
 
