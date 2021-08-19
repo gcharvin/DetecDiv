@@ -118,17 +118,19 @@ else % in this case, only ROIs will be copied
     load([str '/' classiname2]); % classification variable
     
     %classif.roi
-    disp('Copying  ROIs ....Be patient !');
+    disp('We will now transfer ROIs to repository');
     
     %copyfile([classif.path '/trainingdataset/*'],[str '/' classiname '/trainingdataset/']);
     
     % copy ROIs used for generating training sets, add ROI to target
     % classif and chage path ! 
     
-    for i=1:numel(classif.roi)
-        disp(['Copying/Updating ROI ' num2str(i) '/' num2str(numel(classif.roi)) '...']);
+     classification.addROI(classif);
+     
+  %  for i=1:numel(classif.roi)
+   %     disp(['Copying/Updating ROI ' num2str(i) '/' num2str(numel(classif.roi)) '...']);
         
-        classification.addROI(classif)
+       
 %         notadd=0;
 %         
 %         if exist([str '/' classiname '/im_' classif.roi(i).id '.mat'])
@@ -148,7 +150,7 @@ else % in this case, only ROIs will be copied
 %             classification.roi(n+1)=classif.roi(i);
 %             classification.roi(n+1).path=[str '/' classiname '/'];
 %         end
-    end
+ %   end
     
     % also copy/update trainingdatset ? 
     

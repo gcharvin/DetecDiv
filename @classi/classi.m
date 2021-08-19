@@ -15,6 +15,7 @@ classdef classi < handle
         classifyFun='';
         trainingFun='';
         colormap=[];
+        history=table('Size',[1 3],'VariableTypes',{'datetime','string','string'},'VariableNames',{'Date','Category','Message'});
         %  inputsize=[]; %size of the network (required for lstm only
     end
     methods
