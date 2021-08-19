@@ -52,21 +52,46 @@ preserv='';
 
 arr={};
 
+
+
 for i=1:length(rois)
     disp(['Processing ROI ' num2str(i) '/' num2str(length(rois))]);
     
+    duplicate=0;
+    
     roitocopy=obj.roi(rois(i));
+    
+     if numel(roitocopy.image)==0
+        roitocopy.load;
+    end
+    
+    % checking ROIs are already existing in this classi, based on the name 
+    for j=1:numel(classif.roi)
+        if strcmp(roitocopy.id,classif.roi(j).id)
+            disp(['WARNING: The imported ROIs ' roitocopy.id ' has the same name as an existing ROI in ' classif.strid]);
+            disp('Therefore, we will only update the ROI data, not create a new ROI !');
+            duplicate=j;
+            break
+        end
+    end
+    
 
-    % aa=roitocopy
+    if duplicate > 0 % in this case, the roi can just be updated and that's it !
+        pth=classif.roi(j).path;
+        classif.roi(j)=roitocopy;
+        classif.roi(j).path = pth;
+        classif.roi(j).save;
+        classif.roi(j).clear;
+        continue
+    end 
+    
     if cc==0
         classif.roi=roi('',[]);
     else
         classif.roi(cc+1)=roi('',[]);
     end
     
-    if numel(roitocopy.image)==0
-        roitocopy.load;
-    end
+   
     
     classif.roi(cc+1)=propValues(classif.roi(cc+1),roitocopy);
     classif.roi(cc+1).path = classif.path;
@@ -220,6 +245,7 @@ if strcmp(classif.category{1},'Object')
 %     end
     %pixelchannel=size(obj.image,3);
 end
+
 
 
 classif.roi(cc+1).save;
