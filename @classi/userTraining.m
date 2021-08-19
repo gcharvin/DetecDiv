@@ -43,18 +43,18 @@ else % image based classification and regression
     if numel(classitype)==0
         prompt='Please enter the ROI number in which to do training; Default:1';
         classitype= input(prompt);
-        
-        if classitype>numel(classif.roi)
-            disp('This ROI is ot available; quitting ...');
-            return
-        end
-        
+
         if numel(classitype)==0
             classitype=1;
         end
     end
     channel=classif.channel(1);
-
+    
+    if classitype>numel(classif.roi)
+        disp('This ROI is ot available; quitting ...');
+        return
+    end
+        
 % comment : disable restrictions on channel display:
 %classif.roi(classitype).display.selectedchannel=zeros(1,numel(classif.roi(classitype).display.selectedchannel));
 classif.roi(classitype).display.selectedchannel(channel)=1;
