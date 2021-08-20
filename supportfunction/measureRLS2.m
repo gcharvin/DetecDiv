@@ -351,7 +351,7 @@ switch classiftype
         censorid=findclassid(classes,'censor');
         nodivid=findclassid(classes,'nodiv');
         divid=findclassid(classes,'div');
-        emptyid=findclassid(classes,'empty');
+        emptyid=findclassid(classes,'birth');
         
         
         startFrame=find(id==emptyid,1,'last');
