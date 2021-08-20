@@ -13,6 +13,7 @@ function hrls=plotRLS(rls,varargin)
 % display style : color map : name or custom colormap : limits for
 % colormap, color separation , linewidth spacing etc
 % time : generation or physical time
+figExport=1;
 
 param=[];
 comment='';
@@ -28,10 +29,8 @@ end
 
 %===param===
 param.showgroundtruth=1; % display the groundtruth data
-
-param.spacing=0.75; % separation between traces
-param.cellwidth=0.5;
-param.interspacing=1; %separation between doublets
+param.sort=1; % 1 if sorting of trajectories according to generations
+param.timefactor=5; %put =1 to put the time in frames
 
 param.colorbar=0 ; % or 1 if colorbar to be printed
 param.colorbarlegend='';
@@ -42,23 +41,34 @@ param.time=1; %0 : generations; 1 : physical time
 param.plotfluo=0 ; %1 if fluo to be plotted instead of divisions
 param.gradientWidth=0;
 if param.time==1 %sepwidth=separation between rectangles
-    param.sepwidth=2; %unit is in x unit (?), so here in frame
+    param.sepwidth=10; %unit is dataunit (?), so here in frame
 else
     param.sepwidth=0.1; %here in generations
 end
-param.edgewidth=1;
-param.sepcolor=[1 0 0];
-param.edgeColorR=[20/255,200/255,50/255]; %edge color of Results. Should be a matrix of size 3xsizerec2
 
-param.minmax=[2 30]; % min and max values for display;
-param.startY=1; % origin of Y axis for plot
+param.edgewidth=2;
+if figExport==1
+    param.edgewidth=0.5;
+end
+param.sepcolor=[1 0 0];
+param.edgeColorR=[0/255,0/255,0/255]; %edge color of Results. Should be a matrix of size 3xsizerec2
+param.edgeColorG=[0/255,0/255,0/255];
+
+param.cellwidth=0.1;
+param.spacing=param.cellwidth+0.025; % separation between traces
+if param.showgroundtruth==1 && param.sort==1
+    param.interspacing=0.1; %separation between doublets
+else
+    param.interspacing=0;
+end
+
+param.minmax=[2 30]; % min and max values for colordisplay;
+param.startY=0.1+param.cellwidth/2; % origin of Y axis for plot
 param.startX=0;
 param.figure=[];
-param.figure.Position=[0.1 0 0.5 0.9];
+param.figure.Position=[0.1 0 0.5 0.5];
 param.xlim=[];
 param.ylim=[];
-
-param.sort=1; % 1 if sorting of trajectories according to generations
 
 if param.colorbar==1
     l=linspace(0.15,0.85,256);
@@ -73,8 +83,10 @@ if param.colorbar==1
     cmapg(:,3)=(fliplr(l))';
 
 else %no colored data, just filled rectangles with unique color
-    cmap2=(175/255)*ones(256,3);
-    cmapg=cmap2;
+    param.fillColorR=[20/255,200/255,50/255];
+    param.fillColorG=[175/255,175/255,175/255];
+    cmap2=repmat(param.fillColorR,256,1); %for unicolored rectangles
+    cmapg=repmat(param.fillColorG,256,1); %for unicolored rectangles
 end
 param.colormap=cmap2; % should be a colormap with 256 x 3 elements
 param.colormapg=cmapg;% colormap for groundtruth data  
@@ -164,15 +176,21 @@ for i=1:numel(rls)
     
     %===========TIME=1=============
     if param.time==1
-        fdiv=rls(i).framediv;
-        rec2=[0 fdiv(1:end)-rls(i).frameBirth];
+        fdiv=rls(i).framediv*param.timefactor;
+        fBirth=rls(i).frameBirth*param.timefactor;
+        fEnd=rls(i).frameEnd*param.timefactor;
+
+        rec2=[0 fdiv(1:end)-fBirth];
         %rec2=[0 fdiv(1:end-1)];
         rec2=rec2';
-        rec2(:,2)=[fdiv(1:end)-rls(i).frameBirth, rls(i).frameEnd-rls(i).frameBirth]';
+        rec2(:,2)=[fdiv(1:end)-fBirth, fEnd-fBirth]';
         %rec2(:,2)=[fdiv(1:end)]';
         %rec2(end,2)=rec2(end,1)+0;
         maxe=max(maxe,max(fdiv));
     end
+    
+    
+
     %===========ColorIndex=============
     if param.plotfluo==1
         cindex2=uint8(max(1,256*(fluo-param.minmax(1))/(param.minmax(2)-param.minmax(1))));
@@ -183,7 +201,7 @@ for i=1:numel(rls)
     cindex2(end+1)=1;
     cindex2=min(256,cindex2);
     
-    %===========PLOT=============
+    %% ===========PLOT=============
     %size(rec), size(rec2)
     %figure(hfluo);
     %Traj(rec,'Color',cmap,'colorindex',cindex,'width',cellwidth,'startX',startX,'startY',startY,'sepwidth',sepwidth,'sepColor',[0. 0. 0.],'edgeWidth',1,'gradientwidth',0);
@@ -192,8 +210,11 @@ for i=1:numel(rls)
 
    
     if rls(i).groundtruth==0
-        ti(inc)=startY;
-        
+        if param.sort==1
+            ti(inc)=startY+param.spacing/2;
+        else
+            ti(inc)=1;%to code
+        end
         Traj(rec2,'Color',param.colormap,'colorindex',cindex2,'width',param.cellwidth,'startX',startX,'startY',startY,'sepwidth',param.sepwidth,'sepColor',param.sepcolor,'edgeWidth',param.edgewidth,...
             'edgeColor',param.edgeColorR,...
             'gradientwidth',param.gradientWidth,'tag',['Trap - ' num2str(rls(i).trapfov)]);
@@ -203,7 +224,9 @@ for i=1:numel(rls)
     
     if param.showgroundtruth==1 && rls(i).groundtruth==1
         ti(inc)=startY;     
-        Traj(rec2,'Color',param.colormapg,'colorindex',cindex2,'width',param.cellwidth,'startX',startX,'startY',startY,'sepwidth',param.sepwidth,'sepColor',param.sepcolor,'edgeWidth',param.edgewidth,'gradientwidth',param.gradientWidth,'tag',['Trap - ' num2str(rls(i).trapfov)]);
+        Traj(rec2,'Color',param.colormapg,'colorindex',cindex2,'width',param.cellwidth,'startX',startX,'startY',startY,'sepwidth',param.sepwidth,'sepColor',param.sepcolor,'edgeWidth',param.edgewidth,...
+            'edgeColor',param.edgeColorG,...
+            'gradientwidth',param.gradientWidth,'tag',['Trap - ' num2str(rls(i).trapfov)]);
         startY=param.spacing+startY +param.interspacing;
         
         inc=inc+1;
@@ -237,15 +260,20 @@ if numel(rls)>1
 end
 
 %PLOT LABEL
-set(gca,'FontSize',25,'FontWeight','bold','Ytick',ti(1:2:length(ti))+1,'YTickLabel',leg(1:2:length(leg)),'LineWidth',3);
-
-
+set(gca,'FontSize',25,'FontWeight','bold','YTick',ti(1:2:length(ti)),'YTickLabel',leg(1:2:length(leg)),'LineWidth',3);
+box on
 if param.time==0
     xlabel('Generations');
 else
-    xlabel('Time (frames)');
+    if param.timefactor~=1
+        xlabel('Time (minutes)');
+    else
+        xlabel('Time (frames)');
+    end
 end
 
+
+%COLOR BAR
 if param.colorbar==1
     colormap(param.colormap)
     h=colorbar;
@@ -259,8 +287,23 @@ if param.colorbar==1
     %h.Position=[1 1 0.3 0.3]
 end
 
-%xlim([-30 10]);
-ylim([0 (param.spacing*numel(rls)/2 +param.interspacing*numel(rls))]);
+xlim([0 maxe+0.2*maxe]);
+ylim([0 (param.spacing*numel(rls) +param.interspacing*numel(rls)/2)+param.startY]);
+
+set(gca,'FontSize',16, 'FontName','Myriad Pro', 'LineWidth',3,'FontWeight','bold','TickLength',[0.02 0.02]);
+htraj=gcf;
+if figExport==1
+    ax=gca;
+    sz=10;
+    xf_width=sz; yf_width=4;
+    set(gcf, 'PaperType','a4','PaperUnits','centimeters');
+    %set(gcf,'Units','centimeters','Position', [5 5 xf_width yf_width]);
+    set(ax,'Units','centimeters', 'InnerPosition', [2 2 xf_width yf_width])
+    
+    set(ax,'FontSize',8, 'LineWidth',1,'FontWeight','bold','TickLength',[0.02 0.02]);
+    
+    exportgraphics(htraj,'htraj.pdf','BackgroundColor','none','ContentType','vector')
+end
 
 
 
