@@ -26,14 +26,17 @@ classdef classi < handle
                 name='';
                 id=1;
             end
+            
             obj.path=path;
             obj.id=id;
+            
+            
             obj.strid=[name '_' num2str(id)];
             obj.colormap=shallowColormap(1); % default colormap
             
             if numel(path)>0
-                mkdir(path,'classification');
-                obj.path=fullfile(path,'classification');
+               % mkdir(path,'classification');
+              %  obj.path=fullfile(path,'classification');
                 mkdir(obj.path,obj.strid);
                 obj.path=fullfile(obj.path,obj.strid);
             end
@@ -59,6 +62,7 @@ classdef classi < handle
         end
         function obj = setPath(obj,pathe,file)
             
+        %   aa= obj.path
             oldpath=fixpath(obj.path);
             
             % oldpath(strfind(oldpath,'\'))='/';
@@ -68,13 +72,14 @@ classdef classi < handle
             oldfile=obj.strid;
             
             obj.path=pathe;
-            obj.file=file;
+          %
+          %  obj.strid=strid;
             
             % also adjust set path of dependencies
             
-            oldfullpath=fullfile(oldpath,oldfile);
+            oldfullpath=fullfile(oldpath);
             
-            newpath=fullfile(pathe,file);
+            newpath=fullfile(pathe);
             
             
             %      obj.processing.classification(i).path=fixpath(fullfile(obj.processing.classification(i).path));
@@ -90,13 +95,12 @@ classdef classi < handle
             
             for j=1:numel(obj.roi)
                 
-                
                 obj.roi(j).path=fixpath(fullfile(obj.roi(j).path));
-                
-                obj.roi(j).path = replace(obj.processing.classification(i).roi(j).path,oldfullpath,newpath);
-                
+   
+                obj.roi(j).path = replace(obj.roi(j).path,oldfullpath,newpath);
+      
             end
-        end
+  
         
         function pathout=fixpath(pathin)
             pathout=pathin;
@@ -118,4 +122,5 @@ classdef classi < handle
         
     end
     
+    end
 end
