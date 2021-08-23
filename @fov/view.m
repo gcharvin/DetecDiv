@@ -65,6 +65,12 @@ else
 %        end
     
     %%%
+    
+    % create display menu 
+    
+ 
+
+
     %creat zoom callbackas
     hCMZ = uicontextmenu;
     hZMenu = uimenu('Parent',hCMZ,'Label','Reset Zoom',...
@@ -73,6 +79,8 @@ else
         'Callback','pan(gcbf,''on'')');
     hZMenu = uimenu('Parent',hCMZ,'Label','Add current ROI',...
         'Callback',{@addROI,obj,him,hp});
+    hZMenu = uimenu('Parent',hCMZ,'Label','Adjust current zoom...',...
+        'Callback',{@setROIValue,obj,him,hp,0});
     
     
     hZoom = zoom(h);
@@ -93,21 +101,23 @@ else
     
     h.KeyPressFcn={@changeframe,obj,him,hp};
     
-    btnSetFrame = uicontrol('Style', 'text','FontSize',18, 'String', ['FOV ' obj.id] ,...
-        'Position', [50 550 200 20],'HorizontalAlignment','left', ...
+    h.Name= ['FOV ' obj.id];
+    
+%     btnSetFrame = uicontrol('Style', 'text','FontSize',18, 'String',  ,...
+%         'Position', [50 550 200 20],'HorizontalAlignment','left', ...
+%         'Tag','frametexttitle') ;
+    
+    btnSetFrame = uicontrol('Style', 'text','FontSize',12, 'String', 'Enter frame number here, or use arrows <- ->',...
+        'Position', [50 50 350 20],'HorizontalAlignment','left', ...
         'Tag','frametexttitle') ;
     
-    btnSetFrame = uicontrol('Style', 'text','FontSize',14, 'String', 'Enter frame number here, or use arrows <- ->',...
-        'Position', [50 50 300 20],'HorizontalAlignment','left', ...
-        'Tag','frametexttitle') ;
-    
-    btnSetFrame = uicontrol('Style', 'edit','FontSize',14, 'String', num2str(obj.display.frame),...
+    btnSetFrame = uicontrol('Style', 'edit','FontSize',12, 'String', num2str(obj.display.frame),...
         'Position', [50 20 80 20],...
         'Callback', {@setframe,obj,him,hp},'Tag','frametext') ;
     
-        btnSetCrop = uicontrol('Style', 'pushbutton','FontSize',14, 'String', 'set crop',...
-        'Position', [50 80 80 20],...
-        'Callback', {@setCrop,obj,him,hp},'Tag','setCrop') ;
+%         btnSetCrop = uicontrol('Style', 'pushbutton','FontSize',14, 'String', 'set crop',...
+%         'Position', [50 80 80 20],...
+%         'Callback', {@setCrop,obj,him,hp},'Tag','setCrop') ;
     
     
    %         hZMenu = uimenu('Parent',hCMZ,'Label','Set cropping area',...
@@ -127,36 +137,81 @@ else
         'Position', [400 20 150 20],...
         'Callback', {@setchannel,obj,him,hp},'Tag','channelmenu') ;
     
-    btnSetFrame = uicontrol('Style', 'text','FontSize',14, 'String', 'ROIs',...
-        'Position', [400 550 150 20],'HorizontalAlignment','left', ...
-        'Tag','frametexttitle') ;
+%     btnSetFrame = uicontrol('Style', 'text','FontSize',14, 'String', 'ROIs',...
+%         'Position', [400 550 150 20],'HorizontalAlignment','left', ...
+%         'Tag','frametexttitle') ;
     
     
-    str={''};
-    for i=1:numel(obj.roi)
-        if numel(obj.roi(1).id)~=0
-            str{i,1}=num2str(obj.roi(i).value);
-        end
-    end
+%     str={''};
+%     for i=1:numel(obj.roi)
+%         if numel(obj.roi(1).id)~=0
+%             str{i,1}=num2str(obj.roi(i).value);
+%         end
+%     end
     
     
-    btnSetFrame = uicontrol('Style', 'popupmenu','FontSize',14, 'String', str, 'Value',1,...
-        'Position', [400 530 250 20],...
-        'Callback', {@setROI,obj},'Tag','roimenu') ;
+%     btnSetFrame = uicontrol('Style', 'popupmenu','FontSize',14, 'String', str, 'Value',1,...
+%         'Position', [400 530 250 20],...
+%         'Callback', {@setROI,obj},'Tag','roimenu') ;
+%     
+%     btnSetFrame = uicontrol('Style', 'text','FontSize',14, 'String', 'Current ROI',...
+%         'Position', [200 550 150 20],'HorizontalAlignment','left', ...
+%         'Tag','frametexttitle') ;
+%     
+%     xl=round(xlim(gca));
+%     yl=round(xlim(gca));
+%     
+%     btnSetFrame = uicontrol('Style', 'edit','FontSize',14, 'String', num2str([xl(1) yl(1) xl(2)-xl(1) yl(2)-yl(1)]), 'Value',1,...
+%         'Position', [200 530 150 20],...
+%         'Callback', {@setROIValue,obj,him,hp},'Tag','roivalue') ;
     
-    btnSetFrame = uicontrol('Style', 'text','FontSize',14, 'String', 'Current ROI',...
-        'Position', [200 550 150 20],'HorizontalAlignment','left', ...
-        'Tag','frametexttitle') ;
     
-    xl=round(xlim(gca));
-    yl=round(xlim(gca));
+ %   hmenu=findobj(h,'Tag','DisplayMenu')
+%if numel(hmenu)==0
+
+    m = uimenu(h,'Text','Display options','Tag','DisplayROIMenu');
     
-    btnSetFrame = uicontrol('Style', 'edit','FontSize',14, 'String', num2str([xl(1) yl(1) xl(2)-xl(1) yl(2)-yl(1)]), 'Value',1,...
-        'Position', [200 530 150 20],...
-        'Callback', {@setROIValue,obj,him,hp},'Tag','roivalue') ;
+     mitem = uimenu(m,'Text','Display ROIs','Checked','on','Tag','drawROIs');
+        set(mitem,'MenuSelectedFcn',{@displayROI,obj,him,hp});
+        
+       mitem2 = uimenu(m,'Text','Set cropping area to exclude ROIs','Tag','setCrop','Separator','on');
+        set(mitem2,'MenuSelectedFcn',{@setCrop,obj,him,hp});
+        
+            hZMenu = uimenu(m,'Label','Reset Zoom to default',...
+        'Callback',{@resetZoom,obj,him,hp},'Separator','on');
     
+    hZMenu = uimenu(m,'Label','Switch to pan mode',...
+        'Callback','pan(gcbf,''on'')');
     
-    updatedisplay(obj,him,hp)
+        hZMenu = uimenu(m,'Label','Switch to zoom mode',...
+        'Callback','zoom(gcbf,''on'')');
+    
+       hZMenu = uimenu(m,'Label','Adjust current zoom',...
+        'Callback',{@setROIValue,obj,him,hp,0});
+    
+    hZMenu = uimenu(m,'Label','Add ROI for current window',...
+        'Callback',{@addROI,obj,him,hp},'Separator','on');
+ 
+        
+       
+%       mroi = uimenu(h,'Text','ROIs','Tag','ROIMenu');
+%       mroi_menu=[];
+%       
+%       cc=1;
+%          for i=1:numel(obj.roi)
+%         if numel(obj.roi(1).id)~=0
+%             mroi_menu(i) = uimenu(mroi,'Text',[num2str(cc) '-' obj.roi(i).id ],'Checked','on','Tag','ROIs');
+%           %  str{i,1}=num2str(obj.roi(i).value);
+%             cc=cc+1;
+%         end
+%     end
+      
+      mchannel = uimenu(h,'Text','Channels','Tag','ChannelMenu');
+        
+%end
+
+
+    updatedisplay(obj,him,hp);
     
     % btnSetDiv = uicontrol('Style', 'edit', 'String', 'No division',...
     %         'Position', [450 20 80 20],...
@@ -186,6 +241,10 @@ end
 function resetZoom(handle,event, obj,him,hp)
 zoom out
 zoom off
+
+xlim([1 size(him.image.CData,2)]);
+ylim([1 size(him.image.CData,1)]);
+%'ok'
 updatedisplay(obj,him,hp);
 end
 
@@ -242,34 +301,59 @@ end
 function setchannel(handle,event,obj,him,hp)
 
 obj.display.selectedchannel=handle.Value;
-
 end
 
+% function setROI(handle,event,obj)
+% % function associated with ROI popu up menu
+% 
+% h=findobj('Type','patch');
+%  set(h,'FaceColor',[1 0 0]);
+%  
+% %  for i=1:numel(obj.roi)
+% %     h=findobj('Tag',['roitag_' num2str(i)]);
+% %     set(h,'FaceColor',[1 0 0]);
+% %  end
+%  
+%  val=handle.Value;
+%  
+%    h=findobj('Tag',['roitag_' num2str(val)]);
+%    
+%    set(h,'FaceColor',[1 1 0]);
+%    
+% end
 
-function setROI(handle,event,obj)
-% function associated with ROI popu up menu
-
- for i=1:numel(obj.roi)
-    h=findobj('Tag',['roitag_' num2str(i)]);
-    set(h,'FaceColor',[1 0 0]);
- end
- 
- val=handle.Value;
- 
-   h=findobj('Tag',['roitag_' num2str(val)]);
-   
-   set(h,'FaceColor',[1 1 0]);
-   
-
-end
-
-function setROIValue(handle,event,obj,him,hp)
+function setROIValue(handle,event,obj,him,hp,option)
 % ddefines a region of interest based on user input
 
 %obj.display.selectedchannel=handle.Value;
-value=str2num(handle.String);
+
+if option==0 % zoom adjust
+xl=round(xlim(hp(1)));
+yl=round(ylim(hp(1)));
+
+def={[num2str(xl(1)) ' ' num2str(yl(1))  ' '  num2str(xl(2)-xl(1))   ' ' num2str(yl(2)-yl(1))]};
+else
+ %   handle
+    val=handle.UserData;
+    
+    def={num2str(obj.roi(val).value)};
+    
+end
+
+str=inputdlg('Enter current ROI parameters:', 'ROI adjustment',1,def);
+
+value=str2num(str{1});
+
+if option==0 % zoom adjust
 xlim(hp(1),[value(1) value(1)+value(3)]);
 ylim(hp(1),[value(2) value(2)+value(4)]);
+else
+    obj.roi(val).value=[value(1) value(2) value(3) value(4)];
+    updatedisplay(obj,him,hp);
+%    xlim(hp(1),[value(1) value(1)+value(3)]);
+ %   ylim(hp(1),[value(2) value(2)+value(4)]);
+end
+
 end
 
 function adjustROI(handle,event,hp)
@@ -278,32 +362,46 @@ function adjustROI(handle,event,hp)
 xl=round(xlim(hp(1)));
 yl=round(ylim(hp(1)));
 %
-htext=findobj('Tag','roivalue');
+
+%htext=findobj('Tag','roivalue');
+
+htext=findobj('Tag','Axe1');
+
+str='Currently selected ROI: '; 
 %
-htext.String=num2str([xl(1) yl(1) xl(2)-xl(1) yl(2)-yl(1)]);
+
+str=[str num2str([xl(1) yl(1) xl(2)-xl(1) yl(2)-yl(1)])];
+set(htext.Title,'String',str);
+
 end
 
 function addROI(handle,event,obj,him,hp)
 % function in the context menu to add custom ROI
-htext=findobj('Tag','roivalue');
-te=htext.String;
-roi=str2num(te);
+
+xl=round(xlim(hp(1)));
+yl=round(ylim(hp(1)));
+
+roival=[xl(1) yl(1) xl(2)-xl(1) yl(2)-yl(1)];
+
+% htext=findobj('Tag','roivalue')
+% te=htext.String
+% roi=str2num(te)
 
 %roi2=roi2;
 
-htext=findobj('Tag','roimenu');
-tmp=htext.String;
+% htext=findobj('Tag','roimenu');
+% tmp=htext.String;
+% 
+% if numel(tmp)==1 & numel(tmp{1})~=0
+% tmp{end+1}=te;
+% else
+% tmp{1}=te;    
+% end
 
-if numel(tmp)==1 & numel(tmp{1})~=0
-tmp{end+1}=te;
-else
-tmp{1}=te;    
-end
+% htext.String=tmp;
+% htext.Value=numel(tmp);
 
-htext.String=tmp;
-htext.Value=numel(tmp);
-
-obj.addROI(roi,obj.id);
+obj.addROI(roival,obj.id);
 updatedisplay(obj,him,hp);
 end
 
@@ -435,67 +533,112 @@ htext=findobj('Tag','frametext');
 set(htext,'String',num2str(obj.display.frame))
 
 axes(hp(1))
+
+  hdisplaymenu=findobj('Tag','drawROIs');
+  
+  h=findobj('Type','patch');
+  
+%     h=findobj('Tag',['roitag_' num2str(i)]);
+%     
+     if numel(h)~=0
+         delete(h);
+     end
+%     
+
+  htext=findobj('Type','text');
+  
+%       htext=findobj('Tag',['roitext_' num2str(i)]);
+%     
+     if numel(htext)~=0
+         delete(htext);
+     end
+
+         
 for i=1:numel(obj.roi)
     if numel(obj.roi(i).id)==0
         continue
     end
-    
-    h=findobj('Tag',['roitag_' num2str(i)]);
-    
-    if numel(h)~=0
-        delete(h);
-    end
+  
+ 
+    if strcmp(hdisplaymenu.Checked,'on')   
     roitmp=obj.roi(i).value;
     roitmp=[roitmp(1) roitmp(2) roitmp(1)+ roitmp(3) roitmp(2)+ roitmp(4)];
     h=patch([roitmp(1) roitmp(3) roitmp(3) roitmp(1) roitmp(1)],[roitmp(2) roitmp(2) roitmp(4) roitmp(4) roitmp(2)],[1 0 0],'FaceAlpha',0.3,'Tag',['roitag_' num2str(i)],'UserData',i);
     
     htext=text(roitmp(1),roitmp(2), num2str(i), 'Color','r','FontSize',10,'Tag',['roitext_' num2str(i)]);
+
     
     %h=patch([10 100 100 10 10],[10 10 100 100 10],[1 0 0],'FaceAlpha',0.3,'Tag',['roitag_' num2str(i) ]);
     
     hCMZ = uicontextmenu;
     hZMenu = uimenu('Parent',hCMZ,'Label','Remove ROI',...
         'Callback',{@removeROI,obj,him,hp},'UserData',i);
+    
+     hZMenu = uimenu('Parent',hCMZ,'Label','Adjust ROI param...',...
+        'Callback',{@setROIValue,obj,him,hp,1},'UserData',i);
+    
     %hZMenu = uimenu('Parent',hCMZ,'Label','Switch to pan',...
     %    'Callback','pan(gcbf,''on'')');
     %hZMenu = uimenu('Parent',hCMZ,'Label','Add current ROI',...
     %    'Callback',{@addROI,obj,hp});
  
+    
+    
     h.UIContextMenu = hCMZ;
     
     
     %h.Vertices
     h.ButtonDownFcn={@vie,obj};
 end
+end
 
-str={''};
-  
-    for i=1:numel(obj.roi)
-        if numel(obj.roi(1).id)~=0
-            str{i,1}=num2str(obj.roi(i).value);
-        end
-    end
+% str={''};
+%   
+%     for i=1:numel(obj.roi)
+%         if numel(obj.roi(1).id)~=0
+%             str{i,1}=num2str(obj.roi(i).value);
+%         end
+%     end
    
-    htext=findobj('Tag','roimenu');
-    htext.String=str;
+%     htext=findobj('Tag','roimenu');
+%     htext.String=str;
     
     
 end
 
 function vie(handles,event,obj)
 
-    for i=1:numel(obj.roi)
-    h=findobj('Tag',['roitag_' num2str(i)]);
-    set(h,'FaceColor',[1 0 0]);
-    end
+%     for i=1:numel(obj.roi)
+%     h=findobj('Tag',['roitag_' num2str(i)]);
+%     set(h,'FaceColor',[1 0 0]);
+%     end
+    h=findobj('Type','patch');
+ set(h,'FaceColor',[1 0 0]);
+ 
    set(handles,'FaceColor',[1 1 0]);
    val=handles.UserData;
    
-   h=findobj('Tag','roimenu');
-   h.Value=val;
+%    h=findobj('Tag','roimenu');
+%    h.Value=val;
+   
+ha=findobj('Tag','Axe1');
+
+str=['Selected ROI: ' num2str(val) ' - ' obj.roi(val).id];
+set(ha.Title,'String',str,'Interpreter','None');
+   
+   
 end
 
 
-
+ function displayROI(handles, event, obj,him,hp)
+ 
+ 
+  if strcmp(handles.Checked,'on')
+      handles.Checked='off';
+  else
+      handles.Checked='on';
+  end
+      updatedisplay(obj,him,hp)
+    end
 
 
