@@ -1,7 +1,7 @@
-function view(obj,frame)
+function view(obj,frame,option)
 
 
-if nargin==2
+if nargin>=2
     obj.display.frame=frame;
 end
 
@@ -9,7 +9,21 @@ frame=obj.display.frame;
 
 %findobj('Tag',['Trap' num2str(obj.id)])
 
-if numel(findobj('Tag',['Fov' obj.id])) % handle exists already
+if numel(obj.channel) ~= numel(obj.display.selectedchannel)
+    obj.display.selectedchannel=ones(1,numel(obj.channel));
+end
+
+rebuild=0;
+
+h=[];
+
+if nargin==3
+    h=option;
+    rebuild=1;
+  %  'oki'
+end
+
+if numel(findobj('Tag',['Fov' obj.id])) && rebuild==0% handle exists already
     h=findobj('Tag',['Fov' obj.id]);
     
     hp=findobj(h,'Type','Axes');
@@ -28,7 +42,7 @@ if numel(findobj('Tag',['Fov' obj.id])) % handle exists already
     % end
     
     him=h.UserData;
-    %updatedisplay(obj,him,hp);
+
 else
     
     
@@ -39,22 +53,45 @@ else
         return;
     end
     
+  %  h
+    if numel(h)==0
+    %    'ok'
     h=figure('Tag',['Fov' obj.id],'Position',[100 100 1000 600]);
+    end
     
     str={};
+    
+     mchannel = uimenu(h,'Text','Channels','Tag','ChannelMenu');
+     
+     cc=1;
+     
+     tot=sum( obj.display.selectedchannel);
     for i=1:obj.channels
         
-        hp(i)=subplot(1,obj.channels,i);
+         mitemch(i) = uimenu(mchannel,'Text',obj.channel{i},'Checked','on','Tag',['channel_' num2str(i)]);
+        set(mitemch(i),'MenuSelectedFcn',{@displayMenuFcn,obj,h});
         
-        him.image(i)=imshow(im(i).data,[]);
+        if obj.display.selectedchannel(i)==1
+            
         
-        set(hp(i),'Tag',['Axe' num2str(i)]);
+        
+        
+        hp(cc)=subplot(1,tot,cc);
+        
+        him.image(cc)=imshow(im(cc).data,[]);
+        
+        set(hp(cc),'Tag',['Axe' num2str(cc)]);
         
         %axis equal square
         
-        title(hp(i),['Channel ' num2str(i) ' -Intensity:' num2str(obj.display.intensity(i))]);
+        title(hp(cc),['Channel ' num2str(i) ' -Intensity:' num2str(obj.display.intensity(i))]);
         
-        str{i}=['Channel ' num2str(i)];
+        str{cc}=['Channel ' num2str(i)];
+        
+        cc=cc+1;
+        else
+            set(mitemch(i),'Checked','off');
+        end
     end
     
     linkaxes(hp);
@@ -92,7 +129,7 @@ else
     hPan.ActionPostCallback={@adjustROI,hp};
     
     
-    obj.display.selectedchannel=1;
+    
     
     h.Position(3)=600*obj.channels;
     h.Position(4)=600;
@@ -205,8 +242,6 @@ else
 %             cc=cc+1;
 %         end
 %     end
-      
-      mchannel = uimenu(h,'Text','Channels','Tag','ChannelMenu');
         
 %end
 
@@ -242,8 +277,9 @@ function resetZoom(handle,event, obj,him,hp)
 zoom out
 zoom off
 
-xlim([1 size(him.image.CData,2)]);
-ylim([1 size(him.image.CData,1)]);
+ 
+xlim([1 size(him.image(1).CData,2)]);
+ylim([1 size(him.image(1).CData,1)]);
 %'ok'
 updatedisplay(obj,him,hp);
 end
@@ -300,7 +336,7 @@ end
 
 function setchannel(handle,event,obj,him,hp)
 
-obj.display.selectedchannel=handle.Value;
+%obj.display.selectedchannel=handle.Value;
 end
 
 % function setROI(handle,event,obj)
@@ -500,12 +536,19 @@ end
 
 if strcmp(event.Key,'uparrow')
     
-    obj.display.intensity(obj.display.selectedchannel)=max(0.01,obj.display.intensity(obj.display.selectedchannel)-0.01);
+    han=findobj('Tag','channelmenu');
+    str=han.Value;
+    obj.display.intensity(str)=max(0.01,obj.display.intensity(str)-0.1);
+   % if numel(hp)>=str
+   % set(hp(str).Title,'String',[obj.channel{str} ' - Intensity : ' 
     ok=1;
 end
 
 if strcmp(event.Key,'downarrow')
-    obj.display.intensity(obj.display.selectedchannel)=min(1,obj.display.intensity(obj.display.selectedchannel)+0.01);
+    han=findobj('Tag','channelmenu');
+    str=han.Value;
+  
+    obj.display.intensity(str)=min(1,obj.display.intensity(str)+0.1);
     ok=1;
 end
 
@@ -521,9 +564,13 @@ function updatedisplay(obj,him,hp)
 
 im=buildimage(obj);
 
+cc=1;
 for i=1:obj.channels
-    him.image(i).CData=im(i).data;
-    title(hp(i),['Channel ' num2str(i) ' -Intensity:' num2str(obj.display.intensity(i))]);
+     if obj.display.selectedchannel(i)==1
+    him.image(cc).CData=im(cc).data;
+    title(hp(cc),['Channel ' num2str(i) ' -Intensity:' num2str(obj.display.intensity(i))]);
+    cc=cc+1;
+     end
 end
 
 htext=findobj('Tag','frametext');
@@ -639,6 +686,35 @@ end
       handles.Checked='on';
   end
       updatedisplay(obj,him,hp)
-    end
+ end
 
+     function displayMenuFcn(handles, event, obj,h)
+        
+        if strcmp(handles.Checked,'off')
+            handles.Checked='on';
+             str=handles.Tag;
+             i = str2num(replace(str,'channel_',''));
+%              pix=find(obj.channelid==i); % find matrix index associated with channel
+%              pix=pix(1); % there may be several items in case of a   multi-array channel
+%         
+             obj.display.selectedchannel(i)=1;
+%             % aa=obj.display.selectedchannel(i)
+        else
+            
+            handles.Checked='off';
+             str=handles.Tag;
+             i = str2num(replace(str,'channel_',''));
+%             
+%             pix=find(obj.channelid==i); % find matrix index associated with channel
+%              pix=pix(1); % there may be several items in case of a   multi-array channel
+%             
+             obj.display.selectedchannel(i)=0;
+%             %  bb=obj.display.selectedchannel(i)
+        end
+        
+        clf
+        h.UserData=[];
+        view(obj,obj.display.frame,h);
+     end
+    
 
