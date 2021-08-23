@@ -27,20 +27,23 @@ for i=1:numel(shallowObj.fov)
                     cc=cc+1;
 end
 
-fprintf('\n');
-reverseStr='';
-cc=1;
+% fprintf('\n');
+% reverseStr='';
+% cc=1;
 for i=1:numel(shallowObj.processing.classification)
-               for j=1:numel(shallowObj.processing.classification(i).roi)
-                  shallowObj.processing.classification(i).roi(j).save;
-                  shallowObj.processing.classification(i).roi(j).clear;
-               end
-               
-                msg = sprintf('Writing ROIs for classification %d / %d for FOV %s', cc,numel(shallowObj.processing.classification)); %Don't forget this semicolon
-                    fprintf([reverseStr, msg]);
-                    reverseStr = repmat(sprintf('\b'), 1, length(msg));
-                    
-                    cc=cc+1;
+    
+    
+    classiSave( shallowObj.processing.classification(i) );
+%                for j=1:numel(shallowObj.processing.classification(i).roi)
+%                   shallowObj.processing.classification(i).roi(j).save;
+%                   shallowObj.processing.classification(i).roi(j).clear;
+%                end
+%                
+%                 msg = sprintf('Writing ROIs for classification %d / %d for FOV %s', cc,numel(shallowObj.processing.classification)); %Don't forget this semicolon
+%                     fprintf([reverseStr, msg]);
+%                     reverseStr = repmat(sprintf('\b'), 1, length(msg));
+%                     
+%                     cc=cc+1;
 end
            
 
