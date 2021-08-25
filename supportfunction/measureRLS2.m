@@ -103,12 +103,12 @@ for r=rois
                 end
                 rlsResults(cc).rules=[];
                 rlsResults(cc).groundtruth=0;
-                rlsResults(cc).fluo=[];
+                rlsResults(cc).divSignal=[];
                 
-                divFluo=computeSignalDiv(classi,r,rlsResults(cc));
-                rlsResults(cc).fluo=divFluo;
+                divSignal=computeSignalDiv(classi,r,rlsResults(cc));
+                rlsResults(cc).divSignal=divSignal;
             else
-                disp(['there is no result available for ROI ' num2str(r) '=' num2str(classi.roi(r).id)]);
+                disp(['there is no result available for ROI ' char(r) '=' char(classi.roi(r).id)]);
             end
         end
     end
@@ -117,7 +117,7 @@ for r=rois
     %==================GROUNDTRUTH===================
     %Groundtruth?
     idg=[];
-    if isfield(classi.roi(r),'train') %not true for fov
+    if isprop(classi.roi(r),'train') %MATLAB BUG WITH ISFIELD. logical=0 for fov
         if isfield(classi.roi(r).train.(classiid),'id') % test if groundtruth data available
             if sum(classi.roi(r).train.(classiid).id)>0
                 idg=classi.roi(r).train.(classiid).id; % results for classification
@@ -136,10 +136,10 @@ for r=rois
                 rlsGroundtruth(ccg).totaltime=[divTimesG.framediv(1), cumsum(divTimesG.duration)+divTimesG.framediv(1)];
                 rlsGroundtruth(ccg).rules=[];
                 rlsGroundtruth(ccg).groundtruth=1;
-                rlsGroundtruth(ccg).fluo=[];
+                rlsGroundtruth(ccg).divSignal=[];
                 
-                divFluoG=computeSignalDiv(classi,r,classiid,rlsGroundtruth(ccg));
-                rlsGroundtruth(ccg).fluo=divFluoG;
+                divSignalG=computeSignalDiv(classi,r,rlsGroundtruth(ccg));
+                rlsGroundtruth(ccg).divSignal=divSignalG;
             end
         end
         ccg=ccg+1;
@@ -164,7 +164,7 @@ end
 if numel([rlsResults.groundtruth])==numel([rlsGroundtruth.groundtruth])
 rls=[rlsResults rlsGroundtruth];
 else
-    rls=rlsGroundtruth;
+    rls=rlsResults;
 end
 rls=rls(:);
 [p ix]= sort({rls(:).trapclassi});
@@ -296,9 +296,9 @@ switch classiftype
         
         %=====Div counting=====
         divFrames=[];
+        startAfterBudEmergence=0;
         if ~isnan(frameBirth)
         %===divided before start of timelapse==?
-        startAfterBudEmergence=0;
             if id(frameBirth)==smid || id(frameBirth)==lbid
                 startAfterBudEmergence=1;
             end
@@ -361,7 +361,7 @@ end
 function divFluo=computeSignalDiv(classi,r,rls)
 divFluo=[];
 %check all the fields of .results.signal and mean them by div
-if isfields(classi.roi(r).results,'signal')
+if isfield(classi.roi(r).results,'signal')
     resultFields=fields(classi.roi(r).results.signal); %full, cell, nucleus
         %essayer try catch
         for rf=resultFields
@@ -379,7 +379,7 @@ if isfields(classi.roi(r).results,'signal')
                 end
             end
         end
-else disp(['No results.signal for roi ' r]);
+else disp(['No results.signal for roi ' num2str(r)]);
 end
 %==============================================DIVERROR======================================================
 function [framedivNoFalseNeg, framedivNoFalsePos]=detectError(rlsGroundtruthr, rlsResultsr)
