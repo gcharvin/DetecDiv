@@ -54,10 +54,10 @@ param.sepcolor=[1 0 0];
 param.edgeColorR=[0/255,0/255,0/255]; %edge color of Results. Should be a matrix of size 3xsizerec2
 param.edgeColorG=[0/255,0/255,0/255];
 
-param.cellwidth=0.1;
+param.cellwidth=0.05;
 param.spacing=param.cellwidth+0.025; % separation between traces
 if param.showgroundtruth==1 && param.sort==1
-    param.interspacing=0.1; %separation between doublets
+    param.interspacing=0.05; %separation between doublets
 else
     param.interspacing=0;
 end
@@ -83,7 +83,8 @@ if param.colorbar==1
     cmapg(:,3)=(fliplr(l))';
 
 else %no colored data, just filled rectangles with unique color
-    param.fillColorR=[20/255,200/255,50/255];
+    %param.fillColorR=[20/255,200/255,50/255];
+    param.fillColorR=[251/255,176/255,59/255];
     param.fillColorG=[175/255,175/255,175/255];
     cmap2=repmat(param.fillColorR,256,1); %for unicolored rectangles
     cmapg=repmat(param.fillColorG,256,1); %for unicolored rectangles
@@ -295,14 +296,14 @@ htraj=gcf;
 if figExport==1
     ax=gca;
     sz=10;
-    xf_width=sz; yf_width=4;
+    xf_width=sz; yf_width=3;
     set(gcf, 'PaperType','a4','PaperUnits','centimeters');
     %set(gcf,'Units','centimeters','Position', [5 5 xf_width yf_width]);
     set(ax,'Units','centimeters', 'InnerPosition', [2 2 xf_width yf_width])
     
     set(ax,'FontSize',8, 'LineWidth',1,'FontWeight','bold','TickLength',[0.02 0.02]);
-    
-    exportgraphics(htraj,'htraj.pdf','BackgroundColor','none','ContentType','vector')
+    htraj.Renderer='painters';
+    exportgraphics(htraj,'\\space2.igbmc.u-strasbg.fr\charvin\Theo\Projects\RAMM\Figures\Fig1\RLS/htraj.pdf','BackgroundColor','none','ContentType','vector')
 end
 
 
