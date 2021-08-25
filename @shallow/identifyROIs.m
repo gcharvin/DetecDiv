@@ -158,8 +158,12 @@ for i=1:size(out(j).scaled,1)
    
   % j,i
   %  aa=out(j).scaled(i,:)
-    obj.fov(out(j).fovid).addROI(out(j).scaled(i,:),j);
-   
+  
+%    obj.fov(out(j).fovid).addROI(out(j).scaled(i,:),j);
+    
+      obj.fov(out(j).fovid).addROI(out(j).scaled(i,:), obj.fov(out(j).fovid).id);
+  
+      
  %   msg = sprintf('%d / %d Traps created', i , size(positions,1) ); %Don't forget this semicolon
  %   fprintf([reverseStr, msg]);
  %   reverseStr = repmat(sprintf('\b'), 1, length(msg));
