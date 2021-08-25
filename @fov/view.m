@@ -78,15 +78,15 @@ else
         
         hp(cc)=subplot(1,tot,cc);
         
-        him.image(cc)=imshow(im(cc).data,[]);
+        him.image(cc)=imshow(im(i).data,[]);
         
         set(hp(cc),'Tag',['Axe' num2str(cc)]);
         
         %axis equal square
         
-        title(hp(cc),['Channel ' num2str(i) ' -Intensity:' num2str(obj.display.intensity(i))]);
+        title(hp(cc),[obj.channel{i} '-Intensity:' num2str(obj.display.intensity(i))],'Interpreter','None');
         
-        str{cc}=['Channel ' num2str(i)];
+        str{cc}=[obj.channel{i}];
         
         cc=cc+1;
         else
@@ -567,8 +567,8 @@ im=buildimage(obj);
 cc=1;
 for i=1:obj.channels
      if obj.display.selectedchannel(i)==1
-    him.image(cc).CData=im(cc).data;
-    title(hp(cc),['Channel ' num2str(i) ' -Intensity:' num2str(obj.display.intensity(i))]);
+    him.image(cc).CData=im(i).data;
+    title(hp(cc),[obj.channel{i} ' -Intensity:' num2str(obj.display.intensity(i))],'Interpreter','None');
     cc=cc+1;
      end
 end
