@@ -1,5 +1,5 @@
 function trainImageLSTMNetFun(path,name)
-
+blockRNG=1;
 fprintf('Loading training options...\n');
 fprintf('------\n');
 
@@ -87,10 +87,12 @@ if strcmp(trainingParam.lstmtraining,'y') | ~exist([path '/netLSTM.mat']) % trai
     fprintf('------\n');
     
     %=====BLOCKs RNG====
-    stCPU= RandStream('Threefry','Seed',0,'NormalTransform','Inversion');
-    stGPU=parallel.gpu.RandStream('Threefry','Seed',0,'NormalTransform','Inversion');
-    RandStream.setGlobalStream(stCPU);
-    parallel.gpu.RandStream.setGlobalStream(stGPU);
+    if blockRNG==1
+        stCPU= RandStream('Threefry','Seed',0,'NormalTransform','Inversion');
+        stGPU=parallel.gpu.RandStream('Threefry','Seed',0,'NormalTransform','Inversion');
+        RandStream.setGlobalStream(stCPU);
+        parallel.gpu.RandStream.setGlobalStream(stGPU);
+    end
     %===================
     
     numObservations = numel(sequences);
@@ -190,8 +192,8 @@ end
         'MaxEpochs',50,...
         'InitialLearnRate',trainingParam.lstmInitialLearnRate, ...
         'LearnRateSchedule','piecewise',...
-        'LearnRateDropPeriod',10,...
-        'LearnRateDropFactor',0.9,...
+        'LearnRateDropPeriod',5,...
+        'LearnRateDropFactor',0.5,...
         'GradientThreshold',2, ...
         'Shuffle','every-epoch', ...
         'ValidationData',{sequencesValidation,labelsValidation}, ...
