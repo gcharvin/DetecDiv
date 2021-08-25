@@ -2,6 +2,7 @@ function trainImageGoogleNetFun(path,name)
 
 % gather all classification images in each class and performs the training and outputs and saves the trained net 
 % load training data 
+blockRNG=1;
 
 fprintf('Loading data repository...\n');
 fprintf('------\n');
@@ -111,10 +112,12 @@ fprintf('Training network...\n');
 fprintf('------\n');
 
     %=====BLOCKs RNG====
-    stCPU= RandStream('Threefry','Seed',0,'NormalTransform','Inversion');
-    stGPU=parallel.gpu.RandStream('Threefry','Seed',0,'NormalTransform','Inversion');
-    RandStream.setGlobalStream(stCPU);
-    parallel.gpu.RandStream.setGlobalStream(stGPU);
+    if blockRNG==1
+        stCPU= RandStream('Threefry','Seed',0,'NormalTransform','Inversion');
+        stGPU=parallel.gpu.RandStream('Threefry','Seed',0,'NormalTransform','Inversion');
+        RandStream.setGlobalStream(stCPU);
+        parallel.gpu.RandStream.setGlobalStream(stGPU);
+    end
     %===================
     
 % training network
