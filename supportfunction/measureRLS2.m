@@ -361,24 +361,26 @@ end
 function divFluo=computeSignalDiv(classi,r,rls)
 divFluo=[];
 %check all the fields of .results.signal and mean them by div
-resultFields=fields(classi.roi(r).results.signal); %full, cell, nucleus
-    %essayer try catch
-    for rf=resultFields
-        classiFields=fields(classi.roi(r).results.signal.(rf)); %classi
-        for cf=classiFields
-            fluoFields=fields(classi.roi(r).results.signal.(rf).(cf)); %max, mean, volume...
-            for ff=fluoFields
-                for chan=1:numel(classi.roi(r).results.signal.(rf).(cf)(:,1))
-                    tt=1;
-                    for t=1:rls.ndiv
-                        divSignal.(rf).(cf)(chan,t)=mean(classi.roi(r).results.signal.(rf).(cf)(chan,rls.framediv(tt):rls.framediv(tt+1)));
-                        tt=tt+1;
+if isfields(classi.roi(r).results,'signal')
+    resultFields=fields(classi.roi(r).results.signal); %full, cell, nucleus
+        %essayer try catch
+        for rf=resultFields
+            classiFields=fields(classi.roi(r).results.signal.(rf)); %classi
+            for cf=classiFields
+                fluoFields=fields(classi.roi(r).results.signal.(rf).(cf)); %max, mean, volume...
+                for ff=fluoFields
+                    for chan=1:numel(classi.roi(r).results.signal.(rf).(cf)(:,1))
+                        tt=1;
+                        for t=1:rls.ndiv
+                            divSignal.(rf).(cf)(chan,t)=mean(classi.roi(r).results.signal.(rf).(cf)(chan,rls.framediv(tt):rls.framediv(tt+1)));
+                            tt=tt+1;
+                        end
                     end
                 end
             end
         end
-    end
-
+else disp(['No results.signal for roi ' r]);
+end
 %==============================================DIVERROR======================================================
 function [framedivNoFalseNeg, framedivNoFalsePos]=detectError(rlsGroundtruthr, rlsResultsr)
 framedivNoFalseNeg=NaN;
