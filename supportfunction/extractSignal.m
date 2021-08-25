@@ -7,7 +7,7 @@ function extractSignal(obj,type,inputvarargin)
 %*'Method': **'full' computes the average of the kMaxPixels, the total and
 %the mean pixel value of the whople image
 %           **'cell' computes the fluo of channel 'Channels' with the mask
-%           of Mask(2). Give 2 channels in 'Channels. Also extracts the
+%           of Mask(2). Give 2 channelsExtract in 'Channels. Also extracts the
 %           volume of the cell.
 %           **'nucleus' computes the fluo of channel 'Channels' with the mask
 %           of MaskCell inter MaskNuc. Also extracts the
@@ -60,7 +60,7 @@ for i=1:numel(inputvarargin)
     
     %Channels
     if strcmp(inputvarargin{i},'Channels')
-        channels=inputvarargin{i+1};
+        channelsExtract=inputvarargin{i+1};
     end
 end
     
@@ -99,25 +99,30 @@ if strcmp(method,'full')
         str=[str num2str(i) ' - ' chans{i} ';'];
     end
 
-    prompt=['Which channel to extract the signal from? (Default: [2:number of channels])' newline str];
-    channels=input(prompt);
+    prompt=['Which channel to extract the signal from? (Default: [2:number of channelsExtract])' newline str];
+    channelsExtract=input(prompt);
     for r=rois %to parfor
         obj.roi(r).load();
         lastFrame=numel(obj.roi(r).image(1,1,1,:));
-        if ~exist('channels','var')
-            channels=1:numel(obj.roi(r).image(1,1,:,1));
-            if numel(channels)>1
-                channels=2:numel(channels); %avoid channel 1 that is mostof the time not fluo
+        if ~exist('channelsExtract','var')
+            channelsExtract=1:numel(obj.roi(r).image(1,1,:,1));
+            if numel(channelsExtract)>1
+                channelsExtract=2:numel(channelsExtract); %avoid channel 1 that is mostof the time not fluo
             end
         end
-        for c=channels
+        for c=channelsExtract
             for t=1:lastFrame
+                %init/reset
+                obj.roi(r).results.signal.full.(classiname).maxfluo(c,t)=NaN;
+                obj.roi(r).results.signal.full.(classiname).meanfluo(c,t)=NaN;
+                obj.roi(r).results.signal.full.(classiname).totalfluo(c,t)=NaN;
+                %fill, reshaped used to make it line
                 obj.roi(r).results.signal.full.(classiname).maxfluo(c,t)=mean(maxk( reshape(obj.roi(r).image(:,:,c,t),[],1) ,kMaxPix));
                 obj.roi(r).results.signal.full.(classiname).meanfluo(c,t)=mean(reshape(obj.roi(r).image(:,:,c,t),[],1));
                 obj.roi(r).results.signal.full.(classiname).totalfluo(c,t)=sum(reshape(obj.roi(r).image(:,:,c,t),[],1));
             end
         end
-        disp(['Average signal of ' num2str(kMaxPix) 'max pixels, mean and total signal was computed and added to roi(' num2str(r) ').results.' num2str(classiname) '.fluo.full'])
+        disp(['Average signal of ' num2str(kMaxPix) 'max pixels, mean and total signal was computed and added to roi(' num2str(r) ').results.signal.full' num2str(classiname)])
         clear im
     end
 end
@@ -127,18 +132,18 @@ end
 %     for r=rois %to parfor
 %         obj.roi(r).load();
 %         lastFrame=numel(obj.roi(r).image(1,1,1,:));
-%         if ~exist('channels','var')
-%             channels=1:numel(obj.roi(r).image(1,1,:,1));
-%             if numel(channels)>1
-%                 channels=2:numel(channels); %avoid channel 1 that is mostof the time not fluo
+%         if ~exist('channelsExtract','var')
+%             channelsExtract=1:numel(obj.roi(r).image(1,1,:,1));
+%             if numel(channelsExtract)>1
+%                 channelsExtract=2:numel(channelsExtract); %avoid channel 1 that is mostof the time not fluo
 %             end
 %         end
-%         for c=channels
+%         for c=channelsExtract
 %             for t=1:lastFrame
 %                 obj.roi(r).results.(classiid).fluo.full.meanf(c,t)=mean(reshape(obj.roi(r).image(:,:,c,t),[],1));
 %             end
 %         end
-%         disp(['Average signal was computed and added to roi(' num2str(r) ').results.' num2str(classiid) '.fluo.meanf\n'])
+%         disp(['Average signal was computed and added to roi(' num2str(r) ').results.' num2str(classiid) '.fluo.meanf'])
 %         clear im
 %     end
 % end
@@ -152,16 +157,12 @@ if strcmp(method,'volume')
     for i=1:numel(chans)
         str=[str num2str(i) ' - ' chans{i} '; '];
     end
-    prompt=['Which channel contains the mask of the cells?' newline str];
+    prompt=['Which channel contains the MASK of the CELLS?' newline str];
     channelSegCell=input(prompt);
     if ~exist('channelSegCell','var')
-        error('Indicate which channel contains the mask of the cells');
+        error('Indicate which channel contains the MASK of the CELLS');
     end
-    
-    classidMother=0;
-    classidBckg=0;
-    strM='';
-    strB='';
+
     for r=rois %to parfor
         obj.roi(r).load();
         
@@ -173,17 +174,12 @@ if strcmp(method,'volume')
             error('classi name not found with the given mask channel')
         end
         
-        %find the class of the mother, ask it only once.
-        if classidMother==0
-%             for i=1:max(obj.roi(r).image(:,:,channelSegCell,1))
-%                 strM=[strM num2str(i) ' - ' obj.roi(r).classes{i} ';'];
-%             end
-            prompt=(['Indicate the --number-- of the class corresponding to the mother cell for the classi: ' classiname]);
+        %class of the mother, ask it only once.
+            prompt=(['Indicate the --number-- of the class corresponding to the mother cell for the classi: ' classiname ' (Default: 2) ' newline]);
             classidMother=input(prompt);
-        end
-        
+            if numel(classidMother)==0, classidMother=2; end
         %extract volume
-        lastFrame=numel(obj.roi(r).image(1,1,channels(1),:));
+        lastFrame=numel(obj.roi(r).image(1,1,channelsExtract(1),:));
         for t=1:lastFrame
             im=obj.roi(r).image(:,:,c,t);
             maskTotal=zeros(size(im),'uint16');
@@ -192,10 +188,13 @@ if strcmp(method,'volume')
             maskTotal=obj.roi(r).image(:,:,channelSegCell,t); %mask containing all the classes
             maskMother=(maskMother+maskTotal.*uint16(maskTotal==classidMother))./classidMother;
             
-            obj.roi(r).results.signal.cell.(classiname).volume(t)=numel(maskedMother(:));
+            %init/reset
+            obj.roi(r).results.signal.cell.(classiname).volume(t)=NaN;
+            %fill
+            obj.roi(r).results.signal.cell.(classiname).volume(t)=sum(maskMother(:));
         end
     end
-    disp(['Volume mothercell was computed and added to roi(' num2str(r) ').results.' num2str(classiname) '.signal.volume\n'])
+    disp(['Volume mothercell was computed and added to roi(' num2str(r) ').results.signal.cell.' num2str(classiname) '.volume'])
 end
 
 %%
@@ -206,51 +205,42 @@ if strcmp(method,'cell')
         str=[str num2str(i) ' - ' chans{i} ';  '];
     end
 
-    prompt=['Which channel(s) to extract the signal from?' newline str];
-    channels=input(prompt);
-    if ~exist('channels','var')
+    prompt=['Which channel(s) to EXTRACT the signal from?' newline str newline];
+    channelsExtract=input(prompt);
+    if ~exist('channelsExtract','var')
         error('Indicate channel(s) from which to extract the signal');
     end
     
-    prompt=['Which channel contains the mask of the cells?' newline str];
+    prompt=['Which channel contains the MASK of the CELLS?' newline str newline];
     channelSegCell=input(prompt);
     if ~exist('channelSegCell','var')
-        error('Indicate which channel contains the mask of the cells');
+        error('Indicate which channel contains the MASK of the CELLS');
     end
-    
-    classidMother=0;
-    classidBckg=0;
-    strM='';
-    strB='';
+
     for r=rois %to parfor
         obj.roi(r).load();
         
         %find the classi used to segmente
         if contains(chans{channelSegCell},'results_')
-        classiname=extractAfter(chans{channelSegCell},'results_');
+        classiname=chans{channelSegCell};%extractAfter(chans{channelSegCell},'results_');
         else
 %           classiid=chans{channelSegCell};
             error('classi name not found with the given mask channel')
         end
          
         %find the class of the mother, ask it only once.
-        if classidMother==0
-%             for i=1:numel(obj.roi(r).classes)
-%                 strM=[strM num2str(i) ' - ' obj.roi(r).classes{i} ';'];
-%             end
-        prompt=(['Indicate the --number-- of the class corresponding to the mother in the classi: ' classiname]);
+
+        prompt=(['Indicate the --number-- of the class corresponding to the mother in the classi: ' classiname ' (Default: 2) ' newline]);
         classidMother=input(prompt);
+        if numel(classidMother)==0, classidMother=2; end
         
-%             for i=1:numel(obj.roi(r).classes)
-%                 strB=[strB num2str(i) ' - ' obj.roi(r).classes{i} ';'];
-%             end
-        prompt=(['Indicate the --number-- of the class corresponding to the background in the classi: ' classiname]);
+        prompt=(['Indicate the --number-- of the class corresponding to the background in the classi: ' classiname ' (Default: 1) ' newline]);
         classidBckg=input(prompt);        
-        end
+        if numel(classidBckg)==0, classidBckg=1; end
         
         %extract fluo for each given channel
-        lastFrame=numel(obj.roi(r).image(1,1,channels(1),:));
-        for c=channels
+        lastFrame=numel(obj.roi(r).image(1,1,channelsExtract(1),:));
+        for c=channelsExtract
             for t=1:lastFrame
                 im=obj.roi(r).image(:,:,c,t);
                 maskTotal=zeros(size(im),'uint16');
@@ -264,83 +254,77 @@ if strcmp(method,'cell')
                 maskedMother=im.*maskMother;
                 maskedBckg=im.*maskBckg;
                 
-                obj.roi(r).results.signal.cell.(classiname).volume(t)=numel(maskedMother(:));
+                %init/reset
+                obj.roi(r).results.signal.cell.(classiname).volume(t)=NaN;
+                obj.roi(r).results.signal.cell.(classiname).totalfluo(c,t)=NaN;
+                obj.roi(r).results.signal.cell.(classiname).meanfluo(c,t)=NaN;
+                
+                obj.roi(r).results.signal.cell.(classiname).volume(t)=sum(maskMother(:));
                 obj.roi(r).results.signal.cell.(classiname).totalfluo(c,t)=sum(maskedMother(:))-mean(maskedBckg(:));
-                obj.roi(r).results.signal.cell.(classiname).meanfluo(c,t)=obj.roi(r).results.(classiname).fluo.cell(c,t).totalf/sum(maskMother(:));
+                obj.roi(r).results.signal.cell.(classiname).meanfluo(c,t)=obj.roi(r).results.signal.cell.(classiname).totalfluo(c,t)/sum(maskMother(:));
             end
         end
-        disp(['Average and total signal of mothercell was computed and added to roi(' num2str(r) ').results.' num2str(classiname) '.fluo.cell\n'])
+        disp(['Volume, average and total signal of mothercell was computed and added to roi(' num2str(r) ').results.signal.cell' num2str(classiname)])
     end
 end
 
 
 %% nucleus
 
-
-%TODO
 if strcmp(method,'nucleus')
-    prompt='Which channel(s) to extract the signal from?';
-    channels=input(prompt);
-    if ~exist('channels','var')
+    prompt=['Which channel(s) to EXTRACT the signal from?' newline];
+    channelsExtract=input(prompt);
+    if ~exist('channelsExtract','var')
         error('Indicate channel(s) from which to extract the signal');
     end
     
-    prompt='Which channel contains the mask of the cells?';
+    prompt=['Which channel contains the MASK of the CELLS?' newline];
     channelSegCell=input(prompt);
     if ~exist('channelSegCell','var')
-        error('Indicate which channel contains the mask of the cells');
+        error('Indicate which channel contains the MASK of the CELLS');
     end
     
-    prompt='Which channel contains the mask of the nucleus?';
-    channelSegCell=input(prompt);
+    prompt=['Which channel contains the MASK of the NUCLEUS?' newline];
+    channelSegNuc=input(prompt);
     if ~exist('channelSegNucleus','var')
-        error('Indicate which channel contains the mask of the cells');
+        error('Indicate which channel contains the MASK of the CELLS');
     end
     
-    %extract mothercell
-    classidMother=0;
-    classidBckg=0;
-    strM='';
-    strB='';
     for r=rois %to parfor
         obj.roi(r).load();
         
         %find the classi used to segmente
         chans=obj.roi(rois(1)).display.channel;
         if contains(chans{channelSegCell},'results_')
-        classiname=extractAfter(chans{channelSegCell},'results_');
+        classiname=chans{channelSegCell};%extractAfter(chans{channelSegCell},'results_');
         else
-%           classiid=chans{channelSegCell};
             error('classi name not found with the given mask channel')
         end
-         
-        %find the classid of the mother, ask it only once.
-        if classidMother==0
-%             for i=1:numel(obj.roi(r).classes)
-%                 strM=[strM num2str(i) ' - ' obj.roi(r).classes{i} ';'];
-%             end
-        prompt=(['Indicate the --number-- of the class corresponding to the mother cell in the classi: ' classiname]);
-        classidMother=input(prompt);
         
+        if contains(chans{channelSegNuc},'results_')
+        classiNucName=chans{channelSegNuc};
+        else
+            error('classi name not found with the given mask channel')
+        end
+
+        prompt=(['Indicate the --number-- of the class corresponding to the mother cell in the classi: ' classiname ' (Default: 2) ' newline]);
+        classidMother=input(prompt);
+        if numel(classidMother)==0, classidMother=2; end
 %             for i=1:numel(obj.roi(r).classes)
 %                 strB=[strB num2str(i) ' - ' obj.roi(r).classes{i} ';'];
 %             end
-        prompt=(['Indicate the --number-- of the class corresponding to the background in the classi: ' classiname]);
-        classidBckg=input(prompt);        
-        end
+        prompt=(['Indicate the --number-- of the class corresponding to the background in the classi: ' classiname ' (Default: 1) ' newline]);
+        classidBckg=input(prompt);                
+        if numel(classidBckg)==0, classidBckg=1; end
         
         %find the classid of the nucleus, ask it only once.
-        if classidNucleus==0
-%             for i=1:numel(obj.roi(r).classes)
-%                 strN=[strN num2str(i) ' - ' obj.roi(r).classes{i} ';'];
-%             end
-        prompt=(['Indicate the --number-- of the class corresponding to the nucleus in the classi: ' classiname]);
+        prompt=(['Indicate the --number-- of the class corresponding to the nucleus in the classi: ' classiNucName ' (Default: 2) ' newline]);
         classidNucleus=input(prompt);       
-        end
+        if numel(classidNucleus)==0, classidNucleus=2; end
         
         %extract fluo for each given channel
-        lastFrame=numel(obj.roi(r).image(1,1,channels(1),:));
-        for c=channels
+        lastFrame=numel(obj.roi(r).image(1,1,channelsExtract(1),:));
+        for c=channelsExtract
             for t=1:lastFrame
                 im=obj.roi(r).image(:,:,c,t);
                 maskTotal=zeros(size(im),'uint16');
@@ -348,21 +332,27 @@ if strcmp(method,'nucleus')
                 maskBckg=zeros(size(im),'uint16');
                 maskNucleus=zeros(size(im),'uint16');
                 
-                maskTotal=obj.roi(r).image(:,:,channelSegCell,t); %mask containing all the classes
+                maskTotal=obj.roi(r).image(:,:,channelSegCell,t); %mask containing all the classes for the cell mask
+                maskTotalNucleus=obj.roi(r).image(:,:,channelSegNuc,t); %mask containing all the classes for the nuc mask
                 maskMother=(maskMother+maskTotal.*uint16(maskTotal==classidMother))./classidMother;
                 maskBckg=(maskBckg+maskTotal.*uint16(maskTotal==classidBckg))./classidBckg;
-                maskNucleus=(maskNucleus+maskTotal.*uint16(maskTotal==classNucleus))./classidBckg;
+                maskNucleus=(maskNucleus+maskTotalNucleus.*uint16(maskTotalNucleus==classidNucleus))./classidNucleus;
                 maskNucleusMother=maskMother.*maskNucleus;
                 
                 maskedNucleusMother=im.*maskNucleusMother;
                 maskedBckg=im.*maskBckg;
                 
-                obj.roi(r).results.signal.nucleus.(classiname).volume(t)=numel(maskNucleusMother(:));
+                %init/reset
+                obj.roi(r).results.signal.nucleus.(classiname).volume(t)=NaN;
+                obj.roi(r).results.signal.nucleus.(classiname).totalfluo(c,t)=NaN;
+                obj.roi(r).results.signal.nucleus.(classiname).meanfluo(c,t)=NaN;
+                %fill  
+                obj.roi(r).results.signal.nucleus.(classiname).volume(t)=sum(maskNucleusMother(:));
                 obj.roi(r).results.signal.nucleus.(classiname).totalfluo(c,t)=sum(maskedNucleusMother(:))-mean(maskedBckg(:));
-                obj.roi(r).results.signal.nucleus.(classiname).meanfluo(c,t)=obj.roi(r).results.(classiname).fluo.cell(c,t).totalf/sum(maskMother(:));
+                obj.roi(r).results.signal.nucleus.(classiname).meanfluo(c,t)=obj.roi(r).results.signal.nucleus.(classiname).totalfluo(c,t)/sum(maskMother(:));
             end
         end
-        disp(['Average and total signal of mothercell was computed and added to roi(' num2str(r) ').results.' num2str(classiname) '.fluo.cell\n'])
+        disp(['Volume, average and total signal of nucleus was computed and added to roi(' num2str(r) ').results.signal.nucleus' num2str(classiname)])
     end
 end
 end
