@@ -197,3 +197,19 @@ Coming soon/In construction
 ---------------------
 ```list = listRepositoryClassi;``` will create a .txt file in the default matlab folder, containing the indicated path for a folder in which you will put all your desired independant classifications. In this folder, you will be able to create new classi, export existing classi into shallow projects, update existing classi, import classi into it, and add/update ROIs to existing classi.
 to be continued...
+
+### Misc ###
+---------------------
+```myproject.run('roilist',roilist,'args',{'argument Name1 of the method',argument1,'argumentname2',argument2});``` applies the roiMethod to roilist, with arguments args.
+
+
+
+
+---------------------
+---------------------
+---------------------
+### List of methods ###
+---------------------
+
+## roi ##
+```.combineChannels```, arguments:{'channels',[1 2 3],'rgb',{[1 0 0],[0 1 0],[0 0 1]} combines the channels 1 2 3 to create a new rgb channel with intensities [1 0 0],[0 1 0],[0 0 1] for the respective channels.
