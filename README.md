@@ -191,3 +191,8 @@ Coming soon/In construction
 ```myproject.fov.export('Frames',1:5,'Framerate',10,'FontSize',96,'Levels',[4000 14000],'DrawROIs',[],'Drift')```
 
 ```myproject.processing.classification(3).export('Mosaic',1:9,'Name','test','Training','Results','Levels',[6000 20000],'Framerate',10,'Title','fob1','RLS')```
+
+
+### Make independant classifications ###
+```list = listRepositoryClassi;``` will create a .txt file in the default matlab folder, containing the indicated path for a folder in which you will put all your desired independant classifications. In this folder, you will be able to create new classi, export existing classi into shallow projects, update existing classi, import classi into it, and add/update ROIs to existing classi.
+to be continued...
