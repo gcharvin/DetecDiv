@@ -133,7 +133,7 @@ parfor i=fovid
         method='circshift';
        % method='subpixel';
         
-        tmpfov(i).computeDrift('framesid',nframes,'refframeid',refframeid,'method',method,'refimage',refimage,'images',list(:,1)); % compute drift and store in fov.drift
+        tmpfov(i).computeDrift('framesid',nframes,'refframeid',refframeid,'method',method,'refimage',refimage,'images',list(:,1),'fov',i); % compute drift and store in fov.drift
         
         %a= tmpfov(i).drift.x
         
