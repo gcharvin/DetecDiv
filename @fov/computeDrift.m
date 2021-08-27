@@ -26,32 +26,36 @@ for i=1:numel(varargin)
         method=varargin{i+1};
     end
     
-     if strcmp(varargin{i},'channel') % channel number, only used if images are not provided
+    if strcmp(varargin{i},'channel') % channel number, only used if images are not provided
         channel=varargin{i+1};
-     end
+    end
     
-      if strcmp(varargin{i},'images') % cell array of images or single image
+    if strcmp(varargin{i},'images') % cell array of images or single image
         images=varargin{i+1};
         %size(images)
-      end
-      
-      if strcmp(varargin{i},'framesid') %id of frames
+    end
+    
+    if strcmp(varargin{i},'framesid') %id of frames
         framesid=varargin{i+1};
-      end
-     
-        if strcmp(varargin{i},'refimage') % reference image , not a cell array
+    end
+    
+    if strcmp(varargin{i},'refimage') % reference image , not a cell array
         refimage=varargin{i+1};
-        end
-      
-         if strcmp(varargin{i},'refframeid') % id of reference frame
+    end
+    
+    if strcmp(varargin{i},'refframeid') % id of reference frame
         refframeid=varargin{i+1};
-         end
-         
-        
-        if strcmp(varargin{i},'display') % id of reference frame
+    end
+    
+    
+    if strcmp(varargin{i},'display') % id of reference frame
         display=1;
-         end
-
+    end
+    
+    if strcmp(varargin{i},'fov') % id of reference frame
+        fov=varargin{i+1};
+    end
+    
 end
 
 if numel(obj.drift)==0
@@ -75,7 +79,7 @@ end
 
 for j=framesid
   
-        disp(['Computing drift for frame: ' num2str(j) '.....']);
+        disp(['Computing drift for frame: ' num2str(j) ' of fov' num2str(fov) '.....']);
   
     if iscell(images)
     if numel(images)<cc % need to load images
