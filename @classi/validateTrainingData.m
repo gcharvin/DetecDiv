@@ -38,14 +38,17 @@ if exist('classifierStore','var')==0
     classifierStore=classifier;
 end
 
-if exist('classifierCNN','var')==0 
-     str=[path '/netCNN.mat'];
-     if exist(str)
-     load(str);
-     classifierCNN=classifier; 
-     else
-       classifierCNN=[];
-     end
+if classif.typeid==4
+    if exist('classifierCNN','var')==0
+        disp(['Loading CNN classifier: ' name]);
+        str=[path '/netCNN.mat'];
+        if exist(str)
+            load(str);
+            classifierCNN=classifier;
+        else
+            classifierCNN=[];
+        end
+    end
 end
 
 classifier=classifierStore; %either loaded or provided as an argument 
@@ -74,7 +77,7 @@ for i=1:length(roilist)
 tmp(i)=classif.roi(roilist(i));
 end
 
-parfor i=1:length(roilist) % loop on all ROIs using parrallel computing
+for i=1:length(roilist) % loop on all ROIs using parrallel computing
     
  roiobj=tmp(i);
 
