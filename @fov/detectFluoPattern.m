@@ -13,7 +13,7 @@ function detectFluoPattern(obj,varargin)
 %*'frameThreshold' number of frames to be above fluoThreshold
 
 fluoThreshold=500;
-frameThreshold=5;
+frameThreshold=3*5;
 frames=1:numel(obj.srclist{1}); % take the number of frames from the image list 
 rois=1:numel(obj.roi);
 method='full';
@@ -26,7 +26,7 @@ for i=1:numel(varargin)
     %Method
     if strcmp(varargin{i},'Method')
         method=varargin{i+1};
-        if strcmp(method,'full') && strcmp(method,'mean')
+        if strcmp(method,'full') %&& strcmp(method,'mean')
             error('Please enter a valide method');
         end
     end
@@ -56,32 +56,34 @@ for i=1:numel(varargin)
     end
 end
 
-if numel(obj.roi(rois(1)).results)~=0
-    classiid=fieldnames(obj.roi(rois(1)).results);
-    str=[];
-    for i=1:numel(classiid)
-        str=[str num2str(i) ' - ' classiid{i} ';'];
-    end
-    prompt=['Choose which classi : ' str];
-    classiidsNum=input(prompt);
-    if numel(classiidsNum)==0
-       classiidsNum=numel(classiid);
-    end
-    classiid=classiid{classiidsNum};
-else
-    error('You must extract the fluo of the ROI before running this method. See .extractFluo');
-end
-
 %%
 if strcmp(method,'full')
+    %pick classi
+    if numel(obj.roi(rois(1)).results.signal.full)~=0
+        classiname=fieldnames(obj.roi(rois(1)).results.signal.full);
+        str=[];
+        for i=1:numel(classiname)
+            str=[str num2str(i) ' - ' classiname{i} ';'];
+        end
+        prompt=['Choose which classi : ' str];
+        classiid=input(prompt);
+        if numel(classiid)==0
+            classiid=numel(classiname);
+        end
+        classiname=classiname{classiid};
+    else
+        error('You must extract the fluo of the ROI before running this method. See .extractFluo');
+    end
+    
+    
     obj.flaggedROIs=[];
     for r=rois %to parfor
         for c=channels
             flagFluo=0;
             for t=frames
-                if numel(obj.roi(r).results.(classiid).fluo.full.maxf)==0
+                if numel(obj.roi(r).results.signal.full.(classiname).maxfluo)==0
                     error('You must extract the meanfluo of the ROI before running this method. See .extractFluo. At least one frame has not been extracted');
-                elseif obj.roi(r).results.(classiid).fluo.full.maxf(c,t)>fluoThreshold
+                elseif obj.roi(r).results.signal.full.(classiname).maxfluo(c,t)>fluoThreshold
                     flagFluo=flagFluo+1;
                 end
             end
@@ -101,27 +103,27 @@ end
 
 
 
-if strcmp(method,'mean')
-    obj.flaggedROIs=[];
-    for r=rois %to parfor
-        for c=channels
-            flagFluo=0;
-            for t=frames
-                if numel(obj.roi(r).results.(classiid).fluo.full.meanf)==0
-                    error('You must extract the meanfluo of the ROI before running this method. See .extractFluo. At least one frame has not been extracted');
-                elseif obj.roi(r).results.(classiid).fluo.full.meanf(c,t)>fluoThreshold
-                    flagFluo=flagFluo+1;
-                end
-            end
-            if flagFluo>frameThreshold
-                if ~ismember(r,obj.flaggedROIs) % to avoid redundancy in case 2 channels are positive
-                    obj.flaggedROIs=[obj.flaggedROIs r];
-                end
-                disp(['ROI' num2str(r) ' is positive for channel ' num2str(c)])
-            else
-                disp(['ROI' num2str(r) ' is negative for channel ' num2str(c)])
-            end
-        end
-        fprintf('\n')
-    end
-end
+% if strcmp(method,'mean')
+%     obj.flaggedROIs=[];
+%     for r=rois %to parfor
+%         for c=channels
+%             flagFluo=0;
+%             for t=frames
+%                 if numel(obj.roi(r).results.(classiid).fluo.full.meanf)==0
+%                     error('You must extract the meanfluo of the ROI before running this method. See .extractFluo. At least one frame has not been extracted');
+%                 elseif obj.roi(r).results.(classiid).fluo.full.meanf(c,t)>fluoThreshold
+%                     flagFluo=flagFluo+1;
+%                 end
+%             end
+%             if flagFluo>frameThreshold
+%                 if ~ismember(r,obj.flaggedROIs) % to avoid redundancy in case 2 channels are positive
+%                     obj.flaggedROIs=[obj.flaggedROIs r];
+%                 end
+%                 disp(['ROI' num2str(r) ' is positive for channel ' num2str(c)])
+%             else
+%                 disp(['ROI' num2str(r) ' is negative for channel ' num2str(c)])
+%             end
+%         end
+%         fprintf('\n')
+%     end
+% end

@@ -9,16 +9,16 @@ fprintf('Load videos...\n');
 
 for i=1:numel(classifier.Layers)
     if strcmp(class(classifier.Layers(i)), 'nnet.cnn.layer.SequenceInputLayer')
-inputSize = classifier.Layers(i).InputSize(1:2);
-break
+        inputSize = classifier.Layers(i).InputSize(1:2);
+        break
     end
 end
 
-if nargin==4 % standard classification is requested 
-net=classifierCNN;
-inputSizeCNN = net.Layers(1).InputSize;
-classNamesCNN = net.Layers(end).ClassNames;
-numClassesCNN = numel(classNamesCNN);
+if nargin==4 % standard classification is requested
+    net=classifierCNN;
+    inputSizeCNN = net.Layers(1).InputSize;
+    classNamesCNN = net.Layers(end).ClassNames;
+    numClassesCNN = numel(classNamesCNN);
 end
 
 %return;
@@ -34,7 +34,7 @@ if numel(roiobj.image)==0
 end
 
 pix=find(roiobj.channelid==classif.channel(1)); % find channels corresponding to trained data
-im=roiobj.image(:,:,pix,:); 
+im=roiobj.image(:,:,pix,:);
 
 disp('Formatting video before classification....');
 %size(im)
@@ -52,14 +52,14 @@ end
 vid=uint8(zeros(size(im,1),size(im,2),3,size(im,4)));
 
 for j=1:size(im,4)
-
+    
     if numel(pix)==1
         
         tmp=roiobj.preProcessROIData(pix,j,param);
         
         %tmp = double(imadjust(tmp,[meanphc/65535 maxphc/65535],[0 1]))/65535;
         %tmp=repmat(tmp,[1 1 3]);
-         
+        
     else
         tmp=im(:,:,:,j);
         tmp=double(tmp)/65535;
@@ -85,13 +85,13 @@ video = centerCrop(vid,inputSize);
 % nframes=inputSize(1);
 % narr=floor(size(im,4)/nframes);
 % nrem=mod(size(im,4),nframes);
-% 
+%
 % if nrem>0
 %     narr=narr+1;
 % end
-% 
+%
 % videoout={};
-% 
+%
 % %if size(im,4)>nframes
 % for i=1:narr
 %     if i==narr
@@ -104,7 +104,7 @@ video = centerCrop(vid,inputSize);
 % %else
 % %   videoout{1}=video;
 % %end
-% 
+%
 % %size(videoout)
 % %size(videoout{1})
 % %size(videoout{3})
@@ -116,32 +116,34 @@ disp('Starting video classification...');
 
 try
     
-prob=predict(classifier,video); 
-%probCNN=predict(classifierCNN,video);
-[labelCNN,probCNN] = classify(classifierCNN,gfp);
-catch 
+    prob=predict(classifier,video);
+    %probCNN=predict(classifierCNN,video);
+    if nargin==4
+        [labelCNN,probCNN] = classify(classifierCNN,gfp);
+    end
+catch
     
-disp('Error with predict function  : likely out of memory issue with GPU, trying CPU computing...');
-prob=predict(classifier,video,'ExecutionEnvironment', 'cpu');
-%probCNN=predict(classifierCNN,video,'ExecutionEnvironment', 'cpu');
-if nargin==4
-[labelCNN,probCNN] = classify(classifierCNN,gfp);
+    disp('Error with predict function  : likely out of memory issue with GPU, trying CPU computing...');
+    prob=predict(classifier,video,'ExecutionEnvironment', 'cpu');
+    %probCNN=predict(classifierCNN,video,'ExecutionEnvironment', 'cpu');
+    if nargin==4
+        [labelCNN,probCNN] = classify(classifierCNN,gfp);
+    end
 end
-end
-  
+
 labels = classifier.Layers(end).Classes;
-if size(prob,1) == numel(labels) % adjust matrix depending on matlab version 
-   prob=prob';
+if size(prob,1) == numel(labels) % adjust matrix depending on matlab version
+    prob=prob';
 end
- [~, idx] = max(prob,[],2);
- label = labels(idx);
- 
- %if size(probCNN,1) == numel(labels) % adjust matrix depending on matlab version 
- %  probCNN=probCNN';
+[~, idx] = max(prob,[],2);
+label = labels(idx);
+
+%if size(probCNN,1) == numel(labels) % adjust matrix depending on matlab version
+%  probCNN=probCNN';
 %end
- %[~, idx] = max(probCNN,[],2);
- %labelCNN = labels(idx);
- 
+%[~, idx] = max(probCNN,[],2);
+%labelCNN = labels(idx);
+
 %  [~, idx] = max(prob,[],2);
 %  label = labels(idx);
 % %label = classify(classifier,video,'ExecutionEnvironment', 'cpu'); % in case the gpu crashes because of out of memory
@@ -156,68 +158,68 @@ end
 %    lab = [lab label{i}];
 % end
 %else
-   %label=label{1}; 
+%label=label{1};
 %end
 
 %label=lab(1:size(im,4));
 
 results=roiobj.results;
 
-    results.(classif.strid)=[];
-    
-    if classif.output==0
+results.(classif.strid)=[];
+
+if classif.output==0
     results.(classif.strid).id=zeros(1,size(im,4));
+else
+    results.(classif.strid).id =0;
+end
+
+results.(classif.strid).labels=label';
+results.(classif.strid).classes=classif.classes;
+results.(classif.strid).prob=prob';
+
+for i=1:numel(classif.classes)
+    pix=label==classif.classes{i};
+    results.(classif.strid).id(pix)=i;
+end
+
+if nargin==4
+    if classif.output==0
+        results.(classif.strid).idCNN=zeros(1,size(im,4));
     else
-    results.(classif.strid).id =0;  
+        results.(classif.strid).idCNN=0;
     end
     
-    results.(classif.strid).labels=label';
-    results.(classif.strid).classes=classif.classes;
-    results.(classif.strid).prob=prob';
-    
-    for i=1:numel(classif.classes)
-   pix=label==classif.classes{i};
-   results.(classif.strid).id(pix)=i;
-    end
-    
-    if nargin==4
-        if classif.output==0
-    results.(classif.strid).idCNN=zeros(1,size(im,4));
-        else
-            results.(classif.strid).idCNN=0;
-        end
-        
     results.(classif.strid).labelsCNN=labelCNN';
     results.(classif.strid).classesCNN=classif.classes;
     
     results.(classif.strid).probCNN=flipud(probCNN'); % fix orientation of array here !!!!
     
     for i=1:numel(classif.classes)
-   pix=labelCNN==classif.classes{i};
-   results.(classif.strid).idCNN(pix)=i;
+        pix=labelCNN==classif.classes{i};
+        results.(classif.strid).idCNN(pix)=i;
     end
-    end
-    
-    
-roiobj.results=results; 
+end
+
+
+roiobj.results=results;
 
 roiout=roiobj;
 
-%roiobj.clear;    
+%roiobj.clear;
 
 % results.id=roiobj.id;
 % results.path=roiobj.path;
 % results.parent=roiobj.parent;
-% 
+%
 % % stores results locally during classification
-% 
-% if exist([classif.path '/' classif.strid '_results.mat']) % this filles needs to be removed when classification starts ? 
+%
+% if exist([classif.path '/' classif.strid '_results.mat']) % this filles needs to be removed when classification starts ?
 %     load([classif.path '/' classif.strid '_results.mat']) % load res variable
 %     n=length(res);
 %     res(n+1)={results};
 % else
-%     
-%    res={results}; 
+%
+%    res={results};
 % end
 % save([classif.path '/' classif.strid '_results.mat'],'res');
 % pix=label=='largebudded';

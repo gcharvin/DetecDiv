@@ -1,44 +1,61 @@
-function [rls,rlsResults,rlsGroundtruth]=measureRLS2(classi,varargin)
+function [rls,rlsResults,rlsGroundtruth]=measureRLS2(obj,varargin)
 
 %'Fluo' if =1, will computethe fluo of each channel over the divs
 
-%ClassiType is the classif type of classi :
+%ClassiType is the classif type of obj :
 % ClassiType='bud' : unbudded, small, large, dead etc.
 % ClassiType='div' : nodiv, div, dead etc.
 
 % rls combines results and groundtruth is applicable
 % rlsResults only results
 %rlsGroundtruth only groundtruth
+
 classiftype='bud';
 postProcessing=1;
 errorDetection=1;
 ArrestThreshold=100;
 DeathThreshold=5;
-rois=1:numel(classi.roi);
-classiid=classi.strid;
+classiid=obj.strid;
 %classiidfluo=classiid;
 
 for i=1:numel(varargin)
+    
+    %Object type
+    if strcmp(varargin{i},'ObjectType')
+        objType=varargin{i+1};
+        if strcmp(classiftype,'fovs') && strcmp(classiftype,'classi')
+            error('Please enter a valid classitype');
+        end
+    end
+    
+    %Classi
+    if strcmp(varargin{i},'Classi')
+        classi=varargin{i+1};
+    end
+    
     %Method
     if strcmp(varargin{i},'ClassiType')
         classiftype=varargin{i+1};
         if strcmp(classiftype,'div') && strcmp(classiftype,'bud')
             error('Please enter a valid classitype');
         end
-    end 
+    end
     
     %Rois
-    if strcmp(varargin{i},'Rois')
+    if strcmp(varargin{i},'Rois') %1xN vector
         rois=varargin{i+1};
     end
-    %ClassID
-    if strcmp(varargin{i},'ClassID')
-        classiid=varargin{i+1};
-    end  
-    %ClassIDFluo
-    if strcmp(varargin{i},'ClassIDFluo')
-        classiidfluo=varargin{i+1};
+    if strcmp(varargin{i},'Fovs')
+        fovs=varargin{i+1};
     end
+    if strcmp(varargin{i},'RoisArray') %[fovs,...fovs;rois,...rois]
+        roisArray=varargin{i+1};
+    end
+    
+    %     %ClassIDFluo
+    %     if strcmp(varargin{i},'ClassIDFluo')
+    %         classiidfluo=varargin{i+1};
+    %     end
     
     %ArrestThreshold
     if strcmp(varargin{i},'ArrestThreshold')
@@ -60,14 +77,88 @@ for i=1:numel(varargin)
         errorDetection=varargin{i+1};
     end
 end
+%%
+%=classi
+if strcmp(objType,'classi')
+    if ~exist('classi')
+        str=[];
+        for i=1:numel(obj.processing.classification)
+            str=[str num2str(i) ' - ' obj.processing.classification(i).strid ';  '];
+        end
+        classiid=input(['You want to measures RLS from a classi object, but no classi has been selected, indicate which classi:' newline str]);
+        classi=obj.processing.classification(classiid);
+    end
+    obj2=classi;
+    classes=classi.classes;
+    
+    if numel(rois)==0
+        rois=1:numel(obj.roi);
+    end
+    
+    %=fovs
+elseif strcmp(objType,'fovs')
+    
+    if ~exist('classi')
+        str=[];
+        for i=1:numel(obj.processing.classification)
+            str=[str num2str(i) ' - ' obj.processing.classification(i).strid ';  '];
+        end
+        classiid=input(['You want to measures RLS from fov objects, but you need to indicate a classi. Which classi used to compute fov.results, among:' newline str]);
+        classi=obj.processing.classification(classiid);
+    end
+    classes=classi.classes;
+    
+    if numel(roisArray)==0
+        fovvector=[];
+        roivector=[];
+        
+        if ~numel(fovs)
+            for i=fovs
+                % for j=1:numel(obj.fov(i).roi)
+                %size( ones(1,length(obj.fov(i).roi)) )
+                fovvector = [fovvector i*ones(1,length(obj.fov(i).roi)) ];
+                roivector = [roivector  1:length(obj.fov(i).roi) ];
+                % end
+            end
+        else
+            % classify all ROIs
+            for i=1:length(obj.fov)
+                % for j=1:numel(obj.fov(i).roi)
+                %size( ones(1,length(obj.fov(i).roi)) )
+                fovvector = [fovvector i*ones(1,length(obj.fov(i).roi)) ];
+                roivector = [roivector  1:length(obj.fov(i).roi) ];
+                % end
+            end
+        end
+        roisArray=[fovvector; roivector];
+    end
+    %rois=roivector;
+end
 
-classes=classi.classes;
+
+%%
+if strcmp(objType,'fovs')
+    for f=unique(fovvector)
+        obj2=obj.fov(f);
+        rois=roivector(2,:);
+        rois=rois(fovvector==f);
+        [rls,rlsResults,rlsGroundtruth]=RLS(obj2);
+    end
+end
+
+if strcmp(objType,'classi')
+        [rls,rlsResults,rlsGroundtruth]=RLS(obj2);
+end
+
+
+%=========================================RLS============================================
+function [rls,rlsResults,rlsGroundtruth]=RLS(obj2)
 
 rls.divDuration=[];
 rls.framediv=[];
 rls.sep=[];
 rls.fluo=[];
-rls.trapfov='';
+rls.name='';
 rls.ndiv=0;
 rls.totaltime=0;
 rls.rules=[];
@@ -81,11 +172,11 @@ ccg=1;
 
 for r=rois
     %================RESULTS===============
-    if isfield(classi.roi(r).results,classiid)
-        if isfield(classi.roi(r).results.(classiid),'id')
-            if sum(classi.roi(r).results.(classiid).id)>0
-                id=classi.roi(r).results.(classiid).id; % results for classification         
-
+    if isfield(obj2.roi(r).results,classiid)
+        if isfield(obj2.roi(r).results.(classiid),'id')
+            if sum(obj2.roi(r).results.(classiid).id)>0
+                id=obj2.roi(r).results.(classiid).id; % results for classification
+                
                 divTimes=computeDivtime(id,classes,classiftype,DeathThreshold,ArrestThreshold,postProcessing);
                 
                 rlsResults(cc).divDuration=divTimes.duration;
@@ -93,8 +184,8 @@ for r=rois
                 rlsResults(cc).frameEnd=divTimes.frameEnd;
                 rlsResults(cc).framediv=divTimes.framediv;
                 rlsResults(cc).sep=[];
-                rlsResults(cc).trapfov=classi.roi(r).id;
-                rlsResults(cc).trapclassi=['classi(' num2str(classi.id) ').roi(' num2str(r) ')'];
+                rlsResults(cc).name=obj2.roi(r).id;
+                rlsResults(cc).roiid=[class(obj2) '(' num2str(obj2.id) ').roi(' num2str(r) ')'];
                 rlsResults(cc).ndiv=divTimes.ndiv;
                 if numel(divTimes.framediv)>0
                     rlsResults(cc).totaltime=[divTimes.framediv(1), cumsum(divTimes.duration)+divTimes.framediv(1)];
@@ -105,23 +196,23 @@ for r=rois
                 rlsResults(cc).groundtruth=0;
                 rlsResults(cc).divSignal=[];
                 
-                divSignal=computeSignalDiv(classi,r,rlsResults(cc));
+                divSignal=computeSignalDiv(obj2,r,rlsResults(cc));
                 rlsResults(cc).divSignal=divSignal;
             else
-                disp(['there is no result available for ROI ' char(r) '=' char(classi.roi(r).id)]);
+                disp(['there is no result available for ROI ' char(r) '=' char(obj2.roi(r).id)]);
             end
         end
     end
     cc=cc+1;
-
+    
     %==================GROUNDTRUTH===================
     %Groundtruth?
     idg=[];
-    if isprop(classi.roi(r),'train') %MATLAB BUG WITH ISFIELD. logical=0 for fov
-        if isfield(classi.roi(r).train.(classiid),'id') % test if groundtruth data available
-            if sum(classi.roi(r).train.(classiid).id)>0
-                idg=classi.roi(r).train.(classiid).id; % results for classification
-                disp(['Groundtruth data are available for ROI ' num2str(r) '=' num2str(classi.roi(r).id)]);
+    if isprop(obj2.roi(r),'train') %MATLAB BUG WITH ISFIELD. logical=0 for fov
+        if isfield(obj2.roi(r).train.(classiid),'id') % test if groundtruth data available
+            if sum(obj2.roi(r).train.(classiid).id)>0
+                idg=obj2.roi(r).train.(classiid).id; % results for classification
+                disp(['Groundtruth data are available for ROI ' num2str(r) '=' num2str(obj2.roi(r).id)]);
                 
                 divTimesG=computeDivtime(idg,classes,classiftype,DeathThreshold,ArrestThreshold,postProcessing); % groundtruth data
                 
@@ -130,15 +221,15 @@ for r=rois
                 rlsGroundtruth(ccg).frameEnd=divTimesG.frameEnd;
                 rlsGroundtruth(ccg).framediv=divTimesG.framediv;
                 rlsGroundtruth(ccg).sep=[];
-                rlsGroundtruth(ccg).trapfov=classi.roi(r).id;
-                rlsGroundtruth(ccg).trapclassi=['classi(' num2str(classi.id) ').roi(' num2str(r) ')'];
+                rlsGroundtruth(ccg).name=obj2.roi(r).id;
+                rlsGroundtruth(ccg).roiid=[class(obj2) '(' num2str(obj2.id) ').roi(' num2str(r) ')'];
                 rlsGroundtruth(ccg).ndiv=divTimesG.ndiv;
                 rlsGroundtruth(ccg).totaltime=[divTimesG.framediv(1), cumsum(divTimesG.duration)+divTimesG.framediv(1)];
                 rlsGroundtruth(ccg).rules=[];
                 rlsGroundtruth(ccg).groundtruth=1;
                 rlsGroundtruth(ccg).divSignal=[];
                 
-                divSignalG=computeSignalDiv(classi,r,rlsGroundtruth(ccg));
+                divSignalG=computeSignalDiv(obj2,r,rlsGroundtruth(ccg));
                 rlsGroundtruth(ccg).divSignal=divSignalG;
             end
         end
@@ -157,22 +248,18 @@ if errorDetection==1
             rlsGroundtruth(r).divDurationNoFalseDiv=diff(rlsGroundtruth(r).noFalseDiv);
             rlsResults(r).divDurationNoFalseDiv=diff(rlsResults(r).noFalseDiv);
         end
-    else disp('Groundtruth and Result vectors dont match, quitting...') 
+    else disp('Groundtruth and Result vectors dont match, quitting...')
     end
 end
 
 if numel([rlsResults.groundtruth])==numel([rlsGroundtruth.groundtruth])
-rls=[rlsResults rlsGroundtruth];
+    rls=[rlsResults rlsGroundtruth];
 else
     rls=rlsResults;
 end
 rls=rls(:);
-[p ix]= sort({rls(:).trapclassi});
+[p ix]= sort({rls(:).roiid});
 rls=rls(ix);
-
-
-
-
 
 
 %=========================================DIVTIMES=================================================
@@ -199,7 +286,7 @@ switch classiftype
         frameBirth=NaN;
         firstunb=find(id==unbuddedid,1,'first');
         firstsm=find(id==smid,1,'first');
-        firstlg=find(id==lbid,1,'first');        
+        firstlg=find(id==lbid,1,'first');
         if numel(firstunb)==0
             firstunb=NaN;
         end
@@ -258,7 +345,7 @@ switch classiftype
                 end
             end
         end
-              
+        
         %===============3/ find END===================
         frameEnd=min([frameClog, frameDeath, frameEmptied, frameArrest]);
         if isnan(frameEnd) % cell is not dead or clogged or empty, TO DO: SEPARATE BETWEEN DEATH AND CENSOR
@@ -298,12 +385,12 @@ switch classiftype
         divFrames=[];
         startAfterBudEmergence=0;
         if ~isnan(frameBirth)
-        %===divided before start of timelapse==?
+            %===divided before start of timelapse==?
             if id(frameBirth)==smid || id(frameBirth)==lbid
                 startAfterBudEmergence=1;
             end
             
-         %==detect bud emergence==
+            %==detect bud emergence==
             for j=frameBirth:frameEnd-1
                 if (id(j)==lbid && id(j+1)==smid) || (id(j)==unbuddedid && id(j+1)==smid) % bud has emerged
                     divFrames=[divFrames j+1];
@@ -323,11 +410,11 @@ switch classiftype
         if startAfterBudEmergence==1
             divTimes.ndiv=divTimes.ndiv+1;
         end
-
         
-
         
-    %%=================================CLASSIF DIV======================================
+        
+        
+        %%=================================CLASSIF DIV======================================
     case 'div'
         deathid=findclassid(classes,'dead');
         censorid=findclassid(classes,'censor');
@@ -353,32 +440,32 @@ switch classiftype
             end
         end
         divTimes.framediv=divFrames;
-        divTimes.duration=diff(divFrames); % division times ! 
+        divTimes.duration=diff(divFrames); % division times !
 end
 
 
-%==============================================FLUO======================================================
-function divFluo=computeSignalDiv(classi,r,rls)
+%==============================================SIGNAL======================================================
+function divFluo=computeSignalDiv(obj2,r,rls)
 divFluo=[];
 %check all the fields of .results.signal and mean them by div
-if isfield(classi.roi(r).results,'signal')
-    resultFields=fields(classi.roi(r).results.signal); %full, cell, nucleus
-        %essayer try catch
-        for rf=resultFields
-            classiFields=fields(classi.roi(r).results.signal.(rf)); %classi
-            for cf=classiFields
-                fluoFields=fields(classi.roi(r).results.signal.(rf).(cf)); %max, mean, volume...
-                for ff=fluoFields
-                    for chan=1:numel(classi.roi(r).results.signal.(rf).(cf)(:,1))
-                        tt=1;
-                        for t=1:rls.ndiv
-                            divSignal.(rf).(cf)(chan,t)=mean(classi.roi(r).results.signal.(rf).(cf)(chan,rls.framediv(tt):rls.framediv(tt+1)));
-                            tt=tt+1;
-                        end
+if isfield(obj2.roi(r).results,'signal')
+    resultFields=fields(obj2.roi(r).results.signal); %full, cell, nucleus
+    %essayer try catch
+    for rf=resultFields
+        classiFields=fields(obj2.roi(r).results.signal.(rf)); %obj2
+        for cf=classiFields
+            fluoFields=fields(obj2.roi(r).results.signal.(rf).(cf)); %max, mean, volume...
+            for ff=fluoFields
+                for chan=1:numel(obj2.roi(r).results.signal.(rf).(cf)(:,1))
+                    tt=1;
+                    for t=1:rls.ndiv
+                        divSignal.(rf).(cf)(chan,t)=mean(obj2.roi(r).results.signal.(rf).(cf)(chan,rls.framediv(tt):rls.framediv(tt+1)));
+                        tt=tt+1;
                     end
                 end
             end
         end
+    end
 else disp(['No results.signal for roi ' num2str(r)]);
 end
 %==============================================DIVERROR======================================================
@@ -394,7 +481,7 @@ if numel(rlsGroundtruthr.framediv)>1 && numel(rlsResultsr.framediv)>1
             pairij(i,j)=0;
         end
     end
-
+    
     %deal with cases where distance values are m and -m,make -m to 0 so its
     %picked as the min
     [B,I]=mink(abs(distance),2,2);
@@ -404,12 +491,12 @@ if numel(rlsGroundtruthr.framediv)>1 && numel(rlsResultsr.framediv)>1
             distance(l,idxI)=0;%choose the negaitve value, put it to 0
         end
     end
-
+    
     for i=1:numel(rlsGroundtruthr.framediv)
-            [~,idxmini]=min(abs(distance(i,:)));
-            pairij(i,idxmini)=1;
+        [~,idxmini]=min(abs(distance(i,:)));
+        pairij(i,idxmini)=1;
     end
-
+    
     for i=1:numel(rlsGroundtruthr.framediv)
         for j=1:numel(rlsResultsr.framediv)
             if pairij(i,j)==1
@@ -418,7 +505,7 @@ if numel(rlsGroundtruthr.framediv)>1 && numel(rlsResultsr.framediv)>1
             end
         end
     end
-
+    
     for j=1:numel(rlsResultsr.framediv)
         pairij(:,j)=(-1)*pairij(:,j);
         [~, idx]=min(abs(distance2(:,j)));
@@ -426,7 +513,7 @@ if numel(rlsGroundtruthr.framediv)>1 && numel(rlsResultsr.framediv)>1
     end
     falsepair=sum((pairij==-1),2);
     framedivNoFalseNeg=rlsGroundtruthr.framediv(not(falsepair'));
-
+    
     
     
     clear B IdxI IdxMinDist distance pairij idx falsepair distance2
@@ -437,7 +524,7 @@ if numel(rlsGroundtruthr.framediv)>1 && numel(rlsResultsr.framediv)>1
             pairij(i,j)=0;
         end
     end
-
+    
     %deal with cases where distance values are m and -m,make -m to 0 so its
     %picked as the min
     [B,I]=mink(abs(distance),2,2);
@@ -447,13 +534,13 @@ if numel(rlsGroundtruthr.framediv)>1 && numel(rlsResultsr.framediv)>1
             distance(l,idxI)=0;%choose the negaitve value, put it to 0
         end
     end
-
+    
     %identify pairs, including false
     for i=1:numel(rlsResultsr.framediv)
-            [~,idxmini]=min(abs(distance(i,:)));
-            pairij(i,idxmini)=1;
+        [~,idxmini]=min(abs(distance(i,:)));
+        pairij(i,idxmini)=1;
     end
-
+    
     for i=1:numel(rlsResultsr.framediv)
         for j=1:numel(framedivNoFalseNeg)
             if pairij(i,j)==1
@@ -462,7 +549,7 @@ if numel(rlsGroundtruthr.framediv)>1 && numel(rlsResultsr.framediv)>1
             end
         end
     end
-
+    
     %identify false pairs
     for j=1:numel(framedivNoFalseNeg)
         pairij(:,j)=(-1)*pairij(:,j);
