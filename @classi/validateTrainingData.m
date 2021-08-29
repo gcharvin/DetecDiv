@@ -30,40 +30,40 @@ name=classif.strid;
 
    % loading the CNN network as well for comparison purposes
 
-% first load classifier if not loadad to save some time 
-if exist('classifierStore','var')==0
-    disp(['Loading classifier: ' name]);
-    str=[path '/' name '.mat'];
-    load(str); % load classifier 
-    classifierStore=classifier;
-end
-
-if classif.typeid==4
-    if exist('classifierCNN','var')==0
-        disp(['Loading CNN classifier: ' name]);
-        str=[path '/netCNN.mat'];
-        if exist(str)
-            load(str);
-            classifierCNN=classifier;
-        else
-            classifierCNN=[];
-        end
-    end
-end
-
-classifier=classifierStore; %either loaded or provided as an argument 
-
-roiwithgt=0;
-for i=1:numel(varargin)
-    if strcmp(varargin{i},'Rois')
-        roilist=varargin{i+1};
-    end
-    
-      if strcmp(varargin{i},'roiwithgt')
-       roiwithgt=1;
-       roilist=1:numel(classif.roi);
-    end
-end
+   % first load classifier if not loadad to save some time
+   if exist('classifierStore','var')==0
+       disp(['Loading classifier: ' name]);
+       str=[path '/' name '.mat'];
+       load(str); % load classifier
+       classifierStore=classifier;
+   end
+   
+   
+   if exist('classifierCNN','var')==0
+       disp(['Loading CNN classifier: ' name]);
+       str=[path '/netCNN.mat'];
+       if exist(str)
+           load(str);
+           classifierCNN=classifier;
+       else
+           classifierCNN=[];
+       end
+   end
+   
+   
+   classifier=classifierStore; %either loaded or provided as an argument
+   
+   roiwithgt=0;
+   for i=1:numel(varargin)
+       if strcmp(varargin{i},'Rois')
+           roilist=varargin{i+1};
+       end
+       
+       if strcmp(varargin{i},'roiwithgt')
+           roiwithgt=1;
+           roilist=1:numel(classif.roi);
+       end
+   end
 
 %classifier
 if exist('roilist','var')==0 %if no roilist is indicated
