@@ -9,38 +9,30 @@ function [rls,rlsResults,rlsGroundtruth]=measureRLS2(obj,varargin)
 % rls combines results and groundtruth is applicable
 % rlsResults only results
 %rlsGroundtruth only groundtruth
+objType=[];
 
-classiftype='bud';
-postProcessing=1;
-errorDetection=1;
-ArrestThreshold=100;
-DeathThreshold=5;
-classiid=obj.strid;
-%classiidfluo=classiid;
+
+param.classiftype='bud';
+param.postProcessing=1;
+param.errorDetection=1;
+param.ArrestThreshold=100;
+param.DeathThreshold=5;
 
 for i=1:numel(varargin)
     
     %Object type
     if strcmp(varargin{i},'ObjectType')
         objType=varargin{i+1};
-        if strcmp(classiftype,'fovs') && strcmp(classiftype,'classi')
+        if strcmp(classiftype,'fovs') && strcmp(classiftype,'classif')
             error('Please enter a valid classitype');
         end
     end
     
-    %Classi
-    if strcmp(varargin{i},'Classi')
-        classi=varargin{i+1};
+    %classif
+    if strcmp(varargin{i},'classif')
+        classif=varargin{i+1};
     end
-    
-    %Method
-    if strcmp(varargin{i},'ClassiType')
-        classiftype=varargin{i+1};
-        if strcmp(classiftype,'div') && strcmp(classiftype,'bud')
-            error('Please enter a valid classitype');
-        end
-    end
-    
+
     %Rois
     if strcmp(varargin{i},'Rois') %1xN vector
         rois=varargin{i+1};
@@ -52,67 +44,87 @@ for i=1:numel(varargin)
         roisArray=varargin{i+1};
     end
     
-    %     %ClassIDFluo
-    %     if strcmp(varargin{i},'ClassIDFluo')
-    %         classiidfluo=varargin{i+1};
-    %     end
+    %PARAMS OF DIV DETECTION
+    %ClassiType
+    if strcmp(varargin{i},'ClassiType')
+        param.classiftype=varargin{i+1};
+        if strcmp(classiftype,'div') && strcmp(classiftype,'bud')
+            error('Please enter a valid classitype');
+        end
+    end
     
     %ArrestThreshold
     if strcmp(varargin{i},'ArrestThreshold')
-        ArrestThreshold=varargin{i+1};
+        param.ArrestThreshold=varargin{i+1};
     end
     
     %DeathThreshold
     if strcmp(varargin{i},'DeathThreshold')
-        DeathThreshold=varargin{i+1};
+        param.DeathThreshold=varargin{i+1};
     end
     
     %postProcessing
     if strcmp(varargin{i},'PostProcessing')
-        postProcessing=varargin{i+1};
+        param.postProcessing=varargin{i+1};
     end
     
     %detectError
     if strcmp(varargin{i},'ErrorDetection')
-        errorDetection=varargin{i+1};
+        param.errorDetection=varargin{i+1};
     end
 end
 %%
-%=classi
-if strcmp(objType,'classi')
-    if ~exist('classi')
+if numel(objType)==0
+    objTypeid=input('Indicate object type, among 1- fovs or 2- classif: ');
+
+    if objTypeid==1
+        objType='fovs';
+    elseif objTypeid==2
+        objType='classif';
+    else
+        error('Invalid object type');
+    end
+end
+
+
+%=classif
+if strcmp(objType,'classif')
+    if ~exist('classif')
         str=[];
         for i=1:numel(obj.processing.classification)
             str=[str num2str(i) ' - ' obj.processing.classification(i).strid ';  '];
         end
-        classiid=input(['You want to measures RLS from a classi object, but no classi has been selected, indicate which classi:' newline str]);
-        classi=obj.processing.classification(classiid);
+        classiid=input(['You want to measures RLS from a classif object, but no classif has been selected, indicate which classif: (Default: 1)' newline str]);
+        if numel(classiid)==0, classiid=1; end
+        classif=obj.processing.classification(classiid);
     end
-    obj2=classi;
-    classes=classi.classes;
+    obj2=classif;
     
     if numel(rois)==0
         rois=1:numel(obj.roi);
     end
+
+    %compute RLS
+[rls,rlsResults,rlsGroundtruth]=RLS(obj2,classif,param,rois);    
+    
     
     %=fovs
 elseif strcmp(objType,'fovs')
     
-    if ~exist('classi')
+    if ~exist('classif')
         str=[];
         for i=1:numel(obj.processing.classification)
             str=[str num2str(i) ' - ' obj.processing.classification(i).strid ';  '];
         end
-        classiid=input(['You want to measures RLS from fov objects, but you need to indicate a classi. Which classi used to compute fov.results, among:' newline str]);
-        classi=obj.processing.classification(classiid);
+        classiid=input(['You want to measures RLS from fov objects, but you need to indicate a classif. Which classif used to compute fov.results, among:' newline str]);
+        classif=obj.processing.classification(classiid);
     end
-    classes=classi.classes;
     
     if numel(roisArray)==0
         fovvector=[];
         roivector=[];
         
-        if ~numel(fovs)
+        if numel(fovs)
             for i=fovs
                 % for j=1:numel(obj.fov(i).roi)
                 %size( ones(1,length(obj.fov(i).roi)) )
@@ -132,27 +144,20 @@ elseif strcmp(objType,'fovs')
         end
         roisArray=[fovvector; roivector];
     end
-    %rois=roivector;
-end
-
-
-%%
-if strcmp(objType,'fovs')
+    
+    %compute RLS
+    rls=[];
     for f=unique(fovvector)
         obj2=obj.fov(f);
         rois=roivector(2,:);
         rois=rois(fovvector==f);
-        [rls,rlsResults,rlsGroundtruth]=RLS(obj2);
+        rls=vertcat(rls,RLS(obj2,classif,param,rois));
     end
-end
-
-if strcmp(objType,'classi')
-        [rls,rlsResults,rlsGroundtruth]=RLS(obj2);
 end
 
 
 %=========================================RLS============================================
-function [rls,rlsResults,rlsGroundtruth]=RLS(obj2)
+function [rls,rlsResults,rlsGroundtruth]=RLS(obj2,classif,param,rois)
 
 rls.divDuration=[];
 rls.framediv=[];
@@ -170,14 +175,16 @@ rlsGroundtruth=rls;
 cc=1;
 ccg=1;
 
+classistrid=classif.strid;
+classes=classif.classes;
 for r=rois
     %================RESULTS===============
-    if isfield(obj2.roi(r).results,classiid)
-        if isfield(obj2.roi(r).results.(classiid),'id')
-            if sum(obj2.roi(r).results.(classiid).id)>0
-                id=obj2.roi(r).results.(classiid).id; % results for classification
+    if isfield(obj2.roi(r).results,classistrid)
+        if isfield(obj2.roi(r).results.(classistrid),'id')
+            if sum(obj2.roi(r).results.(classistrid).id)>0
+                id=obj2.roi(r).results.(classistrid).id; % results for classification
                 
-                divTimes=computeDivtime(id,classes,classiftype,DeathThreshold,ArrestThreshold,postProcessing);
+                divTimes=computeDivtime(id,classes,param.classiftype,param.DeathThreshold,param.ArrestThreshold,param.postProcessing);
                 
                 rlsResults(cc).divDuration=divTimes.duration;
                 rlsResults(cc).frameBirth=divTimes.frameBirth;
@@ -209,12 +216,12 @@ for r=rois
     %Groundtruth?
     idg=[];
     if isprop(obj2.roi(r),'train') %MATLAB BUG WITH ISFIELD. logical=0 for fov
-        if isfield(obj2.roi(r).train.(classiid),'id') % test if groundtruth data available
-            if sum(obj2.roi(r).train.(classiid).id)>0
-                idg=obj2.roi(r).train.(classiid).id; % results for classification
+        if isfield(obj2.roi(r).train.(classistrid),'id') % test if groundtruth data available
+            if sum(obj2.roi(r).train.(classistrid).id)>0
+                idg=obj2.roi(r).train.(classistrid).id; % results for classification
                 disp(['Groundtruth data are available for ROI ' num2str(r) '=' num2str(obj2.roi(r).id)]);
                 
-                divTimesG=computeDivtime(idg,classes,classiftype,DeathThreshold,ArrestThreshold,postProcessing); % groundtruth data
+                divTimesG=computeDivtime(idg,classes,param.classiftype,param.DeathThreshold,param.ArrestThreshold,param.postProcessing); % groundtruth data
                 
                 rlsGroundtruth(ccg).divDuration=divTimesG.duration;
                 rlsGroundtruth(ccg).frameBirth=divTimesG.frameBirth;
@@ -237,7 +244,7 @@ for r=rois
     end
 end
 
-if errorDetection==1
+if param.errorDetection==1
     if numel([rlsResults.groundtruth])==numel([rlsGroundtruth.groundtruth])
         disp('Proceeding to error detection')
         for r=1:numel([rlsResults.groundtruth])
