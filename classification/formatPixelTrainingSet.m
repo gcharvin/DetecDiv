@@ -20,11 +20,10 @@ disp('Starting parallelized jobs for data formatting....')
 warning off all
 
 parfor i=rois
-    disp(['Launching ROI ' num2str(i) :' processing...'])    
+    disp(['Launching ROI ' num2str(i) :' processing...'])
     if numel(cltmp(i).image)==0
         cltmp(i).load; % load image sequence
     end
-    
     
     % normalize intensity levels
     pix=find(cltmp(i).channelid==classif.channel(1)); % find channel
@@ -41,9 +40,9 @@ parfor i=rois
     %pixe = strfind(cltmp(i).display.channel, classif.strid);
     cc=cltmp(i).findChannelID(classif.strid);
     
-    if numel(cc)>0       
+    if numel(cc)>0
         %pixcc=find(cltmp(i).channelid==cc)
-        pixcc=cc;  
+        pixcc=cc;
         lab=cltmp(i).image(:,:,pixcc,:);
         
         % changes from here
@@ -88,32 +87,28 @@ parfor i=rois
         
         %
         labels= double(zeros(size(lab,1),size(lab,2),3,size(lab,4)));
-        
         %   size(labels)
         
-        for j=1:numel(classif.classes)        
+        for j=1:numel(classif.classes)
             if j==defaultclass %
                 pixz=lab(:,:,1,:)==j | lab(:,:,1,:)==0; % WARNING !!!! add unassigned pixels to this class
             else
                 pixz=lab(:,:,1,:)==j;
             end
-            
             labtmp2=double(zeros(size(lab,1),size(lab,2),1,size(lab,4)));
             labtmp2(pixz)=1;
-            
             for  k=1:3
                 labels(:,:,k,:)=labels(:,:,k,:)+classif.colormap(j+1,k)*labtmp2;
-            end        
+            end
         end
     end
     reverseStr = '';
     
-    
-    for j=1:size(im,4)
+    for j=1:size(im,4) %time
         tmp=im(:,:,:,j);
-        
-        if numel(pix)==1   
+        if numel(pix)==1
             %tmp = double(imadjust(tmp,[meanphc/65535 maxphc/65535],[0 1]))/65535;
+            tmp = double(imadjust(tmp));
             tmp = double(tmp)/65535; %no intensity adjustment
             tmp=repmat(tmp,[1 1 3]);
             %max(tmp(:))
@@ -131,17 +126,14 @@ parfor i=rois
         if numel(cc)>0
             tmplab=lab(:,:,:,j);
             if max(tmplab(:))>0 % test if image has been manually annotated
-                %  'ok'            
+                %  'ok'
                 % pads images - the traininer network expects images bigger or
                 % equal to 500 x 500.
                 % For images smaller than that, image padding is achieved to
                 % enlarge it.
-                
                 %  exptmp=tmp;
-                
                 imwrite(tmp,[classif.path '/' foldername '/images/' cltmp(i).id '_frame_' tr '.tif']);
-                
-                imwrite(labels(:,:,:,j),[classif.path '/' foldername '/labels/' cltmp(i).id '_frame_' tr '.tif']);              
+                imwrite(labels(:,:,:,j),[classif.path '/' foldername '/labels/' cltmp(i).id '_frame_' tr '.tif']);
             end
         end
         
@@ -149,8 +141,8 @@ parfor i=rois
         fprintf([reverseStr, msg]);
         reverseStr = repmat(sprintf('\b'), 1, length(msg));
     end
-    fprintf('\n');    
-    cltmp(i).save;  
+    fprintf('\n');
+    cltmp(i).save;
     disp(['Processing ROI: ' num2str(i) ' ... Done !'])
 end
 
