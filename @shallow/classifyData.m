@@ -6,33 +6,44 @@ function classifyData(obj,classiid,varargin)
 % roilist is an 2 x N array containing FOV IDs and ROI IDs from the shallow
 % object to be classified
 %'Classifier' loads the classifier
+
+
 roilist=[];
 for i=1:numel(varargin)
     if strcmp(varargin{i},'Classifier')
         classifierStore=varargin{i+1};
     end
-    if strcmp(varargin{i},'ClassifierCNN')
-        classifierCNN=varargin{i+1};
-    end
+
     if strcmp(varargin{i},'Rois')
         roilist=varargin{i+1};
     end
+    if strcmp(varargin{i},'Fovs')
+        fovs=varargin{i+1};
+    end
+    
 end
 
 if numel(roilist)==0
-    % classify all ROIs
     roilist=[];
     roilist2=[];
-    
-    for i=1:length(obj.fov)
-        % for j=1:numel(obj.fov(i).roi)
-        
-        %size( ones(1,length(obj.fov(i).roi)) )
-        roilist = [roilist i*ones(1,length(obj.fov(i).roi)) ];
-        roilist2 = [roilist2  1:length(obj.fov(i).roi) ];
-        % end
+    if numel(fovs)
+        for i=fovs
+            % for j=1:numel(obj.fov(i).roi)
+            %size( ones(1,length(obj.fov(i).roi)) )
+            roilist = [roilist i*ones(1,length(obj.fov(i).roi)) ];
+            roilist2 = [roilist2  1:length(obj.fov(i).roi) ];
+            % end
+        end
+    else
+        % classify all ROIs
+        for i=1:length(obj.fov)
+            % for j=1:numel(obj.fov(i).roi)
+            %size( ones(1,length(obj.fov(i).roi)) )
+            roilist = [roilist i*ones(1,length(obj.fov(i).roi)) ];
+            roilist2 = [roilist2  1:length(obj.fov(i).roi) ];
+            % end
+        end
     end
-    
     roilist(2,:)=roilist2;
 end
 
@@ -51,28 +62,7 @@ if exist('classifierStore','var')==0
     load(str); % load classifier
     classifierStore=classifier;
 end
-
-if classi.typeid==4
-if exist('classifierCNN','var')==0
-    str=[path '/netCNN.mat'];
-    if exist(str)
-        load(str);
-        disp(['Loading CNN classifier: ' name]);
-        classifierCNN=classifier;
-    else
-        classifierCNN=[];
-    end
-end
-end
-% str=[path '/netCNN.mat'];
-%      if exist(str)
-%      load(str);
-%      classifierCNN=classifier;
-%      else
-%        classifierCNN=[];
-%      end
-
-%classifier
+% 
 
 disp([num2str(size(roilist,2)) ' ROIs to classify, be patient...']);
 
@@ -81,7 +71,7 @@ for i=1:size(roilist,2)
     tmp(i)=obj.fov(roilist(1,i)).roi(roilist(2,i));
 end
 
-for i=1:size(roilist,2) % loop on all ROIs using parrallel computing   
+parfor i=1:size(roilist,2) % loop on all ROIs using parrallel computing   
     roiobj=tmp(i);
     if numel(roiobj.id)==0
         continue;
@@ -97,7 +87,7 @@ for i=1:size(roilist,2) % loop on all ROIs using parrallel computing
     %if numel(classifierCNN) % in case an LSTM classification is done, validation is performed with a CNN classifier as well
     %mp(i)=feval(classifyFun,roiobj,classif,classifier,classifierCNN); % launch the training function for classification
     %else
-    tmp(i)=feval(classifyFun,roiobj,classi,classifierStore,classifierCNN); % launch the training function for classification
+    tmp(i)=feval(classifyFun,roiobj,classi,classifierStore); % launch the training function for classification
     %end
     
     % since roiobj is a handle, no need to have an output to this the function
