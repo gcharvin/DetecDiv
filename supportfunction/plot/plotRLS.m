@@ -27,10 +27,13 @@ for i=1:numel(varargin)
     end
 end
 
+plotRLS=0; %make an independant ploit where RLS of the result is plotted
+plotTrajs=1;
+
+maxBirth=1; %max frame to be born. After, discard rls.
+
 %===param===
 param.showgroundtruth=1; % display the groundtruth data
-param.plotRLS=1; %make an independant ploit where RLS of the result is plotted
-param.plotTrajs=0;
 
 param.sort=1; % 1 if sorting of trajectories according to generations
 param.timefactor=5; %put =1 to put the time in frames
@@ -99,7 +102,7 @@ param.colormapg=cmapg;% colormap for groundtruth data
   
 %% plot trajs
 
-if param.plotTrajs==1
+if plotTrajs==1
     %if numel(handle)==0
     hrls=figure('Color','w','Units', 'Normalized', 'Position', param.figure.Position);
 
@@ -163,7 +166,7 @@ if param.plotTrajs==1
     incG=1;
     for i=1:numel(rls)
         fprintf('.')
-
+        if ~(rls(i).frameBirth>maxbirth) || ~isnan(rls(i).frameBirth)
         %aa=rls(i).ndiv
         sep=rls(i).sep;
         fluo=rls(i).fluo;
@@ -214,7 +217,6 @@ if param.plotTrajs==1
 
         %figure(hdiv);
 
-
         if rls(i).groundtruth==0
             if param.sort==1
                 ti(inc)=startY+param.spacing/2;
@@ -243,9 +245,11 @@ if param.plotTrajs==1
             fprintf('\n')
         end
         cc=cc+1;
+        
+        else disp('roi(' num2str(i) ') born too late, ignored traj')
+        end
     end
-    %end
-
+%%
     % figure(hfluo);
     % line([0 0],[0 spacing*length(results)+cellwidth],'Color','k','LineWidth',4);
 
@@ -259,8 +263,7 @@ if param.plotTrajs==1
 
     %figure(hdiv);
     %line([0 0],[0 spacing*length(results)+cellwidth],'Color','k','LineWidth',4);
-
-
+ 
     if numel(rls)>1
         text(30,50, ['Median RLS= ' num2str(med) ' (n=' num2str(numel(rls)) ')'],'FontSize',25);
     end
@@ -314,11 +317,13 @@ end
 
 
 
-%% Plot just RLS
-if param.plotRLS==1
-    rlst=[rls.groundtruth]==0;
-    rlstNdivs=[rls(rlst).ndiv];
+%% Plot RLS
+if plotRLS==1
     
+    split=numel()
+    rlst=[rls.groundtruth]==0;
+    rlst=(rlst && (rls.frameBirth<=maxBirth || ~isnan(rls(i).frameBirth)));
+    rlstNdivs=[rls(rlst).ndiv];
     [yt,xt]=ecdf(rlstNdivs);
     
     rlsFig=figure('Color','w','Units', 'Normalized', 'Position',[0.1 0.1 0.35 0.35]);

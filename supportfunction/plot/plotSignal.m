@@ -1,4 +1,5 @@
 function []=plotSignal(obj,varargin)
+%classi script
 
 timeOrGen=0; %time
 
