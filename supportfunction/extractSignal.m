@@ -176,7 +176,7 @@ if strcmp(method,'volume')
             %=compute and store
             obj.roi(r).results.signal.cell.(classiname).volume(t)=sum(maskMother(:));
         end
-        disp(['Volume, of mothercell was computed and added to roi(' num2str(r) ').results.signal.cell' num2str(classiname)])
+        disp(['Volume, of mothercell was computed and added to roi(' num2str(r) ').results.signal.cell.' num2str(classiname)])
         obj.roi(r).image=[];
         clear im
     end

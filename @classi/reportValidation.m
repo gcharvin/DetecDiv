@@ -1,4 +1,4 @@
-function []=plotValidation(classi,varargin)
+function []=reportValidation(classi,varargin)
 dateT=char( datetime('now','Format','yyyy-MM-dd-HH-mm-ss'));
 path=fullfile(classi.path, 'TrainingValidation');
 

@@ -1,9 +1,9 @@
 function trainPixelDeeplabNetFun(path,name)
 
 % gather all classification images in each class : unbudded, small budded,
-% large budded, perform the training and outputs and saves the trained net 
+% large budded, perform the training and outputs and saves the trained net
 
-% load training data 
+% load training data
 
 
 fprintf('Loading data...\n');
@@ -16,7 +16,7 @@ labelsfoldername=[path '/trainingdataset/labels'];
 
 imds = imageDatastore(imagesfoldername);
 
-load([path '/classification.mat']); % load the classification variable 
+load([path '/classification.mat']); % load the classification variable
 
 
 
@@ -40,8 +40,8 @@ pxds = pixelLabelDatastore(labelsfoldername,classes,labelsIDs);
 
 %return;
 
-  I = readimage(imds,1);
-% 
+I = readimage(imds,1);
+%
 % I = histeq(I);
 % imshow(I)
 % C = readimage(pxds,1);
@@ -53,18 +53,16 @@ pxds = pixelLabelDatastore(labelsfoldername,classes,labelsIDs);
 %figure, imshow(C,[])
 %return;
 
- tbl = countEachLabel(pxds);
- frequency = tbl.PixelCount/sum(tbl.PixelCount);
-% 
+tbl = countEachLabel(pxds);
+frequency = tbl.PixelCount/sum(tbl.PixelCount);
+%
 % bar(1:numel(classes),frequency)
-% xticks(1:numel(classes)) 
+% xticks(1:numel(classes))
 % xticklabels(tbl.Name)
 % xtickangle(45)
 % ylabel('Frequency')
 
-
 [imdsTrain, imdsVal, pxdsTrain, pxdsVal] = partitionCamVidData(imds,pxds,classes,labelsIDs,trainingParam.split);
-
 
 % Specify the network image size. This is typically the same as the traing image sizes.
 imageSize = size(I); %[720 960 3];
@@ -84,12 +82,11 @@ imageFreq = tbl.PixelCount ./ tbl.ImagePixelCount;
 classWeights = median(imageFreq) ./ imageFreq;
 %return;
 
-
 %analyzeNetwork(lgraph)
-% this replacement is used when wighted classes must be used : 
- pxLayer=tverskyPixelClassificationLayer('labels',0.7,0.3); % alpha and beta parameters
- pxLayer.Classes=tbl.Name;
-%pxLayer = pixelClassificationLayer('Name','labels','Classes',tbl.Name,'ClassWeights',classWeights); % removing the weights helped increase the resolution 
+% this replacement is used when wighted classes must be used :
+pxLayer=tverskyPixelClassificationLayer('labels',0.4,0.6); % alpha and beta parameters
+%   pxLayer.Classes=tbl.Name;
+% pxLayer = pixelClassificationLayer('Name','labels','Classes',tbl.Name,'ClassWeights',classWeights); % removing the weights helped increase the resolution
 lgraph = replaceLayer(lgraph,"classification",pxLayer);
 
 %pximdsVal = pixelLabelImageDatastore(imdsVal,pxdsVal);
@@ -99,13 +96,12 @@ pximdsVal = pixelLabelImageDatastore(imdsVal,pxdsVal,'OutputSize',imageSize(1:2)
 
 options = trainingOptions(trainingParam.method, ...
     'LearnRateSchedule','piecewise',...
-    'LearnRateDropPeriod',20,...
+    'LearnRateDropPeriod',2,...
     'LearnRateDropFactor',0.7,...
-    'Momentum',0.9, ...
     'InitialLearnRate',trainingParam.InitialLearnRate, ...
     'L2Regularization',trainingParam.regularization, ...
     'ValidationData',pximdsVal,...
-    'MaxEpochs',trainingParam.MaxEpochs, ...  
+    'MaxEpochs',trainingParam.MaxEpochs, ...
     'MiniBatchSize',trainingParam.MiniBatchSize, ...
     'Shuffle',trainingParam.Shuffle, ...
     'CheckpointPath', tempdir, ...
@@ -114,32 +110,32 @@ options = trainingOptions(trainingParam.method, ...
     'ValidationFrequency', 10,...
     'ExecutionEnvironment',trainingParam.ExecutionEnvironment, ...
     'ValidationPatience', 20);
-  %  'ValidationFrequency', 10,...
-  
+%'Momentum',0.9, ...
+%  'ValidationFrequency', 10,...
+
 
 augmenter = imageDataAugmenter('RandXReflection',true,'RandYReflection',true,...
-  'RandXScale',[0.5 2],'RandYScale',[0.5 2],...   
+    'RandXScale',[0.5 2],'RandYScale',[0.5 2],...
     'RandRotation',trainingParam.rotateAugmentation,'RandXTranslation',trainingParam.translateAugmentation,'RandYTranslation',trainingParam.translateAugmentation);
 
-%   'RandXScale',[0.9 1.1],'RandYScale',[0.9 1.1],... 
+%   'RandXScale',[0.9 1.1],'RandYScale',[0.9 1.1],...
 
 pximds = pixelLabelImageDatastore(imdsTrain,pxdsTrain, ...
-    'DataAugmentation',augmenter,'OutputSize',imageSize(1:2),'OutputSizeMode','resize'); % default input size imga for training 
+    'DataAugmentation',augmenter,'OutputSize',imageSize(1:2),'OutputSizeMode','resize'); % default input size imga for training
 
 %if doTraining
- [classifier, info] = trainNetwork(pximds,lgraph,options);
- fprintf('Training is done...\n');
+[classifier, info] = trainNetwork(pximds,lgraph,options);
+fprintf('Training is done...\n');
 save([path '/' name '.mat'],'classifier');
 fprintf('Saving DeepLab network classifier...\n');
 
-  CNNOptions=struct(options);
-  save([path '/TrainingValidation/' 'CNNOptions' '.mat'],'CNNOptions');
-    
-    saveTrainingPlot(path);
-    
-    
+CNNOptions=struct(options);
+save([path '/TrainingValidation/' 'CNNOptions' '.mat'],'CNNOptions');
+
+saveTrainingPlot(path,name);
+
 %else
-%  load([mov.path '/netDeepLab.mat'],'netDeepLab');  
+%  load([mov.path '/netDeepLab.mat'],'netDeepLab');
 %end
 
 % if doTest
@@ -150,7 +146,6 @@ fprintf('Saving DeepLab network classifier...\n');
 % imshow(B)
 % pixelLabelColorbar(cmap, classes);
 % end
-
 
 function pixelLabelColorbar(cmap, classNames)
 % Add a colorbar to the current axis. The colorbar is formatted
@@ -174,9 +169,9 @@ c.TickLength = 0;
 function [imdsTrain, imdsVal, pxdsTrain, pxdsVal] = partitionCamVidData(imds,pxds,classes,labelIDs,split)
 % Partition CamVid data by randomly selecting 60% of the data for training. The
 % rest is used for testing.
-    
+
 % Set initial random state for example reproducibility.
-rng(0); 
+rng(0);
 numFiles = numel(imds.Files);
 shuffledIndices = randperm(numFiles);
 
@@ -213,45 +208,45 @@ pxdsTrain = pixelLabelDatastore(trainingLabels, classes, labelIDs);
 pxdsVal = pixelLabelDatastore(valLabels, classes, labelIDs);
 %pxdsTest = pixelLabelDatastore(testLabels, classes, labelIDs);
 
-% 
+%
 % function [imdsTrain, imdsVal, pxdsTrain, pxdsVal] = partitionCamVidData(imds,pxds,classes,labelIDs)
 % % Partition CamVid data by randomly selecting 60% of the data for training. The
 % % rest is used for testing.
-%     
+%
 % % Set initial random state for example reproducibility.
-% rng(0); 
+% rng(0);
 % numFiles = numel(imds.Files);
 % shuffledIndices = randperm(numFiles);
-% 
+%
 % % Use 70% of the images for training.
 % numTrain = round(0.70 * numFiles);
 % trainingIdx = shuffledIndices(1:numTrain);
-% 
+%
 % % Use 20% of the images for validation
 % numtot = min(numTrain+round(0.30 * numFiles),numel(shuffledIndices));
 % valIdx = shuffledIndices(numTrain+1:numtot);
-% 
+%
 % % Use the rest for testing.
 % %testIdx = shuffledIndices(numTrain+numVal+1:end);
-% 
+%
 % % Create image datastores for training and test.
 % trainingImages = imds.Files(trainingIdx);
 % valImages = imds.Files(valIdx);
 % %testImages = imds.Files(testIdx);
-% 
+%
 % imdsTrain = imageDatastore(trainingImages);
 % imdsVal = imageDatastore(valImages);
 % %imdsTest = imageDatastore(testImages);
-% 
+%
 % % Extract class and label IDs info.
 % %classes = pxds.ClassNames;
 % %labelIDs = camvidPixelLabelIDs();
-% 
+%
 % % Create pixel label datastores for training and test.
 % trainingLabels = pxds.Files(trainingIdx);
 % valLabels = pxds.Files(valIdx);
 % %testLabels = pxds.Files(testIdx);
-% 
+%
 % pxdsTrain = pixelLabelDatastore(trainingLabels, classes, labelIDs);
 % pxdsVal = pixelLabelDatastore(valLabels, classes, labelIDs);
 % %pxdsTest = pixelLabelDatastore(testLabels, classes, labelIDs);
