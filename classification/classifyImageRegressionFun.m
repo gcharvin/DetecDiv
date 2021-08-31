@@ -1,4 +1,4 @@
-function roiout=classifyImageRegressionFun(roiobj,classif,classifier)
+function classifyImageRegressionFun(roiobj,classif,classifier)
 
 % this function can be used to classify any roi object, by providing the
 % classi object and the classifier
@@ -83,7 +83,10 @@ roiobj.results=results;
 %     
 % end
 
-roiout=roiobj;
+roiobj.save;
+roiobj.clear;
+
+%roiout=roiobj;
 % roiobj.clear;
 
 

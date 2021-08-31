@@ -1,4 +1,4 @@
-function roiout=classifyTimeseriesClassifReg(roiobj,classif,classifier)
+function classifyTimeseriesClassifReg(roiobj,classif,classifier)
 
 %load([path '/netCNN.mat']); % load the googlenet to get the input size of image
 
@@ -127,7 +127,10 @@ results.(classif.strid)=[];
     
 roiobj.results=results; 
 
-roiout=roiobj;
+roiobj.save;
+roiobj.clear;
+
+%roiout=roiobj;
 
 
 

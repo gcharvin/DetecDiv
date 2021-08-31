@@ -1,4 +1,4 @@
-function roiout=classifyPixelDeeplabNetFun(roiobj,classif,classifier)
+function classifyPixelDeeplabNetFun(roiobj,classif,classifier)
 
 % this function can be used to classify any roi object, by providing the
 % classi object and the classifier
@@ -184,7 +184,10 @@ roiobj.image(:,:,pixresults,fr)=tmpout;
     
 end
 
-roiout=roiobj;
+roiobj.save;
+roiobj.clear;
+
+%roiout=roiobj;
 %roiobj.save;
 %roiobj.clear;
 

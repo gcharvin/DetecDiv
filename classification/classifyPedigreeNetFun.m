@@ -1,4 +1,4 @@
-function roiout=classifyPedigreeNetFun(roiobj,classif,classifier)
+function classifyPedigreeNetFun(roiobj,classif,classifier)
 
 %load([path '/netCNN.mat']); % load the googlenet to get the input size of image
 
@@ -113,7 +113,9 @@ end
 
 roiobj.results=results; 
 
-roiout=roiobj;
+roiobj.save;
+roiobj.clear;
+%roiout=roiobj;
 
 %label = classify(classifier,video);
 

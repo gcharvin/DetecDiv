@@ -1,4 +1,4 @@
-function roiout=classifyImageGoogleNetFun(roiobj,classif,classifier)
+function classifyImageGoogleNetFun(roiobj,classif,classifier)
 
 % this function can be used to classify any roi object, by providing the
 % classi object and the classifier
@@ -10,6 +10,7 @@ if numel(classifier)==0 % loading the classifier // not recommended because it t
     load(str); % load classifier
 end
 % classify new images
+
 
 net=classifier;
 inputSize = net.Layers(1).InputSize;
@@ -89,8 +90,9 @@ for i=1:numel(classif.classes)
     
 end
 
-roiout=roiobj;
-% roiobj.clear;
+%roiout=roiobj;
+roiobj.save;
+roiobj.clear;
 
 
 

@@ -1,4 +1,4 @@
-function roiout=classifySegDeeplabNetFun(roiobj,classif,classifier)
+function classifySegDeeplabNetFun(roiobj,classif,classifier)
 
 % this function can be used to classify any roi object, by providing the
 % classi object and the classifier
@@ -152,7 +152,9 @@ for fr=1:size(gfp,4)
     roiobj.image(:,:,pixresults,fr)=labels;
 end
 
-roiout=roiobj;
+roiobj.save;
+roiobj.clear;
+%roiout=roiobj;
 fprintf('\n');
 
 
