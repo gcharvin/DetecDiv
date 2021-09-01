@@ -1,4 +1,4 @@
-function result=classifyData2(classiobj,roiobj,varargin)
+function logparf=classifyData2(classiobj,roiobj,varargin)
 % high level function to classify data
 
 % classiobj is a @classi obj
@@ -11,6 +11,7 @@ function result=classifyData2(classiobj,roiobj,varargin)
 %'Classifier' uses a classifier provdied as input
 
 para=0;
+skipCNN=1;
 
 for i=1:numel(varargin)
     if strcmp(varargin{i},'Classifier')
@@ -55,74 +56,44 @@ if classi.typeid==4 % in case of a lstm image classi, a CNN classifier is loaded
     end
 end
 
-
 disp([num2str(numel(roiobj)) ' ROIs to classify, be patient...']);
 
-% tmp=roi; % build list of rois
-% for i=1:size(roilist,2)
-%     tmp(i)=obj.fov(roilist(1,i)).roi(roilist(2,i));
-% end
-
 if para
-result(1:numel(roiobj))= parallel.FevalFuture;
+    logparf(1:numel(roiobj))= parallel.FevalFuture;
 else
-result=1;
+
+    logparf=1;
+
 end
 
-
 tic
-
- if exist('classifierCNN','var')
-     cnn=1;
- else
-     cnn=0;
- end
-
 for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel computing
-    %     roiobj=tmp(i);
-    %     if numel(roiobj.id)==0
-    %         continue;
-    %     end
-    
-    %disp('-----------');
-    disp(['Launching classification for ROI ' num2str(roiobj(i).id)]);
-  
-    %  if strcmp(classif.category{1},'Image') % in this case, the results are provided as a series of labels
-    %  roiobj.results=zeros(1,size(roiobj.image,4)); % pre allocate results for labels
-    %  end
-    
-    %if numel(classifierCNN) % in case an LSTM classification is done, validation is performed with a CNN classifier as well
-    %mp(i)=feval(classifyFun,roiobj,classif,classifier,classifierCNN); % launch the training function for classification
-    %else
-    
+
     if para % parallele computing
-        if cnn
-            result(i)=parfeval(fhandle,0,roiobj(i),classi,classifierStore,classifierCNN); % launch the training function for classification
+        if exist('classifierCNN','var')  && skipCNN==0
+            logparf(i)=parfeval(fhandle,0,roiobj(i),classi,classifierStore,classifierCNN); % launch the training function for classification
+
             %  feval(fhandle,roiobj(i),classi,classifierStore,classifierCNN); % launch the training function for classification
         else
-            result(i)=parfeval(fhandle,0,roiobj(i),classi,classifierStore); % launch the training function for classification
+            %disp(['Starting classification of ' num2str(roiobj(i).id)]);
+            logparf(i)=parfeval(fhandle,0,roiobj(i),classi,classifierStore); % launch the training function for classification
             %  feval(fhandle,roiobj(i),classi,classifierStore); % launch the training function for classification
         end
     else
-         if cnn
-         feval(fhandle,roiobj(i),classi,classifierStore,classifierCNN); % launch the training function for classification
-         else
-         feval(fhandle,roiobj(i),classi,classifierStore); % launch the training function for classification
-         end
+        if exist('classifierCNN','var') && skipCNN==0
+            tic
+            feval(fhandle,roiobj(i),classi,classifierStore,classifierCNN); % launch the training function for classification
+            disp(['Classified ' num2str(roiobj(i).id)]);
+            toc
+        else
+            tic
+            feval(fhandle,roiobj(i),classi,classifierStore); % launch the training function for classification
+            disp(['Classified without CNN' num2str(roiobj(i).id)]);
+            toc
+        end
     end
     
-    % since roiobj is a handle, no need to have an output to this the function
-    % in roiobj.results
-    
 end
-toc
 
-% for i=1:size(roilist,2)
-%     obj.fov(roilist(1,i)).roi(roilist(2,i))=tmp(i);
-%     obj.fov(roilist(1,i)).roi(roilist(2,i)).save;
-%     obj.fov(roilist(1,i)).roi(roilist(2,i)).clear;
-% end
-%
-%
-% shallowSave(obj);
+end
 
