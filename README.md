@@ -203,8 +203,8 @@ to be continued...
 
 ### Plot ###
 
-```plotRLS(shallowObj.processing.classification(1),{shallowObj.fov(1).roi(1:50);shallowObj.fov(1).roi(51:100)},'Comment',{'test1: ','test2: '})```
-plots the RLS from the rois shallowObj.fov(1).roi(1:50) versus the rois shallowObj.fov(1).roi(51:100), measured using shallowObj.processing.classification(1) by ```measureRLS3```.
+```plotRLS({shallowObj.fov(1).roi(1:50);shallowObj.fov(1).roi(51:100)},'Comment',{'test1: ','test2: '})```
+plots the RLS from the rois shallowObj.fov(1).roi(1:50) versus the rois shallowObj.fov(1).roi(51:100), measured by ```measureRLS3```.
 
 ### Misc ###
 ---------------------
