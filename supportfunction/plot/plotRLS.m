@@ -55,7 +55,19 @@ for c=1:szc
     leg{c,1}=[comment{c}, 'median=' num2str(median(rlstNdivs{c,1})) ' (N=' num2str(length(rlstNdivs{c,1})) ')'];
 end
 
+pairs=nchoosek(1:szc,2);
+szp=size(pairs,1);
+textPvalue='';
+for pp=1:szp
+    p(pp)=ranksum(rlstNdivs{pairs(pp,1),1},rlstNdivs{pairs(pp,2),1});
+    textPvalue=[textPvalue newline num2str(pairs(pp,1)) 'vs' num2str(pairs(pp,2)) ': ' num2str(p(pp))]; 
+end
+
 legend(leg)
+text(2,0.25,[textPvalue],'FontSize',16,'FontWeight','bold');
+
+    
+    
 axis square;
 xlabel('Divisions');
 ylabel('Survival');
