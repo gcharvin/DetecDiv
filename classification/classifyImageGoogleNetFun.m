@@ -91,8 +91,8 @@ for i=1:numel(classif.classes)
 end
 
 
-%roiobj.save;
-%roiobj.clear;
+roiobj.save;
+roiobj.clear;
 
 
 
