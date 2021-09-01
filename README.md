@@ -157,11 +157,14 @@ This also provides basic statistics about the classification
 compute and stores (as a txt file) the statistics associated with the classification and comparison
 to groundtruth
 
-### Quantify RLS ###
+```out=classifyData2(test.processing.classification(2),test.processing.classification(2).roi(1:2),'Classifier',classifier,'Parallel')```
+
+
+### Extract RLS ###
 ---------------------
 ```rls=measureRLS2(theo.processing.classification(1),theo.processing.classification(1).strid)```
 
-```plotRLS(rls)```
+```measureRLS3(theoRLS.processing.classification(1),theoRLS.fov(1).roi(1:100))```
 
 ```statRLS(rls)```
 ### Extract signal from ROIs ###
@@ -197,6 +200,11 @@ Coming soon/In construction
 ---------------------
 ```list = listRepositoryClassi;``` will create a .txt file in the default matlab folder, containing the indicated path for a folder in which you will put all your desired independant classifications. In this folder, you will be able to create new classi, export existing classi into shallow projects, update existing classi, import classi into it, and add/update ROIs to existing classi.
 to be continued...
+
+### Plot ###
+
+```plotRLS(shallowObj.processing.classification(1),{shallowObj.fov(1).roi(1:50);shallowObj.fov(1).roi(51:100)},'Comment',{'test1: ','test2: '})```
+plots the RLS from the rois shallowObj.fov(1).roi(1:50) versus the rois shallowObj.fov(1).roi(51:100), measured using shallowObj.processing.classification(1) by ```measureRLS3```.
 
 ### Misc ###
 ---------------------
