@@ -66,9 +66,17 @@ disp([num2str(numel(roiobj)) ' ROIs to classify, be patient...']);
 if para
 result(1:numel(roiobj))= parallel.FevalFuture;
 else
- result=1;
+result=1;
 end
 
+
+tic
+
+ if exist('classifierCNN','var')
+     cnn=1;
+ else
+     cnn=0;
+ end
 
 for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel computing
     %     roiobj=tmp(i);
@@ -76,9 +84,9 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
     %         continue;
     %     end
     
-    disp('-----------');
-    disp(['Classifying ' num2str(roiobj(i).id)]);
-    
+    %disp('-----------');
+    disp(['Launching classification for ROI ' num2str(roiobj(i).id)]);
+  
     %  if strcmp(classif.category{1},'Image') % in this case, the results are provided as a series of labels
     %  roiobj.results=zeros(1,size(roiobj.image,4)); % pre allocate results for labels
     %  end
@@ -88,7 +96,7 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
     %else
     
     if para % parallele computing
-        if exist('classifierCNN','var')
+        if cnn
             result(i)=parfeval(fhandle,0,roiobj(i),classi,classifierStore,classifierCNN); % launch the training function for classification
             %  feval(fhandle,roiobj(i),classi,classifierStore,classifierCNN); % launch the training function for classification
         else
@@ -96,19 +104,18 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
             %  feval(fhandle,roiobj(i),classi,classifierStore); % launch the training function for classification
         end
     else
-         if exist('classifierCNN','var')
+         if cnn
          feval(fhandle,roiobj(i),classi,classifierStore,classifierCNN); % launch the training function for classification
          else
-          feval(fhandle,roiobj(i),classi,classifierStore); % launch the training function for classification
+         feval(fhandle,roiobj(i),classi,classifierStore); % launch the training function for classification
          end
     end
-    %end
     
     % since roiobj is a handle, no need to have an output to this the function
     % in roiobj.results
     
 end
-
+toc
 
 % for i=1:size(roilist,2)
 %     obj.fov(roilist(1,i)).roi(roilist(2,i))=tmp(i);

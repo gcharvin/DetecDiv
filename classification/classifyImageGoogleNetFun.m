@@ -90,7 +90,7 @@ for i=1:numel(classif.classes)
     
 end
 
-%roiout=roiobj;
+
 roiobj.save;
 roiobj.clear;
 

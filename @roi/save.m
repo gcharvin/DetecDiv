@@ -3,16 +3,23 @@ function save(obj)
 
 im=obj.image;
 roiobj=obj;
-
+results=obj.results; 
 % save images
 
 if numel(im)~=0
   %   ['save  ' '''' obj.path '/im_' num2str(obj.id) '.mat' ''''  ' im']
   disp('');
- disp(['Saving ' obj.path '/im_' obj.id '.mat image file for ROI ' obj.id]);
- obj.log(['Saving ROI image to ' obj.path '/im_' obj.id '.mat'],'Saving')
+ disp(['Saving ROI ' obj.id ' to ' obj.path '/im_' obj.id '.mat']);
+
+ 
+ obj.log(['Saving ROI to ' obj.path '/im_' obj.id '.mat'],'Saving')
+ obj.log(['Saving results to ' obj.path '/results_' obj.id '.mat'],'Saving')
  
 eval(['save  ' '''' obj.path '/im_' obj.id '.mat' ''''  ' roiobj']); 
+
+ disp(['Saving ROI results ' obj.id ' to ' obj.path '/results_' obj.id '.mat']);
+eval(['save  ' '''' obj.path '/results_' obj.id '.mat' ''''  ' results']); 
+
 end
 
 
