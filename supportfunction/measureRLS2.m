@@ -11,7 +11,8 @@ function [rls,rlsResults,rlsGroundtruth]=measureRLS2(obj,varargin)
 %rlsGroundtruth only groundtruth
 objType=[];
 
-
+%% TODO : Make it roi method and export to result_Pos_xxx.mat
+%%
 param.classiftype='bud';
 param.postProcessing=1;
 param.errorDetection=1;
@@ -23,13 +24,13 @@ for i=1:numel(varargin)
     %Object type
     if strcmp(varargin{i},'ObjectType')
         objType=varargin{i+1};
-        if strcmp(classiftype,'fovs') && strcmp(classiftype,'classif')
+        if strcmp(objType,'fovs') && strcmp(objType,'classif')
             error('Please enter a valid classitype');
         end
     end
     
     %classif
-    if strcmp(varargin{i},'classif')
+    if strcmp(varargin{i},'Classif')
         classif=varargin{i+1};
     end
 
@@ -48,7 +49,7 @@ for i=1:numel(varargin)
     %ClassiType
     if strcmp(varargin{i},'ClassiType')
         param.classiftype=varargin{i+1};
-        if strcmp(classiftype,'div') && strcmp(classiftype,'bud')
+        if strcmp(param.classiftype,'div') && strcmp(param.classiftype,'bud')
             error('Please enter a valid classitype');
         end
     end

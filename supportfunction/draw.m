@@ -1526,7 +1526,7 @@ end
                     imout=obj.image(:,:,pix,frame);
                     
                     if it~=0 % it=0 corresponds to binary or indexed images
-                        imout=imadjust(imout,[mingfp/65535 maxgfp/65535],[0 1]);
+                        imout=imadjust(imout);%,[mingfp/65535 maxgfp/65535],[0 1]);
                         % imout=mat2gray(imout,[meangfp maxgfp]);
                         % imout =repmat(imout,[1 1 3]);
                         % for k=1:3
