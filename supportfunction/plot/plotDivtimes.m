@@ -1,4 +1,4 @@
-function hrls=plotDivtimes(classif,roiobjcell,varargin)
+function hrls=plotDivtimes(roiobjcell,varargin)
 
 % plot RLS data for one or several curves
 
@@ -19,7 +19,6 @@ maxBirth=100; %max frame to be born. After, discard rls.
 szc=size(roiobjcell,1);
 comment=cell(szc,1);
 
-classifstrid=classif.strid;
 rls=cell(szc);
 
 for i=1:numel(varargin)
@@ -28,6 +27,25 @@ for i=1:numel(varargin)
     end
 end
 
+
+
+
+%find classistrid
+if isfield(roiobjcell{1,1}(1).results,'RLS')
+    liststrid=fields(roiobjcell{1,1}(1).results.RLS);
+    str=[];
+else
+    error(['The roi ' roiobjcell{1,1}(1) 'has no RLS result, be sure to measure it with measureRLS3'])
+end
+for i=1:numel(liststrid)
+    str=[str num2str(i) ' - ' liststrid{i} ';'];
+end
+classifid=input(['Which classi used? (Default: 1)' str]);
+if numel(classifid)==0
+    classifid=1;
+end
+classifstrid=liststrid{classifid};
+
 %extract RLS from roiobj
 for c=1:szc
     for r=1:numel(roiobjcell{c,1})
@@ -35,17 +53,16 @@ for c=1:szc
             if isfield(roiobjcell{c,1}(r).results.RLS,(classifstrid))
                 rls{c,1}=[rls{c,1}; roiobjcell{c,1}(r).results.RLS.(classifstrid)];
             else
-                warning(['The roi ' roiobjcell{c,1}(r) 'has no RLS result relative to ' (classifstrid) ', -->ROI skipped'])
+                warning(['The roi ' roiobjcell{c,1}(r) 'has no RLS result relative to ' classifstrid ', -->ROI skipped'])
             end
         else
-            warning(['The roi ' roiobjcell{c,1}(r) 'has no RLS result, -->ROI skipped'])
+            warning(['The roi ' roiobjcell{1,1}(r) 'has no RLS result, be sure to measure it with measureRLS3, -->ROI skipped'])
         end
     end
     
     rlst{c,1}=rls{c,1}([rls{c,1}.groundtruth]==0);
     rlst{c,1}=rlst{c,1}( ([rlst{c,1}.frameBirth]<=maxBirth) & (~isnan([rlst{c,1}.frameBirth])) );
     divt{c,1}=[rlst{c,1}.divDuration]*5;
-
 end
 
 %%% plot

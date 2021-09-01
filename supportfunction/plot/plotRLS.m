@@ -1,4 +1,4 @@
-function hrls=plotRLS(classif,roiobjcell,varargin)
+function hrls=plotRLS(roiobjcell,varargin)
 
 % plot RLS data for one or several curves
 
@@ -19,7 +19,6 @@ maxBirth=100; %max frame to be born. After, discard rls.
 szc=size(roiobjcell,1);
 comment=cell(szc,1);
 
-classifstrid=classif.strid;
 rls=cell(szc);
 
 for i=1:numel(varargin)
@@ -27,6 +26,25 @@ for i=1:numel(varargin)
         comment=varargin{i+1};
     end
 end
+
+%%
+%find classistrid
+if isfield(roiobjcell{1,1}(1).results,'RLS')
+    liststrid=fields(roiobjcell{1,1}(1).results.RLS);
+    str=[];
+else
+    error(['The roi ' roiobjcell{1,1}(1) 'has no RLS result, be sure to measure it with measureRLS3'])
+end
+for i=1:numel(liststrid)
+    str=[str num2str(i) ' - ' liststrid{i} ';'];
+end
+classifid=input(['Which classi used? (Default: 1)' str]);
+if numel(classifid)==0
+    classifid=1;
+end
+classifstrid=liststrid{classifid};
+
+%%
 for c=1:szc
     for r=1:numel(roiobjcell{c,1})
         if isfield(roiobjcell{c,1}(r).results,'RLS')
@@ -73,7 +91,7 @@ xlabel('Divisions');
 ylabel('Survival');
 M=max([rlstNdivs{:,1}]);
 p=0;%ranksum(rlstNdivs,rlsgNdivs);
-title(['Replicative lifespan; p=' num2str(0)]);
+title(['Replicative lifespan']);
 set(gca,'FontSize',16, 'FontName','Myriad Pro','LineWidth',3,'FontWeight','bold','XTick',[0:10:M],'TickLength',[0.02 0.02]);
 xlim([0 M])
 ylim([0 1.05]);
