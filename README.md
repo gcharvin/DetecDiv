@@ -160,11 +160,11 @@ to groundtruth
 ```out=classifyData2(test.processing.classification(2),test.processing.classification(2).roi(1:2),'Classifier',classifier,'Parallel')```
 
 
-### Quantify RLS ###
+### Extract RLS ###
 ---------------------
 ```rls=measureRLS2(theo.processing.classification(1),theo.processing.classification(1).strid)```
 
-```plotRLS(rls)```
+```measureRLS3(theoRLS.processing.classification(1),theoRLS.fov(1).roi(1:100))```
 
 ```statRLS(rls)```
 ### Extract signal from ROIs ###
