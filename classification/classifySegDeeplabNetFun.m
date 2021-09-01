@@ -3,7 +3,7 @@ function classifySegDeeplabNetFun(roiobj,classif,classifier)
 % this function can be used to classify any roi object, by providing the
 % classi object and the classifier
 
-roiout=roiobj;
+%roiout=roiobj;
 
 if numel(classifier)==0 % loading the classifier // not recommende because it takes time
     path=classif.path;
