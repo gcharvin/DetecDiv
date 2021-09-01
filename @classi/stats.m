@@ -9,7 +9,7 @@ datasetType='';
 
 for i=1:numel(varargin)
     %Method
-    if strcmp(varargin{i},'ROI')
+    if strcmp(varargin{i},'Rois')
         roiid=varargin{i+1};
     end
     

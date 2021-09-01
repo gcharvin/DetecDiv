@@ -201,7 +201,6 @@ if nargin==4
 end
 
 roiobj.results=results;
-
 roiobj.save;
 roiobj.clear;
 
