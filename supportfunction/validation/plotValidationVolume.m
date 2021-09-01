@@ -1,13 +1,29 @@
+function []=plotValidationVolume(classi,varargin)
 figExport=0;
-obj=seg.processing.classification(5).roi;
 
-titre='tverski 0.4 0.6, thresh=0.5, imadjust';
 rois=201:210;
+titre='tverski 0.4 0.6, thresh=0.5, imadjust';
+
+for i=1:numel(varargin)
+    %Rois
+    if strcmp(varargin{i},'Rois')
+        rois=varargin{i+1};
+    end
+    
+    %title
+    if strcmp(varargin{i},'Title')
+        titre=varargin{i+1};
+    end
+end
+
+classistrid=classi.strid;
+classistridRes=['results_' classistrid];
+
 GT=[];
 RES=[];
 for i=rois
-GT=[GT obj(i).results.signal.cell.segcellpaper_5.volume];
-RES=[RES obj(i).results.signal.cell.results_segcellpaper_5.volume];
+    GT=[GT classi.roi(i).results.signal.cell.(classistrid).volume];
+    RES=[RES classi.roi(i).results.signal.cell.(classistridRes).volume];
 end
 RES=RES(~isnan(GT));
 GT=GT(~isnan(GT));
