@@ -1,4 +1,4 @@
-function [rls,rlsResults,rlsGroundtruth]=measureRLS2(obj,varargin)
+function [rls,rlsResults,rlsGroundtruth]=measureRLS3(classif,roiobj,varargin)
 
 %'Fluo' if =1, will computethe fluo of each channel over the divs
 
@@ -9,40 +9,22 @@ function [rls,rlsResults,rlsGroundtruth]=measureRLS2(obj,varargin)
 % rls combines results and groundtruth is applicable
 % rlsResults only results
 %rlsGroundtruth only groundtruth
-objType=[];
 
 %% TODO : Make it roi method and export to result_Pos_xxx.mat
-%%
+%
+environment='local';
+
 param.classiftype='bud';
 param.postProcessing=1;
 param.errorDetection=1;
 param.ArrestThreshold=100;
 param.DeathThreshold=5;
 
+classifstrid=classif.strid;
 for i=1:numel(varargin)
     
-    %Object type
-    if strcmp(varargin{i},'ObjectType')
-        objType=varargin{i+1};
-        if strcmp(objType,'fovs') && strcmp(objType,'classif')
-            error('Please enter a valid classitype');
-        end
-    end
-    
-    %classif
-    if strcmp(varargin{i},'Classif')
-        classif=varargin{i+1};
-    end
-
-    %Rois
-    if strcmp(varargin{i},'Rois') %1xN vector
-        rois=varargin{i+1};
-    end
-    if strcmp(varargin{i},'Fovs')
-        fovs=varargin{i+1};
-    end
-    if strcmp(varargin{i},'RoisArray') %[fovs,...fovs;rois,...rois]
-        roisArray=varargin{i+1};
+    if strcmp(varargin{i},'Envi')
+        environment=varargin{i+1};
     end
     
     %PARAMS OF DIV DETECTION
@@ -75,90 +57,17 @@ for i=1:numel(varargin)
     end
 end
 %%
-if numel(objType)==0
-    objTypeid=input('Indicate object type, among 1- fovs or 2- classif: ');
-
-    if objTypeid==1
-        objType='fovs';
-    elseif objTypeid==2
-        objType='classif';
-    else
-        error('Invalid object type');
-    end
+for i=1:numel(roiobj)
+    roiobj(i).path=strrep(roiobj(i).path,'/shared/space2/','\\space2.igbmc.u-strasbg.fr\');
+    roiobj(i).load;
+    roiobj(i).path=strrep(roiobj(i).path,'/shared/space2/','\\space2.igbmc.u-strasbg.fr\');
+    roiobj(i).results.RLS.(classifstrid)=RLS(roiobj(i),classif,param);
+    roiobj(i).save;
+    roiobj(i).clear;
 end
-
-
-%=classif
-if strcmp(objType,'classif')
-    if ~exist('classif')
-        str=[];
-        for i=1:numel(obj.processing.classification)
-            str=[str num2str(i) ' - ' obj.processing.classification(i).strid ';  '];
-        end
-        classiid=input(['You want to measures RLS from a classif object, but no classif has been selected, indicate which classif: (Default: 1)' newline str]);
-        if numel(classiid)==0, classiid=1; end
-        classif=obj.processing.classification(classiid);
-    end
-    obj2=classif;
-    
-    if numel(rois)==0
-        rois=1:numel(obj.roi);
-    end
-
-    %compute RLS
-[rls,rlsResults,rlsGroundtruth]=RLS(obj2,classif,param,rois);    
-    
-    
-    %=fovs
-elseif strcmp(objType,'fovs')
-    
-    if ~exist('classif')
-        str=[];
-        for i=1:numel(obj.processing.classification)
-            str=[str num2str(i) ' - ' obj.processing.classification(i).strid ';  '];
-        end
-        classiid=input(['You want to measures RLS from fov objects, but you need to indicate a classif. Which classif used to compute fov.results, among:' newline str]);
-        classif=obj.processing.classification(classiid);
-    end
-    
-    if numel(roisArray)==0
-        fovvector=[];
-        roivector=[];
-        
-        if numel(fovs)
-            for i=fovs
-                % for j=1:numel(obj.fov(i).roi)
-                %size( ones(1,length(obj.fov(i).roi)) )
-                fovvector = [fovvector i*ones(1,length(obj.fov(i).roi)) ];
-                roivector = [roivector  1:length(obj.fov(i).roi) ];
-                % end
-            end
-        else
-            % classify all ROIs
-            for i=1:length(obj.fov)
-                % for j=1:numel(obj.fov(i).roi)
-                %size( ones(1,length(obj.fov(i).roi)) )
-                fovvector = [fovvector i*ones(1,length(obj.fov(i).roi)) ];
-                roivector = [roivector  1:length(obj.fov(i).roi) ];
-                % end
-            end
-        end
-        roisArray=[fovvector; roivector];
-    end
-    
-    %compute RLS
-    rls=[];
-    for f=unique(fovvector)
-        obj2=obj.fov(f);
-        rois=roivector(2,:);
-        rois=rois(fovvector==f);
-        rls=vertcat(rls,RLS(obj2,classif,param,rois));
-    end
-end
-
 
 %=========================================RLS============================================
-function [rls,rlsResults,rlsGroundtruth]=RLS(obj2,classif,param,rois)
+function [rls,rlsResults,rlsGroundtruth]=RLS(roi,classif,param)
 
 rls.divDuration=[];
 rls.framediv=[];
@@ -168,7 +77,7 @@ rls.name='';
 rls.ndiv=0;
 rls.totaltime=0;
 rls.rules=[];
-rls.groundtruth=0;
+rls.groundtruth=-1;
 
 rlsResults=rls;
 rlsGroundtruth=rls;
@@ -178,12 +87,11 @@ ccg=1;
 
 classistrid=classif.strid;
 classes=classif.classes;
-for r=rois
     %================RESULTS===============
-    if isfield(obj2.roi(r).results,classistrid)
-        if isfield(obj2.roi(r).results.(classistrid),'id')
-            if sum(obj2.roi(r).results.(classistrid).id)>0
-                id=obj2.roi(r).results.(classistrid).id; % results for classification
+    if isfield(roi.results,classistrid)
+        if isfield(roi.results.(classistrid),'id')
+            if sum(roi.results.(classistrid).id)>0
+                id=roi.results.(classistrid).id; % results for classification
                 
                 divTimes=computeDivtime(id,classes,param.classiftype,param.DeathThreshold,param.ArrestThreshold,param.postProcessing);
                 
@@ -192,8 +100,7 @@ for r=rois
                 rlsResults(cc).frameEnd=divTimes.frameEnd;
                 rlsResults(cc).framediv=divTimes.framediv;
                 rlsResults(cc).sep=[];
-                rlsResults(cc).name=obj2.roi(r).id;
-                rlsResults(cc).roiid=[class(obj2) '(' num2str(obj2.id) ').roi(' num2str(r) ')'];
+                rlsResults(cc).name=roi.id;
                 rlsResults(cc).ndiv=divTimes.ndiv;
                 if numel(divTimes.framediv)>0
                     rlsResults(cc).totaltime=[divTimes.framediv(1), cumsum(divTimes.duration)+divTimes.framediv(1)];
@@ -204,10 +111,10 @@ for r=rois
                 rlsResults(cc).groundtruth=0;
                 rlsResults(cc).divSignal=[];
                 
-                divSignal=computeSignalDiv(obj2,r,rlsResults(cc));
+                divSignal=computeSignalDiv(roi,rlsResults(cc));
                 rlsResults(cc).divSignal=divSignal;
             else
-                disp(['there is no result available for ROI ' char(r) '=' char(obj2.roi(r).id)]);
+                disp(['there is no result available for ROI ' char(roi.id)]);
             end
         end
     end
@@ -216,58 +123,70 @@ for r=rois
     %==================GROUNDTRUTH===================
     %Groundtruth?
     idg=[];
-    if isprop(obj2.roi(r),'train') %MATLAB BUG WITH ISFIELD. logical=0 for fov
-        if isfield(obj2.roi(r).train.(classistrid),'id') % test if groundtruth data available
-            if sum(obj2.roi(r).train.(classistrid).id)>0
-                idg=obj2.roi(r).train.(classistrid).id; % results for classification
-                disp(['Groundtruth data are available for ROI ' num2str(r) '=' num2str(obj2.roi(r).id)]);
-                
-                divTimesG=computeDivtime(idg,classes,param.classiftype,param.DeathThreshold,param.ArrestThreshold,param.postProcessing); % groundtruth data
-                
-                rlsGroundtruth(ccg).divDuration=divTimesG.duration;
-                rlsGroundtruth(ccg).frameBirth=divTimesG.frameBirth;
-                rlsGroundtruth(ccg).frameEnd=divTimesG.frameEnd;
-                rlsGroundtruth(ccg).framediv=divTimesG.framediv;
-                rlsGroundtruth(ccg).sep=[];
-                rlsGroundtruth(ccg).name=obj2.roi(r).id;
-                rlsGroundtruth(ccg).roiid=[class(obj2) '(' num2str(obj2.id) ').roi(' num2str(r) ')'];
-                rlsGroundtruth(ccg).ndiv=divTimesG.ndiv;
-                rlsGroundtruth(ccg).totaltime=[divTimesG.framediv(1), cumsum(divTimesG.duration)+divTimesG.framediv(1)];
-                rlsGroundtruth(ccg).rules=[];
-                rlsGroundtruth(ccg).groundtruth=1;
-                rlsGroundtruth(ccg).divSignal=[];
-                
-                divSignalG=computeSignalDiv(obj2,r,rlsGroundtruth(ccg));
-                rlsGroundtruth(ccg).divSignal=divSignalG;
+    if isprop(roi,'train') %MATLAB BUG WITH ISFIELD. logical=0 for fov
+        if isfield(roi.train,(classistrid))
+            if isfield(roi.train.(classistrid),'id') % test if groundtruth data available
+                if sum(roi.train.(classistrid).id)>0
+                    idg=roi.train.(classistrid).id; % results for classification
+                    disp(['Groundtruth data are available for ROI ' num2str(roi.id)]);
+                    
+                    divTimesG=computeDivtime(idg,classes,param.classiftype,param.DeathThreshold,param.ArrestThreshold,param.postProcessing); % groundtruth data
+                    
+                    rlsGroundtruth(ccg).divDuration=divTimesG.duration;
+                    rlsGroundtruth(ccg).frameBirth=divTimesG.frameBirth;
+                    rlsGroundtruth(ccg).frameEnd=divTimesG.frameEnd;
+                    rlsGroundtruth(ccg).framediv=divTimesG.framediv;
+                    rlsGroundtruth(ccg).sep=[];
+                    rlsGroundtruth(ccg).name=roi.id;
+                    rlsGroundtruth(ccg).ndiv=divTimesG.ndiv;
+                    rlsGroundtruth(ccg).totaltime=[divTimesG.framediv(1), cumsum(divTimesG.duration)+divTimesG.framediv(1)];
+                    rlsGroundtruth(ccg).rules=[];
+                    rlsGroundtruth(ccg).groundtruth=1;
+                    rlsGroundtruth(ccg).divSignal=[];
+                    
+                    divSignalG=computeSignalDiv(roi,rlsGroundtruth(ccg));
+                    rlsGroundtruth(ccg).divSignal=divSignalG;
+                end
             end
         end
         ccg=ccg+1;
     end
-end
 
 if param.errorDetection==1
     if numel([rlsResults.groundtruth])==numel([rlsGroundtruth.groundtruth])
         disp('Proceeding to error detection')
-        for r=1:numel([rlsResults.groundtruth])
-            [rlsGroundtruth(r).noFalseDiv, rlsResults(r).noFalseDiv]=detectError(rlsGroundtruth(r),rlsResults(r));
-            rlsGroundtruth(r).falseDiv=setdiff(rlsGroundtruth(r).framediv,rlsGroundtruth(r).noFalseDiv);
-            rlsResults(r).falseDiv=setdiff(rlsResults(r).framediv,rlsResults(r).noFalseDiv);
-            
-            rlsGroundtruth(r).divDurationNoFalseDiv=diff(rlsGroundtruth(r).noFalseDiv);
-            rlsResults(r).divDurationNoFalseDiv=diff(rlsResults(r).noFalseDiv);
-        end
+            [rlsGroundtruth.noFalseDiv, rlsResults.noFalseDiv]=detectError(rlsGroundtruth,rlsResults);
+            rlsGroundtruth.falseDiv=setdiff(rlsGroundtruth.framediv,rlsGroundtruth.noFalseDiv);
+            rlsResults.falseDiv=setdiff(rlsResults.framediv,rlsResults.noFalseDiv);
+           
+            rlsGroundtruth.divDurationNoFalseDiv=diff(rlsGroundtruth.noFalseDiv);
+            rlsResults.divDurationNoFalseDiv=diff(rlsResults.noFalseDiv);
+
     else disp('Groundtruth and Result vectors dont match, quitting...')
     end
 end
 
-if numel([rlsResults.groundtruth])==numel([rlsGroundtruth.groundtruth])
+if rlsGroundtruth.groundtruth==1
     rls=[rlsResults rlsGroundtruth];
 else
     rls=rlsResults;
 end
-rls=rls(:);
-[p ix]= sort({rls(:).roiid});
-rls=rls(ix);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 %=========================================DIVTIMES=================================================
@@ -453,28 +372,28 @@ end
 
 
 %==============================================SIGNAL======================================================
-function divFluo=computeSignalDiv(obj2,r,rls)
+function divFluo=computeSignalDiv(roi,rls)
 divFluo=[];
 %check all the fields of .results.signal and mean them by div
-if isfield(obj2.roi(r).results,'signal')
-    resultFields=fields(obj2.roi(r).results.signal); %full, cell, nucleus
+if isfield(roi.results,'signal')
+    resultFields=fields(roi.results.signal); %full, cell, nucleus
     %essayer try catch
     for rf=resultFields
-        classiFields=fields(obj2.roi(r).results.signal.(rf)); %obj2
+        classiFields=fields(roi.results.signal.(rf)); %obj2
         for cf=classiFields
-            fluoFields=fields(obj2.roi(r).results.signal.(rf).(cf)); %max, mean, volume...
+            fluoFields=fields(roi.results.signal.(rf).(cf)); %max, mean, volume...
             for ff=fluoFields
-                for chan=1:numel(obj2.roi(r).results.signal.(rf).(cf)(:,1))
+                for chan=1:numel(roi.results.signal.(rf).(cf).(ff)(:,1))
                     tt=1;
                     for t=1:rls.ndiv
-                        divSignal.(rf).(cf)(chan,t)=mean(obj2.roi(r).results.signal.(rf).(cf)(chan,rls.framediv(tt):rls.framediv(tt+1)));
+                        divSignal.(rf).(cf).(ff)(chan,t)=mean(roi.results.signal.(rf).(cf).(ff)(chan,rls.framediv(tt):rls.framediv(tt+1)));
                         tt=tt+1;
                     end
                 end
             end
         end
     end
-else disp(['No results.signal for roi ' num2str(r)]);
+else disp(['No results.signal for roi ' num2str(roi.id)]);
 end
 %==============================================DIVERROR======================================================
 function [framedivNoFalseNeg, framedivNoFalsePos]=detectError(rlsGroundtruthr, rlsResultsr)
