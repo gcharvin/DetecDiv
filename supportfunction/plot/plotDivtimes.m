@@ -75,14 +75,17 @@ for c=1:szc
     leg{c,1}=[comment{c}, 'median=' num2str(median(divt{c,1})) ' (N=' num2str(length(divt{c,1})) ')'];
 end
 
-pairs=nchoosek(1:szc,2);
-szp=size(pairs,1);
 textPvalue='';
-for pp=1:szp
-    p(pp)=ranksum(divt{pairs(pp,1),1},divt{pairs(pp,2),1});
-    textPvalue=[textPvalue newline num2str(pairs(pp,1)) 'vs' num2str(pairs(pp,2)) ': ' num2str(p(pp))]; 
+if szc>1
+    pairs=nchoosek(1:szc,2);
+    szp=size(pairs,1);    
+    for pp=1:szp
+        p(pp)=ranksum(divt{pairs(pp,1),1},divt{pairs(pp,2),1});
+        textPvalue=[textPvalue newline num2str(pairs(pp,1)) 'vs' num2str(pairs(pp,2)) ': ' num2str(p(pp))];
+    end
 end
 
+    
 legend(leg)
 xlim([0,202]);
 xl=xlim; yl=ylim;
