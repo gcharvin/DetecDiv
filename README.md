@@ -157,6 +157,9 @@ This also provides basic statistics about the classification
 compute and stores (as a txt file) the statistics associated with the classification and comparison
 to groundtruth
 
+```out=classifyData2(test.processing.classification(2),test.processing.classification(2).roi(1:2),'Classifier',classifier,'Parallel')```
+
+
 ### Quantify RLS ###
 ---------------------
 ```rls=measureRLS2(theo.processing.classification(1),theo.processing.classification(1).strid)```
