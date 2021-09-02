@@ -19,6 +19,9 @@ param.postProcessing=1;
 param.errorDetection=1;
 param.ArrestThreshold=100;
 param.DeathThreshold=5;
+param.EmptyThresholdDiscard=500;
+param.EmptyThresholdNext=200;
+
 
 classifstrid=classif.strid;
 for i=1:numel(varargin)
@@ -59,10 +62,10 @@ end
 %%
 for i=1:numel(roiobj)
     roiobj(i).path=strrep(roiobj(i).path,'/shared/space2/','\\space2.igbmc.u-strasbg.fr\');
-    roiobj(i).load;
+    roiobj(i).load('results');
     roiobj(i).path=strrep(roiobj(i).path,'/shared/space2/','\\space2.igbmc.u-strasbg.fr\');
     roiobj(i).results.RLS.(classifstrid)=RLS(roiobj(i),classif,param);
-    roiobj(i).save;
+    roiobj(i).save('results');
     roiobj(i).clear;
 end
 
@@ -93,11 +96,12 @@ classes=classif.classes;
             if sum(roi.results.(classistrid).id)>0
                 id=roi.results.(classistrid).id; % results for classification
                 
-                divTimes=computeDivtime(id,classes,param.classiftype,param.DeathThreshold,param.ArrestThreshold,param.postProcessing);
+                divTimes=computeDivtime(id,classes,param);
                 
                 rlsResults(cc).divDuration=divTimes.duration;
                 rlsResults(cc).frameBirth=divTimes.frameBirth;
                 rlsResults(cc).frameEnd=divTimes.frameEnd;
+                rlsResults(cc).endType=divTimes.endType;
                 rlsResults(cc).framediv=divTimes.framediv;
                 rlsResults(cc).sep=[];
                 rlsResults(cc).name=roi.id;
@@ -130,11 +134,12 @@ classes=classif.classes;
                     idg=roi.train.(classistrid).id; % results for classification
                     disp(['Groundtruth data are available for ROI ' num2str(roi.id)]);
                     
-                    divTimesG=computeDivtime(idg,classes,param.classiftype,param.DeathThreshold,param.ArrestThreshold,param.postProcessing); % groundtruth data
+                    divTimesG=computeDivtime(idg,classes,param); % groundtruth data
                     
                     rlsGroundtruth(ccg).divDuration=divTimesG.duration;
                     rlsGroundtruth(ccg).frameBirth=divTimesG.frameBirth;
                     rlsGroundtruth(ccg).frameEnd=divTimesG.frameEnd;
+                    rlsGroundtruth(ccg).endType=divTimesG.endType;
                     rlsGroundtruth(ccg).framediv=divTimesG.framediv;
                     rlsGroundtruth(ccg).sep=[];
                     rlsGroundtruth(ccg).name=roi.id;
@@ -189,15 +194,15 @@ end
 
 
 
-%=========================================DIVTIMES=================================================
-function [divTimes]=computeDivtime(id,classes,classiftype,DeathThreshold,ArrestThreshold,postProcessing)
+%% =========================================DIVTIMES=================================================
+function [divTimes]=computeDivtime(id,classes,param)
 
 divTimes=[];
 
 % first identify frame corresponding to death or clog and birth (non
 % empty cavity)
 
-switch classiftype
+switch param.classiftype
     
     %========================CLASSIF BUD========================
     case 'bud'
@@ -209,7 +214,8 @@ switch classiftype
         emptyid=findclassid(classes,'empty');
         
         
-        %==============1// find BIRTH===============
+        %===1// find BIRTH===
+
         frameBirth=NaN;
         firstunb=find(id==unbuddedid,1,'first');
         firstsm=find(id==smid,1,'first');
@@ -225,64 +231,83 @@ switch classiftype
         end
         frameBirth=min([firstunb,firstsm,firstlg]);
         
-        %=======2// Identify potential END====
-        %========find potential first EMPTY frame, after birth=======
-        frameEmptied=NaN;
+        %===2// Identify potential END===
+        %==find potential first EMPTY frame, after birth
+        frameFirstEmptiedAfterBirth=NaN;
         bwEmpty=(id==emptyid);
         bwEmptyLabeled=bwlabel(bwEmpty);
         for k=1:max(bwEmptyLabeled)
             bwEmpty=(bwEmptyLabeled==k);
             if sum(bwEmpty)> 2 && find(bwEmpty,1,'first')>frameBirth
-                frameEmptied=find(bwEmpty,1,'first');
+                frameFirstEmptiedAfterBirth=find(bwEmpty,1,'first');
                 break
             end
         end
         
-        %======find DEATH (need 5 frames to be validated)======
+        %==post-process empty TODO : if empty very early: check the next rls
+        if frameFirstEmptiedAfterBirth>param.EmptyThresholdDiscard
+            
+        elseif frameFirstEmptiedAfterBirth>param.EmptyThresholdNext
+            frameBirth=min([firstunb,firstsm,firstlg]);
+        end
+        %
+        
+        %==find DEATH (need 5 frames to be validated)======
         frameDeath=NaN;
         bwDeath=(id==deathid);
         bwDeathLabeled=bwlabel(bwDeath);
         
         for k=1:max(bwDeathLabeled)
             bwDeath=(bwDeathLabeled==k);
-            if sum(bwDeath)> DeathThreshold
+            if sum(bwDeath)> param.DeathThreshold
                 frameDeath=find(bwDeath,1,'first');
                 break
             end
         end
+        %
+
         
-        %=================find potential first CLOG==============
-        frameClog=NaN;
+        %==find potential first CLOG==============
         frameClog=find(id==clogid,1,'first');
+        if numel(frameClog)==0
+            frameClog=NaN;
+        end
+        %
         
-        %=======find potential division arrest==========
+        %==find potential division arrest==========
         frameArrest=NaN;
         for arrestid=[unbuddedid,smid,lbid]
             bwArrest=(id==arrestid);
             bwArrestLabel=bwlabel(bwArrest);
             for k=1:max(bwArrestLabel)
                 bwArrest=(bwArrestLabel==k);
-                if sum(bwArrest)> ArrestThreshold
+                if sum(bwArrest)> param.ArrestThreshold
                     if numel(frameArrest)==1
-                        frameArrest=min(frameArrest,(find(bwArrest,1,'first')+ ArrestThreshold));
+                        frameArrest=min(frameArrest,(find(bwArrest,1,'first')+ param.ArrestThreshold));
                     else
-                        frameArrest=find(bwArrest,1,'first')+ ArrestThreshold;
+                        frameArrest=find(bwArrest,1,'first')+ param.ArrestThreshold;
                     end
                     break
                 end
             end
         end
+        %
         
-        %===============3/ find END===================
-        frameEnd=min([frameClog, frameDeath, frameEmptied, frameArrest]);
+        %===3/ find END===
+        frameEnd=min([frameClog, frameDeath, frameFirstEmptiedAfterBirth, frameArrest]);
         if isnan(frameEnd) % cell is not dead or clogged or empty, TO DO: SEPARATE BETWEEN DEATH AND CENSOR
             frameEnd=numel(id);
             %machin.censor=1;
         end
+        endTypeid=find([frameClog, frameDeath, frameFirstEmptiedAfterBirth, frameArrest, numel(id)]==frameEnd,1,'last');
+        endTypeList={'Clog', 'Death', 'Emptied', 'Arrest', 'stillAlive'};
+        endType=endTypeList{endTypeid};
+        %
         
-        %==============4/ detect divisions============
+        
+        %===4/ detect divisions===
         %==post-processing
-        if postProcessing==1
+        if param.postProcessing==1
             bwsmid=(id==smid);
             bwsmidLabel=bwlabel(bwsmid); %find small islets
             for k=1:max(bwsmidLabel)
@@ -309,6 +334,8 @@ switch classiftype
         end
         
         %=====Div counting=====
+        %
+        %
         divFrames=[];
         startAfterBudEmergence=0;
         if ~isnan(frameBirth)
@@ -330,6 +357,7 @@ switch classiftype
         end
         divTimes.frameBirth=frameBirth;
         divTimes.frameEnd=frameEnd;
+        divTimes.endType=endType;
         divTimes.framediv=divFrames;
         divTimes.duration=diff(divFrames); % division times !
         divTimes.ndiv=numel(divTimes.framediv);
@@ -371,7 +399,8 @@ switch classiftype
 end
 
 
-%==============================================SIGNAL======================================================
+
+%% ==============================================SIGNAL======================================================
 function divFluo=computeSignalDiv(roi,rls)
 divFluo=[];
 %check all the fields of .results.signal and mean them by div
