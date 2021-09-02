@@ -3,7 +3,7 @@ function mosaic(obj,varargin)
 
 % obj is the reference object: it can be either a @shallow, a @classi, or a
 % @ROI.
-% otyher arguments are expained below
+% other arguments are expained below
 
 
 name=[];
@@ -16,11 +16,17 @@ training=[];
 results=[];
 title=[];
 strid='';
+classif=classi;
+classif.strid='';
+
 roititle=0;
 rls=0;
 Flip=0;
 rgb={};
 contour=0;
+sequence=[];
+background=[0 0 0];
+text=[1 1 1];
 
 if isa(obj,'classi')
     frames=1:size(obj.roi(1).image,4); % take the number of frames from the image list
@@ -95,7 +101,7 @@ for i=1:numel(varargin)
     end
     
     if strcmp(varargin{i},'Classification') % enters the strid of the classif to be included
-        strid=varargin{i+1};
+       classif=varargin{i+1};
     end
     
     if strcmp(varargin{i},'Title') % display title information on top of the movie
@@ -114,7 +120,21 @@ for i=1:numel(varargin)
         contour=1;
     end
     
+    if strcmp(varargin{i},'Sequence') % outputs data as a sequence of images . sequence is a number that idnicates the number of rows of the monatage image. The number of col is calculated automatically
+        sequence=varargin{i+1};
+    end
+    
+     if strcmp(varargin{i},'Background') % specifies the background color 
+       background=varargin{i+1};
+     end
+    
+          if strcmp(varargin{i},'Text') % specifies the text color 
+       text=varargin{i+1};
+          end
+    
 end
+
+
 
 if numel(levels)==0
     disp('Display levels were not provided ! Will assume that all the channels are grayscale images and will normalize levels');
@@ -129,7 +149,7 @@ end
 
 if isa(obj,'roi') |  isa(obj,'shallow')
     if numel(training) | numel(results)
-        if numel(strid)==0
+        if numel(classif.strid)==0
             disp('You need to provide the strid of the classification training/resultss to be displayed; Quitting ! ');
             return;
         end
@@ -231,7 +251,12 @@ end
 
 h=size(img,1)+shifty;
 w=size(img,2)+shiftx;
-imgout=zeros(nsize(1)*h,nsize(2)*w,3,numel(frames));
+imgout=uint16(65535*ones(nsize(1)*h,nsize(2)*w,3,numel(frames)));
+imgout(:,:,1,:)=imgout(:,:,1,:)*background(1);
+imgout(:,:,2,:)=imgout(:,:,2,:)*background(2);
+imgout(:,:,3,:)=imgout(:,:,3,:)*background(3);
+
+%figure, imshow(imgout(:,:,:,1))
 cc=1;
 
 %   if numel(channel)==1
@@ -287,6 +312,9 @@ for k=1:nsize(1) % include all requested rois
         %         imout=cat(1,imblack2,imout);
         
         imout=uint16(zeros(size(imtmp,1),size(imtmp,2),3,size(imtmp,4)));
+     %   imout(:,:,1,:)=imout(:,:,1,:)*background(1);
+     %   imout(:,:,2,:)=imout(:,:,2,:)*background(2);
+     %   imout(:,:,3,:)=imgout(:,:,3,:)*background(3);
         
         for i=1:size(imtmp,4) % loop on frames
             
@@ -296,12 +324,9 @@ for k=1:nsize(1) % include all requested rois
                 
                 
                 imtmp2=imtmp(:,:,cha{ii},i);
-                
-                
+   
                 if numel(cha{ii})==1 % single dimension channel => levels can be readjusted
-                    
-                    
-                    
+
                     if numel(levels{ii})==2 % A 2D vector is provided, therefore image is not an indexed one
                         imtmp2 = imadjust(imtmp2,[levels{ii}(1)/65535 levels{ii}(2)/65535],[0 1]);
                         imtmp2= cat(3, imtmp2*rgb{ii}(1), imtmp2*rgb{ii}(2), imtmp2*rgb{ii}(3));
@@ -391,17 +416,25 @@ for k=1:nsize(1) % include all requested rois
         
         
         % imout= uint16(zeros(size(imtmp,1),size(imtmp,2),3,size(imtmp,4)));
-        imblack=uint16(zeros(size(imtmp,1),shiftx,3,size(imtmp,4)));
+        imblack=uint16(65535*ones(size(imtmp,1),shiftx,3,size(imtmp,4)));
+        imblack(:,:,1,:)=imblack(:,:,1,:)*background(1);
+        imblack(:,:,2,:)=imblack(:,:,2,:)*background(2);
+        imblack(:,:,3,:)=imblack(:,:,3,:)*background(3);
+          
         imout=cat(2,imblack,imout);
-        imblack2=uint16(zeros(shifty,size(imout,2),3,size(imout,4)));
+        imblack2=uint16(65535*ones(shifty,size(imout,2),3,size(imout,4)));
         imout=cat(1,imblack2,imout);
         
         % add black frame around ROIs
         framesize=2;
-        imout(1:framesize,:,:,:)=0;
-        imout(end-framesize+1:end,:,:,:)=0;
-        imout(:,1:framesize,:,:)=0;
-        imout(:,end-framesize+1:end,:,:)=0;
+        for ci=1:3
+        imout(1:framesize,:,ci,:)=65535*background(ci);
+        imout(end-framesize+1:end,:,ci,:)=65535*background(ci);
+        imout(:,1:framesize,ci,:)=65535*background(ci);
+        imout(:,end-framesize+1:end,ci,:)=65535*background(ci);
+        end
+        
+        
         
         %         if numel(channel)==1
         %             imout=repmat(imout,[1 1 3 1]);
@@ -414,7 +447,8 @@ for k=1:nsize(1) % include all requested rois
         % insert features here
         % calculate RLS  based on measureRLS2
         if rls==1
-            [rlsout,rlsresults,rlstraining]=measureRLS2(obj,strid,'bud','Rois',rois(cc));
+         %   [rlsout,rlsresults,rlstraining]=measureRLS3(classif,roitmp);
+         rlsresults=roitmp.results.RLS.(classif.strid);
         end
         
         % insert ROI title
@@ -427,27 +461,32 @@ for k=1:nsize(1) % include all requested rois
             
             
             for i=1:numel(frames)
-                % str='';
+                 str='';
                 if rls==1
                     pir=find(rlsresults.totaltime>=frames(i),1,'first')-1;
                     if numel(pir)==0
                         pir=length(rlsresults.totaltime);
                     end
-                    pit=find(rlstraining.totaltime>=frames(i),1,'first')-1;
-                    if numel(pit)==0
-                        pit=length(rlstraining.totaltime);
-                    end
                     
-                    if numel(training)
-                        str=[str num2str(pit) ' - '];
-                    end
+%                     pit=find(rlstraining.totaltime>=frames(i),1,'first')-1;
+
+%                     %% to uncomment once i know how to deal with
+%                     groundtruth data
+
+%                     if numel(pit)==0
+%                         pit=length(rlstraining.totaltime);
+%                     end
+%                     
+%                     if numel(training)
+%                         str=[str num2str(pit) ' - '];
+%                     end
                     
-                    str=[str  num2str(pir)];
+                    str=[str  num2str(pir) 'div'];
                 end
                 
                 
                 imout(:,:,:,i)=insertText( imout(:,:,:,i),[1 1],str,'Font','Arial','FontSize',10,'BoxColor',...
-                    [1 1 1],'BoxOpacity',0.0,'TextColor','white','AnchorPoint','LeftTop');
+                    [1 1 1],'BoxOpacity',0.0,'TextColor',255*text,'AnchorPoint','LeftTop');
             end
         end
         
@@ -465,8 +504,8 @@ for k=1:nsize(1) % include all requested rois
                 inte=uint16(double(size(imout,1)-shifty)/double(ncla+1));
                 
                 startx=2;
-                if isfield(roitmp.train,strid)
-                    idtrain=roitmp.train.(strid).id;
+                if isfield(roitmp.train,classif.strid)
+                    idtrain=roitmp.train.(classif.strid).id;
                     offsettrain=wid;
                 else
                     idtrain=[];
@@ -475,8 +514,8 @@ for k=1:nsize(1) % include all requested rois
         end
         
         if numel(results) % display results classes
-            if isfield(roitmp.results,strid)
-                ncla=numel(roitmp.results.(strid).classes);
+            if isfield(roitmp.results,classif.strid)
+                ncla=numel(roitmp.results.(classif.strid).classes);
                 cmap=prism(ncla);
             else
                 ncla=0;
@@ -487,8 +526,8 @@ for k=1:nsize(1) % include all requested rois
             else
                 inte=uint16(double(size(imout,1)-shifty)/double(ncla+1));
                 startx2=startx+offsettrain+2;
-                if isfield(roitmp.results,strid)
-                    idresults=roitmp.results.(strid).id;
+                if isfield(roitmp.results,classif.strid)
+                    idresults=roitmp.results.(classif.strid).id;
                 else
                     idresults=[];
                 end
@@ -500,7 +539,7 @@ for k=1:nsize(1) % include all requested rois
             if numel(training) && numel(idtrain)
                 for jj=1:ncla
                     imout(:,:,:,ii) = insertShape( imout(:,:,:,ii),'Rectangle',[startx inte*jj-inte/2+shifty wid wid],...
-                        'Color', {'white'},'Opacity',1);
+                        'Color', 65535*text,'Opacity',1);
                     if idtrain(frames(ii))==jj
                         col=round(65535*cmap(jj,:));
                         imout(:,:,:,ii) = insertShape( imout(:,:,:,ii),'FilledRectangle',[startx+1 inte*jj-inte/2+1+shifty wid-2 wid-2],'Color',col,'Opacity',1 );
@@ -510,7 +549,7 @@ for k=1:nsize(1) % include all requested rois
             if numel(results) && numel(idresults)
                 for jj=1:ncla
                     imout(:,:,:,ii) = insertShape( imout(:,:,:,ii),'Rectangle',[startx2 inte*jj-inte/2+shifty wid wid],...
-                        'Color', {'white'},'Opacity',1);
+                        'Color', 65535*text,'Opacity',1);
                     if idresults(frames(ii))==jj
                         col=round(65535*cmap(jj,:));
                         imout(:,:,:,ii) = insertShape( imout(:,:,:,ii),'FilledRectangle',[startx2+1 inte*jj-inte/2+1+shifty wid-2 wid-2],'Color',col,'Opacity',1 );
@@ -524,6 +563,7 @@ for k=1:nsize(1) % include all requested rois
     end
 end
 
+%figure, imshow(imgout(:,:,:,1))
 %imgout=imgout(:,:,:,frames);
 imgout=uint8(double( imgout)/256);
 
@@ -531,15 +571,22 @@ imgout=uint8(double( imgout)/256);
 %rows on the top of the movie : framerate or title
 if framerate>0 || numel(title)
     shifttitley=fontsize+10;
-    imgout2=cat(1,uint8(zeros(shifttitley,size(imgout,2),size(imgout,3),size(imgout,4))),imgout);
+    topimage=uint8(255*ones(shifttitley,size(imgout,2),size(imgout,3),size(imgout,4)));
+     for ci=1:3
+       topimage(:,:,ci,:)=topimage(:,:,ci,:)*background(ci);
+     end
+      
+    imgout2=cat(1,topimage,imgout);
+     
+        
     
     for j=1:numel(frames)
-        timestamp=[num2str((j-1)*framerate) 'min'];
+        timestamp=[num2str((frames(j)-frames(1))*framerate) 'min'];
         if numel(title)>0
             timestamp=[timestamp ' - ' title];
         end
         imgout2(:,:,:,j)=insertText( imgout2(:,:,:,j),[1 5],timestamp,'Font','Arial','FontSize',fontsize,'BoxColor',...
-            [1 1 1],'BoxOpacity',0.0,'TextColor','white','AnchorPoint','LeftTop');
+            [1 1 1],'BoxOpacity',0.0,'TextColor',255*text,'AnchorPoint','LeftTop');
     end
     imgout=imgout2;
 end
@@ -577,6 +624,11 @@ else
         name=fullfile(obj.path,name);
     end
 end
+
+% routine output : movie or sequence of image
+
+if numel(sequence)==0 % movie / default 
+    
 v=VideoWriter(name,'MPEG-4');
 v.FrameRate=ips;
 v.Quality=90;
@@ -586,5 +638,10 @@ open(v);
 writeVideo(v,imgout);
 close(v);
 disp(['Movie successfully exported to : ' name '.mp4'])
+
+else
+    
+    figure, montage(imgout,'Size',[sequence Inf]);
+end
 
 
