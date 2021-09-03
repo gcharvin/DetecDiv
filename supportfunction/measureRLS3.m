@@ -1,4 +1,4 @@
-function [rls,rlsResults,rlsGroundtruth]=measureRLS3(classif,roiobj,varargin)
+function measureRLS3(classif,roiobj,varargin)
 
 %'Fluo' if =1, will computethe fluo of each channel over the divs
 
@@ -61,7 +61,9 @@ for i=1:numel(varargin)
 end
 %%
 for i=1:numel(roiobj)
+    if strcmp(environment,'local')
     roiobj(i).path=strrep(roiobj(i).path,'/shared/space2/','\\space2.igbmc.u-strasbg.fr\');
+    end
     roiobj(i).load('results');
     roiobj(i).path=strrep(roiobj(i).path,'/shared/space2/','\\space2.igbmc.u-strasbg.fr\');
     roiobj(i).results.RLS.(classifstrid)=RLS(roiobj(i),classif,param);
