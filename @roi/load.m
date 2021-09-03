@@ -5,7 +5,7 @@ function load(obj,option)
 %%%%
 % to do here : load data for ROIs
 %%%%
-
+pathr=obj.path;
 resonly=0;
 
 if nargin==2
@@ -24,8 +24,8 @@ if exist([obj.path '/im_' obj.id '.mat'])
     
     %eval(['load  ' obj.path '/im_' num2str(obj.id) '.mat']);
     
-    eval(['load  ' '''' obj.path '/im_' obj.id '.mat' '''']);
-    
+    load([obj.path '/im_' obj.id '.mat']);
+    roiobj.path=pathr;
     %obj.image=im;
     
     if exist('im','var') % compatibility with previous roi management: this is ised to load ROI matrix if only the matrix is stored
@@ -45,7 +45,7 @@ end
 
 if exist([obj.path '/results_' obj.id '.mat'])
     %disp(['Loading ' t '/results_' obj.id '.mat result struct for ROI ' obj.id]);
-    eval(['load  ' '''' obj.path '/results_' obj.id '.mat' '''']);
+    eval(['load  ' '''' obj.path '/results_' obj.id '.mat' '''']);    
     obj.results=results;
     disp(['ROI results loaded from ' t '/results_' obj.id '.mat ' obj.id]);
 else
