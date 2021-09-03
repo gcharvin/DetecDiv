@@ -1,5 +1,5 @@
 function extractSignal(obj,type,inputvarargin)
-%This method of .fov extract the signal from the 'Channels' using the 'Method' and
+%This fct extracts the signal from the 'Channels' using the 'Method' and
 %store them in obj.roi(r).results.classiid.fluo.max(c,t)
 
 
