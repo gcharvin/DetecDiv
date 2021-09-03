@@ -69,9 +69,10 @@ end
 bins=[0:5:200, 1000];
 
 leg='';
-hold on
+figure;
 for c=1:szc
-    histogram(divt{c,1},bins,'DisplayStyle','stairs','LineWidth',3,'EdgeAlpha',0.75);
+    histogram(divt{c,1},bins,'DisplayStyle','stairs','LineWidth',3,'EdgeAlpha',0.75,'Normalization','probability');
+    hold on
     leg{c,1}=[comment{c}, 'median=' num2str(median(divt{c,1})) ' (N=' num2str(length(divt{c,1})) ')'];
 end
 
