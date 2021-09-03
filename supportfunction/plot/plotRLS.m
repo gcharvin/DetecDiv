@@ -14,6 +14,7 @@ function hrls=plotRLS(roiobjcell,varargin)
 % colormap, color separation , linewidth spacing etc
 % time : generation or physical time
 figExport=1;
+hazardRate=1;
 maxBirth=100; %max frame to be born. After, discard rls.
 
 szc=size(roiobjcell,1);
@@ -58,19 +59,36 @@ for c=1:szc
         end
     end
     
+    % selection of RLS
     rlst{c,1}=rls{c,1}([rls{c,1}.groundtruth]==0);
     rlst{c,1}=rlst{c,1}( ([rlst{c,1}.frameBirth]<=maxBirth) & (~isnan([rlst{c,1}.frameBirth])) );
+    rlst{c,1}=rlst{c,1}( ~(strcmp({rlst{c,1}.endType},'Arrest') & [rlst{c,1}.frameEnd]<400)  ); %remove weird cells before frame 300 (stop growing)
+    rlst{c,1}=rlst{c,1}( ~(strcmp({rlst{c,1}.endType},'Emptied') & [rlst{c,1}.frameEnd]<400)  ); %remove emptied roi before frame 300
     rlstNdivs{c,1}=[rlst{c,1}.ndiv];
+    %
 end
 
-%%% plot
+%% plot
 rlsFig=figure('Color','w','Units', 'Normalized', 'Position',[0.1 0.1 0.35 0.35]);
 leg='';
 hold on
+
+lcc=1;
 for c=1:szc
-    [yt,xt]=ecdf(rlstNdivs{c,1});
-    stairs([0 ; xt],[1 ; 1-yt],'LineWidth',3);
-    leg{c,1}=[comment{c}, 'median=' num2str(median(rlstNdivs{c,1})) ' (N=' num2str(length(rlstNdivs{c,1})) ')'];
+    [yt,xt]=ecdf(rlstNdivs{c,1},'Bounds','on');
+    splot=stairs([0 ; xt],[1 ; 1-yt],'LineWidth',3);
+    col=get(splot,'color');
+    leg{lcc,1}=[comment{c}, 'median=' num2str(median(rlstNdivs{c,1})) ' (N=' num2str(length(rlstNdivs{c,1})) ')'];
+    lcc=lcc+1;
+    
+    if hazardRate==1
+        dlog=gradient(log(1-yt));
+        dt=gradient(xt);
+        deathRate=-dlog./dt;
+        plot(xt,deathRate,':','LineWidth',3,'Color',col)
+        leg{lcc,1}=[comment{c}, 'hazard rate'];
+        lcc=lcc+1;
+    end
 end
 
 textPvalue='';
@@ -78,7 +96,7 @@ if szc>1
     pairs=nchoosek(1:szc,2);
     szp=size(pairs,1);
     for pp=1:szp
-        p(pp)=ranksum(rlstNdivs{pairs(pp,1),1},rlstNdivs{pairs(pp,2),1});
+        [~,p(pp)]=kstest2(rlstNdivs{pairs(pp,1),1},rlstNdivs{pairs(pp,2),1});
         textPvalue=[textPvalue newline num2str(pairs(pp,1)) 'vs' num2str(pairs(pp,2)) ': ' num2str(p(pp))];
     end
 end
