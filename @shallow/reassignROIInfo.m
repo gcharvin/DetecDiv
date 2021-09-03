@@ -10,7 +10,7 @@ for i=1:numel(varargin)
     end
 end
 temp=[1 1 1];
-for i=1:fovlist
+for i=fovlist
     for j=1:numel(obj.fov(i).roi)
         rpath=fullfile([obj.io.path obj.io.file],obj.fov(i).id);
         obj.fov(i).roi(j).path=rpath;
