@@ -132,9 +132,9 @@ for i=1:length(roilist) % loop on all ROIs using parrallel computing
     %  end
     
     if numel(classifierCNN) % in case an LSTM classification is done, validation is performed with a CNN classifier as well
-        tmp(i)=feval(classifyFun,roiobj,classif,classifier,classifierCNN); % launch the training function for classification
+        feval(classifyFun,roiobj,classif,classifier,classifierCNN); % launch the training function for classification
     else
-        tmp(i)=feval(classifyFun,roiobj,classif,classifier); % launch the training function for classification
+        feval(classifyFun,roiobj,classif,classifier); % launch the training function for classification
     end
 end
 
