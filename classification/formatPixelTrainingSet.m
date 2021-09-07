@@ -19,15 +19,15 @@ disp('Starting parallelized jobs for data formatting....')
 
 warning off all
 
-parfor i=rois
-    disp(['Launching ROI ' num2str(i) :' processing...'])
-    if numel(cltmp(i).image)==0
-        cltmp(i).load; % load image sequence
+for i=1:numel(rois)
+    disp(['Launching ROI ' num2str(rois(i)) :' processing...'])
+    if numel(cltmp(rois(i)).image)==0
+        cltmp(rois(i)).load; % load image sequence
     end
     
     % normalize intensity levels
-    pix=find(cltmp(i).channelid==classif.channel(1)); % find channel
-    im=cltmp(i).image(:,:,pix,:);
+    pix=find(cltmp(rois(i)).channelid==classif.channel(1)); % find channel
+    im=cltmp(rois(i)).image(:,:,pix,:);
     
     if numel(pix)==1
         % 'ok'
@@ -38,12 +38,12 @@ parfor i=rois
     
     % find image channel associated with training
     %pixe = strfind(cltmp(i).display.channel, classif.strid);
-    cc=cltmp(i).findChannelID(classif.strid);
+    cc=cltmp(rois(i)).findChannelID(classif.strid);
     
     if numel(cc)>0
         %pixcc=find(cltmp(i).channelid==cc)
         pixcc=cc;
-        lab=cltmp(i).image(:,:,pixcc,:);
+        lab=cltmp(rois(i)).image(:,:,pixcc,:);
         
         % changes from here
         % %         lab=lab>1; % takes only the second class into account
@@ -132,18 +132,18 @@ parfor i=rois
                 % For images smaller than that, image padding is achieved to
                 % enlarge it.
                 %  exptmp=tmp;
-                imwrite(tmp,[classif.path '/' foldername '/images/' cltmp(i).id '_frame_' tr '.tif']);
-                imwrite(labels(:,:,:,j),[classif.path '/' foldername '/labels/' cltmp(i).id '_frame_' tr '.tif']);
+                imwrite(tmp,[classif.path '/' foldername '/images/' cltmp(rois(i)).id '_frame_' tr '.tif']);
+                imwrite(labels(:,:,:,j),[classif.path '/' foldername '/labels/' cltmp(rois(i)).id '_frame_' tr '.tif']);
             end
         end
         
-        msg = sprintf('Processing frame: %d / %d for ROI %s', j, size(im,4),cltmp(i).id); %Don't forget this semicolon
+        msg = sprintf('Processing frame: %d / %d for ROI %s', j, size(im,4),cltmp(rois(i)).id); %Don't forget this semicolon
         fprintf([reverseStr, msg]);
         reverseStr = repmat(sprintf('\b'), 1, length(msg));
     end
     fprintf('\n');
-    cltmp(i).save;
-    disp(['Processing ROI: ' num2str(i) ' ... Done !'])
+    cltmp(rois(i)).save;
+    disp(['Processing ROI: ' num2str(rois(i)) ' ... Done !'])
 end
 
 warning on all;
