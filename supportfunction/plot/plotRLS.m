@@ -13,12 +13,13 @@ function hrls=plotRLS(roiobjcell,varargin)
 % display style : color map : name or custom colormap : limits for
 % colormap, color separation , linewidth spacing etc
 % time : generation or physical time
-figExport=0;
-bootStrapping=1;
+figExport=1;
+bootStrapping=0;
 sz=5;
 Nboot=100;
-plotHazardRate=1;
+plotHazardRate=0;
 maxBirth=100; %max frame to be born. After, discard rls.
+load=0;
 
 szc=size(roiobjcell,1);
 comment=cell(szc,1);
@@ -32,8 +33,21 @@ for i=1:numel(varargin)
     if strcmp(varargin{i},'Exportfig')
         figExport=1;
     end
+    
+    if strcmp(varargin{i},'Load') %load data
+        load=1;
+    end
 end
 
+%% load if required
+if load==1
+    for c=1:szc
+        for r=1:numel(roiobjcell{c,1})
+            % load data if required
+            roiobjcell{c,1}(r).load('results');
+        end
+    end
+end
 %%
 %find classistrid
 if isfield(roiobjcell{1,1}(1).results,'RLS')
@@ -53,7 +67,7 @@ classifstrid=liststrid{classifid};
 
 %%
 for c=1:szc
-    for r=1:numel(roiobjcell{c,1})
+    for r=1:numel(roiobjcell{c,1})      
         if isfield(roiobjcell{c,1}(r).results,'RLS')
             if isfield(roiobjcell{c,1}(r).results.RLS,(classifstrid))
                 rls{c,1}=[rls{c,1}; roiobjcell{c,1}(r).results.RLS.(classifstrid)];
@@ -85,23 +99,35 @@ end
 
 %set(gcf,'Color','w','Units', 'Normalized', 'Position',[0.1 0.1 0.45 0.45]);
 rlsFig=figure('Color','w','Units', 'Normalized', 'Position',[0.1 0.1 0.45 0.45]);
+ax=gca;
+colorder=ax.ColorOrder;
 leg='';
 hold on
 
 lcc=1;
 for c=1:szc
-
-    [yt,xt]=ecdf(rlstNdivs{c,1});
+    col=colorder(c,:);
+    [yt,xt,flo,fup]=ecdf(rlstNdivs{c,1});
     
-    ecdf(rlstNdivs{c,1},'Function','survivor','Bounds','on');
-    ax=gca;
-    ax.Children(3).LineWidth=lw;
-    col=ax.Children(1).Color;
+    plot(xt,1-yt,'LineWidth',lw,'color',col)
+%     ax.Children(1).LineWidth=lw;
+%     col=ax.Children(1).Color;
+    fup(1)=0;
+    fup(end)=1;
+    flo(1)=0;
+    flo(end)=1;
+    closedxt = [xt', fliplr(xt')];
+    inBetween = [1-fup', fliplr(1-flo')];
+    ptch=patch(closedxt, inBetween,col);
+    ptch.EdgeColor=col;
+    ptch.FaceAlpha=0.15;
+    ptch.EdgeAlpha=0.3;
+    ptch.LineWidth=lw;
     
     leg{lcc,1}=[comment{c}, ': Median=' num2str(median(rlstNdivs{c,1})) ' (N=' num2str(length(rlstNdivs{c,1})) ')'];
     leg{lcc+1,1}='';
-    leg{lcc+2,1}='';
-    lcc=lcc+3;
+%     leg{lcc+2,1}='';
+    lcc=lcc+2;
     
     if plotHazardRate==1
         %BOOTSTRAPPING
@@ -171,12 +197,31 @@ for c=1:szc
             meanBDR=nanmean(binnedDeathRate,1);
             stdBDR=nanstd(binnedDeathRate,1);
             
-            lineProps.width=lw;
-            lineProps.col{:}=col;
-            %mseb(Xb(2:end),meanDR,stdDR,lineProps);
-            mseb(Xb(2:2:end-1),meanBDR,stdBDR,lineProps);
+            %             lineProps.width=lw;
+            %             lineProps.col{:}=col;
+            %             %mseb(Xb(2:end),meanDR,stdDR,lineProps);
+            %             mseb(Xb(2:2:end-1),meanBDR,stdBDR,lineProps);
+            
+            %remove nans for polygon
+            Xb=Xb(~isnan(Xb));
+            stdBDR=stdBDR(~isnan(stdBDR));
+            meanBDR=meanBDR(~isnan(meanBDR));
+            %plot
+            plot(Xb(2:2:end),meanBDR,'LineWidth',lw,'color',col,'LineStyle','--')
+            closedxb=[];
+            shadedstd=[];
+            closedxb = [Xb(2:2:end), fliplr(Xb(2:2:end))];
+            shadedstd = [meanBDR-stdBDR, fliplr(meanBDR+stdBDR)];
+            ptch=patch(closedxb, shadedstd,col);
+            ptch.FaceAlpha=0.15;
+            ptch.EdgeAlpha=0.3;
+            ptch.LineStyle='--';
+            ptch.LineWidth=lw;
+            ptch.EdgeColor=col;
+            
             leg{lcc,1}=[comment{c}, ': Hazard rate '];
-            lcc=lcc+1;
+            leg{lcc+1,1}='';
+            lcc=lcc+2;
         else
             dlog=gradient(log(1-yt));
             dt=gradient(xt);
@@ -217,7 +262,7 @@ p=0;%ranksum(rlstNdivs,rlsgNdivs);
 title(['Replicative lifespan']);
 set(gca,'FontSize',fz, 'FontName','Myriad Pro','LineWidth',2*lw,'FontWeight','bold','XTick',[0:10:M],'TickLength',[0.02 0.02]);
 xlim([0 M])
-ylim([0 1.05]);
+ylim([0 1.02]);
 
 
 if figExport==1

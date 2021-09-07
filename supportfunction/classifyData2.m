@@ -63,33 +63,25 @@ if para
 else
 
     logparf=1;
-
 end
 
-tic
+
 for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel computing
 
     if para % parallele computing
         if exist('classifierCNN','var')  && skipCNN==0
             logparf(i)=parfeval(fhandle,0,roiobj(i),classi,classifierStore,classifierCNN); % launch the training function for classification
-
-            %  feval(fhandle,roiobj(i),classi,classifierStore,classifierCNN); % launch the training function for classification
         else
             %disp(['Starting classification of ' num2str(roiobj(i).id)]);
             logparf(i)=parfeval(fhandle,0,roiobj(i),classi,classifierStore); % launch the training function for classification
-            %  feval(fhandle,roiobj(i),classi,classifierStore); % launch the training function for classification
         end
     else
         if exist('classifierCNN','var') && skipCNN==0
-            tic
             feval(fhandle,roiobj(i),classi,classifierStore,classifierCNN); % launch the training function for classification
             disp(['Classified ' num2str(roiobj(i).id)]);
-            toc
         else
-            tic
             feval(fhandle,roiobj(i),classi,classifierStore); % launch the training function for classification
             disp(['Classified without CNN' num2str(roiobj(i).id)]);
-            toc
         end
     end
     

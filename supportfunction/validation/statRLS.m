@@ -8,7 +8,7 @@ function [h1,h2,h3,h4]=statRLS(rls,varargin)
 % C=colormap BUGGGGGGGGGGGGGEDD
 % C(1,:)=[0 0 0];
 % colormap=C;
-figExport=1;
+figExport=0;
 plotFluo=1;
 plotVolume=1;
 
@@ -76,17 +76,19 @@ if isfield(rls,'noFalseDiv')
     rlsgDivsDuration=rlsgDivsDuration*5;
     %rlstDivsDuration=rlstDivsDuration(~isempty(rlstDivsDuration));
     %rlsgDivsDuration=rlstDivsDuration(~isempty(rlstDivsDuration));
-
+    
     h2=figure('Color','w','Units', 'Normalized', 'Position',[0.1 0.1 0.35 0.35]);
-    scatter(rlsgDivsDuration,rlstDivsDuration,50,'filled','MarkerFaceColor',[125/255, 125/255, 125/255],'MarkerEdgeColor','k','LineWidth',0.1); hold on;
+    %scatter(rlsgDivsDuration,rlstDivsDuration,50,'filled','MarkerFaceColor',[125/255, 125/255, 125/255],'MarkerEdgeColor','k','LineWidth',0.1); hold on;
     box on
-%     hist3([rlsgDivsDuration',rlstDivsDuration'],'CDataMode','auto','Nbins',[50,50])
-%     view(2)
-%     colorbar
-
-    %scatter_kde(rlsgDivsDuration',rlstDivsDuration');
-
-    plot(0:max(max(rlsgDivsDuration),max(rlstDivsDuration)),0:max(max(rlsgDivsDuration),max(rlstDivsDuration)),'k','LineStyle','--','LineWidth',2);
+    %     hist3([rlsgDivsDuration',rlstDivsDuration'],'CDataMode','auto','Nbins',[50,50])
+    %     view(2)
+    %     colorbar
+    
+    colormap gray
+    colorbar
+    scatter_kde(rlsgDivsDuration',rlstDivsDuration','filled','MarkerEdgeColor','k','LineWidth',0.1);
+    
+%     plot(0:max(max(rlsgDivsDuration),max(rlstDivsDuration)),0:max(max(rlsgDivsDuration),max(rlstDivsDuration)),'k','LineStyle','--','LineWidth',2);
     r=corrcoef(rlsgDivsDuration,rlstDivsDuration);
     
     xlim([20 max(max(rlsgDivsDuration),max(rlstDivsDuration))]);
@@ -101,15 +103,15 @@ if isfield(rls,'noFalseDiv')
     set(gca,'xscale','log','yscale','log')
     ticklog=[[20 :20:100],[200:100:500]];
     set(gca,'FontSize',16, 'FontName','Myriad Pro','LineWidth',3,'FontWeight','bold',...
-         'XTick',ticklog,...
-         'YTick',ticklog,'TickLength',[0.02 0.02]);
+        'XTick',ticklog,...
+        'YTick',ticklog,'TickLength',[0.02 0.02]);
 else
     h2=figure('Color','w','Units', 'Normalized', 'Position',[0.1 0.1 0.35 0.35]);
 end
 
 if figExport==1
     ax=gca;
-
+    
     xf_width=sz; yf_width=sz;
     set(gcf, 'PaperType','a4','PaperUnits','centimeters');
     %set(gcf,'Units','centimeters','Position', [5 5 xf_width yf_width]);
@@ -205,123 +207,62 @@ if figExport==1
 end
 
 %% plot volume correlation
-if isfield(rls,'noFalseDiv')
-    for i=1:2:numel(rls)-1
-        if numel(rls(i).divDurationNoFalseDiv)==numel(rls(i+1).divDurationNoFalseDiv)
-            rlstDivsDuration=[rlstDivsDuration, rls(i).divDurationNoFalseDiv];
-            rlsgDivsDuration=[rlsgDivsDuration, rls(i+1).divDurationNoFalseDiv];
-        end
-    end
-    rlstDivsDuration=rlstDivsDuration*5;
-    rlsgDivsDuration=rlsgDivsDuration*5;
-    %rlstDivsDuration=rlstDivsDuration(~isempty(rlstDivsDuration));
-    %rlsgDivsDuration=rlstDivsDuration(~isempty(rlstDivsDuration));
-
-    h2=figure('Color','w','Units', 'Normalized', 'Position',[0.1 0.1 0.35 0.35]);
-    scatter(rlsgDivsDuration,rlstDivsDuration,50,'filled','MarkerFaceColor',[125/255, 125/255, 125/255],'MarkerEdgeColor','k','LineWidth',0.1); hold on;
-    box on
-%     hist3([rlsgDivsDuration',rlstDivsDuration'],'CDataMode','auto','Nbins',[50,50])
-%     view(2)
-%     colorbar
-
-    %scatter_kde(rlsgDivsDuration',rlstDivsDuration');
-
-    plot(0:max(max(rlsgDivsDuration),max(rlstDivsDuration)),0:max(max(rlsgDivsDuration),max(rlstDivsDuration)),'k','LineStyle','--','LineWidth',2);
-    r=corrcoef(rlsgDivsDuration,rlstDivsDuration);
-    
-    xlim([20 max(max(rlsgDivsDuration),max(rlstDivsDuration))]);
-    ylim([20 max(max(rlsgDivsDuration),max(rlstDivsDuration))]);
-    xl=xlim; yl=ylim;
-    axis square;
-    xlabel('Groundtruth division time (minutes)');
-    ylabel('Computed division time (minutes)');
-    
-    text(1.2*xl(1),0.75*yl(2),[comment 'R^2=' num2str(r(1,2)) newline 'N=' num2str(numel(rlsgDivsDuration))],'FontSize',16,'FontWeight','bold');
-    a.LineStyle='none';
-    set(gca,'xscale','log','yscale','log')
-    ticklog=[[20 :20:100],[200:100:500]];
-    set(gca,'FontSize',16, 'FontName','Myriad Pro','LineWidth',3,'FontWeight','bold',...
-         'XTick',ticklog,...
-         'YTick',ticklog,'TickLength',[0.02 0.02]);
-else
-    h2=figure('Color','w','Units', 'Normalized', 'Position',[0.1 0.1 0.35 0.35]);
-end
-
-if figExport==1
-    ax=gca;
-
-    xf_width=sz; yf_width=sz;
-    set(gcf, 'PaperType','a4','PaperUnits','centimeters');
-    %set(gcf,'Units','centimeters','Position', [5 5 xf_width yf_width]);
-    set(ax,'Units','centimeters', 'InnerPosition', [2 2 xf_width yf_width])
-    
-    set(ax,'FontSize',8, 'LineWidth',1,'FontWeight','bold',...
-         'XTick',ticklog,...
-         'YTick',ticklog,'TickLength',[0.02 0.02]);
-    ax.Children(2).LineWidth=1; %diagonale size
-    ax.Children(3).SizeData=12; %dot size
-    ax.Children(1).FontSize=8; %R² size
-    
-    exportgraphics(h2,'h2.pdf','BackgroundColor','none','ContentType','vector')
-end
-
-%% plot fluo correlation
-if isfield(rls,'noFalseDiv')
-    for i=1:2:numel(rls)-1
-        if numel(rls(i).divDurationNoFalseDiv)==numel(rls(i+1).divDurationNoFalseDiv)
-            rlstDivsDuration=[rlstDivsDuration, rls(i).divDurationNoFalseDiv];
-            rlsgDivsDuration=[rlsgDivsDuration, rls(i+1).divDurationNoFalseDiv];
-        end
-    end
-    rlstDivsDuration=rlstDivsDuration*5;
-    rlsgDivsDuration=rlsgDivsDuration*5;
-    %rlstDivsDuration=rlstDivsDuration(~isempty(rlstDivsDuration));
-    %rlsgDivsDuration=rlstDivsDuration(~isempty(rlstDivsDuration));
-
-    h2=figure('Color','w','Units', 'Normalized', 'Position',[0.1 0.1 0.35 0.35]);
-    scatter(rlsgDivsDuration,rlstDivsDuration,50,'filled','MarkerFaceColor',[125/255, 125/255, 125/255],'MarkerEdgeColor','k','LineWidth',0.1); hold on;
-    box on
-%     hist3([rlsgDivsDuration',rlstDivsDuration'],'CDataMode','auto','Nbins',[50,50])
-%     view(2)
-%     colorbar
-
-    %scatter_kde(rlsgDivsDuration',rlstDivsDuration');
-
-    plot(0:max(max(rlsgDivsDuration),max(rlstDivsDuration)),0:max(max(rlsgDivsDuration),max(rlstDivsDuration)),'k','LineStyle','--','LineWidth',2);
-    r=corrcoef(rlsgDivsDuration,rlstDivsDuration);
-    
-    xlim([20 max(max(rlsgDivsDuration),max(rlstDivsDuration))]);
-    ylim([20 max(max(rlsgDivsDuration),max(rlstDivsDuration))]);
-    xl=xlim; yl=ylim;
-    axis square;
-    xlabel('Groundtruth division time (minutes)');
-    ylabel('Computed division time (minutes)');
-    
-    text(1.2*xl(1),0.75*yl(2),[comment 'R^2=' num2str(r(1,2)) newline 'N=' num2str(numel(rlsgDivsDuration))],'FontSize',16,'FontWeight','bold');
-    a.LineStyle='none';
-    set(gca,'xscale','log','yscale','log')
-    ticklog=[[20 :20:100],[200:100:500]];
-    set(gca,'FontSize',16, 'FontName','Myriad Pro','LineWidth',3,'FontWeight','bold',...
-         'XTick',ticklog,...
-         'YTick',ticklog,'TickLength',[0.02 0.02]);
-else
-    h2=figure('Color','w','Units', 'Normalized', 'Position',[0.1 0.1 0.35 0.35]);
-end
-
-if figExport==1
-    ax=gca;
-
-    xf_width=sz; yf_width=sz;
-    set(gcf, 'PaperType','a4','PaperUnits','centimeters');
-    %set(gcf,'Units','centimeters','Position', [5 5 xf_width yf_width]);
-    set(ax,'Units','centimeters', 'InnerPosition', [2 2 xf_width yf_width])
-    
-    set(ax,'FontSize',8, 'LineWidth',1,'FontWeight','bold',...
-         'XTick',ticklog,...
-         'YTick',ticklog,'TickLength',[0.02 0.02]);
-    ax.Children(2).LineWidth=1; %diagonale size
-    ax.Children(3).SizeData=12; %dot size
-    ax.Children(1).FontSize=8; %R² size
-    
-    exportgraphics(h2,'h2.pdf','BackgroundColor','none','ContentType','vector')
-end
+% if isfield(rls,'noFalseDiv')
+%     for i=1:2:numel(rls)-1
+%         if numel(rls(i).divDurationNoFalseDiv)==numel(rls(i+1).divDurationNoFalseDiv)
+%             rlstDivsDuration=[rlstDivsDuration, rls(i).divDurationNoFalseDiv];
+%             rlsgDivsDuration=[rlsgDivsDuration, rls(i+1).divDurationNoFalseDiv];
+%         end
+%     end
+%     rlstDivsDuration=rlstDivsDuration*5;
+%     rlsgDivsDuration=rlsgDivsDuration*5;
+%     %rlstDivsDuration=rlstDivsDuration(~isempty(rlstDivsDuration));
+%     %rlsgDivsDuration=rlstDivsDuration(~isempty(rlstDivsDuration));
+% 
+%     h5=figure('Color','w','Units', 'Normalized', 'Position',[0.1 0.1 0.35 0.35]);
+%     scatter(rlsgDivsDuration,rlstDivsDuration,50,'filled','MarkerFaceColor',[125/255, 125/255, 125/255],'MarkerEdgeColor','k','LineWidth',0.1); hold on;
+%     box on
+% %     hist3([rlsgDivsDuration',rlstDivsDuration'],'CDataMode','auto','Nbins',[50,50])
+% %     view(2)
+% %     colorbar
+% 
+%     %scatter_kde(rlsgDivsDuration',rlstDivsDuration');
+% 
+%     plot(0:max(max(rlsgDivsDuration),max(rlstDivsDuration)),0:max(max(rlsgDivsDuration),max(rlstDivsDuration)),'k','LineStyle','--','LineWidth',2);
+%     r=corrcoef(rlsgDivsDuration,rlstDivsDuration);
+%     
+%     xlim([20 max(max(rlsgDivsDuration),max(rlstDivsDuration))]);
+%     ylim([20 max(max(rlsgDivsDuration),max(rlstDivsDuration))]);
+%     xl=xlim; yl=ylim;
+%     axis square;
+%     xlabel('Groundtruth division time (minutes)');
+%     ylabel('Computed division time (minutes)');
+%     
+%     text(1.2*xl(1),0.75*yl(2),[comment 'R^2=' num2str(r(1,2)) newline 'N=' num2str(numel(rlsgDivsDuration))],'FontSize',16,'FontWeight','bold');
+%     a.LineStyle='none';
+%     set(gca,'xscale','log','yscale','log')
+%     ticklog=[[20 :20:100],[200:100:500]];
+%     set(gca,'FontSize',16, 'FontName','Myriad Pro','LineWidth',3,'FontWeight','bold',...
+%          'XTick',ticklog,...
+%          'YTick',ticklog,'TickLength',[0.02 0.02]);
+% else
+%     h5=figure('Color','w','Units', 'Normalized', 'Position',[0.1 0.1 0.35 0.35]);
+% end
+% 
+% if figExport==1
+%     ax=gca;
+% 
+%     xf_width=sz; yf_width=sz;
+%     set(gcf, 'PaperType','a4','PaperUnits','centimeters');
+%     %set(gcf,'Units','centimeters','Position', [5 5 xf_width yf_width]);
+%     set(ax,'Units','centimeters', 'InnerPosition', [2 2 xf_width yf_width])
+%     
+%     set(ax,'FontSize',8, 'LineWidth',1,'FontWeight','bold',...
+%          'XTick',ticklog,...
+%          'YTick',ticklog,'TickLength',[0.02 0.02]);
+%     ax.Children(2).LineWidth=1; %diagonale size
+%     ax.Children(3).SizeData=12; %dot size
+%     ax.Children(1).FontSize=8; %R² size
+%     
+%     exportgraphics(h2,'h2.pdf','BackgroundColor','none','ContentType','vector')
+% end

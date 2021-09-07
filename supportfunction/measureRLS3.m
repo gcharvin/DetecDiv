@@ -10,8 +10,6 @@ function measureRLS3(classif,roiobj,varargin)
 % rlsResults only results
 %rlsGroundtruth only groundtruth
 
-%% TODO : Make it roi method and export to result_Pos_xxx.mat
-%
 environment='local';
 
 param.classiftype='bud';

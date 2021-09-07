@@ -111,7 +111,7 @@ for fr=1:size(gfp,4)
     
     
     for i=2:numel(classif.classes) % 1 st class is considered default class     
-        BW=features(:,:,i)>0.9;
+        BW=features(:,:,i);%>0.015;
         %BW=logical(C==string(classif.classes{i}));  
         % i
         % size(BW)
@@ -138,6 +138,7 @@ for fr=1:size(gfp,4)
     sous=- imdist;
     %figure, imshow(BW,[]);
     labels = double(watershed(sous,8)).* ~BW;% .* BW % .* param.mask; % watershed
+    
     
     %normalize pixels to classes
     labels(labels(:,:)>0)=2; %cell
