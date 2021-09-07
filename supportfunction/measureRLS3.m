@@ -362,7 +362,7 @@ switch param.classiftype
         divTimes.endType=endType;
         divTimes.framediv=divFrames;
         divTimes.duration=diff(divFrames); % division times !
-        divTimes.ndiv=numel(divTimes.framediv);
+        divTimes.ndiv=sum(~isnan([divTimes.framediv]));
         %if timelapse started while the cell is small or large
         if startAfterBudEmergence==1
             divTimes.ndiv=divTimes.ndiv+1;

@@ -19,7 +19,9 @@ function extractSignal(obj,type,inputvarargin)
 %*'Rois': rois array to extract the signal from
 skip=0;
 kMaxPix=20;
+volThresh=0;
 rois=1:numel(obj.roi);
+postprocess=1;
 %method='full';
 %channelSegCell=3;
 %channelSegNuc=4;
@@ -114,6 +116,7 @@ if strcmp(method,'full')
         end
         disp(['Average signal of ' num2str(kMaxPix) 'max pixels, mean and total signal was computed and added to roi(' num2str(r) ').results.signal' num2str(classiname)])
         obj.roi(r).image=[];
+        obj.roi(r).save('results')
         clear im
     end
 end
@@ -174,10 +177,17 @@ if strcmp(method,'volume')
             maskMother=(maskMother+maskTotal.*uint16(maskTotal==classidMother))./classidMother;
             
             %=compute and store
-            obj.roi(r).results.signal.cell.(classiname).volume(t)=sum(maskMother(:));
+            vol=sum(maskMother(:));
+                if postprocess==1
+                    if vol<volThresh
+                        vol=0;
+                    end
+                end
+            obj.roi(r).results.signal.cell.(classiname).volume(t)=vol;
         end
         disp(['Volume, of mothercell was computed and added to roi(' num2str(r) ').results.signal.cell.' num2str(classiname)])
         obj.roi(r).image=[];
+        obj.roi(r).save('results');
         clear im
     end
 end
@@ -259,7 +269,13 @@ if strcmp(method,'cell')
                 maskedBckg=im.*maskBckg;
                 
                 %=compute and store
-                obj.roi(r).results.signal.cell.(classiname).volume(t)=sum(maskMother(:));
+                vol=sum(maskMother(:));
+                if postprocess==1
+                    if vol<volThresh
+                        vol=0;
+                    end
+                end
+                obj.roi(r).results.signal.cell.(classiname).volume(t)=vol;
                 obj.roi(r).results.signal.cell.(classiname).totalfluo(c,t)=sum(maskedMother(:))-mean(maskedBckg(:));
                 obj.roi(r).results.signal.cell.(classiname).meanfluo(c,t)=obj.roi(r).results.signal.cell.(classiname).totalfluo(c,t)/sum(maskMother(:));
             end
@@ -267,6 +283,7 @@ if strcmp(method,'cell')
         
         disp(['Volume, average and total signal of mothercell was computed and added to roi(' num2str(r) ').results.signal.cell' num2str(classiname)])
         
+        obj.roi(r).save('results');
         obj.roi(r).image=[];
         clear im
     end
@@ -365,6 +382,7 @@ if strcmp(method,'nucleus')
             end
         end
         disp(['Volume, average and total signal of nucleus was computed and added to roi(' num2str(r) ').results.signal.nucleus' num2str(classiname)])
+        obj.roi(r).save('results');
         obj.roi(r).image=[];
         clear im
         

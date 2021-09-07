@@ -13,6 +13,7 @@ objType=[];
 roisArray=[];
 %% TODO : Make it roi method and export to result_Pos_xxx.mat
 %%
+param.mergeGT=1;
 param.classiftype='bud';
 param.postProcessing=1;
 param.errorDetection=1;
@@ -106,9 +107,9 @@ if strcmp(objType,'classif')
     if numel(rois)==0
         rois=1:numel(obj.roi);
     end
-
+    
     %compute RLS
-[rls,rlsResults,rlsGroundtruth]=RLS(obj2,classif,param,rois);    
+    [rls,rlsResults,rlsGroundtruth]=RLS(obj2,classif,param,rois);
     
     
     %=fovs
@@ -265,8 +266,9 @@ if param.errorDetection==1
     end
 end
 
-if rlsGroundtruth.groundtruth==1
-    rls=[rlsResults rlsGroundtruth];
+if param.mergeGT==1
+    rlsResults=rlsResults([rlsGroundtruth.groundtruth]==1);
+    rls=[rlsResults; rlsGroundtruth];
 else
     rls=rlsResults;
 end
@@ -441,7 +443,7 @@ switch param.classiftype
         divTimes.endType=endType;
         divTimes.framediv=divFrames;
         divTimes.duration=diff(divFrames); % division times !
-        divTimes.ndiv=numel(divTimes.framediv);
+        divTimes.ndiv=sum(~isnan([divTimes.framediv]));
         %if timelapse started while the cell is small or large
         if startAfterBudEmergence==1
             divTimes.ndiv=divTimes.ndiv+1;
