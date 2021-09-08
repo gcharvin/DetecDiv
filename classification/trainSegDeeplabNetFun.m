@@ -76,9 +76,10 @@ classWeights = median(imageFreq) ./ imageFreq;
 
 
 %analyzeNetwork(lgraph)
-%pxLayer=tverskyPixelClassificationLayer('labels',0.4,0.6); % alpha and beta parameters
+%pxLayer=tverskyPixelClassificationLayer('labels',0.4,0.6,'Classes',tbl.Name); % alpha and beta parameters
 %pxLayer.Classes=tbl.Name;
-pxLayer = pixelClassificationLayer('Name','labels','Classes',tbl.Name,'ClassWeights',classWeights); % removing the weights helped increase the resolution 
+pxLayer=dicePixelClassificationLayer('Name','labels','Classes',tbl.Name);
+% pxLayer = pixelClassificationLayer('Name','labels','Classes',tbl.Name,'ClassWeights',classWeights); % removing the weights helped increase the resolution 
 lgraph = replaceLayer(lgraph,"classification",pxLayer);
 
 

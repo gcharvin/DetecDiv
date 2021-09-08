@@ -111,7 +111,7 @@ for fr=1:size(gfp,4)
     
     
     for i=2:numel(classif.classes) % 1 st class is considered default class     
-        BW=features(:,:,i);%>0.015;
+        BW=features(:,:,i)>0.4;
         %BW=logical(C==string(classif.classes{i}));  
         % i
         % size(BW)
@@ -167,10 +167,12 @@ maxphc=double(meanphc+0.7*(max(totphc(:))-meanphc));
 im=uint8(zeros(size(gfp,1),size(gfp,2),3,size(gfp,4)));
 
 for j=1:size(gfp,4)
-    fprintf('.'); 
+    fprintf('.');
     a=gfp(:,:,1,j);
     %   figure, imshow(a,[]);
-    a = double(imadjust(a,[meanphc/65535 maxphc/65535],[0 1]))/256;
+    a = double(imadjust(a));
+    a = a/256;
+    %a = double(imadjust(a,[meanphc/65535 maxphc/65535],[0 1]))/256;
     a= repmat(a,[1 1 3]);
     %       figure, imshow(a);
     %       class(a), max(a(:))

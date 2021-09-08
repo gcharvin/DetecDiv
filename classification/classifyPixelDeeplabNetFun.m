@@ -106,7 +106,7 @@ for fr=1:size(gfp,4)
     tmpout=uint16(zeros(size(roiobj.image(:,:,pixresults,fr))));
     for i=2:numel(classif.classes) % 1 st class is considered default class
         %if i>1
-        BW=features(:,:,i)>0.5;
+        BW=features(:,:,i)>0.9;
         %  if sum(BW(:))>0
         %       'ok'
         %     end
@@ -184,9 +184,8 @@ for j=1:size(gfp,4)
     fprintf('.');
     a=gfp(:,:,1,j);
     %a = double(imadjust(a,[meanphc/65535 maxphc/65535],[0 1]))/256;
-%     a = double(imadjust(a));
-%     a = a/256;
-    a = double(imadjust(a,[meanphc/65535 maxphc/65535],[0 1]))/256;
+     a = double(imadjust(a));
+     a = a/256;
     a= repmat(a,[1 1 3]);
     % im(:,:,1,j)=a;im(:,:,2,j)=b;im(:,:,3,j)=c;
     im(:,:,:,j)=uint8(a);
