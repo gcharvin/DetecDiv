@@ -5,8 +5,8 @@ function preTrainPixels(obj,varargin)
 
 type='fluo';
 channel=2;
-frames=1;
-threshold=1;
+frames=[];
+threshold=0.3;
 
 for i=1:numel(varargin)
     %Type
@@ -25,26 +25,48 @@ for i=1:numel(varargin)
     end
 end
 
+obj.load();
+if numel(frames)==0
+    frames=1:numel(obj.image(1,1,1,:));
+end
 
-%obj.view(obj.frame)
+
 for i=frames
-    fprintf('.');
-    
-    img= obj.image(:,:,channel,i);
-    
+    fprintf('.');    
+    img= obj.image(:,:,channel,i);    
+
     if strcmp(type,'fluo')
         BW=segmentFluo(img,threshold);
     else
         BW=segmentPhaseContrast(img);
-    end
-    
-    %to adapt for
-    %robustness!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    end    
     obj.image(:,:,channel+1,i)=BW;
 end
-
+obj.save();
 fprintf('\n');
 
+%%
+function BW2=segmentFluo(img,threshold)
+img2=img;
+
+img2=im2double(imadjust(img2));
+T=graythresh(img2); %get otsu threshold
+BW2=imbinarize(img2,T*1);
+
+% img2=im2double(img2);
+% img2=img2-min(img2(:));
+% img2=img2/max(img2(:));
+% T=graythresh(img2); %get otsu threshold
+% BW2=imbinarize(img2,T*1);
+
+
+BW2 = bwareaopen(BW2, 3);
+BW2=2*BW2;
+if mean(BW2(:))>0.3
+    BW2(:,:)=1;
+end
+
+%%
 function BW=segmentPhaseContrast(img)
 
 param=struct('channel',1,'minSize',100,'maxSize',10000,'thresh',0.25,'display',0,'mask','');
@@ -63,10 +85,8 @@ end
 img = rangefilt(img);
 %[img ~]=imgradient(img);
 %figure, imshow(img,[]);
-
 %img=imtophat(img,strel('disk',5));
 %img = KuwaharaFast(img, 1);
-
 %[img,Xpad] = kuwahara(1-Iobrcbr);
 %figure, imshow(img,[]);
 
@@ -88,12 +108,9 @@ end
 %level2=graythresh(uint16(img2))
 
 T = adaptthresh(uint16(img2),0.5);
-
 BW2=imbinarize(uint16(img2),T);
 
 %BW2 = im2bw(uint16(img2),level2);
-
-
 if param.display==1
     p.pack('h',1); ccc=ccc+1; p(ccc).select();
     p(ccc).marginleft=0;
@@ -101,47 +118,35 @@ if param.display==1
     imshow(BW2,[]);
 end
 
-
 for j=1:1 % currently, only one loop is necessary
-    % l=0.005-0.001*(j); % for log filter
-    
+    % l=0.005-0.001*(j); % for log filter   
     if param.thresh~=0
         l=param.thresh-0.02*(j-1);
         BW=edge(img,'canny',l); % try other edge detection filters ?
     else
         BW=edge(img,'canny');
     end
-    
-    
+        
     if param.display==1
         p.pack('h',1); ccc=ccc+1; p(ccc).select();
         p(ccc).marginleft=0;
         p(ccc).marginright=0;
         
         imshow(BW,[]);
-    end
-    
-    
+    end    
     %BW = im2bw(img,level);
     %BW = BW | BW2;
-    BW2 = bwareaopen(BW2, 10);
-    
-    BW = bwareaopen(BW, 10);
-    
+    BW2 = bwareaopen(BW2, 10);    
+    BW = bwareaopen(BW, 10);  
     %BW=fgm;
     %BW = im2bw(img,l);
-    %BW=BW3;
-    
-    
-    %BW=imopen(BW,strel('disk',2));
-    
+    %BW=BW3;   
+    %BW=imopen(BW,strel('disk',2));    
     %if param.display
     %figure,imshow(BW,[]);
-    %end
-    
+    %end    
     if ~ischar(param.mask)
-        BW=BW | param.mask;
-        
+        BW=BW | param.mask;       
         if param.display==1
             p.pack('h',1); ccc=ccc+1; p(ccc).select();
             p(ccc).marginleft=0;
@@ -149,13 +154,9 @@ for j=1:1 % currently, only one loop is necessary
             imshow(BW,[]);
         end
     end
-    
-    
-    
     imdist=bwdist(BW2);
     imdist = imclose(imdist, strel('disk',2));
-    imdist = imhmax(imdist,2);
-    
+    imdist = imhmax(imdist,2);  
     if param.display==1
         p.pack('h',1); ccc=ccc+1; p(ccc).select();
         p(ccc).marginleft=0;
@@ -167,14 +168,10 @@ for j=1:1 % currently, only one loop is necessary
     
     if ~ischar(param.mask)
         BW2=BW2 | param.mask;
-    end
-    
-    
+    end  
     %BW=logical(zeros(size(BW)));
-    %BW(imdist<60)=1;
-    
-    %figure, imshow(BW,[]);
-    
+    %BW(imdist<60)=1;    
+    %figure, imshow(BW,[]);    
     labels = double(watershed(sous,8)).* ~BW2;% .* BW % .* param.mask; % watershed
     warning off all
     tmp = imopen(labels > 0, strel('disk', 4));
@@ -182,13 +179,10 @@ for j=1:1 % currently, only one loop is necessary
     tmp = bwareaopen(tmp, 50);
     
     newlabels = labels .* tmp; % remove small features
-    newlabels = bwlabel(newlabels>0);
-    
+    newlabels = bwlabel(newlabels>0);   
     warning off all
     %figure, imshow(newlabels,[]);
-    warning on all
-    
-    
+    warning on all   
     % if j>1
     %     %figure, imshow(oldlabels,[]);
     %     %figure, imshow(newlabels,[]);
@@ -218,27 +212,16 @@ end
 %newlabels=imresize(newlabels,2);
 
 %newlabels=uint16(newlabels);
-
-
-
-% tic;
 stat = regionprops(newlabels, 'Area','Eccentricity','BoundingBox');
-
 %phy_Objects = phy_Object();
-
 npoints=32; cc=1;
-
 newlabels2=uint8(zeros(size(newlabels)));
-
 cc=1;
-
 for i=1:numel(stat)
     tmp=newlabels==i;
     %if i==59
     %a=stat(i).Area
     %end
-    
-    
     bb=stat(i).BoundingBox;
     
     if bb(1)<1
@@ -256,8 +239,7 @@ for i=1:numel(stat)
     if bb(1)+bb(3)>size(newlabels,2)
         %newlabels(tmp)=0;
         continue
-    end
-    
+    end  
     if stat(i).Area <param.minSize || stat(i).Area >param.maxSize %|| stat(i).Eccentricity>0.9
         
         %newlabels(tmp)=0;
@@ -265,20 +247,16 @@ for i=1:numel(stat)
     else
         %contours= bwboundaries(tmp);
         %contour = contours{1};
-        %[xnew, ynew]=phy_changePointNumber(contour(:, 2),contour(:, 1),npoints);
-        
+        %[xnew, ynew]=phy_changePointNumber(contour(:, 2),contour(:, 1),npoints);       
         %if min(sca*xnew)>1 && min(sca*ynew)>1 && max(sca*xnew)<size(img,2) && max(sca*ynew)<size(img,1)
-        %phy_Objects(cc) = phy_Object(cc, sca*(xnew+1), sca*(ynew+1),0,0,mean(sca*(xnew+1)),mean(sca*(ynew+1)),0);
-        
-        
+        %phy_Objects(cc) = phy_Object(cc, sca*(xnew+1), sca*(ynew+1),0,0,mean(sca*(xnew+1)),mean(sca*(ynew+1)),0);     
         %phy_Objects(cc).fluoMean(1)=mean(stat(i).PixelValues);
         %phy_Objects(cc).fluoVar(1)=std(double(stat(i).PixelValues));
         
         %if param.display
         %    line( phy_Objects(cc).x,phy_Objects(cc).y,'Color','r','LineWidth',2);
         % text(phy_Objects(cc).ox,phy_Objects(cc).oy,num2str(phy_Objects(cc).n),'Color','r','FontSize',24);
-        %end
-        
+        %end       
         %cc=cc+1;
         %end
     end
@@ -295,19 +273,12 @@ for i=1:numel(stat)
     bb=stat(i).BoundingBox;
     ypos= [ypos bb(2)];
 end
-
 [ypos ix]=sort(ypos);
-
 tmp=newlabels2==ix(1);
 newlabels2(tmp)=0;
-
 tmp=newlabels2==ix(end);
 newlabels2(tmp)=0;
-
-
 OK=1;
-
-
 BW=newlabels2>0;
 
 if param.display==1
@@ -317,26 +288,9 @@ if param.display==1
     imshow(BW,[]);
 end
 
-
 if param.display
     p.marginleft=0;
     p.marginright=0;
-end
-
-function BW2=segmentFluo(img,threshold)
-img2=img;
-img2=im2double(img2);
-
-img2=img2-min(img2(:));
-img2=img2/max(img2(:));
-
-T=graythresh(img2);
-
-BW2=imbinarize(img2,T*1);
-BW2 = bwareaopen(BW2, 3);
-BW2=2*BW2;
-if mean(BW2(:))>0.3
-    BW2(:,:)=1;
 end
 
 
