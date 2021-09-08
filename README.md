@@ -188,13 +188,14 @@ Arguments:
 *'fluoThreshold'
 *'frameThreshold' number of frames to be above fluoThreshold
 
-### Exporting movies ###
+### Exporting movies or image sequences ###
 ------------------------
 Coming soon/In construction
 ```myproject.fov.export('Frames',1:5,'Framerate',10,'FontSize',96,'Levels',[4000 14000],'DrawROIs',[],'Drift')```
 
 ```myproject.processing.classification(3).export('Mosaic',1:9,'Name','test','Training','Results','Levels',[6000 20000],'Framerate',10,'Title','fob1','RLS')```
 
+```myproject.fov(1).roi(1).export('Frames',[1:10:150],'Sequence',3,'Levels',{[5000 30000]},'Background',[1 1 1],'Text',[0 0 0],'Training','Results','Classification',rls.processing.classification(1),'RLS')``` export sequence of Frames
 
 ### Make independant classifications ###
 ---------------------
