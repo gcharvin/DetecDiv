@@ -13,7 +13,7 @@ objType=[];
 roisArray=[];
 %% TODO : Make it roi method and export to result_Pos_xxx.mat
 %%
-param.mergeGT=1;
+param.mergeGT=0;
 param.classiftype='bud';
 param.postProcessing=1;
 param.errorDetection=1;
@@ -201,7 +201,7 @@ for r=rois
                 rlsResults(cc).roiid=[class(obj2) '(' num2str(obj2.id) ').roi(' num2str(r) ')'];
                 rlsResults(cc).ndiv=divTimes.ndiv;
                 if numel(divTimes.framediv)>0
-                    rlsResults(cc).totaltime=[divTimes.framediv(1), cumsum(divTimes.duration)+divTimes.framediv(1)];
+                    rlsResults(cc).totaltime=[divTimes.framediv(1)-divTimes.frameBirth, cumsum(divTimes.duration)+divTimes.framediv(1)-divTimes.frameBirth];
                 else
                     rlsResults(cc).totaltime=0;
                 end
@@ -238,7 +238,7 @@ for r=rois
                 rlsGroundtruth(ccg).name=obj2.roi(r).id;
                 rlsGroundtruth(ccg).roiid=[class(obj2) '(' num2str(obj2.id) ').roi(' num2str(r) ')'];
                 rlsGroundtruth(ccg).ndiv=divTimesG.ndiv;
-                rlsGroundtruth(ccg).totaltime=[divTimesG.framediv(1), cumsum(divTimesG.duration)+divTimesG.framediv(1)];
+                rlsGroundtruth(ccg).totaltime=[divTimesG.framediv(1)-divTimesG.frameBirth, cumsum(divTimesG.duration)+divTimesG.framediv(1)-divTimesG.frameBirth];
                 rlsGroundtruth(ccg).rules=[];
                 rlsGroundtruth(ccg).groundtruth=1;
                 rlsGroundtruth(ccg).divSignal=[];
@@ -267,7 +267,8 @@ if param.errorDetection==1
 end
 
 if param.mergeGT==1
-    rlsResults=rlsResults([rlsGroundtruth.groundtruth]==1);
+%     rlsResults=rlsResults([rlsGroundtruth.groundtruth]==0);
+%     rlsGroundtruth=rlsGroundtruth(
     rls=[rlsResults; rlsGroundtruth];
 else
     rls=rlsResults;

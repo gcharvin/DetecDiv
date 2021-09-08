@@ -107,7 +107,7 @@ classes=classif.classes;
                 rlsResults(cc).name=roi.id;
                 rlsResults(cc).ndiv=divTimes.ndiv;
                 if numel(divTimes.framediv)>0
-                    rlsResults(cc).totaltime=[divTimes.framediv(1), cumsum(divTimes.duration)+divTimes.framediv(1)];
+                    rlsResults(cc).totaltime=[divTimes.framediv(1)-divTimes.frameBirth, cumsum(divTimes.duration)+divTimes.framediv(1)-divTimes.frameBirth];
                 else
                     rlsResults(cc).totaltime=0;
                 end
@@ -144,7 +144,7 @@ classes=classif.classes;
                     rlsGroundtruth(ccg).sep=[];
                     rlsGroundtruth(ccg).name=roi.id;
                     rlsGroundtruth(ccg).ndiv=divTimesG.ndiv;
-                    rlsGroundtruth(ccg).totaltime=[divTimesG.framediv(1), cumsum(divTimesG.duration)+divTimesG.framediv(1)];
+                    rlsGroundtruth(ccg).totaltime=[divTimesG.framediv(1)-divTimesG.frameBirth, cumsum(divTimesG.duration)+divTimesG.framediv(1)-divTimesG.frameBirth];
                     rlsGroundtruth(ccg).rules=[];
                     rlsGroundtruth(ccg).groundtruth=1;
                     rlsGroundtruth(ccg).divSignal=[];
