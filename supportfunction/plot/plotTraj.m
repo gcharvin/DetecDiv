@@ -13,7 +13,7 @@ function hrls=plotTraj(rls,varargin)
 % display style : color map : name or custom colormap : limits for
 % colormap, color separation , linewidth spacing etc
 % time : generation or physical time
-figExport=1;
+figExport=0;
 
 param=[];
 comment='';
@@ -30,20 +30,20 @@ end
 plotRLS=0; %make an independant ploit where RLS of the result is plotted
 plotTrajs=1;
 
-maxBirth=1; %max frame to be born. After, discard rls.
+maxBirth=100; %max frame to be born. After, discard rls.
 
 %===param===
-param.showgroundtruth=1; % display the groundtruth data
+param.showgroundtruth=0; % display the groundtruth data
 
 param.sort=1; % 1 if sorting of trajectories according to generations
 param.timefactor=5; %put =1 to put the time in frames
 
-param.colorbar=0 ; % or 1 if colorbar to be printed
+param.colorbar=1 ; % or 1 if colorbar to be printed
 param.colorbarlegend='';
 
 param.findSEP=0; % 1: use find sep to find SEP
 param.align=0; % 1 : align with respect to SEP
-param.time=1; %0 : generations; 1 : physical time
+param.time=0; %0 : generations; 1 : physical time
 param.plotfluo=0 ; %1 if fluo to be plotted instead of divisions
 param.gradientWidth=0;
 if param.time==1 %sepwidth=separation between rectangles
@@ -53,7 +53,7 @@ else
 end
 
 param.edgewidth=2;
-if figExport==1
+if figExport==0
     param.edgewidth=0.5;
 end
 param.sepcolor=[1 0 0];
@@ -68,7 +68,7 @@ else
     param.interspacing=0;
 end
 
-param.minmax=[2 30]; % min and max values for colordisplay;
+param.minmax=[60 200]; % min and max values for colordisplay;
 param.startY=0.1+param.cellwidth/2; % origin of Y axis for plot
 param.startX=0;
 param.figure=[];
@@ -125,34 +125,57 @@ if plotTrajs==1
     %========================SORT========================
     % sorting traj according to RLS, grouping by pair
     if param.sort==1
-        if param.time==1
-            gt=[rls.groundtruth];
-            dead=[];
-            cc=1;
-            for j=1:numel(rls)
-                if rls(j).groundtruth==1
-                    dead(cc)=rls(j).totaltime(end);
-                    cc=cc+1;
+        if param.showgroundtruth==1
+            if param.time==1
+                gt=[rls.groundtruth];
+                dead=[];
+                cc=1;
+                for j=1:numel(rls)
+                    if rls(j).groundtruth==1
+                        dead(cc)=rls(j).frameEnd;
+                        cc=cc+1;
+                    end
                 end
+                [p, ix]= sort(dead,'Descend');
+                ix=ix*2;
+                % ix,numel(rls)
+                for i=1:length(ix)
+                    rlstmp(2*i-1)=rls(ix(i)-1);
+                    rlstmp(2*i)=rls(ix(i));
+                end
+                rls=rlstmp;
+            else
+                gt=[rls.groundtruth];
+                [p, ix]= sort([rls(gt==1).ndiv],'Descend');
+                ix=ix*2;
+                
+                for i=1:length(ix)
+                    rlstmp(2*i-1)=rls(ix(i)-1);
+                    rlstmp(2*i)=rls(ix(i));
+                end
+                rls=rlstmp;
             end
-            [p, ix]= sort(dead,'Descend');
-            ix=ix*2;
-            % ix,numel(rls)
-            for i=1:length(ix)
-                rlstmp(2*i-1)=rls(ix(i)-1);
-                rlstmp(2*i)=rls(ix(i));
+        else %if no gt
+            if param.time==1
+                gt=[rls.groundtruth];
+                dead=[];
+                cc=1;
+                for j=1:numel(rls)
+                    if rls(j).groundtruth==0
+                        dead(cc)=rls(j).frameEnd;
+                        cc=cc+1;
+                    end
+                end
+                [p, ix]= sort(dead,'Descend');
+                % ix,numel(rls)
+                rlssorted=rls(ix);
+                rls=rlssorted;
+            else
+                gt=[rls.groundtruth];
+                [p, ix]= sort([rls(gt==0).ndiv],'Descend');
+                rlssorted=rls(ix);
+                rls=rlssorted;
             end
-            rls=rlstmp;
-        else
-            gt=[rls.groundtruth];
-            [p, ix]= sort([rls(gt==1).ndiv],'Descend');
-            ix=ix*2;      
-
-            for i=1:length(ix)
-                rlstmp(2*i-1)=rls(ix(i)-1);
-                rlstmp(2*i)=rls(ix(i));
-            end
-            rls=rlstmp;
         end
     end
 
@@ -166,13 +189,13 @@ if plotTrajs==1
     incG=1;
     for i=1:numel(rls)
         fprintf('.')
-        if ~(rls(i).frameBirth>maxbirth) || ~isnan(rls(i).frameBirth)
+        if ~(rls(i).frameBirth>maxBirth) && ~isnan(rls(i).frameBirth) && rls(i).ndiv>1
         %aa=rls(i).ndiv
         sep=rls(i).sep;
         fluo=rls(i).fluo;
         divDur=rls(i).divDuration;
         %leg{i}=regexprep(rls(i).trap,'_','-');
-        %leg{i}=rls(i).trapfov;
+        %leg{i}=rls(i).roiid;
         leg{i}=sprintf('#%i |',incG); %show number of the doublet
         %===========TIME=0=============
         if param.time==0
@@ -185,17 +208,21 @@ if plotTrajs==1
 
         %===========TIME=1=============
         if param.time==1
-            fdiv=rls(i).framediv*param.timefactor;
-            fBirth=rls(i).frameBirth*param.timefactor;
+            ttime=rls(i).totaltime*param.timefactor;
+            %fBirth=rls(i).frameBirth*param.timefactor;
             fEnd=rls(i).frameEnd*param.timefactor;
 
-            rec2=[0 fdiv(1:end)-fBirth];
+            rec2=[0 ttime(1:end)];
             %rec2=[0 fdiv(1:end-1)];
             rec2=rec2';
-            rec2(:,2)=[fdiv(1:end)-fBirth, fEnd-fBirth]';
+            rec2(:,2)=[ttime(1:end) fEnd]';
             %rec2(:,2)=[fdiv(1:end)]';
             %rec2(end,2)=rec2(end,1)+0;
-            maxe=max(maxe,max(fdiv));
+            maxe=max(maxe,max(ttime));
+        else
+            fEnd=rls(i).frameEnd*param.timefactor;
+            divDur=[rls(i).divDuration fEnd-rls(i).totaltime(end)];
+            divDur=divDur*param.timefactor;
         end
 
 
@@ -203,8 +230,8 @@ if plotTrajs==1
         %===========ColorIndex=============
         if param.plotfluo==1
             cindex2=uint8(max(1,256*(fluo-param.minmax(1))/(param.minmax(2)-param.minmax(1))));
-        else
-            cindex2=uint8(max(1,256*(fdiv-param.minmax(1))/(param.minmax(2)-param.minmax(1))));
+        else %div duration
+            cindex2=uint8(max(1,256*(divDur-param.minmax(1))/(param.minmax(2)-param.minmax(1))));
         end
 
         cindex2(end+1)=1;
@@ -225,7 +252,7 @@ if plotTrajs==1
             end
             Traj(rec2,'Color',param.colormap,'colorindex',cindex2,'width',param.cellwidth,'startX',startX,'startY',startY,'sepwidth',param.sepwidth,'sepColor',param.sepcolor,'edgeWidth',param.edgewidth,...
                 'edgeColor',param.edgeColorR,...
-                'gradientwidth',param.gradientWidth,'tag',['Trap - ' num2str(rls(i).trapfov)]);
+                'gradientwidth',param.gradientWidth,'tag',['Trap - ' num2str(rls(i).roiid)]);
             startY=param.spacing+startY;       
             inc=inc+1;
         end
@@ -234,7 +261,7 @@ if plotTrajs==1
             ti(inc)=startY;     
             Traj(rec2,'Color',param.colormapg,'colorindex',cindex2,'width',param.cellwidth,'startX',startX,'startY',startY,'sepwidth',param.sepwidth,'sepColor',param.sepcolor,'edgeWidth',param.edgewidth,...
                 'edgeColor',param.edgeColorG,...
-                'gradientwidth',param.gradientWidth,'tag',['Trap - ' num2str(rls(i).trapfov)]);
+                'gradientwidth',param.gradientWidth,'tag',['Trap - ' num2str(rls(i).roiid)]);
             startY=param.spacing+startY +param.interspacing;
 
             inc=inc+1;
@@ -293,7 +320,7 @@ if plotTrajs==1
         h.Ticks=[0 1];
         h.TickLabels={num2str(param.minmax(1)) num2str(param.minmax(2))};
         set(h,'FontSize',25);
-        ylabel(h,'Division time (frames)');
+        ylabel(h,'Division time (minutes)');
         %h.Position=[1 1 0.3 0.3]
     end
 
