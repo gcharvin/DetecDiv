@@ -106,8 +106,11 @@ for fr=1:size(gfp,4)
     % step
     tmpout=uint16(zeros(size(roiobj.image(:,:,pixresults,fr))));
     for i=2:numel(classif.classes) % 1 st class is considered default class
-        clear ccbwsize midx CCBW lst
-        BW=features(:,:,i)>0.8;
+        ccbwsize=[];
+        midx=[];
+        CCBW=[];
+        lst=[];
+        BW=features(:,:,i)>0.65;
         if postprocess==1
             if i==2 %class of mother
                 BW=bwareaopen(BW,10);

@@ -44,48 +44,7 @@ for i=1:numel(rois)
         %pixcc=find(cltmp(i).channelid==cc)
         pixcc=cc;
         lab=cltmp(rois(i)).image(:,:,pixcc,:);
-        
-        % changes from here
-        % %         lab=lab>1; % takes only the second class into account
-        % %         lab=~lab;
-        % %         dist= double(zeros(size(lab,1),size(lab,2),1,size(lab,4)));
-        % %
-        % %         for k=1:size(dist,4)
-        % %             dist(:,:,1,k)=round(bwdist(lab(:,:,1,k))/2); % distance transform
-        % %         end
-        % %
-        % %          % distance transform
-        % %
-        % %         labels= double(zeros(size(lab,1),size(lab,2),3,size(lab,4)));
-        % %
-        % %
-        % %         for j=1:numel(classif.classes)
-        % %
-        % %             switch j
-        % %                 case numel(classif.classes) % las class contains all
-        % %             pixz=dist(:,:,1,:)>=j-1 % WARNING !!!! add unassigned pixels to this class
-        % %
-        % %                 case 1
-        % %             pixz=dist(:,:,1,:)==0;
-        % %
-        % %                 otherwise
-        % %             pixz=dist(:,:,1,:)==j-1;
-        % %
-        % %             end
-        % %
-        % %             labtmp2=double(zeros(size(lab,1),size(lab,2),1,size(lab,4)));
-        % %             labtmp2(pixz)=1;
-        % %
-        % %             for  k=1:3
-        % %                 labels(:,:,k,:)=labels(:,:,k,:)+classif.colormap(j+1,k)*labtmp2;
-        % %             end
-        % %
-        % %         end
-        
-        
-        %       % to here
-        
-        %
+
         labels= double(zeros(size(lab,1),size(lab,2),3,size(lab,4)));
         %   size(labels)
         
@@ -106,16 +65,16 @@ for i=1:numel(rois)
     
     for j=1:size(im,4) %time
         tmp=im(:,:,:,j);
-        if numel(pix)==1
+%         if numel(pix)==1
             %tmp = double(imadjust(tmp,[meanphc/65535 maxphc/65535],[0 1]))/65535;
             tmp = double(imadjust(tmp));
             tmp = double(tmp)/65535; %no intensity adjustment
             tmp=repmat(tmp,[1 1 3]);
             %max(tmp(:))
             %return
-        else
-            tmp=double(tmp)/65535;
-        end
+%         else
+%             tmp=double(tmp)/65535;
+%         end
         %tmp=uint8(256*tmp);
         
         tr=num2str(j);
@@ -125,7 +84,7 @@ for i=1:numel(rois)
         
         if numel(cc)>0
             tmplab=lab(:,:,:,j);
-            if max(tmplab(:))>0 % test if image has been manually annotated
+            if max(tmplab(:))>1 % test if image has been manually annotated and remove empty frames
                 %  'ok'
                 % pads images - the traininer network expects images bigger or
                 % equal to 500 x 500.

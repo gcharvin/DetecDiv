@@ -13,7 +13,7 @@ objType=[];
 roisArray=[];
 %% TODO : Make it roi method and export to result_Pos_xxx.mat
 %%
-param.mergeGT=0;
+param.mergeGT=1;
 param.classiftype='bud';
 param.postProcessing=1;
 param.errorDetection=1;
@@ -104,7 +104,7 @@ if strcmp(objType,'classif')
         for i=1:numel(obj.processing.classification)
             str=[str num2str(i) ' - ' obj.processing.classification(i).strid ';  '];
         end
-        classiid=input(['You want to measures RLS from a classif object, but no classif has been selected, indicate which classif: (Default: 1)' newline str]);
+        classiid=input(['You want to measure RLS from a classif object, but no classif has been selected, indicate which classif: (Default: 1)' newline str]);
         if numel(classiid)==0, classiid=1; end
         classif=obj.processing.classification(classiid);
     end
@@ -273,9 +273,12 @@ if param.errorDetection==1
 end
 
 if param.mergeGT==1
+    if numel([rlsResults.groundtruth])==numel([rlsGroundtruth.groundtruth])
 %     rlsResults=rlsResults([rlsGroundtruth.groundtruth]==0);
 %     rlsGroundtruth=rlsGroundtruth(
     rls=[rlsResults; rlsGroundtruth];
+    else disp('Groundtruth and Result vectors dont match, quitting...')
+    end
 else
     rls=rlsResults;
 end
