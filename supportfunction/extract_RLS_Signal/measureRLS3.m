@@ -403,6 +403,7 @@ end
 %% ==============================================SIGNAL======================================================
 function divFluo=computeSignalDiv(roi,rls)
 divFluo=[];
+divSignal.divDuration=rls.divDuration; % redundant with rls.divDuration, but convenient for plotSignal.m
 %check all the fields of .results.signal and mean them by div
 if isfield(roi.results,'signal')
     resultFields=fields(roi.results.signal); %full, cell, nucleus

@@ -21,6 +21,7 @@ param.ArrestThreshold=100;
 param.DeathThreshold=5;
 param.EmptyThresholdDiscard=500;
 param.EmptyThresholdNext=200;
+param.align=1;
 
 for i=1:numel(varargin)
     
@@ -75,6 +76,11 @@ for i=1:numel(varargin)
     %detectError
     if strcmp(varargin{i},'ErrorDetection')
         param.errorDetection=varargin{i+1};
+    end
+    
+    %SEP
+    if strcmp(varargin{i},'Align')
+        param.align=1;
     end
 end
 %%
@@ -273,6 +279,11 @@ if param.mergeGT==1
 else
     rls=rlsResults;
 end
+
+if param.align==1
+    rls=AlignSignal(rls);
+end
+
 rls=rls(:);
 [p ix]= sort({rls(:).roiid});
 rls=rls(ix);
@@ -486,6 +497,7 @@ end
 %==============================================SIGNAL======================================================
 function divFluo=computeSignalDiv(obj2,r,rls)
 divFluo=[];
+divSignal.divDuration=rls.divDuration; % redundant with rls.divDuration, but convenient for plotSignal.m
 %check all the fields of .results.signal and mean them by div
 if isfield(obj2.roi(r).results,'signal')
     resultFields=fields(obj2.roi(r).results.signal); %full, cell, nucleus
@@ -507,6 +519,83 @@ if isfield(obj2.roi(r).results,'signal')
     end
 else disp(['No results.signal for roi ' num2str(r)]);
 end
+
+
+%=============================================SEP==========================================
+function [rls]=AlignSignal(rls)
+align=1; %1: SEP, 2: death
+syncType={'birthSynced', 'SEPSynced','deathSynced'};
+threshStart=5;
+numrls=numel(rls);
+
+for i=1:numrls
+    tmpdivDur=rls(i).divDuration;
+    RLS(i)=numel(tmpdivDur);
+end
+maxRLS=max(RLS);
+divDur=NaN(numrls,maxRLS);
+m=0;
+M=0;
+
+
+%find syncpoint for each RLS
+for i=1:numrls
+    for d=1:numel(rls(i).divDuration)
+        divDur(i,d)=rls(i).divDuration(d);
+    end
+    if sum(~isnan(divDur(i,:)))>1 && sum(isnan(divDur(i,:)))<maxRLS %divDur is not full of NaN
+        
+        if align==0
+            syncPoint(i)=1;
+        elseif align==1
+            if sum(~isnan(divDur(i,:)))>threshStart %POST PROCESSING
+                [syncPoint(i),~]=findSEP(divDur(i,threshStart:end),1);
+                syncPoint(i)=syncPoint(i)+threshStart-1;
+            else syncPoint(i)=NaN;
+            end
+        elseif align==2
+            syncPoint(i)=numel(rls(i).divDuration);
+        end
+        
+        %align
+        m=max(m,syncPoint(i)); %max divs in preSEP
+        M=max(M,sum(~isnan(divDur(i,:)))-syncPoint(i)); %max divs in postSEP
+
+    else syncPoint(i)=NaN;
+    end
+
+    rls(i).sep=syncPoint(i);
+end
+
+%align signal VS syncpoint and store it in rls struct
+rlsAligned=rls;
+divDurAligned=NaN(numel(rls),m+M);
+for i=1:numel(rls)
+    
+    if ~isnan(syncPoint(i))
+        %pre+post
+        for j=1:sum(~isnan(divDur(i,:)))
+            divDurAligned(i,m-syncPoint(i)+j)=divDur(i,j);
+        end
+
+        %save results in rls
+        if align==1
+            rlsAligned(i).Aligned.(syncType{align+1}).divDuration=divDurAligned(i,:); 
+            rlsAligned(i).Aligned.(syncType{align+1}).zero=m;  
+        elseif align==0
+        elseif align==2
+        end
+    else
+        if align==1            
+        elseif align==0
+        elseif align==2
+        end
+    end
+        
+end
+
+
+
 %==============================================DIVERROR======================================================
 function [framedivNoFalseNeg, framedivNoFalsePos]=detectError(rlsGroundtruthr, rlsResultsr)
 framedivNoFalseNeg=NaN;
@@ -600,7 +689,7 @@ if numel(rlsGroundtruthr.framediv)>1 && numel(rlsResultsr.framediv)>1
 end
 
 
-
+%======================
 function clid=findclassid(classes,str)
 clid=[];
 for ck=1:numel(classes)
