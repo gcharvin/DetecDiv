@@ -41,23 +41,22 @@ GT=[];
 RES=[];
 
 for i=rois
-    GT=[GT classi.roi(i).results.signal.cell.(classistrid).volume];
-    RES=[RES classi.roi(i).results.signal.cell.(classistridRes).volume];
+    GT=[GT classi.roi(i).results.signal.cell.(classistrid).volume(1:1:end)];
+    RES=[RES classi.roi(i).results.signal.cell.(classistridRes).volume(1:1:end)];
 end
 
+GT=GT*0.325;
+RES=RES*0.325;
 
 GT(GT==0)=NaN;
+% GT(GT>120)=NaN;
+% GT(RES<15)=NaN;
 RES=RES(~isnan(GT));
 GT=GT(~isnan(GT));
 
-
-%RES(RES>75)=RES(RES>75)-75;
-% RES=RES*0.72;
-GT=GT*0.325;
-RES=RES*0.325;
 % if sphereApprox==1
 %     RES=RES.^(3/2);
-%     GT=GT*0.75*.^(GT);
+     RES=RES-35;
 % end
 
 M=max(max(GT(:)),max(RES(:)));
@@ -74,12 +73,12 @@ figure('Color','w','Units', 'Normalized', 'Position',[0.1 0.1 0.35 0.35]);
 % cmap(1,:)=[1 1 1];
 % colormap(cmap);
 
-scatter_kde(GT',RES','filled','MarkerEdgeColor','k', 'LineWidth',0.1);
+scatter_kde(RES',GT','filled','MarkerEdgeColor','k', 'LineWidth',0.1);
 corrvol=gcf;
 set(gcf,'Color','w','Units', 'Normalized', 'Position',[0.1 0.1 0.35 0.35])
     
 %DataDensityPlot(GT',RES',32,M,M);
-colormap bone
+colormap gray
 colorbar
 xlim([0 M]);
 ylim([0 M]);
@@ -92,24 +91,26 @@ r=corrcoef(GT,RES);
 
 title(titre);
 axis square;
-xlabel('Groundtruth surface (µm²)');
-ylabel('Computed surface (µm²)');
+ylabel('Groundtruth surface (µm²)');
+xlabel('Predicted surface (µm²)');
 text(2+xl(1),0.9*yl(2),['R^2=' num2str(r(1,2)) newline 'N=' num2str(sum(~isnan(GT)))],'FontSize',16,'FontWeight','bold');
 
 set(gca,'FontSize',16, 'FontName','Myriad Pro', 'LineWidth',3,'FontWeight','bold', 'TickLength',[0.02 0.02],...
     'XTick',[0:25:M],'YTick',[0:25:M]);
 
-if figExport==0
+if figExport==1
+    f=gcf;
+    f.Renderer="painters";
     ax=gca;
     xf_width=sz; yf_width=sz;
     set(gcf, 'PaperType','a4','PaperUnits','centimeters');
     %set(gcf,'Units','centimeters','Position', [5 5 xf_width yf_width]);
-    set(ax,'Units','centimeters', 'InnerPosition', [2 2 xf_width yf_width])
+    set(ax,'Units','centimeters', 'Position', [2 2 xf_width yf_width])
     
     set(ax,'FontSize',8, 'LineWidth',1);
     ax.Children(2).LineWidth=1; %diagonale size
     ax.Children(3).SizeData=12; %dot size
     ax.Children(1).FontSize=8; %R² size
     
-    exportgraphics(corrvol,'correl_volume.pdf','BackgroundColor','none','ContentType','vector')
+    exportgraphics(corrvol,'\\space2.igbmc.u-strasbg.fr\charvin\Theo\Projects\RAMM\Figures\Fig2\correl_volume.pdf','BackgroundColor','none','ContentType','vector')
 end
