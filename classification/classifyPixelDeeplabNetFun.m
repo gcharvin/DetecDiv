@@ -4,6 +4,7 @@ function classifyPixelDeeplabNetFun(roiobj,classif,classifier)
 % classi object and the classifier
 
 %roiout=roiobj;
+postprocess=1;
 
 if numel(classifier)==0 % loading the classifier // not recommende because it takes time
     path=classif.path;
@@ -105,24 +106,25 @@ for fr=1:size(gfp,4)
     % step
     tmpout=uint16(zeros(size(roiobj.image(:,:,pixresults,fr))));
     for i=2:numel(classif.classes) % 1 st class is considered default class
-        %if i>1
-        BW=features(:,:,i)>0.9;
-        %  if sum(BW(:))>0
-        %       'ok'
-        %     end
-        %  else
-        %BW=features(:,:,2)>0.9;
-        %  end
-        %end
-        %BW=logical(C==string(classif.classes{i}));
-        
-        %   figure, imshow(BW,[]);
-        %BW=logical(C==string(classif.classes{i}));
-        % i
-        % size(BW)
-        % max(BW(:))
-        %figure, imshow(BW,[]);
-        
+        clear ccbwsize midx CCBW lst
+        BW=features(:,:,i)>0.8;
+        if postprocess==1
+            if i==2 %class of mother
+                BW=bwareaopen(BW,10);
+                CCBW=bwconncomp(BW);
+                
+                lst=1:numel(CCBW.PixelIdxList);
+                for j=lst
+                    ccbwsize(j)=numel(CCBW.PixelIdxList{j});
+                end
+                [~, midx]=max(ccbwsize);
+                
+                lst(midx)=[];
+                for j=lst
+                    BW(ind2sub(size(BW),CCBW.PixelIdxList{j}))=0;
+                end
+            end
+        end
         res=uint16(uint8(BW)*(i));
         %pixresults
         %roiobj.image(:,:,pixresults,fr)=roiobj.image(:,:,pixresults,fr)+res;
