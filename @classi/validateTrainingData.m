@@ -51,7 +51,7 @@ end
 
 classifier=classifierStore; %either loaded or provided as an argument
 
-roiwithgt=0;
+roiwithgt=1;
 for i=1:numel(varargin)
     if strcmp(varargin{i},'Rois')
         roilist=varargin{i+1};
@@ -75,8 +75,7 @@ for i=1:length(roilist)
     tmp(i)=classif.roi(roilist(i));
 end
 
-for i=1:length(roilist) % loop on all ROIs using parrallel computing
-    
+for i=1:length(roilist) % loop on all ROIs using parrallel computing  
     roiobj=tmp(i);
     
     if numel(roiobj.id)==0
@@ -96,10 +95,18 @@ for i=1:length(roilist) % loop on all ROIs using parrallel computing
                     end
                     
                     im= roiobj.image;
-                    
+                    frames=1:numel(im(1,1,1,:));
                     imch=im(:,:,ch,:);
+                    
                     if sum(imch(:))>0 % at least one image was annotated
                         ground=1;
+                        flag=[];
+                        for f=frames
+                            if max(max(imch(:,:,1,f)))>1 %takes only frames with cells annotated
+                                flag=[flag, f];
+                            end
+                        end
+                        frames=flag;%frames to classify
                     end
                 end
                 
@@ -120,8 +127,10 @@ for i=1:length(roilist) % loop on all ROIs using parrallel computing
         end
         if ground==0
             disp(['There is no groundtruth available for roi ' num2str(roiobj.id) ' , skipping roi...']);
-            continue
+        elseif ground==1
         end
+        
+    else frames=0; %take all frames
     end
     
     disp('-----------');
@@ -134,7 +143,12 @@ for i=1:length(roilist) % loop on all ROIs using parrallel computing
     if numel(classifierCNN) % in case an LSTM classification is done, validation is performed with a CNN classifier as well
         feval(classifyFun,roiobj,classif,classifier,classifierCNN); % launch the training function for classification
     else
-        feval(classifyFun,roiobj,classif,classifier); % launch the training function for classification
+        switch classif.typeid
+            case {2,8} % pixel classification
+                feval(classifyFun,roiobj,classif,classifier,frames); % launch the training function for classification
+            otherwise
+                feval(classifyFun,roiobj,classif,classifier); % launch the training function for classification
+        end
     end
 end
 
