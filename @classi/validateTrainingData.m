@@ -82,8 +82,8 @@ for i=1:length(roilist) % loop on all ROIs using parrallel computing
         continue;
     end
     
-    if roiwithgt==1 % chacks if ground truth data are avaiable for this ROI, otherwise skips the ROI
-        ground=0;
+    goclassif=0;
+    if roiwithgt==1 % chacks if goclassif truth data are avaiable for this ROI, otherwise skips the ROI
         switch classif.typeid
             case {2,8} % pixel classification
                 ch= roiobj.findChannelID(classif.strid);
@@ -99,7 +99,7 @@ for i=1:length(roilist) % loop on all ROIs using parrallel computing
                     imch=im(:,:,ch,:);
                     
                     if sum(imch(:))>0 % at least one image was annotated
-                        ground=1;
+                        goclassif=1;
                         flag=[];
                         for f=frames
                             if max(max(imch(:,:,1,f)))>1 %takes only frames with cells annotated
@@ -107,10 +107,10 @@ for i=1:length(roilist) % loop on all ROIs using parrallel computing
                             end
                         end
                         frames=flag;%frames to classify
+                    else
+                        goclassif=0;
                     end
                 end
-                
-                
                 
             otherwise % image classification
                 classistr=classif.strid;
@@ -119,36 +119,39 @@ for i=1:length(roilist) % loop on all ROIs using parrallel computing
                     if isfield(roiobj.train,classistr)
                         if numel(roiobj.train.(classistr).id) > 0
                             if sum(roiobj.train.(classistr).id)>0 % training exists for this ROI !
-                                ground=1;
+                                goclassif=1;
+                            else
+                                goclassif=0;
                             end
                         end
                     end
                 end
-        end
-        if ground==0
-            disp(['There is no groundtruth available for roi ' num2str(roiobj.id) ' , skipping roi...']);
-        elseif ground==1
-        end
+        end        
         
-    else frames=0; %take all frames
+    else
+        frames=0; %take all frames
     end
     
-    disp('-----------');
-    disp(['Classifying ' num2str(roiobj.id)]);
-    
-    %  if strcmp(classif.category{1},'Image') % in this case, the results are provided as a series of labels
-    %  roiobj.results=zeros(1,size(roiobj.image,4)); % pre allocate results for labels
-    %  end
-    
-    if numel(classifierCNN) % in case an LSTM classification is done, validation is performed with a CNN classifier as well
-        feval(classifyFun,roiobj,classif,classifier,classifierCNN); % launch the training function for classification
-    else
-        switch classif.typeid
-            case {2,8} % pixel classification
-                feval(classifyFun,roiobj,classif,classifier,frames); % launch the training function for classification
-            otherwise
-                feval(classifyFun,roiobj,classif,classifier); % launch the training function for classification
+    if goclassif==1
+        disp('-----------');
+        disp(['Classifying ' num2str(roiobj.id)]);
+        
+        %  if strcmp(classif.category{1},'Image') % in this case, the results are provided as a series of labels
+        %  roiobj.results=zeros(1,size(roiobj.image,4)); % pre allocate results for labels
+        %  end
+        
+        if numel(classifierCNN) % in case an LSTM classification is done, validation is performed with a CNN classifier as well
+            feval(classifyFun,roiobj,classif,classifier,classifierCNN); % launch the training function for classification
+        else
+            switch classif.typeid
+                case {2,8} % pixel classification
+                    feval(classifyFun,roiobj,classif,classifier,frames); % launch the training function for classification
+                otherwise
+                    feval(classifyFun,roiobj,classif,classifier); % launch the training function for classification
+            end
         end
+    elseif goclassif==0
+        disp(['There is no groundtruth available for roi ' num2str(roiobj.id) ' , skipping roi...']);
     end
 end
 
