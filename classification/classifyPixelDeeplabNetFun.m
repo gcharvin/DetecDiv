@@ -118,7 +118,21 @@ for fr=frames
         midx=[];
         CCBW=[];
         lst=[];
-        BW=features(:,:,i)>0.95;
+        
+        features(:,:,i)=features(:,:,i);%*0.55;
+        
+%         tmpmask=features(:,:,i)>0;
+        T=graythresh(features(:,:,i)); %get otsu threshold
+        tmpmask=imbinarize(features(:,:,i),T*1);
+        
+        featuresim=tmpmask.*features(:,:,i);
+        
+%         if mean(featuresim(featuresim>0))>0.8
+            BW=features(:,:,i)>1*mean(featuresim(featuresim>0));
+%         else
+             %BW=features(:,:,i)>0.925;
+%         end
+        
         if postprocess==1
             if i==2 %class of mother
                 BW=bwareaopen(BW,10);
