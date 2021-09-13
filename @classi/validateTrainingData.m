@@ -148,7 +148,6 @@ for i=1:length(roilist) % loop on all ROIs using parrallel computing
                     feval(classifyFun,roiobj,classif,classifier,frames); % launch the training function for classification
                 otherwise
                     feval(classifyFun,roiobj,classif,classifier); % launch the training function for classification
-                    return;
             end
         end
     elseif goclassif==0
