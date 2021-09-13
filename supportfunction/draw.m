@@ -182,7 +182,7 @@ for i=1:numel(obj.display.channel)
             if strcmp(classif.category{1},'Pixel') | strcmp(classif.category{1},'Object')% display user training and results
                 % pixelchannel
              %   tmppix=obj.findChannelID(classif.strid);
-             %    if pix==obj.findChannelID(classif.strid)
+            %   pix=obj.findChannelID(classif.strid);
                 if pix==obj.findChannelID(classif.strid)
                     dis=1;
                 end

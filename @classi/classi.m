@@ -15,6 +15,13 @@ classdef classi < handle
         classifyFun='';
         trainingFun='';
         colormap=[];
+        
+        % only for pixel classification
+        outputType=''; % other options are : proba, postpocressing, segmentation
+        outputFun=[];
+        outputArg={};
+        
+        
         history=table('Size',[1 3],'VariableTypes',{'datetime','string','string'},'VariableNames',{'Date','Category','Message'});
         %  inputsize=[]; %size of the network (required for lstm only
     end

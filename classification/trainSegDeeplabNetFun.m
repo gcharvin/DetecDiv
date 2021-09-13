@@ -5,7 +5,6 @@ function trainSegDeeplabNetFun(path,name)
 
 % load training data 
 
-
 fprintf('Loading data...\n');
 
 
