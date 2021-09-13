@@ -2,6 +2,7 @@ function extractSignal(obj,type,inputvarargin)
 %This fct extracts the signal from the 'Channels' using the 'Method' and
 %store them in obj.roi(r).results.classiid.fluo.max(c,t)
 
+%TODO: adapt to roiobj, use roi.display. use architecture of measureRLS3
 
 %Arguments:
 %*'Method': **'full' computes the average of the kMaxPixels, the total and
@@ -68,6 +69,7 @@ end
 
 %%
 if strcmp(method,'full')
+    obj.roi(rois(1)).load();
     if skip==1
         classiname=[];
     else
@@ -123,7 +125,7 @@ end
 
 %% extract only the volume of the cell
 if strcmp(method,'volume')
-    
+    obj.roi(rois(1)).load();
     %===channels
     chans=obj.roi(rois(1)).display.channel;
     str=[];
@@ -178,11 +180,6 @@ if strcmp(method,'volume')
             
             %=compute and store
             vol=sum(maskMother(:));
-                if postprocess==1
-                    if vol<volThresh
-                        vol=0;
-                    end
-                end
             obj.roi(r).results.signal.cell.(classiname).volume(t)=vol;
         end
         disp(['Volume, of mothercell was computed and added to roi(' num2str(r) ').results.signal.cell.' num2str(classiname)])
@@ -195,7 +192,7 @@ end
 
 %%
 if strcmp(method,'cell')
-    
+    obj.roi(rois(1)).load();
     %===channels
     chans=obj.roi(rois(1)).display.channel;
     str=[];
@@ -290,7 +287,7 @@ if strcmp(method,'cell')
 end
 
 %% nucleus
-
+obj.roi(rois(1)).load();
 if strcmp(method,'nucleus')
     
     %===ask channels

@@ -60,11 +60,11 @@ end
 %%
 for i=1:numel(roiobj)
     if strcmp(environment,'local')
-    roiobj(i).path=strrep(roiobj(i).path,'/shared/space2/','\\space2.igbmc.u-strasbg.fr\');
+        roiobj(i).path=strrep(roiobj(i).path,'/shared/space2/','\\space2.igbmc.u-strasbg.fr\');
     end
     roiobj(i).load('results');
     roiobj(i).path=strrep(roiobj(i).path,'/shared/space2/','\\space2.igbmc.u-strasbg.fr\');
-    roiobj(i).results.RLS.(classifstrid)=RLS(roiobj(i),classif,param);
+    roiobj(i).results.RLS.(classifstrid)=RLS(roiobj(i),classif,param); %struct() use to keep measureRLS2 code
     roiobj(i).save('results');
     roiobj(i).clear;
 end
@@ -91,8 +91,8 @@ ccg=1;
 classistrid=classif.strid;
 classes=classif.classes;
     %================RESULTS===============
-    if isfield(roi.results,classistrid)
-        if isfield(roi.results.(classistrid),'id')
+    if isprop(roi.results,classistrid)
+        if isprop(roi.results.(classistrid),'id')
             if sum(roi.results.(classistrid).id)>0
                 id=roi.results.(classistrid).id; % results for classification
                 
@@ -118,7 +118,7 @@ classes=classif.classes;
                 divSignal=computeSignalDiv(roi,rlsResults(cc));
                 rlsResults(cc).divSignal=divSignal;
             else
-                disp(['there is no result available for ROI ' char(roi.id)]);
+                disp(['There is no result available for ROI ' char(roi.id)]);
             end
         end
     end
@@ -127,9 +127,9 @@ classes=classif.classes;
     %==================GROUNDTRUTH===================
     %Groundtruth?
     idg=[];
-    if isprop(roi,'train') %MATLAB BUG WITH ISFIELD. logical=0 for fov
-        if isfield(roi.train,(classistrid))
-            if isfield(roi.train.(classistrid),'id') % test if groundtruth data available
+    if isprop(roi,'train') %MATLAB BUG WITH isprop. logical=0 for fov
+        if isprop(roi.train,(classistrid))
+            if isprop(roi.train.(classistrid),'id') % test if groundtruth data available
                 if sum(roi.train.(classistrid).id)>0
                     idg=roi.train.(classistrid).id; % results for classification
                     disp(['Groundtruth data are available for ROI ' num2str(roi.id)]);
@@ -401,24 +401,28 @@ end
 
 
 %% ==============================================SIGNAL======================================================
-function divFluo=computeSignalDiv(roi,rls)
-divFluo=[];
+function divSignal=computeSignalDiv(roi,rls)
+divSignal=[];
 divSignal.divDuration=rls.divDuration; % redundant with rls.divDuration, but convenient for plotSignal.m
 %check all the fields of .results.signal and mean them by div
-if isfield(roi.results,'signal')
+if isprop(roi.results,'signal')
     resultFields=fields(roi.results.signal); %full, cell, nucleus
     %essayer try catch
     for rf=resultFields
-        classiFields=fields(roi.results.signal.(rf)); %obj2
+        classiFields=fields(roi.results.signal.(rf{1})); %obj2
         for cf=classiFields
-            fluoFields=fields(roi.results.signal.(rf).(cf)); %max, mean, volume...
+            fluoFields=fields(roi.results.signal.(rf{1}).(cf{1})); %max, mean, volume...
             for ff=fluoFields
-                for chan=1:numel(roi.results.signal.(rf).(cf).(ff)(:,1))
+                for chan=1:numel(roi.results.signal.(rf{1}).(cf{1}).(ff{1})(:,1))
                     tt=1;
-                    for t=1:rls.ndiv
-                        divSignal.(rf).(cf).(ff)(chan,t)=mean(roi.results.signal.(rf).(cf).(ff)(chan,rls.framediv(tt):rls.framediv(tt+1)));
-                        tt=tt+1;
-                    end
+%                     if numel(rls.divDuration)==0
+%                             divSignal.(rf{1}).(cf{1}).(ff{1})(chan)=[];
+%                     else
+                        for t=1:numel(rls.divDuration)
+                            divSignal.(rf{1}).(cf{1}).(ff{1})(chan,t)=mean(obj2.roi(r).results.signal.(rf{1}).(cf{1}).(ff{1})(chan,rls.framediv(tt):rls.framediv(tt+1)));
+                            tt=tt+1;
+                        end
+%                     end
                 end
             end
         end

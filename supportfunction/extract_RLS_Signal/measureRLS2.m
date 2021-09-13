@@ -1,5 +1,5 @@
 function [rls,rlsResults,rlsGroundtruth]=measureRLS2(obj,varargin)
-
+%TODO: harmonize the inputs outputs of functions
 %'Fluo' if =1, will computethe fluo of each channel over the divs
 
 %ClassiType is the classif type of obj :
@@ -13,15 +13,15 @@ objType=[];
 roisArray=[];
 %% TODO : Make it roi method and export to result_Pos_xxx.mat
 %%
-param.mergeGT=1;
+param.mergeGT=0;
+param.align=1;
 param.classiftype='bud';
 param.postProcessing=1;
-param.errorDetection=1;
+param.errorDetection=0;
 param.ArrestThreshold=100;
 param.DeathThreshold=5;
 param.EmptyThresholdDiscard=500;
 param.EmptyThresholdNext=200;
-param.align=1;
 
 for i=1:numel(varargin)
     
@@ -227,7 +227,7 @@ for r=rois
     %==================GROUNDTRUTH===================
     %Groundtruth?
     idg=[];
-    if isfield(obj2.roi(r).train,(classistrid)) %MATLAB BUG WITH ISFIELD. logical=0 for fov
+    if isfield(obj2.roi(r).train,(classistrid)) %MATLAB BUG WITH isprop. logical=0 for fov
         if isfield(obj2.roi(r).train.(classistrid),'id') % test if groundtruth data available
             if sum(obj2.roi(r).train.(classistrid).id)>0
                 idg=obj2.roi(r).train.(classistrid).id; % results for classification
@@ -288,7 +288,7 @@ if param.align==1
 end
 
 rls=rls(:);
-[p ix]= sort({rls(:).roiid});
+[~, ix]= sort({rls(:).roiid});
 rls=rls(ix);
 
 
@@ -498,24 +498,30 @@ end
 
 
 %==============================================SIGNAL======================================================
-function divFluo=computeSignalDiv(obj2,r,rls)
-divFluo=[];
+function divSignal=computeSignalDiv(obj2,r,rls)
+divSignal=[];
 divSignal.divDuration=rls.divDuration; % redundant with rls.divDuration, but convenient for plotSignal.m
 %check all the fields of .results.signal and mean them by div
-if isfield(obj2.roi(r).results,'signal')
+if isfield(obj2.roi(r).results,'signal') && ~isempty(obj2.roi(r).results.signal)>0
     resultFields=fields(obj2.roi(r).results.signal); %full, cell, nucleus
     %essayer try catch
     for rf=resultFields
-        classiFields=fields(obj2.roi(r).results.signal.(rf)); %obj2
+        classiFields=fields(obj2.roi(r).results.signal.(rf{1})); %obj2
         for cf=classiFields
-            fluoFields=fields(obj2.roi(r).results.signal.(rf).(cf)); %max, mean, volume...
+            fluoFields=fields(obj2.roi(r).results.signal.(rf{1}).(cf{1})); %max, mean, volume...
             for ff=fluoFields
-                for chan=1:numel(obj2.roi(r).results.signal.(rf).(cf).(ff)(:,1))
+                for chan=1:numel(obj2.roi(r).results.signal.(rf{1}).(cf{1}).(ff{1})(:,1))
                     tt=1;
-                    for t=1:rls.ndiv
-                        divSignal.(rf).(cf).(ff)(chan,t)=mean(obj2.roi(r).results.signal.(rf).(cf).(ff)(chan,rls.framediv(tt):rls.framediv(tt+1)));
-                        tt=tt+1;
-                    end
+%                     if numel(rls.divDuration)==0
+%                             divSignal.(rf{1}).(cf{1}).(ff{1})(chan)=[];
+%                     else
+                        for t=1:numel(rls.divDuration)
+                            divSignal.(rf{1}).(cf{1}).(ff{1})(chan,t)=mean(obj2.roi(r).results.signal.(rf{1}).(cf{1}).(ff{1})(chan,rls.framediv(tt):rls.framediv(tt+1)));
+                            tt=tt+1;
+                        end
+                        divSignal.(rf{1}).(cf{1}).(ff{1}).incRate(chan,:)=diff(divSignal.(rf{1}).(cf{1}).(ff{1})(chan,:));
+
+%                     end
                 end
             end
         end
@@ -525,76 +531,104 @@ end
 
 
 %=============================================SEP==========================================
+%To do : harmonize for loops
 function [rls]=AlignSignal(rls)
 align=1; %1: SEP, 2: death
 syncType={'birthSynced', 'SEPSynced','deathSynced'};
-threshStart=5;
+threshStart=1;
 numrls=numel(rls);
 
-for i=1:numrls
-    tmpdivDur=rls(i).divDuration;
-    RLS(i)=numel(tmpdivDur);
+for r=1:numrls
+    tmpdivDur=rls(r).divDuration;
+    RLS(r)=numel(tmpdivDur);
 end
 maxRLS=max(RLS);
 divDur=NaN(numrls,maxRLS);
+
 m=0;
 M=0;
 
-
 %find syncpoint for each RLS
-for i=1:numrls
-    for d=1:numel(rls(i).divDuration)
-        divDur(i,d)=rls(i).divDuration(d);
+for r=1:numrls
+    for d=1:numel(rls(r).divDuration)
+        divDur(r,d)=rls(r).divDuration(d);
     end
-    if sum(~isnan(divDur(i,:)))>1 && sum(isnan(divDur(i,:)))<maxRLS %divDur is not full of NaN
+    if sum(~isnan(divDur(r,:)))>1 && sum(isnan(divDur(r,:)))<maxRLS %divDur is not full of NaN
         
         if align==0
-            syncPoint(i)=1;
+            syncPoint(r)=1;
         elseif align==1
-            if sum(~isnan(divDur(i,:)))>threshStart %POST PROCESSING
-                [syncPoint(i),~]=findSEP(divDur(i,threshStart:end),1);
-                syncPoint(i)=syncPoint(i)+threshStart-1;
-            else syncPoint(i)=NaN;
+            if sum(~isnan(divDur(r,:)))>threshStart %POST PROCESSING
+                [syncPoint(r),~]=findSEP(divDur(r,threshStart:end),1);
+                syncPoint(r)=syncPoint(r)+threshStart-1;
+            else syncPoint(r)=NaN;
             end
         elseif align==2
-            syncPoint(i)=numel(rls(i).divDuration);
+            syncPoint(r)=numel(rls(r).divDuration);
         end
         
         %align
-        m=max(m,syncPoint(i)); %max divs in preSEP
-        M=max(M,sum(~isnan(divDur(i,:)))-syncPoint(i)); %max divs in postSEP
+        m=max(m,syncPoint(r)); %max divs in preSEP
+        M=max(M,sum(~isnan(divDur(r,:)))-syncPoint(r)); %max divs in postSEP
 
-    else syncPoint(i)=NaN;
+    else syncPoint(r)=NaN;
     end
 
-    rls(i).sep=syncPoint(i);
+    rls(r).sep=syncPoint(r);
 end
 
-%align signal VS syncpoint and store it in rls struct
-rlsAligned=rls;
-divDurAligned=NaN(numel(rls),m+M);
-for i=1:numel(rls)
-    
-    if ~isnan(syncPoint(i))
-        %pre+post
-        for j=1:sum(~isnan(divDur(i,:)))
-            divDurAligned(i,m-syncPoint(i)+j)=divDur(i,j);
-        end
 
-        %save results in rls
-        if align==1
-            rlsAligned(i).Aligned.(syncType{align+1}).divDuration=divDurAligned(i,:); 
-            rlsAligned(i).Aligned.(syncType{align+1}).zero=m;  
-        elseif align==0
-        elseif align==2
+%INIT
+for r=1:numrls
+    %align signal VS syncpoint and store it in rls struct
+    %divs
+    if sum(~isnan(divDur(r,:)))>1 && syncPoint(r)>0 %check if it is worth aligning
+        rls(r).Aligned.(syncType{align+1}).divDuration=NaN(1,m+M);
+                
+        %signal
+        if isfield(rls(r),'divSignal') && ~isempty(rls(r).divSignal)
+            resultFields=fields(rls(r).divSignal); %full, cell, nucleus
+            resultFields(strcmp(resultFields,'divDuration'))=[]; %is treated before
+            %essayer try catch
+            for rf=resultFields
+                classiFields=fields(rls(r).divSignal.(rf{1})); %obj2
+                for cf=classiFields
+                    fluoFields=fields(rls(r).divSignal.(rf{1}).(cf{1})); %max, mean, volume...
+                    for ff=fluoFields
+                        for chan=1:numel(rls(r).divSignal.(rf{1}).(cf{1}).(ff{1})(:,1))
+                            rls(r).Aligned.(syncType{align+1}).(rf{1}).(cf{1}).(ff{1})(chan,:)=NaN(1,m+M);
+                        end
+                    end
+                end
+            end
+        else disp(['No results.divSignal for roi ' num2str(r)]);
+        end
+        
+        %FILL
+        %pre+post
+        for j=1:sum(~isnan(divDur(r,:))) %frames
+            rls(r).Aligned.(syncType{align+1}).divDuration(1,m-syncPoint(r)+j)=divDur(r,j);
+            rls(r).Aligned.(syncType{align+1}).zero=m;
+            
+            if isfield(rls(r),'divSignal') && ~isempty(rls(r).divSignal)
+                resultFields=fields(rls(r).divSignal); %full, cell, nucleus
+                resultFields(strcmp(resultFields,'divDuration'))=[]; %is treated before
+                %essayer try catch
+                for rf=resultFields
+                    classiFields=fields(rls(r).divSignal.(rf{1})); %obj2
+                    for cf=classiFields
+                        fluoFields=fields(rls(r).divSignal.(rf{1}).(cf{1})); %max, mean, volume...
+                        for ff=fluoFields
+                            for chan=1:numel(rls(r).divSignal.(rf{1}).(cf{1}).(ff{1})(:,1))
+                                rls(r).Aligned.(syncType{align+1}).(rf{1}).(cf{1}).(ff{1})(chan,m-syncPoint(r)+j)=rls(r).divSignal.(rf{1}).(cf{1}).(ff{1})(chan,j);
+                            end
+                        end
+                    end
+                end
+            end
         end
     else
-        if align==1            
-        elseif align==0
-        elseif align==2
-        end
     end
-        
 end
 
 
