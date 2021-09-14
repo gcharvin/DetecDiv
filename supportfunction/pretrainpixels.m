@@ -1,7 +1,7 @@
-function preTrainPixels(obj,varargin)
+function preTrainPixels(roiobj,classif,varargin)
 % this function assigns pixel values using standard cell segmentation
 
-% obj.train : train is an uint8 rgb image W x H x 3 x Frames : red and green channel used
+% roiobj.train : train is an uint8 rgb image W x H x 3 x Frames : red and green channel used
 
 type='fluo';
 channel=2;
@@ -13,45 +13,85 @@ for i=1:numel(varargin)
     if strcmp(varargin{i},'Type')
         type=varargin{i+1};
     end
+    
     %frames
     if strcmp(varargin{i},'Frames')
         frames=varargin{i+1};
     end
-    if strcmp(varargin{i},'Channel')
-        channel=varargin{i+1};
-    end    
+    
     if strcmp(varargin{i},'Threshold')
         threshold=varargin{i+1};
     end
 end
 
-obj.load();
-if numel(frames)==0
-    frames=1:numel(obj.image(1,1,1,:));
+preTrainorClassif=input('1- GT, or 2- Result? (Default: 1)');
+channel=classif.channel;
+
+
+
+for r=1:numel(roiobj)
+    imtemplate=[];
+    matrix=[];
+    roiobj(r).load();
+    imtemplate=roiobj(r).image(:,:,channel,:);
+    
+    if preTrainorClassif==2 %mimic classif
+        chanidout=findChannelID(roiobj(r),['results_' classif.strid]);
+        
+        if numel(chanidout)>0
+            roiobj(r).image(:,:,chanidout,:)=uint16(zeros(size(imtemplate,1),size(imtemplate,2),1,size(imtemplate,4)));
+        else
+            % add channel is necessary
+            matrix=uint16(zeros(size(imtemplate,1),size(imtemplate,2),1,size(imtemplate,4)));
+            rgb=[1 1 1];
+            intensity=[0 0 0];
+            chanidout=size(roiobj(r).image,3)+1;
+            roiobj(r).addChannel(matrix,['results_' classif.strid],rgb,intensity);
+        end
+        
+    elseif preTrainorClassif==1 %training
+        chanidout=findChannelID(roiobj(r),[classif.strid]);
+        if numel(chanidout)>0
+            roiobj(r).image(:,:,chanidout,:)=uint16(zeros(size(imtemplate,1),size(imtemplate,2),1,size(imtemplate,4)));
+        else
+            % add channel is necessary
+            matrix=uint16(zeros(size(imtemplate,1),size(imtemplate,2),1,size(imtemplate,4)));
+            rgb=[1 1 1];
+            intensity=[0 0 0];
+            chanidout=size(roiobj(r).image,3)+1;
+            roiobj(r).addChannel(matrix,[classif.strid],rgb,intensity);
+        end
+    end
+    
+    
+    if numel(frames)==0
+        frames=1:numel(roiobj(r).image(1,1,channel,:));
+    end
+    
+    
+    for i=frames
+        fprintf('.');
+        img=roiobj(r).image(:,:,channel,i);
+        
+        if strcmp(type,'fluo')
+            BW=segmentFluo(img,threshold);
+        else
+            BW=segmentPhaseContrast(img);
+        end
+        roiobj(r).image(:,:,chanidout,i)=BW;
+    end
+    
+    
+    roiobj(r).save();
+    fprintf('\n');
 end
-
-
-for i=frames
-    fprintf('.');    
-    img= obj.image(:,:,channel,i);    
-
-    if strcmp(type,'fluo')
-        BW=segmentFluo(img,threshold);
-    else
-        BW=segmentPhaseContrast(img);
-    end    
-    obj.image(:,:,channel+1,i)=BW;
-end
-obj.save();
-fprintf('\n');
-
 %%
 function BW2=segmentFluo(img,threshold)
 img2=img;
 
 img2=im2double(imadjust(img2));
 T=graythresh(img2); %get otsu threshold
-BW2=imbinarize(img2,T*1);
+BW2=imbinarize(img2,T*1.05);
 
 % img2=im2double(img2);
 % img2=img2-min(img2(:));

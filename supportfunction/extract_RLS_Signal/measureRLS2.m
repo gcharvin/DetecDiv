@@ -11,6 +11,7 @@ function [rls,rlsResults,rlsGroundtruth]=measureRLS2(obj,varargin)
 %rlsGroundtruth only groundtruth
 objType=[];
 roisArray=[];
+fovs=[];
 %% TODO : Make it roi method and export to result_Pos_xxx.mat
 %%
 param.mergeGT=0;

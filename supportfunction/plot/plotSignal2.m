@@ -128,7 +128,7 @@ elseif timeOrGen==1
                 liststrid=fields(roiobj(1).Aligned); %full, cell, nucleus
                 str=[];
                 for i=1:numel(liststrid)
-                    str=[str num2str(i) ' - ' liststrid{i} ';'];
+                    str=[str num2str(i) ' - ' liststrid{i} '; '];
                 end
                 alignid=input(['Which alignment used ? (Default: 1)' str]);
                 if numel(alignid)==0
@@ -157,9 +157,11 @@ end
 
 %% ask signal
 liststrid=fields(obj(1)); %full, cell, nucleus, div
+liststrid(contains(liststrid,'zero'))=[];
+
 str=[];
 for i=1:numel(liststrid)
-    str=[str num2str(i) ' - ' liststrid{i} ';'];
+    str=[str num2str(i) ' - ' liststrid{i} '; '];
 end
 
 signalid=input(['Which signal type? (Default: 1)' str]);
@@ -181,7 +183,7 @@ if plotDivDuration==0
     str=[];
     
     for i=1:numel(liststrid)
-        str=[str num2str(i) ' - ' liststrid{i} ';'];
+        str=[str num2str(i) ' - ' liststrid{i} '; '];
     end
     classifid=input(['Which classi used for extracting signal? (Default: 1)' str]);
     if numel(classifid)==0
@@ -195,7 +197,7 @@ if plotDivDuration==0
     str=[];
     
     for i=1:numel(liststrid)
-        str=[str num2str(i) ' - ' liststrid{i} ';'];
+        str=[str num2str(i) ' - ' liststrid{i} '; '];
     end
     fluoid=input(['Which type of signal? (Default: 1)' str]);
     if numel(fluoid)==0
@@ -231,7 +233,7 @@ for r=rois
         %extract
             if plotDivDuration==1
                 data(r,:)=obj2{r,1}*timefactor;
-            elseif contains(fluostrid,'volume')
+            elseif strcmp(fluostrid,'volume')
                 data(r,:)=obj2{r,1}(chanid,:)*0.1056; %normalize into pixels
             else
                 data(r,:)=obj2{r,1}(chanid,:);
@@ -241,10 +243,12 @@ end
 %% plot
 lw=1;
 fz=16;
+mz=5;
 if figExport==1
     lw=0.5;
     fz=8;
     sz=4;
+    mz=3.5;
 end
 
 if plotAligned==1
@@ -286,7 +290,7 @@ title(['']);
 % ptch.LineWidth=lw;
 % ptch.EdgeColor='r';
 
-errorbar(x,meanData,semData,'o','MarkerEdgeColor','k','MarkerFaceColor','w','MarkerSize',5,'Color','k');
+errorbar(x,meanData,semData,'o','MarkerEdgeColor','k','MarkerFaceColor',[241/255, 90/255, 41/255],'MarkerSize',mz,'Color','k');
 legend(['N=' num2str(numel(data(:,1)))])
 
 set(gca,'FontSize',fz, 'FontName','Myriad Pro','LineWidth',2*lw,'FontWeight','bold','TickLength',[0.02 0.02]);
