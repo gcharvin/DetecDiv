@@ -503,25 +503,31 @@ divSignal=[];
 divSignal.divDuration=rls.divDuration; % redundant with rls.divDuration, but convenient for plotSignal.m
 %check all the fields of .results.signal and mean them by div
 if isfield(obj2.roi(r).results,'signal') && ~isempty(obj2.roi(r).results.signal)>0
-    resultFields=fields(obj2.roi(r).results.signal); %full, cell, nucleus
+    rF=fields(obj2.roi(r).results.signal); %full, cell, nucleus
     %essayer try catch
-    for rf=resultFields
-        classiFields=fields(obj2.roi(r).results.signal.(rf{1})); %obj2
-        for cf=classiFields
-            fluoFields=fields(obj2.roi(r).results.signal.(rf{1}).(cf{1})); %max, mean, volume...
-            for ff=fluoFields
-                for chan=1:numel(obj2.roi(r).results.signal.(rf{1}).(cf{1}).(ff{1})(:,1))
+    for rf=1:numel(rF)
+        cF=fields(obj2.roi(r).results.signal.(rF{rf})); %obj2
+        for cf=1:numel(cF)
+            fF=fields(obj2.roi(r).results.signal.(rF{rf}).(cF{cf})); %max, mean, volume...
+            for ff=1:numel(fF)
+                for chan=1:numel(obj2.roi(r).results.signal.(rF{rf}).(cF{cf}).(fF{ff})(:,1))
                     tt=1;
-%                     if numel(rls.divDuration)==0
-%                             divSignal.(rf{1}).(cf{1}).(ff{1})(chan)=[];
-%                     else
+                    %                     if numel(rls.divDuration)==0
+                    %                             divSignal.(rF{rf}).(cF{cf}).(fF{ff})(chan)=[];
+                    %                     else
+                    if numel(rls.divDuration)>0
                         for t=1:numel(rls.divDuration)
-                            divSignal.(rf{1}).(cf{1}).(ff{1})(chan,t)=mean(obj2.roi(r).results.signal.(rf{1}).(cf{1}).(ff{1})(chan,rls.framediv(tt):rls.framediv(tt+1)));
+                            divSignal.(rF{rf}).(cF{cf}).(fF{ff})(chan,t)=mean(obj2.roi(r).results.signal.(rF{rf}).(cF{cf}).(fF{ff})(chan,rls.framediv(tt):rls.framediv(tt+1)));
+                            divSignal.(rF{rf}).(cF{cf}).([fF{ff} 'FoldInc'])(chan,t)=mean(obj2.roi(r).results.signal.(rF{rf}).(cF{cf}).(fF{ff})(chan,rls.framediv(tt):rls.framediv(tt+1)))./mean(obj2.roi(r).results.signal.(rF{rf}).(cF{cf}).(fF{ff})(chan,rls.framediv(1):rls.framediv(2)));
                             tt=tt+1;
                         end
-                        divSignal.(rf{1}).(cf{1}).(ff{1}).incRate(chan,:)=diff(divSignal.(rf{1}).(cf{1}).(ff{1})(chan,:));
-
-%                     end
+                    end
+                    if numel(rls.divDuration)>1
+                        divSignal.(rF{rf}).(cF{cf}).([fF{ff} 'IncRate'])(chan,:)=diff(divSignal.(rF{rf}).(cF{cf}).(fF{ff})(chan,:))./divSignal.(rF{rf}).(cF{cf}).(fF{ff})(chan,1:end-1);
+                        divSignal.(rF{rf}).(cF{cf}).([fF{ff} 'IncRate'])=[NaN divSignal.(rF{rf}).(cF{cf}).([fF{ff} 'IncRate'])];
+                    end
+                    
+                    %                     end
                 end
             end
         end
@@ -578,25 +584,29 @@ for r=1:numrls
 end
 
 
-%INIT
+
 for r=1:numrls
     %align signal VS syncpoint and store it in rls struct
-    %divs
+    
+    
     if sum(~isnan(divDur(r,:)))>1 && syncPoint(r)>0 %check if it is worth aligning
+        %INIT
+        
+        %divs
         rls(r).Aligned.(syncType{align+1}).divDuration=NaN(1,m+M);
                 
         %signal
         if isfield(rls(r),'divSignal') && ~isempty(rls(r).divSignal)
-            resultFields=fields(rls(r).divSignal); %full, cell, nucleus
-            resultFields(strcmp(resultFields,'divDuration'))=[]; %is treated before
+            rF=fields(rls(r).divSignal); %full, cell, nucleus
+            rF(strcmp(rF,'divDuration'))=[]; %is treated before
             %essayer try catch
-            for rf=resultFields
-                classiFields=fields(rls(r).divSignal.(rf{1})); %obj2
-                for cf=classiFields
-                    fluoFields=fields(rls(r).divSignal.(rf{1}).(cf{1})); %max, mean, volume...
-                    for ff=fluoFields
-                        for chan=1:numel(rls(r).divSignal.(rf{1}).(cf{1}).(ff{1})(:,1))
-                            rls(r).Aligned.(syncType{align+1}).(rf{1}).(cf{1}).(ff{1})(chan,:)=NaN(1,m+M);
+            for rf=1:numel(rF)
+                cF=fields(rls(r).divSignal.(rF{rf})); %obj2
+                for cf=1:numel(cF)
+                    fF=fields(rls(r).divSignal.(rF{rf}).(cF{cf})); %max, mean, volume...
+                    for ff=1:numel(fF)
+                        for chan=1:numel(rls(r).divSignal.(rF{rf}).(cF{cf}).(fF{ff})(:,1))
+                            rls(r).Aligned.(syncType{align+1}).(rF{rf}).(cF{cf}).(fF{ff})(chan,:)=NaN(1,m+M);
                         end
                     end
                 end
@@ -606,21 +616,21 @@ for r=1:numrls
         
         %FILL
         %pre+post
-        for j=1:sum(~isnan(divDur(r,:))) %frames
+        for j=1:sum(~isnan(divDur(r,:))) %divs
             rls(r).Aligned.(syncType{align+1}).divDuration(1,m-syncPoint(r)+j)=divDur(r,j);
             rls(r).Aligned.(syncType{align+1}).zero=m;
             
             if isfield(rls(r),'divSignal') && ~isempty(rls(r).divSignal)
-                resultFields=fields(rls(r).divSignal); %full, cell, nucleus
-                resultFields(strcmp(resultFields,'divDuration'))=[]; %is treated before
+                rF=fields(rls(r).divSignal); %full, cell, nucleus
+                rF(strcmp(rF,'divDuration'))=[]; %is treated before
                 %essayer try catch
-                for rf=resultFields
-                    classiFields=fields(rls(r).divSignal.(rf{1})); %obj2
-                    for cf=classiFields
-                        fluoFields=fields(rls(r).divSignal.(rf{1}).(cf{1})); %max, mean, volume...
-                        for ff=fluoFields
-                            for chan=1:numel(rls(r).divSignal.(rf{1}).(cf{1}).(ff{1})(:,1))
-                                rls(r).Aligned.(syncType{align+1}).(rf{1}).(cf{1}).(ff{1})(chan,m-syncPoint(r)+j)=rls(r).divSignal.(rf{1}).(cf{1}).(ff{1})(chan,j);
+                for rf=1:numel(rF)
+                    cF=fields(rls(r).divSignal.(rF{rf})); %obj2
+                    for cf=1:numel(cF)
+                        fF=fields(rls(r).divSignal.(rF{rf}).(cF{cf})); %max, mean, volume...
+                        for ff=1:numel(fF)
+                            for chan=1:numel(rls(r).divSignal.(rF{rf}).(cF{cf}).(fF{ff})(:,1))
+                                rls(r).Aligned.(syncType{align+1}).(rF{rf}).(cF{cf}).(fF{ff})(chan,m-syncPoint(r)+j)=rls(r).divSignal.(rF{rf}).(cF{cf}).(fF{ff})(chan,j);
                             end
                         end
                     end

@@ -1,4 +1,4 @@
-function [data]=plotSignal(roiobj,varargin)
+function []=plotSignal2(roiobj,varargin)
 %classi script
 
 %todo : simplify code. remove if plotDuration==1 and replace it by : if
@@ -17,9 +17,9 @@ for i=1:numel(varargin)
         timeOrGen=1;
     end
     
-    if strcmp(varargin{i},'RLSfile') %can also take as inpout rls struct file instead of roiobj
-        RLSfile=1;
-    end
+%     if strcmp(varargin{i},'RLSfile') %can also take as inpout rls struct file instead of roiobj
+%         RLSfile=1;
+%     end
     
     if strcmp(varargin{i},'Load') %load data
         load=1;
@@ -32,15 +32,22 @@ for i=1:numel(varargin)
     
 end
 
-if RLSfile==1
+if isa(roiobj,'roi')
+    RLSfile=0;
+    
+elseif isa(roiobj,'struct')
+    RLSfile=1;
     timeOrGen=1;
 end
+
 
 %% cleaning
 roiobj=roiobj([roiobj(:).ndiv]>8); %put at least 1 for robustness
 roiobj=roiobj( ([roiobj.frameBirth]<=maxBirth) & (~isnan([roiobj.frameBirth])) );
 roiobj=roiobj( ~(strcmp({roiobj.endType},'Arrest') & [roiobj.frameEnd]<300)  ); %remove weird cells before frame 300 (stop growing)
 roiobj=roiobj( ~(strcmp({roiobj.endType},'Emptied') & [roiobj.frameEnd]<300)  ); %remove emptied roi before frame 300
+
+rois=1:numel(roiobj);
 %% 
 signalstrid='';
 classifstrid='';
@@ -49,7 +56,7 @@ fluostrid='';
 
 %% load data if required
 if load==1
-    for r=1:numel(roiobj)
+    for r=rois
         roiobj(r).load('results');
     end
 end
@@ -57,7 +64,9 @@ end
 %%
 if timeOrGen==0
     if isfield(roiobj(1).results,'signal')
-        obj=roiobj(1).results.signal;
+        for r=rois
+            obj(r,1)=roiobj(r).results.signal; %assign obj
+        end
     else
         error(['The roi ' roiobj(1) 'has no signal. Extract it using extractSignal'])
     end
@@ -83,14 +92,19 @@ elseif timeOrGen==1
         classifRLSstrid=liststrid{classiRLSid};
         
         if isfield(roiobj(1).results.RLS.(classifRLSstrid),'signal')
-            obj=roiobj(1).results.RLS.(classifRLSstrid).divSignal;
+            for r=rois
+                obj(r,1)=roiobj(r).results.RLS.(classifRLSstrid).divSignal; %assign obj
+            end
+
         else
             error(['The roi ' roiobj(1) 'has no RLS.signal. Extract it using extractSignal followed by measureRLS3'])
         end
         
     elseif RLSfile==1 %if input is rls struct
         if isfield(roiobj(1),'divSignal')
-            obj=roiobj(1).divSignal;
+            for r=rois
+                obj(r,1)=roiobj(r).divSignal; %assign obj
+            end
         else
             error(['The roi ' roiobj(1) 'has no divSignal field. Extract it using extractSignal followed by measureRLS2'])
         end
@@ -100,7 +114,7 @@ elseif timeOrGen==1
                 plotAligned=0;
             elseif strcmp(askPlotAligned,'y') %plot aligned signals
                 plotAligned=1;
-                
+                clear obj
                 %remove nosep
                 flag=[];
                 for r=1:numel(roiobj)
@@ -109,6 +123,7 @@ elseif timeOrGen==1
                     end
                 end
                 roiobj(flag)=[];
+                rois=1:numel(roiobj);
                 
                 liststrid=fields(roiobj(1).Aligned); %full, cell, nucleus
                 str=[];
@@ -121,7 +136,9 @@ elseif timeOrGen==1
                 end
                 alignstrid=liststrid{alignid};                                
                 
-                obj=roiobj(1).Aligned.(alignstrid);
+                for r=rois
+                    obj(r,1)=roiobj(r).Aligned.(alignstrid); %assign obj
+                end
             end
         end
     end
@@ -139,7 +156,7 @@ end
 
 
 %% ask signal
-liststrid=fields(obj); %full, cell, nucleus, div
+liststrid=fields(obj(1)); %full, cell, nucleus, div
 str=[];
 for i=1:numel(liststrid)
     str=[str num2str(i) ' - ' liststrid{i} ';'];
@@ -153,13 +170,14 @@ end
 signalstrid=liststrid{signalid};
 if strcmp(signalstrid,'divDuration')
     plotDivDuration=1;
+        obj2={obj.divDuration}';
 else
     plotDivDuration=0;
 end
 
 %% ask classistrid
 if plotDivDuration==0
-    liststrid=fields(obj.(signalstrid));
+    liststrid=fields(obj(1).(signalstrid));
     str=[];
     
     for i=1:numel(liststrid)
@@ -171,11 +189,9 @@ if plotDivDuration==0
     end
     
     classifstrid=liststrid{classifid};
-end
 
 %% ask fluo
-if plotDivDuration==0
-    liststrid=fields(obj.(signalstrid).(classifstrid));
+    liststrid=fields(obj(1).(signalstrid).(classifstrid));
     str=[];
     
     for i=1:numel(liststrid)
@@ -187,90 +203,39 @@ if plotDivDuration==0
     end
     
     fluostrid=liststrid{fluoid};
-end
 
-%% ask channel
-if plotDivDuration==0
-    channumber=size(obj.(signalstrid).(classifstrid).(fluostrid),1);
-    str=[];
+
+    %% ask rate
+    if contains(fluostrid,'IncRate')
+        plotRate=1;
+    else
+        plotRate=0;
+    end
     
+    for r=rois
+        obj2(r,1)={obj(r).(signalstrid).(classifstrid).(fluostrid)}';
+    end
+%% ask channel
+    channumber=size(obj2{1},1);
+    str=[];   
     chanid=input(['Which channel ? (Default: 1)' num2str(1:channumber)]);
     if numel(chanid)==0
         chanid=1;
     end
+    
 end
 
 %% data to vector
-for r=1:numel(roiobj)
-
-        %assign obj
-        if timeOrGen==0
-            if isfield(roiobj(r).results,'signal')
-                obj=roiobj(r).results.signal;
-            else
-                error(['The roi ' roiobj(r) 'has no ' signalstrid 'signal from classi ' classifstrid ', be sure extracted it well, using extractSignal'])
-            end
-           
-        elseif timeOrGen==1
-            if RLSfile==0 %if input is roi array
-                if isfield(roiobj(r).results.RLS.(classifRLSstrid),'signal')
-                    obj=roiobj(r).results.RLS.(classifRLSstrid).divSignal;
-                else
-                    error(['The roi ' roiobj(r) 'has no RLS.signal. Extract it using extractSignal followed by measureRLS3'])
-                end
-            elseif RLSfile==1 %if input is rls struct
-                if plotAligned==0 && isfield(roiobj(r),'divSignal')
-                    obj=roiobj(r).divSignal;
-                elseif plotAligned==1
-                    obj=roiobj(r).Aligned.(alignstrid);
-                else
-                    error(['The roi ' roiobj(r) 'has no divSignal field. Extract it using extractSignal followed by measureRLS2'])
-                end
-            end               
-        end
-        
+data=nan(numel(rois),max(cellfun(@numel,obj2)));
+for r=rois
         %extract
             if plotDivDuration==1
-                data(r,:)=obj.divDuration*timefactor;
+                data(r,:)=obj2{r,1}*timefactor;
+            elseif contains(fluostrid,'volume')
+                data(r,:)=obj2{r,1}(chanid,:)*0.1056; %normalize into pixels
             else
-                for chan=chanid
-                    data(r,:)=obj.(signalstrid).(classifstrid).(fluostrid)(chan,:);
-                    hold on
-                end
+                data(r,:)=obj2{r,1}(chanid,:);
             end
-    
-        
-%     elseif plotDivDur==1
-%      
-%         %assign obj
-%         if timeOrGen==1
-%             if RLSfile==0 %if input is roi array
-%                 if isfield(roiobj(r).results,'RLS')
-%                     obj=roiobj(r).results.RLS;
-%                 else
-%                     error(['The roi ' roiobj(r) 'has no RLS. Extract it using extractSignal followed by measureRLS3'])
-%                 end
-%                 
-%             elseif RLSfile==1 %if input is rls struct
-%                 if plotAligned==0    
-%                     obj=roiobj(r);
-%                 elseif plotAligned==1
-%                     obj=roiobj(r).Aligned.(alignstrid);
-%                 end
-%             end
-%             data(r,:)=obj.divDuration*timefactor;
-%         end
-%     end
-
-%extract data
-%      if isfield(obj,signalstrid)
-%       if  isfield(obj.(signalstrid),classifstrid)
-%         else
-%             error(['The roi ' roiobj(r) 'has no ' signalstrid 'signal (or RLS.signal) according to your choice), be sure extracted it, using extractSignal'])
-%         end
-%     else
-%         error(['The roi ' roiobj(r) 'has no signal (or RLS.signal according to your choice). Extract it using extractSignal'])
-%     end
 end
 
 %% plot
@@ -333,7 +298,7 @@ if figExport==1
     set(gcf, 'PaperPositionMode', 'auto', 'PaperType','a4','PaperUnits','centimeters');
     %set(gcf,'Units','centimeters','Position', [5 5 xf_width yf_width]);
     set(ax,'Units','centimeters', 'InnerPosition', [5 5 xf_width yf_width]) %0.8 if .svg is used
-    rlsFig.Renderer='painters';
+    signalFig.Renderer='painters';
     %saveas(rlsFig,'\\space2.igbmc.u-strasbg.fr\charvin\Theo\Projects\RAMM\Figures\Fig1\RLS\RLS_sir2_fob1.svg')
     exportgraphics(signalFig,['\\space2.igbmc.u-strasbg.fr\charvin\Theo\Projects\RAMM\Figures\Fig2\' nameFile '.pdf'])
     %print(rlsFig,'\\space2.igbmc.u-strasbg.fr\charvin\Theo\Projects\RAMM\Figures\Fig1\RLS\RLS_sir2_fob1','-dpdf')%,'BackgroundColor','none','ContentType','vector')

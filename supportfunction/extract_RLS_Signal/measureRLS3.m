@@ -1,5 +1,8 @@
 function measureRLS3(classif,roiobj,varargin)
 
+%TODO :FUSE measureRLS2 and 3 and create a function appart to align.
+
+
 %'Fluo' if =1, will computethe fluo of each channel over the divs
 
 %ClassiType is the classif type of obj :
@@ -91,8 +94,8 @@ ccg=1;
 classistrid=classif.strid;
 classes=classif.classes;
     %================RESULTS===============
-    if isprop(roi.results,classistrid)
-        if isprop(roi.results.(classistrid),'id')
+    if isfield(roi.results,classistrid)
+        if isfield(roi.results.(classistrid),'id')
             if sum(roi.results.(classistrid).id)>0
                 id=roi.results.(classistrid).id; % results for classification
                 
@@ -127,9 +130,9 @@ classes=classif.classes;
     %==================GROUNDTRUTH===================
     %Groundtruth?
     idg=[];
-    if isprop(roi,'train') %MATLAB BUG WITH isprop. logical=0 for fov
-        if isprop(roi.train,(classistrid))
-            if isprop(roi.train.(classistrid),'id') % test if groundtruth data available
+    if isfield(roi,'train') %MATLAB BUG WITH isprop. logical=0 for fov
+        if isfield(roi.train,(classistrid))
+            if isfield(roi.train.(classistrid),'id') % test if groundtruth data available
                 if sum(roi.train.(classistrid).id)>0
                     idg=roi.train.(classistrid).id; % results for classification
                     disp(['Groundtruth data are available for ROI ' num2str(roi.id)]);
@@ -401,34 +404,47 @@ end
 
 
 %% ==============================================SIGNAL======================================================
+%==============================================SIGNAL======================================================
 function divSignal=computeSignalDiv(roi,rls)
 divSignal=[];
 divSignal.divDuration=rls.divDuration; % redundant with rls.divDuration, but convenient for plotSignal.m
 %check all the fields of .results.signal and mean them by div
-if isprop(roi.results,'signal')
-    resultFields=fields(roi.results.signal); %full, cell, nucleus
+if isfield(roi.results,'signal') && ~isempty(roi.results.signal)>0
+    rF=fields(roi.results.signal); %full, cell, nucleus
     %essayer try catch
-    for rf=resultFields
-        classiFields=fields(roi.results.signal.(rf{1})); %obj2
-        for cf=classiFields
-            fluoFields=fields(roi.results.signal.(rf{1}).(cf{1})); %max, mean, volume...
-            for ff=fluoFields
-                for chan=1:numel(roi.results.signal.(rf{1}).(cf{1}).(ff{1})(:,1))
+    for rf=1:numel(rF)
+        cF=fields(roi.results.signal.(rF{rf})); %obj2
+        for cf=1:numel(cF)
+            fF=fields(roi.results.signal.(rF{rf}).(cF{cf})); %max, mean, volume...
+            for ff=1:numel(fF)
+                for chan=1:numel(roi.results.signal.(rF{rf}).(cF{cf}).(fF{ff})(:,1))
                     tt=1;
-%                     if numel(rls.divDuration)==0
-%                             divSignal.(rf{1}).(cf{1}).(ff{1})(chan)=[];
-%                     else
+                    %                     if numel(rls.divDuration)==0
+                    %                             divSignal.(rF{rf}).(cF{cf}).(fF{ff})(chan)=[];
+                    %                     else
+                    if numel(rls.divDuration)>0
                         for t=1:numel(rls.divDuration)
-                            divSignal.(rf{1}).(cf{1}).(ff{1})(chan,t)=mean(obj2.roi(r).results.signal.(rf{1}).(cf{1}).(ff{1})(chan,rls.framediv(tt):rls.framediv(tt+1)));
+                            divSignal.(rF{rf}).(cF{cf}).(fF{ff})(chan,t)=mean(roi.results.signal.(rF{rf}).(cF{cf}).(fF{ff})(chan,rls.framediv(tt):rls.framediv(tt+1)));
+                            divSignal.(rF{rf}).(cF{cf}).([fF{ff} 'FoldInc'])(chan,t)=mean(roi.results.signal.(rF{rf}).(cF{cf}).(fF{ff})(chan,rls.framediv(tt):rls.framediv(tt+1)))./mean(roi.results.signal.(rF{rf}).(cF{cf}).(fF{ff})(chan,rls.framediv(1):rls.framediv(2)));
                             tt=tt+1;
                         end
-%                     end
+                    end
+                    if numel(rls.divDuration)>1
+                        divSignal.(rF{rf}).(cF{cf}).([fF{ff} 'IncRate'])(chan,:)=diff(divSignal.(rF{rf}).(cF{cf}).(fF{ff})(chan,:))./divSignal.(rF{rf}).(cF{cf}).(fF{ff})(chan,1:end-1);
+                        divSignal.(rF{rf}).(cF{cf}).([fF{ff} 'IncRate'])=[NaN divSignal.(rF{rf}).(cF{cf}).([fF{ff} 'IncRate'])];
+                    end
+                    
+                    %                     end
                 end
             end
         end
     end
 else disp(['No results.signal for roi ' num2str(roi.id)]);
 end
+
+
+
+
 %==============================================DIVERROR======================================================
 function [framedivNoFalseNeg, framedivNoFalsePos]=detectError(rlsGroundtruthr, rlsResultsr)
 framedivNoFalseNeg=NaN;

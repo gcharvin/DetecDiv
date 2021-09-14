@@ -45,8 +45,9 @@ for i=rois
     RES=[RES classi.roi(i).results.signal.cell.(classistridRes).volume(1:1:end)];
 end
 
-GT=GT*0.325;
-RES=RES*0.325;
+%converts in um²
+GT=GT*0.1056;
+RES=RES*0.1056;
 
 GT(GT==0)=NaN;
 % GT(GT>120)=NaN;
@@ -56,7 +57,7 @@ GT=GT(~isnan(GT));
 
 % if sphereApprox==1
 %     RES=RES.^(3/2);
-     RES=RES-35;
+%     RES=RES;
 % end
 
 M=max(max(GT(:)),max(RES(:)));
@@ -80,8 +81,8 @@ set(gcf,'Color','w','Units', 'Normalized', 'Position',[0.1 0.1 0.35 0.35])
 %DataDensityPlot(GT',RES',32,M,M);
 colormap gray
 colorbar
-xlim([0 M]);
-ylim([0 M]);
+xlim([0 125]);
+ylim([0 125]);
 xl=xlim; yl=ylim;
 
 hold on
