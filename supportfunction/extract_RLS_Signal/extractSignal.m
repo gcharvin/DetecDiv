@@ -18,7 +18,7 @@ function extractSignal(obj,type,inputvarargin)
 %'kMaxPixels': numbers of pixels taken for the maxPixels method. Default=20
 
 %*'Rois': rois array to extract the signal from
-skip=0;
+snapinc=2; %1/frequency of snappiong of 
 kMaxPix=20;
 volThresh=0;
 rois=1:numel(obj.roi);
@@ -39,10 +39,6 @@ for i=1:numel(inputvarargin)
     %kMaxPixels
     if strcmp(inputvarargin{i},'kMaxPixels')
         kMaxPix=inputvarargin{i+1};
-    end
-    
-    if strcmp(inputvarargin{i},'Skip')
-        skip=1;
     end
     
     %     %MaskCell
@@ -69,13 +65,10 @@ end
 
 %%
 if strcmp(method,'full')
+    
     obj.roi(rois(1)).load();
-    if skip==1
-        classiname=[];
-    else
-        prompt=['Type the name of the result classif: (Default: full_' num2str(kMaxPix) 'maxPixels) '];
-        classiname=input(prompt);
-    end
+    prompt=['Type the name of the result classif: (Default: full_' num2str(kMaxPix) 'maxPixels) '];
+    classiname=input(prompt);
     
     if isempty(classiname)
         classiname=['full_' num2str(kMaxPix) 'maxPixels'];
@@ -87,12 +80,10 @@ if strcmp(method,'full')
         str=[str num2str(i) ' - ' chans{i} ';'];
     end
     
-    %=pick channel=
-    if skip==1
-        channelsExtract=[];
-    else
-        prompt=['Which channel to extract the signal from? (Default: [2:number of channelsExtract])' newline str];
-        channelsExtract=input(prompt);
+    prompt=['Which channel to extract the signal from? (Default: [2:number of channelsExtract])' newline str];
+    channelsExtract=input(prompt);  
+    for c=channelsExtract
+            BckgValue(c)=input(['Choose background value for channel' num2str(c)]);
     end
     
     for r=rois %to parfor
@@ -107,11 +98,11 @@ if strcmp(method,'full')
         for c=channelsExtract
             for t=1:lastFrame
                 %init/reset
-                obj.roi(r).results.signal.full.(classiname).maxfluo(c,t)=NaN;
+                obj.roi(r).results.signal.full.(classiname).meankmaxfluo(c,t)=NaN;
                 obj.roi(r).results.signal.full.(classiname).meanfluo(c,t)=NaN;
                 obj.roi(r).results.signal.full.(classiname).totalfluo(c,t)=NaN;
                 %fill, reshaped used to make it line
-                obj.roi(r).results.signal.full.(classiname).maxfluo(c,t)=mean(maxk( reshape(obj.roi(r).image(:,:,c,t),[],1) ,kMaxPix));
+                obj.roi(r).results.signal.full.(classiname).meankmaxfluo(c,t)=mean(maxk( reshape(obj.roi(r).image(:,:,c,t),[],1) ,kMaxPix))-BckgValue(c);
                 obj.roi(r).results.signal.full.(classiname).meanfluo(c,t)=mean(reshape(obj.roi(r).image(:,:,c,t),[],1));
                 obj.roi(r).results.signal.full.(classiname).totalfluo(c,t)=sum(reshape(obj.roi(r).image(:,:,c,t),[],1));
             end
@@ -176,7 +167,7 @@ if strcmp(method,'volume')
             
             %=masks
             maskTotal=obj.roi(r).image(:,:,channelSegCell,t); %mask containing all the classes
-            maskMother=(maskMother+maskTotal.*uint16(maskTotal==classidMother))./classidMother;
+            maskMother=maskMother+uint16(maskTotal==classidMother)./classidMother;
             
             %=compute and store
             vol=sum(maskMother(:));
@@ -258,12 +249,17 @@ if strcmp(method,'cell')
                 
                 %=masks
                 maskTotal=obj.roi(r).image(:,:,channelSegCell,t); %mask containing all the classes
-                maskMother=(maskMother+maskTotal.*uint16(maskTotal==classidMother))./classidMother;
-                maskBckg=(maskBckg+maskTotal.*uint16(maskTotal==classidBckg))./classidBckg;
+                maskMother=maskMother+   uint16(maskTotal==classidMother)./classidMother;
+                maskBckg=maskBckg+ uint16(maskTotal==classidBckg)./classidBckg;
                 
                 %=masked image
                 maskedMother=im.*maskMother;
                 maskedBckg=im.*maskBckg;
+                
+                %compute backgroun by removing max and min pixels
+                meanbckg=maxk(maskedBckg(:),ceil(0.8*size(im,1)*size(im,2)));
+                meanbckg=mink(meanbckg(:),ceil(0.8*size(im,1)*size(im,2)));
+                meanbckg=mean(meanbckg);
                 
                 %=compute and store
                 vol=sum(maskMother(:));
@@ -273,9 +269,17 @@ if strcmp(method,'cell')
                     end
                 end
                 obj.roi(r).results.signal.cell.(classiname).volume(t)=vol;
-                obj.roi(r).results.signal.cell.(classiname).totalfluo(c,t)=sum(maskedMother(:))-mean(maskedBckg(:));
+                obj.roi(r).results.signal.cell.(classiname).totalfluo(c,t)=sum(maskedMother(:)-meanbckg);
                 obj.roi(r).results.signal.cell.(classiname).meanfluo(c,t)=obj.roi(r).results.signal.cell.(classiname).totalfluo(c,t)/sum(maskMother(:));
             end
+            
+            %ici enlever les frames en trop
+            tremove=1:lastFrame;
+            tremove(1:snapinc:end)=[];
+            
+            obj.roi(r).results.signal.cell.(classiname).totalfluo(c,tremove)=NaN;
+            obj.roi(r).results.signal.cell.(classiname).meanfluo(c,tremove)=NaN;
+            
         end
         
         disp(['Volume, average and total signal of mothercell was computed and added to roi(' num2str(r) ').results.signal.cell' num2str(classiname)])
@@ -311,7 +315,7 @@ if strcmp(method,'nucleus')
     
     prompt=['Which channel contains the MASK of the NUCLEUS?' newline str newline];
     channelSegNuc=input(prompt);
-    if ~exist('channelSegNucleus','var')
+    if ~exist('channelSegNuc','var')
         error('Indicate which channel contains the MASK of the CELLS');
     end
     
@@ -328,7 +332,7 @@ if strcmp(method,'nucleus')
     %             for i=1:numel(obj.roi(r).classes)
     %                 strB=[strB num2str(i) ' - ' obj.roi(r).classes{i} ';'];
     %             end
-    prompt=(['Indicate the --number-- of the class corresponding to the background in the classi: ' classiname ' (Default: 1) ' newline]);
+    prompt=(['Indicate the --number-- of the class corresponding to the background in the classi: ' classiNucName ' (Default: 1) ' newline]);
     classidBckg=input(prompt);
     if numel(classidBckg)==0, classidBckg=1; end
     
@@ -350,12 +354,14 @@ if strcmp(method,'nucleus')
                 %init/reset
                 maskTotal=zeros(size(im),'uint16');
                 maskMother=zeros(size(im),'uint16');
-                maskBckg=zeros(size(im),'uint16');
+                maskTotalNucleus=zeros(size(im),'uint16');
+                maskBckgNucleus=zeros(size(im),'uint16');
                 maskNucleus=zeros(size(im),'uint16');
+                maskNucleusMother=zeros(size(im),'uint16');
                 
-                obj.roi(r).results.signal.nucleus.(classiname).volume(t)=NaN;
-                obj.roi(r).results.signal.nucleus.(classiname).totalfluo(c,t)=NaN;
-                obj.roi(r).results.signal.nucleus.(classiname).meanfluo(c,t)=NaN;
+                obj.roi(r).results.signal.nucleus.(classiNucName).volume(t)=NaN;
+                obj.roi(r).results.signal.nucleus.(classiNucName).totalfluo(c,t)=NaN;
+                obj.roi(r).results.signal.nucleus.(classiNucName).meanfluo(c,t)=NaN;
                 if isequal(im,maskTotal) %if the image hasnt been classified or annotated
                     continue %skip iteration
                 end
@@ -363,22 +369,35 @@ if strcmp(method,'nucleus')
                 %masks
                 maskTotal=obj.roi(r).image(:,:,channelSegCell,t); %mask containing all the classes for the cell mask
                 maskTotalNucleus=obj.roi(r).image(:,:,channelSegNuc,t); %mask containing all the classes for the nuc mask
-                maskMother=(maskMother+maskTotal.*uint16(maskTotal==classidMother))./classidMother;
-                maskBckg=(maskBckg+maskTotal.*uint16(maskTotal==classidBckg))./classidBckg;
-                maskNucleus=(maskNucleus+maskTotalNucleus.*uint16(maskTotalNucleus==classidNucleus))./classidNucleus;
+                maskMother=maskMother+uint16(maskTotal==classidMother)./classidMother;
+                maskBckgNucleus=maskBckgNucleus+uint16(maskTotalNucleus==classidBckg)./classidBckg;
+                maskNucleus=maskNucleus+uint16(maskTotalNucleus==classidNucleus)./classidNucleus;
                 maskNucleusMother=maskMother.*maskNucleus;
                 
                 %masked image
                 maskedNucleusMother=im.*maskNucleusMother;
-                maskedBckg=im.*maskBckg;
+                maskedBckgNucleus=im.*maskBckgNucleus;
+                
+                %compute backgroun by removing max and min pixels
+                meanbckg=maxk(maskedBckgNucleus(:),ceil(0.8*size(im,1)*size(im,2)));
+                meanbckg=mink(meanbckg(:),ceil(0.8*size(im,1)*size(im,2)));
+                meanbckg=mean(meanbckg);
                 
                 %fill
-                obj.roi(r).results.signal.nucleus.(classiname).volume(t)=sum(maskNucleusMother(:));
-                obj.roi(r).results.signal.nucleus.(classiname).totalfluo(c,t)=sum(maskedNucleusMother(:))-mean(maskedBckg(:));
-                obj.roi(r).results.signal.nucleus.(classiname).meanfluo(c,t)=obj.roi(r).results.signal.nucleus.(classiname).totalfluo(c,t)/sum(maskMother(:));
+                obj.roi(r).results.signal.nucleus.(classiNucName).volume(t)=sum(maskNucleusMother(:));
+                
+                obj.roi(r).results.signal.nucleus.(classiNucName).totalfluo(c,t)=sum(maskedNucleusMother(:)-meanbckg);%todo: take 80% of max pixels of back to avoid traps
+                obj.roi(r).results.signal.nucleus.(classiNucName).meanfluo(c,t)=obj.roi(r).results.signal.nucleus.(classiNucName).totalfluo(c,t)/sum(maskNucleusMother(:));                                
             end
+            
+            %ici enlever les frames en trop
+            tremove=1:lastFrame;
+            tremove(1:snapinc:end)=[];
+            
+            obj.roi(r).results.signal.nucleus.(classiNucName).totalfluo(c,tremove)=NaN;
+            obj.roi(r).results.signal.nucleus.(classiNucName).meanfluo(c,tremove)=NaN;
         end
-        disp(['Volume, average and total signal of nucleus was computed and added to roi(' num2str(r) ').results.signal.nucleus' num2str(classiname)])
+        disp(['Volume, average and total signal of nucleus was computed and added to roi(' num2str(r) ').results.signal.nucleus' num2str(classiNucName)])
         obj.roi(r).save('results');
         obj.roi(r).image=[];
         clear im

@@ -78,7 +78,9 @@ for r=1:numel(roiobj)
         else
             BW=segmentPhaseContrast(img);
         end
-        roiobj(r).image(:,:,chanidout,i)=BW;
+        mask=uint16(BW);%numel(classif.classes));%nucleus
+        mask(mask==0)=1;%bckg
+        roiobj(r).image(:,:,chanidout,i)=mask;
     end
     
     

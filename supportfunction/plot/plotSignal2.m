@@ -228,7 +228,7 @@ if plotDivDuration==0
 end
 
 %% data to vector
-data=nan(numel(rois),max(cellfun(@numel,obj2)));
+data=nan(numel(rois),max(cellfun(@numel,obj2))/channumber);
 for r=rois
         %extract
             if plotDivDuration==1
@@ -290,7 +290,7 @@ title(['']);
 % ptch.LineWidth=lw;
 % ptch.EdgeColor='r';
 
-errorbar(x,meanData,semData,'o','MarkerEdgeColor','k','MarkerFaceColor',[241/255, 90/255, 41/255],'MarkerSize',mz,'Color','k');
+errorbar(x,meanData,semData,'o','MarkerEdgeColor','k','MarkerFaceColor',[240/255, 90/255, 41/255],'MarkerSize',mz,'Color','k');
 legend(['N=' num2str(numel(data(:,1)))])
 
 set(gca,'FontSize',fz, 'FontName','Myriad Pro','LineWidth',2*lw,'FontWeight','bold','TickLength',[0.02 0.02]);
