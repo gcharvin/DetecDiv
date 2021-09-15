@@ -1,4 +1,4 @@
-function [rls,rlsResults,rlsGroundtruth]=measureRLS2(obj,varargin)
+function [rls]=measureRLS2(obj,varargin)
 %TODO: harmonize the inputs outputs of functions
 %'Fluo' if =1, will computethe fluo of each channel over the divs
 
@@ -11,16 +11,17 @@ function [rls,rlsResults,rlsGroundtruth]=measureRLS2(obj,varargin)
 %rlsGroundtruth only groundtruth
 objType=[];
 roisArray=[];
+rois=[];
 fovs=[];
 %% TODO : Make it roi method and export to result_Pos_xxx.mat
 %%
-param.mergeGT=0;
+param.mergeGT=1;
 param.align=1;
 param.classiftype='bud';
 param.postProcessing=1;
 param.errorDetection=0;
 param.ArrestThreshold=100;
-param.DeathThreshold=5;
+param.DeathThreshold=1;
 param.EmptyThresholdDiscard=500;
 param.EmptyThresholdNext=200;
 
@@ -112,7 +113,7 @@ if strcmp(objType,'classif')
     obj2=classif;
     
     if numel(rois)==0
-        rois=1:numel(obj.roi);
+        rois=1:numel(obj2.roi);
     end
     
     %compute RLS
@@ -182,9 +183,11 @@ rls.rules=[];
 rls.groundtruth=-1;
 
 rlsResults=rls;
+rlsResultsCNN=rls;
 rlsGroundtruth=rls;
 
 cc=1;
+cccnn=1;
 ccg=1;
 
 classistrid=classif.strid;
@@ -224,6 +227,41 @@ for r=rois
         end
     end
     cc=cc+1;
+    
+    %================CNN===============
+    if isfield(obj2.roi(r).results,classistrid)
+        if isfield(obj2.roi(r).results.(classistrid),'idCNN')
+            if sum(obj2.roi(r).results.(classistrid).idCNN)>0
+                idCNN=obj2.roi(r).results.(classistrid).idCNN; % results for classification
+                
+                divTimesCNN=computeDivtime(idCNN,classes,param);
+                
+                rlsResultsCNN(cccnn).divDuration=divTimesCNN.duration;
+                rlsResultsCNN(cccnn).frameBirth=divTimesCNN.frameBirth;
+                rlsResultsCNN(cccnn).frameEnd=divTimesCNN.frameEnd;
+                rlsResultsCNN(cccnn).endType=divTimesCNN.endType;
+                rlsResultsCNN(cccnn).framediv=divTimesCNN.framediv;
+                rlsResultsCNN(cccnn).sep=[];
+                rlsResultsCNN(cccnn).name=obj2.roi(r).id;
+                rlsResultsCNN(cccnn).roiid=[class(obj2) '(' num2str(obj2.id) ').roi(' num2str(r) ')'];
+                rlsResultsCNN(cccnn).ndiv=divTimesCNN.ndiv;
+                if numel(divTimesCNN.framediv)>0
+                    rlsResultsCNN(cccnn).totaltime=[divTimesCNN.framediv(1)-divTimesCNN.frameBirth, cumsum(divTimesCNN.duration)+divTimesCNN.framediv(1)-divTimesCNN.frameBirth];
+                else
+                    rlsResultsCNN(cccnn).totaltime=0;
+                end
+                rlsResultsCNN(cccnn).rules=[];
+                rlsResultsCNN(cccnn).groundtruth=2;
+                rlsResultsCNN(cccnn).divSignal=[];
+                
+                divSignal=computeSignalDiv(obj2,r,rlsResultsCNN(cccnn));
+                rlsResultsCNN(cccnn).divSignal=divSignal;
+            else
+                disp(['there is no result available for ROI ' char(r) '=' char(obj2.roi(r).id)]);
+            end
+        end
+    end
+    cccnn=cccnn+1;
     
     %==================GROUNDTRUTH===================
     %Groundtruth?
@@ -274,10 +312,10 @@ if param.errorDetection==1
 end
 
 if param.mergeGT==1
-    if numel([rlsResults.groundtruth])==numel([rlsGroundtruth.groundtruth])
+    if numel([rlsResults.groundtruth])==numel([rlsGroundtruth.groundtruth]) && numel([rlsResultsCNN.groundtruth])
 %     rlsResults=rlsResults([rlsGroundtruth.groundtruth]==0);
 %     rlsGroundtruth=rlsGroundtruth(
-    rls=[rlsResults; rlsGroundtruth];
+    rls=[rlsResults; rlsResultsCNN; rlsGroundtruth];
     else disp('Groundtruth and Result vectors dont match, quitting...')
     end
 else
@@ -351,20 +389,20 @@ switch param.classiftype
         end
         %
         
-        %==find DEATH (need 5 frames to be validated)======
+        %==find DEATH (need N frames to be validated)======
         frameDeath=NaN;
         bwDeath=(id==deathid);
         bwDeathLabeled=bwlabel(bwDeath);
         
+
         for k=1:max(bwDeathLabeled)
             bwDeath=(bwDeathLabeled==k);
-            if sum(bwDeath)> param.DeathThreshold
+            if sum(bwDeath)>= param.DeathThreshold
                 frameDeath=find(bwDeath,1,'first');
                 break
             end
         end
         %
-
         
         %==find potential first CLOG==============
         frameClog=find(id==clogid,1,'first');
@@ -381,7 +419,7 @@ switch param.classiftype
             for k=1:max(bwArrestLabel)
                 bwArrest=(bwArrestLabel==k);
                 if sum(bwArrest)> param.ArrestThreshold
-                    if numel(frameArrest)==1
+                    if ~isnan(frameArrest)
                         frameArrest=min(frameArrest,(find(bwArrest,1,'first')+ param.ArrestThreshold));
                     else
                         frameArrest=find(bwArrest,1,'first')+ param.ArrestThreshold;
@@ -518,12 +556,12 @@ if isfield(obj2.roi(r).results,'signal') && ~isempty(obj2.roi(r).results.signal)
                     %                     else
                     if numel(rls.divDuration)>0
                         for t=1:numel(rls.divDuration)
-                            divSignal.(rF{rf}).(cF{cf}).(fF{ff})(chan,t)=mean(obj2.roi(r).results.signal.(rF{rf}).(cF{cf}).(fF{ff})(chan,rls.framediv(tt):rls.framediv(tt+1)));
-                            divSignal.(rF{rf}).(cF{cf}).([fF{ff} 'FoldInc'])(chan,t)=mean(obj2.roi(r).results.signal.(rF{rf}).(cF{cf}).(fF{ff})(chan,rls.framediv(tt):rls.framediv(tt+1)))./mean(obj2.roi(r).results.signal.(rF{rf}).(cF{cf}).(fF{ff})(chan,rls.framediv(1):rls.framediv(2)));
+                            divSignal.(rF{rf}).(cF{cf}).(fF{ff})(chan,t)=nanmean(obj2.roi(r).results.signal.(rF{rf}).(cF{cf}).(fF{ff})(chan,rls.framediv(tt):rls.framediv(tt+1)));
+                            divSignal.(rF{rf}).(cF{cf}).([fF{ff} 'FoldInc'])(chan,t)=nanmean(obj2.roi(r).results.signal.(rF{rf}).(cF{cf}).(fF{ff})(chan,rls.framediv(tt):rls.framediv(tt+1)))./nanmean(obj2.roi(r).results.signal.(rF{rf}).(cF{cf}).(fF{ff})(chan,rls.framediv(1):rls.framediv(2)));
                             tt=tt+1;
                         end
                     end
-                    if numel(rls.divDuration)>1
+                    if numel(rls.divDuration)>1 && numel(isnan(divSignal.(rF{rf}).(cF{cf}).(fF{ff})(chan,:)))==0 %incrate only if all frames have signal. To code : incrate if signal as different snap frequency
                         divSignal.(rF{rf}).(cF{cf}).([fF{ff} 'IncRate'])(chan,:)=diff(divSignal.(rF{rf}).(cF{cf}).(fF{ff})(chan,:))./divSignal.(rF{rf}).(cF{cf}).(fF{ff})(chan,1:end-1);
                         divSignal.(rF{rf}).(cF{cf}).([fF{ff} 'IncRate'])=[NaN divSignal.(rF{rf}).(cF{cf}).([fF{ff} 'IncRate'])];
                     end
