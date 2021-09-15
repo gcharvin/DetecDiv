@@ -72,6 +72,21 @@ for i=1:numel(roiobj)
     roiobj(i).clear;
 end
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 %=========================================RLS============================================
 function [rls,rlsResults,rlsGroundtruth]=RLS(roi,classif,param)
 
@@ -120,45 +135,15 @@ classes=classif.classes;
                 
                 divSignal=computeSignalDiv(roi,rlsResults(cc));
                 rlsResults(cc).divSignal=divSignal;
+                
+                %sep
+                rlsResults(cc).sep=findSEP(rlsResults(cc));
             else
                 disp(['There is no result available for ROI ' char(roi.id)]);
             end
         end
     end
     cc=cc+1;
-    
-    %==================GROUNDTRUTH===================
-    %Groundtruth?
-    idg=[];
-    if isfield(roi,'train') %MATLAB BUG WITH isprop. logical=0 for fov
-        if isfield(roi.train,(classistrid))
-            if isfield(roi.train.(classistrid),'id') % test if groundtruth data available
-                if sum(roi.train.(classistrid).id)>0
-                    idg=roi.train.(classistrid).id; % results for classification
-                    disp(['Groundtruth data are available for ROI ' num2str(roi.id)]);
-                    
-                    divTimesG=computeDivtime(idg,classes,param); % groundtruth data
-                    
-                    rlsGroundtruth(ccg).divDuration=divTimesG.duration;
-                    rlsGroundtruth(ccg).frameBirth=divTimesG.frameBirth;
-                    rlsGroundtruth(ccg).frameEnd=divTimesG.frameEnd;
-                    rlsGroundtruth(ccg).endType=divTimesG.endType;
-                    rlsGroundtruth(ccg).framediv=divTimesG.framediv;
-                    rlsGroundtruth(ccg).sep=[];
-                    rlsGroundtruth(ccg).name=roi.id;
-                    rlsGroundtruth(ccg).ndiv=divTimesG.ndiv;
-                    rlsGroundtruth(ccg).totaltime=[divTimesG.framediv(1)-divTimesG.frameBirth, cumsum(divTimesG.duration)+divTimesG.framediv(1)-divTimesG.frameBirth];
-                    rlsGroundtruth(ccg).rules=[];
-                    rlsGroundtruth(ccg).groundtruth=1;
-                    rlsGroundtruth(ccg).divSignal=[];
-                    
-                    divSignalG=computeSignalDiv(roi,rlsGroundtruth(ccg));
-                    rlsGroundtruth(ccg).divSignal=divSignalG;
-                end
-            end
-        end
-        ccg=ccg+1;
-    end
 
 if param.errorDetection==1
     if numel([rlsResults.groundtruth])==numel([rlsGroundtruth.groundtruth])
@@ -174,11 +159,8 @@ if param.errorDetection==1
     end
 end
 
-if rlsGroundtruth.groundtruth==1
-    rls=[rlsResults rlsGroundtruth];
-else
-    rls=rlsResults;
-end
+rls=rlsResults;
+
 
 
 
@@ -285,7 +267,7 @@ switch param.classiftype
             for k=1:max(bwArrestLabel)
                 bwArrest=(bwArrestLabel==k);
                 if sum(bwArrest)> param.ArrestThreshold
-                    if numel(frameArrest)==1
+                    if ~isnan(frameArrest)
                         frameArrest=min(frameArrest,(find(bwArrest,1,'first')+ param.ArrestThreshold));
                     else
                         frameArrest=find(bwArrest,1,'first')+ param.ArrestThreshold;
@@ -403,8 +385,18 @@ end
 
 
 
+
+
+
+
+
+
+
+
+
+
+
 %% ==============================================SIGNAL======================================================
-%==============================================SIGNAL======================================================
 function divSignal=computeSignalDiv(roi,rls)
 divSignal=[];
 divSignal.divDuration=rls.divDuration; % redundant with rls.divDuration, but convenient for plotSignal.m
@@ -424,12 +416,12 @@ if isfield(roi.results,'signal') && ~isempty(roi.results.signal)>0
                     %                     else
                     if numel(rls.divDuration)>0
                         for t=1:numel(rls.divDuration)
-                            divSignal.(rF{rf}).(cF{cf}).(fF{ff})(chan,t)=mean(roi.results.signal.(rF{rf}).(cF{cf}).(fF{ff})(chan,rls.framediv(tt):rls.framediv(tt+1)));
-                            divSignal.(rF{rf}).(cF{cf}).([fF{ff} 'FoldInc'])(chan,t)=mean(roi.results.signal.(rF{rf}).(cF{cf}).(fF{ff})(chan,rls.framediv(tt):rls.framediv(tt+1)))./mean(roi.results.signal.(rF{rf}).(cF{cf}).(fF{ff})(chan,rls.framediv(1):rls.framediv(2)));
+                            divSignal.(rF{rf}).(cF{cf}).(fF{ff})(chan,t)=nanmean(roi.results.signal.(rF{rf}).(cF{cf}).(fF{ff})(chan,rls.framediv(tt):rls.framediv(tt+1)));
+                            divSignal.(rF{rf}).(cF{cf}).([fF{ff} 'FoldInc'])(chan,t)=nanmean(roi.results.signal.(rF{rf}).(cF{cf}).(fF{ff})(chan,rls.framediv(tt):rls.framediv(tt+1)))./nanmean(roi.results.signal.(rF{rf}).(cF{cf}).(fF{ff})(chan,rls.framediv(1):rls.framediv(2)));
                             tt=tt+1;
                         end
                     end
-                    if numel(rls.divDuration)>1
+                    if numel(rls.divDuration)>1 && numel(isnan(divSignal.(rF{rf}).(cF{cf}).(fF{ff})(chan,:)))==0 %incrate only if all frames have signal. To code : incrate if signal as different snap frequency
                         divSignal.(rF{rf}).(cF{cf}).([fF{ff} 'IncRate'])(chan,:)=diff(divSignal.(rF{rf}).(cF{cf}).(fF{ff})(chan,:))./divSignal.(rF{rf}).(cF{cf}).(fF{ff})(chan,1:end-1);
                         divSignal.(rF{rf}).(cF{cf}).([fF{ff} 'IncRate'])=[NaN divSignal.(rF{rf}).(cF{cf}).([fF{ff} 'IncRate'])];
                     end
@@ -445,6 +437,14 @@ end
 
 
 
+
+
+
+
+
+
+
+%% 
 %==============================================DIVERROR======================================================
 function [framedivNoFalseNeg, framedivNoFalsePos]=detectError(rlsGroundtruthr, rlsResultsr)
 framedivNoFalseNeg=NaN;
@@ -536,6 +536,51 @@ if numel(rlsGroundtruthr.framediv)>1 && numel(rlsResultsr.framediv)>1
     falsepair=sum((pairij==-1),2);
     framedivNoFalsePos=rlsResultsr.framediv(not(falsepair'));
 end
+
+
+
+
+
+
+
+
+
+
+
+
+%% 
+%=============================================SEP==========================================
+%To do : harmonize for loops
+function [syncPoint]=findSEP(rls)
+align=1; %1: SEP, 2: death
+syncType={'birthSynced', 'SEPSynced','deathSynced'};
+threshStart=1;
+numrls=numel(rls);
+
+divDur=rls(r).divDuration;
+if numel(divDur)>1
+    [syncPoint,~]=findSEP(divDur,1);
+else syncPoint=NaN;
+end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
