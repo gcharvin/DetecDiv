@@ -73,6 +73,42 @@ switch nargin
             classes='background cell';
         end
         
+        outt='';
+        outp=[];
+        outa={};
+        
+         if classitype==2 || classitype==8 % pixel classification : ask type of output 
+          
+             disp('');
+              disp('For pixel classification, please specify what kind of output: ');
+              disp('segmentation : outputs a segmented image with default thresholding in a single channel with indexed colors');
+              disp('proba : outputs the proba for each class as one channel per class in a grayscale image ');
+              disp('postprocessing : outputs a segmented image  in a single channel with indexed colors after custom postprocessing ');
+              
+            prompt='Please enter the desired output ? (Default: segmentation):';
+            outt= input(prompt,'s');
+            if numel(outt)==0
+               outt='segmentation';
+            end
+            
+            
+            if strcmp(outt,'postprocessing')
+            prompt='For postprocessing, you need to specify the function to be used (Default: @post):';
+            outp= input(prompt,'s');
+            if numel(outp)==0
+               outp=@post;
+            end
+             prompt='For postprocessing, you need to specify the arguments of the function (Default: none):';
+            outa= input(prompt,'s');
+            if numel(outa)==0
+               outa={};
+            end
+                
+            end
+             
+         end
+             
+        
         cla=0;
         fields=[];
         
@@ -115,7 +151,7 @@ switch nargin
         
         if needClasses==1 % % classes are needed
             prompt='Please enter the classes names that you want  (Default: class1 class2): ';
-            classes= input(prompt,'s');f
+            classes= input(prompt,'s');
             
             if isempty(classes)
                 % 'ok'
@@ -152,6 +188,15 @@ switch nargin
             obj.output=seqone;
             obj.trainingset=fields;
             obj.colormap=shallowColormap(numel(classes));
+            
+            if numel(outt) % user chose pixel classification and an output type
+                obj.outputType=outt; 
+                
+                if strcmp(outt,'postprocessing')
+                 obj.outputFun=outp;
+                 obj.outputArg=outa;
+                end
+            end
         else
             disp('Error : wrong classification type number!');
             return;

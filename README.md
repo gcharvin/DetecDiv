@@ -169,9 +169,9 @@ to groundtruth
 ```statRLS(rls)```
 ### Extract signal from ROIs ###
 ---------------------
-```myproject.fov(1).extractFluo(cf arguments below)```
+```myproject.fov(1).extractFluo(cf arguments below)``` outdated
 or
-```myproject.processing.classification(id).extractFluo(cf arguments below)```
+```myproject.processing.classification(id).extractFluo(cf arguments below)``` outdated
 Extract signal from the ROIs of the fov or classi object. 
 Arguments:
 'Method': 'maxPixels' computes the average of the kMaxPixels. // 'mean'
