@@ -7,6 +7,7 @@ function tmpout=post(features,classes,varargin)
 watersh=0;
 thresh=0.9; 
 adaptive=0;
+maxproba=0;
 sizethreshold=[];
 keeplargest=[];
 
@@ -32,17 +33,23 @@ for i=1:numel(varargin)
     if strcmp(varargin{i},'adaptivethreshold') % pixel assignment threshod based on mean proba value within putative object
         adaptive=1;
     end
+    
+     if strcmp(varargin{i},'maxproba') % pixel assignment threshod based on max probability for each pixel
+       maxproba=1;
+     end
+    
 end
 
 tmpout=uint16(zeros(size(features,1),size(features,2),1));
 
+
 for i=2:numel(classes)
     
     % feature thresholding 
-    
-    if adaptive==0 % fixed threshold
+     
         BW=features(:,:,i)>thresh;
-    else % adaptive threshold
+    
+   if adaptive==1 % adaptive threshold
         ccbwsize=[];
         midx=[];
         CCBW=[];
@@ -53,7 +60,14 @@ for i=2:numel(classes)
         featuresim=tmpmask.*features(:,:,i);
         
         BW=features(:,:,i)>1*mean(featuresim(featuresim>0));
-    end
+   end
+    
+   
+   if maxproba==1 % max proba to assign pixel 
+        [~, BW]=max(features,[],3);
+        BW=BW==i;
+   end
+       
     
     % remove small objects 
       if numel(keeplargest) || numel(sizethreshold)

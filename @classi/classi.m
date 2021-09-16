@@ -6,7 +6,7 @@ classdef classi < handle
         trainingset=[]; % % list of ROI ids used for training
         output=0; % type of output : 'one' , or 'sequence' for lstm classification
         path='' %  path where
-        strid='';
+        strid=''; % string id of the classi object 
         description='';
         category='';
         roi=roi('',[]);
@@ -15,6 +15,7 @@ classdef classi < handle
         classifyFun='';
         trainingFun='';
         colormap=[];
+        score=[]; %struct('roisid',[],'recall',[],'accuracy',[],'fscore',[],'confusion',[],'classes',[],'rois',[]); %  a structure that stores the scores of the classification , which is done by the stats method
         
         % only for pixel classification
         outputType=''; % other options are : proba, postpocressing, segmentation

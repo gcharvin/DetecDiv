@@ -6,17 +6,19 @@ function postprocessing(obj,classif,varargin)
 % the channels names used as input are
 % results_classif.strid_results.classes by default
 
-
-outputFun=classif.outputFun;
-outputArg=classif.outputArg;
-
+OutputFun=classif.outputFun;
+OutputArg=classif.outputArg;
+NoSave=0;
 
 for i=1:numel(varargin)
-    if strcmp(varargin{i},'outputFun')
+    if strcmp(varargin{i},'OutputFun')
         outputFun=varargin{i+1};
     end
-    if strcmp(varargin{i},'outputArg')
+    if strcmp(varargin{i},'OutputArg')
         outputArg=varargin{i+1};
+    end
+     if strcmp(varargin{i},'NoSave') % does not save roi !
+       NoSave=1;
     end
 end
 
@@ -27,7 +29,7 @@ obj.load;
 
 % gather proba images
 
-proba=uint16(zeros(size(obj.image,1),size(obj.image,2),size(classif.classes,1),size(obj.image,4)));
+proba=double(zeros(size(obj.image,1),size(obj.image,2),size(classif.classes,1),size(obj.image,4)));
 
 for i=1:numel(classif.classes)
     pixresultstmp=findChannelID(obj,['results_' classif.strid '_' classif.classes{i}]); % gather all channels associated with proba
@@ -37,7 +39,7 @@ for i=1:numel(classif.classes)
         return;
     else
         
-        proba(:,:,i,:)=double(obj.image(:,:,pixresultstmp,:))./65535; % convert image from uint16 to [0 1]
+        proba(:,:,i,:)=double(obj.image(:,:,pixresultstmp,:))./65535.; % convert image from uint16 to [0 1]
         
     end
 end
@@ -62,12 +64,17 @@ end
  
  
  % apply postprocessing function to all frames and updates obj.image;
+
  
 for i=1:size(obj.image,4)
  obj.image(:,:,pixresults,i)= feval(outputFun,proba(:,:,:,i),classif.classes,outputArg{:});
 end
- 
+
+% figure, imshow(obj.image(:,:,pixresults,5),[])
+
+if NoSave==0
 obj.save; 
 obj.clear;
+end
 
 

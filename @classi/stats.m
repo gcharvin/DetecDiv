@@ -1,11 +1,15 @@
-function [h1, h2, h3]=stats(classif,varargin)
+function stats(classif,varargin)
 outputstr='temp';
 % compute, displays and stores statististics regarding the selected classification
 
 % roiid is an array of roiid from the object classi
 
+
 roiid=1:numel(classif.roi);
 datasetType='';
+thr=[];
+plo=[];
+
 
 for i=1:numel(varargin)
     %Method
@@ -16,20 +20,409 @@ for i=1:numel(varargin)
     if strcmp(varargin{i},'Dataset')
         datasetType=varargin{i+1};
     end
+    
+    if strcmp(varargin{i},'Threshold') % measures benchmarks for different thresholds used to for classification and segmentation. Use thr=-1 to use a custom thresholding method in the @post function; thr=0 for max proba
+        thr=varargin{i+1};
+    end
+    
+    if strcmp(varargin{i},'Plot') % can be {'roi','classes','confusion','accuracyrecall',2} to display benchmarks per roi, classes, confusion, or accuracyrecall tradeoff
+        % if accuracyrecall is selected, then
+        plo=varargin{i+1};
+    end
+    
 end
 
-disp(['Stats will be done on the following ROIs: ' num2str(roiid)]);
-listroi=roiid;
 
-idstat=[]; % identifies all rois with groundtruth & results
+if numel(plo)==0 % do not compute if plot is requested
+    
+    disp(['Stats will be done on the following ROIs: ' num2str(roiid)]);
+    
+    path=classif.path;
+    name=classif.strid;
+    strpath=[path '/' outputstr '_' name];
+    classistr=classif.strid;
+    
+    cc=1;
+    classif.score=[];
+    
+    if numel(thr)==0
+        neval=1;
+    else
+        neval=thr;
+    end
+    
+    for i=neval % loop on possible thr values
+        
+        % apply postprocessing with given threshold
+        if  classif.typeid==2 ||  classif.typeid==8 % does a postprocessing to create segmented image with given threshold
+            for j=roiid
+                switch i
+                    case 0
+                        classif.roi(j).postprocessing(classif,'OutputFun',@post,'OutputArg',{'maxproba'},'NoSave');
+                    case -1
+                        classif.roi(j).postprocessing(classif,'OutputFun',@post,'OutputArg',{'adaptivethreshold'},'NoSave');
+                    otherwise
+                        classif.roi(j).postprocessing(classif,'OutputFun',@post,'OutputArg',{'threshold',i},'NoSave');
+                end
+            end
+        end
+        
+        data=collectROIData(classif,roiid);  % collect prediction and ground truth data
+        
+        if cc==1
+            classif.score= measureAccuracyRecall(classif,data.gt, data.pred, data.roi);  % score for given classification
+            classif.score.comments='Classification benchmarks using main classifier';
+            classif.score.thr=i;
+        else
+            classif.score(cc)= measureAccuracyRecall(classif,data.gt, data.pred, data.roi);  % score for given classification
+            classif.score(cc).comments='Classification benchmarks using main classifier';
+            classif.score(cc).thr=i;
+        end
+        
+        if classif.typeid==4 % for LSTM classification, compute CNN benchmarks
+            cc=cc+1;
+            classif.score(cc)= measureAccuracyRecall(classif,data.gt, data.CNNpred, data.roi);  % score for given classification
+            classif.score(cc).comments='Classification benchmarks using CNN classifier for LSTM architecture';
+            classif.score(cc).thr=i;
+        end
+        
+        cc=cc+1;
+    end
+    
+else
+    for i=1:numel(plo)
+        
+        for j=1:numel(classif.score)
+            
+            if strcmp(plo{i},'confusion') % plot confusion matrix;
+                mate=classif.score(j).confusion;
+                cate=categorical(classif.classes);
+                h=figure;
+                cm=confusionchart(mate,cate,'ColumnSummary','column-normalized','RowSummary','row-normalized');
+                xlabel('Predicted class');
+                ylabel('Groundtruth');
+                
+                str=num2str(classif.score(j).thr);
+                
+                if classif.score(j).thr==0
+                    str='max';
+                end
+                
+                if classif.score(j).thr==-1
+                    str='mean';
+                end
+                
+                title(['Dataset:' datasetType ' - N=' num2str(classif.score(j).N) ' - thr=' str]);
+                set(h,'Color','w','Position',[100+30*j 100+30*j 600 400])
+            end
+       % end
+        
+       % for j=1:numel(classif.score)
+            if strcmp(plo{i},'roi') % plots accuracy, recall, fscore per roi
+                
+                roi=classif.score(j).roi;
+                
+                h=figure;
+                recall=[];
+                accuracy=[];
+                fscore=[];
+                str={};
+                
+                
+                for k=1:numel(roi)
+                    recall=[recall roi(k).recall];
+                    accuracy=[accuracy roi(k).accuracy];
+                    fscore=[fscore roi(k).fscore];
+                    str{k}=[ 'ROI #' num2str(roi(k).id)  ' (N='  num2str(roi(k).N) ')'];
+                end
+                
+                %  x=[x 2];
+                x=1:numel(roi);
+                y=[recall;  accuracy ; fscore];
+                bar(x,y');
+                ylim([0 100]);
+                set(gca,'XTickLabel',str)
+                legend({'Accuracy','Recall','F-score'});
+                title(['Dataset:' datasetType ' - N=' num2str(classif.score(j).N) ' - Benchmark per ROI']);
+                set(h,'Color','w','Position',[100+30*j 100+30*j 600 400])
+                xlabel('ROI Id');
+                ylabel('Benchmark (%)');
+            end
+        %end
+        
+        
+      %  for j=1:numel(classif.score)
+            if strcmp(plo{i},'classes') % plots accuracy, recall, fscore per classes
+                
+                classes=classif.score(j).classes;
+                
+                h=figure;
+                recall=[];
+                accuracy=[];
+                fscore=[];
+                str={};
+                
+                for k=1:numel(classes)
+                    recall=[recall classes(k).recall];
+                    accuracy=[accuracy classes(k).accuracy];
+                    fscore=[fscore classes(k).fscore];
+                    str{k}=[classif.classes{k} '  (N='  num2str(classes(k).N) ')'];
+                end
+                
+                  str2=num2str(classif.score(j).thr);
+                
+                if classif.score(j).thr==0
+                    str2='max';
+                end
+                
+                if classif.score(j).thr==-1
+                    str2='mean';
+                end
+                
+                %  x=[x 2];
+                x=1:numel(classes);
+                y=[recall;  accuracy ; fscore]';
+                bar(x,y);
+                ylim([0 100]);
+                set(gca,'XTickLabel',str)
+                legend({'Accuracy','Recall','F-score'});
+                title(['Dataset:' datasetType ' - N=' num2str(classif.score(j).N) ' - Benchmark per class - thr=' str2]);
+                set(h,'Color','w','Position',[100+30*j 100+30*j 600 400])
+                xlabel('Class');
+                ylabel('Benchmark (%)');
+            end
+        end
+        
+        
+       % for j=1:numel(classif.score)
+            if strcmp(plo{i},'accuracyrecall') % plots accuracy, recall, fscore per classes
+                
+                cl1=[];% table for thr=-1
+                cl2=[]; % table for thr=0
+                cl3=[]; % table for thr>0
+                
+                cla=plo{i+1};
+                
+                
+                
+                 for j=1:numel(classif.score)
 
-path=classif.path;
-name=classif.strid;
-strpath=[path '/' outputstr '_' name];
+                     switch classif.score(j).thr
+                         case -1
+                             cl1=[-1; classif.score(j).classes(cla).recall ; classif.score(j).classes(cla).accuracy ; classif.score(j).classes(cla).fscore];
+                         case 0
+                             cl2=[0; classif.score(j).classes(cla).recall ; classif.score(j).classes(cla).accuracy ; classif.score(j).classes(cla).fscore];
+                         otherwise
+                             cl3=[cl3 , [ classif.score(j).thr ; classif.score(j).classes(cla).recall ; classif.score(j).classes(cla).accuracy ; classif.score(j).classes(cla).fscore]];
+                     end
+                 end
+                 
+              
+                str={};
+                
+                h=figure;
+                ax1=subplot(2,1,1);
+         
+                if numel(cl3)
+                %  x=[x 2];
+                x=cl3(2,:);
+                y=cl3(3,:);
+                
+                
+                plot(x,y,'LineWidth',3,'Color','b'); hold on
+                str=[str, {'Varying prediction threshold'}];
+                
+                [pix id]=max(cl3(4,:));
+                xmax=cl3(2,id);
+                ymax=cl3(3,id);
+                
+                plot(xmax,ymax,'LineWidth',3,'Color','b','Marker','.','MarkerSize',30); hold on
+                str=[str, {'Max Fscore'}];
+                end
+                
+                if numel(cl2)
+                     xmax=cl2(2,1);
+                    ymax=cl2(3,1);
+                   plot(xmax,ymax,'LineWidth',3,'Color','r','Marker','.','MarkerSize',30); hold on
+                   str=[str, {'Max proba'}];
+                end
+                
+                if numel(cl1)
+                     xmax=cl1(2,1);
+                    ymax=cl1(3,1);
+                   plot(xmax,ymax,'LineWidth',3,'Color','m','Marker','.','MarkerSize',30); hold on
+                   str=[str, {'Mean threshold'}];
+                end
+                
+                
+                ylim([0 100]);
+                xlim([0 100]);
+ 
+                legend(str);
+                title(['Dataset:' datasetType ' Recall/Accuracy plot for class ' classif.classes{cla}]);
+                set(h,'Color','w','Position',[200 200 600 400])
+                xlabel('Recall (%)');
+                ylabel('Accuracy (%)');
+                
+                ax2=subplot(2,1,2);
+                      
+                if numel(cl3)
+                %  x=[x 2];
+                x=cl3(1,:);
+                y=cl3(4,:);
+                
+               
+                
+                
+                plot(x,y,'LineWidth',3,'Color','b'); hold on
+                
+                  [pix id]=max(cl3(4,:));
+                xmax=cl3(1,id);
+                ymax=cl3(4,id);
+                
+                plot(xmax,ymax,'LineWidth',3,'Color','b','Marker','.','MarkerSize',30); hold on
+                
+                str=[str, {'Varying prediction threshold'}];
+                 xlabel('Predition threshold');
+                 ylabel('F-score (%)');
+                  ylim([0 100]);
+                 xlim([0 1]);
+                  end
+                
+                  
+                  
+            end
+        end
+end
 
+
+function score=measureAccuracyRecall(classif, groundtruth, predictions, roi)
+
+
+data=[];
+data.gt=groundtruth;
+data.pred=predictions;
+data.roi=roi;
+
+% ===== accuracy & recall per class ====
+
+score=[];
+score.classes=[];
+score.thr=[];
+score.comments='';
+score.classes.accuracy=[];
+score.classes.recall=[];
+score.classes.fscore=[];
+score.classes.N=[];
+
+for i=1:numel(classif.classes)
+    
+    pred=data.pred==i;
+    gt=   data.gt==i;
+    
+    accuracy= 100*sum(pred & gt)./sum(pred);
+    recall=       100*sum(pred & gt)./sum(gt);
+    
+    score.classes(i).accuracy=accuracy;
+    score.classes(i).recall=recall;
+    score.classes(i).fscore=2*recall*accuracy/(accuracy+recall);
+    score.classes(i).N=sum(pred);
+end
+
+% ======= confusion matrix ======
+mate=confusionmat(data.gt,data.pred);
+score.confusion=mate; % matrix coeff must match acc and recall values computed above
+
+% ===== accuracy & recall & fscore per ROI =====
+
+score.roi=[];
+score.roi.accuracy=[];
+score.roi.recall=[];
+score.roi.fscore=[];
+score.roi.N=[];
+
+score.roi.classes=[];
+score.roi.classes.accuracy=[];
+score.roi.classes.recall=[];
+score.roi.classes.fscore=[];
+score.roi.classes.N=[];
+score.roi.id=[];
+
+roiid=unique(data.roi);
+
+cc=1;
+for i=roiid
+    
+    pred=data.pred(data.roi==i);
+    gt=data.gt(data.roi==i);
+    
+    for j=1:numel(classif.classes)
+        
+        predtmp=pred==j;
+        gttmp=   gt==j;
+        
+        accuracy= 100*sum(predtmp & gttmp)./sum(predtmp);
+        recall=       100*sum(predtmp & gttmp)./sum(gttmp);
+        
+        score.roi(cc).classes(j).accuracy=accuracy;
+        score.roi(cc).classes(j).recall=recall;
+        score.roi(cc).classes(j).fscore=2*recall*accuracy/(accuracy+recall);
+        score.roi(cc).classes(j).N=sum(predtmp);
+    end
+    score.roi(cc).id=i;
+    
+    acc=[score.roi(cc).classes(:).accuracy];
+    rec=[score.roi(cc).classes(:).recall];
+    csw=@(x) sum(pred==x);
+    weights=arrayfun(csw,1:numel(classif.classes));
+    
+    % remove classes of 0 weights / NaN accuracy
+    pix=~isnan(acc);
+    acc=acc(pix);
+    rec=rec(pix);
+    weights=weights(pix);
+    
+    score.roi(cc).accuracy=  sum(weights.*acc)./sum(weights);
+    score.roi(cc).recall    =  sum(weights.*rec)./sum(weights);
+    score.roi(cc).fscore=2*score.roi(cc).accuracy* score.roi(cc).recall  ./(score.roi(cc).accuracy+ score.roi(cc).recall  );
+    score.roi(cc).N=sum(pred);
+    cc=cc+1;
+end
+
+% ===== weighted mean  accuracy & recall & fscore ======
+
+acc=[score.classes(:).accuracy];
+rec=[score.classes(:).recall];
+csw=@(x) sum(data.pred==x);
+weights=arrayfun(csw,1:numel(classif.classes));
+
+% remove classes of 0 weights / NaN accuracy
+pix=~isnan(acc);
+acc=acc(pix);
+rec=rec(pix);
+weights=weights(pix);
+
+accuracy=  sum(weights.*acc)./sum(weights);
+recall     =  sum(weights.*rec)./sum(weights);
+
+score.accuracy=accuracy;
+score.recall=recall;
+score.fscore=2*accuracy*recall./(accuracy+recall);
+score.N=sum([score.classes(:).N]);
+
+
+function data=collectROIData(classif,roiid)
+
+disp('Collecting data in ROIs - first checking the existence of both GT and predictions....');
+
+data=[];
+data.roi=[];
+data.gt=[];
+data.pred=[];
+data.CNNpred=[];
 classistr=classif.strid;
 
-for j=listroi
+for j=roiid
     
     obj=classif.roi(j);
     disp([num2str(j) ' - '  obj.id ' - checking data']);
@@ -39,35 +432,97 @@ for j=listroi
     resok=0;
     ground=0;
     
+    gt=[];
+    pred=[];
+    CNNpred=[];
+    
     switch classif.typeid
         case {2,8} % pixel classification
-            ch=obj.findChannelID(classif.strid);
-            if numel(ch)>0 % groundtruth channel exists
+            
+            chgt=obj.findChannelID(classif.strid);
+            chpred=obj.findChannelID(['results_' classif.strid]);
+            
+            if numel(obj.image)==0 % loads the image
+                obj.load;
+            end
+            im=obj.image;
+            
+            if numel(chgt)>0 % groundtruth channel exists
                 % checks if at least one image has been annotated  first!
                 
-                if numel(obj.image)==0 % loads the image
-                    obj.load;
-                end
-                
-                im=obj.image;
-                
-                imch=im(:,:,ch,:);
-                if sum(imch(:))>0 % at least one image was annotated
+                imgt=im(:,:,chgt,:);
+                if sum(imgt(:))>0 % at least one image was annotated
+                    disp('GT data are available!');
                     ground=1;
+                else
+                    disp('there is no GT data !')
                 end
+            else
+                disp('there is no GT channel ')
             end
             
             
-            if numel(obj.findChannelID(['results_' classif.strid]))>0
-                resok=1;
+            if numel(chpred)>0
+                impred=im(:,:,chpred,:);
+                if sum(impred(:))>0 % at least one image was annotated
+                    disp('Predictions data are available!');
+                    resok=1;
+                else
+                    disp('there is no pred data !')
+                end
             else
-                  disp('There is no result available for this roi');
+                disp('There is no prediction channel available for this roi');
+            end
+            
+            if ground && resok
+                %  for gt, if at least one pixel on the image is annotated, then
+                %  take the whole image as annotated and fill in with
+                %  default class
+                for k=1:size(imgt,4)
+                    bw=imgt(:,:,1,k);
+                    if sum(bw(:))>0
+                        bw= imgt(:,:,1,k);
+                        bw(imgt(:,:,1,k)==0)=1;
+                        imgt(:,:,1,k) = bw;
+                    end
+                end
+                
+                pix= imgt & impred;
+                
+                if numel(pix)==0
+                    disp('There is no coincidence for ground truth and prediction : skipping roi !');
+                    continue
+                else
+                    disp('GT and prediction pixels match!');
+                end
+                
+                gt= imgt(pix); gt=gt(:);
+                pred=impred(pix); pred=pred(:);
+                
             end
             
         otherwise % image classification
+            % first check if somm post processing is to be done, ie
+            % threshold >0 , otherwise , use image classification as is
+            %             if threshold>0
+            %                 if numel(obj.results)>0 % check is there are results available
+            %                     if isfield(obj.results,classistr)
+            %                         if numel(obj.results.(classistr).prob) > 0 % proba exist
+            %                             proba= obj.results.(classistr).prob;
+            %
+            %                         end
+            %                     end
+            %                 end
+            %             end
+            
+            
             if numel(obj.results)>0 % check is there are results available
                 if isfield(obj.results,classistr)
-                    resok=1;
+                    if numel(obj.results.(classistr).id) > 0
+                        if sum(obj.results.(classistr).id)>0 % training exists for this ROI !
+                            resok=1;
+                        end
+                    end
                 else
                     disp('There is no result available for this classification id');
                 end
@@ -83,283 +538,48 @@ for j=listroi
                             ground=1;
                         end
                     end
+                else
+                    disp('There is no GT available for this classification id');
+                end
+            else
+                disp('There is no GT available for this roi');
+            end
+            
+            if ground && resok
+                
+                pred=obj.results.(classistr).id;
+                gt=obj.train.(classistr).id;
+                
+                if isfield(obj.results.(classistr),'idCNN')
+                    if numel(obj.results.(classistr).idCNN)>0
+                        CNNpred=obj.results.(classistr).idCNN;
+                    end
+                end
+                
+                pix= pred & gt;
+                
+                if numel(pix)==0
+                    disp('There is no coincidence for ground truth and prediction : skipping roi !');
+                    continue
+                end
+                
+                gt=gt(pix);
+                pred=pred(pix);
+                
+                if numel(CNNpred)>=numel(pix)
+                    CNNpred=CNNpred(pix);
                 end
             end
+            
     end
     % then display the results
     
-    if ground ==1 && resok==1 % list of rois used to compute stats
-        idstat=[idstat j];
-    end
+    % if ground ==1 && resok==1 % list of rois used to compute stats
+    data.gt=[data.gt gt];
+    data.pred=[data.pred pred];
+    data.CNNpred=[data.CNNpred CNNpred];
+    data.roi=[data.roi j*ones(1,numel(gt))];
+    %end
     
 end
-
-cc=1;
-
-% =============accuracy per ROI===============
-acc=[];
-sumyr=[];
-sumyg=[];
-
-
-%if classif.typeid==4 %%if LSTM classif: compute CNN accuracy
-accCNN=[];
-sumyrCNN=[];
-%end
-
-lab={};
-
-
-for i=idstat
-    obj=classif.roi(i);
-    
-    switch classif.typeid
-        case {2,8} % pixel classification
-            % select images in which at leat one pixel was manually
-            % classified
-            chg=obj.findChannelID(classif.strid);
-            chr=obj.findChannelID(['results_' classif.strid]);
-            im=obj.image;
-            
-            yr=[];
-            yg=[];
-            
-            for i=1:size(im,4) % check all the frames
-                imchg=im(:,:,chg,i);
-                imchr=im(:,:,chr,i);
-                
-                %figure, imshow(imchg,[])
-                %return;
-                
-                if sum(imchg(:))>0
-                    if classif.typeid==8 % Segmentation 
-                        yg=[yg (imchg(:)'==2)]; % wrning this will not work with an arbitrary number of classes
-                        yr=[yr   (imchr(:)'>0)];
-                    end
-                    if classif.typeid==2 % Pixel classif 
-                            temp=imchg(:);
-                            temp(temp==0)=1; % correct value for background class
-                            yg=[yg temp'];
-                            
-                            temp=imchr(:);
-                            temp(temp==0)=1; % correct value for background class
-                            yr=[yr temp'];
-                    end
-                    
-
-                end
-            end
-            
-            
-        otherwise % image classification
-            yr=obj.results.(classistr).id;
-            yg=obj.train.(classistr).id;
-            
-            if classif.typeid==4 %%if LSTM classif: compute CNN accuracy
-                yrCNN=obj.results.(classistr).idCNN;
-                sumyrCNN=[sumyrCNN yrCNN];
-                accCNN(cc)= 100*sum(yrCNN==yg)./length(yg);
-            end
-    end
-    
-    acc(cc)= 100*sum(yr==yg)./length(yg);
-    sumyr=[sumyr yr];
-    sumyg=[sumyg yg];
-    lab{cc}=num2str(i);
-    
-    cc=cc+1;
-end
-
-
-
-acctot= 100*sum(sumyr==sumyg)./length(sumyg);
-if classif.typeid==4 %%if LSTM classif: compute CNN accuracy
-    acctotCNN= 100*sum(sumyrCNN==sumyg)./length(sumyg);
-end
-
-%===plot===
-h1=figure('Color','w','Units', 'normalized', 'Position',[0.1, 0.1, 0.5, 0.5]);
-plot(acc,'Color','k','LineWidth',2,'Marker','o');
-ylim([0 100]);
-ylabel('Validation accuracy (%)');
-xlabel('ROI #');
-title({['Dataset:' datasetType ' - Mean acc.: '  num2str(acctot)  '% - ' name] [' - ROIs:' num2str(idstat)]},'interpreter','none');
-set(gca,'FontSize',14,'XTick',1:numel(idstat),'XTicklabel',lab);
-
-if classif.typeid==4 %%if LSTM classif: compute CNN accuracy
-    hold on
-    plot(accCNN,'Color','g','LineWidth',2,'Marker','o');
-    title({['Dataset:' datasetType ' - Mean acc. LSTM VS CNN: '  num2str(acctot)  '% - VS ' num2str(acctotCNN) '% - ' name ' - ']},'interpreter','none');
-end
-
-% disp(['Saving plot to ' strpath '_accuracy_ROIs.fig']);
-% savefig([strpath '_accuracy_ROIs.fig']);
-% disp(['Saving plot to ' strpath '_accuracy_ROIs.pdf']);
-% saveas(gca,[strpath '_accuracy_ROIs.pdf']);
-
-
-
-%  =============accuracy per class for all ROIs==================
-% acc=[];
-% sumyr=[];
-% sumyg=[];
-%
-% if classif.typeid==4 %%if LSTM classif: compute CNN accuracy
-%     accCNN=[];
-%     sumygCNN=[];
-% end
-%
-% for i=idstat
-%     obj=classif.roi(i);
-%     yr=obj.results.(classistr).id;
-%     yg=obj.train.(classistr).id;
-%     sumyr=[sumyr yr];
-%     sumyg=[sumyg yg];
-%
-%     if classif.typeid==4 %%if LSTM classif: compute CNN accuracy
-%         yrCNN=obj.results.(classistr).idCNN;
-%         sumyrCNN=[sumyrCNN yrCNN];
-%         accCNN(cc)= 100*sum(yrCNN==yg)./length(yg);
-%     end
-%     cc=cc+1;
-% end
-
-freqg=[];
-freqr=[];
-for i=1:numel(classif.classes)
-    pix= sumyg==i;
-    pixr= sumyr==i;
-    unio= sumyg==i | sumyr==i;
-    ss=sumyr(pix);
-    acc(i)=100*sum(ss==i)./sum(unio);
-    freqg(i)=100*sum(pix)./length(sumyg);
-    freqr(i)=100*sum(pixr)./length(sumyr);
-    
-    if classif.typeid==4 %%if LSTM classif: compute CNN accuracy
-        pixrCNN=sumyrCNN==i;
-        unioCNN= sumyg==i | sumyrCNN==i;
-        ssCNN=sumyrCNN(pix);
-        accCNN(i)=100*sum(ssCNN==i)./sum(unioCNN);
-        freqrCNN(i)=100*sum(pixrCNN)./length(sumyrCNN);
-    end
-end
-
-acctot= 100*sum(sumyr==sumyg)./length(sumyg);
-if classif.typeid==4 %%if LSTM classif: compute CNN accuracy
-    acctotCNN= 100*sum(sumyrCNN==sumyg)./length(sumyg);
-end
-
-%===plot===
-h2=figure('Color','w','Units', 'normalized', 'Position',[0.1, 0.1, 0.5, 0.5]);
-subplot(2,1,1);
-plot(acc,'Color','k','LineWidth',2,'Marker','o');
-ylim([0 100]);
-xlim([0 numel(classif.classes)+1]);
-ylabel('Validation IoU (%)');
-title({['Dataset:' datasetType ' - Mean acc.: '  num2str(acctot)  '% - N=' num2str(length(sumyg)) ' - ' name ' - ROIs:' num2str(idstat)]},'interpreter','none');
-set(gca,'FontSize',14,'XTick',1:numel(classif.classes),'XTickLabel',{});
-
-if classif.typeid==4 %%if LSTM classif: compute CNN accuracy
-    hold on
-    plot(acc,'Color','g','LineWidth',2,'Marker','o');
-    title({['Dataset:' datasetType ' - Mean acc. LSTM VS CNN: '  num2str(acctot)  '% - VS' num2str(acctotCNN) '% - ' name] [' - ROIs:' num2str(idstat)]},'interpreter','none');
-end
-
-subplot(2,1,2);
-plot(freqg,'Color','k','LineWidth',2,'Marker','o'); hold on;
-plot(freqr,'Color','r','LineWidth',2,'Marker','o'); hold on;
-ylim([0 100]);
-xlim([0 numel(classif.classes)+1]);
-ylabel('Frequency');
-xlabel('classes');
-legend({'Groundtruth','Classification'});
-set(gca,'FontSize',14,'XTick',1:numel(classif.classes),'XTickLabel',classif.classes);
-
-if classif.typeid==4 %%if LSTM classif: compute CNN accuracy
-    hold on
-    plot(freqrCNN,'Color','g','LineWidth',2,'Marker','o'); hold on;
-    legend({'Groundtruth','Classification LSTM','Classification CNN'});
-end
-
-% savefig([strpath '_accuracy_classes.fig']);
-% saveas(gca,[strpath '_accuracy_classes.pdf']);
-
-% disp(['Saving plot to ' strpath '_accuracy_classes.fig']);
-% savefig([strpath '_accuracy_classes.fig']);
-% disp(['Saving plot to ' strpath '_accuracy_classes.pdf']);
-% saveas(gca,[strpath '_accuracy_classes.pdf']);
-
-% check is if classes are not present
-
-%======CONFUSION MATRIX======
-% remove unclassified groundtruth events
-
-classs={};
-cc=1;
-
-switch classif.typeid
-    case {2,8} % pixel classification
-        classs=classif.classes;
-    otherwise % image classif
-        for i=1:numel(classif.classes)
-            if ~any(sumyr==i) && ~any(sumyg==i)
-                % remove class i
-            else
-                classs{cc}=classif.classes{i};
-                cc=cc+1;
-            end
-        end
-        
-        pix=sumyg~=0;
-        sumyg=sumyg(pix);
-        sumyr=sumyr(pix);
-end
-
-if classif.typeid==4
-    sumyrCNN=sumyrCNN(pix);
-end
-
-cate=categorical(classs);
-
-if numel(sumyr)==0 & numel(sumyg)==0
-    disp('no comparison is possible between groundtruth and result because one of them is void!')
-    h3=figure;
-    return;
-end
-
-%sumyr,sumyg
-mate=confusionmat(sumyg,sumyr)
-
-
-if classif.typeid==4
-    mateCNN=confusionmat(sumyg,sumyrCNN);
-end
-
-h3=figure('Color','w','Units', 'normalized', 'Position',[0.1, 0.1, 0.5, 0.5]);
-subplot(2,1,1)
- if size(mate,1)==numel(cate)
-cm=confusionchart(mate,cate,'ColumnSummary','column-normalized','RowSummary','row-normalized');
-xlabel('Classification predictions');
-ylabel('Groundtruth');
-title({['Dataset:' datasetType ' - N=' num2str(length(sumyg)) ' - ' name] [' - ROIs:' num2str(idstat)]});
- end
- 
-subplot(2,1,2)
-if classif.typeid==4 %%if LSTM classif: compute CNN accuracy
-    
-    if size(mateCNN,1)==numel(cate)
-    cmCNN=confusionchart(mateCNN,cate,'ColumnSummary','column-normalized','RowSummary','row-normalized');
-    xlabel('Classification predictions CNN');
-    ylabel('Groundtruth');
-    title({['Dataset:' datasetType ' - N=' num2str(length(sumyg)) ' - ' name] [' - ROIs:' num2str(idstat)]});
-    end
-end
-
-% disp(['Saving plot to ' strpath '_confusion.fig']);
-% savefig([strpath '_confusion.fig']);
-% disp(['Saving plot to ' strpath '_confusion.pdf']);
-% saveas(gca,[strpath '_confusion.pdf']);
-
-% plot confusion matrix for classification
-disp('Done!');
 
