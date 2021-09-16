@@ -5,6 +5,7 @@ function [t1 t2 mid x y tdiv fdiv]=findSEP(tab,l,display)
 %l=cell line for which we want to find SEP
 timefactor=5;
 tab=tab*timefactor;
+tab(tab<60)=65;
 t1=[];
 t2=[];
 x=[];
@@ -39,7 +40,7 @@ test=fdiv;
 
 % t1,t2,level1,level2
 %
-if level2<=0.08 %0.09
+if level2<=0.06/timefactor %0.09
     % senesence case
     %mid=(t1+t2)/2
     
@@ -68,11 +69,15 @@ else
     x=1:1:length(fdiv);
     
     
-    mid=length(x)+1;
+    
     x=x-length(x);
     y=1./fdiv(1:end);
     
+    mid=length(x)+1;
     t2=mid; t1=mid-1;
+    t1=0;
+    t2=0;
+    mid=0;
     %if length(fdiv
     %figure(h3); plot(x,1./y,'Color',col(i,:));
     %hold on;
@@ -86,7 +91,7 @@ end
 
 %  return;
 if nargin==3
-    h= plotFit(x,fdiv*6,t1,t2); %plot(x,v,'Color','g');
+    h= plotFit(x,fdiv,t1,t2); %plot(x,v,'Color','g');
 end
 
 
@@ -94,7 +99,7 @@ function [t1 t2 level1 level2 curve]=fitSenescenceModel(fdiv,thr1,thr2)
 
 chi2=zeros(size(fdiv));
 
-fdiv(fdiv>0.2)=0.15;
+% fdiv(fdiv>1/60)=1/65;
 
 for i=1:length(fdiv)-1
     for j=i+1:length(fdiv)

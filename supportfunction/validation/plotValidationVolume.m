@@ -45,8 +45,9 @@ for i=rois
     RES=[RES classi.roi(i).results.signal.cell.(classistridRes).volume(1:1:end)];
 end
 
-GT=GT*0.325;
-RES=RES*0.325;
+%converts in um²
+GT=GT*0.1056;
+RES=RES*0.1056;
 
 GT(GT==0)=NaN;
 % GT(GT>120)=NaN;
@@ -56,7 +57,7 @@ GT=GT(~isnan(GT));
 
 % if sphereApprox==1
 %     RES=RES.^(3/2);
-     RES=RES-35;
+%     RES=RES;
 % end
 
 M=max(max(GT(:)),max(RES(:)));
@@ -80,8 +81,8 @@ set(gcf,'Color','w','Units', 'Normalized', 'Position',[0.1 0.1 0.35 0.35])
 %DataDensityPlot(GT',RES',32,M,M);
 colormap gray
 colorbar
-xlim([0 M]);
-ylim([0 M]);
+xlim([0 40]);
+ylim([0 40]);
 xl=xlim; yl=ylim;
 
 hold on
@@ -96,7 +97,7 @@ xlabel('Predicted surface (µm²)');
 text(2+xl(1),0.9*yl(2),['R^2=' num2str(r(1,2)) newline 'N=' num2str(sum(~isnan(GT)))],'FontSize',16,'FontWeight','bold');
 
 set(gca,'FontSize',16, 'FontName','Myriad Pro', 'LineWidth',3,'FontWeight','bold', 'TickLength',[0.02 0.02],...
-    'XTick',[0:25:M],'YTick',[0:25:M]);
+    'XTick',[0:10:M],'YTick',[0:10:M]);
 
 if figExport==1
     f=gcf;

@@ -14,17 +14,17 @@ function hrls=plotRLS(roiobjcell,varargin)
 % colormap, color separation , linewidth spacing etc
 % time : generation or physical time
 figExport=1;
-bootStrapping=0;
+bootStrapping=1;
 sz=5;
 Nboot=100;
-plotHazardRate=0;
+plotHazardRate=1;
 maxBirth=100; %max frame to be born. After, discard rls.
 load=0;
-
+%TODO: change column and rowof roiobjcell
 szc=size(roiobjcell,1);
 comment=cell(szc,1);
 
-rls=cell(szc);
+rls=cell(szc,1);
 
 for i=1:numel(varargin)
     if strcmp(varargin{i},'Comment')
@@ -81,6 +81,7 @@ for c=1:szc
     
     % selection of RLS
     rlst{c,1}=rls{c,1}([rls{c,1}.groundtruth]==0);
+    rlst{c,1}=rlst{c,1}([rlst{c,1}.ndiv]>1);
     rlst{c,1}=rlst{c,1}( ([rlst{c,1}.frameBirth]<=maxBirth) & (~isnan([rlst{c,1}.frameBirth])) );
     rlst{c,1}=rlst{c,1}( ~(strcmp({rlst{c,1}.endType},'Arrest') & [rlst{c,1}.frameEnd]<400)  ); %remove weird cells before frame 300 (stop growing)
     rlst{c,1}=rlst{c,1}( ~(strcmp({rlst{c,1}.endType},'Emptied') & [rlst{c,1}.frameEnd]<400)  ); %remove emptied roi before frame 300
@@ -149,17 +150,20 @@ for c=1:szc
             stdDR=[];
             meanBDR=[];
             stdBDR=[];
+            semBDR=[];
+            semDR=[];
             rlsb=[];
             
             [rlsb] = bootstrp(Nboot,@(x)x,rlst);
             rlsb=[rlst; rlsb ];
             Mx=max(rlstNdivs{c,1}(:));
             mx=min(rlstNdivs{c,1}(:));
+            %need to have a stepsize of 1
             Yb=[NaN(Nboot+1,Mx)];
             Xb=[1:Mx];
             
             for b=1:Nboot+1
-                [yb xb]=ecdf(rlsb(b,:));
+                [yb, xb]=ecdf(rlsb(b,:));
                 %if cutx
 
                 for i=1:numel(yb)
@@ -194,8 +198,11 @@ for c=1:szc
             
             meanDR=nanmean(deathRate,1);
             stdDR=nanstd(deathRate,1);
+            semDR=stdDR./sqrt(Nboot+1); %N= number of bootstrappings
             meanBDR=nanmean(binnedDeathRate,1);
             stdBDR=nanstd(binnedDeathRate,1);
+            semBDR=stdBDR/sqrt(Nboot+1); %N= number of bootstrappings
+
             
             %             lineProps.width=lw;
             %             lineProps.col{:}=col;
@@ -205,13 +212,19 @@ for c=1:szc
             %remove nans for polygon
             Xb=Xb(~isnan(Xb));
             stdBDR=stdBDR(~isnan(stdBDR));
+            semBDR=semBDR(~isnan(semBDR));
             meanBDR=meanBDR(~isnan(meanBDR));
             %plot
-            plot(Xb(2:2:end),meanBDR,'LineWidth',lw,'color',col,'LineStyle','--')
+            if mod(numel(Xb),2)==0 %even
+                t=2:2:numel(Xb);
+            else
+                t=2:2:numel(Xb)-1;
+            end
+            plot(Xb(t),meanBDR,'LineWidth',lw,'color',col,'LineStyle','--')
             closedxb=[];
             shadedstd=[];
-            closedxb = [Xb(2:2:end), fliplr(Xb(2:2:end))];
-            shadedstd = [meanBDR-stdBDR, fliplr(meanBDR+stdBDR)];
+            closedxb = [Xb(t), fliplr(Xb(t))];
+            shadedstd = [meanBDR-semBDR, fliplr(meanBDR+semBDR)];
             ptch=patch(closedxb, shadedstd,col);
             ptch.FaceAlpha=0.15;
             ptch.EdgeAlpha=0.3;
