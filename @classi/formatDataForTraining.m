@@ -29,6 +29,8 @@ if isfolder([classif.path '/' foldername])
         disp('Error: did not manage to remove directory !');
     end
 end
+
+
 mkdir(classif.path,foldername)
 
 rois=trainingParam.rois;

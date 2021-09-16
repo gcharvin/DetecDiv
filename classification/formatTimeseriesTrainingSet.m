@@ -33,13 +33,20 @@ cc=1;
 for i=rois
     
     tmp=classif.roi(i);
+    
+  %  str
     for j=1:numel(str)
         tmp=tmp.(str{j});
     end    
     
+ %   tmp
+    if numel(tmp)
+    
     XTrain{cc,1}=tmp;
     YTrain{cc,1}=classif.roi(i).train.(classif.strid).id;
-    cc=cc+1;
+     cc=cc+1;
+    end
+   
 end
 
 save(fullfile(classif.path,foldername,'TrainingData.mat'),'XTrain','YTrain','classes');
