@@ -18,7 +18,7 @@ classdef classi < handle
         score=[]; %struct('roisid',[],'recall',[],'accuracy',[],'fscore',[],'confusion',[],'classes',[],'rois',[]); %  a structure that stores the scores of the classification , which is done by the stats method
         
         % only for pixel classification
-        outputType=''; % other options are : proba, postpocressing, segmentation
+        outputType=''; % other options are : proba (outputs probabilities of class rather than segmentation), postpocressing (uses a default @post function for postprocessing), segmentation 
         outputFun=[];
         outputArg={};
         

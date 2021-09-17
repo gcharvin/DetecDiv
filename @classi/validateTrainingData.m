@@ -75,6 +75,7 @@ for i=1:length(roilist)
     tmp(i)=classif.roi(roilist(i));
 end
 
+
 for i=1:length(roilist) % loop on all ROIs using parrallel computing  
     roiobj=tmp(i);
     
@@ -118,7 +119,7 @@ for i=1:length(roilist) % loop on all ROIs using parrallel computing
                 if numel( roiobj.train)~=0
                     if isfield(roiobj.train,classistr)
                         if numel(roiobj.train.(classistr).id) > 0
-                            if sum(roiobj.train.(classistr).id)>0 % training exists for this ROI !
+                            if sum(roiobj.train.(classistr).id)>0 ||  ( numel(roiobj.train.(classistr).id)==1 && ~isnan(roiobj.train.(classistr).id))  % training exists for this ROI ! put a condition if there is only one element 
                                 goclassif=1;
                             else
                                 goclassif=0;
@@ -134,7 +135,7 @@ for i=1:length(roilist) % loop on all ROIs using parrallel computing
     
     if goclassif==1
         disp('-----------');
-        disp(['Classifying ' num2str(roiobj.id)]);
+        disp(['Classifying ' num2str(roiobj.id) ' - ' num2str(i)]);
         
         %  if strcmp(classif.category{1},'Image') % in this case, the results are provided as a series of labels
         %  roiobj.results=zeros(1,size(roiobj.image,4)); % pre allocate results for labels
@@ -150,6 +151,8 @@ for i=1:length(roilist) % loop on all ROIs using parrallel computing
                     feval(classifyFun,roiobj,classif,classifier); % launch the training function for classification
             end
         end
+        
+        
     elseif goclassif==0
         disp(['There is no groundtruth available for roi ' num2str(roiobj.id) ' , skipping roi...']);
     end

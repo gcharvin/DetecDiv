@@ -26,12 +26,12 @@ load([path '/trainingParam.mat']);
 disp('Preparing LSTM network ...');
 fprintf('------\n');
 
-%=====BLOCKs RNG====
-stCPU= RandStream('Threefry','Seed',0,'NormalTransform','Inversion');
-stGPU=parallel.gpu.RandStream('Threefry','Seed',0,'NormalTransform','Inversion');
-RandStream.setGlobalStream(stCPU);
-parallel.gpu.RandStream.setGlobalStream(stGPU);
-%===================
+% %=====BLOCKs RNG====
+% stCPU= RandStream('Threefry','Seed',0,'NormalTransform','Inversion');
+% stGPU=parallel.gpu.RandStream('Threefry','Seed',0,'NormalTransform','Inversion');
+% RandStream.setGlobalStream(stCPU);
+% parallel.gpu.RandStream.setGlobalStream(stGPU);
+% %===================
 
 numObservations = numel(XTrain);
 idx = randperm(numObservations);
@@ -156,7 +156,7 @@ numIterationsPerEpoch = max(1,floor(numObservations / miniBatchSize));
 
 options = trainingOptions('adam', ...
     'MiniBatchSize',miniBatchSize, ...
-    'MaxEpochs',50,...
+    'MaxEpochs',300,...
     'InitialLearnRate',trainingParam.lstmInitialLearnRate, ...
     'LearnRateSchedule','piecewise',...
     'LearnRateDropPeriod',10,...

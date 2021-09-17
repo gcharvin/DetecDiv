@@ -24,7 +24,9 @@ end
 
 
 % load roi
+if numel(obj.image)==0
 obj.load;
+end
 
 
 % gather proba images
