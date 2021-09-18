@@ -39,13 +39,15 @@ if exist('classifierStore','var')==0
 end
 
 if exist('classifierCNN','var')==0
-    disp(['Loading CNN classifier: ' name]);
     str=[path '/netCNN.mat'];
+    disp(['Loading CNN classifier: ' str]);
+    
     if exist(str)
         load(str);
         classifierCNN=classifier;
     else
         classifierCNN=[];
+        disp(['CNN classifier not found, skipping CNN classif']);
     end
 end
 
