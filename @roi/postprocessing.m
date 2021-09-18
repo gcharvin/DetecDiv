@@ -6,8 +6,8 @@ function postprocessing(obj,classif,varargin)
 % the channels names used as input are
 % results_classif.strid_results.classes by default
 
-OutputFun=classif.outputFun;
-OutputArg=classif.outputArg;
+outputFun=classif.outputFun;
+outputArg=classif.outputArg;
 NoSave=0;
 
 for i=1:numel(varargin)

@@ -41,9 +41,10 @@ elseif isa(roiobj,'struct')
 end
 
 
-%% cleaning
+%% selection
 roiobj=roiobj([roiobj(:).ndiv]>8); %put at least 1 for robustness
 roiobj=roiobj( ([roiobj.frameBirth]<=maxBirth) & (~isnan([roiobj.frameBirth])) );
+ %roiobj=roiobj( (strcmp({roiobj.endType},'Death') & [roiobj.frameEnd]>300)  );
 roiobj=roiobj( ~(strcmp({roiobj.endType},'Arrest') & [roiobj.frameEnd]<300)  ); %remove weird cells before frame 300 (stop growing)
 roiobj=roiobj( ~(strcmp({roiobj.endType},'Emptied') & [roiobj.frameEnd]<300)  ); %remove emptied roi before frame 300
 
@@ -173,6 +174,7 @@ signalstrid=liststrid{signalid};
 if strcmp(signalstrid,'divDuration')
     plotDivDuration=1;
         obj2={obj.divDuration}';
+        channumber=1;
 else
     plotDivDuration=0;
 end
@@ -247,7 +249,8 @@ mz=5;
 if figExport==1
     lw=0.5;
     fz=8;
-    sz=4;
+    sz=7.5;
+    szy=4;
     mz=3.5;
 end
 
@@ -293,12 +296,13 @@ title(['']);
 errorbar(x,meanData,semData,'o','MarkerEdgeColor','k','MarkerFaceColor',[240/255, 90/255, 41/255],'MarkerSize',mz,'Color','k');
 legend(['N=' num2str(numel(data(:,1)))])
 
-set(gca,'FontSize',fz, 'FontName','Myriad Pro','LineWidth',2*lw,'FontWeight','bold','TickLength',[0.02 0.02]);
+set(gca,'FontSize',fz, 'FontName','Myriad Pro','LineWidth',2*lw,'FontWeight','bold','TickLength',[0.02 0.02],'XTick',x(1):5:x(end),'YTick',0.8:0.2:2.2);
 xlim([x(1),10]);
+ylim([0.8,2.2]);
 
 if figExport==1
     ax=gca;
-    xf_width=2.25*sz; yf_width=0.8*sz;
+    xf_width=sz; yf_width=szy;
     set(gcf, 'PaperPositionMode', 'auto', 'PaperType','a4','PaperUnits','centimeters');
     %set(gcf,'Units','centimeters','Position', [5 5 xf_width yf_width]);
     set(ax,'Units','centimeters', 'InnerPosition', [5 5 xf_width yf_width]) %0.8 if .svg is used

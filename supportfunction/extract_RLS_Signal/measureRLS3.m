@@ -12,7 +12,7 @@ function measureRLS3(classif,roiobj,varargin)
 % rls combines results and groundtruth is applicable
 % rlsResults only results
 %rlsGroundtruth only groundtruth
-
+loadres=1;
 environment='local';
 
 param.classiftype='bud';
@@ -67,7 +67,11 @@ for i=1:numel(roiobj)
     end
     roiobj(i).load('results');
     roiobj(i).path=strrep(roiobj(i).path,'/shared/space2/','\\space2.igbmc.u-strasbg.fr\');
-    roiobj(i).results.RLS.(classifstrid)=RLS(roiobj(i),classif,param); %struct() use to keep measureRLS2 code
+    roiobj(i).results.(classifstrid).RLS=RLS(roiobj(i),'result',classif,param); %struct() use to keep measureRLS2 code
+    if isprop(roiobj(i),'train') && numel(roiobj(i).train.(classifstrid).id)>0
+        roiobj(i).train.(classifstrid).RLS=RLS(roiobj(i),'train',classif,param);
+    end
+    
     roiobj(i).save('results');
     roiobj(i).clear;
 end
@@ -88,7 +92,7 @@ end
 
 
 %=========================================RLS============================================
-function [rls,rlsResults,rlsGroundtruth]=RLS(roi,classif,param)
+function [rls,rlsResults,rlsGroundtruth]=RLS(roi,roitype,classif,param)
 
 rls.divDuration=[];
 rls.framediv=[];
@@ -103,11 +107,11 @@ rls.groundtruth=-1;
 rlsResults=rls;
 rlsGroundtruth=rls;
 
-cc=1;
-ccg=1;
 
 classistrid=classif.strid;
 classes=classif.classes;
+
+    if strcmp(roitype,'result')
     %================RESULTS===============
     if isfield(roi.results,classistrid)
         if isfield(roi.results.(classistrid),'id')
@@ -116,50 +120,72 @@ classes=classif.classes;
                 
                 divTimes=computeDivtime(id,classes,param);
                 
-                rlsResults(cc).divDuration=divTimes.duration;
-                rlsResults(cc).frameBirth=divTimes.frameBirth;
-                rlsResults(cc).frameEnd=divTimes.frameEnd;
-                rlsResults(cc).endType=divTimes.endType;
-                rlsResults(cc).framediv=divTimes.framediv;
-                rlsResults(cc).sep=[];
-                rlsResults(cc).name=roi.id;
-                rlsResults(cc).ndiv=divTimes.ndiv;
+                rlsResults.divDuration=divTimes.duration;
+                rlsResults.frameBirth=divTimes.frameBirth;
+                rlsResults.frameEnd=divTimes.frameEnd;
+                rlsResults.endType=divTimes.endType;
+                rlsResults.framediv=divTimes.framediv;
+                rlsResults.sep=[];
+                rlsResults.name=roi.id;
+                rlsResults.ndiv=divTimes.ndiv;
                 if numel(divTimes.framediv)>0
-                    rlsResults(cc).totaltime=[divTimes.framediv(1)-divTimes.frameBirth, cumsum(divTimes.duration)+divTimes.framediv(1)-divTimes.frameBirth];
+                    rlsResults.totaltime=[divTimes.framediv(1)-divTimes.frameBirth, cumsum(divTimes.duration)+divTimes.framediv(1)-divTimes.frameBirth];
                 else
-                    rlsResults(cc).totaltime=0;
+                    rlsResults.totaltime=0;
                 end
-                rlsResults(cc).rules=[];
-                rlsResults(cc).groundtruth=0;
-                rlsResults(cc).divSignal=[];
+                rlsResults.rules=[];
+                rlsResults.groundtruth=0;
+                rlsResults.divSignal=[];
                 
-                divSignal=computeSignalDiv(roi,rlsResults(cc));
-                rlsResults(cc).divSignal=divSignal;
+                divSignal=computeSignalDiv(roi,rlsResults);
+                rlsResults.divSignal=divSignal;
                 
                 %sep
-                rlsResults(cc).sep=findSEP(rlsResults(cc));
+                rlsResults.sep=findSync(rlsResults);
             else
                 disp(['There is no result available for ROI ' char(roi.id)]);
             end
         end
     end
-    cc=cc+1;
 
-if param.errorDetection==1
-    if numel([rlsResults.groundtruth])==numel([rlsGroundtruth.groundtruth])
-        disp('Proceeding to error detection')
-            [rlsGroundtruth.noFalseDiv, rlsResults.noFalseDiv]=detectError(rlsGroundtruth,rlsResults);
-            rlsGroundtruth.falseDiv=setdiff(rlsGroundtruth.framediv,rlsGroundtruth.noFalseDiv);
-            rlsResults.falseDiv=setdiff(rlsResults.framediv,rlsResults.noFalseDiv);
-           
-            rlsGroundtruth.divDurationNoFalseDiv=diff(rlsGroundtruth.noFalseDiv);
-            rlsResults.divDurationNoFalseDiv=diff(rlsResults.noFalseDiv);
-
-    else disp('Groundtruth and Result vectors dont match, quitting...')
+    rls=rlsResults;
+    elseif strcmp(roitype,'train')
+    %==================GROUNDTRUTH===================
+    idg=[];
+    if isfield(roi.train,(classistrid))
+        if isfield(roi.train.(classistrid),'id') % test if groundtruth data available
+            if sum(roi.train.(classistrid).id)>0
+                idg=roi.train.(classistrid).id; % results for classification
+                disp(['Groundtruth data are available for ROI ' num2str(roi.id)]);
+                
+                divTimesG=computeDivtime(idg,classes,param); % groundtruth data
+                
+                rlsGroundtruth.divDuration=divTimesG.duration;
+                rlsGroundtruth.frameBirth=divTimesG.frameBirth;
+                rlsGroundtruth.frameEnd=divTimesG.frameEnd;
+                rlsGroundtruth.endType=divTimesG.endType;
+                rlsGroundtruth.framediv=divTimesG.framediv;
+                rlsGroundtruth.sep=[];
+                rlsGroundtruth.name=roi.id;
+                rlsGroundtruth.roiid=[];
+                rlsGroundtruth.ndiv=divTimesG.ndiv;
+                rlsGroundtruth.totaltime=[divTimesG.framediv(1)-divTimesG.frameBirth, cumsum(divTimesG.duration)+divTimesG.framediv(1)-divTimesG.frameBirth];
+                rlsGroundtruth.rules=[];
+                rlsGroundtruth.groundtruth=1;
+                rlsGroundtruth.divSignal=[];
+                
+                divSignalG=computeSignalDiv(roi,rlsGroundtruth);
+                rlsGroundtruth.divSignal=divSignalG;
+                
+                %sep
+                rlsGroundtruth.sep=findSync(rlsGroundtruth);
+            end
+        end
+    rls=rlsGroundtruth;
     end
-end
+    end
 
-rls=rlsResults;
+
 
 
 
@@ -551,13 +577,13 @@ end
 %% 
 %=============================================SEP==========================================
 %To do : harmonize for loops
-function [syncPoint]=findSEP(rls)
+function [syncPoint]=findSync(rls)
 align=1; %1: SEP, 2: death
 syncType={'birthSynced', 'SEPSynced','deathSynced'};
 threshStart=1;
 numrls=numel(rls);
 
-divDur=rls(r).divDuration;
+divDur=rls.divDuration;
 if numel(divDur)>1
     [syncPoint,~]=findSEP(divDur,1);
 else syncPoint=NaN;

@@ -21,14 +21,17 @@ end
 rlsg=[rls.groundtruth]==1;
 rlsgNdivs=[rls(rlsg).ndiv];
 
-rlst=[rls.groundtruth]==0;
-rlstNdivs=[rls(rlst).ndiv];
+rlsp=[rls.groundtruth]==0;
+rlspNdivs=[rls(rlsp).ndiv];
 
-rlsCNN=[rls.groundtruth]==2;
-rlsCNNNdivs=[rls(rlsCNN).ndiv];
+rlscnn=[rls.groundtruth]==2;
+if sum(rlscnn)==0
+    plotCNN=0;
+end
+rlscnnNdivs=[rls(rlscnn).ndiv];
 
-rlstDivsDuration=[];
-rlsCNNDivsDuration=[];
+rlspDivsDuration=[];
+rlscnnDivsDuration=[];
 rlsgDivsDuration=[];
 
 fz=16;
@@ -37,27 +40,39 @@ dz=50;
 if figExport==1
     fz=8;
     lw=1;
-    dz=5;
+    dz=15;
 end
 
 %% plot rls correlation
 h1=figure('Color','w','Units', 'Normalized', 'Position',[0.1 0.1 0.35 0.35]);
-scatter(rlstNdivs,rlsgNdivs,50,'filled','MarkerFaceColor',[125/255, 125/255, 125/255],'MarkerEdgeColor','k','LineWidth',0.1); hold on; 
+scatter(rlspNdivs,rlsgNdivs,dz,'filled','MarkerFaceColor',[125/255, 125/255, 125/255],'MarkerEdgeColor','k','LineWidth',0.1); hold on; 
+r=corrcoef(rlspNdivs,rlsgNdivs);
 
-M=max(max(rlstNdivs),max(rlsgNdivs));
+M=max(max(rlspNdivs),max(rlsgNdivs));
+txt=[comment 'R^2=' num2str(r(1,2)) newline 'N=' num2str(numel(rlscnnNdivs))];
+
+
+if plotCNN==1
+    scatter(rlscnnNdivs,rlsgNdivs,dz,'filled','MarkerFaceColor',[125/255, 0/255, 125/255],'MarkerEdgeColor','k','LineWidth',0.1); hold on; 
+M=max(M,max(rlscnnNdivs));
+rcnn=corrcoef(rlscnnNdivs,rlsgNdivs);
+txt=[txt newline 'R^2=' num2str(rcnn(1,2)) newline 'N=' num2str(numel(rlscnnNdivs))];
+end
+
 plot(0:M,0:M,'k','LineStyle','--','LineWidth',lw*0.66);
-box on
-r=corrcoef(rlstNdivs,rlsgNdivs);
+
 
 xlim([0 M]);
 ylim([0 M]);
 xl=xlim; yl=ylim;
 
+box on
 axis square;
 
 xlabel('Predicted lifespan (gen.)');
 ylabel('Groundtruth lifespan (gen.)');
-text(2+xl(1),0.9*yl(2),[comment 'R^2=' num2str(r(1,2)) newline 'N=' num2str(numel(rlstNdivs))],'FontSize',fz,'FontWeight','bold');
+text(2+xl(1),0.9*yl(2),txt,'FontSize',fz,'FontWeight','bold');
+
 
 set(gca,'FontSize',fz, 'FontName','Myriad Pro', 'LineWidth',lw,'FontWeight','bold', 'XTick',[0:10:M],'YTick',[0:10:M],'TickLength',[0.02 0.02]);
 
@@ -73,43 +88,72 @@ end
 
 %% 2/ plot divtimes correlation
 if isfield(rls,'noFalseDiv')
-    for i=1:2:numel(rls)-1
-        if numel(rls(i).divDurationNoFalseDiv)==numel(rls(i+1).divDurationNoFalseDiv)
-            rlstDivsDuration=[rlstDivsDuration, rls(i).divDurationNoFalseDiv];
-            rlsgDivsDuration=[rlsgDivsDuration, rls(i+1).divDurationNoFalseDiv];
-        end
+    %LSTM
+    rlspDivsDuration=[rls(rlsp).divDurationNoFalseDiv];
+    rlsgDivsDuration=[rls(rlsg).divDurationNoFalseDiv];
+    if plotCNN==1
+        rlscnnDivsDuration=[rls(rlscnn).divDurationNoFalseDiv];
     end
-    rlstDivsDuration=rlstDivsDuration*5;
+%     
+        if numel(rlspDivsDuration)==numel(rlsgDivsDuration)
+            FP=numel([rls(rlsp).falseDiv]);
+            FN=numel([rls(rlsg).falseDiv]);
+            TP=numel([rls(rlsp).framediv])-FP;
+            accu=TP/(TP+FP);
+            recall=TP/(TP+FN);
+            disp(['Accu=' num2str(accu)])
+            disp(['Recall=' num2str(recall)])
+        else
+            
+            
+%         if numel(rlscnnDivsDuration)==numel(rlsgDivsDuration)
+%             FP=numel([rls(rlscnn).falseDiv]);
+%             FN=numel([rls(rlsg).falseDiv]);
+%             TP=numel([rls(rlscnn).framediv])-FP;
+%             accu=TP/(TP+FP);
+%             recall=TP/(TP+FN);
+%                 disp(['Accu=' num2str(accu)])
+%                 disp(['Recall=' num2str(recall)])
+%         else
+            
+            warning('Sizes dont match');
+            rlspDivsDuration=0:10;
+            rlsgDivsDuration=0:10;
+        end
+
+    rlspDivsDuration=rlspDivsDuration*5;
     rlsgDivsDuration=rlsgDivsDuration*5;
-    %rlstDivsDuration=rlstDivsDuration(~isempty(rlstDivsDuration));
-    %rlsgDivsDuration=rlstDivsDuration(~isempty(rlstDivsDuration));
+    
+    r=corrcoef(rlspDivsDuration,rlsgDivsDuration);
+    txt=[comment 'R^2=' num2str(r(1,2)) newline 'N=' num2str(numel(rlsgDivsDuration))];        
     
     h2=figure('Color','w','Units', 'Normalized', 'Position',[0.1 0.1 0.35 0.35]);
-    scatter(rlstDivsDuration,rlsgDivsDuration,dz,'filled','MarkerFaceColor',[125/255, 125/255, 125/255],'MarkerEdgeColor','k','LineWidth',0.1); hold on;
+    scatter(rlsgDivsDuration,rlspDivsDuration,dz,'filled','MarkerFaceColor',[125/255, 125/255, 125/255],'MarkerEdgeColor','k','LineWidth',0.1); hold on;
+    
     box on
-    %     hist3([rlsgDivsDuration',rlstDivsDuration'],'CDataMode','auto','Nbins',[50,50])
+    %     hist3([rlsgDivsDuration',rlspDivsDuration'],'CDataMode','auto','Nbins',[50,50])
     %     view(2)
     %     colorbar
     
-%     colormap gray
-%     colorbar
-    %scatter_kde(rlstDivsDuration',rlsgDivsDuration','filled','MarkerEdgeColor','k','LineWidth',0.1);
-
-    plot(0:max(max(rlsgDivsDuration),max(rlstDivsDuration)),0:max(max(rlsgDivsDuration),max(rlstDivsDuration)),'k','LineStyle','--','LineWidth',lw);
-    r=corrcoef(rlstDivsDuration,rlsgDivsDuration);
+    %     colormap gray
+    %     colorbar
+    %scatter_kde(rlspDivsDuration',rlsgDivsDuration','filled','MarkerEdgeColor','k','LineWidth',0.1);
     
-    xlim([20 max(max(rlsgDivsDuration),max(rlstDivsDuration))]);
-    ylim([20 max(max(rlsgDivsDuration),max(rlstDivsDuration))]);
+    plot(0:max(max(rlsgDivsDuration),max(rlspDivsDuration)),0:max(max(rlsgDivsDuration),max(rlspDivsDuration)),'k','LineStyle','--','LineWidth',lw);
+    
+%     xlim([20 max(max(rlsgDivsDuration),max(rlspDivsDuration))]);
+%     ylim([20 max(max(rlsgDivsDuration),max(rlspDivsDuration))]);
+    xlim([20,500])
+    ylim([20,500])
     xl=xlim; yl=ylim;
     axis square;
     xlabel('Predicted division time (minutes)');
     ylabel('Groundtruth division time (minutes)');
     
-    text(1.2*xl(1),0.75*yl(2),[comment 'R^2=' num2str(r(1,2)) newline 'N=' num2str(numel(rlsgDivsDuration))],'FontSize',fz,'FontWeight','bold');
-    a.LineStyle='none';
+    text(1.2*xl(1),0.75*yl(2),txt,'FontSize',fz,'FontWeight','bold');
     set(gca,'xscale','log','yscale','log')
     ticklog=[20 :20:100,200:100:500];
-    set(gca,'FontSize',16, 'FontName','Myriad Pro','LineWidth',lw,'FontWeight','bold',...
+    set(gca,'FontSize',fz, 'FontName','Myriad Pro','LineWidth',lw,'FontWeight','bold',...
         'XTick',ticklog,...
         'YTick',ticklog,'TickLength',[0.02 0.02]);
 else
@@ -128,10 +172,11 @@ if figExport==1
 end
 %% ======plot ecdf for lifespan======
 
-[yt,xt]=ecdf(rlstNdivs);
+[yt,xt]=ecdf(rlspNdivs);
 [yg,xg]=ecdf(rlsgNdivs);
 if plotCNN==1
-    [ycnn,xcnn]=ecdf(rlsCNNNdivs);
+    [ycnn,xcnn]=ecdf(rlscnnNdivs);
+    %logrank([rlscnnNdivs', zeros(numel(rlscnnNdivs),1)],[rlsgNdivs', zeros(numel(rlsgNdivs),1)]);
 end
 
 h3=figure('Color','w','Units', 'Normalized', 'Position',[0.1 0.1 0.35 0.35]);
@@ -139,22 +184,23 @@ h3=figure('Color','w','Units', 'Normalized', 'Position',[0.1 0.1 0.35 0.35]);
 stairs([0 ; xg],[1 ; 1-yg],'Color','k','LineWidth',lw);hold on,
 stairs([0 ; xt],[1 ; 1-yt],'Color',[20/255,200/255,50/255],'LineWidth',lw);
 if plotCNN==1
-    stairs([0 ; xcnn],[1 ; 1-ycnn],'Color',[20/255,20/255,50/255],'LineWidth',lw);
+    stairs([0 ; xcnn],[1 ; 1-ycnn],'Color',[20/255,20/255,255/255],'LineWidth',lw);
 end
 
-leg={['Predicted; median=' num2str(median(rlstNdivs)) ' (N=' num2str(length(rlstNdivs)) ')'],['Grountruth; median=' num2str(median(rlsgNdivs)) ' (N=' num2str(length(rlsgNdivs)) ')']};
+leg={['Predicted; median=' num2str(median(rlspNdivs)) ' (N=' num2str(length(rlspNdivs)) ')'],['Grountruth; median=' num2str(median(rlsgNdivs)) ' (N=' num2str(length(rlsgNdivs)) ')']};
 if plotCNN==1
-    leg{3}=['CNN Predicted; median=' num2str(median(rlsCNNNdivs)) ' (N=' num2str(length(rlsCNNNdivs)) ')'];
+    leg{3}=['CNN Predicted; median=' num2str(median(rlscnnNdivs)) ' (N=' num2str(length(rlscnnNdivs)) ')'];
 end
 legend(leg);
 
 axis square;
 xlabel('Divisions');
 ylabel('Survival');
-p=ranksum(rlstNdivs,rlsgNdivs);
+%logrank([rlspNdivs', zeros(numel(rlspNdivs),1)],[rlsgNdivs', zeros(numel(rlsgNdivs),1)]);
+p=0;
 title([comment 'Replicative lifespan; p=' num2str(p)]);
-set(gca,'FontSize',fz, 'FontName','Myriad Pro','LineWidth',lw,'FontWeight','bold','XTick',[0:10:max(max(rlstNdivs),max(rlsgNdivs))],'TickLength',[0.02 0.02]);
-xlim([0 max(max(rlstNdivs),max(rlsgNdivs))])
+set(gca,'FontSize',fz, 'FontName','Myriad Pro','LineWidth',lw,'FontWeight','bold','XTick',[0:10:max(max(rlspNdivs),max(rlsgNdivs))],'TickLength',[0.02 0.02]);
+xlim([0 max(max(rlspNdivs),max(rlsgNdivs))])
 ylim([0 1.05]);
 
 
@@ -169,14 +215,16 @@ if figExport==1
 end
 %% =====plot overall distribution of division times ======
 rlsgNdivs=[rls.groundtruth]==1;
-rlstNdivs=[rls.groundtruth]==0;
+rlspNdivs=[rls.groundtruth]==0;
 
 divg=[rls(rlsgNdivs).divDuration]*5;
-divt=[rls(rlstNdivs).divDuration]*5;
+divt=[rls(rlspNdivs).divDuration]*5;
+p=ranksum(divg,divt);
 
 if plotCNN==1
-    rlsCNNNdivs=[rls.groundtruth]==2;
-    divcnn=[rls(rlsCNNNdivs).divDuration]*5;
+    rlscnnNdivs=[rls.groundtruth]==2;
+    divcnn=[rls(rlscnnNdivs).divDuration]*5;
+    pcnn=ranksum(divg,divcnn);
 end
 
 
@@ -189,7 +237,7 @@ histogram(divg,bins,'DisplayStyle','stairs','LineWidth',lw,'EdgeColor','k','Edge
 hold on
 histogram(divt,bins,'DisplayStyle','stairs','LineWidth',lw,'EdgeAlpha',0.75,'EdgeColor',[20/255,200/255,50/255]);
 if plotCNN==1
-   histogram(divcnn,bins,'DisplayStyle','stairs','LineWidth',lw,'EdgeAlpha',0.75,'EdgeColor',[20/255,20/255,50/255]);
+   histogram(divcnn,bins,'DisplayStyle','stairs','LineWidth',lw,'EdgeAlpha',0.75,'EdgeColor',[20/255,20/255,255/255]);
 end
 
 % stairs(xg,ng,'Color','k','LineWidth',3);hold on;
@@ -199,14 +247,14 @@ end
 %1. ***test*** 
 %+
 
-p=ranksum(divg,divt);
-leg={['Predicted; median=' num2str(median(divt)) ' (N=' num2str(length(divt)) ')'],['Grountruth; median=' num2str(median(divg)) ' (N=' num2str(length(divg)) ')']};
+
+leg={['Predicted; median=' num2str(median(divt)) ' (N=' num2str(length(divt)) '); p=' num2str(p)],['Grountruth; median=' num2str(median(divg)) ' (N=' num2str(length(divg)) ')']};
 if plotCNN==1
-    leg{3}=['CNN Predicted; median=' num2str(median(divcnn)) ' (N=' num2str(length(divcnn)) ')'];
+    leg{3}=['CNN Predicted; median=' num2str(median(divcnn)) ' (N=' num2str(length(divcnn)) '); p=' num2str(pcnn)];
 end
 legend(leg);
 
-title([comment 'Division times; p=' num2str(p)]);
+title([comment 'Division times']);
 set(gca,'FontSize',fz, 'FontName','Myriad Pro','LineWidth',lw,'FontWeight','bold','XTick',[0:25:200],'TickLength',[0.02 0.02]);
 xlim([0,202]);
 axis square;

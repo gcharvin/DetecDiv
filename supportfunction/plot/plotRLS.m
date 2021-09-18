@@ -50,11 +50,11 @@ if load==1
 end
 %%
 %find classistrid
-if isfield(roiobjcell{1,1}(1).results,'RLS')
-    liststrid=fields(roiobjcell{1,1}(1).results.RLS);
+if isfield(roiobjcell{1,1}(1).results)
+    liststrid=fields(roiobjcell{1,1}(1).results);
     str=[];
 else
-    error(['The roi ' roiobjcell{1,1}(1) 'has no RLS result, be sure to measure it with measureRLS3'])
+    error(['The roi ' roiobjcell{1,1}(1) 'has no classifstrid, be sure to measure it with measureRLS3'])
 end
 for i=1:numel(liststrid)
     str=[str num2str(i) ' - ' liststrid{i} ';'];
@@ -68,14 +68,14 @@ classifstrid=liststrid{classifid};
 %%
 for c=1:szc
     for r=1:numel(roiobjcell{c,1})      
-        if isfield(roiobjcell{c,1}(r).results,'RLS')
-            if isfield(roiobjcell{c,1}(r).results.RLS,(classifstrid))
-                rls{c,1}=[rls{c,1}; roiobjcell{c,1}(r).results.RLS.(classifstrid)];
+        if isfield(roiobjcell{c,1}(r).results,(classifstrid))
+            if isfield(roiobjcell{c,1}(r).results.(classifstrid),'RLS')
+                rls{c,1}=[rls{c,1}; roiobjcell{c,1}(r).results.(classifstrid).RLS];
             else
                 warning(['The roi ' roiobjcell{c,1}(r) 'has no RLS result relative to ' (classifstrid) ', -->ROI skipped'])
             end
         else
-            warning(['The roi ' roiobjcell{c,1}(r) 'has no RLS result, -->ROI skipped'])
+            warning(['The roi ' roiobjcell{c,1}(r) 'has no classif' classifstrid ', -->ROI skipped'])
         end
     end
     

@@ -15,31 +15,24 @@ rois=[];
 fovs=[];
 %% TODO : Make it roi method and export to result_Pos_xxx.mat
 %%
-param.mergeGT=1;
+loadroi=0;
+param.GT=2; %1=GT, 0=results, 2=both result lstm and gt, 3=all, 4=gt cnn, 5=gt + lstm+cnn +cnn2
 param.align=1;
 param.classiftype='bud';
 param.postProcessing=1;
-param.errorDetection=0;
+param.errorDetection=1;
 param.ArrestThreshold=100;
-param.DeathThreshold=1;
+param.DeathThreshold=4;
 param.EmptyThresholdDiscard=500;
 param.EmptyThresholdNext=200;
 
 for i=1:numel(varargin)
     
-    %Object type
-    if strcmp(varargin{i},'ObjectType')
-        objType=varargin{i+1};
-        if strcmp(objType,'fovs') && strcmp(objType,'classif')
-            error('Please enter a valid classitype');
-        end
-    end
-    
     %classif
     if strcmp(varargin{i},'Classif')
         classif=varargin{i+1};
     end
-
+    
     %Rois
     if strcmp(varargin{i},'Rois') %1xN vector
         rois=varargin{i+1};
@@ -49,6 +42,10 @@ for i=1:numel(varargin)
     end
     if strcmp(varargin{i},'RoisArray') %[fovs,...fovs;rois,...rois]
         roisArray=varargin{i+1};
+    end
+    
+    if strcmp(varargin{i},'Load') %load data
+        loadroi=1;
     end
     
     %PARAMS OF DIV DETECTION
@@ -63,6 +60,11 @@ for i=1:numel(varargin)
     %ArrestThreshold
     if strcmp(varargin{i},'ArrestThreshold')
         param.ArrestThreshold=varargin{i+1};
+    end
+    
+    %GT
+    if strcmp(varargin{i},'GT')
+        param.GT=varargin{i+1};
     end
     
     %DeathThreshold
@@ -88,7 +90,7 @@ end
 %%
 if numel(objType)==0
     objTypeid=input('Indicate object type, among 1- fovs or 2- classif: ');
-
+    
     if objTypeid==1
         objType='fovs';
     elseif objTypeid==2
@@ -117,11 +119,12 @@ if strcmp(objType,'classif')
     end
     
     %compute RLS
-    [rls,rlsResults,rlsGroundtruth]=RLS(obj2,classif,param,rois);
+    [rls,rlsResults,rlsGroundtruth]=RLS(obj2,classif,param,rois,loadroi);
     
     
     %=fovs
 elseif strcmp(objType,'fovs')
+    param.GT=0;
     
     if ~exist('classif')
         str=[];
@@ -155,7 +158,7 @@ elseif strcmp(objType,'fovs')
                 % end
                 roisArray=[fovvector; roivector];
             end
-        end  
+        end
     end
     
     %compute RLS
@@ -164,13 +167,13 @@ elseif strcmp(objType,'fovs')
         obj2=obj.fov(f);
         rois=roisArray(2,:);
         rois=rois(roisArray(1,:)==f);
-        rls=vertcat(rls,RLS(obj2,classif,param,rois));
+        rls=vertcat(rls,RLS(obj2,classif,param,rois,loadroi));
     end
 end
 
 
 %=========================================RLS============================================
-function [rls,rlsResults,rlsGroundtruth]=RLS(obj2,classif,param,rois)
+function [rls,rlsResults,rlsGroundtruth]=RLS(obj2,classif,param,rois,loadroi)
 
 rls.divDuration=[];
 rls.framediv=[];
@@ -184,15 +187,55 @@ rls.groundtruth=-1;
 
 rlsResults=rls;
 rlsResultsCNN=rls;
+rlsResultsCNN2=rls;
 rlsGroundtruth=rls;
 
 cc=1;
 cccnn=1;
+cccnn2=1;
 ccg=1;
 
 classistrid=classif.strid;
 classes=classif.classes;
 for r=rois
+    % load data if required
+    if loadroi==1
+        obj2.roi(r).load('results');
+    end
+    
+    %==================GROUNDTRUTH===================
+    %Groundtruth?
+    idg=[];
+    if isfield(obj2.roi(r).train,(classistrid)) %MATLAB BUG WITH isprop. logical=0 for fov
+        if isfield(obj2.roi(r).train.(classistrid),'id') % test if groundtruth data available
+            if sum(obj2.roi(r).train.(classistrid).id)>0
+                idg=obj2.roi(r).train.(classistrid).id; % results for classification
+                disp(['Groundtruth data are available for ROI ' num2str(r) '=' num2str(obj2.roi(r).id)]);
+                
+                divTimesG=computeDivtime(idg,classes,param); % groundtruth data
+                
+                rlsGroundtruth(ccg).divDuration=divTimesG.duration;
+                rlsGroundtruth(ccg).frameBirth=divTimesG.frameBirth;
+                rlsGroundtruth(ccg).frameEnd=divTimesG.frameEnd;
+                rlsGroundtruth(ccg).endType=divTimesG.endType;
+                rlsGroundtruth(ccg).framediv=divTimesG.framediv;
+                rlsGroundtruth(ccg).sep=[];
+                rlsGroundtruth(ccg).name=obj2.roi(r).id;
+                rlsGroundtruth(ccg).roiid=[class(obj2) '(' num2str(obj2.id) ').roi(' num2str(r) ')'];
+                rlsGroundtruth(ccg).ndiv=divTimesG.ndiv;
+                rlsGroundtruth(ccg).totaltime=[divTimesG.framediv(1)-divTimesG.frameBirth, cumsum(divTimesG.duration)+divTimesG.framediv(1)-divTimesG.frameBirth];
+                rlsGroundtruth(ccg).rules=[];
+                rlsGroundtruth(ccg).groundtruth=1;
+                rlsGroundtruth(ccg).divSignal=[];
+                
+                divSignalG=computeSignalDiv(obj2,r,rlsGroundtruth(ccg));
+                rlsGroundtruth(ccg).divSignal=divSignalG;
+            end
+        end
+        ccg=ccg+1;
+    end
+    
+    
     %================RESULTS===============
     if isfield(obj2.roi(r).results,classistrid)
         if isfield(obj2.roi(r).results.(classistrid),'id')
@@ -228,108 +271,165 @@ for r=rois
     end
     cc=cc+1;
     
-    %================CNN===============
-    if isfield(obj2.roi(r).results,classistrid)
-        if isfield(obj2.roi(r).results.(classistrid),'idCNN')
-            if sum(obj2.roi(r).results.(classistrid).idCNN)>0
-                idCNN=obj2.roi(r).results.(classistrid).idCNN; % results for classification
-                
-                divTimesCNN=computeDivtime(idCNN,classes,param);
-                
-                rlsResultsCNN(cccnn).divDuration=divTimesCNN.duration;
-                rlsResultsCNN(cccnn).frameBirth=divTimesCNN.frameBirth;
-                rlsResultsCNN(cccnn).frameEnd=divTimesCNN.frameEnd;
-                rlsResultsCNN(cccnn).endType=divTimesCNN.endType;
-                rlsResultsCNN(cccnn).framediv=divTimesCNN.framediv;
-                rlsResultsCNN(cccnn).sep=[];
-                rlsResultsCNN(cccnn).name=obj2.roi(r).id;
-                rlsResultsCNN(cccnn).roiid=[class(obj2) '(' num2str(obj2.id) ').roi(' num2str(r) ')'];
-                rlsResultsCNN(cccnn).ndiv=divTimesCNN.ndiv;
-                if numel(divTimesCNN.framediv)>0
-                    rlsResultsCNN(cccnn).totaltime=[divTimesCNN.framediv(1)-divTimesCNN.frameBirth, cumsum(divTimesCNN.duration)+divTimesCNN.framediv(1)-divTimesCNN.frameBirth];
+    if param.GT==3 || param.GT==4 || param.GT==5
+        %================CNN===============
+        paramcnn=param;
+        paramcnn.postProcessing=0;
+        paramcnn.DeathThreshold=2;
+        if isfield(obj2.roi(r).results,classistrid)
+            if isfield(obj2.roi(r).results.(classistrid),'idCNN')
+                if sum(obj2.roi(r).results.(classistrid).idCNN)>0
+                    idCNN=obj2.roi(r).results.(classistrid).idCNN; % results for classification
+                    
+                    divTimesCNN=computeDivtime(idCNN,classes,paramcnn);
+                    
+                    rlsResultsCNN(cccnn).divDuration=divTimesCNN.duration;
+                    rlsResultsCNN(cccnn).frameBirth=divTimesCNN.frameBirth;
+                    rlsResultsCNN(cccnn).frameEnd=divTimesCNN.frameEnd;
+                    rlsResultsCNN(cccnn).endType=divTimesCNN.endType;
+                    rlsResultsCNN(cccnn).framediv=divTimesCNN.framediv;
+                    rlsResultsCNN(cccnn).sep=[];
+                    rlsResultsCNN(cccnn).name=obj2.roi(r).id;
+                    rlsResultsCNN(cccnn).roiid=[class(obj2) '(' num2str(obj2.id) ').roi(' num2str(r) ')'];
+                    rlsResultsCNN(cccnn).ndiv=divTimesCNN.ndiv;
+                    if numel(divTimesCNN.framediv)>0
+                        rlsResultsCNN(cccnn).totaltime=[divTimesCNN.framediv(1)-divTimesCNN.frameBirth, cumsum(divTimesCNN.duration)+divTimesCNN.framediv(1)-divTimesCNN.frameBirth];
+                    else
+                        rlsResultsCNN(cccnn).totaltime=0;
+                    end
+                    rlsResultsCNN(cccnn).rules=[];
+                    rlsResultsCNN(cccnn).groundtruth=2;
+                    rlsResultsCNN(cccnn).divSignal=[];
+                    
+                    divSignal=computeSignalDiv(obj2,r,rlsResultsCNN(cccnn));
+                    rlsResultsCNN(cccnn).divSignal=divSignal;
                 else
-                    rlsResultsCNN(cccnn).totaltime=0;
+                    disp(['there is no result available for ROI ' char(r) '=' char(obj2.roi(r).id)]);
                 end
-                rlsResultsCNN(cccnn).rules=[];
-                rlsResultsCNN(cccnn).groundtruth=2;
-                rlsResultsCNN(cccnn).divSignal=[];
-                
-                divSignal=computeSignalDiv(obj2,r,rlsResultsCNN(cccnn));
-                rlsResultsCNN(cccnn).divSignal=divSignal;
-            else
-                disp(['there is no result available for ROI ' char(r) '=' char(obj2.roi(r).id)]);
             end
         end
+        cccnn=cccnn+1;
     end
-    cccnn=cccnn+1;
     
-    %==================GROUNDTRUTH===================
-    %Groundtruth?
-    idg=[];
-    if isfield(obj2.roi(r).train,(classistrid)) %MATLAB BUG WITH isprop. logical=0 for fov
-        if isfield(obj2.roi(r).train.(classistrid),'id') % test if groundtruth data available
-            if sum(obj2.roi(r).train.(classistrid).id)>0
-                idg=obj2.roi(r).train.(classistrid).id; % results for classification
-                disp(['Groundtruth data are available for ROI ' num2str(r) '=' num2str(obj2.roi(r).id)]);
-                
-                divTimesG=computeDivtime(idg,classes,param); % groundtruth data
-                
-                rlsGroundtruth(ccg).divDuration=divTimesG.duration;
-                rlsGroundtruth(ccg).frameBirth=divTimesG.frameBirth;
-                rlsGroundtruth(ccg).frameEnd=divTimesG.frameEnd;
-                rlsGroundtruth(ccg).endType=divTimesG.endType;
-                rlsGroundtruth(ccg).framediv=divTimesG.framediv;
-                rlsGroundtruth(ccg).sep=[];
-                rlsGroundtruth(ccg).name=obj2.roi(r).id;
-                rlsGroundtruth(ccg).roiid=[class(obj2) '(' num2str(obj2.id) ').roi(' num2str(r) ')'];
-                rlsGroundtruth(ccg).ndiv=divTimesG.ndiv;
-                rlsGroundtruth(ccg).totaltime=[divTimesG.framediv(1)-divTimesG.frameBirth, cumsum(divTimesG.duration)+divTimesG.framediv(1)-divTimesG.frameBirth];
-                rlsGroundtruth(ccg).rules=[];
-                rlsGroundtruth(ccg).groundtruth=1;
-                rlsGroundtruth(ccg).divSignal=[];
-                
-                divSignalG=computeSignalDiv(obj2,r,rlsGroundtruth(ccg));
-                rlsGroundtruth(ccg).divSignal=divSignalG;
+    if param.GT==5
+        %================CNN2===============
+        paramcnn2=param;
+        paramcnn2.postProcessing=0;
+        paramcnn2.DeathThreshold=1;
+        
+        if isfield(obj2.roi(r).results,classistrid)
+            if isfield(obj2.roi(r).results.(classistrid),'idCNN')
+                if sum(obj2.roi(r).results.(classistrid).idCNN)>0
+                    idCNN=obj2.roi(r).results.(classistrid).idCNN; % results for classification
+                    
+                    divTimesCNN=computeDivtime(idCNN,classes,paramcnn);
+                    
+                    rlsResultsCNN2(cccnn2).divDuration=divTimesCNN.duration;
+                    rlsResultsCNN2(cccnn2).frameBirth=divTimesCNN.frameBirth;
+                    rlsResultsCNN2(cccnn2).frameEnd=divTimesCNN.frameEnd;
+                    rlsResultsCNN2(cccnn2).endType=divTimesCNN.endType;
+                    rlsResultsCNN2(cccnn2).framediv=divTimesCNN.framediv;
+                    rlsResultsCNN2(cccnn2).sep=[];
+                    rlsResultsCNN2(cccnn2).name=obj2.roi(r).id;
+                    rlsResultsCNN2(cccnn2).roiid=[class(obj2) '(' num2str(obj2.id) ').roi(' num2str(r) ')'];
+                    rlsResultsCNN2(cccnn2).ndiv=divTimesCNN.ndiv;
+                    if numel(divTimesCNN.framediv)>0
+                        rlsResultsCNN2(cccnn2).totaltime=[divTimesCNN.framediv(1)-divTimesCNN.frameBirth, cumsum(divTimesCNN.duration)+divTimesCNN.framediv(1)-divTimesCNN.frameBirth];
+                    else
+                        rlsResultsCNN2(cccnn2).totaltime=0;
+                    end
+                    rlsResultsCNN2(cccnn2).rules=[];
+                    rlsResultsCNN2(cccnn2).groundtruth=3;
+                    rlsResultsCNN2(cccnn2).divSignal=[];
+                    
+                    divSignal=computeSignalDiv(obj2,r,rlsResultsCNN2(cccnn2));
+                    rlsResultsCNN2(cccnn2).divSignal=divSignal;
+                else
+                    disp(['there is no result available for ROI ' char(r) '=' char(obj2.roi(r).id)]);
+                end
             end
         end
-        ccg=ccg+1;
+        cccnn2=cccnn2+1;
     end
 end
+
 
 if param.errorDetection==1
-    if numel([rlsResults.groundtruth])==numel([rlsGroundtruth.groundtruth])
-        disp('Proceeding to error detection')
-        for r=1:numel([rlsResults.groundtruth])
-            [rlsGroundtruth(r).noFalseDiv, rlsResults(r).noFalseDiv]=detectError(rlsGroundtruth(r),rlsResults(r));
-            rlsGroundtruth(r).falseDiv=setdiff(rlsGroundtruth(r).framediv,rlsGroundtruth(r).noFalseDiv);
-            rlsResults(r).falseDiv=setdiff(rlsResults(r).framediv,rlsResults(r).noFalseDiv);
-            
-            rlsGroundtruth(r).divDurationNoFalseDiv=diff(rlsGroundtruth(r).noFalseDiv);
-            rlsResults(r).divDurationNoFalseDiv=diff(rlsResults(r).noFalseDiv);
+    if param.GT==2
+        if numel([rlsResults.groundtruth])==numel([rlsGroundtruth.groundtruth])
+            disp('Proceeding to error detection')
+            for r=1:numel([rlsResults.groundtruth])
+                [rlsGroundtruth(r).noFalseDiv, rlsResults(r).noFalseDiv]=detectError(rlsGroundtruth(r),rlsResults(r));
+                rlsGroundtruth(r).falseDiv=setdiff(rlsGroundtruth(r).framediv,rlsGroundtruth(r).noFalseDiv);
+                rlsResults(r).falseDiv=setdiff(rlsResults(r).framediv,rlsResults(r).noFalseDiv);
+                rlsGroundtruth(r).divDurationNoFalseDiv=diff(rlsGroundtruth(r).noFalseDiv);
+                rlsResults(r).divDurationNoFalseDiv=diff(rlsResults(r).noFalseDiv);
+            end
+        else disp('Groundtruth and Result vectors dont match, quitting...')
         end
-    else disp('Groundtruth and Result vectors dont match, quitting...')
+    elseif param.GT==4
+        if numel([rlsResultsCNN.groundtruth])==numel([rlsGroundtruth.groundtruth])
+            disp('Proceeding to error detection')
+            for r=1:numel([rlsResultsCNN.groundtruth])
+                [rlsGroundtruth(r).noFalseDiv, rlsResultsCNN(r).noFalseDiv]=detectError(rlsGroundtruth(r),rlsResultsCNN(r));
+                rlsGroundtruth(r).falseDiv=setdiff(rlsGroundtruth(r).framediv,rlsGroundtruth(r).noFalseDiv);
+                rlsResultsCNN(r).falseDiv=setdiff(rlsResultsCNN(r).framediv,rlsResultsCNN(r).noFalseDiv);
+                rlsGroundtruth(r).divDurationNoFalseDiv=diff(rlsGroundtruth(r).noFalseDiv);
+                rlsResultsCNN(r).divDurationNoFalseDiv=diff(rlsResultsCNN(r).noFalseDiv);
+            end
+        else disp('Groundtruth and Result vectors dont match, quitting...')
+        end
     end
 end
 
-if param.mergeGT==1
+
+%MERGE
+if param.GT==3 %all
     if numel([rlsResults.groundtruth])==numel([rlsGroundtruth.groundtruth]) && numel([rlsResultsCNN.groundtruth])
-%     rlsResults=rlsResults([rlsGroundtruth.groundtruth]==0);
-%     rlsGroundtruth=rlsGroundtruth(
-    rls=[rlsResults; rlsResultsCNN; rlsGroundtruth];
+        %     rlsResults=rlsResults([rlsGroundtruth.groundtruth]==0);
+        %     rlsGroundtruth=rlsGroundtruth(
+        rls=[rlsResults; rlsResultsCNN; rlsGroundtruth];
     else disp('Groundtruth and Result vectors dont match, quitting...')
     end
-else
+elseif param.GT==0 %RES CNN+LSTM
     rls=rlsResults;
+    
+elseif param.GT==1 %GT
+    rls=rlsGroundtruth;
+    
+elseif param.GT==2 %GT and CNN+LSTM
+    if numel([rlsResults.groundtruth])==numel([rlsGroundtruth.groundtruth])
+        rls=[rlsResults; rlsGroundtruth];
+    else disp('Groundtruth and Result vectors dont match, quitting...')
+    end
+    
+elseif param.GT==4 %GT and CNN
+    if numel([rlsResultsCNN.groundtruth])==numel([rlsGroundtruth.groundtruth])
+        rls=[rlsResultsCNN; rlsGroundtruth];
+    else disp('Groundtruth and Result vectors dont match, quitting...')
+    end
+    
+elseif param.GT==5 %GT and CNN and cnn2
+    if numel([rlsResults.groundtruth])==numel([rlsGroundtruth.groundtruth]) && numel([rlsResultsCNN.groundtruth])==numel([rlsResultsCNN2.groundtruth])  && numel([rlsResults.groundtruth])==numel([rlsResultsCNN2.groundtruth])
+        %     rlsResults=rlsResults([rlsGroundtruth.groundtruth]==0);
+        %     rlsGroundtruth=rlsGroundtruth(
+        rls=[rlsResults; rlsGroundtruth; rlsResultsCNN; rlsResultsCNN2];
+    else disp('Groundtruth and Result vectors dont match, quitting...')
+    end
 end
+%=
 
+%ALIGN
 if param.align==1
     rls=AlignSignal(rls);
 end
+%=
 
+%SORT
 rls=rls(:);
 [~, ix]= sort({rls(:).roiid});
 rls=rls(ix);
-
+%=
 
 % =========================================DIVTIMES=================================================
 function [divTimes]=computeDivtime(id,classes,param)
@@ -352,7 +452,7 @@ switch param.classiftype
         
         
         %===1// find BIRTH===
-
+        
         frameBirth=NaN;
         firstunb=find(id==unbuddedid,1,'first');
         firstsm=find(id==smid,1,'first');
@@ -394,7 +494,7 @@ switch param.classiftype
         bwDeath=(id==deathid);
         bwDeathLabeled=bwlabel(bwDeath);
         
-
+        
         for k=1:max(bwDeathLabeled)
             bwDeath=(bwDeathLabeled==k);
             if sum(bwDeath)>= param.DeathThreshold
@@ -482,7 +582,7 @@ switch param.classiftype
             end
             
             %==detect bud emergence==
-            for j=frameBirth:frameEnd-1
+            for j=frameBirth:frameEnd-1%numel(id)-1%takes all divs
                 if (id(j)==lbid && id(j+1)==smid) || (id(j)==unbuddedid && id(j+1)==smid) % bud has emerged
                     divFrames=[divFrames j+1];
                 end
@@ -615,10 +715,10 @@ for r=1:numrls
         %align
         m=max(m,syncPoint(r)); %max divs in preSEP
         M=max(M,sum(~isnan(divDur(r,:)))-syncPoint(r)); %max divs in postSEP
-
+        
     else syncPoint(r)=NaN;
     end
-
+    
     rls(r).sep=syncPoint(r);
 end
 
@@ -633,7 +733,7 @@ for r=1:numrls
         
         %divs
         rls(r).Aligned.(syncType{align+1}).divDuration=NaN(1,m+M);
-                
+        
         %signal
         if isfield(rls(r),'divSignal') && ~isempty(rls(r).divSignal)
             rF=fields(rls(r).divSignal); %full, cell, nucleus
