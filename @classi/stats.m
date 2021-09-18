@@ -69,6 +69,19 @@ if numel(plo)==0 % do not compute if plot is requested
         
         data=collectROIData(classif,roiid);  % collect prediction and ground truth data
         
+        if data.reg==1 % regression 
+            figure('Color','w'); 
+            plot(data.gt,data.pred,'Marker','.','Markersize',10,'LineStyle','none'); hold on;
+            plot([0 max(max(data.gt),max(data.pred))],[0 max(max(data.gt),max(data.pred))],'LineStyle','--','LineWidth',2,'Color','k');
+            c=corrcoef(data.gt,data.pred);
+            xlim([0 max(max(data.gt),max(data.pred))]);
+            ylim([0 max(max(data.gt),max(data.pred))]);
+            
+            xlabel('SEP Groundtruth');
+            ylabel('SEP Prediction');
+            text(2,2,['R^2= ' num2str(c(1,2))]);  
+        else %  classification
+            
         if cc==1
             classif.score= measureAccuracyRecall(classif,data.gt, data.pred, data.roi);  % score for given classification
             classif.score.comments='Classification benchmarks using main classifier';
@@ -84,6 +97,7 @@ if numel(plo)==0 % do not compute if plot is requested
             classif.score(cc)= measureAccuracyRecall(classif,data.gt, data.CNNpred, data.roi);  % score for given classification
             classif.score(cc).comments='Classification benchmarks using CNN classifier for LSTM architecture';
             classif.score(cc).thr=i;
+        end
         end
         
         cc=cc+1;
@@ -436,6 +450,8 @@ for j=roiid
     pred=[];
     CNNpred=[];
     
+    reg=0;
+    
     switch classif.typeid
         case {2,8} % pixel classification
             
@@ -496,11 +512,64 @@ for j=roiid
                     disp('GT and prediction pixels match!');
                 end
                 
-                gt= imgt(pix); gt=gt(:);
-                pred=impred(pix); pred=pred(:);
+                gt= imgt(pix); gt=gt(:); gt=gt';
+                pred=impred(pix); pred=pred(:); pred=pred';
                 
             end
+         
+            case {13} % timeseries classification or regression 
+                
+                  if numel(obj.results)>0 % check is there are results available
+                if isfield(obj.results,classistr)
+                    if isfield(obj.results.(classistr),'id') % it's a classification
+                        
+                           if numel(obj.results.(classistr).id) > 0
+                      %  if sum(obj.results.(classistr).id)>0 % training exists for this ROI !
+                            resok=1;
+                    %    end
+                           end
+                    
+                    else % it s a regression
+                      
+                    if numel(obj.results.(classistr).prob) > 0
+                      %  if sum(obj.results.(classistr).id)>0 % training exists for this ROI !
+                            resok=1;
+                            reg=1;
+                    %    end
+                    end
+                    end
+                else
+                    disp('There is no result available for this classification id');
+                end
+            else
+                disp('There is no result available for this roi');
+            end
             
+            % if roi was used for user training, display the training data first
+            if numel(obj.train)~=0
+                if isfield(obj.train,classistr)
+                    if numel(obj.train.(classistr).id) > 0
+                       % if sum(obj.train.(classistr).id)>0 % training exists for this ROI !
+                            ground=1;
+                      %  end
+                    end
+                else
+                    disp('There is no GT available for this classification id');
+                end
+            else
+                disp('There is no GT available for this roi');
+            end
+            
+            if ground && resok
+                
+                 if isfield(obj.results.(classistr),'id') % it's a classification
+                pred=double(obj.results.(classistr).id);
+                 else
+                      pred=double(obj.results.(classistr).prob);
+                 end
+                gt=double(obj.train.(classistr).id);
+            end
+                
         otherwise % image classification
             % first check if somm post processing is to be done, ie
             % threshold >0 , otherwise , use image classification as is
@@ -570,7 +639,6 @@ for j=roiid
                     CNNpred=CNNpred(pix);
                 end
             end
-            
     end
     % then display the results
     
@@ -579,6 +647,7 @@ for j=roiid
     data.pred=[data.pred pred];
     data.CNNpred=[data.CNNpred CNNpred];
     data.roi=[data.roi j*ones(1,numel(gt))];
+    data.reg=reg;
     %end
     
 end
