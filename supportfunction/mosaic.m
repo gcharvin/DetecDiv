@@ -4,9 +4,11 @@ function mosaic(obj,varargin)
 % obj is the reference object: it can be either a @shallow, a @classi, or a
 % @ROI.
 % other arguments are expained below
-displayLegend=1;
+oneCol=1;
+displayLegend=0;
+snapRate=[];
 scalingFactor=3;
-legendX=40;
+legendX=0;
 name=[];
 ips=10;
 framerate=5;
@@ -60,6 +62,10 @@ for i=1:numel(varargin)
         framerate=varargin{i+1};
     end
     
+    if strcmp(varargin{i},'SnapRate') % used to diplay the time on the movie
+        snapRate=varargin{i+1};
+    end
+    
     if strcmp(varargin{i},'Flip') % used to diplay the time on the movie
         Flip=1;
     end
@@ -70,6 +76,10 @@ for i=1:numel(varargin)
         if numel(channel)==0
             disp('Channel is not found; quitting!');
             return;
+        else
+            if numel(snapRate)==0
+                snapRate=ones(numel(channel));%freq=1 for all channel
+            end
         end
     end
     
@@ -134,6 +144,7 @@ for i=1:numel(varargin)
     
     if strcmp(varargin{i},'Legend') % display legend for classes
         legendX=varargin{i+1};
+        displayLegend=1;
     end
     
     if strcmp(varargin{i},'Scale') % scale images up
@@ -165,6 +176,9 @@ end
 if numel(rois)
     nmov=size(rois,2);
     nsize=[1 1; 1 2; 1 3; 2 2; 2 3; 2 3; 3 3; 3 3; 3 3];
+    if oneCol==1
+        nsize=[1 1; 2 1; 3 1; 4 1; 5 1; 6 1; 7 1; 8 1; 9 1];
+    end
     if nmov>9
         nsize=floor(sqrt(nmov-1))+1;
         nsize=[nsize nsize];
@@ -350,8 +364,12 @@ for k=1:nsize(1) % include all requested rois
         
         for i=1:size(imtmp,4) % loop on frames
             imgRGBsum=uint16(zeros(size(imtmp,1),size(imtmp,2),3));
-            for ii=1:numel(cha)
-                imtmp2=imtmp(:,:,cha{ii},i);
+            for ii=1:numel(cha) %loop on channels
+                if mod(i-1, snapRate(ii))==0
+                    imtmp2=imtmp(:,:,cha{ii},i);
+                else
+                    imtmp2=uint16(zeros(size(imtmp(:,:,cha{ii},i))));
+                end
                 if numel(cha{ii})==1 % single dimension channel => levels can be readjusted
                     if numel(levels{ii})==2 % A 2D vector is provided, therefore image is not an indexed one
                         if levels{ii}==[-1, -1]
@@ -360,10 +378,11 @@ for k=1:nsize(1) % include all requested rois
                             imtmp2 = imadjust(imtmp2,[levels{ii}(1)/65535 levels{ii}(2)/65535],[0 1]);
                         end
                         imtmp2= cat(3, imtmp2*rgb{ii}(1), imtmp2*rgb{ii}(2), imtmp2*rgb{ii}(3));
+                        
                     else % channel represents an indexed image , will use provided colormap
-                        maxe= max( imtmp2(:));
+                        maxe= max( imtmp2(:)); %get classes
                         imrgbbw=uint16(zeros(size(imgRGBsum)));
-                        for iii=1:maxe
+                        for iii=1:maxe %for classes
                             bw=imtmp2==iii;
                             if contour %plots the contour rather than a surface
                                 %bw=bwperim(bw); % ugly but proablably not
@@ -456,11 +475,16 @@ for k=1:nsize(1) % include all requested rois
             for i=1:numel(frames)
                 str='';
                 if rls==1
+                                       
                     pir=sum(frames(i)>=rlsresults.framediv);
-                    if pit<10
+                    if pir<10
                         str=[str  num2str(pir) '  - '];
                     else
                         str=[str num2str(pir) ' - '];
+                    end
+                    if numel(training)==0 %if only results
+                        str=[];
+                        str=[str  num2str(pir) ' divisions'];
                     end
                     
                     if training==1
@@ -473,8 +497,13 @@ for k=1:nsize(1) % include all requested rois
                     end
                 end
                 %ndiv text
+                if numel(training)==1 
                 imout(:,:,:,i)=insertText( imout(:,:,:,i),[legendX-30 shifty/2+2],str,'Font','Monospace 821 Bold BT','FontSize',floor(12*sqrt(scalingFactor)),'BoxColor',...
                     [1 1 1],'BoxOpacity',0.0,'TextColor',255*text,'AnchorPoint','LeftCenter');
+                elseif numel(training)==0 %if only results
+                    imout(:,:,:,i)=insertText( imout(:,:,:,i),[2 shifty/2+2],str,'Font','Monospace 821 Bold BT','FontSize',floor(12*sqrt(scalingFactor)),'BoxColor',...
+                    [1 1 1],'BoxOpacity',0.0,'TextColor',255*text,'AnchorPoint','LeftCenter');
+                end
             end
         end
         
