@@ -33,7 +33,7 @@ cc=1;
 for i=rois
     
     tmp=classif.roi(i);
-    
+   
   %  str
     for j=1:numel(str)
         tmp=tmp.(str{j});
@@ -41,22 +41,22 @@ for i=rois
     
  %   tmp
  
-  %  if numel(tmp) & ~isnan(classif.roi(i).train.(classif.strid).id)
+    if numel(tmp) 
+        %& ~isnan(classif.roi(i).train.(classif.strid).id)
     XTrain{cc,1}=tmp;
     
    % if classif.roi(i).train.(classif.strid).id~=0 % uncomment if willing
    % to resassign =0 values to =numel(tmp) values , and updates the
    % training setp
    
-    YTrain{cc,1}=classif.roi(i).train.(classif.strid).id;
+    YTrain{cc,1}=classif.roi(i).train.(classif.strid).id+1;
   %  else
   %  YTrain{cc,1}=numel(tmp);  
    % classif.roi(i).train.(classif.strid).id=numel(tmp);
- %   end
     
      cc=cc+1;
-     
     end
+     
 end
 
 save(fullfile(classif.path,foldername,'TrainingData.mat'),'XTrain','YTrain','classes');

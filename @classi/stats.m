@@ -25,7 +25,7 @@ for i=1:numel(varargin)
         thr=varargin{i+1};
     end
     
-    if strcmp(varargin{i},'Plot') % can be {'roi','classes','confusion','accuracyrecall',2} to display benchmarks per roi, classes, confusion, or accuracyrecall tradeoff
+    if strcmp(varargin{i},'Plot') % can be {'id',2,'roi','classes','confusion','accuracyrecall',2} to display benchmarks per roi, classes, confusion, or accuracyrecall tradeoff, id plots only the data for specific score values 
         % if accuracyrecall is selected, then
         plo=varargin{i+1};
     end
@@ -104,9 +104,18 @@ if numel(plo)==0 % do not compute if plot is requested
     end
     
 else
+    nscore=1:numel(classif.score);
+    
+      for i=1:numel(plo)
+           if strcmp(plo{i},'id') 
+               nscore=plo{i+1};
+           end
+      end
+      
     for i=1:numel(plo)
         
-        for j=1:numel(classif.score)
+        for j=nscore
+            
             
             if strcmp(plo{i},'confusion') % plot confusion matrix;
                 mate=classif.score(j).confusion;
@@ -219,7 +228,7 @@ else
                 
                 
                 
-                 for j=1:numel(classif.score)
+                 for j=nscore
 
                      switch classif.score(j).thr
                          case -1
@@ -294,6 +303,8 @@ else
                 xmax=cl3(1,id);
                 ymax=cl3(4,id);
                 
+                
+                
                 plot(xmax,ymax,'LineWidth',3,'Color','b','Marker','.','MarkerSize',30); hold on
                 
                 str=[str, {'Varying prediction threshold'}];
@@ -301,6 +312,13 @@ else
                  ylabel('F-score (%)');
                   ylim([0 100]);
                  xlim([0 1]);
+                 
+                 disp(['Score id at max: ' num2str(id)]);
+                 disp(['Threshold max: ' num2str(xmax)]);
+                 disp(['Accuracy at max: ' num2str(cl3(3,id))]);
+                  disp(['Recall at max: ' num2str(cl3(2,id))]);
+                    disp(['Fscore at max: ' num2str(cl3(4,id))]);
+                    
                   end
                 
                   
@@ -437,7 +455,6 @@ data.CNNpred=[];
 classistr=classif.strid;
 
 for j=roiid
-    
     obj=classif.roi(j);
     disp([num2str(j) ' - '  obj.id ' - checking data']);
     

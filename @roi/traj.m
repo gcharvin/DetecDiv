@@ -49,6 +49,7 @@ if reg==0 % this is a classification, not regression
 % find class names
 classes={};
 cc=1;
+
 for i=1:max(obj.results.(classistr).id)
     pix=find(obj.results.(classistr).id==i,1,'first');
     classes{cc}=char(obj.results.(classistr).labels(pix));
