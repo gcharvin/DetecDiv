@@ -5,6 +5,7 @@ function mosaic(obj,varargin)
 % @ROI.
 % other arguments are expained below
 stopWhenDead=[]; %dont show seg if cell is dead
+crop=[];
 oneCol=1;
 displayLegend=0;
 snapRate=[];
@@ -158,6 +159,9 @@ for i=1:numel(varargin)
     if strcmp(varargin{i},'Scale') % scale images up
         scalingFactor=varargin{i+1};
     end
+    if strcmp(varargin{i},'Crop') % scale images up
+        crop=varargin{i+1};
+    end
 end
 %%
 if numel(levels)==0
@@ -308,6 +312,14 @@ if roititle>0 | rls>0
 end
 
 %=creates the table
+if numel(crop)>0
+    for c=1:size(img,3)
+        for f=1:size(img,4)
+            imgtp(:,:,c,f)=imcrop(img(:,:,c,f),crop);
+        end
+    end
+    img=imgtp;
+end
 img=imresize(img,scalingFactor);
 h=size(img,1)+shifty;
 w=size(img,2)+shiftx;
@@ -350,7 +362,16 @@ for k=1:nsize(1) % include all requested rois
         end
         
         imtmp=roitmp.image(:,:,:,frames);
+        if numel(crop)>0
+            for c=1:size(imtmp,3)
+                for f=1:size(imtmp,4)
+                    imtmptp(:,:,c,f)=imcrop(imtmp(:,:,c,f),crop);
+                end
+            end
+            imtmp=imtmptp;
+        end
         imtmp=imresize(imtmp,scalingFactor,'nearest');
+        
         
         frameEnd(1:numel(cha))=9999;
         if numel(find(stopWhenDead==1))>0 %if channel to skip when cell is dead
