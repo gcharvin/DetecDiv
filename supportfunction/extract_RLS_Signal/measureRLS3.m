@@ -18,7 +18,7 @@ environment='local';
 param.classiftype='bud';
 param.postProcessing=1;
 param.errorDetection=1;
-param.ArrestThreshold=100;
+param.ArrestThreshold=175;
 param.DeathThreshold=5;
 param.EmptyThresholdDiscard=500;
 param.EmptyThresholdNext=200;
@@ -68,9 +68,9 @@ for i=1:numel(roiobj)
     roiobj(i).load('results');
     roiobj(i).path=strrep(roiobj(i).path,'/shared/space2/','\\space2.igbmc.u-strasbg.fr\');
     roiobj(i).results.(classifstrid).RLS=RLS(roiobj(i),'result',classif,param); %struct() use to keep measureRLS2 code
-    if isprop(roiobj(i),'train') && numel(roiobj(i).train.(classifstrid).id)>0
-        roiobj(i).train.(classifstrid).RLS=RLS(roiobj(i),'train',classif,param);
-    end
+%     if isprop(roiobj(i),'train') && numel(roiobj(i).train.(classifstrid).id)>0
+%         roiobj(i).train.(classifstrid).RLS=RLS(roiobj(i),'train',classif,param);
+%     end
     
     roiobj(i).save('results');
     roiobj(i).clear;

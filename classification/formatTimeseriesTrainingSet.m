@@ -49,7 +49,7 @@ for i=rois
    % to resassign =0 values to =numel(tmp) values , and updates the
    % training setp
    
-    YTrain{cc,1}=classif.roi(i).train.(classif.strid).id+1;
+    YTrain{cc,1}=classif.roi(i).train.(classif.strid).id;
   %  else
   %  YTrain{cc,1}=numel(tmp);  
    % classif.roi(i).train.(classif.strid).id=numel(tmp);
@@ -61,5 +61,6 @@ end
 
 save(fullfile(classif.path,foldername,'TrainingData.mat'),'XTrain','YTrain','classes');
 
+end
 
 
