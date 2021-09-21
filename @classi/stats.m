@@ -10,6 +10,11 @@ datasetType='';
 thr=[];
 plo=[];
 
+plotROI=0;
+plotClasses=0;
+plotConfusion=0;
+plotScore=0;
+
 
 for i=1:numel(varargin)
     %Method
@@ -25,15 +30,26 @@ for i=1:numel(varargin)
         thr=varargin{i+1};
     end
     
-    if strcmp(varargin{i},'Plot') % can be {'id',2,'roi','classes','confusion','accuracyrecall',2} to display benchmarks per roi, classes, confusion, or accuracyrecall tradeoff, id plots only the data for specific score values 
-        % if accuracyrecall is selected, then
-        plo=varargin{i+1};
+    if strcmp(varargin{i},'ROI')  % plots results per ROI
+        plotROI=1;
+    end
+    
+     if strcmp(varargin{i},'Classes') % Plots results per class
+        plotClasses=1;
+     end
+    
+      if strcmp(varargin{i},'Confusion')  % plots confusion matrix
+        plotConfusion=1;
+      end
+    
+       if strcmp(varargin{i},'Scores') % plots accuracy recal plot based on all scores requested with 'Threshold' option
+        plotScores=1;
     end
     
 end
 
 
-if numel(plo)==0 % do not compute if plot is requested
+
     
     disp(['Stats will be done on the following ROIs: ' num2str(roiid)]);
     

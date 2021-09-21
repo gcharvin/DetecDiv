@@ -42,14 +42,20 @@ for i=rois
  %   tmp
  
     if numel(tmp) 
+        
+      pix=find(isnan(classif.roi(i).train.(classif.strid).id)==0);
+      
+      xtmp=tmp(pix);
+      ytmp=classif.roi(i).train.(classif.strid).id(pix);
+      
         %& ~isnan(classif.roi(i).train.(classif.strid).id)
-    XTrain{cc,1}=tmp;
+    XTrain{cc,1}=xtmp;
     
    % if classif.roi(i).train.(classif.strid).id~=0 % uncomment if willing
    % to resassign =0 values to =numel(tmp) values , and updates the
    % training setp
    
-    YTrain{cc,1}=classif.roi(i).train.(classif.strid).id+1;
+    YTrain{cc,1}=ytmp;
   %  else
   %  YTrain{cc,1}=numel(tmp);  
    % classif.roi(i).train.(classif.strid).id=numel(tmp);
