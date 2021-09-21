@@ -4,6 +4,7 @@ function mosaic(obj,varargin)
 % obj is the reference object: it can be either a @shallow, a @classi, or a
 % @ROI.
 % other arguments are expained below
+stopWhenDead=[]; %dont show seg if cell is dead
 oneCol=1;
 displayLegend=0;
 snapRate=[];
@@ -19,8 +20,8 @@ training=[];
 results=[];
 title=[];
 strid='';
-classif=classi;
-classif.strid='';
+classif=[];
+%classif.strid='';
 
 roititle=0;
 rls=0;
@@ -66,6 +67,10 @@ for i=1:numel(varargin)
         snapRate=varargin{i+1};
     end
     
+    if strcmp(varargin{i},'stopDead') % stop showing channel once cell is dead. Must give 'Classification'
+        stopWhenDead=varargin{i+1};
+    end
+    
     if strcmp(varargin{i},'Flip') % used to diplay the time on the movie
         Flip=1;
     end
@@ -78,7 +83,10 @@ for i=1:numel(varargin)
             return;
         else
             if numel(snapRate)==0
-                snapRate=ones(numel(channel));%freq=1 for all channel
+                snapRate=ones(1,numel(channel));%freq=1 for all channel
+            end
+            if numel(stopWhenDead)==0
+                stopWhenDead=zeros(1,numel(channel));
             end
         end
     end
@@ -98,7 +106,7 @@ for i=1:numel(varargin)
         fontsize=varargin{i+1};
     end
     
-    if strcmp(varargin{i},'Mosaic') % draws the contour of ROIs on the movie
+    if strcmp(varargin{i},'Mosaic') %
         rois=varargin{i+1};
     end
     
@@ -131,7 +139,7 @@ for i=1:numel(varargin)
     end
     
     if strcmp(varargin{i},'Sequence') % outputs data as a sequence of images . sequence is a number that idnicates the number of rows of the monatage image. The number of col is calculated automatically
-        sequence=varargin{i+1};
+        sequence=1;%varargin{i+1};
     end
     
     if strcmp(varargin{i},'Background') % specifies the background color
@@ -342,7 +350,18 @@ for k=1:nsize(1) % include all requested rois
         end
         
         imtmp=roitmp.image(:,:,:,frames);
-        imtmp=imresize(imtmp,scalingFactor);
+        imtmp=imresize(imtmp,scalingFactor,'nearest');
+        
+        frameEnd(1:numel(cha))=9999;
+        if numel(find(stopWhenDead==1))>0 %if channel to skip when cell is dead
+            if numel(classif)>0
+                rlsresults=roitmp.results.(classif.strid).RLS;
+                frameEnd(find(stopWhenDead==1))=rlsresults.frameEnd;
+            else
+                error('You want to hide a channel when cell is dead. You need to indicate a classi with Classification argument');
+            end
+        end
+        
         %   imblack=uint16(zeros(size(imtmp,1),shiftx,size(imtmp,3),size(imtmp,4)));
         %   imout=cat(2,imblack,imtmp);
         
@@ -362,11 +381,17 @@ for k=1:nsize(1) % include all requested rois
         %   imout(:,:,2,:)=imout(:,:,2,:)*background(2);
         %   imout(:,:,3,:)=imgout(:,:,3,:)*background(3);
         
-        for i=1:size(imtmp,4) % loop on frames
+        for i=1:size(imtmp,4) % loop on frames, to replace by frames
+            
+            %IMAGES
             imgRGBsum=uint16(zeros(size(imtmp,1),size(imtmp,2),3));
             for ii=1:numel(cha) %loop on channels
-                if mod(i-1, snapRate(ii))==0
-                    imtmp2=imtmp(:,:,cha{ii},i);
+                if mod(i-1, snapRate(ii))==0 %skip frames 
+                    if frames(i)<frameEnd(ii)  %stop when dead
+                        imtmp2=imtmp(:,:,cha{ii},i);
+                    else
+                        imtmp2=uint16(zeros(size(imtmp(:,:,cha{ii},i))));
+                    end
                 else
                     imtmp2=uint16(zeros(size(imtmp(:,:,cha{ii},i))));
                 end
@@ -386,8 +411,7 @@ for k=1:nsize(1) % include all requested rois
                             bw=imtmp2==iii;
                             if contour %plots the contour rather than a surface
                                 %bw=bwperim(bw); % ugly but proablably not
-                                %worse than what is done below in the end :
-                                %
+                                %worse than what is done below in the end :                             
                                 [B,L] = bwboundaries(bw,'noholes');
                                 bw(:)=0;
                                 bw=65535*uint16(bw);
@@ -398,14 +422,10 @@ for k=1:nsize(1) % include all requested rois
                                     if size(boundary,1)>2 % a polygon must have at least 3 vertices
                                         vecpoltmp=[boundary(:,2)' ; boundary(:,1)'];
                                         vecpoltmp=reshape(vecpoltmp,1,[]);
-                                        bw= insertShape( bw,'Polygon',vecpoltmp,    'Color', round(65535*levels{ii}(iii,:)),'LineWidth',2,'SmoothEdges',true);
+                                        bw= insertShape( bw,'Polygon',vecpoltmp,    'Color', round(65535*levels{ii}(iii,:)),'LineWidth',4,'SmoothEdges',true);
                                     end
                                 end
-                                
-                                % size(bw)
                                 imrgb=bw;
-                                %  figure, imshow(imrgb,[])
-                                %  pause
                                 
                             else % plots surface
                                 bw=65535*uint16(bw);
@@ -426,12 +446,14 @@ for k=1:nsize(1) % include all requested rois
                 if Flip==1 % flip image upside down
                     imtmp2=flip(imtmp2,1);
                 end
-                imgRGBsum=imlincomb(1,imgRGBsum,1,imtmp2);
+                
+                imgRGBsum=imlincomb(1,imgRGBsum,1,imtmp2);                
             end
             
             imout(:,:,:,i)=imgRGBsum;
         end
         
+        %the REST
         %add black rectangles top and left of each roi
         imblack=uint16(65535*ones(size(imtmp,1),shiftx,3,size(imtmp,4)));
         imblack(:,:,1,:)=imblack(:,:,1,:)*background(1);
@@ -511,7 +533,9 @@ for k=1:nsize(1) % include all requested rois
         offsettrain=0;
         
         %=====CLASSES
-        classname=classif.classes;
+        if numel(results) || numel(training)
+            classname=classif.classes;
+        end
         
         if numel(results) % display results classes
             if isfield(roitmp.results,classif.strid)

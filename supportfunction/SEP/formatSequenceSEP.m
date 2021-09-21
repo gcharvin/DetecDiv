@@ -36,17 +36,23 @@ for r=rois
     for ii=1:numel(trainingpath)-1
         targetobj=targetobj.(trainingpath{ii});
     end
-    targetobj2=targetobj.id;
-    targetobj3=targetobj.(trainingpath{end});
+    targetobj2=targetobj.id; %id
+    targetobj.(trainingpath{end})=[]; %idformated
+    targetobj3=targetobj.(trainingpath{end});%idformated
 
     %formatTraining
     if formatTrain==1
         
         obj.roi(r).train.(obj.strid).id=NaN(1,numel(targetobj2));
-        if ~isempty(frameBirth) && ~isempty(frameEnd) && sep>0
-            obj.roi(r).train.(obj.strid).id(frameBirth:frameBirth+sum([divDuration(1:sep)]))=0;
-            obj.roi(r).train.(obj.strid).id(frameBirth+sum([divDuration(1:sep)])+1:frameEnd)=1;
-        end %else, stay full of NaN;
+        if ~isempty(frameBirth) && ~isnan(frameBirth) && ~isempty(frameEnd) && ~isnan(frameEnd)           && sep>0
+            obj.roi(r).train.(obj.strid).id(frameBirth:   frameBirth+ sum([divDuration(1:sep)]))=1;
+            obj.roi(r).train.(obj.strid).id(frameBirth+ sum([divDuration(1:sep)])+1:frameEnd)=2;
+        elseif ~isempty(frameBirth) && ~isnan(frameBirth) && ~isempty(frameEnd) && ~isnan(frameEnd)       && sep==0
+            obj.roi(r).train.(obj.strid).id(frameBirth:frameEnd)=1;
+        end
+        %else, stay full of NaN;    
+            
+        obj.roi(r).train.(obj.strid).('idNaN')=obj.roi(r).train.(obj.strid).id;
         obj.roi(r).train.(obj.strid).id=...
             obj.roi(r).train.(obj.strid).id(~isnan(obj.roi(r).train.(obj.strid).id));
     end
@@ -54,14 +60,16 @@ for r=rois
     %format input timeseries
     if formatInput==1
         targetobj3=NaN(1,numel(targetobj2));
-        if ~isempty(frameBirth) && ~isempty(frameEnd) && sep>0
-            targetobj3(frameBirth:frameEnd)=...
-                targetobj2(frameBirth:frameEnd);
+        if ~isempty(frameBirth) && ~isnan(frameBirth) && ~isempty(frameEnd) && ~isnan(frameEnd) && ~isnan(sep) %if sep is nan but cell is dividing, means it didnt divide enough (defined in measureRLS)
+            targetobj3(frameBirth:frameEnd)=...%idformated
+                targetobj2(frameBirth:frameEnd);%id
         end %else, stay full of NaN;
         
+        obj.roi(r).(trainingpath{1}).(trainingpath{2}).([trainingpath{3} 'NaN'])=targetobj3; %ugly but no better way?
+        
         obj.roi(r).(trainingpath{1}).(trainingpath{2}).(trainingpath{3})=targetobj3;
-        obj.roi(r).(trainingpath{1}).(trainingpath{2}).(trainingpath{3})=...
-            obj.roi(r).(trainingpath{1}).(trainingpath{2}).(trainingpath{3})(~isnan(obj.roi(r).(trainingpath{1}).(trainingpath{2}).(trainingpath{3})));
+        obj.roi(r).(trainingpath{1}).(trainingpath{2}).(trainingpath{3})=...    
+        obj.roi(r).(trainingpath{1}).(trainingpath{2}).(trainingpath{3})(~isnan(obj.roi(r).(trainingpath{1}).(trainingpath{2}).(trainingpath{3})));
     end
     
 end

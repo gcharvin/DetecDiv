@@ -17,7 +17,7 @@ if numel(pix)==0
     str={strfield};
 else
     str={strfield(1:pix(1)-1)};
-    
+
     cc=1;
     for i=1:numel(pix)-1
         str{cc+1}=strfield(pix(i)+1:pix(i+1)-1);
@@ -31,41 +31,40 @@ str{cc+1}=strfield(pix(cc)+1:end);
 cc=1;
 
 for i=rois
-    
+
     tmp=classif.roi(i);
-   
+
   %  str
     for j=1:numel(str)
         tmp=tmp.(str{j});
-    end    
-    
+    end
+
  %   tmp
- 
-    if numel(tmp) 
-        
+
+    if numel(tmp)
+
       pix=find(isnan(classif.roi(i).train.(classif.strid).id)==0);
       
       xtmp=tmp(pix);
       ytmp=classif.roi(i).train.(classif.strid).id(pix);
-      
+
         %& ~isnan(classif.roi(i).train.(classif.strid).id)
     XTrain{cc,1}=xtmp;
-    
+
    % if classif.roi(i).train.(classif.strid).id~=0 % uncomment if willing
    % to resassign =0 values to =numel(tmp) values , and updates the
    % training setp
-   
+
     YTrain{cc,1}=ytmp;
   %  else
-  %  YTrain{cc,1}=numel(tmp);  
+  %  YTrain{cc,1}=numel(tmp);
    % classif.roi(i).train.(classif.strid).id=numel(tmp);
-    
+
      cc=cc+1;
     end
-     
+
 end
 
 save(fullfile(classif.path,foldername,'TrainingData.mat'),'XTrain','YTrain','classes');
 
-
-
+end
