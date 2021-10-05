@@ -16,13 +16,13 @@ fovs=[];
 %% TODO : Make it roi method and export to result_Pos_xxx.mat
 %%
 loadroi=0;
-param.GT=2; %1=GT, 0=results, 2=both result lstm and gt, 3=all, 4=gt cnn, 5=gt + lstm+cnn +cnn2
+param.GT=0; %1=GT, 0=results, 2=both result lstm and gt, 3=all, 4=gt cnn, 5=gt + lstm+cnn +cnn2
 param.align=1;
 param.classiftype='bud';
 param.postProcessing=1;
 param.errorDetection=1;
-param.ArrestThreshold=100;
-param.DeathThreshold=4;
+param.ArrestThreshold=150;
+param.DeathThreshold=2;
 param.EmptyThresholdDiscard=500;
 param.EmptyThresholdNext=200;
 

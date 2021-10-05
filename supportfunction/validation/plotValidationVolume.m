@@ -41,8 +41,8 @@ GT=[];
 RES=[];
 
 for i=rois
-    GT=[GT classi.roi(i).results.signal.cell.(classistrid).volume(1:1:end)];
-    RES=[RES classi.roi(i).results.signal.cell.(classistridRes).volume(1:1:end)];
+    GT=[GT classi.roi(i).results.signal.cell.(classistrid).volume(1:20:end)];
+    RES=[RES classi.roi(i).results.signal.cell.(classistridRes).volume(1:20:end)];
 end
 
 %converts in um²
@@ -50,8 +50,6 @@ GT=GT*0.1056;
 RES=RES*0.1056;
 
 GT(GT==0)=NaN;
-% GT(GT>120)=NaN;
-% GT(RES<15)=NaN;
 RES=RES(~isnan(GT));
 GT=GT(~isnan(GT));
 
@@ -77,12 +75,15 @@ figure('Color','w','Units', 'Normalized', 'Position',[0.1 0.1 0.35 0.35]);
 scatter_kde(RES',GT','filled','MarkerEdgeColor','k', 'LineWidth',0.1);
 corrvol=gcf;
 set(gcf,'Color','w','Units', 'Normalized', 'Position',[0.1 0.1 0.35 0.35])
-    
+
 %DataDensityPlot(GT',RES',32,M,M);
-colormap gray
+green=customcolormap([0 0.75 1], {'#01df00','#6fdf6f','#e7e7e7'});
+orange=customcolormap([0 0.5 1], {'#fd7e00','#ffbd7c','#e7e7e7'});
+grey=customcolormap([0 0.5 1], {'#212121','#7f7f7f','#d8d8d8'});
+colormap(green)
 colorbar
-xlim([0 40]);
-ylim([0 40]);
+xlim([0 20]);
+ylim([0 20]);
 xl=xlim; yl=ylim;
 
 hold on
@@ -97,7 +98,7 @@ xlabel('Predicted surface (µm²)');
 text(2+xl(1),0.9*yl(2),['R^2=' num2str(r(1,2)) newline 'N=' num2str(sum(~isnan(GT)))],'FontSize',16,'FontWeight','bold');
 
 set(gca,'FontSize',16, 'FontName','Myriad Pro', 'LineWidth',3,'FontWeight','bold', 'TickLength',[0.02 0.02],...
-    'XTick',[0:10:M],'YTick',[0:10:M]);
+    'XTick',[0:5:M],'YTick',[0:5:M]);
 
 if figExport==1
     f=gcf;

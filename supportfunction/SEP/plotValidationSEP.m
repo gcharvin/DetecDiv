@@ -66,7 +66,8 @@ ylim([0 M]);
 set(gcf,'Color','w','Units', 'Normalized', 'Position',[0.1 0.1 0.35 0.35])
     
 %DataDensityPlot(data.gt',data.pred',32,M,M);
-colormap autumn
+grey=customcolormap([0 0.5 1], {'#5a5a5a','#949494','#d8d8d8'});
+colormap(grey)
 colorbar
 
 xl=xlim; yl=ylim;

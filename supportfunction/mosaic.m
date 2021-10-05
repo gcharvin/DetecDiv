@@ -5,6 +5,8 @@ function mosaic(obj,varargin)
 % @ROI.
 % other arguments are expained below
 stopWhenDead=[]; %dont show seg if cell is dead
+shiftY=[];
+hideStamp=0;
 crop=[];
 arraySize=[];
 displayLegend=0;
@@ -75,6 +77,14 @@ for i=1:numel(varargin)
     
     if strcmp(varargin{i},'Flip') % used to diplay the time on the movie
         Flip=1;
+    end
+    if strcmp(varargin{i},'HideStamp') %
+        hideStamp=1;
+        shiftY=1;
+    end
+    
+    if strcmp(varargin{i},'NoColor') %
+        nocolor=1;
     end
     
     if strcmp(varargin{i},'Channel') % an array that indicates the channels being displayed, can be scalar array or strid; Multiple channels will be overlaid on the same image
@@ -320,7 +330,7 @@ end
     
     % add row for roi title
     shifty=0;
-    if roititle>0 | rls>0
+    if roititle>0 | rls>0 | shiftY
         shifty=16;
         shifty=floor(shifty*sqrt(scalingFactor));
     end
@@ -577,6 +587,10 @@ end
                 if isfield(roitmp.results,classif.strid)
                     ncla=numel(roitmp.results.(classif.strid).classes);
                     cmap=prism(ncla);
+                    cmap(1,:)=[0.75,0.75,0.75];
+                    if nocolor==1
+                        cmap(:,:)=0.5;
+                    end
                 else
                     ncla=0;
                 end
@@ -598,6 +612,8 @@ end
             if numel(training) % display training classes
                 ncla=numel(roitmp.classes);
                 cmap=prism(ncla);
+                                    cmap(1,:)=[0.75,0.75,0.75];
+
                 if ncla==0
                     disp('No class available in this ROI; There is likely no training for this classification... ');
                     idtrain=[];
@@ -667,6 +683,9 @@ end
         
         for j=1:numel(frames)
             timestamp=[num2str((frames(j)-frames(1))*framerate) 'min'];
+            if hideStamp==1
+                timestamp='';
+            end
             if numel(title)>0
                 timestamp=[title ' - ' timestamp];
             end
