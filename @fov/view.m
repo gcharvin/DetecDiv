@@ -295,7 +295,7 @@ frame=obj.display.frame;
 for i=1:obj.channels
     
    
-    tmp=readImage(obj,frame,i);
+    tmp=uint16(readImage(obj,frame,i));
     
     if numel(tmp)==0
         return;
@@ -304,6 +304,8 @@ for i=1:obj.channels
     tmp=imresize(tmp,obj.display.binning(i)/obj.display.binning(1));
     
     meangfp=0.5*double(mean(tmp(:)));
+    
+    
     maxgfp=double(meangfp+obj.display.intensity(i)*(max(tmp(:))-meangfp));
     % maxgfp2=double(meangfp+obj.intensity*(max(totgfp(:))-meangfp));
     
@@ -515,7 +517,8 @@ h=findobj('Tag',['Fov' obj.id]);
 % end
 
 if strcmp(event.Key,'rightarrow')
-    if obj.display.frame+1>numel(obj.srclist{1})
+  %   if obj.display.frame+1>numel(obj.srclist{1})
+    if obj.display.frame+1>obj.frames
         return;
     end
     

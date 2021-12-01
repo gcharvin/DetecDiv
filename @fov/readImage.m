@@ -4,30 +4,58 @@ function im=readImage(obj,frame,channel)
 
 im=[];
 
-%aa=isfolder(obj.path)
+% first check if the source image belongs to a multiff file.
 
-%aa=obj.srcpath{channel}
-
-%obj.srcpath{channel}
-
-if isfolder(obj.srcpath{channel}) % folders are provided with image or based on phylocell project
-
-list=obj.srclist{channel};
-%    frame
-%
-
-imstr=[fullfile(obj.srcpath{channel}, list(frame).name)];
-
-
-if ~exist(imstr)
-    disp('folder exists, but file does not  ! Quitting....');
-else
-     im=imread(imstr);   
-     disp(['Reading FOV image ' imstr]);
+if channel>numel(obj.channel)
+    disp('This channel does not exist; quitting !');
+    return;
 end
 
+if numel(obj.channel)>numel(obj.srcpath) % in this case , it is likely that a single tiff stores all channel information
+    chastr=1;
+    
+    if numel(obj.srclist{chastr})< obj.frames % in this case , it is likely that a single tiff stores all channel information
+        fra=1;
+        
+        % now find the right image to load 
+        pix=channel:numel(obj.channel):numel(obj.channel)*obj.frames;
+        pix=pix(frame);
+        foldert=obj.srcpath{1};
+        liststr=obj.srclist{1};
+    end
+    
 else
-   disp('folder does not exist ! Quitting....'); 
+    chastr=channel;
+foldert=obj.srcpath{channel};
+pix=[];
+    list=obj.srclist{channel};
+    liststr=list(frame);
+end
+
+
+if isfolder(foldert) % folders are provided with image or based on phylocell project
+    
+    
+    imstr=[fullfile(foldert, liststr.name)];
+    
+    
+    if ~exist(imstr)
+        disp('folder exists, but file does not  ! Quitting....');
+    else
+        
+        if numel(pix)==0 % single tiff image
+        im=imread(imstr);
+        else
+        im=imread(imstr,'tif',pix);    % multitiff image
+        end
+        
+     %   figure, imshow(im,[]);
+        
+        disp(['Reading FOV image ' imstr]);
+    end
+    
+else
+    disp('folder does not exist ! Quitting....');
 end
 
 
@@ -36,30 +64,30 @@ end
 %             v = VideoReader(obj.pathname{channel});
 %            vidHeight = v.Height;
 %            vidWidth = v.Width;
-%            
+%
 %            totalframes=1:v.Duration*v.FrameRate;
-%            
+%
 %            if numel(frames)==0
 %            frames=totalframes;
 %            end
-%            
+%
 %            temp=zeros(vidHeight,vidWidth,3,'uint8');
 %            im=zeros(vidHeight,vidWidth,length(frames),'uint8');
-%        
+%
 %            cc=1;
 %             for k=1:numel(totalframes)
-% 
+%
 %                if k>frames(end)
 %                    continue
 %                end
-%                 
+%
 %                 temp=readFrame(v);
-%                 
+%
 %                 if numel(find(frames==k))==0
 %                    % 'ok'
 %                     continue
 %                 end
-%                 
+%
 %                % cc
 %                 if channel==obj.GFPChannel
 %                 im(:,:,cc)=temp(:,:,2);
@@ -72,7 +100,7 @@ end
 %                 cc=cc+1;
 %             end
 % else
-%    fprintf('Images can not be loaded !!! Chech path !'); 
+%    fprintf('Images can not be loaded !!! Chech path !');
 % end
 
 %

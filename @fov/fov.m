@@ -2,7 +2,8 @@ classdef fov < handle
     properties
         srcpath={''}; % source directory that contains source images; may be updated each time the user loads the project
         srclist={}; % source file names 
-        channel={}; %channel names when importing images 
+        channel={}; %channel names when importing images
+        frames=[];
         tag='Field of view';
         comments='';
         flaggedROIs=[];
@@ -33,7 +34,7 @@ classdef fov < handle
             obj.comments=comments;
             
         end
-        function setpathlist(obj,pathname,number,filtlist)
+        function setpathlist(obj,pathname,number,filelist,name)
             % pathname is a cell array of string with folder paths to
             % channel images
             
@@ -44,51 +45,52 @@ classdef fov < handle
             
             obj.srcpath=pathname;
             obj.number=number;
-            [path , file ]=fileparts(pathname{1});
+         %   [path , file ]=fileparts(pathname{1});
             
-            obj.id=[file '_' num2str(number)];
-            
+            obj.id=[name '_' num2str(number)];
+
             for i=1:numel(pathname)
                 
-                list=dir([obj.srcpath{i} '/*.jpg']);
-                list=[list dir([obj.srcpath{i} '/*.tif'])];
-                
-                if numel(filtlist{i})
-                clist=struct2cell(list);
-                clist=clist(1,:);
-                
-                fi=true(ones(1,size(clist,2)));
-                temp=filtlist{i};
-                
-                for k=1:numel(filtlist{i})
-                   
-                  if ~iscell(filtlist{i})
-                      tmp=filtlist{i};
-                  else
-                     tmp= filtlist{i}{k};
-                     
-                     if iscell(tmp)
-                         tmp=tmp{1};
-                     end
-                  end
-                  
-                occ=regexp(clist,tmp);
-                occ=arrayfun(@(x) numel(x{:}),occ)==1;
-                fi = fi & occ; % filtering files repeatedly
-                end
-                
-                list=list(fi);
-             %   return;
-                end
+%                 list=dir([obj.srcpath{i} '/*.jpg']);
+%                 list=[list dir([obj.srcpath{i} '/*.tif'])];
+%                 
+%                 if numel(filtlist{i})
+%                 clist=struct2cell(list);
+%                 clist=clist(1,:);
+%                 
+%                 fi=true(ones(1,size(clist,2)));
+%                 temp=filtlist{i};
+%                 
+%                 for k=1:numel(filtlist{i})
+%                    
+%                   if ~iscell(filtlist{i})
+%                       tmp=filtlist{i};
+%                   else
+%                      tmp= filtlist{i}{k};
+%                      
+%                      if iscell(tmp)
+%                          tmp=tmp{1};
+%                      end
+%                   end
+%                   
+%                 occ=regexp(clist,tmp);
+%                 occ=arrayfun(@(x) numel(x{:}),occ)==1;
+%                 fi = fi & occ; % filtering files repeatedly
+%                 end
+%                 
+%                 list=list(fi);
+%              %   return;
+%                 end
                 
                 % here loop to find actual files 
-                obj.srclist{i}=list;
-                obj.display.intensity(i)=1;
+                
+                obj.srclist(i)=filelist(i);
             end
+            
 
         end
         function value=get.channels(obj)
-            value=numel(obj.srcpath);
+            value=numel(obj.channel);
         end
     end
 end
