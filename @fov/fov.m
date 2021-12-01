@@ -4,6 +4,8 @@ classdef fov < handle
         srclist={}; % source file names 
         channel={}; %channel names when importing images
         frames=[];
+        interval=[];
+        binning=[];
         tag='Field of view';
         comments='';
         flaggedROIs=[];

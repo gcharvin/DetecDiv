@@ -25,10 +25,13 @@ if numel(obj.channel)>numel(obj.srcpath) % in this case , it is likely that a si
     end
     
 else
-    chastr=channel;
+chastr=channel;
 foldert=obj.srcpath{channel};
 pix=[];
     list=obj.srclist{channel};
+    
+    frame=uint16(ceil(frame./obj.interval(channel))); % in case not every frame was snapped for each channel. 
+    
     liststr=list(frame);
 end
 
