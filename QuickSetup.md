@@ -20,7 +20,7 @@ remove the " ' " after scores{ii} in the arguments of undummify function
  (then select a project name and place to save it)
 
 ```projet=shallowLoad;```
-xx
+To load a project (if oyu just created one, it will be loaded as **myproject** in the variable workspace
 
 ```projet.addData;```
 xx
