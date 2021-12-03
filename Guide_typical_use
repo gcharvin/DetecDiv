@@ -8,4 +8,4 @@ projet.saveCroppedImages;
 
 
 projet.addClassification;
-projet.processing.classification(1).addROI(projet.fov(1),projet.fov(1).flaggedROIs);
+projet.processing.classification(1).addROI(projet.fov(1),projet.fov(1),1:10];
