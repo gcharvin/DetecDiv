@@ -36,6 +36,8 @@ xx
 xx
 
 ## Option A: Image sequence classifier ##
+Choose (4): blablabla
+
 ```projet.processing.classification(1).addROI(projet.fov(1),projet.fov(1),1:10];```
 
 ## Option B: Semantic segmentation ##
