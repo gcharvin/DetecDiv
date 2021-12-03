@@ -9,6 +9,7 @@ Deep Learning Toolbox
 Computer Vision Toolbox
 Bugfix: the classify function of the @DAGNetwork class needs to be patched. On line 172 :
 remove the " ' " after scores{ii} in the arguments of undummify function
+
 ---------------------
 
 ## Create/Save a project ##
