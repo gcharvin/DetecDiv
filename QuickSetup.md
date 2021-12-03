@@ -1,3 +1,5 @@
+[DetecDiv logo](detectdiv_logo.svg)
+
 # DetecDiv quick setup guide #
 
 ## Installation procedure ## 
