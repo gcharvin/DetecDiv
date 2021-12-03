@@ -1,4 +1,4 @@
-function output=parseInputData(pathdir)
+function output=parseInputData(pathdir,varargin)
 % this function is used to parse input file or directory when importing
 % data
 
@@ -16,23 +16,42 @@ output.pos.name=[];
 output.pos.channelfilter={'channel'};
 output.pos.stackfilter={'_z'};
 output.pos.channelname={};
-
+output.comments='';
+output.data=false;
+progress=[];
 typ=[];
 
 % check if stringrepresents a valid file or folder
-
-
+                
 switch exist(pathdir)
     case 7 % is a dir
         
     otherwise
         disp('this directory does not exist ! Quitting !')
+         output.comments='Folder does not exist!';
         return;
 end
-
+    
+% include additional input parameters
+for i=1:numel(varargin)
+    if strcmp(varargin{i}, 'channelfilter')
+        output.pos.channelfilter=varargin{i+1};
+    end
+      if strcmp(varargin{i}, 'stackfilter')
+        output.pos.stackfilter=varargin{i+1};
+      end
+       if strcmp(varargin{i}, 'progress') % progress bar 
+       progress=varargin{i+1};
+    end
+end
 
 % list files and folder present in the propose directory
-
+info='Listing files and folders....';
+ disp(info);
+ if numel(progress)
+ progress.Message=info;
+ end
+ 
 list=dir(pathdir);
 
 % if there are directories avaialable, ignore files in the folder and
@@ -54,6 +73,7 @@ if sum(pix)>2 % there are folders available (. and .. are not real folders)
     if numel( phyloproj ) % phylocell project was found
         disp('This folder contains a phylocell project');
         typ='phylocell';
+         info='Processing phylocell project...';
     else
         disp('This folder contains one or several folders, which will be processed as separate positions');
         typ='folders';
@@ -69,6 +89,7 @@ else % only files available
         disp('This folder contains image files');
     else
         disp('This folder does not contain image files...Quitting!');
+        output.comments='No image files available!';
         return;
     end
     
@@ -82,12 +103,13 @@ else % only files available
         if numel(im)>1  % multi tif file
             disp('This folder contains multifiles files, which will be processed as separate positions');
            typ='multitif';
+            info='Processing multi tiff images...';
         end
     end
     
     if ~strcmp(typ,'multitif') % if list single tif/jpg file, then use the build folder method with one single folder
         typ='folders';
-        
+        info='Processing folder(s)...';
         list=dir(fullfile(pathdir,'..'));
         
         for i=1:numel(list)
@@ -101,22 +123,33 @@ else % only files available
 
 end
 
+ disp(info);
+ if numel(progress)
+ progress.Message=info;
+ end
+ 
+
 switch typ
     case 'phylocell'  % this is a phyloCell project
         
-        output= buildphylocell(phyloproj,output);
+        output.comments=['The folder contains a phylocell project' char(10)];
+        output= buildphylocell(phyloproj,output,progress);
 
     case 'folders' % process each folder as independent positions (incldues micromanager)
         
-        output = buildfolders(list,output);
+         output.comments=['The folder(s) contains (a) series of individual images' char(10)];
+        output = buildfolders(list,output,progress);
         
     case 'multitif'  % check if it a list of files or a collection of mutitiff files (positions)
         
-         output=buildmultitif(list,output);
+          output.comments=['The folder contains (a) series of multi-tiff images' char(10)];
+         output=buildmultitif(list,output,progress);
 end
 
+output.data=true;
 
-function output=buildmultitif(filelist,outputin)
+
+function output=buildmultitif(filelist,outputin,progress)
 % build list offiles and parse channels based on a multif files 
 
 output=outputin;
@@ -157,8 +190,17 @@ if numel(tmp)>0 %positions are terminated by a numer, so sort them
 end
 
 cc=1;
+output.comments=[output.comments num2str(numel(output.pos)) ' positions were identifed' char(10)];
+
   for i=1:numel(output.pos) % loop on positions
-         
+   
+      info=['Processing position: ' num2str(i) '/' num2str(numel(output.pos))];
+       disp(info);
+ if numel(progress)
+ progress.Message=info;
+ progress.Value=min(1,0.67+0.33*(i-1));
+ end
+ 
   im=imfinfo(fullfile(foldername,output.pos(i).name));
   nimages=numel(im);
 
@@ -207,6 +249,8 @@ sut=struct('name',output.pos(cc).name);
     output.pos(cc).binning=ones(1,nch);
     output.pos(cc).interval=interval;
     output.pos(cc).name= ['pos' num2str(sortedres(cc))];
+    output.pos(cc).channelfilter={''};
+    output.pos(cc).stackfilter={''};
     
     for j=1:nch
     output.pos(cc).channelname{j}=['ch' num2str(j)];
@@ -219,7 +263,7 @@ sut=struct('name',output.pos(cc).name);
 
 
 
-function output=buildfolders(dirlist,outputin)
+function output=buildfolders(dirlist,outputin,progress)
 % build list of files and parse channels and stacks, takiing each folder as
 % an individual position
 
@@ -230,6 +274,7 @@ selecteddir=[];
 %dirlist
 cc=1;
 
+ 
 for i=1:numel(dirlist)
     
     if dirlist(i).isdir==0
@@ -277,6 +322,14 @@ realfolders=cellfun(@(x) fullfile(dirlist(1).folder ,x),{output.pos.name},'Unifo
 
 for i=1:numel(output.pos) % extract channels from string names, treat different stackes as different channels
     
+  
+     info=['Processing position: ' num2str(i) '/' num2str(numel(output.pos))];
+       disp(info);
+ if numel(progress)
+ progress.Message=info;
+ progress.Value=min(1,0.67+0.33*(i-1)./numel(output.pos));
+ end
+ 
     % list all files in folder
     tmp=realfolders{i};
     
@@ -302,8 +355,11 @@ for i=1:numel(output.pos) % extract channels from string names, treat different 
         % now parse to retrieve channels according to filters
         strname=filelist(j).name;
         str=output.pos(i).channelfilter{:};
+        
+        if numel(str)
         nstr=regexp(strname,['(?<=' str ')\d+'],'match');
         rescha=[rescha nstr];
+        end
         
     end
     
@@ -314,8 +370,10 @@ for i=1:numel(output.pos) % extract channels from string names, treat different 
     if numel(rescha)==0 % no channel was identifies
         rescha={''};
         disp('We could not identify any image with the requested channel filter');
-        disp('Hence we will consider that ther is only one channel');
+        disp('Hence we will consider that there is only one channel');
     end
+    
+    
     
     for k=1:numel(rescha) % loop on all channels to identify stacks for each channel
         
@@ -343,8 +401,10 @@ for i=1:numel(output.pos) % extract channels from string names, treat different 
             % now parse to retrieve channels according to filters
             strname=filelist(j).name;
             str=output.pos(i).stackfilter{:};
+            if numel(str)
             nstr=regexp(strname,['(?<=' str ')\d+'],'match');
             resstack{k}= [resstack{k} nstr];
+            end
         end
         
         resstack{k}=unique(resstack{k});
@@ -357,11 +417,18 @@ for i=1:numel(output.pos) % extract channels from string names, treat different 
   %   numel( rescha{1})
   %     resstack
     
+    %rescha,resstack
     
     cc=1;
     
     filelist= filelist([filelist.isdir]==0);
     filelist=filelist(contains({filelist.name},{'.tif','.jpg'})); % takes all image files
+    
+    if numel(filelist)==0
+        disp('There are no image in the folder!');
+         output.comments='No image files available!';
+        return
+    end
     
     interval=[];
     
@@ -422,7 +489,7 @@ end
 
 
 
-function output=buildphylocell(phyloproj,outputin)
+function output=buildphylocell(phyloproj,outputin,progress)
 
 output=outputin;
 load(fullfile(phyloproj.folder, phyloproj.name)); % load timeLapse variable
@@ -431,6 +498,7 @@ if exist('timeLapse','var')
     disp('File corresponds to a valid  timeLapse phyloCell project');
 else
     disp('This is not a valid file ! Quitting....');
+     output.comments='No image files available!';
     return;
 end
 
@@ -439,6 +507,7 @@ if isfield(timeLapse,'position')
     npos=1:numel(timeLapse.position.list);
 else
     disp('There are no positions available in this timeLapse project; Quitting...')
+     output.comments='No image files available!';
     return;
 end
 
@@ -448,6 +517,14 @@ binning=[];
 %   nid=n;
 cc=1;
 for i=npos
+    
+         info=['Processing position: ' num2str(i) '/' num2str(npos)];
+       disp(info);
+ if numel(progress)
+ progress.Message=info;
+ progress.Value=min(1,0.67+0.33*(i-1));
+ end
+ 
     strpos=fullfile(phyloproj.folder,[timeLapse.filename '-pos' num2str(i)]);
     
     filename={};

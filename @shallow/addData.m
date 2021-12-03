@@ -1,8 +1,10 @@
-function addData(obj,inputdir)
+function addData(obj,inputarg)
 
 tmppath=pwd;
 
-if nargin==1 % no directory provided
+if nargin==1 % no arg provided
+    
+    
     disp('Input data directory:');
     pathe = uigetdir(tmppath,'Select directory with data:');
     
@@ -10,12 +12,18 @@ if nargin==1 % no directory provided
         disp('Quit!');
         return;
     end
+    newdata=parseInputData(pathe);
 else
+    if ischar(inputarg)
     pathe=inputdir;
+    newdata=parseInputData(pathe);
+    else
+    newdata=inputarg;    
+    end
 end
 
 % parse input folder:
-newdata=parseInputData(pathe);
+
 
 % update fovs in project: 
 
