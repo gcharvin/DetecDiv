@@ -1,4 +1,4 @@
-[DetecDiv logo](detectdiv_logo.svg)
+![DetecDiv logo](detectdiv_logo.svg)
 
 # DetecDiv quick setup guide #
 
