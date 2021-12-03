@@ -1,4 +1,4 @@
-# DetecDiv rethinks image processing pipelines, adding deeplearning enabled classification tools for segmentation and event detection
+# DetecDiv quick setup guide
 
 ## Installation procedure ## 
 
@@ -10,11 +10,7 @@ Computer Vision Toolbox
 Bugfix: the classify function of the @DAGNetwork class needs to be patched. On line 172 :
 remove the " ' " after scores{ii} in the arguments of undummify function
 
-
-## Basic instructions ##
-
-
-### Create/Save a project ###
+## Create/Save a project ##
 ---------------------
 
 ```myproject= shallowNew```
