@@ -1,4 +1,4 @@
-# DetecDiv quick setup guide
+# DetecDiv quick setup guide #
 
 ## Installation procedure ## 
 
