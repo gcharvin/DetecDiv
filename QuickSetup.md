@@ -35,4 +35,9 @@ xx
 ```projet.addClassification;```
 xx
 
+## Option A: Image sequence classifier ##
 ```projet.processing.classification(1).addROI(projet.fov(1),projet.fov(1),1:10];```
+
+## Option B: Semantic segmentation ##
+
+
