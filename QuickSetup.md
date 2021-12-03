@@ -1,4 +1,4 @@
-![DetecDiv logo](https://github.com/gcharvin/DetecDiv/blob/master/Tutorial/detecDiv_logo-01.png)
+![DetecDiv logo](https://github.com/gcharvin/DetecDiv/blob/master/Tutorial/detecDiv_logo.png)
 
 # DetecDiv quick setup guide #
 
