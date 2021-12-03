@@ -5,8 +5,7 @@ projet.addData;
 projet.setPattern;
 projet.identifyRois;
 projet.saveCroppedImages;
-projet.fov(1).extractFluo;
-projet.fov(1).detectFluoPattern;
+
 
 projet.addClassification;
 projet.processing.classification(1).addROI(projet.fov(1),projet.fov(1).flaggedROIs);
