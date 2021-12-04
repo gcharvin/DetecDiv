@@ -1,4 +1,4 @@
-function shallowSave(shallowObj,option)
+function shallowSave(shallowObj,option,progress)
 
 
 [path,file]=shallowObj.getPath;
@@ -7,7 +7,7 @@ reverseStr='';
 cc=1;
 shallowObjOnly=0;
 
-if nargin==2
+if nargin>=2
     if strcmp(option,'shallowObj') % load only the results
         shallowObjOnly=1;
         disp(['Saving only shallowObj ' obj.id]);

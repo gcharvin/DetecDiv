@@ -1,10 +1,11 @@
-function shallowObj=shallowLoad(filename)
+function [shallowObj msg]=shallowLoad(filename)
 
 
 if nargin==0
    [file,path] = uigetfile('*.mat','Select a shallow project',pwd);
    if isequal(file,0)
    disp('User selected Cancel')
+   msg=[];
    shallowObj=[];
    return;
    else
@@ -30,7 +31,28 @@ else
 shallowObj.setPath([path '\'],file); % adjust path 
 end
 
-disp(['Successfully loaded shallow project ' fullfile(path,[file '.mat']) '!']);
+% check if project is already open in the workspace
+varlist=evalin('base','who');
+     for i=1:numel(varlist)
+                
+                if strcmp(varlist{i},'ans')
+                        continue;
+                end
+                
+                 tmp=evalin('base',varlist{i});
+                 if isa(tmp,'shallow')
+                     % check path & filenemae
+                     if strcmp(path, tmp.io.path(1:end-1)) & strcmp(file, tmp.io.file) % var exists already
+                         msg=['Project is already in the workspace under the var name:' varlist{i} '; Quitting...'];
+                         disp(msg);
+                         shallowObj=[];
+                         return
+                     end
+                 end
+     end
+
+msg=['Successfully loaded shallow project ' fullfile(path,[file '.mat']) '!'];
+disp(msg);
 disp('');
 
 
