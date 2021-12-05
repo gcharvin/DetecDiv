@@ -1,8 +1,9 @@
-function classiObj=classiLoad(filename)
+function [classiObj msg]=classiLoad(filename)
 
+msg=[];
 
 if nargin==0
-   [file,path] = uigetfile('*.mat','Select a classification project',pwd);
+   [file,path] = uigetfile('*.mat','Select a classifier (i.e. a XXXXX_classification.mat file)',pwd);
    if isequal(file,0)
    disp('User selected Cancel')
    classiObj=[];
@@ -43,8 +44,35 @@ load(filename);
 path=abspath;
 
 if ~isa(classiObj,'classi')
+    msg='This file does not correspond to a classification object';
     disp('This file does not correspond to a classification object');
+    classiObj=[];
+    return;
+    
 end
+
+% check if classi is already open in the workspace
+varlist=evalin('base','who');
+     for i=1:numel(varlist)
+                
+                if strcmp(varlist{i},'ans')
+                        continue;
+                end
+                
+                 tmp=evalin('base',varlist{i});
+                 if isa(tmp,'classi')
+                     % check path & filenemae
+                  %   path,file
+                  %   a=tmp.path, b=tmp.strid
+                     if strcmp(path,tmp.path(1:end-1)) & strcmp(file, [tmp.strid  '_classification']) % var exists already
+                         msg=['Classi is already in the workspace under the var name:' varlist{i} '; Quitting...'];
+                         disp(msg);
+                         classiObj=[];
+                         return
+                     end
+                 end
+    end
+     
 
 if isunix || ismac
 classiObj.setPath([path '/'],file); % adjust path
@@ -52,7 +80,9 @@ else
 classiObj.setPath([path '\'],file); % adjust path 
 end
 
-classiObj.log(['Classi was loaded with this path: path'],'Creation');
+msg=['Classi was loaded with this path:' path];
+
+classiObj.log(['Classi was loaded with this path:' path],'Creation');
 
 disp(['Successfully loaded classification ' fullfile(path,[file '.mat']) '!']);
 
