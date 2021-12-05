@@ -1,5 +1,14 @@
 
-function importFromClassi(obj,classitocopy)
+function importFromClassi(obj,classitocopy,option)
+
+if nargin==2
+    option=[0 0 0 0];
+end
+
+%option 1: transfer training parameters
+%option 2: transfer trained classifier
+%option 3: transferr formatted fgroundtruth
+% option 4; transffer unformatted ROIs
 
  disp(['Transferring parameters and data from classification: ' num2str(classitocopy.strid)]);
         
@@ -19,12 +28,13 @@ function importFromClassi(obj,classitocopy)
             
             disp(['Found  trainingParam.mat file in the original ' classitocopy.strid ' classi']);
             
-            prompt=['Transfer trainingParam.mat from ' classitocopy.strid ' classification to '  obj.strid  '  [y/n] (Default: y): '];
-            prevclas= input(prompt,'s');
-            if numel(prevclas)==0
-                prevclas='y';
-            end
-            if strcmp(prevclas,'y')
+%             prompt=['Transfer trainingParam.mat from ' classitocopy.strid ' classification to '  obj.strid  '  [y/n] (Default: y): '];
+%             prevclas= input(prompt,'s');
+%             if numel(prevclas)==0
+%                 prevclas='y';
+%             end
+  %          if strcmp(prevclas,'y')
+         if option(1)==1
             copyfile([classitocopy.path '/trainingParam.mat'],[obj.path '/trainingParam.mat']);
             obj.log(['Imported training parameters from '  classitocopy.strid],'Creation')
             end
@@ -36,12 +46,13 @@ function importFromClassi(obj,classitocopy)
             
              disp(['Found classifier file in the original ' classitocopy.strid ' classi']);
             
-            prompt=['Transfer classifier from ' classitocopy.strid ' classification to '  obj.strid  '  [y/n] (Default: y): '];
-            prevclas= input(prompt,'s');
-            if numel(prevclas)==0
-                prevclas='y';
-            end
-            if strcmp(prevclas,'y')
+%             prompt=['Transfer classifier from ' classitocopy.strid ' classification to '  obj.strid  '  [y/n] (Default: y): '];
+%             prevclas= input(prompt,'s');
+%             if numel(prevclas)==0
+%                 prevclas='y';
+%             end
+%             if strcmp(prevclas,'y')
+           if option(2)==1
              copyfile([classitocopy.path '/' classitocopy.strid '.mat'],[obj.path '/' obj.strid '.mat']);
             obj.log(['Imported training parameters from '  classitocopy.strid],'Creation')
             end
@@ -50,12 +61,13 @@ function importFromClassi(obj,classitocopy)
         
         % groundtruth data / images
         if exist([classitocopy.path, '/trainingdataset/'])
-            prompt=['Transfer trainingdataset folder with exported groundtruth data from ' num2str(classitocopy.strid) ' classification [y/n] (Default: y): '];
-            prevclas= input(prompt,'s');
-            if numel(prevclas)==0
-                prevclas='y';
-            end
-            if strcmp(prevclas,'y')
+%             prompt=['Transfer trainingdataset folder with exported groundtruth data from ' num2str(classitocopy.strid) ' classification [y/n] (Default: y): '];
+%             prevclas= input(prompt,'s');
+%             if numel(prevclas)==0
+%                 prevclas='y';
+%             end
+%             if strcmp(prevclas,'y')
+         if option(3)==1
                 mkdir(obj.path,'trainingdataset')
                 copyfile([classitocopy.path '/trainingdataset/*'],[obj.path '/trainingdataset/']);
                 obj.log(['Transfered trainingdatset folder from '  classitocopy.strid],'Creation')
@@ -64,20 +76,22 @@ function importFromClassi(obj,classitocopy)
         
         
         % ROIs
-        prompt=['Transfer ROIs from ' num2str(classitocopy.strid) ' classification [y/n] (Default: y): '];
-        prevclas= input(prompt,'s');
-        if numel(prevclas)==0
-            prevclas='y';
-        end
-        
-      
-        if strcmp(prevclas,'y')
-            obj.addROI(classitocopy); % import ROis from classification option
+%         prompt=['Transfer ROIs from ' num2str(classitocopy.strid) ' classification [y/n] (Default: y): '];
+%         prevclas= input(prompt,'s');
+%         if numel(prevclas)==0
+%             prevclas='y';
+%         end
+%         
+%       
+     %  if strcmp(prevclas,'y')
+          if option(4)==1
+            obj.addROI(classitocopy,1:numel(classitocopy.roi)); % import ROis from classification option
+          end
             
          %   for i=1:numel(obj.roi) % remove irrelevant training and results data
          %       obj.roi(i).removeData('train',classitocopy.strid);
          %       obj.roi(i).removeData('results',classitocopy.strid);
          %   end
-        end
+
         
    

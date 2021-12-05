@@ -29,8 +29,9 @@ chastr=channel;
 foldert=obj.srcpath{channel};
 pix=[];
     list=obj.srclist{channel};
-    
-    frame=uint16(ceil(frame./obj.interval(channel))); % in case not every frame was snapped for each channel. 
+   if numel( obj.interval)>0
+    frame=uint16(ceil(frame./obj.interval(channel))); % in case not every frame was snapped for each channel.   
+   end
     
     liststr=list(frame);
 end

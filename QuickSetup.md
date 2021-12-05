@@ -20,22 +20,22 @@ remove the " ' " after scores{ii} in the arguments of undummify function
  (then select a project name and place to save it)
 
 ```projet=shallowLoad;```
-xx
+To load a project (if you just created one, it will be loaded as ***myproject*** in the variable workspace
 
 ```projet.addData;```
-xx
+To add images to the project. Follow the indications.
 
 ```projet.setPattern;```
-xx
+To set a typical pattern for future automatic cropping (example: select a trap)
 
 ```projet.identifyRois;```
-xx
+To identify the ROIs based on the setPattern
 
 ```projet.saveCroppedImages;```
-xx
+To save the identified Rois into standalone .mat files
 
 ```projet.addClassification;```
-xx
+To create a new classification
 
 ## Option A: Image sequence classifier ##
 Choose (4): blablabla
