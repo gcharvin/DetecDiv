@@ -19,7 +19,7 @@ param.classiftype='bud';
 param.postProcessing=1;
 param.errorDetection=1;
 param.ArrestThreshold=175;
-param.DeathThreshold=5;
+param.DeathThreshold=2;
 param.EmptyThresholdDiscard=500;
 param.EmptyThresholdNext=200;
 
@@ -68,11 +68,11 @@ for i=1:numel(roiobj)
     roiobj(i).load('results');
     roiobj(i).path=strrep(roiobj(i).path,'/shared/space2/','\\space2.igbmc.u-strasbg.fr\');
     roiobj(i).results.(classifstrid).RLS=RLS(roiobj(i),'result',classif,param); %struct() use to keep measureRLS2 code
-%     if isprop(roiobj(i),'train') && numel(roiobj(i).train.(classifstrid).id)>0
-%         roiobj(i).train.(classifstrid).RLS=RLS(roiobj(i),'train',classif,param);
-%     end
+    if isprop(roiobj(i),'train') && numel(roiobj(i).train.(classifstrid).id)>0
+        roiobj(i).train.(classifstrid).RLS=RLS(roiobj(i),'train',classif,param);
+    end
     
-    roiobj(i).save('results');
+    roiobj(i).save();
     roiobj(i).clear;
 end
 
@@ -263,14 +263,14 @@ switch param.classiftype
         end
         %
         
-        %==find DEATH (need 5 frames to be validated)======
+        %==find DEATH (need N frames to be validated)======
         frameDeath=NaN;
         bwDeath=(id==deathid);
         bwDeathLabeled=bwlabel(bwDeath);
         
         for k=1:max(bwDeathLabeled)
             bwDeath=(bwDeathLabeled==k);
-            if sum(bwDeath)> param.DeathThreshold
+            if sum(bwDeath)>= param.DeathThreshold
                 frameDeath=find(bwDeath,1,'first');
                 break
             end
@@ -328,9 +328,9 @@ switch param.classiftype
             for k=2:max(bwsmidLabel)
                 if sum(bwsmidk(k,:))==1 %if a smallid islet is of size 1, check the neighbours islets
                     idx=find(bwsmidk(k,:),1);
-                    idxprev=find(bwsmidk(k-1,:),1,'last');%find previous islet end
+                    %idxprev=find(bwsmidk(k-1,:),1,'last');%find previous islet end
                     if k<max(bwsmidLabel),  idxnext=find(bwsmidk(k+1,:),1,'first');else, idxnext=NaN; end %find next islet start
-                    if (idx-idxprev<3) || (idxnext-idx <3) %if the potential false bud emergence is too close from another small islet -->correct it
+                    if (idxnext-idx <3) %if the potential false bud emergence is too close from another small islet -->correct it
                         id(idx)=id(idx-1);
                     end
                 end

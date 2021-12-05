@@ -4,6 +4,7 @@ function mosaic(obj,varargin)
 % obj is the reference object: it can be either a @shallow, a @classi, or a
 % @ROI.
 % other arguments are expained below
+tabtitle=0;
 stopWhenDead=[]; %dont show seg if cell is dead
 shiftY=[];
 hideStamp=0;
@@ -24,6 +25,10 @@ results=[];
 title=[];
 strid='';
 classif=[];
+nocolor=1;
+
+colr=[36/255,61/255,255/255];
+%colr=[255/255,166/255,33/255];
 
 %classif.strid='';
 
@@ -500,7 +505,7 @@ end
             end
             
             %the REST
-            %add black rectangles top and left of each roi
+            %add background rectangles top and left of each roi
             imblack=uint16(65535*ones(size(imtmp,1),shiftx,3,size(imtmp,4)));
             imblack(:,:,1,:)=imblack(:,:,1,:)*background(1);
             imblack(:,:,2,:)=imblack(:,:,2,:)*background(2);
@@ -558,19 +563,21 @@ end
                         if training==1
                             pit=sum(frames(i)>=rlst.framediv);
                             if pit<10
-                                str=[str ' ' num2str(pit) ' div'];
+                                strt=[blanks(numel(str)) ' ' num2str(pit) ' div'];
                             else
-                                str=[str num2str(pit) ' div'];
+                                strt=[blanks(numel(str)) num2str(pit) ' div'];
                             end
                         end
                     end
                     %ndiv text
                     if numel(training)==1
-                        imout(:,:,:,i)=insertText( imout(:,:,:,i),[legendX-30 shifty/2+2],str,'Font','Monospace 821 Bold BT','FontSize',floor(12*sqrt(scalingFactor)),'BoxColor',...
-                            [1 1 1],'BoxOpacity',0.0,'TextColor',255*text,'AnchorPoint','LeftCenter');
+                        imout(:,:,:,i)=insertText( imout(:,:,:,i),[legendX-0 shifty/2+2],str,'Font','Monospace 821 Bold BT','FontSize',floor(12*sqrt(scalingFactor)),'BoxColor',...
+                            [1 1 1],'BoxOpacity',0.0,'TextColor',colr*65535,'AnchorPoint','LeftCenter');
+                        imout(:,:,:,i)=insertText( imout(:,:,:,i),[legendX-0 shifty/2+2],strt,'Font','Monospace 821 Bold BT','FontSize',floor(12*sqrt(scalingFactor)),'BoxColor',...
+                            [1 1 1],'BoxOpacity',0.0,'TextColor',65535*text,'AnchorPoint','LeftCenter');
                     elseif numel(training)==0 %if only results
                         imout(:,:,:,i)=insertText( imout(:,:,:,i),[2 shifty/2+2],str,'Font','Monospace 821 Bold BT','FontSize',floor(12*sqrt(scalingFactor)),'BoxColor',...
-                            [1 1 1],'BoxOpacity',0.0,'TextColor',255*text,'AnchorPoint','LeftCenter');
+                            [1 1 1],'BoxOpacity',0.0,'TextColor',65535*text,'AnchorPoint','LeftCenter');
                     end
                 end
             end
@@ -586,10 +593,10 @@ end
             if numel(results) % display results classes
                 if isfield(roitmp.results,classif.strid)
                     ncla=numel(roitmp.results.(classif.strid).classes);
-                    cmap=prism(ncla);
+                    cmapr=prism(ncla);
                     cmap(1,:)=[0.75,0.75,0.75];
                     if nocolor==1
-                        cmap(:,:)=0.5;
+                        cmapr(:,1)=colr(1); cmapr(:,2)=colr(2); cmapr(:,3)=colr(3);
                     end
                 else
                     ncla=0;
@@ -602,7 +609,7 @@ end
                     startx=shiftx-ceil(2*sqrt(scalingFactor)) -(numel(results)+numel(training))*wid;
                     
                     if isfield(roitmp.results,classif.strid)
-                        idresults=roitmp.results.(classif.strid).id;
+                        idresults=roitmp.results.(classif.strid).idCNN;
                     else
                         idresults=[];
                     end
@@ -612,8 +619,10 @@ end
             if numel(training) % display training classes
                 ncla=numel(roitmp.classes);
                 cmap=prism(ncla);
-                                    cmap(1,:)=[0.75,0.75,0.75];
-
+                cmap(1,:)=[0.75,0.75,0.75];
+                if nocolor==1
+                   cmap(:,1)=0.25; cmap(:,2)=0.25; cmap(:,3)=0.25;
+                end
                 if ncla==0
                     disp('No class available in this ROI; There is likely no training for this classification... ');
                     idtrain=[];
@@ -630,17 +639,17 @@ end
             end
             
             for ii=1:numel(frames)
-                %===CLASS RECTANGLES===
+                %===CLASS SQUARES===
                 if numel(results) && numel(idresults)
                     for jj=1:ncla
-                        col=round(65535*cmap(jj,:));
+                        col=round(65535*cmapr(jj,:));
                         if idresults(frames(ii))==jj
                             imout(:,:,:,ii) = insertShape( imout(:,:,:,ii),'FilledRectangle',[startx inte*jj-inte/2+shifty-wid/2 wid wid],'Color',col,'Opacity',1 );
                         end
                         imout(:,:,:,ii) = insertShape( imout(:,:,:,ii),'Rectangle',[startx inte*jj-inte/2+shifty-wid/2 wid wid],...
                             'Color', 65535*text,'Opacity',1,'LineWidth',2);
                         if displayLegend==1
-                            imout(:,:,:,ii) = insertText(imout(:,:,:,ii),[shiftx-(numel(results)+numel(training))*wid-5, inte*jj-inte/2+shifty],classname{jj},'Font','Arial Bold','FontSize',20, 'TextColor',col,'BoxColor',[1 1 1],'BoxOpacity',0.0,'AnchorPoint','RightCenter');
+                            %imout(:,:,:,ii) = insertText(imout(:,:,:,ii),[shiftx-(numel(results)+numel(training))*wid-5, inte*jj-inte/2+shifty],classname{jj},'Font','Arial Bold','FontSize',20, 'TextColor',col,'BoxColor',[1 1 1],'BoxOpacity',0.0,'AnchorPoint','RightCenter');
                         end
                     end
                 end
@@ -654,7 +663,7 @@ end
                         imout(:,:,:,ii) = insertShape( imout(:,:,:,ii),'Rectangle',[startx2 inte*jj-inte/2+shifty-wid/2 wid wid],...
                             'Color', 65535*text,'Opacity',1,'LineWidth',2);
                         if displayLegend==1
-                            imout(:,:,:,ii) = insertText(imout(:,:,:,ii),[shiftx-(numel(results)+numel(training))*wid-5, inte*jj-inte/2+shifty],classname{jj},'Font','Arial Bold','FontSize',20, 'TextColor',col,'BoxColor',[1 1 1],'BoxOpacity',0.0,'AnchorPoint','RightCenter');
+                            imout(:,:,:,ii) = insertText(imout(:,:,:,ii),[shiftx-(numel(results)+numel(training))*wid-5, inte*jj-inte/2+shifty],classname{jj},'Font','Monospace 821 Bold BT','FontSize',20, 'TextColor',col,'BoxColor',[1 1 1],'BoxOpacity',0.0,'AnchorPoint','RightCenter');
                         end
                     end
                 end
@@ -671,7 +680,7 @@ end
     imgout=uint8(double( imgout)/256);
     
     
-    %rows on the top of the movie : framerate or title
+    %============TITLE rows on the top of the movie : framerate or title
     if framerate>0 || numel(title)
         shifttitley=floor(sqrt(scalingFactor)*fontsize)+10;
         topimage=uint8(255*ones(shifttitley,size(imgout,2),size(imgout,3),size(imgout,4)));
@@ -687,9 +696,12 @@ end
                 timestamp='';
             end
             if numel(title)>0
-                timestamp=[title ' - ' timestamp];
+                timestamp=[blanks(numel(title)+tabtitle) '- GT : ' timestamp];
             end
-            imgout2(:,:,:,j)=insertText(imgout2(:,:,:,j),[1,shifttitley/2],timestamp,'Font','Arial Bold','FontSize',floor(sqrt(scalingFactor)*fontsize),...
+            %the image passed in 8 bits depth--> use 255
+            imgout2(:,:,:,j)=insertText(imgout2(:,:,:,j),[1,shifttitley/2],[blanks(tabtitle) title],'Font','Monospace 821 Bold BT','FontSize',floor(sqrt(scalingFactor)*fontsize),...
+                'BoxColor',[1 1 1],'BoxOpacity',0.0,'TextColor',colr*255,'AnchorPoint','LeftCenter');
+            imgout2(:,:,:,j)=insertText(imgout2(:,:,:,j),[1,shifttitley/2],timestamp,'Font','Monospace 821 Bold BT','FontSize',floor(sqrt(scalingFactor)*fontsize),...
                 'BoxColor',[1 1 1],'BoxOpacity',0.0,'TextColor',255*text,'AnchorPoint','LeftCenter');
         end
         imgout=imgout2;

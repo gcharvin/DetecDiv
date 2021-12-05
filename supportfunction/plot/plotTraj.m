@@ -14,7 +14,7 @@ function hrls=plotTraj(rls,varargin)
 % colormap, color separation , linewidth spacing etc
 % time : generation or physical time
 figExport=1;
-resultid=0;%choose what result to plot (CNN or CNN+LSTM or CNN+PP...)
+resultid=2;%choose what result to plot (cf rls.grountruth). Not fully implemented. Use 0 and make sure your rls file has only 0 and 1
 param=[];
 comment='';
 for i=1:numel(varargin)
@@ -31,18 +31,18 @@ end
 maxBirth=1000; %max frame to be born. After, discard rls.
 
 %===param===
-param.showgroundtruth=0; % display the groundtruth data
+param.showgroundtruth=1; % display the groundtruth data
 
 param.sort=1; % 1 if sorting of trajectories according to generations
 param.timefactor=5; %put =1 to put the time in frames
 
-param.colorbar=1 ; % or 1 if colorbar to be printed
+param.colorbar=0 ; % or 1 if colorbar to be printed
 param.colorbarlegend='';
 
 param.findSEP=0; % 1: use find sep to find SEP
 param.align=0; % 1 : align with respect to SEP
-param.time=0; %0 : generations; 1 : physical time
-param.plotSignal=1 ; %1 if fluo to be plotted instead of divisions
+param.time=1; %0 : generations; 1 : physical time
+param.plotSignal=0 ; %1 if fluo to be plotted instead of divisions
 param.gradientWidth=0;
 if param.time==1 %sepwidth=separation between rectangles
     param.sepwidth=10; %unit is dataunit (?), so here in frame
@@ -69,8 +69,8 @@ end
 param.autoBounds=0; % computes minmax automatically
 param.minmax=[70 150]; % min and max values for colordisplay;
 %% rr
-param.plotSignal=1 ;
-param.minmax=[1 2.5];
+% param.plotSignal=1 ;
+% param.minmax=[1 2.5];
 %%
 param.startY=0.1+param.cellwidth/2; % origin of Y axis for plot
 param.startX=0;
@@ -326,7 +326,8 @@ for i=1:numel(rls)
             rec2(:,2)=[ttime(1:end) fEnd]';
             %rec2(:,2)=[fdiv(1:end)]';
             %rec2(end,2)=rec2(end,1)+0;
-            maxe=max(maxe,max(ttime)); 
+            maxe=max(maxe,fEnd); 
+            cindex2=1:numel(rec2);
         end
         
         
@@ -468,6 +469,7 @@ if figExport==1
     sz=6;
     xf_width=sz; yf_width=3;
     xlim([0,1.01*maxe]);
+    xlim([0,3250]);
     set(gcf, 'PaperType','a4','PaperUnits','centimeters');
     %set(gcf,'Units','centimeters','Position', [5 5 xf_width yf_width]);
     set(ax,'Units','centimeters', 'InnerPosition', [2 2 xf_width yf_width])
@@ -476,8 +478,6 @@ if figExport==1
     htraj.Renderer='painters';
     exportgraphics(htraj,'\\space2.igbmc.u-strasbg.fr\charvin\Theo\Projects\RAMM\Figures\Fig2\traj.pdf','BackgroundColor','none','ContentType','vector')
 end
-
-
 
 
 
