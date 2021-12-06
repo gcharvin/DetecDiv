@@ -55,7 +55,14 @@ msg=['Successfully loaded shallow project ' fullfile(path,[file '.mat']) '!'];
 disp(msg);
 disp('');
 
-
+% now loading saved classi objects attached to project 
+for i=1:numel(shallowObj.processing.classification)
+    [pathc,filec]=shallowObj.processing.classification(i).getPath;
+    
+ [classiObj msg]=classiLoad(fullfile(pathc,[filec '_classification.mat']));
+ 
+ shallowObj.processing.classification(i)=classiObj;
+end
 
 if numel(shallowObj.fov(1).srcpath{1})~=0 % srce path has been set for at leats one FOV; update ? 
 disp('* Warning *');

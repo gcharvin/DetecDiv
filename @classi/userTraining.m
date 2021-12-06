@@ -1,6 +1,6 @@
 function userTraining(classif,varargin)
 
-% this function load the training process for a specified classification
+% this function load the annotation/curation process for a specified classification
 % task
 classitype=[];
 for i=1:numel(varargin)
@@ -12,17 +12,17 @@ end
         
 category=classif.category;
 
-disp(['Number of classes defined by user: ' num2str(numel(classif.classes))]);
-    for j=1:numel(classif.classes)
-       disp([num2str(j) '- '  classif.classes{j}]);
-    end
-    
-disp(' ');
-    
-disp(['Number of ROIs available in the training set: ' num2str(numel(classif.roi))]);
-    for j=1:numel(classif.roi)
-       disp([num2str(j) '- '  classif.roi(j).id]);
-    end
+% disp(['Number of classes defined by user: ' num2str(numel(classif.classes))]);
+%     for j=1:numel(classif.classes)
+%        disp([num2str(j) '- '  classif.classes{j}]);
+%     end
+%     
+% disp(' ');
+%     
+% disp(['Number of ROIs available in the training set: ' num2str(numel(classif.roi))]);
+%     for j=1:numel(classif.roi)
+%        disp([num2str(j) '- '  classif.roi(j).id]);
+%     end
     
     
 if strcmp(classif.category,'Timeseries') % time series classification and regression
@@ -56,7 +56,7 @@ else % image based classification and regression
     end
         
 % comment : disable restrictions on channel display:
-%classif.roi(classitype).display.selectedchannel=zeros(1,numel(classif.roi(classitype).display.selectedchannel));
+classif.roi(classitype).display.selectedchannel=zeros(1,numel(classif.roi(classitype).display.selectedchannel));
 classif.roi(classitype).display.selectedchannel(channel)=1;
 
 pix = classif.roi(classitype).findChannelID(classif.strid);
