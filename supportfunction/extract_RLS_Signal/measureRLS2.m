@@ -22,7 +22,7 @@ param.classiftype='bud';
 param.postProcessing=1;
 param.errorDetection=1;
 param.ArrestThreshold=150;
-param.DeathThreshold=2;
+param.DeathThreshold=1;
 param.EmptyThresholdDiscard=500;
 param.EmptyThresholdNext=200;
 
@@ -275,7 +275,7 @@ for r=rois
         %================CNN===============
         paramcnn=param;
         paramcnn.postProcessing=0;
-        paramcnn.DeathThreshold=2;
+        paramcnn.DeathThreshold=1;
         if isfield(obj2.roi(r).results,classistrid)
             if isfield(obj2.roi(r).results.(classistrid),'idCNN')
                 if sum(obj2.roi(r).results.(classistrid).idCNN)>0
@@ -309,48 +309,7 @@ for r=rois
             end
         end
         cccnn=cccnn+1;
-    end
-    
-    if param.GT==5
-        %================CNN2===============
-        paramcnn2=param;
-        paramcnn2.postProcessing=0;
-        paramcnn2.DeathThreshold=1;
-        
-        if isfield(obj2.roi(r).results,classistrid)
-            if isfield(obj2.roi(r).results.(classistrid),'idCNN')
-                if sum(obj2.roi(r).results.(classistrid).idCNN)>0
-                    idCNN=obj2.roi(r).results.(classistrid).idCNN; % results for classification
-                    
-                    divTimesCNN=computeDivtime(idCNN,classes,paramcnn);
-                    
-                    rlsResultsCNN2(cccnn2).divDuration=divTimesCNN.duration;
-                    rlsResultsCNN2(cccnn2).frameBirth=divTimesCNN.frameBirth;
-                    rlsResultsCNN2(cccnn2).frameEnd=divTimesCNN.frameEnd;
-                    rlsResultsCNN2(cccnn2).endType=divTimesCNN.endType;
-                    rlsResultsCNN2(cccnn2).framediv=divTimesCNN.framediv;
-                    rlsResultsCNN2(cccnn2).sep=[];
-                    rlsResultsCNN2(cccnn2).name=obj2.roi(r).id;
-                    rlsResultsCNN2(cccnn2).roiid=[class(obj2) '(' num2str(obj2.id) ').roi(' num2str(r) ')'];
-                    rlsResultsCNN2(cccnn2).ndiv=divTimesCNN.ndiv;
-                    if numel(divTimesCNN.framediv)>0
-                        rlsResultsCNN2(cccnn2).totaltime=[divTimesCNN.framediv(1)-divTimesCNN.frameBirth, cumsum(divTimesCNN.duration)+divTimesCNN.framediv(1)-divTimesCNN.frameBirth];
-                    else
-                        rlsResultsCNN2(cccnn2).totaltime=0;
-                    end
-                    rlsResultsCNN2(cccnn2).rules=[];
-                    rlsResultsCNN2(cccnn2).groundtruth=3;
-                    rlsResultsCNN2(cccnn2).divSignal=[];
-                    
-                    divSignal=computeSignalDiv(obj2,r,rlsResultsCNN2(cccnn2));
-                    rlsResultsCNN2(cccnn2).divSignal=divSignal;
-                else
-                    disp(['there is no result available for ROI ' char(r) '=' char(obj2.roi(r).id)]);
-                end
-            end
-        end
-        cccnn2=cccnn2+1;
-    end
+    end 
 end
 
 
@@ -554,9 +513,9 @@ switch param.classiftype
             for k=2:max(bwsmidLabel)
                 if sum(bwsmidk(k,:))==1 %if a smallid islet is of size 1, check the neighbours islets
                     idx=find(bwsmidk(k,:),1);
-                    idxprev=find(bwsmidk(k-1,:),1,'last');%find previous islet end
+                    %idxprev=find(bwsmidk(k-1,:),1,'last');%find previous islet end
                     if k<max(bwsmidLabel),  idxnext=find(bwsmidk(k+1,:),1,'first');else, idxnext=NaN; end %find next islet start
-                    if (idx-idxprev<3) || (idxnext-idx <3) %if the potential false bud emergence is too close from another small islet -->correct it
+                    if (idxnext-idx <3) %if the potential false bud emergence is too close from the next small islet -->correct it
                         id(idx)=id(idx-1);
                     end
                 end

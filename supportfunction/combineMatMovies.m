@@ -10,13 +10,12 @@ if strcmp(cate,'row')
     dim=1;
 end
 
-
 for i=1:numel(matcell)
     
     load(matcell{i})
     
     if ~isvarname('imgout') % imgout var does not exist
-        disp('THe mat file does not feature an imgout movie matrix; quitting....');
+        disp('The mat file does not feature an imgout movie matrix; quitting....');
     end
 
     if i==1
