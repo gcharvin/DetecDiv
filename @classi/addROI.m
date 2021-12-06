@@ -1,10 +1,22 @@
-function addROI(classif,obj,option)
+function addROI(classif,obj,varargin)
 
 % add ROI to object classif
 
 % ROIs are imported from obj, which is either another classification, or a FOV from a shallow project
 
 % Option : a vector that contains the list of ROIs to be added
+
+rois=[];
+convert={};
+
+for i=1:numel(varargin)
+    if strcmp(varargin{i},'rois') % input rois
+        rois=varargin{i+1};
+    end
+     if strcmp(varargin{i},'convert') % provide strings to explain all classes will be converted
+        convert=varargin{i+1};
+    end
+end
 
 if isa(obj,'fov')
     objtype='@fov';
@@ -13,25 +25,28 @@ end
 if isa(obj,'classi')
     objtype='@classi';
     disp('You want to import ROIs from an existing @classi for training');
-    disp('Training datasets (ground truth) will be preserved when transferring ROIs');
+    disp('Training datasets (ground truth) may be preserved when transferring ROIs');
     
 end
 
-
-if nargin==2
-    disp(['This ' objtype ' has ' num2str(numel(obj.roi)) ' ROIs available']);
-    disp('You did not specify which ROI you want to import.');
-    prompt='Please enter the ROIs tu use as training sets: [ROI1id ROI2id ROI3id] (Default: [1 2 3])';
-    rois= input(prompt);
-    if numel(rois)==0
-        rois=[1 2 3];
-    end
-    
+if numel(rois)==0
+    rois=1:numel(obj.roi);
 end
 
-if nargin==3 % use ROI numbers provdied as an extra argument
-    rois=option;
-end
+% if nargin==2
+%     disp(['This ' objtype ' has ' num2str(numel(obj.roi)) ' ROIs available']);
+%     disp('You did not specify which ROI you want to import.');
+%     prompt='Please enter the ROIs tu use as training sets: [ROI1id ROI2id ROI3id] (Default: [1 2 3])';
+%     rois= input(prompt);
+%     if numel(rois)==0
+%         rois=[1 2 3];
+%     end
+%     
+% end
+
+% if nargin==3 % use ROI numbers provdied as an extra argument
+%     rois=option;
+% end
 
 disp('These ROIs will be imported:');
 disp(rois);
@@ -119,18 +134,19 @@ for i=1:length(rois)
         if isa(obj,'classi')
             if isfield(roitocopy.train,obj.strid) % test if previous ROI has training
                 
-                if  numel(preserv)==0 % new class has different number of classes
-                    prompt='Preserve training set? (y/n); Default: y';
-                    preserv= input(prompt,'s');
-                    
-                    if numel(preserv)==0
-                        preserv='y';
-                    end
-                    
-                    disp('This setting will apply to all ROIs');
-                end
+%                 if  numel(preserv)==0 % new class has different number of classes
+%                     
+%                     prompt='Preserve training set? (y/n); Default: y';
+%                     preserv= input(prompt,'s');
+%                     
+%                     if numel(preserv)==0
+%                         preserv='y';
+%                     end
+%                     
+%                     disp('This setting will apply to all ROIs');
+%                 end
                 
-                if strcmp(preserv,'y')
+                if numel(convert) % preserve training set
                     
                     
                     nclasses1=length(classif.classes);
@@ -146,26 +162,29 @@ for i=1:length(rois)
                         disp(['@classi to import from has ' num2str(nclasses2) 'classes:']);
                         disp(obj.classes);
                         
-                        disp('You must map the first set of classes to the second');
+                       % disp('You must map the first set of classes to the second');
                         
-                        
+                         tmp = textscan(convert{2},'%s','Delimiter',' ')
+                         
                         for j=1:nclasses1
                             
-                            str='';
-                            for k=1:nclasses2
-                                str=[str num2str(k) ' - ' obj.classes{k} ';'];
-                            end
+%                             str='';
+%                             for k=1:nclasses2
+%                                 str=[str num2str(k) ' - ' obj.classes{k} ';'];
+%                             end
+%                             
+%                             disp(['Enter the id number(s) of the  class corresponding to ' classif.classes{j}  ]);
+%                             
+%                             prompt=['Among these classes: ' str '; Type 0 if this class has no match; Default :'  num2str(j)];
+%                             idclass= input(prompt);
+%                             
+%                             if numel(idclass)==0
+%                                 idclass=j;
+%                             end
                             
-                            disp(['Enter the id number(s) of the  class corresponding to ' classif.classes{j}  ]);
-                            
-                            prompt=['Among these classes: ' str '; Type 0 if this class has no match; Default :'  num2str(j)];
-                            idclass= input(prompt);
-                            
-                            if numel(idclass)==0
-                                idclass=j;
-                            end
-                            
-                            arr{j}=idclass;
+                   %         arr{j}=idclass;
+                  
+                   arr{j}= tmp{j};
                         end
                     end
                     
