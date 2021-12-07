@@ -242,12 +242,16 @@ for i=1:length(rois)
             if isa(obj,'classi')
                 if  strcmp(obj.category{1},'Pixel') % phenocopy the groundtruth
                     
-                    pixid=      classif.roi(i).findChannelID(obj.strid)
-                    pixidnew=classif.roi(i).findChannelID(classif.strid)
+                    pixid=      classif.roi(i).findChannelID(obj.strid);
+                    pixidnew=classif.roi(i).findChannelID(classif.strid);
                     
-                    if numel(pixid) % copy the groundthruth to new classi 
+                    numel(pixid) & numel(pixidnew) 
+                    
+                    if numel(pixid) && numel(pixidnew) % copy the groundthruth to new classi 
+                        
                     classif.roi(cc+1).image(:,:,pixidnew,:)= classif.roi(cc+1).image(:,:,pixid,:);
                     end
+                    
                     %classif.roi(i).display.channel{pixid}=classif.strid;
                 end
             end

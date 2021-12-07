@@ -16,8 +16,15 @@ labelsfoldername=[path '/trainingdataset/labels'];
 
 imds = imageDatastore(imagesfoldername);
 
-load([path '/classification.mat']); % load the classification variable
-
+load(fullfile(path,[name '_classification.mat'])); % load the classification variable
+if exist('classiObj')
+    classification=classiObj;
+else % old classi name in folder
+    try
+    load(fullfile(path,'classification.mat')); 
+    catch
+    end
+end
 
 
 nclasses=numel(classification.classes);
@@ -133,7 +140,7 @@ fprintf('Saving DeepLab network classifier...\n');
 CNNOptions=struct(options);
 save([path '/TrainingValidation/' 'CNNOptions' '.mat'],'CNNOptions');
 
-saveTrainingPlot(path,name);
+%saveTrainingPlot(path,name);
 
 %else
 %  load([mov.path '/netDeepLab.mat'],'netDeepLab');

@@ -210,7 +210,7 @@ save([path '/TrainingValidation/' 'tmpoptions' '.mat'],'options');
 
 % layers = freezeWeights(layers) sets the learning rates of all the
 % parameters of the layers in the layer array |layers| to zero.
- saveTrainingPlot(path,'CNNTraining');
+% saveTrainingPlot(path,'CNNTraining');
  
 function layers = freezeWeights(layers)
 

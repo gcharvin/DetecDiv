@@ -1,4 +1,6 @@
-function formatPedigreeTrainingSet(foldername,classif,rois)
+function output=formatPedigreeTrainingSet(foldername,classif,rois)
+
+output=0;
 
 if ~isfolder([classif.path '/' foldername '/images'])
     mkdir([classif.path '/' foldername], 'images');
@@ -249,6 +251,7 @@ parfor i=rois
                       end
                       
                       imwrite(imcrop,[classif.path '/' foldername '/images/' classif.classes{clas} '/' cltmp(i).id '_frame_' num2str(ll) '_obj_' num2str(k) '_neighbor_' num2str(mm) '.tif']);
+                       output=output+1;
                       end
                       
                       %imcrop=im(arry,arrx,1,ll);

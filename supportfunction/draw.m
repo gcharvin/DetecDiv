@@ -67,14 +67,23 @@ if numel(classif)>0
             
         else
             %pixelchannel=cc;
+     
         end
         
-        
-        
+
+       obj.display.selectedchannel=zeros(1,numel(obj.display.selectedchannel));
+       obj.display.selectedchannel(classif.channel(1))=1;
+
+
+       pix =obj.findChannelID(classif.strid);
+       pix= obj.channelid(pix);
+       obj.display.selectedchannel(pix)=1;
+
     end
     if strcmp(classif.category{1},'Pedigree')
         ccpedigree=obj.findChannelID(classif.strid);
     end
+    
 end
 
 
@@ -112,12 +121,16 @@ end
 % find channel to be displayed
 cd=0;
 
+
+     
         
 for i=1:numel(obj.display.channel)
      pix=find(obj.channelid==i); % find matrix index associated with channel
  pix=pix(1); % there may be several items in case of a   multi-array channel
  
+ 
           if obj.display.selectedchannel(i)==1
+          %    i
  %   if obj.display.selectedchannel(pix)==1
         cd=cd+1;
     end

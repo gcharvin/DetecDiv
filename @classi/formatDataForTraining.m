@@ -1,4 +1,4 @@
-function formatDataForTraining(classif) %mov,trapsid,option)
+function output=formatDataForTraining(classif) %mov,trapsid,option)
 % saves user annotated data to disk- works for Image, Pixel and LSTM
 % classification
 
@@ -22,14 +22,14 @@ foldername='trainingdataset';
 % remove and recreates all directoires
 % mk folder to store ground user trained data
 
-
-if isfolder([classif.path '/' foldername])
-    try
-        rmdir([classif.path '/' foldername], 's')
-    catch
-        disp('Error: did not manage to remove directory !');
-    end
-end
+% 
+% if isfolder([classif.path '/' foldername])
+%     try
+%         rmdir([classif.path '/' foldername], 's')
+%     catch
+%         disp('Error: did not manage to remove directory !');
+%     end
+% end
 
 
 mkdir(classif.path,foldername)
@@ -46,22 +46,47 @@ rois=trainingParam.rois;
 
 switch category
     case 'Image'
-        formatImageTrainingSet(foldername,classif,rois)    
+       output= formatImageTrainingSet(foldername,classif,rois);    
     case 'LSTM'
-        formatLSTMTrainingSet(foldername,classif,rois)
+       output= formatLSTMTrainingSet(foldername,classif,rois);
     case 'Pixel'
-        formatPixelTrainingSet(foldername,classif,rois)
+      output=formatPixelTrainingSet(foldername,classif,rois);
     case 'Object'
-        formatObjectTrainingSet(foldername,classif,rois)
+        output=formatObjectTrainingSet(foldername,classif,rois);
     case 'Pedigree'
-        formatPedigreeTrainingSet(foldername,classif,rois) 
+       output= formatPedigreeTrainingSet(foldername,classif,rois) ;
     case 'Tracking'
-        formatTrackingTrainingSet(foldername,classif,rois) 
+       output= formatTrackingTrainingSet(foldername,classif,rois) ;
     case 'Timeseries'
-        formatTimeseriesTrainingSet(foldername,classif,rois)  
+       output= formatTimeseriesTrainingSet(foldername,classif,rois)  ;
 end
 
 
+% % check if images of files were generated and return the numbers
+% l=dir(fullfile(classif.path,foldername))
+% 
+% cc=0;
+% for i=1:numel(l)
+%     aa=l(i)
+%     if l(i).isdir==1
+%       
+%     %    if strcmp(l(i).name,'.')
+%     %        continue
+%     %    end
+%     %    if strcmp(l(i).name,'.')
+%     %        continue
+%     %    end
+%         
+%      if strcmp(l(i).name,'labels')
+%         m=dir(fullfile(classif.path,foldername,l(i).name));
+%         nitems=numel(m)-2;
+%         cc=cc+nitems;
+%     end
+%     
+%     end
+% end
+% 
+% cc
 
 
 % 

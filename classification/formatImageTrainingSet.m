@@ -1,7 +1,9 @@
-function formatImageTrainingSet(foldername,classif,rois)
+function output=formatImageTrainingSet(foldername,classif,rois)
 
 % optional argument provides the numbers associaed with reach image in case
 % of a regression 
+
+output=0;
 
 if ~isfolder([classif.path '/' foldername '/images'])
     mkdir([classif.path '/' foldername], 'images');
@@ -74,6 +76,7 @@ parfor i=rois
         if cltmp(i).train.(classif.strid).id(j)~=0 % if training is done
             % if ~isfile([str '/unbudded/im_' mov.trap(i).id '_frame_' tr '.tif'])
             imwrite(tmp,[classif.path '/' foldername '/images/' classif.classes{cltmp(i).train.(classif.strid).id(j)} '/' cltmp(i).id '_frame_' tr '.tif']);
+             output=output+1;
             % end
         end
     
@@ -101,6 +104,7 @@ parfor i=rois
           %   if cltmp(i).train.(classif.strid).id(j)~=-1 % if training is done
              parsaveim([classif.path '/' foldername '/images/' cltmp(i).id '.mat'],tmp);
              parsave([classif.path '/' foldername '/response/' cltmp(i).id '.mat'],cltmp(i).train.(classif.strid).id);
+              output=output+1;
           %   end
      end
     

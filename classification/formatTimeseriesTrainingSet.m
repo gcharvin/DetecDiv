@@ -1,5 +1,6 @@
-function formatTimeseriesTrainingSet(foldername,classif,rois)
+function output= formatTimeseriesTrainingSet(foldername,classif,rois)
 
+output=0;
 % if ~isfolder([classif.path '/' foldername '/data'])
 %     mkdir([classif.path '/' foldername], 'data');
 % end
@@ -56,6 +57,7 @@ for i=rois
    % training setp
 
     YTrain{cc,1}=ytmp;
+     output=output+1;
   %  else
   %  YTrain{cc,1}=numel(tmp);
    % classif.roi(i).train.(classif.strid).id=numel(tmp);
@@ -66,5 +68,6 @@ for i=rois
 end
 
 save(fullfile(classif.path,foldername,'TrainingData.mat'),'XTrain','YTrain','classes');
+
 
 end

@@ -1,5 +1,6 @@
-function formatLSTMTrainingSet(foldername,classif,rois)
+function output=formatLSTMTrainingSet(foldername,classif,rois)
 
+output=0;
 if ~isfolder([classif.path '/' foldername '/images'])
     mkdir([classif.path '/' foldername], 'images');
 end
@@ -117,6 +118,7 @@ parfor i=rois
             if cmp~=0 % if training is done
                 % if ~isfile([str '/unbudded/im_' mov.trap(i).id '_frame_' tr '.tif'])
                 imwrite(tmp,[classif.path '/' foldername '/images/' classif.classes{cmp} '/' cltmp(i).id '_frame_' tr '.tif']);
+                 output=output+1;
                 % end
             end
             
@@ -145,6 +147,7 @@ parfor i=rois
             parsaveim([classif.path '/' foldername '/images/' cltmp(i).id '.mat'],tmp);
             
             parsaveresp([classif.path '/' foldername '/response/' cltmp(i).id '.mat'],cltmp(i).train.(classif.strid).id);
+             output=output+1;
      %   end
         
         

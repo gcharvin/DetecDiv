@@ -1,4 +1,6 @@
-function formatPixelTrainingSet(foldername,classif,rois)
+function output=formatPixelTrainingSet(foldername,classif,rois)
+
+output=0;
 
 mkdir([classif.path '/' foldername],'images')
 mkdir([classif.path '/' foldername],'labels')
@@ -93,6 +95,7 @@ for i=1:numel(rois)
                 %  exptmp=tmp;
                 imwrite(tmp,[classif.path '/' foldername '/images/' cltmp(rois(i)).id '_frame_' tr '.tif']);
                 imwrite(labels(:,:,:,j),[classif.path '/' foldername '/labels/' cltmp(rois(i)).id '_frame_' tr '.tif']);
+                output=output+1;
             end
         end
         

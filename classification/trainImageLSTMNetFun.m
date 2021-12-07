@@ -300,7 +300,7 @@ if strcmp(trainingParam.assemblenet,'y') | ~exist([path '/' name '.mat'])
     
     fprintf('Full network is assembled !\n');
     
-    saveTrainingPlot(path, 'LSTMTraining'); 
+ %   saveTrainingPlot(path, 'LSTMTraining'); 
 else
     load( [path '/' name '.mat']); % loading the fully assembled network
 end

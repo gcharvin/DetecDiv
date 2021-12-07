@@ -1,6 +1,6 @@
-function formatObjectTrainingSet(foldername,classif,rois)
+function output=formatObjectTrainingSet(foldername,classif,rois)
 
-
+output=0;
         if ~isfolder([classif.path '/' foldername '/images'])
             mkdir([classif.path '/' foldername], 'images');
         end
@@ -100,6 +100,7 @@ parfor i=rois
                    % figure, imshow(imcrop,[]);
                    % figure, imshow(tmp,[]);
                      imwrite(imcrop,[classif.path '/' foldername '/images/' classif.classes{clas} '/' cltmp(i).id '_frame_' tr '_obj' num2str(k) '.tif']);
+                      output=output+1;
                 %    end
                     
                     

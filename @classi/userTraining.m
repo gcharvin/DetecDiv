@@ -56,19 +56,21 @@ else % image based classification and regression
     end
         
 % comment : disable restrictions on channel display:
-channel
-
-classif.roi(classitype).display.selectedchannel=zeros(1,numel(classif.roi(classitype).display.selectedchannel));
-classif.roi(classitype).display.selectedchannel(channel)=1;
 
 
-pix = classif.roi(classitype).findChannelID(classif.strid);
-pix=  classif.roi(classitype).channelid(pix)
-classif.roi(classitype).display.selectedchannel(pix)=1;
+% classif.roi(classitype).display.selectedchannel=zeros(1,numel(classif.roi(classitype).display.selectedchannel));
+% classif.roi(classitype).display.selectedchannel(channel)=1;
+% 
+% 
+% pix = classif.roi(classitype).findChannelID(classif.strid);
+% pix=  classif.roi(classitype).channelid(pix);
+% classif.roi(classitype).display.selectedchannel(pix)=1;
 
 
+%painte=classif.roi(classitype).display.selectedchannel
+     
+%anno=classif.roi(classitype).display.channel
 
-            
 %  strfind(obj.processing.classification(classiid).roi(classitype).display.channel, obj.processing.classification(classiid).strid);
 %          cc=[];
 %         for i=1:numel(pix)
