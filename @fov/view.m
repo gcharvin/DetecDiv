@@ -138,6 +138,8 @@ else
     
     h.KeyPressFcn={@changeframe,obj,him,hp};
     
+    h.WindowButtonDownFcn={@deselectROI,obj,him,hp};
+    
     h.Name= ['FOV ' obj.id];
     
 %     btnSetFrame = uicontrol('Style', 'text','FontSize',18, 'String',  ,...
@@ -209,9 +211,11 @@ else
     m = uimenu(h,'Text','Display options','Tag','DisplayROIMenu');
     
      mitem = uimenu(m,'Text','Display ROIs','Checked','on','Tag','drawROIs');
+     
         set(mitem,'MenuSelectedFcn',{@displayROI,obj,him,hp});
         
-       mitem2 = uimenu(m,'Text','Set cropping area to exclude ROIs','Tag','setCrop','Separator','on');
+       mitem2 = uimenu(m,'Text','Set/Show cropping area to exclude ROIs','Tag','setCrop','Separator','on');
+       
         set(mitem2,'MenuSelectedFcn',{@setCrop,obj,him,hp});
         
             hZMenu = uimenu(m,'Label','Reset Zoom to default',...
@@ -228,6 +232,9 @@ else
     
     hZMenu = uimenu(m,'Label','Add ROI for current window',...
         'Callback',{@addROI,obj,him,hp},'Separator','on');
+    
+    hZMenu = uimenu(m,'Label','Clear all ROIs',...
+        'Callback',{@clearROI,obj,him,hp});
  
         
        
@@ -394,6 +401,34 @@ end
 
 end
 
+
+
+function selectPattern(handle,event,obj,him,hp,option)
+% ddefines a region of interest based on user input
+
+%obj.display.selectedchannel=handle.Value;
+val=handle.UserData;
+
+tmp= obj.roi(val).proc;
+
+if numel(tmp)
+ for i=1:numel(obj.roi)
+         obj.roi(i).proc=[];
+ end
+else
+     for i=1:numel(obj.roi)
+         obj.roi(i).proc=[];
+ end
+    obj.roi(val).proc=1; 
+end
+
+% if numel(tmp)
+
+ 
+   updatedisplay(obj,him,hp)
+end
+
+
 function adjustROI(handle,event,hp)
 % adjusts ROI value in user input field when playing with zoom
 
@@ -443,6 +478,14 @@ obj.addROI(roival,obj.id);
 updatedisplay(obj,him,hp);
 end
 
+function clearROI(handle,event,obj,him,hp)
+% function in the context menu to add custom ROI
+
+obj.removeROI;
+updatedisplay(obj,him,hp);
+end
+
+
 function setCrop(handle,event,obj,him,hp)
 % function in the context menu to add custom ROI
 %htext=findobj('Tag','roivalue');
@@ -457,6 +500,8 @@ if numel(obj.crop)
  hCMZ = uicontextmenu;
 hZMenu = uimenu('Parent',hCMZ,'Label','Delete cropping area',...
         'Callback',@destroy);
+ hZMenu2 = uimenu('Parent',hCMZ,'Label','Hide cropping area',...
+        'Callback',@hidecrop);
 temp=drawpolygon('ContextMenu',hCMZ,'Tag','cropROI','Position',obj.crop);
    
   % temp.UserData.OnCleanup = onCleanup(@()destroy);
@@ -464,6 +509,8 @@ else
  hCMZ = uicontextmenu;
 hZMenu = uimenu('Parent',hCMZ,'Label','Delete cropping area',...
         'Callback',@destroy);
+    hZMenu2 = uimenu('Parent',hCMZ,'Label','Delete cropping area',...
+        'Callback',@hidecrop);
 temp=drawpolygon('ContextMenu',hCMZ,'Tag','cropROI');
 
   %temp.UserData.OnCleanup = onCleanup(@()destroy);
@@ -485,6 +532,12 @@ end
             delete(temp)
         end
          obj.crop=[];
+     end
+   function hidecrop(src,event)
+        if ishandle(temp)
+            delete(temp)
+        end
+       %  obj.crop=[];
      end
 end
 
@@ -613,7 +666,13 @@ for i=1:numel(obj.roi)
     if strcmp(hdisplaymenu.Checked,'on')   
     roitmp=obj.roi(i).value;
     roitmp=[roitmp(1) roitmp(2) roitmp(1)+ roitmp(3) roitmp(2)+ roitmp(4)];
-    h=patch([roitmp(1) roitmp(3) roitmp(3) roitmp(1) roitmp(1)],[roitmp(2) roitmp(2) roitmp(4) roitmp(4) roitmp(2)],[1 0 0],'FaceAlpha',0.3,'Tag',['roitag_' num2str(i)],'UserData',i);
+   
+   
+    if numel(obj.roi(i).proc) % roi has been set as pattern
+        h=patch([roitmp(1) roitmp(3) roitmp(3) roitmp(1) roitmp(1)],[roitmp(2) roitmp(2) roitmp(4) roitmp(4) roitmp(2)],[1 0 0],'FaceAlpha',0.3,'Tag',['roitag_' num2str(i)],'UserData',i,'LineWidth',4);
+    else
+         h=patch([roitmp(1) roitmp(3) roitmp(3) roitmp(1) roitmp(1)],[roitmp(2) roitmp(2) roitmp(4) roitmp(4) roitmp(2)],[1 0 0],'FaceAlpha',0.3,'Tag',['roitag_' num2str(i)],'UserData',i);
+    end
     
     htext=text(roitmp(1),roitmp(2), num2str(i), 'Color','r','FontSize',10,'Tag',['roitext_' num2str(i)]);
 
@@ -626,6 +685,11 @@ for i=1:numel(obj.roi)
     
      hZMenu = uimenu('Parent',hCMZ,'Label','Adjust ROI param...',...
         'Callback',{@setROIValue,obj,him,hp,1},'UserData',i);
+    
+    
+     hZMenu = uimenu('Parent',hCMZ,'Label','Select/Deselect ROI as reference pattern.',...
+        'Callback',{@selectPattern,obj,him,hp,1},'UserData',i);
+    
     
     %hZMenu = uimenu('Parent',hCMZ,'Label','Switch to pan',...
     %    'Callback','pan(gcbf,''on'')');
@@ -679,6 +743,13 @@ set(ha.Title,'String',str,'Interpreter','None');
    
 end
 
+function deselectROI(handles,event,obj,him,hp)
+ h=findobj('Type','patch');
+ set(h,'FaceColor',[1 0 0]);
+ 
+%   set(handles,'FaceColor',[1 0 0]);
+   
+end
 
  function displayROI(handles, event, obj,him,hp)
  

@@ -14,7 +14,7 @@ reverseStr='';
                    if numel(classiObj.roi(j).id)
                   classiObj.roi(j).save;
                   classiObj.roi(j).clear;
-                  disp(['Prcoessed ROI  ' classiObj.roi(j).id])
+                  disp(['Processed ROI  ' classiObj.roi(j).id])
                    end
                end
                

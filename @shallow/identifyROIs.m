@@ -1,4 +1,4 @@
-function identifyROIs(obj,fovid,frameid,thr)
+function identifyROIs(obj,fovid,frameid,keepexisting)
 
 
 if numel(obj.processing.roi.pattern)==0
@@ -25,26 +25,33 @@ out.fovid=[];
 scale=1;
 cc=1;
 
-str='';
-arrcrop=[];
+crop=[];
 for i=fovid
-if  numel(obj.fov(i).crop)>0
-
-    str=[str ' ' num2str(i)];
-    arrcrop=[arrcrop i];
+    if  numel(obj.fov(i).crop)>0
+     crop=obj.fov(i).crop;
+     break;
+   end
 end
-end
-
-cr=0;
-if numel(str) 
-disp(['These FOVs have a crop region defined :' str]);
-disp('Please enter the reference crop FOV to be used for other uncropped FOVs; Type 0 if no crop should be used');
-prompt=['Reference FOV ID for cropping; Default: ' num2str(arrcrop(1))];
-cr=input(prompt);
-if numel(cr)==0
-    cr=arrcrop(1);
-end
-end
+% str='';
+% arrcrop=[];
+% for i=fovid
+% if  numel(obj.fov(i).crop)>0
+% 
+%     str=[str ' ' num2str(i)];
+%     arrcrop=[arrcrop i];
+% end
+% end
+% 
+% cr=0;
+% if numel(str) 
+% disp(['These FOVs have a crop region defined :' str]);
+% disp('Please enter the reference crop FOV to be used for other uncropped FOVs; Type 0 if no crop should be used');
+% prompt=['Reference FOV ID for cropping; Default: ' num2str(arrcrop(1))];
+% cr=input(prompt);
+% if numel(cr)==0
+%     cr=arrcrop(1);
+% end
+% end
 
 for i=fovid % loop on all possible field of view
     
@@ -96,11 +103,13 @@ ccc=1;
 
 scaled2=scaled;
 
-croppingarea=obj.fov(i).crop; % get the cropping area for the given fov 
+croppingarea=crop; 
+%obj.fov(i).crop; % get the cropping area for the given fov 
 
-if cr>0 & numel(croppingarea)==0 % a reference FOV id has been defined for cropping 
-    croppingarea=obj.fov(cr).crop;
-end
+% if cr>0 & numel(croppingarea)==0 % a reference FOV id has been defined for cropping 
+%     croppingarea=obj.fov(cr).crop;
+% end
+
 if  numel(croppingarea)>0% include crop factor in ROI selection
  scaled2=[];
  
@@ -117,6 +126,7 @@ if sum(inpolygon(xq,yq,croppingarea(:,1),croppingarea(:,2)))<4 % roi is not full
    scaled2(ccc,:)=scaled(j,:);
    ccc=ccc+1;
 end
+
 disp(['FOV is cropped: only ' num2str(ccc-1) ' ROIs have been selected !']);
 end
 
@@ -140,14 +150,14 @@ for j=1:numel(out)
     
     if existingROI>0
         
-       prompt=['There are ' num2str(existingROI) ' already existing ROIs in FOV ' obj.fov(out(j).fovid).id '. Delete (Y/N) [Y] ?'];
+     %  prompt=['There are ' num2str(existingROI) ' already existing ROIs in FOV ' obj.fov(out(j).fovid).id '. Delete (Y/N) [Y] ?'];
        
-       str= input(prompt,'s');
-       if isempty(str)
-           str='Y';
-       end
+    %   str= input(prompt,'s');
+     %  if isempty(str)
+     %      str='Y';
+     %  end
        
-       if strcmp(str,'Y')
+       if ~keepexisting %strcmp(str,'Y')
           obj.fov(out(j).fovid).removeROI(1:numel(obj.fov(out(j).fovid).roi));
        end
            
