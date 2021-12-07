@@ -3,13 +3,13 @@ function formatPixelTrainingSet(foldername,classif,rois)
 mkdir([classif.path '/' foldername],'images')
 mkdir([classif.path '/' foldername],'labels')
 
-defaultclass=[];
+%defaultclass=[];
 
-prompt='If there are some unassigned pixels, to which class id number do you want to attribute it ? [Default 1]): ';
-defaultclass= input(prompt);
-if numel(defaultclass)==0
+%prompt='If there are some unassigned pixels, to which class id number do you want to attribute it ? [Default 1]): ';
+%defaultclass= input(prompt);
+%if numel(defaultclass)==0
     defaultclass=1;
-end
+%end
 
 % in case of pixels, training data is a list of 3 channels from the
 % roi.image matrix with indexed colors
@@ -112,7 +112,6 @@ for i=rois
 end
 
 % saving classification  for training
-classification=classif;
-save([classif.path '/classification.mat'],'classification');
-end
+classiSave(classif);
+%save([classif.path '/classification.mat'],'classification');
 

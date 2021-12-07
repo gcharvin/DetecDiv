@@ -41,7 +41,7 @@ obj.processing.classification(n+1) =  classiNew('path',pth,'filename',name,'id',
 % obj.processing.classification(n+1).init;    
 % end
  
- shallowSave(obj);
+% shallowSave(obj);
  
  disp(['Shallow project is saved !']);
 

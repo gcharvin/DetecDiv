@@ -28,9 +28,16 @@ if numel(im)~=0
     disp(['Saving ROI ' obj.id ' to ' obj.path '/im_' obj.id '.mat']);   
     obj.log(['Saving ROI to ' obj.path '/im_' obj.id '.mat'],'Saving')
     obj.log(['Saving results to ' obj.path '/results_' obj.id '.mat'],'Saving')
+    
+    if isfolder(obj.path)
     eval(['save  ' '''' obj.path '/im_' obj.id '.mat' ''''  ' roiobj']);   
     disp(['Saving ROI results ' obj.id ' to ' obj.path '/results_' obj.id '.mat']);
     eval(['save  ' '''' obj.path '/results_' obj.id '.mat' ''''  ' results']);
+    else
+       disp('ERROR: Could not find / access the requested folder !!! ');
+    end
     
+else
+   disp('Image is not loaded ; Load image first ...');
 end
 % '''' allows one to use quotes !!!

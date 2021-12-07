@@ -1,8 +1,26 @@
 
-function importFromClassi(obj,classitocopy,option)
+function importFromClassi(obj,classitocopy,option,rois)
 
-if nargin==2
+% if option is provided and option(4), then rois must be an array of roi
+
+% id.
+%if nargin<4
+%    option=[0 0 0 0];
+%end
+
+
+if nargin<3
     option=[0 0 0 0];
+ %   rois=1:numel(classitocopy.roi);
+end
+
+if nargin<4
+    rois=[];
+end
+
+
+if option(4)==1 & numel(rois)==0
+    rois=1:numel(classitocopy.roi);
 end
 
 %option 1: transfer training parameters
@@ -85,7 +103,7 @@ end
 %       
      %  if strcmp(prevclas,'y')
           if option(4)==1
-            obj.addROI(classitocopy,1:numel(classitocopy.roi)); % import ROis from classification option
+            obj.addROI(classitocopy,'rois',rois); % import ROis from classification option
           end
             
          %   for i=1:numel(obj.roi) % remove irrelevant training and results data

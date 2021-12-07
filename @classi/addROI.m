@@ -13,7 +13,7 @@ for i=1:numel(varargin)
     if strcmp(varargin{i},'rois') % input rois
         rois=varargin{i+1};
     end
-     if strcmp(varargin{i},'convert') % provide strings to explain all classes will be converted
+     if strcmp(varargin{i},'convert') % provide character to explain how all classes will be converted
         convert=varargin{i+1};
     end
 end
@@ -164,7 +164,7 @@ for i=1:length(rois)
                         
                        % disp('You must map the first set of classes to the second');
                         
-                         tmp = textscan(convert{2},'%s','Delimiter',' ')
+                         tmp = textscan(convert{2},'%s','Delimiter',' ');
                          
                         for j=1:nclasses1
                             
@@ -239,12 +239,18 @@ for i=1:length(rois)
         classif.roi(cc+1).addChannel(matrix,classif.strid,[1 1 1],[0 0 0]);
         classif.roi(cc+1).display.selectedchannel(end)=1;
         
-        %     if isa(obj,'classi')
-        %         if  strcmp(obj.category{1},'Pixel')
-        %             pixid=classif.roi(i).findChannelID(obj.strid);
-        %             classif.roi(i).display.channel{pixid}=classif.strid;
-        %         end
-        %     end
+            if isa(obj,'classi')
+                if  strcmp(obj.category{1},'Pixel') % phenocopy the groundtruth
+                    
+                    pixid=      classif.roi(i).findChannelID(obj.strid)
+                    pixidnew=classif.roi(i).findChannelID(classif.strid)
+                    
+                    if numel(pixid) % copy the groundthruth to new classi 
+                    classif.roi(cc+1).image(:,:,pixidnew,:)= classif.roi(cc+1).image(:,:,pixid,:);
+                    end
+                    %classif.roi(i).display.channel{pixid}=classif.strid;
+                end
+            end
         %pixelchannel=size(obj.image,3);
     end
     

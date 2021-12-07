@@ -14,7 +14,7 @@ reverseStr='';
                    if numel(classiObj.roi(j).id)
                   classiObj.roi(j).save;
                   classiObj.roi(j).clear;
-                  disp(['Saved ROI  ' classiObj.roi(j).id])
+                  disp(['Prcoessed ROI  ' classiObj.roi(j).id])
                    end
                end
                
@@ -26,6 +26,10 @@ reverseStr='';
 
  classiObj.log('Classi is saved','Creation')
 
+ if isfolder(path)
 save(fullfile(path,[file '_classification.mat']),'classiObj');
             
 disp(['Classification ' fullfile(path,[file '_classification.mat']) ' is saved !']);
+ else
+ disp('Could not find/access the requested folder  ; Check your connection! Quitting!');
+ end

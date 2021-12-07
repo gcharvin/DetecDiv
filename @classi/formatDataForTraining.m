@@ -12,7 +12,7 @@ else
     return;
 end
 
-disp('Saving user training to disk...');
+disp('Removing previous labeled datasets from folders...This can take a very long time...');
 %classif=obj.processing.classification(classiid);
 category=classif.category;
 category=category{1};
@@ -21,6 +21,7 @@ foldername='trainingdataset';
 
 % remove and recreates all directoires
 % mk folder to store ground user trained data
+
 
 if isfolder([classif.path '/' foldername])
     try
@@ -34,6 +35,8 @@ end
 mkdir(classif.path,foldername)
 
 rois=trainingParam.rois;
+
+
 % if nargin<3
 % rois=1:numel(classif.roi);
 % else

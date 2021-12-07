@@ -48,7 +48,8 @@ classiObj=classi(path,filename,id);
 
 classiObj.log('Classi creation','Creation')
 
-classiSave(classiObj);
+%classiSave(classiObj);
+
 
 %mkdir(path,filename);
 %classiObj.setPath(fullfile(path,filename),filename);
