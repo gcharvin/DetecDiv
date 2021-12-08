@@ -124,7 +124,7 @@ for i=1:size(roilist,2) % loop on all ROIs using parrallel computing
     disp(['Classifying ' num2str(roiobj.id)]);
     
     if numel(p)
-    p.Value=double(i)./double(size(roilist,2));
+    p.Value=0.9* double(i)./double(size(roilist,2));
     
     p.Message=['Classifying ROI  ' roiobj.id];
     end
