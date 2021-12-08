@@ -231,37 +231,74 @@ classdef shallow < handle
                     for i=1:numel(obj.fov)
                         for k=1:numel(obj.fov(i).srcpath)
                             if i==1 && k==1
-                                strpath=uigetdir(strpath,'Input folder that contains the ');
                                 
-                                if ispc
-                                    p=strfind(strpath,'\');
-                                else
-                                    p=strfind(strpath,'/') ;
+                                prompt = {obj.fov(i).srcpath{k}};
+                                dlgtitle = 'Please enter the correct path for this directory (ignore / versus \):';
+                                dims = [1 150];
+                                definput = {obj.fov(i).srcpath{k}};
+                                answer = inputdlg(prompt,dlgtitle,dims,definput);
+
+                                if numel(answer)==0
+                                    return;
                                 end
-                                basepath=strpath(1:p(end-1)-1);
+                                
+                                oldpath=obj.fov(i).srcpath{k};
+                                % identidy part of the path to be changed: 
+                                str='';
+                                for n=1:numel(oldpath)
+                                    str=oldpath(end-n:end);
+                                    if numel(strfind(answer{1},str))==0
+                                        break
+                                    end
+                                end
+                                
+                                yo=oldpath(end-n+1:end);
+                                oldbase= oldpath(1:end-n);
+                                newbase=split(answer{1},yo);
+                                newbase=newbase{1};
+                                
+                             %   strpath=uigetdir(strpath,'Input the base folder');
+                                
+                              %  if strpath==0
+                              %      return;
+                              %  end
+                                
+%                                 if ispc
+%                                     p=strfind(strpath,'\');
+%                                 else
+%                                     p=strfind(strpath,'/') ;
+%                                 end
+                             %   basepath=strpath(1:p(end-1)-1);
                                 
                             end
                             
                             tmp=obj.fov(i).srcpath{k};
+                            sp=split(tmp,oldbase);
+                            kep=sp{2};
                             
-                            if ispc
-                                p=strfind(tmp,'\');
-                            else
-                                p=strfind(tmp,'/');
-                            end
+                       %    if ispc
+                       %        p=strfind(tmp,'\');
+                       %    else
+                      %          p=strfind(tmp,'/');
+                      %     end
                             
-                            tmp=tmp(p(end-1):end);
+                       %     p
+                      %      tmp=tmp(p(end-1):end);
                             
-                            finalpath=[basepath tmp];
+                       %     finalpath=[basepath tmp];
+                            
+                               finalpath=fullfile([newbase kep]);
+                             %  return
                             
                             if isfolder(finalpath)
                                 obj.fov(i).srcpath{k}=finalpath;
                                 
-                                if ispc
-                                    obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'/','\');
-                                else
-                                    obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'\','/');
-                                end
+                           %     obj.fov(i).srcpath{k}
+                           %    if ispc
+                           %        obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'/','\');
+                          %     else
+                           %        obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'\','/');
+                           %    end
                                 
                             else
                                 disp('Warning : this path does not exsit: cannot change it !');
@@ -367,19 +404,19 @@ classdef shallow < handle
             
             if numel(obj.fov(1).srcpath{1})~=0 % srce path has been set for at leats one FOV; update ?
                 
-                for i=1:numel(obj.fov)
-                    disp(['Path for FOV: ' num2str(i)])
-                    disp([obj.fov(i).srcpath{1}]);
-                    
-                    disp('Loading first image to check path integrity....');
-                    
-                    im=obj.fov(i).readImage(1,1);
-                    
-                    if numel(im)>0
-                        disp('Path is OK for this FOV');
-                        disp('-------------------------');
-                    end
-                end
+%                 for i=1:numel(obj.fov)
+%                     disp(['Path for FOV: ' num2str(i)])
+%                     disp([obj.fov(i).srcpath{1}]);
+%                     
+%                     disp('Loading first image to check path integrity....');
+%                     
+%                     im=obj.fov(i).readImage(1,1);
+%                     
+%                     if numel(im)>0
+%                         disp('Path is OK for this FOV');
+%                         disp('-------------------------');
+%                     end
+%                 end
                 
                 
             else
