@@ -8,47 +8,88 @@ function classifyData(obj,classiid,varargin)
 %'Classifier' loads the classifier
 
 
-roilist=[];
+rois=[];
+fovs=[];
+
+p=[];
+
 for i=1:numel(varargin)
     if strcmp(varargin{i},'Classifier')
         classifierStore=varargin{i+1};
     end
 
     if strcmp(varargin{i},'Rois')
-        roilist=varargin{i+1};
+        rois=varargin{i+1};
     end
     if strcmp(varargin{i},'Fovs')
         fovs=varargin{i+1};
     end
     
+  if strcmp(varargin{i},'Progress') % update progress bar
+        p=varargin{i+1};
+    end
+    
 end
 
-if numel(roilist)==0
-    roilist=[];
-    roilist2=[];
-    if numel(fovs)
-        for i=fovs
-            % for j=1:numel(obj.fov(i).roi)
-            %size( ones(1,length(obj.fov(i).roi)) )
-            roilist = [roilist i*ones(1,length(obj.fov(i).roi)) ];
-            roilist2 = [roilist2  1:length(obj.fov(i).roi) ];
-            % end
-        end
-    else
-        % classify all ROIs
-        for i=1:length(obj.fov)
-            % for j=1:numel(obj.fov(i).roi)
-            %size( ones(1,length(obj.fov(i).roi)) )
-            roilist = [roilist i*ones(1,length(obj.fov(i).roi)) ];
-            roilist2 = [roilist2  1:length(obj.fov(i).roi) ];
-            % end
-        end
-    end
-    roilist(2,:)=roilist2;
+
+if numel(p)
+    p.Value=0.1;
+    p.Message='Preparing classification....';
 end
+
+if numel(fovs) == 0 % then take all the fovs; 
+    fovs=1:numel(obj.fov);
+end
+
+
+if numel(rois)==0
+    rois={};
+    for i = 1:numel(fovs)
+        rois{i}=numel(obj.fov(fovs(i)).roi);
+    end
+end
+
+roilist=[];
+roilist2=[];
+
+for i=1:numel(fovs)
+    
+    ro= rois{i};
+    
+    roilist=[roilist fovs(i)*ones(1,numel(ro))];
+    roilist2=[roilist2 ro];
+    
+end
+
+roilist(2,:)=roilist2;
+
+%     for i=fovs
+%             % for j=1:numel(obj.fov(i).roi)
+%             %size( ones(1,length(obj.fov(i).roi)) )
+%             roilist = [roilist i*ones(1,length(obj.fov(i).roi)) ];
+%             roilist2 = [roilist2  1:length(obj.fov(i).roi) ];
+%             % end
+%         end
+%     else
+%         % classify all ROIs
+%         for i=1:length(obj.fov)
+%             % for j=1:numel(obj.fov(i).roi)
+%             %size( ones(1,length(obj.fov(i).roi)) )
+%             roilist = [roilist i*ones(1,length(obj.fov(i).roi)) ];
+%             roilist2 = [roilist2  1:length(obj.fov(i).roi) ];
+%             % end
+%         end
+%     end
+%     roilist(2,:)=roilist2;
+
 
 
 classifyFun=obj.processing.classification(classiid).classifyFun;
+
+if numel(p)
+    p.Value=0.2;
+    p.Message='Loading classifier file....';
+end
 
 disp(['Classifying new data using ' classifyFun]);
 
@@ -71,7 +112,9 @@ for i=1:size(roilist,2)
     tmp(i)=obj.fov(roilist(1,i)).roi(roilist(2,i));
 end
 
-parfor i=1:size(roilist,2) % loop on all ROIs using parrallel computing   
+
+
+for i=1:size(roilist,2) % loop on all ROIs using parrallel computing   
     roiobj=tmp(i);
     if numel(roiobj.id)==0
         continue;
@@ -80,6 +123,13 @@ parfor i=1:size(roilist,2) % loop on all ROIs using parrallel computing
     disp('-----------');
     disp(['Classifying ' num2str(roiobj.id)]);
     
+    if numel(p)
+    p.Value=double(i)./double(size(roilist,2));
+    
+    p.Message=['Classifying ROI  ' roiobj.id];
+    end
+
+    
     %  if strcmp(classif.category{1},'Image') % in this case, the results are provided as a series of labels
     %  roiobj.results=zeros(1,size(roiobj.image,4)); % pre allocate results for labels
     %  end
@@ -87,20 +137,28 @@ parfor i=1:size(roilist,2) % loop on all ROIs using parrallel computing
     %if numel(classifierCNN) % in case an LSTM classification is done, validation is performed with a CNN classifier as well
     %mp(i)=feval(classifyFun,roiobj,classif,classifier,classifierCNN); % launch the training function for classification
     %else
-    tmp(i)=feval(classifyFun,roiobj,classi,classifierStore); % launch the training function for classification
+   % classifyFun,roiobj,classi,classifierStore
+    
+    feval(classifyFun,roiobj,classi,classifierStore); % launch the training function for classification
     %end
     
     % since roiobj is a handle, no need to have an output to this the function
     % in roiobj.results
     
 end
+% 
+% for i=1:size(roilist,2)
+%     obj.fov(roilist(1,i)).roi(roilist(2,i))=tmp(i);
+%     obj.fov(roilist(1,i)).roi(roilist(2,i)).save;
+%     obj.fov(roilist(1,i)).roi(roilist(2,i)).clear;
+% end
 
-for i=1:size(roilist,2)
-    obj.fov(roilist(1,i)).roi(roilist(2,i))=tmp(i);
-    obj.fov(roilist(1,i)).roi(roilist(2,i)).save;
-    obj.fov(roilist(1,i)).roi(roilist(2,i)).clear;
-end
 
-
+  if numel(p)
+    p.Value=0.9;
+    p.Message='Saving project...Please wait...';
+  end
+    
+  
 shallowSave(obj);
 

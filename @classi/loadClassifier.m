@@ -13,6 +13,9 @@ name=classif.strid;
     load(str); % load classifier 
  else
     disp('Classifier does not exist ! Has training been done?');
+    classifierout=[];
+    return;
  end
  
+
  classifierout=classifier;
