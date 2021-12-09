@@ -1,3 +1,61 @@
+<div id="top"></div>
+
+<!-- PROJECT SHIELDS -->
+<!--
+*** I'm using markdown "reference style" links for readability.
+*** Reference links are enclosed in brackets [ ] instead of parentheses ( ).
+*** See the bottom of this document for the declaration of the reference variables
+*** for contributors-url, forks-url, etc. This is an optional, concise syntax you may use.
+*** https://www.markdownguide.org/basic-syntax/#reference-style-links
+-->
+[![Contributors][contributors-shield]][contributors-url]
+[![Forks][forks-shield]][forks-url]
+[![Stargazers][stars-shield]][stars-url]
+[![Issues][issues-shield]][issues-url]
+[![MIT License][license-shield]][license-url]
+
+
+
+<!-- PROJECT LOGO -->
+<br />
+<div align="center">
+  <a href="https://github.com/gcharvin/DetecDiv">
+    <img src="Tutorial/detecDiv_logo-01.png" alt="Logo" width="300" height="120">
+  </a>
+
+  <h3 align="center">User Guide</h3>
+
+  <p align="center">
+    An awesome README template to jumpstart your projects!
+    <br />
+    <a href="https://github.com/othneildrew/Best-README-Template"><strong>Explore the docs »</strong></a>
+    <br />
+    <br />
+    <a href="https://github.com/othneildrew/Best-README-Template">View Demo</a>
+    ·
+    <a href="https://github.com/othneildrew/Best-README-Template/issues">Report Bug</a>
+    ·
+    <a href="https://github.com/othneildrew/Best-README-Template/issues">Request Feature</a>
+  </p>
+</div>
+
+
+
+<!-- MARKDOWN LINKS & IMAGES -->
+<!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
+[contributors-shield]: https://img.shields.io/github/contributors/gcharvin/DetecDiv
+[contributors-url]: https://github.com/gcharvin/DetecDiv/graphs/contributors
+[forks-shield]: https://img.shields.io/github/forks/gcharvin/DetecDiv
+[forks-url]: https://github.com/gcharvin/DetecDiv/network/members
+[stars-shield]: https://img.shields.io/github/stars/gcharvin/DetecDiv
+[stars-url]: https://github.com/gcharvin/DetecDiv/stargazers
+[issues-shield]: https://img.shields.io/github/issues/gcharvin/DetecDiv
+[issues-url]: https://github.com/gcharvin/DetecDiv/issues
+[license-shield]: https://img.shields.io/github/license/gcharvin/DetecDiv
+[license-url]: https://github.com/gcharvin/DetecDiv/blob/master/LICENSE.txt
+[product-screenshot]: images/screenshot.png
+
+
 
 
 
