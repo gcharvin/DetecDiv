@@ -1,35 +1,46 @@
-function removeData(obj,type,option)
+function removeData(obj,train,results)
 % removes training / results fields from ROIs 
-% type : 'train' , 'results', 
-% option = strid to be removed  ; if no option provided, than all fields
-% are removed
+
+% train and results are cell arrays of string with field names t be erased
+% in each respective category . 
+% write "all" if you want to remove all the fields 
 
 removeall=0;
 
-if nargin==2
-   removeall=1;
-   option='';
-end
+obj.load % necessary to make sure that saving will then be effective. 
 
-if numel(obj.(type))==0
-    disp(['No '  type  ' data to be erased in this ROI!']);
-    return;
-end
-
-res=fieldnames(obj.(type));
-
-for i=1:numel(res)
+for i=1:numel(train)
     
-    if strcmp(res{i},option) | removeall==1
-    obj.(type)=rmfield(obj.(type),res{i});
- disp([ type  ' data '  res{i} '  erased in this ROI!']);
-    end 
-   
+type=train{i};
+
+if strcmp(type,'all')
+    obj.train=[];
+    break;
 end
 
-res=fieldnames(obj.(type));
-if numel(res)==0
-    obj.(type)=[];
+if isfield(obj.train,train{i})
+    obj.train=rmfield(obj.train,train{i});
+else
+    disp(['No '  type  ' data in training to be erased in this ROI!']);
 end
+end
+
+for i=1:numel(results)
+    
+type=results{i};
+
+if strcmp(type,'all')
+    obj.results=[];
+    break;
+end
+
+if isfield(obj.results,results{i})
+    obj.results=rmfield(obj.results,results{i});
+else
+    disp(['No '  type  ' data in results to be erased in this ROI!']);
+end
+end
+
+obj.save;
     
  obj.log(['Removed training data or classi results from ROI'],'Processing');

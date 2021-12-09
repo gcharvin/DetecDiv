@@ -124,6 +124,7 @@ if compute==1 % compute new scores
         else %  classification
             
             if cc==1
+ 
                 classif.score= measureAccuracyRecall(classif,data.gt, data.pred, data.roi);  % score for given classification
                 classif.score.comments='Classification benchmarks using main classifier';
                 classif.score.thr=i;
@@ -134,10 +135,13 @@ if compute==1 % compute new scores
             end
             
             if classif.typeid==4 % for LSTM classification, compute CNN benchmarks
+                if numel( data.CNNpred)
                 cc=cc+1;
+            
                 classif.score(cc)= measureAccuracyRecall(classif,data.gt, data.CNNpred, data.roi);  % score for given classification
                 classif.score(cc).comments='Classification benchmarks using CNN classifier for LSTM architecture';
                 classif.score(cc).thr=i;
+                end
             end
         end
         
@@ -145,6 +149,8 @@ if compute==1 % compute new scores
     end
     
 end
+
+%aa=classif.score
 
 % ===== plot statistics
 
@@ -170,6 +176,7 @@ end
 
 if plotConfusion
        for j=nscore
+          % j
             mate=classif.score(j).confusion;
             cate=categorical(classif.classes);
             h=figure;
@@ -540,6 +547,7 @@ for i=1:numel(classif.classes)
     
     pred=data.pred==i;
     gt=   data.gt==i;
+   
     
     accuracy= 100*sum(pred & gt)./sum(pred);
     recall=       100*sum(pred & gt)./sum(gt);
@@ -551,7 +559,7 @@ for i=1:numel(classif.classes)
 end
 
 % ======= confusion matrix ======
-mate=confusionmat(data.gt,data.pred);
+mate=confusionmat(data.gt,data.pred,'Order',1:numel(classif.classes));
 score.confusion=mate; % matrix coeff must match acc and recall values computed above
 
 % ===== accuracy & recall & fscore per ROI =====

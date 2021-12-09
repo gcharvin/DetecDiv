@@ -27,7 +27,8 @@ disp('Starting parallelized jobs for data formatting....')
 
 warning off all
 %for i=rois
-parfor i=rois
+
+for i=rois
     disp(['Launching ROI ' num2str(i) :' processing...'])
     
     if numel(cltmp(i).image)==0
@@ -172,13 +173,16 @@ for i=rois
 end
 
 
-
 function parsaveim(fname, im)
-eval(['save  '  fname  '  im']);
+eval(['save  ''''  '  fname  ''''  '  im']);
 
 function parsaveresp(fname, response)
-eval(['save  '  fname  '  response']); 
+eval(['save  ' '''' fname  ''''  '  response']); 
 
-    function parsave(fname, deep,vid,lab)
-        eval(['save  '  fname  '  deep vid lab']);
+  function parsave(fname, deep,vid,lab)
+        
+     %   fname
+   eval(['save  ' ''''  fname  ''''  '  deep vid lab']);
+      
+      
     

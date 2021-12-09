@@ -121,8 +121,19 @@ for i=rois
     cltmp(i).clear; %%% remove !!!!
 end
 
-function parsaveim(fname, im)
-eval(['save  '  fname  '  im']); 
+% function parsaveim(fname, im)
+% eval(['save  '  fname  '  im']); 
+% 
+% function parsave(fname, response)
+% eval(['save  '  fname  '  response']); 
 
-function parsave(fname, response)
-eval(['save  '  fname  '  response']); 
+
+function parsaveim(fname, im)
+eval(['save  ''''  '  fname  ''''  '  im']);
+
+function parsaveresp(fname, response)
+eval(['save  ' '''' fname  ''''  '  response']); 
+
+ 
+      
+   

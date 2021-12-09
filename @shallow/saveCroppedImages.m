@@ -42,7 +42,7 @@ end
 
 strpath=[obj.io.path obj.io.file];
 
-for i=fovid
+parfor i=fovid
     
     if numel(tmpfov(i).roi)==0
         disp('this FOV has no ROI ! Quitting ....');

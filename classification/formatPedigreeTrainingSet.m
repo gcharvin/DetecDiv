@@ -369,8 +369,17 @@ end
 
 end
 
-function parsave(fname, deep,vid,lab)
-eval(['save  '  fname  '  deep vid lab']); 
-end
+% 
+% function parsave(fname, deep,vid,lab)
+% eval(['save  '  fname  '  deep vid lab']); 
+% end
 
+
+
+
+  function parsave(fname, deep,vid,lab)
+        
+     %   fname
+   eval(['save  ' ''''  fname  ''''  '  deep vid lab']);
+      
 

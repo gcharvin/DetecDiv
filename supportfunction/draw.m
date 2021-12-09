@@ -71,18 +71,20 @@ if numel(classif)>0
         end
         
 
-       obj.display.selectedchannel=zeros(1,numel(obj.display.selectedchannel));
+      
+
+    end
+    if strcmp(classif.category{1},'Pedigree')
+        ccpedigree=obj.findChannelID(classif.strid);
+    end
+    
+     obj.display.selectedchannel=zeros(1,numel(obj.display.selectedchannel));
        obj.display.selectedchannel(classif.channel(1))=1;
 
 
        pix =obj.findChannelID(classif.strid);
        pix= obj.channelid(pix);
        obj.display.selectedchannel(pix)=1;
-
-    end
-    if strcmp(classif.category{1},'Pedigree')
-        ccpedigree=obj.findChannelID(classif.strid);
-    end
     
 end
 
@@ -200,6 +202,8 @@ for i=1:numel(obj.display.channel)
                     dis=1;
                 end
             end
+            
+            
         end
         
         if dis==0 %  channel to be displayed is not that of the ongoing classification
@@ -477,6 +481,9 @@ for i=1:numel(obj.display.channel)
             fields=fieldnames(obj.train);
             
             for k=1:numel(fields)
+             if isfield(obj.train.(fields{k}),'id')
+                 if numel(obj.train.(fields{k}).id)>=obj.display.frame
+         %    kk=   obj.train.(fields{k}).id
                 tt=obj.train.(fields{k}).id(obj.display.frame);
                 
                 if isfield(obj.train.(fields{k}),'classes')
@@ -508,6 +515,8 @@ for i=1:numel(obj.display.channel)
                     %                         end
               %  end
                 
+             end
+             end
             end
         end
            
