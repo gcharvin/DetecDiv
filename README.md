@@ -1,9 +1,6 @@
 
 
 
-
-# DetecDiv rethinks image processing pipelines, adding deeplearning enabled classification tools for segmentation and event detection
-
 ## Installation procedure ## 
 
 You need Matlab R2019b installed with the following TB:
