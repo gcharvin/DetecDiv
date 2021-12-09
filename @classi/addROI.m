@@ -82,7 +82,7 @@ for i=1:length(rois)
     for j=1:numel(classif.roi)
         if strcmp(roitocopy.id,classif.roi(j).id)
             disp(['WARNING: The imported ROIs ' roitocopy.id ' has the same name as an existing ROI in ' classif.strid]);
-            disp('Therefore, we will only update the ROI data, not create a new ROI !');
+            disp('Therefore, we will not  not create a new ROI !');
             duplicate=j;
             break
         end
@@ -90,13 +90,14 @@ for i=1:length(rois)
     
     
     if duplicate > 0 % in this case, the roi can just be updated and that's it !
-        pth=classif.roi(j).path;
+     %   pth=classif.roi(j).path;
        % classif.roi(j)=roitocopy;
        % classif.roi(j).path = pth;
-        classif.roi(j)=propValues(classif.roi(j),roitocopy);
-        classif.roi(j).path=pth;
-        classif.roi(j).save;
-        classif.roi(j).clear;
+       
+     %   classif.roi(j)=propValues(classif.roi(j),roitocopy);
+     %   classif.roi(j).path=pth;
+     %   classif.roi(j).save;
+    %    classif.roi(j).clear;
         continue
     end
     
@@ -146,6 +147,7 @@ for i=1:length(rois)
 %                     disp('This setting will apply to all ROIs');
 %                 end
                 
+
                 if numel(convert) % preserve training set
                     
                     
@@ -163,9 +165,12 @@ for i=1:length(rois)
                         disp(obj.classes);
                         
                        % disp('You must map the first set of classes to the second');
-                        
-                         tmp = textscan(convert{2},'%s','Delimiter',' ');
+                       
+                         tmp = textscan(strip(convert{2},'left'),'%s','Delimiter',' ');
+ 
+                         tmp=tmp{1};
                          
+                         arr=[];
                         for j=1:nclasses1
                             
 %                             str='';
@@ -183,20 +188,29 @@ for i=1:length(rois)
 %                             end
                             
                    %         arr{j}=idclass;
+                %   arr(j)=0;
+              %  aa=
+              
+                  pix=find(contains(tmp,classif.classes{j}));
+                  if numel(pix)==0
+                      pix=0;
+                  end
                   
-                   arr{j}= tmp{j};
+                   arr(j)= pix;
                         end
+                        
                     end
                     
+           %         arr
                     %arr
                     
                     %classif.roi(cc+1).train.(classif.strid).id=roitocopy.train(obj.strid).id;
                     
                     for j=1:nclasses1
-                        for k=1:numel(arr{j})
+                        for k=1:numel(arr)
                             
-                            if arr{j}(k)~=0
-                                pix=roitocopy.train.(obj.strid).id==arr{j}(k);
+                            if arr(j)~=0
+                                pix=roitocopy.train.(obj.strid).id==arr(j);
                                 %j
                                 %aa=classif.roi(cc+1).train.(classif.strid).id
                                 

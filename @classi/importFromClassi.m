@@ -1,5 +1,5 @@
 
-function importFromClassi(obj,classitocopy,option,rois)
+function importFromClassi(obj,classitocopy,option,varargin)
 
 % if option is provided and option(4), then rois must be an array of roi
 
@@ -14,10 +14,17 @@ if nargin<3
  %   rois=1:numel(classitocopy.roi);
 end
 
-if nargin<4
-    rois=[];
-end
+rois=[];
+convert={};
 
+for i=1:numel(varargin)
+    if strcmp(varargin{i},'rois')
+        rois=varargin{i+1};
+    end
+       if strcmp(varargin{i},'convert')
+       convert=varargin{i+1};
+    end
+end
 
 if option(4)==1 & numel(rois)==0
     rois=1:numel(classitocopy.roi);
@@ -103,7 +110,10 @@ end
 %       
      %  if strcmp(prevclas,'y')
           if option(4)==1
-            obj.addROI(classitocopy,'rois',rois); % import ROis from classification option
+              
+              % preserve ROI !!!
+              
+            obj.addROI(classitocopy,'rois',rois,'convert',convert); % import ROis from classification option
           end
             
          %   for i=1:numel(obj.roi) % remove irrelevant training and results data
