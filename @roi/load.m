@@ -15,6 +15,11 @@ if nargin==2
     end
 end
 
+if numel(obj.path)==0
+    disp('ROI is created but has not been extracted from raw image! Quitting....');
+    return;
+end
+
  t=replace(obj.path,'\','/');
  
 if resonly==0

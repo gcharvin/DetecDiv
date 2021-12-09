@@ -48,15 +48,17 @@ else
     
     im=buildimage(obj); % returns a structure with all images to be displayed
    
+    warning off all
     if numel(im.data)==0
         disp('Could not load image. Quitting...');
         return;
     end
+    warning on all;
     
   %  h
     if numel(h)==0
     %    'ok'
-    h=figure('Tag',['Fov' obj.id],'Position',[100 100 1000 600]);
+    h=figure('Tag',['Fov' obj.id],'Position',[100 100 800 600]);
     end
     
     str={};
@@ -387,6 +389,10 @@ end
 
 str=inputdlg('Enter current ROI parameters:', 'ROI adjustment',1,def);
 
+if numel(str)==0
+    return;
+end
+
 value=str2num(str{1});
 
 if option==0 % zoom adjust
@@ -509,7 +515,7 @@ else
  hCMZ = uicontextmenu;
 hZMenu = uimenu('Parent',hCMZ,'Label','Delete cropping area',...
         'Callback',@destroy);
-    hZMenu2 = uimenu('Parent',hCMZ,'Label','Delete cropping area',...
+    hZMenu2 = uimenu('Parent',hCMZ,'Label','Hide cropping area',...
         'Callback',@hidecrop);
 temp=drawpolygon('ContextMenu',hCMZ,'Tag','cropROI');
 
@@ -788,7 +794,8 @@ end
         
         clf
         h.UserData=[];
-        view(obj,obj.display.frame,h);
+        
+        obj.view(obj.display.frame,h);
      end
     
 

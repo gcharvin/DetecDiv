@@ -94,7 +94,8 @@ else % only files available
     end
     
     
-    plist=plist(contains({plist.name},{'.tif'})); % takes all image files
+    plist=plist(contains({plist.name},{'.tif'}));
+    % takes all image files
     
      
     if numel(plist)
@@ -112,16 +113,27 @@ else % only files available
         info='Processing folder(s)...';
         list=dir(fullfile(pathdir,'..'));
         
+  %     list
         for i=1:numel(list)
-            if strfind(pathdir, list(i).name)
+             bb= list(i).name;
+             
+          %   aaa=endsWith(pathdir,bb)
+          %  tt= pathdir(end-numel(bb)-1:end-numel(bb)-1)
+            if endsWith(pathdir,bb) % & ( strcmp(pathdir(1:end-numel(bb)),'/') | strcmp(pathdir(1:end-numel(bb)),'\'))
+                
+                tt=pathdir(end-numel(bb):end-numel(bb));
+                if strcmp(tt,'/') || strcmp(tt,'\')
                 list=list(i);
                 break
+                end
             end
         end
         
     end
 
 end
+
+%list
 
  disp(info);
  if numel(progress)
@@ -273,13 +285,14 @@ selecteddir=[];
 
 %dirlist
 cc=1;
-
  
 for i=1:numel(dirlist)
     
     if dirlist(i).isdir==0
         continue
     end
+    
+   
     
     if strcmp(dirlist(i).name,'.')
         continue
@@ -294,8 +307,9 @@ for i=1:numel(dirlist)
         output.pos(cc)=output.pos(1);
     end
     
-    output.pos(cc).name=dirlist(i).name;
     
+    output.pos(cc).name=dirlist(i).name;
+
     cc=cc+1;
 end
 
@@ -303,6 +317,7 @@ cc=1;
 
 res=[];
 for i=selecteddir
+  %  i
     tmp=regexp(dirlist(i).name, '\d+$','match');
     
     if numel(tmp)==0 % there is no trailing number
@@ -318,7 +333,9 @@ if numel(tmp)>0 %positions are terminated by a numer, so sort them
     output.pos=output.pos(ix);
 end
 
-realfolders=cellfun(@(x) fullfile(dirlist(1).folder ,x),{output.pos.name},'UniformOutput',false); % fullfile folder name
+
+realfolders=cellfun(@(x) fullfile(dirlist(1).folder ,x),{output.pos.name},'UniformOutput',false) ;
+% fullfile folder name
 
 for i=1:numel(output.pos) % extract channels from string names, treat different stackes as different channels
     
