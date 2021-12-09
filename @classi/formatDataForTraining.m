@@ -2,8 +2,6 @@ function output=formatDataForTraining(classif) %mov,trapsid,option)
 % saves user annotated data to disk- works for Image, Pixel and LSTM
 % classification
 
-
-
 str=fullfile(classif.path,'trainingParam.mat');
 if exist(str)
 load(str);

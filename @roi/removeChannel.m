@@ -15,7 +15,9 @@ end
 if iscell(channel) || ischar(channel)
      pix=obj.findChannelID(channel);
 else
-    pix=find(obj.channelid==channel);
+   % pix=find(obj.channelid==channel);
+   disp('this is not allowed; quitting....')
+  return;
 end
 
 if numel(pix)==0
@@ -23,28 +25,41 @@ if numel(pix)==0
     return;
 end
 
+%pix
+pix2=find(matches(obj.display.channel,channel));
+
 remainsdim=setxor(1:size(obj.image,3),pix);
+
+
 
 channelid=obj.channelid(pix(1));
 remainsdimid=obj.channelid==channelid;
 
-obj.channelid=obj.channelid(~remainsdimid); %obj.channelid(remainsdimid); cautious this has not been tested !!!!
 
-if pix<=max(obj.channelid)
-obj.channelid(pix:end)=obj.channelid(pix:end)-1;
+newchannelid=obj.channelid(~remainsdimid);
+
+if pix<=numel(newchannelid)
+newchannelid(pix:end)=newchannelid(pix:end)-1;
 end
 
-remainscha=setxor(1:numel(obj.display.channel),channel);
+%newchannelid
+remainscha=setxor(1:numel(obj.display.channel),pix2);
+
+%newchannelid
 
 val=[];
 for i=1:numel(remainscha)
     pix=find(obj.channelid==remainscha(i));
     val=[val pix];
 end
+dims=val;
 
- obj.image=obj.image(:,:,val,:);
- 
-% 
+%return;
+
+% update structure 
+
+obj.channelid=newchannelid;
+ obj.image=obj.image(:,:,dims,:);
 
  obj.display.channel=obj.display.channel(remainscha);
  obj.display.intensity=obj.display.intensity(remainscha,:);

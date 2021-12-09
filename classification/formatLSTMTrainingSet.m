@@ -28,7 +28,7 @@ disp('Starting parallelized jobs for data formatting....')
 warning off all
 %for i=rois
 
-for i=rois
+parfor i=rois
     disp(['Launching ROI ' num2str(i) :' processing...'])
     
     if numel(cltmp(i).image)==0
@@ -150,8 +150,6 @@ for i=rois
             parsaveresp([classif.path '/' foldername '/response/' cltmp(i).id '.mat'],cltmp(i).train.(classif.strid).id);
              output=output+1;
      %   end
-        
-        
     end
     
     fprintf('\n');
@@ -162,7 +160,6 @@ for i=rois
     cltmp(i).save;
     
     disp(['Processing ROI: ' num2str(i) ' ... Done !'])
-    
 end
 
 
