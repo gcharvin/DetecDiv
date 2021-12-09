@@ -770,6 +770,9 @@ end
 
      function displayMenuFcn(handles, event, obj,h)
         
+     pan off
+     zoom off
+     
         if strcmp(handles.Checked,'off')
             handles.Checked='on';
              str=handles.Tag;

@@ -13,7 +13,7 @@ disp('Processing raw images. Wait....');
 frames=[];
 fovid=1:numel(obj.fov); % All FOVs will be processed
 cut=20;
-channelint=ones(1,numel(obj.fov(1).srclist));
+%channelint=ones(1,numel(obj.fov(1).srclist));
  
 for i=1:numel(varargin)
     if strcmp(varargin{i},'frames') % frames to be processed
@@ -28,9 +28,9 @@ for i=1:numel(varargin)
         cut=varargin{i+1};
       end
     
-          if strcmp(varargin{i},'channelint') % number of frames loaded at once to prepare ROI matrices
-        channelint=varargin{i+1};
-      end
+   %       if strcmp(varargin{i},'channelint') % frames interval
+   %     channelint=varargin{i+1};
+   %   end
 end
 % first creat independent fov indentical to obj.fov
 
@@ -42,7 +42,7 @@ end
 
 strpath=[obj.io.path obj.io.file];
 
-parfor i=fovid
+for i=fovid
     
     if numel(tmpfov(i).roi)==0
         disp('this FOV has no ROI ! Quitting ....');
@@ -109,7 +109,7 @@ parfor i=fovid
             disp(['Reading frame: ' num2str(j) ' / '  num2str(numel(nframes)) ' in group of frame : ' num2str(ii) ' / ' num2str(numel(framecell)) ' for FOV:  ' num2str(tmpfov(i).id)]);
             
             for k=1:numel(tmpfov(i).srclist) % loop on channels            
-                frame=floor((nframes(j)-1)/channelint(k))+1; %  spacing frames when channels are not used with equal time interval
+                frame=(nframes(j)); %/channelint(k))+1; %  spacing frames when channels are not used with equal time interval
                 im=tmpfov(i).readImage(frame,k);
                             
                 if tmpfov(i).display.binning(k) ~= tmpfov(i).display.binning(1)
