@@ -25,7 +25,6 @@
 </div>
 
 
-   
 <!-- ABOUT THE PROJECT -->
 <div id="about"></div>
 
@@ -41,7 +40,10 @@ DetecDiv provides a comprehensive set of tools to analyze time microscopy images
    Théo Aspert, Didier Hentsch, Gilles Charvin
     
    <a href="https://www.biorxiv.org/content/10.1101/2021.10.05.463175v2"> https://doi.org/10.1101/2021.10.05.463175  </a>
-    
+  
+  
+ Please visit the <a href="https://charvin.igbmc.science"> Charvin lab website </a> for more information. 
+  
     
 <p align="right">(<a href="#top">back to top</a>)</p>
 
@@ -57,9 +59,8 @@ DetecDiv provides a comprehensive set of tools to analyze time microscopy images
     <li><a href="#about">About the project</a></li>
     <li><a href="#installation">Installation procedure</a></li>
     <li><a href="#gui">User guide</a></li>
-    <li><a href="#license">Demo project</a></li>
-    <li><a href="#contact">Contact</a></li>
-    <li><a href="#acknowledgments">Acknowledgments</a></li>
+    <li><a href="#demo">Demo project</a></li>
+    <li><a href="#thanks">Acknowledgments</a></li>
   </ol>
 
 
@@ -79,9 +80,9 @@ We recommend using Matlab >= R2021a to ensure the compatibility of the software.
 
 -Statistics and Machine Learning Toolbox               Version 12.1        (R2021a)
 
-<p align="right">(<a href="#top">back to top</a>)</p>
+Make sure to include all DetecDiv folders and subfolders in the Matlab path using the "Set Path" in the main Matlab workspace.
 
-Make sure to include all DetecDiv folders and subfolders in the Matlab path using the "Set Path" in the main Matlab workspace
+<p align="right">(<a href="#top">back to top</a>)</p>
 
 <div id="gui"></div>
 
@@ -95,22 +96,24 @@ A list of command-line instructions to use DetecDiv in scripts or in the Matlab 
 
  <a href="https://github.com/gcharvin/DetecDiv/blob/master/Tutorial/commandline_tutorial.md">Command-line instructions</a>
  
+ <p align="right">(<a href="#top">back to top</a>)</p>
+ 
  <div id="demo"></div>
  
-## DetecDiv demo project files ##
+## DetecDiv demo project ##
  
-A demo project that contains all the necessary files (i.e. raw image files, ROIs, groudtruth data, classifier models, trained classifiers) to learn how to use DetecDiv can be found there: 
+A demo project that contains all the necessary files (i.e. raw image files, ROIs, groudtruth data, classifier models, trained classifiers) to learn how to use DetecDiv can be found here: 
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.5771536.svg)](https://doi.org/10.5281/zenodo.5771536)
 
+<p align="right">(<a href="#top">back to top</a>)</p>
+
+<div id="thanks"></div>
 
 <!-- ACKNOWLEDGMENTS -->
 ## Acknowledgments
 
-Many thanks to those who provided the necessary resources to make this project possible.
-
-* [GitHub Pages](https://pages.github.com)
-* 
+Many thanks to those who provided the necessary resources to make this project possible, including the <a href="https://charvin.igbmc.science">Charvin lab</a> group members, the <a href="https://www.igbmc.fr">IGBMC staff and facilities</a>. 
 
 <p align="right">(<a href="#top">back to top</a>)</p>
  
