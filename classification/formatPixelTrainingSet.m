@@ -23,6 +23,8 @@ warning off all
 
 for i=1:numel(rois)
     disp(['Launching ROI ' num2str(rois(i)) :' processing...'])
+ 
+
     if numel(cltmp(rois(i)).image)==0
         cltmp(rois(i)).load; % load image sequence
     end

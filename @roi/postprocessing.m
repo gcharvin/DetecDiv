@@ -8,6 +8,14 @@ function postprocessing(obj,classif,varargin)
 
 outputFun=classif.outputFun;
 outputArg=classif.outputArg;
+
+if strcmp(numel(outputFun),'post')
+    if numel(outputArg)==0
+        outputArg={'threshold',0.9};
+    end
+end
+
+
 NoSave=0;
 
 for i=1:numel(varargin)

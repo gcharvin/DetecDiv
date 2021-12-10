@@ -528,8 +528,10 @@ for i=1:numel(obj.display.channel)
                 for k = 1:length(pl)
                     if isfield(obj.results.(pl{k}),'labels')
                      %   tt=char(obj.results.(pl{k}).labels(obj.display.frame));
+                     if numel(obj.results.(pl{k}).id)>=obj.display.frame
                             tt=num2str(obj.results.(pl{k}).id(obj.display.frame));
                         str=[str ' - ' tt ' (' pl{k} ')'];
+                     end
                     end
                     
                     if isfield(obj.results.(pl{k}),'mother')
@@ -1242,6 +1244,7 @@ end
             fields=fieldnames(obj.train);
             
             for k=1:numel(fields)
+                
                 tt=obj.train.(fields{k}).id(obj.display.frame);
                 
                 if isfield(obj.train.(fields{k}),'classes')
@@ -1265,7 +1268,7 @@ end
                 end
                     
                %     tt
-                    str=[str ' - ' tt ' (tr.: ' fields{k} ')'];
+                    str=[str ' - class #' tt ' (tr.: ' fields{k} ')'];
                     
                     %                         if obj.train(obj.display.frame)==0
                     %                             str=[str ' - not classified'];
@@ -1287,8 +1290,10 @@ end
                 for k = 1:length(pl)
                     if isfield(obj.results.(pl{k}),'labels')
                      %   tt=char(obj.results.(pl{k}).labels(obj.display.frame));
+                     if numel(obj.results.(pl{k}).id)>= obj.display.frame
                             tt=num2str(obj.results.(pl{k}).id(obj.display.frame));
-                        str=[str ' - ' tt ' (' pl{k} ')'];
+                        str=[str ' - class #' tt ' (' pl{k} ')'];
+                     end
                     end
                     
                     if isfield(obj.results.(pl{k}),'mother')

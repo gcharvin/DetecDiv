@@ -13,6 +13,7 @@ fovs=[];
 
 p=[];
 
+channel=[];
 for i=1:numel(varargin)
     if strcmp(varargin{i},'Classifier')
         classifierStore=varargin{i+1};
@@ -27,7 +28,11 @@ for i=1:numel(varargin)
     
   if strcmp(varargin{i},'Progress') % update progress bar
         p=varargin{i+1};
-    end
+  end
+    
+     if strcmp(varargin{i},'Channel') % specify a different channel to classify
+        channel=varargin{i+1}; % channel must have the same size as Fovs
+     end
     
 end
 
@@ -52,6 +57,8 @@ end
 roilist=[];
 roilist2=[];
 
+chan=[];
+
 for i=1:numel(fovs)
     
     ro= rois{i};
@@ -59,6 +66,9 @@ for i=1:numel(fovs)
     roilist=[roilist fovs(i)*ones(1,numel(ro))];
     roilist2=[roilist2 ro];
     
+    if numel(channel)
+    chan=[chan channel(i)*ones(1,numel(ro))];
+    end
 end
 
 roilist(2,:)=roilist2;
@@ -94,6 +104,8 @@ end
 disp(['Classifying new data using ' classifyFun]);
 
 classi=obj.processing.classification(classiid);
+channelstore=classi.channel;
+
 path=classi.path;
 name=classi.strid;
 if exist('classifierStore','var')==0
@@ -113,7 +125,7 @@ for i=1:size(roilist,2)
 end
 
 
-
+try 
 for i=1:size(roilist,2) % loop on all ROIs using parrallel computing   
     roiobj=tmp(i);
     if numel(roiobj.id)==0
@@ -139,6 +151,10 @@ for i=1:size(roilist,2) % loop on all ROIs using parrallel computing
     %else
    % classifyFun,roiobj,classi,classifierStore
     
+   if numel(channel)~=0 % channel number was changed
+    classi.channel=chan(i);
+   end
+
     feval(classifyFun,roiobj,classi,classifierStore); % launch the training function for classification
     %end
     
@@ -152,7 +168,10 @@ end
 %     obj.fov(roilist(1,i)).roi(roilist(2,i)).save;
 %     obj.fov(roilist(1,i)).roi(roilist(2,i)).clear;
 % end
-
+catch
+    classi.channel=channelstore;
+end
+classi.channel=channelstore;
 
   if numel(p)
     p.Value=0.9;
