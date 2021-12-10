@@ -251,12 +251,41 @@ A figure window will appear, allowing to select the channels to be displayed. Us
 
 ### Creating a new classifier within a project ###
 
+Select the project of interest in the tree window.
+
+Click --> add Classsifier.
+
+![This is an image](addClassifierGUI_newclassifier.png)
+
+Select "New Classifier".
+Enter the name of the classifier and click --> Proceed.
+WARNING : save project at this time.
 
 <div id="classi_import"></div>
 
 ### Importing an exisiting classifier ###
 
+If a classifier is loaded in the workspace (either a project-based or project-independent classifier), you can transfer it to your own project.
+Select the project of interest in the tree window.
 
+Click --> add Classsifier.
+
+![This is an image](addClassifierGUI_duplicateclassifier.png)
+
+Select "Duplicate existing classifier in the workspace". In the dropdown list, select the desired classifier.
+
+Check which aspect of the classifier should be transferred:
+
+- training parameters (hyperparameters used by the training procedure)
+
+- the file that contains the trained classifier (which can be used right away without further training)
+
+- formatted groundtruth images that can be used to train/re-train the classifier
+
+- the trainingset (i.e. a list of ROIs that have been manually annotated and are used to generate the groundtruth image dataset). In this case, please specfiy the array of ROIs to be transferred.
+- 
+Enter the name of the new classifier and click --> Proceed.
+WARNING : save project at this time.
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
@@ -264,6 +293,38 @@ A figure window will appear, allowing to select the channels to be displayed. Us
 
 ## Editing a classifier ##
 
+Once a classifier is created, dependent ROIs (if any) are listed as subnodes of the classifier node. They can be open by left-clicking the corresponding nodes:
+
+![This is an image](classifier_roi.png)
+
+To edit a classifier: 
+Right-click on a classifier --> Open classifier.
+
+The classifier GUI has 3 tabs to allow paramters setup:
+ 1) classification parameters; Please entrer information as requested (MORE ON THIS TO FOLLOW SOON)
+
+![This is an image](ClassifierGUI_tab1.png)
+
+ 2) Training procedure parameters; Enter parameter values in the table (MORE ON THIS TO FOLLOW SOON)
+
+![This is an image](ClassifierGUI_tab2.png)
+
+ 3) ROIs used as trainingset or testset.
+
+![This is an image](ClassifierGUI_tab3.png)
+
+Specific buttons on this tab: 
+
+	*Select/Delect ROIs: Select/Unselect the ROIs to be used as training set (network training) or, alternatively, as a test set (validation)
+	*Import ROIs: Additional ROIs can be imported from other ROIs available in the workspace.
+	*Annotate selected ROI : launches a figure window to perofmr manual annotation of the training/test sets. Shortcut keys indicated in the "Classes" menu can be used to assign one among all available classes for each frame. 
+ 
+The buttons at the bottom provide the following functions:
+* Save classifier & parameters: saves all relevant paramters in the classfier GUI. This step is required to preserve any modification executed in the GUI
+* Format trainingset for training : this function exports ROIs data as images to folders. These images will be then used by the training procedure
+* Train classifier : launches the training procedure 
+* Validateclassifier : classify all the ROI data in the classifier GUI using the trained network (if any). 
+* Display statistics: performs the validation of the classifier by comparing predictions and groundtruth for the testset only (i.e. input training data are not considered to compute statistics)
 
 
 <p align="right">(<a href="#top">back to top</a>)</p>
@@ -271,6 +332,21 @@ A figure window will appear, allowing to select the channels to be displayed. Us
 <div id="classify"></div>
 
 ## Classifying new data ##
+
+Click --> Classify data after seelcting a project in the tree window. 
+
+![This is an image](classifyData.png)
+
+In the classify data GUI: 
+* Select a classifier
+* Select positions and ROIs to be processed in the table window. You can also edit the channel in the ROIs to be used as input of the classifier. By default, the channel value is identical to that used for training the classifier. 
+Classification can take a very long time depending on the size of the dataset. Classification results are automatically saved.
+
+Once finished, classified data can be monitored by left-clicking ROIs in Project->Position subnodes:
+
+![This is an image](classifyData_roi.png)
+
+
 
 
 <p align="right">(<a href="#top">back to top</a>)</p>
