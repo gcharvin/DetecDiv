@@ -315,9 +315,11 @@ The classifier GUI has 3 tabs to allow paramters setup:
 
 Specific buttons on this tab: 
 
-	*Select/Delect ROIs: Select/Unselect the ROIs to be used as training set (network training) or, alternatively, as a test set (validation)
-	*Import ROIs: Additional ROIs can be imported from other ROIs available in the workspace.
-	*Annotate selected ROI : launches a figure window to perofmr manual annotation of the training/test sets. Shortcut keys indicated in the "Classes" menu can be used to assign one among all available classes for each frame. 
+*Select/Delect ROIs: Select/Unselect the ROIs to be used as training set (network training) or, alternatively, as a test set (validation)
+
+*Import ROIs: Additional ROIs can be imported from other ROIs available in the workspace.
+
+*Annotate selected ROI : launches a figure window to perofmr manual annotation of the training/test sets. Shortcut keys indicated in the "Classes" menu can be used to assign one among all available classes for each frame. 
  
 The buttons at the bottom provide the following functions:
 * Save classifier & parameters: saves all relevant paramters in the classfier GUI. This step is required to preserve any modification executed in the GUI
