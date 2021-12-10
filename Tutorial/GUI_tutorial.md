@@ -32,6 +32,7 @@
         <li><a href="#roi_manual">Manually adding ROIs</a></li>
         <li><a href="#roi_automated">Automated detection of multi ROIs</a></li>
         <li><a href="#roi_extraction">Exctracting 4-D volumes</a></li>
+        <li><a href="#roi_browse">Browsing ROIs data</a></li>
     </ul>
     <li><a href="#contact">Contact</a></li>
     <li><a href="#acknowledgments">Acknowledgments</a></li>
@@ -70,7 +71,10 @@ File --> New Project --> Choose filename/location
 
 File --> Save Project 
 
-Please note that a corresponding variable associated with the project is listed in the workspace. 
+Please note that a corresponding variable associated with the project is listed in the workspace:
+
+![This is an image](workspace_project.png)
+
 This variable can be accessed at any time to gather information, include as an argument in your own scripts, 
 or use additional command-line functions of DetecDiv.
 
@@ -169,7 +173,7 @@ For this, click --> Set/show cropping area in the 'Display Options' menu and dra
 Right-click on the cropping area to hide or delete it.
 Close the figure window. 
 
-In detecdiv, click --> identify ROIs based on image pattern; this launches the ROI identification GUI. 
+In detecdiv, select a position and click --> identify ROIs based on image pattern; this launches the ROI identification GUI. 
 The GUI displays an image of the selected pattern:
 
 ![This is an image](ROIidentifierGUI.png)
@@ -184,18 +188,49 @@ Close the ROI identifer GUI.
 
 You can now see the avaiable ROIs as subnodes of the position nodes:
 
-![This is an image](detecdiv_roitree.png)
+![This is an image](detecdiv_roistree.png)
 
 You can also look at the spatial location of these ROIs by opening the position window (right-click on a selected position, as described previously):
 
 ![This is an image](fov_view_automated_cropped_rois.png)
 
-
-
 WARNING: Save the project at this time.
 
 
+<p align="right">(<a href="#top">back to top</a>)</p>
+
 <div id="roi_extraction"></div>
+
+### Extracting 4-D volumes for ROIs in positions ###
+
+Once defined, ROIs data can be extracted by creating individual .mat files that contains (X,Y,Channel,Time) information.
+
+Select a relevant project and position by navigating the tree window.
+
+Click: --> Extract ROIs data from raw data
+
+Select parameters: 
+
+-Array of frames 
+
+-Array of positions to be processed
+
+-Max number of frames loaded in memory (this is is to prevent loading all the raw images at once during this process).
+
+-Channel-specific relative frame interval: If channel 1 is snapped every 5min and channel 2 is snapped every 10 minutes, then type 1 2.
+(The data parsing program attempts to guess this paramter by counting the respective number of files for each channel).
+
+Confirm your choice. 
+
+This process takes a very long time. It uses parallel computing to distribute computing tasks on different workers.
+Information in the workspace is indicated to show the progression of the process. The project is automatically saved at the end of the process.
+
+<p align="right">(<a href="#top">back to top</a>)</p>
+
+<div id="roi_browse"></div>
+
+### Browsing ROI data ###
+
 
 <!-- MARKDOWN LINKS & IMAGES -->
 <!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
