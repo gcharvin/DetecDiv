@@ -34,8 +34,13 @@
         <li><a href="#roi_extraction">Exctracting 4-D volumes</a></li>
         <li><a href="#roi_browse">Browsing ROIs data</a></li>
     </ul>
-    <li><a href="#contact">Contact</a></li>
-    <li><a href="#acknowledgments">Acknowledgments</a></li>
+   <li><a href="#classi">Creating and setting up a classifier</a></li>
+   <ul>
+        <li><a href="#classi_new">Creating a new classifier within a project</a></li>
+        <li><a href="#classi_import">Importing an exisiting classifier</a></li>
+    </ul>
+   <li><a href="#classi_edit">Editing a classifier</a></li>
+   <li><a href="#classify">Classifying new data</a></li>
   </ol>
 
 
@@ -230,6 +235,45 @@ Information in the workspace is indicated to show the progression of the process
 <div id="roi_browse"></div>
 
 ### Browsing ROI data ###
+
+Once extracted, ROIs data can be viewed by left-clicking on subnodes of the position nodes in the tree window. 
+A figure window will appear, allowing to select the channels to be displayed. Use keyboard arrow keys to scroll trhough time. 
+
+![This is an image](sample_roi.png)
+
+<p align="right">(<a href="#top">back to top</a>)</p>
+
+<div id="classi"></div>
+
+## Creating and setting up a classifier ##
+
+<div id="classi_new"></div>
+
+### Creating a new classifier within a project ###
+
+
+<div id="classi_import"></div>
+
+### Importing an exisiting classifier ###
+
+
+
+<p align="right">(<a href="#top">back to top</a>)</p>
+
+<div id="classi_edit"></div>
+
+## Editing a classifier ##
+
+
+
+<p align="right">(<a href="#top">back to top</a>)</p>
+
+<div id="classify"></div>
+
+## Classifying new data ##
+
+
+<p align="right">(<a href="#top">back to top</a>)</p>
 
 
 <!-- MARKDOWN LINKS & IMAGES -->
