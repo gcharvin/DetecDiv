@@ -57,10 +57,6 @@ DetecDiv provides a comprehensive set of tools to analyze time microscopy images
     <li><a href="#about">About the project</a></li>
     <li><a href="#installation">Installation procedure</a></li>
     <li><a href="#gui">Graphical user-interface user guide</a></li>
-     <ul>
-        <li><a href="#gui_opening">Opening DetecDiv</a></li>
-        <li><a href="#gui_project">Setting up a new project</a></li>
-      </ul>
     <li><a href="#license">License</a></li>
     <li><a href="#contact">Contact</a></li>
     <li><a href="#acknowledgments">Acknowledgments</a></li>
@@ -69,8 +65,7 @@ DetecDiv provides a comprehensive set of tools to analyze time microscopy images
 
 ## Installation procedure
 
-
-We recommend the usage of Matlab >= R2021a to ensure the compatibility of the software. DetecDiv requires the following toolboxes: 
+We recommend using Matlab >= R2021a to ensure the compatibility of the software. DetecDiv requires the following toolboxes: 
 
 -MATLAB                                                Version 9.10        (R2021a)
 
@@ -86,11 +81,17 @@ We recommend the usage of Matlab >= R2021a to ensure the compatibility of the so
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
+Make sure to include all DetecDiv folders and subfolders in the Matlab path using the "Set Path" in the main Matlab workspace
+
 <div id="gui"></div>
 
 ## Graphical user-interface user guide ##
 
-<div id="gui_opening"></div>
+A detailed guide on how to use the graphical user-interface can be found here: 
+
+ <a href="https://github.com/gcharvin/DetecDiv/blob/master/Tutorial/GUI_tutorial.md">GUI User guide</a>
+ 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.5771536.svg)](https://doi.org/10.5281/zenodo.5771536)
 
 ### Opening DetecDiv ###
 
