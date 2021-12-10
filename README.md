@@ -28,7 +28,7 @@
 <!-- ABOUT THE PROJECT -->
 <div id="about"></div>
 
-## About The Project
+## About The Project ##
 
 
 DetecDiv provides a comprehensive set of tools to analyze time microscopy images using deep learning methods. The software structure is such that data can be processed either at the command line or using a graphical user-interface. Detecdiv classification models include : image classification and regression, semantic segmentation, LSTM networks to analyze data and image timeseries. Please refer to our pre-print for further details about the software and its applications for yeast cell division counting and replicative lifespan analysis: 
