@@ -12,13 +12,10 @@
 <br />
 <div align="center">
   <a href="https://github.com/gcharvin/DetecDiv">
-    <img src="Tutorial/detecDiv_logo.png" alt="Logo" width="200" height="200">
+    <img src="Tutorial/detecDiv_logo-01.png" alt="Logo">
   </a>
-  
-  <h3 align="center"> DetecDiv</h3>
-
-  <p align="center">
-    Processing microscopy image sequences using Matlab, a graphical user-interface and deep learning classifiers
+  <p align="center" style="font-size:30px">
+    <i> Processing microscopy image sequences using Matlab, a graphical user-interface and deep learning classifiers </i>
     <br />
     <br />
   </p> 
