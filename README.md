@@ -1,13 +1,6 @@
 <div id="top"></div>
 
 <!-- PROJECT SHIELDS -->
-<!--
-*** I'm using markdown "reference style" links for readability.
-*** Reference links are enclosed in brackets [ ] instead of parentheses ( ).
-*** See the bottom of this document for the declaration of the reference variables
-*** for contributors-url, forks-url, etc. This is an optional, concise syntax you may use.
-*** https://www.markdownguide.org/basic-syntax/#reference-style-links
--->
 [![Contributors][contributors-shield]][contributors-url]
 [![Forks][forks-shield]][forks-url]
 [![Stargazers][stars-shield]][stars-url]
@@ -15,65 +8,117 @@
 [![MIT License][license-shield]][license-url]
 
 
-
 <!-- PROJECT LOGO -->
 <br />
 <div align="center">
   <a href="https://github.com/gcharvin/DetecDiv">
-    <img src="Tutorial/detecDiv_logo-01.png" alt="Logo" width="300" height="120">
+    <img src="Tutorial/detecDiv_logo.png" alt="Logo" width="200" height="200">
   </a>
-
-  <h3 align="center">User Guide</h3>
+  
+  <h3 align="center"> DetecDiv</h3>
 
   <p align="center">
-    An awesome README template to jumpstart your projects!
-    <br />
-    <a href="https://github.com/othneildrew/Best-README-Template"><strong>Explore the docs »</strong></a>
+    Processing microscopy image sequences using Matlab, a graphical user-interface and deep learning classifiers
     <br />
     <br />
-    <a href="https://github.com/othneildrew/Best-README-Template">View Demo</a>
-    ·
-    <a href="https://github.com/othneildrew/Best-README-Template/issues">Report Bug</a>
-    ·
-    <a href="https://github.com/othneildrew/Best-README-Template/issues">Request Feature</a>
-  </p>
+  </p> 
 </div>
 
 
+   
+<!-- ABOUT THE PROJECT -->
+<div id="about"></div>
 
-<!-- MARKDOWN LINKS & IMAGES -->
-<!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
-[contributors-shield]: https://img.shields.io/github/contributors/gcharvin/DetecDiv
-[contributors-url]: https://github.com/gcharvin/DetecDiv/graphs/contributors
-[forks-shield]: https://img.shields.io/github/forks/gcharvin/DetecDiv
-[forks-url]: https://github.com/gcharvin/DetecDiv/network/members
-[stars-shield]: https://img.shields.io/github/stars/gcharvin/DetecDiv
-[stars-url]: https://github.com/gcharvin/DetecDiv/stargazers
-[issues-shield]: https://img.shields.io/github/issues/gcharvin/DetecDiv
-[issues-url]: https://github.com/gcharvin/DetecDiv/issues
-[license-shield]: https://img.shields.io/github/license/gcharvin/DetecDiv
-[license-url]: https://github.com/gcharvin/DetecDiv/blob/master/LICENSE.txt
-[product-screenshot]: images/screenshot.png
+## About The Project
 
 
+DetecDiv provides a comprehensive set of tools to analyze time microscopy images using deep learning methods. The software structure is such that data can be processed either at the command line or using a graphical user-interface. Detecdiv classification models include : image classification and regression, semantic segmentation, LSTM networks to analyze data and image timeseries. Please refer to our pre-print for further details about the software and its applications for yeast cell division counting and replicative lifespan analysis: 
+    
+<a href="https://www.biorxiv.org/content/10.1101/2021.10.05.463175v2">
+   DetecDiv, a deep-learning platform for automated cell division tracking and replicative lifespan analysis
+  </a>
+    
+   Théo Aspert, Didier Hentsch, Gilles Charvin
+    
+   <a href="https://www.biorxiv.org/content/10.1101/2021.10.05.463175v2"> https://doi.org/10.1101/2021.10.05.463175  </a>
+    
+    
+<p align="right">(<a href="#top">back to top</a>)</p>
+
+
+<div id="installation"></div>
+
+## Table of contents
+
+<!-- TABLE OF CONTENTS -->
+
+ <!-- <summary>Table of Contents</summary> -->
+  <ol>
+    <li><a href="#about">About the project</a></li>
+    <li><a href="#installation">Installation procedure</a></li>
+    <li><a href="#gui">Graphical user-interface user guide</a></li>
+     <ul>
+        <li><a href="#gui_opening">Opening DetecDiv</a></li>
+        <li><a href="#gui_project">Setting up a new project</a></li>
+      </ul>
+    <li><a href="#license">License</a></li>
+    <li><a href="#contact">Contact</a></li>
+    <li><a href="#acknowledgments">Acknowledgments</a></li>
+  </ol>
+
+
+## Installation procedure
+
+
+We recommend the usage of Matlab >= R2021a to ensure the compatibility of the software. DetecDiv requires the following toolboxes: 
+
+-MATLAB                                                Version 9.10        (R2021a)
+
+-Computer Vision Toolbox                               Version 10.0        (R2021a)
+
+-Deep Learning Toolbox                                 Version 14.2        (R2021a)
+
+-Image Processing Toolbox                              Version 11.3        (R2021a)
+
+-Parallel Computing Toolbox                            Version 7.4         (R2021a)
+
+-Statistics and Machine Learning Toolbox               Version 12.1        (R2021a)
+
+<p align="right">(<a href="#top">back to top</a>)</p>
+
+<div id="gui"></div>
+
+## Graphical user-interface user guide ##
+
+<div id="gui_opening"></div>
+
+### Opening DetecDiv ###
+
+Type in Matlab workspace: 
+
+```>> detecdiv```
+
+ <img src="Tutorial/detecdiv_plain.png" width="600" height="600">
+
+<div id="gui_project"></div>
+
+### Setting up a new project  ###
 
 
 
-## Installation procedure ## 
+<!-- ACKNOWLEDGMENTS -->
+## Acknowledgments
 
-You need Matlab R2019b installed with the following TB:
+Many thanks to those who provided the necessary resources to make this project possible.
 
+* [GitHub Pages](https://pages.github.com)
 
-Image Processing Toolbox  
-Deep Learning Toolbox
-Computer Vision Toolbox
-
-
-Bugfix: the classify function of the @DAGNetwork class needs to be patched. On line 172 :
-remove the " ' " after scores{ii} in the arguments of undummify function
+<p align="right">(<a href="#top">back to top</a>)</p>
+ 
 
 
-## Basic instructions ##
+
+## Basic command-line instructions ##
 
 
 ### Create/Save a project ###
@@ -271,13 +316,28 @@ plots the RLS from the rois shallowObj.fov(1).roi(1:50) versus the rois shallowO
 ```myproject.run('roilist',roilist,'args',{'argument Name1 of the method',argument1,'argumentname2',argument2});``` applies the roiMethod to roilist, with arguments args.
 
 
-
-
----------------------
----------------------
 ---------------------
 ### List of methods ###
 ---------------------
 
 ## roi ##
 ```.combineChannels```, arguments:{'channels',[1 2 3],'rgb',{[1 0 0],[0 1 0],[0 0 1]} combines the channels 1 2 3 to create a new rgb channel with intensities [1 0 0],[0 1 0],[0 0 1] for the respective channels.
+
+
+
+<!-- MARKDOWN LINKS & IMAGES -->
+<!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
+[contributors-shield]: https://img.shields.io/github/contributors/gcharvin/DetecDiv
+[contributors-url]: https://github.com/gcharvin/DetecDiv/graphs/contributors
+[forks-shield]: https://img.shields.io/github/forks/gcharvin/DetecDiv
+[forks-url]: https://github.com/gcharvin/DetecDiv/network/members
+[stars-shield]: https://img.shields.io/github/stars/gcharvin/DetecDiv
+[stars-url]: https://github.com/gcharvin/DetecDiv/stargazers
+[issues-shield]: https://img.shields.io/github/issues/gcharvin/DetecDiv
+[issues-url]: https://github.com/gcharvin/DetecDiv/issues
+[license-shield]: https://img.shields.io/github/license/gcharvin/DetecDiv
+[license-url]: https://github.com/gcharvin/DetecDiv/blob/master/LICENSE.txt
+[product-screenshot]: images/screenshot.png
+
+
+
