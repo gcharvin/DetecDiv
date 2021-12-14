@@ -58,7 +58,7 @@ parfor i=fovid
     end
     
     if numel(frames)==0
-        nframes=1:numel(tmpfov(i).srclist{1}); % take the number of frames from the image list
+        nframes=1:tmpfov(i).frames; %numel(tmpfov(i).srclist{1}); % take the number of frames from the image list
     else
         nframes=frames;   % specify a number of images to be applied to all FOVs
     end
@@ -66,6 +66,8 @@ parfor i=fovid
     % find the number of arrays
     framecell={}; % a cell array that specfifes how to porcess the frames
     
+    
+    % cutting frames loading into small pieces 
     
     narr= floor(numel(nframes)/cut);
     id=1:narr*cut;
@@ -108,10 +110,10 @@ parfor i=fovid
             
             disp(['Reading frame: ' num2str(j) ' / '  num2str(numel(nframes)) ' in group of frame : ' num2str(ii) ' / ' num2str(numel(framecell)) ' for FOV:  ' num2str(tmpfov(i).id)]);
             
-            for k=1:numel(tmpfov(i).srclist) % loop on channels            
+            for k=1:numel(tmpfov(i).channel) % loop on channels            
                 frame=(nframes(j)); %/channelint(k))+1; %  spacing frames when channels are not used with equal time interval
                 im=tmpfov(i).readImage(frame,k);
-                            
+      
                 if tmpfov(i).display.binning(k) ~= tmpfov(i).display.binning(1)
                     im=imresize(im,tmpfov(i).display.binning(k)/tmpfov(i).display.binning(1));
                 end
@@ -141,7 +143,7 @@ parfor i=fovid
             row=tmpfov(i).drift.x(nframes(j));           
             col=tmpfov(i).drift.y(nframes(j));
             
-            for k=1:numel(tmpfov(i).srclist)
+            for k=1:numel(tmpfov(i).channel)
                 
                 if strcmp(method,'circshift')
                     list{j,k}=circshift( list{j,k},row,1);
@@ -197,7 +199,7 @@ parfor i=fovid
                 temp=[1 1 1];
                 %temp=temp';
                 
-                for k=1:numel(tmpfov(i).srclist)
+                for k=1:numel(tmpfov(i).channel)
                     tmproi(l).display.channel{k}=tmpfov(i).channel{k}; %['Channel ' num2str(k)];
                     tmproi(l).display.intensity(k,:)=temp;
                     tmproi(l).channelid(k)=k;
@@ -212,7 +214,7 @@ parfor i=fovid
             %cc=1;
             for j=1:numel(nframes)
                 
-                for k=1:numel(tmpfov(i).srclist)
+                for k=1:numel(tmpfov(i).channel)
                     
                     tmp=list{j,k};
                     
