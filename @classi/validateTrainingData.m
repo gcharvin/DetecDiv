@@ -33,9 +33,15 @@ name=classif.strid;
 % first load classifier if not loadad to save some time
 if exist('classifierStore','var')==0
     disp(['Loading classifier: ' name]);
-    str=[path '/' name '.mat'];
-    load(str); % load classifier
-    classifierStore=classifier;
+   % str=[path '/' name '.mat'];
+   
+    classifierStore=classif.loadClassifier;
+    
+    if numel(classifierStore)==0
+        disp('could not load main classifier.... quitting');
+        return;
+    end 
+ 
 end
 
 if exist('classifierCNN','var')==0

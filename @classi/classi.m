@@ -11,6 +11,8 @@ classdef classi < handle
         category='';
         roi=roi('',[]);
         channel=1;
+        channelName='';
+        channelName2='';
         classes={}; % names of the classes
         classifyFun='';
         trainingFun='';

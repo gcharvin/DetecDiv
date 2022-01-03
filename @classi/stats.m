@@ -110,6 +110,11 @@ if compute==1 % compute new scores
         
         data=collectROIData(classif,roiid);  % collect prediction and ground truth data
         
+        if ~isfield(data,'reg')
+           disp('There are no statistics to display.... quitting');
+           return;
+        end
+        
         if data.reg==1 % regression
             figure('Color','w');
             plot(data.gt,data.pred,'Marker','.','Markersize',10,'LineStyle','none'); hold on;

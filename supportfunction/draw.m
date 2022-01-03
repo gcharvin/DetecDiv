@@ -386,6 +386,8 @@ if numel(classif)>0
         
         for i=1:numel(obj.classes)
           %  cmap
+%aa=keys{i}
+%bb=cmap(i+1,:)
 
             mitem(i) = uimenu(m,'Text',obj.classes{i},'Checked','off','Tag',['classes_' num2str(i)],'ForegroundColor',cmap(i+1,:),'Accelerator',keys{i});
             
