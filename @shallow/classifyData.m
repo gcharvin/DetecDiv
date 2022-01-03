@@ -125,7 +125,7 @@ for i=1:size(roilist,2)
 end
 
 
-try 
+%try 
 for i=1:size(roilist,2) % loop on all ROIs using parrallel computing   
     roiobj=tmp(i);
     if numel(roiobj.id)==0
@@ -168,9 +168,13 @@ end
 %     obj.fov(roilist(1,i)).roi(roilist(2,i)).save;
 %     obj.fov(roilist(1,i)).roi(roilist(2,i)).clear;
 % end
-catch
-    classi.channel=channelstore;
-end
+
+
+% catch
+%     disp('Did not manage to classify.... ')
+%     classi.channel=channelstore;
+% end
+
 classi.channel=channelstore;
 
   if numel(p)

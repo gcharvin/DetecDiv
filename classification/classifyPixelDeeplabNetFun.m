@@ -80,6 +80,7 @@ switch classif.outputType
          end  
 end
 
+
         for fr=frames
             fprintf('.');
             % fr
@@ -88,6 +89,7 @@ end
             if size(tmp,1)<inputSize(1) | size(tmp,2)<inputSize(2)
                 tmp=imresize(tmp,inputSize(1:2));
             end
+            
             
             %C = semanticseg(tmp, net); % this is no longer required if we extract the probabilities from the previous layer
             %    if numel(gpuDeviceCount)==0
@@ -101,9 +103,12 @@ end
                 features=imresize(features,size(gfp,1:2));
                 C=imresize(C,size(gfp,1:2));
             end
-       
+            
+           % figure, imshow(features(:,:,2),[]);
+            
             tmpout=uint16(zeros(size(roiobj.image(:,:,pixresults,fr))));
 
+            
             switch classif.outputType
                     case 'proba' % outputs proba 
                        
@@ -112,6 +117,7 @@ end
                         end
                        
                     case 'segmentation'
+                          
                          for i=2:numel(classif.classes) % 1 st class is considered default class
                         BW=features(:,:,i)>0.9;
                         res=uint16(uint16(BW)*(i));
@@ -122,8 +128,12 @@ end
               
                     case 'postprocessing'
                         tmpout= feval(classif.outputFun,features,classif.classes,classif.outputArg{:});
+                        
+                       
             end
 
+       %      figure, imshow(tmpout,[]);
+             
             roiobj.image(:,:,pixresults,fr)=tmpout;
         end
         

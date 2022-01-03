@@ -13,7 +13,6 @@ keeplargest=[];
 
 thrmethod='threshold';
 
-
 for i=1:numel(varargin)
     if strcmp(varargin{i},'watershed') % does watershed on each class > 1 to cut connected objects
         watersh=1;
@@ -46,14 +45,14 @@ end
 
 tmpout=uint16(zeros(size(features,1),size(features,2),1));
 
-
 for i=2:numel(classes)
     
     % feature thresholding
-    
+     
     switch thrmethod
         case 'threshold'
-            BW=features(:,:,i)>thresh;
+            
+            BW=features(:,:,i)>str2num(thresh);
             
         case 'adaptivethreshold'
          %   ccbwsize=[];
@@ -68,11 +67,10 @@ for i=2:numel(classes)
             
             BW=features(:,:,i)>1*mean(featuresim(featuresim>0));
             
-        case 'adaptivethreshold'
+        case 'maxproba'
             [~, BW]=max(features,[],3);
             BW=BW==i;
     end
-    
     
     % remove small objects
     if numel(keeplargest) || numel(sizethreshold)
@@ -113,6 +111,7 @@ for i=2:numel(classes)
     end
     res=uint16(uint16(BW)*(i));
     tmpout=tmpout+ res;
+    
 end
 
 tmpout(tmpout==0)=1; %fill background
