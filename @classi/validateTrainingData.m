@@ -93,8 +93,8 @@ for i=1:length(roilist) % loop on all ROIs using parrallel computing
     
     goclassif=0;
     if roiwithgt==1 % chacks if goclassif truth data are avaiable for this ROI, otherwise skips the ROI
-        switch classif.typeid
-            case {2,8} % pixel classification
+        switch classif.category{1}
+            case 'Pixel' % pixel classification
                 ch= roiobj.findChannelID(classif.strid);
                 if numel(ch)>0 % groundtruth channel exists
                     % checks if at least one image has been annotated  first!
@@ -115,7 +115,9 @@ for i=1:length(roilist) % loop on all ROIs using parrallel computing
                                 flag=[flag, f];
                             end
                         end
-                        frames=flag;%frames to classify
+                       % frames=flag;%frames to classify - disabled to
+                       % classify all frames 
+                       
                     else
                         goclassif=0;
                     end
@@ -152,8 +154,8 @@ for i=1:length(roilist) % loop on all ROIs using parrallel computing
         if numel(classifierCNN) % in case an LSTM classification is done, validation is performed with a CNN classifier as well
             feval(classifyFun,roiobj,classif,classifier,classifierCNN); % launch the training function for classification
         else
-            switch classif.typeid
-                case {2,8} % pixel classification
+            switch classif.category{1}
+                case 'Pixel'  % pixel classification
                     feval(classifyFun,roiobj,classif,classifier,frames); % launch the training function for classification
                 otherwise
                     feval(classifyFun,roiobj,classif,classifier); % launch the training function for classification

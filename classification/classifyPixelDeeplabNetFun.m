@@ -1,4 +1,4 @@
-function classifyPixelDeeplabNetFun(roiobj,classif,classifier,frames)
+function classifyPixelDeeplabNetFun(roiobj,classif,classifier,varargin)
 
 % this function can be used to classify any roi object, by providing the
 % classi object and the classifier
@@ -11,6 +11,13 @@ if numel(classifier)==0 % loading the classifier // not recommende because it ta
     load(str); % load classifier
 end
 % classify new images
+
+frames=[];
+for i=1:numel(varargin)
+      if strcmp(varargin{i},'Frames')
+          frames=varargin{i+1};
+      end
+end
 
 net=classifier;
 
@@ -25,11 +32,7 @@ roiobj.load;
 pix=find(roiobj.channelid==classif.channel(1)); % find channels corresponding to trained data
 gfp=roiobj.image(:,:,pix,:);
 
-if exist('frames','var')
-    if frames==0
-        frames=1:numel(gfp(1,1,1,:)); %classify only frames with GT
-    end
-else
+if numel(frames)==0
     frames=1:numel(gfp(1,1,1,:));
 end
 
@@ -80,7 +83,6 @@ switch classif.outputType
          end  
 end
 
-
         for fr=frames
             fprintf('.');
             % fr
@@ -125,8 +127,17 @@ end
                          end 
                          
                        tmpout(tmpout==0)=1; %fill background
-              
+            
+                       
                     case 'postprocessing'
+                        
+                        if numel(classif.outputFun)==0
+                            classif.outputFun='post';
+                        end
+                        if numel(classif.outputArg)==0
+                            classif.outputArg={ 'threshold'  '0.9'};
+                        end
+                        
                         tmpout= feval(classif.outputFun,features,classif.classes,classif.outputArg{:});
                         
                        

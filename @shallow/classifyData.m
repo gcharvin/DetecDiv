@@ -14,6 +14,8 @@ fovs=[];
 p=[];
 
 channel=[];
+frames=[];
+
 for i=1:numel(varargin)
     if strcmp(varargin{i},'Classifier')
         classifierStore=varargin{i+1};
@@ -22,8 +24,13 @@ for i=1:numel(varargin)
     if strcmp(varargin{i},'Rois')
         rois=varargin{i+1};
     end
+    
     if strcmp(varargin{i},'Fovs')
         fovs=varargin{i+1};
+    end
+    
+      if strcmp(varargin{i},'Frames') % is a cell array with the same number of elements as FOVs
+        frames=varargin{i+1};
     end
     
   if strcmp(varargin{i},'Progress') % update progress bar
@@ -59,6 +66,7 @@ roilist2=[];
 
 chan=[];
 
+
 for i=1:numel(fovs)
     
     ro= rois{i};
@@ -69,6 +77,8 @@ for i=1:numel(fovs)
     if numel(channel)
     chan=[chan channel(i)*ones(1,numel(ro))];
     end
+   
+    
 end
 
 roilist(2,:)=roilist2;
@@ -110,10 +120,7 @@ path=classi.path;
 name=classi.strid;
 if exist('classifierStore','var')==0
     % first load classifier if not loadad to save some time
-    disp(['Loading classifier: ' name '...']);
-    str=[path '/' name '.mat'];
-    load(str); % load classifier
-    classifierStore=classifier;
+   [classifierStore, ~]=loadClassifier(classi);
 end
 % 
 
@@ -155,7 +162,11 @@ for i=1:size(roilist,2) % loop on all ROIs using parrallel computing
     classi.channel=chan(i);
    end
 
+   if numel(frames)==0
     feval(classifyFun,roiobj,classi,classifierStore); % launch the training function for classification
+   else
+    feval(classifyFun,roiobj,classi,classifierStore,'Frames',frames{roilist(1,i)});    
+   end
     %end
     
     % since roiobj is a handle, no need to have an output to this the function
