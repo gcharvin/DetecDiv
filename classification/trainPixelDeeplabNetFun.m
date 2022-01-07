@@ -138,7 +138,7 @@ save([path '/' name '.mat'],'classifier');
 fprintf('Saving DeepLab network classifier...\n');
 
 CNNOptions=struct(options);
-if ~exist(fullfile(path,'TrainingValidation')
+if ~exist(fullfile(path,'TrainingValidation'))
     makedir(path,'TrainingValidation');
 end
 

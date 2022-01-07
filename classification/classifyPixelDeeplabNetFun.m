@@ -131,6 +131,7 @@ end
                        
                     case 'postprocessing'
                         
+                        
                         if numel(classif.outputFun)==0
                             classif.outputFun='post';
                         end

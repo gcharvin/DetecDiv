@@ -23,7 +23,7 @@ for i=1:numel(varargin)
     end
     
     if strcmp(varargin{i},'sizethreshold') % removes small features smaller than size threshold for all classes
-        sizethreshold=varargin{i+1};
+        sizethreshold=str2num(varargin{i+1});
     end
     
     if strcmp(varargin{i},'threshold') % threshold on probability to assign class to pixel
@@ -72,6 +72,7 @@ for i=2:numel(classes)
             BW=BW==i;
     end
     
+    
     % remove small objects
     if numel(keeplargest) || numel(sizethreshold)
         
@@ -87,7 +88,8 @@ for i=2:numel(classes)
         end
         
         if numel(sizethreshold)
-            idx=find(numPixels<sizethreshold); % objects numbers smallers than threshold
+            idx=find(numPixels<sizethreshold);
+            % objects numbers smallers than threshold
             for k=1:numel(idx)
                 BW(CC.PixelIdxList{idx(k)}) = 0;
             end

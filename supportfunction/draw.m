@@ -14,6 +14,19 @@ end
 %     refresh='full';
 % end
 
+
+% % This should work in both HG1 and HG2:
+% hManager = uigetmodemanager(h);
+% try
+%     set(hManager.WindowListenerHandles, 'Enable', 'off');  % HG1
+% catch
+%     [hManager.WindowListenerHandles.Enabled] = deal(false);  % HG2
+% end
+% set(h, 'WindowKeyPressFcn', []);
+%set(hFig, 'KeyPressFcn', @myKeyPressCallback);
+
+
+
 if numel(h.UserData)~=0 % window is already displayed; therefore just update the figure
     him=h.UserData;
     hp=findobj(h,'Type','Axes');
@@ -251,6 +264,9 @@ for i=1:numel(obj.display.channel)
             set(gca,'Position',[0.2 0.2 0.7 0.7]  );
         end
         
+     %   ax=gca;
+        
+  %    set(zoom(ax),'ActionPreCallback',@(x,y) myCallbackFcn(ax,h));
         
         cc=cc+1;
         
@@ -259,7 +275,27 @@ for i=1:numel(obj.display.channel)
 end
 
 
-
+%     function myCallbackFcn(ax,h)
+%         
+%         
+%         % here must disable paintingif zoom is in
+%           for j=1:numel(classif.classes)
+%                 ha=findobj('Tag',['classes_' num2str(j)]);
+%                 if numel(ha)
+%                         ha.Checked='off';
+%                 end
+%                 
+% 
+%           end
+%          
+%     h.WindowButtonDownFcn='';
+%     h.Pointer = 'arrow';
+%     h.WindowButtonMotionFcn = '';
+%     h.WindowButtonUpFcn = '';
+%    % figure(h); % set focus
+%     
+%     
+%     end
 
 if cd>0
     linkaxes(hp);
@@ -422,7 +458,7 @@ if numel(classif)>0
         % change keypressfcn if painting is allowed to allow more functions
         %
         if strcmp(classif.category{1},'Pixel') | strcmp(classif.category{1},'Object') % only in pixel mode
-            h.KeyPressFcn={@changeframe,obj,him,hp,keys,classif,hpaint.Children(1),hcopy.Children(1)};
+            h.KeyPressFcn={@changeframe,obj,him,hp,keys,classif,hpaint.Children(1),hcopy.Children(1),hpaint};
             %<<<<<<< HEAD
         else
             h.KeyPressFcn={@changeframe,obj,him,hp,keys,classif};
@@ -853,14 +889,26 @@ if strcmp(handles.Checked,'off')
     %str=replace(handles.Tag,'classes_','');
     %colo=str2num(str);
     
+    tz=zoom(h);
+    tp=pan(h);
+    
+    if strcmp(tz.Enable,'on')  || strcmp(tp.Enable,'on')
+  %  disp('not available,  set zoom and pan will be set off');
+    tz.Enable='off';
+    tp.Enable='off';
+   % return;
+    end
+    
+     handles.Checked='on';
+    
     
     % set pixel painting mode
     if strcmp(classif.category{1},'Pixel')
-        set(h,'WindowButtonDownFcn',@wbdcb);
+        set(h,'WindowButtonDownFcn',{@wbdcb,obj,impaint1,impaint2,hpaint,classif,h});
     end
     
     if strcmp(classif.category{1},'Object')
-        set(h,'WindowButtonDownFcn',@wbdcb2);
+        set(h,'WindowButtonDownFcn',{@wbdcb2,impaint1,impaint2,h});
     end
     
     %ah = hp(1); %axes('SortMethod','childorder');
@@ -877,68 +925,14 @@ else
 end
 
 %[him hp]=draw(obj,h,classif);
-    function wbdcb2(src,cbk)
-        seltype = src.SelectionType;
-        
-        if strcmp(seltype,'normal')
-            %src.Pointer = 'circle';
-            cp = hpaint.CurrentPoint;
-            
-            xinit = cp(1,1);
-            yinit = cp(1,2);
-            
-            if xinit>size(obj.image,2) | xinit<1 | yinit<1 | yinit>size(obj.image,1)
-                return;
-            end
-            
-            
-            hmenu = findobj('Tag','TrainingClassesMenu');
-            hclass=findobj(hmenu,'Checked','on');
-            strcolo=replace(hclass.Tag,'classes_','');
-            colo=str2num(strcolo);
-            
-            bw=impaint1.CData;
-            [l n]=bwlabel(bw>0);
-            
-            %xinit,yinit
-            val=l(round(yinit),round(xinit));
-            
-            if val>0
-                %tmp=bw;
-                sel=l==val;
-                bw(sel)=colo;
-                impaint1.CData=bw;
-                impaint2.CData=bw;
-                
-                pixelchannel=obj.findChannelID(classif.strid);
-                pix=find(obj.channelid==pixelchannel);
-                
-                obj.image(:,:,pix,obj.display.frame)=impaint2.CData;
-                % HERE
-            end
-            
-            
-            % hl = line('XData',xinit,'YData',yinit,...
-            % 'Marker','p','color','b');
-            %src.WindowButtonMotionFcn = {@wbmcb,1};
-            %src.WindowButtonUpFcn = @wbucb;
-            
-        end
-        %         if strcmp(seltype,'alt')
-        %             src.Pointer = 'circle';
-        %             cp = hpaint.CurrentPoint;
-        %             xinit = cp(1,1);
-        %             yinit = cp(1,2);
-        %             % hl = line('XData',xinit,'YData',yinit,...
-        %             % 'Marker','p','color','b');
-        %             src.WindowButtonMotionFcn = {@wbmcb,2};
-        %             src.WindowButtonUpFcn = @wbucb;
-        %
-        %         end
-    end
+   
 
 % nested function, good luck ;-) ....
-    function wbdcb(src,cbk)
+   
+end
+
+
+ function wbdcb(src,event,obj,impaint1,impaint2,hpaint,classif,h)
         seltype = src.SelectionType;
         ma=zeros(size(obj.image,1),size(obj.image,2));
         
@@ -981,6 +975,7 @@ end
         end
         
         if strcmp(seltype,'open') % paint whole connected area into the selected class color
+            % double click 
             
             
             % find the color to paint in
@@ -995,6 +990,13 @@ end
             yinit = uint16(round(cp(1,2)));
             
             %gather the list of pixel to paint
+            
+            if xinit>size(impaint1.CData,2)
+                return
+            end
+             if yinit>size(impaint1.CData,1)
+                return
+            end
             
             val=impaint1.CData(yinit,xinit); %
             
@@ -1045,6 +1047,16 @@ end
             %xdat = [xinit,cp(1,1)]
             %ydat = [yinit,cp(1,2)]
             
+             tz=zoom(h);
+             tp=pan(h);
+    
+             if strcmp(tz.Enable,'on')  || strcmp(tp.Enable,'on')
+             %  disp('not available,  set zoom and pan will be set off');
+            
+         %    disp('nogood')
+             return;
+            end
+    
             
             switch bsize
                 case 2 % fine brush
@@ -1060,8 +1072,8 @@ end
                     %xdat = [cp(1,1) cp(1,1)+1 cp(1,1)-1 cp(1,1)+1 cp(1,1)-1 cp(1,1) cp(1,1) cp(1,1)+1 cp(1,1)-1];
                     %ydat = [cp(1,2) cp(1,2)+1 cp(1,2)-1 cp(1,2)-1 cp(1,2)+1 cp(1,2)+1 cp(1,2)-1 cp(1,2) cp(1,2)];
                     
-                    mix=max(1,cp(1,2)-1);
-                    miy=max(1,cp(1,1)-1);
+                    mix=max(1,cp(1,2)-3);
+                    miy=max(1,cp(1,1)-3);
                     mux=min(size(ma,1),cp(1,2));
                     muy=min(size(ma,1),cp(1,1));
                     
@@ -1144,8 +1156,68 @@ end
             %    return
             %end
         end
-    end
-end
+ end
+    
+ function wbdcb2(src,obj,impaint1,impaint2,h)
+        seltype = src.SelectionType;
+        
+        if strcmp(seltype,'normal')
+            %src.Pointer = 'circle';
+            cp = hpaint.CurrentPoint;
+            
+            xinit = cp(1,1);
+            yinit = cp(1,2);
+            
+            if xinit>size(obj.image,2) | xinit<1 | yinit<1 | yinit>size(obj.image,1)
+                return;
+            end
+            
+            
+            hmenu = findobj('Tag','TrainingClassesMenu');
+            hclass=findobj(hmenu,'Checked','on');
+            strcolo=replace(hclass.Tag,'classes_','');
+            colo=str2num(strcolo);
+            
+            bw=impaint1.CData;
+            [l n]=bwlabel(bw>0);
+            
+            %xinit,yinit
+            val=l(round(yinit),round(xinit));
+            
+            if val>0
+                %tmp=bw;
+                sel=l==val;
+                bw(sel)=colo;
+                impaint1.CData=bw;
+                impaint2.CData=bw;
+                
+                pixelchannel=obj.findChannelID(classif.strid);
+                pix=find(obj.channelid==pixelchannel);
+                
+                obj.image(:,:,pix,obj.display.frame)=impaint2.CData;
+                % HERE
+            end
+            
+            
+            % hl = line('XData',xinit,'YData',yinit,...
+            % 'Marker','p','color','b');
+            %src.WindowButtonMotionFcn = {@wbmcb,1};
+            %src.WindowButtonUpFcn = @wbucb;
+            
+        end
+        %         if strcmp(seltype,'alt')
+        %             src.Pointer = 'circle';
+        %             cp = hpaint.CurrentPoint;
+        %             xinit = cp(1,1);
+        %             yinit = cp(1,2);
+        %             % hl = line('XData',xinit,'YData',yinit,...
+        %             % 'Marker','p','color','b');
+        %             src.WindowButtonMotionFcn = {@wbmcb,2};
+        %             src.WindowButtonUpFcn = @wbucb;
+        %
+        %         end
+ end
+ 
 
 
 function regression(handles,event,h,obj,him,hp,classif)
@@ -1271,7 +1343,6 @@ function updatedisplay(obj,him,hp,classif)
 % end
 
 im=buildimage(obj);
-
 
 % need to update the painting window here hpaint.Children(1).CData...
 
@@ -1703,7 +1774,7 @@ if frame<=size(obj.image,4) & frame > 0
 end
 end
 
-function changeframe(handle,event,obj,him,hp,keys,classif,impaint1,impaint2)
+function changeframe(handle,event,obj,him,hp,keys,classif,impaint1,impaint2,hpaint)
 
 %hpaint.Children(1),hcopy.Children(1)
 
@@ -1757,11 +1828,10 @@ if strcmp(event.Key,'l') % move by 10 frames right
     ok=1;
 end
 
-if nargin==9 % only if painting is allowed
+if nargin==10 % only if painting is allowed
     if strcmp(event.Key,'k') % fill up painted contours
         hmenu = findobj('Tag','TrainingClassesMenu');
         hclass=findobj(hmenu,'Checked','on');
-        
         if numel(hclass)==0
             disp('first make sure that a given class is checked !');
             return;
@@ -1780,13 +1850,15 @@ if nargin==9 % only if painting is allowed
     end
 end
 
-if nargin==9 % only if painting is allowed
+if nargin==10 % only if painting is allowed
     if strcmp(event.Key,'uparrow') %
         
         warning off all
         ax=findobj('Tag',classif.strid);
         al=ax.Children.AlphaData;
-        ax.Children.AlphaData=min(al+0.2,1);
+        ax.Children.AlphaData=min(al+0.1,1);
+ %       aa=ax.Children.AlphaData
+        
         warning on all
         
         %obj.display.intensity(obj.display.selectedchannel)=max(0.01,obj.display.intensity(obj.display.selectedchannel)-0.01);
@@ -1802,7 +1874,7 @@ if nargin==9 % only if painting is allowed
         warning off all
         ax=findobj('Tag',classif.strid);
         al=ax.Children.AlphaData;
-        ax.Children.AlphaData=max(al-0.2,0);
+        ax.Children.AlphaData=max(al-0.1,0);
         warning on all
         % obj.display.intensity(obj.display.selectedchannel)=min(1,obj.display.intensity(obj.display.selectedchannel)+0.01);
         ok=1;
@@ -1829,6 +1901,28 @@ for i=1:numel(keys) % display the selected class for the current image
                     else
                         % if strcmp(ha.Checked,'off')
                         ha.Checked='on';
+                        
+                         tz=zoom(gcf);
+                        tp=pan(gcf);
+                        
+                          if strcmp(tz.Enable,'on') || strcmp(tp.Enable,'on')
+                           %  disp('not available,  set zoom and pan will be set off');
+                            tz.Enable='off';
+                             tp.Enable='off';
+                    %    return;
+                          end
+    
+    
+    
+    
+  % set pixel painting mode
+    if strcmp(classif.category{1},'Pixel')
+        set(h,'WindowButtonDownFcn',{@wbdcb,obj,impaint1,impaint2,hpaint,classif,h});
+    end
+    
+    if strcmp(classif.category{1},'Object')
+        set(h,'WindowButtonDownFcn',{@wbdcb2,impaint1,impaint2,h});
+    end
                         % else
                         % ha.Checked='off';
                         % h.WindowButtonDownFcn='';

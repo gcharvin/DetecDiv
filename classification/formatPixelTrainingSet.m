@@ -68,7 +68,7 @@ for i=1:numel(rois)
     reverseStr = '';
     
     for j=1:size(im,4) %time
-        tmp=im(:,:,:,j);
+            tmp=im(:,:,:,j);
 %         if numel(pix)==1
             %tmp = double(imadjust(tmp,[meanphc/65535 maxphc/65535],[0 1]))/65535;
             tmp = double(imadjust(tmp));
@@ -90,6 +90,9 @@ for i=1:numel(rois)
             tmplab=lab(:,:,:,j);
             if max(tmplab(:))>1 % test if image has been manually annotated and remove empty frames
                 %  'ok'
+                
+              %  j
+                
                 % pads images - the traininer network expects images bigger or
                 % equal to 500 x 500.
                 % For images smaller than that, image padding is achieved to
@@ -101,9 +104,9 @@ for i=1:numel(rois)
             end
         end
         
-        msg = sprintf('Processing frame: %d / %d for ROI %s', j, size(im,4),cltmp(rois(i)).id); %Don't forget this semicolon
-        fprintf([reverseStr, msg]);
-        reverseStr = repmat(sprintf('\b'), 1, length(msg));
+      msg = sprintf('Processing frame: %d / %d for ROI %s', j, size(im,4),cltmp(rois(i)).id); %Don't forget this semicolon
+       fprintf([reverseStr, msg]);
+       reverseStr = repmat(sprintf('\b'), 1, length(msg));
     end
     fprintf('\n');
     cltmp(rois(i)).save;
