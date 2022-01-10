@@ -44,6 +44,7 @@ for i=1:numel(varargin)
 end
 
 
+
 if numel(p)
     p.Value=0.1;
     p.Message='Preparing classification....';
@@ -63,6 +64,7 @@ end
 
 roilist=[];
 roilist2=[];
+roilist3=[];
 
 chan=[];
 
@@ -72,16 +74,23 @@ for i=1:numel(fovs)
     ro= rois{i};
     
     roilist=[roilist fovs(i)*ones(1,numel(ro))];
+    roilist3=[roilist3 i*ones(1,numel(ro))];
     roilist2=[roilist2 ro];
     
     if numel(channel)
     chan=[chan channel(i)*ones(1,numel(ro))];
     end
-   
     
 end
 
 roilist(2,:)=roilist2;
+
+if numel(frames)
+ fra={};
+for i=1:size(roilist,2)
+    fra{i}= frames{roilist3(i)};
+end
+end
 
 %     for i=fovs
 %             % for j=1:numel(obj.fov(i).roi)
@@ -133,6 +142,7 @@ end
 
 
 %try 
+
 for i=1:size(roilist,2) % loop on all ROIs using parrallel computing   
     roiobj=tmp(i);
     if numel(roiobj.id)==0
@@ -162,10 +172,11 @@ for i=1:size(roilist,2) % loop on all ROIs using parrallel computing
     classi.channel=chan(i);
    end
 
+   
    if numel(frames)==0
     feval(classifyFun,roiobj,classi,classifierStore); % launch the training function for classification
    else
-    feval(classifyFun,roiobj,classi,classifierStore,'Frames',frames{roilist(1,i)});    
+    feval(classifyFun,roiobj,classi,classifierStore,'Frames',fra{i});    
    end
     %end
     

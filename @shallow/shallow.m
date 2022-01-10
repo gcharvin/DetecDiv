@@ -5,7 +5,7 @@ classdef shallow < handle
         io=struct('path','','file','');
         
         fov=fov();%fov({},1,'');
-        processing=struct('roi',[],'classification',[]);%,'classification',classi());
+        processing=struct('roi',[],'classification',[],'processor',[]);%,'classification',classi());
         
         
         %processing.roi.pattern=[];
@@ -161,6 +161,12 @@ classdef shallow < handle
                     
                 end
             end
+            
+             for i=1:numel(obj.processing.processor)
+                obj.processing.processor(i).path=fixpath(fullfile(obj.processing.processor(i).path));
+                obj.processing.processor(i).path = replace(obj.processing.processor(i).path,oldfullpath,newpath);
+             end
+                
             
             function pathout=fixpath(pathin)
                 pathout=pathin;

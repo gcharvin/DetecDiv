@@ -23,6 +23,11 @@ abspath=abspath.path;
 filename=fullfile(abspath,[file ext]);
 
 load(filename);
+
+if ~isfield(shallowObj.processing,'processor')
+    shallowObj.processing.processor=[];
+end
+
 path=abspath;
 
 if isunix || ismac
@@ -88,6 +93,44 @@ for j=1:numel(listclassi)
     
      shallowObj.processing.classification(j)=classiObj;
 end
+
+
+
+
+% now loading saved classi objects attached to project 
+
+% here browse the classification folder and load all avaiable classifiers 
+
+listclassi=dir(fullfile(path,file,'processor'));
+listclassi=listclassi(~contains({listclassi.name},{'.','..'}));
+listclassi=listclassi(find(arrayfun(@(x) x.isdir==1,listclassi)));
+% sort the classi by ending number
+
+if numel(listclassi)
+ shallowObj.processing.processor=process;
+end
+ 
+arr=[];
+for j=1:numel(listclassi)
+tmp=regexp(listclassi(j).name, '\d+$','match') ;
+arr(j)=str2num(tmp{1});
+end
+
+[s ix]=sort(arr);
+
+listclassi=listclassi(ix);
+
+for j=1:numel(listclassi)
+    
+    name=listclassi(j).name;
+    str=fullfile(path,file,'processor',name,[name '_processor.mat']);
+    
+    [classiObj msg]=processLoad(str);
+    
+     shallowObj.processing.processor(j)=classiObj;
+end
+
+
 
 % for i=1:numel(shallowObj.processing.classification)
 %     [pathc,filec]=shallowObj.processing.classification(i).getPath;

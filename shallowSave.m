@@ -43,9 +43,6 @@ if shallowObjOnly==0
         cc=cc+1;
     end
     
-    % fprintf('\n');
-    % reverseStr='';
-    % cc=1;
     for i=1:numel(shallowObj.processing.classification)
         
          if nargin==3
@@ -55,17 +52,19 @@ if shallowObjOnly==0
          end
         
         classiSave( shallowObj.processing.classification(i) );
-        %                for j=1:numel(shallowObj.processing.classification(i).roi)
-        %                   shallowObj.processing.classification(i).roi(j).save;
-        %                   shallowObj.processing.classification(i).roi(j).clear;
-        %                end
-        %
-        %                 msg = sprintf('Writing ROIs for classification %d / %d for FOV %s', cc,numel(shallowObj.processing.classification)); %Don't forget this semicolon
-        %                     fprintf([reverseStr, msg]);
-        %                     reverseStr = repmat(sprintf('\b'), 1, length(msg));
-        %
-        %                     cc=cc+1;
     end
+    
+      for i=1:numel(shallowObj.processing.processor)
+        
+         if nargin==3
+            progress.Message=['Saving processor' num2str(i) ' /' num2str(numel(shallowObj.processing.processor)) '...'];
+            progress.Value= i./numel(shallowObj.processing.processor);
+            pause(0.01);
+         end
+        
+        processSave( shallowObj.processing.processor(i) );
+      end
+    
 end
 
 fprintf('\n');

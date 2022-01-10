@@ -4,6 +4,8 @@ function classifyPixelDeeplabNetFun(roiobj,classif,classifier,varargin)
 % classi object and the classifier
 
 
+
+
 if numel(classifier)==0 % loading the classifier // not recommende because it takes time
     path=classif.path;
     name=classif.strid;
@@ -28,6 +30,7 @@ inputSize = net.Layers(1).InputSize;
 %if numel(roiobj.image)==0 % load stored image in any case
 roiobj.load;
 %end
+
 
 pix=find(roiobj.channelid==classif.channel(1)); % find channels corresponding to trained data
 gfp=roiobj.image(:,:,pix,:);
