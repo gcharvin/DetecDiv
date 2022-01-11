@@ -42,7 +42,6 @@ end
 
 strpath=[obj.io.path obj.io.file];
 
-
 for i=fovid
     
     if numel(tmpfov(i).roi)==0
@@ -59,7 +58,7 @@ for i=fovid
     end
     
     if numel(frames)==0
-        nframes=1:tmpfov(i).frames; %numel(tmpfov(i).srclist{1}); % take the number of frames from the image list
+        nframes=1:numel(tmpfov(i).srclist{1}); % take the number of frames from the image list
     else
         nframes=frames;   % specify a number of images to be applied to all FOVs
     end
@@ -67,8 +66,6 @@ for i=fovid
     % find the number of arrays
     framecell={}; % a cell array that specfifes how to porcess the frames
     
-    
-    % cutting frames loading into small pieces 
     
     narr= floor(numel(nframes)/cut);
     id=1:narr*cut;
@@ -111,10 +108,10 @@ for i=fovid
             
             disp(['Reading frame: ' num2str(j) ' / '  num2str(numel(nframes)) ' in group of frame : ' num2str(ii) ' / ' num2str(numel(framecell)) ' for FOV:  ' num2str(tmpfov(i).id)]);
             
-            for k=1:numel(tmpfov(i).channel) % loop on channels            
+            for k=1:numel(tmpfov(i).srclist) % loop on channels            
                 frame=(nframes(j)); %/channelint(k))+1; %  spacing frames when channels are not used with equal time interval
                 im=tmpfov(i).readImage(frame,k);
-      
+                            
                 if tmpfov(i).display.binning(k) ~= tmpfov(i).display.binning(1)
                     im=imresize(im,tmpfov(i).display.binning(k)/tmpfov(i).display.binning(1));
                 end
@@ -144,7 +141,7 @@ for i=fovid
             row=tmpfov(i).drift.x(nframes(j));           
             col=tmpfov(i).drift.y(nframes(j));
             
-            for k=1:numel(tmpfov(i).channel)
+            for k=1:numel(tmpfov(i).srclist)
                 
                 if strcmp(method,'circshift')
                     list{j,k}=circshift( list{j,k},row,1);
@@ -192,15 +189,11 @@ for i=fovid
                 tmproi(l).image=uint16(zeros(rroi(4),rroi(3),numel(tmpfov(i).srclist),numel(nframestot)));
                 tmproi(l).display.channel={};
                 tmproi(l).display.frame=1;
-                 tmproi(l).display.intensity=[];
-               tmproi(l).display.selectedchannel=[];   
-                tmproi(l).display.rgb=[];
-                 tmproi(l).channelid=[];
                 %tmpfov(i).roi(l).display.settings={};
                 temp=[1 1 1];
                 %temp=temp';
                 
-                for k=1:numel(tmpfov(i).channel)
+                for k=1:numel(tmpfov(i).srclist)
                     tmproi(l).display.channel{k}=tmpfov(i).channel{k}; %['Channel ' num2str(k)];
                     tmproi(l).display.intensity(k,:)=temp;
                     tmproi(l).channelid(k)=k;
@@ -215,7 +208,7 @@ for i=fovid
             %cc=1;
             for j=1:numel(nframes)
                 
-                for k=1:numel(tmpfov(i).channel)
+                for k=1:numel(tmpfov(i).srclist)
                     
                     tmp=list{j,k};
                     

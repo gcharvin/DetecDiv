@@ -27,8 +27,9 @@ strid='';
 classif=[];
 nocolor=1;
 
-colr=[36/255,61/255,255/255];
-%colr=[255/255,166/255,33/255];
+%colr=[36/255,61/255,255/255];
+%colr=[0.35,0.35,0.35];
+colr=[255/255,166/255,33/255];
 
 %classif.strid='';
 
@@ -609,7 +610,7 @@ end
                     startx=shiftx-ceil(2*sqrt(scalingFactor)) -(numel(results)+numel(training))*wid;
                     
                     if isfield(roitmp.results,classif.strid)
-                        idresults=roitmp.results.(classif.strid).idCNN;
+                        idresults=roitmp.results.(classif.strid).id;
                     else
                         idresults=[];
                     end
@@ -649,7 +650,7 @@ end
                         imout(:,:,:,ii) = insertShape( imout(:,:,:,ii),'Rectangle',[startx inte*jj-inte/2+shifty-wid/2 wid wid],...
                             'Color', 65535*text,'Opacity',1,'LineWidth',2);
                         if displayLegend==1
-                            %imout(:,:,:,ii) = insertText(imout(:,:,:,ii),[shiftx-(numel(results)+numel(training))*wid-5, inte*jj-inte/2+shifty],classname{jj},'Font','Arial Bold','FontSize',20, 'TextColor',col,'BoxColor',[1 1 1],'BoxOpacity',0.0,'AnchorPoint','RightCenter');
+                            imout(:,:,:,ii) = insertText(imout(:,:,:,ii),[shiftx-(numel(results)+numel(training))*wid-5, inte*jj-inte/2+shifty],classname{jj},'Font','Monospace 821 Bold BT','FontSize',20, 'TextColor',col,'BoxColor',[1 1 1],'BoxOpacity',0.0,'AnchorPoint','RightCenter');
                         end
                     end
                 end

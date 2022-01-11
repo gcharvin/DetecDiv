@@ -18,7 +18,7 @@ function extractSignal(obj,type,inputvarargin)
 %'kMaxPixels': numbers of pixels taken for the maxPixels method. Default=20
 
 %*'Rois': rois array to extract the signal from
-snapinc=2; %1/frequency of snappiong of 
+snapinc=3; %1/frequency of snappiong of 
 kMaxPix=20;
 volThresh=0;
 rois=1:numel(obj.roi);
@@ -67,8 +67,9 @@ end
 if strcmp(method,'full')
     
     obj.roi(rois(1)).load();
-    prompt=['Type the name of the result classif: (Default: full_' num2str(kMaxPix) 'maxPixels) '];
-    classiname=input(prompt);
+    prompt=['Type the name of the result classif: (Default: full_with' num2str(kMaxPix) 'maxPixels) '];
+    %classiname=input(prompt);
+    classiname=['full_with' num2str(kMaxPix) 'maxPixels']; %%to delete
     
     if isempty(classiname)
         classiname=['full_' num2str(kMaxPix) 'maxPixels'];
@@ -81,10 +82,13 @@ if strcmp(method,'full')
     end
     
     prompt=['Which channel to extract the signal from? (Default: [2:number of channelsExtract])' newline str];
-    channelsExtract=input(prompt);  
-    for c=channelsExtract
-            BckgValue(c)=input(['Choose background value for channel' num2str(c)]);
-    end
+%     channelsExtract=input(prompt);  
+%     for c=channelsExtract
+%             BckgValue(c)=input(['Choose background value for channel' num2str(c)]);
+%     end
+                        channelsExtract=[2,3];      %%to delete                  
+                        BckgValue(2)=105;%%to delete
+                        BckgValue(3)=100;%%to delete
     
     for r=rois %to parfor
         obj.roi(r).load();

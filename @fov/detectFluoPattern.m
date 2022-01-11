@@ -13,7 +13,7 @@ function detectFluoPattern(obj,varargin)
 %*'frameThreshold' number of frames to be above fluoThreshold
 
 fluoThreshold=500;
-frameThreshold=3*5;
+frameThreshold=15;
 frames=1:numel(obj.srclist{1}); % take the number of frames from the image list 
 rois=1:numel(obj.roi);
 method='full';
@@ -81,9 +81,9 @@ if strcmp(method,'full')
         for c=channels
             flagFluo=0;
             for t=frames
-                if numel(obj.roi(r).results.signal.full.(classiname).maxfluo)==0
+                if numel(obj.roi(r).results.signal.full.(classiname).meankmaxfluo)==0
                     error('You must extract the meanfluo of the ROI before running this method. See .extractFluo. At least one frame has not been extracted');
-                elseif obj.roi(r).results.signal.full.(classiname).maxfluo(c,t)>fluoThreshold
+                elseif obj.roi(r).results.signal.full.(classiname).meankmaxfluo(c,t)>fluoThreshold
                     flagFluo=flagFluo+1;
                 end
             end

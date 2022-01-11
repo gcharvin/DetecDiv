@@ -178,7 +178,7 @@ For this, click --> Set/show cropping area in the 'Display Options' menu and dra
 Right-click on the cropping area to hide or delete it.
 Close the figure window. 
 
-In detecdiv, select a position and click --> identify ROIs based on image pattern; this launches the ROI identification GUI. 
+In detecdiv, select the project and click --> identify ROIs based on image pattern; this launches the ROI identification GUI. 
 The GUI displays an image of the selected pattern:
 
 ![This is an image](ROIidentifierGUI.png)
