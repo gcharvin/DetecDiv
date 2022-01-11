@@ -5,7 +5,7 @@ function [h1,h2,h3,h4]=statRLS(rls,varargin)
 
 % plot correlation between groundtruth rls and observed rls 
 
-figExport=1;
+figExport=0;
 plotCNN=1;
 plotFluo=1;
 plotVolume=1;
@@ -227,7 +227,6 @@ if plotCNN==1
     pcnn=ranksum(divg,divcnn);
 end
 
-
 bins=[0:5:200, 1000];
 
 
@@ -247,10 +246,9 @@ end
 %1. ***test*** 
 %+
 
-
-leg={['Predicted; median=' num2str(median(divt)) ' (N=' num2str(length(divt)) '); p=' num2str(p)],['Grountruth; median=' num2str(median(divg)) ' (N=' num2str(length(divg)) ')']};
+leg={['Predicted; mean+-SEM=' num2str(mean(divt)) '+' num2str(std(divt)/sqrt(length(divt))) ' (N=' num2str(length(divt)) '); p=' num2str(p)],['Grountruth; mean+-SEM=' num2str(mean(divg)) '+' num2str(std(divg)/sqrt(length(divg))) ' (N=' num2str(length(divg)) ')']};
 if plotCNN==1
-    leg{3}=['CNN Predicted; median=' num2str(median(divcnn)) ' (N=' num2str(length(divcnn)) '); p=' num2str(pcnn)];
+    leg{3}=['CNN Predicted; mean+-SEM=' num2str(mean(divcnn)) '+' num2str(std(divcnn)/sqrt(length(divcnn))) ' (N=' num2str(length(divcnn)) '); p=' num2str(pcnn)];
 end
 legend(leg);
 

@@ -87,13 +87,17 @@ for r=1:numel(roiobj)
     roiobj(r).save();
     fprintf('\n');
 end
+
+
+
+
 %%
 function BW2=segmentFluo(img,threshold)
 img2=img;
 
 img2=im2double(imadjust(img2));
 T=graythresh(img2); %get otsu threshold
-BW2=imbinarize(img2,T*1.05);
+BW2=imbinarize(img2,T*1.5);
 
 % img2=im2double(img2);
 % img2=img2-min(img2(:));
