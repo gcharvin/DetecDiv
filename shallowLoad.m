@@ -56,13 +56,46 @@ disp(msg);
 disp('');
 
 % now loading saved classi objects attached to project 
-for i=1:numel(shallowObj.processing.classification)
-    [pathc,filec]=shallowObj.processing.classification(i).getPath;
-    
- [classiObj msg]=classiLoad(fullfile(pathc,[filec '_classification.mat']));
- 
- shallowObj.processing.classification(i)=classiObj;
+
+% here browse the classification folder and load all avaiable classifiers 
+
+listclassi=dir(fullfile(path,file,'classification'));
+listclassi=listclassi(~contains({listclassi.name},{'.','..'}));
+listclassi=listclassi(find(arrayfun(@(x) x.isdir==1,listclassi)));
+
+% sort the classi by ending number
+
+if numel(listclassi)
+ shallowObj.processing.classification=classi;
 end
+ 
+arr=[];
+for j=1:numel(listclassi)
+tmp=regexp(listclassi(j).name, '\d+$','match') ;
+arr(j)=str2num(tmp{1});
+end
+
+[s ix]=sort(arr);
+
+listclassi=listclassi(ix);
+
+for j=1:numel(listclassi)
+    
+    name=listclassi(j).name;
+    str=fullfile(path,file,'classification',name,[name '_classification.mat']);
+    
+    [classiObj msg]=classiLoad(str);
+    
+     shallowObj.processing.classification(j)=classiObj;
+end
+
+% for i=1:numel(shallowObj.processing.classification)
+%     [pathc,filec]=shallowObj.processing.classification(i).getPath;
+%     
+%  [classiObj msg]=classiLoad(fullfile(pathc,[filec '_classification.mat']));
+%  
+% 
+% end
 
 if numel(shallowObj.fov(1).srcpath{1})~=0 % srce path has been set for at leats one FOV; update ? 
 disp('* Warning *');

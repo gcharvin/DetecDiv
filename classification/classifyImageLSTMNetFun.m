@@ -1,4 +1,4 @@
-function classifyImageLSTMNetFun(roiobj,classif,classifier,classifierCNN)
+function classifyImageLSTMNetFun(roiobj,classif,classifier,varargin)
 
 %load([path '/netCNN.mat']); % load the googlenet to get the input size of image
 
@@ -14,27 +14,36 @@ for i=1:numel(classifier.Layers)
     end
 end
 
-if nargin==4 % standard classification is requested
+for i=1:numel(varargin)
+    if strcmp(varargin{i},'classifierCNN')
     net=classifierCNN;
     inputSizeCNN = net.Layers(1).InputSize;
     classNamesCNN = net.Layers(end).ClassNames;
     numClassesCNN = numel(classNamesCNN);
+    end
+      if strcmp(varargin{i},'Frames')
+          % not yet implemented
+      end
 end
 
-%return;
-% x y size of the input movie (140th layer)
-
-
-%for i=id
-%fprintf(['Processing video:' num2str(i) '...\n']);
-%load([mov.path '/labeled_video_' mov.trap(i).id '.mat']); % loads deep, vid, lab (categories of labels)
 
 if numel(roiobj.image)==0
     roiobj.load;
 end
 
 pix=find(roiobj.channelid==classif.channel(1)); % find channels corresponding to trained data
+
 im=roiobj.image(:,:,pix,:);
+
+% if exist('frames','var')
+%     if frames==0
+%         frames=1:numel(im(1,1,1,:)); %classify only frames with GT
+%     end
+% else
+%     frames=1:numel(im(1,1,1,:));
+% end
+
+%im=roiobj.image(:,:,pix,frames);
 
 disp('Formatting video before classification....');
 %size(im)

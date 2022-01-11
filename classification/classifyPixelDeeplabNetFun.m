@@ -1,4 +1,4 @@
-function classifyPixelDeeplabNetFun(roiobj,classif,classifier,frames)
+function classifyPixelDeeplabNetFun(roiobj,classif,classifier,varargin)
 
 % this function can be used to classify any roi object, by providing the
 % classi object and the classifier
@@ -11,6 +11,13 @@ if numel(classifier)==0 % loading the classifier // not recommende because it ta
     load(str); % load classifier
 end
 % classify new images
+
+frames=[];
+for i=1:numel(varargin)
+      if strcmp(varargin{i},'Frames')
+          frames=varargin{i+1};
+      end
+end
 
 net=classifier;
 
@@ -25,11 +32,7 @@ roiobj.load;
 pix=find(roiobj.channelid==classif.channel(1)); % find channels corresponding to trained data
 gfp=roiobj.image(:,:,pix,:);
 
-if exist('frames','var')
-    if frames==0
-        frames=1:numel(gfp(1,1,1,:)); %classify only frames with GT
-    end
-else
+if numel(frames)==0
     frames=1:numel(gfp(1,1,1,:));
 end
 
@@ -89,6 +92,7 @@ end
                 tmp=imresize(tmp,inputSize(1:2));
             end
             
+            
             %C = semanticseg(tmp, net); % this is no longer required if we extract the probabilities from the previous layer
             %    if numel(gpuDeviceCount)==0
             %     features = activations(net,tmp,'softmax-out'); % this is used to get the probabilities rather than the classification itself
@@ -101,9 +105,12 @@ end
                 features=imresize(features,size(gfp,1:2));
                 C=imresize(C,size(gfp,1:2));
             end
-       
+            
+           % figure, imshow(features(:,:,2),[]);
+            
             tmpout=uint16(zeros(size(roiobj.image(:,:,pixresults,fr))));
 
+            
             switch classif.outputType
                     case 'proba' % outputs proba 
                        
@@ -112,6 +119,7 @@ end
                         end
                        
                     case 'segmentation'
+                          
                          for i=2:numel(classif.classes) % 1 st class is considered default class
                         BW=features(:,:,i)>0.9;
                         res=uint16(uint16(BW)*(i));
@@ -119,11 +127,25 @@ end
                          end 
                          
                        tmpout(tmpout==0)=1; %fill background
-              
+            
+                       
                     case 'postprocessing'
+                        
+                        
+                        if numel(classif.outputFun)==0
+                            classif.outputFun='post';
+                        end
+                        if numel(classif.outputArg)==0
+                            classif.outputArg={ 'threshold'  '0.9'};
+                        end
+                        
                         tmpout= feval(classif.outputFun,features,classif.classes,classif.outputArg{:});
+                        
+                       
             end
 
+       %      figure, imshow(tmpout,[]);
+             
             roiobj.image(:,:,pixresults,fr)=tmpout;
         end
         

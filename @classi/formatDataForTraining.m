@@ -20,14 +20,14 @@ foldername='trainingdataset';
 % remove and recreates all directoires
 % mk folder to store ground user trained data
 
-% 
-% if isfolder([classif.path '/' foldername])
-%     try
-%         rmdir([classif.path '/' foldername], 's')
-%     catch
-%         disp('Error: did not manage to remove directory !');
-%     end
-% end
+
+if isfolder(fullfile(classif.path,foldername))
+    try
+        rmdir(fullfile(classif.path,foldername), 's')
+    catch
+        disp('Error: did not manage to remove directory !');
+    end
+end
 
 
 mkdir(classif.path,foldername)

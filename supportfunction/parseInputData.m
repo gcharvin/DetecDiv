@@ -233,12 +233,12 @@ output.comments=[output.comments num2str(numel(output.pos)) ' positions were ide
        nframes=nimages./nch;
   end
   
- interval=regexp(str,['(?<=finterval=)\d+'],'match');
-  if numel(interval)
-       interval=str2double(interval{1});
-  else
-       interval=nimages./nch;
-  end
+%  interval=regexp(str,['(?<=finterval=)\d+'],'match');
+%   if numel(interval)
+%        interval=str2double(interval{1});
+%   else
+       interval=ones(1,nch); % an array that represents the reletaive frequency of each channel
+%  end
   
   
 %   framelist={};
@@ -252,8 +252,14 @@ sut=struct('name',output.pos(cc).name);
    output.pos(cc).channels=nch;
     output.pos(cc).frames=nframes;
     
-    output.pos(cc).filelist={sut};
+    
+  %  for k=1:nch
+ %   output.pos(cc).filelist=[ output.pos(cc).filelist sut];
+ %   output.pos(cc).pathlist=[output.pos(cc).pathlist foldername];
+     output.pos(cc).filelist={sut};
     output.pos(cc).pathlist={foldername};
+  %  end
+    
     output.pos(cc).unfilteredpathlist={foldername};
     
     output.pos(cc).unfilteredfilelist={sut};
