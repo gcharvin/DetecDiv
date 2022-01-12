@@ -424,7 +424,7 @@ if numel(tmp)
 else
      for i=1:numel(obj.roi)
          obj.roi(i).proc=[];
- end
+       end
     obj.roi(val).proc=1; 
 end
 
