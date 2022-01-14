@@ -341,12 +341,11 @@ regularization : L2-regularization parameter
 
 execution environment : GPU, CPU or parallel (to use multi cpu computing). 
 
-
-
-
 ![This is an image](ClassifierGUI_tab2.png)
 
  3) ROIs used as trainingset or testset.
+
+The table displays the list of ROIs imported to be used either as training set (for training the classifier) or as testset (to benchmark the classifier).
 
 ![This is an image](ClassifierGUI_tab3.png)
 
@@ -358,8 +357,13 @@ Specific buttons on this tab:
 
 *Annotate selected ROI : launches a figure window to perofmr manual annotation of the training/test sets. Shortcut keys indicated in the "Classes" menu can be used to assign one among all available classes for each frame. 
  
-The buttons at the bottom provide the following functions:
-* Save classifier & parameters: saves all relevant paramters in the classfier GUI. This step is required to preserve any modification executed in the GUI
+ 
+ Menu functions :
+
+File Menu --> Save classifier parameters. This is required each time parameters are changed on any of the 3 tabs. 
+
+CLassifier Menu --> thie menu contains all the functions that are used to train and validate the classifier: 
+
 * Format trainingset for training : this function exports ROIs data as images to folders. These images will be then used by the training procedure
 * Train classifier : launches the training procedure 
 * Validateclassifier : classify all the ROI data in the classifier GUI using the trained network (if any). 
