@@ -398,6 +398,7 @@ Once finished, classified data can be monitored by left-clicking ROIs in Project
 
 1) Create a new DetecDiv project, import data and extract ROIs as described above
 
+(MORE SOON)
 
 
 <p align="right">(<a href="#top">back to top</a>)</p>
