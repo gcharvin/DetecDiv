@@ -368,6 +368,8 @@ CLassifier Menu --> thie menu contains all the functions that are used to train 
 * Train classifier : launches the training procedure 
 * Validateclassifier : classify all the ROI data in the classifier GUI using the trained network (if any). 
 * Display statistics: performs the validation of the classifier by comparing predictions and groundtruth for the testset only (i.e. input training data are not considered to compute statistics)
+* Load classifier : loads the classifier in the workspace / memory, so that it can be used to perform various classification task 
+* Check status : this can be used to check the status (Red/Green lamps) of the classifier
 
 
 <p align="right">(<a href="#top">back to top</a>)</p>
@@ -396,7 +398,6 @@ Once finished, classified data can be monitored by left-clicking ROIs in Project
 
 1) Create a new DetecDiv project, import data and extract ROIs as described above
 
-2)
 
 
 <p align="right">(<a href="#top">back to top</a>)</p>
