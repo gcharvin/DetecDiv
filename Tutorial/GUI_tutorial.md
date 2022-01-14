@@ -41,6 +41,7 @@
     </ul>
    <li><a href="#classi_edit">Editing a classifier</a></li>
    <li><a href="#classify">Classifying new data</a></li>
+   <li><a href="#semantic">Example #1 : semantic segmentation workflow</a></li>
   </ol>
 
 
@@ -201,7 +202,6 @@ You can also look at the spatial location of these ROIs by opening the position 
 
 WARNING: Save the project at this time.
 
-
 <p align="right">(<a href="#top">back to top</a>)</p>
 
 <div id="roi_extraction"></div>
@@ -349,6 +349,13 @@ Once finished, classified data can be monitored by left-clicking ROIs in Project
 ![This is an image](classifyData_roi.png)
 
 
+<div id="semantic"></div>
+
+## Example #1 : semantic segmentation ##
+
+1) Create a new DetecDiv project, import data and extract ROIs as described above
+
+2)
 
 
 <p align="right">(<a href="#top">back to top</a>)</p>
