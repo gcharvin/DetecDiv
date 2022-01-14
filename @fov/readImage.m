@@ -29,19 +29,21 @@ chastr=channel;
 foldert=obj.srcpath{channel};
 pix=[];
     list=obj.srclist{channel};
-    
-  %  aa=obj.interval
-  %  frame
-    
-  %  bb=obj.interval(channel)
-    
+   
+  
    if numel( obj.interval)>0
        
-    frame=uint16(ceil(frame./obj.interval(channel))); % in case not every frame was snapped for each channel.   
+       tmp=obj.interval./obj.interval(1); % normalize interval;
+       
+    frame=uint16(ceil(frame./tmp(channel))); % in case not every frame was snapped for each channel.   
    end
     
+  % frame
+   
     liststr=list(frame);
 end
+
+
 
 if isfolder(foldert) % folders are provided with image or based on phylocell project
     

@@ -589,21 +589,24 @@ for i=npos
     lf=dir(strpos);
     lf= lf([lf.isdir]==0);
     lf=lf(contains({lf.name},{'.mat'})); % takes all mat files
+    [~,idxdate] = sort([lf.datenum],'descend');% sort them by date 
+    lf = lf(idxdate);
     
     for ll=1:numel(lf)
         
      %   zzz=lf(ll).name
         
         load(fullfile(lf(ll).folder,lf(ll).name));
+        
         h=findobj('Name','phyloCell_mainGUI'); % in cas a figure is linked to the seg variable
         delete(h);
         
         if exist('segmentation','var')
             
-             progress.Message='Found segmentation variable...';
+             progress.Message=['Found segmentation variable : ' lf(ll).name];
              pause(0.2);
              
-             disp('Found segmentation variable...');
+             disp(['Found segmentation variable : ' lf(ll).name]);
              
             if numel(segmentation.cells1)>=1 && segmentation.cells1(1,1).n~=0
             output.pos(cc).contours.cells1=segmentation.cells1;
@@ -613,6 +616,7 @@ for i=npos
             output.pos(cc).contours.nucleus=segmentation.nucleus;
              end
             
+             break; % take only the most recent segmentation variable 
         end
     end
     

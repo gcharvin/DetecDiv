@@ -213,9 +213,6 @@ for i=fovid
                 
                 % add additional channels for cell contours if any
                 
-
-                
-              
                 
                 if numel(tmpfov(i).contours)
                 
@@ -287,17 +284,19 @@ for i=fovid
                         tmproi(l).image(:,:,k,nframes(j))= uint16(zeros(size(tmp,1),size(tmp,2)));
                         labtmp= tmproi(l).image(:,:,k,nframes(j));
                         
+                        if  nframes(j)<=size(tmpfov(i).contours.cells1,1)
                         cells1= tmpfov(i).contours.cells1(nframes(j),:);
                         
                         for cd=1:size(cells1,2)
-                            x=cells1(cd).x;
-                            y=cells1(cd).y;
+                            x=cells1(cd).x-(rroitmp(2)-1);
+                            y=cells1(cd).y-(rroitmp(1)-1);
                             
                             mask = poly2mask(x,y,size(tmp,1),size(tmp,2)); %%HEREE 
                             labtmp(mask)=cells1(cd).n;
                         end
                         
                         tmproi(l).image(:,:,k,nframes(j)) = labtmp;
+                        end
                    end
                    
                     if  tmproi(l).display.channel{k}=="nucleus"
@@ -305,22 +304,22 @@ for i=fovid
                           tmproi(l).image(:,:,k,nframes(j))= uint16(zeros(size(tmp,1),size(tmp,2)));
                         labtmp= tmproi(l).image(:,:,k,nframes(j));
                         
+                        if  nframes(j)<=size(tmpfov(i).contours.nucleus,1)
                         nucleus= tmpfov(i).contours.nucleus(nframes(j),:);
                         
                         for cd=1:size(nucleus,2)
-                            x=nucleus(cd).x;
-                            y=nucleus(cd).y;
+                            x=nucleus(cd).x-(rroitmp(2)-1);
+                            y=nucleus(cd).y-(rroitmp(1)-1);
                             
                             mask = poly2mask(x,y,size(tmp,1),size(tmp,2)); %%HEREE 
                             labtmp(mask)=nucleus(cd).n;
                         end
                         
                         tmproi(l).image(:,:,k,nframes(j)) = labtmp;
-                        
-                   end
-                
+                        end
+                    end 
                end
-                
+
                 %cc=cc+1;
             end
             
@@ -352,6 +351,7 @@ for i=fovid % restore obj structure
 end
 
 disp('Saving project...');
+
 shallowSave(obj)
 
 
