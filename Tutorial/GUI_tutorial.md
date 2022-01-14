@@ -300,12 +300,25 @@ Once a classifier is created, dependent ROIs (if any) are listed as subnodes of 
 To edit a classifier: 
 Right-click on a classifier --> Open classifier.
 
-The classifier GUI has 3 tabs to allow paramters setup:
- 1) classification parameters; Please entrer information as requested (MORE ON THIS TO FOLLOW SOON)
+The classifier GUI has 3 tabs to allow parameters setup:
+ 1) classification parameters; Please entrer information as requested. 
+ First select the type of classifier in the drop down list: Image classification, Image sequence classification (LSTM+CNN), Pixel classification (semantic segmentation), Timeseries classification etc.
+Then , select the "output type" if available : sequence-to-sequence means that each frame will be classified. sequence-to-one means that the sequnece wil classified as a whole. 
+Select the name of the channel name to be used for training. This channel name can be set using the drop down menu that lists all possible values taken from the ROIs attached to this classification models. 
+Enter the names of the classes to be used by the classifier. 
+In case of pixel classification (semantic segmentation), you can specify various post-processing parameters, or a custom function handle; 
 
 ![This is an image](ClassifierGUI_tab1.png)
 
- 2) Training procedure parameters; Enter parameter values in the table (MORE ON THIS TO FOLLOW SOON)
+ 2) Training procedure parameters; Enter parameter values in the table. 
+Most of the parameters are in common with all classification models. Parameters for image sequence classification include: 
+Method : network training methode - adam or sgdm. 
+Network : name f the network used as a base for classification -  googlenet (inception), resnet50 or resnet18 
+MiniBatchSize : size of the minibatch used fro a single training step - from 1 to 128 depending on the size of the trainingset and the memory available on the computer. 
+MaxEpochs : number of cycles used to performs network optimization. 
+InitialLearnRate : rate associated with parameter modification in the network layers
+Shuffle : shuffle of data set between training and validation set - every-epoch is the only option
+Split : fraction of the data set used for training versus validation 
 
 ![This is an image](ClassifierGUI_tab2.png)
 
