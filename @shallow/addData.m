@@ -41,6 +41,9 @@ for i=1:numel(newdata.pos) % loop on all the fov / positions / folders to be cre
     
     obj.fov(cc).setpathlist(newdata.pos(i).pathlist,cc,newdata.pos(i).filelist,newdata.pos(i).name);
 
+
+    obj.fov(cc).contours=newdata.pos(i).contours;
+    
     obj.fov(cc).display.binning=newdata.pos(i).binning;
     obj.fov(cc).display.intensity=ones(1,size(newdata.pos(i).binning,2));
     obj.fov(cc).channel=newdata.pos(i).channelname;
