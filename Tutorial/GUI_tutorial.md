@@ -42,7 +42,6 @@
    <li><a href="#classi_edit">Editing a classifier</a></li>
    <li><a href="#classify">Classifying new data</a></li>
    <li><a href="#semantic">Example #1 : semantic segmentation workflow</a></li>
-  
   </ol>
 
 
