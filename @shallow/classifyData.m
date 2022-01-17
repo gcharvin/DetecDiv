@@ -68,7 +68,6 @@ roilist3=[];
 
 chan=[];
 
-
 for i=1:numel(fovs)
     
     ro= rois{i};
