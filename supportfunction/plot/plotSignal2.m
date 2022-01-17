@@ -17,7 +17,7 @@ for i=1:numel(varargin)
         timeOrGen=1;
     end
     
-%     if strcmp(varargin{i},'RLSfile') %can also take as inpout rls struct file instead of roiobj
+%     if strcmp(varargin{i},'RLSfile') %can also take as input rls struct file instead of roiobj
 %         RLSfile=1;
 %     end
     

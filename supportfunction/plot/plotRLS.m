@@ -13,8 +13,10 @@ function hrls=plotRLS(roiobjcell,varargin)
 % display style : color map : name or custom colormap : limits for
 % colormap, color separation , linewidth spacing etc
 % time : generation or physical time
+
+%example: plotRLS({[detecdivProj.fov([1:4,9:12]).roi];[detecdivProj.fov([5:8,13:16,17:18]).roi]; [detecdivProj.fov([26:28,30:34]).roi]},'Comment',{'Condition1', 'Condition2','Condition3'})
 figExport=1;
-bootStrapping=1;
+bootStrapping=0;
 sz=5;
 Nboot=100;
 plotHazardRate=1;
@@ -50,9 +52,13 @@ if load==1
 end
 %%
 %find classistrid
-if isfield(roiobjcell{1,1}(1).results)
-    liststrid=fields(roiobjcell{1,1}(1).results);
+if isprop(roiobjcell{1,1}(1),'results')
+    if isfield(roiobjcell{1,1}(1).results, 'RLS')
+        liststrid=fieldnames(roiobjcell{1,1}(1).results.RLS);
     str=[];
+    else
+        error(['The roi ' roiobjcell{1,1}(1) 'has no results.RLS property, be sure to create it using measureRLS3'])
+    end
 else
     error(['The roi ' roiobjcell{1,1}(1) 'has no classifstrid, be sure to measure it with measureRLS3'])
 end
@@ -68,14 +74,14 @@ classifstrid=liststrid{classifid};
 %%
 for c=1:szc
     for r=1:numel(roiobjcell{c,1})      
-        if isfield(roiobjcell{c,1}(r).results,(classifstrid))
-            if isfield(roiobjcell{c,1}(r).results.(classifstrid),'RLS')
-                rls{c,1}=[rls{c,1}; roiobjcell{c,1}(r).results.(classifstrid).RLS];
+        if isfield(roiobjcell{c,1}(r).results, 'RLS')
+            if isfield(roiobjcell{c,1}(r).results.RLS,(classifstrid))            
+                rls{c,1}=[rls{c,1}; roiobjcell{c,1}(r).results.RLS.(classifstrid)];
             else
                 warning(['The roi ' roiobjcell{c,1}(r) 'has no RLS result relative to ' (classifstrid) ', -->ROI skipped'])
             end
         else
-            warning(['The roi ' roiobjcell{c,1}(r) 'has no classif' classifstrid ', -->ROI skipped'])
+            warning(['The roi ' roiobjcell{c,1}(r) 'has no RLS computed, -->ROI skipped'])
         end
     end
     
