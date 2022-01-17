@@ -89,9 +89,12 @@ for j=1:numel(listclassi)
     name=listclassi(j).name;
     str=fullfile(path,file,'classification',name,[name '_classification.mat']);
     
+    if exist(str)
     [classiObj msg]=classiLoad(str);
     
      shallowObj.processing.classification(j)=classiObj;
+    end
+    
 end
 
 
