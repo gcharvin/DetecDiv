@@ -28,6 +28,8 @@ disp('Starting parallelized jobs for data formatting....')
 warning off all
 %for i=rois
 
+ channel=classif.channelName;
+ 
 parfor i=rois
     disp(['Launching ROI ' num2str(i) :' processing...'])
     
@@ -36,7 +38,10 @@ parfor i=rois
     end
     
     % normalize intensity levels
-    pix=find(cltmp(i).channelid==classif.channel(1)); % find channel
+       
+    pix=cltmp(i).findChannelID(channel{1});
+    
+  %  pix=find(cltmp(i).channelid==classif.channel(1)); % find channel
     im=cltmp(i).image(:,:,pix,:);
     
     if numel(pix)==1

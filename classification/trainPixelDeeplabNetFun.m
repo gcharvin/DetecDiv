@@ -146,18 +146,6 @@ save(fullfile(path,'TrainingValidation','CNNOptions.mat'),'CNNOptions');
 
 %saveTrainingPlot(path,name);
 
-%else
-%  load([mov.path '/netDeepLab.mat'],'netDeepLab');
-%end
-
-% if doTest
-%     cmap=lines(2);
-%     I = readimage(imdsTest,option);
-%     C = semanticseg(I, netDeepLab);
-%     B = labeloverlay(I,C,'Colormap',cmap,'Transparency',0.4);
-% imshow(B)
-% pixelLabelColorbar(cmap, classes);
-% end
 
 function pixelLabelColorbar(cmap, classNames)
 % Add a colorbar to the current axis. The colorbar is formatted
@@ -220,45 +208,3 @@ pxdsTrain = pixelLabelDatastore(trainingLabels, classes, labelIDs);
 pxdsVal = pixelLabelDatastore(valLabels, classes, labelIDs);
 %pxdsTest = pixelLabelDatastore(testLabels, classes, labelIDs);
 
-%
-% function [imdsTrain, imdsVal, pxdsTrain, pxdsVal] = partitionCamVidData(imds,pxds,classes,labelIDs)
-% % Partition CamVid data by randomly selecting 60% of the data for training. The
-% % rest is used for testing.
-%
-% % Set initial random state for example reproducibility.
-% rng(0);
-% numFiles = numel(imds.Files);
-% shuffledIndices = randperm(numFiles);
-%
-% % Use 70% of the images for training.
-% numTrain = round(0.70 * numFiles);
-% trainingIdx = shuffledIndices(1:numTrain);
-%
-% % Use 20% of the images for validation
-% numtot = min(numTrain+round(0.30 * numFiles),numel(shuffledIndices));
-% valIdx = shuffledIndices(numTrain+1:numtot);
-%
-% % Use the rest for testing.
-% %testIdx = shuffledIndices(numTrain+numVal+1:end);
-%
-% % Create image datastores for training and test.
-% trainingImages = imds.Files(trainingIdx);
-% valImages = imds.Files(valIdx);
-% %testImages = imds.Files(testIdx);
-%
-% imdsTrain = imageDatastore(trainingImages);
-% imdsVal = imageDatastore(valImages);
-% %imdsTest = imageDatastore(testImages);
-%
-% % Extract class and label IDs info.
-% %classes = pxds.ClassNames;
-% %labelIDs = camvidPixelLabelIDs();
-%
-% % Create pixel label datastores for training and test.
-% trainingLabels = pxds.Files(trainingIdx);
-% valLabels = pxds.Files(valIdx);
-% %testLabels = pxds.Files(testIdx);
-%
-% pxdsTrain = pixelLabelDatastore(trainingLabels, classes, labelIDs);
-% pxdsVal = pixelLabelDatastore(valLabels, classes, labelIDs);
-% %pxdsTest = pixelLabelDatastore(testLabels, classes, labelIDs);

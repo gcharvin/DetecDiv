@@ -14,16 +14,26 @@ for i=1:numel(classifier.Layers)
     end
 end
 
+channel=classif.channelName;
+frames=[];
+classifierCNN=[];
+
 for i=1:numel(varargin)
     if strcmp(varargin{i},'classifierCNN')
+        
+    classifierCNN=varargin{i+1};
     net=classifierCNN;
     inputSizeCNN = net.Layers(1).InputSize;
     classNamesCNN = net.Layers(end).ClassNames;
     numClassesCNN = numel(classNamesCNN);
     end
       if strcmp(varargin{i},'Frames')
+          frames=varargin{i+1};
           % not yet implemented
       end
+        if strcmp(varargin{i},'Channel')
+           channel=varargin{i+1};
+       end
 end
 
 
@@ -31,9 +41,14 @@ if numel(roiobj.image)==0
     roiobj.load;
 end
 
-pix=find(roiobj.channelid==classif.channel(1)); % find channels corresponding to trained data
+pix=roiobj.findChannelID(channel{1});
+%pix=find(roiobj.channelid==classif.channel(1)); % find channels corresponding to trained data
 
-im=roiobj.image(:,:,pix,:);
+if numel(frames)==0
+    frames=size(im,4);
+end
+
+im=roiobj.image(:,:,pix,frames);
 
 % if exist('frames','var')
 %     if frames==0
@@ -58,9 +73,9 @@ if numel(pix)==1
     param.maxphc=maxphc;
 end
 
-vid=uint8(zeros(size(im,1),size(im,2),3,size(im,4)));
+vid=uint8(zeros(size(im,1),size(im,2),3,numel(frames)));
 
-for j=1:size(im,4)
+for j=1:numel(frames)
     
     if numel(pix)==1
         
@@ -84,39 +99,8 @@ end
 %inputSize
 %size(vid)
 
-gfp = imresize(vid,inputSize(1:2));
+%gfp = imresize(vid,inputSize(1:2));
 video = centerCrop(vid,inputSize);
-
-
-%size(video)
-%aa=classifier.Layers
-
-% nframes=inputSize(1);
-% narr=floor(size(im,4)/nframes);
-% nrem=mod(size(im,4),nframes);
-%
-% if nrem>0
-%     narr=narr+1;
-% end
-%
-% videoout={};
-%
-% %if size(im,4)>nframes
-% for i=1:narr
-%     if i==narr
-%         ende=(i-1)*nframes+nrem;
-%     else
-%         ende=i*nframes ;
-%     end
-%    videoout{i}=video(:,:,:,(i-1)*nframes+1:ende);
-% end
-% %else
-% %   videoout{1}=video;
-% %end
-%
-% %size(videoout)
-% %size(videoout{1})
-% %size(videoout{3})
 
 disp('Starting video classification...');
 
@@ -127,18 +111,22 @@ try
     
     prob=predict(classifier,video);
     %probCNN=predict(classifierCNN,video);
-    if nargin==4
-        [labelCNN,probCNN] = classify(classifierCNN,gfp);
+    if numel(classifierCNN)
+       % [labelCNN,probCNN] = classify(classifierCNN,gfp);
+         % [labelCNN,probCNN] = classify(classifierCNN,video);
+             probCNN=predict(classifierCNN,video);
     end
 catch
     
     disp('Error with predict function  : likely out of memory issue with GPU, trying CPU computing...');
     prob=predict(classifier,video,'ExecutionEnvironment', 'cpu');
     %probCNN=predict(classifierCNN,video,'ExecutionEnvironment', 'cpu');
-    if nargin==4
-        [labelCNN,probCNN] = classify(classifierCNN,gfp);
+    if numel(classifierCNN)
+      %  [labelCNN,probCNN] = classify(classifierCNN,gfp);
+          probCNN=predict(classifierCNN,video,'ExecutionEnvironment', 'cpu');
     end
 end
+
 
 labels = classifier.Layers(end).Classes;
 if size(prob,1) == numel(labels) % adjust matrix depending on matlab version
@@ -146,6 +134,15 @@ if size(prob,1) == numel(labels) % adjust matrix depending on matlab version
 end
 [~, idx] = max(prob,[],2);
 label = labels(idx);
+
+if numel(classifierCNN)
+labelCNN = classifierCNN.Layers(end).Classes;
+if size(probCNN,1) == numel(labelCNN) % adjust matrix depending on matlab version
+    probCNN=probCNN';
+end
+[~, idx] = max(probCNN,[],2);
+labelCNN = labelCNN(idx);
+end
 
 %if size(probCNN,1) == numel(labels) % adjust matrix depending on matlab version
 %  probCNN=probCNN';
@@ -176,11 +173,14 @@ results=roiobj.results;
 
 results.(classif.strid)=[];
 
+
+
 if classif.output==0
     results.(classif.strid).id=zeros(1,size(im,4));
 else
     results.(classif.strid).id =0;
 end
+
 
 results.(classif.strid).labels=label';
 results.(classif.strid).classes=classif.classes;
@@ -191,7 +191,7 @@ for i=1:numel(classif.classes)
     results.(classif.strid).id(pix)=i;
 end
 
-if nargin==4
+if numel(classifierCNN)
     if classif.output==0
         results.(classif.strid).idCNN=zeros(1,size(im,4));
     else

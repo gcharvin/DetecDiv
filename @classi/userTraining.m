@@ -48,7 +48,8 @@ else % image based classification and regression
             classitype=1;
         end
     end
-    channel=classif.channel(1);
+    
+   % channel=classif.channel(1);
     
     if classitype>numel(classif.roi)
         disp('This ROI is ot available; quitting ...');
@@ -66,24 +67,6 @@ else % image based classification and regression
 % pix=  classif.roi(classitype).channelid(pix);
 % classif.roi(classitype).display.selectedchannel(pix)=1;
 
-
-%painte=classif.roi(classitype).display.selectedchannel
-     
-%anno=classif.roi(classitype).display.channel
-
-%  strfind(obj.processing.classification(classiid).roi(classitype).display.channel, obj.processing.classification(classiid).strid);
-%          cc=[];
-%         for i=1:numel(pix)
-%             if numel(pix{i})~=0
-%                 cc=i;
-%                
-%                 break
-%             end
-%         end
-%        
-%         if numel(cc)
-
-   %     end
             
 classif.roi(classitype).view(classif.roi(classitype).display.frame,classif); 
 
@@ -105,18 +88,7 @@ keys={'a' 'z' 'e' 'r' 't' 'y' 'u' 'i' 'o' 'p' 'q' 's' 'd' 'f' 'g' 'h' 'j'};
 h.KeyPressFcn={@changeframe,classif,rois,keys};
 end
     
-% if classif.output==0 % sequence to sequence 
-%     if numel(classif)>0 % classification
-%         
-%         
-%     else % regression 
-%         
-%         
-%     end
-%     
-% else % seuqnece to one 
-%     
-% end
+
 
 function tmp=getData(classif,rois,id)
 strfield=classif.trainingset; % datsaet to be trained on

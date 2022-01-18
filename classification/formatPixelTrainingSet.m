@@ -30,7 +30,10 @@ for i=1:numel(rois)
     end
     
     % normalize intensity levels
-    pix=find(cltmp(rois(i)).channelid==classif.channel(1)); % find channel
+        channel=classif.channelName;
+    pix=cltmp(i).findChannelID(channel{1});
+    
+   % pix=find(cltmp(rois(i)).channelid==classif.channel(1)); % find channel
     im=cltmp(rois(i)).image(:,:,pix,:);
     
     if numel(pix)==1

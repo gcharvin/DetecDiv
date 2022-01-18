@@ -26,7 +26,6 @@ end
 %set(hFig, 'KeyPressFcn', @myKeyPressCallback);
 
 
-
 if numel(h.UserData)~=0 % window is already displayed; therefore just update the figure
     him=h.UserData;
     hp=findobj(h,'Type','Axes');
@@ -83,16 +82,17 @@ if numel(classif)>0
             
         end
         
-        
-        
-        
     end
     if strcmp(classif.category{1},'Pedigree')
         ccpedigree=obj.findChannelID(classif.strid);
     end
     
     obj.display.selectedchannel=zeros(1,numel(obj.display.selectedchannel));
-    obj.display.selectedchannel(classif.channel(1))=1;
+    
+    ps=obj.findChannelID(classif.channelName{1});
+    if numel(ps)
+    obj.display.selectedchannel(ps)=1;
+    end
     
     
     pix =obj.findChannelID(classif.strid);

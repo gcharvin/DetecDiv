@@ -1,4 +1,4 @@
-function classifyImageGoogleNetFun(roiobj,classif,classifier)
+function classifyImageGoogleNetFun(roiobj,classif,classifier,varargin)
 
 % this function can be used to classify any roi object, by providing the
 % classi object and the classifier
@@ -11,6 +11,16 @@ if numel(classifier)==0 % loading the classifier // not recommended because it t
 end
 % classify new images
 
+channel=classif.channelName;
+
+for i=1:numel(varargin)
+      if strcmp(varargin{i},'Frames')
+          % not yet implemented
+      end
+        if strcmp(varargin{i},'Channel')
+           channel=varargin{i+1};
+       end
+end
 
 net=classifier;
 inputSize = net.Layers(1).InputSize;
@@ -21,7 +31,8 @@ if numel(roiobj.image)==0
     roiobj.load;
 end
 
-pix=find(roiobj.channelid==classif.channel(1)); % find channels corresponding to trained data
+pix=roiobj.findChannelID(channel{1});
+%pix=find(roiobj.channelid==classif.channel(1)); % find channels corresponding to trained data
 gfp=roiobj.image(:,:,pix,:);
 
 

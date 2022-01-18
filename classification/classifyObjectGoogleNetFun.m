@@ -1,4 +1,4 @@
-function classifyObjectGoogleNetFun(roiobj,classif,classifier)
+function classifyObjectGoogleNetFun(roiobj,classif,classifier,varargin)
 
 % this function can be used to classify any roi object, by providing the
 % classi object and the classifier
@@ -20,7 +20,19 @@ if numel(roiobj.image)==0
     roiobj.load;
 end
 
-pix=find(roiobj.channelid==classif.channel(1)); % find channels corresponding to trained data
+
+channel=classif.channelName;
+for i=1:numel(varargin)
+      if strcmp(varargin{i},'Frames')
+          % not yet implemented
+      end
+        if strcmp(varargin{i},'Channel')
+           channel=varargin{i+1};
+       end
+end
+
+pix=roiobj.findChannelID(channel{1});
+%pix=find(roiobj.channelid==classif.channel(1)); % find channels corresponding to trained data
 gfp=roiobj.image(:,:,pix,:);
 
 if numel(pix)==1

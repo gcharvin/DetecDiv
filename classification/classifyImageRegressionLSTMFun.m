@@ -1,4 +1,4 @@
-function classifyImageRegressionLSTMFun(roiobj,classif,classifier,classifierCNN)
+function classifyImageRegressionLSTMFun(roiobj,classif,classifier,varargin)
 
 %load([path '/netCNN.mat']); % load the googlenet to get the input size of image
 
@@ -14,12 +14,29 @@ break
     end
 end
 
-if nargin==4 % standard classification is requested 
-net=classifierCNN;
-%inputSizeCNN = net.Layers(1).InputSize;
-%classNamesCNN = net.Layers(end).ClassNames;
-%numClassesCNN = numel(classNamesCNN);
+channel=classif.channelName;
+
+for i=1:numel(varargin)
+    if strcmp(varargin{i},'classifierCNN')
+    net=classifierCNN;
+    inputSizeCNN = net.Layers(1).InputSize;
+    classNamesCNN = net.Layers(end).ClassNames;
+    numClassesCNN = numel(classNamesCNN);
+    end
+      if strcmp(varargin{i},'Frames')
+          % not yet implemented
+      end
+        if strcmp(varargin{i},'Channel')
+           channel=varargin{i+1};
+       end
 end
+
+% if nargin==4 % standard classification is requested 
+% net=classifierCNN;
+% %inputSizeCNN = net.Layers(1).InputSize;
+% %classNamesCNN = net.Layers(end).ClassNames;
+% %numClassesCNN = numel(classNamesCNN);
+% end
 
 %return;
 % x y size of the input movie (140th layer)
@@ -33,7 +50,8 @@ if numel(roiobj.image)==0
     roiobj.load;
 end
 
-pix=find(roiobj.channelid==classif.channel(1)); % find channels corresponding to trained data
+pix=roiobj.findChannelID(channel{1});
+%pix=find(roiobj.channelid==classif.channel(1)); % find channels corresponding to trained data
 im=roiobj.image(:,:,pix,:); 
 
 disp('Formatting video before classification....');
