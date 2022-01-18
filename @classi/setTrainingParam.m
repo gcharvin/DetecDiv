@@ -39,7 +39,7 @@ if ~strcmp(trai,'n')
     
     trainingParam.classes=classif.classes; % saves the classes for use in the training fucntions
     
-    if classif.typeid==4 || classif.typeid == 12 % LSTM: ask which part needs to be trained
+    
         disp('Train image classifier?');
         trainingParam=setParam(trainingParam,{'imageclassifier','y'});
         
