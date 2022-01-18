@@ -15,10 +15,16 @@ end
 % classify new images
 
 frames=[];
+channel=classif.channelName;
+
 for i=1:numel(varargin)
       if strcmp(varargin{i},'Frames')
           frames=varargin{i+1};
       end
+      
+       if strcmp(varargin{i},'Channel')
+           channel=varargin{i+1};
+       end
 end
 
 net=classifier;
@@ -31,7 +37,7 @@ if numel(roiobj.image)==0 % load stored image in any case
 roiobj.load;
 end
 
-pix=obj.findChannelID(classif.channelName{1});
+pix=roiobj.findChannelID(channel{1});
 
 %pix=find(roiobj.channelid==classif.channel(1)); % find channels corresponding to trained data
 

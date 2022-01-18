@@ -1,4 +1,4 @@
-function logparf=classifyData2(classiobj,roiobj,varargin)
+function logparf=classifyData(classiobj,roiobj,varargin)
 % high level function to classify data
 
 % classiobj is a @classi obj
@@ -19,8 +19,6 @@ function logparf=classifyData2(classiobj,roiobj,varargin)
 % The channel can have the same number of items as the @roi array. If only
 % one item is provided, it will be used for 
 
-% HERE : implement channels  + correct channels in classifier GUI
-
 % 'Progress' : specifiy a handle to a progree bar to be updated during
 % classification 
 
@@ -35,21 +33,24 @@ function logparf=classifyData2(classiobj,roiobj,varargin)
 %'Classifier' uses a classifier provdied as input
 
 para=0;
-skipCNN=1;
 frames=[];
 p=[];
-channel=[];
+channel=classiobj.channelName;
+classifierCNN=[];
+classifier=[];
+CNNflag=0;
 
 
 for i=1:numel(varargin)
     if strcmp(varargin{i},'Classifier')
-        classifierStore=varargin{i+1};
+        classifier=varargin{i+1};
     end
     if strcmp(varargin{i},'ClassifierCNN')
-        classifierCNN=varargin{i+1};
+       % classifierCNN=varargin{i+1};
+        CNNflag=1;
     end
     
-    if strcmp(varargin{i},'Frames') % is a cell array with the same number of elements as FOVs
+    if strcmp(varargin{i},'Frames') % is a cell array with the same number of elements as number of rois. If it s a numeric array, then apply to all rois
         frames=varargin{i+1};
     end
     
@@ -58,7 +59,7 @@ for i=1:numel(varargin)
   end
     
      if strcmp(varargin{i},'Channel') % specify a different channel to classify
-        channel=varargin{i+1}; % channel must have the same size as Fovs
+        channel=varargin{i+1}; % channel is a cell array with the same size as the number of rois; if not, will apply the same number to all ROIs
      end
      
     if strcmp(varargin{i},'Parallel') % parallel computing
@@ -77,29 +78,30 @@ if numel(p)
     p.Message='Preparing classification....';
 end
 
-
-path=classi.path;
-name=classi.strid;
-if exist('classifierStore','var')==0
-    % first load classifier if not loadad to save some time
-    disp(['Loading classifier: ' name '...']);
-    str=[path '/' name '.mat'];
-    load(str); % load classifier
-    classifierStore=classifier;
+if numel(classifier)==0
+    disp(['Loading classifier: ' classi.strid]);
+    % str=[path '/' name '.mat'];
+    
+    classifier=classi.loadClassifier;
+    
+    if numel(classifier)==0
+        disp('could not load main classifier.... quitting');
+        return;
+    end 
 end
 
-if classi.typeid==4 % in case of a lstm image classi, a CNN classifier is loaded for comparison, if requested by user
-    if exist('classifierCNN','var')==0
-        str=[path '/netCNN.mat'];
+ if CNNflag==1
+        str=fullfile([path 'netCNN.mat']);
         if exist(str)
             load(str);
             disp(['Loading CNN classifier: ' name]);
             classifierCNN=classifier;
-        else
+        else 
             classifierCNN=[];
         end
-    end
-end
+ else
+      classifierCNN=[];
+ end
 
 if numel(p)
     p.Value=0.2;
@@ -119,7 +121,7 @@ end
 for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel computing
 
     if numel(roiobj(i).image)==0
-        roiobj(j).load;
+        roiobj(i).load;
     end
     
     fra=size(roiobj(i).image,4);
@@ -137,34 +139,43 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
     
     
      if numel(p)
-    p.Value=0.9* double(i)./double(size(roilist,2));
+    p.Value=0.9* double(i)./numel(roiobj);
     
-    p.Message=['Classifying ROI  ' roiobj.id];
+    p.Message=['Classifying ROI  ' roiobj(i).id];
      end
     
      
-    if para % parallele computing
-        if exist('classifierCNN','var')  && skipCNN==0
-            logparf(i)=parfeval(fhandle,0,roiobj(i),classi,classifierStore,classifierCNN,'Frames',fra{i}); % launch the training function for classification
+    if para % parallel computing
+        if numel(classifierCNN)
+            logparf(i)=parfeval(fhandle,0,roiobj(i),classi,classifier,classifierCNN,'Frames',fra,'Channel',channel); % launch the training function for classification
         else
             %disp(['Starting classification of ' num2str(roiobj(i).id)]);
-            logparf(i)=parfeval(fhandle,0,roiobj(i),classi,classifierStore,'Frames',fra{i}); % launch the training function for classification
+            logparf(i)=parfeval(fhandle,0,roiobj(i),classi,classifier,'Frames',fra,'Channel',channel); % launch the training function for classification
         end
     else
-        if exist('classifierCNN','var') && skipCNN==0
-            feval(fhandle,roiobj(i),classi,classifierStore,classifierCNN,'Frames',fra{i}); % launch the training function for classification
-            disp(['Classified ' num2str(roiobj(i).id)]);
+        if  numel(classifierCNN)
+            feval(fhandle,roiobj(i),classi,classifier,classifierCNN,'Frames',fra,'Channel',channel); % launch the training function for classification
+            disp(['Classified with separate CNN ' num2str(roiobj(i).id)]);
         else
-            feval(fhandle,roiobj(i),classi,classifierStore,'Frames',fra{i}); % launch the training function for classification
-            disp(['Classified without CNN' num2str(roiobj(i).id)]);
+            feval(fhandle,roiobj(i),classi,classifier,'Frames',fra,'Channel',channel); % launch the training function for classification
+            disp(['Classified' num2str(roiobj(i).id)]);
         end
     end
     
 end
+
+% if para  % not implemented
+%     maxFuture = afterEach(logparf, @(r) max(r), 1);
+%     
+%     minFuture = afterAll(maxFuture, @(r) min(r), 1);
+%     
+% end
 
   if numel(p)
     p.Value=0.9;
     p.Message='Saving project...Please wait...';
   end
   
-
+  
+  
+%disp('You must save the shallow project to save these classified data !');

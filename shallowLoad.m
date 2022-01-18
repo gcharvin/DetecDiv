@@ -128,7 +128,9 @@ for j=1:numel(listclassi)
     name=listclassi(j).name;
     str=fullfile(path,file,'processor',name,[name '_processor.mat']);
     
+    if exist(str)
     [classiObj msg]=processLoad(str);
+    end
     
      shallowObj.processing.processor(j)=classiObj;
 end
