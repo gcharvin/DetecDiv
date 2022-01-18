@@ -163,7 +163,7 @@ if strcmp(method,'volume')
             %init/reset
             maskTotal=zeros(size(im),'uint16');
             maskMother=zeros(size(im),'uint16');
-            obj.roi(r).results.signal.cell.(classiname).volume(t)=NaN;
+            obj.roi(r).results.signal.cell.(['from_' classiname]).volume(t)=NaN;
             
             if isequal(im,maskTotal) %if the image hasnt been classified or annotated
                 continue %skip iteration
@@ -175,9 +175,9 @@ if strcmp(method,'volume')
             
             %=compute and store
             vol=sum(maskMother(:));
-            obj.roi(r).results.signal.cell.(classiname).volume(t)=vol;
+            obj.roi(r).results.signal.cell.(['from_' classiname]).volume(t)=vol;
         end
-        disp(['Volume, of mothercell was computed and added to roi(' num2str(r) ').results.signal.cell.' num2str(classiname)])
+        disp(['Volume, of mothercell was computed and added to roi(' num2str(r) ').results.signal.cell.' num2str(['from_' classiname])])
         obj.roi(r).image=[];
         obj.roi(r).save('results');
         clear im
@@ -281,12 +281,12 @@ if strcmp(method,'cell')
             tremove=1:lastFrame;
             tremove(1:snapinc:end)=[];
             
-            obj.roi(r).results.signal.cell.(classiname).totalfluo(c,tremove)=NaN;
-            obj.roi(r).results.signal.cell.(classiname).meanfluo(c,tremove)=NaN;
+            obj.roi(r).results.signal.cell.(['from_' classiname]).totalfluo(c,tremove)=NaN;
+            obj.roi(r).results.signal.cell.(['from_' classiname]).meanfluo(c,tremove)=NaN;
             
         end
         
-        disp(['Volume, average and total signal of mothercell was computed and added to roi(' num2str(r) ').results.signal.cell' num2str(classiname)])
+        disp(['Volume, average and total signal of mothercell was computed and added to roi(' num2str(r) ').results.signal.cell' num2str(['from_' classiname])])
         
         obj.roi(r).save('results');
         obj.roi(r).image=[];
@@ -363,9 +363,9 @@ if strcmp(method,'nucleus')
                 maskNucleus=zeros(size(im),'uint16');
                 maskNucleusMother=zeros(size(im),'uint16');
                 
-                obj.roi(r).results.signal.nucleus.(classiNucName).volume(t)=NaN;
-                obj.roi(r).results.signal.nucleus.(classiNucName).totalfluo(c,t)=NaN;
-                obj.roi(r).results.signal.nucleus.(classiNucName).meanfluo(c,t)=NaN;
+                obj.roi(r).results.signal.nucleus.(['from_' classiNucName]).volume(t)=NaN;
+                obj.roi(r).results.signal.nucleus.(['from_' classiNucName]).totalfluo(c,t)=NaN;
+                obj.roi(r).results.signal.nucleus.(['from_' classiNucName]).meanfluo(c,t)=NaN;
                 if isequal(im,maskTotal) %if the image hasnt been classified or annotated
                     continue %skip iteration
                 end
@@ -388,20 +388,20 @@ if strcmp(method,'nucleus')
                 meanbckg=mean(meanbckg);
                 
                 %fill
-                obj.roi(r).results.signal.nucleus.(classiNucName).volume(t)=sum(maskNucleusMother(:));
+                obj.roi(r).results.signal.nucleus.(['from_' classiNucName]).volume(t)=sum(maskNucleusMother(:));
                 
-                obj.roi(r).results.signal.nucleus.(classiNucName).totalfluo(c,t)=sum(maskedNucleusMother(:)-meanbckg);%todo: take 80% of max pixels of back to avoid traps
-                obj.roi(r).results.signal.nucleus.(classiNucName).meanfluo(c,t)=obj.roi(r).results.signal.nucleus.(classiNucName).totalfluo(c,t)/sum(maskNucleusMother(:));                                
+                obj.roi(r).results.signal.nucleus.(['from_' classiNucName]).totalfluo(c,t)=sum(maskedNucleusMother(:)-meanbckg);%todo: take 80% of max pixels of back to avoid traps
+                obj.roi(r).results.signal.nucleus.(['from_' classiNucName]).meanfluo(c,t)=obj.roi(r).results.signal.nucleus.(['from_' classiNucName]).totalfluo(c,t)/sum(maskNucleusMother(:));                                
             end
             
-            %ici enlever les frames en trop
+            %Remove duplicated frames (from different snapping frequency)
             tremove=1:lastFrame;
             tremove(1:snapinc:end)=[];
             
-            obj.roi(r).results.signal.nucleus.(classiNucName).totalfluo(c,tremove)=NaN;
-            obj.roi(r).results.signal.nucleus.(classiNucName).meanfluo(c,tremove)=NaN;
+            obj.roi(r).results.signal.nucleus.(['from_' classiNucName]).totalfluo(c,tremove)=NaN;
+            obj.roi(r).results.signal.nucleus.(['from_' classiNucName]).meanfluo(c,tremove)=NaN;
         end
-        disp(['Volume, average and total signal of nucleus was computed and added to roi(' num2str(r) ').results.signal.nucleus' num2str(classiNucName)])
+        disp(['Volume, average and total signal of nucleus was computed and added to roi(' num2str(r) ').results.signal.nucleus' num2str(['from_' classiNucName])])
         obj.roi(r).save('results');
         obj.roi(r).image=[];
         clear im
