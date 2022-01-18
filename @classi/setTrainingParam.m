@@ -55,19 +55,19 @@ if ~strcmp(trai,'n')
         trainingParam.output=classif.output; % sequence-to-sequence vs sequence-to-one
     end
     
-    if classif.typeid==1 || (classif.typeid==4 & strcmp(trainingParam.imageclassifier,'y')) ||  classif.typeid==11 || (classif.typeid==12 & strcmp(trainingParam.imageclassifier,'y'))
+    if classi.category{1}=="Image" || (classi.category{1}=="LSTM"  & strcmp(trainingParam.imageclassifier,'y')) || classi.category{1}=="Image Regression" || (classi.category{1}=="LSTM Regression" & strcmp(trainingParam.imageclassifier,'y'))
         trainingParam=imageTraining(trainingParam);
     end
     
-    if classif.typeid==4 || classif.typeid == 12  % LSTM specific
+    if classi.category{1}=="LSTM" || classi.category{1}=="LSTM Regression"  % LSTM specific
         trainingParam=LSTMTraining(trainingParam);
     end
     
-    if classif.typeid==8 ||  classif.typeid==2 % seg specific
+    if classi.category{1}=="Pixel" % seg specific
         trainingParam=SegTraining(trainingParam);
     end
     
-    if classif.typeid==13 % timeseries trainingset
+    if classi.category{1}=="Timeseries"% timeseries trainingset
        
          trainingParam=LSTMTraining(trainingParam);
             trainingParam.output=classif.output; % sequence-to-sequence vs sequence-to-one

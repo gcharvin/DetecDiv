@@ -5,16 +5,20 @@ if ~isfolder([classif.path '/' foldername '/images'])
     mkdir([classif.path '/' foldername], 'images');
 end
 
-if classif.typeid~=12 % if classif
+if strcmp(classif.category{1},'LSTM')
     for i=1:numel(classif.classes)
         if ~isfolder([classif.path '/' foldername '/images/' classif.classes{i}])
             mkdir([classif.path '/' foldername '/images'], classif.classes{i});
         end
     end
-else % regression
+end
+
+if strcmp(classif.category{1},'LSTM Regression')
+% regression
     if ~isfolder([classif.path '/' foldername '/response/'])
         mkdir([classif.path '/' foldername], 'response');
     end
+end
 end
 
 if ~isfolder([classif.path '/' foldername '/timeseries'])
@@ -71,11 +75,9 @@ parfor i=rois
      imtest=im;  
    end
     
-   %  figure, imshow(imtest,[]);
-   %  return;
-    % 'ok'
     
     vid=uint8(zeros(size(imtest,1),size(imtest,2),3,size(imtest,4)));
+    
     
     if classif.typeid~=12 % only for  image classif
         pixb=numel(cltmp(i).train.(classif.strid).id);
@@ -93,7 +95,7 @@ parfor i=rois
         lab=[];
     end
     
-    if classif.typeid~=12 % image classif
+  if strcmp(classif.category{1},'LSTM') % image lstm classification
         reverseStr = '';
         for j=1:size(im,4)
 
@@ -132,8 +134,10 @@ parfor i=rois
             fprintf([reverseStr, msg]);
             reverseStr = repmat(sprintf('\b'), 1, length(msg));
         end
-        
-    else % image regression
+  end
+  
+  if strcmp(classif.category{1},'LSTM Regression') % image lstm classification
+     % image regression
         tmp=zeros(size(im,1),size(im,2),3,size(im,4));
         
         for j=1:size(im,4)

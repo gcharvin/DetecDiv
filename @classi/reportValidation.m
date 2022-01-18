@@ -34,10 +34,10 @@ end
 
 %%
 commentsLSTM="ND";
-switch classi.typeid
-    case {2,8}
+switch classi.category{1}
+    case 'Pixel'
         
-    case 4 %LSTM
+    case 'LSTM'
         for i=1:numel(varargin)
             %Comment
             if strcmp(varargin{i},'CommentLSTM')
@@ -51,10 +51,10 @@ load(fullfile(path,'trainingParam.mat'));
 copyfile(fullfile(classi.path, [classi.strid '.mat']),fullfile(path, dateT, [classi.strid '.mat']));
 
 %move classifiers to unique folder
-switch classi.typeid
-    case {2,8}
+switch classi.category{1}
+    case 'Pixel'
         
-    case 4
+    case 'LSTM'
         copyfile(fullfile(classi.path, 'netCNN.mat'),fullfile(path, dateT,  'netCNN.mat'));
         copyfile(fullfile(classi.path, 'netLSTM.mat'),fullfile(path, dateT,  'netLSTM.mat'));
 end
@@ -75,8 +75,8 @@ CNNfile=folder(contains({folder.name},'CNNTraining.pdf'));
 
 %move LSTM training plot to dedicated folder
 includeLSTMTraining=0;
-switch classi.typeid
-    case 4
+switch classi.category{1}
+    case 'LSTM'
         % LSTM Training
         
         if exist(fullfile(path,'LSTMTraining.pdf'))
@@ -188,8 +188,8 @@ if includeCNNTraining
 end
 
 
-switch classi.typeid
-    case 4 
+switch classi.category{1}
+    case 'LSTM'
         if includeLSTMTraining
             % LSTMparam
             figLSTM=figure('Name', LSTMfile.date, 'Units', 'Normalized', 'Position',[0.1, 0.1, 0.5, 0.5],'HandleVisibility', 'on');
@@ -365,8 +365,8 @@ if numel(roisTest)>0
         fullfile(dirpath,'CNNParam.pdf'),...
         fullfile(dirpath,'CNNTraining.pdf'));
     
-    switch classi.typeid
-        case 4
+    switch classi.category{1}
+        case 'LSTM'
             append_pdfs(reportpath,...
                 fullfile(dirpath,'LSTMParam.pdf'),...
                 fullfile(dirpath,'LSTMTraining.pdf'));
@@ -398,8 +398,8 @@ else
         fullfile(dirpath,'CNNParam.pdf'),...
         fullfile(dirpath,'CNNTraining.pdf'));
     
-    switch classi.typeid
-        case 4
+    switch classi.category{1}
+        case 'LSTM'
             append_pdfs(reportpath,...
                 fullfile(dirpath,'LSTMParam.pdf'),...
                 fullfile(dirpath,'\LSTMTraining.pdf'));
@@ -439,8 +439,8 @@ save(fullfile(dirpath,'trainingParam.mat'),'trainingParam');
 delete(fullfile(dirpath,'CNNParam.pdf'));
 delete(fullfile(dirpath,'CNNTraining.pdf'));
 
-switch classi.typeid
-    case 4
+switch classi.category{1}
+    case 'LSTM'
         delete(fullfile(dirpath,'LSTMParam.pdf'));
         delete(fullfile(dirpath,'LSTMTraining.pdf'));
 end

@@ -410,7 +410,7 @@ if numel(classif)>0
         
     end
     
-    if strcmp(classif.category{1},'Pixel') | strcmp(classif.category{1},'Object') | (strcmp(classif.category{1},'Image') & classif.typeid~=11) | (strcmp(classif.category{1},'LSTM') & classif.typeid~=12)
+    if strcmp(classif.category{1},'Pixel') | strcmp(classif.category{1},'Object') | strcmp(classif.category{1},'Image')  | strcmp(classif.category{1},'LSTM') 
         % plotting classes menu for classification
         
         
@@ -481,7 +481,7 @@ if numel(classif)>0
         
     end
     
-    if classif.typeid==11 || classif.typeid==12 % Regression training analysis
+    if strcmp(classif.category{1},'LSTM Regression') || strcmp(classif.category{1},'Image Regression') % Regression training analysis
         %ccpedigree=obj.findChannelID(classif.strid);
         set(h,'WindowButtonDownFcn',{@regression,h,obj,him,hp,classif});%%% HERE
         

@@ -95,7 +95,7 @@ if compute==1 % compute new scores
     for i=neval % loop on possible thr values
         
         % apply postprocessing with given threshold
-        if  classif.typeid==2 ||  classif.typeid==8 % does a postprocessing to create segmented image with given threshold
+        if  strcmp(classif.category{1},'Pixel')% does a postprocessing to create segmented image with given threshold
             for j=roiid
                 switch i
                     case 0
@@ -139,7 +139,7 @@ if compute==1 % compute new scores
                 classif.score(cc).thr=i;
             end
             
-            if classif.typeid==4 % for LSTM classification, compute CNN benchmarks
+            if classif.category=="LSTM" % for LSTM classification, compute CNN benchmarks
                 if numel( data.CNNpred)
                 cc=cc+1;
             
@@ -671,8 +671,8 @@ score.N=sum([score.classes(:).N]);
             
             reg=0;
             
-            switch classif.typeid
-                case {2,8} % pixel classification
+            switch classif.category{1}
+                case 'Pixel' % pixel classification
                     
                     chgt=obj.findChannelID(classif.strid);
                     chpred=obj.findChannelID(['results_' classif.strid]);
@@ -736,7 +736,7 @@ score.N=sum([score.classes(:).N]);
                         
                     end
                     
-                case {13} % timeseries classification or regression
+                case 'Timeseries' % timeseries classification or regression
                     
                     if numel(obj.results)>0 % check is there are results available
                         if isfield(obj.results,classistr)

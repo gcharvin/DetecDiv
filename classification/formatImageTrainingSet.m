@@ -1,7 +1,7 @@
 function output=formatImageTrainingSet(foldername,classif,rois)
 
 % optional argument provides the numbers associaed with reach image in case
-% of a regression 
+% of a regression
 
 output=0;
 
@@ -9,14 +9,16 @@ if ~isfolder([classif.path '/' foldername '/images'])
     mkdir([classif.path '/' foldername], 'images');
 end
 
-if classif.typeid~=11
-for i=1:numel(classif.classes)
-    if ~isfolder([classif.path '/' foldername '/images/' classif.classes{i}])
-        mkdir([classif.path '/' foldername '/images'], classif.classes{i});
+if strcmp(classif.category{1},'Image')
+    for i=1:numel(classif.classes)
+        if ~isfolder([classif.path '/' foldername '/images/' classif.classes{i}])
+            mkdir([classif.path '/' foldername '/images'], classif.classes{i});
+        end
     end
 end
-else 
-     if ~isfolder([classif.path '/' foldername '/response/'])
+
+if strcmp(classif.category{1},'Image Regression')
+    if ~isfolder([classif.path '/' foldername '/response/'])
         mkdir([classif.path '/' foldername], 'response');
     end
 end
@@ -27,8 +29,8 @@ disp('Starting parallelized jobs for data formatting....')
 
 warning off all
 
- channel=classif.channelName;
- 
+channel=classif.channelName;
+
 parfor i=rois
     disp(['Launching ROI ' num2str(i) :' processing...'])
     
@@ -38,7 +40,7 @@ parfor i=rois
     end
     
     
-   
+    
     pix=cltmp(i).findChannelID(channel{1});
     
     % normalize intensity levels
@@ -61,61 +63,64 @@ parfor i=rois
     reverseStr = '';
     
     
-     if classif.typeid~=11 % image classif 
-    for j=1:size(im,4)
-     
-        
-         if numel(pix)==1
+    if   strcmp(classif.category{1},'Image')
+        for j=1:size(im,4)
+            
+            
+            if numel(pix)==1
                 tmp=cltmp(i).preProcessROIData(pix,j,param);
             else
                 tmp=im(:,:,:,j);
                 tmp=double(tmp)/65535;
-         end
+            end
             
-       
-        tr=num2str(j);
-        while numel(tr)<4
-            tr=['0' tr];
+            
+            tr=num2str(j);
+            while numel(tr)<4
+                tr=['0' tr];
+            end
+            
+            
+            if cltmp(i).train.(classif.strid).id(j)~=0 % if training is done
+                % if ~isfile([str '/unbudded/im_' mov.trap(i).id '_frame_' tr '.tif'])
+                imwrite(tmp,[classif.path '/' foldername '/images/' classif.classes{cltmp(i).train.(classif.strid).id(j)} '/' cltmp(i).id '_frame_' tr '.tif']);
+                output=output+1;
+                % end
+            end
+            
+            
+            msg = sprintf('Processing frame: %d / %d for ROI %s', j, size(im,4),cltmp(i).id); %Don't forget this semicolon
+            fprintf([reverseStr, msg]);
+            reverseStr = repmat(sprintf('\b'), 1, length(msg));
         end
         
-       
-        if cltmp(i).train.(classif.strid).id(j)~=0 % if training is done
-            % if ~isfile([str '/unbudded/im_' mov.trap(i).id '_frame_' tr '.tif'])
-            imwrite(tmp,[classif.path '/' foldername '/images/' classif.classes{cltmp(i).train.(classif.strid).id(j)} '/' cltmp(i).id '_frame_' tr '.tif']);
-             output=output+1;
-            % end
-        end
-    
-        
-        msg = sprintf('Processing frame: %d / %d for ROI %s', j, size(im,4),cltmp(i).id); %Don't forget this semicolon
-        fprintf([reverseStr, msg]);
-        reverseStr = repmat(sprintf('\b'), 1, length(msg));
     end
     
-     else % image regression
-         tmp=zeros(size(im,1),size(im,2),3,size(im,4));
-         
-          for j=1:size(im,4)
-       % tmp(:,:,:j)=im(:,:,:,j);
+    if  strcmp(classif.category{1},'Image Regression')
+        % image regression
+        tmp=zeros(size(im,1),size(im,2),3,size(im,4));
         
-       if numel(pix)==1
+        for j=1:size(im,4)
+            % tmp(:,:,:j)=im(:,:,:,j);
+            
+            if numel(pix)==1
                 tmp=cltmp(i).preProcessROIData(pix,j,param);
             else
                 tmp=im(:,:,:,j);
                 tmp=double(tmp)/65535;
-       end
+            end
             
-          end
-          
-          %   if cltmp(i).train.(classif.strid).id(j)~=-1 % if training is done
-             parsaveim([classif.path '/' foldername '/images/' cltmp(i).id '.mat'],tmp);
-             parsave([classif.path '/' foldername '/response/' cltmp(i).id '.mat'],cltmp(i).train.(classif.strid).id);
-              output=output+1;
-          %   end
-     end
+        end
+        
+        %   if cltmp(i).train.(classif.strid).id(j)~=-1 % if training is done
+        parsaveim([classif.path '/' foldername '/images/' cltmp(i).id '.mat'],tmp);
+        parsave([classif.path '/' foldername '/response/' cltmp(i).id '.mat'],cltmp(i).train.(classif.strid).id);
+        output=output+1;
+        %   end
+    end
     
     fprintf('\n');
-
+    
     cltmp(i).save;
     
     disp(['Processing ROI: ' num2str(i) ' ... Done !'])
@@ -128,18 +133,18 @@ for i=rois
 end
 
 % function parsaveim(fname, im)
-% eval(['save  '  fname  '  im']); 
-% 
+% eval(['save  '  fname  '  im']);
+%
 % function parsave(fname, response)
-% eval(['save  '  fname  '  response']); 
+% eval(['save  '  fname  '  response']);
 
 
 function parsaveim(fname, im)
 eval(['save  ''''  '  fname  ''''  '  im']);
 
 function parsaveresp(fname, response)
-eval(['save  ' '''' fname  ''''  '  response']); 
+eval(['save  ' '''' fname  ''''  '  response']);
 
- 
-      
-   
+
+
+
