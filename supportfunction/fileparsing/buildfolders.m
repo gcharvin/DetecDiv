@@ -2,6 +2,8 @@ function output=buildfolders(dirlist,outputin,progress)
 % build list of files and parse channels and stacks, takiing each folder as
 % an individual position
 
+% damien coudreuse
+
 output=outputin;
 
 selecteddir=[];
