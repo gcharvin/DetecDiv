@@ -111,8 +111,9 @@ for i=2:numel(classes)
         % figure, imshow(BW,[]);
         
     end
-    res=uint16(uint16(BW)*(i));
-    tmpout=tmpout+ res;
+   % res=uint16(uint16(BW)*(i));
+   % tmpout=tmpout+ res;
+    tmpout(BW)=i;
     
 end
 

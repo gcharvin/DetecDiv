@@ -112,6 +112,7 @@ end
 if option(4)==1
     
     % preserve ROI !!!
+    
     obj.addROI(classitocopy,'rois',rois,'convert',convert); % import ROis from classification option
 end
 

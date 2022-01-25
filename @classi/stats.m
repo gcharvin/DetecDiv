@@ -564,6 +564,7 @@ for i=1:numel(classif.classes)
 end
 
 % ======= confusion matrix ======
+
 mate=confusionmat(data.gt,data.pred,'Order',1:numel(classif.classes));
 score.confusion=mate; % matrix coeff must match acc and recall values computed above
 

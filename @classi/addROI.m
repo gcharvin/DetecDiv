@@ -251,10 +251,11 @@ for i=1:length(rois)
             if isa(obj,'classi')
                 if  strcmp(obj.category{1},'Pixel') % phenocopy the groundtruth
                     
-                    pixid=      classif.roi(i).findChannelID(obj.strid);
-                    pixidnew=classif.roi(i).findChannelID(classif.strid);
+                 %   aa=obj.strid
                     
-                    numel(pixid) & numel(pixidnew) 
+                    pixid=      classif.roi(cc+1).findChannelID(obj.strid)
+                    pixidnew=classif.roi(cc+1).findChannelID(classif.strid)
+                    
                     
                     if numel(pixid) && numel(pixidnew) % copy the groundthruth to new classi 
                         
@@ -290,118 +291,6 @@ for i=1:length(rois)
     
     cc=cc+1;
 end
-
-
-
-% if isa(obj,'classi') % rois are imported from previous classiciation
-%
-%     disp('You want to import ROIs from an existing @classi for training');
-%     disp('This @classi has ' num2str(numel(obj.roi)) ' ROIs available');
-%
-%     if nargin<3 % specificy classif to import from
-%         prompt='Enter the id number of the classification to import from (Default: 1): ';
-%         prevclas= input(prompt);
-%         if numel(prevclas)==0
-%             prevclas=1;
-%         end
-%     else
-%         prevclas=option;
-%     end
-%
-%     disp(' ');
-%
-%     disp(['Number of ROIs available in the classification training set: ' num2str(numel(obj.processing.classification(prevclas).roi))]);
-%     for j=1:numel(obj.processing.classification(prevclas).roi)
-%         disp([num2str(j) '- '  obj.processing.classification(prevclas).roi(j).id]);
-%     end
-%     disp(' ');
-%     prompt='Enter the id numbers of the ROIs to import in a comma-separated way (Default: 1): ';
-%     ids= input(prompt,'s');
-%     if numel(ids)==0
-%         ids=1;
-%     else
-%         ids=str2num(ids);
-%     end
-%
-%     classif.trainingset=obj.processing.classification(prevclas).trainingset;
-%
-%     % copy dedicated ROIs to local classification folder and change path
-%
-%     cc=numel(classif.roi);
-%
-%     if cc==1
-%         if  numel(classif.roi(1).id)==0
-%             cc=0;
-%         end
-%     end
-%
-%
-%
-%     for i=ids
-%         % rois(1,i),rois(1,i)
-%         %rois(1,i),rois(2,i)
-%         disp(['Processing ROI ' num2str(cc+1) '/' num2str(numel(ids))]);
-%
-%         roitocopy=obj.processing.classification(prevclas).roi(i); %obj.fov(rois(1,i)).roi(rois(2,i));
-%
-%         % aa=roitocopy
-%
-%         if cc==0
-%             classif.roi=roi('',[]);
-%         end
-%         classif.roi(cc+1)=roi('',[]);
-%
-%         if numel(roitocopy.image)==0
-%             roitocopy.load;
-%         end
-%
-%         classif.roi(cc+1)=propValues(classif.roi(cc+1),roitocopy);
-%         classif.roi(cc+1).path = classif.path;
-%
-%         classif.roi(cc+1).classes=classif.classes;
-%
-%         %size(classif.roi(cc+1).image)
-%
-%         %     if strcmp(classif.category{1},'Image') | strcmp(classif.category{1},'LSTM')
-%         %     classif.roi(cc+1).train.(classif.strid)=[];
-%         %     classif.roi(cc+1).train.(classif.strid).id= zeros(1,size(classif.roi(cc+1).image,4));
-%         %    % classif.roi(cc+1).train= zeros(1,size(classif.roi(cc+1).image,4));
-%         %     end
-%
-%         if strcmp(classif.category{1},'Pixel') && strcmp(obj.processing.classification(prevclas).category{1},'Pixel')
-%
-%             pixid=classif.roi(i).findChannelID(obj.processing.classification(prevclas).strid);
-%             classif.roi(i).display.channel{pixid}=classif.strid;
-%
-%             %im=classif.roi(cc+1).image;
-%             % matrix=uint16(zeros(size(im,1),size(im,2),1,size(im,4)));
-%             %classif.roi(cc+1).addChannel(matrix,classif.strid,[1 1 1],[0 0 0]);
-%             %classif.roi(cc+1).display.selectedchannel(end)=1;
-%             %pixelchannel=size(obj.image,3);
-%         end
-%
-%         if strcmp(classif.category{1},'Object')
-%
-%             pixid=classif.roi(i).findChannelID(obj.processing.classification(prevclas).strid);
-%             classif.roi(i).display.channel{pixid}=classif.strid;
-%
-%             % im=classif.roi(cc+1).image;
-%             %size(im)
-%             % matrix=uint16(im(:,:,classif.channel(2),:)>0);
-%
-%             % classif.roi(cc+1).addChannel(matrix,classif.strid,[1 1 1],[0 0 0]);
-%             %pixelchannel=size(obj.image,3);
-%         end
-%
-%
-%
-%         classif.roi(cc+1).save;
-%         classif.roi(cc+1).clear;
-%
-%         cc=cc+1;
-%     end
-%
-% end
 
 
 function newObj=propValues(newObj,orgObj)

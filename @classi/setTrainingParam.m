@@ -73,7 +73,6 @@ if ~strcmp(trai,'n')
             trainingParam.output=classif.output; % sequence-to-sequence vs sequence-to-one
     end
         
-end
 
 disp('---------------');
 disp('Stored training parameters: ');
