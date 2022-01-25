@@ -34,7 +34,7 @@ warning off all
 
  channel=classif.channelName;
  
-parfor i=rois
+for i=rois
     disp(['Launching ROI ' num2str(i) :' processing...'])
     
     if numel(cltmp(i).image)==0
