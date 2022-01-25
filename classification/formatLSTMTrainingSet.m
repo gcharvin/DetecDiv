@@ -19,7 +19,7 @@ if strcmp(classif.category{1},'LSTM Regression')
         mkdir([classif.path '/' foldername], 'response');
     end
 end
-end
+
 
 if ~isfolder([classif.path '/' foldername '/timeseries'])
     mkdir([classif.path '/' foldername], 'timeseries');
