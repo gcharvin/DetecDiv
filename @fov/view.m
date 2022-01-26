@@ -237,6 +237,20 @@ else
     
     hZMenu = uimenu(m,'Label','Clear all ROIs',...
         'Callback',{@clearROI,obj,him,hp});
+    
+  hZMenu = uimenu(m,'Label','Original orientation',...
+        'Callback',{@rotateFOV,obj,him,hp,0}, 'Checked','on','Separator','on','Tag','rotate_0');
+    
+  hZMenu = uimenu(m,'Label','Rotate by 90 degrees clockwise',...
+        'Callback',{@rotateFOV,obj,him,hp,90}, 'Checked','off','Tag','rotate_90');
+    
+      hZMenu = uimenu(m,'Label','Rotate by 180 degrees clockwise',...
+        'Callback',{@rotateFOV,obj,him,hp,180}, 'Checked','off','Tag','rotate_180');
+    
+       hZMenu = uimenu(m,'Label','Rotate by 270 degrees clockwise',...
+        'Callback',{@rotateFOV,obj,him,hp,270}, 'Checked','off','Tag','rotate_270');
+    
+    % HERE orientation 
  
         
        
@@ -488,6 +502,27 @@ function clearROI(handle,event,obj,him,hp)
 % function in the context menu to add custom ROI
 
 obj.removeROI;
+updatedisplay(obj,him,hp);
+end
+
+function rotateFOV(handle,event,obj,him,hp,angle)
+% function in the context menu to add custom ROI
+
+if  ~isfield(obj,'orientation')
+    obj.orientation=0;
+end
+
+obj.orientation=angle;
+
+val=setxor([0 90 180 270],angle);
+for i=val
+h=findobj('Tag',['rotate_' num2str(i)]);
+set(h,'Checked','off');
+end
+
+h=findobj('Tag',['rotate_' num2str(angle)]);
+set(h,'Checked','on');
+
 updatedisplay(obj,him,hp);
 end
 

@@ -6,6 +6,7 @@ classdef fov < handle
         frames=[];
         interval=[];
         binning=[];
+        orientation=0;
         contours=[]; % in case phylocontours are attached to a fov
         tag='Field of view';
         comments='';

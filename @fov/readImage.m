@@ -72,6 +72,12 @@ else
 end
 
 
+if obj.orientation~=0
+    im=imrotate(im,obj.orientation);
+end
+
+
+
 
 % elseif isfile(obj.pathname{channel}) % when an avi movie is loaded for instance
 %             v = VideoReader(obj.pathname{channel});
