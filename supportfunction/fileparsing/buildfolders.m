@@ -79,6 +79,8 @@ for i=1:numel(output.pos) % extract channels from string names, treat different 
  progress.Value=min(1,0.67+0.33*(i-1)./numel(output.pos));
  end
  
+ 
+ 
     % list all files in folder
     tmp=realfolders{i};
     
@@ -89,58 +91,9 @@ for i=1:numel(output.pos) % extract channels from string names, treat different 
  filelist= filelist([filelist.isdir]==0);
  filelist=filelist(contains({filelist.name},{'.tif','.jpg'})); % takes all image files
 
-% filter files based on position filter 
-posfilter=output.pos(i).positionfilter;
-
-npos={}; % if numel(npos=0), there is one single poistion found
-
-posfilter2={};
-
-for j=1:numel(posfilter)
-    
-    if endsWith(posfilter{j},'$') % numerated positions
-
-        tmp=regexp({filelist.name}, [posfilter{j}(1:end-1) '\d+'],'match');  
-        tmp=cellfun(@testx,tmp,'UniformOutput',false) ;
-        tmp=unique(tmp);  tmp=tmp(cellfun(@(x) ~isempty(x),tmp));
-          if numel(tmp)
-        npos=[npos tmp];
-         posfilter2=[posfilter2 posfilter{i}];
-          end
-       
-      
-    else % manually defined positions
-        
-        tmp=regexp({filelist.name}, posfilter{j},'match');  
-        tmp=cellfun(@testx,tmp,'UniformOutput',false) ;
-        tmp=unique(tmp);  tmp=tmp(cellfun(@(x) ~isempty(x),tmp));
-         if numel(tmp)
-        npos=[npos tmp];
-        posfilter2=[posfilter2 posfilter{j}];
-          end
-        
-    end 
-end
-
-% if positions are numerated, then reorder positions
- % nposorder=1:numel(npos);
-if numel(npos)
-    
-  npostmp=regexp(npos, '\d+$','match');
-  
-  npostmp=cellfun(@(x) str2num(x{1}),npostmp,'UniformOutput',false) ;
-  
-  npostmp=cell2mat(npostmp);
-  [~,ix]=sort(npostmp);
-  npos=npos(ix);
-end
-        
-if numel(npos)==0 % there is ony one position 
     npos={''};
     posfilter2={};
-      disp('We could not identify any image with the requested position filter');
-      disp('Hence we will consider that there is only one position');
-end
+
 
 % list of channels 
 
@@ -163,7 +116,7 @@ end
       
     else % manually defined positions
         
-         tmp=regexp({filelist.name}, chafilter{i},'match');  
+         tmp=regexp({filelist.name}, chafilter{j},'match');  
         tmp=cellfun(@testx,tmp,'UniformOutput',false) ;
         tmp=unique(tmp);  tmp=tmp(cellfun(@(x) ~isempty(x),tmp));
          if numel(tmp)
@@ -192,7 +145,7 @@ end
     
      for j=1:numel( stackfilter)
     
-    if endsWith(stackfilter{i},'$') % numerated positions
+    if endsWith(stackfilter{j},'$') % numerated positions
 
         tmp=regexp({filelist.name}, [stackfilter{j}(1:end-1) '\d+'],'match');
         tmp=cellfun(@testx,tmp,'UniformOutput',false) ;
@@ -210,7 +163,7 @@ end
         tmp=unique(tmp); tmp=tmp(cellfun(@(x) ~isempty(x),tmp));
          if numel(tmp)
         nsta=[nsta tmp];
-          stackfilter2=[ stackfilter2  stackfilter{i}];
+          stackfilter2=[ stackfilter2  stackfilter{j}];
          end
           
     end 
@@ -223,14 +176,13 @@ end
         stackfilter2={};
   end 
   
+ 
   
     if i~=1
-        output.pos(i)=output.pos(1);
-        output.pos(i).name=npos{i};
-        output.pos(i).frames=[];
-        output.pos(i).filelist={};
-       output.pos(i).binning=[];
-       output.pos(i).interval=[]; 
+      output.pos(i).frames=[];
+      output.pos(i).filelist={};
+      output.pos(i).binning=[];
+      output.pos(i).interval=[]; 
       output.pos(i).pathlist={};
       output.pos(i).channelname={};
     end
@@ -238,16 +190,7 @@ end
 
     cc=1;
     
-       info=['Processing position: ' num2str(i) '/' num2str(numel(npos))];
-      disp(info);
-      
-      if numel(progress)
-            progress.Message=info;
-            progress.Value=min(1,0.67+0.33*(i-1)./numel(npos));
-      end
-     
-     % npos
-      ispos=contains({filelist.name},npos(i));
+    
       
       % loop on channels 
       
@@ -259,7 +202,7 @@ end
            %  i,j,k
              isstack=contains({filelist.name},nsta(k)); 
              
-             files=filelist(ispos & ischa & isstack);
+             files=filelist( ischa & isstack);
              
              if numel(files) % there are files to gather here
    
@@ -285,15 +228,7 @@ end
           
       end
       
-      
-      if numel(npos{i})~=0
-      output.pos(i).name=npos{i};
-      else
-      output.pos(i).name='Pos1';     
-      end
-      
-      
-      
+
       output.pos(i).channels=numel(output.pos(i).binning);
       output.pos(i).binning= output.pos(i).binning./ output.pos(i).binning(1);
       output.pos(i).interval=output.pos(i).interval(1)./output.pos(i).interval;
@@ -302,9 +237,6 @@ end
       output.pos(i).positionfilter2=posfilter2; % output filter
       output.pos(i).channelfilter2=chafilter2;
       output.pos(i).stackfilter2=stackfilter2;
-      
- 
-    
 end
 
 function out=testx(x)

@@ -82,8 +82,8 @@ if data.newproject
     
     for i=1:numel(positions)
         for j=1:numel(rois)
-            p(cc).name=data.shallowObj.fov(i).roi(j).id;
-            p(cc).pos=[i,j];
+            p(cc).name=data.shallowObj.fov(positions(i)).roi(j).id;
+            p(cc).pos=[positions(i),j];
             timeLapse.position.list(cc).name=p(cc).name;
             cc=cc+1;
         end

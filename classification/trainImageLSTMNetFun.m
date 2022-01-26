@@ -18,8 +18,13 @@ end
 
 fprintf('Loading Image classifier...\n');
 fprintf('------\n');
-load([ path '/netCNN.mat']); % load the image classifier
+str=[ path '/netCNN.mat'];
+
+if exist(str)
+load(str); % load the image classifier
+
 netCNN=classifier;
+end
 
 %%% Calculate activations from the image classifier network based on the training
 %%% set

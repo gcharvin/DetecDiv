@@ -114,7 +114,7 @@ for i=fovid
             
             disp(['Reading frame: ' num2str(j) ' / '  num2str(numel(nframes)) ' in group of frame : ' num2str(ii) ' / ' num2str(numel(framecell)) ' for FOV:  ' num2str(tmpfov(i).id)]);
             
-            for k=1:numel(tmpfov(i).srclist) % loop on channels
+            for k=1:numel(tmpfov(i).channel) % loop on channels
                 frame=(nframes(j)); %/channelint(k))+1; %  spacing frames when channels are not used with equal time interval
                 im=tmpfov(i).readImage(frame,k);
                 
@@ -149,7 +149,7 @@ for i=fovid
             row=tmpfov(i).drift.x(nframes(j));
             col=tmpfov(i).drift.y(nframes(j));
             
-            for k=1:numel(tmpfov(i).srclist)
+            for k=1:numel(tmpfov(i).channel)
                 
                 if strcmp(method,'circshift')
                     list{j,k}=circshift( list{j,k},row,1);
@@ -196,14 +196,14 @@ for i=fovid
             %             end
             
             if init==1
-                tmproi(l).image=uint16(zeros(rroi(4),rroi(3),numel(tmpfov(i).srclist),numel(nframestot)));
+                tmproi(l).image=uint16(zeros(rroi(4),rroi(3),numel(tmpfov(i).channel),numel(nframestot)));
                 tmproi(l).display.channel={};
                 tmproi(l).display.frame=1;
                 %tmpfov(i).roi(l).display.settings={};
                 temp=[1 1 1];
                 %temp=temp';
                 
-                for k=1:numel(tmpfov(i).srclist)
+                for k=1:numel(tmpfov(i).channel)
                     tmproi(l).display.channel{k}=tmpfov(i).channel{k}; %['Channel ' num2str(k)];
                     tmproi(l).display.intensity(k,:)=temp;
                     tmproi(l).channelid(k)=k;
@@ -220,7 +220,7 @@ for i=fovid
                    
                         if numel(tmpfov(i).contours.cells1)>1
                           
-                             ccc=numel(tmpfov(i).srclist)+1;
+                             ccc=numel(tmpfov(i).channel)+1;
                                             
                             tmproi(l).display.channel{ccc}='cells1'; %['Channel ' num2str(k)];
                             tmproi(l).display.intensity(ccc,:)=temp;
@@ -255,7 +255,7 @@ for i=fovid
             %cc=1;
             for j=1:numel(nframes)
                 
-                for k=1:numel(tmpfov(i).srclist)
+                for k=1:numel(tmpfov(i).channel)
                     
                     tmp=list{j,k};
                     
@@ -277,7 +277,7 @@ for i=fovid
                 end
                 
                  
-               for k=numel(tmpfov(i).srclist)+1: numel(tmproi(l).display.channel)
+               for k=numel(tmpfov(i).channel)+1: numel(tmproi(l).display.channel)
                    
                    if  tmproi(l).display.channel{k}=="cells1"
                        
