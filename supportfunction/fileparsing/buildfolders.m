@@ -189,8 +189,7 @@ for i=1:numel(output.pos) % extract channels from string names, treat different 
     
 
     cc=1;
-    
-    
+  
       
       % loop on channels 
       

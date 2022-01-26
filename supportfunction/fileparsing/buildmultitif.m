@@ -53,17 +53,29 @@ output.comments=[output.comments num2str(numel(output.pos)) ' positions were ide
   im=imfinfo(fullfile(foldername,output.pos(i).name));
   nimages=numel(im);
 
-  str=im(i).ImageDescription;
+  str=im(1).ImageDescription;
   
+  nch=[];
+  nframes=[];
+  
+  if contains(str,'ImageJ')
   nch=regexp(str,['(?<=channels=)\d+'],'match');
+  nframes=regexp(str,['(?<=frames=)\d+'],'match');
+  end
   
-   if numel(nch)==0 % channel parsing failed, will consider only one channel 
+   if contains(str,'OME')
+ nch=regexp(str,['(?<=SizeC=")\d+'],'match');
+ nframes=regexp(str,['(?<=SizeT=")\d+'],'match');
+   end
+  
+ 
+    if numel(nch)==0 % channel parsing failed, will consider only one channel 
        nch=1;
    else
   nch=str2double(nch{1});
-   end
-   
-  nframes=regexp(str,['(?<=frames=)\d+'],'match');
+    end     
+     
+     
   if numel(nframes)
        nframes=str2double(nframes{1});
   else
