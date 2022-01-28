@@ -1,13 +1,61 @@
-function trainTimeseriesClassifReg(path,name)
+function trainTimeseriesClassifReg(classif,setparam)
 
+path=fullfile(classif.path);
+name=classif.strid;
+
+%---------------- parameters setting
+if nargin==2 % basic parameter initialization
+        
+        tip={'Specify if each frame should be classified, or if one class is expected for the whole sequence of images',...
+             'Choose the training method',...
+               'Enter the number of epochs',...
+                 'Choose whether and how training and validation data should be shuffled during training',...
+                  'Specify value for L2 regularization',...
+                   'Choose the fraction of the data to be used for training vs validation during LSTM training',...
+                    'Enter the size of the hidden unit',...
+                     'Choose the size of the mini batch; Higher values require more memory and are prone to errors',...
+                       'Enter the initial learning rate'};
+                  
+       
+        classif.trainingParam=struct('classifier_output',{{'sequence-to-sequence','sequence-to-one','sequence-to-sequence'}},...
+            'LSTM_training_method',{{'adam','sgdm','adam'}},...
+            'LSTM_max_epochs',6,...
+            'LSTM_data_shuffling',{{'once','every-epoch','never','every-epoch'}},...
+            'LSTM_l2_regularization',0.00001,...
+            'LSTM_data_splitting_factor',0.9,...
+            'LSTM_hidden_size',150,...
+            'LSTM_mini_batch_size',8,...
+            'LSTM_initial_learning_rate', 0.0001,...
+            'tip',{tip});
+        
+    
+        return;
+        %   end
+    else
+        trainingParam=classif.trainingParam;
+        
+        if numel(trainingParam)==0
+            disp('Could not find training parameters : first launch straing with an extra argument to force parameter assignment');
+            return;
+        end
+        
+    end
+    %-----------------------------------%
+    
 
 fprintf('Loading training data...\n');
 filename=fullfile(path,'trainingdataset','TrainingData.mat');
 
+if exist(filename)
 load(filename); % load XTrain, YTrain, and classes variable
 
+else
+    disp('Training data are not available, first format training data !');
+    return;
+end
+
 seq={};
-if numel(classes)>0 % classification problem
+if numel(classif.classes)>0 % classification problem
 for i=1:numel(YTrain)
         seq{i}=categorical(YTrain{i},1:numel(classes),classes);
 end
@@ -16,12 +64,6 @@ else
 end
 
 YTrain=seq;
-
-fprintf('Loading training options...\n');
-fprintf('------\n');
-
-load([path '/trainingParam.mat']);
-
 
 disp('Preparing LSTM network ...');
 fprintf('------\n');
@@ -35,7 +77,11 @@ fprintf('------\n');
 
 numObservations = numel(XTrain);
 idx = randperm(numObservations);
-N = floor(trainingParam.lstmsplit* numObservations); % 0.9 replace
+N = floor(trainingParam.LSTM_data_splitting_factor* numObservations); % 0.9 replace
+%N=1;
+if N==0
+    N=1;
+end
 
 idxTrain = idx(1:N);
 %idxTrain=1; % warning
@@ -49,17 +95,19 @@ labelsTrain = YTrain(idxTrain);
 %labelsTrain{1}= repmat(labelsTrain{1},[1 500])
 %class(labels{1})
 
-if trainingParam.output==1 % sequence to one classification
+if trainingParam.classifier_output{end}==1 % sequence to one classification
     labelsTrain=[labelsTrain{:}]';
 end
 
 idxValidation = idx(N+1:end);
 %idxValidation = 1; %warning
-
+if numel(idxValidation)==0
+    idxValidation = 1;
+end
 sequencesValidation =XTrain(idxValidation);
 labelsValidation = YTrain(idxValidation);
 
-if trainingParam.output==1 % sequence to one classification
+if trainingParam.classifier_output{end}==1 % sequence to one classification
     labelsValidation = [labelsValidation{:}]';
 end
 
@@ -67,9 +115,9 @@ end
 % labelsValidation{1}= repmat(labelsValidation{1},[1 500])
 % create LSTM network
 
-if numel(trainingParam.classes)>0 % classification
+if numel(classif.classes)>0 % classification
     numFeatures = size(sequencesTrain{1},1);
-    numClasses = numel(trainingParam.classes); %numel(categories(labelsTrain{1}));
+    numClasses = numel(classif.classes); %numel(categories(labelsTrain{1}));
     
     %ntot=countcats(labelsTrain{1});
     %weights = double(ntot)/double(sum(ntot));
@@ -83,9 +131,13 @@ if numel(trainingParam.classes)>0 % classification
     sucl=sum(sucl,1);
     
     tempsucl=sucl(sucl>0);
+    if numel(tempsucl)
     sucl(sucl==0)=min(tempsucl(:));
     classWeights = 1./sucl;
     classWeights = classWeights'/mean(classWeights);
+    else
+        classWeights=ones(1,numel(classif.classes));
+    end
     
     %classWeights(isnan(classWeights))=0;
     %classWeights
@@ -101,10 +153,10 @@ if numel(trainingParam.classes)>0 % classification
     
     %==============OPTIONS=================
     
-    if trainingParam.output==0 % seuqence to sequence clssif
+    if trainingParam.classifier_output{end}==0 % seuqence to sequence clssif
         layers = [
             sequenceInputLayer(numFeatures,'Name','sequence')
-            bilstmLayer(trainingParam.lstmlayers,'OutputMode','sequence','Name','bilstm')
+            bilstmLayer(trainingParam.LSTM_hidden_size,'OutputMode','sequence','Name','bilstm')
             % lstmLayer(200,'OutputMode','sequence','Name','bilstm')
             dropoutLayer(0.5,'Name','drop');
             fullyConnectedLayer(numClasses,'Name','fc')
@@ -113,7 +165,7 @@ if numel(trainingParam.classes)>0 % classification
     else % sequence to one classification
         layers = [
             sequenceInputLayer(numFeatures,'Name','sequence')
-            bilstmLayer(trainingParam.lstmlayers,'OutputMode','last','Name','bilstm')
+            bilstmLayer(trainingParam.LSTM_hidden_size,'OutputMode','last','Name','bilstm')
             % lstmLayer(200,'OutputMode','sequence','Name','bilstm')
             dropoutLayer(0.5,'Name','drop');
             fullyConnectedLayer(numClasses,'Name','fc')
@@ -125,10 +177,10 @@ else % regression
     numClasses=1;
     numFeatures = size(sequencesTrain{1},1);
     
-    if trainingParam.output==0
+    if trainingParam.classifier_output{end}==0
         layers = [
             sequenceInputLayer(numFeatures,'Name','sequence')
-            bilstmLayer(trainingParam.lstmlayers,'OutputMode','sequence','Name','bilstm')
+            bilstmLayer(trainingParam.LSTM_hidden_size,'OutputMode','sequence','Name','bilstm')
             % lstmLayer(200,'OutputMode','sequence','Name','bilstm')
             dropoutLayer(0.5,'Name','drop');
             fullyConnectedLayer(numClasses,'Name','fc')
@@ -138,7 +190,7 @@ else % regression
     else
         layers = [
             sequenceInputLayer(numFeatures,'Name','sequence')
-            bilstmLayer(trainingParam.lstmlayers,'OutputMode','last','Name','bilstm')
+            bilstmLayer(trainingParam.LSTM_hidden_size,'OutputMode','last','Name','bilstm')
             % lstmLayer(200,'OutputMode','sequence','Name','bilstm')
             dropoutLayer(0.5,'Name','drop');
             fullyConnectedLayer(numClasses,'Name','fc')
@@ -150,19 +202,23 @@ end
 
 % specifiy training options
 
-miniBatchSize = trainingParam.lstmMiniBatchSize;
+miniBatchSize = trainingParam.LSTM_mini_batch_size;
 numObservations = numel(sequencesTrain);
 numIterationsPerEpoch = max(1,floor(numObservations / miniBatchSize));
 
-options = trainingOptions('adam', ...
+sequencesTrain,labelsTrain
+
+sequencesValidation,labelsValidation
+
+options = trainingOptions(trainingParam.LSTM_training_method{end}, ...
     'MiniBatchSize',miniBatchSize, ...
     'MaxEpochs',300,...
-    'InitialLearnRate',trainingParam.lstmInitialLearnRate, ...
+    'InitialLearnRate',trainingParam.LSTM_initial_learning_rate, ...
     'LearnRateSchedule','piecewise',...
     'LearnRateDropPeriod',10,...
     'LearnRateDropFactor',0.9,...
     'GradientThreshold',2, ...
-    'Shuffle','every-epoch', ...
+    'Shuffle',trainingParam.LSTM_data_shuffling{end}, ...
     'ValidationData',{sequencesValidation,labelsValidation}, ...
     'ValidationFrequency',numIterationsPerEpoch, ...
     'Plots','training-progress', ...
@@ -170,12 +226,7 @@ options = trainingOptions('adam', ...
     'VerboseFrequency',10);
 
 % warning : Parallel training of recurrent networks is not supported. 'ExecutionEnvironment' value in trainingOptions function must be 'auto',
-%'gpu', or 'cpu'.
 
-%options.SequenceLength
-%options.SequencePaddingValue
-%return;
-% train network
 disp('Training LSTM network ...');
 fprintf('------\n');
 
@@ -188,52 +239,3 @@ fprintf('------\n');
 disp('Training LSTM network is done and saved ...');
 fprintf('------\n');
 
-
-
-
-% if nargin==2
-%     roilist=1:numel(classiobj.roi);
-% end
-% 
-% className=classiobj.classes{classeid};
-% cate=categorical({className, 'other'});
-% classes=categories(cate);
-% 
-% % get the groundtruth data and results from classif
-% 
-% X={};
-% Y={};
-% 
-% for i=1:numel(roilist)
-%     roiid=roilist(i);
-%     
-%     X{i}=classiobj.roi(roiid).results.(classiobj.strid).prob(classeid,:);
-%     temp=uint8(classiobj.roi(roiid).train.(classiobj.strid).id==classeid);
-%     temp=temp+1;
-%     Y{i}=categorical(temp,[1 2],classes);
-% end
-% 
-% 
-% lstmmodel=[];
-% 
-% % setup architecture of lstm network
-% 
-% numFeatures = 1;
-% numHiddenUnits = 20;
-% numClasses = 2;
-% 
-% layers = [ ...
-%     sequenceInputLayer(numFeatures)
-%     lstmLayer(numHiddenUnits,'OutputMode','sequence')
-%     fullyConnectedLayer(numClasses)
-%     softmaxLayer
-%     classificationLayer];
-% 
-% options = trainingOptions('adam', ...
-%     'MaxEpochs',300, ...
-%     'InitialLearnRate',0.005, ...
-%     'GradientThreshold',2, ...
-%     'Verbose',0, ...
-%     'Plots','training-progress');
-% 
-% lstmmodel = trainNetwork(X,Y,layers,options);

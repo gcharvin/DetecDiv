@@ -2,13 +2,7 @@ function output=formatDataForTraining(classif) %mov,trapsid,option)
 % saves user annotated data to disk- works for Image, Pixel and LSTM
 % classification
 
-str=fullfile(classif.path,'trainingParam.mat');
-if exist(str)
-load(str);
-else
-    disp('There are not training parameters defined yet: first use the classif.setTrainingParam function !');
-    return;
-end
+output=[];
 
 disp('Removing previous labeled datasets from folders...This can take a very long time...');
 %classif=obj.processing.classification(classiid);
@@ -32,7 +26,7 @@ end
 
 mkdir(classif.path,foldername)
 
-rois=trainingParam.rois;
+rois=classif.trainingset;
 
 
 % if nargin<3

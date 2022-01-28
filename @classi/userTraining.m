@@ -79,6 +79,7 @@ function annotateROIs(classif,rois)
 h=figure('Position',[100 100 800 400]);
 
 %tmp=getData(classif,rois,1);
+rois
  classif.roi(rois(1)).display.frame=1;
 plotData(h,classif,rois,1);
 
@@ -91,7 +92,8 @@ end
 
 
 function tmp=getData(classif,rois,id)
-strfield=classif.trainingset; % datsaet to be trained on
+%strfield=classif.trainingset; % datsaet to be trained on
+strfield=classif.channelName{1};
 pix=strfind(strfield,'.');
 
 if numel(pix)==0
@@ -113,7 +115,7 @@ cc=1;
 
 r=rois(id);
     
-    tmp=classif.roi(r);
+    tmp=classif.roi(r).results;
     
     for j=1:numel(str)
         tmp=tmp.(str{j});
@@ -237,7 +239,7 @@ if classif.output==0 % sequence to sequence // allow frame browsing
        end
   end
     if strcmp(event.Key,'leftarrow')
-     if classif.roi(rois(roiid)).display.frame>1;
+     if classif.roi(rois(roiid)).display.frame>1
     classif.roi(rois(roiid)).display.frame=classif.roi(rois(roiid)).display.frame-1;
     refreshe=1;
      end

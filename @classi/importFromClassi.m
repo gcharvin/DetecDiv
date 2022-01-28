@@ -41,7 +41,7 @@ fi=fieldnames(obj);
 %history_store=obj.history;
 
 for i=1:numel(fi)
-    if ~strcmp(fi{i},'path') && ~strcmp(fi{i},'strid') && ~strcmp(fi{i},'id') && ~strcmp(fi{i},'roi')  && ~strcmp(fi{i},'history')
+    if ~strcmp(fi{i},'path') && ~strcmp(fi{i},'strid') && ~strcmp(fi{i},'id') && ~strcmp(fi{i},'roi')  && ~strcmp(fi{i},'history') && ~strcmp(fi{i},'trainingParam') 
         obj.(fi{i})=classitocopy.(fi{i});
     end
 end
@@ -49,23 +49,11 @@ end
 % obj.history=history_store;
 
 % training param
-if exist([classitocopy.path '/trainingParam.mat']) % copy the training param variable to the new classif
-    
-    disp(['Found  trainingParam.mat file in the original ' classitocopy.strid ' classi']);
-    
-    %             prompt=['Transfer trainingParam.mat from ' classitocopy.strid ' classification to '  obj.strid  '  [y/n] (Default: y): '];
-    %             prevclas= input(prompt,'s');
-    %             if numel(prevclas)==0
-    %                 prevclas='y';
-    %             end
-    %          if strcmp(prevclas,'y')
+
     if option(1)==1
-        copyfile([classitocopy.path '/trainingParam.mat'],[obj.path '/trainingParam.mat']);
-        obj.log(['Imported training parameters from '  classitocopy.strid],'Creation')
+      obj.trainingParam=classitocopy.trainingParam;
     end
     
-end
-
 % classifier
 if exist([classitocopy.path '/' classitocopy.strid '.mat']) % copy the classifier variable to the new classif
     
@@ -114,6 +102,7 @@ if option(4)==1
     % preserve ROI !!!
     
     obj.addROI(classitocopy,'rois',rois,'convert',convert); % import ROis from classification option
+    obj.trainingset=1:numel(rois);
 end
 
 %   for i=1:numel(obj.roi) % remove irrelevant training and results data

@@ -1,4 +1,50 @@
-function trainImageGoogleNetFun(path,name)
+function trainImageGoogleNetFun(classif,setparam)
+
+path=fullfile(classif.path);
+name=classif.strid;
+
+%---------------- parameters setting
+if nargin==2 % basic parameter initialization
+        
+        tip={'Choose the training method',...
+            'Choose the CNN',...
+            'Choose the size of the mini batch; Higher values require more memory and are prone to errors',...
+            'Enter the number of epochs',...
+            'Enter the initial learning rate',...
+            'Choose whether and how training and validation data should be shuffled during training',...
+            'Enter fraction of the data to be used for training vs validation during training',...
+            'Enter the magnitude of translation for data augmentation (in pixels)',...
+            'Enter the magnitude of rotation for data augmentation (in pixels)',...
+            'Specify value for L2 regularization',...
+            'Choose execution environment',...
+            };
+        
+        classif.trainingParam=struct('CNN_training_method',{{'adam','sgdm','adam'}},...
+            'CNN_network',{{'googlenet','resnet18','resnet50','resnet101','nasnetlarge','inceptionresnetv2', 'efficientnetb0','googlenet'}},...
+            'CNN_mini_batch_size',8,...
+            'CNN_max_epochs',6,...
+            'CNN_initial_learning_rate',0.0003,...
+            'CNN_data_shuffling',{{'once','every-epoch','never','every-epoch'}},...
+            'CNN_data_splitting_factor',0.7,...
+            'CNN_translation_augmentation',[-5 5],...
+            'CNN_rotation_augmentation',[-20 20],...
+            'CNN_l2_regularization',0.00001,...
+            'execution_environment',{{'auto','parallel','cpu','gpu','multi-gpu','auto'}},...
+            'tip',{tip});
+        
+        return;
+        %   end
+    else
+        trainingParam=classif.trainingParam;
+        
+        if numel(trainingParam)==0
+            disp('Could not find training parameters : first launch straing with an extra argument to force parameter assignment');
+            return;
+        end
+        
+    end
+    %-----------------------------------%
+
 
 % gather all classification images in each class and performs the training and outputs and saves the trained net 
 % load training data 
@@ -25,16 +71,15 @@ classWeights = classWeights'/mean(classWeights);
 fprintf('Loading training options...\n');
 fprintf('------\n');
 
-load([path '/trainingParam.mat']);
 
-[imdsTrain,imdsValidation] = splitEachLabel(imds,trainingParam.split);
+[imdsTrain,imdsValidation] = splitEachLabel(imds,trainingParam.CNN_data_splitting_factor);
 
-numClasses = trainingParam.classes; %numel(categories(imdsTrain.Labels));
+numClasses = classif.classes; %numel(categories(imdsTrain.Labels));
 
 fprintf('Loading network...\n');
 fprintf('------\n');
 
-switch trainingParam.network
+switch trainingParam.CNN_network{end}
     case 'googlenet'
 net = googlenet;
 %net=googlenet('Weights','places365');% trained on places rather than on
@@ -52,9 +97,9 @@ net=nasnetlarge;
 net=inceptionresnetv2;
    case 'efficientnetb0'
 net=efficientnetb0;
-    otherwise
-fprintf('User selected custom CNN...\n');
-eval(['net =' trainingParam.network]);        
+%     otherwise
+% fprintf('User selected custom CNN...\n');
+% eval(['net =' trainingParam.CNN_network]);        
 end
 %
 
@@ -100,13 +145,13 @@ lgraph = replaceLayer(lgraph,classLayer.Name,newClassLayer);
 %fprintf('Freezing layers...\n');
 
 % freezing layers
-if strcmp(trainingParam.freeze,'y')
-layers = lgraph.Layers;
-connections = lgraph.Connections;
-
- layers(1:10) = freezeWeights(layers(1:10)); % only googlenet
- lgraph = createLgraphUsingConnections(layers,connections); % onlygooglnet
-end
+% if strcmp(trainingParam.freeze,'y')
+% layers = lgraph.Layers;
+% connections = lgraph.Connections;
+% 
+%  layers(1:10) = freezeWeights(layers(1:10)); % only googlenet
+%  lgraph = createLgraphUsingConnections(layers,connections); % onlygooglnet
+% end
 
 fprintf('Training network...\n');
 fprintf('------\n');
@@ -125,7 +170,7 @@ fprintf('------\n');
 
 %pixelRange=[-5 5];
 
-pixelRange = trainingParam.translateAugmentation;
+pixelRange = trainingParam.CNN_translation_augmentation;
 
 %scaleRange = [0.9 1.1];
 
@@ -133,7 +178,7 @@ pixelRange = trainingParam.translateAugmentation;
 %scaleRange = [0.7 1.3];
 
 %rotation=[180 180];
-rotation=trainingParam.rotateAugmentation;
+rotation=trainingParam.CNN_rotation_augmentation;
 
 % imageAugmenter = imageDataAugmenter( ...
 %     'RandXReflection',true, ...
@@ -159,26 +204,26 @@ augimdsTrain = augmentedImageDatastore(inputSize(1:2),imdsTrain, ...
 
 augimdsValidation = augmentedImageDatastore(inputSize(1:2),imdsValidation);
 
-miniBatchSize = trainingParam.MiniBatchSize; %8
+miniBatchSize = trainingParam.CNN_mini_batch_size; %8
 valFrequency = floor(numel(augimdsTrain.Files)/miniBatchSize);
 
 % if gpuDeviceCount>0
 % disp('Using GPUs and multiple workers');
-options = trainingOptions(trainingParam.method, ...
-    'MiniBatchSize', trainingParam.MiniBatchSize, ...
-    'MaxEpochs',trainingParam.MaxEpochs, ...
-    'InitialLearnRate',trainingParam.InitialLearnRate, ...
+options = trainingOptions(trainingParam.CNN_training_method{end}, ...
+    'MiniBatchSize',miniBatchSize, ...
+    'MaxEpochs',trainingParam.CNN_max_epochs, ...
+    'InitialLearnRate',trainingParam.CNN_initial_learning_rate, ...
     'LearnRateSchedule','piecewise',...
     'LearnRateDropPeriod',10,...
     'LearnRateDropFactor',0.9,...
     'GradientThreshold',0.5, ...
-    'L2Regularization',trainingParam.regularization, ...
-    'Shuffle',trainingParam.Shuffle, ...
+    'L2Regularization',trainingParam.CNN_l2_regularization, ...
+    'Shuffle',trainingParam.CNN_data_shuffling{end}, ...
     'ValidationData',augimdsValidation, ...
     'ValidationFrequency',valFrequency, ...
     'VerboseFrequency',10,...
     'Plots','training-progress',...
-    'ExecutionEnvironment',trainingParam.ExecutionEnvironment);
+    'ExecutionEnvironment',trainingParam.execution_environment{end});
   
 % else
 %     disp('Using CPUs or whatever is available');

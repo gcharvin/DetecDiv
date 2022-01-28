@@ -11,7 +11,8 @@ XTrain={};
 YTrain={};
 classes=classif.classes;
 
-strfield=classif.trainingset;
+strfield=classif.channelName{1};
+
 pix=strfind(strfield,'.');
 
 if numel(pix)==0
@@ -31,20 +32,30 @@ str{cc+1}=strfield(pix(cc)+1:end);
 
 cc=1;
 
+
 for i=rois
 
-    tmp=classif.roi(i);
+    tmp=classif.roi(i).results;
 
   %  str
     for j=1:numel(str)
+        if isfield(tmp,str{j})
+            
         tmp=tmp.(str{j});
+        else
+        tmp=[];
+        break;
+        end
     end
 
+    
  %   tmp
 
     if numel(tmp)
 
+       % tmp
       pix=find(isnan(classif.roi(i).train.(classif.strid).id)==0);
+      pix=pix(1:numel(tmp));
       
       xtmp=tmp(pix);
       ytmp=classif.roi(i).train.(classif.strid).id(pix);

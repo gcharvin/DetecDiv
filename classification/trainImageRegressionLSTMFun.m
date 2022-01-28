@@ -1,4 +1,26 @@
-function trainImageRegressionLSTMFun(path,name)
+function out=trainImageRegressionLSTMFun(classif,setparam)
+%training procedure for image series classification 
+
+out=[];
+if nargin==2
+    
+    out.input_channel_name='results_segcell_simple_3';
+    
+    paramout.coefdist='1';
+    paramout.size_weight='1';
+    
+    paramout.max_relative_distance='2';
+    
+    paramout.output_channel_name='track_segcell_simple_3';
+    
+    return;
+else
+paramout=param; 
+end
+
+path=classif.path; 
+name=classif.strid; 
+
 
 fprintf('Loading training options...\n');
 fprintf('------\n');
