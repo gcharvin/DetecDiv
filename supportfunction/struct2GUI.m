@@ -5,7 +5,8 @@ f=fieldnames(pstruct);
 
 handle=[];
 flag=[];
-tip=cell(1,numel(f));
+tip=cellstr('');
+tip=repmat(tip,1,numel(f));
 
 for i=1:numel(varargin)
     if strcmp(varargin{i},'Handle') % insert struct in a given gui
@@ -32,8 +33,6 @@ col=0;
 %cd=1;
 
 space=35;
-
-
 
 
 for i=1:numel(f)

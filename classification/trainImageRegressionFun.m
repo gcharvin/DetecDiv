@@ -1,8 +1,54 @@
-function trainImageRegressionFun(path,name)
+function trainImageRegressionFun(classif,setparam)
 
 % gather all classification images in each class and performs the training and outputs and saves the trained net 
 % load training data 
 
+path=fullfile(classif.path);
+name=classif.strid;
+
+%---------------- parameters setting
+if nargin==2 % basic parameter initialization
+        
+        tip={'Choose the training method',...
+            'Choose the CNN',...
+            'Choose the size of the mini batch; Higher values require more memory and are prone to errors',...
+            'Enter the number of epochs',...
+            'Enter the initial learning rate',...
+            'Choose whether and how training and validation data should be shuffled during training',...
+            'Enter fraction of the data to be used for training vs validation during training',...
+            'Enter the magnitude of translation for data augmentation (in pixels)',...
+            'Enter the magnitude of rotation for data augmentation (in pixels)',...
+            'Specify value for L2 regularization',...
+            'Choose execution environment',...
+            };
+        
+        classif.trainingParam=struct('CNN_training_method',{{'adam','sgdm','adam'}},...
+            'CNN_network',{{'googlenet','resnet18','resnet50','resnet101','nasnetlarge','inceptionresnetv2', 'efficientnetb0','googlenet'}},...
+            'CNN_mini_batch_size',8,...
+            'CNN_max_epochs',6,...
+            'CNN_initial_learning_rate',0.0003,...
+            'CNN_data_shuffling',{{'once','every-epoch','never','every-epoch'}},...
+            'CNN_data_splitting_factor',0.7,...
+            'CNN_translation_augmentation',[-5 5],...
+            'CNN_rotation_augmentation',[-20 20],...
+            'CNN_l2_regularization',0.00001,...
+            'execution_environment',{{'auto','parallel','cpu','gpu','multi-gpu','auto'}},...
+            'tip',{tip});
+        
+        return;
+        %   end
+    else
+        trainingParam=classif.trainingParam;
+        
+        if numel(trainingParam)==0
+            disp('Could not find training parameters : first launch straing with an extra argument to force parameter assignment');
+            return;
+        end
+        
+    end
+    %-----------------------------------%
+    
+ blockRNG=1;
 
 
 fprintf('Loading data repository...\n');
@@ -12,6 +58,8 @@ fprintf('------\n');
 
 imfolder=fullfile(path, '/trainingdataset/images');
 list=dir([imfolder '/*.mat']);
+
+
 
 
 for i=1:numel(list)
@@ -41,6 +89,15 @@ for i=1:numel(list)
 end
 restore=restore';
 
+% to do : properly use datastore and assign labels a posteriori once the
+% datastore is created 
+% this code is not proofread:
+%imds = imageDatastore(foldername); 
+% imds.Labels={restore};
+
+% then uncomment all the data augmentation things....
+
+
 % imds = imageDatastore(foldername, ...
 %  %   'IncludeSubfolders',true, ...
 %     'LabelSource','foldernames'); 
@@ -66,7 +123,7 @@ numClasses = 1;%numel(categories(imdsTrain.Labels));
 fprintf('Loading network...\n');
 fprintf('------\n');
 
-switch trainingParam.network
+switch trainingParam.CNN_network{end}
     case 'googlenet'
 net = googlenet;
     case 'resnet18'
@@ -81,9 +138,9 @@ net=nasnetlarge;
 net=inceptionresnetv2;
    case 'efficientnetb0'
 net=efficientnetb0;
-    otherwise
-fprintf('User selected custom CNN...\n');
-eval(['net =' trainingParam.network]);        
+%     otherwise
+% fprintf('User selected custom CNN...\n');
+% eval(['net =' trainingParam.network]);        
 end
 %
 
@@ -149,18 +206,27 @@ lgraph = replaceLayer(lgraph,classLayer.Name,newRegLayer); % replace classif lay
  
 %fprintf('Freezing layers...\n');
 
-% freezing layers
-if strcmp(trainingParam.freeze,'y')
-layers = lgraph.Layers;
-connections = lgraph.Connections;
-
- layers(1:10) = freezeWeights(layers(1:10)); % only googlenet
- lgraph = createLgraphUsingConnections(layers,connections); % onlygooglnet
-end
+% % freezing layers
+% if strcmp(trainingParam.freeze,'y')
+% layers = lgraph.Layers;
+% connections = lgraph.Connections;
+% 
+%  layers(1:10) = freezeWeights(layers(1:10)); % only googlenet
+%  lgraph = createLgraphUsingConnections(layers,connections); % onlygooglnet
+% end
 
 fprintf('Training network...\n');
 fprintf('------\n');
 
+   %=====BLOCKs RNG====
+    if blockRNG==1
+        stCPU= RandStream('Threefry','Seed',0,'NormalTransform','Inversion');
+        stGPU=parallel.gpu.RandStream('Threefry','Seed',0,'NormalTransform','Inversion');
+        RandStream.setGlobalStream(stCPU);
+        parallel.gpu.RandStream.setGlobalStream(stGPU);
+    end
+    %===================
+    
 % training network
 % augment dataset
 
@@ -191,25 +257,26 @@ fprintf('------\n');
 
 %augimdsValidation = augmentedImageDatastore(inputSize(1:2),imdsValidation);
 
-miniBatchSize = trainingParam.MiniBatchSize; %8
+miniBatchSize = trainingParam.CNN_mini_batch_size; %8
 valFrequency = 10; %floor(numel(augimdsTrain.Files)/miniBatchSize);
 
 % if gpuDeviceCount>0
 % disp('Using GPUs and multiple workers');
-options = trainingOptions(trainingParam.method, ...
-    'MiniBatchSize', trainingParam.MiniBatchSize, ...
-    'MaxEpochs',trainingParam.MaxEpochs, ...
-    'InitialLearnRate',trainingParam.InitialLearnRate, ...
+options = trainingOptions(trainingParam.CNN_training_method{end}, ...
+    'MiniBatchSize',miniBatchSize, ...
+    'MaxEpochs',trainingParam.CNN_max_epochs, ...
+    'InitialLearnRate',trainingParam.CNN_initial_learning_rate, ...
     'LearnRateSchedule','piecewise',...
     'LearnRateDropPeriod',10,...
     'LearnRateDropFactor',0.9,...
     'GradientThreshold',0.5, ...
-    'L2Regularization',trainingParam.regularization, ...
-    'Shuffle',trainingParam.Shuffle, ...
+    'L2Regularization',trainingParam.CNN_l2_regularization, ...
+    'Shuffle',trainingParam.CNN_data_shuffling{end}, ...
+    'ValidationData',augimdsValidation, ...
     'ValidationFrequency',valFrequency, ...
     'VerboseFrequency',10,...
     'Plots','training-progress',...
-    'ExecutionEnvironment',trainingParam.ExecutionEnvironment);
+    'ExecutionEnvironment',trainingParam.execution_environment{end});
   
  %   'ValidationData',augimdsValidation, ...
  

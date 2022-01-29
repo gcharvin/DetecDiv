@@ -79,7 +79,6 @@ function annotateROIs(classif,rois)
 h=figure('Position',[100 100 800 400]);
 
 %tmp=getData(classif,rois,1);
-rois
  classif.roi(rois(1)).display.frame=1;
 plotData(h,classif,rois,1);
 

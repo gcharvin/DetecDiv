@@ -1,22 +1,71 @@
 function out=trainImageRegressionLSTMFun(classif,setparam)
 %training procedure for image series classification 
 
-out=[];
-if nargin==2
+path=fullfile(classif.path);
+name=classif.strid;
+
+%---------------- parameters setting
+if nargin==2 % basic parameter initialization
+        
+        tip={'Check box to train CNN',...
+            'Check box to compute CNN activations',...
+            'Check box to train the LSTM network',...
+            'Check box to asssemble the CNN and LSTM networks',...
+            'Specify if each frame should be classified, or if one class is expected for the whole sequence of images',...
+            'Choose the training method',...
+            'Choose the CNN',...
+            'Choose the size of the mini batch; Higher values require more memory and are prone to errors',...
+            'Enter the number of epochs',...
+            'Enter the initial learning rate',...
+            'Choose whether and how training and validation data should be shuffled during training',...
+            'Enter fraction of the data to be used for training vs validation during training',...
+            'Enter the magnitude of translation for data augmentation (in pixels)',...
+            'Enter the magnitude of rotation for data augmentation (in pixels)',...
+            'Specify value for L2 regularization',...
+            'Choose execution environment',...
+            'Choose the fraction of the data to be used for training vs validation during LSTM training',...
+            'Enter the size of the hidden unit',...
+            'Choose the size of the mini batch for LSTM training; Higher values require more memory and are prone to errors',...
+            'Enter the LSTM initial learning rate',...
+            };
+        
+        classif.trainingParam=struct('train_CNN_classifier',true,...
+            'compute_CNN_activations',true,...
+            'train_LSTM_network',true,...
+            'assemble_network',true,...
+            'classifier_output',{{'sequence-to-sequence','sequence-to-one','sequence-to-sequence'}},...
+            'CNN_training_method',{{'adam','sgdm','adam'}},...
+            'CNN_network',{{'googlenet','resnet50','googlenet'}},...
+            'CNN_mini_batch_size',8,...
+            'CNN_max_epochs',6,...
+            'CNN_initial_learning_rate',0.0003,...
+            'CNN_data_shuffling',{{'once','every-epoch','never','every-epoch'}},...
+            'CNN_data_splitting_factor',0.7,...
+            'CNN_translation_augmentation',[-5 5],...
+            'CNN_rotation_augmentation',[-20 20],...
+            'CNN_l2_regularization',0.00001,...
+            'LSTM_data_splitting_factor',0.9,...
+            'LSTM_hidden_size',150,...
+            'LSTM_mini_batch_size',8,...
+            'LSTM_initial_learning_rate', 0.0001,...
+            'execution_environment',{{'auto','parallel','cpu','gpu','multi-gpu','auto'}},...
+            'tip',{tip});
+        
+        return;
+        %   end
+    else
+        trainingParam=classif.trainingParam;
+        
+        if numel(trainingParam)==0
+            disp('Could not find training parameters : first launch straing with an extra argument to force parameter assignment');
+            return;
+        end
+        
+    end
+    %-----------------------------------%
     
-    out.input_channel_name='results_segcell_simple_3';
     
-    paramout.coefdist='1';
-    paramout.size_weight='1';
-    
-    paramout.max_relative_distance='2';
-    
-    paramout.output_channel_name='track_segcell_simple_3';
-    
-    return;
-else
-paramout=param; 
-end
+
 
 path=classif.path; 
 name=classif.strid; 
@@ -32,9 +81,10 @@ load([path '/trainingParam.mat']);
 
 %%% training image classifier
 
-if strcmp(trainingParam.imageclassifier,'y')
-    feval('trainImageRegressionFun',path,'netCNN'); % trainImageGoogle net first and saves it as netCNN.mat in the LSTM dir
+if trainingParam.train_CNN_classifier
+    feval('trainImageRegressionFun',classif); % trainImageGoogle net first and saves it as netCNN.mat in the LSTM dir
     % corresponding variable name is 'classifier'
+    copyfile(fullfile(path,[name '.mat']),fullfile(path,'netCNN.mat')); % copies the trained CNN classifieer so that it can later be assembled to the lstm network
 end
 
 
@@ -51,22 +101,21 @@ netCNN=classifier;
 
 inputSize = netCNN.Layers(1).InputSize(1:2);
 
-if strcmp(trainingParam.network,'googlenet')
+if strcmp(trainingParam.CNN_network{end},'googlenet')
 layerName = "pool5-7x7_s1"; % layer id where the network will be connected 
 end
-if strcmp(trainingParam.network,'resnet50')
+if strcmp(trainingParam.CNN_network{end},'resnet50')
 layerName = "avg_pool"; % layer id where the network will be connected 
 end
-if strcmp(trainingParam.network,'efficientnetb0')
-layerName = "pool5-7x7_s1"; % layer id where the network will be connected 
-end
+% if strcmp(trainingParam.CNN_network{end},'efficientnetb0')
+% layerName = "pool5-7x7_s1"; % layer id where the network will be connected 
+% end
 
 tempFile = [path '/' name '_image_classifier_activations.mat']; 
 
-
-if ~strcmp(trainingParam.cactivations,'y') && exist(tempFile)  % if acitvations already exist
-    fprintf('Loading Image classifier activation data...\n');
-    fprintf('------\n');
+   if trainingParam.compute_CNN_activations==false && exist(tempFile)  % if acitvations already exist
+        fprintf('Loading Image classifier activation data...\n');
+        fprintf('------\n');
 
     load(tempFile,"sequences","labels"); % loads vid, lab, deep variables
 % label in an array of categorical labels, vid is a video file of uint8
@@ -103,15 +152,24 @@ end
 
 %return;
 
-if strcmp(trainingParam.lstmtraining,'y') | ~exist([path '/netLSTM.mat']) % training of LSTM network, if file does not exist, then must train
+  if trainingParam.train_LSTM_network | ~exist([path '/netLSTM.mat']) % training of LSTM network, if file does not exist, then must train
     
     disp('Preparing LSTM network ...');
     fprintf('------\n');
-    % prepare training data : 90% in training and 10% used for validation
+    
+      %=====BLOCKs RNG====
+        if blockRNG==1
+            stCPU= RandStream('Threefry','Seed',0,'NormalTransform','Inversion');
+            stGPU=parallel.gpu.RandStream('Threefry','Seed',0,'NormalTransform','Inversion');
+            RandStream.setGlobalStream(stCPU);
+            parallel.gpu.RandStream.setGlobalStream(stGPU);
+        end
+        %===================
+      
     
     numObservations = numel(sequences);
     idx = randperm(numObservations);
-    N = floor(trainingParam.lstmsplit* numObservations); % 0.9 replace
+    N = floor(trainingParam.LSTM_data_splitting_factor* numObservations); % 0.9 replace
     
     idxTrain = idx(1:N);
     %idxTrain=1; % warning
@@ -119,8 +177,8 @@ if strcmp(trainingParam.lstmtraining,'y') | ~exist([path '/netLSTM.mat']) % trai
     sequencesTrain = sequences(idxTrain);
     labelsTrain = labels(idxTrain);
     
-        if trainingParam.output==1 % sequence to one classification
-    labelsTrain=[labelsTrain{:}]';
+      if strcmp(trainingParam.classifier_output{end},'sequence-to-one') % sequence to one classification
+            labelsTrain=[labelsTrain{:}]';
         end
     
     idxValidation = idx(N+1:end);
@@ -163,10 +221,10 @@ if strcmp(trainingParam.lstmtraining,'y') | ~exist([path '/netLSTM.mat']) % trai
 %         classificationLayer('Name','classification')];
 
 %==============OPTIONS=================    
-if trainingParam.output==0
+ if strcmp(trainingParam.classifier_output{end},'sequence-to-sequence') % seuqence to sequence clssif
     layers = [
         sequenceInputLayer(numFeatures,'Name','sequence')
-        bilstmLayer(trainingParam.lstmlayers,'OutputMode','sequence','Name','bilstm')
+        bilstmLayer(trainingParam.LSTM_hidden_size,'OutputMode','sequence','Name','bilstm')
         % lstmLayer(200,'OutputMode','sequence','Name','bilstm')
         dropoutLayer(0.5,'Name','drop');
         fullyConnectedLayer(numClasses,'Name','fc')
@@ -176,7 +234,7 @@ if trainingParam.output==0
 else
     layers = [
         sequenceInputLayer(numFeatures,'Name','sequence')
-        bilstmLayer(trainingParam.lstmlayers,'OutputMode','last','Name','bilstm')
+        bilstmLayer(trainingParam.LSTM_hidden_size,'OutputMode','last','Name','bilstm')
         % lstmLayer(200,'OutputMode','sequence','Name','bilstm')
         dropoutLayer(0.5,'Name','drop');
         fullyConnectedLayer(numClasses,'Name','fc')
@@ -187,14 +245,14 @@ end
     
     % specifiy training options
     
-    miniBatchSize = trainingParam.lstmMiniBatchSize;
+     miniBatchSize = trainingParam.LSTM_mini_batch_size;
     numObservations = numel(sequencesTrain);
     numIterationsPerEpoch = max(1,floor(numObservations / miniBatchSize));
     
     options = trainingOptions('adam', ...
         'MiniBatchSize',miniBatchSize, ...
         'MaxEpochs',50,...
-        'InitialLearnRate',trainingParam.lstmInitialLearnRate, ...
+        'InitialLearnRate',trainingParam.LSTM_initial_learning_rate, ...
         'LearnRateSchedule','piecewise',...
         'LearnRateDropPeriod',10,...
         'LearnRateDropFactor',0.95,...
@@ -232,7 +290,7 @@ end
 %%% assemble the full network
 %%%
 
-if strcmp(trainingParam.assemblenet,'y') | ~exist([path '/' name '.mat']) 
+  if trainingParam.assemble_network | ~exist([path '/' name '.mat'])
     disp('Assembling full network ...');
     fprintf('------\n');
     
@@ -243,12 +301,13 @@ if strcmp(trainingParam.assemblenet,'y') | ~exist([path '/' name '.mat'])
     cnnLayers = layerGraph(netCNN);
     %layerNames = ["data" "pool5-drop_7x7_s1" "loss3-classifier" "prob" "output"];
     
-    if strcmp(trainingParam.network,'googlenet')
-    layerNames = ["data" "pool5-drop_7x7_s1" "new_fc" "new_regoutput"];
-    end
-    if strcmp(trainingParam.network,'resnet50')
-    layerNames = ["input_1" "new_fc" "new_regoutput"];
-    end
+  if strcmp(trainingParam.CNN_network{end},'googlenet')
+            layerNames = ["data" "pool5-drop_7x7_s1" "new_fc" "prob" "new_classoutput"];
+        end
+        
+        if strcmp(trainingParam.CNN_network{end},'resnet50')
+            layerNames = ["input_1" "new_fc" "fc1000_softmax" "new_classoutput"];
+        end
     
     cnnLayers = removeLayers(cnnLayers,layerNames);
     
@@ -270,12 +329,12 @@ if strcmp(trainingParam.assemblenet,'y') | ~exist([path '/' name '.mat'])
     
     lgraph = addLayers(cnnLayers,layers);
     
-     if strcmp(trainingParam.network,'googlenet')
-    lgraph = connectLayers(lgraph,"fold/out","conv1-7x7_s2");
-     end
-     if strcmp(trainingParam.network,'resnet50')
-    lgraph = connectLayers(lgraph,"fold/out","conv1");    
-      end
+   if strcmp(trainingParam.CNN_network{end},'googlenet')
+            lgraph = connectLayers(lgraph,"fold/out","conv1-7x7_s2");
+        end
+        if strcmp(trainingParam.CNN_network{end},'resnet50')
+            lgraph = connectLayers(lgraph,"fold/out","conv1");
+        end
     
     % create lstm network and remove first layer (sequence)
     fprintf(' create LSTM network\n');
