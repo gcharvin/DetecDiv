@@ -504,20 +504,32 @@ switch param.classiftype
         %===4/ detect divisions===
         %==post-processing
         if param.postProcessing==1
-            bwsmid=(id==smid);
-            bwsmidLabel=bwlabel(bwsmid); %find small islets
-            for k=1:max(bwsmidLabel)
-                bwsmidk(k,:)=(bwsmidLabel==k);
-            end
-            
-            for k=2:max(bwsmidLabel)
-                if sum(bwsmidk(k,:))==1 %if a smallid islet is of size 1, check the neighbours islets
-                    idx=find(bwsmidk(k,:),1);
-                    %idxprev=find(bwsmidk(k-1,:),1,'last');%find previous islet end
-                    if k<max(bwsmidLabel),  idxnext=find(bwsmidk(k+1,:),1,'first');else, idxnext=NaN; end %find next islet start
-                    if (idxnext-idx <3) %if the potential false bud emergence is too close from the next small islet -->correct it
-                        id(idx)=id(idx-1);
-                    end
+            stopProcessing=0;
+            while stopProcessing==0
+                bwsmid=(id==smid);
+                bwsmidLabel=bwlabel(bwsmid); %find small islets
+                for k=1:max(bwsmidLabel)
+                    bwsmidk(k,:)=(bwsmidLabel==k);
+                end
+
+                if max(bwsmidLabel)>2
+                    for k=2:max(bwsmidLabel)-1
+                        if sum(bwsmidk(k,:))>=1 %if a smallid islet is of size 1, check the neighbours islets
+                            idx=find(bwsmidk(k,:),1,'first');
+                            %idxprev=find(bwsmidk(k-1,:),1,'last');%find previous islet end
+                            idxnext=find(bwsmidk(k+1,:),1,'first');%find next islet start
+                            idxprev=find(bwsmidk(k-1,:),1,'last'); %find prev islet start
+                            
+                            if (idx-idxprev<5) %if the potential false small is too close from another small islet -->correct it as the previous class
+                                id(idx)=id(idx-1); break
+                            elseif (idxnext-idx <5) %if the potential false small is too close from another small islet -->correct it as the previous class
+                                id(idx)=id(idx-1); break
+                            end
+                        end
+                        stopProcessing=1;
+                    end                    
+                else
+                    stopProcessing=1;
                 end
             end
             

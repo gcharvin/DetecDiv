@@ -13,8 +13,8 @@ function hrls=plotTraj(rls,varargin)
 % display style : color map : name or custom colormap : limits for
 % colormap, color separation , linewidth spacing etc
 % time : generation or physical time
-figExport=1;
-resultid=2;%choose what result to plot (cf rls.grountruth). Not fully implemented. Use 0 and make sure your rls file has only 0 and 1
+figExport=0;
+resultid=0;%choose what result to plot (cf rls.grountruth). Not fully implemented. Use 0 and make sure your rls file has only 0 and 1
 param=[];
 comment='';
 for i=1:numel(varargin)
@@ -31,17 +31,17 @@ end
 maxBirth=1000; %max frame to be born. After, discard rls.
 
 %===param===
-param.showgroundtruth=1; % display the groundtruth data
+param.showgroundtruth=0; % display the groundtruth data
 
 param.sort=1; % 1 if sorting of trajectories according to generations
 param.timefactor=5; %put =1 to put the time in frames
 
-param.colorbar=0 ; % or 1 if colorbar to be printed
+param.colorbar=1 ; % or 1 if colorbar to be printed
 param.colorbarlegend='';
 
 param.findSEP=0; % 1: use find sep to find SEP
 param.align=0; % 1 : align with respect to SEP
-param.time=1; %0 : generations; 1 : physical time
+param.time=0; %0 : generations; 1 : physical time
 param.plotSignal=0 ; %1 if fluo to be plotted instead of divisions
 param.gradientWidth=0;
 if param.time==1 %sepwidth=separation between rectangles
@@ -67,7 +67,7 @@ else
 end
 
 param.autoBounds=0; % computes minmax automatically
-param.minmax=[70 150]; % min and max values for colordisplay;
+param.minmax=[80 150]; % min and max values for colordisplay;
 %% rr
 % param.plotSignal=1 ;
 % param.minmax=[1 2.5];
@@ -459,7 +459,8 @@ if param.colorbar==1
     %h.Position=[1 1 0.3 0.3]
 end
 
-xlim([0 1.2*maxe]);
+xlim([0 1.2*50]);
+%xlim([0 1.2*maxe]);
 ylim([0 (param.spacing*numel(rls) +param.interspacing*numel(rls)/2)+param.startY]);
 
 set(gca,'FontSize',16, 'FontName','Myriad Pro', 'LineWidth',3,'FontWeight','bold','TickLength',[0.02 0.02]);

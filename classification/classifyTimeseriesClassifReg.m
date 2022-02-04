@@ -1,4 +1,4 @@
-function classifyTimeseriesClassifReg(roiobj,classif,classifier)
+function classifyTimeseriesClassifReg(roiobj,classif,classifier,varargin)
 
 %load([path '/netCNN.mat']); % load the googlenet to get the input size of image
 
@@ -39,8 +39,12 @@ disp('Starting video classification...');
 % on R2019b
 
 try
-    
-prob=predict(classifier,X); 
+
+    if ~isempty(X)
+        prob=predict(classifier,X);
+    else
+        prob=[];
+    end
 
 catch 
     
@@ -52,9 +56,9 @@ end
   
 if numel(classif.classes)>0
 labels = classifier.Layers(end).Classes;
-if size(prob,1) == numel(labels) % adjust matrix depending on matlab version 
-   prob=prob';
-end
+    if size(prob,1) == numel(labels) % adjust matrix depending on matlab version 
+       prob=prob';
+    end
  [~, idx] = max(prob,[],2);
  label = labels(idx);
 else
@@ -96,9 +100,7 @@ end
 results=roiobj.results;
 
 results.(classif.strid)=[];
-    
 
-    
     results.(classif.strid).labels=label';
     results.(classif.strid).classes=classif.classes;
     results.(classif.strid).prob=prob';

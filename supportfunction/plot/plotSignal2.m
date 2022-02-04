@@ -42,7 +42,7 @@ end
 
 
 %% selection
-roiobj=roiobj([roiobj(:).ndiv]>8); %put at least 1 for robustness
+roiobj=roiobj([roiobj(:).ndiv]>7); %put at least 1 for robustness
 roiobj=roiobj( ([roiobj.frameBirth]<=maxBirth) & (~isnan([roiobj.frameBirth])) );
  %roiobj=roiobj( (strcmp({roiobj.endType},'Death') & [roiobj.frameEnd]>300)  );
 roiobj=roiobj( ~(strcmp({roiobj.endType},'Arrest') & [roiobj.frameEnd]<300)  ); %remove weird cells before frame 300 (stop growing)
@@ -63,7 +63,7 @@ if load==1
 end
 
 %%
-if timeOrGen==0
+if timeOrGen==0 %time
     if isfield(roiobj(1).results,'signal')
         for r=rois
             obj(r,1)=roiobj(r).results.signal; %assign obj
@@ -72,7 +72,7 @@ if timeOrGen==0
         error(['The roi ' roiobj(1) 'has no signal. Extract it using extractSignal'])
     end
     
-elseif timeOrGen==1
+elseif timeOrGen==1 %generations
     
     if RLSfile==0 %if input is rois array
         % ask RLSclassi
@@ -85,6 +85,7 @@ elseif timeOrGen==1
         for i=1:numel(liststrid)
             str=[str num2str(i) ' - ' liststrid{i} ';'];
         end
+        str=erase(str,'from_');
         
         classiRLSid=input(['Which classi used for RLS extraction? (Default: 1)' str]);
         if numel(classiRLSid)==0
@@ -101,6 +102,9 @@ elseif timeOrGen==1
             error(['The roi ' roiobj(1) 'has no RLS.signal. Extract it using extractSignal followed by measureRLS3'])
         end
         
+        
+        
+        
     elseif RLSfile==1 %if input is rls struct
         if isfield(roiobj(1),'divSignal')
             for r=rois
@@ -109,6 +113,7 @@ elseif timeOrGen==1
         else
             error(['The roi ' roiobj(1) 'has no divSignal field. Extract it using extractSignal followed by measureRLS2'])
         end
+        
         if isfield(roiobj(1),'Aligned')
             askPlotAligned=input('Aligned signals available, plot this? y/n (Default: n)','s');
             if numel(askPlotAligned)==0
@@ -296,9 +301,9 @@ title(['']);
 errorbar(x,meanData,semData,'o','MarkerEdgeColor','k','MarkerFaceColor',[240/255, 90/255, 41/255],'MarkerSize',mz,'Color','k');
 legend(['N=' num2str(numel(data(:,1)))])
 
-set(gca,'FontSize',fz, 'FontName','Myriad Pro','LineWidth',2*lw,'FontWeight','bold','TickLength',[0.02 0.02],'XTick',x(1):5:x(end),'YTick',0.8:0.2:2.2);
-xlim([x(1),10]);
-ylim([0.8,2.2]);
+set(gca,'FontSize',fz, 'FontName','Myriad Pro','LineWidth',2*lw,'FontWeight','bold','TickLength',[0.02 0.02],'XTick',x(1):5:x(end));
+xlim([x(1),7]);
+ylim(1)=0;
 
 if figExport==1
     ax=gca;
