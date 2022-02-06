@@ -124,9 +124,9 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
         roiobj(i).load;
     end
     
-    fra=size(roiobj(i).image,4);
+    fra=1:size(roiobj(i).image,4);
     
-    if numel(frames)~=0
+    if numel(frames)>0
         if iscell(frames)
             if numel(frames)>=i
              fra=frames{i};
