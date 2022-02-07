@@ -91,7 +91,7 @@ end
 
 
 function tmp=getData(classif,rois,id)
-%strfield=classif.trainingset; % datsaet to be trained on
+%strfield=classif.trainingset; % dataset to be trained on
 strfield=classif.channelName{1};
 pix=strfind(strfield,'.');
 
@@ -105,8 +105,9 @@ else
         str{cc+1}=strfield(pix(i)+1:pix(i+1)-1);
         cc=cc+1;
     end
+    str{cc+1}=strfield(pix(cc)+1:end);
 end
-str{cc+1}=strfield(pix(cc)+1:end);
+
 
 % parse fields
 
@@ -117,7 +118,7 @@ r=rois(id);
     tmp=classif.roi(r).results;
     
     for j=1:numel(str)
-        tmp=tmp.(str{j});
+        tmp=tmp.(str{j}); % ?? Why ??
     end    
     
 end
@@ -154,7 +155,7 @@ clf
                     if classif.roi(rois(roiid)).train.(classif.strid).id(classif.roi(rois(roiid)).display.frame) >0
                         str=[str ' - ' classif.classes{classif.roi(rois(roiid)).train.(classif.strid).id(classif.roi(rois(roiid)).display.frame)}];
                     else
-                        str=[str ' - unclasfied']; 
+                        str=[str ' - unclassified']; 
                     end
                else
                    classif.roi(rois(roiid)).train.(classif.strid).id(classif.roi(rois(roiid)).display.frame)=0;
