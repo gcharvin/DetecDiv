@@ -36,28 +36,14 @@ pix=roiobj.findChannelID(channel{1});
 gfp=roiobj.image(:,:,pix,:);
 
 
-if numel(pix)==1
-    % 'ok'
-    param=[];
-    totphc=gfp;
-    meanphc=0.5*double(mean(totphc(:)));
-    maxphc=double(meanphc+0.7*(max(totphc(:))-meanphc));
-    param.meanphc=meanphc;
-    param.maxphc=maxphc;
-end
 
 im=uint8(zeros(size(gfp,1),size(gfp,2),3,size(gfp,4)));
    
 if numel(pix)==1
-    for j=1:size(gfp,4)
-        
+    for j=1:size(gfp,4)        
+        param=[];
         tmp=roiobj.preProcessROIData(pix,j,param);
-        
-        im(:,:,:,j)=uint8(256*tmp);
-        
-        %figure, imshow(im(:,:,:,j));
-        %pause
-        %close
+        im(:,:,:,j)=uint8(256*tmp);        
     end
     gfp=im;
 end
