@@ -43,7 +43,7 @@ switch  param.nframes % number of images to be stitched together
 end
 
 tmp=obj.image(:,:,ch,fr);
-imout=zeros(n*size(tmp,1),n*size(tmp,2));
+imout=zeros(n*size(tmp,1),n*size(tmp,2),numel(ch));
 
 cc=1;
 ccol=1;
@@ -58,16 +58,21 @@ for i=1:param.nframes
         ccol=floor((cc-1)/n);
         
         tmp=obj.image(:,:,ch,frshift);
-        tmp = double(imadjust(tmp,[param.meanphc/65535 param.maxphc/65535],[0 1]))/65535;
+        tmp = double(imadjust(tmp,stretchlim(tmp)))/65535;
 
         
-        imout(ccol*size(tmp,1)+1:(ccol+1)*size(tmp,1),crow*size(tmp,2)+1:(crow+1)*size(tmp,2))=tmp;
+        imout(ccol*size(tmp,1)+1:(ccol+1)*size(tmp,1),crow*size(tmp,2)+1:(crow+1)*size(tmp,2),:)=tmp;
        
     end
      cc=cc+1;
 end
 
-
-im=repmat(imout,[1 1 3]);
+if numel(ch)==1
+    im=repmat(imout,[1 1 3]);
+elseif numel(ch)==3
+    im=imout;
+else
+    error('This image must have 1 or 3 channels');
+end
 
             

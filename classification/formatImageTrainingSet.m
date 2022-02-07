@@ -48,16 +48,6 @@ parfor i=rois
     
     im=cltmp(i).image(:,:,pix,:);
     
-    if numel(pix)==1
-        % 'ok'
-        param=[];
-        totphc=im;
-        meanphc=0.5*double(mean(totphc(:)));
-        maxphc=double(meanphc+0.7*(max(totphc(:))-meanphc));
-        param.meanphc=meanphc;
-        param.maxphc=maxphc;
-    end
-    
     %lab= categorical(cltmp(i).train.(classif.strid).id,1:numel(classif.classes),classif.classes); % creates labels for classification
     
     reverseStr = '';
@@ -65,16 +55,10 @@ parfor i=rois
     
     if   strcmp(classif.category{1},'Image')
         for j=1:size(im,4)
-            
-            
-            if numel(pix)==1
-                tmp=cltmp(i).preProcessROIData(pix,j,param);
-            else
-                tmp=im(:,:,:,j);
-                tmp=double(tmp)/65535;
-            end
-            
-            
+
+            param=[];
+            tmp=cltmp(i).preProcessROIData(pix,j,param);
+
             tr=num2str(j);
             while numel(tr)<4
                 tr=['0' tr];
@@ -102,14 +86,10 @@ parfor i=rois
         
         for j=1:size(im,4)
             % tmp(:,:,:j)=im(:,:,:,j);
-            
-            if numel(pix)==1
-                tmp=cltmp(i).preProcessROIData(pix,j,param);
-            else
-                tmp=im(:,:,:,j);
-                tmp=double(tmp)/65535;
-            end
-            
+            param=[];
+            tmp=cltmp(i).preProcessROIData(pix,j,param);
+            tmp=im(:,:,:,j);
+            tmp=double(tmp)/65535;
         end
         
         %   if cltmp(i).train.(classif.strid).id(j)~=-1 % if training is done
