@@ -2,7 +2,6 @@ function output=formatImageTrainingSet(foldername,classif,rois)
 
 % optional argument provides the numbers associaed with reach image in case
 % of a regression
-
 output=0;
 
 if ~isfolder([classif.path '/' foldername '/images'])
@@ -30,9 +29,9 @@ disp('Starting parallelized jobs for data formatting....')
 warning off all
 
 channel=classif.channelName;
-
-parfor i=rois
-    disp(['Launching ROI ' num2str(i) :' processing...'])
+%parfor here
+for i=rois
+    disp(['Launching ROI ' num2str(i) ': processing...'])
     
     
     if numel(cltmp(i).image)==0
@@ -58,7 +57,7 @@ parfor i=rois
 
             param=[];
             tmp=cltmp(i).preProcessROIData(pix,j,param);
-
+            figure; imshow(tmp)
             tr=num2str(j);
             while numel(tr)<4
                 tr=['0' tr];

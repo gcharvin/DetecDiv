@@ -14,7 +14,7 @@ if strcmp(classif.category{1},'LSTM')
 end
 
 if strcmp(classif.category{1},'LSTM Regression')
-% regression
+    % regression
     if ~isfolder([classif.path '/' foldername '/response/'])
         mkdir([classif.path '/' foldername], 'response');
     end
@@ -32,8 +32,8 @@ disp('Starting parallelized jobs for data formatting....')
 warning off all
 %for i=rois
 
- channel=classif.channelName;
- 
+channel=classif.channelName;
+
 for i=rois
     disp(['Launching ROI ' num2str(i) :' processing...'])
     
@@ -42,38 +42,22 @@ for i=rois
     end
     
     % normalize intensity levels
-       
+    
     pix=cltmp(i).findChannelID(channel{1});
     
-  %  pix=find(cltmp(i).channelid==classif.channel(1)); % find channel
+    %  pix=find(cltmp(i).channelid==classif.channel(1)); % find channel
     im=cltmp(i).image(:,:,pix,:);
-    
-    if numel(pix)==1
-        param=[];
-        % 'ok'
-        totphc=im;
-        meanphc=0.5*double(mean(totphc(:)));
-        maxphc=double(meanphc+0.7*(max(totphc(:))-meanphc));
-        
-        param.meanphc=meanphc;
-        param.maxphc =maxphc;
-        
-    end
     
     if numel(classif.trainingset)==0
         param.nframes=1; % number of temporal frames per frame
-        else
-        param.nframes=classif.trainingset; % number of temporal frames per frame  
+    else
+        param.nframes=classif.trainingset; % number of temporal frames per frame
     end
-        
     
-   if  numel(pix)==1
-     imtest=cltmp(i).preProcessROIData(pix,1,param); % done to determine image size
-     % this preprocessing can only be performed on grayscale images
-     % numel(pix)=1
-   else
-     imtest=im;  
-   end
+    param=[];
+    imtest=cltmp(i).preProcessROIData(pix,1,param); % done to determine image size
+    % this preprocessing can only be performed on grayscale images
+    % numel(pix)=1
     
     
     vid=uint8(zeros(size(imtest,1),size(imtest,2),3,size(imtest,4)));
@@ -95,21 +79,14 @@ for i=rois
         lab=[];
     end
     
-  if strcmp(classif.category{1},'LSTM') % image lstm classification
+    if strcmp(classif.category{1},'LSTM') % image lstm classification
         reverseStr = '';
         for j=1:size(im,4)
-
-            if numel(pix)==1
-                tmp=cltmp(i).preProcessROIData(pix,j,param);
-            else
-                tmp=im(:,:,:,j);
-                tmp=double(tmp)/65535;
-            end
             
+            tmp=cltmp(i).preProcessROIData(pix,j,param);            
             %figure, imshow(tmp);
             %pause;
-            %close;
-            
+            %close;            
             vid(:,:,:,j)=uint8(256*tmp);
             
             tr=num2str(j);
@@ -126,7 +103,7 @@ for i=rois
             if cmp~=0 % if training is done
                 % if ~isfile([str '/unbudded/im_' mov.trap(i).id '_frame_' tr '.tif'])
                 imwrite(tmp,[classif.path '/' foldername '/images/' classif.classes{cmp} '/' cltmp(i).id '_frame_' tr '.tif']);
-                 output=output+1;
+                output=output+1;
                 % end
             end
             
@@ -134,31 +111,25 @@ for i=rois
             fprintf([reverseStr, msg]);
             reverseStr = repmat(sprintf('\b'), 1, length(msg));
         end
-  end
-  
-  if strcmp(classif.category{1},'LSTM Regression') % image lstm classification
-     % image regression
+    end
+    
+    if strcmp(classif.category{1},'LSTM Regression') % image lstm classification
+        % image regression
         tmp=zeros(size(im,1),size(im,2),3,size(im,4));
         
         for j=1:size(im,4)
             % tmp(:,:,:j)=im(:,:,:,j);
             
-             if numel(pix)==1
-                tmp=cltmp(i).preProcessROIData(pix,j,param);
-            else
-                tmp=im(:,:,:,j);
-                tmp=double(tmp)/65535;
-            end
-            
-             vid(:,:,:,j)=uint8(256*tmp);
+            tmp=cltmp(i).preProcessROIData(pix,j,param);
+            vid(:,:,:,j)=uint8(256*tmp);
         end
         
-      %  if cltmp(i).train.(classif.strid).id(j)~=-1 % if training is done
-            parsaveim([classif.path '/' foldername '/images/' cltmp(i).id '.mat'],tmp);
-            
-            parsaveresp([classif.path '/' foldername '/response/' cltmp(i).id '.mat'],cltmp(i).train.(classif.strid).id);
-             output=output+1;
-     %   end
+        %  if cltmp(i).train.(classif.strid).id(j)~=-1 % if training is done
+        parsaveim([classif.path '/' foldername '/images/' cltmp(i).id '.mat'],tmp);
+        
+        parsaveresp([classif.path '/' foldername '/response/' cltmp(i).id '.mat'],cltmp(i).train.(classif.strid).id);
+        output=output+1;
+        %   end
     end
     
     fprintf('\n');
@@ -183,12 +154,11 @@ function parsaveim(fname, im)
 eval(['save  ''''  '  fname  ''''  '  im']);
 
 function parsaveresp(fname, response)
-eval(['save  ' '''' fname  ''''  '  response']); 
+eval(['save  ' '''' fname  ''''  '  response']);
 
-  function parsave(fname, deep,vid,lab)
-        
-     %   fname
-   eval(['save  ' ''''  fname  ''''  '  deep vid lab']);
-      
-      
-    
+function parsave(fname, deep,vid,lab)
+
+%   fname
+eval(['save  ' ''''  fname  ''''  '  deep vid lab']);
+
+
