@@ -31,7 +31,7 @@ for i=1:numel(varargin)
     end
     
      if strcmp(varargin{i},'correctdrift') % number of frames loaded at once to prepare ROI matrices
-        correctdrift=varargin{i+1};
+        correctdrift=logical(varargin{i+1});
     end
     
     %       if strcmp(varargin{i},'channelint') % frames interval
@@ -324,7 +324,7 @@ for i=fovid
             end
             
             tmproi(l).save;
-            %    tmproi(l).clear;
+                tmproi(l).clear;
             %tmpfov(i).roi(l).clear;
             
             disp(['Saved images for ROI ' tmproi(l).id ' in FOV : ' tmpfov(i).id]); %d / %d ROIs saved for FOV %s', l , numel(tmpfov(i).roi), tmpfov(i).id); %Don't forget this semicolon
@@ -345,9 +345,9 @@ end
 
 for i=fovid % restore obj structure
     obj.fov(i)=tmpfov(i);
-    for l=1:numel(obj.fov(i).roi)
-        obj.fov(i).roi(l).clear;
-    end
+  %  for l=1:numel(obj.fov(i).roi)
+ %       obj.fov(i).roi(l).clear;
+  %  end
 end
 
 disp('Saving project...');
