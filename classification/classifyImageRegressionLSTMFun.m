@@ -57,30 +57,12 @@ im=roiobj.image(:,:,pix,:);
 disp('Formatting video before classification....');
 %size(im)
 
-if numel(pix)==1
-    % 'ok'
-    param=[];
-    totphc=im;
-    meanphc=0.5*double(mean(totphc(:)));
-    maxphc=double(meanphc+0.7*(max(totphc(:))-meanphc));
-    param.meanphc=meanphc;
-    param.maxphc=maxphc;
-end
-
 vid=uint8(zeros(size(im,1),size(im,2),3,size(im,4)));
 
 for j=1:size(im,4)
-    tmp=im(:,:,:,j);
-    
-    if numel(pix)==1
-        tmp=roiobj.preProcessROIData(pix,j,param);
-        
-        else
-        tmp=gfp(:,:,:,j);
-        tmp=double(tmp)/65535;   
-    end
-        
-    
+    param=[];
+    tmp=roiobj.preProcessROIData(pix,j,param);
+    im(:,:,:,j)=uint8(256*tmp);
     vid(:,:,:,j)=uint8(256*tmp);
 end
 

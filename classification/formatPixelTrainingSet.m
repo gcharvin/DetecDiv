@@ -49,12 +49,12 @@ for i=1:numel(rois)
         % pix=find(cltmp(rois(i)).channelid==classif.channel(1)); % find channel
         im=cltmp(rois(i)).image(:,:,pix,:);
         
-        if numel(pix)==1
-            % 'ok'
-            totphc=im;
-            meanphc=0.5*double(mean(totphc(:)));
-            maxphc=double(meanphc+0.7*(max(totphc(:))-meanphc));
-        end
+%         if numel(pix)==1
+%             % 'ok'
+%             totphc=im;
+%             meanphc=0.5*double(mean(totphc(:)));
+%             maxphc=double(meanphc+0.7*(max(totphc(:))-meanphc));
+%         end
         
         
         %pixcc=find(cltmp(i).channelid==cc)
@@ -82,7 +82,7 @@ for i=1:numel(rois)
     for j=1:size(im,4) %time
         tmp=im(:,:,:,j);
         
-        
+        %TODO: preProcessROIData(pix,j,param);
         if numel(pix)<=3
             %tmp = double(imadjust(tmp,[meanphc/65535 maxphc/65535],[0 1]))/65535;
             tmp = double(imadjust(tmp));

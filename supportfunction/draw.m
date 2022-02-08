@@ -1740,6 +1740,9 @@ for i=1:numel(obj.display.channel)
             imout=uint16(zeros(size(obj.image,1),size(obj.image,2),3));
             % size(imout)
             %i
+            
+            imtemp=obj.image(:,:,pix,frame);
+            imtemp=imadjust(imtemp,stretchlim(imtemp));
             for j=1:numel(pix)
                 %   i,j,pix(j)
                 %  tmp=src(:,:,pix(j),:);
@@ -1749,14 +1752,14 @@ for i=1:numel(obj.display.channel)
                 %                         if maxgfp==0
                 %                             maxgfp=1;
                 %                         end
-                imtemp=obj.image(:,:,pix(j),frame);
+                
                 %size(imtemp)
                 
                 % if meangfp>0 && maxgfp>0
                 %    imtemp = imadjust(imtemp,[meangfp/65535 maxgfp/65535],[0 1]);
                 %end
                 
-                imout(:,:,j)=imtemp.*obj.display.rgb(i,j);
+                imout(:,:,j)=imtemp(:,:,j).*obj.display.rgb(i,j);
             end
         end
         im(cc).data=imout;

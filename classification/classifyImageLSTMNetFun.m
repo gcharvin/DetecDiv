@@ -19,13 +19,12 @@ frames=[];
 classifierCNN=[];
 
 for i=1:numel(varargin)
-    if strcmp(varargin{i},'classifierCNN')
-        
-    classifierCNN=varargin{i+1};
-    net=classifierCNN;
-    inputSizeCNN = net.Layers(1).InputSize;
-    classNamesCNN = net.Layers(end).ClassNames;
-    numClassesCNN = numel(classNamesCNN);
+    if strcmp(varargin{i},'classifierCNN')        
+        classifierCNN=varargin{i+1};
+        net=classifierCNN;
+        inputSizeCNN = net.Layers(1).InputSize;
+        classNamesCNN = net.Layers(end).ClassNames;
+        numClassesCNN = numel(classNamesCNN);
     end
       if strcmp(varargin{i},'Frames')
           frames=varargin{i+1};
@@ -42,13 +41,14 @@ if numel(roiobj.image)==0
 end
 
 pix=roiobj.findChannelID(channel{1});
-%pix=find(roiobj.channelid==classif.channel(1)); % find channels corresponding to trained data
 
+%pix=find(roiobj.channelid==classif.channel(1)); % find channels corresponding to trained data
 if numel(frames)==0
-    frames=size(im,4);
+    frames=1:size(roiobj.image,4);
 end
 
 im=roiobj.image(:,:,pix,frames);
+%im=roiobj.image(:,:,pix,:);
 
 % if exist('frames','var')
 %     if frames==0
@@ -63,32 +63,14 @@ im=roiobj.image(:,:,pix,frames);
 disp('Formatting video before classification....');
 %size(im)
 
-if numel(pix)==1
-    % 'ok'
-    param=[];
-    totphc=im;
-    meanphc=0.5*double(mean(totphc(:)));
-    maxphc=double(meanphc+0.7*(max(totphc(:))-meanphc));
-    param.meanphc=meanphc;
-    param.maxphc=maxphc;
-end
-
 vid=uint8(zeros(size(im,1),size(im,2),3,numel(frames)));
 
-for j=1:numel(frames)
+for j=frames
+    param=[];
+    tmp=roiobj.preProcessROIData(pix,j,param);
     
-    if numel(pix)==1
-        
-        tmp=roiobj.preProcessROIData(pix,j,param);
-        
-        %tmp = double(imadjust(tmp,[meanphc/65535 maxphc/65535],[0 1]))/65535;
-        %tmp=repmat(tmp,[1 1 3]);
-        
-    else
-        tmp=im(:,:,:,j);
-        tmp=double(tmp)/65535;
-    end
-    
+    %tmp = double(imadjust(tmp,[meanphc/65535 maxphc/65535],[0 1]))/65535;
+    %tmp=repmat(tmp,[1 1 3]);        
     vid(:,:,:,j)=uint8(256*tmp);
     
 end
@@ -136,12 +118,12 @@ end
 label = labels(idx);
 
 if numel(classifierCNN)
-labelCNN = classifierCNN.Layers(end).Classes;
-if size(probCNN,1) == numel(labelCNN) % adjust matrix depending on matlab version
-    probCNN=probCNN';
-end
-[~, idx] = max(probCNN,[],2);
-labelCNN = labelCNN(idx);
+    labelCNN = classifierCNN.Layers(end).Classes;
+    if size(probCNN,1) == numel(labelCNN) % adjust matrix depending on matlab version
+        probCNN=probCNN';
+    end
+    [~, idx] = max(probCNN,[],2);
+    labelCNN = labelCNN(idx);
 end
 
 %if size(probCNN,1) == numel(labels) % adjust matrix depending on matlab version
