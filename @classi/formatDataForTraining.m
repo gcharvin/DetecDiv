@@ -42,6 +42,8 @@ switch category
     case 'LSTM'
        output= formatLSTMTrainingSet(foldername,classif,rois);
     case 'Pixel'
+        % this is transient : 
+       rois=1:numel(classif.roi); % takes all rois to format, only rois in trainingset will be later selected for training
       output=formatPixelTrainingSet(foldername,classif,rois);
     case 'Object'
         output=formatObjectTrainingSet(foldername,classif,rois);

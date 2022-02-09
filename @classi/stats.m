@@ -69,6 +69,7 @@ end
 
 
 if compute==1
+    
     disp(['Stats will be computed on the following ROIs: ' num2str(roiid)]);
     
 else
