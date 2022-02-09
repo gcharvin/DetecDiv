@@ -85,7 +85,7 @@ for i=1:numel(rois)
         %TODO: preProcessROIData(pix,j,param);
         if numel(pix)<=3
             %tmp = double(imadjust(tmp,[meanphc/65535 maxphc/65535],[0 1]))/65535;
-            tmp = double(imadjust(tmp,stretchlim(imadjust)))/65535;;
+            tmp = double(imadjust(tmp,stretchlim(tmp)))/65535;
             tmp=repmat(tmp,[1 1 3]);
             %max(tmp(:))
             %return
