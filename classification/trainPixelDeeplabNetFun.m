@@ -16,6 +16,7 @@ if nargin==2 % basic parameter initialization
             'Enter the initial learning rate',...
             'Choose whether and how training and validation data should be shuffled during training',...
             'Enter fraction of the data to be used for training vs validation during training',...
+            'Check if random crossvalidation is to be performed',...
             'Enter the magnitude of translation for data augmentation (in pixels)',...
             'Enter the magnitude of rotation for data augmentation (in pixels)',...
             'Specify value for L2 regularization',...
@@ -29,6 +30,7 @@ if nargin==2 % basic parameter initialization
             'CNN_initial_learning_rate',0.001,...
             'CNN_data_shuffling',{{'once','every-epoch','never','every-epoch'}},...
             'CNN_data_splitting_factor',0.9,...
+            'CNN_crossvalidation',false,...
             'CNN_translation_augmentation',[-5 5],...
             'CNN_rotation_augmentation',[-20 20],...
             'CNN_l2_regularization',0.00001,...
@@ -99,6 +101,17 @@ frequency = tbl.PixelCount/sum(tbl.PixelCount);
 % xticklabels(tbl.Name)
 % xtickangle(45)
 % ylabel('Frequency')
+
+
+
+if trainingParam.CNN_crossvalidation==true % randomly select rois, respecting the initial number of ROIs in classif.trainingset variable
+ nrois= numel(classif.trainingset);
+ shuffledIndices = randperm(numel(classif.roi));
+ classif.trainingset=shuffledIndices(1:nrois);
+end
+
+[imds, pxds] = subSelectTrainingSet(imds,pxds,classes,labelsIDs, classif); % subselect images in datastore according to their belonging to classif.trainingset
+ 
 
 [imdsTrain, imdsVal, pxdsTrain, pxdsVal] = partitionCamVidData(imds,pxds,classes,labelsIDs,trainingParam.CNN_data_splitting_factor);
 
@@ -238,4 +251,24 @@ valLabels = pxds.Files(valIdx);
 pxdsTrain = pixelLabelDatastore(trainingLabels, classes, labelIDs);
 pxdsVal = pixelLabelDatastore(valLabels, classes, labelIDs);
 %pxdsTest = pixelLabelDatastore(testLabels, classes, labelIDs);
+
+
+function [imdsTrain, pxdsTrain] = subSelectTrainingSet(imds,pxds,classes,labelIDs, classif)
+% subselect data in the trainingset
+
+str={};
+for i=1:numel(classif.trainingset)
+    str{i}= classif.roi(classif.trainingset(i)).id;
+end
+
+pix=contains(imds.Files,str);
+
+trainingImages = imds.Files(pix);
+
+imdsTrain = imageDatastore(trainingImages);
+
+trainingLabels = pxds.Files(pix);
+
+pxdsTrain = pixelLabelDatastore(trainingLabels, classes, labelIDs);
+
 
