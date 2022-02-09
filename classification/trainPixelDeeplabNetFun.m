@@ -110,8 +110,13 @@ if trainingParam.CNN_crossvalidation==true % randomly select rois, respecting th
  classif.trainingset=shuffledIndices(1:nrois);
 end
 
+disp('ROis used for training : ' );
+
+roitraining=classif.trainingset
+
 [imds, pxds] = subSelectTrainingSet(imds,pxds,classes,labelsIDs, classif); % subselect images in datastore according to their belonging to classif.trainingset
  
+nfiles=numel(imds.Files)
 
 [imdsTrain, imdsVal, pxdsTrain, pxdsVal] = partitionCamVidData(imds,pxds,classes,labelsIDs,trainingParam.CNN_data_splitting_factor);
 

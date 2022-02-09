@@ -10,18 +10,22 @@ classif.trainingParam.CNN_crossvalidation=true;
 end
 classif.trainingParam.CNN_crossvalidation=true;
 
+output=classif.score;
+
 for i=1:nsteps
     
     classif.trainClassifier; % this will randomly pick rois among all rois in the @classi, taking numel(@classi.trainingset) as the number of rois
     
     trainingrois=classif.trainingset;
     
-    testrois=setxor(1:numel(classif.rois),trainingrois);
+    testrois=setxor(1:numel(classif.roi),trainingrois);
     
     evalin('base',['clear ' classif.strid]); % removes existing classifier from workspace
     classif.loadClassifier; 
     
-    classif.validateTrainingData(testrois,'RoiWithGT');
+    roiobj=classif.roi(testrois);
+    
+    classif.validateTrainingData(roiobj,'RoiWithGT');
     
     str=[num2str(i)];
     
@@ -30,7 +34,12 @@ for i=1:nsteps
     end
     
     str=['Step' str '.mat'];
-    pth=fulfile(classif.path,'TrainingValidation',str);
+    pth=fullfile(classif.path,'TrainingValidation',str);
     
-    classif.stats('Confusion','Classes','Rois',testrois','Force','Export',pth);
+    classif.stats('Confusion','Classes','Rois',testrois,'Force','Export',pth);
+    close all
+    output(i)=classif.score;
 end
+
+pth=fullfile(classif.path,'TrainingValidation','output.mat');
+save(pth,'output');

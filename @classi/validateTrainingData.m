@@ -114,13 +114,13 @@ end
 
 for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel computing
     
-    
     goclassif=1;
     
     
     if roiwithgt==1 % checks if goclassif truth data are avaiable for this ROI, otherwise skips the ROI
         switch classif.category{1}
             case 'Pixel' % pixel classification
+                
                 
                 ch= roiobj(i).findChannelID(classif.strid);
                 
