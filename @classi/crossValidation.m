@@ -38,7 +38,13 @@ for i=1:nsteps
     
     classif.stats('Confusion','Classes','Rois',testrois,'Force','Export',pth);
     close all
+    
+    if i==1
+        output=classif.score;
+    else
     output(i)=classif.score;
+    end
+    
 end
 
 pth=fullfile(classif.path,'TrainingValidation','output.mat');
