@@ -128,7 +128,7 @@ if isfield(rls,'noFalseDiv')
     txt=[comment 'R^2=' num2str(r(1,2)) newline 'N=' num2str(numel(rlsgDivsDuration))];        
     
     h2=figure('Color','w','Units', 'Normalized', 'Position',[0.1 0.1 0.35 0.35]);
-    scatter(rlsgDivsDuration,rlspDivsDuration,dz,'filled','MarkerFaceColor',[125/255, 125/255, 125/255],'MarkerEdgeColor','k','LineWidth',0.1); hold on;
+    scatter(rlspDivsDuration,rlsgDivsDuration,dz,'filled','MarkerFaceColor',[125/255, 125/255, 125/255],'MarkerEdgeColor','k','LineWidth',0.1); hold on;
     
     box on
     %     hist3([rlsgDivsDuration',rlspDivsDuration'],'CDataMode','auto','Nbins',[50,50])
@@ -139,7 +139,7 @@ if isfield(rls,'noFalseDiv')
     %     colorbar
     %scatter_kde(rlspDivsDuration',rlsgDivsDuration','filled','MarkerEdgeColor','k','LineWidth',0.1);
     
-    plot(0:max(max(rlsgDivsDuration),max(rlspDivsDuration)),0:max(max(rlsgDivsDuration),max(rlspDivsDuration)),'k','LineStyle','--','LineWidth',lw);
+    plot(0:max(max(rlspDivsDuration),max(rlsgDivsDuration)),0:max(max(rlspDivsDuration),max(rlsgDivsDuration)),'k','LineStyle','--','LineWidth',lw);
     
 %     xlim([20 max(max(rlsgDivsDuration),max(rlspDivsDuration))]);
 %     ylim([20 max(max(rlsgDivsDuration),max(rlspDivsDuration))]);
@@ -181,8 +181,8 @@ end
 
 h3=figure('Color','w','Units', 'Normalized', 'Position',[0.1 0.1 0.35 0.35]);
 
-stairs([0 ; xg],[1 ; 1-yg],'Color','k','LineWidth',lw);hold on,
-stairs([0 ; xt],[1 ; 1-yt],'Color',[20/255,200/255,50/255],'LineWidth',lw);
+stairs([0 ; xt],[1 ; 1-yt],'Color','k','LineWidth',lw);hold on,
+stairs([0 ; xg],[1 ; 1-yg],'Color',[20/255,200/255,50/255],'LineWidth',lw);
 if plotCNN==1
     stairs([0 ; xcnn],[1 ; 1-ycnn],'Color',[20/255,20/255,255/255],'LineWidth',lw);
 end
@@ -232,9 +232,9 @@ bins=[0:5:200, 1000];
 
 h4=figure('Color','w','Units', 'Normalized', 'Position',[0.1 0.1 0.35 0.35]);
 
-histogram(divg,bins,'DisplayStyle','stairs','LineWidth',lw,'EdgeColor','k','EdgeAlpha',0.75);
+histogram(divt,bins,'DisplayStyle','stairs','LineWidth',lw,'EdgeColor','k','EdgeAlpha',0.75);
 hold on
-histogram(divt,bins,'DisplayStyle','stairs','LineWidth',lw,'EdgeAlpha',0.75,'EdgeColor',[20/255,200/255,50/255]);
+histogram(divg,bins,'DisplayStyle','stairs','LineWidth',lw,'EdgeAlpha',0.75,'EdgeColor',[20/255,200/255,50/255]);
 if plotCNN==1
    histogram(divcnn,bins,'DisplayStyle','stairs','LineWidth',lw,'EdgeAlpha',0.75,'EdgeColor',[20/255,20/255,255/255]);
 end

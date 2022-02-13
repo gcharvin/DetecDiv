@@ -178,7 +178,7 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
           end
         
           im= roiobj(i).image; 
-         fra=size(im,4);
+         fra=1:size(im,4);
     
     if numel(frames)~=0
       %  if iscell(frames)

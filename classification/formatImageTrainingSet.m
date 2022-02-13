@@ -30,7 +30,7 @@ warning off all
 
 channel=classif.channelName;
 %parfor here
-for i=rois
+parfor i=rois
     disp(['Launching ROI ' num2str(i) ': processing...'])
     
     

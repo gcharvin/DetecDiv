@@ -766,9 +766,9 @@ end
                 lin=1;
             end
             
-             h= figure, montage(imgout,'Size',[lin Inf]);
-              exportgraphics(h, [ name '.pdf']);
-              disp(['Montage figure successfully exported to : ' name '.pdf'])
+             h= figure, montage(imgout, 'Size', [1 1]);
+              exportgraphics(h, [ name '.png']);
+              disp(['Montage figure successfully exported to : ' name '.png'])
               
         case 'Mat'
             save( [ name '.mat'], 'imgout');
