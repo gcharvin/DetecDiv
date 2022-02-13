@@ -223,7 +223,7 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
         
         
     elseif goclassif==0
-        disp(['There is no groundtruth available for roi ' num2str(roiobj.id) ' , skipping roi...']);
+        disp(['There is no groundtruth available for roi ' num2str(roiobj(i).id) ' , skipping roi...']);
     end
 end
 
