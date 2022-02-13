@@ -88,7 +88,7 @@ if compute==1 % compute new scores
     classif.score=[];
     
     if numel(thr)==0
-        neval=1;
+        neval=0.9;
     else
         neval=thr;
     end
@@ -104,7 +104,8 @@ if compute==1 % compute new scores
                     case -1
                         classif.roi(j).postprocessing(classif,'OutputFun',@post,'OutputArg',{'adaptivethreshold'},'NoSave');
                     otherwise
-                        classif.roi(j).postprocessing(classif,'OutputFun',@post,'OutputArg',{'threshold',i},'NoSave');
+                 
+                        classif.roi(j).postprocessing(classif,'OutputFun',@post,'OutputArg',{'threshold',num2str(i)},'NoSave');
                 end
             end
         end

@@ -77,6 +77,7 @@ end
 
  
 for i=1:size(obj.image,4)
+    
  obj.image(:,:,pixresults,i)= feval(outputFun,proba(:,:,:,i),classif.classes,outputArg{:});
 end
 
