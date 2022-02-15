@@ -71,9 +71,9 @@ varlist=evalin('base','who');
                          return
                      end
                  end
-    end
+     end
      
-
+    
 if isunix || ismac
 classiObj.setPath([path '/'],file); % adjust path
 else

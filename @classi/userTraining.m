@@ -67,7 +67,6 @@ else % image based classification and regression
 % pix=  classif.roi(classitype).channelid(pix);
 % classif.roi(classitype).display.selectedchannel(pix)=1;
 
-            
 classif.roi(classitype).view(classif.roi(classitype).display.frame,classif); 
 
 end

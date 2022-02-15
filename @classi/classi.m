@@ -74,6 +74,7 @@ classdef classi < handle
         function obj = setPath(obj,pathe,file)
             
         %   aa= obj.path
+        
             oldpath=fixpath(obj.path);
             
             % oldpath(strfind(oldpath,'\'))='/';
@@ -88,27 +89,17 @@ classdef classi < handle
             
             % also adjust set path of dependencies
             
-            oldfullpath=fullfile(oldpath);
+         %   oldfullpath=fullfile(oldpath);
             
-            newpath=fullfile(pathe);
+        %    newpath=fullfile(pathe);
             
-            
-            %      obj.processing.classification(i).path=fixpath(fullfile(obj.processing.classification(i).path));
-            
-            
-            
-            
-            %     obj.processing.classification(i).path = replace(obj.processing.classification(i).path,oldfullpath,newpath);
-            
-            
-            %   bb=obj.processing.classification(i).path
             
             
             for j=1:numel(obj.roi)
                 
-                obj.roi(j).path=fixpath(fullfile(obj.roi(j).path));
-   
-                obj.roi(j).path = replace(obj.roi(j).path,oldfullpath,newpath);
+                 obj.roi(j).path = pathe;
+           %     obj.roi(j).path=fixpath(fullfile(obj.roi(j).path));
+           %     obj.roi(j).path = replace(obj.roi(j).path,oldfullpath,newpath);
       
             end
   

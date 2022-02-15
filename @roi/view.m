@@ -7,7 +7,6 @@ function view(obj,frame,classif)
 % tool
 
 if numel(obj.image)==0
-   % 'ok'
     obj.load
 end
 

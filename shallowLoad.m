@@ -64,9 +64,9 @@ disp('');
 
 % here browse the classification folder and load all avaiable classifiers 
 
-listclassi=dir(fullfile(path,file,'classification'))
-listclassi=listclassi(~contains({listclassi.name},{'.','..'}))
-listclassi=listclassi(find(arrayfun(@(x) x.isdir==1,listclassi)))
+listclassi=dir(fullfile(path,file,'classification'));
+listclassi=listclassi(~contains({listclassi.name},{'.','..'}));
+listclassi=listclassi(find(arrayfun(@(x) x.isdir==1,listclassi)));
 
 % sort the classi by ending number
 

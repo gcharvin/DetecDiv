@@ -88,7 +88,7 @@ if compute==1 % compute new scores
     classif.score=[];
     
     if numel(thr)==0
-        neval=1;
+        neval=0.9;
     else
         neval=thr;
     end
@@ -104,7 +104,8 @@ if compute==1 % compute new scores
                     case -1
                         classif.roi(j).postprocessing(classif,'OutputFun',@post,'OutputArg',{'adaptivethreshold'},'NoSave');
                     otherwise
-                        classif.roi(j).postprocessing(classif,'OutputFun',@post,'OutputArg',{'threshold',i},'NoSave');
+                 
+                        classif.roi(j).postprocessing(classif,'OutputFun',@post,'OutputArg',{'threshold',num2str(i)},'NoSave');
                 end
             end
         end
@@ -205,7 +206,11 @@ if plotConfusion
             
             if numel(export)
                 savefig(h,[export '_score_' num2str(j) '_confusion.fig']);
+                try
                 exportgraphics(h,[export '_score_' num2str(j) '_confusion.pdf']);
+                catch
+                end
+                
                  fileID = fopen([export '.txt'],'a+');
                   fprintf(fileID,'=======\n');
                   fprintf(fileID,'Confusion plot with classes:\n');
@@ -266,7 +271,11 @@ if plotROI
             
                if numel(export)
                 savefig(h,[export  '_score_' num2str(j) '_roi.fig']);
+                try
                 exportgraphics(h,[export  '_score_' num2str(j) '_roi.pdf']);
+                catch
+                end
+                
                  fileID = fopen([export '.txt'],'a+');
                   fprintf(fileID,'=======\n');
                   fprintf(fileID,'Statistics per ROIs:\n');
@@ -357,7 +366,11 @@ if plotClasses
             
              if numel(export)
                 savefig(h,[export  '_score_' num2str(j) '_classes.fig']);
+                try
                 exportgraphics(h,[export  '_score_' num2str(j) '_classes.pdf']);
+                catch
+                end
+                 
                  fileID = fopen([export '.txt'],'a+');
                  
                   fprintf(fileID,'=======\n');
@@ -507,7 +520,11 @@ end
         
             if numel(export)
                 savefig(h,[export  '_score.fig']);
+                try
                 exportgraphics(h,[export  '_score.pdf']);
+                catch
+                end
+                
                  fileID = fopen([export '.txt'],'a+');
                   fprintf(fileID,'=======\n');
                   fprintf(fileID,'AccRecall:\n');

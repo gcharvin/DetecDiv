@@ -67,7 +67,7 @@ end
         
             obj.addChannel(matrix,['results_' classif.strid],rgb,intensity);
 
-            pixresults=size(roiobj.image,3);
+            pixresults=size(obj.image,3);
          else
             obj.image(:,:,pixresults,:)=uint16(zeros(size(obj.image,1),size(obj.image,2),1,size(obj.image,4)));
  end
@@ -77,6 +77,7 @@ end
 
  
 for i=1:size(obj.image,4)
+    
  obj.image(:,:,pixresults,i)= feval(outputFun,proba(:,:,:,i),classif.classes,outputArg{:});
 end
 
