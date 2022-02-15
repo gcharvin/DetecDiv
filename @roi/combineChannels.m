@@ -123,6 +123,6 @@ end
 %figure, imshow(matrix(:,:,:,1));
  obj.addChannel(matrix,name,[1 1 1],[0 0 0]);
  
- obj.log(['Combined channels'],'Processing');
+ obj.log(['Combined channels'],'Processing'); 
 
 

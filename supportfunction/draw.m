@@ -1742,7 +1742,9 @@ for i=1:numel(obj.display.channel)
             %i
             
             imtemp=obj.image(:,:,pix,frame);
-            imtemp=imadjust(imtemp,stretchlim(imtemp));
+            strchlm=stretchlim(imtemp(:,:,ceil((end+1)/2))); % computes the strecthlim for the middle stack. To be changed once we add multichannels as inputs.        
+            imtemp=imadjust(imtemp,strchlm);
+            
             for j=1:numel(pix)
                 %   i,j,pix(j)
                 %  tmp=src(:,:,pix(j),:);

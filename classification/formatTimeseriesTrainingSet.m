@@ -35,11 +35,11 @@ cc=1;
 
 for i=rois
 
-    tmp=classif.roi(i).results;
+    tmp=classif.roi(i);
 
   %  str
     for j=1:numel(str)
-        if isfield(tmp,str{j})
+        if isprop(tmp,str{j}) || isfield(tmp,str{j})
             
         tmp=tmp.(str{j});
         else
@@ -54,8 +54,8 @@ for i=rois
     if numel(tmp)
 
        % tmp
-      pix=find(isnan(classif.roi(i).train.(classif.strid).id)==0);
-      pix=pix(1:numel(tmp));
+      pix=find(~isnan(classif.roi(i).train.(classif.strid).id));
+      %pix=pix(1:numel(tmp));
       
       xtmp=tmp(pix);
       ytmp=classif.roi(i).train.(classif.strid).id(pix);

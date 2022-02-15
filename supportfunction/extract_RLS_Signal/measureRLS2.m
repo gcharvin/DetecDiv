@@ -22,7 +22,7 @@ param.classiftype='bud';
 param.postProcessing=1;
 param.errorDetection=1;
 param.ArrestThreshold=150;
-param.DeathThreshold=1;
+param.DeathThreshold=2;
 param.EmptyThresholdDiscard=500;
 param.EmptyThresholdNext=200;
 
@@ -504,6 +504,21 @@ switch param.classiftype
         %===4/ detect divisions===
         %==post-processing
         if param.postProcessing==1
+%              bwsmid=(id==smid);
+%             bwsmidLabel=bwlabel(bwsmid); %find small islets
+%             for k=1:max(bwsmidLabel)
+%                 bwsmidk(k,:)=(bwsmidLabel==k);
+%             end
+%             
+%             for k=2:max(bwsmidLabel)
+%                 if sum(bwsmidk(k,:))==1 %if a smallid islet is of size 1, check the neighbours islets
+%                     idx=find(bwsmidk(k,:),1);
+%                     %idxprev=find(bwsmidk(k-1,:),1,'last');%find previous islet end
+%                     if k<max(bwsmidLabel),  idxnext=find(bwsmidk(k+1,:),1,'first');else, idxnext=NaN; end %find next islet start
+%                     if (idxnext-idx <3) %if the potential false bud emergence is too close from the next small islet -->correct it
+%                         id(idx)=id(idx-1);
+%                     end
+                    
             stopProcessing=0;
             while stopProcessing==0
                 bwsmid=(id==smid);
@@ -530,7 +545,7 @@ switch param.classiftype
                     end                    
                 else
                     stopProcessing=1;
-                end
+                 end
             end
             
             %small->unbud, can be improved by checking the islets size

@@ -91,5 +91,5 @@ if figExport==1
     set(gcf, 'PaperType','a4','PaperUnits','centimeters');
     set(ax,'Units','centimeters', 'Position', [2 2 xf_width yf_width])
     
-    exportgraphics(corsep,'\\space2.igbmc.u-strasbg.fr\charvin\Theo\Projects\RAMM\Figures\Fig2\correl_sep.pdf','BackgroundColor','none','ContentType','vector')
+    exportgraphics(corsep,'','BackgroundColor','none','ContentType','vector')
 end

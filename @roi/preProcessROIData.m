@@ -58,7 +58,8 @@ for i=1:param.nframes
         ccol=floor((cc-1)/n);
         
         tmp=obj.image(:,:,ch,frshift);
-        tmp = double(imadjust(tmp,stretchlim(tmp)))/65535;
+        strchlm=stretchlim(tmp(:,:,ceil((end+1)/2))); % computes the strecthlim for the middle stack. To be changed once we add multichannels as inputs.
+        tmp = double(imadjust(tmp,strchlm))/65535;
 
         
         imout(ccol*size(tmp,1)+1:(ccol+1)*size(tmp,1),crow*size(tmp,2)+1:(crow+1)*size(tmp,2),:)=tmp;
