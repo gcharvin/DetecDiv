@@ -77,6 +77,8 @@ We recommend using Matlab >= R2021a to ensure the compatibility of the software.
 
 -Statistics and Machine Learning Toolbox               Version 12.1        (R2021a)
 
+In addition, you will need to install specific Matlab addons by clicking the "add-ons" button in the matlab main window. Then search for "Googlenet" and "Resnet50" to install these packages that correspond to pre-trained neural nets
+
 Make sure to include all DetecDiv folders and subfolders in the Matlab path using the "Set Path" in the main Matlab workspace.
 
 <p align="right">(<a href="#top">back to top</a>)</p>
