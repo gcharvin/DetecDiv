@@ -91,7 +91,7 @@ disp('Starting video classification...');
 
 try
     
-    prob=predict(classifier,video);
+    prob=predict(classifier,video,'ExecutionEnvironment', classif.trainingParam.execution_environment{end});
     %probCNN=predict(classifierCNN,video);
     if numel(classifierCNN)
        % [labelCNN,probCNN] = classify(classifierCNN,gfp);

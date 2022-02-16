@@ -118,7 +118,6 @@ for i=rois
                bw2=l2==l;
                bw2dil=imdilate(bw2,strel('Disk',10));
                
-               
                stat2b=regionprops(bw2dil,'BoundingBox');
                
                % create image of the right size
