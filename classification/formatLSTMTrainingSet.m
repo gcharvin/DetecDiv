@@ -5,6 +5,11 @@ if ~isfolder([classif.path '/' foldername '/images'])
     mkdir([classif.path '/' foldername], 'images');
 end
 
+if ~isfolder(fullfile(classif.path, 'TrainingValidation'))
+    mkdir(classif.path,'TrainingValidation');
+end
+
+
 if strcmp(classif.category{1},'LSTM')
     for i=1:numel(classif.classes)
         if ~isfolder([classif.path '/' foldername '/images/' classif.classes{i}])
