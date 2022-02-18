@@ -65,6 +65,8 @@ for i=1:numel(channels)
     totchan=totchan+numel(pix);
 end
 
+totchan=max(totchan,classification.channel); % takes a higher number of channel for Delta tracking for instance
+
 if totchan>3
 imds = imageDatastore(imagesfoldername,'FileExtensions','.mat','ReadFcn',@matReader);  
 else
@@ -110,11 +112,18 @@ frequency = tbl.PixelCount/sum(tbl.PixelCount);
 [imdsTrain, imdsVal, pxdsTrain, pxdsVal] = partitionCamVidData(imds,pxds,classes,labelsIDs,trainingParam.CNN_data_splitting_factor,size(I,3));
 
 % Specify the network image size. This is typically the same as the traing image sizes.
-%imageSize = size(I); %[720 960 3];
+imageSize = size(I); %[720 960 3];
 
-%imageSize= [992 992 size(I,3)];
+two=[2.^(4:9) 992]; % 992 is the max network size for unet;
 
-imageSize= [64 64 size(I,3)];
+pix=find(two>=imageSize(1),1,'first');
+if numel(pix)==0
+    nsize=992;
+else
+    nsize=two(pix);
+end
+
+imageSize= [nsize nsize size(I,3)];
 
 % Specify the number of classes.
 numClasses = numel(classes);
@@ -182,7 +191,7 @@ fprintf('Saving DeepLab network classifier...\n');
 
 CNNOptions=struct(options);
 if ~exist(fullfile(path,'TrainingValidation'))
-    makedir(path,'TrainingValidation');
+    mkdir(path,'TrainingValidation');
 end
 
 save(fullfile(path,'TrainingValidation','CNNOptions.mat'),'CNNOptions');

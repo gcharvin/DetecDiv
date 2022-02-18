@@ -18,10 +18,12 @@ cltmp=classif.roi;
 warning off all
 
 channel=classif.channelName; % list of channels used to generate input image
+classif.channel=4; %specifies that 4 channels will be used
+
 % for delta : ch1 : image at t; ch2: seg of target cell at t; ch3: image at
 % t+1; ch4 : seg of all cells
 
-% outpur :  labels for target cell at t+1; 
+% outpur :  labels for target cell at t+1;
 
 % therefore 2 channels are necessary : first is raw image, second is labels
 
@@ -38,7 +40,7 @@ for i=rois
     
     % normalize intensity levels
     pix=cltmp(rois(i)).findChannelID(channel{1});
-     
+    
     im=cltmp(i).image(:,:,pix,:); % raw image
     
     if numel(pix)==1
@@ -49,7 +51,7 @@ for i=rois
     end
     
     %pixelchannel2=cltmp(i).findChannelID(classif.strid);
-     pix2=cltmp(rois(i)).findChannelID(channel{2}); % label channel
+    pix2=cltmp(rois(i)).findChannelID(channel{2}); % label channel
     
     % find channel associated with user classified objects
     im2=cltmp(i).image(:,:,pix2,:);
@@ -61,9 +63,14 @@ for i=rois
         tmp1=im(:,:,1,j);
         tmp2=im(:,:,1,j+1);
         
-         tmcrop=uint8(zeros(imagesize,imagesize,4));
-         tmcroplabel=uint8(zeros(imagesize,imagesize,3));
-         
+        
+        label1=im2(:,:,1,j);
+        label2=im2(:,:,1,j+1);
+        
+        if sum(label2(:))==0
+            continue
+        end
+        
         %figure, imshow(tmp1,[]);
         %figure, imshow(tmp2,[]);
         %return;
@@ -83,10 +90,9 @@ for i=rois
         end
         
         
-        label1=im2(:,:,1,j);
-        label2=im2(:,:,1,j+1);
         
-       % labelout
+        
+        % labelout
         %l1=bwlabel(label1);
         %l2=bwlabel(label2);
         
@@ -95,39 +101,72 @@ for i=rois
         end
         
         
-        % HERE 
+        % HERE
         
         for k=1:max(label1(:))% loop on all present objects
             
             bw1=label1==k;
-
+            
             if numel(bw1)==0 % this cell number is not present
                 continue
             end
             
-            stat1=regionprops(bw1,'Centroid'); % reference of the image
+            stat1=regionprops(bw1,'Centroid');
+            
+            if numel(stat1)==0
+                %    disp('found object with no centroid; skipping....');
+                continue
+            end
+            
+            % reference of the image
             
             minex=uint16(max(1,round(stat1.Centroid(1))-imagesize/2));
             miney=uint16(max(1,round(stat1.Centroid(2))-imagesize/2));
             
-            maxex=uint16(min(size(tmp,2),round(stat1.Centroid(1))+imagesize/2-1));
-            maxey=uint16(min(size(tmp,1),round(stat1.Centroid(2))+imagesize/2-1));
+            maxex=uint16(min(size(tmp1,2),round(stat1.Centroid(1))+imagesize/2-1));
+            maxey=uint16(min(size(tmp1,1),round(stat1.Centroid(2))+imagesize/2-1));
+            
+            tmpcrop=uint8(zeros(maxey-miney+1,maxex-minex+1,4));
             
             tmpcrop(:,:,1)=tmp1(miney:maxey,minex:maxex);
             tmpcrop(:,:,2)=255*uint8(bw1(miney:maxey,minex:maxex));
             tmpcrop(:,:,3)=tmp2(miney:maxey,minex:maxex);
-            tmpcrop(:,:,4)=label2(miney:maxey,minex:maxex);
+            tmpcrop(:,:,4)=255*uint8(label2(miney:maxey,minex:maxex)>0);
             
-        
-               
-               %imcrop=uint8(256*imout);
-               imcrop=tmcrop;
-             %  figure, imshow(imcrop,[]);
-               imwrite(imcrop,[classif.path '/' foldername '/images/' classif.classes{clas} '/' cltmp(i).id '_frame_' tr '_obj' num2str(val1) '_obj' num2str(val2) '.tif']);
-                output=output+1;
-               
-            end
+            lab=label2==k;
+
+            lab=lab(miney:maxey,minex:maxex);
+            
+            
+            labels= double(zeros(size(lab,1),size(lab,2),3));
+            %   size(labels)
+            
+            for cc=1:numel(classif.classes)
+                %  if cc==1 %
+                %       pixz=lab==cc | lab=; % WARNING !!!! add unassigned pixels to this class
+                %   else
+                pixz=lab==cc-1;
+                %   end
                 
+                labtmp2=double(zeros(size(lab,1),size(lab,2),1));
+                labtmp2(pixz)=1;
+                %  figure, imshow(labtmp2);
+                for  ck=1:3
+                    labels(:,:,ck)=labels(:,:,ck)+classif.colormap(cc+1,ck)*labtmp2;
+                end
+            end
+            
+            %   figure, imshow(labels);
+            %    return;
+            output=output+1;
+            
+            pth=fullfile(classif.path,foldername,[ 'images/' cltmp(rois(i)).id '_frame_' tr '_object' num2str(k) '.mat']);
+            
+            save(pth,'tmpcrop');
+            
+            pth=fullfile(classif.path,foldername,[ 'labels/' cltmp(rois(i)).id '_frame_' tr '_object' num2str(k) '.tif']);
+            
+            imwrite(labels,pth);
             
         end
         

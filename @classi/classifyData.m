@@ -78,23 +78,16 @@ if numel(p)
     p.Message='Preparing classification....';
 end
 
+mustload=0;
 if numel(classifier)==0
-    disp(['Loading classifier: ' classi.strid]);
-    % str=[path '/' name '.mat'];
-    
-    classifier=classi.loadClassifier;
-    
-    if numel(classifier)==0
-        disp('could not load main classifier.... quitting');
-        return;
-    end 
+    mustload=1;
 end
 
  if CNNflag==1
-        str=fullfile([path 'netCNN.mat']);
-        if exist(str)
+        str=fullfile(classi.path,'netCNN.mat');
+        if exist(str)   
             load(str);
-            disp(['Loading CNN classifier: ' name]);
+            disp(['Loading CNN classifier: ' str]);
             classifierCNN=classifier;
         else 
             classifierCNN=[];
@@ -102,6 +95,19 @@ end
  else
       classifierCNN=[];
  end
+ 
+ if mustload==1
+     disp(['Loading classifier: ' classi.strid]);
+    % str=[path '/' name '.mat'];
+    classifier=[];
+    classifier=classi.loadClassifier;
+    
+    if numel(classifier)==0
+        disp('could not load main classifier.... quitting');
+        return;
+    end 
+ end
+ 
 
 if numel(p)
     p.Value=0.2;
@@ -147,14 +153,14 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
      
     if para % parallel computing
         if numel(classifierCNN)
-            logparf(i)=parfeval(fhandle,0,roiobj(i),classi,classifier,classifierCNN,'Frames',fra,'Channel',channel); % launch the training function for classification
+            logparf(i)=parfeval(fhandle,0,roiobj(i),classi,classifier,'classifierCNN',classifierCNN,'Frames',fra,'Channel',channel); % launch the training function for classification
         else
             %disp(['Starting classification of ' num2str(roiobj(i).id)]);
             logparf(i)=parfeval(fhandle,0,roiobj(i),classi,classifier,'Frames',fra,'Channel',channel); % launch the training function for classification
         end
     else
         if  numel(classifierCNN)
-            feval(fhandle,roiobj(i),classi,classifier,classifierCNN,'Frames',fra,'Channel',channel); % launch the training function for classification
+            feval(fhandle,roiobj(i),classi,classifier,'classifierCNN',classifierCNN,'Frames',fra,'Channel',channel); % launch the training function for classification
             disp(['Classified with separate CNN ' num2str(roiobj(i).id)]);
         else
             feval(fhandle,roiobj(i),classi,classifier,'Frames',fra,'Channel',channel); % launch the training function for classification
