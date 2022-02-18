@@ -253,8 +253,8 @@ for i=1:length(rois)
                     
                  %   aa=obj.strid
                     
-                    pixid=      classif.roi(cc+1).findChannelID(obj.strid)
-                    pixidnew=classif.roi(cc+1).findChannelID(classif.strid)
+                    pixid=      classif.roi(cc+1).findChannelID(obj.strid);
+                    pixidnew=classif.roi(cc+1).findChannelID(classif.strid);
                     
                     
                     if numel(pixid) && numel(pixidnew) % copy the groundthruth to new classi 

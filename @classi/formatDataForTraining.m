@@ -53,6 +53,8 @@ switch category
        output= formatTrackingTrainingSet(foldername,classif,rois) ;
     case 'Timeseries'
        output= formatTimeseriesTrainingSet(foldername,classif,rois)  ;
+      case 'Delta'
+       output= formatDeltaTrainingSet(foldername,classif,rois)  ;
 end
 
 
