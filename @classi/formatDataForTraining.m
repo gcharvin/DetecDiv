@@ -48,7 +48,9 @@ switch category
     case 'Object'
         output=formatObjectTrainingSet(foldername,classif,rois);
     case 'Pedigree'
-       output= formatPedigreeTrainingSet(foldername,classif,rois) ;
+     %  output= formatPedigreeTrainingSet(foldername,classif,rois) ;
+          output= formatDeltaPedigreeTrainingSet(foldername,classif,rois) ;
+          
     case 'Tracking'
        output= formatTrackingTrainingSet(foldername,classif,rois) ;
     case 'Timeseries'
