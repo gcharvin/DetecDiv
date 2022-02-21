@@ -83,6 +83,8 @@ if numel(classif)>0
         end
         
     end
+    
+    
     if strcmp(classif.category{1},'Pedigree')
         ccpedigree=obj.findChannelID(classif.strid);
     end

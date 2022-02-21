@@ -3,9 +3,6 @@ function classifyUNetFun(roiobj,classif,classifier,varargin)
 % this function can be used to classify any roi object, by providing the
 % classi object and the classifier
 
-
-
-
 if numel(classifier)==0 % loading the classifier // not recommende because it takes time
     path=classif.path;
     name=classif.strid;
