@@ -1708,41 +1708,49 @@ for i=1:numel(obj.display.channel)
         % for each channel perform normalization
         %pix
         %INTENSITY
-        if numel(pix)==1 % single channel to display
-            %pix
-            tmp=src(:,:,pix,:);
-            meangfp=0.3*double(mean(tmp(:)));
-            mingfp=double(min(tmp(:)));
-            maxgfp=double(0.7*max(tmp(:)));
-            
-            %                     % pix,i
-            it=mean(obj.display.intensity(i,:));
-            %                     maxgfp=double(meangfp+1*it*(max(tmp(:))-meangfp));
-            
-            if maxgfp==0
-                maxgfp=1;
-            end
-            %     frame
-            % size(obj.image)
-            
-            imout=obj.image(:,:,pix,frame);
-            
-            if it~=0 % it=0 corresponds to binary or indexed images
-                imout=imadjust(imout);%,[mingfp/65535 maxgfp/65535],[0 1]);
-                % imout=mat2gray(imout,[meangfp maxgfp]);
-                % imout =repmat(imout,[1 1 3]);
-                % for k=1:3
-                %     imout(:,:,k)=imout(:,:,k).*obj.display.rgb(i,k);
-                % end
-            end
-        else
+%         if numel(pix)==1 % single channel to display
+%             %pix
+             tmp=src(:,:,pix,:);
+% %             meangfp=0.3*double(mean(tmp(:)));
+% %             mingfp=double(min(tmp(:)));
+% %             maxgfp=double(0.7*max(tmp(:)));
+%             
+%             %                     % pix,i
+%             it=mean(obj.display.intensity(i,:));
+%             %                     maxgfp=double(meangfp+1*it*(max(tmp(:))-meangfp));
+%             
+% %             if maxgfp==0
+% %                 maxgfp=1;
+% %             end
+%             %     frame
+%             % size(obj.image)
+%             
+%             imout=obj.image(:,:,pix,frame);
+%             
+%             if it~=0 % it=0 corresponds to binary or indexed images
+%                 imout=imadjust(imout);%,[mingfp/65535 maxgfp/65535],[0 1]);
+%                 % imout=mat2gray(imout,[meangfp maxgfp]);
+%                 % imout =repmat(imout,[1 1 3]);
+%                 % for k=1:3
+%                 %     imout(:,:,k)=imout(:,:,k).*obj.display.rgb(i,k);
+%                 % end
+%             end
+%         else
             %'ok'
             imout=uint16(zeros(size(obj.image,1),size(obj.image,2),3));
             % size(imout)
             %i
             
             imtemp=obj.image(:,:,pix,frame);
-            strchlm=stretchlim(imtemp(:,:,ceil((end+1)/2))); % computes the strecthlim for the middle stack. To be changed once we add multichannels as inputs.        
+            
+            if ~isfield(obj.display,'stretchlim') && ~isprop(obj.display,'stretchlim')
+                disp(['No stretch limits found for ROI ' num2str(obj.id) ', computing them...']);
+                obj.computeStretchlim;
+            end
+            strchlm=obj.display.stretchlim(:,(pix(end)-pix(1))/2 + pix(1)); %middle stack            
+            
+            %strchlm=stretchlim(imtemp(:,:,(end-1)/2 + 1),[0.005 0.995]);
+            %strchlm=stretchlim(imtemp(:,:,ceil((end+1)/2))); % computes the strecthlim for the middle stack. To be changed once we add multichannels as inputs.
             imtemp=imadjust(imtemp,strchlm);
             
             for j=1:numel(pix)
@@ -1763,7 +1771,7 @@ for i=1:numel(obj.display.channel)
                 
                 imout(:,:,j)=imtemp(:,:,j).*obj.display.rgb(i,j);
             end
-        end
+%         end
         im(cc).data=imout;
         cc=cc+1;
     end

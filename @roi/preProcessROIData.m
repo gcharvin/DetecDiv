@@ -2,71 +2,30 @@ function im=preProcessROIData(obj,ch,fr,param)
 
 % preprocess frame / channel image of ROI and returns corresponding image
 
-% fra=[];
-% fra(1)=fr-1;
-% fra(2)=fr;
-% fra(3)=fr+1;
-% 
-% if fr==1
-%    fra(1)=1;
-% end
-% 
-% if fr==size(obj.image,4)
-%    fra(3)= size(obj.image,4);
-% end
+perImage=0;
+%here add param.perImage
 
-% im=zeros(size(obj.image,1),size(obj.image,2),3);
-% 
-% 
-% for i=1:3
-% tmp=obj.image(:,:,ch,fra(i));
-% tmp = double(imadjust(tmp,[param.meanphc/65535 param.maxphc/65535],[0 1]))/65535;
-% im(:,:,i)=tmp;
-% end
-
-if ~isfield(param,'nframes')
-    param.nframes=1;
-end
-
-switch  param.nframes % number of images to be stitched together
-    case 1
-    n=1; 
-    
-    case {2,3,4}
-      n=2;
-      
-    case {5,6,7,8,9}
-      n=3;
-      
-    otherwise
-      n=3;
-end
 
 tmp=obj.image(:,:,ch,fr);
-imout=zeros(n*size(tmp,1),n*size(tmp,2),numel(ch));
+imout=zeros(size(tmp,1),size(tmp,2),numel(ch));
 
-cc=1;
-ccol=1;
-
-for i=1:param.nframes
-    frshift=fr-round(param.nframes/2)+i;
-  %  cc
-    if frshift>=1 && frshift<= size(obj.image,4)
-     %   'ok'
-     
-        crow=mod((cc-1),n);
-        ccol=floor((cc-1)/n);
-        
-        tmp=obj.image(:,:,ch,frshift);
-        strchlm=stretchlim(tmp(:,:,ceil((end+1)/2))); % computes the strecthlim for the middle stack. To be changed once we add multichannels as inputs.
-        tmp = double(imadjust(tmp,strchlm))/65535;
-
-        
-        imout(ccol*size(tmp,1)+1:(ccol+1)*size(tmp,1),crow*size(tmp,2)+1:(crow+1)*size(tmp,2),:)=tmp;
-       
+if perImage==1 %if imadjust from each image
+    strchlm=stretchlim(tmp(:,:,(end-1)/2 + 1,fr),[0.001 0.999]); 
+else %if imadjust with bounds computed from the whole timeseries
+    if ~isfield(obj.display,'strchlim') && ~isprop(obj.display,'strchlim')
+        obj.computeStretchlim;
     end
-     cc=cc+1;
+    strchlm=obj.display.stretchlim(:,(ch(end)-ch(1))/2 + ch(1)); %middle stack
 end
+% for t=1:size(tmp,4) %computes strechlim on the whole timeseries, saturating 1% of pixels
+%     lm(:,t)=stretchlim(tmp(:,:,(end-1)/2 + 1,t),[0.005 0.995]);
+% end
+% strchlm=mean(lm,2);
+%strchlm=obj.display.strchlim((ch(end)-ch(1))/2 + ch(1),:); %takes the strechlim, computed from the fov, from the middle stack
+%strchlm=stretchlim(tmp(:,:,1 + (end-1)/2)); % computes the strecthlim for the middle stack. To be changed once we add multichannels as inputs.
+tmp = double(imadjust(tmp,strchlm))/65535;
+imout=tmp;
+
 
 if numel(ch)==1
     im=repmat(imout,[1 1 3]);
