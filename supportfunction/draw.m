@@ -1745,10 +1745,11 @@ for i=1:numel(obj.display.channel)
             
             imout(:,:,j)=imtemp(:,:,j).*obj.display.rgb(i,j);
         end
-    end
+    
     %         end
     im(cc).data=imout;
     cc=cc+1;
+    end
 end
 %   cc=cc+1;
 end
