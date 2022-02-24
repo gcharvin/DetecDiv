@@ -29,7 +29,7 @@ end
 if ~isfolder([classif.path '/' foldername '/timeseries'])
     mkdir([classif.path '/' foldername], 'timeseries');
 end
-
+        
 cltmp=classif.roi;
 
 disp('Starting parallelized jobs for data formatting....')
@@ -85,7 +85,8 @@ parfor i=rois
     end
     
     if strcmp(classif.category{1},'LSTM') % image lstm classification
-        reverseStr = '';
+        reverseStr = '';               
+        
         for j=1:size(im,4)
             
             tmp=cltmp(i).preProcessROIData(pix,j,param);            
