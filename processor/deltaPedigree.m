@@ -23,6 +23,7 @@ if nargin==0
     
   %  paramout.frames='0';
     paramout.classifier_name='delta_3';
+    paramout.imagesize=151; 
     
     return;
 else
@@ -172,7 +173,7 @@ for i=frames(1)+1:frames(end) % loop on all frames
 
     cellsrefstore=cellsref;
     
-    [cellsref,cost]=hungarianTracker(cellsref,cellstest,imrefraw,imtestraw,lref,ltest,classifier);
+    [cellsref,cost]=hungarianTracker(cellsref,cellstest,imrefraw,imtestraw,lref,ltest,classifier,param.imagesize);
     
     %imref
     
@@ -236,7 +237,7 @@ for i=1:max(l(:))
 end
 
 
-function [newcell,cost]=hungarianTracker(cell0,cell1,iminput0,iminput1,l0,l1,classifier)
+function [newcell,cost]=hungarianTracker(cell0,cell1,iminput0,iminput1,l0,l1,classifier,imagesize)
 
 % this function performs the tracking of cell contours based on an
 % assignment cost matrix and the Hungarian method for assignment
@@ -283,7 +284,7 @@ for i=1:length(ind0)
     % M(i,j)=dist + (1-cost);%-log(cost); % take the loglikelyhood of the probability 
     
  %   tic
-     vec=deltaComputeCost(iminput0,iminput1,l0,l1,classifier,id);
+     vec=deltaComputeCost(iminput0,iminput1,l0,l1,classifier,id,imagesize);
   %   toc
      
      M(i,:)=vec;%-log(cost); % take the loglikelyhood of the probability 

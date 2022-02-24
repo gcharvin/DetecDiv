@@ -1,5 +1,7 @@
 function output= formatDeltaPedigreeTrainingSet(foldername,classif,rois)
+
 output=0;
+
 if ~isfolder([classif.path '/' foldername '/images'])
     mkdir([classif.path '/' foldername], 'images');
 end
@@ -7,9 +9,22 @@ if ~isfolder([classif.path '/' foldername '/labels'])
     mkdir([classif.path '/' foldername], 'labels');
 end
 
-offset=10; % offset used to increase image size around object
-
-imagesize=151;
+ prompt = {'SIze of cropped image (square) used for pedigree'};
+            dlgtitle = 'Input complementary tracking parameter';
+            
+            dims = [1 100];
+            
+            definput = {imagesize};%, num2str(inte)};
+            answer = inputdlg(prompt,dlgtitle,dims,definput);
+            
+            if numel(answer)==0
+                return;
+            else
+                imagesize=answer{1};
+                classif.trainingParam.imagesize=imagesize;
+                classif.channel=5; %specifies that 5 channels will be used
+                classiSave(classif);
+            end
 
 cltmp=classif.roi;
 
@@ -18,16 +33,18 @@ cltmp=classif.roi;
 warning off all
 
 channel=classif.channelName; % list of channels used to generate input image
-classif.channel=4; %specifies that 4 channels will be used
 
-% for delta : ch1 : image at t; ch2: seg of target cell at t; ch3: image at
-% t+1; ch4 : seg of all cells
+% channels for delta pedigree 
+%ch1 : image at t-1; 
+%ch2: imaghe at t; 
+%ch3: image at t+1; 
+%ch4: seg of target new bud at t; 
+%ch5 :seg of all surrounding cells but the new bud 
 
-% outpur :  labels for target cell at t+1;
+% output :  labels for target mother cell at t;
 
-% therefore 2 channels are necessary : first is raw image, second is labels
-
-% labels must ber tracked over time to extract cell numbers
+% therefore 2 channels are necessary : first is raw image, second is
+% tracked cells
 
 %labelchannel=classif.strid; % image that contains the labels
 
@@ -59,13 +76,24 @@ for i=rois
     
     reverseStr = '';
     
-    for j=1:size(im,4)-1 % stop 1 image bedfore the end
-        tmp1=im(:,:,1,j);
-        tmp2=im(:,:,1,j+1);
+     label1=im2(:,:,1,1);
+    memory=zeros(1,max(label1(:))); % array stores the memory of budding times for all cells 
+    mothers=cltmp(rois(i)).train.(classif.strid).mother;
+    
+    for j=2:size(im,4)-1 % stop 1 image bedfore the end
+        tmp1=im(:,:,1,j-1);
+        tmp2=im(:,:,1,j);
+        tmp3=im(:,:,1,j+1);
         
         
-        label1=im2(:,:,1,j);
-        label2=im2(:,:,1,j+1);
+        label1=im2(:,:,1,j-1);
+        label2=im2(:,:,1,j);
+        
+        % get new born cells 
+        n1=unique(label1(:)); n1=n1(n1>0);
+        n2=unique(label2(:)); n2=n2(n2>0);
+        newcells=setdiff(n2,n1);
+       
         
         if sum(label2(:))==0
             continue
@@ -80,6 +108,8 @@ for i=rois
             tmp1=uint8(256*tmp1);
             tmp2 = double(imadjust(tmp2,[meanphc/65535 maxphc/65535],[0 1]))/65535;
             tmp2=uint8(256*tmp2);
+            tmp3 = double(imadjust(tmp3,[meanphc/65535 maxphc/65535],[0 1]))/65535;
+            tmp3=uint8(256*tmp3);
             %tmp=repmat(tmp,[1 1 3]);
             
         end
@@ -88,26 +118,20 @@ for i=rois
         while numel(tr)<4
             tr=['0' tr];
         end
-        
-        
-        
-        
-        % labelout
-        %l1=bwlabel(label1);
-        %l2=bwlabel(label2);
-        
+
         if max(label1(:))==0 % image is not annotated
             continue
         end
         
-        
-        % HERE
-        
-        for k=1:max(label1(:))% loop on all present objects
+        for k=newcells % loop on all new buds
             
-            bw1=label1==k;
+            bw1=label2==k;
             
             if numel(bw1)==0 % this cell number is not present
+                continue
+            end
+            
+            if mothers(k)==0 % not assigned
                 continue
             end
             
@@ -129,11 +153,24 @@ for i=rois
             tmpcrop=uint8(zeros(maxey-miney+1,maxex-minex+1,4));
             
             tmpcrop(:,:,1)=tmp1(miney:maxey,minex:maxex);
-            tmpcrop(:,:,2)=255*uint8(bw1(miney:maxey,minex:maxex));
-            tmpcrop(:,:,3)=tmp2(miney:maxey,minex:maxex);
-            tmpcrop(:,:,4)=255*uint8(label2(miney:maxey,minex:maxex)>0);
+            tmpcrop(:,:,2)=tmp2(miney:maxey,minex:maxex);
+            tmpcrop(:,:,3)=tmp3(miney:maxey,minex:maxex);
             
-            lab=label2==k;
+            tmpcrop(:,:,4)=255*uint8(bw1(miney:maxey,minex:maxex));
+           
+            bwtemp= label2 && ~bw1; % removes bud from list; 
+            
+            %%HERE : manage the age of cell and build a label file , use x
+            %%/ x + k to set the memory of th cell, with k ~ 6 - 7 frames
+            %
+            for cc=1:numel()
+                
+            end
+                
+                
+            tmpcrop(:,:,5)=255*uint8(label2(miney:maxey,minex:maxex)>0);
+            
+            lab=label2==mothers(k);
 
             lab=lab(miney:maxey,minex:maxex);
             

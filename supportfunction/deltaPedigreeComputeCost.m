@@ -1,7 +1,6 @@
-function vec=deltaComputeCost(iminput1,iminput2,label1,label2,classifier,id1,imagesize)
+function vec=deltaPedigreeComputeCost(iminput1,iminput2,label1,label2,classifier,id1,imagesize)
 
 bw1=label1==id1;
-
 
 tmp1=iminput1;
 tmp2=iminput2;

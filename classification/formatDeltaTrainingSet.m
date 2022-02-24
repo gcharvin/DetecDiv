@@ -7,9 +7,28 @@ if ~isfolder([classif.path '/' foldername '/labels'])
     mkdir([classif.path '/' foldername], 'labels');
 end
 
-offset=10; % offset used to increase image size around object
+if isfield(classif.trainingParam,'imagesize')
+    imagesize=classif.trainingParam.imagesize; 
+else
+    imagesize=151;
+end
 
-imagesize=151;
+ prompt = {'SIze of cropped image (square) used for tracking'};
+            dlgtitle = 'Input complementary tracking parameter';
+            
+            dims = [1 100];
+            
+            definput = {imagesize};%, num2str(inte)};
+            answer = inputdlg(prompt,dlgtitle,dims,definput);
+            
+            if numel(answer)==0
+                return;
+            else
+                imagesize=answer{1};
+                classif.trainingParam.imagesize=imagesize;
+                classif.channel=4; %specifies that 4 channels will be used
+                classiSave(classif);
+            end
 
 cltmp=classif.roi;
 
@@ -18,7 +37,7 @@ cltmp=classif.roi;
 warning off all
 
 channel=classif.channelName; % list of channels used to generate input image
-classif.channel=4; %specifies that 4 channels will be used
+
 
 % for delta : ch1 : image at t; ch2: seg of target cell at t; ch3: image at
 % t+1; ch4 : seg of all cells

@@ -236,7 +236,8 @@ for i=1:length(rois)
         
         im=classif.roi(cc+1).image;
         %size(im)
-        matrix=im(:,:,classif.channel(2),:);
+        ch=classif.roi(cc+1).findChannelID(classif.channelName{2});
+        matrix=im(:,:,ch,:);
         
         classif.roi(cc+1).addChannel(matrix,classif.strid,[1 1 1],[0 0 0]);
     end

@@ -1,6 +1,5 @@
 function classiSave(classiObj)
 
-
 [path,file]=classiObj.getPath;
 
 reverseStr='';
