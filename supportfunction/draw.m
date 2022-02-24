@@ -601,6 +601,7 @@ for i=1:numel(obj.display.channel)
             
             im=him.image(cc).CData;
             
+    
             [l n]=bwlabel(im);
             r=regionprops(l,'Centroid');
             
@@ -1704,6 +1705,7 @@ for i=1:numel(obj.display.channel)
         %    if obj.display.selectedchannel(pix)==1
         % get the righ data: there may be several matrices for one single
         % channel in case of RGB images
+        
         pix=find(obj.channelid==i);
         src=obj.image;
         
@@ -1713,20 +1715,30 @@ for i=1:numel(obj.display.channel)
         
         tmp=src(:,:,pix,:);
         
-        imout=uint16(zeros(size(obj.image,1),size(obj.image,2),3));
+      %  imout=uint16(zeros(size(obj.image,1),size(obj.image,2),3));
+        
         imtemp=obj.image(:,:,pix,frame);
+        imout=imtemp;
+        
+        % WARNING PIX MAY BE A 1 or  3 element vector
         if ~isfield(obj.display,'stretchlim') && ~isprop(obj.display,'stretchlim')
             disp(['No stretch limits found for ROI ' num2str(obj.id) ', computing them...']);
             obj.computeStretchlim;
         end
+        
         strchlm=obj.display.stretchlim(:,(pix(end)-pix(1))/2 + pix(1)); %middle stack
         %strchlm=stretchlim(imtemp(:,:,(end-1)/2 + 1),[0.005 0.995]);
         %strchlm=stretchlim(imtemp(:,:,ceil((end+1)/2))); % computes the strecthlim for the middle stack. To be changed once we add multichannels as inputs.
+      
+        it=mean(obj.display.intensity(i,:)); % indexed images has intensity levels to 0
+        if it~=0
         imtemp=imadjust(imtemp,strchlm);
-        
-        if numel(pix)==1
-            imtemp =repmat(imtemp,[1 1 3]);
         end
+     %   if numel(pix)==1
+       %     imtemp =repmat(imtemp,[1 1 3]);
+      %  end
+        
+        if numel(pix)==3
         for j=1:size(imtemp,3)
             %   i,j,pix(j)
             %  tmp=src(:,:,pix(j),:);
@@ -1744,6 +1756,7 @@ for i=1:numel(obj.display.channel)
             %end
             
             imout(:,:,j)=imtemp(:,:,j).*obj.display.rgb(i,j);
+        end
         end
     
     %         end
