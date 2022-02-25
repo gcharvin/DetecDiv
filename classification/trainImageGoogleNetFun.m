@@ -228,10 +228,16 @@ imageAugmenter = imageDataAugmenter( ...
 augimdsTrain = augmentedImageDatastore(inputSize(1:2),imdsTrain, ...
     'DataAugmentation',imageAugmenter);
 
-augimdsValidation = augmentedImageDatastore(inputSize(1:2),imdsValidation);
-
 miniBatchSize = trainingParam.CNN_mini_batch_size; %8
 valFrequency = floor(numel(augimdsTrain.Files)/miniBatchSize);
+
+augimdsTrain = transform(augimdsTrain,@classificationAugmentationPipeline,'IncludeInfo',true);
+
+augimdsValidation = augmentedImageDatastore(inputSize(1:2),imdsValidation);
+
+
+
+
 
 % if gpuDeviceCount>0
 % disp('Using GPUs and multiple workers');

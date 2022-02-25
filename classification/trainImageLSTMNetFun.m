@@ -255,7 +255,7 @@ if trainingParam.train_LSTM_network | ~exist(str) % training of LSTM network, if
     
      src=fullfile(classif.path,['netLSTM_' trainingParam.transfer_learning{end}]);
          if exist(src)
-             load(src); %loads classifier
+             load(src); %loads netLSTM
           %   layers=layerGraph(classifier)
           layers=netLSTM.Layers;
          else
