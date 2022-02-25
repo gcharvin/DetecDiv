@@ -19,7 +19,7 @@ if nargin==2 % basic parameter initialization
             'Enter the magnitude of rotation for data augmentation (in pixels)',...
             'Specify value for L2 regularization',...
             'Choose execution environment',...
-            };
+            'Select initial version of network to start training with; Default: ImageNet'};
       
         classif.trainingParam=struct('CNN_training_method',{{'adam','sgdm','adam'}},...
             'CNN_mini_batch_size',8,...
@@ -31,6 +31,7 @@ if nargin==2 % basic parameter initialization
             'CNN_rotation_augmentation',[-20 20],...
             'CNN_l2_regularization',0.00001,...
             'execution_environment',{{'auto','parallel','cpu','gpu','multi-gpu','auto'}},...
+            'transfer_learning',{{'ImageNet','ImageNet'}},...
             'tip',{tip});
         
         return;
@@ -87,27 +88,10 @@ end
 pxds = pixelLabelDatastore(labelsfoldername,classes,labelsIDs);
 
 I = readimage(imds,1);
-%
-% I = histeq(I);
-% imshow(I)
-% C = readimage(pxds,1);
-% cmap = jet(2);
-% B = labeloverlay(I,C,'ColorMap',classification.colormap(2:end,:));
-% imshow(B)
-% pixelLabelColorbar(classification.colormap(2:end,:),classes);
-
-%figure, imshow(C,[])
-%return;
 
 tbl = countEachLabel(pxds);
 frequency = tbl.PixelCount/sum(tbl.PixelCount);
 
-%
-% bar(1:numel(classes),frequency)
-% xticks(1:numel(classes))
-% xticklabels(tbl.Name)
-% xtickangle(45)
-% ylabel('Frequency')
 
 [imdsTrain, imdsVal, pxdsTrain, pxdsVal] = partitionCamVidData(imds,pxds,classes,labelsIDs,trainingParam.CNN_data_splitting_factor,size(I,3));
 
@@ -128,22 +112,27 @@ imageSize= [nsize nsize size(I,3)];
 % Specify the number of classes.
 numClasses = numel(classes);
 
-% Create DeepLab v3+.
-%nettype=1; % 1 for resnet50 , 0 for resnet18;
-
-lgraph = unetLayers(imageSize,numClasses);
-
-
-%analyzeNetwork(lgraph);
-%return;
-
 imageFreq = tbl.PixelCount ./ tbl.ImagePixelCount;
 classWeights = median(imageFreq) ./ imageFreq;
-%return;
+
+if strcmp(trainingParam.transfer_learning{end},'ImageNet') % creates a new network
+disp('Generating new network');
+lgraph = unetLayers(imageSize,numClasses);
 
 
 pxLayer = pixelClassificationLayer('Name','labels','Classes',tbl.Name,'ClassWeights',classWeights); % removing the weights helped increase the resolution
 lgraph = replaceLayer(lgraph,"Segmentation-Layer",pxLayer);
+else
+     disp(['Loading previously trained network : ' trainingParam.transfer_learning{end}]);
+ strpth=fullfile(classif.path,  trainingParam.transfer_learning{end});
+if exist(strpth)
+    load(strpth); %loads classifier
+ lgraph = layerGraph(classifier);    
+else
+    disp(['Unable to load: ' trainingParam.transfer_learning{end}]);
+    return;
+end
+end
 
 %pximdsVal = pixelLabelImageDatastore(imdsVal,pxdsVal);
 pximdsVal = pixelLabelImageDatastore(imdsVal,pxdsVal,'OutputSize',imageSize(1:2),'OutputSizeMode','resize');

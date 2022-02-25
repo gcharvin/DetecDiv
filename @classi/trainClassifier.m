@@ -11,8 +11,17 @@ if nargin==1
 feval(trainingFun,classif);
 else
     disp(['Setting parameters for  ' trainingFun]);
+ 
+  
  feval(trainingFun,classif,setparam);  
  
+%    
+  if  ~isfield(classif.trainingParam,'transferLearning')
+                 [t,lastIndex]=classif.version;
+                 str=t(:,1);
+                 str=['ImageNet', str', 'ImageNet'];
+                 classif.trainingParam.transfer_learning=str;
+                 classif.trainingParam.tip{end+1}='Select version of the classifier to be used';
 end
-
+end
             

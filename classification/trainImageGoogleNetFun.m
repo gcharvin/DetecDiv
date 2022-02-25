@@ -1,7 +1,9 @@
-function trainImageGoogleNetFun(classif,setparam)
+function trainImageGoogleNetFun(classif,setparam,inputnetwork)
 
 path=fullfile(classif.path);
 name=classif.strid;
+
+flagCNN=[];
 
 %---------------- parameters setting
 if nargin==2 % basic parameter initialization
@@ -17,7 +19,7 @@ if nargin==2 % basic parameter initialization
             'Enter the magnitude of rotation for data augmentation (in pixels)',...
             'Specify value for L2 regularization',...
             'Choose execution environment',...
-            };
+            'Select initial version of network to start training with; Default: ImageNet'};
         
         classif.trainingParam=struct('CNN_training_method',{{'adam','sgdm','adam'}},...
             'CNN_network',{{'googlenet','resnet18','resnet50','resnet101','nasnetlarge','inceptionresnetv2', 'efficientnetb0','googlenet'}},...
@@ -30,6 +32,7 @@ if nargin==2 % basic parameter initialization
             'CNN_rotation_augmentation',[-20 20],...
             'CNN_l2_regularization',0.00001,...
             'execution_environment',{{'auto','parallel','cpu','gpu','multi-gpu','auto'}},...
+            'transfer_learning',{{'ImageNet','ImageNet'}},...
             'tip',{tip});
         
         return;
@@ -40,6 +43,10 @@ if nargin==2 % basic parameter initialization
         if numel(trainingParam)==0
             disp('Could not find training parameters : first launch train with an extra argument to force parameter assignment');
             return;
+        end
+        
+        if nargin==3  % input network is provided to be used instad of a virgin network 
+            flagCNN=inputnetwork;
         end
         
     end
@@ -67,10 +74,8 @@ imds = imageDatastore(foldername, ...
 classWeights = 1./countcats(imds.Labels);
 classWeights = classWeights'/mean(classWeights);
 
-
 fprintf('Loading training options...\n');
 fprintf('------\n');
-
 
 [imdsTrain,imdsValidation] = splitEachLabel(imds,trainingParam.CNN_data_splitting_factor);
 
@@ -78,6 +83,9 @@ numClasses = classif.classes; %numel(categories(imdsTrain.Labels));
 
 fprintf('Loading network...\n');
 fprintf('------\n');
+
+if strcmp(trainingParam.transfer_learning{end},'ImageNet')  % creates a new network
+disp('Generating new network');
 
 switch trainingParam.CNN_network{end}
     case 'googlenet'
@@ -102,8 +110,6 @@ net=efficientnetb0;
 % eval(['net =' trainingParam.CNN_network]);        
 end
 %
-
-inputSize = net.Layers(1).InputSize;
 
 fprintf('Reformatting net for transfer learning...\n');
 fprintf('------\n');
@@ -152,6 +158,26 @@ lgraph = replaceLayer(lgraph,classLayer.Name,newClassLayer);
 %  layers(1:10) = freezeWeights(layers(1:10)); % only googlenet
 %  lgraph = createLgraphUsingConnections(layers,connections); % onlygooglnet
 % end
+else
+     disp(['Loading previously trained CNN network associated with: ' trainingParam.transfer_learning{end}]);
+     
+    if numel(flagCNN)
+        lgraph = layerGraph(flagCNN);    
+        net=flagCNN;
+    else
+         strpth=fullfile(classif.path,  trainingParam.transfer_learning{end});
+         if exist(strpth)
+             load(strpth); %loads classifier
+             lgraph = layerGraph(classifier); 
+             net=classifier;
+         else
+             disp(['Unable to load: ' trainingParam.transfer_learning{end}]);
+            return;
+        end
+    end
+end
+
+inputSize = net.Layers(1).InputSize;
 
 fprintf('Training network...\n');
 fprintf('------\n');
