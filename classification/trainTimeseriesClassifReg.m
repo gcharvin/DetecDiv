@@ -14,8 +14,8 @@ if nargin==2 % basic parameter initialization
                    'Choose the fraction of the data to be used for training vs validation during LSTM training',...
                     'Enter the size of the hidden unit',...
                      'Choose the size of the mini batch; Higher values require more memory and are prone to errors',...
-                       'Enter the initial learning rate'};
-                  
+                       'Enter the initial learning rate'
+                            'Select initial version of network to start training with; Default: ImageNet'};
        
         classif.trainingParam=struct('classifier_output',{{'sequence-to-sequence','sequence-to-one','sequence-to-sequence'}},...
             'LSTM_training_method',{{'adam','sgdm','adam'}},...
@@ -26,6 +26,7 @@ if nargin==2 % basic parameter initialization
             'LSTM_hidden_size',150,...
             'LSTM_mini_batch_size',8,...
             'LSTM_initial_learning_rate', 0.0001,...
+            'transfer_learning',{{'ImageNet','ImageNet'}},...
             'tip',{tip});
         
     
@@ -154,6 +155,8 @@ if numel(classif.classes)>0 % classification
     %==============OPTIONS=================
     
     if trainingParam.classifier_output{end}==0 % seuqence to sequence clssif
+        if strcmp(trainingParam.transfer_learning{end},'ImageNet') % creates a new network
+        disp('Generating new network');
         layers = [
             sequenceInputLayer(numFeatures,'Name','sequence')
             bilstmLayer(trainingParam.LSTM_hidden_size,'OutputMode','sequence','Name','bilstm')
@@ -162,7 +165,20 @@ if numel(classif.classes)>0 % classification
             fullyConnectedLayer(numClasses,'Name','fc')
             softmaxLayer('Name','softmax')
             weightedLSTMClassificationLayer(classWeights,'classification')];
+        else
+                           disp(['Loading previously trained network : ' trainingParam.transfer_learning{end}]);
+ strpth=fullfile(classif.path,  trainingParam.transfer_learning{end});
+if exist(strpth)
+    load(strpth); %loads classifier
+ layers = layerGraph(classifier);    
+else
+    disp(['Unable to load: ' trainingParam.transfer_learning{end}]);
+    return;
+end
+        end
     else % sequence to one classification
+          if strcmp(trainingParam.transfer_learning{end},'ImageNet') % creates a new network
+        disp('Generating new network');
         layers = [
             sequenceInputLayer(numFeatures,'Name','sequence')
             bilstmLayer(trainingParam.LSTM_hidden_size,'OutputMode','last','Name','bilstm')
@@ -171,6 +187,17 @@ if numel(classif.classes)>0 % classification
             fullyConnectedLayer(numClasses,'Name','fc')
             softmaxLayer('Name','softmax')
             weightedLSTMClassificationLayer(classWeights,'classification')];
+          else
+                 disp(['Loading previously trained network : ' trainingParam.transfer_learning{end}]);
+ strpth=fullfile(classif.path,  trainingParam.transfer_learning{end});
+if exist(strpth)
+    load(strpth); %loads classifier
+ layers = layerGraph(classifier);    
+else
+    disp(['Unable to load: ' trainingParam.transfer_learning{end}]);
+    return;
+end
+          end
     end
     
 else % regression
@@ -178,6 +205,9 @@ else % regression
     numFeatures = size(sequencesTrain{1},1);
     
     if trainingParam.classifier_output{end}==0
+          if strcmp(trainingParam.transfer_learning{end},'ImageNet') % creates a new network
+        disp('Generating new network');
+        
         layers = [
             sequenceInputLayer(numFeatures,'Name','sequence')
             bilstmLayer(trainingParam.LSTM_hidden_size,'OutputMode','sequence','Name','bilstm')
@@ -187,7 +217,20 @@ else % regression
             regressionLayer];
         %softmaxLayer('Name','softmax')
         %weightedLSTMClassificationLayer(classWeights,'classification')];
+          else
+                disp(['Loading previously trained network : ' trainingParam.transfer_learning{end}]);
+ strpth=fullfile(classif.path,  trainingParam.transfer_learning{end});
+if exist(strpth)
+    load(strpth); %loads classifier
+ layers = layerGraph(classifier);    
+else
+    disp(['Unable to load: ' trainingParam.transfer_learning{end}]);
+    return;
+end
+          end
     else
+          if strcmp(trainingParam.transfer_learning{end},'ImageNet') % creates a new network
+        disp('Generating new network');
         layers = [
             sequenceInputLayer(numFeatures,'Name','sequence')
             bilstmLayer(trainingParam.LSTM_hidden_size,'OutputMode','last','Name','bilstm')
@@ -197,6 +240,17 @@ else % regression
             regressionLayer];
         %softmaxLayer('Name','softmax')
         %weightedLSTMClassificationLayer(classWeights,'classification')];
+          else
+   disp(['Loading previously trained network : ' trainingParam.transfer_learning{end}]);
+ strpth=fullfile(classif.path,  trainingParam.transfer_learning{end});
+if exist(strpth)
+    load(strpth); %loads classifier
+ layers = layerGraph(classifier);    
+else
+    disp(['Unable to load: ' trainingParam.transfer_learning{end}]);
+    return;
+end
+          end
     end
 end
 
@@ -206,9 +260,9 @@ miniBatchSize = trainingParam.LSTM_mini_batch_size;
 numObservations = numel(sequencesTrain);
 numIterationsPerEpoch = max(1,floor(numObservations / miniBatchSize));
 
-sequencesTrain,labelsTrain
-
-sequencesValidation,labelsValidation
+% sequencesTrain,labelsTrain
+% 
+% sequencesValidation,labelsValidation
 
 options = trainingOptions(trainingParam.LSTM_training_method{end}, ...
     'MiniBatchSize',miniBatchSize, ...

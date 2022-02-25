@@ -26,7 +26,7 @@ if nargin==2 % basic parameter initialization
         'Enter the size of the hidden unit',...
         'Choose the size of the mini batch for LSTM training; Higher values require more memory and are prone to errors',...
         'Enter the LSTM initial learning rate',...
-        };
+        'Select initial version of network to start training with; Default: ImageNet'};
     
     classif.trainingParam=struct('train_CNN_classifier',true,...
         'compute_CNN_activations',true,...
@@ -48,6 +48,7 @@ if nargin==2 % basic parameter initialization
         'LSTM_mini_batch_size',8,...
         'LSTM_initial_learning_rate', 0.0001,...
         'execution_environment',{{'auto','parallel','cpu','gpu','multi-gpu','auto'}},...
+        'transfer_learning',{{'ImageNet','ImageNet'}},...
         'tip',{tip});
     
     return;
@@ -75,15 +76,27 @@ fprintf('------\n');
 %%% training image classifier
 
 if trainingParam.train_CNN_classifier
-    feval('trainImageGoogleNetFun',classif); % trainImageGoogle net first and saves it as netCNN.mat in the LSTM dir
-    % corresponding variable name is 'classifier'
-    copyfile(fullfile(path,[name '.mat']),fullfile(path,'netCNN.mat')); % copies the trained CNN classifieer so that it can later be assembled to the lstm network
+    
+    if strcmp(trainingParam.transfer_learning{end},'ImageNet') 
+    trainImageGoogleNetFun(classif); % trainImageGoogle net first and saves it as netCNN.mat in the LSTM dir
+    else
+     src=fullfile(classif.path,['netCNN_' trainingParam.transfer_learning{end}]);
+         if exist(src)
+             load(src); %loads classifier
+         else
+             disp(['Unable to load: ' trainingParam.transfer_learning{end}]);
+            return;
+         end        
+        trainImageGoogleNetFun(classif,'ok',classifier);    
+    end
+    
+    target=fullfile(path,['netCNN_' name '.mat']);
+    copyfile(fullfile(path,[name '.mat']),target); % copies the trained CNN classifieer so that it can later be assembled to the lstm network
 end
-
 
 fprintf('Loading Image classifier...\n');
 fprintf('------\n');
-str=fullfile(path,'netCNN.mat');
+str=fullfile(path,['netCNN_' name '.mat']);
 
 if exist(str)
     load(str); % load the image classifier
@@ -146,7 +159,9 @@ else % compute acitvations for input data
     fprintf('\n');
 end
 
-if trainingParam.train_LSTM_network | ~exist([path '/netLSTM.mat']) % training of LSTM network, if file does not exist, then must train
+str=fullfile(path,['netLSTM_' name '.mat']);
+
+if trainingParam.train_LSTM_network | ~exist(str) % training of LSTM network, if file does not exist, then must train
     
     disp('Preparing LSTM network ...');
     fprintf('------\n');
@@ -214,6 +229,8 @@ if trainingParam.train_LSTM_network | ~exist([path '/netLSTM.mat']) % training o
     
     %==============OPTIONS=================
     
+ if strcmp(trainingParam.transfer_learning{end},'ImageNet') 
+     
     if strcmp(trainingParam.classifier_output{end},'sequence-to-sequence') % seuqence to sequence clssif
         layers = [
             sequenceInputLayer(numFeatures,'Name','sequence')
@@ -234,6 +251,18 @@ if trainingParam.train_LSTM_network | ~exist([path '/netLSTM.mat']) % training o
             weightedLSTMClassificationLayer(classWeights,'classification')];
     end
     
+ else % loads existing classifier to extract layers
+    
+     src=fullfile(classif.path,['netLSTM_' trainingParam.transfer_learning{end}]);
+         if exist(src)
+             load(src); %loads classifier
+          %   layers=layerGraph(classifier)
+          layers=netLSTM.Layers;
+         else
+             disp(['Unable to load LSTM network: ' trainingParam.transfer_learning{end}]);
+            return;
+         end         
+ end
     % specifiy training options
     
     miniBatchSize = trainingParam.LSTM_mini_batch_size;
@@ -266,12 +295,15 @@ if trainingParam.train_LSTM_network | ~exist([path '/netLSTM.mat']) % training o
     
     [netLSTM,info] = trainNetwork(sequencesTrain,labelsTrain,layers,options);
     
-    save([path '/netLSTM.mat'],'netLSTM','info');
+     target=fullfile(path,['netLSTM_' name '.mat']);
+ 
+    save(target,'netLSTM','info');
     disp('Training LSTM network is done and saved ...');
     fprintf('------\n');
     
 else
-    load([path '/netLSTM.mat']);
+     target=fullfile(path,['netLSTM_' name '.mat']);
+    load(target);
     disp('Loading LSTM network ...');
     fprintf('------\n');
 end

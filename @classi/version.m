@@ -34,11 +34,13 @@ end
 fileindex_classi=fileindex_classi(ib);
 fileindex_network=fileindex_network(ia);
 
-t={};
+t={''};
+lastIndex=0;
 
-lastIndex=max(inte);
 
 cc=1;
+if numel(inte)
+   lastIndex=max(inte); 
 for i=inte
     
     %                    str=num2str(i);
@@ -49,7 +51,7 @@ for i=inte
     %
     %                  classiName=[file '_classification_' str '.mat']
     %                  classifierName=[file '_' str '.mat']
-    
+
     cla=l(fileindex_classi(cc));
     net=l(fileindex_network(cc));
     
@@ -80,4 +82,4 @@ for i=inte
       
     cc=cc+1;
 end
-
+end

@@ -23,3 +23,20 @@ end
  
   ff=fullfile(pth,t{index,4});
  copyfile(ff,fullfile(pth,[classif.strid '.mat']));
+ 
+ 
+    src=fullfile(pth,['netCNN_' t{index,4} '.mat']);
+    target=fullfile(pth,['netCNN_' classif.strid '.mat']);
+    
+     if exist(src)
+                 copyfile(src,target);  
+     end
+     
+     src=fullfile(pth,['netLSTM_' t{index,4} '.mat']);
+    target=fullfile(pth,['netLSTM_' classif.strid '.mat']);
+    
+     if exist(src)
+                 copyfile(src,target);  
+     end
+         
+            

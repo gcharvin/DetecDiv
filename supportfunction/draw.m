@@ -171,6 +171,9 @@ if numel(handles)==0
     
     dritem(4) = uimenu(dr,'Text','Draw object','Tag','Draw object','Separator','on');
     set(dritem(4),'MenuSelectedFcn',{@drawObject,obj});
+    
+ %   dritem(5) = uimenu(dr,'Text','Draw cell number for tracked cells','Checked','off','Tag','DrawCellNumber');
+%   set(dritem(5),'MenuSelectedFcn',{@checkCells,obj,h,classif});
 end
 
 % build display image object
@@ -606,12 +609,18 @@ for i=1:numel(obj.display.channel)
             r=regionprops(l,'Centroid');
             
             %'ok'
+           
+            xx=findobj('Tag','DrawCellNumber');
+            
+            if strcmp(xx.Checked,'on')
             
             for k=1:n
                 bw=l==k;
                 id=round(mean(im(bw)));
                 htext(cctext)=text(r(k).Centroid(1),r(k).Centroid(2),num2str(id),'Color',[1 1 1],'FontSize',20,'Tag','tracktext');
                 cctext=cctext+1; % update handle counter
+            end
+            
             end
         end
         
@@ -622,6 +631,20 @@ for i=1:numel(obj.display.channel)
     end
 end
 end
+
+%  function checkCells(handles, event,obj,h,classif)
+%  if strcmp(handles.Checked,'on')
+%  set(handles,'Checked','off')
+%  else
+%  set(handles,'Checked','on')     
+%  end
+%  
+ %clf
+%h.UserData=[];
+%[him hp]=draw(obj,h,classif);
+
+ %obj.view;
+% end
 
 function addChannel(handles, event,obj)
 matrix=uint16(zeros(size(obj.image,1),size(obj.image,2),1,size(obj.image,4)));

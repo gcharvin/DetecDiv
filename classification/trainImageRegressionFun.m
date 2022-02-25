@@ -20,7 +20,8 @@ if nargin==2 % basic parameter initialization
             'Enter the magnitude of rotation for data augmentation (in pixels)',...
             'Specify value for L2 regularization',...
             'Choose execution environment',...
-            };
+            'Select initial version of network to start training with; Default: ImageNet'};
+
         
         classif.trainingParam=struct('CNN_training_method',{{'adam','sgdm','adam'}},...
             'CNN_network',{{'googlenet','resnet18','resnet50','resnet101','nasnetlarge','inceptionresnetv2', 'efficientnetb0','googlenet'}},...
@@ -33,6 +34,7 @@ if nargin==2 % basic parameter initialization
             'CNN_rotation_augmentation',[-20 20],...
             'CNN_l2_regularization',0.00001,...
             'execution_environment',{{'auto','parallel','cpu','gpu','multi-gpu','auto'}},...
+            'transfer_learning',{{'ImageNet','ImageNet'}},...
             'tip',{tip});
         
         return;
@@ -123,6 +125,10 @@ numClasses = 1;%numel(categories(imdsTrain.Labels));
 fprintf('Loading network...\n');
 fprintf('------\n');
 
+
+if strcmp(trainingParam.transfer_learning{end},'ImageNet') % creates a new network
+disp('Generating new network');
+
 switch trainingParam.CNN_network{end}
     case 'googlenet'
 net = googlenet;
@@ -143,12 +149,6 @@ net=efficientnetb0;
 % eval(['net =' trainingParam.network]);        
 end
 %
-
-inputSize = net.Layers(1).InputSize;
-
-% adjusting data size to network 
-
-imstore=imresize(imstore,inputSize(1:2));
 
 fprintf('Reformatting net for transfer learning...\n');
 fprintf('------\n');
@@ -214,6 +214,24 @@ lgraph = replaceLayer(lgraph,classLayer.Name,newRegLayer); % replace classif lay
 %  layers(1:10) = freezeWeights(layers(1:10)); % only googlenet
 %  lgraph = createLgraphUsingConnections(layers,connections); % onlygooglnet
 % end
+
+else
+         disp(['Loading previously trained network : ' trainingParam.transfer_learning{end}]);
+ strpth=fullfile(classif.path,  trainingParam.transfer_learning{end});
+if exist(strpth)
+    load(strpth); %loads classifier
+ lgraph = layerGraph(classifier);    
+ net=classifier;
+else
+    disp(['Unable to load: ' trainingParam.transfer_learning{end}]);
+    return;
+end
+end
+
+
+inputSize = net.Layers(1).InputSize;
+% adjusting data size to network 
+imstore=imresize(imstore,inputSize(1:2));
 
 fprintf('Training network...\n');
 fprintf('------\n');

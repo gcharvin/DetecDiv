@@ -21,7 +21,7 @@ if nargin==2 % basic parameter initialization
             'Enter the magnitude of rotation for data augmentation (in pixels)',...
             'Specify value for L2 regularization',...
             'Choose execution environment',...
-            };
+            'Select initial version of network to start training with; Default: ImageNet'};
       
         classif.trainingParam=struct('CNN_training_method',{{'adam','sgdm','adam'}},...
             'CNN_network',{{'resnet18','googlenet','resnet50','googlenet'}},...
@@ -35,6 +35,7 @@ if nargin==2 % basic parameter initialization
             'CNN_rotation_augmentation',[-20 20],...
             'CNN_l2_regularization',0.00001,...
             'execution_environment',{{'auto','parallel','cpu','gpu','multi-gpu','auto'}},...
+            'transfer_learning',{{'ImageNet','ImageNet'}},...
             'tip',{tip});
         
         return;
@@ -112,11 +113,11 @@ end
 
 disp('ROis used for training : ' );
 
-roitraining=classif.trainingset
+roitraining=classif.trainingset;
 
 [imds, pxds] = subSelectTrainingSet(imds,pxds,classes,labelsIDs, classif); % subselect images in datastore according to their belonging to classif.trainingset
  
-nfiles=numel(imds.Files)
+nfiles=numel(imds.Files);
 
 [imdsTrain, imdsVal, pxdsTrain, pxdsVal] = partitionCamVidData(imds,pxds,classes,labelsIDs,trainingParam.CNN_data_splitting_factor);
 
@@ -125,20 +126,19 @@ imageSize = size(I); %[720 960 3];
 
 % Specify the number of classes.
 numClasses = numel(classes);
+imageFreq = tbl.PixelCount ./ tbl.ImagePixelCount;
+classWeights = median(imageFreq) ./ imageFreq;
 
 % Create DeepLab v3+.
 %nettype=1; % 1 for resnet50 , 0 for resnet18;
 
+if strcmp(trainingParam.transfer_learning{end},'ImageNet') % creates a new network
+disp('Generating new network');
 lgraph = helperDeeplabv3PlusResnet18(imageSize, numClasses,trainingParam.CNN_network{end});
 
 %analyzeNetwork(lgraph);
 %return;
 
-imageFreq = tbl.PixelCount ./ tbl.ImagePixelCount;
-classWeights = median(imageFreq) ./ imageFreq;
-%return;
-
-%analyzeNetwork(lgraph)
 % this replacement is used when wighted classes must be used :
 %pxLayer=tverskyPixelClassificationLayer('labels',0.7,0.3); % alpha and beta parameters
 %pxLayer.Classes=tbl.Name;
@@ -146,6 +146,17 @@ classWeights = median(imageFreq) ./ imageFreq;
 
 pxLayer = pixelClassificationLayer('Name','labels','Classes',tbl.Name,'ClassWeights',classWeights); % removing the weights helped increase the resolution
 lgraph = replaceLayer(lgraph,"classification",pxLayer);
+else
+ disp(['Loading previously trained network : ' trainingParam.transfer_learning{end}]);
+ strpth=fullfile(classif.path,  trainingParam.transfer_learning{end});
+if exist(strpth)
+    load(strpth); %loads classifier
+ lgraph = layerGraph(classifier);    
+else
+    disp(['Unable to load: ' trainingParam.transfer_learning{end}]);
+    return;
+end
+end
 
 %pximdsVal = pixelLabelImageDatastore(imdsVal,pxdsVal);
 pximdsVal = pixelLabelImageDatastore(imdsVal,pxdsVal,'OutputSize',imageSize(1:2),'OutputSizeMode','resize');
