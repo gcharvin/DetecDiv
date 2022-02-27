@@ -9,12 +9,12 @@ tmp=obj.image(:,:,:,:);
 for c=1:size(tmp,3)
     tmpimg=tmp(:,:,c,:);
     med(c)=median(tmpimg(:));
-    std(c)=std(tmpimg(:));
+    stddev(c)=std(double(tmpimg(:)));
     %for t=1:min(100,size(tmp,4)) %computes stretchlim on the 100 first frames of the timeseries, saturating 1% of pixels
         
         %lm(:,t)=stretchlim(tmp(:,:,c,t),[0.001 0.999]);
     %end
     %strchlm(:,c)=mean(lm,2);
 end
-obj.display.stretchlim=[med-std ; med+std];
+obj.display.stretchlim=[max(0,double(med)-4*stddev) ; min(65535,double(med)+4*stddev)]/65535;
 %obj.display.stretchlim=strchlm

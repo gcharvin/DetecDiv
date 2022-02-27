@@ -1754,7 +1754,8 @@ for i=1:numel(obj.display.channel)
         %strchlm=stretchlim(imtemp(:,:,ceil((end+1)/2))); % computes the strecthlim for the middle stack. To be changed once we add multichannels as inputs.
       
         it=mean(obj.display.intensity(i,:)); % indexed images has intensity levels to 0
-        if it~=0
+        
+        if it~=0 || numel(pix)==3
         imtemp=imadjust(imtemp,strchlm);
         end
      %   if numel(pix)==1
