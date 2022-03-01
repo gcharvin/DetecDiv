@@ -17,8 +17,8 @@ if strcmp(classif.category{1},'Image')
 end
 
 if strcmp(classif.category{1},'Image Regression')
-    if ~isfolder([classif.path '/' foldername '/response/'])
-        mkdir([classif.path '/' foldername], 'response');
+    if ~isfolder([classif.path '/' foldername '/labels/'])
+        mkdir([classif.path '/' foldername], 'labels');
     end
 end
 
@@ -30,7 +30,7 @@ warning off all
 
 channel=classif.channelName;
 %parfor here
-parfor i=rois
+for i=rois
     disp(['Launching ROI ' num2str(i) ': processing...'])
     
     
@@ -57,7 +57,7 @@ parfor i=rois
 
             param=[];
             tmp=cltmp(i).preProcessROIData(pix,j,param);
-            figure; imshow(tmp)
+         %   figure; imshow(tmp)
             tr=num2str(j);
             while numel(tr)<4
                 tr=['0' tr];
@@ -81,20 +81,37 @@ parfor i=rois
     
     if  strcmp(classif.category{1},'Image Regression')
         % image regression
-        tmp=zeros(size(im,1),size(im,2),3,size(im,4));
+      %  tmp=zeros(size(im,1),size(im,2),3,size(im,4));
         
         for j=1:size(im,4)
             % tmp(:,:,:j)=im(:,:,:,j);
             param=[];
             tmp=cltmp(i).preProcessROIData(pix,j,param);
-            tmp=im(:,:,:,j);
-            tmp=double(tmp)/65535;
+          %  tmp=im(:,:,:,j);
+        %    tmp=double(tmp)/65535;
+        
+        tr=num2str(j);
+            while numel(tr)<4
+                tr=['0' tr];
+            end
+           
+              if ~isnan(cltmp(i).train.(classif.strid).id(j)) % if training is done
+                % if ~isfile([str '/unbudded/im_' mov.trap(i).id '_frame_' tr '.tif'])
+                imwrite(tmp,[classif.path '/' foldername '/images/' cltmp(i).id '_frame_' tr '.tif']);
+                
+                label= cltmp(i).train.(classif.strid).id(j);
+                
+                save([classif.path '/' foldername '/labels/' cltmp(i).id '_frame_' tr '.mat'],'label');
+                output=output+1;
+                % end
+              end
+            
         end
         
         %   if cltmp(i).train.(classif.strid).id(j)~=-1 % if training is done
-        parsaveim([classif.path '/' foldername '/images/' cltmp(i).id '.mat'],tmp);
-        parsave([classif.path '/' foldername '/response/' cltmp(i).id '.mat'],cltmp(i).train.(classif.strid).id);
-        output=output+1;
+       % parsaveim([classif.path '/' foldername '/images/' cltmp(i).id '.mat'],tmp);
+       % parsave([classif.path '/' foldername '/response/' cltmp(i).id '.mat'],cltmp(i).train.(classif.strid).id);
+       % output=output+1;
         %   end
     end
     

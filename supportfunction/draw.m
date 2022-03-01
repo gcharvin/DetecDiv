@@ -415,6 +415,7 @@ if numel(classif)>0
         
     end
     
+          
     if strcmp(classif.category{1},'Pixel') | strcmp(classif.category{1},'Object') | strcmp(classif.category{1},'Image')  | strcmp(classif.category{1},'LSTM')
         % plotting classes menu for classification
         
@@ -1314,7 +1315,7 @@ y=1;
         
         %            str=hpaint.UserData;
         
-        obj.train.(classif.strid).id(obj.display.frame)=round(dist);
+        obj.train.(classif.strid).id(obj.display.frame)=floor(dist);
         
         updatedisplay(obj,him,hp,classif)
         %             if numel(obj.train.(str).mother)>=mother & mother>0

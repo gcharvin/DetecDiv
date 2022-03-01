@@ -37,7 +37,7 @@ rois=classif.trainingset;
 
 
 switch category
-    case 'Image'
+    case {'Image','Image Regression'}
        output= formatImageTrainingSet(foldername,classif,rois);    
     case 'LSTM'
        output= formatLSTMTrainingSet(foldername,classif,rois);

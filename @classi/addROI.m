@@ -13,7 +13,7 @@ for i=1:numel(varargin)
     if strcmp(varargin{i},'rois') % input rois
         rois=varargin{i+1};
     end
-     if strcmp(varargin{i},'convert') % provide character to explain how all classes will be converted
+    if strcmp(varargin{i},'convert') % provide character to explain how all classes will be converted
         convert=varargin{i+1};
     end
 end
@@ -41,7 +41,7 @@ end
 %     if numel(rois)==0
 %         rois=[1 2 3];
 %     end
-%     
+%
 % end
 
 % if nargin==3 % use ROI numbers provdied as an extra argument
@@ -90,14 +90,14 @@ for i=1:length(rois)
     
     
     if duplicate > 0 % in this case, the roi can just be updated and that's it !
-     %   pth=classif.roi(j).path;
-       % classif.roi(j)=roitocopy;
-       % classif.roi(j).path = pth;
-       
-     %   classif.roi(j)=propValues(classif.roi(j),roitocopy);
-     %   classif.roi(j).path=pth;
-     %   classif.roi(j).save;
-    %    classif.roi(j).clear;
+        %   pth=classif.roi(j).path;
+        % classif.roi(j)=roitocopy;
+        % classif.roi(j).path = pth;
+        
+        %   classif.roi(j)=propValues(classif.roi(j),roitocopy);
+        %   classif.roi(j).path=pth;
+        %   classif.roi(j).save;
+        %    classif.roi(j).clear;
         continue
     end
     
@@ -115,12 +115,27 @@ for i=1:length(rois)
     
     %size(classif.roi(cc+1).image)
     
+    if strcmp(classif.category{1},'Image Regression') || strcmp(classif.category{1},'LSTM Regression')
+        classif.roi(cc+1).train.(classif.strid)=[];
+        classif.roi(cc+1).train.(classif.strid).id= nan*ones(1,size(classif.roi(cc+1).image,4));
+        
+        if classif.output==1 % sequence-to-one regression
+            classif.roi(cc+1).train.(classif.strid).id= nan;
+        end
+        
+        if isa(obj,'classi')
+            if isfield(roitocopy.train,obj.strid) % test if previous ROI has training
+                                 classif.roi(cc+1).train.(classif.strid).id=roitocopy.train.(obj.strid).id;                        
+            end
+        end
+    end
+    
     if strcmp(classif.category{1},'Image') | strcmp(classif.category{1},'LSTM') | strcmp(classif.category{1},'Timeseries')
         classif.roi(cc+1).train.(classif.strid)=[];
         
-            classif.roi(cc+1).train.(classif.strid).id= zeros(1,size(classif.roi(cc+1).image,4));
-
-  
+        classif.roi(cc+1).train.(classif.strid).id= zeros(1,size(classif.roi(cc+1).image,4));
+        
+        
         if classif.output==1 % sequence-to-one classification
             classif.roi(cc+1).train.(classif.strid).id= 0;
         end
@@ -128,21 +143,7 @@ for i=1:length(rois)
         classif.roi(cc+1).train.(classif.strid).classes=classif.classes;
         
         if isa(obj,'classi')
-            if isfield(roitocopy.train,obj.strid) % test if previous ROI has training
-                
-%                 if  numel(preserv)==0 % new class has different number of classes
-%                     
-%                     prompt='Preserve training set? (y/n); Default: y';
-%                     preserv= input(prompt,'s');
-%                     
-%                     if numel(preserv)==0
-%                         preserv='y';
-%                     end
-%                     
-%                     disp('This setting will apply to all ROIs');
-%                 end
-                
-
+            if isfield(roitocopy.train,obj.strid) % test if previous ROI has training                       
                 if numel(convert) % preserve training set
                     
                     
@@ -159,44 +160,44 @@ for i=1:length(rois)
                         disp(['@classi to import from has ' num2str(nclasses2) 'classes:']);
                         disp(obj.classes);
                         
-                       % disp('You must map the first set of classes to the second');
-                       
-                         tmp = textscan(strip(convert{2},'left'),'%s','Delimiter',' ');
- 
-                         tmp=tmp{1};
-                         
-                         arr=[];
+                        % disp('You must map the first set of classes to the second');
+                        
+                        tmp = textscan(strip(convert{2},'left'),'%s','Delimiter',' ');
+                        
+                        tmp=tmp{1};
+                        
+                        arr=[];
                         for j=1:nclasses1
                             
-%                             str='';
-%                             for k=1:nclasses2
-%                                 str=[str num2str(k) ' - ' obj.classes{k} ';'];
-%                             end
-%                             
-%                             disp(['Enter the id number(s) of the  class corresponding to ' classif.classes{j}  ]);
-%                             
-%                             prompt=['Among these classes: ' str '; Type 0 if this class has no match; Default :'  num2str(j)];
-%                             idclass= input(prompt);
-%                             
-%                             if numel(idclass)==0
-%                                 idclass=j;
-%                             end
+                            %                             str='';
+                            %                             for k=1:nclasses2
+                            %                                 str=[str num2str(k) ' - ' obj.classes{k} ';'];
+                            %                             end
+                            %
+                            %                             disp(['Enter the id number(s) of the  class corresponding to ' classif.classes{j}  ]);
+                            %
+                            %                             prompt=['Among these classes: ' str '; Type 0 if this class has no match; Default :'  num2str(j)];
+                            %                             idclass= input(prompt);
+                            %
+                            %                             if numel(idclass)==0
+                            %                                 idclass=j;
+                            %                             end
                             
-                   %         arr{j}=idclass;
-                %   arr(j)=0;
-              %  aa=
-              
-                  pix=find(contains(tmp,classif.classes{j}));
-                  if numel(pix)==0
-                      pix=0;
-                  end
-                  
-                   arr(j)= pix;
+                            %         arr{j}=idclass;
+                            %   arr(j)=0;
+                            %  aa=
+                            
+                            pix=find(contains(tmp,classif.classes{j}));
+                            if numel(pix)==0
+                                pix=0;
+                            end
+                            
+                            arr(j)= pix;
                         end
                         
                     end
                     
-           %         arr
+                    %         arr
                     %arr
                     
                     %classif.roi(cc+1).train.(classif.strid).id=roitocopy.train(obj.strid).id;
@@ -249,23 +250,23 @@ for i=1:length(rois)
         classif.roi(cc+1).addChannel(matrix,classif.strid,[1 1 1],[0 0 0]);
         classif.roi(cc+1).display.selectedchannel(end)=1;
         
-            if isa(obj,'classi')
-                if  strcmp(obj.category{1},'Pixel') % phenocopy the groundtruth
+        if isa(obj,'classi')
+            if  strcmp(obj.category{1},'Pixel') % phenocopy the groundtruth
+                
+                %   aa=obj.strid
+                
+                pixid=      classif.roi(cc+1).findChannelID(obj.strid);
+                pixidnew=classif.roi(cc+1).findChannelID(classif.strid);
+                
+                
+                if numel(pixid) && numel(pixidnew) % copy the groundthruth to new classi
                     
-                 %   aa=obj.strid
-                    
-                    pixid=      classif.roi(cc+1).findChannelID(obj.strid);
-                    pixidnew=classif.roi(cc+1).findChannelID(classif.strid);
-                    
-                    
-                    if numel(pixid) && numel(pixidnew) % copy the groundthruth to new classi 
-                        
                     classif.roi(cc+1).image(:,:,pixidnew,:)= classif.roi(cc+1).image(:,:,pixid,:);
-                    end
-                    
-                    %classif.roi(i).display.channel{pixid}=classif.strid;
                 end
+                
+                %classif.roi(i).display.channel{pixid}=classif.strid;
             end
+        end
         %pixelchannel=size(obj.image,3);
     end
     
