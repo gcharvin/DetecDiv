@@ -11,13 +11,13 @@ hideStamp=0;
 crop=[];
 arraySize=[];
 displayLegend=0;
-snapRate=[];
-scalingFactor=3;
+snapRate=1;
+scalingFactor=1;
 legendX=0;
 name=[];
 ips=10;
 framerate=5;
-channel=2;
+channel=1;
 fontsize=15;
 levels=[];
 training=[];
@@ -308,7 +308,7 @@ end
         end
         
         if numel(levels{i})==0
-            levels{i}=[0 1];
+            levels{i}=[0.01 0.99];
         end
         
     end
@@ -438,21 +438,30 @@ end
                 %IMAGES
                 imgRGBsum=uint16(zeros(size(imtmp,1),size(imtmp,2),3));
                 for ii=1:numel(cha) %loop on channels
+
                     if mod(i-1, snapRate(ii))==0 %skip frames
                         if frames(i)<frameEnd(ii)  %stop when dead
                             imtmp2=imtmp(:,:,cha{ii},i);
                         else
                             imtmp2=uint16(zeros(size(imtmp(:,:,cha{ii},i))));
                         end
+                        
+                     
                     else
+ 
                         imtmp2=uint16(zeros(size(imtmp(:,:,cha{ii},i))));
                     end
                     if numel(cha{ii})==1 % single dimension channel => levels can be readjusted
+                  
                         if numel(levels{ii})==2 % A 2D vector is provided, therefore image is not an indexed one
-                            if levels{ii}==[-1, -1]
+                           
+                            
+                            if levels{ii}==[0.01 0.99]
                                 imtmp2 = imadjust(imtmp2);
+                           
                             else
-                                imtmp2 = imadjust(imtmp2,[levels{ii}(1)/65535 levels{ii}(2)/65535],[0 1]);
+       
+                                imtmp2 = imadjust(imtmp2,[levels{ii}(1)/65535 levels{ii}(2)/65535]);
                             end
                             imtmp2= cat(3, imtmp2*rgb{ii}(1), imtmp2*rgb{ii}(2), imtmp2*rgb{ii}(3));
                             
@@ -499,7 +508,9 @@ end
                         imtmp2=flip(imtmp2,1);
                     end
                     
+                  
                     imgRGBsum=imlincomb(1,imgRGBsum,1,imtmp2);
+                    
                 end
                 
                 imout(:,:,:,i)=imgRGBsum;
