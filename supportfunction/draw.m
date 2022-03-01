@@ -1741,7 +1741,7 @@ for i=1:numel(obj.display.channel)
       %  imout=uint16(zeros(size(obj.image,1),size(obj.image,2),3));
         
         imtemp=obj.image(:,:,pix,frame);
-        imout=imtemp;
+  
         
         % WARNING PIX MAY BE A 1 or  3 element vector
         if ~isfield(obj.display,'stretchlim') && ~isprop(obj.display,'stretchlim')
@@ -1756,8 +1756,11 @@ for i=1:numel(obj.display.channel)
         it=mean(obj.display.intensity(i,:)); % indexed images has intensity levels to 0
         
         if it~=0 || numel(pix)==3
+
         imtemp=imadjust(imtemp,strchlm);
+        
         end
+        imout=imtemp;
      %   if numel(pix)==1
        %     imtemp =repmat(imtemp,[1 1 3]);
       %  end
