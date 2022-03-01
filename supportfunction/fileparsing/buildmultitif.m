@@ -53,6 +53,7 @@ output.comments=[output.comments num2str(numel(output.pos)) ' positions were ide
   im=imfinfo(fullfile(foldername,output.pos(i).name));
   nimages=numel(im);
 
+  if isfield(im,'ImageDescription')
   str=im(1).ImageDescription;
   
   nch=[];
@@ -67,7 +68,10 @@ output.comments=[output.comments num2str(numel(output.pos)) ' positions were ide
  nch=regexp(str,['(?<=SizeC=")\d+'],'match');
  nframes=regexp(str,['(?<=SizeT=")\d+'],'match');
    end
-  
+  else % not fiji or OME, probably matlab based
+   nch=[];
+   nframes=[];
+  end
  
     if numel(nch)==0 % channel parsing failed, will consider only one channel 
        nch=1;

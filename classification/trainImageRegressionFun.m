@@ -58,38 +58,102 @@ fprintf('------\n');
 
 % load images at once
 
-imfolder=fullfile(path, '/trainingdataset/images');
-list=dir([imfolder '/*.mat']);
+imagefolder=fullfile(path, '/trainingdataset/images');
+
+listimage=dir([imagefolder '/*.tif']);
+
+%imds = imageDatastore(foldername, ...
+  %  'IncludeSubfolders',false, ...
+  %  'LabelSource','none'); 
+
+% imds.Labels=[];
+
+ responsefolder=fullfile(path, '/trainingdataset/labels');
+listresponse=dir([responsefolder '/*.mat']);
 
 
-
-
-for i=1:numel(list)
-% aa=   list(i)
-    load(fullfile(imfolder,list(i).name));
-    
+for i=1:numel(listimage)
+   im=imread(fullfile(imagefolder,listimage(i).name)); 
     if i==1
-        imstore=im;
+      X=im;
     else
-        imstore(:,:,:,end+1:end+size(im,4))=im;
+     X(:,:,:,i)=im;
     end
 end
+
+for i=1:numel(listresponse)
+
+    load(fullfile(responsefolder,listresponse(i).name));
+   % if i==1
+  %     Y=label;
+  %  else
+      Y(i)=label;
+  %  end
+end
+
+
+% arr=[];
+% for i=1:numel(imds.Files)
+%     
+%     [pth fle ext]=fileparts(imds.Files{i});
+%     
+%     % load corresponding label
+%     
+%     load(fullfile(path,'trainingdataset','labels',[fle,'.mat'])); % loads the label variable
+%     
+%   arr(i)=label;
+% end
+%   response=arr';
+  
+  
+  rng(0);
+  splitfactor=trainingParam.CNN_data_splitting_factor;
+numFiles = numel(listimage);
+shuffledIndices = randperm(numFiles);
+
+% Use 70% of the images for training.
+numTrain = round(splitfactor * numFiles);
+trainingIdx = shuffledIndices(1:numTrain);
+
+% Use 20% of the images for validation
+numtot = min(numTrain+round((1-splitfactor) * numFiles),numel(shuffledIndices));
+valIdx = shuffledIndices(numTrain+1:numtot);
+
+
+XTrain=X(:,:,:,trainingIdx);
+YTrain=Y(trainingIdx); YTrain=YTrain';
+
+XVal=X(:,:,:,valIdx);
+YVal=Y(valIdx); YVal=YVal';
+
+
+
+% for i=1:numel(list)
+% % aa=   list(i)
+%     load(fullfile(imfolder,list(i).name));
+%     
+%     if i==1
+%         imstore=im;
+%     else
+%         imstore(:,:,:,end+1:end+size(im,4))=im;
+%     end
+% end
 
 % load response at once
 
-imfolder=fullfile(path, '/trainingdataset/response');
-list=dir([imfolder '/*.mat']);
-
-for i=1:numel(list)
-% aa=   list(i)
-    load(fullfile(imfolder,list(i).name));
-    if i==1
-       restore=response;
-    else
-        restore(1,end+1:end+size(response,2))=response;
-    end
-end
-restore=restore';
+% imfolder=fullfile(path, '/trainingdataset/response');
+% list=dir([imfolder '/*.mat']);
+% 
+% for i=1:numel(list)
+% % aa=   list(i)
+%     load(fullfile(imfolder,list(i).name));
+%     if i==1
+%        restore=response;
+%     else
+%         restore(1,end+1:end+size(response,2))=response;
+%     end
+% end
+% restore=restore';
 
 % to do : properly use datastore and assign labels a posteriori once the
 % datastore is created 
@@ -98,7 +162,6 @@ restore=restore';
 % imds.Labels={restore};
 
 % then uncomment all the data augmentation things....
-
 
 % imds = imageDatastore(foldername, ...
 %  %   'IncludeSubfolders',true, ...
@@ -112,13 +175,11 @@ restore=restore';
 %classWeights = 1./countcats(imds.Labels);
 %classWeights = classWeights'/mean(classWeights);
 
+%[imdsTrain, imdsValidation, responseTrain, responseValidation] = subSelectTrainingSet(imds,response,trainingParam.CNN_data_splitting_factor); % subselect images in datastore according to their belonging to classif.trainingset
 
-fprintf('Loading training options...\n');
-fprintf('------\n');
+      
+%[imdsTrain,imdsValidation] = splitEachLabel(imds,trainingParam.CNN_data_splitting_factor);
 
-load([path '/trainingParam.mat']);
-
-%[imdsTrain,imdsValidation] = splitEachLabel(imds,trainingParam.split);
 
 numClasses = 1;%numel(categories(imdsTrain.Labels));
 
@@ -216,7 +277,7 @@ lgraph = replaceLayer(lgraph,classLayer.Name,newRegLayer); % replace classif lay
 % end
 
 else
-         disp(['Loading previously trained network : ' trainingParam.transfer_learning{end}]);
+    disp(['Loading previously trained network : ' trainingParam.transfer_learning{end}]);
  strpth=fullfile(classif.path,  trainingParam.transfer_learning{end});
 if exist(strpth)
     load(strpth); %loads classifier
@@ -231,7 +292,7 @@ end
 
 inputSize = net.Layers(1).InputSize;
 % adjusting data size to network 
-imstore=imresize(imstore,inputSize(1:2));
+%imstore=imresize(imstore,inputSize(1:2));
 
 fprintf('Training network...\n');
 fprintf('------\n');
@@ -245,38 +306,30 @@ fprintf('------\n');
     end
     %===================
     
-% training network
-% augment dataset
+ pixelRange = trainingParam.CNN_translation_augmentation;
+rotation=trainingParam.CNN_rotation_augmentation;
 
-%pixelRange = trainingParam.translateAugmentation;
-%rotation=trainingParam.rotateAugmentation;
+imageAugmenter = imageDataAugmenter( ...
+    'RandXReflection',true, ...
+    'RandYReflection',true, ...
+    'RandXTranslation',pixelRange, ...
+    'RandYTranslation',pixelRange, ...
+     'RandRotation',rotation);% , ...
 
-% imageAugmenter = imageDataAugmenter( ...
-%     'RandXReflection',true, ...
-%     'RandYReflection',true, ...
-%     'RandXTranslation',pixelRange, ...
-%     'RandRotation',rotation, ...
-%     'RandYTranslation',pixelRange, ...
-%     'RandXScale',scaleRange, ...
-%     'RandYScale',scaleRange);
+ %augimdsTrain= augmentedImageDatastore(inputSize(1:2),imdsTrain, ...
+  %  'DataAugmentation',imageAugmenter);
 
-% imageAugmenter = imageDataAugmenter( ...
-%     'RandXReflection',true, ...
-%     'RandYReflection',true, ...
-%     'RandXTranslation',pixelRange, ...
-%     'RandYTranslation',pixelRange, ...
-%      'RandRotation',rotation);% , ...
-
-  %  'RandXScale',scaleRange, ...
-  %  'RandYScale',scaleRange);
-
-% augimdsTrain = augmentedImageDatastore(inputSize(1:2),imdsTrain, ...
-%     'DataAugmentation',imageAugmenter);
-
-%augimdsValidation = augmentedImageDatastore(inputSize(1:2),imdsValidation);
+ augimdsTrain= augmentedImageDatastore(inputSize(1:2),XTrain,YTrain, ...
+    'DataAugmentation',imageAugmenter);
 
 miniBatchSize = trainingParam.CNN_mini_batch_size; %8
-valFrequency = 10; %floor(numel(augimdsTrain.Files)/miniBatchSize);
+%valFrequency = 10; %floor(numel(augimdsTrain.Files)/miniBatchSize);
+
+valFrequency = floor(size(XTrain,4)/miniBatchSize);
+
+%augimdsTrain = transform(augimdsTrain,@classificationAugmentationPipeline,'IncludeInfo',true);
+
+augimdsValidation = augmentedImageDatastore(inputSize(1:2),XVal,YVal);
 
 % if gpuDeviceCount>0
 % disp('Using GPUs and multiple workers');
@@ -290,32 +343,15 @@ options = trainingOptions(trainingParam.CNN_training_method{end}, ...
     'GradientThreshold',0.5, ...
     'L2Regularization',trainingParam.CNN_l2_regularization, ...
     'Shuffle',trainingParam.CNN_data_shuffling{end}, ...
-    'ValidationData',augimdsValidation, ...
+     'ValidationData',augimdsValidation, ...
     'ValidationFrequency',valFrequency, ...
     'VerboseFrequency',10,...
     'Plots','training-progress',...
     'ExecutionEnvironment',trainingParam.execution_environment{end});
   
- %   'ValidationData',augimdsValidation, ...
- 
-% else
-%     disp('Using CPUs or whatever is available');
-%    options = trainingOptions('sgdm', ...
-%     'MiniBatchSize',miniBatchSize, ...
-%     'MaxEpochs',6, ...
-%     'InitialLearnRate',3e-4, ... % 3e-4
-%     'Shuffle','every-epoch', ...
-%     'ValidationData',augimdsValidation, ...
-%     'ValidationFrequency',valFrequency, ...
-%      'VerboseFrequency',2,...
-%     'Plots','training-progress',...%     'ExecutionEnvironment','auto');
-%  
-% end
+%    'ValidationData',augimdsValidation, ...
 
-%size(imstore), size(restore)
-%return;
-
-classifier = trainNetwork(imstore,restore,lgraph,options);
+classifier = trainNetwork(augimdsTrain,lgraph,options);
 
 fprintf('Training is done...\n');
 fprintf('Saving image classifier ...\n');
@@ -324,15 +360,15 @@ fprintf('------\n');
 %[path '/' name '.mat']
 
 save([path '/' name '.mat'],'classifier');
-CNNOptions=struct(options);
-
-CNNOptions.ValidationData=[];
-save([path '/TrainingValidation/' 'CNNOptions' '.mat'],'CNNOptions');
-save([path '/TrainingValidation/' 'tmpoptions' '.mat'],'options');
+% CNNOptions=struct(options);
+% 
+% CNNOptions.ValidationData=[];
+% save([path '/TrainingValidation/' 'CNNOptions' '.mat'],'CNNOptions');
+% save([path '/TrainingValidation/' 'tmpoptions' '.mat'],'options');
 
 % layers = freezeWeights(layers) sets the learning rates of all the
 % parameters of the layers in the layer array |layers| to zero.
- saveTrainingPlot(path,'CNNTraining');
+% saveTrainingPlot(path,'CNNTraining');
  
 function layers = freezeWeights(layers)
 
@@ -360,5 +396,34 @@ end
 for c = 1:size(connections,1)
     lgraph = connectLayers(lgraph,connections.Source{c},connections.Destination{c});
 end
+
+
+function [imdsTrain, imdsVal, responseTrain, responseValidation] = subSelectTrainingSet(imds,response, splitfactor)
+% subselect data in the trainingset
+     
+      
+rng(0);
+numFiles = numel(imds.Files);
+shuffledIndices = randperm(numFiles);
+
+% Use 70% of the images for training.
+numTrain = round(splitfactor * numFiles);
+trainingIdx = shuffledIndices(1:numTrain);
+
+% Use 20% of the images for validation
+numtot = min(numTrain+round((1-splitfactor) * numFiles),numel(shuffledIndices));
+valIdx = shuffledIndices(numTrain+1:numtot);
+
+% Create image datastores for training and test.
+trainingImages = imds.Files(trainingIdx);
+valImages = imds.Files(valIdx);
+%testImages = imds.Files(testIdx);
+
+imdsTrain = imageDatastore(trainingImages);
+imdsVal = imageDatastore(valImages);
+
+responseTrain=response(trainingIdx);
+responseValidation=response(valIdx);
+
 
 
