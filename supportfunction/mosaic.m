@@ -11,13 +11,13 @@ hideStamp=0;
 crop=[];
 arraySize=[];
 displayLegend=0;
-snapRate=1;
+snapRate=[];
 scalingFactor=1;
 legendX=0;
 name=[];
 ips=10;
 framerate=5;
-channel=1;
+channel={};
 fontsize=15;
 levels=[];
 training=[];
@@ -100,9 +100,7 @@ for i=1:numel(varargin)
             disp('Channel is not found; quitting!');
             return;
         else
-            if numel(snapRate)==0
-                snapRate=ones(1,numel(channel));%freq=1 for all channel
-            end
+           
             if numel(stopWhenDead)==0
                 stopWhenDead=zeros(1,numel(channel));
             end
@@ -191,6 +189,10 @@ end
         disp('Display levels were not provided ! Will assume that all the channels are grayscale images and will normalize levels');
     end
     
+     if numel(snapRate)==0
+                snapRate=ones(1,numel(channel));%freq=1 for all channel
+     end
+            
     
     % rois mode: displays specific ROIs from different FOVs
     % find number of lines and columns
@@ -265,7 +267,7 @@ end
             ccf=1;
             for r=rois(2,:)
                 obj.fov(rois(2,ccf)).roi(r).load;
-                maxframe=min(maxframe, min(size(obj.roi(r).image,4)));
+                maxframe=min(maxframe, min(size(obj.fov(rois(2,ccf)).roi(r).image,4)));
                 ccf=ccf+1;
             end
             frames=1:maxframe;
@@ -302,6 +304,7 @@ end
             pix=find(roitmp.channelid==channel(i));
             cha{i}=pix;
         end
+       
         
         if numel(rgb{i})==0
             rgb{i}=[1 1 1];
@@ -682,6 +685,7 @@ end
                 
                 
             end
+            
             imgout(1+(k-1)*h:k*h,1+(j-1)*w:j*w,:,:)=imout; % assemble rois
             cc=cc+1;
         end
@@ -765,6 +769,7 @@ end
         open(v);
         
         %return
+    
         writeVideo(v,imgout);
         close(v);
         disp(['Movie successfully exported to : ' name '.mp4'])

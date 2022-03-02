@@ -116,17 +116,18 @@ if compute==1 % compute new scores
            disp('There are no statistics to display.... quitting');
            return;
         end
+
         
         if data.reg==1 % regression
             figure('Color','w');
             plot(data.gt,data.pred,'Marker','.','Markersize',10,'LineStyle','none'); hold on;
-            plot([0 max(max(data.gt),max(data.pred))],[0 max(max(data.gt),max(data.pred))],'LineStyle','--','LineWidth',2,'Color','k');
+            plot([min(min(data.gt),min(data.pred)) max(max(data.gt),max(data.pred))],[min(min(data.gt),min(data.pred)) max(max(data.gt),max(data.pred))],'LineStyle','--','LineWidth',2,'Color','k');
             c=corrcoef(data.gt,data.pred);
-            xlim([0 max(max(data.gt),max(data.pred))]);
-            ylim([0 max(max(data.gt),max(data.pred))]);
+            xlim([min(min(data.gt),min(data.pred)) max(max(data.gt),max(data.pred))]);
+            ylim([min(min(data.gt),min(data.pred)) max(max(data.gt),max(data.pred))]);
             
-            xlabel('SEP Groundtruth');
-            ylabel('SEP Prediction');
+            xlabel('Groundtruth');
+            ylabel('Prediction');
             text(2,2,['R^2= ' num2str(c(1,2))]);
         else %  classification
             
@@ -674,7 +675,8 @@ score.N=sum([score.classes(:).N]);
         data.pred=[];
         data.CNNpred=[];
         classistr=classif.strid;
-        
+         reg=0;
+         
         for j=roiid
             obj=classif.roi(j);
             disp([num2str(j) ' - '  obj.id ' - checking data']);
@@ -688,7 +690,7 @@ score.N=sum([score.classes(:).N]);
             pred=[];
             CNNpred=[];
             
-            reg=0;
+           
             
             switch classif.category{1}
                 case 'Pixel' % pixel classification
@@ -754,6 +756,56 @@ score.N=sum([score.classes(:).N]);
                         pred=impred(pix); pred=pred(:); pred=pred';
                         
                     end
+                    
+                case 'Image Regression'
+                      if numel(obj.results)>0 % check is there are results available
+                        if isfield(obj.results,classistr)
+                            if isfield(obj.results.(classistr),'id') % it's a classification
+                                
+                                if numel(obj.results.(classistr).id) > 0
+                                    %  if sum(obj.results.(classistr).id)>0 % training exists for this ROI !
+                                    resok=1;
+                                    %    end
+                                end
+                        else
+                            disp('There is no result available for this classification id');
+                        end
+                    else
+                        disp('There is no result available for this roi');
+                        end
+                      end
+          
+                    
+                    % if roi was used for user training, display the training data first
+                    if numel(obj.train)~=0
+                        if isfield(obj.train,classistr)
+                            if numel(obj.train.(classistr).id) > 0
+                                % if sum(obj.train.(classistr).id)>0 % training exists for this ROI !
+                                ground=1;
+                                %  end
+                            end
+                        else
+                            disp('There is no GT available for this classification id');
+                        end
+                    else
+                        disp('There is no GT available for this roi');
+                    end
+                    
+                    if ground && resok
+                        reg=1;
+                        
+                     %   if isfield(obj.results.(classistr),'id') % it's a classification
+                            pred=double(obj.results.(classistr).id);
+                    %    else
+                    %        pred=double(obj.results.(classistr).prob);
+                    %    end
+                        gt=double(obj.train.(classistr).id)
+                        
+                  
+                        pred=pred'
+                    end
+            
+                    
                     
                 case 'Timeseries' % timeseries classification or regression
                     
@@ -880,6 +932,7 @@ score.N=sum([score.classes(:).N]);
             end
             % then display the results
             
+
             % if ground ==1 && resok==1 % list of rois used to compute stats
             data.gt=[data.gt gt];
             data.pred=[data.pred pred];
