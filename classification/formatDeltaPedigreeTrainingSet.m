@@ -9,21 +9,27 @@ if ~isfolder([classif.path '/' foldername '/labels'])
     mkdir([classif.path '/' foldername], 'labels');
 end
 
+if isfield(classif.trainingParam,'imagesize')
+    imagesize=classif.trainingParam.imagesize; 
+else
+    imagesize=151;
+end
+
  prompt = {'SIze of cropped image (square) used for pedigree'};
             dlgtitle = 'Input complementary tracking parameter';
             
             dims = [1 100];
             
-            definput = {imagesize};%, num2str(inte)};
+            definput = {num2str(imagesize)};%, num2str(inte)};
             answer = inputdlg(prompt,dlgtitle,dims,definput);
             
             if numel(answer)==0
                 return;
             else
-                imagesize=answer{1};
+                imagesize=str2num(answer{1});
                 classif.trainingParam.imagesize=imagesize;
                 classif.channel=5; %specifies that 5 channels will be used
-                classiSave(classif);
+                %classiSave(classif);
             end
 
 cltmp=classif.roi;
@@ -81,6 +87,7 @@ for i=rois
     mothers=cltmp(rois(i)).train.(classif.strid).mother;
     
     for j=2:size(im,4)-1 % stop 1 image bedfore the end
+       % fprintf('.')
         tmp1=im(:,:,1,j-1);
         tmp2=im(:,:,1,j);
         tmp3=im(:,:,1,j+1);
@@ -93,9 +100,10 @@ for i=rois
         n1=unique(label1(:)); n1=n1(n1>0);
         n2=unique(label2(:)); n2=n2(n2>0);
         newcells=setdiff(n2,n1);
-       
+       % memory(newcells)=0; % assign zero history for new cells
         
         if sum(label2(:))==0
+            disp(['No annotation for frame: ' num2str(j+1)]);
             continue
         end
         
@@ -120,15 +128,22 @@ for i=rois
         end
 
         if max(label1(:))==0 % image is not annotated
+             disp(['No annotation for frame: ' num2str(j+1)]);
             continue
         end
         
-        for k=newcells % loop on all new buds
+        
+        for k=newcells' % loop on all new buds
             
+         %   figure, imshow(label2,[]),k
             bw1=label2==k;
             
             if numel(bw1)==0 % this cell number is not present
                 continue
+            end
+            
+            if k>length(mothers)
+               continue 
             end
             
             if mothers(k)==0 % not assigned
@@ -143,14 +158,16 @@ for i=rois
             end
             
             % reference of the image
-            
+          %  imagesize
             minex=uint16(max(1,round(stat1.Centroid(1))-imagesize/2));
             miney=uint16(max(1,round(stat1.Centroid(2))-imagesize/2));
             
             maxex=uint16(min(size(tmp1,2),round(stat1.Centroid(1))+imagesize/2-1));
             maxey=uint16(min(size(tmp1,1),round(stat1.Centroid(2))+imagesize/2-1));
             
-            tmpcrop=uint8(zeros(maxey-miney+1,maxex-minex+1,4));
+           % maxey-miney+1,maxex-minex+1
+            
+            tmpcrop=uint8(zeros(maxey-miney+1,maxex-minex+1,5));
             
             tmpcrop(:,:,1)=tmp1(miney:maxey,minex:maxex);
             tmpcrop(:,:,2)=tmp2(miney:maxey,minex:maxex);
@@ -158,21 +175,28 @@ for i=rois
             
             tmpcrop(:,:,4)=255*uint8(bw1(miney:maxey,minex:maxex));
            
-            bwtemp= label2 && ~bw1; % removes bud from list; 
-            
-            %%HERE : manage the age of cell and build a label file , use x
-            %%/ x + k to set the memory of th cell, with k ~ 6 - 7 frames
-            %
-            for cc=1:numel()
+            l= label2;
+            l(bw1)=0;  % removes bud from list; 
+            l=l(miney:maxey,minex:maxex);
+            lmemory=double(l);
+      
+            for cc=1:max(l(:))
+                b=l==cc;
                 
+                if cc>numel(memory)
+                    memory(cc)=0;
+                end
+                
+                lmemory(b)=(memory(cc)+1)./(memory(cc)+1+6); % memory saturates within 6 frames
             end
                 
-                
-            tmpcrop(:,:,5)=255*uint8(label2(miney:maxey,minex:maxex)>0);
+            tmpcrop(:,:,5)=uint8(255*lmemory);
             
-            lab=label2==mothers(k);
-
+            lab=label2==mothers(k); % HERE
+            
             lab=lab(miney:maxey,minex:maxex);
+            
+         %   figure, imshow(lab,[]);
             
             
             labels= double(zeros(size(lab,1),size(lab,2),3));
@@ -207,9 +231,23 @@ for i=rois
             
         end
         
-        msg = sprintf('Processing frame: %d / %d for ROI %s', j, size(im,4),cltmp(i).id); %Don't forget this semicolon
-        fprintf([reverseStr, msg]);
-        reverseStr = repmat(sprintf('\b'), 1, length(msg));
+         memory=memory+1;
+          
+        % newcells,mothers
+         newcells= newcells( newcells<=numel(mothers));
+         news=[newcells' mothers(newcells)];
+        
+         if numel(news)
+         memory(news~=0)=0;
+         end
+        
+     %   if numel(newmothers)
+         
+       % end
+        
+       % msg = sprintf('Processing frame: %d / %d for ROI %s', j, size(im,4),cltmp(i).id); %Don't forget this semicolon
+      %  fprintf([reverseStr, msg]);
+     %   reverseStr = repmat(sprintf('\b'), 1, length(msg));
     end
     
     fprintf('\n');

@@ -184,12 +184,6 @@ if trainingParam.train_LSTM_network | ~exist(str) % training of LSTM network, if
     
     sequencesTrain = sequences(idxTrain);
     labelsTrain = labels(idxTrain);
-    %class(labelsTrain)
-    %size(labelsTrain)
-    %class(labelsTrain{:})
-    %size(labelsTrain{:})
-    %labelsTrain{1}= repmat(labelsTrain{1},[1 500])
-    %class(labels{1})
     
     if strcmp(trainingParam.classifier_output{end},'sequence-to-one') % sequence to one classification
         labelsTrain=[labelsTrain{:}]';

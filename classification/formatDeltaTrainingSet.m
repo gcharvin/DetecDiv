@@ -18,13 +18,13 @@ end
             
             dims = [1 100];
             
-            definput = {imagesize};%, num2str(inte)};
+            definput = {num2str(imagesize)};%, num2str(inte)};
             answer = inputdlg(prompt,dlgtitle,dims,definput);
             
             if numel(answer)==0
                 return;
             else
-                imagesize=answer{1};
+                imagesize=str2num(answer{1});
                 classif.trainingParam.imagesize=imagesize;
                 classif.channel=4; %specifies that 4 channels will be used
                 classiSave(classif);
