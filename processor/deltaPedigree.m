@@ -94,6 +94,7 @@ end
          classifier=evalin('base',param.classifier_name);
     else
         disp('This classifer is not in the workspace. Please load the classifier using the load method applied to the relevant @classi')
+        return;
     end
     
 %creates an output channel to update results
@@ -224,7 +225,7 @@ for j=frames(1)+1:frames(end)-1 % loop on all frames
              tmpcrop=imresize(tmpcrop,classifier.Layers(1).InputSize(1:2));
              [C,score,features]= semanticseg(tmpcrop, classifier);
              
-             BW=features(:,:,2)>0.9;
+             BW=features(:,:,2)>0.95;
              
              if sum(BW(:))>0
              si=  [maxey-miney+1,maxex-minex+1];
@@ -238,12 +239,16 @@ for j=frames(1)+1:frames(end)-1 % loop on all frames
              for kk=ce
                  tmp=l==kk;
                  
-                 freq(cc)=mean(BW(tmp));
+           %      freq(cc)=mean(BW(tmp));
+           pic=BW & tmp;
+                 freq(cc)=sum(pic(:));
                  cc=cc+1;
              end
              
-            if k==124
-                ce,freq
+            if k==117
+               % ce,freq
+              %  figure, imshow(BW,[])
+              %  figure, imshow(l,[])
             end
             
              [m ix]=max(freq);
