@@ -68,11 +68,13 @@ for i=1:numel(roiobj)
     roiobj(i).load('results');
     roiobj(i).path=strrep(roiobj(i).path,'/shared/space2/','\\space2.igbmc.u-strasbg.fr\');
     roiobj(i).results.RLS.(['from_' classifstrid])=RLS(roiobj(i),'result',classif,param); %struct() use to keep measureRLS2 code
+    roiobj(i).train.RLS.(['from_' classifstrid])=RLS(roiobj(i),'train',classif,param); %struct() use to keep measureRLS2 code
+
 %     if isprop(roiobj(i),'train') && numel(roiobj(i).train.(classifstrid).id)>0
 %         roiobj(i).train.(classifstrid).RLS=RLS(roiobj(i),'train',classif,param);
 %     end
     
-    roiobj(i).save();
+    roiobj(i).save('results');
     roiobj(i).clear;
 end
 
@@ -152,7 +154,7 @@ classes=classif.classes;
                 rlsGroundtruth.framediv=divTimesG.framediv;
                 rlsGroundtruth.sep=[];
                 rlsGroundtruth.name=roi.id;
-                rlsGroundtruth.roiid=[];
+                %rlsGroundtruth.roiid=[];
                 rlsGroundtruth.ndiv=divTimesG.ndiv;
                 rlsGroundtruth.totaltime=[divTimesG.framediv(1)-divTimesG.frameBirth, cumsum(divTimesG.duration)+divTimesG.framediv(1)-divTimesG.frameBirth];
                 rlsGroundtruth.rules=[];
