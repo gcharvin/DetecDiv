@@ -235,12 +235,12 @@ for i=1:length(rois)
         classif.roi(cc+1).train.(classif.strid).mother= [];%zeros(1,size(classif.roi(cc+1).image,4));
         % classif.roi(cc+1).train= zeros(1,size(classif.roi(cc+1).image,4));
         
-        im=classif.roi(cc+1).image;
+     %   im=classif.roi(cc+1).image;
         %size(im)
-        ch=classif.roi(cc+1).findChannelID(classif.channelName{2});
-        matrix=im(:,:,ch,:);
+     %   ch=classif.roi(cc+1).findChannelID(classif.channelName{2});
+     %   matrix=im(:,:,ch,:);
         
-        classif.roi(cc+1).addChannel(matrix,classif.strid,[1 1 1],[0 0 0]);
+     %   classif.roi(cc+1).addChannel(matrix,classif.strid,[1 1 1],[0 0 0]);
     end
     
     

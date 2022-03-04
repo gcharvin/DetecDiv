@@ -513,8 +513,8 @@ end
 cctext=1;
 
 %test
+
 for i=1:numel(obj.display.channel)
-    
     pix=find(obj.channelid==i); % find matrix index associated with channel
     pix=pix(1); % there may be several items in case of a   multi-array channel
     
@@ -569,7 +569,7 @@ for i=1:numel(obj.display.channel)
         end
         
         % str=hp(cc).Title.String;
-        
+
         if numel(obj.results)>0
             pl = fieldnames(obj.results);
             %aa=obj.results
@@ -582,11 +582,13 @@ for i=1:numel(obj.display.channel)
                     end
                 end
                 
+                  
                 if isfield(obj.results.(pl{k}),'mother')
                     % pedigree data available .
-                    
-                    if strcmp(['results_' pl{k}],str) % identify channel
-                        
+              %    str,pl{k}
+                 %   if strcmp(['results_' pl{k}],str) % identify channel
+                    if strcmp([pl{k}],str) % identify channel
+                 %       'ok'
                         plotLinksResults(obj,hp,pl{k})
                         
                     end
@@ -613,6 +615,7 @@ for i=1:numel(obj.display.channel)
            
             xx=findobj('Tag','DrawCellNumber');
             
+            if numel(xx)
             if strcmp(xx.Checked,'on')
             
             for k=1:n
@@ -621,7 +624,7 @@ for i=1:numel(obj.display.channel)
                 htext(cctext)=text(r(k).Centroid(1),r(k).Centroid(2),num2str(id),'Color',[1 1 1],'FontSize',20,'Tag','tracktext');
                 cctext=cctext+1; % update handle counter
             end
-            
+            end
             end
         end
         
@@ -660,6 +663,10 @@ end
 h=findobj('Tag',['ROI' obj.id]);
 close(h);
 obj.addChannel(matrix,answer{1},str2num(answer{2}),str2num(answer{3}));
+
+            disp(['update stretchlim: ' num2str(obj.id) ', computing them...']);
+            obj.computeStretchlim;
+        
 obj.view;
 end
 
@@ -1496,16 +1503,27 @@ for i=1:numel(obj.display.channel)
                         tt=num2str(obj.results.(pl{k}).id(obj.display.frame));
                         str=[str ' - class #' tt ' (' pl{k} ')'];
                     end
-                end
-                
-                if isfield(obj.results.(pl{k}),'mother')
+                 end
+%                 
+%                 if isfield(obj.results.(pl{k}),'mother')
+%                     % pedigree data available .
+%                     
+%                     if strcmp(['results_' pl{k}],str) % identify channel
+%                         
+%                         plotLinksResults(obj,hp,pl{k})
+%                     end
+%                 end
+
+      if isfield(obj.results.(pl{k}),'mother')
                     % pedigree data available .
-                    
-                    if strcmp(['results_' pl{k}],str) % identify channel
-                        
+              %    str,pl{k}
+                 %   if strcmp(['results_' pl{k}],str) % identify channel
+                    if strcmp([pl{k}],str) % identify channel
+                 %       'ok'
                         plotLinksResults(obj,hp,pl{k})
                     end
-                end
+      end
+                
             end
         end
         
@@ -1659,10 +1677,12 @@ end
 function plotLinksResults(obj,hp,strid)
 mother=obj.results.(strid).mother;
 
+
 hmother=findobj('Tag','mothertagresults');
 hmother2=findobj('Tag','mothertagresults2');
 
-hpt=findobj(hp,'UserData',['results_' strid]);
+%hpt=findobj(hp,'UserData',['results_' strid]);
+hpt=findobj(hp,'UserData',[strid]);
 hpt=findobj(hpt,'Type','Image');
 
 imtmp=hpt.CData;
@@ -1745,7 +1765,7 @@ for i=1:numel(obj.display.channel)
   
         
         % WARNING PIX MAY BE A 1 or  3 element vector
-        if ~isfield(obj.display,'stretchlim') && ~isprop(obj.display,'stretchlim')
+        if (~isfield(obj.display,'stretchlim') && ~isprop(obj.display,'stretchlim')) || size(obj.display.stretchlim,2)<numel(obj.display.channel)
             disp(['No stretch limits found for ROI ' num2str(obj.id) ', computing them...']);
             obj.computeStretchlim;
         end
