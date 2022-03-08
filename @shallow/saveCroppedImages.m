@@ -14,8 +14,7 @@ frames=[];
 fovid=1:numel(obj.fov); % All FOVs will be processed
 cut=20;
 correctdrift=true;
-
-%channelint=ones(1,numel(obj.fov(1).srclist));
+crashrecovery=0;
 
 for i=1:numel(varargin)
     if strcmp(varargin{i},'frames') % frames to be processed
@@ -30,8 +29,12 @@ for i=1:numel(varargin)
         cut=varargin{i+1};
     end
     
-     if strcmp(varargin{i},'correctdrift') % number of frames loaded at once to prepare ROI matrices
+    if strcmp(varargin{i},'correctdrift') % number of frames loaded at once to prepare ROI matrices
         correctdrift=logical(varargin{i+1});
+    end
+    
+    if strcmp(varargin{i},'crashrecovery')
+        crashrecovery=varargin{i+1};
     end
     
     %       if strcmp(varargin{i},'channelint') % frames interval
@@ -41,6 +44,29 @@ end
 % first creat independent fov indentical to obj.fov
 
 tmpfov=fov;
+
+if crashrecovery==1
+    if exist(fullfile(userpath, 'tmpcrash.mat'))
+        disp(['A crash log file exist at location : ' userpath]);
+        load(fullfile(userpath, 'tmpcrash.mat'));
+        fovid= tmpcrash.fovid;
+        
+        framecell= tmpcrash.framecell;
+        
+        i=tmpcrash.currentfovid;
+        
+        pix=find(fovid==i);
+        fovid=fovid(pix:end);
+        
+        currentframe=tmpcrash.currentframe;
+    else
+        disp('I could not find any crash recovery file !');
+        return;
+    end
+else
+    currentframe=[];
+end
+
 for i=fovid
     tmpfov(i)=obj.fov(i);
     %tmpfov(i)=propValues(tmpfov(i),obj.fov(i));
@@ -56,6 +82,7 @@ for i=fovid
         %return
         continue
     end
+    
     if numel(tmpfov(i).roi(1).id)==0
         disp('this FOV has no ROI ! Quitting ....');
         %break
@@ -71,7 +98,6 @@ for i=fovid
     
     % find the number of arrays
     framecell={}; % a cell array that specfifes how to porcess the frames
-    
     
     narr= floor(numel(nframes)/cut);
     id=1:narr*cut;
@@ -89,21 +115,45 @@ for i=fovid
     nframestot=nframes;
     
     % % create fov specific directory
-    %
+    
     
     if ~exist(fullfile(strpath,tmpfov(i).id),'dir')
+        try
         mkdir(strpath,tmpfov(i).id);
+        catch
+          disp(['Could not create folder : ' tmpfov(i).id  ' in ' strpath '; Quitting !'])
+          return;
+        end
     end
     
     disp('loading reference image to perform XY alignment');
     
     refframe=framecell{1}(1);
     refframeid=refframe;
-    refimage=tmpfov(i).readImage(refframe,1);
+    
+    % reading data
+    try
+        refimage=tmpfov(i).readImage(refframe,1);
+        if numel(refimage)==0
+            disp(['Unable to read frame ' num2str(refframe) ' in channel ' num2str(1)]);
+            dumprecovery(fovid,framecell,i,1);
+            return;
+        end
+    catch
+        disp(['Unable to read frame ' num2str(refframe) ' in channel ' num2str(1)]);
+        dumprecovery(fovid,framecell,i,1);
+        return;
+    end
     
     disp('Loading raw images in memory ....');
     
-    for ii=1:numel(framecell) % loop on all blocks of frames on a given FOV
+    frstart=1;
+    if numel(currentframe)>0 % crash recovery on going, restart from previous error
+        frstart=currentframe;
+        currentframe=[];
+    end
+    
+    for ii=frstart:numel(framecell) % loop on all blocks of frames on a given FOV
         nframes= framecell{ii};
         list={};
         % refframe=framecell{1}(1);
@@ -116,7 +166,23 @@ for i=fovid
             
             for k=1:numel(tmpfov(i).channel) % loop on channels
                 frame=(nframes(j)); %/channelint(k))+1; %  spacing frames when channels are not used with equal time interval
-                im=tmpfov(i).readImage(frame,k);
+                
+                
+                %     im=tmpfov(i).readImage(frame,k);
+                
+                try
+                    im=tmpfov(i).readImage(frame,k);
+                    if numel(im)==0
+                        disp(['Unable to read frame ' num2str(frame) ' in channel ' num2str(k)]);
+                        dumprecovery(fovid,framecell,i,ii);
+                        return;
+                    end
+                catch
+                    disp(['Unable to read frame ' num2str(frame) ' in channel ' num2str(k)]);
+                    dumprecovery(fovid,framecell,i,ii);
+                    return;
+                end
+                
                 
                 if tmpfov(i).display.binning(k) ~= tmpfov(i).display.binning(1)
                     im=imresize(im,tmpfov(i).display.binning(k)/tmpfov(i).display.binning(1));
@@ -136,32 +202,32 @@ for i=fovid
         
         if correctdrift
             
-        disp('Correcting XY drift in images...');
-        
-        method='circshift';
-        % method='subpixel';
-        
-        tmpfov(i).computeDrift('framesid',nframes,'refframeid',refframeid,'method',method,'refimage',refimage,'images',list(:,1),'fov',i); % compute drift and store in fov.drift
-        
-        %a= tmpfov(i).drift.x
-        
-        for j=1:numel(nframes)
-            row=tmpfov(i).drift.x(nframes(j));
-            col=tmpfov(i).drift.y(nframes(j));
+            disp('Correcting XY drift in images...');
             
-            for k=1:numel(tmpfov(i).channel)
+            method='circshift';
+            % method='subpixel';
+            
+            tmpfov(i).computeDrift('framesid',nframes,'refframeid',refframeid,'method',method,'refimage',refimage,'images',list(:,1),'fov',i); % compute drift and store in fov.drift
+            
+            %a= tmpfov(i).drift.x
+            
+            for j=1:numel(nframes)
+                row=tmpfov(i).drift.x(nframes(j));
+                col=tmpfov(i).drift.y(nframes(j));
                 
-                if strcmp(method,'circshift')
-                    list{j,k}=circshift( list{j,k},row,1);
-                    list{j,k}=circshift( list{j,k},col,2);
-                end
-                if strcmp(method,'subpixel')
-                    list{j,k}=imtranslate(list{j,k},[-col -row]);
-                    %  list{j,k}=imtranslate(list{j,k},[row col]);
+                for k=1:numel(tmpfov(i).channel)
+                    
+                    if strcmp(method,'circshift')
+                        list{j,k}=circshift( list{j,k},row,1);
+                        list{j,k}=circshift( list{j,k},col,2);
+                    end
+                    if strcmp(method,'subpixel')
+                        list{j,k}=imtranslate(list{j,k},[-col -row]);
+                        %  list{j,k}=imtranslate(list{j,k},[row col]);
+                    end
                 end
             end
-        end
-        
+            
         end
         
         disp('Cropping ROIs....');
@@ -184,7 +250,22 @@ for i=fovid
             
             if ii~=1 % if not the first group of frame, re-load the 4D im to append data
                 % if numel(tmproi(l).image)==[]
-                tmproi(l).load;
+                
+                  try
+                    tmproi(l).load;
+                    if numel(tmproi(l).image)==0
+                        disp(['Unable to load ROI ' num2str(l)]);
+                        dumprecovery(fovid,framecell,i,ii);
+                        return;
+                    end
+                  catch
+                      disp(['Unable to load ROI ' num2str(l)]);
+                       dumprecovery(fovid,framecell,i,ii);
+                    return;
+                  end
+                
+                
+                
                 %  end
             else   % first group of frames, need to create structure
                 init=1;
@@ -212,16 +293,17 @@ for i=fovid
                 end
                 
                 % add additional channels for cell contours if any
+                % (phylocell projects)
                 
                 
                 if numel(tmpfov(i).contours)
-                
+                    
                     if isfield(tmpfov(i).contours,'cells1')
-                   
+                        
                         if numel(tmpfov(i).contours.cells1)>1
-                          
-                             ccc=numel(tmpfov(i).channel)+1;
-                                            
+                            
+                            ccc=numel(tmpfov(i).channel)+1;
+                            
                             tmproi(l).display.channel{ccc}='cells1'; %['Channel ' num2str(k)];
                             tmproi(l).display.intensity(ccc,:)=temp;
                             tmproi(l).channelid(ccc)=ccc;
@@ -231,12 +313,12 @@ for i=fovid
                         end
                     end
                     
-                 
+                    
                     if isfield(tmpfov(i).contours,'nucleus')
                         
                         if numel(tmpfov(i).contours.nucleus)>1
-                             ccc=ccc+1;
-                              
+                            ccc=ccc+1;
+                            
                             tmproi(l).display.channel{ccc}='nucleus'; %['Channel ' num2str(k)];
                             tmproi(l).display.intensity(ccc,:)=temp;
                             tmproi(l).channelid(ccc)=ccc;
@@ -248,6 +330,7 @@ for i=fovid
                     
                 end
                 
+                % write here
                 tmproi(l).save;
                 %       tmproi(l).clear;
             end
@@ -276,59 +359,72 @@ for i=fovid
                     %   tt= tmproi(l).image(:,:,k,nframes(j));
                 end
                 
-                 
-               for k=numel(tmpfov(i).channel)+1: numel(tmproi(l).display.channel)
-                   
-                   if  tmproi(l).display.channel{k}=="cells1"
-                       
+                
+                for k=numel(tmpfov(i).channel)+1: numel(tmproi(l).display.channel)
+                    
+                    if  tmproi(l).display.channel{k}=="cells1"
+                        
                         tmproi(l).image(:,:,k,nframes(j))= uint16(zeros(size(tmp,1),size(tmp,2)));
                         labtmp= tmproi(l).image(:,:,k,nframes(j));
                         
                         if  nframes(j)<=size(tmpfov(i).contours.cells1,1)
-                        cells1= tmpfov(i).contours.cells1(nframes(j),:);
-                        
-                        for cd=1:size(cells1,2)
-                            x=cells1(cd).x-(rroitmp(2)-1);
-                            y=cells1(cd).y-(rroitmp(1)-1);
+                            cells1= tmpfov(i).contours.cells1(nframes(j),:);
                             
-                            mask = poly2mask(x,y,size(tmp,1),size(tmp,2)); %%HEREE 
-                            labtmp(mask)=cells1(cd).n;
+                            for cd=1:size(cells1,2)
+                                x=cells1(cd).x-(rroitmp(2)-1);
+                                y=cells1(cd).y-(rroitmp(1)-1);
+                                
+                                mask = poly2mask(x,y,size(tmp,1),size(tmp,2)); %%HEREE
+                                labtmp(mask)=cells1(cd).n;
+                            end
+                            
+                            tmproi(l).image(:,:,k,nframes(j)) = labtmp;
                         end
-                        
-                        tmproi(l).image(:,:,k,nframes(j)) = labtmp;
-                        end
-                   end
-                   
+                    end
+                    
                     if  tmproi(l).display.channel{k}=="nucleus"
-                       
-                          tmproi(l).image(:,:,k,nframes(j))= uint16(zeros(size(tmp,1),size(tmp,2)));
+                        
+                        tmproi(l).image(:,:,k,nframes(j))= uint16(zeros(size(tmp,1),size(tmp,2)));
                         labtmp= tmproi(l).image(:,:,k,nframes(j));
                         
                         if  nframes(j)<=size(tmpfov(i).contours.nucleus,1)
-                        nucleus= tmpfov(i).contours.nucleus(nframes(j),:);
-                        
-                        for cd=1:size(nucleus,2)
-                            x=nucleus(cd).x-(rroitmp(2)-1);
-                            y=nucleus(cd).y-(rroitmp(1)-1);
+                            nucleus= tmpfov(i).contours.nucleus(nframes(j),:);
                             
-                            mask = poly2mask(x,y,size(tmp,1),size(tmp,2)); %%HEREE 
-                            labtmp(mask)=nucleus(cd).n;
+                            for cd=1:size(nucleus,2)
+                                x=nucleus(cd).x-(rroitmp(2)-1);
+                                y=nucleus(cd).y-(rroitmp(1)-1);
+                                
+                                mask = poly2mask(x,y,size(tmp,1),size(tmp,2)); %%HEREE
+                                labtmp(mask)=nucleus(cd).n;
+                            end
+                            
+                            tmproi(l).image(:,:,k,nframes(j)) = labtmp;
                         end
-                        
-                        tmproi(l).image(:,:,k,nframes(j)) = labtmp;
-                        end
-                    end 
-               end
-
+                    end
+                end
+                
                 %cc=cc+1;
             end
             
-            tmproi(l).save;
-                tmproi(l).clear;
+              try
+                     tmproi(l).save;
+                     tmproi(l).clear;
+                     disp(['Saved images for ROI ' tmproi(l).id ' in FOV : ' tmpfov(i).id]); %d / %d ROIs saved for FOV %s', l , numel(tmpfov(i).roi), tmpfov(i).id); %Don't forget this semicolon
+                     
+%                     if numel(tmproi(l).im)==0
+%                         disp(['Unable to load ROI ' num2str(l)]);
+%                         dumprecovery(fovid,framecell,i,ii);
+%                         return;
+%                     end
+                catch
+                      disp(['Unable to save ROI ' num2str(l)]);
+                       dumprecovery(fovid,framecell,i,ii);
+                    return;
+              end
+                  
+          
             %tmpfov(i).roi(l).clear;
-            
-            disp(['Saved images for ROI ' tmproi(l).id ' in FOV : ' tmpfov(i).id]); %d / %d ROIs saved for FOV %s', l , numel(tmpfov(i).roi), tmpfov(i).id); %Don't forget this semicolon
-            
+
             % msg = sprintf('Images in %d / %d ROIs saved for FOV %s', l , numel(tmpfov(i).roi), tmpfov(i).id); %Don't forget this semicolon
             % fprintf([reverseStr, msg]);
             %  reverseStr = repmat(sprintf('\b'), 1, length(msg));
@@ -345,9 +441,9 @@ end
 
 for i=fovid % restore obj structure
     obj.fov(i)=tmpfov(i);
-  %  for l=1:numel(obj.fov(i).roi)
- %       obj.fov(i).roi(l).clear;
-  %  end
+    %  for l=1:numel(obj.fov(i).roi)
+    %       obj.fov(i).roi(l).clear;
+    %  end
 end
 
 disp('Saving project...');
@@ -363,6 +459,15 @@ for k = 1:length(pl)
     end
 end
 
+
+function dumprecovery(fovid,framecell,currentfovid,currentframe)
+
+tmpcrash =[];
+tmpcrash.fovid=fovid;
+tmpcrash.framecell=framecell;
+tmpcrash.currentfovid=currentfovid;
+tmpcrash.currentframe=currentframe;
+save(fullfile(userpath, 'tmpcrash.mat'),'tmpcrash');
 
 
 
