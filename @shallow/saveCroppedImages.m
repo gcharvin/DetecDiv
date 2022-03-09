@@ -122,6 +122,7 @@ for i=fovid
         mkdir(strpath,tmpfov(i).id);
         catch
           disp(['Could not create folder : ' tmpfov(i).id  ' in ' strpath '; Quitting !'])
+          disp(' This is an I/O CRASH: start ROI extraction again with crashrecovery mode set to 1');
           return;
         end
     end
@@ -136,11 +137,13 @@ for i=fovid
         refimage=tmpfov(i).readImage(refframe,1);
         if numel(refimage)==0
             disp(['Unable to read frame ' num2str(refframe) ' in channel ' num2str(1)]);
+            disp(' This is an I/O CRASH: start ROI extraction again with crashrecovery mode set to 1');
             dumprecovery(fovid,framecell,i,1);
             return;
         end
     catch
         disp(['Unable to read frame ' num2str(refframe) ' in channel ' num2str(1)]);
+        disp(' This is an I/O CRASH: start ROI extraction again with crashrecovery mode set to 1');
         dumprecovery(fovid,framecell,i,1);
         return;
     end
@@ -174,11 +177,13 @@ for i=fovid
                     im=tmpfov(i).readImage(frame,k);
                     if numel(im)==0
                         disp(['Unable to read frame ' num2str(frame) ' in channel ' num2str(k)]);
+                        disp(' This is an I/O CRASH: start ROI extraction again with crashrecovery mode set to 1');
                         dumprecovery(fovid,framecell,i,ii);
                         return;
                     end
                 catch
                     disp(['Unable to read frame ' num2str(frame) ' in channel ' num2str(k)]);
+                    disp(' This is an I/O CRASH: start ROI extraction again with crashrecovery mode set to 1');
                     dumprecovery(fovid,framecell,i,ii);
                     return;
                 end
@@ -418,6 +423,7 @@ for i=fovid
 %                     end
                 catch
                       disp(['Unable to save ROI ' num2str(l)]);
+                      disp(' This is an I/O CRASH: start ROI extraction again with crashrecovery mode set to 1');
                        dumprecovery(fovid,framecell,i,ii);
                     return;
               end
@@ -448,7 +454,13 @@ end
 
 disp('Saving project...');
 
-shallowSave(obj)
+shallowSave(obj);
+
+ if exist(fullfile(userpath, 'tmpcrash.mat')) % removing tmp crash file
+        disp('Removing crash log file...');
+        load(fullfile(userpath, 'tmpcrash.mat'));
+        delete(fullfile(userpath, 'tmpcrash.mat'));
+    end
 
 
 function newObj=propValues(newObj,orgObj)
