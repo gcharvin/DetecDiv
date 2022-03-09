@@ -67,12 +67,21 @@ else
     currentframe=[];
 end
 
+strpath=[obj.io.path obj.io.file];
+
 for i=fovid
     tmpfov(i)=obj.fov(i);
     %tmpfov(i)=propValues(tmpfov(i),obj.fov(i));
+    
+    for j=1:numel(obj.fov(i).roi)
+      obj.fov(i).roi(j).path=fullfile(strpath,obj.fov(i).id);
+    end
 end
 
-strpath=[obj.io.path obj.io.file];
+shallowSave(obj);
+
+
+
 
 for i=fovid
     
@@ -443,6 +452,7 @@ for i=fovid
         tmpfov(i).roi(l)=tmproi(l);
         %tmpfov(i)=propValues(tmpfov(i),obj.fov(i));
     end
+    
 end
 
 for i=fovid % restore obj structure
