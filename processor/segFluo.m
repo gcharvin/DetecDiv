@@ -54,7 +54,7 @@ for fr=1:numel(frames) %adjust boundaries
     %tmpimg=imbinarize(tmpimg,'adaptive', 'Sensitivity', 0.545);
     tmpimg=bwareaopen(tmpimg, 3);
     
-    if str2double(paramout.takeCenter)==1 %takes the most center islet only
+    if str2double(paramout.takeCenter_0or1)==1 %takes the most center islet only
         [~,LabeledMask]=bwboundaries(tmpimg); 
         if max(LabeledMask(:))>0
             distCenter=[];
