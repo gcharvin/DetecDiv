@@ -16,7 +16,7 @@ else
  feval(trainingFun,classif,setparam);  
  
 %    
-  if  ~isfield(classif.trainingParam,'transferLearning')
+  if  ~isfield(classif.trainingParam,'transfer_learning')
                  [t,lastIndex]=classif.version;
                  str=t(:,1);
                  str=['ImageNet', str', 'ImageNet'];

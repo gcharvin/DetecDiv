@@ -681,6 +681,16 @@ if strcmp(event.Key,'downarrow')
     ok=1;
 end
 
+if strcmp(event.Key,'delete')
+    h=findobj('Type','patch','FaceColor',[1 1 0]);
+    
+    if numel(h)
+%set(handles,'FaceColor',[1 1 0]);
+ removeROI(h,event,obj,him,hp);
+    end
+end
+
+
 if ok==1
     
     updatedisplay(obj,him,hp)

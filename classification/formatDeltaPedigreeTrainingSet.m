@@ -187,7 +187,7 @@ for i=rois
                     memory(cc)=0;
                 end
                 
-                lmemory(b)=(memory(cc)+1)./(memory(cc)+1+6); % memory saturates within 6 frames
+                lmemory(b)=1; %(memory(cc)+1)./(memory(cc)+1+6); % memory saturates within 6 frames
             end
                 
             tmpcrop(:,:,5)=uint8(255*lmemory);
