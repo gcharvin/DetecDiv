@@ -12,8 +12,14 @@ imout=zeros(size(tmp,1),size(tmp,2),numel(ch));
 if perImage==1 %if imadjust from each image
     strchlm=stretchlim(tmp(:,:,(end-1)/2 + 1,fr),[0.001 0.999]); 
 else %if imadjust with bounds computed from the whole timeseries
-    if ~isfield(obj.display,'stretchlim') && ~isprop(obj.display,'stretchlim')
-        error(['No stretch limits found for ROI ' num2str(obj.id) ', launch their computation using roi.computeStretchlim...']);
+    
+    %     if ~isfield(obj.display,'stretchlim') && ~isprop(obj.display,'stretchlim')
+%         error(['No stretch limits found for ROI ' num2str(obj.id) ', launch their computation using roi.computeStretchlim...']);
+%     end
+
+    if (~isfield(obj.display,'stretchlim') && ~isprop(obj.display,'stretchlim')) || size(obj.display.stretchlim,2)<numel(obj.display.channel)
+            disp(['No stretch limits found for ROI ' num2str(obj.id) ', computing them...']);
+            obj.computeStretchlim;
     end
     strchlm=obj.display.stretchlim(:,(ch(end)-ch(1))/2 + ch(1)); %middle stack
 end

@@ -66,7 +66,8 @@ disp('Formatting video before classification....');
 vid=uint8(zeros(size(im,1),size(im,2),3,numel(frames)));
 
 for j=frames
-    param=[];
+    param=[];   
+        
     tmp=roiobj.preProcessROIData(pix,j,param);
     
     %tmp = double(imadjust(tmp,[meanphc/65535 maxphc/65535],[0 1]))/65535;
@@ -89,8 +90,8 @@ disp('Starting video classification...');
 % this function predict  is used instead of 'classify' function which causes an error
 % on R2019b
 
-try
-    
+
+ try   
     prob=predict(classifier,video,'ExecutionEnvironment', classif.trainingParam.execution_environment{end});
     %probCNN=predict(classifierCNN,video);
     if numel(classifierCNN)
@@ -98,7 +99,7 @@ try
          % [labelCNN,probCNN] = classify(classifierCNN,video);
              probCNN=predict(classifierCNN,video);
     end
-catch
+    catch
     
     disp('Error with predict function  : likely out of memory issue with GPU, trying CPU computing...');
     prob=predict(classifier,video,'ExecutionEnvironment', 'cpu');
@@ -107,8 +108,8 @@ catch
       %  [labelCNN,probCNN] = classify(classifierCNN,gfp);
           probCNN=predict(classifierCNN,video,'ExecutionEnvironment', 'cpu');
     end
-end
 
+end
 
 labels = classifier.Layers(end).Classes;
 if size(prob,1) == numel(labels) % adjust matrix depending on matlab version

@@ -39,19 +39,19 @@ warning off all
 
 channel=classif.channelName;
 
-parfor i=rois
+parfor i=1:numel(rois)
     disp(['Launching ROI ' num2str(i) :' processing...'])
     
-    if numel(cltmp(i).image)==0
-        cltmp(i).load; % load image sequence
+    if numel(cltmp(rois(i)).image)==0
+        cltmp(rois(i)).load; % load image sequence
     end
     
     % normalize intensity levels
     
-    pix=cltmp(i).findChannelID(channel{1});
+    pix=cltmp(rois(i)).findChannelID(channel{1});
     
     %  pix=find(cltmp(i).channelid==classif.channel(1)); % find channel
-    im=cltmp(i).image(:,:,pix,:);
+    im=cltmp(rois(i)).image(:,:,pix,:);
     
     if numel(classif.trainingset)==0
         param.nframes=1; % number of temporal frames per frame
@@ -60,7 +60,7 @@ parfor i=rois
     end
     
     param=[];
-    imtest=cltmp(i).preProcessROIData(pix,1,param); % done to determine image size
+    imtest=cltmp(rois(i)).preProcessROIData(pix,1,param); % done to determine image size
     % this preprocessing can only be performed on grayscale images
     % numel(pix)=1
     
@@ -69,8 +69,8 @@ parfor i=rois
     
     
     if classif.typeid~=12 % only for  image classif
-        pixb=numel(cltmp(i).train.(classif.strid).id);
-        pixa=find(cltmp(i).train.(classif.strid).id==0);
+        pixb=numel(cltmp(rois(i)).train.(classif.strid).id);
+        pixa=find(cltmp(rois(i)).train.(classif.strid).id==0);
         
         if numel(pixa)>0 || numel(pixa)==0 && pixb==0 % some images are not labeled, quitting ...
             disp('Error: some images are not labeled in this ROI - LSTM requires all images to be labeled in the timeseries!');
@@ -79,7 +79,7 @@ parfor i=rois
         
         % 'pasok'
         
-        lab= categorical(cltmp(i).train.(classif.strid).id,1:numel(classif.classes),classif.classes); % creates labels for classification
+        lab= categorical(cltmp(rois(i)).train.(classif.strid).id,1:numel(classif.classes),classif.classes); % creates labels for classification
     else
         lab=[];
     end
@@ -89,7 +89,7 @@ parfor i=rois
         
         for j=1:size(im,4)
             
-            tmp=cltmp(i).preProcessROIData(pix,j,param);            
+            tmp=cltmp(rois(i)).preProcessROIData(pix,j,param);            
             %figure, imshow(tmp);
             %pause;
             %close;            
@@ -101,19 +101,19 @@ parfor i=rois
             end
             
             if classif.output==0
-                cmp=cltmp(i).train.(classif.strid).id(j); % seuquence-to-sequence classif
+                cmp=cltmp(rois(i)).train.(classif.strid).id(j); % seuquence-to-sequence classif
             else
-                cmp=cltmp(i).train.(classif.strid).id; % sequence-to-one classif
+                cmp=cltmp(rois(i)).train.(classif.strid).id; % sequence-to-one classif
             end
             
             if cmp~=0 % if training is done
                 % if ~isfile([str '/unbudded/im_' mov.trap(i).id '_frame_' tr '.tif'])
-                imwrite(tmp,[classif.path '/' foldername '/images/' classif.classes{cmp} '/' cltmp(i).id '_frame_' tr '.tif']);
+                imwrite(tmp,[classif.path '/' foldername '/images/' classif.classes{cmp} '/' cltmp(rois(i)).id '_frame_' tr '.tif']);
                 output=output+1;
                 % end
             end
             
-            msg = sprintf('Processing frame: %d / %d for ROI %s', j, size(im,4),cltmp(i).id); %Don't forget this semicolon
+            msg = sprintf('Processing frame: %d / %d for ROI %s', j, size(im,4),cltmp(rois(i)).id); %Don't forget this semicolon
             fprintf([reverseStr, msg]);
             reverseStr = repmat(sprintf('\b'), 1, length(msg));
         end
@@ -126,26 +126,26 @@ parfor i=rois
         for j=1:size(im,4)
             % tmp(:,:,:j)=im(:,:,:,j);
             
-            tmp=cltmp(i).preProcessROIData(pix,j,param);
+            tmp=cltmp(rois(i)).preProcessROIData(pix,j,param);
             vid(:,:,:,j)=uint8(256*tmp);
         end
         
         %  if cltmp(i).train.(classif.strid).id(j)~=-1 % if training is done
-        parsaveim([classif.path '/' foldername '/images/' cltmp(i).id '.mat'],tmp);
+        parsaveim([classif.path '/' foldername '/images/' cltmp(rois(i)).id '.mat'],tmp);
         
-        parsaveresp([classif.path '/' foldername '/response/' cltmp(i).id '.mat'],cltmp(i).train.(classif.strid).id);
+        parsaveresp([classif.path '/' foldername '/response/' cltmp(rois(i)).id '.mat'],cltmp(rois(i)).train.(classif.strid).id);
         output=output+1;
         %   end
     end
     
     fprintf('\n');
     
-    deep=cltmp(i).train.(classif.strid).id;
-    parsave([classif.path '/' foldername '/timeseries/lstm_labeled_' cltmp(i).id '.mat'],deep,vid,lab);
+    deep=cltmp(rois(i)).train.(classif.strid).id;
+    parsave([classif.path '/' foldername '/timeseries/lstm_labeled_' cltmp(rois(i)).id '.mat'],deep,vid,lab);
     
-    cltmp(i).save;
+    cltmp(rois(i)).save;
     
-    disp(['Processing ROI: ' num2str(i) ' ... Done !'])
+    disp(['Processing ROI: ' num2str(rois(i)) ' ... Done !'])
 end
 
 
