@@ -1,7 +1,10 @@
-function im=preProcessROIData(obj,ch,fr,param)
+function im=preProcessROIData(obj,ch,fr,dorepmat)
 
+if numel(dorepmat)==0
+    dorepmat=1;
+end
 % preprocess frame / channel image of ROI and returns corresponding image
-
+%fr must be a double, not a vector;
 perImage=0;
 %here add param.perImage
 
@@ -17,7 +20,7 @@ else %if imadjust with bounds computed from the whole timeseries
 %         error(['No stretch limits found for ROI ' num2str(obj.id) ', launch their computation using roi.computeStretchlim...']);
 %     end
 
-    if (~isfield(obj.display,'stretchlim') && ~isprop(obj.display,'stretchlim')) || size(obj.display.stretchlim,2)<numel(obj.display.channel)
+    if (~isfield(obj.display,'stretchlim') && ~isprop(obj.display,'stretchlim')) || size(obj.display.stretchlim,2)<numel(obj.channelid)
             disp(['No stretch limits found for ROI ' num2str(obj.id) ', computing them...']);
             obj.computeStretchlim;
     end
@@ -33,8 +36,10 @@ tmp = double(imadjust(tmp,strchlm))/65535;
 imout=tmp;
 
 
-if numel(ch)==1
+if dorepmat==1 && numel(ch)==1
     im=repmat(imout,[1 1 3]);
+elseif dorepmat==0
+    im=imout;
 elseif numel(ch)==3
     im=imout;
 else

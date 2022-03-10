@@ -115,7 +115,7 @@ classi=obj.processing.processor(classiid);
 
 % 
 
-disp([num2str(size(roilist,2)) ' ROIs to classify, be patient...']);
+disp([num2str(size(roilist,2)) ' ROIs to process with processor, be patient...']);
 
 tmp=roi; % build list of rois
 for i=1:size(roilist,2)
