@@ -172,8 +172,22 @@ if numel(handles)==0
     dritem(4) = uimenu(dr,'Text','Draw object','Tag','Draw object','Separator','on');
     set(dritem(4),'MenuSelectedFcn',{@drawObject,obj});
     
- %   dritem(5) = uimenu(dr,'Text','Draw cell number for tracked cells','Checked','off','Tag','DrawCellNumber');
-%   set(dritem(5),'MenuSelectedFcn',{@checkCells,obj,h,classif});
+ 
+      if numel(classif)>0
+           if strcmp(classif.category{1},'Image')  || strcmp(classif.category{1},'LSTM') % display user training and results
+               
+     dr = uimenu(h,'Text','Classification options','Tag','Classification');
+     
+    dritem = uimenu(dr,'Text','Assign classes for multiple frames','Tag','FillIn1');
+    set(dritem,'MenuSelectedFcn',{@fillInClasses,obj,classif});
+    
+       dritem2 = uimenu(dr,'Text','Fill-in unclassified frames with class from last classified frame','Tag','FillIn2');
+    set(dritem2,'MenuSelectedFcn',{@fillInClassesTheo,obj,classif});
+            end
+      end
+      
+    %   dritem(5) = uimenu(dr,'Text','Draw cell number for tracked cells','Checked','off','Tag','DrawCellNumber');
+    %   set(dritem(5),'MenuSelectedFcn',{@checkCells,obj,h,classif});
 end
 
 % build display image object
@@ -415,7 +429,7 @@ if numel(classif)>0
         
     end
     
-          
+    
     if strcmp(classif.category{1},'Pixel') | strcmp(classif.category{1},'Object') | strcmp(classif.category{1},'Image')  | strcmp(classif.category{1},'LSTM')
         % plotting classes menu for classification
         
@@ -540,20 +554,45 @@ for i=1:numel(obj.display.channel)
                             classesspe=    obj.classes ;
                         end
                         
-                        if tt<0
-                            tt='Not Clas.';
+                        if tt<=0
+                            if  length(obj.classes)>0
+                                tt='Not Clas.';
+                            else
+                                % regression
+                            end
                         else
-                            % if tt <= length(obj.classes) & tt>=0
-                            %     tt=obj.classes{tt};
-                            % else
-                            %     tt='N/A';
-                            %end
-                            tt=num2str(tt);
+                            
+                            if length(obj.classes)>0
+                                if tt <= length(obj.classes)
+                                    tt=obj.classes{tt};
+                                else
+                                    tt='N/A';
+                                end
+                            else
+                                
+                                %
+                                tt=num2str(tt);
+                            end
+                            
                         end
                         
                         %     tt
                         str=[str ' - ' tt ' (tr.: ' fields{k} ')'];
                         
+                        
+                        if numel(classif)>0
+                             if strcmp(classif.category{1},'Image')  || strcmp(classif.category{1},'LSTM') 
+                                 
+                                 
+                                  pixx=numel(find(obj.train.(classif.strid).id==0));
+                                  
+                                %  if pixx>0
+                                    if pixx>0
+                                 str=[str ' - ' num2str(pixx) ' frames remains to classify'];
+                                  end
+                                 
+                             end
+                        end
                         %                         if obj.train(obj.display.frame)==0
                         %                             str=[str ' - not classified'];
                         %                     %title(hp(cc),str, 'Color',[0 0 0],'FontSize',20);
@@ -569,7 +608,7 @@ for i=1:numel(obj.display.channel)
         end
         
         % str=hp(cc).Title.String;
-
+        
         if numel(obj.results)>0
             pl = fieldnames(obj.results);
             %aa=obj.results
@@ -582,13 +621,13 @@ for i=1:numel(obj.display.channel)
                     end
                 end
                 
-                  
+                
                 if isfield(obj.results.(pl{k}),'mother')
                     % pedigree data available .
-              %    str,pl{k}
-                 %   if strcmp(['results_' pl{k}],str) % identify channel
+                    %    str,pl{k}
+                    %   if strcmp(['results_' pl{k}],str) % identify channel
                     if strcmp([pl{k}],str) % identify channel
-                 %       'ok'
+                        %       'ok'
                         plotLinksResults(obj,hp,pl{k})
                         
                     end
@@ -607,24 +646,24 @@ for i=1:numel(obj.display.channel)
             
             im=him.image(cc).CData;
             
-    
+            
             [l n]=bwlabel(im);
             r=regionprops(l,'Centroid');
             
             %'ok'
-           
+            
             xx=findobj('Tag','DrawCellNumber');
             
             if numel(xx)
-            if strcmp(xx.Checked,'on')
-            
-            for k=1:n
-                bw=l==k;
-                id=round(mean(im(bw)));
-                htext(cctext)=text(r(k).Centroid(1),r(k).Centroid(2),num2str(id),'Color',[1 1 1],'FontSize',20,'Tag','tracktext');
-                cctext=cctext+1; % update handle counter
-            end
-            end
+                if strcmp(xx.Checked,'on')
+                    
+                    for k=1:n
+                        bw=l==k;
+                        id=round(mean(im(bw)));
+                        htext(cctext)=text(r(k).Centroid(1),r(k).Centroid(2),num2str(id),'Color',[1 1 1],'FontSize',20,'Tag','tracktext');
+                        cctext=cctext+1; % update handle counter
+                    end
+                end
             end
         end
         
@@ -640,14 +679,14 @@ end
 %  if strcmp(handles.Checked,'on')
 %  set(handles,'Checked','off')
 %  else
-%  set(handles,'Checked','on')     
+%  set(handles,'Checked','on')
 %  end
-%  
- %clf
+%
+%clf
 %h.UserData=[];
 %[him hp]=draw(obj,h,classif);
 
- %obj.view;
+%obj.view;
 % end
 
 function addChannel(handles, event,obj)
@@ -664,9 +703,9 @@ h=findobj('Tag',['ROI' obj.id]);
 close(h);
 obj.addChannel(matrix,answer{1},str2num(answer{2}),str2num(answer{3}));
 
-            disp(['update stretchlim: ' num2str(obj.id) ', computing them...']);
-            obj.computeStretchlim;
-        
+disp(['update stretchlim: ' num2str(obj.id) ', computing them...']);
+obj.computeStretchlim;
+
 obj.view;
 end
 
@@ -782,6 +821,107 @@ if numel(sele)==5
 end
 
 end
+
+function fillInClasses(handles, event,obj, classif)
+
+if numel(obj.classes)==0
+    disp('there are no classes in this roi !');
+    return;
+end
+
+h=findobj('Tag',['ROI' obj.id]);
+
+id=obj.train.(classif.strid).id;
+
+idframe=id(obj.display.frame);
+
+if idframe==0
+    idframe=1;
+end
+
+h.UserData.classframes={obj.classes{idframe}   num2str(obj.display.frame) num2str(size(obj.image,4)) };
+
+
+fig = uifigure('Position',[100 100 350 150],'UserData',h,'Name','Fill in classes in frames:');
+
+lab=uilabel(fig,'Position',[10, 120, 100, 22],'Text','Class: :');
+
+dd1 = uidropdown(fig,'Items', obj.classes,...
+    'Position',[10, 100, 150, 22],...
+    'Value', obj.classes{idframe},...
+    'ValueChangedFcn',@(dd,event) classselection(dd,fig,1));
+
+lab=uilabel(fig,'Position',[10, 80, 120, 22],'Text','Start frame:');
+
+txt = uieditfield(fig,...
+    'Value', num2str(obj.display.frame), 'Position',[40 60 100 22],...
+    'ValueChangedFcn',@(txt,event) classselection(txt,fig,2));
+
+
+lab=uilabel(fig,'Position',[140, 80, 120, 22],'Text','End frame:');
+
+txt2 = uieditfield(fig,...
+    'Value', num2str(size(obj.image,4)), 'Position',[190 60 100 22],...
+    'ValueChangedFcn',@(txt,event) classselection(txt,fig,3));
+
+% Code the callback function
+
+btn = uibutton(fig,'push',...
+    'Position',[10, 10, 100, 22],'Text','Proceed',...
+    'ButtonPushedFcn', @(btn,event) classButtonPushed(btn,fig));
+
+
+% Create the function for the ButtonPushedFcn callback
+    function classButtonPushed(btn,fig)
+        fig.UserData.UserData.classframes{4}='ok';
+        close(fig)
+    end
+
+% drop down selection function
+    function classselection(dd,fig,id)
+        val = dd.Value;
+        fig.UserData.UserData.classframes{id} = val;
+    end
+
+uiwait(fig);
+
+sele=h.UserData.classframes;
+
+if numel(sele)==4
+    
+    pix1=find(matches(obj.classes,sele{1}));
+    fr1=str2num(sele{2});
+    fr2=str2num(sele{3});
+    
+    obj.train.(classif.strid).id(fr1:fr2)=pix1;
+    
+    close(h);
+    
+    %
+    %    obj.removeChannel(sele);
+     %   obj.view;
+ 
+    obj.view(obj.display.frame,classif);
+end
+
+end
+
+function fillInClassesTheo(handles, event,obj, classif)
+
+
+if numel(obj.classes)==0
+    disp('there are no classes in this roi !');
+    return;
+end
+
+h=findobj('Tag',['ROI' obj.id]);
+
+obj.fillTraining('Training',classif.strid); 
+close(h);
+obj.view(obj.display.frame,classif);
+
+end
+
 
 
 function drawObject(handles, event,obj)
@@ -1462,22 +1602,43 @@ for i=1:numel(obj.display.channel)
                     classesspe=    obj.classes ;
                 end
                 
-                
-                
-                
-                if tt<0
-                    tt='Not Clas.';
-                else
-                    % if tt <= length(obj.classes) & tt>=0
-                    %     tt=obj.classes{tt};
-                    % else
-                    %     tt='N/A';
-                    %end
-                    tt=num2str(tt);
-                end
+                      if tt<=0
+                            if  numel(obj.classes)>0
+                                tt='Not Clas.';
+                            else
+                                % regression
+                            end
+                        else
+                            
+                            if numel(obj.classes)>0
+                                if tt <= length(obj.classes)
+                                    tt=obj.classes{tt};
+                                else
+                                    tt='N/A';
+                                end
+                            else
+                                
+                                %
+                                tt=num2str(tt);
+                            end
+                            
+                        end
                 
                 %     tt
-                str=[str ' - class #' tt ' (tr.: ' fields{k} ')'];
+                str=[str ' - class # ' tt ' (tr.: ' fields{k} ')'];
+                
+                   if numel(classif)>0
+                             if strcmp(classif.category{1},'Image')  || strcmp(classif.category{1},'LSTM') 
+                                 
+                                 
+                                  pixx=numel(find(obj.train.(classif.strid).id==0));
+                                  
+                                  if pixx>0
+                                 str=[str ' - ' num2str(pixx) ' frames remains to classify'];
+                                  end
+                             end
+                   end
+                        
                 
                 %                         if obj.train(obj.display.frame)==0
                 %                             str=[str ' - not classified'];
@@ -1503,26 +1664,26 @@ for i=1:numel(obj.display.channel)
                         tt=num2str(obj.results.(pl{k}).id(obj.display.frame));
                         str=[str ' - class #' tt ' (' pl{k} ')'];
                     end
-                 end
-%                 
-%                 if isfield(obj.results.(pl{k}),'mother')
-%                     % pedigree data available .
-%                     
-%                     if strcmp(['results_' pl{k}],str) % identify channel
-%                         
-%                         plotLinksResults(obj,hp,pl{k})
-%                     end
-%                 end
-
-      if isfield(obj.results.(pl{k}),'mother')
+                end
+                %
+                %                 if isfield(obj.results.(pl{k}),'mother')
+                %                     % pedigree data available .
+                %
+                %                     if strcmp(['results_' pl{k}],str) % identify channel
+                %
+                %                         plotLinksResults(obj,hp,pl{k})
+                %                     end
+                %                 end
+                
+                if isfield(obj.results.(pl{k}),'mother')
                     % pedigree data available .
-              %    str,pl{k}
-                 %   if strcmp(['results_' pl{k}],str) % identify channel
+                    %    str,pl{k}
+                    %   if strcmp(['results_' pl{k}],str) % identify channel
                     if strcmp([pl{k}],str) % identify channel
-                 %       'ok'
+                        %       'ok'
                         plotLinksResults(obj,hp,pl{k})
                     end
-      end
+                end
                 
             end
         end
@@ -1759,10 +1920,10 @@ for i=1:numel(obj.display.channel)
         
         tmp=src(:,:,pix,:);
         
-      %  imout=uint16(zeros(size(obj.image,1),size(obj.image,2),3));
+        %  imout=uint16(zeros(size(obj.image,1),size(obj.image,2),3));
         
         imtemp=obj.image(:,:,pix,frame);
-  
+        
         
         % WARNING PIX MAY BE A 1 or  3 element vector
         if (~isfield(obj.display,'stretchlim') && ~isprop(obj.display,'stretchlim')) || size(obj.display.stretchlim,2)<numel(obj.channelid)
@@ -1773,43 +1934,43 @@ for i=1:numel(obj.display.channel)
         strchlm=obj.display.stretchlim(:,(pix(end)-pix(1))/2 + pix(1)); %middle stack
         %strchlm=stretchlim(imtemp(:,:,(end-1)/2 + 1),[0.005 0.995]);
         %strchlm=stretchlim(imtemp(:,:,ceil((end+1)/2))); % computes the strecthlim for the middle stack. To be changed once we add multichannels as inputs.
-      
+        
         it=mean(obj.display.intensity(i,:)); % indexed images has intensity levels to 0
         
         if it~=0 || numel(pix)==3
-
-        imtemp=imadjust(imtemp,strchlm);
-        
+            
+            imtemp=imadjust(imtemp,strchlm);
+            
         end
         imout=imtemp;
-     %   if numel(pix)==1
-       %     imtemp =repmat(imtemp,[1 1 3]);
-      %  end
+        %   if numel(pix)==1
+        %     imtemp =repmat(imtemp,[1 1 3]);
+        %  end
         
         if numel(pix)==3
-        for j=1:size(imtemp,3)
-            %   i,j,pix(j)
-            %  tmp=src(:,:,pix(j),:);
-            %  meangfp=0.5*double(mean(tmp(:)));
-            % it=obj.display.intensity(i,j);
-            %                         maxgfp=double(meangfp+it*(max(tmp(:))-meangfp));
-            %                         if maxgfp==0
-            %                             maxgfp=1;
-            %                         end
-            
-            %size(imtemp)
-            
-            % if meangfp>0 && maxgfp>0
-            %    imtemp = imadjust(imtemp,[meangfp/65535 maxgfp/65535],[0 1]);
-            %end
-            
-            imout(:,:,j)=imtemp(:,:,j).*obj.display.rgb(i,j);
+            for j=1:size(imtemp,3)
+                %   i,j,pix(j)
+                %  tmp=src(:,:,pix(j),:);
+                %  meangfp=0.5*double(mean(tmp(:)));
+                % it=obj.display.intensity(i,j);
+                %                         maxgfp=double(meangfp+it*(max(tmp(:))-meangfp));
+                %                         if maxgfp==0
+                %                             maxgfp=1;
+                %                         end
+                
+                %size(imtemp)
+                
+                % if meangfp>0 && maxgfp>0
+                %    imtemp = imadjust(imtemp,[meangfp/65535 maxgfp/65535],[0 1]);
+                %end
+                
+                imout(:,:,j)=imtemp(:,:,j).*obj.display.rgb(i,j);
+            end
         end
-        end
-    
-    %         end
-    im(cc).data=imout;
-    cc=cc+1;
+        
+        %         end
+        im(cc).data=imout;
+        cc=cc+1;
     end
 end
 %   cc=cc+1;

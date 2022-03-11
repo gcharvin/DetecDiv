@@ -80,9 +80,6 @@ end
 
 shallowSave(obj);
 
-
-
-
 for i=fovid
     
     if numel(tmpfov(i).roi)==0

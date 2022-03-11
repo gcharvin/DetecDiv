@@ -85,8 +85,8 @@ for i=fovid % loop on all possible field of view
    [tmppos scores]=findTraps(tmp,obj.processing.roi.pattern,thr);
 
    if numel(tmppos)==0
-      disp('could not find any ROIs in image .... Quitting !');
-      return;
+      disp('could not find any ROIs in image .... skipping !');
+      continue
    end
    
     out(cc).positions=tmppos;
@@ -239,16 +239,17 @@ BW = im2bw(c,thr);
 pp = regionprops(BW,'centroid');
 pos = round(cat(1, pp.Centroid));
 
-orien=imrotate(img,180);
-c2 = normxcorr2(pattern,orien);
+% orien=imrotate(img,180);
+% c2 = normxcorr2(pattern,orien);
+% 
+% BW = im2bw(c2,thr);
+% BW=imrotate(BW,180);
+% 
+% pp = regionprops(BW,'centroid');
+% pos2 = round(cat(1, pp.Centroid));
+% 
+% pos=[pos ; pos2];
 
-BW = im2bw(c2,thr);
-BW=imrotate(BW,180);
-
-pp = regionprops(BW,'centroid');
-pos2 = round(cat(1, pp.Centroid));
-
-pos=[pos ; pos2];
 
 %    [tmppos2 scores2]=findTraps(orien,obj.processing.roi.pattern,thr);
 %    tmppos=[tmppos; tmppos2];

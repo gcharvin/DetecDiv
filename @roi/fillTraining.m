@@ -31,6 +31,8 @@ function fillTraining(obj,varargin)
 %will output 1 1 1 2 2 3
 
 type='default';
+training=[];
+
 for i=1:numel(varargin)
     if strcmp(varargin{i},'Type')
         type=varargin{i+1};
@@ -38,9 +40,13 @@ for i=1:numel(varargin)
             error('Please enter a valide Type, among default or div');
         end
     end
+     if strcmp(varargin{i},'Training')
+         training=varargin{i+1};
+     end
 end
 
 
+if numel(training)==0
 %find the training id
 trainids=fieldnames(obj.train);
 
@@ -57,6 +63,10 @@ if numel(trainid)==0
 end
 
 trainid=trainids{trainid};
+else
+    trainid=training; 
+end
+
 classes= obj.classes;
 %%
 switch type
