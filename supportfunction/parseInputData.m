@@ -30,40 +30,40 @@ progress=[];
 typ=[];
 
 % check if stringrepresents a valid file or folder
-                
+
 switch exist(pathdir)
     case 7 % is a dir
         
     otherwise
         disp('this directory does not exist ! Quitting !')
-         output.comments='Folder does not exist!';
+        output.comments='Folder does not exist!';
         return;
 end
-    
+
 % include additional input parameters
 for i=1:numel(varargin)
     if strcmp(varargin{i}, 'channelfilter')
         output.pos.channelfilter=varargin{i+1};
     end
-      if strcmp(varargin{i}, 'stackfilter')
+    if strcmp(varargin{i}, 'stackfilter')
         output.pos.stackfilter=varargin{i+1};
-      end
-       if strcmp(varargin{i}, 'positionfilter')
+    end
+    if strcmp(varargin{i}, 'positionfilter')
         output.pos.positionfilter=varargin{i+1};
-       end
-      
-       if strcmp(varargin{i}, 'progress') % progress bar 
-       progress=varargin{i+1};
+    end
+    
+    if strcmp(varargin{i}, 'progress') % progress bar
+        progress=varargin{i+1};
     end
 end
 
 % list files and folder present in the propose directory
 info='Listing files and folders....';
- disp(info);
- if numel(progress)
- progress.Message=info;
- end
- 
+disp(info);
+if numel(progress)
+    progress.Message=info;
+end
+
 list=dir(pathdir);
 
 % if there are directories avaialable, ignore files in the folder and
@@ -85,7 +85,7 @@ if sum(pix)>2 % there are folders available (. and .. are not real folders)
     if numel( phyloproj ) % phylocell project was found
         disp('This folder contains a phylocell project');
         typ='phylocell';
-         info='Processing phylocell project...';
+        info='Processing phylocell project...';
     else
         disp('This folder contains one or several folders, which will be processed as separate positions');
         typ='folders';
@@ -109,73 +109,73 @@ else % only files available
     plist=plist(contains({plist.name},{'.tif'}));
     % takes all image files
     
-     
+    
     if numel(plist)
         im=imfinfo(fullfile(plist(1).folder,plist(1).name));
         
         if numel(im)>1  % multi tif file
             disp('This folder contains multifiles files, which will be processed as separate positions');
-           typ='multitif';
+            typ='multitif';
             info='Processing multi tiff images...';
         end
     end
     
     if ~strcmp(typ,'multitif') % if list single tif/jpg file, then use the build folder method with one single folder
-       
+        
         typ='multifiles';
         
-%         typ='folders';
-%         info='Processing folder(s)...';
-%         list=dir(fullfile(pathdir,'..'));
-%         
-%   %     list
-%         for i=1:numel(list)
-%              bb= list(i).name;
-%              
-%           %   aaa=endsWith(pathdir,bb)
-%           %  tt= pathdir(end-numel(bb)-1:end-numel(bb)-1)
-%             if endsWith(pathdir,bb) % & ( strcmp(pathdir(1:end-numel(bb)),'/') | strcmp(pathdir(1:end-numel(bb)),'\'))
-%                 
-%                 tt=pathdir(end-numel(bb):end-numel(bb));
-%                 if strcmp(tt,'/') || strcmp(tt,'\')
-%                 list=list(i);
-%                 break
-%                 end
-%             end
-%         end
+        %         typ='folders';
+        %         info='Processing folder(s)...';
+        %         list=dir(fullfile(pathdir,'..'));
+        %
+        %   %     list
+        %         for i=1:numel(list)
+        %              bb= list(i).name;
+        %
+        %           %   aaa=endsWith(pathdir,bb)
+        %           %  tt= pathdir(end-numel(bb)-1:end-numel(bb)-1)
+        %             if endsWith(pathdir,bb) % & ( strcmp(pathdir(1:end-numel(bb)),'/') | strcmp(pathdir(1:end-numel(bb)),'\'))
+        %
+        %                 tt=pathdir(end-numel(bb):end-numel(bb));
+        %                 if strcmp(tt,'/') || strcmp(tt,'\')
+        %                 list=list(i);
+        %                 break
+        %                 end
+        %             end
+        %         end
         
     end
-
+    
 end
 
 %list
 
- disp(info);
- if numel(progress)
- progress.Message=info;
- end
- 
+disp(info);
+if numel(progress)
+    progress.Message=info;
+end
+
 
 switch typ
     case 'phylocell'  % this is a phyloCell project
         
         output.comments=['The folder contains a phylocell project' char(10)];
         output= buildphylocell(phyloproj,output,progress);
-
+        
     case 'folders' % process each folder as independent positions (incldues micromanager)
         
-         output.comments=['The folder(s) contains (a) series of individual images' char(10)];
+        output.comments=['The folder(s) contains (a) series of individual images' char(10)];
         output = buildfolders(list,output,progress);
         
-    case 'multifiles' % contains a list of files, potentially with multiple poistions 
+    case 'multifiles' % contains a list of files, potentially with multiple poistions
         
-         output.comments=['The folder contains (a) series of individual images with multiple poistions' char(10)];
-        output = buildmultifiles(list,output,progress);     
+        output.comments=['The folder contains (a) series of individual images with multiple positions' char(10)];
+        output = buildmultifiles(list,output,progress);
         
     case 'multitif'  % check if it a list of files or a collection of mutitiff files (positions)
         
-          output.comments=['The folder contains (a) series of multi-tiff images' char(10)];
-         output=buildmultitif(list,output,progress);
+        output.comments=['The folder contains (a) series of multi-tiff images' char(10)];
+        output=buildmultitif(list,output,progress);
 end
 
 output.datatype=typ;
@@ -184,7 +184,7 @@ output.datatype=typ;
 
 
 
-  
+
 
 
 

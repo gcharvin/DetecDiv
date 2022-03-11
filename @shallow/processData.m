@@ -25,7 +25,7 @@ for i=1:numel(varargin)
         fovs=varargin{i+1};
     end
     
-      if strcmp(varargin{i},'Frames') % is a cell array with the same number of elements as FOVs
+    if strcmp(varargin{i},'Frames') % is a cell array with the same number of elements as FOVs
         frames=varargin{i+1};
     end
     

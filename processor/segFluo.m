@@ -102,3 +102,6 @@ else
     %pixresults=size(obj.image,3)+1;
     obj.addChannel(imframesOuput,paramout.output_channel_name,rgb,intensity);
 end
+
+obj.save;
+obj.clear;

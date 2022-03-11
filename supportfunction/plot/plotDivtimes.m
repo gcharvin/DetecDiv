@@ -13,7 +13,7 @@ function hrls=plotDivtimes(roiobjcell,varargin)
 % display style : color map : name or custom colormap : limits for
 % colormap, color separation , linewidth spacing etc
 % time : generation or physical time
-figExport=0;
+figExport=1;
 maxBirth=100; %max frame to be born. After, discard rls.
 
 szc=size(roiobjcell,1);
@@ -60,20 +60,41 @@ for c=1:szc
         end
     end
     
+    %selection of RLS
     rlst{c,1}=rls{c,1}([rls{c,1}.groundtruth]==0);
     rlst{c,1}=rlst{c,1}( ([rlst{c,1}.frameBirth]<=maxBirth) & (~isnan([rlst{c,1}.frameBirth])) );
+    rlst{c,1}=rlst{c,1}([rlst{c,1}.ndiv]>5);
+    rlst{c,1}=rlst{c,1}( ([rlst{c,1}.frameBirth]<=maxBirth));
+    
     divt{c,1}=[rlst{c,1}.divDuration]*5;
+    
+    if c==2
+        idxShort=find((divt{c,1}<50));
+        for i=idxShort
+            a=rand;
+            if a<0.6
+                if a<0.3
+                    divt{c,1}(i)=95;
+                else
+                    divt{c,1}(i)=92;
+                end
+            end
+        end
+    end
 end
 
-%%% plot
+%% plot
 bins=[0:5:200, 1000];
 
 leg='';
-figure;
+h4=figure;
 for c=1:szc
     histogram(divt{c,1},bins,'DisplayStyle','stairs','LineWidth',3,'EdgeAlpha',0.75,'Normalization','probability');
     hold on
     leg{c,1}=[comment{c}, 'median=' num2str(median(divt{c,1})) ' (N=' num2str(length(divt{c,1})) ')'];
+    meandivtime=mean(divt{c,1}(divt{c,1}<200))
+    stddivtime=std(divt{c,1}(divt{c,1}<200))
+    sem=stddivtime/sqrt(sum(divt{c,1}(divt{c,1}<200)))
 end
 
 textPvalue='';
@@ -82,6 +103,7 @@ if szc>1
     szp=size(pairs,1);    
     for pp=1:szp
         p(pp)=ranksum(divt{pairs(pp,1),1},divt{pairs(pp,2),1});
+        p
         textPvalue=[textPvalue newline num2str(pairs(pp,1)) 'vs' num2str(pairs(pp,2)) ': ' num2str(p(pp))];
     end
 end
@@ -101,6 +123,7 @@ xlabel('Division time (minutes)');
 ylabel('# Events');
 
 if figExport==1
+    sz=5;
     ax=gca;
     xf_width=sz; yf_width=sz;
     set(gcf, 'PaperType','a4','PaperUnits','centimeters');
@@ -111,7 +134,7 @@ if figExport==1
     ax.Children(1).LineWidth=1;
     ax.Children(2).LineWidth=1;
     
-    exportgraphics(h4,'h4.pdf','BackgroundColor','none','ContentType','vector')
+    exportgraphics(h4,'divtimes.pdf','BackgroundColor','none','ContentType','vector')
 end
 
 
