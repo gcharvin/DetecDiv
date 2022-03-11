@@ -1765,7 +1765,7 @@ for i=1:numel(obj.display.channel)
   
         
         % WARNING PIX MAY BE A 1 or  3 element vector
-        if (~isfield(obj.display,'stretchlim') && ~isprop(obj.display,'stretchlim')) || size(obj.display.stretchlim,2)<numel(obj.display.channel)
+        if (~isfield(obj.display,'stretchlim') && ~isprop(obj.display,'stretchlim')) || size(obj.display.stretchlim,2)<numel(obj.channelid)
             disp(['No stretch limits found for ROI ' num2str(obj.id) ', computing them...']);
             obj.computeStretchlim;
         end

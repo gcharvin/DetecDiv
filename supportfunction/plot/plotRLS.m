@@ -90,7 +90,8 @@ for c=1:szc
     rlst{c,1}=rlst{c,1}([rlst{c,1}.ndiv]>1);
     rlst{c,1}=rlst{c,1}( ([rlst{c,1}.frameBirth]<=maxBirth) & (~isnan([rlst{c,1}.frameBirth])) );
     rlst{c,1}=rlst{c,1}( ~(strcmp({rlst{c,1}.endType},'Arrest') & [rlst{c,1}.frameEnd]<400)  ); %remove weird cells before frame 300 (stop growing)
-    rlst{c,1}=rlst{c,1}( ~(strcmp({rlst{c,1}.endType},'Emptied') & [rlst{c,1}.frameEnd]<400)  ); %remove emptied roi before frame 300
+    rlst{c,1}=rlst{c,1}( ~(strcmp({rlst{c,1}.endType},'Emptied'))); %remove emptied roi
+    rlst{c,1}=rlst{c,1}( ~(strcmp({rlst{c,1}.endType},'Clog')  ));%remove clogged roi
     rlstNdivs{c,1}=[rlst{c,1}.ndiv];
     %
 end

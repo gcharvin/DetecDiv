@@ -18,6 +18,9 @@ environment='local';
 param.classiftype='bud';
 param.postProcessing=1;
 param.errorDetection=1;
+
+%these param must be adjusted by the user, in particular if the experiment
+%is shorter than 500 frames.
 param.ArrestThreshold=175;
 param.DeathThreshold=2;
 param.EmptyThresholdDiscard=500;
@@ -69,10 +72,10 @@ for i=1:numel(roiobj)
     roiobj(i).path=strrep(roiobj(i).path,'/shared/space2/','\\space2.igbmc.u-strasbg.fr\');
     roiobj(i).results.RLS.(['from_' classifstrid])=RLS(roiobj(i),'result',classif,param); %struct() use to keep measureRLS2 code
     roiobj(i).train.RLS.(['from_' classifstrid])=RLS(roiobj(i),'train',classif,param); %struct() use to keep measureRLS2 code
-
-%     if isprop(roiobj(i),'train') && numel(roiobj(i).train.(classifstrid).id)>0
-%         roiobj(i).train.(classifstrid).RLS=RLS(roiobj(i),'train',classif,param);
-%     end
+    
+    %     if isprop(roiobj(i),'train') && numel(roiobj(i).train.(classifstrid).id)>0
+    %         roiobj(i).train.(classifstrid).RLS=RLS(roiobj(i),'train',classif,param);
+    %     end
     
     roiobj(i).save('results');
     roiobj(i).clear;
@@ -98,7 +101,7 @@ rlsGroundtruth=rls;
 classistrid=classif.strid;
 classes=classif.classes;
 
-    if strcmp(roitype,'result')
+if strcmp(roitype,'result')
     %================RESULTS===============
     if isfield(roi.results,classistrid)
         if isfield(roi.results.(classistrid),'id')
@@ -134,9 +137,9 @@ classes=classif.classes;
             end
         end
     end
-
+    
     rls=rlsResults;
-    elseif strcmp(roitype,'train')
+elseif strcmp(roitype,'train')
     %==================GROUNDTRUTH===================
     idg=[];
     if isfield(roi.train,(classistrid))
@@ -168,9 +171,9 @@ classes=classif.classes;
                 rlsGroundtruth.sep=findSync(rlsGroundtruth);
             end
         end
-    rls=rlsGroundtruth;
+        rls=rlsGroundtruth;
     end
-    end
+end
 
 
 
@@ -213,12 +216,11 @@ switch param.classiftype
         
         
         %===1// find BIRTH===
-
-        frameBirth=NaN;
+        
         firstunb=find(id==unbuddedid,1,'first');
         firstsm=find(id==smid,1,'first');
         firstlg=find(id==lbid,1,'first');
-        if numel(firstunb)==0
+        if numel(firstunb)==0 %isempty
             firstunb=NaN;
         end
         if numel(firstsm)==0
@@ -242,10 +244,23 @@ switch param.classiftype
             end
         end
         
-        %==post-process empty TODO : if empty very early: check the next rls
-        if frameFirstEmptiedAfterBirth>param.EmptyThresholdDiscard
-            
-        elseif frameFirstEmptiedAfterBirth>param.EmptyThresholdNext
+        %==post-process empty : if empty very early: check the next rls
+        if frameFirstEmptiedAfterBirth<param.EmptyThresholdNext%frameFirstEmptiedAfterBirth>param.EmptyThresholdDiscard
+            frameAfterFirstEmpty=find(bwEmpty,1,'last');
+            %search from after the first empty islet (after first birth)
+            %until the end
+            firstunb=find(id(frameAfterFirstEmpty:end)==unbuddedid,1,'first');
+            firstsm=find(id(frameAfterFirstEmpty:end)==smid,1,'first');
+            firstlg=find(id(frameAfterFirstEmpty:end)==lbid,1,'first');
+            if numel(firstunb)==0 %isempty
+                firstunb=NaN;
+            end
+            if numel(firstsm)==0
+                firstsm=NaN;
+            end
+            if numel(firstlg)==0
+                firstlg=NaN;
+            end
             frameBirth=min([firstunb,firstsm,firstlg]);
         end
         %
@@ -263,7 +278,7 @@ switch param.classiftype
             end
         end
         %
-
+        
         
         %==find potential first CLOG==============
         frameClog=find(id==clogid,1,'first');
@@ -292,14 +307,19 @@ switch param.classiftype
         %
         
         %===3/ find END===
-        frameEnd=min([frameClog, frameDeath, frameFirstEmptiedAfterBirth, frameArrest]);
-        if isnan(frameEnd) % cell is not dead or clogged or empty, TO DO: SEPARATE BETWEEN DEATH AND CENSOR
-            frameEnd=numel(id);
-            %machin.censor=1;
+        if isnan(frameBirth) %if timeseries has never seen unb, small or large
+            frameEnd=NaN;
+            endType='NeverBorn';
+        else
+            frameEnd=min([frameClog, frameDeath, frameFirstEmptiedAfterBirth, frameArrest]);
+            if isnan(frameEnd) % cell is not dead or clogged or empty, TO DO: SEPARATE BETWEEN DEATH AND CENSOR
+                frameEnd=numel(id);
+                %machin.censor=1;
+            end
+            endTypeid=find([frameClog, frameDeath, frameFirstEmptiedAfterBirth, frameArrest, numel(id)]==frameEnd,1,'last');
+            endTypeList={'Clog', 'Death', 'Emptied', 'Arrest', 'stillAlive'};
+            endType=endTypeList{endTypeid};
         end
-        endTypeid=find([frameClog, frameDeath, frameFirstEmptiedAfterBirth, frameArrest, numel(id)]==frameEnd,1,'last');
-        endTypeList={'Clog', 'Death', 'Emptied', 'Arrest', 'stillAlive'};
-        endType=endTypeList{endTypeid};
         %
         
         
@@ -313,7 +333,7 @@ switch param.classiftype
                 for k=1:max(bwsmidLabel)
                     bwsmidk(k,:)=(bwsmidLabel==k);
                 end
-
+                
                 if max(bwsmidLabel)>2
                     for k=2:max(bwsmidLabel)-1
                         if sum(bwsmidk(k,:))>=1 %if a smallid islet is of size 1, check the neighbours islets
@@ -329,7 +349,7 @@ switch param.classiftype
                             end
                         end
                         stopProcessing=1;
-                    end                    
+                    end
                 else
                     stopProcessing=1;
                 end
@@ -464,7 +484,7 @@ end
 
 
 
-%% 
+%%
 %==============================================DIVERROR======================================================
 function [framedivNoFalseNeg, framedivNoFalsePos]=detectError(rlsGroundtruthr, rlsResultsr)
 framedivNoFalseNeg=NaN;
@@ -568,7 +588,7 @@ end
 
 
 
-%% 
+%%
 %=============================================SEP==========================================
 %To do : harmonize for loops
 function [syncPoint]=findSync(rls)

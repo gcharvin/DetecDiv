@@ -1,5 +1,12 @@
-function computeStretchlim(obj)
+function computeStretchlim(obj, varargin)
 
+clearfile=0;
+for i=1:numel(varargin)
+    if strcmp(varargin{i},'Clear')
+        clearfile=1;
+    end
+end
+    
 if numel(obj.image)==0
     disp(['No image loaded for ROI ' num2str(obj.id) ', loading image']);
     obj.load
@@ -18,3 +25,8 @@ for c=1:size(tmp,3)
 end
 obj.display.stretchlim=[max(0,double(med)-4*stddev) ; min(65535,double(med)+4*stddev)]/65535;
 %obj.display.stretchlim=strchlm
+
+if clearfile==1
+    obj.save;
+    obj.clear; %can cause problem if called from another fonction
+end
