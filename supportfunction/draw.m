@@ -173,10 +173,19 @@ if numel(handles)==0
     set(dritem(4),'MenuSelectedFcn',{@drawObject,obj});
     
  
+      if numel(classif)>0
+           if strcmp(classif.category{1},'Image')  || strcmp(classif.category{1},'LSTM') % display user training and results
+               
      dr = uimenu(h,'Text','Classification options','Tag','Classification');
-    dritem = uimenu(dr,'Text','Fill in classes...','Tag','FillIn');
-    set(dritem,'MenuSelectedFcn',{@fillInClasses,obj});
+     
+    dritem = uimenu(dr,'Text','Assign classes for multiple frames','Tag','FillIn1');
+    set(dritem,'MenuSelectedFcn',{@fillInClasses,obj,classif});
     
+       dritem2 = uimenu(dr,'Text','Fill-in unclassified frames with class from last classified frame','Tag','FillIn2');
+    set(dritem2,'MenuSelectedFcn',{@fillInClassesTheo,obj,classif});
+            end
+      end
+      
     %   dritem(5) = uimenu(dr,'Text','Draw cell number for tracked cells','Checked','off','Tag','DrawCellNumber');
     %   set(dritem(5),'MenuSelectedFcn',{@checkCells,obj,h,classif});
 end
@@ -813,77 +822,103 @@ end
 
 end
 
-function copyFrames(handles, event,obj)
+function fillInClasses(handles, event,obj, classif)
+
+if numel(obj.classes)==0
+    disp('there are no classes in this roi !');
+    return;
+end
 
 h=findobj('Tag',['ROI' obj.id]);
-h.UserData.copyframes={obj.display.channel{1} obj.display.channel{1} num2str(obj.display.frame) num2str(obj.display.frame) };
 
-fig = uifigure('Position',[100 100 350 150],'UserData',h,'Name','Copy frames:');
+id=obj.train.(classif.strid).id;
 
-lab=uilabel(fig,'Position',[10, 120, 100, 22],'Text','From channel::');
-lab=uilabel(fig,'Position',[180, 120, 100, 22],'Text','To channel::');
+idframe=id(obj.display.frame);
+
+if idframe==0
+    idframe=1;
+end
+
+h.UserData.classframes={obj.classes{idframe}   num2str(obj.display.frame) num2str(size(obj.image,4)) };
 
 
-dd1 = uidropdown(fig,'Items', obj.display.channel,...
+fig = uifigure('Position',[100 100 350 150],'UserData',h,'Name','Fill in classes in frames:');
+
+lab=uilabel(fig,'Position',[10, 120, 100, 22],'Text','Class: :');
+
+dd1 = uidropdown(fig,'Items', obj.classes,...
     'Position',[10, 100, 150, 22],...
-    'Value', obj.display.channel{1},...
-    'ValueChangedFcn',@(dd,event) selection(dd,fig,1));
+    'Value', obj.classes{idframe},...
+    'ValueChangedFcn',@(dd,event) classselection(dd,fig,1));
 
-dd2 = uidropdown(fig,'Items', obj.display.channel,...
-    'Position',[180, 100, 150, 22],...
-    'Value', obj.display.channel{1},...
-    'ValueChangedFcn',@(dd2,event) selection(dd2,fig,2));
-
-lab=uilabel(fig,'Position',[10, 80, 120, 22],'Text','Source frames:');
+lab=uilabel(fig,'Position',[10, 80, 120, 22],'Text','Start frame:');
 
 txt = uieditfield(fig,...
     'Value', num2str(obj.display.frame), 'Position',[40 60 100 22],...
-    'ValueChangedFcn',@(txt,event) selection(txt,fig,3));
+    'ValueChangedFcn',@(txt,event) classselection(txt,fig,2));
 
 
-lab=uilabel(fig,'Position',[140, 80, 120, 22],'Text','Destination frames:');
+lab=uilabel(fig,'Position',[140, 80, 120, 22],'Text','End frame:');
 
 txt2 = uieditfield(fig,...
-    'Value', num2str(obj.display.frame), 'Position',[190 60 100 22],...
-    'ValueChangedFcn',@(txt,event) selection(txt,fig,4));
+    'Value', num2str(size(obj.image,4)), 'Position',[190 60 100 22],...
+    'ValueChangedFcn',@(txt,event) classselection(txt,fig,3));
 
 % Code the callback function
 
 btn = uibutton(fig,'push',...
     'Position',[10, 10, 100, 22],'Text','Proceed',...
-    'ButtonPushedFcn', @(btn,event) plotButtonPushed(btn,fig));
+    'ButtonPushedFcn', @(btn,event) classButtonPushed(btn,fig));
 
 
 % Create the function for the ButtonPushedFcn callback
-    function plotButtonPushed(btn,fig)
-        fig.UserData.UserData.copyframes{5}='ok';
+    function classButtonPushed(btn,fig)
+        fig.UserData.UserData.classframes{4}='ok';
         close(fig)
     end
 
 % drop down selection function
-    function selection(dd,fig,id)
+    function classselection(dd,fig,id)
         val = dd.Value;
-        fig.UserData.UserData.copyframes{id} = val;
+        fig.UserData.UserData.classframes{id} = val;
     end
 
 uiwait(fig);
 
-sele=h.UserData.copyframes;
+sele=h.UserData.classframes;
 
-if numel(sele)==5
+if numel(sele)==4
     
-    pix1=obj.findChannelID(sele{1});
-    pix2=obj.findChannelID(sele{2});
-    fr1=str2num(sele{3});
-    fr2=str2num(sele{4});
+    pix1=find(matches(obj.classes,sele{1}));
+    fr1=str2num(sele{2});
+    fr2=str2num(sele{3});
     
-    obj.image(:,:,pix2,fr2)=obj.image(:,:,pix1,fr1);
+    obj.train.(classif.strid).id(fr1:fr2)=pix1;
     
     close(h);
+    
     %
-    %     obj.removeChannel(sele);
-    obj.view;
+    %    obj.removeChannel(sele);
+     %   obj.view;
+ 
+    obj.view(obj.display.frame,classif);
 end
+
+end
+
+function fillInClassesTheo(handles, event,obj, classif)
+
+
+if numel(obj.classes)==0
+    disp('there are no classes in this roi !');
+    return;
+end
+
+h=findobj('Tag',['ROI' obj.id]);
+
+obj.fillTraining('Training',classif.strid); 
+close(h);
+obj.view(obj.display.frame,classif);
 
 end
 
