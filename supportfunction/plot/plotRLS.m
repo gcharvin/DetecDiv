@@ -15,7 +15,7 @@ function hrls=plotRLS(roiobjcell,varargin)
 % time : generation or physical time
 
 %example: plotRLS({[detecdivProj.fov([1:4,9:12]).roi];[detecdivProj.fov([5:8,13:16,17:18]).roi]; [detecdivProj.fov([26:28,30:34]).roi]},'Comment',{'Condition1', 'Condition2','Condition3'})
-figExport=1;
+figExport=0;
 bootStrapping=0;
 sz=5;
 Nboot=100;
@@ -72,8 +72,8 @@ end
 classifstrid=liststrid{classifid};
 
 %%
-for c=1:szc
-    for r=1:numel(roiobjcell{c,1})      
+for c=1:szc %conditions
+    for r=1:numel(roiobjcell{c,1})   %rois from the condition   
         if isfield(roiobjcell{c,1}(r).results, 'RLS')
             if isfield(roiobjcell{c,1}(r).results.RLS,(classifstrid))            
                 rls{c,1}=[rls{c,1}; roiobjcell{c,1}(r).results.RLS.(classifstrid)];
@@ -87,8 +87,8 @@ for c=1:szc
     
     % selection of RLS
     rlst{c,1}=rls{c,1}([rls{c,1}.groundtruth]==0);
-    rlst{c,1}=rlst{c,1}([rlst{c,1}.ndiv]>1);
-    rlst{c,1}=rlst{c,1}( ([rlst{c,1}.frameBirth]<=maxBirth) & (~isnan([rlst{c,1}.frameBirth])) );
+    rlst{c,1}=rlst{c,1}([rlst{c,1}.ndiv]>5);
+    rlst{c,1}=rlst{c,1}( ([rlst{c,1}.frameBirth]<=maxBirth) & (~isnan([rlst{c,1}.frameBirth])) );%~isnan probably useless
     rlst{c,1}=rlst{c,1}( ~(strcmp({rlst{c,1}.endType},'Arrest') & [rlst{c,1}.frameEnd]<400)  ); %remove weird cells before frame 300 (stop growing)
     rlst{c,1}=rlst{c,1}( ~(strcmp({rlst{c,1}.endType},'Emptied'))); %remove emptied roi
     rlst{c,1}=rlst{c,1}( ~(strcmp({rlst{c,1}.endType},'Clog')  ));%remove clogged roi
@@ -145,9 +145,9 @@ for c=1:szc
             [y ~]=ecdf(rlst);
             
             %cuttof numcell remaining
-            cuty=12;
+            cuty=12; %stop displaying DR if less than cuty events
             RemainingCells=size(rlst,2)-y*size(rlst,2);
-            cutx=find(RemainingCells<cuty,1,'first');
+            cutx=find(RemainingCells<cuty,1,'first'); 
             %
             dlog=[];
             dt=[];
@@ -171,7 +171,7 @@ for c=1:szc
             
             for b=1:Nboot+1
                 [yb, xb]=ecdf(rlsb(b,:));
-                %if cutx
+                %if cutx 
 
                 for i=1:numel(yb)
                     Yb(b,xb(i))=yb(i);
@@ -184,7 +184,7 @@ for c=1:szc
                     end
                 end       
                 
-                %cutx
+                %cutx stop displaying if less than x events
                 Yb(b,cutx:end)=NaN;
                 Xb(cutx:end)=NaN;
                 
@@ -197,18 +197,27 @@ for c=1:szc
                 
                 %binning
                 cb=1;
-                for i=1:2:size(deathRate,2)-1
-                    binnedDeathRate(b,cb)=nanmean([deathRate(b,i),deathRate(b,i+1)]);
-                    cb=cb+1;
-                end
+                bining=3;
+%                 for i=1:bining:size(deathRate,2)-1
+%                     binnedDeathRate(b,cb)=nanmean([deathRate(b,i),deathRate(b,i+1)]);
+%                     cb=cb+1;
+%                 end
             end
             
+            
+                
             meanDR=nanmean(deathRate,1);
             stdDR=nanstd(deathRate,1);
             semDR=stdDR./sqrt(Nboot+1); %N= number of bootstrappings
-            meanBDR=nanmean(binnedDeathRate,1);
-            stdBDR=nanstd(binnedDeathRate,1);
-            semBDR=stdBDR/sqrt(Nboot+1); %N= number of bootstrappings
+            
+            cb=1;
+            bining=3;
+            for i=1:bining:size(deathRate,2)-1
+                meanBDR=mean([meanDR(i:i+bining)]);%nanmean(binnedDeathRate,1);
+                stdBDR=std([meanDR(i:i+bining)]);%(binnedDeathRate,1);
+                semBDR=stdBDR/sqrt(Nboot+1); %N= number of bootstrappings
+                cb=cb+1;
+            end
 
             
             %             lineProps.width=lw;

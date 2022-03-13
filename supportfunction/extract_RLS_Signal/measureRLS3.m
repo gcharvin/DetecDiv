@@ -13,7 +13,7 @@ function measureRLS3(classif,roiobj,varargin)
 % rlsResults only results
 %rlsGroundtruth only groundtruth
 loadres=1;
-environment='local';
+environment='pc';
 
 param.classiftype='bud';
 param.postProcessing=1;
@@ -65,7 +65,7 @@ for i=1:numel(varargin)
 end
 %%
 for i=1:numel(roiobj)
-    if strcmp(environment,'local')
+    if strcmp(environment,'pc')
         roiobj(i).path=strrep(roiobj(i).path,'/shared/space2/','\\space2.igbmc.u-strasbg.fr\');
     end
     roiobj(i).load('results');

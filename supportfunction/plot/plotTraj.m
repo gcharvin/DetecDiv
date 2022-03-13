@@ -115,7 +115,7 @@ param.colormapg=cmapg;% colormap for groundtruth data
 %     end
 % end
 % rls(flag)=[];
-rls([rls.ndiv]<5)=[];
+rls=rls([rls.ndiv]>5);
 %%
 if param.plotSignal==1
     
@@ -360,7 +360,7 @@ for i=1:numel(rls)
             end
             Traj(rec2,'Color',param.colormap,'colorindex',cindex2,'width',param.cellwidth,'startX',startX,'startY',startY,'sepwidth',param.sepwidth,'sepColor',param.sepcolor,'edgeWidth',param.edgewidth,...
                 'edgeColor',param.edgeColorR,...
-                'gradientwidth',param.gradientWidth,'tag',['Trap - ' num2str(rls(i).roiid)]);
+                'gradientwidth',param.gradientWidth,'tag',['Trap - ' num2str(rls(i).name)]);
             startY=param.spacing+startY;
             inc=inc+1;
         end
@@ -370,7 +370,7 @@ for i=1:numel(rls)
             ti(inc)=startY;
             Traj(rec2,'Color',param.colormapg,'colorindex',cindex2,'width',param.cellwidth,'startX',startX,'startY',startY,'sepwidth',param.sepwidth,'sepColor',param.sepcolor,'edgeWidth',param.edgewidth,...
                 'edgeColor',param.edgeColorG,...
-                'gradientwidth',param.gradientWidth,'tag',['Trap - ' num2str(rls(i).roiid)]);
+                'gradientwidth',param.gradientWidth,'tag',['Trap - ' num2str(rls(i).name)]);
             startY=param.spacing+startY +param.interspacing;
             
             inc=inc+1;
