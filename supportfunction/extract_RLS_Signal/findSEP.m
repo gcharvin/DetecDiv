@@ -5,7 +5,7 @@ function [t1 t2 mid x y tdiv fdiv]=findSEP(tab,l,display)
 %l=cell line for which we want to find SEP
 timefactor=5;
 tab=tab*timefactor;
-tab(tab<60)=65;
+tab(tab<60)=65; %% PP to "correct" false positive
 t1=[];
 t2=[];
 x=[];
@@ -53,10 +53,7 @@ if level2<=0.06/timefactor %0.09
     end
     
     mid=min(length(fdiv),mid);
-    
-    %mid=t1;
-    
-    %mid=t1;
+
     x=1:1:length(fdiv);
     x=x-mid;
     % x=x-length(x);
@@ -74,7 +71,7 @@ else
     y=1./fdiv(1:end);
     
     mid=length(x)+1;
-    t2=mid; t1=mid-1;
+    %t2=mid; t1=mid-1;
     t1=0;
     t2=0;
     mid=0;

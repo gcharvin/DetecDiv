@@ -28,7 +28,10 @@ for i=1:numel(varargin)
     
 end
 
-maxBirth=1000; %max frame to be born. After, discard rls.
+param.time=0; %0 : generations; 1 : physical time
+param.plotSignal=0 ; %1 if fluo to be plotted instead of divisions
+
+maxBirth=400; %max frame to be born. After, discard rls.
 
 %===param===
 param.showgroundtruth=0; % display the groundtruth data
@@ -41,8 +44,7 @@ param.colorbarlegend='';
 
 param.findSEP=0; % 1: use find sep to find SEP
 param.align=0; % 1 : align with respect to SEP
-param.time=0; %0 : generations; 1 : physical time
-param.plotSignal=0 ; %1 if fluo to be plotted instead of divisions
+
 param.gradientWidth=0;
 if param.time==1 %sepwidth=separation between rectangles
     param.sepwidth=10; %unit is dataunit (?), so here in frame
@@ -84,11 +86,11 @@ if param.colorbar==1
     green=customcolormap([0 0.75 1], {'#01df00','#6fdf6f','#e7e7e7'});
     orange=customcolormap([0 0.5 1], {'#fd7e00','#ffbd7c','#e7e7e7'});
     grey=customcolormap([0 0.5 1], {'#212121','#7f7f7f','#d8d8d8'});
-     l=linspace(0.01,1,256);
-%     cmap2=zeros(256,3);
-%     cmap2(:,2)=0*fliplr(l)';
-%     cmap2(:,1)=fliplr(l)';%(fliplr(l))';
-%     cmap2(:,3)=0*fliplr(l)';
+    l=linspace(0.01,1,256);
+    %     cmap2=zeros(256,3);
+    %     cmap2(:,2)=0*fliplr(l)';
+    %     cmap2(:,1)=fliplr(l)';%(fliplr(l))';
+    %     cmap2(:,3)=0*fliplr(l)';
     cmap2=orange;
     
     cmapg=zeros(256,3);
@@ -107,7 +109,7 @@ param.colormap=cmap2; % should be a colormap with 256 x 3 elements
 param.colormapg=cmapg;% colormap for groundtruth data
 %===end param===
 
-%% cleanup
+%% remove unwanted rls
 % flag=[];
 % for i=1:numel(rls)
 %     if sum(isnan(rls(i).framediv))>0
@@ -116,26 +118,29 @@ param.colormapg=cmapg;% colormap for groundtruth data
 % end
 % rls(flag)=[];
 rls=rls([rls.ndiv]>5);
+rls=rls([rls.frameBirth]<maxBirth);
+rls=rls(~(strcmp({rls.endType},'Emptied')));
+rls=rls(~(strcmp({rls.endType},'Clog')));
 %%
 if param.plotSignal==1
     
-% ask signal
-liststrid=fields(rls(1).divSignal); %full, cell, nucleus, div
-liststrid(contains(liststrid,'divDuration'))=[];
-
-str=[];
-for i=1:numel(liststrid)
-    str=[str num2str(i) ' - ' liststrid{i} '; '];
-end
-
-signalid=input(['Which signal type? (Default: 1)' str]);
-if numel(signalid)==0
-    signalid=1;
-end
-
-signalstrid=liststrid{signalid};
-
-% ask classistrid
+    % ask signal
+    liststrid=fields(rls(1).divSignal); %full, cell, nucleus, div
+    liststrid(contains(liststrid,'divDuration'))=[];
+    
+    str=[];
+    for i=1:numel(liststrid)
+        str=[str num2str(i) ' - ' liststrid{i} '; '];
+    end
+    
+    signalid=input(['Which signal type? (Default: 1)' str]);
+    if numel(signalid)==0
+        signalid=1;
+    end
+    
+    signalstrid=liststrid{signalid};
+    
+    % ask classistrid
     liststrid=fields(rls(1).divSignal.(signalstrid));
     str=[];
     
@@ -148,8 +153,8 @@ signalstrid=liststrid{signalid};
     end
     
     classifstrid=liststrid{classifid};
-
-% ask fluo
+    
+    % ask fluo
     liststrid=fields(rls(1).divSignal.(signalstrid).(classifstrid));
     str=[];
     
@@ -162,14 +167,14 @@ signalstrid=liststrid{signalid};
     end
     
     fluostrid=liststrid{fluoid};
-
-% ask channel
+    
+    % ask channel
     channumber=size(rls(1).divSignal.(signalstrid).(classifstrid).(fluostrid),1);
-    str=[];   
+    str=[];
     chanid=input(['Which channel ? (Default: 1)' num2str(1:channumber)]);
     if numel(chanid)==0
         chanid=1;
-    end    
+    end
 end
 %==
 
@@ -261,152 +266,154 @@ maxsignal=NaN;
 minsignal=NaN;
 
 if param.plotSignal==1 && param.autoBounds==1
+    signal=[]; %takes bounds to saturate ~10% of values, for each side
     for i=1:numel(rls)
-    signal=rls(i).divSignal.(signalstrid).(classifstrid).(fluostrid)(chanid,:);
-
-        for s=1:numel(signal)
-            maxsignal=max(maxsignal,signal(s));
-            minsignal=min(minsignal,signal(s));
-        end
+        signal=[signal,rls(i).divSignal.(signalstrid).(classifstrid).(fluostrid)(chanid,:)];
+        
+        %         for s=1:numel(signal)
+        %             maxsignal=max(maxsignal,signal(s));
+        %             minsignal=min(minsignal,signal(s));
+        %         end
+        %         maxsignal=0.8*maxsignal;
+        %         minsignal=1.2*minsignal;
     end
+    maxsignal=min(maxk(signal(~isnan(signal)),floor(0.05*sum(~isnan(signal(:))))));
+    minsignal=max(mink(signal(~isnan(signal)),floor(0.2*sum(~isnan(signal(:))))));
 end
 
 for i=1:numel(rls)
     cindex2=[];
     fprintf('.')
-    if ~(rls(i).frameBirth>maxBirth) && ~isnan(rls(i).frameBirth) && rls(i).ndiv>1
-        %aa=rls(i).ndiv
-        sep=rls(i).sep;
-        signal=[];
-        if param.plotSignal==1
-            signal=rls(i).divSignal.(signalstrid).(classifstrid).(fluostrid)(chanid,:);
-        end
-%         if (signal(end)>1.1)
-%             continue
-%         end
+    %aa=rls(i).ndiv
+    sep=rls(i).sep;
+    signal=[];
+    if param.plotSignal==1
+        signal=rls(i).divSignal.(signalstrid).(classifstrid).(fluostrid)(chanid,:);
+    end
+    %         if (signal(end)>1.1)
+    %             continue
+    %         end
+    
+    divDur=rls(i).divDuration;
+    %leg{i}=regexprep(rls(i).trap,'_','-');
+    %leg{i}=rls(i).roiid;
+    leg{i}=sprintf('#%i |',incG); %show number of the doublet
+    %===========TIME=0=============
+    if param.time==0 || param.plotSignal==1
+        rec2=0:1:1*length(divDur)-1;
+        rec2=rec2';
+        rec2(:,2)=rec2(:,1)+1;
+        %rec2(end,2)=rec2(end,1)+0;
+        maxe=max(maxe,numel(rls(i).framediv));
         
-        divDur=rls(i).divDuration;
-        %leg{i}=regexprep(rls(i).trap,'_','-');
-        %leg{i}=rls(i).roiid;
-        leg{i}=sprintf('#%i |',incG); %show number of the doublet
-        %===========TIME=0=============
-        if param.time==0 || param.plotSignal==1
-            rec2=0:1:1*length(divDur)-1;
-            rec2=rec2';
-            rec2(:,2)=rec2(:,1)+1;
-            %rec2(end,2)=rec2(end,1)+0;
-            maxe=max(maxe,numel(rls(i).framediv));
-            
-            fEnd=rls(i).frameEnd*param.timefactor;
-            divDur=[rls(i).divDuration fEnd-rls(i).totaltime(end)];
-            divDur=divDur*param.timefactor;
-            if param.plotSignal==0
+        fEnd=rls(i).frameEnd*param.timefactor;
+        divDur=[rls(i).divDuration fEnd-rls(i).totaltime(end)];
+        divDur=divDur*param.timefactor;
+        if param.plotSignal==0
             cindex2=uint8(max(1,256*(divDur-param.minmax(1))/(param.minmax(2)-param.minmax(1))));
             
             %SIGNAL
-            elseif param.plotSignal==1                
-                for s=1:numel(signal)
-                    if param.autoBounds==1
-                        cindex2(s)=uint8(max(1,256*(signal(s)-minsignal)/(maxsignal-minsignal)));
-                    else
-                        cindex2(s)=uint8(max(1,256*(signal(s)-param.minmax(1))/(param.minmax(2)-param.minmax(1))));
-                    end
+        elseif param.plotSignal==1
+            for s=1:numel(signal)
+                if param.autoBounds==1
+                    cindex2(s)=uint8(max(1,256*(signal(s)-minsignal)/(maxsignal-minsignal)));
+                else
+                    cindex2(s)=uint8(max(1,256*(signal(s)-param.minmax(1))/(param.minmax(2)-param.minmax(1))));
                 end
-                
             end
-            %===========TIME=1=============
-        elseif param.time==1 && param.plotSignal==0
-            ttime=rls(i).totaltime*param.timefactor;
-            %fBirth=rls(i).frameBirth*param.timefactor;
-            fEnd=rls(i).frameEnd*param.timefactor;
             
-            rec2=[0 ttime(1:end)];
-            %rec2=[0 fdiv(1:end-1)];
-            rec2=rec2';
-            rec2(:,2)=[ttime(1:end) fEnd]';
-            %rec2(:,2)=[fdiv(1:end)]';
-            %rec2(end,2)=rec2(end,1)+0;
-            maxe=max(maxe,fEnd); 
-            cindex2=1:numel(rec2);
         end
+        %===========TIME=1=============
+    elseif param.time==1 && param.plotSignal==0
+        ttime=rls(i).totaltime*param.timefactor;
+        %fBirth=rls(i).frameBirth*param.timefactor;
+        fEnd=rls(i).frameEnd*param.timefactor;
         
-        
-        %===========ColorIndex=============
-%         if param.plotSignal==1
-%             cindex2=uint8(max(1,256*(signal-param.minmax(1))/(param.minmax(2)-param.minmax(1))));
-%             
-%         elseif param.colorbar==1%div duration
-%             cindex2=uint8(max(1,256*(divDur-param.minmax(1))/(param.minmax(2)-param.minmax(1))));
-%             
-%         else
-%             cindex2=1:numel(rec2);
-%         end
-%         
-%         cindex2=min(256,cindex2);
-        
-        %% ===========PLOT=============
-        %size(rec), size(rec2)
-        %figure(hfluo);
-        %Traj(rec,'Color',cmap,'colorindex',cindex,'width',cellwidth,'startX',startX,'startY',startY,'sepwidth',sepwidth,'sepColor',[0. 0. 0.],'edgeWidth',1,'gradientwidth',0);
-        
-        %figure(hdiv);
-        
-        %result
-        if rls(i).groundtruth==resultid
-            if param.sort==1
-                ti(inc)=startY+param.spacing/2;
-            else
-                ti(inc)=1;%to code
-            end
-            Traj(rec2,'Color',param.colormap,'colorindex',cindex2,'width',param.cellwidth,'startX',startX,'startY',startY,'sepwidth',param.sepwidth,'sepColor',param.sepcolor,'edgeWidth',param.edgewidth,...
-                'edgeColor',param.edgeColorR,...
-                'gradientwidth',param.gradientWidth,'tag',['Trap - ' num2str(rls(i).name)]);
-            startY=param.spacing+startY;
-            inc=inc+1;
-        end
-        
-        %GT
-        if param.showgroundtruth==1 && rls(i).groundtruth==1
-            ti(inc)=startY;
-            Traj(rec2,'Color',param.colormapg,'colorindex',cindex2,'width',param.cellwidth,'startX',startX,'startY',startY,'sepwidth',param.sepwidth,'sepColor',param.sepcolor,'edgeWidth',param.edgewidth,...
-                'edgeColor',param.edgeColorG,...
-                'gradientwidth',param.gradientWidth,'tag',['Trap - ' num2str(rls(i).name)]);
-            startY=param.spacing+startY +param.interspacing;
-            
-            inc=inc+1;
-            incG=incG+1;
-        end
-        
-        %         if param.showgroundtruth==1 && plotMulti==1 && rls(i).groundtruth==2
-        %             ti(inc)=startY;
-        %             Traj(rec2,'Color',param.colormapg,'colorindex',cindex2,'width',param.cellwidth,'startX',startX,'startY',startY,'sepwidth',param.sepwidth,'sepColor',param.sepcolor,'edgeWidth',param.edgewidth,...
-        %                 'edgeColor',param.edgeColorG,...
-        %                 'gradientwidth',param.gradientWidth,'tag',['Trap - ' num2str(rls(i).roiid)]);
-        %             startY=param.spacing+startY +param.interspacing;
-        %
-        %             inc=inc+1;
-        %             incG=incG+1;
-        %         end
-        %
-        %         if param.showgroundtruth==1 && plotMulti==1 && rls(i).groundtruth==3
-        %             ti(inc)=startY;
-        %             Traj(rec2,'Color',param.colormapg,'colorindex',cindex2,'width',param.cellwidth,'startX',startX,'startY',startY,'sepwidth',param.sepwidth,'sepColor',param.sepcolor,'edgeWidth',param.edgewidth,...
-        %                 'edgeColor',param.edgeColorG,...
-        %                 'gradientwidth',param.gradientWidth,'tag',['Trap - ' num2str(rls(i).roiid)]);
-        %             startY=param.spacing+startY +param.interspacing;
-        %
-        %             inc=inc+1;
-        %             incG=incG+1;
-        %         end
-        %
-        %         if mod(cc,50)==0
-        %             fprintf('\n')
-        %         end
-        %         cc=cc+1;
-        %
-    else
-        disp(['roi(' num2str(i) ') born too late, ignored traj'])
+        rec2=[0 ttime(1:end)];
+        %rec2=[0 fdiv(1:end-1)];
+        rec2=rec2';
+        rec2(:,2)=[ttime(1:end) fEnd]';
+        %rec2(:,2)=[fdiv(1:end)]';
+        %rec2(end,2)=rec2(end,1)+0;
+        maxe=max(maxe,fEnd);
+        cindex2=1:numel(rec2);
     end
+    
+    
+    %===========ColorIndex=============
+    %         if param.plotSignal==1
+    %             cindex2=uint8(max(1,256*(signal-param.minmax(1))/(param.minmax(2)-param.minmax(1))));
+    %
+    %         elseif param.colorbar==1%div duration
+    %             cindex2=uint8(max(1,256*(divDur-param.minmax(1))/(param.minmax(2)-param.minmax(1))));
+    %
+    %         else
+    %             cindex2=1:numel(rec2);
+    %         end
+    %
+    %         cindex2=min(256,cindex2);
+    
+    %% ===========PLOT=============
+    %size(rec), size(rec2)
+    %figure(hfluo);
+    %Traj(rec,'Color',cmap,'colorindex',cindex,'width',cellwidth,'startX',startX,'startY',startY,'sepwidth',sepwidth,'sepColor',[0. 0. 0.],'edgeWidth',1,'gradientwidth',0);
+    
+    %figure(hdiv);
+    
+    %result
+    if rls(i).groundtruth==resultid
+        if param.sort==1
+            ti(inc)=startY+param.spacing/2;
+        else
+            ti(inc)=1;%to code
+        end
+        Traj(rec2,'Color',param.colormap,'colorindex',cindex2,'width',param.cellwidth,'startX',startX,'startY',startY,'sepwidth',param.sepwidth,'sepColor',param.sepcolor,'edgeWidth',param.edgewidth,...
+            'edgeColor',param.edgeColorR,...
+            'gradientwidth',param.gradientWidth,'tag',['Trap - ' num2str(rls(i).name)]);
+        startY=param.spacing+startY;
+        inc=inc+1;
+    end
+    
+    %GT
+    if param.showgroundtruth==1 && rls(i).groundtruth==1
+        ti(inc)=startY;
+        Traj(rec2,'Color',param.colormapg,'colorindex',cindex2,'width',param.cellwidth,'startX',startX,'startY',startY,'sepwidth',param.sepwidth,'sepColor',param.sepcolor,'edgeWidth',param.edgewidth,...
+            'edgeColor',param.edgeColorG,...
+            'gradientwidth',param.gradientWidth,'tag',['Trap - ' num2str(rls(i).name)]);
+        startY=param.spacing+startY +param.interspacing;
+        
+        inc=inc+1;
+        incG=incG+1;
+    end
+    
+    %         if param.showgroundtruth==1 && plotMulti==1 && rls(i).groundtruth==2
+    %             ti(inc)=startY;
+    %             Traj(rec2,'Color',param.colormapg,'colorindex',cindex2,'width',param.cellwidth,'startX',startX,'startY',startY,'sepwidth',param.sepwidth,'sepColor',param.sepcolor,'edgeWidth',param.edgewidth,...
+    %                 'edgeColor',param.edgeColorG,...
+    %                 'gradientwidth',param.gradientWidth,'tag',['Trap - ' num2str(rls(i).roiid)]);
+    %             startY=param.spacing+startY +param.interspacing;
+    %
+    %             inc=inc+1;
+    %             incG=incG+1;
+    %         end
+    %
+    %         if param.showgroundtruth==1 && plotMulti==1 && rls(i).groundtruth==3
+    %             ti(inc)=startY;
+    %             Traj(rec2,'Color',param.colormapg,'colorindex',cindex2,'width',param.cellwidth,'startX',startX,'startY',startY,'sepwidth',param.sepwidth,'sepColor',param.sepcolor,'edgeWidth',param.edgewidth,...
+    %                 'edgeColor',param.edgeColorG,...
+    %                 'gradientwidth',param.gradientWidth,'tag',['Trap - ' num2str(rls(i).roiid)]);
+    %             startY=param.spacing+startY +param.interspacing;
+    %
+    %             inc=inc+1;
+    %             incG=incG+1;
+    %         end
+    %
+    %         if mod(cc,50)==0
+    %             fprintf('\n')
+    %         end
+    %         cc=cc+1;
+    %
+    
 end
 %%
 % figure(hfluo);

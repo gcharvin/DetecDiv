@@ -267,23 +267,29 @@ switch param.classiftype
         
         %==find DEATH (need N frames to be validated)======
         frameDeath=NaN;
-        bwDeath=(id==deathid);
-        bwDeathLabeled=bwlabel(bwDeath);
-        
-        for k=1:max(bwDeathLabeled)
-            bwDeath=(bwDeathLabeled==k);
-            if sum(bwDeath)>= param.DeathThreshold
-                frameDeath=find(bwDeath,1,'first');
-                break
+        if ~isnan(frameBirth)
+            idpostBirth=id;
+            idpostBirth(1:frameBirth)=0;%only consider death if cell is born (to ignore death if first images of roi is death=
+            bwDeath=(idpostBirth==deathid);
+            bwDeath(1:frameBirth)=0;
+            bwDeathLabeled=bwlabel(bwDeath);
+            for k=1:max(bwDeathLabeled)
+                bwDeath=(bwDeathLabeled==k);
+                if sum(bwDeath)>= param.DeathThreshold
+                    frameDeath=find(bwDeath,1,'first');
+                    break
+                end
             end
         end
         %
         
         
         %==find potential first CLOG==============
-        frameClog=find(id==clogid,1,'first');
-        if numel(frameClog)==0
-            frameClog=NaN;
+        if ~isnan(frameBirth)
+            frameClog=find((idpostBirth==clogid),1,'first');
+            if numel(frameClog)==0
+                frameClog=NaN;
+            end
         end
         %
         

@@ -1,4 +1,5 @@
 function hrls=plotDivtimes(roiobjcell,varargin)
+%TODO: TAKE AS INPUT rls struct file generated using createRLSfile
 
 % plot RLS data for one or several curves
 
@@ -16,7 +17,7 @@ function hrls=plotDivtimes(roiobjcell,varargin)
 figExport=1;
 maxBirth=100; %max frame to be born. After, discard rls.
 
-szc=size(roiobjcell,1);
+szc=size(roiobjcell,1); %number of conditions
 comment=cell(szc,1);
 
 rls=cell(szc);
@@ -68,19 +69,6 @@ for c=1:szc
     
     divt{c,1}=[rlst{c,1}.divDuration]*5;
     
-    if c==2
-        idxShort=find((divt{c,1}<50));
-        for i=idxShort
-            a=rand;
-            if a<0.6
-                if a<0.3
-                    divt{c,1}(i)=95;
-                else
-                    divt{c,1}(i)=92;
-                end
-            end
-        end
-    end
 end
 
 %% plot
