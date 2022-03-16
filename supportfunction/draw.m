@@ -25,6 +25,7 @@ end
 % set(h, 'WindowKeyPressFcn', []);
 %set(hFig, 'KeyPressFcn', @myKeyPressCallback);
 
+h.Name=['ROI# :' obj.id]; 
 
 if numel(h.UserData)~=0 % window is already displayed; therefore just update the figure
     him=h.UserData;
@@ -588,7 +589,7 @@ for i=1:numel(obj.display.channel)
                                   
                                 %  if pixx>0
                                     if pixx>0
-                                 str=[str ' - ' num2str(pixx) ' frames remains to classify'];
+                                 str=[str ' - ' num2str(pixx) ' frames remain to be classified'];
                                   end
                                  
                              end
@@ -1634,7 +1635,7 @@ for i=1:numel(obj.display.channel)
                                   pixx=numel(find(obj.train.(classif.strid).id==0));
                                   
                                   if pixx>0
-                                 str=[str ' - ' num2str(pixx) ' frames remains to classify'];
+                                 str=[str ' - ' num2str(pixx) ' frames remain to be classified'];
                                   end
                              end
                    end
