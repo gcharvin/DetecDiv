@@ -253,11 +253,11 @@ if plotDivDuration==0
     
     for cond=1:numel(condition)
         for r=rois{cond}
-            obj2{cond}{r,1}={obj{cond}(r).(signalstrid).(classifstrid).(fluostrid)}';
+            obj2{cond}{r,1}=obj{cond}(r).(signalstrid).(classifstrid).(fluostrid);
         end
     end
     %% ask channel
-    channumber=size(obj2{1},1);
+    channumber=size(obj2{1}{1,1},1);
     str=[];
     chanid=input(['Which channel ? (Default: 1)' num2str(1:channumber)]);
     if numel(chanid)==0
@@ -346,8 +346,10 @@ for cond=1:numel(condition)
     errorbar(x{cond},meanData{cond},semData{cond},'o','MarkerEdgeColor','k','MarkerFaceColor',colmap(cond,:),'MarkerSize',mz,'Color',colmap(cond,:));
     leg{cond}=[comment{cond} ' N=' num2str(numel(data{cond}(:,1)))];
     
-    set(gca,'FontSize',fz, 'FontName','Myriad Pro','LineWidth',2*lw,'FontWeight','bold','TickLength',[0.02 0.02],'XTick',x{cond}(1):5:x{cond}(end));
-    xlim([x{cond}(1),7]);
+    %Xtk=[x{cond}(1):5:x{cond}(end)];
+    Xtk=[-30:5:5];
+    set(gca,'FontSize',fz, 'FontName','Myriad Pro','LineWidth',2*lw,'FontWeight','bold','TickLength',[0.02 0.02],'XTick',Xtk);
+    xlim([Xtk(1) Xtk(end)]);
     ylim(1)=0;
 end
 legend(leg);
@@ -360,7 +362,7 @@ if figExport==1
     set(ax,'Units','centimeters', 'InnerPosition', [5 5 xf_width yf_width]) %0.8 if .svg is used
     signalFig.Renderer='painters';
     %saveas(rlsFig,'\\space2.igbmc.u-strasbg.fr\charvin\Theo\Projects\RAMM\Figures\Fig1\RLS\RLS_sir2_fob1.svg')
-    exportgraphics(signalFig,['\\space2.igbmc.u-strasbg.fr\charvin\Theo\Projects\RAMM\Figures\Fig2\' nameFile '.pdf'])
+    exportgraphics(signalFig,['' nameFile '.pdf'])
     %print(rlsFig,'\\space2.igbmc.u-strasbg.fr\charvin\Theo\Projects\RAMM\Figures\Fig1\RLS\RLS_sir2_fob1','-dpdf')%,'BackgroundColor','none','ContentType','vector')
     %export_fig RLS_sir2_fob1.pdf
 end

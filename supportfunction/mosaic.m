@@ -266,8 +266,8 @@ end
             maxframe=NaN;
             ccf=1;
             for r=rois(2,:)
-                obj.fov(rois(2,ccf)).roi(r).load;
-                maxframe=min(maxframe, min(size(obj.fov(rois(2,ccf)).roi(r).image,4)));
+                obj.fov(rois(1,ccf)).roi(r).load;
+                maxframe=min(maxframe, min(size(obj.fov(rois(1,ccf)).roi(r).image,4)));
                 ccf=ccf+1;
             end
             frames=1:maxframe;
@@ -311,7 +311,7 @@ end
         end
         
         if numel(levels{i})==0
-            levels{i}=[0.01 0.99];
+            levels{i}=[-1 -1];
         end
         
     end
@@ -405,7 +405,7 @@ end
                 imtmp=imtmptp;
             end
             imtmp=imresize(imtmp,scalingFactor,'nearest');
-            
+           
             
             frameEnd(1:numel(cha))=9999;
             if numel(find(stopWhenDead==1))>0 %if channel to skip when cell is dead
@@ -436,8 +436,7 @@ end
             %   imout(:,:,2,:)=imout(:,:,2,:)*background(2);
             %   imout(:,:,3,:)=imgout(:,:,3,:)*background(3);
             
-            for i=1:size(imtmp,4) % loop on frames, to replace by frames
-                
+            for i=1:size(imtmp,4) % loop on frames              
                 %IMAGES
                 imgRGBsum=uint16(zeros(size(imtmp,1),size(imtmp,2),3));
                 for ii=1:numel(cha) %loop on channels
@@ -454,16 +453,17 @@ end
  
                         imtmp2=uint16(zeros(size(imtmp(:,:,cha{ii},i))));
                     end
-                    if numel(cha{ii})==1 % single dimension channel => levels can be readjusted
-                  
-                        if numel(levels{ii})==2 % A 2D vector is provided, therefore image is not an indexed one
-                           
-                            
-                            if levels{ii}==[0.01 0.99]
-                                imtmp2 = imadjust(imtmp2);
-                           
-                            else
-       
+                    if numel(cha{ii})==1 % single dimension channel => levels can be readjusted                  
+                        if numel(levels{ii})==2 % A 2D vector is provided, therefore image is not an indexed one                                                       
+                            if levels{ii}==[-1 -1] %auto adjust
+                                if i==1
+                                    tmptimelapse=imtmp(:,:,cha{ii},1:end);
+                                    med=median(tmptimelapse(:));
+                                    stddev=std(double(tmptimelapse(:)));
+                                    stretchlim(:,ii)=[max(0,double(med)-4*stddev) ; min(65535,double(med)+4*stddev)]/65535;
+                                end
+                                imtmp2 = imadjust(imtmp2,stretchlim(:,ii));                                                           
+                            else       
                                 imtmp2 = imadjust(imtmp2,[levels{ii}(1)/65535 levels{ii}(2)/65535]);
                             end
                             imtmp2= cat(3, imtmp2*rgb{ii}(1), imtmp2*rgb{ii}(2), imtmp2*rgb{ii}(3));

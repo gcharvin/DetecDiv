@@ -13,7 +13,7 @@ function hrls=plotTraj(rls,varargin)
 % display style : color map : name or custom colormap : limits for
 % colormap, color separation , linewidth spacing etc
 % time : generation or physical time
-figExport=0;
+figExport=1;
 resultid=0;%choose what result to plot (cf rls.grountruth). Not fully implemented. Use 0 and make sure your rls file has only 0 and 1
 param=[];
 comment='';
@@ -29,7 +29,9 @@ for i=1:numel(varargin)
 end
 
 param.time=0; %0 : generations; 1 : physical time
-param.plotSignal=0 ; %1 if fluo to be plotted instead of divisions
+param.plotSignal=1 ; %1 if fluo to be plotted instead of divisions
+param.autoBounds=0; % computes minmax automatically
+param.minmax=[4000 30000]; % min and max values for colordisplay;
 
 maxBirth=400; %max frame to be born. After, discard rls.
 
@@ -68,8 +70,7 @@ else
     param.interspacing=0;
 end
 
-param.autoBounds=0; % computes minmax automatically
-param.minmax=[80 150]; % min and max values for colordisplay;
+
 %% rr
 % param.plotSignal=1 ;
 % param.minmax=[1 2.5];
@@ -91,7 +92,7 @@ if param.colorbar==1
     %     cmap2(:,2)=0*fliplr(l)';
     %     cmap2(:,1)=fliplr(l)';%(fliplr(l))';
     %     cmap2(:,3)=0*fliplr(l)';
-    cmap2=orange;
+    cmap2=green;
     
     cmapg=zeros(256,3);
     cmapg(:,2)=(fliplr(l))';
@@ -220,8 +221,13 @@ if param.sort==1
             end
             rls=rlstmp;
         else %generation
-            gt=[rls.groundtruth];
-            [p, ix]= sort([rls(gt==1).ndiv],'Descend');
+            gt=[rls.groundtruth];            
+            for g=1:numel({rls.divDuration})
+                ndiv(g)=numel(rls(g).divDuration);
+            end
+            ndiv=ndiv(gt==1)';            
+            
+            [p, ix]= sort(ndiv,'Descend');
             ix=ix*2;
             
             for i=1:length(ix)
@@ -246,8 +252,12 @@ if param.sort==1
             rlssorted=rls(ix);
             rls=rlssorted;
         else
-            gt=[rls.groundtruth];
-            [p, ix]= sort([rls(gt==resultid).ndiv],'Descend');
+            %gt=[rls.groundtruth];
+            for g=1:numel({rls.divDuration})
+                ndiv(g)=numel(rls(g).divDuration);
+            end
+            ndiv=ndiv';%(gt==resultid)';
+            [p, ix]= sort(ndiv,'Descend');
             rlssorted=rls(ix);
             rls=rlssorted;
         end
@@ -278,7 +288,7 @@ if param.plotSignal==1 && param.autoBounds==1
         %         minsignal=1.2*minsignal;
     end
     maxsignal=min(maxk(signal(~isnan(signal)),floor(0.05*sum(~isnan(signal(:))))));
-    minsignal=max(mink(signal(~isnan(signal)),floor(0.2*sum(~isnan(signal(:))))));
+    minsignal=max(mink(signal(~isnan(signal)),floor(0.3*sum(~isnan(signal(:))))));
 end
 
 for i=1:numel(rls)
@@ -477,14 +487,14 @@ if figExport==1
     sz=6;
     xf_width=sz; yf_width=3;
     xlim([0,1.01*maxe]);
-    xlim([0,3250]);
+    %xlim([0,3250]);
     set(gcf, 'PaperType','a4','PaperUnits','centimeters');
     %set(gcf,'Units','centimeters','Position', [5 5 xf_width yf_width]);
     set(ax,'Units','centimeters', 'InnerPosition', [2 2 xf_width yf_width])
     
     set(ax,'FontSize',8, 'LineWidth',1,'FontWeight','bold','TickLength',[0.02 0.02],'TickDir','out');
     htraj.Renderer='painters';
-    exportgraphics(htraj,'\\space2.igbmc.u-strasbg.fr\charvin\Theo\Projects\RAMM\Figures\Fig2\traj.pdf','BackgroundColor','none','ContentType','vector')
+    exportgraphics(htraj,'traj.pdf','BackgroundColor','none','ContentType','vector')
 end
 
 

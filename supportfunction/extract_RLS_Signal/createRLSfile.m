@@ -80,13 +80,15 @@ end
 %Selection
 %todo: parametrize selection here instead of in the different functions,
 %ex:
-% % % rls=rls([rls(:).ndiv]>7); %put at least 1 for robustness
-% % % rls=rls([rls(:).sep]>0); %take only SEP cells
+% % % rls=rls([rls(:).ndiv]>5); %put at least 1 for robustness
+% % % rls=rls(~isnan([rls(:).sep])); %take only SEP cells
 % % % 
-% % % rls=rls( ([rls.frameBirth]<=maxBirth) & (~isnan([rls.frameBirth])) );
+% % % rls=rls( ([rls.frameBirth]<=100) & (~isnan([rls.frameBirth])) );
 % % %  %roiobj=roiobj( (strcmp({roiobj.endType},'Death') & [roiobj.frameEnd]>300)  );
 % % % rls=rls( ~(strcmp({rls.endType},'Arrest') & [rls.frameEnd]<300)  ); %remove weird cells before frame 300 (stop growing)
-% % % rls=rls( ~(strcmp({rls.endType},'Emptied') & [rls.frameEnd]<300)  ); %remove emptied roi before frame 300
+% % % rls=rls( ~(strcmp({rls.endType},'Emptied')); %remove emptied roi
+% % % rls=rls( ~(strcmp({rls.endType},'Clog')); %remove emptied roi 
+
 
 %=
 
