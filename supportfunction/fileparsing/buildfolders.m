@@ -10,20 +10,21 @@ selecteddir=[];
 
 %dirlist
 cc=1;
- 
+dirlist=dirlist([dirlist.isdir]);
+dirlist = dirlist(~ismember({dirlist.name},{'.','..'}));
 for i=1:numel(dirlist)
     
-    if dirlist(i).isdir==0
-        continue
-    end
-    
-    
-    if strcmp(dirlist(i).name,'.')
-        continue
-    end
-    if strcmp(dirlist(i).name,'..')
-        continue
-    end
+%     if dirlist(i).isdir==0
+%         continue
+%     end
+%     
+%     
+%     if strcmp(dirlist(i).name,'.')
+%         continue
+%     end
+%     if strcmp(dirlist(i).name,'..')
+%         continue
+%     end
     
     selecteddir(cc)=i;
     
@@ -52,7 +53,7 @@ for i=selecteddir
     cc=cc+1;
 end
 
-if numel(tmp)>0 %positions are terminated by a numer, so sort them
+if numel(res)>0 %positions are terminated by a numer, so sort them
     [cc ix]=sort(res);
     output.pos=output.pos(ix);
 end
