@@ -1,4 +1,4 @@
-function hrls=plotRLS(roiobjcell,varargin)
+function hrls=plotRLS(rlsfile,varargin)
 
 % plot RLS data for one or several curves
 
@@ -21,17 +21,17 @@ sz=5;
 Nboot=100;
 plotHazardRate=1;
 maxBirth=100; %max frame to be born. After, discard rls.
-load=0;
-%TODO: change column and rowof roiobjcell
-szc=size(roiobjcell,1);
-comment=cell(szc,1);
+% load=0;
 
-rls=cell(szc,1);
+szc=max([rlsfile.condition]); %number of conditions
+% comment=cell(szc,1);
+
+% rls=cell(szc,1);
 
 for i=1:numel(varargin)
-    if strcmp(varargin{i},'Comment')
-        comment=varargin{i+1};
-    end
+%     if strcmp(varargin{i},'Comment')
+%         comment=varargin{i+1};
+%     end
     if strcmp(varargin{i},'Exportfig')
         figExport=1;
     end
@@ -42,48 +42,51 @@ for i=1:numel(varargin)
 end
 
 %% load if required
-if load==1
-    for c=1:szc
-        for r=1:numel(roiobjcell{c,1})
-            % load data if required
-            roiobjcell{c,1}(r).load('results');
-        end
-    end
-end
+% if load==1
+%     for c=1:szc
+%         for r=1:numel(roiobjcell{c,1})
+%             % load data if required
+%             roiobjcell{c,1}(r).load('results');
+%         end
+%     end
+% end
 %%
-%find classistrid
-if isprop(roiobjcell{1,1}(1),'results')
-    if isfield(roiobjcell{1,1}(1).results, 'RLS')
-        liststrid=fieldnames(roiobjcell{1,1}(1).results.RLS);
-    str=[];
-    else
-        error(['The roi ' roiobjcell{1,1}(1) 'has no results.RLS property, be sure to create it using measureRLS3'])
-    end
-else
-    error(['The roi ' roiobjcell{1,1}(1) 'has no classifstrid, be sure to measure it with measureRLS3'])
-end
-for i=1:numel(liststrid)
-    str=[str num2str(i) ' - ' liststrid{i} ';'];
-end
-classifid=input(['Which classi used? (Default: 1)' str]);
-if numel(classifid)==0
-    classifid=1;
-end
-classifstrid=liststrid{classifid};
+% %find classistrid
+% if isprop(roiobjcell{1,1}(1),'results')
+%     if isfield(roiobjcell{1,1}(1).results, 'RLS')
+%         liststrid=fieldnames(roiobjcell{1,1}(1).results.RLS);
+%     str=[];
+%     else
+%         error(['The roi ' roiobjcell{1,1}(1) 'has no results.RLS property, be sure to create it using measureRLS3'])
+%     end
+% else
+%     error(['The roi ' roiobjcell{1,1}(1) 'has no classifstrid, be sure to measure it with measureRLS3'])
+% end
+% for i=1:numel(liststrid)
+%     str=[str num2str(i) ' - ' liststrid{i} ';'];
+% end
+% classifid=input(['Which classi used? (Default: 1)' str]);
+% if numel(classifid)==0
+%     classifid=1;
+% end
+% classifstrid=liststrid{classifid};
 
 %%
 for c=1:szc %conditions
-    for r=1:numel(roiobjcell{c,1})   %rois from the condition   
-        if isfield(roiobjcell{c,1}(r).results, 'RLS')
-            if isfield(roiobjcell{c,1}(r).results.RLS,(classifstrid))            
-                rls{c,1}=[rls{c,1}; roiobjcell{c,1}(r).results.RLS.(classifstrid)];
-            else
-                warning(['The roi ' roiobjcell{c,1}(r) 'has no RLS result relative to ' (classifstrid) ', -->ROI skipped'])
-            end
-        else
-            warning(['The roi ' roiobjcell{c,1}(r) 'has no RLS computed, -->ROI skipped'])
-        end
-    end
+%     for r=1:numel(roiobjcell{c,1})   %rois from the condition   
+%         if isfield(roiobjcell{c,1}(r).results, 'RLS')
+%             if isfield(roiobjcell{c,1}(r).results.RLS,(classifstrid))            
+%                 rls{c,1}=[rls{c,1}; roiobjcell{c,1}(r).results.RLS.(classifstrid)];
+%             else
+%                 warning(['The roi ' roiobjcell{c,1}(r) 'has no RLS result relative to ' (classifstrid) ', -->ROI skipped'])
+%             end
+%         else
+%             warning(['The roi ' roiobjcell{c,1}(r) 'has no RLS computed, -->ROI skipped'])
+%         end
+%     end
+
+    rls{c,1}=rlsfile([rlsfile.condition]==c);
+    comment{c}=rls{c,1}(1).conditionComment;
     
     % selection of RLS
     rlst{c,1}=rls{c,1}([rls{c,1}.groundtruth]==0);
@@ -97,11 +100,13 @@ for c=1:szc %conditions
 end
 
 %% plot
-lw=1;
-fz=16;
+
 if figExport==1
     lw=0.5;
     fz=8;
+else
+    lw=1;
+    fz=16;
 end
 
 
@@ -116,7 +121,7 @@ lcc=1;
 for c=1:szc
     col=colorder(c,:);
     [yt,xt,flo,fup]=ecdf(rlstNdivs{c,1});
-    
+    xt(1)=0;
     plot(xt,1-yt,'LineWidth',lw,'color',col)
 %     ax.Children(1).LineWidth=lw;
 %     col=ax.Children(1).Color;
@@ -302,7 +307,7 @@ if figExport==1
     set(ax,'Units','centimeters', 'InnerPosition', [5 5 xf_width yf_width]) %0.8 if .svg is used
     rlsFig.Renderer='painters';
     %saveas(rlsFig,'\\space2.igbmc.u-strasbg.fr\charvin\Theo\Projects\RAMM\Figures\Fig1\RLS\RLS_sir2_fob1.svg')
-    exportgraphics(rlsFig,'\\space2.igbmc.u-strasbg.fr\charvin\Theo\Projects\RAMM\Figures\Fig1\RLS\RLS_sir2_fob1.pdf')
+    exportgraphics(rlsFig,'rls_curve.pdf')
     %print(rlsFig,'\\space2.igbmc.u-strasbg.fr\charvin\Theo\Projects\RAMM\Figures\Fig1\RLS\RLS_sir2_fob1','-dpdf')%,'BackgroundColor','none','ContentType','vector')
     %export_fig RLS_sir2_fob1.pdf
 end

@@ -1,4 +1,4 @@
-function []=plotSignal2(rls,varargin)
+function []=plotSignal2(rlsfile,varargin)
 %classi script
 
 %todo : simplify code. remove if plotDuration==1 and replace it by : if
@@ -9,7 +9,6 @@ nameFile='signal';
 timeOrGen=0; %time
 timefactor=5;
 load=0;
-RLSfile=0;
 maxBirth=200; %max frame to be born. After, discard rls.
 condition=1;
 
@@ -49,17 +48,17 @@ timeOrGen=1;
 
 %% selection
 % rls=rls([rls(:).condition]==condition);
-rls=rls([rls(:).ndiv]>7); %put at least 1 for robustness
-rls=rls([rls(:).sep]>5); %take only SEP cells
+rlsfile=rlsfile([rlsfile(:).ndiv]>7); %put at least 1 for robustness
+rlsfile=rlsfile([rlsfile(:).sep]>5); %take only SEP cells
 
-rls=rls( ([rls.frameBirth]<=maxBirth) & (~isnan([rls.frameBirth])) );
+rlsfile=rlsfile( ([rlsfile.frameBirth]<=maxBirth) & (~isnan([rlsfile.frameBirth])) );
 %roiobj=roiobj( (strcmp({roiobj.endType},'Death') & [roiobj.frameEnd]>300)  );
-rls=rls( ~(strcmp({rls.endType},'Arrest') & [rls.frameEnd]<300)  ); %remove weird cells before frame 300 (stop growing)
-rls=rls( ~(strcmp({rls.endType},'Emptied') & [rls.frameEnd]<300)  ); %remove emptied roi before frame 300
+rlsfile=rlsfile( ~(strcmp({rlsfile.endType},'Arrest') & [rlsfile.frameEnd]<300)  ); %remove weird cells before frame 300 (stop growing)
+rlsfile=rlsfile( ~(strcmp({rlsfile.endType},'Emptied') & [rlsfile.frameEnd]<300)  ); %remove emptied roi before frame 300
 
 for cond=1:numel(condition)
-    rois{cond}=1:numel(rls([rls.condition]==condition(cond)));
-    comment{cond}=rls(find([rls.condition]==condition(cond)),1).conditionComment;
+    rois{cond}=1:numel(rlsfile([rlsfile.condition]==condition(cond)));
+    comment{cond}=rlsfile(find([rlsfile.condition]==condition(cond)),1).conditionComment;
 end
 %%
 signalstrid='';
@@ -71,22 +70,22 @@ fluostrid='';
 if load==1
     for cond=conditions
     for r=rois{cond}
-        rls(r).load('results');
+        rlsfile(r).load('results');
     end
     end
 end
 
 %%
 if timeOrGen==0 %time
-    if isfield(rls(1).results,'signal')
+    if isfield(rlsfile(1).results,'signal')
         for cond=conditions
-            rlstmp=rls([rls.condition]==condition(cond));
+            rlstmp=rlsfile([rlsfile.condition]==condition(cond));
             for r=rois{cond}
                 obj{cond}(r,1)=rlstmp(r).results.signal; %assign obj
             end
         end
     else
-        error(['The roi ' rls(1) 'has no signal. Extract it using extractSignal'])
+        error(['The roi ' rlsfile(1) 'has no signal. Extract it using extractSignal'])
     end
     
 elseif timeOrGen==1 %generations
@@ -123,18 +122,18 @@ elseif timeOrGen==1 %generations
     
     
     %     elseif RLSfile==1 %if input is rls struct
-    if isfield(rls(1),'divSignal')
+    if isfield(rlsfile(1),'divSignal')
         for cond=1:numel(condition)
-            rlstmp=rls([rls.condition]==condition(cond));
+            rlstmp=rlsfile([rlsfile.condition]==condition(cond));
             for r=rois{cond}
                 obj{cond}(r,1)=rlstmp(r).divSignal; %assign obj
             end
         end
     else
-        error(['The roi ' rls(1).name 'has no divSignal field. Extract it using extractSignal followed by measureRLS2'])
+        error(['The roi ' rlsfile(1).name 'has no divSignal field. Extract it using extractSignal followed by measureRLS2'])
     end
     
-    if isfield(rls(1),'Aligned')
+    if isfield(rlsfile(1),'Aligned')
         askPlotAligned=input('Aligned signals available, plot this? y/n (Default: n)','s');
         if numel(askPlotAligned)==0
             plotAligned=0;
@@ -143,17 +142,17 @@ elseif timeOrGen==1 %generations
             clear obj
             %remove nosep
             flag=[];
-            for r=1:numel(rls)
-                if isempty(rls(r).Aligned)
+            for r=1:numel(rlsfile)
+                if isempty(rlsfile(r).Aligned)
                     flag=[flag r];
                 end
             end
-            rls(flag)=[];
+            rlsfile(flag)=[];
             for cond=1:numel(condition) %updates variable storing number of rois
-                rois{cond}=1:numel(rls([rls.condition]==condition(cond)));
+                rois{cond}=1:numel(rlsfile([rlsfile.condition]==condition(cond)));
             end
             
-            liststrid=fields(rls(1).Aligned); %full, cell, nucleus
+            liststrid=fields(rlsfile(1).Aligned); %full, cell, nucleus
             str=[];
             for i=1:numel(liststrid)
                 str=[str num2str(i) ' - ' liststrid{i} '; '];
@@ -165,7 +164,7 @@ elseif timeOrGen==1 %generations
             alignstrid=liststrid{alignid};
             
             for cond=1:numel(condition)
-                rlstmp=rls([rls.condition]==condition(cond));
+                rlstmp=rlsfile([rlsfile.condition]==condition(cond));
                 for r=rois{cond}
                     obj{cond}(r,1)=rlstmp(r).Aligned.(alignstrid); %assign obj
                 end
