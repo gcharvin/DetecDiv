@@ -8,6 +8,8 @@ function addROI(classif,obj,varargin)
 
 rois=[];
 convert={};
+adjustName={}; %classif.channelName;
+
 
 for i=1:numel(varargin)
     if strcmp(varargin{i},'rois') % input rois
@@ -15,6 +17,9 @@ for i=1:numel(varargin)
     end
     if strcmp(varargin{i},'convert') % provide character to explain how all classes will be converted
         convert=varargin{i+1};
+    end
+     if strcmp(varargin{i},'adjustName') % provide character to explain how all classes will be converted
+        adjustName=varargin{i+1};
     end
 end
 
@@ -112,6 +117,16 @@ for i=1:length(rois)
     classif.roi(cc+1).path = classif.path;
     
     classif.roi(cc+1).classes=classif.classes;
+    
+    if numel(adjustName) % adjust the name of the channels to fit that of the target classifier
+        targetChannel=classif.channelName; 
+        
+        for ii=1:numel(adjustName)
+            pix=find(matches(classif.roi(cc+1).display.channel,adjustName{ii}));
+            
+            classif.roi(cc+1).display.channel{pix}=targetChannel{ii};
+        end
+    end
     
     %size(classif.roi(cc+1).image)
     
