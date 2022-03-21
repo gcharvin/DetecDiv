@@ -123,24 +123,29 @@ rls=rls([rls.frameBirth]<maxBirth);
 rls=rls(~(strcmp({rls.endType},'Emptied')));
 rls=rls(~(strcmp({rls.endType},'Clog')));
 %%
+% ask signal
+liststrid=fields(rls(1).divSignal); %full, cell, nucleus, div
+%liststrid(contains(liststrid,'divDuration'))=[];
+
+str='';
+for i=1:numel(liststrid)
+    str=[str num2str(i) ' - ' liststrid{i} '; '];
+end
+
+signalid=input(['Which signal type? (Default: 1) ' str]);
+if numel(signalid)==0
+    signalid=1;
+end
+
+signalstrid=liststrid{signalid};
+
+if strcmp(signalstrid,'divDuration')
+    param.plotSignal=0;
+else
+    param.plotSignal=1;
+end
+
 if param.plotSignal==1
-    
-    % ask signal
-    liststrid=fields(rls(1).divSignal); %full, cell, nucleus, div
-    liststrid(contains(liststrid,'divDuration'))=[];
-    
-    str=[];
-    for i=1:numel(liststrid)
-        str=[str num2str(i) ' - ' liststrid{i} '; '];
-    end
-    
-    signalid=input(['Which signal type? (Default: 1)' str]);
-    if numel(signalid)==0
-        signalid=1;
-    end
-    
-    signalstrid=liststrid{signalid};
-    
     % ask classistrid
     liststrid=fields(rls(1).divSignal.(signalstrid));
     str=[];
@@ -172,7 +177,7 @@ if param.plotSignal==1
     % ask channel
     channumber=size(rls(1).divSignal.(signalstrid).(classifstrid).(fluostrid),1);
     str=[];
-    chanid=input(['Which channel ? (Default: 1)' num2str(1:channumber)]);
+    chanid=input(['Which channel (refers to channels exported with extractSignal)? (Default: 1)' num2str(1:channumber)]);
     if numel(chanid)==0
         chanid=1;
     end
@@ -426,6 +431,14 @@ for i=1:numel(rls)
     
 end
 %%
+
+if figExport==0
+    fs=16;
+    lw=3;
+else
+    fs=8;
+    lw=1;
+end
 % figure(hfluo);
 % line([0 0],[0 spacing*length(results)+cellwidth],'Color','k','LineWidth',4);
 
@@ -441,11 +454,11 @@ end
 %line([0 0],[0 spacing*length(results)+cellwidth],'Color','k','LineWidth',4);
 
 if numel(rls)>1
-    text(30,50, ['Median RLS= ' num2str(med) ' (n=' num2str(numel(rls)) ')'],'FontSize',25);
+    text(30,50, ['Median RLS= ' num2str(med) ' (n=' num2str(numel(rls)) ')'],'FontSize',fs);
 end
 
 %PLOT LABEL
-set(gca,'FontSize',25,'FontWeight','bold','YTick',ti(1:2:length(ti)),'YTickLabel',leg(1:2:length(leg)),'LineWidth',3);
+set(gca,'FontSize',fs,'FontWeight','bold','YTick',ti(1:2:length(ti)),'YTickLabel',leg(1:2:length(leg)),'LineWidth',lw);
 box on
 if param.time==0
     xlabel('Generations');
@@ -471,8 +484,13 @@ if param.colorbar==1
     else
         h.TickLabels={num2str(minsignal) num2str(maxsignal)};
     end
-    set(h,'FontSize',25);
-    ylabel(h,'Division time (minutes)');
+    set(h,'FontSize',fs);
+    
+    if param.plotSignal==1
+        ylabel(h,fluostrid);
+    else
+        ylabel(h,'Division time (minutes)');
+    end
     %h.Position=[1 1 0.3 0.3]
 end
 
@@ -480,7 +498,7 @@ xlim([0 1.2*50]);
 %xlim([0 1.2*maxe]);
 ylim([0 (param.spacing*numel(rls) +param.interspacing*numel(rls)/2)+param.startY]);
 
-set(gca,'FontSize',16, 'FontName','Myriad Pro', 'LineWidth',3,'FontWeight','bold','TickLength',[0.02 0.02]);
+set(gca,'FontSize',fs, 'FontName','Myriad Pro', 'LineWidth',3,'FontWeight','bold','TickLength',[0.02 0.02]);
 htraj=gcf;
 if figExport==1
     ax=gca;
@@ -492,7 +510,6 @@ if figExport==1
     %set(gcf,'Units','centimeters','Position', [5 5 xf_width yf_width]);
     set(ax,'Units','centimeters', 'InnerPosition', [2 2 xf_width yf_width])
     
-    set(ax,'FontSize',8, 'LineWidth',1,'FontWeight','bold','TickLength',[0.02 0.02],'TickDir','out');
     htraj.Renderer='painters';
     exportgraphics(htraj,'traj.pdf','BackgroundColor','none','ContentType','vector')
 end
