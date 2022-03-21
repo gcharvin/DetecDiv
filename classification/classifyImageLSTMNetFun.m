@@ -35,7 +35,6 @@ for i=1:numel(varargin)
        end
 end
 
-
 if numel(roiobj.image)==0
     roiobj.load;
 end

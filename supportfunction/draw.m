@@ -539,18 +539,99 @@ for i=1:numel(obj.display.channel)
         %hp=findobj('UserData',obj.display.channel{i});
         axes(hp(cc));
         str=obj.display.channel{i};
-        
-        if numel(obj.train)>0
+         discc=1;
+          displaystruct=[];
+        displaystruct.name=[];
+        displaystruct.gt='';
+        displaystruct.pred='';
+        displaystruct.info='';
+         
+         if numel(obj.train)>0
             fields=fieldnames(obj.train);
             
             for k=1:numel(fields)
-                if isfield(obj.train.(fields{k}),'id')
-                    if numel(obj.train.(fields{k}).id)>=obj.display.frame
-                        %    kk=   obj.train.(fields{k}).id
-                        tt=obj.train.(fields{k}).id(obj.display.frame);
+                
+                tt=obj.train.(fields{k}).id(obj.display.frame);
+                
+                if isfield(obj.train.(fields{k}),'classes')
+                    classesspe=obj.train.(fields{k}).classes; % classes name specfic to training
+                else
+                    classesspe=    obj.classes ;
+                end
+                
+                      if tt<=0
+                            if  numel(obj.classes)>0
+                                tt='Not Clas.';
+                            else
+                                % regression
+                            end
+                        else
+                            
+                            if numel(obj.classes)>0
+                                if tt <= length(obj.classes)
+                                    tt=obj.classes{tt};
+                                else
+                                    tt='N/A';
+                                end
+                            else
+                                
+                                %
+                                tt=num2str(tt);
+                            end
+                            
+                        end
+                
+                %     tt
+                displaystruct(discc).name=fields{k};
+                displaystruct(discc).gt=['GT: ' tt];
+                
+               
+              %  str=[str ' -  ' tt ' (tr.: ' fields{k} ')'];
+                
+                   if numel(classif)>0 & strcmp(classif.strid,fields{k})
+                             if strcmp(classif.category{1},'Image')  || strcmp(classif.category{1},'LSTM') 
+
+                                  pixx=numel(find(obj.train.(classif.strid).id==0));
+                                  
+                                  if pixx>0
+                                 strclassi= [num2str(pixx) ' frames remain to be classified'];
+                                 displaystruct(discc).info=strclassi; 
+                                  end
+                             end
+                   end
+                   discc=discc+1;
                         
-                        if isfield(obj.train.(fields{k}),'classes')
-                            classesspe=obj.train.(fields{k}).classes; % classes name specfic to training
+                
+                %                         if obj.train(obj.display.frame)==0
+                %                             str=[str ' - not classified'];
+                %                     %title(hp(cc),str, 'Color',[0 0 0],'FontSize',20);
+                %                         else
+                %                             str= [str ' - ' obj.classes{obj.train(obj.display.frame)} ' (training)'];
+                %                     %title(hp(cc),str, 'Color',cmap(obj.train(obj.display.frame),:),'FontSize',20);
+                %                         end
+                %  end
+                
+            end
+        end
+        
+        % str=hp(cc).Title.String;
+        
+      
+         if numel(obj.results)>0
+            pl = fieldnames(obj.results);
+            
+            %aa=obj.results
+            for k = 1:length(pl)
+                if isfield(obj.results.(pl{k}),'labels')
+                    %   tt=char(obj.results.(pl{k}).labels(obj.display.frame));
+                    if numel(obj.results.(pl{k}).id)>= obj.display.frame
+                       % tt=num2str(obj.results.(pl{k}).id(obj.display.frame));
+                       % str=[str ' - class #' tt ' (' pl{k} ')'];
+                        
+                             tt=obj.results.(pl{k}).id(obj.display.frame);
+                        
+                        if isfield(obj.results.(pl{k}),'classes')
+                            classesspe=obj.results.(pl{k}).classes; % classes name specfic to training
                         else
                             classesspe=    obj.classes ;
                         end
@@ -578,50 +659,31 @@ for i=1:numel(obj.display.channel)
                         end
                         
                         %     tt
-                        str=[str ' - ' tt ' (tr.: ' fields{k} ')'];
+                      %  str=[str ' - ' tt ' ( ' fields{k} ')'];
                         
-                        
-                        if numel(classif)>0
-                             if strcmp(classif.category{1},'Image')  || strcmp(classif.category{1},'LSTM') 
-                                 
-                                 
-                                  pixx=numel(find(obj.train.(classif.strid).id==0));
-                                  
-                                %  if pixx>0
-                                    if pixx>0
-                                 str=[str ' - ' num2str(pixx) ' frames remain to be classified'];
-                                  end
-                                 
-                             end
+                      found=0;
+                        for jk=1:numel(displaystruct)
+                            if strcmp(displaystruct(jk).name,pl{k})
+                                displaystruct(jk).pred=['Pred: ' tt];
+                                found=1;
+                            end
                         end
-                        %                         if obj.train(obj.display.frame)==0
-                        %                             str=[str ' - not classified'];
-                        %                     %title(hp(cc),str, 'Color',[0 0 0],'FontSize',20);
-                        %                         else
-                        %                             str= [str ' - ' obj.classes{obj.train(obj.display.frame)} ' (training)'];
-                        %                     %title(hp(cc),str, 'Color',cmap(obj.train(obj.display.frame),:),'FontSize',20);
-                        %                         end
-                        %  end
+                        if found==0
+                            displaystruct(end+1).pred=tt;
+                            displaystruct(end+1).name=pl{k};
+                        end
                         
                     end
                 end
-            end
-        end
-        
-        % str=hp(cc).Title.String;
-        
-        if numel(obj.results)>0
-            pl = fieldnames(obj.results);
-            %aa=obj.results
-            for k = 1:length(pl)
-                if isfield(obj.results.(pl{k}),'labels')
-                    %   tt=char(obj.results.(pl{k}).labels(obj.display.frame));
-                    if numel(obj.results.(pl{k}).id)>=obj.display.frame
-                        tt=num2str(obj.results.(pl{k}).id(obj.display.frame));
-                        str=[str ' - ' tt ' (' pl{k} ')'];
-                    end
-                end
-                
+                %
+                %                 if isfield(obj.results.(pl{k}),'mother')
+                %                     % pedigree data available .
+                %
+                %                     if strcmp(['results_' pl{k}],str) % identify channel
+                %
+                %                         plotLinksResults(obj,hp,pl{k})
+                %                     end
+                %                 end
                 
                 if isfield(obj.results.(pl{k}),'mother')
                     % pedigree data available .
@@ -630,11 +692,12 @@ for i=1:numel(obj.display.channel)
                     if strcmp([pl{k}],str) % identify channel
                         %       'ok'
                         plotLinksResults(obj,hp,pl{k})
-                        
                     end
                 end
+                
             end
-        end
+         end
+        
         
         % display tracking results as numbers on each cell
         %him.image(cc) are the Data
@@ -668,8 +731,16 @@ for i=1:numel(obj.display.channel)
             end
         end
         
+        subt={};
+        
+        for ii=1:numel(displaystruct)
+            subt{ii}=[displaystruct(ii).name ' - '  displaystruct(ii).gt ' - ' displaystruct(ii).pred ' - '  displaystruct(ii).info ];
+        end
+        
+        title(hp(cc),[str subt],'FontSize',12,'interpreter','none');
+        
         %test=get(hp(cc),'Parent')
-        title(hp(cc),str,'FontSize',14,'interpreter','none');
+     %   title(hp(cc),str,'FontSize',14,'interpreter','none');
         %title(hp(cc),str, 'Color',colo,'FontSize',20);
         cc=cc+1;
     end
@@ -1589,6 +1660,14 @@ for i=1:numel(obj.display.channel)
         % if obj.display.selectedchannel(pix)==1
         axes(hp(cc));
         str=obj.display.channel{i};
+        strclassi='';
+        displaystruct=[];
+        displaystruct.name=[];
+        displaystruct.gt='';
+        displaystruct.pred='';
+        displaystruct.info='';
+        
+        discc=1;
         
         if numel(obj.train)>0
             fields=fieldnames(obj.train);
@@ -1626,19 +1705,24 @@ for i=1:numel(obj.display.channel)
                         end
                 
                 %     tt
-                str=[str ' - class # ' tt ' (tr.: ' fields{k} ')'];
+                displaystruct(discc).name=fields{k};
+                displaystruct(discc).gt=['GT: ' tt];
                 
-                   if numel(classif)>0
+               
+              %  str=[str ' -  ' tt ' (tr.: ' fields{k} ')'];
+                
+                   if numel(classif)>0 & strcmp(classif.strid,fields{k})
                              if strcmp(classif.category{1},'Image')  || strcmp(classif.category{1},'LSTM') 
-                                 
-                                 
+
                                   pixx=numel(find(obj.train.(classif.strid).id==0));
                                   
                                   if pixx>0
-                                 str=[str ' - ' num2str(pixx) ' frames remain to be classified'];
+                                 strclassi= [num2str(pixx) ' frames remain to be classified'];
+                                 displaystruct(discc).info=strclassi; 
                                   end
                              end
                    end
+                   discc=discc+1;
                         
                 
                 %                         if obj.train(obj.display.frame)==0
@@ -1657,13 +1741,60 @@ for i=1:numel(obj.display.channel)
         
         if numel(obj.results)>0
             pl = fieldnames(obj.results);
+            
             %aa=obj.results
             for k = 1:length(pl)
                 if isfield(obj.results.(pl{k}),'labels')
                     %   tt=char(obj.results.(pl{k}).labels(obj.display.frame));
                     if numel(obj.results.(pl{k}).id)>= obj.display.frame
-                        tt=num2str(obj.results.(pl{k}).id(obj.display.frame));
-                        str=[str ' - class #' tt ' (' pl{k} ')'];
+                       % tt=num2str(obj.results.(pl{k}).id(obj.display.frame));
+                       % str=[str ' - class #' tt ' (' pl{k} ')'];
+                        
+                             tt=obj.results.(pl{k}).id(obj.display.frame);
+                        
+                        if isfield(obj.results.(pl{k}),'classes')
+                            classesspe=obj.results.(pl{k}).classes; % classes name specfic to training
+                        else
+                            classesspe=    obj.classes ;
+                        end
+                        
+                        if tt<=0
+                            if  length(obj.classes)>0
+                                tt='Not Clas.';
+                            else
+                                % regression
+                            end
+                        else
+                            
+                            if length(obj.classes)>0
+                                if tt <= length(obj.classes)
+                                    tt=obj.classes{tt};
+                                else
+                                    tt='N/A';
+                                end
+                            else
+                                
+                                %
+                                tt=num2str(tt);
+                            end
+                            
+                        end
+                        
+                        %     tt
+                      %  str=[str ' - ' tt ' ( ' fields{k} ')'];
+                        
+                      found=0;
+                        for jk=1:numel(displaystruct)
+                            if strcmp(displaystruct(jk).name,pl{k})
+                                displaystruct(jk).pred=['Pred: ' tt];
+                                found=1;
+                            end
+                        end
+                        if found==0
+                            displaystruct(end+1).pred=tt;
+                            displaystruct(end+1).name=pl{k};
+                        end
+                        
                     end
                 end
                 %
@@ -1689,64 +1820,7 @@ for i=1:numel(obj.display.channel)
             end
         end
         
-        %                 if numel(obj.train)>0
-        %                     fields=fieldnames(obj.train);
-        %
-        %                     for k=1:numel(fields)
-        %                         tt=obj.train.(fields{k}).id(obj.display.frame);
-        %
-        %                         if isfield(obj.train.(fields{k}),'classes')
-        %                             classesspe=obj.train.(fields{k}).classes; % classes name specfic to training
-        %                         else
-        %                             classesspe=    obj.classes ;
-        %                         end
-        %
-        %                         if tt==0
-        %                             tt='not classified';
-        %                         else
-        %                             if tt <= length(obj.classes)
-        %                                 tt=obj.classes{tt};
-        %                             else
-        %                                 tt='class unavailable';
-        %                             end
-        %                         end
-        %                         str=[str ' - ' tt ' (training: ' fields{k} ')'];
-        %
-        %                         %                         if obj.train(obj.display.frame)==0
-        %                         %                             str=[str ' - not classified'];
-        %                         %                     %title(hp(cc),str, 'Color',[0 0 0],'FontSize',20);
-        %                         %                         else
-        %                         %                             str= [str ' - ' obj.classes{obj.train(obj.display.frame)} ' (training)'];
-        %                         %                     %title(hp(cc),str, 'Color',cmap(obj.train(obj.display.frame),:),'FontSize',20);
-        %                         %                         end
-        %                     end
-        %
-        %                 end
-        %
-        %                 % str=hp(cc).Title.String;
-        %
-        %                 if numel(obj.results)>0
-        %                     pl = fieldnames(obj.results);
-        %                     %aa=obj.results
-        %                     for k = 1:length(pl)
-        %                         if isfield(obj.results.(pl{k}),'labels')
-        %                             tt=char(obj.results.(pl{k}).labels(obj.display.frame));
-        %                             str=[str ' - ' tt ' (' pl{k} ')'];
-        %                         end
-        %
-        %                         if isfield(obj.results.(pl{k}),'mother')
-        %                             % pedigree data available .
-        %
-        %                             if strcmp(['results_' pl{k}],str) % identify channel
-        %
-        %                                 plotLinksResults(obj,hp,pl{k})
-        %
-        %                             end
-        %                         end
-        %                     end
-        %                 end
-        %
-        % display tracking numbers on cells
+    
         if numel(strfind(obj.display.channel{i},'track'))~=0 | numel(strfind(obj.display.channel{i},'pedigree'))~=0
             im=him.image(cc).CData;
             
@@ -1761,7 +1835,17 @@ for i=1:numel(obj.display.channel)
             end
         end
         
-        title(hp(cc),str,'FontSize',14,'interpreter','none');
+       
+        
+        subt={};
+        
+        for ii=1:numel(displaystruct)
+            subt{ii}=[displaystruct(ii).name ' - '  displaystruct(ii).gt ' - ' displaystruct(ii).pred ' - '  displaystruct(ii).info ];
+        end
+        
+        title(hp(cc),[str subt],'FontSize',12,'interpreter','none');
+      %  subtitle(hp(cc), subt ,'FontSize',10,'interpreter','none');
+
         %title(hp(cc),str, 'Color',colo,'FontSize',20);
         cc=cc+1;
     end
