@@ -1,7 +1,7 @@
 function saveCroppedImages(obj,varargin)
 
 % writes ROIs and applies XY drift correction
-% cut all frames into small pieces to prevent out of memeoy :
+% cut all frames into small pieces to prevent out of memory :
 
 % loop on groups of frames --> loading raw images for designated frames
 % into memory
@@ -15,6 +15,7 @@ fovid=1:numel(obj.fov); % All FOVs will be processed
 cut=20;
 correctdrift=true;
 crashrecovery=0;
+cropDrift=0.25;
 
 for i=1:numel(varargin)
     if strcmp(varargin{i},'frames') % frames to be processed
@@ -33,10 +34,14 @@ for i=1:numel(varargin)
         correctdrift=logical(varargin{i+1});
     end
     
+    if strcmp(varargin{i},'cropdrift') % cropping factor for computedrift
+        cropDrift=varargin{i+1};
+    end
+    
     if strcmp(varargin{i},'crashrecovery')
         crashrecovery=varargin{i+1};
     end
-    
+            
     %       if strcmp(varargin{i},'channelint') % frames interval
     %     channelint=varargin{i+1};
     %   end
@@ -218,7 +223,7 @@ for i=fovid
             method='circshift';
             % method='subpixel';
             
-            tmpfov(i).computeDrift('framesid',nframes,'refframeid',refframeid,'method',method,'refimage',refimage,'images',list(:,1),'fov',i); % compute drift and store in fov.drift
+            tmpfov(i).computeDrift('framesid',nframes,'refframeid',refframeid,'method',method,'refimage',refimage,'images',list(:,1),'fov',i,'crop',cropDrift); % compute drift and store in fov.drift
             
             %a= tmpfov(i).drift.x
             
