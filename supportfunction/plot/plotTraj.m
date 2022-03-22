@@ -13,7 +13,7 @@ function hrls=plotTraj(rls,varargin)
 % display style : color map : name or custom colormap : limits for
 % colormap, color separation , linewidth spacing etc
 % time : generation or physical time
-figExport=1;
+figExport=0;
 resultid=0;%choose what result to plot (cf rls.grountruth). Not fully implemented. Use 0 and make sure your rls file has only 0 and 1
 param=[];
 comment='';
@@ -29,14 +29,14 @@ for i=1:numel(varargin)
 end
 
 param.time=0; %0 : generations; 1 : physical time
-param.plotSignal=1 ; %1 if fluo to be plotted instead of divisions
+%param.plotSignal=0 ; %1 if fluo to be plotted instead of divisions
 param.autoBounds=0; % computes minmax automatically
-param.minmax=[4000 30000]; % min and max values for colordisplay;
+param.minmax=[60 150]; % min and max values for colordisplay;
 
 maxBirth=400; %max frame to be born. After, discard rls.
 
 %===param===
-param.showgroundtruth=0; % display the groundtruth data
+param.showgroundtruth=1; % display the groundtruth data
 
 param.sort=1; % 1 if sorting of trajectories according to generations
 param.timefactor=5; %put =1 to put the time in frames
