@@ -75,6 +75,7 @@ end
 strpath=[obj.io.path obj.io.file];
 
 for i=fovid
+    
     tmpfov(i)=obj.fov(i);
     %tmpfov(i)=propValues(tmpfov(i),obj.fov(i));
     
