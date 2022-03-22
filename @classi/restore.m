@@ -11,6 +11,8 @@ function restore(classif,index)
        return;
    end
    
+  evalin('base', ['clear ' classif.strid]); % clear classifier variable if loaded.
+  
   ff=fullfile(pth,t{index,1});
    copyfile(ff,fullfile(pth,[classif.strid '_classification.mat']));
   load(ff); % classiObj;

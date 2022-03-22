@@ -33,6 +33,11 @@ for i=1:numel(varargin)
     
     if strcmp(varargin{i},'Frames') % is a numeric array 
         frames=str2num(varargin{i+1});
+        if numel(frames)==1
+            if frames==-1
+                frames=[];
+            end
+        end
     end
     
     if strcmp(varargin{i},'Progress') % update progress bar
