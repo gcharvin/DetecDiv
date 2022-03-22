@@ -15,61 +15,43 @@ function hrls=plotDivtimes(rlsfile,varargin)
 % colormap, color separation , linewidth spacing etc
 % time : generation or physical time
 figExport=1;
+timeFactor=5;
+GT=0;
 maxBirth=100; %max frame to be born. After, discard rls.
 
-szc=max([rlsfile.condition]); %number of conditions
-% comment=cell(szc,1);
-
-% rls=cell(szc);
-
-% for i=1:numel(varargin)
+for i=1:numel(varargin)
 %     if strcmp(varargin{i},'Comment')
 %         comment=varargin{i+1};
 %     end
-% end
+    if strcmp(varargin{i},'GT')
+        GT=1;
+    end
+end
 
-
-
-
-% %find classistrid
-% if isfield(roiobjcell{1,1}(1).results,'RLS')
-%     liststrid=fields(roiobjcell{1,1}(1).results.RLS);
-%     str=[];
-% else
-%     error(['The roi ' roiobjcell{1,1}(1) 'has no RLS result, be sure to measure it with measureRLS3'])
-% end
-% for i=1:numel(liststrid)
-%     str=[str num2str(i) ' - ' liststrid{i} ';'];
-% end
-% classifid=input(['Which classi used? (Default: 1)' str]);
-% if numel(classifid)==0
-%     classifid=1;
-% end
-% classifstrid=liststrid{classifid};
+if GT==1
+    szc=2;
+    comment={'Groundtruth', 'Prediction'};
+else
+    szc=max([rlsfile.condition]); %number of conditions
+end
 
 %extract RLS from roiobj
 for c=1:szc
-    rls{c,1}=rlsfile([rlsfile.condition]==c);
-    comment{c}=rls{c,1}(1).conditionComment;
-%     for r=1:numel(roiobjcell{c,1})
-%         if isfield(roiobjcell{c,1}(r).results,'RLS')
-%             if isfield(roiobjcell{c,1}(r).results.RLS,(classifstrid))
-%                 rls{c,1}=[rls{c,1}; roiobjcell{c,1}(r).results.RLS.(classifstrid)];
-%             else
-%                 warning(['The roi ' roiobjcell{c,1}(r) 'has no RLS result relative to ' classifstrid ', -->ROI skipped'])
-%             end
-%         else
-%             warning(['The roi ' roiobjcell{1,1}(r) 'has no RLS result, be sure to measure it with measureRLS3, -->ROI skipped'])
-%         end
-%     end
     
+    if GT==0
+        rls{c,1}=rlsfile([rlsfile.condition]==c);
+        comment{c}=rls{c,1}(1).conditionComment;
+    elseif GT==1
+        rls{c,1}=rlsfile([rlsfile.groundtruth]==c-1);
+    end
+    
+    rlst=rls;
     %selection of RLS (to put in createRLSfile() for coherence)
-    rlst{c,1}=rls{c,1}([rls{c,1}.groundtruth]==0);
     rlst{c,1}=rlst{c,1}( ([rlst{c,1}.frameBirth]<=maxBirth) & (~isnan([rlst{c,1}.frameBirth])) );
     rlst{c,1}=rlst{c,1}([rlst{c,1}.ndiv]>5);
     rlst{c,1}=rlst{c,1}( ([rlst{c,1}.frameBirth]<=maxBirth));
     
-    divt{c,1}=[rlst{c,1}.divDuration]*5;
+    divt{c,1}=[rlst{c,1}.divDuration]*timeFactor;
     
 end
 

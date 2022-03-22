@@ -9,6 +9,7 @@ environment='local';
 for i=1:numel(varargin)
     if strcmp(varargin{i},'GT')
         GT=1;
+        comment={'Groundtruth','Prediction'};
     end
     
     if strcmp(varargin{i},'Align')
@@ -38,14 +39,22 @@ for cond=1:szc
         end
         roiobjcell{cond,1}(r).load('results');
         roiobjcell{cond,1}(r).path=strrep(roiobjcell{cond,1}(r).path,'/shared/space2/','\\space2.igbmc.u-strasbg.fr\');
-        rls(cc)=roiobjcell{cond,1}(r).results.RLS.(['from_' classifstrid]);
-        rlscond(cc,1)=cond;
-        rlscomm{cc,1}=comment{1,cond};
+        rls(cc)=roiobjcell{cond,1}(r).results.RLS.(['from_' classifstrid]);              
         
         if GT==1
+            %if exist...else error('explicit error message') for robustness
             rls(cc+1)=roiobjcell{cond,1}(r).train.RLS.(['from_' classifstrid]);
+            rlscomm{cc,1}=comment{1,2}; %Pred
+            rlscomm{cc+1,1}=comment{1,1}; %GT
+            
+            rlscond(cc,1)=cond;
+            rlscond(cc+1,1)=cond;  
+            
             cc=cc+2;
-        else
+        elseif GT==0
+            rlscomm{cc,1}=comment{1,cond};
+            rlscond(cc,1)=cond;
+            
             cc=cc+1;
         end
         %     if isprop(roiobj(i),'train') && numel(roiobj(i).train.(classifstrid).id)>0
