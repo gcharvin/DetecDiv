@@ -80,7 +80,7 @@ phyloproj=[];
 
 if sum(pix)>2 % there are folders available (. and .. are not real folders)
     % check if there is a phyloCell project
-    phyloproj=list((contains({list.name},{'-project.mat'})) & (~contains({list.name},{'BK-project.mat'})));
+    phyloproj=list((contains({list.name},{'-project.mat'})) & (~contains({list.name},{'BK-project.mat'})) &  (~contains({list.name},{'-project.mat.bk'})));
     
     if numel( phyloproj ) % phylocell project was found
         disp('This folder contains a phylocell project');
