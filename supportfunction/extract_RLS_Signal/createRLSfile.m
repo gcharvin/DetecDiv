@@ -34,11 +34,11 @@ classifstrid=classif.strid;
 cc=1;
 for cond=1:szc
     for r=1:numel(roiobjcell{cond,1})
-        if strcmp(environment,'local')
-            roiobjcell{cond,1}(r).path=strrep(roiobjcell{cond,1}(r).path,'/shared/space2/','\\space2.igbmc.u-strasbg.fr\');
-        end
+%         if strcmp(environment,'local')
+%             roiobjcell{cond,1}(r).path=strrep(roiobjcell{cond,1}(r).path,'/shared/space2/','\\space2.igbmc.u-strasbg.fr\');
+%         end
         roiobjcell{cond,1}(r).load('results');
-        roiobjcell{cond,1}(r).path=strrep(roiobjcell{cond,1}(r).path,'/shared/space2/','\\space2.igbmc.u-strasbg.fr\');
+%         roiobjcell{cond,1}(r).path=strrep(roiobjcell{cond,1}(r).path,'/shared/space2/','\\space2.igbmc.u-strasbg.fr\');
         rls(cc)=roiobjcell{cond,1}(r).results.RLS.(['from_' classifstrid]);              
         
         if GT==1

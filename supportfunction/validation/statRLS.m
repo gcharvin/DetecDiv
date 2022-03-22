@@ -172,7 +172,7 @@ if figExport==1
 end
 %% ======plot ecdf for lifespan======
 
-[yt,xt]=ecdf(rlspNdivs);
+[ypred,xpred]=ecdf(rlspNdivs);
 [yg,xg]=ecdf(rlsgNdivs);
 if plotCNN==1
     [ycnn,xcnn]=ecdf(rlscnnNdivs);
@@ -181,13 +181,13 @@ end
 
 h3=figure('Color','w','Units', 'Normalized', 'Position',[0.1 0.1 0.35 0.35]);
 
-stairs([0 ; xt],[1 ; 1-yt],'Color','k','LineWidth',lw);hold on,
+stairs([0 ; xpred],[1 ; 1-ypred],'Color','k','LineWidth',lw);hold on,
 stairs([0 ; xg],[1 ; 1-yg],'Color',[20/255,200/255,50/255],'LineWidth',lw);
 if plotCNN==1
     stairs([0 ; xcnn],[1 ; 1-ycnn],'Color',[20/255,20/255,255/255],'LineWidth',lw);
 end
 
-leg={['Predicted; median=' num2str(median(rlspNdivs)) ' (N=' num2str(length(rlspNdivs)) ')'],['Grountruth; median=' num2str(median(rlsgNdivs)) ' (N=' num2str(length(rlsgNdivs)) ')']};
+leg={['Predicted; median=' num2str(median(rlspNdivs)) ' (N=' num2str(length(rlspNdivs)) ')'],['Groundtruth; median=' num2str(median(rlsgNdivs)) ' (N=' num2str(length(rlsgNdivs)) ')']};
 if plotCNN==1
     leg{3}=['CNN Predicted; median=' num2str(median(rlscnnNdivs)) ' (N=' num2str(length(rlscnnNdivs)) ')'];
 end
