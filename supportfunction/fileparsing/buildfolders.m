@@ -219,7 +219,7 @@ for i=1:numel(output.pos) % extract channels from string names, treat different 
               
              output.pos(i).binning=[output.pos(i).binning tmp.Width] ;
              output.pos(i).interval=[output.pos(i).interval numel(files)];
-             output.pos(i).channelname{cc}=[ncha{j} '-' nsta{k}];
+             output.pos(i).channelname{cc}=[ncha{j} '' nsta{k}];
             
              cc=cc+1;
              end
