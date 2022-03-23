@@ -16,6 +16,7 @@ cut=20;
 correctdrift=true;
 crashrecovery=0;
 cropDrift=1;
+channels=[];;
 
 for i=1:numel(varargin)
     if strcmp(varargin{i},'frames') % frames to be processed
@@ -41,6 +42,10 @@ for i=1:numel(varargin)
     
     if strcmp(varargin{i},'crashrecovery')
         crashrecovery=varargin{i+1};
+    end
+    
+      if strcmp(varargin{i},'channel')
+        channels=varargin{i+1};
     end
             
     %       if strcmp(varargin{i},'channelint') % frames interval
@@ -101,6 +106,13 @@ for i=fovid
         %break
         continue
         %return;
+    end
+    
+    
+    if numel(channels)==0
+        cha=1:numel(tmpfov(i).channel) ;
+    else
+        cha=channels; 
     end
     
     if numel(frames)==0
@@ -180,7 +192,8 @@ for i=fovid
             
             disp(['Reading frame: ' num2str(j) ' / '  num2str(numel(nframes)) ' in group of frame : ' num2str(ii) ' / ' num2str(numel(framecell)) ' for FOV:  ' num2str(tmpfov(i).id)]);
             
-            for k=1:numel(tmpfov(i).channel) % loop on channels
+           % ck=1;
+            for k=cha % loop on channels
                 frame=(nframes(j)); %/channelint(k))+1; %  spacing frames when channels are not used with equal time interval
                 
                 
@@ -207,6 +220,7 @@ for i=fovid
                 end
                 
                 list{j,k}=im;
+               % ck=ck+1;
             end
             
             % msg = sprintf('Reading frame: %d / %d for FOV %s', j, numel(nframes),tmpfov(i).id); %Don't forget this semicolon
@@ -233,7 +247,7 @@ for i=fovid
                 row=tmpfov(i).drift.x(nframes(j));
                 col=tmpfov(i).drift.y(nframes(j));
                 
-                for k=1:numel(tmpfov(i).channel)
+                for k=cha
                     
                     if strcmp(method,'circshift')
                         list{j,k}=circshift( list{j,k},row,1);
@@ -302,12 +316,14 @@ for i=fovid
                 temp=[1 1 1];
                 %temp=temp';
                 
-                for k=1:numel(tmpfov(i).channel)
-                    tmproi(l).display.channel{k}=tmpfov(i).channel{k}; %['Channel ' num2str(k)];
-                    tmproi(l).display.intensity(k,:)=temp;
-                    tmproi(l).channelid(k)=k;
-                    tmproi(l).display.selectedchannel(k)=1;
-                    tmproi(l).display.rgb(k,:)=temp;
+                ck=1;
+                for k=cha
+                    tmproi(l).display.channel{ck}=tmpfov(i).channel{k}; %['Channel ' num2str(k)];
+                    tmproi(l).display.intensity(ck,:)=temp;
+                    tmproi(l).channelid(ck)=ck;
+                    tmproi(l).display.selectedchannel(ck)=1;
+                    tmproi(l).display.rgb(ck,:)=temp;
+                    ck=ck+1;
                 end
                 
                 % add additional channels for cell contours if any
@@ -320,7 +336,7 @@ for i=fovid
                         
                         if numel(tmpfov(i).contours.cells1)>1
                             
-                            ccc=numel(tmpfov(i).channel)+1;
+                            ccc=numel(cha)+1;
                             
                             tmproi(l).display.channel{ccc}='cells1'; %['Channel ' num2str(k)];
                             tmproi(l).display.intensity(ccc,:)=temp;
@@ -356,7 +372,8 @@ for i=fovid
             %cc=1;
             for j=1:numel(nframes)
                 
-                for k=1:numel(tmpfov(i).channel)
+                ck=1;
+                for k=cha
                     
                     tmp=list{j,k};
                     
@@ -373,12 +390,13 @@ for i=fovid
                     % rroitmp
                     % size(tmpfov(i).roi(l).image,1:2)
                     
-                    tmproi(l).image(:,:,k,nframes(j))=tmp(rroitmp(2):rroitmp(4),rroitmp(1):rroitmp(3));
+                    tmproi(l).image(:,:,ck,nframes(j))=tmp(rroitmp(2):rroitmp(4),rroitmp(1):rroitmp(3));
                     %   tt= tmproi(l).image(:,:,k,nframes(j));
+                    ck=ck+1;
                 end
                 
                 
-                for k=numel(tmpfov(i).channel)+1: numel(tmproi(l).display.channel)
+                for k=numel(cha)+1: numel(tmproi(l).display.channel)
                     
                     if  tmproi(l).display.channel{k}=="cells1"
                         
