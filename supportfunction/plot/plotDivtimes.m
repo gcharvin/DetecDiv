@@ -30,7 +30,7 @@ end
 
 if GT==1
     szc=2;
-    comment={'Groundtruth', 'Prediction'};
+    comment={'Prediction', 'Groundtruth'};
 else
     szc=max([rlsfile.condition]); %number of conditions
 end
