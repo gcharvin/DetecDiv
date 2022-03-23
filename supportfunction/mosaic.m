@@ -781,8 +781,8 @@ end
             else
                 lin=1;
             end
-            
-             h= figure, montage(imgout, 'Size', [1 1]);
+            size(imgout)
+             h= figure, montage(imgout);
               exportgraphics(h, [ name '.png']);
               disp(['Montage figure successfully exported to : ' name '.png'])
               

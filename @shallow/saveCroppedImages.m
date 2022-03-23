@@ -15,7 +15,7 @@ fovid=1:numel(obj.fov); % All FOVs will be processed
 cut=20;
 correctdrift=true;
 crashrecovery=0;
-cropDrift=0.25;
+cropDrift=1;
 
 for i=1:numel(varargin)
     if strcmp(varargin{i},'frames') % frames to be processed
@@ -24,6 +24,7 @@ for i=1:numel(varargin)
     
     if strcmp(varargin{i},'fov') % list of fov to be prepared
         fovid=varargin{i+1};
+        
     end
     
     if strcmp(varargin{i},'cut') % number of frames loaded at once to prepare ROI matrices
@@ -78,7 +79,7 @@ for i=fovid
     
     tmpfov(i)=obj.fov(i);
     %tmpfov(i)=propValues(tmpfov(i),obj.fov(i));
-    
+  
     for j=1:numel(obj.fov(i).roi)
       obj.fov(i).roi(j).path=fullfile(strpath,obj.fov(i).id);
     end

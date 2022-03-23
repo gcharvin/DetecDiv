@@ -32,6 +32,7 @@ classifstrid=classif.strid;
 
 %%
 cc=1;
+
 for cond=1:szc
     for r=1:numel(roiobjcell{cond,1})
         if strcmp(environment,'local')
@@ -39,6 +40,12 @@ for cond=1:szc
         end
         roiobjcell{cond,1}(r).load('results');
         roiobjcell{cond,1}(r).path=strrep(roiobjcell{cond,1}(r).path,'/shared/space2/','\\space2.igbmc.u-strasbg.fr\');
+        
+        aa=roiobjcell{cond,1}(r).results.RLS.(['from_' classifstrid]);
+        if numel(aa.divDuration)==0
+            continue;
+        end
+        
         rls(cc)=roiobjcell{cond,1}(r).results.RLS.(['from_' classifstrid]);              
         
         if GT==1
