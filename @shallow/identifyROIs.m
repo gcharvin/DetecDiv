@@ -237,7 +237,7 @@ c = normxcorr2(pattern,img);
 BW = im2bw(c,thr);
 
 pp = regionprops(BW,'centroid');
-pos = round(cat(1, pp.Centroid))
+pos = round(cat(1, pp.Centroid));
 
 % orien=imrotate(img,180);
 % c2 = normxcorr2(pattern,orien);
@@ -268,8 +268,8 @@ scores=[];
 
 cc=1;
 %figure;
-size(img)
-size(pattern)
+%size(img)
+%size(pattern)
 
 for ex=1:size(pos,1)
     
