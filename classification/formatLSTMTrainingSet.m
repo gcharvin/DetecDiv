@@ -1,4 +1,14 @@
-function output=formatLSTMTrainingSet(foldername,classif,rois)
+function output=formatLSTMTrainingSet(foldername,classif,rois,varargin)
+
+
+Frames=[];
+for i=1:numel(varargin)
+    if strcmp(varargin{i},'Frames')
+        Frames=varargin{i+1};
+    end
+end
+
+
 
 output=0;
 if ~isfolder([classif.path '/' foldername '/images'])
@@ -39,6 +49,8 @@ warning off all
 
 channel=classif.channelName;
 
+disp(['These ROIs will be processed : ' num2str(rois)]);
+
 parfor i=1:numel(rois)
     disp(['Launching ROI ' num2str(i) :' processing...'])
     
@@ -52,6 +64,13 @@ parfor i=1:numel(rois)
     
     %  pix=find(cltmp(i).channelid==classif.channel(1)); % find channel
     im=cltmp(rois(i)).image(:,:,pix,:);
+
+    if numel(Frames)==0
+        fra=1:size(im,4)
+    else
+        fra=Frames;
+     end
+
     
     if numel(classif.trainingset)==0
         param.nframes=1; % number of temporal frames per frame
@@ -62,14 +81,12 @@ parfor i=1:numel(rois)
     param=[];
     imtest=cltmp(rois(i)).preProcessROIData(pix,1,param); % done to determine image size
     % this preprocessing can only be performed on grayscale images
-    % numel(pix)=1
+    % numel(pix)=
+  
+    vid=uint8(zeros(size(imtest,1),size(imtest,2),3,1));
     
-    
-    vid=uint8(zeros(size(imtest,1),size(imtest,2),3,size(imtest,4)));
-    
-    
-    if classif.typeid~=12 % only for  image classif
-        pixb=numel(cltmp(rois(i)).train.(classif.strid).id);
+    if strcmp(classif.category{1},'LSTM')%classif.typeid~=12 % only for  image classif
+        pixb=numel(cltmp(rois(i)).train.(classif.strid).id(fra));
         pixa=find(cltmp(rois(i)).train.(classif.strid).id==0);
         
         if numel(pixa)>0 || numel(pixa)==0 && pixb==0 % some images are not labeled, quitting ...
@@ -79,7 +96,7 @@ parfor i=1:numel(rois)
         
         % 'pasok'
         
-        lab= categorical(cltmp(rois(i)).train.(classif.strid).id,1:numel(classif.classes),classif.classes); % creates labels for classification
+        lab= categorical(cltmp(rois(i)).train.(classif.strid).id(fra),1:numel(classif.classes),classif.classes); % creates labels for classification
     else
         lab=[];
     end
@@ -87,13 +104,14 @@ parfor i=1:numel(rois)
     if strcmp(classif.category{1},'LSTM') % image lstm classification
         reverseStr = '';               
         
-        for j=1:size(im,4)
+        cc=1;
+        for j=fra
             
             tmp=cltmp(rois(i)).preProcessROIData(pix,j,param);            
             %figure, imshow(tmp);
             %pause;
             %close;            
-            vid(:,:,:,j)=uint8(256*tmp);
+            vid(:,:,:,cc)=uint8(256*tmp);
             
             tr=num2str(j);
             while numel(tr)<4
@@ -116,31 +134,36 @@ parfor i=1:numel(rois)
             msg = sprintf('Processing frame: %d / %d for ROI %s', j, size(im,4),cltmp(rois(i)).id); %Don't forget this semicolon
             fprintf([reverseStr, msg]);
             reverseStr = repmat(sprintf('\b'), 1, length(msg));
+
+            cc=cc+1;
         end
     end
     
     if strcmp(classif.category{1},'LSTM Regression') % image lstm classification
         % image regression
-        tmp=zeros(size(im,1),size(im,2),3,size(im,4));
-        
-        for j=1:size(im,4)
+        tmp=zeros(size(im,1),size(im,2),3,numel(fra));
+
+        cc=1;
+
+        for j=fra
             % tmp(:,:,:j)=im(:,:,:,j);
             
             tmp=cltmp(rois(i)).preProcessROIData(pix,j,param);
-            vid(:,:,:,j)=uint8(256*tmp);
+            vid(:,:,:,cc)=uint8(256*tmp);
+            cc=cc+1;
         end
         
         %  if cltmp(i).train.(classif.strid).id(j)~=-1 % if training is done
         parsaveim([classif.path '/' foldername '/images/' cltmp(rois(i)).id '.mat'],tmp);
         
-        parsaveresp([classif.path '/' foldername '/response/' cltmp(rois(i)).id '.mat'],cltmp(rois(i)).train.(classif.strid).id);
+        parsaveresp([classif.path '/' foldername '/response/' cltmp(rois(i)).id '.mat'],cltmp(rois(i)).train.(classif.strid).id(fra));
         output=output+1;
         %   end
     end
     
     fprintf('\n');
     
-    deep=cltmp(rois(i)).train.(classif.strid).id;
+    deep=cltmp(rois(i)).train.(classif.strid).id(fra);
     parsave([classif.path '/' foldername '/timeseries/lstm_labeled_' cltmp(rois(i)).id '.mat'],deep,vid,lab);
     
     cltmp(rois(i)).save;

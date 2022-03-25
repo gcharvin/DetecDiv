@@ -230,6 +230,7 @@ function [positions scores]=findTraps(img,pattern,thr)
 c = normxcorr2(pattern,img);
 
 %figure, imshow(img)
+%figure, imshow(pattern,[])
 %figure, surf(c), shading flat
 
 %thr=0.5; % threshold for detected peaks
@@ -268,14 +269,15 @@ scores=[];
 
 cc=1;
 %figure;
-
 %size(img)
+%size(pattern)
+
 for ex=1:size(pos,1)
     
-    minex=pos(ex,2)-size(pattern,1);
-    maxex=pos(ex,2);
-    miney=pos(ex,1)-size(pattern,2);
-    maxey=pos(ex,1);
+    minex=pos(ex,1)-size(pattern,2);
+    maxex=pos(ex,1);
+    miney=pos(ex,2)-size(pattern,1);
+    maxey=pos(ex,2);
     
     if minex<1
         continue
@@ -286,14 +288,15 @@ for ex=1:size(pos,1)
     if maxex>size(img,2)
         continue
     end
+    
     if maxey>size(img,1)
         continue
     end
     
-    positions(cc,1)=minex;
-    positions(cc,3)=miney;
-    positions(cc,2)=maxex;
-    positions(cc,4)=maxey;
+    positions(cc,1)=miney;
+    positions(cc,3)=minex;
+    positions(cc,2)=maxey;
+    positions(cc,4)=maxex;
     
     scores(cc)=c(pos(ex,2),pos(ex,1)); % computing scores 
     
@@ -306,6 +309,8 @@ for ex=1:size(pos,1)
     
     cc=cc+1;
 end
+
+
 end
 
 %
