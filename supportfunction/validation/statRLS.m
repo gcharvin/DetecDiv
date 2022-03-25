@@ -9,6 +9,7 @@ figExport=0;
 plotCNN=1;
 plotFluo=1;
 plotVolume=1;
+corrdiv=0;
 
 sz=4;
 comment='';
@@ -16,13 +17,31 @@ for i=1:numel(varargin)
     if strcmp(varargin{i},'Comment')
         comment=[varargin{i+1} '- '];
     end
+    
+    if strcmp(varargin{i},'CorrelDiv')
+        corrdiv=1;
+    end
 end
 
+
+%% remove unclassified and unannotated rois
+rlsp=[rls.groundtruth]==0;
+toremove=(rlsp & [rls.ndiv]==-1); %remove roi with no training
+toremoveidx=find(toremove);
+toremoveidx=[toremoveidx, toremoveidx+1]; %+1 because in pairs, gt=0 comes first
+rls(toremoveidx)=[];
+
+rlsg=[rls.groundtruth]==1;
+toremove=(rlsg & [rls.ndiv]==-1); %remove roi with no pred
+toremoveidx=find(toremove);
+toremoveidx=[toremoveidx, toremoveidx-1]; %-1 because in pairs, gt=1 comes second
+
+%%
+rlsp=[rls.groundtruth]==0;
 rlsg=[rls.groundtruth]==1;
 rlsgNdivs=[rls(rlsg).ndiv];
-
-rlsp=[rls.groundtruth]==0;
 rlspNdivs=[rls(rlsp).ndiv];
+
 
 rlscnn=[rls.groundtruth]==2;
 if sum(rlscnn)==0
@@ -87,45 +106,39 @@ if figExport==1
 end
 
 %% 2/ plot divtimes correlation
-if isfield(rls,'noFalseDiv')
+if isfield(rls,'noFalseDiv') && corrdiv==1
     %LSTM
-    rlspDivsDuration=[rls(rlsp).divDurationNoFalseDiv];
-    rlsgDivsDuration=[rls(rlsg).divDurationNoFalseDiv];
+    ccd=1;
+    flag=[];
+    for r=1:numel(rls)/2 %remove rois with pairing mismatch
+        if (numel(rls(ccd).divDurationNoFalseDiv)~=numel(rls(ccd+1).divDurationNoFalseDiv)) | isnan(rls(ccd).divDurationNoFalseDiv) | isnan(rls(ccd+1).divDurationNoFalseDiv)
+            flag=[flag ccd ccd+1];
+        end
+        ccd=ccd+2;
+    end
+    rlsdivs=rls;
+    rlsdivs(flag)=[];
+    rlspDivsDuration=[rlsdivs([rlsdivs.groundtruth]==0).divDurationNoFalseDiv];
+    rlsgDivsDuration=[rlsdivs([rlsdivs.groundtruth]==1).divDurationNoFalseDiv];
+
     if plotCNN==1
         rlscnnDivsDuration=[rls(rlscnn).divDurationNoFalseDiv];
     end
-%     
-        if numel(rlspDivsDuration)==numel(rlsgDivsDuration)
-            FP=numel([rls(rlsp).falseDiv]);
-            FN=numel([rls(rlsg).falseDiv]);
-            TP=numel([rls(rlsp).framediv])-FP;
+
+            FP=numel([rls([rlsdivs.groundtruth]==0).falseDiv]);
+            FN=numel([rls([rlsdivs.groundtruth]==1).falseDiv]);
+            TP=numel([rls([rlsdivs.groundtruth]==0).framediv])-FP;
             accu=TP/(TP+FP);
             recall=TP/(TP+FN);
             disp(['Accu=' num2str(accu)])
             disp(['Recall=' num2str(recall)])
-        else
-            
-            
-%         if numel(rlscnnDivsDuration)==numel(rlsgDivsDuration)
-%             FP=numel([rls(rlscnn).falseDiv]);
-%             FN=numel([rls(rlsg).falseDiv]);
-%             TP=numel([rls(rlscnn).framediv])-FP;
-%             accu=TP/(TP+FP);
-%             recall=TP/(TP+FN);
-%                 disp(['Accu=' num2str(accu)])
-%                 disp(['Recall=' num2str(recall)])
-%         else
-            
-            warning('Sizes dont match');
-            rlspDivsDuration=0:10;
-            rlsgDivsDuration=0:10;
-        end
+
 
     rlspDivsDuration=rlspDivsDuration*5;
     rlsgDivsDuration=rlsgDivsDuration*5;
     
-    r=corrcoef(rlspDivsDuration,rlsgDivsDuration);
-    txt=[comment 'R^2=' num2str(r(1,2)) newline 'N=' num2str(numel(rlsgDivsDuration))];        
+    rcoef=corrcoef(rlspDivsDuration,rlsgDivsDuration);
+    txt=[comment 'R^2=' num2str(rcoef(1,2)) newline 'N=' num2str(numel(rlsgDivsDuration))];        
     
     h2=figure('Color','w','Units', 'Normalized', 'Position',[0.1 0.1 0.35 0.35]);
     scatter(rlspDivsDuration,rlsgDivsDuration,dz,'filled','MarkerFaceColor',[125/255, 125/255, 125/255],'MarkerEdgeColor','k','LineWidth',0.1); hold on;

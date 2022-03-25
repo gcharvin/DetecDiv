@@ -16,7 +16,7 @@ cut=20;
 correctdrift=true;
 crashrecovery=0;
 cropDrift=1;
-channels=[];;
+channels=[];
 
 for i=1:numel(varargin)
     if strcmp(varargin{i},'frames') % frames to be processed

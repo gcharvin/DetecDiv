@@ -2,6 +2,7 @@ function rls=createRLSfile(classif,roiobjcell,varargin)
 
 Align=1;
 GT=0;
+errorDetection=0;
 szc=size(roiobjcell,1); %number of conditions
 comment=cell(szc,1);
 environment='local';
@@ -14,6 +15,10 @@ for i=1:numel(varargin)
 
     if strcmp(varargin{i},'Align')
         Align=1;
+    end
+    
+    if strcmp(varargin{i},'errorDetection')
+        errorDetection=1;
     end
 
 
@@ -41,16 +46,26 @@ for cond=1:szc
         roiobjcell{cond,1}(r).load('results');
         roiobjcell{cond,1}(r).path=strrep(roiobjcell{cond,1}(r).path,'/shared/space2/','\\space2.igbmc.u-strasbg.fr\');
 
-        aa=roiobjcell{cond,1}(r).results.RLS.(['from_' classifstrid]);
-        if numel(aa.divDuration)==0
-            continue;
-        end
+%         aa=roiobjcell{cond,1}(r).results.RLS.(['from_' classifstrid]);
+%         if numel(aa.divDuration)==0
+%             continue;
+%         end
 
         rls(cc)=roiobjcell{cond,1}(r).results.RLS.(['from_' classifstrid]);
 
         if GT==1
             %if exist...else error('explicit error message') for robustness
             rls(cc+1)=roiobjcell{cond,1}(r).train.RLS.(['from_' classifstrid]);
+            
+            if errorDetection==1
+            disp('Proceeding to error detection')
+                [rlserr(cc+1).noFalseDiv, rlserr(cc).noFalseDiv]=detectError(rls(cc+1),rls(cc));
+                rlserr(cc+1).falseDiv=setdiff(rls(cc+1).framediv,rlserr(cc+1).noFalseDiv);
+                rlserr(cc).falseDiv=setdiff(rls(cc).framediv,rlserr(cc).noFalseDiv);
+                rlserr(cc+1).divDurationNoFalseDiv=diff(rlserr(cc+1).noFalseDiv);
+                rlserr(cc).divDurationNoFalseDiv=diff(rlserr(cc).noFalseDiv);
+            end
+            
             rlscomm{cc,1}=comment{1,2}; %Pred
             rlscomm{cc+1,1}=comment{1,1}; %GT
 
@@ -72,9 +87,16 @@ for cond=1:szc
     end
 end
 
+
 for r=1:numel(rls)
     rls(r).condition=rlscond(r);
     rls(r).conditionComment=rlscomm{r};
+    
+    if GT==1 && errorDetection==1
+        rls(r).noFalseDiv=rlserr(r).noFalseDiv;
+        rls(r).falseDiv=rlserr(r).noFalseDiv;
+        rls(r).divDurationNoFalseDiv=rlserr(r).noFalseDiv;
+    end
 end
 
 %ALIGN & sort
@@ -214,3 +236,100 @@ for r=1:numrls
     else
     end
 end
+
+
+
+
+%%
+%==============================================DIVERROR======================================================
+function [framedivNoFalseNeg, framedivNoFalsePos]=detectError(rlsGroundtruthr, rlsResultsr)
+framedivNoFalseNeg=NaN;
+framedivNoFalsePos=NaN;
+if numel(rlsGroundtruthr.framediv)>1 && numel(rlsResultsr.framediv)>1
+    %====1/false neg (groundtruth has a div that results doesnt)====
+    clear B IdxI IdxMinDist distance regiondup regiondupk firstdupk bwregiondup
+    for i=1:numel(rlsGroundtruthr.framediv)
+        for j=1:numel(rlsResultsr.framediv)
+            distance(i,j)=rlsGroundtruthr.framediv(i)-rlsResultsr.framediv(j);
+            pairij(i,j)=0;
+        end
+    end
+    
+    %deal with cases where distance values are m and -m,make -m to 0 so its
+    %picked as the min
+    [B,I]=mink(abs(distance),2,2);
+    for l=1:size(B,1)
+        if B(l,1)==B(l,2)
+            [~,idxI]=min([distance(l,I(l,1)) distance(l,I(l,2))]);
+            distance(l,idxI)=0;%choose the negaitve value, put it to 0
+        end
+    end
+    
+    for i=1:numel(rlsGroundtruthr.framediv)
+        [~,idxmini]=min(abs(distance(i,:)));
+        pairij(i,idxmini)=1;
+    end
+    
+    for i=1:numel(rlsGroundtruthr.framediv)
+        for j=1:numel(rlsResultsr.framediv)
+            if pairij(i,j)==1
+                distance2(i,j)=distance(i,j);
+            else distance2(i,j)=NaN;
+            end
+        end
+    end
+    
+    for j=1:numel(rlsResultsr.framediv)
+        pairij(:,j)=(-1)*pairij(:,j);
+        [~, idx]=min(abs(distance2(:,j)));
+        pairij(idx,j)=1;
+    end
+    falsepair=sum((pairij==-1),2);
+    framedivNoFalseNeg=rlsGroundtruthr.framediv(not(falsepair'));
+    
+    
+    
+    clear B IdxI IdxMinDist distance pairij idx falsepair distance2
+    %====2/false pos (res has a div that gt doesnt)====
+    for i=1:numel(rlsResultsr.framediv)
+        for j=1:numel(framedivNoFalseNeg)
+            distance(i,j)=rlsResultsr.framediv(i)-framedivNoFalseNeg(j);
+            pairij(i,j)=0;
+        end
+    end
+    
+    %deal with cases where distance values are m and -m,make -m to 0 so its
+    %picked as the min
+    [B,I]=mink(abs(distance),2,2);
+    for l=1:size(B,1)
+        if B(l,1)==B(l,2)
+            [~,idxI]=min([distance(l,I(l,1)) distance(l,I(l,2))]);
+            distance(l,idxI)=0;%choose the negaitve value, put it to 0
+        end
+    end
+    
+    %identify pairs, including false
+    for i=1:numel(rlsResultsr.framediv)
+        [~,idxmini]=min(abs(distance(i,:)));
+        pairij(i,idxmini)=1;
+    end
+    
+    for i=1:numel(rlsResultsr.framediv)
+        for j=1:numel(framedivNoFalseNeg)
+            if pairij(i,j)==1
+                distance2(i,j)=distance(i,j);
+            else distance2(i,j)=NaN;
+            end
+        end
+    end
+    
+    %identify false pairs
+    for j=1:numel(framedivNoFalseNeg)
+        pairij(:,j)=(-1)*pairij(:,j);
+        [~, idx]=min(abs(distance2(:,j)));
+        pairij(idx,j)=1;
+    end
+    falsepair=sum((pairij==-1),2);
+    framedivNoFalsePos=rlsResultsr.framediv(not(falsepair'));
+end
+

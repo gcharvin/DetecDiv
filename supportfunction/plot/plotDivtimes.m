@@ -14,7 +14,7 @@ function hrls=plotDivtimes(rlsfile,varargin)
 % display style : color map : name or custom colormap : limits for
 % colormap, color separation , linewidth spacing etc
 % time : generation or physical time
-figExport=1;
+figExport=0;
 timeFactor=5;
 GT=0;
 maxBirth=100; %max frame to be born. After, discard rls.

@@ -20,7 +20,7 @@ else %if imadjust with bounds computed from the whole timeseries
 %         error(['No stretch limits found for ROI ' num2str(obj.id) ', launch their computation using roi.computeStretchlim...']);
 %     end
 
-    if (~isfield(obj.display,'stretchlim') && ~isprop(obj.display,'stretchlim')) || size(obj.display.stretchlim,2)<numel(obj.channelid)
+    if (~isfield(obj.display,'stretchlim') && ~isprop(obj.display,'stretchlim')) || size(obj.display.stretchlim,2)~=numel(obj.channelid)
             disp(['No stretch limits found for ROI ' num2str(obj.id) ', computing them...']);
             obj.computeStretchlim;
     end

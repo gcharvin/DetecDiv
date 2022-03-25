@@ -22,9 +22,9 @@ param.errorDetection=1;
 %these param must be adjusted by the user, in particular if the experiment
 %is shorter than 500 frames.
 param.ArrestThreshold=175;
-param.DeathThreshold=2;
+param.DeathThreshold=3;
 param.EmptyThresholdDiscard=500;
-param.EmptyThresholdNext=200;
+param.EmptyThresholdNext=100;
 
 
 classifstrid=classif.strid;
@@ -70,8 +70,8 @@ for i=1:numel(roiobj)
     end
     roiobj(i).load('results');
     roiobj(i).path=strrep(roiobj(i).path,'/shared/space2/','\\space2.igbmc.u-strasbg.fr\');
-    roiobj(i).results.RLS.(['from_' classifstrid])=RLS(roiobj(i),'result',classif,param); %struct() use to keep measureRLS2 code
-    roiobj(i).train.RLS.(['from_' classifstrid])=RLS(roiobj(i),'train',classif,param); %struct() use to keep measureRLS2 code
+    roiobj(i).results.RLS.(['from_' classifstrid])=RLS(roiobj(i),'result',classif,param,i); %struct() use to keep measureRLS2 code
+    roiobj(i).train.RLS.(['from_' classifstrid])=RLS(roiobj(i),'train',classif,param,i); %struct() use to keep measureRLS2 code
     
     %     if isprop(roiobj(i),'train') && numel(roiobj(i).train.(classifstrid).id)>0
     %         roiobj(i).train.(classifstrid).RLS=RLS(roiobj(i),'train',classif,param);
@@ -82,20 +82,24 @@ for i=1:numel(roiobj)
 end
 
 %=========================================RLS============================================
-function [rls,rlsResults,rlsGroundtruth]=RLS(roi,roitype,classif,param)
+function [rls,rlsResults,rlsGroundtruth]=RLS(roi,roitype,classif,param,i)
 
-rls.divDuration=[];
-rls.framediv=[];
-rls.sep=[];
-rls.fluo=[];
-rls.name='';
-rls.ndiv=0;
-rls.totaltime=0;
-rls.rules=[];
-rls.groundtruth=-1;
-
-rlsResults=rls;
-rlsGroundtruth=rls;
+% rls.divDuration=[];
+% rls.frameBirth=[];
+% rls.frameEnd=[];
+% rls.endType=[];
+% rls.framediv=[];
+% rls.sep=[];
+% rls.roiid=[];
+% rls.name='';
+% rls.ndiv=0;
+% rls.totaltime=0;
+% rls.rules=[];
+% rls.divSignal=[];
+%
+%
+% rlsResults=rls;
+% rlsGroundtruth=rls;
 
 
 classistrid=classif.strid;
@@ -103,78 +107,100 @@ classes=classif.classes;
 
 if strcmp(roitype,'result')
     %================RESULTS===============
-    if isfield(roi.results,classistrid)
-        if isfield(roi.results.(classistrid),'id')
-            if sum(roi.results.(classistrid).id)>0
-                id=roi.results.(classistrid).id; % results for classification
-                
-                divTimes=computeDivtime(id,classes,param);
-                
-                rlsResults.divDuration=divTimes.duration;
-                rlsResults.frameBirth=divTimes.frameBirth;
-                rlsResults.frameEnd=divTimes.frameEnd;
-                rlsResults.endType=divTimes.endType;
-                rlsResults.framediv=divTimes.framediv;
-                rlsResults.sep=[];
-                rlsResults.name=roi.id;
-                rlsResults.ndiv=divTimes.ndiv;
-                if numel(divTimes.framediv)>0
-                    rlsResults.totaltime=[divTimes.framediv(1)-divTimes.frameBirth, cumsum(divTimes.duration)+divTimes.framediv(1)-divTimes.frameBirth];
-                else
-                    rlsResults.totaltime=0;
-                end
-                rlsResults.rules=[];
-                rlsResults.groundtruth=0;
-                rlsResults.divSignal=[];
-                
-                divSignal=computeSignalDiv(roi,rlsResults);
-                rlsResults.divSignal=divSignal;
-                
-                %sep
-                rlsResults.sep=findSync(rlsResults);
-            else
-                disp(['There is no result available for ROI ' char(roi.id)]);
-            end
+    if isfield(roi.results,classistrid) && isfield(roi.results.(classistrid),'id') && sum(roi.results.(classistrid).id)>0
+        
+        id=roi.results.(classistrid).id; % results for classification
+        
+        divTimes=computeDivtime(id,classes,param);
+        
+        rlsResults.divDuration=divTimes.duration;
+        rlsResults.frameBirth=divTimes.frameBirth;
+        rlsResults.frameEnd=divTimes.frameEnd;
+        rlsResults.endType=divTimes.endType;
+        rlsResults.framediv=divTimes.framediv;
+        rlsResults.sep=[];
+        rlsResults.name=roi.id;
+        rlsResults.roiid=i;
+        rlsResults.ndiv=divTimes.ndiv;
+        if numel(divTimes.framediv)>0
+            rlsResults.totaltime=[divTimes.framediv(1)-divTimes.frameBirth, cumsum(divTimes.duration)+divTimes.framediv(1)-divTimes.frameBirth];
+        else
+            rlsResults.totaltime=0;
         end
+        rlsResults.rules=[];
+        rlsResults.groundtruth=0;
+        rlsResults.divSignal=[];
+        
+        divSignal=computeSignalDiv(roi,rlsResults);
+        rlsResults.divSignal=divSignal;
+        
+        %sep
+        rlsResults.sep=findSync(rlsResults);
+    else
+        warning(['There is no result available for ROI ' char(roi.id)]);
+        rlsResults.groundtruth=0;
+        rlsResults.divDuration=[];
+        rlsResults.frameBirth=[];
+        rlsResults.frameEnd=[];
+        rlsResults.endType=[];
+        rlsResults.framediv=[];
+        rlsResults.sep=[];
+        rlsResults.roiid=[];
+        rlsResults.name='';
+        rlsResults.ndiv=-1;
+        rlsResults.totaltime=-1;
+        rlsResults.rules=[];
+        rlsResults.divSignal=[];
     end
     
     rls=rlsResults;
 elseif strcmp(roitype,'train')
     %==================GROUNDTRUTH===================
     idg=[];
-    if isfield(roi.train,(classistrid))
-        if isfield(roi.train.(classistrid),'id') % test if groundtruth data available
-            if sum(roi.train.(classistrid).id)>0
-                idg=roi.train.(classistrid).id; % results for classification
-                disp(['Groundtruth data are available for ROI ' num2str(roi.id)]);
-                
-                divTimesG=computeDivtime(idg,classes,param); % groundtruth data
-                
-                rlsGroundtruth.divDuration=divTimesG.duration;
-                rlsGroundtruth.frameBirth=divTimesG.frameBirth;
-                rlsGroundtruth.frameEnd=divTimesG.frameEnd;
-                rlsGroundtruth.endType=divTimesG.endType;
-                rlsGroundtruth.framediv=divTimesG.framediv;
-                rlsGroundtruth.sep=[];
-                rlsGroundtruth.name=roi.id;
-                %rlsGroundtruth.roiid=[];
-                rlsGroundtruth.ndiv=divTimesG.ndiv;
-                rlsGroundtruth.totaltime=[divTimesG.framediv(1)-divTimesG.frameBirth, cumsum(divTimesG.duration)+divTimesG.framediv(1)-divTimesG.frameBirth];
-                rlsGroundtruth.rules=[];
-                rlsGroundtruth.groundtruth=1;
-                rlsGroundtruth.divSignal=[];
-                
-                divSignalG=computeSignalDiv(roi,rlsGroundtruth);
-                rlsGroundtruth.divSignal=divSignalG;
-                
-                %sep
-                rlsGroundtruth.sep=findSync(rlsGroundtruth);
-            end
-        end
-        rls=rlsGroundtruth;
+    if isfield(roi.train,(classistrid)) && isfield(roi.train.(classistrid),'id') && sum(roi.train.(classistrid).id)>0
+        idg=roi.train.(classistrid).id; % results for classification
+        disp(['Groundtruth data are available for ROI ' num2str(roi.id)]);
+        
+        divTimesG=computeDivtime(idg,classes,param); % groundtruth data
+        
+        rlsGroundtruth.divDuration=divTimesG.duration;
+        rlsGroundtruth.frameBirth=divTimesG.frameBirth;
+        rlsGroundtruth.frameEnd=divTimesG.frameEnd;
+        rlsGroundtruth.endType=divTimesG.endType;
+        rlsGroundtruth.framediv=divTimesG.framediv;
+        rlsGroundtruth.sep=[];
+        rlsGroundtruth.name=roi.id;
+        rlsGroundtruth.roiid=i;
+        %rlsGroundtruth.roiid=[];
+        rlsGroundtruth.ndiv=divTimesG.ndiv;
+        rlsGroundtruth.totaltime=[divTimesG.framediv(1)-divTimesG.frameBirth, cumsum(divTimesG.duration)+divTimesG.framediv(1)-divTimesG.frameBirth];
+        rlsGroundtruth.rules=[];
+        rlsGroundtruth.groundtruth=1;
+        rlsGroundtruth.divSignal=[];
+        
+        divSignalG=computeSignalDiv(roi,rlsGroundtruth);
+        rlsGroundtruth.divSignal=divSignalG;
+        
+        %sep
+        rlsGroundtruth.sep=findSync(rlsGroundtruth);
+    else
+        warning(['There is no groundtruth available for ROI ' char(roi.id)]);
+        rlsGroundtruth.groundtruth=1;
+        rlsGroundtruth.divDuration=[];
+        rlsGroundtruth.frameBirth=[];
+        rlsGroundtruth.frameEnd=[];
+        rlsGroundtruth.endType=[];
+        rlsGroundtruth.framediv=[];
+        rlsGroundtruth.sep=[];
+        rlsGroundtruth.roiid=[];
+        rlsGroundtruth.name='';
+        rlsGroundtruth.ndiv=-1;
+        rlsGroundtruth.totaltime=-1;
+        rlsGroundtruth.rules=[];
+        rlsGroundtruth.divSignal=[];
     end
+    rls=rlsGroundtruth;
 end
-
 
 
 
@@ -490,98 +516,6 @@ end
 
 
 
-%%
-%==============================================DIVERROR======================================================
-function [framedivNoFalseNeg, framedivNoFalsePos]=detectError(rlsGroundtruthr, rlsResultsr)
-framedivNoFalseNeg=NaN;
-framedivNoFalsePos=NaN;
-if numel(rlsGroundtruthr.framediv)>1 && numel(rlsResultsr.framediv)>1
-    %====1/false neg (groundtruth has a div that results doesnt)====
-    clear B IdxI IdxMinDist distance regiondup regiondupk firstdupk bwregiondup
-    for i=1:numel(rlsGroundtruthr.framediv)
-        for j=1:numel(rlsResultsr.framediv)
-            distance(i,j)=rlsGroundtruthr.framediv(i)-rlsResultsr.framediv(j);
-            pairij(i,j)=0;
-        end
-    end
-    
-    %deal with cases where distance values are m and -m,make -m to 0 so its
-    %picked as the min
-    [B,I]=mink(abs(distance),2,2);
-    for l=1:size(B,1)
-        if B(l,1)==B(l,2)
-            [~,idxI]=min([distance(l,I(l,1)) distance(l,I(l,2))]);
-            distance(l,idxI)=0;%choose the negaitve value, put it to 0
-        end
-    end
-    
-    for i=1:numel(rlsGroundtruthr.framediv)
-        [~,idxmini]=min(abs(distance(i,:)));
-        pairij(i,idxmini)=1;
-    end
-    
-    for i=1:numel(rlsGroundtruthr.framediv)
-        for j=1:numel(rlsResultsr.framediv)
-            if pairij(i,j)==1
-                distance2(i,j)=distance(i,j);
-            else distance2(i,j)=NaN;
-            end
-        end
-    end
-    
-    for j=1:numel(rlsResultsr.framediv)
-        pairij(:,j)=(-1)*pairij(:,j);
-        [~, idx]=min(abs(distance2(:,j)));
-        pairij(idx,j)=1;
-    end
-    falsepair=sum((pairij==-1),2);
-    framedivNoFalseNeg=rlsGroundtruthr.framediv(not(falsepair'));
-    
-    
-    
-    clear B IdxI IdxMinDist distance pairij idx falsepair distance2
-    %====2/false pos (res has a div that gt doesnt)====
-    for i=1:numel(rlsResultsr.framediv)
-        for j=1:numel(framedivNoFalseNeg)
-            distance(i,j)=rlsResultsr.framediv(i)-framedivNoFalseNeg(j);
-            pairij(i,j)=0;
-        end
-    end
-    
-    %deal with cases where distance values are m and -m,make -m to 0 so its
-    %picked as the min
-    [B,I]=mink(abs(distance),2,2);
-    for l=1:size(B,1)
-        if B(l,1)==B(l,2)
-            [~,idxI]=min([distance(l,I(l,1)) distance(l,I(l,2))]);
-            distance(l,idxI)=0;%choose the negaitve value, put it to 0
-        end
-    end
-    
-    %identify pairs, including false
-    for i=1:numel(rlsResultsr.framediv)
-        [~,idxmini]=min(abs(distance(i,:)));
-        pairij(i,idxmini)=1;
-    end
-    
-    for i=1:numel(rlsResultsr.framediv)
-        for j=1:numel(framedivNoFalseNeg)
-            if pairij(i,j)==1
-                distance2(i,j)=distance(i,j);
-            else distance2(i,j)=NaN;
-            end
-        end
-    end
-    
-    %identify false pairs
-    for j=1:numel(framedivNoFalseNeg)
-        pairij(:,j)=(-1)*pairij(:,j);
-        [~, idx]=min(abs(distance2(:,j)));
-        pairij(idx,j)=1;
-    end
-    falsepair=sum((pairij==-1),2);
-    framedivNoFalsePos=rlsResultsr.framediv(not(falsepair'));
-end
 
 
 
