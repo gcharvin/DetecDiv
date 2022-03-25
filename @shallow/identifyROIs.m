@@ -230,6 +230,7 @@ function [positions scores]=findTraps(img,pattern,thr)
 c = normxcorr2(pattern,img);
 
 %figure, imshow(img)
+%figure, imshow(pattern,[])
 %figure, surf(c), shading flat
 
 %thr=0.5; % threshold for detected peaks

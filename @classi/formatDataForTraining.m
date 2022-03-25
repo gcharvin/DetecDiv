@@ -1,4 +1,4 @@
-function output=formatDataForTraining(classif) %mov,trapsid,option)
+function output=formatDataForTraining(classif,varargin) %mov,trapsid,option)
 % saves user annotated data to disk- works for Image, Pixel and LSTM
 % classification
 
@@ -28,6 +28,15 @@ mkdir(classif.path,foldername)
 
 rois=classif.trainingset;
 
+Frames=[];
+
+for i=1:numel(varargin)
+    if strcmp(varargin{i},'Frames')
+        
+        Frames=varargin{i+1};
+        
+    end
+end
 
 % if nargin<3
 % rois=1:numel(classif.roi);
@@ -40,7 +49,11 @@ switch category
     case {'Image','Image Regression'}
        output= formatImageTrainingSet(foldername,classif,rois);    
     case 'LSTM'
-       output= formatLSTMTrainingSet(foldername,classif,rois);
+       if numel(Frames)
+       output= formatLSTMTrainingSet(foldername,classif,rois,'Frames',Frames);
+       else
+       output= formatLSTMTrainingSet(foldername,classif,rois);     
+       end
     case 'Pixel'
         % this is transient : 
        rois=1:numel(classif.roi); % takes all rois to format, only rois in trainingset will be later selected for training
