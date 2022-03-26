@@ -64,6 +64,7 @@ disp('Formatting video before classification....');
 
 vid=uint8(zeros(size(im,1),size(im,2),3,numel(frames)));
 
+cc=1;
 for j=frames
     param=[];   
         
@@ -71,24 +72,16 @@ for j=frames
     
     %tmp = double(imadjust(tmp,[meanphc/65535 maxphc/65535],[0 1]))/65535;
     %tmp=repmat(tmp,[1 1 3]);        
-    vid(:,:,:,j)=uint8(256*tmp);
-    
+    vid(:,:,:,cc)=uint8(256*tmp);
+    cc=cc+1;
 end
 
-
-%vid=vid(:,:,:,1:388);
-
-%inputSize
-%size(vid)
-
-%gfp = imresize(vid,inputSize(1:2));
 video = centerCrop(vid,inputSize);
 
 disp('Starting video classification...');
 
 % this function predict  is used instead of 'classify' function which causes an error
 % on R2019b
-
 
  try   
     prob=predict(classifier,video,'ExecutionEnvironment', classif.trainingParam.execution_environment{end});
@@ -158,35 +151,41 @@ results.(classif.strid)=[];
 
 
 if classif.output==0
-    results.(classif.strid).id=zeros(1,size(im,4));
+    results.(classif.strid).id=zeros(1,size(roiobj.image,4));
+    results.(classif.strid).prob=zeros(numel(classif.classes),size(roiobj.image,4));
+    results.(classif.strid).labels(1:size(roiobj.image,4))=categorical({''});
 else
     results.(classif.strid).id =0;
+    results.(classif.strid).prob=zeros(numel(classif.classes),1);
+    results.(classif.strid).labels(1:size(roiobj.image,4))=categorical({''});
 end
 
-
-results.(classif.strid).labels=label';
+results.(classif.strid).labels(frames)=label';
 results.(classif.strid).classes=classif.classes;
-results.(classif.strid).prob=prob';
+results.(classif.strid).prob(:,frames)=prob';
 
 for i=1:numel(classif.classes)
-    pix=label==classif.classes{i};
+    pix=results.(classif.strid).labels==classif.classes{i};
     results.(classif.strid).id(pix)=i;
 end
 
 if numel(classifierCNN)
     if classif.output==0
-        results.(classif.strid).idCNN=zeros(1,size(im,4));
+        results.(classif.strid).idCNN=zeros(1,size(roiobj.image,4));
+        results.(classif.strid).probCNN=zeros(numel(classif.classes),size(roiobj.image,4));
+        results.(classif.strid).labelsCNN(1:size(roiobj.image,4))=categorical({''});
     else
         results.(classif.strid).idCNN=0;
+        results.(classif.strid).probCNN=zeros(numel(classif.classes),1);
+        results.(classif.strid).labelsCNN(1:size(roiobj.image,4))=categorical({''});
     end
     
-    results.(classif.strid).labelsCNN=labelCNN';
-    results.(classif.strid).classesCNN=classif.classes;
-    
-    results.(classif.strid).probCNN=flipud(probCNN'); % fix orientation of array here !!!!
+    results.(classif.strid).labelsCNN(frames)=labelCNN';
+    results.(classif.strid).classesCNN=classif.classes; 
+    results.(classif.strid).probCNN(:,frames)=flipud(probCNN'); % fix orientation of array here !!!!
     
     for i=1:numel(classif.classes)
-        pix=labelCNN==classif.classes{i};
+        pix=results.(classif.strid).labelsCNN==classif.classes{i};
         results.(classif.strid).idCNN(pix)=i;
     end
 end

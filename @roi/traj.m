@@ -31,6 +31,7 @@ for i=1:numel(varargin)
     
 end
 
+
 if numel(obj.results)==0
     disp('There is no result available for this position');
     return;
