@@ -55,7 +55,7 @@ if nargin==2 % basic parameter initialization
 
 % gather all classification images in each class and performs the training and outputs and saves the trained net 
 % load training data 
-blockRNG=0;
+blockRNG=1;
 
 fprintf('Loading data repository...\n');
 fprintf('------\n');

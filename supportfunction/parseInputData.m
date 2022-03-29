@@ -96,7 +96,7 @@ else % only files available
     
     
     plist= list([list.isdir]==0);
-    plist=plist(contains({plist.name},{'.tif','.jpg'})); % takes all image files
+    plist=plist(contains({plist.name},{'.tif','.jpg','.png'})); % takes all image files
     
     if numel(plist)
         disp('This folder contains image files');

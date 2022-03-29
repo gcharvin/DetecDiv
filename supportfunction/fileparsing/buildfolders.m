@@ -90,7 +90,7 @@ for i=1:numel(output.pos) % extract channels from string names, treat different 
 
 %filter out folders and take only image files. 
  filelist= filelist([filelist.isdir]==0);
- filelist=filelist(contains({filelist.name},{'.tif','.jpg'})); % takes all image files
+ filelist=filelist(contains({filelist.name},{'.tif','.jpg','.png'})); % takes all image files
 
     npos={''};
     posfilter2={};

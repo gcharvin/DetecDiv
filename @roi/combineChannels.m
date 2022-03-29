@@ -41,6 +41,7 @@ for i=1:numel(varargin)
       end   
 end
 
+
 if numel(levels)==0
      for j=1:numel(channels)
            levels{j}=[0 65535];
@@ -80,8 +81,10 @@ for i=1:numel(channels)
         return;
     end
     
+  
     imtmp= obj.image(:,:,pix2,:);
     
+
     if size(rgb{i},1)==1 % image is not indexed , therefore there is only one triplet
     if numel(pix2)==1 % one single channel
       for j=1:size(imtmp,4)

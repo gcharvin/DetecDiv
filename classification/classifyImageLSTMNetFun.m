@@ -181,8 +181,9 @@ if numel(classifierCNN)
     end
     
     results.(classif.strid).labelsCNN(frames)=labelCNN';
-    results.(classif.strid).classesCNN=classif.classes; 
-    results.(classif.strid).probCNN(:,frames)=flipud(probCNN'); % fix orientation of array here !!!!
+    results.(classif.strid).classesCNN=classif.classes;
+    tmpprob=flipud(probCNN');
+    results.(classif.strid).probCNN(1:size(tmpprob,1),frames)=flipud(probCNN'); % fix orientation of array here !!!!
     
     for i=1:numel(classif.classes)
         pix=results.(classif.strid).labelsCNN==classif.classes{i};
