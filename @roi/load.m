@@ -25,8 +25,6 @@ end
 if resonly==0
 if exist([obj.path '/im_' obj.id '.mat']) 
     
-    
-    
     %eval(['load  ' obj.path '/im_' num2str(obj.id) '.mat']);
     
     load([obj.path '/im_' obj.id '.mat']);

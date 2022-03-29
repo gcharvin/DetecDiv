@@ -94,10 +94,9 @@ if numel(classif)>0
     
     ps=obj.findChannelID(classif.channelName{1});
     if numel(ps)
-        obj.display.selectedchannel(ps)=1;
+        obj.display.selectedchannel(ps(1))=1;
     end
-    
-    
+
     pix =obj.findChannelID(classif.strid);
     pix= obj.channelid(pix);
     obj.display.selectedchannel(pix)=1;
