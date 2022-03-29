@@ -162,13 +162,13 @@ else
      disp(['Loading previously trained CNN network associated with: ' trainingParam.transfer_learning{end}]);
      
     if numel(flagCNN)
-        lgraph = layerGraph(flagCNN);    
+        lgraph = layerGraph(flagCNN)  ;
         net=flagCNN;
     else
          strpth=fullfile(classif.path,  trainingParam.transfer_learning{end});
          if exist(strpth)
              load(strpth); %loads classifier
-             lgraph = layerGraph(classifier); 
+             lgraph = layerGraph(classifier);
              net=classifier;
          else
              disp(['Unable to load: ' trainingParam.transfer_learning{end}]);
