@@ -1818,8 +1818,7 @@ for i=1:numel(obj.display.channel)
                 
             end
         end
-        
-    
+
         if numel(strfind(obj.display.channel{i},'track'))~=0 | numel(strfind(obj.display.channel{i},'pedigree'))~=0
             im=him.image(cc).CData;
             
@@ -1833,8 +1832,7 @@ for i=1:numel(obj.display.channel)
                 cctext=cctext+1;
             end
         end
-        
-       
+ 
         
         subt={};
         
@@ -2174,6 +2172,21 @@ if nargin==10 % only if painting is allowed
         ok=1;
     end
 end
+
+  if  strcmp(classif.category{1},'Image') || strcmp(classif.category{1},'LSTM')% if image classification, assign class to keypress even
+      if ~isfield(obj.train.(classif.strid),'bounds')
+            obj.train.(classif.strid).bounds=[0 0];
+      else
+            if strcmp(event.Key,'w')
+            obj.train.(classif.strid).bounds(1)=obj.display.frame;
+            end
+            if strcmp(event.Key,'x')
+            obj.train.(classif.strid).bounds(2)=obj.display.frame;
+            end
+      end
+             
+            ok=1;
+  end
 
 for i=1:numel(keys) % display the selected class for the current image
     if i>numel(obj.classes)

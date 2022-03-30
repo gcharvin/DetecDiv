@@ -66,12 +66,26 @@ parfor i=1:numel(rois)
     im=cltmp(rois(i)).image(:,:,pix,:);
 
     if numel(Frames)==0
-        fra=1:size(im,4)
+        fra=1:size(im,4);
     else
         fra=Frames;
-     end
+    end
 
-    
+      if isfield(cltmp(rois(i)).train.(classif.strid),'bounds') % restricting frames used on a per-ROI basis
+                    minet=cltmp(rois(i)).train.(classif.strid).bounds(1); 
+                    maxet=cltmp(rois(i)).train.(classif.strid).bounds(2);
+
+                    minet=max(minet,fra(1));
+                    if maxet==0
+                    maxet=max(maxet,fra(end));
+                    else
+                    maxet=min(maxet,fra(end));
+                    end
+
+                    fra=minet:maxet;
+        end
+
+    fra
     if numel(classif.trainingset)==0
         param.nframes=1; % number of temporal frames per frame
     else
@@ -87,7 +101,7 @@ parfor i=1:numel(rois)
     
     if strcmp(classif.category{1},'LSTM')%classif.typeid~=12 % only for  image classif
         pixb=numel(cltmp(rois(i)).train.(classif.strid).id(fra));
-        pixa=find(cltmp(rois(i)).train.(classif.strid).id==0);
+        pixa=find(cltmp(rois(i)).train.(classif.strid).id(fra)==0);
         
         if numel(pixa)>0 || numel(pixa)==0 && pixb==0 % some images are not labeled, quitting ...
             disp('Error: some images are not labeled in this ROI - LSTM requires all images to be labeled in the timeseries!');
