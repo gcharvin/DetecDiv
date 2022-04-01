@@ -28,19 +28,6 @@ if numel(findobj('Tag',['Fov' obj.id])) && rebuild==0% handle exists already
     
     hp=findobj(h,'Type','Axes');
     
-    %     hp(1)=findobj(h,'Tag','Axe1');
-    %     hp(2)=findobj(h,'Tag','Axe2');
-    %     hp(3)=findobj(h,'Tag','Axe3');
-    %     hp(4)=findobj(h,'Tag','Axe4');
-    
-    % hp=h.Children
-    %
-    % if strcmp(h.Children(1).Units,'normalized')
-    % hp(1:4)=h.Children(1:4);
-    % else
-    % hp(1:4)=h.Children(5:8);
-    % end
-    
     him=h.UserData;
     
 else
@@ -97,13 +84,7 @@ else
     end
     
     linkaxes(hp);
-    
-    %        if numel(obj.crop) % cropping area exists
-    %         axes(hp(1);
-    %         drawpolygon('Position',obj.crop);
-    %        end
-    
-    %%%
+   
     
     % create display menu
     
@@ -146,12 +127,12 @@ else
     %         'Position', [50 550 200 20],'HorizontalAlignment','left', ...
     %         'Tag','frametexttitle') ;
     
-    btnSetFrame = uicontrol('Style', 'text','FontSize',12, 'String', 'Enter frame number here, or use arrows <- ->',...
-        'Position', [50 50 350 20],'HorizontalAlignment','left', ...
+    btnSetFrame = uicontrol('Style', 'text','FontSize',10, 'String', 'Set frame, or use arrows <- ->',...
+        'Position', [20 20 350 20],'HorizontalAlignment','left', ...
         'Tag','frametexttitle') ;
     
-    btnSetFrame = uicontrol('Style', 'edit','FontSize',12, 'String', num2str(obj.display.frame),...
-        'Position', [50 20 80 20],...
+    btnSetFrame = uicontrol('Style', 'edit','FontSize',10, 'String', num2str(obj.display.frame),...
+        'Position', [200 20 50 20],...
         'Callback', {@setframe,obj,him,hp},'Tag','frametext') ;
     
     %         btnSetCrop = uicontrol('Style', 'pushbutton','FontSize',14, 'String', 'set crop',...
@@ -168,45 +149,14 @@ else
     A{1,2} = 'up and down arrow keys for channel:';
     mls = sprintf('%s\n%s',A{1,1},A{1,2});
     
-    btnSetFrame = uicontrol('Style', 'text','FontSize',14, 'String', mls,...
-        'Position', [400 50 300 40],'HorizontalAlignment','left', ...
+    btnSetFrame = uicontrol('Style', 'text','FontSize',10, 'String', mls,...
+        'Position', [300 10 300 40],'HorizontalAlignment','left', ...
         'Tag','frametexttitle') ;
     
-    btnSetFrame = uicontrol('Style', 'popupmenu','FontSize',14, 'String', str, 'Value',1,...
-        'Position', [400 20 150 20],...
+    btnSetFrame = uicontrol('Style', 'popupmenu','FontSize',10, 'String', str, 'Value',1,...
+        'Position', [520 20 150 20],...
         'Callback', {@setchannel,obj,him,hp},'Tag','channelmenu') ;
     
-    %     btnSetFrame = uicontrol('Style', 'text','FontSize',14, 'String', 'ROIs',...
-    %         'Position', [400 550 150 20],'HorizontalAlignment','left', ...
-    %         'Tag','frametexttitle') ;
-    
-    
-    %     str={''};
-    %     for i=1:numel(obj.roi)
-    %         if numel(obj.roi(1).id)~=0
-    %             str{i,1}=num2str(obj.roi(i).value);
-    %         end
-    %     end
-    
-    
-    %     btnSetFrame = uicontrol('Style', 'popupmenu','FontSize',14, 'String', str, 'Value',1,...
-    %         'Position', [400 530 250 20],...
-    %         'Callback', {@setROI,obj},'Tag','roimenu') ;
-    %
-    %     btnSetFrame = uicontrol('Style', 'text','FontSize',14, 'String', 'Current ROI',...
-    %         'Position', [200 550 150 20],'HorizontalAlignment','left', ...
-    %         'Tag','frametexttitle') ;
-    %
-    %     xl=round(xlim(gca));
-    %     yl=round(xlim(gca));
-    %
-    %     btnSetFrame = uicontrol('Style', 'edit','FontSize',14, 'String', num2str([xl(1) yl(1) xl(2)-xl(1) yl(2)-yl(1)]), 'Value',1,...
-    %         'Position', [200 530 150 20],...
-    %         'Callback', {@setROIValue,obj,him,hp},'Tag','roivalue') ;
-    
-    
-    %   hmenu=findobj(h,'Tag','DisplayMenu')
-    %if numel(hmenu)==0
     
     m = uimenu(h,'Text','Display options','Tag','DisplayROIMenu');
     
@@ -253,48 +203,14 @@ else
     if numel(pix)
     set(hZMenuO(pix), 'Checked','on');
     end
+
+      m = uimenu(h,'Text','Export','Tag','ExportMenu');
     
-    % HERE orientation
-    
-    
-    
-    %       mroi = uimenu(h,'Text','ROIs','Tag','ROIMenu');
-    %       mroi_menu=[];
-    %
-    %       cc=1;
-    %          for i=1:numel(obj.roi)
-    %         if numel(obj.roi(1).id)~=0
-    %             mroi_menu(i) = uimenu(mroi,'Text',[num2str(cc) '-' obj.roi(i).id ],'Checked','on','Tag','ROIs');
-    %           %  str{i,1}=num2str(obj.roi(i).value);
-    %             cc=cc+1;
-    %         end
-    %     end
-    
-    %end
-    
-    
+    mitem = uimenu(m,'Text','Export Movie...','Tag','Movie');
+    set(mitem,'MenuSelectedFcn',{@exportMovie,obj,him,hp});
+
     updatedisplay(obj,him,hp);
-    
-    % btnSetDiv = uicontrol('Style', 'edit', 'String', 'No division',...
-    %         'Position', [450 20 80 20],...
-    %         'Callback', {},'Tag','divtext') ;
-    
-    % btnTrainObjects2 = uicontrol('Style', 'pushbutton', 'String', 'Classify objects',...
-    %         'Position', [320 20 80 20],...
-    %         'Callback', {@classify,obj,him,hp}) ;
-    
-    %  if ~isfield(obj.div,'deep')
-    %       obj.div.deep=[];
-    %       obj.div.deep=-ones(1,size(obj.gfp,3));
-    %  end
-    %  if ~isfield(obj.div,'deepCNN')
-    %       obj.div.deepCNN=[];
-    %       obj.div.deepCNN=-ones(1,size(obj.gfp,3));
-    %  end
-    %  if ~isfield(obj.div,'deepLSTM')
-    %       obj.div.deepLSTM=[];
-    %       obj.div.deepLSTM=-ones(1,size(obj.gfp,3));
-    %  end
+   
     
 end
 
@@ -671,9 +587,13 @@ end
 
 if strcmp(event.Key,'uparrow')
     
-    han=findobj('Tag','channelmenu');
+    han=findobj('Tag','channelmenu')
+    items=han.String; 
     str=han.Value;
-    obj.display.intensity(str)=max(0.01,obj.display.intensity(str)-0.1);
+    chaname=items{str};
+    pix=find(matches(obj.channel,chaname));
+    obj.display.intensity(pix)=max(0.01,obj.display.intensity(pix)-0.1);
+
     % if numel(hp)>=str
     % set(hp(str).Title,'String',[obj.channel{str} ' - Intensity : '
     ok=1;
@@ -681,9 +601,11 @@ end
 
 if strcmp(event.Key,'downarrow')
     han=findobj('Tag','channelmenu');
+    items=han.String; 
     str=han.Value;
-    
-    obj.display.intensity(str)=min(1,obj.display.intensity(str)+0.1);
+    chaname=items{str};
+    pix=find(matches(obj.channel,chaname));
+    obj.display.intensity(pix)=max(0.01,obj.display.intensity(pix)+0.1);
     ok=1;
 end
 
@@ -843,6 +765,7 @@ set(h,'FaceColor',[1 0 0]);
 
 end
 
+
 function displayROI(handles, event, obj,him,hp)
 
 
@@ -885,6 +808,99 @@ clf
 h.UserData=[];
 
 obj.view(obj.display.frame,h);
+end
+
+function exportMovie(handles,event,obj,him,hp)
+% h=findobj('Type','patch');
+% set(h,'FaceColor',[1 0 0]);
+
+%   set(handles,'FaceColor',[1 0 0]);
+
+ prompt = {'Frames:',...
+     'Output Path/name (don t put the extension) :',...
+     'Frame interval in experiment (min):',...
+     'Frames per second:',...
+     'FontSize',...
+     'Draw ROIs (yes: 1; no : 0)',...
+     'Correct Drift (yes: 1; no: 0)'};
+
+            dlgtitle = 'Input movie export parameters';
+
+            dims = [1 100];
+
+            fra=obj.frames(1);
+            pth=fullfile(obj.srcpath{1},'mymovie');
+            definput = {['1:' num2str(fra)],pth,'10','10','20','0','0'};%, num2str(inte)};
+            answer = inputdlg(prompt,dlgtitle,dims,definput);
+
+            if numel(answer)==0
+                return;
+            end
+
+
+        %    [pth nme ext]=fileparts(answer{2});
+
+            arg={}; cc=1;
+            arg{cc}='Frames'; cc=cc+1;
+            arg{cc}=str2num(answer{1}); cc=cc+1;
+            arg{cc}='Name'; cc=cc+1;
+            arg{cc}=answer{2}; cc=cc+1;
+            arg{cc}='IPS'; cc=cc+1;
+            arg{cc}=str2num(answer{4}); cc=cc+1;
+            arg{cc}='Framerate'; cc=cc+1;
+            arg{cc}=str2num(answer{3}); cc=cc+1;
+            arg{cc}='FontSize'; cc=cc+1;
+            arg{cc}=str2num(answer{5}); cc=cc+1;
+            arg{cc}='DrawROIs'; cc=cc+1;
+            if str2num(answer{6})==1
+            arg{cc}=[]; cc=cc+1;
+            else
+            arg{cc}=0; cc=cc+1;
+            end
+
+            if str2num(answer{7})==1
+            arg{cc}='Drift'; cc=cc+1;
+            end
+
+            % list  channels
+            cha=find(obj.display.selectedchannel==1);
+
+            arg{cc}='Channel'; cc=cc+1;
+            arg{cc}=cha; cc=cc+1;
+
+            % find levels
+            lev=obj.display.intensity(cha);
+            
+            levels=[];
+            for i=1:numel(cha)
+ tmp=uint16(readImage(obj,obj.display.frame,cha(i)));
+
+%figure, imshow(tmp,[]);
+ meangfp=0.5*double(mean(tmp(:)));
+ maxgfp=double(meangfp+lev(i)*(max(tmp(:))-meangfp));
+ levels(i,1)=meangfp;
+ levels(i,2)=maxgfp;
+            end
+         %   return;
+
+            arg{cc}='Levels'; cc=cc+1;
+            arg{cc}=levels; cc=cc+1;
+
+                % cropping factor 
+     crop(1,:)=   round(hp(1).XLim);
+     crop(2,:)=   round(hp(1).YLim);
+
+ arg{cc}='Crop'; cc=cc+1;
+            arg{cc}=crop; cc=cc+1;
+            % crop
+
+            obj.export(arg{:});
+           
+
+
+
+
+
 end
 
 

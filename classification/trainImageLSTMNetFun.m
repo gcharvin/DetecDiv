@@ -149,9 +149,21 @@ else % compute acitvations for input data
         fprintf(['Processing movie ' num2str(i) '...']);
         load([list(i).folder '/' list(i).name]); % loads deep, vid, lab (categories of labels)
         video = centerCrop(vid,inputSize);
-        sequences{cc,1} = activations(netCNN,video,layerName,'OutputAs','columns');
-        labels{cc,1}= lab;
+        fr=1:size(video,4);
+        nb=ceil(size(video,4)/100); % packs of 100 frames
+        dis=discretize(fr,nb);
+
+       % return;
+
+        for k=1:max(dis)
+        tmpvid=video(:,:,:,fr(dis==k));
+
+        %sequences{cc,1} = activations(netCNN,video,layerName,'OutputAs','columns');
+        %labels{cc,1}= lab;
+         sequences{cc,1} = activations(netCNN,tmpvid,layerName,'OutputAs','columns');
+        labels{cc,1}= lab(fr(dis==k));
         cc=cc+1;
+        end
         fprintf('\n');
     end
     

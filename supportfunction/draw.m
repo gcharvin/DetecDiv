@@ -538,6 +538,7 @@ for i=1:numel(obj.display.channel)
         %hp=findobj('UserData',obj.display.channel{i});
         axes(hp(cc));
         str=obj.display.channel{i};
+        strbound='';
          discc=1;
           displaystruct=[];
         displaystruct.name=[];
@@ -597,6 +598,11 @@ for i=1:numel(obj.display.channel)
                                  displaystruct(discc).info=strclassi; 
                                   end
                              end
+
+                                if isfield(obj.train.(classif.strid),'bounds')
+                                   strbound=num2str(obj.train.(classif.strid).bounds);
+                                end
+
                    end
                    discc=discc+1;
                         
@@ -736,6 +742,10 @@ for i=1:numel(obj.display.channel)
             subt{ii}=[displaystruct(ii).name ' - '  displaystruct(ii).gt ' - ' displaystruct(ii).pred ' - '  displaystruct(ii).info ];
         end
         
+            if numel(strbound)
+               subt(end+1)={['Frames bounds: ' strbound]} ;
+            end
+
         title(hp(cc),[str subt],'FontSize',12,'interpreter','none');
         
         %test=get(hp(cc),'Parent')
@@ -1660,6 +1670,7 @@ for i=1:numel(obj.display.channel)
         axes(hp(cc));
         str=obj.display.channel{i};
         strclassi='';
+        strbound='';
         displaystruct=[];
         displaystruct.name=[];
         displaystruct.gt='';
@@ -1720,6 +1731,12 @@ for i=1:numel(obj.display.channel)
                                  displaystruct(discc).info=strclassi; 
                                   end
                              end
+
+                                  if isfield(obj.train.(classif.strid),'bounds')
+                                   strbound=num2str(obj.train.(classif.strid).bounds);
+                                  end
+
+
                    end
                    discc=discc+1;
                         
@@ -1839,7 +1856,11 @@ for i=1:numel(obj.display.channel)
         for ii=1:numel(displaystruct)
             subt{ii}=[displaystruct(ii).name ' - '  displaystruct(ii).gt ' - ' displaystruct(ii).pred ' - '  displaystruct(ii).info ];
         end
-        
+
+        if numel(strbound)
+               subt(end+1)={['Frames bounds: ' strbound]} ;
+        end
+
         title(hp(cc),[str subt],'FontSize',12,'interpreter','none');
       %  subtitle(hp(cc), subt ,'FontSize',10,'interpreter','none');
 

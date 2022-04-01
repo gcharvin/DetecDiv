@@ -14,6 +14,8 @@ fontsize=20;
 levels=[3500 23000; 500 1000; 500 1000; 500 1000];
 drawrois=-1;
 drift=[];
+crop=[];
+
 
 for i=1:numel(varargin)
     
@@ -51,7 +53,11 @@ for i=1:numel(varargin)
     
      if strcmp(varargin{i},'Drift') % correction of XY drift
         drift=1;% varargin{i+1};
-    end
+     end
+
+       if strcmp(varargin{i},'Crop') % correction of XY drift
+        crop=varargin{i+1};% varargin{i+1};
+     end
     
 end
 
@@ -87,6 +93,11 @@ cc=1;
 disp('Writing video.... Wait!');
 
 im=obj.readImage(1,1);
+
+if numel(crop)
+    im=im(crop(2,1):crop(2,2),crop(1,1):crop(1,2));
+ end
+
 imtot=zeros(size(im,1),size(im,2)*numel(channels),1,numel(frames),'single');
 
 reverseStr = '';
@@ -95,12 +106,21 @@ cc=1;
 
 if numel(drift)
     refframe= obj.readImage(frames(1),1);
+
+    if numel(crop)
+    refframe=refframe(crop(2,1):crop(2,2),crop(1,1):crop(1,2));
+ end
 end
 
 for j=frames
     
     if numel(drift)
-    c = normxcorr2(refframe,obj.readImage(j,1));
+        test=obj.readImage(j,1);
+           if numel(crop)
+   test=test(crop(2,1):crop(2,2),crop(1,1):crop(1,2));
+           end
+
+    c = normxcorr2(refframe,test);
 
 [mx ix]=max(c(:));
  [row col]=ind2sub(size(c),ix);
@@ -115,6 +135,12 @@ for j=frames
         
         ch=channels(k);
         im=obj.readImage(j,ch);
+        im=imresize(im,obj.display.binning(k)/obj.display.binning(1));
+
+          if numel(crop)
+    im=im(crop(2,1):crop(2,2),crop(1,1):crop(1,2));
+          end
+
         
         if numel(drift)
          im=circshift( im,-row,1);
@@ -122,8 +148,8 @@ for j=frames
         end
         
         %size(im)
-        imtmp=imresize(im,obj.display.binning(k)/obj.display.binning(1));
-        imtmp=imadjust(imtmp,[levels(k,1)/65535 levels(k,2)/65535],[0 1]);
+       
+        imtmp=imadjust(im,[levels(k,1)/65535 levels(k,2)/65535],[0 1]);
         
         imtot(:,(k-1)*size(im,2)+1:(k)*size(im,2),1,cc)=imtmp;
         
@@ -174,6 +200,12 @@ for j=1:size(im,4)
         for i=drawrois
             if i<=length(obj.roi)
         roitmp=obj.roi(i).value;
+
+        if numel(crop)
+roitmp(1)=roitmp(1)-crop(1,1);
+roitmp(2)=roitmp(2)-crop(2,1);
+        end
+
        % roitmp=[roitmp(1) roitmp(2) roitmp(1)+ roitmp(3) roitmp(2)+ roitmp(4)];
        % h=patch([roitmp(1) roitmp(3) roitmp(3) roitmp(1) roitmp(1)],[roitmp(2) roitmp(2) roitmp(4) roitmp(4) roitmp(2)],[1 0 0],'FaceAlpha',0.3,'Tag',['roitag_' num2str(i)],'UserData',i);
         
@@ -182,7 +214,15 @@ for j=1:size(im,4)
 
         im(:,:,:,j)=insertText( im(:,:,:,j),[roitmp(1) roitmp(2)],num2str(i),'Font','Arial','FontSize',20,'BoxColor',...
             [1 1 1],'BoxOpacity',0.0,'TextColor','red','AnchorPoint','leftcenter');
-        
+
+      roitmp(1)=roitmp(1)+size(im,1);
+          im(:,:,:,j) = insertShape( im(:,:,:,j),'FilledRectangle',[roitmp(1) roitmp(2) roitmp(3) roitmp(4)],...
+    'Color', {'red'},'Opacity',0.3);
+
+        im(:,:,:,j)=insertText( im(:,:,:,j),[roitmp(1) roitmp(2)],num2str(i),'Font','Arial','FontSize',20,'BoxColor',...
+            [1 1 1],'BoxOpacity',0.0,'TextColor','red','AnchorPoint','leftcenter');
+
+
       %  htext=text(roitmp(1),roitmp(2), num2str(i), 'Color','r','FontSize',10,'Tag',['roitext_' num2str(i)]);
             end
         end

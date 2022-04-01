@@ -8,8 +8,6 @@ for i=1:numel(varargin)
     end
 end
 
-
-
 output=0;
 if ~isfolder([classif.path '/' foldername '/images'])
     mkdir([classif.path '/' foldername], 'images');
@@ -51,7 +49,7 @@ channel=classif.channelName;
 
 disp(['These ROIs will be processed : ' num2str(rois)]);
 
-parfor i=1:numel(rois)
+for i=1:numel(rois)
     disp(['Launching ROI ' num2str(i) :' processing...'])
     
     if numel(cltmp(rois(i)).image)==0
@@ -85,7 +83,7 @@ parfor i=1:numel(rois)
                     fra=minet:maxet;
         end
 
-    fra
+    %fra
     if numel(classif.trainingset)==0
         param.nframes=1; % number of temporal frames per frame
     else
@@ -119,6 +117,7 @@ parfor i=1:numel(rois)
         reverseStr = '';               
         
         cc=1;
+        
         for j=fra
             
             tmp=cltmp(rois(i)).preProcessROIData(pix,j,param);            
@@ -127,6 +126,9 @@ parfor i=1:numel(rois)
             %close;            
             vid(:,:,:,cc)=uint8(256*tmp);
             
+        %    figure, imshow(vid(:,:,:,cc),[])
+          %  pause
+
             tr=num2str(j);
             while numel(tr)<4
                 tr=['0' tr];
@@ -145,17 +147,18 @@ parfor i=1:numel(rois)
                 % end
             end
             
-            msg = sprintf('Processing frame: %d / %d for ROI %s', j, size(im,4),cltmp(rois(i)).id); %Don't forget this semicolon
+            msg = sprintf('Processing frame: %d / %d for ROI %s', cc, numel(fra),cltmp(rois(i)).id); %Don't forget this semicolon
             fprintf([reverseStr, msg]);
             reverseStr = repmat(sprintf('\b'), 1, length(msg));
 
             cc=cc+1;
         end
+
     end
     
     if strcmp(classif.category{1},'LSTM Regression') % image lstm classification
         % image regression
-        tmp=zeros(size(im,1),size(im,2),3,numel(fra));
+        tmp=zeros(size(im,1),size(im,2),3,1);
 
         cc=1;
 
@@ -178,6 +181,11 @@ parfor i=1:numel(rois)
     fprintf('\n');
     
     deep=cltmp(rois(i)).train.(classif.strid).id(fra);
+%     aah=vid;
+%      figure, imshow(vid(:,:,:,87),[]);
+%      save('test.mat','aah')
+    % assignin('base','test',vid);
+   %  size(vid)
     parsave([classif.path '/' foldername '/timeseries/lstm_labeled_' cltmp(rois(i)).id '.mat'],deep,vid,lab);
     
     cltmp(rois(i)).save;
