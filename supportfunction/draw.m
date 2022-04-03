@@ -2193,7 +2193,7 @@ if nargin==10 % only if painting is allowed
         ok=1;
     end
 end
-
+if numel(classif)>0
   if  strcmp(classif.category{1},'Image') || strcmp(classif.category{1},'LSTM')% if image classification, assign class to keypress even
       if ~isfield(obj.train.(classif.strid),'bounds')
             obj.train.(classif.strid).bounds=[0 0];
@@ -2208,6 +2208,7 @@ end
              
             ok=1;
   end
+end
 
 for i=1:numel(keys) % display the selected class for the current image
     if i>numel(obj.classes)
