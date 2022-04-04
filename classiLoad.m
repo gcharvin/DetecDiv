@@ -64,6 +64,7 @@ varlist=evalin('base','who');
                      % check path & filenemae
                   %   path,file
                   %   a=tmp.path, b=tmp.strid
+                  
                      if strcmp(path,tmp.path(1:end-1)) & strcmp(file, [tmp.strid  '_classification']) % var exists already
                          msg=['Classification is already in the workspace under the var name:' varlist{i} '; Quitting...'];
                          disp(msg);

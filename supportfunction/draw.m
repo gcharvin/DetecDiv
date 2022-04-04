@@ -28,7 +28,7 @@ end
 h.Name=['ROI# :' obj.id]; 
 
 if numel(h.UserData)~=0 % window is already displayed; therefore just update the figure
-    him=h.UserData;
+    him=h.UserData.him;
     hp=findobj(h,'Type','Axes');
     
     % sort Axes !
@@ -183,6 +183,7 @@ if numel(handles)==0
     
        dritem2 = uimenu(dr,'Text','Fill-in unclassified frames with class from last classified frame','Tag','FillIn2');
     set(dritem2,'MenuSelectedFcn',{@fillInClassesTheo,obj,classif});
+
             end
       end
       
@@ -321,11 +322,30 @@ if cd>0
 end
 
 
+if numel(handles)==0
+      if numel(classif)>0
+
+          
+           if strcmp(classif.category{1},'Image')  || strcmp(classif.category{1},'LSTM') % display user training and results
+               
+      dritem2 = uimenu(dr,'Text','Correction Mode GT vs Pred','Checked','off','Tag','Correction1');
+    set(dritem2,'MenuSelectedFcn',{@correctionMode,obj, him, hp, classif,1});
+
+    dritem2 = uimenu(dr,'Text','Correction Mode Class group','Checked','off','Tag','Correction2');
+    set(dritem2,'MenuSelectedFcn',{@correctionMode,obj,him,hp,classif,2});
+
+            end
+      end
+
+end
+
+
 %========POSITION IMAGE=========
 %set(h,'Units', 'Normalized','Position',[0 0 1 1]);
 
 
-h.UserData=him;
+h.UserData.him=him;
+h.UserData.correctionMode='off';
 
 % reset mouse interaction function
 h.WindowButtonDownFcn='';
@@ -335,7 +355,7 @@ h.WindowButtonUpFcn = '';
 
 
 % add buttons and fcn to chanfe frame
-keys={'a' 'z' 'e' 'r' 't' 'y' 'u' 'i' 'o' 'p' 'q' 's' 'd' 'f' 'g' 'h' 'j'};
+keys={'a' 'z' 'e' 'r' 't' 'y' 'u' 'i' 'o' 'p'};
 h.KeyPressFcn={@changeframe,obj,him,hp,keys,classif};
 
 handles=findobj(h,'Tag','frametexttitle');
@@ -521,6 +541,14 @@ htext=findobj(gcf,'Tag','tracktext');
 if numel(htext)>0
     if ishandle(htext)
         delete(htext);
+    end
+end
+
+htextclassi=findobj(gcf,'Tag','classitext');
+
+if numel(htextclassi)>0
+    if ishandle(htextclassi)
+        delete(htextclassi);
     end
 end
 
@@ -713,7 +741,7 @@ for i=1:numel(obj.display.channel)
         
         if numel(strfind(obj.display.channel{i},'track'))~=0 | numel(strfind(obj.display.channel{i},'pedigree'))~=0
             
-            im=him.image(cc).CData;
+            im=him.image(cc).CData;m
             
             
             [l n]=bwlabel(im);
@@ -740,6 +768,15 @@ for i=1:numel(obj.display.channel)
         
         for ii=1:numel(displaystruct)
             subt{ii}=[displaystruct(ii).name ' - '  displaystruct(ii).gt ' - ' displaystruct(ii).pred ' - '  displaystruct(ii).info ];
+
+                        if numel(classif)>0
+            if strcmp(displaystruct(ii).name,classif.strid)
+                 xx=size(obj.image,2)/2;
+                 yy=size(obj.image,1)/2;
+                  htextclassi=text(xx,yy,[displaystruct(ii).gt ' - ' displaystruct(ii).pred],'Color',[1 0 0],'FontSize',20,'Tag','classitext','HorizontalAlignment','center');
+            end
+                        end
+
         end
         
             if numel(strbound)
@@ -1003,7 +1040,27 @@ obj.view(obj.display.frame,classif);
 
 end
 
+function correctionMode(handles, event,obj, him,hp,classif,mode)
 
+h=findobj('Tag',['ROI' obj.id]);
+
+  ha=findobj('Tag',['Correction' num2str(mode)]); 
+    
+    if numel(ha)
+        if strcmp(ha.Checked,'on')
+             set(ha,'Checked','off');
+              h.UserData.correctionMode='off';
+        else
+           set(ha,'Checked','on');
+            h.UserData.correctionMode=num2str(mode);
+           ha=findobj('Tag',['Correction' num2str(2-mode+1)]);
+           set(ha,'Checked','off');
+        end
+    end
+
+    updatedisplay(obj,him,hp,classif)
+    % HERE : 
+end
 
 function drawObject(handles, event,obj)
 
@@ -1596,7 +1653,7 @@ function updatedisplay(obj,him,hp,classif)
 %         list=[list i];
 %     end
 % end
-
+h=findobj('Tag',['ROI' obj.id]);
 im=buildimage(obj);
 
 % need to update the painting window here hpaint.Children(1).CData...
@@ -1657,6 +1714,14 @@ htext=findobj(gcf,'Tag','tracktext');
 if numel(htext)>0
     if ishandle(htext)
         delete(htext);
+    end
+end
+
+htextclassi=findobj(gcf,'Tag','classitext');
+
+if numel(htextclassi)>0
+    if ishandle(htextclassi)
+        delete(htextclassi);
     end
 end
 
@@ -1730,6 +1795,8 @@ for i=1:numel(obj.display.channel)
                                  strclassi= [num2str(pixx) ' frames remain to be classified'];
                                  displaystruct(discc).info=strclassi; 
                                   end
+
+                                 
                              end
 
                                   if isfield(obj.train.(classif.strid),'bounds')
@@ -1855,13 +1922,29 @@ for i=1:numel(obj.display.channel)
         
         for ii=1:numel(displaystruct)
             subt{ii}=[displaystruct(ii).name ' - '  displaystruct(ii).gt ' - ' displaystruct(ii).pred ' - '  displaystruct(ii).info ];
+
+
+            if numel(classif)>0
+            if strcmp(displaystruct(ii).name,classif.strid)
+                 xx=size(obj.image,2)/2;
+                 yy=size(obj.image,1)/2;
+                  htextclassi=text(xx,yy,[displaystruct(ii).gt ' - ' displaystruct(ii).pred],'Color',[1 0 0],'FontSize',20,'Tag','classitext','HorizontalAlignment','center');
+            end
+            end
         end
 
         if numel(strbound)
                subt(end+1)={['Frames bounds: ' strbound]} ;
         end
 
-        title(hp(cc),[str subt],'FontSize',12,'interpreter','none');
+        str=[str subt];
+
+        if ~strcmp(h.UserData.correctionMode,'off')
+            tt=h.UserData.correctionMode;
+str=[{['[CORRECTION MODE ' tt ']']}, str];
+        end
+
+        title(hp(cc),str,'FontSize',12,'interpreter','none');
       %  subtitle(hp(cc), subt ,'FontSize',10,'interpreter','none');
 
         %title(hp(cc),str, 'Color',colo,'FontSize',20);
@@ -2193,6 +2276,7 @@ if nargin==10 % only if painting is allowed
         ok=1;
     end
 end
+
 if numel(classif)>0
   if  strcmp(classif.category{1},'Image') || strcmp(classif.category{1},'LSTM')% if image classification, assign class to keypress even
       if ~isfield(obj.train.(classif.strid),'bounds')
@@ -2205,6 +2289,77 @@ if numel(classif)>0
             obj.train.(classif.strid).bounds(2)=obj.display.frame;
             end
       end
+
+        if strcmp(event.Key,'k')
+            if strcmp(h.UserData.correctionMode,'1')
+                if isfield(obj.train,classif.strid)
+                    if numel(obj.train.(classif.strid).id)>0
+                          if isfield(obj.results,classif.strid)
+                               if numel(obj.results.(classif.strid).id)>0
+                                   if obj.display.frame<size(obj.image,4)
+                                   aa1=obj.results.(classif.strid).id(obj.display.frame+1:end);
+                                   aa2=obj.train.(classif.strid).id(obj.display.frame+1:end);
+
+                                   pix1=find( aa1-aa2~=0,1,'first');
+                                   obj.display.frame=obj.display.frame+pix1;
+                                   end
+                               end
+                          end
+                    end
+                end
+            end
+             if strcmp(h.UserData.correctionMode,'2')
+                if isfield(obj.train,classif.strid)
+                    if numel(obj.train.(classif.strid).id)>0
+                          if isfield(obj.results,classif.strid)
+                               if numel(obj.results.(classif.strid).id)>0
+                                 
+                                   [aa2,pix]=sort(obj.train.(classif.strid).id);
+                                   xx=find(pix==obj.display.frame);
+                                    if xx+1<size(obj.image,4)
+                                   obj.display.frame=pix(xx+1);
+                                   end
+                               end
+                          end
+                    end
+                end
+             end
+        end
+        if strcmp(event.Key,'j')
+             if strcmp(h.UserData.correctionMode,'1')
+                if isfield(obj.train,classif.strid)
+                    if numel(obj.train.(classif.strid).id)>0
+                          if isfield(obj.results,classif.strid)
+                               if numel(obj.results.(classif.strid).id)>0
+                                   if obj.display.frame>1
+                                   aa1=obj.results.(classif.strid).id(1:obj.display.frame-1);
+                                   aa2=obj.train.(classif.strid).id(1:obj.display.frame-1);
+
+                                   pix1=find( aa1-aa2~=0,1,'last');
+                                   obj.display.frame=obj.display.frame-pix1;
+                                   end
+                               end
+                          end
+                    end
+                end
+            end
+             if strcmp(h.UserData.correctionMode,'2')
+                if isfield(obj.train,classif.strid)
+                    if numel(obj.train.(classif.strid).id)>0
+                          if isfield(obj.results,classif.strid)
+                               if numel(obj.results.(classif.strid).id)>0
+                                 
+                                   [aa2 pix]=sort(obj.train.(classif.strid).id);
+                                   xx=find(pix==obj.display.frame);
+                                   if xx-1>0
+                                   obj.display.frame=pix(xx-1);
+                                   end
+                               end
+                          end
+                    end
+                end
+            end
+        end
              
             ok=1;
   end
