@@ -35,7 +35,7 @@ rlsg=[rls.groundtruth]==1;
 toremove=(rlsg & [rls.ndiv]==-1); %remove roi with no pred
 toremoveidx=find(toremove);
 toremoveidx=[toremoveidx, toremoveidx-1]; %-1 because in pairs, gt=1 comes second
-
+rls(toremoveidx)=[];
 %%
 rlsp=[rls.groundtruth]==0;
 rlsg=[rls.groundtruth]==1;
