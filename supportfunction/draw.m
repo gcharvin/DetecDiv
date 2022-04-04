@@ -1053,8 +1053,22 @@ if numel(ha)
     else
         set(ha,'Checked','on');
         h.UserData.correctionMode=num2str(mode);
+
         ha=findobj('Tag',['Correction' num2str(2-mode+1)]);
         set(ha,'Checked','off');
+
+        if mode==2 % sort frames 
+                                if isfield(obj.train,classif.strid)
+                    if numel(obj.train.(classif.strid).id)>0
+                        if isfield(obj.results,classif.strid)
+                            if numel(obj.results.(classif.strid).id)>0
+                                [aa2,pix]=sort(obj.train.(classif.strid).id);
+                                h.UserData.correctionSort=pix;
+                            end
+                        end
+                    end
+                                end
+        end
     end
 end
 
@@ -2325,7 +2339,7 @@ if numel(classif)>0
                         if isfield(obj.results,classif.strid)
                             if numel(obj.results.(classif.strid).id)>0
 
-                                [aa2,pix]=sort(obj.train.(classif.strid).id);
+                                pix=h.UserData.correctionSort;
                                 xx=find(pix==obj.display.frame);
                                 if xx+1<size(obj.image,4)
                                     obj.display.frame=pix(xx+1);
@@ -2360,7 +2374,7 @@ if numel(classif)>0
                         if isfield(obj.results,classif.strid)
                             if numel(obj.results.(classif.strid).id)>0
 
-                                [aa2 pix]=sort(obj.train.(classif.strid).id);
+                                 pix=h.UserData.correctionSort;
                                 xx=find(pix==obj.display.frame);
                                 if xx-1>0
                                     obj.display.frame=pix(xx-1);
