@@ -16,6 +16,7 @@ loadres=1;
 environment='pc';
 
 param.classiftype='bud';
+param.timeRate=5;
 param.postProcessing=1;
 param.errorDetection=1;
 
@@ -25,6 +26,7 @@ param.ArrestThreshold=175;
 param.DeathThreshold=3;
 param.EmptyThresholdDiscard=500;
 param.EmptyThresholdNext=100;
+param.Frames=[];
 
 
 classifstrid=classif.strid;
@@ -40,7 +42,7 @@ for i=1:numel(varargin)
         param.classiftype=varargin{i+1};
         if strcmp(param.classiftype,'div') && strcmp(param.classiftype,'bud')
             error('Please enter a valid classitype');
-        end
+        end                
     end
     
     %ArrestThreshold
@@ -62,14 +64,27 @@ for i=1:numel(varargin)
     if strcmp(varargin{i},'ErrorDetection')
         param.errorDetection=varargin{i+1};
     end
+    
+    %frames
+    if strcmp(varargin{i},'Frames')
+        param.Frames=varargin{i+1};
+    end
+    
+    %timeRate
+    if strcmp(varargin{i},'TimeRate')
+        param.timeRate=varargin{i+1};
+    end
 end
 %%
 for i=1:numel(roiobj)
-    if strcmp(environment,'pc')
-        roiobj(i).path=strrep(roiobj(i).path,'/shared/space2/','\\space2.igbmc.u-strasbg.fr\');
-    end
     roiobj(i).load('results');
     roiobj(i).path=strrep(roiobj(i).path,'/shared/space2/','\\space2.igbmc.u-strasbg.fr\');
+    
+    if param.Frames==0 %auto bounds
+        if isfield(roiobj(i).train.(classifstrid),'bounds')
+            param.Frames=roiobj(i).train.(classifstrid).bounds;
+        end
+    end
     roiobj(i).results.RLS.(['from_' classifstrid])=RLS(roiobj(i),'result',classif,param,i); %struct() use to keep measureRLS2 code
     roiobj(i).train.RLS.(['from_' classifstrid])=RLS(roiobj(i),'train',classif,param,i); %struct() use to keep measureRLS2 code
     
@@ -114,6 +129,7 @@ if strcmp(roitype,'result')
         divTimes=computeDivtime(id,classes,param);
         
         rlsResults.divDuration=divTimes.duration;
+        rlsResults.timeRate=param.timeRate;
         rlsResults.frameBirth=divTimes.frameBirth;
         rlsResults.frameEnd=divTimes.frameEnd;
         rlsResults.endType=divTimes.endType;
@@ -134,22 +150,26 @@ if strcmp(roitype,'result')
         divSignal=computeSignalDiv(roi,rlsResults);
         rlsResults.divSignal=divSignal;
         
+        rlsResults.bounds=param.Frames;
+        
         %sep
         rlsResults.sep=findSync(rlsResults);
     else
         warning(['There is no result available for ROI ' char(roi.id)]);
         rlsResults.groundtruth=0;
         rlsResults.divDuration=[];
+        rlsResults.timeRate=param.timeRate;
         rlsResults.frameBirth=[];
         rlsResults.frameEnd=[];
         rlsResults.endType=[];
         rlsResults.framediv=[];
         rlsResults.sep=[];
-        rlsResults.roiid=[];
-        rlsResults.name='';
+        rlsResults.roiid=i;
+        rlsResults.name=roi.id;
         rlsResults.ndiv=-1;
         rlsResults.totaltime=-1;
         rlsResults.rules=[];
+        rlsResults.bounds=param.Frames;
         rlsResults.divSignal=[];
     end
     
@@ -164,6 +184,7 @@ elseif strcmp(roitype,'train')
         divTimesG=computeDivtime(idg,classes,param); % groundtruth data
         
         rlsGroundtruth.divDuration=divTimesG.duration;
+        rlsGroundtruth.timeRate=param.timeRate;
         rlsGroundtruth.frameBirth=divTimesG.frameBirth;
         rlsGroundtruth.frameEnd=divTimesG.frameEnd;
         rlsGroundtruth.endType=divTimesG.endType;
@@ -177,6 +198,7 @@ elseif strcmp(roitype,'train')
         rlsGroundtruth.rules=[];
         rlsGroundtruth.groundtruth=1;
         rlsGroundtruth.divSignal=[];
+        rlsGroundtruth.bounds=param.Frames;
         
         divSignalG=computeSignalDiv(roi,rlsGroundtruth);
         rlsGroundtruth.divSignal=divSignalG;
@@ -187,16 +209,18 @@ elseif strcmp(roitype,'train')
         warning(['There is no groundtruth available for ROI ' char(roi.id)]);
         rlsGroundtruth.groundtruth=1;
         rlsGroundtruth.divDuration=[];
+        rlsGroundtruth.timeRate=param.timeRate;
         rlsGroundtruth.frameBirth=[];
         rlsGroundtruth.frameEnd=[];
         rlsGroundtruth.endType=[];
         rlsGroundtruth.framediv=[];
         rlsGroundtruth.sep=[];
-        rlsGroundtruth.roiid=[];
-        rlsGroundtruth.name='';
+        rlsGroundtruth.roiid=i;
+        rlsGroundtruth.name=roi.id;
         rlsGroundtruth.ndiv=-1;
         rlsGroundtruth.totaltime=-1;
         rlsGroundtruth.rules=[];
+        rlsGroundtruth.bounds=param.Frames;
         rlsGroundtruth.divSignal=[];
     end
     rls=rlsGroundtruth;
@@ -223,7 +247,9 @@ end
 
 %% =========================================DIVTIMES=================================================
 function [divTimes]=computeDivtime(id,classes,param)
-
+if numel(param.Frames)==2
+    id=id(param.Frames(1):param.Frames(2));
+end
 divTimes=[];
 
 % first identify frame corresponding to death or clog and birth (non
@@ -388,9 +414,15 @@ switch param.classiftype
             end
             
             %small->unbud, can be improved by checking the islets size
+            bwsmid=(id==smid);
+            bwsmidLabel=bwlabel(bwsmid); %find small islets
+
             for j=1:numel(id)-1
                 if (id(j)==smid && id(j+1)==unbuddedid)
-                    id(j)=lbid;
+                    
+                    isletLabel=bwsmidLabel(j);
+                    idxToCorrect=(bwsmidLabel==isletLabel); %islet to correct
+                    id(idxToCorrect)=lbid;
                 end
             end
         end
