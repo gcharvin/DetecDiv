@@ -2221,48 +2221,46 @@ for i=1:numel(keys) % display the selected class for the current image
                 obj.train.(classif.strid).id(obj.display.frame)=i;
                 ok=1;
             end
-        end
-        
-        if strcmp(classif.category{1},'Pixel') | strcmp(classif.category{1},'Object') % for pixel classification enable painting function for the given class
-            for j=1:numel(classif.classes)
-                ha=findobj('Tag',['classes_' num2str(j)]);
-                if numel(ha)
-                    if j~=i
-                        ha.Checked='off';
-                    else
-                        % if strcmp(ha.Checked,'off')
-                        ha.Checked='on';
-                        
-                        tz=zoom(gcf);
-                        tp=pan(gcf);
-                        
-                        if strcmp(tz.Enable,'on') || strcmp(tp.Enable,'on')
-                            %  disp('not available,  set zoom and pan will be set off');
-                            tz.Enable='off';
-                            tp.Enable='off';
-                            %    return;
+            
+            
+            if strcmp(classif.category{1},'Pixel') | strcmp(classif.category{1},'Object') % for pixel classification enable painting function for the given class
+                for j=1:numel(classif.classes)
+                    ha=findobj('Tag',['classes_' num2str(j)]);
+                    if numel(ha)
+                        if j~=i
+                            ha.Checked='off';
+                        else
+                            % if strcmp(ha.Checked,'off')
+                            ha.Checked='on';
+                            
+                            tz=zoom(gcf);
+                            tp=pan(gcf);
+                            
+                            if strcmp(tz.Enable,'on') || strcmp(tp.Enable,'on')
+                                %  disp('not available,  set zoom and pan will be set off');
+                                tz.Enable='off';
+                                tp.Enable='off';
+                                %    return;
+                            end
+                            
+                            % set pixel painting mode
+                            if strcmp(classif.category{1},'Pixel')
+                                set(h,'WindowButtonDownFcn',{@wbdcb,obj,impaint1,impaint2,hpaint,classif,h});
+                            end
+                            
+                            if strcmp(classif.category{1},'Object')
+                                set(h,'WindowButtonDownFcn',{@wbdcb2,impaint1,impaint2,h});
+                            end
+                            % else
+                            % ha.Checked='off';
+                            % h.WindowButtonDownFcn='';
+                            % h.Pointer = 'arrow';
+                            % h.WindowButtonMotionFcn = '';
+                            % h.WindowButtonUpFcn = '';
+                            %figure(h); % set focus
+                            % end
+                            %draw(obj,h);
                         end
-                        
-                        
-                        
-                        
-                        % set pixel painting mode
-                        if strcmp(classif.category{1},'Pixel')
-                            set(h,'WindowButtonDownFcn',{@wbdcb,obj,impaint1,impaint2,hpaint,classif,h});
-                        end
-                        
-                        if strcmp(classif.category{1},'Object')
-                            set(h,'WindowButtonDownFcn',{@wbdcb2,impaint1,impaint2,h});
-                        end
-                        % else
-                        % ha.Checked='off';
-                        % h.WindowButtonDownFcn='';
-                        % h.Pointer = 'arrow';
-                        % h.WindowButtonMotionFcn = '';
-                        % h.WindowButtonUpFcn = '';
-                        %figure(h); % set focus
-                        % end
-                        %draw(obj,h);
                     end
                 end
             end
