@@ -25,7 +25,7 @@ end
 % set(h, 'WindowKeyPressFcn', []);
 %set(hFig, 'KeyPressFcn', @myKeyPressCallback);
 
-h.Name=['ROI# :' obj.id]; 
+h.Name=['ROI# :' obj.id];
 
 if numel(h.UserData)~=0 % window is already displayed; therefore just update the figure
     him=h.UserData;
@@ -96,7 +96,7 @@ if numel(classif)>0
     if numel(ps)
         obj.display.selectedchannel(ps)=1;
     end
-
+    
     pix =obj.findChannelID(classif.strid);
     pix= obj.channelid(pix);
     obj.display.selectedchannel(pix)=1;
@@ -172,20 +172,20 @@ if numel(handles)==0
     dritem(4) = uimenu(dr,'Text','Draw object','Tag','Draw object','Separator','on');
     set(dritem(4),'MenuSelectedFcn',{@drawObject,obj});
     
- 
-      if numel(classif)>0
-           if strcmp(classif.category{1},'Image')  || strcmp(classif.category{1},'LSTM') % display user training and results
-               
-     dr = uimenu(h,'Text','Classification options','Tag','Classification');
-     
-    dritem = uimenu(dr,'Text','Assign classes for multiple frames','Tag','FillIn1');
-    set(dritem,'MenuSelectedFcn',{@fillInClasses,obj,classif});
     
-       dritem2 = uimenu(dr,'Text','Fill-in unclassified frames with class from last classified frame','Tag','FillIn2');
-    set(dritem2,'MenuSelectedFcn',{@fillInClassesTheo,obj,classif});
-            end
-      end
-      
+    if numel(classif)>0
+        if strcmp(classif.category{1},'Image')  || strcmp(classif.category{1},'LSTM') % display user training and results
+            
+            dr = uimenu(h,'Text','Classification options','Tag','Classification');
+            
+            dritem = uimenu(dr,'Text','Assign classes for multiple frames','Tag','FillIn1');
+            set(dritem,'MenuSelectedFcn',{@fillInClasses,obj,classif});
+            
+            dritem2 = uimenu(dr,'Text','Fill-in unclassified frames with class from last classified frame','Tag','FillIn2');
+            set(dritem2,'MenuSelectedFcn',{@fillInClassesTheo,obj,classif});
+        end
+    end
+    
     %   dritem(5) = uimenu(dr,'Text','Draw cell number for tracked cells','Checked','off','Tag','DrawCellNumber');
     %   set(dritem(5),'MenuSelectedFcn',{@checkCells,obj,h,classif});
 end
@@ -539,14 +539,14 @@ for i=1:numel(obj.display.channel)
         axes(hp(cc));
         str=obj.display.channel{i};
         strbound='';
-         discc=1;
-          displaystruct=[];
+        discc=1;
+        displaystruct=[];
         displaystruct.name=[];
         displaystruct.gt='';
         displaystruct.pred='';
         displaystruct.info='';
-         
-         if numel(obj.train)>0
+        
+        if numel(obj.train)>0
             fields=fieldnames(obj.train);
             
             for k=1:numel(fields)
@@ -559,53 +559,53 @@ for i=1:numel(obj.display.channel)
                     classesspe=    obj.classes ;
                 end
                 
-                      if tt<=0
-                            if  numel(obj.classes)>0
-                                tt='Not Clas.';
-                            else
-                                % regression
-                            end
+                if tt<=0
+                    if  numel(obj.classes)>0
+                        tt='Not Clas.';
+                    else
+                        % regression
+                    end
+                else
+                    
+                    if numel(obj.classes)>0
+                        if tt <= length(obj.classes)
+                            tt=obj.classes{tt};
                         else
-                            
-                            if numel(obj.classes)>0
-                                if tt <= length(obj.classes)
-                                    tt=obj.classes{tt};
-                                else
-                                    tt='N/A';
-                                end
-                            else
-                                
-                                %
-                                tt=num2str(tt);
-                            end
-                            
+                            tt='N/A';
                         end
+                    else
+                        
+                        %
+                        tt=num2str(tt);
+                    end
+                    
+                end
                 
                 %     tt
                 displaystruct(discc).name=fields{k};
                 displaystruct(discc).gt=['GT: ' tt];
                 
-               
-              %  str=[str ' -  ' tt ' (tr.: ' fields{k} ')'];
                 
-                   if numel(classif)>0 & strcmp(classif.strid,fields{k})
-                             if strcmp(classif.category{1},'Image')  || strcmp(classif.category{1},'LSTM') 
-
-                                  pixx=numel(find(obj.train.(classif.strid).id==0));
-                                  
-                                  if pixx>0
-                                 strclassi= [num2str(pixx) ' frames remain to be classified'];
-                                 displaystruct(discc).info=strclassi; 
-                                  end
-                             end
-
-                                if isfield(obj.train.(classif.strid),'bounds')
-                                   strbound=num2str(obj.train.(classif.strid).bounds);
-                                end
-
-                   end
-                   discc=discc+1;
+                %  str=[str ' -  ' tt ' (tr.: ' fields{k} ')'];
+                
+                if numel(classif)>0 & strcmp(classif.strid,fields{k})
+                    if strcmp(classif.category{1},'Image')  || strcmp(classif.category{1},'LSTM')
                         
+                        pixx=numel(find(obj.train.(classif.strid).id==0));
+                        
+                        if pixx>0
+                            strclassi= [num2str(pixx) ' frames remain to be classified'];
+                            displaystruct(discc).info=strclassi;
+                        end
+                    end
+                    
+                    if isfield(obj.train.(classif.strid),'bounds')
+                        strbound=num2str(obj.train.(classif.strid).bounds);
+                    end
+                    
+                end
+                discc=discc+1;
+                
                 
                 %                         if obj.train(obj.display.frame)==0
                 %                             str=[str ' - not classified'];
@@ -621,8 +621,8 @@ for i=1:numel(obj.display.channel)
         
         % str=hp(cc).Title.String;
         
-      
-         if numel(obj.results)>0
+        
+        if numel(obj.results)>0
             pl = fieldnames(obj.results);
             
             %aa=obj.results
@@ -630,10 +630,10 @@ for i=1:numel(obj.display.channel)
                 if isfield(obj.results.(pl{k}),'labels')
                     %   tt=char(obj.results.(pl{k}).labels(obj.display.frame));
                     if numel(obj.results.(pl{k}).id)>= obj.display.frame
-                       % tt=num2str(obj.results.(pl{k}).id(obj.display.frame));
-                       % str=[str ' - class #' tt ' (' pl{k} ')'];
+                        % tt=num2str(obj.results.(pl{k}).id(obj.display.frame));
+                        % str=[str ' - class #' tt ' (' pl{k} ')'];
                         
-                             tt=obj.results.(pl{k}).id(obj.display.frame);
+                        tt=obj.results.(pl{k}).id(obj.display.frame);
                         
                         if isfield(obj.results.(pl{k}),'classes')
                             classesspe=obj.results.(pl{k}).classes; % classes name specfic to training
@@ -664,9 +664,9 @@ for i=1:numel(obj.display.channel)
                         end
                         
                         %     tt
-                      %  str=[str ' - ' tt ' ( ' fields{k} ')'];
+                        %  str=[str ' - ' tt ' ( ' fields{k} ')'];
                         
-                      found=0;
+                        found=0;
                         for jk=1:numel(displaystruct)
                             if strcmp(displaystruct(jk).name,pl{k})
                                 displaystruct(jk).pred=['Pred: ' tt];
@@ -701,7 +701,7 @@ for i=1:numel(obj.display.channel)
                 end
                 
             end
-         end
+        end
         
         
         % display tracking results as numbers on each cell
@@ -742,14 +742,14 @@ for i=1:numel(obj.display.channel)
             subt{ii}=[displaystruct(ii).name ' - '  displaystruct(ii).gt ' - ' displaystruct(ii).pred ' - '  displaystruct(ii).info ];
         end
         
-            if numel(strbound)
-               subt(end+1)={['Frames bounds: ' strbound]} ;
-            end
-
+        if numel(strbound)
+            subt(end+1)={['Frames bounds: ' strbound]} ;
+        end
+        
         title(hp(cc),[str subt],'FontSize',12,'interpreter','none');
         
         %test=get(hp(cc),'Parent')
-     %   title(hp(cc),str,'FontSize',14,'interpreter','none');
+        %   title(hp(cc),str,'FontSize',14,'interpreter','none');
         %title(hp(cc),str, 'Color',colo,'FontSize',20);
         cc=cc+1;
     end
@@ -980,8 +980,8 @@ if numel(sele)==4
     
     %
     %    obj.removeChannel(sele);
-     %   obj.view;
- 
+    %   obj.view;
+    
     obj.view(obj.display.frame,classif);
 end
 
@@ -997,7 +997,7 @@ end
 
 h=findobj('Tag',['ROI' obj.id]);
 
-obj.fillTraining('Training',classif.strid); 
+obj.fillTraining('Training',classif.strid);
 close(h);
 obj.view(obj.display.frame,classif);
 
@@ -1692,54 +1692,54 @@ for i=1:numel(obj.display.channel)
                     classesspe=    obj.classes ;
                 end
                 
-                      if tt<=0
-                            if  numel(obj.classes)>0
-                                tt='Not Clas.';
-                            else
-                                % regression
-                            end
+                if tt<=0
+                    if  numel(obj.classes)>0
+                        tt='Not Clas.';
+                    else
+                        % regression
+                    end
+                else
+                    
+                    if numel(obj.classes)>0
+                        if tt <= length(obj.classes)
+                            tt=obj.classes{tt};
                         else
-                            
-                            if numel(obj.classes)>0
-                                if tt <= length(obj.classes)
-                                    tt=obj.classes{tt};
-                                else
-                                    tt='N/A';
-                                end
-                            else
-                                
-                                %
-                                tt=num2str(tt);
-                            end
-                            
+                            tt='N/A';
                         end
+                    else
+                        
+                        %
+                        tt=num2str(tt);
+                    end
+                    
+                end
                 
                 %     tt
                 displaystruct(discc).name=fields{k};
                 displaystruct(discc).gt=['GT: ' tt];
                 
-               
-              %  str=[str ' -  ' tt ' (tr.: ' fields{k} ')'];
                 
-                   if numel(classif)>0 & strcmp(classif.strid,fields{k})
-                             if strcmp(classif.category{1},'Image')  || strcmp(classif.category{1},'LSTM') 
-
-                                  pixx=numel(find(obj.train.(classif.strid).id==0));
-                                  
-                                  if pixx>0
-                                 strclassi= [num2str(pixx) ' frames remain to be classified'];
-                                 displaystruct(discc).info=strclassi; 
-                                  end
-                             end
-
-                                  if isfield(obj.train.(classif.strid),'bounds')
-                                   strbound=num2str(obj.train.(classif.strid).bounds);
-                                  end
-
-
-                   end
-                   discc=discc+1;
+                %  str=[str ' -  ' tt ' (tr.: ' fields{k} ')'];
+                
+                if numel(classif)>0 & strcmp(classif.strid,fields{k})
+                    if strcmp(classif.category{1},'Image')  || strcmp(classif.category{1},'LSTM')
                         
+                        pixx=numel(find(obj.train.(classif.strid).id==0));
+                        
+                        if pixx>0
+                            strclassi= [num2str(pixx) ' frames remain to be classified'];
+                            displaystruct(discc).info=strclassi;
+                        end
+                    end
+                    
+                    if isfield(obj.train.(classif.strid),'bounds')
+                        strbound=num2str(obj.train.(classif.strid).bounds);
+                    end
+                    
+                    
+                end
+                discc=discc+1;
+                
                 
                 %                         if obj.train(obj.display.frame)==0
                 %                             str=[str ' - not classified'];
@@ -1763,10 +1763,10 @@ for i=1:numel(obj.display.channel)
                 if isfield(obj.results.(pl{k}),'labels')
                     %   tt=char(obj.results.(pl{k}).labels(obj.display.frame));
                     if numel(obj.results.(pl{k}).id)>= obj.display.frame
-                       % tt=num2str(obj.results.(pl{k}).id(obj.display.frame));
-                       % str=[str ' - class #' tt ' (' pl{k} ')'];
+                        % tt=num2str(obj.results.(pl{k}).id(obj.display.frame));
+                        % str=[str ' - class #' tt ' (' pl{k} ')'];
                         
-                             tt=obj.results.(pl{k}).id(obj.display.frame);
+                        tt=obj.results.(pl{k}).id(obj.display.frame);
                         
                         if isfield(obj.results.(pl{k}),'classes')
                             classesspe=obj.results.(pl{k}).classes; % classes name specfic to training
@@ -1797,9 +1797,9 @@ for i=1:numel(obj.display.channel)
                         end
                         
                         %     tt
-                      %  str=[str ' - ' tt ' ( ' fields{k} ')'];
+                        %  str=[str ' - ' tt ' ( ' fields{k} ')'];
                         
-                      found=0;
+                        found=0;
                         for jk=1:numel(displaystruct)
                             if strcmp(displaystruct(jk).name,pl{k})
                                 displaystruct(jk).pred=['Pred: ' tt];
@@ -1835,7 +1835,7 @@ for i=1:numel(obj.display.channel)
                 
             end
         end
-
+        
         if numel(strfind(obj.display.channel{i},'track'))~=0 | numel(strfind(obj.display.channel{i},'pedigree'))~=0
             im=him.image(cc).CData;
             
@@ -1849,21 +1849,21 @@ for i=1:numel(obj.display.channel)
                 cctext=cctext+1;
             end
         end
- 
+        
         
         subt={};
         
         for ii=1:numel(displaystruct)
             subt{ii}=[displaystruct(ii).name ' - '  displaystruct(ii).gt ' - ' displaystruct(ii).pred ' - '  displaystruct(ii).info ];
         end
-
+        
         if numel(strbound)
-               subt(end+1)={['Frames bounds: ' strbound]} ;
+            subt(end+1)={['Frames bounds: ' strbound]} ;
         end
-
+        
         title(hp(cc),[str subt],'FontSize',12,'interpreter','none');
-      %  subtitle(hp(cc), subt ,'FontSize',10,'interpreter','none');
-
+        %  subtitle(hp(cc), subt ,'FontSize',10,'interpreter','none');
+        
         %title(hp(cc),str, 'Color',colo,'FontSize',20);
         cc=cc+1;
     end
@@ -2194,20 +2194,20 @@ if nargin==10 % only if painting is allowed
     end
 end
 if numel(classif)>0
-  if  strcmp(classif.category{1},'Image') || strcmp(classif.category{1},'LSTM')% if image classification, assign class to keypress even
-      if ~isfield(obj.train.(classif.strid),'bounds')
+    if  strcmp(classif.category{1},'Image') || strcmp(classif.category{1},'LSTM')% if image classification, assign class to keypress even
+        if ~isfield(obj.train.(classif.strid),'bounds')
             obj.train.(classif.strid).bounds=[0 0];
-      else
+        else
             if strcmp(event.Key,'w')
-            obj.train.(classif.strid).bounds(1)=obj.display.frame;
+                obj.train.(classif.strid).bounds(1)=obj.display.frame;
             end
             if strcmp(event.Key,'x')
-            obj.train.(classif.strid).bounds(2)=obj.display.frame;
+                obj.train.(classif.strid).bounds(2)=obj.display.frame;
             end
-      end
-             
-            ok=1;
-  end
+        end
+        
+        ok=1;
+    end
 end
 
 for i=1:numel(keys) % display the selected class for the current image
@@ -2216,9 +2216,11 @@ for i=1:numel(keys) % display the selected class for the current image
     end
     
     if strcmp(event.Key,keys{i})
-        if  strcmp(classif.category{1},'Image') || strcmp(classif.category{1},'LSTM')% if image classification, assign class to keypress event
-            obj.train.(classif.strid).id(obj.display.frame)=i;
-            ok=1;
+        if numel(classif)>0
+            if  strcmp(classif.category{1},'Image') || strcmp(classif.category{1},'LSTM')% if image classification, assign class to keypress event
+                obj.train.(classif.strid).id(obj.display.frame)=i;
+                ok=1;
+            end
         end
         
         if strcmp(classif.category{1},'Pixel') | strcmp(classif.category{1},'Object') % for pixel classification enable painting function for the given class

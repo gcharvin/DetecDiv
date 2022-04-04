@@ -16,6 +16,7 @@ loadres=1;
 environment='pc';
 
 param.classiftype='bud';
+param.timeRate=5;
 param.postProcessing=1;
 param.errorDetection=1;
 
@@ -64,9 +65,14 @@ for i=1:numel(varargin)
         param.errorDetection=varargin{i+1};
     end
     
-    %detectError
+    %frames
     if strcmp(varargin{i},'Frames')
         param.Frames=varargin{i+1};
+    end
+    
+    %timeRate
+    if strcmp(varargin{i},'TimeRate')
+        param.timeRate=varargin{i+1};
     end
 end
 %%
@@ -123,6 +129,7 @@ if strcmp(roitype,'result')
         divTimes=computeDivtime(id,classes,param);
         
         rlsResults.divDuration=divTimes.duration;
+        rlsResults.timeRate=param.timeRate;
         rlsResults.frameBirth=divTimes.frameBirth;
         rlsResults.frameEnd=divTimes.frameEnd;
         rlsResults.endType=divTimes.endType;
@@ -151,13 +158,14 @@ if strcmp(roitype,'result')
         warning(['There is no result available for ROI ' char(roi.id)]);
         rlsResults.groundtruth=0;
         rlsResults.divDuration=[];
+        rlsResults.timeRate=param.timeRate;
         rlsResults.frameBirth=[];
         rlsResults.frameEnd=[];
         rlsResults.endType=[];
         rlsResults.framediv=[];
         rlsResults.sep=[];
         rlsResults.roiid=i;
-        rlsResults.name='';
+        rlsResults.name=roi.id;
         rlsResults.ndiv=-1;
         rlsResults.totaltime=-1;
         rlsResults.rules=[];
@@ -176,6 +184,7 @@ elseif strcmp(roitype,'train')
         divTimesG=computeDivtime(idg,classes,param); % groundtruth data
         
         rlsGroundtruth.divDuration=divTimesG.duration;
+        rlsGroundtruth.timeRate=param.timeRate;
         rlsGroundtruth.frameBirth=divTimesG.frameBirth;
         rlsGroundtruth.frameEnd=divTimesG.frameEnd;
         rlsGroundtruth.endType=divTimesG.endType;
@@ -200,13 +209,14 @@ elseif strcmp(roitype,'train')
         warning(['There is no groundtruth available for ROI ' char(roi.id)]);
         rlsGroundtruth.groundtruth=1;
         rlsGroundtruth.divDuration=[];
+        rlsGroundtruth.timeRate=param.timeRate;
         rlsGroundtruth.frameBirth=[];
         rlsGroundtruth.frameEnd=[];
         rlsGroundtruth.endType=[];
         rlsGroundtruth.framediv=[];
         rlsGroundtruth.sep=[];
         rlsGroundtruth.roiid=i;
-        rlsGroundtruth.name='';
+        rlsGroundtruth.name=roi.id;
         rlsGroundtruth.ndiv=-1;
         rlsGroundtruth.totaltime=-1;
         rlsGroundtruth.rules=[];
