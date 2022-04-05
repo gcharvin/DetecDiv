@@ -1765,12 +1765,15 @@ end
 
 
 htextclassi=findobj(gcf,'Tag','classitext');
+htextclassipred=findobj(gcf,'Tag','classitextpred');
+
 if numel(htextclassi)>0
     if ishandle(htextclassi)
         ha=findobj('Tag','classitextflag');
         if numel(ha)
             if strcmp(ha.Checked,'off')
                 delete(htextclassi);
+                delete(htextclassipred);
             end
         end
 
@@ -2000,9 +2003,9 @@ for ii=1:numel(displaystruct)
                     idf=obj.train.(fields{k}).id(obj.display.frame);
                     if exist('ttid'), idfpred=ttid; else idfpred=1; end
                     colmap=flip(prism,1);
-                    if numel(htextclassi)==0
+                    if numel(htextclassi)==0 || numel(htextclassipred)==0
                         htextclassi=text(xx,yy,[displaystruct(ii).gt],'Color',colmap(1*idf,:),'FontSize',20,'Tag','classitext','HorizontalAlignment','right');
-                        htextclassipred=text(xx,yy,['   ' displaystruct(ii).pred],'Color',colmap(1*idfpred,:),'FontSize',20,'HorizontalAlignment','left');
+                        htextclassipred=text(xx,yy,['   ' displaystruct(ii).pred],'Color',colmap(1*idfpred,:),'FontSize',20,'Tag','classitextpred','HorizontalAlignment','left');
                     else
                         htextclassi.String=[displaystruct(ii).gt];
                         htextclassi.Color=colmap(1*idf,:);
