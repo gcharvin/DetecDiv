@@ -769,29 +769,29 @@ for i=1:numel(obj.display.channel)
 
         subt={};
 
-        for ii=1:numel(displaystruct)
-            subt{ii}=[displaystruct(ii).name ' - '  displaystruct(ii).gt ' - ' displaystruct(ii).pred ' - '  displaystruct(ii).info ];
-
-            if numel(classif)>0
-                if strcmp(displaystruct(ii).name,classif.strid)
-                    ha=findobj('Tag','classitextflag');
-
-                    if numel(ha)
-                        if strcmp(ha.Checked,'on')
-                            xx=size(obj.image,2)/2;
-                            yy=size(obj.image,1)/2;
-                             if numel(htextclassi)==0
-                                htextclassi=text(xx,yy,[displaystruct(ii).gt ' - ' displaystruct(ii).pred],'Color',[1 0 0],'FontSize',20,'Tag','classitext','HorizontalAlignment','center');
-                            else
-                                htextclassi.String=[displaystruct(ii).gt ' - ' displaystruct(ii).pred];
-                            end
-                        end
-                    end
-
-                end
-            end
-
-        end
+%         for ii=1:numel(displaystruct)
+%             subt{ii}=[displaystruct(ii).name ' - '  displaystruct(ii).gt ' - ' displaystruct(ii).pred ' - '  displaystruct(ii).info ];
+% 
+%             if numel(classif)>0
+%                 if strcmp(displaystruct(ii).name,classif.strid)
+%                     ha=findobj('Tag','classitextflag');
+% 
+%                     if numel(ha)
+%                         if strcmp(ha.Checked,'on')
+%                             xx=size(obj.image,2)/2;
+%                             yy=size(obj.image,1)/2;
+%                              if numel(htextclassi)==0
+%                                 htextclassi=text(xx,yy,[displaystruct(ii).gt ' - ' displaystruct(ii).pred],'Color',[1 0 0],'FontSize',20,'Tag','classitext','HorizontalAlignment','center');
+%                             else
+%                                 htextclassi.String=[displaystruct(ii).gt ' - ' displaystruct(ii).pred];
+%                             end
+%                         end
+%                     end
+% 
+%                 end
+%             end
+% 
+%         end
 
         if numel(strbound)
             subt(end+1)={['Frames bounds: ' strbound]} ;
@@ -1857,10 +1857,10 @@ for i=1:numel(obj.display.channel)
                 end
                 discc=discc+1;
 
-                if pixx>0
-                    strclassi= [num2str(pixx) ' frames remain to be classified'];
-                    displaystruct(discc).info=strclassi;
-                end
+%                 if pixx>0
+%                     strclassi= [num2str(pixx) ' frames remain to be classified'];
+%                     displaystruct(discc).info=strclassi;
+%                 end
             end
 
             if isfield(obj.train.(classif.strid),'bounds')
@@ -1898,7 +1898,8 @@ if numel(obj.results)>0
                 % str=[str ' - class #' tt ' (' pl{k} ')'];
 
                 tt=obj.results.(pl{k}).id(obj.display.frame);
-
+                ttid=obj.results.(pl{k}).id(obj.display.frame);
+                
                 if isfield(obj.results.(pl{k}),'classes')
                     classesspe=obj.results.(pl{k}).classes; % classes name specfic to training
                 else
@@ -1996,12 +1997,17 @@ for ii=1:numel(displaystruct)
                 if strcmp(ha.Checked,'on')
                     xx=size(obj.image,2)/2;
                     yy=size(obj.image,1)/2;
-
-             
+                    idf=obj.train.(fields{k}).id(obj.display.frame);
+                    if exist('ttid'), idfpred=ttid; else idfpred=1; end
+                    colmap=flip(prism,1);
                     if numel(htextclassi)==0
-                        htextclassi=text(xx,yy,[displaystruct(ii).gt ' - ' displaystruct(ii).pred],'Color',[1 0 0],'FontSize',20,'Tag','classitext','HorizontalAlignment','center');
+                        htextclassi=text(xx,yy,[displaystruct(ii).gt],'Color',colmap(1*idf,:),'FontSize',20,'Tag','classitext','HorizontalAlignment','right');
+                        htextclassipred=text(xx,yy,['   ' displaystruct(ii).pred],'Color',colmap(1*idfpred,:),'FontSize',20,'HorizontalAlignment','left');
                     else
-                        htextclassi.String=[displaystruct(ii).gt ' - ' displaystruct(ii).pred];
+                        htextclassi.String=[displaystruct(ii).gt];
+                        htextclassi.Color=colmap(1*idf,:);
+                        htextclassipred.String=['   ' displaystruct(ii).pred];
+                        htextclassipred.Color=colmap(1*idfpred,:);
                     end
                 end
             end
