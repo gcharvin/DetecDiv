@@ -334,6 +334,9 @@ if numel(handles)==0
             dritem2 = uimenu(dr,'Text','Correction Mode Class group','Checked','off','Tag','Correction2');
             set(dritem2,'MenuSelectedFcn',{@correctionMode,obj,him,hp,classif,2});
 
+            dritem2 = uimenu(dr,'Text','Display current classi state on image','Checked','off','Tag','classitextflag');
+            set(dritem2,'MenuSelectedFcn',{@setclassitextflag,obj,him,hp,classif});
+
         end
     end
 
@@ -741,7 +744,7 @@ for i=1:numel(obj.display.channel)
 
         if numel(strfind(obj.display.channel{i},'track'))~=0 | numel(strfind(obj.display.channel{i},'pedigree'))~=0
 
-            im=him.image(cc).CData;m
+            im=him.image(cc).CData;
 
 
             [l n]=bwlabel(im);
@@ -771,9 +774,20 @@ for i=1:numel(obj.display.channel)
 
             if numel(classif)>0
                 if strcmp(displaystruct(ii).name,classif.strid)
-                    xx=size(obj.image,2)/2;
-                    yy=size(obj.image,1)/2;
-                    htextclassi=text(xx,yy,[displaystruct(ii).gt ' - ' displaystruct(ii).pred],'Color',[1 0 0],'FontSize',20,'Tag','classitext','HorizontalAlignment','center');
+                    ha=findobj('Tag','classitextflag');
+
+                    if numel(ha)
+                        if strcmp(ha.Checked,'on')
+                            xx=size(obj.image,2)/2;
+                            yy=size(obj.image,1)/2;
+                             if numel(htextclassi)==0
+                                htextclassi=text(xx,yy,[displaystruct(ii).gt ' - ' displaystruct(ii).pred],'Color',[1 0 0],'FontSize',20,'Tag','classitext','HorizontalAlignment','center');
+                            else
+                                htextclassi.String=[displaystruct(ii).gt ' - ' displaystruct(ii).pred];
+                            end
+                        end
+                    end
+
                 end
             end
 
@@ -1057,18 +1071,36 @@ if numel(ha)
         ha=findobj('Tag',['Correction' num2str(2-mode+1)]);
         set(ha,'Checked','off');
 
-        if mode==2 % sort frames 
-                                if isfield(obj.train,classif.strid)
-                    if numel(obj.train.(classif.strid).id)>0
-                        if isfield(obj.results,classif.strid)
-                            if numel(obj.results.(classif.strid).id)>0
-                                [aa2,pix]=sort(obj.train.(classif.strid).id);
-                                h.UserData.correctionSort=pix;
-                            end
+        if mode==2 % sort frames
+            if isfield(obj.train,classif.strid)
+                if numel(obj.train.(classif.strid).id)>0
+                    if isfield(obj.results,classif.strid)
+                        if numel(obj.results.(classif.strid).id)>0
+                            [aa2,pix]=sort(obj.train.(classif.strid).id);
+                            h.UserData.correctionSort=pix;
                         end
                     end
-                                end
+                end
+            end
         end
+    end
+end
+
+updatedisplay(obj,him,hp,classif)
+% HERE :
+end
+
+function setclassitextflag(handles, event,obj, him,hp,classif)
+
+h=findobj('Tag',['ROI' obj.id]);
+
+ha=findobj('Tag','classitextflag');
+
+if numel(ha)
+    if strcmp(ha.Checked,'on')
+        set(ha,'Checked','off');
+    else
+        set(ha,'Checked','on');
     end
 end
 
@@ -1731,11 +1763,17 @@ if numel(htext)>0
     end
 end
 
-htextclassi=findobj(gcf,'Tag','classitext');
 
+htextclassi=findobj(gcf,'Tag','classitext');
 if numel(htextclassi)>0
     if ishandle(htextclassi)
-        delete(htextclassi);
+        ha=findobj('Tag','classitextflag');
+        if numel(ha)
+            if strcmp(ha.Checked,'off')
+                delete(htextclassi);
+            end
+        end
+
     end
 end
 
@@ -1952,9 +1990,22 @@ for ii=1:numel(displaystruct)
 
     if numel(classif)>0
         if strcmp(displaystruct(ii).name,classif.strid)
-            xx=size(obj.image,2)/2;
-            yy=size(obj.image,1)/2;
-            htextclassi=text(xx,yy,[displaystruct(ii).gt ' - ' displaystruct(ii).pred],'Color',[1 0 0],'FontSize',20,'Tag','classitext','HorizontalAlignment','center');
+            ha=findobj('Tag','classitextflag');
+
+            if numel(ha)
+                if strcmp(ha.Checked,'on')
+                    xx=size(obj.image,2)/2;
+                    yy=size(obj.image,1)/2;
+
+             
+                    if numel(htextclassi)==0
+                        htextclassi=text(xx,yy,[displaystruct(ii).gt ' - ' displaystruct(ii).pred],'Color',[1 0 0],'FontSize',20,'Tag','classitext','HorizontalAlignment','center');
+                    else
+                        htextclassi.String=[displaystruct(ii).gt ' - ' displaystruct(ii).pred];
+                    end
+                end
+            end
+
         end
     end
 end
@@ -1971,7 +2022,7 @@ if ~strcmp(h.UserData.correctionMode,'off')
 end
 
 title(hp(cc),str,'FontSize',12,'interpreter','none');
-%  subtitle(hp(cc), subt ,'FontSize',10,'interpreter','none');
+% subtitle(hp(cc), subt ,'FontSize',10,'interpreter','none');
 
 %title(hp(cc),str, 'Color',colo,'FontSize',20);
 cc=cc+1;
@@ -2374,7 +2425,7 @@ if numel(classif)>0
                         if isfield(obj.results,classif.strid)
                             if numel(obj.results.(classif.strid).id)>0
 
-                                 pix=h.UserData.correctionSort;
+                                pix=h.UserData.correctionSort;
                                 xx=find(pix==obj.display.frame);
                                 if xx-1>0
                                     obj.display.frame=pix(xx-1);
