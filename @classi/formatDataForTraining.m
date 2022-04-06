@@ -22,12 +22,13 @@ end
 
 category=classif.category;
 category=category{1};
+foldername='trainingdataset';
 
 if Keep==0
 disp('Removing previous labeled datasets from folders...This can take a very long time...');
 %classif=obj.processing.classification(classiid);
 
-foldername='trainingdataset';
+
 
 % remove and recreates all directoires
 % mk folder to store ground user trained data
