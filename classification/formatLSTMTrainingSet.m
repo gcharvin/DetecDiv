@@ -49,7 +49,7 @@ channel=classif.channelName;
 
 disp(['These ROIs will be processed : ' num2str(rois)]);
 
-for i=1:numel(rois)
+parfor i=1:numel(rois)
     disp(['Launching ROI ' num2str(i) :' processing...'])
     
     if numel(cltmp(rois(i)).image)==0

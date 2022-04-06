@@ -1853,19 +1853,18 @@ for i=1:numel(obj.display.channel)
                         strbound=num2str(obj.train.(classif.strid).bounds);
                     end
 
+                     if isfield(obj.train.(classif.strid),'bounds')
+                strbound=num2str(obj.train.(classif.strid).bounds);
+                     end
+                     
 
                 end
                 discc=discc+1;
 
-                if pixx>0
-                    strclassi= [num2str(pixx) ' frames remain to be classified'];
-                    displaystruct(discc).info=strclassi;
-                end
+
             end
 
-            if isfield(obj.train.(classif.strid),'bounds')
-                strbound=num2str(obj.train.(classif.strid).bounds);
-            end
+           
 
 
         end
