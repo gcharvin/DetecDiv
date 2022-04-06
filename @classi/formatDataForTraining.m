@@ -4,16 +4,33 @@ function output=formatDataForTraining(classif,varargin) %mov,trapsid,option)
 
 output=[];
 
-disp('Removing previous labeled datasets from folders...This can take a very long time...');
-%classif=obj.processing.classification(classiid);
+Frames=[];
+Keep=0;
+rois=[];
+
+for i=1:numel(varargin)
+    if strcmp(varargin{i},'Frames')
+        Frames=varargin{i+1};
+    end
+        if strcmp(varargin{i},'Rois')
+        rois=varargin{i+1};
+    end
+        if strcmp(varargin{i},'Keep') % keep existing images in folder 
+       Keep=1;
+    end
+end
+
 category=classif.category;
 category=category{1};
+
+if Keep==0
+disp('Removing previous labeled datasets from folders...This can take a very long time...');
+%classif=obj.processing.classification(classiid);
 
 foldername='trainingdataset';
 
 % remove and recreates all directoires
 % mk folder to store ground user trained data
-
 
 if isfolder(fullfile(classif.path,foldername))
     try
@@ -25,18 +42,13 @@ end
 
 
 mkdir(classif.path,foldername)
-
-rois=classif.trainingset;
-
-Frames=[];
-
-for i=1:numel(varargin)
-    if strcmp(varargin{i},'Frames')
-        
-        Frames=varargin{i+1};
-        
-    end
 end
+
+if numel(rois)==0
+rois=classif.trainingset;
+end
+
+
 
 % if nargin<3
 % rois=1:numel(classif.roi);
