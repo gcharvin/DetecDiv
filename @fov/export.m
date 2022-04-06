@@ -94,6 +94,7 @@ disp('Writing video.... Wait!');
 
 im=obj.readImage(1,1);
 
+
 if numel(crop)
     im=im(crop(2,1):crop(2,2),crop(1,1):crop(1,2));
  end

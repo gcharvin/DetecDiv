@@ -890,6 +890,11 @@ function exportMovie(handles,event,obj,him,hp)
      crop(1,:)=   round(hp(1).XLim);
      crop(2,:)=   round(hp(1).YLim);
 
+     crop(1,1)=max(1,crop(1,1));
+     crop(2,1)=max(1,crop(2,1));
+     crop(1,2)=min(size(tmp,2),crop(1,2));
+     crop(2,2)=min(size(tmp,1),crop(2,2));
+
  arg{cc}='Crop'; cc=cc+1;
             arg{cc}=crop; cc=cc+1;
             % crop
