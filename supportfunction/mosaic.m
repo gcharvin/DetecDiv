@@ -240,7 +240,9 @@ end
         img=obj.roi(rois(1)).image;
         if numel(img)==0
             obj.roi(rois(1)).load;
+            img=obj.roi(rois(1)).image;
         end
+        
         roitmp=obj.roi(rois(1));
         
         %get max number of frames
@@ -258,6 +260,7 @@ end
         img=obj.fov(rois(1,1)).roi(rois(2,1)).image;
         if numel(img)==0
             obj.fov(rois(1,1)).roi(rois(2,1)).load;
+            img=obj.fov(rois(1,1)).roi(rois(2,1)).image;
         end
         roitmp=obj.fov(rois(1,1)).roi(rois(2,1));
         
@@ -279,13 +282,13 @@ end
         img=obj.image;
         if numel(img)==0
             obj.load;
+            img=obj.image;
         end
-        roitmp=obj;
+        roitmp=obj;        
     end
     
     nframesref=size(roitmp.image,4);%useless?
-    
-    
+        
     % find the right channel
     cha={};
     
@@ -354,7 +357,9 @@ end
         img=imgtp;
     end
     %scalingFactor
-    img=imresize(img,scalingFactor);
+    if scalingFactor~=1
+        img=imresize(img,scalingFactor);
+    end
     h=size(img,1)+shifty;
     w=size(img,2)+shiftx;
     imgout=uint16(65535*ones(nsize(1)*h,nsize(2)*w,3,numel(frames)));
