@@ -26,6 +26,8 @@ title=[];
 strid='';
 classif=[];
 nocolor=1;
+rotate=[];
+imageSize=[];
 
 %colr=[36/255,61/255,255/255];
 %colr=[0.35,0.35,0.35];
@@ -51,7 +53,7 @@ if isa(obj,'classi')
 end
 if isa(obj,'shallow')
     %frames=1:numel(obj.fov(1).srclist{1}); % take the number of frames from the image list
-    frames=[]; %auto determination later, if not indicated
+    frames=[]; %auto determination later, if not indicatedchannel
     rois=[1 1 1; 1 2 3];
 end
 if isa(obj,'roi')
@@ -80,7 +82,15 @@ for i=1:numel(varargin)
     if strcmp(varargin{i},'stopDead') % stop showing channel once cell is dead. Must give 'Classification'
         stopWhenDead=varargin{i+1};
     end
+
+      if strcmp(varargin{i},'Rotate') % rotate image in degrees
+        rotate=varargin{i+1};
+    end
     
+       if strcmp(varargin{i},'ImageSize') %specify image size in pixels
+        imageSize=varargin{i+1};
+       end
+
     if strcmp(varargin{i},'Flip') % used to diplay the time on the movie
         Flip=1;
     end
@@ -100,7 +110,6 @@ for i=1:numel(varargin)
             disp('Channel is not found; quitting!');
             return;
         else
-           
             if numel(stopWhenDead)==0
                 stopWhenDead=zeros(1,numel(channel));
             end
@@ -174,6 +183,7 @@ for i=1:numel(varargin)
     if strcmp(varargin{i},'Scale') % scale images up
         scalingFactor=varargin{i+1};
     end
+
     if strcmp(varargin{i},'Crop') % scale images up
         crop=varargin{i+1};
     end
@@ -305,7 +315,7 @@ end
             cha{i}=pix;
         end
        
-        
+
         if numel(rgb{i})==0
             rgb{i}=[1 1 1];
         end
@@ -353,8 +363,16 @@ end
         end
         img=imgtp;
     end
+   
+
     %scalingFactor
     img=imresize(img,scalingFactor);
+
+      if numel(imageSize)
+                img=imresize(img,imageSize);
+      end
+
+
     h=size(img,1)+shifty;
     w=size(img,2)+shiftx;
     imgout=uint16(65535*ones(nsize(1)*h,nsize(2)*w,3,numel(frames)));
@@ -396,6 +414,9 @@ end
             end
             
             imtmp=roitmp.image(:,:,:,frames);
+
+          
+
             if numel(crop)>0
                 for c=1:size(imtmp,3)
                     for f=1:size(imtmp,4)
@@ -405,6 +426,10 @@ end
                 imtmp=imtmptp;
             end
             imtmp=imresize(imtmp,scalingFactor,'nearest');
+
+              if numel(imageSize)
+                imtmp=imresize(imtmp,imageSize);
+            end
            
             
             frameEnd(1:numel(cha))=9999;
@@ -435,7 +460,8 @@ end
             %   imout(:,:,1,:)=imout(:,:,1,:)*background(1);
             %   imout(:,:,2,:)=imout(:,:,2,:)*background(2);
             %   imout(:,:,3,:)=imgout(:,:,3,:)*background(3);
-            
+
+
             for i=1:size(imtmp,4) % loop on frames              
                 %IMAGES
                 imgRGBsum=uint16(zeros(size(imtmp,1),size(imtmp,2),3));
@@ -453,7 +479,12 @@ end
  
                         imtmp2=uint16(zeros(size(imtmp(:,:,cha{ii},i))));
                     end
-                    if numel(cha{ii})==1 % single dimension channel => levels can be readjusted                  
+
+           
+                    if numel(cha{ii})==1 % single dimension channel => levels can be readjusted  
+
+
+
                         if numel(levels{ii})==2 % A 2D vector is provided, therefore image is not an indexed one                                                       
                             if levels{ii}==[-1 -1] %auto adjust
                                 if i==1
@@ -468,14 +499,17 @@ end
                             end
                             imtmp2= cat(3, imtmp2*rgb{ii}(1), imtmp2*rgb{ii}(2), imtmp2*rgb{ii}(3));
                             
+
                         else % channel represents an indexed image , will use provided colormap
                             maxe= max( imtmp2(:)); %get classes
                             imrgbbw=uint16(zeros(size(imgRGBsum)));
                             for iii=1:maxe %for classes
                                 bw=imtmp2==iii;
+
                                 if contour %plots the contour rather than a surface
                                     %bw=bwperim(bw); % ugly but proablably not
                                     %worse than what is done below in the end :
+  
                                     [B,L] = bwboundaries(bw,'noholes');
                                     bw(:)=0;
                                     bw=65535*uint16(bw);
@@ -486,13 +520,14 @@ end
                                         if size(boundary,1)>2 % a polygon must have at least 3 vertices
                                             vecpoltmp=[boundary(:,2)' ; boundary(:,1)'];
                                             vecpoltmp=reshape(vecpoltmp,1,[]);
-                                            bw= insertShape( bw,'Polygon',vecpoltmp,    'Color', round(65535*levels{ii}(iii,:)),'LineWidth',4,'SmoothEdges',true);
+                                            bw= insertShape( bw,'Polygon',vecpoltmp,    'Color', round(65535*levels{ii}(iii,:)),'LineWidth',2,'SmoothEdges',true);
                                         end
                                     end
                                     imrgb=bw;
                                     
                                 else % plots surface
                                     bw=65535*uint16(bw);
+
                                     imrgb=cat(3,bw*levels{ii}(iii,1)*rgb{ii}(1),bw*levels{ii}(iii,2)*rgb{ii}(2),bw*levels{ii}(iii,3)*rgb{ii}(3));
                                 end
                                 
@@ -516,6 +551,11 @@ end
                     
                 end
                 
+                if numel(rotate)
+                    imgRGBsum=imrotate(imgRGBsum,rotate);
+                end
+             %   size(imgRGBsum)
+
                 imout(:,:,:,i)=imgRGBsum;
             end
             
@@ -782,7 +822,7 @@ end
                 lin=1;
             end
             size(imgout)
-             h= figure, montage(imgout);
+             h= figure, montage(imgout,'Size',[1 NaN]);
               exportgraphics(h, [ name '.png']);
               disp(['Montage figure successfully exported to : ' name '.png'])
               

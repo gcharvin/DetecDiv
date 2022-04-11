@@ -169,8 +169,16 @@ else % compute acitvations for input data
         %labels{cc,1}= lab;
          sequences{cc,1} = activations(netCNN,tmpvid,layerName,'OutputAs','columns');
         labels{cc,1}= lab(fr(dis==k));
+
+ if size(labels{cc,1},1)>1 % swap dim if incorrect ! I don't know how the dims may be incorrect, but I observed it !
+            labels{cc,1}=labels{cc,1}';
+ end
+
         cc=cc+1;
         end
+
+       
+
         fprintf('\n');
     end
     
@@ -306,7 +314,7 @@ if trainingParam.train_LSTM_network | ~exist(str) % training of LSTM network, if
     % train network
     disp('Training LSTM network ...');
     fprintf('------\n');
-    
+
     [netLSTM,info] = trainNetwork(sequencesTrain,labelsTrain,layers,options);
     
      target=fullfile(path,['netLSTM_' name '.mat']);

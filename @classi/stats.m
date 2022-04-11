@@ -651,7 +651,7 @@ csw=@(x) sum(data.pred==x);
 weights=arrayfun(csw,1:numel(classif.classes));
 
 % remove classes of 0 weights / NaN accuracy
-pix=~isnan(acc);
+pix=~isnan(acc) & ~isnan(rec) ;
 acc=acc(pix);
 rec=rec(pix);
 weights=weights(pix);

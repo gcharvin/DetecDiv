@@ -88,7 +88,7 @@ end
  else
      classifierCNN=[];
  end
-    
+
  % first load classifier if not loadad to save some time
 %if numel(classifier)==0
     disp(['Loading classifier: ' classif.strid]);

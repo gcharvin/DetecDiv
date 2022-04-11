@@ -8,7 +8,9 @@ fprintf('Load videos...\n');
 %inputSize = netCNN.Layers(1).InputSize(1:2);
 
 for i=1:numel(classifier.Layers)
+
     if strcmp(class(classifier.Layers(i)), 'nnet.cnn.layer.SequenceInputLayer')
+  
         inputSize = classifier.Layers(i).InputSize(1:2);
         break
     end
