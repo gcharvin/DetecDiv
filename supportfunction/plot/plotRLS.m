@@ -21,6 +21,7 @@ sz=5;
 Nboot=100;
 plotHazardRate=1;
 maxBirth=100; %max frame to be born. After, discard rls.
+GT=0;
 % load=0;
 
 % comment=cell(szc,1);
