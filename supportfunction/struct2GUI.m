@@ -120,6 +120,7 @@ src.Parent.UserData.(src.Tag)=logical(src.Value);
    src.Parent.UserData.(src.Tag)=str2num(src.Value);      
 end
 
+
 if numel(flag)
 flag.Color=[1 0 0];
 end
@@ -127,7 +128,7 @@ end
 
 function dropchanged(src,event,flag)
 
-src.Parent.UserData.(src.Tag)=[src.Parent.UserData.(src.Tag)(1:end-1) src.Value]; 
+src.Parent.UserData.(src.Tag)=[src.Parent.UserData.(src.Tag)(1:end-1) src.Value];
 
 if numel(flag)
 flag.Color=[1 0 0];
