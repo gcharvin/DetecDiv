@@ -1,4 +1,4 @@
-function measureRLS3(classif,roiobj,varargin)
+function measureRLS3(roiobj,param,varargin)
 
 %TODO :FUSE measureRLS2 and 3 and create a function appart to align.
 
@@ -12,11 +12,15 @@ function measureRLS3(classif,roiobj,varargin)
 % rls combines results and groundtruth is applicable
 % rlsResults only results
 %rlsGroundtruth only groundtruth
-loadres=1;
-environment='pc';
+%loadres=1;
+%environment='pc';
+param.timeRate=[];
 
+if numel(param)==0
+param.classifierName={'myclassi','myclassi'};
+param.classes='unbud small large dead clog empty';
 param.classiftype='bud';
-param.timeRate=5;
+%param.timeRate=[];
 param.postProcessing=1;
 param.errorDetection=1;
 
@@ -28,13 +32,11 @@ param.EmptyThresholdDiscard=500;
 param.EmptyThresholdNext=100;
 param.Frames=[];
 
-
-classifstrid=classif.strid;
 for i=1:numel(varargin)
     
-    if strcmp(varargin{i},'Envi')
-        environment=varargin{i+1};
-    end
+%     if strcmp(varargin{i},'Envi')
+%         environment=varargin{i+1};
+%     end
     
     %PARAMS OF DIV DETECTION
     %ClassiType
@@ -46,6 +48,10 @@ for i=1:numel(varargin)
     end
     
     %ArrestThreshold
+      if strcmp(varargin{i},'ClassifierName')
+        param.classifierName=varargin{i+1};
+      end
+
     if strcmp(varargin{i},'ArrestThreshold')
         param.ArrestThreshold=varargin{i+1};
     end
@@ -75,6 +81,22 @@ for i=1:numel(varargin)
         param.timeRate=varargin{i+1};
     end
 end
+end
+
+if ischar(param.classifierName)
+classifstrid=param.classifierName;
+else
+classifstrid=param.classifierName{end};
+end
+
+if ~ischar(param)
+param.classiftype=param.classiftype{end};
+end
+
+classif=evalin('base',classifstrid)
+
+
+
 %%
 for i=1:numel(roiobj)
     roiobj(i).load('results');
@@ -155,7 +177,7 @@ if strcmp(roitype,'result')
         %sep
         rlsResults.sep=findSync(rlsResults);
     else
-        warning(['There is no result available for ROI ' char(roi.id)]);
+%        warning(['There is no result available for ROI ' char(roi.id)]);
         rlsResults.groundtruth=0;
         rlsResults.divDuration=[];
         rlsResults.timeRate=param.timeRate;

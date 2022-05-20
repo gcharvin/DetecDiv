@@ -32,7 +32,7 @@ cc=1;
 col=0;
 %cd=1;
 
-space=35;
+space=28;
 
 
 for i=1:numel(f)

@@ -3,6 +3,7 @@ function [Tree handle]=datapickerGUI2(varargin)
 handle=[];
 flag=[];
 input=[];
+position=[12 12 400 400];
 
 for i=1:numel(varargin)
     if strcmp(varargin{i},'Handle') % insert struct in a given gui
@@ -13,6 +14,9 @@ for i=1:numel(varargin)
     end
     if strcmp(varargin{i},'Input') % indicate the handle to modify the color of a button when any field has been modifed
         input=varargin{i+1};
+    end
+    if strcmp(varargin{i},'Position') % indicate the handle to modify the color of a button when any field has been modifed
+        position=varargin{i+1};
     end
 end
 
@@ -28,6 +32,7 @@ workspaceVars=gatherVarsFromWorkspace;
 Tree = uitree(handle,'checkbox');
 %      Tree.SelectionChangedFcn = createCallbackFcn(app, @TreeSelectionChanged, true);
 
+
 %  Tree.SelectionChangedFcn = {@TreeSelectionChanged, workspaceVars};
 Tree.CheckedNodesChangedFcn = {@checkChanged, workspaceVars, flag};
 
@@ -35,8 +40,12 @@ Tree.CheckedNodes=[];
 checkedNodes=[];
 
 %  Tree.SelectionChangedFcn = createCallbackFcn(app, @TreeSelectionChanged, true);
-Tree.Tooltip = {'Use left-click to scroll projects and classifiers; Use right-click to open positions and classifiers'};
-Tree.Position = [12 12 400 400];
+Tree.Tooltip = {'Select data from projects loaded in memory'};
+Tree.Position = position;
+
+         Tree.UserData.roiobj=[];
+        Tree.UserData.nodeid=[];
+        Tree.UserData.filepath=[]; 
 
 % Create ProjectsNode
 ProjectNode = uitreenode(Tree);
@@ -340,18 +349,25 @@ end
 
     function checkChanged(src, event,data,flag)
 
-        if isfield(flag,'Color')
+    if numel(flag)
+
+      %  if isfield(flag,'Color')
+      %      'okk'
             flag.Color=[1 0 0];
-        end
+     %   end
+    end
 
         roiobj=[];
         nodeid={};
+        filepath={};
+        type={};
+
         checkedNodes = event.LeafCheckedNodes;
 
         if numel(checkedNodes)
             for i=1:numel(checkedNodes)
 
-                typ=    checkedNodes(i).Tag;
+                typ= checkedNodes(i).Tag;
 
                 if strcmp(typ,'Projectpos')
 
@@ -366,6 +382,9 @@ end
                     roiobj=[roiobj  ; shallowObj.fov(posindex).roi(:)];
 
                     nodeid=[nodeid udata.nodeid];
+
+                    filepath=[filepath fullfile(shallowObj.io.path,[shallowObj.io.file '.mat'])];
+                    type=[type 'shallow'];
                 end
 
                 if strcmp(typ,'Projectposrois')
@@ -380,6 +399,8 @@ end
 
                     roiobj=[roiobj  ; shallowObj.fov(posindex).roi(udata.ROI)];
                     nodeid=[nodeid udata.nodeid];
+                     filepath=[filepath fullfile(shallowObj.io.path,[shallowObj.io.file '.mat'])];
+                       type=[type 'shallow'];
                 end
 
                 if strcmp(typ,'Projectclassi')
@@ -396,7 +417,8 @@ end
 
                     roiobj=[roiobj ; tmp];
                     nodeid=[nodeid udata.nodeid];
-
+                    filepath=[filepath fullfile(shallowObj.io.path,[shallowObj.io.file '.mat'])];
+                      type=[type 'shallow'];
                 end
 
                 if strcmp(typ,'Projectclassirois')
@@ -415,7 +437,8 @@ end
 
                     roiobj=[roiobj ; tmp];
                     nodeid=[nodeid udata.nodeid];
-
+                     filepath=[filepath fullfile(shallowObj.io.path,[shallowObj.io.file '.mat'])];
+                       type=[type 'shallow'];
                 end
 
                 if strcmp(typ,'Classifier')
@@ -426,7 +449,8 @@ end
 
                     roiobj=[roiobj  ; classiObj.roi(:)];
                     nodeid=[nodeid udata.nodeid];
-
+                     filepath=[filepath fullfile(classiObj.path,[classiObj.strid '_classification.mat'])];
+                       type=[type 'classi'];
                 end
 
                 if strcmp(typ,'Classifierrois')
@@ -440,7 +464,8 @@ end
 
                     roiobj=[roiobj ; tmp];
                     nodeid=[nodeid udata.nodeid];
-
+                    filepath=[filepath fullfile(classiObj.path,[classiObj.strid '_classification.mat'])];
+                      type=[type 'classi'];
                 end
 
             end
@@ -448,7 +473,10 @@ end
 
         src.UserData.roiobj=roiobj;
         src.UserData.nodeid=nodeid;
+        [src.UserData.filepath, ia,~]=unique(filepath); 
+        src.UserData.type=type(ia);
 
+    %    aa=src.UserData
 
         function TreeSelectionChanged(src, event,data)
             selectedNodes = event.SelectedNodes;

@@ -45,7 +45,6 @@ for i=1:numel(varargin)
     end
 end
 
-
 if GT==1
     szc=2;
     comment={'Prediction', 'Groundtruth'};

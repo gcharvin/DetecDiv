@@ -1,71 +1,86 @@
-function rls=createRLSfile(classif,roiobjcell,varargin)
+function rls=createRLSfile(classif,roiobjcell,param,varargin)
 
 Align=1;
 GT=0;
 errorDetection=0;
 szc=size(roiobjcell,1); %number of conditions
 comment=cell(szc,1);
-environment='local';
 
-for i=1:numel(varargin)
-    if strcmp(varargin{i},'GT')
+if numel(param)==0
+    param.GroundtruthVSPredictions=false;
+    param.AlignTraj='Birth';
+
+    classifstrid=classif.strid;
+
+    for i=1:numel(varargin)
+        if strcmp(varargin{i},'GT')
+            GT=1;
+            comment={'Groundtruth','Prediction'};
+        end
+
+        if strcmp(varargin{i},'Align') % Birth, SEP, Death
+            Align=varargin{i+1};
+        end
+
+        if strcmp(varargin{i},'errorDetection')
+            errorDetection=1;
+        end
+
+        if strcmp(varargin{i},'Comment')
+            comment=varargin{i+1};
+        end
+
+    end
+else
+    if param.GroundtruthVSPredictions
         GT=1;
         comment={'Groundtruth','Prediction'};
+    else
+        comment=param.comment;
     end
 
-    if strcmp(varargin{i},'Align')
-        Align=1;
-    end
-    
-    if strcmp(varargin{i},'errorDetection')
-        errorDetection=1;
-    end
+ classifstrid=param.classifierName{end};
+ if isfield(param,'AlignTraj')
+  %   'ok'
+    Align=param.AlignTraj{end};
+ else
+Align=0;
+ end
+    errorDetection=param.errorDetection;
 
-
-    if strcmp(varargin{i},'Comment')
-        comment=varargin{i+1};
-    end
-
-    if strcmp(varargin{i},'Envi')
-        environment=varargin{i+1};
-    end
 end
-
-
-
-classifstrid=classif.strid;
 
 %%
 cc=1;
 
 for cond=1:szc
     for r=1:numel(roiobjcell{cond,1})
-%         if strcmp(environment,'local')
-%             roiobjcell{cond,1}(r).path=strrep(roiobjcell{cond,1}(r).path,'/shared/space2/','\\space2.igbmc.u-strasbg.fr\');
-%         end
+        %         if strcmp(environment,'local')
+        %             roiobjcell{cond,1}(r).path=strrep(roiobjcell{cond,1}(r).path,'/shared/space2/','\\space2.igbmc.u-strasbg.fr\');
+        %         end
         roiobjcell{cond,1}(r).load('results');
         roiobjcell{cond,1}(r).path=strrep(roiobjcell{cond,1}(r).path,'/shared/space2/','\\space2.igbmc.u-strasbg.fr\');
 
-%         aa=roiobjcell{cond,1}(r).results.RLS.(['from_' classifstrid]);
-%         if numel(aa.divDuration)==0
-%             continue;
-%         end
+        %         aa=roiobjcell{cond,1}(r).results.RLS.(['from_' classifstrid]);
+        %         if numel(aa.divDuration)==0
+        %             continue;
+        %         en
 
         rls(cc)=roiobjcell{cond,1}(r).results.RLS.(['from_' classifstrid]);
 
         if GT==1
             %if exist...else error('explicit error message') for robustness
             rls(cc+1)=roiobjcell{cond,1}(r).train.RLS.(['from_' classifstrid]);
-            
+
             if errorDetection==1
-            disp('Proceeding to error detection')
+                disp('Proceeding to error detection')
                 [rlserr(cc+1).noFalseDiv, rlserr(cc).noFalseDiv]=detectError(rls(cc+1),rls(cc));
                 rlserr(cc+1).falseDiv=setdiff(rls(cc+1).framediv,rlserr(cc+1).noFalseDiv);
                 rlserr(cc).falseDiv=setdiff(rls(cc).framediv,rlserr(cc).noFalseDiv);
                 rlserr(cc+1).divDurationNoFalseDiv=diff(rlserr(cc+1).noFalseDiv);
                 rlserr(cc).divDurationNoFalseDiv=diff(rlserr(cc).noFalseDiv);
             end
-            
+
             rlscomm{cc,1}=comment{1,2}; %Pred
             rlscomm{cc+1,1}=comment{1,1}; %GT
 
@@ -91,7 +106,7 @@ end
 for r=1:numel(rls)
     rls(r).condition=rlscond(r);
     rls(r).conditionComment=rlscomm{r};
-    
+
     if GT==1 && errorDetection==1
         rls(r).noFalseDiv=rlserr(r).noFalseDiv;
         rls(r).falseDiv=rlserr(r).noFalseDiv;
@@ -254,7 +269,7 @@ if numel(rlsGroundtruthr.framediv)>1 && numel(rlsResultsr.framediv)>1
             pairij(i,j)=0;
         end
     end
-    
+
     %deal with cases where distance values are m and -m,make -m to 0 so its
     %picked as the min
     [B,I]=mink(abs(distance),2,2);
@@ -264,12 +279,12 @@ if numel(rlsGroundtruthr.framediv)>1 && numel(rlsResultsr.framediv)>1
             distance(l,idxI)=0;%choose the negaitve value, put it to 0
         end
     end
-    
+
     for i=1:numel(rlsGroundtruthr.framediv)
         [~,idxmini]=min(abs(distance(i,:)));
         pairij(i,idxmini)=1;
     end
-    
+
     for i=1:numel(rlsGroundtruthr.framediv)
         for j=1:numel(rlsResultsr.framediv)
             if pairij(i,j)==1
@@ -278,7 +293,7 @@ if numel(rlsGroundtruthr.framediv)>1 && numel(rlsResultsr.framediv)>1
             end
         end
     end
-    
+
     for j=1:numel(rlsResultsr.framediv)
         pairij(:,j)=(-1)*pairij(:,j);
         [~, idx]=min(abs(distance2(:,j)));
@@ -286,9 +301,9 @@ if numel(rlsGroundtruthr.framediv)>1 && numel(rlsResultsr.framediv)>1
     end
     falsepair=sum((pairij==-1),2);
     framedivNoFalseNeg=rlsGroundtruthr.framediv(not(falsepair'));
-    
-    
-    
+
+
+
     clear B IdxI IdxMinDist distance pairij idx falsepair distance2
     %====2/false pos (res has a div that gt doesnt)====
     for i=1:numel(rlsResultsr.framediv)
@@ -297,7 +312,7 @@ if numel(rlsGroundtruthr.framediv)>1 && numel(rlsResultsr.framediv)>1
             pairij(i,j)=0;
         end
     end
-    
+
     %deal with cases where distance values are m and -m,make -m to 0 so its
     %picked as the min
     [B,I]=mink(abs(distance),2,2);
@@ -307,13 +322,13 @@ if numel(rlsGroundtruthr.framediv)>1 && numel(rlsResultsr.framediv)>1
             distance(l,idxI)=0;%choose the negaitve value, put it to 0
         end
     end
-    
+
     %identify pairs, including false
     for i=1:numel(rlsResultsr.framediv)
         [~,idxmini]=min(abs(distance(i,:)));
         pairij(i,idxmini)=1;
     end
-    
+
     for i=1:numel(rlsResultsr.framediv)
         for j=1:numel(framedivNoFalseNeg)
             if pairij(i,j)==1
@@ -322,7 +337,7 @@ if numel(rlsGroundtruthr.framediv)>1 && numel(rlsResultsr.framediv)>1
             end
         end
     end
-    
+
     %identify false pairs
     for j=1:numel(framedivNoFalseNeg)
         pairij(:,j)=(-1)*pairij(:,j);

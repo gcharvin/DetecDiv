@@ -1,4 +1,4 @@
-function hrls=plotDivtimes(rlsfile,varargin)
+function divt=plotDivtimes(rlsfile,varargin)
 %TODO: TAKE AS INPUT rls struct file generated using createRLSfile
 
 % plot RLS data for one or several curves
@@ -67,7 +67,7 @@ end
 bins=[0:5:200, 1000];
 
 leg='';
-h4=figure;
+h4=figure('Color','w','Name','ok');
 for c=1:szc
     histogram(divt{c,1},bins,'DisplayStyle','stairs','LineWidth',3,'EdgeAlpha',0.75,'Normalization','probability');
     hold on
