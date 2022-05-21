@@ -1,4 +1,4 @@
-function hrls=plotRLS(rlsfile,varargin)
+function rlstNdivs=plotRLS(rlsfile,varargin)
 
 % plot RLS data for one or several curves
 
@@ -16,12 +16,16 @@ function hrls=plotRLS(rlsfile,varargin)
 
 %example: plotRLS({[detecdivProj.fov([1:4,9:12]).roi];[detecdivProj.fov([5:8,13:16,17:18]).roi]; [detecdivProj.fov([26:28,30:34]).roi]},'Comment',{'Condition1', 'Condition2','Condition3'})
 figExport=0;
+dataExport=0;
 bootStrapping=0;
 sz=5;
 Nboot=100;
-plotHazardRate=1;
+plotHazardRate=0;
+filename='RLS_export';
 maxBirth=100; %max frame to be born. After, discard rls.
 GT=0;
+timeFactor=5;
+figName=[];
 % load=0;
 
 % comment=cell(szc,1);
@@ -32,14 +36,44 @@ for i=1:numel(varargin)
 %     if strcmp(varargin{i},'Comment')
 %         comment=varargin{i+1};
 %     end
-    if strcmp(varargin{i},'Exportfig')
+    if strcmp(varargin{i},'ExportPlot')
         figExport=1;
     end
-    
+
+        if strcmp(varargin{i},'ExportData')
+        dataExport=1;
+        end
+
+          if strcmp(varargin{i},'HazardRate')
+        plotHazardRate=1;
+        end
+
+           if strcmp(varargin{i},'Bootstrap')
+        bootStrapping=1;
+           end
+
+  if strcmp(varargin{i},'Bootstrap_Steps')
+        Nboot=varargin{i+1};
+  end
+
     if strcmp(varargin{i},'Load') %load data
         load=1;
     end
-    
+
+    if strcmp(varargin{i},'Filename')
+        filename=varargin{i+1};
+     end
+
+    if strcmp(varargin{i},'FrameInterval')
+        timeFactor=varargin{i+1};
+    end
+    if strcmp(varargin{i},'maxBirth')
+        maxBirth=varargin{i+1};
+    end
+  if strcmp(varargin{i},'figName')
+        figName=varargin{i+1};
+  end
+
     if strcmp(varargin{i},'GT')
         GT=1;
     end
@@ -71,6 +105,10 @@ for c=1:szc %conditions
     %
 end
 
+if dataExport==1
+writecell(rlstNdivs,[filename '.csv']);
+end
+
 %% plot
 
 if figExport==1
@@ -83,7 +121,7 @@ end
 
 
 %set(gcf,'Color','w','Units', 'Normalized', 'Position',[0.1 0.1 0.45 0.45]);
-rlsFig=figure('Color','w','Units', 'Normalized', 'Position',[0.1 0.1 0.45 0.45]);
+rlsFig=figure('Color','w','Units', 'Normalized', 'Position',[0.1 0.1 0.45 0.45],'Name',figName);
 ax=gca;
 colorder=ax.ColorOrder;
 leg='';
@@ -265,7 +303,7 @@ end
 
 M=max([rlstNdivs{:,1}]);
 p=0;%ranksum(rlstNdivs,rlsgNdivs);
-title(['Replicative lifespan']);
+%title(['Replicative lifespan']);
 set(gca,'FontSize',fz, 'FontName','Myriad Pro','LineWidth',2*lw,'FontWeight','bold','XTick',[0:10:M],'TickLength',[0.02 0.02]);
 xlim([0 M])
 ylim([0 1.02]);
@@ -279,7 +317,7 @@ if figExport==1
     set(ax,'Units','centimeters', 'InnerPosition', [5 5 xf_width yf_width]) %0.8 if .svg is used
     rlsFig.Renderer='painters';
     %saveas(rlsFig,'\\space2.igbmc.u-strasbg.fr\charvin\Theo\Projects\RAMM\Figures\Fig1\RLS\RLS_sir2_fob1.svg')
-    exportgraphics(rlsFig,'rls_curve.pdf')
+    exportgraphics(rlsFig,[filename '.pdf']);
     %print(rlsFig,'\\space2.igbmc.u-strasbg.fr\charvin\Theo\Projects\RAMM\Figures\Fig1\RLS\RLS_sir2_fob1','-dpdf')%,'BackgroundColor','none','ContentType','vector')
     %export_fig RLS_sir2_fob1.pdf
 end

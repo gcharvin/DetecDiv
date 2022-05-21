@@ -15,9 +15,14 @@ function divt=plotDivtimes(rlsfile,varargin)
 % colormap, color separation , linewidth spacing etc
 % time : generation or physical time
 figExport=0;
+dataExport=0;
+filename='div_export';
 timeFactor=5;
 GT=0;
 maxBirth=100; %max frame to be born. After, discard rls.
+figName=[];
+binSize=5;
+maxBin=200;
 
 for i=1:numel(varargin)
 %     if strcmp(varargin{i},'Comment')
@@ -25,6 +30,30 @@ for i=1:numel(varargin)
 %     end
     if strcmp(varargin{i},'GT')
         GT=1;
+    end
+    if strcmp(varargin{i},'ExportPlot')
+        figExport=1;
+    end
+     if strcmp(varargin{i},'ExportData')
+        dataExport=1;
+    end
+         if strcmp(varargin{i},'Filename')
+        filename=varargin{i+1};
+    end
+     if strcmp(varargin{i},'FrameInterval')
+        timeFactor=varargin{i+1};
+    end
+    if strcmp(varargin{i},'maxBirth')
+        maxBirth=varargin{i+1};
+    end
+       if strcmp(varargin{i},'figName')
+        figName=varargin{i+1};
+       end
+         if strcmp(varargin{i},'binSize')
+        binSize=varargin{i+1};
+         end
+        if strcmp(varargin{i},'maxBin')
+        maxBin=varargin{i+1};
     end
 end
 
@@ -64,17 +93,17 @@ else
     fs=8;
 end
 
-bins=[0:5:200, 1000];
+bins=[0:binSize:maxBin, 1000];
 
 leg='';
-h4=figure('Color','w','Name','ok');
+h4=figure('Color','w','Name',figName);
 for c=1:szc
     histogram(divt{c,1},bins,'DisplayStyle','stairs','LineWidth',3,'EdgeAlpha',0.75,'Normalization','probability');
     hold on
     leg{c,1}=[comment{c}, ', median=' num2str(median(divt{c,1})) ' (N=' num2str(length(divt{c,1})) ')'];
-    meandivtime=mean(divt{c,1}(divt{c,1}<200));
-    stddivtime=std(divt{c,1}(divt{c,1}<200));
-    sem=stddivtime/sqrt(sum(divt{c,1}(divt{c,1}<200)));
+    meandivtime=mean(divt{c,1}(divt{c,1}<maxBin));
+    stddivtime=std(divt{c,1}(divt{c,1}<maxBin));
+    sem=stddivtime/sqrt(sum(divt{c,1}(divt{c,1}<maxBin)));
 end
 
 textPvalue='';
@@ -90,14 +119,14 @@ end
 
     
 legend(leg)
-xlim([0,202]);
+xlim([0,maxBin+2]);
 xl=xlim; yl=ylim;
 text(0.5*xl(2),0.5*yl(2),textPvalue,'FontSize',fs,'FontWeight','bold');
 
 axis square;
-title('Division times');
+%title('Division times');
 set(gcf,'Units', 'Normalized', 'Position',[0.1 0.1 0.35 0.35]);
-set(gca,'FontSize',fs, 'FontName','Myriad Pro','LineWidth',lw,'FontWeight','bold','XTick',[0:25:200],'TickLength',[0.02 0.02]);
+set(gca,'FontSize',fs, 'FontName','Myriad Pro','LineWidth',lw,'FontWeight','bold','XTick',[0:25:maxBin],'TickLength',[0.02 0.02]);
 
 xlabel('Division time (minutes)');
 ylabel('# Events');
@@ -110,7 +139,12 @@ if figExport==1
 %     set(gcf,'Units','centimeters','Position', [5 5 xf_width+3 yf_width+3]);
     set(ax,'Units','centimeters', 'InnerPosition', [2 2 xf_width yf_width])
         
-    exportgraphics(h4,'divtimes.pdf','BackgroundColor','none','ContentType','vector')
+    
+    exportgraphics(h4,[filename '.pdf'],'BackgroundColor','none','ContentType','vector')
+  
+end
+if dataExport==1
+writecell(divt,[filename '.csv']);
 end
 
 
