@@ -25,34 +25,34 @@ binSize=5;
 maxBin=200;
 
 for i=1:numel(varargin)
-%     if strcmp(varargin{i},'Comment')
-%         comment=varargin{i+1};
-%     end
+    %     if strcmp(varargin{i},'Comment')
+    %         comment=varargin{i+1};
+    %     end
     if strcmp(varargin{i},'GT')
         GT=1;
     end
     if strcmp(varargin{i},'ExportPlot')
         figExport=1;
     end
-     if strcmp(varargin{i},'ExportData')
+    if strcmp(varargin{i},'ExportData')
         dataExport=1;
     end
-         if strcmp(varargin{i},'Filename')
+    if strcmp(varargin{i},'Filename')
         filename=varargin{i+1};
     end
-     if strcmp(varargin{i},'FrameInterval')
+    if strcmp(varargin{i},'FrameInterval')
         timeFactor=varargin{i+1};
     end
     if strcmp(varargin{i},'maxBirth')
         maxBirth=varargin{i+1};
     end
-       if strcmp(varargin{i},'figName')
+    if strcmp(varargin{i},'figName')
         figName=varargin{i+1};
-       end
-         if strcmp(varargin{i},'binSize')
+    end
+    if strcmp(varargin{i},'binSize')
         binSize=varargin{i+1};
-         end
-        if strcmp(varargin{i},'maxBin')
+    end
+    if strcmp(varargin{i},'maxBin')
         maxBin=varargin{i+1};
     end
 end
@@ -109,15 +109,15 @@ end
 textPvalue='';
 if szc>1
     pairs=nchoosek(1:szc,2);
-    szp=size(pairs,1);    
+    szp=size(pairs,1);
     for pp=1:szp
         p(pp)=ranksum(divt{pairs(pp,1),1},divt{pairs(pp,2),1});
-
+        
         textPvalue=[textPvalue newline num2str(pairs(pp,1)) 'vs' num2str(pairs(pp,2)) ': ' num2str(p(pp))];
     end
 end
 
-    
+
 legend(leg)
 xlim([0,maxBin+2]);
 xl=xlim; yl=ylim;
@@ -131,20 +131,20 @@ set(gca,'FontSize',fs, 'FontName','Myriad Pro','LineWidth',lw,'FontWeight','bold
 xlabel('Division time (minutes)');
 ylabel('# Events');
 
-if figExport==1   
+if figExport==1
     sz=5;
     ax=gca;
     xf_width=sz; yf_width=sz;
     set(gcf, 'PaperType','a4','PaperUnits','centimeters');
-%     set(gcf,'Units','centimeters','Position', [5 5 xf_width+3 yf_width+3]);
+    %     set(gcf,'Units','centimeters','Position', [5 5 xf_width+3 yf_width+3]);
     set(ax,'Units','centimeters', 'InnerPosition', [2 2 xf_width yf_width])
-        
+    
     
     exportgraphics(h4,[filename '.pdf'],'BackgroundColor','none','ContentType','vector')
-  
+    
 end
 if dataExport==1
-writecell(divt,[filename '.csv']);
+    writecell(divt,[filename '.csv']);
 end
 
 

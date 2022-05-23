@@ -17,15 +17,15 @@ function rlstNdivs=plotRLS(rlsfile,varargin)
 %example: plotRLS({[detecdivProj.fov([1:4,9:12]).roi];[detecdivProj.fov([5:8,13:16,17:18]).roi]; [detecdivProj.fov([26:28,30:34]).roi]},'Comment',{'Condition1', 'Condition2','Condition3'})
 figExport=0;
 dataExport=0;
-bootStrapping=0;
+bootStrapping=1;
 sz=5;
 Nboot=100;
-plotHazardRate=0;
+plotHazardRate=1;
 filename='RLS_export';
 maxBirth=100; %max frame to be born. After, discard rls.
 GT=0;
 timeFactor=5;
-figName=[];
+figName='default';
 % load=0;
 
 % comment=cell(szc,1);
@@ -33,47 +33,47 @@ figName=[];
 % rls=cell(szc,1);
 
 for i=1:numel(varargin)
-%     if strcmp(varargin{i},'Comment')
-%         comment=varargin{i+1};
-%     end
+    %     if strcmp(varargin{i},'Comment')
+    %         comment=varargin{i+1};
+    %     end
     if strcmp(varargin{i},'ExportPlot')
         figExport=1;
     end
-
-        if strcmp(varargin{i},'ExportData')
+    
+    if strcmp(varargin{i},'ExportData')
         dataExport=1;
-        end
-
-          if strcmp(varargin{i},'HazardRate')
+    end
+    
+    if strcmp(varargin{i},'HazardRate')
         plotHazardRate=1;
-        end
-
-           if strcmp(varargin{i},'Bootstrap')
+    end
+    
+    if strcmp(varargin{i},'Bootstrap')
         bootStrapping=1;
-           end
-
-  if strcmp(varargin{i},'Bootstrap_Steps')
+    end
+    
+    if strcmp(varargin{i},'Bootstrap_Steps')
         Nboot=varargin{i+1};
-  end
-
+    end
+    
     if strcmp(varargin{i},'Load') %load data
         load=1;
     end
-
+    
     if strcmp(varargin{i},'Filename')
         filename=varargin{i+1};
-     end
-
+    end
+    
     if strcmp(varargin{i},'FrameInterval')
         timeFactor=varargin{i+1};
     end
     if strcmp(varargin{i},'maxBirth')
         maxBirth=varargin{i+1};
     end
-  if strcmp(varargin{i},'figName')
+    if strcmp(varargin{i},'figName')
         figName=varargin{i+1};
-  end
-
+    end
+    
     if strcmp(varargin{i},'GT')
         GT=1;
     end
@@ -106,7 +106,7 @@ for c=1:szc %conditions
 end
 
 if dataExport==1
-writecell(rlstNdivs,[filename '.csv']);
+    writecell(rlstNdivs,[filename '.csv']);
 end
 
 %% plot
@@ -133,8 +133,8 @@ for c=1:szc
     [yt,xt,flo,fup]=ecdf(rlstNdivs{c,1});
     xt(1)=0;
     plot(xt,1-yt,'LineWidth',lw,'color',col)
-%     ax.Children(1).LineWidth=lw;
-%     col=ax.Children(1).Color;
+    %     ax.Children(1).LineWidth=lw;
+    %     col=ax.Children(1).Color;
     fup(1)=0;
     fup(end)=1;
     flo(1)=0;
@@ -149,25 +149,24 @@ for c=1:szc
     
     leg{lcc,1}=[comment{c}, ': Median=' num2str(median(rlstNdivs{c,1})) ' (N=' num2str(length(rlstNdivs{c,1})) ')'];
     leg{lcc+1,1}='';
-%     leg{lcc+2,1}='';
+    %     leg{lcc+2,1}='';
     lcc=lcc+2;
     
     if plotHazardRate==1
         %BOOTSTRAPPING
         if bootStrapping==1
-            bin=2;
             rlst=rlstNdivs{c,1};
-            [y ~]=ecdf(rlst);
+            [y x]=ecdf(rlst);
             
             %cuttof numcell remaining
-            cuty=12; %stop displaying DR if less than cuty events
+            cuty=10; %stop displaying DR if less than cuty events
             RemainingCells=size(rlst,2)-y*size(rlst,2);
-            cutx=find(RemainingCells<cuty,1,'first'); 
+            cutx=find(RemainingCells<=cuty,1,'first');
+            cutx=x(cutx);
             %
             dlog=[];
             dt=[];
             deathRate=[];
-            binnedDeathRate=[];
             meanDR=[];
             stdDR=[];
             meanBDR=[];
@@ -177,19 +176,18 @@ for c=1:szc
             rlsb=[];
             
             [rlsb] = bootstrp(Nboot,@(x)x,rlst);
-            rlsb=[rlst; rlsb ];
+            rlsb=[rlst; rlsb ]; %add the real one in addition to the bootstrap
             Mx=max(rlstNdivs{c,1}(:));
             mx=min(rlstNdivs{c,1}(:));
             %need to have a stepsize of 1
             Yb=[NaN(Nboot+1,Mx)];
-            Xb=[1:Mx];
+            Xb=[0:Mx-1];
             
             for b=1:Nboot+1
                 [yb, xb]=ecdf(rlsb(b,:));
-                %if cutx 
-
-                for i=1:numel(yb)
-                    Yb(b,xb(i))=yb(i);
+                xb(1)=1;
+                for i=1:numel(yb)                    
+                    Yb(b,xb(i))=yb(i);                    
                 end
                 
                 %fill NaN with neighbour value
@@ -197,65 +195,63 @@ for c=1:szc
                     if isnan(Yb(b,i))
                         Yb(b,i)=Yb(b,i-1);
                     end
-                end       
+                end
                 
-                %cutx stop displaying if less than x events
-                Yb(b,cutx:end)=NaN;
-                Xb(cutx:end)=NaN;
                 
-                dlog(b,:)=diff(log(1-Yb(b,:)));
-                dlog(dlog==Inf)=NaN;
-                dt(b,:)=diff(Xb);
+                
+                dlog(b,:)=gradient(log(1-Yb(b,:)));
+                dlog(dlog==-Inf)=0;
+                dt(b,:)=gradient(Xb);
                 deathRate(b,:)=-dlog(b,:)./dt(b,:);
                 %                 deathRate(b,:)=diff(Yb(b,:))./(1-Yb(b,2:end));
-                deathRate(deathRate==Inf)=NaN;
+                %deathRate(deathRate==Inf)=NaN;
                 
                 %binning
-                cb=1;
-                bining=3;
-%                 for i=1:bining:size(deathRate,2)-1
-%                     binnedDeathRate(b,cb)=nanmean([deathRate(b,i),deathRate(b,i+1)]);
-%                     cb=cb+1;
-%                 end
+%                 cb=1;
+%                 bining=3;
+                %                 for i=1:bining:size(deathRate,2)-1
+                %                     binnedDeathRate(b,cb)=nanmean([deathRate(b,i),deathRate(b,i+1)]);
+                %                     cb=cb+1;
+                %                 end
             end
             
+            %cutx stop displaying if less than x events
+            deathRate(:,cutx:end)=[];
+            Xb(:,cutx:end)=[];
             
-                
             meanDR=nanmean(deathRate,1);
             stdDR=nanstd(deathRate,1);
             semDR=stdDR./sqrt(Nboot+1); %N= number of bootstrappings
             
             cb=1;
-            bining=3;
-            for i=1:bining:size(deathRate,2)-1
-                meanBDR=mean([meanDR(i:i+bining)]);%nanmean(binnedDeathRate,1);
-                stdBDR=std([meanDR(i:i+bining)]);%(binnedDeathRate,1);
-                semBDR=stdBDR/sqrt(Nboot+1); %N= number of bootstrappings
+            bining=1;
+            for i=1:bining:size(deathRate,2)-(bining-1)
+                meanBDR(cb)=mean([meanDR(i:i+bining-1)]);%nanmean(binnedDeathRate,1);
+                stdBDR(cb)=mean([stdDR(i:i+bining-1)]);%(binnedDeathRate,1);
+                semBDR(cb)=stdBDR(cb)/sqrt(Nboot+1); %N= number of bootstrappings
                 cb=cb+1;
             end
-
+            
             
             %             lineProps.width=lw;
             %             lineProps.col{:}=col;
             %             %mseb(Xb(2:end),meanDR,stdDR,lineProps);
             %             mseb(Xb(2:2:end-1),meanBDR,stdBDR,lineProps);
             
-            %remove nans for polygon
+            %remove nans for polygon, normally useless
             Xb=Xb(~isnan(Xb));
             stdBDR=stdBDR(~isnan(stdBDR));
             semBDR=semBDR(~isnan(semBDR));
             meanBDR=meanBDR(~isnan(meanBDR));
             %plot
-            if mod(numel(Xb),2)==0 %even
-                t=2:2:numel(Xb);
-            else
-                t=2:2:numel(Xb)-1;
-            end
+
+            t=1:bining:numel(Xb)-mod(numel(Xb),bining);
+
             plot(Xb(t),meanBDR,'LineWidth',lw,'color',col,'LineStyle','--')
             closedxb=[];
             shadedstd=[];
             closedxb = [Xb(t), fliplr(Xb(t))];
-            shadedstd = [meanBDR-semBDR, fliplr(meanBDR+semBDR)];
+            shadedstd = [meanBDR-stdBDR, fliplr(meanBDR+stdBDR)];
             ptch=patch(closedxb, shadedstd,col);
             ptch.FaceAlpha=0.15;
             ptch.EdgeAlpha=0.3;
@@ -270,6 +266,7 @@ for c=1:szc
             dlog=gradient(log(1-yt));
             dt=gradient(xt);
             deathRate=-dlog./dt;
+            
             plot(xt,deathRate,'--','LineWidth',lw,'Color',col)
             leg{lcc,1}=[comment{c}, ': Hazard rate '];
             lcc=lcc+1;
@@ -298,7 +295,7 @@ box on
 xlabel('Divisions');
 ylabel('Survival');
 if plotHazardRate==1
-  ylabel(['Survival' newline 'and hazard rate (div^-1)']);
+    ylabel(['Survival' newline 'and hazard rate (div^-1)']);
 end
 
 M=max([rlstNdivs{:,1}]);
