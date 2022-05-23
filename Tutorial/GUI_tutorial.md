@@ -403,6 +403,7 @@ Once finished, classified data can be monitored by left-clicking ROIs in Project
 
 
 ## Division counting and replicative lifespan analysis ##
+<div id="rls"></div>
 
 This programs provides a GUI for division counting and RLS analyses. IMPORTANT: Please note that all the data must be classfied beforehand, as this GUI is not only processing classified datasets. 
 
@@ -435,13 +436,14 @@ Press 'save selected group' each time the selection of parameters or data has ch
 ![This is an image](rls_division_counting.png)
 
 6) Then, click 'Plot/Export': 
-<div id="RLS"></div>
 
 ![This is an image](rls_plot.png)
 
-7) Click on the "RLS Analysis" tab to display RLS data, similarly as with the division counting tab. 
+7) Click on the "RLS Analysis" tab to display RLS data, similarly as with the division counting tab. In the case below, the "groundtruth versus prediction" was selected. 
 
 ![This is an image](rls_rls.png)
+
+![This is an image](rls_rls_plot.png)
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
