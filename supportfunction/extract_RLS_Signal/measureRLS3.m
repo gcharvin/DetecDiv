@@ -1,7 +1,5 @@
 function measureRLS3(roiobj,param,varargin)
 
-%TODO :FUSE measureRLS2 and 3 and create a function appart to align.
-
 
 %'Fluo' if =1, will computethe fluo of each channel over the divs
 
@@ -93,7 +91,7 @@ if ~ischar(param)
 param.classiftype=param.classiftype{end};
 end
 
-classif=evalin('base',classifstrid)
+classif=evalin('base',classifstrid);
 
 
 
@@ -147,8 +145,9 @@ if strcmp(roitype,'result')
     if isfield(roi.results,classistrid) && isfield(roi.results.(classistrid),'id') && sum(roi.results.(classistrid).id)>0
         
         id=roi.results.(classistrid).id; % results for classification
+        proba=roi.results.(classistrid).prob;
         
-        divTimes=computeDivtime(id,classes,param);
+        divTimes=computeDivtime(id,proba,classes,param);
         
         rlsResults.divDuration=divTimes.duration;
         rlsResults.timeRate=param.timeRate;
@@ -203,7 +202,8 @@ elseif strcmp(roitype,'train')
         idg=roi.train.(classistrid).id; % results for classification
         disp(['Groundtruth data are available for ROI ' num2str(roi.id)]);
         
-        divTimesG=computeDivtime(idg,classes,param); % groundtruth data
+        proba=-1;
+        divTimesG=computeDivtime(idg,proba,classes,param); % groundtruth data
         
         rlsGroundtruth.divDuration=divTimesG.duration;
         rlsGroundtruth.timeRate=param.timeRate;
@@ -268,7 +268,7 @@ end
 
 
 %% =========================================DIVTIMES=================================================
-function [divTimes]=computeDivtime(id,classes,param)
+function [divTimes]=computeDivtime(id,proba,classes,param)
 if numel(param.Frames)==2
     id=id(param.Frames(1):param.Frames(2));
 end
@@ -287,6 +287,15 @@ switch param.classiftype
         smid=findclassid(classes,'small');
         unbuddedid=findclassid(classes,'unbud');
         emptyid=findclassid(classes,'empty');
+        
+        if (proba~=-1) & (param.postProcessing==1)
+            probaPP=proba;
+            probaPP(smid,:)=medfilt1(probaPP(smid,:),4);
+            probaPP(lbid,:)=medfilt1(probaPP(lbid,:),4);
+            
+            [~,idPP]=max(probaPP,[],1);
+            id=idPP;
+        end
         
         
         %===1// find BIRTH===
@@ -405,49 +414,49 @@ switch param.classiftype
         
         %===4/ detect divisions===
         %==post-processing
-        if param.postProcessing==1
-            stopProcessing=0;
-            while stopProcessing==0
-                bwsmid=(id==smid);
-                bwsmidLabel=bwlabel(bwsmid); %find small islets
-                for k=1:max(bwsmidLabel)
-                    bwsmidk(k,:)=(bwsmidLabel==k);
-                end
-                
-                if max(bwsmidLabel)>2
-                    for k=2:max(bwsmidLabel)-1
-                        if sum(bwsmidk(k,:))>=1 %if a smallid islet is of size 1, check the neighbours islets
-                            idx=find(bwsmidk(k,:),1,'first');
-                            %idxprev=find(bwsmidk(k-1,:),1,'last');%find previous islet end
-                            idxnext=find(bwsmidk(k+1,:),1,'first');%find next islet start
-                            idxprev=find(bwsmidk(k-1,:),1,'last'); %find prev islet start
-                            
-                            if (idx-idxprev<5) %if the potential false small is too close from another small islet -->correct it as the previous class
-                                id(idx)=id(idx-1); break
-                            elseif (idxnext-idx <5) %if the potential false small is too close from another small islet -->correct it as the previous class
-                                id(idx)=id(idx-1); break
-                            end
-                        end
-                        stopProcessing=1;
-                    end
-                else
-                    stopProcessing=1;
-                end
-            end
-            
-            %small->unbud, can be improved by checking the islets size
-            bwsmid=(id==smid);
-            bwsmidLabel=bwlabel(bwsmid); %find small islets
-
-            for j=1:numel(id)-1
-                if (id(j)==smid && id(j+1)==unbuddedid)
-                    
-                    isletLabel=bwsmidLabel(j);
-                    idxToCorrect=(bwsmidLabel==isletLabel); %islet to correct
-                    id(idxToCorrect)=lbid;
-                end
-            end
-        end
+%         if param.postProcessing==1
+%             stopProcessing=0;
+%             while stopProcessing==0
+%                 bwsmid=(id==smid);
+%                 bwsmidLabel=bwlabel(bwsmid); %find small islets
+%                 for k=1:max(bwsmidLabel)
+%                     bwsmidk(k,:)=(bwsmidLabel==k);
+%                 end
+%                 
+%                 if max(bwsmidLabel)>2
+%                     for k=2:max(bwsmidLabel)-1
+%                         if sum(bwsmidk(k,:))>=1 %if a smallid islet is of size 1, check the neighbours islets
+%                             idx=find(bwsmidk(k,:),1,'first');
+%                             %idxprev=find(bwsmidk(k-1,:),1,'last');%find previous islet end
+%                             idxnext=find(bwsmidk(k+1,:),1,'first');%find next islet start
+%                             idxprev=find(bwsmidk(k-1,:),1,'last'); %find prev islet start
+%                             
+%                             if (idx-idxprev<5) %if the potential false small is too close from another small islet -->correct it as the previous class
+%                                 id(idx)=id(idx-1); break
+%                             elseif (idxnext-idx <5) %if the potential false small is too close from another small islet -->correct it as the previous class
+%                                 id(idx)=id(idx-1); break
+%                             end
+%                         end
+%                         stopProcessing=1;
+%                     end
+%                 else
+%                     stopProcessing=1;
+%                 end
+%             end
+%             
+%             %small->unbud, can be improved by checking the islets size
+%             bwsmid=(id==smid);
+%             bwsmidLabel=bwlabel(bwsmid); %find small islets
+% 
+%             for j=1:numel(id)-1
+%                 if (id(j)==smid && id(j+1)==unbuddedid)
+%                     
+%                     isletLabel=bwsmidLabel(j);
+%                     idxToCorrect=(bwsmidLabel==isletLabel); %islet to correct
+%                     id(idxToCorrect)=lbid;
+%                 end
+%             end
+%         end
         
         %=====Div counting=====
         %
