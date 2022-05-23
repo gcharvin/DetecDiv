@@ -3,7 +3,7 @@ function [classiObj msg]=classiLoad(filename)
 msg=[];
 
 if nargin==0
-   [file,path] = uigetfile('*.mat','Select a classification object (i.e. a XXXXX_classification.mat file)',pwd);
+   [file,path] = uigetfile('*classification*.mat','Select a classification object (i.e. a XXXXX_classification.mat file)',pwd);
    if isequal(file,0)
    disp('User selected Cancel')
    classiObj=[];
