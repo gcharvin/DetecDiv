@@ -17,7 +17,8 @@ function rlstNdivs=plotRLS(rlsfile,varargin)
 %example: plotRLS({[detecdivProj.fov([1:4,9:12]).roi];[detecdivProj.fov([5:8,13:16,17:18]).roi]; [detecdivProj.fov([26:28,30:34]).roi]},'Comment',{'Condition1', 'Condition2','Condition3'})
 figExport=0;
 dataExport=0;
-bootStrapping=1;
+bootStrapping=0;
+binning=4;
 sz=5;
 Nboot=100;
 plotHazardRate=1;
@@ -208,8 +209,8 @@ for c=1:szc
                 
                 %binning
 %                 cb=1;
-%                 bining=3;
-                %                 for i=1:bining:size(deathRate,2)-1
+%                 binning=3;
+                %                 for i=1:binning:size(deathRate,2)-1
                 %                     binnedDeathRate(b,cb)=nanmean([deathRate(b,i),deathRate(b,i+1)]);
                 %                     cb=cb+1;
                 %                 end
@@ -224,10 +225,10 @@ for c=1:szc
             semDR=stdDR./sqrt(Nboot+1); %N= number of bootstrappings
             
             cb=1;
-            bining=1;
-            for i=1:bining:size(deathRate,2)-(bining-1)
-                meanBDR(cb)=mean([meanDR(i:i+bining-1)]);%nanmean(binnedDeathRate,1);
-                stdBDR(cb)=mean([stdDR(i:i+bining-1)]);%(binnedDeathRate,1);
+            
+            for i=1:binning:size(deathRate,2)-(binning-1)
+                meanBDR(cb)=mean([meanDR(i:i+binning-1)]);%nanmean(binnedDeathRate,1);
+                stdBDR(cb)=mean([stdDR(i:i+binning-1)]);%(binnedDeathRate,1);
                 semBDR(cb)=stdBDR(cb)/sqrt(Nboot+1); %N= number of bootstrappings
                 cb=cb+1;
             end
@@ -245,7 +246,7 @@ for c=1:szc
             meanBDR=meanBDR(~isnan(meanBDR));
             %plot
 
-            t=1:bining:numel(Xb)-mod(numel(Xb),bining);
+            t=1:binning:numel(Xb)-mod(numel(Xb),binning);
 
             plot(Xb(t),meanBDR,'LineWidth',lw,'color',col,'LineStyle','--')
             closedxb=[];
@@ -263,11 +264,21 @@ for c=1:szc
             leg{lcc+1,1}='';
             lcc=lcc+2;
         else
+            xtB=[];
             dlog=gradient(log(1-yt));
             dt=gradient(xt);
             deathRate=-dlog./dt;
             
-            plot(xt,deathRate,'--','LineWidth',lw,'Color',col)
+            %binning
+            cb=1;
+            for i=1:binning:size(deathRate)-(binning-1)
+                meanBDR(cb)=mean([deathRate(i:i+binning-1)]);
+                xtB(cb)=mean([xt(i:i+binning-1)]); %sloppy but ecdf doesnt give step of 1
+                cb=cb+1;
+            end
+            %t=1:binning:numel(xtB)-mod(numel(xtB),binning);
+            
+            plot(xtB,meanBDR,'--','LineWidth',lw,'Color',col)
             leg{lcc,1}=[comment{c}, ': Hazard rate '];
             lcc=lcc+1;
         end
