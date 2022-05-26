@@ -47,9 +47,7 @@ if numel(frames)==0
     frames=1:numel(gfp(1,1,1,:));
 end
 
-if numel(pix)==1
-    gfp=formatImage(gfp);
-end
+
 
 % BEWARE : rather use formatted image in lstm .mat variable
 % need to distinguish between formating for training versus validation
@@ -97,8 +95,13 @@ end
         for fr=frames
             fprintf('.');
             % fr
-            tmp=gfp(:,:,:,fr);
-         
+            %tmp=gfp(:,:,:,fr);
+            
+            if numel(pix)==1
+                param=[];
+                tmp=roiobj(i).preProcessROIData(pix,fr,param);
+            end
+            
             if size(tmp,1)<inputSize(1) | size(tmp,2)<inputSize(2)
                 tmp=imresize(tmp,inputSize(1:2));
             end
@@ -165,49 +168,4 @@ end
         fprintf('\n');
         
         
-        function im=formatImage(gfp)
-        totphc=gfp;
-        meanphc=0.5*double(mean(totphc(:)));
-        maxphc=double(meanphc+0.7*(max(totphc(:))-meanphc));
-        im=uint8(zeros(size(gfp,1),size(gfp,2),3,size(gfp,4)));
         
-        for j=1:size(gfp,4)
-            fprintf('.');
-            a=gfp(:,:,1,j);
-            %a = double(imadjust(a,[meanphc/65535 maxphc/65535],[0 1]))/256;
-            a = double(imadjust(a));
-            a = a/256;
-            a= repmat(a,[1 1 3]);
-            % im(:,:,1,j)=a;im(:,:,2,j)=b;im(:,:,3,j)=c;
-            im(:,:,:,j)=uint8(a);
-        end
-        
-        fprintf('\n');
-        
-        %
-        % function im=formatImage(gfp,phasechannel)
-        %
-        %     totphc=gfp(:,:,:,phasechannel);
-        %     meanphc=0.5*double(mean(totphc(:)));
-        %     maxphc=double(meanphc+0.7*(max(totphc(:))-meanphc));
-        %
-        %     im=zeros(size(gfp,1),size(gfp,2),3,size(gfp,3));
-        %
-        %     for j=1:size(gfp,3)
-        %     fprintf('.');
-        %
-        %     a=gfp(:,:,j,phasechannel);
-        %     b=gfp(:,:,j,phasechannel);
-        %     c=gfp(:,:,j,phasechannel);
-        %
-        %     a = double(imadjust(a,[meanphc/65535 maxphc/65535],[0 1]))/256;
-        %     b = a; %double(imadjust(b,[meanphc/65535 maxphc/65535],[0 1]))/65535;
-        %     c = a; %double(imadjust(c,[meanphc/65535 maxphc/65535],[0 1]))/65535;
-        %
-        %
-        %
-        %     im(:,:,1,j)=a;im(:,:,2,j)=b;im(:,:,3,j)=c;
-        %     im=uint8(im);
-        %     end
-        %
-        %     fprintf('\n');
