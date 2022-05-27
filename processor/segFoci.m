@@ -9,7 +9,8 @@ if nargin==0
     paramout.mask_channel_name='bw_seg';
     paramout.fluo_channel_name='fluo1';
     paramout.output_channel_name='bw_foci1';
-    
+    paramout.keeplargest0or1='0';
+    paramout.sizethreshold='3';
     return;
 else
     paramout=param;
@@ -22,7 +23,9 @@ channelstrmsk=param.mask_channel_name;
 channelID=obj.findChannelID(channelstr);
 channelIDmask=obj.findChannelID(channelstrmsk);
 
-stdfoci=param.stdfoci;
+stdfoci=str2double(param.stdfoci);
+keeplargest=str2double(param.keeplargest0or1);
+sizethreshold=str2double(param.sizethreshold);
 
 if numel(channelID)==0 % this channel contains the segmented objects
     disp([' This channel ' channelstr ' does not exist ! Quitting ...']) ;
@@ -34,7 +37,7 @@ if numel(obj.image)==0
 end
 
 im=obj.image(:,:,channelID,:);
-mask=obj.image(:,:,channelIDmsk,:);
+mask=obj.image(:,:,channelIDmask,:);
 
 if nargin<3
     frames=1:size(im,4);
@@ -50,16 +53,41 @@ imframesOuput=uint16(zeros( size(im,1) , size(im,2) , 1 , numel(frames) ));
 for fr=1:numel(frames) %adjust boundaries
     tmpimg=preProcessROIData(obj,channelID,frames(fr),0);
     tmpmask=mask(:,:,1,fr);
+    tmpmask(tmpmask==1)=0;
+    tmpmask(tmpmask==3)=0;
+    tmpmask(tmpmask==2)=1;
+    tmpmask=logical(tmpmask);
     tmpmasked=tmpimg.*tmpmask;
     
-    kmaxcell=str2double(paramout.kmaxcell);
+    %kmaxcell=str2double(paramout.kmaxcell);
     
     meanimg=mean(tmpimg(tmpmask));
     stdimg=std(tmpimg(tmpmask));
     
-    foci=(tmpmasked>meanimg+stdfoci*stdimg);
+    foci=tmpmasked(:,:)>(meanimg+stdfoci*stdimg);
+    
+    % size filtering
+    if numel(keeplargest) || numel(sizethreshold)        
+        %BW=bwareaopen(BW,10);
+        CC= bwconncomp(foci);
+        numPixels = cellfun(@numel,CC.PixelIdxList);
+        
+        %keep largest islet
+        if numel(keeplargest) & numel(numPixels)>1 % if several objects are presents
+                [~,idx] = max(numPixels);
+                foci(CC.PixelIdxList{setxor(1:numel(numPixels),idx)}) = 0;
+        end
+        
+        %remove smaller objects
+            idx=find(numPixels<sizethreshold);
+            % objects numbers smallers than threshold
+            for k=1:numel(idx)
+                foci(CC.PixelIdxList{idx(k)}) = 0;
+            end
+    end
+    
     %tmpmasked=medfilt2(tmpmasked,[3 3],'symmetric');
-       
+    foci=uint16(foci);
     imframesOuput(:,:,1,fr)=imframesOuput(:,:,1,fr)+foci;
 end
 
