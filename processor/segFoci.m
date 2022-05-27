@@ -1,4 +1,4 @@
-function paramout=segFluo(param,roiobj,frames)
+function paramout=segFoci(param,roiobj,frames)
 
 if nargin==0
     paramout=[];
