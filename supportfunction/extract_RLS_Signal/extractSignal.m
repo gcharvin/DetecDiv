@@ -31,10 +31,10 @@ environment='pc';
 for i=1:numel(varargin)
     %Method
     if strcmp(varargin{i},'Method')
-        method=varargin{i+1};
-        if strcmp(method,'full') && strcmp(method,'cell') && strcmp(method,'nucleus') && strcmp(method,'volume') && strcmp(method,'fociOrNot')
-            error('Please enter a valid method');
-        end
+        method=varargin{i+1};        
+    end
+    if strcmp(method,'full') && strcmp(method,'cell') && strcmp(method,'nucleus') && strcmp(method,'volume') && strcmp(method,'fociOrNot')
+        error('Please enter a valid method');
     end
     
     %kMaxPixels
@@ -447,9 +447,7 @@ end
 
 %%
 if strcmp(method,'fociOrNot')
-    roiobj(r).load();
-        for r=1:numel(roiobj)
-    im=roiobj(r).image(:,:,channelsExtract,t);
+    roiobj(1).load();
     
     prompt=['Which channel contains the foci mask?' newline str newline];
     channelFociMask=input(prompt);
@@ -457,7 +455,10 @@ if strcmp(method,'fociOrNot')
         error('Indicate channelof the foci mask');
     end
     
-        if sum(foci(:))>0
+    for r=1:numel(roiobj)
+        roiobj(r).load();
+        im=roiobj(r).image(:,:,channelFociMask,t);
+        if sum(im(:)==2)>0
             channelFociMaskOut=[channelFociMask 'fociOrNot'];
             roiobj.results.signal.channelFociMaskOut(fr)=1;
         else
@@ -466,7 +467,7 @@ if strcmp(method,'fociOrNot')
         
         roiobj(r).save('results');
         roiobj(r).clear;
-        end
+    end
 end
 
 end
