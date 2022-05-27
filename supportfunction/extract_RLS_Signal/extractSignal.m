@@ -448,6 +448,12 @@ end
 %%
 if strcmp(method,'fociOrNot')
     roiobj(1).load();
+    %===ask channels
+    chans=roiobj(1).display.channel;
+    str=[];
+    for i=1:numel(chans)
+        str=[str num2str(i) ' - ' chans{i} ';  '];
+    end
     
     prompt=['Which channel contains the foci mask?' newline str newline];
     channelFociMask=input(prompt);
