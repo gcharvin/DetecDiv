@@ -463,15 +463,14 @@ if strcmp(method,'fociOrNot')
     
     for r=1:numel(roiobj)
         roiobj(r).load();
-        lastFrame=numel(roiobj(r).image(1,1,channelFociMask),:);
+        lastFrame=numel(roiobj(r).image(1,1,channelFociMask,:));
         
         for t=1:lastFrame
             im=roiobj(r).image(:,:,channelFociMask,t);
             if sum(im(:)==2)>0
-                channelFociMaskOut=['from_' channelFociMask];
-                roiobj.results.signal.foci.channelFociMaskOut.bin(t)=1;
+                roiobj.results.signal.foci.(['from_' channelFociMask]).bin(t)=1;
             else
-                roiobj.results.signal.foci.channelFociMaskOut.bin(t)=0;
+                roiobj.results.signal.foci.(['from_' channelFociMask]).bin(t)=0;
             end
         end
         

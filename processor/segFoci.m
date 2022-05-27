@@ -3,7 +3,6 @@ function paramout=segFoci(param,roiobj,frames)
 if nargin==0
     paramout=[];
         
-    %paramout.kmaxcell='60';
     paramout.stdfoci='3';
     
     paramout.mask_channel_name='bw_seg';
@@ -76,7 +75,7 @@ for fr=1:numel(frames) %adjust boundaries
         %keep largest islet
         if numel(keeplargest) & numel(numPixels)>1 % if several objects are presents
                 [~,idx] = max(numPixels);
-                foci([CC.PixelIdxList{setxor(1:numel(numPixels),idx)}]) = 0;
+                foci(vertcat(CC.PixelIdxList{setxor(1:numel(numPixels),idx)})) = 0;
         end
         
         %remove smaller objects
