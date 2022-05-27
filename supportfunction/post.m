@@ -83,7 +83,7 @@ for i=2:numel(classes)
         if numel(keeplargest)
             if numel(find(keeplargest==i)) & numel(numPixels)>1 % only for selected classes & only if several objects are presents
                 [~,idx] = max(numPixels);
-                BW(CC.PixelIdxList{setxor(1:numel(numPixels),idx)}) = 0;
+                BW([CC.PixelIdxList{setxor(1:numel(numPixels),idx)}]) = 0;
             end
         end
         

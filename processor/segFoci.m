@@ -11,6 +11,7 @@ if nargin==0
     paramout.output_channel_name='bw_foci1';
     paramout.keeplargest0or1='0';
     paramout.sizethreshold='3';
+    paramout.writePresenceOfFoci0or1='1';
     return;
 else
     paramout=param;
@@ -18,6 +19,7 @@ end
 
 obj=roiobj;
 
+channeloutstr=param.output_channel_name;
 channelstr=param.fluo_channel_name;
 channelstrmsk=param.mask_channel_name;
 channelID=obj.findChannelID(channelstr);
@@ -26,6 +28,8 @@ channelIDmask=obj.findChannelID(channelstrmsk);
 stdfoci=str2double(param.stdfoci);
 keeplargest=str2double(param.keeplargest0or1);
 sizethreshold=str2double(param.sizethreshold);
+
+writePresenceOfFoci=str2double(param.writePresenceOfFoci0or1);
 
 if numel(channelID)==0 % this channel contains the segmented objects
     disp([' This channel ' channelstr ' does not exist ! Quitting ...']) ;
@@ -75,7 +79,7 @@ for fr=1:numel(frames) %adjust boundaries
         %keep largest islet
         if numel(keeplargest) & numel(numPixels)>1 % if several objects are presents
                 [~,idx] = max(numPixels);
-                foci(CC.PixelIdxList{setxor(1:numel(numPixels),idx)}) = 0;
+                foci([CC.PixelIdxList{setxor(1:numel(numPixels),idx)}]) = 0;
         end
         
         %remove smaller objects
@@ -89,6 +93,14 @@ for fr=1:numel(frames) %adjust boundaries
     %tmpmasked=medfilt2(tmpmasked,[3 3],'symmetric');
     foci=uint16(foci);
     imframesOuput(:,:,1,fr)=imframesOuput(:,:,1,fr)+foci;
+    
+    if writePresenceOfFoci==1
+        if sum(foci(:))>0
+            roiobj.results.channeloutstr(fr)=1;
+        else
+            roiobj.results.channeloutstr(fr)=0;
+        end
+    end
 end
 
 imframesOuput=imframesOuput*2;
