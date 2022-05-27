@@ -457,18 +457,22 @@ if strcmp(method,'fociOrNot')
     
     prompt=['Which channel contains the foci mask?' newline str newline];
     channelFociMask=input(prompt);
-    if ~exist('channelFoci','var')
+    if ~exist('channelFociMask','var')
         error('Indicate channelof the foci mask');
     end
     
     for r=1:numel(roiobj)
         roiobj(r).load();
-        im=roiobj(r).image(:,:,channelFociMask,t);
-        if sum(im(:)==2)>0
-            channelFociMaskOut=[channelFociMask 'fociOrNot'];
-            roiobj.results.signal.channelFociMaskOut(fr)=1;
-        else
-            roiobj.results.signal.channelFociMaskOut(fr)=0;
+        lastFrame=numel(roiobj(r).image(1,1,channelFociMask),:);
+        
+        for t=1:lastFrame
+            im=roiobj(r).image(:,:,channelFociMask,t);
+            if sum(im(:)==2)>0
+                channelFociMaskOut=['from_' channelFociMask];
+                roiobj.results.signal.foci.channelFociMaskOut.bin(t)=1;
+            else
+                roiobj.results.signal.foci.channelFociMaskOut.bin(t)=0;
+            end
         end
         
         roiobj(r).save('results');
