@@ -99,7 +99,7 @@ end
             
             if numel(pix)==1
                 param=[];
-                tmp=roiobj(i).preProcessROIData(pix,fr,param);
+                tmp=roiobj.preProcessROIData(pix,fr,param);
             end
             
             if size(tmp,1)<inputSize(1) | size(tmp,2)<inputSize(2)
