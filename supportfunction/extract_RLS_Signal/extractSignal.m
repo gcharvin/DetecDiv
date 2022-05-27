@@ -32,7 +32,7 @@ for i=1:numel(varargin)
     %Method
     if strcmp(varargin{i},'Method')
         method=varargin{i+1};
-        if strcmp(method,'full') && strcmp(method,'cell') && strcmp(method,'nucleus') && strcmp(method,'volume')
+        if strcmp(method,'full') && strcmp(method,'cell') && strcmp(method,'nucleus') && strcmp(method,'volume') && strcmp(method,'fociOrNot')
             error('Please enter a valid method');
         end
     end
@@ -88,9 +88,9 @@ if strcmp(method,'full')
     %     for c=channelsExtract
     %             BckgValue(c)=input(['Choose background value for channel' num2str(c)]);
     %     end
-    channelsExtract=[2,3];      %%to delete
-    BckgValue(2)=105;%%to delete
-    BckgValue(3)=100;%%to delete
+%     channelsExtract=[2,3];      %%to delete
+%     BckgValue(2)=105;%%to delete
+%     BckgValue(3)=100;%%to delete
     
     for r=1:numel(roiobj) %to parfor
         roiobj(r).path=modifyPath(roiobj(r),environment);        
@@ -309,7 +309,7 @@ if strcmp(method,'cell')
         end
         
         disp(['Volume, average and total signal of mothercell was computed and added to roi(' num2str(r) ').results.signal.cell' num2str(['.from_' classiname])])
-        
+
         roiobj(r).save('results');
         roiobj(r).clear;
         clear im
@@ -444,6 +444,31 @@ if strcmp(method,'nucleus')
         
     end
 end
+
+%%
+if strcmp(method,'fociOrNot')
+    roiobj(r).load();
+        for r=1:numel(roiobj)
+    im=roiobj(r).image(:,:,channelsExtract,t);
+    
+    prompt=['Which channel contains the foci mask?' newline str newline];
+    channelFociMask=input(prompt);
+    if ~exist('channelFoci','var')
+        error('Indicate channelof the foci mask');
+    end
+    
+        if sum(foci(:))>0
+            channelFociMaskOut=[channelFociMask 'fociOrNot'];
+            roiobj.results.signal.channelFociMaskOut(fr)=1;
+        else
+            roiobj.results.signal.channelFociMaskOut(fr)=0;
+        end
+        
+        roiobj(r).save('results');
+        roiobj(r).clear;
+        end
+end
+
 end
 
 function path=modifyPath(roi,environment)
