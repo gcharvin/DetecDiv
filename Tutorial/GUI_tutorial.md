@@ -405,7 +405,7 @@ Once finished, classified data can be monitored by left-clicking ROIs in Project
 ## Division counting and replicative lifespan analysis ##
 <div id="rls"></div>
 
-This programs provides a GUI for division counting and RLS analyses. IMPORTANT: Please note that all the data must be classfied beforehand, as this GUI is not only processing classified datasets. 
+This programs provides a GUI for division counting and RLS analyses. IMPORTANT: Please note that all the data must be classfied beforehand, as this GUI is only processing classified datasets. 
 
 1) Load an independent classifier or a project that contains a division classifier in detecdiv: 
 
@@ -429,9 +429,11 @@ This will launch a new window as follows:
 
 ![This is an image](rls_classifier_param2.png)
 
+Select "bud" as classiftype.
+
 Press 'save selected group' each time the selection of parameters or data has changed. Please note that groups can be saved to and loaded from the disk as .mat file (use the File... menu). 
 
-5) CLick the 'Division counting' tab, to extract division information based on classifier results. Check the data group to be plotted and assign plotting parameters values.  "Export Plot" will save the figure file as .pdf on the disk in the Matlab current folder (using "Filename" as a file name). The CSV export mode saves the list of divisions as comma-separated values. The workspace export mode assigns a variable (using the "Filename" name) in the matlab workspace for further processing (scripts, etc.).
+5) Click the 'Division counting' tab, to extract division information based on classifier results. Check the data group to be plotted and assign plotting parameters values.  "Export Plot" will save the figure file as .pdf on the disk in the Matlab current folder (using "Filename" as a file name). The CSV export mode saves the list of divisions as comma-separated values. The workspace export mode assigns a variable (using the "Filename" name) in the matlab workspace for further processing (scripts, etc.).
 
 ![This is an image](rls_division_counting.png)
 
