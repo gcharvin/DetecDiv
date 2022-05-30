@@ -149,7 +149,7 @@ elseif timeOrGen==1 %generations
         
         for cond=1:numel(condition)
             rlstmp=rlsfile([rlsfile.condition]==condition(cond));
-            
+            obj{cond}(1,1)=rlstmp(1).Aligned.(alignstrid);
             listfields=fieldnames(obj{cond}(1,1));
             for r=rois{cond}
                 for f=1:numel(listfields)
@@ -162,7 +162,7 @@ elseif timeOrGen==1 %generations
     end
     
 end
-end
+
 
 %% ask signal
 liststrid=fields(obj{1}(1)); %full, cell, nucleus, div
