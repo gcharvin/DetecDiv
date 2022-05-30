@@ -9,27 +9,27 @@ comment=cell(szc,1);
 if numel(param)==0
     param.GroundtruthVSPredictions=false;
     param.AlignTraj='Birth';
-
+    
     classifstrid=classif.strid;
-
+    
     for i=1:numel(varargin)
         if strcmp(varargin{i},'GT')
             GT=1;
             comment={'Groundtruth','Prediction'};
         end
-
+        
         if strcmp(varargin{i},'Align') % Birth, SEP, Death
             Align=varargin{i+1};
         end
-
+        
         if strcmp(varargin{i},'errorDetection')
             errorDetection=1;
         end
-
+        
         if strcmp(varargin{i},'Comment')
             comment=varargin{i+1};
         end
-
+        
     end
 else
     if param.GroundtruthVSPredictions
@@ -38,16 +38,16 @@ else
     else
         comment=param.comment;
     end
-
- classifstrid=param.classifierName{end};
- if isfield(param,'AlignTraj')
-  %   'ok'
-    Align=param.AlignTraj{end};
- else
-Align=0;
- end
+    
+    classifstrid=param.classifierName{end};
+    if isfield(param,'AlignTraj')
+        %   'ok'
+        Align=param.AlignTraj{end};
+    else
+        Align=0;
+    end
     errorDetection=param.errorDetection;
-
+    
 end
 
 %%
@@ -60,18 +60,18 @@ for cond=1:szc
         %         end
         roiobjcell{cond,1}(r).load('results');
         roiobjcell{cond,1}(r).path=strrep(roiobjcell{cond,1}(r).path,'/shared/space2/','\\space2.igbmc.u-strasbg.fr\');
-
+        
         %         aa=roiobjcell{cond,1}(r).results.RLS.(['from_' classifstrid]);
         %         if numel(aa.divDuration)==0
         %             continue;
         %         en
-
+        
         rls(cc)=roiobjcell{cond,1}(r).results.RLS.(['from_' classifstrid]);
-
+        
         if GT==1
             %if exist...else error('explicit error message') for robustness
             rls(cc+1)=roiobjcell{cond,1}(r).train.RLS.(['from_' classifstrid]);
-
+            
             if errorDetection==1
                 disp('Proceeding to error detection')
                 [rlserr(cc+1).noFalseDiv, rlserr(cc).noFalseDiv]=detectError(rls(cc+1),rls(cc));
@@ -80,25 +80,25 @@ for cond=1:szc
                 rlserr(cc+1).divDurationNoFalseDiv=diff(rlserr(cc+1).noFalseDiv);
                 rlserr(cc).divDurationNoFalseDiv=diff(rlserr(cc).noFalseDiv);
             end
-
+            
             rlscomm{cc,1}=comment{1,2}; %Pred
             rlscomm{cc+1,1}=comment{1,1}; %GT
-
+            
             rlscond(cc,1)=cond;
             rlscond(cc+1,1)=cond;
-
+            
             cc=cc+2;
         elseif GT==0
             rlscomm{cc,1}=comment{1,cond};
             rlscond(cc,1)=cond;
-
+            
             cc=cc+1;
         end
         %     if isprop(roiobj(i),'train') && numel(roiobj(i).train.(classifstrid).id)>0
         %         roiobj(i).train.(classifstrid).RLS=RLS(roiobj(i),'train',classif,param);
         %     end
         roiobjcell{cond,1}(r).clear;
-
+        
     end
 end
 
@@ -106,7 +106,7 @@ end
 for r=1:numel(rls)
     rls(r).condition=rlscond(r);
     rls(r).conditionComment=rlscomm{r};
-
+    
     if GT==1 && errorDetection==1
         rls(r).noFalseDiv=rlserr(r).noFalseDiv;
         rls(r).falseDiv=rlserr(r).noFalseDiv;
@@ -173,7 +173,7 @@ for r=1:numrls
         divDur(r,d)=rls(r).divDuration(d);
     end
     if sum(~isnan(divDur(r,:)))>1 && sum(isnan(divDur(r,:)))<maxRLS %divDur is not full of NaN
-
+        
         if align==0
             syncPoint(r)=1;
         elseif align==1
@@ -185,14 +185,14 @@ for r=1:numrls
         elseif align==2
             syncPoint(r)=numel(rls(r).divDuration);
         end
-
+        
         %align
         m=max(m,syncPoint(r)); %max divs in preSEP
         M=max(M,sum(~isnan(divDur(r,:)))-syncPoint(r)); %max divs in postSEP
-
+        
     else syncPoint(r)=NaN;
     end
-
+    
     rls(r).sep=syncPoint(r);
 end
 
@@ -200,14 +200,12 @@ end
 
 for r=1:numrls
     %align signal VS syncpoint and store it in rls struct
-
-
     if sum(~isnan(divDur(r,:)))>1 && syncPoint(r)>0 %check if it is worth aligning
         %INIT
-
+        
         %divs
         rls(r).Aligned.(syncType{align+1}).divDuration=NaN(1,m+M);
-
+        
         %signal
         if isfield(rls(r),'divSignal') && ~isempty(rls(r).divSignal)
             rF=fields(rls(r).divSignal); %full, cell, nucleus
@@ -226,13 +224,13 @@ for r=1:numrls
             end
         else disp(['No results.divSignal for roi ' num2str(r)]);
         end
-
+        
         %FILL
         %pre+post
         for j=1:sum(~isnan(divDur(r,:))) %divs
             rls(r).Aligned.(syncType{align+1}).divDuration(1,m-syncPoint(r)+j)=divDur(r,j);
             rls(r).Aligned.(syncType{align+1}).zero=m;
-
+            
             if isfield(rls(r),'divSignal') && ~isempty(rls(r).divSignal)
                 rF=fields(rls(r).divSignal); %full, cell, nucleus
                 rF(strcmp(rF,'divDuration'))=[]; %is treated before
@@ -271,7 +269,7 @@ if numel(rlsGroundtruthr.framediv)>1 && numel(rlsResultsr.framediv)>1
             pairij(i,j)=0;
         end
     end
-
+    
     %deal with cases where distance values are m and -m,make -m to 0 so its
     %picked as the min
     [B,I]=mink(abs(distance),2,2);
@@ -281,12 +279,12 @@ if numel(rlsGroundtruthr.framediv)>1 && numel(rlsResultsr.framediv)>1
             distance(l,idxI)=0;%choose the negaitve value, put it to 0
         end
     end
-
+    
     for i=1:numel(rlsGroundtruthr.framediv)
         [~,idxmini]=min(abs(distance(i,:)));
         pairij(i,idxmini)=1;
     end
-
+    
     for i=1:numel(rlsGroundtruthr.framediv)
         for j=1:numel(rlsResultsr.framediv)
             if pairij(i,j)==1
@@ -295,7 +293,7 @@ if numel(rlsGroundtruthr.framediv)>1 && numel(rlsResultsr.framediv)>1
             end
         end
     end
-
+    
     for j=1:numel(rlsResultsr.framediv)
         pairij(:,j)=(-1)*pairij(:,j);
         [~, idx]=min(abs(distance2(:,j)));
@@ -303,9 +301,9 @@ if numel(rlsGroundtruthr.framediv)>1 && numel(rlsResultsr.framediv)>1
     end
     falsepair=sum((pairij==-1),2);
     framedivNoFalseNeg=rlsGroundtruthr.framediv(not(falsepair'));
-
-
-
+    
+    
+    
     clear B IdxI IdxMinDist distance pairij idx falsepair distance2
     %====2/false pos (res has a div that gt doesnt)====
     for i=1:numel(rlsResultsr.framediv)
@@ -314,7 +312,7 @@ if numel(rlsGroundtruthr.framediv)>1 && numel(rlsResultsr.framediv)>1
             pairij(i,j)=0;
         end
     end
-
+    
     %deal with cases where distance values are m and -m,make -m to 0 so its
     %picked as the min
     [B,I]=mink(abs(distance),2,2);
@@ -324,13 +322,13 @@ if numel(rlsGroundtruthr.framediv)>1 && numel(rlsResultsr.framediv)>1
             distance(l,idxI)=0;%choose the negaitve value, put it to 0
         end
     end
-
+    
     %identify pairs, including false
     for i=1:numel(rlsResultsr.framediv)
         [~,idxmini]=min(abs(distance(i,:)));
         pairij(i,idxmini)=1;
     end
-
+    
     for i=1:numel(rlsResultsr.framediv)
         for j=1:numel(framedivNoFalseNeg)
             if pairij(i,j)==1
@@ -339,7 +337,7 @@ if numel(rlsGroundtruthr.framediv)>1 && numel(rlsResultsr.framediv)>1
             end
         end
     end
-
+    
     %identify false pairs
     for j=1:numel(framedivNoFalseNeg)
         pairij(:,j)=(-1)*pairij(:,j);

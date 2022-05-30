@@ -12,7 +12,7 @@ function measureRLS3(roiobj,param,varargin)
 %rlsGroundtruth only groundtruth
 %loadres=1;
 %environment='pc';
-param.timeRate=5;
+
 
 if numel(param)==0
 param.classifierName={'myclassi','myclassi'};
@@ -21,7 +21,7 @@ param.classiftype='bud';
 %param.timeRate=[];
 param.postProcessing=1;
 param.errorDetection=1;
-
+param.timeRate=5;
 %these param must be adjusted by the user, in particular if the experiment
 %is shorter than 500 frames.
 param.ArrestThreshold=175;
@@ -98,7 +98,7 @@ param.classiftype=param.classiftype{end};
 end
 
 classif=evalin('base',classifstrid);
-
+classifstrid=classif.strid;
 
 
 %%
