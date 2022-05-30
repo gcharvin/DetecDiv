@@ -364,7 +364,7 @@ switch param.classiftype
             bwDeathLabeled=bwlabel(bwDeath);
             for k=1:max(bwDeathLabeled)
                 bwDeath=(bwDeathLabeled==k);
-                if sum(bwDeath)>= param.DeathThreshold
+                if sum(bwDeath)>= param.DeathThreshold || find(bwDeath,1,'last')==numel(id) % if ... or if the last frame is "dead", then consider as death
                     frameDeath=find(bwDeath,1,'first');
                     break
                 end
