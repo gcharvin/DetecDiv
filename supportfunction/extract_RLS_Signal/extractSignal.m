@@ -144,7 +144,6 @@ if strcmp(method,'volume')
     end
     
     classiname=chans{channelSegCell};
-    channelSegCell=find(roiobj(1).channelid==channelSegCell,1,'first'); %to deal with combined channels
     %===
     
     %===find the class of the mother, ask it only once.
@@ -157,6 +156,7 @@ if strcmp(method,'volume')
         roiobj(r).path=modifyPath(roiobj(r),environment);
         roiobj(r).load();
         
+        channelSegCell=findChannelID(roiobj(r),classiname);
         %         if contains(chans{channelSegCell},'results_')
         %         classiname=chans{channelSegCell};%extractAfter(chans{channelSegCell},'results_');
         %         else
@@ -218,7 +218,6 @@ if strcmp(method,'cell')
     end
     
     classiname=chans{channelSegCell};
-    channelSegCell=find(roiobj(1).channelid==channelSegCell,1,'first'); %to deal with combined channels
     %===
     
     %===find the class of the mother, ask it only once.
@@ -236,6 +235,7 @@ if strcmp(method,'cell')
         roiobj(r).path=modifyPath(roiobj(r),environment);
         roiobj(r).load();
         
+        channelSegCell=findChannelID(roiobj(r),classiname); 
         %         if contains(chans{channelSegCell},'results_')
         %         classiname=chans{channelSegCell};%extractAfter(chans{channelSegCell},'results_');
         %         else
@@ -345,10 +345,9 @@ if strcmp(method,'nucleus')
         error('Indicate which channel contains the MASK of the CELLS');
     end
     
+    channelExtractName=chans{channelsExtract};
     classiname=chans{channelSegCell};
-    channelSegCell=find(roiobj(1).channelid==channelSegCell,1,'first'); %to deal with combined channels
     classiNucName=chans{channelSegNuc};
-    channelSegNuc=find(roiobj(1).channelid==channelSegNuc,1,'first'); %to deal with combined channels
     %===
     
     %===ask class ID
@@ -368,9 +367,14 @@ if strcmp(method,'nucleus')
     if numel(classidNucleus)==0, classidNucleus=2; end
     %===
     
+    %NOW WORK ON ALL THE ROIS
     for r=1:numel(roiobj) %to parfor
         roiobj(r).path=modifyPath(roiobj(r),environment);
         roiobj(r).load();
+        
+        channelsExtract=findChannelID(roiobj(r),channelExtractName);   
+        channelSegCell=findChannelID(roiobj(r),classiname);        
+        channelSegNuc=findChannelID(roiobj(r),classiNucName);
         
         %extract fluo for each given channel
         lastFrame=numel(roiobj(r).image(1,1,channelsExtract(1),:));
@@ -459,11 +463,14 @@ if strcmp(method,'fociOrNot')
     channelFociMask=input(prompt);
     if ~exist('channelFociMask','var')
         error('Indicate channelof the foci mask');
-    end
+    end    
+    channelFociMaskName=chans{channelFociMask};
     
     for r=1:numel(roiobj)
         roiobj(r).load();
         lastFrame=numel(roiobj(r).image(1,1,channelFociMask,:));
+        
+        channelFociMask=findChannelID(roiobj(r),channelFociMaskName);        
         
         for t=1:lastFrame
             im=roiobj(r).image(:,:,channelFociMask,t);
