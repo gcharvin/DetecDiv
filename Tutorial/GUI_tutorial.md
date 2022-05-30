@@ -405,7 +405,7 @@ Once finished, classified data can be monitored by left-clicking ROIs in Project
 ## Division counting and replicative lifespan analysis ##
 <div id="rls"></div>
 
-This programs provides a GUI for division counting and RLS analyses. IMPORTANT: Please note that all the data must be classfied beforehand, as this GUI is not only processing classified datasets. 
+This programs provides a GUI for division counting and RLS analyses. IMPORTANT: Please note that all the data must be classfied beforehand, as this GUI is only processing classified datasets. 
 
 1) Load an independent classifier or a project that contains a division classifier in detecdiv: 
 
