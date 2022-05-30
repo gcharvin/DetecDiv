@@ -18,6 +18,7 @@ function rlstNdivs=plotRLS(rlsfile,varargin)
 figExport=0;
 dataExport=0;
 bootStrapping=0;
+confidenceInterval=0;
 binning=4;
 cuty=10; %stop displaying HR if less than cuty events
 sz=5;
@@ -45,6 +46,10 @@ for i=1:numel(varargin)
         dataExport=1;
     end
     
+    if strcmp(varargin{i},'ConfidenceInterval')
+        confidenceInterval=1;
+    end
+        
     if strcmp(varargin{i},'HazardRate')
         plotHazardRate=1;
     end
@@ -132,34 +137,37 @@ end
 %set(gcf,'Color','w','Units', 'Normalized', 'Position',[0.1 0.1 0.45 0.45]);
 rlsFig=figure('Color','w','Units', 'Normalized', 'Position',[0.1 0.1 0.45 0.45],'Name',figName);
 ax=gca;
-colorder=ax.ColorOrder;
+colmap=lines;
 leg='';
 hold on
 
 lcc=1;
 for c=1:szc
-    col=colorder(c,:);
+    col=colmap(c,:);
     [yt,xt,flo,fup]=ecdf(rlstNdivs{c,1});
     xt(1)=0;
     plot(xt,1-yt,'LineWidth',lw,'color',col)
+    leg{lcc,1}=[comment{c}, ': Median=' num2str(median(rlstNdivs{c,1})) ' (N=' num2str(length(rlstNdivs{c,1})) ')'];
+    lcc=lcc+1;
     %     ax.Children(1).LineWidth=lw;
     %     col=ax.Children(1).Color;
-    fup(1)=0;
-    fup(end)=1;
-    flo(1)=0;
-    flo(end)=1;
-    closedxt = [xt', fliplr(xt')];
-    inBetween = [1-fup', fliplr(1-flo')];
-    ptch=patch(closedxt, inBetween,col);
-    ptch.EdgeColor=col;
-    ptch.FaceAlpha=0.15;
-    ptch.EdgeAlpha=0.3;
-    ptch.LineWidth=lw;
+    if confidenceInterval==1
+        fup(1)=0;
+        fup(end)=1;
+        flo(1)=0;
+        flo(end)=1;
+        closedxt = [xt', fliplr(xt')];
+        inBetween = [1-fup', fliplr(1-flo')];
+        ptch=patch(closedxt, inBetween,col);
+        ptch.EdgeColor=col;
+        ptch.FaceAlpha=0.15;
+        ptch.EdgeAlpha=0.3;
+        ptch.LineWidth=lw;
+        leg{lcc,1}='';
+        lcc=lcc+1;
+    end
     
-    leg{lcc,1}=[comment{c}, ': Median=' num2str(median(rlstNdivs{c,1})) ' (N=' num2str(length(rlstNdivs{c,1})) ')'];
-    leg{lcc+1,1}='';
-    %     leg{lcc+2,1}='';
-    lcc=lcc+2;
+    
     
     if plotHazardRate==1
         %BOOTSTRAPPING

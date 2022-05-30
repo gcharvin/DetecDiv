@@ -612,7 +612,6 @@ end
 
 %%
 %=============================================SEP==========================================
-%To do : harmonize for loops
 function [syncPoint]=findSync(rls)
 align=1; %1: SEP, 2: death
 syncType={'birthSynced', 'SEPSynced','deathSynced'};
