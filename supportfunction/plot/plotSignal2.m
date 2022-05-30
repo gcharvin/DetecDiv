@@ -83,7 +83,9 @@ if timeOrGen==0 %time
             listfields=fieldnames(obj{cond}(1,1));
             for r=rois{cond}
                 for f=listfields
-                    obj{cond}(r,1).(f)=rlstmp(r).results.signal.(f); %assign obj
+                    if isfield(rlstmp(r).results.signal,f)
+                        obj{cond}(r,1).(f)=rlstmp(r).results.signal.(f); %assign obj
+                    end
                 end
             end
         end
@@ -128,12 +130,14 @@ elseif timeOrGen==1 %generations
     if isfield(rlsfile(1),'divSignal')
         for cond=1:numel(condition)
             rlstmp=rlsfile([rlsfile.condition]==condition(cond));
-            obj{cond}(1,1)=rlstmp(r).divSignal;
+            obj{cond}(1,1)=rlstmp(1).divSignal;
             
             listfields=fieldnames(obj{cond}(1,1));
             for r=rois{cond}
                 for f=listfields
-                	obj{cond}(r,1).(f)=rlstmp(r).divSignal.(f); %assign obj
+                    if isfield(rlstmp(r).divSignal,f)
+                        obj{cond}(r,1).(f)=rlstmp(r).divSignal.(f); %assign obj
+                    end
                 end
             end
         end
