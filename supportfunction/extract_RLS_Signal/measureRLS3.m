@@ -26,8 +26,9 @@ param.errorDetection=1;
 %is shorter than 500 frames.
 param.ArrestThreshold=175;
 param.DeathThreshold=3;
-param.EmptyThresholdDiscard=500;
-param.EmptyThresholdNext=100;
+param.ClogThreshold=1;
+param.EmptyThresholdDiscard=500; %discard roi if empty for more than this number of frames
+param.EmptyThresholdNext=100; %if encounter an empy after birth but before birth+EmptyThresholdNext, check the new RLS
 param.Frames=[];
 
 for i=1:numel(varargin)
@@ -59,6 +60,11 @@ for i=1:numel(varargin)
         param.DeathThreshold=varargin{i+1};
     end
     
+    %DeathThreshold
+    if strcmp(varargin{i},'ClogThreshold')
+        param.DeathThreshold=varargin{i+1};
+    end
+        
     %postProcessing
     if strcmp(varargin{i},'PostProcessing')
         param.postProcessing=varargin{i+1};
@@ -228,7 +234,7 @@ elseif strcmp(roitype,'train')
         %sep
         rlsGroundtruth.sep=findSync(rlsGroundtruth);
     else
-        warning(['There is no groundtruth available for ROI ' char(roi.id)]);
+        disp(['There is no groundtruth available for ROI ' char(roi.id)]);
         rlsGroundtruth.groundtruth=1;
         rlsGroundtruth.divDuration=[];
         rlsGroundtruth.timeRate=param.timeRate;
@@ -354,7 +360,7 @@ switch param.classiftype
             idpostBirth=id;
             idpostBirth(1:frameBirth)=0;%only consider death if cell is born (to ignore death if first images of roi is death=
             bwDeath=(idpostBirth==deathid);
-            bwDeath(1:frameBirth)=0;
+            bwDeath(1:frameBirth)=0; %useless?
             bwDeathLabeled=bwlabel(bwDeath);
             for k=1:max(bwDeathLabeled)
                 bwDeath=(bwDeathLabeled==k);
@@ -368,13 +374,26 @@ switch param.classiftype
         
         
         %==find potential first CLOG==============
+        frameClog=NaN;
         if ~isnan(frameBirth)
-            frameClog=find((idpostBirth==clogid),1,'first');
-            if numel(frameClog)==0
-                frameClog=NaN;
+            idpostBirth=id;
+            idpostBirth(1:frameBirth)=0;%only consider clog if cell is born (to ignore clog if first images of roi is clog=
+            bwClog=(idpostBirth==clogid);
+            bwClog(1:frameBirth)=0; %useless?
+            bwClogLabeled=bwlabel(bwClog);
+            for k=1:max(bwClogLabeled)
+                bwClog=(bwClogLabeled==k);
+                if sum(bwClog)>= param.ClogThreshold
+                    frameClog=find(bwClog,1,'first');
+                    break
+                end
             end
-        end
+        end        
+%         if ~isnan(frameBirth)            
+%             frameClog=find((idpostBirth==clogid),1,'first');
+%         end
         %
+        
         
         %==find potential division arrest==========
         frameArrest=NaN;
