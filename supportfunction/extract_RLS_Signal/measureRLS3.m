@@ -12,7 +12,7 @@ function measureRLS3(roiobj,param,varargin)
 %rlsGroundtruth only groundtruth
 %loadres=1;
 %environment='pc';
-param.timeRate=[];
+param.timeRate=5;
 
 if numel(param)==0
 param.classifierName={'myclassi','myclassi'};
