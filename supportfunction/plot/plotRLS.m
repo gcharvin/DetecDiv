@@ -19,13 +19,13 @@ figExport=0;
 dataExport=0;
 bootStrapping=0;
 binning=4;
+cuty=10; %stop displaying HR if less than cuty events
 sz=5;
 Nboot=100;
-plotHazardRate=1;
+plotHazardRate=0;
 filename='RLS_export';
 maxBirth=100; %max frame to be born. After, discard rls.
 GT=0;
-timeFactor=5;
 figName='default';
 % load=0;
 
@@ -55,6 +55,14 @@ for i=1:numel(varargin)
     
     if strcmp(varargin{i},'Bootstrap_Steps')
         Nboot=varargin{i+1};
+    end
+    
+    if strcmp(varargin{i},'Binning_HazardRate')
+        binning=varargin{i+1};
+    end
+    
+    if strcmp(varargin{i},'MinNumberCell_HazardRate')
+        cuty=varargin{i+1};
     end
     
     if strcmp(varargin{i},'Load') %load data
@@ -159,8 +167,7 @@ for c=1:szc
             rlst=rlstNdivs{c,1};
             [y x]=ecdf(rlst);
             
-            %cuttof numcell remaining
-            cuty=10; %stop displaying DR if less than cuty events
+            %cuttof numcell remaining            
             RemainingCells=size(rlst,2)-y*size(rlst,2);
             cutx=find(RemainingCells<=cuty,1,'first');
             cutx=x(cutx);
@@ -225,7 +232,7 @@ for c=1:szc
             semDR=stdDR./sqrt(Nboot+1); %N= number of bootstrappings
             
             cb=1;
-            
+            binning
             for i=1:binning:size(deathRate,2)-(binning-1)
                 meanBDR(cb)=mean([meanDR(i:i+binning-1)]);%nanmean(binnedDeathRate,1);
                 stdBDR(cb)=mean([stdDR(i:i+binning-1)]);%(binnedDeathRate,1);
