@@ -177,8 +177,14 @@ elseif timeOrGen==1 %generations
             
             for cond=1:numel(condition)
                 rlstmp=rlsfile([rlsfile.condition]==condition(cond));
+                
+                listfields=fieldnames(obj{cond}(1,1));                            
                 for r=rois{cond}
-                    obj{cond}(r,1)=rlstmp(r).Aligned.(alignstrid); %assign obj
+                    for f=1:numel(listfields)
+                        if isfield(rlstmp(r).Aligned.(alignstrid),listfields{f})
+                            obj{cond}(r,1)=rlstmp(r).Aligned.(alignstrid).(listfields{f}); %assign obj
+                        end
+                    end
                 end
             end
             
