@@ -129,8 +129,12 @@ elseif timeOrGen==1 %generations
         for cond=1:numel(condition)
             rlstmp=rlsfile([rlsfile.condition]==condition(cond));
             obj{cond}(1,1)=rlstmp(r).divSignal;
+            
+            listfields=fieldnames(obj{cond}(1,1));
             for r=rois{cond}
-                obj{cond}(r,1)=rlstmp(r).divSignal; %assign obj
+                for f=listfields
+                	obj{cond}(r,1).(f)=rlstmp(r).divSignal.(f); %assign obj
+                end
             end
         end
     else
