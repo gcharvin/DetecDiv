@@ -154,7 +154,7 @@ elseif timeOrGen==1 %generations
             for r=rois{cond}
                 for f=1:numel(listfields)
                     if isfield(rlstmp(r).Aligned.(alignstrid),listfields{f})
-                        obj{cond}(r,1)=rlstmp(r).Aligned.(alignstrid).(listfields{f}); %assign obj
+                        obj{cond}(r,1).(listfields{f})=rlstmp(r).Aligned.(alignstrid).(listfields{f}); %assign obj
                     end
                 end
             end
