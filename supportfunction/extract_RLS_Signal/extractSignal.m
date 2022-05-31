@@ -2,7 +2,7 @@ function extractSignal(roiobj,varargin)
 %This fct extracts the signal from the 'Channels' using the 'Method' and
 %store them in roiobj(r).results.classiid.fluo.max(c,t)
 
-%TODO: adapt to roiobj, use roi.display. use architecture of measureRLS3
+%TODO: make warning message if roi has no signal
 
 %Arguments:
 %*'Method': **'full' computes the average of the kMaxPixels, the total and
@@ -475,9 +475,9 @@ if strcmp(method,'fociOrNot')
         for t=1:lastFrame
             im=roiobj(r).image(:,:,channelFociMask,t);
             if sum(im(:)==2)>0
-                roiobj.results.signal.foci.(['from_' channelFociMask]).bin(t)=1;
+                roiobj.results.signal.foci.(['from_' channelFociMaskName]).bin(t)=1;
             else
-                roiobj.results.signal.foci.(['from_' channelFociMask]).bin(t)=0;
+                roiobj.results.signal.foci.(['from_' channelFociMaskName]).bin(t)=0;
             end
         end
         
