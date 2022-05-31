@@ -231,18 +231,18 @@ if plotDivDuration==0
     for cond=1:numel(condition)
         cr=1;
         for r=rois{cond}
-            if isfield(obj{cond}(r),signalstrid)
-                if isfield(obj{cond}(r).signalstrid,classifstrid)
-                    if isfield(obj{cond}(r).signalstrid.classifstrid,fluostrid)
+            if isfield(obj{cond}(r),signalstrid) %normally useless cause should be taken into account earlier
+                if isfield(obj{cond}(r).(signalstrid),classifstrid)
+                    if isfield(obj{cond}(r).(signalstrid).(classifstrid),fluostrid)
                         obj2{cr}{r,1}=obj{cond}(r).(signalstrid).(classifstrid).(fluostrid);
                     else
-                        warning(['this roi has no ' signalstrid '.' classifstrid '.' fluostrid 'field, ignored']);
+                        warning(['this roi has no ' signalstrid '.' classifstrid '.' fluostrid 'field, roi ignored']);
                     end
                 else
-                    warning(['this roi has no ' signalstrid '.' classifstrid 'field, ignored']);
+                    warning(['this roi has no ' signalstrid '.' classifstrid 'field, roi ignored']);
                 end
             else
-                warning(['this roi has no ' signalstrid 'field, ignored']);
+                warning(['this roi has no ' signalstrid 'field, roi ignored']);
             end
             cr=cr+1;
         end
