@@ -40,6 +40,7 @@ else
     end
     
     classifstrid=param.classifierName{end};
+    classifstrid=erase(classifstrid,'_indep'); %alternatively, take classif.strid
     if isfield(param,'AlignTraj')
         %   'ok'
         Align=param.AlignTraj{end};

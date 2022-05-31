@@ -13,21 +13,22 @@ function measureRLS3(roiobj,param,varargin)
 %loadres=1;
 %environment='pc';
 
+binFrameThreshold=3; %during signal averaging over the div: number of frames with 1 to count the div as 1, when dealing with bin signals
 
 if numel(param)==0
-param.classifierName={'myclassi','myclassi'};
-param.classes='unbud small large dead clog empty';
-param.classiftype='bud';
-param.postProcessing=1;
-param.errorDetection=1;
-%these param must be adjusted by the user, in particular if the experiment
-%is shorter than 500 frames.
-param.ArrestThreshold=175;
-param.DeathThreshold=3;
-param.ClogThreshold=1;
-param.EmptyThresholdDiscard=500; %discard roi if empty for more than this number of frames
-param.EmptyThresholdNext=100; %if encounter an empy after birth but before birth+EmptyThresholdNext, check the new RLS
-param.Frames=[];
+    param.classifierName={'myclassi','myclassi'};
+    param.classes='unbud small large dead clog empty';
+    param.classiftype='bud';
+    param.postProcessing=1;
+    param.errorDetection=1;
+    %these param must be adjusted by the user, in particular if the experiment
+    %is shorter than 500 frames.
+    param.ArrestThreshold=175;
+    param.DeathThreshold=3;
+    param.ClogThreshold=1;
+    param.EmptyThresholdDiscard=500; %discard roi if empty for more than this number of frames
+    param.EmptyThresholdNext=100; %if encounter an empy after birth but before birth+EmptyThresholdNext, check the new RLS
+    param.Frames=[];
 
 for i=1:numel(varargin)
     
