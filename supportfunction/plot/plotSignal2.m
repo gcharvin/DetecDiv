@@ -1,7 +1,7 @@
 function []=plotSignal2(rlsfile,varargin)
 %classi script
 
-%todo : simplify code. remove if plotDuration==1 and replace it by : if
+%todo : ignore if roi has no signal instead of error
 %rf=divDuration, skip the rest of the questions.
 
 figExport=0;
@@ -229,8 +229,22 @@ if plotDivDuration==0
     end
     
     for cond=1:numel(condition)
+        cr=1;
         for r=rois{cond}
-            obj2{cond}{r,1}=obj{cond}(r).(signalstrid).(classifstrid).(fluostrid);
+            if isfield(obj{cond}(r),signalstrid)
+                if isfield(obj{cond}(r).signalstrid,classifstrid)
+                    if isfield(obj{cond}(r).signalstrid.classifstrid,fluostrid)
+                        obj2{cr}{r,1}=obj{cond}(r).(signalstrid).(classifstrid).(fluostrid);
+                    else
+                        warning(['this roi has no ' signalstrid '.' classifstrid '.' fluostrid 'field, ignored']);
+                    end
+                else
+                    warning(['this roi has no ' signalstrid '.' classifstrid 'field, ignored']);
+                end
+            else
+                warning(['this roi has no ' signalstrid 'field, ignored']);
+            end
+            cr=cr+1;
         end
     end
     %% ask channel

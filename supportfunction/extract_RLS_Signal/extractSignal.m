@@ -2,7 +2,7 @@ function extractSignal(roiobj,varargin)
 %This fct extracts the signal from the 'Channels' using the 'Method' and
 %store them in roiobj(r).results.classiid.fluo.max(c,t)
 
-%TODO: make warning message if roi has no signal
+%TODO: make warning message and ignore if roi has no signal
 
 %Arguments:
 %*'Method': **'full' computes the average of the kMaxPixels, the total and
