@@ -18,10 +18,8 @@ if numel(param)==0
 param.classifierName={'myclassi','myclassi'};
 param.classes='unbud small large dead clog empty';
 param.classiftype='bud';
-%param.timeRate=[];
 param.postProcessing=1;
 param.errorDetection=1;
-param.timeRate=5;
 %these param must be adjusted by the user, in particular if the experiment
 %is shorter than 500 frames.
 param.ArrestThreshold=175;
@@ -80,10 +78,10 @@ for i=1:numel(varargin)
         param.Frames=varargin{i+1};
     end
     
-    %timeRate
-    if strcmp(varargin{i},'TimeRate')
-        param.timeRate=varargin{i+1};
-    end
+%     %timeRate
+%     if strcmp(varargin{i},'TimeRate')
+%         param.timeRate=varargin{i+1};
+%     end
 end
 end
 
@@ -156,7 +154,6 @@ if strcmp(roitype,'result')
         divTimes=computeDivtime(id,proba,classes,param);
         
         rlsResults.divDuration=divTimes.duration;
-        rlsResults.timeRate=param.timeRate;
         rlsResults.frameBirth=divTimes.frameBirth;
         rlsResults.frameEnd=divTimes.frameEnd;
         rlsResults.endType=divTimes.endType;
@@ -185,7 +182,6 @@ if strcmp(roitype,'result')
 %        warning(['There is no result available for ROI ' char(roi.id)]);
         rlsResults.groundtruth=0;
         rlsResults.divDuration=[];
-        rlsResults.timeRate=param.timeRate;
         rlsResults.frameBirth=[];
         rlsResults.frameEnd=[];
         rlsResults.endType=[];
@@ -212,7 +208,6 @@ elseif strcmp(roitype,'train')
         divTimesG=computeDivtime(idg,proba,classes,param); % groundtruth data
         
         rlsGroundtruth.divDuration=divTimesG.duration;
-        rlsGroundtruth.timeRate=param.timeRate;
         rlsGroundtruth.frameBirth=divTimesG.frameBirth;
         rlsGroundtruth.frameEnd=divTimesG.frameEnd;
         rlsGroundtruth.endType=divTimesG.endType;
@@ -237,7 +232,6 @@ elseif strcmp(roitype,'train')
         disp(['There is no groundtruth available for ROI ' char(roi.id)]);
         rlsGroundtruth.groundtruth=1;
         rlsGroundtruth.divDuration=[];
-        rlsGroundtruth.timeRate=param.timeRate;
         rlsGroundtruth.frameBirth=[];
         rlsGroundtruth.frameEnd=[];
         rlsGroundtruth.endType=[];
