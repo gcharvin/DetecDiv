@@ -468,9 +468,8 @@ if strcmp(method,'fociOrNot')
     
     for r=1:numel(roiobj)
         roiobj(r).load();
-        lastFrame=numel(roiobj(r).image(1,1,channelFociMask,:));
-        
-        channelFociMask=findChannelID(roiobj(r),channelFociMaskName);        
+        channelFociMask=findChannelID(roiobj(r),channelFociMaskName);
+        lastFrame=numel(roiobj(r).image(1,1,channelFociMask,:));                        
         
         for t=1:lastFrame
             im=roiobj(r).image(:,:,channelFociMask,t);
