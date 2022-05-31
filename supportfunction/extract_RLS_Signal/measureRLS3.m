@@ -551,7 +551,7 @@ divSignal.divDuration=rls.divDuration; % redundant with rls.divDuration, but con
 %check all the fields of .results.signal and mean them by div
 if isfield(roi.results,'signal') && ~isempty(roi.results.signal)>0
     rF=fields(roi.results.signal); %full, cell, nucleus
-    %essayer try catch
+    %essayer try catch pour reduire le nb de if isfield
     for rf=1:numel(rF)
         cF=fields(roi.results.signal.(rF{rf})); %obj2
         for cf=1:numel(cF)
@@ -559,13 +559,19 @@ if isfield(roi.results,'signal') && ~isempty(roi.results.signal)>0
             for ff=1:numel(fF)
                 for chan=1:numel(roi.results.signal.(rF{rf}).(cF{cf}).(fF{ff})(:,1))
                     tt=1;
-                    %                     if numel(rls.divDuration)==0
-                    %                             divSignal.(rF{rf}).(cF{cf}).(fF{ff})(chan)=[];
-                    %                     else
                     if numel(rls.divDuration)>0
                         for t=1:numel(rls.divDuration)
-                            divSignal.(rF{rf}).(cF{cf}).(fF{ff})(chan,t)=nanmean(roi.results.signal.(rF{rf}).(cF{cf}).(fF{ff})(chan,rls.framediv(tt):rls.framediv(tt+1)));
-                            divSignal.(rF{rf}).(cF{cf}).([fF{ff} 'FoldInc'])(chan,t)=nanmean(roi.results.signal.(rF{rf}).(cF{cf}).(fF{ff})(chan,rls.framediv(tt):rls.framediv(tt+1)))./nanmean(roi.results.signal.(rF{rf}).(cF{cf}).(fF{ff})(chan,rls.framediv(1):rls.framediv(2)));
+                            binFrameThreshold=3;
+                            if strcmp(fF{ff},'bin') %if signal is binary, dont mean but threshold number of frames to have 1 for the div
+                                if sum(roi.results.signal.(rF{rf}).(cF{cf}).(fF{ff})(chan,rls.framediv(tt):rls.framediv(tt+1)),'omitnan')>=binFrameThreshold
+                                    divSignal.(rF{rf}).(cF{cf}).(fF{ff})(chan,t)=1;
+                                else
+                                    divSignal.(rF{rf}).(cF{cf}).(fF{ff})(chan,t)=0;
+                                end                                
+                            else
+                                divSignal.(rF{rf}).(cF{cf}).(fF{ff})(chan,t)=nanmean(roi.results.signal.(rF{rf}).(cF{cf}).(fF{ff})(chan,rls.framediv(tt):rls.framediv(tt+1)));
+                                divSignal.(rF{rf}).(cF{cf}).([fF{ff} 'FoldInc'])(chan,t)=nanmean(roi.results.signal.(rF{rf}).(cF{cf}).(fF{ff})(chan,rls.framediv(tt):rls.framediv(tt+1)))./nanmean(roi.results.signal.(rF{rf}).(cF{cf}).(fF{ff})(chan,rls.framediv(1):rls.framediv(2)));                            
+                            end
                             tt=tt+1;
                         end
                     end

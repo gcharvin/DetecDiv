@@ -234,7 +234,8 @@ if plotDivDuration==0
             if isfield(obj{cond}(r),signalstrid) %normally useless cause should be taken into account earlier
                 if isfield(obj{cond}(r).(signalstrid),classifstrid)
                     if isfield(obj{cond}(r).(signalstrid).(classifstrid),fluostrid)
-                        obj2{cr}{r,1}=obj{cond}(r).(signalstrid).(classifstrid).(fluostrid);
+                        obj2{cond}{cr,1}=obj{cond}(r).(signalstrid).(classifstrid).(fluostrid);
+                        cr=cr+1;
                     else
                         warning(['this roi has no ' signalstrid '.' classifstrid '.' fluostrid 'field, roi ignored']);
                     end
@@ -244,7 +245,6 @@ if plotDivDuration==0
             else
                 warning(['this roi has no ' signalstrid 'field, roi ignored']);
             end
-            cr=cr+1;
         end
     end
     %% ask channel
@@ -259,11 +259,11 @@ end
 
 %% data to vector
 for cond=1:numel(condition)
-    data{cond}=nan(numel(rois{cond}),max(cellfun(@numel,obj2{cond}))/channumber);
+    data{cond}=nan(numel(obj2{cond}),max(cellfun(@numel,obj2{cond}))/channumber);
 end
 
 for cond=1:numel(condition)
-    for r=rois{cond}
+    for r=1:numel(obj2{cond})
         %extract
         if plotDivDuration==1
             data{cond}(r,:)=obj2{cond}{r,1}*timefactor;
@@ -299,7 +299,7 @@ for cond=1:numel(condition)
     
     %all
     figure;
-    for r=rois{cond}
+    for r=1:numel(obj2{cond})
         hold on
         plot(x{cond}(:),data{cond}(r,:))
     end
