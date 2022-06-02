@@ -6,6 +6,9 @@ if nargin==0
     paramout.stdfoci='3';
     
     paramout.mask_channel_name='bw_seg';
+    paramout.class_bck='1';
+    paramout.class_mother='2';
+    paramout.class_other='3';
     paramout.fluo_channel_name='fluo1';
     paramout.output_channel_name='bw_foci1';
     paramout.keeplargest0or1='0';
@@ -26,6 +29,10 @@ channelIDmask=obj.findChannelID(channelstrmsk);
 stdfoci=str2double(param.stdfoci);
 keeplargest=str2double(param.keeplargest0or1);
 sizethreshold=str2double(param.sizethreshold);
+
+class_bck=str2double(class_bck);
+class_mother=str2double(class_mother);
+class_other=str2double(class_other);
 
 if numel(channelID)==0 % this channel contains the segmented objects
     disp([' This channel ' channelstr ' does not exist ! Quitting ...']) ;
@@ -53,16 +60,24 @@ imframesOuput=uint16(zeros( size(im,1) , size(im,2) , 1 , numel(frames) ));
 for fr=1:numel(frames) %adjust boundaries
     tmpimg=preProcessROIData(obj,channelID,frames(fr),0);
     tmpmask=mask(:,:,1,fr);
-    tmpmask(tmpmask==1)=0;
-    tmpmask(tmpmask==3)=0;
-    tmpmask(tmpmask==2)=1;
-    tmpmask=logical(tmpmask);
-    tmpmasked=tmpimg.*tmpmask;
+    tmpmaskMother(tmpmask==class_bck)=0;
+    tmpmaskMother(tmpmask==class_other)=0;
+    tmpmaskMother(tmpmask==class_mother)=1;
     
-    %kmaxcell=str2double(paramout.kmaxcell);
+    tmpmaskBck(tmpmask==class_bck)=1;
+    tmpmaskBck(tmpmask==class_other)=0;
+    tmpmaskBck(tmpmask==class_other)=0;    
     
-    meanimg=mean(tmpimg(tmpmask));
-    stdimg=std(tmpimg(tmpmask));
+    tmpmaskBck=logical(tmpmaskBck);
+    %tmpmaskedBck=tmpimg.*tmpmaskBck;
+    
+    tmpmaskMother=logical(tmpmaskMother);
+    %tmpmaskedMother=tmpimg.*tmpmaskMother;
+    
+    meanimgBck=mean(tmpimg(tmpmaskBck));
+    
+    meanimg=mean(tmpimg(tmpmaskMother))-meanimgBck;
+    stdimg=std(tmpimg(tmpmaskMother));
     
     foci=tmpmasked(:,:)>(meanimg+stdfoci*stdimg);
     
