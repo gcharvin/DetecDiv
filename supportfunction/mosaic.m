@@ -587,10 +587,10 @@ end
             % =calculate RLS  based on measureRLS2
             if rls==1
                 %   [rlsout,rlsresults,rlstraining]=measureRLS3(classif,roitmp);
-                rlsresults=roitmp.results.(classif.strid).RLS;
+                rlsresults=roitmp.results.RLS.(['from_' classif.strid]);
                 pir=0;
                 if training==1
-                    rlst=roitmp.train.(classif.strid).RLS;
+                    rlst=roitmp.train.RLS.(['from_' classif.strid]);
                     pit=0;
                 end
             end
@@ -629,12 +629,12 @@ end
                     end
                     %ndiv text
                     if numel(training)==1
-                        imout(:,:,:,i)=insertText( imout(:,:,:,i),[legendX-0 shifty/2+2],str,'Font','Monospace 821 Bold BT','FontSize',floor(12*sqrt(scalingFactor)),'BoxColor',...
+                        imout(:,:,:,i)=insertText( imout(:,:,:,i),[legendX-0 shifty/2+2],str,'Font','Consolas Bold','FontSize',floor(12*sqrt(scalingFactor)),'BoxColor',...
                             [1 1 1],'BoxOpacity',0.0,'TextColor',colr*65535,'AnchorPoint','LeftCenter');
-                        imout(:,:,:,i)=insertText( imout(:,:,:,i),[legendX-0 shifty/2+2],strt,'Font','Monospace 821 Bold BT','FontSize',floor(12*sqrt(scalingFactor)),'BoxColor',...
+                        imout(:,:,:,i)=insertText( imout(:,:,:,i),[legendX-0 shifty/2+2],strt,'Font','Consolas Bold','FontSize',floor(12*sqrt(scalingFactor)),'BoxColor',...
                             [1 1 1],'BoxOpacity',0.0,'TextColor',65535*text,'AnchorPoint','LeftCenter');
                     elseif numel(training)==0 %if only results
-                        imout(:,:,:,i)=insertText( imout(:,:,:,i),[2 shifty/2+2],str,'Font','Monospace 821 Bold BT','FontSize',floor(12*sqrt(scalingFactor)),'BoxColor',...
+                        imout(:,:,:,i)=insertText( imout(:,:,:,i),[2 shifty/2+2],str,'Font','Consolas Bold','FontSize',floor(12*sqrt(scalingFactor)),'BoxColor',...
                             [1 1 1],'BoxOpacity',0.0,'TextColor',65535*text,'AnchorPoint','LeftCenter');
                     end
                 end
@@ -707,7 +707,7 @@ end
                         imout(:,:,:,ii) = insertShape( imout(:,:,:,ii),'Rectangle',[startx inte*jj-inte/2+shifty-wid/2 wid wid],...
                             'Color', 65535*text,'Opacity',1,'LineWidth',2);
                         if displayLegend==1
-                            imout(:,:,:,ii) = insertText(imout(:,:,:,ii),[shiftx-(numel(results)+numel(training))*wid-5, inte*jj-inte/2+shifty],classname{jj},'Font','Monospace 821 Bold BT','FontSize',20, 'TextColor',col,'BoxColor',[1 1 1],'BoxOpacity',0.0,'AnchorPoint','RightCenter');
+                            imout(:,:,:,ii) = insertText(imout(:,:,:,ii),[shiftx-(numel(results)+numel(training))*wid-5, inte*jj-inte/2+shifty],classname{jj},'Font','Consolas Bold','FontSize',20, 'TextColor',col,'BoxColor',[1 1 1],'BoxOpacity',0.0,'AnchorPoint','RightCenter');
                         end
                     end
                 end
@@ -721,7 +721,7 @@ end
                         imout(:,:,:,ii) = insertShape( imout(:,:,:,ii),'Rectangle',[startx2 inte*jj-inte/2+shifty-wid/2 wid wid],...
                             'Color', 65535*text,'Opacity',1,'LineWidth',2);
                         if displayLegend==1
-                            imout(:,:,:,ii) = insertText(imout(:,:,:,ii),[shiftx-(numel(results)+numel(training))*wid-5, inte*jj-inte/2+shifty],classname{jj},'Font','Monospace 821 Bold BT','FontSize',20, 'TextColor',col,'BoxColor',[1 1 1],'BoxOpacity',0.0,'AnchorPoint','RightCenter');
+                            imout(:,:,:,ii) = insertText(imout(:,:,:,ii),[shiftx-(numel(results)+numel(training))*wid-5, inte*jj-inte/2+shifty],classname{jj},'Font','Consolas Bold','FontSize',20, 'TextColor',col,'BoxColor',[1 1 1],'BoxOpacity',0.0,'AnchorPoint','RightCenter');
                         end
                     end
                 end
@@ -758,9 +758,9 @@ end
                 timestamp=[blanks(numel(title)+tabtitle) '- GT : ' timestamp];
             end
             %the image passed in 8 bits depth--> use 255
-            imgout2(:,:,:,j)=insertText(imgout2(:,:,:,j),[1,shifttitley/2],[blanks(tabtitle) title],'Font','Monospace 821 Bold BT','FontSize',floor(sqrt(scalingFactor)*fontsize),...
+            imgout2(:,:,:,j)=insertText(imgout2(:,:,:,j),[1,shifttitley/2],[blanks(tabtitle) title],'Font','Consolas Bold','FontSize',floor(sqrt(scalingFactor)*fontsize),...
                 'BoxColor',[1 1 1],'BoxOpacity',0.0,'TextColor',colr*255,'AnchorPoint','LeftCenter');
-            imgout2(:,:,:,j)=insertText(imgout2(:,:,:,j),[1,shifttitley/2],timestamp,'Font','Monospace 821 Bold BT','FontSize',floor(sqrt(scalingFactor)*fontsize),...
+            imgout2(:,:,:,j)=insertText(imgout2(:,:,:,j),[1,shifttitley/2],timestamp,'Font','Consolas Bold','FontSize',floor(sqrt(scalingFactor)*fontsize),...
                 'BoxColor',[1 1 1],'BoxOpacity',0.0,'TextColor',255*text,'AnchorPoint','LeftCenter');
         end
         imgout=imgout2;
@@ -811,7 +811,7 @@ end
         v.Quality=100;
         open(v);
 
-        %return
+        return
 
         writeVideo(v,imgout);
         close(v);
