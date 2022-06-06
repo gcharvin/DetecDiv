@@ -308,6 +308,16 @@ for cond=1:numel(condition)
     %averaged value
     meanData{cond}=nanmean(data{cond},1);
     stdData{cond}=nanstd(data{cond},1);
+    if plotAligned==1
+        meanPreSync{cond}=nanmean(data{cond}(:,1:zero{cond}),2);
+        meanPopPreSync{cond}=nanmean(meanPreSync{cond});
+        meanPostSync{cond}=nanmean(data{cond}(:,zero{cond}:end),2);
+        meanPopPostSync{cond}=nanmean(meanPostSync{cond});
+        [~,p{cond}]=ttest2(meanPreSync{cond},meanPostSync{cond});
+        disp(['mean pre for condition ' num2str(cond) ' is ' num2str(meanPopPreSync{cond})])
+        disp(['mean post for condition ' num2str(cond) ' is ' num2str(meanPopPostSync{cond})])
+        disp(['p-value pre VS post SEP for condition ' num2str(cond) ' is ' num2str(p{cond})])
+    end
     for i=1:numel(stdData{cond})
         numberOfCells{cond}(i)=sum(~isnan(data{cond}(:,i)));
         semData{cond}(i)=stdData{cond}(i)/sqrt(numberOfCells{cond}(i));
