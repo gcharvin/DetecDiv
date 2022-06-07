@@ -20,7 +20,7 @@ filename='div_export';
 timeFactor=5;
 GT=0;
 maxBirth=100; %max frame to be born. After, discard rls.
-figName=[];
+figName='fig_divtimes';
 binSize=5;
 maxBin=200;
 

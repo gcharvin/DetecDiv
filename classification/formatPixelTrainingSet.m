@@ -83,14 +83,9 @@ for i=1:numel(rois)
         tmp=im(:,:,:,j);
         
         %TODO: preProcessROIData(pix,j,param);
-        if numel(pix)<=3
-            %tmp = double(imadjust(tmp,[meanphc/65535 maxphc/65535],[0 1]))/65535;
+        if numel(pix)<=3            
             param=[];
             tmp=cltmp(i).preProcessROIData(pix,j,param);
-            %max(tmp(:))
-            %return
-            %         else
-            %             tmp=double(tmp)/65535;
         end
         
         %tmp=uint8(256*tmp);

@@ -20,7 +20,7 @@ if numel(param)==0
     param.classes='unbud small large dead clog empty';
     param.classiftype='bud';
     param.postProcessing=1;
-    param.errorDetection=1;
+    param.errorDetection=0;
     %these param must be adjusted by the user, in particular if the experiment
     %is shorter than 500 frames.
     param.ArrestThreshold=175;
@@ -29,71 +29,71 @@ if numel(param)==0
     param.EmptyThresholdDiscard=500; %discard roi if empty for more than this number of frames
     param.EmptyThresholdNext=100; %if encounter an empy after birth but before birth+EmptyThresholdNext, check the new RLS
     param.Frames=[];
-
-for i=1:numel(varargin)
     
-%     if strcmp(varargin{i},'Envi')
-%         environment=varargin{i+1};
-%     end
-    
-    %PARAMS OF DIV DETECTION
-    %ClassiType
-    if strcmp(varargin{i},'ClassiType')
-        param.classiftype=varargin{i+1};
-        if strcmp(param.classiftype,'div') && strcmp(param.classiftype,'bud')
-            error('Please enter a valid classitype');
-        end                
-    end
-    
-    %ArrestThreshold
-      if strcmp(varargin{i},'ClassifierName')
-        param.classifierName=varargin{i+1};
-      end
-
-    if strcmp(varargin{i},'ArrestThreshold')
-        param.ArrestThreshold=varargin{i+1};
-    end
-    
-    %DeathThreshold
-    if strcmp(varargin{i},'DeathThreshold')
-        param.DeathThreshold=varargin{i+1};
-    end
-    
-    %DeathThreshold
-    if strcmp(varargin{i},'ClogThreshold')
-        param.DeathThreshold=varargin{i+1};
-    end
+    for i=1:numel(varargin)
         
-    %postProcessing
-    if strcmp(varargin{i},'PostProcessing')
-        param.postProcessing=varargin{i+1};
+        %     if strcmp(varargin{i},'Envi')
+        %         environment=varargin{i+1};
+        %     end
+        
+        %PARAMS OF DIV DETECTION
+        %ClassiType
+        if strcmp(varargin{i},'ClassiType')
+            param.classiftype=varargin{i+1};
+            if strcmp(param.classiftype,'div') && strcmp(param.classiftype,'bud')
+                error('Please enter a valid classitype');
+            end
+        end
+        
+        %ArrestThreshold
+        if strcmp(varargin{i},'ClassifierName')
+            param.classifierName=varargin{i+1};
+        end
+        
+        if strcmp(varargin{i},'ArrestThreshold')
+            param.ArrestThreshold=varargin{i+1};
+        end
+        
+        %DeathThreshold
+        if strcmp(varargin{i},'DeathThreshold')
+            param.DeathThreshold=varargin{i+1};
+        end
+        
+        %DeathThreshold
+        if strcmp(varargin{i},'ClogThreshold')
+            param.DeathThreshold=varargin{i+1};
+        end
+        
+        %postProcessing
+        if strcmp(varargin{i},'PostProcessing')
+            param.postProcessing=varargin{i+1};
+        end
+        
+        %detectError
+        if strcmp(varargin{i},'ErrorDetection')
+            param.errorDetection=varargin{i+1};
+        end
+        
+        %frames
+        if strcmp(varargin{i},'Frames')
+            param.Frames=varargin{i+1};
+        end
+        
+        %     %timeRate
+        %     if strcmp(varargin{i},'TimeRate')
+        %         param.timeRate=varargin{i+1};
+        %     end
     end
-    
-    %detectError
-    if strcmp(varargin{i},'ErrorDetection')
-        param.errorDetection=varargin{i+1};
-    end
-    
-    %frames
-    if strcmp(varargin{i},'Frames')
-        param.Frames=varargin{i+1};
-    end
-    
-%     %timeRate
-%     if strcmp(varargin{i},'TimeRate')
-%         param.timeRate=varargin{i+1};
-%     end
-end
 end
 
 if ischar(param.classifierName)
-classifstrid=param.classifierName;
+    classifstrid=param.classifierName;
 else
-classifstrid=param.classifierName{end};
+    classifstrid=param.classifierName{end};
 end
 
-if ~ischar(param)
-param.classiftype=param.classiftype{end};
+if ~ischar(param.classiftype)
+    param.classiftype=param.classiftype{end};
 end
 
 classif=evalin('base',classifstrid);
@@ -180,7 +180,7 @@ if strcmp(roitype,'result')
         %sep
         rlsResults.sep=findSync(rlsResults);
     else
-%        warning(['There is no result available for ROI ' char(roi.id)]);
+        %        warning(['There is no result available for ROI ' char(roi.id)]);
         rlsResults.groundtruth=0;
         rlsResults.divDuration=[];
         rlsResults.frameBirth=[];
@@ -289,6 +289,7 @@ switch param.classiftype
         unbuddedid=findclassid(classes,'unbud');
         emptyid=findclassid(classes,'empty');
         
+        %% post process
         if (proba~=-1) & (param.postProcessing==1)
             probaPP=proba;
             probaPP(smid,:)=medfilt1(probaPP(smid,:),4);
@@ -297,7 +298,7 @@ switch param.classiftype
             [~,idPP]=max(probaPP,[],1);
             id=idPP;
         end
-        
+        %%
         
         %===1// find BIRTH===
         
@@ -349,7 +350,7 @@ switch param.classiftype
         end
         %
         
-        %==find DEATH (need N frames to be validated)======
+        %==find DEATH (need param.DeathThreshold frames to be validated)======
         frameDeath=NaN;
         if ~isnan(frameBirth)
             idpostBirth=id;
@@ -359,7 +360,7 @@ switch param.classiftype
             bwDeathLabeled=bwlabel(bwDeath);
             for k=1:max(bwDeathLabeled)
                 bwDeath=(bwDeathLabeled==k);
-                if sum(bwDeath)>= param.DeathThreshold || find(bwDeath,1,'last')==numel(id) % if ... or if the last frame is "dead", then consider as death
+                if sum(bwDeath)>= param.DeathThreshold || find(bwDeath,1,'last')==numel(id) || (id(find(bwDeath,1,'last')+1)==emptyid)% if ... or if the last frame is "dead",  or if dead is followed by empty (dead cells often squeeze through the trap), then consider as death
                     frameDeath=find(bwDeath,1,'first');
                     break
                 end
@@ -383,10 +384,10 @@ switch param.classiftype
                     break
                 end
             end
-        end        
-%         if ~isnan(frameBirth)            
-%             frameClog=find((idpostBirth==clogid),1,'first');
-%         end
+        end
+        %         if ~isnan(frameBirth)
+        %             frameClog=find((idpostBirth==clogid),1,'first');
+        %         end
         %
         
         
@@ -428,49 +429,49 @@ switch param.classiftype
         
         %===4/ detect divisions===
         %==post-processing
-%         if param.postProcessing==1
-%             stopProcessing=0;
-%             while stopProcessing==0
-%                 bwsmid=(id==smid);
-%                 bwsmidLabel=bwlabel(bwsmid); %find small islets
-%                 for k=1:max(bwsmidLabel)
-%                     bwsmidk(k,:)=(bwsmidLabel==k);
-%                 end
-%                 
-%                 if max(bwsmidLabel)>2
-%                     for k=2:max(bwsmidLabel)-1
-%                         if sum(bwsmidk(k,:))>=1 %if a smallid islet is of size 1, check the neighbours islets
-%                             idx=find(bwsmidk(k,:),1,'first');
-%                             %idxprev=find(bwsmidk(k-1,:),1,'last');%find previous islet end
-%                             idxnext=find(bwsmidk(k+1,:),1,'first');%find next islet start
-%                             idxprev=find(bwsmidk(k-1,:),1,'last'); %find prev islet start
-%                             
-%                             if (idx-idxprev<5) %if the potential false small is too close from another small islet -->correct it as the previous class
-%                                 id(idx)=id(idx-1); break
-%                             elseif (idxnext-idx <5) %if the potential false small is too close from another small islet -->correct it as the previous class
-%                                 id(idx)=id(idx-1); break
-%                             end
-%                         end
-%                         stopProcessing=1;
-%                     end
-%                 else
-%                     stopProcessing=1;
-%                 end
-%             end
-%             
-%             %small->unbud, can be improved by checking the islets size
-%             bwsmid=(id==smid);
-%             bwsmidLabel=bwlabel(bwsmid); %find small islets
-% 
-%             for j=1:numel(id)-1
-%                 if (id(j)==smid && id(j+1)==unbuddedid)
-%                     
-%                     isletLabel=bwsmidLabel(j);
-%                     idxToCorrect=(bwsmidLabel==isletLabel); %islet to correct
-%                     id(idxToCorrect)=lbid;
-%                 end
-%             end
-%         end
+        %         if param.postProcessing==1
+        %             stopProcessing=0;
+        %             while stopProcessing==0
+        %                 bwsmid=(id==smid);
+        %                 bwsmidLabel=bwlabel(bwsmid); %find small islets
+        %                 for k=1:max(bwsmidLabel)
+        %                     bwsmidk(k,:)=(bwsmidLabel==k);
+        %                 end
+        %
+        %                 if max(bwsmidLabel)>2
+        %                     for k=2:max(bwsmidLabel)-1
+        %                         if sum(bwsmidk(k,:))>=1 %if a smallid islet is of size 1, check the neighbours islets
+        %                             idx=find(bwsmidk(k,:),1,'first');
+        %                             %idxprev=find(bwsmidk(k-1,:),1,'last');%find previous islet end
+        %                             idxnext=find(bwsmidk(k+1,:),1,'first');%find next islet start
+        %                             idxprev=find(bwsmidk(k-1,:),1,'last'); %find prev islet start
+        %
+        %                             if (idx-idxprev<5) %if the potential false small is too close from another small islet -->correct it as the previous class
+        %                                 id(idx)=id(idx-1); break
+        %                             elseif (idxnext-idx <5) %if the potential false small is too close from another small islet -->correct it as the previous class
+        %                                 id(idx)=id(idx-1); break
+        %                             end
+        %                         end
+        %                         stopProcessing=1;
+        %                     end
+        %                 else
+        %                     stopProcessing=1;
+        %                 end
+        %             end
+        %
+        %             %small->unbud, can be improved by checking the islets size
+        %             bwsmid=(id==smid);
+        %             bwsmidLabel=bwlabel(bwsmid); %find small islets
+        %
+        %             for j=1:numel(id)-1
+        %                 if (id(j)==smid && id(j+1)==unbuddedid)
+        %
+        %                     isletLabel=bwsmidLabel(j);
+        %                     idxToCorrect=(bwsmidLabel==isletLabel); %islet to correct
+        %                     id(idxToCorrect)=lbid;
+        %                 end
+        %             end
+        %         end
         
         %=====Div counting=====
         %
@@ -559,8 +560,8 @@ if isfield(roi.results,'signal') && ~isempty(roi.results.signal)>0
             fF=fields(roi.results.signal.(rF{rf}).(cF{cf})); %max, mean, volume...
             for ff=1:numel(fF)
                 for chan=1:numel(roi.results.signal.(rF{rf}).(cF{cf}).(fF{ff})(:,1))
-                    tt=1;
                     if numel(rls.divDuration)>0
+                        tt=1;
                         for t=1:numel(rls.divDuration)
                             binFrameThreshold=3;
                             if strcmp(fF{ff},'bin') %if signal is binary, dont mean but threshold number of frames to have 1 for the div
@@ -568,13 +569,16 @@ if isfield(roi.results,'signal') && ~isempty(roi.results.signal)>0
                                     divSignal.(rF{rf}).(cF{cf}).(fF{ff})(chan,t)=1;
                                 else
                                     divSignal.(rF{rf}).(cF{cf}).(fF{ff})(chan,t)=0;
-                                end                                
+                                end
                             else
                                 divSignal.(rF{rf}).(cF{cf}).(fF{ff})(chan,t)=nanmean(roi.results.signal.(rF{rf}).(cF{cf}).(fF{ff})(chan,rls.framediv(tt):rls.framediv(tt+1)));
-                                divSignal.(rF{rf}).(cF{cf}).([fF{ff} 'FoldInc'])(chan,t)=nanmean(roi.results.signal.(rF{rf}).(cF{cf}).(fF{ff})(chan,rls.framediv(tt):rls.framediv(tt+1)))./nanmean(roi.results.signal.(rF{rf}).(cF{cf}).(fF{ff})(chan,rls.framediv(1):rls.framediv(2)));                            
+                                divSignal.(rF{rf}).(cF{cf}).([fF{ff} 'FoldInc'])(chan,t)=nanmean(roi.results.signal.(rF{rf}).(cF{cf}).(fF{ff})(chan,rls.framediv(tt):rls.framediv(tt+1)))./nanmean(roi.results.signal.(rF{rf}).(cF{cf}).(fF{ff})(chan,rls.framediv(1):rls.framediv(2)));
                             end
                             tt=tt+1;
                         end
+                    else
+                        divSignal.(rF{rf}).(cF{cf}).(fF{ff})(chan)=NaN;
+                        divSignal.(rF{rf}).(cF{cf}).([fF{ff} 'FoldInc'])(chan)=NaN;
                     end
                     if numel(rls.divDuration)>1 && numel(isnan(divSignal.(rF{rf}).(cF{cf}).(fF{ff})(chan,:)))==0 %incrate only if all frames have signal. To code : incrate if signal as different snap frequency
                         divSignal.(rF{rf}).(cF{cf}).([fF{ff} 'IncRate'])(chan,:)=diff(divSignal.(rF{rf}).(cF{cf}).(fF{ff})(chan,:))./divSignal.(rF{rf}).(cF{cf}).(fF{ff})(chan,1:end-1);

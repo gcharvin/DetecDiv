@@ -10,7 +10,7 @@ timeOrGen=0; %time
 timefactor=5;
 load=0;
 maxBirth=200; %max frame to be born. After, discard rls.
-condition=1;
+condition=1:max([rlsfile.condition]);
 
 
 for i=1:numel(varargin)
@@ -120,7 +120,7 @@ elseif timeOrGen==1 %generations
                 end
             end
         else
-            error(['The roi ' rlsfile(1).name 'has no divSignal field. Extract it using extractSignal followed by measureRLS3'])
+            error(['The roi ' rlsfile(1).name ' has no divSignal field. Extract it using extractSignal followed by measureRLS3'])
         end
         
     elseif plotAligned==1
@@ -270,7 +270,8 @@ for cond=1:numel(condition)
         elseif strcmp(fluostrid,'volume')
             data{cond}(r,:)=obj2{cond}{r,1}(chanid,:)*0.1056; %normalize into microns²
         else
-            data{cond}(r,:)=obj2{cond}{r,1}(chanid,:);
+            sdatavector=numel(obj2{cond}{r,1}(chanid,:));
+            data{cond}(r,1:sdatavector)=obj2{cond}{r,1}(chanid,:);
         end
     end
 end

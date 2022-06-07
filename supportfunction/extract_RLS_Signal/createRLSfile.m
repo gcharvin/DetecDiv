@@ -1,12 +1,15 @@
 function rls=createRLSfile(classif,roiobjcell,param,varargin)
 
-Align=1;
-GT=0;
-errorDetection=0;
 szc=size(roiobjcell,1); %number of conditions
-comment=cell(szc,1);
+for i=1:szc
+    comment{i}=num2str(i);
+end
 
 if numel(param)==0
+    Align=1;
+    GT=0;
+    errorDetection=0;
+    
     param.GroundtruthVSPredictions=false;
     param.AlignTraj='Birth';
     
@@ -36,6 +39,7 @@ else
         GT=1;
         comment={'Groundtruth','Prediction'};
     else
+        GT=0;
         comment=param.comment;
     end
     
@@ -47,8 +51,8 @@ else
     else
         Align=0;
     end
-    errorDetection=param.errorDetection;
     
+    errorDetection=param.errorDetection;
 end
 
 %%

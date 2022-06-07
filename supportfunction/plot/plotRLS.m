@@ -288,7 +288,7 @@ for c=1:szc
             cb=1;
             for i=1:binning:size(deathRate)-(binning-1)
                 meanBDR(cb)=mean([deathRate(i:i+binning-1)]);
-                xtB(cb)=mean([xt(i:i+binning-1)]); %sloppy but ecdf doesnt give step of 1
+                xtB(cb)=i;%mean([xt(i:i+binning-1)]); %sloppy but ecdf doesnt give step of 1
                 cb=cb+1;
             end
             %t=1:binning:numel(xtB)-mod(numel(xtB),binning);
