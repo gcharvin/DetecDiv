@@ -13,7 +13,7 @@ filelist=dirlist;
 
 %filter out folders and take only image files.
 filelist= filelist([filelist.isdir]==0);
-filelist=filelist(contains({filelist.name},{'.tif'}); % takes all image files
+filelist=filelist(contains({filelist.name},{'.tif'})); % takes all image files
 
 % filter files based on position filter
 posfilter=output.pos(1).positionfilter;

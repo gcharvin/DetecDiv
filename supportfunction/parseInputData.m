@@ -93,8 +93,6 @@ if sum(pix)>2 % there are folders available (. and .. are not real folders)
     end
 else % only files available
     disp('This folder contains one or several files but no folders');
-    
-    
     plist= list([list.isdir]==0);
     plist=plist(contains({plist.name},{'.tif','.jpg','.png'})); % takes all image files
     
@@ -168,7 +166,6 @@ switch typ
         output = buildfolders(list,output,progress);
         
     case 'multifiles' % contains a list of files, potentially with multiple poistions
-        
         output.comments=['The folder contains (a) series of individual images with multiple positions' char(10)];
         output = buildmultifiles(list,output,progress);
         
