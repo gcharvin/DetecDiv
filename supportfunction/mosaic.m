@@ -811,7 +811,7 @@ end
         v.Quality=100;
         open(v);
 
-        return
+        %return
 
         writeVideo(v,imgout);
         close(v);
