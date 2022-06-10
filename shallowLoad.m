@@ -24,6 +24,13 @@ filename=fullfile(abspath,[file ext]);
 
 load(filename);
 
+if ~exist('shallowObj')
+disp('this is not a shallow object ! Quitting....');
+msg=['Wrong file name loaded'];
+  shallowObj=[];
+return;
+end
+
 if ~isfield(shallowObj.processing,'processor')
     shallowObj.processing.processor=[];
 end

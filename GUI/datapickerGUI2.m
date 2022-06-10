@@ -46,6 +46,7 @@ Tree.Position = position;
          Tree.UserData.roiobj=[];
         Tree.UserData.nodeid=[];
         Tree.UserData.filepath=[]; 
+        Tree.UserData.type=[]; 
 
 % Create ProjectsNode
 ProjectNode = uitreenode(Tree);
