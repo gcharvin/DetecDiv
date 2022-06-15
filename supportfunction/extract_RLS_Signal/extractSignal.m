@@ -81,14 +81,14 @@ if strcmp(method,'full')
     chans=roiobj(1).display.channel;
     str=[];
     for i=1:numel(chans)
-        str=[str num2str(i) ' - ' chans{i} ';'];
+        str=[str num2str(i) ' - ' chans{i} '; '];
     end
     
-    prompt=['Which channel to extract the signal from? (Default: [2:number of channelsExtract])' newline str];
-    %     channelsExtract=input(prompt);
-    %     for c=channelsExtract
-    %             BckgValue(c)=input(['Choose background value for channel' num2str(c)]);
-    %     end
+    prompt=['Which channel(s) to extract the signal from? (Default: [2:number of channelsExtract])' newline str];
+    channelsExtract=input(prompt);
+    for c=channelsExtract
+        BckgValue(c)=input(['Choose background value for channel' num2str(c) ' ']);
+    end
 %     channelsExtract=[2,3];      %%to delete
 %     BckgValue(2)=105;%%to delete
 %     BckgValue(3)=100;%%to delete
