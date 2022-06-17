@@ -38,7 +38,7 @@ if nargin==2 % basic parameter initialization
         'assemble_network',true,...
         'classifier_output',{{'sequence-to-sequence','sequence-to-one','sequence-to-sequence'}},...
         'CNN_training_method',{{'adam','sgdm','adam'}},...
-        'CNN_network',{{'googlenet','resnet50','googlenet'}},...
+        'CNN_network',{{'googlenet','inceptionresnetv2','inceptionv3','resnet50','googlenet'}},...
         'CNN_mini_batch_size',8,...
         'CNN_max_epochs',6,...
         'CNN_initial_learning_rate',0.0003,...
@@ -98,7 +98,14 @@ if trainingParam.train_CNN_classifier
     end
     
     target=fullfile(path,['netCNN_' name '.mat']);
-    copyfile(fullfile(path,[name '.mat']),target); % copies the trained CNN classifieer so that it can later be assembled to the lstm network
+    source=fullfile(path,[name '.mat']);
+  
+    if ~exist(source)
+        disp('Trained CNN does not exist; quitting !');
+        return;
+    end
+    
+    copyfile(source,target); % copies the trained CNN classifieer so that it can later be assembled to the lstm network
 end
 
 fprintf('Loading Image classifier...\n');
@@ -121,15 +128,13 @@ end
 
 inputSize = netCNN.Layers(1).InputSize(1:2);
 
-if strcmp(trainingParam.CNN_network{end},'googlenet')
-    layerName = "pool5-7x7_s1"; % layer id where the network will be connected
+switch trainingParam.CNN_network{end}
+    case 'googlenet'
+layerName = "pool5-7x7_s1";  % layer id where the network will be connected
+    otherwise
+layerName = "avg_pool"; 
 end
-if strcmp(trainingParam.CNN_network{end},'resnet50')
-    layerName = "avg_pool"; % layer id where the network will be connected
-end
-% if strcmp(trainingParam.CNN_network{end},'efficientnetb0')
-%     layerName = "pool5-7x7_s1"; % layer id where the network will be connected
-% end
+
 
 tempFile = [path '/' name '_image_classifier_activations.mat'];
 
@@ -345,14 +350,17 @@ if trainingParam.assemble_network | ~exist([path '/' name '.mat'])
     cnnLayers = layerGraph(netCNN);
     %layerNames = ["data" "pool5-drop_7x7_s1" "loss3-classifier" "prob" "output"];
     
-    if strcmp(trainingParam.CNN_network{end},'googlenet')
-        layerNames = ["data" "pool5-drop_7x7_s1" "new_fc" "prob" "new_classoutput"];
+    switch trainingParam.CNN_network{end}
+        case 'googlenet'
+            layerNames = ["data" "pool5-drop_7x7_s1" "new_fc" "prob" "new_classoutput"];
+            
+        case 'resnet50'
+            layerNames = ["input_1" "new_fc" "fc1000_softmax" "new_classoutput"];
+
+        case {'inceptionresnetv2','inceptionv3'}
+            layerNames = ["input_1" "new_fc" "predictions_softmax" "new_classoutput"];
     end
-    
-    if strcmp(trainingParam.CNN_network{end},'resnet50')
-        layerNames = ["input_1" "new_fc" "fc1000_softmax" "new_classoutput"];
-    end
-    
+
     cnnLayers = removeLayers(cnnLayers,layerNames);
     
     % create layers to adjust to CNN network layers
@@ -373,12 +381,18 @@ if trainingParam.assemble_network | ~exist([path '/' name '.mat'])
     
     lgraph = addLayers(cnnLayers,layers);
     
-    if strcmp(trainingParam.CNN_network{end},'googlenet')
-        lgraph = connectLayers(lgraph,"fold/out","conv1-7x7_s2");
-    end
-    if strcmp(trainingParam.CNN_network{end},'resnet50')
-        lgraph = connectLayers(lgraph,"fold/out","conv1");
-    end
+      switch trainingParam.CNN_network{end}
+          case 'googlenet'
+  lgraph = connectLayers(lgraph,"fold/out","conv1-7x7_s2");
+
+          case 'resnet50'
+  lgraph = connectLayers(lgraph,"fold/out","conv1");
+
+          case  {'inceptionresnetv2','inceptionv3'}
+ lgraph = connectLayers(lgraph,"fold/out","conv2d_1");             
+      end
+
+    
     
     % create lstm network and remove first layer (sequence)
     fprintf(' create LSTM network\n');

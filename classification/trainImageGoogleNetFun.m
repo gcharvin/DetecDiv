@@ -22,7 +22,7 @@ if nargin==2 % basic parameter initialization
             'Select initial version of network to start training with; Default: ImageNet'};
         
         classif.trainingParam=struct('CNN_training_method',{{'adam','sgdm','adam'}},...
-            'CNN_network',{{'googlenet','resnet18','resnet50','resnet101','nasnetlarge','inceptionresnetv2', 'efficientnetb0','googlenet'}},...
+            'CNN_network',{{'googlenet','inceptionresnetv2','inceptionv3','resnet18','resnet50','resnet101','nasnetlarge','inceptionresnetv2', 'efficientnetb0','googlenet'}},...
             'CNN_mini_batch_size',8,...
             'CNN_max_epochs',6,...
             'CNN_initial_learning_rate',0.0003,...
@@ -62,6 +62,11 @@ fprintf('------\n');
 
 foldername=[path '/trainingdataset/images'];
 
+if ~exist(foldername)
+disp('Folder does not  exist; first export images for training; quitting !')
+return;
+end
+
 imds = imageDatastore(foldername, ...
     'IncludeSubfolders',true, ...
     'LabelSource','foldernames'); 
@@ -87,29 +92,7 @@ fprintf('------\n');
 if strcmp(trainingParam.transfer_learning{end},'ImageNet')  % creates a new network
 disp('Generating new network');
 
-switch trainingParam.CNN_network{end}
-    case 'googlenet'
-net = googlenet;
-%net=googlenet('Weights','places365');% trained on places rather than on
-%imageNet; but is much worse than imagenet pretraining
-
-    case 'resnet18'
-net=resnet18;
-    case 'resnet50'
-net=resnet50;
-    case 'resnet101'
-net=resnet101;
-    case 'nasnetlarge'
-net=nasnetlarge;
-    case 'inceptionresnetv2'
-net=inceptionresnetv2;
-   case 'efficientnetb0'
-net=efficientnetb0;
-%     otherwise
-% fprintf('User selected custom CNN...\n');
-% eval(['net =' trainingParam.CNN_network]);        
-end
-%
+net=eval(trainingParam.CNN_network{end});
 
 fprintf('Reformatting net for transfer learning...\n');
 fprintf('------\n');
