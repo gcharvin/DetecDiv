@@ -70,6 +70,7 @@ for fr=1:numel(frames) %adjust boundaries
             tmpimg(tmpimg~=idxCentered)=0;
             tmpimg=uint16(tmpimg/idxCentered);
         end
+        
         %figure; imshowpair(mipmed,mipcrop,'montage')
         %mipwie=wiener2(mip,[4 4]);
         %     h = fspecial('average', [3 3]);

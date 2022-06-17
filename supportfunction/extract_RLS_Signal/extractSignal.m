@@ -57,12 +57,7 @@ for i=1:numel(varargin)
     %     if strcmp(inputvarargin{i},'lastFrame')
     %         lastFrame=inputvarargin{i+1};
     %     end
-    
-    %Rois
-    if strcmp(varargin{i},'Rois')
-        rois=varargin{i+1};
-    end
-    
+
 end
 
 
