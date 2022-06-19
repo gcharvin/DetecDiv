@@ -179,7 +179,6 @@ tempFile = [path '/' name '_image_classifier_activations.mat'];
     end
     
 %str=fullfile(path,['netLSTM_' name '.mat']);
-
 %if trainingParam.train_LSTM_network | ~exist(str) % training of LSTM network, if file does not exist, then must train
     
     disp('Preparing LSTM network ...');
@@ -223,8 +222,10 @@ tempFile = [path '/' name '_image_classifier_activations.mat'];
     % create LSTM network
     
     numFeatures = size(sequencesTrain{1},1);
-    numClasses = numel(classif.classes); %numel(categories(labelsTrain{1}));
+    numClasses =  numel(categories(labelsTrain{1}));
     
+  %  numel(classif.classes);
+
     %ntot=countcats(labelsTrain{1});
     %weights = double(ntot)/double(sum(ntot));
     

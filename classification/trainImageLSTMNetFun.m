@@ -274,7 +274,7 @@ return;
     if strcmp(trainingParam.classifier_output{end},'sequence-to-sequence') % seuqence to sequence clssif
         layers = [
             sequenceInputLayer(numFeatures,'Name','sequence')
-            bilstmLayer(nh,'OutputMode','sequence','Name','bilstm','InputWeights',rand(8*nh,sz(2)),'RecurrentWeights',rand(8*nh,nh),'Bias',zeros(8*nh,1));
+            bilstmLayer(nh,'OutputMode','sequence','Name','bilstm','InputWeightsInitializer' ,'glorot','RecurrentWeightsInitializer','orthogonal'); %'InputWeights',rand(8*nh,sz(2)),'RecurrentWeights',rand(8*nh,nh),'Bias',zeros(8*nh,1));
             % lstmLayer(200,'OutputMode','sequence','Name','bilstm')
             dropoutLayer(0.5,'Name','drop');
             fullyConnectedLayer(numClasses,'Name','fc','Weights', rand(6,2*nh) ,'Bias',zeros(6,1));
@@ -283,7 +283,7 @@ return;
     else % sequence to one classification
         layers = [
             sequenceInputLayer(numFeatures,'Name','sequence')
-            bilstmLayer(trainingParam.LSTM_hidden_size,'OutputMode','last','Name','bilstm','InputWeights',rand(8*nh,sz(2)),'RecurrentWeights',rand(8*nh,nh),'Bias',zeros(8*nh,1));
+            bilstmLayer(trainingParam.LSTM_hidden_size,'OutputMode','last','Name','bilstm','InputWeightsInitializer' ,'glorot','RecurrentWeightsInitializer','orthogonal');%'InputWeights',rand(8*nh,sz(2)),'RecurrentWeights',rand(8*nh,nh),'Bias',zeros(8*nh,1));
             % lstmLayer(200,'OutputMode','sequence','Name','bilstm')
             dropoutLayer(0.5,'Name','drop');
             fullyConnectedLayer(numClasses,'Name','fc','Weights', rand(6,2*nh) ,'Bias',zeros(6,1));
