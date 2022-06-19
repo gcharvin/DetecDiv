@@ -7,7 +7,7 @@ classdef weightedLSTMClassificationLayer < nnet.layer.ClassificationLayer
     
     
     methods
-        function layer = weightedLSTMClassificationLayer(classWeights, name)
+        function layer = weightedLSTMClassificationLayer(classWeights, name,classes)
             % layer = weightedClassificationLayer(classWeights) creates a
             % weighted cross entropy loss layer. classWeights is a row
             % vector of weights corresponding to the classes in the order
@@ -20,9 +20,12 @@ classdef weightedLSTMClassificationLayer < nnet.layer.ClassificationLayer
             layer.ClassWeights = classWeights;
 
             % Set layer name
-            if nargin == 2
+            if nargin >= 2
                 layer.Name = name;
             end
+              if nargin == 3
+                    layer.Classes=classes;
+             end
 
             % Set layer description
             layer.Description = 'Weighted cross entropy';

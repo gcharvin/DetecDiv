@@ -84,7 +84,13 @@ fprintf('------\n');
 
 [imdsTrain,imdsValidation] = splitEachLabel(imds,trainingParam.CNN_data_splitting_factor);
 
-numClasses = classif.classes; %numel(categories(imdsTrain.Labels));
+classes = classif.classes;
+
+%numel(categories(imdsTrain.Labels));
+if numel(classes)==0
+disp('There is no classes defined ; Cannot continue !')
+return;
+end
 
 fprintf('Loading network...\n');
 fprintf('------\n');
@@ -106,15 +112,18 @@ else
 end
 
 [learnableLayer,classLayer] = findLayersToReplace(lgraph);
-
+sz=size(learnableLayer.Weights);
 numClasses = numel(categories(imdsTrain.Labels));
+cates=categories(imdsTrain.Labels);
+%numClasses = numel(classes);
 
 % adjust the final layers of the net
 if isa(learnableLayer,'nnet.cnn.layer.FullyConnectedLayer')
     newLearnableLayer = fullyConnectedLayer(numClasses, ...
         'Name','new_fc', ...
         'WeightLearnRateFactor',1, ...
-        'BiasLearnRateFactor',1);
+        'BiasLearnRateFactor',1,...
+       'Weights',rand(numClasses,sz(2)),'Bias',zeros(numClasses,1));
     
 elseif isa(learnableLayer,'nnet.cnn.layer.Convolution2DLayer')
     newLearnableLayer = convolution2dLayer(1,numClasses, ...
@@ -127,7 +136,7 @@ lgraph = replaceLayer(lgraph,learnableLayer.Name,newLearnableLayer);
 
 %Change here to put or not class weighting
 %newClassLayer = classificationLayer('Name','new_classoutput');
-newClassLayer = weightedClassificationLayer(classWeights,'new_classoutput');
+newClassLayer = weightedClassificationLayer(classWeights,'new_classoutput',cates);
 
 lgraph = replaceLayer(lgraph,classLayer.Name,newClassLayer);
 
@@ -253,6 +262,7 @@ options = trainingOptions(trainingParam.CNN_training_method{end}, ...
 %     'Plots','training-progress',...%     'ExecutionEnvironment','auto');
 %  
 % end
+
 classifier = trainNetwork(augimdsTrain,lgraph,options);
 
 fprintf('Training is done...\n');
