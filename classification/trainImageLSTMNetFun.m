@@ -277,7 +277,7 @@ return;
             bilstmLayer(nh,'OutputMode','sequence','Name','bilstm','InputWeights',rand(8*nh,sz(2)),'RecurrentWeights',rand(8*nh,nh),'Bias',zeros(8*nh,1));
             % lstmLayer(200,'OutputMode','sequence','Name','bilstm')
             dropoutLayer(0.5,'Name','drop');
-            fullyConnectedLayer(numClasses,'Name','fc','Weights', ones(6,2*nh) ,'Bias',ones(6,1));
+            fullyConnectedLayer(numClasses,'Name','fc','Weights', rand(6,2*nh) ,'Bias',zeros(6,1));
             softmaxLayer('Name','softmax')
             weightedLSTMClassificationLayer(classWeights,'classification',classif.classes)];
     else % sequence to one classification
@@ -286,7 +286,7 @@ return;
             bilstmLayer(trainingParam.LSTM_hidden_size,'OutputMode','last','Name','bilstm','InputWeights',rand(8*nh,sz(2)),'RecurrentWeights',rand(8*nh,nh),'Bias',zeros(8*nh,1));
             % lstmLayer(200,'OutputMode','sequence','Name','bilstm')
             dropoutLayer(0.5,'Name','drop');
-            fullyConnectedLayer(numClasses,'Name','fc','Weights', ones(6,2*nh) ,'Bias',ones(6,1));
+            fullyConnectedLayer(numClasses,'Name','fc','Weights', rand(6,2*nh) ,'Bias',zeros(6,1));
             softmaxLayer('Name','softmax')
             weightedLSTMClassificationLayer(classWeights,'classification',classif.classes)];
     end
