@@ -87,7 +87,7 @@ if trainingParam.train_CNN_classifier
     if strcmp(trainingParam.transfer_learning{end},'ImageNet') 
     trainImageGoogleNetFun(classif); % trainImageGoogle net first and saves it as netCNN.mat in the LSTM dir
     else
-     src=fullfile(classif.path,[trainingParam.transfer_learning{end}]);
+     src=fullfile(classif.path,['netCNN_' trainingParam.transfer_learning{end}]);
          if exist(src)
              load(src); %loads classifier
          else

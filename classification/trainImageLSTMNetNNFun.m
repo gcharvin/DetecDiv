@@ -68,10 +68,134 @@ blockRNG=1;
 fprintf('Loading training options...\n');
 fprintf('------\n');
 
+netCNN=eval(trainingParam.CNN_network{end});
+inputSize = netCNN.Layers(1).InputSize(1:2);
+
+ if strcmp(trainingParam.transfer_learning{end},'ImageNet') 
 
 %load([ path '/options.mat']); % loading options for training --> imageclassifier, cactivations, lstm_training, assemblenet, validation
 
-netCNN=eval(trainingParam.CNN_network{end});
+ else
+   disp('loading previsouly trained classifier')
+     src=fullfile(classif.path,[trainingParam.transfer_learning{end}]);
+         if exist(src)
+             load(src); %loads classifier
+         else
+             disp(['Unable to load: ' trainingParam.transfer_learning{end}]);
+            return;
+         end     
+         lgraph=layerGraph(classifier);
+      %   classifier 
+      %   analyzeNetwork(classifier)
+     %     classifier.Layers(1)
+     %    inputSize = classifier.Layers(1).InputSize(1:2);
+ end
+
+
+% loading data 
+   cc=1;
+%     
+    % load all the files in the timeseries
+    fol= [path '/trainingdataset/timeseries'];
+    list=dir([fol '/*.mat']);
+    numFiles = numel(list);
+    sequences = cell(numFiles,1);
+    labels = cell(numFiles,1);
+    
+    for i=1:numel(list)
+        fprintf(['Processing movie ' num2str(i) '...']);
+        load([list(i).folder '/' list(i).name]); % loads deep, vid, lab (categories of labels)
+        video = centerCrop(vid,inputSize);
+        fr=1:size(video,4);
+        nb=ceil(size(video,4)/trainingParam.LSTM_sequence_length); % packs of 100 frames
+        dis=discretize(fr,nb);
+
+       % return;
+
+        for k=1:max(dis)
+        tmpvid=video(:,:,:,fr(dis==k));
+
+        %sequences{cc,1} = activations(netCNN,video,layerName,'OutputAs','columns');
+        %labels{cc,1}= lab;
+         sequences{cc,1} = tmpvid; %activations(netCNN,tmpvid,layerName,'OutputAs','columns');
+        labels{cc,1}= lab(fr(dis==k));
+
+ if size(labels{cc,1},1)>1 % swap dim if incorrect ! I don't know how the dims may be incorrect, but I observed it !
+            labels{cc,1}=labels{cc,1}';
+ end
+
+        cc=cc+1;
+        end
+
+        fprintf('\n');
+    end
+
+
+    %=====BLOCKs RNG====
+    if blockRNG==1
+        stCPU= RandStream('Threefry','Seed',0,'NormalTransform','Inversion');
+        stGPU=parallel.gpu.RandStream('Threefry','Seed',0,'NormalTransform','Inversion');
+        RandStream.setGlobalStream(stCPU);
+        parallel.gpu.RandStream.setGlobalStream(stGPU);
+    end
+    %===================
+    
+    numObservations = numel(sequences);
+    idx = randperm(numObservations);
+    N = floor(trainingParam.LSTM_data_splitting_factor* numObservations); % 0.9 replace
+    
+    idxTrain = idx(1:N);
+    %idxTrain=1; % warning
+    
+    sequencesTrain = sequences(idxTrain);
+    labelsTrain = labels(idxTrain);
+    
+    if strcmp(trainingParam.classifier_output{end},'sequence-to-one') % sequence to one classification
+        labelsTrain=[labelsTrain{:}]';
+    end
+    
+    idxValidation = idx(N+1:end);
+    %idxValidation = 1; %warning
+    
+    sequencesValidation = sequences(idxValidation);
+    labelsValidation = labels(idxValidation);
+    
+    if strcmp(trainingParam.classifier_output{end},'sequence-to-one') % sequence to one classification
+        labelsValidation = [labelsValidation{:}]';
+    end
+    
+    
+    % labelsValidation{1}= repmat(labelsValidation{1},[1 500])
+    % create LSTM network
+    
+    numFeatures = size(sequencesTrain{1},1);
+    numClasses =  numel(categories(labelsTrain{1}));
+    cates=categories(labelsTrain{1});
+
+  %  numel(classif.classes);
+
+    %ntot=countcats(labelsTrain{1});
+    %weights = double(ntot)/double(sum(ntot));
+    
+    sucl=zeros(numObservations,numClasses);
+    
+    for i=1:numObservations
+        sucl(i,:)=countcats(labels{i});
+    end
+    sucl=sum(sucl,1);
+    
+    tempsucl=sucl(sucl>0);
+    sucl(sucl==0)=min(tempsucl(:));
+    classWeights = 1./sucl;
+    classWeights = classWeights'/mean(classWeights);
+
+    % building network
+
+ if strcmp(trainingParam.transfer_learning{end},'ImageNet') 
+
+%load([ path '/options.mat']); % loading options for training --> imageclassifier, cactivations, lstm_training, assemblenet, validation
+
+%netCNN=eval(trainingParam.CNN_network{end});
 
 %%% training image classifier
 
@@ -119,7 +243,7 @@ netCNN=eval(trainingParam.CNN_network{end});
 % load and format data as sequences of vectors using spepcific network
 % layer
 
-inputSize = netCNN.Layers(1).InputSize(1:2);
+
 
 switch trainingParam.CNN_network{end}
     case 'googlenet'
@@ -141,42 +265,7 @@ tempFile = [path '/' name '_image_classifier_activations.mat'];
 %     fprintf('Computing Image classifier activation data...\n');
 %     fprintf('------\n');
 %     
-     cc=1;
-%     
-    % load all the files in the timeseries
-    fol= [path '/trainingdataset/timeseries'];
-    list=dir([fol '/*.mat']);
-    numFiles = numel(list);
-    sequences = cell(numFiles,1);
-    labels = cell(numFiles,1);
-    
-    for i=1:numel(list)
-        fprintf(['Processing movie ' num2str(i) '...']);
-        load([list(i).folder '/' list(i).name]); % loads deep, vid, lab (categories of labels)
-        video = centerCrop(vid,inputSize);
-        fr=1:size(video,4);
-        nb=ceil(size(video,4)/trainingParam.LSTM_sequence_length); % packs of 100 frames
-        dis=discretize(fr,nb);
-
-       % return;
-
-        for k=1:max(dis)
-        tmpvid=video(:,:,:,fr(dis==k));
-
-        %sequences{cc,1} = activations(netCNN,video,layerName,'OutputAs','columns');
-        %labels{cc,1}= lab;
-         sequences{cc,1} = tmpvid; %activations(netCNN,tmpvid,layerName,'OutputAs','columns');
-        labels{cc,1}= lab(fr(dis==k));
-
- if size(labels{cc,1},1)>1 % swap dim if incorrect ! I don't know how the dims may be incorrect, but I observed it !
-            labels{cc,1}=labels{cc,1}';
- end
-
-        cc=cc+1;
-        end
-
-        fprintf('\n');
-    end
+  
     
 %str=fullfile(path,['netLSTM_' name '.mat']);
 %if trainingParam.train_LSTM_network | ~exist(str) % training of LSTM network, if file does not exist, then must train
@@ -184,67 +273,7 @@ tempFile = [path '/' name '_image_classifier_activations.mat'];
     disp('Preparing LSTM network ...');
     fprintf('------\n');
     
-    %=====BLOCKs RNG====
-    if blockRNG==1
-        stCPU= RandStream('Threefry','Seed',0,'NormalTransform','Inversion');
-        stGPU=parallel.gpu.RandStream('Threefry','Seed',0,'NormalTransform','Inversion');
-        RandStream.setGlobalStream(stCPU);
-        parallel.gpu.RandStream.setGlobalStream(stGPU);
-    end
-    %===================
     
-    numObservations = numel(sequences);
-    idx = randperm(numObservations);
-    N = floor(trainingParam.LSTM_data_splitting_factor* numObservations); % 0.9 replace
-    
-    idxTrain = idx(1:N);
-    %idxTrain=1; % warning
-    
-    sequencesTrain = sequences(idxTrain);
-    labelsTrain = labels(idxTrain);
-    
-    if strcmp(trainingParam.classifier_output{end},'sequence-to-one') % sequence to one classification
-        labelsTrain=[labelsTrain{:}]';
-    end
-    
-    idxValidation = idx(N+1:end);
-    %idxValidation = 1; %warning
-    
-    sequencesValidation = sequences(idxValidation);
-    labelsValidation = labels(idxValidation);
-    
-    if strcmp(trainingParam.classifier_output{end},'sequence-to-one') % sequence to one classification
-        labelsValidation = [labelsValidation{:}]';
-    end
-    
-    
-    % labelsValidation{1}= repmat(labelsValidation{1},[1 500])
-    % create LSTM network
-    
-    numFeatures = size(sequencesTrain{1},1);
-    numClasses =  numel(categories(labelsTrain{1}));
-    
-  %  numel(classif.classes);
-
-    %ntot=countcats(labelsTrain{1});
-    %weights = double(ntot)/double(sum(ntot));
-    
-    sucl=zeros(numObservations,numClasses);
-    
-    for i=1:numObservations
-        sucl(i,:)=countcats(labels{i});
-    end
-    sucl=sum(sucl,1);
-    
-    tempsucl=sucl(sucl>0);
-    sucl(sucl==0)=min(tempsucl(:));
-    classWeights = 1./sucl;
-    classWeights = classWeights'/mean(classWeights);
-    
-    %==============OPTIONS=================
-    
-
-  % assembling network 
 
 %%% assemble the full network
     
@@ -258,6 +287,7 @@ else
 end
 
 [learnableLayer,classLayer] = findLayersToReplace(lgraph);
+    sz=size(learnableLayer.Weights);
 
 %numClasses = numel(categories(imdsTrain.Labels));
 
@@ -267,6 +297,7 @@ if isa(learnableLayer,'nnet.cnn.layer.FullyConnectedLayer')
         'Name','new_fc', ...
         'WeightLearnRateFactor',1, ...
         'BiasLearnRateFactor',1);
+%     'Weights',rand(numClasses,sz(2)),'Bias',zeros(numClasses,1));
     
 elseif isa(learnableLayer,'nnet.cnn.layer.Convolution2DLayer')
     newLearnableLayer = convolution2dLayer(1,numClasses, ...
@@ -279,7 +310,7 @@ lgraph = replaceLayer(lgraph,learnableLayer.Name,newLearnableLayer);
 
 %Change here to put or not class weighting
 %newClassLayer = classificationLayer('Name','new_classoutput');
-newClassLayer = weightedClassificationLayer(classWeights,'new_classoutput');
+newClassLayer = weightedClassificationLayer(classWeights,'new_classoutput',cates);
 
  cnnLayers = replaceLayer(lgraph,classLayer.Name,newClassLayer);
 
@@ -334,25 +365,26 @@ newClassLayer = weightedClassificationLayer(classWeights,'new_classoutput');
     fprintf(' create LSTM network\n');
     
     % if strcmp(trainingParam.transfer_learning{end},'ImageNet') 
-     
+      nh=trainingParam.LSTM_hidden_size;
+
     if strcmp(trainingParam.classifier_output{end},'sequence-to-sequence') % seuqence to sequence clssif
         lstmLayers = [
             sequenceInputLayer(numFeatures,'Name','sequence')
-            bilstmLayer(trainingParam.LSTM_hidden_size,'OutputMode','sequence','Name','bilstm')
+            bilstmLayer(nh,'OutputMode','sequence','Name','bilstm','InputWeightsInitializer' ,'glorot','RecurrentWeightsInitializer','orthogonal','InputWeights',randn(8*nh,sz(2)),'RecurrentWeights',randn(8*nh,nh),'Bias',zeros(8*nh,1));
             % lstmLayer(200,'OutputMode','sequence','Name','bilstm')
             dropoutLayer(0.5,'Name','drop');
-            fullyConnectedLayer(numClasses,'Name','fc')
+            fullyConnectedLayer(numClasses,'Name','fc','Weights', rand(6,2*nh) ,'Bias',zeros(6,1));
             softmaxLayer('Name','softmax')
-            weightedLSTMClassificationLayer(classWeights,'classification')];
+            weightedLSTMClassificationLayer(classWeights,'classification',classif.classes)];
     else % sequence to one classification
-        lstmLayers = [
+       lstmLayers= [
             sequenceInputLayer(numFeatures,'Name','sequence')
-            bilstmLayer(trainingParam.LSTM_hidden_size,'OutputMode','last','Name','bilstm')
+            bilstmLayer(trainingParam.LSTM_hidden_size,'OutputMode','last','Name','bilstm','InputWeightsInitializer' ,'glorot','RecurrentWeightsInitializer','orthogonal');%'InputWeights',rand(8*nh,sz(2)),'RecurrentWeights',rand(8*nh,nh),'Bias',zeros(8*nh,1));
             % lstmLayer(200,'OutputMode','sequence','Name','bilstm')
             dropoutLayer(0.5,'Name','drop');
-            fullyConnectedLayer(numClasses,'Name','fc')
+            fullyConnectedLayer(numClasses,'Name','fc','Weights', rand(6,2*nh) ,'Bias',zeros(6,1));
             softmaxLayer('Name','softmax')
-            weightedLSTMClassificationLayer(classWeights,'classification')];
+            weightedLSTMClassificationLayer(classWeights,'classification',classif.classes)];
     end
 
 
@@ -370,19 +402,14 @@ newClassLayer = weightedClassificationLayer(classWeights,'new_classoutput');
     lgraph = connectLayers(lgraph,layerName,"unfold/in");
     lgraph = connectLayers(lgraph,"fold/miniBatchSize","unfold/miniBatchSize");
     
-    analyzeNetwork(lgraph)
+  %  analyzeNetwork(lgraph)
     
-    fprintf('Assemble full network\n');
+ %   fprintf('Assemble full network\n');
     
-    classifier = assembleNetwork(lgraph);
-    save([path '/' name '.mat'],'classifier');
+ %   classifier = assembleNetwork(lgraph);
+ %   save([path '/' name '.mat'],'classifier');
 
-    fprintf('Full network is assembled !\n');
-    
-
-    return;
-
-
+%    fprintf('Full network is assembled !\n');
     
 % else % loads existing classifier to extract layers
     
@@ -397,6 +424,11 @@ newClassLayer = weightedClassificationLayer(classWeights,'new_classoutput');
 %          end         
 % end
     % specifiy training options
+
+ else
+  
+ end
+
     
     miniBatchSize = trainingParam.LSTM_mini_batch_size;
     numObservations = numel(sequencesTrain);
@@ -427,11 +459,13 @@ newClassLayer = weightedClassificationLayer(classWeights,'new_classoutput');
     disp('Training LSTM network ...');
     fprintf('------\n');
 
-    [netLSTM,info] = trainNetwork(sequencesTrain,labelsTrain,layers,options);
+    [classifier,info] = trainNetwork(sequencesTrain,labelsTrain,lgraph,options);
     
-     target=fullfile(path,['netLSTM_' name '.mat']);
+    % target=fullfile(path,['netLSTM_' name '.mat']);
  
-    save(target,'netLSTM','info');
+    save([path '/' name '.mat'],'classifier');
+
+   % save(target,'netLSTM','info');
     disp('Training LSTM network is done and saved ...');
     fprintf('------\n');
     
