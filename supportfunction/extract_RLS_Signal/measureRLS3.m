@@ -16,7 +16,7 @@ function measureRLS3(roiobj,param,varargin)
 binFrameThreshold=3; %during signal averaging over the div: number of frames with 1 to count the div as 1, when dealing with bin signals
 
 if numel(param)==0
-    param.classifierName={'myclassi','myclassi'};
+    param.classifierName=classi;
     param.classes='unbud small large dead clog empty';
     param.classiftype='bud';
     param.postProcessing=1;
@@ -46,7 +46,7 @@ if numel(param)==0
         end
         
         %ArrestThreshold
-        if strcmp(varargin{i},'ClassifierName')
+        if strcmp(varargin{i},'ClassifierName') % must be a classifier , not a string or a char
             param.classifierName=varargin{i+1};
         end
         
@@ -86,18 +86,21 @@ if numel(param)==0
     end
 end
 
-if ischar(param.classifierName)
-    classifstrid=param.classifierName;
-else
-    classifstrid=param.classifierName{end};
-end
+%if ischar(param.classifierName)
+  classif= param.classifierName ;
+  classifstrid=classif.strid;
+  
+%else
+%    classifstrid=param.classifierName{end};
+%end
 
 if ~ischar(param.classiftype)
     param.classiftype=param.classiftype{end};
 end
 
-classif=evalin('base',classifstrid);
-classifstrid=classif.strid;
+
+%classif=evalin('base',classifstrid);
+%classifstrid=classif.strid;
 
 
 %%
