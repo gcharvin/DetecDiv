@@ -5,7 +5,7 @@ function paramout=segFluo(param,roiobj,frames)
 if nargin==0
     paramout=[];
     
-    paramout.input_channel_name={listChannels};
+  %  paramout.input_channel_name={listChannels};
     
     paramout.threshold='1.5';
     

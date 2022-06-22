@@ -77,7 +77,6 @@ for i=1:numel(f)
               
             s = uilabel(handle,'Text',[ f{i} ':'],'Position',[position(1)+320*col position(2)-(cc-1)*space 150 22]);
             
-            
             t = uidropdown(handle,'Items',pstruct.(f{i})(1:end-1),'Value',pstruct.(f{i}){end},'Tag',f{i},'Position',[position(1)+150+320*col position(2)-(cc-1)*space 150 22],'Tooltip',tip{i});
             t.ValueChangedFcn={@dropchanged,flag};
             
