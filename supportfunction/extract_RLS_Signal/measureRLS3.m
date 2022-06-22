@@ -45,13 +45,13 @@ if numel(param)==0
             end
         end
         
-<<<<<<< HEAD
+%<<<<<<< HEAD
         %ArrestThreshold
-        if strcmp(varargin{i},'ClassifierName') % must be a classifier , not a string or a char
-=======
+ %       if strcmp(varargin{i},'ClassifierName') % must be a classifier , not a string or a char
+%=======
         
         if strcmp(varargin{i},'ClassifierName')
->>>>>>> cf240d22cbe39a3e7adcd858ae709a89829df145
+%>>>>>>> cf240d22cbe39a3e7adcd858ae709a89829df145
             param.classifierName=varargin{i+1};
         end
         
@@ -104,19 +104,19 @@ if ~ischar(param.classiftype)
     param.classiftype=param.classiftype{end};
 end
 
-<<<<<<< HEAD
+%<<<<<<< HEAD
 
 %classif=evalin('base',classifstrid);
 %classifstrid=classif.strid;
-=======
-try
-    classif=evalin('base',classifstrid);
-    classifstrid=classif.strid;
-catch
+%=======
+%try
+ %   classif=evalin('base',classifstrid);
+  %  classifstrid=classif.strid;
+%catch
     %nothing, classifstrid = classifstrid
-end
+%end
 
->>>>>>> cf240d22cbe39a3e7adcd858ae709a89829df145
+%>>>>>>> cf240d22cbe39a3e7adcd858ae709a89829df145
 
 
 %%
