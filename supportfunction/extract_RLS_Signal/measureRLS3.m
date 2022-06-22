@@ -45,11 +45,17 @@ if numel(param)==0
             end
         end
         
+<<<<<<< HEAD
         %ArrestThreshold
         if strcmp(varargin{i},'ClassifierName') % must be a classifier , not a string or a char
+=======
+        
+        if strcmp(varargin{i},'ClassifierName')
+>>>>>>> cf240d22cbe39a3e7adcd858ae709a89829df145
             param.classifierName=varargin{i+1};
         end
         
+        %ArrestThreshold
         if strcmp(varargin{i},'ArrestThreshold')
             param.ArrestThreshold=varargin{i+1};
         end
@@ -98,9 +104,19 @@ if ~ischar(param.classiftype)
     param.classiftype=param.classiftype{end};
 end
 
+<<<<<<< HEAD
 
 %classif=evalin('base',classifstrid);
 %classifstrid=classif.strid;
+=======
+try
+    classif=evalin('base',classifstrid);
+    classifstrid=classif.strid;
+catch
+    %nothing, classifstrid = classifstrid
+end
+
+>>>>>>> cf240d22cbe39a3e7adcd858ae709a89829df145
 
 
 %%
@@ -113,8 +129,8 @@ for i=1:numel(roiobj)
             param.Frames=roiobj(i).train.(classifstrid).bounds;
         end
     end
-    roiobj(i).results.RLS.(['from_' classifstrid])=RLS(roiobj(i),'result',classif,param,i); %struct() use to keep measureRLS2 code
-    roiobj(i).train.RLS.(['from_' classifstrid])=RLS(roiobj(i),'train',classif,param,i); %struct() use to keep measureRLS2 code
+    roiobj(i).results.RLS.(['from_' classifstrid])=RLS(roiobj(i),'result',classifstrid,param,i); %struct() use to keep measureRLS2 code
+    roiobj(i).train.RLS.(['from_' classifstrid])=RLS(roiobj(i),'train',classifstrid,param,i); %struct() use to keep measureRLS2 code
     
     %     if isprop(roiobj(i),'train') && numel(roiobj(i).train.(classifstrid).id)>0
     %         roiobj(i).train.(classifstrid).RLS=RLS(roiobj(i),'train',classif,param);
@@ -125,7 +141,7 @@ for i=1:numel(roiobj)
 end
 
 %=========================================RLS============================================
-function [rls,rlsResults,rlsGroundtruth]=RLS(roi,roitype,classif,param,i)
+function [rls,rlsResults,rlsGroundtruth]=RLS(roi,roitype,classifstrid,param,i)
 
 % rls.divDuration=[];
 % rls.frameBirth=[];
@@ -145,15 +161,16 @@ function [rls,rlsResults,rlsGroundtruth]=RLS(roi,roitype,classif,param,i)
 % rlsGroundtruth=rls;
 
 
-classistrid=classif.strid;
-classes=classif.classes;
+%classifstrid=classif.strid;
+
 
 if strcmp(roitype,'result')
     %================RESULTS===============
-    if isfield(roi.results,classistrid) && isfield(roi.results.(classistrid),'id') && sum(roi.results.(classistrid).id)>0
+    if isfield(roi.results,classifstrid) && isfield(roi.results.(classifstrid),'id') && sum(roi.results.(classifstrid).id)>0
         
-        id=roi.results.(classistrid).id; % results for classification
-        proba=roi.results.(classistrid).prob;
+        classes=roi.results.(classifstrid).classes;
+        id=roi.results.(classifstrid).id; % results for classification
+        proba=roi.results.(classifstrid).prob;
         
         divTimes=computeDivtime(id,proba,classes,param);
         
@@ -202,10 +219,11 @@ if strcmp(roitype,'result')
     
     rls=rlsResults;
 elseif strcmp(roitype,'train')
-    %==================GROUNDTRUTH===================
+    %==================GROUNDTRUTH=================== 
     idg=[];
-    if isfield(roi.train,(classistrid)) && isfield(roi.train.(classistrid),'id') && sum(roi.train.(classistrid).id)>0
-        idg=roi.train.(classistrid).id; % results for classification
+    if isfield(roi.train,(classifstrid)) && isfield(roi.train.(classifstrid),'id') && sum(roi.train.(classifstrid).id)>0
+        classes=roi.train.(classifstrid).classes;
+        idg=roi.train.(classifstrid).id; % results for classification
         disp(['Groundtruth data are available for ROI ' num2str(roi.id)]);
         
         proba=-1;

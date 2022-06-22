@@ -1,9 +1,11 @@
 function paramout=segFluo(param,roiobj,frames)
 
+ listChannels=listAvailableChannels;
+
 if nargin==0
     paramout=[];
     
-    paramout.input_channel_name='fluo1';
+    paramout.input_channel_name={listChannels};
     
     paramout.threshold='1.5';
     
