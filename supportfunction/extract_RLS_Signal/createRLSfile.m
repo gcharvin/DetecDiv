@@ -65,14 +65,9 @@ for cond=1:szc
         %             roiobjcell{cond,1}(r).path=strrep(roiobjcell{cond,1}(r).path,'/shared/space2/','\\space2.igbmc.u-strasbg.fr\');
         %         end
         roiobjcell{cond,1}(r).load('results');
-        roiobjcell{cond,1}(r).path=strrep(roiobjcell{cond,1}(r).path,'/shared/space2/','\\space2.igbmc.u-strasbg.fr\');
-        
-        %         aa=roiobjcell{cond,1}(r).results.RLS.(['from_' classifstrid]);
-        %         if numel(aa.divDuration)==0
-        %             continue;
-        %         en
-        
+                
         rls(cc)=roiobjcell{cond,1}(r).results.RLS.(['from_' classifstrid]);
+        rlsspf(cc)=roiobjcell{cond,1}(r).results.signal;
         
         if GT==1
             %if exist...else error('explicit error message') for robustness
@@ -112,7 +107,7 @@ end
 for r=1:numel(rls)
     rls(r).condition=rlscond(r);
     rls(r).conditionComment=rlscomm{r};
-    
+    rls(r).signalPerFrame=rlsspf(r);
     if GT==1 && errorDetection==1
         rls(r).noFalseDiv=rlserr(r).noFalseDiv;
         rls(r).falseDiv=rlserr(r).noFalseDiv;

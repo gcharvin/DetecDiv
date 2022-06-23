@@ -8,11 +8,13 @@ figExport=0;
 nameFile='signal';
 timeOrGen=0; %time
 timefactor=5;
-load=0;
+
+
 maxBirth=200; %max frame to be born. After, discard rls.
 condition=1:max([rlsfile.condition]);
 MinDiv=1;
 MinSep=0;
+plotAligned=0;
 
 
 for i=1:numel(varargin)
@@ -92,38 +94,28 @@ signalstrid='';
 classifstrid='';
 fluostrid='';
 
-rlsfile
-rois
-
-%% load data if required
-if load==1
-    for cond=conditions
-        for r=rois{cond}
-            rlsfile(r).load('results');
-        end
-    end
-end
 
 %%
 if timeOrGen==0 %time
-    if isfield(rlsfile(1).results,'signal')
-        for cond=conditions
+    if isfield(rlsfile(1),'signalPerFrame')
+        for cond=1:numel(condition)
             rlstmp=rlsfile([rlsfile.condition]==condition(cond));
+            obj{cond}(1,1)=rlstmp(1).signalPerFrame;
+            
             listfields=fieldnames(obj{cond}(1,1));
             for r=rois{cond}
                 for f=1:numel(listfields)
-                    if isfield(rlstmp(r).results.signal,listfields{f})
-                        obj{cond}(r,1).(listfields{f})=rlstmp(r).results.signal.(listfields{f}); %assign obj
+                    if isfield(rlstmp(r).signalPerFrame,listfields{f})
+                        obj{cond}(r,1).(listfields{f})=rlstmp(r).signalPerFrame.(listfields{f}); %assign obj
                     end
                 end
             end
         end
     else
-        error(['The roi ' rlsfile(1) 'has no signal. Extract it using extractSignal'])
+        error(['The roi ' rlsfile(1).name ' has no signalPerFrame field. Extract it using extractSignal followed by measureRLS3'])
     end
-
-elseif timeOrGen==1 %generations
-    plotAligned=0;
+        
+elseif timeOrGen==1 %generations    
 
     if isfield(rlsfile(1),'Aligned')
         %   askPlotAligned=input('Aligned signals available, plot this? y/n (Default: n)','s');
