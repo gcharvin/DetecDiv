@@ -116,7 +116,6 @@ if timeOrGen==0 %time
     end
         
 elseif timeOrGen==1 %generations    
-
     if isfield(rlsfile(1),'Aligned')
         %   askPlotAligned=input('Aligned signals available, plot this? y/n (Default: n)','s');
         %  if numel(askPlotAligned)==0 || strcmp(askPlotAligned,'n')
@@ -289,8 +288,11 @@ for cond=1:numel(condition)
         %extract
         if plotDivDuration==1
             data{cond}(r,:)=obj2{cond}{r,1}*timefactor;
-        elseif strcmp(fluostrid,'volume')
-            data{cond}(r,:)=obj2{cond}{r,1}(chanid,:)*0.1056; %normalize into microns²
+%         elseif strcmp(fluostrid,'volume')
+%             data{cond}(r,:)=obj2{cond}{r,1}(chanid,:)*0.1056; %normalize into microns²
+        elseif timeOrGen==0
+            sdatavector=[rlstmp(r).frameBirth,rlstmp(r).frameEnd];
+            data{cond}(r,sdatavector(1):sdatavector(2))=obj2{cond}{r,1}(chanid,sdatavector(1):sdatavector(2));
         else
             sdatavector=numel(obj2{cond}{r,1}(chanid,:));
             data{cond}(r,1:sdatavector)=obj2{cond}{r,1}(chanid,:);
@@ -369,9 +371,21 @@ colmap=colormap(lines);
 for cond=1:numel(condition)
     errorbar(x{cond},meanData{cond},semData{cond},'o','MarkerEdgeColor','k','MarkerFaceColor',colmap(cond,:),'MarkerSize',mz,'Color',colmap(cond,:));
     leg{cond}=[comment{cond} ' N=' num2str(numel(data{cond}(:,1)))];
-
-    %Xtk=[x{cond}(1):5:x{cond}(end)];
-    Xtk=[-30:5:5];
+    
+    if timeOrGen==1
+        step=5;
+        if plotAligned==0
+            first=0;
+        else
+            first=-30;
+        end
+    else
+        step=100;
+        first=0;
+    end
+    
+    Xtk=[first:step:x{cond}(end)];
+    %Xtk=[-30:5:5];
     set(gca,'FontSize',fz, 'FontName','Myriad Pro','LineWidth',2*lw,'FontWeight','bold','TickLength',[0.02 0.02],'XTick',Xtk);
     xlim([Xtk(1) Xtk(end)]);
     ylim(1)=0;
