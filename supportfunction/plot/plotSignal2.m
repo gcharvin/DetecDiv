@@ -11,30 +11,57 @@ timefactor=5;
 load=0;
 maxBirth=200; %max frame to be born. After, discard rls.
 condition=1:max([rlsfile.condition]);
+MinDiv=1;
+MinSep=0;
 
 
 for i=1:numel(varargin)
     if strcmp(varargin{i},'Generation')
         timeOrGen=1;
     end
-    
+
     if strcmp(varargin{i},'Condition')
         condition=varargin{i+1};
     end
-    
+
     %     if strcmp(varargin{i},'RLSfile') %can also take as input rls struct file instead of roiobj
     %         RLSfile=1;
     %     end
-    
+
     if strcmp(varargin{i},'Load') %load data
         load=1;
     end
-    
+
     if strcmp(varargin{i},'NameFile')
         nameFile=varargin{i+1};
         figExport=1;
     end
-    
+
+    if strcmp(varargin{i},'MinDiv') %load data
+        MinDiv=varargin{i+1};
+    end
+
+    if strcmp(varargin{i},'MinSep') %load data
+        MinSep=varargin{i+1};
+    end
+
+    if strcmp(varargin{i},'FrameInterval') %load data
+        timefactor=varargin{i+1};
+    end
+
+    if strcmp(varargin{i},'maxBirth') %load data
+        maxBirth=varargin{i+1};
+    end
+
+
+    if strcmp(varargin{i},'timeOrGen') %load data
+        if strcmp(varargin{i+1},'Time')
+            timeOrGen=0;
+        else
+            timeOrGen=1;
+        end
+    end
+
 end
 
 % if isa(rls,'roi')
@@ -42,14 +69,14 @@ end
 %
 % elseif isa(rls,'struct')
 %RLSfile=1;
-timeOrGen=1;
+%timeOrGen=1;
 % end
 
 
 %% selection
 % rls=rls([rls(:).condition]==condition);
-rlsfile=rlsfile([rlsfile(:).ndiv]>7); %put at least 1 for robustness
-rlsfile=rlsfile([rlsfile(:).sep]>5); %take only SEP cells
+rlsfile=rlsfile([rlsfile(:).ndiv]>MinDiv); %put at least 1 for robustness
+rlsfile=rlsfile([rlsfile(:).sep]>MinSep); %take only SEP cells
 
 rlsfile=rlsfile( ([rlsfile.frameBirth]<=maxBirth) & (~isnan([rlsfile.frameBirth])) );
 %roiobj=roiobj( (strcmp({roiobj.endType},'Death') & [roiobj.frameEnd]>300)  );
@@ -65,6 +92,8 @@ signalstrid='';
 classifstrid='';
 fluostrid='';
 
+rlsfile
+rois
 
 %% load data if required
 if load==1
@@ -92,24 +121,25 @@ if timeOrGen==0 %time
     else
         error(['The roi ' rlsfile(1) 'has no signal. Extract it using extractSignal'])
     end
-    
-elseif timeOrGen==1 %generations  
-    
+
+elseif timeOrGen==1 %generations
+    plotAligned=0;
+
     if isfield(rlsfile(1),'Aligned')
-        askPlotAligned=input('Aligned signals available, plot this? y/n (Default: n)','s');
-        if numel(askPlotAligned)==0 || strcmp(askPlotAligned,'n')
-            plotAligned=0;
-        elseif strcmp(askPlotAligned,'y') %plot aligned signals
-            plotAligned=1;
-        end
+        %   askPlotAligned=input('Aligned signals available, plot this? y/n (Default: n)','s');
+        %  if numel(askPlotAligned)==0 || strcmp(askPlotAligned,'n')
+        %      plotAligned=0;
+        %  elseif strcmp(askPlotAligned,'y') %plot aligned signals
+        plotAligned=1;
+        %  end
     end
-    
+
     if plotAligned==0
         if isfield(rlsfile(1),'divSignal')
             for cond=1:numel(condition)
                 rlstmp=rlsfile([rlsfile.condition]==condition(cond));
                 obj{cond}(1,1)=rlstmp(1).divSignal;
-                
+
                 listfields=fieldnames(obj{cond}(1,1));
                 for r=rois{cond}
                     for f=1:numel(listfields)
@@ -122,7 +152,7 @@ elseif timeOrGen==1 %generations
         else
             error(['The roi ' rlsfile(1).name ' has no divSignal field. Extract it using extractSignal followed by measureRLS3'])
         end
-        
+
     elseif plotAligned==1
         %remove nosep
         flag=[];
@@ -135,18 +165,18 @@ elseif timeOrGen==1 %generations
         for cond=1:numel(condition) %updates variable storing number of rois
             rois{cond}=1:numel(rlsfile([rlsfile.condition]==condition(cond)));
         end
-        
+
         liststrid=fields(rlsfile(1).Aligned); %full, cell, nucleus
         str=[];
         for i=1:numel(liststrid)
             str=[str num2str(i) ' - ' liststrid{i} '; '];
         end
-        alignid=input(['Which alignment used ? (Default: 1)' str]);
-        if numel(alignid)==0
-            alignid=1;
-        end
+        %  alignid=input(['Which alignment used ? (Default: 1)' str]);
+        %  if numel(alignid)==0
+        alignid=1;
+        %  end
         alignstrid=liststrid{alignid};
-        
+
         for cond=1:numel(condition)
             rlstmp=rlsfile([rlsfile.condition]==condition(cond));
             obj{cond}(1,1)=rlstmp(1).Aligned.(alignstrid);
@@ -160,7 +190,7 @@ elseif timeOrGen==1 %generations
             end
         end
     end
-    
+
 end
 
 
@@ -181,11 +211,11 @@ end
 signalstrid=liststrid{signalid};
 if strcmp(signalstrid,'divDuration')
     plotDivDuration=1;
-    
+
     for cond=1:numel(condition)
         obj2{cond}={obj{cond}.divDuration}'; %assign obj
     end
-    
+
     channumber=1;
 else
     plotDivDuration=0;
@@ -195,7 +225,7 @@ end
 if plotDivDuration==0
     liststrid=fields(obj{1}(1).(signalstrid));
     str=[];
-    
+
     for i=1:numel(liststrid)
         str=[str num2str(i) ' - ' liststrid{i} '; '];
     end
@@ -203,13 +233,13 @@ if plotDivDuration==0
     if numel(classifid)==0
         classifid=1;
     end
-    
+
     classifstrid=liststrid{classifid};
-    
+
     %% ask fluo
     liststrid=fields(obj{1}(1).(signalstrid).(classifstrid));
     str=[];
-    
+
     for i=1:numel(liststrid)
         str=[str num2str(i) ' - ' liststrid{i} '; '];
     end
@@ -217,17 +247,17 @@ if plotDivDuration==0
     if numel(fluoid)==0
         fluoid=1;
     end
-    
+
     fluostrid=liststrid{fluoid};
-    
-    
+
+
     %% ask rate
     if contains(fluostrid,'IncRate')
         plotRate=1;
     else
         plotRate=0;
     end
-    
+
     for cond=1:numel(condition)
         cr=1;
         for r=rois{cond}
@@ -254,7 +284,7 @@ if plotDivDuration==0
     if numel(chanid)==0
         chanid=1;
     end
-    
+
 end
 
 %% data to vector
@@ -296,16 +326,16 @@ for cond=1:numel(condition)
     else
         x{cond}=1:numel(data{cond}(1,:));
     end
-    
-    
+
+
     %all
     figure;
     for r=1:numel(obj2{cond})
         hold on
         plot(x{cond}(:),data{cond}(r,:))
     end
-    
-    
+
+
     %averaged value
     meanData{cond}=nanmean(data{cond},1);
     stdData{cond}=nanstd(data{cond},1);
@@ -347,7 +377,7 @@ colmap=colormap(lines);
 for cond=1:numel(condition)
     errorbar(x{cond},meanData{cond},semData{cond},'o','MarkerEdgeColor','k','MarkerFaceColor',colmap(cond,:),'MarkerSize',mz,'Color',colmap(cond,:));
     leg{cond}=[comment{cond} ' N=' num2str(numel(data{cond}(:,1)))];
-    
+
     %Xtk=[x{cond}(1):5:x{cond}(end)];
     Xtk=[-30:5:5];
     set(gca,'FontSize',fz, 'FontName','Myriad Pro','LineWidth',2*lw,'FontWeight','bold','TickLength',[0.02 0.02],'XTick',Xtk);

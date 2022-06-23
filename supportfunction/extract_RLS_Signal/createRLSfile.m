@@ -45,12 +45,13 @@ else
     
     classifstrid=param.classifierName{end};
     classifstrid=erase(classifstrid,'_indep'); %alternatively, take classif.strid
-    if isfield(param,'AlignTraj')
-        %   'ok'
-        Align=param.AlignTraj{end};
-    else
-        Align=0;
-    end
+%     if isfield(param,'AlignTraj')
+%         %   'ok'
+%         Align=param.AlignTraj{end};
+%     else
+%         Align=0;
+%     end
+    Align=0;
     
     errorDetection=param.errorDetection;
 end

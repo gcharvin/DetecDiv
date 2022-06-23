@@ -242,7 +242,7 @@ if strcmp(method,'oneMask')
  %       error('Indicate which channel contains the MASK');
  %   end
 
-     channelSegCell=paramout.mask_channel_name1;
+    channelSegCell=paramout.mask_channel_name1;
     classiname=channelSegCell; %chans{channelSegCell};
     %===
     
@@ -346,58 +346,68 @@ if strcmp(method,'TwoMask')
     roiobj(1).path=modifyPath(roiobj(1),environment);
     roiobj(1).load();
     %===ask channels
-    chans=roiobj(1).display.channel;
-    str=[];
-    for i=1:numel(chans)
-        str=[str num2str(i) ' - ' chans{i} ';  '];
-    end
+%     chans=roiobj(1).display.channel;
+%     str=[];
+%     for i=1:numel(chans)
+%         str=[str num2str(i) ' - ' chans{i} ';  '];
+%     end
     
-    prompt=['Which channel(s) to EXTRACT the signal from?' newline str newline];
-    channelsExtract=input(prompt);
-    if ~exist('channelsExtract','var')
-        error('Indicate channel(s) from which to extract the signal');
-    end
+   % prompt=['Which channel(s) to EXTRACT the signal from?' newline str newline];
+    %channelsExtract=input(prompt);
+    %if ~exist('channelsExtract','var')
+      %  error('Indicate channel(s) from which to extract the signal');
+   % end
     
-    prompt=['Which channel contains the MASK 1?' newline str newline];
-    channelSegCell=input(prompt);
-    if ~exist('channelSegCell','var')
-        error('Indicate which channel contains the MASK 1');
-    end
+  %  prompt=['Which channel contains the MASK 1?' newline str newline];
+  %  channelSegCell=input(prompt);
+
+    channelSegCell=paramout.mask_channel_name1;
+    classiname=channelSegCell; %chans{channelSegCell};
+ classidMother= paramout.mask_channel_class1;
+
+  %  if ~exist('channelSegCell','var')
+  %      error('Indicate which channel contains the MASK 1');
+  %  end
     
-    prompt=['Which channel contains the MASK 2?' newline str newline];
-    channelSegNuc=input(prompt);
-    if ~exist('channelSegNuc','var')
-        error('Indicate which channel contains the MASK 2');
-    end
+ %   prompt=['Which channel contains the MASK 2?' newline str newline];
+%    channelSegNuc=input(prompt);
+   % if ~exist('channelSegNuc','var')
+     %   error('Indicate which channel contains the MASK 2');
+    %end
     
-    channelExtractName=chans{channelsExtract};
-    classiname=chans{channelSegCell};
-    classiNucName=chans{channelSegNuc};
+     channelSegNuc=paramout.mask_channel_name2;
+     classiNucName= channelSegNuc;
+      classidNucleus= paramout.mask_channel_class2;
+
+ %   channelExtractName=chans{channelsExtract};
+%    classiname=chans{channelSegCell};
+  %  classiNucName=chans{channelSegNuc};
     %===
     
     %===ask class ID
-    prompt=(['Indicate the --number-- of the class corresponding to the mother onemask in the classi: ' classiname ' (Default: 2) ' newline]);
-    classidMother=input(prompt);
-    if numel(classidMother)==0, classidMother=2; end
+%     prompt=(['Indicate the --number-- of the class corresponding to the mother onemask in the classi: ' classiname ' (Default: 2) ' newline]);
+%     classidMother=input(prompt);
+%     if numel(classidMother)==0, classidMother=2; end
     %             for i=1:numel(roiobj(r).classes)
     %                 strB=[strB num2str(i) ' - ' roiobj(r).classes{i} ';'];
     %             end
-    prompt=(['Indicate the --number-- of the class corresponding to the background in the classi: ' classiNucName ' (Default: 1) ' newline]);
-    classidBckg=input(prompt);
-    if numel(classidBckg)==0, classidBckg=1; end
+%    prompt=(['Indicate the --number-- of the class corresponding to the background in the classi: ' classiNucName ' (Default: 1) ' newline]);
+    classidBckg=1; %input(prompt);
+  %  if numel(classidBckg)==0, classidBckg=1; end
     
     %find the classid of the nucleus, ask it only once.
-    prompt=(['Indicate the --number-- of the class corresponding to the nucleus in the classi: ' classiNucName ' (Default: 2) ' newline]);
-    classidNucleus=input(prompt);
-    if numel(classidNucleus)==0, classidNucleus=2; end
+ %   prompt=(['Indicate the --number-- of the class corresponding to the nucleus in the classi: ' classiNucName ' (Default: 2) ' newline]);
+   % classidNucleus=input(prompt);
+    %if numel(classidNucleus)==0, classidNucleus=2; end
     %===
     
     %NOW WORK ON ALL THE ROIS
-    for r=1:numel(roiobj) %to parfor
+ %   for r=1:numel(roiobj) %to parfor
+ r=1;
         roiobj(r).path=modifyPath(roiobj(r),environment);
         roiobj(r).load();
         
-        channelsExtract=findChannelID(roiobj(r),channelExtractName);   
+    %    channelsExtract=findChannelID(roiobj(r),channelExtractName);   
         channelSegCell=findChannelID(roiobj(r),classiname);        
         channelSegNuc=findChannelID(roiobj(r),classiNucName);
         
@@ -471,25 +481,25 @@ if strcmp(method,'TwoMask')
         roiobj(r).clear;
         clear im
         
-    end
+%    end
 end
 
 %%
 if strcmp(method,'fociOrNot')
     roiobj(1).load();
     %===ask channels
-    chans=roiobj(1).display.channel;
-    str=[];
-    for i=1:numel(chans)
-        str=[str num2str(i) ' - ' chans{i} ';  '];
-    end
+%     chans=roiobj(1).display.channel;
+%     str=[];
+%     for i=1:numel(chans)
+%         str=[str num2str(i) ' - ' chans{i} ';  '];
+%     end
     
-    prompt=['Which channel contains the foci mask?' newline str newline];
-    channelFociMask=input(prompt);
-    if ~exist('channelFociMask','var')
-        error('Indicate channelof the foci mask');
-    end    
-    channelFociMaskName=chans{channelFociMask};
+%    prompt=['Which channel contains the foci mask?' newline str newline];
+    %channelFociMask=input(prompt);
+   % if ~exist('channelFociMask','var')
+     %   error('Indicate channelof the foci mask');
+    %end    
+    channelFociMaskName=paramout.mask_channel_name1;
     
     for r=1:numel(roiobj)
         roiobj(r).load();
