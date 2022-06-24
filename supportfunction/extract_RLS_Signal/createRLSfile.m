@@ -59,6 +59,9 @@ end
 %%
 cc=1;
 
+rlsspf=[];
+rlsspf.data=[];
+
 for cond=1:szc
     for r=1:numel(roiobjcell{cond,1})
         %         if strcmp(environment,'local')
@@ -67,7 +70,13 @@ for cond=1:szc
         roiobjcell{cond,1}(r).load('results');
                 
         rls(cc)=roiobjcell{cond,1}(r).results.RLS.(['from_' classifstrid]);
-        rlsspf(cc)=roiobjcell{cond,1}(r).results.signal;
+   % aa=roiobjcell{cond,1}(r).results.signal
+   if isfield(roiobjcell{cond,1}(r).results,'signal')
+        rlsspf(cc).data=roiobjcell{cond,1}(r).results.signal;
+   else
+        rlsspf(cc).data=[];
+   end
+       
         
         if GT==1
             %if exist...else error('explicit error message') for robustness
@@ -107,7 +116,7 @@ end
 for r=1:numel(rls)
     rls(r).condition=rlscond(r);
     rls(r).conditionComment=rlscomm{r};
-    rls(r).signalPerFrame=rlsspf(r);
+    rls(r).signalPerFrame=rlsspf(r).data;
     if GT==1 && errorDetection==1
         rls(r).noFalseDiv=rlserr(r).noFalseDiv;
         rls(r).falseDiv=rlserr(r).noFalseDiv;

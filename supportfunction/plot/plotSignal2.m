@@ -36,7 +36,7 @@ for i=1:numel(varargin)
 
     if strcmp(varargin{i},'NameFile')
         nameFile=varargin{i+1};
-        figExport=1;
+     %   figExport=1;
     end
 
     if strcmp(varargin{i},'MinDiv') %load data
@@ -323,11 +323,11 @@ for cond=1:numel(condition)
 
 
     %all
-    figure;
-    for r=1:numel(obj2{cond})
-        hold on
-        plot(x{cond}(:),data{cond}(r,:))
-    end
+  %  figure;
+  %  for r=1:numel(obj2{cond})
+   %     hold on
+  %      plot(x{cond}(:),data{cond}(r,:))
+  %  end
 
 
     %averaged value
@@ -369,7 +369,12 @@ title(['']);
 colmap=colormap(lines);
 
 for cond=1:numel(condition)
+    if size(x{cond})==size(semData{cond})
     errorbar(x{cond},meanData{cond},semData{cond},'o','MarkerEdgeColor','k','MarkerFaceColor',colmap(cond,:),'MarkerSize',mz,'Color',colmap(cond,:));
+    else
+      plot(x{cond},meanData{cond},'o','MarkerEdgeColor','k','MarkerFaceColor',colmap(cond,:),'MarkerSize',mz,'Color',colmap(cond,:));
+    end
+
     leg{cond}=[comment{cond} ' N=' num2str(numel(data{cond}(:,1)))];
     
     if timeOrGen==1
@@ -384,10 +389,13 @@ for cond=1:numel(condition)
         first=0;
     end
     
+   
     Xtk=[first:step:x{cond}(end)];
     %Xtk=[-30:5:5];
     set(gca,'FontSize',fz, 'FontName','Myriad Pro','LineWidth',2*lw,'FontWeight','bold','TickLength',[0.02 0.02],'XTick',Xtk);
+    if numel(Xtk)>1
     xlim([Xtk(1) Xtk(end)]);
+    end
     ylim(1)=0;
 end
 legend(leg);

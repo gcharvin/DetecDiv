@@ -14,6 +14,11 @@ for i=1:numel(listproj.Project)
     for j=1:numel(listproj.Projectpos)
 
         pix=find(matches(positions,listproj.Projectpos{j}));
+
+        if numel(pix)==0
+            continue
+        end
+
         roiobj=proj.fov(pix).roi;
         listcha={};
 
@@ -27,6 +32,11 @@ for i=1:numel(listproj.Project)
     for j=1:numel(listproj.Projectclassi)
 
         pix=find(matches(classifiers,listproj.Projectclassi{j}));
+
+        if numel(pix)==0
+            continue
+        end
+
         roiobj=proj.processing.classification(pix).roi;
         listcha={};
 
