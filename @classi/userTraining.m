@@ -115,8 +115,9 @@ cc=1;
 r=rois(id);
     
     tmp=classif.roi(r).results;
-    
-    for j=1:numel(str)
+
+
+    for j=2:numel(str)
         tmp=tmp.(str{j}); % ?? Why ??
     end    
     
