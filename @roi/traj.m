@@ -77,12 +77,16 @@ set(gca,'FontSize',20);
 
 str={};
 % GT
+
+
 if numel(obj.train)~=0
+    if isfield(obj.train,classistr)
     x=1:numel(obj.train.(classistr).id);
     y=obj.train.(classistr).id;
     
     plot(x,y,'Color','k','LineWidth',3); hold on;
     str{1}= 'Groundtruth';
+    end
 end
 
 % results

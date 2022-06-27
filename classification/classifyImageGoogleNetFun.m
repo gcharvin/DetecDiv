@@ -35,8 +35,6 @@ pix=roiobj.findChannelID(channel{1});
 %pix=find(roiobj.channelid==classif.channel(1)); % find channels corresponding to trained data
 gfp=roiobj.image(:,:,pix,:);
 
-
-
 im=uint8(zeros(size(gfp,1),size(gfp,2),3,size(gfp,4)));
    
 if numel(pix)==1
@@ -51,6 +49,8 @@ if numel(pix)==1
 end
 
 gfp = imresize(gfp,inputSize(1:2));
+%figure, imshow(gfp(:,:,:,1));
+
 
 %   class(gfp)
 %   trm=gfp(:,:,:,fr);
@@ -69,9 +69,11 @@ gfp = imresize(gfp,inputSize(1:2));
 
 % upload results into roi obj;
 
+
 results=roiobj.results;
 results.(classif.strid)=[];
 results.(classif.strid).id=zeros(1,size(roiobj.image,4));
+results.(classif.strid).classes=classif.classes;
 results.(classif.strid).labels=label;
 
 roiobj.results=results;

@@ -52,7 +52,6 @@ if nargin==2 % basic parameter initialization
     end
     %-----------------------------------%
 
-
 % gather all classification images in each class and performs the training and outputs and saves the trained net 
 % load training data 
 blockRNG=1;
@@ -61,32 +60,24 @@ fprintf('Loading data repository...\n');
 fprintf('------\n');
 
 foldername=[path '/trainingdataset/images'];
-
 if ~exist(foldername)
 disp('Folder does not  exist; first export images for training; quitting !')
 return;
 end
-
 imds = imageDatastore(foldername, ...
     'IncludeSubfolders',true, ...
     'LabelSource','foldernames'); 
 
-% calculate class frequency for each class 
-
-%ntot=countcats(imds.Labels);
-%weights = double(ntot)/double(sum(ntot));
-
 classWeights = 1./countcats(imds.Labels);
 classWeights = classWeights'/mean(classWeights);
 
-fprintf('Loading training options...\n');
 fprintf('------\n');
 
 [imdsTrain,imdsValidation] = splitEachLabel(imds,trainingParam.CNN_data_splitting_factor);
 
 classes = classif.classes;
-
 %numel(categories(imdsTrain.Labels));
+
 if numel(classes)==0
 disp('There is no classes defined ; Cannot continue !')
 return;
@@ -97,7 +88,6 @@ fprintf('------\n');
 
 if strcmp(trainingParam.transfer_learning{end},'ImageNet')  % creates a new network
 disp('Generating new network');
-
 net=eval(trainingParam.CNN_network{end});
 
 fprintf('Reformatting net for transfer learning...\n');
@@ -122,8 +112,8 @@ if isa(learnableLayer,'nnet.cnn.layer.FullyConnectedLayer')
     newLearnableLayer = fullyConnectedLayer(numClasses, ...
         'Name','new_fc', ...
         'WeightLearnRateFactor',1, ...
-        'BiasLearnRateFactor',1,...
-       'Weights',rand(numClasses,sz(2)),'Bias',zeros(numClasses,1));
+        'BiasLearnRateFactor',1);
+ %      'Weights',rand(numClasses,sz(2)),'Bias',zeros(numClasses,1));
     
 elseif isa(learnableLayer,'nnet.cnn.layer.Convolution2DLayer')
     newLearnableLayer = convolution2dLayer(1,numClasses, ...
@@ -134,9 +124,8 @@ end
 
 lgraph = replaceLayer(lgraph,learnableLayer.Name,newLearnableLayer);
 
-%Change here to put or not class weighting
 %newClassLayer = classificationLayer('Name','new_classoutput');
-newClassLayer = weightedClassificationLayer(classWeights,'new_classoutput',cates);
+newClassLayer = weightedClassificationLayer(classWeights,'new_classoutput');%,cates);
 
 lgraph = replaceLayer(lgraph,classLayer.Name,newClassLayer);
 
@@ -182,30 +171,9 @@ fprintf('------\n');
         parallel.gpu.RandStream.setGlobalStream(stGPU);
     end
     %===================
-    
-% training network
-% augment dataset
-
-%pixelRange=[-5 5];
 
 pixelRange = trainingParam.CNN_translation_augmentation;
-
-%scaleRange = [0.9 1.1];
-
-%pixelRange = [-100 100];
-%scaleRange = [0.7 1.3];
-
-%rotation=[180 180];
 rotation=trainingParam.CNN_rotation_augmentation;
-
-% imageAugmenter = imageDataAugmenter( ...
-%     'RandXReflection',true, ...
-%     'RandYReflection',true, ...
-%     'RandXTranslation',pixelRange, ...
-%     'RandRotation',rotation, ...
-%     'RandYTranslation',pixelRange, ...
-%     'RandXScale',scaleRange, ...
-%     'RandYScale',scaleRange);
 
 imageAugmenter = imageDataAugmenter( ...
     'RandXReflection',true, ...
@@ -213,9 +181,6 @@ imageAugmenter = imageDataAugmenter( ...
     'RandXTranslation',pixelRange, ...
     'RandYTranslation',pixelRange, ...
      'RandRotation',rotation);% , ...
-
-  %  'RandXScale',scaleRange, ...
-  %  'RandYScale',scaleRange);
 
 augimdsTrain = augmentedImageDatastore(inputSize(1:2),imdsTrain, ...
     'DataAugmentation',imageAugmenter);
@@ -227,12 +192,6 @@ valFrequency = floor(numel(augimdsTrain.Files)/miniBatchSize);
 
 augimdsValidation = augmentedImageDatastore(inputSize(1:2),imdsValidation);
 
-
-
-
-
-% if gpuDeviceCount>0
-% disp('Using GPUs and multiple workers');
 options = trainingOptions(trainingParam.CNN_training_method{end}, ...
     'MiniBatchSize',miniBatchSize, ...
     'MaxEpochs',trainingParam.CNN_max_epochs, ...
@@ -248,20 +207,6 @@ options = trainingOptions(trainingParam.CNN_training_method{end}, ...
     'VerboseFrequency',10,...
     'Plots','training-progress',...
     'ExecutionEnvironment',trainingParam.execution_environment{end});
-  
-% else
-%     disp('Using CPUs or whatever is available');
-%    options = trainingOptions('sgdm', ...
-%     'MiniBatchSize',miniBatchSize, ...
-%     'MaxEpochs',6, ...
-%     'InitialLearnRate',3e-4, ... % 3e-4
-%     'Shuffle','every-epoch', ...
-%     'ValidationData',augimdsValidation, ...
-%     'ValidationFrequency',valFrequency, ...
-%      'VerboseFrequency',2,...
-%     'Plots','training-progress',...%     'ExecutionEnvironment','auto');
-%  
-% end
 
 classifier = trainNetwork(augimdsTrain,lgraph,options);
 
@@ -275,6 +220,11 @@ save([path '/' name '.mat'],'classifier');
 CNNOptions=struct(options);
 
 CNNOptions.ValidationData=[];
+
+if ~exist(fullfile(path,'TrainingValidation'))
+    mkdir(path,'TrainingValidation');
+end
+
 save([path '/TrainingValidation/' 'CNNOptions' '.mat'],'CNNOptions');
 save([path '/TrainingValidation/' 'tmpoptions' '.mat'],'options');
 
