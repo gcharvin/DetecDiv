@@ -101,13 +101,14 @@ inputSize = netCNN.Layers(1).InputSize(1:2);
     numFiles = numel(list);
     sequences = cell(numFiles,1);
     labels = cell(numFiles,1);
-    
+  %  list
+
     for i=1:numel(list)
         fprintf(['Processing movie ' num2str(i) '...']);
         load([list(i).folder '/' list(i).name]); % loads deep, vid, lab (categories of labels)
         video = centerCrop(vid,inputSize);
         fr=1:size(video,4);
-        nb=ceil(size(video,4)/trainingParam.LSTM_sequence_length); % packs of 100 frames
+        nb=ceil(size(video,4)/trainingParam.LSTM_sequence_length) ;
         dis=discretize(fr,nb);
 
        % return;
@@ -129,7 +130,6 @@ inputSize = netCNN.Layers(1).InputSize(1:2);
 
         fprintf('\n');
     end
-
 
     %=====BLOCKs RNG====
     if blockRNG==1
@@ -310,7 +310,7 @@ lgraph = replaceLayer(lgraph,learnableLayer.Name,newLearnableLayer);
 
 %Change here to put or not class weighting
 %newClassLayer = classificationLayer('Name','new_classoutput');
-newClassLayer = weightedClassificationLayer(classWeights,'new_classoutput',cates);
+newClassLayer = weightedClassificationLayer(classWeights,'new_classoutput');%,cates);
 
  cnnLayers = replaceLayer(lgraph,classLayer.Name,newClassLayer);
 
@@ -336,10 +336,23 @@ newClassLayer = weightedClassificationLayer(classWeights,'new_classoutput',cates
     inputSize = netCNN.Layers(1).InputSize(1:2);
     averageImage = netCNN.Layers(1).AverageImage;
     
-    inputLayer = sequenceInputLayer([inputSize 3], ...
+  switch trainingParam.CNN_network{end}
+        case {'googlenet','resnet50'}
+          averageImage = netCNN.Layers(1).Mean;
+              inputLayer = sequenceInputLayer([inputSize 3], ...
         'Normalization','zerocenter', ...
         'Mean',averageImage, ...
         'Name','input');
+
+        case {'inceptionresnetv2','inceptionv3'}
+          mine = netCNN.Layers(1).Min;
+          maxe = netCNN.Layers(1).Max;
+              inputLayer = sequenceInputLayer([inputSize 3], ...
+        'Normalization','rescale-symmetric', ...
+        'Min',mine, ...
+        'Max',maxe,...
+        'Name','input');   
+    end
     
     % add the sequence input layer to the layer graph
     layers = [
@@ -370,21 +383,21 @@ newClassLayer = weightedClassificationLayer(classWeights,'new_classoutput',cates
     if strcmp(trainingParam.classifier_output{end},'sequence-to-sequence') % seuqence to sequence clssif
         lstmLayers = [
             sequenceInputLayer(numFeatures,'Name','sequence')
-            bilstmLayer(nh,'OutputMode','sequence','Name','bilstm','InputWeightsInitializer' ,'glorot','RecurrentWeightsInitializer','orthogonal','InputWeights',randn(8*nh,sz(2)),'RecurrentWeights',randn(8*nh,nh),'Bias',zeros(8*nh,1));
+            bilstmLayer(nh,'OutputMode','sequence','Name','bilstm');%,'InputWeightsInitializer' ,'glorot','RecurrentWeightsInitializer','orthogonal','InputWeights',randn(8*nh,sz(2)),'RecurrentWeights',randn(8*nh,nh),'Bias',zeros(8*nh,1));
             % lstmLayer(200,'OutputMode','sequence','Name','bilstm')
             dropoutLayer(0.5,'Name','drop');
-            fullyConnectedLayer(numClasses,'Name','fc','Weights', rand(6,2*nh) ,'Bias',zeros(6,1));
+            fullyConnectedLayer(numClasses,'Name','fc');%,'Weights', rand(6,2*nh) ,'Bias',zeros(6,1));
             softmaxLayer('Name','softmax')
-            weightedLSTMClassificationLayer(classWeights,'classification',classif.classes)];
+            weightedLSTMClassificationLayer(classWeights,'classification')];%,classif.classes)];
     else % sequence to one classification
        lstmLayers= [
             sequenceInputLayer(numFeatures,'Name','sequence')
-            bilstmLayer(trainingParam.LSTM_hidden_size,'OutputMode','last','Name','bilstm','InputWeightsInitializer' ,'glorot','RecurrentWeightsInitializer','orthogonal');%'InputWeights',rand(8*nh,sz(2)),'RecurrentWeights',rand(8*nh,nh),'Bias',zeros(8*nh,1));
+            bilstmLayer(trainingParam.LSTM_hidden_size,'OutputMode','last','Name','bilstm');%,'InputWeightsInitializer' ,'glorot','RecurrentWeightsInitializer','orthogonal');%'InputWeights',rand(8*nh,sz(2)),'RecurrentWeights',rand(8*nh,nh),'Bias',zeros(8*nh,1));
             % lstmLayer(200,'OutputMode','sequence','Name','bilstm')
             dropoutLayer(0.5,'Name','drop');
-            fullyConnectedLayer(numClasses,'Name','fc','Weights', rand(6,2*nh) ,'Bias',zeros(6,1));
+            fullyConnectedLayer(numClasses,'Name');%,'fc','Weights', rand(6,2*nh) ,'Bias',zeros(6,1));
             softmaxLayer('Name','softmax')
-            weightedLSTMClassificationLayer(classWeights,'classification',classif.classes)];
+            weightedLSTMClassificationLayer(classWeights,'classification')];%,classif.classes)];
     end
 
 
@@ -429,7 +442,6 @@ newClassLayer = weightedClassificationLayer(classWeights,'new_classoutput',cates
   
  end
 
-    
     miniBatchSize = trainingParam.LSTM_mini_batch_size;
     numObservations = numel(sequencesTrain);
     numIterationsPerEpoch = max(1,floor(numObservations / miniBatchSize));

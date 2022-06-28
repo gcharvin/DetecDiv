@@ -182,8 +182,6 @@ else % compute acitvations for input data
         cc=cc+1;
         end
 
-       
-
         fprintf('\n');
     end
     
