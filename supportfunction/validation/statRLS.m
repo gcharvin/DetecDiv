@@ -5,11 +5,11 @@ function [h1,h2,h3,h4]=statRLS(rls,varargin)
 
 % plot correlation between groundtruth rls and observed rls 
 
-figExport=0;
+figExport=1;
 plotCNN=1;
 plotFluo=1;
 plotVolume=1;
-corrdiv=0;
+corrdiv=1;
 
 sz=4;
 comment='';
@@ -127,7 +127,7 @@ if isfield(rls,'noFalseDiv') && corrdiv==1
 
             FP=numel([rls([rlsdivs.groundtruth]==0).falseDiv]);
             FN=numel([rls([rlsdivs.groundtruth]==1).falseDiv]);
-            TP=numel([rls([rlsdivs.groundtruth]==0).framediv])-FP;
+            TP=numel([rls([rlsdivs.groundtruth]==0).frameDiv])-FP;
             accu=TP/(TP+FP);
             recall=TP/(TP+FN);
             disp(['Accu=' num2str(accu)])
@@ -194,8 +194,8 @@ end
 
 h3=figure('Color','w','Units', 'Normalized', 'Position',[0.1 0.1 0.35 0.35]);
 
-stairs([0 ; xpred],[1 ; 1-ypred],'Color','k','LineWidth',lw);hold on,
-stairs([0 ; xg],[1 ; 1-yg],'Color',[20/255,200/255,50/255],'LineWidth',lw);
+stairs([0 ; xpred],[1 ; 1-ypred],'Color',[20/255,200/255,50/255],'LineWidth',lw);hold on,
+stairs([0 ; xg],[1 ; 1-yg],'Color','k','LineWidth',lw);
 if plotCNN==1
     stairs([0 ; xcnn],[1 ; 1-ycnn],'Color',[20/255,20/255,255/255],'LineWidth',lw);
 end
@@ -245,9 +245,9 @@ bins=[0:5:200, 1000];
 
 h4=figure('Color','w','Units', 'Normalized', 'Position',[0.1 0.1 0.35 0.35]);
 
-histogram(divt,bins,'DisplayStyle','stairs','LineWidth',lw,'EdgeColor','k','EdgeAlpha',0.75);
+histogram(divt,bins,'DisplayStyle','stairs','LineWidth',lw,'EdgeColor',[20/255,200/255,50/255],'EdgeAlpha',0.75);
 hold on
-histogram(divg,bins,'DisplayStyle','stairs','LineWidth',lw,'EdgeAlpha',0.75,'EdgeColor',[20/255,200/255,50/255]);
+histogram(divg,bins,'DisplayStyle','stairs','LineWidth',lw,'EdgeAlpha',0.75,'EdgeColor','k');
 if plotCNN==1
    histogram(divcnn,bins,'DisplayStyle','stairs','LineWidth',lw,'EdgeAlpha',0.75,'EdgeColor',[20/255,20/255,255/255]);
 end
@@ -259,7 +259,7 @@ end
 %1. ***test*** 
 %+
 
-leg={['Predicted; mean+-SEM=' num2str(mean(divt)) '+' num2str(std(divt)/sqrt(length(divt))) ' (N=' num2str(length(divt)) '); p=' num2str(p)],['Grountruth; mean+-SEM=' num2str(mean(divg)) '+' num2str(std(divg)/sqrt(length(divg))) ' (N=' num2str(length(divg)) ')']};
+leg={['Predicted; mean+-SEM=' num2str(mean(divt(divt<200))) '+' num2str(std(divt(divt<205))/sqrt(length(divt(divt<205)))) ' (N=' num2str(length(divt)) '); p=' num2str(p)],['Groundtruth; mean+-SEM=' num2str(mean(divg(divg<200))) '+' num2str(std(divg(divg<205))/sqrt(length(divg(divg<205)))) ' (N=' num2str(length(divg)) ')']};
 if plotCNN==1
     leg{3}=['CNN Predicted; mean+-SEM=' num2str(mean(divcnn)) '+' num2str(std(divcnn)/sqrt(length(divcnn))) ' (N=' num2str(length(divcnn)) '); p=' num2str(pcnn)];
 end
