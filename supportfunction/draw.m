@@ -92,7 +92,7 @@ if numel(classif)>0
 
     obj.display.selectedchannel=zeros(1,numel(obj.display.selectedchannel));
 
-    ps=find(matches(obj.display.channel,classif.channelName{1}));
+    ps=find(matches(obj.display.channel,classif.channelName));
     if numel(ps)
         obj.display.selectedchannel(ps)=1;
     end
@@ -138,8 +138,7 @@ end
 % find channel to be displayed
 cd=0;
 
-
-
+%aa=obj.display.selectedchannel
 
 for i=1:numel(obj.display.channel)
     pix=find(obj.channelid==i); % find matrix index associated with channel
@@ -267,6 +266,7 @@ for i=1:numel(obj.display.channel)
         end
 
         h.Position=aa; % forcing positioning (in case cd==1)
+
 
         set(hp(cc),'Tag',['AxeROI' num2str(cc)]);
 
