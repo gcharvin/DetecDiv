@@ -358,8 +358,32 @@ h.WindowButtonUpFcn = '';
 
 
 % add buttons and fcn to chanfe frame
-keys={'a' 'z' 'e' 'r' 't' 'y' 'u' 'i' 'o' 'p'};
-h.KeyPressFcn={@changeframe,obj,him,hp,keys,classif};
+
+  
+            pth=userpath;
+           fle= fullfile(pth,'Detecdiv/userprefs.mat');
+            if exist(fle)
+                load(fle) % loads userprefs variable
+                keys=textscan(userprefs.roi_view_shortcut_keys,'%s');
+                keys=keys{1};
+                keys=keys';
+
+               
+                specialkeys={};
+                tmp=userprefs.roi_view_corr_shortcut_keys;  tmp=textscan(tmp,'%s');   tmp=tmp{1}; tmp=tmp'; specialkeys{1}=tmp;
+                tmp=userprefs.roi_view_bounds_shortcut_keys;  tmp=textscan(tmp,'%s');   tmp=tmp{1}; tmp=tmp'; specialkeys{2}=tmp;
+                tmp=userprefs.roi_view_frames_jump_size;  tmp=textscan(tmp,'%s');   tmp=tmp{1}; tmp=tmp'; specialkeys{3}=tmp;
+                tmp=userprefs.painting_fill_holes_shortcut;  tmp=textscan(tmp,'%s');   tmp=tmp{1}; tmp=tmp'; specialkeys{4}=tmp;
+                tmp=userprefs.painting_transparency_shortcut;  tmp=textscan(tmp,'%s');   tmp=tmp{1}; tmp=tmp'; specialkeys{5}=tmp;
+
+            else % structure must me created
+errordlg('Could not file the shortcut preferences; Please reset user preferences before launching this indow again!,Error');
+close
+return; 
+            end
+
+%keys={'a' 'z' 'e' 'r' 't' 'y' 'u' 'i' 'o' 'p'};
+h.KeyPressFcn={@changeframe,obj,him,hp,keys,classif,specialkeys};
 
 handles=findobj(h,'Tag','frametexttitle');
 if numel(handles)==0
@@ -478,7 +502,7 @@ if numel(classif)>0
                 hpaint=findobj('Tag',classif.strid); % if the painting axe is displayed
                 if numel(hpaint)~=0
 
-                    set(mitem(i),'MenuSelectedFcn',{@classesMenuFcn,h,obj,hpaint.Children(1),hcopy.Children(1),hpaint,classif});
+                    set(mitem(i),'MenuSelectedFcn',{@classesMenuFcn,h,obj,hpaint.Children(1),hcopy.Children(1),hpaint,classif,userprefs});
 
                 end
             end
@@ -501,10 +525,10 @@ if numel(classif)>0
         % change keypressfcn if painting is allowed to allow more functions
         %
         if strcmp(classif.category{1},'Pixel') | strcmp(classif.category{1},'Object') % only in pixel mode
-            h.KeyPressFcn={@changeframe,obj,him,hp,keys,classif,hpaint.Children(1),hcopy.Children(1),hpaint};
+            h.KeyPressFcn={@changeframe,obj,him,hp,keys,classif,specialkeys,hpaint.Children(1),hcopy.Children(1),hpaint};
             %<<<<<<< HEAD
         else
-            h.KeyPressFcn={@changeframe,obj,him,hp,keys,classif};
+            h.KeyPressFcn={@changeframe,obj,him,hp,keys,classif,specialkeys};
         end
 
 
@@ -1230,7 +1254,7 @@ y=1;
     end
 end
 
-function classesMenuFcn(handles, event, h,obj,impaint1,impaint2,hpaint,classif)
+function classesMenuFcn(handles, event, h,obj,impaint1,impaint2,hpaint,classif,userprefs)
 
 if strcmp(handles.Checked,'off')
 
@@ -1262,7 +1286,7 @@ if strcmp(handles.Checked,'off')
 
     % set pixel painting mode
     if strcmp(classif.category{1},'Pixel')
-        set(h,'WindowButtonDownFcn',{@wbdcb,obj,impaint1,impaint2,hpaint,classif,h});
+        set(h,'WindowButtonDownFcn',{@wbdcb,obj,impaint1,impaint2,hpaint,classif,h,userprefs});
     end
 
     if strcmp(classif.category{1},'Object')
@@ -1290,7 +1314,7 @@ end
 end
 
 
-function wbdcb(src,event,obj,impaint1,impaint2,hpaint,classif,h)
+function wbdcb(src,event,obj,impaint1,impaint2,hpaint,classif,h,userprefs)
 seltype = src.SelectionType;
 ma=zeros(size(obj.image,1),size(obj.image,2));
 
@@ -1418,33 +1442,31 @@ end
 
         switch bsize
             case 2 % fine brush
-                % xdat = [cp(1,1) ];
-                %ydat = [cp(1,2) ];
 
-                mix=max(1,cp(1,2));
-                miy=max(1,cp(1,1));
-                mux=min(size(ma,1),cp(1,2));
-                muy=min(size(ma,1),cp(1,1));
+                si=round(sqrt(userprefs.painting_small_brush_size));
+                mix=max(1,cp(1,2)-(si-1));
+                miy=max(1,cp(1,1)-(si-1));
+                mux=min(size(ma,1),cp(1,2)+(si-1));
+                muy=min(size(ma,1),cp(1,1)+(si-1));
 
             case 1 % large brush
-                %xdat = [cp(1,1) cp(1,1)+1 cp(1,1)-1 cp(1,1)+1 cp(1,1)-1 cp(1,1) cp(1,1) cp(1,1)+1 cp(1,1)-1];
-                %ydat = [cp(1,2) cp(1,2)+1 cp(1,2)-1 cp(1,2)-1 cp(1,2)+1 cp(1,2)+1 cp(1,2)-1 cp(1,2) cp(1,2)];
 
-                mix=max(1,cp(1,2)-3);
-                miy=max(1,cp(1,1)-3);
-                mux=min(size(ma,1),cp(1,2));
-                muy=min(size(ma,1),cp(1,1));
+             si=round(sqrt(userprefs.painting_large_brush_size));
+                mix=max(1,cp(1,2)-(si-1));
+                miy=max(1,cp(1,1)-(si-1));
+                mux=min(size(ma,1),cp(1,2)+(si-1));
+                muy=min(size(ma,1),cp(1,1)+(si-1));
 
                 %ma(mix:mux,miy:muy)=1;
                 % pis=ma>0;
 
             case 3 % huge brush
 
-                % ma=zeros(size(obj,image,1),size(obj.image,2));
-                mix=max(1,cp(1,2)-8);
-                miy=max(1,cp(1,1)-8);
-                mux=min(size(ma,1),cp(1,2)+8);
-                muy=min(size(ma,1),cp(1,1)+8);
+               si=round(sqrt(userprefs.painting_huge_brush_size));
+                mix=max(1,cp(1,2)-(si-1));
+                miy=max(1,cp(1,1)-(si-1));
+                mux=min(size(ma,1),cp(1,2)+(si-1));
+                muy=min(size(ma,1),cp(1,1)+(si-1));
 
                 %ma(mix:mux,miy:muy)=1;
                 %pis=ma>0;
@@ -2027,7 +2049,7 @@ str=[str subt];
 
 if ~strcmp(h.UserData.correctionMode,'off')
     tt=h.UserData.correctionMode;
-    str=[{['[CORRECTION MODE ' tt ' - j/k keys]']}, str];
+    str=[{['[CORRECTION MODE ' tt ' - j/kkeys]']}, str];
 end
 
 title(hp(cc),str,'FontSize',12,'interpreter','none');
@@ -2255,7 +2277,7 @@ if frame<=size(obj.image,4) & frame > 0
 end
 end
 
-function changeframe(handle,event,obj,him,hp,keys,classif,impaint1,impaint2,hpaint)
+function changeframe(handle,event,obj,him,hp,keys,classif,specialkeys,impaint1,impaint2,hpaint)
 
 %hpaint.Children(1),hcopy.Children(1)
 
@@ -2279,7 +2301,7 @@ if strcmp(event.Key,'rightarrow')
     ok=1;
 end
 
-if strcmp(event.Key,'m') % move by 10 frames rights
+if strcmp(event.Key,specialkeys{3}{2}) % move by 10 frames rights
     if obj.display.frame+10>size(obj.image,4)
         return;
     end
@@ -2299,7 +2321,7 @@ if strcmp(event.Key,'leftarrow')
     ok=1;
 end
 
-if strcmp(event.Key,'l') % move by 10 frames right
+if strcmp(event.Key,specialkeys{3}{1}) % move by 10 frames right
     if obj.display.frame-10<1
         return;
     end
@@ -2309,8 +2331,8 @@ if strcmp(event.Key,'l') % move by 10 frames right
     ok=1;
 end
 
-if nargin==10 % only if painting is allowed
-    if strcmp(event.Key,'k') % fill up painted contours
+if nargin==11 % only if painting is allowed
+    if strcmp(event.Key,specialkeys{4}{1}) % fill up painted contours
         hmenu = findobj('Tag','TrainingClassesMenu');
         hclass=findobj(hmenu,'Checked','on');
         if numel(hclass)==0
@@ -2325,14 +2347,14 @@ if nargin==10 % only if painting is allowed
         impaint1.CData(imend)= colo;
         impaint2.CData(imend)= colo;
         pixelchannel=obj.findChannelID(classif.strid);
-        pix=find(obj.channelid==pixelchannel);
-        obj.image(:,:,pix,obj.display.frame)=impaint2.CData;
+     %   pix=find(obj.channelid==pixelchannel)
+        obj.image(:,:,pixelchannel,obj.display.frame)=impaint2.CData;
         ok=1;
     end
 end
 
-if nargin==10 % only if painting is allowed
-    if strcmp(event.Key,'uparrow') %
+if nargin==11 % only if painting is allowed
+    if strcmp(event.Key,'uparrow')  || strcmp(event.Key,specialkeys{5}{2}) %
 
         warning off all
         ax=findobj('Tag',classif.strid);
@@ -2350,7 +2372,7 @@ if nargin==10 % only if painting is allowed
     %            if strcmp(event.Key,'downarrow') %
 
     %=======
-    if strcmp(event.Key,'downarrow') % TO BE IMPLEMENTED
+    if strcmp(event.Key,'downarrow')  || strcmp(event.Key,specialkeys{5}{1})  % TO BE IMPLEMENTED
         %>>>>>>> 589f21a9bbb3f84230a952fbece4d0e9d1d7fbf6
         warning off all
         ax=findobj('Tag',classif.strid);
@@ -2363,7 +2385,7 @@ if nargin==10 % only if painting is allowed
 end
 
 if numel(classif)>0
-    if  strcmp(classif.category{1},'Image') || strcmp(classif.category{1},'LSTM')% if image classification, assign class to keypress even
+    if  strcmp(classif.category{1},'Image') % || strcmp(classif.category{1},'LSTM')% if image classification, assign class to keypress even
         if ~isfield(obj.train.(classif.strid),'bounds')
             obj.train.(classif.strid).bounds=[0 0];
         else

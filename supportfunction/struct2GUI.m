@@ -7,6 +7,7 @@ handle=[];
 flag=[];
 tip=cellstr('');
 tip=repmat(tip,1,numel(f));
+wid=150;
 
 for i=1:numel(varargin)
     if strcmp(varargin{i},'Handle') % insert struct in a given gui
@@ -17,7 +18,10 @@ for i=1:numel(varargin)
      end
       if strcmp(varargin{i},'Tip') % indicate tips to be displayed when rolling over parameter. Must be a cell array of string, same size as the structure
     tip =varargin{i+1};
-     end
+      end
+       if strcmp(varargin{i},'Width') % indicate tips to be displayed when rolling over parameter. Must be a cell array of string, same size as the structure
+  wid=varargin{i+1};
+      end
 end
 
 if numel(handle)==0
@@ -44,7 +48,7 @@ for i=1:numel(f)
         case 'logical' % check box, editable
 
             
-            t = uicheckbox(handle,'Text',f{i},'Value',pstruct.(f{i}),'Tag',f{i},'Position',[position(1)+320*col position(2)-(cc-1)*space 150 22],'Tooltip',tip{i});
+            t = uicheckbox(handle,'Text',f{i},'Value',pstruct.(f{i}),'Tag',f{i},'Position',[position(1)+(2*wid+20)*col position(2)-(cc-1)*space wid 22],'Tooltip',tip{i});
              
             t.ValueChangedFcn={@checkchanged,flag,'bool'};
 
@@ -55,9 +59,9 @@ for i=1:numel(f)
                 tmp=num2str(tmp);
             end
             
-            s = uilabel(handle,'Text',[ f{i} ':'],'Position',[position(1)+320*col position(2)-(cc-1)*space 150 22]);
+            s = uilabel(handle,'Text',[ f{i} ':'],'Position',[position(1)+(2*wid+20)*col position(2)-(cc-1)*space wid 22]);
             
-            t = uieditfield(handle,'text','Value',tmp,'Tag',f{i},'Position',[position(1)+150+320*col position(2)-(cc-1)*space 150 22],'Tooltip',tip{i});
+            t = uieditfield(handle,'text','Value',tmp,'Tag',f{i},'Position',[position(1)+wid+(2*wid+20)*col position(2)-(cc-1)*space wid 22],'Tooltip',tip{i});
             t.ValueChangedFcn={@checkchanged,flag,'char'};
             
           case {'double','uint8','uint16','single'} % string field
@@ -67,17 +71,17 @@ for i=1:numel(f)
                 tmp=num2str(tmp);
             end
             
-            s = uilabel(handle,'Text',[ f{i} ':'],'Position',[position(1)+320*col position(2)-(cc-1)*space 150 22]);
+            s = uilabel(handle,'Text',[ f{i} ':'],'Position',[position(1)+(2*wid+20)*col position(2)-(cc-1)*space wid 22]);
             
-            t = uieditfield(handle,'text','Value',tmp,'Tag',f{i},'Position',[position(1)+150+320*col position(2)-(cc-1)*space 150 22],'Tooltip',tip{i});
+            t = uieditfield(handle,'text','Value',tmp,'Tag',f{i},'Position',[position(1)+wid+(2*wid+20)*col position(2)-(cc-1)*space wid 22],'Tooltip',tip{i});
             t.ValueChangedFcn={@checkchanged,flag,'num'};
             
             
           case 'cell' % drop down list, selectable
               
-            s = uilabel(handle,'Text',[ f{i} ':'],'Position',[position(1)+320*col position(2)-(cc-1)*space 150 22]);
+            s = uilabel(handle,'Text',[ f{i} ':'],'Position',[position(1)+(2*wid+20)*col position(2)-(cc-1)*space wid 22]);
             
-            t = uidropdown(handle,'Items',pstruct.(f{i})(1:end-1),'Value',pstruct.(f{i}){end},'Tag',f{i},'Position',[position(1)+150+320*col position(2)-(cc-1)*space 150 22],'Tooltip',tip{i});
+            t = uidropdown(handle,'Items',pstruct.(f{i})(1:end-1),'Value',pstruct.(f{i}){end},'Tag',f{i},'Position',[position(1)+wid+(2*wid+20)*col position(2)-(cc-1)*space wid 22],'Tooltip',tip{i});
             t.ValueChangedFcn={@dropchanged,flag};
             
         case 'string' % string field, not editable 
@@ -89,9 +93,9 @@ for i=1:numel(f)
             str=[str char(tmp(i))];
           end
             
-            s = uilabel(handle,'Text',[ f{i} ':'],'Position',[position(1)+320*col position(2)-(cc-1)*space 150 22]);
+            s = uilabel(handle,'Text',[ f{i} ':'],'Position',[position(1)+(2*wid+20)*col position(2)-(cc-1)*space wid 22]);
             
-            t = uieditfield(handle,'text','Value',str,'Tag',f{i},'Position',[position(1)+150+320*col position(2)-(cc-1)*space 150 22],'Tooltip',tip{i});
+            t = uieditfield(handle,'text','Value',str,'Tag',f{i},'Position',[position(1)+wid+(2*wid+20)*col position(2)-(cc-1)*space wid 22],'Tooltip',tip{i});
             t.Editable='off';
               
     end
