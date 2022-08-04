@@ -33,8 +33,8 @@ switch cate
     case {'Image','LSTM'}
 
         classes=classif.classes;
-        nfolder=fullfile(pth, 'trainingdataset/images');
-        l=dir(nfolder);
+        nfolder=fullfile(pth, 'trainingdataset/images')
+        l=dir(nfolder)
 
         if numel(l)<=2
             disp('there is no exprted dataset in folder; quitting...')
@@ -76,12 +76,12 @@ switch cate
                %    aa=l(i).name
                     tmp=insertText(tmp,[1 1],l(i).name,'TextColor',[255 0 0],'BoxOpacity',0,'FontSize',9);
                     disp(['Display image: ' p(j).name ])
-                    if cc==1
-                        img=tmp;
+                  %  if cc==1
+                   %     img=tmp;
                      
-                    else
-                        img(:,:,:,cc)=tmp;
-                    end
+                  %  else
+                        img{cc}=tmp;
+                  %  end
 
                     cc=cc+1;
                 end
@@ -148,7 +148,7 @@ switch cate
                     if cc==1
                         img=tmp;
                     else
-                        img(:,:,:,cc)=tmp;
+                        img{cc}=tmp;
                     end
                     cc=cc+1;
                 end
