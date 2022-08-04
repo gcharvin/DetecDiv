@@ -10,7 +10,7 @@ function [output himg]=displayFormattedTrainingSet(classif,varargin)
 % LSTM and Pixel types
 
 display=0;
-n=6;
+n=10;
 himg=[];
 output={};
 img={};
@@ -62,7 +62,7 @@ switch cate
             if display
                 
                 
-                n=3;
+            %    n=10;
                 maxe=min(n,numel(p)-2);
                 if numel(p)>2
 
@@ -77,7 +77,7 @@ switch cate
 
                     tmp=imread(fullfile(p(j).folder,p(j).name));
                %    aa=l(i).name
-                    fntsize=round(10*size(tmp,1)/100);
+                    fntsize=round(10*size(tmp,1)/50);
                     tmp=insertText(tmp,[1 1],l(i).name,'TextColor',[255 255 255],'BoxOpacity',0,'FontSize',fntsize);
                     disp(['Display image: ' p(j).name ])
                   %  if cc==1
