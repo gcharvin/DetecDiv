@@ -13,6 +13,7 @@ display=0;
 n=6;
 himg=[];
 output={};
+img={};
 
 
 for i=1:numel(varargin)
@@ -20,7 +21,7 @@ for i=1:numel(varargin)
         display=1;
     end
      if strcmp(varargin{i},'Nimages')
-        n=varargin{i+1};;
+        n=varargin{i+1};
      end
 
 end
@@ -33,8 +34,8 @@ switch cate
     case {'Image','LSTM'}
 
         classes=classif.classes;
-        nfolder=fullfile(pth, 'trainingdataset/images')
-        l=dir(nfolder)
+        nfolder=fullfile(pth, 'trainingdataset/images');
+        l=dir(nfolder);
 
         if numel(l)<=2
             disp('there is no exprted dataset in folder; quitting...')
@@ -145,11 +146,13 @@ switch cate
                     tmp=imlincomb(0.75,tmp,0.25,tmp2);
 
                     disp(['Display image: ' l(j).name ])
-                    if cc==1
-                        img=tmp;
-                    else
+               %     if cc==1
+                %        img=tmp;
+               %     else
+                 %       size(tmp)
+                %       class(tmp)
                         img{cc}=tmp;
-                    end
+                %    end
                     cc=cc+1;
                 end
 
@@ -166,7 +169,9 @@ if exist(fle)
 himg=imread(fle);
 end
 else
+ if numel(himg.CData)~=0
 imwrite(himg.CData,fle);
+ end
 himg=himg.CData;
 end
 
