@@ -40,9 +40,10 @@ if iscell(str)
 
     pixresults={};
    tmppixresults=[];
+
    
     for i=1:numel(str)
-        
+ 
         pixe = strfind(obj.display.channel, str{i});
         cc=[];
 

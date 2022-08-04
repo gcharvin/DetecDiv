@@ -41,6 +41,9 @@ for i=1:numel(varargin)
        end
 end
 
+
+
+
 if numel(roiobj.image)==0
     roiobj.load;
 end
@@ -51,10 +54,13 @@ pix=roiobj.findChannelID(channel);
             pix=cell2mat(pix);
     end
 
+
+
 %pix=find(roiobj.channelid==classif.channel(1)); % find channels corresponding to trained data
 if numel(frames)==0
     frames=1:size(roiobj.image,4);
 end
+
 
 im=roiobj.image(:,:,pix,frames);
 %im=roiobj.image(:,:,pix,:);

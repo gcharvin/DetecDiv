@@ -35,7 +35,7 @@ function logparf=classifyData(classiobj,roiobj,varargin)
 para=0;
 frames=[];
 p=[];
-channel=classiobj.channelName;
+channel=[]; %classiobj.channelName;
 classifierCNN=[];
 classifier=[];
 CNNflag=0;
@@ -146,7 +146,11 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
         end
     end
     
-    
+    if numel(channel)==0
+        cha=classiobj.channelName;
+    else
+        cha=channel{i};
+    end
     
      if numel(p)
     p.Value=0.9* double(i)./numel(roiobj);
@@ -157,17 +161,17 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
      
     if para % parallel computing
         if numel(classifierCNN)
-            logparf(i)=parfeval(fhandle,0,roiobj(i),classi,classifierStore,'classifierCNN',classifierCNN,'Frames',fra,'Channel',channel); % launch the training function for classification
+            logparf(i)=parfeval(fhandle,0,roiobj(i),classi,classifierStore,'classifierCNN',classifierCNN,'Frames',fra,'Channel',cha); % launch the training function for classification
         else
             %disp(['Starting classification of ' num2str(roiobj(i).id)]);
-            logparf(i)=parfeval(fhandle,0,roiobj(i),classi,classifierStore,'Frames',fra,'Channel',channel); % launch the training function for classification
+            logparf(i)=parfeval(fhandle,0,roiobj(i),classi,classifierStore,'Frames',fra,'Channel',cha); % launch the training function for classification
         end
     else
         if  numel(classifierCNN)
-            feval(fhandle,roiobj(i),classi,classifierStore,'classifierCNN',classifierCNN,'Frames',fra,'Channel',channel); % launch the training function for classification
+            feval(fhandle,roiobj(i),classi,classifierStore,'classifierCNN',classifierCNN,'Frames',fra,'Channel',cha); % launch the training function for classification
             disp(['Classified with separate CNN ' num2str(roiobj(i).id)]);
         else
-            feval(fhandle,roiobj(i),classi,classifierStore,'Frames',fra,'Channel',channel); % launch the training function for classification
+            feval(fhandle,roiobj(i),classi,classifierStore,'Frames',fra,'Channel',cha); % launch the training function for classification
             disp(['Classified' num2str(roiobj(i).id)]);
         end
     end
