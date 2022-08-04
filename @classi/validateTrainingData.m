@@ -94,6 +94,7 @@ end
     disp(['Loading classifier: ' classif.strid]);
     % str=[path '/' name '.mat'];
     
+    
     classifier=classif.loadClassifier;
     
     if numel(classifier)==0

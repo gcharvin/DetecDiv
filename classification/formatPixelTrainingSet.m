@@ -41,10 +41,16 @@ for i=1:numel(rois)
         end
         
         
-        pix=[];
-        for j=1:numel(channel) % loop on all selected channels
-            pix=[pix cltmp(i).findChannelID(channel{j})];
-        end
+     pix=roiobj.findChannelID(channel); % new multichannel mode
+
+    if iscell(pix)
+            pix=cell2mat(pix);
+    end
+
+%         pix=[];
+%         for j=1:numel(channel) % loop on all selected channels
+%             pix=[pix cltmp(i).findChannelID(channel{j})];
+%         end
         
         % pix=find(cltmp(rois(i)).channelid==classif.channel(1)); % find channel
         im=cltmp(rois(i)).image(:,:,pix,:);
@@ -110,7 +116,7 @@ for i=1:numel(rois)
                 if numel(pix)<=3
                     imwrite(tmp,[classif.path '/' foldername '/images/' cltmp(rois(i)).id '_frame_' tr '.tif']);
                 else % multispectral image
-                    save([classif.path '/' foldername '/images/' cltmp(rois(i)).id '_frame_' tr '.mat'],tmp);
+                    save([classif.path '/' foldername '/images/' cltmp(rois(i)).id '_frame_' tr '.mat'],tmp); % WARNING no preprocessing is performed in that case 
                 end
                 
                 imwrite(labels(:,:,:,j),[classif.path '/' foldername '/labels/' cltmp(rois(i)).id '_frame_' tr '.tif']);

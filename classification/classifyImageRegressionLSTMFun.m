@@ -50,7 +50,12 @@ if numel(roiobj.image)==0
     roiobj.load;
 end
 
-pix=roiobj.findChannelID(channel{1});
+pix=roiobj.findChannelID(channel);
+
+    if iscell(pix)
+            pix=cell2mat(pix);
+    end
+    
 %pix=find(roiobj.channelid==classif.channel(1)); % find channels corresponding to trained data
 im=roiobj.image(:,:,pix,:); 
 

@@ -40,7 +40,12 @@ for i=rois
     
     
     
-    pix=cltmp(i).findChannelID(channel{1});
+    pix=cltmp(i).findChannelID(channel);
+
+    if iscell(pix)
+            pix=cell2mat(pix);
+    end
+    
     
     % normalize intensity levels
     %pix=find(cltmp(i).channelid==classif.channel(1)); % find channel

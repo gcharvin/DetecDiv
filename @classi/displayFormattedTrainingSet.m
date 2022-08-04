@@ -66,16 +66,19 @@ switch cate
                 maxe=min(n,numel(p)-2);
                 if numel(p)>2
 
-                    idx=randi(numel(p)-2,[1 maxe]);
+                    idx=randi([3 numel(p)],[1 maxe]);
                 else
                     idx=[];
                 end
 
                
                 for j=idx
+                 %   aa=p(j).name
+
                     tmp=imread(fullfile(p(j).folder,p(j).name));
                %    aa=l(i).name
-                    tmp=insertText(tmp,[1 1],l(i).name,'TextColor',[255 0 0],'BoxOpacity',0,'FontSize',9);
+                    fntsize=round(10*size(tmp,1)/100);
+                    tmp=insertText(tmp,[1 1],l(i).name,'TextColor',[255 255 255],'BoxOpacity',0,'FontSize',fntsize);
                     disp(['Display image: ' p(j).name ])
                   %  if cc==1
                    %     img=tmp;
@@ -134,7 +137,7 @@ switch cate
                 maxe=min(n,numel(l)-2);
                 if numel(l)>2
 
-                    idx=randi(numel(l)-2,[1 maxe]);
+                    idx=randi([3 numel(l)],[1 maxe]);
                 else
                     idx=[];
                 end

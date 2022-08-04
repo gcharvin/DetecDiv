@@ -29,7 +29,11 @@ parfor i=rois
   
     % normalize intensity levels
        
-    pix=cltmp(i).findChannelID(channel{1});
+    pix=cltmp(i).findChannelID(channel);
+
+    if iscell(pix)
+            pix=cell2mat(pix);
+    end
     
     %pix=find(cltmp(i).channelid==classif.channel(1)); % find channel
     im=cltmp(i).image(:,:,pix,:);

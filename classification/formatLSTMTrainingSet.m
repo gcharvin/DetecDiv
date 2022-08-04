@@ -58,10 +58,16 @@ for i=1:numel(rois)
     
     % normalize intensity levels
     
-    pix=cltmp(rois(i)).findChannelID(channel{1});
+    pix=cltmp(rois(i)).findChannelID(channel);
+
+    if iscell(pix)
+            pix=cell2mat(pix);
+    end
     
+
     %  pix=find(cltmp(i).channelid==classif.channel(1)); % find channel
     im=cltmp(rois(i)).image(:,:,pix,:);
+
 
     if numel(Frames)==0
         fra=1:size(im,4);
@@ -93,8 +99,7 @@ for i=1:numel(rois)
     
     param=[];
     imtest=cltmp(rois(i)).preProcessROIData(pix,1,param); % done to determine image size
-    % this preprocessing can only be performed on grayscale images
-    % numel(pix)=
+   
   
     vid=uint8(zeros(size(imtest,1),size(imtest,2),3,1));
     
@@ -124,7 +129,8 @@ for i=1:numel(rois)
             tmp=cltmp(rois(i)).preProcessROIData(pix,j,param);            
             %figure, imshow(tmp);
             %pause;
-            %close;            
+            %close;      
+     
             vid(:,:,:,cc)=uint8(256*tmp);
             
         %    figure, imshow(vid(:,:,:,cc),[])

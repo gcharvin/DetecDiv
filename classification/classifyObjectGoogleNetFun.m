@@ -31,7 +31,12 @@ for i=1:numel(varargin)
        end
 end
 
-pix=roiobj.findChannelID(channel{1});
+pix=roiobj.findChannelID(channel);
+
+    if iscell(pix)
+            pix=cell2mat(pix);
+    end
+    
 %pix=find(roiobj.channelid==classif.channel(1)); % find channels corresponding to trained data
 gfp=roiobj.image(:,:,pix,:);
 

@@ -605,6 +605,8 @@ for i=1:numel(obj.display.channel)
             fields=fieldnames(obj.train);
 
             for k=1:numel(fields)
+                
+          if numel(obj.train.(fields{k}).id)>=obj.display.frame
 
                 tt=obj.train.(fields{k}).id(obj.display.frame);
 
@@ -671,6 +673,7 @@ for i=1:numel(obj.display.channel)
                 %                         end
                 %  end
 
+          end
             end
         end
 
@@ -1826,6 +1829,7 @@ for i=1:numel(obj.display.channel)
 
             for k=1:numel(fields)
 
+                  if numel(obj.train.(fields{k}).id)>=obj.display.frame
                 tt=obj.train.(fields{k}).id(obj.display.frame);
 
                 if isfield(obj.train.(fields{k}),'classes')
@@ -1890,7 +1894,7 @@ for i=1:numel(obj.display.channel)
             end
 
 
-
+            end
 
         end
         discc=discc+1;

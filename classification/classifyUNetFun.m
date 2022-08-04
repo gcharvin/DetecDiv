@@ -34,10 +34,16 @@ if numel(roiobj.image)==0 % load stored image in any case
 roiobj.load;
 end
 
-pix=[];
-for i=1:numel(channel) % loop on all selected channels
-pix=[pix roiobj.findChannelID(channel{i})];
-end
+% pix=[]; PREVIOUS VERSION BEOFRE CHANGING MULTICHANNEL MODE BELOW
+% for i=1:numel(channel) % loop on all selected channels
+% pix=[pix roiobj.findChannelID(channel{i})];
+% end
+
+pix=roiobj.findChannelID(channel);
+
+    if iscell(pix) %  MULTICHANNEL MODE
+            pix=cell2mat(pix);
+    end
 
 %pix=find(roiobj.channelid==classif.channel(1)); % find channels corresponding to trained data
 

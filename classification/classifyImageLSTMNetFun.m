@@ -7,9 +7,9 @@ fprintf('Load videos...\n');
 
 %inputSize = netCNN.Layers(1).InputSize(1:2);
 
-
 for i=1:numel(classifier.Layers)
 %maa= strcmp(class(classifier.Layers(i)), 'nnet.cnn.layer.SequenceInputLayer')
+
     if strcmp(class(classifier.Layers(i)), 'nnet.cnn.layer.SequenceInputLayer')
   
         inputSize = classifier.Layers(i).InputSize(1:2);
@@ -45,7 +45,11 @@ if numel(roiobj.image)==0
     roiobj.load;
 end
 
-pix=roiobj.findChannelID(channel{1});
+pix=roiobj.findChannelID(channel);
+
+    if iscell(pix)
+            pix=cell2mat(pix);
+    end
 
 %pix=find(roiobj.channelid==classif.channel(1)); % find channels corresponding to trained data
 if numel(frames)==0
