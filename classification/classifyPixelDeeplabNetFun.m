@@ -101,12 +101,12 @@ for fr=frames
     % fr
     %tmp=gfp(:,:,:,fr);
     
-    if numel(pix)==1
+   % if numel(pix)==1
         param=[];
         tmp=roiobj.preProcessROIData(pix,fr,param);
         
         tmp=uint8(tmp*256);
-    end
+  %  end
     
     if size(tmp,1)<inputSize(1) | size(tmp,2)<inputSize(2)
         tmp=imresize(tmp,inputSize(1:2));

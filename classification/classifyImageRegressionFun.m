@@ -43,14 +43,14 @@ gfp=roiobj.image(:,:,pix,:);
 
 im=uint8(zeros(size(gfp,1),size(gfp,2),3,size(gfp,4)));
    
-if numel(pix)==1
+%if numel(pix)==1
     for j=1:size(gfp,4)        
         param=[];
         tmp=roiobj.preProcessROIData(pix,j,param);
         im(:,:,:,j)=uint8(256*tmp);        
     end
     gfp=im;
-end
+%end
 
 gfp = imresize(gfp,inputSize(1:2));
 

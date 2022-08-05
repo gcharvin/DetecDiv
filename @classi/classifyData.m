@@ -67,7 +67,7 @@ for i=1:numel(varargin)
     end
 end
 
-classifierStore=classifier; 
+classifierStore=classifier;
 
 classi=classiobj;
 classifyFun=classi.classifyFun;
@@ -102,8 +102,8 @@ end
      disp(['Loading classifier: ' classi.strid]);
     % str=[path '/' name '.mat'];
     classifier=[];
-    classifier=classi.loadClassifier;
-    classifierStore=classifier; 
+    classifier=classi.loadClassifier('force'); % to prevent pb if classifier is already loaded in the workspace
+    classifierStore=classifier;
 
     if numel(classifierStore)==0
         disp('could not load main classifier.... quitting');
