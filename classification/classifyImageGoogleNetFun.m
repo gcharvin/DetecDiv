@@ -23,6 +23,7 @@ for i=1:numel(varargin)
 end
 
 net=classifier;
+
 inputSize = net.Layers(1).InputSize;
 classNames = net.Layers(end).ClassNames;
 numClasses = numel(classNames);
@@ -42,7 +43,7 @@ gfp=roiobj.image(:,:,pix,:);
 
 im=uint8(zeros(size(gfp,1),size(gfp,2),3,size(gfp,4)));
    
-if numel(pix)==1
+%if numel(pix)==1
     for j=1:size(gfp,4)
         
         param=[];
@@ -51,9 +52,10 @@ if numel(pix)==1
         
     end
     gfp=im;
-end
+%end
 
 gfp = imresize(gfp,inputSize(1:2));
+
 %figure, imshow(gfp(:,:,:,1));
 
 
