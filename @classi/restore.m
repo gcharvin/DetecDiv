@@ -28,33 +28,34 @@ for i=1:numel(m)
     end
 end
 
-  save([classif.strid '_classification.mat'],'classiObj');
+
+  save(fullfile(pth,[classif.strid '_classification.mat']),'classiObj');
 
  
   ff=fullfile(pth,t{index,4});
  % exist(ff)
   targ=fullfile(pth,[classif.strid '.mat']);
 
- load(ff); % loads classifier
- save(targ,'classifier');
-% copyfile(ff,fullfile(pth,[classif.strid '.mat']));
+% load(ff); % loads classifier
+ %save(targ,'classifier');
+ copyfile(ff,fullfile(pth,[classif.strid '.mat']));
  
     src=fullfile(pth,['netCNN_' t{index,4}]);
     target=fullfile(pth,['netCNN_' classif.strid '.mat']);
     
      if exist(src)
-             load(src); % loads classifier
-             save(target,'classifier')
-              %   copyfile(src,target);  
+          %   load(src); % loads classifier
+         %    save(target,'classifier')
+                 copyfile(src,target);  
      end
      
      src=fullfile(pth,['netLSTM_' t{index,4}]);
     target=fullfile(pth,['netLSTM_' classif.strid '.mat']);
     
      if exist(src)
-          load(src); % loads classifier
-          save(target,'netLSTM','info')
-             %    copyfile(src,target);  
+      %    load(src); % loads classifier
+      %    save(target,'netLSTM','info')
+                 copyfile(src,target);  
      end
          
             

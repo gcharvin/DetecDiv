@@ -38,7 +38,7 @@ switch cate
         l=dir(nfolder);
 
         if numel(l)<=2
-            disp('there is no exprted dataset in folder; quitting...')
+            disp('there is no exported dataset in folder; quitting...')
      
             return;
         end
