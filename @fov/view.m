@@ -1,4 +1,4 @@
-function view(obj,frame,option)
+function view(obj,frame,option,callingApp)
 
 
 if nargin>=2
@@ -17,18 +17,25 @@ rebuild=0;
 
 h=[];
 
-if nargin==3
+if nargin>=3
     h=option;
     rebuild=1;
     %  'oki'
 end
+
+if nargin>=4
+    h=[];
+    rebuild=1;
+end
+
+
 
 if numel(findobj('Tag',['Fov' obj.id])) && rebuild==0% handle exists already
     h=findobj('Tag',['Fov' obj.id]);
 
     hp=findobj(h,'Type','Axes');
 
-    him=h.UserData;
+    him=h.UserData.handle;
 
 else
 
@@ -42,10 +49,16 @@ else
     end
     warning on all;
 
-    %  h
+
     if numel(h)==0
         %    'ok'
         h=figure('Tag',['Fov' obj.id],'Position',[100 100 800 600]);
+       
+        if nargin>=4
+       h.UserData.callingApp=callingApp;
+        else
+h.UserData.callingApp=[];
+        end
     end
 
     str={};
@@ -115,7 +128,7 @@ else
     h.Position(3)=600*obj.channels;
     h.Position(4)=600;
 
-    h.UserData=him;
+    h.UserData.handle=him;
 
     h.KeyPressFcn={@changeframe,obj,him,hp};
 
@@ -128,17 +141,33 @@ else
     %         'Tag','frametexttitle') ;
 
     btnSetFrame = uicontrol('Style', 'text','FontSize',10, 'String', 'Set frame, or use arrows <- ->',...
-        'Position', [20 20 350 20],'HorizontalAlignment','left', ...
+        'Position', [20 100 200 20],'HorizontalAlignment','left', ...
         'Tag','frametexttitle') ;
 
     btnSetFrame = uicontrol('Style', 'edit','FontSize',10, 'String', num2str(obj.display.frame),...
-        'Position', [200 20 50 20],...
+        'Position', [20 70 50 20],...
         'Callback', {@setframe,obj,him,hp},'Tag','frametext') ;
 
 
-%    btnSetROI = uicontrol('Style', 'pushbutton','FontSize',10, 'Text','Set ROI',...
-  %      'Position', [20 200 50 40],...
-  %      'Callback', {@setframe,obj,him,hp},'Tag','roitext') ;
+   btnSetROI = uicontrol('Style', 'pushbutton','FontSize',9, 'String','Zoom to set ROI',...
+       'Position', [20 300 100 40],...
+        'Callback','zoom(gcbf,''on'')','Tag','roitext','Tooltip','Press this button to zoom on the image before setting an ROI') ;
+
+      btnSetROI = uicontrol('Style', 'pushbutton','FontSize',9, 'String','Set ROI',...
+       'Position', [20 250 100 40],...
+        'Callback',{@addROI,obj,him,hp},'Tag','roitext','Tooltip','Press this button to set a new ROI based on the current filed of view') ;
+
+       btnSetROI = uicontrol('Style', 'pushbutton','FontSize',8, 'String','Set ROI as ref pattern',...
+       'Position', [20 200 100 40],...
+        'Callback',{@selectPattern,obj,him,hp,1},'Tag','roitext','Tooltip','Press this button to set the selected ROI as a reference pattern for automated ROI detection') ;
+
+     btnSetROI = uicontrol('Style', 'pushbutton','FontSize',8, 'String','Close',...
+       'Position', [20 150 100 40],...
+        'Callback',{@closeWindow,h},'Tag','roitext','Tooltip','Press this button to close the window') ;
+
+     %  btnSetROI = uicontrol('Style', 'pushbutton','FontSize',10, 'String','Set ROI',...
+    %   'Position', [20 150 100 40],...
+    %    'Callback',{@addROI,obj,him,hp},'Tag','roitext') ;
 
     %         btnSetCrop = uicontrol('Style', 'pushbutton','FontSize',14, 'String', 'set crop',...
     %         'Position', [50 80 80 20],...
@@ -155,11 +184,11 @@ else
     mls = sprintf('%s\n%s',A{1,1},A{1,2});
 
     btnSetFrame = uicontrol('Style', 'text','FontSize',10, 'String', mls,...
-        'Position', [300 10 300 40],'HorizontalAlignment','left', ...
+        'Position', [20 40 200 20],'HorizontalAlignment','left', ...
         'Tag','frametexttitle') ;
 
     btnSetFrame = uicontrol('Style', 'popupmenu','FontSize',10, 'String', str, 'Value',1,...
-        'Position', [520 20 150 20],...
+        'Position', [20 10 200 20],...
         'Callback', {@setchannel,obj,him,hp},'Tag','channelmenu') ;
 
 
@@ -284,6 +313,13 @@ end
 end
 
 
+function closeWindow(handles,event,h)
+if numel(h.UserData.callingApp)
+    uiresume(h.UserData.callingApp)
+end
+delete(h)
+end
+
 function setchannel(handle,event,obj,him,hp)
 
 %obj.display.selectedchannel=handle.Value;
@@ -352,7 +388,17 @@ function selectPattern(handle,event,obj,him,hp,option)
 % ddefines a region of interest based on user input
 
 %obj.display.selectedchannel=handle.Value;
-val=handle.UserData;
+val=handle.UserData
+
+if numel(val)==0
+hmenu=findobj('Tag','DisplayROIMenu');
+val=hmenu.UserData;
+end
+
+if numel(val)==0
+    disp('unable to set pattern; First select a ROI!')
+    return
+end
 
 tmp= obj.roi(val).proc;
 
@@ -452,7 +498,10 @@ yl=round(ylim(hp(1)));
 roival=[xl(1) yl(1) xl(2)-xl(1) yl(2)-yl(1)];
 
 obj.addROI(roival,obj.id);
+
 updatedisplay(obj,him,hp);
+
+resetZoom(handle,event,obj,him,hp)
 end
 
 function clearROI(handle,event,obj,him,hp)
@@ -751,8 +800,8 @@ set(h,'FaceColor',[1 0 0]);
 set(handles,'FaceColor',[1 1 0]);
 val=handles.UserData;
 
-%    h=findobj('Tag','roimenu');
-%    h.Value=val;
+    hh=findobj('Tag','DisplayROIMenu')
+    hh.UserData=val;
 
 ha=findobj('Tag','Axe1');
 
@@ -810,7 +859,7 @@ else
 end
 
 clf
-h.UserData=[];
+h.UserData.handle=[];
 
 obj.view(obj.display.frame,h);
 end
