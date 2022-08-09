@@ -48,11 +48,14 @@ for i=1:numel(varargin)
         channels=varargin{i+1};
     end
             
+
     %       if strcmp(varargin{i},'channelint') % frames interval
     %     channelint=varargin{i+1};
     %   end
 end
 % first creat independent fov indentical to obj.fov
+
+
 
 tmpfov=fov;
 
@@ -114,6 +117,7 @@ for i=fovid
     else
         cha=channels; 
     end
+
     
     if numel(frames)==0
         nframes=1:numel(tmpfov(i).srclist{1}); % take the number of frames from the image list
@@ -128,6 +132,7 @@ for i=fovid
     id=1:narr*cut;
     id=reshape(id,cut,[]);
     
+
     for iii=1:narr
         framecell{iii}= nframes(id(:,iii));
     end
@@ -138,6 +143,7 @@ for i=fovid
     end
     
     nframestot=nframes;
+
     
     % % create fov specific directory
     
@@ -183,6 +189,7 @@ for i=fovid
     
     for ii=frstart:numel(framecell) % loop on all blocks of frames on a given FOV
         nframes= framecell{ii};
+
         list={};
         % refframe=framecell{1}(1);
         
@@ -229,6 +236,7 @@ for i=fovid
             
             % cc=cc+1;
         end
+
         
         fprintf('\n');
         
@@ -317,6 +325,7 @@ for i=fovid
                 %temp=temp';
                 
                 ck=1;
+        
                 for k=cha
                     tmproi(l).display.channel{ck}=tmpfov(i).channel{k}; %['Channel ' num2str(k)];
                     tmproi(l).display.intensity(ck,:)=temp;
@@ -326,6 +335,14 @@ for i=fovid
                     ck=ck+1;
                 end
                 
+
+                tmproi(l).channelid=tmproi(l).channelid(1:numel(cha));
+                tmproi(l).display.selectedchannel= tmproi(l).display.selectedchannel(1:numel(cha));
+                tmproi(l).display.intensity= tmproi(l).display.intensity(1:numel(cha),:);
+                tmproi(l).display.rgb= tmproi(l).display.rgb(1:numel(cha),:);
+                tmproi(l).results=[];
+                tmproi(l).train=[];
+         %       return;
                 % add additional channels for cell contours if any
                 % (phylocell projects)
                 
@@ -368,6 +385,7 @@ for i=fovid
                 tmproi(l).save;
                 %       tmproi(l).clear;
             end
+        %    return;
             
             %cc=1;
             for j=1:numel(nframes)

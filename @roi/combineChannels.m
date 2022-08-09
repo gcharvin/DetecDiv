@@ -10,7 +10,7 @@ function combineChannels(obj,varargin)
 % 0; 0 1 0; 0 0 1]} ,
 % levels : cell array that specifies the levels of the target channel in
 % the final image: { [ 4000 40000] , [ 0 3 ] };
-% if 'rgb' is set to [],only one channel will be copied 
+% if 'rgb' is set to [],only one channel will be copied
 % the output channel is an rgb image
 
 channels=[];
@@ -63,9 +63,9 @@ if numel(obj.image)==0
 end
 
 if numel(rgb)~=0
-matrix=uint16(zeros(size(obj.image,1),size(obj.image,2),3,size(obj.image,4)));
+    matrix=uint16(zeros(size(obj.image,1),size(obj.image,2),3,size(obj.image,4)));
 else
-matrix=uint16(zeros(size(obj.image,1),size(obj.image,2),1,size(obj.image,4)));
+    matrix=uint16(zeros(size(obj.image,1),size(obj.image,2),1,size(obj.image,4)));
 end
 
 for i=1:numel(channels)
@@ -74,6 +74,8 @@ for i=1:numel(channels)
     else
         pix2=find(obj.channelid==channels(i));
     end
+
+
 
     if numel(pix2)==0
         disp('Channel does not exist; quitting !');
@@ -89,15 +91,16 @@ for i=1:numel(channels)
 
     if numel(rgb)==0
 
-   for j=1:size(imtmp,4)
-                    imtmp(:,:,1,j)=imadjust(imtmp(:,:,1,j),[levels{i}(1)/65535 levels{i}(2)/65535]);
-   end
-  % size(imtmp),class(imtmp),size(matrix)
-   matrix=imadd(matrix,imtmp);
-   outrgb=[1 1 1];
+        for j=1:size(imtmp,4)
+            imtmp(:,:,1,j)=imadjust(imtmp(:,:,1,j),[levels{i}(1)/65535 levels{i}(2)/65535]);
+        end
+        % size(imtmp),class(imtmp),size(matrix)
+        matrix=imadd(matrix,imtmp);
+        outrgb=[1 1 1];
     else
 
         if size(rgb{i},1)==1 % image is not indexed , therefore there is only one triplet
+
             if numel(pix2)==1 % one single channel
                 for j=1:size(imtmp,4)
                     imtmp(:,:,1,j)=imadjust(imtmp(:,:,1,j),[levels{i}(1)/65535 levels{i}(2)/65535]);
@@ -135,7 +138,6 @@ for i=1:numel(channels)
         end
         outrgb=[0 0 0];
     end
-    
 end
 
 %figure, imshow(matrix(:,:,:,1));

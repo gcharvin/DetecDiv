@@ -145,6 +145,12 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
              fra=frames;
         end
     end
+
+    % check that the requested number of frames is compatible with that of
+    % the roi 
+
+    fra=intersect(fra,1:size(roiobj(i).image,4));
+
     
     if numel(channel)==0
         cha=classiobj.channelName;

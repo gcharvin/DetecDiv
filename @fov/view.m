@@ -25,70 +25,70 @@ end
 
 if numel(findobj('Tag',['Fov' obj.id])) && rebuild==0% handle exists already
     h=findobj('Tag',['Fov' obj.id]);
-    
+
     hp=findobj(h,'Type','Axes');
-    
+
     him=h.UserData;
-    
+
 else
-    
-    
+
+
     im=buildimage(obj); % returns a structure with all images to be displayed
-    
+
     warning off all
     if numel(im.data)==0
         disp('Could not load image. Quitting...');
         return;
     end
     warning on all;
-    
+
     %  h
     if numel(h)==0
         %    'ok'
         h=figure('Tag',['Fov' obj.id],'Position',[100 100 800 600]);
     end
-    
+
     str={};
-    
+
     mchannel = uimenu(h,'Text','Channels','Tag','ChannelMenu');
-    
+
     cc=1;
-    
+
     tot=sum( obj.display.selectedchannel);
     for i=1:obj.channels
-        
+
         mitemch(i) = uimenu(mchannel,'Text',obj.channel{i},'Checked','on','Tag',['channel_' num2str(i)]);
         set(mitemch(i),'MenuSelectedFcn',{@displayMenuFcn,obj,h});
-        
+
         if obj.display.selectedchannel(i)==1
-            
-            
-            
-            
+
+
+
+
             hp(cc)=subplot(1,tot,cc);
-            
+
             him.image(cc)=imshow(im(i).data,[]);
-            
+
             set(hp(cc),'Tag',['Axe' num2str(cc)]);
-            
+
             %axis equal square
-            
+
             title(hp(cc),[obj.channel{i} '-Intensity:' num2str(obj.display.intensity(i))],'Interpreter','None');
-            
+
             str{cc}=[obj.channel{i}];
-            
+
             cc=cc+1;
         else
             set(mitemch(i),'Checked','off');
         end
     end
-    
+
     linkaxes(hp);
-   
-    
+
+
     % create display menu
-    
-    
+
+
     %creat zoom callbackas
     hCMZ = uicontextmenu;
     hZMenu = uimenu('Parent',hCMZ,'Label','Reset Zoom',...
@@ -99,119 +99,124 @@ else
         'Callback',{@addROI,obj,him,hp});
     hZMenu = uimenu('Parent',hCMZ,'Label','Adjust current zoom...',...
         'Callback',{@setROIValue,obj,him,hp,0});
-    
-    
+
+
     hZoom = zoom(h);
     hZoom.UIContextMenu = hCMZ;
     hZoom.ActionPostCallback={@adjustROI,hp};
-    
+
     hPan=pan(h);
     hPan.UIContextMenu = hCMZ;
     hPan.ActionPostCallback={@adjustROI,hp};
-    
-    
-    
-    
+
+
+
+
     h.Position(3)=600*obj.channels;
     h.Position(4)=600;
-    
+
     h.UserData=him;
-    
+
     h.KeyPressFcn={@changeframe,obj,him,hp};
-    
+
     h.WindowButtonDownFcn={@deselectROI,obj,him,hp};
-    
+
     h.Name= ['FOV ' obj.id];
-    
+
     %     btnSetFrame = uicontrol('Style', 'text','FontSize',18, 'String',  ,...
     %         'Position', [50 550 200 20],'HorizontalAlignment','left', ...
     %         'Tag','frametexttitle') ;
-    
+
     btnSetFrame = uicontrol('Style', 'text','FontSize',10, 'String', 'Set frame, or use arrows <- ->',...
         'Position', [20 20 350 20],'HorizontalAlignment','left', ...
         'Tag','frametexttitle') ;
-    
+
     btnSetFrame = uicontrol('Style', 'edit','FontSize',10, 'String', num2str(obj.display.frame),...
         'Position', [200 20 50 20],...
         'Callback', {@setframe,obj,him,hp},'Tag','frametext') ;
-    
+
+
+%    btnSetROI = uicontrol('Style', 'pushbutton','FontSize',10, 'Text','Set ROI',...
+  %      'Position', [20 200 50 40],...
+  %      'Callback', {@setframe,obj,him,hp},'Tag','roitext') ;
+
     %         btnSetCrop = uicontrol('Style', 'pushbutton','FontSize',14, 'String', 'set crop',...
     %         'Position', [50 80 80 20],...
     %         'Callback', {@setCrop,obj,him,hp},'Tag','setCrop') ;
-    
-    
+
+
     %         hZMenu = uimenu('Parent',hCMZ,'Label','Set cropping area',...
     %     'Callback',{@setCrop,obj,him,hp});
-    
-    
+
+
     A = cell(1,2);
     A{1,1} = 'Intensity adjust using';
     A{1,2} = 'up and down arrow keys for channel:';
     mls = sprintf('%s\n%s',A{1,1},A{1,2});
-    
+
     btnSetFrame = uicontrol('Style', 'text','FontSize',10, 'String', mls,...
         'Position', [300 10 300 40],'HorizontalAlignment','left', ...
         'Tag','frametexttitle') ;
-    
+
     btnSetFrame = uicontrol('Style', 'popupmenu','FontSize',10, 'String', str, 'Value',1,...
         'Position', [520 20 150 20],...
         'Callback', {@setchannel,obj,him,hp},'Tag','channelmenu') ;
-    
-    
+
+
     m = uimenu(h,'Text','Display options','Tag','DisplayROIMenu');
-    
+
     mitem = uimenu(m,'Text','Display ROIs','Checked','on','Tag','drawROIs');
-    
+
     set(mitem,'MenuSelectedFcn',{@displayROI,obj,him,hp});
-    
+
     mitem2 = uimenu(m,'Text','Set/Show cropping area to exclude ROIs','Tag','setCrop','Separator','on');
-    
+
     set(mitem2,'MenuSelectedFcn',{@setCrop,obj,him,hp});
-    
+
     hZMenu = uimenu(m,'Label','Reset Zoom to default',...
         'Callback',{@resetZoom,obj,him,hp},'Separator','on');
-    
+
     hZMenu = uimenu(m,'Label','Switch to pan mode',...
         'Callback','pan(gcbf,''on'')');
-    
+
     hZMenu = uimenu(m,'Label','Switch to zoom mode',...
         'Callback','zoom(gcbf,''on'')');
-    
+
     hZMenu = uimenu(m,'Label','Adjust current zoom',...
         'Callback',{@setROIValue,obj,him,hp,0});
-    
+
     hZMenu = uimenu(m,'Label','Add ROI for current window',...
         'Callback',{@addROI,obj,him,hp},'Separator','on');
-    
+
     hZMenu = uimenu(m,'Label','Clear all ROIs',...
         'Callback',{@clearROI,obj,him,hp});
-    
+
     hZMenuO(1) = uimenu(m,'Label','Original orientation',...
         'Callback',{@rotateFOV,obj,him,hp,0}, 'Checked','off','Separator','on','Tag','rotate_0');
-    
+
     hZMenuO(2) = uimenu(m,'Label','Rotate by 90 degrees clockwise',...
         'Callback',{@rotateFOV,obj,him,hp,90}, 'Checked','off','Tag','rotate_90');
-    
+
     hZMenuO(3) = uimenu(m,'Label','Rotate by 180 degrees clockwise',...
         'Callback',{@rotateFOV,obj,him,hp,180}, 'Checked','off','Tag','rotate_180');
-    
+
     hZMenuO(4) = uimenu(m,'Label','Rotate by 270 degrees clockwise',...
         'Callback',{@rotateFOV,obj,him,hp,270}, 'Checked','off','Tag','rotate_270');
-    
+
     arr=[0 90 180 270];
     pix=find(arr==obj.orientation);
     if numel(pix)
-    set(hZMenuO(pix), 'Checked','on');
+        set(hZMenuO(pix), 'Checked','on');
     end
 
-      m = uimenu(h,'Text','Export','Tag','ExportMenu');
-    
+    m = uimenu(h,'Text','Export','Tag','ExportMenu');
+
     mitem = uimenu(m,'Text','Export Movie...','Tag','Movie');
     set(mitem,'MenuSelectedFcn',{@exportMovie,obj,him,hp});
 
     updatedisplay(obj,him,hp);
-   
-    
+
+
 end
 
 end
@@ -236,31 +241,31 @@ im.data=[];
 frame=obj.display.frame;
 
 for i=1:obj.channels
-    
-    
+
+
     tmp=uint16(readImage(obj,frame,i));
-    
+
     if numel(tmp)==0
         return;
     end
-    
+
     tmp=imresize(tmp,obj.display.binning(i)/obj.display.binning(1));
-    
+
     meangfp=0.5*double(mean(tmp(:)));
-    
-    
+
+
     maxgfp=double(meangfp+obj.display.intensity(i)*(max(tmp(:))-meangfp));
     % maxgfp2=double(meangfp+obj.intensity*(max(totgfp(:))-meangfp));
-    
+
     tmp = imadjust(tmp,[meangfp/65535 maxgfp/65535],[0 1]);
-    
+
     im(i).data=tmp; %=uint16(cat(3,zeros(size(rawphc)),zeros(size(rawphc)),zeros(size(rawphc))));
-    
+
     % size(tmp)
     %imphc(:,:,1)=rawphc;
     %imphc(:,:,2)=rawphc;
     %imphc(:,:,3)=rawphc;
-    
+
     %imgfp=uint16(zeros(size(imphc)));
     %imgfp(:,:,2)=temp;
     %im.overlay=imphc; %imgfp+imphc;
@@ -311,14 +316,14 @@ function setROIValue(handle,event,obj,him,hp,option)
 if option==0 % zoom adjust
     xl=round(xlim(hp(1)));
     yl=round(ylim(hp(1)));
-    
+
     def={[num2str(xl(1)) ' ' num2str(yl(1))  ' '  num2str(xl(2)-xl(1))   ' ' num2str(yl(2)-yl(1))]};
 else
     %   handle
     val=handle.UserData;
-    
+
     def={num2str(obj.roi(val).value)};
-    
+
 end
 
 str=inputdlg('Enter current ROI parameters:', 'ROI adjustment',1,def);
@@ -428,7 +433,7 @@ for i=1:imax
         if i==1 && j==1
             continue
         end
-        
+
         roival=[xstart+(i-1)*str2num(answer{2}) ystart+(j-1)*str2num(answer{4}) roistart.value(3) roistart.value(4)];
         obj.addROI(roival,obj.id);
     end
@@ -498,7 +503,7 @@ if numel(obj.crop)
     hZMenu2 = uimenu('Parent',hCMZ,'Label','Hide cropping area',...
         'Callback',@hidecrop);
     temp=drawpolygon('ContextMenu',hCMZ,'Tag','cropROI','Position',obj.crop);
-    
+
     % temp.UserData.OnCleanup = onCleanup(@()destroy);
 else
     hCMZ = uicontextmenu;
@@ -507,7 +512,7 @@ else
     hZMenu2 = uimenu('Parent',hCMZ,'Label','Hide cropping area',...
         'Callback',@hidecrop);
     temp=drawpolygon('ContextMenu',hCMZ,'Tag','cropROI');
-    
+
     %temp.UserData.OnCleanup = onCleanup(@()destroy);
 end
 
@@ -569,7 +574,7 @@ if strcmp(event.Key,'rightarrow')
     if obj.display.frame+1>obj.frames
         return;
     end
-    
+
     obj.display.frame=obj.display.frame+1;
     frame=obj.display.frame+1;
     ok=1;
@@ -579,16 +584,16 @@ if strcmp(event.Key,'leftarrow')
     if obj.display.frame-1<1
         return;
     end
-    
+
     obj.display.frame=obj.display.frame-1;
     frame=obj.display.frame-1;
     ok=1;
 end
 
 if strcmp(event.Key,'uparrow')
-    
+
     han=findobj('Tag','channelmenu')
-    items=han.String; 
+    items=han.String;
     str=han.Value;
     chaname=items{str};
     pix=find(matches(obj.channel,chaname));
@@ -601,7 +606,7 @@ end
 
 if strcmp(event.Key,'downarrow')
     han=findobj('Tag','channelmenu');
-    items=han.String; 
+    items=han.String;
     str=han.Value;
     chaname=items{str};
     pix=find(matches(obj.channel,chaname));
@@ -611,18 +616,18 @@ end
 
 if strcmp(event.Key,'delete')
     h=findobj('Type','patch','FaceColor',[1 1 0]);
-    
+
     if numel(h)
-%set(handles,'FaceColor',[1 1 0]);
- removeROI(h,event,obj,him,hp);
+        %set(handles,'FaceColor',[1 1 0]);
+        removeROI(h,event,obj,him,hp);
     end
 end
 
 
 if ok==1
-    
+
     updatedisplay(obj,him,hp)
-    
+
 end
 fprintf('Done ! \n');
 end
@@ -672,49 +677,49 @@ for i=1:numel(obj.roi)
     if numel(obj.roi(i).id)==0
         continue
     end
-    
-    
+
+
     if strcmp(hdisplaymenu.Checked,'on')
         roitmp=obj.roi(i).value;
         roitmp=[roitmp(1) roitmp(2) roitmp(1)+ roitmp(3) roitmp(2)+ roitmp(4)];
-        
-        
+
+
         if numel(obj.roi(i).proc) % roi has been set as pattern
             h=patch([roitmp(1) roitmp(3) roitmp(3) roitmp(1) roitmp(1)],[roitmp(2) roitmp(2) roitmp(4) roitmp(4) roitmp(2)],[1 0 0],'FaceAlpha',0.3,'Tag',['roitag_' num2str(i)],'UserData',i,'LineWidth',4);
         else
             h=patch([roitmp(1) roitmp(3) roitmp(3) roitmp(1) roitmp(1)],[roitmp(2) roitmp(2) roitmp(4) roitmp(4) roitmp(2)],[1 0 0],'FaceAlpha',0.3,'Tag',['roitag_' num2str(i)],'UserData',i);
         end
-        
+
         htext=text(roitmp(1),roitmp(2), num2str(i), 'Color','r','FontSize',10,'Tag',['roitext_' num2str(i)]);
-        
-        
+
+
         %h=patch([10 100 100 10 10],[10 10 100 100 10],[1 0 0],'FaceAlpha',0.3,'Tag',['roitag_' num2str(i) ]);
-        
+
         hCMZ = uicontextmenu;
         hZMenu = uimenu('Parent',hCMZ,'Label','Remove ROI',...
             'Callback',{@removeROI,obj,him,hp},'UserData',i);
-        
+
         hZMenu = uimenu('Parent',hCMZ,'Label','Adjust ROI param...',...
             'Callback',{@setROIValue,obj,him,hp,1},'UserData',i);
-        
-        
+
+
         hZMenu = uimenu('Parent',hCMZ,'Label','Select/Deselect ROI as reference pattern.',...
             'Callback',{@selectPattern,obj,him,hp,1},'UserData',i);
-        
+
         hZMenu = uimenu('Parent',hCMZ,'Label','Generate ROI grid...',...
             'Callback',{@ROIgrid,obj,him,hp,1},'UserData',i);
-        
-        
+
+
         %hZMenu = uimenu('Parent',hCMZ,'Label','Switch to pan',...
         %    'Callback','pan(gcbf,''on'')');
         %hZMenu = uimenu('Parent',hCMZ,'Label','Add current ROI',...
         %    'Callback',{@addROI,obj,hp});
-        
-        
-        
+
+
+
         h.UIContextMenu = hCMZ;
-        
-        
+
+
         %h.Vertices
         h.ButtonDownFcn={@vie,obj};
     end
@@ -792,7 +797,7 @@ if strcmp(handles.Checked,'off')
     obj.display.selectedchannel(i)=1;
     %             % aa=obj.display.selectedchannel(i)
 else
-    
+
     handles.Checked='off';
     str=handles.Tag;
     i = str2num(replace(str,'channel_',''));
@@ -816,91 +821,91 @@ function exportMovie(handles,event,obj,him,hp)
 
 %   set(handles,'FaceColor',[1 0 0]);
 
- prompt = {'Frames:',...
-     'Output Path/name (don t put the extension) :',...
-     'Frame interval in experiment (min):',...
-     'Frames per second:',...
-     'FontSize',...
-     'Draw ROIs (yes: 1; no : 0)',...
-     'Correct Drift (yes: 1; no: 0)'};
+prompt = {'Frames:',...
+    'Output Path/name (don t put the extension) :',...
+    'Frame interval in experiment (min):',...
+    'Frames per second:',...
+    'FontSize',...
+    'Draw ROIs (yes: 1; no : 0)',...
+    'Correct Drift (yes: 1; no: 0)'};
 
-            dlgtitle = 'Input movie export parameters';
+dlgtitle = 'Input movie export parameters';
 
-            dims = [1 100];
+dims = [1 100];
 
-            fra=obj.frames(1);
-            pth=fullfile(obj.srcpath{1},'mymovie');
-            definput = {['1:' num2str(fra)],pth,'10','10','20','0','0'};%, num2str(inte)};
-            answer = inputdlg(prompt,dlgtitle,dims,definput);
+fra=obj.frames(1);
+pth=fullfile(obj.srcpath{1},'mymovie');
+definput = {['1:' num2str(fra)],pth,'10','10','20','0','0'};%, num2str(inte)};
+answer = inputdlg(prompt,dlgtitle,dims,definput);
 
-            if numel(answer)==0
-                return;
-            end
+if numel(answer)==0
+    return;
+end
 
 
-        %    [pth nme ext]=fileparts(answer{2});
+%    [pth nme ext]=fileparts(answer{2});
 
-            arg={}; cc=1;
-            arg{cc}='Frames'; cc=cc+1;
-            arg{cc}=str2num(answer{1}); cc=cc+1;
-            arg{cc}='Name'; cc=cc+1;
-            arg{cc}=answer{2}; cc=cc+1;
-            arg{cc}='IPS'; cc=cc+1;
-            arg{cc}=str2num(answer{4}); cc=cc+1;
-            arg{cc}='Framerate'; cc=cc+1;
-            arg{cc}=str2num(answer{3}); cc=cc+1;
-            arg{cc}='FontSize'; cc=cc+1;
-            arg{cc}=str2num(answer{5}); cc=cc+1;
-            arg{cc}='DrawROIs'; cc=cc+1;
-            if str2num(answer{6})==1
-            arg{cc}=[]; cc=cc+1;
-            else
-            arg{cc}=0; cc=cc+1;
-            end
+arg={}; cc=1;
+arg{cc}='Frames'; cc=cc+1;
+arg{cc}=str2num(answer{1}); cc=cc+1;
+arg{cc}='Name'; cc=cc+1;
+arg{cc}=answer{2}; cc=cc+1;
+arg{cc}='IPS'; cc=cc+1;
+arg{cc}=str2num(answer{4}); cc=cc+1;
+arg{cc}='Framerate'; cc=cc+1;
+arg{cc}=str2num(answer{3}); cc=cc+1;
+arg{cc}='FontSize'; cc=cc+1;
+arg{cc}=str2num(answer{5}); cc=cc+1;
+arg{cc}='DrawROIs'; cc=cc+1;
+if str2num(answer{6})==1
+    arg{cc}=[]; cc=cc+1;
+else
+    arg{cc}=0; cc=cc+1;
+end
 
-            if str2num(answer{7})==1
-            arg{cc}='Drift'; cc=cc+1;
-            end
+if str2num(answer{7})==1
+    arg{cc}='Drift'; cc=cc+1;
+end
 
-            % list  channels
-            cha=find(obj.display.selectedchannel==1);
+% list  channels
+cha=find(obj.display.selectedchannel==1);
 
-            arg{cc}='Channel'; cc=cc+1;
-            arg{cc}=cha; cc=cc+1;
+arg{cc}='Channel'; cc=cc+1;
+arg{cc}=cha; cc=cc+1;
 
-            % find levels
-            lev=obj.display.intensity(cha);
-            
-            levels=[];
-            for i=1:numel(cha)
- tmp=uint16(readImage(obj,obj.display.frame,cha(i)));
+% find levels
+lev=obj.display.intensity(cha);
 
-%figure, imshow(tmp,[]);
- meangfp=0.5*double(mean(tmp(:)));
- maxgfp=double(meangfp+lev(i)*(max(tmp(:))-meangfp));
- levels(i,1)=meangfp;
- levels(i,2)=maxgfp;
-            end
-         %   return;
+levels=[];
+for i=1:numel(cha)
+    tmp=uint16(readImage(obj,obj.display.frame,cha(i)));
 
-            arg{cc}='Levels'; cc=cc+1;
-            arg{cc}=levels; cc=cc+1;
+    %figure, imshow(tmp,[]);
+    meangfp=0.5*double(mean(tmp(:)));
+    maxgfp=double(meangfp+lev(i)*(max(tmp(:))-meangfp));
+    levels(i,1)=meangfp;
+    levels(i,2)=maxgfp;
+end
+%   return;
 
-                % cropping factor 
-     crop(1,:)=   round(hp(1).XLim);
-     crop(2,:)=   round(hp(1).YLim);
+arg{cc}='Levels'; cc=cc+1;
+arg{cc}=levels; cc=cc+1;
 
-     crop(1,1)=max(1,crop(1,1));
-     crop(2,1)=max(1,crop(2,1));
-     crop(1,2)=min(size(tmp,2),crop(1,2));
-     crop(2,2)=min(size(tmp,1),crop(2,2));
+% cropping factor
+crop(1,:)=   round(hp(1).XLim);
+crop(2,:)=   round(hp(1).YLim);
 
- arg{cc}='Crop'; cc=cc+1;
-            arg{cc}=crop; cc=cc+1;
-            % crop
+crop(1,1)=max(1,crop(1,1));
+crop(2,1)=max(1,crop(2,1));
+crop(1,2)=min(size(tmp,2),crop(1,2));
+crop(2,2)=min(size(tmp,1),crop(2,2));
 
-            obj.export(arg{:});
-           
+arg{cc}='Crop'; cc=cc+1;
+arg{cc}=crop; cc=cc+1;
+% crop
+
+obj.export(arg{:});
+
 
 
 

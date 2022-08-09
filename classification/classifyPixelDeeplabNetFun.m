@@ -27,6 +27,7 @@ for i=1:numel(varargin)
     end
 end
 
+
 net=classifier;
 
 inputSize = net.Layers(1).InputSize;
@@ -50,7 +51,6 @@ gfp=roiobj.image(:,:,pix,:);
 if numel(frames)==0
     frames=1:numel(gfp(1,1,1,:));
 end
-
 
 
 % BEWARE : rather use formatted image in lstm .mat variable
