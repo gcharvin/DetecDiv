@@ -164,6 +164,7 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
     p.Message=['Classifying ROI  ' roiobj(i).id];
      end
     
+    % roiobj(i).classes=classi.classes;
      
     if para % parallel computing
         if numel(classifierCNN)

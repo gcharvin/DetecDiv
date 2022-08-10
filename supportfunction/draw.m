@@ -617,15 +617,15 @@ for i=1:numel(obj.display.channel)
                 end
 
                 if tt<=0
-                    if  numel(obj.classes)>0
+                    if  numel(classesspe)>0
                         tt='Not Clas.';
                     else
                         % regression
                     end
                 else
 
-                    if numel(obj.classes)>0
-                        if tt <= length(obj.classes)
+                    if numel(classesspe)>0
+                        if tt <= length(classesspe)
                             tt=obj.classes{tt};
                         else
                             tt='N/A';
@@ -639,6 +639,7 @@ for i=1:numel(obj.display.channel)
                 end
 
                 %     tt
+               
                 displaystruct(discc).name=fields{k};
                 displaystruct(discc).gt=['GT: ' tt];
 
@@ -663,7 +664,6 @@ for i=1:numel(obj.display.channel)
                 end
                 discc=discc+1;
 
-
                 %                         if obj.train(obj.display.frame)==0
                 %                             str=[str ' - not classified'];
                 %                     %title(hp(cc),str, 'Color',[0 0 0],'FontSize',20);
@@ -686,18 +686,22 @@ for i=1:numel(obj.display.channel)
             %aa=obj.results
             for k = 1:length(pl)
                 if isfield(obj.results.(pl{k}),'labels')
+            
                     %   tt=char(obj.results.(pl{k}).labels(obj.display.frame));
                     if numel(obj.results.(pl{k}).id)>= obj.display.frame
                         % tt=num2str(obj.results.(pl{k}).id(obj.display.frame));
                         % str=[str ' - class #' tt ' (' pl{k} ')'];
 
                         tt=obj.results.(pl{k}).id(obj.display.frame);
+                      %  rr=obj.results.(pl{k});
 
                         if isfield(obj.results.(pl{k}),'classes')
+               
                             classesspe=obj.results.(pl{k}).classes; % classes name specfic to training
                         else
                             classesspe=    obj.classes ;
                         end
+
 
                         if tt<=0
                             if  length(obj.classes)>0
@@ -707,9 +711,10 @@ for i=1:numel(obj.display.channel)
                             end
                         else
 
-                            if length(obj.classes)>0
-                                if tt <= length(obj.classes)
-                                    tt=obj.classes{tt};
+
+                            if length(classesspe)>0
+                                if tt <= length(classesspe)
+                                    tt=classesspe{tt};
                                 else
                                     tt='N/A';
                                 end
@@ -725,16 +730,36 @@ for i=1:numel(obj.display.channel)
                         %  str=[str ' - ' tt ' ( ' fields{k} ')'];
 
                         found=0;
+
+                   
+
                         for jk=1:numel(displaystruct)
                             if strcmp(displaystruct(jk).name,pl{k})
                                 displaystruct(jk).pred=['Pred: ' tt];
                                 found=1;
                             end
                         end
+
+                     
                         if found==0
-                            displaystruct(end+1).pred=tt;
-                            displaystruct(end+1).name=pl{k};
+                 
+                                chk=0;
+                   if numel(displaystruct)==1
+                       if numel(displaystruct(1).name)==0
+                           chk=1;
+                       end
+                   end
+                   if chk==0
+                    displaystruct(end+1).pred=['Pred: ' tt];
+                    displaystruct(end+1).name=pl{k};
+                   else
+                       displaystruct(1).pred=['Pred: ' tt];
+                       displaystruct(1).name=pl{k};
+                   end
+
                         end
+
+                  %       aa=    displaystruct
 
                     end
                 end
@@ -1824,6 +1849,8 @@ for i=1:numel(obj.display.channel)
 
         discc=1;
 
+        
+
         if numel(obj.train)>0
             fields=fieldnames(obj.train);
 
@@ -1839,16 +1866,16 @@ for i=1:numel(obj.display.channel)
                 end
 
                 if tt<=0
-                    if  numel(obj.classes)>0
+                    if  numel(classesspe)>0
                         tt='Not Clas.';
                     else
                         % regression
                     end
                 else
 
-                    if numel(obj.classes)>0
-                        if tt <= length(obj.classes)
-                            tt=obj.classes{tt};
+                    if numel(classesspe)>0
+                        if tt <= length(classesspe)
+                            tt=classesspe{tt};
                         else
                             tt='N/A';
                         end
@@ -1934,17 +1961,18 @@ if numel(obj.results)>0
                     classesspe=    obj.classes ;
                 end
 
+              
                 if tt<=0
-                    if  length(obj.classes)>0
+                    if  length(classesspe)>0
                         tt='Not Clas.';
                     else
                         % regression
                     end
                 else
 
-                    if length(obj.classes)>0
-                        if tt <= length(obj.classes)
-                            tt=obj.classes{tt};
+                    if length(classesspe)>0
+                        if tt <= length( classesspe)
+                            tt= classesspe{tt};
                         else
                             tt='N/A';
                         end
@@ -1967,8 +1995,19 @@ if numel(obj.results)>0
                     end
                 end
                 if found==0
-                    displaystruct(end+1).pred=tt;
+                    chk=0;
+                   if numel(displaystruct)==1
+                       if numel(displaystruct(1).name)==0
+                           chk=1;
+                       end
+                   end
+                   if chk==0
+                    displaystruct(end+1).pred=['Pred: ' tt];
                     displaystruct(end+1).name=pl{k};
+                   else
+                       displaystruct(1).pred=['Pred: ' tt];
+                       displaystruct(1).name=pl{k};
+                   end
                 end
 
             end

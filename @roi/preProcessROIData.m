@@ -22,8 +22,19 @@ imout=zeros(size(tmp,1),size(tmp,2),numel(ch));
 %         error(['No stretch limits found for ROI ' num2str(obj.id) ', launch their computation using roi.computeStretchlim...']);
 %     end
 
-    if (~isfield(obj.display,'stretchlim') && ~isprop(obj.display,'stretchlim')) || size(obj.display.stretchlim,2)~=numel(obj.channelid)
-            disp(['No stretch limits found for ROI ' num2str(obj.id) ', computing them...']);
+   cmpt=0;
+    if (~isfield(obj.display,'stretchlim') && ~isprop(obj.display,'stretchlim')) || size(obj.display.stretchlim,2)~=numel(obj.channelid) 
+      cmpt=1;
+    else
+     for i=1:numel(ch)
+         if obj.display.stretchlim(2,ch(i))==0
+             cmpt=1;
+         end
+     end
+    end
+
+    if cmpt==1
+              disp(['No stretch limits found for ROI ' num2str(obj.id) ', computing them...']);
             obj.computeStretchlim;
     end
   
