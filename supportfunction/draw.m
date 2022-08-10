@@ -2236,6 +2236,10 @@ for i=1:numel(obj.display.channel)
 
         if it~=0 || numel(pix)==3
 
+            if strchlm(1)==0 && strchlm(2)==0
+                strchlm(2)=1;
+            end
+
             imtemp=imadjust(imtemp,strchlm);
 
         end

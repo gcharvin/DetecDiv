@@ -141,6 +141,11 @@ for i=1:numel(channels)
 end
 
 %figure, imshow(matrix(:,:,:,1));
+pix=obj.findChannelID(name);
+if numel(pix)
+    obj.removeChannel(name);
+end
+
 obj.addChannel(matrix,name,[1 1 1],outrgb);
 
 obj.log(['Combined channels'],'Processing');

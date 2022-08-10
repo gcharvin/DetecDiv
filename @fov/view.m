@@ -28,8 +28,6 @@ if nargin>=4
     rebuild=1;
 end
 
-
-
 if numel(findobj('Tag',['Fov' obj.id])) && rebuild==0% handle exists already
     h=findobj('Tag',['Fov' obj.id]);
 
@@ -388,7 +386,7 @@ function selectPattern(handle,event,obj,him,hp,option)
 % ddefines a region of interest based on user input
 
 %obj.display.selectedchannel=handle.Value;
-val=handle.UserData
+val=handle.UserData;
 
 if numel(val)==0
 hmenu=findobj('Tag','DisplayROIMenu');
@@ -396,7 +394,8 @@ val=hmenu.UserData;
 end
 
 if numel(val)==0
-    disp('unable to set pattern; First select a ROI!')
+    disp('unable to set pattern; First select a ROI!');
+    warndlg('Unable to set a ROI as a reference pattern; Please select a ROI first ! Try to zoom on window if ROI selection is impossible; Also, zoom function should be off for the selection to work','Warning');
     return
 end
 

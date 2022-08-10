@@ -8,8 +8,13 @@ for i=1:numel(listproj.Project)
 
     proj=evalin('base',listproj.Project{i});
 
+
     positions={proj.fov.id};
+    if numel(proj.processing.classification)
     classifiers={proj.processing.classification.strid};
+    else
+    classifiers={};
+    end
 
     for j=1:numel(listproj.Projectpos)
 

@@ -23,6 +23,7 @@ for c=1:size(tmp,3)
     %end
     %strchlm(:,c)=mean(lm,2);
 end
+
 obj.display.stretchlim=[max(0,double(med)-4*stddev) ; min(65535,double(med)+4*stddev)]/65535;
 
 %obj.display.stretchlim=[max(0,double(med)-3*stddev) ; min(65535,double(med)+3*stddev)]/65535;
