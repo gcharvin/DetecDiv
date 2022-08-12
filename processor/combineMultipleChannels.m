@@ -29,7 +29,7 @@ obj=roiobj;
 
 args={};
 
-f=fieldnames(param)
+f=fieldnames(param);
 
 cha={};
 rgb={};
@@ -45,7 +45,6 @@ for i=1:numel(f)-1
         end
 end
 
-cha, rgb
 roiobj.combineChannels('channels',cha,'rgb',rgb,'name',param.outputChannelName);
 
 %roiobj.combineChannels({'channels',{'ch000-st000'    'ch000-st001'    'ch000-st002'},'rgb',{[1 0 0] [0 1 0] [0 0 1]}})

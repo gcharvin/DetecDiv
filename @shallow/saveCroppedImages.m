@@ -295,11 +295,13 @@ for i=fovid
                     tmproi(l).load;
                     if numel(tmproi(l).image)==0
                         disp(['Unable to load ROI ' num2str(l)]);
+                        disp('Try to recover the extraction by reloading with crash recovery set');
                         dumprecovery(fovid,framecell,i,ii);
                         return;
                     end
                   catch
                       disp(['Unable to load ROI ' num2str(l)]);
+                      disp('Try to recover the extraction by reloading with crash recovery set');
                        dumprecovery(fovid,framecell,i,ii);
                     return;
                   end

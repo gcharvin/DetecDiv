@@ -116,8 +116,10 @@ if numel(handles)==0
         mitem(i) = uimenu(m,'Text',obj.display.channel{i},'Checked','on','Tag',['channel_' num2str(i)]);
         set(mitem(i),'MenuSelectedFcn',{@displayMenuFcn,obj,h,classif});
 
+
         pix=find(obj.channelid==i); % find matrix index associated with channel
         pix=pix(1); % there may be several items in case of a   multi-array channel
+
 
         % here !!!!!
         if obj.display.selectedchannel(i)==1
@@ -626,7 +628,7 @@ for i=1:numel(obj.display.channel)
 
                     if numel(classesspe)>0
                         if tt <= length(classesspe)
-                            tt=obj.classes{tt};
+                            tt=classesspe{tt};
                         else
                             tt='N/A';
                         end

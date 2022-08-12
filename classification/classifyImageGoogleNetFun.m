@@ -56,6 +56,8 @@ im=uint8(zeros(size(gfp,1),size(gfp,2),3,size(gfp,4)));
 
 gfp = imresize(gfp,inputSize(1:2));
 
+%figure, imshow(gfp(:,:,:,1),[])
+%return
 %figure, imshow(gfp(:,:,:,1));
 
 
@@ -75,7 +77,6 @@ gfp = imresize(gfp,inputSize(1:2));
 %end
 
 % upload results into roi obj;
-
 
 results=roiobj.results;
 results.(classif.strid)=[];
