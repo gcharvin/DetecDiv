@@ -16,9 +16,10 @@ for i=1:numel(listproj.Project)
     classifiers={};
     end
 
-    for j=1:numel(listproj.Projectpos)
+    for j=1:numel(listproj.Projectpos{i})
+     tmp=listproj.Projectpos{i}{j};
 
-        pix=find(matches(positions,listproj.Projectpos{j}));
+        pix=find(matches(positions,tmp));
 
         if numel(pix)==0
             continue
@@ -53,6 +54,8 @@ for i=1:numel(listproj.Project)
     end
 end
 
+
+
 for i=1:numel(listproj.Classifier)
   classifiers=evalin('base',listproj.Classifier{i});
    % pix=find(matches(classifiers,listproj.Projectclassi{j}));
@@ -65,3 +68,6 @@ for i=1:numel(listproj.Classifier)
 
     list=[list unique(listcha) ];
 end
+
+list=unique(list);
+

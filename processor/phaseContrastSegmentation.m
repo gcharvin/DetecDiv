@@ -16,6 +16,7 @@ if nargin==0
     return;
 else
 paramout=param; 
+paramout.input_channel=[listChannels param.input_channel{end}];
 end
 
 obj=roiobj; 
@@ -29,6 +30,7 @@ end
 pixresults=findChannelID(obj, paramout.input_channel{end});
  
 pixoutput=findChannelID(obj,  paramout.output_channel_name);
+
 
 if numel(pixoutput)>0
 obj.image(:,:,pixoutput,frames)=uint16(zeros(size(obj.image,1),size(obj.image,2),1,numel(frames)));
@@ -85,7 +87,7 @@ newlabels2=zeros(size(newlabels));
 
 cc=1;
 for i=1:numel(l)
-if l(i).Area<5000 && l(i).Circularity>0.6
+if l(i).Area<15000 && l(i).Circularity>0.6
  bw=newlabels==i;
  newlabels2(bw)=2;
 

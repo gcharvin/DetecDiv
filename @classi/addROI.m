@@ -261,9 +261,22 @@ for i=1:length(rois)
     
     if strcmp(classif.category{1},'Pixel')
         im=classif.roi(cc+1).image;
-        matrix=uint16(zeros(size(im,1),size(im,2),1,size(im,4)));
-        classif.roi(cc+1).addChannel(matrix,classif.strid,[1 1 1],[0 0 0]);
-        classif.roi(cc+1).display.selectedchannel(end)=1;
+
+        pix=findChannelID(classif.roi(cc+1), classif.strid);
+
+
+if numel(pix)>0 %channel is already present in roi , so skip channel creation
+
+else
+   % add channel is necessary 
+  matrix=uint16(zeros(size(im,1),size(im,2),1,size(im,4)));
+   classif.roi(cc+1).addChannel(matrix,classif.strid,[1 1 1],[0 0 0]);
+    classif.roi(cc+1).display.selectedchannel(end)=1;
+end
+
+
+
+       
         
         if isa(obj,'classi')
             if  strcmp(obj.category{1},'Pixel') % phenocopy the groundtruth

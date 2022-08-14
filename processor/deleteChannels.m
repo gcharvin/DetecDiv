@@ -29,7 +29,7 @@ f=fieldnames(param);
 
 cha={};
 
-for i=1:numel(f)-1
+for i=1:numel(f)
         pix=find(matches(listChannels,f{i}));
 
         if numel(pix)
@@ -41,6 +41,7 @@ for i=1:numel(f)-1
 end
 
 for i=1:numel(cha)
+
 roiobj.removeChannel(cha{i});
 end
 
