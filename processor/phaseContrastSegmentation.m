@@ -87,7 +87,7 @@ cc=1;
 for i=1:numel(l)
 if l(i).Area<5000 && l(i).Circularity>0.6
  bw=newlabels==i;
- newlabels2(bw)=cc;
+ newlabels2(bw)=2;
 
 %  figure,imshow(bw,[]);
 %  pause

@@ -1,6 +1,6 @@
 function paramout=combineMultipleChannels(param,roiobj,frames)
 
- listChannels=listAvailableChannels;
+ listChannels=listAvailableChannels
 % listChannels=['N/A', listChannels];
 environment='pc' ;
 
