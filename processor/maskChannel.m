@@ -28,7 +28,10 @@ else
 paramout=param; 
 end
 
-obj=roiobj;
+if numel(roiobj.image)==0
+    roiobj.load;
+end
+
 
 args={};
 
@@ -42,9 +45,11 @@ selid=roiobj.channelid(pixdata(1));
 
 %im=roiobj.image(:,:,pixin,:);
 
-destiCha=paramout.outputChannelName; 
+destiCha=paramout.outputChannelName;
 
 pix=roiobj.findChannelID(destiCha);
+
+
 
 if numel(pix)>0
 roiobj.image(:,:,pix,frames)=uint16(zeros(size(roiobj.image,1),size(roiobj.image,2),1:numel(pix),numel(frames)));
@@ -61,7 +66,9 @@ else
 end
 
 bw= roiobj.image(:,:,pixmask,:)==paramout.maskIndex;
+roiobj.display.stretchlim(:,pixoutput)=[0;1];
 roiobj.image(:,:,pixoutput,:)=roiobj.image(:,:,pixdata,:) .* uint16(bw);
+
 
 
 

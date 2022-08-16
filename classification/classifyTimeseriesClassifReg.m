@@ -8,7 +8,7 @@ fprintf('Loading and formatting data...\n');
 X=[];
 
 
-strfield=classif.trainingset;
+strfield=classif.channelName{1};
 pix=strfind(strfield,'.');
 
 if numel(pix)==0

@@ -7,7 +7,7 @@ function removeData(obj,train,results)
 
 removeall=0;
 
-obj.load % necessary to make sure that saving will then be effective. 
+%obj.load % necessary to make sure that saving will then be effective. 
 
 for i=1:numel(train)
     
@@ -41,6 +41,6 @@ else
 end
 end
 
-obj.save;
+%obj.save;
     
  obj.log(['Removed training data or classi results from ROI'],'Processing');

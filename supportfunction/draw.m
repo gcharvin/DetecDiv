@@ -1837,10 +1837,12 @@ cctext=1;
 for i=1:numel(obj.display.channel)
     pix=find(obj.channelid==i); % find matrix index associated with channel
     pix=pix(1); % there may be several items in case of a   multi-array channel
+
     if obj.display.selectedchannel(i)==1
         % if obj.display.selectedchannel(pix)==1
         axes(hp(cc));
-        str=obj.display.channel{i};
+
+        str=obj.display.channel{i}
         strclassi='';
         strbound='';
         displaystruct=[];
@@ -1850,8 +1852,6 @@ for i=1:numel(obj.display.channel)
         displaystruct.info='';
 
         discc=1;
-
-        
 
         if numel(obj.train)>0
             fields=fieldnames(obj.train);
@@ -1938,8 +1938,6 @@ for i=1:numel(obj.display.channel)
         %                         end
         %  end
 
-    end
-end
 
 % str=hp(cc).Title.String;
 
@@ -2102,6 +2100,9 @@ title(hp(cc),str,'FontSize',12,'interpreter','none');
 
 %title(hp(cc),str, 'Color',colo,'FontSize',20);
 cc=cc+1;
+    end
+end
+
 
 
 htext=findobj(gcf,'Tag','frametext');
@@ -2117,9 +2118,10 @@ if numel(htraj)~=0
     end
 end
 
+end
+
 %return;
 %axes(hp(1));
-end
 
 function plotLinks(obj,hp,classif)
 mother=obj.train.(classif.strid).mother;
