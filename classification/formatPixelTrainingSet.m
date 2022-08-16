@@ -40,7 +40,9 @@ for i=1:numel(rois)
             cltmp(rois(i)).load; % load image sequence
         end
         
-        pix=cltmp(rois(i)).findChannelID(channel); % new multichannel mode
+  
+        pix=cltmp(rois(i)).findChannelID(channel);
+        % new multichannel mode
 
     if iscell(pix)
             pix=cell2mat(pix);
