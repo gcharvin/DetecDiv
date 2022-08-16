@@ -1,7 +1,6 @@
 function im=preProcessROIData(obj,ch,fr,dorepmat)
 
 
-
 tmp=obj.image(:,:,ch,fr);
 imout=zeros(size(tmp,1),size(tmp,2),numel(ch));
 

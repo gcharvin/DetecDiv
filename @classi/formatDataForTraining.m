@@ -69,7 +69,9 @@ switch category
        end
     case 'Pixel'
         % this is transient : 
-       rois=1:numel(classif.roi); % takes all rois to format, only rois in trainingset will be later selected for training
+    %   rois=1:numel(classif.roi); % takes all rois to format, only rois in trainingset will be later selected for training
+    % the line above should be uncommented to perform automated cross
+    % validation , see parameters
        output=formatPixelTrainingSet(foldername,classif,rois);
     case 'Object'
         output=formatObjectTrainingSet(foldername,classif,rois);

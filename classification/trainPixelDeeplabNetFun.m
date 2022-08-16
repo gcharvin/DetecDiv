@@ -104,19 +104,20 @@ frequency = tbl.PixelCount/sum(tbl.PixelCount);
 % ylabel('Frequency')
 
 
-
-if trainingParam.CNN_crossvalidation==true % randomly select rois, respecting the initial number of ROIs in classif.trainingset variable
- nrois= numel(classif.trainingset);
- shuffledIndices = randperm(numel(classif.roi));
- classif.trainingset=shuffledIndices(1:nrois);
-end
+% i disable crossvalidation
+% if trainingParam.CNN_crossvalidation==true % randomly select rois, respecting the initial number of ROIs in classif.trainingset variable
+%  nrois= numel(classif.trainingset);
+%  shuffledIndices = randperm(numel(classif.roi));
+%  classif.trainingset=shuffledIndices(1:nrois);
+% end
 
 disp('ROis used for training : ' );
 
 roitraining=classif.trainingset;
 
-[imds, pxds] = subSelectTrainingSet(imds,pxds,classes,labelsIDs, classif); % subselect images in datastore according to their belonging to classif.trainingset
- 
+%[imds, pxds] = subSelectTrainingSet(imds,pxds,classes,labelsIDs, classif); % subselect images in datastore according to their belonging to classif.trainingset
+% uncomment this line if crossvalidation should be performed  
+
 nfiles=numel(imds.Files);
 
 [imdsTrain, imdsVal, pxdsTrain, pxdsVal] = partitionCamVidData(imds,pxds,classes,labelsIDs,trainingParam.CNN_data_splitting_factor);

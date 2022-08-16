@@ -87,10 +87,12 @@ for i=1:numel(rois)
     for j=1:size(im,4) %time
         tmp=im(:,:,:,j);
         
+
         %TODO: preProcessROIData(pix,j,param);
         if numel(pix)<=3            
             param=[];
-            tmp=cltmp(i).preProcessROIData(pix,j,param);
+
+            tmp=cltmp(rois(i)).preProcessROIData(pix,j,param);
         end
         
         %tmp=uint8(256*tmp);
