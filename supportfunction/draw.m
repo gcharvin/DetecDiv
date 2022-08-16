@@ -1842,7 +1842,7 @@ for i=1:numel(obj.display.channel)
         % if obj.display.selectedchannel(pix)==1
         axes(hp(cc));
 
-        str=obj.display.channel{i}
+        str=obj.display.channel{i};
         strclassi='';
         strbound='';
         displaystruct=[];
