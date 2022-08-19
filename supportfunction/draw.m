@@ -385,7 +385,7 @@ return;
             end
 
 %keys={'a' 'z' 'e' 'r' 't' 'y' 'u' 'i' 'o' 'p'};
-h.KeyPressFcn={@changeframe,obj,him,hp,keys,classif,specialkeys};
+h.KeyPressFcn={@changeframe,obj,him,hp,keys,classif,specialkeys,userprefs};
 
 handles=findobj(h,'Tag','frametexttitle');
 if numel(handles)==0
@@ -527,10 +527,10 @@ if numel(classif)>0
         % change keypressfcn if painting is allowed to allow more functions
         %
         if strcmp(classif.category{1},'Pixel') | strcmp(classif.category{1},'Object') % only in pixel mode
-            h.KeyPressFcn={@changeframe,obj,him,hp,keys,classif,specialkeys,hpaint.Children(1),hcopy.Children(1),hpaint};
+            h.KeyPressFcn={@changeframe,obj,him,hp,keys,classif,specialkeys,hpaint.Children(1),hcopy.Children(1),hpaint,userprefs};
             %<<<<<<< HEAD
         else
-            h.KeyPressFcn={@changeframe,obj,him,hp,keys,classif,specialkeys};
+            h.KeyPressFcn={@changeframe,obj,him,hp,keys,classif,specialkeys,userprefs};
         end
 
 
@@ -1347,6 +1347,7 @@ end
 function wbdcb(src,event,obj,impaint1,impaint2,hpaint,classif,h,userprefs)
 seltype = src.SelectionType;
 ma=zeros(size(obj.image,1),size(obj.image,2));
+
 
 if strcmp(seltype,'normal') % paint with middle sized brush
     src.Pointer = 'cross';
@@ -2328,7 +2329,7 @@ if frame<=size(obj.image,4) & frame > 0
 end
 end
 
-function changeframe(handle,event,obj,him,hp,keys,classif,specialkeys,impaint1,impaint2,hpaint)
+function changeframe(handle,event,obj,him,hp,keys,classif,specialkeys,impaint1,impaint2,hpaint,userprefs)
 
 %hpaint.Children(1),hcopy.Children(1)
 
@@ -2341,6 +2342,29 @@ h=findobj('Tag',['ROI' obj.id]);
 % han.trap(val-1).view;
 % delete(handle);
 % end
+
+str=event.Key; str2=strfind(str,'numpad');
+if numel(str2) % user pressed 
+val=str2num(str(end)); % key that was pressed
+siz=size(him.image(1).CData);
+
+if val~=0
+cutt= {[3 1], [3 2], [3 3], [2 1],[2 2],[2 3], [1 1], [1 2], [1 3]};
+
+
+
+xl= [(cutt{val}(2)-1)*siz(2)/3-10 cutt{val}(2)*siz(2)/3 ];
+yl= [(cutt{val}(1)-1)*siz(1)/3-10 cutt{val}(1)*siz(1)/3 ];
+else
+xl=[0 siz(2)];
+yl=[0 siz(1)];
+end
+
+set(hp(1),'XLim',xl);
+set(hp(1),'YLim',yl);
+
+
+end
 
 if strcmp(event.Key,'rightarrow')
     if obj.display.frame+1>size(obj.image,4)
@@ -2558,7 +2582,7 @@ for i=1:numel(keys) % display the selected class for the current image
 
                             % set pixel painting mode
                             if strcmp(classif.category{1},'Pixel')
-                                set(h,'WindowButtonDownFcn',{@wbdcb,obj,impaint1,impaint2,hpaint,classif,h});
+                                set(h,'WindowButtonDownFcn',{@wbdcb,obj,impaint1,impaint2,hpaint,classif,h,userprefs});
                             end
 
                             if strcmp(classif.category{1},'Object')
