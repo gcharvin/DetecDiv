@@ -814,7 +814,7 @@ for i=1:numel(obj.display.channel)
                     for k=1:n
                         bw=l==k;
                         id=round(mean(im(bw)));
-                        htext(cctext)=text(r(k).Centroid(1),r(k).Centroid(2),num2str(id),'Color',[1 1 1],'FontSize',20,'Tag','tracktext');
+                        htext(cctext)=text(r(k).Centroid(1),r(k).Centroid(2),num2str(id),'Color',[1 1 1],'FontSize',10,'Tag','tracktext');
                         cctext=cctext+1; % update handle counter
                     end
                 end
@@ -2045,7 +2045,7 @@ if numel(strfind(obj.display.channel{i},'track'))~=0 | numel(strfind(obj.display
     for k=1:n
         bw=l==k;
         id=round(mean(im(bw)));
-        htext(cctext)=text(r(k).Centroid(1),r(k).Centroid(2),num2str(id),'Color',[1 1 1],'FontSize',20,'Tag','tracktext');
+        htext(cctext)=text(r(k).Centroid(1),r(k).Centroid(2),num2str(id),'Color',[1 1 1],'FontSize',10,'Tag','tracktext');
         cctext=cctext+1;
     end
 end

@@ -37,7 +37,8 @@ end
 
 im=obj.image(:,:,channelID,:);
 
-% convert image into binary mask
+% convert image into binary mask if labeled image, otherwise leave it as
+% is. 
 
 im=logical(im-1);
 
@@ -119,7 +120,6 @@ for i=frames(1)+1:frames(end) % loop on all frames
    
     end
 
-    
     cellsrefstore=cellsref;
     
     [cellsref,cost]=hungarianTracker(cellsref,cellstest,distancemean,param);
