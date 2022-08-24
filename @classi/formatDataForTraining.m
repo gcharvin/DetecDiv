@@ -83,7 +83,11 @@ switch category
     case 'Timeseries'
        output= formatTimeseriesTrainingSet(foldername,classif,rois)  ;
       case 'Delta'
-       output= formatDeltaTrainingSet(foldername,classif,rois)  ;
+            if numel(Frames)
+       output= formatDeltaTrainingSet(foldername,classif,rois,'Frames',Frames)  ;
+            else
+          output= formatDeltaTrainingSet(foldername,classif,rois)  ; 
+            end
 end
 
 

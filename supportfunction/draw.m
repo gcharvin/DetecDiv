@@ -2245,7 +2245,7 @@ cc=1;
 for i=1:numel(obj.display.channel)
 
     pix=find(obj.channelid==i); % find matrix index associated with channel
-    pix=pix(1); % there may be several items in case of a   multi-array channel
+ %   pix=pix(1); % there may be several items in case of a   multi-array channel
 
     if obj.display.selectedchannel(i)==1
         %    if obj.display.selectedchannel(pix)==1
@@ -2253,18 +2253,8 @@ for i=1:numel(obj.display.channel)
         % channel in case of RGB images
 
         pix=find(obj.channelid==i);
-        src=obj.image;
-
-        % for each channel perform normalization
-        %pix
-        %INTENSITY
-
-        tmp=src(:,:,pix,:);
-
-        %  imout=uint16(zeros(size(obj.image,1),size(obj.image,2),3));
 
         imtemp=obj.image(:,:,pix,frame);
-
 
         % WARNING PIX MAY BE A 1 or  3 element vector
         if (~isfield(obj.display,'stretchlim') && ~isprop(obj.display,'stretchlim')) || size(obj.display.stretchlim,2)~=numel(obj.channelid)

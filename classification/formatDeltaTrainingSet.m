@@ -1,4 +1,14 @@
-function output= formatDeltaTrainingSet(foldername,classif,rois)
+function output= formatDeltaTrainingSet(foldername,classif,rois,varargin)
+
+Frames=[];
+
+for i=1:numel(varargin)
+    if strcmp(varargin{i},'Frames')
+        Frames=varargin{i+1};
+    end
+end
+
+
 output=0;
 if ~isfolder([classif.path '/' foldername '/images'])
     mkdir([classif.path '/' foldername], 'images');
@@ -74,17 +84,50 @@ for i=rois
     
     % find channel associated with user classified objects
     im2=cltmp(i).image(:,:,pix2,:);
+
+  %  if max(im2(:))>1 % check if bw image is encoded between levels 0 and 1 or 1 and 2 
+      %  im2=im2-1;
+   % end
+
     %figure, imshow(im2(:,:,1,1),[]);
     
     reverseStr = '';
     
-    for j=1:size(im,4)-1 % stop 1 image bedfore the end
+    if numel(Frames)==0
+        fra=1:size(im,4)-1;
+    else
+        fra=Frames(1:end-1);
+    end
+
+    cc=1;
+    for j=fra % stop 1 image bedfore the end
+       %j
         tmp1=im(:,:,1,j);
         tmp2=im(:,:,1,j+1);
         
         
+        % check if image is labeled or not 
         label1=im2(:,:,1,j);
         label2=im2(:,:,1,j+1);
+
+        if max(label1(:))==1 % bw image or image with no pattern 
+            if min(label1(:))==0 % bw image 
+                     label1=bwlabel(label1);
+                     label2=bwlabel(label2);
+            else %there is no contour , continue 
+                    continue
+            end
+        end
+        if max(label1(:))==2 % segmented image or labeled imaged
+                   if min(label1(:))==1 % segmented image
+                            label1=bwlabel(label1-1);
+                            label2=bwlabel(label2-1);
+                         %   'ok'
+                   else
+% indexed image, do nothing
+                   end
+        end
+
         
         if sum(label2(:))==0
             continue
@@ -138,9 +181,18 @@ for i=rois
             end
             
             % reference of the image
-            
+           % stat1
+
+            try 
             minex=uint16(max(1,round(stat1.Centroid(1))-imagesize/2));
             miney=uint16(max(1,round(stat1.Centroid(2))-imagesize/2));
+
+            catch
+                figure,imshow(bw1,[])
+                 figure,imshow(label1,[])
+
+                return
+            end
             
             maxex=uint16(min(size(tmp1,2),round(stat1.Centroid(1))+imagesize/2-1));
             maxey=uint16(min(size(tmp1,1),round(stat1.Centroid(2))+imagesize/2-1));
@@ -189,9 +241,10 @@ for i=rois
             
         end
         
-        msg = sprintf('Processing frame: %d / %d for ROI %s', j, size(im,4),cltmp(i).id); %Don't forget this semicolon
+        msg = sprintf('Processing frame: %d / %d for ROI %s', cc, numel(fra),cltmp(i).id); %Don't forget this semicolon
         fprintf([reverseStr, msg]);
         reverseStr = repmat(sprintf('\b'), 1, length(msg));
+        cc=cc+1;
     end
     
     fprintf('\n');

@@ -66,8 +66,10 @@ else
 end
 
 bw= roiobj.image(:,:,pixmask,:)==paramout.maskIndex;
-roiobj.display.stretchlim(:,pixoutput)=[0;1];
+%roiobj.display.stretchlim(:,pixoutput)=[0;1];
+
 roiobj.image(:,:,pixoutput,:)=roiobj.image(:,:,pixdata,:) .* uint16(bw);
+roiobj.computeStretchlim;
 
 
 
