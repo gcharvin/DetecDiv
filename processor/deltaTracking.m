@@ -1,5 +1,9 @@
 function paramout=deltaTracking(param,obj,frames)
 
+list=listAvailableChannels();
+
+listproj= gatherVariablesFromWorkspace;
+
 % implements the tracking method as in the lugagne paper Delta 2.0 
 % procedure 
 % setup processor paramters : "add processor..." 
@@ -17,29 +21,71 @@ function paramout=deltaTracking(param,obj,frames)
 if nargin==0
     paramout=[];
     
-    paramout.raw_channel_name='ch1--'; % raw images
-    paramout.seg_channel_name='track_segcell_1'; % segmented data
+    list{end+1}=list{1};
+
+    paramout.raw_channel_name=list;
+    paramout.seg_channel_name=list; % segmented data
+
+
+    cla={};
+    cc=1;
+    for i=1:numel(listproj.Classifier)
+        clas=evalin('base',  listproj.Classifier{i});
+          if strcmp(clas.category{1},'Delta')
+                cla{cc}=listproj.Classifier{i};
+                cc=cc+1;
+          end
+    end
+
+    for i=1:numel(listproj.Projectclassi)
+              proj=evalin('base',listproj.Project{i});
+
+          for j=1:numel(listproj.Projectclassi{i})
+             
+         %     tmp=listproj.Projectclassi{i}{j}
+       %     zz=   {proj.processing.classification.strid}
+              pix=find(matches( {proj.processing.classification.strid},listproj.Projectclassi{i}{j}));
+               clas=proj.processing.classification(pix);
+              
+                if strcmp(clas.category{1},'Delta')
+                cla{cc}=listproj.Projectclassi{i}{j};
+                cc=cc+1;
+          end
+          end
+    end
+
+%    cla
+  
+deltacla=cla;
+
+    if numel(deltacla)==0
+            deltacla={'',''};
+    else
+            deltacla{end+1}=deltacla{1};
+    end
+
+    paramout.classifier_name=deltacla;
+
     paramout.output_channel_name='track_delta'; % output channel 
     paramout.imagesize=151; 
     
   %  paramout.frames='0';
-    paramout.classifier_name='delta_3';
     
     return;
 else
 paramout=param; 
 end
 
-display=0;
+display=1;
 
-channelID=obj.findChannelID(param.seg_channel_name);
+channelID=obj.findChannelID(param.seg_channel_name{end});
 
 if numel(channelID)==0 % this channel contains the segmented objects
    disp([' This channel ' param.seg_channel_name ' does not exist ! Quitting ...']) ;
    return;
 end
 
-inputchannelID=obj.findChannelID(paramout.raw_channel_name);
+inputchannelID=obj.findChannelID(paramout.raw_channel_name{end});
 
 if numel(inputchannelID)==0 % this channel contains the raw images used to segment objects or to characterize the object
    disp([' This channel ' paramout.raw_channel_name ' does not exist ! Quitting ...']) ;
@@ -56,38 +102,67 @@ if numel(obj.image)==0
 end
 
 im=obj.image(:,:,channelID,:);
-im=im>0; % binarize cell contours
+
+        if max(im(:))==1 % bw image or image with no pattern 
+            if min(im(:))==0 % bw image 
+                   im=im>0;
+            end
+        end
+        if max(im(:))>=2 % segmented image or labeled imaged
+                   if min(im(:))==1 % segmented image
+                          im=im>1;
+                   end
+        end
+
 
 rawim=obj.image(:,:,inputchannelID,:);
 
-totphc=rawim;
-meanphc=0.5*double(mean(totphc(:)));
-maxphc=double(meanphc+0.5*(max(totphc(:))-meanphc));
+% totphc=rawim;
+% meanphc=0.5*double(mean(totphc(:)));
+% maxphc=double(meanphc+0.5*(max(totphc(:))-meanphc));
 
 
 if frames==0
     frames=1:size(im,4);
 else
-    frames=frames;
+%    frames=frames;
 end
 
 
-    disp('Loading classifier....')
+disp('Loading classifier....')
     
-    varlist=evalin('base','who');
-
     ok=0;
-   for i=1:numel(varlist)
-                if strcmp(varlist{i},param.classifier_name)
-                   ok=1;
-                    break
-                end
-   end
+ cla={};
+    cc=1;
+    for i=1:numel(listproj.Classifier)
+        clas=evalin('base',  listproj.Classifier{i});
+          if strcmp(clas.category{1},'Delta') && strcmp(clas.strid,paramout.classifier_name{end})
+                ok=1;
+                break;
+          end
+    end
+
+    for i=1:numel(listproj.Project)
+              proj=evalin('base',listproj.Project{i});
+
+          for j=1:numel(proj.processing.classification)
+             
+              
+               clas=proj.processing.classification(j);
+
+               if strcmp(clas.category{1},'Delta') && strcmp(clas.strid,paramout.classifier_name{end})
+               ok=1;
+               break;
+               end
+          end
+    end
+
     
    if ok==1
-         classifier=evalin('base',param.classifier_name);
+         classifier=clas.loadClassifier; %evalin('base',param.classifier_name);
     else
-        disp('This classifer is not in the workspace. Please load the classifier using the load method applied to the relevant @classi')
+        disp('This classifer is not in the workspace. Please load the classifier using the load method applied to the relevant @classi');
+        return;
     end
     
 %creates an output channel to update results
@@ -104,32 +179,47 @@ else
    obj.addChannel(matrix,param.output_channel_name,rgb,intensity);
 end
 
-% % calculate the mean object size during the movie
-% area=[];
-% 
-% disp('Computing mean cell size in mo....')
-% for i=1:size(im,4)
-%    
-%     stats=regionprops(im(:,:,1,i)>0,'Area');
-%     tmp=[stats.Area];
-%    % size(tmp)
-%     area=[area; tmp'];
-% end
-% 
-% area=area';
-% areamean=mean(area);
-% distancemean=2*sqrt(areamean)*2/pi;
 
-% typical cell size in movie x 2 
-%
+% compute stretchlim 
+ch=obj.channelid;
+cmpt=0;
+    if (~isfield(obj.display,'stretchlim') && ~isprop(obj.display,'stretchlim')) || size(obj.display.stretchlim,2)~=numel(obj.channelid) 
+      cmpt=1;
+    else
+     for i=1:numel(ch)
+         if obj.display.stretchlim(2,ch(i))==0
+             cmpt=1;
+         end
+     end
+    end
+
+    if cmpt==1
+              disp(['No stretch limits found for ROI ' num2str(obj.id) ', computing them...']);
+            obj.computeStretchlim;
+    end
+
+
 
 lref=bwlabel(im(:,:,1,frames(1)));
+
 imrefraw=rawim(:,:,1,frames(1));
 
-imrefraw = double(imadjust(imrefraw,[meanphc/65535 maxphc/65535],[0 1]))/256;
+strchlm=obj.display.stretchlim(:,obj.channelid(inputchannelID(1)));
+
+imrefraw = double(imadjust(imrefraw,strchlm,[0 1]))/256;
 imrefraw=uint8(imrefraw);
 
-obj.image(:,:,pixresults,frames(1))=lref;
+%figure, imshow(im(:,:,1,frames(1)),[]);
+%return;
+
+%imrefraw = double(imadjust(imrefraw,[meanphc/65535 maxphc/65535],[0 1]))/256;
+%imrefraw=uint8(imrefraw);
+
+%obj.image(:,:,pixresults,frames(1))=lref;
+%figure, imshow(lref,[]);
+
+%return;
+
 %rawim(:,:,1,frames(1);
 
 cellsref=getCells(lref);%,rawim(:,:,1,frames(1)),meanphc,maxphc);
@@ -150,8 +240,11 @@ for i=frames(1)+1:frames(end) % loop on all frames
     
     imtestraw=rawim(:,:,1,i);
     
-    imtestraw = double(imadjust(imtestraw,[meanphc/65535 maxphc/65535],[0 1]))/256;
+    imtestraw = double(imadjust(imtestraw,strchlm,[0 1]))/256;
     imtestraw=uint8(imtestraw);
+
+%    imtestraw = double(imadjust(imtestraw,[meanphc/65535 maxphc/65535],[0 1]))/256;
+%    imtestraw=uint8(imtestraw);
 
     [ltest,ntest]=bwlabel(imtest);
     

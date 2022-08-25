@@ -164,6 +164,73 @@ switch cate
              %   title(l(i).name)
             end
 
+    case 'Delta' % displays training set for Delta tracking 
+
+        classes=classif.classes;
+        nfolder=fullfile(pth, 'trainingdataset/images');
+        l=dir(nfolder);
+
+        nfolder2=fullfile(pth, 'trainingdataset/labels');
+        l2=dir(nfolder2);
+
+        if numel(l)<=2
+            disp('there is no exported dataset in folder; quitting...')
+
+            return;
+        end
+
+        cd=numel(l)-2;
+        disp(['Total number of images in trainingset: ' num2str(cd)]);
+
+          output{1,1}='images';
+          output{1,2}=cd;
+
+           if display
+
+                img=[];
+                maxe=min(n,numel(l)-2);
+                if numel(l)>2
+
+                    idx=randi([3 numel(l)],[1 maxe]);
+                else
+                    idx=[];
+                end
+
+                cc=1;
+                for j=idx
+                    load(fullfile(l(j).folder,l(j).name));
+                    tmp=tmpcrop; % tmpcrop is troed in the file. 
+                    tmp2=imread(fullfile(l2(j).folder,l2(j).name));
+                   
+    % aa=fullfile(l(j).folder,l(j).name)
+            
+
+                tmpa=repmat(tmp(:,:,1),[1 1 3]);
+                tmpb=repmat(tmp(:,:,2),[1 1 3]);
+                tmpc=repmat(tmp(:,:,3),[1 1 3]);
+                tmpd=repmat(tmp(:,:,4),[1 1 3]);
+
+                 tmp3=[tmpa tmpb tmpc tmpd  tmp2 ];
+                   % tmp=imlincomb(0.75,tmp,0.25,tmp2);
+
+                    disp(['Display image: ' l(j).name ])
+               %     if cc==1
+                %        img=tmp;
+               %     else
+                 %       size(tmp)
+                %       class(tmp)
+                        img{cc}=tmp3;
+                %    end
+                    cc=cc+1;
+                end
+
+                figure;
+                himg=montage(img,'Size',[NaN 1]);
+             %   title(l(i).name)
+           end
+
+      
+  
 end
 
 fle=fullfile(pth,'sampleImage.png');

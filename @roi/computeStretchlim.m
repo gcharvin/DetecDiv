@@ -50,7 +50,7 @@ end
 %min(65535,double(med)+4*stddev)]/65535; % does not work well with images
 %with large stretches of 0's. 
 
-obj.display.stretchlim=[mi ; ma] %home made stretchilm to work with multi D images. slow but more reliable
+obj.display.stretchlim=[mi ; ma]; %home made stretchilm to work with multi D images. slow but more reliable
 
 if clearfile==1
     obj.save;

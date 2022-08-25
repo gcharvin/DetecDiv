@@ -36,9 +36,12 @@ end
             else
                 imagesize=str2num(answer{1});
                 classif.trainingParam.imagesize=imagesize;
+                classif.trainingParam.tip{end+1}='enter the size of the image to be cut';
                 classif.channel=4; %specifies that 4 channels will be used
                 classiSave(classif);
             end
+
+
 
 cltmp=classif.roi;
 
@@ -60,30 +63,54 @@ channel=classif.channelName; % list of channels used to generate input image
 
 %labelchannel=classif.strid; % image that contains the labels
 
-for i=rois
+for i=1:numel(rois)
     disp(['Launching ROI ' num2str(i) : ' processing...']);
     
     if numel(cltmp(i).image)==0
-        cltmp(i).load; % load image sequence
+        cltmp(rois(i)).load; % load image sequence
     end
     
     % normalize intensity levels
+
     pix=cltmp(rois(i)).findChannelID(channel{1});
-    
-    im=cltmp(i).image(:,:,pix,:); % raw image
-    
-    if numel(pix)==1
-        % 'ok'
-        totphc=im;
-        meanphc=0.5*double(mean(totphc(:)));
-        maxphc=double(meanphc+0.7*(max(totphc(:))-meanphc));
+
+    ch=cltmp(rois(i)).channelid;
+    obj=cltmp(rois(i));
+
+    cmpt=0;
+    if (~isfield(obj.display,'stretchlim') && ~isprop(obj.display,'stretchlim')) || size(obj.display.stretchlim,2)~=numel(obj.channelid) 
+      cmpt=1;
+    else
+     for i=1:numel(ch)
+         if obj.display.stretchlim(2,ch(i))==0
+             cmpt=1;
+         end
+     end
     end
+
+    if cmpt==1
+              disp(['No stretch limits found for ROI ' num2str(obj.id) ', computing them...']);
+            obj.computeStretchlim;
+    end
+
+    
+    im=cltmp(rois(i)).image(:,:,pix,:); % raw image
+    strchlm=cltmp(rois(i)).display.stretchlim(pix);
+
+%     if numel(pix)==1
+%         'ok'
+%         totphc=im;
+%         meanphc=0.5*double(mean(totphc(:)));
+%         maxphc=double(meanphc+0.7*(max(totphc(:))-meanphc));
+%     end
+
     
     %pixelchannel2=cltmp(i).findChannelID(classif.strid);
     pix2=cltmp(rois(i)).findChannelID(channel{2}); % label channel
-    
+    strchlm2=cltmp(rois(i)).display.stretchlim(pix2);
+
     % find channel associated with user classified objects
-    im2=cltmp(i).image(:,:,pix2,:);
+    im2=cltmp(rois(i)).image(:,:,pix2,:);
 
   %  if max(im2(:))>1 % check if bw image is encoded between levels 0 and 1 or 1 and 2 
       %  im2=im2-1;
@@ -99,34 +126,35 @@ for i=rois
         fra=Frames(1:end-1);
     end
 
-    cc=1;
+    ccc=1;
     for j=fra % stop 1 image bedfore the end
        %j
         tmp1=im(:,:,1,j);
         tmp2=im(:,:,1,j+1);
         
         
-        % check if image is labeled or not 
+        % images must be labeled already = ground truth , otherwise no
+        % training set can be made
         label1=im2(:,:,1,j);
         label2=im2(:,:,1,j+1);
 
-        if max(label1(:))==1 % bw image or image with no pattern 
-            if min(label1(:))==0 % bw image 
-                     label1=bwlabel(label1);
-                     label2=bwlabel(label2);
-            else %there is no contour , continue 
-                    continue
-            end
-        end
-        if max(label1(:))==2 % segmented image or labeled imaged
-                   if min(label1(:))==1 % segmented image
-                            label1=bwlabel(label1-1);
-                            label2=bwlabel(label2-1);
-                         %   'ok'
-                   else
-% indexed image, do nothing
-                   end
-        end
+%         if max(label1(:))==1 % bw image or image with no pattern 
+%             if min(label1(:))==0 % bw image 
+%                      label1=bwlabel(label1);
+%                      label2=bwlabel(label2);
+%             else %there is no contour , continue 
+%                     continue
+%             end
+%         end
+%         if max(label1(:))==2 % segmented image or labeled imaged
+%                    if min(label1(:))==1 % segmented image
+%                             label1=bwlabel(label1-1);
+%                             label2=bwlabel(label2-1);
+%                          %   'ok'
+%                    else
+% % indexed image, do nothing
+%                    end
+%         end
 
         
         if sum(label2(:))==0
@@ -138,9 +166,9 @@ for i=rois
         %return;
         if numel(pix)==1
             
-            tmp1 = double(imadjust(tmp1,[meanphc/65535 maxphc/65535],[0 1]))/65535;
+            tmp1 = double(imadjust(tmp1,[strchlim(1) strchlm(2)],[0 1]))/65535;
             tmp1=uint8(256*tmp1);
-            tmp2 = double(imadjust(tmp2,[meanphc/65535 maxphc/65535],[0 1]))/65535;
+            tmp2 = double(imadjust(tmp2,[strchlm2(1) strchlm2(2)],[0 1]))/65535;
             tmp2=uint8(256*tmp2);
             %tmp=repmat(tmp,[1 1 3]);
             
@@ -150,10 +178,7 @@ for i=rois
         while numel(tr)<4
             tr=['0' tr];
         end
-        
-        
-        
-        
+
         % labelout
         %l1=bwlabel(label1);
         %l2=bwlabel(label2);
@@ -161,10 +186,7 @@ for i=rois
         if max(label1(:))==0 % image is not annotated
             continue
         end
-        
-        
-        % HERE
-        
+
         for k=1:max(label1(:))% loop on all present objects
             
             bw1=label1==k;
@@ -183,16 +205,16 @@ for i=rois
             % reference of the image
            % stat1
 
-            try 
+       %     try 
             minex=uint16(max(1,round(stat1.Centroid(1))-imagesize/2));
             miney=uint16(max(1,round(stat1.Centroid(2))-imagesize/2));
 
-            catch
-                figure,imshow(bw1,[])
-                 figure,imshow(label1,[])
-
-                return
-            end
+%             catch
+%                 figure,imshow(bw1,[])
+%                 figure,imshow(label1,[])
+% 
+%                 return
+%             end
             
             maxex=uint16(min(size(tmp1,2),round(stat1.Centroid(1))+imagesize/2-1));
             maxey=uint16(min(size(tmp1,1),round(stat1.Centroid(2))+imagesize/2-1));
@@ -241,10 +263,10 @@ for i=rois
             
         end
         
-        msg = sprintf('Processing frame: %d / %d for ROI %s', cc, numel(fra),cltmp(i).id); %Don't forget this semicolon
+        msg = sprintf('Processing frame: %d / %d for ROI %s', ccc, numel(fra),cltmp(rois(i)).id); %Don't forget this semicolon
         fprintf([reverseStr, msg]);
         reverseStr = repmat(sprintf('\b'), 1, length(msg));
-        cc=cc+1;
+        ccc=ccc+1;
     end
     
     fprintf('\n');
