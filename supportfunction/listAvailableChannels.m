@@ -16,6 +16,8 @@ for i=1:numel(listproj.Project)
     classifiers={};
     end
 
+
+
     for j=1:numel(listproj.Projectpos{i})
      tmp=listproj.Projectpos{i}{j};
 
@@ -43,14 +45,18 @@ for i=1:numel(listproj.Project)
             continue
         end
 
-        roiobj=proj.processing.classification(pix).roi;
+        for jj=1:numel(pix)
+        roiobj=proj.processing.classification(pix(jj)).roi;
         listcha={};
 
         for k=1:numel(roiobj)
             listcha=[ listcha  roiobj(k).display.channel];
         end
+      %  listcha
+   list=[list unique(listcha) ];
+        end
 
-        list=[list unique(listcha) ];
+     
     end
 end
 
