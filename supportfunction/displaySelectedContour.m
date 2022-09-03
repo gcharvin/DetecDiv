@@ -21,6 +21,18 @@ if val>0
     handles.String=num2str(val);
 
     sel=bw==val;
+
+    if numel(find(sel))==0
+        handles=findobj(src,'Tag','celltext');
+        handles.String='-';
+
+        p=findobj(hpaint,'Type','Line');
+        if numel(p)
+            delete(p);
+        end
+        return
+    end
+
     B = bwboundaries(sel);
     B=B{1};
 
@@ -29,7 +41,7 @@ if val>0
         delete(p);
     end
 
- 
+
     hh=line(B(:,2),B(:,1),'Color',colo,'LineWidth',2,'UserData',val);
 
 

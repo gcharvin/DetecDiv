@@ -551,7 +551,7 @@ if numel(classif)>0
         hpaint=findobj('Tag',classif.strid);
         % if the painting axe is displayed
         if numel(hpaint)
-            set(h,'WindowButtonDownFcn',{@wbdcb_delta,obj,hpaint.Children(1),hcopy.Children(1),hpaint});
+            set(h,'WindowButtonDownFcn',{@wbdcb_delta,obj,hpaint.Children(1),hcopy.Children(1),hpaint,classif,him,hp});
         end
 
         % create text field to input cell number
@@ -1318,6 +1318,11 @@ txt=str2num(to.String);
 
 prev=findobj(hpaint,'Type','Line');
 
+if prev.UserData==txt
+    disp('The selected cell index is identical to the original cell index');
+    return
+end
+
 if numel(txt) && numel(prev)
 
     prev=prev.UserData;
@@ -1325,23 +1330,22 @@ if numel(txt) && numel(prev)
     pixcha=find(obj.channelid==pixelchannel);
 
 
-
-
-
     if numel(pixcha)
 
         % check if cell was present already ask if it should be replaced
-        pixcellex= obj.image(:,:,pixcha,obj.display.frame:end)==txt;
+        tt= obj.image(:,:,pixcha,obj.display.frame:end);
 
-        if numel(pixcellex)
-            answer = questdlg('The cell number you chose already exist in at least one frame.Please choose to assign this number:', ...
-            	'Cell ID processing menu', ...
-            	'to the rest of the frames','only missing frames','Cancel','Cancel');
+        pixcellex= tt==txt;
+
+        if numel(find(pixcellex))
+            answer = questdlg('The cell number you chose is already present. What should be done with that existing cell ? :', ...
+                'Cell ID processing menu', ...
+                'Change the cell number to preserve that cell','Only assign this number in frames where that cell is not present','Cancel','Cancel');
             % Handle response
             switch answer
-                case 'to the rest of the frames'
+                case 'Change the cell number to preserve that cell'
                     dessert = 1;
-                case 'only missing frames'
+                case 'Only assign this number in frames where that cell is not present'
                     dessert = 2;
                 case 'Cancel'
                     dessert = 0;
@@ -1349,35 +1353,58 @@ if numel(txt) && numel(prev)
 
             if dessert==0
                 disp('User canceled selection')
-            return;
+                return;
             end
 
-        
+        else
+              dessert=0;
+        end
 
-        if dessert==1 % must renumber the target cell before processing further
+             if dessert==0
+                 pixcell= obj.image(:,:,pixcha,obj.display.frame:end)==prev; % pixels to be replace
+                imtmp= obj.image(:,:,pixcha,obj.display.frame:end);
+                imtmp(pixcell)= txt;
+             end
+
+            if dessert==1 % must renumber the target cell before processing further
                 imtmp= obj.image(:,:,pixcha,:);
-                me=maxe(imtmp); 
+                me=max(imtmp(:));
                 imtmp= obj.image(:,:,pixcha,obj.display.frame:end);
                 imtmp(pixcellex)=me+1;
 
-               pixcell= obj.image(:,:,pixcha,obj.display.frame:end)==prev; % pixels to be replace
-                imtmp= obj.image(:,:,pixcha,obj.display.frame:end);
-                imtmp(pixcell)= txt;
-        end 
+                pixcell= obj.image(:,:,pixcha,obj.display.frame:end)==prev; % pixels to be replace
+            %    imtmp= obj.image(:,:,pixcha,obj.display.frame:end);
+                 imtmp(pixcell)= txt;
+            end
 
-        if dessert==2 % must identify the missing frames 
+            if dessert==2 % must identify the missing frames
+
+                imtmp= obj.image(:,:,pixcha,:);
+
                 for i=obj.display.frame:size(obj.image,4)
-                    pixmiss= obj.image(:,:,pixcha,obj.display.frame:end)==prev %%% HERE
+
+                    pixmiss= obj.image(:,:,pixcha,i)==txt; %%% HERE
+
+                    if numel(find(pixmiss))==0
+                          imtmp2=imtmp(:,:,:,i);
+
+                        pixcell= imtmp2==prev;
+                      
+                        imtmp2(pixcell)=txt;
+                        imtmp(:,:,:,i)=imtmp2;
+                    end
                 end
-        end
+
+                imtmp=imtmp(:,:,:,obj.display.frame:end);
+            end
 
 
-        obj.image(:,:,pixcha,obj.display.frame:end)=imtmp;
+            obj.image(:,:,pixcha,obj.display.frame:end)=imtmp;
 
-        updatedisplay(obj,him,hp,classif)
+            updatedisplay(obj,him,hp,classif)
     end
-end
 
+end
 end
 
 function setframe(handle,event,obj,him,hp,classif )
