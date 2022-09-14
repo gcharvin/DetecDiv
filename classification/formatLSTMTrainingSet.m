@@ -49,7 +49,10 @@ channel=classif.channelName;
 
 disp(['These ROIs will be processed : ' num2str(rois)]);
 
+
+
 for i=1:numel(rois)
+      emptyFrame=[];
     disp(['Launching ROI ' num2str(i) :' processing...'])
     
     if numel(cltmp(rois(i)).image)==0
@@ -100,6 +103,10 @@ for i=1:numel(rois)
     param=[];
     imtest=cltmp(rois(i)).preProcessROIData(pix,1,param); % done to determine image size
    
+    if numel(imtest)==0 % preprocessing failed 
+            disp('Pre-processing failed, likely because the image is void !');
+            continue; 
+    end
   
     vid=uint8(zeros(size(imtest,1),size(imtest,2),3,1));
     
@@ -123,10 +130,17 @@ for i=1:numel(rois)
         reverseStr = '';               
         
         cc=1;
-        
+
         for j=fra
             
-            tmp=cltmp(rois(i)).preProcessROIData(pix,j,param);            
+            tmp=cltmp(rois(i)).preProcessROIData(pix,j,param);   
+
+                if numel(tmp)==0 % preprocessing failed 
+            disp('Pre-processing failed, likely because the image is void !');
+            emptyFrame=1;
+            break; 
+                end
+
             %figure, imshow(tmp);
             %pause;
             %close;      
@@ -193,9 +207,15 @@ for i=1:numel(rois)
 %      save('test.mat','aah')
     % assignin('base','test',vid);
    %  size(vid)
+
+
+   if numel(emptyFrame)==0
     parsave([classif.path '/' foldername '/timeseries/lstm_labeled_' cltmp(rois(i)).id '.mat'],deep,vid,lab);
     
     cltmp(rois(i)).save;
+   else
+    disp('This ROI was not saved because it has empty frames');
+   end
     
     disp(['Processing ROI: ' num2str(rois(i)) ' ... Done !'])
 end

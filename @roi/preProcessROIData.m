@@ -24,6 +24,12 @@ imout=zeros(size(tmp,1),size(tmp,2),numel(ch));
     for i=1:numel(ch)
   %  strchlm=obj.display.stretchlim(:,(ch(end)-ch(1))/2 + ch(1)); %middle stack
    strchlm=obj.display.stretchlim(:,ch(i));
+
+   if strchlm(1)>= strchlm(2)
+       im=[];
+    return;
+   end
+
  %  imout(:,:,i)=tmp(:,:,i);
    imout(:,:,i)=double(imadjust(tmp(:,:,i),strchlm))/65535;
     end
