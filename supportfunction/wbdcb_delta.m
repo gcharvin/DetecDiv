@@ -31,6 +31,7 @@ if strcmp(seltype,'normal') % basic cell selection
 end
 
 if strcmp(seltype,'alt') % swap cells
+    if val~=0
     prev=findobj(hpaint,'Type','Line');
     if numel(prev)
         prev=prev.UserData;
@@ -61,9 +62,27 @@ if strcmp(seltype,'alt') % swap cells
             displaySelectedContour(src,hpaint,impaint1,prev,colo);
         end
     end
+    end
 end
 
-if strcmp(seltype,'extend') % swap cells
+if strcmp(seltype,'open') % basic cell selection
+        
+    prompt = {'Enter cell id:'};
+dlgtitle = 'Input';
+dims = [1 35];
+definput = {num2str(val)};
+answer = inputdlg(prompt,dlgtitle,dims,definput);
+
+if numel(answer{1})==0
+        return;
+end
+
+ setcell_low(src,event,obj,hpaint,classif,him,hp,str2double(answer{1}));
+
+end
+
+
+if strcmp(seltype,'extend') % suppress cells
 
     if val~=0
         colo=[0 0 1];
@@ -109,9 +128,5 @@ if strcmp(seltype,'extend') % swap cells
                 displaySelectedContour(src,hpaint,impaint1,0,colo);
         end
     end
-
-
-
 end
-
 end
