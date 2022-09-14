@@ -81,14 +81,21 @@ disp('Formatting video before classification....');
 vid=uint8(zeros(size(im,1),size(im,2),3,numel(frames)));
 
 cc=1;
+
 for j=frames
     param=[];   
         
     tmp=roiobj.preProcessROIData(pix,j,param);
+
+
+    if numel(tmp)==0 % empty frame 
+         vid(:,:,:,cc)=uint8(0);
+    else
     
     %tmp = double(imadjust(tmp,[meanphc/65535 maxphc/65535],[0 1]))/65535;
     %tmp=repmat(tmp,[1 1 3]);        
     vid(:,:,:,cc)=uint8(256*tmp);
+    end
     cc=cc+1;
 end
 
