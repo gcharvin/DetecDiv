@@ -50,17 +50,22 @@ warning off all
 
 channel=classif.channelName; % list of channels used to generate input image
 
-
 % for delta : ch1 : image at t; ch2: seg of target cell at t; ch3: image at
 % t+1; ch4 : seg of all cells
 
 % outpur :  labels for target cell at t+1;
 
 % therefore 2 channels are necessary : first is raw image, second is labels
+% channel names must be 1) raw image 2) result of segmentation, because
+% this routine will take segmentation results as inputs. Labeled images are
+% required here just because they are used to generate the ground truth
+% data set. 
 
-% labels must ber tracked over time to extract cell numbers
+% labels must be tracked over time to extract cell numbers
 
 %labelchannel=classif.strid; % image that contains the labels
+
+distance_store=[]; % records the distance for 1 cell in 2 successive frames and store it in the classif folder 
 
 for i=1:numel(rois)
     disp(['Launching ROI ' num2str(i) : ' processing...']);
@@ -252,6 +257,8 @@ for i=1:numel(rois)
                     continue; 
             end
 
+            distance_store=[ distance_store dist];
+            
             lab=lab(miney:maxey,minex:maxex);
 
          %   figure, imshow(lab,[])
@@ -295,6 +302,7 @@ for i=1:numel(rois)
         ccc=ccc+1;
     end
 
+
     fprintf('\n');
 
 
@@ -302,6 +310,11 @@ for i=1:numel(rois)
 
     disp(['Processing ROI: ' num2str(i) ' ... Done !'])
 end
+
+hh=histogram(distance_store); % displays the distribution of distances between objects
+ pth=fullfile(classif.path,foldername,'distances.pdf');
+exportgraphics(hh,pth)
+
 
 warning on all;
 

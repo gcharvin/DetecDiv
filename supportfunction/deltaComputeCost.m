@@ -62,9 +62,9 @@ tmp2=iminput2;
 
            dist=sqrt((stat2(i).Centroid(2)-stat1.Centroid(2)).^2+(stat2(i).Centroid(1)-stat1.Centroid(1)).^2);
 
-            if dist>imagesize% pixel, arbitrarily defined
-                continue
-            end
+          %  if dist>imagesize% pixel, arbitrarily defined
+          %      continue
+           % end
            
             bw=label2crop==i;
             
