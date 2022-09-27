@@ -10,8 +10,16 @@ tmp2=iminput2;
 %             if numel(bw1)==0 % this cell number is not present
 %                 continue
 %             end
-            
+          
  stat1=regionprops(bw1,'Centroid');
+
+ if numel(stat1)==0
+stat2=regionprops(label2,'Centroid');
+vec=Inf*ones(1,max(label2(:)));
+return;
+ end
+
+ 
  
 %  if numel(stat1)==0
 %      
@@ -62,19 +70,26 @@ tmp2=iminput2;
 
            dist=sqrt((stat2(i).Centroid(2)-stat1.Centroid(2)).^2+(stat2(i).Centroid(1)-stat1.Centroid(1)).^2);
 
-          %  if dist>imagesize% pixel, arbitrarily defined
-          %      continue
-           % end
+            if dist>imagesize% pixel, arbitrarily defined
+                continue
+            end
            
             bw=label2crop==i;
             
             if sum(bw(:))>0
             proba=features(:,:,2); % cell class proba 
             
+            tmp=mean(proba(bw));
+
+            if tmp>1e-10 % >0 ensures that the log is a real number; >1e-10 ensures that the weight is not to high
             vec(i) = -log(mean(proba(bw)));
+            end
+
             end
             
        end
+
+  
        
        
        

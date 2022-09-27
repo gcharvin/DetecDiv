@@ -194,8 +194,8 @@ if cmpt==1
 end
 
 
-
 lref=bwlabel(im(:,:,1,frames(1)));
+obj.image(:,:,pixresults,frames(1))=lref;
 
 imrefraw=rawim(:,:,1,frames(1));
 
@@ -259,6 +259,7 @@ for i=frames(1)+1:frames(end) % loop on all frames
 
     [cellsref,cost]=hungarianTracker(cellsref,cellstest,imrefraw,imtestraw,lref,ltest,classifier,param.imagesize);
 
+% cost
     %imref
 
     imrefraw=imtestraw;
@@ -337,10 +338,11 @@ lastObjectNumber=max([cell0.n]);
 
 % buld weight matrix based on distance and size
 
-%a=[cell0.ox]
+p0=ones(1,numel(cell0));
+p1=ones(1,numel(cell1));
 
-p0= ([cell0.ox]~=0) & ([cell0.area]~=0);
-p1= ([cell1.ox]~=0) & ([cell1.area]~=0);
+%p0= ([cell0.ox]~=0) & ([cell0.area]~=0);
+%p1= ([cell1.ox]~=0) & ([cell1.area]~=0);
 
 n0=length(find(p0));
 n1=length(find(p1));
@@ -359,6 +361,9 @@ thr=2;
 %areamean=mean([cell0.area]);
 %meancellsize=30; % pixels sqrt(areamean/pi);
 %thr*meancellsize
+
+%figure, imshow(l0,[]);
+%figure, imshow(l1,[]);
 
 for i=1:length(ind0)
 
