@@ -239,6 +239,10 @@ if exist(fle)
 himg=imread(fle);
 end
 else
+ if numel(himg)==0
+     return
+ end
+ 
  if numel(himg.CData)~=0
 imwrite(himg.CData,fle);
  end
