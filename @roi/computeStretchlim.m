@@ -19,6 +19,7 @@ tmp=obj.image(:,:,:,:);
 
 for c=1:size(tmp,3)
     tmpimg=tmp(:,:,c,:);
+    tmpimg=tmpimg(tmpimg>0); % to avoid problems with masked images where most of pixels are =0
     med(c)=median(tmpimg(:));
     stddev(c)=std(double(tmpimg(:)));
     %for t=1:min(100,size(tmp,4)) %computes stretchlim on the 100 first frames of the timeseries, saturating 1% of pixels
