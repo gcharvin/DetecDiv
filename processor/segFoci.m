@@ -26,13 +26,14 @@ channelstrmsk=param.mask_channel_name;
 channelID=obj.findChannelID(channelstr);
 channelIDmask=obj.findChannelID(channelstrmsk);
 
+
 stdfoci=str2double(param.stdfoci);
 keeplargest=str2double(param.keeplargest0or1);
 sizethreshold=str2double(param.sizethreshold);
 
-class_bck=str2double(class_bck);
-class_mother=str2double(class_mother);
-class_other=str2double(class_other);
+class_bck=str2double(param.class_bck);
+class_mother=str2double(param.class_mother);
+class_other=str2double(param.class_other);
 
 if numel(channelID)==0 % this channel contains the segmented objects
     disp([' This channel ' channelstr ' does not exist ! Quitting ...']) ;
@@ -60,50 +61,53 @@ imframesOuput=uint16(zeros( size(im,1) , size(im,2) , 1 , numel(frames) ));
 for fr=1:numel(frames) %adjust boundaries
     tmpimg=preProcessROIData(obj,channelID,frames(fr),0);
     tmpmask=mask(:,:,1,fr);
+    tmpmaskMother=zeros(size(tmpmask));
     tmpmaskMother(tmpmask==class_bck)=0;
     tmpmaskMother(tmpmask==class_other)=0;
     tmpmaskMother(tmpmask==class_mother)=1;
-    
+    tmpmaskMother=logical(tmpmaskMother);
+
+    tmpmaskBck=zeros(size(tmpmask));
     tmpmaskBck(tmpmask==class_bck)=1;
     tmpmaskBck(tmpmask==class_other)=0;
     tmpmaskBck(tmpmask==class_other)=0;    
-    
     tmpmaskBck=logical(tmpmaskBck);
-    %tmpmaskedBck=tmpimg.*tmpmaskBck;
     
-    tmpmaskMother=logical(tmpmaskMother);
-    %tmpmaskedMother=tmpimg.*tmpmaskMother;
+    tmpmaskedMother=tmpimg.*tmpmaskMother;
     
     meanimgBck=mean(tmpimg(tmpmaskBck));
     
-    meanimg=mean(tmpimg(tmpmaskMother))-meanimgBck;
-    stdimg=std(tmpimg(tmpmaskMother));
-    
-    foci=tmpmasked(:,:)>(meanimg+stdfoci*stdimg);
+    meanimg=mean(tmpmaskedMother(tmpmaskedMother>0))-meanimgBck;
+    stdimg=std(tmpmaskedMother(tmpmaskedMother>0));
+%     meanimg=mean(tmpmaskedMother(tmpmaskedMother>0))-meanimgBck;
+%     stdimg=std(tmpmaskedMother(tmpmaskedMother>0));
+
+
+    focimask=tmpmaskedMother>(meanimg+stdfoci*stdimg);
     
     % size filtering
-    if numel(keeplargest) || numel(sizethreshold)        
+    if keeplargest==1 || sizethreshold>0        
         %BW=bwareaopen(BW,10);
-        CC= bwconncomp(foci);
+        CC= bwconncomp(focimask,4);
         numPixels = cellfun(@numel,CC.PixelIdxList);
         
         %keep largest islet
-        if numel(keeplargest) & numel(numPixels)>1 % if several objects are presents
+        if keeplargest==1 && numel(numPixels)>1 % if several objects are presents
                 [~,idx] = max(numPixels);
-                foci(vertcat(CC.PixelIdxList{setxor(1:numel(numPixels),idx)})) = 0;
+                focimask(vertcat(CC.PixelIdxList{setxor(1:numel(numPixels),idx)})) = 0;
         end
         
         %remove smaller objects
             idx=find(numPixels<sizethreshold);
             % objects numbers smallers than threshold
             for k=1:numel(idx)
-                foci(CC.PixelIdxList{idx(k)}) = 0;
+                focimask(CC.PixelIdxList{idx(k)}) = 0;
             end
     end
     
     %tmpmasked=medfilt2(tmpmasked,[3 3],'symmetric');
-    foci=uint16(foci);
-    imframesOuput(:,:,1,fr)=imframesOuput(:,:,1,fr)+foci;
+    focimask=uint16(focimask);
+    imframesOuput(:,:,1,fr)=imframesOuput(:,:,1,fr)+focimask;
         
 end
 

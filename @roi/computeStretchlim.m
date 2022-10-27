@@ -20,18 +20,25 @@ tmp=obj.image(:,:,:,:);
 for c=1:size(tmp,3)
     tmpimg=tmp(:,:,c,:);
     
-    %tmpimg=tmpimg(tmpimg>0); % to avoid problems with masked images where most of pixels are =0
+%     if sum(tmpimg(tmpimg>0))>0
+%         tmpimg=tmpimg(tmpimg>0); % to avoid problems with masked images where most of pixels are =0
+%     end
+
+    A=tmpimg==0;
+    if numel(A)==0
+        A=0;
+    end
+    A=sum(A(:)); %number of pixels =0
+    n=numel(tmpimg(:));
+        
+    matmp=maxk( tmpimg(:), n- round((satur(2))*n) ); %*A/n... to compensate for the loss of bright pixels from the background, in masked images 
+    ma(c)=min(matmp);
+    mitmp = mink(tmpimg(:),round((satur(1) +A/n)*n)); %A/n to account for pixels =0, which have to be saturated, + a corrective term
+    mi(c) = max(mitmp);
 %     med(c)=median(tmpimg(:));
 %     stddev(c)=std(double(tmpimg(:)));
     %for t=1:min(100,size(tmp,4)) %computes stretchlim on the 100 first frames of the timeseries, saturating 1% of pixels
-        
-    n=numel(tmpimg(:));
-    matmp=maxk(tmpimg(:),n- round(satur(2)*n));
-    ma(c)=min(matmp);
-    mitmp = mink(tmpimg(:),round(satur(1)*n));
-    mi(c) = max(mitmp);
 
-    
         %lm(:,t)=stretchlim(tmp(:,:,c,t),[0.001 0.999]);
     %end
     %strchlm(:,c)=mean(lm,2);
