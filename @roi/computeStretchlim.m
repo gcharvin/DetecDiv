@@ -19,9 +19,10 @@ tmp=obj.image(:,:,:,:);
 
 for c=1:size(tmp,3)
     tmpimg=tmp(:,:,c,:);
-    tmpimg=tmpimg(tmpimg>0); % to avoid problems with masked images where most of pixels are =0
-    med(c)=median(tmpimg(:));
-    stddev(c)=std(double(tmpimg(:)));
+    
+    %tmpimg=tmpimg(tmpimg>0); % to avoid problems with masked images where most of pixels are =0
+%     med(c)=median(tmpimg(:));
+%     stddev(c)=std(double(tmpimg(:)));
     %for t=1:min(100,size(tmp,4)) %computes stretchlim on the 100 first frames of the timeseries, saturating 1% of pixels
         
     n=numel(tmpimg(:));
@@ -47,8 +48,8 @@ if isa(tmp,'uint8')
 end
 
 
-%obj.display.stretchlim=[max(0,double(med)-4*stddev) ;
-%min(65535,double(med)+4*stddev)]/65535; % does not work well with images
+% obj.display.stretchlim=[max(0,double(med)-4*stddev) ;
+% min(65535,double(med)+4*stddev)]/65535; % does not work well with images
 %with large stretches of 0's. 
 
 obj.display.stretchlim=[mi ; ma]; %home made stretchilm to work with multi D images. slow but more reliable
