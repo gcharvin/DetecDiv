@@ -48,30 +48,36 @@ for i=1:numel(obj.display.channel)
 
         end
         imout=imtemp;
-        %   if numel(pix)==1
-        %     imtemp =repmat(imtemp,[1 1 3]);
-        %  end
 
-        if numel(pix)==3
-            for j=1:size(imtemp,3)
-                %   i,j,pix(j)
-                %  tmp=src(:,:,pix(j),:);
-                %  meangfp=0.5*double(mean(tmp(:)));
-                % it=obj.display.intensity(i,j);
-                %                         maxgfp=double(meangfp+it*(max(tmp(:))-meangfp));
-                %                         if maxgfp==0
-                %                             maxgfp=1;
-                %                         end
-
-                %size(imtemp)
-
-                % if meangfp>0 && maxgfp>0
-                %    imtemp = imadjust(imtemp,[meangfp/65535 maxgfp/65535],[0 1]);
-                %end
+           if numel(pix)==1 & obj.display.intensity(i,1)==1 % grayscale image but with rgb output request
+             imtemp =repmat(imtemp,[1 1 3]);
+              for j=1:size(imtemp,3)
+                
 
                 imout(:,:,j)=imtemp(:,:,j).*obj.display.rgb(i,j);
             end
-        end
+          end
+
+%         if numel(pix)==3
+%             for j=1:size(imtemp,3)
+%                 %   i,j,pix(j)
+%                 %  tmp=src(:,:,pix(j),:);
+%                 %  meangfp=0.5*double(mean(tmp(:)));
+%                 % it=obj.display.intensity(i,j);
+%                 %                         maxgfp=double(meangfp+it*(max(tmp(:))-meangfp));
+%                 %                         if maxgfp==0
+%                 %                             maxgfp=1;
+%                 %                         end
+% 
+%                 %size(imtemp)
+% 
+%                 % if meangfp>0 && maxgfp>0
+%                 %    imtemp = imadjust(imtemp,[meangfp/65535 maxgfp/65535],[0 1]);
+%                 %end
+% 
+%                 imout(:,:,j)=imtemp(:,:,j).*obj.display.rgb(i,j);
+%             end
+%         end
 
         %         end
         im(cc).data=imout;

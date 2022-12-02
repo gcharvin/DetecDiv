@@ -76,7 +76,6 @@ for i=1:numel(channels)
     end
 
 
-
     if numel(pix2)==0
         disp('Channel does not exist; quitting !');
         return;
@@ -104,6 +103,11 @@ for i=1:numel(channels)
             if numel(pix2)==1 % one single channel
                 for j=1:size(imtmp,4)
                     imtmp(:,:,1,j)=imadjust(imtmp(:,:,1,j),[levels{i}(1)/65535 levels{i}(2)/65535]);
+
+%                      if i==1 % invert contrast
+%                 imtmp(:,:,1,j)=65535-imtmp(:,:,1,j);
+%                      end
+
                 end
                 imtmp=repmat(imtmp,[1 1 3 1]);
             end
@@ -142,6 +146,7 @@ end
 
 %figure, imshow(matrix(:,:,:,1));
 pix=obj.findChannelID(name);
+
 if numel(pix)
     obj.removeChannel(name);
 end
