@@ -34,6 +34,9 @@ for c=1:size(tmp,3)
     matmp=maxk( tmpimg(:), n- round((satur(2))*n) ); %*A/n... to compensate for the loss of bright pixels from the background, in masked images 
     ma(c)=min(matmp);
     mitmp = mink(tmpimg(:),round((satur(1) +A/n)*n)); %A/n to account for pixels =0, which have to be saturated, + a corrective term
+    if numel(mitmp)==0
+        mitmp=0;
+    end
     mi(c) = max(mitmp);
 %     med(c)=median(tmpimg(:));
 %     stddev(c)=std(double(tmpimg(:)));
