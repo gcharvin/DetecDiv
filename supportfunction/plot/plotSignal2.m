@@ -287,7 +287,7 @@ for cond=1:numel(condition)
     for r=1:numel(obj2{cond})
         %extract
         if plotDivDuration==1
-            data{cond}(r,:)=obj2{cond}{r,1}*timefactor;
+            data{cond}(r,1:numel(obj2{cond}{r,1}))=obj2{cond}{r,1}*timefactor;
 %         elseif strcmp(fluostrid,'volume')
 %             data{cond}(r,:)=obj2{cond}{r,1}(chanid,:)*0.1056; %normalize into microns²
         elseif timeOrGen==0
