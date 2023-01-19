@@ -5,6 +5,8 @@ outputstr='temp';
 % by default, if classi.score is not empty, the program will only display
 % information . Otherwise, it will compute the stats and display
 
+% now also outputs an excel file which contains all the mismatches between
+% Pred and GT. 
 
 roiid=1:numel(classif.roi);
 datasetType='';
@@ -133,11 +135,11 @@ if compute==1 % compute new scores
             
             if cc==1
  
-                classif.score= measureAccuracyRecall(classif,data.gt, data.pred, data.roi);  % score for given classification
+                classif.score= measureAccuracyRecall(classif,data.gt, data.pred, data.roi, data.frames, num2str(i));  % score for given classification
                 classif.score.comments='Classification benchmarks using main classifier';
                 classif.score.thr=i;
             else
-                classif.score(cc)= measureAccuracyRecall(classif,data.gt, data.pred, data.roi);  % score for given classification
+                classif.score(cc)= measureAccuracyRecall(classif,data.gt, data.pred, data.roi, data.frames, num2str(i));  % score for given classification
                 classif.score(cc).comments='Classification benchmarks using main classifier';
                 classif.score(cc).thr=i;
             end
@@ -146,7 +148,7 @@ if compute==1 % compute new scores
                 if numel( data.CNNpred)
                 cc=cc+1;
             
-                classif.score(cc)= measureAccuracyRecall(classif,data.gt, data.CNNpred, data.roi);  % score for given classification
+                classif.score(cc)= measureAccuracyRecall(classif,data.gt, data.CNNpred, data.roi, data.frames, ['LSTM_' num2str(i)]);  % score for given classification
                 classif.score(cc).comments='Classification benchmarks using CNN classifier for LSTM architecture';
                 classif.score(cc).thr=i;
                 end
@@ -548,13 +550,15 @@ end
     end
 
 
-function score=measureAccuracyRecall(classif, groundtruth, predictions, roi)
+function score=measureAccuracyRecall(classif, groundtruth, predictions, roi, frames, str)
 
+% str is a flag for the excell export file 
 
 data=[];
 data.gt=groundtruth;
 data.pred=predictions;
 data.roi=roi;
+data.frames=frames; 
 
 % ===== accuracy & recall per class ====
 
@@ -571,6 +575,8 @@ for i=1:numel(classif.classes)
     
     pred=data.pred==i;
     gt=   data.gt==i;
+    roi2=data.roi; 
+    frames2=data.frames;
    
     
     accuracy= 100*sum(pred & gt)./sum(pred);
@@ -580,6 +586,20 @@ for i=1:numel(classif.classes)
     score.classes(i).recall=recall;
     score.classes(i).fscore=2*recall*accuracy/(accuracy+recall);
     score.classes(i).N=sum(pred);
+
+    % outputs inconsistencies as an excel file per class
+
+
+roiid={classif.roi.id};
+
+
+    inc_pix=~(pred & gt) & gt; % select mismatch frames for all GT classes 
+    inc_roi=roi2(inc_pix);
+    inc_frames=frames2(inc_pix);
+    roiid=roiid(inc_roi);
+    pth=classif.path; 
+    pthtot=fullfile(pth,[classif.strid '_mismatch_' str '.xlsx']);
+    writecell([(num2cell(inc_roi,1))', roiid', (num2cell(inc_frames))'],pthtot,'sheet',classif.classes{i},'WriteMode','overwritesheet');
 end
 
 % ======= confusion matrix ======
@@ -671,6 +691,7 @@ score.N=sum([score.classes(:).N]);
         
         data=[];
         data.roi=[];
+        data.frames=[];
         data.gt=[];
         data.pred=[];
         data.CNNpred=[];
@@ -799,10 +820,10 @@ score.N=sum([score.classes(:).N]);
                     %    else
                     %        pred=double(obj.results.(classistr).prob);
                     %    end
-                        gt=double(obj.train.(classistr).id)
+                        gt=double(obj.train.(classistr).id);
                         
                   
-                        pred=pred'
+                        pred=pred';
                     end
             
                     
@@ -916,6 +937,7 @@ score.N=sum([score.classes(:).N]);
                         end
                         
                         pix= pred & gt;
+                        fra=find(pix);
                         
                         if numel(pix)==0
                             disp('There is no coincidence for ground truth and prediction : skipping roi !');
@@ -936,6 +958,7 @@ score.N=sum([score.classes(:).N]);
             % if ground ==1 && resok==1 % list of rois used to compute stats
             data.gt=[data.gt gt];
             data.pred=[data.pred pred];
+            data.frames=[data.frames fra];
             data.CNNpred=[data.CNNpred CNNpred];
             data.roi=[data.roi j*ones(1,numel(gt))];
             data.reg=reg;
