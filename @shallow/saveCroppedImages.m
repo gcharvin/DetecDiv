@@ -281,7 +281,7 @@ for i=fovid
         end
         
         % parfor here
-        for l=1:numel(tmpfov(i).roi) % loop on all rois
+        parfor l=1:numel(tmpfov(i).roi) % loop on all rois
             
             tmproi(l).path=fullfile(strpath,tmpfov(i).id);
             rroi=tmproi(l).value; % cropping data
@@ -297,13 +297,13 @@ for i=fovid
                         disp(['Unable to load ROI ' num2str(l)]);
                         disp('Try to recover the extraction by reloading with crash recovery set');
                         dumprecovery(fovid,framecell,i,ii);
-                        return;
+                        %return;
                     end
                   catch
                       disp(['Unable to load ROI ' num2str(l)]);
                       disp('Try to recover the extraction by reloading with crash recovery set');
                        dumprecovery(fovid,framecell,i,ii);
-                    return;
+                    %return;
                   end
                 
                 
@@ -476,7 +476,7 @@ for i=fovid
                       disp(['Unable to save ROI ' num2str(l)]);
                       disp(' This is an I/O CRASH: start ROI extraction again with crashrecovery mode set to 1');
                        dumprecovery(fovid,framecell,i,ii);
-                    return;
+                    %return;
               end
                   
           

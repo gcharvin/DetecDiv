@@ -1,6 +1,6 @@
 function paramout=combineMultipleChannels(param,roiobj,frames)
 
- listChannels=listAvailableChannels
+ listChannels=listAvailableChannels;
 % listChannels=['N/A', listChannels];
 environment='pc' ;
 
@@ -10,6 +10,7 @@ if nargin==0
     tip={};
     cc=1;
     for i=1:numel(listChannels)
+        paramout
         tip{cc}= 'Check this box if this channel should be combined into a new channel'; cc=cc+1;
         paramout.(listChannels{i})=false;
         tip{cc}= 'Enter the RGB triplet for this channel in t the output channel eg: [1 0 0]; Discard if channel is not selected'; cc=cc+1;

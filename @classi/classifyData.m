@@ -41,6 +41,7 @@ classifier=[];
 CNNflag=0;
 
 
+
 for i=1:numel(varargin)
     if strcmp(varargin{i},'Classifier')
         classifier=varargin{i+1};
