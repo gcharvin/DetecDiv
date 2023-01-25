@@ -710,6 +710,7 @@ score.N=sum([score.classes(:).N]);
             gt=[];
             pred=[];
             CNNpred=[];
+            fra=[];
             
            
             
