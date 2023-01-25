@@ -19,16 +19,24 @@ for i=1:numel(project.fov) % loop on all FOVs
         frames= project.fov(i).roi(j).image(:,:,channel,:); % gets all frames
         frames= frames==2; % converts into a binary mask with cell of interest only ( pixel label=2 for that cell). 
         project.fov(i).roi(j).results.cytometry=[];
-        [project.fov(i).roi(j).results.cytometry.volume, project.fov(i).roi(j).results.cytometry.surface]=volumeApprox(frames);
+        [a0,b0,c0,d0,e0]=volumeApprox(frames);
+        project.fov(i).roi(j).results.cytometry.volume=a0;
+        project.fov(i).roi(j).results.cytometry.surface=b0;
+        project.fov(i).roi(j).results.cytometry.surface_mask=c0;
+        project.fov(i).roi(j).results.cytometry.length=d0;
+        project.fov(i).roi(j).results.cytometry.width=e0;
     end
     fprintf('\n');
 end
 
-function [volume surface]=volumeApprox(frames)
+function [volume,surface,surface_mask,len,wid]=volumeApprox(frames)
 
 
 volume=[];
 surface=[];
+surface_mask=[];
+len=[];
+wid=[];
 
 for i=1:size(frames,4)
     bw=frames(:,:,1,i);
@@ -45,9 +53,15 @@ for i=1:size(frames,4)
 
     volume(i)= 4*pi*r^3/3 + pi*r^2*h;
     surface(i)= 4*pi*r^2 + 2*pi*r*h; 
+    surface_mask(i)=stats(def).Area;
+    wid(i)=stats(def).MinorAxisLength;
+    len(i)=stats(def).MajorAxisLength;
     else
     volume(i)=nan;
     surface(i)=nan; 
+    surface_mask(i)=nan;
+    wid(i)=nan;
+    len(i)=nan; 
     end
 end
 
