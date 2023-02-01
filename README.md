@@ -30,16 +30,15 @@
 
 DetecDiv provides a comprehensive set of tools to analyze time microscopy images using deep learning methods. The software structure is such that data can be processed either at the command line or using a graphical user-interface. Detecdiv classification models include : image classification and regression, semantic segmentation, LSTM networks to analyze data and image timeseries. Please refer to our pre-print for further details about the software and its applications for yeast cell division counting and replicative lifespan analysis: 
     
-<a href="https://www.biorxiv.org/content/10.1101/2021.10.05.463175v2">
+<a href="https://elifesciences.org/articles/79519">
    DetecDiv, a deep-learning platform for automated cell division tracking and replicative lifespan analysis
   </a>
     
    Théo Aspert, Didier Hentsch, Gilles Charvin
     
-   <a href="https://www.biorxiv.org/content/10.1101/2021.10.05.463175v2"> https://doi.org/10.1101/2021.10.05.463175  </a>
+   <a href="https://elifesciences.org/articles/79519"> https://doi.org/10.7554/eLife.79519  </a>
   
   
- Please visit the <a href="https://charvin.igbmc.science"> Charvin lab website </a> for more information. 
   
     
 <p align="right">(<a href="#top">back to top</a>)</p>
@@ -73,11 +72,11 @@ We recommend using Matlab >= R2021a to ensure the compatibility of the software.
 
 -Image Processing Toolbox                              Version 11.3        (R2021a)
 
--Parallel Computing Toolbox                            Version 7.4         (R2021a)
-
 -Statistics and Machine Learning Toolbox               Version 12.1        (R2021a)
 
-In addition, you will need to install specific Matlab addons by clicking the "add-ons" button in the matlab main window. Then search for "Googlenet" and "Resnet50" to install these packages that correspond to pre-trained neural nets
+-Parallel Computing Toolbox                            Version 7.4         (R2021a)  (optional)
+
+In addition, you will need to install specific Matlab addons by clicking the "add-ons" button in the matlab main window. Then search for "Googlenet", "Resnet50", and "Resnet18" to install these packages that correspond to pre-trained neural nets.
 
 Make sure to include all DetecDiv folders and subfolders in the Matlab path using the "Set Path" in the main Matlab workspace.
 
@@ -97,8 +96,30 @@ A list of command-line instructions to use DetecDiv in scripts or in the Matlab 
  
  <p align="right">(<a href="#top">back to top</a>)</p>
  
- <div id="demo"></div>
+ <div id="data"></div>
  
+ ## Available datasets and models ##
+ 
+ ### Trained models and annotated data bundle ###
+ 
+All the classification models used in the  <a href="https://elifesciences.org/articles/79519"> paper </a> can be downloaded from Zenodo:
+
+  <a href="https://zenodo.org/record/7018296#.Y9oVNnbMI9E"> This repository </a> contains classifiers used to score cell division and lifespan in different contexts (geometries, microscopes):
+ 
+
+
+| Italic             |  Block letters |
+:-------------------------:|:-------------------------:
+![](Tutotrial/classifier_acar.png)  |  ![](Tutotrial/classifier_acar.png)
+
+
+
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.5771536.svg)](https://doi.org/10.5281/zenodo.5771536)
+
+<p align="right">(<a href="#top">back to top</a>)</p>
+
+<div id="demo"></div>
+
 ## DetecDiv demo project ##
  
 A demo project that contains all the necessary files (i.e. raw image files, ROIs, groudtruth data, classifier models, trained classifiers) to learn how to use DetecDiv can be found here: 
