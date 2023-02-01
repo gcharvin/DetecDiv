@@ -100,7 +100,7 @@ A list of command-line instructions to use DetecDiv in scripts or in the Matlab 
  
  ## Available datasets and models ##
  
- ### Trained models and annotated training set bundle ###
+ ### Trained models and annotated image trainingset bundle ###
  
 All the classification models used in the  <a href="https://elifesciences.org/articles/79519"> paper </a> can be downloaded from Zenodo:
 
@@ -108,7 +108,7 @@ All the classification models used in the  <a href="https://elifesciences.org/ar
  
 
 
-| Sample images and labels          |  Description | Link
+| Sample images and labels          |  Description | Link to the zip file
 :-------------------------:|:-------------------------:|:----------------
  <img src="Tutorial/classifier_acar.png" alt="acar" width="300">  |  Image sequence classification for division and lifespan analysis. Trap geometry as used in the Acar lab | <a href="https://zenodo.org/record/7018296/files/acar40x_theo_1.zip?download=1"> Download </a>
  <img src="Tutorial/classifier_div_1.png" alt="acar" width="300">  |  Image sequence classification for division and lifespan analysis. Trap geometry as used in the Charvin lab with a 20x objective and the RAMM microscope | <a href="https://zenodo.org/record/7018296/files/div_1.zip?download=1"> Download </a>
@@ -124,6 +124,16 @@ All the classification models used in the  <a href="https://elifesciences.org/ar
 
  ### Individual images and classification models ###
  
+ The repositories below contain datasets (training sets and validation sets) used to train classification models, as well as the trained model itself (.mat file). Unlike the "bundle" above, this respositories contain either images or the model, so they are not intended to be used seamlessly within Detecdiv. If you want to use a particular model within Detecdiv, please dowanload a "bundle" as indicated above. 
+ 
+ | Description         |  Training set repository | Testset repository | Trained model 
+:-------------------------:|:-------------------------:|:----------------:|:--------------
+Image sequence classification for division and lifespan analysis. Trap geometry as used in the Charvin lab with a 20x objective and the RAMM microscope. Relates to Figure 1 in the <a href="https://elifesciences.org/articles/79519"> paper </a> (id01) | <a href="https://zenodo.org/record/6078462"> Link </a> |  <a href="https://zenodo.org/record/5866747"> Link </a> | <a href="https://zenodo.org/record/5553862"> Link </a>
+Cell segmentation. Trap geometry as used in the Charvin lab with a 20x objective and the RAMM microscope. Relates to Figure 5 in the <a href="https://elifesciences.org/articles/79519"> paper </a> (id02) | <a href="https://doi.org/10.5281/zenodo.6077125"> Link </a> |  <a href="https://doi.org/10.5281/zenodo.6077125"> Link </a> | <a href="https://doi.org/10.5281/zenodo.5553851"> Link </a>
+SEP detection within lifespan data. Relates to Figure 4 in the <a href="https://elifesciences.org/articles/79519"> paper </a> (id03) | <a href="https://doi.org/10.5281/zenodo.6075691"> Link </a> |  <a href="https://doi.org/10.5281/zenodo.6075691"> Link </a> | <a href="https://doi.org/10.5281/zenodo.5553829"> Link </a>
+
+
+
 <div id="demo"></div>
 
 ## DetecDiv demo project ##
