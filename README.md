@@ -55,6 +55,7 @@ DetecDiv provides a comprehensive set of tools to analyze time microscopy images
     <li><a href="#about">About the project</a></li>
     <li><a href="#installation">Installation procedure</a></li>
     <li><a href="#gui">User guide</a></li>
+    <li><a href="#data">Available data and models</a></li>
     <li><a href="#demo">Demo project</a></li>
     <li><a href="#thanks">Acknowledgments</a></li>
   </ol>
