@@ -100,24 +100,30 @@ A list of command-line instructions to use DetecDiv in scripts or in the Matlab 
  
  ## Available datasets and models ##
  
- ### Trained models and annotated data bundle ###
+ ### Trained models and annotated training set bundle ###
  
 All the classification models used in the  <a href="https://elifesciences.org/articles/79519"> paper </a> can be downloaded from Zenodo:
 
-  <a href="https://zenodo.org/record/7018296#.Y9oVNnbMI9E"> This repository </a> contains classifiers used to score cell division and lifespan in different contexts (geometries, microscopes):
+  <a href="https://zenodo.org/record/7018296#.Y9oVNnbMI9E"> This repository </a> contains classifiers used to score cell division and lifespan in different contexts (geometries, microscopes). Each .zip files contains the trained classification model, along with the training and validation annonated image datasets that were used to train and test the classfiers. The generalist model is located in a different <a href="https://zenodo.org/record/7112521#.Y9pNV3bMI9E"> This repository </a>. 
  
 
 
-| Italic             |  Block letters |
-:-------------------------:|:-------------------------:
-![](Tutotrial/classifier_acar.png)  |  ![](Tutotrial/classifier_acar.png)
-
-
+| Sample images and labels          |  Description | Link
+:-------------------------:|:-------------------------:|:----------------
+ <img src="Tutorial/classifier_acar.png" alt="acar" width="300">  |  Image sequence classification for division and lifespan analysis. Trap geometry as used in the Acar lab | <a href="https://zenodo.org/record/7018296/files/acar40x_theo_1.zip?download=1"> Download </a>
+ <img src="Tutorial/classifier_div_1.png" alt="acar" width="300">  |  Image sequence classification for division and lifespan analysis. Trap geometry as used in the Charvin lab with a 20x objective and the RAMM microscope | <a href="https://zenodo.org/record/7018296/files/div_1.zip?download=1"> Download </a>
+ <img src="Tutorial/classifier_div_n60b_1.png" alt="acar" width="300">  |  Image sequence classification for division and lifespan analysis. Trap geometry as used in the Charvin lab with a 60x objective and a Nikon microscope | <a href="https://zenodo.org/record/7018296/files/div_n60b_1.zip?download=1"> Download </a>
+  <img src="Tutorial/classifier_jo_theo_1.png" alt="acar" width="300">  |  Image sequence classification for division and lifespan analysis. Trap geometry similar to that used in the Qin lab | <a href="https://zenodo.org/record/7018296/files/jo_theo_1.zip?download=1"> Download </a>
+  <img src="Tutorial/classifier_swain_div_1.png" alt="acar" width="300">  |  Image sequence classification for division and lifespan analysis. Trap geometry as used in the Qwain lab | <a href="https://zenodo.org/record/7018296/files/swain_div_1.zip?download=1"> Download </a>
+  <img src="Tutorial/classifier_segcellpaper_5.png" alt="acar" width="300">  |  Image sequence classification for cell contour segmentation. | <a href="https://zenodo.org/record/7018296/files/segcellpaper_5.zip?download=1"> Download </a>  
+  <img src="Tutorial/classifier_generalist_1.png" alt="acar" width="300">  |  Image sequence classification for division and lifespan analysis. Works for any trap geometry listed above | <a href="https://zenodo.org/record/7112521/files/generalist_1.zip?download=1"> Download </a>
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.5771536.svg)](https://doi.org/10.5281/zenodo.5771536)
 
-<p align="right">(<a href="#top">back to top</a>)</p>
+![zenodo 7112521](https://user-images.githubusercontent.com/5951608/216031808-5da79e07-fa4c-4f5c-aaf9-0d33a4de7cbc.svg)
 
+ ### Individual images and classification models ###
+ 
 <div id="demo"></div>
 
 ## DetecDiv demo project ##
