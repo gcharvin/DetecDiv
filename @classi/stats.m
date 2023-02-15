@@ -66,7 +66,6 @@ for i=1:numel(varargin)
     if strcmp(varargin{i},'Force') % forces the caluclation of scores
         compute=1;
     end
-   
 end
 
 
@@ -588,18 +587,17 @@ for i=1:numel(classif.classes)
     score.classes(i).N=sum(pred);
 
     % outputs inconsistencies as an excel file per class
-
-
-roiid={classif.roi.id};
-
-
+    roiid={classif.roi.id};
     inc_pix=~(pred & gt) & gt; % select mismatch frames for all GT classes 
+
+    if numel(frames2)
     inc_roi=roi2(inc_pix);
     inc_frames=frames2(inc_pix);
     roiid=roiid(inc_roi);
     pth=classif.path; 
     pthtot=fullfile(pth,[classif.strid '_mismatch_' str '.xlsx']);
     writecell([(num2cell(inc_roi,1))', roiid', (num2cell(inc_frames))'],pthtot,'sheet',classif.classes{i},'WriteMode','overwritesheet');
+    end
 end
 
 % ======= confusion matrix ======
