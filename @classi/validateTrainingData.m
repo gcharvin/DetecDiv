@@ -203,7 +203,6 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
         fra=intersect(fra,flag);
     end
     
-    
         
         if numel(p)
             p.Value=0.9* double(i)./numel(roiobj);
@@ -229,7 +228,6 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
                 disp(['Classified' num2str(roiobj(i).id)]);
             end
         end
-        
         
     elseif goclassif==0
         disp(['There is no groundtruth available for roi ' num2str(roiobj(i).id) ' , skipping roi...']);

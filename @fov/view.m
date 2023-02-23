@@ -1,4 +1,4 @@
-function view(obj,frame,option,callingApp)
+function h=view(obj,frame,option,parentObj)
 
 
 if nargin>=2
@@ -19,13 +19,13 @@ h=[];
 
 if nargin>=3
     h=option;
-    rebuild=1;
+   % rebuild=1;
     %  'oki'
 end
 
 if nargin>=4
     h=[];
-    rebuild=1;
+  %  rebuild=1;
 end
 
 if numel(findobj('Tag',['Fov' obj.id])) && rebuild==0% handle exists already
@@ -34,6 +34,11 @@ if numel(findobj('Tag',['Fov' obj.id])) && rebuild==0% handle exists already
     hp=findobj(h,'Type','Axes');
 
     him=h.UserData.handle;
+
+    ht=findobj('Tag','frametext');
+    ht.String=num2str(obj.display.frame);
+
+     updatedisplay(obj,him,hp);
 
 else
 
@@ -52,11 +57,12 @@ else
         %    'ok'
         h=figure('Tag',['Fov' obj.id],'Position',[100 100 800 600]);
        
-        if nargin>=4
-       h.UserData.callingApp=callingApp;
-        else
-h.UserData.callingApp=[];
-        end
+         if nargin>=4
+              obj.flaggedROIs=parentObj;
+%        h.UserData.callingApp=callingApp;
+%         else
+% h.UserData.callingApp=[];
+         end
     end
 
     str={};
@@ -96,7 +102,7 @@ h.UserData.callingApp=[];
 
     linkaxes(hp);
 
-
+    
     % create display menu
 
 
@@ -147,6 +153,31 @@ h.UserData.callingApp=[];
         'Callback', {@setframe,obj,him,hp},'Tag','frametext') ;
 
 
+
+    btnSetROI = uicontrol('Style', 'pushbutton','FontSize',9, 'String','Set pattern for ROI detection',...
+       'Position', [20 560 200 40],...
+        'Callback',{@setPattern,obj,him,hp},'Tag','buttonPattern','Tooltip','Press this button to draw a rectangle on the image') ;
+
+     btnTextPattern = uicontrol('Style', 'text','FontSize',10, 'String', 'Change pattern size (t l w h):',...
+        'Position', [20 530 200 20],'HorizontalAlignment','left', ...
+        'Tag','textPattern') ;
+
+    btnSetPattern = uicontrol('Style', 'edit','FontSize',10, 'String', num2str([100 100 60 60]),...
+        'Position', [20 500 150 20],...
+        'Callback', {@changePattern,obj,him,hp},'Tag','editPattern') ;
+
+
+    btnSetROI = uicontrol('Style', 'pushbutton','FontSize',9, 'String','Identify all ROIs...',...
+       'Position', [20 450 200 40],...
+        'Callback',{@launchextraction,obj},'Tag','buttonPattern','Tooltip','Press this button to launch the ROI extracter GUI') ;
+
+
+    btnSetROI = uicontrol('Style', 'pushbutton','FontSize',9, 'String','Set/Hide cropping area',...
+       'Position', [20 400 200 40],...
+        'Callback',{@setCrop,obj,him,hp},'Tag','buttonPattern','Tooltip','Press this button to set the region to constrain ROI detection') ;
+
+
+
    btnSetROI = uicontrol('Style', 'pushbutton','FontSize',9, 'String','Zoom to set ROI',...
        'Position', [20 300 100 40],...
         'Callback','zoom(gcbf,''on'')','Tag','roitext','Tooltip','Press this button to zoom on the image before setting an ROI') ;
@@ -155,9 +186,9 @@ h.UserData.callingApp=[];
        'Position', [20 250 100 40],...
         'Callback',{@addROI,obj,him,hp},'Tag','roitext','Tooltip','Press this button to set a new ROI based on the current filed of view') ;
 
-       btnSetROI = uicontrol('Style', 'pushbutton','FontSize',8, 'String','Set ROI as ref pattern',...
-       'Position', [20 200 100 40],...
-        'Callback',{@selectPattern,obj,him,hp,1},'Tag','roitext','Tooltip','Press this button to set the selected ROI as a reference pattern for automated ROI detection') ;
+%        btnSetROI = uicontrol('Style', 'pushbutton','FontSize',8, 'String','Set ROI as ref pattern',...
+%        'Position', [20 200 100 40],...
+%         'Callback',{@selectPattern,obj,him,hp,1},'Tag','roitext','Tooltip','Press this button to set the selected ROI as a reference pattern for automated ROI detection') ;
 
      btnSetROI = uicontrol('Style', 'pushbutton','FontSize',8, 'String','Close',...
        'Position', [20 150 100 40],...
@@ -190,15 +221,19 @@ h.UserData.callingApp=[];
         'Callback', {@setchannel,obj,him,hp},'Tag','channelmenu') ;
 
 
-    m = uimenu(h,'Text','Display options','Tag','DisplayROIMenu');
+    m = uimenu(h,'Text','Display options','Tag','DisplayOptions');
+    n = uimenu(h,'Text','ROIs','Tag','DisplayROIs');
 
-    mitem = uimenu(m,'Text','Display ROIs','Checked','on','Tag','drawROIs');
+
+    mitem = uimenu(n,'Text','Display ROIs','Checked','on','Tag','drawROIs');
 
     set(mitem,'MenuSelectedFcn',{@displayROI,obj,him,hp});
 
-    mitem2 = uimenu(m,'Text','Set/Show cropping area to exclude ROIs','Tag','setCrop','Separator','on');
-
+    mitem2 = uimenu(n,'Text','Set/Show cropping area to exclude ROIs','Tag','setCrop','Separator','on');
     set(mitem2,'MenuSelectedFcn',{@setCrop,obj,him,hp});
+
+    mitem3 = uimenu(n,'Text','Set pattern for ROI detection','Tag','setPattern','Separator','on');
+    set(mitem3,'MenuSelectedFcn',{@setPattern,obj,him,hp});
 
     hZMenu = uimenu(m,'Label','Reset Zoom to default',...
         'Callback',{@resetZoom,obj,him,hp},'Separator','on');
@@ -212,10 +247,10 @@ h.UserData.callingApp=[];
     hZMenu = uimenu(m,'Label','Adjust current zoom',...
         'Callback',{@setROIValue,obj,him,hp,0});
 
-    hZMenu = uimenu(m,'Label','Add ROI for current window',...
+    hZMenu = uimenu(n,'Label','Add ROI for current window',...
         'Callback',{@addROI,obj,him,hp},'Separator','on');
 
-    hZMenu = uimenu(m,'Label','Clear all ROIs',...
+    hZMenu = uimenu(n,'Label','Clear all ROIs',...
         'Callback',{@clearROI,obj,him,hp});
 
     hZMenuO(1) = uimenu(m,'Label','Original orientation',...
@@ -246,6 +281,35 @@ h.UserData.callingApp=[];
 
 end
 
+if numel(obj.crop)
+    if nargin>=3
+setCrop([],[],obj,him,hp);
+    end
+end
+
+if numel(obj.pattern)
+setPattern([],[],obj,him,hp);
+end
+
+end
+
+function launchextraction(handle,event,obj)
+
+h=findall(groot,'Tag','ROIExtracter') ;
+if numel(h)==0
+ROIextracterGUI(obj);
+else
+   ll= h.Children(2).Children(3); % update roi size
+   ll.Text=['Pattern found in FOV Pos22_Pos1_1;  Size : ' num2str(obj.pattern(3)) 'x'  num2str(obj.pattern(4))];
+
+% update channel name
+   pix=find(obj.display.selectedchannel,1,'first');
+    h.Children(2).Children(1).Value=obj.channel{pix};
+
+  
+figure(h);
+
+end
 end
 
 function resetZoom(handle,event, obj,him,hp)
@@ -389,7 +453,7 @@ function selectPattern(handle,event,obj,him,hp,option)
 val=handle.UserData;
 
 if numel(val)==0
-hmenu=findobj('Tag','DisplayROIMenu');
+hmenu=findobj('Tag','DisplayROIs');
 val=hmenu.UserData;
 end
 
@@ -430,7 +494,7 @@ yl=round(ylim(hp(1)));
 
 htext=findobj('Tag','Axe1');
 
-str='Currently selected ROI: ';
+str='Currently selected window (t l w h):';
 %
 
 str=[str num2str([xl(1) yl(1) xl(2)-xl(1) yl(2)-yl(1)])];
@@ -533,7 +597,6 @@ set(h,'Checked','on');
 updatedisplay(obj,him,hp);
 end
 
-
 function setCrop(handle,event,obj,him,hp)
 % function in the context menu to add custom ROI
 %htext=findobj('Tag','roivalue');
@@ -545,12 +608,22 @@ function setCrop(handle,event,obj,him,hp)
 %obj.crop=roi;
 if numel(obj.crop)
     %   'ok'
+    temp=findobj('Tag','cropROI');
+
+    if numel(temp)==0 
+
     hCMZ = uicontextmenu;
     hZMenu = uimenu('Parent',hCMZ,'Label','Delete cropping area',...
         'Callback',@destroy);
     hZMenu2 = uimenu('Parent',hCMZ,'Label','Hide cropping area',...
         'Callback',@hidecrop);
     temp=drawpolygon('ContextMenu',hCMZ,'Tag','cropROI','Position',obj.crop);
+    else
+         if ishandle(temp)
+     delete(temp);
+     return;
+         end
+    end
 
     % temp.UserData.OnCleanup = onCleanup(@()destroy);
 else
@@ -587,6 +660,94 @@ obj.crop=temp.Position;
         end
         %  obj.crop=[];
     end
+end
+
+function changePattern(handle,event,obj,him,hp)
+
+newpos=str2num(handle.String); 
+temp=findobj('Tag','patternROI');
+temp.Position=newpos;
+obj.pattern=round(temp.Position);
+end
+
+function setPattern(handle,event,obj,him,hp)
+% function in the context menu to add  a reference pattern for roi
+% extraction
+
+ tt=findobj('Tag','editPattern');
+ tt.Enable="on";
+ tt=findobj('Tag','textPattern');
+ tt.Enable="on";
+
+if numel(obj.pattern)
+%     %   'ok'
+%     hCMZ = uicontextmenu;
+%     hZMenu = uimenu('Parent',hCMZ,'Label','Delete pattern',...
+%         'Callback',@destroy);
+% %    hZMenu2 = uimenu('Parent',hCMZ,'Label','Hide cropping area',...
+%  %       'Callback',@hidecrop);
+
+temp=findobj('Tag','patternROI');
+
+ if numel(temp)==0
+         hCMZ = uicontextmenu;
+    hZMenu = uimenu('Parent',hCMZ,'Label','Delete pattern',...
+        'Callback',@destroy);
+%    hZMenu2 = uimenu('Parent',hCMZ,'Label','Hide cropping area',...
+ %       'Callback',@hidecrop);
+     temp=drawrectangle('ContextMenu',hCMZ,'Tag','patternROI','Position',obj.pattern,'Color',[0 1 0]);
+
+     tt=findobj('Tag','editPattern');
+     tt.String=num2str(obj.pattern);
+
+ end
+
+    % temp.UserData.OnCleanup = onCleanup(@()destroy);
+else
+    hCMZ = uicontextmenu;
+    hZMenu = uimenu('Parent',hCMZ,'Label','Delete pattern',...
+        'Callback',@destroy);
+ %   hZMenu2 = uimenu('Parent',hCMZ,'Label','Hide cropping area',...
+ %       'Callback',@hidecrop);
+    temp=drawrectangle('ContextMenu',hCMZ,'Tag','patternROI','Color',[0 1 0]);
+
+    %temp.UserData.OnCleanup = onCleanup(@()destroy);
+end
+
+  addlistener(temp,'ROIMoved',@allevents2);
+obj.pattern=round(temp.Position);
+  tt=findobj('Tag','editPattern');
+     tt.String=num2str(obj.pattern);
+
+
+    function allevents2(src,evt)
+        evname = evt.EventName;
+        switch(evname)
+            case{'ROIMoved'}
+                obj.pattern=round(src.Position);
+                  tt=findobj('Tag','editPattern');
+                  tt.String=num2str(obj.pattern);
+        end
+    end
+
+    function destroy(src,event)
+        if ishandle(temp)
+            delete(temp)
+        end
+        obj.pattern=[];
+
+         tt=findobj('Tag','editPattern');
+         tt.String=num2str([10 10 60 60]);
+         tt.Enable="off";
+         tt=findobj('Tag','textPattern');
+         tt.Enable="off";
+    end
+%     function hidecrop(src,event)
+%         if ishandle(temp)
+%             delete(temp)
+%         end
+%         %  obj.crop=[];
+%     end
 end
 
 function removeROI(handles,event,obj,him,hp)
@@ -738,7 +899,7 @@ for i=1:numel(obj.roi)
             h=patch([roitmp(1) roitmp(3) roitmp(3) roitmp(1) roitmp(1)],[roitmp(2) roitmp(2) roitmp(4) roitmp(4) roitmp(2)],[1 0 0],'FaceAlpha',0.3,'Tag',['roitag_' num2str(i)],'UserData',i);
         end
 
-        htext=text(roitmp(1),roitmp(2), num2str(i), 'Color','r','FontSize',10,'Tag',['roitext_' num2str(i)]);
+        htext=text(roitmp(1),roitmp(2), num2str(i), 'Color','r','FontSize',10,'Tag',['roitext_' num2str(i)],'Clipping','on');
 
 
         %h=patch([10 100 100 10 10],[10 10 100 100 10],[1 0 0],'FaceAlpha',0.3,'Tag',['roitag_' num2str(i) ]);
@@ -762,9 +923,6 @@ for i=1:numel(obj.roi)
         %    'Callback','pan(gcbf,''on'')');
         %hZMenu = uimenu('Parent',hCMZ,'Label','Add current ROI',...
         %    'Callback',{@addROI,obj,hp});
-
-
-
         h.UIContextMenu = hCMZ;
 
 
@@ -772,6 +930,10 @@ for i=1:numel(obj.roi)
         h.ButtonDownFcn={@vie,obj};
     end
 end
+
+
+
+
 
 % str={''};
 %
@@ -799,7 +961,7 @@ set(h,'FaceColor',[1 0 0]);
 set(handles,'FaceColor',[1 1 0]);
 val=handles.UserData;
 
-    hh=findobj('Tag','DisplayROIMenu')
+    hh=findobj('Tag','DisplayROIs');
     hh.UserData=val;
 
 ha=findobj('Tag','Axe1');

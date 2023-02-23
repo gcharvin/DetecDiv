@@ -1,4 +1,4 @@
-function identifyROIs(obj,varargin)
+function out=identifyROIs(varargin)
 
 % if numel(obj.processing.roi.pattern)==0
 %     disp('There are no patterns available !');
@@ -6,17 +6,19 @@ function identifyROIs(obj,varargin)
 %     return;
 % end
 
-fovid=[obj.fov];
+fovs=[];
 channelid=1;
 keepexisting=false;
 frameid=1;
+pattern=[];
+crop=[];
 
 test=false ; % just claculate ROIs and plots them but does not assign ROIs to object
 thr=0.5;
 
 for i=1:numel(varargin)
     if strcmp(varargin{i},'FOV')
-        fovid=varargin{i+1};
+        fovs=varargin{i+1};
     end
     if strcmp(varargin{i},'Frames')
         frameid=varargin{i+1};
@@ -30,6 +32,16 @@ for i=1:numel(varargin)
     if strcmp(varargin{i},'Threshold')
         thr=varargin{i+1};
     end
+       if strcmp(varargin{i},'Pattern')
+        pattern=varargin{i+1};
+       end
+          if strcmp(varargin{i},'Crop')
+       crop=varargin{i+1};
+          end
+       if strcmp(varargin{i},'Channel')
+       channelid=varargin{i+1};
+    end
+
 end
 
 %frameid
@@ -41,13 +53,12 @@ out.fovid=[];
 scale=1;
 cc=1;
 
-crop=[];
-for i=fovid
-    if  numel(obj.fov(i).crop)>0
-        crop=obj.fov(i).crop;
-        break;
-    end
-end
+% for fovi=fovs
+%     if  numel(fovi.crop)>0
+%         crop=fovi.crop;
+%         break;
+%     end
+% end
 
 % str='';
 % arrcrop=[];
@@ -70,19 +81,24 @@ end
 % end
 % end
 
-for i=fovid % loop on all possible field of view
-    
+cd=0;
+
+for fovi=fovs % loop on all field of view provided as inputs
+    cd=cd+1;
+
     disp(['Loading source file for FOV ' num2str(i) '....']);
     
-    tmp=readImage(obj.fov(i),frameid,channelid);
+    tmp=readImage(fovi,frameid,channelid);
     if numel(tmp)==0
         disp('unable to load image: quitting !');
         return
     end
+
+    pattimg=tmp(pattern(2):pattern(2)+pattern(4),pattern(1):pattern(1)+pattern(3));
     
     disp('Identifying traps using autocorrelation function....');
     
-   [tmppos scores]=findTraps(tmp,obj.processing.roi.pattern,thr);
+   [tmppos scores]=findTraps(tmp,pattimg,thr);
 
    if numel(tmppos)==0
       disp('could not find any ROIs in image .... skipping !');
@@ -90,7 +106,7 @@ for i=fovid % loop on all possible field of view
    end
    
     out(cc).positions=tmppos;
-    out(cc).fovid=i;
+    out(cc).fovid=cd;
     
     disp(['Found ' num2str(size(out(cc).positions,1)) ' ROIs !']);
     
@@ -180,10 +196,10 @@ if ~test
     %reverseStr = '';
     for j=1:numel(out)
         
-        existingROI=numel(obj.fov(out(j).fovid).roi);
+        existingROI=numel(fovs(out(j).fovid).roi);
         
         if existingROI==1
-            if numel(obj.fov(out(j).fovid).roi(1).id)==0
+            if numel(fovs(out(j).fovid).roi(1).id)==0
                 existingROI=0;
             end
         end
@@ -199,7 +215,7 @@ if ~test
             %  end
             
             if ~keepexisting %strcmp(str,'Y')
-                obj.fov(out(j).fovid).removeROI(1:numel(obj.fov(out(j).fovid).roi));
+                fovs(out(j).fovid).removeROI(1:numel(fovs(out(j).fovid).roi));
             end
             
         end
@@ -211,7 +227,7 @@ if ~test
             
             %    obj.fov(out(j).fovid).addROI(out(j).scaled(i,:),j);
             
-            obj.fov(out(j).fovid).addROI(out(j).scaled(i,:), obj.fov(out(j).fovid).id);
+            fovs(out(j).fovid).addROI(out(j).scaled(i,:), fovs(out(j).fovid).id);
             
             %   msg = sprintf('%d / %d Traps created', i , size(positions,1) ); %Don't forget this semicolon
             %   fprintf([reverseStr, msg]);
