@@ -125,7 +125,7 @@ end
 
 %try 
 
-for i=1:size(roilist,2) % loop on all ROIs using parrallel computing   
+parfor i=1:size(roilist,2) % loop on all ROIs using parrallel computing   
     roiobj=tmp(i);
     if numel(roiobj.id)==0
         continue;
@@ -134,11 +134,11 @@ for i=1:size(roilist,2) % loop on all ROIs using parrallel computing
     disp('-----------');
     disp(['Processing ' num2str(roiobj.id)]);
     
-    if numel(p)
-    p.Value=0.9* double(i)./double(size(roilist,2));
-    
-    p.Message=['Processing ROI  ' roiobj.id];
-    end
+%     if numel(p)
+%     p.Value=0.9* double(i)./double(size(roilist,2));
+%     
+%     p.Message=['Processing ROI  ' roiobj.id];
+%     end
 
 
    

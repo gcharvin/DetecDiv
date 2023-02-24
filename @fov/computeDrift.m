@@ -1,4 +1,4 @@
-function computeDrift(obj,varargin)
+function list=computeDrift(obj,varargin)
 
 % compute xy drift for FOV images in framesid
 
@@ -92,22 +92,25 @@ else
     error('cropping factor must be ]0,1]')
 end
 
+list=images; 
+
 for j=framesid
     
     disp(['Computing drift for frame: ' num2str(j) ' of fov' num2str(fov) '.....']);
     
-    if iscell(images)
-        if numel(images)<cc % need to load images
-            %  tic;
-            images{cc}=obj.readImage(j,channel);
-            %   disp('Reading image...');
-            %   toc;
-        end
-    else
-        images={images};
-    end
+%     if iscell(images)
+%         if numel(images)<cc % need to load images
+%             %  tic;
+%             images{cc}=obj.readImage(j,channel);
+%             %   disp('Reading image...');
+%             %   toc;
+%         end
+%     else
+%         images={images};
+%     end
     
-    im=images{cc};
+    im=images(:,:,channel,cc);
+
     ims=size(im,1);
     if crop<1
         rect=[ims*crop-ims*(crop/2), ims*crop-ims*(crop/2),ims*crop,ims*crop];
@@ -130,7 +133,9 @@ for j=framesid
         row=row-size(refimage,1);
         col=col-size(refimage,2);
         
-        
+        list(:,:,:,cc)=circshift( list(:,:,:,cc),-row,1);
+        list(:,:,:,cc)=circshift( list(:,:,:,cc),-col,2);
+
         if display==1
             imout=circshift( im,-row,1);
             imout=circshift( imout,-col,2);
@@ -205,6 +210,9 @@ for j=framesid
     cc=cc+1;
     
 end
+
+
+
 
 
 
