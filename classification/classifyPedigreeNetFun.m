@@ -1,4 +1,4 @@
-function classifyPedigreeNetFun(roiobj,classif,classifier)
+function [results,image]=classifyPedigreeNetFun(roiobj,classif,classifier)
 
 %load([path '/netCNN.mat']); % load the googlenet to get the input size of image
 
@@ -111,10 +111,11 @@ for k=1:max(totpix) % . loop on all cells in ROI
    % pause
 end
 
-roiobj.results=results; 
+image=roiobj.image; 
+%roiobj.results=results; 
 
-roiobj.save;
-roiobj.clear;
+%roiobj.save;
+%roiobj.clear;
 %roiout=roiobj;
 
 %label = classify(classifier,video);

@@ -1,4 +1,4 @@
-function classifyImageLSTMNetFun(roiobj,classif,classifier,varargin)
+function [results,image]=classifyImageLSTMNetFun(roiobj,classif,classifier,varargin)
 
 %load([path '/netCNN.mat']); % load the googlenet to get the input size of image
 
@@ -6,6 +6,9 @@ function classifyImageLSTMNetFun(roiobj,classif,classifier,varargin)
 fprintf('Load videos...\n');
 
 %inputSize = netCNN.Layers(1).InputSize(1:2);
+
+results=[]; %roi;
+image=[];
 
 for i=1:numel(classifier.Layers)
 %maa= strcmp(class(classifier.Layers(i)), 'nnet.cnn.layer.SequenceInputLayer')
@@ -19,10 +22,10 @@ for i=1:numel(classifier.Layers)
 end
 
 
-
 channel=classif.channelName;
 frames=[];
 classifierCNN=[];
+gpu=0;
 
 for i=1:numel(varargin)
     if strcmp(varargin{i},'classifierCNN')        
@@ -38,7 +41,10 @@ for i=1:numel(varargin)
       end
         if strcmp(varargin{i},'Channel')
            channel=varargin{i+1};
-       end
+        end
+        if strcmp(varargin{i},'Exec')
+           gpu=varargin{i+1};
+        end
 end
 
 
@@ -82,11 +88,10 @@ vid=uint8(zeros(size(im,1),size(im,2),3,numel(frames)));
 
 cc=1;
 
-for j=frames
-    param=[];   
-        
-    tmp=roiobj.preProcessROIData(pix,j,param);
+param=[]; 
 
+for j=frames  
+    tmp=roiobj.preProcessROIData(pix,j,param);
 
     if numel(tmp)==0 % empty frame 
          vid(:,:,:,cc)=uint8(0);
@@ -106,8 +111,14 @@ disp('Starting video classification...');
 % this function predict  is used instead of 'classify' function which causes an error
 % on R2019b
 
- try   
-    prob=predict(classifier,video,'ExecutionEnvironment', classif.trainingParam.execution_environment{end});
+ try  
+    
+    if gpu==1
+    prob=predict(classifier,video,'ExecutionEnvironment','gpu');
+    else
+    prob=predict(classifier,video,'ExecutionEnvironment','cpu');
+    end
+
     %probCNN=predict(classifierCNN,video);
     if numel(classifierCNN)
        % [labelCNN,probCNN] = classify(classifierCNN,gfp);
@@ -214,9 +225,12 @@ if numel(classifierCNN)
     end
 end
 
-roiobj.results=results;
-roiobj.save;
-roiobj.clear;
+%roiobj.results=results;
+
+image=roiobj.image;
+
+%roiobj.save;
+%roiobj.clear;
 
 
 %roiout=roiobj;

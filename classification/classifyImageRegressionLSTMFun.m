@@ -1,4 +1,4 @@
-function classifyImageRegressionLSTMFun(roiobj,classif,classifier,varargin)
+function [results,image]=classifyImageRegressionLSTMFun(roiobj,classif,classifier,varargin)
 
 %load([path '/netCNN.mat']); % load the googlenet to get the input size of image
 
@@ -190,10 +190,11 @@ results=roiobj.results;
      end
     
     
-roiobj.results=results; 
+image=roiobj.image;
+%roiobj.results=results; 
 
-roiobj.save;
-roiobj.clear;
+%roiobj.save;
+%roiobj.clear;
 
 %roiout=roiobj;
 

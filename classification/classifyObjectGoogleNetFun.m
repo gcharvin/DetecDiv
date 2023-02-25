@@ -1,4 +1,4 @@
-function classifyObjectGoogleNetFun(roiobj,classif,classifier,varargin)
+function [results,image]=classifyObjectGoogleNetFun(roiobj,classif,classifier,varargin)
 
 % this function can be used to classify any roi object, by providing the
 % classi object and the classifier
@@ -73,6 +73,8 @@ for i=1:numel(classif.classes)
 end
 
 
+image=roiobj.image; 
+
 for j=1:size(roiobj.image,4)
     fprintf('.');
     
@@ -127,8 +129,10 @@ for j=1:size(roiobj.image,4)
      roiobj.image(:,:,pixresults,j)=ob2;
 end
 
-roiobj.save;
-roiobj.clear;
+image=roiobj.image; 
+results=roiobj.results; 
+%roiobj.save;
+%roiobj.clear;
 
 %roiout=roiobj;
 % roiobj.save;

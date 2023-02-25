@@ -38,6 +38,8 @@ classifierCNN=[];
 classifier=[];
 CNNflag=0;
 roiwithgt=0;
+goclassif=1;
+gpu=0;
 
 
 for i=1:numel(varargin)
@@ -67,6 +69,10 @@ for i=1:numel(varargin)
 
     if strcmp(varargin{i},'RoiWithGT') % classify only ROIs and frames that have a groundtruth available
         roiwithgt=1;
+    end
+
+     if strcmp(varargin{i},'GPU') % classify with GPU
+        gpu=1;
     end
 end
 
@@ -225,19 +231,31 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
 
         if para % parallel computing
             if numel(classifierCNN)
-                logparf(i)=parfeval(fhandle,0,roiobj(i),classi,classifierStore,'classifierCNN',classifierCNN,'Frames',fra,'Channel',cha); % launch the training function for classification
+                if numel(roiobj(i).image)==0
+                 roiobj(i).load;
+                end
+                logparf(i)=parfeval(fhandle,2,roiobj(i),classi,classifierStore,'classifierCNN',classifierCNN,'Frames',fra,'Channel',cha,'Exec',gpu); % launch the training function for classification
             else
+                 if numel(roiobj(i).image)==0
+                 roiobj(i).load;
+                 end
+
                 %disp(['Starting classification of ' num2str(roiobj(i).id)]);
-                logparf(i)=parfeval(fhandle,0,roiobj(i),classi,classifierStore,'Frames',fra,'Channel',cha); % launch the training function for classification
+                logparf(i)=parfeval(fhandle,2,roiobj(i),classi,classifierStore,'Frames',fra,'Channel',cha,'Exec',gpu); % launch the training function for classification
             end
         else
             if  numel(classifierCNN)
-                feval(fhandle,roiobj(i),classi,classifierStore,'classifierCNN',classifierCNN,'Frames',fra,'Channel',cha); % launch the training function for classification
+                [results,image]=feval(fhandle,roiobj(i),classi,classifierStore,'classifierCNN',classifierCNN,'Frames',fra,'Channel',cha,'Exec',gpu); % launch the training function for classification
                 disp(['Classified with separate CNN ' num2str(roiobj(i).id)]);
             else
-                feval(fhandle,roiobj(i),classi,classifierStore,'Frames',fra,'Channel',cha); % launch the training function for classification
+               [results,image]=feval(fhandle,roiobj(i),classi,classifierStore,'Frames',fra,'Channel',cha,'Exec',gpu); % launch the training function for classification
                 disp(['Classified' num2str(roiobj(i).id)]);
             end
+
+            roiobj(i).results=results; 
+            roiobj(i).image=image; 
+            roiobj(i).save; 
+            roiobj(i).clear,
         end
 
     elseif goclassif==0
@@ -245,12 +263,39 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
     end
 end
 
+
 % if para  % not implemented
 %     maxFuture = afterEach(logparf, @(r) max(r), 1);
 %
 %     minFuture = afterAll(maxFuture, @(r) min(r), 1);
 %
 % end
+
+% HERE : parallel mode works but not the serial mode !!!!!
+
+if para % parallel computing
+    disp('Waiting for job to complete...');
+    logparf
+    if numel(p)
+        p.Message='Waiting for job to complete...';
+    end
+wait(logparf);
+
+for i=1:numel(logparf)
+    [results,image]=fetchOutputs(logparf(i));
+
+    roiobj(i).results=results; 
+
+    roiobj(i).image=image; 
+    roiobj(i).save
+    roiobj(i).clear;
+
+ %   aa=results.my_classi_1.id
+    % here image is empty !!!!
+  %  roiout.save; 
+  %  roiout.clear,
+end
+end
 
 if numel(p)
     p.Value=0.9;

@@ -1,4 +1,4 @@
-function classifyUNetFun(roiobj,classif,classifier,varargin)
+function [results,image]=classifyUNetFun(roiobj,classif,classifier,varargin)
 
 % this function can be used to classify any roi object, by providing the
 % classi object and the classifier
@@ -140,7 +140,8 @@ end
             
             tmpout=uint16(zeros(size(roiobj.image(:,:,pixresults,fr))));
 
-            
+            image=roiobj.image; 
+
             switch classif.outputType
                     case 'proba' % outputs proba 
                        
@@ -176,10 +177,12 @@ end
 
        %      figure, imshow(tmpout,[]);
              
-            roiobj.image(:,:,pixresults,fr)=tmpout;
+            image(:,:,pixresults,fr)=tmpout;
         end
         
-        roiobj.save;
-        roiobj.clear;
+        results=roiobj.results; 
+        
+        %roiobj.save;
+        %roiobj.clear;
         fprintf('\n');
         

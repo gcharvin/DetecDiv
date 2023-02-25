@@ -1,4 +1,4 @@
-function classifyPixelDeeplabNetFun(roiobj,classif,classifier,varargin)
+function [results,image]=classifyPixelDeeplabNetFun(roiobj,classif,classifier,varargin)
 
 % this function can be used to classify any roi object, by providing the
 % classi object and the classifier
@@ -130,7 +130,8 @@ for fr=frames
     
     tmpout=uint16(zeros(size(roiobj.image(:,:,pixresults,fr))));
     
-    
+    image=roiobj.image; 
+
     switch classif.outputType
         case 'proba' % outputs proba
             
@@ -164,11 +165,13 @@ for fr=frames
     
     %      figure, imshow(tmpout,[]);
     
-    roiobj.image(:,:,pixresults,fr)=tmpout;
+    image(:,:,pixresults,fr)=tmpout;
 end
 
-roiobj.save;
-roiobj.clear;
+results=roiobj.results; 
+
+%roiobj.save;
+%roiobj.clear;
 fprintf('\n');
 
 

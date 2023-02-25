@@ -1,4 +1,4 @@
-function classifyImageRegressionFun(roiobj,classif,classifier,varargin)
+function [results,image]=classifyImageRegressionFun(roiobj,classif,classifier,varargin)
 
 % this function can be used to classify any roi object, by providing the
 % classi object and the classifier
@@ -76,7 +76,8 @@ results.(classif.strid)=[];
 results.(classif.strid).id=predi;
 results.(classif.strid).labels=predi';
 
-roiobj.results=results;
+image=roiobj.image;
+%roiobj.results=results;
 
 % for i=1:numel(classif.classes)
 %     
@@ -85,8 +86,8 @@ roiobj.results=results;
 %     
 % end
 
-roiobj.save;
-roiobj.clear;
+%roiobj.save;
+%roiobj.clear;
 
 %roiout=roiobj;
 % roiobj.clear;
