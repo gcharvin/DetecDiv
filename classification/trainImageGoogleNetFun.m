@@ -174,7 +174,9 @@ fprintf('------\n');
 
 pixelRange = trainingParam.CNN_translation_augmentation;
 rotation=trainingParam.CNN_rotation_augmentation;
+%=trainingParam.CNN_rotation_augmentation;
 
+% below add a scaling factor 
 imageAugmenter = imageDataAugmenter( ...
     'RandXReflection',true, ...
     'RandYReflection',true, ...
@@ -185,6 +187,7 @@ imageAugmenter = imageDataAugmenter( ...
 augimdsTrain = augmentedImageDatastore(inputSize(1:2),imdsTrain, ...
     'DataAugmentation',imageAugmenter);
 
+% here add an outsize 
 miniBatchSize = trainingParam.CNN_mini_batch_size; %8
 valFrequency = floor(numel(augimdsTrain.Files)/miniBatchSize);
 

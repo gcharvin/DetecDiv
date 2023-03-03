@@ -84,14 +84,40 @@ im=roiobj.image(:,:,pix,frames);
 disp('Formatting video before classification....');
 %size(im)
 
-vid=uint8(zeros(size(im,1),size(im,2),3,numel(frames)));
+% si=58;
+% sz=size(im);
+% rect=[round((sz(2)-si)/2)+1 round((sz(1)-si)/2)+1 si-1 si-1]
+% si=[si si];
+
+%si=size(im);
+vid=uint8(zeros(si(1),si(2),3,numel(frames)));
 
 cc=1;
 
 param=[]; 
 
+% pix
+% if numel(pix)==1
+%     % 'ok'
+%     param=[];
+%     totphc=im;
+%     meanphc=0.5*double(mean(totphc(:)));
+%     maxphc=double(meanphc+0.7*(max(totphc(:))-meanphc));
+%     param.meanphc=meanphc;
+%     param.maxphc=maxphc;
+% end
+
+%param
 for j=frames  
     tmp=roiobj.preProcessROIData(pix,j,param);
+%    tmp=im(:,:,1,j);
+% 
+%    tmp = double(imadjust(tmp,[param.meanphc/65535 param.maxphc/65535],[0 1]))/65535;
+%    tmp=repmat(tmp,[1 1 3]);
+
+
+
+   % tmp=imcrop(tmp,rect); use in case a cropping factor is applied 
 
     if numel(tmp)==0 % empty frame 
          vid(:,:,:,cc)=uint8(0);
@@ -104,6 +130,7 @@ for j=frames
     cc=cc+1;
 end
 
+
 video = centerCrop(vid,inputSize);
 
 disp('Starting video classification...');
@@ -112,19 +139,25 @@ disp('Starting video classification...');
 % on R2019b
 
  try  
-    
-    if gpu==1
-    prob=predict(classifier,video,'ExecutionEnvironment','gpu');
-    else
-    prob=predict(classifier,video,'ExecutionEnvironment','cpu');
-    end
 
-    %probCNN=predict(classifierCNN,video);
+    if gpu==1
+    [x, prob]=classify(classifier,video,'ExecutionEnvironment',"gpu");
     if numel(classifierCNN)
-       % [labelCNN,probCNN] = classify(classifierCNN,gfp);
-         % [labelCNN,probCNN] = classify(classifierCNN,video);
+         [labelCNN,probCNN] = classify(classifierCNN,video,'ExecutionEnvironment',"gpu");
              probCNN=predict(classifierCNN,video);
     end
+
+    else
+    [x, prob]=classify(classifier,video,'ExecutionEnvironment',"cpu");
+    if numel(classifierCNN)
+         [labelCNN,probCNN] = classify(classifierCNN,video,'ExecutionEnvironment',"cpu");
+             probCNN=predict(classifierCNN,video);
+    end
+    end
+
+   % probCNN=predict(classifierCNN,video);
+    
+
     catch
     
     disp('Error with predict function  : likely out of memory issue with GPU, trying CPU computing...');
@@ -132,7 +165,7 @@ disp('Starting video classification...');
     %probCNN=predict(classifierCNN,video,'ExecutionEnvironment', 'cpu');
     if numel(classifierCNN)
       %  [labelCNN,probCNN] = classify(classifierCNN,gfp);
-          probCNN=predict(classifierCNN,video,'ExecutionEnvironment', 'cpu');
+         [labelCNN,probCNN] =classify(classifierCNN,video,'ExecutionEnvironment', 'cpu');
     end
 
 end
@@ -141,6 +174,7 @@ labels = classifier.Layers(end).Classes;
 if size(prob,1) == numel(labels) % adjust matrix depending on matlab version
     prob=prob';
 end
+
 [~, idx] = max(prob,[],2);
 label = labels(idx);
 

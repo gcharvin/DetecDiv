@@ -96,7 +96,7 @@ switch classif.outputType
         end
 end
 
-for fr=frames
+for fr=frames % remove the loop on frames here !!!! andtry ti use a gpu array 
     fprintf('.');
     % fr
     %tmp=gfp(:,:,:,fr);

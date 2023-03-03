@@ -140,11 +140,11 @@ end
 for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel computing
 
     if roiwithgt==1 % checks if goclassif truth data are avaiable for this ROI, otherwise skips the ROI
-        switch classif.category{1}
+        switch classiobj.category{1}
             case 'Pixel' % pixel classification
 
 
-                ch= roiobj(i).findChannelID(classif.strid);
+                ch= roiobj(i).findChannelID(classiobj.strid);
 
                 if numel(ch)>0 % groundtruth channel exists
                     % checks if at least one image has been annotated  first!
@@ -175,7 +175,7 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
                 end
 
             otherwise % image classification
-                classistr=classif.strid;
+                classistr=classiobj.strid;
                 % if roi was used for user training, display the training data first
                 if numel( roiobj(i).train)~=0
                     if isfield(roiobj(i).train,classistr)
@@ -212,7 +212,11 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
         % check that the requested number of frames is compatible with that of
         % the roi
 
+        if fra~=-1
         fra=intersect(fra,1:size(roiobj(i).image,4));
+        else
+        fra=1:size(roiobj(i).image,4);
+        end
 
 
         if numel(channel)==0
@@ -231,14 +235,14 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
 
         if para % parallel computing
             if numel(classifierCNN)
-                if numel(roiobj(i).image)==0
-                 roiobj(i).load;
-                end
+%                 if numel(roiobj(i).image)==0
+%                  roiobj(i).load;
+%                 end
                 logparf(i)=parfeval(fhandle,2,roiobj(i),classi,classifierStore,'classifierCNN',classifierCNN,'Frames',fra,'Channel',cha,'Exec',gpu); % launch the training function for classification
             else
-                 if numel(roiobj(i).image)==0
-                 roiobj(i).load;
-                 end
+%                  if numel(roiobj(i).image)==0
+%                  roiobj(i).load;
+%                  end
 
                 %disp(['Starting classification of ' num2str(roiobj(i).id)]);
                 logparf(i)=parfeval(fhandle,2,roiobj(i),classi,classifierStore,'Frames',fra,'Channel',cha,'Exec',gpu); % launch the training function for classification
@@ -279,16 +283,19 @@ if para % parallel computing
     if numel(p)
         p.Message='Waiting for job to complete...';
     end
-wait(logparf);
+
+%wait(logparf);
 
 for i=1:numel(logparf)
-    [results,image]=fetchOutputs(logparf(i));
+ %   [results,image]=fetchOutputs(logparf(i));
 
-    roiobj(i).results=results; 
+    [idx,results,image]=fetchNext(logparf(i));
 
-    roiobj(i).image=image; 
-    roiobj(i).save
-    roiobj(i).clear;
+    roiobj(idx).results=results; 
+
+    roiobj(idx).image=image; 
+    roiobj(idx).save
+    roiobj(idx).clear;
 
  %   aa=results.my_classi_1.id
     % here image is empty !!!!
