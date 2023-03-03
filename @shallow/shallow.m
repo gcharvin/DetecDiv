@@ -8,36 +8,6 @@ classdef shallow < handle
         processing=struct('roi',[],'classification',[],'processor',[]);%,'classification',classi());
         
         
-        %processing.roi.pattern=[];
-        
-        %pattern=[];
-        %       filename
-        %       pathname
-        %       path
-        %       projectpath
-        %       GFPChannel
-        %       PhaseChannel
-        %       id
-        %       divisionTime=6; % in frame units; used to detect division peaks
-        %       intensity=0.2; % defualt threshold for iage adjustement
-        %
-        %
-        %       pattern % trap pattern for position
-        %       cavity =[];  % structure that contains geometrical information on cavity
-        %
-        %       imsize=[]; % image size
-        %       nframes=[]; % number of frames
-        %
-        %       gfp % contains list of phc contrast images
-        %       phc % contains list of gfp images
-        %       trap=trap([],[],[]) % contains list of traps identified
-        %       pixclassifier
-        %       pixclassifierpath
-        %       objclassifier
-        %       objclassifierpath
-        %       divclassifier
-        %       divclassifierpath
-        
         tag='shallow project';
         
     end
@@ -251,7 +221,9 @@ classdef shallow < handle
                                 oldpath=obj.fov(i).srcpath{k};
                                 % identidy part of the path to be changed: 
                                 str='';
-                                for n=1:numel(oldpath)
+
+
+                                for n=0:numel(oldpath)-1
                                     str=oldpath(end-n:end);
                                     if numel(strfind(answer{1},str))==0
                                         break

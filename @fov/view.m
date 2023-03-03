@@ -28,14 +28,17 @@ if nargin>=4
   %  rebuild=1;
 end
 
-if numel(findobj('Tag',['Fov' obj.id])) && rebuild==0% handle exists already
-    h=findobj('Tag',['Fov' obj.id]);
+h=findobj('Tag',['Fov' obj.id]);
 
-    hp=findobj(h,'Type','Axes');
+if numel(h) && numel(h.Children) && rebuild==0% handle exists already
+ 
+
+    hp=findobj(h,'Type','Axes')
 
     him=h.UserData.handle;
 
-    ht=findobj('Tag','frametext');
+    ht=findobj(h,'Tag','frametext')
+    
     ht.String=num2str(obj.display.frame);
 
      updatedisplay(obj,him,hp);
@@ -453,7 +456,8 @@ function selectPattern(handle,event,obj,him,hp,option)
 val=handle.UserData;
 
 if numel(val)==0
-hmenu=findobj('Tag','DisplayROIs');
+    hf=findobj('Tag',['Fov' obj.id]);
+hmenu=findobj(hf,'Tag','DisplayROIs');
 val=hmenu.UserData;
 end
 
@@ -491,8 +495,8 @@ yl=round(ylim(hp(1)));
 %
 
 %htext=findobj('Tag','roivalue');
-
-htext=findobj('Tag','Axe1');
+ hf=findobj('Tag',['Fov' obj.id]);
+htext=findobj(hf,'Tag','Axe1');
 
 str='Currently selected window (t l w h):';
 %
@@ -586,12 +590,16 @@ end
 obj.orientation=angle;
 
 val=setxor([0 90 180 270],angle);
+ hf=findobj('Tag',['Fov' obj.id]);
+
 for i=val
-    h=findobj('Tag',['rotate_' num2str(i)]);
+
+    
+    h=findobj(hf,'Tag',['rotate_' num2str(i)]);
     set(h,'Checked','off');
 end
 
-h=findobj('Tag',['rotate_' num2str(angle)]);
+h=findobj(hf,'Tag',['rotate_' num2str(angle)]);
 set(h,'Checked','on');
 
 updatedisplay(obj,him,hp);
@@ -606,9 +614,11 @@ function setCrop(handle,event,obj,him,hp)
 %roi2=roi2;
 
 %obj.crop=roi;
+ hf=findobj('Tag',['Fov' obj.id]);
+
 if numel(obj.crop)
     %   'ok'
-    temp=findobj('Tag','cropROI');
+    temp=findobj(hf,'Tag','cropROI');
 
     if numel(temp)==0 
 
@@ -665,7 +675,8 @@ end
 function changePattern(handle,event,obj,him,hp)
 
 newpos=str2num(handle.String); 
-temp=findobj('Tag','patternROI');
+ hf=findobj('Tag',['Fov' obj.id]);
+temp=findobj(hf,'Tag','patternROI');
 temp.Position=newpos;
 obj.pattern=round(temp.Position);
 end
@@ -674,9 +685,11 @@ function setPattern(handle,event,obj,him,hp)
 % function in the context menu to add  a reference pattern for roi
 % extraction
 
- tt=findobj('Tag','editPattern');
+ hf=findobj('Tag',['Fov' obj.id]);
+
+ tt=findobj(hf,'Tag','editPattern');
  tt.Enable="on";
- tt=findobj('Tag','textPattern');
+ tt=findobj(hf,'Tag','textPattern');
  tt.Enable="on";
 
 if numel(obj.pattern)
@@ -687,7 +700,7 @@ if numel(obj.pattern)
 % %    hZMenu2 = uimenu('Parent',hCMZ,'Label','Hide cropping area',...
 %  %       'Callback',@hidecrop);
 
-temp=findobj('Tag','patternROI');
+temp=findobj(hf,'Tag','patternROI');
 
  if numel(temp)==0
          hCMZ = uicontextmenu;
@@ -697,7 +710,7 @@ temp=findobj('Tag','patternROI');
  %       'Callback',@hidecrop);
      temp=drawrectangle('ContextMenu',hCMZ,'Tag','patternROI','Position',obj.pattern,'Color',[0 1 0]);
 
-     tt=findobj('Tag','editPattern');
+     tt=findobj(hf,'Tag','editPattern');
      tt.String=num2str(obj.pattern);
 
  end
@@ -716,7 +729,7 @@ end
 
   addlistener(temp,'ROIMoved',@allevents2);
 obj.pattern=round(temp.Position);
-  tt=findobj('Tag','editPattern');
+  tt=findobj(hf,'Tag','editPattern');
      tt.String=num2str(obj.pattern);
 
 
@@ -725,7 +738,7 @@ obj.pattern=round(temp.Position);
         switch(evname)
             case{'ROIMoved'}
                 obj.pattern=round(src.Position);
-                  tt=findobj('Tag','editPattern');
+                  tt=findobj(hf,'Tag','editPattern');
                   tt.String=num2str(obj.pattern);
         end
     end
@@ -736,10 +749,10 @@ obj.pattern=round(temp.Position);
         end
         obj.pattern=[];
 
-         tt=findobj('Tag','editPattern');
+         tt=findobj(hf,'Tag','editPattern');
          tt.String=num2str([10 10 60 60]);
          tt.Enable="off";
-         tt=findobj('Tag','textPattern');
+         tt=findobj(hf,'Tag','textPattern');
          tt.Enable="off";
     end
 %     function hidecrop(src,event)
@@ -753,9 +766,11 @@ end
 function removeROI(handles,event,obj,him,hp)
 val=handles.UserData;
 obj.removeROI(val);
-h=findobj('Tag',['roitag_' num2str(val)]);
+ hf=findobj('Tag',['Fov' obj.id]);
+
+h=findobj(hf,'Tag',['roitag_' num2str(val)]);
 delete(h);
-h=findobj('Tag',['roitext_' num2str(val)]);
+h=findobj(hf,'Tag',['roitext_' num2str(val)]);
 delete(h);
 
 
@@ -801,7 +816,7 @@ end
 
 if strcmp(event.Key,'uparrow')
 
-    han=findobj('Tag','channelmenu')
+    han=findobj(h,'Tag','channelmenu')
     items=han.String;
     str=han.Value;
     chaname=items{str};
@@ -814,7 +829,7 @@ if strcmp(event.Key,'uparrow')
 end
 
 if strcmp(event.Key,'downarrow')
-    han=findobj('Tag','channelmenu');
+    han=findobj(h,'Tag','channelmenu');
     items=han.String;
     str=han.Value;
     chaname=items{str};
@@ -824,7 +839,7 @@ if strcmp(event.Key,'downarrow')
 end
 
 if strcmp(event.Key,'delete')
-    h=findobj('Type','patch','FaceColor',[1 1 0]);
+    h=findobj(h,'Type','patch','FaceColor',[1 1 0]);
 
     if numel(h)
         %set(handles,'FaceColor',[1 1 0]);
@@ -844,6 +859,7 @@ end
 function updatedisplay(obj,him,hp)
 
 im=buildimage(obj);
+ hf=findobj('Tag',['Fov' obj.id]);
 
 cc=1;
 for i=1:obj.channels
@@ -854,7 +870,7 @@ for i=1:obj.channels
     end
 end
 
-htext=findobj('Tag','frametext');
+htext=findobj(hf,'Tag','frametext');
 %aa=obj.display.frame
 
 
@@ -862,9 +878,11 @@ set(htext,'String',num2str(obj.display.frame))
 
 axes(hp(1))
 
-hdisplaymenu=findobj('Tag','drawROIs');
 
-h=findobj('Type','patch');
+
+hdisplaymenu=findobj(hf,'Tag','drawROIs');
+
+h=findobj(hf,'Type','patch');
 
 %     h=findobj('Tag',['roitag_' num2str(i)]);
 %
@@ -873,7 +891,7 @@ if numel(h)~=0
 end
 %
 
-htext=findobj('Type','text');
+htext=findobj(hf,'Type','text');
 
 %       htext=findobj('Tag',['roitext_' num2str(i)]);
 %
@@ -955,16 +973,18 @@ function vie(handles,event,obj)
 %     h=findobj('Tag',['roitag_' num2str(i)]);
 %     set(h,'FaceColor',[1 0 0]);
 %     end
-h=findobj('Type','patch');
+ hf=findobj('Tag',['Fov' obj.id]);
+
+h=findobj(hf,'Type','patch');
 set(h,'FaceColor',[1 0 0]);
 
 set(handles,'FaceColor',[1 1 0]);
 val=handles.UserData;
 
-    hh=findobj('Tag','DisplayROIs');
+    hh=findobj(hf,'Tag','DisplayROIs');
     hh.UserData=val;
 
-ha=findobj('Tag','Axe1');
+ha=findobj(hf,'Tag','Axe1');
 
 str=['Selected ROI: ' num2str(val) ' - ' obj.roi(val).id];
 set(ha.Title,'String',str,'Interpreter','None');
@@ -973,7 +993,8 @@ set(ha.Title,'String',str,'Interpreter','None');
 end
 
 function deselectROI(handles,event,obj,him,hp)
-h=findobj('Type','patch');
+ hf=findobj('Tag',['Fov' obj.id]);
+h=findobj(hf,'Type','patch');
 set(h,'FaceColor',[1 0 0]);
 
 %   set(handles,'FaceColor',[1 0 0]);
