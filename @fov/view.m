@@ -33,11 +33,11 @@ h=findobj('Tag',['Fov' obj.id]);
 if numel(h) && numel(h.Children) && rebuild==0% handle exists already
  
 
-    hp=findobj(h,'Type','Axes')
+    hp=findobj(h,'Type','Axes');
 
     him=h.UserData.handle;
 
-    ht=findobj(h,'Tag','frametext')
+    ht=findobj(h,'Tag','frametext');
     
     ht.String=num2str(obj.display.frame);
 
