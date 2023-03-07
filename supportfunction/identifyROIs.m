@@ -88,7 +88,7 @@ for fovi=fovs % loop on all field of view provided as inputs
     cd=cd+1;
     
 
-    disp(['Loading source file for FOV ' num2str(i) '....']);
+    disp(['Loading source file for FOV ' fovi.id '....']);
     
     tmp=readImage(fovi,frameid,channelid);
     if numel(tmp)==0

@@ -62,9 +62,6 @@ else
        
          if nargin>=4
               obj.flaggedROIs=parentObj;
-%        h.UserData.callingApp=callingApp;
-%         else
-% h.UserData.callingApp=[];
          end
     end
 
@@ -81,9 +78,6 @@ else
         set(mitemch(i),'MenuSelectedFcn',{@displayMenuFcn,obj,h});
 
         if obj.display.selectedchannel(i)==1
-
-
-
 
             hp(cc)=subplot(1,tot,cc);
 
@@ -337,6 +331,8 @@ frame=obj.display.frame;
 for i=1:obj.channels
 
 
+    if obj.display.selectedchannel(i)==1
+
     tmp=uint16(readImage(obj,frame,i));
 
     if numel(tmp)==0
@@ -353,7 +349,11 @@ for i=1:obj.channels
 
     tmp = imadjust(tmp,[meangfp/65535 maxgfp/65535],[0 1]);
 
+    
     im(i).data=tmp; %=uint16(cat(3,zeros(size(rawphc)),zeros(size(rawphc)),zeros(size(rawphc))));
+    else
+     %   im(i).tmp=[];
+    end
 
     % size(tmp)
     %imphc(:,:,1)=rawphc;
