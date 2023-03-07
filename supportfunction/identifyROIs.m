@@ -83,8 +83,10 @@ cc=1;
 
 cd=0;
 
+
 for fovi=fovs % loop on all field of view provided as inputs
     cd=cd+1;
+    
 
     disp(['Loading source file for FOV ' num2str(i) '....']);
     
@@ -94,11 +96,12 @@ for fovi=fovs % loop on all field of view provided as inputs
         return
     end
 
-    pattimg=tmp(pattern(2):pattern(2)+pattern(4),pattern(1):pattern(1)+pattern(3));
-    
+   % pattimg=tmp(pattern(2):pattern(2)+pattern(4),pattern(1):pattern(1)+pattern(3));
+   % figure, imshow(tmp,[])
+
     disp('Identifying traps using autocorrelation function....');
     
-   [tmppos scores]=findTraps(tmp,pattimg,thr);
+   [tmppos scores]=findTraps(tmp,pattern,thr);
 
    if numel(tmppos)==0
       disp('could not find any ROIs in image .... skipping !');
@@ -148,7 +151,17 @@ for fovi=fovs % loop on all field of view provided as inputs
     
     scaled2=scaled;
     
-    croppingarea=crop;
+    if numel(fovi.crop)
+        croppingarea=fovi.crop; % fov intrisic cropping area;
+         disp('FOV has an internal crop');
+    else
+       croppingarea=crop; % cropping area is external
+       if numel(crop)
+       disp('applying external crop');
+       end
+    end
+
+   
     %obj.fov(i).crop; % get the cropping area for the given fov
     
     % if cr>0 & numel(croppingarea)==0 % a reference FOV id has been defined for cropping
