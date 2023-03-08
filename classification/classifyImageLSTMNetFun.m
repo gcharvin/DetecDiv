@@ -89,7 +89,7 @@ disp('Formatting video before classification....');
 % rect=[round((sz(2)-si)/2)+1 round((sz(1)-si)/2)+1 si-1 si-1]
 % si=[si si];
 
-%si=size(im);
+si=size(im);
 vid=uint8(zeros(si(1),si(2),3,numel(frames)));
 
 cc=1;
