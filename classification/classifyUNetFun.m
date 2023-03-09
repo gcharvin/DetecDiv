@@ -67,38 +67,24 @@ switch classif.outputType
     case 'proba' % outputs proba of classes
         pixresults=[];
         for i=1:numel(classif.classes)
-        pixresultstmp=findChannelID(roiobj,['results_' classif.strid '_' classif.classes{i}]); % gather all channels associated with proba
-        
-        if numel(pixresultstmp)==0 % channel does not exist, hence create them
-            matrix=uint16(zeros(size(gfp,1),size(gfp,2),1,size(gfp,4)));
-            rgb=[1 1 1];
-            intensity=[1 1 1]; % used to display grayscale image in .view
-          
-              roiobj.addChannel(matrix,['results_' classif.strid '_' classif.classes{i}],rgb,intensity);
-         
-              pixresults=[pixresults size(roiobj.image,3)];
-        else
+            pixresultstmp=findChannelID(roiobj,['results_' classif.strid '_' classif.classes{i}]); % gather all channels associated with proba
             
-               roiobj.image(:,:,pixresultstmp,:)=uint16(zeros(size(gfp,1),size(gfp,2),1,size(gfp,4)));
-               pixresults=[pixresults pixresultstmp];
+            if numel(pixresultstmp)==0 % channel does not exist, hence create them  
+                pixresults=[pixresults size(roiobj.image,3)];
+            else
+                pixresults=[pixresults pixresultstmp];
+            end
         end
-        end
-
+        
     otherwise %  outputs segmentation or segmentation after postprocessing
         pixresults=findChannelID(roiobj,['results_' classif.strid]);
         
-         if numel(pixresults)==0 % channels do not exist, hence create them
-            matrix=uint16(zeros(size(gfp,1),size(gfp,2),1,size(gfp,4)));
-            rgb=[1 1 1];
-            intensity=[0 0 0]; % used to display indexed image in .view
-        
-            roiobj.addChannel(matrix,['results_' classif.strid],rgb,intensity);
-
+        if numel(pixresults)==0 % channels do not exist, hence create them
             pixresults=size(roiobj.image,3);
-         else
-            roiobj.image(:,:,pixresults,:)=uint16(zeros(size(gfp,1),size(gfp,2),1,size(gfp,4)));
-         end  
+        end
 end
+
+image=roiobj.image;
 
         for fr=frames
             fprintf('.');
