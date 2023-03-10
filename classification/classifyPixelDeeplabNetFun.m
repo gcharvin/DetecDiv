@@ -100,24 +100,24 @@ switch classif.outputType
         end
 end
 
-<<<<<<< Updated upstream
-for fr=frames % remove the loop on frames here !!!! andtry ti use a gpu array 
-    fprintf('.');
-    % fr
-    %tmp=gfp(:,:,:,fr);
-    
-   % if numel(pix)==1
-        param=[];
-        tmp=roiobj.preProcessROIData(pix,fr,param);
-        
-        tmp=uint8(tmp*256);
-=======
+% %<<<<<<< Updated upstream
+% for fr=frames % remove the loop on frames here !!!! andtry ti use a gpu array 
+%     fprintf('.');
+%     % fr
+%     %tmp=gfp(:,:,:,fr);
+%     
+%    % if numel(pix)==1
+%         param=[];
+%         tmp=roiobj.preProcessROIData(pix,fr,param);
+%         
+%         tmp=uint8(tmp*256);
+% =======
 
 image=roiobj.image;
 
 %%try to remove loop on frames 
 
-  param=[];
+param=[];
 
 %gfp=uint16(zeros(size(gfp,1),size(gfp,2),3));
 
@@ -130,12 +130,12 @@ end
       %  tmp=repmat(tmp,[1 1 3]);
         
       gfp=uint8(gfp*256);
->>>>>>> Stashed changes
+%>>>>>>> Stashed changes
   %  end
     
-    if size(tmp,1)<inputSize(1) | size(tmp,2)<inputSize(2)
-        tmp=imresize(tmp,inputSize(1:2));
-    end
+%     if size(tmp,1)<inputSize(1) | size(tmp,2)<inputSize(2)
+%         tmp=imresize(tmp,inputSize(1:2));
+%     end
 
     
  %gfptmp=gfp;
@@ -149,19 +149,20 @@ end
     %     features = activations(net,tmp,'softmax-out','Acceleration','mex');
     %    end
     
-<<<<<<< Updated upstream
-    [C,score,features]= semanticseg(tmp, net);%,'Acceleration','mex'); % this is no longer required if we extract the probabilities from the previous layer
-    if size(gfp,1)<inputSize(1) | size(gfp,2)<inputSize(2)
-        features=imresize(features,size(gfp,1:2));
-        C=imresize(C,size(gfp,1:2));
-    end
-    
-    % figure, imshow(features(:,:,2),[]);
-    
-    tmpout=uint16(zeros(size(roiobj.image(:,:,pixresults,fr))));
-    
-    image=roiobj.image; 
-=======
+% <<<<<<< Updated upstream
+%     [C,score,features]= semanticseg(tmp, net);%,'Acceleration','mex'); % this is no longer required if we extract the probabilities from the previous layer
+%     if size(gfp,1)<inputSize(1) | size(gfp,2)<inputSize(2)
+%         features=imresize(features,size(gfp,1:2));
+%         C=imresize(C,size(gfp,1:2));
+%     end
+%     
+%     % figure, imshow(features(:,:,2),[]);
+%     
+%     tmpout=uint16(zeros(size(roiobj.image(:,:,pixresults,fr))));
+%     
+%     image=roiobj.image; 
+% =======
+
 if gpu==1
     [C,score,features]= semanticseg(gfp, net,'ExecutionEnvironment',"gpu");%,'Acceleration','mex'); % this is no longer required if we extract the probabilities from the previous laye
 
@@ -175,23 +176,29 @@ end
    % end
 
   %  tmpout=uint16(zeros(size(roiobj.image(:,:,pixresults,fr)))); 
-     tmpout=uint16(zeros(size(roiobj.image(:,:,pixresults,frames)))); 
->>>>>>> Stashed changes
 
     switch classif.outputType
         case 'proba' % outputs proba
-            
+             tmpout=uint16(zeros(size(roiobj.image(:,:,numel(classif.classes),frames)))); 
+
+
             for i=1:numel(classif.classes)
-                tmpout(:,:,i)=65535*features(:,:,i);
+                tmpout(:,:,i,:)=65535*features(:,:,i,:);
             end
             
         case 'segmentation'
             
+            tmpout=uint16(zeros(size(roiobj.image(:,:,1,frames)))); 
+
             for i=2:numel(classif.classes) % 1 st class is considered default class
-                BW=features(:,:,i)>0.9;
+                BW=features(:,:,i,:)>0.9;
                 res=uint16(uint16(BW)*(i));
+
+               
                 tmpout=tmpout+res;
             end
+
+            
             
             tmpout(tmpout==0)=1; %fill background
             
@@ -205,20 +212,22 @@ end
             if numel(classif.outputArg)==0
                 classif.outputArg={ 'threshold'  '0.9'};
             end
-            
+            %tmpout=uint16(zeros(size(roiobj.image(:,:,1,frames)))); 
+
             tmpout= feval(classif.outputFun,features,classif.classes,classif.outputArg{:});
     end
     
     %      figure, imshow(tmpout,[]);
     
-<<<<<<< Updated upstream
-    image(:,:,pixresults,fr)=tmpout;
-end
-=======
+
+%<<<<<<< Updated upstream
+%    image(:,:,pixresults,fr)=tmpout;
+%end
+%=======
     image(:,:,pixresults,frames)=tmpout;
    % image(:,:,pixresults,fr)=tmpout;
 
->>>>>>> Stashed changes
+%>>>>>>> Stashed changes
 
 results=roiobj.results; 
 

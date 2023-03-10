@@ -43,7 +43,7 @@ for i=1:numel(varargin)
     
 end
 
-tmpout=uint16(zeros(size(features,1),size(features,2),1));
+tmpout=uint16(zeros(size(features,1),size(features,2),1,size(features,4)));
 
 for i=2:numel(classes)
     
@@ -52,7 +52,7 @@ for i=2:numel(classes)
     switch thrmethod
         case 'threshold'
             
-            BW=features(:,:,i)>str2num(thresh);
+            BW=features(:,:,i,:)>str2num(thresh);
             
         case 'adaptivethreshold'
          %   ccbwsize=[];
@@ -60,12 +60,12 @@ for i=2:numel(classes)
          %   CCBW=[];
          %   lst=[];
             
-            T=graythresh(features(:,:,i)); %get otsu threshold
-            tmpmask=imbinarize(features(:,:,i),T*1);
+            T=graythresh(features(:,:,i,:)); %get otsu threshold
+            tmpmask=imbinarize(features(:,:,i,:),T*1);
             
-            featuresim=tmpmask.*features(:,:,i);
+            featuresim=tmpmask.*features(:,:,i,:);
             
-            BW=features(:,:,i)>1*mean(featuresim(featuresim>0));
+            BW=features(:,:,i,:)>1*mean(featuresim(featuresim>0));
             
         case 'maxproba'
             [~, BW]=max(features,[],3);
