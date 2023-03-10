@@ -4,7 +4,7 @@ function [results,image]=classifyPixelDeeplabNetFun(roiobj,classif,classifier,va
 % classi object and the classifier
 
 
-
+gpu=0;
 
 if numel(classifier)==0 % loading the classifier // not recommende because it takes time
     path=classif.path;
@@ -25,6 +25,10 @@ for i=1:numel(varargin)
     if strcmp(varargin{i},'Channel')
         channel=varargin{i+1};
     end
+      if strcmp(varargin{i},'Exec')
+           gpu=varargin{i+1};
+      end
+
 end
 
 
@@ -96,6 +100,7 @@ switch classif.outputType
         end
 end
 
+<<<<<<< Updated upstream
 for fr=frames % remove the loop on frames here !!!! andtry ti use a gpu array 
     fprintf('.');
     % fr
@@ -106,13 +111,37 @@ for fr=frames % remove the loop on frames here !!!! andtry ti use a gpu array
         tmp=roiobj.preProcessROIData(pix,fr,param);
         
         tmp=uint8(tmp*256);
+=======
+
+image=roiobj.image;
+
+%%try to remove loop on frames 
+
+  param=[];
+
+%gfp=uint16(zeros(size(gfp,1),size(gfp,2),3));
+
+gfp=double(zeros(size(gfp,1),size(gfp,2),3,numel(frames)));
+
+for fr=frames % remove the loop on frames here !!!! andtry ti use a gpu array 
+        gfp(:,:,:,fr)=roiobj.preProcessROIData(pix,fr,param);
+end
+
+      %  tmp=repmat(tmp,[1 1 3]);
+        
+      gfp=uint8(gfp*256);
+>>>>>>> Stashed changes
   %  end
     
     if size(tmp,1)<inputSize(1) | size(tmp,2)<inputSize(2)
         tmp=imresize(tmp,inputSize(1:2));
     end
+
     
-    
+ %gfptmp=gfp;
+
+ %for fr=frames
+    % gfp=gfptmp(:,:,:,fr);
     %C = semanticseg(tmp, net); % this is no longer required if we extract the probabilities from the previous layer
     %    if numel(gpuDeviceCount)==0
     %     features = activations(net,tmp,'softmax-out'); % this is used to get the probabilities rather than the classification itself
@@ -120,6 +149,7 @@ for fr=frames % remove the loop on frames here !!!! andtry ti use a gpu array
     %     features = activations(net,tmp,'softmax-out','Acceleration','mex');
     %    end
     
+<<<<<<< Updated upstream
     [C,score,features]= semanticseg(tmp, net);%,'Acceleration','mex'); % this is no longer required if we extract the probabilities from the previous layer
     if size(gfp,1)<inputSize(1) | size(gfp,2)<inputSize(2)
         features=imresize(features,size(gfp,1:2));
@@ -131,6 +161,22 @@ for fr=frames % remove the loop on frames here !!!! andtry ti use a gpu array
     tmpout=uint16(zeros(size(roiobj.image(:,:,pixresults,fr))));
     
     image=roiobj.image; 
+=======
+if gpu==1
+    [C,score,features]= semanticseg(gfp, net,'ExecutionEnvironment',"gpu");%,'Acceleration','mex'); % this is no longer required if we extract the probabilities from the previous laye
+
+else
+    [C,score,features]= semanticseg(gfp, net,'ExecutionEnvironment',"cpu");
+end
+    
+   % if size(gfp,1)~=inputSize(1) | size(gfp,2)~=inputSize(2)
+        features=imresize(features,size(image,1:2));
+        C=imresize(C,size(image,1:2));
+   % end
+
+  %  tmpout=uint16(zeros(size(roiobj.image(:,:,pixresults,fr)))); 
+     tmpout=uint16(zeros(size(roiobj.image(:,:,pixresults,frames)))); 
+>>>>>>> Stashed changes
 
     switch classif.outputType
         case 'proba' % outputs proba
@@ -165,8 +211,14 @@ for fr=frames % remove the loop on frames here !!!! andtry ti use a gpu array
     
     %      figure, imshow(tmpout,[]);
     
+<<<<<<< Updated upstream
     image(:,:,pixresults,fr)=tmpout;
 end
+=======
+    image(:,:,pixresults,frames)=tmpout;
+   % image(:,:,pixresults,fr)=tmpout;
+
+>>>>>>> Stashed changes
 
 results=roiobj.results; 
 

@@ -3,6 +3,8 @@ function [results,image]=classifyUNetFun(roiobj,classif,classifier,varargin)
 % this function can be used to classify any roi object, by providing the
 % classi object and the classifier
 
+gpu=0;
+
 if numel(classifier)==0 % loading the classifier // not recommende because it takes time
     path=classif.path;
     name=classif.strid;
@@ -22,6 +24,11 @@ for i=1:numel(varargin)
        if strcmp(varargin{i},'Channel')
            channel=varargin{i+1};
        end
+
+           if strcmp(varargin{i},'Exec')
+           gpu=varargin{i+1};
+           end
+
 end
 
 net=classifier;
@@ -100,47 +107,41 @@ switch classif.outputType
          end  
 end
 
-        for fr=frames
-            fprintf('.');
-            % fr
-       %     tmp=gfp(:,:,:,fr);
-         
-             param=[];
-        tmp=roiobj.preProcessROIData(pix,fr,param);
+
+  param=[];
+
+%gfp=uint16(zeros(size(gfp,1),size(gfp,2),3));
+
+gfp=double(zeros(size(gfp,1),size(gfp,2),3,numel(frames)));
+
+for fr=frames % remove the loop on frames here !!!! andtry ti use a gpu array 
+        gfp(:,:,:,fr)=roiobj.preProcessROIData(pix,fr,param);
+end
         
-        tmp=uint8(tmp*256);
-  %  end
-    
-    if size(tmp,1)<inputSize(1) | size(tmp,2)<inputSize(2)
-        tmp=imresize(tmp,inputSize(1:2));
+      gfp=uint8(gfp*256);
+  
+    if size(gfp,1)<inputSize(1) | size(gfp,2)<inputSize(2)
+        gfp=imresize(gfp,inputSize(1:2));
     end
 
 
-        %    if size(tmp,1)<inputSize(1) | size(tmp,2)<inputSize(2)
-      %          tmp=imresize(tmp,inputSize(1:2));
-         %   end
-            
-            
-            %C = semanticseg(tmp, net); % this is no longer required if we extract the probabilities from the previous layer
-            %    if numel(gpuDeviceCount)==0
-            %     features = activations(net,tmp,'softmax-out'); % this is used to get the probabilities rather than the classification itself
-            %    else
-            %     features = activations(net,tmp,'softmax-out','Acceleration','mex');
-            %    end
-            
- 
-            
-            [C,score,features]= semanticseg(tmp, net);%,'Acceleration','mex'); % this is no longer required if we extract the probabilities from the previous layer
-         %   if size(gfp,1)<inputSize(1) | size(gfp,2)<inputSize(2)
-                features=imresize(features,size(gfp,1:2));
-                C=imresize(C,size(gfp,1:2));
-         %   end
-            
-           % figure, imshow(features(:,:,2),[]);
-            
-            tmpout=uint16(zeros(size(roiobj.image(:,:,pixresults,fr))));
+if gpu==1
+    [C,score,features]= semanticseg(gfp, net,'ExecutionEnvironment',"gpu");%,'Acceleration','mex'); % this is no longer required if we extract the probabilities from the previous laye
 
-            image=roiobj.image; 
+else
+    [C,score,features]= semanticseg(gfp, net,'ExecutionEnvironment',"cpu");
+end
+ 
+
+           %   if size(gfp,1)<inputSize(1) | size(gfp,2)<inputSize(2)
+                features=imresize(features,size(image,1:2));
+                C=imresize(C,size(image,1:2));
+
+             tmpout=uint16(zeros(size(roiobj.image(:,:,pixresults,frames)))); 
+
+
+
+           % tmpout=uint16(zeros(size(roiobj.image(:,:,pixresults,fr))));
 
             switch classif.outputType
                     case 'proba' % outputs proba 
@@ -175,10 +176,8 @@ end
                        
             end
 
-       %      figure, imshow(tmpout,[]);
-             
-            image(:,:,pixresults,fr)=tmpout;
-        end
+            image(:,:,pixresults,frames)=tmpout;
+     %   end
         
         results=roiobj.results; 
         
