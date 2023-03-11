@@ -132,7 +132,7 @@ else
     [C,score,features]= semanticseg(gfp, net,'ExecutionEnvironment',"cpu");
 end
  
-
+image=roiobj.image;
            %   if size(gfp,1)<inputSize(1) | size(gfp,2)<inputSize(2)
                 features=imresize(features,size(image,1:2));
                 C=imresize(C,size(image,1:2));
