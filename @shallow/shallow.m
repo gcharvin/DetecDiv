@@ -84,11 +84,14 @@ classdef shallow < handle
                 end
             end
             
+
             for i=1:numel(obj.processing.classification)
                 
               %  aa=obj.processing.classification(i).path;
      
-
+    if ~isvalid(obj.processing.classification(i)) % sometimes this handle is deleted !
+        continue
+    end
                 
                 obj.processing.classification(i).path=fixpath(fullfile(obj.processing.classification(i).path));
                 

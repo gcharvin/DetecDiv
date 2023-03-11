@@ -197,6 +197,8 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
             roiobj(i).load;
         end
 
+        ROIpreprocessing(roiobj(i),classiobj)
+
         fra=1:size(roiobj(i).image,4);
 
         if numel(frames)>0
@@ -209,6 +211,7 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
             end
         end
 
+        
         % check that the requested number of frames is compatible with that of
         % the roi
 
@@ -256,10 +259,10 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
                 disp(['Classified' num2str(roiobj(i).id)]);
             end
 
-            roiobj(i).results=results; 
-            roiobj(i).image=image; 
-            roiobj(i).save; 
-            roiobj(i).clear,
+            % manage ROI here
+
+            ROIManagement(roiobj(i),results,image)
+           
         end
 
     elseif goclassif==0
@@ -279,7 +282,6 @@ end
 
 if para % parallel computing
     disp('Waiting for job to complete...');
-    logparf
     if numel(p)
         p.Message='Waiting for job to complete...';
     end
@@ -291,11 +293,13 @@ for i=1:numel(logparf)
 
     [idx,results,image]=fetchNext(logparf(i));
 
-    roiobj(idx).results=results; 
 
-    roiobj(idx).image=image; 
-    roiobj(idx).save
-    roiobj(idx).clear;
+    ROIManagement(roiobj(idx),results, image);
+%     roiobj(idx).results=results; 
+% 
+%     roiobj(idx).image=image; 
+%     roiobj(idx).save
+%     roiobj(idx).clear;
 
  %   aa=results.my_classi_1.id
     % here image is empty !!!!
@@ -310,5 +314,55 @@ if numel(p)
 end
 
 
+function ROIpreprocessing(roiobj,classif)
+% in case of pixel segmentation 
 
+% check whether output is segmentation, proba, or postprocessing
+if strcmp(classif.category,'Pixel')
+    gfp=roiobj.image;
+
+switch classif.outputType
+    case 'proba' % outputs proba of classes
+        pixresults=[];
+        for i=1:numel(classif.classes)
+            pixresultstmp=findChannelID(roiobj,['results_' classif.strid '_' classif.classes{i}]); % gather all channels associated with proba
+            
+            if numel(pixresultstmp)==0 % channel does not exist, hence create them
+                matrix=uint16(zeros(size(gfp,1),size(gfp,2),1,size(gfp,4)));
+                rgb=[1 1 1];
+                intensity=[1 1 1]; % used to display grayscale image in .view
+                
+                roiobj.addChannel(matrix,['results_' classif.strid '_' classif.classes{i}],rgb,intensity);
+                
+                pixresults=[pixresults size(roiobj.image,3)];
+            else
+                
+                roiobj.image(:,:,pixresultstmp,:)=uint16(zeros(size(gfp,1),size(gfp,2),1,size(gfp,4)));
+                pixresults=[pixresults pixresultstmp];
+            end
+        end
+        
+    otherwise %  outputs segmentation or segmentation after postprocessing
+        pixresults=findChannelID(roiobj,['results_' classif.strid]);
+        
+        if numel(pixresults)==0 % channels do not exist, hence create them
+            matrix=uint16(zeros(size(gfp,1),size(gfp,2),1,size(gfp,4)));
+            rgb=[1 1 1];
+            intensity=[0 0 0]; % used to display indexed image in .view
+            
+            roiobj.addChannel(matrix,['results_' classif.strid],rgb,intensity);
+            
+            pixresults=size(roiobj.image,3);
+        else
+            roiobj.image(:,:,pixresults,:)=uint16(zeros(size(gfp,1),size(gfp,2),1,size(gfp,4)));
+        end
+end
+end
+
+function ROIManagement(roiobj,results, image)
+
+ roiobj.results=results; 
+ roiobj.image=image; 
+ roiobj.save; 
+ roiobj.clear,
 %disp('You must save the shallow project to save these classified data !');

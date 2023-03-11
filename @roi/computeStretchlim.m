@@ -62,6 +62,13 @@ end
 % min(65535,double(med)+4*stddev)]/65535; % does not work well with images
 %with large stretches of 0's. 
 
+mi=max([mi;  zeros(1,length(mi))],[],1);
+mi=min([mi;  ones(1,length(mi))],[],1);
+
+ma=max([ma;  mi+0.0001],[],1)
+ma=min([ma;  ones(1,length(ma))],[],1)
+ma=max([ma;  0.001*ones(1,length(ma))],[],1)
+
 obj.display.stretchlim=[mi ; ma]; %home made stretchilm to work with multi D images. slow but more reliable
 
 if clearfile==1

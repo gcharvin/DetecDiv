@@ -20,7 +20,7 @@ for i=1:numel(varargin)
       if strcmp(varargin{i},'Frames')
           frames=varargin{i+1};
       end
-      
+
        if strcmp(varargin{i},'Channel')
            channel=varargin{i+1};
        end
@@ -74,37 +74,21 @@ switch classif.outputType
     case 'proba' % outputs proba of classes
         pixresults=[];
         for i=1:numel(classif.classes)
-        pixresultstmp=findChannelID(roiobj,['results_' classif.strid '_' classif.classes{i}]); % gather all channels associated with proba
-        
-        if numel(pixresultstmp)==0 % channel does not exist, hence create them
-            matrix=uint16(zeros(size(gfp,1),size(gfp,2),1,size(gfp,4)));
-            rgb=[1 1 1];
-            intensity=[1 1 1]; % used to display grayscale image in .view
-          
-              roiobj.addChannel(matrix,['results_' classif.strid '_' classif.classes{i}],rgb,intensity);
-         
-              pixresults=[pixresults size(roiobj.image,3)];
-        else
-            
-               roiobj.image(:,:,pixresultstmp,:)=uint16(zeros(size(gfp,1),size(gfp,2),1,size(gfp,4)));
-               pixresults=[pixresults pixresultstmp];
-        end
+            pixresultstmp=findChannelID(roiobj,['results_' classif.strid '_' classif.classes{i}]); % gather all channels associated with proba
+
+            if numel(pixresultstmp)==0 % channel does not exist, hence create them
+                pixresults=[pixresults size(roiobj.image,3)];
+            else
+                pixresults=[pixresults pixresultstmp];
+            end
         end
 
     otherwise %  outputs segmentation or segmentation after postprocessing
         pixresults=findChannelID(roiobj,['results_' classif.strid]);
-        
-         if numel(pixresults)==0 % channels do not exist, hence create them
-            matrix=uint16(zeros(size(gfp,1),size(gfp,2),1,size(gfp,4)));
-            rgb=[1 1 1];
-            intensity=[0 0 0]; % used to display indexed image in .view
-        
-            roiobj.addChannel(matrix,['results_' classif.strid],rgb,intensity);
 
+        if numel(pixresults)==0 % channels do not exist, hence create them
             pixresults=size(roiobj.image,3);
-         else
-            roiobj.image(:,:,pixresults,:)=uint16(zeros(size(gfp,1),size(gfp,2),1,size(gfp,4)));
-         end  
+        end
 end
 
 
@@ -114,12 +98,12 @@ end
 
 gfp=double(zeros(size(gfp,1),size(gfp,2),3,numel(frames)));
 
-for fr=frames % remove the loop on frames here !!!! andtry ti use a gpu array 
+for fr=frames % remove the loop on frames here !!!! andtry ti use a gpu array
         gfp(:,:,:,fr)=roiobj.preProcessROIData(pix,fr,param);
 end
-        
+
       gfp=uint8(gfp*256);
-  
+
     if size(gfp,1)<inputSize(1) | size(gfp,2)<inputSize(2)
         gfp=imresize(gfp,inputSize(1:2));
     end
@@ -131,57 +115,56 @@ if gpu==1
 else
     [C,score,features]= semanticseg(gfp, net,'ExecutionEnvironment',"cpu");
 end
- 
+
 image=roiobj.image;
            %   if size(gfp,1)<inputSize(1) | size(gfp,2)<inputSize(2)
                 features=imresize(features,size(image,1:2));
                 C=imresize(C,size(image,1:2));
 
-             tmpout=uint16(zeros(size(roiobj.image(:,:,pixresults,frames)))); 
+             tmpout=uint16(zeros(size(roiobj.image(:,:,pixresults,frames))));
 
 
 
            % tmpout=uint16(zeros(size(roiobj.image(:,:,pixresults,fr))));
 
             switch classif.outputType
-                    case 'proba' % outputs proba 
-                       
+                    case 'proba' % outputs proba
+
                         for i=1:numel(classif.classes)
                            tmpout(:,:,i)=65535*features(:,:,i);
                         end
-                       
+
                     case 'segmentation'
-                          
+
                          for i=2:numel(classif.classes) % 1 st class is considered default class
                         BW=features(:,:,i)>0.9;
                         res=uint16(uint16(BW)*(i));
                          tmpout=tmpout+res;
-                         end 
-                         
+                         end
+
                        tmpout(tmpout==0)=1; %fill background
-            
-                       
+
+
                     case 'postprocessing'
-                        
-                        
+
+
                         if numel(classif.outputFun)==0
                             classif.outputFun='post';
                         end
                         if numel(classif.outputArg)==0
                             classif.outputArg={ 'threshold'  '0.9'};
                         end
-                        
+
                         tmpout= feval(classif.outputFun,features,classif.classes,classif.outputArg{:});
-                        
-                       
+
+
             end
 
             image(:,:,pixresults,frames)=tmpout;
      %   end
-        
-        results=roiobj.results; 
-        
+
+        results=roiobj.results;
+
         %roiobj.save;
         %roiobj.clear;
         fprintf('\n');
-        
