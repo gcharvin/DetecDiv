@@ -78,19 +78,19 @@ for i=1:numel(rois)
         fra=Frames;
     end
 
-%       if isfield(cltmp(rois(i)).train.(classif.strid),'bounds') % restricting frames used on a per-ROI basis
-%                     minet=cltmp(rois(i)).train.(classif.strid).bounds(1); 
-%                     maxet=cltmp(rois(i)).train.(classif.strid).bounds(2);
-% 
-%                     minet=max(minet,fra(1));
-%                     if maxet==0
-%                     maxet=max(maxet,fra(end));
-%                     else
-%                     maxet=min(maxet,fra(end));
-%                     end
-% 
-%                     fra=minet:maxet;
-%         end
+      if isfield(cltmp(rois(i)).train.(classif.strid),'bounds') % restricting frames used on a per-ROI basis
+                    minet=cltmp(rois(i)).train.(classif.strid).bounds(1); 
+                    maxet=cltmp(rois(i)).train.(classif.strid).bounds(2);
+
+                    minet=max(minet,fra(1));
+                    if maxet==0
+                    maxet=max(maxet,fra(end));
+                    else
+                    maxet=min(maxet,fra(end));
+                    end
+
+                    fra=minet:maxet;
+        end
 
     %fra
     
