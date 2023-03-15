@@ -125,7 +125,7 @@ end
 
 %try 
 
-parfor i=1:size(roilist,2) % loop on all ROIs using parrallel computing   
+for i=1:size(roilist,2) % loop on all ROIs using parrallel computing   
     roiobj=tmp(i);
     if numel(roiobj.id)==0
         continue;
