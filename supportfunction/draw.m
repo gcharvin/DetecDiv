@@ -38,6 +38,7 @@ if numel(h.UserData)~=0 % window is already displayed; therefore just update the
     for i=1:numel(hp)
         s(i)=str2num(hp(i).Tag(7:end));
     end
+    
     [q, ix]=sort(s);
     hp=hp(ix);
 
@@ -375,7 +376,7 @@ h.KeyPressFcn={@changeframe,obj,him,hp,keys,classif,specialkeys,userprefs};
 
 handles=findobj(h,'Tag','frametexttitle');
 if numel(handles)==0
-    btnSetFrame = uicontrol('Style', 'text','FontSize',14, 'String', 'Enter frame number here, or use arrows <- ->',...
+    btnSetFrame = uicontrol('Style', 'text','FontSize',14, 'String', 'Enter frame, or use arrow keys',...
         'Position', [50 50 450 20],'HorizontalAlignment','left', ...
         'Tag','frametexttitle') ;
 end
@@ -389,6 +390,11 @@ else
     handles.Callback=  {@setframe,obj,him,hp,classif};
     handles.String=num2str(obj.display.frame);
 end
+
+btnSetFrame = uicontrol('Style', 'pushbutton','FontSize',12, 'String', 'Display Settings...',...
+        'Position', [350 20 160 40],...
+        'Callback', {@displayGUI,obj,him,hp,classif,h},'Tag','displayGUI') ;
+
 
 % create training specific menus and graphics
 % training classes menu
@@ -850,6 +856,12 @@ h=findobj('Tag',['ROI' obj.id]);
 obj.fillTraining('Training',classif.strid);
 close(h);
 obj.view(obj.display.frame,classif);
+
+end
+
+function displayGUI(handles, event, obj,him,hp,classif,h)
+
+ROIdisplayGUI(obj,him,hp,classif,h);
 
 end
 

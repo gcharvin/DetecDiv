@@ -18,14 +18,19 @@ classdef roi < handle
       
       parent=[] % reference of the parent field of view
       
-      display=struct('intensity',[1 1 1],'frame',1,'selectedchannel',1,'binning',1,'rgb',[1 1 1],'channel',{'Channel 1'});
+      display=struct('intensity',[1 1 1],'frame',1,'selectedchannel',1,'binning',1,'rgb',[1 1 1],'channel',{'Channel 1'},'stretchlim',[],'displaylim',[0 1]);
       
+      % stretchlim : is the levels used to perform preprocessing 
+      % displaylim are the levels used to display the images
+
       history=table('Size',[1 3],'VariableTypes',{'datetime','string','string'},'VariableNames',{'Date','Category','Message'});
       
       classes={};
       train=[] ; %1D array that has the size of the 4rd dim of the image array and contains assigned classes; is defined when ROI is assigned to classification 
       
       results=[]; %display results if based on classification-> an array that has the same size as the number of frames
+
+      data=dataseries; % array of dataseries objects
       
       % displays a list of channels in RGB channels 
       %train=[] % list of rgb images that contain pixel training data

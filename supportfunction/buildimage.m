@@ -27,12 +27,23 @@ for i=1:numel(obj.display.channel)
         imtemp=obj.image(:,:,pix,frame);
 
         % WARNING PIX MAY BE A 1 or  3 element vector
-        if (~isfield(obj.display,'stretchlim') && ~isprop(obj.display,'stretchlim')) || size(obj.display.stretchlim,2)~=numel(obj.channelid)
-            disp(['No stretch limits found for ROI ' num2str(obj.id) ', computing them...']);
-            obj.computeStretchlim;
-        end
+       
+        % added display lim to take care of displaying images ; stretchlim
+        % applies to preprocessing only
+         if (~isfield(obj.display,'displaylim') && ~isprop(obj.display,'displaylim')) || size(obj.display.displaylim,2)~=numel(obj.channelid)
+            disp(['No display limits found for ROI ' num2str(obj.id) ', computing them...']);
+            obj.computeDisplaylim;
 
-        strchlm=obj.display.stretchlim(:,(pix(end)-pix(1))/2 + pix(1)); %middle stack
+         end
+
+%         if (~isfield(obj.display,'stretchlim') && ~isprop(obj.display,'stretchlim')) || size(obj.display.stretchlim,2)~=numel(obj.channelid)
+%             disp(['No stretch limits found for ROI ' num2str(obj.id) ', computing them...']);
+%             obj.computeStretchlim;
+%         end
+
+
+        strchlm=obj.display.displaylim(:,(pix(end)-pix(1))/2 + pix(1)); %middle stack
+        
         %strchlm=stretchlim(imtemp(:,:,(end-1)/2 + 1),[0.005 0.995]);
         %strchlm=stretchlim(imtemp(:,:,ceil((end+1)/2))); % computes the strecthlim for the middle stack. To be changed once we add multichannels as inputs.
 
