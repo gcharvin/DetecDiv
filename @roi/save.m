@@ -5,34 +5,35 @@ function save(obj,option)
 im=obj.image;
 roiobj=obj;
 results=obj.results;
+data=obj.data;
 % save images
 
 resonly=0;
 if nargin==2
-    if strcmp(option,'results') % load only the results
+    if strcmp(option,'data') % load only the results
         resonly=1;
-        disp(['Saving results only for ROI ' obj.id]);
+        disp(['Saving data only for ROI ' obj.id]);
     end
 end
 
 if resonly==1
-    obj.log(['Saving results only to ' obj.path '/results_' obj.id '.mat'],'Saving')
-    disp(['Saving ROI results ' obj.id ' to ' obj.path '/results_' obj.id '.mat']);
-    eval(['save  ' '''' obj.path '/results_' obj.id '.mat' ''''  ' results']);
+    obj.log(['Saving data only to ' obj.path '/data_' obj.id '.mat'],'Saving')
+    disp(['Saving ROI data ' obj.id ' to ' obj.path '/data_' obj.id '.mat']);
+    eval(['save  ' '''' obj.path '/data_' obj.id '.mat' ''''  ' data']);
     return;
 end
 
 if numel(im)~=0
     %   ['save  ' '''' obj.path '/im_' num2str(obj.id) '.mat' ''''  ' im']
     %  disp('');
-    disp(['Saving ROI ' obj.id ' to ' obj.path '/im_' obj.id '.mat']);   
+    disp(['Saving ROI image and data to ' obj.id ' to ' obj.path '/im_' obj.id '.mat']);   
     obj.log(['Saving ROI to ' obj.path '/im_' obj.id '.mat'],'Saving')
-    obj.log(['Saving results to ' obj.path '/results_' obj.id '.mat'],'Saving')
+    obj.log(['Saving data to ' obj.path '/data_' obj.id '.mat'],'Saving')
     
     if isfolder(obj.path)
     eval(['save  ' '''' obj.path '/im_' obj.id '.mat' ''''  ' roiobj']);   
-    disp(['Saving ROI results ' obj.id ' to ' obj.path '/results_' obj.id '.mat']);
-    eval(['save  ' '''' obj.path '/results_' obj.id '.mat' ''''  ' results']);
+    disp(['Saving ROI data to ' obj.id ' to ' obj.path '/data_' obj.id '.mat']);
+    eval(['save  ' '''' obj.path '/data_' obj.id '.mat' ''''  ' data']);
     else
        disp('ERROR: Could not find / access the requested folder !!! ');
     end

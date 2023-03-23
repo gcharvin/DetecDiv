@@ -38,8 +38,7 @@ for i=rois
         cltmp(i).load; % load image sequence
     end
     
-    
-    
+  
     pix=cltmp(i).findChannelID(channel);
 
     if iscell(pix)
@@ -51,6 +50,13 @@ for i=rois
     %pix=find(cltmp(i).channelid==classif.channel(1)); % find channel
     
     im=cltmp(i).image(:,:,pix,:);
+
+    data=cltmp(i).data;
+    pixdata=arrayfun(@(x) strcmp(x.groupid,classif.strid),data);
+    data=data(pixdata);
+    dataid=data.getData('id_training');
+    %dataidfra=dataid(fra);
+
     
     %lab= categorical(cltmp(i).train.(classif.strid).id,1:numel(classif.classes),classif.classes); % creates labels for classification
     
@@ -69,7 +75,8 @@ for i=rois
             end
             
             
-            if cltmp(i).train.(classif.strid).id(j)~=0 % if training is done
+           % if cltmp(i).train.(classif.strid).id(j)~=0 % if training is done
+            if dataid(j)~=0
                 % if ~isfile([str '/unbudded/im_' mov.trap(i).id '_frame_' tr '.tif'])
                 imwrite(tmp,[classif.path '/' foldername '/images/' classif.classes{cltmp(i).train.(classif.strid).id(j)} '/' cltmp(i).id '_frame_' tr '.tif']);
                 output=output+1;
@@ -100,11 +107,13 @@ for i=rois
                 tr=['0' tr];
             end
            
-              if ~isnan(cltmp(i).train.(classif.strid).id(j)) % if training is done
+            %  if ~isnan(cltmp(i).train.(classif.strid).id(j)) % if training is done
+                if ~isnan(dataid(j)) % if training is done
                 % if ~isfile([str '/unbudded/im_' mov.trap(i).id '_frame_' tr '.tif'])
                 imwrite(tmp,[classif.path '/' foldername '/images/' cltmp(i).id '_frame_' tr '.tif']);
                 
-                label= cltmp(i).train.(classif.strid).id(j);
+               % label= cltmp(i).train.(classif.strid).id(j);
+                label= dataid(j);
                 
                 save([classif.path '/' foldername '/labels/' cltmp(i).id '_frame_' tr '.mat'],'label');
                 output=output+1;

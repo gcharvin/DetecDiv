@@ -251,17 +251,18 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
                 logparf(i)=parfeval(fhandle,2,roiobj(i),classi,classifierStore,'Frames',fra,'Channel',cha,'Exec',gpu); % launch the training function for classification
             end
         else
+        
             if  numel(classifierCNN)
-                [results,image]=feval(fhandle,roiobj(i),classi,classifierStore,'classifierCNN',classifierCNN,'Frames',fra,'Channel',cha,'Exec',gpu); % launch the training function for classification
+                [data,image]=feval(fhandle,roiobj(i),classi,classifierStore,'classifierCNN',classifierCNN,'Frames',fra,'Channel',cha,'Exec',gpu); % launch the training function for classification
                 disp(['Classified with separate CNN ' num2str(roiobj(i).id)]);
             else
-               [results,image]=feval(fhandle,roiobj(i),classi,classifierStore,'Frames',fra,'Channel',cha,'Exec',gpu); % launch the training function for classification
+               [data,image]=feval(fhandle,roiobj(i),classi,classifierStore,'Frames',fra,'Channel',cha,'Exec',gpu); % launch the training function for classification
                 disp(['Classified' num2str(roiobj(i).id)]);
             end
 
             % manage ROI here
 
-            ROIManagement(roiobj(i),results,image)
+            ROIManagement(roiobj(i),data,image)
            
         end
 
@@ -291,10 +292,10 @@ if para % parallel computing
 for i=1:numel(logparf)
  %   [results,image]=fetchOutputs(logparf(i));
 
-    [idx,results,image]=fetchNext(logparf(i));
+    [idx,data,image]=fetchNext(logparf(i));
 
 
-    ROIManagement(roiobj(idx),results, image);
+    ROIManagement(roiobj(idx),data, image);
 %     roiobj(idx).results=results; 
 % 
 %     roiobj(idx).image=image; 
@@ -359,9 +360,9 @@ switch classif.outputType
 end
 end
 
-function ROIManagement(roiobj,results, image)
+function ROIManagement(roiobj,data, image)
 
- roiobj.results=results; 
+ roiobj.data=data; 
  roiobj.image=image; 
  roiobj.save; 
  roiobj.clear,

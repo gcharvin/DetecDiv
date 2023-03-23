@@ -49,8 +49,6 @@ channel=classif.channelName;
 
 disp(['These ROIs will be processed : ' num2str(rois)]);
 
-
-
 for i=1:numel(rois)
       emptyFrame=[];
     disp(['Launching ROI ' num2str(i) :' processing...'])
@@ -70,6 +68,16 @@ for i=1:numel(rois)
 
     %  pix=find(cltmp(i).channelid==classif.channel(1)); % find channel
     im=cltmp(rois(i)).image(:,:,pix,:);
+    data=cltmp(rois(i)).data;
+    pixdata=arrayfun(@(x) strcmp(x.groupid,classif.strid),data);
+    data=data(pixdata);
+    bounds=[];
+    if isfield(data.userData,'bounds')
+        bounds=data.userData.bounds;
+        if bounds(1)==0
+            bounds=[];
+        end
+    end
 
 
     if numel(Frames)==0
@@ -78,6 +86,7 @@ for i=1:numel(rois)
         fra=Frames;
     end
 
+<<<<<<< Updated upstream
 %       if isfield(cltmp(rois(i)).train.(classif.strid),'bounds') % restricting frames used on a per-ROI basis
 %                     minet=cltmp(rois(i)).train.(classif.strid).bounds(1); 
 %                     maxet=cltmp(rois(i)).train.(classif.strid).bounds(2);
@@ -91,6 +100,21 @@ for i=1:numel(rois)
 % 
 %                     fra=minet:maxet;
 %         end
+=======
+    if numel(bounds) % restricting frames used on a per-ROI basis
+        minet=bounds(1);
+        maxet=bounds(2);
+
+        minet=max(minet,fra(1));
+        if maxet==0
+            maxet=max(maxet,fra(end));
+        else
+            maxet=min(maxet,fra(end));
+        end
+
+        fra=minet:maxet;
+    end
+>>>>>>> Stashed changes
 
     %fra
     
@@ -109,19 +133,37 @@ for i=1:numel(rois)
     end
   
     vid=uint8(zeros(size(imtest,1),size(imtest,2),3,1));
+<<<<<<< Updated upstream
     
     if strcmp(classif.category{1},'LSTM')%classif.typeid~=12 % only for  image classif
         pixb=numel(cltmp(rois(i)).train.(classif.strid).id(fra));
         pixa=find(cltmp(rois(i)).train.(classif.strid).id(fra)==0);
         
+=======
+
+    dataid=data.getData('id_training');
+    dataidfra=dataid(fra);
+
+    if strcmp(classif.category{1},'LSTM')%classif.typeid~=12 % only for  image classif
+        
+        
+        pixb=numel(dataidfra);
+        pixa=find(dataidfra==0);
+
+>>>>>>> Stashed changes
         if numel(pixa)>0 || numel(pixa)==0 && pixb==0 % some images are not labeled, quitting ...
             disp('Error: some images are not labeled in this ROI - LSTM requires all images to be labeled in the timeseries!');
             continue
         end
         
         % 'pasok'
+<<<<<<< Updated upstream
         
         lab= categorical(cltmp(rois(i)).train.(classif.strid).id(fra),1:numel(classif.classes),classif.classes); % creates labels for classification
+=======
+
+        lab= categorical(dataidfra,1:numel(classif.classes),classif.classes); % creates labels for classification
+>>>>>>> Stashed changes
     else
         lab=[];
     end
@@ -156,9 +198,9 @@ for i=1:numel(rois)
             end
             
             if classif.output==0
-                cmp=cltmp(rois(i)).train.(classif.strid).id(j); % seuquence-to-sequence classif
+                cmp=dataid(j); % seuquence-to-sequence classif
             else
-                cmp=cltmp(rois(i)).train.(classif.strid).id; % sequence-to-one classif
+                cmp=dataid; % sequence-to-one classif
             end
             
             if cmp~=0 % if training is done
@@ -190,21 +232,37 @@ for i=1:numel(rois)
             vid(:,:,:,cc)=uint8(256*tmp);
             cc=cc+1;
         end
+<<<<<<< Updated upstream
         
         %  if cltmp(i).train.(classif.strid).id(j)~=-1 % if training is done
         parsaveim([classif.path '/' foldername '/images/' cltmp(rois(i)).id '.mat'],tmp);
         
         parsaveresp([classif.path '/' foldername '/response/' cltmp(rois(i)).id '.mat'],cltmp(rois(i)).train.(classif.strid).id(fra));
+=======
+
+      
+        parsaveim([classif.path '/' foldername '/images/' cltmp(rois(i)).id '.mat'],tmp);
+
+        parsaveresp([classif.path '/' foldername '/response/' cltmp(rois(i)).id '.mat'],dataidfra);
+>>>>>>> Stashed changes
         output=output+1;
         %   end
     end
     
     fprintf('\n');
+<<<<<<< Updated upstream
     
     deep=cltmp(rois(i)).train.(classif.strid).id(fra);
 %     aah=vid;
 %      figure, imshow(vid(:,:,:,87),[]);
 %      save('test.mat','aah')
+=======
+
+    deep=dataidfra;
+    %     aah=vid;
+    %      figure, imshow(vid(:,:,:,87),[]);
+    %      save('test.mat','aah')
+>>>>>>> Stashed changes
     % assignin('base','test',vid);
    %  size(vid)
 

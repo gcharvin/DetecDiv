@@ -710,8 +710,6 @@ score.N=sum([score.classes(:).N]);
             CNNpred=[];
             fra=[];
             
-           
-            
             switch classif.category{1}
                 case 'Pixel' % pixel classification
                     
@@ -778,51 +776,66 @@ score.N=sum([score.classes(:).N]);
                     end
                     
                 case 'Image Regression'
-                      if numel(obj.results)>0 % check is there are results available
-                        if isfield(obj.results,classistr)
-                            if isfield(obj.results.(classistr),'id') % it's a classification
-                                
-                                if numel(obj.results.(classistr).id) > 0
+
+                    dataserie=obj.data;
+                    pixdata=arrayfun(@(x) strcmp(x.groupid,classistr),dataserie);
+                    dataserie=dataserie(pixdata); 
+                    id_training=dataserie.getData('id_training');
+                    id_results=dataserie.getData('id');
+
+                      if numel(id_results)>0 % check is there are results available
+                        if any(id_results)
                                     %  if sum(obj.results.(classistr).id)>0 % training exists for this ROI !
                                     resok=1;
-                                    %    end
-                                end
+                                    %    en
                         else
                             disp('There is no result available for this classification id');
                         end
                     else
                         disp('There is no result available for this roi');
-                        end
                       end
-          
+
+    
                     
                     % if roi was used for user training, display the training data first
-                    if numel(obj.train)~=0
-                        if isfield(obj.train,classistr)
-                            if numel(obj.train.(classistr).id) > 0
+
+                    if numel(id_training)~=0
+                        if any(id_training)
                                 % if sum(obj.train.(classistr).id)>0 % training exists for this ROI !
                                 ground=1;
                                 %  end
-                            end
                         else
                             disp('There is no GT available for this classification id');
                         end
                     else
                         disp('There is no GT available for this roi');
                     end
+
+
+%                     if numel(obj.train)~=0
+%                         if isfield(obj.train,classistr)
+%                             if numel(obj.train.(classistr).id) > 0
+%                                 % if sum(obj.train.(classistr).id)>0 % training exists for this ROI !
+%                                 ground=1;
+%                                 %  end
+%                             end
+%                         else
+%                             disp('There is no GT available for this classification id');
+%                         end
+%                     else
+%                         disp('There is no GT available for this roi');
+%                     end
                     
                     if ground && resok
                         reg=1;
                         
                      %   if isfield(obj.results.(classistr),'id') % it's a classification
-                            pred=double(obj.results.(classistr).id);
+                            pred=double(id_results); pred=pred';% double(obj.results.(classistr).id);
                     %    else
                     %        pred=double(obj.results.(classistr).prob);
                     %    end
-                        gt=double(obj.train.(classistr).id);
-                        
-                  
-                        pred=pred';
+                        gt=double(id_training); gt=gt'; %double(obj.train.(classistr).id);
+ 
                     end
             
                     
@@ -881,59 +894,85 @@ score.N=sum([score.classes(:).N]);
                     end
                     
                 otherwise % image classification
-                    % first check if somm post processing is to be done, ie
-                    % threshold >0 , otherwise , use image classification as is
-                    %             if threshold>0
-                    %                 if numel(obj.results)>0 % check is there are results available
-                    %                     if isfield(obj.results,classistr)
-                    %                         if numel(obj.results.(classistr).prob) > 0 % proba exist
-                    %                             proba= obj.results.(classistr).prob;
-                    %
-                    %                         end
-                    %                     end
-                    %                 end
-                    %             end
                     
-                    
-                    if numel(obj.results)>0 % check is there are results available
-                        if isfield(obj.results,classistr)
-                            if numel(obj.results.(classistr).id) > 0
-                                if sum(obj.results.(classistr).id)>0 % training exists for this ROI !
+                    dataserie=obj.data;
+                    pixdata=arrayfun(@(x) strcmp(x.groupid,classistr),dataserie);
+                    dataserie=dataserie(pixdata); 
+                    id_training=dataserie.getData('id_training');
+                    id_results=dataserie.getData('id');
+
+                      if numel(id_results)>0 % check is there are results available
+                        if any(id_results)
+                                    %  if sum(obj.results.(classistr).id)>0 % training exists for this ROI !
                                     resok=1;
-                                end
-                            end
+                                    %    en
                         else
                             disp('There is no result available for this classification id');
                         end
                     else
                         disp('There is no result available for this roi');
-                    end
-                    
-                    % if roi was used for user training, display the training data first
-                    if numel(obj.train)~=0
-                        if isfield(obj.train,classistr)
-                            if numel(obj.train.(classistr).id) > 0
-                                if sum(obj.train.(classistr).id)>0 % training exists for this ROI !
-                                    ground=1;
-                                end
-                            end
+                      end
+
+                       if numel(id_training)~=0
+                        if any(id_training)
+                                % if sum(obj.train.(classistr).id)>0 % training exists for this ROI !
+                                ground=1;
+                                %  end
                         else
                             disp('There is no GT available for this classification id');
                         end
                     else
                         disp('There is no GT available for this roi');
-                    end
+                       end
+
+
+
+                    
+%                     if numel(obj.results)>0 % check is there are results available
+%                         if isfield(obj.results,classistr)
+%                             if numel(obj.results.(classistr).id) > 0
+%                                 if sum(obj.results.(classistr).id)>0 % training exists for this ROI !
+%                                     resok=1;
+%                                 end
+%                             end
+%                         else
+%                             disp('There is no result available for this classification id');
+%                         end
+%                     else
+%                         disp('There is no result available for this roi');
+%                     end
+                    
+                    % if roi was used for user training, display the training data first
+%                     if numel(obj.train)~=0
+%                         if isfield(obj.train,classistr)
+%                             if numel(obj.train.(classistr).id) > 0
+%                                 if sum(obj.train.(classistr).id)>0 % training exists for this ROI !
+%                                     ground=1;
+%                                 end
+%                             end
+%                         else
+%                             disp('There is no GT available for this classification id');
+%                         end
+%                     else
+%                         disp('There is no GT available for this roi');
+%                     end
                     
                     if ground && resok
                         
-                        pred=obj.results.(classistr).id;
-                        gt=obj.train.(classistr).id;
+                        pred=double(id_results); pred=pred'; %obj.results.(classistr).id;
+                        gt=double(id_training); gt=gt';  %obj.train.(classistr).id;
                         
-                        if isfield(obj.results.(classistr),'idCNN')
-                            if numel(obj.results.(classistr).idCNN)>0
-                                CNNpred=obj.results.(classistr).idCNN;
-                            end
+                        id_CNN=dataserie.getData('idCNN');
+
+                        if numel(id_CNN)
+                            CNNpred=double(id_CNN); CNNpred=CNNpred';
                         end
+
+                      %  if isfield(obj.results.(classistr),'idCNN')
+                       %     if numel(obj.results.(classistr).idCNN)>0
+                              %  CNNpred=obj.results.(classistr).idCNN;
+                       %     end
+                       % end
                         
                         pix= pred & gt;
                         fra=find(pix);
@@ -949,6 +988,8 @@ score.N=sum([score.classes(:).N]);
                         if numel(CNNpred)>=numel(pix)
                             CNNpred=CNNpred(pix);
                         end
+
+                        
                     end
             end
             % then display the results

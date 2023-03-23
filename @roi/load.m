@@ -9,9 +9,9 @@ pathr=obj.path;
 resonly=0;
 
 if nargin==2
-    if strcmp(option,'results') % load only the results
+    if strcmp(option,'data') % load only the data
         resonly=1;
-        disp(['Loading results only for ROI ' obj.id]);
+        disp(['Loading data only for ROI ' obj.id]);
     end
 end
 
@@ -46,14 +46,14 @@ else
 end
 end
 
-if exist([obj.path '/results_' obj.id '.mat'])
-    %disp(['Loading ' t '/results_' obj.id '.mat result struct for ROI ' obj.id]);
-    eval(['load  ' '''' obj.path '/results_' obj.id '.mat' '''']);    
-    obj.results=results;
-    disp(['ROI results loaded from ' t '/results_' obj.id '.mat ' obj.id]);
+if exist([obj.path '/data_' obj.id '.mat'])
+    %disp(['Loading ' t '/data_' obj.id '.mat result struct for ROI ' obj.id]);
+    eval(['load  ' '''' obj.path '/data_' obj.id '.mat' '''']);    
+    obj.data=data;
+    disp(['ROI data loaded from ' t '/data_' obj.id '.mat ' obj.id]);
 else
     
-    fprintf(['Error: file not found  ' t  '/results_' obj.id '.mat failed for ROI ' obj.id '\n']);
+    fprintf(['Error: file not found  ' t  '/data_' obj.id '.mat failed for ROI ' obj.id '\n']);
     
 end
 

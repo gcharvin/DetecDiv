@@ -1,4 +1,4 @@
-function [results,image]=classifyImageLSTMNetFun(roiobj,classif,classifier,varargin)
+function [data,image]=classifyImageLSTMNetFun(roiobj,classif,classifier,varargin)
 
 %load([path '/netCNN.mat']); % load the googlenet to get the input size of image
 
@@ -7,7 +7,7 @@ fprintf('Load videos...\n');
 
 %inputSize = netCNN.Layers(1).InputSize(1:2);
 
-results=[]; %roi;
+data=[]; %roi;
 image=[];
 
 for i=1:numel(classifier.Layers)
@@ -28,7 +28,7 @@ classifierCNN=[];
 gpu=0;
 
 for i=1:numel(varargin)
-    if strcmp(varargin{i},'classifierCNN')        
+    if strcmp(varargin{i},'classifierCNN')   
         classifierCNN=varargin{i+1};
         net=classifierCNN;
         inputSizeCNN = net.Layers(1).InputSize;
@@ -60,24 +60,13 @@ pix=roiobj.findChannelID(channel);
             pix=cell2mat(pix);
     end
 
-
-
 %pix=find(roiobj.channelid==classif.channel(1)); % find channels corresponding to trained data
 if numel(frames)==0
     frames=1:size(roiobj.image,4);
 end
 
-
 im=roiobj.image(:,:,pix,frames);
-%im=roiobj.image(:,:,pix,:);
 
-% if exist('frames','var')
-%     if frames==0
-%         frames=1:numel(im(1,1,1,:)); %classify only frames with GT
-%     end
-% else
-%     frames=1:numel(im(1,1,1,:));
-% end
 
 %im=roiobj.image(:,:,pix,frames);
 
@@ -96,28 +85,9 @@ cc=1;
 
 param=[]; 
 
-% pix
-% if numel(pix)==1
-%     % 'ok'
-%     param=[];
-%     totphc=im;
-%     meanphc=0.5*double(mean(totphc(:)));
-%     maxphc=double(meanphc+0.7*(max(totphc(:))-meanphc));
-%     param.meanphc=meanphc;
-%     param.maxphc=maxphc;
-% end
-
 %param
 for j=frames  
     tmp=roiobj.preProcessROIData(pix,j,param);
-%    tmp=im(:,:,1,j);
-% 
-%    tmp = double(imadjust(tmp,[param.meanphc/65535 param.maxphc/65535],[0 1]))/65535;
-%    tmp=repmat(tmp,[1 1 3]);
-
-
-
-   % tmp=imcrop(tmp,rect); use in case a cropping factor is applied 
 
     if numel(tmp)==0 % empty frame 
          vid(:,:,:,cc)=uint8(0);
@@ -130,13 +100,9 @@ for j=frames
     cc=cc+1;
 end
 
-
 video = centerCrop(vid,inputSize);
 
 disp('Starting video classification...');
-
-% this function predict  is used instead of 'classify' function which causes an error
-% on R2019b
 
  try  
 
@@ -212,51 +178,126 @@ end
 
 %label=lab(1:size(im,4));
 
-results=roiobj.results;
+%results=roiobj.results;
 
-results.(classif.strid)=[];
+data=roiobj.data;
 
+pixdata=find(arrayfun(@(x) strcmp(x.groupid,classif.strid),roiobj.data));
 
+if numel(pixdata)
+    cc=pixdata;
+ else
+    cc=numel(roiobj.data)+1;
+    roiobj.data(cc)=dataseries();
+    roiobj.data(cc).class="classification";
+    roiobj.data(cc).groupid=classif.strid;
+end
+
+data=roiobj.data(cc);
+
+%results.(classif.strid)=[];
 
 if classif.output==0
-    results.(classif.strid).id=zeros(1,size(roiobj.image,4));
-    results.(classif.strid).prob=zeros(numel(classif.classes),size(roiobj.image,4));
-    results.(classif.strid).labels(1:size(roiobj.image,4))=categorical({''});
+    n=size(roiobj.image,4);
 else
-    results.(classif.strid).id =0;
-    results.(classif.strid).prob=zeros(numel(classif.classes),1);
-    results.(classif.strid).labels(1:size(roiobj.image,4))=categorical({''});
+    n=1;
 end
 
-results.(classif.strid).labels(frames)=label';
-results.(classif.strid).classes=classif.classes;
-results.(classif.strid).prob(:,frames)=prob';
+    data.addData(zeros(n,1),'id');
+    for i=1:numel(classif.classes)
+    data.addData(zeros(n,1),['prob_' classif.classes{i}]);
+    end
+
+    tmp=categorical(zeros(n,1),0,{'undefined'});
+    data.addData(tmp,'labels');
+
+%     %results.(classif.strid).id=zeros(1,size(roiobj.image,4));
+%    % results.(classif.strid).prob=zeros(numel(classif.classes),size(roiobj.image,4));
+%     %results.(classif.strid).labels(1:size(roiobj.image,4))=categorical({''});
+% else
+% %     results.(classif.strid).id =0;
+% %     results.(classif.strid).prob=zeros(numel(classif.classes),1);
+% %     results.(classif.strid).labels(1:size(roiobj.image,4))=categorical({''});
+% 
+%     data.addData(zeros(1,1),'id');
+%     for i=1:numel(classif.classes)
+%     data.addData(zeros(1,1),['prob_' classif.classes{i}]);
+%     end
+% 
+%     tmp=categorical(zeros(1,1),0,{'ok'});
+%     data.addData(tmp,'labels');
+% 
+% 
+% end
+
+data.data.labels(frames)=label;
+data.userData.classes=classif.classes;
 
 for i=1:numel(classif.classes)
-    pix=results.(classif.strid).labels==classif.classes{i};
-    results.(classif.strid).id(pix)=i;
+    if size(prob,2)>=i
+    data.data.(['prob_' classif.classes{i}])(frames)=prob(frames,i);
+    end
 end
 
+data.data.id(frames)=idx;
+ 
+%here 
+%results.(classif.strid).labels(frames)=label';
+%results.(classif.strid).classes=classif.classes;
+%results.(classif.strid).prob(:,frames)=prob';
+% 
+% for i=1:numel(classif.classes)
+%     pix=results.(classif.strid).labels==classif.classes{i};
+%     results.(classif.strid).id(pix)=i;
+% end
+
 if numel(classifierCNN)
+
+  
     if classif.output==0
-        results.(classif.strid).idCNN=zeros(1,size(roiobj.image,4));
-        results.(classif.strid).probCNN=zeros(numel(classif.classes),size(roiobj.image,4));
-        results.(classif.strid).labelsCNN(1:size(roiobj.image,4))=categorical({''});
+    n=size(roiobj.image,4);
     else
-        results.(classif.strid).idCNN=0;
-        results.(classif.strid).probCNN=zeros(numel(classif.classes),1);
-        results.(classif.strid).labelsCNN(1:size(roiobj.image,4))=categorical({''});
+    n=1;
     end
-    
-    results.(classif.strid).labelsCNN(frames)=labelCNN';
-    results.(classif.strid).classesCNN=classif.classes;
-    tmpprob=flipud(probCNN');
-    results.(classif.strid).probCNN(1:size(tmpprob,1),frames)=flipud(probCNN'); % fix orientation of array here !!!!
-    
+
+    data.addData(zeros(n,1),'idCNN');
     for i=1:numel(classif.classes)
-        pix=results.(classif.strid).labelsCNN==classif.classes{i};
-        results.(classif.strid).idCNN(pix)=i;
+    data.addData(zeros(n,1),['probCNN_' classif.classes{i}]);
     end
+
+    tmp=categorical(zeros(n,1),0,{'undefined'});
+    data.addData(tmp,'labelsCNN');
+
+%     if classif.output==0
+%         results.(classif.strid).idCNN=zeros(1,size(roiobj.image,4));
+%         results.(classif.strid).probCNN=zeros(numel(classif.classes),size(roiobj.image,4));
+%         results.(classif.strid).labelsCNN(1:size(roiobj.image,4))=categorical({''});
+%     else
+%         results.(classif.strid).idCNN=0;
+%         results.(classif.strid).probCNN=zeros(numel(classif.classes),1);
+%         results.(classif.strid).labelsCNN(1:size(roiobj.image,4))=categorical({''});
+%     end
+
+data.data.labelsCNN(frames)=labelCNN;
+data.userData.classesCNN=classif.classes;
+
+for i=1:numel(classif.classes)
+    if size(probCNN,2)>=i
+    data.data.(['probCNN_' classif.classes{i}])(frames)=probCNN(frames,i);
+    end
+end
+
+data.data.idCNN(frames)=idx;
+    
+%     results.(classif.strid).labelsCNN(frames)=labelCNN';
+%     results.(classif.strid).classesCNN=classif.classes;
+%     tmpprob=flipud(probCNN');
+%     results.(classif.strid).probCNN(1:size(tmpprob,1),frames)=flipud(probCNN'); % fix orientation of array here !!!!
+%     
+%     for i=1:numel(classif.classes)
+%         pix=results.(classif.strid).labelsCNN==classif.classes{i};
+%         results.(classif.strid).idCNN(pix)=i;
+%     end
 end
 
 %roiobj.results=results;
@@ -265,40 +306,6 @@ image=roiobj.image;
 
 %roiobj.save;
 %roiobj.clear;
-
-
-%roiout=roiobj;
-
-%roiobj.clear;
-
-% results.id=roiobj.id;
-% results.path=roiobj.path;
-% results.parent=roiobj.parent;
-%
-% % stores results locally during classification
-%
-% if exist([classif.path '/' classif.strid '_results.mat']) % this filles needs to be removed when classification starts ?
-%     load([classif.path '/' classif.strid '_results.mat']) % load res variable
-%     n=length(res);
-%     res(n+1)={results};
-% else
-%
-%    res={results};
-% end
-% save([classif.path '/' classif.strid '_results.mat'],'res');
-% pix=label=='largebudded';
-% mov.trap(i).div.deepLSTM(pix)=2;
-%
-% pix=label=='smallbudded';
-% mov.trap(i).div.deepLSTM(pix)=1;
-%
-% pix=label=='unbudded';
-% mov.trap(i).div.deepLSTM(pix)=0;
-
-
-%mov.trap(i).div.deepLSTM=YPred;
-
-
 
 function videoResized = centerCrop(video,inputSize)
 
