@@ -16,6 +16,11 @@ function formatData(roiobj,class,type)
     
     p=fieldnames(train);
 
+<<<<<<< Updated upstream
+=======
+    roiobj
+    
+>>>>>>> Stashed changes
     if numel(roiobj.data)==1 & numel(roiobj.data.data)==0
     cc=1;
     else
