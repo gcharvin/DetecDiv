@@ -6,6 +6,8 @@ function [him, hp]=draw(obj,h,classif)
 
 % updates number of channel if userTraining mode is on.
 
+
+
 if nargin<3
     classif=[];
     % refresh='full';
@@ -27,6 +29,9 @@ end
 
 h.Name=['ROI# :' obj.id];
 
+
+
+
 if numel(h.UserData)~=0 % window is already displayed; therefore just update the figure
     him=h.UserData.him;
 
@@ -41,9 +46,6 @@ if numel(h.UserData)~=0 % window is already displayed; therefore just update the
     
     [q, ix]=sort(s);
     hp=hp(ix);
-
-
-  
 
     updatedisplay(obj,him,hp,classif);
     return;
@@ -157,6 +159,7 @@ for i=1:numel(obj.display.channel)
         cd=cd+1;
     end
 end
+
 
 
 % create draw menu
@@ -306,6 +309,9 @@ for i=1:numel(obj.display.channel)
 end
 
 
+
+
+
 if cd>0
     linkaxes(hp);
 end
@@ -370,6 +376,17 @@ else % structure must me created
     close
     return;
 end
+
+% here bug fiw when deleting all channels 
+% if ~exist('hp','var') || numel(hp)==0 || cd ==0
+%   %  hp=axis;
+%   %  set(hp,'Tag',['AxeROI' num2str(cc)]);
+% 
+%     %close(h);
+%     hp=[];
+%     him=[];
+%     return
+% end
 
 %keys={'a' 'z' 'e' 'r' 't' 'y' 'u' 'i' 'o' 'p'};
 h.KeyPressFcn={@changeframe,obj,him,hp,keys,classif,specialkeys,userprefs};
@@ -1214,7 +1231,7 @@ end
 
 clf
 h.UserData=[];
-[him hp]=draw(obj,h,classif);
+[~, ~]=draw(obj,h,classif);
 end
 
 
