@@ -1,4 +1,4 @@
-function computeStretchlim(obj, varargin)
+function computeDisplaylim(obj, varargin)
 
 clearfile=0;
 for i=1:numel(varargin)
@@ -69,7 +69,7 @@ ma=max([ma;  mi+0.0001],[],1);
 ma=min([ma;  ones(1,length(ma))],[],1);
 ma=max([ma;  0.001*ones(1,length(ma))],[],1);
 
-obj.display.stretchlim=[mi ; ma]; %home made stretchilm to work with multi D images. slow but more reliable
+obj.display.displaylim=[mi ; ma]; %home made stretchilm to work with multi D images. slow but more reliable
 
 if clearfile==1
     obj.save;

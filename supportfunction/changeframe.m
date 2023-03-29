@@ -132,11 +132,20 @@ if numel(classif)>0
         if ~isfield(obj.train.(classif.strid),'bounds')
             obj.train.(classif.strid).bounds=[0 0];
         else
-            if strcmp(event.Key,'w')
+            if strcmp(event.Key,specialkeys{2}{1}) 
+
+                if numel(obj.train.(classif.strid).bounds)==0 || obj.train.(classif.strid).bounds(1)~=obj.display.frame
                 obj.train.(classif.strid).bounds(1)=obj.display.frame;
+                else
+                obj.train.(classif.strid).bounds=[];
+                end
             end
-            if strcmp(event.Key,'x')
+            if strcmp(event.Key,specialkeys{2}{2}) 
+                if  numel(obj.train.(classif.strid).bounds)<2 || obj.train.(classif.strid).bounds(2)~=obj.display.frame
                 obj.train.(classif.strid).bounds(2)=obj.display.frame;
+                else
+                obj.train.(classif.strid).bounds=[];
+                end
             end
         end
 

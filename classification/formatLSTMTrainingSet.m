@@ -37,7 +37,7 @@ end
 if ~isfolder([classif.path '/' foldername '/timeseries'])
     mkdir([classif.path '/' foldername], 'timeseries');
 end
-        
+
 cltmp=classif.roi;
 
 disp('Starting parallelized jobs for data formatting....')
@@ -50,21 +50,21 @@ channel=classif.channelName;
 disp(['These ROIs will be processed : ' num2str(rois)]);
 
 for i=1:numel(rois)
-      emptyFrame=[];
+    emptyFrame=[];
     disp(['Launching ROI ' num2str(i) :' processing...'])
-    
+
     if numel(cltmp(rois(i)).image)==0
         cltmp(rois(i)).load; % load image sequence
     end
-    
+
     % normalize intensity levels
-    
+
     pix=cltmp(rois(i)).findChannelID(channel);
 
     if iscell(pix)
-            pix=cell2mat(pix);
+        pix=cell2mat(pix);
     end
-    
+
 
     %  pix=find(cltmp(i).channelid==classif.channel(1)); % find channel
     im=cltmp(rois(i)).image(:,:,pix,:);
@@ -88,16 +88,16 @@ for i=1:numel(rois)
 
 %<<<<<<< Updated upstream
 %       if isfield(cltmp(rois(i)).train.(classif.strid),'bounds') % restricting frames used on a per-ROI basis
-%                     minet=cltmp(rois(i)).train.(classif.strid).bounds(1); 
+%                     minet=cltmp(rois(i)).train.(classif.strid).bounds(1);
 %                     maxet=cltmp(rois(i)).train.(classif.strid).bounds(2);
-% 
+%
 %                     minet=max(minet,fra(1));
 %                     if maxet==0
 %                     maxet=max(maxet,fra(end));
 %                     else
 %                     maxet=min(maxet,fra(end));
 %                     end
-% 
+%
 %                     fra=minet:maxet;
 %         end
 %=======
@@ -117,36 +117,36 @@ for i=1:numel(rois)
 %>>>>>>> Stashed changes
 
     %fra
-    
+
     if numel(classif.trainingset)==0
         param.nframes=1; % number of temporal frames per frame
     else
         param.nframes=classif.trainingset; % number of temporal frames per frame
     end
-    
+
     param=[];
     imtest=cltmp(rois(i)).preProcessROIData(pix,1,param); % done to determine image size
-   
-    if numel(imtest)==0 % preprocessing failed 
-            disp('Pre-processing failed, likely because the image is void !');
-            continue; 
+
+    if numel(imtest)==0 % preprocessing failed
+        disp('Pre-processing failed, likely because the image is void !');
+        continue;
     end
-  
+
     vid=uint8(zeros(size(imtest,1),size(imtest,2),3,1));
 %<<<<<<< Updated upstream
-    
+
    % if strcmp(classif.category{1},'LSTM')%classif.typeid~=12 % only for  image classif
        % pixb=numel(cltmp(rois(i)).train.(classif.strid).id(fra));
        % pixa=find(cltmp(rois(i)).train.(classif.strid).id(fra)==0);
-        
+
 %=======
 
     dataid=data.getData('id_training');
     dataidfra=dataid(fra);
 
     if strcmp(classif.category{1},'LSTM')%classif.typeid~=12 % only for  image classif
-        
-        
+
+
         pixb=numel(dataidfra);
         pixa=find(dataidfra==0);
 
@@ -155,10 +155,10 @@ for i=1:numel(rois)
             disp('Error: some images are not labeled in this ROI - LSTM requires all images to be labeled in the timeseries!');
             continue
         end
-        
+
         % 'pasok'
 %<<<<<<< Updated upstream
-        
+
       %  lab= categorical(cltmp(rois(i)).train.(classif.strid).id(fra),1:numel(classif.classes),classif.classes); % creates labels for classification
 %=======
 
@@ -167,49 +167,49 @@ for i=1:numel(rois)
     else
         lab=[];
     end
-    
+
     if strcmp(classif.category{1},'LSTM') % image lstm classification
-        reverseStr = '';               
-        
+        reverseStr = '';
+
         cc=1;
 
         for j=fra
-            
-            tmp=cltmp(rois(i)).preProcessROIData(pix,j,param);   
 
-                if numel(tmp)==0 % preprocessing failed 
-            disp('Pre-processing failed, likely because the image is void !');
-            emptyFrame=1;
-            break; 
-                end
+            tmp=cltmp(rois(i)).preProcessROIData(pix,j,param);
+
+            if numel(tmp)==0 % preprocessing failed
+                disp('Pre-processing failed, likely because the image is void !');
+                emptyFrame=1;
+                break;
+            end
 
             %figure, imshow(tmp);
             %pause;
-            %close;      
-     
+            %close;
+
             vid(:,:,:,cc)=uint8(256*tmp);
-            
-        %    figure, imshow(vid(:,:,:,cc),[])
-          %  pause
+
+            %    figure, imshow(vid(:,:,:,cc),[])
+            %  pause
 
             tr=num2str(j);
             while numel(tr)<4
                 tr=['0' tr];
             end
-            
+
             if classif.output==0
                 cmp=dataid(j); % seuquence-to-sequence classif
             else
                 cmp=dataid; % sequence-to-one classif
             end
-            
+
             if cmp~=0 % if training is done
                 % if ~isfile([str '/unbudded/im_' mov.trap(i).id '_frame_' tr '.tif'])
                 imwrite(tmp,[classif.path '/' foldername '/images/' classif.classes{cmp} '/' cltmp(rois(i)).id '_frame_' tr '.tif']);
                 output=output+1;
                 % end
             end
-            
+
             msg = sprintf('Processing frame: %d / %d for ROI %s', cc, numel(fra),cltmp(rois(i)).id); %Don't forget this semicolon
             fprintf([reverseStr, msg]);
             reverseStr = repmat(sprintf('\b'), 1, length(msg));
@@ -218,7 +218,7 @@ for i=1:numel(rois)
         end
 
     end
-    
+
     if strcmp(classif.category{1},'LSTM Regression') % image lstm classification
         % image regression
         tmp=zeros(size(im,1),size(im,2),3,1);
@@ -227,20 +227,20 @@ for i=1:numel(rois)
 
         for j=fra
             % tmp(:,:,:j)=im(:,:,:,j);
-            
+
             tmp=cltmp(rois(i)).preProcessROIData(pix,j,param);
             vid(:,:,:,cc)=uint8(256*tmp);
             cc=cc+1;
         end
 %<<<<<<< Updated upstream
-        
+
         %  if cltmp(i).train.(classif.strid).id(j)~=-1 % if training is done
      %   parsaveim([classif.path '/' foldername '/images/' cltmp(rois(i)).id '.mat'],tmp);
-        
+
      %   parsaveresp([classif.path '/' foldername '/response/' cltmp(rois(i)).id '.mat'],cltmp(rois(i)).train.(classif.strid).id(fra));
 %=======
 
-      
+
         parsaveim([classif.path '/' foldername '/images/' cltmp(rois(i)).id '.mat'],tmp);
 
         parsaveresp([classif.path '/' foldername '/response/' cltmp(rois(i)).id '.mat'],dataidfra);
@@ -248,10 +248,10 @@ for i=1:numel(rois)
         output=output+1;
         %   end
     end
-    
+
     fprintf('\n');
 % <<<<<<< Updated upstream
-%     
+%
 %     deep=cltmp(rois(i)).train.(classif.strid).id(fra);
 % %     aah=vid;
 % %      figure, imshow(vid(:,:,:,87),[]);
@@ -264,17 +264,17 @@ for i=1:numel(rois)
     %      save('test.mat','aah')
 %>>>>>>> Stashed changes
     % assignin('base','test',vid);
-   %  size(vid)
+    %  size(vid)
 
 
-   if numel(emptyFrame)==0
-    parsave([classif.path '/' foldername '/timeseries/lstm_labeled_' cltmp(rois(i)).id '.mat'],deep,vid,lab);
-    
-    cltmp(rois(i)).save;
-   else
-    disp('This ROI was not saved because it has empty frames');
-   end
-    
+    if numel(emptyFrame)==0
+        parsave([classif.path '/' foldername '/timeseries/lstm_labeled_' cltmp(rois(i)).id '.mat'],deep,vid,lab);
+
+        cltmp(rois(i)).save;
+    else
+        disp('This ROI was not saved because it has empty frames');
+    end
+
     disp(['Processing ROI: ' num2str(rois(i)) ' ... Done !'])
 end
 
@@ -296,5 +296,3 @@ function parsave(fname, deep,vid,lab)
 
 %   fname
 eval(['save  ' ''''  fname  ''''  '  deep vid lab']);
-
-
