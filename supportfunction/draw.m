@@ -283,7 +283,6 @@ for i=1:numel(obj.display.channel)
 
         h.Position=aa; % forcing positioning (in case cd==1)
 
-
         set(hp(cc),'Tag',['AxeROI' num2str(cc)]);
 
         set(hp(cc),'UserData',obj.display.channel{i});
@@ -376,17 +375,6 @@ else % structure must me created
     close
     return;
 end
-
-% here bug fiw when deleting all channels 
-% if ~exist('hp','var') || numel(hp)==0 || cd ==0
-%   %  hp=axis;
-%   %  set(hp,'Tag',['AxeROI' num2str(cc)]);
-% 
-%     %close(h);
-%     hp=[];
-%     him=[];
-%     return
-% end
 
 %keys={'a' 'z' 'e' 'r' 't' 'y' 'u' 'i' 'o' 'p'};
 h.KeyPressFcn={@changeframe,obj,him,hp,keys,classif,specialkeys,userprefs};
@@ -1217,6 +1205,10 @@ if strcmp(handles.Checked,'off')
     obj.display.selectedchannel(i)=1;
     % aa=obj.display.selectedchannel(i)
 else
+
+    if numel(find(obj.display.selectedchannel))==1 % quit if only one channel was selected
+        return;
+    end
 
     handles.Checked='off';
     str=handles.Tag;
