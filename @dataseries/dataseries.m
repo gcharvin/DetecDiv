@@ -12,6 +12,8 @@ classdef dataseries < handle
 
         % interval=1; % time interval in case it's temporal data;
 
+        plotGroup;
+        plotProperties;
         description; % information about the dataset; this can be an object which specifiies classes for classificaiton
         history;
         userData;
