@@ -3,10 +3,17 @@ function h=plot(data)
 % plot specific subdataset using properties included in the dataseries
 % object
 
+if numel(data.plotProperties)==0
+    h=[];
+    return;
+end
+
 h=findobj('Tag',data.id);
 
 if numel(h)==0
-h= figure('Color','w','Position',[100 100 1000 400],'Tag',data.id);
+h= figure('Color','w','Position',[100 100 1000 200],'Tag',data.id,'Name',data.parentid);
+else
+clf;
 end
 % find the number of subplots 
 
@@ -16,6 +23,7 @@ groups=data.plotGroup{6};
 
 plotidx={};
 plotidxgroup={};
+
 
 for i=1:numel(groups)
 
@@ -33,22 +41,44 @@ for i=1:numel(groups)
 
 end
 
+h.Position(4)=n*200;
+
 varnames=data.data.Properties.VariableNames;
+toplot=0;
 
 for i=1:numel(plotidx)
 
     subplot(n,1,i);
 
+    str={};
+
+
     for j=1:numel(plotidx{i})
-       
+    toplot=toplot+1;
     tmp=plotidx{i};
     dat=data.getData(varnames{plotidx{i}(j)});
     plot(dat); hold on
+    str=[str varnames{plotidx{i}(j)}];
     
     end
-    ylabel(plotidxgroup{i})
+    legend(str,'Interpreter','none','FontSize',10);
+    ylabel(plotidxgroup{i});
 
+    if data.type=="temporal"
+        xlabel("Time");
+    end
+    set(gca,'FontSize',20);
 end
+
+if toplot==0
+    delete(h)
+    return
+end
+
+ax=findobj(h,'Type','Axes');
+linkaxes(ax,'x')
+
+
 
 
 
