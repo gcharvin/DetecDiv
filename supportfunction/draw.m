@@ -381,14 +381,14 @@ h.KeyPressFcn={@changeframe,obj,him,hp,keys,classif,specialkeys,userprefs};
 
 handles=findobj(h,'Tag','frametexttitle');
 if numel(handles)==0
-    btnSetFrame = uicontrol('Style', 'text','FontSize',14, 'String', 'Enter frame, or use arrow keys',...
+    btnSetFrame = uicontrol('Style', 'text','FontSize',10, 'String', 'Frame:',...
         'Position', [50 50 450 20],'HorizontalAlignment','left', ...
         'Tag','frametexttitle') ;
 end
 
 handles=findobj(h,'Tag','frametext');
 if numel(handles)==0
-    btnSetFrame = uicontrol('Style', 'edit','FontSize',14, 'String', num2str(obj.display.frame),...
+    btnSetFrame = uicontrol('Style', 'edit','FontSize',10, 'String', num2str(obj.display.frame),...
         'Position', [50 20 80 20],...
         'Callback', {@setframe,obj,him,hp,classif},'Tag','frametext') ;
 else
@@ -396,9 +396,17 @@ else
     handles.String=num2str(obj.display.frame);
 end
 
-btnSetFrame = uicontrol('Style', 'pushbutton','FontSize',12, 'String', 'Display Settings...',...
-        'Position', [350 20 160 40],...
+btnSetFrame = uicontrol('Style', 'pushbutton','FontSize',10, 'String', 'Display Settings...',...
+        'Position', [150 20 120 40],...
         'Callback', {@displayGUI,obj,him,hp,classif,h},'Tag','displayGUI') ;
+
+btnSetFrame = uicontrol('Style', 'pushbutton','FontSize',10, 'String', 'Plot data',...
+        'Position', [300 20 120 40],...
+        'Callback', {@plotdata,obj,him,hp,classif,h},'Tag','plotdata') ;
+
+btnSetFrame = uicontrol('Style', 'pushbutton','FontSize',10, 'String', 'Plot settings...',...
+        'Position', [450 20 120 40],...
+        'Callback', {@plotsettings,obj,him,hp,classif,h},'Tag','plotsettings') ;
 
 
 % create training specific menus and graphics
@@ -867,6 +875,20 @@ end
 function displayGUI(handles, event, obj,him,hp,classif,h)
 
 ROIdisplayGUI(obj,him,hp,classif,h);
+
+end
+
+function plotdata(handles, event, obj,him,hp,classif,h)
+
+data=obj.data; 
+DataPlotGUI(data,obj);
+
+end
+
+function plotsettings(handles, event, obj,him,hp,classif,h)
+
+data=obj.data; 
+DataPlotGUI(data,obj);
 
 end
 

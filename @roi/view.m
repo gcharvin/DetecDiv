@@ -30,7 +30,7 @@ if numel(findobj('Tag',['ROI' obj.id])) % handle exists already
     %'ok'
 
 else
-    h=figure('Tag',['ROI' obj.id],'Units', 'Normalized','Position',[0 0.1 0.5 0.5]);%'Toolbar','none');%,'MenuBar','none');%,'Toolbar','none');
+    h=figure('Tag',['ROI' obj.id],'Units', 'Normalized','Position',[0 0.1 0.3 0.3]);%'Toolbar','none');%,'MenuBar','none');%,'Toolbar','none');
    %movegui(h,'center')
 end
 

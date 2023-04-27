@@ -37,7 +37,7 @@ for i=1:numel(groups)
         plotidx{n}=pix;
         plotidxgroup{n}=groups{i};
     end
-    % here : plot data as subplot in the main figure 
+ 
 
 end
 

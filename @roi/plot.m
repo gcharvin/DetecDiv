@@ -3,4 +3,4 @@ function plot(roiobj,specificdata)
 % plotted for a given ROI
 
 data=roiobj.data; 
-DataPlotGUI(data);
+DataPlotGUI(data,roiobj);
