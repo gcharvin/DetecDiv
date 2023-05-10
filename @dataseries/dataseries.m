@@ -17,6 +17,7 @@ classdef dataseries < handle
         description; % information about the dataset; this can be an object which specifiies classes for classificaiton
         history;
         userData;
+        show=true ; % whether this dataset must be plotted when plot function is called
 
 
     end
@@ -88,6 +89,16 @@ classdef dataseries < handle
             end
 
 
+        end
+        function newobj=copyData(obj)
+            newobj=dataseries; 
+            fields=fieldnames(obj);
+
+            for i=1:numel(fields)
+                if ~strcmp(fields{i},'id')
+                    newobj.(fields{i})=obj.(fields{i});
+                end
+            end
         end
 
         function out=getData(obj,subdatasetname,varargin)

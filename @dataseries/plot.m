@@ -1,20 +1,43 @@
-function h=plot(data)
+function h=plot(data,pos)
 
 % plot specific subdataset using properties included in the dataseries
 % object
 
+% specifies roiobj to plot dat along with roi image
+% here 
 if numel(data.plotProperties)==0
     h=[];
     return;
 end
 
+
+% find if roi is already displayed 
+%  hroi=findobj('Tag',['ROI' data.parentid]);
+% 
+%  if numel(hroi) 
+%      pos=hroi.Position;
+%  end
+
 h=findobj('Tag',data.id);
 
 if numel(h)==0
-h= figure('Color','w','Position',[100 100 1000 200],'Tag',data.id,'Name',data.parentid);
+h= figure('MenuBar','none','Color','w','Units','normalized','Tag',data.id,'Name',[ data.parentid '//' data.groupid '//' data.id]);
+
+% set position
+if nargin==1
+pos=[0.1 0.1 0.25 0.15];
+end
+
+h.Position=pos;
 else
+figure(h);
 clf;
 end
+
+
+
+
+
 % find the number of subplots 
 
 n=0;
@@ -37,18 +60,18 @@ for i=1:numel(groups)
         plotidx{n}=pix;
         plotidxgroup{n}=groups{i};
     end
- 
 
 end
 
-h.Position(4)=n*200;
+h.Position(4)=n*0.15;
+%h.Position(4)=h.Position(4)-(n-1)*0.15;
 
 varnames=data.data.Properties.VariableNames;
 toplot=0;
 
 for i=1:numel(plotidx)
 
-    subplot(n,1,i);
+    hs(i)=subplot(n,1,i);
 
     str={};
 
@@ -57,17 +80,17 @@ for i=1:numel(plotidx)
     toplot=toplot+1;
     tmp=plotidx{i};
     dat=data.getData(varnames{plotidx{i}(j)});
-    plot(dat); hold on
+    plot(hs(i),dat); hold on
     str=[str varnames{plotidx{i}(j)}];
     
     end
-    legend(str,'Interpreter','none','FontSize',10);
-    ylabel(plotidxgroup{i});
+    legend(hs(i),str,'Interpreter','none','FontSize',10);
+    ylabel(hs(i),plotidxgroup{i});
 
     if data.type=="temporal"
-        xlabel("Time");
+        xlabel(hs(i),"Time");
     end
-    set(gca,'FontSize',20);
+    set(hs(i),'FontSize',20);
 end
 
 if toplot==0

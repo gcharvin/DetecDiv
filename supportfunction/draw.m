@@ -881,7 +881,45 @@ end
 function plotdata(handles, event, obj,him,hp,classif,h)
 
 data=obj.data; 
-DataPlotGUI(data,obj);
+
+% find if roi is already displayed 
+  hroi=findobj('Tag',['ROI' obj.id]);
+% 
+  if numel(hroi) 
+      pos=hroi.Position;
+      %pos(2)=pos(2)-pos(4);
+  else
+      pos=[0.1 0.1 0.25 0.15];
+  end
+
+cc=0;
+
+for i=1:numel(data)
+ if data(i).show
+       
+n=0;
+cc=cc+1;
+groups=data(i).plotGroup{6};
+
+for j=1:numel(groups)
+
+    pix=contains(data(i).plotProperties(:,end),string(groups{j}));
+    pix2=cellfun(@(x) x(:,1)==true, data(i).plotProperties(:,1));
+
+    pix=find(pix & pix2); % id of plots to be displayed indenpendlty 
+
+    if numel(pix)
+        n=n+1;
+    end
+
+end
+
+pos(2)=pos(2)-n*0.15;
+data(i).plot(pos);
+ end
+end
+
+figure(hroi);
 
 end
 
