@@ -116,7 +116,6 @@ classdef dataseries < handle
                         if numel(find(matches(data.Properties.VariableNames,subdatasetname{i})))
                             out.(subdatasetname{i})=data.(subdatasetname{i});
                         end
-
                     end
                 elseif ischar(subdatasetname)
                     

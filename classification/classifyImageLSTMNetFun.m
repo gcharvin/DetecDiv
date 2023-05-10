@@ -182,18 +182,27 @@ end
 
 data=roiobj.data;
 
+if numel(data)==0
+    roiobj.data=dataseries;
+end
+
 pixdata=find(arrayfun(@(x) strcmp(x.groupid,classif.strid),roiobj.data));
 
 if numel(pixdata)
     cc=pixdata;
  else
     cc=numel(roiobj.data)+1;
-    roiobj.data(cc)=dataseries();
-    roiobj.data(cc).class="classification";
-    roiobj.data(cc).groupid=classif.strid;
 end
 
-data=roiobj.data(cc);
+    data(cc)=dataseries();
+
+    data(cc).class="classification";
+    data(cc).groupid=classif.strid;
+    data(cc).parentid=roiobj.id; 
+    data(cc).plotGroup={[] [] [] [] [] {'id' 'prob' 'labels'}};
+
+
+datatmp=data(cc);
 
 %results.(classif.strid)=[];
 
@@ -203,13 +212,13 @@ else
     n=1;
 end
 
-    data.addData(zeros(n,1),'id');
+    datatmp.addData(zeros(n,1),'id');
     for i=1:numel(classif.classes)
-    data.addData(zeros(n,1),['prob_' classif.classes{i}]);
+    datatmp.addData(zeros(n,1),['prob_' classif.classes{i}]);
     end
 
     tmp=categorical(zeros(n,1),0,{'undefined'});
-    data.addData(tmp,'labels');
+    datatmp.addData(tmp,'labels');
 
 %     %results.(classif.strid).id=zeros(1,size(roiobj.image,4));
 %    % results.(classif.strid).prob=zeros(numel(classif.classes),size(roiobj.image,4));
@@ -230,16 +239,16 @@ end
 % 
 % end
 
-data.data.labels(frames)=label;
-data.userData.classes=classif.classes;
+datatmp.data.labels(frames)=label;
+datatmp.userData.classes=classif.classes;
 
 for i=1:numel(classif.classes)
     if size(prob,2)>=i
-    data.data.(['prob_' classif.classes{i}])(frames)=prob(frames,i);
+    datatmp.data.(['prob_' classif.classes{i}])(frames)=prob(frames,i);
     end
 end
 
-data.data.id(frames)=idx;
+datatmp.data.id(frames)=idx;
  
 %here 
 %results.(classif.strid).labels(frames)=label';
@@ -260,13 +269,13 @@ if numel(classifierCNN)
     n=1;
     end
 
-    data.addData(zeros(n,1),'idCNN');
+    datatmp.addData(zeros(n,1),'idCNN');
     for i=1:numel(classif.classes)
-    data.addData(zeros(n,1),['probCNN_' classif.classes{i}]);
+    datatmp.addData(zeros(n,1),['probCNN_' classif.classes{i}]);
     end
 
     tmp=categorical(zeros(n,1),0,{'undefined'});
-    data.addData(tmp,'labelsCNN');
+    datatmp.addData(tmp,'labelsCNN');
 
 %     if classif.output==0
 %         results.(classif.strid).idCNN=zeros(1,size(roiobj.image,4));
@@ -278,16 +287,16 @@ if numel(classifierCNN)
 %         results.(classif.strid).labelsCNN(1:size(roiobj.image,4))=categorical({''});
 %     end
 
-data.data.labelsCNN(frames)=labelCNN;
-data.userData.classesCNN=classif.classes;
+datatmp.data.labelsCNN(frames)=labelCNN;
+datatmp.userData.classesCNN=classif.classes;
 
 for i=1:numel(classif.classes)
     if size(probCNN,2)>=i
-    data.data.(['probCNN_' classif.classes{i}])(frames)=probCNN(frames,i);
+    datatmp.data.(['probCNN_' classif.classes{i}])(frames)=probCNN(frames,i);
     end
 end
 
-data.data.idCNN(frames)=idx;
+datatmp.data.idCNN(frames)=idx;
     
 %     results.(classif.strid).labelsCNN(frames)=labelCNN';
 %     results.(classif.strid).classesCNN=classif.classes;
@@ -300,6 +309,32 @@ data.data.idCNN(frames)=idx;
 %     end
 end
 
+t={};
+varnames=datatmp.data.Properties.VariableNames;
+%columnformat={[] [] [] [] [] {'id' 'prob' 'labels'}};
+
+   for i=1:numel(varnames)
+                    
+                   t{i,1}= true; % set to true to  plot by default
+                   t{i,2}= varnames{i};
+                   t{i,3}= class(datatmp.data.(varnames{i}));
+                   t{i,4}= 'k';
+                   t{i,5}= 2;
+                    
+                   if numel(find(contains(varnames{i},'id')))
+                   t{i,6}= 'id';
+                   t{i,1}= false;
+                   end
+                   if numel(find(contains(varnames{i},'prob')))
+                   t{i,6}= 'prob';
+                   end
+                   if numel(find(contains(varnames{i},'labels')))
+                   t{i,6}= 'labels';
+                   end
+   end
+
+datatmp.plotProperties=t;
+data(cc)=datatmp;
 %roiobj.results=results;
 
 image=roiobj.image;

@@ -369,12 +369,27 @@ htext.String=num2str(obj.display.frame);
 
 % if classif result is displayed, then update the position of the cursor
 
-htraj=findobj('Tag',['Traj' num2str(obj.id)]);
-if numel(htraj)~=0
-    hl=findobj(htraj,'Tag','track');
-    if numel(hl)>0
-        hl.XData=[obj.display.frame obj.display.frame];
+htraj=findobj('Type','Figure');
+
+for i=1:numel(htraj)
+    z= htraj(i).Name;
+
+    if contains(z,obj.id)
+        
+        li=findobj(htraj(i),'Tag',[obj.id '_track']);
+
+        for j=1:numel(li)
+          li(j).XData=[obj.display.frame obj.display.frame];  
+        end
+
     end
 end
+%h = findobj('-regexp','Tag',expr)
+% if numel(htraj)~=0
+%     hl=findobj(htraj,'Tag','track');
+%     if numel(hl)>0
+%         hl.XData=[obj.display.frame obj.display.frame];
+%     end
+% end
 
 end
