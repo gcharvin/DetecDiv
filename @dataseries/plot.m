@@ -14,7 +14,7 @@ end
 h=findobj('Tag',data.id);
 
 if numel(h)==0
-h= figure('MenuBar','none','Color','w','Units','normalized','Tag',data.id,'Name',[ data.parentid '//' data.groupid '//' data.id])
+h= figure('MenuBar','none','Color','w','Units','normalized','Tag',data.id,'Name',[ data.parentid '//' data.groupid '//' data.id]);
 % set position
 if nargin==1
 pos=[0.1 0.1 0.25 0.15];

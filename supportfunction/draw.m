@@ -882,6 +882,11 @@ function plotdata(handles, event, obj,him,hp,classif,h)
 
 data=obj.data; 
 
+if numel(data.data)==0
+    disp('No data available to display');
+    return
+end
+
 % find if roi is already displayed 
   hroi=findobj('Tag',['ROI' obj.id]);
 % 

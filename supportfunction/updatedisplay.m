@@ -128,9 +128,13 @@ for i=1:numel(obj.display.channel)
 
         if numel(obj.train)>0
             fields=fieldnames(obj.train);
-
+          
             for k=1:numel(fields)
 
+                if ~isfield(obj.train.(fields{k}),'id')
+                    continue
+                end
+                
                 if numel(obj.train.(fields{k}).id)>=obj.display.frame
                     tt=obj.train.(fields{k}).id(obj.display.frame);
 
