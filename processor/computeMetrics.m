@@ -42,8 +42,6 @@ else
 paramout=param; 
 end
 
-obj=roiobj;
-
 snapinc=paramout.snapinc;
 
 channelsExtract={};
@@ -68,32 +66,70 @@ if numel(channelsExtract)==0 % this channel contains the segmented objects
 end
 
 if numel(obj.image)==0
-    obj.load
+    roiobj.load
 end
 
 % compute mask metrics 
 
+data=roiobj.data; 
+
 for i=1:2
-    if  paramout.(['mask' num2str(i) '_stat']) % if detailed stat should be computed
+    if  paramout.(['mask' num2str(i) '_stat']) &  ~strcmp(paramout.(['mask' num2str(i) '_name']),'N/A') % if detailed stat should be computed
        
+cha=roiobj.findChannelID(paramout.(['mask' num2str(i) '_name']));
 
-        % here HERE 
-%         pixdata=find(arrayfun(@(x) strcmp(x.groupid,classif.strid),roiobj.data));
+if numel(cha)==0
+    continue
+end
+
+BW_3D=roiobj.im(:,:,cha,:);
+
+ pixdata=find(arrayfun(@(x) strcmp(x.groupid, paramout.mask1_name),roiobj.data)); % find if object exists already 
+
 % 
-% if numel(pixdata)
-%     cc=pixdata; % data to be overwritten
-% else
-%     if numel(roiobj.data.data)==0
-%      cc=1; % replace empty dataset
-%     else
-%     cc=numel(roiobj.data)+1;
-%     end
-% end
-% 
-%     data(cc)=dataseries;
+ if numel(pixdata)
+     cc=pixdata; % data to be overwritten
+ else
+     if numel(roiobj.data.data)==0
+      cc=1; % replace empty dataset
+     else
+     cc=numel(roiobj.data)+1;
+     end
+ end
 
 
-           roiobjobj = dataseries(data,datanames,'groupid','jojolagfrite') 
+ % chatGPT code inserted 
+ nb_temps = size(BW_3D, 3);
+
+% Obtenir la liste des valeurs entières différentes du masque
+liste_valeurs = unique(BW_3D(:));
+
+% Initialiser les tableaux pour stocker les résultats
+surface = zeros(length(liste_valeurs), nb_temps);
+axe_majeur = zeros(length(liste_valeurs), nb_temps);
+axe_mineur = zeros(length(liste_valeurs), nb_temps);
+
+% Calculer les statistiques pour chaque valeur de masque et chaque temps
+for v = 1:length(liste_valeurs)
+    for t = 1:nb_temps
+        % Extraire le masque BW pour la valeur et le temps courants
+        valeur = liste_valeurs(v);
+        BW = (BW_3D(:,:,t) == valeur);
+        
+        % Calculer les statistiques
+        stats = regionprops(BW, 'Area', 'MajorAxisLength', 'MinorAxisLength');
+        
+        % Stocker les résultats dans les tableaux
+        surface(v,t) = sum([stats.Area]);
+        axe_majeur(v,t) = mean([stats.MajorAxisLength]);
+        axe_mineur(v,t) = mean([stats.MinorAxisLength]);
+    end
+end
+ 
+ data(cc)=dataseries(data,datanames,'groupid',paramout.mask1_name,'parentid',roiobj.id);
+
+
+
     end
 end
 
