@@ -55,7 +55,7 @@ classdef dataseries < handle
                     obj.groupid=varargin{i+1};
                  end
                   if strcmp(varargin{i},'parentid')
-                    obj.groupid=varargin{i+1};
+                    obj.parentid=varargin{i+1};
                  end
             end
 

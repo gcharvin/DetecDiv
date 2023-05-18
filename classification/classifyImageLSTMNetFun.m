@@ -184,17 +184,22 @@ data=roiobj.data;
 
 if numel(data)==0
     roiobj.data=dataseries;
+    data=roiobj.data;
 end
 
 pixdata=find(arrayfun(@(x) strcmp(x.groupid,classif.strid),roiobj.data));
 
 if numel(pixdata)
-    cc=pixdata;
- else
+    cc=pixdata; % data to be overwritten
+else
+    if numel(roiobj.data.data)==0
+     cc=1; % replace empty dataset
+    else
     cc=numel(roiobj.data)+1;
+    end
 end
 
-    data(cc)=dataseries();
+    data(cc)=dataseries;
 
     data(cc).class="classification";
     data(cc).groupid=classif.strid;
@@ -335,6 +340,9 @@ varnames=datatmp.data.Properties.VariableNames;
 
 datatmp.plotProperties=t;
 data(cc)=datatmp;
+cc
+
+data
 %roiobj.results=results;
 
 image=roiobj.image;
