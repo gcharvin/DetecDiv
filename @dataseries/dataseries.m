@@ -77,16 +77,21 @@ classdef dataseries < handle
                 arrname={arrname};
             end
 
-            %arr,arrname,sz
-            if (size(arr,1)~=sz(1) | size(arr,2)~=numel(arrname)) & sz(1)~=0
-                disp('Wrong number of items in the list! Quitting...');
-                return;
-            else
+             outname={};
+            if ( size(arr,2)~=numel(arrname)) %& sz(1)~=0 && | size(arr,1)~=sz(1) 
+                disp('Wrong number of items in the list...Adjusting name of dataset');
+
                 for i=1:size(arr,2)
-               
-                    obj.data.(arrname{i})=arr(:,i);
+                     outname{i}=[arrname{1} '_' num2str(i)];
                 end
+            else
+                outname=arrname;
             end
+
+            for i=1:size(arr,2)
+                    obj.data.(outname{i})=arr(:,i);
+            end
+           
 
 
         end

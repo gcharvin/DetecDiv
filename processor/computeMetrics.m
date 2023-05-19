@@ -60,12 +60,12 @@ for i=1:4
     end
 end
 
-if numel(channelsExtract)==0 % this channel contains the segmented objects
-   disp([' These channels do not exist for this ROI ! Quitting ...']) ;
-   return;
-end
+% if numel(channelsExtract)==0 % this channel contains the segmented objects
+%    disp([' These channels do not exist for this ROI ! Quitting ...']) ;
+%    return;
+% end
 
-if numel(obj.image)==0
+if numel(roiobj.image)==0
     roiobj.load
 end
 
@@ -82,7 +82,7 @@ if numel(cha)==0
     continue
 end
 
-BW_3D=roiobj.im(:,:,cha,:);
+BW_3D=roiobj.image(:,:,cha,:);
 
  pixdata=find(arrayfun(@(x) strcmp(x.groupid, paramout.mask1_name),roiobj.data)); % find if object exists already 
 
@@ -90,7 +90,8 @@ BW_3D=roiobj.im(:,:,cha,:);
  if numel(pixdata)
      cc=pixdata; % data to be overwritten
  else
-     if numel(roiobj.data.data)==0
+     n=numel(roiobj.data);
+     if n==1 & numel(roiobj.data.data)==0
       cc=1; % replace empty dataset
      else
      cc=numel(roiobj.data)+1;
@@ -99,7 +100,8 @@ BW_3D=roiobj.im(:,:,cha,:);
 
 
  % chatGPT code inserted 
- nb_temps = size(BW_3D, 3);
+
+ nb_temps = size(BW_3D, 4);
 
 % Obtenir la liste des valeurs entières différentes du masque
 liste_valeurs = unique(BW_3D(:));
@@ -108,27 +110,64 @@ liste_valeurs = unique(BW_3D(:));
 surface = zeros(length(liste_valeurs), nb_temps);
 axe_majeur = zeros(length(liste_valeurs), nb_temps);
 axe_mineur = zeros(length(liste_valeurs), nb_temps);
+eccentricity = zeros(length(liste_valeurs), nb_temps);
+cellvolume=zeros(length(liste_valeurs), nb_temps);
+cellsurface=zeros(length(liste_valeurs), nb_temps);
 
 % Calculer les statistiques pour chaque valeur de masque et chaque temps
+val_surface={};
+val_axe_mineur={};
+val_axe_majeur={};
+val_eccentricity={};
+
+
 for v = 1:length(liste_valeurs)
     for t = 1:nb_temps
         % Extraire le masque BW pour la valeur et le temps courants
         valeur = liste_valeurs(v);
-        BW = (BW_3D(:,:,t) == valeur);
+        BW = (BW_3D(:,:,1,t) == valeur);
         
         % Calculer les statistiques
-        stats = regionprops(BW, 'Area', 'MajorAxisLength', 'MinorAxisLength');
+        stats = regionprops(BW, 'Area', 'MajorAxisLength', 'MinorAxisLength','Eccentricity');
         
         % Stocker les résultats dans les tableaux
         surface(v,t) = sum([stats.Area]);
         axe_majeur(v,t) = mean([stats.MajorAxisLength]);
         axe_mineur(v,t) = mean([stats.MinorAxisLength]);
+        eccentricity(v,t) = mean([stats.Eccentricity]);
+
+        %here
+        r=axe_mineur(v,t);
+        h=axe_majeur(v,t) -r;
+
+        cellvolume(v,t)= 4*pi*r^3/3 + pi*r^2*h;
+        cellsurface(v,t)= 4*pi*r^2 + 2*pi*r*h; 
+
     end
+
+      val_surface{v}=   ['Area_Mask_#' num2str(valeur)];
+      val_axe_mineur{v}=['Minor_Axis_#' num2str(valeur)];
+      val_axe_majeur{v}=['Major_Axis_#' num2str(valeur)];
+      val_eccentricity{v}=['Eccentricity_#' num2str(valeur)];
+
 end
  
- data(cc)=dataseries(data,datanames,'groupid',paramout.mask1_name,'parentid',roiobj.id);
+cell_data={};
+cell_name={};
 
+if numel(find(liste_valeurs==paramout.mask1_class))
 
+pix=find(liste_valeurs==paramout.mask1_class);
+
+cell_data=[surface(pix,:); axe_mineur(pix,:) ; axe_majeur(pix,:); eccentricity(pix,:); cellvolume(pix,:); cellsurface(pix,:)];
+cell_name={'Projected_Area_Cell' 'MinorAxis_Cell' 'MajorAxis_Cell' 'Eccentricity' 'Volume_Cell' 'Surface_Cell'};
+end
+
+size([cell_data' surface' axe_mineur' axe_majeur' eccentricity'])
+size([cell_name val_surface val_axe_mineur val_axe_majeur val_eccentricity])
+
+data(cc)=dataseries([cell_data' surface' axe_mineur' axe_majeur' eccentricity'],[cell_name val_surface val_axe_mineur val_axe_majeur val_eccentricity],'groupid',paramout.mask1_name,'parentid',roiobj.id);
+roiobj.data=data; 
 
     end
 end
