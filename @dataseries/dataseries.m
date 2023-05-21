@@ -51,12 +51,17 @@ classdef dataseries < handle
                         return;
                     end
                 end
-                 if strcmp(varargin{i},'groupid')
+                 if strcmp(varargin{i},'groupid') % actual name of the dataseries
                     obj.groupid=varargin{i+1};
                  end
                   if strcmp(varargin{i},'parentid')
                     obj.parentid=varargin{i+1};
-                 end
+                  end
+
+                  if strcmp(varargin{i},'groups') % cell array representing the different subgroups of the dataset
+                    obj.plotGroup={[] [] [] [] [] varargin{i+1}};
+                  end
+
             end
 
 
@@ -67,6 +72,60 @@ classdef dataseries < handle
           %  obj=
             %disp('Input data is not a table, therefore the object is void of data');
             end
+
+            % build default group and plotproperties 
+
+            si=size(obj.data);
+
+            defplot=cell(1,size(si,2));
+            defplot(:)={false};
+            groups=cell(1,size(si,2));
+            groups(:)={''};
+
+
+            for i=1:numel(varargin)
+                 if strcmp(varargin{i},'plot') % cell array representing the different subgroups of the dataset
+                    defplot=varargin{i+1};
+                 end
+
+                 if strcmp(varargin{i},'groups')
+                    groups=varargin{i+1};
+                 end
+            end
+
+            t={};
+            varnames=obj.data.Properties.VariableNames;
+
+                 for i=1:numel(varnames)
+                   t{i,1}= defplot{i};
+                   t{i,2}= varnames{i};
+               
+                   t{i,3}= class(obj.data.(varnames{i}));
+                   t{i,4}= 'k';
+                   t{i,5}= 2;
+                    
+                   % here : how to manage default groups !
+                   % add a property in varargin to deal with grouping
+                   % subdata
+
+
+%                    if numel(find(contains(varnames{i},'id')))
+%                    t{i,6}= 'id';
+%                    end
+%                    if numel(find(contains(varnames{i},'prob')))
+%                    t{i,6}= 'prob';
+%                    end
+%                    if numel(find(contains(varnames{i},'labels')))
+%                    t{i,6}= 'labels';
+%                    end
+
+                    t{i,6}=groups{i};
+                 end
+
+             obj.plotProperties=t;
+             obj.plotGroup={[] [] [] [] [] unique(groups)};
+
+
 
         end
         function addData(obj,arr,arrname)

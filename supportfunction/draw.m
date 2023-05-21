@@ -880,9 +880,9 @@ end
 
 function plotdata(handles, event, obj,him,hp,classif,h)
 
-data=obj.data; 
+data=obj.data;
 
-if numel(data.data)==0
+if numel(data)==1 & numel(data(1).data)==0
     disp('No data available to display');
     return
 end

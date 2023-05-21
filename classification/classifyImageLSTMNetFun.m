@@ -189,18 +189,19 @@ end
 
 pixdata=find(arrayfun(@(x) strcmp(x.groupid,classif.strid),roiobj.data));
 
-if numel(pixdata)
-    cc=pixdata; % data to be overwritten
-else
-    if numel(roiobj.data.data)==0
-     cc=1; % replace empty dataset
-    else
-    cc=numel(roiobj.data)+1;
-    end
-end
+ if numel(pixdata)
+     cc=pixdata; % data to be overwritten
+ else
+     n=numel(roiobj.data);
+     if n==1 & numel(roiobj.data.data)==0
+      cc=1; % replace empty dataset
+     else
+     cc=numel(roiobj.data)+1;
+     end
+ end
+
 
     data(cc)=dataseries;
-
     data(cc).class="classification";
     data(cc).groupid=classif.strid;
     data(cc).parentid=roiobj.id; 
