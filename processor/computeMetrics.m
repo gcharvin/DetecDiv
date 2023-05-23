@@ -7,34 +7,37 @@ environment='pc' ;
 if nargin==0
     paramout=[];
 
-    tip={'Name of Mask channel  #1 (eg cell contours)',...
+    tip={'Name of Mask channel  #1',...
         'Compute detailed Mask #1 statistics (area, etc)',...
         'Class number used to identify (cell) contours for Mask #1 (defaullt:2)',...
-        'Name of Mask channel  #2 (optional, eg nucleus, foci,etc...)',...
+        'Label of Mask channel  #1 (optional, eg cytoplasm, nucleus, foci,etc...)',...
+        'Name of Mask channel  #2',...
         'Class number used to identify (subcellular) contours for Mask #2 (defaullt:2)',...
+        'Label of Mask channel  #2 (optional, eg cytoplasm, nucleus, foci,etc...)',...
         'Compute detailed Mask #2 statistics (area, etc)',...
         'Channel name #1 to score',...
         'Channel name #2 to score',...
         'Channel name #3 to score',...
         'Channel name #4 to score',...
-        'Max intensity pixel number (default 20)',...
-        'Number of frames between 2 fluo acquisitions'};
+        'Number of pixels to consider to calculate mean brightest pixels (default 20)',...
+        };
 
     paramout.mask1_name=[listChannels listChannels{1}];
     paramout.mask1_stat=true;
     paramout.mask1_class=2;
+    paramout.mask1_label='cytoplasm';
     paramout.mask2_name=[listChannels listChannels{1}];
     paramout.mask2_stat=true;
     paramout.mask2_class=2;
+    paramout.mask2_label='nucleus';
 
     paramout.channel1_name=[listChannels listChannels{1}];
     paramout.channel2_name=[listChannels listChannels{1}];
     paramout.channel3_name=[listChannels listChannels{1}];
     paramout.channel4_name=[listChannels listChannels{1}];
 
-    paramout.kMaxPixels=20;
-    paramout.snapinc=1;
-
+    paramout.BrightestPixels=20;
+ 
     paramout.tip=tip;
 
     return;
@@ -42,15 +45,12 @@ else
     paramout=param;
 end
 
-snapinc=paramout.snapinc;
-
 channelsExtract={};
 channelsName={};
 
 paramout.mask1_name= paramout.mask1_name{end};
 paramout.mask2_name= paramout.mask2_name{end};
 
-i=1;
 
 for i=1:4
     paramout.(['channel' num2str(i) '_name'])= paramout.(['channel' num2str(i) '_name']){end};
@@ -73,6 +73,7 @@ if numel(roiobj.image)==0
     roiobj.load
 end
 
+
 % compute mask metrics
 
 for i=1:2
@@ -81,6 +82,7 @@ for i=1:2
         cha=roiobj.findChannelID(paramout.(['mask' num2str(i) '_name']));
 
         if numel(cha)==0
+            disp('The mask you selected is unavailable for thi ROI !')
             continue
         end
 
@@ -122,30 +124,59 @@ for i=1:2
 
         plotgroup={};
         defplot={};
+        
+        BW_3D=permute(BW_3D,[1 2 4 3]);
+        BW_big=zeros(size(BW_3D));
+        BW_big=repmat(BW_big,[1 1 1 length(liste_valeurs)]);
+
+        cc=1;
+        for v=1:length(liste_valeurs)
+            valeur = liste_valeurs(v);  
+            BW_big(:,:,:,cc)=BW_3D==valeur;
+            cc=cc+1;
+        end
+
+        BWcell=mat2cell(BW_big,size(BW_big,1),size(BW_big,2),ones(1,size(BW_big,3)),ones(1,size(BW_big,4)));
+  
+        f=@(BW) regionprops(BW, 'Area', 'MajorAxisLength', 'MinorAxisLength','Eccentricity');
+        stats=cellfun(f,BWcell,'UniformOutput',false);
+        stats=permute(stats,[3 4 1 2]);
+        output = cellfun(@getra, stats, 'UniformOutput', false);
+        output= cell2mat(output); output=output';
+        surface=output(1:4:end,:);
+        axe_majeur=output(2:4:end,:);
+        axe_mineur=output(3:4:end,:);
+        eccentricity=output(4:4:end,:);
+        r=axe_mineur;
+        h=axe_majeur -r;
+        cellvolume= 4*pi*r.^3/3 + pi*r.^2.*h;
+        cellsurface= 4*pi*r.^2 + 2*pi.*r.*h;
+           % return
+
 
         for v = 1:length(liste_valeurs)
-            for t = 1:nb_temps
-                % Extraire le masque BW pour la valeur et le temps courants
-                valeur = liste_valeurs(v);
-                BW = (BW_3D(:,:,1,t) == valeur);
-
-                % Calculer les statistiques
-                stats = regionprops(BW, 'Area', 'MajorAxisLength', 'MinorAxisLength','Eccentricity');
-
-                % Stocker les résultats dans les tableaux
-                surface(v,t) = sum([stats.Area]);
-                axe_majeur(v,t) = mean([stats.MajorAxisLength]);
-                axe_mineur(v,t) = mean([stats.MinorAxisLength]);
-                eccentricity(v,t) = mean([stats.Eccentricity]);
-
-                %here
-                r=axe_mineur(v,t);
-                h=axe_majeur(v,t) -r;
-
-                cellvolume(v,t)= 4*pi*r^3/3 + pi*r^2*h;
-                cellsurface(v,t)= 4*pi*r^2 + 2*pi*r*h;
-
-            end
+%             for t = 1:nb_temps
+%                 % Extraire le masque BW pour la valeur et le temps courants
+%                 valeur = liste_valeurs(v);
+%                 BW = (BW_3D(:,:,1,t) == valeur);
+% 
+%                 % Calculer les statistiques
+%                 stats = regionprops(BW, 'Area', 'MajorAxisLength', 'MinorAxisLength','Eccentricity');
+% 
+%                 % Stocker les résultats dans les tableaux
+%                 surface(v,t) = sum([stats.Area]);
+%                 axe_majeur(v,t) = mean([stats.MajorAxisLength]);
+%                 axe_mineur(v,t) = mean([stats.MinorAxisLength]);
+%                 eccentricity(v,t) = mean([stats.Eccentricity]);
+% 
+%                 %here
+%                 r=axe_mineur(v,t);
+%                 h=axe_majeur(v,t) -r;
+% 
+%                 cellvolume(v,t)= 4*pi*r^3/3 + pi*r^2*h;
+%                 cellsurface(v,t)= 4*pi*r^2 + 2*pi*r*h;
+% 
+%             end
 
             val_surface{v}=   ['Area_Mask_' num2str(valeur)];
             val_axe_mineur{v}=['Length_Minor_Axis_' num2str(valeur)];
@@ -187,42 +218,41 @@ for i=1:2
     end
 end
 
-% chatGPT code:  compute mean, total, max N pixels fluorescence for all channels, all masks, and intersection between bw1 and bw2
-
+% compute mean, total, max N pixels fluorescence for all channels, all masks, and intersection between bw1 and bw2
 im = roiobj.image;
 
 chabw={};
 for i=1:2
     if  ~strcmp(paramout.(['mask' num2str(i) '_name']),'N/A') % if detailed stat should be computed
-
         chabw{i}=roiobj.findChannelID(paramout.(['mask' num2str(i) '_name']));
-
+    else
+        chabw{i}=[];
     end
 end
 
 if numel(chabw{1})
-    bw1=roiobj.image(:,:,chabw{1},:);
+    bw1=roiobj.image(:,:,chabw{1},:)==paramout.(['mask' num2str(1) '_class']);
     bw1=repmat(bw1,[1 1 1 1 size(im,3)]);
     bw1=permute(bw1,[1 2 5 4 3]);
     bw1=reshape(bw1,[],size(bw1,3),size(bw1,4));
 end
 
 if numel(chabw{2})
-    bw2=roiobj.image(:,:,chabw{2},:);
+    bw2=roiobj.image(:,:,chabw{2},:)==paramout.(['mask' num2str(1) '_class']);
     bw2=repmat(bw2,[1 1 1 1 size(im,3)]);
     bw2=permute(bw2,[1 2 5 4 3]);
     bw2=reshape(bw2,[],size(bw2,3),size(bw2,4));
 end
 
-N = paramout.kMaxPixels; % Nombre de pixels les plus brillants à considérer
+N = paramout.BrightestPixels; % Nombre de pixels les plus brillants à considérer
 
 % Calcul des valeurs moyennes des pixels actifs, des sommes, de la moyenne à l'extérieur du masque et des différences pour tous les instants et tous les canaux pour bw1
 if numel(chabw{1})
-    pixels_actifs1 = reshape(im,[],size(im,3),size(im,4)) .* uint16(bw1);
-    pixels_exterieur1 = reshape(im,[],size(im,3),size(im,4)) .* uint16(~bw1);
-    moyennes1 = mean(pixels_actifs1, 1); size(moyennes1)
-    sommes1 = sum(pixels_actifs1, 1);
-    moyenne_exterieur1 = mean(pixels_exterieur1, 1);
+    pixels_actifs1 = reshape(im,[],size(im,3),size(im,4)).*uint16(bw1);
+    pixels_exterieur1 = reshape(im,[],size(im,3),size(im,4)).*uint16(~bw1);
+    moyennes1=sum(pixels_actifs1,1)./sum(uint16(bw1),1);
+    sommes1 = sum(pixels_actifs1,1);
+    moyenne_exterieur1 = sum(pixels_exterieur1,1)./sum(uint16(~bw1),1);
     difference1 = moyennes1 - moyenne_exterieur1;
 
     % Calcul des valeurs moyennes des N pixels les plus brillants pour tous les instants et tous les canaux pour bw1
@@ -233,11 +263,11 @@ end
 
 % Calcul des valeurs moyennes des pixels actifs, des sommes, de la moyenne à l'extérieur du masque et des différences pour tous les instants et tous les canaux pour bw2
 if numel(chabw{2})
-    pixels_actifs2 = reshape(im,[],size(im,3),size(im,4)) .* uint16(bw2);
-    pixels_exterieur2 = reshape(im,[],size(im,3),size(im,4)).* uint16(~bw2);
-    moyennes2 = mean(pixels_actifs2, 1);
-    sommes2 = sum(pixels_actifs2, 1);
-    moyenne_exterieur2 = mean(pixels_exterieur2, 1);
+    pixels_actifs2 = reshape(im,[],size(im,3),size(im,4)).*uint16(bw2);
+    pixels_exterieur2 = reshape(im,[],size(im,3),size(im,4)).*uint16(~bw2);
+    moyennes2=sum(pixels_actifs2,1)./sum(uint16(bw2),1);
+    sommes2 = sum(pixels_actifs2,1);
+    moyenne_exterieur2 = sum(pixels_exterieur2,1)./sum(uint16(~bw2),1);
     difference2 = moyennes2 - moyenne_exterieur2;
 
     % Calcul des valeurs moyennes des N pixels les plus brillants pour tous les instants et tous les canaux pour bw2
@@ -252,7 +282,7 @@ if numel(chabw{1}) &&  numel(chabw{2})
     pixels_intersection2 = reshape(im,[],size(im,3),size(im,4)) .* uint16(bw1 & ~bw2);
 
     if any(pixels_intersection(:))
-        moyenne_intersection = mean(pixels_intersection, 1);
+        moyenne_intersection = sum(pixels_intersection, 1)./sum(uint16(bw1 & bw2), 1);
         somme_intersection = sum(pixels_intersection, 1);
     else
         moyenne_intersection = zeros(1, size(im, 3), size(im, 4));
@@ -260,7 +290,7 @@ if numel(chabw{1}) &&  numel(chabw{2})
     end
 
     if any(pixels_intersection2(:))
-        moyenne_intersection2 = mean(pixels_intersection2, 1);
+        moyenne_intersection2 = mean(pixels_intersection2, 1)./sum(uint16(bw1 & ~bw2), 1);
         somme_intersection2 = sum(pixels_intersection2, 1);
     else
         moyenne_intersection2 = zeros(1, size(im, 3), size(im, 4));
@@ -281,14 +311,14 @@ for i=1:numel(channelsExtract)
 
     bwn=1;
     if numel(chabw{bwn})
-        name=[name, ['Mean_' channelsName{i} '_Mask_' paramout.(['mask' num2str(bwn) '_name'])],...
-            ['Total_' channelsName{i} '_Mask_' paramout.(['mask' num2str(bwn) '_name'])],...
-            ['Mean_Brightest_' channelsName{i} '_Mask_' paramout.(['mask' num2str(bwn) '_name'])],...
-            ['Total_Brightest_' channelsName{i} '_Mask_' paramout.(['mask' num2str(bwn) '_name'])],...
-            ['Background_' channelsName{i} '_Mask_' paramout.(['mask' num2str(bwn) '_name'])],...
-            ['Mean_Minus_Background_' channelsName{i} '_Mask_' paramout.(['mask' num2str(bwn) '_name'])]];
-        group=[group {'Mean' 'Total' 'Mean' 'Total' 'Mean' 'Mean'} ];
-        defplot=[defplot {true false false false false false}];
+        name=[name, ['Mean_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label'])],...
+            ['Total_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label'])],...
+            ['Mean_Brightest_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label'])],...
+            ['Total_Brightest_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label'])],...
+            ['Mean_Background_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label'])],...
+            ['Mean_Minus_Background_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label'])]];
+        group=[group {['Mean_' channelsName{i}], ['Total_' channelsName{i}], ['Mean_' channelsName{i}], ['Total_' channelsName{i}], ['Mean_' channelsName{i}], ['Mean_' channelsName{i}]} ];
+        defplot=[defplot {false false false false false true}];
 
         dat1=[dat1 moyennes1(:,cha,:) sommes1(:,cha,:) moyenne_brillants1(:,cha,:),...
             somme_brillants1(:,cha,:) moyenne_exterieur1(:,cha,:) difference1(:,cha,:)];
@@ -296,14 +326,14 @@ for i=1:numel(channelsExtract)
 
     bwn=2;
     if numel(chabw{bwn})
-        name=[name, ['Mean_' channelsName{i} '_Mask_' paramout.(['mask' num2str(bwn) '_name'])],...
-            ['Total_' channelsName{i} '_Mask_' paramout.(['mask' num2str(bwn) '_name'])],...
-            ['Mean_Brightest_' channelsName{i} '_Mask_' paramout.(['mask' num2str(bwn) '_name'])],...
-            ['Total_Brightest_' channelsName{i} '_Mask_' paramout.(['mask' num2str(bwn) '_name'])],...
-            ['Background_' channelsName{i} '_Mask_' paramout.(['mask' num2str(bwn) '_name'])],...
-            ['Mean_Minus_Background_' channelsName{i} '_Mask_' paramout.(['mask' num2str(bwn) '_name'])]];
-        group=[group {'Mean' 'Total' 'Mean' 'Total' 'Mean' 'Mean'} ];
-        defplot=[defplot {true false false false false false}];
+        name=[name, ['Mean_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label'])],...
+            ['Total_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label'])],...
+            ['Mean_Brightest_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label'])],...
+            ['Total_Brightest_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label'])],...
+            ['Background_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label'])],...
+            ['Mean_Minus_Background_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label'])]];
+         group=[group {['Mean_' channelsName{i}], ['Total_' channelsName{i}], ['Mean_' channelsName{i}], ['Total_' channelsName{i}], ['Mean_' channelsName{i}], ['Mean_' channelsName{i}]} ];
+        defplot=[defplot {false false false false false true}];
 
         dat2=[dat2 moyennes2(:,cha,:) sommes2(:,cha,:) moyenne_brillants2(:,cha,:),...
             somme_brillants2(:,cha,:) moyenne_exterieur2(:,cha,:) difference2(:,cha,:)];
@@ -311,11 +341,11 @@ for i=1:numel(channelsExtract)
     
     bwn=1;
     if numel(chabw{1}) &&  numel(chabw{2})
-        name=[name, ['Mean_' channelsName{i} '_Mask_1_AND_2'],...
-            ['Total_' channelsName{i} '_Mask_1_AND_2'],...
-            ['Mean_' channelsName{i} '_Mask_1_AND_NOT_2'],...
-            ['Total_' channelsName{i} '_Mask_1_AND_NOT_2']];
-        group=[group {'Mean' 'Total' 'Mean' 'Total'} ];
+        name=[name, ['Mean_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label']) 'AND' paramout.(['mask' num2str(bwn+1) '_label'])],...
+            ['Total_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label']) '_AND_' paramout.(['mask' num2str(bwn+1) '_label'])],...
+            ['Mean_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label']) '_AND_NOT_' paramout.(['mask' num2str(bwn+1) '_label'])],...
+            ['Total_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label']) '_AND_NOT_' paramout.(['mask' num2str(bwn+1) '_label'])]];
+         group=[group {['Mean_' channelsName{i}], ['Total_' channelsName{i}], ['Mean_' channelsName{i}], ['Total_' channelsName{i}]} ];
         defplot=[defplot {true false true false}];
 
         dat3=[dat3 moyenne_intersection(:,cha,:), somme_intersection(:,cha,:),...
@@ -353,11 +383,17 @@ else
     end
 end
 
-
 roiobj.data(cc)=temp;
 roiobj.data(cc).class="processing";
-roiobj.data(cc).plotGroup={[] [] [] [] [] unique(plotgroup)};
+%roiobj.data(cc).plotGroup={[] [] [] [] [] unique(group)};
 
+function y=getra(x)
 
+            if numel(x)==0
+                y=[NaN NaN NaN NaN];
+            else
+                y=[x.Area x.MajorAxisLength x.MinorAxisLength x.Eccentricity] ;
+            end
+        
 
 

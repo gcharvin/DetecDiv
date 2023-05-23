@@ -14,7 +14,8 @@ end
 h=findobj('Tag',data.id);
 
 if numel(h)==0
-h= figure('MenuBar','none','Color','w','Units','normalized','Tag',data.id,'Name',[ data.parentid '//' data.groupid '//' data.id]);
+%h= figure('MenuBar','none','Color','w','Units','normalized','Tag',data.id,'Name',[ data.parentid '//' data.groupid '//' data.id]);
+h= figure('Color','w','Units','normalized','Tag',data.id,'Name',[ data.parentid '//' data.groupid '//' data.id]);
 % set position
 if nargin==1
 pos=[0.1 0.1 0.25 0.15];
@@ -84,7 +85,7 @@ for i=1:numel(plotidx)
 
     
     legend(hs(i),str,'Interpreter','none','FontSize',10);
-    ylabel(hs(i),plotidxgroup{i});
+    ylabel(hs(i),plotidxgroup{i},'Interpreter','None','FontSize',10);
 
     if data.type=="temporal"
         xlabel(hs(i),"Time");
