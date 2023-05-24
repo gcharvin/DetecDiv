@@ -155,29 +155,6 @@ for i=1:2
 
 
         for v = 1:length(liste_valeurs)
-%             for t = 1:nb_temps
-%                 % Extraire le masque BW pour la valeur et le temps courants
-%                 valeur = liste_valeurs(v);
-%                 BW = (BW_3D(:,:,1,t) == valeur);
-% 
-%                 % Calculer les statistiques
-%                 stats = regionprops(BW, 'Area', 'MajorAxisLength', 'MinorAxisLength','Eccentricity');
-% 
-%                 % Stocker les résultats dans les tableaux
-%                 surface(v,t) = sum([stats.Area]);
-%                 axe_majeur(v,t) = mean([stats.MajorAxisLength]);
-%                 axe_mineur(v,t) = mean([stats.MinorAxisLength]);
-%                 eccentricity(v,t) = mean([stats.Eccentricity]);
-% 
-%                 %here
-%                 r=axe_mineur(v,t);
-%                 h=axe_majeur(v,t) -r;
-% 
-%                 cellvolume(v,t)= 4*pi*r^3/3 + pi*r^2*h;
-%                 cellsurface(v,t)= 4*pi*r^2 + 2*pi*r*h;
-% 
-%             end
-
             val_surface{v}=   ['Area_Mask_' num2str(valeur)];
             val_axe_mineur{v}=['Length_Minor_Axis_' num2str(valeur)];
             val_axe_majeur{v}=['Length_Major_Axis_' num2str(valeur)];
@@ -185,7 +162,6 @@ for i=1:2
 
             % plotgroup=[plotgroup {'Area' 'Length' 'Length' 'Number'}];
             defplot=[defplot {false false false false}];
-
         end
 
         plotgroup=[repmat({'Area'},[1 length(liste_valeurs)]), repmat({'Length'},[1 length(liste_valeurs)]),...
