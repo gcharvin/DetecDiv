@@ -95,13 +95,15 @@ for i=1:numel(plotidx)
    dat=data.getData(varnames{plotidx{i}(1)});
 
   if numel(hroi) 
+
+      if data.type=="temporal"
       xr=1:numel(dat);
       yy=ylim(hs(i));
 
       pix=find(xr==frame);
-    
-     
+  
       line([xr(pix) xr(pix)],yy,'Color',[0.5 0.5 0.5],'LineWidth',2,'Tag',[data.parentid '_track']);
+      end
   end
 
 end

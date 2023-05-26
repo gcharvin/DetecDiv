@@ -25,11 +25,11 @@ if nargin==0
     paramout.mask1_name=[listChannels listChannels{1}];
     paramout.mask1_stat=true;
     paramout.mask1_class=2;
-    paramout.mask1_label='cytoplasm';
+    paramout.mask1_label='cyto';
     paramout.mask2_name=[listChannels listChannels{1}];
     paramout.mask2_stat=true;
     paramout.mask2_class=2;
-    paramout.mask2_label='nucleus';
+    paramout.mask2_label='nucl';
 
     paramout.channel1_name=[listChannels listChannels{1}];
     paramout.channel2_name=[listChannels listChannels{1}];
@@ -129,11 +129,11 @@ for i=1:2
         BW_big=zeros(size(BW_3D));
         BW_big=repmat(BW_big,[1 1 1 length(liste_valeurs)]);
 
-        cc=1;
+        cd=1;
         for v=1:length(liste_valeurs)
             valeur = liste_valeurs(v);  
-            BW_big(:,:,:,cc)=BW_3D==valeur;
-            cc=cc+1;
+            BW_big(:,:,:,cd)=BW_3D==valeur;
+            cd=cd+1;
         end
 
         BWcell=mat2cell(BW_big,size(BW_big,1),size(BW_big,2),ones(1,size(BW_big,3)),ones(1,size(BW_big,4)));
@@ -155,10 +155,11 @@ for i=1:2
 
 
         for v = 1:length(liste_valeurs)
-            val_surface{v}=   ['Area_Mask_' num2str(valeur)];
-            val_axe_mineur{v}=['Length_Minor_Axis_' num2str(valeur)];
-            val_axe_majeur{v}=['Length_Major_Axis_' num2str(valeur)];
-            val_eccentricity{v}=['Number_Eccentricity_' num2str(valeur)];
+             valeur = liste_valeurs(v);  
+            val_surface{v}=   ['Area_' num2str(valeur)];
+            val_axe_mineur{v}=['LenMinAxis_' num2str(valeur)];
+            val_axe_majeur{v}=['LenMajAxis_' num2str(valeur)];
+            val_eccentricity{v}=['Eccentric_' num2str(valeur)];
 
             % plotgroup=[plotgroup {'Area' 'Length' 'Length' 'Number'}];
             defplot=[defplot {false false false false}];
@@ -175,7 +176,7 @@ for i=1:2
             pix=find(liste_valeurs==paramout.(['mask' num2str(i) '_class']));
 
             cell_data=[surface(pix,:); axe_mineur(pix,:) ; axe_majeur(pix,:); eccentricity(pix,:); cellvolume(pix,:); cellsurface(pix,:)];
-            cell_name={'Area_Projected_Cell' 'Length_MinorAxis_Cell' 'Length_MajorAxis_Cell' 'Number_Eccentricity' 'Volume_Cell' 'Surface_Cell'};
+            cell_name={'Area_Cell' 'LenMinAxis_Cell' 'LenMajAxis_Cell' 'Eccentric_Cell' 'Vol_Cell' 'Surf_Cell'};
             plotgroup=[{'Area' 'Length' 'Length' 'Number' 'Volume' 'Area'} plotgroup];
             defplot=[{true true true true true true} defplot];
         end
@@ -194,6 +195,7 @@ for i=1:2
     end
 end
 
+if numel(channelsExtract)
 % compute mean, total, max N pixels fluorescence for all channels, all masks, and intersection between bw1 and bw2
 im = roiobj.image;
 
@@ -288,11 +290,11 @@ for i=1:numel(channelsExtract)
     bwn=1;
     if numel(chabw{bwn})
         name=[name, ['Mean_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label'])],...
-            ['Total_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label'])],...
-            ['Mean_Brightest_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label'])],...
-            ['Total_Brightest_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label'])],...
-            ['Mean_Background_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label'])],...
-            ['Mean_Minus_Background_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label'])]];
+            ['Tot_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label'])],...
+            ['MeanTop_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label'])],...
+            ['TotTop_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label'])],...
+            ['Mean_Bckg_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label'])],...
+            ['MeanNoBckg_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label'])]];
         group=[group {['Mean_' channelsName{i}], ['Total_' channelsName{i}], ['Mean_' channelsName{i}], ['Total_' channelsName{i}], ['Mean_' channelsName{i}], ['Mean_' channelsName{i}]} ];
         defplot=[defplot {false false false false false true}];
 
@@ -302,12 +304,12 @@ for i=1:numel(channelsExtract)
 
     bwn=2;
     if numel(chabw{bwn})
-        name=[name, ['Mean_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label'])],...
-            ['Total_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label'])],...
-            ['Mean_Brightest_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label'])],...
-            ['Total_Brightest_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label'])],...
-            ['Background_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label'])],...
-            ['Mean_Minus_Background_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label'])]];
+             name=[name, ['Mean_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label'])],...
+            ['Tot_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label'])],...
+            ['MeanTop_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label'])],...
+            ['TotTop_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label'])],...
+            ['Mean_Bckg_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label'])],...
+            ['MeanNoBckg_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label'])]];
          group=[group {['Mean_' channelsName{i}], ['Total_' channelsName{i}], ['Mean_' channelsName{i}], ['Total_' channelsName{i}], ['Mean_' channelsName{i}], ['Mean_' channelsName{i}]} ];
         defplot=[defplot {false false false false false true}];
 
@@ -318,9 +320,9 @@ for i=1:numel(channelsExtract)
     bwn=1;
     if numel(chabw{1}) &&  numel(chabw{2})
         name=[name, ['Mean_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label']) 'AND' paramout.(['mask' num2str(bwn+1) '_label'])],...
-            ['Total_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label']) '_AND_' paramout.(['mask' num2str(bwn+1) '_label'])],...
+            ['Tot_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label']) '_AND_' paramout.(['mask' num2str(bwn+1) '_label'])],...
             ['Mean_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label']) '_AND_NOT_' paramout.(['mask' num2str(bwn+1) '_label'])],...
-            ['Total_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label']) '_AND_NOT_' paramout.(['mask' num2str(bwn+1) '_label'])]];
+            ['Tot_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label']) '_AND_NOT_' paramout.(['mask' num2str(bwn+1) '_label'])]];
          group=[group {['Mean_' channelsName{i}], ['Total_' channelsName{i}], ['Mean_' channelsName{i}], ['Total_' channelsName{i}]} ];
         defplot=[defplot {true false true false}];
 
@@ -362,6 +364,9 @@ end
 roiobj.data(cc)=temp;
 roiobj.data(cc).class="processing";
 %roiobj.data(cc).plotGroup={[] [] [] [] [] unique(group)};
+
+end
+
 
 function y=getra(x)
 

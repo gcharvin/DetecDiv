@@ -8,7 +8,7 @@ classdef dataseries < handle
 
         data=table; % value is an array
         class (1,1) string {mustBeMember(class, ["classification","regression","processing","other"])} = "other";
-        type (1,1) string {mustBeMember(type, ["temporal","other"])} = "temporal";
+        type (1,1) string {mustBeMember(type, ["temporal","generation","other"])} = "temporal";
 
         % interval=1; % time interval in case it's temporal data;
 
