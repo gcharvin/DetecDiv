@@ -78,21 +78,31 @@ if numel(id)~=0
 
      divTimes=computeDivtime(id,proba',classes,param,frames);
 
+     if numel(divTimes.framediv)>0
 
-       divDuration=divTimes.duration;
-       frameBirth=divTimes.frameBirth;
-       frameEnd=divTimes.frameEnd;
-       endType=divTimes.endType;
-       framediv=divTimes.framediv;
-       sep=[];
-       ndiv=divTimes.ndiv;
+    % framesOut=[divTimes.frameBirth divTimes.framediv divTimes.frameEnd];
 
-        if numel(divTimes.framediv)>0
-            totaltime=[divTimes.framediv(1)-divTimes.frameBirth, cumsum(divTimes.duration)+divTimes.framediv(1)-divTimes.frameBirth];
-        else
-            totaltime=0;
-        end
+     event="Budding";
+     event=repmat(event,[1 numel(divTimes.duration)]);
+     event=[event divTimes.endType];
+   
+     divDuration=[NaN, divTimes.duration, NaN, NaN];
+
+     totaltime=[0, divTimes.framediv(1)-divTimes.frameBirth, cumsum(divTimes.duration)+divTimes.framediv(1)-divTimes.frameBirth -divTimes.frameEnd-divTimes.frameBirth];
+ 
+     sep=[];
+       
+     end
+
 end
+
+% HERE : formatt! 
+
+event 
+divDuration
+totaltime
+
+return;
 
 divTimes_training=[];
 
@@ -152,6 +162,7 @@ pixdata=find(arrayfun(@(x) strcmp(x.groupid, ['RLS_' param.classification_data{e
   roiobj.data(cc).type="generation";
   roiobj.data(cc).plotGroup={[] [] [] [] [] unique(plotgroup)};
 
+ 
 if numel(divTimes_training)
 % here add data
 end
