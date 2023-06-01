@@ -16,8 +16,6 @@ function formatData(roiobj,class,type)
     
     p=fieldnames(train);
 
-    roiobj
-
     if numel(roiobj.data)==1 & numel(roiobj.data.data)==0
     cc=1;
     else

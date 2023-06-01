@@ -341,9 +341,7 @@ varnames=datatmp.data.Properties.VariableNames;
 
 datatmp.plotProperties=t;
 data(cc)=datatmp;
-cc
 
-data
 %roiobj.results=results;
 
 image=roiobj.image;

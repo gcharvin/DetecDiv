@@ -97,6 +97,7 @@ classdef dataseries < handle
             varnames=obj.data.Properties.VariableNames;
 
                  for i=1:numel(varnames)
+       
                    t{i,1}= defplot{i};
                    t{i,2}= varnames{i};
                

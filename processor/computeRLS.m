@@ -83,26 +83,21 @@ if numel(id)~=0
     % framesOut=[divTimes.frameBirth divTimes.framediv divTimes.frameEnd];
 
      event="Budding";
-     event=repmat(event,[1 numel(divTimes.duration)]);
-     event=[event divTimes.endType];
+
+     event=repmat(event,[1 1+numel(divTimes.duration)]);
+     event=["Birth" event divTimes.endType];
+     event=categorical(cellstr(event));
    
      divDuration=[NaN, divTimes.duration, NaN, NaN];
 
-     totaltime=[0, divTimes.framediv(1)-divTimes.frameBirth, cumsum(divTimes.duration)+divTimes.framediv(1)-divTimes.frameBirth -divTimes.frameEnd-divTimes.frameBirth];
- 
+     totaltime=[0, divTimes.framediv(1)-divTimes.frameBirth, cumsum(divTimes.duration)+divTimes.framediv(1)-divTimes.frameBirth , divTimes.frameEnd-divTimes.frameBirth];
+     totaltime= totaltime+divTimes.frameBirth;
+
      sep=[];
        
      end
 
 end
-
-% HERE : formatt! 
-
-event 
-divDuration
-totaltime
-
-return;
 
 divTimes_training=[];
 
@@ -138,8 +133,6 @@ if numel(id_training)~=0
 %         end
 end
 
-
-
 pixdata=find(arrayfun(@(x) strcmp(x.groupid, ['RLS_' param.classification_data{end}]),roiobj.data)); % find if object exists already
 %
  if numel(pixdata)
@@ -153,9 +146,17 @@ pixdata=find(arrayfun(@(x) strcmp(x.groupid, ['RLS_' param.classification_data{e
             end
   end
 
-  plotgroup={'divisions'};
-  temp=dataseries(divDuration',{'divDuration'},...
-            'groupid',['RLS_' param.classification_data{end}],'parentid',roiobj.id,'plot',{true},'groups',plotgroup);
+  plotgroup={'events' 'divisions' 'time'};
+
+
+  t=table;
+  t{:,1}=event';
+  t{:,2}=divDuration' ;
+  t{:,3}= totaltime';
+  t.Properties.VariableNames={'event', 'divduration' 'totaltime'};
+
+  temp=dataseries(t,{'event', 'divduration' 'totaltime'},...
+            'groupid',['RLS_' param.classification_data{end}],'parentid',roiobj.id,'plot',{true true false},'groups',plotgroup);
 
   roiobj.data(cc)=temp;
   roiobj.data(cc).class="processing";

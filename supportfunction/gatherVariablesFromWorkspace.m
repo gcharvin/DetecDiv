@@ -8,7 +8,7 @@ function list= gatherVariablesFromWorkspace(filter)
 
 
             varlist=evalin('base','who');
-            st=struct('Project',{''},'Classifier',{''},'Projectpos',{''},'Projectclassi',{''});
+            st=struct('Project',{''},'Classifier',{''},'Projectpos',{''},'Projectclassi',{''},'Projectprocessor',{''});
             cc=0;
             cd=0;
             list=[];
@@ -45,6 +45,22 @@ function list= gatherVariablesFromWorkspace(filter)
                     end
 
                     st.Projectclassi{cc}=tmpclassi;
+
+                    tmpclassi={};
+
+                    for k=1:numel(tmp.processing.processor)
+                        %  k
+
+                        if nargin==1
+                        if contains(filter,tmp.processing.processor(k).strid)
+                        tmpclassi = [tmpclassi tmp.processing.processor(k).strid];
+                        end
+                        else
+                         tmpclassi = [tmpclassi tmp.processing.processor(k).strid];
+                        end
+                    end
+
+                    st.Projectprocessor{cc}=tmpclassi;
 
                     tmpproj={};
 

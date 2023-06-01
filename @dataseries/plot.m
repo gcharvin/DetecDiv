@@ -29,8 +29,6 @@ end
 
 
 
-
-
 % find the number of subplots 
 
 n=0;
@@ -65,8 +63,12 @@ varnames=data.data.Properties.VariableNames;
 toplot=0;
 
 hroi=findobj('Tag',['ROI' data.parentid]);
+
+frame=[];
 hf=findobj(hroi,'Tag','frametext');
-frame=str2num(hf.String);;
+if numel(hf)
+frame=str2num(hf.String);
+end
 
 for i=1:numel(plotidx)
 
@@ -90,6 +92,11 @@ for i=1:numel(plotidx)
     if data.type=="temporal"
         xlabel(hs(i),"Time");
     end
+
+      if data.type=="generation"
+        xlabel(hs(i),"Generations");
+      end
+
     set(hs(i),'FontSize',20);
 
    dat=data.getData(varnames{plotidx{i}(1)});
