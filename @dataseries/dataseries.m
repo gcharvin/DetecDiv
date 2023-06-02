@@ -125,13 +125,30 @@ classdef dataseries < handle
 
              obj.plotProperties=t;
              obj.plotGroup={[] [] [] [] [] unique(groups)};
-
-
-
         end
-        function addData(obj,arr,arrname)
+
+        function addData(obj,arr,arrname, varargin)
 
             sz=size(obj.data);
+
+            groupitem=[];
+            toplot=false; 
+
+            for i=1:numel(varargin)
+                if strcmp(varargin{i},'groups')
+                    groupitem=varargin{i+1};
+                end
+                if strcmp(varargin{i},'plot')
+                    toplot=varargin{i+1};
+                end
+
+            end
+            
+            if numel(groupitem)==0
+                groupitem=obj.plotGroup{6}{end};
+            end
+
+            groups=[obj.plotGroup{6} groupitem];
 
             if ischar(arrname)
                 arrname={arrname};
@@ -151,8 +168,12 @@ classdef dataseries < handle
             for i=1:size(arr,2)
                     obj.data.(outname{i})=arr(:,i);
             end
-           
 
+            obj.plotProperties(end+1,:)=obj.plotProperties(end,:);
+            obj.plotProperties{end,1}=toplot;
+            obj.plotProperties{end,6}=groupitem;
+            obj.plotGroup={[] [] [] [] [] unique(groups)};
+         
 
         end
         function newobj=copyData(obj)

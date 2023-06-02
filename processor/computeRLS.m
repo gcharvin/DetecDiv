@@ -93,7 +93,7 @@ if numel(id)~=0
     end
     end
 
-     divTimes=computeDivtime(id,proba',classes,param,frames)
+     divTimes=computeDivtime(id,proba',classes,param,frames);
 
      if numel(divTimes.framediv)>0
 
@@ -105,10 +105,8 @@ if numel(id)~=0
      event=["Birth" event divTimes.endType];
      event=categorical(cellstr(event));
 
-
      [syncPoint,~]=findSEP(divTimes.duration,1); %find SEP using classical xhi² fit based on div frequency
 
-   
      divDuration=[NaN, divTimes.duration, NaN, NaN];
 
      count=[0:numel(divTimes.duration) NaN, NaN];
@@ -116,7 +114,6 @@ if numel(id)~=0
 
      totaltime=[0, divTimes.framediv(1)-divTimes.frameBirth, cumsum(divTimes.duration)+divTimes.framediv(1)-divTimes.frameBirth , divTimes.frameEnd-divTimes.frameBirth];
      totaltime= totaltime+divTimes.frameBirth;
-
 
 pixdata=find(arrayfun(@(x) strcmp(x.groupid, ['RLS' nme{j} param.classification_data{end}]),dataout)); % find if object exists already
 %
@@ -150,7 +147,11 @@ pixdata=find(arrayfun(@(x) strcmp(x.groupid, ['RLS' nme{j} param.classification_
   dataout(cc).type="generation";
   dataout(cc).plotGroup={[] [] [] [] [] unique(plotgroup)};
 
-  
+  if numel(syncPoint) % sep was found
+        sep=count-syncPoint;
+
+        dataout(cc).addData(sep',{'sep'},'plot',false,'groups','count');
+  end
 
      end
 
