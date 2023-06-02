@@ -614,28 +614,6 @@ if isfield(roi.results,'signal') && ~isempty(roi.results.signal)>0
 else disp(['No results.signal for roi ' num2str(roi.id)]);
 end
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 %%
 %=============================================SEP==========================================
 function [syncPoint]=findSync(rls)

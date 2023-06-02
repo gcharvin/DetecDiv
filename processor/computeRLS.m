@@ -40,6 +40,7 @@ end
 param=paramout;
 
 dataout=[];
+dataout=roiobj.data;
 
 roiobj.load('results');
  
@@ -61,9 +62,17 @@ data=roiobj.data(pix);
     end
 
 id =data.getData('id'); % class id for classif output
+
 id_training=data.getData('id_training');
 
 % class id ouput for training; 
+
+grou={id, id_training};
+nme={'_','_GT_'};
+
+for j=1:2
+
+id=grou{j};
 
 if numel(id)~=0 
 
@@ -75,13 +84,16 @@ if numel(id)~=0
       end
 
     proba=[];
+
+    if j==1 % not for groundtruth
     for i=1:numel(classes)
         str=['prob_' classes{i}];
 
         proba=[proba data.getData(str)];
     end
+    end
 
-     divTimes=computeDivtime(id,proba',classes,param,frames);
+     divTimes=computeDivtime(id,proba',classes,param,frames)
 
      if numel(divTimes.framediv)>0
 
@@ -92,60 +104,21 @@ if numel(id)~=0
      event=repmat(event,[1 1+numel(divTimes.duration)]);
      event=["Birth" event divTimes.endType];
      event=categorical(cellstr(event));
+
+
+     [syncPoint,~]=findSEP(divTimes.duration,1); %find SEP using classical xhi² fit based on div frequency
+
    
      divDuration=[NaN, divTimes.duration, NaN, NaN];
+
+     count=[0:numel(divTimes.duration) NaN, NaN];
+     death=[-numel(divTimes.duration):0, NaN,NaN];
 
      totaltime=[0, divTimes.framediv(1)-divTimes.frameBirth, cumsum(divTimes.duration)+divTimes.framediv(1)-divTimes.frameBirth , divTimes.frameEnd-divTimes.frameBirth];
      totaltime= totaltime+divTimes.frameBirth;
 
-     sep=[];
-       
-     end
 
-end
-
-divTimes_GT=[];
-
-if numel(id_training)~=0 
-
-      if isfield(data.userData,'classes')
-            classes=data.userData.classes;
-      else
-            disp('could not identify classes used in the classification pipeline');
-            return;
-      end
-
-    for i=1:numel(classes)
-        str=['prob_' classes{i}];
-
-        proba=[proba data.getData(str)];
-    end
-
-     divTimes_GT=computeDivtime(id_training,[],classes,param,frames)
-
-     if numel(divTimes_GT)>0
-
-    % framesOut=[divTimes.frameBirth divTimes.framediv divTimes.frameEnd];
-
-    event_GT="Budding";
-
-    event_GT=repmat(event_GT,[1 1+numel(divTimes_GT.duration)]);
-    event_GT=["Birth" event_GT divTimes_GT.endType];
-    event_GT=categorical(cellstr(event_GT));
-   
-     divDuration_GT=[NaN, divTimes_GT.duration, NaN, NaN];
-
-     totaltime=[0, divTimes_GT.framediv(1)-divTimes_GT.frameBirth, cumsum(divTimes_GT.duration)+divTimes_GT.framediv(1)-divTimes_GT.frameBirth , divTimes_GT.frameEnd-divTimes_GT.frameBirth];
-     totaltime_GT= totaltime_GT+divTimes_GT.frameBirth;
-
-     sep=[];
-       
-     end
-end
-
-dataout=roiobj.data;
-
-pixdata=find(arrayfun(@(x) strcmp(x.groupid, ['RLS_' param.classification_data{end}]),dataout)); % find if object exists already
+pixdata=find(arrayfun(@(x) strcmp(x.groupid, ['RLS' nme{j} param.classification_data{end}]),dataout)); % find if object exists already
 %
  if numel(pixdata)
             cc=pixdata(1); % data to be overwritten
@@ -158,136 +131,35 @@ pixdata=find(arrayfun(@(x) strcmp(x.groupid, ['RLS_' param.classification_data{e
             end
   end
 
-  plotgroup={'events' 'divisions' 'time'};
-
+  plotgroup={'events' 'divisions' 'time' 'count' 'count'};
 
   t=table;
   t{:,1}=event';
   t{:,2}=divDuration' ;
   t{:,3}= totaltime';
-  t.Properties.VariableNames={'event', 'divduration' 'totaltime'};
+  t{:,4}= count';
+  t{:,5}= death';
 
-  temp=dataseries(t,{'event', 'divduration' 'totaltime'},...
-            'groupid',['RLS_' param.classification_data{end}],'parentid',roiobj.id,'plot',{true true false},'groups',plotgroup);
+  t.Properties.VariableNames={'event', 'divduration' 'totaltime' 'birth' 'death'};
+
+  temp=dataseries(t,{'event', 'divduration' 'totaltime' 'birth' 'death'},...
+            'groupid',['RLS' nme{j} param.classification_data{end}],'parentid',roiobj.id,'plot',{true true false false false},'groups',plotgroup);
 
   dataout(cc)=temp;
   dataout(cc).class="processing";
   dataout(cc).type="generation";
   dataout(cc).plotGroup={[] [] [] [] [] unique(plotgroup)};
 
- 
-if numel(divTimes_training)
-% here add data
+  
+
+     end
+
+end
 end
 
 % to do : compute fluo, find sep, sync trajectories 
 
 
-% if strcmp(roitype,'result')
-%     %================RESULTS===============
-%     if isfield(roi.results,classifstrid) && isfield(roi.results.(classifstrid),'id') && sum(roi.results.(classifstrid).id)>0
-%         
-%         classes=roi.results.(classifstrid).classes;
-%         id=roi.results.(classifstrid).id; % results for classification
-%         proba=roi.results.(classifstrid).prob;
-%         
-%         divTimes=computeDivtime(id,proba,classes,param);
-%         
-%         rlsResults.divDuration=divTimes.duration;
-%         rlsResults.frameBirth=divTimes.frameBirth;
-%         rlsResults.frameEnd=divTimes.frameEnd;
-%         rlsResults.endType=divTimes.endType;
-%         rlsResults.framediv=divTimes.framediv;
-%         rlsResults.sep=[];
-%         rlsResults.name=roi.id;
-%         rlsResults.roiid=i;
-%         rlsResults.ndiv=divTimes.ndiv;
-%         if numel(divTimes.framediv)>0
-%             rlsResults.totaltime=[divTimes.framediv(1)-divTimes.frameBirth, cumsum(divTimes.duration)+divTimes.framediv(1)-divTimes.frameBirth];
-%         else
-%             rlsResults.totaltime=0;
-%         end
-%         rlsResults.rules=[];
-%         rlsResults.groundtruth=0;
-%         rlsResults.divSignal=[];
-%         
-%         divSignal=computeSignalDiv(roi,rlsResults);
-%         rlsResults.divSignal=divSignal;
-%         
-%         rlsResults.bounds=param.Frames;
-%         
-%         %sep
-%         rlsResults.sep=findSync(rlsResults);
-%     else
-%         %        warning(['There is no result available for ROI ' char(roi.id)]);
-%         rlsResults.groundtruth=0;
-%         rlsResults.divDuration=[];
-%         rlsResults.frameBirth=[];
-%         rlsResults.frameEnd=[];
-%         rlsResults.endType=[];
-%         rlsResults.framediv=[];
-%         rlsResults.sep=[];
-%         rlsResults.roiid=i;
-%         rlsResults.name=roi.id;
-%         rlsResults.ndiv=-1;
-%         rlsResults.totaltime=-1;
-%         rlsResults.rules=[];
-%         rlsResults.bounds=param.Frames;
-%         rlsResults.divSignal=[];
-%     end
-%     
-%     rls=rlsResults;
-% elseif strcmp(roitype,'train')
-%     %==================GROUNDTRUTH=================== 
-%     idg=[];
-%     if isfield(roi.train,(classifstrid)) && isfield(roi.train.(classifstrid),'id') && sum(roi.train.(classifstrid).id)>0
-%         classes=roi.train.(classifstrid).classes;
-%         idg=roi.train.(classifstrid).id; % results for classification
-%         disp(['Groundtruth data are available for ROI ' num2str(roi.id)]);
-%         
-%         proba=-1;
-%         divTimesG=computeDivtime(idg,proba,classes,param); % groundtruth data
-%         
-%         rlsGroundtruth.divDuration=divTimesG.duration;
-%         rlsGroundtruth.frameBirth=divTimesG.frameBirth;
-%         rlsGroundtruth.frameEnd=divTimesG.frameEnd;
-%         rlsGroundtruth.endType=divTimesG.endType;
-%         rlsGroundtruth.framediv=divTimesG.framediv;
-%         rlsGroundtruth.sep=[];
-%         rlsGroundtruth.name=roi.id;
-%         rlsGroundtruth.roiid=i;
-%         %rlsGroundtruth.roiid=[];
-%         rlsGroundtruth.ndiv=divTimesG.ndiv;
-%         rlsGroundtruth.totaltime=[divTimesG.framediv(1)-divTimesG.frameBirth, cumsum(divTimesG.duration)+divTimesG.framediv(1)-divTimesG.frameBirth];
-%         rlsGroundtruth.rules=[];
-%         rlsGroundtruth.groundtruth=1;
-%         rlsGroundtruth.divSignal=[];
-%         rlsGroundtruth.bounds=param.Frames;
-%         
-%         divSignalG=computeSignalDiv(roi,rlsGroundtruth);
-%         rlsGroundtruth.divSignal=divSignalG;
-%         
-%         %sep
-%         rlsGroundtruth.sep=findSync(rlsGroundtruth);
-%     else
-%         disp(['There is no groundtruth available for ROI ' char(roi.id)]);
-%         rlsGroundtruth.groundtruth=1;
-%         rlsGroundtruth.divDuration=[];
-%         rlsGroundtruth.frameBirth=[];
-%         rlsGroundtruth.frameEnd=[];
-%         rlsGroundtruth.endType=[];
-%         rlsGroundtruth.framediv=[];
-%         rlsGroundtruth.sep=[];
-%         rlsGroundtruth.roiid=i;
-%         rlsGroundtruth.name=roi.id;
-%         rlsGroundtruth.ndiv=-1;
-%         rlsGroundtruth.totaltime=-1;
-%         rlsGroundtruth.rules=[];
-%         rlsGroundtruth.bounds=param.Frames;
-%         rlsGroundtruth.divSignal=[];
-%     end
-%     rls=rlsGroundtruth;
-% end
 
 
 %% =========================================DIVTIMES=================================================
