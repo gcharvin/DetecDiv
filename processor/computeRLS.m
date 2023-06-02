@@ -158,10 +158,9 @@ pixdata=find(arrayfun(@(x) strcmp(x.groupid, ['RLS' nme{j} param.classification_
 end
 end
 
-% to do : compute fluo, find sep, sync trajectories 
 
 
-
+% to do : compute fluo, sync trajectories 
 
 %% =========================================DIVTIMES=================================================
 function [divTimes]=computeDivtime(id,proba,classes,param,frames)

@@ -167,11 +167,12 @@ classdef dataseries < handle
 
             for i=1:size(arr,2)
                     obj.data.(outname{i})=arr(:,i);
+                    obj.plotProperties(end+1,:)=obj.plotProperties(end,:);
+                    obj.plotProperties{end,1}=toplot;
+                    obj.plotProperties{end,2}=outname{i};
+                    obj.plotProperties{end,6}=groupitem;
             end
 
-            obj.plotProperties(end+1,:)=obj.plotProperties(end,:);
-            obj.plotProperties{end,1}=toplot;
-            obj.plotProperties{end,6}=groupitem;
             obj.plotGroup={[] [] [] [] [] unique(groups)};
          
 
