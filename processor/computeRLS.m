@@ -1,4 +1,4 @@
-function paramout=computeRLS(param,roiobj,frames)
+function [paramout, dataout]=computeRLS(param,roiobj,frames)
 
 
 if nargin==0
@@ -39,8 +39,11 @@ end
 
 param=paramout;
 
+dataout=[];
+
 roiobj.load('results');
  
+
 listdata={roiobj.data.groupid};
 pix=find(matches(listdata,param.classification_data{end}));
 
@@ -58,7 +61,9 @@ data=roiobj.data(pix);
     end
 
 id =data.getData('id'); % class id for classif output
-id_training=data.getData('id_training'); % class id ouput for training; 
+id_training=data.getData('id_training');
+
+% class id ouput for training; 
 
 if numel(id)~=0 
 
@@ -99,7 +104,7 @@ if numel(id)~=0
 
 end
 
-divTimes_training=[];
+divTimes_GT=[];
 
 if numel(id_training)~=0 
 
@@ -116,33 +121,40 @@ if numel(id_training)~=0
         proba=[proba data.getData(str)];
     end
 
-     divTimes_training=computeDivtime(id_training,[],classes,param,frames);
+     divTimes_GT=computeDivtime(id_training,[],classes,param,frames)
 
-%        divDuration=divTimes.duration;
-%        frameBirth=divTimes.frameBirth;
-%        frameEnd=divTimes.frameEnd;
-%        endType=divTimes.endType;
-%        framediv=divTimes.framediv;
-%        sep=[];
-%        ndiv=divTimes.ndiv;
-% 
-%         if numel(divTimes.framediv)>0
-%             totaltime=[divTimes.framediv(1)-divTimes.frameBirth, cumsum(divTimes.duration)+divTimes.framediv(1)-divTimes.frameBirth];
-%         else
-%             totaltime=0;
-%         end
+     if numel(divTimes_GT)>0
+
+    % framesOut=[divTimes.frameBirth divTimes.framediv divTimes.frameEnd];
+
+    event_GT="Budding";
+
+    event_GT=repmat(event_GT,[1 1+numel(divTimes_GT.duration)]);
+    event_GT=["Birth" event_GT divTimes_GT.endType];
+    event_GT=categorical(cellstr(event_GT));
+   
+     divDuration_GT=[NaN, divTimes_GT.duration, NaN, NaN];
+
+     totaltime=[0, divTimes_GT.framediv(1)-divTimes_GT.frameBirth, cumsum(divTimes_GT.duration)+divTimes_GT.framediv(1)-divTimes_GT.frameBirth , divTimes_GT.frameEnd-divTimes_GT.frameBirth];
+     totaltime_GT= totaltime_GT+divTimes_GT.frameBirth;
+
+     sep=[];
+       
+     end
 end
 
-pixdata=find(arrayfun(@(x) strcmp(x.groupid, ['RLS_' param.classification_data{end}]),roiobj.data)); % find if object exists already
+dataout=roiobj.data;
+
+pixdata=find(arrayfun(@(x) strcmp(x.groupid, ['RLS_' param.classification_data{end}]),dataout)); % find if object exists already
 %
  if numel(pixdata)
             cc=pixdata(1); % data to be overwritten
   else
-            n=numel(roiobj.data);
-            if n==1 & numel(roiobj.data.data)==0
+            n=numel(dataout);
+            if n==1 & numel(dataout.data)==0
                 cc=1; % replace empty dataset
             else
-                cc=numel(roiobj.data)+1;
+                cc=numel(dataout)+1;
             end
   end
 
@@ -158,10 +170,10 @@ pixdata=find(arrayfun(@(x) strcmp(x.groupid, ['RLS_' param.classification_data{e
   temp=dataseries(t,{'event', 'divduration' 'totaltime'},...
             'groupid',['RLS_' param.classification_data{end}],'parentid',roiobj.id,'plot',{true true false},'groups',plotgroup);
 
-  roiobj.data(cc)=temp;
-  roiobj.data(cc).class="processing";
-  roiobj.data(cc).type="generation";
-  roiobj.data(cc).plotGroup={[] [] [] [] [] unique(plotgroup)};
+  dataout(cc)=temp;
+  dataout(cc).class="processing";
+  dataout(cc).type="generation";
+  dataout(cc).plotGroup={[] [] [] [] [] unique(plotgroup)};
 
  
 if numel(divTimes_training)

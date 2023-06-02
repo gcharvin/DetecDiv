@@ -1,4 +1,4 @@
-function paramout=computeMetrics(param,roiobj,frames)
+function [paramout,dataout]=computeMetrics(param,roiobj,frames)
 
 listChannels=listAvailableChannels;
 listChannels=['N/A', listChannels];
@@ -48,6 +48,8 @@ end
 channelsExtract={};
 channelsName={};
 
+dataout=[];
+
 paramout.mask1_name= paramout.mask1_name{end};
 paramout.mask2_name= paramout.mask2_name{end};
 
@@ -76,6 +78,9 @@ end
 
 % compute mask metrics
 
+
+dataout=roiobj.data;
+
 for i=1:2
     if  paramout.(['mask' num2str(i) '_stat']) &  ~strcmp(paramout.(['mask' num2str(i) '_name']),'N/A') % if detailed stat should be computed
 
@@ -93,11 +98,11 @@ for i=1:2
         if numel(pixdata)
             cc=pixdata(1); % data to be overwritten
         else
-            n=numel(roiobj.data);
-            if n==1 & numel(roiobj.data.data)==0
+            n=numel(dataout);
+            if n==1 & numel(dataout.data)==0
                 cc=1; % replace empty dataset
             else
-                cc=numel(roiobj.data)+1;
+                cc=numel(dataout)+1;
             end
         end
 
@@ -188,9 +193,9 @@ for i=1:2
             [cell_name val_surface val_axe_mineur val_axe_majeur val_eccentricity],...
             'groupid',paramout.(['mask' num2str(i) '_name']),'parentid',roiobj.id,'plot',defplot,'groups',plotgroup);
 
-        roiobj.data(cc)=temp;
-        roiobj.data(cc).class="processing";
-        roiobj.data(cc).plotGroup={[] [] [] [] [] unique(plotgroup)};
+        dataout(cc)=temp;
+        dataout(cc).class="processing";
+        dataout(cc).plotGroup={[] [] [] [] [] unique(plotgroup)};
 
     end
 end
@@ -347,24 +352,23 @@ end
 temp=dataseries(dat,name,...
     'groupid','channel_quantification','parentid',roiobj.id,'plot',defplot,'groups',group);
 
-pixdata=find(arrayfun(@(x) strcmp(x.groupid, 'channel_quantification'),roiobj.data)); % find if object exists already
+pixdata=find(arrayfun(@(x) strcmp(x.groupid, 'channel_quantification'),dataout)); % find if object exists already
 
 %
 if numel(pixdata)
     cc=pixdata(1); % data to be overwritten
 else
-    n=numel(roiobj.data);
-    if n==1 & numel(roiobj.data.data)==0
+    n=numel(dataout);
+    if n==1 & numel(dataout)==0
         cc=1; % replace empty dataset
     else
-        cc=numel(roiobj.data)+1;
+        cc=numel(dataout)+1;
     end
 end
 
-roiobj.data(cc)=temp;
-roiobj.data(cc).class="processing";
+dataout(cc)=temp;
+dataout(cc).class="processing";
 %roiobj.data(cc).plotGroup={[] [] [] [] [] unique(group)};
-
 end
 
 
