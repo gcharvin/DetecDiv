@@ -128,7 +128,7 @@ classdef roi < handle
 
            pixdata=find(arrayfun(@(x) strcmp(x.groupid, classistr),roiobj.data)); % find if object exists already
             
-           datas=roiobj.data(pixdata);
+           datas=roiobj.data(pixdata)
 
            if numel(find(matches(datas.data.Properties.VariableNames,'id_training')))
            dataout=datas.data.('id_training');

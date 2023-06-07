@@ -320,22 +320,28 @@ for i=1:numel(obj.display.channel)
 
 
             if numel(classif)>0
-                if strcmp(displaystruct(ii).name,classif.strid)
+               % if strcmp(displaystruct(ii).name,classif.strid)
                     ha=findobj('Tag','classitextflag');
 
                     if numel(ha)
                         if strcmp(ha.Checked,'on')
                             xx=size(obj.image,2)/2;
                             yy=1*size(obj.image,1)/2;
-                            idf=obj.train.(displaystruct(ii).name).id(obj.display.frame);
+                           % idf=obj.train.(displaystruct(ii).name).id(obj.display.frame);
+                           
+                            [dataout, labelout]=getTrainingData(obj,classif.strid);
+                            idf=dataout(obj.display.frame);
+                            txt=char(labelout(obj.display.frame));
+
                             if idf==0, idf=10; end
+
                             if exist('ttid'), idfpred=ttid; else idfpred=1; end
                             colmap=flip(prism,1);
                             if numel(htextclassi)==0 %|| numel(htextclassipred)==0
-                                htextclassi=text(xx,yy,[displaystruct(ii).gt],'Color',colmap(1*idf,:),'FontSize',20,'FontWeight','Bold','Tag','classitext','HorizontalAlignment','right');
+                                htextclassi=text(xx,yy,txt,'Color',colmap(1*idf,:),'FontSize',20,'FontWeight','Bold','Tag','classitext','HorizontalAlignment','right');
                                 %htextclassipred=text(xx,yy,['   ' displaystruct(ii).pred],'Color',colmap(1*idfpred,:),'FontSize',20,'FontWeight','Bold','Tag','classitextpred','HorizontalAlignment','left');
                             else
-                                htextclassi.String=[displaystruct(ii).gt];
+                                htextclassi.String=txt;
                                 htextclassi.Color=colmap(1*idf,:);
                                 %htextclassipred.String=['   ' displaystruct(ii).pred];
                                 %htextclassipred.Color=colmap(1*idfpred,:);
@@ -343,7 +349,7 @@ for i=1:numel(obj.display.channel)
                         end
                     end
 
-                end
+               % end
             end
         end
 
@@ -406,9 +412,7 @@ for i=1:numel(htraj)
         end
 
         title(hpo,txt);
-
-       
-        
+ 
     end
 end
 %h = findobj('-regexp','Tag',expr)
