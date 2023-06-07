@@ -129,6 +129,7 @@ classdef dataseries < handle
 
         function addData(obj,arr,arrname, varargin)
 
+        
             sz=size(obj.data);
 
             groupitem=[];
@@ -143,12 +144,19 @@ classdef dataseries < handle
                 end
 
             end
-            
+    
+
             if numel(groupitem)==0
                 groupitem=obj.plotGroup{6}{end};
             end
 
-            groups=[obj.plotGroup{6} groupitem];
+       
+            if numel(obj.plotGroup{6})==0 || (numel(obj.plotGroup{6})==1 && numel(obj.plotGroup{6}{1})==0)
+           groups={groupitem};
+            else
+           groups=[obj.plotGroup{6} groupitem];
+    
+            end
 
             if ischar(arrname)
                 arrname={arrname};
@@ -165,12 +173,33 @@ classdef dataseries < handle
                 outname=arrname;
             end
 
+          
+
+
             for i=1:size(arr,2)
+
                     obj.data.(outname{i})=arr(:,i);
+
+                    if numel(obj.plotProperties)
                     obj.plotProperties(end+1,:)=obj.plotProperties(end,:);
                     obj.plotProperties{end,1}=toplot;
                     obj.plotProperties{end,2}=outname{i};
                     obj.plotProperties{end,6}=groupitem;
+                    else
+                   t={};
+       
+                   t{1,1}= toplot;
+                   t{1,2}= outname{i};
+                   t{1,3}= class(obj.data.(outname{i}));
+                   t{1,4}= 'k';
+                   t{1,5}= 2;
+                   t{1,6}=groupitem;
+               
+
+                    obj.plotProperties=t;
+
+                    end
+
             end
 
             obj.plotGroup={[] [] [] [] [] unique(groups)};

@@ -1,10 +1,12 @@
-function h=plot(data,pos)
+function h=plot(data,pos,classif)
 
 % plot specific subdataset using properties included in the dataseries
 % object
 
 % specifies roiobj to plot dat along with roi image
 % here 
+
+% if 3rd argument is provided, then it s the annotation mode 
 
 if numel(data.plotProperties)==0
     h=[];
@@ -20,6 +22,7 @@ h= figure('Color','w','Units','normalized','Tag',data.id,'Name',[ data.parentid 
 if nargin==1
 pos=[0.1 0.1 0.25 0.15];
 end
+
 
 h.Position=pos;
 else
@@ -55,8 +58,13 @@ for i=1:numel(groups)
 end
 
 
-
+if nargin~=3
 h.Position(4)=n*0.15;
+else
+h.Position(4)=n*0.25;
+end
+
+
 %h.Position(4)=h.Position(4)-(n-1)*0.15;
 
 varnames=data.data.Properties.VariableNames;
@@ -70,23 +78,21 @@ if numel(hf)
 frame=str2num(hf.String);
 end
 
+txt='';
 for i=1:numel(plotidx)
 
     hs(i)=subplot(n,1,i);
-
+ 
     str={};
 
- 
     for j=1:numel(plotidx{i})
     toplot=toplot+1;
     tmp=plotidx{i};
     dat=data.getData(varnames{plotidx{i}(j)});
-    plot(hs(i),dat); hold on
+    plot(hs(i),dat,'Tag',varnames{plotidx{i}(j)},'LineWidth',2); hold on
     str=[str varnames{plotidx{i}(j)}];
     end
 
-    
-    legend(hs(i),str,'Interpreter','none','FontSize',10);
     ylabel(hs(i),plotidxgroup{i},'Interpreter','None','FontSize',10);
 
     if data.type=="temporal"
@@ -109,10 +115,26 @@ for i=1:numel(plotidx)
 
       pix=find(xr==frame);
   
-      line([xr(pix) xr(pix)],yy,'Color',[0.5 0.5 0.5],'LineWidth',2,'Tag',[data.parentid '_track']);
+      line([xr(pix) xr(pix)],yy,'Color',[0.5 0.5 0.5],'LineWidth',1,'Tag',[data.parentid '_track'],'userData',data);
+
+      if nargin==3 % display current class
+
+        set(gca,'Tag','Axes_track');
+          if iscategorical(dat(pix))
+             txt=[txt ' ' char(dat(pix))];
+          end
+          if isnumeric(dat(pix))
+             txt=[txt ' ' num2str(dat(pix))];
+          end
+
+        title(txt,'FontSize',20);
+
+      end
+
       end
   end
-
+  str=[str 'frame'];
+  legend(hs(i),str,'Interpreter','none','FontSize',10);
 end
 
 if toplot==0

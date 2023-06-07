@@ -1,4 +1,4 @@
-function [listout classes]=listROIDataID(datatype)
+function [listout]=listROIDataID(datatype)
 % list all possible channels in the workspace variable
 
 if nargin==0

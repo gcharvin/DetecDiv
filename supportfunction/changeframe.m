@@ -232,8 +232,54 @@ for i=1:numel(keys) % display the selected class for the current image
     if strcmp(event.Key,keys{i})
         if numel(classif)>0
             if  strcmp(classif.category{1},'Image') || strcmp(classif.category{1},'LSTM')% if image classification, assign class to keypress event
-                obj.train.(classif.strid).id(obj.display.frame)=i;
-                ok=1;
+               % obj.train.(classif.strid).id(obj.display.frame)=i;
+               % the change is now made in the updatedisplay function
+               htraj=findobj('Type','Figure');
+
+                for j=1:numel(htraj)
+
+                     z= htraj(j).Name;
+
+                      if contains(z,obj.id)
+
+                     li=findobj(htraj(j),'Tag',[obj.id '_track']);
+
+                        if numel(li)==0
+                       continue
+                     end
+
+                 pix=obj.display.frame;
+              % li=findobj(htraj(j),'Tag',[obj.id '_track']);
+              % data=li.UserData;
+              % classes=data.userData.classes;
+
+               training_pixdata=find(arrayfun(@(x) strcmp(x.groupid, classif.strid),obj.data)); % find if object exists already
+               if numel(training_pixdata)
+                    training_data=obj.data(training_pixdata);
+               end
+
+               classes=training_data.userData.classes;
+
+               tmp=training_data.data.('labels_training');
+               tmp(pix)=categorical(classes(i));
+               training_data.data.('labels_training')=tmp;
+
+               hpp=findobj(htraj(j),'Tag','labels_training');
+               hpp.YData=tmp;
+
+               tmp=training_data.data.('id_training');
+               tmp(pix)=i;
+               training_data.data.('id_training')=tmp;
+
+               obj.data(training_pixdata)=training_data;
+
+                      end
+                end
+
+               % aa=data.data.('id_training')';
+
+               % zz=aa(pix)
+               % ok=1;
             end
 
 

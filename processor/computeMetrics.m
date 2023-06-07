@@ -92,7 +92,7 @@ for i=1:2
         end
 
         BW_3D=roiobj.image(:,:,cha,:);
-        pixdata=find(arrayfun(@(x) strcmp(x.groupid, paramout.(['mask' num2str(i) '_name'])),roiobj.data)); % find if object exists already
+        pixdata=find(arrayfun(@(x) strcmp(x.groupid, ['mask_quantification_' paramout.(['mask' num2str(i) '_name'])]),roiobj.data)); % find if object exists already
 
         %
         if numel(pixdata)
@@ -191,7 +191,7 @@ for i=1:2
 
         temp=dataseries([cell_data' surface' axe_mineur' axe_majeur' eccentricity'],...
             [cell_name val_surface val_axe_mineur val_axe_majeur val_eccentricity],...
-            'groupid',paramout.(['mask' num2str(i) '_name']),'parentid',roiobj.id,'plot',defplot,'groups',plotgroup);
+            'groupid',['mask_quantification_' paramout.(['mask' num2str(i) '_name'])],'parentid',roiobj.id,'plot',defplot,'groups',plotgroup);
 
         dataout(cc)=temp;
         dataout(cc).class="processing";

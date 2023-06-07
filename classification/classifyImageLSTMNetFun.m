@@ -177,7 +177,6 @@ end
 %end
 
 %label=lab(1:size(im,4));
-
 %results=roiobj.results;
 
 data=roiobj.data;

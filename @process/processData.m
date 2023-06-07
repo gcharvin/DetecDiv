@@ -50,7 +50,7 @@ classifyFun=classi.processFun;
 fhandle=eval(['@' classifyFun]);
 param=classi.processArg;
 
-disp(['Classifying roi data using ' classifyFun]);
+disp(['Prcoessing roi data using ' classifyFun]);
 
 if numel(p)
     p.Value=0.1;
@@ -63,7 +63,7 @@ if numel(p)
     p.Message='Processor is loaded.';
 end
 
-disp([num2str(numel(roiobj)) ' ROIs to classify, be patient...']);
+disp([num2str(numel(roiobj)) ' ROIs to process, be patient...']);
 
 if para
     logparf(1:numel(roiobj))= parallel.FevalFuture;
@@ -105,7 +105,7 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
         if numel(p)
             p.Value=0.9* double(i)./numel(roiobj);
 
-            p.Message=['Classifying ROI  ' roiobj(i).id];
+            p.Message=['Processing ROI  ' roiobj(i).id];
         end
 
         % roiobj(i).classes=classi.classes;

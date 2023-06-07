@@ -547,9 +547,6 @@ if numel(classif)>0
         else
             h.KeyPressFcn={@changeframe,obj,him,hp,keys,classif,specialkeys,userprefs};
         end
-
-
-
     end
 
     if strcmp(classif.category{1},'Pedigree') % Pedigree analysis
@@ -597,6 +594,7 @@ if numel(classif)>0
 
     end
 
+    plotdata(handles, '', obj,him,hp,classif,h); % plot data for user annotation 
 end
 
 % display results for image classification & plot tracking results if
@@ -845,6 +843,49 @@ if numel(sele)==4
 
     obj.train.(classif.strid).id(fr1:fr2)=pix1;
 
+     pix=fr1:fr2;
+              % li=findobj(htraj(j),'Tag',[obj.id '_track']);
+              % data=li.UserData;
+              % classes=data.userData.classes;
+
+              htraj=findobj('Type','Figure');
+              for j=1:numel(htraj)
+
+                     z= htraj(j).Name;
+
+                      if contains(z,obj.id)
+
+                     li=findobj(htraj(j),'Tag',[obj.id '_track']);
+
+                        if numel(li)==0
+                       continue
+                        end
+
+                      
+               training_pixdata=find(arrayfun(@(x) strcmp(x.groupid, classif.strid),obj.data)); % find if object exists already
+               if numel(training_pixdata)
+                    training_data=obj.data(training_pixdata);
+               end
+
+               classes=training_data.userData.classes;
+
+               tmp=training_data.data.('labels_training');
+               tmp(pix)=categorical(classes(pix1));
+               training_data.data.('labels_training')=tmp;
+
+               hpp=findobj(htraj(j),'Tag','labels_training');
+               hpp.YData=tmp;
+
+               tmp=training_data.data.('id_training');
+               tmp(pix)=pix1;
+               training_data.data.('id_training')=tmp;
+
+               obj.data(training_pixdata)=training_data;
+                      end
+              end
+
+
+
     close(h);
 
     %
@@ -882,10 +923,7 @@ function plotdata(handles, event, obj,him,hp,classif,h)
 
 data=obj.data;
 
-if numel(data)==1 & numel(data(1).data)==0
-    disp('No data available to display');
-    return
-end
+
 
 % find if roi is already displayed 
   hroi=findobj('Tag',['ROI' obj.id]);
@@ -894,10 +932,17 @@ end
       pos=hroi.Position;
       %pos(2)=pos(2)-pos(4);
   else
-      pos=[0.1 0.1 0.25 0.15];
+      pos=[0.1 0.1 0.25 0.25];
   end
 
 cc=0;
+
+if numel(data)==1 & numel(data(1).data)==0
+    disp('No data available to display');
+    return
+end
+
+if numel(classif)==0 % plots all requested data when no classifier is provided 
 
 for i=1:numel(data)
  if data(i).show
@@ -922,6 +967,38 @@ end
 pos(2)=pos(2)-n*0.15;
 data(i).plot(pos);
  end
+end
+
+else % user annotation mode with function classif
+
+   pixdata=find(arrayfun(@(x) strcmp(x.groupid, classif.strid),data)); % find if object exists already
+
+        %
+        if numel(pixdata)
+            cc=pixdata(1); 
+            pos(2)=pos(2)-1*0.25;
+            ind=find(contains(data(cc).data.Properties.VariableNames,"labels_training"));
+
+            if numel(ind)==0 % must create the array 
+
+            else
+
+            end
+
+            data(cc).plotProperties(:,1)={false};
+            data(cc).plotProperties(ind,1)={true};
+            data(cc).show=true;
+            data(cc).plot(pos,'classif');
+
+            
+        else
+%             n=numel(dataout);
+%             if n==1 & numel(dataout.data)==0
+%                 cc=1; % replace empty dataset
+%             else
+%                 cc=numel(dataout)+1;
+%             end
+        end
 end
 
 figure(hroi);
