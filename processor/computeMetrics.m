@@ -87,8 +87,8 @@ for i=1:2
         cha=roiobj.findChannelID(paramout.(['mask' num2str(i) '_name']));
 
         if numel(cha)==0
-            disp('The mask you selected is unavailable for thi ROI !')
-            continue
+            disp('The mask you selected is unavailable for thi ROI ! qutting!!')
+            return;
         end
 
         BW_3D=roiobj.image(:,:,cha,:);

@@ -378,7 +378,7 @@ end
 htext=findobj(gcf,'Tag','frametext');
 htext.String=num2str(obj.display.frame);
 
-% if classif result is displayed, then update the position of the cursor
+% if classif result and training is displayed, then update the position of the cursor
 
 htraj=findobj('Type','Figure');
 
@@ -398,8 +398,12 @@ for i=1:numel(htraj)
             li(j).XData=[obj.display.frame obj.display.frame];
         end
 
-        hpp=findobj(htraj(i),'Tag','labels_training');
+        txt=[];
         hpo=findobj(htraj(i),'Tag','Axes_track');
+
+        hpp=findobj(htraj(i),'Tag','labels_training');
+        if numel(hpp)
+        
 
         dat=hpp.YData;
         pix=obj.display.frame;
@@ -412,6 +416,8 @@ for i=1:numel(htraj)
         end
 
         title(hpo,txt);
+        end
+        
  
     end
 end

@@ -173,9 +173,6 @@ classdef dataseries < handle
                 outname=arrname;
             end
 
-          
-
-
             for i=1:size(arr,2)
 
                     obj.data.(outname{i})=arr(:,i);

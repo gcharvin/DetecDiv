@@ -83,8 +83,9 @@ mask_pixdata=find(cellfun(@(x) ~isempty(x), mask_pixdata));
 
 if numel(mask_pixdata)
     mask_data=roiobj.data(mask_pixdata);
+else
+return;
 end
-
 
 for j=1:2
 
@@ -174,7 +175,7 @@ for j=1:2
             if numel(fluo_pixdata)
                 totaltime_int=uint16(totaltime);
                 indices = repelem(2:numel(totaltime_int), diff(totaltime_int))-1;
-                size(indices)
+                %size(indices)
 
                 varnames=fluo_data.data.Properties.VariableNames;
 

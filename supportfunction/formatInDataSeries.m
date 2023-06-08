@@ -7,6 +7,15 @@ for i=1:numel(roiobj)
     roiobj(i).data=dataseries();
 
     formatData(roiobj(i),"classification","temporal");
+    
+    l=[];
+    for j=1:numel(roiobj(i).data)
+            if numel(roiobj(i).data(j).data)~=0
+                l=[l j];
+            end
+    end
+
+    roiobj(i).data=roiobj(i).data(l);
     roiobj(i).save('data');
 end
 
@@ -25,7 +34,7 @@ function formatData(roiobj,class,type)
     end
     
     for i=1:numel(p)
-    
+
         roiobj.data(cc)=dataseries();
         roiobj.data(cc).class=class;
         roiobj.data(cc).groupid=p{i};
@@ -43,7 +52,7 @@ function formatData(roiobj,class,type)
 
         for k=1:numel(q)
 
-        if strcmp(q{k},'bounds') || strcmp(q{k},'classes') 
+        if strcmp(q{k},'bounds') || strcmp(q{k},'classes')  || strcmp(q{k},'label') 
             continue
         end
 
@@ -58,7 +67,7 @@ function formatData(roiobj,class,type)
 
                   categoryArray = categorical(tmp, 1:numel(roiobj.data(cc).userData.classes), roiobj.data(cc).userData.classes);
                  
-                  roiobj.data(cc).addData(categoryArray,'labels_training','groups','label');
+                  roiobj.data(cc).addData(categoryArray,'labels_training','groups','label','plot',true);
               %  end
 
             otherwise
@@ -76,8 +85,10 @@ function formatData(roiobj,class,type)
 
     end
 
-    if numel(train)~=0
     train=roiobj.results;
+
+    if numel(train)~=0
+ 
     p=fieldnames(train);
 
 %     if numel(roiobj.data)==1 & numel(roiobj.data.data)==0
@@ -113,7 +124,7 @@ function formatData(roiobj,class,type)
         roiobj.data(cc).groupid=p{i};
         roiobj.data(cc).parentid=roiobj.id;
         end
- 
+
         if isfield(train.(p{i}),'classes')
         roiobj.data(cc).userData.classes=train.(p{i}).classes;
         end
@@ -123,13 +134,22 @@ function formatData(roiobj,class,type)
 
         for k=1:numel(q)
 
-        if strcmp(q{k},'bounds') || strcmp(q{k},'classes') 
+        if strcmp(q{k},'bounds') || strcmp(q{k},'classes')  || strcmp(q{k},'label') 
             continue
         end
 
         tmp=train.(p{i}).(q{k}); tmp=tmp';
 
         switch q{k}
+            case 'id'
+              %  for j=1:size(tmp,2)
+    
+                  roiobj.data(cc).addData(tmp,'id','groups','id');
+
+                  categoryArray = categorical(tmp, 1:numel(roiobj.data(cc).userData.classes), roiobj.data(cc).userData.classes);
+                 
+                 roiobj.data(cc).addData(categoryArray,'labels','groups','label','plot',true);
+
             case 'prob'
                 for j=1:size(tmp,2)
                  classes=roiobj.data(cc).userData.classes;
