@@ -48,13 +48,15 @@ end
 
 if exist([obj.path '/data_' obj.id '.mat'])
     %disp(['Loading ' t '/data_' obj.id '.mat result struct for ROI ' obj.id]);
-    eval(['load  ' '''' obj.path '/data_' obj.id '.mat' '''']);    
+    eval(['load  ' '''' obj.path '/data_' obj.id '.mat' '''']);  
+    try
     obj.data=data;
     disp(['ROI data loaded from ' t '/data_' obj.id '.mat ' obj.id]);
-else
-    
+    catch
     fprintf(['Error: file not found  ' t  '/data_' obj.id '.mat failed for ROI ' obj.id '\n']);
-    
+    end
+else
+    fprintf(['Error: file not found  ' t  '/data_' obj.id '.mat failed for ROI ' obj.id '\n']);
 end
 
 
