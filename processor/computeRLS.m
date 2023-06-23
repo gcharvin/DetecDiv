@@ -113,16 +113,13 @@ for j=1:2
 
         divTimes=computeDivtime(id,proba',classes,param,frames);
 
-        if numel(divTimes.framediv)>0 && ~isnan(divTimes.framediv(1))
-
-            % framesOut=[divTimes.frameBirth divTimes.framediv divTimes.frameEnd];
+        if numel(divTimes.framediv)>0 && ~isnan(divTimes.framediv(1)) && numel(divTimes.duration)
 
             event="Budding";
 
             event=repmat(event,[1 1+numel(divTimes.duration)]);
             event=["Birth" event divTimes.endType];
             event=categorical(cellstr(event));
-      
 
             [syncPoint,~]=findSEP(divTimes.duration,1); %find SEP using classical xhi² fit based on div frequency
 

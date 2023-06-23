@@ -85,18 +85,27 @@ for i=1:numel(datagroups)
         if datagroups(i).Param.Plot_average
             g(i,j)=figure('Color','w','Tag',['plot_' num2str(i) '_' num2str(j)],'Name',str);
    
-
+            yout=cellfun(@(x,y) y(~isnan(x)), xout,yout,'UniformOutput',false);
             xout=cellfun(@(x) x(~isnan(x)), xout,'UniformOutput',false);
+
             valMin = cellfun(@(x) min(x), xout); totMin=min(valMin);
             valMax = cellfun(@(x) max(x), xout);
             totMax=max(valMax)+1;
             totMax= num2cell(totMax*ones(1,numel(valMax)));
             len=cellfun(@(x) length(x), xout,'UniformOutput',false);
             valMax = cellfun(@(x,y) x-y,  totMax,len,'UniformOutput',false);
-            padded=cellfun(@(x,y) padarray(x, [y 0],NaN,'post'),xout,valMax,'UniformOutput',false);
+
+            paddedx=cellfun(@(x,y) padarray(x, [y 0],NaN,'post'),xout,valMax,'UniformOutput',false);
+            paddedy=cellfun(@(x,y) padarray(x, [y 0],NaN,'post'),yout,valMax,'UniformOutput',false);
+
+            listx=cell2mat(paddedx);
+            listy=cell2mat(paddedy);
+
+            meanx=min(listx(:)):max(listx(:));
+            meany=mean(listy,2,'omitnan');
+            stdy = std(listy,2,'omitnan');
 
 
-            
         
 
         end
