@@ -93,21 +93,42 @@ for i=1:numel(datagroups)
             xout=cellfun(@(x) x(~isnan(x)), xout,'UniformOutput',false);
 
             valMin = cellfun(@(x) min(x), xout);
-            totMin=min(valMin)+1;
+            totMin=min(valMin)-1;
             valMax = cellfun(@(x) max(x), xout);
             totMax=max(valMax)+1;
 
             totMax= num2cell(totMax*ones(1,numel(valMax)));
-            totMin= num2cell(-totMin*ones(1,numel(valMin)))
+            totMin=  num2cell(-totMin*ones(1,numel(valMin)));
 
-            len=cellfun(@(x) length(x), xout,'UniformOutput',false)
+            len=cellfun(@(x) length(x), xout,'UniformOutput',false);
+
             valMax = cellfun(@(x,y) x-y,  totMax,len,'UniformOutput',false);
-            valMin = cellfun(@(x,y) x-y,  totMin,len,'UniformOutput',false)
+            valMin = cellfun(@(x,y) x-y,  totMin,len,'UniformOutput',false);
 
                if strcmp(datagroups(i).Param.Plot_type{end},'generation')
                     switch datagroups(i).Param.Traj_synchronization{end}
                         case 'sep'
-                            xout{end}= rois(k).data(pix).getData('sep');
+                   
+            valMin= cellfun(@(x) min(x), xout);
+            totMin=min(valMin)-1;
+            valMax= cellfun(@(x) max(x), xout);
+            totMax=max(valMax)+1;
+
+            totMax= num2cell(totMax*ones(1,numel(valMax)));
+            totMin = num2cell(-totMin*ones(1,numel(valMin)));
+
+            lenMin=cellfun(@(x) length(find(x<=0)), xout,'UniformOutput',false);
+            lenMax=cellfun(@(x) length(find(x>=0)), xout,'UniformOutput',false);
+
+            valMax = cellfun(@(x,y) x-y,  totMax,lenMax,'UniformOutput',false);
+            valMin = cellfun(@(x,y) x-y,  totMin,lenMin,'UniformOutput',false);
+
+                           paddedx=cellfun(@(x,y) padarray(x, [y 0],NaN,'pre'),xout,valMin,'UniformOutput',false);
+                           paddedy=cellfun(@(x,y) padarray(x, [y 0],NaN,'pre'),yout,valMin,'UniformOutput',false);
+
+                           paddedx=cellfun(@(x,y) padarray(x, [y 0],NaN,'post'),paddedx,valMax,'UniformOutput',false);
+                           paddedy=cellfun(@(x,y) padarray(x, [y 0],NaN,'post'),paddedy,valMax,'UniformOutput',false);
+
                         case 'death'
                             paddedx=cellfun(@(x,y) padarray(x, [y 0],NaN,'pre'),xout,valMin,'UniformOutput',false);
                             paddedy=cellfun(@(x,y) padarray(x, [y 0],NaN,'pre'),yout,valMin,'UniformOutput',false);
