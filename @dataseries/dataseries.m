@@ -174,6 +174,12 @@ classdef dataseries < handle
             end
 
             for i=1:size(arr,2)
+                % 
+                % 
+                % aaa=outname{i}
+                % bbb=arr(:,i)
+                % sss=size(obj.data)
+                % size(bbb)
 
                     obj.data.(outname{i})=arr(:,i);
 

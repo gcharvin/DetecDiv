@@ -113,6 +113,7 @@ for j=1:2
 
         divTimes=computeDivtime(id,proba',classes,param,frames);
 
+
         if numel(divTimes.framediv)>0 && ~isnan(divTimes.framediv(1)) && numel(divTimes.duration)
 
             event="Budding";
@@ -171,19 +172,27 @@ for j=1:2
             end
 
             if numel(fluo_pixdata)
+
                 totaltime_int=uint16(totaltime);
+
                 indices = repelem(2:numel(totaltime_int), diff(totaltime_int))-1;
-                %size(indices)
 
                 varnames=fluo_data.data.Properties.VariableNames;
 
                 for k=1:numel(varnames)
                     dat=fluo_data.data.(varnames{k});
+
                     dat=dat(totaltime_int(1):totaltime_int(end)-1);
+                    % here put a condition if still alive 
                   
                     val = accumarray(indices',dat,[],@mean);
 
+                    if totaltime_int(end-1)==totaltime_int(end) % if last event coincides with last frame
+                        val=[val; NaN];
+                    end
+
                     val=[val; NaN];
+
                     dataout(cc).addData(val,varnames(k),'plot',false,'groups','channel_quant');
 
                 end
@@ -204,6 +213,10 @@ for j=1:2
                     dat=dat(totaltime_int(1):totaltime_int(end)-1);
 
                     val = accumarray(indices',dat,[],@mean);
+
+                       if totaltime_int(end-1)==totaltime_int(end) % if last event coincide with last frame
+                        val=[val; NaN];
+                       end
 
                     val=[val; NaN];
 
