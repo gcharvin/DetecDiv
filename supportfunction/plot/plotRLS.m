@@ -212,8 +212,7 @@ for c=1:szc
                         Yb(b,i)=Yb(b,i-1);
                     end
                 end
-                
-                
+
                 
                 dlog(b,:)=gradient(log(1-Yb(b,:)));
                 dlog(dlog==-Inf)=0;
@@ -240,7 +239,7 @@ for c=1:szc
             semDR=stdDR./sqrt(Nboot+1); %N= number of bootstrappings
             
             cb=1;
-            binning
+           % binning
             for i=1:binning:size(deathRate,2)-(binning-1)
                 meanBDR(cb)=mean([meanDR(i:i+binning-1)]);%nanmean(binnedDeathRate,1);
                 stdBDR(cb)=mean([stdDR(i:i+binning-1)]);%(binnedDeathRate,1);

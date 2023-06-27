@@ -14,6 +14,9 @@ function plotData(datagroups,filename,varargin)
 
 [p ,f ,ext]=fileparts(filename);
 
+col=lines(numel(datagroups));
+
+
 for i=1:numel(datagroups)
 
     if ~isfield(datagroups(i).Source,'nodename') % user did not check any node, so skip plotting
@@ -28,13 +31,6 @@ for i=1:numel(datagroups)
         str=[datagroups(i).Name ' // ' dat{j}{1} ' // ' dat{j}{2}];
 
         d=dat{j};
-
-        %strtot={};
-        %cc=1;
-        hold on;
-
-        cmap=lines(numel(rois));
-        cmapcell = mat2cell(cmap, ones(numel(rois),1), 3);
 
         xout={};
         yout={};
@@ -66,10 +62,13 @@ for i=1:numel(datagroups)
             end
         end
 
+        cmap=lines(numel(xout));
+        cmapcell = mat2cell(cmap, ones(numel(xout),1), 3);
+
         if datagroups(i).Param.Plot_singletraj
             h(i,j)=figure('Color','w','Tag',['plot_singletraj' num2str(i) '_' num2str(j)],'Name',str);
-
             hold on;
+
             cellfun(@(x, y, c) plot(x, y, 'Color',c), xout, yout, cmapcell', 'UniformOutput', false); 
 
             if strcmp(datagroups(i).Param.Plot_type{end},'temporal')
@@ -83,30 +82,75 @@ for i=1:numel(datagroups)
         end
 
         if datagroups(i).Param.Plot_average
-            g(i,j)=figure('Color','w','Tag',['plot_' num2str(i) '_' num2str(j)],'Name',str);
+
+            havg=findobj('Tag',['plot_average_' dat{j}{2}]);
+
+            if numel(havg)==0
+            havg=figure('Color','w','Tag',['plot_average_' dat{j}{2}],'Name',dat{j}{2});
+            end
    
             yout=cellfun(@(x,y) y(~isnan(x)), xout,yout,'UniformOutput',false);
             xout=cellfun(@(x) x(~isnan(x)), xout,'UniformOutput',false);
 
-            valMin = cellfun(@(x) min(x), xout); totMin=min(valMin);
+            valMin = cellfun(@(x) min(x), xout);
+            totMin=min(valMin)+1;
             valMax = cellfun(@(x) max(x), xout);
             totMax=max(valMax)+1;
-            totMax= num2cell(totMax*ones(1,numel(valMax)));
-            len=cellfun(@(x) length(x), xout,'UniformOutput',false);
-            valMax = cellfun(@(x,y) x-y,  totMax,len,'UniformOutput',false);
 
-            paddedx=cellfun(@(x,y) padarray(x, [y 0],NaN,'post'),xout,valMax,'UniformOutput',false);
-            paddedy=cellfun(@(x,y) padarray(x, [y 0],NaN,'post'),yout,valMax,'UniformOutput',false);
+            totMax= num2cell(totMax*ones(1,numel(valMax)));
+            totMin= num2cell(-totMin*ones(1,numel(valMin)))
+
+            len=cellfun(@(x) length(x), xout,'UniformOutput',false)
+            valMax = cellfun(@(x,y) x-y,  totMax,len,'UniformOutput',false);
+            valMin = cellfun(@(x,y) x-y,  totMin,len,'UniformOutput',false)
+
+               if strcmp(datagroups(i).Param.Plot_type{end},'generation')
+                    switch datagroups(i).Param.Traj_synchronization{end}
+                        case 'sep'
+                            xout{end}= rois(k).data(pix).getData('sep');
+                        case 'death'
+                            paddedx=cellfun(@(x,y) padarray(x, [y 0],NaN,'pre'),xout,valMin,'UniformOutput',false);
+                            paddedy=cellfun(@(x,y) padarray(x, [y 0],NaN,'pre'),yout,valMin,'UniformOutput',false);
+                        otherwise % birth
+                            paddedx=cellfun(@(x,y) padarray(x, [y 0],NaN,'post'),xout,valMax,'UniformOutput',false);
+                            paddedy=cellfun(@(x,y) padarray(x, [y 0],NaN,'post'),yout,valMax,'UniformOutput',false);
+                    end
+               end
+
+            
 
             listx=cell2mat(paddedx);
             listy=cell2mat(paddedy);
 
             meanx=min(listx(:)):max(listx(:));
-            meany=mean(listy,2,'omitnan');
-            stdy = std(listy,2,'omitnan');
+            meany=mean(listy,2,"omitnan"); meany=meany';
+            stdy = std(listy,0,2,"omitnan")./sqrt(sum(~isnan(listy),2)); stdy=stdy';
 
+            %[rlsb] = bootstrp(Nboot,@(x)x,rlst);
+           % rlsb=[rlst; rlsb ]; %add the real one in addition to the bootstrap
 
-        
+            figure(havg); hold on;
+            plot(meanx, meany,'Color',col(i,:),'LineWidth',2); 
+            closedxt = [meanx fliplr(meanx)];
+            inBetween = [meany+stdy fliplr(meany-stdy)];
+
+            ptch=patch(closedxt, inBetween',col(i,:));
+            ptch.EdgeColor=col(i,:);
+            ptch.FaceAlpha=0.15;
+            ptch.EdgeAlpha=0.3;
+            ptch.LineWidth=1;
+
+             if strcmp(datagroups(i).Param.Plot_type{end},'temporal')
+                xlabel('Time (frames)');
+            end
+            if strcmp(datagroups(i).Param.Plot_type{end},'generation')
+                xlabel('Generation');
+            end
+
+            ylabel(dat{j}{2},'Interpreter','None');
+    
+ 
+
 
         end
 
