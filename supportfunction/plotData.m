@@ -44,11 +44,11 @@ for i=1:numel(datagroups)
             if numel(pix)
 
                 yout{end+1}= rois(k).data(pix).getData(d{2});
-       
-               % tmp=rois(k).data(pix).getData(d{2})
 
-               tmp=1:numel(yout{end});
-               xout{end+1}=tmp';
+                % tmp=rois(k).data(pix).getData(d{2})
+
+                tmp=1:numel(yout{end});
+                xout{end+1}=tmp';
 
                 if strcmp(datagroups(i).Param.Plot_type{end},'generation')
                     switch datagroups(i).Param.Traj_synchronization{end}
@@ -93,7 +93,9 @@ for i=1:numel(datagroups)
             end
 
 
-            if strcmp(datagroups(i).Param.Plot_type{end},'generation')
+            if strcmp(datagroups(i).Param.Plot_type{end},'generation')   % here distinguish if data are an event : in this case, plot the RLS curve !!!
+               % HERE  and synchronize from birth, take censoring into
+               % account
 
                 yout=cellfun(@(x,y) y(~isnan(x)), xout,yout,'UniformOutput',false);
                 xout=cellfun(@(x) x(~isnan(x)), xout,'UniformOutput',false);
@@ -140,22 +142,22 @@ for i=1:numel(datagroups)
 
             if strcmp(datagroups(i).Param.Plot_type{end},'temporal')
 
-             %   yout=cellfun(@(x,y) y(~isnan(x)), xout,yout,'UniformOutput',false);
-              %  xout=cellfun(@(x) x(~isnan(x)), xout,'UniformOutput',false);
+                %   yout=cellfun(@(x,y) y(~isnan(x)), xout,yout,'UniformOutput',false);
+                %  xout=cellfun(@(x) x(~isnan(x)), xout,'UniformOutput',false);
 
-             %   valMin = cellfun(@(x) min(x), xout);
-              %  totMin=min(valMin)-1;
-       %    tt=   xout{1}
+                %   valMin = cellfun(@(x) min(x), xout);
+                %  totMin=min(valMin)-1;
+                %    tt=   xout{1}
                 valMax = cellfun(@(x) max(x), xout);
                 totMax=max(valMax)+1;
 
                 totMax= num2cell(totMax*ones(1,numel(valMax)));
-               % totMin=  num2cell(-totMin*ones(1,numel(valMin)));
+                % totMin=  num2cell(-totMin*ones(1,numel(valMin)));
 
                 len=cellfun(@(x) length(x), xout,'UniformOutput',false);
 
                 valMax = cellfun(@(x,y) x-y,  totMax,len,'UniformOutput',false);
-             %   valMin = cellfun(@(x,y) x-y,  totMin,len,'UniformOutput',false);
+                %   valMin = cellfun(@(x,y) x-y,  totMin,len,'UniformOutput',false);
 
                 switch datagroups(i).Param.Traj_synchronization{end}
                     case 'sep'
@@ -168,16 +170,22 @@ for i=1:numel(datagroups)
                         paddedx=cellfun(@(x,y) padarray(x, [y 0],NaN,'post'),xout,valMax,'UniformOutput',false);
                         paddedy=cellfun(@(x,y) padarray(x, [y 0],NaN,'post'),yout,valMax,'UniformOutput',false);
                 end
-                
+
                 listx=cell2mat(paddedx);
                 listy=cell2mat(paddedy);
 
             end
 
-            meanx=min(listx(:)):max(listx(:));
+            meanx=min(listx(:)):max(listx(:)); 
             meany=mean(listy,2,"omitnan"); meany=meany'; meany=meany(~isnan(meany));
-
             stdy = std(listy,0,2,"omitnan")./sqrt(sum(~isnan(listy),2)); stdy=stdy'; stdy=stdy(~isnan(stdy));
+
+            mi=min(size(meanx,2),mean(meany,2));
+            meanx=meanx(1:mi);
+            meany=meany(1:mi);
+            stdy=stdy(1:mi);
+
+     
 
             %[rlsb] = bootstrp(Nboot,@(x)x,rlst);
             % rlsb=[rlst; rlsb ]; %add the real one in addition to the bootstrap
@@ -188,10 +196,13 @@ for i=1:numel(datagroups)
             inBetween = [meany+stdy fliplr(meany-stdy)];
 
             ptch=patch(closedxt, inBetween',col(i,:));
+           if numel(ptch)
             ptch.EdgeColor=col(i,:);
             ptch.FaceAlpha=0.15;
             ptch.EdgeAlpha=0.3;
             ptch.LineWidth=1;
+
+           end
 
             if strcmp(datagroups(i).Param.Plot_type{end},'temporal')
                 xlabel('Time (frames)');
@@ -203,22 +214,16 @@ for i=1:numel(datagroups)
             ylabel(dat{j}{2},'Interpreter','None');
 
 
-            % now plot the survival curve 
-            if strcmp(datagroups(i).Param.Plot_type{end},'generation')
-
-
-
-            end
-
-
         end
-
 
     end
 
 
 
 end
+
+
+
 
 
 return;
