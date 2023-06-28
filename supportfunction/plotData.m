@@ -35,17 +35,20 @@ for i=1:numel(datagroups)
         xout={};
         yout={};
 
+        cc=1;
         for k=1:numel(rois)
 
-            groups={rois(k).data.groupid}
+            groups={rois(k).data.groupid};
             pix=find(matches(groups,d{1}));
 
             if numel(pix)
 
                 yout{end+1}= rois(k).data(pix).getData(d{2});
        
+               % tmp=rois(k).data(pix).getData(d{2})
 
-                xout{end+1}=1:numel(yout{end});
+               tmp=1:numel(yout{end});
+               xout{end+1}=tmp';
 
                 if strcmp(datagroups(i).Param.Plot_type{end},'generation')
                     switch datagroups(i).Param.Traj_synchronization{end}
@@ -57,8 +60,10 @@ for i=1:numel(datagroups)
                             xout{end}= rois(k).data(pix).getData('birth');
                     end
                 end
+                cc=cc+1;
             end
         end
+
 
         cmap=lines(numel(xout));
         cmapcell = mat2cell(cmap, ones(numel(xout),1), 3);
@@ -129,7 +134,6 @@ for i=1:numel(datagroups)
                         paddedy=cellfun(@(x,y) padarray(x, [y 0],NaN,'post'),yout,valMax,'UniformOutput',false);
                 end
 
-
                 listx=cell2mat(paddedx);
                 listy=cell2mat(paddedy);
             end
@@ -141,32 +145,21 @@ for i=1:numel(datagroups)
 
              %   valMin = cellfun(@(x) min(x), xout);
               %  totMin=min(valMin)-1;
-           tt=   xout{1}
-                valMax = cellfun(@(x) max(x), xout)
-                totMax=max(valMax)+1
+       %    tt=   xout{1}
+                valMax = cellfun(@(x) max(x), xout);
+                totMax=max(valMax)+1;
 
                 totMax= num2cell(totMax*ones(1,numel(valMax)));
                % totMin=  num2cell(-totMin*ones(1,numel(valMin)));
 
                 len=cellfun(@(x) length(x), xout,'UniformOutput',false);
 
-                valMax = cellfun(@(x,y) x-y,  totMax,len,'UniformOutput',false)
+                valMax = cellfun(@(x,y) x-y,  totMax,len,'UniformOutput',false);
              %   valMin = cellfun(@(x,y) x-y,  totMin,len,'UniformOutput',false);
 
                 switch datagroups(i).Param.Traj_synchronization{end}
                     case 'sep'
-                        disp('SEP synchro is not compatible with temporal display mode !')
-                        % lenMin=cellfun(@(x) length(find(x<=0)), xout,'UniformOutput',false);
-                        % lenMax=cellfun(@(x) length(find(x>=0)), xout,'UniformOutput',false);
-                        % 
-                        % valMax = cellfun(@(x,y) x-y,  totMax,lenMax,'UniformOutput',false);
-                        % valMin = cellfun(@(x,y) x-y,  totMin,lenMin,'UniformOutput',false);
-                        % 
-                        % paddedx=cellfun(@(x,y) padarray(x, [y 0],NaN,'pre'),xout,valMin,'UniformOutput',false);
-                        % paddedy=cellfun(@(x,y) padarray(x, [y 0],NaN,'pre'),yout,valMin,'UniformOutput',false);
-                        % 
-                        % paddedx=cellfun(@(x,y) padarray(x, [y 0],NaN,'post'),paddedx,valMax,'UniformOutput',false);
-                        % paddedy=cellfun(@(x,y) padarray(x, [y 0],NaN,'post'),paddedy,valMax,'UniformOutput',false);
+                        disp('SEP synchro is not compatible with temporal display mode !');
 
                     case 'death'
                         paddedx=cellfun(@(x,y) padarray(x, [y 0],NaN,'pre'),xout,valMax,'UniformOutput',false);
@@ -175,19 +168,16 @@ for i=1:numel(datagroups)
                         paddedx=cellfun(@(x,y) padarray(x, [y 0],NaN,'post'),xout,valMax,'UniformOutput',false);
                         paddedy=cellfun(@(x,y) padarray(x, [y 0],NaN,'post'),yout,valMax,'UniformOutput',false);
                 end
-
-                paddedx
+                
                 listx=cell2mat(paddedx);
                 listy=cell2mat(paddedy);
+
             end
 
-
-
-
-
             meanx=min(listx(:)):max(listx(:));
-            meany=mean(listy,2,"omitnan"); meany=meany';
-            stdy = std(listy,0,2,"omitnan")./sqrt(sum(~isnan(listy),2)); stdy=stdy';
+            meany=mean(listy,2,"omitnan"); meany=meany'; meany=meany(~isnan(meany));
+
+            stdy = std(listy,0,2,"omitnan")./sqrt(sum(~isnan(listy),2)); stdy=stdy'; stdy=stdy(~isnan(stdy));
 
             %[rlsb] = bootstrp(Nboot,@(x)x,rlst);
             % rlsb=[rlst; rlsb ]; %add the real one in addition to the bootstrap
@@ -213,6 +203,12 @@ for i=1:numel(datagroups)
             ylabel(dat{j}{2},'Interpreter','None');
 
 
+            % now plot the survival curve 
+            if strcmp(datagroups(i).Param.Plot_type{end},'generation')
+
+
+
+            end
 
 
         end
@@ -223,6 +219,7 @@ for i=1:numel(datagroups)
 
 
 end
+
 
 return;
 
