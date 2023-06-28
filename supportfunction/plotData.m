@@ -37,14 +37,15 @@ for i=1:numel(datagroups)
 
         for k=1:numel(rois)
 
-            groups={rois(k).data.groupid};
+            groups={rois(k).data.groupid}
             pix=find(matches(groups,d{1}));
 
             if numel(pix)
 
                 yout{end+1}= rois(k).data(pix).getData(d{2});
+       
 
-                xout{end+1}=1:numel(yout);
+                xout{end+1}=1:numel(yout{end});
 
                 if strcmp(datagroups(i).Param.Plot_type{end},'generation')
                     switch datagroups(i).Param.Traj_synchronization{end}
@@ -56,9 +57,6 @@ for i=1:numel(datagroups)
                             xout{end}= rois(k).data(pix).getData('birth');
                     end
                 end
-
-
-
             end
         end
 
@@ -69,7 +67,7 @@ for i=1:numel(datagroups)
             h(i,j)=figure('Color','w','Tag',['plot_singletraj' num2str(i) '_' num2str(j)],'Name',str);
             hold on;
 
-            cellfun(@(x, y, c) plot(x, y, 'Color',c), xout, yout, cmapcell', 'UniformOutput', false); 
+            cellfun(@(x, y, c) plot(x, y, 'Color',c), xout, yout, cmapcell', 'UniformOutput', false);
 
             if strcmp(datagroups(i).Param.Plot_type{end},'temporal')
                 xlabel('Time (frames)');
@@ -86,72 +84,116 @@ for i=1:numel(datagroups)
             havg=findobj('Tag',['plot_average_' dat{j}{2}]);
 
             if numel(havg)==0
-            havg=figure('Color','w','Tag',['plot_average_' dat{j}{2}],'Name',dat{j}{2});
+                havg=figure('Color','w','Tag',['plot_average_' dat{j}{2}],'Name',dat{j}{2});
             end
-   
-            yout=cellfun(@(x,y) y(~isnan(x)), xout,yout,'UniformOutput',false);
-            xout=cellfun(@(x) x(~isnan(x)), xout,'UniformOutput',false);
 
-            valMin = cellfun(@(x) min(x), xout);
-            totMin=min(valMin)-1;
-            valMax = cellfun(@(x) max(x), xout);
-            totMax=max(valMax)+1;
 
-            totMax= num2cell(totMax*ones(1,numel(valMax)));
-            totMin=  num2cell(-totMin*ones(1,numel(valMin)));
+            if strcmp(datagroups(i).Param.Plot_type{end},'generation')
 
-            len=cellfun(@(x) length(x), xout,'UniformOutput',false);
+                yout=cellfun(@(x,y) y(~isnan(x)), xout,yout,'UniformOutput',false);
+                xout=cellfun(@(x) x(~isnan(x)), xout,'UniformOutput',false);
 
-            valMax = cellfun(@(x,y) x-y,  totMax,len,'UniformOutput',false);
-            valMin = cellfun(@(x,y) x-y,  totMin,len,'UniformOutput',false);
+                valMin = cellfun(@(x) min(x), xout);
+                totMin=min(valMin)-1;
+                valMax = cellfun(@(x) max(x), xout);
+                totMax=max(valMax)+1;
 
-               if strcmp(datagroups(i).Param.Plot_type{end},'generation')
-                    switch datagroups(i).Param.Traj_synchronization{end}
-                        case 'sep'
-                   
-            valMin= cellfun(@(x) min(x), xout);
-            totMin=min(valMin)-1;
-            valMax= cellfun(@(x) max(x), xout);
-            totMax=max(valMax)+1;
+                totMax= num2cell(totMax*ones(1,numel(valMax)));
+                totMin=  num2cell(-totMin*ones(1,numel(valMin)));
 
-            totMax= num2cell(totMax*ones(1,numel(valMax)));
-            totMin = num2cell(-totMin*ones(1,numel(valMin)));
+                len=cellfun(@(x) length(x), xout,'UniformOutput',false);
 
-            lenMin=cellfun(@(x) length(find(x<=0)), xout,'UniformOutput',false);
-            lenMax=cellfun(@(x) length(find(x>=0)), xout,'UniformOutput',false);
+                valMax = cellfun(@(x,y) x-y,  totMax,len,'UniformOutput',false);
+                valMin = cellfun(@(x,y) x-y,  totMin,len,'UniformOutput',false);
 
-            valMax = cellfun(@(x,y) x-y,  totMax,lenMax,'UniformOutput',false);
-            valMin = cellfun(@(x,y) x-y,  totMin,lenMin,'UniformOutput',false);
+                switch datagroups(i).Param.Traj_synchronization{end}
+                    case 'sep'
 
-                           paddedx=cellfun(@(x,y) padarray(x, [y 0],NaN,'pre'),xout,valMin,'UniformOutput',false);
-                           paddedy=cellfun(@(x,y) padarray(x, [y 0],NaN,'pre'),yout,valMin,'UniformOutput',false);
+                        lenMin=cellfun(@(x) length(find(x<=0)), xout,'UniformOutput',false);
+                        lenMax=cellfun(@(x) length(find(x>=0)), xout,'UniformOutput',false);
 
-                           paddedx=cellfun(@(x,y) padarray(x, [y 0],NaN,'post'),paddedx,valMax,'UniformOutput',false);
-                           paddedy=cellfun(@(x,y) padarray(x, [y 0],NaN,'post'),paddedy,valMax,'UniformOutput',false);
+                        valMax = cellfun(@(x,y) x-y,  totMax,lenMax,'UniformOutput',false);
+                        valMin = cellfun(@(x,y) x-y,  totMin,lenMin,'UniformOutput',false);
 
-                        case 'death'
-                            paddedx=cellfun(@(x,y) padarray(x, [y 0],NaN,'pre'),xout,valMin,'UniformOutput',false);
-                            paddedy=cellfun(@(x,y) padarray(x, [y 0],NaN,'pre'),yout,valMin,'UniformOutput',false);
-                        otherwise % birth
-                            paddedx=cellfun(@(x,y) padarray(x, [y 0],NaN,'post'),xout,valMax,'UniformOutput',false);
-                            paddedy=cellfun(@(x,y) padarray(x, [y 0],NaN,'post'),yout,valMax,'UniformOutput',false);
-                    end
-               end
+                        paddedx=cellfun(@(x,y) padarray(x, [y 0],NaN,'pre'),xout,valMin,'UniformOutput',false);
+                        paddedy=cellfun(@(x,y) padarray(x, [y 0],NaN,'pre'),yout,valMin,'UniformOutput',false);
 
-            
+                        paddedx=cellfun(@(x,y) padarray(x, [y 0],NaN,'post'),paddedx,valMax,'UniformOutput',false);
+                        paddedy=cellfun(@(x,y) padarray(x, [y 0],NaN,'post'),paddedy,valMax,'UniformOutput',false);
 
-            listx=cell2mat(paddedx);
-            listy=cell2mat(paddedy);
+                    case 'death'
+                        paddedx=cellfun(@(x,y) padarray(x, [y 0],NaN,'pre'),xout,valMin,'UniformOutput',false);
+                        paddedy=cellfun(@(x,y) padarray(x, [y 0],NaN,'pre'),yout,valMin,'UniformOutput',false);
+                    otherwise % birth
+                        paddedx=cellfun(@(x,y) padarray(x, [y 0],NaN,'post'),xout,valMax,'UniformOutput',false);
+                        paddedy=cellfun(@(x,y) padarray(x, [y 0],NaN,'post'),yout,valMax,'UniformOutput',false);
+                end
+
+
+                listx=cell2mat(paddedx);
+                listy=cell2mat(paddedy);
+            end
+
+            if strcmp(datagroups(i).Param.Plot_type{end},'temporal')
+
+             %   yout=cellfun(@(x,y) y(~isnan(x)), xout,yout,'UniformOutput',false);
+              %  xout=cellfun(@(x) x(~isnan(x)), xout,'UniformOutput',false);
+
+             %   valMin = cellfun(@(x) min(x), xout);
+              %  totMin=min(valMin)-1;
+           tt=   xout{1}
+                valMax = cellfun(@(x) max(x), xout)
+                totMax=max(valMax)+1
+
+                totMax= num2cell(totMax*ones(1,numel(valMax)));
+               % totMin=  num2cell(-totMin*ones(1,numel(valMin)));
+
+                len=cellfun(@(x) length(x), xout,'UniformOutput',false);
+
+                valMax = cellfun(@(x,y) x-y,  totMax,len,'UniformOutput',false)
+             %   valMin = cellfun(@(x,y) x-y,  totMin,len,'UniformOutput',false);
+
+                switch datagroups(i).Param.Traj_synchronization{end}
+                    case 'sep'
+                        disp('SEP synchro is not compatible with temporal display mode !')
+                        % lenMin=cellfun(@(x) length(find(x<=0)), xout,'UniformOutput',false);
+                        % lenMax=cellfun(@(x) length(find(x>=0)), xout,'UniformOutput',false);
+                        % 
+                        % valMax = cellfun(@(x,y) x-y,  totMax,lenMax,'UniformOutput',false);
+                        % valMin = cellfun(@(x,y) x-y,  totMin,lenMin,'UniformOutput',false);
+                        % 
+                        % paddedx=cellfun(@(x,y) padarray(x, [y 0],NaN,'pre'),xout,valMin,'UniformOutput',false);
+                        % paddedy=cellfun(@(x,y) padarray(x, [y 0],NaN,'pre'),yout,valMin,'UniformOutput',false);
+                        % 
+                        % paddedx=cellfun(@(x,y) padarray(x, [y 0],NaN,'post'),paddedx,valMax,'UniformOutput',false);
+                        % paddedy=cellfun(@(x,y) padarray(x, [y 0],NaN,'post'),paddedy,valMax,'UniformOutput',false);
+
+                    case 'death'
+                        paddedx=cellfun(@(x,y) padarray(x, [y 0],NaN,'pre'),xout,valMax,'UniformOutput',false);
+                        paddedy=cellfun(@(x,y) padarray(x, [y 0],NaN,'pre'),yout,valMax,'UniformOutput',false);
+                    otherwise % birth
+                        paddedx=cellfun(@(x,y) padarray(x, [y 0],NaN,'post'),xout,valMax,'UniformOutput',false);
+                        paddedy=cellfun(@(x,y) padarray(x, [y 0],NaN,'post'),yout,valMax,'UniformOutput',false);
+                end
+
+                paddedx
+                listx=cell2mat(paddedx);
+                listy=cell2mat(paddedy);
+            end
+
+
+
+
 
             meanx=min(listx(:)):max(listx(:));
             meany=mean(listy,2,"omitnan"); meany=meany';
             stdy = std(listy,0,2,"omitnan")./sqrt(sum(~isnan(listy),2)); stdy=stdy';
 
             %[rlsb] = bootstrp(Nboot,@(x)x,rlst);
-           % rlsb=[rlst; rlsb ]; %add the real one in addition to the bootstrap
+            % rlsb=[rlst; rlsb ]; %add the real one in addition to the bootstrap
 
             figure(havg); hold on;
-            plot(meanx, meany,'Color',col(i,:),'LineWidth',2); 
+            plot(meanx, meany,'Color',col(i,:),'LineWidth',2);
             closedxt = [meanx fliplr(meanx)];
             inBetween = [meany+stdy fliplr(meany-stdy)];
 
@@ -161,7 +203,7 @@ for i=1:numel(datagroups)
             ptch.EdgeAlpha=0.3;
             ptch.LineWidth=1;
 
-             if strcmp(datagroups(i).Param.Plot_type{end},'temporal')
+            if strcmp(datagroups(i).Param.Plot_type{end},'temporal')
                 xlabel('Time (frames)');
             end
             if strcmp(datagroups(i).Param.Plot_type{end},'generation')
@@ -169,8 +211,8 @@ for i=1:numel(datagroups)
             end
 
             ylabel(dat{j}{2},'Interpreter','None');
-    
- 
+
+
 
 
         end
