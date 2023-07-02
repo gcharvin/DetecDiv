@@ -92,10 +92,8 @@ for i=1:numel(datagroups)
                 havg=figure('Color','w','Tag',['plot_average_' dat{j}{2}],'Name',dat{j}{2});
             end
 
+            if strcmp(datagroups(i).Param.Plot_type{end},'generation')   && ~strcmp(d{2},'event') % don t do it if if  RLS survival curve
 
-            if strcmp(datagroups(i).Param.Plot_type{end},'generation')   % here distinguish if data are an event : in this case, plot the RLS curve !!!
-               % HERE  and synchronize from birth, take censoring into
-               % account
 
                 yout=cellfun(@(x,y) y(~isnan(x)), xout,yout,'UniformOutput',false);
                 xout=cellfun(@(x) x(~isnan(x)), xout,'UniformOutput',false);
@@ -142,12 +140,6 @@ for i=1:numel(datagroups)
 
             if strcmp(datagroups(i).Param.Plot_type{end},'temporal')
 
-                %   yout=cellfun(@(x,y) y(~isnan(x)), xout,yout,'UniformOutput',false);
-                %  xout=cellfun(@(x) x(~isnan(x)), xout,'UniformOutput',false);
-
-                %   valMin = cellfun(@(x) min(x), xout);
-                %  totMin=min(valMin)-1;
-                %    tt=   xout{1}
                 valMax = cellfun(@(x) max(x), xout);
                 totMax=max(valMax)+1;
 
@@ -176,6 +168,7 @@ for i=1:numel(datagroups)
 
             end
 
+            if ~strcmp(d{2},'event')  % plot the average data , unless the user requests to plot the RLS curve
             meanx=min(listx(:)):max(listx(:)); 
             meany=mean(listy,2,"omitnan"); meany=meany'; meany=meany(~isnan(meany));
             stdy = std(listy,0,2,"omitnan")./sqrt(sum(~isnan(listy),2)); stdy=stdy'; stdy=stdy(~isnan(stdy));
@@ -212,6 +205,16 @@ for i=1:numel(datagroups)
             end
 
             ylabel(dat{j}{2},'Interpreter','None');
+            else
+
+                censored=cellfun(@(x) x(end)==categorical("stillAlive"),yout);
+                ngen=cellfun(@(x) length(x),yout)-1;
+
+% here plot the rls cuve !!!
+% find patch function , ecdf + kaplan meier algorithm !
+
+            
+            end
 
 
         end
