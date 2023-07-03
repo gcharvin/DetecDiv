@@ -17,6 +17,16 @@ function plotData(datagroups,filename,varargin)
 col=lines(numel(datagroups));
 
 
+leg={};
+
+for i=1:numel(datagroups)
+      dat=datagroups(i).Source.nodename;
+     for j=1:numel(dat) % loop on plotted data types
+                leg{j}{2*i-1}=datagroups(i).Name;
+                 leg{j}{2*i}='';
+     end
+end
+
 for i=1:numel(datagroups)
 
     if ~isfield(datagroups(i).Source,'nodename') % user did not check any node, so skip plotting
@@ -64,7 +74,6 @@ for i=1:numel(datagroups)
             end
         end
 
-
         cmap=lines(numel(xout));
         cmapcell = mat2cell(cmap, ones(numel(xout),1), 3);
 
@@ -73,6 +82,8 @@ for i=1:numel(datagroups)
             hold on;
 
             cellfun(@(x, y, c) plot(x, y, 'Color',c), xout, yout, cmapcell', 'UniformOutput', false);
+
+            title(datagroups(i).Name,'Interpreter','none');
 
             if strcmp(datagroups(i).Param.Plot_type{end},'temporal')
                 xlabel('Time (frames)');
@@ -95,7 +106,6 @@ for i=1:numel(datagroups)
             end
 
             if strcmp(datagroups(i).Param.Plot_type{end},'generation')   && ~strcmp(d{2},'event') % don t do it if if  RLS survival curve
-
      
                 yout=cellfun(@(x,y) y(~isnan(x)), xout,yout,'UniformOutput',false);
                 xout=cellfun(@(x) x(~isnan(x)), xout,'UniformOutput',false);
@@ -198,6 +208,8 @@ for i=1:numel(datagroups)
 
            end
 
+           legend(leg{j});
+
             if strcmp(datagroups(i).Param.Plot_type{end},'temporal')
                 xlabel('Time (frames)');
             end
@@ -216,7 +228,9 @@ for i=1:numel(datagroups)
    
                  xt(1)=0;
                  figure(havg(j)); hold on;
-                 plot(xt,1-yt,'LineWidth',2,'color',col(i,:))
+                 plot(xt,1-yt,'LineWidth',2,'color',col(i,:));
+
+                  leg{j}{2*i-1}=[ leg{j}{2*i-1} ' - Median=' num2str(median(ngen)) ' (N=' num2str(length(ngen)) ')'];
  %   leg{lcc,1}=[comment{c}, ': Median=' num2str(median(rlstNdivs{c,1})) ' (N=' num2str(length(rlstNdivs{c,1})) ')'];
 
         fup(1)=0;
@@ -230,6 +244,8 @@ for i=1:numel(datagroups)
         ptch.FaceAlpha=0.15;
         ptch.EdgeAlpha=0.3;
         ptch.LineWidth=1;
+
+         legend(leg{j});
 
         ylabel('Survival')
         xlabel('Generations')
