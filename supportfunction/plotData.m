@@ -86,15 +86,17 @@ for i=1:numel(datagroups)
 
         if datagroups(i).Param.Plot_average
 
-            havg=findobj('Tag',['plot_average_' dat{j}{2}]);
+            htmp=findobj('Tag',['plot_average_' dat{j}{2}]);
 
-            if numel(havg)==0
-                havg=figure('Color','w','Tag',['plot_average_' dat{j}{2}],'Name',dat{j}{2});
+            if numel(htmp)==0
+                havg(j)=figure('Color','w','Tag',['plot_average_' dat{j}{2}],'Name',dat{j}{2});
+            else
+                havg(j)=htmp;
             end
 
             if strcmp(datagroups(i).Param.Plot_type{end},'generation')   && ~strcmp(d{2},'event') % don t do it if if  RLS survival curve
 
-
+     
                 yout=cellfun(@(x,y) y(~isnan(x)), xout,yout,'UniformOutput',false);
                 xout=cellfun(@(x) x(~isnan(x)), xout,'UniformOutput',false);
 
@@ -169,21 +171,20 @@ for i=1:numel(datagroups)
             end
 
             if ~strcmp(d{2},'event')  % plot the average data , unless the user requests to plot the RLS curve
-            meanx=min(listx(:)):max(listx(:)); 
+            
+            meanx=min(listx(:)):max(listx(:));
             meany=mean(listy,2,"omitnan"); meany=meany'; meany=meany(~isnan(meany));
             stdy = std(listy,0,2,"omitnan")./sqrt(sum(~isnan(listy),2)); stdy=stdy'; stdy=stdy(~isnan(stdy));
 
-            mi=min(size(meanx,2),mean(meany,2));
+            mi=uint16(min(size(meanx,2),size(meany,2)));
             meanx=meanx(1:mi);
             meany=meany(1:mi);
             stdy=stdy(1:mi);
 
-     
-
             %[rlsb] = bootstrp(Nboot,@(x)x,rlst);
             % rlsb=[rlst; rlsb ]; %add the real one in addition to the bootstrap
 
-            figure(havg); hold on;
+            figure(havg(j)); hold on;
             plot(meanx, meany,'Color',col(i,:),'LineWidth',2);
             closedxt = [meanx fliplr(meanx)];
             inBetween = [meany+stdy fliplr(meany-stdy)];
@@ -205,17 +206,39 @@ for i=1:numel(datagroups)
             end
 
             ylabel(dat{j}{2},'Interpreter','None');
-            else
+
+            else % rls curve correspondinf to "event" subdataset 
 
                 censored=cellfun(@(x) x(end)==categorical("stillAlive"),yout);
                 ngen=cellfun(@(x) length(x),yout)-1;
 
-% here plot the rls cuve !!!
-% find patch function , ecdf + kaplan meier algorithm !
+                 [yt,xt,flo,fup]=ecdf(ngen,'Censoring',censored);
+   
+                 xt(1)=0;
+                 figure(havg(j)); hold on;
+                 plot(xt,1-yt,'LineWidth',2,'color',col(i,:))
+ %   leg{lcc,1}=[comment{c}, ': Median=' num2str(median(rlstNdivs{c,1})) ' (N=' num2str(length(rlstNdivs{c,1})) ')'];
+
+        fup(1)=0;
+        fup(end)=1;
+        flo(1)=0;
+        flo(end)=1;
+        closedxt = [xt', fliplr(xt')];
+        inBetween = [1-fup', fliplr(1-flo')];
+        ptch=patch(closedxt, inBetween,col(i,:));
+        ptch.EdgeColor=col(i,:);
+        ptch.FaceAlpha=0.15;
+        ptch.EdgeAlpha=0.3;
+        ptch.LineWidth=1;
+
+        ylabel('Survival')
+        xlabel('Generations')
+  %      leg{lcc,1}='';
+    %    lcc=lcc+1;
+  %  end
 
             
             end
-
 
         end
 
@@ -224,6 +247,8 @@ for i=1:numel(datagroups)
 
 
 end
+
+
 
 
 
