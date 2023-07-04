@@ -16,7 +16,6 @@ function plotData(datagroups,filename,varargin)
 
 col=lines(numel(datagroups));
 
-
 leg={};
 
 for i=1:numel(datagroups)
@@ -208,7 +207,9 @@ for i=1:numel(datagroups)
 
            end
 
+           warning off all
            legend(leg{j});
+           warning on all 
 
             if strcmp(datagroups(i).Param.Plot_type{end},'temporal')
                 xlabel('Time (frames)');
@@ -245,23 +246,25 @@ for i=1:numel(datagroups)
         ptch.EdgeAlpha=0.3;
         ptch.LineWidth=1;
 
+        warning off all 
          legend(leg{j});
+        warning on all
 
         ylabel('Survival')
         xlabel('Generations')
-  %      leg{lcc,1}='';
-    %    lcc=lcc+1;
-  %  end
-
             
             end
-
         end
-
     end
+end
 
-
-
+for i=1:numel(datagroups)
+      dat=datagroups(i).Source.nodename;
+     for j=1:numel(dat) % loop on plotted data types
+           strname=fullfile(filename,[datagroups(i).Name '_' dat{j}{1} '_' dat{j}{2}]);
+            exportgraphics(h(i,j),[strname '.pdf'],'BackgroundColor','None');
+            savefig(h(i,j),[strname '.fig']);
+     end
 end
 
 
