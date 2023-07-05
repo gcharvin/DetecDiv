@@ -23,6 +23,13 @@ for i=1:numel(datagroups)
      for j=1:numel(dat) % loop on plotted data types
                 leg{j}{2*i-1}=datagroups(i).Name;
                  leg{j}{2*i}='';
+
+                 strname=fullfile(filename,['average_' dat{j}{1} '_' dat{j}{2}]);
+                 outfile=[strname  '.xlsx']; %write as xlsx is important , otherwise throw an error with large files
+
+        if exist(outfile)
+            delete(outfile);
+        end
      end
 end
 
@@ -94,7 +101,7 @@ for i=1:numel(datagroups)
             ylabel(dat{j}{2},'Interpreter','None');
         end
 
-        if datagroups(i).Param.Plot_average
+        if datagroups(i).Param.Plot_average  % plot average curve
 
             htmp=findobj('Tag',['plot_average_' dat{j}{2}]);
 
@@ -198,6 +205,15 @@ for i=1:numel(datagroups)
             closedxt = [meanx fliplr(meanx)];
             inBetween = [meany+stdy fliplr(meany-stdy)];
 
+            tmp=[];
+            tmp(1,:)=meanx;
+            tmp(2,:)=meany;
+            tmp(3,:)=stdy;
+
+            tmp=num2cell(tmp);
+            tmp=[ {datagroups(i).Name; ' '; ' '} , {'abscissa'; 'mean'; 'sem'},  tmp]; 
+           % tmp=[ {'abscissa'; 'mean'; 'sem'} tmp];
+
             ptch=patch(closedxt, inBetween',col(i,:));
            if numel(ptch)
             ptch.EdgeColor=col(i,:);
@@ -231,8 +247,16 @@ for i=1:numel(datagroups)
                  figure(havg(j)); hold on;
                  plot(xt,1-yt,'LineWidth',2,'color',col(i,:));
 
+
+            tmp=[];
+            tmp(1,:)=xt;
+            tmp(2,:)=1-yt;
+            tmp(3,:)=(fup-flo)/2;
+
+            tmp=num2cell(tmp);
+            tmp=[ {datagroups(i).Name; ' '; ' '},  {'abscissa'; 'mean'; 'sem'} tmp];
+
                   leg{j}{2*i-1}=[ leg{j}{2*i-1} ' - Median=' num2str(median(ngen)) ' (N=' num2str(length(ngen)) ')'];
- %   leg{lcc,1}=[comment{c}, ': Median=' num2str(median(rlstNdivs{c,1})) ' (N=' num2str(length(rlstNdivs{c,1})) ')'];
 
         fup(1)=0;
         fup(end)=1;
@@ -254,6 +278,10 @@ for i=1:numel(datagroups)
         xlabel('Generations')
             
             end
+        
+                 strname=fullfile(filename,['average_' dat{j}{1} '_' dat{j}{2}]);
+                 outfile=[strname  '.xlsx']; %write as xlsx is important , otherwise throw an error with large files
+               writecell(tmp,outfile,'WriteMode','append');
         end
     end
 end
@@ -267,73 +295,6 @@ for i=1:numel(datagroups)
      end
 end
 
-
-
-
-
-
-
-return;
-
-
-
-for i=1:numel(dat)
-    if numel(dat)>0
-
-        d=dat{i};
-
-        outfile=fullfile(p,[f '_' d{1} '.xlsx']); %write as xlsx is important , otherwise throw an error with large files
-
-        if exist(outfile)
-            delete(outfile);
-        end
-    end
-end
-
-for i=1:numel(dat)
-    if numel(dat)>0
-
-        d=dat{i};
-
-        strtot={};
-        cc=1;
-        for j=1:numel(rois)
-
-            groups={rois(j).data.groupid};
-            pix=find(matches(groups,d{1}));
-
-            if numel(pix)
-                out= rois(j).data(pix).getData(d{2});
-
-                str={};
-                str{1}=rois(j).id;
-
-                if iscell(out)
-                    str=[str out'];
-                else
-                    str2=num2cell(out');
-                    ny=size(str2,1);
-                    if ny>1
-                        str(2:ny,1)={[]};
-                    end
-
-                    str=[str str2];
-                end
-
-
-                strtot((cc-1)*size(str,1)+1:cc*size(str,1),1:size(str,2))=str;
-                cc=cc+1;
-
-            end
-        end
-
-        if cc>1
-            tt=fullfile(p,[f '_' d{1} '.xlsx']);
-
-            writecell(strtot,fullfile(p,[f '_' d{1} '.xlsx']),'sheet',d{2},'WriteMode','overwritesheet');
-        end
-    end
-end
 
 disp('Export is done !')
 
