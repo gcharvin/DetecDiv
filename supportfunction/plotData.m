@@ -16,6 +16,22 @@ function plotData(datagroups,filename,varargin)
 
 col=lines(numel(datagroups));
 
+leg={};
+
+for i=1:numel(datagroups)
+      dat=datagroups(i).Source.nodename;
+     for j=1:numel(dat) % loop on plotted data types
+                leg{j}{2*i-1}=datagroups(i).Name;
+                 leg{j}{2*i}='';
+
+                 strname=fullfile(filename,['average_' dat{j}{1} '_' dat{j}{2}]);
+                 outfile=[strname  '.xlsx']; %write as xlsx is important , otherwise throw an error with large files
+
+        if exist(outfile)
+            delete(outfile);
+        end
+     end
+end
 
 for i=1:numel(datagroups)
 
@@ -64,7 +80,6 @@ for i=1:numel(datagroups)
             end
         end
 
-
         cmap=lines(numel(xout));
         cmapcell = mat2cell(cmap, ones(numel(xout),1), 3);
 
@@ -73,6 +88,8 @@ for i=1:numel(datagroups)
             hold on;
 
             cellfun(@(x, y, c) plot(x, y, 'Color',c), xout, yout, cmapcell', 'UniformOutput', false);
+
+            title(datagroups(i).Name,'Interpreter','none');
 
             if strcmp(datagroups(i).Param.Plot_type{end},'temporal')
                 xlabel('Time (frames)');
@@ -84,19 +101,18 @@ for i=1:numel(datagroups)
             ylabel(dat{j}{2},'Interpreter','None');
         end
 
-        if datagroups(i).Param.Plot_average
+        if datagroups(i).Param.Plot_average  % plot average curve
 
-            havg=findobj('Tag',['plot_average_' dat{j}{2}]);
+            htmp=findobj('Tag',['plot_average_' dat{j}{2}]);
 
-            if numel(havg)==0
-                havg=figure('Color','w','Tag',['plot_average_' dat{j}{2}],'Name',dat{j}{2});
+            if numel(htmp)==0
+                havg(j)=figure('Color','w','Tag',['plot_average_' dat{j}{2}],'Name',dat{j}{2});
+            else
+                havg(j)=htmp;
             end
 
-
-            if strcmp(datagroups(i).Param.Plot_type{end},'generation')   % here distinguish if data are an event : in this case, plot the RLS curve !!!
-               % HERE  and synchronize from birth, take censoring into
-               % account
-
+            if strcmp(datagroups(i).Param.Plot_type{end},'generation')   && ~strcmp(d{2},'event') % don t do it if if  RLS survival curve
+     
                 yout=cellfun(@(x,y) y(~isnan(x)), xout,yout,'UniformOutput',false);
                 xout=cellfun(@(x) x(~isnan(x)), xout,'UniformOutput',false);
 
@@ -142,12 +158,6 @@ for i=1:numel(datagroups)
 
             if strcmp(datagroups(i).Param.Plot_type{end},'temporal')
 
-                %   yout=cellfun(@(x,y) y(~isnan(x)), xout,yout,'UniformOutput',false);
-                %  xout=cellfun(@(x) x(~isnan(x)), xout,'UniformOutput',false);
-
-                %   valMin = cellfun(@(x) min(x), xout);
-                %  totMin=min(valMin)-1;
-                %    tt=   xout{1}
                 valMax = cellfun(@(x) max(x), xout);
                 totMax=max(valMax)+1;
 
@@ -176,24 +186,33 @@ for i=1:numel(datagroups)
 
             end
 
-            meanx=min(listx(:)):max(listx(:)); 
+            if ~strcmp(d{2},'event')  % plot the average data , unless the user requests to plot the RLS curve
+            
+            meanx=min(listx(:)):max(listx(:));
             meany=mean(listy,2,"omitnan"); meany=meany'; meany=meany(~isnan(meany));
             stdy = std(listy,0,2,"omitnan")./sqrt(sum(~isnan(listy),2)); stdy=stdy'; stdy=stdy(~isnan(stdy));
 
-            mi=min(size(meanx,2),mean(meany,2));
+            mi=uint16(min(size(meanx,2),size(meany,2)));
             meanx=meanx(1:mi);
             meany=meany(1:mi);
             stdy=stdy(1:mi);
 
-     
-
             %[rlsb] = bootstrp(Nboot,@(x)x,rlst);
             % rlsb=[rlst; rlsb ]; %add the real one in addition to the bootstrap
 
-            figure(havg); hold on;
+            figure(havg(j)); hold on;
             plot(meanx, meany,'Color',col(i,:),'LineWidth',2);
             closedxt = [meanx fliplr(meanx)];
             inBetween = [meany+stdy fliplr(meany-stdy)];
+
+            tmp=[];
+            tmp(1,:)=meanx;
+            tmp(2,:)=meany;
+            tmp(3,:)=stdy;
+
+            tmp=num2cell(tmp);
+            tmp=[ {datagroups(i).Name; ' '; ' '} , {'abscissa'; 'mean'; 'sem'},  tmp]; 
+           % tmp=[ {'abscissa'; 'mean'; 'sem'} tmp];
 
             ptch=patch(closedxt, inBetween',col(i,:));
            if numel(ptch)
@@ -204,6 +223,10 @@ for i=1:numel(datagroups)
 
            end
 
+           warning off all
+           legend(leg{j});
+           warning on all 
+
             if strcmp(datagroups(i).Param.Plot_type{end},'temporal')
                 xlabel('Time (frames)');
             end
@@ -213,80 +236,65 @@ for i=1:numel(datagroups)
 
             ylabel(dat{j}{2},'Interpreter','None');
 
+            else % rls curve correspondinf to "event" subdataset 
 
-        end
+                censored=cellfun(@(x) x(end)==categorical("stillAlive"),yout);
+                ngen=cellfun(@(x) length(x),yout)-1;
 
-    end
-
-
-
-end
-
-
-
-
-
-return;
+                 [yt,xt,flo,fup]=ecdf(ngen,'Censoring',censored);
+   
+                 xt(1)=0;
+                 figure(havg(j)); hold on;
+                 plot(xt,1-yt,'LineWidth',2,'color',col(i,:));
 
 
+            tmp=[];
+            tmp(1,:)=xt;
+            tmp(2,:)=1-yt;
+            tmp(3,:)=(fup-flo)/2;
 
-for i=1:numel(dat)
-    if numel(dat)>0
+            tmp=num2cell(tmp);
+            tmp=[ {datagroups(i).Name; ' '; ' '},  {'abscissa'; 'mean'; 'sem'} tmp];
 
-        d=dat{i};
+                  leg{j}{2*i-1}=[ leg{j}{2*i-1} ' - Median=' num2str(median(ngen)) ' (N=' num2str(length(ngen)) ')'];
 
-        outfile=fullfile(p,[f '_' d{1} '.xlsx']); %write as xlsx is important , otherwise throw an error with large files
+        fup(1)=0;
+        fup(end)=1;
+        flo(1)=0;
+        flo(end)=1;
+        closedxt = [xt', fliplr(xt')];
+        inBetween = [1-fup', fliplr(1-flo')];
+        ptch=patch(closedxt, inBetween,col(i,:));
+        ptch.EdgeColor=col(i,:);
+        ptch.FaceAlpha=0.15;
+        ptch.EdgeAlpha=0.3;
+        ptch.LineWidth=1;
 
-        if exist(outfile)
-            delete(outfile);
-        end
-    end
-end
+        warning off all 
+         legend(leg{j});
+        warning on all
 
-for i=1:numel(dat)
-    if numel(dat)>0
-
-        d=dat{i};
-
-        strtot={};
-        cc=1;
-        for j=1:numel(rois)
-
-            groups={rois(j).data.groupid};
-            pix=find(matches(groups,d{1}));
-
-            if numel(pix)
-                out= rois(j).data(pix).getData(d{2});
-
-                str={};
-                str{1}=rois(j).id;
-
-                if iscell(out)
-                    str=[str out'];
-                else
-                    str2=num2cell(out');
-                    ny=size(str2,1);
-                    if ny>1
-                        str(2:ny,1)={[]};
-                    end
-
-                    str=[str str2];
-                end
-
-
-                strtot((cc-1)*size(str,1)+1:cc*size(str,1),1:size(str,2))=str;
-                cc=cc+1;
-
+        ylabel('Survival')
+        xlabel('Generations')
+            
             end
-        end
-
-        if cc>1
-            tt=fullfile(p,[f '_' d{1} '.xlsx']);
-
-            writecell(strtot,fullfile(p,[f '_' d{1} '.xlsx']),'sheet',d{2},'WriteMode','overwritesheet');
+        
+                 strname=fullfile(filename,['average_' dat{j}{1} '_' dat{j}{2}]);
+                 outfile=[strname  '.xlsx']; %write as xlsx is important , otherwise throw an error with large files
+               writecell(tmp,outfile,'WriteMode','append');
         end
     end
 end
+
+for i=1:numel(datagroups)
+      dat=datagroups(i).Source.nodename;
+     for j=1:numel(dat) % loop on plotted data types
+           strname=fullfile(filename,[datagroups(i).Name '_' dat{j}{1} '_' dat{j}{2}]);
+            exportgraphics(h(i,j),[strname '.pdf'],'BackgroundColor','None');
+            savefig(h(i,j),[strname '.fig']);
+     end
+end
+
 
 disp('Export is done !')
 
