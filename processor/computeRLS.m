@@ -40,6 +40,7 @@ end
 param=paramout;
 
 dataout=[];
+mask_data=[];
 dataout=roiobj.data;
 
 roiobj.load('results');
@@ -83,8 +84,6 @@ mask_pixdata=find(cellfun(@(x) ~isempty(x), mask_pixdata));
 
 if numel(mask_pixdata)
     mask_data=roiobj.data(mask_pixdata);
-else
-return;
 end
 
 for j=1:2
