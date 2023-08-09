@@ -407,6 +407,10 @@ for i=1:numel(htraj)
         if numel(hpp)
         
 
+        datastruct=hpp.UserData;
+        datatot=datastruct.getData('id_training');
+        pixdat=numel(find(datatot==0));
+
         dat=hpp.YData;
         pix=obj.display.frame;
 
@@ -417,6 +421,7 @@ for i=1:numel(htraj)
             txt=num2str(dat(pix));
         end
 
+        txt=[txt ' - ' num2str(pixdat) ' frames left to annotate'];
         title(hpo,txt);
         end
     

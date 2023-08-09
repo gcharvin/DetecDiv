@@ -137,7 +137,7 @@ if numel(classif)>0
         if numel(pixdata)
 
             if ~isfield(obj.data(pixdata).userData,'bounds')
-                obj.data(pixdata).userData.bounds=[0 0];
+                obj.data(pixdata).userData.bounds=[];
                 
             else
                 if strcmp(event.Key,specialkeys{2}{1})

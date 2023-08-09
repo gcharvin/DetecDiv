@@ -74,7 +74,8 @@ for i=1:numel(rois)
     bounds=[];
     if isfield(data.userData,'bounds')
         bounds=data.userData.bounds;
-        if bounds(1)==0
+
+        if numel(bounds) && bounds(1)==0
             bounds=[];
         end
     end
