@@ -353,11 +353,11 @@ for i=1:numel(obj.display.channel)
             end
         end
 
-        if numel(strbound)
-            subt(end+1)={['Frames bounds: ' strbound]} ;
-        end
+%         if numel(strbound)
+%             subt(end+1)={['Frames bounds: ' strbound]} ;
+%         end
 
-        str=[str subt];
+      %  str=[str subt];
 
         if ~strcmp(h.UserData.correctionMode,'off')
             tt=h.UserData.correctionMode;
@@ -376,7 +376,9 @@ end
 
 
 htext=findobj(gcf,'Tag','frametext');
+if numel(htext)
 htext.String=num2str(obj.display.frame);
+end
 
 % if classif result and training is displayed, then update the position of the cursor
 
@@ -417,7 +419,7 @@ for i=1:numel(htraj)
 
         title(hpo,txt);
         end
-        
+    
  
     end
 end

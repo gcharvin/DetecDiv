@@ -416,10 +416,10 @@ btnSetFrame = uicontrol('Style', 'pushbutton','FontSize',10, 'String', 'Plot set
 if numel(classif)>0
 
     if strcmp(classif.category{1},'Image')  || strcmp(classif.category{1},'LSTM') % display user training and results
-        if numel(obj.train)==0 % new roi , training not yet used
-            obj.train.(classif.strid)=[];
-            obj.train.(classif.strid).id=zeros(1,size(obj.image,4));
-        end
+%         if numel(obj.train)==0 % new roi , training not yet used
+%             obj.train.(classif.strid)=[];
+%             obj.train.(classif.strid).id=zeros(1,size(obj.image,4));
+%         end
 
         %         if obj.train(obj.display.frame)==0 % user training
         %             str='not classified';
@@ -779,7 +779,16 @@ end
 
 h=findobj('Tag',['ROI' obj.id]);
 
-id=obj.train.(classif.strid).id;
+listdata={obj.data.groupid};
+pixdata=find(matches(listdata,classif.strid));
+
+if numel(pixdata)
+id=obj.data(pixdata).getData('id_training');
+else
+    return;
+end
+
+%id=obj.train.(classif.strid).id;
 
 idframe=id(obj.display.frame);
 

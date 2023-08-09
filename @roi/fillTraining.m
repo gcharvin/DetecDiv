@@ -45,43 +45,71 @@ for i=1:numel(varargin)
      end
 end
 
+trainid=training; 
 
-if numel(training)==0
-%find the training id
-trainids=fieldnames(obj.train);
-
-str=[];
-for i=1:numel(trainids)
-    str=[str num2str(i) ' - ' trainids{i} ';'];
-end
-
-prompt=['Choose which training to fill among: ' str];
-trainid=input(prompt);
-
-if numel(trainid)==0
-                trainid=numel(trainids);
-end
-
-trainid=trainids{trainid};
-else
-    trainid=training; 
-end
+% if numel(training)==0
+% %find the training id
+% trainids=fieldnames(obj.train);
+% 
+% str=[];
+% for i=1:numel(trainids)
+%     str=[str num2str(i) ' - ' trainids{i} ';'];
+% end
+% 
+% prompt=['Choose which training to fill among: ' str];
+% trainid=input(prompt);
+% 
+% if numel(trainid)==0
+%                 trainid=numel(trainids);
+% end
+% 
+% trainid=trainids{trainid};
+% else
+%     trainid=training; 
+% end
 
 classes= obj.classes;
 %%
 switch type
     case 'default'
     %fill the holes
-    lastAnnotatedFrame=find(obj.train.(trainid).id,1,'last');
+
+    listdata={obj.data.groupid};
+    pixdata=find(matches(listdata,trainid));
+
+if numel(pixdata)
+id=obj.data(pixdata).getData('id_training');
+else
+fprintf('Training data not found !');
+return;
+end
+
+
+    lastAnnotatedFrame=find(id,1,'last');
 
     for f=2:lastAnnotatedFrame 
-        if obj.train.(trainid).id(f)==0
-         obj.train.(trainid).id(f)=     obj.train.(trainid).id(f-1);
+        if id(f)==0
+         id(f)=     id(f-1);
         end
     end
+
+
+    training_data=obj.data(pixdata);
+    classes=training_data.userData.classes;
+    pix=1:lastAnnotatedFrame;
+    pixid=id(pix);
+
+    pixnonzero=find(pixid>0);
+
+    tmp=training_data.data.('labels_training');
+               tmp(pixnonzero)=categorical(classes(pixid(pixnonzero)));
+               training_data.data.('labels_training')=tmp;
+
+               training_data.data.('id_training')=id;
+
     disp('Array filled');
     
-    case 'div'
+    case 'div' % no longer used
         %find class ids
         deathid=findclassid(classes,'dead');
         censorid=findclassid(classes,'censor');

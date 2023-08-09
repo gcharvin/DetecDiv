@@ -8,6 +8,7 @@ function h=plot(data,pos,classif)
 
 % if 3rd argument is provided, then it s the annotation mode 
 
+
 if numel(data.plotProperties)==0
     h=[];
     return;
@@ -115,7 +116,7 @@ for i=1:numel(plotidx)
 
       pix=find(xr==frame);
   
-      line([xr(pix) xr(pix)],yy,'Color',[0.5 0.5 0.5],'LineWidth',1,'Tag',[data.parentid '_track'],'userData',data);
+      line([xr(pix) xr(pix)],yy,'Color',[0.5 0.5 0.5],'LineWidth',1,'Tag',[data.parentid '_track'],'UserData',data);
 
       if nargin==3 % display current class
 
@@ -130,11 +131,25 @@ for i=1:numel(plotidx)
         title(txt,'FontSize',20);
 
       end
-
+      str=[str 'frame'];
       end
   end
-  str=[str 'frame'];
+  
+  % plot bounds if any 
+  if isfield(data.userData,'bounds')
+      bounds=data.userData.bounds;
+      yy=ylim(hs(i));
+
+        for k=1:numel(bounds)
+            line([bounds(k) bounds(k)],yy,'Color',[1 0 0],'LineWidth',2,'LineStyle','--','Tag',[data.parentid '_bounds_' num2str(k)],'UserData',data);
+              str=[str ['bound:' num2str(bounds(k))]];
+        end
+  end
+
+
   legend(hs(i),str,'Interpreter','none','FontSize',10);
+
+  xlim([1 numel(dat)]);
 end
 
 if toplot==0

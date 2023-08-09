@@ -338,7 +338,8 @@ for i=1:length(rois)
     %         %pixelchannel=size(obj.image,3);
     %     end
 
-
+    formatInDataSeries(classif.roi(cc+1)); % converts train object to datseries;
+    classif.roi(cc+1).train=[];
     classif.roi(cc+1).save;
     classif.roi(cc+1).clear;
 
