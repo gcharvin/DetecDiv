@@ -1,4 +1,4 @@
-function paramout=combineMultipleChannels(param,roiobj,frames)
+function [paramout,dataout]=combineMultipleChannels(param,roiobj,frames)
 
 
 % listChannels=['N/A', listChannels];
@@ -32,6 +32,7 @@ else
 paramout=param; 
 end
 
+dataout=[];
 obj=roiobj;
 
 args={};
