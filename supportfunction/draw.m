@@ -994,6 +994,7 @@ else % user annotation mode with function classif
 
             end
 
+            
             data(cc).plotProperties(:,1)={false};
             data(cc).plotProperties(ind,1)={true};
             data(cc).show=true;

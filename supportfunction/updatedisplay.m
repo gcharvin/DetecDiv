@@ -69,7 +69,9 @@ if numel(classif)>0
                         dd=obj.data(pixdata);
                        ddts=dd.getData('labels_training');
 
+                       if numel(ddts)
                         strplus=[ddts(obj.display.frame)];
+                       end
                   
                     end
         end

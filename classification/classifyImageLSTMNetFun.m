@@ -197,14 +197,16 @@ pixdata=find(arrayfun(@(x) strcmp(x.groupid,classif.strid),roiobj.data));
      else
      cc=numel(roiobj.data)+1;
      end
- end
 
-
-    data(cc)=dataseries;
+      data(cc)=dataseries;
     data(cc).class="classification";
     data(cc).groupid=classif.strid;
     data(cc).parentid=roiobj.id; 
-    data(cc).plotGroup={[] [] [] [] [] {'id' 'prob' 'labels'}};
+   % data(cc).plotGroup={[] [] [] [] [] {'id' 'prob' 'labels'}};
+ end
+
+data(cc).plotGroup={[] [] [] [] [] {'id' 'prob' 'labels'}};
+   
 
 
 datatmp=data(cc);

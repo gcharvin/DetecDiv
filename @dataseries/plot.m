@@ -59,6 +59,7 @@ for i=1:numel(groups)
 end
 
 
+
 if nargin~=3
 h.Position(4)=n*0.15;
 else
@@ -116,6 +117,8 @@ for i=1:numel(plotidx)
 
       pix=find(xr==frame);
   
+      'ok'
+      
       line([xr(pix) xr(pix)],yy,'Color',[0.5 0.5 0.5],'LineWidth',1,'Tag',[data.parentid '_track'],'UserData',data);
 
       if nargin==3 % display current class
