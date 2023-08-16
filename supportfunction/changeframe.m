@@ -15,7 +15,7 @@ h=findobj('Tag',['ROI' obj.id]);
 str=event.Key; str2=strfind(str,'numpad');
 if numel(str2) % user pressed
     val=str2num(str(end)); % key that was pressed
-    siz=size(him.image(1).CData);
+    siz=size(him.image(1).CData);a
 
     if val~=0
         cutt= {[3 1], [3 2], [3 3], [2 1],[2 2],[2 3], [1 1], [1 2], [1 3]};

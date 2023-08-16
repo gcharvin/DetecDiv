@@ -28,6 +28,7 @@ for i=1:numel(obj.display.channel)
     end
 end
 
+strplus='';
 
 if numel(classif)>0
     cmap=classif.colormap;
@@ -58,6 +59,20 @@ if numel(classif)>0
     if strcmp(classif.category{1},'Pedigree')
         plotLinks(obj,hp,classif);
     end
+
+        if numel(obj.data)
+                    listdata={obj.data.groupid};
+
+                    pixdata=find(matches(listdata,classif.strid));
+
+                    if numel(pixdata)
+                        dd=obj.data(pixdata);
+                       ddts=dd.getData('labels_training');
+
+                        strplus=[ddts(obj.display.frame)];
+                  
+                    end
+        end
 
     %     if strcmp(classif.category{1},'Image') || strcmp(classif.category{1},'LSTM')
     %         cc=1;
@@ -126,173 +141,6 @@ for i=1:numel(obj.display.channel)
 
         discc=1;
 
-%         if numel(obj.train)>0
-%             fields=fieldnames(obj.train);
-% 
-%             for k=1:numel(fields)
-% 
-%                 if ~isfield(obj.train.(fields{k}),'id')
-%                     continue
-%                 end
-% 
-%                 if numel(obj.train.(fields{k}).id)>=obj.display.frame
-%                     tt=obj.train.(fields{k}).id(obj.display.frame);
-% 
-%                     if isfield(obj.train.(fields{k}),'classes')
-%                         classesspe=obj.train.(fields{k}).classes; % classes name specfic to training
-%                     else
-%                         classesspe=    obj.classes ;
-%                     end
-% 
-%                     if tt<=0
-%                         if  numel(classesspe)>0
-%                             tt='Not Clas.';
-%                         else
-%                             % regression
-%                         end
-%                     else
-% 
-%                         if numel(classesspe)>0
-%                             if tt <= length(classesspe)
-%                                 tt=classesspe{tt};
-%                             else
-%                                 tt='N/A';
-%                             end
-%                         else
-% 
-%                             %
-%                             tt=num2str(tt);
-%                         end
-% 
-%                     end
-% 
-%                     %     tt
-%                     displaystruct(discc).name=fields{k};
-%                     displaystruct(discc).gt=['GT: ' tt];
-% 
-% 
-%                     if numel(classif)>0 & strcmp(classif.strid,fields{k})
-%                         if strcmp(classif.category{1},'Image')  || strcmp(classif.category{1},'LSTM')
-% 
-%                             pixx=numel(find(obj.train.(classif.strid).id==0));
-% 
-%                             if pixx>0
-%                                 strclassi= [num2str(pixx) ' frames remain to be classified'];
-%                                 displaystruct(discc).info=strclassi;
-%                             end
-%                         end
-% 
-%                         if isfield(obj.train.(classif.strid),'bounds')
-%                             strbound=num2str(obj.train.(classif.strid).bounds);
-%                         end
-% 
-%                         if isfield(obj.train.(classif.strid),'bounds')
-%                             strbound=num2str(obj.train.(classif.strid).bounds);
-%                         end
-% 
-% 
-%                     end
-%                     discc=discc+1;
-%                 end
-%             end
-% 
-%         end
-      %  discc=discc+1;
-
-%         if numel(obj.results)>0
-%             pl = fieldnames(obj.results);
-% 
-%             %aa=obj.results
-%             for k = 1:length(pl)
-%                 if isfield(obj.results.(pl{k}),'labels')
-%                     %   tt=char(obj.results.(pl{k}).labels(obj.display.frame));
-%                     if numel(obj.results.(pl{k}).id)>= obj.display.frame
-%                         % tt=num2str(obj.results.(pl{k}).id(obj.display.frame));
-%                         % str=[str ' - class #' tt ' (' pl{k} ')'];
-% 
-%                         tt=obj.results.(pl{k}).id(obj.display.frame);
-%                         ttid=obj.results.(pl{k}).id(obj.display.frame);
-% 
-%                         if isfield(obj.results.(pl{k}),'classes')
-%                             classesspe=obj.results.(pl{k}).classes; % classes name specfic to training
-%                         else
-%                             classesspe=    obj.classes ;
-%                         end
-% 
-% 
-%                         if tt<=0
-%                             if  length(classesspe)>0
-%                                 tt='Not Clas.';
-%                             else
-%                                 % regression
-%                             end
-%                         else
-% 
-%                             if length(classesspe)>0
-%                                 if tt <= length( classesspe)
-%                                     tt= classesspe{tt};
-%                                 else
-%                                     tt='N/A';
-%                                 end
-%                             else
-% 
-%                                 %
-%                                 tt=num2str(tt);
-%                             end
-% 
-%                         end
-% 
-%                         %     tt
-%                         %  str=[str ' - ' tt ' ( ' fields{k} ')'];
-% 
-%                         found=0;
-%                         for jk=1:numel(displaystruct)
-%                             if strcmp(displaystruct(jk).name,pl{k})
-%                                 displaystruct(jk).pred=['Pred: ' tt];
-%                                 found=1;
-%                             end
-%                         end
-%                         if found==0
-%                             chk=0;
-%                             if numel(displaystruct)==1
-%                                 if numel(displaystruct(1).name)==0
-%                                     chk=1;
-%                                 end
-%                             end
-%                             if chk==0
-%                                 displaystruct(end+1).pred=['Pred: ' tt];
-%                                 displaystruct(end+1).name=pl{k};
-%                             else
-%                                 displaystruct(1).pred=['Pred: ' tt];
-%                                 displaystruct(1).name=pl{k};
-%                             end
-%                         end
-% 
-%                     end
-%                 end
-%                 %
-%                 %                 if isfield(obj.results.(pl{k}),'mother')
-%                 %                     % pedigree data available .
-%                 %
-%                 %                     if strcmp(['results_' pl{k}],str) % identify channel
-%                 %
-%                 %                         plotLinksResults(obj,hp,pl{k})
-%                 %                     end
-%                 %                 end
-% 
-%                 if isfield(obj.results.(pl{k}),'mother')
-%                     % pedigree data available .
-%                     %    str,pl{k}
-%                     %   if strcmp(['results_' pl{k}],str) % identify channel
-%                     if strcmp([pl{k}],str) % identify channel
-%                         %       'ok'
-%                         plotLinksResults(obj,hp,pl{k})
-%                     end
-%                 end
-% 
-%             end
-%         end
-
 
 
         if numel(strfind(obj.display.channel{i},'track'))~=0 | numel(strfind(obj.display.channel{i},'pedigree'))~=0
@@ -353,18 +201,15 @@ for i=1:numel(obj.display.channel)
             end
         end
 
-%         if numel(strbound)
-%             subt(end+1)={['Frames bounds: ' strbound]} ;
-%         end
-
-      %  str=[str subt];
-
+        str=[str strplus];
         if ~strcmp(h.UserData.correctionMode,'off')
             tt=h.UserData.correctionMode;
             str=[{['[CORRECTION MODE ' tt ' - j/kkeys]']}, str];
         end
 
-       
+
+
+
         title(hp(cc),str,'FontSize',12,'interpreter','none');
         % subtitle(hp(cc), subt ,'FontSize',10,'interpreter','none');
 

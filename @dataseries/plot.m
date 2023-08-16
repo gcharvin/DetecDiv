@@ -121,6 +121,11 @@ for i=1:numel(plotidx)
       if nargin==3 % display current class
 
         set(gca,'Tag','Axes_track');
+
+ 
+        pixdat=numel(find(dat==""));
+        
+
           if iscategorical(dat(pix))
              txt=[txt ' ' char(dat(pix))];
           end
@@ -128,7 +133,9 @@ for i=1:numel(plotidx)
              txt=[txt ' ' num2str(dat(pix))];
           end
 
-        title(txt,'FontSize',20);
+             txt=[txt ' - ' num2str(pixdat) ' frames left to annotate'];
+
+        title(txt,'FontSize',20,'Interpreter','none');
 
       end
       str=[str 'frame'];

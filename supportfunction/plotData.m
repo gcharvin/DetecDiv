@@ -238,7 +238,7 @@ for i=1:numel(datagroups)
 
             else % rls curve correspondinf to "event" subdataset 
 
-                censored=cellfun(@(x) x(end)==categorical("stillAlive"),yout);
+                censored=cellfun(@(x) x(end)==categorical("stillAlive"),yout); % censored cells are those that are still alive at the end of the movie
                 ngen=cellfun(@(x) length(x),yout)-1;
 
                  [yt,xt,flo,fup]=ecdf(ngen,'Censoring',censored);
