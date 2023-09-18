@@ -295,6 +295,7 @@ for i=1:length(rois)
         else
             % add channel is necessary
             matrix=uint16(zeros(size(im,1),size(im,2),1,size(im,4)));
+
             classif.roi(cc+1).addChannel(matrix,classif.strid,[1 1 1],[0 0 0]);
             classif.roi(cc+1).display.selectedchannel(end)=1;
         end

@@ -38,12 +38,19 @@ end
 matrix=uint16(matrix);
 
 imz=size(obj.image); % 3rd dimension 
+% here
 
 obj.display.channel{end+1}=str;
 obj.display.intensity(end+1,:)=intensity;
 obj.display.rgb(end+1,:)=rgb;
 
-obj.image(:,:,imz(3)+1:imz(3)+size(matrix,3),:)=matrix;
+if  numel(imz)<3
+    obj.image(:,:,1+1:1+size(matrix,3),:)=matrix;
+else
+    obj.image(:,:,imz(3)+1:imz(3)+size(matrix,3),:)=matrix;
+end
+
+
 obj.display.selectedchannel(end+1)=1;
 
 tmp=(max(obj.channelid)+1)*ones(1,size(matrix,3));

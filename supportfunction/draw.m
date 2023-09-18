@@ -124,6 +124,7 @@ if numel(handles)==0
 
 
         pix=find(obj.channelid==i); % find matrix index associated with channel
+        
         pix=pix(1); % there may be several items in case of a   multi-array channel
 
 
