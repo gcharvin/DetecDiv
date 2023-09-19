@@ -144,6 +144,7 @@ switch cate
 
                 cc=1;
                 for j=idx
+                    try
                     tmp=imread(fullfile(l(j).folder,l(j).name));
                     tmp2=imread(fullfile(l2(j).folder,l2(j).name));
                     tmp=imlincomb(0.75,tmp,0.25,tmp2);
@@ -156,6 +157,10 @@ switch cate
                 %       class(tmp)
                         img{cc}=tmp;
                 %    end
+
+                    catch 
+disp('could not display sample image');
+                    end
                     cc=cc+1;
                 end
 

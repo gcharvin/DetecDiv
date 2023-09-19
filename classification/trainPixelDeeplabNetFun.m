@@ -118,7 +118,7 @@ roitraining=classif.trainingset;
 %[imds, pxds] = subSelectTrainingSet(imds,pxds,classes,labelsIDs, classif); % subselect images in datastore according to their belonging to classif.trainingset
 % uncomment this line if crossvalidation should be performed  
 
-nfiles=numel(imds.Files);
+nfiles=numel(imds.Files)
 
 [imdsTrain, imdsVal, pxdsTrain, pxdsVal] = partitionCamVidData(imds,pxds,classes,labelsIDs,trainingParam.CNN_data_splitting_factor);
 
