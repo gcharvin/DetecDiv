@@ -18,7 +18,7 @@ classdef roi < handle
 
         parent=[] % reference of the parent field of view
 
-        display=struct('intensity',[1 1 1],'frame',1,'selectedchannel',1,'binning',1,'rgb',[1 1 1],'channel',{'Channel 1'},'stretchlim',[],'displaylim',[0 1]);
+        display=struct('intensity',[1 1 1],'frame',1,'selectedchannel',1,'binning',1,'rgb',[1 1 1],'channel',{'Channel 1'},'stretchlim',[],'displaylim',[0 ; 1]);
 
         % stretchlim : is the levels used to perform preprocessing
         % displaylim are the levels used to display the images
