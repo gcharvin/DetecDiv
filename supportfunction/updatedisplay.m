@@ -168,6 +168,7 @@ for i=1:numel(obj.display.channel)
         for ii=1:numel(displaystruct)
             subt{ii}=[displaystruct(ii).name ' - '  displaystruct(ii).gt ' - ' displaystruct(ii).pred ' - '  displaystruct(ii).info ];
 
+            % display current classi on image
 
             if numel(classif)>0
                % if strcmp(displaystruct(ii).name,classif.strid)
@@ -227,12 +228,11 @@ if numel(htext)
 htext.String=num2str(obj.display.frame);
 end
 
-% if classif result and training is displayed, then update the position of the cursor
 
+% if classif result and training is displayed, then update the position of the cursor
 htraj=findobj('Type','Figure');
 
 for i=1:numel(htraj)
-
     z= htraj(i).Name;
 
     if contains(z,obj.id)
@@ -251,12 +251,14 @@ for i=1:numel(htraj)
         hpo=findobj(htraj(i),'Tag','Axes_track');
 
         hpp=findobj(htraj(i),'Tag','labels_training');
+
         if numel(hpp)
         
-
         datastruct=hpp.UserData;
         datatot=datastruct.getData('id_training');
         pixdat=numel(find(datatot==0));
+
+        datalabels=datastruct.getData('labels_training');
 
         dat=hpp.YData;
         pix=obj.display.frame;
@@ -270,11 +272,24 @@ for i=1:numel(htraj)
 
         txt=[txt ' - ' num2str(pixdat) ' frames left to annotate'];
         title(hpo,txt);
+
+        hpp.YData= datalabels;
+        % update data plot 
+        % 
+        %     hh=findobj('Tag',obj.data(pixdata).id);
+        %      if numel(hh)
+        %          pos=hh.Position;
+        %        pos(2)=pos(2)+0.05;
+        %         delete(hh);
+        %          obj.data(pixdata).plot(pos,'ok');
+        %          figure(h);
+        %      end
+
+
         end
-    
- 
     end
 end
+
 %h = findobj('-regexp','Tag',expr)
 % if numel(htraj)~=0
 %     hl=findobj(htraj,'Tag','track');

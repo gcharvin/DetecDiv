@@ -323,6 +323,15 @@ for i=1:numel(keys) % display the selected class for the current image
 
                         obj.data(training_pixdata)=training_data;
 
+                %          hh=findobj('Tag',obj.data(training_pixdata).id);
+                % 
+                %           if numel(hh)
+                %                  pos=hh.Position;
+                % pos(2)=pos(2)+0.05;
+                %                  delete(hh);
+                %                  obj.data(training_pixdata).plot(pos,'ok');
+                % figure(handle)
+                %           end
                     end
                 end
 
@@ -377,6 +386,7 @@ for i=1:numel(keys) % display the selected class for the current image
         end
     end
 end
+
 if ok==1
     updatedisplay(obj,him,hp,classif)
 end

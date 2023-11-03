@@ -116,10 +116,9 @@ for i=1:numel(plotidx)
       yy=ylim(hs(i));
 
       pix=find(xr==frame);
-  
-      'ok'
       
       line([xr(pix) xr(pix)],yy,'Color',[0.5 0.5 0.5],'LineWidth',1,'Tag',[data.parentid '_track'],'UserData',data);
+
 
       if nargin==3 % display current class
 
