@@ -3,7 +3,12 @@ function [paramout, dataout]=computeRLS(param,roiobj,frames)
 
 if nargin==0
     listout=listROIDataID("classification"); % lists all data that were generated using a classifier
+
+    if numel(listout)==0
+   listout='';
+    else
     listout{end+1}=listout{end};
+    end
 
     paramout=[];
 
