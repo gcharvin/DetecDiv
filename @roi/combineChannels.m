@@ -154,7 +154,7 @@ end
 obj.addChannel(matrix,name,[1 1 1],outrgb);
 
 obj.log(['Combined channels'],'Processing');
-obj.save;
-obj.clear;
+%obj.save;
+%obj.clear;
 
 

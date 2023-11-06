@@ -154,7 +154,6 @@ if numel(classif)>0
                 obj.data(pixdata).plot(pos,'ok');
                 figure(handle)
             end
-
                 end
 
                 if strcmp(event.Key,specialkeys{2}{2})
@@ -173,8 +172,6 @@ if numel(classif)>0
             end
                 end
             end
-
-           
 
         else
             disp('could find training data');

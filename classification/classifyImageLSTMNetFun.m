@@ -14,9 +14,7 @@ for i=1:numel(classifier.Layers)
 %maa= strcmp(class(classifier.Layers(i)), 'nnet.cnn.layer.SequenceInputLayer')
 
     if strcmp(class(classifier.Layers(i)), 'nnet.cnn.layer.SequenceInputLayer')
-  
         inputSize = classifier.Layers(i).InputSize(1:2);
-
         break
     end
 end
@@ -110,14 +108,14 @@ disp('Starting video classification...');
     [x, prob]=classify(classifier,video,'ExecutionEnvironment',"gpu");
     if numel(classifierCNN)
          [labelCNN,probCNN] = classify(classifierCNN,video,'ExecutionEnvironment',"gpu");
-             probCNN=predict(classifierCNN,video);
+          %   probCNN=predict(classifierCNN,video);
     end
 
     else
     [x, prob]=classify(classifier,video,'ExecutionEnvironment',"cpu");
     if numel(classifierCNN)
          [labelCNN,probCNN] = classify(classifierCNN,video,'ExecutionEnvironment',"cpu");
-             probCNN=predict(classifierCNN,video);
+        %     probCNN=predict(classifierCNN,video);
     end
     end
 
@@ -127,7 +125,7 @@ disp('Starting video classification...');
     catch
     
     disp('Error with predict function  : likely out of memory issue with GPU, trying CPU computing...');
-    prob=predict(classifier,video,'ExecutionEnvironment', 'cpu');
+    [x, prob]=predict(classifier,video,'ExecutionEnvironment', 'cpu');
     %probCNN=predict(classifierCNN,video,'ExecutionEnvironment', 'cpu');
     if numel(classifierCNN)
       %  [labelCNN,probCNN] = classify(classifierCNN,gfp);
@@ -145,12 +143,20 @@ end
 label = labels(idx);
 
 if numel(classifierCNN)
-    labelCNN = classifierCNN.Layers(end).Classes;
+    labelCNN =  classifierCNN.Layers(end).Classes;
+    % CNN classes are not in the right order !!!
+    [~, idxperm] = ismember(labels, labelCNN);
+   
+    labelCNN=labelCNN(idxperm');
+
     if size(probCNN,1) == numel(labelCNN) % adjust matrix depending on matlab version
         probCNN=probCNN';
     end
-    [~, idx] = max(probCNN,[],2);
-    labelCNN = labelCNN(idx);
+     
+    probCNN=probCNN(:,idxperm);
+
+    [~, idxCNN] = max(probCNN,[],2);
+    labelCNN = labelCNN(idxCNN);
 end
 
 %if size(probCNN,1) == numel(labels) % adjust matrix depending on matlab version
@@ -207,8 +213,6 @@ pixdata=find(arrayfun(@(x) strcmp(x.groupid,classif.strid),roiobj.data));
 
 data(cc).plotGroup={[] [] [] [] [] {'id' 'prob' 'labels'}};
    
-
-
 datatmp=data(cc);
 
 %results.(classif.strid)=[];
@@ -255,7 +259,8 @@ for i=1:numel(classif.classes)
     end
 end
 
-datatmp.data.id(frames)=idx;
+
+datatmp.data.id(frames)=idx; % here check id 
  
 %here 
 %results.(classif.strid).labels(frames)=label';
@@ -303,7 +308,7 @@ for i=1:numel(classif.classes)
     end
 end
 
-datatmp.data.idCNN(frames)=idx;
+datatmp.data.idCNN(frames)=idxCNN;
     
 %     results.(classif.strid).labelsCNN(frames)=labelCNN';
 %     results.(classif.strid).classesCNN=classif.classes;

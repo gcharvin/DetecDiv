@@ -1,4 +1,4 @@
-function [paramout,dataout]=combineMultipleChannels(param,roiobj,frames)
+function [paramout,dataout,imageout]=combineMultipleChannels(param,roiobj,frames)
 
 
 % listChannels=['N/A', listChannels];
@@ -56,6 +56,8 @@ for i=1:numel(f)-1
 end
 
 roiobj.combineChannels('channels',cha,'rgb',rgb,'name',param.outputChannelName);
+dataout=roiobj.data; 
+imageout=roiobj.image;
 
 %roiobj.combineChannels({'channels',{'ch000-st000'    'ch000-st001'    'ch000-st002'},'rgb',{[1 0 0] [0 1 0] [0 0 1]}})
 

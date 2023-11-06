@@ -144,9 +144,9 @@ if compute==1 % compute new scores
             end
             
             if classif.category=="LSTM" % for LSTM classification, compute CNN benchmarks
-                if numel( data.CNNpred)
+                if numel( data.CNNpred) && numel(data.gt)==numel(data.CNNpred)
+       
                 cc=cc+1;
-            
                 classif.score(cc)= measureAccuracyRecall(classif,data.gt, data.CNNpred, data.roi, data.frames, ['LSTM_' num2str(i)]);  % score for given classification
                 classif.score(cc).comments='Classification benchmarks using CNN classifier for LSTM architecture';
                 classif.score(cc).thr=i;
@@ -159,7 +159,7 @@ if compute==1 % compute new scores
     
 end
 
-%aa=classif.score
+aa=classif.score
 
 % ===== plot statistics
 
@@ -574,10 +574,13 @@ for i=1:numel(classif.classes)
     
     pred=data.pred==i;
     gt=   data.gt==i;
+
     roi2=data.roi; 
     frames2=data.frames;
    
     
+    
+ %   size(pred), size(gt)
     accuracy= 100*sum(pred & gt)./sum(pred);
     recall=       100*sum(pred & gt)./sum(gt);
     

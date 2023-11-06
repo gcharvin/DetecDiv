@@ -53,7 +53,7 @@ for i=1:numel(rois)
     emptyFrame=[];
     disp(['Launching ROI ' num2str(i) :' processing...'])
 
-    if numel(cltmp(rois(i)).image)==0
+    if numel(cltmp(rois(i)).image)==0 || numel(cltmp(rois(i)).data)==0
         cltmp(rois(i)).load; % load image sequence
     end
 
@@ -68,10 +68,18 @@ for i=1:numel(rois)
 
     %  pix=find(cltmp(i).channelid==classif.channel(1)); % find channel
     im=cltmp(rois(i)).image(:,:,pix,:);
+
     data=cltmp(rois(i)).data;
+
+    if numel(data)==0
+        disp('No training data available for this position');
+        continue
+    end
+
     pixdata=arrayfun(@(x) strcmp(x.groupid,classif.strid),data);
     data=data(pixdata);
     bounds=[];
+
     if isfield(data.userData,'bounds')
         bounds=data.userData.bounds;
 

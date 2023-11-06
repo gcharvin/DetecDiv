@@ -113,10 +113,10 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
         if para % parallel computing
                 logparf(i)=parfeval(fhandle,2,param,roiobj(i),fra); % launch the training function for classification
         else
-               [paramout,data]=feval(fhandle,param,roiobj(i),fra); % launch the training function for classification
+               [paramout,data,image]=feval(fhandle,param,roiobj(i),fra); % launch the training function for classification
                 disp(['Classified' num2str(roiobj(i).id)]);
 
-              ROIManagement(roiobj(i),data);
+              ROIManagement(roiobj(i),image,data);
            
         end
 
@@ -134,7 +134,7 @@ if para % parallel computing
 for i=1:numel(logparf)
  %   [results,image]=fetchOutputs(logparf(i));
 
-    [idx,param,data]=fetchNext(logparf(i));
+    [idx,param,data,image]=fetchNext(logparf(i));
 
 
     ROIManagement(roiobj(idx),data);
@@ -157,10 +157,10 @@ if numel(p)
 end
 
 
-function ROIManagement(roiobj,data)
+function ROIManagement(roiobj,image,data)
 
  roiobj.data=data; 
- %roiobj.image=image; 
+ roiobj.image=image; 
  roiobj.save('data'); 
  roiobj.clear,
 %disp('You must save the shallow project to save these classified data !');
