@@ -91,10 +91,9 @@ if numel(mask_pixdata)
     mask_data=roiobj.data(mask_pixdata);
 end
 
-for j=1:2
+for j=1:2 % loop on training and prediction data
 
     id=grou{j};
-
 
     if numel(id)~=0
 
@@ -116,7 +115,6 @@ for j=1:2
         end
 
         divTimes=computeDivtime(id,proba',classes,param,frames);
-
 
         if numel(divTimes.framediv)>0 && ~isnan(divTimes.framediv(1)) && numel(divTimes.duration)
 
