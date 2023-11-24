@@ -1,4 +1,4 @@
-function [results,image]=classifyPixelDeeplabNetFun(roiobj,classif,classifier,varargin)
+function [data,image]=classifyPixelDeeplabNetFun(roiobj,classif,classifier,varargin)
 
 % this function can be used to classify any roi object, by providing the
 % classi object and the classifier
@@ -41,6 +41,13 @@ inputSize = net.Layers(1).InputSize;
 if numel(roiobj.image)==0 % load stored image in any case
     roiobj.load;
 end
+
+data=roiobj.data;
+if numel(data)==0
+    roiobj.data=dataseries;
+    data=roiobj.data;
+end
+
 
 pix=roiobj.findChannelID(channel);
 
@@ -115,9 +122,11 @@ end
 %>>>>>>> Stashed changes
   %  end
 
-%     if size(tmp,1)<inputSize(1) | size(tmp,2)<inputSize(2)
-%         tmp=imresize(tmp,inputSize(1:2));
-%     end
+ % inputSize
+
+     if size(gfp,1)<inputSize(1) | size(gfp,2)<inputSize(2)
+         gfp=imresize(gfp,inputSize(1:2));
+     end
 
 
  %gfptmp=gfp;
@@ -211,7 +220,7 @@ end
 
 %>>>>>>> Stashed changes
 
-results=roiobj.results;
+
 
 %roiobj.save;
 %roiobj.clear;

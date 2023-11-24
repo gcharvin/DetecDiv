@@ -1,8 +1,9 @@
-function [paramout,dataout]=computeMetrics(param,roiobj,frames)
+function [paramout,dataout, imageout]=computeMetrics(param,roiobj,frames)
 
 listChannels=listAvailableChannels;
 listChannels=['N/A', listChannels];
 environment='pc' ;
+imageout=[];
 
 if nargin==0
     paramout=[];
@@ -77,7 +78,6 @@ end
 
 
 % compute mask metrics
-
 
 dataout=roiobj.data;
 
@@ -192,6 +192,7 @@ for i=1:2
         temp=dataseries([cell_data' surface' axe_mineur' axe_majeur' eccentricity'],...
             [cell_name val_surface val_axe_mineur val_axe_majeur val_eccentricity],...
             'groupid',['mask_quantification_' paramout.(['mask' num2str(i) '_name'])],'parentid',roiobj.id,'plot',defplot,'groups',plotgroup);
+
 
         dataout(cc)=temp;
         dataout(cc).class="processing";

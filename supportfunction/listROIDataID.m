@@ -36,6 +36,10 @@ for i=1:numel(listproj.Project)
         for k=1:numel(roiobj)
             roiobj(k).load('data');
 
+            if numel(roiobj(k).data)==0
+                continue
+            end
+            
             if numel(roiobj(k).data(1).data)==0
                 continue;
             end
