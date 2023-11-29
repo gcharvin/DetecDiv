@@ -1,9 +1,14 @@
 function computeDisplaylim(obj, varargin)
 
 clearfile=0;
+channels=[];
+
 for i=1:numel(varargin)
     if strcmp(varargin{i},'Clear')
         clearfile=1;
+    end
+      if strcmp(varargin{i},'Channel')
+        channels=varargin{i+1};
     end
 end
 
@@ -14,10 +19,16 @@ if numel(obj.image)==0
     obj.load
 end
 
-tmp=obj.image(:,:,:,:);
 
+if numel(channels)==0
+    channels=1:size(obj.image,3);
+end
 
-for c=1:size(tmp,3)
+tmp=obj.image;
+
+cc=1;
+
+for c=channels
     tmpimg=tmp(:,:,c,:);
     
 %     if sum(tmpimg(tmpimg>0))>0
@@ -32,12 +43,13 @@ for c=1:size(tmp,3)
     n=numel(tmpimg(:));
         
     matmp=maxk( tmpimg(:), n- round((satur(2))*n) ); %*A/n... to compensate for the loss of bright pixels from the background, in masked images 
-    ma(c)=min(matmp);
+    ma(cc)=min(matmp);
     mitmp = mink(tmpimg(:),round((satur(1) +A/n)*n)); %A/n to account for pixels =0, which have to be saturated, + a corrective term
     if numel(mitmp)==0
         mitmp=0;
     end
-    mi(c) = max(mitmp);
+    mi(cc) = max(mitmp);
+
 %     med(c)=median(tmpimg(:));
 %     stddev(c)=std(double(tmpimg(:)));
     %for t=1:min(100,size(tmp,4)) %computes stretchlim on the 100 first frames of the timeseries, saturating 1% of pixels
@@ -45,7 +57,9 @@ for c=1:size(tmp,3)
         %lm(:,t)=stretchlim(tmp(:,:,c,t),[0.001 0.999]);
     %end
     %strchlm(:,c)=mean(lm,2);
+    cc=cc+1;
 end
+
 
 if isa(tmp,'uint16')
   mi=double(mi)/65536;
@@ -69,7 +83,7 @@ ma=max([ma;  mi+0.0001],[],1);
 ma=min([ma;  ones(1,length(ma))],[],1);
 ma=max([ma;  0.001*ones(1,length(ma))],[],1);
 
-obj.display.displaylim=[mi ; ma]; %home made stretchilm to work with multi D images. slow but more reliable
+obj.display.displaylim(:,channels)=[mi ; ma]; %home made stretchilm to work with multi D images. slow but more reliable
 
 if clearfile==1
     obj.save;

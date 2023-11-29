@@ -53,7 +53,6 @@ for i=1:numel(datagroups)
 
         cc=1;
         for k=1:numel(rois)
-
             groups={rois(k).data.groupid};
             pix=find(matches(groups,d{1}));
 
@@ -234,6 +233,7 @@ for i=1:numel(datagroups)
                 % tmp=[ {'abscissa'; 'mean'; 'sem'} tmp];
 
                 ptch=patch(closedxt, inBetween',col(i,:));
+                
                 if numel(ptch)
                     ptch.EdgeColor=col(i,:);
                     ptch.FaceAlpha=0.15;

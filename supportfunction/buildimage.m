@@ -30,10 +30,15 @@ for i=1:numel(obj.display.channel)
        
         % added display lim to take care of displaying images ; stretchlim
         % applies to preprocessing only
-         if (~isfield(obj.display,'displaylim') && ~isprop(obj.display,'displaylim')) || size(obj.display.displaylim,2)~=numel(obj.channelid) || size(obj.display.displaylim,1)~=2
+                 if (~isfield(obj.display,'displaylim') && ~isprop(obj.display,'displaylim')) || numel(obj.display.displaylim)~=2*numel(obj.channelid)
             disp(['No display limits found for ROI ' num2str(obj.id) ', computing them...']);
             obj.computeDisplaylim;
          end
+
+    %     if (~isfield(obj.display,'displaylim') && ~isprop(obj.display,'displaylim')) || size(obj.display.displaylim,2)~=numel(obj.channelid) || size(obj.display.displaylim,1)~=2
+      %      disp(['No display limits found for ROI ' num2str(obj.id) ', computing them...']);
+     %       obj.computeDisplaylim;
+     %    end
 
 %         if (~isfield(obj.display,'stretchlim') && ~isprop(obj.display,'stretchlim')) || size(obj.display.stretchlim,2)~=numel(obj.channelid)
 %             disp(['No stretch limits found for ROI ' num2str(obj.id) ', computing them...']);
