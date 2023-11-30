@@ -133,7 +133,7 @@ end
                 mix=max(1,cp(1,2)-(si-1));
                 miy=max(1,cp(1,1)-(si-1));
                 mux=min(size(ma,1),cp(1,2)+(si-1));
-                muy=min(size(ma,1),cp(1,1)+(si-1));
+                muy=min(size(ma,2),cp(1,1)+(si-1));
 
             case 1 % large brush
 
@@ -141,7 +141,7 @@ end
                 mix=max(1,cp(1,2)-(si-1));
                 miy=max(1,cp(1,1)-(si-1));
                 mux=min(size(ma,1),cp(1,2)+(si-1));
-                muy=min(size(ma,1),cp(1,1)+(si-1));
+                muy=min(size(ma,2),cp(1,1)+(si-1));
 
                 %ma(mix:mux,miy:muy)=1;
                 % pis=ma>0;
@@ -152,7 +152,7 @@ end
                 mix=max(1,cp(1,2)-(si-1));
                 miy=max(1,cp(1,1)-(si-1));
                 mux=min(size(ma,1),cp(1,2)+(si-1));
-                muy=min(size(ma,1),cp(1,1)+(si-1));
+                muy=min(size(ma,2),cp(1,1)+(si-1));
 
                 %ma(mix:mux,miy:muy)=1;
                 %pis=ma>0;

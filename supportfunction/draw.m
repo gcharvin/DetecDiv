@@ -6,8 +6,6 @@ function [him, hp]=draw(obj,h,classif)
 
 % updates number of channel if userTraining mode is on.
 
-
-
 if nargin<3
     classif=[];
     % refresh='full';
@@ -308,14 +306,9 @@ for i=1:numel(obj.display.channel)
     end
 end
 
-
-
-
-
 if cd>0
     linkaxes(hp);
 end
-
 
 if numel(handles)==0
     if numel(classif)>0
