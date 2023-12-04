@@ -83,7 +83,7 @@ ma=max([ma;  mi+0.0001],[],1);
 ma=min([ma;  ones(1,length(ma))],[],1);
 ma=max([ma;  0.001*ones(1,length(ma))],[],1);
 
-obj.display.displaylim(:,channels)=[mi ; ma]; %home made stretchilm to work with multi D images. slow but more reliable
+obj.display.displaylim(1:2,channels)=[mi ; ma]; %home made stretchilm to work with multi D images. slow but more reliable
 
 if clearfile==1
     obj.save;

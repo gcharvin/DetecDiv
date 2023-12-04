@@ -17,14 +17,11 @@ function processData(classiobj,roiobj,varargin)
 
 % results outputs the array of future objects with information about errors
 % etc...
-
-
 para=0;
 frames=[];
 p=[];
 
 gpu=0;
-
 
 for i=1:numel(varargin)
 

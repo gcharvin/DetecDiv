@@ -16,8 +16,6 @@ for i=1:numel(listproj.Project)
         classifiers={};
     end
 
-
-
     for j=1:numel(listproj.Projectpos{i})
         tmp=listproj.Projectpos{i}{j};
 
@@ -29,8 +27,6 @@ for i=1:numel(listproj.Project)
 
         roiobj=proj.fov(pix).roi;
         listcha={};
-
-       
 
         for k=1:numel(roiobj)
             if strcmp(roiobj(k).display.channel,' ')
