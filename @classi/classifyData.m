@@ -221,7 +221,6 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
         fra=1:size(roiobj(i).image,4);
         end
 
-
         if numel(channel)==0
             cha=classiobj.channelName;
         else
@@ -257,6 +256,7 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
                 disp(['Classified with separate CNN ' num2str(roiobj(i).id)]);
             else
                [data,image]=feval(fhandle,roiobj(i),classi,classifierStore,'Frames',fra,'Channel',cha,'Exec',gpu); % launch the training function for classification
+           %    figure, imshow(image(:,:,4:6,1),[]);
                 disp(['Classified' num2str(roiobj(i).id)]);
             end
 
@@ -293,7 +293,6 @@ for i=1:numel(logparf)
  %   [results,image]=fetchOutputs(logparf(i));
 
     [idx,data,image]=fetchNext(logparf(i));
-
 
     ROIManagement(roiobj(idx),data, image);
 %     roiobj(idx).results=results; 
@@ -361,7 +360,6 @@ end
 end
 
 function ROIManagement(roiobj,data, image)
-
  roiobj.data=data; 
  roiobj.image=image; 
  roiobj.save; 
