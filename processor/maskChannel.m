@@ -1,8 +1,11 @@
-function paramout=deleteChannels(param,roiobj,frames)
+function [paramout, data, imageout]=deleteChannels(param,roiobj,frames)
 
  listChannels=listAvailableChannels;
 % listChannels=['N/A', listChannels];
 environment='pc' ;
+
+data=[];
+imageout=[];
 
 if nargin==0
     paramout=[];
@@ -72,7 +75,7 @@ roiobj.image(:,:,pixoutput,:)=roiobj.image(:,:,pixdata,:) .* uint16(bw);
 roiobj.computeStretchlim;
 roiobj.display.stretchlim(:,pixoutput)=roiobj.display.stretchlim(:,pixdata);
 
-
+imageout=roiobj.image;
 
 
 

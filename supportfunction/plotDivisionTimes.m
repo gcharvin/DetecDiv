@@ -22,8 +22,11 @@ leg={};
 leg2=leg;
 
 cd=1;
+clineage=1;
+
 for i=1:numel(datagroups)
     cd(i)=0;
+    clineage(i)=0;
     dat=datagroups(i).Source.nodename;
 
     if ~isfield(datagroups(i).Source,'nodename') % user did not check any node, so skip plotting
@@ -45,8 +48,8 @@ for i=1:numel(datagroups)
            % break
         end
 
-            if strcmp(dat{j}{2},'lineage') % get M/D lineage data
-            cd(i)=j;
+         if strcmp(dat{j}{2},'lineage') % get M/D lineage data
+            clineage(i)=j;
 
             % HERE
 
@@ -72,14 +75,9 @@ end
 
   leg2{2*i-1}=datagroups(i).Name;
   leg2{2*i}='';
-
-
 end
 
-%leg2=leg;
-
 for i=1:numel(datagroups)
-
     if ~isfield(datagroups(i).Source,'nodename') % user did not check any node, so skip plotting
         continue
     end
@@ -88,7 +86,6 @@ for i=1:numel(datagroups)
     rois=datagroups(i).Data.roiobj;
 
     %   for j=1:numel(dat) % loop on plotted data types
-
     j=cd(i);
 
     str=[datagroups(i).Name ' // ' dat{j}{1} ' // ' dat{j}{2}];
@@ -96,7 +93,7 @@ for i=1:numel(datagroups)
     d=dat{j};
     xout={};
     yout={};
-
+    ylineage={};
     cc=1;
 
     groups={rois(1).data.groupid};
@@ -117,6 +114,11 @@ for i=1:numel(datagroups)
         if numel(pix)
             tt= rois(k).data(pix).getData(d{2});
             yout{end+1}= rois(k).data(pix).getData(d{2});
+            
+            if clineage(i)~=0
+            ylineage{end+1}=rois(k).data(pix).getData('lineage');
+            end
+
             tmp=1:numel(yout{end});
             xout{end+1}=tmp';
 
@@ -132,7 +134,7 @@ for i=1:numel(datagroups)
             end
             cc=cc+1;
         else
-            disp(['Could not find ' num2str(d{1}) 'in the avaiable data']);
+            disp(['Could not find ' num2str(d{1}) 'in the available data']);
         end
     end
 
@@ -194,6 +196,10 @@ for i=1:numel(datagroups)
         havg2=htmp;
     end
 
+  
+  if clineage(i)~=0
+            hlineage(i)=figure('Color','w','Tag',['plot_lineage_' dat{j}{2} '_group' num2str(i)],'Name',['Division times // lineage for ' num2str(i)]);
+  end
 
     %   if strcmp(datagroups(i).Type,'generation')  % don t do it if if  RLS survival curve
 
@@ -239,7 +245,48 @@ for i=1:numel(datagroups)
     listx=cell2mat(paddedx);
     listy=cell2mat(paddedy);
 
-    %  end
+    if clineage(i)~=0 % concatenate data for lineage specific averaging  
+    yout=cellfun(@(x,y) y(~isnan(x)), xout,ylineage,'UniformOutput',false);
+    xout=cellfun(@(x) x(~isnan(x)), xout,'UniformOutput',false);
+
+    valMin = cellfun(@(x) min(x), xout);
+    totMin=min(valMin)-1;
+    valMax = cellfun(@(x) max(x), xout);
+    totMax=max(valMax)+1;
+
+    totMax= num2cell(totMax*ones(1,numel(valMax)));
+    totMin=  num2cell(-totMin*ones(1,numel(valMin)));
+
+    len=cellfun(@(x) length(x), xout,'UniformOutput',false);
+
+    valMax = cellfun(@(x,y) x-y,  totMax,len,'UniformOutput',false);
+    valMin = cellfun(@(x,y) x-y,  totMin,len,'UniformOutput',false);
+
+    switch datagroups(i).Param.Traj_synchronization{end}
+        case 'sep'
+            lenMin=cellfun(@(x) length(find(x<=0)), xout,'UniformOutput',false);
+            lenMax=cellfun(@(x) length(find(x>=0)), xout,'UniformOutput',false);
+
+            valMax = cellfun(@(x,y) x-y,  totMax,lenMax,'UniformOutput',false);
+            valMin = cellfun(@(x,y) x-y,  totMin,lenMin,'UniformOutput',false);
+
+            paddedx=cellfun(@(x,y) padarray(x, [y 0],NaN,'pre'),xout,valMin,'UniformOutput',false);
+            paddedy=cellfun(@(x,y) padarray(x, [y 0],NaN,'pre'),yout,valMin,'UniformOutput',false);
+
+            paddedx=cellfun(@(x,y) padarray(x, [y 0],NaN,'post'),paddedx,valMax,'UniformOutput',false);
+            paddedy=cellfun(@(x,y) padarray(x, [y 0],NaN,'post'),paddedy,valMax,'UniformOutput',false);
+
+        case 'death'
+            paddedx=cellfun(@(x,y) padarray(x, [y 0],NaN,'pre'),xout,valMin,'UniformOutput',false);
+            paddedy=cellfun(@(x,y) padarray(x, [y 0],NaN,'pre'),yout,valMin,'UniformOutput',false);
+        otherwise % birth
+            paddedx=cellfun(@(x,y) padarray(x, [y 0],NaN,'post'),xout,valMax,'UniformOutput',false);
+            paddedy=cellfun(@(x,y) padarray(x, [y 0],NaN,'post'),yout,valMax,'UniformOutput',false);
+    end
+
+    listxlineage=cell2mat(paddedx);
+    listylineage=cell2mat(paddedy);
+    end
 
     % plot the average data points after synchronization 
     
@@ -299,32 +346,7 @@ for i=1:numel(datagroups)
     hs(i).Normalization='probability';
     hs(i).BinWidth=1;
 
-
-  %  plot(xt,1-yt,'LineWidth',2,'color',col(i,:));
-
-    % tmp=[];
-    % tmp(1,:)=xt;
-    % tmp(2,:)=1-yt;
-    % tmp(3,:)=(fup-flo)/2;
-    % 
-    % tmp=num2cell(tmp);
-    % tmp=[ {datagroups(i).Name; ' '; ' '},  {'abscissa'; 'mean'; 'sem'} tmp];
-
     leg{i}=[leg{i}  ' - Median= ' num2str(median(val)) '+/-' num2str(std(val)) ' (N=' num2str(length(val)) ')'];
-
-   % leg{2*i-1}=[ leg{2*i-1} ' - Median=' num2str(median(ngen)) ' (N=' num2str(length(ngen)) ')'];
-
-    % fup(1)=0;
-    % fup(end)=1;
-    % flo(1)=0;
-    % flo(end)=1;
-    % closedxt = [xt', fliplr(xt')];
-    % inBetween = [1-fup', fliplr(1-flo')];
-    % ptch=patch(closedxt, inBetween,col(i,:));
-    % ptch.EdgeColor=col(i,:);
-    % ptch.FaceAlpha=0.15;
-    % ptch.EdgeAlpha=0.3;
-    % ptch.LineWidth=1;
 
     warning off all
    legend(leg);
@@ -345,7 +367,7 @@ end
 %   %  if plottable_data(i)
 strname=fullfile(filename,['histogram_' dat{j}{1} '_' dat{j}{2}]);
 exportgraphics(havg(j),[strname '.pdf'],'BackgroundColor','None');
-exportgraphics(havg(j),[strname '.pdf'],'BackgroundColor','None');
+%exportgraphics(havg(j),[strname '.pdf'],'BackgroundColor','None');
 savefig(havg(j),[strname '.fig']);
 
 % %    en
