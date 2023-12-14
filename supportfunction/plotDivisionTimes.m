@@ -16,10 +16,12 @@ function plotDivisionTimes(datagroups,filename,varargin)
 
 col=lines(numel(datagroups));
 
-% here do implement divtimes analysis 
+% here do implement divtimes analysis
 
 leg={};
 leg2=leg;
+
+leg_md={};
 
 cd=1;
 clineage=1;
@@ -38,43 +40,42 @@ for i=1:numel(datagroups)
         if strcmp(dat{j}{2},'divduration') % plotting division times data
             cd(i)=j;
 
-               strname=fullfile(filename,['average_' dat{cd(i)}{1} '_' dat{cd(i)}{2}]);
+            strname=fullfile(filename,['average_' dat{cd(i)}{1} '_' dat{cd(i)}{2}]);
             outfile=[strname  '.xlsx']; %write as xlsx is important , otherwise throw an error with large files
 
             if exist(outfile)
                 delete(outfile);
             end
 
-           % break
+            % break
         end
 
-         if strcmp(dat{j}{2},'lineage') % get M/D lineage data
+        if strcmp(dat{j}{2},'lineage') % get M/D lineage data
             clineage(i)=j;
 
             % HERE
 
-         %   strname=fullfile(filename,['average_' dat{cd(i)}{1} '_' dat{cd(i)}{2}]);
-        %    outfile=[strname  '.xlsx']; %write as xlsx is important , otherwise throw an error with large files
+            strname_lin=fullfile(filename,['average_MD_' dat{cd(i)}{1} '_' dat{cd(i)}{2}]);
+            outfile_lin=[strname_lin  '.xlsx']; %write as xlsx is important , otherwise throw an error with large files
 
-        %    if exist(outfile)
-        %        delete(outfile);
-          %  end
+            if exist(outfile_lin)
+                delete(outfile_lin);
+            end
+            break
 
-           % break
         end
-
     end
 
-if cd(i)==0
-    disp(['Could not find the data required to plot division times in group ' num2str(i) ' ; Quitting ....'])
-    return;
-end
+    if cd(i)==0
+        disp(['Could not find the data required to plot division times in group ' num2str(i) ' ; Quitting ....'])
+        return;
+    end
 
- leg{i}=datagroups(i).Name;
-% leg{2*i}='';
+    leg{i}=datagroups(i).Name;
+    leg_md{i}{1}=datagroups(i).Name;
 
-  leg2{2*i-1}=datagroups(i).Name;
-  leg2{2*i}='';
+    leg2{2*i-1}=datagroups(i).Name;
+    leg2{2*i}='';
 end
 
 for i=1:numel(datagroups)
@@ -114,9 +115,9 @@ for i=1:numel(datagroups)
         if numel(pix)
             tt= rois(k).data(pix).getData(d{2});
             yout{end+1}= rois(k).data(pix).getData(d{2});
-            
+
             if clineage(i)~=0
-            ylineage{end+1}=rois(k).data(pix).getData('lineage');
+                ylineage{end+1}=rois(k).data(pix).getData('lineage');
             end
 
             tmp=1:numel(yout{end});
@@ -140,22 +141,22 @@ for i=1:numel(datagroups)
 
     % cmap=lines(numel(xout));
     % cmapcell = mat2cell(cmap, ones(numel(xout),1), 3);
-    % 
+    %
     % if datagroups(i).Param.Display_single_cell_plot
     %     h(i,j)=figure('Color','w','Tag',['plot_singletraj' num2str(i) '_' num2str(j)],'Name',str);
     %     hold on;
-    % 
+    %
     %     cellfun(@(x, y, c) plot(x, y, 'Color',c), xout, yout, cmapcell', 'UniformOutput', false);
-    % 
+    %
     %     title(datagroups(i).Name,'Interpreter','none');
-    % 
+    %
     %     if strcmp(datagroups(i).Type,'temporal')
     %         xlabel('Time (frames)');
     %     end
     %     if strcmp(datagroups(i).Type,'generation')
     %         xlabel('Generation');
     %     end
-    % 
+    %
     %     ylabel(dat{j}{2},'Interpreter','None');
     % end
 
@@ -196,10 +197,9 @@ for i=1:numel(datagroups)
         havg2=htmp;
     end
 
-  
-  if clineage(i)~=0
-            hlineage(i)=figure('Color','w','Tag',['plot_lineage_' dat{j}{2} '_group' num2str(i)],'Name',['Division times // lineage for ' num2str(i)]);
-  end
+    if clineage(i)~=0
+        hlineage(i)=figure('Color','w','Tag',['plot_lineage_' dat{j}{2} '_group' num2str(i)],'Name',['Division times // lineage for group ' datagroups(i).Name]);
+    end
 
     %   if strcmp(datagroups(i).Type,'generation')  % don t do it if if  RLS survival curve
 
@@ -245,51 +245,53 @@ for i=1:numel(datagroups)
     listx=cell2mat(paddedx);
     listy=cell2mat(paddedy);
 
-    if clineage(i)~=0 % concatenate data for lineage specific averaging  
-    yout=cellfun(@(x,y) y(~isnan(x)), xout,ylineage,'UniformOutput',false);
-    xout=cellfun(@(x) x(~isnan(x)), xout,'UniformOutput',false);
+    if clineage(i)~=0 % concatenate data for lineage specific averaging
+        yout=cellfun(@(x,y) y(~isnan(x)), xout,ylineage,'UniformOutput',false);
+        xout=cellfun(@(x) x(~isnan(x)), xout,'UniformOutput',false);
 
-    valMin = cellfun(@(x) min(x), xout);
-    totMin=min(valMin)-1;
-    valMax = cellfun(@(x) max(x), xout);
-    totMax=max(valMax)+1;
+        valMin = cellfun(@(x) min(x), xout);
+        totMin=min(valMin)-1;
+        valMax = cellfun(@(x) max(x), xout);
+        totMax=max(valMax)+1;
 
-    totMax= num2cell(totMax*ones(1,numel(valMax)));
-    totMin=  num2cell(-totMin*ones(1,numel(valMin)));
+        totMax= num2cell(totMax*ones(1,numel(valMax)));
+        totMin=  num2cell(-totMin*ones(1,numel(valMin)));
 
-    len=cellfun(@(x) length(x), xout,'UniformOutput',false);
+        len=cellfun(@(x) length(x), xout,'UniformOutput',false);
 
-    valMax = cellfun(@(x,y) x-y,  totMax,len,'UniformOutput',false);
-    valMin = cellfun(@(x,y) x-y,  totMin,len,'UniformOutput',false);
+        valMax = cellfun(@(x,y) x-y,  totMax,len,'UniformOutput',false);
+        valMin = cellfun(@(x,y) x-y,  totMin,len,'UniformOutput',false);
 
-    switch datagroups(i).Param.Traj_synchronization{end}
-        case 'sep'
-            lenMin=cellfun(@(x) length(find(x<=0)), xout,'UniformOutput',false);
-            lenMax=cellfun(@(x) length(find(x>=0)), xout,'UniformOutput',false);
+        switch datagroups(i).Param.Traj_synchronization{end}
+            case 'sep'
+                lenMin=cellfun(@(x) length(find(x<=0)), xout,'UniformOutput',false);
+                lenMax=cellfun(@(x) length(find(x>=0)), xout,'UniformOutput',false);
 
-            valMax = cellfun(@(x,y) x-y,  totMax,lenMax,'UniformOutput',false);
-            valMin = cellfun(@(x,y) x-y,  totMin,lenMin,'UniformOutput',false);
+                valMax = cellfun(@(x,y) x-y,  totMax,lenMax,'UniformOutput',false);
+                valMin = cellfun(@(x,y) x-y,  totMin,lenMin,'UniformOutput',false);
 
-            paddedx=cellfun(@(x,y) padarray(x, [y 0],NaN,'pre'),xout,valMin,'UniformOutput',false);
-            paddedy=cellfun(@(x,y) padarray(x, [y 0],NaN,'pre'),yout,valMin,'UniformOutput',false);
+                paddedx=cellfun(@(x,y) padarray(x, [y 0],NaN,'pre'),xout,valMin,'UniformOutput',false);
+                paddedy=cellfun(@(x,y) padarray(x, [y 0],NaN,'pre'),yout,valMin,'UniformOutput',false);
 
-            paddedx=cellfun(@(x,y) padarray(x, [y 0],NaN,'post'),paddedx,valMax,'UniformOutput',false);
-            paddedy=cellfun(@(x,y) padarray(x, [y 0],NaN,'post'),paddedy,valMax,'UniformOutput',false);
+                paddedx=cellfun(@(x,y) padarray(x, [y 0],NaN,'post'),paddedx,valMax,'UniformOutput',false);
+                paddedy=cellfun(@(x,y) padarray(x, [y 0],NaN,'post'),paddedy,valMax,'UniformOutput',false);
 
-        case 'death'
-            paddedx=cellfun(@(x,y) padarray(x, [y 0],NaN,'pre'),xout,valMin,'UniformOutput',false);
-            paddedy=cellfun(@(x,y) padarray(x, [y 0],NaN,'pre'),yout,valMin,'UniformOutput',false);
-        otherwise % birth
-            paddedx=cellfun(@(x,y) padarray(x, [y 0],NaN,'post'),xout,valMax,'UniformOutput',false);
-            paddedy=cellfun(@(x,y) padarray(x, [y 0],NaN,'post'),yout,valMax,'UniformOutput',false);
+            case 'death'
+                paddedx=cellfun(@(x,y) padarray(x, [y 0],NaN,'pre'),xout,valMin,'UniformOutput',false);
+                paddedy=cellfun(@(x,y) padarray(x, [y 0],NaN,'pre'),yout,valMin,'UniformOutput',false);
+            otherwise % birth
+                paddedx=cellfun(@(x,y) padarray(x, [y 0],NaN,'post'),xout,valMax,'UniformOutput',false);
+                paddedy=cellfun(@(x,y) padarray(x, [y 0],NaN,'post'),yout,valMax,'UniformOutput',false);
+        end
+
+        listxlineage=cell2mat(paddedx);
+        listylineage=cell2mat(paddedy);
     end
 
-    listxlineage=cell2mat(paddedx);
-    listylineage=cell2mat(paddedy);
-    end
 
-    % plot the average data points after synchronization 
-    
+
+    % plot the average data points after synchronization
+
     meanx=min(listx(:)):max(listx(:));
     meany=mean(listy,2,"omitnan"); meany=meany'; meany=meany(~isnan(meany));
     stdy = std(listy,0,2,"omitnan")./sqrt(sum(~isnan(listy),2)); stdy=stdy'; stdy=stdy(~isnan(stdy));
@@ -332,12 +334,13 @@ for i=1:numel(datagroups)
     xlabel('Generation');
     ylabel(dat{j}{2},'Interpreter','None');
 
-    % save average as xlsx file 
+    % save average as xlsx file
     strname=fullfile(filename,['average_' dat{j}{1} '_' dat{j}{2}]);
     outfile=[strname  '.xlsx']; %write as xlsx is important , otherwise throw an error with large files
     writecell(tmp,outfile,'WriteMode','append');
 
-    % plot the histogram of division times
+    % plot the histogram of division times , all the groups on the same
+    % plot
 
     val=listy(:); val=val(~isnan(val));
 
@@ -349,15 +352,50 @@ for i=1:numel(datagroups)
     leg{i}=[leg{i}  ' - Median= ' num2str(median(val)) '+/-' num2str(std(val)) ' (N=' num2str(length(val)) ')'];
 
     warning off all
-   legend(leg);
+    legend(leg);
     warning on all
 
-    ylabel('Probability')
-    xlabel('Time (frames)')
+    ylabel('Probability');
+    xlabel('Time (frames)');
 
- %   strname=fullfile(filename,['average_' dat{j}{1} '_' dat{j}{2}]);
- %   outfile=[strname  '.xlsx']; %write as xlsx is important , otherwise throw an error with large files
- %   writecell(tmp,outfile,'WriteMode','append');
+    % plot the histogram of division times ,distinguishing mothers and
+    % daughters
+
+    if clineage(i)~=0 % concatenate data for lineage specific averaging
+
+         tmplin=listylineage(:); m=tmplin==1; d= tmplin==0;
+
+         divm=listy(m); divd=listy(d);
+
+        %val=listy(:); val=val(~isnan(val));
+
+        figure(hlineage(i)); hold on;
+        hm(i)=histogram(divm);
+        hm(i).Normalization='probability';
+        hm(i).BinWidth=1;
+
+        hd(i)=histogram(divd);
+        hd(i).Normalization='probability';
+        hd(i).BinWidth=1;
+
+         leg_md{i}{2}= leg_md{i}{1};
+
+        leg_md{i}{1}=[leg_md{i}{1}  ' Mothers - Median= ' num2str(median(divm)) '+/-' num2str(std(divm)) ' (N=' num2str(length(divm)) ')'];
+
+        leg_md{i}{2}=[leg_md{i}{2}  ' Daughter  - Median= ' num2str(median(divd)) '+/-' num2str(std(divd)) ' (N=' num2str(length(divd)) ')'];
+
+        warning off all
+        legend(leg_md{i});
+        warning on all
+
+        ylabel('Probability');
+        xlabel('Time (frames)');
+    end
+
+
+    %   strname=fullfile(filename,['average_' dat{j}{1} '_' dat{j}{2}]);
+    %   outfile=[strname  '.xlsx']; %write as xlsx is important , otherwise throw an error with large files
+    %   writecell(tmp,outfile,'WriteMode','append');
 end
 
 % for i=1:numel(datagroups)

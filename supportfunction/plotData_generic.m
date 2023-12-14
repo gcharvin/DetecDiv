@@ -54,20 +54,19 @@ for i=1:numel(datagroups)
 
         cc=1;
 
-         groups={rois(1).data.groupid};
-            pix=find(matches(groups,d{1}));
-            tt= rois(1).data(pix).getData(d{2});
-                 if ~isnumeric(tt)
-                      disp(['Those data  ' num2str(d{1}) ' are not numeric; skipping ....' ]);
-                       plottable_data(i,j)=false;   
-                    continue
-                end
+        groups={rois(1).data.groupid};
+        pix=find(matches(groups,d{1}));
+        tt= rois(1).data(pix).getData(d{2});
+        if ~isnumeric(tt)
+            disp(['Those data  ' num2str(d{1}) ' are not numeric; skipping ....' ]);
+            plottable_data(i,j)=false;
+            continue
+        end
 
-        plottable_data(i,j)=true;        
+        plottable_data(i,j)=true;
 
         for k=1:numel(rois)
-
-            % collect the selected data 
+            % collect the selected data
 
             groups={rois(k).data.groupid};
             pix=find(matches(groups,d{1}));
@@ -103,41 +102,53 @@ for i=1:numel(datagroups)
         cmapcell = mat2cell(cmap, ones(numel(xout),1), 3);
 
 
-        if datagroups(i).Param.Display_single_cell_plot
-            h(i,j)=figure('Color','w','Tag',['plot_singletraj' num2str(i) '_' num2str(j)],'Name',str);
-            hold on;
+      [listx, listy]=concatArrays(xout,yout, datagroups(i))
 
-            cellfun(@(x, y, c) plot(x, y, 'Color',c), xout, yout, cmapcell', 'UniformOutput', false);
 
-            title(datagroups(i).Name,'Interpreter','none');
+        if datagroups(i).Param.Display_single_cell_plot % plot single cell data....
 
-            if strcmp(datagroups(i).Type,'temporal')
-                xlabel('Time (frames)');
+            if strcmp(datagroups(i).Param.Single_cell_display_type{end},'plot')  % ....as plot
+
+                h(i,j)=figure('Color','w','Tag',['plot_singletraj' num2str(i) '_' num2str(j)],'Name',str);
+                hold on;
+
+      
+
+                cellfun(@(x, y, c) plot(x, y, 'Color',c), xout, yout, cmapcell', 'UniformOutput', false);
+
+                title(datagroups(i).Name,'Interpreter','none');
+
+                if strcmp(datagroups(i).Type,'temporal')
+                    xlabel('Time (frames)');
+                end
+                if strcmp(datagroups(i).Type,'generation')
+                    xlabel('Generation');
+                end
+                ylabel(dat{j}{2},'Interpreter','None');
             end
-            if strcmp(datagroups(i).Type,'generation')
-                xlabel('Generation');
-            end
 
-            ylabel(dat{j}{2},'Interpreter','None');
+            if strcmp(datagroups(i).Param.Single_cell_display_type{end},'traj') % ....as traj
+                h(i,j)=figure('Color','w','Tag',['plot_singletraj' num2str(i) '_' num2str(j)],'Name',str);
+                hold on;
+
+                aligne=datagroups(i).Param.Traj_synchronization{end};
+
+                htemp=h(i,j);
+
+                plotTraj(htemp,listx,listy,aligne,dat{j}{2})
+
+                title(datagroups(i).Name,'Interpreter','none');
+
+                if strcmp(datagroups(i).Type,'temporal')
+                    xlabel('Time (frames)');
+                end
+                if strcmp(datagroups(i).Type,'generation')
+                    xlabel('Generation');
+                end
+
+               % ylabel(dat{j}{2},'Interpreter','None');
+            end
         end
-
-            %   if datagroups(i).Param.Display_single_cell_plot
-            % h(i,j)=figure('Color','w','Tag',['plot_singletraj' num2str(i) '_' num2str(j)],'Name',str);
-            % hold on;
-            % 
-            % cellfun(@(x, y, c) plot(x, y, 'Color',c), xout, yout, cmapcell', 'UniformOutput', false);
-            % 
-            % title(datagroups(i).Name,'Interpreter','none');
-            % 
-            % if strcmp(datagroups(i).Param.Plot_type{end},'temporal')
-            %     xlabel('Time (frames)');
-            % end
-            % if strcmp(datagroups(i).Param.Plot_type{end},'generation')
-            %     xlabel('Generation');
-            % end
-            % 
-            % ylabel(dat{j}{2},'Interpreter','None');
-            %   end
 
 
         if datagroups(i).Param.Display_average  % plot average curve
@@ -150,7 +161,83 @@ for i=1:numel(datagroups)
                 havg(j)=htmp;
             end
 
-            if strcmp(datagroups(i).Type,'generation')  % don t do it if if  RLS survival curve
+            meanx=min(listx(:)):max(listx(:));
+            meany=mean(listy,2,"omitnan"); meany=meany'; meany=meany(~isnan(meany));
+            stdy = std(listy,0,2,"omitnan")./sqrt(sum(~isnan(listy),2)); stdy=stdy'; stdy=stdy(~isnan(stdy));
+
+            mi=uint16(min(size(meanx,2),size(meany,2)));
+            meanx=meanx(1:mi);
+            meany=meany(1:mi);
+            stdy=stdy(1:mi);
+
+            %[rlsb] = bootstrp(Nboot,@(x)x,rlst);
+            % rlsb=[rlst; rlsb ]; %add the real one in addition to the bootstrap
+
+            figure(havg(j)); hold on;
+            plot(meanx, meany,'Color',col(i,:),'LineWidth',2);
+            closedxt = [meanx fliplr(meanx)];
+            inBetween = [meany+stdy fliplr(meany-stdy)];
+
+            tmp=[];
+            tmp(1,:)=meanx;
+            tmp(2,:)=meany;
+            tmp(3,:)=stdy;
+
+            tmp=num2cell(tmp);
+            tmp=[ {datagroups(i).Name; ' '; ' '} , {'abscissa'; 'mean'; 'sem'},  tmp];
+            % tmp=[ {'abscissa'; 'mean'; 'sem'} tmp];
+
+            ptch=patch(closedxt, inBetween',col(i,:));
+
+            if numel(ptch)
+                ptch.EdgeColor=col(i,:);
+                ptch.FaceAlpha=0.15;
+                ptch.EdgeAlpha=0.3;
+                ptch.LineWidth=1;
+
+            end
+
+            warning off all
+            legend(leg{j});
+            warning on all
+
+            if strcmp(datagroups(i).Type,'temporal')
+                xlabel('Time (frames)');
+            end
+            if strcmp(datagroups(i).Type,'generation')
+                xlabel('Generation');
+            end
+
+            ylabel(dat{j}{2},'Interpreter','None');
+
+        end
+
+        strname=fullfile(filename,['average_' dat{j}{1} '_' dat{j}{2}]);
+        outfile=[strname  '.xlsx']; %write as xlsx is important , otherwise throw an error with large files
+        writecell(tmp,outfile,'WriteMode','append');
+    end
+end
+
+for i=1:numel(datagroups)
+    dat=datagroups(i).Source.nodename;
+    for j=1:numel(dat) % loop on plotted data types
+        if plottable_data(i,j)
+            strname=fullfile(filename,[datagroups(i).Name '_' dat{j}{1} '_' dat{j}{2}]);
+            exportgraphics(h(i,j),[strname '.pdf'],'BackgroundColor','None');
+            savefig(h(i,j),[strname '.fig']);
+        end
+    end
+end
+
+disp('Export is done !')
+
+
+function [listx listy]=concatArrays(xout,yout, datagroups)
+
+listx=[];
+listy=[];
+
+   if strcmp(datagroups.Type,'generation')  % don t do it if if  RLS survival curve
 
                 yout=cellfun(@(x,y) y(~isnan(x)), xout,yout,'UniformOutput',false);
                 xout=cellfun(@(x) x(~isnan(x)), xout,'UniformOutput',false);
@@ -168,7 +255,7 @@ for i=1:numel(datagroups)
                 valMax = cellfun(@(x,y) x-y,  totMax,len,'UniformOutput',false);
                 valMin = cellfun(@(x,y) x-y,  totMin,len,'UniformOutput',false);
 
-                switch datagroups(i).Param.Traj_synchronization{end}
+                switch datagroups.Param.Traj_synchronization{end}
                     case 'sep'
 
                         lenMin=cellfun(@(x) length(find(x<=0)), xout,'UniformOutput',false);
@@ -195,7 +282,7 @@ for i=1:numel(datagroups)
                 listy=cell2mat(paddedy);
             end
 
-            if strcmp(datagroups(i).Type,'temporal')
+            if strcmp(datagroups.Type,'temporal')
 
                 isScalarNonEmpty = @(x,y) ~isempty(x) && isnumeric(x) && ~isempty(y) && isnumeric(y);
 
@@ -206,7 +293,7 @@ for i=1:numel(datagroups)
 
                 if numel(yout)==0
                     disp('One of the variable you are trying to plot is empty or not numeric!')
-                    continue
+                    return;
                 end
 
                 valMax = cellfun(@(x) max(x), xout);
@@ -221,7 +308,7 @@ for i=1:numel(datagroups)
                 valMax = cellfun(@(x,y) x-y,  totMax,len,'UniformOutput',false);
                 %   valMin = cellfun(@(x,y) x-y,  totMin,len,'UniformOutput',false);
 
-                switch datagroups(i).Param.Traj_synchronization{end}
+                switch datagroups.Param.Traj_synchronization{end}
                     case 'sep'
                         disp('SEP synchro is not compatible with temporal display mode !');
 
@@ -243,73 +330,4 @@ for i=1:numel(datagroups)
                 listy=cell2mat(paddedy);
             end
 
-                meanx=min(listx(:)):max(listx(:));
-                meany=mean(listy,2,"omitnan"); meany=meany'; meany=meany(~isnan(meany));
-                stdy = std(listy,0,2,"omitnan")./sqrt(sum(~isnan(listy),2)); stdy=stdy'; stdy=stdy(~isnan(stdy));
-
-                mi=uint16(min(size(meanx,2),size(meany,2)));
-                meanx=meanx(1:mi);
-                meany=meany(1:mi);
-                stdy=stdy(1:mi);
-
-                %[rlsb] = bootstrp(Nboot,@(x)x,rlst);
-                % rlsb=[rlst; rlsb ]; %add the real one in addition to the bootstrap
-
-                figure(havg(j)); hold on;
-                plot(meanx, meany,'Color',col(i,:),'LineWidth',2);
-                closedxt = [meanx fliplr(meanx)];
-                inBetween = [meany+stdy fliplr(meany-stdy)];
-
-                tmp=[];
-                tmp(1,:)=meanx;
-                tmp(2,:)=meany;
-                tmp(3,:)=stdy;
-
-                tmp=num2cell(tmp);
-                tmp=[ {datagroups(i).Name; ' '; ' '} , {'abscissa'; 'mean'; 'sem'},  tmp];
-                % tmp=[ {'abscissa'; 'mean'; 'sem'} tmp];
-
-                ptch=patch(closedxt, inBetween',col(i,:));
-
-                if numel(ptch)
-                    ptch.EdgeColor=col(i,:);
-                    ptch.FaceAlpha=0.15;
-                    ptch.EdgeAlpha=0.3;
-                    ptch.LineWidth=1;
-
-                end
-
-                warning off all
-                legend(leg{j});
-                warning on all
-
-                if strcmp(datagroups(i).Type,'temporal')
-                    xlabel('Time (frames)');
-                end
-                if strcmp(datagroups(i).Type,'generation')
-                    xlabel('Generation');
-                end
-
-                ylabel(dat{j}{2},'Interpreter','None');
-
-            end
-
-            strname=fullfile(filename,['average_' dat{j}{1} '_' dat{j}{2}]);
-            outfile=[strname  '.xlsx']; %write as xlsx is important , otherwise throw an error with large files
-            writecell(tmp,outfile,'WriteMode','append');
-        end
-end
-
-for i=1:numel(datagroups)
-    dat=datagroups(i).Source.nodename;
-    for j=1:numel(dat) % loop on plotted data types
-        if plottable_data(i,j)
-        strname=fullfile(filename,[datagroups(i).Name '_' dat{j}{1} '_' dat{j}{2}]);
-        exportgraphics(h(i,j),[strname '.pdf'],'BackgroundColor','None');
-        savefig(h(i,j),[strname '.fig']);
-        end
-    end
-end
-
-disp('Export is done !')
 
