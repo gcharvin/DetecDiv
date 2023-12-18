@@ -13,9 +13,7 @@ function plotData_generic(datagroups,filename,varargin)
 % reletaed to the number of events in array
 
 [p ,f ,ext]=fileparts(filename);
-
 col=lines(numel(datagroups));
-
 leg={};
 
 for i=1:numel(datagroups)
@@ -55,7 +53,14 @@ for i=1:numel(datagroups)
         cc=1;
 
         groups={rois(1).data.groupid};
+        
         pix=find(matches(groups,d{1}));
+
+        if numel(pix)==0
+            disp('Could not find corresponding data! quitting .... ')
+            return
+        end
+
         tt= rois(1).data(pix).getData(d{2});
         if ~isnumeric(tt)
             disp(['Those data  ' num2str(d{1}) ' are not numeric; skipping ....' ]);
@@ -64,6 +69,8 @@ for i=1:numel(datagroups)
         end
 
         plottable_data(i,j)=true;
+
+        roinames={};
 
         for k=1:numel(rois)
             % collect the selected data
@@ -78,6 +85,8 @@ for i=1:numel(datagroups)
 
                 yout{end+1}= rois(k).data(pix).getData(d{2});
 
+                roinames{k}=rois(k).id;
+
                 tmp=1:numel(yout{end});
 
                 xout{end+1}=tmp';
@@ -86,6 +95,11 @@ for i=1:numel(datagroups)
                     switch datagroups(i).Param.Traj_synchronization{end}
                         case 'sep'
                             xout{end}= rois(k).data(pix).getData('sep');
+                            
+                            if numel(xout{end})==0 % there is no sep in this data set
+                             xout{end}= rois(k).data(pix).getData('birth');
+                            end
+
                         case 'death'
                             xout{end}= rois(k).data(pix).getData('death');
                         otherwise % birth
@@ -101,9 +115,7 @@ for i=1:numel(datagroups)
         cmap=lines(numel(xout));
         cmapcell = mat2cell(cmap, ones(numel(xout),1), 3);
 
-
-      [listx, listy]=concatArrays(xout,yout, datagroups(i))
-
+      [listx, listy]=concatArrays(xout,yout, datagroups(i));
 
         if datagroups(i).Param.Display_single_cell_plot % plot single cell data....
 
@@ -111,8 +123,6 @@ for i=1:numel(datagroups)
 
                 h(i,j)=figure('Color','w','Tag',['plot_singletraj' num2str(i) '_' num2str(j)],'Name',str);
                 hold on;
-
-      
 
                 cellfun(@(x, y, c) plot(x, y, 'Color',c), xout, yout, cmapcell', 'UniformOutput', false);
 
@@ -131,11 +141,11 @@ for i=1:numel(datagroups)
                 h(i,j)=figure('Color','w','Tag',['plot_singletraj' num2str(i) '_' num2str(j)],'Name',str);
                 hold on;
 
-                aligne=datagroups(i).Param.Traj_synchronization{end};
+               % aligne=datagroups(i).Param.Traj_synchronization{end};
 
                 htemp=h(i,j);
 
-                plotTraj(htemp,listx,listy,aligne,dat{j}{2})
+                plotTraj(htemp,listx,listy,dat{j}{2},datagroups(i).Param,roinames);
 
                 title(datagroups(i).Name,'Interpreter','none');
 
@@ -218,19 +228,23 @@ for i=1:numel(datagroups)
     end
 end
 
+
 for i=1:numel(datagroups)
     dat=datagroups(i).Source.nodename;
     for j=1:numel(dat) % loop on plotted data types
         if plottable_data(i,j)
+
+             if datagroups(i).Param.Display_single_cell_plot % plot single cell data....
+
             strname=fullfile(filename,[datagroups(i).Name '_' dat{j}{1} '_' dat{j}{2}]);
             exportgraphics(h(i,j),[strname '.pdf'],'BackgroundColor','None');
             savefig(h(i,j),[strname '.fig']);
+             end
         end
     end
 end
 
 disp('Export is done !')
-
 
 function [listx listy]=concatArrays(xout,yout, datagroups)
 

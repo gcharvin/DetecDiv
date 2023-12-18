@@ -48,7 +48,7 @@ end
 
  disp(['Loading classifier: ' name]);
     
- str=[path '/' name '.mat'];
+ str=[path '/' name '.mat']
      
  if exist(str)
     load(str); % load classifier 
