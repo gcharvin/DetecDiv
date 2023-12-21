@@ -1,4 +1,4 @@
-function plotTraj(handle, xout, yout,dataname,param,roinames)
+function plotTraj(handle, xout, yout,dataname,param,roinames,lineage)
 %here put roinames
 
 % to do : 
@@ -97,24 +97,30 @@ ttickslabel={};
             xCoords = [j-1; j-1; j; j]-1;
             yCoords = [i-1 + (i-1)*delta; i + (i-1)*delta; i + (i-1)*delta; i-1 + (i-1)*delta];
 
-           
             patch(xCoords, yCoords, sortedData(i, j), 'EdgeColor', str2num(param.Display_traj_edge_color), 'LineWidth', 1);
         end
         end
 
-        tticks(i)=(i-1)*(1+delta);
-        ttickslabel{i}=
+        if param.Display_ROI_name
+        tticks(i)=(i-0.5)*(1+delta);
+        ttickslabel{i}=roinames{i};
+        end
 
     end
 
-    
-
 % Add colorbar and label it
+
+set(handle,'Position',[ 100 100 800 N*50])
+
+   if param.Display_ROI_name
+        set(gca,'YTick',tticks);
+        yticklabels(ttickslabel);
+   else
+       set(gca,'YTick',[]);
+   end
+
 cb = colorbar;
 ylabel(cb, dataname);
 
-
+set(gca,'TickLabelInterpreter','none')
 hold off;
-
-set(handle,'Position',[ 100 100 800 N*50])
-set(gca,'YTick',[]);

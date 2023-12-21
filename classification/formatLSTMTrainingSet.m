@@ -86,6 +86,10 @@ for i=1:numel(rois)
         if numel(bounds) && bounds(1)==0
             bounds=[];
         end
+
+        if numel(bounds)==1
+            bounds=[];
+        end
     end
 
 

@@ -2,7 +2,6 @@ function exportData(datagroup,rois,filename,varargin)
 % export single cell dataseries from rois as xls file
 % mainly used by the detector GUI
 
-
             [p ,f ,ext]=fileparts(filename);
    
             dat=datagroup.Source.nodename;

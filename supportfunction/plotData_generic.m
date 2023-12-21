@@ -204,7 +204,6 @@ for i=1:numel(datagroups)
                 ptch.FaceAlpha=0.15;
                 ptch.EdgeAlpha=0.3;
                 ptch.LineWidth=1;
-
             end
 
             warning off all
