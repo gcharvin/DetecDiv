@@ -15,6 +15,9 @@ function plotData_generic(datagroups,filename,varargin)
 [p ,f ,ext]=fileparts(filename);
 col=lines(numel(datagroups));
 leg={};
+clineage=0;
+listxlin=[];
+listylin=[];
 
 for i=1:numel(datagroups)
     dat=datagroups(i).Source.nodename;
@@ -28,6 +31,7 @@ for i=1:numel(datagroups)
         if exist(outfile)
             delete(outfile);
         end
+
     end
 end
 
@@ -41,6 +45,34 @@ for i=1:numel(datagroups)
 
     dat=datagroups(i).Source.nodename;
     rois=datagroups(i).Data.roiobj;
+
+    xlin={};
+    ylin={};
+
+      for j=1:numel(dat) % loop on plotted data types
+      % test if lineage data type is present 
+             if strcmp(dat{j}{2},'lineage') % get M/D lineage data
+            clineage=j;
+            d=dat{j};
+
+              for k=1:numel(rois)
+            % collect the selected data
+
+            groups={rois(k).data.groupid};
+            pix=find(matches(groups,d{1}));
+
+                  if numel(pix)
+               ylin{end+1}= rois(k).data(pix).getData(d{2});
+                tmp=1:numel(ylin{end});
+                xlin{end+1}=tmp';
+                 end
+              end
+
+             end
+      end
+      if numel(ylin)
+       [listxlin, listylin]=concatArrays(xlin,ylin, datagroups(i));
+      end
 
     for j=1:numel(dat) % loop on plotted data types
         str=[datagroups(i).Name ' // ' dat{j}{1} ' // ' dat{j}{2}];
@@ -75,6 +107,8 @@ for i=1:numel(datagroups)
         for k=1:numel(rois)
             % collect the selected data
 
+           
+
             groups={rois(k).data.groupid};
             pix=find(matches(groups,d{1}));
 
@@ -82,7 +116,6 @@ for i=1:numel(datagroups)
             if numel(pix)
 
                 tt= rois(k).data(pix).getData(d{2});
-
                 yout{end+1}= rois(k).data(pix).getData(d{2});
 
                 roinames{k}=rois(k).id;
@@ -106,6 +139,7 @@ for i=1:numel(datagroups)
                             xout{end}= rois(k).data(pix).getData('birth');
                     end
                 end
+
                 cc=cc+1;
             else
                 disp(['Could not find ' num2str(d{1}) 'in the avaiable data']);
@@ -145,7 +179,7 @@ for i=1:numel(datagroups)
 
                 htemp=h(i,j);
 
-                plotTraj(htemp,listx,listy,dat{j}{2},datagroups(i).Param,roinames);
+                plotTraj(htemp,listx,listy,dat{j}{2},datagroups(i).Param,roinames,listylin,rois);
 
                 title(datagroups(i).Name,'Interpreter','none');
 
@@ -219,11 +253,12 @@ for i=1:numel(datagroups)
 
             ylabel(dat{j}{2},'Interpreter','None');
 
-        end
-
-        strname=fullfile(filename,['average_' dat{j}{1} '_' dat{j}{2}]);
+         strname=fullfile(filename,['average_' dat{j}{1} '_' dat{j}{2}]);
         outfile=[strname  '.xlsx']; %write as xlsx is important , otherwise throw an error with large files
         writecell(tmp,outfile,'WriteMode','append');
+        end
+
+     
     end
 end
 
