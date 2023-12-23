@@ -18,6 +18,8 @@ leg={};
 clineage=0;
 listxlin=[];
 listylin=[];
+listxlintemp=[];
+listylintemp=[];
 
 for i=1:numel(datagroups)
     dat=datagroups(i).Source.nodename;
@@ -46,13 +48,14 @@ for i=1:numel(datagroups)
     dat=datagroups(i).Source.nodename;
     rois=datagroups(i).Data.roiobj;
 
+    % gather lineage information , if existing
+
     xlin={};
     ylin={};
 
       for j=1:numel(dat) % loop on plotted data types
       % test if lineage data type is present 
              if strcmp(dat{j}{2},'lineage') % get M/D lineage data
-            clineage=j;
             d=dat{j};
 
               for k=1:numel(rois)
@@ -73,6 +76,36 @@ for i=1:numel(datagroups)
       if numel(ylin)
        [listxlin, listylin]=concatArrays(xlin,ylin, datagroups(i));
       end
+
+      % gather temporal information , if existing
+
+    xlintemp={};
+    ylintemp={};
+
+      for j=1:numel(dat) % loop on plotted data types
+      % test if lineage data type is present 
+             if strcmp(dat{j}{2},'totaltime') % get M/D lineage data
+            d=dat{j};
+
+              for k=1:numel(rois)
+            % collect the selected data
+
+            groups={rois(k).data.groupid};
+            pix=find(matches(groups,d{1}));
+
+                  if numel(pix)
+               ylintemp{end+1}= rois(k).data(pix).getData(d{2});
+                tmp=1:numel(ylintemp{end});
+                xlintemp{end+1}=tmp';
+                 end
+              end
+
+             end
+      end
+      if numel(ylin)
+       [listxlintemp, listylintemp]=concatArrays(xlintemp,ylintemp, datagroups(i));
+      end
+
 
     for j=1:numel(dat) % loop on plotted data types
         str=[datagroups(i).Name ' // ' dat{j}{1} ' // ' dat{j}{2}];
@@ -179,7 +212,7 @@ for i=1:numel(datagroups)
 
                 htemp=h(i,j);
 
-                plotTraj(htemp,listx,listy,dat{j}{2},datagroups(i).Param,roinames,listylin,rois);
+                plotTraj(htemp,listx,listy,dat{j}{2},datagroups(i).Param,roinames,listylin,listylintemp,rois);
 
                 title(datagroups(i).Name,'Interpreter','none');
 

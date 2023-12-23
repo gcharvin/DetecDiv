@@ -46,6 +46,7 @@ if numel(h.UserData)~=0 % window is already displayed; therefore just update the
     hp=hp(ix);
 
     updatedisplay(obj,him,hp,classif);
+
     return;
 end
 
@@ -389,6 +390,7 @@ else
     handles.Callback=  {@setframe,obj,him,hp,classif};
     handles.String=num2str(obj.display.frame);
 end
+
 
 btnSetFrame = uicontrol('Style', 'pushbutton','FontSize',10, 'String', 'Display Settings...',...
         'Position', [150 20 120 40],...

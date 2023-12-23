@@ -1,4 +1,4 @@
-function plotTraj(handle, xout, yout,dataname,param,roinames,listylin,rois)
+function plotTraj(handle, xout, yout,dataname,param,roinames,listylin,listylintemp,rois)
 %here put roinames
 
 % to do :
@@ -27,21 +27,30 @@ end
 data= yout';
 
 if numel(listylin)
-    datalin=listylin';
+    datalin=listylin'; 
+end
+if numel(listylintemp)
+    datalintemp=listylintemp';
 end
 
 ali=xout';
 
 trajectorySizes = sum(~isnan(data),2);
 
+if param.Sort_traj
 [~, order] = sort(trajectorySizes, 'descend');
 sortedData = data(order,:);
 roinames=roinames(order);
-
-
 if numel(listylin)
     datalin=datalin(order,:);
 end
+if numel(listylintemp)
+    datalintemp=datalintemp(order,:);
+end
+else
+sortedData = data(:,:);
+end
+
 
 % Dimensions
 [N, M] = size(sortedData);
@@ -98,7 +107,11 @@ for i = 1:N
             hp=patch(xCoords, yCoords, sortedData(i, j),'LineStyle','none');
             end
 
-            set(hp,'ButtonDownFcn',{@test,gca,rois(i)});
+            if numel(listylintemp)
+            set(hp,'ButtonDownFcn',{@test,gca,rois(i),datalintemp(i,:)});
+            else
+            set(hp,'ButtonDownFcn',{@test,gca,rois(i),[]});
+            end
 
             if param.Display_MD_lineage
                 if numel(listylin)
@@ -137,13 +150,20 @@ ylabel(cb, dataname);
 set(gca,'TickLabelInterpreter','none','FontSize',14)
 hold off;
 
-function test(obj, event, handles,roitmp)
+function test(obj, event, handles,roitmp,fralist)
 
-roitmp.view
 % if isstruct(handlesstruct)
 % 
-%     pt = get(gca, 'CurrentPoint');
-%     frame=round(pt(1,1));
+     pt = get(gca, 'CurrentPoint');
+
+      frame=round(pt(1,1));
+
+     if numel(fralist)~=0
+           frame=fralist(frame);
+     end
+
+    roitmp.view(frame);
+
 % 
 %     src=get(obj,'Tag');
 %     f1=strfind(src,':');

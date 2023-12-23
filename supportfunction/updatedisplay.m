@@ -223,7 +223,7 @@ end
 
 
 
-htext=findobj(gcf,'Tag','frametext');
+htext=findobj(h,'Tag','frametext');
 if numel(htext)
 htext.String=num2str(obj.display.frame);
 end
