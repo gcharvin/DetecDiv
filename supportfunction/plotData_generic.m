@@ -228,7 +228,7 @@ for i=1:numel(datagroups)
         end
 
 
-        if datagroups(i).Param.Display_average  % plot average curve
+        if datagroups(i).Param.Display_average  % plot average curve or traj 
 
             htmp=findobj('Tag',['plot_average_' dat{j}{2}]);
 
@@ -247,14 +247,6 @@ for i=1:numel(datagroups)
             meany=meany(1:mi);
             stdy=stdy(1:mi);
 
-            %[rlsb] = bootstrp(Nboot,@(x)x,rlst);
-            % rlsb=[rlst; rlsb ]; %add the real one in addition to the bootstrap
-
-            figure(havg(j)); hold on;
-            plot(meanx, meany,'Color',col(i,:),'LineWidth',2);
-            closedxt = [meanx fliplr(meanx)];
-            inBetween = [meany+stdy fliplr(meany-stdy)];
-
             tmp=[];
             tmp(1,:)=meanx;
             tmp(2,:)=meany;
@@ -264,6 +256,12 @@ for i=1:numel(datagroups)
             tmp=[ {datagroups(i).Name; ' '; ' '} , {'abscissa'; 'mean'; 'sem'},  tmp];
             % tmp=[ {'abscissa'; 'mean'; 'sem'} tmp];
 
+           figure(havg(j)); hold on;
+
+           if datagroups(i).Param.Display_single_cell_plot % plot data....
+            plot(meanx, meany,'Color',col(i,:),'LineWidth',2);
+            closedxt = [meanx fliplr(meanx)];
+            inBetween = [meany+stdy fliplr(meany-stdy)];
             ptch=patch(closedxt, inBetween',col(i,:));
 
             if numel(ptch)
@@ -283,8 +281,24 @@ for i=1:numel(datagroups)
             if strcmp(datagroups(i).Type,'generation')
                 xlabel('Generation');
             end
-
             ylabel(dat{j}{2},'Interpreter','None');
+            end
+
+             if strcmp(datagroups(i).Param.Single_cell_display_type{end},'traj') % ....as traj
+
+                plotTraj(havg(j),meanx',meany',dat{j}{2},datagroups(i).Param,{},[],[],[]);
+
+                title(datagroups(i).Name,'Interpreter','none');
+
+                if strcmp(datagroups(i).Type,'temporal')
+                    xlabel('Time (frames)');
+                end
+                if strcmp(datagroups(i).Type,'generation')
+                    xlabel('Generation');
+                end
+
+
+             end
 
          strname=fullfile(filename,['average_' dat{j}{1} '_' dat{j}{2}]);
         outfile=[strname  '.xlsx']; %write as xlsx is important , otherwise throw an error with large files

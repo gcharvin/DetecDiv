@@ -40,7 +40,10 @@ trajectorySizes = sum(~isnan(data),2);
 if param.Sort_traj
 [~, order] = sort(trajectorySizes, 'descend');
 sortedData = data(order,:);
+if numel(roinames)
 roinames=roinames(order);
+end
+
 if numel(listylin)
     datalin=datalin(order,:);
 end
@@ -107,10 +110,12 @@ for i = 1:N
             hp=patch(xCoords, yCoords, sortedData(i, j),'LineStyle','none');
             end
 
+            if numel(rois)
             if numel(listylintemp)
             set(hp,'ButtonDownFcn',{@test,gca,rois(i),datalintemp(i,:)});
             else
             set(hp,'ButtonDownFcn',{@test,gca,rois(i),[]});
+            end
             end
 
             if param.Display_MD_lineage
@@ -128,14 +133,16 @@ for i = 1:N
     end
 
     if param.Display_ROI_name
+        if numel(roinames)
         tticks(i)=(i-0.5)*(1+delta);
         ttickslabel{i}=roinames{i};
+        end
     end
 end
 
 % Add colorbar and label it
 
-set(handle,'Position',[ 100 100 800 N*50])
+set(handle,'Position',[ 100 100 800 N*50+100])
 
 if param.Display_ROI_name
     set(gca,'YTick',tticks);

@@ -1,1 +1,0 @@
-function paramout=convertParam(classif,param)
