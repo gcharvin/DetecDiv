@@ -338,6 +338,7 @@ end
 
 h.UserData.him=him;
 h.UserData.correctionMode='off';
+h.UserData.roi=obj;
 
 % reset mouse interaction function
 h.WindowButtonDownFcn='';
