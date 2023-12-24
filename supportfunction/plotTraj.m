@@ -40,6 +40,7 @@ trajectorySizes = sum(~isnan(data),2);
 if param.Sort_traj
 [~, order] = sort(trajectorySizes, 'descend');
 sortedData = data(order,:);
+xout=xout(:,order);
 if numel(roinames)
 roinames=roinames(order);
 end
@@ -93,7 +94,10 @@ for i = 1:N
     for j = 1:M
         if ~isnan(sortedData(i, j))  % Check if the data point is not NaN
             % Calculate x and y coordinates with spacing
-            xCoords = [j-1; j-1; j; j]-1;
+         %   xCoords = [j-1; j-1; j; j]-1;
+
+             xCoords = [xout(j,i)-1; xout(j,i)-1; xout(j,i); xout(j,i)];
+
             yCoords = [i-1 + (i-1)*delta; i + (i-1)*delta; i + (i-1)*delta; i-1 + (i-1)*delta];
 
                 if param.Display_MD_lineage
@@ -154,6 +158,7 @@ end
 cb = colorbar;
 ylabel(cb, dataname);
 
+xlim([min(xout(:)),max(xout(:))]);
 set(gca,'TickLabelInterpreter','none','FontSize',14)
 hold off;
 

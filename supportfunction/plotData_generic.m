@@ -102,7 +102,8 @@ for i=1:numel(datagroups)
 
              end
       end
-      if numel(ylin)
+
+      if numel(ylintemp)
        [listxlintemp, listylintemp]=concatArrays(xlintemp,ylintemp, datagroups(i));
       end
 
@@ -139,9 +140,6 @@ for i=1:numel(datagroups)
 
         for k=1:numel(rois)
             % collect the selected data
-
-           
-
             groups={rois(k).data.groupid};
             pix=find(matches(groups,d{1}));
 
@@ -212,6 +210,7 @@ for i=1:numel(datagroups)
 
                 htemp=h(i,j);
 
+
                 plotTraj(htemp,listx,listy,dat{j}{2},datagroups(i).Param,roinames,listylin,listylintemp,rois);
 
                 title(datagroups(i).Name,'Interpreter','none');
@@ -238,7 +237,7 @@ for i=1:numel(datagroups)
                 havg(j)=htmp;
             end
 
-            meanx=min(listx(:)):max(listx(:));
+            meanx=min(listx(:)):max(listx(:)); 
             meany=mean(listy,2,"omitnan"); meany=meany'; meany=meany(~isnan(meany));
             stdy = std(listy,0,2,"omitnan")./sqrt(sum(~isnan(listy),2)); stdy=stdy'; stdy=stdy(~isnan(stdy));
 
@@ -258,7 +257,7 @@ for i=1:numel(datagroups)
 
            figure(havg(j)); hold on;
 
-           if datagroups(i).Param.Display_single_cell_plot % plot data....
+          if strcmp(datagroups(i).Param.Single_cell_display_type{end},'plot') 
             plot(meanx, meany,'Color',col(i,:),'LineWidth',2);
             closedxt = [meanx fliplr(meanx)];
             inBetween = [meany+stdy fliplr(meany-stdy)];
@@ -285,8 +284,8 @@ for i=1:numel(datagroups)
             end
 
              if strcmp(datagroups(i).Param.Single_cell_display_type{end},'traj') % ....as traj
-
-                plotTraj(havg(j),meanx',meany',dat{j}{2},datagroups(i).Param,{},[],[],[]);
+               
+                plotTraj(havg(j),[meanx' ; max(meanx)+1],[NaN ; meany'],dat{j}{2},datagroups(i).Param,{},[],[],[]);
 
                 title(datagroups(i).Name,'Interpreter','none');
 
