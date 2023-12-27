@@ -143,9 +143,7 @@ for i=1:numel(datagroups)
             groups={rois(k).data.groupid};
             pix=find(matches(groups,d{1}));
 
-
             if numel(pix)
-
                 tt= rois(k).data(pix).getData(d{2});
                 yout{end+1}= rois(k).data(pix).getData(d{2});
 
@@ -191,6 +189,7 @@ for i=1:numel(datagroups)
 
                 cellfun(@(x, y, c) plot(x, y, 'Color',c), xout, yout, cmapcell', 'UniformOutput', false);
 
+
                 title(datagroups(i).Name,'Interpreter','none');
 
                 if strcmp(datagroups(i).Type,'temporal')
@@ -211,7 +210,7 @@ for i=1:numel(datagroups)
                 htemp=h(i,j);
 
 
-                plotTraj(htemp,listx,listy,dat{j}{2},datagroups(i).Param,roinames,listylin,listylintemp,rois);
+                plotTraj(htemp,listx,listy,dat{j}{2},datagroups(i).Param,roinames,listylin,listylintemp,rois); % listylin : lineage data ; listylintemp : totaltime data
 
                 title(datagroups(i).Name,'Interpreter','none');
 
@@ -222,17 +221,42 @@ for i=1:numel(datagroups)
                     xlabel('Generation');
                 end
 
+
+
                % ylabel(dat{j}{2},'Interpreter','None');
             end
         end
+
+         if datagroups(i).Param.Display_MD_lineage % display pedigree tre with data
+                
+                hped(i,j)=figure('Color','w','Tag',['plot_pedigree' num2str(i) '_' num2str(j)],'Name',str);
+                hold on;
+
+               % aligne=datagroups(i).Param.Traj_synchronization{end};
+
+                htemp=hped(i,j);
+
+                plotPedigree(htemp,listx,listy,dat{j}{2},datagroups(i).Param,listylin); % listylin : lineage data ; listylintemp : totaltime data
+
+                title(datagroups(i).Name,'Interpreter','none');
+
+                if strcmp(datagroups(i).Type,'temporal')
+                    xlabel('Time (frames)');
+                end
+                if strcmp(datagroups(i).Type,'generation')
+                    xlabel('Generation');
+                end
+
+         end
 
 
         if datagroups(i).Param.Display_average  % plot average curve or traj 
 
             htmp=findobj('Tag',['plot_average_' dat{j}{2}]);
 
+            stravg=[datagroups(i).Name ' // ' dat{j}{1} ' // ' dat{j}{2} '// Average' ];
             if numel(htmp)==0
-                havg(j)=figure('Color','w','Tag',['plot_average_' dat{j}{2}],'Name',dat{j}{2});
+                havg(j)=figure('Color','w','Tag',['plot_average_' dat{j}{2}],'Name',stravg);
             else
                 havg(j)=htmp;
             end
@@ -295,8 +319,6 @@ for i=1:numel(datagroups)
                 if strcmp(datagroups(i).Type,'generation')
                     xlabel('Generation');
                 end
-
-
              end
 
          strname=fullfile(filename,['average_' dat{j}{1} '_' dat{j}{2}]);

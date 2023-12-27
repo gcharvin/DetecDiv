@@ -1,10 +1,24 @@
 function plotTraj(handle, xout, yout,dataname,param,roinames,listylin,listylintemp,rois)
-%here put roinames
+% plot traj based on xout and yout data : list of values including NaN 
+% param is as follows : 
+%            param=struct('Traj_synchronization',{{'birth','sep','death','birth'}},...
+ %               'Single_cell_display_type',{{'traj','plot','traj'}},...
+                % 'Single_cell_traj_low_color','0.85 0.85 0.85',...
+                % 'Single_cell_traj_high_color','1 0 0',...
+                % 'Single_cell_min_max','NaN NaN',...
+                %  'Display_traj_edge',true,...
+                %  'Display_traj_edge_color','0 0 0',...
+                %     'Display_MD_lineage',false,...
+                %     'Sort_traj',true,...
+                %     'Display_ROI_name',false, ...
+                % 'Display_single_cell_plot',true,...
+                % 'Display_average',true,...
 
-% to do :
-%put tagging on patches to launch 
+ %  roiname is a cell array of string 
+ % listylin : lineage data ; put [] if no data 
+ % listylintemp : totaltime data ; put [] if no data
+ % rois : put roi object if a link to viewing ROIs is established 
 
-%cmap2=viridis(256); % colormap for division times
 
 handlestruct=[];
 
@@ -162,10 +176,8 @@ xlim([min(xout(:)),max(xout(:))]);
 set(gca,'TickLabelInterpreter','none','FontSize',14)
 hold off;
 
-function test(obj, event, handles,roitmp,fralist)
+function test(obj, event, handles,roitmp,fralist) % link to ROIs
 
-% if isstruct(handlesstruct)
-% 
      pt = get(gca, 'CurrentPoint');
 
       frame=round(pt(1,1));
@@ -175,16 +187,3 @@ function test(obj, event, handles,roitmp,fralist)
      end
 
     roitmp.view(frame);
-
-% 
-%     src=get(obj,'Tag');
-%     f1=strfind(src,':');
-%     f2=strfind(src,'-');
-%     nObject=str2num(src(f1+1:f2-1));
-% 
-% else
-%     src=get(obj,'Tag');
-%     axes(handles);
-%     title(src);
-% end
-
