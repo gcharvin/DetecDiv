@@ -31,10 +31,6 @@ else
     clf;
 end
 
-
-
-
-
 % find the number of subplots
 
 n=0;

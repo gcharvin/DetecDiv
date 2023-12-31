@@ -284,7 +284,6 @@ for i=1:numel(obj.display.channel)
         h.Position=aa; % forcing positioning (in case cd==1)
 
         set(hp(cc),'Tag',['AxeROI' num2str(cc)]);
-
         set(hp(cc),'UserData',obj.display.channel{i});
 
 

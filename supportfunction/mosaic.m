@@ -7,7 +7,7 @@ function mosaic(obj,varargin)
 tabtitle=0;
 stopWhenDead=[]; %dont show seg if cell is dead
 shiftY=[];
-hideStamp=0;
+hideStamp=false;
 crop=[];
 arraySize=[];
 displayLegend=0;
@@ -28,14 +28,16 @@ classif=[];
 nocolor=1;
 rotate=[];
 imageSize=[];
+DisplayTest=0;
+timeoffset=false;
 
 %colr=[36/255,61/255,255/255];
-%colr=[0.35,0.35,0.35];
-colr=[255/255,166/255,33/255];
+colr=[0.35,0.35,0.35];
+%colr=[255/255,166/255,33/255];
 
 %classif.strid='';
 
-roititle=0;
+roititle=false;
 rls=0;
 Flip=0;
 rgb={};
@@ -44,24 +46,25 @@ sequence='Movie';
 background=[0 0 0];
 text=[1 1 1];
 
-if isa(obj,'classi')
-    %frames=1:size(obj.roi(1).image,4); % take the number of frames from the image list
-    frames=[]; %auto determination later, if not indicated
-    strid=obj.strid;
-    rois=[1 2 3];
-    classif=obj;
-end
-if isa(obj,'shallow')
-    %frames=1:numel(obj.fov(1).srclist{1}); % take the number of frames from the image list
-    frames=[]; %auto determination later, if not indicatedchannel
-    rois=[1 1 1; 1 2 3];
-end
+% if isa(obj,'classi')
+%     %frames=1:size(obj.roi(1).image,4); % take the number of frames from the image list
+%     frames=[]; %auto determination later, if not indicated
+%     strid=obj.strid;
+%     rois=[1 2 3];
+%     classif=obj;
+% end
+% if isa(obj,'shallow')
+%     %frames=1:numel(obj.fov(1).srclist{1}); % take the number of frames from the image list
+%     frames=[]; %auto determination later, if not indicatedchannel
+%     rois=[1 1 1; 1 2 3];
+% end
 if isa(obj,'roi')
-    frames=1:size(obj.image,4); % take the number of frames from the image list
+    frames=1:size(obj(1).image,4); % take the number of frames from the image list
 end
 
 
 %%
+
 for i=1:numel(varargin)
 
     if strcmp(varargin{i},'Frames')  frames=varargin{i+1};  end
@@ -95,8 +98,14 @@ for i=1:numel(varargin)
         Flip=1;
     end
     if strcmp(varargin{i},'HideStamp') %
-        hideStamp=1;
+        hideStamp=varargin{i+1};
+        if hideStamp
         shiftY=1;
+        end
+    end
+
+      if strcmp(varargin{i},'TimeOffset') %
+        timeoffset=varargin{i+1};
     end
 
     if strcmp(varargin{i},'NoColor') %
@@ -131,9 +140,9 @@ for i=1:numel(varargin)
         fontsize=varargin{i+1};
     end
 
-    if strcmp(varargin{i},'Mosaic') %
-        rois=varargin{i+1};
-    end
+    % if strcmp(varargin{i},'Mosaic') %
+    %     rois=varargin{i+1};
+    % end
 
     if strcmp(varargin{i},'Training') % displays the training data (ground truth)
         training=1; %varargin{i+1};
@@ -152,7 +161,7 @@ for i=1:numel(varargin)
     end
 
     if strcmp(varargin{i},'ROITitle') % display title for each roi
-        roititle=1;
+        roititle=varargin{i+1};
     end
 
     if strcmp(varargin{i},'RLS') %
@@ -173,6 +182,7 @@ for i=1:numel(varargin)
 
     if strcmp(varargin{i},'Text') % specifies the text color
         text=varargin{i+1};
+        colr=text;
     end
 
     if strcmp(varargin{i},'Legend') % display legend for classes
@@ -190,9 +200,17 @@ for i=1:numel(varargin)
 
     if strcmp(varargin{i},'ArraySize') % a 2 element vector that specifiies the number of row/col for the output matrix
         arraySize=varargin{i+1};
-        nmov=size(rois,2);
+   %     nmov=size(rois,2);
 
     end
+
+     if strcmp(varargin{i},'DisplayTest') 
+        
+        DisplayTest=1;  
+        frames=obj(1).display.frame;
+    
+      end
+
 end
     %%
     if numel(levels)==0
@@ -206,22 +224,23 @@ end
 
     % rois mode: displays specific ROIs from different FOVs
     % find number of lines and columns
-    if isa(obj,'roi')
-        rois=[];
-    end
 
-    if isa(obj,'roi') |  isa(obj,'shallow')
-        if numel(training) | numel(results)
-            if numel(classif.strid)==0
-                disp('You need to provide the strid of the classification training/results to be displayed; Quitting ! ');
-                return;
-            end
-        end
-    end
+    % if isa(obj,'roi')
+    %     rois=[];
+    % end
+
+    % if isa(obj,'roi') |  isa(obj,'shallow')
+    %     if numel(training) | numel(results)
+    %         if numel(classif.strid)==0
+    %             disp('You need to provide the strid of the classification training/results to be displayed; Quitting ! ');
+    %             return;
+    %         end
+    %     end
+    % end
 
     %%
-    if numel(rois)
-        nmov=size(rois,2);
+%    if numel(rois)
+        nmov=size(obj,2);
 
         if numel(arraySize)
             nsize=arraySize;
@@ -240,61 +259,61 @@ end
                 nsize=nsize(nmov,:);
             end
         end
-    else
-        nsize=[1 1];
-        nmov=1;
-    end
+%    else
+%        nsize=[1 1];
+%        nmov=1;
+%    end
 
     % load template image to check image size
-    if isa(obj,'classi')
-        img=obj.roi(rois(1)).image;
-        if numel(img)==0
-            obj.roi(rois(1)).load;
-            img=obj.roi(rois(1)).image;
-        end
-
-        roitmp=obj.roi(rois(1));
-
-        %get max number of frames
-        if numel(frames)==0
-            maxframe=NaN;
-            for r=rois
-                obj.roi(r).load;
-                maxframe=min(maxframe, min(size(obj.roi(r).image,4)));
-            end
-            frames=1:maxframe;
-        end
-    end
-
-    if isa(obj,'shallow')
-        img=obj.fov(rois(1,1)).roi(rois(2,1)).image;
-        if numel(img)==0
-            obj.fov(rois(1,1)).roi(rois(2,1)).load;
-            img=obj.fov(rois(1,1)).roi(rois(2,1)).image;
-        end
-        roitmp=obj.fov(rois(1,1)).roi(rois(2,1));
-
-        %get max number of frames
-        if numel(frames)==0
-            maxframe=NaN;
-            ccf=1;
-            for r=rois(2,:)
-                obj.fov(rois(1,ccf)).roi(r).load;
-                maxframe=min(maxframe, min(size(obj.fov(rois(1,ccf)).roi(r).image,4)));
-                ccf=ccf+1;
-            end
-            frames=1:maxframe;
-        end
-
-    end
+    % if isa(obj,'classi')
+    %     img=obj.roi(rois(1)).image;
+    %     if numel(img)==0
+    %         obj.roi(rois(1)).load;
+    %         img=obj.roi(rois(1)).image;
+    %     end
+    % 
+    %     roitmp=obj.roi(rois(1));
+    % 
+    %     %get max number of frames
+    %     if numel(frames)==0
+    %         maxframe=NaN;
+    %         for r=rois
+    %             obj.roi(r).load;
+    %             maxframe=min(maxframe, min(size(obj.roi(r).image,4)));
+    %         end
+    %         frames=1:maxframe;
+    %     end
+    % end
+    % 
+    % if isa(obj,'shallow')
+    %     img=obj.fov(rois(1,1)).roi(rois(2,1)).image;
+    %     if numel(img)==0
+    %         obj.fov(rois(1,1)).roi(rois(2,1)).load;
+    %         img=obj.fov(rois(1,1)).roi(rois(2,1)).image;
+    %     end
+    %     roitmp=obj.fov(rois(1,1)).roi(rois(2,1));
+    % 
+    %     %get max number of frames
+    %     if numel(frames)==0
+    %         maxframe=NaN;
+    %         ccf=1;
+    %         for r=rois(2,:)
+    %             obj.fov(rois(1,ccf)).roi(r).load;
+    %             maxframe=min(maxframe, min(size(obj.fov(rois(1,ccf)).roi(r).image,4)));
+    %             ccf=ccf+1;
+    %         end
+    %         frames=1:maxframe;
+    %     end
+    % 
+    % end
 
     if isa(obj,'roi')
-        img=obj.image;
+        img=obj(1).image;
         if numel(img)==0
-            obj.load;
-            img=obj.image;
+            obj(1).load;
+            img=obj(1).image;
         end
-        roitmp=obj;
+        roitmp=obj(1);
     end
 
     nframesref=size(roitmp.image,4);%useless?
@@ -352,7 +371,9 @@ end
 
     % add row for roi title
     shifty=0;
-    if roititle>0 | rls>0 | shiftY
+
+    if roititle | rls>0 | shiftY
+ 
         shifty=16;
         shifty=floor(shifty*sqrt(scalingFactor));
     end
@@ -379,11 +400,12 @@ end
     h=size(img,1)+shifty;
     w=size(img,2)+shiftx;
     imgout=uint16(65535*ones(nsize(1)*h,nsize(2)*w,3,numel(frames)));
-    imgout(:,:,1,:)=imgout(:,:,1,:)*background(1);
-    imgout(:,:,2,:)=imgout(:,:,2,:)*background(2);
-    imgout(:,:,3,:)=imgout(:,:,3,:)*background(3);
+
+    imgout(:,:,1,:)=uint16(double(imgout(:,:,1,:))*background(1));
+    imgout(:,:,2,:)=uint16(double(imgout(:,:,2,:))*background(2));
+    imgout(:,:,3,:)=uint16(double(imgout(:,:,3,:))*background(3));
     %=
-    %figure, imshow(imgout(:,:,:,1))
+ 
     cc=1;
 
     %   if numel(channel)==1
@@ -397,20 +419,27 @@ end
 
     for k=1:nsize(1) % include all requested rois
         for j=1:nsize(2)
+            % 
+            % if isa(obj,'classi')
+            %     roitmp=obj.roi(rois(cc));
+            % end
+            % if isa(obj,'shallow')
+            %     roitmp=obj.fov(rois(1,cc)).roi(rois(2,cc));
+            % end
+            % if isa(obj,'roi')
+            %     roitmp=obj;
+            % end
 
-            if isa(obj,'classi')
-                roitmp=obj.roi(rois(cc));
+            if cc>numel(obj)
+                continue
             end
-            if isa(obj,'shallow')
-                roitmp=obj.fov(rois(1,cc)).roi(rois(2,cc));
-            end
-            if isa(obj,'roi')
-                roitmp=obj;
-            end
+
+            roitmp=obj(cc);
+
             if numel(roitmp.image)==0
                 roitmp.load;
             end
-            disp(['ROI ' roitmp.id ' loaded']);
+            disp(['ROI ' roitmp.id ' is loaded']);
 
             if numel(intersect(1:size(roitmp.image,4) , frames)) < numel(frames)
                 disp('this ROI does not have enough frames, you must provide a compatible frames argument');
@@ -531,6 +560,8 @@ end
                                 else % plots surface
                                     bw=65535*uint16(bw);
 
+                                    levels{ii}
+
                                     imrgb=cat(3,bw*levels{ii}(iii,1)*rgb{ii}(1),bw*levels{ii}(iii,2)*rgb{ii}(2),bw*levels{ii}(iii,3)*rgb{ii}(3));
                                 end
 
@@ -562,6 +593,7 @@ end
                 imout(:,:,:,i)=imgRGBsum;
             end
 
+
             %the REST
             %add background rectangles top and left of each roi
             imblack=uint16(65535*ones(size(imtmp,1),shiftx,3,size(imtmp,4)));
@@ -571,6 +603,11 @@ end
 
             imout=cat(2,imblack,imout);
             imblack2=uint16(65535*ones(shifty,size(imout,2),3,size(imout,4)));
+                for ci=1:3
+            imblack2(:,:,1,:)= imblack2(:,:,1,:)*background(ci);
+            imblack2(:,:,2,:)= imblack2(:,:,2,:)*background(ci); 
+             imblack2(:,:,3,:)= imblack2(:,:,3,:)*background(ci); 
+                end
             imout=cat(1,imblack2,imout);
             %=
 
@@ -597,16 +634,21 @@ end
             %=
 
             % insert ROI title
-            if roititle>0 | rls>0
+            if roititle | rls>0
                 str='';
-                if roititle>0
-                    str=[roitmp.id ' - '];
+                if roititle
+                    if numel(roitmp.id)>10
+                    str=[roitmp.id(end-10:end)];
+                    else
+                    str=[roitmp.id];
+                    end
                 end
+
                 %NUMBER OF DIVS
                 for i=1:numel(frames)
-                    str='';
+         
                     if rls==1
-
+                         str='';
                         pir=sum(frames(i)>=rlsresults.framediv);
                         if pir<10
                             str=[str  num2str(pir) '  - '];
@@ -627,15 +669,18 @@ end
                             end
                         end
                     end
+
                     %ndiv text
                     if numel(training)==1
                         imout(:,:,:,i)=insertText( imout(:,:,:,i),[legendX-0 shifty/2+2],str,'Font','Consolas Bold','FontSize',floor(12*sqrt(scalingFactor)),'BoxColor',...
-                            [1 1 1],'BoxOpacity',0.0,'TextColor',colr*65535,'AnchorPoint','LeftCenter');
+                           background,'BoxOpacity',0.0,'TextColor',colr*65535,'AnchorPoint','LeftCenter');
                         imout(:,:,:,i)=insertText( imout(:,:,:,i),[legendX-0 shifty/2+2],strt,'Font','Consolas Bold','FontSize',floor(12*sqrt(scalingFactor)),'BoxColor',...
-                            [1 1 1],'BoxOpacity',0.0,'TextColor',65535*text,'AnchorPoint','LeftCenter');
+                            background,'BoxOpacity',0.0,'TextColor',65535*text,'AnchorPoint','LeftCenter');
                     elseif numel(training)==0 %if only results
-                        imout(:,:,:,i)=insertText( imout(:,:,:,i),[2 shifty/2+2],str,'Font','Consolas Bold','FontSize',floor(12*sqrt(scalingFactor)),'BoxColor',...
-                            [1 1 1],'BoxOpacity',0.0,'TextColor',65535*text,'AnchorPoint','LeftCenter');
+                      %  str
+                     
+                        imout(:,:,:,i)=insertText( imout(:,:,:,i),[-2 shifty/2+3],str,'Font','Consolas Bold','FontSize',floor(12*sqrt(scalingFactor)),'BoxColor',...
+                          255* background,'BoxOpacity',0.0,'TextColor',65535*text,'AnchorPoint','LeftCenter');
                     end
                 end
             end
@@ -750,16 +795,24 @@ end
         imgout2=cat(1,topimage,imgout);
 
         for j=1:numel(frames)
+            if timeoffset
             timestamp=[num2str((frames(j)-frames(1))*framerate) 'min'];
+            else
+              timestamp=[num2str((frames(j))*framerate) 'min'];
+            end
+
             if hideStamp==1
                 timestamp='';
             end
             if numel(title)>0
-                timestamp=[blanks(numel(title)+tabtitle) '- GT : ' timestamp];
+          %      timestamp=[blanks(numel(title)+tabtitle) '- GT : ' timestamp];
+                   timestamp=[blanks(numel(title)+tabtitle) ' - ' timestamp];
             end
+
             %the image passed in 8 bits depth--> use 255
             imgout2(:,:,:,j)=insertText(imgout2(:,:,:,j),[1,shifttitley/2],[blanks(tabtitle) title],'Font','Consolas Bold','FontSize',floor(sqrt(scalingFactor)*fontsize),...
                 'BoxColor',[1 1 1],'BoxOpacity',0.0,'TextColor',colr*255,'AnchorPoint','LeftCenter');
+
             imgout2(:,:,:,j)=insertText(imgout2(:,:,:,j),[1,shifttitley/2],timestamp,'Font','Consolas Bold','FontSize',floor(sqrt(scalingFactor)*fontsize),...
                 'BoxColor',[1 1 1],'BoxOpacity',0.0,'TextColor',255*text,'AnchorPoint','LeftCenter');
         end
@@ -775,13 +828,14 @@ end
         %  for i=1:nmov
         %       name=[name '_' num2str(rois(i)) '_' num2str(rois(i)) '-'];
         %    end
-        if isa(obj,'classi')
-            name=fullfile(obj.path, 'rois');
-        end
 
-        if isa(obj,'shallow')
-            name=fullfile(obj.io.path,obj.io.file,'rois');
-        end
+        % if isa(obj,'classi')
+        %     name=fullfile(obj.path, 'rois');
+        % end
+        % 
+        % if isa(obj,'shallow')
+        %     name=fullfile(obj.io.path,obj.io.file,'rois');
+        % end
 
         if isa(obj,'roi')
             name=fullfile(obj.path,obj.id);
@@ -802,6 +856,19 @@ end
     end
 
     % routine output : movie or sequence of image
+
+if DisplayTest==1
+    disp('test movie output');
+
+    h=findobj('Tag','MovieTest');
+    if numel(h)==0
+        h=figure('Tag','MovieTest','Name','Preview figure for movie export');
+    end
+    p=h.Position;
+        imshow(imgout,[]);
+        set(gcf,'Position',p);
+    return;
+end
 
     switch sequence
         case 'Movie' % movie / default
@@ -824,7 +891,7 @@ end
             else
                 lin=1;
             end
-            size(imgout)
+
              h= figure, montage(imgout,'Size',[1 NaN]);
               exportgraphics(h, [ name '.png']);
               disp(['Montage figure successfully exported to : ' name '.png'])
