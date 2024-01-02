@@ -30,12 +30,11 @@ rotate=[];
 imageSize=[];
 DisplayTest=0;
 timeoffset=false;
+weights=[];
 
 %colr=[36/255,61/255,255/255];
 colr=[0.35,0.35,0.35];
-%colr=[255/255,166/255,33/255];
 
-%classif.strid='';
 
 roititle=false;
 rls=0;
@@ -184,6 +183,11 @@ for i=1:numel(varargin)
         text=varargin{i+1};
         colr=text;
     end
+
+     if strcmp(varargin{i},'Weights') % specifies the weight of the channel in the composition of images. Must have the same number of elements as the channel array. 
+        weights=varargin{i+1};
+    end
+
 
     if strcmp(varargin{i},'Legend') % display legend for classes
         legendX=varargin{i+1};
@@ -337,7 +341,6 @@ end
             cha{i}=pix;
         end
 
-
         if numel(rgb{i})==0
             rgb{i}=[1 1 1];
         end
@@ -345,9 +348,7 @@ end
         if numel(levels{i})==0
             levels{i}=[-1 -1];
         end
-
     end
-
 
     % set up extra display pixels
     % columns on the left of the movie
@@ -447,8 +448,6 @@ end
 
             imtmp=roitmp.image(:,:,:,frames);
 
-
-
             if numel(crop)>0
                 for c=1:size(imtmp,3)
                     for f=1:size(imtmp,4)
@@ -462,7 +461,6 @@ end
               if numel(imageSize)
                 imtmp=imresize(imtmp,imageSize);
             end
-
 
             frameEnd(1:numel(cha))=9999;
             if numel(find(stopWhenDead==1))>0 %if channel to skip when cell is dead
@@ -512,6 +510,10 @@ end
                         imtmp2=uint16(zeros(size(imtmp(:,:,cha{ii},i))));
                     end
 
+                             if Flip==1 % flip image upside down
+                        imtmp2=flip(imtmp2,1);
+                              end
+
 
                     if numel(cha{ii})==1 % single dimension channel => levels can be readjusted
 
@@ -532,56 +534,92 @@ end
                             imtmp2= cat(3, imtmp2*rgb{ii}(1), imtmp2*rgb{ii}(2), imtmp2*rgb{ii}(3));
 
 
+                                       if numel(weights)==0
+                    imgRGBsum=imlincomb(1,imgRGBsum,1,imtmp2);
+                    else
+                     imgRGBsum=imlincomb(1,imgRGBsum,weights(ii),imtmp2);
+                                       end
+
+
                         else % channel represents an indexed image , will use provided colormap
-                            maxe= max( imtmp2(:)); %get classes
+                           indices=str2num(levels{ii}{1});
+
+                          %  maxe= max( imtmp2(:)); %get classes
                             imrgbbw=uint16(zeros(size(imgRGBsum)));
-                            for iii=1:maxe %for classes
-                                bw=imtmp2==iii;
+
+                            contour= levels{ii}{4};
+                            wid= levels{ii}{5};
+                             levmap=eval(levels{ii}{2});
+                             wei= levels{ii}{3};
+
+         
+
+                            for iii=1:numel(indices) %1:maxe %for classes
+                                bw=imtmp2==indices(iii);
 
                                 if contour %plots the contour rather than a surface
+                                       lineopac=min(1,wei);
+                                       opac=0;
+                                else
+                                       lineopac=1;
+                                       opac=min(1,wei);
+                                end
+                                       wid=max(1,wid);
+            
+                                       imgRGBsum= insertObjectMask(   imgRGBsum,bw,'MaskColor',uint8(255*levmap(iii,:)),'Opacity',opac,'LineOpacity',lineopac,'LineWidth',wid);
+                                end
                                     %bw=bwperim(bw); % ugly but proablably not
                                     %worse than what is done below in the end :
 
-                                    [B,L] = bwboundaries(bw,'noholes');
-                                    bw(:)=0;
-                                    bw=65535*uint16(bw);
-                                    vecpol=[];
+                                %     [B,L] = bwboundaries(bw,'noholes');
+                                %     bw(:)=0;
+                                %     bw=65535*uint16(bw);
+                                %     vecpol=[];
+                                % 
+                                %     for m =1:length(B)
+                                %         boundary = B{m};
+                                %         if size(boundary,1)>2 % a polygon must have at least 3 vertices
+                                %             vecpoltmp=[boundary(:,2)' ; boundary(:,1)'];
+                                %             vecpoltmp=reshape(vecpoltmp,1,[]);
+                                %             imgRGBsum= insertShape(  imgRGBsum,'Polygon',vecpoltmp,    'ShapeColor', round(65535*levmap(iii,:)),'LineWidth',wid,'SmoothEdges',true,'Opacity',min(1,wei));
+                                %             % if contour, the contour
+                                %             % should be blended but
+                                %             % strictly delineated
+                                %         end
+                                %     end
+                                % 
+                                %     if length(B)==0
+                                % %    bw=cat(3,bw,bw,bw);
+                                %     end
+                                % 
+                                %   %  imrgb=bw;
+                                % else % plots surface
+                                   % bw=65535*uint16(bw);
 
-                                    for m =1:length(B)
-                                        boundary = B{m};
-                                        if size(boundary,1)>2 % a polygon must have at least 3 vertices
-                                            vecpoltmp=[boundary(:,2)' ; boundary(:,1)'];
-                                            vecpoltmp=reshape(vecpoltmp,1,[]);
-                                            bw= insertShape( bw,'Polygon',vecpoltmp,    'Color', round(65535*levels{ii}(iii,:)),'LineWidth',2,'SmoothEdges',true);
-                                        end
-                                    end
-                                    imrgb=bw;
+                            %        imrgbbw = insertObjectMask(imrgbbw,bw,'MaskColor',uint8(255*levmap(iii,:)),'Opacity',1);
 
-                                else % plots surface
-                                    bw=65535*uint16(bw);
+                               %       imgRGBsum= insertObjectMask(   imgRGBsum,bw,'MaskColor',uint8(255*levmap(iii,:)),'Opacity',min(1,wei));
 
-                                    levels{ii}
+                                %    imrgb=cat(3,bw*levmap(iii,1)*rgb{ii}(1),bw*levmap(iii,2)*rgb{ii}(2),bw*levmap(iii,3)*rgb{ii}(3));
+                               %     imrgbbw=imadd(imrgbbw,imrgb); % in case of a surface, blend the pixels 
+                          %      end
 
-                                    imrgb=cat(3,bw*levels{ii}(iii,1)*rgb{ii}(1),bw*levels{ii}(iii,2)*rgb{ii}(2),bw*levels{ii}(iii,3)*rgb{ii}(3));
-                                end
+                           
+                             %   imrgbbw=imlincomb(1,imrgbbw,1,imrgb);
 
-                                %size(imrgb)
-                                %size(imrgbbw)
-
-                                imrgbbw=imlincomb(1,imrgbbw,1,imrgb);
-                            end
-                            imtmp2=imrgbbw;
+                          %  imtmp2=imrgbbw;
+                        
                         end
                     end
+
                     if numel(cha{ii})==3 % already a combined image ; no RGB adjustmeent is possible
-                    end
-
-                    if Flip==1 % flip image upside down
-                        imtmp2=flip(imtmp2,1);
-                    end
-
-
+                            if numel(weights)==0
                     imgRGBsum=imlincomb(1,imgRGBsum,1,imtmp2);
+                    else
+                     imgRGBsum=imlincomb(1,imgRGBsum,weights(ii),imtmp2);
+                            end
+                    end
+
 
                 end
 
@@ -865,10 +903,12 @@ if DisplayTest==1
         h=figure('Tag','MovieTest','Name','Preview figure for movie export');
     end
     p=h.Position;
+    figure(h);
         imshow(imgout,[]);
-        set(gcf,'Position',p);
+        set(h,'Position',p);
     return;
 end
+
 
     switch sequence
         case 'Movie' % movie / default
@@ -882,7 +922,7 @@ end
 
         writeVideo(v,imgout);
         close(v);
-        disp(['Movie successfully exported to : ' name '.mp4'])
+        disp(['Movie successfully exported to : ' name])
 
         case 'Sequence'
 
@@ -893,10 +933,17 @@ end
             end
 
              h= figure, montage(imgout,'Size',[1 NaN]);
-              exportgraphics(h, [ name '.png']);
-              disp(['Montage figure successfully exported to : ' name '.png'])
+             [pth fle]=fileparts(name);
+   
+              fil=fullfile(pth, [fle '.png'])
+              exportgraphics(h, fil);
+              disp(['Montage figure successfully exported to : ' fil])
 
         case 'Mat'
-            save( [ name '.mat'], 'imgout');
-             disp(['Mat file with matrix successfully exported to : ' name '.mat'])
+              [pth fle]=fileparts(name);
+   
+              fil=fullfile(pth, [fle '.mat']);
+       
+            save(fil, 'imgout');
+             disp(['Mat file with matrix successfully exported to : ' fil])
     end
