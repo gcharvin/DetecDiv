@@ -1,6 +1,8 @@
 function wbdcb(src,event,obj,impaint1,impaint2,hpaint,classif,h,userprefs)
 % function used to paint pixels on image
-seltype = src.SelectionType;
+seltype = src.SelectionType
+modtype= src.CurrentModifier
+
 ma=zeros(size(obj.image,1),size(obj.image,2));
 
 
@@ -45,7 +47,6 @@ end
 if strcmp(seltype,'open') % paint whole connected area into the selected class color
     % double click
 
-
     % find the color to paint in
     hmenu = findobj('Tag','TrainingClassesMenu');
     hclass=findobj(hmenu,'Checked','on');
@@ -70,10 +71,12 @@ if strcmp(seltype,'open') % paint whole connected area into the selected class c
 
     [L nlab]=bwlabel(impaint1.CData==val);
 
+
     for j=1:nlab
         bwtemp=L==j;
         if bwtemp(yinit,xinit)==1 % found the connected to which the init pixel belongs
 
+            % HERE perform an erosion to remove the perimeter to 
             BW=~bwtemp;
 
             imdist=bwdist(BW);
@@ -86,12 +89,20 @@ if strcmp(seltype,'open') % paint whole connected area into the selected class c
 
             labels = double(watershed(sous,8)).* ~BW; % do a watershed to cut objects
 
+            % properly cut objects
+              impaint1.CData(labels==0 & bwtemp)=0;
+              impaint2.CData(labels==0 & bwtemp)=0;
+
+
             for k=1:max(labels(:))
                 bwtemp2=labels==k;
+                bwtemp2(labels==0)=0;
+
 
                 if bwtemp2(yinit,xinit)==1
                     impaint1.CData(bwtemp2)=colo;
                     impaint2.CData(bwtemp2)=colo;
+        
 
                     %     pixelchannel=obj.findChannelID(classif.strid);
                     pix=obj.findChannelID(classif.strid);
@@ -103,6 +114,7 @@ if strcmp(seltype,'open') % paint whole connected area into the selected class c
                     break
                 end
             end
+
         end
     end
 end
