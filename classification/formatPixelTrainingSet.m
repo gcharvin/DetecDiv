@@ -2,6 +2,16 @@ function output=formatPixelTrainingSet(foldername,classif,rois)
 
 % formats training set as tif images if number of channels is smaller or
 % equal than 3, otherwise as multidemensionnal .mat file
+
+% if instance segmentaiton (solov2), data are formatted as follows : 
+% the training image is stores in the images folder
+% a mat file is stores in the labels folder as a cell array: 
+%out{1} = im;
+%out{2} = Nx4 double bounding boxes
+% Convert the dataset into 1 class
+%out{3} = repmat(categorical("Object"), [numObjects 1]);       % Nx1 categorical object labels
+%out{4} = data.masks;        % HxWxN logical mask arrays
+
 output=0;
 
 mkdir([classif.path '/' foldername],'images')
@@ -27,8 +37,8 @@ warning off all
 channel=classif.channelName;
 
 for i=1:numel(rois)
+
     disp(['Launching ROI ' num2str(rois(i)) ': processing...'])
-    
     
     % find image channel associated with training
     %pixe = strfind(cltmp(i).display.channel, classif.strid);
@@ -104,13 +114,17 @@ for i=1:numel(rois)
             tr=['0' tr];
         end
         
+          if ~strcmp(classif.description{3}{1},'Solov2') % classical labeled image
+minval=1;
+          else
+minval=0;
+          end
+
         if numel(cc)>0
             tmplab=lab(:,:,:,j);
-            if max(tmplab(:))>1 % test if image has been manually annotated and remove empty frames
-                %  'ok'
-                
-                %  j
-                
+            if max(tmplab(:))>minval % test if image has been manually annotated and remove empty frames
+
+               
                 % pads images - the traininer network expects images bigger or
                 % equal to 500 x 500.
                 % For images smaller than that, image padding is achieved to
@@ -121,8 +135,42 @@ for i=1:numel(rois)
                 else % multispectral image
                     save([classif.path '/' foldername '/images/' cltmp(rois(i)).id '_frame_' tr '.mat'],tmp); % WARNING no preprocessing is performed in that case 
                 end
-                
+
+                 if ~strcmp(classif.description{3}{1},'Solov2') % classical labeled image
                 imwrite(labels(:,:,:,j),[classif.path '/' foldername '/labels/' cltmp(rois(i)).id '_frame_' tr '.tif']);
+                 else % specific formatting for solov2
+                     boxes=[];
+                     imageFile=[classif.path '/' foldername '/images/' cltmp(rois(i)).id '_frame_' tr '.tif'];
+                     labels=categorical([]);
+        
+                     masks=false(size(lab,1:2));
+
+                     nmask=1;
+                      for k=1:numel(classif.classes)
+                      %    if k==defaultclass %
+                      %           pixz=lab(:,:,1,j)==k | lab(:,:,1,j)==0; % WARNING !!!! add unassigned pixels to this class
+                      %   else
+                                  pixz=lab(:,:,1,j)==k;
+                     %     end
+                       %  labtmp2=double(zeros(size(lab,1),size(lab,2),1,size(lab,4)));
+                       %  labtmp2(pixz)=1;
+
+                  %     figure, imshow(pixz)
+                       stats=regionprops(pixz,"BoundingBox");
+                       [L n]=bwlabel(pixz);
+                       for l=1:n
+                            masks(:,:,nmask)=L==l;
+                            boxes(nmask,1:4)=stats(l).BoundingBox;
+                            labels(nmask)=categorical(classif.classes(k));
+                           nmask=nmask+1;
+                       end
+                      end
+
+
+                     save([classif.path '/' foldername '/labels/' cltmp(rois(i)).id '_frame_' tr '.mat'],'boxes','imageFile','labels','masks');
+
+                 end
+
                 output=output+1;
             end
         end

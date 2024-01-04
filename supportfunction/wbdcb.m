@@ -1,7 +1,7 @@
 function wbdcb(src,event,obj,impaint1,impaint2,hpaint,classif,h,userprefs)
 % function used to paint pixels on image
-seltype = src.SelectionType
-modtype= src.CurrentModifier
+seltype = src.SelectionType;
+modtype= src.CurrentModifier;
 
 ma=zeros(size(obj.image,1),size(obj.image,2));
 
@@ -190,8 +190,13 @@ end
             % impaint1.CData(linearInd)=colo;
             % impaint2.CData(linearInd)=colo;
 
+            if strcmp(modtype,'shift') % erase painting
+            impaint1.CData(pis)=0;
+            impaint2.CData(pis)=0;
+            else % do paint
             impaint1.CData(pis)=colo;
             impaint2.CData(pis)=colo;
+            end
 
 
             % dave data in obj.image object
