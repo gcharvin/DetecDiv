@@ -321,6 +321,7 @@ function ROIpreprocessing(roiobj,classif)
 if strcmp(classif.category,'Pixel')
     gfp=roiobj.image;
 
+  if ~strcmp(classif.description{3},'Solov2')  
 switch classif.outputType
     case 'proba' % outputs proba of classes
         pixresults=[];
@@ -357,6 +358,49 @@ switch classif.outputType
             roiobj.image(:,:,pixresults,:)=uint16(zeros(size(gfp,1),size(gfp,2),1,size(gfp,4)));
         end
 end
+
+  else
+          pixresults=[];
+
+        for i=1:numel(classif.classes) % display one channel per class 
+            pixresultstmp=findChannelID(roiobj,['results_' classif.strid '_' classif.classes{i}]); % gather all channels associated with proba
+            
+            if numel(pixresultstmp)==0 % channel does not exist, hence create them
+                matrix=uint16(zeros(size(gfp,1),size(gfp,2),1,size(gfp,4)));
+                rgb=[1 1 1];
+                intensity=[0 0 0]; % used to display indexed image
+                
+                roiobj.addChannel(matrix,['results_' classif.strid '_' classif.classes{i}],rgb,intensity);
+                
+                pixresults=[pixresults size(roiobj.image,3)];
+            else
+                
+                roiobj.image(:,:,pixresultstmp,:)=uint16(zeros(size(gfp,1),size(gfp,2),1,size(gfp,4)));
+                pixresults=[pixresults pixresultstmp];
+            end
+        end
+
+        % add an additional channel that contains all objects for all
+        % classes
+
+            pixresultstmp=findChannelID(roiobj,['results_' classif.strid]); % gather all channels associated with proba
+            
+            if numel(pixresultstmp)==0 % channel does not exist, hence create them
+                matrix=uint16(zeros(size(gfp,1),size(gfp,2),1,size(gfp,4)));
+                rgb=[1 1 1];
+                intensity=[0 0 0]; % used to display indexed image
+                
+                roiobj.addChannel(matrix,['results_' classif.strid],rgb,intensity);
+                
+              %  pixresults=[pixresults size(roiobj.image,3)];
+            else
+                
+                roiobj.image(:,:,pixresultstmp,:)=uint16(zeros(size(gfp,1),size(gfp,2),1,size(gfp,4)));
+          %      pixresults=[pixresults pixresultstmp];
+            end
+
+
+  end
 end
 
 function ROIManagement(roiobj,data, image)

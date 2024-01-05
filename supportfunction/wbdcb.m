@@ -137,6 +137,10 @@ end
             return;
         end
 
+ 
+        if strcmp(modtype,'shift')
+            bsize=1;
+        end
 
         switch bsize
             case 2 % fine brush
@@ -170,6 +174,8 @@ end
                 %pis=ma>0;
                 % HERE
         end
+
+ 
 
         ma(round(mix):round(mux),round(miy):round(muy))=1;
         pis=ma>0;

@@ -1,14 +1,12 @@
-function out = matReaderBinData(filename)
+function out = mymatReaderBinData(filename)
 %matReader Read annotations for simulated bin picking dataset
 
 
-
-data = load(filename)
+data = load(filename);
 
 %imagePath = fullfile(imagepath,data.imageFile)
 
-imagePath = data.imageFile
-
+imagePath = data.imageFile;
 
 im = imread(imagePath);
 

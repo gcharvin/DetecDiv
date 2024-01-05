@@ -77,6 +77,20 @@ for i=1:numel(rois)
         %pixcc=find(cltmp(i).channelid==cc)
 
         lab=cltmp(rois(i)).image(:,:,cc,:);
+
+      
+           if strcmp(classif.description{3}{1},'Solov2') % classical labeled image
+        %resize images to multile of 32 in case of solov2
+            % Load your image
+              [M, N, ~] = size(im);
+
+            newM = ceil(M / 32) * 32;
+            newN = ceil(N / 32) * 32;
+
+            im= imresize(im, [newM newN]);
+            lab= imresize(lab, [newM newN]);
+           end
+
         
         labels= double(zeros(size(lab,1),size(lab,2),3,size(lab,4)));
         %   size(labels)
@@ -105,6 +119,20 @@ for i=1:numel(rois)
             param=[];
 
             tmp=cltmp(rois(i)).preProcessROIData(pix,j,param);
+
+              if strcmp(classif.description{3}{1},'Solov2') % classical labeled image
+        %resize images to multile of 32 in case of solov2
+            % Load your image
+              [M, N, ~] = size(tmp);
+
+            newM = ceil(M / 32) * 32;
+            newN = ceil(N / 32) * 32;
+
+            tmp= imresize(tmp, [newM newN]);
+        
+           end
+
+
         end
         
         %tmp=uint8(256*tmp);
@@ -132,6 +160,7 @@ minval=0;
                 %  exptmp=tmp;
                 if numel(pix)<=3
                     imwrite(tmp,[classif.path '/' foldername '/images/' cltmp(rois(i)).id '_frame_' tr '.tif']);
+
                 else % multispectral image
                     save([classif.path '/' foldername '/images/' cltmp(rois(i)).id '_frame_' tr '.mat'],tmp); % WARNING no preprocessing is performed in that case 
                 end
@@ -165,7 +194,7 @@ minval=0;
                            nmask=nmask+1;
                        end
                       end
-
+                        labels=labels';
 
                      save([classif.path '/' foldername '/labels/' cltmp(rois(i)).id '_frame_' tr '.mat'],'boxes','imageFile','labels','masks');
 

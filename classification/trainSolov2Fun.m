@@ -25,8 +25,8 @@ if nargin==2 % basic parameter initialization
       
         classif.trainingParam=struct('CNN_training_method',{{'adam','sgdm','adam'}},...
             'CNN_network',{{'resnet50-coco','light-resnet18-coco','resnet50-coco'}},...
-            'CNN_mini_batch_size',8,...
-            'CNN_max_epochs',5,...
+            'CNN_mini_batch_size',4,...
+            'CNN_max_epochs',20,...
             'CNN_initial_learning_rate',0.0005,...
             'CNN_data_shuffling',{{'once','every-epoch','never','every-epoch'}},...
             'CNN_data_splitting_factor',0.9,...
@@ -72,35 +72,33 @@ if nargin==2 % basic parameter initialization
 
 
 imagesfoldername=[path '/trainingdataset/images'];
-
 labelsfoldername=[path '/trainingdataset/labels'];
 
-imds = imageDatastore(imagesfoldername);
+%imds = imageDatastore(imagesfoldername);
 
 classification=classif;
-
-
 nclasses=numel(classification.classes);
 %colormap=classification.colormap(1:nclasses,:);
 
-classes=string();
-labelsIDs={};
+classes=classification.classes;
+%labelsIDs={};
 
-for i=1:nclasses
-    classes(i)=string(classification.classes{i});
-    labelsIDs{i}=round(255*classification.colormap(i+1,:)); % !! +1 because the first index in the colormap is black color
-end
+% for i=1:nclasses
+%     classes(i)=string(classification.classes{i});
+%     labelsIDs{i}=round(255*classification.colormap(i+1,:)); % !! +1 because the first index in the colormap is black color
+% end
 
-%classes, labelsIDs
+ds = fileDatastore(labelsfoldername,FileExtensions=".mat",ReadFcn=@(x)mymatReaderBinData(x));
 
-%classes=["Background" "Cell"];
-%labelIDs={[255 0 0] [0 255 0]};
-
-pxds = pixelLabelDatastore(labelsfoldername,classes,labelsIDs);
+%pxds = pixelLabelDatastore(labelsfoldername,classes,labelsIDs);
 
 %return;
 
-I = readimage(imds,1);
+out=ds.read;
+I=out{1};
+
+%I = readimage(imds,1);
+
 %
 % I = histeq(I);
 % imshow(I)
@@ -113,8 +111,9 @@ I = readimage(imds,1);
 %figure, imshow(C,[])
 %return;
 
-tbl = countEachLabel(pxds);
-frequency = tbl.PixelCount/sum(tbl.PixelCount);
+%tbl = countEachLabel(pxds);
+%frequency = tbl.PixelCount/sum(tbl.PixelCount);
+
 %
 % bar(1:numel(classes),frequency)
 % xticks(1:numel(classes))
@@ -134,20 +133,31 @@ disp('ROis used for training : ' );
 
 roitraining=classif.trainingset;
 
-%[imds, pxds] = subSelectTrainingSet(imds,pxds,classes,labelsIDs, classif); % subselect images in datastore according to their belonging to classif.trainingset
+ds = subSelectTrainingSet(ds,classif, imagesfoldername); % subselect images in datastore according to their belonging to classif.trainingset
 % uncomment this line if crossvalidation should be performed  
 
-nfiles=numel(imds.Files)
+%nfiles=numel(imds.Files)
 
-[imdsTrain, imdsVal, pxdsTrain, pxdsVal] = partitionCamVidData(imds,pxds,classes,labelsIDs,trainingParam.CNN_data_splitting_factor);
+numImages = length(ds.Files);
+numTrain = floor(trainingParam.CNN_data_splitting_factor*numImages);
+numVal = floor((1-trainingParam.CNN_data_splitting_factor)*numImages);
+
+shuffledIndices = randperm(numImages);
+trainDS = subset(ds,shuffledIndices(1:numTrain));
+valDS   = subset(ds,shuffledIndices(numTrain+1:numTrain+numVal));
+%testDS  = subset(ds,shuffledIndices(numTrain+numVal+1:end));
+
+%[imdsTrain, imdsVal, pxdsTrain, pxdsVal] = partitionCamVidData(imds,pxds,classes,labelsIDs,trainingParam.CNN_data_splitting_factor);
 
 % Specify the network image size. This is typically the same as the traing image sizes.
+
 imageSize = size(I); %[720 960 3];
 
+
 % Specify the number of classes.
-numClasses = numel(classes);
-imageFreq = tbl.PixelCount ./ tbl.ImagePixelCount;
-classWeights = median(imageFreq) ./ imageFreq;
+%numClasses = numel(classes);
+%imageFreq = tbl.PixelCount ./ tbl.ImagePixelCount;
+%classWeights = median(imageFreq) ./ imageFreq;
 
 % Create DeepLab v3+.
 %nettype=1; % 1 for resnet50 , 0 for resnet18;
@@ -155,7 +165,7 @@ classWeights = median(imageFreq) ./ imageFreq;
 if strcmp(trainingParam.transfer_learning{end},'ImageNet') % creates a new network
 disp('Generating new network');
 
-lgraph = solov2(trainingParam.CNN_network{end},InputSize=imageSize,classNames=classes);
+lgraph = solov2(trainingParam.CNN_network{end},classes,'InputSize',imageSize);
 
 else
  disp(['Loading previously trained network : ' trainingParam.transfer_learning{end}]);
@@ -170,25 +180,30 @@ end
 end
 
 %pximdsVal = pixelLabelImageDatastore(imdsVal,pxdsVal);
-pximdsVal = pixelLabelImageDatastore(imdsVal,pxdsVal,'OutputSize',imageSize(1:2),'OutputSizeMode','resize');
+
+%pximdsVal = pixelLabelImageDatastore(imdsVal,pxdsVal,'OutputSize',imageSize(1:2),'OutputSizeMode','resize');
 
 % L2regularisation = 0.005;
 
 options = trainingOptions(trainingParam.CNN_training_method{end}, ...
     'LearnRateSchedule','piecewise',...
-    'LearnRateDropPeriod',2,...
-    'LearnRateDropFactor',0.7,...
+    'LearnRateDropPeriod',1,...
+    'LearnRateDropFactor',0.9,...
     'InitialLearnRate',trainingParam.CNN_initial_learning_rate, ...
     'L2Regularization',trainingParam.CNN_l2_regularization, ...
-    'ValidationData',pximdsVal,...
+    'ValidationData',valDS,...
     'MaxEpochs',trainingParam.CNN_max_epochs, ...
     'MiniBatchSize',trainingParam.CNN_mini_batch_size, ...
     'Shuffle',trainingParam.CNN_data_shuffling{end}, ...
     'CheckpointPath', tempdir, ...
     'VerboseFrequency',2,...
     'Plots','training-progress',...
+    'BatchNormalizationStatistics',"moving",...
     'ValidationFrequency', 10,...
+     'GradientThreshold',35, ... 
+     'ResetInputNormalization',false, ... 
     'ExecutionEnvironment',trainingParam.execution_environment{end}, ...
+     'OutputNetwork',"best-validation-loss",...
     'ValidationPatience', 500);%'Momentum',0.9);%, ...
 %  'ValidationFrequency', 10,...
 
@@ -212,18 +227,18 @@ options = trainingOptions(trainingParam.CNN_training_method{end}, ...
 %     OutputNetwork="best-validation-loss");
 
 
-augmenter = imageDataAugmenter('RandXReflection',true,'RandYReflection',true,...
-    'RandXScale',[0.5 2],'RandYScale',[0.5 2],...
-    'RandRotation',trainingParam.CNN_rotation_augmentation,'RandXTranslation',trainingParam.CNN_translation_augmentation,'RandYTranslation',trainingParam.CNN_translation_augmentation);
+%augmenter = imageDataAugmenter('RandXReflection',true,'RandYReflection',true,...
+%    'RandXScale',[0.5 2],'RandYScale',[0.5 2],...
+%    'RandRotation',trainingParam.CNN_rotation_augmentation,'RandXTranslation',trainingParam.CNN_translation_augmentation,'RandYTranslation',trainingParam.CNN_translation_augmentation);
 
 %   'RandXScale',[0.9 1.1],'RandYScale',[0.9 1.1],...
 
-pximds = pixelLabelImageDatastore(imdsTrain,pxdsTrain, ...
-    'DataAugmentation',augmenter,'OutputSize',imageSize(1:2),'OutputSizeMode','resize'); % default input size imga for training
+%pximds = pixelLabelImageDatastore(imdsTrain,pxdsTrain, ...
+%    'DataAugmentation',augmenter,'OutputSize',imageSize(1:2),'OutputSizeMode','resize'); % default input size imga for training
 
 %if doTraining
 
-[classifir info]= trainSOLOV2(pximds,lgraph,options,FreezeSubNetwork="backbone");
+[classifier, info]= trainSOLOV2(trainDS,lgraph,options,FreezeSubNetwork="backbone");
 
 %[classifier, info] = trainNetwork(pximds,lgraph,options);
 fprintf('Training is done...\n');
@@ -301,21 +316,18 @@ pxdsVal = pixelLabelDatastore(valLabels, classes, labelIDs);
 %pxdsTest = pixelLabelDatastore(testLabels, classes, labelIDs);
 
 
-% function [imdsTrain, pxdsTrain] = subSelectTrainingSet(imds,pxds,classes,labelIDs, classif)
-% % subselect data in the trainingset
-% 
-% str={};
-% for i=1:numel(classif.trainingset)
-%     str{i}= classif.roi(classif.trainingset(i)).id;
-% end
-% 
-% pix=contains(imds.Files,str);
-% 
-% trainingImages = imds.Files(pix);
-% 
-% imdsTrain = imageDatastore(trainingImages);
-% 
-% trainingLabels = pxds.Files(pix);
-% 
-% pxdsTrain = pixelLabelDatastore(trainingLabels, classes, labelIDs);
+function dsTrain = subSelectTrainingSet(ds, classif,imagesfoldername)
+% subselect data in the trainingset
+
+str={};
+for i=1:numel(classif.trainingset)
+    str{i}= classif.roi(classif.trainingset(i)).id;
+end
+
+pix=contains(ds.Files,str);
+
+trainingImages = ds.Files(pix);
+
+dsTrain = fileDatastore(trainingImages,FileExtensions=".mat",ReadFcn=@(x)mymatReaderBinData(x));
+
 
