@@ -119,6 +119,7 @@ for i=fovid
         cha=channels;
     end
 
+    
 
     if numel(frames)==0
         nframes=1:numel(tmpfov(i).srclist{1}); % take the number of frames from the image list
@@ -187,13 +188,25 @@ for i=fovid
         currentframe=[];
     end
 
+    ccha=0;
+    arrcha=[];
+
+    cccha=1;
+     for k=cha % loop on channels to determine the type of image
+              im=tmpfov(i).readImage(1,k);
+              ccha=ccha+size(im,3);
+              arrcha(cccha)=size(im,3);
+              cccha=cccha+1;
+     end
+
     for ii=frstart:numel(framecell) % loop on all blocks of frames on a given FOV
         nframes= framecell{ii};
 
 
         % list=cell(numel(nframes),numel(cha));
         im=tmpfov(i).readImage(1,1);
-        list=uint16(zeros(size(im,1),size(im,2),numel(cha),numel(nframes)));
+    %    list=uint16(zeros(size(im,1),size(im,2),numel(cha),numel(nframes)));
+           list=uint16(zeros(size(im,1),size(im,2),ccha,numel(nframes)));
 
         % refframe=framecell{1}(1);
 
@@ -204,6 +217,8 @@ for i=fovid
             disp(['Reading frame: ' num2str(j) ' / '  num2str(numel(nframes)) ' in group of frame : ' num2str(ii) ' / ' num2str(numel(framecell)) ' for FOV:  ' num2str(tmpfov(i).id)]);
 
             % ck=1;
+             cccha=1;
+
             for k=cha % loop on channels
                 frame=(nframes(j)); %/channelint(k))+1; %  spacing frames when channels are not used with equal time interval
 
@@ -226,11 +241,14 @@ for i=fovid
                 end
 
 
+                numbcha=size(im,3);
+
                 if tmpfov(i).display.binning(k) ~= tmpfov(i).display.binning(1)
                     im=imresize(im,tmpfov(i).display.binning(k)/tmpfov(i).display.binning(1));
                 end
 
-                list(:,:,k,j)=im;
+                list(:,:,cccha:cccha+numbcha-1,j)=im;
+                 cccha=cccha+numbcha;
                 % ck=ck+1;
             end
 
@@ -530,26 +548,39 @@ for i=fovid
             %             end
 
             if init==1
-                tmproi(l).image=uint16(zeros(rroi(4),rroi(3),numel(tmpfov(i).channel),numel(nframestot)));
+             %   tmproi(l).image=uint16(zeros(rroi(4),rroi(3),numel(tmpfov(i).channel),numel(nframestot)));
+                 tmproi(l).image=uint16(zeros(rroi(4),rroi(3),ccha,numel(nframestot)));
+             %   ccha
                 tmproi(l).display.channel={};
                 tmproi(l).display.frame=1;
+               tmproi(l).channelid=[];
+                tmproi(l).display.displaylim=[];
                 %tmpfov(i).roi(l).display.settings={};
                 temp=[1 1 1];
                 %temp=temp';
 
                 ck=1;
+                cumck=1;
 
                 for k=cha
                     tmproi(l).display.channel{ck}=tmpfov(i).channel{k}; %['Channel ' num2str(k)];
+                    if arrcha(ck)==1
                     tmproi(l).display.intensity(ck,:)=temp;
                     tmproi(l).channelid(ck)=ck;
+                    else
+                    tmproi(l).display.intensity(ck,:)=[1 1 1];
+                    tmproi(l).channelid(cumck:cumck+arrcha(ck)-1)=ck*ones(1,arrcha(k));
+                    end
+
                     tmproi(l).display.selectedchannel(ck)=1;
                     tmproi(l).display.rgb(ck,:)=temp;
+                    cumck=cumck+arrcha(ck);
                     ck=ck+1;
+      
                 end
 
 
-                tmproi(l).channelid=tmproi(l).channelid(1:numel(cha));
+             %   tmproi(l).channelid=tmproi(l).channelid(1:numel(cha));
                 tmproi(l).display.selectedchannel= tmproi(l).display.selectedchannel(1:numel(cha));
                 tmproi(l).display.intensity= tmproi(l).display.intensity(1:numel(cha),:);
                 tmproi(l).display.rgb= tmproi(l).display.rgb(1:numel(cha),:);

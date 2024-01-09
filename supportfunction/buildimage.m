@@ -32,6 +32,7 @@ for i=1:numel(obj.display.channel)
         % applies to preprocessing only
                  if (~isfield(obj.display,'displaylim') && ~isprop(obj.display,'displaylim')) || numel(obj.display.displaylim)~=2*numel(obj.channelid)
             disp(['No display limits found for ROI ' num2str(obj.id) ', computing them...']);
+            
             obj.computeDisplaylim;
          end
 

@@ -27,9 +27,6 @@ end
 
 h.Name=['ROI# :' obj.id];
 
-
-
-
 if numel(h.UserData)~=0 % window is already displayed; therefore just update the figure
     him=h.UserData.him;
 

@@ -460,7 +460,7 @@ end
             xmax=cl2(2,1);
             ymax=cl2(3,1);
             plot(xmax,ymax,'LineWidth',3,'Color','r','Marker','.','MarkerSize',30); hold on
-            str=[str, {'Max proba'}];
+            str=[str, {'Max prob'}];
         end
         
         if numel(cl1)
@@ -605,6 +605,7 @@ end
 
 % ======= confusion matrix ======
 
+
 mate=confusionmat(data.gt,data.pred,'Order',1:numel(classif.classes));
 score.confusion=mate; % matrix coeff must match acc and recall values computed above
 
@@ -700,6 +701,7 @@ score.N=sum([score.classes(:).N]);
          reg=0;
          
         for j=roiid
+            
             obj=classif.roi(j);
             disp([num2str(j) ' - '  obj.id ' - checking data']);
             

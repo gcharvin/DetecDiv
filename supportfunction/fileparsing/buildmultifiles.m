@@ -13,7 +13,7 @@ filelist=dirlist;
 
 %filter out folders and take only image files.
 filelist= filelist([filelist.isdir]==0);
-filelist=filelist(contains({filelist.name},{'.tif'})); % takes all image files
+filelist=filelist(contains({filelist.name},{'.tif','jpg','.png'})) ; % takes all image files
 
 % filter files based on position filter
 posfilter=output.pos(1).positionfilter;
@@ -21,6 +21,7 @@ posfilter=output.pos(1).positionfilter;
 npos={}; % if numel(npos=0), there is one single poistion found
 
 posfilter2={};
+
 
 for i=1:numel(posfilter)
     
@@ -36,7 +37,6 @@ for i=1:numel(posfilter)
         
         
     else % manually defined positions
-        
         tmp=regexp({filelist.name}, posfilter{i},'match');
         tmp=cellfun(@testx,tmp,'UniformOutput',false) ;
         tmp=unique(tmp);  tmp=tmp(cellfun(@(x) ~isempty(x),tmp));
@@ -48,8 +48,11 @@ for i=1:numel(posfilter)
     end
 end
 
+
+
 % if positions are numerated, then reorder positions
 % nposorder=1:numel(npos);
+
 if numel(npos)
     
     npostmp=regexp(npos, '\d+$','match');
@@ -154,8 +157,6 @@ end
 
 % build list of positions
 
-
-
 for i=1:numel(npos)
     
     if i~=1
@@ -168,7 +169,6 @@ for i=1:numel(npos)
         output.pos(i).pathlist={};
         output.pos(i).channelname={};
     end
-    
     
     cc=1;
     
@@ -206,32 +206,40 @@ for i=1:numel(npos)
                 
                 output.pos(i).pathlist=[ output.pos(i).pathlist files(1).folder];
                 
-                tmp=imfinfo(fullfile(files(1).folder,files(1).name));
+              %  tmp=imfinfo(fullfile(files(1).folder,files(1).name));
+
+                 tmp=imread(fullfile(files(1).folder,files(1).name));
                 
-                output.pos(i).binning=[output.pos(i).binning tmp.Width] ;
+           %     output.pos(i).binning=[output.pos(i).binning tmp.Width] ;
+              output.pos(i).binning=[output.pos(i).binning size(tmp,2)] ;
                 output.pos(i).interval=[output.pos(i).interval numel(files)];
                 output.pos(i).channelname{cc}=[ncha{j} '' nsta{k}];
                 
                 cc=cc+1;
             end
-            
         end
-        
     end
-    
     
     if numel(npos{i})~=0
         output.pos(i).name=npos{i};
     else
         output.pos(i).name='Pos1';
+        output.pos(i).channelname{1}='Channel1';
     end
     
-    
-    
     output.pos(i).channels=numel(output.pos(i).binning);
+
+    if numel(output.pos(i).binning)
     output.pos(i).binning= output.pos(i).binning./ output.pos(i).binning(1);
-    output.pos(i).interval=output.pos(i).interval(1)./output.pos(i).interval;
+    else
+    output.pos(i).binning=1;
+    end
     
+     if numel(output.pos(i).interval)
+    output.pos(i).interval=output.pos(i).interval(1)./output.pos(i).interval;
+     else
+    output.pos(i).interval=1;
+     end
     
     output.pos(i).positionfilter2=posfilter2; % output filter
     output.pos(i).channelfilter2=chafilter2;
@@ -240,6 +248,11 @@ for i=1:numel(npos)
     %    output.pos(i).unfilteredpathlist= realfolders{i};
     %   output.pos(i).unfilteredfilelist=filelist;
 end
+
+% if no file was identifed in any position, stack or channel, then consider
+% all the images as independent positions with one time point orone
+% positions with multiples times 
+
 
 function out=testx(x)
 

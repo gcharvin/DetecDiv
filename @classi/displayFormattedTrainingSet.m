@@ -144,9 +144,30 @@ switch cate
 
                 cc=1;
                 for j=idx
+
+          
                     try
                     tmp=imread(fullfile(l(j).folder,l(j).name));
-                    tmp2=imread(fullfile(l2(j).folder,l2(j).name));
+
+                    if strcmp(classif.description{3},'Solov2')
+                       
+           tmp2=load(fullfile(l2(j).folder,l2(j).name));
+                         mas=tmp2.masks;
+                         dis= uint8(zeros(size(tmp,1:2)));
+
+    
+                         for ii=1:size(mas,3)
+                                dis(mas(:,:,ii))=255*ii./size(mas,3);
+                         end
+                         tmp2=dis;
+                         tmp2=repmat(tmp2,[1 1 3]);
+                         tmp2(:,:,2:3)=0;
+
+
+                    else
+                         tmp2=imread(fullfile(l2(j).folder,l2(j).name));
+                    end
+
                     tmp=imlincomb(0.75,tmp,0.25,tmp2);
 
                     disp(['Display image: ' l(j).name ])
