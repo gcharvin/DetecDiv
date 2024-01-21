@@ -24,9 +24,16 @@ for i=1:numel(varargin)
       end
 end
 
+if numel(tip)~=numel(f)
+    errordlg('The number of items in the tips field is different than that of the dialog box!')
+    return
+end
+
 if numel(handle)==0
     handle=uifigure;
 end
+
+
 
 
 handle.UserData=pstruct;

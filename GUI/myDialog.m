@@ -54,6 +54,7 @@ else
     end
 end
 
+
 %
 %         tip={'Keyboard shortcuts used to assign a class to an image; Please enter space-separated letters; Please restart the ROI viewer after modification',...
 %                 'Keyboard shortcuts used to correct GT vs prediction discrepancies; Please enter space-separated letters; Please restart the ROI viewer after modification',...
@@ -78,7 +79,7 @@ end
 %
 
 nfields=fieldnames(param);
-siz=25*numel(nfields)+50;
+siz=25*numel(nfields)+75;
 
 
 if numel(tip)==0
@@ -89,10 +90,10 @@ end
 
 param.tip=tip;
 
-
 if numel(pos)==0
     posi=[100 100 400 siz];
 else
+    
     posi=pos;
     posi(1)=posi(1)+10;
     posi(2)=posi(2)+pos(4)-siz-20;
@@ -101,7 +102,7 @@ else
 
 end
 
-h=uifigure('Position',posi,'Name',title,'WindowStyle','modal','CloseRequestFcn',{@fdel});
+h=uifigure('Position',posi,'Name',title,'WindowStyle','normal','CloseRequestFcn',{@fdel});
 
 % create structure;
 %

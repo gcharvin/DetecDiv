@@ -19,6 +19,7 @@ correctdrift=true;
 crashrecovery=0;
 cropDrift=1;
 channels=[];
+scale=1;
 
 for i=1:numel(varargin)
     if strcmp(varargin{i},'frames') % frames to be processed
@@ -47,6 +48,10 @@ for i=1:numel(varargin)
 
     if strcmp(varargin{i},'channel')
         channels=varargin{i+1};
+    end
+
+     if strcmp(varargin{i},'scale')
+        scale=varargin{i+1};
     end
 
 
