@@ -163,14 +163,18 @@ for i=1:numel(rois)
         pixb=numel(dataidfra);
         pixa=find(dataidfra==0);
 
-%>>>>>>> Stashed changes
+      
         if numel(pixa)>0 || numel(pixa)==0 && pixb==0 % some images are not labeled, quitting ...
+             if strcmp(classif.trainingParam.classifier_output{end},'sequence-to-sequence') % check the type of classifier 
             disp('Error: some images are not labeled in this ROI - LSTM requires all images to be labeled in the timeseries!');
-            continue
-        end
+            
+             else
+             disp('Error: no images are labeled : sequence-to-one LSTM requires some images to be labeled in the timeseries!');
+             end
+             continue
+       end
 
-        % 'pasok'
-%<<<<<<< Updated upstream
+
 
       %  lab= categorical(cltmp(rois(i)).train.(classif.strid).id(fra),1:numel(classif.classes),classif.classes); % creates labels for classification
 %=======
@@ -183,7 +187,6 @@ for i=1:numel(rois)
 
     if strcmp(classif.category{1},'LSTM') % image lstm classification
         reverseStr = '';
-
         cc=1;
 
         for j=fra

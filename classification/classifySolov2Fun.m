@@ -81,7 +81,6 @@ end
             end
         end
 
-
 %    otherwise %  outputs segmentation or segmentation after postprocessing
           pixresults2=findChannelID(roiobj,['results_' classif.strid]);
         % % 
@@ -101,8 +100,10 @@ param=[];
 
 gfp=double(zeros(size(gfp,1),size(gfp,2),3,numel(frames)));
 
+cc=1;
 for fr=frames % remove the loop on frames here !!!! andtry ti use a gpu array
-        gfp(:,:,:,fr)=roiobj.preProcessROIData(pix,fr,param);
+        gfp(:,:,:,cc)=roiobj.preProcessROIData(pix,fr,param);
+        cc=cc+1;
 end
 
       gfp=uint8(gfp*256);
@@ -116,7 +117,7 @@ end
            gfp= imresize(gfp, [newM newN]);
 
       %      size(gfp)
-      %      figure, imshow(gfp(:,:,1),[])
+     %       figure, imshow(gfp(:,:,1),[])
        %     class(gfp)
 
      % if size(gfp,1)<inputSize(1) | size(gfp,2)<inputSize(2)
@@ -150,11 +151,10 @@ end
 % =======
 
 if gpu==1
-    [C,labels,score] = segmentObjects(net,gfp,'ExecutionEnvironment',"gpu",'SelectStrongest',true,'Threshold',0.2);
+    [C,labels,score] = segmentObjects(net,gfp,'ExecutionEnvironment',"gpu",'SelectStrongest',true,'Threshold',classif.trainingParam.Output_threshold,'MaskThreshold',classif.trainingParam.Mask_threshold);
   %  [C,score,features]= semanticseg(gfp, net,'ExecutionEnvironment',"gpu");%,'Acceleration','mex'); % this is no longer required if we extract the probabilities from the previous laye
-
 else
-     [C,labels,score] = segmentObjects(net,gfp,'ExecutionEnvironment',"cpu",'SelectStrongest',true,'Threshold',0.2);
+     [C,labels,score] = segmentObjects(net,gfp,'ExecutionEnvironment',"cpu",'SelectStrongest',true,'Threshold',classif.trainingParam.Output_threshold,'MaskThreshold',classif.trainingParam.Mask_threshold);
 end
 
    % if size(gfp,1)~=inputSize(1) | size(gfp,2)~=inputSize(2)
@@ -181,14 +181,17 @@ end
  %   switch classif.outputType
    %     case 'proba' % outputs proba
 
-      tmpout=uint16(zeros(size(roiobj.image(:,:,numel(classif.classes),frames))));
-      tmpout2=uint16(zeros(size(roiobj.image(:,:,1,frames))));
+      tmpout=uint16(zeros(size(roiobj.image(:,:,1:numel(classif.classes),1:numel(frames)))));
+      tmpout2=uint16(zeros(size(roiobj.image(:,:,1,1:numel(frames)))));
 
       if iscell(C)
            nfra=numel(C);
        else
             nfra=1;
       end
+
+
+  score
 
    for i=1:nfra % loop on frames
   
@@ -202,10 +205,16 @@ end
            continue
        end
        
-       rawim=imresize(rawim, [M N]);
 
+       rawim=imresize(rawim, [M N]);
      
-       cc=1;
+       %size(C)
+
+     %  size(rawim)
+       labels
+
+       cc=ones(1,numel(classif.classes));
+       
          for k=1:size(rawim,3) % loop on found mask 
            %    figure, imshow(rawim(:,:,k),[]);
                if iscell(labels)
@@ -216,16 +225,21 @@ end
 
                 pix=find(classif.classes==lab(k));
                 allim=tmpout(:,:,pix,i);
-                allim(rawim(:,:,k))=cc;
+                allim(rawim(:,:,k))=cc(pix);
                  tmpout(:,:,pix,i)=allim;
 
-                  allim=tmpout2(:,:,1,i);
-                allim(rawim(:,:,k))=pix;
+            %     figure, imshow(allim,[]); title(['per class' num2str(k) ' - ' lab(k) ' - '  num2str(pix)]); 
+
+                 allim=tmpout2(:,:,1,i);
+                 allim(rawim(:,:,k))=pix;
                  tmpout2(:,:,1,i)=allim;
 
+           %      figure, imshow(rawim(:,:,k),[]);
+
+             %    figure, imshow(allim,[]); title(['all objects' num2str(k) ' - ' lab(k) ' - ' ]); 
               %  tmpout(:,:,pix,i)=  tmpout(:,:,pix,i)+uint16(cc*rawim(:,:,k));
              %   tmpout2(:,:,1,i)=  tmpout2(:,:,1,i)+uint16(pix*rawim(:,:,k));
-                cc=cc+1;
+                cc(pix)=cc(pix)+1;
          end
    end
 
@@ -273,8 +287,8 @@ end
 %    image(:,:,pixresults,fr)=tmpout;
 %end
 %=======
-    image(:,:,pixresults,frames)=tmpout;
-    image(:,:,pixresults2,frames)=tmpout2;
+    image(:,:,pixresults,frames)=tmpout; % images that are specific to each class 
+    image(:,:,pixresults2,frames)=tmpout2; % image that contains all objects 
 
    % image(:,:,pixresults,fr)=tmpout;
 

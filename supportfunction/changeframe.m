@@ -12,15 +12,15 @@ h=findobj('Tag',['ROI' obj.id]);
 % delete(handle);
 % end
 
-str=event.Key; str2=strfind(str,'numpad');
-if numel(str2) % user pressed
+str=event.Key;
+str2=strfind(str,'numpad');
+
+if numel(str2) | numel(str2num(str)) % user pressed the numpad
     val=str2num(str(end)); % key that was pressed
     siz=size(him.image(1).CData);
 
     if val~=0
         cutt= {[3 1], [3 2], [3 3], [2 1],[2 2],[2 3], [1 1], [1 2], [1 3]};
-
-
 
         xl= [(cutt{val}(2)-1)*siz(2)/3-10 cutt{val}(2)*siz(2)/3 ];
         yl= [(cutt{val}(1)-1)*siz(1)/3-10 cutt{val}(1)*siz(1)/3 ];
@@ -31,7 +31,6 @@ if numel(str2) % user pressed
 
     set(hp(1),'XLim',xl);
     set(hp(1),'YLim',yl);
-
 
 end
 
@@ -295,7 +294,12 @@ for i=1:numel(keys) % display the selected class for the current image
                             continue
                         end
 
+                        if strcmp(classif.trainingParam.classifier_output{end},'sequence-to-sequence') % assign key to a given frame
                         pix=obj.display.frame;
+                        else % seuqence to one , assign only one class for all the frames
+                        pix=1:size(obj.image,4);
+                        end
+
                         % li=findobj(htraj(j),'Tag',[obj.id '_track']);
                         % data=li.UserData;
                         % classes=data.userData.classes;
@@ -320,24 +324,11 @@ for i=1:numel(keys) % display the selected class for the current image
 
                         obj.data(training_pixdata)=training_data;
 
-                %          hh=findobj('Tag',obj.data(training_pixdata).id);
-                % 
-                %           if numel(hh)
-                %                  pos=hh.Position;
-                % pos(2)=pos(2)+0.05;
-                %                  delete(hh);
-                %                  obj.data(training_pixdata).plot(pos,'ok');
-                % figure(handle)
-                %           end
+             
                     end
                 end
 
-                % aa=data.data.('id_training')';
-
-                % zz=aa(pix)
-                % ok=1;
             end
-
 
             if strcmp(classif.category{1},'Pixel') | strcmp(classif.category{1},'Object') % for pixel classification enable painting function for the given class
                 for j=1:numel(classif.classes)

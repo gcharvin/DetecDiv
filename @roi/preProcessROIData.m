@@ -13,6 +13,10 @@ if perFrames==0
     cmpt=0;
     if (~isfield(obj.display,'stretchlim') && ~isprop(obj.display,'stretchlim')) || size(obj.display.stretchlim,2)~=numel(obj.channelid)
         cmpt=1;
+
+        size(obj.display.stretchlim,2)
+        numel(obj.channelid)
+
     else
         for i=1:numel(ch)
             if obj.display.stretchlim(2,ch(i))==0
@@ -42,8 +46,8 @@ for i=1:numel(ch)
 
     %  imout(:,:,i)=tmp(:,:,i);
     imout(:,:,i)=double(imadjust(tmp(:,:,i),strchlm))/65535;
+%      imout(:,:,i)=double(tmp(:,:,i))/65535;
 end
-
 
 switch numel(ch)
     case 1

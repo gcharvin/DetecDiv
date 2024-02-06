@@ -555,7 +555,7 @@ for i=fovid
             if init==1
              %   tmproi(l).image=uint16(zeros(rroi(4),rroi(3),numel(tmpfov(i).channel),numel(nframestot)));
          
-                 tmproi(l).image=uint16(zeros(scale*rroi(4),scale*rroi(3),ccha,numel(nframestot)));
+                 tmproi(l).image=uint16(zeros(uint16(scale*rroi(4)),uint16(scale*rroi(3)),ccha,numel(nframestot)));
          
              %   ccha
                 tmproi(l).display.channel={};

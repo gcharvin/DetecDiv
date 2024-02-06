@@ -1,5 +1,6 @@
-function [paramout, dataout]=computeRLS(param,roiobj,frames)
+function [paramout, dataout, image]=computeRLS(param,roiobj,frames)
 
+image=[];
 
 if nargin==0
     listout=listROIDataID("classification"); % lists all data that were generated using a classifier

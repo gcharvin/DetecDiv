@@ -146,30 +146,46 @@ switch cate
                 for j=idx
 
           
-                    try
+               %     try
+
+               try
                     tmp=imread(fullfile(l(j).folder,l(j).name));
 
                     if strcmp(classif.description{3},'Solov2')
                        
-           tmp2=load(fullfile(l2(j).folder,l2(j).name));
+                        tmp2=load(fullfile(l2(j).folder,l2(j).name));
                          mas=tmp2.masks;
+                         lab=tmp2.labels;
                          dis= uint8(zeros(size(tmp,1:2)));
+                        nm=size(mas,3);
+                        cm=lines(numel(classif.classes));
 
-    
-                         for ii=1:size(mas,3)
-                                dis(mas(:,:,ii))=255*ii./size(mas,3);
+                         for ii=1:nm
+                               
+                             bwtmp=tmp2.masks(:,:,ii);
+                            
+                        %   ttt=  tmp2.labels(ii)
+                        pixc=find(matches(classif.classes,string(tmp2.labels(ii)))); % HERE
+                        col=cm(pixc,:);
+                        tmp=  insertObjectMask(tmp,bwtmp,'MaskColor',col,'Opacity',0.5,'LineOpacity',1,'LineWidth',2);
+
+                         %       dis(mas(:,:,ii))=255*ii./size(mas,3);
                          end
-                         tmp2=dis;
-                         tmp2=repmat(tmp2,[1 1 3]);
-                         tmp2(:,:,2:3)=0;
+                       %  tmp2=dis;
+                       %tmp2=repmat(tmp2,[1 1 3]);
+                       %  tmp2(:,:,2:3)=0;
 
-
+                     
                     else
                          tmp2=imread(fullfile(l2(j).folder,l2(j).name));
+                         tmp=imlincomb(0.75,tmp,0.25,tmp2);
                     end
 
-                    tmp=imlincomb(0.75,tmp,0.25,tmp2);
+              
 
+               catch 
+               end
+               
                     disp(['Display image: ' l(j).name ])
                %     if cc==1
                 %        img=tmp;
@@ -179,9 +195,9 @@ switch cate
                         img{cc}=tmp;
                 %    end
 
-                    catch 
-disp('could not display sample image');
-                    end
+                    % catch 
+                    %  disp('could not display sample image');
+                    % end
                     cc=cc+1;
                 end
 
