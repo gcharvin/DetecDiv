@@ -11,6 +11,16 @@ if numel(obj.image)==0
     obj.load
 end
 
+if frame>size(obj.image,4)
+    frame=size(obj.image,4);
+    obj.display.frame=frame;
+end
+if frame<1
+    frame=1;
+    obj.display.frame=1;
+end
+
+
 cc=1;
 for i=1:numel(obj.display.channel)
 
