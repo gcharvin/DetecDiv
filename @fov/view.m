@@ -1,6 +1,5 @@
 function h=view(obj,frame,option,parentObj)
 
-
 if nargin>=2
     obj.display.frame=frame;
 end
@@ -48,10 +47,13 @@ else
 
     im=buildimage(obj); % returns a structure with all images to be displayed
 
+
     warning off all
-    if numel(im.data)==0
-        disp('Could not load image. Quitting...');
+    for i=1:numel(im)
+    if numel(im(i).data)==0
+        disp('One image could not be loaded. Quitting...');
         return;
+    end
     end
     warning on all;
 
@@ -122,9 +124,6 @@ else
     hPan=pan(h);
     hPan.UIContextMenu = hCMZ;
     hPan.ActionPostCallback={@adjustROI,hp};
-
-
-
 
     h.Position(3)=600*obj.channels;
     h.Position(4)=600;
@@ -328,6 +327,7 @@ im.data=[];
 
 frame=obj.display.frame;
 
+
 for i=1:obj.channels
 
 
@@ -352,7 +352,7 @@ for i=1:obj.channels
     
     im(i).data=tmp; %=uint16(cat(3,zeros(size(rawphc)),zeros(size(rawphc)),zeros(size(rawphc))));
     else
-     %   im(i).tmp=[];
+        im(i).data=0;
     end
 
     % size(tmp)
