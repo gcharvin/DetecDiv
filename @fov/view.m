@@ -74,6 +74,8 @@ else
     cc=1;
 
     tot=sum( obj.display.selectedchannel);
+    hp=[];
+
     for i=1:obj.channels
 
         mitemch(i) = uimenu(mchannel,'Text',obj.channel{i},'Checked','on','Tag',['channel_' num2str(i)]);
@@ -99,7 +101,11 @@ else
         end
     end
 
+if ishandle(hp)
     linkaxes(hp);
+else
+return;
+end
 
     
     % create display menu
