@@ -261,7 +261,12 @@ end
 %% =========================================DIVTIMES=================================================
 function [divTimes]=computeDivtime(id,proba,classes,param,frames)
 
+if numel(frames)<=numel(id)
 id=id(frames);
+else
+ma=min(frames(end),numel(id));
+id=id(frames(1):ma);
+end
 
 divTimes=[];
 

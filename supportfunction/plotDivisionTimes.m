@@ -64,6 +64,8 @@ for i=1:numel(datagroups)
             break
 
         end
+
+        
     end
 
     if cd(i)==0
@@ -397,6 +399,8 @@ for i=1:numel(datagroups)
     %   outfile=[strname  '.xlsx']; %write as xlsx is important , otherwise throw an error with large files
     %   writecell(tmp,outfile,'WriteMode','append');
 end
+
+
 
 % for i=1:numel(datagroups)
 %     dat=datagroups(i).Source.nodename;

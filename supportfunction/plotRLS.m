@@ -63,13 +63,13 @@ for i=1:numel(datagroups)
     end
 
     dat=datagroups(i).Source.nodename;
-    rois=datagroups(i).Data.roiobj;
+    rois=datagroups(i).Data.roiobj
 
     %   for j=1:numel(dat) % loop on plotted data types
 
     j=cd(i);
 
-    str=[datagroups(i).Name ' // ' dat{j}{1} ' // ' dat{j}{2}];
+    str=[datagroups(i).Name ' // ' dat{j}{1} ' // ' dat{j}{2}]
 
     d=dat{j};
 
@@ -79,6 +79,7 @@ for i=1:numel(datagroups)
     cc=1;
 
     groups={rois(1).data.groupid};
+
     pix=find(matches(groups,d{1}));
     tt= rois(1).data(pix).getData(d{2});
 
@@ -361,6 +362,9 @@ end
 %     %    for j=1:numel(dat) % loop on plotted data types
 %     j=cd;
 %   %  if plottable_data(i)
+
+j=1;
+
 strname=fullfile(filename,['RLS_' dat{j}{1} '_' dat{j}{2}]);
 exportgraphics(havg(j),[strname '.pdf'],'BackgroundColor','None');
 exportgraphics(havg(j),[strname '.pdf'],'BackgroundColor','None');

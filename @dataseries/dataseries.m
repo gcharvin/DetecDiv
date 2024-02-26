@@ -224,8 +224,12 @@ classdef dataseries < handle
             % returns an array if the input is a char
             % returns a table if the input is cell array of string
 
-            data=obj.data;
             out=[];
+            if numel(obj)==0
+                return
+            end
+
+            data=obj.data;
 
             if nargin==2
                 if iscell(subdatasetname)
