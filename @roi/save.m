@@ -32,6 +32,7 @@ if numel(im)~=0
     
 else
    disp('Image is not loaded ; Load image first ...');
+   return;
 end
 
 if numel(obj.path)
