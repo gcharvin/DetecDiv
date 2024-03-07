@@ -110,9 +110,15 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
         if para % parallel computing
                 logparf(i)=parfeval(fhandle,2,param,roiobj(i),fra); % launch the training function for classification
         else
-               [paramout,data,image]=feval(fhandle,param,roiobj(i),fra); % launch the training function for classification
-                disp(['Classified' num2str(roiobj(i).id)]);
+         %       aa=       roiobj(i)
 
+               [paramout,data,image]=feval(fhandle,param,roiobj(i),fra); % launch the training function for classification
+                disp(['Processed ' num2str(roiobj(i).id)]);
+
+         % bb=       roiobj(i)
+         %        size(image)
+         %        size(roiobj(i).image)
+         %        return
               ROIManagement(roiobj(i),image,data);
            
         end

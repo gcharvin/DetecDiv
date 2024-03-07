@@ -135,15 +135,25 @@ if numel(classif)>0
 
         if numel(pixdata)
 
+               if ~isfield(obj.data(pixdata).userData,'userbounds')
+                     obj.data(pixdata).userData.userbounds=[];
+               end
+
             if ~isfield(obj.data(pixdata).userData,'bounds')
                 obj.data(pixdata).userData.bounds=[];
-                
             else
+
+                if numel(obj.data(pixdata).userData.userbounds)==0 &&  numel(obj.data(pixdata).userData.bounds)~=0 
+                    obj.data(pixdata).userData.userbounds=obj.data(pixdata).userData.bounds;
+                end
+                
                 if strcmp(event.Key,specialkeys{2}{1})
                     if numel(obj.data(pixdata).userData.bounds)==0 || obj.data(pixdata).userData.bounds(1)~=obj.display.frame
                         obj.data(pixdata).userData.bounds(1)=obj.display.frame;
+                        obj.data(pixdata).userData.userbounds(1)=obj.display.frame;
                     else
                         obj.data(pixdata).userData.bounds=[];
+                        obj.data(pixdata).userData.userbounds=[];
                     end
                      hh=findobj('Tag',obj.data(pixdata).id);
             if numel(hh)
@@ -158,8 +168,10 @@ if numel(classif)>0
                 if strcmp(event.Key,specialkeys{2}{2})
                     if numel(obj.data(pixdata).userData.bounds)<2 || obj.data(pixdata).userData.bounds(2)~=obj.display.frame
                         obj.data(pixdata).userData.bounds(2)=obj.display.frame;
+                        obj.data(pixdata).userData.userbounds(2)=obj.display.frame;
                     else
                         obj.data(pixdata).userData.bounds=[];
+                        obj.data(pixdata).userData.userbounds=[];
                     end
                      hh=findobj('Tag',obj.data(pixdata).id);
             if numel(hh)

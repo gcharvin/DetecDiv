@@ -76,10 +76,11 @@ if numel(roiobj.image)==0
     roiobj.load
 end
 
-
 % compute mask metrics
 
 dataout=roiobj.data;
+
+imageout=roiobj.image;
 
 for i=1:2
     if  paramout.(['mask' num2str(i) '_stat']) &  ~strcmp(paramout.(['mask' num2str(i) '_name']),'N/A') % if detailed stat should be computed
@@ -339,8 +340,10 @@ if numel(channelsExtract)
     end
 
 
-    % compute ratios between channels
+ %  compute ratios between channels
 
+  ratios=[];
+  
   bwn=1;
     if numel(chabw{bwn})
         for i=1:numel(channelsExtract)
@@ -368,7 +371,7 @@ if numel(channelsExtract)
             end
         end
     end
-  
+
 
   bwn=2;
     if numel(chabw{bwn})
@@ -401,8 +404,6 @@ if numel(channelsExtract)
 
 
 
-    % here add ratio between channel
-
 
     if numel(dat1)
         dat1=permute(dat1,[3 2 1]);
@@ -415,6 +416,11 @@ if numel(channelsExtract)
     if numel(dat3)
         dat3=permute(dat3,[3 2 1]);
         dat=[dat dat3];
+    end
+
+    if numel(ratios)
+        ratios=permute(ratios,[3 2 1]);
+        dat=[dat ratios];
     end
 
     temp=dataseries(dat,name,...
