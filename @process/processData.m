@@ -162,6 +162,10 @@ function ROIManagement(roiobj,image,data)
 
  roiobj.data=data; 
  roiobj.image=image; 
+ if numel(image)
  roiobj.save; % before we used to save the data only ('data')
  roiobj.clear,
+ else
+roiobj.save('data');
+ end
 %disp('You must save the shallow project to save these classified data !');
