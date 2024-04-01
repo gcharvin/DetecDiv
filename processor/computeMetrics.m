@@ -267,31 +267,36 @@ end
 
   if numel(chabw{1})
    val1=unique(bw1);
-   moyennes1=NaN*ones(length(val1),size(bw1,2),size(bw1,3));
+   moyennes1=NaN*ones(length(val1)-1,size(bw1,2),size(bw1,3));
    sommes1=moyennes1;
    moyenne_brillants1=moyennes1;
    somme_brillants1=moyennes1;
+   moyenne_exterieur1=NaN*ones(1,size(bw1,2),size(bw1,3));
 
    for i=1:size(bw1,3) % loop on time 
        for k=1:size(bw1,2) % loop on channels
            cc=1;
-            for j=val1'
+            for j=1:numel(val1)
                   vpix=pixels_actifs1(:,k,i);
                    tmp=bw1(:,k,i);
-                    pix=tmp==j;
+                    pix=tmp==val1(j);
+
+                    if val1(j)==min(val1) % in this case, the mask corresponds to the background
+                    moyenne_exterieur1(1,k,i)=mean(vpix(pix));
+                    else
                     moyennes1(cc,k,i)=mean(vpix(pix));
                     sommes1(cc,k,i)=sum(vpix(pix));
                     moyenne_brillants1(cc,k,i) =  meanTopNValues(vpix(pix), N);
                     somme_brillants1(cc,k,i) =  sumTopNValues(vpix(pix), N);
                     cc=cc+1;
+                    end
             end
        end
    end
-
-   moyenne_exterieur1=moyennes1(1,:,:);
    difference1=moyennes1-moyenne_exterieur1;
   end
 
+%aa=moyennes1(:,1,1)
 
  if numel(chabw{2})
    val2=unique(bw2);
@@ -299,24 +304,28 @@ end
    sommes2=moyennes2;
    moyenne_brillants2=moyennes2;
    somme_brillants2=moyennes2;
+      moyenne_exterieur2=NaN*ones(1,size(bw1,2),size(bw1,3));
 
    for i=1:size(bw2,3) % loop on time 
        for k=1:size(bw2,2) % loop on channels
            cc=1;
-            for j=val1'
+            for j=1:numel(val2)
                   vpix=pixels_actifs2(:,k,i);
                    tmp=bw2(:,k,i);
-                    pix=tmp==j;
+                    pix=tmp==val2(j);
+
+                     if val2(j)==min(val2) % in this case, the mask corresponds to the background
+                     moyenne_exterieur2(1,k,i)=mean(vpix(pix));
+                    else
                     moyennes2(cc,k,i)=mean(vpix(pix));
                     sommes2(cc,k,i)=sum(vpix(pix));
                     moyenne_brillants2 =  meanTopNValues(vpix(pix), N);
                     somme_brillants2 =  sumTopNValues(vpix(pix), N);
                     cc=cc+1;
+                     end
             end
        end
    end
-
-   moyenne_exterieur2=moyennes2(1,:,:);
    difference2=moyennes2-moyenne_exterieur2;
  end
 
@@ -522,20 +531,24 @@ end
         cha=channelsExtract{i}; % cha has several elements in case of an RGB image
         bwn=1;
         if numel(chabw{bwn})
-          dataout(cc).data.(['Mean_' channelsName{i}  '_' paramout.(['mask' num2str(bwn) '_label'])])=squeeze(mean(moyennes1(:,cha,:),2)).';
-          dataout(cc).data.(['Tot_' channelsName{i}  '_' paramout.(['mask' num2str(bwn) '_label'])])=squeeze(mean(moyennes1(:,cha,:),2)).';
-          dataout(cc).data.(['MeanTop_' channelsName{i}  '_' paramout.(['mask' num2str(bwn) '_label'])])=squeeze(mean(moyenne_brillants1(:,cha,:),2)).';
-          dataout(cc).data.(['TotTop_' channelsName{i}  '_' paramout.(['mask' num2str(bwn) '_label'])])=squeeze(mean(somme_brillants1(:,cha,:),2)).';
-          dataout(cc).data.(['MeanNoBckg_' channelsName{i}  '_' paramout.(['mask' num2str(bwn) '_label'])])=squeeze(mean(difference1(:,cha,:),2)).';
+           
+            % do not  transpose sizes HERE if the dimension of the first dim is 1
+
+
+          dataout(cc).data.(['Mean_' channelsName{i}  '_' paramout.(['mask' num2str(bwn) '_label'])])=permute(mean(moyennes1(:,cha,:),2),[3 1 2]);
+          dataout(cc).data.(['Tot_' channelsName{i}  '_' paramout.(['mask' num2str(bwn) '_label'])])=permute(mean(sommes1(:,cha,:),2),[3 1 2]);
+          dataout(cc).data.(['MeanTop_' channelsName{i}  '_' paramout.(['mask' num2str(bwn) '_label'])])=permute(mean(moyenne_brillants1(:,cha,:),2),[3 1 2]);
+          dataout(cc).data.(['TotTop_' channelsName{i}  '_' paramout.(['mask' num2str(bwn) '_label'])])=permute(mean(somme_brillants1(:,cha,:),2),[3 1 2]);
+          dataout(cc).data.(['MeanNoBckg_' channelsName{i}  '_' paramout.(['mask' num2str(bwn) '_label'])])=permute(mean(difference1(:,cha,:),2),[3 1 2]);
 
         end
         bwn=2;
         if numel(chabw{bwn})
-          dataout(cc).data.(['Mean_' channelsName{i}  '_' paramout.(['mask' num2str(bwn) '_label'])])=squeeze(mean(moyennes2(:,cha,:),2)).';
-          dataout(cc).data.(['Tot_' channelsName{i}  '_' paramout.(['mask' num2str(bwn) '_label'])])=squeeze(mean(moyennes2(:,cha,:),2)).';
-          dataout(cc).data.(['MeanTop_' channelsName{i}  '_' paramout.(['mask' num2str(bwn) '_label'])])=squeeze(mean(moyenne_brillants2(:,cha,:),2)).';
-          dataout(cc).data.(['TotTop_' channelsName{i}  '_' paramout.(['mask' num2str(bwn) '_label'])])=squeeze(mean(somme_brillants2(:,cha,:),2)).';
-          dataout(cc).data.(['MeanNoBckg_' channelsName{i}  '_' paramout.(['mask' num2str(bwn) '_label'])])=squeeze(mean(difference2(:,cha,:),2)).';
+         dataout(cc).data.(['Mean_' channelsName{i}  '_' paramout.(['mask' num2str(bwn) '_label'])])=permute(mean(moyennes2(:,cha,:),2),[3 1 2]);
+          dataout(cc).data.(['Tot_' channelsName{i}  '_' paramout.(['mask' num2str(bwn) '_label'])])=permute(mean(sommes2(:,cha,:),2),[3 1 2]);
+          dataout(cc).data.(['MeanTop_' channelsName{i}  '_' paramout.(['mask' num2str(bwn) '_label'])])=permute(mean(moyenne_brillants2(:,cha,:),2),[3 1 2]);
+          dataout(cc).data.(['TotTop_' channelsName{i}  '_' paramout.(['mask' num2str(bwn) '_label'])])=permute(mean(somme_brillants2(:,cha,:),2),[3 1 2]);
+          dataout(cc).data.(['MeanNoBckg_' channelsName{i}  '_' paramout.(['mask' num2str(bwn) '_label'])])=permute(mean(difference2(:,cha,:),2),[3 1 2]);
         end
         
       end
