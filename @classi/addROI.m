@@ -136,24 +136,33 @@ for i=1:length(rois)
          targetChannel=classif.channelName; 
         % adjustChannel
        %  ccc=classif.roi(cc+1).display.channel
+        currentChannels = classif.roi(cc+1).display.channel;
+        channelsToRemove = setdiff(currentChannels, targetChannel);
+        channelsToRemove = setdiff(channelsToRemove, adjustChannel);
 
-       ii=1;
-        while ii<numel( classif.roi(cc+1).display.channel)
-         % aaa=  matches(adjustChannel, classif.roi(cc+1).display.channel{ii})
-        %  bbb=  matches(targetChannel,classif.roi(cc+1).display.channel{ii})
+          for k = 1:numel(channelsToRemove)
+                 classif.roi(cc+1).removeChannel(channelsToRemove{k});
+          end
 
-                if numel(find(matches(adjustChannel, classif.roi(cc+1).display.channel{ii})))==0 && numel(find(matches(targetChannel,classif.roi(cc+1).display.channel{ii})))==0 % channel is not in the list of channel to be transferred and is not that of the classifier. 
-                        classif.roi(cc+1).removeChannel(classif.roi(cc+1).display.channel{ii});
-                else
-                        ii=ii+1;
-                end
-        end
+       % ii=1;
+       %  while ii<numel( classif.roi(cc+1).display.channel)
+       %   % aaa=  matches(adjustChannel, classif.roi(cc+1).display.channel{ii})
+       %  %  bbb=  matches(targetChannel,classif.roi(cc+1).display.channel{ii})
+       % 
+       %          if numel(find(matches(adjustChannel, classif.roi(cc+1).display.channel{ii})))==0 && numel(find(matches(targetChannel,classif.roi(cc+1).display.channel{ii})))==0 % channel is not in the list of channel to be transferred and is not that of the classifier. 
+       %                  classif.roi(cc+1).removeChannel(classif.roi(cc+1).display.channel{ii});
+       %          else
+       %                  ii=ii+1;
+       %          end
+       %  end
             
     end
 
 
 
     %size(classif.roi(cc+1).image)
+
+    %% Warning : there is still a "train" property here that has not been replaced !!!
 
     if strcmp(classif.category{1},'Image Regression') || strcmp(classif.category{1},'LSTM Regression')
         classif.roi(cc+1).train.(classif.strid)=[];
@@ -309,13 +318,26 @@ for i=1:length(rois)
 
             %   aa=obj.strid
 
-            pixid=      classif.roi(cc+1).findChannelID(obj.strid);
+            
+
+            pixid= roitocopy.findChannelID(obj.strid);
             pixidnew=classif.roi(cc+1).findChannelID(classif.strid);
 
 
             if numel(pixid) && numel(pixidnew) % copy the groundthruth to new classi
-                classif.roi(cc+1).image(:,:,pixidnew,:)= classif.roi(cc+1).image(:,:,pixid,:);
+                classif.roi(cc+1).image(:,:,pixidnew,:)= roitocopy.image(:,:,pixid,:);
             end
+            
+     
+
+
+            % pixid=      classif.roi(cc+1).findChannelID(obj.strid);
+            % pixidnew=classif.roi(cc+1).findChannelID(classif.strid);
+            % 
+            % 
+            % if numel(pixid) && numel(pixidnew) % copy the groundthruth to new classi
+            %     classif.roi(cc+1).image(:,:,pixidnew,:)= classif.roi(cc+1).image(:,:,pixid,:);
+            % end
 
             %classif.roi(i).display.channel{pixid}=classif.strid;
         end
