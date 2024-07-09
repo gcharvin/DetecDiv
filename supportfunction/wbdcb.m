@@ -44,7 +44,7 @@ if strcmp(seltype,'extend') % paint with middle large brush
 
 end
 
-if strcmp(seltype,'open') % paint whole connected area into the selected class color
+if strcmp(seltype,'open') & numel(modtype)==0 % paint whole connected area into the selected class color
     % double click
 
     % find the color to paint in
@@ -117,6 +117,135 @@ if strcmp(seltype,'open') % paint whole connected area into the selected class c
 
         end
     end
+end
+
+if strcmp(seltype,'open') & numel(modtype)~=0  % try to guess cell contours
+
+    him= findobj(h, 'Type', 'axes', 'Tag', 'AxeROI1');
+    rawimg=him.Children.CData;
+    rawimg=rawimg(:,:,1);
+
+    % find the color to paint in
+    hmenu = findobj('Tag','TrainingClassesMenu');
+    hclass=findobj(hmenu,'Checked','on');
+    strcolo=replace(hclass.Tag,'classes_','');
+    colo=str2num(strcolo);
+
+    % get the pointed pixel
+    cp = hpaint.CurrentPoint;
+    xinit = uint16(round(cp(1,1)));
+    yinit = uint16(round(cp(1,2)));
+
+    %gather the list of pixel to paint
+
+    if xinit>size(impaint1.CData,2)
+        return
+    end
+    if yinit>size(impaint1.CData,1)
+        return
+    end
+
+    val=impaint1.CData(yinit,xinit); %
+
+    rawimg=rawimg(yinit-25:yinit+25,xinit-25:xinit+25);
+    T = adaptthresh(uint16(rawimg),0.5);
+    BW2=imbinarize(uint16(rawimg),T);
+
+    BW2 = bwareaopen(BW2, 20);    
+
+    %figure, imshow(BW2);
+
+    imdist=bwdist(BW2);
+    imdist = imclose(imdist, strel('disk',2));
+    imdist = imhmax(imdist,2); 
+
+    sous=BW2- imdist;
+    sous(25,25)=-Inf;
+
+   % figure, imshow(sous,[]);
+
+    labels = double(watershed(sous,8)).* ~BW2;% .* BW % .* param.mask; % watershed
+    warning off all
+    tmp = imopen(labels > 0, strel('disk', 4));
+    warning on all
+    tmp = bwareaopen(tmp, 50);
+    
+  %   figure, imshow(tmp,[]);
+   % newlabels = labels .* tmp; % remove small features
+    newlabels = bwlabel(tmp);
+
+    % figure, imshow(newlabels,[]);
+   %  size(newlabels)
+
+    tmpval=newlabels(25,25); % center of image
+    if tmpval>0
+    bwfinal=newlabels==tmpval;
+    bwfinal2=logical(zeros(size(impaint1.CData)));
+    bwfinal2(yinit-25:yinit+25,xinit-25:xinit+25)=bwfinal;
+   
+    impaint1.CData(bwfinal2)=colo;
+    impaint2.CData(bwfinal2)=colo;
+    % 
+    % 
+    pixelchannel=obj.findChannelID(classif.strid);
+    pix=obj.findChannelID(classif.strid);
+    pix=find(obj.channelid==pixelchannel);
+    % 
+    obj.image(:,:,pix,obj.display.frame)=impaint2.CData;
+    % 
+    end
+    drawnow
+
+
+
+
+    % [L nlab]=bwlabel(impaint1.CData==val);
+    % 
+    % 
+    % for j=1:nlab
+    %     bwtemp=L==j;
+    %     if bwtemp(yinit,xinit)==1 % found the connected to which the init pixel belongs
+    % 
+    %         % HERE perform an erosion to remove the perimeter to 
+    %         BW=~bwtemp;
+    % 
+    %         imdist=bwdist(BW);
+    %         imdist = imclose(imdist, strel('disk',2));
+    %         imdist = imhmax(imdist,1);
+    % 
+    %         sous=- imdist;
+    % 
+    %         %figure, imshow(BW,[]);
+    % 
+    %         labels = double(watershed(sous,8)).* ~BW; % do a watershed to cut objects
+    % 
+    %         % properly cut objects
+    %           impaint1.CData(labels==0 & bwtemp)=0;
+    %           impaint2.CData(labels==0 & bwtemp)=0;
+    % 
+    % 
+    %         for k=1:max(labels(:))
+    %             bwtemp2=labels==k;
+    %             bwtemp2(labels==0)=0;
+    % 
+    % 
+    %             if bwtemp2(yinit,xinit)==1
+    %                 impaint1.CData(bwtemp2)=colo;
+    %                 impaint2.CData(bwtemp2)=colo;
+    % 
+    % 
+    %                 %     pixelchannel=obj.findChannelID(classif.strid);
+    %                 pix=obj.findChannelID(classif.strid);
+    %                 %pix=find(obj.channelid==pixelchannel)
+    % 
+    %                 obj.image(:,:,pix,obj.display.frame)=impaint2.CData;
+    % 
+    %                 drawnow
+    %                 break
+    %             end
+    %         end
+    %     end
+    % end   
 end
 
     function wbmcb(src,event,bsize) % paint pixels while pressing left or right button
