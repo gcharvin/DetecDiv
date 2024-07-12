@@ -72,47 +72,68 @@ for i=2:numel(classes)
             BW=BW==i;
     end
 
+    for j=1:size(BW,4)
+
+    BWtmp=BW(:,:,1,j);
 
     % remove small objects
     if numel(keeplargest) || numel(sizethreshold)
 
-        BW=bwareaopen(BW,10);
-        CC= bwconncomp(BW);
+        BWtmp=bwareaopen(BWtmp,10);
+        BWtmp=imclose(BWtmp,strel('Disk',1));
+
+        CC= bwconncomp(BWtmp);
         numPixels = cellfun(@numel,CC.PixelIdxList);
 
         if numel(keeplargest)
             if numel(find(keeplargest==i)) & numel(numPixels)>1 % only for selected classes & only if several objects are presents
                 [~,idx] = max(numPixels);
-                BW([CC.PixelIdxList{setxor(1:numel(numPixels),idx)}]) = 0;
+                BWtmp([CC.PixelIdxList{setxor(1:numel(numPixels),idx)}]) = 0;
             end
         end
 
         if numel(sizethreshold)
             idx=find(numPixels<sizethreshold);
+            
             % objects numbers smallers than threshold
             for k=1:numel(idx)
-                BW(CC.PixelIdxList{idx(k)}) = 0;
+                BWtmp(CC.PixelIdxList{idx(k)}) = 0;
             end
         end
+
     end
 
     % performs watershed segmentation
     if watersh==1
-        BW=~BW;
+
+%         % Appliquer un filtre gaussien pour lisser les contours
+% sigma = 1; % écart-type du filtre gaussien
+% gaussianFilter = fspecial('gaussian', [5, 5], sigma);
+% smoothedImg = imfilter(double(BWtmp), gaussianFilter, 'same');
+% 
+% % Rebinariser l'image lissée
+%   figure, imshow(smoothedImg,[]);
+% BWtmp = imbinarize(smoothedImg);
+
+        BWtmp=~BWtmp;
         %       figure, imshow(BW,[]);
-        imdist=bwdist(BW);
+        imdist=bwdist(BWtmp);
         %      figure, imshow(imdist,[]);
         imdist = imclose(imdist, strel('disk',2));
         imdist = imhmax(imdist,1);
         %   figure, imshow(BW,[]);
-        BW= double(watershed(-imdist,8)).* ~BW;
+        BWtmp= double(watershed(-imdist,8)).* ~BWtmp;
         %  figure, imshow(BW,[]);
-        BW = BW>0;% & imopen(BW > 0, strel('disk', 1));
+        BWtmp = BWtmp>0;% & imopen(BW > 0, strel('disk', 1));
         % figure, imshow(BW,[]);
 
     end
+
+    BW(:,:,1,j)=BWtmp;
    % res=uint16(uint16(BW)*(i));
    % tmpout=tmpout+ res;
+    end
+
     tmpout(BW)=i;
 
 end

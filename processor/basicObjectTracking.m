@@ -1,4 +1,4 @@
-function paramout=basicObjectTracking(param,roiobj,frames)
+function [paramout,dataout, imageout]=basicObjectTracking(param,roiobj,frames)
 
 % basic tracker to link objects over time 
 
@@ -19,7 +19,15 @@ else
 paramout=param; 
 end
 
+if numel(roiobj.image)==0
+    roiobj.load
+end
+
 obj=roiobj;
+
+imageout=roiobj.image;
+dataout=roiobj.data;
+
 channelstr=param.input_channel_name;
 
 display=0;
@@ -29,10 +37,6 @@ channelID=obj.findChannelID(channelstr);
 if numel(channelID)==0 % this channel contains the segmented objects
    disp([' This channel ' channelstr ' does not exist ! Quitting ...']) ;
    return;
-end
-
-if numel(obj.image)==0
-    obj.load
 end
 
 im=obj.image(:,:,channelID,:);
@@ -57,7 +61,7 @@ pixresults=findChannelID(obj,paramout.output_channel_name);
 if numel(pixresults)>0
 %pixresults=find(roiobj.channelid==cc); % find channels corresponding to trained data
 
-obj.image(:,:,pixresults,:)=im; %uint16(zeros(size(obj.image,1),size(obj.image,2),1,size(obj.image,4)));
+imageout(:,:,pixresults,:)=im; %uint16(zeros(size(obj.image,1),size(obj.image,2),1,size(obj.image,4)));
 else
    % add channel is necessary 
    matrix=im; %uint16(zeros(size(obj.image,1),size(obj.image,2),1,size(obj.image,4)));
@@ -69,8 +73,6 @@ end
 
 % calculate the mean object size during the movie
 area=[];
-
-
 
 for i=1:size(im,4)
    
@@ -147,7 +149,7 @@ for i=frames(1)+1:frames(end) % loop on all frames
        bw(pix)=cellsref(j).n;
     end
 
-    obj.image(:,:,pixresults,i)=bw;
+    imageout(:,:,pixresults,i)=bw;
   
 fprintf('.');
 end

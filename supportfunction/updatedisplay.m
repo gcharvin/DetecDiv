@@ -60,21 +60,21 @@ if numel(classif)>0
         plotLinks(obj,hp,classif);
     end
 
-        if numel(obj.data)
-                    listdata={obj.data.groupid};
+    if numel(obj.data)
+        listdata={obj.data.groupid};
 
-                    pixdata=find(matches(listdata,classif.strid));
+        pixdata=find(matches(listdata,classif.strid));
 
-                    if numel(pixdata)
-                        dd=obj.data(pixdata);
-                       ddts=dd.getData('labels_training');
+        if numel(pixdata)
+            dd=obj.data(pixdata);
+            ddts=dd.getData('labels_training');
 
-                       if numel(ddts)
-                        strplus=[ddts(obj.display.frame)];
-                       end
-                  
-                    end
+            if numel(ddts)
+                strplus=[ddts(obj.display.frame)];
+            end
+
         end
+    end
 
     %     if strcmp(classif.category{1},'Image') || strcmp(classif.category{1},'LSTM')
     %         cc=1;
@@ -144,7 +144,7 @@ for i=1:numel(obj.display.channel)
         discc=1;
 
 
-
+        % display object number on object if it is a track
         if numel(strfind(obj.display.channel{i},'track'))~=0 | numel(strfind(obj.display.channel{i},'pedigree'))~=0
             im=him.image(cc).CData;
 
@@ -157,9 +157,16 @@ for i=1:numel(obj.display.channel)
 
                 tmp=hp(cc);
 
-                htext(cctext)=text(tmp,r(k).Centroid(1),r(k).Centroid(2),num2str(id),'Color',[1 1 1],'FontSize',10,'Tag','tracktext');
+
+
+
+                htext(cctext)=text(tmp,r(k).Centroid(1),r(k).Centroid(2),num2str(id),'Color',[0.8 0.8 0.8],'FontSize',10,'Tag','tracktext','UserData',obj.display.channel{i});
+                set(htext(cctext), 'ButtonDownFcn', @(src, event) enableEditing(src, event));
                 cctext=cctext+1;
+
             end
+
+            % Define the callback function to enable editing
         end
 
 
@@ -171,36 +178,36 @@ for i=1:numel(obj.display.channel)
             % display current classi on image
 
             if numel(classif)>0
-               % if strcmp(displaystruct(ii).name,classif.strid)
-                    ha=findobj('Tag','classitextflag');
+                % if strcmp(displaystruct(ii).name,classif.strid)
+                ha=findobj('Tag','classitextflag');
 
-                    if numel(ha)
-                        if strcmp(ha.Checked,'on')
-                            xx=size(obj.image,2)/2;
-                            yy=1*size(obj.image,1)/2;
-                           % idf=obj.train.(displaystruct(ii).name).id(obj.display.frame);
-                           
-                            [dataout, labelout]=getTrainingData(obj,classif.strid);
-                            idf=dataout(obj.display.frame);
-                            txt=char(labelout(obj.display.frame));
+                if numel(ha)
+                    if strcmp(ha.Checked,'on')
+                        xx=size(obj.image,2)/2;
+                        yy=1*size(obj.image,1)/2;
+                        % idf=obj.train.(displaystruct(ii).name).id(obj.display.frame);
 
-                            if idf==0, idf=10; end
+                        [dataout, labelout]=getTrainingData(obj,classif.strid);
+                        idf=dataout(obj.display.frame);
+                        txt=char(labelout(obj.display.frame));
 
-                            if exist('ttid'), idfpred=ttid; else idfpred=1; end
-                            colmap=flip(prism,1);
-                            if numel(htextclassi)==0 %|| numel(htextclassipred)==0
-                                htextclassi=text(xx,yy,txt,'Color',colmap(1*idf,:),'FontSize',20,'FontWeight','Bold','Tag','classitext','HorizontalAlignment','right');
-                                %htextclassipred=text(xx,yy,['   ' displaystruct(ii).pred],'Color',colmap(1*idfpred,:),'FontSize',20,'FontWeight','Bold','Tag','classitextpred','HorizontalAlignment','left');
-                            else
-                                htextclassi.String=txt;
-                                htextclassi.Color=colmap(1*idf,:);
-                                %htextclassipred.String=['   ' displaystruct(ii).pred];
-                                %htextclassipred.Color=colmap(1*idfpred,:);
-                            end
+                        if idf==0, idf=10; end
+
+                        if exist('ttid'), idfpred=ttid; else idfpred=1; end
+                        colmap=flip(prism,1);
+                        if numel(htextclassi)==0 %|| numel(htextclassipred)==0
+                            htextclassi=text(xx,yy,txt,'Color',colmap(1*idf,:),'FontSize',20,'FontWeight','Bold','Tag','classitext','HorizontalAlignment','right');
+                            %htextclassipred=text(xx,yy,['   ' displaystruct(ii).pred],'Color',colmap(1*idfpred,:),'FontSize',20,'FontWeight','Bold','Tag','classitextpred','HorizontalAlignment','left');
+                        else
+                            htextclassi.String=txt;
+                            htextclassi.Color=colmap(1*idf,:);
+                            %htextclassipred.String=['   ' displaystruct(ii).pred];
+                            %htextclassipred.Color=colmap(1*idfpred,:);
                         end
                     end
+                end
 
-               % end
+                % end
             end
         end
 
@@ -225,7 +232,7 @@ end
 
 htext=findobj(h,'Tag','frametext');
 if numel(htext)
-htext.String=num2str(obj.display.frame);
+    htext.String=num2str(obj.display.frame);
 end
 
 
@@ -253,37 +260,37 @@ for i=1:numel(htraj)
         hpp=findobj(htraj(i),'Tag','labels_training');
 
         if numel(hpp)
-        
-        datastruct=hpp.UserData;
-        datatot=datastruct.getData('id_training');
-        pixdat=numel(find(datatot==0));
 
-        datalabels=datastruct.getData('labels_training');
+            datastruct=hpp.UserData;
+            datatot=datastruct.getData('id_training');
+            pixdat=numel(find(datatot==0));
 
-        dat=hpp.YData;
-        pix=obj.display.frame;
+            datalabels=datastruct.getData('labels_training');
 
-        if iscategorical(dat(pix))
-            txt=char(dat(pix));
-        end
-        if isnumeric(dat(pix))
-            txt=num2str(dat(pix));
-        end
+            dat=hpp.YData;
+            pix=obj.display.frame;
 
-        txt=[txt ' - ' num2str(pixdat) ' frames left to annotate'];
-        title(hpo,txt);
+            if iscategorical(dat(pix))
+                txt=char(dat(pix));
+            end
+            if isnumeric(dat(pix))
+                txt=num2str(dat(pix));
+            end
 
-        hpp.YData= datalabels;
-        % update data plot 
-        % 
-        %     hh=findobj('Tag',obj.data(pixdata).id);
-        %      if numel(hh)
-        %          pos=hh.Position;
-        %        pos(2)=pos(2)+0.05;
-        %         delete(hh);
-        %          obj.data(pixdata).plot(pos,'ok');
-        %          figure(h);
-        %      end
+            txt=[txt ' - ' num2str(pixdat) ' frames left to annotate'];
+            title(hpo,txt);
+
+            hpp.YData= datalabels;
+            % update data plot
+            %
+            %     hh=findobj('Tag',obj.data(pixdata).id);
+            %      if numel(hh)
+            %          pos=hh.Position;
+            %        pos(2)=pos(2)+0.05;
+            %         delete(hh);
+            %          obj.data(pixdata).plot(pos,'ok');
+            %          figure(h);
+            %      end
 
 
         end
@@ -298,4 +305,53 @@ end
 %     end
 % end
 
+    function enableEditing(src, ~)
+        % Enable editing mode
+        oldLabel = str2double(src.String);
+
+        src.Editing = 'on';
+
+        % Set a callback for when editing is done
+        addlistener(src, 'Editing', 'PostSet', @(~, event) disableEditing(src, event,oldLabel));
+    end
+
+% Define the callback function to disable editing after editing is done
+    function disableEditing(htext, event,oldLabel)
+        % Check if the editing is turned off
+        if strcmp(event.AffectedObject.Editing, 'off')
+            % Obtenir la nouvelle valeur du texte
+            newLabelStr = event.AffectedObject.String;
+            newLabel = str2double(newLabelStr);
+
+            % Vérifier si le nouveau label est un nombre valide
+            if ~isnan(newLabel)
+                % Obtenir la position de l'objet texte
+                pos = get(event.AffectedObject, 'Position');
+                x = pos(1);
+                y = pos(2);
+
+                % Trouver les coordonnées correspondantes dans l'image labellisée
+                row = round(y);
+                col = round(x);
+
+                L=l;
+                % Mettre à jour l'image labellisée si les coordonnées sont dans les limites
+                if row > 0 && row <= size(L, 1) && col > 0 && col <= size(L, 2)
+                 %   oldLabel = uint16(str2double(event.AffectedObject.String));
+                   % L(L == oldLabel) = newLabel; % Mettre à jour toutes les instances de l'ancien label
+                   frame=obj.display.frame;
+                   tmp=htext.UserData;
+                   pix=obj.findChannelID(tmp);
+                   img=obj.image(:,:,pix,frame:end);
+         
+                   p=img==oldLabel;
+                   img(p)=newLabel;
+                    obj.image(:,:,pix,frame:end)=img;
+                    %figure, imshow(obj.image(:,:,pix,frame),[]);
+                    updatedisplay(obj,him,hp,classif);
+                end
+            end
+        end
+    end
 end
+

@@ -792,7 +792,6 @@ end
 
 h.UserData.classframes={obj.classes{idframe}   num2str(obj.display.frame) num2str(size(obj.image,4)) };
 
-
 fig = uifigure('Position',[100 100 350 150],'UserData',h,'Name','Fill in classes in frames:');
 
 lab=uilabel(fig,'Position',[10, 120, 100, 22],'Text','Class: :');

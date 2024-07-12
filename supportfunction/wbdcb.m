@@ -147,7 +147,8 @@ if strcmp(seltype,'open') & numel(modtype)~=0  % try to guess cell contours
 
     val=impaint1.CData(yinit,xinit); %
 
-    rawimg=rawimg(yinit-25:yinit+25,xinit-25:xinit+25);
+    n=20;
+    rawimg=rawimg(yinit-n:yinit+n,xinit-n:xinit+n);
     T = adaptthresh(uint16(rawimg),0.5);
     BW2=imbinarize(uint16(rawimg),T);
 
@@ -160,7 +161,7 @@ if strcmp(seltype,'open') & numel(modtype)~=0  % try to guess cell contours
     imdist = imhmax(imdist,2); 
 
     sous=BW2- imdist;
-    sous(25,25)=-Inf;
+    sous(n,n)=-Inf;
 
    % figure, imshow(sous,[]);
 
@@ -177,11 +178,11 @@ if strcmp(seltype,'open') & numel(modtype)~=0  % try to guess cell contours
     % figure, imshow(newlabels,[]);
    %  size(newlabels)
 
-    tmpval=newlabels(25,25); % center of image
+    tmpval=newlabels(n,n); % center of image
     if tmpval>0
     bwfinal=newlabels==tmpval;
     bwfinal2=logical(zeros(size(impaint1.CData)));
-    bwfinal2(yinit-25:yinit+25,xinit-25:xinit+25)=bwfinal;
+    bwfinal2(yinit-n:yinit+n,xinit-n:xinit+n)=bwfinal;
    
     impaint1.CData(bwfinal2)=colo;
     impaint2.CData(bwfinal2)=colo;

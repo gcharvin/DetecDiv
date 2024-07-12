@@ -319,7 +319,7 @@ for i=1:numel(rois)
         reverseStr = repmat(sprintf('\b'), 1, length(msg));
     end
     fprintf('\n');
-    cltmp(rois(i)).save;
+   % cltmp(rois(i)).save; %why saving ROIs ? 
     disp(['Processing ROI: ' num2str(rois(i)) ' ... Done !'])
 end
 
@@ -332,4 +332,3 @@ end
 % saving classification  for training
 classiSave(classif);
 %save([classif.path '/classification.mat'],'classification');
-
