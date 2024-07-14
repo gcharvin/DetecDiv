@@ -34,7 +34,18 @@ if numel(classif)>0
     cmap=classif.colormap;
     if strcmp(classif.category{1},'Pixel') | strcmp(classif.category{1},'Object') | strcmp(classif.category{1},'Delta')
         htmp=findobj('Tag',classif.strid);
+
+        if numel(htmp)>1
+            disp('One painting window is probably already open : please close ! ');
+            return;
+        end
+
         hpt=findobj(hp,'UserData',classif.strid);
+
+        if numel(htmp)>1
+            disp('One painting window is probably already open : please close ! ');
+            return;
+        end
 
 
         if numel(htmp) && numel(hpt)

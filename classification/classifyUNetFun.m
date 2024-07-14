@@ -96,25 +96,78 @@ end
 
 %gfp=uint16(zeros(size(gfp,1),size(gfp,2),3));
 
-gfp=double(zeros(size(gfp,1),size(gfp,2),3,numel(frames)));
+% gfp=double(zeros(size(gfp,1),size(gfp,2),3,numel(frames)));
+% 
+% for fr=frames % remove the loop on frames here !!!! andtry ti use a gpu array
+%         gfp(:,:,:,fr)=roiobj.preProcessROIData(pix,fr,param);
+% end
+% 
+%       gfp=uint8(gfp*256);
+% 
+%     if size(gfp,1)<inputSize(1) | size(gfp,2)<inputSize(2)
+%         gfp=imresize(gfp,inputSize(1:2));
+%     end
+% 
+% 
+% if gpu==1
+%     [C,score,features]= semanticseg(gfp, net,'ExecutionEnvironment',"gpu");%,'Acceleration','mex'); % this is no longer required if we extract the probabilities from the previous laye
+% 
+% else
+%     [C,score,features]= semanticseg(gfp, net,'ExecutionEnvironment',"cpu");
+% end
+% Set the batch size
 
-for fr=frames % remove the loop on frames here !!!! andtry ti use a gpu array
-        gfp(:,:,:,fr)=roiobj.preProcessROIData(pix,fr,param);
-end
+% Set the batch size
+batchSize = 10; % Adjust the batch size as needed
+numFrames = numel(frames);
 
-      gfp=uint8(gfp*256);
+% Initialize empty arrays to store results
+C = [];
+score = [];
+features = [];
 
-    if size(gfp,1)<inputSize(1) | size(gfp,2)<inputSize(2)
-        gfp=imresize(gfp,inputSize(1:2));
+% Loop over batches of frames
+for i = 1:batchSize:numFrames
+    % Determine the end of the current batch
+    batchEnd = min(i + batchSize - 1, numFrames);
+    currentBatchFrames = frames(i:batchEnd);
+
+    % Process the current batch of frames
+    batchGfp = double(zeros(size(gfp, 1), size(gfp, 2), 3, numel(currentBatchFrames)));
+
+    for fr = 1:numel(currentBatchFrames)
+        batchGfp(:,:,:,fr) = roiobj.preProcessROIData(pix, currentBatchFrames(fr), param);
     end
 
+    % Convert to uint8
+    batchGfp = uint8(batchGfp * 256);
 
-if gpu==1
-    [C,score,features]= semanticseg(gfp, net,'ExecutionEnvironment',"gpu");%,'Acceleration','mex'); % this is no longer required if we extract the probabilities from the previous laye
+    % Resize if needed
+    if size(batchGfp, 1) < inputSize(1) || size(batchGfp, 2) < inputSize(2)
+        batchGfp = imresize(batchGfp, inputSize(1:2));
+    end
 
-else
-    [C,score,features]= semanticseg(gfp, net,'ExecutionEnvironment',"cpu");
+    % Perform semantic segmentation
+    if gpu == 1
+        [batchC, batchScore, batchFeatures] = semanticseg(batchGfp, net, 'ExecutionEnvironment', "gpu");
+    else
+        [batchC, batchScore, batchFeatures] = semanticseg(batchGfp, net, 'ExecutionEnvironment', "cpu");
+    end
+
+    % Store results in the main arrays
+    if isempty(C)
+        C = batchC;
+        %score = batchScore;
+        features = batchFeatures;
+    else
+
+        C = cat(3, C, batchC);
+        %score = cat(3, score, batchScore);
+        features = cat(4, features, batchFeatures);
+    end
 end
+
+
 
             image=roiobj.image;
            %   if size(gfp,1)<inputSize(1) | size(gfp,2)<inputSize(2)

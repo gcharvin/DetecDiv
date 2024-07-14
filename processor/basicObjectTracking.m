@@ -93,7 +93,7 @@ distancemean=2*sqrt(areamean)*2/pi;
 imref=im(:,:,1,frames(1));
 tmp=bwlabel(imref);
 
-obj.image(:,:,pixresults,frames(1))=tmp;
+imageout(:,:,pixresults,frames(1))=tmp;
 cellsref=getCells(tmp);
 
 if display==1
@@ -153,6 +153,7 @@ for i=frames(1)+1:frames(end) % loop on all frames
   
 fprintf('.');
 end
+
 fprintf('\n');
 
 disp('Tracking done !');
