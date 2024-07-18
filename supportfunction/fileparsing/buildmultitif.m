@@ -20,18 +20,23 @@ for i=1:numel(filelist)
 end
 
 cc=1;
+
 for i=1:numel(filelist)
     [pth fle ext]=fileparts(filelist(i).name);
     
-    tmp=regexp(fle, '\d+$','match');
-    
+   % tmp=regexp(fle, '\d+$','match');
+    tmp = regexp(fle, '(\d+)(\.ome)?$', 'tokens');
+
     if numel(tmp)==0 % there is no trailing number
         break;
     end
     
-    res(cc)= str2double(tmp{1});
+    %res(cc)= str2double(tmp{1});
+    res(cc) = str2double(tmp{1}{1});
     cc=cc+1;
 end
+
+
 
 if numel(tmp)>0 %positions are terminated by a numer, so sort them
     [sortedres ix]=sort(res);
@@ -56,6 +61,7 @@ for i=1:numel(output.pos) % loop on positions
     if isfield(im,'ImageDescription')
         str=im(1).ImageDescription;
         
+        if ~isempty(str)
         nch=[];
         nframes=[];
         
@@ -68,10 +74,44 @@ for i=1:numel(output.pos) % loop on positions
             nch=regexp(str,['(?<=SizeC=")\d+'],'match');
             nframes=regexp(str,['(?<=SizeT=")\d+'],'match');
         end
+        end
     else % not fiji or OME, probably matlab based
         nch=[];
         nframes=[];
     end
+   
+   % to be improved
+
+    % if numel(nch)==0 % parsing using ImageDescription failed, trying metadata.txt
+    % 
+    %         if endsWith(fle, '.ome')
+    %             fle2 = extractBefore(fle, strlength(fle) - 3);
+    %         else
+    %             fle2 = fle;
+    %         end
+    % 
+    % 
+    %         % Construct the metadata file path
+    %         metadataFilePath = fullfile(pth, [fle2 'metadata.txt'])
+    % 
+    %         % Read the metadata file
+    %         if exist(metadataFilePath, 'file')
+    %             metadata = fileread(metadataFilePath);
+    %             metadata = jsondecode(metadata);
+    % 
+    %             % Extract channel information from metadata
+    %             if isfield(metadata.Summary, 'IntendedDimensions')
+    %                 nch = metadata.Summary.IntendedDimensions.channel;
+    %                 nframes = metadata.Summary.IntendedDimensions.time;
+    %             else
+    %                 nch = 1;
+    %                 nframes = nimages;
+    %             end
+    %         else
+    %             nch = 1;
+    %             nframes = nimages;
+    %         end
+    % end
     
     if numel(nch)==0 % channel parsing failed, will consider only one channel
         nch=1;
