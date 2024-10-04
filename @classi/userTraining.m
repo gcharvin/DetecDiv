@@ -58,7 +58,6 @@ else % image based classification and regression
         
 % comment : disable restrictions on channel display:
 
-
 % classif.roi(classitype).display.selectedchannel=zeros(1,numel(classif.roi(classitype).display.selectedchannel));
 % classif.roi(classitype).display.selectedchannel(channel)=1;
 % 

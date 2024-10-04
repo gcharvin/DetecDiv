@@ -1,4 +1,3 @@
-
 function importFromClassi(obj,classitocopy,option,varargin)
 
 % if option is provided and option(4), then rois must be an array of roi
@@ -33,7 +32,7 @@ end
 %option 1: transfer training parameters
 %option 2: transfer trained classifier
 %option 3: transferr formatted groundtruth
-% option 4; transffer unformatted ROIs
+%option 4; transffer unformatted ROIs
 
 disp(['Transferring parameters and data from classification: ' num2str(classitocopy.strid)]);
 

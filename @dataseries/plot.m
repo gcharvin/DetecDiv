@@ -87,7 +87,7 @@ for i=1:numel(plotidx)
     for j=1:numel(plotidx{i})
         toplot=toplot+1;
         tmp=plotidx{i};
-        dat=data.getData(varnames{plotidx{i}(j)})
+        dat=data.getData(varnames{plotidx{i}(j)});
 
         plot(hs(i),dat,'Tag',varnames{plotidx{i}(j)},'LineWidth',2,'UserData',data); hold on
         str=[str varnames{plotidx{i}(j)}];
