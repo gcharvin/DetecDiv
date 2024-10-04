@@ -848,12 +848,24 @@ end
             end
 
             %the image passed in 8 bits depth--> use 255
+            if ispc
             imgout2(:,:,:,j)=insertText(imgout2(:,:,:,j),[1,shifttitley/2],[blanks(tabtitle) title],'Font','Consolas Bold','FontSize',floor(sqrt(scalingFactor)*fontsize),...
                 'BoxColor',[1 1 1],'BoxOpacity',0.0,'TextColor',colr*255,'AnchorPoint','LeftCenter');
 
             imgout2(:,:,:,j)=insertText(imgout2(:,:,:,j),[1,shifttitley/2],timestamp,'Font','Consolas Bold','FontSize',floor(sqrt(scalingFactor)*fontsize),...
                 'BoxColor',[1 1 1],'BoxOpacity',0.0,'TextColor',255*text,'AnchorPoint','LeftCenter');
+            else
+            
+              imgout2(:,:,:,j)=insertText(imgout2(:,:,:,j),[1,shifttitley/2],[blanks(tabtitle) title],'Font','Ubuntu-C','FontSize',floor(sqrt(scalingFactor)*fontsize),...
+                'BoxColor',[1 1 1],'BoxOpacity',0.0,'TextColor',colr*255,'AnchorPoint','LeftCenter');
+
+            imgout2(:,:,:,j)=insertText(imgout2(:,:,:,j),[1,shifttitley/2],timestamp,'Font','Ubuntu-C','FontSize',floor(sqrt(scalingFactor)*fontsize),...
+                'BoxColor',[1 1 1],'BoxOpacity',0.0,'TextColor',255*text,'AnchorPoint','LeftCenter');
+             
+             
+            end
         end
+
         imgout=imgout2;
     end
 
@@ -913,7 +925,12 @@ end
     switch sequence
         case 'Movie' % movie / default
 
+         if ispc
         v=VideoWriter(name,'MPEG-4');
+         else
+        v=VideoWriter(name,'Motion JPEG AVI');
+         end
+
         v.FrameRate=ips;
         v.Quality=100;
         open(v);

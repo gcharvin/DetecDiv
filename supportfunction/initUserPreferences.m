@@ -1,19 +1,31 @@
 function initUserPreferences
 
-         if numel(userpath)==0
+          if numel(userpath)==0
                  userpath('reset')
              end
 
             pth=userpath;
  
-           fle= fullfile(pth,'Detecdiv/userprefs.mat');
+          % fle= fullfile(pth,'Detecdiv/userprefs.mat')
+          % pth=userpath;
+if ispc
+fle= fullfile(pth,'Detecdiv/userprefs.mat');
+targetpth=userpath;
+else
+tmpfile=getenv("HOME");
+fle=fullfile(strcat(tmpfile,'/Detecdiv'),'userprefs.mat');
+targetpth=tmpfile;
+end
+
+
             if exist(fle)
                 load(fle)
             else % structure must me created
 
-               if ~exist(fullfile(userpath,'Detecdiv'))
-                    mkdir(fullfile(userpath,'Detecdiv'))
+               if ~exist(fullfile(targetpth,'Detecdiv'))
+                    mkdir(fullfile(targetpth,'Detecdiv'))
                end
+            end
 
 
             tip={'Keyboard shortcuts used to assign a class to an image; Please enter space-separated letters; Please restart the ROI viewer after modification',...

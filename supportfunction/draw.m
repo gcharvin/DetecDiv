@@ -348,7 +348,13 @@ h.WindowButtonUpFcn = '';
 
 
 pth=userpath;
+if ispc
 fle= fullfile(pth,'Detecdiv/userprefs.mat');
+else
+tmpfile=getenv("HOME");
+fle=fullfile(strcat(tmpfile,'/Detecdiv'),'userprefs.mat');
+end
+
 if exist(fle)
     load(fle) % loads userprefs variable
     keys=textscan(userprefs.roi_view_shortcut_keys,'%s');
