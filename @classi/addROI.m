@@ -178,9 +178,11 @@ for i=1:length(rois)
     end
 
     if strcmp(classif.category{1},'Image') | strcmp(classif.category{1},'LSTM') | strcmp(classif.category{1},'Timeseries')
-       % classif.roi(cc+1).train.(classif.strid)=[];
+        classif.roi(cc+1).train.(classif.strid)=[];
 
-      %  classif.roi(cc+1).train.(classif.strid).id= zeros(1,size(classif.roi(cc+1).image,4));
+        classif.roi(cc+1).train.(classif.strid).id= zeros(1,size(classif.roi(cc+1).image,4));
+        formatInDataSeries(classif.roi(cc+1)); % converts train object to datseries;
+        classif.roi(cc+1).train=[];
 
 
       %  if classif.output==1 % sequence-to-one classification
@@ -379,8 +381,7 @@ for i=1:length(rois)
     %     end
 
     
-    %formatInDataSeries(classif.roi(cc+1)); % converts train object to datseries;
-  %  classif.roi(cc+1).train=[];
+   
     classif.roi(cc+1).save;
     classif.roi(cc+1).clear;
 
