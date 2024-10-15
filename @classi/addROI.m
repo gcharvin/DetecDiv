@@ -82,7 +82,6 @@ for i=1:length(rois)
 
     roitocopy=obj.roi(rois(i));
 
-
     if numel(roitocopy.image)==0
         roitocopy.load;
     end
@@ -181,15 +180,17 @@ for i=1:length(rois)
         classif.roi(cc+1).train.(classif.strid)=[];
 
         classif.roi(cc+1).train.(classif.strid).id= zeros(1,size(classif.roi(cc+1).image,4));
+        %classif.roi(cc+1).train=[];
+
+        if classif.output==1 % sequence-to-one classification
+            classif.roi(cc+1).train.(classif.strid).id= 0;
+        end
+
+        classif.roi(cc+1).train.(classif.strid).classes=classif.classes;
+       % bb=classif.roi(cc+1).train.(classif.strid)
+
         formatInDataSeries(classif.roi(cc+1)); % converts train object to datseries;
-        classif.roi(cc+1).train=[];
-
-
-      %  if classif.output==1 % sequence-to-one classification
-      %      classif.roi(cc+1).train.(classif.strid).id= 0;
-      %  end
-
-      %  classif.roi(cc+1).train.(classif.strid).classes=classif.classes;
+        %aa=classif.roi(cc+1).data
 
         if isa(obj,'classi')
 
