@@ -190,7 +190,7 @@ for i=1:length(rois)
             disp('Transferring training set data from copied ROI');
            ccc=pixdata(1);
 
-          classif.roi(cc+1).data=dataseries;
+          classif.roi(cc+1).data=dataseries();
           classif.roi(cc+1).data=propValues(classif.roi(cc+1).data,data(ccc));
           classif.roi(cc+1).data.groupid=classif.strid;
           classif.roi(cc+1).data.data = data(ccc).data;
