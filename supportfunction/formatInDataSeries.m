@@ -16,7 +16,7 @@ for i=1:numel(roiobj)
     end
 
     roiobj(i).data=roiobj(i).data(l);
-    roiobj(i).save('data');
+%    roiobj(i).save('data');
 end
 
 function formatData(roiobj,class,type)

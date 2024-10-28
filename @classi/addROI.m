@@ -34,7 +34,7 @@ end
 if isa(obj,'classi')
     objtype='@classi';
     disp('You want to import ROIs from an existing @classi for training');
-    disp('Training datasets (ground truth) may be preserved when transferring ROIs');
+    %disp('Training datasets (ground truth) may be preserved when transferring ROIs');
 
 end
 
@@ -177,37 +177,29 @@ for i=1:length(rois)
     end
 
     if strcmp(classif.category{1},'Image') | strcmp(classif.category{1},'LSTM') | strcmp(classif.category{1},'Timeseries')
-        classif.roi(cc+1).train.(classif.strid)=[];
+        
+        trainingSetTransfer=false; % flag to determine whether dataseries for training set has to be generated
 
-        classif.roi(cc+1).train.(classif.strid).id= zeros(1,size(classif.roi(cc+1).image,4));
-        %classif.roi(cc+1).train=[];
-
-        if classif.output==1 % sequence-to-one classification
-            classif.roi(cc+1).train.(classif.strid).id= 0;
-        end
-
-        classif.roi(cc+1).train.(classif.strid).classes=classif.classes;
-       % bb=classif.roi(cc+1).train.(classif.strid)
-
-        formatInDataSeries(classif.roi(cc+1)); % converts train object to datseries;
-        %aa=classif.roi(cc+1).data
-
-        if isa(obj,'classi')
-
-           % roitocopy.load('data')
-
+        if isa(obj,'classi') % checks if ROIs are imported from another classi
             data=roitocopy.data;
+            pixdata=find(arrayfun(@(x) strcmp(x.groupid, obj.strid),data));
+            
+            % find if object exists already
 
-            pixdata=find(arrayfun(@(x) strcmp(x.groupid, obj.strid),data)); % find if object exists already
+        if numel(pixdata) % checks if dataset is available
+            disp('Transferring training set data from copied ROI');
+           ccc=pixdata(1);
 
-        %
-        if numel(pixdata)
-            ccc=pixdata(1); 
-           
-          datatarget=classif.roi(cc+1).data;
-          datatarget.data=data(ccc).data;
-          datatarget.groupid=classif.strid;
+          classif.roi(cc+1).data=dataseries;
+          classif.roi(cc+1).data=propValues(classif.roi(cc+1).data,data(ccc));
+          classif.roi(cc+1).data.groupid=classif.strid;
+          classif.roi(cc+1).data.data = data(ccc).data;
 
+          %datatarget=classif.roi(cc+1).data;
+
+        %  datatarget.data=data(ccc).data;
+        %  datatarget.groupid=classif.strid;
+          trainingSetTransfer=true; 
          % datatarget(cc).data.id_training=data.data(:,ind2)
   
         end
@@ -294,6 +286,18 @@ for i=1:length(rois)
             %     end
             % end
         end
+
+        if ~trainingSetTransfer
+                    disp('No training set available, creating empty dataseries');
+                    classif.roi(cc+1).train.(classif.strid)=[];
+                    classif.roi(cc+1).train.(classif.strid).id= zeros(1,size(classif.roi(cc+1).image,4));
+                    if classif.output==1 % sequence-to-one classification
+                        classif.roi(cc+1).train.(classif.strid).id= 0;
+                    end
+                    classif.roi(cc+1).train.(classif.strid).classes=classif.classes;
+                    formatInDataSeries(classif.roi(cc+1)); % converts train object to datseries;
+        end
+
         % classif.roi(cc+1).train= zeros(1,size(classif.roi(cc+1).image,4));
     end
 
@@ -315,9 +319,7 @@ for i=1:length(rois)
 
     if strcmp(classif.category{1},'Pixel') | strcmp(classif.category{1},'Object') |  strcmp(classif.category{1},'Delta')  |  strcmp(classif.category{1},'Pedigree')
         im=classif.roi(cc+1).image;
-
         pix=findChannelID(classif.roi(cc+1), classif.strid);
-
 
         if numel(pix)>0 %channel is already present in roi , so skip channel creation
 
@@ -381,7 +383,6 @@ for i=1:length(rois)
     %         %pixelchannel=size(obj.image,3);
     %     end
 
-    
    
     classif.roi(cc+1).save;
     classif.roi(cc+1).clear;
@@ -393,7 +394,7 @@ end
 function newObj=propValues(newObj,orgObj)
 pl = properties(orgObj);
 for k = 1:length(pl)
-    if isprop(newObj,pl{k})
+    if isprop(newObj,pl{k}) && ~strcmp(pl{k},'data')
         newObj.(pl{k}) = orgObj.(pl{k});
     end
 end
