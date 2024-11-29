@@ -190,18 +190,11 @@ for i=1:length(rois)
             disp('Transferring training set data from copied ROI');
            ccc=pixdata(1);
 
-          classif.roi(cc+1).data=dataseries();
+          classif.roi(cc+1).data=dataseries;
           classif.roi(cc+1).data=propValues(classif.roi(cc+1).data,data(ccc));
           classif.roi(cc+1).data.groupid=classif.strid;
           classif.roi(cc+1).data.data = data(ccc).data;
-
-          %datatarget=classif.roi(cc+1).data;
-
-        %  datatarget.data=data(ccc).data;
-        %  datatarget.groupid=classif.strid;
           trainingSetTransfer=true; 
-         % datatarget(cc).data.id_training=data.data(:,ind2)
-  
         end
 % to be done if mapping between different classi must be done 
             % if isfield(roitocopy.train,obj.strid) % test if previous ROI has training

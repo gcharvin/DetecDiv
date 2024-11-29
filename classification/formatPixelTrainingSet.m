@@ -14,8 +14,8 @@ function output=formatPixelTrainingSet(foldername,classif,rois)
 
 output=0;
 
-mkdir([classif.path '/' foldername],'images')
-mkdir([classif.path '/' foldername],'labels')
+mkdir([classif.path '/' foldername],'images');
+mkdir([classif.path '/' foldername],'labels');
 
 %defaultclass=[];
 
@@ -42,7 +42,12 @@ for i=1:numel(rois)
 
     % find image channel associated with training
     %pixe = strfind(cltmp(i).display.channel, classif.strid);
-    cc=cltmp(rois(i)).findChannelID(classif.strid);
+
+    if strcmp(classif.description{1},'Image pixel regression')
+    cc=cltmp(rois(i)).findChannelID(channel{2}); % second channel is used as output
+    else
+    cc=cltmp(rois(i)).findChannelID(classif.strid); % classical labeled channel
+    end
 
     if numel(cc)>0
 
@@ -50,12 +55,18 @@ for i=1:numel(rois)
             cltmp(rois(i)).load; % load image sequence
         end
 
+        if strcmp(classif.description{1},'Image pixel regression')
+        pix=cltmp(rois(i)).findChannelID(channel{1});
+        else
         pix=cltmp(rois(i)).findChannelID(channel);
         % new multichannel mode
+        end
 
         if iscell(pix)
             pix=cell2mat(pix);
         end
+        
+      
 
         %         pix=[];
         %         for j=1:numel(channel) % loop on all selected channels
@@ -77,8 +88,6 @@ for i=1:numel(rois)
 
         lab=cltmp(rois(i)).image(:,:,cc,:);
 
-
-
         if strcmp(classif.description{3},'Solov2') % classical labeled image
             %resize images to multile of 32 in case of solov2
             % Load your image
@@ -92,7 +101,12 @@ for i=1:numel(rois)
             % labels_solo= double(zeros(size(lab,1),size(lab,2),3,size(lab,4)));
         end
 
-        labels= double(zeros(size(lab,1),size(lab,2),3,size(lab,4)));
+        
+
+        if strcmp(classif.description{1},'Image pixel regression')
+         %   labels=repmat(lab,1,1,3,1);
+        else
+            labels= double(zeros(size(lab,1),size(lab,2),3,size(lab,4)));
 
         for j=1:numel(classif.classes)
             if j==defaultclass %
@@ -106,12 +120,17 @@ for i=1:numel(rois)
                 labels(:,:,k,:)=labels(:,:,k,:)+classif.colormap(j+1,k)*labtmp2;
             end
         end
+
+        end
     end
     reverseStr = '';
 
     for j=1:size(im,4) %time
         tmp=im(:,:,:,j);
 
+      %  if strcmp(classif.description{1},'Image pixel regression')
+      %  labtmp= lab(:,:,:,j);
+      %  end
 
         %TODO: preProcessROIData(pix,j,param);
         if numel(pix)<=3
@@ -129,6 +148,11 @@ for i=1:numel(rois)
             % 
             %     tmp= imresize(tmp, [newM newN]);
             % end
+
+             if strcmp(classif.description{1},'Image pixel regression')
+                tmplab= cltmp(rois(i)).preProcessROIData(cc,j,param);
+              %  figure, imshow(tmplab(:,:,1,1),[])
+             end
         end
 
         %tmp=uint8(256*tmp);
@@ -145,19 +169,31 @@ for i=1:numel(rois)
         %           end
 
         if numel(cc)>0
+
+            if strcmp(classif.description{1},'Image pixel regression')
+                % do nothing
+            else
             tmplab=lab(:,:,:,j);
+            end
 
             if ~strcmp(classif.description{3},'Solov2') % classical labeled image
-                if max(tmplab(:))>1 % image has labeled pixels
+
+                max(tmplab(:))
+                if max(tmplab(:))>1 | strcmp(classif.description{1},'Image pixel regression') % image has labeled pixels or is a regression
 
                     if numel(pix)<=3
+
                         imwrite(tmp,[classif.path '/' foldername '/images/' cltmp(rois(i)).id '_frame_' tr '.tif']);
 
                     else % multispectral image
                         save([classif.path '/' foldername '/images/' cltmp(rois(i)).id '_frame_' tr '.mat'],tmp); % WARNING no preprocessing is performed in that case
                     end
 
-                    imwrite(labels(:,:,:,j),[classif.path '/' foldername '/labels/' cltmp(rois(i)).id '_frame_' tr '.tif']);
+                    if strcmp(classif.description{1},'Image pixel regression')
+                    imwrite(tmplab(:,:,:,j),[classif.path '/' foldername '/labels/' cltmp(rois(i)).id '_frame_' tr '.tif']); % raw image
+                    else
+                    imwrite(labels(:,:,:,j),[classif.path '/' foldername '/labels/' cltmp(rois(i)).id '_frame_' tr '.tif']); % labeled image
+                    end
 
                 end
                 output=output+1;

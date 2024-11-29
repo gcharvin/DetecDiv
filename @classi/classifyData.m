@@ -344,12 +344,17 @@ switch classif.outputType
         end
         
     otherwise %  outputs segmentation or segmentation after postprocessing
+
         pixresults=findChannelID(roiobj,['results_' classif.strid]);
         
         if numel(pixresults)==0 % channels do not exist, hence create them
             matrix=uint16(zeros(size(gfp,1),size(gfp,2),1,size(gfp,4)));
             rgb=[1 1 1];
+              if strcmp(classif.description{1},'Image pixel regression')
+            intensity=[1 1 1]; % used to display indexed image in .view
+              else
             intensity=[0 0 0]; % used to display indexed image in .view
+              end
             
             roiobj.addChannel(matrix,['results_' classif.strid],rgb,intensity);
             
