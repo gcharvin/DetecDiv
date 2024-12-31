@@ -14,8 +14,8 @@ if perFrames==0
     if (~isfield(obj.display,'stretchlim') && ~isprop(obj.display,'stretchlim')) || size(obj.display.stretchlim,2)~=numel(obj.channelid)
         cmpt=1;
 
-        size(obj.display.stretchlim,2)
-        numel(obj.channelid)
+%        size(obj.display.stretchlim,2)
+    %    numel(obj.channelid)
 
     else
         for i=1:numel(ch)

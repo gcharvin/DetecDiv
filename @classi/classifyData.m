@@ -115,9 +115,9 @@ if mustload==1
     classifierStore=classifier;
 
     if numel(classifierStore)==0
-        disp('could not load main classifier.... quitting');
+        disp('WARNING : could not load main classifier....');
         %%
-        return;
+       % return;
     end
 end
 
@@ -331,7 +331,12 @@ switch classif.outputType
             if numel(pixresultstmp)==0 % channel does not exist, hence create them
                 matrix=uint16(zeros(size(gfp,1),size(gfp,2),1,size(gfp,4)));
                 rgb=[1 1 1];
+
+                if ~strcmp(classif.description{3},'Yolov11')
                 intensity=[1 1 1]; % used to display grayscale image in .view
+                else
+                intensity=[0 0 0]; % in yolo the output is indexed image x number of classes
+                end
                 
                 roiobj.addChannel(matrix,['results_' classif.strid '_' classif.classes{i}],rgb,intensity);
                 
@@ -361,6 +366,7 @@ switch classif.outputType
             pixresults=size(roiobj.image,3);
         else
             roiobj.image(:,:,pixresults,:)=uint16(zeros(size(gfp,1),size(gfp,2),1,size(gfp,4)));
+
         end
 end
 

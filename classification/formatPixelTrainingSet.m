@@ -178,7 +178,7 @@ for i=1:numel(rois)
 
             if ~strcmp(classif.description{3},'Solov2') % classical labeled image
 
-                max(tmplab(:))
+                %max(tmplab(:))
                 if max(tmplab(:))>1 | strcmp(classif.description{1},'Image pixel regression') % image has labeled pixels or is a regression
 
                     if numel(pix)<=3
