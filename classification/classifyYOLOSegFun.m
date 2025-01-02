@@ -19,7 +19,6 @@ for i=1:numel(varargin)
       if strcmp(varargin{i},'Exec')
            gpu=varargin{i+1};
       end
-
 end
 
 
@@ -98,18 +97,32 @@ pix=roiobj.findChannelID(channel);
 image=roiobj.image;
 param=[];
 
-gfp=double(zeros(size(image,1),size(image,2),3,numel(frames)));
+%gfp=double(zeros(size(image,1),size(image,2),numel(pix),numel(frames)));
 
-for fr=frames % remove the loop on frames here !!!! andtry ti use a gpu array
-        gfp(:,:,:,fr)=roiobj.preProcessROIData(pix,fr,param);
+% Préparer les données GFP
+gfp = uint8(zeros(size(image, 1), size(image, 2), numel(pix), numel(frames)));
+
+cc = 1;
+for fr = frames
+    % Extraire la frame actuelle
+    tmp = roiobj.image(:, :, pix, fr);  % Dimensions [H, W, C]
+
+    % Normaliser avec mat2gray et convertir en uint8
+    tmp_uint8 = uint8(255 * mat2gray(tmp));
+  %  figure, imshow(tmp_uint8);
+
+    % Ajouter au tableau GFP
+    gfp(:, :, :, cc) = tmp_uint8 ;
+    cc = cc + 1;
 end
 
- gfp=uint8(gfp*256);
+ %gfp=uint8(gfp*256);
 
  % Sauvegarder la matrice `gfp` sur le disque
     tmp_mat_path = fullfile(classif.path, 'tmp.mat');
     save(tmp_mat_path, 'gfp');
     disp(['Matrice GFP sauvegardée à : ', tmp_mat_path]);
+
 
 % Set device based on GPU flag
 device = 'cpu';
@@ -150,7 +163,10 @@ disp(['Chemin du module export_yolo_results_to_hdf5 trouvé : ', export_function
 % Générer le script Python
 python_script_content = sprintf( ...
     "import sys\n" + ...
+    "import importlib\n" + ...
     "sys.path.append(r'%s')\n" + ...
+    "import export_yolo_results_to_hdf5\n" + ...
+    "importlib.reload(export_yolo_results_to_hdf5)\n" + ...
     "from export_yolo_results_to_hdf5 import export_yolo_results_to_hdf5\n" + ...
     "\n" + ...
     "from ultralytics import YOLO\n" + ...
@@ -158,6 +174,7 @@ python_script_content = sprintf( ...
     "import numpy as np\n" + ...
     "import os\n" + ...
     "import cv2\n" + ...
+    "\n" + ...
     "# Configurations\n" + ...
     "mat_path = r'%s'\n" + ...
     "project = r'%s'\n" + ...
@@ -166,22 +183,32 @@ python_script_content = sprintf( ...
     "\n" + ...
     "# Charger et prétraiter les images\n" + ...
     "gfp = sio.loadmat(mat_path)['gfp']\n" + ...
-    "print(f'Dimensions de gfp : {gfp.shape}')\n" + ...
-    "images = [cv2.cvtColor(img.astype(np.uint8), cv2.COLOR_GRAY2BGR) if img.ndim == 2 else img.astype(np.uint8) for img in gfp.transpose(3, 0, 1, 2)]\n" + ...
+    "print(f\'Dimensions de gfp : {gfp.shape}\')\n" + ...
     "\n" + ...
-    "# Charger le modèle YOLO et extraire la taille d'entrée\n" + ...
-    "model = YOLO(model_path)\n" + ...
-    "input_size = model.model.yaml['backbone'][0][3][0]  # Taille extraite du 'backbone'\n" + ...
-    "print(f'Taille d entrée extraite du backbone : {input_size}x{input_size}')\n" + ...
+    "# Convertir en liste d'images (H, W, C)\n" + ...
+    "images = [cv2.cvtColor(img.astype(np.uint8), cv2.COLOR_GRAY2BGR) if img.ndim == 2 else img.astype(np.uint8) \n" + ...
+    "          for img in gfp.transpose(3, 0, 1, 2)]\n" + ...
     "\n" + ...
-    "# Redimensionner les images\n" + ...
-    "resized_images = [cv2.resize(img, (input_size, input_size), interpolation=cv2.INTER_LINEAR) for img in images]\n" + ...
+    "# Déterminer la taille des images\n" + ...
+    "height, width = images[0].shape[:2]\n" + ...
+    "print(f\'Original image size: {height}x{width}\')\n" + ...
+    "\n" + ...
+    "# Calculer le multiple de 32 juste au-dessus\n" + ...
+    "target_height = int(np.ceil(height / 32) * 32)\n" + ...
+    "target_width = int(np.ceil(width / 32) * 32)\n" + ...
+    "print(f\'Adjusted model size (multiple of 32): {target_height}x{target_width}\')\n" + ...
+    "\n" + ...
+    "# Redimensionner les images à cette taille\n" + ...
+    "resized_images = [cv2.resize(img, (target_width, target_height), interpolation=cv2.INTER_LINEAR) for img in images]\n" + ...
+    "\n" + ...
+    "model=YOLO(model_path)\n" + ...
     "\n" + ...
     "# Effectuer le suivi et la segmentation\n" + ...
     "results = model.track(\n" + ...
     "    source=resized_images,\n" + ...
     "    device=0,\n" + ...
     "    save=True,\n" + ...
+    "    tracker='botsort.yaml',\n" + ...
     "    save_txt=True,\n" + ...
     "    project=project\n" + ...
     ")\n" + ...
@@ -189,8 +216,7 @@ python_script_content = sprintf( ...
     "# Exporter les résultats au format HDF5\n" + ...
     "export_yolo_results_to_hdf5(results, output_hdf5_path)\n" + ...
     "print(f'Resultats sauvegardés dans : {output_hdf5_path}')\n", ...
-    export_function_path,tmp_mat_path, classi_path, model_path);
-
+    export_function_path, tmp_mat_path, classi_path, model_path);
 
 % Afficher le contenu pour vérifier
 %disp(python_script_content);
@@ -230,6 +256,14 @@ hdf5_path = fullfile(classif.path, 'results.h5');
 info = h5info(hdf5_path);
 disp(info);
 
+% disp('Groupes et datasets dans le fichier HDF5 :');
+% for i = 1:numel(info.Groups)
+%     disp(['Groupe : ', info.Groups(i).Name]);
+%     disp('Datasets :');
+%     disp({info.Groups(i).Datasets.Name}); % Affiche les noms des datasets disponibles
+% end
+
+
 % for i = 1:numel(info.Groups)
 %     disp(['Groupe trouvé : ', info.Groups(i).Name]);
 %     disp('Datasets disponibles :');
@@ -241,9 +275,25 @@ disp(info);
 results = struct();
 
 % Parcourir les groupes (frames)
+frame_indices = zeros(1, numel(info.Groups)); % Pour stocker les indices numériques des frames
+
+% Extraire les indices numériques des frames
 for i = 1:numel(info.Groups)
     group_name = info.Groups(i).Name;  % Nom du groupe (ex: '/frame_0')
-    disp(['Lecture des données pour : ', group_name]);
+    % Extraire le numéro de la frame (après le dernier '_')
+    frame_index = sscanf(group_name, '/frame_%d');
+    frame_indices(i) = frame_index;
+end
+
+% Trier les indices et récupérer l'ordre de tri
+[~, sorted_indices] = sort(frame_indices);
+
+% Lire les données dans l'ordre trié
+results = struct([]);
+for sorted_idx = 1:numel(sorted_indices)
+    i = sorted_indices(sorted_idx);
+    group_name = info.Groups(i).Name;  % Nom du groupe (ex: '/frame_0')
+    %disp(['Lecture des données pour : ', group_name]);
     
     % Lire les boîtes englobantes
     boxes = h5read(hdf5_path, [group_name, '/boxes']);
@@ -256,6 +306,8 @@ for i = 1:numel(info.Groups)
     
     % Lire les masques
     masks = h5read(hdf5_path, [group_name, '/masks']);
+
+    track_ids = h5read(hdf5_path, [group_name, '/track_ids']);  % Lire les track IDs
     
     % Lire les attributs
     attrs = h5info(hdf5_path, group_name);
@@ -263,16 +315,16 @@ for i = 1:numel(info.Groups)
     original_shape = attrs.Attributes(strcmp({attrs.Attributes.Name}, 'original_shape')).Value;
     
     % Stocker les données dans la structure de résultats
-    results(i).frame_name = group_name;
-    results(i).boxes = boxes;
-    results(i).scores = scores;
-    results(i).class_ids = class_ids;
-    results(i).masks = masks;
-    results(i).path = path;
-    results(i).original_shape = original_shape;
+    results(sorted_idx).frame_name = group_name;
+    results(sorted_idx).boxes = boxes;
+    results(sorted_idx).scores = scores;
+    results(sorted_idx).class_ids = class_ids;
+    results(sorted_idx).masks = masks;
+    results(sorted_idx).path = path;
+    results(sorted_idx).track_ids = track_ids;  % Ajouter les track IDs
+    results(sorted_idx).original_shape = original_shape;
 end
 
-% Afficher un résumé des résultats
 disp('Lecture complète');
 
 
@@ -281,18 +333,25 @@ image_height = size(roiobj.image, 1);
 image_width = size(roiobj.image, 2);
 
 num_classes = numel(pixresults); %numel(classif.classes);  % Nombre de classes
-num_frames = numel(results);  % Nombre de frames dans les résultats
+num_frames = numel(results);
+
+% Nombre de frames dans les résultats
 
 % Initialiser la matrice tmpout
 tmpout = zeros(image_height, image_width, num_classes, num_frames);
 
 % Initialiser un compteur pour les instances par classe et frame
-instance_counters = zeros(num_classes, num_frames);
+%instance_counters = zeros(num_classes, num_frames);
+
+% Initialiser une map pour stocker les relations entre track_ids et instances
+track_id_to_instance_map = containers.Map('KeyType', 'double', 'ValueType', 'double');
+track_id_to_class_map = containers.Map('KeyType', 'double', 'ValueType', 'double'); % Associe les Track IDs aux classes
+instance_counter = 1; % Compteur global pour les instances
 
 % Parcourir les frames dans les résultats
 for frame_idx = 1:num_frames
     frame_results = results(frame_idx);
-    
+
     % Extraire l'image brute pour la frame (canal 1)
     raw_image = roiobj.image(:, :, 1, frame_idx);
 
@@ -321,6 +380,13 @@ for frame_idx = 1:num_frames
     % Extraire les scores
     scores = frame_results.scores;  % Tableau des scores
 
+     % Extraire les track IDs
+    if isfield(frame_results, 'track_ids') && ~isempty(frame_results.track_ids)
+        track_ids = frame_results.track_ids;  % Liste des track IDs
+    else
+        error('Les track IDs ne sont pas disponibles dans les résultats.');
+    end
+
     % Parcourir les objets détectés dans la frame
     for obj_idx = 1:size(boxes_xyxy, 2)  % Le nombre de colonnes correspond au nombre d'objets
         class_id = frame_results.class_ids(obj_idx) + 1;  % Indice de la classe (1-indexé pour MATLAB)
@@ -332,11 +398,36 @@ for frame_idx = 1:num_frames
             mask = imresize(mask, [size(roiobj.image, 1), size(roiobj.image, 2)], 'nearest');
         end
 
-        instance_counters(class_id, frame_idx)=instance_counters(class_id, frame_idx)+1;
-        % Ajouter le masque à la matrice tmpout avec la valeur de l'instance
-        tmpout(:, :, class_id, frame_idx) = tmpout(:, :, class_id, frame_idx) + ...
-                                            (mask * instance_counters(class_id, frame_idx));
+        % Extraire le track ID pour l'objet actuel
+        track_id = track_ids(obj_idx);
 
+        % Vérifier si le track ID existe déjà dans la map
+        if isKey(track_id_to_instance_map, track_id)
+            % Vérifier si la classe actuelle correspond à la classe enregistrée pour ce Track ID
+            if track_id_to_class_map(track_id) ~= class_id
+                warning('Conflit de classe pour le Track ID %d: Classe enregistrée %d, Classe actuelle %d.', track_id, track_id_to_class_map(track_id), class_id);
+              % disp('Conflit de classe')
+               % Créer une nouvelle instance pour éviter le conflit
+                instance_value = instance_counter;
+                track_id_to_instance_map(track_id) = instance_value;
+                track_id_to_class_map(track_id) = class_id; % Mettre à jour la classe associée
+                instance_counter = instance_counter + 1;
+            else
+                % Si la classe correspond, utiliser l'instance existante
+                instance_value = track_id_to_instance_map(track_id);
+            end
+        else
+            % Si le track ID est nouveau, l'ajouter à la map avec une nouvelle valeur d'instance
+            instance_value = instance_counter;
+            track_id_to_instance_map(track_id) = instance_value;
+            track_id_to_class_map(track_id) = class_id; % Associer la classe au Track ID
+            instance_counter = instance_counter + 1;
+        end
+        
+        % Ajouter le masque à la matrice tmpout avec la valeur d'instance unique
+        tmpout(:, :, class_id, frame_idx) = tmpout(:, :, class_id, frame_idx) + (mask * instance_value);
+
+        if debug_flag
         % Extraire la bounding box correspondante (colonne `obj_idx`)
         box_xyxy = boxes_xyxy(:, obj_idx)';
         
@@ -349,9 +440,8 @@ for frame_idx = 1:num_frames
         % Ajouter la bounding box à `bboxes`
         bboxes = [bboxes; box_xywh];
 
-        % Ajouter le label correspondant à `labels`
         detection_score = scores(obj_idx);  % Score de la détection
-        labels{end+1} = sprintf('%s #%d (%.2f)', classif.classes{class_id}, obj_idx, detection_score);
+        labels{end+1} = sprintf('%s #%d (%.2f)', classif.classes{class_id}, track_id, detection_score);
 
         % Redimensionner le masque pour correspondre à 512x512 pour l'affichage
         mask_resized = imresize(mask, [512, 512], 'nearest');
@@ -361,8 +451,10 @@ for frame_idx = 1:num_frames
         for c = 1:3
             mask_overlay(:, :, c) = mask_overlay(:, :, c) + mask_resized * color(c);
         end
+        end
     end
 
+     if debug_flag
     % Normaliser le masque pour éviter les débordements
     mask_overlay = mask_overlay / max(mask_overlay(:));
 
@@ -371,23 +463,20 @@ for frame_idx = 1:num_frames
         error('Le nombre de bounding boxes (%d) ne correspond pas au nombre de labels (%d).', size(bboxes, 1), numel(labels));
     end
 
-    if debug_flag
-    % Ajouter les annotations sur l'image brute
-    annotated_image = insertObjectAnnotation(uint8(overlay_image * 255), 'Rectangle', bboxes, labels);
+   
+        % Ajouter les annotations sur l'image brute
+        annotated_image = insertObjectAnnotation(uint8(overlay_image * 255), 'Rectangle', bboxes, labels);
 
-    % Ajouter le masque superposé à l'image annotée
-    final_image = imadd(uint8(annotated_image), uint8(mask_overlay * 255));
+        % Ajouter le masque superposé à l'image annotée
+        final_image = imadd(uint8(annotated_image), uint8(mask_overlay * 255));
 
-
-    % Afficher l'image annotée avec les masques superposés
-    figure;
-    imshow(final_image);
-    title(sprintf('Frame %d - Annotations et Masques', frame_idx));
-    drawnow;
+        % Afficher l'image annotée avec les masques superposés
+        figure;
+        imshow(final_image);
+        title(sprintf('Frame %d - Annotations et Masques', frame_idx));
+        drawnow;
     end
 end
-
-
 
 % Vérification de la matrice
 disp('Matrice tmpout construite avec succès.');
