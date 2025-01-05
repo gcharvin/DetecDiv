@@ -56,10 +56,10 @@ if  numel(classif.roi) < 1 || numel(classif.roi(1).value) < 4
     error('Invalid or missing ROI information in classif.');
 end
 
-imgsz=classif.roi(1).value(4); % image size multiplied by 4 to improve accuracy!!
+imgsz=max(256,classif.roi(1).value(4)); % image size multiplied by 4 to improve accuracy!!
 
 degrees=trainingParam.CNN_rotation_augmentation(2);
-translate= trainingParam.CNN_translation_augmentation(2) / imgsz;
+translate= trainingParam.CNN_translation_augmentation(2)/classif.roi(1).value(4);
 optimizer=trainingParam.CNN_training_method{end};
 
 switch trainingParam.execution_environment{end}
@@ -83,7 +83,7 @@ if isempty(device)
 elseif isnumeric(device)
     device_param = sprintf("        device=%d,\n", device); % Inclure le paramètre avec un nombre
 else
-    device_param = sprintf("        device='%s',\n", device); % Inclure le paramètre avec une chaîne
+    device_param = sprintf("        device=cpu,\n"); % Inclure le paramètre avec une chaîne
 end
 
 python_script_content = sprintf( ...
