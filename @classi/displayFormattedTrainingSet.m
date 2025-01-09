@@ -192,7 +192,11 @@ switch cate
                %     else
                  %       size(tmp)
                 %       class(tmp)
+                try
                         img{cc}=tmp;
+                catch
+
+                end
                 %    end
 
                     % catch 
@@ -201,8 +205,11 @@ switch cate
                     cc=cc+1;
                 end
 
+                try
                 figure;
                 himg=montage(img);
+                catch
+                end
              %   title(l(i).name)
             end
 

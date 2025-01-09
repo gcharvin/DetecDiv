@@ -191,13 +191,16 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
         end
     end
 
+
+
     if goclassif==1
 
         if numel(roiobj(i).image)==0
             roiobj(i).load;
+      
         end
 
-        ROIpreprocessing(roiobj(i),classiobj)
+        ROIpreprocessing(roiobj(i),classiobj);
 
         fra=1:size(roiobj(i).image,4);
 
@@ -295,16 +298,6 @@ for i=1:numel(logparf)
     [idx,data,image]=fetchNext(logparf(i));
 
     ROIManagement(roiobj(idx),data, image);
-%     roiobj(idx).results=results; 
-% 
-%     roiobj(idx).image=image; 
-%     roiobj(idx).save
-%     roiobj(idx).clear;
-
- %   aa=results.my_classi_1.id
-    % here image is empty !!!!
-  %  roiout.save; 
-  %  roiout.clear,
 end
 end
 
@@ -323,7 +316,7 @@ if strcmp(classif.category,'Pixel')
 
   if ~strcmp(classif.description{3},'Solov2')  
 switch classif.outputType
-    case 'proba' % outputs proba of classes
+    case {'proba',''} % outputs proba of classes
         pixresults=[];
         for i=1:numel(classif.classes)
             pixresultstmp=findChannelID(roiobj,['results_' classif.strid '_' classif.classes{i}]); % gather all channels associated with proba

@@ -60,9 +60,9 @@ if numel(frames)==0
 frames = 1:size(roiobj.image, 4); % Default to all frames if not specified
 end
 
-if numel(roiobj.image)==0 % load stored image in any case
-    roiobj.load;
-end
+% if numel(roiobj.image)==0 % load stored image in any case
+%     roiobj.load;
+% end
 
 data=roiobj.data;
 if numel(data)==0
@@ -77,12 +77,14 @@ pix=roiobj.findChannelID(channel);
     end
 
         pixresults=[]; % channels where each mask for each class is stored
+        cd=1;
         for i=1:numel(classif.classes)
             pixresultstmp=findChannelID(roiobj,['results_' classif.strid '_' classif.classes{i}]);
             % gather all channels associated with proba
 
             if numel(pixresultstmp)==0 % channel does not exist, hence create them
-                pixresults=[pixresults size(roiobj.image,3)];
+                pixresults=[pixresults size(roiobj.image,3)+cd];
+                cd=cd+1;
             else
                 pixresults=[pixresults pixresultstmp];
             end
@@ -592,6 +594,7 @@ disp(size(tmpout));  % Affiche les dimensions : [H, W, num_classes, num_frames]
     image = roiobj.image;
   
     disp('Traitement des résultats terminé.');
+
 
 
 image(:,:,pixresults,frames)=tmpout;
