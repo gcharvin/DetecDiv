@@ -190,7 +190,7 @@ for i=1:numel(rois)
                     end
 
                     if strcmp(classif.description{1},'Image pixel regression')
-                    imwrite(tmplab(:,:,:,j),[classif.path '/' foldername '/labels/' cltmp(rois(i)).id '_frame_' tr '.tif']); % raw image
+                    imwrite(tmplab,[classif.path '/' foldername '/labels/' cltmp(rois(i)).id '_frame_' tr '.tif']); % raw image
                     else
                     imwrite(labels(:,:,:,j),[classif.path '/' foldername '/labels/' cltmp(rois(i)).id '_frame_' tr '.tif']); % labeled image
                     end
