@@ -122,14 +122,18 @@ imageSize = [adjustedHeight, adjustedWidth, imageSize(3)];
 
 % Créer le réseau U-Net
 lgraph = unetLayers(imageSize, 3, 'EncoderDepth', 3); % Temporarily set numClasses = 2
+%here 
 
+myL1LossLayer = l1LossLayer('L1LossOutput'); % regression layer based on L1 error function, rather than L2 error function 
 % Ajouter une couche de régression (le nom "regressionOutput" peut être utilisé ici)
-myregressionLayer = regressionLayer('Name', 'regressionOutput');
+%myregressionLayer = regressionLayer('Name', 'regressionOutput');
 
 lgraph = removeLayers(lgraph, 'Softmax-Layer'); % Supprimer la couche Softmax
 lgraph = removeLayers(lgraph, 'Segmentation-Layer');
-lgraph = addLayers(lgraph, myregressionLayer);
-lgraph = connectLayers(lgraph, 'Final-ConvolutionLayer', 'regressionOutput');
+%lgraph = addLayers(lgraph, myregressionLayer);
+lgraph = addLayers(lgraph, myL1LossLayer);
+%lgraph = connectLayers(lgraph, 'Final-ConvolutionLayer', 'regressionOutput');
+lgraph = connectLayers(lgraph, 'Final-ConvolutionLayer', 'L1LossOutput');
 %analyzeNetwork(lgraph);
 else
     disp(['Loading previously trained network: ' trainingParam.transfer_learning{end}]);

@@ -49,11 +49,13 @@ for i=1:numel(rois)
     cc=cltmp(rois(i)).findChannelID(classif.strid); % classical labeled channel
     end
 
+    
     if numel(cc)>0
 
         if numel(cltmp(rois(i)).image)==0
             cltmp(rois(i)).load; % load image sequence
         end
+
 
         if strcmp(classif.description{1},'Image pixel regression')
         pix=cltmp(rois(i)).findChannelID(channel{1});
@@ -65,6 +67,7 @@ for i=1:numel(rois)
         if iscell(pix)
             pix=cell2mat(pix);
         end
+
         
       
 
@@ -128,6 +131,8 @@ for i=1:numel(rois)
     for j=1:size(im,4) %time
         tmp=im(:,:,:,j);
 
+        
+
       %  if strcmp(classif.description{1},'Image pixel regression')
       %  labtmp= lab(:,:,:,j);
       %  end
@@ -148,6 +153,8 @@ for i=1:numel(rois)
             % 
             %     tmp= imresize(tmp, [newM newN]);
             % end
+
+           
 
              if strcmp(classif.description{1},'Image pixel regression')
                 tmplab= cltmp(rois(i)).preProcessROIData(cc,j,param);
@@ -182,7 +189,7 @@ for i=1:numel(rois)
                 if max(tmplab(:))>1 | strcmp(classif.description{1},'Image pixel regression') % image has labeled pixels or is a regression
 
                     if numel(pix)<=3
-
+                       
                         imwrite(tmp,[classif.path '/' foldername '/images/' cltmp(rois(i)).id '_frame_' tr '.tif']);
 
                     else % multispectral image

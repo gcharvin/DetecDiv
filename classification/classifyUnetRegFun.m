@@ -74,6 +74,8 @@ function [results, imageout] = classifyUnetRegFun(roiobj, classif, classifier, v
             batchGfp = gpuArray(batchGfp);
         end
 
+       % figure, imshow(batchGfp,[]);
+
         % Prédictions via U-Net
         if gpu == 1
             batchOutput = predict(net, batchGfp, 'ExecutionEnvironment', 'gpu');
@@ -81,7 +83,7 @@ function [results, imageout] = classifyUnetRegFun(roiobj, classif, classifier, v
             batchOutput = predict(net, batchGfp, 'ExecutionEnvironment', 'cpu');
         end
 
-       % figure, imshow(batchOutput,[]);
+       % figure, imshow(100*batchOutput,[]);
 
         % Collecter les résultats
         if isempty(outputImages)
