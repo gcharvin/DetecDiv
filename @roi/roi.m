@@ -1,57 +1,39 @@
 classdef roi < handle
     properties
-        % default properties with values
-        id='';
-        value %
-        %gfp % list of grayscale images that contain gfp data (m x n x time x channel)
-        %gfpchannel
-        %phasechannel
-        path
-        %intensity=0.2; % intensity of fluoresecence displayed on view gui
-        %brushSize=3;
-        %phc % list of grayscale images that contain ph data
-
-        image=[]; % . images for field of view
-        channelid=1;
-        % imagestr={}; % contains the description for each image
-        proc=[]; % sturct that contains all possible prcessing data
-
+        id=''; % name of the ROI
+        value % indicates the x, y, width height of the ROI in the original image
+        path % indicates the absolute path of the image to be loaded with load() method
+        image=[]; % 4-D image of the roi : x, y, channel, time
+        channelid=1; % nx1 array of numbers that indicates how the channels are organized within the image; exemple : channelid: [1 1 1 2 3 4 5 6] means that the first channel is composed of 3 subchannels, and there are 6 channels in total
         parent=[] % reference of the parent field of view
-
         display=struct('intensity',[1 1 1],'frame',1,'selectedchannel',1,'binning',1,'rgb',[1 1 1],'channel',{'Channel 1'},'stretchlim',[],'displaylim',[0 ; 1]);
+        % display struct structure : 
+        % intensity: nx3 array, n is the number of channels; if all 3
+        % elements are 0 for a given channel, then image is an indexed
+        % image ; could be used t indicates the weight of an image. 
+        % frame : current time frame to be displayed within the 4-D image
+        % selectedchannel : nx1 array, n is the number of channels . If element == 1, then channel should be displayed, otherwise not. 
+        %binning : n x 1 array, n is the number of channels. Indicats the binning number of the image 
+        % rgb : n x 3 array, n is the number of channels, indicates the
+        % color to use for display
+        % channel : 1xn cell array of string; indicates the channel name; 
+        %stretchlim : n x 2 array that indicates how the image limit are
+        %computed before processing
+        % displaylim : n x 2 array that indicates how the image limits are
+        % computed 
 
-        % stretchlim : is the levels used to perform preprocessing
-        % displaylim are the levels used to display the images
+
 
         history=table('Size',[1 3],'VariableTypes',{'datetime','string','string'},'VariableNames',{'Date','Category','Message'});
 
+        %unused properties : 
+        proc=[];
         classes={};
-        train=[] ; %1D array that has the size of the 4rd dim of the image array and contains assigned classes; is defined when ROI is assigned to classification
-
-        results=[]; %display results if based on classification-> an array that has the same size as the number of frames
+        train=[] ; 
+        results=[];
 
         data=dataseries; % array of dataseries objects
 
-        % displays a list of channels in RGB channels
-        %train=[] % list of rgb images that contain pixel training data
-        %classi=[] % list of rgb images that contain pixel classification RGB image , only second channel is useful
-        %traintrack=[]; % list of grayscale images that contains training for nucleus tracking results
-        %track=[] % array that contains 1) the nucleus index to be tracked (classification result) : 0 if no tracking 2) other information related to tracking : division etc...
-
-        %cavity=[]; % geometrical information avout cavity
-        %area=[]; % area of nucleus in trajectory NOT USED
-        %param=[]; % predictors used ? NOT USED
-
-        %data=struct('fluo',[],'area',[]);
-        %data.fluo=[]; % quantification of total fluorescence in mother nucleus
-
-        %rls=[];
-
-        %div=struct('reject',[],'raw',[],'classi',[],'tree',[],'dead',[],'daughter',[],'stop',[]) % structure that contains all relevant info about division, including training and classification
-
-        %frame=1; %current frame being displayed;
-        %pixtree % pix classifier
-        %objtree % object trajectory classifier
     end
     methods
         function obj = roi(id,roiarr)
@@ -63,13 +45,6 @@ classdef roi < handle
 
             obj.id=id;
             obj.value=roiarr;
-            %  obj.gfp=gfp;
-            %obj.phc=phc;
-
-            %obj.classi=uint8(zeros(size(gfp,1),size(gfp,2),3,size(gfp,3)));
-            %obj.train= uint8(zeros(size(gfp,1),size(gfp,2),3,size(gfp,3)));
-            %obj.traintrack= uint8(zeros(size(gfp,1),size(gfp,2),3,size(gfp,3)));
-            %obj.track= uint8(zeros(size(gfp,1),size(gfp,2),size(gfp,3)));
         end
 
         function dataout=getData(roiobj,str)
@@ -128,7 +103,7 @@ classdef roi < handle
 
            pixdata=find(arrayfun(@(x) strcmp(x.groupid, classistr),roiobj.data)); % find if object exists already
             
-           datas=roiobj.data(pixdata)
+           datas=roiobj.data(pixdata);
 
            if numel(find(matches(datas.data.Properties.VariableNames,'id_training')))
            dataout=datas.data.('id_training');
