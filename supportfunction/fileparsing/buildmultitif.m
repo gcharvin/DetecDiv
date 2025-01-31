@@ -36,12 +36,13 @@ for i=1:numel(filelist)
     cc=cc+1;
 end
 
-
-
-if numel(tmp)>0 %positions are terminated by a numer, so sort them
-    [sortedres ix]=sort(res);
-    output.pos=output.pos(ix);
+if numel(res) > 0
+    [sortedres, ix] = sort(res);
+    output.pos = output.pos(ix);
+else
+    sortedres = 1:numel(output.pos); % Définit un tri par défaut
 end
+
 
 cc=1;
 output.comments=[output.comments num2str(numel(output.pos)) ' positions were identifed' char(10)];
