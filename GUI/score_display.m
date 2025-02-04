@@ -165,7 +165,7 @@ end
 score_updateHistogram(app, mode);
 
 if app.LineIntensityprofileButton.Value % mise à jour du profil
-    updateIntensityProfile(app, getPosition(app.LineIntensityProfileLine));
+  score_updateIntensityProfile(app, getPosition(app.LineIntensityProfileLine));
 end
 
 if app.ShapeButton.Value % mise à jour du profil

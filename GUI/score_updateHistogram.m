@@ -5,7 +5,8 @@ function score_updateHistogram(app, mode)
     end
 
     % Récupérer la ROI sélectionnée
-    selectedROIIndex = find(cell2mat(app.UIChannelTable.Data(:, 1)), 1);
+    %selectedROIIndex = find(cell2mat(app.UIChannelTable.Data(:, 1)), 1);
+    selectedROIIndex = find(cell2mat(app.UIROITable.Data(:,1)), 1);
     if isempty(selectedROIIndex)
         return;
     end
