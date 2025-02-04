@@ -1,12 +1,11 @@
 function score_updateHistogram(app, mode)
-    
-% Vérifier qu'une ROI est sélectionnée
+    % Vérifier qu'une ROI est sélectionnée
     if isempty(app.content.ROIList)
         return;
     end
 
     % Récupérer la ROI sélectionnée
-    selectedROIIndex = find(cell2mat(app.UIROITable.Data(:, 1)), 1);
+    selectedROIIndex = find(cell2mat(app.UIChannelTable.Data(:, 1)), 1);
     if isempty(selectedROIIndex)
         return;
     end
@@ -33,25 +32,27 @@ function score_updateHistogram(app, mode)
         end
     end
 
-    % Récupérer les cases cochées depuis la table
+    % Récupérer les cases cochées depuis la table (colonne 1)
     if isempty(app.UIChannelTable.Data)
         cla(app.UIDisplayAxes);
         return;
     end
     checkboxValues = cell2mat(app.UIChannelTable.Data(:, 1));
     displayedChannels = colorChannels(checkboxValues);
+    
+    if isempty(displayedChannels)
+        cla(app.UIDisplayAxes);
+        return;
+    end
 
-
-   % --- Mise à jour en mode refresh ---
+    % --- Mode refresh : mise à jour rapide si possible ---
     if strcmp(mode, 'refresh')
         if isempty(app.HistogramEdges) || isempty(app.HistogramLines) || (length(app.HistogramLines) ~= length(displayedChannels))
-   
             score_updateHistogram(app, 'slow');
             return;
         end
         for k = 1:length(app.HistogramLines)
             if ~isvalid(app.HistogramLines(k))
-          
                 score_updateHistogram(app, 'slow');
                 return;
             end
@@ -72,75 +73,64 @@ function score_updateHistogram(app, mode)
                 lowVal = selectedROI.display.displaylim(1, channelIdx) * 65535;
                 highVal = selectedROI.display.displaylim(2, channelIdx) * 65535;
                 if ~isvalid(app.HistogramLimits(2*k-1)) || ~isvalid(app.HistogramLimits(2*k))
-                   
                     score_updateHistogram(app, 'slow');
                     return;
                 end
                 set(app.HistogramLimits(2*k-1), 'Value', lowVal);
-                set(app.HistogramLimits(2*k),   'Value', highVal);
+                set(app.HistogramLimits(2*k), 'Value', highVal);
                 if all(selectedROI.display.rgb(channelIdx, :) >= 0.99)
                     rgbColorPlot = [0, 0, 0];
                 else
                     rgbColorPlot = selectedROI.display.rgb(channelIdx, :);
                 end
                 set(app.HistogramLimits(2*k-1), 'Color', rgbColorPlot);
-                set(app.HistogramLimits(2*k),   'Color', rgbColorPlot);
+                set(app.HistogramLimits(2*k), 'Color', rgbColorPlot);
             end
         else
-        
             score_updateHistogram(app, 'slow');
             return;
         end
         return;
     end
 
-
-    
-    if isempty(displayedChannels)
-        cla(app.UIDisplayAxes);
-        return;
-    end
-
-    % Effacer l'axe et activer le hold pour accumuler tous les tracés
+    % --- Mode slow : recalcul complet ---
     cla(app.UIDisplayAxes);
     hold(app.UIDisplayAxes, 'on');
 
-    % Définir le nombre de bins et les bords pour l'histogramme (échelle logarithmique)
     numBins = 200;
     edges = logspace(0, log10(65535), numBins);
     histogramData = cell(1, length(displayedChannels));
     hLines = gobjects(1, length(displayedChannels));
     allPixelValues = [];
-
-    % Pour stocker les valeurs médianes et le nom de chaque canal affiché
     medianValues = cell(1, length(displayedChannels));
     channelNames = cell(1, length(displayedChannels));
 
-    
     for k = 1:length(displayedChannels)
         channelIdx = displayedChannels(k);
-        % Vérifier si le canal est RGB
+        % Vérifier si le canal est RGB ou monochrome
         pix = selectedROI.findChannelID(selectedROI.display.channel{channelIdx});
         if numel(pix) == 3
             % Pour un canal RGB, extraire les 3 composantes et calculer une image en niveaux de gris
             rawR = double(selectedROI.image(:, :, pix(1), frameIndex));
             rawG = double(selectedROI.image(:, :, pix(2), frameIndex));
             rawB = double(selectedROI.image(:, :, pix(3), frameIndex));
-            % Conversion en niveaux de gris (pondération standard)
             imgChannel = 0.2989 * rawR + 0.5870 * rawG + 0.1140 * rawB;
         else
             imgChannel = double(selectedROI.image(:, :, channelIdx, frameIndex));
         end
         
-        % Calcul de l'histogramme sur les valeurs brutes (sans normalisation)
+        % Calcul de l'histogramme sur les valeurs brutes
         [counts, ~] = histcounts(imgChannel, edges);
-        counts(counts == 0) = NaN;  % pour éviter des zéros sur une échelle logarithmique
+        counts(counts == 0) = NaN;  % éviter des zéros sur une échelle logarithmique
         histogramData{k} = counts;
         allPixelValues = [allPixelValues; imgChannel(:)];
         
-        channelNames{k} = selectedROI.display.channel{channelIdx};
-         % Calculer la médiane des pixels pour ce canal
-        medianValues{k} = median(imgChannel(:));
+        % Calculer la médiane des pixels pour ce canal
+        medianVal = median(imgChannel(:));
+        medianValues{k} = medianVal;
+        
+        % Préparer le nom du canal pour la légende, avec la médiane
+        channelNames{k} = sprintf('%s (Med=%.0f)', selectedROI.display.channel{channelIdx}, medianVal);
         
         % Définir la couleur d'affichage (forcer le noir si la couleur est blanche)
         rgbColor = selectedROI.display.rgb(channelIdx, :);
@@ -150,7 +140,7 @@ function score_updateHistogram(app, mode)
             rgbColorPlot = rgbColor;
         end
         
-        % Tracer la courbe d'histogramme sans effacer les précédentes
+        % Tracer la courbe d'histogramme
         hLines(k) = plot(app.UIDisplayAxes, edges(1:end-1), counts, 'Color', rgbColorPlot, 'LineWidth', 1.5);
     end
 
@@ -158,38 +148,37 @@ function score_updateHistogram(app, mode)
     minPixelValue = max(min(allPixelValues), 1);
     maxPixelValue = min(max(allPixelValues), 65535);
     set(app.UIDisplayAxes, 'XScale', 'log', 'YScale', 'log');
-    xlim(app.UIDisplayAxes, [0.8*minPixelValue, 1.2*maxPixelValue]);
+    xlim(app.UIDisplayAxes, [0.8 * minPixelValue, 1.2 * maxPixelValue]);
     ylim(app.UIDisplayAxes, [1, max(cellfun(@(x) max(x(:)), histogramData)) * 1.2]);
     
     xlabel(app.UIDisplayAxes, 'Pixel Intensity');
     ylabel(app.UIDisplayAxes, 'Pixel Count');
-   % title(app.UIDisplayAxes, 'Histogram');
-
-   % Concaténer les médianes dans le titre
-    titleStr = 'Med:';
-    for k = 1:length(displayedChannels)
-        titleStr = [titleStr sprintf('%s : %.0f; ', channelNames{k}, medianValues{k})];
-    end
-    titleStr = [titleStr ')'];
-    title(app.UIDisplayAxes, titleStr);
     
-    % Création ou mise à jour des lignes verticales pour les limites (Low/High)
-    numLimits = 2 * length(displayedChannels);
-    hLimits = gobjects(numLimits, 1);
-    for k = 1:length(displayedChannels)
-        channelIdx = displayedChannels(k);
-        lowVal = selectedROI.display.displaylim(1, channelIdx) * 65535;
-        highVal = selectedROI.display.displaylim(2, channelIdx) * 65535;
-        rgbColor = selectedROI.display.rgb(channelIdx, :);
-        if all(rgbColor >= 0.99)
-            rgbColorPlot = [0, 0, 0];
-        else
-            rgbColorPlot = rgbColor;
-        end
-        hLimits(2*k-1) = xline(app.UIDisplayAxes, lowVal, '--', 'Color', rgbColorPlot, 'LineWidth', 1);
-        hLimits(2*k)   = xline(app.UIDisplayAxes, highVal, '--', 'Color', rgbColorPlot, 'LineWidth', 1);
+    % Au lieu d'utiliser le titre pour afficher la médiane, on les place dans la légende
+    legend(app.UIDisplayAxes, channelNames, 'Interpreter', 'none');
+    
+    % Tracer les lignes verticales pour les limites (Low/High)
+   % Création ou mise à jour des lignes verticales pour les limites (Low/High)
+numLimits = 2 * length(displayedChannels);
+hLimits = gobjects(numLimits, 1);
+for k = 1:length(displayedChannels)
+    channelIdx = displayedChannels(k);
+    lowVal = selectedROI.display.displaylim(1, channelIdx) * 65535;
+    highVal = selectedROI.display.displaylim(2, channelIdx) * 65535;
+    rgbColor = selectedROI.display.rgb(channelIdx, :);
+    if all(rgbColor >= 0.99)
+        rgbColorPlot = [0, 0, 0];
+    else
+        rgbColorPlot = rgbColor;
     end
-    app.HistogramLimits = hLimits;
+    hLimits(2*k-1) = xline(app.UIDisplayAxes, lowVal, '--', 'Color', rgbColorPlot, 'LineWidth', 1);
+    hLimits(2*k)   = xline(app.UIDisplayAxes, highVal, '--', 'Color', rgbColorPlot, 'LineWidth', 1);
+    % Exclure les lignes verticales de la légende
+    hLimits(2*k-1).Annotation.LegendInformation.IconDisplayStyle = 'off';
+    hLimits(2*k).Annotation.LegendInformation.IconDisplayStyle = 'off';
+end
+app.HistogramLimits = hLimits;
+
     
     % Stocker les données et handles pour le mode refresh
     app.HistogramEdges = edges;
@@ -197,7 +186,5 @@ function score_updateHistogram(app, mode)
     app.HistogramChannels = displayedChannels;
     app.HistogramLines = hLines;
     
-    % Désactiver le hold
     hold(app.UIDisplayAxes, 'off');
-    
 end
