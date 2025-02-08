@@ -63,30 +63,58 @@ for i=1:numel(datagroups)
     end
 
     dat=datagroups(i).Source.nodename;
-    rois=datagroups(i).Data.roiobj
+    rois=datagroups(i).Data.roiobj;
 
     %   for j=1:numel(dat) % loop on plotted data types
 
     j=cd(i);
 
-    str=[datagroups(i).Name ' // ' dat{j}{1} ' // ' dat{j}{2}]
+    str=[datagroups(i).Name ' // ' dat{j}{1} ' // ' dat{j}{2}];
 
-    d=dat{j};
+    d=dat{j}
 
     xout={};
     yout={};
 
     cc=1;
 
-    groups={rois(1).data.groupid};
+% --- Recherche du data item correspondant dans les ROIs ---
+found = false;  % drapeau indiquant si un data item correspondant a été trouvé
 
-    pix=find(matches(groups,d{1}));
-    tt= rois(1).data(pix).getData(d{2});
-
-    if isnumeric(tt)
-        disp(['Those data:  ' num2str(d{1}) ' are numeric, yet I expect event-type data; quitting ....' ]);
-        return
+% Utiliser une variable différente (r) pour itérer sur les rois
+for r = 1:numel(rois)
+    % Vérifier que le ROI courant contient des data items
+    if isempty(rois(r).data)
+        continue;  % passer au ROI suivant
     end
+
+    % Extraire les groupid de chaque data de ce ROI
+    groupIdsRoi = arrayfun(@(x) x.groupid, rois(r).data, 'UniformOutput', false);
+
+    % Chercher les indices où groupid correspond à d{1}
+    pix = find(matches(groupIdsRoi, d{1}));
+
+    % Si au moins un data item est trouvé, on le récupère et on quitte la boucle
+    if ~isempty(pix)
+        tt = rois(r).data(pix(1)).getData(d{2});
+        found = true;
+        break;
+    end
+end
+
+% Si aucun data item n'a été trouvé dans aucun ROI, on affiche un avertissement et on quitte.
+if ~found
+    warning('Aucun des ROIs ne contient un data item avec groupid "%s".', d{1});
+    return;
+end
+
+% Vérifier que le data récupéré n'est pas numérique (car l'on attend des données de type événement)
+if isnumeric(tt)
+    disp(['Les données associées au groupid ' num2str(d{1}) ' sont numériques, or j''attends des données de type événement; arrêt ...']);
+    return;
+end
+
+
 
     for k=1:numel(rois)
         % collect the selected data

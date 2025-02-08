@@ -160,194 +160,233 @@ classdef shallow < handle
             end
             
         end
+
+  function obj = setSrcPath(obj, option)
+% setSrcPath met à jour le chemin source (srcpath) de chaque FOV en ne modifiant
+% que la base du chemin.
+%
+% USAGE :
+%   obj = obj.setSrcPath()              % Utilise le mode GUI par défaut
+%   obj = obj.setSrcPath(option)        % option peut être 'GUI' ou 'command'
+%
+% Seule la partie de base du chemin sera modifiée pour tous les FOV et tous les canaux.
+%
+% Exemple :
+%   Si le chemin actuel est :
+%       'C:\AncienneBase\projet\images'
+%   et que l'utilisateur souhaite remplacer 'C:\AncienneBase' par 'D:\NouvelleBase',
+%   alors le chemin sera mis à jour en :
+%       'D:\NouvelleBase\projet\images'
+
+    % Par défaut, utiliser le mode GUI si aucun argument n'est fourni
+    if nargin < 2
+        option = 'GUI';
+    end
+
+    % Vérifier qu'au moins un chemin source existe
+    if isempty(obj.fov) || isempty(obj.fov(1).srcpath) || isempty(obj.fov(1).srcpath{1})
+        disp('Aucun chemin source n''a été défini pour les FOVs. Opération annulée.');
+        return;
+    end
+
+    % Afficher le chemin source actuel du premier FOV pour référence
+    disp('Chemin source actuel du premier FOV :');
+    disp(obj.fov(1).srcpath{1});
+
+    % Demander une seule fois le changement de la base du chemin
+    switch lower(option)
+        case 'gui'
+            prompt = {'Saisissez la partie du chemin à remplacer (base) :', ...
+                      'Saisissez la nouvelle base :'};
+            dlgTitle = 'Mise à jour unique du chemin source';
+            dims = [1 150];
+            % Par défaut, on propose d'afficher le chemin complet actuel pour info
+            defInput = {obj.fov(1).srcpath{1}, ''};
+            answer = inputdlg(prompt, dlgTitle, dims, defInput);
+            if isempty(answer)
+                disp('Mise à jour annulée par l''utilisateur.');
+                return;
+            end
+            oldBase = answer{1};
+            newBase = answer{2};
+        case 'command'
+            oldBase = input('Saisissez la partie du chemin à remplacer (base) : ', 's');
+            if isempty(oldBase)
+                disp('Aucune saisie. Mise à jour annulée.');
+                return;
+            end
+            newBase = input('Saisissez la nouvelle base : ', 's');
+            if isempty(newBase)
+                disp('Aucune saisie. Mise à jour annulée.');
+                return;
+            end
+        otherwise
+            error('Option inconnue. Utilisez "GUI" ou "command".');
+    end
+
+    % Pour chaque FOV et pour chaque canal de srcpath, remplacer la base spécifiée
+    for i = 1:numel(obj.fov)
+        
+        for k = 1:numel(obj.fov(i).srcpath)
+            
+            currentPath = obj.fov(i).srcpath{k};
+            % Remplacer l'ancienne base par la nouvelle base
+            updatedPath = replace(currentPath, oldBase, newBase);
+            
+            % Normaliser les séparateurs de dossiers en fonction du système
+            if ispc
+                updatedPath = strrep(updatedPath, '/', '\');
+            else
+                updatedPath = strrep(updatedPath, '\', '/');
+            end
+    
+            % Vérifier que le dossier mis à jour existe
+            if isfolder(updatedPath)
+
+                obj.fov(i).srcpath{k} = updatedPath;
+            else
+                'not ok'
+     
+                warning('Le dossier "%s" n''existe pas. Chemin non mis à jour pour FOV %d, canal %d.', ...
+                        updatedPath, i, k);
+            end
+        end
+    end
+
+    disp('La mise à jour du chemin de base des FOVs est effectuée.');
+end
+
+
+
         function [path,file]= getPath(obj) % filename contains a list of path to images used in the movi project
             %  obj.props.path=pathname;
             % obj.props.name=filename;
-            
+
             path=obj.io.path;
             file=obj.io.file;
         end
-        
-        function obj = setSrcPath(obj,option) %
-            % this function will be written to ensure that source image path
-            % can be updated when necessary
-            % display current path for first channel of each FOV
-            
-            % option : path is changed at the command line. Default : GUI
-            % change
-            % HERE
-            
-            if numel(obj.fov(1).srcpath{1})~=0 % srce path has been set for at leats one FOV; update ?
-                
-                for i=1:numel(obj.fov)
-                    disp(['Path for FOV: ' num2str(i)])
-                    disp([obj.fov(i).srcpath{1}]);
-                end
-            else
-                disp('there is no path for FOVs; Quitting !');
-                return
-            end
-            
-            
-            %for i=1
-            strpath=pwd;
-            
-%             prompt='Reassign FOV path all at once? [y/n] (Default: y)';
-%             defaultclass= input(prompt,'s');
-%             if numel(defaultclass)==0
-%                 defaultclass='y';
+
+%         function obj = setSrcPath(obj,option) %
+%             % this function will be written to ensure that source image path
+%             % can be updated when necessary
+%             % display current path for first channel of each FOV
+% 
+%             % option : path is changed at the command line. Default : GUI
+%             % change
+%             % HERE
+% 
+%             if numel(obj.fov(1).srcpath{1})~=0 % srce path has been set for at leats one FOV; update ?
+% 
+%                 for i=1:numel(obj.fov)
+%                     disp(['Path for FOV: ' num2str(i)])
+%                     disp([obj.fov(i).srcpath{1}]);
+%                 end
+%             else
+%                 disp('there is no path for FOVs; Quitting !');
+%                 return
 %             end
-            
-         %   if strcmp(defaultclass,'y') % path is changed automatically for all FOVs
-         
-%                 prompt='Use GUI to change path [y/n] (Default: n)';
-%                 guipath= input(prompt,'s');
-%                 if numel(defaultclass)==0
-%                     guipath='n';
-%                 end
-                
-                if nargin==1 % path is changed using GUI
-                    for i=1:numel(obj.fov)
-                        for k=1:numel(obj.fov(i).srcpath)
-                            if i==1 && k==1
-                                
-                                prompt = {obj.fov(i).srcpath{k}};
-                                dlgtitle = 'Please enter the correct path for this directory (ignore / versus \):';
-                                dims = [1 150];
-                                definput = {obj.fov(i).srcpath{k}};
-                                answer = inputdlg(prompt,dlgtitle,dims,definput);
-
-                                if numel(answer)==0
-                                    return;
-                                end
-                                
-                                oldpath=obj.fov(i).srcpath{k};
-                                % identidy part of the path to be changed: 
-                                str='';
-
-
-                                for n=0:numel(oldpath)-1
-                                    str=oldpath(end-n:end);
-                                    if numel(strfind(answer{1},str))==0
-                                        break
-                                    end
-                                end
-                                
-                                yo=oldpath(end-n+1:end);
-                                oldbase= oldpath(1:end-n);
-                                newbase=split(answer{1},yo);
-                                newbase=newbase{1};
-                                
-                             %   strpath=uigetdir(strpath,'Input the base folder');
-                                
-                              %  if strpath==0
-                              %      return;
-                              %  end
-                                
-%                                 if ispc
-%                                     p=strfind(strpath,'\');
-%                                 else
-%                                     p=strfind(strpath,'/') ;
-%                                 end
-                             %   basepath=strpath(1:p(end-1)-1);
-                                
-                            end
-                            
-                            tmp=obj.fov(i).srcpath{k};
-                            sp=split(tmp,oldbase);
-                            kep=sp{2};
-                            
-                       %    if ispc
-                       %        p=strfind(tmp,'\');
-                       %    else
-                      %          p=strfind(tmp,'/');
-                      %     end
-                            
-                       %     p
-                      %      tmp=tmp(p(end-1):end);
-                            
-                       %     finalpath=[basepath tmp];
-                            
-                               finalpath=fullfile([newbase kep]);
-                             %  return
-                            
-                            if isfolder(finalpath)
-                                obj.fov(i).srcpath{k}=finalpath;
-                                
-                           %     obj.fov(i).srcpath{k}
-                           %    if ispc
-                           %        obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'/','\');
-                          %     else
-                           %        obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'\','/');
-                           %    end
-                                
-                            else
-                                disp('Warning : this path does not exsit: cannot change it !');
-                            end
-                        end
-                    end
-                else % path is changes as the command line
-                    disp('Current source path for the FOV:')
-                    disp(obj.fov(1).srcpath{1})
-                    prompt='Type the part of the path to be changed:';
-                    oldpath= input(prompt,'s');
-                    if numel(oldpath)==0
-                        return;
-                    end
-                    prompt='Type the new base path:';
-                    newpath= input(prompt,'s');
-                    if numel(newpath)==0
-                        return;
-                    end
-                    
-                    for i=1:numel(obj.fov)
-                        for k=1:numel(obj.fov(i).srcpath)
-                            tmp=obj.fov(i).srcpath{k};
-                            finalpath=replace(tmp,oldpath,newpath);
-                            
-                            % if isfolder(finalpath)
-                            obj.fov(i).srcpath{k}=finalpath;
-                            
-                            if ispc
-                                obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'/','\');
-                            else
-                                obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'\','/');
-                            end
-                            
-                            %       else
-                            %           disp('Warning : this path does not exsit: cannot change it !');
-                            % end
-                        end
-                    end
-                    disp('Base path of FOVs succesfully changed! ');
-                end
-                
-%             else % path is changed manually for all FOVs / each channel
-%                 
-%                 prompt='Use GUI to change path [y/n] (Default: n)';
-%                 guipath= input(prompt,'s');
-%                 if numel(defaultclass)==0
-%                     guipath='n';
-%                 end
-%                 
-%                 if strcmp(guipath,'y') % path is changed using GUI
+% 
+% 
+%             %for i=1
+%             strpath=pwd;
+% 
+% %             prompt='Reassign FOV path all at once? [y/n] (Default: y)';
+% %             defaultclass= input(prompt,'s');
+% %             if numel(defaultclass)==0
+% %                 defaultclass='y';
+% %             end
+% 
+%          %   if strcmp(defaultclass,'y') % path is changed automatically for all FOVs
+% 
+% %                 prompt='Use GUI to change path [y/n] (Default: n)';
+% %                 guipath= input(prompt,'s');
+% %                 if numel(defaultclass)==0
+% %                     guipath='n';
+% %                 end
+% 
+%                 if nargin==1 % path is changed using GUI
 %                     for i=1:numel(obj.fov)
 %                         for k=1:numel(obj.fov(i).srcpath)
-%                             strpath=uigetdir(strpath);
-%                             obj.fov(i).srcpath{k}=strpath;
-%                             
-%                             if ispc
-%                                 obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'/','\');
+%                             if i==1 && k==1
+% 
+%                                 prompt = {obj.fov(i).srcpath{k}};
+%                                 dlgtitle = 'Please enter the correct path for this directory (ignore / versus \):';
+%                                 dims = [1 150];
+%                                 definput = {obj.fov(i).srcpath{k}};
+%                                 answer = inputdlg(prompt,dlgtitle,dims,definput);
+% 
+%                                 if numel(answer)==0
+%                                     return;
+%                                 end
+% 
+%                                 oldpath=obj.fov(i).srcpath{k};
+%                                 % identidy part of the path to be changed: 
+%                                 str='';
+% 
+% 
+%                                 for n=0:numel(oldpath)-1
+%                                     str=oldpath(end-n:end);
+%                                     if numel(strfind(answer{1},str))==0
+%                                         break
+%                                     end
+%                                 end
+% 
+%                                 yo=oldpath(end-n+1:end);
+%                                 oldbase= oldpath(1:end-n);
+%                                 newbase=split(answer{1},yo);
+%                                 newbase=newbase{1};
+% 
+%                              %   strpath=uigetdir(strpath,'Input the base folder');
+% 
+%                               %  if strpath==0
+%                               %      return;
+%                               %  end
+% 
+% %                                 if ispc
+% %                                     p=strfind(strpath,'\');
+% %                                 else
+% %                                     p=strfind(strpath,'/') ;
+% %                                 end
+%                              %   basepath=strpath(1:p(end-1)-1);
+% 
+%                             end
+% 
+%                             tmp=obj.fov(i).srcpath{k};
+%                             sp=split(tmp,oldbase);
+%                             kep=sp{2};
+% 
+%                        %    if ispc
+%                        %        p=strfind(tmp,'\');
+%                        %    else
+%                       %          p=strfind(tmp,'/');
+%                       %     end
+% 
+%                        %     p
+%                       %      tmp=tmp(p(end-1):end);
+% 
+%                        %     finalpath=[basepath tmp];
+% 
+%                                finalpath=fullfile([newbase kep]);
+%                              %  return
+% 
+%                             if isfolder(finalpath)
+%                                 obj.fov(i).srcpath{k}=finalpath;
+% 
+%                            %     obj.fov(i).srcpath{k}
+%                            %    if ispc
+%                            %        obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'/','\');
+%                           %     else
+%                            %        obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'\','/');
+%                            %    end
+% 
 %                             else
-%                                 obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'\','/');
+%                                 disp('Warning : this path does not exsit: cannot change it !');
 %                             end
 %                         end
 %                     end
-%                 else % path is changes at the command line 
-%                     for i=1:numel(obj.fov)
-%                         
-%                         disp(['Path for FOV: ' num2str(i)])
-%                         disp(obj.fov(i).srcpath{1})
+%                 else % path is changes as the command line
+%                     disp('Current source path for the FOV:')
+%                     disp(obj.fov(1).srcpath{1})
 %                     prompt='Type the part of the path to be changed:';
 %                     oldpath= input(prompt,'s');
 %                     if numel(oldpath)==0
@@ -358,65 +397,124 @@ classdef shallow < handle
 %                     if numel(newpath)==0
 %                         return;
 %                     end
-%                     
-%                     for k=1:numel(obj.fov(i).srcpath)
+% 
+%                     for i=1:numel(obj.fov)
+%                         for k=1:numel(obj.fov(i).srcpath)
 %                             tmp=obj.fov(i).srcpath{k};
 %                             finalpath=replace(tmp,oldpath,newpath);
-%                             
+% 
 %                             % if isfolder(finalpath)
 %                             obj.fov(i).srcpath{k}=finalpath;
-%                             
+% 
 %                             if ispc
 %                                 obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'/','\');
 %                             else
 %                                 obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'\','/');
 %                             end
-%                             
+% 
 %                             %       else
 %                             %           disp('Warning : this path does not exsit: cannot change it !');
 %                             % end
+%                         end
 %                     end
-%                         
-%                     end
+%                     disp('Base path of FOVs succesfully changed! ');
 %                 end
-           % end
-            
-            % displays new path and check integrity by loading images
-            
-            if numel(obj.fov(1).srcpath{1})~=0 % srce path has been set for at leats one FOV; update ?
-                
-%                 for i=1:numel(obj.fov)
-%                     disp(['Path for FOV: ' num2str(i)])
-%                     disp([obj.fov(i).srcpath{1}]);
-%                     
-%                     disp('Loading first image to check path integrity....');
-%                     
-%                     im=obj.fov(i).readImage(1,1);
-%                     
-%                     if numel(im)>0
-%                         disp('Path is OK for this FOV');
-%                         disp('-------------------------');
-%                     end
-%                 end
-                
-                
-            else
-                disp('there is no path for FOVs; Quitting !');
-                return
-            end
-            
-            
-            % updates each FOV or all FOVs at once
-            
-            
-            % make a loop on all FOV objects to adjust the path for these
-            % sources objects
-            
-            %  obj.props.path=pathname;
-            % obj.props.name=filename;
-            
-            %obj.io.path=path;
-            %obj.io.file=file;
-        end
+% 
+% %             else % path is changed manually for all FOVs / each channel
+% %                 
+% %                 prompt='Use GUI to change path [y/n] (Default: n)';
+% %                 guipath= input(prompt,'s');
+% %                 if numel(defaultclass)==0
+% %                     guipath='n';
+% %                 end
+% %                 
+% %                 if strcmp(guipath,'y') % path is changed using GUI
+% %                     for i=1:numel(obj.fov)
+% %                         for k=1:numel(obj.fov(i).srcpath)
+% %                             strpath=uigetdir(strpath);
+% %                             obj.fov(i).srcpath{k}=strpath;
+% %                             
+% %                             if ispc
+% %                                 obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'/','\');
+% %                             else
+% %                                 obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'\','/');
+% %                             end
+% %                         end
+% %                     end
+% %                 else % path is changes at the command line 
+% %                     for i=1:numel(obj.fov)
+% %                         
+% %                         disp(['Path for FOV: ' num2str(i)])
+% %                         disp(obj.fov(i).srcpath{1})
+% %                     prompt='Type the part of the path to be changed:';
+% %                     oldpath= input(prompt,'s');
+% %                     if numel(oldpath)==0
+% %                         return;
+% %                     end
+% %                     prompt='Type the new base path:';
+% %                     newpath= input(prompt,'s');
+% %                     if numel(newpath)==0
+% %                         return;
+% %                     end
+% %                     
+% %                     for k=1:numel(obj.fov(i).srcpath)
+% %                             tmp=obj.fov(i).srcpath{k};
+% %                             finalpath=replace(tmp,oldpath,newpath);
+% %                             
+% %                             % if isfolder(finalpath)
+% %                             obj.fov(i).srcpath{k}=finalpath;
+% %                             
+% %                             if ispc
+% %                                 obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'/','\');
+% %                             else
+% %                                 obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'\','/');
+% %                             end
+% %                             
+% %                             %       else
+% %                             %           disp('Warning : this path does not exsit: cannot change it !');
+% %                             % end
+% %                     end
+% %                         
+% %                     end
+% %                 end
+%            % end
+% 
+%             % displays new path and check integrity by loading images
+% 
+%             if numel(obj.fov(1).srcpath{1})~=0 % srce path has been set for at leats one FOV; update ?
+% 
+% %                 for i=1:numel(obj.fov)
+% %                     disp(['Path for FOV: ' num2str(i)])
+% %                     disp([obj.fov(i).srcpath{1}]);
+% %                     
+% %                     disp('Loading first image to check path integrity....');
+% %                     
+% %                     im=obj.fov(i).readImage(1,1);
+% %                     
+% %                     if numel(im)>0
+% %                         disp('Path is OK for this FOV');
+% %                         disp('-------------------------');
+% %                     end
+% %                 end
+% 
+% 
+%             else
+%                 disp('there is no path for FOVs; Quitting !');
+%                 return
+%             end
+% 
+% 
+%             % updates each FOV or all FOVs at once
+% 
+% 
+%             % make a loop on all FOV objects to adjust the path for these
+%             % sources objects
+% 
+%             %  obj.props.path=pathname;
+%             % obj.props.name=filename;
+% 
+%             %obj.io.path=path;
+%             %obj.io.file=file;
+%         end
     end
 end

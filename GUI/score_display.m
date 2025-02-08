@@ -23,14 +23,12 @@ function score_display(app, mode)
         return;
     end
 
-    % Récupérer la liste des canaux affichés dans la table (UIChannelTable)
+    % Récupérer la liste des canaux affichés dans la table UIChannelTable
     tableData = app.UIChannelTable.Data;
     if isempty(tableData)
         cla(app.UIImageAxes);
         return;
     end
-
-    % Extraire les noms des canaux visibles depuis la table
     visibleChannelNames = tableData(:, 2);
     visibleChannels = cellfun(@(name) find(strcmp(selectedROI.display.channel, name), 1), visibleChannelNames, 'UniformOutput', false);
     visibleChannels = cell2mat(visibleChannels);
@@ -39,39 +37,43 @@ function score_display(app, mode)
         return;
     end
 
+    % list indexed channels
+    indexedChannels = [];
+        for i = 1:numel(selectedROI.display.channel)
+            pix = selectedROI.findChannelID(selectedROI.display.channel{i});
+            if numel(pix) ~= 3  % non-RGB
+                if sum(selectedROI.display.intensity(i, :)) == 0
+                    indexedChannels = [indexedChannels, i];
+                end
+            end
+        end
+
+
+
     % Récupérer la taille de l'image brute
     [imgHeight, imgWidth, ~, ~] = size(selectedROI.image);
 
-    % --- Affichage en fonction du mode Overlay ---
     if app.OverlayCheckBox.Value
-        % Mode overlay : construire l'image composite
-        compositeImage = zeros(imgHeight, imgWidth, 3);  % image RGB composite
+        %% Mode overlay : (code existant)
+        compositeImage = zeros(imgHeight, imgWidth, 3);  % image composite
         for i = 1:numel(visibleChannels)
             chIndex = visibleChannels(i);
-            % Ne traiter que les canaux sélectionnés pour l'affichage
             if ~selectedROI.display.selectedchannel(chIndex)
                 continue;
             end
-
-            % Vérifier si le canal est RGB (3 indices) ou non
             pix = selectedROI.findChannelID(selectedROI.display.channel{chIndex});
             if numel(pix) == 3
-                % Canal RGB : extraire les trois composantes
                 channelImageR = double(selectedROI.image(:, :, pix(1), currentFrame));
                 channelImageG = double(selectedROI.image(:, :, pix(2), currentFrame));
                 channelImageB = double(selectedROI.image(:, :, pix(3), currentFrame));
                 rgbChannelImage = cat(3, channelImageR, channelImageG, channelImageB);
-
-                % Normaliser selon les limites d'affichage
                 minLevel = 65535 * selectedROI.display.displaylim(1, chIndex);
                 maxLevel = 65535 * selectedROI.display.displaylim(2, chIndex);
                 rgbChannelImage = (rgbChannelImage - minLevel) / (maxLevel - minLevel);
                 rgbChannelImage = max(0, min(1, rgbChannelImage));
-
                 intensity = selectedROI.display.intensity(chIndex);
                 compositeImage = compositeImage + intensity * rgbChannelImage;
             else
-                % Canal non-RGB (monochrome)
                 channelImage = double(selectedROI.image(:, :, chIndex, currentFrame));
                 minLevel = 65535 * selectedROI.display.displaylim(1, chIndex);
                 maxLevel = 65535 * selectedROI.display.displaylim(2, chIndex);
@@ -84,10 +86,7 @@ function score_display(app, mode)
                 end
             end
         end
-
-        compositeImage = max(0, min(1, compositeImage));  % Clamp final
-
-        % Affichage selon le mode slow/refresh
+        compositeImage = max(0, min(1, compositeImage));
         if strcmp(mode, 'slow')
             h = imshow(compositeImage, 'Parent', app.UIImageAxes);
             h.Tag = 'CompositeImage';
@@ -108,17 +107,50 @@ function score_display(app, mode)
                 app.UIImageAxes.UserData.CDataHandle = h;
             end
         end
-
-        % Si le ZoomSlider est à 100%, on réinitialise les axes à la taille complète de l'image.
+        % Réinitialiser les limites de l'axe si le zoom est à 100%
         if app.ZoomSlider.Value == 100
             set(app.UIImageAxes, 'XLim', [1, imgWidth], 'YLim', [1, imgHeight]);
             app.OriginalXLim = [1, imgWidth];
             app.OriginalYLim = [1, imgHeight];
         end
 
+        % Pour les canaux indexés, on superpose le masque sur l'image composite.
+        % On reconstruit la liste des canaux indexés (non-RGB)
+        
+
+        % Pour chaque canal indexé, superposer le masque
+        for j = 1:length(indexedChannels)
+            chIndex = indexedChannels(j);
+            pix = selectedROI.findChannelID(selectedROI.display.channel{chIndex});
+            % Extraire l'image brute du canal pour le frame courant
+            channelImage = double(selectedROI.image(:, :, pix, currentFrame));
+             %figure, imshow(channelImage,[]);
+            channelImage(channelImage==1)=0;
+            % Créer le masque : on considère tous les pixels > 0
+            mask = channelImage > 0;
+            % Créer une image de la même taille remplie de la couleur du canal
+           
+% Récupérer la couleur associée à ce canal (valeurs dans [0, 1])
+uniformColor = selectedROI.display.rgb(chIndex, :);
+
+% Créer une image de couleur uniforme qui ne sera visible que là où mask est vrai
+% Pour cela, multiplier la couleur uniforme par le masque (converti en double)
+colorMask = repmat(reshape(uniformColor, [1, 1, 3]), imgHeight, imgWidth) .* repmat(double(mask), [1, 1, 3]);
+
+ % figure, imshow(colorMask,[]);
+            % Définir l'alpha : app.Transparency pour les pixels du masque, 0 sinon
+            alphaMask = app.Transparency.Value * double(mask);
+            % Superposer le masque sur l'axe (imagesc ajoute un objet sur l'axe sans effacer)
+            hMask = imagesc(app.UIImageAxes, colorMask);
+            set(hMask, 'AlphaData', alphaMask, 'AlphaDataMapping', 'none');
+            % Exclure cet objet de la légende
+            set(hMask, 'HandleVisibility', 'off');
+        end
+
     else
-        % Mode non-overlay : afficher les canaux empilés verticalement.
+        %% Mode non-overlay : afficher les canaux empilés verticalement et superposer les masques
         channelImages = {};
+        displayedChannelIndices = [];  % pour mémoriser l'ordre des canaux affichés
         for i = 1:numel(visibleChannels)
             chIndex = visibleChannels(i);
             if ~selectedROI.display.selectedchannel(chIndex)
@@ -127,6 +159,7 @@ function score_display(app, mode)
 
             pix = selectedROI.findChannelID(selectedROI.display.channel{chIndex});
             if numel(pix) == 3
+                % Canal RGB
                 channelImageR = double(selectedROI.image(:, :, pix(1), currentFrame));
                 channelImageG = double(selectedROI.image(:, :, pix(2), currentFrame));
                 channelImageB = double(selectedROI.image(:, :, pix(3), currentFrame));
@@ -138,6 +171,7 @@ function score_display(app, mode)
                 intensity = selectedROI.display.intensity(chIndex);
                 coloredChannel = intensity * rgbChannelImage;
             else
+                % Canal monochrome
                 channelImage = double(selectedROI.image(:, :, chIndex, currentFrame));
                 minLevel = 65535 * selectedROI.display.displaylim(1, chIndex);
                 maxLevel = 65535 * selectedROI.display.displaylim(2, chIndex);
@@ -150,19 +184,47 @@ function score_display(app, mode)
                     coloredChannel(:, :, c) = intensity * rgbColor(c) * normChannel;
                 end
             end
-            channelImages{end+1} = coloredChannel;  %#ok<AGROW>
+            channelImages{end+1} = coloredChannel;
+            displayedChannelIndices(end+1) = chIndex;
         end
 
         if ~isempty(channelImages)
             stackedImage = cat(1, channelImages{:});
             imshow(stackedImage, 'Parent', app.UIImageAxes);
             newYLim = [1, numel(channelImages)*imgHeight];
-            % Si le ZoomSlider est à 100, réinitialiser les axes pour le mode empilé
             if app.ZoomSlider.Value == 100
                 set(app.UIImageAxes, 'XLim', [1, imgWidth], 'YLim', newYLim);
                 app.OriginalXLim = [1, imgWidth];
                 app.OriginalYLim = newYLim;
             end
+
+            % Superposer les masques pour les canaux indexés (non-RGB)
+            % Pour chaque affiché, on détermine son ordre (1...N)
+            for j = 1:length(displayedChannelIndices)
+                chIndex = displayedChannelIndices(j);
+                % Vérifier si ce canal est non-RGB (indexed)
+                pix = selectedROI.findChannelID(selectedROI.display.channel{chIndex});
+                if numel(pix) == 3
+                    continue;  % Ne pas traiter les canaux RGB ici
+                end
+                % Extraire l'image brute du canal
+                channelImage = double(selectedROI.image(:, :, chIndex, currentFrame));
+                mask = channelImage > 0;  % masque binaire
+                % La zone du j‑ème canal dans l'image empilée est :
+                yOffset = (j-1)*imgHeight; 
+                % Créer un masque de la même taille que l'image empilée
+                fullMask = false(numel(channelImages)*imgHeight, imgWidth);
+                fullMask(yOffset+1:yOffset+imgHeight, :) = mask;
+                % Créer une image de couleur constante pour ce canal
+                maskColor = selectedROI.display.rgb(chIndex, :);
+                colorMask = repmat(reshape(maskColor, [1 1 3]), numel(channelImages)*imgHeight, imgWidth);
+                % Définir l'alpha (transparence)
+                alphaMask = app.Transparency.Value * double(fullMask);
+                hMask = imagesc(app.UIImageAxes, colorMask);
+                set(hMask, 'AlphaData', alphaMask, 'AlphaDataMapping', 'none');
+                set(hMask, 'HandleVisibility', 'off');
+            end
+
         else
             cla(app.UIImageAxes);
         end
@@ -171,11 +233,11 @@ function score_display(app, mode)
     % Mise à jour de l'histogramme
     score_updateHistogram(app, mode);
 
-    % Mise à jour du profil d'intensité de la ligne ou de l'ellipse si activé
-    if app.LineIntensityprofileButton.Value  % mode ligne
+    % Mise à jour du profil d'intensité (ligne ou ellipse) si activé
+    if app.LineIntensityprofileButton.Value
         score_updateIntensityProfile(app, getPosition(app.LineIntensityProfileLine));
     end
-    if app.ShapeButton.Value  % mode ellipse
+    if app.ShapeButton.Value
         score_updateEllipticalProfile(app, app.EllipseIntensityProfileObj);
     end
 end

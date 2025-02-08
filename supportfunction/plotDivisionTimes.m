@@ -93,7 +93,7 @@ for i=1:numel(datagroups)
 
     str=[datagroups(i).Name ' // ' dat{j}{1} ' // ' dat{j}{2}];
 
-    d=dat{j};
+    d=dat{j}
     xout={};
     yout={};
     ylineage={};
@@ -110,7 +110,7 @@ for i=1:numel(datagroups)
 
     for k=1:numel(rois)
         % collect the selected data
-
+  
         groups={rois(k).data.groupid};
         pix=find(matches(groups,d{1}));
 
@@ -137,6 +137,7 @@ for i=1:numel(datagroups)
             end
             cc=cc+1;
         else
+            disp(rois(k).id)
             disp(['Could not find ' num2str(d{1}) 'in the available data']);
         end
     end

@@ -118,21 +118,59 @@ for i=1:numel(datagroups)
 
         cc=1;
 
-        groups={rois(1).data.groupid};
-        
-        pix=find(matches(groups,d{1}));
+        % --- Recherche du data item correspondant dans les ROIs ---
+found = false;  % drapeau indiquant si un data item correspondant a été trouvé
 
-        if numel(pix)==0
-            disp('Could not find corresponding data! quitting .... ')
-            return
-        end
+% Utiliser une variable différente (r) pour itérer sur les rois
+for r = 1:numel(rois)
+    % Vérifier que le ROI courant contient des data items
+    if isempty(rois(r).data)
+        continue;  % passer au ROI suivant
+    end
 
-        tt= rois(1).data(pix).getData(d{2});
-        if ~isnumeric(tt)
-            disp(['Those data  ' num2str(d{1}) ' are not numeric; skipping ....' ]);
-            plottable_data(i,j)=false;
-            continue
-        end
+    % Extraire les groupid de chaque data de ce ROI
+    groupIdsRoi = arrayfun(@(x) x.groupid, rois(r).data, 'UniformOutput', false);
+
+    % Chercher les indices où groupid correspond à d{1}
+    pix = find(matches(groupIdsRoi, d{1}));
+
+    % Si au moins un data item est trouvé, on le récupère et on quitte la boucle
+    if ~isempty(pix)
+        tt = rois(r).data(pix(1)).getData(d{2});
+        found = true;
+        break;
+    end
+end
+
+% Si aucun data item n'a été trouvé dans aucun ROI, on affiche un avertissement et on quitte.
+if ~found
+    warning('Aucun des ROIs ne contient un data item avec groupid "%s".', d{1});
+    return;
+end
+
+% Vérifier que le data récupéré n'est pas numérique (car l'on attend des données de type événement)
+if ~isnumeric(tt)
+    disp(['Les données associées au groupid ' num2str(d{1}) ' sont pas numériques, or j''attends des données de type événement; arrêt ...']);
+     plottable_data(i,j)=false;
+    continue
+
+end
+
+        % groups={rois(1).data.groupid};
+        % 
+        % pix=find(matches(groups,d{1}));
+        % 
+        % if numel(pix)==0
+        %     disp('Could not find corresponding data! quitting .... ')
+        %     return
+        % end
+
+        % tt= rois(1).data(pix).getData(d{2});
+        % if ~isnumeric(tt)
+        %     disp(['Those data  ' num2str(d{1}) ' are not numeric; skipping ....' ]);
+        %     plottable_data(i,j)=false;
+        %     continue
+        % end
 
         plottable_data(i,j)=true;
 
