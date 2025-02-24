@@ -35,6 +35,7 @@ end
 shallowObj=shallow;
 shallowObj.setPath(path,filename);
 
+
 mkdir(path,filename);
 
 save(fullfile(path,[filename '.mat']),'shallowObj');
