@@ -11,9 +11,9 @@ if channel>numel(obj.channel)
     return;
 end
 
-    chastr=1;
-if numel(obj.srclist{chastr}) ==1 && numel(obj.frames(1))>1 % numel(obj.channel)>numel(obj.srcpath)  % in this case , it is likely that a single tiff stores all channel information
- %   chastr=1;
+chastr=1;
+if numel(obj.srclist{chastr}) ==1 && numel(obj.frames(1))==1  % numel(obj.channel)>numel(obj.srcpath)  % in this case , it is likely that a single tiff stores all channel information
+    
     
  %   if numel(obj.srclist{chastr})< obj.frames % in this case , it is likely that a single tiff stores all channel information
         fra=1;
@@ -39,9 +39,11 @@ pix=[];
     frame=uint16(ceil(frame./tmp(channel))); % in case not every frame was snapped for each channel.   
    end
     
-  % frame
-   
+   if numel(list)>=frame
     liststr=list(frame);
+   else
+     return;
+   end
 end
 
 
