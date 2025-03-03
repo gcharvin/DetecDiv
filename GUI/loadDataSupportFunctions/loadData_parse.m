@@ -207,12 +207,17 @@ else
 end
 
 parsedData.positions = positions;
-parsedData.roitype='full';
+parsedData.roitype='full'; 
 parsedData.roibb=[];
 parsedData.roipattern=[];
 parsedData.maxframeloading=20;
 parsedData.correctdrift=false;
 parsedData.maxroidisplay=10;
+parsedData.allpositions=true;
+parsedData.folder=folder; 
+parsedData.advancedMode=false;
+parsedData.projectPath=fullfile(parsedData.folder,'tmpProject.mat');
+
 
 % Calcul global de minFrame et maxFrame sur toutes les positions
 globalFrames = [];
