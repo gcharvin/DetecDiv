@@ -147,10 +147,10 @@ function score_updateHistogram(app, mode)
 
     % Ajuster les axes
     minPixelValue = max(min(allPixelValues), 1);
-    maxPixelValue = min(max(allPixelValues), 65535);
+    maxPixelValue = max(min(max(allPixelValues), 65535),minPixelValue+1);
     set(app.UIDisplayAxes, 'XScale', 'log', 'YScale', 'log');
     xlim(app.UIDisplayAxes, [0.8 * minPixelValue, 1.2 * maxPixelValue]);
-    ylim(app.UIDisplayAxes, [1, max(cellfun(@(x) max(x(:)), histogramData)) * 1.2]);
+    ylim(app.UIDisplayAxes, [1, max(1.1,max(cellfun(@(x) max(x(:)), histogramData)) * 1.2)]);
     
     xlabel(app.UIDisplayAxes, 'Pixel Intensity');
     ylabel(app.UIDisplayAxes, 'Pixel Count');
