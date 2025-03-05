@@ -1,5 +1,5 @@
 function loadData_load(parsedData, hprogressbar)
-    % Initialize the progress bar if provided
+    %% Initialize the progress bar if provided
     if exist('hprogressbar', 'var') && ~isempty(hprogressbar)
         hprogressbar.Value = 0;
         hprogressbar.Message = 'Initializing...';
