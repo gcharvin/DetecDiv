@@ -69,13 +69,28 @@ end
 varnames=data.data.Properties.VariableNames;
 toplot=0;
 
-hroi=findobj('Tag',['ROI' data.parentid]);
-
 frame=[];
+
+hroi=findobj('Tag',['ROI' data.parentid]);
 hf=findobj(hroi,'Tag','frametext');
 if numel(hf)
     frame=str2num(hf.String);
 end
+
+ figures=findall(0,'Type','figure');
+ appFigure=findobj(figures,'Name','ScoreApp');
+   if isprop(appFigure,'RunningAppInstance')
+                app=appFigure.RunningAppInstance;
+
+                selectedROIIndex = find(cell2mat(app.UIROITable.Data(:,1)), 1);
+                 if isempty(selectedROIIndex)
+                     return;
+                end
+
+                selectedROI = app.content.ROIList{selectedROIIndex};
+                hroi=app.ImageFigure;
+                frame=selectedROI.display.frame;
+   end
 
 txt='';
 for i=1:numel(plotidx)
@@ -161,7 +176,7 @@ for i=1:numel(plotidx)
 end
 
 if toplot==0
-    delete(h)
+    delete(h)  ;
     return
 end
 
@@ -178,7 +193,27 @@ function setFrame(src, event, hroi)
 
     frame=round(pt(1,1));
 
+    if numel(hroi.UserData)
     hroi.UserData.roi.view(frame);
+    end
+
+
+     figures=findall(0,'Type','figure');
+ appFigure=findobj(figures,'Name','ScoreApp');
+   if isprop(appFigure,'RunningAppInstance')
+                app=appFigure.RunningAppInstance;
+
+                selectedROIIndex = find(cell2mat(app.UIROITable.Data(:,1)), 1);
+                 if isempty(selectedROIIndex)
+                     return;
+                end
+
+                selectedROI = app.content.ROIList{selectedROIIndex};
+                selectedROI.display.frame=frame;
+                score_display(app, 'refresh');
+   end
+
+
 
 
 % to do : make a synchro function to move cursor from the plot handle, see below :

@@ -22,6 +22,10 @@ function score_display(app, mode)
 
     % Récupérer le frame sélectionné
     currentFrame = selectedROI.display.frame;
+
+    app.FrameLabel.Text=['Frame : ' num2str(currentFrame)];
+    app.updateAssignValueControls();
+
     numFrames = size(selectedROI.image, 4);
     if currentFrame < 1 || currentFrame > numFrames
         return;
@@ -290,4 +294,31 @@ function score_display(app, mode)
     if app.ShapeButton.Value
         score_updateEllipticalProfile(app, app.EllipseIntensityProfileObj);
     end
+
+    
+    selection = app.UIDataTable.Selection;
+if isempty(selection)
+    return;
+end
+dsIndex = selection(1);
+
+% Vérifier que la ROI sélectionnée possède la propriété data et qu'elle contient assez d'éléments
+if ~isprop(selectedROI, 'data') || numel(selectedROI.data) < dsIndex
+    return;
+end
+
+% Mettre à jour les plotProperties dans le dataset correspondant
+selectedROI.data(dsIndex).plotProperties = app.UISubDataTable.Data;
+
+% Vérifier qu'au moins un item est coché dans la première colonne de UISubDataTable
+subData = app.UISubDataTable.Data;
+if ~isempty(subData) && any(cell2mat(subData(:,1)))
+    try
+        app.DataFigure = selectedROI.data(dsIndex).plot();
+    catch ME
+        warning('Error when calling plot method: %s', ME.message);
+    end
+    figure(app.ImageFigure);
+end
+
 end
