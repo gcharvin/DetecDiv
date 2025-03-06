@@ -66,9 +66,7 @@ if strcmp(seltype,'open') & numel(modtype)==0 % paint whole connected area into 
     if yinit>size(impaint1.CData,1)
         return
     end
-
     val=impaint1.CData(yinit,xinit); %
-
     [L nlab]=bwlabel(impaint1.CData==val);
 
 

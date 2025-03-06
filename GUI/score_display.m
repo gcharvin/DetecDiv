@@ -1,258 +1,292 @@
 function score_display(app, mode)
 
-% Vérifier qu'une ROI est sélectionnée
-if isempty(app.content.ROIList)
-    return;
-end
+    checkOrCreateImageFigure(app);
 
-% Récupérer la ROI actuellement sélectionnée via la table des ROIs
-selectedROIIndex = find(cell2mat(app.UIROITable.Data(:, 1)), 1);
-if isempty(selectedROIIndex)
-    return;
-end
-selectedROI = app.content.ROIList{selectedROIIndex};
-
-% Vérifier que l'image est chargée, sinon la charger
-if isempty(selectedROI.image)
-    selectedROI.image.load();
-end
-
-% Récupérer le frame sélectionné
-currentFrame = selectedROI.display.frame;
-numFrames = size(selectedROI.image, 4);
-if currentFrame < 1 || currentFrame > numFrames
-    return;
-end
-
-% Récupérer la liste des canaux affichés dans la table UIChannelTable
-tableData = app.UIChannelTable.Data;
-if isempty(tableData)
-    cla(app.UIImageAxes);
-    return;
-end
-visibleChannelNames = tableData(:, 2);
-visibleChannels = cellfun(@(name) find(strcmp(selectedROI.display.channel, name), 1), visibleChannelNames, 'UniformOutput', false);
-visibleChannels = cell2mat(visibleChannels);
-if isempty(visibleChannels)
-    cla(app.UIImageAxes);
-    return;
-end
-
-% Liste des canaux indexés (non-RGB) : on parcourt tous les canaux et on ajoute
-% ceux pour lesquels findChannelID ne renvoie pas 3 indices.
-indexedChannels = [];
-numChannels = numel(selectedROI.display.channel);
-for i = 1:numChannels
-    pix = selectedROI.findChannelID(selectedROI.display.channel{i});
-    if numel(pix) ~= 3  % non-RGB
-        % Vous pouvez décider ici d'inclure ou non selon l'intensité
-        if sum(selectedROI.display.intensity(i, :)) == 0
-            indexedChannels = [indexedChannels, i];
-        end
+    % Vérifier qu'une ROI est sélectionnée
+    if isempty(app.content.ROIList)
+        return;
     end
-end
 
-% Récupérer la taille de l'image brute
-[imgHeight, imgWidth, ~, ~] = size(selectedROI.image);
+    % Récupérer la ROI actuellement sélectionnée via la table des ROIs
+    selectedROIIndex = find(cell2mat(app.UIROITable.Data(:, 1)), 1);
+    if isempty(selectedROIIndex)
+        return;
+    end
+    selectedROI = app.content.ROIList{selectedROIIndex};
 
-if app.OverlayCheckBox.Value
+    % Vérifier que l'image est chargée, sinon la charger
+    if isempty(selectedROI.image)
+        selectedROI.image.load();
+    end
 
-    %% Mode overlay : construire l'image composite dans app.UIImageAxes
-    compositeImage = zeros(imgHeight, imgWidth, 3);
-    for i = 1:numel(visibleChannels)
-        chIndex = visibleChannels(i);
-        if ~selectedROI.display.selectedchannel(chIndex)
-            continue;
-        end
-        pix = selectedROI.findChannelID(selectedROI.display.channel{chIndex});
-        if numel(pix) == 3
-            % Canal RGB
-            channelImageR = double(selectedROI.image(:, :, pix(1), currentFrame));
-            channelImageG = double(selectedROI.image(:, :, pix(2), currentFrame));
-            channelImageB = double(selectedROI.image(:, :, pix(3), currentFrame));
-            rgbChannelImage = cat(3, channelImageR, channelImageG, channelImageB);
-            minLevel = 65535 * selectedROI.display.displaylim(1, chIndex);
-            maxLevel = 65535 * selectedROI.display.displaylim(2, chIndex);
-            rgbChannelImage = (rgbChannelImage - minLevel) / (maxLevel - minLevel);
-            rgbChannelImage = max(0, min(1, rgbChannelImage));
-            intensity = selectedROI.display.intensity(chIndex);
-            compositeImage = compositeImage + intensity * rgbChannelImage;
-        else
-            % Canal non-RGB (monochrome)
-            channelImage = double(selectedROI.image(:, :, chIndex, currentFrame));
-            minLevel = 65535 * selectedROI.display.displaylim(1, chIndex);
-            maxLevel = 65535 * selectedROI.display.displaylim(2, chIndex);
-            channelImage = (channelImage - minLevel) / (maxLevel - minLevel);
-            channelImage = max(0, min(1, channelImage));
-            intensity = selectedROI.display.intensity(chIndex);
-            rgbColor = selectedROI.display.rgb(chIndex, :);
-            for c = 1:3
-                compositeImage(:, :, c) = compositeImage(:, :, c) + intensity * rgbColor(c) * channelImage;
+    % Récupérer le frame sélectionné
+    currentFrame = selectedROI.display.frame;
+    numFrames = size(selectedROI.image, 4);
+    if currentFrame < 1 || currentFrame > numFrames
+        return;
+    end
+
+    % Récupérer la liste des canaux affichés dans la table UIChannelTable
+    tableData = app.UIChannelTable.Data;
+    if isempty(tableData)
+        cla(app.ImageAxes);
+        return;
+    end
+    visibleChannelNames = tableData(:, 2);
+    visibleChannels = cellfun(@(name) find(strcmp(selectedROI.display.channel, name), 1), visibleChannelNames, 'UniformOutput', false);
+    visibleChannels = cell2mat(visibleChannels);
+    if isempty(visibleChannels)
+        cla(app.ImageAxes);
+        return;
+    end
+
+    % Liste des canaux indexés (non-RGB)
+    indexedChannels = [];
+    numChannels = numel(selectedROI.display.channel);
+    for i = 1:numChannels
+        pix = selectedROI.findChannelID(selectedROI.display.channel{i});
+        if numel(pix) ~= 3  % non-RGB
+            if sum(selectedROI.display.intensity(i, :)) == 0
+                indexedChannels = [indexedChannels, i];
             end
         end
     end
-    compositeImage = max(0, min(1, compositeImage));
 
+    % Récupérer la taille de l'image brute
+    [imgHeight, imgWidth, ~, ~] = size(selectedROI.image);
+    app.ImageFigure.Name = ['Frame ' num2str(selectedROI.display.frame)];
 
-    % construire l'image qui affiche les masques par dessus l'image
-    % composite
-
-    % On suppose que 'indexedChannels' a été calculé précédemment.
-    % Vider l'axe overlay pour éviter l'accumulation
-
-    %cla(app.UIOverlayAxes);
-
-    % Initialiser des matrices pour l'overlay et l'alpha (pour tous les canaux indexés)
-    indexedOverlay = zeros(imgHeight, imgWidth, 3);
-    alphaOverlay = zeros(imgHeight, imgWidth);
-
-    % Parcourir chacun des canaux indexés à afficher
-    for j = 1:numel(indexedChannels)
-        chIndex = indexedChannels(j);
-        if ~selectedROI.display.selectedchannel(chIndex)
-            continue;
-        end
-
-        % Pour un canal indexé (non-RGB), extraire l'image brute pour le frame courant.
-        % On suppose ici que le canal est monochrome.
-        pix = selectedROI.findChannelID(selectedROI.display.channel{chIndex});
-        if iscell(pix)
-            channelImage = double(selectedROI.image(:, :, pix{1}, currentFrame));
-        else
-            channelImage = double(selectedROI.image(:, :, pix, currentFrame));
-        end
-
-        % Créer le masque binaire : considérer comme actif tous les pixels > 1 (vous pouvez ajuster le seuil)
-        mask = channelImage > 1;
-
-        % Récupérer la couleur uniforme associée à ce canal (définie dans selectedROI.display.rgb)
-        uniformColor = selectedROI.display.rgb(chIndex, :);  % valeurs dans [0 1]
-
-        % Pour les pixels où mask est vrai, on affecte la couleur uniformColor ;
-        % si plusieurs canaux se chevauchent, le dernier traité écrase les précédents.
-        for k = 1:3
-            channelOverlay = indexedOverlay(:, :, k);
-            channelOverlay(mask) = uniformColor(k);
-            indexedOverlay(:, :, k) = channelOverlay;
-        end
-
-        % Définir l'opacité pour ces pixels : pour les pixels où mask est vrai, l'opacité sera app.Transparency.Value
-        alphaOverlay(mask) = app.Transparency.Value;
-    end
-
-
-    if strcmp(mode, 'slow')
-        h = imshow(compositeImage, 'Parent', app.UIImageAxes);
-        h.Tag = 'CompositeImage';
-        app.UIImageAxes.UserData.CDataHandle = h;
-
-        hOverlay = imshow(indexedOverlay, 'Parent', app.UIOverlayAxes);
-        hOverlay.Tag = 'IndexedOverlay';
-        set(hOverlay, 'AlphaData', alphaOverlay, 'AlphaDataMapping', 'none');
-        app.UIOverlayAxes.UserData.CDataHandle = hOverlay;
-
-    else
-        if isfield(app.UIImageAxes.UserData, 'CDataHandle') && isvalid(app.UIImageAxes.UserData.CDataHandle)
-            try
-                set(app.UIImageAxes.UserData.CDataHandle, 'CData', compositeImage);
-            catch ME
-                warning('Erreur lors de la mise à jour du CData : %s. Recréation de l''image.', ME.message);
-                h = imshow(compositeImage, 'Parent', app.UIImageAxes);
-                h.Tag = 'CompositeImage';
-                app.UIImageAxes.UserData.CDataHandle = h;
+      if isprop(app, 'SelectedObjectRectangle') && ~isempty(app.SelectedObjectRectangle) && isgraphics(app.SelectedObjectRectangle)
+                delete(app.SelectedObjectRectangle);
             end
+
+    if app.OverlayCheckBox.Value
+
+        %% Mode overlay : construire l'image composite dans app.ImageAxes
+        compositeImage = zeros(imgHeight, imgWidth, 3);
+        for i = 1:numel(visibleChannels)
+            chIndex = visibleChannels(i);
+            if ~selectedROI.display.selectedchannel(chIndex)
+                continue;
+            end
+            pix = selectedROI.findChannelID(selectedROI.display.channel{chIndex});
+            if numel(pix) == 3
+                % Canal RGB
+                channelImageR = double(selectedROI.image(:, :, pix(1), currentFrame));
+                channelImageG = double(selectedROI.image(:, :, pix(2), currentFrame));
+                channelImageB = double(selectedROI.image(:, :, pix(3), currentFrame));
+                rgbChannelImage = cat(3, channelImageR, channelImageG, channelImageB);
+                minLevel = 65535 * selectedROI.display.displaylim(1, chIndex);
+                maxLevel = 65535 * selectedROI.display.displaylim(2, chIndex);
+                rgbChannelImage = (rgbChannelImage - minLevel) / (maxLevel - minLevel);
+                rgbChannelImage = max(0, min(1, rgbChannelImage));
+                intensity = selectedROI.display.intensity(chIndex);
+                compositeImage = compositeImage + intensity * rgbChannelImage;
+            else
+                % Canal non-RGB (monochrome)
+                channelImage = double(selectedROI.image(:, :, chIndex, currentFrame));
+                minLevel = 65535 * selectedROI.display.displaylim(1, chIndex);
+                maxLevel = 65535 * selectedROI.display.displaylim(2, chIndex);
+                channelImage = (channelImage - minLevel) / (maxLevel - minLevel);
+                channelImage = max(0, min(1, channelImage));
+                intensity = selectedROI.display.intensity(chIndex);
+                rgbColor = selectedROI.display.rgb(chIndex, :);
+                for c = 1:3
+                    compositeImage(:, :, c) = compositeImage(:, :, c) + intensity * rgbColor(c) * channelImage;
+                end
+            end
+        end
+        compositeImage = max(0, min(1, compositeImage));
+
+        indexedOverlay = zeros(imgHeight, imgWidth, 3);
+        alphaOverlay = zeros(imgHeight, imgWidth);
+
+        if app.PaintButton.Value
+            % --- Modification pour la reconstruction du nom complet ---
+            selectedRow = app.UIAnnotationTable.Selection;
+            if isempty(selectedRow) || isempty(selectedRow(1))
+                errordlg('No channel selected!');
+                return;
+            else
+                % Récupérer la partie "Annotation" et "Class" depuis la table d'annotations
+                annotationPart = app.UIAnnotationTable.Data{selectedRow(1), 2};
+                classPart = app.UIAnnotationTable.Data{selectedRow(1), 3};
+                fullChannelName = [annotationPart, '_', classPart];
+                channelIdx = find(strcmp(selectedROI.display.channel, fullChannelName), 1);
+                if isempty(channelIdx)
+                    errordlg('No channel selected!');
+                    return;
+                end
+            end
+
+            % Extraire l'image d'annotation pour ce canal (on suppose qu'elle est monochrome)
+            pix = selectedROI.findChannelID(selectedROI.display.channel{channelIdx});
+            annotationImage = double(selectedROI.image(:, :, pix, currentFrame));
+           
+            [imgH, imgW] = size(annotationImage);
+
+            uniqueVals = unique(annotationImage);
+            uniqueVals(uniqueVals == 0) = [];
+            numUnique = numel(uniqueVals);
+            if numUnique > 0
+                cmap = lines(numUnique);
+            else
+                cmap = [1 0 0];
+            end
+
+            annotationColorImage = zeros(imgH, imgW, 3);
+            alphamask = zeros(imgH, imgW);
+            for iVal = 1:numUnique
+                val = uniqueVals(iVal);
+                mask = annotationImage == val;
+                alphamask = alphamask | mask;
+                for c = 1:3
+                    annotationColorImage(:, :, c) = annotationColorImage(:, :, c) + mask * cmap(iVal, c);
+                end
+            end
+            annotationColorImage = max(0, min(1, annotationColorImage));
+            if numel(find(alphamask))
+                alphaOverlay(alphamask) = app.Transparency.Value;
+            end
+
+            indexedOverlay = annotationColorImage;
+
         else
-            h = imshow(compositeImage, 'Parent', app.UIImageAxes);
+            % Mode overlay sans peinture : traitement des canaux indexés
+            for j = 1:numel(indexedChannels)
+                chIndex = indexedChannels(j);
+                if ~selectedROI.display.selectedchannel(chIndex)
+                    continue;
+                end
+
+                pix = selectedROI.findChannelID(selectedROI.display.channel{chIndex});
+                if iscell(pix)
+                    channelImage = double(selectedROI.image(:, :, pix{1}, currentFrame));
+                else
+                    channelImage = double(selectedROI.image(:, :, pix, currentFrame));
+                end
+
+                mask = channelImage >= 1;
+                uniformColor = selectedROI.display.rgb(chIndex, :);
+                for k = 1:3
+                    channelOverlay = indexedOverlay(:, :, k);
+                    channelOverlay(mask) = uniformColor(k);
+                    indexedOverlay(:, :, k) = channelOverlay;
+                end
+                alphaOverlay(mask) = app.Transparency.Value;
+            end
+        end
+
+        if strcmp(mode, 'slow')
+            h = imshow(compositeImage, 'Parent', app.ImageAxes, 'InitialMagnification', 'fit');
             h.Tag = 'CompositeImage';
-            app.UIImageAxes.UserData.CDataHandle = h;
-        end
-        if isfield(app.UIOverlayAxes.UserData, 'CDataHandle') && isvalid(app.UIOverlayAxes.UserData.CDataHandle)
-            try
-                set(app.UIOverlayAxes.UserData.CDataHandle, 'CData', indexedOverlay, 'AlphaData', alphaOverlay);
-            catch ME
-                warning('Erreur lors de la mise à jour de l''overlay : %s. Recréation de l''overlay.', ME.message);
-                hOverlay = imshow(indexedOverlay, 'Parent', app.UIOverlayAxes);
+            app.ImageAxes.UserData.CDataHandle = h;
+            hOverlay = imshow(indexedOverlay, 'Parent', app.OverlayAxes);
+            hOverlay.Tag = 'IndexedOverlay';
+            set(hOverlay, 'HitTest', 'off');
+            set(hOverlay, 'AlphaData', alphaOverlay, 'AlphaDataMapping', 'none');
+            app.OverlayAxes.UserData.CDataHandle = hOverlay;
+        else
+            if isfield(app.ImageAxes.UserData, 'CDataHandle') && isvalid(app.ImageAxes.UserData.CDataHandle)
+                try
+                    set(app.ImageAxes.UserData.CDataHandle, 'CData', compositeImage);
+                catch ME
+                    warning('Erreur lors de la mise à jour du CData : %s. Recréation de l''image.', ME.message);
+                    h = imshow(compositeImage, 'Parent', app.ImageAxes);
+                    h.Tag = 'CompositeImage';
+                    app.ImageAxes.UserData.CDataHandle = h;
+                end
+            else
+                h = imshow(compositeImage, 'Parent', app.ImageAxes);
+                h.Tag = 'CompositeImage';
+                app.ImageAxes.UserData.CDataHandle = h;
+            end
+            if isfield(app.OverlayAxes.UserData, 'CDataHandle') && isvalid(app.OverlayAxes.UserData.CDataHandle)
+                try
+                    set(app.OverlayAxes.UserData.CDataHandle, 'CData', indexedOverlay, 'AlphaData', alphaOverlay);
+                catch ME
+                    warning('Erreur lors de la mise à jour de l''overlay : %s. Recréation de l''overlay.', ME.message);
+                    hOverlay = imshow(indexedOverlay, 'Parent', app.OverlayAxes);
+                    hOverlay.Tag = 'IndexedOverlay';
+                    set(hOverlay, 'AlphaData', alphaOverlay, 'AlphaDataMapping', 'none');
+                    app.OverlayAxes.UserData.CDataHandle = hOverlay;
+                    set(hOverlay, 'HitTest', 'off');
+                end
+            else
+                hOverlay = imshow(indexedOverlay, 'Parent', app.OverlayAxes, 'InitialMagnification', 'fit');
                 hOverlay.Tag = 'IndexedOverlay';
                 set(hOverlay, 'AlphaData', alphaOverlay, 'AlphaDataMapping', 'none');
-                app.UIOverlayAxes.UserData.CDataHandle = hOverlay;
-            end
-        else
-            hOverlay = imshow(indexedOverlay, 'Parent', app.UIOverlayAxes);
-            hOverlay.Tag = 'IndexedOverlay';
-            set(hOverlay, 'AlphaData', alphaOverlay, 'AlphaDataMapping', 'none');
-            app.UIOverlayAxes.UserData.CDataHandle = hOverlay;
-        end
-    end
-
-    if app.ZoomSlider.Value == 100
-        set(app.UIImageAxes, 'XLim', [1, imgWidth], 'YLim', [1, imgHeight]);
-        app.OriginalXLim = [1, imgWidth];
-        app.OriginalYLim = [1, imgHeight];
-    end
-
-else
-    %% Mode non-overlay : afficher les canaux empilés verticalement et superposer les masques sur l'axe overlay
-    % ne pas afficher les channels
-
-    channelImages = {};
-    displayedChannelIndices = [];
-    for i = 1:numel(visibleChannels)
-        chIndex = visibleChannels(i);
-        if ~selectedROI.display.selectedchannel(chIndex)
-            continue;
-        end
-        pix = selectedROI.findChannelID(selectedROI.display.channel{chIndex});
-        if numel(pix) == 3
-            channelImageR = double(selectedROI.image(:, :, pix(1), currentFrame));
-            channelImageG = double(selectedROI.image(:, :, pix(2), currentFrame));
-            channelImageB = double(selectedROI.image(:, :, pix(3), currentFrame));
-            rgbChannelImage = cat(3, channelImageR, channelImageG, channelImageB);
-            minLevel = 65535 * selectedROI.display.displaylim(1, chIndex);
-            maxLevel = 65535 * selectedROI.display.displaylim(2, chIndex);
-            rgbChannelImage = (rgbChannelImage - minLevel) / (maxLevel - minLevel);
-            rgbChannelImage = max(0, min(1, rgbChannelImage));
-            intensity = selectedROI.display.intensity(chIndex);
-            coloredChannel = intensity * rgbChannelImage;
-        else
-            channelImage = double(selectedROI.image(:, :, chIndex, currentFrame));
-            minLevel = 65535 * selectedROI.display.displaylim(1, chIndex);
-            maxLevel = 65535 * selectedROI.display.displaylim(2, chIndex);
-            normChannel = (channelImage - minLevel) / (maxLevel - minLevel);
-            normChannel = max(0, min(1, normChannel));
-            intensity = selectedROI.display.intensity(chIndex);
-            rgbColor = selectedROI.display.rgb(chIndex, :);
-            coloredChannel = zeros(imgHeight, imgWidth, 3);
-            for c = 1:3
-                coloredChannel(:, :, c) = intensity * rgbColor(c) * normChannel;
+                app.OverlayAxes.UserData.CDataHandle = hOverlay;
             end
         end
-        channelImages{end+1} = coloredChannel;
-        displayedChannelIndices(end+1) = chIndex;
-    end
 
-    if ~isempty(channelImages)
-        stackedImage = cat(1, channelImages{:});
-        imshow(stackedImage, 'Parent', app.UIImageAxes);
-        newYLim = [1, numel(channelImages)*imgHeight];
         if app.ZoomSlider.Value == 100
-            set(app.UIImageAxes, 'XLim', [1, imgWidth], 'YLim', newYLim);
+            set(app.ImageAxes, 'XLim', [1, imgWidth], 'YLim', [1, imgHeight]);
             app.OriginalXLim = [1, imgWidth];
-            app.OriginalYLim = newYLim;
+            app.OriginalYLim = [1, imgHeight];
         end
+
     else
-        cla(app.UIImageAxes);
+        %% Mode non-overlay : afficher les canaux empilés verticalement et superposer les masques sur l'axe overlay
+        channelImages = {};
+        displayedChannelIndices = [];
+        for i = 1:numel(visibleChannels)
+            chIndex = visibleChannels(i);
+            if ~selectedROI.display.selectedchannel(chIndex)
+                continue;
+            end
+            pix = selectedROI.findChannelID(selectedROI.display.channel{chIndex});
+            if numel(pix) == 3
+                channelImageR = double(selectedROI.image(:, :, pix(1), currentFrame));
+                channelImageG = double(selectedROI.image(:, :, pix(2), currentFrame));
+                channelImageB = double(selectedROI.image(:, :, pix(3), currentFrame));
+                rgbChannelImage = cat(3, channelImageR, channelImageG, channelImageB);
+                minLevel = 65535 * selectedROI.display.displaylim(1, chIndex);
+                maxLevel = 65535 * selectedROI.display.displaylim(2, chIndex);
+                rgbChannelImage = (rgbChannelImage - minLevel) / (maxLevel - minLevel);
+                rgbChannelImage = max(0, min(1, rgbChannelImage));
+                intensity = selectedROI.display.intensity(chIndex);
+                coloredChannel = intensity * rgbChannelImage;
+            else
+                channelImage = double(selectedROI.image(:, :, chIndex, currentFrame));
+                minLevel = 65535 * selectedROI.display.displaylim(1, chIndex);
+                maxLevel = 65535 * selectedROI.display.displaylim(2, chIndex);
+                normChannel = (channelImage - minLevel) / (maxLevel - minLevel);
+                normChannel = max(0, min(1, normChannel));
+                intensity = selectedROI.display.intensity(chIndex);
+                rgbColor = selectedROI.display.rgb(chIndex, :);
+                coloredChannel = zeros(imgHeight, imgWidth, 3);
+                for c = 1:3
+                    coloredChannel(:, :, c) = intensity * rgbColor(c) * normChannel;
+                end
+            end
+            channelImages{end+1} = coloredChannel;
+            displayedChannelIndices(end+1) = chIndex;
+        end
+
+        if ~isempty(channelImages)
+            stackedImage = cat(1, channelImages{:});
+            imshow(stackedImage, 'Parent', app.ImageAxes);
+            newYLim = [1, numel(channelImages)*imgHeight];
+            if app.ZoomSlider.Value == 100
+                set(app.ImageAxes, 'XLim', [1, imgWidth], 'YLim', newYLim);
+                app.OriginalXLim = [1, imgWidth];
+                app.OriginalYLim = newYLim;
+            end
+        else
+            cla(app.ImageAxes);
+        end
+        cla(app.OverlayAxes);
     end
-     cla(app.UIOverlayAxes);
-end
 
-% Mise à jour de l'histogramme
-score_updateHistogram(app, mode);
+    % Mise à jour de l'histogramme
+    score_updateHistogram(app, mode);
 
-% Mise à jour du profil d'intensité (ligne ou ellipse) si activé
-if app.LineIntensityprofileButton.Value
-    score_updateIntensityProfile(app, getPosition(app.LineIntensityProfileLine));
-end
-if app.ShapeButton.Value
-    score_updateEllipticalProfile(app, app.EllipseIntensityProfileObj);
-end
+    % Mise à jour du profil d'intensité (ligne ou ellipse) si activé
+    if app.LineIntensityprofileButton.Value
+        score_updateIntensityProfile(app, getPosition(app.LineIntensityProfileLine));
+    end
+    if app.ShapeButton.Value
+        score_updateEllipticalProfile(app, app.EllipseIntensityProfileObj);
+    end
 end

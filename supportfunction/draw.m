@@ -1221,7 +1221,7 @@ if strcmp(handles.Checked,'off')
         %  disp('not available,  set zoom and pan will be set off');
         tz.Enable='off';
         tp.Enable='off';
-        % return;
+        % return;wbdcb
     end
 
     handles.Checked='on';
@@ -1485,15 +1485,11 @@ for i=1:numel(mother)
 end
 end
 
-
 function setcell(handle,event,obj,hpaint,classif,him,hp )
 to=findobj(handle,'Tag','celltext');
 txt=str2num(to.String);
 setcell_low(handle,event,obj,hpaint,classif,him,hp,txt );
 end
-
-
-
 
 function setframe(handle,event,obj,him,hp,classif )
 frame=str2num(handle.String);
