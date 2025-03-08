@@ -216,6 +216,7 @@ parsedData.maxroidisplay=10;
 parsedData.allpositions=true;
 parsedData.folder=folder; 
 parsedData.advancedMode=false;
+
 parsedData.projectPath=fullfile(parsedData.folder,'tmpProject.mat');
 
 

@@ -117,7 +117,6 @@ function loadData_load(parsedData, hprogressbar)
          end
     end
 
-    rr = newdata.pos(2);
     if exist('hprogressbar', 'var') && ~isempty(hprogressbar)
          hprogressbar.Value = 0.45;
          hprogressbar.Message = 'Adding data to the shallow project...';
@@ -225,6 +224,7 @@ function loadData_load(parsedData, hprogressbar)
 
     shallowObj.parsedData=parsedData;
 
+     if parsedData.extractROI
     %% Call saveCroppedImages with the constructed arguments
     shallowObj.saveCroppedImages('frames', framesCell, 'fov', fovArg, 'cut', parsedData.maxframeloading, ...
         'correctdrift', corrDrift, 'cropdrift', 1, 'crashrecovery', 0, ...
@@ -234,6 +234,7 @@ function loadData_load(parsedData, hprogressbar)
          hprogressbar.Message = 'Cropped images saved...';
          drawnow;
     end
+     end
 
     %% Save the project
     shallowSave(shallowObj);
@@ -267,6 +268,8 @@ function loadData_load(parsedData, hprogressbar)
     end
 
     %% loading regions of interest 
+
+ if parsedData.extractROI
 
   figures = findall(0, 'Type', 'figure');
 appFigure = findobj(figures, 'Name', 'ScoreApp');
@@ -319,6 +322,10 @@ if roiCount == 0
     disp('Aucune ROI disponible pour l''affichage.');
     return;
 end
+
+ end
+
+
 
 
 

@@ -17,6 +17,12 @@ function hImage = loadData_preview(app, parsedData, posIndex, channelIndex, slid
 %     end
     lastParams = [posIndex, channelIndex, sliderFrame];
 
+    
+    if ~isfield(parsedData,'positions') || numel(parsedData.positions)==0
+        disp('No position to display; quitting...');
+        return; 
+    end
+
     % --- [Code existant de lecture et affichage de l'image] ---
     if posIndex > numel(parsedData.positions)
         error('posIndex (%d) excède le nombre de positions (%d).', posIndex, numel(parsedData.positions));

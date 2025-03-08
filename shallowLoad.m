@@ -1,4 +1,4 @@
-function [shallowObj msg]=shallowLoad(filename)
+function [shallowObj, msg]=shallowLoad(filename)
 
 
 if nargin==0
@@ -55,7 +55,7 @@ varlist=evalin('base','who');
                  if isa(tmp,'shallow')
                      % check path & filenemae
                      if strcmp(path, tmp.io.path(1:end-1)) & strcmp(file, tmp.io.file) % var exists already
-                         msg=['Project is already in the workspace under the var name:' varlist{i} '; Quitting...'];
+                         msg=['Project is already in the workspace under the var name: ' varlist{i} '; Quitting...'];
                          disp(msg);
                          shallowObj=[];
                          return
