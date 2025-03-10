@@ -75,8 +75,7 @@ end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 function drawROIs(app, parsedData, ax, img, posIndex)
-    %parsedData
-    
+    % Récupérer les données de la position
     posData = parsedData.positions(posIndex);
     % Si aucune image n'est passée, tenter de récupérer celle affichée.
     if nargin < 4 || isempty(img)
@@ -91,22 +90,20 @@ function drawROIs(app, parsedData, ax, img, posIndex)
     end
     [rows, cols, ~] = size(img);
     
-    % Supprimer les patchs ROI (mais pas l'imrect custom)
+    % Supprimer les patchs ROI existants (mais pas l'imrect custom)
     oldPatches = findobj(ax, 'Tag', 'ROIpatch');
     if ~isempty(oldPatches)
         delete(oldPatches);
     end
 
-    % Sélection du mode ROI dans parsedData.roitype (stocké globalement dans parsedData)
+    % Détermination du mode ROI (custom, full ou divide) à partir de parsedData.roitype
     if isfield(parsedData, 'roitype')
         modeROI = lower(parsedData.roitype);
         switch modeROI
             case 'custom'
-                % Mode custom : on utilise drawrectangle pour créer ou mettre à jour le rectangle interactif.
-
+                % Mode custom : dessiner les ROI détectées (en vert) si plusieurs existent
                 if isfield(posData, 'roibb') && ~isempty(posData.roibb)
                     if size(posData.roibb, 1) > 1
-                        % Plusieurs ROI détectées : les dessiner en magenta.
                         for k = 1:size(posData.roibb, 1)
                             r = posData.roibb(k,:);
                             patch('Parent', ax, 'XData', [r(1), r(1)+r(3), r(1)+r(3), r(1)], ...
@@ -116,49 +113,37 @@ function drawROIs(app, parsedData, ax, img, posIndex)
                     end
                 end
 
+                % Création du rectangle interactif custom s'il n'existe pas déjà
                 if ~(isprop(app, 'hCustomROI') && ~isempty(app.hCustomROI) && isvalid(app.hCustomROI))
                     if isfield(parsedData, 'roibb') && ~isempty(parsedData.roibb)
                         defaultPos = parsedData.roibb;
                     else
-                        % Par défaut, centrer un rectangle de 100x100.
                         x0 = round((cols - 100)/2);
                         y0 = round((rows - 100)/2);
                         defaultPos = [x0, y0, 60, 60];
                         parsedData.roibb = defaultPos;
-                       % parsedData.roipattern = imcrop(img, defaultPos);
                         app.customROIPositionChanged(defaultPos);
-                       
                     end
-                    % Créer le rectangle interactif avec drawrectangle
-                  
                     app.hCustomROI = drawrectangle(ax, 'Position', defaultPos, 'Color', 'b');
-                    % Ajouter un listener pour mettre à jour la position custom
                     addlistener(app.hCustomROI, 'ROIMoved', @(src,evt) customROIPositionChanged(app, src.Position));
-                else
-                    % Si le rectangle existe déjà, on peut le mettre à jour (par exemple, le repositionner si parsedData.roibb a changé)
-                    % Ici, on laisse l'utilisateur interagir directement.
                 end
 
             case 'full'
-                % Supprimer le rectangle custom s'il existe
-
+                % Mode full : supprimer le rectangle custom s'il existe et dessiner un patch vert couvrant toute l'image
                 if isprop(app, 'hCustomROI') && ~isempty(app.hCustomROI) && isvalid(app.hCustomROI)
                     delete(app.hCustomROI);
                     app.hCustomROI = [];
                 end
-      
-                % Dessiner un patch rouge couvrant toute l'image
                 patch('Parent', ax, 'XData', [1, cols, cols, 1], 'YData', [1, 1, rows, rows], ...
-                      'FaceColor', 'none', 'EdgeColor', 'g', 'LineWidth', 2, 'Tag', 'ROIpatch')
+                      'FaceColor', 'none', 'EdgeColor', 'g', 'LineWidth', 2, 'Tag', 'ROIpatch');
                 parsedData.roibb = [1, 1, cols, rows];
           
             case 'divide'
-                % Supprimer le rectangle custom s'il existe
+                % Mode divide : supprimer le rectangle custom s'il existe et dessiner un quadrillage
                 if isprop(app, 'hCustomROI') && ~isempty(app.hCustomROI) && isvalid(app.hCustomROI)
                     delete(app.hCustomROI);
                     app.hCustomROI = [];
                 end
-                % Dessiner un quadrillage de patchs verts
                 nDiv = app.ROIDivide.Value;
                 if nDiv < 1, nDiv = 1; end
                 widthRect = cols / nDiv;
@@ -178,8 +163,24 @@ function drawROIs(app, parsedData, ax, img, posIndex)
                     end
                 end
                 parsedData.roibb = boundingBoxes;
-                     
         end
     end
-app.parsedData=parsedData;
+
+    % Ajout d'une superposition des ROI stockées dans app.shallowObj (affichées en rouge)
+    if ~isempty(app.shallowObj) && isa(app.shallowObj, 'shallow')
+        % Vérifier que l'objet shallowObj possède un champ fov et que pour cette position, roi est défini
+        if isprop(app.shallowObj, 'fov') && numel(app.shallowObj.fov) >= posIndex
+            fovData = app.shallowObj.fov(posIndex);
+            if isprop(fovData, 'roi') && isprop(fovData.roi, 'value') && ~isempty(fovData.roi.value)
+                roiBox = fovData.roi.value; % Bounding box sous forme [x y width height]
+                % Afficher cette bounding box en rouge par-dessus les ROI existantes
+                patch('Parent', ax, 'XData', [roiBox(1), roiBox(1)+roiBox(3), roiBox(1)+roiBox(3), roiBox(1)], ...
+                      'YData', [roiBox(2), roiBox(2), roiBox(2)+roiBox(4), roiBox(2)+roiBox(4)], ...
+                      'FaceColor', 'none', 'EdgeColor', 'r', 'LineWidth', 2, 'Tag', 'ROIpatch');
+            end
+        end
+    end
+
+    % Mise à jour de parsedData (si nécessaire)
+    app.parsedData = parsedData;
 end

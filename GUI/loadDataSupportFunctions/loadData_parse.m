@@ -123,6 +123,7 @@ for i = 1:numel(positions)
     % Marquer la position comme sélectionnée par défaut.
     positions(i).selected = true;
     positions(i).roibb=[];
+    positions(i).extractROI=true;
     % Définir un nom d'utilisateur pour la position.
     if isfield(positions(i), 'folder') && ~isempty(positions(i).folder)
         folderPath = positions(i).folder;

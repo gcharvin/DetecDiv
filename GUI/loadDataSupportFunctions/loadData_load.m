@@ -166,48 +166,54 @@ function loadData_load(parsedData, hprogressbar)
              drawnow;
        end
     end
+%% Extract ROI data
+if exist('hprogressbar', 'var') && ~isempty(hprogressbar)
+    hprogressbar.Value = 0.65;
+    hprogressbar.Message = 'Extracting ROI data...';
+    drawnow;
+end
 
-    %% Extract ROI data
-    if exist('hprogressbar', 'var') && ~isempty(hprogressbar)
-         hprogressbar.Value = 0.65;
-         hprogressbar.Message = 'Extracting ROI data...';
-         drawnow;
+selectedPos = find([parsedData.positions.selected]);
+if isempty(selectedPos)
+    error('No position selected in the table.');
+end
+
+% Initialiser les cell arrays pour les frames et les channels
+framesCell = {};
+channelCell = {};
+fovArg = [];
+
+cc = 1;
+for idx = 1:numel(selectedPos)
+    i = selectedPos(idx);
+    pos = parsedData.positions(i);
+    % Ne traiter que les positions dont extractROI est true
+    if pos.extractROI
+        fovArg(end+1) = i;  %#ok<AGROW>
+        
+        if exist('hprogressbar', 'var') && ~isempty(hprogressbar)
+            hprogressbar.Message = sprintf('Extracting frames for FOV %d/%d...', cc, numel(selectedPos));
+            drawnow;
+        end
+        if isfield(pos, 'currentMinFrame') && isfield(pos, 'currentMaxFrame') && ...
+                ~isempty(pos.currentMinFrame) && ~isempty(pos.currentMaxFrame)
+            framesCell{cc} = pos.currentMinFrame : pos.currentMaxFrame;
+        else
+            framesCell{cc} = pos.frames;
+        end
+        
+        if exist('hprogressbar', 'var') && ~isempty(hprogressbar)
+            hprogressbar.Message = sprintf('Extracting channels for FOV %d/%d...', cc, numel(selectedPos));
+            drawnow;
+        end
+        channelCell{cc} = find(pos.channelsSelected);
+        
+        cc = cc + 1;
     end
+end
 
-    selectedPos = find([parsedData.positions.selected]);
-    if isempty(selectedPos)
-        error('No position selected in the table.');
-    end
 
-    % Build the cell array for "frames"
-    framesCell = cell(1, numel(selectedPos));
-    for idx = 1:numel(selectedPos)
-         i = selectedPos(idx);
-         pos = parsedData.positions(i);
-         if exist('hprogressbar', 'var') && ~isempty(hprogressbar)
-             hprogressbar.Message = sprintf('Extracting frames for position %d/%d...', idx, numel(selectedPos));
-             drawnow;
-         end
-         if isfield(pos, 'currentMinFrame') && isfield(pos, 'currentMaxFrame') && ...
-                 ~isempty(pos.currentMinFrame) && ~isempty(pos.currentMaxFrame)
-             framesCell{idx} = pos.currentMinFrame : pos.currentMaxFrame;
-         else
-             framesCell{idx} = pos.frames;
-         end
-    end
-
-    % Build the cell array for "channel"
-    channelCell = cell(1, numel(selectedPos));
-    for idx = 1:numel(selectedPos)
-         i = selectedPos(idx);
-         if exist('hprogressbar', 'var') && ~isempty(hprogressbar)
-             hprogressbar.Message = sprintf('Extracting channels for position %d/%d...', idx, numel(selectedPos));
-             drawnow;
-         end
-         channelCell{idx} = find(parsedData.positions(i).channelsSelected);
-    end
-
-    fovArg = selectedPos;
+   % fovArg = selectedPos;
     if parsedData.correctdrift
          corrDrift = true;
     else
@@ -221,11 +227,11 @@ function loadData_load(parsedData, hprogressbar)
     end
 
     %% save parsedData in the current project
-
     shallowObj.parsedData=parsedData;
 
-     if parsedData.extractROI
+    
     %% Call saveCroppedImages with the constructed arguments
+    if numel(fovArg)
     shallowObj.saveCroppedImages('frames', framesCell, 'fov', fovArg, 'cut', parsedData.maxframeloading, ...
         'correctdrift', corrDrift, 'cropdrift', 1, 'crashrecovery', 0, ...
         'channel', channelCell, 'scale', 1,'hprogressbar',hprogressbar);
@@ -234,7 +240,8 @@ function loadData_load(parsedData, hprogressbar)
          hprogressbar.Message = 'Cropped images saved...';
          drawnow;
     end
-     end
+    end
+    
 
     %% Save the project
     shallowSave(shallowObj);
@@ -269,19 +276,33 @@ function loadData_load(parsedData, hprogressbar)
 
     %% loading regions of interest 
 
- if parsedData.extractROI
+    nroimax = parsedData.maxroidisplay;
+
+    if nroimax==0
+         if exist('hprogressbar', 'var') && ~isempty(hprogressbar)
+         hprogressbar.Value = 1.0;
+         hprogressbar.Message = '';
+         drawnow;
+        end
+        return
+    end
 
   figures = findall(0, 'Type', 'figure');
 appFigure = findobj(figures, 'Name', 'ScoreApp');
 
 % Nombre maximum de ROIs à afficher
-nroimax = parsedData.maxroidisplay;
+
 
 % Initialiser le compteur de ROIs ajoutées
 roiCount = 0;
 
 % Parcourir tous les FOV de shallowObj
 for f = 1:numel(shallowObj.fov)
+
+    if numel(find(fovArg==f))==0
+        continue
+    end
+
     currentFOV = shallowObj.fov(f);
     
     % Tester si ce FOV contient des ROIs
@@ -322,12 +343,5 @@ if roiCount == 0
     disp('Aucune ROI disponible pour l''affichage.');
     return;
 end
-
- end
-
-
-
-
-
 
 end
