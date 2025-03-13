@@ -358,7 +358,7 @@ function info = parseFileList(fileList, forceSinglePosition)
     info.userChanName = cell(1, info.numChannels);
 
     for j = 1:info.numChannels
-        info.userChanName{j} = ['Channel ' num2str(j-1)];
+        info.userChanName{j} = ['Channel' num2str(j-1)];
     end
     
     if forceSinglePosition

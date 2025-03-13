@@ -1,4 +1,4 @@
-function loadData_load(parsedData, hprogressbar)
+function shallowObj=loadData_load(parsedData, hprogressbar)
     %% Initialize the progress bar if provided
     if exist('hprogressbar', 'var') && ~isempty(hprogressbar)
         hprogressbar.Value = 0;
@@ -25,6 +25,7 @@ function loadData_load(parsedData, hprogressbar)
         hprogressbar.Message = 'Shallow project created...';
         drawnow;
     end
+
 
     %% Build the newdata structure to provide to addData
     newdata.pos = [];

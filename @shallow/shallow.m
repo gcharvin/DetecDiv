@@ -5,7 +5,7 @@ classdef shallow < handle
         io=struct('path','','file','');
         parsedData;
         fov=fov();%fov({},1,'');
-        processing=struct('roi',[],'classification',[],'processor',[]);%,'classification',classi());
+        processing=struct('roi',[],'classification',[],'processor',[],'pipeline',[]);%,'classification',classi());
         
         
         tag='shallow project';

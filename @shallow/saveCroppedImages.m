@@ -290,6 +290,7 @@ for idfov = 1:numel(fovid)
                 tmproi(l).display.frame = nframesBlock(1);
             end
 
+     
             if init == 1
                 tmproi(l).image = uint16(zeros(uint16(scale * rroi(4)), uint16(scale * rroi(3)), ccha, numel(nframestot)));
                 tmproi(l).display.channel = {};
@@ -300,7 +301,9 @@ for idfov = 1:numel(fovid)
                 ck = 1;
                 cumck = 1;
                 for k = cha
+            
                     if numel(tmpfov(i).channel{k}) == 0
+                       
                         tmproi(l).display.channel{ck} = ['Channel_' num2str(k)];
                     else
                         tmproi(l).display.channel{ck} = tmpfov(i).channel{k};
