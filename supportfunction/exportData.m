@@ -62,7 +62,7 @@ function exportData(datagroup,rois,filename,varargin)
 
                     if cc>1
                         tt=fullfile(p,[f '_' d{1} '.xlsx']);
-                  
+                  p,f
                         writecell(strtot,fullfile(p,[f '_' d{1} '.xlsx']),'sheet',d{2},'WriteMode','overwritesheet');
                     end
                 end

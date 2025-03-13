@@ -86,7 +86,7 @@ if numel(dataout)==0
 dataout=dataseries;
 end
 
-imageout=roiobj.image;
+%imageout=roiobj.image;
 
 for i=1:2
     if  paramout.(['mask' num2str(i) '_stat']) & ~strcmp(paramout.(['mask' num2str(i) '_name']),'N/A') % if detailed stat should be computed
@@ -99,7 +99,8 @@ for i=1:2
         end
 
         BW_3D=roiobj.image(:,:,cha,:);
-        pixdata=find(arrayfun(@(x) strcmp(x.groupid, ['mask_quantification_' paramout.(['mask' num2str(i) '_name'])]),roiobj.data)); % find if object exists already
+        pixdata=find(arrayfun(@(x) strcmp(x.groupid, ['mask_quantification_' paramout.(['mask' num2str(i) '_name'])]),roiobj.data)) ;
+        % find if object exists already
 
         %
         if numel(pixdata)

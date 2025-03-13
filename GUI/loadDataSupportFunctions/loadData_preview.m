@@ -171,7 +171,7 @@ function drawROIs(app, parsedData, ax, img, posIndex)
         % Vérifier que l'objet shallowObj possède un champ fov et que pour cette position, roi est défini
         if isprop(app.shallowObj, 'fov') && numel(app.shallowObj.fov) >= posIndex
             fovData = app.shallowObj.fov(posIndex);
-            if isprop(fovData, 'roi') && isprop(fovData.roi, 'value') && ~isempty(fovData.roi.value)
+            if  isprop(fovData, 'roi') && any(arrayfun(@(x) isprop(x, 'value'), fovData.roi)) && ~isempty(fovData.roi(1).value)
                 roiBox = fovData.roi.value; % Bounding box sous forme [x y width height]
                 % Afficher cette bounding box en rouge par-dessus les ROI existantes
                 patch('Parent', ax, 'XData', [roiBox(1), roiBox(1)+roiBox(3), roiBox(1)+roiBox(3), roiBox(1)], ...

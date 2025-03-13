@@ -49,8 +49,12 @@ dataout=[];
 mask_data=[];
 dataout=roiobj.data;
 
-roiobj.load('results');
+roiobj.load('data');
 
+tmp=roiobj.data;
+if numel(tmp)==0
+    roiobj.data=dataseries;
+end
 
 listdata={roiobj.data.groupid};
 pix=find(matches(listdata,param.classification_data{end}));
@@ -139,6 +143,7 @@ for j=1:2 % loop on training and prediction data
             %
             if numel(pixdata)
                 cc=pixdata(1); % data to be overwritten
+   
             else
                 n=numel(dataout);
                 if n==1 & numel(dataout.data)==0

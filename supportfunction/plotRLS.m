@@ -22,7 +22,7 @@ leg={};
 cd=1;
 for i=1:numel(datagroups)
     cd(i)=1;
-    dat=datagroups(i).Source.nodename;
+    dat=datagroups(i).Source.nodename
 
     if ~isfield(datagroups(i).Source,'nodename') % user did not check any node, so skip plotting
         continue
@@ -129,6 +129,7 @@ end
             xout{end+1}=tmp';
 
             if strcmp(datagroups(i).Type,'generation')
+               
                 switch datagroups(i).Param.Traj_synchronization{end}
                     case 'sep'
                         xout{end}= rois(k).data(pix).getData('sep');
