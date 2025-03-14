@@ -81,17 +81,30 @@ function score_display(app, mode)
                 channelImageG = double(selectedROI.image(:, :, pix(2), currentFrame));
                 channelImageB = double(selectedROI.image(:, :, pix(3), currentFrame));
                 rgbChannelImage = cat(3, channelImageR, channelImageG, channelImageB);
-                minLevel = 65535 * selectedROI.display.displaylim(1, chIndex);
-                maxLevel = 65535 * selectedROI.display.displaylim(2, chIndex);
+         
+if isfield(selectedROI.display, 'displaylim') && ~isempty(selectedROI.display.displaylim) && size(selectedROI.display.displaylim,2) >= chIndex
+    minLevel = 65535 * selectedROI.display.displaylim(1, chIndex);
+    maxLevel = 65535 * selectedROI.display.displaylim(2, chIndex);
+else
+    % Valeurs par défaut si displaylim n'est pas défini pour ce canal
+    minLevel = 0;
+    maxLevel = 65535;
+end
                 rgbChannelImage = (rgbChannelImage - minLevel) / (maxLevel - minLevel);
                 rgbChannelImage = max(0, min(1, rgbChannelImage));
                 intensity = selectedROI.display.intensity(chIndex);
                 compositeImage = compositeImage + intensity * rgbChannelImage;
             else
                 % Canal non-RGB (monochrome)
-                channelImage = double(selectedROI.image(:, :, chIndex, currentFrame));
-                minLevel = 65535 * selectedROI.display.displaylim(1, chIndex);
-                maxLevel = 65535 * selectedROI.display.displaylim(2, chIndex);
+               channelImage = double(selectedROI.image(:, :, chIndex, currentFrame));
+if isfield(selectedROI.display, 'displaylim') && ~isempty(selectedROI.display.displaylim) && size(selectedROI.display.displaylim,2) >= chIndex
+    minLevel = 65535 * selectedROI.display.displaylim(1, chIndex);
+    maxLevel = 65535 * selectedROI.display.displaylim(2, chIndex);
+else
+    % Valeurs par défaut si displaylim n'est pas défini pour ce canal
+    minLevel = 0;
+    maxLevel = 65535;
+end
                 channelImage = (channelImage - minLevel) / (maxLevel - minLevel);
                 channelImage = max(0, min(1, channelImage));
                 intensity = selectedROI.display.intensity(chIndex);

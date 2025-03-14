@@ -173,14 +173,25 @@ classdef dataseries < handle
                 outname=arrname;
             end
 
-            for i=1:size(arr,2)
-                % 
-                % 
-                % aaa=outname{i}
-                % bbb=arr(:,i)
-                % sss=size(obj.data)
-                % size(bbb)
+currentHeight = height(obj.data);
+newHeight = size(arr,1);
+if newHeight > currentHeight
+    numNewRows = newHeight - currentHeight;
+    varNames = obj.data.Properties.VariableNames;
+    % Créer une table avec numNewRows lignes et les mêmes variables, toutes remplies de missing
+    newRows = table();
+    for iVar = 1:numel(varNames)
+        % Pour chaque colonne, remplir un vecteur de valeurs manquantes
+        newRows.(varNames{iVar}) = repmat(missing, numNewRows, 1);
+    end
+    % Concaténer la table existante avec les nouvelles lignes
+    obj.data = [obj.data; newRows];
+elseif newHeight < currentHeight
+    % Tronquer la table si besoin
+    obj.data = obj.data(1:newHeight, :);
+end
 
+            for i=1:size(arr,2)
                     obj.data.(outname{i})=arr(:,i);
 
                     if numel(obj.plotProperties)
