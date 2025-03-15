@@ -14,7 +14,6 @@ function score_display(app, mode)
     end
     selectedROI = app.content.ROIList{selectedROIIndex};
 
-
     % Vérifier que l'image est chargée, sinon la charger) 
     if isempty(selectedROI.image)
         selectedROI.load();

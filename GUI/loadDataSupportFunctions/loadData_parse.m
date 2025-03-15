@@ -234,6 +234,10 @@ else
     parsedData.maxFrame = NaN;
 end
 
+parsedData.currentMinFrame=parsedData.minFrame;
+parsedData.currentMaxFrame=parsedData.maxFrame;
+
+
 end
 
 %% Fonction locale pour récupérer la liste des fichiers d'un dossier

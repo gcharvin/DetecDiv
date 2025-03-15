@@ -93,7 +93,7 @@ for i=1:numel(datagroups)
 
     str=[datagroups(i).Name ' // ' dat{j}{1} ' // ' dat{j}{2}];
 
-    d=dat{j}
+    d=dat{j};
     xout={};
     yout={};
     ylineage={};
@@ -214,8 +214,11 @@ for i=1:numel(datagroups)
     valMax = cellfun(@(x) max(x), xout);
     totMax=max(valMax)+1;
 
-    totMax= num2cell(totMax*ones(1,numel(valMax)));
-    totMin=  num2cell(-totMin*ones(1,numel(valMin)));
+   % totMax= num2cell(totMax*ones(1,numel(valMax)));
+  %  totMin=  num2cell(-totMin*ones(1,numel(valMin)));
+
+    totMax = num2cell(totMax .* ones(1, numel(valMax)));
+totMin = num2cell(-totMin .* ones(1, numel(valMin)));
 
     len=cellfun(@(x) length(x), xout,'UniformOutput',false);
 
