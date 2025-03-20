@@ -134,9 +134,7 @@ for i=1:numel(plotidx)
             xr=1:numel(dat);
             yy=ylim(hs(i));
 
-            pix=find(xr==frame);
-
-            pix 
+            pix=find(xr==frame); 
 
             if numel(pix)~=0
 

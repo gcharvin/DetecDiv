@@ -1,5 +1,13 @@
 function score_updateEllipticalProfile(app, ellipseObj)
-    %% Récupérer la ROI et le frame courant
+
+     % Vérifier que l'objet ellipse est valide
+    if isempty(ellipseObj) || ~isvalid(ellipseObj)
+        % Vous pouvez vider l'axe du profil ou simplement sortir de la fonction
+        cla(app.UIProfileAxes);
+        return;
+    end
+
+%% Récupérer la ROI et le frame courant
     % On utilise ici la table des canaux pour les données, mais la ROI est déterminée via UIROITable.
     selectedROIIndex = find(cell2mat(app.UIROITable.Data(:,1)), 1);
     if isempty(selectedROIIndex)

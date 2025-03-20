@@ -1,6 +1,11 @@
 function score_display(app, mode)
 
+
+%  tmp=app.EllipseIntensityProfileObj
+
 checkOrCreateImageFigure(app);
+
+  
 
 % Vérifier qu'une ROI est sélectionnée
 if isempty(app.content.ROIList)
@@ -315,6 +320,7 @@ score_updateHistogram(app, mode);
 
 % Mise à jour du profil d'intensité (ligne ou ellipse) si activé
 if app.LineIntensityprofileButton.Value
+
     score_updateIntensityProfile(app, getPosition(app.LineIntensityProfileLine));
 end
 if app.ShapeButton.Value
@@ -333,6 +339,7 @@ if ~isprop(selectedROI, 'data') || numel(selectedROI.data) < dsIndex
     return;
 end
 
+ if strcmp(mode, 'slow') % data refresh
 % Mettre à jour les plotProperties dans le dataset correspondant
 selectedROI.data(dsIndex).plotProperties = app.UISubDataTable.Data;
 
@@ -353,7 +360,6 @@ if ~isempty(subData) && any(cell2mat(subData(:,1)))
 
       
             if numel(find( selectedTableIndex==i))~=0
-                
                     app.DataFigure(i)= selectedROI.data(i).plot();
             end
             end
@@ -363,5 +369,6 @@ if ~isempty(subData) && any(cell2mat(subData(:,1)))
     end
     figure(app.ImageFigure);
 end
+ end
 
 end
