@@ -120,9 +120,15 @@ if app.OverlayCheckBox.Value
     indexedOverlay = zeros(imgHeight, imgWidth, 3);
     alphaOverlay = zeros(imgHeight, imgWidth);
 
+  
+   noIndexed=0;
+   for l = 1:numel(indexedChannels)
+           noIndexed=noIndexed+selectedROI.display.selectedchannel(indexedChannels(l)) ;
+   end
 
-    if app.PaintButton.Value
+    if app.PaintButton.Value && noIndexed~=0
         % --- Modification pour la reconstruction du nom complet ---
+      
         selectedRow = app.UIAnnotationTable.Selection;
         if isempty(selectedRow) || isempty(selectedRow(1))
             errordlg('No channel selected!');
@@ -132,7 +138,7 @@ if app.OverlayCheckBox.Value
             annotationPart = app.UIAnnotationTable.Data{selectedRow(1), 2};
             classPart = app.UIAnnotationTable.Data{selectedRow(1), 3};
             fullChannelName = [annotationPart, '_', classPart];
-            channelIdx = find(strcmp(selectedROI.display.channel, fullChannelName), 1)
+            channelIdx = find(strcmp(selectedROI.display.channel, fullChannelName), 1);
             if isempty(channelIdx)
                 errordlg('No channel selected!');
                 return;
@@ -334,7 +340,24 @@ selectedROI.data(dsIndex).plotProperties = app.UISubDataTable.Data;
 subData = app.UISubDataTable.Data;
 if ~isempty(subData) && any(cell2mat(subData(:,1)))
     try
-        app.DataFigure = selectedROI.data(dsIndex).plot();
+          selectedTableIndex = find(cell2mat(app.UIDataTable.Data(:,1)));
+         %  if numel(selectedTableIndex)
+            for i=1:numel(selectedROI.data) %selectedTableIndex'
+                h=findobj('Tag',selectedROI.data(i).id);
+
+                if numel(h) % plot is present 
+                    if numel(find(selectedTableIndex==i))==0 % table is not checked, delete plot
+                        delete(h);
+                    end
+                end
+
+      
+            if numel(find( selectedTableIndex==i))~=0
+                
+                    app.DataFigure(i)= selectedROI.data(i).plot();
+            end
+            end
+
     catch ME
         warning('Error when calling plot method: %s', ME.message);
     end

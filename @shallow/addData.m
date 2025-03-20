@@ -49,6 +49,7 @@ for i=1:numel(newdata.pos) % loop on all the fov / positions / folders to be cre
     obj.fov(cc).channel=newdata.pos(i).channelname;
     obj.fov(cc).frames=newdata.pos(i).frames;
     obj.fov(cc).interval=newdata.pos(i).interval;
+    obj.fov(cc).parent=obj;
     cc=cc+1;
 end
 

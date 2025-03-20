@@ -20,6 +20,7 @@ classdef fov < handle
         crop=[]; %cropping area for fov
         pattern=[];
         drift=[] %  2D vector that specifies how to translate image to suppress stage reporducibility errors
+        parent=[];
     end
     
     properties (Dependent)

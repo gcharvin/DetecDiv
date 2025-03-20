@@ -158,6 +158,8 @@ disp('* This project contains at least one FOV wit the following path');
 disp('* The current path are:*');
 for i=1:numel(shallowObj.fov)
 disp([shallowObj.fov(i).srcpath{1}]);
+% new ref to parent
+shallowObj.fov(i).parent=shallowObj;
 end
 disp('* Need to update the path of the source images ?');
 disp('* To do so, use the shallowObj.setSrcPath function');

@@ -613,6 +613,7 @@ end
             end
         end
 
+        dataout(cc).plotGroup={[] [] [] [] [] unique(group)};
     %roiobj.data(cc).plotGroup={[] [] [] [] [] unique(group)};
 end
 

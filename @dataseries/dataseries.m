@@ -18,6 +18,7 @@ classdef dataseries < handle
         history;
         userData;
         show=true ; % whether this dataset must be plotted when plot function is called
+        parent; % handle of the parent roi
 
 
     end

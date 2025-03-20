@@ -7,6 +7,7 @@ classdef roi < handle
         channelid=1; % nx1 array of numbers that indicates how the channels are organized within the image; exemple : channelid: [1 1 1 2 3 4 5 6] means that the first channel is composed of 3 subchannels, and there are 6 channels in total
         parent=[] % reference of the parent field of view
         display=struct('intensity',[1 1 1],'frame',1,'selectedchannel',1,'binning',1,'rgb',[1 1 1],'channel',{'Channel 1'},'stretchlim',[],'displaylim',[0 ; 1]);
+
         % display struct structure : 
         % intensity: nx3 array, n is the number of channels; if all 3
         % elements are 0 for a given channel, then image is an indexed

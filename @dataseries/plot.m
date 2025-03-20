@@ -72,6 +72,7 @@ toplot=0;
 frame=[];
 
 hroi=findobj('Tag',['ROI' data.parentid]);
+
 hf=findobj(hroi,'Tag','frametext');
 if numel(hf)
     frame=str2num(hf.String);
@@ -92,7 +93,10 @@ end
                 frame=selectedROI.display.frame;
    end
 
+
 txt='';
+
+
 for i=1:numel(plotidx)
 
     hs(i)=subplot(n,1,i);
@@ -132,7 +136,11 @@ for i=1:numel(plotidx)
 
             pix=find(xr==frame);
 
-            line([xr(pix) xr(pix)],yy,'Color',[0.5 0.5 0.5],'LineWidth',1,'Tag',[data.parentid '_track'],'UserData',data);
+            pix 
+
+            if numel(pix)~=0
+
+            line(h.Children(1),[xr(pix) xr(pix)],yy,'Color',[0.5 0.5 0.5],'LineWidth',1,'Tag',[data.parentid '_track'],'UserData',data);
 
 
             if nargin==3 % display current class
@@ -155,6 +163,7 @@ for i=1:numel(plotidx)
                 title(txt,'FontSize',20,'Interpreter','none');
 
             end
+            end
             str=[str 'frame'];
         end
     end
@@ -174,6 +183,8 @@ for i=1:numel(plotidx)
 
     xlim([1 numel(dat)]);
 end
+
+
 
 if toplot==0
     delete(h)  ;

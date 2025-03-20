@@ -1,14 +1,14 @@
-function [processObj, shallowObj] = lifespan_setupPreProcessing(app, processorName,index)
+function processObj = lifespan_setupPreProcessing(shallowObj, processorName,index)
     %% Préparation du processing
 
     % Récupérer l'objet shallow depuis l'espace de travail à partir du nom de projet
-    projName = app.shallowObj.io.file;
-    if evalin('base', sprintf('exist(''%s'', ''var'')', projName))
-        shallowObj = evalin('base', projName);
-    else
-        uialert(app.LifespanizerUIFigure, 'Project not found in workspace.', 'Error');
-        return;
-    end
+    %projName = shallowObj.io.file;
+    % if evalin('base', sprintf('exist(''%s'', ''var'')', projName))
+    %     shallowObj = evalin('base', projName);
+    % else
+    %     warning('Project not found in workspace');
+    %     return;
+    % end
 
     % Vérifier si un processor dont le nom contient processorName existe déjà
     existingProcessors = [];
@@ -40,11 +40,10 @@ function [processObj, shallowObj] = lifespan_setupPreProcessing(app, processorNa
         if exist(procListFile, 'file')
             load(procListFile, 'processlist'); 
         else
-            uialert(app.LifespanizerUIFigure, 'Processor list not found.', 'Error');
+            warning('Project list not found in workspace');
             return;
         end
 
-       
         processObj.processFun = processlist{index,5}{1};
         processObj.processArg = {};
 
