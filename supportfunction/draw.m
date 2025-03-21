@@ -370,7 +370,7 @@ if exist(fle)
     tmp=userprefs.painting_transparency_shortcut;  tmp=textscan(tmp,'%s');   tmp=tmp{1}; tmp=tmp'; specialkeys{5}=tmp;
 
 else % structure must me created
-    errordlg('Could not file the shortcut preferences; Please reset user preferences before launching this indow again!,Error');
+    errordlg('Could not file the shortcut preferences; Please reset user preferences before launching this window again!,Error');
     close
     return;
 end

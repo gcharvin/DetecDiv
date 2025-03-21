@@ -339,7 +339,7 @@ if ~isprop(selectedROI, 'data') || numel(selectedROI.data) < dsIndex
     return;
 end
 
- if strcmp(mode, 'slow') % data refresh
+% if strcmp(mode, 'slow') % data refresh
 % Mettre à jour les plotProperties dans le dataset correspondant
 selectedROI.data(dsIndex).plotProperties = app.UISubDataTable.Data;
 
@@ -358,7 +358,6 @@ if ~isempty(subData) && any(cell2mat(subData(:,1)))
                     end
                 end
 
-      
             if numel(find( selectedTableIndex==i))~=0
                     app.DataFigure(i)= selectedROI.data(i).plot();
             end
@@ -369,6 +368,6 @@ if ~isempty(subData) && any(cell2mat(subData(:,1)))
     end
     figure(app.ImageFigure);
 end
- end
+% end
 
 end

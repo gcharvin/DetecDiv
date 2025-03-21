@@ -128,6 +128,7 @@ for i=1:numel(plotidx)
 
     dat=data.getData(varnames{plotidx{i}(1)});
 
+
     if numel(hroi)
 
         if data.type=="temporal"
