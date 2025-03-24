@@ -69,6 +69,7 @@ for i=1:numel(varargin)
     if strcmp(varargin{i},'Frames')  frames=varargin{i+1};  end
     if strcmp(varargin{i},'Name')    name=varargin{i+1}; end
 
+
     if strcmp(varargin{i},'IPS') % number of frames displayed per second
         ips=varargin{i+1};
     end
@@ -495,6 +496,7 @@ end
             for i=1:size(imtmp,4) % loop on frames
                 %IMAGES
                 imgRGBsum=uint16(zeros(size(imtmp,1),size(imtmp,2),3));
+
                 for ii=1:numel(cha) %loop on channels
 
                     if mod(i-1, snapRate(ii))==0 %skip frames
@@ -520,6 +522,7 @@ end
 
 
                         if numel(levels{ii})==2 % A 2D vector is provided, therefore image is not an indexed one
+                   
                             if levels{ii}==[-1 -1] %auto adjust
                                 if i==1
                                     tmptimelapse=imtmp(:,:,cha{ii},1:end);
@@ -542,14 +545,22 @@ end
 
 
                         else % channel represents an indexed image , will use provided colormap
+  
+                           
                            indices=str2num(levels{ii}{1});
+                           if indices==-1
+                                indices=1:max(imtmp2(:));
+                                 levmap=eval([levels{ii}{2} '(' num2str(max(imtmp2(:))) ')']);
+                           else
+                                 levmap=eval(levels{ii}{2});
+                           end
 
                           %  maxe= max( imtmp2(:)); %get classes
                             imrgbbw=uint16(zeros(size(imgRGBsum)));
 
                             contour= levels{ii}{4};
                             wid= levels{ii}{5};
-                             levmap=eval(levels{ii}{2});
+                            
                              wei= levels{ii}{3};
 
          
@@ -949,10 +960,11 @@ end
                 lin=1;
             end
 
+
              h= figure, montage(imgout,'Size',[1 NaN]);
              [pth fle]=fileparts(name);
    
-              fil=fullfile(pth, [fle '.png'])
+              fil=fullfile(pth, [fle '.png']);
               exportgraphics(h, fil);
               disp(['Montage figure successfully exported to : ' fil])
 

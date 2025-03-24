@@ -44,6 +44,10 @@ obj.display.channel{end+1}=str;
 obj.display.intensity(end+1,:)=intensity;
 obj.display.rgb(end+1,:)=rgb;
 
+if sum(intensity)==0
+    obj.display.indexed=true;
+end
+
 if  numel(imz)<3
     obj.image(:,:,1+1:1+size(matrix,3),:)=matrix;
 else

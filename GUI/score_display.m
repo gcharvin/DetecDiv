@@ -57,7 +57,7 @@ numChannels = numel(selectedROI.display.channel);
 for i = 1:numChannels
     pix = selectedROI.findChannelID(selectedROI.display.channel{i});
     if numel(pix) ~= 3  % non-RGB
-        if sum(selectedROI.display.intensity(i, :)) == 0
+        if selectedROI.display.indexed(i)==true %sum(selectedROI.display.intensity(i, :)) == 0
             indexedChannels = [indexedChannels, i];
         end
     end
@@ -98,7 +98,7 @@ if app.OverlayCheckBox.Value
             end
             rgbChannelImage = (rgbChannelImage - minLevel) / (maxLevel - minLevel);
             rgbChannelImage = max(0, min(1, rgbChannelImage));
-            intensity = selectedROI.display.intensity(chIndex);
+            intensity = selectedROI.display.alpha(chIndex);
             compositeImage = compositeImage + intensity * rgbChannelImage;
         else
             % Canal non-RGB (monochrome)
@@ -113,7 +113,7 @@ if app.OverlayCheckBox.Value
             end
             channelImage = (channelImage - minLevel) / (maxLevel - minLevel);
             channelImage = max(0, min(1, channelImage));
-            intensity = selectedROI.display.intensity(chIndex);
+            intensity = selectedROI.display.alpha(chIndex);
             rgbColor = selectedROI.display.rgb(chIndex, :);
             for c = 1:3
                 compositeImage(:, :, c) = compositeImage(:, :, c) + intensity * rgbColor(c) * channelImage;
@@ -177,7 +177,7 @@ if app.OverlayCheckBox.Value
         end
         annotationColorImage = max(0, min(1, annotationColorImage));
         if numel(find(alphamask))
-            alphaOverlay(alphamask) = app.Transparency.Value;
+            alphaOverlay(alphamask) = selectedROI.display.alpha(channelIdx);
         end
 
         indexedOverlay = annotationColorImage;
@@ -209,7 +209,7 @@ if app.OverlayCheckBox.Value
                 channelOverlay(mask) = uniformColor(k);
                 indexedOverlay(:, :, k) = channelOverlay;
             end
-            alphaOverlay(mask) = app.Transparency.Value;
+            alphaOverlay(mask) = selectedROI.display.alpha(chIndex);
         end
     end
 
@@ -281,7 +281,7 @@ else
             maxLevel = 65535 * selectedROI.display.displaylim(2, chIndex);
             rgbChannelImage = (rgbChannelImage - minLevel) / (maxLevel - minLevel);
             rgbChannelImage = max(0, min(1, rgbChannelImage));
-            intensity = selectedROI.display.intensity(chIndex);
+            intensity = selectedROI.display.alpha(chIndex);
             coloredChannel = intensity * rgbChannelImage;
         else
             channelImage = double(selectedROI.image(:, :, chIndex, currentFrame));
@@ -289,7 +289,7 @@ else
             maxLevel = 65535 * selectedROI.display.displaylim(2, chIndex);
             normChannel = (channelImage - minLevel) / (maxLevel - minLevel);
             normChannel = max(0, min(1, normChannel));
-            intensity = selectedROI.display.intensity(chIndex);
+            intensity = selectedROI.display.alpha(chIndex);
             rgbColor = selectedROI.display.rgb(chIndex, :);
             coloredChannel = zeros(imgHeight, imgWidth, 3);
             for c = 1:3
