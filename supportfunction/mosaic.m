@@ -32,6 +32,9 @@ DisplayTest=0;
 timeoffset=false;
 weights=[];
 
+paintChannel=0;
+defaultClass=0;
+
 %colr=[36/255,61/255,255/255];
 colr=[0.35,0.35,0.35];
 
@@ -214,6 +217,14 @@ for i=1:numel(varargin)
         DisplayTest=1;  
         frames=obj(1).display.frame;
     
+     end
+
+      if strcmp(varargin{i},'PaintChannel') 
+                paintChannel=varargin{i+1};
+      end
+
+       if strcmp(varargin{i},'DefaultClass') 
+                defaultClass=varargin{i+1};
       end
 
 end
@@ -546,11 +557,22 @@ end
 
                         else % channel represents an indexed image , will use provided colormap
   
-                           
                            indices=str2num(levels{ii}{1});
                            if indices==-1
-                                indices=1:max(imtmp2(:));
+
+                               if defaultClass
+                                 indices=2:max(imtmp2(:));
+                               else
+                                  indices=1:max(imtmp2(:));
+                               end
+
+                               if paintChannel~=0 % display single color for the whole mask 
                                  levmap=eval([levels{ii}{2} '(' num2str(max(imtmp2(:))) ')']);
+                               else
+                                   tmpcha=obj.channelid(cha{ii});
+                                 levmap=repmat(obj.display.rgb(tmpcha,:),[numel(indices),1]);
+                               end
+
                            else
                                  levmap=eval(levels{ii}{2});
                            end
@@ -559,6 +581,7 @@ end
                             imrgbbw=uint16(zeros(size(imgRGBsum)));
 
                             contour= levels{ii}{4};
+        
                             wid= levels{ii}{5};
                             
                              wei= levels{ii}{3};
@@ -572,7 +595,7 @@ end
                                        lineopac=min(1,wei);
                                        opac=0;
                                 else
-                                       lineopac=1;
+                                       lineopac=0;
                                        opac=min(1,wei);
                                 end
                                        wid=max(1,wid);
