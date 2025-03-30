@@ -263,56 +263,144 @@ if app.OverlayCheckBox.Value
     end
 
 else
-    %% Mode non-overlay : afficher les canaux empilés verticalement et superposer les masques sur l'axe overlay
-    channelImages = {};
-    displayedChannelIndices = [];
-    for i = 1:numel(visibleChannels)
-        chIndex = visibleChannels(i);
-        if ~selectedROI.display.selectedchannel(chIndex)
-            continue;
+ %% Mode non-overlay : afficher les canaux empilés verticalement et appliquer les masques sur chaque panel
+channelImages = {};
+displayedChannelIndices = [];
+for i = 1:numel(visibleChannels)
+    chIndex = visibleChannels(i);
+    if ~selectedROI.display.selectedchannel(chIndex)
+        continue;
+    end
+    pix = selectedROI.findChannelID(selectedROI.display.channel{chIndex});
+    if numel(pix) == 3
+        % Canal RGB
+        channelImageR = double(selectedROI.image(:, :, pix(1), currentFrame));
+        channelImageG = double(selectedROI.image(:, :, pix(2), currentFrame));
+        channelImageB = double(selectedROI.image(:, :, pix(3), currentFrame));
+        rgbChannelImage = cat(3, channelImageR, channelImageG, channelImageB);
+        minLevel = 65535 * selectedROI.display.displaylim(1, chIndex);
+        maxLevel = 65535 * selectedROI.display.displaylim(2, chIndex);
+        rgbChannelImage = (rgbChannelImage - minLevel) / (maxLevel - minLevel);
+        rgbChannelImage = max(0, min(1, rgbChannelImage));
+        intensity = selectedROI.display.alpha(chIndex);
+        coloredChannel = intensity * rgbChannelImage;
+        % Pour le masque, on utilisera la première composante
+        channelForMask = channelImageR;
+    else
+        % Canal non-RGB
+        channelImage = double(selectedROI.image(:, :, chIndex, currentFrame));
+        minLevel = 65535 * selectedROI.display.displaylim(1, chIndex);
+        maxLevel = 65535 * selectedROI.display.displaylim(2, chIndex);
+        normChannel = (channelImage - minLevel) / (maxLevel - minLevel);
+        normChannel = max(0, min(1, normChannel));
+        intensity = selectedROI.display.alpha(chIndex);
+        rgbColor = selectedROI.display.rgb(chIndex, :);
+        coloredChannel = zeros(imgHeight, imgWidth, 3);
+        for c = 1:3
+            coloredChannel(:, :, c) = intensity * rgbColor(c) * normChannel;
         end
-        pix = selectedROI.findChannelID(selectedROI.display.channel{chIndex});
-        if numel(pix) == 3
-            channelImageR = double(selectedROI.image(:, :, pix(1), currentFrame));
-            channelImageG = double(selectedROI.image(:, :, pix(2), currentFrame));
-            channelImageB = double(selectedROI.image(:, :, pix(3), currentFrame));
-            rgbChannelImage = cat(3, channelImageR, channelImageG, channelImageB);
-            minLevel = 65535 * selectedROI.display.displaylim(1, chIndex);
-            maxLevel = 65535 * selectedROI.display.displaylim(2, chIndex);
-            rgbChannelImage = (rgbChannelImage - minLevel) / (maxLevel - minLevel);
-            rgbChannelImage = max(0, min(1, rgbChannelImage));
-            intensity = selectedROI.display.alpha(chIndex);
-            coloredChannel = intensity * rgbChannelImage;
-        else
-            channelImage = double(selectedROI.image(:, :, chIndex, currentFrame));
-            minLevel = 65535 * selectedROI.display.displaylim(1, chIndex);
-            maxLevel = 65535 * selectedROI.display.displaylim(2, chIndex);
-            normChannel = (channelImage - minLevel) / (maxLevel - minLevel);
-            normChannel = max(0, min(1, normChannel));
-            intensity = selectedROI.display.alpha(chIndex);
-            rgbColor = selectedROI.display.rgb(chIndex, :);
-            coloredChannel = zeros(imgHeight, imgWidth, 3);
-            for c = 1:3
-                coloredChannel(:, :, c) = intensity * rgbColor(c) * normChannel;
-            end
-        end
-        channelImages{end+1} = coloredChannel;
-        displayedChannelIndices(end+1) = chIndex;
+        channelForMask = channelImage;
     end
 
-    if ~isempty(channelImages)
-        stackedImage = cat(1, channelImages{:});
-        imshow(stackedImage, 'Parent', app.ImageAxes);
-        newYLim = [1, numel(channelImages)*imgHeight];
-        if app.ZoomSlider.Value == 100
-            set(app.ImageAxes, 'XLim', [1, imgWidth], 'YLim', newYLim);
-            app.OriginalXLim = [1, imgWidth];
-            app.OriginalYLim = newYLim;
+    % Si le canal est indexé, appliquer le masque spécifique en fonction du mode peinture
+    if ismember(chIndex, indexedChannels)
+        if app.PaintButton.Value
+            % Mode peinture : on vérifie si ce canal correspond à celui sélectionné dans l'annotation
+            selectedRow = app.UIAnnotationTable.Selection;
+            if ~isempty(selectedRow) && ~isempty(selectedRow(1))
+                annotationPart = app.UIAnnotationTable.Data{selectedRow(1), 2};
+                classPart = app.UIAnnotationTable.Data{selectedRow(1), 3};
+                fullChannelName = [annotationPart, '_' classPart];
+                if strcmp(selectedROI.display.channel{chIndex}, fullChannelName)
+                    % Affichage détaillé : masque avec segmentation et palette (lines)
+                    annotationImage = channelForMask;
+                    uniqueVals = unique(annotationImage);
+                    uniqueVals(uniqueVals == 0) = [];
+                    numUnique = numel(uniqueVals);
+                    if numUnique > 0
+                        cmap = lines(numUnique);
+                    else
+                        cmap = [1 0 0];
+                    end
+                    annotationColorImage = zeros(size(coloredChannel));
+                    alphamask = false(size(channelForMask));
+                    for iVal = 1:numUnique
+                        val = uniqueVals(iVal);
+                        mask = (annotationImage == val);
+                        alphamask = alphamask | mask;
+                        for c = 1:3
+                            tmp = annotationColorImage(:, :, c);
+                            tmp(mask) = cmap(iVal, c);
+                            annotationColorImage(:, :, c) = tmp;
+                        end
+                    end
+                    % Intégration du masque détaillé sur le canal courant
+                    for c = 1:3
+                        tmp = coloredChannel(:, :, c);
+                        tmp(alphamask) = annotationColorImage(:, :, c);
+                        coloredChannel(:, :, c) = tmp;
+                    end
+                else
+                    % En mode peinture mais canal indexé non sélectionné : affichage uniforme
+                    if app.isthedefautcolorCheckBox.Value
+                        mask = channelForMask > 1;
+                    else
+                        mask = channelForMask >= 1;
+                    end
+                    uniformColor = selectedROI.display.rgb(chIndex, :);
+                    for c = 1:3
+                        tmp = coloredChannel(:, :, c);
+                        tmp(mask) = uniformColor(c);
+                        coloredChannel(:, :, c) = tmp;
+                    end
+                end
+            else
+                % Si aucune annotation n'est sélectionnée, appliquer le masque uniforme
+                if app.isthedefautcolorCheckBox.Value
+                    mask = channelForMask > 1;
+                else
+                    mask = channelForMask >= 1;
+                end
+                uniformColor = selectedROI.display.rgb(chIndex, :);
+                for c = 1:3
+                    tmp = coloredChannel(:, :, c);
+                    tmp(mask) = uniformColor(c);
+                    coloredChannel(:, :, c) = tmp;
+                end
+            end
+        else
+            % Mode non-peinture : masque uniforme sur le canal indexé
+            if app.isthedefautcolorCheckBox.Value
+                mask = channelForMask > 1;
+            else
+                mask = channelForMask >= 1;
+            end
+            uniformColor = selectedROI.display.rgb(chIndex, :);
+            for c = 1:3
+                tmp = coloredChannel(:, :, c);
+                tmp(mask) = uniformColor(c);
+                coloredChannel(:, :, c) = tmp;
+            end
         end
-    else
-        cla(app.ImageAxes);
     end
-    cla(app.OverlayAxes);
+
+    channelImages{end+1} = coloredChannel;
+    displayedChannelIndices(end+1) = chIndex;
+end
+
+if ~isempty(channelImages)
+    stackedImage = cat(1, channelImages{:});
+    imshow(stackedImage, 'Parent', app.ImageAxes);
+    newYLim = [1, numel(channelImages)*imgHeight];
+    if app.ZoomSlider.Value == 100
+        set(app.ImageAxes, 'XLim', [1, imgWidth], 'YLim', newYLim);
+        app.OriginalXLim = [1, imgWidth];
+        app.OriginalYLim = newYLim;
+    end
+else
+    cla(app.ImageAxes);
+end
+cla(app.OverlayAxes);
 end
 
 % Mise à jour de l'histogramme
