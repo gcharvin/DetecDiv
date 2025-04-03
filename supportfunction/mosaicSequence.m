@@ -3,7 +3,7 @@ function mosaicSequence(obj, varargin)
 % est obtenue en blendant les channels non indexés (mode overlay) ou en affichant
 % les canaux non indexés empilés verticalement (mode non-overlay).
 % Les contours vectoriels (issus des channels indexés) et les annotations
-% (timestamp, titre ROI) sont ajoutés de façon vectorielle.
+% (timestamp, titre ROI) sont ajoutés de façon vectorielle.di
 %
 % Les ROI sont organisées dans un mosaic dont le layout est défini par ArraySize.
 %
@@ -139,6 +139,7 @@ for cc = 1:numROI
             currentCha{j} = pix;
         end
     end
+
     imtmp = roitmp.image(:,:,:,frames);
     if ~isempty(crop)
         for c = 1:size(imtmp,3)
@@ -148,7 +149,10 @@ for cc = 1:numROI
         end
         imtmp = imtmptp;
     end
+
+
     imtmp = imresize(imtmp, scalingFactor, 'nearest');
+
     if ~isempty(imageSize)
         imtmp = imresize(imtmp, imageSize);
     end
@@ -177,6 +181,8 @@ for cc = 1:numROI
         end
         vText = [];
         vContours = [];
+
+
         if overlayMode
             % Mode overlay : blending classique de tous les canaux
             for ii = 1:numel(channel)
@@ -418,7 +424,7 @@ if overlayMode
     [tileH, tileW, ~, ~] = size(roiOverlay(1).baseImage);
     globalRows = nRows;
 else
-    [fullH, tileW, ~, ~] = size(roiOverlay(1).baseImage);
+    [fullH, tileW, ~, ~] = size(roiOverlay(1).baseImage)
     nChannel = 0;
     for j = 1:numel(channel)
         if ~iscell(levels{j})
@@ -519,7 +525,7 @@ for roiIdx = 1:numROI
                     else
                         ts = [num2str(frames(f)*framerate) 'min'];
                     end
-                    text(ax, 0.01, 0.99, ts, 'FontName', 'Arial', 'FontSize', floor(sqrt(scalingFactor)*fontsize),...
+                    text(ax, 0.02, 0.99, ts, 'FontName', 'Arial', 'FontSize', floor(sqrt(scalingFactor)*fontsize),...
                         'Color', textColor, 'Units', 'normalized', 'HorizontalAlignment', 'left',...
                         'VerticalAlignment', 'top', 'Interpreter', 'none');
                 end
@@ -557,79 +563,58 @@ for k = 1:(globalRows*globalCols)
     ax = nexttile(tGlobal, k);
     tilePos(k,:) = get(ax, 'Position');
 end
-
-
-
-% On s'assure que la figure utilise les pixels pour sa position
-set(hFig, 'Units', 'pixels');
-figPos = get(hFig, 'Position');  % [left, bottom, width, height] en pixels
-
-% La propriété OuterPosition du tiledlayout est exprimée en unités normalisées
-tiledNorm = tGlobal.OuterPosition;  
-% Conversion de l'outerPosition en pixels
-tiledPixels = [tiledNorm(1)*figPos(3), tiledNorm(2)*figPos(4), tiledNorm(3)*figPos(3), tiledNorm(4)*figPos(4)];
-
-% Les positions des tiles (obtenues via get(ax,'Position')) sont en unités normalisées relatives au tiledlayout.
-% On définit une fonction de conversion qui utilise la position en pixels du tiledlayout :
-convertPos = @(p) [ tiledPixels(1) + p(1)*tiledPixels(3), ...
-                    tiledPixels(2) + p(2)*tiledPixels(4), ...
-                    p(3)*tiledPixels(3), ...
-                    p(4)*tiledPixels(4) ];
-
-% Supposons que tilePos contient, pour chaque tile, la position [x y width height] en unités normalisées
+globalPos = tGlobal.OuterPosition;
+convertPos = @(p) [ globalPos(1) + p(1)*globalPos(3), globalPos(2) + p(2)*globalPos(4), p(3)*globalPos(3), p(4)*globalPos(4) ];
 for k = 1:(globalRows*globalCols)
     pRel = tilePos(k,:);
-    pFig = convertPos(pRel);  % Conversion en pixels
-    xLine = pFig(1) + pFig(3);
+    pFig = convertPos(pRel);
+    xLine = pFig(1) + pFig(3)-0.005;
     yBot = pFig(2);
     yTop = pFig(2) + pFig(4);
-    % Ici, on peut définir des offsets en pixels (par exemple -5 et +5)
-    line([xLine, xLine], [yBot-5, yTop+5], ...
-               'Color', background, 'LineWidth', drawLineWidth);
+    annotation(hFig, 'line', [xLine xLine], [yBot-0.01 yTop+0.01], 'Color', background, 'LineWidth', drawLineWidth);
 end
-
 
 [pth, fle] = fileparts(name);
 fil = fullfile(pth, [fle, '.pdf']);
 
-% Création d'une copie de la figure pour l'export PDF
-hFigCopy = copyobj(hFig, 0);
-
-%% --- Modification des annotations de type ligne ---
-% On récupère tous les objets annotations
-annoObjs = findall(hFigCopy, 'Type', 'lineshape');
-for i = 1:length(annoObjs)
-    % Ici, on souhaite modifier uniquement ceux créés avec l'argument 'line'
-    % Pour cela, on vérifie s'ils possèdent une propriété 'Color' et si leur couleur est noire
-    if isprop(annoObjs(i), 'Color') && isequal(annoObjs(i).Color, [0 0 0])
-        annoObjs(i).Color = [1 1 1];  % passage en blanc
-    end
-end
-
-%% --- Modification du titre du tiledlayout (ou des textes) ---
-% On recherche les tiled layouts dans la figure copiée
-tiledLayouts = hFigCopy.Children;
-    if isprop(tiledLayouts, 'Title') & ~isempty(tiledLayouts.Title)
-        titleObj = tiledLayouts.Title;
-        if isequal(titleObj.Color, [1 1 1])
-            titleObj.Color = [0 0 0];  % passage en noir
-        end
-    end
-
-% On peut aussi vérifier parmi les objets Text, si le titre a été ajouté autrement
-textObjs = findall(hFigCopy, 'Type', 'Text');
-for i = 1:length(textObjs)
-    % On teste ici uniquement si la chaîne correspond au titre de la figure et que la couleur est blanche
-    if isprop(textObjs(i), 'String')
-        if isequal(textObjs(i).Color, [1 1 1])
-            textObjs(i).Color = [0 0 0];
-        end
-    end
-end
+% % Création d'une copie de la figure pour l'export PDF
+% hFigCopy = copyobj(hFig, 0);
+% 
+% %% --- Modification des annotations de type ligne ---
+% % On récupère tous les objets annotations
+% annoObjs = findall(hFigCopy, 'Type', 'lineshape');
+% for i = 1:length(annoObjs)
+%     % Ici, on souhaite modifier uniquement ceux créés avec l'argument 'line'
+%     % Pour cela, on vérifie s'ils possèdent une propriété 'Color' et si leur couleur est noire
+%     if isprop(annoObjs(i), 'Color') && isequal(annoObjs(i).Color, [0 0 0])
+%         annoObjs(i).Color = [1 1 1];  % passage en blanc
+%     end
+% end
+% 
+% %% --- Modification du titre du tiledlayout (ou des textes) ---
+% % On recherche les tiled layouts dans la figure copiée
+% tiledLayouts = hFigCopy.Children;
+%     if isprop(tiledLayouts, 'Title') & ~isempty(tiledLayouts.Title)
+%         titleObj = tiledLayouts.Title;
+%         if isequal(titleObj.Color, [1 1 1])
+%             titleObj.Color = [0 0 0];  % passage en noir
+%         end
+%     end
+% 
+% % On peut aussi vérifier parmi les objets Text, si le titre a été ajouté autrement
+% textObjs = findall(hFigCopy, 'Type', 'Text');
+% for i = 1:length(textObjs)
+%     % On teste ici uniquement si la chaîne correspond au titre de la figure et que la couleur est blanche
+%     if isprop(textObjs(i), 'String')
+%         if isequal(textObjs(i).Color, [1 1 1])
+%             textObjs(i).Color = [0 0 0];
+%         end
+%     end
+% end
 
 %% --- Exportation ---
-exportgraphics(hFigCopy, fil, 'ContentType', 'vector');
-close(hFigCopy);  % On ferme la copie pour ne pas perturber l'affichage initial
+exportgraphics(hFig, fil, 'ContentType', 'vector','BackgroundColor',background);
+%close(hFig);  % On ferme la copie pour ne pas perturber l'affichage initial
 
 disp(['Sequence export successfully saved to : ' fil]);
 

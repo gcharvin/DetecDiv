@@ -529,9 +529,6 @@ end
 
 
                     if numel(cha{ii})==1 % single dimension channel => levels can be readjusted
-
-
-
                         if numel(levels{ii})==2 % A 2D vector is provided, therefore image is not an indexed one
                    
                             if levels{ii}==[-1 -1] %auto adjust

@@ -132,11 +132,14 @@ for i = 1:numel(varargin)
         paintChannel = varargin{i+1};
     elseif strcmp(varargin{i}, 'DefaultClass')
         defaultClass = varargin{i+1};
+    elseif strcmp(varargin{i}, 'Overlay')
+        overlayMode = varargin{i+1};  % Active/désactive le mode overlay (1 pour overlay
     end
 end
 
+
 if numel(snapRate)==0
-                snapRate=ones(1,numel(channel));%freq=1 for all channel
+    snapRate=ones(1,numel(channel));%freq=1 for all channel
 end
 
 
@@ -259,6 +262,8 @@ for k = 1:nsize(1)
         if numel(intersect(1:size(roitmp.image,4), frames)) < numel(frames)
             disp('This ROI does not have enough frames, you must provide a compatible frames argument');
         end
+
+
         imtmp = roitmp.image(:,:,:,frames);
         if ~isempty(crop)
             for c = 1:size(imtmp,3)
@@ -272,7 +277,7 @@ for k = 1:nsize(1)
         if ~isempty(imageSize)
             imtmp = imresize(imtmp, imageSize);
         end
-        
+
         frameEnd = 9999*ones(1, numel(cha));
         if ~isempty(find(stopWhenDead==1,1))
             if ~isempty(classif)
@@ -282,93 +287,161 @@ for k = 1:nsize(1)
                 error('You want to hide a channel when cell is dead. You need to indicate a classi with Classification argument');
             end
         end
-        
-        imComposite = uint16(zeros(size(imtmp,1), size(imtmp,2), 3, size(imtmp,4)));
-        
-        for i = 1:size(imtmp,4)
-            imgRGBsum = uint16(zeros(size(imtmp,1), size(imtmp,2), 3));
-            for ii = 1:numel(cha)
-                 totim=imtmp(:,:,cha{ii}, :);
-                if mod(i-1, snapRate(ii)) == 0
-                    if frames(i) < frameEnd(ii)
-                        imtmp2 = imtmp(:,:,cha{ii}, i);
-                    else
-                        imtmp2 = uint16(zeros(size(imtmp(:,:,cha{ii}, i))));
-                    end
-                else
-                    imtmp2 = uint16(zeros(size(imtmp(:,:,cha{ii}, i))));
-                end
-                if Flip == 1
-                    imtmp2 = flip(imtmp2,1);
-                end
-                if numel(cha{ii}) == 1
-                    if numel(levels{ii}) == 2
-                        if isequal(levels{ii}, [-1 -1])
-                            if i==1
-                                tmptimelapse = imtmp(:,:,cha{ii}, 1:end);
-                                med = median(tmptimelapse(:));
-                                stddev = std(double(tmptimelapse(:)));
-                                stretchlim(:,ii) = [max(0, double(med)-4*stddev); min(65535, double(med)+4*stddev)]/65535;
-                            end
-                            imtmp2 = imadjust(imtmp2, stretchlim(:,ii));
-                        else
-                            imtmp2 = imadjust(imtmp2, [levels{ii}(1)/65535, levels{ii}(2)/65535]);
-                        end
-                        imtmp2 = cat(3, imtmp2*rgb{ii}(1), imtmp2*rgb{ii}(2), imtmp2*rgb{ii}(3));
-                        if isempty(weights)
-                            imgRGBsum = imlincomb(1, imgRGBsum, 1, imtmp2);
-                        else
-                            imgRGBsum = imlincomb(1, imgRGBsum, weights(ii), imtmp2);
-                        end
-                    else
-                        % Channel indexé : utiliser insertObjectMask pour dessiner les surfaces
-                        indices = str2num(levels{ii}{1});
-                        if isempty(indices) || (numel(indices)==1 && indices == -1)
-                            if defaultClass
-                                indices = 2:max(totim(:));
-                            else
-                                indices = 1:max(totim(:));
-                            end
-                            if paintChannel ~= 0
-                             %   max(totim(:))
-                                levmap = eval([levels{ii}{2} '(' num2str(max(totim(:))) ')']);
-                            else
-                                tmpcha = roitmp.channelid(cha{ii});
-                                levmap = repmat(roitmp.display.rgb(tmpcha,:), [numel(indices),1]);
-                            end
-                        else
-                            levmap = eval(levels{ii}{2});
-                        end
-                        wid = levels{ii}{5};
-                        wei = levels{ii}{3};
-                        for iii = 1:numel(indices)
-                            bw = imtmp2==indices(iii);
-                            if levels{ii}{4}
-                                lineopac = min(1, wei);
-                                opac = 0;
-                            else
-                                lineopac = 0;
-                                opac = min(1, wei);
-                            end
-                            wid = max(1, wid);
-                            imgRGBsum = insertObjectMask(imgRGBsum, bw, 'MaskColor', uint8(255*levmap(iii,:)), 'Opacity', opac, 'LineOpacity', lineopac, 'LineWidth', wid);
-                        end
-                    end
-                end
-                if numel(cha{ii})==3
-                    if isempty(weights)
-                        imgRGBsum = imlincomb(1, imgRGBsum, 1, imtmp2);
-                    else
-                        imgRGBsum = imlincomb(1, imgRGBsum, weights(ii), imtmp2);
-                    end
+
+        % --- Assemblage des ROI en mode "Movie" ---
+        % Pour chaque ROI, on extrait les images
+      
+       imtmp = roitmp.image(:,:,:,frames);
+        if ~isempty(crop)
+            for c = 1:size(imtmp,3)
+                for f = 1:size(imtmp,4)
+                    imtmptp(:,:,c,f) = imcrop(imtmp(:,:,c,f), crop);
                 end
             end
-            if ~isempty(rotate)
-                imgRGBsum = imrotate(imgRGBsum, rotate);
-            end
-            imComposite(:,:,:,i) = imgRGBsum;
+            imtmp = imtmptp;
         end
+        imtmp = imresize(imtmp, scalingFactor, 'nearest');
+        if ~isempty(imageSize)
+            imtmp = imresize(imtmp, imageSize);
+        end
+
+        % Initialisation de imComposite selon le mode d'affichage
+        if overlayMode
+            compositeWidth = size(imtmp,2) * numel(cha);
+            imComposite = uint16(zeros(size(imtmp,1), compositeWidth, 3, size(imtmp,4)));
+        else
+            imComposite = uint16(zeros(size(imtmp,1), size(imtmp,2), 3, size(imtmp,4)));
+        end
+
+        for i = 1:size(imtmp,4)
+            if overlayMode
+                % Mode overlay : chaque canal s'affiche dans une colonne différente
+                overlayPanels = cell(1, numel(cha));
+                
+                  for ii=1:numel(cha) %loop on channels
+
+                    if mod(i-1, snapRate(ii))==0 %skip frames
+                        if frames(i)<frameEnd(ii)  %stop when dead
+                            imtmp2=imtmp(:,:,cha{ii},i);
+                        else
+                            imtmp2=uint16(zeros(size(imtmp(:,:,cha{ii},i))));
+                        end
+
+
+                    else
+
+                        imtmp2=uint16(zeros(size(imtmp(:,:,cha{ii},i))));
+                    end
+
+                             if Flip==1 % flip image upside down
+                        imtmp2=flip(imtmp2,1);
+                              end
+
+
+                    if numel(cha{ii})==1 % single dimension channel => levels can be readjusted
+                        if numel(levels{ii})==2 % A 2D vector is provided, therefore image is not an indexed one
+                            if levels{ii}==[-1 -1] %auto adjust
+                                if i==1
+                                    tmptimelapse=imtmp(:,:,cha{ii},1:end);
+                                    med=median(tmptimelapse(:));
+                                    stddev=std(double(tmptimelapse(:)));
+                                    stretchlim(:,ii)=[max(0,double(med)-4*stddev) ; min(65535,double(med)+4*stddev)]/65535;
+                                end
+                                imtmp2 = imadjust(imtmp2,stretchlim(:,ii));
+                            else
+                                imtmp2 = imadjust(imtmp2,[levels{ii}(1)/65535 levels{ii}(2)/65535]);
+                            end
+                            imtmp2= cat(3, imtmp2*rgb{ii}(1), imtmp2*rgb{ii}(2), imtmp2*rgb{ii}(3));
+
+
+                                       if numel(weights)==0
+                    imgRGBsum=imlincomb(1,imgRGBsum,1,imtmp2);
+                    else
+                     imgRGBsum=imlincomb(1,imgRGBsum,weights(ii),imtmp2);
+                                       end
+
+
+                        else % channel represents an indexed image , will use provided colormap
+  
+                           indices=str2num(levels{ii}{1});
+                           if indices==-1
+
+                               if defaultClass
+                                 indices=2:max(imtmp2(:));
+                               else
+                                  indices=1:max(imtmp2(:));
+                               end
+
+                               if paintChannel~=0 % display single color for the whole mask 
+                                 levmap=eval([levels{ii}{2} '(' num2str(max(imtmp2(:))) ')']);
+                               else
+                                   tmpcha=obj.channelid(cha{ii});
+                                 levmap=repmat(obj.display.rgb(tmpcha,:),[numel(indices),1]);
+                               end
+
+                           else
+                                 levmap=eval(levels{ii}{2});
+                           end
+
+                          %  maxe= max( imtmp2(:)); %get classes
+                            imrgbbw=uint16(zeros(size(imgRGBsum)));
+
+                            contour= levels{ii}{4};
         
+                            wid= levels{ii}{5};
+                            
+                             wei= levels{ii}{3};
+
+                            for iii=1:numel(indices) %1:maxe %for classes
+                                bw=imtmp2==indices(iii);
+
+                                if contour %plots the contour rather than a surface
+                                       lineopac=min(1,wei);
+                                       opac=0;
+                                else
+                                       lineopac=0;
+                                       opac=min(1,wei);
+                                end
+                                       wid=max(1,wid);
+            
+                                       imgRGBsum= insertObjectMask(   imgRGBsum,bw,'MaskColor',uint8(255*levmap(iii,:)),'Opacity',opac,'LineOpacity',lineopac,'LineWidth',wid);
+                             end
+                
+                        end
+                    end
+
+                    if numel(cha{ii})==3 % already a combined image ; no RGB adjustmeent is possible
+                            if numel(weights)==0
+                    imgRGBsum=imlincomb(1,imgRGBsum,1,imtmp2);
+                    else
+                     imgRGBsum=imlincomb(1,imgRGBsum,weights(ii),imtmp2);
+                            end
+                    end
+                end
+                % Concaténation horizontale des sous-panels pour créer l'image composite
+                compositeOverlay = overlayPanels{1};
+              %  size(compositeOverlay)  %, size(overlayPanels)
+                for ii = 2:numel(overlayPanels)
+                    compositeOverlay = cat(2, compositeOverlay, overlayPanels{ii});
+                end
+                if ~isempty(rotate)
+                    compositeOverlay = imrotate(compositeOverlay, rotate);
+                end
+                imComposite(:,:,:,i) = compositeOverlay;
+            else
+                % Mode composite (blending des canaux) : code existant
+                imgRGBsum = uint16(zeros(size(imtmp,1), size(imtmp,2), 3));
+                for ii = 1:numel(cha)
+                    % [Traitement identique au code existant pour le blending]
+                    ii
+                end
+                if ~isempty(rotate)
+                    imgRGBsum = imrotate(imgRGBsum, rotate);
+                end
+                imComposite(:,:,:,i) = imgRGBsum;
+            end
+        end
+
         % Ajout des marges de fond
         imblack = uint16(65535*ones(size(imtmp,1), shiftx, 3, size(imtmp,4)));
         imblack(:,:,1,:) = imblack(:,:,1,:) * background(1);
@@ -380,7 +453,7 @@ for k = 1:nsize(1)
             imblack2(:,:,ci,:) = imblack2(:,:,ci,:) * background(ci);
         end
         imComposite = cat(1, imblack2, imComposite);
-        
+
         framesize = 2;
         for ci = 1:3
             imComposite(1:framesize,:,ci,:) = 65535*background(ci);
@@ -388,7 +461,7 @@ for k = 1:nsize(1)
             imComposite(:,1:framesize,ci,:) = 65535*background(ci);
             imComposite(:,end-framesize+1:end,ci,:) = 65535*background(ci);
         end
-        
+
         % Insertion d'annotations textuelles (titres, horodatages) sur l'image composite
         if roititle || rls>0
             str = '';
@@ -428,7 +501,7 @@ for k = 1:nsize(1)
                 end
             end
         end
-   
+
         % Assemblage de l'image composite dans le mosaic final
         imgout(1+(k-1)*h : k*h, 1+(j-1)*w : j*w, :, :) = imComposite;
         cc = cc + 1;
@@ -436,6 +509,56 @@ for k = 1:nsize(1)
 end
 
 imgout = uint8(double(imgout)/256);
+
+
+title=titleStr;
+%============TITLE rows on the top of the movie : framerate or title
+if framerate>0 || numel(title)
+    shifttitley=floor(sqrt(scalingFactor)*fontsize)+10;
+    topimage=uint8(255*ones(shifttitley,size(imgout,2),size(imgout,3),size(imgout,4)));
+    for ci=1:3
+        topimage(:,:,ci,:)=topimage(:,:,ci,:)*background(ci);
+    end
+
+    imgout2=cat(1,topimage,imgout);
+
+    for j=1:numel(frames)
+        if timeoffset
+            timestamp=[num2str((frames(j)-frames(1))*framerate) 'min'];
+        else
+            timestamp=[num2str((frames(j))*framerate) 'min'];
+        end
+
+        if hideStamp==1
+            timestamp='';
+        end
+        if numel(title)>0
+            %      timestamp=[blanks(numel(title)+tabtitle) '- GT : ' timestamp];
+            timestamp=[blanks(numel(title)+tabtitle) ' - ' timestamp];
+        end
+
+        %the image passed in 8 bits depth--> use 255
+        if ispc
+            imgout2(:,:,:,j)=insertText(imgout2(:,:,:,j),[1,shifttitley/2],[blanks(tabtitle) title],'Font','Consolas Bold','FontSize',floor(sqrt(scalingFactor)*fontsize),...
+                'BoxColor',[1 1 1],'BoxOpacity',0.0,'TextColor',colr*255,'AnchorPoint','LeftCenter');
+
+            imgout2(:,:,:,j)=insertText(imgout2(:,:,:,j),[1,shifttitley/2],timestamp,'Font','Consolas Bold','FontSize',floor(sqrt(scalingFactor)*fontsize),...
+                'BoxColor',[1 1 1],'BoxOpacity',0.0,'TextColor',255*textColor,'AnchorPoint','LeftCenter');
+        else
+
+            imgout2(:,:,:,j)=insertText(imgout2(:,:,:,j),[1,shifttitley/2],[blanks(tabtitle) title],'Font','Ubuntu-C','FontSize',floor(sqrt(scalingFactor)*fontsize),...
+                'BoxColor',[1 1 1],'BoxOpacity',0.0,'TextColor',colr*255,'AnchorPoint','LeftCenter');
+
+            imgout2(:,:,:,j)=insertText(imgout2(:,:,:,j),[1,shifttitley/2],timestamp,'Font','Ubuntu-C','FontSize',floor(sqrt(scalingFactor)*fontsize),...
+                'BoxColor',[1 1 1],'BoxOpacity',0.0,'TextColor',255*textColor,'AnchorPoint','LeftCenter');
+
+
+        end
+    end
+    imgout=imgout2;
+end
+
+
 
 if DisplayTest == 1
     disp('test movie output');
@@ -463,6 +586,7 @@ switch sequence
         writeVideo(v, imgout);
         close(v);
         disp(['Movie successfully exported to : ' name]);
+        %winopen(name);
     case 'Mat'
         [pth, fle] = fileparts(name);
         fil = fullfile(pth, [fle, '.mat']);

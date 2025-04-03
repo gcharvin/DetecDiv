@@ -107,6 +107,11 @@ src.WindowButtonUpFcn = @wbucb;
         croppedBrush = brushMask(cropYStart:cropYEnd, cropXStart:cropXEnd);
 
         % Vérifier la valeur au point initial cliqué
+        if yinit>size(currentMask,1) || xinit>size(currentMask,2)
+            disp('painting on the wrong display window')
+            return
+        end
+
         if currentMask(yinit, xinit) == 0
             uniqueVals = unique(currentMask);
             uniqueVals(uniqueVals == 0) = [];  % exclure le fond
