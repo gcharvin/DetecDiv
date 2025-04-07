@@ -2,11 +2,11 @@ function hFig = score_drawImage(roiOverlay, roiobj, param, layout)
 % Affichage des images et panels de données en mode tiledlayout.
 %
 % roiOverlay   : structure contenant pour chaque ROI une image 4D, des contours vectoriels, etc.
-% dataidx      : index de sélection des données (non utilisé ici directement)
-% param        : structure des paramètres (overlayMode, background, titleStr, textColor, scalingFactor, etc.)
+% roiobj       : structure contenant notamment les données associées à chaque ROI.
+% param        : structure des paramètres (overlayMode, background, titleStr, textColor, scalingFactor, output, etc.)
 % layout       : structure contenant les paramètres de mise en page (nCols, nRows, globalCols, globalRows, tileH, tileW, frames, ngroup, nonIndexedNames, etc.)
 
-overlayMode = param.overlayMode;roi
+overlayMode = param.overlayMode;
 tileH = layout.tileH;
 tileW = layout.tileW;
 background = param.background;
@@ -14,29 +14,53 @@ titleStr = param.titleStr;
 textColor = param.textColor;
 scalingFactor = param.scalingFactor;
 fontsize = param.fontsize;
-name = param.name;
+name = 'test.pdf'; % param.name;
 frames = layout.frames;
 numROI = numel(roiOverlay);
-nCols = layout.nCols;
-nRows = layout.nRows;
+nCols_ROI = layout.nCols;
+nRows_ROI = layout.nRows;
 
-% Définir le nombre de lignes d’images par ROI
+% Définir le nombre de lignes d’images par ROI et le nombre de canaux
 if overlayMode
     imageRows = 1;
+    nChannel = 1;
 else
-    nChannel = numel(layout.nonIndexedNames);
-    imageRows = nChannel;
+    switch param.output
+        case "Sequence"
+            nChannel = numel(layout.nonIndexedNames);
+            imageRows = nChannel;
+        case "Display"
+            nChannel = numel(layout.nonIndexedNames);
+            imageRows = 1;
+        case "Movie"
+            % À compléter si besoin
+    end
 end
+
 dataRows = layout.ngroup;  % nombre de panels de données par ROI
 
-globalCols = layout.globalCols;
-globalRows = layout.globalRows;
+% Pour le mode Display, la grille doit tenir compte des canaux en colonnes
+if param.output == "Display"
+    globalCols = nCols_ROI * nChannel;             % Chaque ROI occupe nChannel colonnes pour l'image
+    globalRows = nRows_ROI * (1 + dataRows);         % Chaque ROI occupe 1 ligne pour l'image + dataRows pour le panel
+else
+    globalCols = layout.globalCols;
+    globalRows = layout.globalRows;
+end
 
 % Dimensions de la figure
 margin = 5;
 extraMargin = 50;
-figWidth = globalCols * tileW + (globalCols+1)*margin;
-figHeight = globalRows * tileH + (globalRows+1)*margin + extraMargin;
+switch param.output
+    case "Sequence"
+        figWidth = globalCols * tileW + (globalCols+1)*margin;
+        figHeight = globalRows * tileH + (globalRows+1)*margin + extraMargin;
+    case "Movie"
+        % À compléter si besoin
+    case "Display"
+        figWidth = globalCols * tileW + (globalCols+1)*margin;
+        figHeight = globalRows * tileH + (globalRows+1)*margin + extraMargin;
+end
 
 hFig = figure('Name', 'Sequences Export (Vectorial)', 'Units', 'pixels', ...
     'Position', [100, 100, figWidth, figHeight]);
@@ -53,82 +77,128 @@ end
 % Parcours de chaque ROI
 for roiIdx = 1:numROI
     % Déterminer la position (bloc) de la ROI dans la grille globale
-    r = ceil(roiIdx / nCols);
-    c_roi = mod(roiIdx-1, nCols) + 1;
+    % On considère ici que les ROIs sont organisées en nRows_ROI x nCols_ROI
+    r = ceil(roiIdx / nCols_ROI);
+    c_roi = mod(roiIdx-1, nCols_ROI) + 1;
     
     % -- Partie images --
-    for imgRow = 1:imageRows
+    if overlayMode
+        % Mode overlay : chaque ROI a une seule ligne d'images
         for f = 1:numel(frames)
-            % Calcul de la ligne globale pour la tuile d'image
-            globalImageRow = (r-1) * (imageRows + dataRows) + imgRow;
+            globalImageRow = (r-1) * (imageRows + dataRows) + 1;
             colIndex = (c_roi - 1)*numel(frames) + f;
             globalTileIndex = (globalImageRow - 1)*globalCols + colIndex;
             ax = nexttile(tGlobal, globalTileIndex);
-            
-            if overlayMode
-                imshow(roiOverlay(roiIdx).baseImage(:,:,:,f), 'Parent', ax);
-                set(ax, 'Color', background);
-                % Affichage des graphismes vectoriels (texte, contours, etc.)
-                displayVectorGraphics(ax, f, 1, roiOverlay(roiIdx), layout, param);
-            else
-                % Mode non‑overlay : chaque ligne correspond à un canal
-                imgFull = roiOverlay(roiIdx).baseImage;  % [M*nChannel x N x 3 x numFrames]
-                M_total = size(imgFull,1);
-                nChannel = imageRows;  % ici imageRows vaut le nombre de canaux
-                M = M_total / nChannel;
-                rowStart = round((imgRow-1)*M) + 1;
-                rowEnd = round(imgRow*M);
-                imgChannel = imgFull(rowStart:rowEnd, :, :, f);
-                if size(imgChannel,3) ~= 3
-                    imgChannel = repmat(imgChannel, [1,1,3]);
+            imshow(roiOverlay(roiIdx).baseImage(:,:,:,f), 'Parent', ax);
+            set(ax, 'Color', background);
+            displayVectorGraphics(ax, f, 1, roiOverlay(roiIdx), layout, param);
+        end
+    else
+        switch param.output
+            case "Sequence"
+                % Mode Sequence : chaque canal sur une ligne
+                for imgRow = 1:imageRows
+                    for f = 1:numel(frames)
+                        globalImageRow = (r-1) * (imageRows + dataRows) + imgRow;
+                        colIndex = (c_roi - 1)*numel(frames) + f;
+                        globalTileIndex = (globalImageRow - 1)*globalCols + colIndex;
+                        ax = nexttile(tGlobal, globalTileIndex);
+                        imgFull = roiOverlay(roiIdx).baseImage;  % [M*nChannel x N x 3 x numFrames]
+                        M_total = size(imgFull,1);
+                        nChannel_seq = imageRows;  % ici imageRows vaut le nombre de canaux
+                        M = M_total / nChannel_seq;
+                        rowStart = round((imgRow-1)*M) + 1;
+                        rowEnd = round(imgRow*M);
+                        imgChannel = imgFull(rowStart:rowEnd, :, :, f);
+                        if size(imgChannel,3) ~= 3
+                            imgChannel = repmat(imgChannel, [1,1,3]);
+                        end
+                        imshow(imgChannel, 'Parent', ax);
+                        set(ax, 'Color', background);
+                        displayVectorGraphics(ax, f, imgRow, roiOverlay(roiIdx), layout, param);
+                        if f == 1
+                            ylabel(ax, layout.nonIndexedNames{imgRow}, 'FontName', 'Arial', ...
+                                'FontSize', floor(sqrt(scalingFactor)*fontsize), 'Color', textColor);
+                        end
+                    end
                 end
-                imshow(imgChannel, 'Parent', ax);
-                set(ax, 'Color', background);
-                displayVectorGraphics(ax, f, imgRow, roiOverlay(roiIdx), layout, param);
-                if f == 1
-                    ylabel(ax, layout.nonIndexedNames{imgRow}, 'FontName', 'Arial', ...
-                        'FontSize', floor(sqrt(scalingFactor)*fontsize), 'Color', textColor);
+            case "Display"
+                % Mode Display : les canaux sont représentés en colonnes
+                % On suppose que roiOverlay(roiIdx).baseImage a une taille [M x (N*nChannel) x 3 x numFrames]
+                imgFull = roiOverlay(roiIdx).baseImage;
+                N_total = size(imgFull, 2);
+                M = size(imgFull, 1);
+                N = N_total / nChannel;
+                % Pour chaque frame, on parcourt chaque canal
+                globalImageRow = (r-1) * (1 + dataRows) + 1; % seule ligne d'images pour la ROI
+                for f = 1:numel(frames)
+                    for ch = 1:nChannel
+                        colIndex = (c_roi - 1)*nChannel + ch;
+                        globalTileIndex = (globalImageRow - 1)*globalCols + colIndex;
+                        ax = nexttile(tGlobal, globalTileIndex);
+                        colStart = round((ch-1)*N) + 1;
+                        colEnd = round(ch*N);
+                        imgChannel = imgFull(:, colStart:colEnd, :, f);
+                        if size(imgChannel,3) ~= 3
+                            imgChannel = repmat(imgChannel, [1,1,3]);
+                        end
+                        imshow(imgChannel, 'Parent', ax);
+                        set(ax, 'Color', background);
+                        % En mode Display, chaque colonne (canal) reçoit ses vector graphics
+                        displayVectorGraphics(ax, f, ch, roiOverlay(roiIdx), layout, param);
+                        % if f == 1
+                        %     ylabel(ax, layout.nonIndexedNames{ch}, 'FontName', 'Arial', ...
+                        %         'FontSize', floor(sqrt(scalingFactor)*fontsize), 'Color', textColor);
+                        % end
+                    end
                 end
-            end
+            case "Movie"
+                % À compléter si besoin
         end
     end
     
-   % -- Partie panels de données --
-for g = 1:dataRows
-    % Calcul de la ligne globale pour le panel de données de la ROI
-    globalDataRow = (r-1) * (imageRows + dataRows) + imageRows + g;
-    % La colonne de départ correspond à celle du bloc de la ROI dans la grille
-    colIndexStart = (c_roi - 1) * numel(frames) + 1;
-    % Calcul de l'indice de la tuile de départ dans la grille globale
-    tileIndex = (globalDataRow - 1) * globalCols + colIndexStart;
-    % Appel de nexttile avec tileIndex (entier) et span couvrant toutes les frames
-
-    ax = nexttile(tGlobal, tileIndex, [1 numel(frames)]);
-   
-    % Affichage du panel de données (à adapter selon vos besoins)
-    displayDataPanel(ax, g, layout.frames, layout, param, roiobj(roiIdx));
+    % -- Partie panels de données --
+    for g = 1:dataRows
+        % Calcul de la ligne globale pour le panel de données de la ROI
+        if param.output == "Display"
+            % En mode Display, la zone de données occupe une rangée de la ROI
+            globalDataRow = (r-1) * (1 + dataRows) + 1 + g;
+            colIndexStart = (c_roi - 1)*nChannel + 1;
+            tileIndex = (globalDataRow - 1)*globalCols + colIndexStart;
+            ax = nexttile(tGlobal, tileIndex, [1, nChannel]);
+        else
+            globalDataRow = (r-1) * (imageRows + dataRows) + imageRows + g;
+            colIndexStart = (c_roi - 1)*numel(frames) + 1;
+            tileIndex = (globalDataRow - 1)*globalCols + colIndexStart;
+            ax = nexttile(tGlobal, tileIndex, [1, numel(frames)]);
+        end
+        displayDataPanel(ax, g, layout.frames, layout, param, roiobj(roiIdx));
+    end
 end
+
+% --- Lignes de séparation verticales ---
+% Pour les images, la boucle dépend du mode : en Sequence on a numel(frames) colonnes, en Display nChannel colonnes.
+if param.output == "Display"
+    nDiv = nChannel;
+else
+    nDiv = numel(frames);
 end
 
-drawLineWidth = 2*scalingFactor;
-nFrames=numel(frames);
+drawLineWidth = 2 * scalingFactor;
 globalPos = tGlobal.OuterPosition;
 convertPos = @(p) [ globalPos(1) + p(1)*globalPos(3), ...
                     globalPos(2) + p(2)*globalPos(4), ...
                     p(3)*globalPos(3), p(4)*globalPos(4) ];
-
-% Boucle uniquement sur les lignes d'images (pas sur les panels de données)
-for r = 1:nRows
-    for i = 1:imageRows  % i correspond à la ligne d'image dans le bloc ROI
-         globalRow = (r-1)*(imageRows+dataRows) + i;
-         for c = 1:nCols
-              for f = 1:(nFrames-1) % On trace la ligne verticale pour chaque frame sauf la dernière
-                   % Calcul de l'indice de la tuile dans la partie image
-                   tileIndex = (globalRow - 1)*globalCols + ((c-1)*nFrames + f);
+% Boucle uniquement sur les lignes d'images (hors panels de données)
+for r = 1:nRows_ROI
+    for i = 1:imageRows
+         globalRow = (r-1) * (imageRows + dataRows) + i;
+         for c = 1:nCols_ROI
+              for f = 1:(nDiv-1)
+                   tileIndex = (globalRow - 1)*globalCols + ((c-1)*nDiv + f);
                    ax = nexttile(tGlobal, tileIndex);
                    pRel = get(ax, 'Position');
                    pFig = convertPos(pRel);
-                   % Ligne verticale à droite de la tuile
                    xLine = pFig(1) + pFig(3) - 0.005;
                    yBot = pFig(2);
                    yTop = pFig(2) + pFig(4);
@@ -143,13 +213,13 @@ end
 fil = fullfile(pth, [fle, '.pdf']);
 
 %% --- Exportation ---
-exportgraphics(hFig, fil, 'ContentType', 'vector','BackgroundColor',background);
-%close(hFig);  % On ferme la copie pour ne pas perturber l'affichage initial
-
+exportgraphics(hFig, fil, 'ContentType', 'vector', 'BackgroundColor', background);
+% close(hFig);  % Optionnel, pour ne pas perturber l'affichage initial
 disp(['Sequence export successfully saved to : ' fil]);
 
-
 end
+
+
 
 function displayDataPanel(ax, groupIdx, frame, layout, param, roiobj)
 % Fonction d'affichage d'un panel de données.
@@ -230,18 +300,13 @@ set(lgd, 'Color', param.background, ...        % Fond identique à celui de la f
 set(ax, 'XColor', param.textColor, 'YColor', param.textColor, 'Box', 'off');
 set(ax, 'Color', param.background,'FontSize',floor(sqrt(scalingFactor)*fontsize));
 
-xlim(ax, framerate * [min(layout.frames), max(layout.frames)]);
+xlim(ax, framerate * [0.9*min(layout.frames), 1.1*max(layout.frames)]);
 
 % Seul le plot tout en bas (dernier panel) affiche les étiquettes des X ticks
 if groupIdx < layout.ngroup
     set(ax, 'XTickLabel', []);
 end
 end
-
-
-
-
-
 
 function displayVectorGraphics(ax, f, ch, roiOverlay, layout, param)
 % Affiche les textes et contours vectoriels sur l'image.

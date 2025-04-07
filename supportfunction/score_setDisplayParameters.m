@@ -29,11 +29,12 @@ textColor     = [1 1 1];          % Couleur du texte (défaut blanc)
 roiTitle      = false;            % Indique si le titre ROI doit être affiché
 flip          = 0;                % Indique si l'image doit être inversée (split left/right)
 rgb           = {};               % Cell array indiquant les valeurs RGB pour chaque canal
-output      = 'Sequence';       % Mode d'affichage : 'Sequence', 'Movie' ou 'Display'
+output      = "Sequence";       % Mode d'affichage : 'Sequence', 'Movie' ou 'Display'
 background    = [0 0 0];          % Couleur de fond (défaut noir)
 overlayMode   = false;            % Mode overlay désactivé par défaut
 refresh       = false;            % false pour un affichage rapide, 'slow' pour reconstruire la figure
 frames        = [];               % Liste des frames à traiter
+nbrick = 1; 
 
 
 
@@ -108,6 +109,8 @@ while i <= nArgs
                 end
             case 'ScalingFactor'
                 scalingFactor = varargin{i+1};  i = i + 2;
+                 case 'Nbrick'
+                nbrick = varargin{i+1};  i = i + 2;  
             otherwise
                 disp(['Unknown parameter: ', varargin{i}]);
                 i=i+1;
@@ -154,4 +157,5 @@ param.background    = background;
 param.overlayMode   = overlayMode;
 param.refresh       = refresh;
 param.frames        = frames;
+param.nbrick = nbrick;
 end

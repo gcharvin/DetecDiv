@@ -141,7 +141,7 @@ switch param.output
         else
             layout.size = [basesize(1)*(1+layout.ngroup), basesize(2)*nChannel, 3, numel(frames)];
             layout.imagesize = [basesize(1), basesize(2)*nChannel, 3, numel(frames)];
-            globalCols = nChannel;
+            globalCols =1; % nChannel;
         end
 end
 
