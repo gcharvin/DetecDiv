@@ -64,7 +64,7 @@ switch lower(displayHandles.mode)
                         imshow(displayImage, []);
 
                       %  displayVectorGraphics(ax, frame, 1, vContours , layoutOptions);
-                          [htext, hvector]=displayVectorGraphics(ax, frame, 1, vContours , layoutOptions);
+                          [htext, hvector]=score_displayVectorGraphics(ax, frame, 1, vContours , layoutOptions);
                            graphicsHandles.vectorHandles(tileIndex)=[htext hvector];
 
                      %   title(sprintf('ROI(%d) F:%d', roiIndex, frame));
@@ -88,7 +88,7 @@ switch lower(displayHandles.mode)
 
                           %  img = roiData.image(:,:,ch,frame);
                             imshow(displayImage(:,:,:,ch), []);
-                             [htext, hvector]=displayVectorGraphics(ax, frame, ch, vContours , layoutOptions);
+                             [htext, hvector]=score_displayVectorGraphics(ax, frame, ch, vContours , layoutOptions);
                             graphicsHandles.vectorHandles(tileIndex)=[htext hvector];
                           %  title(sprintf('ROI(%d) Ch:%d F:%d', roiIndex, ch, frame));
                             graphicsHandles.imgHandles(tileIndex) = ax.Children;
@@ -187,6 +187,15 @@ switch lower(displayHandles.mode)
                 end
 
                 ax = nexttile(masterTL, tileIndex, [1, wid]);
+                     if layoutOptions.Ndataseries>1 && ds~=layoutOptions.Ndataseries
+                       set(ax,'XTickLabel',[]);
+                     %   'ok'
+                      else
+                    set(ax, 'XTickLabelRotation', 0);  % ou 0, selon ton style
+                      end
+                        xtickformat(ax, '%.1f');
+                        ytickformat(ax, '%.1f');
+
                 hLine= score_displayDataPanel(ax, ds, layoutOptions, roiData);
                 %  hLine = plot(roiData.data(ds, :));
                 %   title(sprintf('Data:%d', ds));
@@ -227,11 +236,13 @@ switch lower(displayHandles.mode)
 
                     imshow(displayImage, []);
                   
-                     [htext, hvector]=displayVectorGraphics(ax, 1, 1, vContours , layoutOptions);
+                     [htext, hvector]=score_displayVectorGraphics(ax, 1, 1, vContours , layoutOptions);
 
                      graphicsHandles.vectorHandles(tileIndex)=[htext hvector];
 
                     %title(sprintf('ROI(%d) Overlay', roiIndex));
+        
+
                       imageHandles = ax.Children(strcmp(get(ax.Children, 'Type'), 'image'));
                     graphicsHandles.imgHandles(tileIndex) =  imageHandles;
                 else
@@ -248,7 +259,7 @@ switch lower(displayHandles.mode)
                         imshow(displayImage(:,:,:,ch), []);
                       %  title(sprintf('ROI(%d) Ch:%d', roiIndex, ch));
                    
-                         [htext, hvector]=displayVectorGraphics(ax, 1, ch, vContours , layoutOptions);
+                         [htext, hvector]=score_displayVectorGraphics(ax, 1, ch, vContours , layoutOptions);
                          
                         graphicsHandles.vectorHandles(tileIndex)=[htext hvector];
                         
@@ -272,6 +283,21 @@ switch lower(displayHandles.mode)
                         end
 
                         ax = nexttile(masterTL, tileIndex, [1, wid]);
+                        xtickformat(ax, '%.1f');
+                        ytickformat(ax, '%.1f');
+
+                           if layoutOptions.Ndataseries>1 && ds~=layoutOptions.Ndataseries
+                       set(ax,'XTickLabel',[]);
+                     %   'ok'
+                      else
+                    set(ax, 'XTickLabelRotation', 0);  % ou 0, selon ton style
+                      end
+
+                        hLine= score_displayDataPanel(ax, ds, layoutOptions, roiData);
+                %  hLine = plot(roiData.data(ds, :));
+                %   title(sprintf('Data:%d', ds));
+                       graphicsHandles.lineHandles(tileIndex) = hLine;
+
                      %   hLine = plot(roiData.data(ds, :));
                      %   title(sprintf('Data:%d', ds));
                      %   graphicsHandles.lineHandles(tileIndex) = hLine;
@@ -282,6 +308,7 @@ switch lower(displayHandles.mode)
                 end
             end
         end
+        
         % Vidéo setup avec VideoWriter.
         outputMoviePath = fullfile(pwd, 'output_movie.mp4');
         v = VideoWriter(outputMoviePath, 'MPEG-4');
@@ -289,13 +316,6 @@ switch lower(displayHandles.mode)
         open(v);
         fig = get(masterTL, 'Parent');
         set(fig, 'Visible', 'off','InvertHardcopy', 'off');
-
-        % frame=1;
-        % rgbImage = print(fig, '-RGBImage');
-        %  disp(['Rendering frame ' num2str(frame) ' / ' num2str(numel(layoutOptions.frames))])
-        %   writeVideo(v, im2frame(rgbImage));
-
-          % HERE delete the right handles !
 
         for frame = 1:numel(layoutOptions.frames)
             score_updateRender(graphicsHandles, roiobj, layoutOptions, displayHandles,frame)
@@ -360,51 +380,7 @@ end
 
 end
 
-function [htext, hvector]= displayVectorGraphics(ax, f, ch, vContours , param)
-% Affiche les textes et contours vectoriels sur l'image.
-frames = param.frames;
-scalingFactor = param.scalingFactor;
-fontsize = param.fontSize;
-hideStamp = param.hideStamp;
-timeoffset = param.timeOffset;
-framerate = param.framerate;
-textColor = param.textColor;
-hold(ax, 'on');
 
-htext=[];
-hvector=[];
-
-if ch == 1 && ~hideStamp
-    if timeoffset
-        ts = [num2str((frames(f)-frames(1))*framerate) 'min'];
-    else
-        ts = [num2str(frames(f)*framerate) 'min'];
-    end
-    htext=text(ax, 0.01, 0.99, ts, 'FontName', 'Arial', 'FontSize', floor(sqrt(scalingFactor)*fontsize), ...
-         'Color', textColor, 'Units', 'normalized', 'HorizontalAlignment', 'left', ...
-         'VerticalAlignment', 'top', 'Interpreter', 'none');
-end
-
-vc = vContours;
-cc=1;
-for k = 1:length(vc)
-    if ~isempty(vc(k).x) && all(isfinite(vc(k).x)) && all(isfinite(vc(k).y)) && all(vc(k).LineWidth(:) > 0)
-        faceColor = double(vc(k).FaceColor); if any(faceColor > 1), faceColor = faceColor/255; end
-        faceAlpha = double(vc(k).FaceAlpha);
-        patchArgs = {'XData', vc(k).x, 'YData', vc(k).y, 'FaceColor', faceColor, 'FaceAlpha', faceAlpha};
-        if ~(ischar(vc(k).EdgeColor) && strcmp(vc(k).EdgeColor, 'none')) && ~isempty(vc(k).LineWidth)
-            edgeColor = double(vc(k).EdgeColor); if any(edgeColor > 1), edgeColor = edgeColor/255; end
-            patchArgs = [patchArgs, {'EdgeColor', edgeColor, 'LineWidth', double(vc(k).LineWidth)}];
-        else
-            patchArgs = [patchArgs, {'LineStyle', 'none'}];
-        end
-       
-        hvector(cc)=patch(ax, patchArgs{:});
-        cc=cc+1;
-    end
-end
-hold(ax, 'off');
-end
 
 
 

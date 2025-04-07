@@ -18,7 +18,7 @@ function [displayHandles, layoutOptions] = score_createDisplayHandles(layoutOpti
 margin = 5;
 extraMargin = 50;
 
-background=layoutOptions.background
+background=layoutOptions.background;
 
 %layoutOptions.Nbrick=2;
 

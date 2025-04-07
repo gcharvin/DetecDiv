@@ -11,7 +11,7 @@ function updateRender(graphicsHandles, roiobj, layoutOptions, displayHandles,new
 %   displayHandles  - structure issue de createDisplayHandles contenant les dimensions du layout
 %
 % La fonction met à jour 'CData' pour les images et 'YData' pour les courbes.
-
+masterTL = displayHandles.masterTiledLayout;
 mode = lower(layoutOptions.mode);
 switch mode
     case 'display'
@@ -21,9 +21,7 @@ switch mode
         layoutOptions.frames=newframe;
 
         displayImage=score_makeComposite(roiobj(1),1,layoutOptions);
-
         MasterCols = displayHandles.MasterCols;
-
 
         if layoutOptions.overlay
             tileIndex = 1;
@@ -41,12 +39,36 @@ switch mode
         end
         % Mise à jour des dataseries
         if layoutOptions.Ndataseries > 0 && ~isempty(roiData.data)
-            for ds = 1:layoutOptions.Ndataseries
+  
+              for ds = 1:layoutOptions.Ndataseries
                 local_row = layoutOptions.Nbrick + ds;
                 local_col = 1;
-                tileIndex = (local_row-1)*MasterCols + local_col;
-                %   set(graphicsHandles.lineHandles(tileIndex), 'YData', roiData.data(ds, :));
-            end
+                tileIndex = (local_row-1)*displayHandles.MasterCols + local_col;
+
+                if layoutOptions.overlay
+                    wid=layoutOptions.Nbrick;
+                else
+                    wid= layoutOptions.Nchannel*layoutOptions.Nbrick;
+                end
+
+                ax = nexttile(masterTL, tileIndex, [1, wid]);
+                      if layoutOptions.Ndataseries>1 && ds~=layoutOptions.Ndataseries
+                       set(ax,'XTickLabel',[]);
+                     %   'ok'
+                      else
+                    set(ax, 'XTickLabelRotation', 0);  % ou 0, selon ton style
+                      end
+                        xtickformat(ax, '%.1f');
+                        ytickformat(ax, '%.1f');
+
+                hLineAll= graphicsHandles.lineHandles(tileIndex);
+                updateMarkers(hLineAll, newframe , layoutOptions);
+               
+                xlim(ax,[layoutOptions.framerate*(newframe-3) layoutOptions.framerate*(newframe+3)]);
+
+                %   title(sprintf('Data:%d', ds));
+       
+              end
         end
 
     case 'movie'
@@ -92,7 +114,7 @@ switch mode
                         set(graphicsHandles.imgHandles(tileIndex), 'CData', displayImage(:,:,:,ch));
                         ax=graphicsHandles.imgHandles(tileIndex); ax=ax.Parent;
 
-                        [htext, hvector]=displayVectorGraphics(ax, newframe, 1, vContours , layoutOptions);
+                        [htext, hvector]=score_displayVectorGraphics(ax, newframe, 1, vContours , layoutOptions);
                         graphicsHandles.vectorHandles(tileIndex)=[htext hvector];
                     end
 
@@ -109,38 +131,55 @@ switch mode
                             set(graphicsHandles.imgHandles(tileIndex), 'CData', displayImage(:,:,:,ch));
                             ax=graphicsHandles.imgHandles(tileIndex); ax=ax.Parent;
 
-                            [htext, hvector]=displayVectorGraphics(ax, newframe, ch, vContours , layoutOptions);
+                            [htext, hvector]=score_displayVectorGraphics(ax, newframe, ch, vContours , layoutOptions);
                             graphicsHandles.vectorHandles(tileIndex)=[htext hvector];
                         end
 
                     end
                 end
 
-                % Mise à jour des dataseries (supposées inchangées d'une frame à l'autre)
-                if layoutOptions.Ndataseries > 0 && ~isempty(roiData.data)
-                    if layoutOptions.overlay
-                        base_row = layoutOptions.Nbrick;
-                    else
-                        base_row = layoutOptions.Nchannel * layoutOptions.Nbrick;
+                    if layoutOptions.Ndataseries > 0 && ~isempty(roiData.data)
+                    for ds = 1:layoutOptions.Ndataseries
+                        local_row = layoutOptions.Nbrick + ds;
+                        local_col = 1;
+                        global_row = ROI_row_offset + local_row;
+                        global_col = ROI_col_offset + local_col;
+                        tileIndex = (global_row-1)*displayHandles.MasterCols + global_col;
+
+                        if layoutOptions.overlay
+                            wid=layoutOptions.Nbrick;
+                        else
+                            wid= layoutOptions.Nchannel*layoutOptions.Nbrick;
+                        end
+                       
+                        ax = nexttile(masterTL, tileIndex, [1, wid]);
+
+                         if layoutOptions.Ndataseries>1 && ds~=layoutOptions.Ndataseries
+                       set(ax,'XTickLabel',[]);
+                     %   'ok'
+                      else
+                    set(ax, 'XTickLabelRotation', 0);  % ou 0, selon ton style
+                         end
+                         
+                        xtickformat(ax, '%.1f');
+                        ytickformat(ax, '%.1f');
+
+                        hLineAll= graphicsHandles.lineHandles(tileIndex);
+                       updateMarkers(hLineAll, newframe , layoutOptions);
+                       amin=layoutOptions.framerate*(newframe-3);
+                       amax=layoutOptions.framerate*(newframe+3);
+                        xticks = linspace(amin, amax, 5);
+                        set(ax, 'XTick', xticks);
+                        xlim(ax,[amin amax]);
+
+                     %   title(sprintf('Data:%d', ds));
+      
                     end
-                    local_row = base_row + 1;
-                    local_col = 1;
-                    if layoutOptions.overlay
-                        ROI_col_offset = (j-1) * layoutOptions.Nbrick;
-                    else
-                        ROI_col_offset = (j-1) * (layoutOptions.Nchannel * layoutOptions.Nbrick);
                     end
-                    global_row = ROI_row_offset + local_row;
-                    global_col = ROI_col_offset + local_col;
-                    tileIndex = (global_row-1)*displayHandles.MasterCols + global_col;
-                    if isKey(graphicsHandles.lineHandles, tileIndex)
-                        %      set(graphicsHandles.lineHandles(tileIndex), 'YData', roiData.data(1, :));
-                    end
-                end
             end
         end
 
-    case 'sequence'
+    case 'sequence'  % this mode is not relevant , because there is no update of rendering to be made
         % Mode SEQUENCE : mise à jour de chaque ROI dans le layout séquence.
         ROI_cols = displayHandles.ROI_cols;
         for i = 1:layoutOptions.Nrow
@@ -198,50 +237,38 @@ switch mode
 end
 end
 
-function [htext, hvector]= displayVectorGraphics(ax, f, ch, vContours , param)
-% Affiche les textes et contours vectoriels sur l'image.
-frames = param.frames;
-scalingFactor = param.scalingFactor;
-fontsize = param.fontSize;
-hideStamp = param.hideStamp;
-timeoffset = param.timeOffset;
-framerate = param.framerate;
-textColor = param.textColor;
-hold(ax, 'on');
+function updateMarkers(hLineAll, fIdx, layoutOptions)
+% Met à jour la position des marqueurs en fonction de fIdx
+% en utilisant les données contenues dans les hLine (plus besoin de roiobj)
 
-htext=[];
-hvector=[];
+    % Identifier les marqueurs par leur style
+    isMarker = arrayfun(@(h) strcmp(get(h, 'Marker'), 'o'), hLineAll);
+    hMarkers = hLineAll(isMarker);
 
-if ch == 1 && ~hideStamp
-    if timeoffset
-        ts = [num2str((frames(f)-frames(1))*framerate) 'min'];
+    % Calculer nouvelle position X
+    if layoutOptions.timeOffset
+        xMarker = (fIdx - layoutOptions.frames(1)) * layoutOptions.framerate;
     else
-        ts = [num2str(frames(f)*framerate) 'min'];
+        xMarker = fIdx * layoutOptions.framerate;
     end
-    htext=text(ax, 0.01, 0.99, ts, 'FontName', 'Arial', 'FontSize', floor(sqrt(scalingFactor)*fontsize), ...
-        'Color',textColor, 'Units', 'normalized', 'HorizontalAlignment', 'left', ...
-        'VerticalAlignment', 'top', 'Interpreter', 'none');
-end
 
-vc = vContours;
-cc=1;
-for k = 1:length(vc)
-    if ~isempty(vc(k).x) && all(isfinite(vc(k).x)) && all(isfinite(vc(k).y)) && all(vc(k).LineWidth(:) > 0)
-        faceColor = double(vc(k).FaceColor); if any(faceColor > 1), faceColor = faceColor/255; end
-        faceAlpha = double(vc(k).FaceAlpha);
-        patchArgs = {'XData', vc(k).x, 'YData', vc(k).y, 'FaceColor', faceColor, 'FaceAlpha', faceAlpha};
-        if ~(ischar(vc(k).EdgeColor) && strcmp(vc(k).EdgeColor, 'none')) && ~isempty(vc(k).LineWidth)
-            edgeColor = double(vc(k).EdgeColor); if any(edgeColor > 1), edgeColor = edgeColor/255; end
-            patchArgs = [patchArgs, {'EdgeColor', edgeColor, 'LineWidth', double(vc(k).LineWidth)}];
-        else
-            patchArgs = [patchArgs, {'LineStyle', 'none'}];
+    % Mettre à jour chaque marqueur
+    for j = 1:length(hMarkers)
+        linkedLine = hMarkers(j).UserData.LinkedLine;
+
+        if isempty(linkedLine) || ~isgraphics(linkedLine)
+            warning('Marqueur #%d n''est pas lié à une ligne valide.', j);
+            continue;
         end
 
-        hvector(cc)=patch(ax, patchArgs{:});
-        cc=cc+1;
+        yLine = get(linkedLine, 'YData');
+
+        if fIdx > length(yLine)
+           % warning('fIdx dépasse les données de la courbe liée au marqueur #%d.', j);
+            continue;
+        end
+
+        yMarker = yLine(fIdx);
+        set(hMarkers(j), 'XData', xMarker, 'YData', yMarker);
     end
 end
-hold(ax, 'off');
-end
-
-

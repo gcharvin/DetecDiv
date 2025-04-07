@@ -35,25 +35,33 @@ end
 hLine = plot(ax, xdata, ydata, 'LineWidth', 2);
 hold(ax, 'on');
 
-hLine2=[];
+hLine2 = gobjects(0);  % au lieu de hLine2 = [];
 cc=1;
 % Pour chaque élément dans layout.frames, ajouter un gros rond plein sur chaque courbe
 markerSize = 10;  % Taille du marker (ajustable)
 for k = 1:length(layoutOptions.frames)
     fIdx = layoutOptions.frames(k);
     % Vérifier que fIdx est dans les limites de ydata
-    if fIdx <= size(ydata,1)
-        % Calcul de la position x pour le marker
-        if timeoffset
+           if timeoffset
             xMarker = (fIdx - layoutOptions.frames(1)) * framerate;
         else
             xMarker = fIdx * framerate;
-        end
+           end
+
+    if fIdx <= size(ydata,1)
+        % Calcul de la position x pour le marker
         % Pour chaque courbe (chaque colonne de ydata)
         for j = 1:length(hLine)
             yMarker = ydata(fIdx, j);
             % Utilisation de la couleur propre à la courbe p(j)
-            hLine2(cc)=plot(ax, xMarker, yMarker, 'o', 'MarkerSize', markerSize, 'MarkerFaceColor', hLine(j).Color, 'MarkerEdgeColor', hLine(j).Color);
+          %  hLine2(cc)=plot(ax, xMarker, yMarker, 'o', 'MarkerSize', markerSize, 'MarkerFaceColor', hLine(j).Color, 'MarkerEdgeColor', hLine(j).Color);
+            hLine2(cc) = plot(ax, xMarker, yMarker, 'o', 'MarkerSize', markerSize, ...
+    'MarkerFaceColor', hLine(j).Color, 'MarkerEdgeColor', hLine(j).Color);
+
+% On lie le marker à sa ligne correspondante
+         %   hLine2(cc).UserData.LinkedLine = hLine(j);
+            hLine2(cc).UserData = struct('LinkedLine', hLine(j));
+
             cc=cc+1;
         end
     end
@@ -83,6 +91,8 @@ set(lgd, 'Color', layoutOptions.background, ...        % Fond identique à celui
 set(ax, 'XColor', layoutOptions.textColor, 'YColor', layoutOptions.textColor, 'Box', 'off');
 set(ax, 'Color', layoutOptions.background,'FontSize',floor(sqrt(scalingFactor)*layoutOptions.fontSize));
 
+switch layoutOptions.mode
+    case "Sequence"
 amin=min(xdata);
 if amin>0
     amin=0.95*amin-0.01;
@@ -95,6 +105,10 @@ if amax>0
     amax=0.95*amax-0.01;
 else
     amax=1.05*amax+0.01;
+end
+    otherwise % display and movie mode
+    amin=xMarker-3*framerate;
+    amax=xMarker+3*framerate;
 end
 
 xlim(ax,  [amin amax]);
