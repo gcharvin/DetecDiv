@@ -15,7 +15,7 @@ function [displayHandles, layoutOptions] = score_createDisplayHandles(layoutOpti
 %
 % Le master tiledlayout est créé avec 'TileSpacing' et 'Padding' réglés sur 'none'.
 
-margin = 5;
+margin = 0;
 extraMargin = 50;
 
 background=layoutOptions.background;
@@ -67,8 +67,7 @@ set(fig, 'Color', background);
 
             if nargin==2  && ~isempty(hfig) && ishandle(hfig) && isvalid(hfig)
             fig=hfig;
-         %   set(fig,'Name', 'Sequences Export (Vectorial)', 'Units', 'pixels', ...
-  %  'Position', [100, 100, figWidth, figHeight]);
+
             set(fig, 'Color', background);
             clf;
             else

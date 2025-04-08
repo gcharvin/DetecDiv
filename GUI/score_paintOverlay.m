@@ -32,12 +32,16 @@ pix = roi.findChannelID(roi.display.channel{channelIdx});
 % Récupérer le masque courant (dans le canal d'annotation)
 currentMask = roi.image(:, :, pix, roi.display.frame);
 
+axes=app.graphicsHandles.overlayHandles(1).Parent;
+
+%axes=app.OverlayAxes;
+
 % Récupérer le point initial dans l'axe overlay
-cp = get(app.OverlayAxes, 'CurrentPoint');
+cp = get(axes, 'CurrentPoint');
 xinit = round(cp(1,1));
 yinit = round(cp(1,2));
 
-hOverlayImg = app.OverlayAxes.UserData.CDataHandle;
+hOverlayImg = app.graphicsHandles.overlayHandles(1); %axes.UserData.CDataHandle;
 
 % Si un double-clic est détecté, on affiche l'objet sélectionné
 if strcmp(seltype, 'open')
@@ -66,7 +70,7 @@ src.WindowButtonUpFcn = @wbucb;
 
 % --- Callback imbriquée pour suivre le mouvement (peinture en continu) ---
     function wbmcb(~, ~)
-        cpMotion = get(app.OverlayAxes, 'CurrentPoint');
+        cpMotion = get(axes, 'CurrentPoint');
         x = round(cpMotion(1,1));
         y = round(cpMotion(1,2));
 
@@ -95,7 +99,8 @@ src.WindowButtonUpFcn = @wbucb;
         halfW = floor(maskW/2);
 
         % Déterminer la région de l'image à mettre à jour
-        [imgH, imgW, ~] = size(get(app.OverlayAxes.UserData.CDataHandle, 'CData'));
+    %    [imgH, imgW, ~] = size(get(axes.UserData.CDataHandle, 'CData'));
+       [imgH, imgW, ~] = size(get(hOverlayImg, 'CData'));
         xRange = max(1, x-halfW) : min(imgW, x+halfW);
         yRange = max(1, y-halfH) : min(imgH, y+halfH);
 
@@ -234,7 +239,7 @@ src.WindowButtonUpFcn = @wbucb;
                 delete(app.SelectedObjectRectangle);
             end
 
-            app.SelectedObjectRectangle = rectangle(app.OverlayAxes, 'Position', bb, ...
+            app.SelectedObjectRectangle = rectangle(axes, 'Position', bb, ...
                 'EdgeColor', 'w', 'LineWidth', 2, 'LineStyle', '--');
 
             drawnow;

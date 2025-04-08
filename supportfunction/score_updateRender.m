@@ -1,4 +1,4 @@
-function updateRender(graphicsHandles, roiobj, layoutOptions, displayHandles,newframe)
+function score_updateRender(graphicsHandles, roiobj, layoutOptions, displayHandles,newframe)
 % updateRender Met à jour les objets graphiques existants (images et courbes)
 % dans le master tiledlayout à partir d'un nouveau jeu de données (roiobj).
 %
@@ -20,13 +20,17 @@ switch mode
 
         layoutOptions.frames=newframe;
 
-        displayImage=score_makeComposite(roiobj(1),1,layoutOptions);
+       % displayImage=score_makeComposite(roiobj(1),1,layoutOptions);
+       [displayImage, vContours, indexedOverlay, alphaOverlay]=score_makeComposite(roiobj(1),1,layoutOptions);
+
         MasterCols = displayHandles.MasterCols;
 
         if layoutOptions.overlay
             tileIndex = 1;
-            %    aa= graphicsHandles.imgHandles(tileIndex);
             set(graphicsHandles.imgHandles(tileIndex), 'CData', displayImage);
+
+            set(graphicsHandles.overlayHandles(tileIndex),'CData', indexedOverlay);
+            set(graphicsHandles.overlayHandles(tileIndex), 'AlphaData', alphaOverlay, 'AlphaDataMapping', 'none');
         else
             for ch = 1:layoutOptions.Nchannel
                 local_row = 1;
@@ -34,9 +38,16 @@ switch mode
                 tileIndex = (local_row-1)*MasterCols + local_col;
                 newImg = displayImage(:,:,:,ch);
                 %  aa= graphicsHandles.imgHandles(tileIndex);
+              %  tmp=graphicsHandles.imgHandles(tileIndex)
                 set(graphicsHandles.imgHandles(tileIndex), 'CData', newImg);
+
+
+            set(graphicsHandles.overlayHandles(tileIndex),'CData', indexedOverlay);
+            set(graphicsHandles.overlayHandles(tileIndex), 'AlphaData', alphaOverlay, 'AlphaDataMapping', 'none');
             end
         end
+
+
         % Mise à jour des dataseries
         if layoutOptions.Ndataseries > 0 && ~isempty(roiData.data)
   
@@ -58,8 +69,13 @@ switch mode
                       else
                     set(ax, 'XTickLabelRotation', 0);  % ou 0, selon ton style
                       end
+
+                      if ~isa(ax.YAxis, 'matlab.graphics.axis.decorator.CategoricalRuler')
+                            ytickformat(ax, '%.1f');
+                      end
+
                         xtickformat(ax, '%.1f');
-                        ytickformat(ax, '%.1f');
+                        
 
                 hLineAll= graphicsHandles.lineHandles(tileIndex);
                 updateMarkers(hLineAll, newframe , layoutOptions);
@@ -160,9 +176,12 @@ switch mode
                       else
                     set(ax, 'XTickLabelRotation', 0);  % ou 0, selon ton style
                          end
-                         
+
+                            if ~isa(ax.YAxis, 'matlab.graphics.axis.decorator.CategoricalRuler')
+                            ytickformat(ax, '%.1f');
+                      end
+
                         xtickformat(ax, '%.1f');
-                        ytickformat(ax, '%.1f');
 
                         hLineAll= graphicsHandles.lineHandles(tileIndex);
                        updateMarkers(hLineAll, newframe , layoutOptions);

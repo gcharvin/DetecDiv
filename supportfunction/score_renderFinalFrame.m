@@ -1,4 +1,4 @@
-function graphicsHandles = renderFinalFrame(displayHandles, roiobj, layoutOptions)
+function graphicsHandles = score_renderFinalFrame(displayHandles, roiobj, layoutOptions)
 % renderFinalFrame Affiche le rendu initial dans le master tiledlayout et
 % retourne la structure graphicsHandles contenant les handles graphiques.
 %
@@ -136,7 +136,10 @@ switch lower(displayHandles.mode)
         % Ici, on affiche une seule ROI avec layout display.
 
         roiData=roiobj(1);
-        displayImage=score_makeComposite(roiData,1,layoutOptions);
+       % displayImage=score_makeComposite(roiData,1,layoutOptions);
+        [displayImage, vContours, indexedOverlay, alphaOverlay]=score_makeComposite(roiData,1,layoutOptions);
+
+       % figure, imshow(alphaOverlay,[]);
 
         if layoutOptions.overlay
             % Si overlay true, on combine les canaux.
@@ -153,7 +156,14 @@ switch lower(displayHandles.mode)
             axOverlay = axes('Position', pos, 'Color', 'none', 'XTick', [], 'YTick', []);
             set(axOverlay, 'HitTest', 'off');
             uistack(axOverlay, 'top');
-            graphicsHandles.overlayHandles(tileIndex) = axOverlay;
+
+             hOverlay=imshow(indexedOverlay, 'Parent', axOverlay, 'InitialMagnification', 'fit');
+             hOverlay.Tag = 'IndexedOverlay';
+             set(hOverlay, 'AlphaData', alphaOverlay, 'AlphaDataMapping', 'none');
+%             axImg.UserData.OverlayHandle = hOverlay;
+          %  axOverlay.UserData.CDataHandle=
+            graphicsHandles.overlayHandles(tileIndex) = axOverlay.Children;
+        
         else
             % Si overlay false, chaque canal est affiché.
             for ch = 1:layoutOptions.Nchannel
@@ -170,8 +180,14 @@ switch lower(displayHandles.mode)
                 axOverlay = axes('Position', pos, 'Color', 'none', 'XTick', [], 'YTick', []);
                 set(axOverlay, 'HitTest', 'off');
                 uistack(axOverlay, 'top');
-                graphicsHandles.overlayHandles(tileIndex) = axOverlay;
+
+                hOverlay=imshow(indexedOverlay, 'Parent', axOverlay, 'InitialMagnification', 'fit');
+                hOverlay.Tag = 'IndexedOverlay';
+                set(hOverlay, 'AlphaData', alphaOverlay, 'AlphaDataMapping', 'none');
+
+                graphicsHandles.overlayHandles(tileIndex) = axOverlay.Children;
             end
+
         end
         % Dataseries en dessous
         if layoutOptions.Ndataseries > 0 && ~isempty(roiData.data)
@@ -193,8 +209,11 @@ switch lower(displayHandles.mode)
                       else
                     set(ax, 'XTickLabelRotation', 0);  % ou 0, selon ton style
                       end
+                           if ~isa(ax.YAxis, 'matlab.graphics.axis.decorator.CategoricalRuler')
+                            ytickformat(ax, '%.1f');
+                      end
+
                         xtickformat(ax, '%.1f');
-                        ytickformat(ax, '%.1f');
 
                 hLine= score_displayDataPanel(ax, ds, layoutOptions, roiData);
                 %  hLine = plot(roiData.data(ds, :));

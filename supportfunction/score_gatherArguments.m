@@ -10,7 +10,7 @@ arg = {};
 % 'Frames' : conversion de la chaîne (ex. '1:10') en tableau numérique
 arg = [arg, {'frames', currentFrame}];
 % 'Output' : type de sortie (ex. 'Movie')
-arg = [arg, {'mode', 'display'}];
+arg = [arg, {'mode', 'Display'}];
 % 'Background' : couleur de fond (conversion de chaîne en vecteur numérique)
 arg = [arg, {'background', [0 0 0]}];
 % 'Text' : couleur du texte (conversion)
@@ -28,5 +28,6 @@ arg = [arg, {'overlay', app.OverlayCheckBox.Value}];
 % just one roi to be displayed
 arg= [arg , {'Nrow',1}];
 arg= [arg , {'Ncol',1}];
+arg= [arg , {'Nbrick',3}];
 
 end
