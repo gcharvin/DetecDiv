@@ -122,7 +122,7 @@ for j = 1:numel(layoutOptions.channel)
         end
     end
 end
-if nChannel == 0, nChannel = 1; end
+if nChannel == 0  end
 
 %% layout parameters
 

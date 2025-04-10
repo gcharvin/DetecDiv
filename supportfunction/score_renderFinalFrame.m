@@ -36,6 +36,8 @@ textColor=layoutOptions.textColor;
 channel=layoutOptions.channel;
 fontsize=layoutOptions.fontSize;
 
+axarray=[];
+
 switch lower(displayHandles.mode)
     case 'sequence'
         % --- Mode SEQUENCE ---
@@ -61,14 +63,18 @@ switch lower(displayHandles.mode)
                         tileIndex = (global_row-1)*displayHandles.MasterCols + global_col;
                         ax = nexttile(masterTL, tileIndex, [layoutOptions.Nbrick, layoutOptions.Nbrick]);
                         
+     
                         imshow(displayImage, []);
 
                       %  displayVectorGraphics(ax, frame, 1, vContours , layoutOptions);
                           [htext, hvector]=score_displayVectorGraphics(ax, frame, 1, vContours , layoutOptions);
+
+                          drawSeparationLines(ax,layoutOptions)
+
                            graphicsHandles.vectorHandles(tileIndex)=[htext hvector];
 
                      %   title(sprintf('ROI(%d) F:%d', roiIndex, frame));
-                        graphicsHandles.imgHandles(tileIndex) = ax.Children;
+                         graphicsHandles.imgHandles(tileIndex) = ax.Children;
                     end
                 else
                     % Chaque canal séparé : layout classique.
@@ -89,16 +95,18 @@ switch lower(displayHandles.mode)
                           %  img = roiData.image(:,:,ch,frame);
                             imshow(displayImage(:,:,:,ch), []);
                              [htext, hvector]=score_displayVectorGraphics(ax, frame, ch, vContours , layoutOptions);
+                               drawSeparationLines(ax,layoutOptions);
                             graphicsHandles.vectorHandles(tileIndex)=[htext hvector];
                           %  title(sprintf('ROI(%d) Ch:%d F:%d', roiIndex, ch, frame));
                             graphicsHandles.imgHandles(tileIndex) = ax.Children;
                                if frame == 1
                             ylabel(ax, layoutOptions.channel{ch}, 'FontName', 'Arial', ...
-                                'FontSize', floor(sqrt(scalingFactor)*fontsize), 'Color', textColor);
+                                'FontSize', floor(sqrt(scalingFactor)*fontsize), 'Color', textColor,'Interpreter','none');
                                end
 
                         end
-                    end
+                        end
+                       
                 end
 
                 % Dataseries pour cette ROI.
@@ -116,7 +124,7 @@ switch lower(displayHandles.mode)
                         tileIndex = (global_row-1)*displayHandles.MasterCols + global_col;
                         ax = nexttile(masterTL, tileIndex, [1, displayHandles.ROI_cols]);
                        hLine= score_displayDataPanel(ax, ds, layoutOptions, roiData);
-   
+
                        % title(sprintf('ROI(%d) Data:%d', roiIndex, ds));
                         graphicsHandles.lineHandles(tileIndex) = hLine;
                     end
@@ -141,55 +149,7 @@ switch lower(displayHandles.mode)
 
        % figure, imshow(alphaOverlay,[]);
 
-        if layoutOptions.overlay
-            % Si overlay true, on combine les canaux.
-            tileIndex = 1;
-            % Pour display overlay, le master layout a :
-            % Lignes = Nbrick + Ndataseries, Colonnes = Nbrick.
-            ax = nexttile(masterTL, tileIndex, [layoutOptions.Nbrick, layoutOptions.Nbrick]);
-            %compositeImg = max(roiData.image, [], 3);
-            imshow(displayImage, []);
-          %  title('Overlay Composite');
-            graphicsHandles.imgHandles(tileIndex) = ax.Children;
-            % Ajout d'un axe overlay transparent.
-            pos = get(ax, 'Position');
-            axOverlay = axes('Position', pos, 'Color', 'none', 'XTick', [], 'YTick', []);
-            set(axOverlay, 'HitTest', 'off');
-            uistack(axOverlay, 'top');
-
-             hOverlay=imshow(indexedOverlay, 'Parent', axOverlay, 'InitialMagnification', 'fit');
-             hOverlay.Tag = 'IndexedOverlay';
-             set(hOverlay, 'AlphaData', alphaOverlay, 'AlphaDataMapping', 'none');
-%             axImg.UserData.OverlayHandle = hOverlay;
-          %  axOverlay.UserData.CDataHandle=
-            graphicsHandles.overlayHandles(tileIndex) = axOverlay.Children;
-        
-        else
-            % Si overlay false, chaque canal est affiché.
-            for ch = 1:layoutOptions.Nchannel
-                local_row = 1;
-                local_col = (ch-1)*layoutOptions.Nbrick + 1;
-                tileIndex = (local_row-1)*displayHandles.MasterCols + local_col;
-                ax = nexttile(masterTL, tileIndex, [layoutOptions.Nbrick, layoutOptions.Nbrick]);
-                img = displayImage(:,:,:,ch);
-                imshow(img, []);
-            %    title(sprintf('Ch:%d', ch));
-                graphicsHandles.imgHandles(tileIndex) = ax.Children;
-                % Ajout d'un axe overlay transparent sur chaque tuile.
-                pos = get(ax, 'Position');
-                axOverlay = axes('Position', pos, 'Color', 'none', 'XTick', [], 'YTick', []);
-                set(axOverlay, 'HitTest', 'off');
-                uistack(axOverlay, 'top');
-
-                hOverlay=imshow(indexedOverlay, 'Parent', axOverlay, 'InitialMagnification', 'fit');
-                hOverlay.Tag = 'IndexedOverlay';
-                set(hOverlay, 'AlphaData', alphaOverlay, 'AlphaDataMapping', 'none');
-
-                graphicsHandles.overlayHandles(tileIndex) = axOverlay.Children;
-            end
-
-        end
-        % Dataseries en dessous
+          % Dataseries en dessous
         if layoutOptions.Ndataseries > 0 && ~isempty(roiData.data)
             for ds = 1:layoutOptions.Ndataseries
                 local_row = layoutOptions.Nbrick + ds;
@@ -213,7 +173,7 @@ switch lower(displayHandles.mode)
                             ytickformat(ax, '%.1f');
                       end
 
-                        xtickformat(ax, '%.1f');
+                  xtickformat(ax, '%.1f');
 
                 hLine= score_displayDataPanel(ax, ds, layoutOptions, roiData);
                 %  hLine = plot(roiData.data(ds, :));
@@ -221,6 +181,74 @@ switch lower(displayHandles.mode)
                   graphicsHandles.lineHandles(tileIndex) = hLine;
             end
         end
+
+        if layoutOptions.overlay
+            % Si overlay true, on combine les canaux.
+            tileIndex = 1;
+            % Pour display overlay, le master layout a :
+            % Lignes = Nbrick + Ndataseries, Colonnes = Nbrick.
+            ax = nexttile(masterTL, tileIndex, [layoutOptions.Nbrick, layoutOptions.Nbrick]);
+            set(ax, 'HitTest', 'off');
+            axarray=[axarray ax];
+            %compositeImg = max(roiData.image, [], 3);
+            imshow(displayImage, []);
+          %  title('Overlay Composite');
+            graphicsHandles.imgHandles(tileIndex) = ax.Children;
+            % Ajout d'un axe overlay transparent.
+            pos = get(ax, 'Position');
+            axOverlay = axes('Position', pos, 'Color', 'none', 'XTick', [], 'YTick', []);
+            set(axOverlay, 'HitTest', 'off');
+            uistack(axOverlay, 'top');
+
+             axOverlay.XLim=ax.XLim;
+             axOverlay.YLim=ax.YLim;
+
+            % axOverlay, ax
+
+             hOverlay=imshow(indexedOverlay, 'Parent', axOverlay, 'InitialMagnification', 'fit');
+             hOverlay.Tag = 'IndexedOverlay';
+             set(hOverlay, 'AlphaData', alphaOverlay, 'AlphaDataMapping', 'none');
+%             axImg.UserData.OverlayHandle = hOverlay;
+          %  axOverlay.UserData.CDataHandle=
+            graphicsHandles.overlayHandles(tileIndex) = axOverlay.Children;
+            axarray=[axarray axOverlay];
+        else
+            % Si overlay false, chaque canal est affiché.
+            for ch = 1:layoutOptions.Nchannel
+                local_row = 1;
+                local_col = (ch-1)*layoutOptions.Nbrick + 1;
+                tileIndex = (local_row-1)*displayHandles.MasterCols + local_col;
+                ax = nexttile(masterTL, tileIndex, [layoutOptions.Nbrick, layoutOptions.Nbrick]);
+                set(ax, 'HitTest', 'off');
+                
+                axarray=[axarray ax];
+                img = displayImage(:,:,:,ch);
+                imshow(img, []);
+            %    title(sprintf('Ch:%d', ch));
+                graphicsHandles.imgHandles(tileIndex) = ax.Children;
+                % Ajout d'un axe overlay transparent sur chaque tuile.
+                pos = get(ax, 'Position');
+                axOverlay = axes('Position', pos, 'Color', 'none', 'XTick', [], 'YTick', []);
+                set(axOverlay, 'HitTest', 'off');
+
+                %ax.YTickLabel = repmat({''}, size(ax.YTick));  % masque les ticks
+                %ax.XTickLabel = repmat({''}, size(ax.XTick));
+          
+
+                uistack(axOverlay, 'top');
+
+                hOverlay=imshow(indexedOverlay, 'Parent', axOverlay, 'InitialMagnification', 'fit');
+                hOverlay.Tag = 'IndexedOverlay';
+                set(hOverlay, 'AlphaData', alphaOverlay, 'AlphaDataMapping', 'none');
+
+                graphicsHandles.overlayHandles(tileIndex) = axOverlay.Children;
+                axarray=[axarray axOverlay];
+            end        
+
+        end
+        
+    
+         linkaxes(axarray,'xy');
 
     case 'movie'
         % --- Mode MOVIE ---
@@ -347,57 +375,54 @@ switch lower(displayHandles.mode)
         fprintf('Movie saved as MP4: %s\n', outputMoviePath);
 end
 
+end
 
-% % --- Lignes de séparation verticales ---
-% % Pour les images, la boucle dépend du mode : en Sequence on a numel(frames) colonnes, en Display nChannel colonnes.
-%
-% if overlayMode
-%     imageRows = 1;
-%     nChannel = 1;
-% else
-%    switch lower(displayHandles.mode)
-%        case "sequence"
-%             imageRows = layoutOptions.Nchannel;
-%              nDiv = numel(frames);
-%         case "display"
-%             nChannel = nlayoutOptions.Nchannel;
-%             imageRows = 1;
-%             nDiv = nChannel;
-%         case "movie"
-%              imageRows = 1;
-%               nChannel = nlayoutOptions.Nchannel;
-%             % À compléter si besoin
-%                   nDiv = nChannel;
-%     end
-% end
-%
+function drawSeparationLines(ax,layoutOptions)
+
+% --- Lignes de séparation verticales ---
+% Pour les images, la boucle dépend du mode : en Sequence on a numel(frames) colonnes, en Display nChannel colonnes.
+
+ scalingFactor=layoutOptions.scalingFactor;
+ nbrick=layoutOptions.Nbrick; 
+
+% textColor=layoutOptions.textColor;
+% channel=layoutOptions.channel;
+% fontsize=layoutOptions.fontSize;
+
+background=layoutOptions.background;
 % drawLineWidth = 2; %* scalingFactor;
-% globalPos = masterTL.OuterPosition;
+% 
 % convertPos = @(p) [ globalPos(1) + p(1)*globalPos(3), ...
 %                     globalPos(2) + p(2)*globalPos(4), ...
 %                     p(3)*globalPos(3), p(4)*globalPos(4) ];
-% % Boucle uniquement sur les lignes d'images (hors panels de données)
-% for r = 1:nRows_ROI
-%     for i = 1:imageRows
-%          globalRow = (r-1) * (imageRows + dataRows) + i;
-%          for c = 1:nCols_ROI
-%               for f = 1:(nDiv-1)
-%                    tileIndex = (globalRow - 1)*globalCols + ((c-1)*nDiv + f);
-%                    ax = nexttile(tGlobal, tileIndex);
+% 
 %                    pRel = get(ax, 'Position');
 %                    pFig = convertPos(pRel);
 %                    xLine = pFig(1) + pFig(3) - 0.005;
 %                    yBot = pFig(2);
 %                    yTop = pFig(2) + pFig(4);
-%                    annotation(hFig, 'line', [xLine xLine], [yBot-0.01 yTop+0.01], ...
+% 
+%                    annotation(ax.Children, 'line', [xLine xLine], [yBot-0.01 yTop+0.01], ...
 %                               'Color', background, 'LineWidth', drawLineWidth);
-%               end
-%          end
-%     end
-% end
 
+xlim_ = xlim(ax);
+    xRight = xlim_(2);  % bord droit
 
-end
+    % Récupérer le centre de la plage Y (pour centrer la ligne)
+    ylim_ = ylim(ax);
+    yCenter = mean(ylim_);
+    
+    % Définir les bornes Y de la ligne (hauteur = 2)
+    %y1 = yCenter - 1
+   % y2 = yCenter + 1
+
+    % Tracer la ligne
+
+    wid=2*nbrick*scalingFactor;
+    line(ax, [xRight xRight], ylim_, ...
+        'Color', background, 'LineWidth', wid, 'LineStyle', '-');
+
+ end
 
 
 

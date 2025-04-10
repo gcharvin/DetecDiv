@@ -98,6 +98,7 @@ for ch=1:numel(channel)
         end
 
 
+
         wid = levels{ch}{5};
         weiVal = double(levels{ch}{3});
         fillAlpha = min(1, weiVal);

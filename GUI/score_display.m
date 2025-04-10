@@ -12,6 +12,7 @@ selectedROIIndex = find(cell2mat(app.UIROITable.Data(:, 1)), 1);
 if isempty(selectedROIIndex)
     return;
 end
+
 selectedROI = app.content.ROIList{selectedROIIndex};
 if isempty(selectedROI.image)
     selectedROI.load();
@@ -24,12 +25,15 @@ end
 
 %% build argument list for display
 
-
  arg=score_gatherArguments(app,selectedROI);
  opts = score_collectDisplayOptions(arg{:});
  cmap=app.MoviecolormapEditField.Value;
  opts=score_updateLayout(opts,selectedROI,cmap);
  app.layoutOptions=opts;
+
+ if opts.Nchannel==0
+     return
+ end
 
 refresh=false; 
 if isempty(app.displayHandles)
@@ -52,9 +56,15 @@ if strcmp(mode, 'slow')
  refresh=true;
 end
 
+
 %tmp=app.graphicsHandles.imgHandles
    if refresh
-[displayHandles, opts]= score_createDisplayHandles(opts,app.ImageFigure);
+displayHandles= score_createDisplayHandles(opts,app.ImageFigure);
+
+%nexttile([3 3])
+%h=gcf
+% imshow(rand(100,100),[])
+%return;
 app.graphicsHandles=score_renderFinalFrame(displayHandles , selectedROI, opts);
 app.displayHandles=displayHandles;
    else
@@ -76,9 +86,11 @@ end
 % histo update
 score_updateHistogram(app, mode);
 if app.LineIntensityprofileButton.Value
+      createIntensityLine(app);
     score_updateIntensityProfile(app, getPosition(app.LineIntensityProfileLine));
 end
 if app.ShapeButton.Value
+    createEllipse(app);
     score_updateEllipticalProfile(app, app.EllipseIntensityProfileObj);
 end
 

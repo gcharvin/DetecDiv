@@ -1,4 +1,4 @@
-function [displayHandles, layoutOptions] = score_createDisplayHandles(layoutOptions,hfig)
+function displayHandles = score_createDisplayHandles(layoutOptions,hfig)
 % createDisplayHandles Crée un master tiledlayout pour l'affichage sans uipanel.
 %
 % Pour 'sequence' :
@@ -16,7 +16,7 @@ function [displayHandles, layoutOptions] = score_createDisplayHandles(layoutOpti
 % Le master tiledlayout est créé avec 'TileSpacing' et 'Padding' réglés sur 'none'.
 
 margin = 0;
-extraMargin = 50;
+extraMargin = 0;
 
 background=layoutOptions.background;
 
@@ -42,13 +42,14 @@ background=layoutOptions.background;
     'Position', [100, 100, figWidth, figHeight]);
 set(fig, 'Color', background);
 
-            masterTL = tiledlayout(fig, MasterRows, MasterCols, 'TileSpacing', 'none', 'Padding', 'none');
+            masterTL = tiledlayout(fig, MasterRows, MasterCols, 'TileSpacing', 'none', 'Padding', 'tight');
             displayHandles.masterTiledLayout = masterTL;
             displayHandles.MasterRows = MasterRows;
             displayHandles.MasterCols = MasterCols;
             displayHandles.ROI_rows = ROI_rows;
             displayHandles.ROI_cols = ROI_cols;
             displayHandles.mode = 'sequence';
+
         case 'display'
             % Pour display, une seule ROI est utilisée.
               if layoutOptions.overlay
@@ -57,7 +58,7 @@ set(fig, 'Color', background);
             else
                 ROI_rows = layoutOptions.Nbrick + layoutOptions.Ndataseries;
                 ROI_cols = layoutOptions.Nchannel * layoutOptions.Nbrick;
-            end
+              end
 
             %ROI_rows = layoutOptions.Nbrick + layoutOptions.Ndataseries;
             %ROI_cols = layoutOptions.Nchannel * layoutOptions.Nbrick
@@ -69,11 +70,13 @@ set(fig, 'Color', background);
             fig=hfig;
 
             set(fig, 'Color', background);
+    
             clf;
             else
             fig= figure('Name', 'Sequences Export (Vectorial)', 'Units', 'pixels', ...
     'Position', [100, 100, figWidth, figHeight]);
-set(fig, 'Color', background);
+       set(fig, 'Color', background);
+   
             end
 
             masterTL = tiledlayout(fig, ROI_rows, ROI_cols, 'TileSpacing', 'none', 'Padding', 'none');
