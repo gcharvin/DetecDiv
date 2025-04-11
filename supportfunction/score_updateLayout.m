@@ -1,5 +1,4 @@
-function layoutOut=score_updateLayout(layoutOptions,roiobj,cmap)
-
+function layoutOut=score_updateLayout(layoutOptions,roiobj)
 
  roitmp = roiobj(1);
 if numel(roitmp.image) == 0
@@ -12,13 +11,13 @@ end
 %     frames = layoutOptions.frames;
 % end
 
-
 %% channel specific parameters
 
 dsC = roitmp.display;
 % HERE
 % On ne considère que les channels sélectionnés
 selCh = find(dsC.selectedchannel);
+cmap=layoutOptions.colormap;
 
 if ~isempty(selCh)
     % Récupérer le nom des channels (cell array de chaînes)

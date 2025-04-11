@@ -27,8 +27,8 @@ end
 
  arg=score_gatherArguments(app,selectedROI);
  opts = score_collectDisplayOptions(arg{:});
- cmap=app.MoviecolormapEditField.Value;
- opts=score_updateLayout(opts,selectedROI,cmap);
+ %cmap=app.MoviecolormapEditField.Value;
+ opts=score_updateLayout(opts,selectedROI);
  app.layoutOptions=opts;
 
  if opts.Nchannel==0

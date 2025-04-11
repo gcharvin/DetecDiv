@@ -14,6 +14,7 @@ classdef dataseries < handle
 
         plotGroup;
         plotProperties;
+        groupProperties;
         description; % information about the dataset; this can be an object which specifiies classes for classificaiton
         history;
         userData;

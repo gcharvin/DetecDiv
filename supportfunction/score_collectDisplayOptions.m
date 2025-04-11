@@ -1,4 +1,4 @@
-function param = collectDisplayOptions(varargin)
+function param = score_collectDisplayOptions(varargin)
 % collectDisplayOptions Collecte et valide les paramètres d'affichage.
 %
 %   param = collectDisplayOptions('Param1', value1, ...)
@@ -89,6 +89,10 @@ function param = collectDisplayOptions(varargin)
     defaultBackground    = [0 0 0];
     defaultRefresh       = false;
     defaultFrames        = [];
+    defaultTrack= false;
+    defaultTrackWindow=20;
+    defaultColormap='lines';
+    defaultDataColormap='lines';
     
     p = inputParser;
     
@@ -130,7 +134,11 @@ function param = collectDisplayOptions(varargin)
     addParameter(p, 'background', defaultBackground);
     addParameter(p, 'refresh', defaultRefresh);
     addParameter(p, 'frames', defaultFrames);
-    
+    addParameter(p, 'track', defaultTrack);
+    addParameter(p, 'trackWindow', defaultTrackWindow);
+    addParameter(p, 'colormap', defaultColormap);
+    addParameter(p, 'dataColormap', defaultDataColormap);
+
     parse(p, varargin{:});
     param = p.Results;
     

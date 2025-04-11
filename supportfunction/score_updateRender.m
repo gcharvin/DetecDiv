@@ -20,8 +20,8 @@ switch mode
 
         layoutOptions.frames=newframe;
 
-       % displayImage=score_makeComposite(roiobj(1),1,layoutOptions);
-       [displayImage, vContours, indexedOverlay, alphaOverlay]=score_makeComposite(roiobj(1),1,layoutOptions);
+        % displayImage=score_makeComposite(roiobj(1),1,layoutOptions);
+        [displayImage, vContours, indexedOverlay, alphaOverlay]=score_makeComposite(roiobj(1),1,layoutOptions);
 
         MasterCols = displayHandles.MasterCols;
 
@@ -38,20 +38,19 @@ switch mode
                 tileIndex = (local_row-1)*MasterCols + local_col;
                 newImg = displayImage(:,:,:,ch);
                 %  aa= graphicsHandles.imgHandles(tileIndex);
-              %  tmp=graphicsHandles.imgHandles(tileIndex)
+                %  tmp=graphicsHandles.imgHandles(tileIndex)
                 set(graphicsHandles.imgHandles(tileIndex), 'CData', newImg);
 
 
-            set(graphicsHandles.overlayHandles(tileIndex),'CData', indexedOverlay);
-            set(graphicsHandles.overlayHandles(tileIndex), 'AlphaData', alphaOverlay, 'AlphaDataMapping', 'none');
+                set(graphicsHandles.overlayHandles(tileIndex),'CData', indexedOverlay);
+                set(graphicsHandles.overlayHandles(tileIndex), 'AlphaData', alphaOverlay, 'AlphaDataMapping', 'none');
             end
         end
 
-
         % Mise à jour des dataseries
         if layoutOptions.Ndataseries > 0 && ~isempty(roiData.data)
-  
-              for ds = 1:layoutOptions.Ndataseries
+
+            for ds = 1:layoutOptions.Ndataseries
                 local_row = layoutOptions.Nbrick + ds;
                 local_col = 1;
                 tileIndex = (local_row-1)*displayHandles.MasterCols + local_col;
@@ -63,28 +62,26 @@ switch mode
                 end
 
                 ax = nexttile(masterTL, tileIndex, [1, wid]);
-                      if layoutOptions.Ndataseries>1 && ds~=layoutOptions.Ndataseries
-                       set(ax,'XTickLabel',[]);
-                     %   'ok'
-                      else
+                if layoutOptions.Ndataseries>1 && ds~=layoutOptions.Ndataseries
+                    set(ax,'XTickLabel',[]);
+                    %   'ok'
+                else
                     set(ax, 'XTickLabelRotation', 0);  % ou 0, selon ton style
-                      end
+                end
 
-                      if ~isa(ax.YAxis, 'matlab.graphics.axis.decorator.CategoricalRuler')
-                            ytickformat(ax, '%.1f');
-                      end
+                if ~isa(ax.YAxis, 'matlab.graphics.axis.decorator.CategoricalRuler')
+                    ytickformat(ax, '%.1f');
+                end
 
-                        xtickformat(ax, '%.1f');
-                        
+                xtickformat(ax, '%.1f');
+
 
                 hLineAll= graphicsHandles.lineHandles(tileIndex);
                 updateMarkers(hLineAll, newframe , layoutOptions);
-               
-                xlim(ax,[layoutOptions.framerate*(newframe-3) layoutOptions.framerate*(newframe+3)]);
-
+                updateDataPanels(ax,layoutOptions,newframe);
                 %   title(sprintf('Data:%d', ds));
-       
-              end
+
+            end
         end
 
     case 'movie'
@@ -127,7 +124,7 @@ switch mode
                     end
 
                     if isKey(graphicsHandles.imgHandles, tileIndex)
-                        set(graphicsHandles.imgHandles(tileIndex), 'CData', displayImage(:,:,:,ch));
+                        set(graphicsHandles.imgHandles(tileIndex), 'CData', displayImage(:,:,:,1));
                         ax=graphicsHandles.imgHandles(tileIndex); ax=ax.Parent;
 
                         [htext, hvector]=score_displayVectorGraphics(ax, newframe, 1, vContours , layoutOptions);
@@ -154,7 +151,7 @@ switch mode
                     end
                 end
 
-                    if layoutOptions.Ndataseries > 0 && ~isempty(roiData.data)
+                if layoutOptions.Ndataseries > 0 && ~isempty(roiData.data)
                     for ds = 1:layoutOptions.Ndataseries
                         local_row = layoutOptions.Nbrick + ds;
                         local_col = 1;
@@ -167,34 +164,31 @@ switch mode
                         else
                             wid= layoutOptions.Nchannel*layoutOptions.Nbrick;
                         end
-                       
+
                         ax = nexttile(masterTL, tileIndex, [1, wid]);
 
-                         if layoutOptions.Ndataseries>1 && ds~=layoutOptions.Ndataseries
-                       set(ax,'XTickLabel',[]);
-                     %   'ok'
-                      else
-                    set(ax, 'XTickLabelRotation', 0);  % ou 0, selon ton style
-                         end
+                        if layoutOptions.Ndataseries>1 && ds~=layoutOptions.Ndataseries
+                            set(ax,'XTickLabel',[]);
+                            %   'ok'
+                        else
+                            set(ax, 'XTickLabelRotation', 0);  % ou 0, selon ton style
+                        end
 
-                            if ~isa(ax.YAxis, 'matlab.graphics.axis.decorator.CategoricalRuler')
+                        if ~isa(ax.YAxis, 'matlab.graphics.axis.decorator.CategoricalRuler')
                             ytickformat(ax, '%.1f');
-                      end
+                        end
 
                         xtickformat(ax, '%.1f');
 
                         hLineAll= graphicsHandles.lineHandles(tileIndex);
-                       updateMarkers(hLineAll, newframe , layoutOptions);
-                       amin=layoutOptions.framerate*(newframe-3);
-                       amax=layoutOptions.framerate*(newframe+3);
-                        xticks = linspace(amin, amax, 5);
-                        set(ax, 'XTick', xticks);
-                        xlim(ax,[amin amax]);
+                        updateMarkers(hLineAll, newframe , layoutOptions);
 
-                     %   title(sprintf('Data:%d', ds));
-      
+                        updateDataPanels(ax,layoutOptions,newframe);
+
+                        %   title(sprintf('Data:%d', ds));
+
                     end
-                    end
+                end
             end
         end
 
@@ -260,34 +254,105 @@ function updateMarkers(hLineAll, fIdx, layoutOptions)
 % Met à jour la position des marqueurs en fonction de fIdx
 % en utilisant les données contenues dans les hLine (plus besoin de roiobj)
 
-    % Identifier les marqueurs par leur style
-    isMarker = arrayfun(@(h) strcmp(get(h, 'Marker'), 'o'), hLineAll);
-    hMarkers = hLineAll(isMarker);
+% Identifier les marqueurs par leur style
+isMarker = arrayfun(@(h) strcmp(get(h, 'Marker'), 'o'), hLineAll);
+hMarkers = hLineAll(isMarker);
 
-    % Calculer nouvelle position X
-    if layoutOptions.timeOffset
-        xMarker = (fIdx - layoutOptions.frames(1)) * layoutOptions.framerate;
+% Calculer nouvelle position X
+if layoutOptions.timeOffset
+    xMarker = (fIdx - layoutOptions.frames(1)) * layoutOptions.framerate;
+else
+    xMarker = fIdx * layoutOptions.framerate;
+end
+
+% Mettre à jour chaque marqueur
+for j = 1:length(hMarkers)
+    linkedLine = hMarkers(j).UserData.LinkedLine;
+
+    if isempty(linkedLine) || ~isgraphics(linkedLine)
+        warning('Marqueur #%d n''est pas lié à une ligne valide.', j);
+        continue;
+    end
+
+    yLine = get(linkedLine, 'YData');
+
+    if fIdx > length(yLine)
+        % warning('fIdx dépasse les données de la courbe liée au marqueur #%d.', j);
+        continue;
+    end
+
+    yMarker = yLine(fIdx);
+    set(hMarkers(j), 'XData', xMarker, 'YData', yMarker);
+end
+end
+
+function updateDataPanels(ax,layoutOptions,currentframe)
+
+framerate=layoutOptions.framerate;
+
+
+track=false;
+if layoutOptions.track
+    if layoutOptions.mode~="Sequence"
+        track=true;
+    end
+end
+
+if track
+
+    amin=(currentframe-layoutOptions.trackWindow)*framerate;
+    amax=(currentframe+layoutOptions.trackWindow)*framerate;
+   % ax.UserData.xlim=[amin amax];
+
+else % no tracking mode
+
+    lims=ax.UserData.xlim;
+
+    if ischar(lims) & lims=="auto"
+
+        lines = findall(ax, 'Type', 'line');  % Trouve tous les objets 'line' dans l'axe
+
+        if isempty(lines)
+            warning('Aucune courbe trouvée dans cet axe.');
+            xmin = NaN;
+            xmax = NaN;
+            return;
+        end
+
+        allX = [];
+
+        for k = 1:length(lines)
+            xdata = get(lines(k), 'XData');
+            allX = [allX, xdata]; %#ok<AGROW> % Concatène tous les X
+        end
+
+        xmin = min(allX);
+        xmax = max(allX);
+
+        if xmin>0
+            xmin=0.95*xmin-0.01;
+        else
+            xmin=1.05*xmin-0.01;
+        end
+
+        if xmax>0
+            xmax=0.95*xmax-0.01;
+        else
+            xmax=1.05*xmax+0.01;
+        end
+
+
     else
-        xMarker = fIdx * layoutOptions.framerate;
+
+        xmin=ax.UserData.xlim(1);
+        xmax=ax.UserData.xlim(2);
     end
 
-    % Mettre à jour chaque marqueur
-    for j = 1:length(hMarkers)
-        linkedLine = hMarkers(j).UserData.LinkedLine;
+    amin=xmin;
+    amax=xmax;
 
-        if isempty(linkedLine) || ~isgraphics(linkedLine)
-            warning('Marqueur #%d n''est pas lié à une ligne valide.', j);
-            continue;
-        end
+end
 
-        yLine = get(linkedLine, 'YData');
+xlim(ax,  [amin amax]);
 
-        if fIdx > length(yLine)
-           % warning('fIdx dépasse les données de la courbe liée au marqueur #%d.', j);
-            continue;
-        end
-
-        yMarker = yLine(fIdx);
-        set(hMarkers(j), 'XData', xMarker, 'YData', yMarker);
-    end
 end

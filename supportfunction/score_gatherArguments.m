@@ -30,4 +30,9 @@ arg= [arg , {'Nrow',1}];
 arg= [arg , {'Ncol',1}];
 arg= [arg , {'Nbrick',3}];
 
+arg= [arg , {'track',app.DisplaySettings.Movie.MoviedatatrackCheckBox}];
+arg= [arg , {'trackWindow',str2num(app.DisplaySettings.Movie.MovietrackwindowEditField)}];
+                 arg= [arg , {'colormap',app.DisplaySettings.Movie.MoviecolormapEditField}];
+                 arg= [arg , {'dataColormap',app.DisplaySettings.Movie.MovieDatacolormapEditField}];
+
 end

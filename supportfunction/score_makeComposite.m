@@ -14,6 +14,8 @@ defaultClass=param.defaultClass;
 
 imtmp=preProcessROI(roitmp,param);
 
+% here make a distinction : if image has 3 D , then don't display it as
+% overlay , otherwise  do it !
 
 if overlay==false
     displayImage= zeros([size(imtmp,1), size(imtmp,2) 3 numel(channel)], 'uint8');
@@ -27,8 +29,6 @@ alphaOverlay = zeros(size(imtmp,1), size(imtmp,2));
 alphamask = zeros(size(alphaOverlay));
 
 vContours = [];
-
-
 
 for ch=1:numel(channel)
 
@@ -51,6 +51,7 @@ for ch=1:numel(channel)
         end
 
         imtmp2 = cat(3, imtmp2*rgb{ch}(1), imtmp2*rgb{ch}(2), imtmp2*rgb{ch}(3));
+
 
         if size(imtmp2,3) ~= 3
             imtmp2 = repmat(imtmp2, [1,1,3]);
@@ -86,7 +87,7 @@ for ch=1:numel(channel)
             end
         end
 
-
+%tmp=levels{ch}{2} 
 
         if paintChannel == currentIndx
             uni = unique(totim(:));
@@ -129,12 +130,12 @@ for ch=1:numel(channel)
 
             case "Display"
 
-              %  annotationColorImage = zeros(size(indexedOverlay));
-               % alphamask = zeros(size(alphaOverlay));
+                %  annotationColorImage = zeros(size(indexedOverlay));
+                % alphamask = zeros(size(alphaOverlay));
 
                 for iVal = 1:numel(indices)
                     mask = imtmp2 == indices(iVal);
-                   %   figure, imshow(mask,[])
+                    %   figure, imshow(mask,[])
                     alphamask = alphamask | mask;
 
                     for c = 1:3
@@ -143,17 +144,28 @@ for ch=1:numel(channel)
                         indexedOverlay(:, :, c) = channelOverlay;
                     end
 
-                          if numel(find(mask))
-                    alphaOverlay(mask) = fillAlpha;
-                          end
+                    if numel(find(mask))
+                        alphaOverlay(mask) = fillAlpha;
+                    end
 
                 end
         end
-        end
-
+    else
         if overlay
-            displayImage =comp;
+        if isempty(weights)
+            comp = imlincomb(1, comp, 1, uint8(double(imtmp2)/256));
+        else
+            comp = imlincomb(1, comp, weights(ch), uint8(double(imtmp2)/256));
         end
+        else
+            displayImage(:,:,:,ch) = uint8(double(imtmp2)/256);
+        end
+    end
+
+
+    if overlay
+        displayImage =comp;
+    end
 
 end
 

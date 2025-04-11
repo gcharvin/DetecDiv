@@ -55,6 +55,7 @@ switch lower(displayHandles.mode)
                        % curframe=layoutOptions.frames(frame);
 
                         [displayImage, vContours]=score_makeComposite(roiData,frame,layoutOptions);
+                        
 
                         local_row = 1;  % Une seule rangée pour le composite
                         local_col = (frame-1)*layoutOptions.Nbrick + 1;
@@ -63,10 +64,8 @@ switch lower(displayHandles.mode)
                         tileIndex = (global_row-1)*displayHandles.MasterCols + global_col;
                         ax = nexttile(masterTL, tileIndex, [layoutOptions.Nbrick, layoutOptions.Nbrick]);
                         
-     
                         imshow(displayImage, []);
 
-                      %  displayVectorGraphics(ax, frame, 1, vContours , layoutOptions);
                           [htext, hvector]=score_displayVectorGraphics(ax, frame, 1, vContours , layoutOptions);
 
                           drawSeparationLines(ax,layoutOptions)
@@ -147,6 +146,7 @@ switch lower(displayHandles.mode)
        % displayImage=score_makeComposite(roiData,1,layoutOptions);
         [displayImage, vContours, indexedOverlay, alphaOverlay]=score_makeComposite(roiData,1,layoutOptions);
 
+     %   figure, imshow(displayImage,[]);
        % figure, imshow(alphaOverlay,[]);
 
           % Dataseries en dessous
