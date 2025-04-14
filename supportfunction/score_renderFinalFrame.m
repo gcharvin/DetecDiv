@@ -135,7 +135,8 @@ switch lower(displayHandles.mode)
         end
         % Export en PDF
         outputPath = fullfile(pwd, 'output_sequence.pdf');
-        exportgraphics(masterTL, outputPath, 'ContentType', 'vector');
+        drawnow;
+        exportgraphics(displayHandles.Figure, outputPath, 'ContentType', 'vector');
         fprintf('Sequence saved as PDF: %s\n', outputPath);
 
     case 'display'

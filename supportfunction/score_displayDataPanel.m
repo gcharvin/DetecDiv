@@ -207,16 +207,6 @@ if plottype=="Plot"
 
     set(ax,'box','off');
 
-    % if groupIdx < layoutOptions.ngroup
-    %     set(ax, 'XTickLabel', []);
-    % else
-    %     xlims = get(ax, 'XLim');
-    %     ticks = niceTicks(xlims(1), xlims(2), 5);
-    %     % Appliquer les ticks
-    %     set(ax, 'XTick', ticks);
-    %     xticklabels = arrayfun(@(x) sprintf('%.0f', x), ticks, 'UniformOutput', false);
-    %     set(ax, 'XTickLabel', xticklabels);
-    % end
 else  % traj mode
 
     if timeoffset
@@ -240,15 +230,6 @@ else  % traj mode
      hold(ax, 'on');
 
     [rgbImage, alphaImage, color] = render_ydata_as_image(ydata, amin, amax , layoutOptions,data, dataIndices);
-  
-    %    % Conversion de l'axe X : on utilise le nombre de points dans ydata et param.framerate
-    % if timeoffset
-    %     % Si timeoffset est activé, on soustrait la première frame de layout.frames
-    %     xdata = ((1:size(ydata,1)) - layoutOptions.frames(1)) * framerate;
-    % else
-    %     xdata = (1:size(ydata,1)) * framerate;
-    % end
-
 
     hLine = imagesc(ax, rgbImage,'AlphaData', alphaImage);
     axis(ax, 'normal');  % clé pour permettre l'étirement
@@ -312,18 +293,19 @@ else  % traj mode
 
     hold on;
 
-    W = 0.15;  % largeur
-    H = 0.02; % hauteur
+    axPos = get(ax, 'Position');  % [left, bottom, width, height]
+    W = 0.2;  % largeur
+    H = 0.3*size(ydata,2)*(axPos(4)-0.05); % hauteur
 
     % Récupérer la position de l'axe
     %drawnow;
-    axPos = get(ax, 'Position');  % [left, bottom, width, height]
+    
 
     % Calculer la position du panel en haut à gauche de l'axe
-    panelLeft = axPos(1) + axPos(3) - W;      % bord droit de l'axe - largeur du panel
-    panelBottom = axPos(2) + axPos(4) - 1*H;    % bord haut de l'axe - hauteur du panel
+    panelLeft = axPos(1) + axPos(3) - W-0.01;      % bord droit de l'axe - largeur du panel
+    panelBottom = axPos(2) + axPos(4) - H  ;    % bord haut de l'axe - hauteur du panel
 
-    axLegend = addHorizontalColorbarLegend(ax.Parent.Parent, ydata, color, [panelLeft, panelBottom, W, H], layoutOptions);
+   axLegend = addHorizontalColorbarLegend(ax.Parent.Parent, ydata, color, [panelLeft, panelBottom, W, H], layoutOptions,str);
 
     hold off;
 
@@ -333,7 +315,6 @@ else  % traj mode
 
 end
 end
-
 
 function rgb = parseRGBstring(str)
 rgb = [];
@@ -397,14 +378,27 @@ function [rgbImage_rescaled, alphaImage_rescaled, colorsOrColormap] = render_yda
         % Ce cas sera traité par la suite via le mapping sur le gradient
     end
 
-    % Récupération et parsing de la couleur de fond
+       % Récupération et parsing de la couleur de fond
     bgColor = parseRGBstring(layoutOptions.background);
     if isempty(bgColor) || numel(bgColor) ~= 3
         bgColor = [0 0 0];  % Fond par défaut noir
     end
 
+    % Détermination du nombre de niveaux dans le gradient
+    if strcmp(layoutOptions.dataColormap, 'lines')
+        % Lorsque le colormap est "lines", et que les données sont quantifiées,
+        % on adapte le nombre de niveaux au nombre de valeurs uniques.
+        uniqueVals = unique(ydata(:));
+        if numel(uniqueVals) < 256
+            nSteps = numel(uniqueVals);
+        else
+            nSteps = 256;
+        end
+    else
+        nSteps = 256;  % Par défaut, 256 niveaux
+    end
+
     % Construction du gradient pour chaque série
-    nSteps = 256;  % Nombre de niveaux dans le gradient
     gradMap = cell(num_series,1);
     for i = 1:num_series
         if useCustomColormap(i)
@@ -418,6 +412,7 @@ function [rgbImage_rescaled, alphaImage_rescaled, colorsOrColormap] = render_yda
                           linspace(bgColor(3), refColor(i,3), nSteps)'];
         end
     end
+
 
     % En sortie, renvoyer le gradient pour chaque série
     colorsOrColormap = gradMap;
@@ -509,8 +504,6 @@ for r = 1:N
 end
 rgbImage = newImg;
 
-
-    
     %---------------------------------------------------------------------
     % Gestion de l'opacité (alpha) en fonction de fadeFrame
     %---------------------------------------------------------------------
@@ -531,50 +524,128 @@ rgbImage = newImg;
 end
 
 
-
-
-function axLegend = addHorizontalColorbarLegend(parentFigOrPanel, ydata, cmap, panelPosition,layoutOptions)
+function axLegend = addHorizontalColorbarLegend(parentFigOrPanel, ydata, cmap, panelPosition, layoutOptions, varName)
 % addHorizontalColorbarLegend
-% Crée une légende colorée horizontale représentant les valeurs de ydata
-% - parentFigOrPanel : figure ou uipanel contenant l'axe
-% - ydata : tableau de données (utilisé pour min et max)
-% - cmap : colormap utilisée pour l'image principale (Nx3)
-% - position : [x y width height] de l'axe légende (en unités normalisées)
+% Crée une légende colorée horizontale pour CHAQUE série de données,
+% en créant directement des axes dans la figure, même si un tiledlayout existe.
+%
+% Arguments :
+%   - parentFigOrPanel : figure dans laquelle créer les axes de légende.
+%   - ydata : tableau de données (utilisé pour min et max)
+%   - cmap : cell array contenant un colormap (Nx3) pour chaque série,
+%            i.e. numel(cmap) == size(ydata,2).
+%   - panelPosition : [x y width height] définissant la région dans la figure
+%                     (en unités normalisées) où placer les légendes.
+%   - layoutOptions : structure contenant par exemple background, textColor et fontSize.
+%   - varName : cell array de chaînes contenant le nom de la variable pour chaque série.
+%
+% Retour :
+%   - axLegend : cell array contenant les handles des axes de légende (un par série).
 
-% Déterminer les bornes de l’échelle
-minVal = min(ydata(:), [], 'omitnan');
-maxVal = max(ydata(:), [], 'omitnan');
+    % Déterminer les bornes de l’échelle
+    minVal = min(ydata(:), [], 'omitnan');
+    maxVal = max(ydata(:), [], 'omitnan');
 
-% Taille en pixels (par défaut 256 niveaux)
-nColor = size(cmap, 1);
+    % Ici, on va utiliser directement la figure (parentFigOrPanel) comme conteneur.
+    % panelPosition définit la zone dans la figure où placer nos axes.
+    
+    % Nombre de séries (nombre d'axes à créer)
+    numSeries = numel(cmap);
 
-% Créer une image horizontale avec dégradé linéaire
-gradient = linspace(0, 1, nColor);   % de gauche à droite
-legendRGB = ind2rgb(round(gradient * (nColor - 1)) + 1, cmap);
-legendRGB = reshape(legendRGB, [1, nColor, 3]);  % image 1 x N x 3
+    % On subdivise verticalement la zone définie par panelPosition.
+    axLegend = cell(1, numSeries);
+    subH = 1 / numSeries;  % Hauteur relative de chaque axe dans la zone
+    subW = 1;              % Toute la largeur de la zone
 
-% Créer l'axe légende
-% Créer le uipanel pour la légende
-legendPanel = uipanel('Parent', parentFigOrPanel, ...
-    'Units', 'normalized', ...
-    'Position', panelPosition, ...
-    'BorderType', 'none');
+    for i = 1:numSeries
+        % Calculer la position relative pour l'axe dans panelPosition.
+        % Positions relatives dans le panel (0-1) converties en coordonnées figures:
+        subY = 1 - i * subH;  % La première série en haut
+        pos = [ panelPosition(1), ...                        % x
+                panelPosition(2) + subY * panelPosition(4), ...% y
+                panelPosition(3), ...                        % width
+                subH * panelPosition(4) ];                    % height
+        
+        % Créer l'axe directement dans la figure.
+        ax = axes('Parent', parentFigOrPanel, ...
+                  'Units', 'normalized', ...
+                  'Position', pos, ...
+                  'Color', layoutOptions.background);
+              
+        % Extraire le colormap (assuré numérique) pour la série i
+        currentCmap = cmap{i};
+        if ~isa(currentCmap, 'double')
+            currentCmap = double(currentCmap);
+        end
+        
+        % Nombre de niveaux dans le colormap
+        nColor = size(currentCmap, 1);
+        gradientVal = linspace(0, 1, nColor);
+        indices = round(gradientVal * (nColor - 1)) + 1;
+        legendRGB = ind2rgb(indices, currentCmap);
+        legendRGB = reshape(legendRGB, [1, nColor, 3]);  % Image 1 x nColor x 3
+        
+        % Afficher le dégradé dans l'axe
+        imagesc([minVal, maxVal], [0, 1], legendRGB);
+        axis(ax, 'normal');  % Laisser les limites définies par imagesc
+        
+        % Insetter légèrement l'axe pour que les ticks et labels soient bien visibles.
+        posInset = pos;
+        marginX = 0.1 * pos(3);
+        marginY = 0.2 * pos(4);
+        posInset(1) = pos(1) + marginX;
+        posInset(2) = pos(2) + marginY;
+        posInset(3) = pos(3) - 2*marginX;
+        posInset(4) = pos(4) - marginY;
+        set(ax, 'Position', posInset);
+        
+        % Définir seulement deux ticks aux valeurs extrêmes
+        %ticks = [minVal, maxVal];
+        %tickLabels = {num2str(minVal, '%.2f'), num2str(maxVal, '%.2f')};
+        % set(ax, 'XTick', ticks, 'XTickLabel', tickLabels, 'YTick', [],...
+        %     'FontSize', floor(layoutOptions.fontSize));
+        ax.XColor = layoutOptions.textColor;
+        ax.YColor = layoutOptions.textColor;
 
-axLegend = axes('Parent', legendPanel, 'Position', [0 0 1 1],'Color',layoutOptions.background);
-imagesc([minVal maxVal], [0 1], legendRGB);  % [XData], [YData]
-set(axLegend, 'YTick', [], 'XTickMode', 'auto');
-set(axLegend, 'YAxisLocation', 'left');
-set(axLegend, 'YDir', 'normal');
-box(axLegend, 'on');
-axis(axLegend, 'tight');
-axLegend.XColor=layoutOptions.textColor;
-axLegend.YColor=layoutOptions.textColor;
+        % Supprimer les xticks automatiques
+set(ax, 'XTick', []);
+set(ax, 'YTick', []);
 
+% Récupérer les limites de l'axe
+xLimits = get(ax, 'XLim');  % devrait correspondre à [minVal, maxVal]
+yLimits = get(ax, 'YLim');  % ici généralement [0, 1]
 
-xlabel(axLegend, 'Valeur', 'Color', layoutOptions.textColor);
-box(axLegend, 'on');
+% Ajouter un texte à gauche et à droite aux extrémités de l'axe.
+% On place le texte près du bas de l'axe (par exemple, en alignement vertical "top").
+text(ax, xLimits(1), mean(yLimits), num2str(minVal, '%.1f'), ...
+     'Units', 'data', ...
+     'Color', layoutOptions.textColor, ...
+     'FontSize', floor(layoutOptions.fontSize), ...
+     'HorizontalAlignment', 'left', ...
+     'VerticalAlignment', 'middle');
+     
+text(ax, xLimits(2)+0.01, mean(yLimits) , num2str(maxVal, '%.1f'), ...
+     'Units', 'data', ...
+     'Color', layoutOptions.textColor, ...
+     'FontSize', floor(layoutOptions.fontSize), ...
+     'HorizontalAlignment', 'right', ...
+     'VerticalAlignment', 'middle');
 
+        
+        % Insérer un texte centré dans l'axe pour le nom de la variable
+        xCenter = mean(xLimits);
+        yCenter = mean(yLimits);
+        text(ax, xCenter, yCenter, varName{i}, ...
+             'Color', layoutOptions.textColor, ...
+             'FontWeight', 'bold', ...
+             'HorizontalAlignment', 'center', ...
+             'VerticalAlignment', 'middle', 'Interpreter', 'none');
+        
+        % Stocker le handle dans le tableau de sorties.
+        axLegend{i} = ax;
+    end
 end
+
 
 function ticks = niceTicks(xmin, xmax, nticks)
 % Trouve des ticks "ronds" entre xmin et xmax (nticks environ)
@@ -584,6 +655,7 @@ rawStep = range / (nticks - 1);
 % Trouve une "belle" taille de pas (10^n * 1, 2, ou 5)
 mag = 10^floor(log10(rawStep));
 niceSteps = [0,1, 2, 3, 4, 5, 6, 7 ,8, 9,10];
+niceSteps = [0,1, 2, 5, 10];
 step = mag * niceSteps(find(rawStep <= mag * niceSteps, 1));
 
 % Début et fin arrondis
