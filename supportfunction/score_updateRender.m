@@ -62,23 +62,24 @@ switch mode
                 end
 
                 ax = nexttile(masterTL, tileIndex, [1, wid]);
-                if layoutOptions.Ndataseries>1 && ds~=layoutOptions.Ndataseries
-                    set(ax,'XTickLabel',[]);
-                    %   'ok'
-                else
-                    set(ax, 'XTickLabelRotation', 0);  % ou 0, selon ton style
-                end
 
-                if ~isa(ax.YAxis, 'matlab.graphics.axis.decorator.CategoricalRuler')
-                    ytickformat(ax, '%.1f');
-                end
-
-                xtickformat(ax, '%.1f');
+                % if layoutOptions.Ndataseries>1 && ds~=layoutOptions.Ndataseries
+                %     set(ax,'XTickLabel',[]);
+                %     %   'ok'
+                % else
+                %     set(ax, 'XTickLabelRotation', 0);  % ou 0, selon ton style
+                % end
+                % 
+                % if ~isa(ax.YAxis, 'matlab.graphics.axis.decorator.CategoricalRuler')
+                %     ytickformat(ax, '%.1f');
+                % end
+                % 
+                % xtickformat(ax, '%.1f');
 
 
                 hLineAll= graphicsHandles.lineHandles(tileIndex);
                 updateMarkers(hLineAll, newframe , layoutOptions);
-                updateDataPanels(ax,layoutOptions,newframe);
+                updateDataPanels(ax,layoutOptions,newframe,hLineAll);
                 %   title(sprintf('Data:%d', ds));
 
             end
@@ -167,23 +168,22 @@ switch mode
 
                         ax = nexttile(masterTL, tileIndex, [1, wid]);
 
-                        if layoutOptions.Ndataseries>1 && ds~=layoutOptions.Ndataseries
-                            set(ax,'XTickLabel',[]);
-                            %   'ok'
-                        else
-                            set(ax, 'XTickLabelRotation', 0);  % ou 0, selon ton style
-                        end
-
-                        if ~isa(ax.YAxis, 'matlab.graphics.axis.decorator.CategoricalRuler')
-                            ytickformat(ax, '%.1f');
-                        end
-
-                        xtickformat(ax, '%.1f');
+                        % if layoutOptions.Ndataseries>1 && ds~=layoutOptions.Ndataseries
+                        % %     set(ax,'XTickLabel',[]);
+                        % %     %   'ok'
+                        % % else
+                        % %     set(ax, 'XTickLabelRotation', 0);  % ou 0, selon ton style
+                        % % end
+                        % % 
+                        % % if ~isa(ax.YAxis, 'matlab.graphics.axis.decorator.CategoricalRuler')
+                        % %     ytickformat(ax, '%.1f');
+                        % % end
+                        % % 
+                        % % xtickformat(ax, '%.1f');
 
                         hLineAll= graphicsHandles.lineHandles(tileIndex);
                         updateMarkers(hLineAll, newframe , layoutOptions);
-
-                        updateDataPanels(ax,layoutOptions,newframe);
+                        updateDataPanels(ax,layoutOptions,newframe,hLineAll);
 
                         %   title(sprintf('Data:%d', ds));
 
@@ -254,6 +254,11 @@ function updateMarkers(hLineAll, fIdx, layoutOptions)
 % Met à jour la position des marqueurs en fonction de fIdx
 % en utilisant les données contenues dans les hLine (plus besoin de roiobj)
 
+
+if strcmp(class(hLineAll(1)),'matlab.graphics.primitive.Image') % don't update if traj mode is selected 
+    return
+end
+
 % Identifier les marqueurs par leur style
 isMarker = arrayfun(@(h) strcmp(get(h, 'Marker'), 'o'), hLineAll);
 hMarkers = hLineAll(isMarker);
@@ -286,10 +291,24 @@ for j = 1:length(hMarkers)
 end
 end
 
-function updateDataPanels(ax,layoutOptions,currentframe)
+function updateDataPanels(ax,layoutOptions,currentframe,hLineAll)
+
+
+if strcmp(class(hLineAll(1)),'matlab.graphics.primitive.Image') % traj mode
+    
+    Nframes=size(hLineAll.CData,2);
+    alphaVec = ones(1, Nframes);           % tout transparent par défaut
+
+if currentframe <= Nframes
+    alphaVec(currentframe:end) = 0.2;      % 20% d’opacité à droite
+end
+
+alphaImage = repmat(alphaVec, size(hLineAll.CData,1), 1);
+set(hLineAll,'AlphaData',alphaImage);
+
+else % plot mode 
 
 framerate=layoutOptions.framerate;
-
 
 track=false;
 if layoutOptions.track
@@ -299,13 +318,10 @@ if layoutOptions.track
 end
 
 if track
-
     amin=(currentframe-layoutOptions.trackWindow)*framerate;
     amax=(currentframe+layoutOptions.trackWindow)*framerate;
    % ax.UserData.xlim=[amin amax];
-
 else % no tracking mode
-
     lims=ax.UserData.xlim;
 
     if ischar(lims) & lims=="auto"
@@ -355,4 +371,5 @@ end
 
 xlim(ax,  [amin amax]);
 
+end
 end

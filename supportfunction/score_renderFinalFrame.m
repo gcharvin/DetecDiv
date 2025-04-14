@@ -52,10 +52,10 @@ switch lower(displayHandles.mode)
                 if layoutOptions.overlay
                     % Combine les canaux pour chaque frame.
                     for frame = 1:numel(layoutOptions.frames)
-                       % curframe=layoutOptions.frames(frame);
+                        % curframe=layoutOptions.frames(frame);
 
                         [displayImage, vContours]=score_makeComposite(roiData,frame,layoutOptions);
-                        
+
 
                         local_row = 1;  % Une seule rangée pour le composite
                         local_col = (frame-1)*layoutOptions.Nbrick + 1;
@@ -63,26 +63,26 @@ switch lower(displayHandles.mode)
                         global_col = ROI_col_offset + local_col;
                         tileIndex = (global_row-1)*displayHandles.MasterCols + global_col;
                         ax = nexttile(masterTL, tileIndex, [layoutOptions.Nbrick, layoutOptions.Nbrick]);
-                        
+
                         imshow(displayImage, []);
 
-                          [htext, hvector]=score_displayVectorGraphics(ax, frame, 1, vContours , layoutOptions);
+                        [htext, hvector]=score_displayVectorGraphics(ax, frame, 1, vContours , layoutOptions);
 
-                          drawSeparationLines(ax,layoutOptions)
+                        drawSeparationLines(ax,layoutOptions)
 
-                           graphicsHandles.vectorHandles(tileIndex)=[htext hvector];
+                        graphicsHandles.vectorHandles(tileIndex)=[htext hvector];
 
-                     %   title(sprintf('ROI(%d) F:%d', roiIndex, frame));
-                         graphicsHandles.imgHandles(tileIndex) = ax.Children;
+                        %   title(sprintf('ROI(%d) F:%d', roiIndex, frame));
+                        graphicsHandles.imgHandles(tileIndex) = ax.Children;
                     end
                 else
                     % Chaque canal séparé : layout classique.
-                        for frame = 1:numel(layoutOptions.frames)
-                             for ch = 1:layoutOptions.Nchannel
+                    for frame = 1:numel(layoutOptions.frames)
+                        for ch = 1:layoutOptions.Nchannel
 
-                             curframe=layoutOptions.frames(frame);
+                            curframe=layoutOptions.frames(frame);
 
-                              [displayImage, vContours]=score_makeComposite(roiData,frame,layoutOptions);
+                            [displayImage, vContours]=score_makeComposite(roiData,frame,layoutOptions);
 
                             local_row = (ch-1)*layoutOptions.Nbrick + 1;
                             local_col = (frame-1)*layoutOptions.Nbrick + 1;
@@ -91,21 +91,21 @@ switch lower(displayHandles.mode)
                             tileIndex = (global_row-1)*displayHandles.MasterCols + global_col;
                             ax = nexttile(masterTL, tileIndex, [layoutOptions.Nbrick, layoutOptions.Nbrick]);
 
-                          %  img = roiData.image(:,:,ch,frame);
+                            %  img = roiData.image(:,:,ch,frame);
                             imshow(displayImage(:,:,:,ch), []);
-                             [htext, hvector]=score_displayVectorGraphics(ax, frame, ch, vContours , layoutOptions);
-                               drawSeparationLines(ax,layoutOptions);
+                            [htext, hvector]=score_displayVectorGraphics(ax, frame, ch, vContours , layoutOptions);
+                            drawSeparationLines(ax,layoutOptions);
                             graphicsHandles.vectorHandles(tileIndex)=[htext hvector];
-                          %  title(sprintf('ROI(%d) Ch:%d F:%d', roiIndex, ch, frame));
+                            %  title(sprintf('ROI(%d) Ch:%d F:%d', roiIndex, ch, frame));
                             graphicsHandles.imgHandles(tileIndex) = ax.Children;
-                               if frame == 1
-                            ylabel(ax, layoutOptions.channel{ch}, 'FontName', 'Arial', ...
-                                'FontSize', floor(sqrt(scalingFactor)*fontsize), 'Color', textColor,'Interpreter','none');
-                               end
+                            if frame == 1
+                                ylabel(ax, layoutOptions.channel{ch}, 'FontName', 'Arial', ...
+                                    'FontSize', floor(sqrt(scalingFactor)*fontsize), 'Color', textColor,'Interpreter','none');
+                            end
 
                         end
-                        end
-                       
+                    end
+
                 end
 
                 % Dataseries pour cette ROI.
@@ -122,9 +122,9 @@ switch lower(displayHandles.mode)
                         global_col = ROI_col_offset + local_col;
                         tileIndex = (global_row-1)*displayHandles.MasterCols + global_col;
                         ax = nexttile(masterTL, tileIndex, [1, displayHandles.ROI_cols]);
-                       hLine= score_displayDataPanel(ax, ds, layoutOptions, roiData);
+                        hLine= score_displayDataPanel(ax, ds, layoutOptions, roiData);
 
-                       % title(sprintf('ROI(%d) Data:%d', roiIndex, ds));
+                        % title(sprintf('ROI(%d) Data:%d', roiIndex, ds));
                         graphicsHandles.lineHandles(tileIndex) = hLine;
                     end
                 end
@@ -143,13 +143,14 @@ switch lower(displayHandles.mode)
         % Ici, on affiche une seule ROI avec layout display.
 
         roiData=roiobj(1);
-       % displayImage=score_makeComposite(roiData,1,layoutOptions);
+        % displayImage=score_makeComposite(roiData,1,layoutOptions);
         [displayImage, vContours, indexedOverlay, alphaOverlay]=score_makeComposite(roiData,1,layoutOptions);
 
-     %   figure, imshow(displayImage,[]);
-       % figure, imshow(alphaOverlay,[]);
+        
+        %   figure, imshow(displayImage,[]);
+        % figure, imshow(alphaOverlay,[]);
 
-          % Dataseries en dessous
+        % Dataseries en dessous
         if layoutOptions.Ndataseries > 0 && ~isempty(roiData.data)
             for ds = 1:layoutOptions.Ndataseries
                 local_row = layoutOptions.Nbrick + ds;
@@ -163,22 +164,22 @@ switch lower(displayHandles.mode)
                 end
 
                 ax = nexttile(masterTL, tileIndex, [1, wid]);
-                     if layoutOptions.Ndataseries>1 && ds~=layoutOptions.Ndataseries
-                       set(ax,'XTickLabel',[]);
-                     %   'ok'
-                      else
+                if layoutOptions.Ndataseries>1 && ds~=layoutOptions.Ndataseries
+                    set(ax,'XTickLabel',[]);
+                    %   'ok'
+                else
                     set(ax, 'XTickLabelRotation', 0);  % ou 0, selon ton style
-                      end
-                           if ~isa(ax.YAxis, 'matlab.graphics.axis.decorator.CategoricalRuler')
-                            ytickformat(ax, '%.1f');
-                      end
+                end
+                if ~isa(ax.YAxis, 'matlab.graphics.axis.decorator.CategoricalRuler')
+                    ytickformat(ax, '%.1f');
+                end
 
-                  xtickformat(ax, '%.1f');
+                xtickformat(ax, '%.1f');
 
                 hLine= score_displayDataPanel(ax, ds, layoutOptions, roiData);
                 %  hLine = plot(roiData.data(ds, :));
                 %   title(sprintf('Data:%d', ds));
-                  graphicsHandles.lineHandles(tileIndex) = hLine;
+                graphicsHandles.lineHandles(tileIndex) = hLine;
             end
         end
 
@@ -192,7 +193,7 @@ switch lower(displayHandles.mode)
             axarray=[axarray ax];
             %compositeImg = max(roiData.image, [], 3);
             imshow(displayImage, []);
-          %  title('Overlay Composite');
+            %  title('Overlay Composite');
             graphicsHandles.imgHandles(tileIndex) = ax.Children;
             % Ajout d'un axe overlay transparent.
             pos = get(ax, 'Position');
@@ -200,16 +201,16 @@ switch lower(displayHandles.mode)
             set(axOverlay, 'HitTest', 'off');
             uistack(axOverlay, 'top');
 
-             axOverlay.XLim=ax.XLim;
-             axOverlay.YLim=ax.YLim;
+            axOverlay.XLim=ax.XLim;
+            axOverlay.YLim=ax.YLim;
 
             % axOverlay, ax
 
-             hOverlay=imshow(indexedOverlay, 'Parent', axOverlay, 'InitialMagnification', 'fit');
-             hOverlay.Tag = 'IndexedOverlay';
-             set(hOverlay, 'AlphaData', alphaOverlay, 'AlphaDataMapping', 'none');
-%             axImg.UserData.OverlayHandle = hOverlay;
-          %  axOverlay.UserData.CDataHandle=
+            hOverlay=imshow(indexedOverlay, 'Parent', axOverlay, 'InitialMagnification', 'fit');
+            hOverlay.Tag = 'IndexedOverlay';
+            set(hOverlay, 'AlphaData', alphaOverlay, 'AlphaDataMapping', 'none');
+            %             axImg.UserData.OverlayHandle = hOverlay;
+            %  axOverlay.UserData.CDataHandle=
             graphicsHandles.overlayHandles(tileIndex) = axOverlay.Children;
             axarray=[axarray axOverlay];
         else
@@ -220,11 +221,11 @@ switch lower(displayHandles.mode)
                 tileIndex = (local_row-1)*displayHandles.MasterCols + local_col;
                 ax = nexttile(masterTL, tileIndex, [layoutOptions.Nbrick, layoutOptions.Nbrick]);
                 set(ax, 'HitTest', 'off');
-                
+
                 axarray=[axarray ax];
                 img = displayImage(:,:,:,ch);
                 imshow(img, []);
-            %    title(sprintf('Ch:%d', ch));
+                %    title(sprintf('Ch:%d', ch));
                 graphicsHandles.imgHandles(tileIndex) = ax.Children;
                 % Ajout d'un axe overlay transparent sur chaque tuile.
                 pos = get(ax, 'Position');
@@ -233,7 +234,7 @@ switch lower(displayHandles.mode)
 
                 %ax.YTickLabel = repmat({''}, size(ax.YTick));  % masque les ticks
                 %ax.XTickLabel = repmat({''}, size(ax.XTick));
-          
+
 
                 uistack(axOverlay, 'top');
 
@@ -243,12 +244,12 @@ switch lower(displayHandles.mode)
 
                 graphicsHandles.overlayHandles(tileIndex) = axOverlay.Children;
                 axarray=[axarray axOverlay];
-            end        
+            end
 
         end
-        
-    
-         linkaxes(axarray,'xy');
+
+
+        linkaxes(axarray,'xy');
 
     case 'movie'
         % --- Mode MOVIE ---
@@ -276,21 +277,21 @@ switch lower(displayHandles.mode)
                     tileIndex = (global_row-1)*displayHandles.MasterCols + global_col;
 
                     ax = nexttile(masterTL, tileIndex, [layoutOptions.Nbrick, layoutOptions.Nbrick]);
-                   % compositeImg = max(roiData.image, [], 3);
+                    % compositeImg = max(roiData.image, [], 3);
 
                     [displayImage, vContours]=score_makeComposite(roiData,1,layoutOptions);
 
 
                     imshow(displayImage, []);
-                  
-                     [htext, hvector]=score_displayVectorGraphics(ax, 1, 1, vContours , layoutOptions);
 
-                     graphicsHandles.vectorHandles(tileIndex)=[htext hvector];
+                    [htext, hvector]=score_displayVectorGraphics(ax, 1, 1, vContours , layoutOptions);
+
+                    graphicsHandles.vectorHandles(tileIndex)=[htext hvector];
 
                     %title(sprintf('ROI(%d) Overlay', roiIndex));
-        
 
-                      imageHandles = ax.Children(strcmp(get(ax.Children, 'Type'), 'image'));
+
+                    imageHandles = ax.Children(strcmp(get(ax.Children, 'Type'), 'image'));
                     graphicsHandles.imgHandles(tileIndex) =  imageHandles;
                 else
                     % Affichage de chaque canal séparément.
@@ -302,16 +303,16 @@ switch lower(displayHandles.mode)
                         tileIndex = (global_row-1)*displayHandles.MasterCols + global_col;
                         ax = nexttile(masterTL, tileIndex, [layoutOptions.Nbrick, layoutOptions.Nbrick]);
                         [displayImage, vContours]=score_makeComposite(roiData,1,layoutOptions);
-                      %  img = roiData.image(:,:,ch,1);
+                        %  img = roiData.image(:,:,ch,1);
                         imshow(displayImage(:,:,:,ch), []);
-                      %  title(sprintf('ROI(%d) Ch:%d', roiIndex, ch));
-                   
-                         [htext, hvector]=score_displayVectorGraphics(ax, 1, ch, vContours , layoutOptions);
-                         
+                        %  title(sprintf('ROI(%d) Ch:%d', roiIndex, ch));
+
+                        [htext, hvector]=score_displayVectorGraphics(ax, 1, ch, vContours , layoutOptions);
+
                         graphicsHandles.vectorHandles(tileIndex)=[htext hvector];
-                        
-                     imageHandles = ax.Children(strcmp(get(ax.Children, 'Type'), 'image'));
-                    graphicsHandles.imgHandles(tileIndex) =  imageHandles;
+
+                        imageHandles = ax.Children(strcmp(get(ax.Children, 'Type'), 'image'));
+                        graphicsHandles.imgHandles(tileIndex) =  imageHandles;
                     end
                 end
 
@@ -333,21 +334,21 @@ switch lower(displayHandles.mode)
                         xtickformat(ax, '%.1f');
                         ytickformat(ax, '%.1f');
 
-                           if layoutOptions.Ndataseries>1 && ds~=layoutOptions.Ndataseries
-                       set(ax,'XTickLabel',[]);
-                     %   'ok'
-                      else
-                    set(ax, 'XTickLabelRotation', 0);  % ou 0, selon ton style
-                      end
+                        if layoutOptions.Ndataseries>1 && ds~=layoutOptions.Ndataseries
+                            set(ax,'XTickLabel',[]);
+                            %   'ok'
+                        else
+                            set(ax, 'XTickLabelRotation', 0);  % ou 0, selon ton style
+                        end
 
                         hLine= score_displayDataPanel(ax, ds, layoutOptions, roiData);
-                %  hLine = plot(roiData.data(ds, :));
-                %   title(sprintf('Data:%d', ds));
-                       graphicsHandles.lineHandles(tileIndex) = hLine;
+                        %  hLine = plot(roiData.data(ds, :));
+                        %   title(sprintf('Data:%d', ds));
+                        graphicsHandles.lineHandles(tileIndex) = hLine;
 
-                     %   hLine = plot(roiData.data(ds, :));
-                     %   title(sprintf('Data:%d', ds));
-                     %   graphicsHandles.lineHandles(tileIndex) = hLine;
+                        %   hLine = plot(roiData.data(ds, :));
+                        %   title(sprintf('Data:%d', ds));
+                        %   graphicsHandles.lineHandles(tileIndex) = hLine;
                     end
                 end
                 if layoutOptions.debug
@@ -355,7 +356,7 @@ switch lower(displayHandles.mode)
                 end
             end
         end
-        
+
         % Vidéo setup avec VideoWriter.
         outputMoviePath = fullfile(pwd, 'output_movie.mp4');
         v = VideoWriter(outputMoviePath, 'MPEG-4');
@@ -382,8 +383,8 @@ function drawSeparationLines(ax,layoutOptions)
 % --- Lignes de séparation verticales ---
 % Pour les images, la boucle dépend du mode : en Sequence on a numel(frames) colonnes, en Display nChannel colonnes.
 
- scalingFactor=layoutOptions.scalingFactor;
- nbrick=layoutOptions.Nbrick; 
+scalingFactor=layoutOptions.scalingFactor;
+nbrick=layoutOptions.Nbrick;
 
 % textColor=layoutOptions.textColor;
 % channel=layoutOptions.channel;
@@ -391,42 +392,35 @@ function drawSeparationLines(ax,layoutOptions)
 
 background=layoutOptions.background;
 % drawLineWidth = 2; %* scalingFactor;
-% 
+%
 % convertPos = @(p) [ globalPos(1) + p(1)*globalPos(3), ...
 %                     globalPos(2) + p(2)*globalPos(4), ...
 %                     p(3)*globalPos(3), p(4)*globalPos(4) ];
-% 
+%
 %                    pRel = get(ax, 'Position');
 %                    pFig = convertPos(pRel);
 %                    xLine = pFig(1) + pFig(3) - 0.005;
 %                    yBot = pFig(2);
 %                    yTop = pFig(2) + pFig(4);
-% 
+%
 %                    annotation(ax.Children, 'line', [xLine xLine], [yBot-0.01 yTop+0.01], ...
 %                               'Color', background, 'LineWidth', drawLineWidth);
 
 xlim_ = xlim(ax);
-    xRight = xlim_(2);  % bord droit
+xRight = xlim_(2);  % bord droit
 
-    % Récupérer le centre de la plage Y (pour centrer la ligne)
-    ylim_ = ylim(ax);
-    yCenter = mean(ylim_);
-    
-    % Définir les bornes Y de la ligne (hauteur = 2)
-    %y1 = yCenter - 1
-   % y2 = yCenter + 1
+% Récupérer le centre de la plage Y (pour centrer la ligne)
+ylim_ = ylim(ax);
+yCenter = mean(ylim_);
 
-    % Tracer la ligne
+% Définir les bornes Y de la ligne (hauteur = 2)
+%y1 = yCenter - 1
+% y2 = yCenter + 1
 
-    wid=2*nbrick*scalingFactor;
-    line(ax, [xRight xRight], ylim_, ...
-        'Color', background, 'LineWidth', wid, 'LineStyle', '-');
+% Tracer la ligne
 
- end
-
-
-
-
-
-
+wid=2*nbrick*scalingFactor;
+line(ax, [xRight xRight], ylim_, ...
+    'Color', background, 'LineWidth', wid, 'LineStyle', '-');
+end
 
