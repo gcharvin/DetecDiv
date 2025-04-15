@@ -102,6 +102,7 @@ end
 
 shallowSave(obj);
 
+
 % Loop over each selected FOV
 for idfov = 1:numel(fovid)
     i = fovid(idfov);
@@ -185,6 +186,7 @@ for idfov = 1:numel(fovid)
         cccha = cccha + 1;
     end
 
+
     for ii = frstart:numel(framecell) % loop on all blocks of frames for a given FOV
         nframesBlock = framecell{ii};
 
@@ -259,8 +261,11 @@ for idfov = 1:numel(fovid)
 
         for l = 1:numel(tmpfov(i).roi) % loop on all ROIs
             tmproi(l).path = fullfile(strpath, tmpfov(i).id);
-            rroi = tmproi(l).value; % cropping data
+            rroi = tmproi(l).value;
+            % cropping data
             init = 0;
+
+      
 
             if ii ~= 1 % if not the first block, reload the 4D image to append data
                 try
@@ -276,14 +281,20 @@ for idfov = 1:numel(fovid)
                     dumprecovery(fovid, framecell, i, ii);
                 end
             else  % first block of frames, create structure
+
                 tmproi(l).load;
+
+
+
                 if numel(tmproi(l).image) == 0
                     init = 1;
                 else
-                    tm = tmproi(l).image;
                     roivalue = tmproi(l).value;
-                    if size(tm, 1) ~= uint16(scale * rroi(4)) || size(tm, 2) ~= uint16(scale * rroi(3)) || ~isequal(roivalue, uint16(scale * rroi)) || size(tm, 3) ~= ccha
-                        tmproi(l).value = uint16(scale * rroi);
+                    tm=size(tmproi(l).image);
+
+                    if tm(1) ~= uint16(round(scale * rroi(4))) || tm(2) ~= uint16(round(scale * rroi(3)))  || tm(3) ~= ccha %|| ~isequal(roivalue, uint16(scale * rroi))
+                    %    tmproi(l).value = uint16(scale * rroi);
+                 %   pause
                         init = 1;
                     end
                 end
@@ -293,6 +304,8 @@ for idfov = 1:numel(fovid)
      
             if init == 1
                 tmproi(l).image = uint16(zeros(uint16(scale * rroi(4)), uint16(scale * rroi(3)), ccha, numel(nframestot)));
+              %  tmproi(l).value = uint16(scale * rroi);
+              %  pause
                 tmproi(l).display.channel = {};
                 tmproi(l).display.frame = nframesBlock(1);
                 tmproi(l).channelid = [];
@@ -326,9 +339,9 @@ for idfov = 1:numel(fovid)
                 end
                 tmproi(l).display.selectedchannel = tmproi(l).display.selectedchannel(1:numel(cha));
                 tmproi(l).display.intensity = tmproi(l).display.intensity(1:numel(cha), :);
-                tmproi(l).display.alpha = tmproi(l).display.alpha(1:numel(cha), :);
-                tmproi(l).display.contour = tmproi(l).display.contour(1:numel(cha), :);
-                tmproi(l).display.width = tmproi(l).display.width(1:numel(cha), :);
+               % tmproi(l).display.alpha = tmproi(l).display.alpha(1:numel(cha), :);
+              %  tmproi(l).display.contour = tmproi(l).display.contour(1:numel(cha), :);
+               % tmproi(l).display.width = tmproi(l).display.width(1:numel(cha), :);
 
                 tmproi(l).display.rgb = tmproi(l).display.rgb(1:numel(cha), :);
                 tmproi(l).results = [];
@@ -347,6 +360,7 @@ for idfov = 1:numel(fovid)
                 tmpfinal = imresize(tmpfinal, scale);
             end
             tmproi(l).image(:,:,:,nframesBlock) = tmpfinal;
+
             try
                 tmproi(l).save;
                 tmproi(l).clear;

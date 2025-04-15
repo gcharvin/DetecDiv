@@ -167,6 +167,7 @@ function shallowObj=loadData_load(parsedData, hprogressbar)
              drawnow;
        end
     end
+
 %% Extract ROI data
 if exist('hprogressbar', 'var') && ~isempty(hprogressbar)
     hprogressbar.Value = 0.65;
@@ -178,6 +179,7 @@ selectedPos = find([parsedData.positions.selected]);
 if isempty(selectedPos)
     error('No position selected in the table.');
 end
+
 
 % Initialiser les cell arrays pour les frames et les channels
 framesCell = {};
@@ -212,7 +214,6 @@ for idx = 1:numel(selectedPos)
         cc = cc + 1;
     end
 end
-
 
    % fovArg = selectedPos;
     if parsedData.correctdrift

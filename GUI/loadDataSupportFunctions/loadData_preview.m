@@ -172,11 +172,16 @@ function drawROIs(app, parsedData, ax, img, posIndex)
         if isprop(app.shallowObj, 'fov') && numel(app.shallowObj.fov) >= posIndex
             fovData = app.shallowObj.fov(posIndex);
             if  isprop(fovData, 'roi') && any(arrayfun(@(x) isprop(x, 'value'), fovData.roi)) && ~isempty(fovData.roi(1).value)
-                roiBox = fovData.roi.value; % Bounding box sous forme [x y width height]
+
+                for i=1:numel(fovData.roi)
+                roiBox = fovData.roi(i).value;
+                
+                % Bounding box sous forme [x y width height]
                 % Afficher cette bounding box en rouge par-dessus les ROI existantes
                 patch('Parent', ax, 'XData', [roiBox(1), roiBox(1)+roiBox(3), roiBox(1)+roiBox(3), roiBox(1)], ...
                       'YData', [roiBox(2), roiBox(2), roiBox(2)+roiBox(4), roiBox(2)+roiBox(4)], ...
-                      'FaceColor', 'none', 'EdgeColor', 'r', 'LineWidth', 2, 'Tag', 'ROIpatch');
+                      'FaceColor', 'none', 'EdgeColor', 'r', 'LineWidth', 4, 'Tag', 'ROIpatch');
+                end
             end
         end
     end
