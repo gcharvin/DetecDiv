@@ -31,6 +31,7 @@ pix = roi.findChannelID(roi.display.channel{channelIdx});
 
 % Récupérer le masque courant (dans le canal d'annotation)
 currentMask = roi.image(:, :, pix, roi.display.frame);
+%allframesMask=roi.image(:, :, pix, :);
 
 axes=app.graphicsHandles.overlayHandles(1).Parent;
 
@@ -48,6 +49,7 @@ if strcmp(seltype, 'open')
     displaySelectedObject(app);
     return;
 end
+
 
 % Déterminer la taille du pinceau (bsize) en fonction du type de clic
 if strcmp(seltype, 'normal')
@@ -76,8 +78,10 @@ src.WindowButtonUpFcn = @wbucb;
 
         currentBsize = bsize;
         modtype = src.CurrentModifier;
-        if strcmp(modtype, 'shift')
-            currentBsize = 1;
+        if strcmp(modtype, 'shift') 
+             currentBsize = 3;
+        elseif strcmp(modtype, 'control') 
+             currentBsize = 1;
         end
 
         % Déterminer la taille du pinceau (en pixels)
@@ -87,7 +91,7 @@ src.WindowButtonUpFcn = @wbucb;
             case 2
                 brushRadius = 2;
             case 3
-                brushRadius = 5;
+                brushRadius = 6;
             otherwise
                 brushRadius = 10;
         end
@@ -131,16 +135,34 @@ src.WindowButtonUpFcn = @wbucb;
         end
 
         % Détermination de la couleur à utiliser à partir du colormap "lines"
+            %  uni = unique(totim(:));
+            % uni(uni==0) = [];
+            % nuni = max(numel(uni),numel(indices));
+            % levmap = eval([levels{ch}{2} '(' num2str(nuni) ')']);
+
+     %   uniqueVals = unique(allframesMask);
         uniqueVals = unique(currentMask);
+
         uniqueVals(uniqueVals == 0) = [];
         if ~ismember(paintValue, uniqueVals)
             uniqueVals = sort([uniqueVals; paintValue]);
         end
+        uniqueVals=1:max(uniqueVals);
         idx = find(uniqueVals == paintValue, 1);
         cmap = lines(max(numel(uniqueVals), idx));
         paintColor = cmap(idx, :);
 
-        if strcmp(modtype, 'shift') % effacer la peinture
+
+        % uniqueVals = unique(currentMask);
+        % uniqueVals(uniqueVals == 0) = [];
+        % if ~ismember(paintValue, uniqueVals)
+        %     uniqueVals = sort([uniqueVals; paintValue]);
+        % end
+        % idx = find(uniqueVals == paintValue, 1);
+        % cmap = lines(max(numel(uniqueVals), idx));
+        % paintColor = cmap(idx, :);
+
+        if strcmp(modtype, 'shift') | strcmp(modtype, 'control') % effacer la peinture
             paintColor = [0 0 0];
             paintValue = 0;
         end
@@ -232,8 +254,6 @@ src.WindowButtonUpFcn = @wbucb;
                         break
             end
         end
-
-
 
             if isprop(app, 'SelectedObjectRectangle') && ~isempty(app.SelectedObjectRectangle) && isgraphics(app.SelectedObjectRectangle)
                 delete(app.SelectedObjectRectangle);

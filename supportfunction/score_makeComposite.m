@@ -92,11 +92,13 @@ for ch=1:numel(channel)
         if paintChannel == currentIndx
             uni = unique(totim(:));
             uni(uni==0) = [];
-            nuni = numel(uni);
+            nuni = max(numel(uni),numel(indices));
             levmap = eval([levels{ch}{2} '(' num2str(nuni) ')']);
         else
             levmap = repmat(roitmp.display.rgb(tmpcha,:), [numel(indices), 1]);
         end
+
+
 
 
 
@@ -138,6 +140,7 @@ for ch=1:numel(channel)
                     %   figure, imshow(mask,[])
                     alphamask = alphamask | mask;
 
+              
                     for c = 1:3
                         channelOverlay = indexedOverlay(:, :, c);
                         channelOverlay(mask) =levmap(iVal, c);
@@ -151,6 +154,11 @@ for ch=1:numel(channel)
                 end
         end
     else
+
+         if ~isequal(levels{ch}, [-1 -1])
+            imtmp2 = imadjust(imtmp2, [levels{ch}(1)/65535, levels{ch}(2)/65535]);
+         end
+         
         if overlay
         if isempty(weights)
             comp = imlincomb(1, comp, 1, uint8(double(imtmp2)/256));
@@ -158,6 +166,7 @@ for ch=1:numel(channel)
             comp = imlincomb(1, comp, weights(ch), uint8(double(imtmp2)/256));
         end
         else
+ 
             displayImage(:,:,:,ch) = uint8(double(imtmp2)/256);
         end
     end

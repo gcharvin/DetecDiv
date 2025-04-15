@@ -45,8 +45,11 @@ obj.display.intensity(end+1,:)=intensity;
 obj.display.rgb(end+1,:)=rgb;
 
 if sum(intensity)==0
-    obj.display.indexed=true;
+    obj.display.indexed(end+1)=1;
 end
+obj.display.alpha(end+1)=1;
+obj.display.contour(end+1)=0;
+obj.display.width(end+1)=0;
 
 if  numel(imz)<3
     obj.image(:,:,1+1:1+size(matrix,3),:)=matrix;
@@ -56,6 +59,7 @@ end
 
 
 obj.display.selectedchannel(end+1)=1;
+
 
 tmp=(max(obj.channelid)+1)*ones(1,size(matrix,3));
 
