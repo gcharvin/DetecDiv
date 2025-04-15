@@ -316,12 +316,20 @@ for idfov = 1:numel(fovid)
                         tmproi(l).channelid(cumck:cumck+arrcha(ck)-1) = ck * ones(1, arrcha(ck));
                     end
                     tmproi(l).display.selectedchannel(ck) = 1;
+                    tmproi(l).display.alpha(ck) = 1;
+                    tmproi(l).display.contour(ck) = 1;
+                    tmproi(l).display.width(ck) = 1;
+
                     tmproi(l).display.rgb(ck, :) = temp;
                     cumck = cumck + arrcha(ck);
                     ck = ck + 1;
                 end
                 tmproi(l).display.selectedchannel = tmproi(l).display.selectedchannel(1:numel(cha));
                 tmproi(l).display.intensity = tmproi(l).display.intensity(1:numel(cha), :);
+                tmproi(l).display.alpha = tmproi(l).display.alpha(1:numel(cha), :);
+                tmproi(l).display.contour = tmproi(l).display.contour(1:numel(cha), :);
+                tmproi(l).display.width = tmproi(l).display.width(1:numel(cha), :);
+
                 tmproi(l).display.rgb = tmproi(l).display.rgb(1:numel(cha), :);
                 tmproi(l).results = [];
                 tmproi(l).train = [];

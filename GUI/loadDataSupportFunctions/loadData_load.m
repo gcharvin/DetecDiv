@@ -234,8 +234,8 @@ end
     %% Call saveCroppedImages with the constructed arguments
     if numel(fovArg)
     shallowObj.saveCroppedImages('frames', framesCell, 'fov', fovArg, 'cut', parsedData.maxframeloading, ...
-        'correctdrift', corrDrift, 'cropdrift', 1, 'crashrecovery', 0, ...
-        'channel', channelCell, 'scale', 1,'hprogressbar',hprogressbar);
+        'correctdrift', corrDrift,'cropdrift', 1, 'crashrecovery', 0, ...
+        'channel', channelCell, 'scale', parsedData.scale,'hprogressbar',hprogressbar);
     if exist('hprogressbar', 'var') && ~isempty(hprogressbar)
          hprogressbar.Value = 0.80;
          hprogressbar.Message = 'Cropped images saved...';

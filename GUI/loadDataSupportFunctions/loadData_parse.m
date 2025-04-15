@@ -212,6 +212,7 @@ parsedData.roitype='full';
 parsedData.roibb=[];
 parsedData.roipattern=[];
 parsedData.maxframeloading=20;
+parsedData.scale=1;
 parsedData.correctdrift=false;
 parsedData.maxroidisplay=10;
 parsedData.allpositions=true;
