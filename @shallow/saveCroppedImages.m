@@ -67,6 +67,7 @@ if iscell(channels)
     end
 end
 
+
 % Create a local copy of the FOVs to process
 tmpfov = obj.fov;  % working on a local copy
 
@@ -238,7 +239,7 @@ for idfov = 1:numel(fovid)
         if correctdrift
             disp('Correcting XY drift in images...');
             if ~isempty(hprogressbar)
-                hprogressbar.Message = 'Correcting XY drift in images...';
+                hprogressbar.Message = sprintf('Correcting XY drift for position  %d/%d...', idfov, numel(fovid));
                 drawnow;
             end
             method = 'circshift';
@@ -248,7 +249,7 @@ for idfov = 1:numel(fovid)
 
         disp('Cropping ROIs....');
         if ~isempty(hprogressbar)
-            hprogressbar.Message = 'Cropping ROIs...';
+            hprogressbar.Message =  sprintf('Cropping ROIs for positions  %d/%d...', idfov, numel(fovid));
             drawnow;
         end
 

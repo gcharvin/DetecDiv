@@ -5,7 +5,7 @@ classdef roi < handle
         path % indicates the absolute path of the image to be loaded with load() method
         image=[]; % 4-D image of the roi : x, y, channel, time
         channelid=1; % nx1 array of numbers that indicates how the channels are organized within the image; exemple : channelid: [1 1 1 2 3 4 5 6] means that the first channel is composed of 3 subchannels, and there are 6 channels in total
-        parent=[] % reference of the parent field of view
+       
         display=struct('intensity',[1 1 1],'frame',1,'selectedchannel',1,'binning',1,'rgb',[1 1 1],'channel',{'Channel 1'},'stretchlim',[],'displaylim',[0 ; 1], 'indexed', false, 'alpha', 1, 'contour', false, 'width', 1);
 
         % display struct structure : 
@@ -35,6 +35,9 @@ classdef roi < handle
 
         data=dataseries; % array of dataseries objects
 
+    end
+    properties (Transient)
+             parent=[] % reference of the parent field of view
     end
     methods
         function obj = roi(id,roiarr)

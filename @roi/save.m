@@ -42,12 +42,42 @@ end
 
 if numel(obj.path)
    if isfolder(obj.path)
-    eval(['save  ' '''' obj.path '/im_' obj.id '.mat' ''''  ' roiobj']);   
+  %  eval(['save  ' '''' obj.path '/im_' obj.id '.mat' ''''  ' roiobj']);   
    % disp(['Saving ROI data to ' obj.id ' to ' obj.path '/data_' obj.id '.mat']);
-    eval(['save  ' '''' obj.path '/data_' obj.id '.mat' ''''  ' data']);
+  %  eval(['save  ' '''' obj.path '/data_' obj.id '.mat' ''''  ' data']);
+
+  
+
+    success = false;
+attempts = 0;
+max_attempts = 5;
+
+%filename = fullfile(obj.path, ['im_' obj.id '.mat']);
+
+while ~success && attempts < max_attempts
+    try
+         save(fullfile(obj.path, ['im_' obj.id '.mat']), 'roiobj');
+        save(fullfile(obj.path, ['data_' obj.id '.mat']), 'data');
+        success = true;
+    catch ME
+        disp(['Erreur lors de la sauvegarde de ' filename ' : ' ME.message]);
+        pause(0.5);  % attendre avant de réessayer
+        attempts = attempts + 1;
+    end
+end
+
+if ~success
+    error(['Échec de la sauvegarde après ' num2str(max_attempts) ' tentatives.']);
+end
+
+
+
+
     else
        disp('ERROR: Could not find / access the requested folder !!! ');
    end
+
+
 end
 
 % '''' allows one to use quotes !!!

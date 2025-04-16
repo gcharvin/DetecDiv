@@ -19,6 +19,16 @@ function parsedData = loadData_parse(files, folder, invert)
 %       divide (fractionnated), custom 
 %       .roipattern : image pattern used to do the detection
 %       .roibb : roi boundind box
+%       .roitype='full'; 
+
+%     .maxframeloading=20;
+%     .scale=1;
+%     .correctdrift=false;
+%     .maxroidisplay=10;
+%     .allpositions=true;
+%     .advancedMode=false;
+%     .projectPath=fullfile(parsedData.folder,'tmpProject.mat');
+
 %      
 %       .positions    : Array de structures, chacune correspondant à une position et
 %                       contenant notamment :
@@ -218,7 +228,6 @@ parsedData.maxroidisplay=10;
 parsedData.allpositions=true;
 parsedData.folder=folder; 
 parsedData.advancedMode=false;
-
 parsedData.projectPath=fullfile(parsedData.folder,'tmpProject.mat');
 
 
