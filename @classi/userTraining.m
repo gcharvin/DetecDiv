@@ -66,7 +66,19 @@ else % image based classification and regression
 % pix=  classif.roi(classitype).channelid(pix);
 % classif.roi(classitype).display.selectedchannel(pix)=1;
 
-classif.roi(classitype).view(classif.roi(classitype).display.frame,classif); 
+%classif.roi(classitype).view(classif.roi(classitype).display.frame,classif); 
+
+roiObj=classif.roi(classitype);
+
+figures=findall(0,'Type','figure');
+appFigure=findobj(figures,'Name','ScoreApp');
+    if isprop(appFigure,'RunningAppInstance')
+                appFigure.RunningAppInstance.addROI(roiObj);
+   else
+    score(roiObj);
+   end
+
+%classif.roi(classitype).
 
 end
 end

@@ -290,9 +290,14 @@ python_script_content = sprintf( ...
     "gfp = sio.loadmat(mat_path)['gfp']\n" + ...
     "print(f'Dimensions de gfp : {gfp.shape}')\n" + ...
     "\n" + ...
+    "gfp_reord = np.transpose(gfp, (3, 0, 1, 2))" + ...
+     "\n" + ...
+     "if gfp_reord.shape[-1] == 1: "+ ...
+     "           gfp_reord = np.repeat(gfp_reord, 3, axis=-1)" + ...
+    "\n" + ...
     "# Convertir en liste d'images (H, W, C)\n" + ...
-    "images = [cv2.cvtColor(img.astype(np.uint8), cv2.COLOR_GRAY2BGR) if img.ndim == 2 else img.astype(np.uint8) \n" + ...
-    "          for img in gfp.transpose(3, 0, 1, 2)]\n" + ...
+     "\n" + ...
+     "images = [img.astype(np.uint8) for img in gfp_reord]"+...
     "\n" + ...
     "# Déterminer la taille des images\n" + ...
     "height, width = images[0].shape[:2]\n" + ...
@@ -368,13 +373,11 @@ disp(info);
 %     disp({info.Groups(i).Datasets.Name}); % Affiche les noms des datasets disponibles
 % end
 
-
 % for i = 1:numel(info.Groups)
 %     disp(['Groupe trouvé : ', info.Groups(i).Name]);
 %     disp('Datasets disponibles :');
 %     disp({info.Groups(i).Datasets.Name});  % Affiche les noms des datasets du groupe
 % end
-
 
 % Initialiser une structure pour stocker les résultats
 results = struct();
@@ -430,160 +433,237 @@ for sorted_idx = 1:numel(sorted_indices)
     results(sorted_idx).original_shape = original_shape;
 end
 
+assignin('base','results',results);
+
 disp('Lecture complète');
 
 
-% Taille des masques
-image_height = size(roiobj.image, 1);
-image_width = size(roiobj.image, 2);
+% ====== Paramètres généraux =================================================
+num_classes = numel(pixresults);      % autant de canaux que de classes
+num_frames  = numel(results);
 
-num_classes = numel(pixresults); %numel(classif.classes);  % Nombre de classes
-num_frames = numel(results);
+image_height = size(roiobj.image,1);
+image_width  = size(roiobj.image,2);
 
-% Nombre de frames dans les résultats
+% ====== Matrice de sortie (H,W,C,T) ========================================
+tmpout = zeros(image_height, image_width, num_classes, num_frames, 'single');
 
-% Initialiser la matrice tmpout
-tmpout = zeros(image_height, image_width, num_classes, num_frames);
+% ====== Mapping TrackID → instance_value par classe ========================
+trackMap        = cell(1,num_classes);           % un containers.Map par classe
+instanceCounter = zeros(1,num_classes);          % compteur d’instances / classe
+for c = 1:num_classes
+    trackMap{c} = containers.Map('KeyType','double','ValueType','double');
+end
 
-% Initialiser un compteur pour les instances par classe et frame
-%instance_counters = zeros(num_classes, num_frames);
-
-% Initialiser une map pour stocker les relations entre track_ids et instances
-track_id_to_instance_map = containers.Map('KeyType', 'double', 'ValueType', 'double');
-track_id_to_class_map = containers.Map('KeyType', 'double', 'ValueType', 'double'); % Associe les Track IDs aux classes
-instance_counter = 1; % Compteur global pour les instances
-
-% Parcourir les frames dans les résultats
+% ====== BOUCLE SUR LES FRAMES =============================================
 for frame_idx = 1:num_frames
-    frame_results = results(frame_idx);
+    res = results(frame_idx);
 
-    % Extraire l'image brute pour la frame (canal 1)
-    raw_image = roiobj.image(:, :, 1, frame_idx);
-
-    % Normaliser l'image brute pour affichage
-    raw_image_normalized = double(raw_image) / double(max(raw_image(:)));
-
-    % Redimensionner l'image brute à 512x512 pour l'affichage
-    overlay_image = imresize(repmat(raw_image_normalized, [1, 1, 3]), [512, 512]);
-
-    % Initialiser les annotations pour bounding boxes
-    bboxes = [];
-    labels = {};
-    
-    % Créer un masque de superposition (initialisé à zéro)
-    mask_overlay = zeros(512, 512, 3);
-
-    % Vérifier si les bounding boxes existent
-    if isempty(frame_results.boxes)
-        warning('Aucune bounding box pour la frame %d.', frame_idx);
+    if isempty(res.class_ids)        % aucune détection ?
         continue;
     end
 
-    % Extraire les bounding boxes sous forme de matrice 4xN
-    boxes_xyxy = frame_results.boxes;  % Chaque colonne est une bounding box [x_min; y_min; x_max; y_max]
-
-    % Extraire les scores
-    scores = frame_results.scores;  % Tableau des scores
-
-    % Extraire ou générer les track IDs
-    if isfield(frame_results, 'track_ids') && ~isempty(frame_results.track_ids)
-        track_ids = frame_results.track_ids;  % Liste des track IDs
-    else
-        % Si les track IDs sont vides, générer des identifiants uniques pour chaque objet
-        track_ids = (instance_counter:instance_counter + size(boxes_xyxy, 2) - 1)';
-        instance_counter = instance_counter + size(boxes_xyxy, 2);
+    % -----------------------------------------------------------------------
+    % 1. si res.track_ids absent -> créer une suite 1:N
+    % -----------------------------------------------------------------------
+    if isempty(res.track_ids)
+        res.track_ids = single(1:numel(res.class_ids)).';
     end
 
-    % Parcourir les objets détectés dans la frame
-    for obj_idx = 1:size(boxes_xyxy, 2)  % Le nombre de colonnes correspond au nombre d'objets
-        class_id = frame_results.class_ids(obj_idx) + 1;  % Indice de la classe (1-indexé pour MATLAB)
-        mask = squeeze(frame_results.masks(:, :, obj_idx))';  % Extraire le masque et permuter les dimensions x et y
-        
-        % Vérifiez si les dimensions du masque correspondent à l'image originale
-        if size(mask, 1) ~= size(roiobj.image, 1) || size(mask, 2) ~= size(roiobj.image, 2)
-            % Redimensionner le masque pour qu'il corresponde à la taille de l'image originale
-            mask = imresize(mask, [size(roiobj.image, 1), size(roiobj.image, 2)], 'nearest');
+    % -----------------------------------------------------------------------
+    % 2. Boucle sur chaque objet détecté de la frame
+    % -----------------------------------------------------------------------
+    Nobj = numel(res.class_ids);
+    for k = 1:Nobj
+        % ----- 2.1 Infos de l’objet ----------------------------------------
+        class_id = res.class_ids(k) + 1;      % 1‑indexé pour MATLAB
+        tid      = res.track_ids(k);          % Track ID fourni par BoTSORT
+
+        % ----- 2.2 Instance_value unique pour (classe,track_id) ------------
+        tmap = trackMap{class_id};
+        if ~isKey(tmap, tid)
+            instanceCounter(class_id) = instanceCounter(class_id) + 1;
+            tmap(tid) = instanceCounter(class_id);
+        end
+        instVal = tmap(tid);
+
+        % ----- 2.3 Masque binaire H×W --------------------------------------
+        mask = res.masks(:,:,k) > 0;          % masques stockés (H,W,N)
+        mask=mask';
+        if ~isequal(size(mask),[image_height,image_width])
+            mask = imresize(mask,[image_height,image_width],'nearest');
         end
 
-        % Extraire ou générer un track ID unique
-        track_id = track_ids(obj_idx);
-
-        % Vérifier si le track ID existe déjà dans la map
-        if isKey(track_id_to_instance_map, track_id)
-            % Vérifier si la classe actuelle correspond à la classe enregistrée pour ce Track ID
-            if track_id_to_class_map(track_id) ~= class_id
-                warning('Conflit de classe pour le Track ID %d: Classe enregistrée %d, Classe actuelle %d.', track_id, track_id_to_class_map(track_id), class_id);
-                % Créer une nouvelle instance pour éviter le conflit
-                instance_value = instance_counter;
-                track_id_to_instance_map(track_id) = instance_value;
-                track_id_to_class_map(track_id) = class_id; % Mettre à jour la classe associée
-                instance_counter = instance_counter + 1;
-            else
-                % Si la classe correspond, utiliser l'instance existante
-                instance_value = track_id_to_instance_map(track_id);
-            end
-        else
-            % Si le track ID est nouveau, l'ajouter à la map avec une nouvelle valeur d'instance
-            instance_value = instance_counter;
-            track_id_to_instance_map(track_id) = instance_value;
-            track_id_to_class_map(track_id) = class_id; % Associer la classe au Track ID
-            instance_counter = instance_counter + 1;
-        end
-        
-        % Ajouter le masque à la matrice tmpout avec la valeur d'instance unique
-        tmpout(:, :, class_id, frame_idx) = tmpout(:, :, class_id, frame_idx) + (mask * instance_value);
-
-        if debug_flag
-            % Extraire la bounding box correspondante (colonne `obj_idx`)
-            box_xyxy = boxes_xyxy(:, obj_idx)';
-            
-            % Convertir la bounding box en [x, y, width, height] et redimensionner pour 512x512
-            box_xyxy_resized = round(box_xyxy * (512 / image_height));  % Échelle basée sur la hauteur de l'image
-            box_xywh = [box_xyxy_resized(1), box_xyxy_resized(2), ...
-                        box_xyxy_resized(3) - box_xyxy_resized(1), ...
-                        box_xyxy_resized(4) - box_xyxy_resized(2)];
-            
-            % Ajouter la bounding box à `bboxes`
-            bboxes = [bboxes; box_xywh];
-
-            detection_score = scores(obj_idx);  % Score de la détection
-            labels{end+1} = sprintf('%s #%d (%.2f)', classif.classes{class_id}, track_id, detection_score);
-
-            % Redimensionner le masque pour correspondre à 512x512 pour l'affichage
-            mask_resized = imresize(mask, [512, 512], 'nearest');
-
-            % Superposer le masque avec une couleur spécifique à la classe
-            color = rand(1, 3);  % Couleur aléatoire
-            for c = 1:3
-                mask_overlay(:, :, c) = mask_overlay(:, :, c) + mask_resized * color(c);
-            end
-        end
-    end
-
-
-     if debug_flag
-    % Normaliser le masque pour éviter les débordements
-    mask_overlay = mask_overlay / max(mask_overlay(:));
-
-    % Vérifier que le nombre de labels correspond au nombre de bounding boxes
-    if size(bboxes, 1) ~= numel(labels)
-        error('Le nombre de bounding boxes (%d) ne correspond pas au nombre de labels (%d).', size(bboxes, 1), numel(labels));
-    end
-
-   
-        % Ajouter les annotations sur l'image brute
-        annotated_image = insertObjectAnnotation(uint8(overlay_image * 255), 'Rectangle', bboxes, labels);
-
-        % Ajouter le masque superposé à l'image annotée
-        final_image = imadd(uint8(annotated_image), uint8(mask_overlay * 255));
-
-        % Afficher l'image annotée avec les masques superposés
-        figure;
-        imshow(final_image);
-        title(sprintf('Frame %d - Annotations et Masques', frame_idx));
-        drawnow;
+        % ----- 2.4 Écriture sans overlap -----------------------------------
+        layer = tmpout(:,:,class_id,frame_idx);
+        layer(mask & layer==0) = instVal;     % ne pas écraser valeur existante
+        tmpout(:,:,class_id,frame_idx) = layer;
     end
 end
+% ====== FIN BOUCLE FRAMES ==================================================
+
+% — copier vers les canaux de l’image finale —
+image(:,:,pixresults,frames) = tmpout;
+
+
+% ==== Fin de la boucle frames ====
+
+
+
+% num_classes = numel(pixresults); %numel(classif.classes);  % Nombre de classes
+% num_frames = numel(results);
+% 
+% % Nombre de frames dans les résultats
+% 
+% % Initialiser la matrice tmpout
+% tmpout = zeros(image_height, image_width, num_classes, num_frames);
+% 
+% % Initialiser un compteur pour les instances par classe et frame
+% %instance_counters = zeros(num_classes, num_frames);
+% 
+% % Initialiser une map pour stocker les relations entre track_ids et instances
+% track_id_to_instance_map = containers.Map('KeyType', 'double', 'ValueType', 'double');
+% track_id_to_class_map = containers.Map('KeyType', 'double', 'ValueType', 'double'); % Associe les Track IDs aux classes
+% instance_counter = 1; % Compteur global pour les instances
+% 
+% % Parcourir les frames dans les résultats
+% for frame_idx = 1:num_frames
+%     frame_results = results(frame_idx);
+% 
+%     % Extraire l'image brute pour la frame (canal 1)
+%     raw_image = roiobj.image(:, :, 1, frame_idx);
+% 
+%     % Normaliser l'image brute pour affichage
+%     raw_image_normalized = double(raw_image) / double(max(raw_image(:)));
+% 
+%     % Redimensionner l'image brute à 512x512 pour l'affichage
+%     overlay_image = imresize(repmat(raw_image_normalized, [1, 1, 3]), [512, 512]);
+% 
+%     % Initialiser les annotations pour bounding boxes
+%     bboxes = [];
+%     labels = {};
+% 
+%     % Créer un masque de superposition (initialisé à zéro)
+%     mask_overlay = zeros(512, 512, 3);
+% 
+%     % Vérifier si les bounding boxes existent
+%     if isempty(frame_results.boxes)
+%         warning('Aucune bounding box pour la frame %d.', frame_idx);
+%         continue;
+%     end
+% 
+%     % Extraire les bounding boxes sous forme de matrice 4xN
+%     boxes_xyxy = frame_results.boxes;  % Chaque colonne est une bounding box [x_min; y_min; x_max; y_max]
+% 
+%     % Extraire les scores
+%     scores = frame_results.scores;  % Tableau des scores
+% 
+%     % Extraire ou générer les track IDs
+%     if isfield(frame_results, 'track_ids') && ~isempty(frame_results.track_ids)
+%         track_ids = frame_results.track_ids;  % Liste des track IDs
+%     else
+%         % Si les track IDs sont vides, générer des identifiants uniques pour chaque objet
+%         track_ids = (instance_counter:instance_counter + size(boxes_xyxy, 2) - 1)';
+%         instance_counter = instance_counter + size(boxes_xyxy, 2);
+%     end
+% 
+%     % Parcourir les objets détectés dans la frame
+%     for obj_idx = 1:size(boxes_xyxy, 2)  % Le nombre de colonnes correspond au nombre d'objets
+%         class_id = frame_results.class_ids(obj_idx) + 1;  % Indice de la classe (1-indexé pour MATLAB)
+%         mask = squeeze(frame_results.masks(:, :, obj_idx))';  % Extraire le masque et permuter les dimensions x et y
+% 
+%         % Vérifiez si les dimensions du masque correspondent à l'image originale
+%         if size(mask, 1) ~= size(roiobj.image, 1) || size(mask, 2) ~= size(roiobj.image, 2)
+%             % Redimensionner le masque pour qu'il corresponde à la taille de l'image originale
+%             mask = imresize(mask, [size(roiobj.image, 1), size(roiobj.image, 2)], 'nearest');
+%         end
+% 
+%         % Extraire ou générer un track ID unique
+%         track_id = track_ids(obj_idx);
+% 
+%         % Vérifier si le track ID existe déjà dans la map
+%         if isKey(track_id_to_instance_map, track_id)
+%             % Vérifier si la classe actuelle correspond à la classe enregistrée pour ce Track ID
+%             if track_id_to_class_map(track_id) ~= class_id
+%                 warning('Conflit de classe pour le Track ID %d: Classe enregistrée %d, Classe actuelle %d.', track_id, track_id_to_class_map(track_id), class_id);
+%                 % Créer une nouvelle instance pour éviter le conflit
+%                 instance_value = instance_counter;
+%                 track_id_to_instance_map(track_id) = instance_value;
+%                 track_id_to_class_map(track_id) = class_id; % Mettre à jour la classe associée
+%                 instance_counter = instance_counter + 1;
+%             else
+%                 % Si la classe correspond, utiliser l'instance existante
+%                 instance_value = track_id_to_instance_map(track_id);
+%             end
+%         else
+%             % Si le track ID est nouveau, l'ajouter à la map avec une nouvelle valeur d'instance
+%             instance_value = instance_counter;
+%             track_id_to_instance_map(track_id) = instance_value;
+%             track_id_to_class_map(track_id) = class_id; % Associer la classe au Track ID
+%             instance_counter = instance_counter + 1;
+%         end
+% 
+%         % Ajouter le masque à la matrice tmpout avec la valeur d'instance unique
+%        % tmpout(:, :, class_id, frame_idx) = tmpout(:, :, class_id, frame_idx) + (mask * instance_value);
+%           % NOUVEAU : on n’écrit instance_value que sur les pixels non encore étiquetés
+%     layer   = tmpout(:, :, class_id, frame_idx);
+%     maskIdx = mask > 0;                          % vrai exactement sur le masque
+%     % n’écrire instance_value que là où layer est encore 0
+%     layer(maskIdx & layer == 0) = instance_value;
+%     tmpout(:, :, class_id, frame_idx) = layer;
+% 
+% 
+%         if debug_flag
+%             % Extraire la bounding box correspondante (colonne `obj_idx`)
+%             box_xyxy = boxes_xyxy(:, obj_idx)';
+% 
+%             % Convertir la bounding box en [x, y, width, height] et redimensionner pour 512x512
+%             box_xyxy_resized = round(box_xyxy * (512 / image_height));  % Échelle basée sur la hauteur de l'image
+%             box_xywh = [box_xyxy_resized(1), box_xyxy_resized(2), ...
+%                         box_xyxy_resized(3) - box_xyxy_resized(1), ...
+%                         box_xyxy_resized(4) - box_xyxy_resized(2)];
+% 
+%             % Ajouter la bounding box à `bboxes`
+%             bboxes = [bboxes; box_xywh];
+% 
+%             detection_score = scores(obj_idx);  % Score de la détection
+%             labels{end+1} = sprintf('%s #%d (%.2f)', classif.classes{class_id}, track_id, detection_score);
+% 
+%             % Redimensionner le masque pour correspondre à 512x512 pour l'affichage
+%             mask_resized = imresize(mask, [512, 512], 'nearest');
+% 
+%             % Superposer le masque avec une couleur spécifique à la classe
+%             color = rand(1, 3);  % Couleur aléatoire
+%             for c = 1:3
+%                 mask_overlay(:, :, c) = mask_overlay(:, :, c) + mask_resized * color(c);
+%             end
+%         end
+%     end
+% 
+% 
+%      if debug_flag
+%     % Normaliser le masque pour éviter les débordements
+%     mask_overlay = mask_overlay / max(mask_overlay(:));
+% 
+%     % Vérifier que le nombre de labels correspond au nombre de bounding boxes
+%     if size(bboxes, 1) ~= numel(labels)
+%         error('Le nombre de bounding boxes (%d) ne correspond pas au nombre de labels (%d).', size(bboxes, 1), numel(labels));
+%     end
+% 
+% 
+%         % Ajouter les annotations sur l'image brute
+%         annotated_image = insertObjectAnnotation(uint8(overlay_image * 255), 'Rectangle', bboxes, labels);
+% 
+%         % Ajouter le masque superposé à l'image annotée
+%         final_image = imadd(uint8(annotated_image), uint8(mask_overlay * 255));
+% 
+%         % Afficher l'image annotée avec les masques superposés
+%         figure;
+%         imshow(final_image);
+%         title(sprintf('Frame %d - Annotations et Masques', frame_idx));
+%         drawnow;
+%     end
+% end
 
 % Vérification de la matrice
 disp('Matrice tmpout construite avec succès.');

@@ -34,6 +34,7 @@ function shallowObj=loadData_load(parsedData, hprogressbar)
 
  %% Si aucun projet déjà chargé n'a été trouvé, créer un nouvel objet shallow
     if ~projectLoaded
+        [projFolder, projFilename, ~] = fileparts(parsedData.projectPath);
         shallowObj = shallowNew('path', char(fullfile(projFolder, '/')), 'filename', [char(projFilename) '.mat']);
         if isempty(shallowObj)
             disp('Project creation canceled by the user.');
@@ -333,7 +334,7 @@ end
     end
     end
 
-   % fullpath = fullfile(char(projFolder), [char(projFilename) '.mat']);
+  
    % disp(['Shallow project created and saved: ' fullpath]);
 
 
@@ -341,7 +342,8 @@ end
 
     if ~projectLoaded % in this case load the project in the workspace
 
-    % projName = shallowObj.io.file;
+      fullpath = fullfile(char(projFolder), [char(projFilename) '.mat']);
+     projName = shallowObj.io.file;
     % if evalin('base', sprintf('exist(''%s'', ''var'')', projName))
     %      evalin('base', sprintf('clear %s', projName));
     %      disp(['Variable ', projName, ' already existed and has been cleared.']);

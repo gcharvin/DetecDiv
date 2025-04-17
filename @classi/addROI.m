@@ -196,6 +196,7 @@ for i=1:length(rois)
           classif.roi(cc+1).data.data = data(ccc).data;
           trainingSetTransfer=true; 
         end
+
 % to be done if mapping between different classi must be done 
             % if isfield(roitocopy.train,obj.strid) % test if previous ROI has training
             %     if numel(convert) % preserve training set
@@ -319,9 +320,10 @@ for i=1:length(rois)
         else
             % add channel is necessary
             matrix=uint16(zeros(size(im,1),size(im,2),1,size(im,4)));
-
-            classif.roi(cc+1).addChannel(matrix,classif.strid,[1 1 1],[0 0 0]);
+            for k=1:numel(classif.classes)
+            classif.roi(cc+1).addChannel(matrix,[classif.strid '_' classif.classes{k}],[1 1 1],[0 0 0]);
             classif.roi(cc+1).display.selectedchannel(end)=1;
+            end
         end
 
 

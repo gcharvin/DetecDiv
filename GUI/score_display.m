@@ -94,6 +94,10 @@ if app.ShapeButton.Value
     score_updateEllipticalProfile(app, app.EllipseIntensityProfileObj);
 end
 
+if strcmp(mode, 'slow')
+figure(app.displayHandles.Figure)
+end
+
 %profile viewer
 end
 
