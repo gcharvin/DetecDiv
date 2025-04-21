@@ -131,7 +131,7 @@ classdef dataseries < handle
 
         function addData(obj,arr,arrname, varargin)
 
-        
+      
             sz=size(obj.data);
 
             groupitem=[];
@@ -206,6 +206,7 @@ end
        
                    t{1,1}= toplot;
                    t{1,2}= outname{i};
+                   
                    t{1,3}= class(obj.data.(outname{i}));
                    t{1,4}= 'k';
                    t{1,5}= 2;
@@ -222,6 +223,7 @@ end
          
 
         end
+        
         function newobj=copyData(obj)
             newobj=dataseries; 
             fields=fieldnames(obj);

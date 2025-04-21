@@ -84,7 +84,13 @@ if isprop(app, 'SelectedObjectRectangle') && ~isempty(app.SelectedObjectRectangl
 end
 
 % histo update
+%if strcmp(mode, 'slow')
+if app.DisplaySettings.panels.DisplaysettingsPanel=="on"
 score_updateHistogram(app, mode);
+end
+%end
+
+if app.DisplaySettings.panels.IntensityQuantificationPanel=="on"
 if app.LineIntensityprofileButton.Value
       createIntensityLine(app);
     score_updateIntensityProfile(app, getPosition(app.LineIntensityProfileLine));
@@ -92,6 +98,7 @@ end
 if app.ShapeButton.Value
     createEllipse(app);
     score_updateEllipticalProfile(app, app.EllipseIntensityProfileObj);
+end
 end
 
 if strcmp(mode, 'slow')

@@ -10,7 +10,7 @@ for i=1:numel(varargin)
     end
 end
         
-category=classif.category;
+category=classif.category{1};
 
 % disp(['Number of classes defined by user: ' num2str(numel(classif.classes))]);
 %     for j=1:numel(classif.classes)
@@ -74,11 +74,29 @@ figures=findall(0,'Type','figure');
 appFigure=findobj(figures,'Name','ScoreApp');
     if isprop(appFigure,'RunningAppInstance')
                 appFigure.RunningAppInstance.addROI(roiObj);
+                app=appFigure.RunningAppInstance;
    else
-    score(roiObj);
+    app=score(roiObj);
    end
 
-%classif.roi(classitype).
+
+  if category=="Pixel"
+        app.DisplaysettingsPanel.Visible="off";
+        app.DataSettingsPanel.Visible="off";
+        app.AnnotationPanel.Visible="on";
+        app.IntensityQuantificationPanel.Visible="off";
+        app.MoviePanel.Visible="off";
+  end
+   if category=="Image"
+       app.DisplaysettingsPanel.Visible="off";
+        app.DataSettingsPanel.Visible="on";
+        app.AnnotationPanel.Visible="off";
+        app.IntensityQuantificationPanel.Visible="off";
+        app.MoviePanel.Visible="off";
+   end
+
+        app.updatePanelsLayout();
+        app.updateDisplaySettings();
 
 end
 end
