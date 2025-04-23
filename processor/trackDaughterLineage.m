@@ -17,7 +17,7 @@ if nargin == 0
     % Liste des canaux d'instance
     ch = listAvailableChannels;
     paramout.listChannelName = ['N/A', ch, ch{end}];
-    paramout.outputChannelName = 'TrackedDaughters_cell';
+    paramout.outputChannelName = 'TrackedDaughters';
     paramout.tip = {...
         'Sélectionnez le dataseries classification',...
         'Sélectionnez le canal de masques de track IDs',...
@@ -45,6 +45,14 @@ if isempty(chanID), error('Canal mask introuvable'); end
 maskSeq = roiobj.image(:,:,chanID,:);  % H×W×1×T
 [H,W,~,T] = size(maskSeq);
 
+%% Préallocation masques
+cellMask = false(H,W,1,T);
+budMask  = false(H,W,1,T);
+allMask  = false(H,W,1,T);
+
+swapflag=false;
+swapv=false(T);
+
 % --- 1) Orientation cavité (haut vs bas) par flux moyen en y
 dyList = [];
 for t = 1:T-1
@@ -53,7 +61,7 @@ for t = 1:T-1
     ids = unique(frm0); ids(ids==0)=[];
     for id = ids'
         [ys0, ~] = find(frm0 == id);
-            y0 = mean(ys0);
+        y0 = mean(ys0);
         if ismember(id, unique(frm1))
             [ys1, ~] = find(frm1 == id);
             y1 = mean(ys1);
@@ -100,10 +108,10 @@ if ~isempty(firstIdx)
     frm = maskSeq(:,:,1,firstIdx);
     ids = unique(frm); ids(ids==0)=[];
     ys = zeros(size(ids));
-        for k = 1:numel(ids)
-            [ys_k, ~] = find(frm == ids(k));
-            ys(k) = mean(ys_k);
-        end
+    for k = 1:numel(ids)
+        [ys_k, ~] = find(frm == ids(k));
+        ys(k) = mean(ys_k);
+    end
     if state == "smallt"
         % tracked = bas, bud = au-dessus
         [~,i] = max(ys * bottomSign);
@@ -126,9 +134,12 @@ end
 
 % --- 3) Boucle sur les frames
 maskOut = false(H,W,1,T);
+
+swapflag=false;
+
 for t = 1:T
-    t
-    state = labels(t)
+    %  t
+    state = labels(t);
 
     frm   = maskSeq(:,:,1,t);
     ids   = unique(frm); ids(ids==0)=[];
@@ -146,22 +157,37 @@ for t = 1:T
         prevEvent = curEvent;
         curEvent  = state;
         lastTransFrame = t;
+
         if strcmp(prevEvent,'smallt')
             % cas smallt précédant: supprime ancien bourgeon
             budCell = [];
-            'remove t'
-        elseif strcmp(prevEvent,'smallb')
-            % cas smallb précédant: switch trackedCell
-           % if ~isempty(budCell)
-            %    trackedCell = budCell;
-          %  end
-          'ok remove'
-            budCell = [];
-         %   pause
+            %    'remove t'
         end
+
+        %elseif strcmp(prevEvent,'smallb')
+        % cas smallb précédant: switch trackedCell
+        % if ~isempty(budCell)
+        %    trackedCell = budCell;
+        %  end
+        %   'ok remove'
+        % if strcmp(curEvent,'smallb')
+        %     % swapping tracked cell and budcell
+        %    budCell = [];
+        % end
+
+        if strcmp(prevEvent,'smallb')
+            % swapping tracked cell and budcell
+            swap=trackedCell;
+            trackedCell=budCell;
+            budCell=[]; %swap;
+            %  swapflag=true;
+            % else
+            %  swapflag=false;
+        end
+        %   pause
     end
     % si pas de trackedCell en périoed smallb->large, init
-        % si pas de trackedCell en période smallb->large, init à la cellule la plus basse
+    % si pas de trackedCell en période smallb->large, init à la cellule la plus basse
     if isempty(trackedCell) && state=="large"
         % calcul explicite des centroïdes en y
         ys_temp = zeros(size(ids));
@@ -183,7 +209,7 @@ for t = 1:T
         cy = mean(ys_tr);
         cand = [];
         for id = ids'
-             % ne considérer que les IDs apparus après la dernière transition
+            % ne considérer que les IDs apparus après la dernière transition
             if firstAppearance(id) <= lastTransFrame
                 continue;
             end
@@ -197,41 +223,57 @@ for t = 1:T
             end
         end
 
-
-
-        if ~isempty(cand)
-            [~,j] = min(cand(:,1)); budCell = cand(j,2);
-
-            if strcmp(curEvent,'smallb')
-            % swapping tracked cell and budcell
-            swap=trackedCell;
-            trackedCell=budCell;
-            budCell=swap;
-            end
+        if ~isempty(cand) && isempty(budCell)
+            [~,j] = min(cand(:,1));
+            budCell = cand(j,2);
+             
+            % if strcmp(curEvent,'smallb')
+            % % swapping tracked cell and budcell
+            % swap=trackedCell;
+            % trackedCell=budCell;
+            % budCell=swap;
+            % swapflag=true;
+            % else
+            % swapflag=false;
+            % end
         end
-
-   
     end
     % construire masque mère+bud
-         if t>110
+    %  if t>110
     %    pause;
-         end
+    %  end
 
-    m = false(H,W);
-    if ~isempty(trackedCell), m = m | (frm==trackedCell); end
-    if ~isempty(budCell),     m = m | (frm==budCell); end
-    maskOut(:,:,1,t) = m;
+    %     m = false(H,W);
+    %     if ~isempty(trackedCell), m = m | (frm==trackedCell); end
+    %     if ~isempty(budCell),     m = m | (frm==budCell); end
+    %     maskOut(:,:,1,t) = m;
+    % end
+
+    % Stockage masques
+
+    if ~isempty(trackedCell)
+        cellMask(:,:,1,t) = (frm == trackedCell);
+    end
+    if ~isempty(budCell)
+        budMask(:,:,1,t) = (frm == budCell);
+    end
+    allMask(:,:,1,t) = cellMask(:,:,1,t) | budMask(:,:,1,t);
 end
 
-% --- 4) Sauvegarde dans roiobj
-outChan = paramout.outputChannelName;
-pix = roiobj.findChannelID(outChan);
-if ~isempty(pix)
-    roiobj.image(:,:,pix,:) = maskOut;
-else
-    roiobj.addChannel(maskOut, outChan, [1 1 1], [0 0 0]);
-end
+%% Sauvegarde des canaux
+baseName = paramout.outputChannelName;
+channels = {'_cell','_bud','_all'};
+masks = {cellMask, budMask, allMask};
 
-dataout = roiobj.data;
-imageout = roiobj.image;
+for i = 1:length(channels)
+    name = [baseName, channels{i}];
+    pix = roiobj.findChannelID(name);
+    if ~isempty(pix)
+        roiobj.image(:,:,pix,:) = masks{i};
+    else
+        roiobj.addChannel(masks{i}, name, [1 1 1], [0 0 0]);
+    end
+
+    dataout = roiobj.data;
+    imageout = roiobj.image;
 end

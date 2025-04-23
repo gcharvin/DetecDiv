@@ -260,16 +260,18 @@ end
         liste_valeurs=paramout.(['mask' num2str(1) '_class']);
         end
 
+
         if paramout.(['mask' num2str(1) '_class'])> 0
         %bw1=roiobj.image(:,:,chabw{1},:)==paramout.(['mask' num2str(1) '_class']); 
         bw1=roiobj.image(:,:,chabw{1},:).*uint16(ismember(roiobj.image(:,:,chabw{1},:),liste_valeurs)); %==paramout.(['mask' num2str(1) '_class']); 
         else
         bw1=roiobj.image(:,:,chabw{1},:);  % expect an indexed image
         end
-
+       
         bw1=repmat(bw1,[1 1 1 1 size(im,3)]);
         bw1=permute(bw1,[1 2 5 4 3]);
         bw1=reshape(bw1,[],size(bw1,3),size(bw1,4));
+  
     end
 
     if numel(chabw{2})
@@ -279,6 +281,7 @@ end
         else
         liste_valeurs=paramout.(['mask' num2str(2) '_class']);
         end
+
 
         if paramout.(['mask' num2str(2) '_class'])> 0
         %bw1=roiobj.image(:,:,chabw{1},:)==paramout.(['mask' num2str(1) '_class']); 
@@ -302,8 +305,10 @@ end
     end
 
   if numel(chabw{1})
+
    val1=unique(bw1);
    moyennes1=NaN*ones(length(val1)-1,size(bw1,2),size(bw1,3));
+
    sommes1=moyennes1;
    moyenne_brillants1=moyennes1;
    somme_brillants1=moyennes1;
@@ -316,6 +321,8 @@ end
                   vpix=pixels_actifs1(:,k,i);
                    tmp=bw1(:,k,i);
                     pix=tmp==val1(j);
+
+             
 
                     if val1(j)==min(val1) % in this case, the mask corresponds to the background
                     moyenne_exterieur1(1,k,i)=mean(vpix(pix));
@@ -332,15 +339,21 @@ end
    difference1=moyennes1-moyenne_exterieur1;
   end
 
+   moib1= size(moyenne_brillants1)
 %aa=moyennes1(:,1,1)
 
  if numel(chabw{2})
    val2=unique(bw2);
-   moyennes2=NaN*ones(length(val2),size(bw2,2),size(bw2,3));
+   moyennes2=NaN*ones(length(val2)-1,size(bw2,2),size(bw2,3));
+
    sommes2=moyennes2;
+  
    moyenne_brillants2=moyennes2;
+     moib2= size(moyenne_brillants2)
+
    somme_brillants2=moyennes2;
-      moyenne_exterieur2=NaN*ones(1,size(bw1,2),size(bw1,3));
+   moyenne_exterieur2=NaN*ones(1,size(bw1,2),size(bw1,3));
+
 
    for i=1:size(bw2,3) % loop on time 
        for k=1:size(bw2,2) % loop on channels
@@ -350,50 +363,58 @@ end
                    tmp=bw2(:,k,i);
                     pix=tmp==val2(j);
 
+             
+
                      if val2(j)==min(val2) % in this case, the mask corresponds to the background
                      moyenne_exterieur2(1,k,i)=mean(vpix(pix));
                     else
                     moyennes2(cc,k,i)=mean(vpix(pix));
                     sommes2(cc,k,i)=sum(vpix(pix));
-                    moyenne_brillants2 =  meanTopNValues(vpix(pix), N);
-                    somme_brillants2 =  sumTopNValues(vpix(pix), N);
+                    
+                    moyenne_brillants2(cc,k,i) =  meanTopNValues(vpix(pix), N);
+                    somme_brillants1(cc,k,i) =  sumTopNValues(vpix(pix), N);
                     cc=cc+1;
                      end
             end
        end
+      
    end
    difference2=moyennes2-moyenne_exterieur2;
  end
 
- % do the intersection later
- if numel(chabw{1}) &&  numel(chabw{2})
-    
-        moyenne_intersection = zeros(1, size(im, 3), size(im, 4));
+    %moib2=size(moyenne_brillants2)
 
-%             somme_intersection = zeros(1, size(im, 3), size(im, 4));
-         if any(pixels_intersection(:))
+%  % do the intersection later
+%  if numel(chabw{1}) &&  numel(chabw{2})
 % 
-%             moyenne_intersection = sum(pixels_intersection, 1)./sum(uint16(bw1 & bw2), 1);
-%             somme_intersection = sum(pixels_intersection, 1);
-  %       else
+%         moyenne_intersection = zeros(1, size(im, 3), size(im, 4));
 % 
-%             moyenne_intersection = zeros(1, size(im, 3), size(im, 4));
-%             somme_intersection = zeros(1, size(im, 3), size(im, 4));
-         end
-% 
-         if any(pixels_intersection2(:))
-%             moyenne_intersection2 = mean(pixels_intersection2, 1)./sum(uint16(bw1 & ~bw2), 1);
-%             somme_intersection2 = sum(pixels_intersection2, 1);
- %        else
-%             moyenne_intersection2 = zeros(1, size(im, 3), size(im, 4));
-%             somme_intersection2 = zeros(1, size(im, 3), size(im, 4));
-         end
- end
+% %             somme_intersection = zeros(1, size(im, 3), size(im, 4));
+%          if any(pixels_intersection(:))
+% % 
+% %             moyenne_intersection = sum(pixels_intersection, 1)./sum(uint16(bw1 & bw2), 1);
+% %             somme_intersection = sum(pixels_intersection, 1);
+%   %       else
+% % 
+% %             moyenne_intersection = zeros(1, size(im, 3), size(im, 4));
+% %             somme_intersection = zeros(1, size(im, 3), size(im, 4));
+%          end
+% % 
+%          if any(pixels_intersection2(:))
+% %             moyenne_intersection2 = mean(pixels_intersection2, 1)./sum(uint16(bw1 & ~bw2), 1);
+% %             somme_intersection2 = sum(pixels_intersection2, 1);
+%  %        else
+% %             moyenne_intersection2 = zeros(1, size(im, 3), size(im, 4));
+% %             somme_intersection2 = zeros(1, size(im, 3), size(im, 4));
+%          end
+%  end
 
     name={};
     group={};
     defplot={};
     dat=[];
+
+  
     dat1=[];
     dat2=[];
     dat3=[];
@@ -415,11 +436,19 @@ end
             defplot=[defplot {false false false false false true}];
           %  end
 
+               tr=size(mean(moyennes1(1,cha,:),2))
+       ty= size(mean(sommes1(1,cha,:),2))
+       tt= size(mean(moyenne_brillants1(1,cha,:),2))
+       tx= size(mean(somme_brillants1(1,cha,:),2))
+
             dat1=[dat1 mean(moyennes1(1,cha,:),2) mean(sommes1(1,cha,:),2) mean(moyenne_brillants1(1,cha,:),2),...
                 mean(somme_brillants1(1,cha,:),2) mean(moyenne_exterieur1(1,cha,:),2) mean(difference1(1,cha,:),2)];
         end
 
         bwn=2;
+
+        chabw
+
         if numel(chabw{bwn})
 
             % for ch=1:numel(cha)
@@ -435,6 +464,14 @@ end
 
         %    dat2=[dat2 moyennes2(:,cha,:) sommes2(:,cha,:) moyenne_brillants2(:,cha,:),...
         %        somme_brillants2(:,cha,:) moyenne_exterieur2(:,cha,:) difference2(:,cha,:)];
+
+        size(dat2)
+       tr=size(mean(moyennes2(1,cha,:),2))
+       ty= size(mean(sommes2(1,cha,:),2))
+       tt= size(mean(moyenne_brillants2(1,cha,:),2))
+       tx= size(mean(somme_brillants2(1,cha,:),2))
+
+       aa=[dat2  mean(moyennes2(1,cha,:),2) mean(sommes2(1,cha,:),2) mean(moyenne_brillants2(1,cha,:),2) mean(somme_brillants2(1,cha,:),2) ]
 
              dat2=[dat2 mean(moyennes2(1,cha,:),2) mean(sommes2(1,cha,:),2) mean(moyenne_brillants2(1,cha,:),2),...
                 mean(somme_brillants2(1,cha,:),2) mean(moyenne_exterieur2(1,cha,:),2) mean(difference2(1,cha,:),2)];
