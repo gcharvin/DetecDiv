@@ -1,165 +1,204 @@
-function [listout]=listROIDataID(datatype)
-% list all possible channels in the workspace variable
+function listout = listROIDataID(datatype)
+% LISTROIDATAID  Liste tous les groupid des ROI selon un filtre datatype
+%   listout = listROIDataID()            % sans filtre
+%   listout = listROIDataID('myType')    % filtre sur 'myType'
+%
+% Retourne un cell array de char, sans espaces ni tirets.
 
-if nargin==0
-    datatype=[];
-end
-
-list=[];
-listproj= gatherVariablesFromWorkspace;
-
-for i=1:numel(listproj.Project)
-
-    proj=evalin('base',listproj.Project{i});
-
-    positions={proj.fov.id};
-    if numel(proj.processing.classification)
-        classifiers={proj.processing.classification.strid};
+    %% 1) Préparation de l’entrée
+    if nargin == 0
+        datatype = {};
     else
-        classifiers={};
+        if ischar(datatype)
+            datatype = { datatype };
+        elseif isstring(datatype)
+            datatype = cellstr(datatype);
+        elseif iscell(datatype)
+            datatype = cellfun(@ensureChar, datatype, 'UniformOutput', false);
+        else
+            error('datatype must be char, string or cell array of char');
+        end
     end
 
-    for j=1:numel(listproj.Projectpos{i})
-        tmp=listproj.Projectpos{i}{j};
+    %% 2) Conteneur final
+    list = {};   % on stocke des char
 
-        pix=find(matches(positions,tmp));
+    %% 3) Récupère la structure workspace
+    listproj = gatherVariablesFromWorkspace;
 
-        if numel(pix)==0
-            continue
+    %% 4) Parcours des projets
+    for iProj = 1:numel(listproj.Project)
+        proj = evalin('base', listproj.Project{iProj});
+
+        % --- strid des classifications du projet ---
+        if ~isempty(proj.processing.classification)
+            rawStr = { proj.processing.classification.strid };
+            classifiers = cellfun(@ensureChar, rawStr, 'UniformOutput', false);
+        else
+            classifiers = {};
         end
 
-        roiobj=proj.fov(pix).roi;
-        listcha={};
+        %% 4a) Parcours des FOVs (Projectpos)
+        for iPos = 1:numel(listproj.Projectpos{iProj})
+            tmp0      = listproj.Projectpos{iProj}{iPos};
+            tmp       = ensureChar(tmp0);
 
+            rawpos    = { proj.fov.id };
+            positions = cellfun(@ensureChar, rawpos, 'UniformOutput', false);
 
+            pix = find( ismember(positions, tmp) );
+            if isempty(pix), continue; end
 
-        for k=1:numel(roiobj)
-            roiobj(k).load('data');
+            roiobj  = proj.fov(pix).roi;
+            listcha = {};
 
-            if numel(roiobj(k).data)==0
-                continue
-            end
-            
-            if numel(roiobj(k).data(1).data)==0
-                continue;
-            end
-
-            
-            if numel(datatype)==0
-                listcha=[ listcha  {roiobj(k).data.groupid}];
-            else
-              cla=[roiobj(k).data.class];
-              if numel(find(matches(cla,datatype)))
-               
-                  pix=find(matches(cla,datatype));
-                  listcha=[ listcha  {roiobj(k).data(pix).groupid}];
-              end
-            end
-
-            
-
-            if numel(listcha)>20 && k>100 % stop sampling roi if enough is gathered
-                %    break;
-            end
-        end
-
-        list=[list unique(listcha) ];
-    end
-
-    for j=1:numel(listproj.Projectclassi)
-
-        pix=find(matches(classifiers,listproj.Projectclassi{j}));
-
-        if numel(pix)==0
-            continue
-        end
-
-        for jj=1:numel(pix)
-            roiobj=proj.processing.classification(pix(jj)).roi;
-            listcha={};
-
-            for k=1:numel(roiobj)
-
-                if numel(roiobj(k).data)==0
-                    continue
-                end
-
-                if numel(roiobj(k).data(1).data)==0
+            for k = 1:numel(roiobj)
+                roiobj(k).load('data');
+                if isempty(roiobj(k).data) || isempty(roiobj(k).data(1).data)
                     continue;
                 end
 
-               if numel(datatype)==0
-                listcha=[ listcha  {roiobj(k).data.groupid}];
-            else
-              cla=[roiobj(k).data.class];
-              if numel(find(matches(cla,datatype)))
-               
-                  pixe=find(matches(cla,datatype));
-                  listcha=[ listcha  {roiobj(k).data(pixe).groupid}];
-              end
-            end
+            tmp=roiobj(k).data.groupid;
 
-                if numel(listcha)>20 && k>100 % stop sampling roi if enough is gathered
-                    %    break;
+if ischar(tmp)
+    g=tmp;
+else
+                g = ensureChar( roiobj(k).data.groupid) ;%roiobj(k).data.groupid );
+end
+
+                if isempty(datatype)
+                    listcha{end+1} = g;
+                else
+                    rawcla = { roiobj(k).data.class };
+                    cla    = cellfun(@ensureChar, rawcla, 'UniformOutput', false);
+                    idx    = find( ismember(cla, datatype) );
+                    for ii = idx
+                        listcha{end+1} = ensureChar( roiobj(k).data(ii).groupid );
+                    end
                 end
 
+                if numel(listcha) > 20 && k > 100
+                    break;
+                end
             end
-            %  listcha
-            list=[list unique(listcha) ];
+
+            if ~isempty(listcha)
+                list = [ list, unique(listcha, 'stable') ];
+            end
         end
 
-
-    end
-end
-
-
-
-for i=1:numel(listproj.Classifier)
-    classifiers=evalin('base',listproj.Classifier{i});
-    % pix=find(matches(classifiers,listproj.Projectclassi{j}));
-    roiobj=classifiers.roi;
-    listcha={};
-
-    for k=1:numel(roiobj)
-        if numel(roiobj(k).data(1).data)==0
-            continue;
-        end
-
-         if numel(datatype)==0
-                listcha=[ listcha  {roiobj(k).data.groupid}];
+        %% 4b) Parcours des classifications dans proj.processing
+        for iC = 1:numel(listproj.Projectclassi)
+            rawCls0 = listproj.Projectclassi{iC};
+            % déplier si c'est une cellule de plusieurs
+            if iscell(rawCls0)
+                clsSet = cellfun(@ensureChar, rawCls0, 'UniformOutput', false);
             else
-              cla=[roiobj(k).data.class];
-              if numel(find(matches(cla,datatype)))
-               
-                  pix=find(matches(cla,datatype));
-                  listcha=[ listcha  {roiobj(k).data(pix).groupid}];
-              end
-         end
-   
+                clsSet = { ensureChar(rawCls0) };
+            end
 
-        if numel(listcha)>20 && k>100 % stop sampling roi if enough is gathered
-            %      break;
+            for ci = 1:numel(clsSet)
+                cls = clsSet{ci};
+                pix = find( ismember(classifiers, cls) );
+                if isempty(pix), continue; end
+
+                for jj = pix
+                    roiobj  = proj.processing.classification(jj).roi;
+                    listcha = {};
+
+                    for k = 1:numel(roiobj)
+                        if isempty(roiobj(k).data) || isempty(roiobj(k).data(1).data)
+                            continue;
+                        end
+
+                        g = ensureChar( roiobj(k).data.groupid );
+
+                        if isempty(datatype)
+                            listcha{end+1} = g;
+                        else
+                            rawcla = { roiobj(k).data.class };
+                            cla    = cellfun(@ensureChar, rawcla, 'UniformOutput', false);
+                            idx    = find( ismember(cla, datatype) );
+                            for ii = idx
+                                listcha{end+1} = ensureChar( roiobj(k).data(ii).groupid );
+                            end
+                        end
+
+                        if numel(listcha) > 20 && k > 100
+                            break;
+                        end
+                    end
+
+                    if ~isempty(listcha)
+                        list = [ list, unique(listcha, 'stable') ];
+                    end
+                end
+            end
         end
     end
 
-    list=[list unique(listcha) ];
+    %% 5) Parcours des variables Classifier globales
+    for iCl = 1:numel(listproj.Classifier)
+        clsVar  = evalin('base', listproj.Classifier{iCl});
+        roiobj  = clsVar.roi;
+        listcha = {};
+
+        for k = 1:numel(roiobj)
+            if isempty(roiobj(k).data) || isempty(roiobj(k).data(1).data)
+                continue;
+            end
+
+            g = ensureChar( roiobj(k).data.groupid );
+
+            if isempty(datatype)
+                listcha{end+1} = g;
+            else
+                rawcla = { roiobj(k).data.class };
+                cla    = cellfun(@ensureChar, rawcla, 'UniformOutput', false);
+                idx    = find( ismember(cla, datatype) );
+                for ii = idx
+                    listcha{end+1} = ensureChar( roiobj(k).data(ii).groupid );
+                end
+            end
+
+            if numel(listcha) > 20 && k > 100
+                break;
+            end
+        end
+
+        if ~isempty(listcha)
+            list = [ list, unique(listcha, 'stable') ];
+        end
+    end
+
+    %% 6) Unicité finale + filtrage espaces/tirets
+    if isempty(list)
+        listout = {};
+    else
+        list = unique(list, 'stable');
+        mask = cellfun(@(s) isempty(strfind(s,' ')) && isempty(strfind(s,'-')), list);
+        listout = list(mask);
+    end
 end
 
-list=unique(list);
+%% Petite fonction utilitaire interne
+function s = ensureChar(x)
 
-listout={};
-
-cc=1;
-for i=1:numel(list)
-    if sum(contains(list{i},' '))>0
-
-        continue;
+    if iscell(x)
+        if numel(x)==1
+            s = ensureChar(x{1});
+        else
+            % si c'est un cell de plusieurs, on concatène avec '_' (ou autre séparateur)
+            parts = cellfun(@ensureChar, x, 'UniformOutput', false);
+            s = strjoin(parts, '_');
+        end
+    elseif isnumeric(x) || islogical(x)
+        s = num2str(x);
+    elseif isstring(x)
+        s = char(x);
+    elseif ischar(x)
+        s = x;
+    else
+        error('Cannot convert type %s to char', class(x));
     end
-    if sum(contains(list{i},'-'))>0
-
-        continue;
-    end
-
-    listout{cc}=list{i};
-    cc=cc+1;
 end

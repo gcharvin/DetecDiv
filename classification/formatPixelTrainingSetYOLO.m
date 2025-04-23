@@ -34,7 +34,6 @@ for i = 1:numel(all_rois)
         pix = cell2mat(pix);
     end
 
-
     for j = 1:size(im, 4) % Loop through time frames
 
         masklist=false(size(im,1),size(im,2),0);
@@ -50,7 +49,7 @@ for i = 1:numel(all_rois)
                 mlab=max(lab(:));
                 if  mlab>=1 % image is annotated
 
-                    for kk=1:mlab
+                    for kk=1:mlab % here change value 
 
                         pixz = lab == kk;
 

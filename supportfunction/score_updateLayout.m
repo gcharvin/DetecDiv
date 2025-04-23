@@ -19,6 +19,10 @@ dsC = roitmp.display;
 selCh = find(dsC.selectedchannel);
 cmap=layoutOptions.colormap;
 
+ if size( dsC.displaylim,2)~=numel(roitmp.channelid)
+roitmp.computeDisplaylim;
+ end
+
 if ~isempty(selCh)
     % Récupérer le nom des channels (cell array de chaînes)
     channels = dsC.channel(selCh);
@@ -27,6 +31,9 @@ if ~isempty(selCh)
     levels = cell(1, numel(selCh));
     for i = 1:numel(selCh)
         idx = selCh(i);
+
+       
+
         lowVal  = round(65535 * dsC.displaylim(1, idx));
         highVal = round(65535 * dsC.displaylim(2, idx));
         levels{i} = [lowVal, highVal];

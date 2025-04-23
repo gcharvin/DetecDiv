@@ -43,10 +43,11 @@ for ch=1:numel(channel)
 
     imtmp2 = imtmp(:,:, currentCha, fr);
 
-
-
     if numel(currentCha)==1 && ~iscell(levels{ch})
         if ~isequal(levels{ch}, [-1 -1])
+            if levels{ch}(1)>=levels{ch}(2)
+                levels{ch}(1)=levels{ch}(2)-1;
+            end
             imtmp2 = imadjust(imtmp2, [levels{ch}(1)/65535, levels{ch}(2)/65535]);
         end
 

@@ -65,4 +65,14 @@ obj.channelid=newchannelid;
  obj.display.intensity=obj.display.intensity(remainscha,:);
  obj.display.rgb=obj.display.rgb(remainscha,:);
  obj.display.selectedchannel=obj.display.selectedchannel(remainscha);
+
+
+
+obj.display.indexed=obj.display.indexed(remainscha);
+
+obj.display.alpha=obj.display.alpha(remainscha);
+
+obj.display.contour=obj.display.contour(remainscha);
+obj.display.width=obj.display.width(remainscha);
+
  obj.log(['Removed channel from ROI'],'Processing');

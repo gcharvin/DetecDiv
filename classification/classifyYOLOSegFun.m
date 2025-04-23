@@ -22,35 +22,44 @@ for i=1:numel(varargin)
       end
 end
 
-
-% Trouver tous les dossiers dans classif.path qui suivent le motif 'runXX'
 runs_list = dir(fullfile(classif.path, 'run*'));
 
-% Vérifier si des dossiers correspondant au motif existent
-if isempty(runs_list)
-    error('Aucun dossier "runXX" trouvé dans : %s', classif.path);
+% On filtre seulement les dossiers (pas les fichiers)
+runs_list = runs_list([runs_list.isdir]);
+
+run_nums = [];
+valid_runs = [];
+
+for k = 1:length(runs_list)
+    name = runs_list(k).name;
+
+    if strcmp(name, 'run')
+        run_nums(end+1) = 0;  % cas spécial pour le premier run sans numéro
+        valid_runs(end+1) = k;
+    else
+        tokens = regexp(name, '^run(\d+)$', 'tokens');
+        if ~isempty(tokens)
+            run_nums(end+1) = str2double(tokens{1}{1});
+            valid_runs(end+1) = k;
+        end
+    end
 end
 
-% Extraire les valeurs XX des noms de dossiers en utilisant sscanf
-XX_values = arrayfun(@(d) sscanf(d.name, 'run%d'), runs_list, 'UniformOutput', false);
-
-% Supprimer les entrées vides (au cas où certains dossiers ne correspondent pas au format attendu)
-XX_values = [XX_values{:}];
-
-if isempty(XX_values)
-    error('Aucun dossier "runXX" avec un numéro valide trouvé dans : %s', classif.path);
+if isempty(run_nums)
+    error('Aucun dossier valide de type "run" ou "runXX" trouvé dans : %s', classif.path);
 end
 
-% Trouver le dossier avec la plus grande valeur de XX
-[~, latest_idx] = max(XX_values);
-latest_run_folder = fullfile(runs_list(XX_values(latest_idx)).folder, runs_list(XX_values(latest_idx)).name);
+% Trouver l'indice du run le plus récent (valeur la plus grande)
+[~, idx] = max(run_nums);
+latest_idx = valid_runs(idx);
 
-% Construire le chemin vers le modèle YOLO (dans /weights/best.pt)
+aa = runs_list(latest_idx);
+latest_run_folder = fullfile(aa.folder, aa.name);
+
+% Vérification facultative de la présence du modèle
 model_path = fullfile(latest_run_folder, 'weights', 'best.pt');
-
-% Vérifier si le fichier du modèle existe
-if ~exist(model_path, 'file')
-    error('Modèle YOLO introuvable dans : %s', model_path);
+if ~isfile(model_path)
+    warning('Modèle YOLO introuvable dans : %s', model_path);
 end
 
 % Afficher le chemin du modèle pour confirmation

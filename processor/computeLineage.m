@@ -48,7 +48,7 @@ param=paramout;
 dataout=[];
 mask_data=[];
 
-roiobj.load('results');
+roiobj.load('data');
 
 dataout=roiobj.data;
 if numel(dataout)==0
