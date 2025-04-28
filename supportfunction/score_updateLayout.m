@@ -88,6 +88,8 @@ dataidx={};
 for j = 1:numel(layoutOptions.dataSelectedIdx)
     idx = layoutOptions.dataSelectedIdx(j);
     data = roitmp.data(idx);
+
+    if numel( data.plotProperties)
     subDataIdx = find(cellfun(@(x) x(:, 1) == true, data.plotProperties(:, 1)));
     layoutOptions.subData(j) = {subDataIdx};
     ndata = ndata + numel(subDataIdx);
@@ -104,6 +106,13 @@ for j = 1:numel(layoutOptions.dataSelectedIdx)
             plotidxgroup{n} = groups{i};
             dataidx{n} = idx;
         end
+    end
+    else
+      plotidx={};
+      plotidxgroup={};
+      dataidx={};
+       n=0;
+
     end
 end
 
