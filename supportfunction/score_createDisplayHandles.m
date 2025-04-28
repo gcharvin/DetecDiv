@@ -103,7 +103,7 @@ set(fig, 'Color', background);
             figHeight = MasterRows * layoutOptions.tileH + (MasterRows+1)*margin + extraMargin;
 
             fig = figure('Name', 'Sequences Export (Vectorial)', 'Units', 'pixels', ...
-    'Position', [100, 100, figWidth, figHeight]);
+    'Position', [100, 100, figWidth, figHeight],'Tag','ScoreDisplayFigure');
 set(fig, 'Color', background);
 
             masterTL = tiledlayout(fig, MasterRows, MasterCols, 'TileSpacing', 'none', 'Padding', 'none');

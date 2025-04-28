@@ -156,8 +156,11 @@ function score_updateHistogram(app, mode)
     ylabel(app.UIDisplayAxes, 'Pixel Count');
     
     % Au lieu d'utiliser le titre pour afficher la médiane, on les place dans la légende
-    legend(app.UIDisplayAxes, channelNames, 'Interpreter', 'none');
-    
+    title(app.UIDisplayAxes, channelNames, 'Interpreter', 'none'); % no legend !
+    legend off;
+   % lgd=legend;
+  %  delete(lgd);
+
     % Tracer les lignes verticales pour les limites (Low/High)
    % Création ou mise à jour des lignes verticales pour les limites (Low/High)
 numLimits = 2 * length(displayedChannels);

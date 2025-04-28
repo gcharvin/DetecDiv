@@ -46,6 +46,11 @@ switch lower(displayHandles.mode)
         for i = 1:layoutOptions.Nrow
             for j = 1:layoutOptions.Ncol
                 roiIndex = (i-1)*layoutOptions.Ncol + j;
+
+                if roiIndex>numel(roiobj)
+                    continue
+                end
+
                 roiData = roiobj(roiIndex);
 
                 ROI_row_offset = (i-1) * displayHandles.ROI_rows;
@@ -268,7 +273,13 @@ newPath = fullfile(folder, [name '.pdf']);
         for i = 1:layoutOptions.Nrow
             for j = 1:layoutOptions.Ncol
                 roiIndex = (i-1)*layoutOptions.Ncol + j;
+
+                    if roiIndex>numel(roiobj)
+                    continue
+                    end
+
                 roiData = roiobj(roiIndex);
+
                 ROI_row_offset = (i-1) * (layoutOptions.Nbrick + layoutOptions.Ndataseries);
                 if layoutOptions.overlay
                     ROI_col_offset = (j-1) * layoutOptions.Nbrick;

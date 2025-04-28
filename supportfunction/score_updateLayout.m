@@ -13,9 +13,13 @@ end
 
 %% channel specific parameters
 
+
 dsC = roitmp.display;
 % HERE
 % On ne considère que les channels sélectionnés
+
+dsC.selectedchannel=dsC.selectedchannel(1:numel(dsC.channel)); % remove this line ? 
+
 selCh = find(dsC.selectedchannel);
 cmap=layoutOptions.colormap;
 

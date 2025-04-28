@@ -17,6 +17,7 @@ selectedROI = app.content.ROIList{selectedROIIndex};
 if isempty(selectedROI.image)
     selectedROI.load();
 end
+
 currentFrame=selectedROI.display.frame;
 numFrames = size(selectedROI.image, 4);
 if currentFrame < 1 || currentFrame > numFrames
@@ -75,7 +76,7 @@ app.displayHandles=displayHandles;
 
 % GUI panel update
 app.FrameLabel.Text = ['Frame : ' num2str(currentFrame)];
-app.ImageFigure.Name = ['Frame ' num2str(selectedROI.display.frame)];
+app.ImageFigure.Name = ['ROI:' selectedROI.id ' -  Frame: ' num2str(selectedROI.display.frame) '/' num2str(numFrames)];
 
 app.updateAssignValueControls(); % this updates the value of the data plotted in the data panel GUI
 
@@ -101,9 +102,16 @@ if app.ShapeButton.Value
 end
 end
 
-if strcmp(mode, 'slow')
-figure(app.displayHandles.Figure)
+%if strcmp(mode, 'slow')
+%figure(app.displayHandles.Figure);
+%end
+
+aa=groot().CurrentFigure;
+
+if aa.Tag~="ScoreDisplayFigure"
+    figure(app.displayHandles.Figure);
 end
+
 
 %profile viewer
 end
