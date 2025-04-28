@@ -44,8 +44,17 @@ obj.display.channel{end+1}=str;
 obj.display.intensity(end+1,:)=intensity;
 obj.display.rgb(end+1,:)=rgb;
 
+if ~isfield(obj.display,'indexed')
+        obj.display.indexed=zeros(1,numel(obj.display.channel)-1);
+        obj.display.alpha=obj.display.indexed;
+        obj.display.contour=obj.display.indexed;
+        obj.display.width=obj.display.indexed;
+end
+
 if sum(intensity)==0
     obj.display.indexed(end+1)=1;
+else
+  obj.display.indexed(end+1)=0;
 end
 obj.display.alpha(end+1)=1;
 obj.display.contour(end+1)=0;

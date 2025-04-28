@@ -91,7 +91,7 @@ src.WindowButtonUpFcn = @wbucb;
             case 2
                 brushRadius = 2;
             case 3
-                brushRadius = 6;
+                brushRadius = 4;
             otherwise
                 brushRadius = 10;
         end

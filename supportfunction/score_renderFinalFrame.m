@@ -35,6 +35,7 @@ scalingFactor=layoutOptions.scalingFactor;
 textColor=layoutOptions.textColor;
 channel=layoutOptions.channel;
 fontsize=layoutOptions.fontSize;
+outputname=layoutOptions.name;
 
 axarray=[];
 
@@ -134,10 +135,15 @@ switch lower(displayHandles.mode)
             end
         end
         % Export en PDF
-        outputPath = fullfile(pwd, 'output_sequence.pdf');
+        % on décompose en dossier, nom et extension
+[folder, name, ~] = fileparts(outputname);
+% on reconstruit le chemin avec la nouvelle extension
+newPath = fullfile(folder, [name '.pdf']);
+
+    %    outputPath = fullfile(pwd,newPath);
         drawnow;
-        exportgraphics(displayHandles.Figure, outputPath, 'ContentType', 'vector');
-        fprintf('Sequence saved as PDF: %s\n', outputPath);
+        exportgraphics(displayHandles.Figure, newPath, 'ContentType', 'vector');
+        fprintf('Sequence saved as PDF: %s\n', newPath);
 
     case 'display'
         % --- Mode DISPLAY ---
@@ -359,8 +365,12 @@ switch lower(displayHandles.mode)
         end
 
         % Vidéo setup avec VideoWriter.
-        outputMoviePath = fullfile(pwd, 'output_movie.mp4');
-        v = VideoWriter(outputMoviePath, 'MPEG-4');
+       % outputMoviePath = fullfile(pwd,outputname);
+       [folder, name, ~] = fileparts(outputname);
+% on reconstruit le chemin avec la nouvelle extension
+    newPath = fullfile(folder, [name '.mp4']);
+
+        v = VideoWriter(newPath, 'MPEG-4');
         v.FrameRate = 10;  % Ajustez le FrameRate selon vos besoins.
         open(v);
         fig = get(masterTL, 'Parent');
@@ -374,7 +384,7 @@ switch lower(displayHandles.mode)
         end
 
         close(v);
-        fprintf('Movie saved as MP4: %s\n', outputMoviePath);
+        fprintf('Movie saved as MP4: %s\n', newPath);
 end
 
 end

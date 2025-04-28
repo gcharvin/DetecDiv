@@ -63,7 +63,7 @@ function listout = listROIDataID(datatype)
 if ischar(tmp)
     g=tmp;
 else
-                g = ensureChar( roiobj(k).data.groupid) ;%roiobj(k).data.groupid );
+                g = ensureChar( [roiobj(k).data.groupid]) ;%roiobj(k).data.groupid );
 end
 
                 if isempty(datatype)
@@ -111,7 +111,7 @@ end
                             continue;
                         end
 
-                        g = ensureChar( roiobj(k).data.groupid );
+                        g = ensureChar( [roiobj(k).data.groupid] );
 
                         if isempty(datatype)
                             listcha{end+1} = g;
@@ -148,7 +148,7 @@ end
                 continue;
             end
 
-            g = ensureChar( roiobj(k).data.groupid );
+            g = ensureChar( [roiobj(k).data.groupid] );
 
             if isempty(datatype)
                 listcha{end+1} = g;

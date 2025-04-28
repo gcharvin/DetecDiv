@@ -31,7 +31,7 @@ alphamask = zeros(size(alphaOverlay));
 vContours = [];
 
 for ch=1:numel(channel)
-
+%fr
     if iscell(channel)
         currentCha = roitmp.findChannelID(channel{ch});
     else

@@ -339,7 +339,7 @@ end
    difference1=moyennes1-moyenne_exterieur1;
   end
 
-   moib1= size(moyenne_brillants1)
+   %moib1= size(moyenne_brillants1)
 %aa=moyennes1(:,1,1)
 
  if numel(chabw{2})
@@ -349,7 +349,7 @@ end
    sommes2=moyennes2;
   
    moyenne_brillants2=moyennes2;
-     moib2= size(moyenne_brillants2)
+ %    moib2= size(moyenne_brillants2)
 
    somme_brillants2=moyennes2;
    moyenne_exterieur2=NaN*ones(1,size(bw1,2),size(bw1,3));
@@ -436,10 +436,10 @@ end
             defplot=[defplot {false false false false false true}];
           %  end
 
-               tr=size(mean(moyennes1(1,cha,:),2))
-       ty= size(mean(sommes1(1,cha,:),2))
-       tt= size(mean(moyenne_brillants1(1,cha,:),2))
-       tx= size(mean(somme_brillants1(1,cha,:),2))
+       %         tr=size(mean(moyennes1(1,cha,:),2))
+       % ty= size(mean(sommes1(1,cha,:),2))
+       % tt= size(mean(moyenne_brillants1(1,cha,:),2))
+       % tx= size(mean(somme_brillants1(1,cha,:),2))
 
             dat1=[dat1 mean(moyennes1(1,cha,:),2) mean(sommes1(1,cha,:),2) mean(moyenne_brillants1(1,cha,:),2),...
                 mean(somme_brillants1(1,cha,:),2) mean(moyenne_exterieur1(1,cha,:),2) mean(difference1(1,cha,:),2)];
@@ -447,7 +447,7 @@ end
 
         bwn=2;
 
-        chabw
+      %  chabw
 
         if numel(chabw{bwn})
 
@@ -465,13 +465,13 @@ end
         %    dat2=[dat2 moyennes2(:,cha,:) sommes2(:,cha,:) moyenne_brillants2(:,cha,:),...
         %        somme_brillants2(:,cha,:) moyenne_exterieur2(:,cha,:) difference2(:,cha,:)];
 
-        size(dat2)
-       tr=size(mean(moyennes2(1,cha,:),2))
-       ty= size(mean(sommes2(1,cha,:),2))
-       tt= size(mean(moyenne_brillants2(1,cha,:),2))
-       tx= size(mean(somme_brillants2(1,cha,:),2))
+       %  size(dat2)
+       % tr=size(mean(moyennes2(1,cha,:),2))
+       % ty= size(mean(sommes2(1,cha,:),2))
+       % tt= size(mean(moyenne_brillants2(1,cha,:),2))
+       % tx= size(mean(somme_brillants2(1,cha,:),2))
 
-       aa=[dat2  mean(moyennes2(1,cha,:),2) mean(sommes2(1,cha,:),2) mean(moyenne_brillants2(1,cha,:),2) mean(somme_brillants2(1,cha,:),2) ]
+   %    aa=[dat2  mean(moyennes2(1,cha,:),2) mean(sommes2(1,cha,:),2) mean(moyenne_brillants2(1,cha,:),2) mean(somme_brillants2(1,cha,:),2) ]
 
              dat2=[dat2 mean(moyennes2(1,cha,:),2) mean(sommes2(1,cha,:),2) mean(moyenne_brillants2(1,cha,:),2),...
                 mean(somme_brillants2(1,cha,:),2) mean(moyenne_exterieur2(1,cha,:),2) mean(difference2(1,cha,:),2)];
