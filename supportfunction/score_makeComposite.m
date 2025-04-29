@@ -210,6 +210,7 @@ for j = 1:numel(channel)
 end
 
 % preprocess images
+
 imtmp = roitmp.image(:,:,:,frames);
 if ~isempty(crop)
     for c = 1:size(imtmp,3)

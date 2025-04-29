@@ -5,6 +5,19 @@ if numel(roitmp.image) == 0
     roitmp.load;
 end
 
+
+fmin=1;
+fmax=size(roitmp.image,4);
+ isValid = all(layoutOptions.frames >= fmin & layoutOptions.frames <= fmax);
+
+
+if ~isValid
+  layoutOut=[];
+  disp('Frames do not exist; Quitting!');
+  return;
+end
+
+
 % if isempty(param.frames)
 %     frames = size(roitmp.image,4);
 % else
@@ -17,6 +30,8 @@ end
 dsC = roitmp.display;
 % HERE
 % On ne considère que les channels sélectionnés
+
+
 
 dsC.selectedchannel=dsC.selectedchannel(1:numel(dsC.channel)); % remove this line ? 
 

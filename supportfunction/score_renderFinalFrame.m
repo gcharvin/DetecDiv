@@ -60,6 +60,8 @@ switch lower(displayHandles.mode)
                     for frame = 1:numel(layoutOptions.frames)
                         % curframe=layoutOptions.frames(frame);
 
+
+
                         [displayImage, vContours]=score_makeComposite(roiData,frame,layoutOptions);
 
 
@@ -80,6 +82,10 @@ switch lower(displayHandles.mode)
 
                         %   title(sprintf('ROI(%d) F:%d', roiIndex, frame));
                         graphicsHandles.imgHandles(tileIndex) = ax.Children;
+
+                        if frame==1 && layoutOptions.ROITitle
+                                title(ax,roiData.id,'Color',textColor,'Interpreter','none','FontSize', floor(sqrt(scalingFactor)*fontsize));
+                        end
                     end
                 else
                     % Chaque canal séparé : layout classique.

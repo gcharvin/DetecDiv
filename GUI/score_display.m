@@ -30,6 +30,12 @@ end
  opts = score_collectDisplayOptions(arg{:});
  %cmap=app.MoviecolormapEditField.Value;
  opts=score_updateLayout(opts,selectedROI);
+
+ if numel(opts)==0 % layout returned an error, should quit
+            disp('Display is aborted due to layout error!')
+            return;
+ end
+
  app.layoutOptions=opts;
 
  if opts.Nchannel==0

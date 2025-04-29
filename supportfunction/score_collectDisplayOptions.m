@@ -93,6 +93,7 @@ function param = score_collectDisplayOptions(varargin)
     defaultTrackWindow=20;
     defaultColormap='lines';
     defaultDataColormap='lines';
+    defaultLegend=true;
     
     p = inputParser;
     
@@ -138,6 +139,7 @@ function param = score_collectDisplayOptions(varargin)
     addParameter(p, 'trackWindow', defaultTrackWindow);
     addParameter(p, 'colormap', defaultColormap);
     addParameter(p, 'dataColormap', defaultDataColormap);
+    addParameter(p, 'legend', defaultLegend);
 
     parse(p, varargin{:});
     param = p.Results;

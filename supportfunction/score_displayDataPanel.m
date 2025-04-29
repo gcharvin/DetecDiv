@@ -5,6 +5,9 @@ function hLine=score_displayDataPanel(ax, groupIdx, layoutOptions, roiobj)
 %
 % dataIndices : indices des données à afficher (extrait de layout.plotidx{groupIdx})
 
+ax.XTickMode = 'manual'; % ne pas recalculer automatiquement les ticks
+ax.XTickLabelMode = 'manual'; % ne pas recalculer automatiquement les labels
+
 timeoffset = layoutOptions.timeOffset;
 framerate  = layoutOptions.framerate;
 fontsize=layoutOptions.fontSize;
@@ -122,12 +125,18 @@ if plottype=="Plot"
         'FontSize', floor(layoutOptions.fontSize), ...
         'Color', layoutOptions.textColor);
 
-
+ if layoutOptions.legend
     % Création et configuration de la légende
     lgd = legend(ax, str);
     set(lgd, 'Color', layoutOptions.background, ...        % Fond identique à celui de la figure
         'Interpreter', 'none', ...             % Pas d'interprétation en LaTeX
         'TextColor', layoutOptions.textColor);         % Texte de la légende en param.textColor
+
+ else
+    legend off;
+ end
+
+    
 
     % Configuration des axes : affichage uniquement des axes gauche et inférieur
     set(ax, 'XColor', layoutOptions.textColor, 'YColor', layoutOptions.textColor, 'Box', 'off');
@@ -191,10 +200,24 @@ if plottype=="Plot"
 
     % Seul le plot tout en bas (dernier panel) affiche les étiquettes des X ticks
 
-         xlims = get(ax, 'XLim');
+       amin=min(xdata);
+            if amin>0
+                amin=0.95*amin-0.01;
+            else
+                amin=1.05*amin-0.01;
+            end
+
+            amax=max(xdata);
+            if amax>0
+                amax=0.95*amax-0.01;
+            else
+                amax=1.05*amax+0.01;
+            end
+
+         xlims =  [amin amax]; % get(ax, 'XLim');
         % [xmin xmax]
         % Créer 5 ticks également espacés
-        ticks = niceTicks(xlims(1), xlims(2), 5);
+        ticks = niceTicks(xlims(1), xlims(2), 10);
         % Appliquer les ticks
         set(ax, 'XTick', ticks);
         
@@ -204,6 +227,7 @@ if plottype=="Plot"
         xticklabels = arrayfun(@(x) sprintf('%.0f', x), ticks, 'UniformOutput', false);
         set(ax, 'XTickLabel', xticklabels);
     end
+
 
     set(ax,'box','off');
 
@@ -237,16 +261,16 @@ else  % traj mode
     % Configuration des axes : affichage uniquement des axes gauche et inférieur
     set(ax, 'XColor', layoutOptions.textColor, 'YColor', layoutOptions.background, 'Box', 'off');
     set(ax, 'Color', layoutOptions.background,'FontSize',floor(sqrt(scalingFactor)*layoutOptions.fontSize));
-
+  
 
     % Affichage du titre en ylabel (au lieu d'un titre en haut)
     ylabel(ax, layoutOptions.plotidxgroup{groupIdx}, ...
         'FontSize', floor(layoutOptions.fontSize), ...
-        'FontName', 'Arial', 'Color', layoutOptions.textColor, 'Interpreter', 'none');
+        'FontName', 'Arial', 'Color', layoutOptions.textColor, 'Interpreter', 'none','FontSize',floor(sqrt(scalingFactor)*layoutOptions.fontSize));
 
     % Ajout d'un label pour l'axe X
     xlabel(ax, 'Time(min)', 'FontName', 'Arial', ...
-        'FontSize', floor(layoutOptions.fontSize), ...
+        'FontSize', floor(sqrt(scalingFactor)*layoutOptions.fontSize), ...
         'Color', layoutOptions.textColor);
 
     %  xlim(ax, [0.5, imwidth + 0.5]);
@@ -305,7 +329,9 @@ else  % traj mode
     panelLeft = axPos(1) + axPos(3) - W-0.01;      % bord droit de l'axe - largeur du panel
     panelBottom = axPos(2) + axPos(4) - H  ;    % bord haut de l'axe - hauteur du panel
 
+     if layoutOptions.legend
    axLegend = addHorizontalColorbarLegend(ax.Parent.Parent, ydata, color, [panelLeft, panelBottom, W, H], layoutOptions,str);
+     end
 
     hold off;
 
