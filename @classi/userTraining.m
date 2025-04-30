@@ -69,6 +69,7 @@ else % image based classification and regression
 %classif.roi(classitype).view(classif.roi(classitype).display.frame,classif); 
 
 roiObj=classif.roi(classitype);
+roiObj.parent=classif;
 
 figures=findall(0,'Type','figure');
 appFigure=findobj(figures,'Name','ScoreApp');

@@ -52,6 +52,11 @@ if numel(roiobj.image)==0
     roiobj.load;
 end
 
+if numel(roiobj.image)==0
+disp('Could not find ROI ; Quitting...');
+return;
+end
+
 pix=roiobj.findChannelID(channel);
 
     if iscell(pix)
@@ -62,6 +67,7 @@ pix=roiobj.findChannelID(channel);
 if numel(frames)==0
     frames=1:size(roiobj.image,4);
 end
+
 
 im=roiobj.image(:,:,pix,frames);
 

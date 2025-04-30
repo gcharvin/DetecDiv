@@ -57,6 +57,11 @@ for i=1:numel(rois)
         cltmp(rois(i)).load; % load image sequence
     end
 
+    if numel(cltmp(rois(i)).image)==0
+        disp(['ROI# ' num2str(i) ' / ' num2str(numel(rois))  ' ID: ' cltmp(rois(i)).id ' is not available; skipping...']);
+        continue;
+    end
+
     % normalize intensity levels
 
     pix=cltmp(rois(i)).findChannelID(channel);
@@ -67,6 +72,8 @@ for i=1:numel(rois)
 
 
     %  pix=find(cltmp(i).channelid==classif.channel(1)); % find channel
+  
+
     im=cltmp(rois(i)).image(:,:,pix,:);
 
     data=cltmp(rois(i)).data;
