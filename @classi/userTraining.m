@@ -69,6 +69,11 @@ else % image based classification and regression
 %classif.roi(classitype).view(classif.roi(classitype).display.frame,classif); 
 
 roiObj=classif.roi(classitype);
+
+if numel(roiObj.image)==0
+    roiObj.load;
+end
+
 roiObj.parent=classif;
 
 figures=findall(0,'Type','figure');
