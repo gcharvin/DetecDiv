@@ -901,8 +901,21 @@ score.N=sum([score.classes(:).N]);
                 otherwise % image classification
                     
                     dataserie=obj.data;
+                    
                     pixdata=arrayfun(@(x) strcmp(x.groupid,classistr),dataserie);
-                    dataserie=dataserie(pixdata); 
+                    dataserie=dataserie(pixdata);
+
+                    if isempty(dataserie)
+                        obj.load('data');
+                        dataserie=obj.data;
+                        pixdata=arrayfun(@(x) strcmp(x.groupid,classistr),dataserie);
+                        dataserie=dataserie(pixdata);
+                         if isempty(dataserie)
+                        disp(['No matching dataseries found for groupid: ' classistr ' in ROI ' obj.id]);
+                        continue;
+                         end
+                    end
+
                     id_training=dataserie.getData('id_training');
                     id_results=dataserie.getData('id');
 
