@@ -82,6 +82,8 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
             else
                 fra=frames;
             end
+        else
+                fra=-1;
         end
 
         

@@ -307,7 +307,10 @@ end
   if numel(chabw{1})
 
    val1=unique(bw1);
-   moyennes1=NaN*ones(length(val1)-1,size(bw1,2),size(bw1,3));
+   
+   matsize=max(1,length(val1)-1);
+
+   moyennes1=NaN*ones(matsize,size(bw1,2),size(bw1,3));
 
    sommes1=moyennes1;
    moyenne_brillants1=moyennes1;
@@ -344,7 +347,12 @@ end
 
  if numel(chabw{2})
    val2=unique(bw2);
-   moyennes2=NaN*ones(length(val2)-1,size(bw2,2),size(bw2,3));
+
+      matsize=max(1,length(val2)-1);
+
+   moyennes2=NaN*ones(matsize,size(bw2,2),size(bw2,3));
+
+  % moyennes2=NaN*ones(length(val2)-1,size(bw2,2),size(bw2,3));
 
    sommes2=moyennes2;
   
@@ -436,6 +444,7 @@ end
             defplot=[defplot {false false false false false true}];
           %  end
 
+       %    size(moyennes1)
        %         tr=size(mean(moyennes1(1,cha,:),2))
        % ty= size(mean(sommes1(1,cha,:),2))
        % tt= size(mean(moyenne_brillants1(1,cha,:),2))

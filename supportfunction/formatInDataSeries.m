@@ -35,6 +35,7 @@ function formatData(roiobj,class,type)
     
     for i=1:numel(p)
 
+        disp(['Converting training set' p{j} 'in dataseries...']);
         roiobj.data(cc)=dataseries();
         roiobj.data(cc).class=class;
         roiobj.data(cc).groupid=p{i};
@@ -58,6 +59,7 @@ function formatData(roiobj,class,type)
 
         tmp=train.(p{i}).(q{k}); tmp=tmp';
 
+      
 
         switch q{k}
             case 'id'
@@ -100,7 +102,7 @@ function formatData(roiobj,class,type)
     for i=1:numel(p)
 
         % identify if data exist already
-
+    disp(['Converting data set ' p{i} ' in dataseries...']);
         pixdata=find(arrayfun(@(x) strcmp(x.groupid,p{i}),roiobj.data));
 
 %          if numel(pixdata)
@@ -138,7 +140,9 @@ function formatData(roiobj,class,type)
             continue
         end
 
-        tmp=train.(p{i}).(q{k}); tmp=tmp';
+        disp(['Found dataset : ' q{k}])
+        tmp=train.(p{i}).(q{k});
+        tmp=tmp';
 
         switch q{k}
             case 'id'
@@ -164,8 +168,11 @@ function formatData(roiobj,class,type)
                 end
 
             otherwise
+
                   sz=size(roiobj.data(cc).data,1);
+
                   if numel(tmp)==sz
+       
                   roiobj.data(cc).addData(tmp,q{k});
                   else
                   %roiobj.data(cc).userData.(q{k})=tmp;

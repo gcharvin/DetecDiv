@@ -55,7 +55,7 @@ if nargin==2 % basic parameter initialization
         'LSTM_initial_learning_rate', 0.0001,...
         'LSTM_max_epochs', 50,...
         'LSTM_sequence_length', 40,...
-        'LSTM_learn_rate_drop_factor', 0.5,... 
+        'LSTM_learn_rate_drop_factor', 0.9,... 
         'execution_environment',{{'auto','parallel','cpu','gpu','multi-gpu','auto'}},...
         'transfer_learning',{{'ImageNet','ImageNet'}},...
         'tip',{tip});
@@ -136,7 +136,6 @@ layerName = "pool5-7x7_s1";  % layer id where the network will be connected
     otherwise
 layerName = "avg_pool"; 
 end
-
 
 tempFile = [path '/' name '_image_classifier_activations.mat'];
 
@@ -468,19 +467,19 @@ end
 
 function videoResized = centerCrop(video,inputSize)
 
-sz = size(video);
-
-if sz(1) < sz(2)
-    % Video is landscape
-    idx = floor((sz(2) - sz(1))/2);
-    video(:,1:(idx-1),:,:) = [];
-    video(:,(sz(1)+1):end,:,:) = [];
-    
-elseif sz(2) < sz(1)
-    % Video is portrait
-    idx = floor((sz(1) - sz(2))/2);
-    video(1:(idx-1),:,:,:) = [];
-    video((sz(2)+1):end,:,:,:) = [];
-end
+% sz = size(video);
+% 
+% if sz(1) < sz(2)
+%     % Video is landscape
+%     idx = floor((sz(2) - sz(1))/2);
+%     video(:,1:(idx-1),:,:) = [];
+%     video(:,(sz(1)+1):end,:,:) = [];
+% 
+% elseif sz(2) < sz(1)
+%     % Video is portrait
+%     idx = floor((sz(1) - sz(2))/2);
+%     video(1:(idx-1),:,:,:) = [];
+%     video((sz(2)+1):end,:,:,:) = [];
+% end
 
 videoResized = imresize(video,inputSize(1:2));

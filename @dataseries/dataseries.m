@@ -271,6 +271,57 @@ end
         function out=dataSize(obj)
             out=size(obj.data);
         end
+        
+       function removeData(obj, str)
+    % Supprime une ou plusieurs colonnes de données de l'objet dataseries
+    %
+    % Usage :
+    %   obj.removeData('var1')          % supprime une seule variable
+    %   obj.removeData({'var1','var2'}) % supprime plusieurs variables
+    %   obj.removeData()                % supprime toutes les données
+
+    if nargin < 2
+        % Supprimer toutes les données
+        obj.data = table();
+        obj.plotProperties = {};
+        obj.plotGroup = {[] [] [] [] [] {}};
+        return;
+    end
+
+    % Si l'argument est une chaîne ou un string, convertir en cell
+    if ischar(str) || isstring(str)
+        str = cellstr(str);
+    end
+
+    if ~iscell(str)
+        error('Input must be a string or cell array of strings.');
+    end
+
+    for i = 1:numel(str)
+        varName = str{i};
+        if ismember(varName, obj.data.Properties.VariableNames)
+            % Supprimer la colonne dans la table
+            obj.data = removevars(obj.data, varName);
+
+            % Supprimer la ligne correspondante dans plotProperties
+            idx = find(strcmp(varName, obj.plotProperties(:,2)));
+            if ~isempty(idx)
+                obj.plotProperties(idx,:) = [];
+            end
+        else
+            warning('Variable "%s" not found in dataseries object.', varName);
+        end
+    end
+
+    % Mettre à jour les groupes disponibles
+    if ~isempty(obj.plotProperties)
+        obj.plotGroup{6} = unique(obj.plotProperties(:,6));
+    else
+        obj.plotGroup{6} = {};
+    end
+end
+
+
 
 
     end

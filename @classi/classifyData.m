@@ -137,6 +137,11 @@ else
 end
 
 
+if numel(channel)<numel(roiobj) % in case user forces to classify everything
+channel(numel(channel)+1:numel(roiobj))={channel{end}};
+end
+
+
 for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel computing
 
     if roiwithgt==1 % checks if goclassif truth data are avaiable for this ROI, otherwise skips the ROI
@@ -223,6 +228,7 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
         else
         fra=1:size(roiobj(i).image,4);
         end
+
 
         if numel(channel)==0
             cha=classiobj.channelName;

@@ -140,30 +140,47 @@ disp('Starting video classification...');
 
 end
 
+% Liste de toutes les classes du LSTM
 labels = classifier.Layers(end).Classes;
-if size(prob,1) == numel(labels) % adjust matrix depending on matlab version
-    prob=prob';
-end
 
+% Post-traitement des probas LSTM
+if size(prob,1) == numel(labels)
+    prob = prob';
+end
 [~, idx] = max(prob,[],2);
 label = labels(idx);
 
+
+% Si on utilise un CNN séparé pour classification frame-by-frame
 if numel(classifierCNN)
-    labelCNN =  classifierCNN.Layers(end).Classes;
-    % CNN classes are not in the right order !!!
-    [~, idxperm] = ismember(labels, labelCNN);
-   
-    labelCNN=labelCNN(idxperm');
+    labelCNN_all = classifierCNN.Layers(end).Classes;
 
-    if size(probCNN,1) == numel(labelCNN) % adjust matrix depending on matlab version
-        probCNN=probCNN';
+    % Réordonner les colonnes de probCNN pour qu'elles correspondent à `labels`
+    [tf, idxperm] = ismember(labels, labelCNN_all);
+    
+    missing = labels(~tf);
+    if ~isempty(missing)
+        warning('Classes absentes dans le CNN :');
+        disp(missing);
     end
-     
-    probCNN=probCNN(:,idxperm);
 
-    [~, idxCNN] = max(probCNN,[],2);
-    labelCNN = labelCNN(idxCNN);
+    % Supprimer les colonnes/classes manquantes si nécessaire
+    valid = idxperm > 0;
+    reducedLabels = labels(valid);
+    reducedIdx = idxperm(valid);
+
+    % Appliquer le réarrangement une seule fois
+    labelCNN_reordered = labelCNN_all(reducedIdx);
+    probCNN_reordered = probCNN(:, reducedIdx);
+
+    if size(probCNN_reordered, 1) == numel(labelCNN_reordered)
+        probCNN_reordered = probCNN_reordered';
+    end
+
+    [~, idxCNN] = max(probCNN_reordered,[],2);
+    labelCNN = labelCNN_reordered(idxCNN);
 end
+
 
 %if size(probCNN,1) == numel(labels) % adjust matrix depending on matlab version
 %  probCNN=probCNN';
@@ -210,14 +227,15 @@ pixdata=find(arrayfun(@(x) strcmp(x.groupid,classif.strid),roiobj.data));
      cc=numel(roiobj.data)+1;
      end
 
-      data(cc)=dataseries;
+    data(cc)=dataseries;
     data(cc).class="classification";
     data(cc).groupid=classif.strid;
     data(cc).parentid=roiobj.id; 
    % data(cc).plotGroup={[] [] [] [] [] {'id' 'prob' 'labels'}};
  end
 
-data(cc).plotGroup={[] [] [] [] [] {'id' 'prob' 'labels'}};
+data(cc).plotGroup={[] [] [] [] [] {'id' 'prob' 'labels'}}; % for display
+data(cc).groupProperties={'id' 'Plot' 'auto' 'auto'; 'labels' 'Plot' 'auto' 'auto'; 'prob' 'Plot' 'auto', 'auto'}; % for display
    
 datatmp=data(cc);
 
@@ -228,6 +246,7 @@ if classif.output==0
 else
     n=1;
 end
+
 
     datatmp.addData(zeros(n,1),'id');
     for i=1:numel(classif.classes)
@@ -279,8 +298,6 @@ datatmp.data.id(frames)=idx; % here check id
 % end
 
 if numel(classifierCNN)
-
-  
     if classif.output==0
     n=size(roiobj.image,4);
     else
@@ -325,6 +342,12 @@ datatmp.data.idCNN(frames)=idxCNN;
 %         pix=results.(classif.strid).labelsCNN==classif.classes{i};
 %         results.(classif.strid).idCNN(pix)=i;
 %     end
+else
+    for i=1:numel(classif.classes)
+datatmp.removeData(['probCNN_' classif.classes{i}]);
+    end
+    datatmp.removeData('labelsCNN'); 
+    datatmp.removeData('idCNN'); 
 end
 
 t={};
@@ -363,20 +386,20 @@ image=roiobj.image;
 
 function videoResized = centerCrop(video,inputSize)
 
-sz = size(video);
-
-if sz(1) < sz(2)
-    % Video is landscape
-    idx = floor((sz(2) - sz(1))/2);
-    video(:,1:(idx-1),:,:) = [];
-    video(:,(sz(1)+1):end,:,:) = [];
-    
-elseif sz(2) < sz(1)
-    % Video is portrait
-    idx = floor((sz(1) - sz(2))/2);
-    video(1:(idx-1),:,:,:) = [];
-    video((sz(2)+1):end,:,:,:) = [];
-end
+% sz = size(video);
+% 
+% if sz(1) < sz(2)
+%     % Video is landscape
+%     idx = floor((sz(2) - sz(1))/2);
+%     video(:,1:(idx-1),:,:) = [];
+%     video(:,(sz(1)+1):end,:,:) = [];
+% 
+% elseif sz(2) < sz(1)
+%     % Video is portrait
+%     idx = floor((sz(1) - sz(2))/2);
+%     video(1:(idx-1),:,:,:) = [];
+%     video((sz(2)+1):end,:,:,:) = [];
+% end
 
 videoResized = imresize(video,inputSize(1:2));
 
