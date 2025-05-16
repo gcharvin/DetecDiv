@@ -271,56 +271,67 @@ end
         function out=dataSize(obj)
             out=size(obj.data);
         end
-        
-       function removeData(obj, str)
-    % Supprime une ou plusieurs colonnes de données de l'objet dataseries
-    %
-    % Usage :
-    %   obj.removeData('var1')          % supprime une seule variable
-    %   obj.removeData({'var1','var2'}) % supprime plusieurs variables
-    %   obj.removeData()                % supprime toutes les données
 
-    if nargin < 2
-        % Supprimer toutes les données
-        obj.data = table();
-        obj.plotProperties = {};
-        obj.plotGroup = {[] [] [] [] [] {}};
-        return;
-    end
+   function removeData(obj, str, keep)
+        % Supprime ou conserve des colonnes de l'objet dataseries
+        %
+        % Usage :
+        %   obj.removeData('var1')             % supprime var1
+        %   obj.removeData({'v1','v2'})        % supprime v1 et v2
+        %   obj.removeData()                   % supprime toutes les données
+        %   obj.removeData('partie', true)     % conserve toutes les variables dont le nom contient 'partie'
+        %
+        if nargin < 2
+            % pas d'argument str : tout supprimer
+            obj.data = table();
+            obj.plotProperties = {};
+            obj.plotGroup = {[] [] [] [] [] {}};
+            return;
+        end
 
-    % Si l'argument est une chaîne ou un string, convertir en cell
-    if ischar(str) || isstring(str)
-        str = cellstr(str);
-    end
+        % Normaliser str en cell array de chaînes
+        if ischar(str) || isstring(str)
+            str = cellstr(str);
+        end
+        if ~iscell(str)
+            error('removeData: str doit être une string ou un cell array de strings');
+        end
 
-    if ~iscell(str)
-        error('Input must be a string or cell array of strings.');
-    end
+        allVars = obj.data.Properties.VariableNames;
 
-    for i = 1:numel(str)
-        varName = str{i};
-        if ismember(varName, obj.data.Properties.VariableNames)
-            % Supprimer la colonne dans la table
-            obj.data = removevars(obj.data, varName);
-
-            % Supprimer la ligne correspondante dans plotProperties
-            idx = find(strcmp(varName, obj.plotProperties(:,2)));
-            if ~isempty(idx)
-                obj.plotProperties(idx,:) = [];
+        if nargin >= 3 & keep
+            % Mode "keep" : ne garder que ceux qui contiennent l'une des str
+            maskKeep = false(size(allVars));
+            for i = 1:numel(str)
+                maskKeep = maskKeep | contains(allVars, str{i});
             end
+            varsToRemove = allVars(~maskKeep);
         else
-            warning('Variable "%s" not found in dataseries object.', varName);
+            % Mode "remove" (par défaut) : supprimer ceux qui contiennent str
+            varsToRemove = {};
+            for i = 1:numel(str)
+                matched = allVars(contains(allVars, str{i}));
+                varsToRemove = [varsToRemove, matched]; %#ok<AGROW>
+            end
+            varsToRemove = unique(varsToRemove);
+        end
+
+        % Supprimer les variables dans la table
+        if ~isempty(varsToRemove)
+            obj.data = removevars(obj.data, varsToRemove);
+
+            % Mettre à jour plotProperties : retirer les lignes correspondantes
+            toDel = ismember(obj.plotProperties(:,2), varsToRemove);
+            obj.plotProperties(toDel, :) = [];
+        end
+
+        % Mettre à jour la liste des groupes disponibles
+        if ~isempty(obj.plotProperties)
+            obj.plotGroup{6} = unique(obj.plotProperties(:,6));
+        else
+            obj.plotGroup{6} = {};
         end
     end
-
-    % Mettre à jour les groupes disponibles
-    if ~isempty(obj.plotProperties)
-        obj.plotGroup{6} = unique(obj.plotProperties(:,6));
-    else
-        obj.plotGroup{6} = {};
-    end
-end
-
 
 
 

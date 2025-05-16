@@ -67,12 +67,17 @@ obj.channelid=newchannelid;
  obj.display.selectedchannel=obj.display.selectedchannel(remainscha);
 
 
-
+if isfield(obj.display,'indexed')
 obj.display.indexed=obj.display.indexed(remainscha);
-
+end
+if isfield(obj.display,'alpha')
 obj.display.alpha=obj.display.alpha(remainscha);
-
+end
+if isfield(obj.display,'contour')
 obj.display.contour=obj.display.contour(remainscha);
+end
+if isfield(obj.display,'width')
 obj.display.width=obj.display.width(remainscha);
+end
 
  obj.log(['Removed channel from ROI'],'Processing');

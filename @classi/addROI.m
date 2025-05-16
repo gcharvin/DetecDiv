@@ -27,20 +27,23 @@ for i=1:numel(varargin)
     end
 end
 
+
 if isa(obj,'fov')
-    objtype='@fov';
+    objtype="fov";
     disp('You want to import ROIs from an existing @fov for training');
-end
-if isa(obj,'classi')
-    objtype='@classi';
+elseif isa(obj,'classi')
+    objtype="classi";
     disp('You want to import ROIs from an existing @classi for training');
     %disp('Training datasets (ground truth) may be preserved when transferring ROIs');
-
+else
+    disp('The object to transfer from is incompatible ! quitting');
+    return;
 end
 
 if numel(rois)==0
     rois=1:numel(obj.roi);
 end
+
 
 % if nargin==2
 %     disp(['This ' objtype ' has ' num2str(numel(obj.roi)) ' ROIs available']);
@@ -84,7 +87,13 @@ for i=1:length(rois)
 
     if numel(roitocopy.image)==0
         roitocopy.load;
+
+         if numel(roitocopy.image)==0
+                disp('ROI cannot be loaded or does not exist; Quitting !')
+                continue
+         end
     end
+
 
     % checking ROIs are already existing in this classi, based on the name
     for j=1:numel(classif.roi)
@@ -181,11 +190,11 @@ for i=1:length(rois)
         trainingSetTransfer=false; % flag to determine whether dataseries for training set has to be generated
         data=roitocopy.data;
 
-
-
-        pixdata=find(arrayfun(@(x) strcmp(x.groupid, obj.strid),data));
-        if numel(pixdata)
-            trainingSetTransfer=true;
+        if objtype=="classi" && ~isempty(convert) % users resquest conversion from classi
+            pixtransferdata=find(arrayfun(@(x) strcmp(x.groupid, obj.strid),data)); % index of data to be stransferred
+            if numel(pixtransferdata) %
+                trainingSetTransfer=true;
+            end
         end
 
 
@@ -272,26 +281,38 @@ for i=1:length(rois)
         %     end
         % end
 
-         if ~trainingSetTransfer
-        disp('No training set available, creating empty dataseries');
-        classif.roi(cc+1).train.(classif.strid)=[];
-        classif.roi(cc+1).train.(classif.strid).id= zeros(1,size(classif.roi(cc+1).image,4));
-        if classif.output==1 % sequence-to-one classification
-            classif.roi(cc+1).train.(classif.strid).id= 0;
+        if ~trainingSetTransfer % create new dataseries with empty arrays
+            disp('No training set available, creating empty dataseries');
+
+            
+            classif.roi(cc+1).train=[];
+            classif.roi(cc+1).results=[];
+            classif.roi(cc+1).train.(classif.strid)=[];
+            classif.roi(cc+1).train.(classif.strid).id= zeros(1,size(classif.roi(cc+1).image,4));
+            if classif.output==1 % sequence-to-one classification
+                classif.roi(cc+1).train.(classif.strid).id= 0;
+            end
+            classif.roi(cc+1).train.(classif.strid).classes=classif.classes;
+ 
+            formatInDataSeries(classif.roi(cc+1)); % converts train object to datseries;
+            
+  
         end
-        classif.roi(cc+1).train.(classif.strid).classes=classif.classes;
-        formatInDataSeries(classif.roi(cc+1)); % converts train object to datseries;
-         end
 
     end
 
-   
 
-    % transfer existing dataseries
+
+    % transfer existing dataseries to imported ROI
 
     data=roitocopy.data;
 
-    disp('Transferring training set data from copied ROI');
+    disp('Transfer all dataseries from copied ROI');
+    if  numel(classif.roi(cc+1).data)>=1 & numel(classif.roi(cc+1).data(end).groupid)~=0
+    cd=numel(classif.roi(cc+1).data)+1;
+    else
+    cd=1;
+    end
 
     for ij=1:numel(data)
 
@@ -301,106 +322,121 @@ for i=1:length(rois)
 
         %  ij=pixdata(1);
         % copy all datasets
-        classif.roi(cc+1).data(ij)=dataseries;
-        classif.roi(cc+1).data(ij)=propValues(classif.roi(cc+1).data(ij),data(ij));
-        %classif.roi(cc+1).data(ij).groupid=classif.strid;
-        classif.roi(cc+1).data(ij).data = data(ij).data;
-%tmp=data(ij).data
-   %   aa=classif.roi(cc+1).data(ij)
-    end
 
+        if numel(data(ij).groupid) % dataseries is not empty
 
-    % classif.roi(cc+1).train= zeros(1,size(classif.roi(cc+1).image,4));
+            classif.roi(cc+1).data(cd)=dataseries;
+            classif.roi(cc+1).data(cd)=propValues(classif.roi(cc+1).data(cd),data(ij));
+            %classif.roi(cc+1).data(ij).groupid=classif.strid;
+            classif.roi(cc+1).data(cd).data = data(ij).data;
 
-if strcmp(classif.category{1},'Pedigree')
-    classif.roi(cc+1).train.(classif.strid)=[];
-    classif.roi(cc+1).train.(classif.strid).id= zeros(1,size(classif.roi(cc+1).image,4));
-    classif.roi(cc+1).train.(classif.strid).classes=classif.classes;
-    classif.roi(cc+1).train.(classif.strid).mother= [];%zeros(1,size(classif.roi(cc+1).image,4));
-    % classif.roi(cc+1).train= zeros(1,size(classif.roi(cc+1).image,4));
+            %     if strcmp(class(obj),'classi') & strcmp(data(ij).groupid,obj.strid) % change data groupid to match the name of the  new classifier
+            %         classif.roi(cc+1).data(ij).groupid=classif.strid;
+            %     end
 
-    %   im=classif.roi(cc+1).image;
-    %size(im)
-    %   ch=classif.roi(cc+1).findChannelID(classif.channelName{2});
-    %   matrix=im(:,:,ch,:);
-
-    %   classif.roi(cc+1).addChannel(matrix,classif.strid,[1 1 1],[0 0 0]);
-end
-
-
-if strcmp(classif.category{1},'Pixel') | strcmp(classif.category{1},'Object') |  strcmp(classif.category{1},'Delta')  |  strcmp(classif.category{1},'Pedigree')
-    im=classif.roi(cc+1).image;
-    pix=findChannelID(classif.roi(cc+1), classif.strid);
-
-    if numel(pix)>0 %channel is already present in roi , so skip channel creation
-
-    else
-        % add channel is necessary
-        matrix=uint16(zeros(size(im,1),size(im,2),1,size(im,4)));
-        for k=1:numel(classif.classes)
-            classif.roi(cc+1).addChannel(matrix,[classif.strid '_' classif.classes{k}],[1 1 1],[0 0 0]);
-            classif.roi(cc+1).display.selectedchannel(end)=1;
+            if trainingSetTransfer % transfer dataset but modify data groupid
+                if ij==pixtransferdata 
+                     disp('Found and transferred training set data from copied ROI');
+                    classif.roi(cc+1).data(cd).groupid=classif.strid;
+                     classif.roi(cc+1).data(cd).removeData('train','keep') % only keep training fields and remove previous classif results
+                end
+            end
+            cd=cd+1;
         end
     end
 
 
+        % classif.roi(cc+1).train= zeros(1,size(classif.roi(cc+1).image,4));
 
+        if strcmp(classif.category{1},'Pedigree')
+            classif.roi(cc+1).train.(classif.strid)=[];
+            classif.roi(cc+1).train.(classif.strid).id= zeros(1,size(classif.roi(cc+1).image,4));
+            classif.roi(cc+1).train.(classif.strid).classes=classif.classes;
+            classif.roi(cc+1).train.(classif.strid).mother= [];%zeros(1,size(classif.roi(cc+1).image,4));
+            % classif.roi(cc+1).train= zeros(1,size(classif.roi(cc+1).image,4));
 
+            %   im=classif.roi(cc+1).image;
+            %size(im)
+            %   ch=classif.roi(cc+1).findChannelID(classif.channelName{2});
+            %   matrix=im(:,:,ch,:);
 
-    if isa(obj,'classi')
-        %   if  strcmp(obj.category{1},'Pixel') % phenocopy the groundtruth
-
-        %   aa=obj.strid
-
-
-
-        pixid= roitocopy.findChannelID(obj.strid);
-        pixidnew=classif.roi(cc+1).findChannelID(classif.strid);
-
-
-        if numel(pixid) && numel(pixidnew) % copy the groundthruth to new classi
-            classif.roi(cc+1).image(:,:,pixidnew,:)= roitocopy.image(:,:,pixid,:);
+            %   classif.roi(cc+1).addChannel(matrix,classif.strid,[1 1 1],[0 0 0]);
         end
 
 
+        if strcmp(classif.category{1},'Pixel') | strcmp(classif.category{1},'Object') |  strcmp(classif.category{1},'Delta')  |  strcmp(classif.category{1},'Pedigree')
+            im=classif.roi(cc+1).image;
+            pix=findChannelID(classif.roi(cc+1), classif.strid);
+
+            if numel(pix)>0 %channel is already present in roi , so skip channel creation
+
+            else
+                % add channel is necessary
+                matrix=uint16(zeros(size(im,1),size(im,2),1,size(im,4)));
+                for k=1:numel(classif.classes)
+                    classif.roi(cc+1).addChannel(matrix,[classif.strid '_' classif.classes{k}],[1 1 1],[0 0 0]);
+                    classif.roi(cc+1).display.selectedchannel(end)=1;
+                end
+            end
 
 
-        % pixid=      classif.roi(cc+1).findChannelID(obj.strid);
-        % pixidnew=classif.roi(cc+1).findChannelID(classif.strid);
+
+
+
+            if isa(obj,'classi')
+                %   if  strcmp(obj.category{1},'Pixel') % phenocopy the groundtruth
+
+                %   aa=obj.strid
+
+
+
+                pixid= roitocopy.findChannelID(obj.strid);
+                pixidnew=classif.roi(cc+1).findChannelID(classif.strid);
+
+
+                if numel(pixid) && numel(pixidnew) % copy the groundthruth to new classi
+                    classif.roi(cc+1).image(:,:,pixidnew,:)= roitocopy.image(:,:,pixid,:);
+                end
+
+
+
+
+                % pixid=      classif.roi(cc+1).findChannelID(obj.strid);
+                % pixidnew=classif.roi(cc+1).findChannelID(classif.strid);
+                %
+                %
+                % if numel(pixid) && numel(pixidnew) % copy the groundthruth to new classi
+                %     classif.roi(cc+1).image(:,:,pixidnew,:)= classif.roi(cc+1).image(:,:,pixid,:);
+                % end
+
+                %classif.roi(i).display.channel{pixid}=classif.strid;
+            end
+            %  end
+            %pixelchannel=size(obj.image,3);
+        end
+
+
+        %     if strcmp(classif.category{1},'Object') |  strcmp(classif.category{1},'Delta')  |  strcmp(classif.category{1},'Pedigree')
+        %         im=classif.roi(cc+1).image;
+        %         %size(im)
         %
+        %         matrix=uint16(im(:,:,classif.channel(2),:)>0);
         %
-        % if numel(pixid) && numel(pixidnew) % copy the groundthruth to new classi
-        %     classif.roi(cc+1).image(:,:,pixidnew,:)= classif.roi(cc+1).image(:,:,pixid,:);
-        % end
+        %         classif.roi(cc+1).addChannel(matrix,classif.strid,[1 1 1],[0 0 0]);
+        %
+        %         %     if isa(obj,'classi')
+        %         %         pixid=classif.roi(i).findChannelID(obj.strid);
+        %         %         classif.roi(i).display.channel{pixid}=classif.strid;
+        %         %     end
+        %         %pixelchannel=size(obj.image,3);
+        %     end
 
-        %classif.roi(i).display.channel{pixid}=classif.strid;
+
+        classif.roi(cc+1).save;
+        classif.roi(cc+1).clear;
+
+        cc=cc+1;
     end
-    %  end
-    %pixelchannel=size(obj.image,3);
-end
-
-
-%     if strcmp(classif.category{1},'Object') |  strcmp(classif.category{1},'Delta')  |  strcmp(classif.category{1},'Pedigree')
-%         im=classif.roi(cc+1).image;
-%         %size(im)
-%
-%         matrix=uint16(im(:,:,classif.channel(2),:)>0);
-%
-%         classif.roi(cc+1).addChannel(matrix,classif.strid,[1 1 1],[0 0 0]);
-%
-%         %     if isa(obj,'classi')
-%         %         pixid=classif.roi(i).findChannelID(obj.strid);
-%         %         classif.roi(i).display.channel{pixid}=classif.strid;
-%         %     end
-%         %pixelchannel=size(obj.image,3);
-%     end
-
-
-classif.roi(cc+1).save;
-classif.roi(cc+1).clear;
-
-cc=cc+1;
-end
 
 
 function newObj=propValues(newObj,orgObj)
