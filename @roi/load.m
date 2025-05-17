@@ -1,85 +1,71 @@
-function load(obj,option)
-% load data associated with a given trap
+function loadROI(obj, option)
+% LOADROI Robustly load image and data for a given ROI handle object.
+%   loadROI(OBJ) loads both image and data files associated with the ROI.
+%   loadROI(OBJ, 'data') loads only the data file.
 
-% first load images
-%%%%
-% to do here : load data for ROIs
-%%%%
-pathr=obj.path;
-resonly=0;
+    % Validate inputs
+    narginchk(1,2);
+    validOptions = {'data'};
+    if nargin == 2 && ~ismember(option, validOptions)
+        error('loadROI:InvalidOption', 'Unknown option "%s".', option);
+    end
+    resonly = (nargin == 2 && strcmp(option, 'data'));
 
-if nargin==2
-    if strcmp(option,'data') % load only the data
-        resonly=1;
-        disp(['Loading data only for ROI ' obj.id]);
+    % Ensure path is set
+    if isempty(obj.path)
+        error('loadROI:NoPath', 'ROI path is empty. Extract ROI before loading.');
+    end
+
+    % Construct file paths
+    imFile   = fullfile(obj.path, sprintf('im_%s.mat', obj.id));
+    dataFile = fullfile(obj.path, sprintf('data_%s.mat', obj.id));
+
+    disp(['Loading ROI : ' obj.id]);
+
+    % Load image file if needed
+    if ~resonly
+        if isfile(imFile)
+            try
+                S = load(imFile, 'roiobj');
+                % Copy roiobj properties into handle object, excluding path and id
+                if isfield(S, 'roiobj')
+                    setProperties(obj, S.roiobj);
+                end
+                % Assign image if present
+                if isfield(S, 'im')
+                    obj.image = S.im;
+                end
+                obj.log(sprintf('Loaded ROI image from %s.', imFile), 'Loading');
+            catch ME
+                disp(['Could not load ROI image for: ' obj.id ' (' ME.message ')']);
+            end
+        end
+    end
+    disp(['ROI: ' obj.id ' successfully loaded']);
+
+    % Load data file
+    if isfile(dataFile)
+        try
+            disp(['Loading ROI Data : ' obj.id]);
+            S = load(dataFile, 'data');
+            obj.data = S.data;
+            obj.log(sprintf('Loaded ROI data from %s.', dataFile), 'Loading');
+            disp(['Data from ROI: ' obj.id ' successfully loaded']);
+        catch ME
+            disp(['Could not load data for ROI: ' obj.id ' (' ME.message ')']);
+        end
+    else
+        disp(['No ROI Data : ' obj.id ' available']);
     end
 end
 
-if numel(obj.path)==0
-    disp('ROI is created but has not been extracted from raw image! Quitting....');
-    return;
-end
-
- t=replace(obj.path,'\','/');
- 
-if resonly==0
-if exist([obj.path '/im_' obj.id '.mat']) 
-    
-    %eval(['load  ' obj.path '/im_' num2str(obj.id) '.mat']);
-    
-    load([obj.path '/im_' obj.id '.mat']);
-    roiobj.path=pathr;
-    %obj.image=im;
-    
-    if exist('im','var') % compatibility with previous roi management: this is ised to load ROI matrix if only the matrix is stored
-        obj.image=im;
-    end
-    
-    if exist('roiobj','var')
-        obj=propValues(obj,roiobj);
-        %obj=roiobj;
-        %'ok'
-    end
-    disp(['ROI loaded from ' t '/im_' obj.id '.mat ' obj.id]);
-else
-    fprintf(['Error : file not found:   ' t  '/im_' obj.id '.mat failed for ROI ' obj.id '!!!\n']);
-end
-end
-
-if exist([obj.path '/data_' obj.id '.mat'])
-    %disp(['Loading ' t '/data_' obj.id '.mat result struct for ROI ' obj.id]);
-    eval(['load  ' '''' obj.path '/data_' obj.id '.mat' '''']);  
-    try
-    obj.data=data;
-    disp(['ROI data loaded from ' t '/data_' obj.id '.mat ' obj.id]);
-    catch
-    fprintf(['Error: file not found  ' t  '/data_' obj.id '.mat failed for ROI ' obj.id '\n']);
-    end
-else
-    fprintf(['Error: file not found  ' t  '/data_' obj.id '.mat failed for ROI ' obj.id '\n']);
-end
-
-
-obj.log(['Loading ROI image from ' obj.path],'Loading')
-
-function newObj=propValues(newObj,orgObj)
-pl = properties(orgObj);
-for k = 1:length(pl)
-    if isprop(newObj,pl{k})
-        newObj.(pl{k}) = orgObj.(pl{k});
+function setProperties(obj, srcObj)
+% SETPROPERTIES Copy matching properties from srcObj to obj (handle), excluding critical ones
+    allProps = intersect(properties(obj), properties(srcObj));
+    % Exclude properties that should not be overwritten
+    exclude = {'path','id'};
+    props = setdiff(allProps, exclude);
+    for k = 1:numel(props)
+        obj.(props{k}) = srcObj.(props{k});
     end
 end
-
-% load  analyses matrices
-
-% if exist([obj.path '/an_' num2str(obj.id) '.mat'])
-%  fprintf(['Loading  ' obj.path '/im_' num2str(obj.id) '.mat analysis file for trap ' obj.id '\n']);
-% eval(['load  ' obj.path '/an_' num2str(obj.id) '.mat']);
-%  obj.classi=classi;
-%  obj.train=train;
-%  obj.traintrack=traintrack;
-%  obj.track=track;
-% else
-%  fprintf(['!!! Loading  ' obj.path '/an_' num2str(obj.id) '.mat failed for trap !!!' obj.id '\n']);
-%
-% end
