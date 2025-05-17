@@ -295,8 +295,10 @@ emptyid=find(matches(classes,'empty'));
 %% post process
 if (proba~=-1) & (param.postProcessing==1)
     probaPP=proba;
-    probaPP(smid,:)=medfilt1(probaPP(smid,:),4);
-    probaPP(lbid,:)=medfilt1(probaPP(lbid,:),4);
+    probaPP(smid,:) = movmedian(probaPP(smid,:), 4, 2, 'omitnan');
+    probaPP(lbid,:) = movmedian(probaPP(lbid,:), 4, 2, 'omitnan');
+    % probaPP(smid,:)=medfilt1(probaPP(smid,:),4);
+    % probaPP(lbid,:)=medfilt1(probaPP(lbid,:),4);
 
     [~,idPP]=max(probaPP,[],1);
     id=idPP;
