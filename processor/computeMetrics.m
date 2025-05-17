@@ -99,6 +99,7 @@ for i=1:2
         end
 
         BW_3D=roiobj.image(:,:,cha,:);
+        roi.data = roi.data(isvalid(roi.data));
         pixdata=find(arrayfun(@(x) strcmp(x.groupid, ['mask_quantification_' paramout.(['mask' num2str(i) '_name'])]),roiobj.data)) ;
         % find if object exists already
 
