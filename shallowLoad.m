@@ -32,6 +32,7 @@ if ~isfile(filename)
     return;
 end
 file=namestr;
+path=pathstr
 load(filename);
 
 
