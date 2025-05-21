@@ -91,6 +91,8 @@ end
 for i=1:2
     if  paramout.(['mask' num2str(i) '_stat']) & ~strcmp(paramout.(['mask' num2str(i) '_name']),'N/A') % if detailed stat should be computed
 
+    % aa=paramout.(['mask' num2str(i) '_name'])
+
         cha=roiobj.findChannelID(paramout.(['mask' num2str(i) '_name']));
 
         if numel(cha)==0
@@ -99,7 +101,7 @@ for i=1:2
         end
 
         BW_3D=roiobj.image(:,:,cha,:);
-        roi.data = roi.data(isvalid(roi.data));
+        roiobj.data = roiobj.data(isvalid(roiobj.data));
         pixdata=find(arrayfun(@(x) strcmp(x.groupid, ['mask_quantification_' paramout.(['mask' num2str(i) '_name'])]),roiobj.data)) ;
         % find if object exists already
 

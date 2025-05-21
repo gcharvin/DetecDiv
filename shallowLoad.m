@@ -13,11 +13,27 @@ if nargin == 0
     end
 end
 
-[path, file, ext] = fileparts(filename);
-abspath = what(path);
-abspath = abspath.path;
-filename = fullfile(abspath, [file ext]);
+% [path, file, ext] = fileparts(filename);
+% abspath = what(path);
+% abspath = abspath.path;
+% filename = fullfile(abspath, [file ext]);
+% load(filename);
+
+[pathstr, namestr, ext] = fileparts(filename);
+if isempty(ext)
+    ext = '.mat';
+end
+filename = fullfile(pathstr, [namestr ext]);
+
+if ~isfile(filename)
+    msg = ['Fichier introuvable : ' filename];
+    disp(msg);
+    shallowObj = [];
+    return;
+end
+file=namestr;
 load(filename);
+
 
 if ~exist('shallowObj', 'var')
     disp('this is not a shallow object ! Quitting....');

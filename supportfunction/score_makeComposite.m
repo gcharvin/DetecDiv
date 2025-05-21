@@ -12,7 +12,10 @@ weights=param.weights;
 paintChannel=param.paintChannel;
 defaultClass=param.defaultClass;
 
+%figure, imshow(roitmp.image(:,:,13,1),[]);
 imtmp=preProcessROI(roitmp,param);
+
+%figure, imshow(imtmp(:,:,13,1),[]);
 
 % here make a distinction : if image has 3 D , then don't display it as
 % overlay , otherwise  do it !
@@ -39,9 +42,13 @@ for ch=1:numel(channel)
         currentCha = pix;
     end
 
+  %  currentCha
+
     totim =roitmp.image(:,:, currentCha, :); % to get the whole range of map values
 
     imtmp2 = imtmp(:,:, currentCha, fr);
+   % class(imtmp2),max(imtmp2(:))
+   % figure, imshow(imtmp2,[]);
 
     if numel(currentCha)==1 && ~iscell(levels{ch})
         if ~isequal(levels{ch}, [-1 -1])
@@ -70,6 +77,8 @@ for ch=1:numel(channel)
 
     elseif numel(currentCha)==1 && iscell(levels{ch})
         imtmp2 = imadjust(imtmp2, [0 1]);
+
+     %   max(imtmp2(:))
         indices = str2num(levels{ch}{1});
         % Traitement des canaux indexés
         listofindexedcha = find(roitmp.display.indexed);
@@ -79,6 +88,7 @@ for ch=1:numel(channel)
         if  (paintChannel ~= currentIndx) && paintChannel~=0 % in paint mode, discard other channels
             continue
         end
+
 
         if isempty(indices) || (numel(indices)==1 && indices==-1)
             if defaultClass && (paintChannel ~= currentIndx)
