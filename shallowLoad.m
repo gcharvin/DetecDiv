@@ -32,7 +32,7 @@ if ~isfile(filename)
     return;
 end
 file=namestr;
-path=pathstr
+path=pathstr;
 load(filename);
 
 
@@ -53,23 +53,38 @@ else
     shallowObj.setPath([path '\'], file);
 end
 
-% Vérification si projet déjà chargé
+normalizePathClean = @(p) regexprep(lower(strrep(p, '\', '/')), '/+$', '');
+
+expectedPath = normalizePathClean(path);
+expectedFile = lower(file);
+
 varlist = evalin('base', 'who');
 for i = 1:numel(varlist)
-    if strcmp(varlist{i}, 'ans')
+    varName = varlist{i};
+    if strcmp(varName, 'ans')
         continue;
     end
-    tmp = evalin('base', varlist{i});
-    if isa(tmp, 'shallow')
-        if strcmp(path, tmp.io.path(1:end-1)) && strcmp(file, tmp.io.file)
-            msg = ['Project is already in the workspace under the var name: ' varlist{i} '; Quitting...'];
+
+    try
+        tmp = evalin('base', varName);
+    catch
+        continue;
+    end
+
+
+    if isa(tmp, 'shallow') && isprop(tmp, 'io') && isfield(tmp.io, 'path') && isfield(tmp.io, 'file')
+
+        tmpPath = normalizePathClean(tmp.io.path);
+        tmpFile = lower(tmp.io.file);
+
+        if strcmp(tmpPath, expectedPath) && strcmp(tmpFile, expectedFile)
+            msg = ['Project is already in the workspace under the var name: ' varName '; Quitting...'];
             disp(msg);
-            shallowObj = [];
+            shallowObj = tmp;
             return;
         end
     end
 end
-
 msg = ['Successfully loaded shallow project ' fullfile(path, [file '.mat']) '!'];
 disp(msg);
 disp('');
