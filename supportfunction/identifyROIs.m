@@ -256,6 +256,10 @@ function [positions scores]=findTraps(img,pattern,thr)
 % position provides the list of boundaries for the traps
 %img = rgb2gray(img);
 
+disp(size(img))
+disp(size(pattern))
+
+
 c = normxcorr2(pattern,img);
 
 %figure, imshow(img)

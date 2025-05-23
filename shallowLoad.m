@@ -71,7 +71,6 @@ for i = 1:numel(varlist)
         continue;
     end
 
-
     if isa(tmp, 'shallow') && isprop(tmp, 'io') && isfield(tmp.io, 'path') && isfield(tmp.io, 'file')
 
         tmpPath = normalizePathClean(tmp.io.path);

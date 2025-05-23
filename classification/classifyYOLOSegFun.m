@@ -65,6 +65,7 @@ end
 % Afficher le chemin du modèle pour confirmation
 disp(['Modèle YOLO trouvé : ', model_path]);
 
+
 % Input images to classify
 if numel(frames)==0
 frames = 1:size(roiobj.image, 4); % Default to all frames if not specified
@@ -105,6 +106,8 @@ pix=roiobj.findChannelID(channel);
           if numel(pixresults2)==0 % channels do not exist, hence create them
             pixresults2=size(roiobj.image,3)+1;
           end
+
+
 
 image=roiobj.image;
 param=[];
@@ -535,8 +538,12 @@ for frame_idx = 1:num_frames
         layer(mask & layer==0) = instVal;     % ne pas écraser valeur existante
         tmpout(:,:,class_id,frame_idx) = layer;
     end
+%    figure, imshow(layer, []);
 end
 % ====== FIN BOUCLE FRAMES ==================================================
+
+maxval = max(tmpout(:));
+disp(['🔎 Valeur max dans tmpout = ', num2str(maxval)]);
 
 % — copier vers les canaux de l’image finale —
 image(:,:,pixresults,frames) = tmpout;
@@ -700,15 +707,15 @@ image(:,:,pixresults,frames) = tmpout;
 
 % Vérification de la matrice
 disp('Matrice tmpout construite avec succès.');
-disp(size(tmpout));  % Affiche les dimensions : [H, W, num_classes, num_frames]
+%disp(size(tmpout));  % Affiche les dimensions : [H, W, num_classes, num_frames]
 
 
     % Ajouter les résultats dans les canaux appropriés
-  image = roiobj.image;
+ % image = roiobj.image;
   
 disp('Traitement des résultats terminé.');
 
-image(:,:,pixresults,frames)=tmpout;
+%image(:,:,pixresults,frames)=tmpout;
 %image(:,:,pixresults2,frames)=tmpout2;
 
 fprintf('\n');

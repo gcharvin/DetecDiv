@@ -349,6 +349,26 @@ switch classif.outputType
         
     otherwise %  outputs segmentation or segmentation after postprocessing
 
+        if strcmp(classif.description{1},'YOLO instance segmentation')
+
+             pixresults=[];
+        for i=1:numel(classif.classes)
+            pixresultstmp=findChannelID(roiobj,['results_' classif.strid '_' classif.classes{i}]); % gather all channels associated with proba
+            
+            if numel(pixresultstmp)==0 % channel does not exist, hence create them
+                matrix=uint16(zeros(size(gfp,1),size(gfp,2),1,size(gfp,4)));
+                rgb=[1 1 1];
+                intensity=[0 0 0]; % in yolo the output is indexed image x number of classes
+                
+                roiobj.addChannel(matrix,['results_' classif.strid '_' classif.classes{i}],rgb,intensity);
+                pixresults=[pixresults size(roiobj.image,3)];
+            else
+                roiobj.image(:,:,pixresultstmp,:)=uint16(zeros(size(gfp,1),size(gfp,2),1,size(gfp,4)));
+                pixresults=[pixresults pixresultstmp];
+            end
+        end
+
+        else
         pixresults=findChannelID(roiobj,['results_' classif.strid]);
         
         if numel(pixresults)==0 % channels do not exist, hence create them
@@ -366,6 +386,7 @@ switch classif.outputType
         else
             roiobj.image(:,:,pixresults,:)=uint16(zeros(size(gfp,1),size(gfp,2),1,size(gfp,4)));
 
+        end
         end
 end
 
