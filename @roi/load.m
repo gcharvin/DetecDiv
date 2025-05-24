@@ -31,18 +31,20 @@ function loadROI(obj, option)
                 if isfield(S, 'roiobj')
                     setProperties(obj, S.roiobj);
                 end
+               
                 % Assign image if present
                 if isfield(S, 'im')
                     obj.image = S.im;
+   
                 end
                 obj.log(sprintf('Loaded ROI image from %s.', imFile), 'Loading');
+                 disp(['ROI: ' obj.id ' successfully loaded']);
             catch ME
                 disp(['Could not load ROI image for: ' obj.id ' (' ME.message ')']);
             end
         end
     end
-    disp(['ROI: ' obj.id ' successfully loaded']);
-
+   
     % Load data file
     if isfile(dataFile)
         try
@@ -50,6 +52,7 @@ function loadROI(obj, option)
             S = load(dataFile, 'data');
             obj.data = S.data;
             obj.log(sprintf('Loaded ROI data from %s.', dataFile), 'Loading');
+            obj.fixLabelsInPlotFields;
             disp(['Data from ROI: ' obj.id ' successfully loaded']);
         catch ME
             disp(['Could not load data for ROI: ' obj.id ' (' ME.message ')']);

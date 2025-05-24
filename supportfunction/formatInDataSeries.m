@@ -69,7 +69,7 @@ function formatData(roiobj,class,type)
 
                   categoryArray = categorical(tmp, 1:numel(roiobj.data(cc).userData.classes), roiobj.data(cc).userData.classes);
                  
-                  roiobj.data(cc).addData(categoryArray,'labels_training','groups','label','plot',true);
+                  roiobj.data(cc).addData(categoryArray,'labels_training','groups','labels','plot',true);
               %  end
 
             otherwise

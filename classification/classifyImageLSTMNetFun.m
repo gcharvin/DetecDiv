@@ -231,11 +231,11 @@ pixdata=find(arrayfun(@(x) strcmp(x.groupid,classif.strid),roiobj.data));
     data(cc).class="classification";
     data(cc).groupid=classif.strid;
     data(cc).parentid=roiobj.id; 
-   % data(cc).plotGroup={[] [] [] [] [] {'id' 'prob' 'labels'}};
+   % data(cc).plotGroup={[] [] [] [] [] {'id' 'prob' 'label'}};
  end
 
 data(cc).plotGroup={[] [] [] [] [] {'id' 'prob' 'labels'}}; % for display
-data(cc).groupProperties={'id' 'Plot' 'auto' 'auto'; 'labels' 'Plot' 'auto' 'auto'; 'prob' 'Plot' 'auto', 'auto'}; % for display
+data(cc).groupProperties={'id' 'Plot' 'auto' 'auto'; 'label' 'Plot' 'auto' 'auto'; 'prob' 'Plot' 'auto', 'auto'}; % for display
    
 datatmp=data(cc);
 
@@ -370,7 +370,7 @@ varnames=datatmp.data.Properties.VariableNames;
                    t{i,6}= 'prob';
                    end
                    if numel(find(contains(varnames{i},'labels')))
-                   t{i,6}= 'labels';
+                   t{i,6}= 'label';
                    end
    end
 
