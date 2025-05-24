@@ -182,12 +182,15 @@ rotation=trainingParam.CNN_rotation_augmentation;
 imageAugmenter = imageDataAugmenter( ...
     'RandXReflection',true, ...
     'RandYReflection',true, ...
+    'RandScale',[0.95 1.05], ...
     'RandXTranslation',pixelRange, ...
     'RandYTranslation',pixelRange, ...
      'RandRotation',rotation);% , ...
 
+imdsTrain = transform(imdsTrain, @augmenterGrayscale);
 augimdsTrain = augmentedImageDatastore(inputSize(1:2),imdsTrain, ...
     'DataAugmentation',imageAugmenter);
+
 
 % here add an outsize 
 miniBatchSize = trainingParam.CNN_mini_batch_size; %8
@@ -267,5 +270,16 @@ end
 for c = 1:size(connections,1)
     lgraph = connectLayers(lgraph,connections.Source{c},connections.Destination{c});
 end
+
+function dataOut = augmenterGrayscale(data)
+    img = im2double(data.input);
+    contrastFactor = 0.8 + 0.4 * rand();  % entre 0.8 et 1.2
+    brightnessOffset = 0.3 * (rand() - 0.5);  % entre -0.15 et 0.15
+    img = img * contrastFactor + brightnessOffset;
+    img = im2uint8(mat2gray(img));  % remise à l'échelle et conversion
+    dataOut = data;
+    dataOut.input = img;
+
+
 
 
