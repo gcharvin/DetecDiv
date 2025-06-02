@@ -4,11 +4,20 @@ msg=[];
 
 if nargin==0
    [file,path] = uigetfile('*classification*.mat','Select a classification object (i.e. a XXXXX_classification.mat file)',pwd);
+   
    if isequal(file,0)
    disp('User selected Cancel')
    classiObj=[];
    return;
    else
+
+
+    if ~contains(file, 'classification')
+    warndlg('The selected file does not appear to be a classification file.', 'Warning');
+    classiObj = [];
+    return;
+    end
+
    disp(['User selected ', fullfile(path, file)]); 
    filename=fullfile(path, file);
    end

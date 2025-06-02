@@ -264,7 +264,15 @@ end
 %% =========================================DIVTIMES=================================================
 function [divTimes]=computeDivtime(id,proba,classes,param,frames)
 
-id=id(frames);
+
+frames = frames(frames <= numel(id));  % On ne garde que les indices valides
+if isempty(frames)
+    warning('Aucun indice valide dans "frames" : dépasse la longueur de la série (%d)', numel(id));
+    divTimes = struct('frameBirth',NaN,'frameEnd',NaN,'endType','Invalid','framediv',NaN,'duration',[],'lineage',[],'ndiv',0);
+    return;
+end
+id = id(frames);
+
 
 divTimes=[];
 

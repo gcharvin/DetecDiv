@@ -12,8 +12,10 @@ function loadROI(obj, option)
     resonly = (nargin == 2 && strcmp(option, 'data'));
 
     % Ensure path is set
+   % Ensure path is set
     if isempty(obj.path)
-        error('loadROI:NoPath', 'ROI path is empty. Extract ROI before loading.');
+        warning('loadROI:NoPath', 'ROI path is empty. Extract ROI before loading.');
+        return;
     end
 
     % Construct file paths

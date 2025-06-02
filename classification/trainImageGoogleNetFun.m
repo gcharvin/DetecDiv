@@ -103,6 +103,13 @@ else
   lgraph = layerGraph(net);
 end
 
+% Ajustement du taux de dropout
+% dropoutLayerName = 'pool5-drop_7x7_s1';
+% newDropout = dropoutLayer(0.6, 'Name', dropoutLayerName);
+% lgraph = replaceLayer(lgraph, dropoutLayerName, newDropout);
+
+
+
 [learnableLayer,classLayer] = findLayersToReplace(lgraph);
 sz=size(learnableLayer.Weights);
 numClasses = numel(categories(imdsTrain.Labels));

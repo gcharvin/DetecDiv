@@ -251,16 +251,27 @@ if ~test
 end
 end
 
-function [positions scores]=findTraps(img,pattern,thr)
+function [positions, scores]=findTraps(img,pattern,thr)
 
 % position provides the list of boundaries for the traps
 %img = rgb2gray(img);
 
-disp(size(img))
-disp(size(pattern))
+
+  % Vérifier que l'entrée est une image valide
+    if ndims(img) == 2
+        % Déjà en niveaux de gris
+        img_gray = img;
+    elseif ndims(img) == 3 && size(img, 3) == 3
+        % Image RGB, conversion en niveaux de gris
+        img_gray = rgb2gray(img);  % utilise les coefficients perceptuels
+        % Alternative manuelle : moyenne simple des canaux
+        % img_gray = mean(img, 3);  % mais moins fidèle à la perception visuelle
+    else
+       warning('Image non supportée : doit être 2D (grayscale) ou 3D avec 3 canaux (RGB)');
+    end
 
 
-c = normxcorr2(pattern,img);
+c = normxcorr2(pattern,img_gray);
 
 %figure, imshow(img)
 %figure, imshow(pattern,[])

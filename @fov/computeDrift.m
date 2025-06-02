@@ -126,7 +126,38 @@ for j=framesid
     
     if strcmp(method, 'circshift')
         % tic;
-        c = normxcorr2(refimage,im);
+
+        % Vérifier que l'entrée est une image valide
+    if ndims(im) == 2
+        % Déjà en niveaux de gris
+        img_gray = im;
+    elseif ndims(im) == 3 && size(im, 3) == 3
+        % Image RGB, conversion en niveaux de gris
+        img_gray = rgb2gray(im);  % utilise les coefficients perceptuels
+        % Alternative manuelle : moyenne simple des canaux
+        % img_gray = mean(img, 3);  % mais moins fidèle à la perception visuelle
+    else
+       warning('Image non supportée : doit être 2D (grayscale) ou 3D avec 3 canaux (RGB)');
+    end
+
+
+           % Vérifier que l'entrée est une image valide
+    if ndims(refimage) == 2
+        % Déjà en niveaux de gris
+        ref_gray = refimage;
+    elseif ndims(refimage) == 3 && size(refimage, 3) == 3
+        % Image RGB, conversion en niveaux de gris
+        ref_gray = rgb2gray(refimage);  % utilise les coefficients perceptuels
+        % Alternative manuelle : moyenne simple des canaux
+        % img_gray = mean(img, 3);  % mais moins fidèle à la perception visuelle
+    else
+       warning('Image non supportée : doit être 2D (grayscale) ou 3D avec 3 canaux (RGB)');
+    end
+
+
+
+        c = normxcorr2(ref_gray,img_gray);
+
         %  toc;
         [mx ix]=max(c(:));
         [row col]=ind2sub(size(c),ix);

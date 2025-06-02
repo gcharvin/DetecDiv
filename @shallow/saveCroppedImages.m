@@ -165,6 +165,40 @@ for idfov = 1:numel(fovid)
         end
     end
 
+    refframe=framecell{1}(1); %Add commentMore actions
+    refframeid=refframe;
+
+    % reading data
+    try
+        refimage=tmpfov(i).readImage(refframe,1);
+
+
+               if ndims( refimage) == 2
+        % Déjà en niveaux de gris
+        img_gray = refimage;
+    elseif ndims( refimage) == 3 && size( refimage, 3) == 3
+        % Image RGB, conversion en niveaux de gris
+        img_gray = rgb2gray(refimage);  % utilise les coefficients perceptuels
+        % Alternative manuelle : moyenne simple des canaux
+        % img_gray = mean(img, 3);  % mais moins fidèle à la perception visuelle
+    else
+       warning('Image non supportée : doit être 2D (grayscale) ou 3D avec 3 canaux (RGB)');
+        end
+             refimage=img_gray;
+
+        if numel(refimage)==0
+            disp(['Unable to read frame ' num2str(refframe) ' in channel ' num2str(1)]);
+            disp(' This is an I/O CRASH: start ROI extraction again with crashrecovery mode set to 1');
+            dumprecovery(fovid,framecell,i,1);
+            return;
+        end
+    catch
+        disp(['Unable to read frame ' num2str(refframe) ' in channel ' num2str(1)]);
+        disp(' This is an I/O CRASH: start ROI extraction again with crashrecovery mode set to 1');
+        dumprecovery(fovid,framecell,i,1);
+        return;
+    end
+
     disp('Loading raw images into memory....');
     if ~isempty(hprogressbar)
         hprogressbar.Message = sprintf('Loading raw images for FOV %s...', tmpfov(i).id);
@@ -182,16 +216,47 @@ for idfov = 1:numel(fovid)
     cccha = 1;
     for k = cha % loop on channels to determine image type
         im = tmpfov(i).readImage(1, k);
+
+               if ndims(im) == 2
+        % Déjà en niveaux de gris
+        img_gray = im;
+    elseif ndims(im) == 3 && size(im, 3) == 3
+        % Image RGB, conversion en niveaux de gris
+        img_gray = rgb2gray(im);  % utilise les coefficients perceptuels
+        % Alternative manuelle : moyenne simple des canaux
+        % img_gray = mean(img, 3);  % mais moins fidèle à la perception visuelle
+    else
+       warning('Image non supportée : doit être 2D (grayscale) ou 3D avec 3 canaux (RGB)');
+        end
+            im=img_gray;
+
         ccha = ccha + size(im, 3);
         arrcha(cccha) = size(im, 3);
         cccha = cccha + 1;
     end
 
 
+
+
     for ii = frstart:numel(framecell) % loop on all blocks of frames for a given FOV
         nframesBlock = framecell{ii};
 
         im = tmpfov(i).readImage(1,1);
+
+
+               if ndims(im) == 2
+        % Déjà en niveaux de gris
+        img_gray = im;
+    elseif ndims(im) == 3 && size(im, 3) == 3
+        % Image RGB, conversion en niveaux de gris
+        img_gray = rgb2gray(im);  % utilise les coefficients perceptuels
+        % Alternative manuelle : moyenne simple des canaux
+        % img_gray = mean(img, 3);  % mais moins fidèle à la perception visuelle
+    else
+       warning('Image non supportée : doit être 2D (grayscale) ou 3D avec 3 canaux (RGB)');
+        end
+            im=img_gray;
+
         list = uint16(zeros(size(im,1), size(im,2), ccha, numel(nframesBlock)));
 
         disp(['Reading group of frames: ' num2str(ii) ' / ' num2str(numel(framecell))]);
@@ -212,6 +277,22 @@ for idfov = 1:numel(fovid)
                 frame = nframesBlock(j);
                 try
                     im = tmpfov(i).readImage(frame, k);
+
+
+               if ndims(im) == 2
+        % Déjà en niveaux de gris
+        img_gray = im;
+    elseif ndims(im) == 3 && size(im, 3) == 3
+        % Image RGB, conversion en niveaux de gris
+        img_gray = rgb2gray(im);  % utilise les coefficients perceptuels
+        % Alternative manuelle : moyenne simple des canaux
+        % img_gray = mean(img, 3);  % mais moins fidèle à la perception visuelle
+    else
+       warning('Image non supportée : doit être 2D (grayscale) ou 3D avec 3 canaux (RGB)');
+        end
+            im=img_gray;
+
+                    
                     if numel(im) == 0
                         disp(['Unable to read frame ' num2str(frame) ' in channel ' num2str(k)]);
                         disp('This is an I/O CRASH: restart ROI extraction with crashrecovery mode set to 1');
