@@ -217,7 +217,7 @@ for idfov = 1:numel(fovid)
     for k = cha % loop on channels to determine image type
         im = tmpfov(i).readImage(1, k);
 
-               if ndims(im) == 2
+    if ndims(im) == 2
         % Déjà en niveaux de gris
         img_gray = im;
     elseif ndims(im) == 3 && size(im, 3) == 3
@@ -236,13 +236,10 @@ for idfov = 1:numel(fovid)
     end
 
 
-
-
     for ii = frstart:numel(framecell) % loop on all blocks of frames for a given FOV
         nframesBlock = framecell{ii};
 
         im = tmpfov(i).readImage(1,1);
-
 
                if ndims(im) == 2
         % Déjà en niveaux de gris
@@ -254,7 +251,8 @@ for idfov = 1:numel(fovid)
         % img_gray = mean(img, 3);  % mais moins fidèle à la perception visuelle
     else
        warning('Image non supportée : doit être 2D (grayscale) ou 3D avec 3 canaux (RGB)');
-        end
+    end
+
             im=img_gray;
 
         list = uint16(zeros(size(im,1), size(im,2), ccha, numel(nframesBlock)));
