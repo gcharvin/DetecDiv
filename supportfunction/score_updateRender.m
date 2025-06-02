@@ -27,10 +27,21 @@ switch mode
 
         if layoutOptions.overlay
             tileIndex = 1;
-            set(graphicsHandles.imgHandles(tileIndex), 'CData', displayImage);
+          %  set(graphicsHandles.imgHandles(tileIndex), 'CData', displayImage);
 
-            set(graphicsHandles.overlayHandles(tileIndex),'CData', indexedOverlay);
-            set(graphicsHandles.overlayHandles(tileIndex), 'AlphaData', alphaOverlay, 'AlphaDataMapping', 'none');
+            h = graphicsHandles.imgHandles(tileIndex);
+            if ~isequal(get(h, 'CData'), displayImage)
+                set(h, 'CData', displayImage);
+            end
+
+            h = graphicsHandles.overlayHandles(tileIndex);
+            if ~isequal(get(h, 'CData'), indexedOverlay)
+                set(h, 'CData', indexedOverlay);
+                 set(h, 'AlphaData', alphaOverlay, 'AlphaDataMapping', 'none');
+            end
+
+            %set(graphicsHandles.overlayHandles(tileIndex),'CData', indexedOverlay);
+            %set(graphicsHandles.overlayHandles(tileIndex), 'AlphaData', alphaOverlay, 'AlphaDataMapping', 'none');
         else
             for ch = 1:layoutOptions.Nchannel
                 local_row = 1;
@@ -251,125 +262,217 @@ end
 end
 
 function updateMarkers(hLineAll, fIdx, layoutOptions)
-% Met à jour la position des marqueurs en fonction de fIdx
-% en utilisant les données contenues dans les hLine (plus besoin de roiobj)
+% Version optimisée : mise à jour des marqueurs avec moins d'accès graphiques
 
-
-if strcmp(class(hLineAll(1)),'matlab.graphics.primitive.Image') % don't update if traj mode is selected 
+if isa(hLineAll(1), 'matlab.graphics.primitive.Image')  % Mode image/traj => pas de marqueurs
     return
 end
 
-% Identifier les marqueurs par leur style
-isMarker = arrayfun(@(h) strcmp(get(h, 'Marker'), 'o'), hLineAll);
-hMarkers = hLineAll(isMarker);
+% Identifier les marqueurs (style 'o')
+markerIdx = arrayfun(@(h) strcmp(h.Marker, 'o'), hLineAll);
+hMarkers = hLineAll(markerIdx);
 
-% Calculer nouvelle position X
+% Préparer X coordonnée des marqueurs
 if layoutOptions.timeOffset
     xMarker = (fIdx - layoutOptions.frames(1)) * layoutOptions.framerate;
 else
     xMarker = fIdx * layoutOptions.framerate;
 end
 
-% Mettre à jour chaque marqueur
-for j = 1:length(hMarkers)
+% Préparer les nouvelles positions (XData, YData)
+newX = repmat({xMarker}, 1, numel(hMarkers));
+newY = cell(1, numel(hMarkers));
+
+for j = 1:numel(hMarkers)
     linkedLine = hMarkers(j).UserData.LinkedLine;
-
     if isempty(linkedLine) || ~isgraphics(linkedLine)
-        warning('Marqueur #%d n''est pas lié à une ligne valide.', j);
-        continue;
-    end
-
-    yLine = get(linkedLine, 'YData');
-
-    if fIdx > length(yLine)
-        % warning('fIdx dépasse les données de la courbe liée au marqueur #%d.', j);
-        continue;
-    end
-
-    yMarker = yLine(fIdx);
-    set(hMarkers(j), 'XData', xMarker, 'YData', yMarker);
-end
-end
-
-function updateDataPanels(ax,layoutOptions,currentframe,hLineAll)
-
-
-if strcmp(class(hLineAll(1)),'matlab.graphics.primitive.Image') % traj mode
-    
-    Nframes=size(hLineAll.CData,2);
-    alphaVec = ones(1, Nframes);           % tout transparent par défaut
-
-if currentframe <= Nframes
-    alphaVec(currentframe:end) = 0.2;      % 20% d’opacité à droite
-end
-
-alphaImage = repmat(alphaVec, size(hLineAll.CData,1), 1);
-set(hLineAll,'AlphaData',alphaImage);
-
-else % plot mode 
-
-framerate=layoutOptions.framerate;
-
-track=false;
-if layoutOptions.track
-    if layoutOptions.mode~="Sequence"
-        track=true;
-    end
-end
-
-if track
-    amin=(currentframe-layoutOptions.trackWindow)*framerate;
-    amax=(currentframe+layoutOptions.trackWindow)*framerate;
-   % ax.UserData.xlim=[amin amax];
-else % no tracking mode
-    lims=ax.UserData.xlim;
-
-    if ischar(lims) & lims=="auto"
-
-        lines = findall(ax, 'Type', 'line');  % Trouve tous les objets 'line' dans l'axe
-
-        if isempty(lines)
-            warning('Aucune courbe trouvée dans cet axe.');
-            xmin = NaN;
-            xmax = NaN;
-            return;
-        end
-
-        allX = [];
-
-        for k = 1:length(lines)
-            xdata = get(lines(k), 'XData');
-            allX = [allX, xdata]; %#ok<AGROW> % Concatène tous les X
-        end
-
-        xmin = min(allX);
-        xmax = max(allX);
-
-        if xmin>0
-            xmin=0.95*xmin-0.01;
-        else
-            xmin=1.05*xmin-0.01;
-        end
-
-        if xmax>0
-            xmax=0.95*xmax-0.01;
-        else
-            xmax=1.05*xmax+0.01;
-        end
-
-
+        newY{j} = NaN;
     else
+        yLine = linkedLine.YData;
+        if fIdx <= numel(yLine)
+            newY{j} = yLine(fIdx);
+        else
+            newY{j} = NaN;
+        end
+    end
+end
 
-        xmin=ax.UserData.xlim(1);
-        xmax=ax.UserData.xlim(2);
+% Appliquer d'un coup (évite les boucles `set` répétées)
+set(hMarkers, {'XData'}, newX, {'YData'}, newY);
+end
+
+% function updateMarkers(hLineAll, fIdx, layoutOptions)
+% % Met à jour la position des marqueurs en fonction de fIdx
+% % en utilisant les données contenues dans les hLine (plus besoin de roiobj)
+% 
+% 
+% if strcmp(class(hLineAll(1)),'matlab.graphics.primitive.Image') % don't update if traj mode is selected 
+%     return
+% end
+% 
+% % Identifier les marqueurs par leur style
+% isMarker = arrayfun(@(h) strcmp(get(h, 'Marker'), 'o'), hLineAll);
+% hMarkers = hLineAll(isMarker);
+% 
+% % Calculer nouvelle position X
+% if layoutOptions.timeOffset
+%     xMarker = (fIdx - layoutOptions.frames(1)) * layoutOptions.framerate;
+% else
+%     xMarker = fIdx * layoutOptions.framerate;
+% end
+% 
+% % Mettre à jour chaque marqueur
+% for j = 1:length(hMarkers)
+%     linkedLine = hMarkers(j).UserData.LinkedLine;
+% 
+%     if isempty(linkedLine) || ~isgraphics(linkedLine)
+%         warning('Marqueur #%d n''est pas lié à une ligne valide.', j);
+%         continue;
+%     end
+% 
+%     yLine = get(linkedLine, 'YData');
+% 
+%     if fIdx > length(yLine)
+%         % warning('fIdx dépasse les données de la courbe liée au marqueur #%d.', j);
+%         continue;
+%     end
+% 
+%     yMarker = yLine(fIdx);
+%     set(hMarkers(j), 'XData', xMarker, 'YData', yMarker);
+% end
+% 
+% end
+
+function updateDataPanels(ax, layoutOptions, currentframe, hLineAll)
+
+if isa(hLineAll(1), 'matlab.graphics.primitive.Image')  % Mode trajectoire
+    Nframes = size(hLineAll.CData, 2);
+    alphaVec = ones(1, Nframes);
+    if currentframe <= Nframes
+        alphaVec(currentframe:end) = 0.2;  % faible opacité à droite
+    end
+    alphaImage = repmat(alphaVec, size(hLineAll.CData,1), 1);
+    hLineAll.AlphaData = alphaImage;
+else  % Mode courbes
+    framerate = layoutOptions.framerate;
+
+    % Tracking automatique
+    if isfield(layoutOptions, 'track') && layoutOptions.track && ~strcmpi(layoutOptions.mode, 'sequence')
+        aMin = (currentframe - layoutOptions.trackWindow) * framerate;
+        aMax = (currentframe + layoutOptions.trackWindow) * framerate;
+    else
+        lims = ax.UserData.xlim;
+        if ischar(lims) && strcmp(lims, 'auto')
+            % Optimisation : utiliser hLineAll directement au lieu de `findall`
+            xdatas = get(hLineAll, {'XData'});
+            allX = horzcat(xdatas{:});
+
+            if isempty(allX)
+                return
+            end
+
+            xmin = min(allX);
+            xmax = max(allX);
+
+            % Petit padding
+            xmin = xmin - 0.01 * abs(xmin);
+            xmax = xmax + 0.01 * abs(xmax);
+
+            aMin = xmin;
+            aMax = xmax;
+        else
+            aMin = lims(1);
+            aMax = lims(2);
+        end
     end
 
-    amin=xmin;
-    amax=xmax;
-
-end
-
-xlim(ax,  [amin amax]);
-
+    % Ne mettre à jour que si nécessaire
+    if ~isequal(ax.XLim, [aMin, aMax])
+        xlim(ax, [aMin, aMax]);
+    end
 end
 end
+
+
+% function updateDataPanels(ax,layoutOptions,currentframe,hLineAll)
+% 
+% 
+% if strcmp(class(hLineAll(1)),'matlab.graphics.primitive.Image') % traj mode
+% 
+%     Nframes=size(hLineAll.CData,2);
+%     alphaVec = ones(1, Nframes);           % tout transparent par défaut
+% 
+% if currentframe <= Nframes
+%     alphaVec(currentframe:end) = 0.2;      % 20% d’opacité à droite
+% end
+% 
+% alphaImage = repmat(alphaVec, size(hLineAll.CData,1), 1);
+% set(hLineAll,'AlphaData',alphaImage);
+% 
+% else % plot mode 
+% 
+% framerate=layoutOptions.framerate;
+% 
+% track=false;
+% if layoutOptions.track
+%     if layoutOptions.mode~="Sequence"
+%         track=true;
+%     end
+% end
+% 
+% if track
+%     amin=(currentframe-layoutOptions.trackWindow)*framerate;
+%     amax=(currentframe+layoutOptions.trackWindow)*framerate;
+%    % ax.UserData.xlim=[amin amax];
+% else % no tracking mode
+%     lims=ax.UserData.xlim;
+% 
+%     if ischar(lims) & lims=="auto"
+% 
+%         lines = findall(ax, 'Type', 'line');  % Trouve tous les objets 'line' dans l'axe
+% 
+%         if isempty(lines)
+%             warning('Aucune courbe trouvée dans cet axe.');
+%             xmin = NaN;
+%             xmax = NaN;
+%             return;
+%         end
+% 
+%         allX = [];
+% 
+%         for k = 1:length(lines)
+%             xdata = get(lines(k), 'XData');
+%             allX = [allX, xdata]; %#ok<AGROW> % Concatène tous les X
+%         end
+% 
+%         xmin = min(allX);
+%         xmax = max(allX);
+% 
+%         if xmin>0
+%             xmin=0.95*xmin-0.01;
+%         else
+%             xmin=1.05*xmin-0.01;
+%         end
+% 
+%         if xmax>0
+%             xmax=0.95*xmax-0.01;
+%         else
+%             xmax=1.05*xmax+0.01;
+%         end
+% 
+% 
+%     else
+% 
+%         xmin=ax.UserData.xlim(1);
+%         xmax=ax.UserData.xlim(2);
+%     end
+% 
+%     amin=xmin;
+%     amax=xmax;
+% 
+% end
+% 
+% xlim(ax,  [amin amax]);
+% 
+% end
+% end
