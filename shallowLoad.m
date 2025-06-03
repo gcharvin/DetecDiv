@@ -139,6 +139,7 @@ if ~isempty(listproc)
 end
 
 %% Vérification des FOV
+if numel(shallowObj.fov) ~= 0
 if numel(shallowObj.fov(1).srcpath{1}) ~= 0
     disp('* Warning *');
     disp('* This project contains at least one FOV with the following path:');
@@ -149,5 +150,5 @@ if numel(shallowObj.fov(1).srcpath{1}) ~= 0
     disp('* Need to update the path of the source images ?');
     disp('* To do so, use the shallowObj.setSrcPath function');
 end
-
+end
 end

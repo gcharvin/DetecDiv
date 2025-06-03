@@ -65,6 +65,7 @@ if numel(progress)
 end
 
 list=dir(pathdir);
+list = list(~startsWith({list.name}, '._')); % remove ._ files in mac os .
 
 % if there are directories avaialable, ignore files in the folder and
 % consider directories as distinct positions

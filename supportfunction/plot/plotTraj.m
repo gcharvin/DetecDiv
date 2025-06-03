@@ -118,6 +118,8 @@ param.colormapg=cmapg;% colormap for groundtruth data
 %     end
 % end
 % rls(flag)=[];
+rls
+
 rls=rls([rls.ndiv]>5);
 rls=rls([rls.frameBirth]<maxBirth);
 rls=rls(~(strcmp({rls.endType},'Emptied')));
