@@ -51,7 +51,7 @@ disp(['These ROIs will be processed : ' num2str(rois)]);
 
 for i=1:numel(rois)
     emptyFrame=[];
-    disp(['Launching ROI ' num2str(i) :' processing...'])
+    disp(['Launching ROI :' num2str(i) ' processing...'])
 
     if numel(cltmp(rois(i)).image)==0 || numel(cltmp(rois(i)).data)==0
         cltmp(rois(i)).load; % load image sequence
@@ -161,21 +161,25 @@ for i=1:numel(rois)
 
 %=======
 
-    dataid=data.getData('labels_training'); % here I switched from id_training to labels_training because the annotation process is performed 
+    dataid=data.getData('labels_training');
+    % here I switched from id_training to labels_training because the annotation process is performed 
     % with labels and not id 
 
- % Forcer catList en vecteur colonne de strings
-    catList = string(dataid(:));
+    catList=classif.classes;
+    % Forcer catList en vecteur colonne de strings
+    catList = string(catList(:));  % Mx1
 
-    % Convertir les valeurs catégorielles en chaînes
-    catStr = string(classif.classes);
+ 
+    % Extraire les labels des données catégorielles sous forme de string
+    catStr = string(dataid);  % Nx1
 
-    % Trouver l'indice de chaque élément dans la liste
-    [tf, idx] = ismember(catStr, catList);
+    % Utiliser ismember pour obtenir les indices dans catList
+    [isInList, idx] = ismember(catStr, catList);
 
-    % Mettre les non-appartenants (tf==false) à 0
-    idx(~tf) = 0;
+    % Mettre les valeurs non trouvées à 0
+    idx(~isInList) = 0;
 
+    % Retourner l'indice final
     dataid = idx;
 
     dataidfra=dataid(fra);
