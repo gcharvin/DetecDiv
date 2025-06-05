@@ -33,6 +33,16 @@ if ~isfile(filename)
 end
 file=namestr;
 path=pathstr;
+
+% Vérifier que le dossier associé au projet existe
+projectFolder = fullfile(path, file);
+if ~isfolder(projectFolder)
+    msg = ['The folder "' projectFolder '" does not exsit. The project is incomplete... Quitting!'];
+    disp(msg);
+    shallowObj = [];
+    return;
+end
+
 load(filename);
 
 
@@ -149,6 +159,10 @@ if numel(shallowObj.fov(1).srcpath{1}) ~= 0
     end
     disp('* Need to update the path of the source images ?');
     disp('* To do so, use the shallowObj.setSrcPath function');
+else
+disp('There is no available FOV in this project!');
 end
+else
+disp('There is no available FOV in this project!');
 end
 end

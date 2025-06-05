@@ -161,11 +161,26 @@ for i=1:numel(rois)
 
 %=======
 
-    dataid=data.getData('id_training');
+    dataid=data.getData('labels_training'); % here I switched from id_training to labels_training because the annotation process is performed 
+    % with labels and not id 
+
+ % Forcer catList en vecteur colonne de strings
+    catList = string(dataid(:));
+
+    % Convertir les valeurs catégorielles en chaînes
+    catStr = string(classif.classes);
+
+    % Trouver l'indice de chaque élément dans la liste
+    [tf, idx] = ismember(catStr, catList);
+
+    % Mettre les non-appartenants (tf==false) à 0
+    idx(~tf) = 0;
+
+    dataid = idx;
+
     dataidfra=dataid(fra);
 
     if strcmp(classif.category{1},'LSTM')%classif.typeid~=12 % only for  image classif
-
 
         pixb=numel(dataidfra);
         pixa=find(dataidfra==0);

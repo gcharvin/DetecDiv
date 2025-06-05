@@ -87,10 +87,10 @@ switch mode
                 % 
                 % xtickformat(ax, '%.1f');
 
-
                 hLineAll= graphicsHandles.lineHandles(tileIndex);
-                updateMarkers(hLineAll, newframe , layoutOptions);
-                updateDataPanels(ax,layoutOptions,newframe,hLineAll);
+                
+                updateDataPanels(ax,ds,layoutOptions,newframe,hLineAll,roiData);
+                updateMarkers(hLineAll, newframe, layoutOptions);
                 %   title(sprintf('Data:%d', ds));
 
             end
@@ -193,8 +193,9 @@ switch mode
                         % % xtickformat(ax, '%.1f');
 
                         hLineAll= graphicsHandles.lineHandles(tileIndex);
+                        
+                        updateDataPanels(ax,ds, layoutOptions,newframe,hLineAll,roiData);
                         updateMarkers(hLineAll, newframe , layoutOptions);
-                        updateDataPanels(ax,layoutOptions,newframe,hLineAll);
 
                         %   title(sprintf('Data:%d', ds));
 
@@ -343,7 +344,30 @@ end
 % 
 % end
 
-function updateDataPanels(ax, layoutOptions, currentframe, hLineAll)
+function updateDataPanels(ax, groupIdx, layoutOptions, currentframe, hLineAll, roiData)
+
+dataIndices = layoutOptions.plotidx{groupIdx}; % indices des données à afficher
+data = roiData.data(layoutOptions.dataidx{groupIdx});
+
+ydata = data.data{:, layoutOptions.plotidx{groupIdx}};
+% here 
+
+xdata = (1:size(ydata,1)) * layoutOptions.framerate;
+if layoutOptions.timeOffset
+    xdata = xdata - layoutOptions.frames(1) * layoutOptions.framerate;
+    pix = xdata >= 0;
+    xdata = xdata(pix);
+    ydata = ydata(pix, :);
+end
+
+for i = 1:numel(hLineAll)
+    if isgraphics(hLineAll(i)) && i <= size(ydata, 2)
+        set(hLineAll(i), ...
+            'XData', xdata, ...
+            'YData', ydata(:, i));
+    end
+end
+
 
 if isa(hLineAll(1), 'matlab.graphics.primitive.Image')  % Mode trajectoire
     Nframes = size(hLineAll.CData, 2);

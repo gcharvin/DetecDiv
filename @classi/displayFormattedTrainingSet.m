@@ -15,7 +15,6 @@ himg=[];
 output={};
 img={};
 
-
 for i=1:numel(varargin)
     if strcmp(varargin{i},'Display')
         display=1;
