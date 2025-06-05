@@ -184,10 +184,11 @@ for i=1:length(rois)
             end
         end
     end
-
+    
+trainingSetTransfer=false; % flag to determine whether dataseries for training set has to be generated
     if strcmp(classif.category{1},'Image') | strcmp(classif.category{1},'LSTM') | strcmp(classif.category{1},'Timeseries')
 
-        trainingSetTransfer=false; % flag to determine whether dataseries for training set has to be generated
+        
         data=roitocopy.data;
 
         if objtype=="classi" && ~isempty(convert) % users resquest conversion from classi

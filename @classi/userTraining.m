@@ -77,8 +77,20 @@ else % image based classification and regression
     roiObj.parent=classif;
 
    if category=="Pixel"
-        options= 'pixelAnotation';
-    end
+
+        options= 'pixelAnnotation';
+
+         for i = 1:numel(roiObj.data)
+            data=roiObj.data(i);
+            data.show=false;
+         end
+
+         classstr={};
+         for i=1:numel(classif.classes)
+            classstr{i}=[classif.strid '_' classif.classes{i}];
+         end
+   end
+
     if category=="LSTM"
        options=  'dataAnnotation';
        pix=[];
@@ -112,13 +124,18 @@ else % image based classification and regression
        
     end
 
-    channel_names = roiObj.display.channel;
+ channel_names = roiObj.display.channel;
 
 selected = false(1, numel(roiObj.display.selectedchannel));
 
 for i = 1:numel(roiObj.display.selectedchannel)
     if any(strcmp(channel_names{i}, classif.channelName))
         selected(i) = true;
+    end
+    if category=="Pixel"
+         if any(strcmp(channel_names{i}, classstr))
+        selected(i) = true;
+         end 
     end
 end
 
