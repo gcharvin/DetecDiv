@@ -86,6 +86,18 @@ ma=max([ma;  0.001*ones(1,length(ma))],[],1);
 obj.display.displaylim=[];
 obj.display.displaylim(1:2,channels)=[mi ; ma]; %home made stretchilm to work with multi D images. slow but more reliable
 
+% to test if does not work : 
+% % Nombre de canaux "physiques" (3e dim de l'image)
+% nch = size(obj.image, 3);
+% 
+% % Initialiser tous les canaux à [0;1]
+% obj.display.displaylim = repmat([0; 1], 1, nch);
+% 
+% % Remplir les canaux spécifiés par 'channels' avec les valeurs calculées
+% obj.display.displaylim(:, channels) = [mi; ma];
+
+
+
 if clearfile==1
     obj.save;
     obj.clear; %can cause problem if called from another fonction

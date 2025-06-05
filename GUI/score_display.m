@@ -81,7 +81,7 @@ app.displayHandles=displayHandles;
 %% --- Mises à jour complémentaires ---
 
 % GUI panel update
-app.FrameLabel.Text = ['Frame : ' num2str(currentFrame)];
+app.FrameEditField_2.Value = currentFrame;
 app.ImageFigure.Name = ['ROI:' selectedROI.id ' -  Frame: ' num2str(selectedROI.display.frame) '/' num2str(numFrames)];
 
 app.updateAssignValueControls(); % this updates the value of the data plotted in the data panel GUI
