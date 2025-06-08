@@ -3,37 +3,45 @@ function obj = fixLabelsInPlotFields(obj)
 % - plotGroup{6}
 % - plotProperties(:,6)
 % - groupProperties(:,1)
+% pour chaque dataseries de obj.data
 
-    % --- Corriger plotGroup{6}
-    pg = obj.data.plotGroup;
-    if numel(pg) >= 6 && iscell(pg{6})
-        items = pg{6};
-        items(strcmp(items, 'labels')) = {'label'};  % remplacer
-        items = unique(items, 'stable');             % éviter doublons
-        obj.data.plotGroup{6} = items;
-    end
+    for k = 1:numel(obj.data)
+        ds = obj.data(k);  % une instance de dataseries
 
-    % --- Corriger la 6e colonne de plotProperties
-    pp = obj.data.plotProperties;
-    if size(pp,2) >= 6
-        for j = 1:size(pp,1)
-            val = pp{j,6};
-            if ischar(val) && strcmp(val, 'labels')
-                pp{j,6} = 'label';
-            end
+        % --- Corriger plotGroup{6}
+        pg = ds.plotGroup;
+        if numel(pg) >= 6 && iscell(pg{6})
+            items = pg{6};
+            items(strcmp(items, 'labels')) = {'label'};  % remplacer
+            items = unique(items, 'stable');             % éviter doublons
+            ds.plotGroup{6} = items;
         end
-        obj.data.plotProperties = pp;
-    end
 
-    % --- Corriger la 1ère colonne de groupProperties
-    gp = obj.data.groupProperties;
-    if size(gp,2) >= 1
-        for j = 1:size(gp,1)
-            val = gp{j,1};
-            if ischar(val) && strcmp(val, 'labels')
-                gp{j,1} = 'label';
+        % --- Corriger la 6e colonne de plotProperties
+        pp = ds.plotProperties;
+        if size(pp,2) >= 6
+            for j = 1:size(pp,1)
+                val = pp{j,6};
+                if ischar(val) && strcmp(val, 'labels')
+                    pp{j,6} = 'label';
+                end
             end
+            ds.plotProperties = pp;
         end
-        obj.data.groupProperties = gp;
+
+        % --- Corriger la 1ère colonne de groupProperties
+        gp = ds.groupProperties;
+        if size(gp,2) >= 1
+            for j = 1:size(gp,1)
+                val = gp{j,1};
+                if ischar(val) && strcmp(val, 'labels')
+                    gp{j,1} = 'label';
+                end
+            end
+            ds.groupProperties = gp;
+        end
+
+        % Réassigner la version corrigée dans obj.data
+        obj.data(k) = ds;
     end
 end
