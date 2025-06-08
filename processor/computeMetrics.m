@@ -1,13 +1,13 @@
 function [paramout,dataout, imageout]=computeMetrics(param,roiobj,frames)
 
-listChannels=listAvailableChannels;
-listChannels=['N/A', listChannels];
-environment='pc' ;
-
 imageout=[];
 
 if nargin==0
     paramout=[];
+
+    listChannels=listAvailableChannels;
+    listChannels=['N/A', listChannels];
+    environment='pc' ;
 
     tip={'Name of Mask channel  #1',...
         'Compute detailed Mask #1 statistics (area, etc)',...
@@ -46,6 +46,8 @@ if nargin==0
 else
     paramout=param;
 end
+
+disp('computeMetrics processing...');
 
 channelsExtract={};
 channelsName={};

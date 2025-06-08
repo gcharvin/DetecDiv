@@ -43,6 +43,7 @@ else
     paramout=param;
 end
 
+disp('computeRLS processing...');
 param=paramout;
 
 dataout=[];
