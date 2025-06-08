@@ -64,13 +64,37 @@ function loadROI(obj, option)
     end
 end
 
+% function setProperties(obj, srcObj)
+% % SETPROPERTIES Copy matching properties from srcObj to obj (handle), excluding critical ones
+%     allProps = intersect(properties(obj), properties(srcObj));
+%     % Exclude properties that should not be overwritten
+%     exclude = {'path','id'};
+%     props = setdiff(allProps, exclude);
+%     for k = 1:numel(props)
+%         obj.(props{k}) = srcObj.(props{k});
+%     end
+% end
+
 function setProperties(obj, srcObj)
 % SETPROPERTIES Copy matching properties from srcObj to obj (handle), excluding critical ones
+
     allProps = intersect(properties(obj), properties(srcObj));
-    % Exclude properties that should not be overwritten
-    exclude = {'path','id'};
+    exclude = {'path', 'id'};  % Ne pas écraser ces propriétés critiques
     props = setdiff(allProps, exclude);
+
     for k = 1:numel(props)
-        obj.(props{k}) = srcObj.(props{k});
+        try
+            val = srcObj.(props{k});
+
+            % Éviter l'erreur sur les comma-separated lists d'objets
+            if isobject(val) && numel(val) > 1
+                obj.(props{k}) = val(:)';  % ou juste = val; si shape déjà bon
+            else
+                obj.(props{k}) = val;
+            end
+        catch ME
+            warning('⛔️ Could not assign property "%s": %s', props{k}, ME.message);
+        end
     end
 end
+
