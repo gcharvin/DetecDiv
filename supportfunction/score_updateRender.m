@@ -263,15 +263,19 @@ end
 end
 
 function updateMarkers(hLineAll, fIdx, layoutOptions)
-% Version optimisée : mise à jour des marqueurs avec moins d'accès graphiques
+% Version robuste de mise à jour des marqueurs
 
-if isa(hLineAll(1), 'matlab.graphics.primitive.Image')  % Mode image/traj => pas de marqueurs
+if isempty(hLineAll) || isa(hLineAll(1), 'matlab.graphics.primitive.Image')  % Mode image/traj => pas de marqueurs
     return
 end
 
 % Identifier les marqueurs (style 'o')
-markerIdx = arrayfun(@(h) strcmp(h.Marker, 'o'), hLineAll);
+markerIdx = arrayfun(@(h) isgraphics(h) && strcmp(h.Marker, 'o'), hLineAll);
 hMarkers = hLineAll(markerIdx);
+
+if isempty(hMarkers)
+    return
+end
 
 % Préparer X coordonnée des marqueurs
 if layoutOptions.timeOffset
@@ -280,7 +284,7 @@ else
     xMarker = fIdx * layoutOptions.framerate;
 end
 
-% Préparer les nouvelles positions (XData, YData)
+% Préparer les nouvelles positions
 newX = repmat({xMarker}, 1, numel(hMarkers));
 newY = cell(1, numel(hMarkers));
 
@@ -298,9 +302,17 @@ for j = 1:numel(hMarkers)
     end
 end
 
-% Appliquer d'un coup (évite les boucles `set` répétées)
-set(hMarkers, {'XData'}, newX, {'YData'}, newY);
+% Vérification de cohérence
+if numel(hMarkers) == numel(newX) && numel(newX) == numel(newY)
+    set(hMarkers, {'XData'}, newX(:), {'YData'}, newY(:));
+else
+    % En cas d'erreur, fallback en mode boucle
+    for j = 1:numel(hMarkers)
+        set(hMarkers(j), 'XData', newX{j}, 'YData', newY{j});
+    end
 end
+end
+
 
 % function updateMarkers(hLineAll, fIdx, layoutOptions)
 % % Met à jour la position des marqueurs en fonction de fIdx

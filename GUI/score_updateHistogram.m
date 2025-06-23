@@ -58,7 +58,7 @@ function score_updateHistogram(app, mode)
                 return;
             end
             set(app.HistogramLines(k), 'YData', app.HistogramData{k});
-            channelIdx = app.HistogramChannels(k)
+            channelIdx = app.HistogramChannels(k);
             rgbColor = selectedROI.display.rgb(channelIdx, :);
             if all(rgbColor >= 0.99)
                 rgbColorPlot = [0, 0, 0];
