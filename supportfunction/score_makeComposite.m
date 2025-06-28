@@ -34,7 +34,7 @@ alphamask = zeros(size(alphaOverlay));
 vContours = [];
 
 for ch=1:numel(channel)
-%fr
+    %fr
     if iscell(channel)
         currentCha = roitmp.findChannelID(channel{ch});
     else
@@ -42,43 +42,136 @@ for ch=1:numel(channel)
         currentCha = pix;
     end
 
-  %  currentCha
+    %  currentCha
 
     totim =roitmp.image(:,:, currentCha, :); % to get the whole range of map values
 
     imtmp2 = imtmp(:,:, currentCha, fr);
-   % class(imtmp2),max(imtmp2(:))
-   % figure, imshow(imtmp2,[]);
+    % class(imtmp2),max(imtmp2(:))
+    % figure, imshow(imtmp2,[]);
 
     if numel(currentCha)==1 && ~iscell(levels{ch})
-        if ~isequal(levels{ch}, [-1 -1])
-            if levels{ch}(1)>=levels{ch}(2)
-                levels{ch}(1)=levels{ch}(2)-1;
+        % if ~isequal(levels{ch}, [-1 -1])
+        %     if levels{ch}(1)>=levels{ch}(2)
+        %         levels{ch}(1)=levels{ch}(2)-1;
+        %     end
+        %     imtmp2 = imadjust(imtmp2, [levels{ch}(1)/65535, levels{ch}(2)/65535]);
+        % end
+
+
+
+        logdisplay=false;
+        if isprop(roitmp, 'display') && isfield(roitmp.display, 'log') && roitmp.display.log(currentCha) == true
+
+            logdisplay=true;
+            imtmp2 = double(imtmp2);  % passage explicite en double pour éviter erreurs
+            % Appliquer log dans l'espace double, éviter log(0)
+            imtmp2 = log1p(imtmp2);
+
+
+            % Appliquer levels dans l'espace log
+            % On suppose que les niveaux sont donnés dans l'espace linéaire et doivent être logés
+            lmin = log1p(double(levels{ch}(1))) / log1p(65535);
+            lmax = log1p(double(levels{ch}(2))) / log1p(65535);
+            if lmin >= lmax
+                lmin = lmax - 1e-3;
             end
-            imtmp2 = imadjust(imtmp2, [levels{ch}(1)/65535, levels{ch}(2)/65535]);
+
+            imtmp2 = imtmp2 / log1p(65535);
+            imtmp2 = imadjust(imtmp2, [lmin, lmax]);
+            imtmp2=uint16(65535*imtmp2);
+
+
+            % Valeurs de niveaux définies (en linéaire)
+            levelMin = levels{ch}(1);
+            levelMax =  levels{ch}(2);
+
+            % Convertir en bornes log-normalisées
+            lmin = log1p(levelMin) / log1p(65535);
+            lmax = log1p(levelMax) / log1p(65535);
+
+            % Définir les ticks en valeurs linéaires arrondies dans l'intervalle
+            tickValsLin = [1, 10, 100, 1000, 10000, 65535];
+            tickValsLin = tickValsLin(tickValsLin >= levelMin & tickValsLin <= levelMax);
+
+            % Convertir les ticks dans l'échelle log1p normalisée
+            tickValsNorm = log1p(tickValsLin) / log1p(65535);
+
+           %  fig = figure('Position', [100, 100, 300, 600], 'Color', 'w');
+           % 
+           %  % Axe fictif pour le colorbar
+           %  axes('Position', [0, 0, 1, 1], 'Visible', 'off');
+           % 
+           %  % Affichage de la colorbar seule
+           %  colormap(parula2green(256));
+           % 
+           % % colormap(parula(256));
+           %  cb = colorbar('eastoutside');
+           % 
+           %  % Forcer la position et la largeur (plus large que d'habitude)
+           %  cb.Position = [0.3, 0.1, 0.3, 0.8];  % [left, bottom, width, height]
+           % 
+           %  % Échelle + ticks
+           %  caxis([lmin lmax]);
+           %  cb.Ticks = tickValsNorm;
+           %  cb.TickLabels = string(tickValsLin);
+           % 
+           %  % Taille police augmentée
+           %  cb.FontSize = 40;
+           % 
+           %  % Label vertical
+           %  cb.Label.String = 'Fluorescence intensity (a.u.)';
+           %  cb.Label.FontSize = 40;
+           %  cb.Label.FontWeight = 'bold';
+           %  cb.Label.Rotation = 90;
+           % 
+           %  % Export optionnel
+           %  exportgraphics(fig, 'colorbar_log_parula_levels.pdf', 'BackgroundColor', 'none', 'Resolution', 300);
+
+        else
+            % Cas normal (linéaire)
+            if ~isequal(levels{ch}, [-1 -1])
+                if levels{ch}(1) >= levels{ch}(2)
+                    levels{ch}(1) = levels{ch}(2) - 1;
+                end
+
+                imtmp2 = imadjust(imtmp2 , [levels{ch}(1)/65535, levels{ch}(2)/65535]);
+
+            end
         end
 
-        imtmp2 = cat(3, imtmp2*rgb{ch}(1), imtmp2*rgb{ch}(2), imtmp2*rgb{ch}(3));
-
-
-        if size(imtmp2,3) ~= 3
-            imtmp2 = repmat(imtmp2, [1,1,3]);
-        end
 
         if overlay
+            imtmp2 = cat(3, imtmp2*rgb{ch}(1), imtmp2*rgb{ch}(2), imtmp2*rgb{ch}(3));
             if isempty(weights)
                 comp = imlincomb(1, comp, 1, uint8(double(imtmp2)/256));
             else
                 comp = imlincomb(1, comp, weights(ch), uint8(double(imtmp2)/256));
             end
         else
-            displayImage(:,:,:,ch) = uint8(double(imtmp2)/256);
+            if logdisplay
+                % here
+
+                imnorm = double(imtmp2) / 65535;
+                imnorm = min(max(imnorm, 0), 1);
+                imind = uint8(imnorm * 255);
+                cmap = parula2green(256);
+                rgbImage = ind2rgb(imind, cmap);
+                displayImage(:,:,:,ch) = uint8(rgbImage * 255);
+
+            else
+                imtmp2 = cat(3, imtmp2*rgb{ch}(1), imtmp2*rgb{ch}(2), imtmp2*rgb{ch}(3));
+                displayImage(:,:,:,ch) = uint8(double(imtmp2)/256);
+            end
         end
+
+
+
 
     elseif numel(currentCha)==1 && iscell(levels{ch})
         imtmp2 = imadjust(imtmp2, [0 1]);
 
-     %   max(imtmp2(:))
+        %   max(imtmp2(:))
         indices = str2num(levels{ch}{1});
         % Traitement des canaux indexés
         listofindexedcha = find(roitmp.display.indexed);
@@ -98,7 +191,7 @@ for ch=1:numel(channel)
             end
         end
 
-%tmp=levels{ch}{2} 
+        %tmp=levels{ch}{2}
 
         if paintChannel == currentIndx
             uni = unique(totim(:));
@@ -151,7 +244,7 @@ for ch=1:numel(channel)
                     %   figure, imshow(mask,[])
                     alphamask = alphamask | mask;
 
-              
+
                     for c = 1:3
                         channelOverlay = indexedOverlay(:, :, c);
                         channelOverlay(mask) =levmap(iVal, c);
@@ -166,18 +259,50 @@ for ch=1:numel(channel)
         end
     else
 
-         if ~isequal(levels{ch}, [-1 -1])
-            imtmp2 = imadjust(imtmp2, [levels{ch}(1)/65535, levels{ch}(2)/65535]);
-         end
-         
+        % if ~isequal(levels{ch}, [-1 -1])
+        %    imtmp2 = imadjust(imtmp2, [levels{ch}(1)/65535, levels{ch}(2)/65535]);
+        % end
+        %
+
+        % if isprop(roitmp, 'display') && isfield(roitmp.display, 'log') && roitmp.display.log(currentCha) == true
+        % 
+        %     imtmp2 = double(imtmp2);  % passage explicite en double pour éviter erreurs
+        %     % Appliquer log dans l'espace double, éviter log(0)
+        %     imtmp2 = log1p(imtmp2);
+        % 
+        %     % Appliquer levels dans l'espace log
+        %     % On suppose que les niveaux sont donnés dans l'espace linéaire et doivent être logés
+        %     lmin = log1p(double(levels{ch}(1))) / log1p(65535);
+        %     lmax = log1p(double(levels{ch}(2))) / log1p(65535);
+        %     if lmin >= lmax
+        %         lmin = lmax - 1e-3;
+        %     end
+        % 
+        %     imtmp2 = imtmp2 / log1p(65535);
+        %     imtmp2 = imadjust(imtmp2, [lmin, lmax]);
+        %     imtmp2=uint16(65535*imtmp2);
+        % 
+        % else
+            % Cas normal (linéaire)
+            if ~isequal(levels{ch}, [-1 -1])
+                if levels{ch}(1) >= levels{ch}(2)
+                    levels{ch}(1) = levels{ch}(2) - 1;
+                end
+
+                imtmp2 = imadjust(imtmp2 , [levels{ch}(1)/65535, levels{ch}(2)/65535]);
+
+            end
+      %  end
+
+
         if overlay
-        if isempty(weights)
-            comp = imlincomb(1, comp, 1, uint8(double(imtmp2)/256));
+            if isempty(weights)
+                comp = imlincomb(1, comp, 1, uint8(double(imtmp2)/256));
+            else
+                comp = imlincomb(1, comp, weights(ch), uint8(double(imtmp2)/256));
+            end
         else
-            comp = imlincomb(1, comp, weights(ch), uint8(double(imtmp2)/256));
-        end
-        else
- 
+
             displayImage(:,:,:,ch) = uint8(double(imtmp2)/256);
         end
     end
@@ -243,4 +368,29 @@ if flip==1
     imtmp = flip(imtmp,1);
 end
 end
+
+
+function cmap = parula2green(n)
+% Crée une colormap de type parula, mais dont la couleur max est verte
+
+% Génère un colormap progressif de bleu -> rouge -> vert
+% Bleu (faible), rouge (milieu), vert (fort)
+
+    if nargin < 1
+        n = 256;
+    end
+
+    % Points de contrôle : bleu, rouge, vert
+    colors = [ ...
+        0     0     1   ;  % bleu
+        1     0     0   ;  % rouge
+        0     1     0 ];   % vert
+
+    % Interpolation sur n points
+    x = linspace(0, 1, size(colors, 1));      % 3 points
+    xi = linspace(0, 1, n);                   % n points
+
+    cmap = interp1(x, colors, xi, 'linear');
+end
+
 

@@ -54,7 +54,7 @@ if ~exist('shallowObj', 'var')
 end
 
 if ~isfield(shallowObj.processing, 'processor')
-    shallowObj.processing.processor = [];
+    shallowObj.processing.processor = process.empty;
 end
 
 if isunix || ismac
@@ -125,9 +125,14 @@ end
 
 %% Chargement des processeurs
 
+%% Chargement des processeurs
+
 listproc = dir(fullfile(path, file, 'processor'));
 listproc = listproc(~contains({listproc.name}, {'.', '..'}));
 listproc = listproc(arrayfun(@(x) x.isdir, listproc));
+
+% initialisation typée sûre (même si le champ existe déjà)
+shallowObj.processing.processor = process.empty;
 
 if ~isempty(listproc)
     arr = zeros(1, numel(listproc));
@@ -138,15 +143,24 @@ if ~isempty(listproc)
     [~, ix] = sort(arr);
     listproc = listproc(ix);
 
+    procList = process.empty;  % tableau typé
+
     for j = 1:numel(listproc)
         name = listproc(j).name;
         str = fullfile(path, file, 'processor', name, [name '_processor.mat']);
         if exist(str, 'file') == 2
-            [procObj, msgproc] = processLoad(str);
-            shallowObj.processing.processor(j) = procObj;
+            try
+                [procObj, msgproc] = processLoad(str);
+                procList(end+1) = procObj;
+            catch ME
+                warning('Erreur processLoad : %s', ME.message);
+            end
         end
     end
+
+    shallowObj.processing.processor = procList;
 end
+
 
 %% Vérification des FOV
 if numel(shallowObj.fov) ~= 0

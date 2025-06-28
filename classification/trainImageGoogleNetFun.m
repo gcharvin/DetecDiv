@@ -194,7 +194,12 @@ imageAugmenter = imageDataAugmenter( ...
     'RandYTranslation',pixelRange, ...
      'RandRotation',rotation);% , ...
 
-imdsTrain = transform(imdsTrain, @augmenterGrayscale);
+%imdsTrain = transform(imdsTrain, @augmenterGrayscale);
+%imdsTrain = transform(imdsTrain, @(data)augmenterGrayscaleResize(data,
+%inputSize)); % new function, not tested, to include all augmentations in
+%one fonction 
+
+
 augimdsTrain = augmentedImageDatastore(inputSize(1:2),imdsTrain, ...
     'DataAugmentation',imageAugmenter);
 
@@ -228,6 +233,7 @@ options = trainingOptions(trainingParam.CNN_training_method{end}, ...
     'ExecutionEnvironment',trainingParam.execution_environment{end});
 
 classifier = trainNetwork(augimdsTrain,lgraph,options);
+%classifier = trainNetwork(imdsTrain, lgraph, options);
 
 fprintf('Training is done...\n');
 fprintf('Saving image classifier ...\n');
@@ -289,4 +295,46 @@ function dataOut = augmenterGrayscale(data)
 
 
 
+% this function is not used yet 
+function dataOut = augmenterGrayscaleResize(data, inputSize)
+    % --- Image en double
+    img = im2double(data.input);
+
+    % --- Ajustement contraste et luminosité
+    contrastFactor = 0.8 + 0.4 * rand();             % entre 0.8 et 1.2
+    brightnessOffset = 0.3 * (rand() - 0.5);         % entre -0.15 et 0.15
+    img = img * contrastFactor + brightnessOffset;
+
+    % --- Rotation aléatoire (angle entre -20 et 20 degrés)
+    angle = -20 + 40 * rand();
+    img = imrotate(img, angle, 'bilinear', 'crop');
+
+    % --- Translation aléatoire (max ±5 pixels)
+    shiftX = round(-5 + 10 * rand());
+    shiftY = round(-5 + 10 * rand());
+    tform = affine2d([1 0 0; 0 1 0; shiftX shiftY 1]);
+    img = imwarp(img, tform, 'OutputView', imref2d(size(img)));
+
+    % --- Flip horizontal/vertical avec proba 0.5
+    if rand() > 0.5
+        img = fliplr(img);
+    end
+    if rand() > 0.5
+        img = flipud(img);
+    end
+
+    % --- Bruit gaussien (faible) avec proba 0.5
+    if rand() > 0.5
+        img = imnoise(img, 'gaussian', 0, 0.002);
+    end
+
+    % --- Redimensionnement
+    img = imresize(img, inputSize(1:2));
+
+    % --- Clamp et conversion uint8
+    img = im2uint8(mat2gray(img));
+
+    % --- Remise en sortie
+    dataOut = data;
+    dataOut.input = img;
 
