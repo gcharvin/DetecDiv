@@ -6,7 +6,7 @@ outputstr='temp';
 % information . Otherwise, it will compute the stats and display
 
 % now also outputs an excel file which contains all the mismatches between
-% Pred and GT. 
+% Pred and GT.
 
 roiid=1:numel(classif.roi);
 datasetType='';
@@ -30,39 +30,39 @@ for i=1:numel(varargin)
     if strcmp(varargin{i},'Rois')
         roiid=varargin{i+1};
     end
-    
+
     if strcmp(varargin{i},'Dataset')
         datasetType=varargin{i+1};
     end
-    
+
     if strcmp(varargin{i},'Threshold') % measures benchmarks for different thresholds used to for classification and segmentation. Use thr=-1 to use a custom thresholding method in the @post function; thr=0 for max proba
         thr=varargin{i+1};
     end
-    
+
     if strcmp(varargin{i},'ROI')  % plots results per ROI
         plotROI=1;
     end
-    
+
     if strcmp(varargin{i},'Classes') % Plots results per class
         plotClasses=1;
     end
-    
+
     if strcmp(varargin{i},'Confusion')  % plots confusion matrix
         plotConfusion=1;
     end
-    
+
     if strcmp(varargin{i},'AccRec') % plots accuracy recal plot based on all scores. Argument must be provided to display the class used for the plot
-        plotScore=varargin{i+1}; 
+        plotScore=varargin{i+1};
     end
-    
+
     if strcmp(varargin{i},'Export') % this mode removes uncessary displayed elements and output a text file and a pdf file; provide full filepath as argument
         export=varargin{i+1};
     end
-    
-       if strcmp(varargin{i},'ScoreId') %specifies indices of scores to be used in stats
+
+    if strcmp(varargin{i},'ScoreId') %specifies indices of scores to be used in stats
         scoreid=varargin{i+1};
     end
-    
+
     if strcmp(varargin{i},'Force') % forces the caluclation of scores
         compute=1;
     end
@@ -70,9 +70,9 @@ end
 
 
 if compute==1
-    
+
     disp(['Stats will be computed on the following ROIs: ' num2str(roiid)]);
-    
+
 else
     disp(['Stats will be plotted on the following ROIs: ' num2str(roiid)]);
 end
@@ -84,18 +84,18 @@ classistr=classif.strid;
 
 
 if compute==1 % compute new scores
-    
+
     cc=1;
     classif.score=[];
-    
+
     if numel(thr)==0
         neval=0.9;
     else
         neval=thr;
     end
-    
+
     for i=neval % loop on possible thr values
-        
+
         % apply postprocessing with given threshold
         if  strcmp(classif.category{1},'Pixel')% does a postprocessing to create segmented image with given threshold
             for j=roiid
@@ -105,20 +105,20 @@ if compute==1 % compute new scores
                     case -1
                         classif.roi(j).postprocessing(classif,'OutputFun',@post,'OutputArg',{'adaptivethreshold'},'NoSave');
                     otherwise
-                 
+
                         classif.roi(j).postprocessing(classif,'OutputFun',@post,'OutputArg',{'threshold',num2str(i)},'NoSave');
                 end
             end
         end
-        
+
         data=collectROIData(classif,roiid);  % collect prediction and ground truth data
-        
+
         if ~isfield(data,'reg')
-           disp('There are no statistics to display.... quitting');
-           return;
+            disp('There are no statistics to display.... quitting');
+            return;
         end
 
-        
+
         if data.reg==1 % regression
             figure('Color','w');
             plot(data.gt,data.pred,'Marker','.','Markersize',10,'LineStyle','none'); hold on;
@@ -126,14 +126,14 @@ if compute==1 % compute new scores
             c=corrcoef(data.gt,data.pred);
             xlim([min(min(data.gt),min(data.pred)) max(max(data.gt),max(data.pred))]);
             ylim([min(min(data.gt),min(data.pred)) max(max(data.gt),max(data.pred))]);
-            
+
             xlabel('Groundtruth');
             ylabel('Prediction');
             text(2,2,['R^2= ' num2str(c(1,2))]);
         else %  classification
-            
+
             if cc==1
- 
+
                 classif.score= measureAccuracyRecall(classif,data.gt, data.pred, data.roi, data.frames, num2str(i));  % score for given classification
                 classif.score.comments='Classification benchmarks using main classifier';
                 classif.score.thr=i;
@@ -142,21 +142,21 @@ if compute==1 % compute new scores
                 classif.score(cc).comments='Classification benchmarks using main classifier';
                 classif.score(cc).thr=i;
             end
-            
+
             if classif.category=="LSTM" % for LSTM classification, compute CNN benchmarks
                 if numel( data.CNNpred) && numel(data.gt)==numel(data.CNNpred)
-       
-                cc=cc+1;
-                classif.score(cc)= measureAccuracyRecall(classif,data.gt, data.CNNpred, data.roi, data.frames, ['LSTM_' num2str(i)]);  % score for given classification
-                classif.score(cc).comments='Classification benchmarks using CNN classifier for LSTM architecture';
-                classif.score(cc).thr=i;
+
+                    cc=cc+1;
+                    classif.score(cc)= measureAccuracyRecall(classif,data.gt, data.CNNpred, data.roi, data.frames, ['LSTM_' num2str(i)]);  % score for given classification
+                    classif.score(cc).comments='Classification benchmarks using CNN classifier for LSTM architecture';
+                    classif.score(cc).thr=i;
                 end
             end
         end
-        
+
         cc=cc+1;
     end
-    
+
 end
 
 aa=classif.score
@@ -164,9 +164,9 @@ aa=classif.score
 % ===== plot statistics
 
 if numel(scoreid)==0
-nscore=1:numel(classif.score);
+    nscore=1:numel(classif.score);
 else
-nscore=scoreid;     
+    nscore=scoreid;
 end
 
 if numel(nscore)==0
@@ -176,388 +176,388 @@ end
 
 if numel(export) % generate a text file with statistics data
     fileID = fopen([export '.txt'],'w');
-   fprintf(fileID,'Stat file for classification %s \n',classif.strid);
-   fprintf(fileID,'Date:  %s \n',datestr(datetime));
-   fprintf(fileID,'scores displayed: %s \n\n' ,num2str(nscore));
-fclose(fileID);
+    fprintf(fileID,'Stat file for classification %s \n',classif.strid);
+    fprintf(fileID,'Date:  %s \n',datestr(datetime));
+    fprintf(fileID,'scores displayed: %s \n\n' ,num2str(nscore));
+    fclose(fileID);
 
 end
 
 if plotConfusion
-       for j=nscore
-          % j
-            mate=classif.score(j).confusion;
-            cate=categorical(classif.classes);
-            h=figure;
-            cm=confusionchart(mate,cate,'ColumnSummary','column-normalized','RowSummary','row-normalized');
-            xlabel('Predicted class');
-            ylabel('Groundtruth');
-            
-            str=num2str(classif.score(j).thr);
-            
-            if classif.score(j).thr==0
-                str='max';
-            end
-            
-            if classif.score(j).thr==-1
-                str='mean';
-            end
-            
-             set(h,'Color','w','Position',[100+30*j 100+30*j 600 400])
-            set(gca,'FontSize',14);
-            
-            if numel(export)
-                savefig(h,[export '_score_' num2str(j) '_confusion.fig']);
-                try
-                exportgraphics(h,[export '_score_' num2str(j) '_confusion.pdf']);
-                catch
-                end
-                
-                 fileID = fopen([export '.txt'],'a+');
-                  fprintf(fileID,'=======\n');
-                  fprintf(fileID,'Confusion plot with classes:\n');
-                  
-                      fprintf(fileID,'=======\n');
-                   fprintf(fileID,'Score %s \n',num2str(j));
-                    fprintf(fileID,'=======\n');
-                    
-                  fprintf(fileID,'Total N= %s \n',num2str(classif.score(j).N));
-                  fprintf(fileID,'Threshold= %s \n',num2str(classif.score(j).thr));
-                  
-                  for k=1:numel(classif.classes)
-                      fprintf(fileID,'Class %d: %s \n',k,classif.classes{k}); %heree
-                       fprintf(fileID,'N= %d \n',classif.score(j).classes(k).N); %heree
-                  end
-                  
-                   fprintf(fileID,'-----n');
-              
-                 fclose(fileID);
-            else
-                title(['Dataset:' datasetType ' - N=' num2str(classif.score(j).N) ' - thr=' str]);
-            end
-            
+    for j=nscore
+        % j
+        mate=classif.score(j).confusion;
+        cate=categorical(classif.classes);
+        h=figure;
+        cm=confusionchart(mate,cate,'ColumnSummary','column-normalized','RowSummary','row-normalized');
+        xlabel('Predicted class');
+        ylabel('Groundtruth');
+
+        str=num2str(classif.score(j).thr);
+
+        if classif.score(j).thr==0
+            str='max';
         end
-end
-  
-if plotROI
-       for j=nscore
-            
-            roi=classif.score(j).roi;
-            
-            h=figure;
-            recall=[];
-            accuracy=[];
-            fscore=[];
-            str={};
-            
-            
-            for k=1:numel(roi)
-                recall=[recall roi(k).recall];
-                accuracy=[accuracy roi(k).accuracy];
-                fscore=[fscore roi(k).fscore];
-              %  str{k}=[ 'ROI #' num2str(roi(k).id)  ' (N='  num2str(roi(k).N) ')'];
+
+        if classif.score(j).thr==-1
+            str='mean';
+        end
+
+        set(h,'Color','w','Position',[100+30*j 100+30*j 600 400])
+        set(gca,'FontSize',14);
+
+        if numel(export)
+            savefig(h,[export '_score_' num2str(j) '_confusion.fig']);
+            try
+                exportgraphics(h,[export '_score_' num2str(j) '_confusion.pdf']);
+            catch
             end
-            
-            %  x=[x 2];
-            x=1:numel(roi);
-            y=[recall;  accuracy ; fscore];
-            bar(x,y');
-            ylim([0 100]);
-         %   set(gca,'XTickLabel',str)
-            legend({'Recall','Accuracy','F-score'},'Location','southwest');
-         
-            set(h,'Color','w','Position',[100+30*j 100+30*j 600 400])
-             set(gca,'FontSize',14);
-            xlabel('ROI Id');
-            ylabel('Benchmark (%)');
-            
-               if numel(export)
-                savefig(h,[export  '_score_' num2str(j) '_roi.fig']);
-                try
+
+            fileID = fopen([export '.txt'],'a+');
+            fprintf(fileID,'=======\n');
+            fprintf(fileID,'Confusion plot with classes:\n');
+
+            fprintf(fileID,'=======\n');
+            fprintf(fileID,'Score %s \n',num2str(j));
+            fprintf(fileID,'=======\n');
+
+            fprintf(fileID,'Total N= %s \n',num2str(classif.score(j).N));
+            fprintf(fileID,'Threshold= %s \n',num2str(classif.score(j).thr));
+
+            for k=1:numel(classif.classes)
+                fprintf(fileID,'Class %d: %s \n',k,classif.classes{k}); %heree
+                fprintf(fileID,'N= %d \n',classif.score(j).classes(k).N); %heree
+            end
+
+            fprintf(fileID,'-----n');
+
+            fclose(fileID);
+        else
+            title(['Dataset:' datasetType ' - N=' num2str(classif.score(j).N) ' - thr=' str]);
+        end
+
+    end
+end
+
+if plotROI
+    for j=nscore
+
+        roi=classif.score(j).roi;
+
+        h=figure;
+        recall=[];
+        accuracy=[];
+        fscore=[];
+        str={};
+
+
+        for k=1:numel(roi)
+            recall=[recall roi(k).recall];
+            accuracy=[accuracy roi(k).accuracy];
+            fscore=[fscore roi(k).fscore];
+            %  str{k}=[ 'ROI #' num2str(roi(k).id)  ' (N='  num2str(roi(k).N) ')'];
+        end
+
+        %  x=[x 2];
+        x=1:numel(roi);
+        y=[recall;  accuracy ; fscore];
+        bar(x,y');
+        ylim([0 100]);
+        %   set(gca,'XTickLabel',str)
+        legend({'Recall','Accuracy','F-score'},'Location','southwest');
+
+        set(h,'Color','w','Position',[100+30*j 100+30*j 600 400])
+        set(gca,'FontSize',14);
+        xlabel('ROI Id');
+        ylabel('Benchmark (%)');
+
+        if numel(export)
+            savefig(h,[export  '_score_' num2str(j) '_roi.fig']);
+            try
                 exportgraphics(h,[export  '_score_' num2str(j) '_roi.pdf']);
-                catch
+            catch
+            end
+
+            fileID = fopen([export '.txt'],'a+');
+            fprintf(fileID,'=======\n');
+            fprintf(fileID,'Statistics per ROIs:\n');
+
+            fprintf(fileID,'=======\n');
+            fprintf(fileID,'Score %s \n',num2str(j));
+            fprintf(fileID,'=======\n');
+
+            fprintf(fileID,'Total N= %s \n',num2str(classif.score(j).N));
+            fprintf(fileID,'Threshold= %s \n',num2str(classif.score(j).thr));
+
+            for i=1:numel(classif.score(j).roi)
+                fprintf(fileID,'ROI # %d \n',i ); %heree
+
+                fprintf(fileID,'Accuracy: %s \n',num2str(classif.score(j).roi(i).accuracy)); %heree
+                fprintf(fileID,'Recall: %s \n',num2str(classif.score(j).roi(i).recall)); %heree
+                fprintf(fileID,'Fscore: %s \n',num2str(classif.score(j).roi(i).fscore)); %heree
+                fprintf(fileID,'N= %d \n',classif.score(j).roi(i).N); %heree
+
+                fprintf(fileID,'-----\n');
+
+                for k=1:numel(classif.classes)
+                    fprintf(fileID,'Class %d: %s \n',k,classif.classes{k}); %heree
+                    fprintf(fileID,'Accuracy: %s \n',num2str(classif.score(j).roi(i).classes(k).accuracy)); %heree
+                    fprintf(fileID,'Recall: %s \n',num2str(classif.score(j).roi(i).classes(k).recall)); %heree
+                    fprintf(fileID,'Fscore: %s \n',num2str(classif.score(j).roi(i).classes(k).fscore)); %heree
                 end
-                
-                 fileID = fopen([export '.txt'],'a+');
-                  fprintf(fileID,'=======\n');
-                  fprintf(fileID,'Statistics per ROIs:\n');
-                  
-                  fprintf(fileID,'=======\n');
-                   fprintf(fileID,'Score %s \n',num2str(j));
-                    fprintf(fileID,'=======\n');
-                    
-                  fprintf(fileID,'Total N= %s \n',num2str(classif.score(j).N));
-                  fprintf(fileID,'Threshold= %s \n',num2str(classif.score(j).thr));
-                  
-                  for i=1:numel(classif.score(j).roi)
-                     fprintf(fileID,'ROI # %d \n',i ); %heree
-                     
-                     fprintf(fileID,'Accuracy: %s \n',num2str(classif.score(j).roi(i).accuracy)); %heree
-                     fprintf(fileID,'Recall: %s \n',num2str(classif.score(j).roi(i).recall)); %heree
-                     fprintf(fileID,'Fscore: %s \n',num2str(classif.score(j).roi(i).fscore)); %heree
-                      fprintf(fileID,'N= %d \n',classif.score(j).roi(i).N); %heree
-                      
-                       fprintf(fileID,'-----\n');
-                     
-                  for k=1:numel(classif.classes)
-                      fprintf(fileID,'Class %d: %s \n',k,classif.classes{k}); %heree
-                       fprintf(fileID,'Accuracy: %s \n',num2str(classif.score(j).roi(i).classes(k).accuracy)); %heree
-                     fprintf(fileID,'Recall: %s \n',num2str(classif.score(j).roi(i).classes(k).recall)); %heree
-                     fprintf(fileID,'Fscore: %s \n',num2str(classif.score(j).roi(i).classes(k).fscore)); %heree
-                  end
-                  
-                 %    fprintf(fileID,'=======\n');
-                  end
-                  
-                   fprintf(fileID,'-----\n');
-                
-                
-                 fclose(fileID);
-            else
-                 title(['Dataset:' datasetType ' - N=' num2str(classif.score(j).N) ' - Benchmark per ROI']);
-               end
-            
-       end
+
+                %    fprintf(fileID,'=======\n');
+            end
+
+            fprintf(fileID,'-----\n');
+
+
+            fclose(fileID);
+        else
+            title(['Dataset:' datasetType ' - N=' num2str(classif.score(j).N) ' - Benchmark per ROI']);
+        end
+
+    end
 end
 
 
-        %end
-        
-          
+%end
+
+
 if plotClasses
 
-         for j=nscore
-            
-            classes=classif.score(j).classes;
-            
-            h=figure;
-            recall=[];
-            accuracy=[];
-            fscore=[];
-            str={};
-            
-            for k=1:numel(classes)
-                recall=[recall classes(k).recall];
-                accuracy=[accuracy classes(k).accuracy];
-                fscore=[fscore classes(k).fscore];
-                str{k}=[classif.classes{k}];
-            end
-            
-            str2=num2str(classif.score(j).thr);
-            
-            if classif.score(j).thr==0
-                str2='max';
-            end
-            
-            if classif.score(j).thr==-1
-                str2='mean';
-            end
-            
-            %  x=[x 2];
-            x=1:numel(classes);
-            y=[recall;  accuracy ; fscore]';
-            bar(x,y);
-            ylim([0 100]);
-            set(gca,'XTickLabel',str)
-              legend({'Recall','Accuracy','F-score'},'Location','southwest');
-          
-            set(h,'Color','w','Position',[100+30*j 100+30*j 600 400])
-             set(gca,'FontSize',14);
-            xlabel('Class');
-            ylabel('Benchmark (%)');
-            
-             if numel(export)
-                savefig(h,[export  '_score_' num2str(j) '_classes.fig']);
-                try
-                exportgraphics(h,[export  '_score_' num2str(j) '_classes.pdf']);
-                catch
-                end
-                 
-                 fileID = fopen([export '.txt'],'a+');
-                 
-                  fprintf(fileID,'=======\n');
-                   fprintf(fileID,'Score %s \n',num2str(j));
-                    fprintf(fileID,'=======\n');
-                    
-                  fprintf(fileID,'Total N= %s \n',num2str(classif.score(j).N));
-                  fprintf(fileID,'Threshold= %s \n',num2str(classif.score(j).thr));
-              
-                 
-                  fprintf(fileID,'---------\n');
-                  fprintf(fileID,'Statistics per class:\n');
-                  
-                 
-                  for k=1:numel(classif.classes)
-                      fprintf(fileID,'Class %d: %s \n',k,classif.classes{k}); %heree
-                       fprintf(fileID,'N= %d \n',classif.score(j).classes(k).N); %heree
-                       fprintf(fileID,'Accuracy: %s \n',num2str(classif.score(j).classes(k).accuracy)); %heree
-                     fprintf(fileID,'Recall: %s \n',num2str(classif.score(j).classes(k).recall)); %heree
-                     fprintf(fileID,'Fscore: %s \n',num2str(classif.score(j).classes(k).fscore)); %heree
-                %     fprintf(fileID,'-----\n');
-                  end
-                 
-                  
-            %  fprintf(fileID,'=======\n');
-                   fclose(fileID);
-         
-            else
-                 title(['Dataset:' datasetType ' - N=' num2str(classif.score(j).N) ' - Benchmark per class - thr=' str2]);
-             end
-               
-         end
-           
-end
-    
-    
-    % for j=1:numel(classif.score)
-  if numel(plotScore)
-        
-        cl1=[];% table for thr=-1
-        cl2=[]; % table for thr=0
-        cl3=[]; % table for thr>0
-        
-        cla=plotScore;
+    for j=nscore
 
-        for j=nscore
-            
-            switch classif.score(j).thr
-                case -1
-                    cl1=[-1; classif.score(j).classes(cla).recall ; classif.score(j).classes(cla).accuracy ; classif.score(j).classes(cla).fscore];
-                case 0
-                    cl2=[0; classif.score(j).classes(cla).recall ; classif.score(j).classes(cla).accuracy ; classif.score(j).classes(cla).fscore];
-                otherwise
-                    cl3=[cl3 , [ classif.score(j).thr ; classif.score(j).classes(cla).recall ; classif.score(j).classes(cla).accuracy ; classif.score(j).classes(cla).fscore]];
-            end
-        end
-        
-        
-        str={};
-        
+        classes=classif.score(j).classes;
+
         h=figure;
-        ax1=subplot(2,1,1);
-        
-        if numel(cl3)
-            %  x=[x 2];
-            x=cl3(2,:);
-            y=cl3(3,:);
-            
-            
-            plot(x,y,'LineWidth',3,'Color','b'); hold on
-            str=[str, {'Varying prediction threshold'}];
-            
-            [pix id]=max(cl3(4,:));
-            xmax=cl3(2,id);
-            ymax=cl3(3,id);
-            
-            recmax=xmax;
-            accmax=ymax;
-            
-            plot(xmax,ymax,'LineWidth',3,'Color',[1 0.5 0],'Marker','.','MarkerSize',30,'LineStyle','none'); hold on
-            str=[str, {'Max. F-score'}];
+        recall=[];
+        accuracy=[];
+        fscore=[];
+        str={};
+
+        for k=1:numel(classes)
+            recall=[recall classes(k).recall];
+            accuracy=[accuracy classes(k).accuracy];
+            fscore=[fscore classes(k).fscore];
+            str{k}=[classif.classes{k}];
         end
-        
-        if numel(cl2)
-            xmax=cl2(2,1);
-            ymax=cl2(3,1);
-            plot(xmax,ymax,'LineWidth',3,'Color','r','Marker','.','MarkerSize',30); hold on
-            str=[str, {'Max prob'}];
+
+        str2=num2str(classif.score(j).thr);
+
+        if classif.score(j).thr==0
+            str2='max';
         end
-        
-        if numel(cl1)
-            xmax=cl1(2,1);
-            ymax=cl1(3,1);
-            plot(xmax,ymax,'LineWidth',3,'Color','m','Marker','.','MarkerSize',30); hold on
-            str=[str, {'Mean threshold'}];
+
+        if classif.score(j).thr==-1
+            str2='mean';
         end
-        
-        
+
+        %  x=[x 2];
+        x=1:numel(classes);
+        y=[recall;  accuracy ; fscore]';
+        bar(x,y);
         ylim([0 100]);
-        xlim([0 100]);
-        
-        legend(str,'Location','southwest');
-       
-      
-        set(h,'Color','w','Position',[200 200 600 1000])
-         set(gca,'FontSize',14);
-        xlabel('Recall (%)');
-        ylabel('Accuracy (%)');
-        
-        ax2=subplot(2,1,2);
-        
-      
-         
-        if numel(cl3)
-            %  x=[x 2];
-            x=cl3(1,:);
-            y=cl3(4,:);
-            
-            
-            
-            
-            plot(x,y,'LineWidth',3,'Color','b'); hold on
-            
-            [pix id]=max(cl3(4,:));
-            xmax=cl3(1,id);
-            ymax=cl3(4,id);
-            
-            thrmax=xmax;
-            fmax= ymax;
-            
-            plot(xmax,ymax,'LineWidth',3,'Color',[1 0.5 0],'Marker','.','MarkerSize',30,'LineStyle','none'); hold on
-            
-            str=[str, {'Varying prediction threshold'}];
-            xlabel('Prediction threshold');
-            ylabel('F-score (%)');
-            ylim([0 100]);
-            xlim([0 1]);
-               set(gca,'FontSize',14);
-            
-            disp(['Score id at max: ' num2str(id)]);
-            disp(['Threshold max: ' num2str(xmax)]);
-            disp(['Accuracy at max: ' num2str(cl3(3,id))]);
-            disp(['Recall at max: ' num2str(cl3(2,id))]);
-            disp(['Fscore at max: ' num2str(cl3(4,id))]);
-            
-        end
-        
-            if numel(export)
-                savefig(h,[export  '_score.fig']);
-                try
-                exportgraphics(h,[export  '_score.pdf']);
-                catch
-                end
-                
-                 fileID = fopen([export '.txt'],'a+');
-                  fprintf(fileID,'=======\n');
-                  fprintf(fileID,'AccRecall:\n');
-                  
-                  
-                    fprintf(fileID,'Thrmax: %s \n',num2str(thrmax)); %heree
-                    fprintf(fileID,'Accuracy max: %s \n',num2str(accmax)); %heree
-                    fprintf(fileID,'Recall max: %s \n',num2str(recmax)); %heree
-                     fprintf(fileID,'F score max: %s \n',num2str(fmax)); %heree
-                      
-                     fclose(fileID);
-                     
-                     
-            else
-                  title(['Dataset:' datasetType ' Recall/Accuracy plot for class ' classif.classes{cla}]);
+        set(gca,'XTickLabel',str)
+        legend({'Recall','Accuracy','F-score'},'Location','southwest');
+
+        set(h,'Color','w','Position',[100+30*j 100+30*j 600 400])
+        set(gca,'FontSize',14);
+        xlabel('Class');
+        ylabel('Benchmark (%)');
+
+        if numel(export)
+            savefig(h,[export  '_score_' num2str(j) '_classes.fig']);
+            try
+                exportgraphics(h,[export  '_score_' num2str(j) '_classes.pdf']);
+            catch
             end
-        
-        
-        
+
+            fileID = fopen([export '.txt'],'a+');
+
+            fprintf(fileID,'=======\n');
+            fprintf(fileID,'Score %s \n',num2str(j));
+            fprintf(fileID,'=======\n');
+
+            fprintf(fileID,'Total N= %s \n',num2str(classif.score(j).N));
+            fprintf(fileID,'Threshold= %s \n',num2str(classif.score(j).thr));
+
+
+            fprintf(fileID,'---------\n');
+            fprintf(fileID,'Statistics per class:\n');
+
+
+            for k=1:numel(classif.classes)
+                fprintf(fileID,'Class %d: %s \n',k,classif.classes{k}); %heree
+                fprintf(fileID,'N= %d \n',classif.score(j).classes(k).N); %heree
+                fprintf(fileID,'Accuracy: %s \n',num2str(classif.score(j).classes(k).accuracy)); %heree
+                fprintf(fileID,'Recall: %s \n',num2str(classif.score(j).classes(k).recall)); %heree
+                fprintf(fileID,'Fscore: %s \n',num2str(classif.score(j).classes(k).fscore)); %heree
+                %     fprintf(fileID,'-----\n');
+            end
+
+
+            %  fprintf(fileID,'=======\n');
+            fclose(fileID);
+
+        else
+            title(['Dataset:' datasetType ' - N=' num2str(classif.score(j).N) ' - Benchmark per class - thr=' str2]);
+        end
+
     end
+
+end
+
+
+% for j=1:numel(classif.score)
+if numel(plotScore)
+
+    cl1=[];% table for thr=-1
+    cl2=[]; % table for thr=0
+    cl3=[]; % table for thr>0
+
+    cla=plotScore;
+
+    for j=nscore
+
+        switch classif.score(j).thr
+            case -1
+                cl1=[-1; classif.score(j).classes(cla).recall ; classif.score(j).classes(cla).accuracy ; classif.score(j).classes(cla).fscore];
+            case 0
+                cl2=[0; classif.score(j).classes(cla).recall ; classif.score(j).classes(cla).accuracy ; classif.score(j).classes(cla).fscore];
+            otherwise
+                cl3=[cl3 , [ classif.score(j).thr ; classif.score(j).classes(cla).recall ; classif.score(j).classes(cla).accuracy ; classif.score(j).classes(cla).fscore]];
+        end
+    end
+
+
+    str={};
+
+    h=figure;
+    ax1=subplot(2,1,1);
+
+    if numel(cl3)
+        %  x=[x 2];
+        x=cl3(2,:);
+        y=cl3(3,:);
+
+
+        plot(x,y,'LineWidth',3,'Color','b'); hold on
+        str=[str, {'Varying prediction threshold'}];
+
+        [pix id]=max(cl3(4,:));
+        xmax=cl3(2,id);
+        ymax=cl3(3,id);
+
+        recmax=xmax;
+        accmax=ymax;
+
+        plot(xmax,ymax,'LineWidth',3,'Color',[1 0.5 0],'Marker','.','MarkerSize',30,'LineStyle','none'); hold on
+        str=[str, {'Max. F-score'}];
+    end
+
+    if numel(cl2)
+        xmax=cl2(2,1);
+        ymax=cl2(3,1);
+        plot(xmax,ymax,'LineWidth',3,'Color','r','Marker','.','MarkerSize',30); hold on
+        str=[str, {'Max prob'}];
+    end
+
+    if numel(cl1)
+        xmax=cl1(2,1);
+        ymax=cl1(3,1);
+        plot(xmax,ymax,'LineWidth',3,'Color','m','Marker','.','MarkerSize',30); hold on
+        str=[str, {'Mean threshold'}];
+    end
+
+
+    ylim([0 100]);
+    xlim([0 100]);
+
+    legend(str,'Location','southwest');
+
+
+    set(h,'Color','w','Position',[200 200 600 1000])
+    set(gca,'FontSize',14);
+    xlabel('Recall (%)');
+    ylabel('Accuracy (%)');
+
+    ax2=subplot(2,1,2);
+
+
+
+    if numel(cl3)
+        %  x=[x 2];
+        x=cl3(1,:);
+        y=cl3(4,:);
+
+
+
+
+        plot(x,y,'LineWidth',3,'Color','b'); hold on
+
+        [pix id]=max(cl3(4,:));
+        xmax=cl3(1,id);
+        ymax=cl3(4,id);
+
+        thrmax=xmax;
+        fmax= ymax;
+
+        plot(xmax,ymax,'LineWidth',3,'Color',[1 0.5 0],'Marker','.','MarkerSize',30,'LineStyle','none'); hold on
+
+        str=[str, {'Varying prediction threshold'}];
+        xlabel('Prediction threshold');
+        ylabel('F-score (%)');
+        ylim([0 100]);
+        xlim([0 1]);
+        set(gca,'FontSize',14);
+
+        disp(['Score id at max: ' num2str(id)]);
+        disp(['Threshold max: ' num2str(xmax)]);
+        disp(['Accuracy at max: ' num2str(cl3(3,id))]);
+        disp(['Recall at max: ' num2str(cl3(2,id))]);
+        disp(['Fscore at max: ' num2str(cl3(4,id))]);
+
+    end
+
+    if numel(export)
+        savefig(h,[export  '_score.fig']);
+        try
+            exportgraphics(h,[export  '_score.pdf']);
+        catch
+        end
+
+        fileID = fopen([export '.txt'],'a+');
+        fprintf(fileID,'=======\n');
+        fprintf(fileID,'AccRecall:\n');
+
+
+        fprintf(fileID,'Thrmax: %s \n',num2str(thrmax)); %heree
+        fprintf(fileID,'Accuracy max: %s \n',num2str(accmax)); %heree
+        fprintf(fileID,'Recall max: %s \n',num2str(recmax)); %heree
+        fprintf(fileID,'F score max: %s \n',num2str(fmax)); %heree
+
+        fclose(fileID);
+
+
+    else
+        title(['Dataset:' datasetType ' Recall/Accuracy plot for class ' classif.classes{cla}]);
+    end
+
+
+
+end
 
 
 function score=measureAccuracyRecall(classif, groundtruth, predictions, roi, frames, str)
 
-% str is a flag for the excell export file 
+% str is a flag for the excell export file
 
 data=[];
 data.gt=groundtruth;
 data.pred=predictions;
 data.roi=roi;
-data.frames=frames; 
+data.frames=frames;
 
 % ===== accuracy & recall per class ====
 
@@ -571,19 +571,19 @@ score.classes.fscore=[];
 score.classes.N=[];
 
 for i=1:numel(classif.classes)
-    
+
     pred=data.pred==i;
     gt=   data.gt==i;
 
-    roi2=data.roi; 
+    roi2=data.roi;
     frames2=data.frames;
-   
-    
-    
- %   size(pred), size(gt)
+
+
+
+    %   size(pred), size(gt)
     accuracy= 100*sum(pred & gt)./sum(pred);
     recall=       100*sum(pred & gt)./sum(gt);
-    
+
     score.classes(i).accuracy=accuracy;
     score.classes(i).recall=recall;
     score.classes(i).fscore=2*recall*accuracy/(accuracy+recall);
@@ -591,15 +591,15 @@ for i=1:numel(classif.classes)
 
     % outputs inconsistencies as an excel file per class
     roiid={classif.roi.id};
-    inc_pix=~(pred & gt) & gt; % select mismatch frames for all GT classes 
+    inc_pix=~(pred & gt) & gt; % select mismatch frames for all GT classes
 
     if numel(frames2)
-    inc_roi=roi2(inc_pix);
-    inc_frames=frames2(inc_pix);
-    roiid=roiid(inc_roi);
-    pth=classif.path; 
-    pthtot=fullfile(pth,[classif.strid '_mismatch_' str '.xlsx']);
-    writecell([(num2cell(inc_roi,1))', roiid', (num2cell(inc_frames))'],pthtot,'sheet',classif.classes{i},'WriteMode','overwritesheet');
+        inc_roi=roi2(inc_pix);
+        inc_frames=frames2(inc_pix);
+        roiid=roiid(inc_roi);
+        pth=classif.path;
+        pthtot=fullfile(pth,[classif.strid '_mismatch_' str '.xlsx']);
+        writecell([(num2cell(inc_roi,1))', roiid', (num2cell(inc_frames))'],pthtot,'sheet',classif.classes{i},'WriteMode','overwritesheet');
     end
 end
 
@@ -628,36 +628,36 @@ roiid=unique(data.roi);
 
 cc=1;
 for i=roiid
-    
+
     pred=data.pred(data.roi==i);
     gt=data.gt(data.roi==i);
-    
+
     for j=1:numel(classif.classes)
-        
+
         predtmp=pred==j;
         gttmp=   gt==j;
-        
+
         accuracy= 100*sum(predtmp & gttmp)./sum(predtmp);
         recall=       100*sum(predtmp & gttmp)./sum(gttmp);
-        
+
         score.roi(cc).classes(j).accuracy=accuracy;
         score.roi(cc).classes(j).recall=recall;
         score.roi(cc).classes(j).fscore=2*recall*accuracy/(accuracy+recall);
         score.roi(cc).classes(j).N=sum(predtmp);
     end
     score.roi(cc).id=i;
-    
+
     acc=[score.roi(cc).classes(:).accuracy];
     rec=[score.roi(cc).classes(:).recall];
     csw=@(x) sum(pred==x);
     weights=arrayfun(csw,1:numel(classif.classes));
-    
+
     % remove classes of 0 weights / NaN accuracy
     pix=~isnan(acc);
     acc=acc(pix);
     rec=rec(pix);
     weights=weights(pix);
-    
+
     score.roi(cc).accuracy=  sum(weights.*acc)./sum(weights);
     score.roi(cc).recall    =  sum(weights.*rec)./sum(weights);
     score.roi(cc).fscore=2*score.roi(cc).accuracy* score.roi(cc).recall  ./(score.roi(cc).accuracy+ score.roi(cc).recall  );
@@ -687,340 +687,307 @@ score.fscore=2*accuracy*recall./(accuracy+recall);
 score.N=sum([score.classes(:).N]);
 
 
-    function data=collectROIData(classif,roiid)
-        
-        disp('Collecting data in ROIs - first checking the existence of both GT and predictions....');
-        
-        data=[];
-        data.roi=[];
-        data.frames=[];
-        data.gt=[];
-        data.pred=[];
-        data.CNNpred=[];
-        classistr=classif.strid;
-         reg=0;
-         
-        for j=roiid
-            
-            obj=classif.roi(j);
-            disp([num2str(j) ' - '  obj.id ' - checking data']);
-            
-            % classiid represents the strid of the classifier to be displayed
-            
-            resok=0;
-            ground=0;
-            
-            gt=[];
-            pred=[];
-            CNNpred=[];
-            fra=[];
-            
-            switch classif.category{1}
-                case 'Pixel' % pixel classification
-                    
-                    chgt=obj.findChannelID(classif.strid);
-                    chpred=obj.findChannelID(['results_' classif.strid]);
-                    
-                    if numel(obj.image)==0 % loads the image
-                        obj.load;
-                    end
-                    im=obj.image;
-                    
-                    if numel(chgt)>0 % groundtruth channel exists
-                        % checks if at least one image has been annotated  first!
-                        
-                        imgt=im(:,:,chgt,:);
-                        if sum(imgt(:))>0 % at least one image was annotated
-                            disp('GT data are available!');
-                            ground=1;
-                        else
-                            disp('there is no GT data !')
-                        end
-                    else
-                        disp('there is no GT channel ')
-                    end
-                    
-                    
-                    if numel(chpred)>0
-                        impred=im(:,:,chpred,:);
-                        if sum(impred(:))>0 % at least one image was annotated
-                            disp('Predictions data are available!');
-                            resok=1;
-                        else
-                            disp('there is no pred data !')
-                        end
-                    else
-                        disp('There is no prediction channel available for this roi');
-                    end
-                    
-                    if ground && resok
-                        %  for gt, if at least one pixel on the image is annotated, then
-                        %  take the whole image as annotated and fill in with
-                        %  default class
-                        for k=1:size(imgt,4)
-                            bw=imgt(:,:,1,k);
-                            if sum(bw(:))>0
-                                bw= imgt(:,:,1,k);
-                                bw(imgt(:,:,1,k)==0)=1;
-                                imgt(:,:,1,k) = bw;
-                            end
-                        end
-                        
-                        pix= imgt & impred;
-                        
-                        if numel(pix)==0
-                            disp('There is no coincidence for ground truth and prediction : skipping roi !');
-                            continue
-                        else
-                            disp('GT and prediction pixels match!');
-                        end
-                        
-                        gt= imgt(pix); gt=gt(:); gt=gt';
-                        pred=impred(pix); pred=pred(:); pred=pred';
-                        
-                    end
-                    
-                case 'Image Regression'
+function data=collectROIData(classif,roiid)
 
-                    dataserie=obj.data;
-                    pixdata=arrayfun(@(x) strcmp(x.groupid,classistr),dataserie);
-                    dataserie=dataserie(pixdata); 
-                    id_training=dataserie.getData('id_training');
-                    id_results=dataserie.getData('id');
+disp('Collecting data in ROIs - first checking the existence of both GT and predictions....');
 
-                      if numel(id_results)>0 % check is there are results available
-                        if any(id_results)
-                                    %  if sum(obj.results.(classistr).id)>0 % training exists for this ROI !
-                                    resok=1;
-                                    %    en
-                        else
-                            disp('There is no result available for this classification id');
-                        end
-                    else
-                        disp('There is no result available for this roi');
-                      end
+data=[];
+data.roi=[];
+data.frames=[];
+data.gt=[];
+data.pred=[];
+data.CNNpred=[];
+classistr=classif.strid;
+reg=0;
 
-    
-                    
-                    % if roi was used for user training, display the training data first
+for j=roiid
 
-                    if numel(id_training)~=0
-                        if any(id_training)
-                                % if sum(obj.train.(classistr).id)>0 % training exists for this ROI !
-                                ground=1;
-                                %  end
-                        else
-                            disp('There is no GT available for this classification id');
-                        end
-                    else
-                        disp('There is no GT available for this roi');
-                    end
+    obj=classif.roi(j);
+    disp([num2str(j) ' - '  obj.id ' - checking data']);
 
+    % classiid represents the strid of the classifier to be displayed
 
-%                     if numel(obj.train)~=0
-%                         if isfield(obj.train,classistr)
-%                             if numel(obj.train.(classistr).id) > 0
-%                                 % if sum(obj.train.(classistr).id)>0 % training exists for this ROI !
-%                                 ground=1;
-%                                 %  end
-%                             end
-%                         else
-%                             disp('There is no GT available for this classification id');
-%                         end
-%                     else
-%                         disp('There is no GT available for this roi');
-%                     end
-                    
-                    if ground && resok
-                        reg=1;
-                        
-                     %   if isfield(obj.results.(classistr),'id') % it's a classification
-                            pred=double(id_results); pred=pred';% double(obj.results.(classistr).id);
-                    %    else
-                    %        pred=double(obj.results.(classistr).prob);
-                    %    end
-                        gt=double(id_training); gt=gt'; %double(obj.train.(classistr).id);
- 
-                    end
-            
-                    
-                    
-                case 'Timeseries' % timeseries classification or regression
-                    
-                    if numel(obj.results)>0 % check is there are results available
-                        if isfield(obj.results,classistr)
-                            if isfield(obj.results.(classistr),'id') % it's a classification
-                                
-                                if numel(obj.results.(classistr).id) > 0
-                                    %  if sum(obj.results.(classistr).id)>0 % training exists for this ROI !
-                                    resok=1;
-                                    %    end
-                                end
-                                
-                            else % it s a regression
-                                
-                                if numel(obj.results.(classistr).prob) > 0
-                                    %  if sum(obj.results.(classistr).id)>0 % training exists for this ROI !
-                                    resok=1;
-                                    reg=1;
-                                    %    end
-                                end
-                            end
-                        else
-                            disp('There is no result available for this classification id');
-                        end
-                    else
-                        disp('There is no result available for this roi');
-                    end
-                    
-                    % if roi was used for user training, display the training data first
-                    if numel(obj.train)~=0
-                        if isfield(obj.train,classistr)
-                            if numel(obj.train.(classistr).id) > 0
-                                % if sum(obj.train.(classistr).id)>0 % training exists for this ROI !
-                                ground=1;
-                                %  end
-                            end
-                        else
-                            disp('There is no GT available for this classification id');
-                        end
-                    else
-                        disp('There is no GT available for this roi');
-                    end
-                    
-                    if ground && resok
-                        
-                        if isfield(obj.results.(classistr),'id') % it's a classification
-                            pred=double(obj.results.(classistr).id);
-                        else
-                            pred=double(obj.results.(classistr).prob);
-                        end
-                        gt=double(obj.train.(classistr).id);
-                    end
-                    
-                otherwise % image classification
-                    
-                    dataserie=obj.data;
-                    
-                    pixdata=arrayfun(@(x) strcmp(x.groupid,classistr),dataserie);
-                    dataserie=dataserie(pixdata);
+    resok=0;
+    ground=0;
 
-                    if isempty(dataserie)
-                        obj.load('data');
-                        dataserie=obj.data;
-                        pixdata=arrayfun(@(x) strcmp(x.groupid,classistr),dataserie);
-                        dataserie=dataserie(pixdata);
-                         if isempty(dataserie)
-                        disp(['No matching dataseries found for groupid: ' classistr ' in ROI ' obj.id]);
-                        continue;
-                         end
-                    end
+    gt=[];
+    pred=[];
+    CNNpred=[];
+    fra=[];
 
-                    id_training=dataserie.getData('id_training');
-                    id_results=dataserie.getData('id');
+    switch classif.category{1}
+        case 'Pixel' % pixel classification
 
-                      if numel(id_results)>0 % check is there are results available
-                        if any(id_results)
-                                    %  if sum(obj.results.(classistr).id)>0 % training exists for this ROI !
-                                    resok=1;
-                                    %    en
-                        else
-                            disp('There is no result available for this classification id');
-                        end
-                    else
-                        disp('There is no result available for this roi');
-                      end
+            chgt=obj.findChannelID(classif.strid);
+            chpred=obj.findChannelID(['results_' classif.strid]);
 
-                       if numel(id_training)~=0
-                        if any(id_training)
-                                % if sum(obj.train.(classistr).id)>0 % training exists for this ROI !
-                                ground=1;
-                                %  end
-                        else
-                            disp('There is no GT available for this classification id');
-                        end
-                    else
-                        disp('There is no GT available for this roi');
-                       end
-
-
-
-                    
-%                     if numel(obj.results)>0 % check is there are results available
-%                         if isfield(obj.results,classistr)
-%                             if numel(obj.results.(classistr).id) > 0
-%                                 if sum(obj.results.(classistr).id)>0 % training exists for this ROI !
-%                                     resok=1;
-%                                 end
-%                             end
-%                         else
-%                             disp('There is no result available for this classification id');
-%                         end
-%                     else
-%                         disp('There is no result available for this roi');
-%                     end
-                    
-                    % if roi was used for user training, display the training data first
-%                     if numel(obj.train)~=0
-%                         if isfield(obj.train,classistr)
-%                             if numel(obj.train.(classistr).id) > 0
-%                                 if sum(obj.train.(classistr).id)>0 % training exists for this ROI !
-%                                     ground=1;
-%                                 end
-%                             end
-%                         else
-%                             disp('There is no GT available for this classification id');
-%                         end
-%                     else
-%                         disp('There is no GT available for this roi');
-%                     end
-                    
-                    if ground && resok
-                        
-                        pred=double(id_results); pred=pred'; %obj.results.(classistr).id;
-                        gt=double(id_training); gt=gt';  %obj.train.(classistr).id;
-                        
-                        id_CNN=dataserie.getData('idCNN');
-
-                        if numel(id_CNN)
-                            CNNpred=double(id_CNN); CNNpred=CNNpred';
-                        end
-
-                      %  if isfield(obj.results.(classistr),'idCNN')
-                       %     if numel(obj.results.(classistr).idCNN)>0
-                              %  CNNpred=obj.results.(classistr).idCNN;
-                       %     end
-                       % end
-                        
-                        pix= pred & gt;
-                        fra=find(pix);
-                        
-                        if numel(pix)==0
-                            disp('There is no coincidence for ground truth and prediction : skipping roi !');
-                            continue
-                        end
-                        
-                        gt=gt(pix);
-                        pred=pred(pix);
-                        
-                        if numel(CNNpred)>=numel(pix)
-                            CNNpred=CNNpred(pix);
-                        end
-
-                        
-                    end
+            if numel(obj.image)==0 % loads the image
+                obj.load;
             end
-            % then display the results
-            
+            im=obj.image;
 
-            % if ground ==1 && resok==1 % list of rois used to compute stats
-            data.gt=[data.gt gt];
-            data.pred=[data.pred pred];
-            data.frames=[data.frames fra];
-            data.CNNpred=[data.CNNpred CNNpred];
-            data.roi=[data.roi j*ones(1,numel(gt))];
-            data.reg=reg;
-            %end
-            
-        end
-        
+            if numel(chgt)>0 % groundtruth channel exists
+                % checks if at least one image has been annotated  first!
+
+                imgt=im(:,:,chgt,:);
+                if sum(imgt(:))>0 % at least one image was annotated
+                    disp('GT data are available!');
+                    ground=1;
+                else
+                    disp('there is no GT data !')
+                end
+            else
+                disp('there is no GT channel ')
+            end
+
+
+            if numel(chpred)>0
+                impred=im(:,:,chpred,:);
+                if sum(impred(:))>0 % at least one image was annotated
+                    disp('Predictions data are available!');
+                    resok=1;
+                else
+                    disp('there is no pred data !')
+                end
+            else
+                disp('There is no prediction channel available for this roi');
+            end
+
+            if ground && resok
+                %  for gt, if at least one pixel on the image is annotated, then
+                %  take the whole image as annotated and fill in with
+                %  default class
+                for k=1:size(imgt,4)
+                    bw=imgt(:,:,1,k);
+                    if sum(bw(:))>0
+                        bw= imgt(:,:,1,k);
+                        bw(imgt(:,:,1,k)==0)=1;
+                        imgt(:,:,1,k) = bw;
+                    end
+                end
+
+                pix= imgt & impred;
+
+                if numel(pix)==0
+                    disp('There is no coincidence for ground truth and prediction : skipping roi !');
+                    continue
+                else
+                    disp('GT and prediction pixels match!');
+                end
+
+                gt= imgt(pix); gt=gt(:); gt=gt';
+                pred=impred(pix); pred=pred(:); pred=pred';
+
+            end
+
+        case 'Image Regression'
+
+            dataserie=obj.data;
+            pixdata=arrayfun(@(x) strcmp(x.groupid,classistr),dataserie);
+            dataserie=dataserie(pixdata);
+            id_training=dataserie.getData('id_training');
+            id_results=dataserie.getData('id');
+
+            if numel(id_results)>0 % check is there are results available
+                if any(id_results)
+                    %  if sum(obj.results.(classistr).id)>0 % training exists for this ROI !
+                    resok=1;
+                    %    en
+                else
+                    disp('There is no result available for this classification id');
+                end
+            else
+                disp('There is no result available for this roi');
+            end
+
+
+
+            % if roi was used for user training, display the training data first
+
+            if numel(id_training)~=0
+                if any(id_training)
+                    % if sum(obj.train.(classistr).id)>0 % training exists for this ROI !
+                    ground=1;
+                    %  end
+                else
+                    disp('There is no GT available for this classification id');
+                end
+            else
+                disp('There is no GT available for this roi');
+            end
+
+
+            %                     if numel(obj.train)~=0
+            %                         if isfield(obj.train,classistr)
+            %                             if numel(obj.train.(classistr).id) > 0
+            %                                 % if sum(obj.train.(classistr).id)>0 % training exists for this ROI !
+            %                                 ground=1;
+            %                                 %  end
+            %                             end
+            %                         else
+            %                             disp('There is no GT available for this classification id');
+            %                         end
+            %                     else
+            %                         disp('There is no GT available for this roi');
+            %                     end
+
+            if ground && resok
+                reg=1;
+
+                %   if isfield(obj.results.(classistr),'id') % it's a classification
+                pred=double(id_results); pred=pred';% double(obj.results.(classistr).id);
+                %    else
+                %        pred=double(obj.results.(classistr).prob);
+                %    end
+                gt=double(id_training); gt=gt'; %double(obj.train.(classistr).id);
+
+            end
+
+
+
+        case 'Timeseries' % timeseries classification or regression
+
+            if numel(obj.results)>0 % check is there are results available
+                if isfield(obj.results,classistr)
+                    if isfield(obj.results.(classistr),'id') % it's a classification
+
+                        if numel(obj.results.(classistr).id) > 0
+                            %  if sum(obj.results.(classistr).id)>0 % training exists for this ROI !
+                            resok=1;
+                            %    end
+                        end
+
+                    else % it s a regression
+
+                        if numel(obj.results.(classistr).prob) > 0
+                            %  if sum(obj.results.(classistr).id)>0 % training exists for this ROI !
+                            resok=1;
+                            reg=1;
+                            %    end
+                        end
+                    end
+                else
+                    disp('There is no result available for this classification id');
+                end
+            else
+                disp('There is no result available for this roi');
+            end
+
+            % if roi was used for user training, display the training data first
+            if numel(obj.train)~=0
+                if isfield(obj.train,classistr)
+                    if numel(obj.train.(classistr).id) > 0
+                        % if sum(obj.train.(classistr).id)>0 % training exists for this ROI !
+                        ground=1;
+                        %  end
+                    end
+                else
+                    disp('There is no GT available for this classification id');
+                end
+            else
+                disp('There is no GT available for this roi');
+            end
+
+            if ground && resok
+
+                if isfield(obj.results.(classistr),'id') % it's a classification
+                    pred=double(obj.results.(classistr).id);
+                else
+                    pred=double(obj.results.(classistr).prob);
+                end
+                gt=double(obj.train.(classistr).id);
+            end
+
+        otherwise % image classification
+
+            dataserie = obj.data;
+            pixdata = arrayfun(@(x) strcmp(x.groupid, classistr), dataserie);
+            dataserie = dataserie(pixdata);
+
+            if isempty(dataserie)
+                obj.load('data');
+                dataserie = obj.data;
+                pixdata = arrayfun(@(x) strcmp(x.groupid, classistr), dataserie);
+                dataserie = dataserie(pixdata);
+                if isempty(dataserie)
+                    disp(['No matching dataseries found for groupid: ' classistr ' in ROI ' obj.id]);
+                    continue;
+                end
+            end
+
+            % --- récupération des données ---
+            labels_training = dataserie.getData('labels_training');  % categorical
+            id_results = dataserie.getData('id');                    % prédictions
+            id_CNN = dataserie.getData('idCNN');                     % prédictions CNN (optionnel)
+
+            % --- test présence résultats ---
+            if numel(id_results) > 0
+                if any(id_results)
+                    resok = 1;
+                else
+                    disp('There is no result available for this classification id');
+                end
+            else
+                disp('There is no result available for this roi');
+            end
+
+            % --- conversion des labels -> id_training ---
+            ground = 0;
+            if ~isempty(labels_training)
+                labels = string(labels_training);       % conversion en string array
+                class_names = string(classif.classes);  % noms de classes
+                id_training = zeros(size(labels));      % pré-allocation
+
+                for k = 1:numel(class_names)
+                    id_training(labels == class_names(k)) = k;
+                end
+
+                if any(id_training)
+                    ground = 1;
+                else
+                    disp('There is no GT available for this classification id');
+                end
+            else
+                disp('There is no GT available for this roi');
+            end
+
+            % --- comparaison prédictions / GT ---
+            if ground && resok
+                pred = double(id_results(:))';
+                gt = double(id_training(:))';
+
+                if numel(id_CNN)
+                    CNNpred = double(id_CNN(:))';
+                end
+
+                pix = pred & gt;
+                fra = find(pix);
+
+                if numel(fra) == 0
+                    disp('There is no coincidence for ground truth and prediction : skipping roi !');
+                    continue;
+                end
+
+                gt = gt(pix);
+                pred = pred(pix);
+
+                if exist('CNNpred', 'var') && numel(CNNpred) >= numel(pix)
+                    CNNpred = CNNpred(pix);
+                end
+            end
+
+    end
+    % then display the results
+
+
+    % if ground ==1 && resok==1 % list of rois used to compute stats
+    data.gt=[data.gt gt];
+    data.pred=[data.pred pred];
+    data.frames=[data.frames fra];
+    data.CNNpred=[data.CNNpred CNNpred];
+    data.roi=[data.roi j*ones(1,numel(gt))];
+    data.reg=reg;
+    %end
+
+end
+

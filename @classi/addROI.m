@@ -134,7 +134,16 @@ for i=1:length(rois)
         targetChannel=classif.channelName;
 
         for ii=1:numel(adjustName)
-            pix=find(matches(classif.roi(cc+1).display.channel,adjustName{ii}));
+             thisName = adjustName{ii};
+
+            if isempty(thisName)
+                continue
+            end
+            
+            if ~ischar(thisName) && ~isstring(thisName)
+              thisName = string(thisName); % conversion prudente
+            end
+            pix = find(matches(classif.roi(cc+1).display.channel, thisName));
 
             classif.roi(cc+1).display.channel{pix}=targetChannel{ii};
         end
