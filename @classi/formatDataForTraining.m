@@ -54,11 +54,16 @@ function output = formatDataForTraining(classif, varargin)
                 output = formatLSTMTrainingSet(foldername, classif, rois);
             end
         case 'Pixel'
+      
             if isprop(classif, 'description')
                 if iscell(classif.description{1}) && strcmp(classif.description{1}{1}, 'YOLO instance segmentation')
                     output = formatPixelTrainingSetYOLO(foldername, classif, rois,valrois);
                 elseif ischar(classif.description{1}) && strcmp(classif.description{1}, 'YOLO instance segmentation')
                     output = formatPixelTrainingSetYOLO(foldername, classif, rois,valrois);
+                elseif iscell(classif.description{1}) && strcmp(classif.description{1}{1}, 'CellposeSAM')
+                    output = formatPixelTrainingSetCPSAM(foldername, classif, rois,valrois);
+                elseif ischar(classif.description{1}) && strcmp(classif.description{1}, 'CellposeSAM')
+                    output = formatPixelTrainingSetCPSAM(foldername, classif, rois,valrois);
                 else
                     output = formatPixelTrainingSet(foldername, classif, rois);
                 end

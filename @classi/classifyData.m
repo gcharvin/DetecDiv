@@ -349,7 +349,7 @@ switch classif.outputType
         
     otherwise %  outputs segmentation or segmentation after postprocessing
 
-        if strcmp(classif.description{1},'YOLO instance segmentation')
+        if strcmp(classif.description{1},'YOLO instance segmentation') || strcmp(classif.description{1},'CellposeSAM')
 
              pixresults=[];
         for i=1:numel(classif.classes)
@@ -357,7 +357,7 @@ switch classif.outputType
             
             if numel(pixresultstmp)==0 % channel does not exist, hence create them
                 matrix=uint16(zeros(size(gfp,1),size(gfp,2),1,size(gfp,4)));
-                rgb=[1 1 1];
+                rgb=[1 1 1]; %[1 1 1]; 
                 intensity=[0 0 0]; % in yolo the output is indexed image x number of classes
                 
                 roiobj.addChannel(matrix,['results_' classif.strid '_' classif.classes{i}],rgb,intensity);
