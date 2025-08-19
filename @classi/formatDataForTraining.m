@@ -64,6 +64,10 @@ function output = formatDataForTraining(classif, varargin)
                     output = formatPixelTrainingSetCPSAM(foldername, classif, rois,valrois);
                 elseif ischar(classif.description{1}) && strcmp(classif.description{1}, 'CellposeSAM')
                     output = formatPixelTrainingSetCPSAM(foldername, classif, rois,valrois);
+               elseif iscell(classif.description{1}) && strcmp(classif.description{1}{1}, 'Cell-TRACKTR')
+                    output = formatPixelTrainingSetCellTracktr(foldername, classif, rois,valrois);
+                elseif ischar(classif.description{1}) && strcmp(classif.description{1}, 'Cell-TRACKTR')
+                    output = formatPixelTrainingSetCellTracktr(foldername, classif, rois,valrois);
                 else
                     output = formatPixelTrainingSet(foldername, classif, rois);
                 end
