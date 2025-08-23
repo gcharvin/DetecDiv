@@ -53,6 +53,8 @@ repo_path = classif.trainingParam.repo_path;  % racine repo Cell-TRACTR
 
 % res_name : utilise classif.trainingParam.res_name si dispo, sinon 1er dossier
 results_root = fullfile(classif.path, 'results');   % parent des runs d'entraînement
+
+
 if isfield(classif.trainingParam,'res_name') && isfolder(fullfile(results_root, classif.trainingParam.res_name))
     res_name = classif.trainingParam.res_name;
 else
@@ -60,6 +62,9 @@ else
     if isempty(names), error('Aucun run dans %s', results_root); end
     res_name = names{1};
 end
+
+
+%return
 
 % --------- Génère un nom de séquence UNIQUE (sûr en parallèle) ---------
 % Format: seq<HHMMSSFFF><r2>  (finit par 2 chiffres pour matcher le regex côté pipeline)
@@ -82,8 +87,11 @@ end
 % --------- Lancement pipeline ---------
 pythonScript = fullfile(repo_path, 'src', 'pipeline.py');
 
-cmd = sprintf('python "%s" --results_path "%s" with res_name=%s dataset=%s', ...
-    pythonScript, results_root, res_name, dataset);
+cmd = sprintf('python "%s" --results_path "%s" --only "%s" with res_name=%s dataset=%s', ...
+    pythonScript, results_root, seqName, res_name, dataset);
+
+%cmd = sprintf('python "%s" --results_path "%s" with res_name=%s dataset=%s', ...
+%    pythonScript, results_root, res_name, dataset);
 
 disp('[Cell-TRACTR] Launching pipeline.py ...');
 [status, result] = system(cmd, '-echo');
@@ -148,8 +156,8 @@ else
         end
 
         masks_all(:,:,1,pos) = m;
-        % DEBUG (si besoin)
-        % fprintf('mask %s -> pos=%d (frame absolue=%d)\n', fname, pos, frames(pos));
+      %   DEBUG (si besoin)
+         fprintf('mask %s -> pos=%d (frame absolue=%d)\n', fname, pos, frames(pos));
     end
 end
 
