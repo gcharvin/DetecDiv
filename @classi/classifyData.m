@@ -349,7 +349,7 @@ switch classif.outputType
         
     otherwise %  outputs segmentation or segmentation after postprocessing
 
-        if strcmp(classif.description{1},'YOLO instance segmentation') || strcmp(classif.description{1},'CellposeSAM')
+        if strcmp(classif.description{1},'YOLO instance segmentation') || strcmp(classif.description{1},'CellposeSAM') || strcmp(classif.description{1},'Cell-TRACKTR')
 
              pixresults=[];
         for i=1:numel(classif.classes)

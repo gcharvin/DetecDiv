@@ -7,14 +7,14 @@ function output = formatPixelTrainingSetCellTracktr(foldername, classif, trainro
 output = 0; % compteur global frames
 
 % === Nom du dataset ===
-if isfield(classif.trainingParam, 'dataset') && ~isempty(classif.trainingParam.dataset)
-    datasetName = classif.trainingParam.dataset;
-else
-    error('❌ Aucun datasetName trouvé dans classif.trainingParam.dataset');
-end
+% if isfield(classif.trainingParam, 'dataset') && ~isempty(classif.trainingParam.dataset)
+%     datasetName = classif.trainingParam.dataset;
+% else
+%     error('❌ Aucun datasetName trouvé dans classif.trainingParam.dataset');
+% end
 
 % === Racine dataset ===
-base = fullfile(classif.path, foldername, datasetName, 'CTC');
+base = fullfile(classif.path, foldername, 'moma', 'CTC');
 if ~exist(base, 'dir'), mkdir(base); end
 
 % === Splits ===
@@ -150,9 +150,10 @@ fprintf('✅ Export CTC terminé : %d frames exportées.\n', output);
 % === Appel du script Python de conversion ===
 % On suppose que classif.trainingParam.repo_path contient le chemin du repo Cell-TRACTR
 
-dataRoot = fullfile(classif.path, foldername); % là où CTC/ se trouve
+dataRoot = fullfile(classif.path, foldername,'moma'); % là où CTC/ se trouve
 pythonScript = fullfile(classif.trainingParam.repo_path, 'scripts', 'create_coco_dataset_from_CTC.py');
 
+datasetName='';
 cmd = sprintf('python "%s" --dataset "%s" --datapath "%s"', ...
     pythonScript, datasetName, dataRoot);
 system(cmd);

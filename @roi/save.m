@@ -60,7 +60,7 @@ while ~success && attempts < max_attempts
         if ~isempty(im) && resonly==0
          save(fullfile(obj.path, ['im_' obj.id '.mat']), 'roiobj');
           obj.log(['Saving ROI to ' obj.path '/im_' obj.id '.mat'],'Saving')
-          disp(['Saving content of ROI# ' obj.id ' to ' obj.path 'im_' obj.id '.mat']);   
+          disp(['Saving content of ROI# ' obj.id ' to ' obj.path '/im_' obj.id '.mat']);   
         else
          if resonly==0
          disp('Image is not loaded ; Load image first ...');

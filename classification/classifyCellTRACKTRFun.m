@@ -30,13 +30,25 @@ if isempty(pix), error('Canal "%s" introuvable dans la ROI.', channel); end
 % normalisation/uint8
 seq_img = uint8(255 * mat2gray(image(:,:,pix,frames)));
 
+pixresults=[]; cd=1;
+for i=1:numel(classif.classes)
+    pixresultstmp=findChannelID(roiobj, ['results_' classif.strid '_' classif.classes{i}]);
+    if isempty(pixresultstmp)
+        pixresults = [pixresults size(roiobj.image,3)+cd];
+        cd = cd+1;
+    else
+        pixresults = [pixresults pixresultstmp];
+    end
+end
+
+
 % --------- Chemins (alignés avec YAML d'inférence) ---------
 if isfield(classif, 'trainingParam') && isfield(classif.trainingParam, 'data_dir')
     data_dir = classif.trainingParam.data_dir;
 else
     data_dir = classif.path; % fallback
 end
-dataset   = 'test';                           % inférence sur test
+dataset   = classif.strid;                           % inférence sur test
 repo_path = classif.trainingParam.repo_path;  % racine repo Cell-TRACTR
 
 % res_name : utilise classif.trainingParam.res_name si dispo, sinon 1er dossier
@@ -113,22 +125,34 @@ else
     fnames = {fl.name};
     if exist('natsortfiles','file'), fnames = natsortfiles(fnames); else, fnames = sort(fnames); end
 
-    % map maskNNN (0-based) -> position dans "frames" (1-based)
+    N = numel(frames);                 % nb de frames exportées
     for iFile = 1:numel(fnames)
         fname = fnames{iFile};
         tok = regexp(fname, '^mask(\d+)\.tif$', 'tokens', 'once');
         if isempty(tok), continue; end
-        idx0 = str2double(tok{1});          % 0-based écrit par pipeline
-        pos  = find(frames == (idx0 + 1), 1, 'first');
-        if isempty(pos), continue; end      % masque hors sous-ensemble de frames demandé
+
+        idx0 = str2double(tok{1});     % index 0-based écrit par pipeline
+        pos  = idx0 + 1;               % position 1-based dans notre sous-ensemble
+
+        % borne : le pipeline peut ne pas écrire tous les masks
+        if pos < 1 || pos > N
+            % ex: mask plus grand que nb de frames exportées
+            continue;
+        end
+
+        % lecture & formatage
         m = imread(fullfile(res_dir, fname));
         if ~isa(m,'uint16'), m = uint16(m); end
         if size(m,1) ~= H || size(m,2) ~= W
             m = imresize(m, [H W], 'nearest');
         end
+
         masks_all(:,:,1,pos) = m;
+        % DEBUG (si besoin)
+        % fprintf('mask %s -> pos=%d (frame absolue=%d)\n', fname, pos, frames(pos));
     end
 end
+
 
 % % (optionnel) Lecture du tracking global si présent
 % res_track_file = fullfile(res_dir, 'res_track.txt');
@@ -153,7 +177,7 @@ end
 
 
 % --------- Injection dans image ---------
-pixresults = size(image,3) + 1;                 % nouveau canal
+%pixresults = size(image,3) + 1;                 % nouveau canal
 if size(image,4) < frames(end), image(:,:,:,frames(end)) = 0; end
 image(:,:,pixresults,frames) = masks_all;
 
