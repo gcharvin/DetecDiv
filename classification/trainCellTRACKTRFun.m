@@ -133,6 +133,22 @@ fprintf(fid, '%s', py_script);
 fclose(fid);
 disp(['[OK] Python launcher saved to: ' launcher]);
 
+% python_env = pyenv();
+% if strcmp(python_env.Status, 'NotLoaded')
+%     error('Python environment not loaded. Activate an environment before running this script.');
+% else
+%     disp(['Active Python env: ' python_env.Executable]);
+% end
+% 
+% try
+%     pyrunfile(launcher);
+%     disp('[OK] Cell-TRACTR training finished successfully.');
+% catch ME
+%     disp('[ERROR] during Python script execution.');
+%     disp(ME.message);
+% end
+
+% --- Récupère l'interpréteur Python actif de MATLAB (ton env conda)
 python_env = pyenv();
 if strcmp(python_env.Status, 'NotLoaded')
     error('Python environment not loaded. Activate an environment before running this script.');
@@ -140,13 +156,32 @@ else
     disp(['Active Python env: ' python_env.Executable]);
 end
 
-try
-    pyrunfile(launcher);
-    disp('[OK] Cell-TRACTR training finished successfully.');
-catch ME
-    disp('[ERROR] during Python script execution.');
-    disp(ME.message);
+% --- Paramètres
+repo   = string(classif.trainingParam.repo_path);             % racine du repo Cell-TRACTR
+pyexe  = string(python_env.Executable);                      % ex: C:\Users\...\envs\cell-tractr-116\python.exe
+yaml   = fullfile(repo, 'cfgs', ['train_' char(classif.strid) '.yaml']);
+trainpy= fullfile(repo, 'src', 'train.py');
+
+% --- (optionnel) variables d'environnement utiles pour ce process
+setenv('PYTHONUNBUFFERED','1');   % forcer l'affichage non-bufferisé
+setenv('PYTHONPATH', repo);       % imports "trackformer.*"
+
+% --- Construire la commande Windows
+% pushd dans le repo  -> python -u src\train.py with cfgs\train_XXX.yaml -> popd
+cmd = sprintf('cmd /v:on /c "pushd \"%s\" && \"%s\" -u \"%s\" with \"%s\" && popd"', ...
+              repo, pyexe, trainpy, yaml);
+
+% --- Lancer et streamer les logs dans MATLAB
+status = system(cmd, '-echo');
+if status ~= 0
+    error('Cell-TRACTR training failed (exit code %d).', status);
 end
+
+
+
+
+
+
 end
 
 % ===================== Helpers =====================
