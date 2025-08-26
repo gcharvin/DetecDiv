@@ -22,7 +22,7 @@ if nargin == 2
         'epochs', 12, ...
         'batch_size', 2, ...
         'lr', 2e-4, ...
-        'lr_backbone', 2e-5, ...
+        'lr_backbone', 5e-5, ...
         'weight_decay', 1e-4, ...
         'num_workers', 4, ...
         'device', 'cuda', ...
@@ -59,8 +59,18 @@ end
 if numel(classif.roi) < 1 || numel(classif.roi(1).value) < 4
     error('Invalid or missing ROI information in classif.');
 end
-roiW = classif.roi(1).value(3);
-roiH = classif.roi(1).value(4);
+
+if numel(classif.roi(1).image)==0
+    classif.roi(1).load;
+end
+
+if numel(classif.roi(1).image)==0
+     error('Invalid or missing ROI information in classif.');
+end
+
+roiW = size(classif.roi(1).image,2);
+roiH = size(classif.roi(1).image,1);
+
 target_size_str = sprintf('(%d,%d)', roiH, roiW);  % format attendu
 
 %---------------- Lire le YAML original (texte brut)
