@@ -193,17 +193,21 @@ for ch=1:numel(channel)
 
         %tmp=levels{ch}{2}
 
-        if paintChannel == currentIndx
-            uni = unique(totim(:));
-            uni(uni==0) = [];
-            nuni = max(numel(uni),numel(indices));
-            levmap = eval([levels{ch}{2} '(' num2str(nuni) ')']);
-        else
-            levmap = repmat(roitmp.display.rgb(tmpcha,:), [numel(indices), 1]);
-        end
+         if paintChannel == currentIndx
+        %     uni = unique(totim(:));
+        %     uni(uni==0) = [];
+        %     nuni = max(numel(uni),numel(indices));
+        %     levmap = eval([levels{ch}{2} '(' num2str(nuni) ')']);
+        levmap = zeros(numel(indices),3);
+for ii = 1:numel(indices)
+    levmap(ii,:) = label2color(indices(ii));   % <- mapping stable
+end
+         else
+             levmap = repmat(roitmp.display.rgb(tmpcha,:), [numel(indices), 1]);
+         end
 
 
-
+        % --- Couleurs stables (0..1) pour chaque ID ---
 
 
         wid = levels{ch}{5};
@@ -256,6 +260,14 @@ for ch=1:numel(channel)
                     end
 
                 end
+
+                
+    % m = ismember(imtmp2, indices);
+    % Lsub = imtmp2 .* uint16(m);
+    % rgbL = mask2rgb_stable(Lsub);
+    % indexedOverlay = rgbL;
+    % alphaOverlay   = double(m) * fillAlpha;
+
         end
     else
 
@@ -392,5 +404,58 @@ function cmap = parula2green(n)
 
     cmap = interp1(x, colors, xi, 'linear');
 end
+
+function cmap = getPalette(n)
+% Palette qualitative de 16 couleurs bien distinctes, sans gris clair.
+% Remplacement du gris (0.498,0.498,0.498) par un or vif (1.000,0.835,0.000).
+
+base = [ ...
+    0.121 0.466 0.705;  % bleu
+    1.000 0.498 0.054;  % orange
+    0.172 0.627 0.172;  % vert
+    0.839 0.152 0.156;  % rouge
+    0.580 0.404 0.741;  % violet
+    0.549 0.337 0.294;  % brun
+    0.890 0.466 0.760;  % rose
+    1.000 0.835 0.000;  % OR vif (remplace le gris)
+    0.737 0.741 0.133;  % olive
+    0.090 0.745 0.811;  % cyan
+    0.650 0.810 0.890;  % bleu clair
+    1.000 0.733 0.470;  % orange clair
+    0.596 0.874 0.541;  % vert clair
+    1.000 0.596 0.588;  % rouge clair
+    0.770 0.690 0.835;  % violet clair
+    0.900 0.770 0.580]; % beige/tan
+
+if n <= size(base,1)
+    cmap = base(1:n,:);
+else
+    reps = ceil(n/size(base,1));
+    cmap = repmat(base, reps, 1);
+    cmap = cmap(1:n, :);
+end
+end
+
+
+function col = label2color(id)
+pal = getPalette(16);
+idx = 1 + mod(max(1,round(id))-1, size(pal,1));
+col = pal(idx,:);
+end
+
+function rgb = mask2rgb_stable(L)
+L = double(L);
+[H,W] = size(L);
+rgb = zeros(H,W,3,'double');
+ids = unique(L); ids(ids==0) = [];
+for id = ids(:).'
+    c = label2color(id);
+    m = (L==id);
+    rgb(:,:,1) = rgb(:,:,1) + m.*c(1);
+    rgb(:,:,2) = rgb(:,:,2) + m.*c(2);
+    rgb(:,:,3) = rgb(:,:,3) + m.*c(3);
+end
+end
+
 
 

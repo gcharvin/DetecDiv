@@ -18,6 +18,9 @@ if isempty(selectedROI.image)
     selectedROI.load();
 end
 
+roiId = string(selectedROI.id);   % <— ajoute cette ligne
+
+
 currentFrame=selectedROI.display.frame;
 numFrames = size(selectedROI.image, 4);
 if currentFrame < 1 || currentFrame > numFrames
@@ -78,17 +81,46 @@ app.displayHandles=displayHandles;
  score_updateRender(app.graphicsHandles,selectedROI, opts, app.displayHandles,currentFrame)
    end
 
+
+   
+try
+    if app.KeepSelection && ~isempty(app.SelectedObjectLabelCell) && ~isnan(app.SelectedObjectLabelCell)
+        sel = app.UIAnnotationTable.Selection;
+        if ~isempty(sel)
+            ann = app.UIAnnotationTable.Data{sel(1),2};
+            cls = app.UIAnnotationTable.Data{sel(1),3};
+            fullName = [ann '_' cls];
+            channelIdx = find(strcmp(selectedROI.display.channel, fullName), 1);
+            if ~isempty(channelIdx)
+                pix = selectedROI.findChannelID(selectedROI.display.channel{channelIdx});
+                redrawSelectedRectangle(app, selectedROI, channelIdx, pix);
+            end
+        end
+    end
+catch ME
+    warning("Redraw selection failed: %s", ME.message);
+end
+
+
+
+
 %% --- Mises à jour complémentaires ---
 
 % GUI panel update
 app.FrameEditField_2.Value = currentFrame;
-app.ImageFigure.Name = ['ROI:' selectedROI.id ' -  Frame: ' num2str(selectedROI.display.frame) '/' num2str(numFrames)];
+
+str='';
+if ~isnan(app.SelectedObjectLabelCell)
+    str=' - Selected cell: ';
+    str=[str num2str(app.SelectedObjectLabelCell)];
+end
+app.ImageFigure.Name = ['ROI:' selectedROI.id ' -  Frame: ' num2str(selectedROI.display.frame) '/' num2str(numFrames) str];
 
 app.updateAssignValueControls(); % this updates the value of the data plotted in the data panel GUI
 
-if isprop(app, 'SelectedObjectRectangle') && ~isempty(app.SelectedObjectRectangle) && isgraphics(app.SelectedObjectRectangle)
-    delete(app.SelectedObjectRectangle);
-end
+% if isprop(app, 'SelectedObjectRectangle') && ~isempty(app.SelectedObjectRectangle) && isgraphics(app.SelectedObjectRectangle)
+%     delete(app.SelectedObjectRectangle);
+% end
 
 % histo update
 %if strcmp(mode, 'slow')

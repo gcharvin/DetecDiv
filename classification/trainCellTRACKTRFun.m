@@ -15,6 +15,10 @@ if nargin == 2
         'Weight decay'
         'Nombre de workers pour le DataLoader'
         'Device (cuda ou cpu)'
+        'Backbone (resnet18, resnet34 ou resnet50)'          %% NEW
+        'Nombre de requêtes (num_queries)'                   %% NEW
+        'Seuil confiance détection (cls_threshold)'          %% NEW
+        'Seuil IoU NMS/association (iou_threshold)'          %% NEW
     };
 
     classif.trainingParam = struct( ...
@@ -26,6 +30,10 @@ if nargin == 2
         'weight_decay', 1e-4, ...
         'num_workers', 4, ...
         'device', 'cuda', ...
+        'backbone', {{'resnet18','resnet34','resnet50','resnet50'}}, ...       %% NEW (défaut = resnet50)
+        'num_queries', 48, ...            %% NEW
+        'cls_threshold', 0.35, ...        %% NEW
+        'iou_threshold', 0.55, ...        %% NEW
         'tip', {tip} ...
     );
     disp('Training parameters initialised. Modify classif.trainingParam then run without setparam.');
@@ -91,7 +99,7 @@ yaml_txt = setYamlScalar(yaml_txt, 'target_size',    target_size_str);
 yaml_txt = setYamlScalar(yaml_txt, 'output_dir',     outdir);
 yaml_txt = setYamlScalar(yaml_txt, 'data_dir',       datadir);
 
-% Hyperparamètres éventuels
+% Hyperparamètres éventuels (classiques)
 yaml_txt = setYamlScalar(yaml_txt, 'epochs',         TP.epochs);
 yaml_txt = setYamlScalar(yaml_txt, 'batch_size',     TP.batch_size);
 yaml_txt = setYamlScalar(yaml_txt, 'lr',             lr_str);          % décimal fixe
@@ -99,13 +107,19 @@ yaml_txt = setYamlScalar(yaml_txt, 'lr_backbone',    lr_back_str);     % décima
 yaml_txt = setYamlScalar(yaml_txt, 'weight_decay',   wd_str);          % décimal fixe
 yaml_txt = setYamlScalar(yaml_txt, 'num_workers',    TP.num_workers);
 
-% Supprimer CoMOT si présent
-%yaml_txt = regexprep(yaml_txt, '^\s*CoMOT\s*:\s*.*\n', '', 'lineanchors');
+% ==== NOUVEAUX PARAMÈTRES EXPOSÉS À L'UTILISATEUR ====
+bb = TP.backbone; if iscell(bb), bb = bb{end}; end
+yaml_txt = setYamlScalar(yaml_txt, 'backbone',       char(bb));        % 'resnet18' | 'resnet34' | 'resnet50'
+yaml_txt = setYamlScalar(yaml_txt, 'num_queries',    TP.num_queries);  % entier
+
+cls_th_str = formatFixed(TP.cls_threshold);
+iou_th_str = formatFixed(TP.iou_threshold);
+yaml_txt = setYamlScalar(yaml_txt, 'cls_threshold',  cls_th_str);      % surtout utilisé en inférence
+yaml_txt = setYamlScalar(yaml_txt, 'iou_threshold',  iou_th_str);      % idem
 
 % Nettoyer les booléens (forcer en lowercase YAML)
 yaml_txt = regexprep(yaml_txt, '\<True\>', 'true');
 yaml_txt = regexprep(yaml_txt, '\<False\>', 'false');
-
 
 dev = TP.device; if iscell(dev), dev = dev{end}; end
 yaml_txt = setYamlScalar(yaml_txt, 'device',         char(dev));
@@ -119,6 +133,13 @@ fwrite(fid, yaml_txt, 'char');
 if ~endsWith(yaml_txt, sprintf('\n')), fwrite(fid, sprintf('\n')); end
 fclose(fid);
 disp(['[OK] YAML saved to: ' yaml_path]);
+
+% --- S'assurer que le dossier de sortie existe (crée aussi les parents)
+outdir_fs = fullfile(classif.path, 'results', char(classif.strid));  % ex: ...\results\my_classi_6
+[ok,msg] = mkdir(outdir_fs);
+if ~ok
+    error('Unable to create output dir: %s (%s)', outdir_fs, msg);
+end
 
 %---------------- Lancement Python (train.py) inchangé
 repo_path_esc = strrep(repo_path, '\', '\\');
@@ -135,28 +156,12 @@ py_script = sprintf( ...
 "runpy.run_path('src/train.py', run_name='__main__')\n", ...
 repo_path_esc, repo_path_esc, repo_path_esc, classif.strid);
 
-
 launcher = fullfile(classif.path, 'train_celltractr_script.py');
 fid = fopen(launcher, 'w');
 if fid == -1, error('Unable to create Python script: %s', launcher); end
 fprintf(fid, '%s', py_script);
 fclose(fid);
 disp(['[OK] Python launcher saved to: ' launcher]);
-
-% python_env = pyenv();
-% if strcmp(python_env.Status, 'NotLoaded')
-%     error('Python environment not loaded. Activate an environment before running this script.');
-% else
-%     disp(['Active Python env: ' python_env.Executable]);
-% end
-% 
-% try
-%     pyrunfile(launcher);
-%     disp('[OK] Cell-TRACTR training finished successfully.');
-% catch ME
-%     disp('[ERROR] during Python script execution.');
-%     disp(ME.message);
-% end
 
 % --- Récupère l'interpréteur Python actif de MATLAB (ton env conda)
 python_env = pyenv();
@@ -177,7 +182,6 @@ setenv('PYTHONUNBUFFERED','1');   % forcer l'affichage non-bufferisé
 setenv('PYTHONPATH', repo);       % imports "trackformer.*"
 
 % --- Construire la commande Windows
-% pushd dans le repo  -> python -u src\train.py with cfgs\train_XXX.yaml -> popd
 cmd = sprintf('cmd /v:on /c "pushd \"%s\" && \"%s\" -u \"%s\" with \"%s\" && popd"', ...
               repo, pyexe, trainpy, yaml);
 
@@ -186,27 +190,18 @@ status = system(cmd, '-echo');
 if status ~= 0
     error('Cell-TRACTR training failed (exit code %d).', status);
 end
-
-
-
-
-
-
 end
 
 % ===================== Helpers =====================
-
 function s = fixslashes(p)
-    % Windows paths -> forward slashes to éviter \t, \b, \a dans YAML
     s = strrep(p, '\', '/');
 end
 
 function txt = setYamlScalar(txt, key, val)
-    % Remplace la valeur d'une clé YAML en préservant indentation / commentaires.
     if islogical(val)
         valStr = lower(string(val));
     elseif isnumeric(val)
-        valStr = num2str(val);  % on passe déjà des strings décimales pour lr, etc.
+        valStr = num2str(val);
     else
         valStr = string(val);
     end
@@ -216,7 +211,6 @@ function txt = setYamlScalar(txt, key, val)
     newtxt  = regexprep(txt, pattern, ['$1' key ': ' valStr '$3'], 'once', 'lineanchors');
 
     if strcmp(newtxt, txt)
-        % clé non trouvée → on l'ajoute en fin (optionnel)
         warning('Key "%s" not found in YAML. Appending at the end.', key);
         if ~endsWith(txt, sprintf('\n')), txt = [txt sprintf('\n')]; end
         newtxt = sprintf('%s%s: %s\n', txt, key, valStr);
@@ -225,31 +219,9 @@ function txt = setYamlScalar(txt, key, val)
 end
 
 function s = formatFixed(x)
-    % Retourne une chaîne décimale sans notation scientifique (ex: 0.00002)
     if ~isnumeric(x), s = char(string(x)); return; end
-    if x == 0
-        s = '0';
-        return;
-    end
-    mag = floor(log10(abs(x)));
-    if mag <= -3 || mag >= 6
-        % petit ou très grand -> forcer décimal avec suffisamment de précision
-        s = sprintf('%.10f', x);
-    else
-        % plage "normale"
-        s = sprintf('%.10f', x);
-    end
-    % nettoyer: enlever zéros/point superflus
+    if x == 0, s = '0'; return; end
+    s = sprintf('%.10f', x);
     s = regexprep(s, '0+$', '');
     s = regexprep(s, '\.$', '');
-    if startsWith(s, '-0.') && all(s(3:end) ~= '0')
-        % garder le signe -0.x si nécessaire
-        return;
-    end
-    if startsWith(s, '0.') || startsWith(s, '-0.')
-        % OK
-    elseif startsWith(s, '-0') && ~contains(s, '.')
-        % -0 -> 0
-        s = '0';
-    end
 end
