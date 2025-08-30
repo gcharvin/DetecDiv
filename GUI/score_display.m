@@ -20,7 +20,6 @@ end
 
 roiId = string(selectedROI.id);   % <— ajoute cette ligne
 
-
 currentFrame=selectedROI.display.frame;
 numFrames = size(selectedROI.image, 4);
 if currentFrame < 1 || currentFrame > numFrames
@@ -82,7 +81,7 @@ app.displayHandles=displayHandles;
    end
 
 
-   
+   %% draw rectangle around selected cell 
 try
     if app.KeepSelection && ~isempty(app.SelectedObjectLabelCell) && ~isnan(app.SelectedObjectLabelCell)
         sel = app.UIAnnotationTable.Selection;
@@ -103,7 +102,6 @@ end
 
 
 
-
 %% --- Mises à jour complémentaires ---
 
 % GUI panel update
@@ -115,6 +113,16 @@ if ~isnan(app.SelectedObjectLabelCell)
     str=[str num2str(app.SelectedObjectLabelCell)];
 end
 app.ImageFigure.Name = ['ROI:' selectedROI.id ' -  Frame: ' num2str(selectedROI.display.frame) '/' num2str(numFrames) str];
+
+
+% --- Overlay lineage (fille→mère)
+try
+    ensureCellInformationDataseries(selectedROI);  % sûr & idempotent
+%    score_refreshLineageOverlay(app, selectedROI, opts);
+catch ME
+    warning("Lineage overlay failed: %s", ME.message);
+end
+
 
 app.updateAssignValueControls(); % this updates the value of the data plotted in the data panel GUI
 

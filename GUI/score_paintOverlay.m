@@ -49,6 +49,13 @@ cp    = get(axOverlay,'CurrentPoint');
 xinit = round(cp(1,1));
 yinit = round(cp(1,2));
 
+mods     = get(src,'CurrentModifier');          % {} ou cellstr
+
+% isShift  = iscell(mods) && any(strcmp(mods,'shift'))
+% isCtrl   = iscell(mods) && any(strcmp(mods,'control'))
+% isAltKey = iscell(mods) && any(strcmp(mods,'alt'))   % touche Alt clavier (rarement utile)
+
+
 %% --- Déselection si clic hors image (mais PAS si pixel==0 : on veut peindre) ---
 if any(strcmp(seltype,{'normal','alt','extend'}))
     isOut = xinit < 1 || yinit < 1 || ...
@@ -59,27 +66,29 @@ if any(strcmp(seltype,{'normal','alt','extend'}))
     end
 end
 
-% %% --- PRIORITÉ AU MENU : clic droit à l'intérieur de la bbox sélectionnée ---
-% if strcmp(seltype,'alt') && isgraphics(app.SelectedObjectRectangle)
-%     bb = app.SelectedObjectRectangle.Position;  % [x y w h]
-%     hitObj = hittest(src);
-%     inBox  = pointInBBox(xinit, yinit, bb);
-%     if inBox || isequal(hitObj, app.SelectedObjectRectangle)
-%         % stoppe la peinture (au cas où) et ouvre le menu explicitement
-%         src.WindowButtonMotionFcn = '';
-%         src.WindowButtonUpFcn     = '';
-%         src.Pointer = 'arrow'; drawnow;
-%
-%         cm = buildDisplayContextMenu(app.ImageFigure, app, roi, channelIdx, pix, frm);
-%         set(cm,'Visible','on');  % obligatoire quand WindowButtonDownFcn existe
-%
-%         % Attacher pour les prochains clics
-%         app.SelectedObjectRectangle.UIContextMenu = cm;
-%         h = getOverlayImageHandle(app);
-%         if ~isempty(h) && isgraphics(h), h.UIContextMenu = cm; end
-%         return;
-%     end
-% end
+% --- CTRL + clic gauche (MATLAB => seltype='alt') ---
+if strcmp(seltype,'alt') && hasSelectedObject(app, roi)
+    mods   = get(src,'CurrentModifier');
+    isCtrl = iscell(mods) && any(strcmp(mods,'control'));
+    if isCtrl
+        % s'assurer que le dataseries existe
+        ensureCellInformationDataseries(roi);
+        setLineageChannel(roi, fullChannelName, pix);     % <<< NOUVEAU
+
+        daughterID = int32(app.SelectedObjectLabelCell);
+        labAt      = currentMask(yinit,xinit);
+
+        if labAt > 0 && labAt ~= daughterID
+            setCellMother(roi, daughterID, double(labAt), 'birthFrame', frm);
+            flashStatus(app, sprintf('Mère de #%d → #%d (frame %d)', daughterID, labAt, frm));
+        else
+            removeCellMother(roi, daughterID);
+            flashStatus(app, sprintf('Mère retirée pour #%d', daughterID));
+        end
+        score_display(app,'fast');
+        return;
+    end
+end
 
 %% --- Double-clic : sélectionner l'objet + bbox + attacher menu ---
 %% --- Double-clic : toggle sélection (si déjà sélectionné) ou sélectionner
@@ -98,7 +107,6 @@ if strcmp(seltype,'open')
     displaySelectedObject(app, roi, channelIdx, pix, frm, axOverlay, hOverlayImg, xinit, yinit);
     return;
 end
-
 
 %% --- Déselection si clic gauche en dehors de la bbox (mais dans l'image) ---
 if strcmp(seltype,'normal') & isgraphics(app.SelectedObjectRectangle)
@@ -137,6 +145,7 @@ src.WindowButtonUpFcn     = @wbucb;
         mods = get(src,'CurrentModifier');         % {} ou cellstr
         isShift   = iscell(mods) && any(strcmp(mods,'shift'));
         isControl = iscell(mods) && any(strcmp(mods,'control'));
+
 
         % Taille/Mode pinceau
         if strcmp(seltype,'extend') || isShift
@@ -905,6 +914,37 @@ end
 end
 
 
+
+function flashStatus(app, msg)
+try
+    if isprop(app,'StatusLabel') && ~isempty(app.StatusLabel) && isgraphics(app.StatusLabel)
+        app.StatusLabel.Text = msg;
+    else
+        disp(msg);
+    end
+catch
+    disp(msg);
+end
+end
+
+
+function ds = getCellInfoDataseries(roi)
+% Retourne le handle du dataseries groupid='cell_information' (assuré existant)
+ensureCellInformationDataseries(roi);
+idx = find(arrayfun(@(x) isprop(x,'groupid') && strcmp(x.groupid,'cell_information'), roi.data),1,'first');
+ds  = roi.data(idx);
+end
+
+function setLineageChannel(roi, channelName, pix)
+% Enregistre le canal servant aux labels de lineage
+ds = getCellInfoDataseries(roi);
+if ~isprop(ds,'userData') || isempty(ds.userData) || ~isstruct(ds.userData)
+    ds.userData = struct();
+end
+% On stocke **les deux**: nom (robuste aux ré-ordres) + pix (fallback rapide)
+ds.userData.lineageChannelName = string(channelName);
+ds.userData.lineageChannelPix  = double(pix);
+end
 
 
 

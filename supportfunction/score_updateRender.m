@@ -40,6 +40,8 @@ switch mode
                  set(h, 'AlphaData', alphaOverlay, 'AlphaDataMapping', 'none');
             end
 
+
+
             %set(graphicsHandles.overlayHandles(tileIndex),'CData', indexedOverlay);
             %set(graphicsHandles.overlayHandles(tileIndex), 'AlphaData', alphaOverlay, 'AlphaDataMapping', 'none');
         else
@@ -68,7 +70,7 @@ switch mode
 
                 if layoutOptions.overlay
                     wid=layoutOptions.Nbrick;
-                else
+                elselinea
                     wid= layoutOptions.Nchannel*layoutOptions.Nbrick;
                 end
 
@@ -162,6 +164,8 @@ switch mode
 
                     end
                 end
+
+               
 
                 if layoutOptions.Ndataseries > 0 && ~isempty(roiData.data)
                     for ds = 1:layoutOptions.Ndataseries
@@ -260,6 +264,23 @@ switch mode
             end
         end
 end
+
+% --- lineage overlay (refresh à chaque frame)
+try
+    switch mode
+    case 'display'
+            fr=newframe;
+
+    case 'movie'
+   % layoutOptions
+           fr=layoutOptions.frames(newframe);
+    end
+
+     refreshLineageOverlays(graphicsHandles, roiobj, layoutOptions, displayHandles, fr)
+catch ME
+   % warning('Lineage refresh failed: %s', ME.message);
+end
+
 end
 
 function updateMarkers(hLineAll, fIdx, layoutOptions)

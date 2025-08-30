@@ -177,9 +177,29 @@ pyexe  = string(python_env.Executable);                      % ex: C:\Users\...\
 yaml   = fullfile(repo, 'cfgs', ['train_' char(classif.strid) '.yaml']);
 trainpy= fullfile(repo, 'src', 'train.py');
 
-% --- (optionnel) variables d'environnement utiles pour ce process
-setenv('PYTHONUNBUFFERED','1');   % forcer l'affichage non-bufferisé
-setenv('PYTHONPATH', repo);       % imports "trackformer.*"
+% --- Récupère l'interpréteur Python actif
+python_env = pyenv();
+if strcmp(python_env.Status, 'NotLoaded')
+    error('Python environment not loaded. Activate an environment before running this script.');
+else
+    disp(['Active Python env: ' python_env.Executable]);
+end
+
+% --- Dérive CONDA_PREFIX depuis l'exécutable Python
+pyexe = string(python_env.Executable);                      % ...\envs\cell-tractr-116\python.exe
+conda_prefix = char(fileparts(pyexe));                      % ...\envs\cell-tractr-116
+
+% --- Expose variables d'environnement au process enfant
+setenv('PYTHONUNBUFFERED','1');
+setenv('PYTHONPATH', repo);                                 % pour "trackformer.*"
+setenv('CONDA_PREFIX', conda_prefix);                       % <<< IMPORTANT
+
+% (optionnel mais utile pour les DLL CUDA/torch sous Windows)
+p = getenv('PATH');
+torch_lib = fullfile(conda_prefix, 'Lib', 'site-packages', 'torch', 'lib');
+dll_bins  = fullfile(conda_prefix, 'Library', 'bin');
+setenv('PATH', [p ';' torch_lib ';' dll_bins]);             % évite des erreurs de chargement de DLL
+
 
 % --- Construire la commande Windows
 cmd = sprintf('cmd /v:on /c "pushd \"%s\" && \"%s\" -u \"%s\" with \"%s\" && popd"', ...

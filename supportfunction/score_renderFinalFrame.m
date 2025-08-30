@@ -28,6 +28,7 @@ graphicsHandles.lineHandles    = containers.Map('KeyType','double','ValueType','
 graphicsHandles.overlayHandles = containers.Map('KeyType','double','ValueType','any');
 graphicsHandles.vectorHandles = containers.Map('KeyType','double','ValueType','any');
 
+graphicsHandles.lineageHandles = containers.Map('KeyType','double','ValueType','any');
 % find number of image rows and columns
 % Définir le nombre de lignes d’images par ROI et le nombre de canaux
 
@@ -43,8 +44,10 @@ switch lower(displayHandles.mode)
     case 'sequence'
         % --- Mode SEQUENCE ---
         ROI_cols = displayHandles.ROI_cols; % ROI_cols = Nframes * Nbrick (sequence)
+
         for i = 1:layoutOptions.Nrow
             for j = 1:layoutOptions.Ncol
+
                 roiIndex = (i-1)*layoutOptions.Ncol + j;
 
                 if roiIndex>numel(roiobj)
@@ -53,8 +56,9 @@ switch lower(displayHandles.mode)
 
                 roiData = roiobj(roiIndex);
 
-                ROI_row_offset = (i-1) * displayHandles.ROI_rows;
-                ROI_col_offset = (j-1) * displayHandles.ROI_cols;
+                 ROI_row_offset = (i-1) * displayHandles.ROI_rows;
+                 ROI_col_offset = (j-1) * displayHandles.ROI_cols;
+
                 if layoutOptions.overlay
                     % Combine les canaux pour chaque frame.
                     for frame = 1:numel(layoutOptions.frames)
@@ -145,6 +149,16 @@ switch lower(displayHandles.mode)
                 end
             end
         end
+
+        try
+        fseq = layoutOptions.frames;
+          refreshLineageOverlays(graphicsHandles, roiobj, layoutOptions, displayHandles,fseq);
+        catch ME
+          %  warning('Lineage init failed: %s', ME.message);
+        end
+
+
+        
         % Export en PDF
         % on décompose en dossier, nom et extension
 [folder, name, ~] = fileparts(outputname);
@@ -265,9 +279,18 @@ newPath = fullfile(folder, [name '.pdf']);
             end
 
         end
-
+        
+                        % --- lineage overlay (init après création des overlays)
+        try
+        fseq = layoutOptions.frames;
+          refreshLineageOverlays(graphicsHandles, roiobj, layoutOptions, displayHandles,fseq);
+        catch ME
+          %  warning('Lineage init failed: %s', ME.message);
+        end
 
         linkaxes(axarray,'xy');
+
+
 
     case 'movie'
         % --- Mode MOVIE ---
@@ -375,9 +398,12 @@ newPath = fullfile(folder, [name '.pdf']);
                         %   graphicsHandles.lineHandles(tileIndex) = hLine;
                     end
                 end
+
                 if layoutOptions.debug
                     fprintf('DEBUG: ROI %d rendered in movie mode.\n', roiIndex);
                 end
+
+
             end
         end
 
@@ -403,6 +429,7 @@ newPath = fullfile(folder, [name '.pdf']);
         close(v);
         fprintf('Movie saved as MP4: %s\n', newPath);
 end
+
 
 end
 
