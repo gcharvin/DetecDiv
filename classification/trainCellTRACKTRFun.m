@@ -117,6 +117,12 @@ iou_th_str = formatFixed(TP.iou_threshold);
 yaml_txt = setYamlScalar(yaml_txt, 'cls_threshold',  cls_th_str);      % surtout utilisé en inférence
 yaml_txt = setYamlScalar(yaml_txt, 'iou_threshold',  iou_th_str);      % idem
 
+yaml_txt = setYamlScalar(yaml_txt, 'refine_div_track_queries', true);
+yaml_txt = setYamlScalar(yaml_txt, 'flex_div', true);
+% (optionnel) si tu veux rétropropager la CE sur CoMOT :
+% yaml_txt = setYamlScalar(yaml_txt, 'CoMOT_loss_ce', true);
+
+
 % Nettoyer les booléens (forcer en lowercase YAML)
 yaml_txt = regexprep(yaml_txt, '\<True\>', 'true');
 yaml_txt = regexprep(yaml_txt, '\<False\>', 'false');
@@ -147,14 +153,19 @@ py_script = sprintf( ...
 "import os, sys, runpy\n" + ...
 "os.chdir(r'%s')\n" + ...
 "os.environ['PYTHONPATH'] = r'%s'\n" + ...
+"os.environ['PYTHONUNBUFFERED'] = '1'\n" + ...          # <--- flush auto
+"os.environ['DIVDBG'] = '1'\n" + ...                   # <--- force debug
 "sys.path.insert(0, os.path.join(r'%s', 'src'))\n" + ...
 "os.environ['CONDA_PREFIX'] = os.path.dirname(sys.executable)\n" + ...
 "print('CWD:', os.getcwd())\n" + ...
 "print('PYTHONPATH:', os.environ.get('PYTHONPATH'))\n" + ...
 "print('sys.path:', sys.path)\n" + ...
-"sys.argv = ['src/train.py', 'with', 'cfgs/train_%s.yaml']\n" + ...
+"sys.argv = ['src/train.py', 'with', 'cfgs/train_%s.yaml', " + ...
+"            'debug_division=True']\n" + ...
+"print('argv:', sys.argv)\n" + ...
 "runpy.run_path('src/train.py', run_name='__main__')\n", ...
 repo_path_esc, repo_path_esc, repo_path_esc, classif.strid);
+
 
 launcher = fullfile(classif.path, 'train_celltractr_script.py');
 fid = fopen(launcher, 'w');
@@ -193,6 +204,15 @@ conda_prefix = char(fileparts(pyexe));                      % ...\envs\cell-trac
 setenv('PYTHONUNBUFFERED','1');
 setenv('PYTHONPATH', repo);                                 % pour "trackformer.*"
 setenv('CONDA_PREFIX', conda_prefix);                       % <<< IMPORTANT
+setenv('FLEX_DIV_DEBUG', '0');
+setenv('DIVDBG', '1');
+setenv('CLS_THR', '0.5');
+setenv('DIV_THR', '0.35');
+setenv('DIV_IOU_THR', '0.2');
+
+% setenv('FLEX_DIV_EARLY_PROB','0.30');
+% setenv('FLEX_DIV_EARLY_IOU','0.40');
+% setenv('FLEX_DIV_EARLY_MAX_PER_FRAME','2');
 
 % (optionnel mais utile pour les DLL CUDA/torch sous Windows)
 p = getenv('PATH');

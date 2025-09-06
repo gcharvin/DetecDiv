@@ -87,14 +87,18 @@ end
 % --------- Lancement pipeline ---------
 pythonScript = fullfile(repo_path, 'src', 'pipeline.py');
 
-cmd = sprintf('python "%s" --results_path "%s" --only "%s" with res_name=%s dataset=%s', ...
-    pythonScript, results_root, seqName, res_name, dataset);
 
 %cmd = sprintf('python "%s" --results_path "%s" with res_name=%s dataset=%s', ...
 %    pythonScript, results_root, res_name, dataset);
 
 disp('[Cell-TRACTR] Launching pipeline.py ...');
+
+pyexe = pyenv().Executable;
+cmd = sprintf('"%s" "%s" --results_path "%s" --only "%s" with res_name=%s dataset=%s', ...
+    pyexe, pythonScript, results_root, seqName, res_name, dataset);
 [status, result] = system(cmd, '-echo');
+
+
 if status ~= 0
     disp('❌ Erreur pipeline.py :');
     disp(result);

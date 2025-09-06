@@ -275,7 +275,7 @@ try
    % layoutOptions
            fr=layoutOptions.frames(newframe);
     end
-
+ 
      refreshLineageOverlays(graphicsHandles, roiobj, layoutOptions, displayHandles, fr)
 catch ME
    % warning('Lineage refresh failed: %s', ME.message);

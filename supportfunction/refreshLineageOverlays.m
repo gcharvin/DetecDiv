@@ -1,5 +1,17 @@
 function refreshLineageOverlays(graphicsHandles, roiobj, layoutOptions, displayHandles,currentFrames)
 
+if ~isempty(roiobj)
+    [~, chName] = getStoredLineageChannel(roiobj(1));
+    if ~isempty(chName) && (~isfield(layoutOptions,'channel') || isempty(layoutOptions.channel) ...
+            || ~any(strcmp(layoutOptions.channel, char(chName))))
+        clearLineageAllTiles(graphicsHandles);
+        if isfield(layoutOptions,'debug') && layoutOptions.debug
+            warning('Lineage: channel "%s" non présent dans layoutOptions.channel -> overlay désactivé.', char(chName));
+        end
+        return;
+    end
+end
+
 % --- toggle global (sans app)
 show = true;
 if isfield(layoutOptions,'ShowLineageOverlay')
@@ -218,6 +230,21 @@ end
 
 function pix = resolvePixWithoutApp(roi, layoutOptions)
 % 1) priorité au canal enregistré dans cell_information.userData
+
+% 0) si un channel de lignage est stocké mais n'est PAS dans la liste à afficher -> on ne trace pas
+[pixStored0, nameStored0] = getStoredLineageChannel(roi);
+if ~isempty(nameStored0) && isfield(layoutOptions,'channel') && ~isempty(layoutOptions.channel)
+    try
+        % nameStored0 peut être string => cast en char pour strcmp
+        if ~any(strcmp(layoutOptions.channel, char(nameStored0)))
+            pix = [];    % pas de correspondance => retour prématuré
+            return;
+        end
+    catch
+        pix = [];
+        return;
+    end
+end
 
 [pixStored, nameStored] = getStoredLineageChannel(roi);
 
