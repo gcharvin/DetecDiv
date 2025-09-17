@@ -63,6 +63,7 @@ pix=find(matches(listdata,param.classification_data{end}));
 if numel(pix)==0
     disp('impossible to find the classified data, trying to reformat dataset...');
     formatInDataSeries(roiobj);
+    dataout=roiobj.data
     listdata={roiobj.data.groupid};
     pix=find(matches(listdata,param.classification_data{end}));
 
