@@ -61,9 +61,18 @@ listdata={roiobj.data.groupid};
 pix=find(matches(listdata,param.classification_data{end}));
 
 if numel(pix)==0
-    disp('impossible to find the classified data');
-    return;
+    disp('impossible to find the classified data, trying to reformat dataset...');
+    formatInDataSeries(roiobj);
+    listdata={roiobj.data.groupid};
+    pix=find(matches(listdata,param.classification_data{end}));
+
+    if numel(pix)==0
+        disp('impossible to find the classified data; quitting!');
+        return;
+    end
 end
+
+
 
 data=roiobj.data(pix);
 
@@ -180,6 +189,7 @@ for j=1:2 % loop on training and prediction data
             if numel(syncPoint) % sep was found
                 sep=count-syncPoint;
                 dataout(cc).addData(sep',{'sep'},'plot',false,'groups','count');
+                 disp('Added SEP quantification...');
             end
 
             if numel(fluo_pixdata)
@@ -203,7 +213,7 @@ for j=1:2 % loop on training and prediction data
                     end
 
                     val=[val; NaN];
-
+                     disp('Added fluo quantification...');
                     dataout(cc).addData(val,varnames(k),'plot',false,'groups','channel_quant');
 
                 end
@@ -247,6 +257,7 @@ for j=1:2 % loop on training and prediction data
                     end
 
 
+                    disp('Added mask quantification...');
                     {'Area_Cell' 'LenMinAxis_Cell' 'LenMajAxis_Cell' 'Eccentric_Cell' 'Vol_Cell' 'Surf_Cell'};
 
                     dataout(cc).addData(val,['mask' num2str(l) '_' varnames{k}],'plot',false,'groups',str);
