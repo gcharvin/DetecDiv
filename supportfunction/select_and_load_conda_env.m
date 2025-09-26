@@ -129,12 +129,12 @@ envList = struct('name', {}, 'path', {}, 'python', {});
         envList(end+1) = struct('name', name, 'path', p, 'python', string(pyexe)); %#ok<AGROW>
     end
 
-% 4) Affichage console propre
+% 4) Affichage console (uniquement, pas de GUI)
 fprintf('\nAvailable environments:\n');
 defIdx = [];
 for i = 1:numel(envList)
     if defPrefix ~= "" && envList(i).path == defPrefix
-        defIdx = i;
+        defIdx = i;  % base par défaut si présente
     end
     existsTag = '[MISSING]';
     if exist(char(envList(i).python), 'file') == 2
@@ -145,49 +145,29 @@ for i = 1:numel(envList)
         fprintf('       python: %s %s\n', char(envList(i).python), existsTag);
     end
 end
-if isempty(defIdx), defIdx = 1; end
+if isempty(defIdx), defIdx = 1; end  % fallback si pas de default_prefix
 
-% 5) Sélection: console-only sous Linux ou si pas d'AWT; sinon GUI OK
-useUI = ispc && usejava('awt') && feature('ShowFigureWindows');
-
-idx = [];
-if useUI
-    try
-        listStr = strcat(envList(:).name, "  -  ", envList(:).path);
-        [idx, ok] = listdlg('PromptString','Select a Conda environment:', ...
-                            'SelectionMode','single', ...
-                            'ListString', listStr, ...
-                            'InitialValue', defIdx, ...
-                            'ListSize',[800 350]);
-        if ~ok, disp('Cancelled.'); info = struct(); return; end
-    catch
-        idx = [];  % fallback console
+% 5) Sélection via prompt
+prompt = sprintf('Enter the number of the environment to use [%d=%s]: ', ...
+                 defIdx, char(envList(defIdx).name));
+sel = input(prompt, 's');
+if isempty(sel)
+    idx = defIdx;
+else
+    v = str2double(sel);
+    if ~isfinite(v) || v < 1 || v > numel(envList)
+        error('Invalid selection: %s', sel);
     end
-end
-
-if isempty(idx)
-    prompt = sprintf('Enter the number of the environment to use [%d=%s]: ', ...
-                     defIdx, char(envList(defIdx).name));
-    sel = input(prompt, 's');
-    if isempty(sel)
-        idx = defIdx;
-    else
-        v = str2double(sel);
-        if ~isfinite(v) || v<1 || v>numel(envList)
-            error('Invalid selection: %s', sel);
-        end
-        idx = round(v);
-    end
+    idx = round(v);
 end
 
 if debug
-    fprintf('[DEBUG] Selection method: %s | index=%d\n', tern(useUI,'UI','console'), idx);
+    fprintf('[DEBUG] Selection method: console | index=%d\n', idx);
 end
 chosen = envList(idx);
 if ~isfile(chosen.python)
     error('Python executable not found: %s', chosen.python);
 end
-
 
     % 6) pyenv OutOfProcess
     if debug
