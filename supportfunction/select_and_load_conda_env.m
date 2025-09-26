@@ -1,9 +1,10 @@
-function select_and_load_conda_env(debug)
-% SELECT_AND_LOAD_CONDA_ENV (robust, no ternary)
-% - Locates conda reliably
-% - Lists Conda environments (via "conda info --json" then fallback "conda env list --json")
-% - Prompts user to select one (UI if available, else console)
-% - Sets pyenv to OutOfProcess and verifies Python / Torch
+function info = select_and_load_conda_env(debug)
+% SELECT_AND_LOAD_CONDA_ENV
+% - Linux/macOS : exécute conda via "bash -lic" et lance "conda-init" avant
+% - Windows     : détecte conda.exe/conda.bat et appelle directement
+% - Liste les environnements conda (JSON), sélection UI/console
+% - Configure pyenv (OutOfProcess)
+% - Vérifie Python + Torch (version/CUDA/cuda.is_available)
 %
 % Usage:
 %   info = select_and_load_conda_env();        % debug on
@@ -12,82 +13,90 @@ function select_and_load_conda_env(debug)
     if nargin < 1, debug = true; end
     info = struct();
 
-    % 1) Find conda
-    % 0) Check if pyenv is already loaded and usable
-pe = pyenv;
-if pe.Status == "Loaded"
-    if debug
-        fprintf('[DEBUG] pyenv already loaded: %s\n', pe.Version);
-        fprintf('[DEBUG] Skipping environment selection.\n');
-    end
-
-    % Try basic verification
-    info = struct();
-    info.name = "(existing)";
-    info.path = fileparts(pe.Executable);
-    info.python = string(pe.Version);
-    info.pyenv = pe;
-    info.debug = debug;
-
-    try
-        pysys = py.importlib.import_module('sys');
-        info.python_sys_version = toStringSafe(pysys.version);
-    catch
-        info.python_sys_version = "(import failed)";
-    end
-
-    try
-        torch = py.importlib.import_module('torch');
-        info.torch = struct( ...
-            'installed', true, ...
-            'version', toStringSafe(pytorch.("__version__")), ...
-            'cuda',    toStringSafe(torch.version.cuda), ...
-            'is_available', toBoolSafe(torch.cuda.is_available()) ...
-        );
-    catch
-        info.torch = struct( ...
-            'installed', false, ...
-            'version', "", ...
-            'cuda', "", ...
-            'is_available', false ...
-        );
-    end
-
-    % Affichage de résumé (si debug)
-    if debug
-        fprintf('\n=== Python already loaded in MATLAB ===\n');
-        fprintf('Python exe     : %s\n', char(pe.Executable));
-        fprintf('pyenv.Status   : %s\n', char(string(pe.Status)));
-        fprintf('pyenv.Version  : %s\n', char(string(pe.Version)));
-        fprintf('Torch installed: %d\n', info.torch.installed);
-        if info.torch.installed
-            fprintf('Torch version  : %s | CUDA: %s | is_available: %d\n', ...
-                info.torch.version, info.torch.cuda, info.torch.is_available);
+    % 0) Déjà chargé ?
+    pe = pyenv;
+    if pe.Status == "Loaded"
+        if debug
+            fprintf('[DEBUG] pyenv already loaded: %s\n', pe.Version);
+            fprintf('[DEBUG] Skipping environment selection.\n');
         end
-        fprintf('=======================================\n');
+
+        info = struct();
+        info.name    = "(existing)";
+        info.path    = fileparts(pe.Executable);
+        info.python  = string(pe.Version);
+        info.pyenv   = pe;
+        info.debug   = debug;
+
+        % sys.version
+        try
+            pysys = py.importlib.import_module('sys');
+            info.python_sys_version = toStringSafe(pysys.version);
+        catch
+            info.python_sys_version = "(import failed)";
+        end
+
+        % torch
+        try
+            torch = py.importlib.import_module('torch');
+            % Utiliser getattr pour __version__ et modules imbriqués
+            tver      = toStringSafe(py.getattr(torch, '__version__'));
+            torchver  = py.getattr(torch, 'version');
+            cudaAttr  = toStringSafe(py.getattr(torchver, 'cuda')); % peut être None
+            tcuda     = py.getattr(torch, 'cuda');
+            is_av_fun = py.getattr(tcuda, 'is_available');
+            is_av     = toBoolSafe(is_av_fun());
+
+            info.torch = struct( ...
+                'installed',     true, ...
+                'version',       tver, ...
+                'cuda',          cudaAttr, ...
+                'is_available',  is_av ...
+            );
+        catch
+            info.torch = struct( ...
+                'installed', false, ...
+                'version',   "", ...
+                'cuda',      "", ...
+                'is_available', false ...
+            );
+        end
+
+        if debug
+            fprintf('\n=== Python already loaded in MATLAB ===\n');
+            fprintf('Python exe     : %s\n', char(pe.Executable));
+            fprintf('pyenv.Status   : %s\n', char(string(pe.Status)));
+            fprintf('pyenv.Version  : %s\n', char(string(pe.Version)));
+            fprintf('Torch installed: %d\n', info.torch.installed);
+            if info.torch.installed
+                fprintf('Torch version  : %s | CUDA: %s | is_available: %d\n', ...
+                    info.torch.version, info.torch.cuda, info.torch.is_available);
+            end
+            fprintf('=======================================\n');
+        end
+        return;
     end
 
-    return;
-end
-
-% 1) Find conda
-condaCmd = findCondaCmd(debug);
-
-
-
-    if debug
-        fprintf('[DEBUG] Using conda command: %s\n', condaCmd);
+    % 1) Préparation conda (Windows: chemin, Unix: via bash -lic)
+    if ispc
+        condaCmd = findCondaCmd(debug);
+        if debug, fprintf('[DEBUG] Using conda command: %s\n', condaCmd); end
+    else
+        % Sous Unix, non utilisé directement (runConda encapsule conda-init)
+        condaCmd = 'conda'; %#ok<NASGU>
+        if debug
+            fprintf('[DEBUG] Unix: conda will be invoked via bash -lic "conda-init; conda ..."\n');
+        end
     end
 
-    % 2) Query conda for envs
-    [data, rawOut, src] = getCondaEnvs(condaCmd, debug);
+    % 2) Récup envs
+    [data, rawOut, src] = getCondaEnvs(debug);
     if debug
         fprintf('[DEBUG] Envs source: %s | JSON length: %d chars\n', src, strlength(string(rawOut)));
     end
-
     if ~isfield(data,'envs') || isempty(data.envs)
         rawShort = char(string(rawOut));
-        if numel(rawShort) > 500, rawShort = rawShort(1:500); end
+        if numel(rawShort) > 500, rawShort = [rawShort(1:500) ' ... [truncated]']; end
         error('No environments found in conda JSON. Raw (first 500 chars):\n%s', rawShort);
     end
 
@@ -102,9 +111,9 @@ condaCmd = findCondaCmd(debug);
         if debug, fprintf('[DEBUG] default_prefix: %s\n', defPrefix); end
     end
 
-    % 3) Build env list
-    isWindows = ispc;
-    envList = struct('name', string.empty, 'path', string.empty, 'python', string.empty);
+    % 3) Construire la liste sans "entrée fantôme"
+envList = struct('name', {}, 'path', {}, 'python', {});
+
     for i = 1:numel(envPaths)
         p = envPaths(i);
         if defPrefix ~= "" && p == defPrefix
@@ -112,7 +121,7 @@ condaCmd = findCondaCmd(debug);
         else
             name = getLastPathComponent(p);
         end
-        if isWindows
+        if ispc
             pyexe = fullfile(p, 'python.exe');
         else
             pyexe = fullfile(p, 'bin', 'python');
@@ -120,72 +129,60 @@ condaCmd = findCondaCmd(debug);
         envList(end+1) = struct('name', name, 'path', p, 'python', string(pyexe)); %#ok<AGROW>
     end
 
-    % 4) Show list in console (always)
-    fprintf('\nAvailable environments:\n');
-    for i = 1:numel(envList)
-        existsTag = '[MISSING]';
-        if exist(char(envList(i).python), 'file') == 2
-            existsTag = '[exists]';
-        end
-        fprintf('  [%d] %-20s %s\n', i, char(envList(i).name), char(envList(i).path));
-        if debug
-            fprintf('       python: %s %s\n', char(envList(i).python), existsTag);
-        end
+% 4) Affichage console (uniquement, pas de GUI)
+fprintf('\nAvailable environments:\n');
+defIdx = [];
+for i = 1:numel(envList)
+    if defPrefix ~= "" && envList(i).path == defPrefix
+        defIdx = i;  % base par défaut si présente
     end
-
-    % 5) Selection (UI if possible, else console)
-    listStr = strcat(envList(:).name, "  -  ", envList(:).path);
-    idx = [];
-    usedUI = false;
-    try
-        [idx, ok] = listdlg('PromptString','Select a Conda environment:', ...
-                            'SelectionMode','single', ...
-                            'ListString', listStr, ...
-                            'ListSize',[800 350]);
-        usedUI = true;
-        if ~ok
-            disp('Cancelled.');
-            return;
-        end
-    catch
-        % UI not available; will do console input below
+    existsTag = '[MISSING]';
+    if exist(char(envList(i).python), 'file') == 2
+        existsTag = '[exists]';
     end
-
-    if isempty(idx)
-        sel = input('Enter the number of the environment to use: ');
-        if isempty(sel) || ~isscalar(sel) || sel < 1 || sel > numel(envList)
-            error('Invalid selection.');
-        end
-        idx = sel;
-    end
-
+    fprintf('  [%d] %-20s %s\n', i, char(envList(i).name), char(envList(i).path));
     if debug
-        if usedUI
-            fprintf('[DEBUG] Selection method: UI | index=%d\n', idx);
-        else
-            fprintf('[DEBUG] Selection method: console | index=%d\n', idx);
-        end
+        fprintf('       python: %s %s\n', char(envList(i).python), existsTag);
     end
+end
+if isempty(defIdx), defIdx = 1; end  % fallback si pas de default_prefix
 
-    chosen = envList(idx);
-    if ~isfile(chosen.python)
-        error('Python executable not found: %s', chosen.python);
+% 5) Sélection via prompt
+prompt = sprintf('Enter the number of the environment to use [%d=%s]: ', ...
+                 defIdx, char(envList(defIdx).name));
+sel = input(prompt, 's');
+if isempty(sel)
+    idx = defIdx;
+else
+    v = str2double(sel);
+    if ~isfinite(v) || v < 1 || v > numel(envList)
+        error('Invalid selection: %s', sel);
     end
+    idx = round(v);
+end
 
-    % 6) Configure pyenv (OutOfProcess)
+if debug
+    fprintf('[DEBUG] Selection method: console | index=%d\n', idx);
+end
+chosen = envList(idx);
+if ~isfile(chosen.python)
+    error('Python executable not found: %s', chosen.python);
+end
+
+    % 6) pyenv OutOfProcess
     if debug
         fprintf('[DEBUG] Setting pyenv to: %s (OutOfProcess)\n', char(chosen.python));
     end
     pe = pyenv;
     if pe.Status == "Loaded"
-        if ~strcmp(char(string(pe.Version)), char(chosen.python))
+        if ~strcmpi(char(pe.Executable), char(chosen.python))
             if debug, fprintf('[DEBUG] Terminating existing Python engine...\n'); end
             terminate(pyenv);
         end
     end
     pe = pyenv('Version', char(chosen.python), 'ExecutionMode', 'OutOfProcess');
 
-    % 7) Verify sys + torch
+    % 7) Vérifs sys + torch (via getattr)
     okSys = false; pyVer = "";
     okTorch = false; torchVer = ""; torchCUDA = ""; torchAvail = false;
 
@@ -201,22 +198,17 @@ condaCmd = findCondaCmd(debug);
     end
 
     try
-        pytorch   = py.importlib.import_module('torch');
+        torch     = py.importlib.import_module('torch');
         okTorch   = true;
-        torchVer  = toStringSafe(pytorch.("__version__"));
-        torchCUDA = toStringSafe(pytorch.version.("cuda"));  % may be None
-        torchAvail= toBoolSafe(pytorch.cuda.is_available());
+        torchVer  = toStringSafe(py.getattr(torch, '__version__'));
+        tv        = py.getattr(torch, 'version');
+        torchCUDA = toStringSafe(py.getattr(tv, 'cuda'));  % peut être None
+        tc        = py.getattr(torch, 'cuda');
+        is_av_fn  = py.getattr(tc, 'is_available');
+        torchAvail= toBoolSafe(is_av_fn());
         if debug
-            if torchCUDA == ""
-                tcdisp = "(None)";
-            else
-                tcdisp = torchCUDA;
-            end
-            if torchAvail
-                avdisp = "true";
-            else
-                avdisp = "false";
-            end
+            tcdisp = torchCUDA; if tcdisp == "", tcdisp = "(None)"; end
+            avdisp = tern(torchAvail, "true", "false");
             fprintf('[DEBUG] torch.__version__: %s | torch.version.cuda: %s | cuda.is_available(): %s\n', ...
                 char(torchVer), char(tcdisp), char(avdisp));
         end
@@ -226,19 +218,10 @@ condaCmd = findCondaCmd(debug);
         end
     end
 
-    % Printable values
-    if torchCUDA == ""
-        torchCUDA_disp = "(None)";
-    else
-        torchCUDA_disp = torchCUDA;
-    end
-    if torchAvail
-        availStr = "true";
-    else
-        availStr = "false";
-    end
+    % 8) Rapport
+    torchCUDA_disp = torchCUDA; if torchCUDA_disp == "", torchCUDA_disp = "(None)"; end
+    availStr = tern(torchAvail, "true", "false");
 
-    % 8) Report
     fprintf('\n=== MATLAB Python Configuration ===\n');
     fprintf('Selected env   : %s\n', char(chosen.name));
     fprintf('Python exe     : %s\n', char(chosen.python));
@@ -258,67 +241,47 @@ condaCmd = findCondaCmd(debug);
     end
     fprintf('===================================\n');
 
-    % % 9) Return struct
-    % info = struct( ...
-    %     'name', chosen.name, ...
-    %     'path', chosen.path, ...
-    %     'python', chosen.python, ...
-    %     'pyenv', pe, ...
-    %     'python_sys_version', pyVer, ...
-    %     'torch', struct('installed', okTorch, 'version', torchVer, 'cuda', torchCUDA, 'is_available', torchAvail), ...
-    %     'debug', debug ...
-    % );
+    % 9) Sortie
+    info = struct( ...
+        'name', chosen.name, ...
+        'path', chosen.path, ...
+        'python', chosen.python, ...
+        'pyenv', pe, ...
+        'python_sys_version', pyVer, ...
+        'torch', struct('installed', okTorch, 'version', torchVer, 'cuda', torchCUDA, 'is_available', torchAvail), ...
+        'debug', debug ...
+    );
 end
 
-% ===== helpers =====
+% =================== Helpers ===================
 
-function cmd = findCondaCmd(debug)
-    cands = {};
-    ex = getenv('CONDA_EXE'); if ~isempty(ex), cands{end+1} = ex; end %#ok<AGROW>
-    ex = getenv('CONDA_BAT'); if ~isempty(ex), cands{end+1} = ex; end %#ok<AGROW>
-    if ispc
-        up = getenv('USERPROFILE');
-        cands = [cands, { ...
-            fullfile('C:\tools','Anaconda3','condabin','conda.bat'), ...
-            fullfile(up,'anaconda3','condabin','conda.bat'), ...
-            fullfile(up,'miniconda3','condabin','conda.bat')}];
-        [st, out] = system('where conda');
-        if st == 0
-            lines = strsplit(strtrim(out), {'\r','\n'});
-            for i=1:numel(lines)
-                if ~isempty(lines{i}), cands{end+1} = strtrim(lines{i}); end %#ok<AGROW>
-            end
-        end
+function [st,out] = runConda(subcmd, debug)
+% Exécute une sous-commande conda de manière robuste selon l'OS.
+% Unix : bash -lic "conda-init; conda <subcmd>"
+% Win  : "<path_to_conda>" <subcmd>
+    if isunix
+        cmd = sprintf('bash -lic "conda-init; conda %s"', subcmd);
     else
-        cands = [cands, {'conda'}];
+        cmd = sprintf('%s %s', quoteIfNeeded(findCondaCmd(false)), subcmd);
     end
-    % Dedup and probe
-    seen = containers.Map('KeyType','char','ValueType','logical');
-    for i = 1:numel(cands)
-        p = cands{i};
-        if isempty(p), continue; end
-        if isKey(seen,p), continue; end
-        seen(p) = true;
-        test = sprintf('%s --version', quoteIfNeeded(p));
-        [st, out] = system(test);
-        if st == 0 && contains(lower(out),'conda')
-            cmd = p; return;
-        else
-            if debug
-                fprintf('[DEBUG] Skip conda candidate: %s (rc=%d)\n', p, st);
+    [st,out] = system(cmd);
+    if debug
+        fprintf('[DEBUG] runConda: %s\n[DEBUG] rc=%d\n', cmd, st);
+        if ~isempty(out)
+            if contains(subcmd,'--json')
+                trunc = char(out);
+                if numel(trunc) > 300, trunc = [trunc(1:300) ' ... [truncated]']; end
+                fprintf('[DEBUG] out(json): %s\n', trunc);
+            else
+                fprintf('[DEBUG] out: %s\n', out);
             end
         end
     end
-    cmd = 'conda'; % last resort
 end
 
-function [data, out, src] = getCondaEnvs(condaCmd, debug)
-    % Try "conda info --json" first
-    cmd = sprintf('%s info --json', quoteIfNeeded(condaCmd));
-    [st, out] = system(cmd);
-    if debug
-        fprintf('[DEBUG] Run: %s | rc=%d | out.len=%d\n', cmd, st, strlength(string(out)));
-    end
+function [data, out, src] = getCondaEnvs(debug)
+% Interroge conda (info --json puis fallback env list --json) via runConda.
+    [st, out] = runConda('info --json', debug);
     if st == 0
         try
             data = jsondecode(out);
@@ -330,22 +293,85 @@ function [data, out, src] = getCondaEnvs(condaCmd, debug)
             warnJson(ME, out);
         end
     end
-    % Fallback: "conda env list --json"
-    cmd = sprintf('%s env list --json', quoteIfNeeded(condaCmd));
-    [st2, out2] = system(cmd);
-    if debug
-        fprintf('[DEBUG] Run: %s | rc=%d | out.len=%d\n', cmd, st2, strlength(string(out2)));
-    end
+    [st2, out2] = runConda('env list --json', debug);
     if st2 ~= 0
         error('Both "conda info --json" and "conda env list --json" failed.');
     end
     try
         data = jsondecode(out2);
-        src = 'conda env list --json';
-        out = out2;
+        src  = 'conda env list --json';
+        out  = out2;
     catch ME
         warnJson(ME, out2);
         error('JSON parse failed for both commands.');
+    end
+end
+
+function cmd = findCondaCmd(debug)
+% Windows : détecte conda.exe/.bat ou 'conda' sur le PATH.
+    candidates = {};
+    ex = getenv('CONDA_EXE'); if ~isempty(ex), candidates{end+1} = ex; end
+    ex = getenv('CONDA_BAT'); if ~isempty(ex), candidates{end+1} = ex; end
+
+    if ispc
+        up = getenv('USERPROFILE');
+        candidates = [candidates, { ...
+            fullfile('C:\tools','Anaconda3','Scripts','conda.exe'), ...
+            fullfile('C:\tools','Anaconda3','condabin','conda.bat'), ...
+            fullfile(up,'anaconda3','Scripts','conda.exe'), ...
+            fullfile(up,'anaconda3','condabin','conda.bat'), ...
+            fullfile(up,'miniconda3','Scripts','conda.exe'), ...
+            fullfile(up,'miniconda3','condabin','conda.bat')}];
+
+        [st, out] = system('where conda');
+        if st == 0
+            lines = strsplit(strtrim(out), {'\r','\n'});
+            for i = 1:numel(lines)
+                li = strtrim(lines{i});
+                if ~isempty(li), candidates{end+1} = li; end
+            end
+        end
+    else
+        cmd = 'conda'; % Sous Unix, non utilisé (runConda gère tout)
+        return;
+    end
+
+    % Dédup
+    seen = containers.Map('KeyType','char','ValueType','logical');
+    pruned = {};
+    for i = 1:numel(candidates)
+        p = candidates{i};
+        if isempty(p), continue; end
+        if isKey(seen, p), continue; end
+        seen(p) = true;
+        pruned{end+1} = p; %#ok<AGROW>
+    end
+
+    % Probe
+    for i = 1:numel(pruned)
+        p = pruned{i};
+        testCmd = buildProbeCmd(p);
+        [st, out] = system(testCmd);
+        if st == 0 && contains(lower(out), 'conda')
+            if debug, fprintf('[DEBUG] conda OK: %s\n', p); end
+            cmd = p; return;
+        else
+            if debug, fprintf('[DEBUG] Skip conda candidate: %s (rc=%d)\n', p, st); end
+        end
+    end
+
+    cmd = 'conda'; % dernier recours
+end
+
+function c = buildProbeCmd(p)
+    if ispc
+        if endsWith(lower(p), '.bat')
+            c = sprintf('cmd /c "%s --version"', p);
+        else
+            c = sprintf('"%s" --version', p);
+        end
+    else
+        c = sprintf('%s --version', p);
     end
 end
 
@@ -386,4 +412,8 @@ function b = toBoolSafe(pybool)
     catch
         b = logical(pybool == true);
     end
+end
+
+function x = tern(cond, a, b)
+    if cond, x = a; else, x = b; end
 end

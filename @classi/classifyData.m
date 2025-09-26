@@ -202,7 +202,10 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
 
         if numel(roiobj(i).image)==0
             roiobj(i).load;
-      
+        end
+        if numel(roiobj(i).image)==0
+            warning('ROI is empty; skipping...')
+            continue;
         end
 
         ROIpreprocessing(roiobj(i),classiobj);
@@ -351,22 +354,46 @@ switch classif.outputType
 
         if strcmp(classif.description{1},'YOLO instance segmentation') || strcmp(classif.description{1},'CellposeSAM') || strcmp(classif.description{1},'Cell-TRACKTR')
 
-             pixresults=[];
-        for i=1:numel(classif.classes)
-            pixresultstmp=findChannelID(roiobj,['results_' classif.strid '_' classif.classes{i}]); % gather all channels associated with proba
-            
-            if numel(pixresultstmp)==0 % channel does not exist, hence create them
-                matrix=uint16(zeros(size(gfp,1),size(gfp,2),1,size(gfp,4)));
-                rgb=[1 1 1]; %[1 1 1]; 
-                intensity=[0 0 0]; % in yolo the output is indexed image x number of classes
-                
-                roiobj.addChannel(matrix,['results_' classif.strid '_' classif.classes{i}],rgb,intensity);
-                pixresults=[pixresults size(roiobj.image,3)];
-            else
-                roiobj.image(:,:,pixresultstmp,:)=uint16(zeros(size(gfp,1),size(gfp,2),1,size(gfp,4)));
-                pixresults=[pixresults pixresultstmp];
-            end
-        end
+          
+pixresults = [];
+
+for i = 1:numel(classif.classes)
+    chname = ['results_' classif.strid '_' classif.classes{i}];
+    pixid  = findChannelID(roiobj, chname);
+    selectid=roiobj.channelid(pixid);
+
+    % Valeurs voulues pour ces channels
+    rgb       = [1 1 1];
+    intensity = [0 0 0];
+
+    if isempty(pixid)
+        % channel n'existe pas → le créer
+        matrix = uint16(zeros(size(gfp,1), size(gfp,2), 1, size(gfp,4)));
+        roiobj.addChannel(matrix, chname, rgb, intensity);
+        pixid = size(roiobj.image, 3);  % index du channel nouvellement ajouté
+        selectid=roiobj.channelid(pixid);
+        % On force quand même (au cas où addChannel ne propage pas)
+        [roiobj.display.rgb, roiobj.display.intensity] = ...
+           ensureDisplayRows(roiobj.display.rgb, roiobj.display.intensity, selectid);
+        roiobj.display.rgb(selectid, :)       = rgb;
+        roiobj.display.intensity(selectid, :) = intensity;
+         roiobj.display.selectedchannel(pixid)=true;
+
+    else
+        % channel existe → on remet les pixels à zéro et on force l'affichage
+        roiobj.image(:, :, pixid, :) = uint16(zeros(size(gfp,1), size(gfp,2), 1, size(gfp,4)));
+
+        [roiobj.display.rgb, roiobj.display.intensity] = ...
+            ensureDisplayRows(roiobj.display.rgb, roiobj.display.intensity, selectid);
+        roiobj.display.rgb(selectid, :)       = rgb;
+        roiobj.display.intensity(selectid, :) = intensity;
+        roiobj.display.selectedchannel(selectid)=true;
+
+    end
+
+    pixresults = [pixresults pixid];
+end
+
 
         else
         pixresults=findChannelID(roiobj,['results_' classif.strid]);
@@ -445,3 +472,14 @@ function ROIManagement(roiobj,data, image)
 roiobj.save('data');
  end
 %disp('You must save the shallow project to save these classified data !');
+
+
+% Helpers pour garantir que display.* ont assez de lignes
+function [rgbTab, intTab] = ensureDisplayRows(rgbTab, intTab, idx)
+    if isempty(rgbTab),  rgbTab = ones(0,3); end
+    if isempty(intTab),  intTab = ones(0,3); end
+    need = max(0, idx - size(rgbTab,1));
+    if need > 0
+        rgbTab(end+1:idx, :) = 1;  % défaut: blanc
+        intTab(end+1:idx, :) = 0;  % défaut: intensité 1
+    end
