@@ -76,6 +76,8 @@ else % image based classification and regression
 
     roiObj.parent=classif;
 
+    normalizeDisplay(roiObj);
+
    if category=="Pixel"
 
         options= 'pixelAnnotation';
@@ -126,7 +128,8 @@ else % image based classification and regression
 
  channel_names = roiObj.display.channel;
 
-selected = false(1, numel(roiObj.display.selectedchannel));
+nch = numel(channel_names);
+selected = false(1, nch);
 
 for i = 1:numel(roiObj.display.selectedchannel)
     if any(strcmp(channel_names{i}, classif.channelName))
@@ -359,6 +362,63 @@ if refreshe==1
     plotData(handle,classif,rois,roiid);
 end
 end
+
+function normalizeDisplay(roiObj)
+d = roiObj.display;
+nch = numel(d.channel);
+
+% Helpers internes
+resizeRow = @(v, n, fill) ( ...
+    (numel(v)>=n) * v(1:n) + ...
+    (numel(v)< n)  * [v(:).'  repmat(fill,1,n-numel(v))] ); %#ok<NASGU>
+
+% 1D vecteurs (rangés sur 1×N)
+oneDFields = {'selectedchannel','indexed','alpha','contour','width','log'};
+for k = 1:numel(oneDFields)
+    f = oneDFields{k};
+    if isfield(d,f)
+        v = d.(f);
+        v = v(:).';                      % force 1×N
+        if numel(v) >= nch
+            d.(f) = v(1:nch);
+        else
+            d.(f) = [v, zeros(1, nch-numel(v))];
+        end
+    end
+end
+
+% Matrices N×3 : intensity, rgb
+if isfield(d,'intensity')
+    v = d.intensity;
+    if size(v,1) >= nch
+        d.intensity = v(1:nch, :);
+    else
+        d.intensity = [v; zeros(nch-size(v,1), 3)];
+    end
+end
+if isfield(d,'rgb')
+    v = d.rgb;
+    if size(v,1) >= nch
+        d.rgb = v(1:nch, :);
+    else
+        d.rgb = [v; ones(nch-size(v,1), 3)];  % par défaut blanc
+    end
+end
+
+% % displaylim : 2×N
+% if isfield(d,'displaylim')
+%     v = d.displaylim;
+%     if size(v,2) >= nch
+%         d.displaylim = v(:,1:nch);
+%     else
+%         add = repmat([0;1], 1, nch-size(v,2));
+%         d.displaylim = [v, add];
+%     end
+% end
+
+roiObj.display = d;
+end
+
 
 
 
