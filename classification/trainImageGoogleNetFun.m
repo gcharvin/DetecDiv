@@ -17,13 +17,16 @@ if nargin==2 % basic parameter initialization
             'Choose whether and how training and validation data should be shuffled during training',...
             'Enter fraction of the data to be used for training vs validation during training',...
             'Enter the magnitude of translation for data augmentation (in pixels)',...
-            'Enter the magnitude of rotation for data augmentation (in pixels)',...
+            'Enter the magnitude of rotation for data augmentation (in degrees)',...
             'Specify value for L2 regularization',...
+            'Check to use a dropout layer',...
+            'Value for dropout regularization',...
             'Choose execution environment',...
             'Select initial version of network to start training with; Default: ImageNet'};
         
-        classif.trainingParam=struct('CNN_training_method',{{'adam','sgdm','adam'}},...
-            'CNN_network',{{'googlenet','inceptionresnetv2','inceptionv3','resnet18','resnet50','resnet101','nasnetlarge','inceptionresnetv2', 'efficientnetb0','googlenet'}},...
+        classif.trainingParam=struct( ...
+            'CNN_training_method',{{'adam','sgdm','adam'}},...
+            'CNN_network',{{'googlenet','inceptionresnetv2','inceptionv3','resnet18','resnet50','resnet101','nasnetlarge','inceptionresnetv2','efficientnetb0','googlenet'}},...
             'CNN_mini_batch_size',8,...
             'CNN_max_epochs',6,...
             'CNN_initial_learning_rate',0.0003,...
@@ -32,15 +35,21 @@ if nargin==2 % basic parameter initialization
             'CNN_data_splitting_factor',0.7,...
             'CNN_translation_augmentation',[-5 5],...
             'CNN_rotation_augmentation',[-20 20],...
-            'CNN_l2_regularization',0.00001,...
+            'CNN_l2_regularization',0.0001,...
+            'CNN_use_dropout',true,...                 % <---- NEW
+            'CNN_dropout',0.5,...                      % <---- NEW
             'execution_environment',{{'auto','parallel','cpu','gpu','multi-gpu','auto'}},...
             'transfer_learning',{{'ImageNet','ImageNet'}},...
-            'tip',{tip});
-        
+            'tip',{tip} ...
+        );
         return;
-        %   end
-    else
+
+else
         trainingParam=classif.trainingParam;
+
+        % Backward compatibility defaults
+        if ~isfield(trainingParam,'CNN_use_dropout'); trainingParam.CNN_use_dropout = true; end
+        if ~isfield(trainingParam,'CNN_dropout');      trainingParam.CNN_dropout     = 0.5;  end
         
         if numel(trainingParam)==0
             disp('Could not find training parameters : first launch train with an extra argument to force parameter assignment');
@@ -50,9 +59,8 @@ if nargin==2 % basic parameter initialization
         if nargin==3  % input network is provided to be used instad of a virgin network 
             flagCNN=inputnetwork;
         end
-        
-    end
-    %-----------------------------------%
+end
+%-----------------------------------%
 
 % gather all classification images in each class and performs the training and outputs and saves the trained net 
 % load training data 
@@ -62,10 +70,11 @@ fprintf('Loading data repository...\n');
 fprintf('------\n');
 
 foldername=[path '/trainingdataset/images'];
-if ~exist(foldername)
-disp('Folder does not  exist; first export images for training; quitting !')
-return;
+if ~exist(foldername,"dir")
+    disp('Folder does not  exist; first export images for training; quitting !')
+    return;
 end
+
 imds = imageDatastore(foldername, ...
     'IncludeSubfolders',true, ...
     'LabelSource','foldernames'); 
@@ -78,43 +87,122 @@ fprintf('------\n');
 [imdsTrain,imdsValidation] = splitEachLabel(imds,trainingParam.CNN_data_splitting_factor);
 
 classes = classif.classes;
-%numel(categories(imdsTrain.Labels));
 
 if numel(classes)==0
-disp('There is no classes defined ; Cannot continue !')
-return;
+    disp('There is no classes defined ; Cannot continue !')
+    return;
 end
 
 fprintf('Loading network...\n');
 fprintf('------\n');
 
 if strcmp(trainingParam.transfer_learning{end},'ImageNet')  % creates a new network
-disp('Generating new network');
-net=eval(trainingParam.CNN_network{end});
+    disp('Generating new network');
+    net = eval(trainingParam.CNN_network{end});
 
-fprintf('Reformatting net for transfer learning...\n');
-fprintf('------\n');
+    fprintf('Reformatting net for transfer learning...\n');
+    fprintf('------\n');
 
-% formatting the net for transferred learning
-% extract the layer graph from the trained network 
-if isa(net,'SeriesNetwork') 
-  lgraph = layerGraph(net.Layers); 
+    % extract layer graph
+    if isa(net,'SeriesNetwork') 
+        lgraph = layerGraph(net.Layers); 
+    else
+        lgraph = layerGraph(net);
+    end
+
 else
-  lgraph = layerGraph(net);
+    disp(['Loading previously trained CNN network associated with: ' trainingParam.transfer_learning{end}]);
+    if numel(flagCNN)
+        lgraph = layerGraph(flagCNN);
+        net    = flagCNN;
+    else
+        strpth = fullfile(classif.path, trainingParam.transfer_learning{end});
+        if exist(strpth,"file") || exist([strpth '.mat'],"file")
+            load(strpth); % loads 'classifier'
+            lgraph = layerGraph(classifier);
+            net    = classifier;
+        else
+            disp(['Unable to load: ' trainingParam.transfer_learning{end}]);
+            return;
+        end
+    end
 end
 
-% Ajustement du taux de dropout
-% dropoutLayerName = 'pool5-drop_7x7_s1';
-% newDropout = dropoutLayer(0.6, 'Name', dropoutLayerName);
-% lgraph = replaceLayer(lgraph, dropoutLayerName, newDropout);
+% ===== Insert/adjust DROPOUT before we swap heads =====
+% We will find the current learnable layer to know where to attach dropout (especially for ResNet).
+[learnableLayer,classLayer] = findLayersToReplace(lgraph);
 
+% Apply dropout only if requested
+if trainingParam.CNN_use_dropout
+    netName = lower(trainingParam.CNN_network{end});
+    pDrop   = trainingParam.CNN_dropout;
 
+    if contains(netName,'googlenet')
+        % GoogLeNet: replace existing dropout just before FC head
+        if any(strcmp({lgraph.Layers.Name}, 'pool5-drop_7x7_s1'))
+            lgraph = replaceLayer(lgraph,'pool5-drop_7x7_s1', ...
+                                  dropoutLayer(pDrop,'Name','pool5-drop_7x7_s1'));
+            fprintf('Applied dropout %.2f to GoogLeNet (pool5-drop_7x7_s1).\n', pDrop);
+        else
+            % Fallback: insert a custom dropout right before the learnable layer
+            if any(strcmp({lgraph.Layers.Name}, 'pool5-7x7_s1'))
+                if ~any(strcmp({lgraph.Layers.Name},'custom_dropout'))
+                    lgraph = addLayers(lgraph, dropoutLayer(pDrop,'Name','custom_dropout'));
+                    lgraph = disconnectLayers(lgraph,'pool5-7x7_s1',learnableLayer.Name);
+                    lgraph = connectLayers(lgraph,'pool5-7x7_s1','custom_dropout');
+                    lgraph = connectLayers(lgraph,'custom_dropout',learnableLayer.Name);
+                    fprintf('Inserted custom dropout %.2f before final head (GoogLeNet).\n', pDrop);
+                end
+            end
+        end
 
+    elseif contains(netName,'resnet18') || contains(netName,'resnet50')
+        % ResNet: insert dropout between avg_pool and learnable layer
+        if any(strcmp({lgraph.Layers.Name},'avg_pool'))
+            if ~any(strcmp({lgraph.Layers.Name},'custom_dropout'))
+                lgraph = addLayers(lgraph, dropoutLayer(pDrop,'Name','custom_dropout'));
+                % disconnect avg_pool -> learnable
+                if any(strcmp(lgraph.Connections.Source,'avg_pool') & strcmp(lgraph.Connections.Destination,learnableLayer.Name))
+                    lgraph = disconnectLayers(lgraph,'avg_pool',learnableLayer.Name);
+                else
+                    % More robust: disconnect any outgoing from avg_pool
+                    nextIdx = strcmp(lgraph.Connections.Source,'avg_pool');
+                    nextDest = lgraph.Connections.Destination(nextIdx);
+                    for ii=1:numel(nextDest)
+                        lgraph = disconnectLayers(lgraph,'avg_pool',nextDest{ii});
+                    end
+                end
+                % reconnect via dropout
+                lgraph = connectLayers(lgraph,'avg_pool','custom_dropout');
+                lgraph = connectLayers(lgraph,'custom_dropout',learnableLayer.Name);
+                fprintf('Inserted custom dropout %.2f after avg\\_pool (ResNet).\n', pDrop);
+            end
+        else
+            warning('avg_pool not found; skipping dropout insertion for ResNet.');
+        end
+    else
+        % Other nets: try a generic insertion right before learnableLayer
+        if ~any(strcmp({lgraph.Layers.Name},'custom_dropout'))
+            lgraph = addLayers(lgraph, dropoutLayer(pDrop,'Name','custom_dropout'));
+            % find all sources feeding the learnable layer
+            srcMask = strcmp(lgraph.Connections.Destination, learnableLayer.Name);
+            srcNames = lgraph.Connections.Source(srcMask);
+            for ii=1:numel(srcNames)
+                lgraph = disconnectLayers(lgraph, srcNames{ii}, learnableLayer.Name);
+                lgraph = connectLayers(lgraph, srcNames{ii}, 'custom_dropout');
+            end
+            lgraph = connectLayers(lgraph,'custom_dropout',learnableLayer.Name);
+            fprintf('Inserted custom dropout %.2f before final head (generic path).\n', pDrop);
+        end
+    end
+end
+% ===== End DROPOUT insertion =====
+
+% Recompute handles in case graph changed
 [learnableLayer,classLayer] = findLayersToReplace(lgraph);
 sz=size(learnableLayer.Weights);
 numClasses = numel(categories(imdsTrain.Labels));
 cates=categories(imdsTrain.Labels);
-%numClasses = numel(classes);
 
 % adjust the final layers of the net
 if isa(learnableLayer,'nnet.cnn.layer.FullyConnectedLayer')
@@ -122,93 +210,52 @@ if isa(learnableLayer,'nnet.cnn.layer.FullyConnectedLayer')
         'Name','new_fc', ...
         'WeightLearnRateFactor',1, ...
         'BiasLearnRateFactor',1);
- %      'Weights',rand(numClasses,sz(2)),'Bias',zeros(numClasses,1));
-    
 elseif isa(learnableLayer,'nnet.cnn.layer.Convolution2DLayer')
     newLearnableLayer = convolution2dLayer(1,numClasses, ...
         'Name','new_conv', ...
         'WeightLearnRateFactor',1, ...
         'BiasLearnRateFactor',1);
+else
+    error('Unsupported learnable layer type: %s', class(learnableLayer));
 end
 
 lgraph = replaceLayer(lgraph,learnableLayer.Name,newLearnableLayer);
 
-%newClassLayer = classificationLayer('Name','new_classoutput');
-newClassLayer = weightedClassificationLayer(classWeights,'new_classoutput');%,cates);
-
+% Use class weights
+newClassLayer = weightedClassificationLayer(classWeights,'new_classoutput');
 lgraph = replaceLayer(lgraph,classLayer.Name,newClassLayer);
-
-%fprintf('Freezing layers...\n');
-
-% freezing layers
-% if strcmp(trainingParam.freeze,'y')
-% layers = lgraph.Layers;
-% connections = lgraph.Connections;
-% 
-%  layers(1:10) = freezeWeights(layers(1:10)); % only googlenet
-%  lgraph = createLgraphUsingConnections(layers,connections); % onlygooglnet
-% end
-else
-     disp(['Loading previously trained CNN network associated with: ' trainingParam.transfer_learning{end}]);
-     
-    if numel(flagCNN)
-        lgraph = layerGraph(flagCNN)  ;
-        net=flagCNN;
-    else
-         strpth=fullfile(classif.path,  trainingParam.transfer_learning{end});
-         if exist(strpth)
-             load(strpth); %loads classifier
-             lgraph = layerGraph(classifier);
-             net=classifier;
-         else
-             disp(['Unable to load: ' trainingParam.transfer_learning{end}]);
-            return;
-        end
-    end
-end
 
 inputSize = net.Layers(1).InputSize;
 
 fprintf('Training network...\n');
 fprintf('------\n');
 
-    %=====BLOCKs RNG====
-    if blockRNG==1
-        stCPU= RandStream('Threefry','Seed',0,'NormalTransform','Inversion');
-        stGPU=parallel.gpu.RandStream('Threefry','Seed',0,'NormalTransform','Inversion');
-        RandStream.setGlobalStream(stCPU);
-        parallel.gpu.RandStream.setGlobalStream(stGPU);
-    end
-    %===================
+%=====BLOCKs RNG====
+if blockRNG==1
+    stCPU= RandStream('Threefry','Seed',0,'NormalTransform','Inversion');
+    stGPU=parallel.gpu.RandStream('Threefry','Seed',0,'NormalTransform','Inversion');
+    RandStream.setGlobalStream(stCPU);
+    parallel.gpu.RandStream.setGlobalStream(stGPU);
+end
+%===================
 
 pixelRange = trainingParam.CNN_translation_augmentation;
-rotation=trainingParam.CNN_rotation_augmentation;
-%=trainingParam.CNN_rotation_augmentation;
+rotation   = trainingParam.CNN_rotation_augmentation;
 
-% below add a scaling factor 
+% basic augmentations (portable)
 imageAugmenter = imageDataAugmenter( ...
     'RandXReflection',true, ...
     'RandYReflection',true, ...
     'RandScale',[0.95 1.05], ...
     'RandXTranslation',pixelRange, ...
     'RandYTranslation',pixelRange, ...
-     'RandRotation',rotation);% , ...
-
-%imdsTrain = transform(imdsTrain, @augmenterGrayscale);
-%imdsTrain = transform(imdsTrain, @(data)augmenterGrayscaleResize(data,
-%inputSize)); % new function, not tested, to include all augmentations in
-%one fonction 
-
+    'RandRotation',rotation);
 
 augimdsTrain = augmentedImageDatastore(inputSize(1:2),imdsTrain, ...
     'DataAugmentation',imageAugmenter);
 
-
-% here add an outsize 
-miniBatchSize = trainingParam.CNN_mini_batch_size; %8
-valFrequency = floor(numel(augimdsTrain.Files)/miniBatchSize);
-
-%augimdsTrain = transform(augimdsTrain,@classificationAugmentationPipeline,'IncludeInfo',true);
+miniBatchSize = trainingParam.CNN_mini_batch_size;
+valFrequency  = floor(numel(augimdsTrain.Files)/miniBatchSize);
 
 augimdsValidation = augmentedImageDatastore(inputSize(1:2),imdsValidation);
 
@@ -233,32 +280,24 @@ options = trainingOptions(trainingParam.CNN_training_method{end}, ...
     'ExecutionEnvironment',trainingParam.execution_environment{end});
 
 classifier = trainNetwork(augimdsTrain,lgraph,options);
-%classifier = trainNetwork(imdsTrain, lgraph, options);
 
 fprintf('Training is done...\n');
 fprintf('Saving image classifier ...\n');
 fprintf('------\n');
 
-%[path '/' name '.mat']
-
 save([path '/' name '.mat'],'classifier');
 CNNOptions=struct(options);
-
 CNNOptions.ValidationData=[];
 
-if ~exist(fullfile(path,'TrainingValidation'))
+if ~exist(fullfile(path,'TrainingValidation'),"dir")
     mkdir(path,'TrainingValidation');
 end
 
 save([path '/TrainingValidation/' 'CNNOptions' '.mat'],'CNNOptions');
 save([path '/TrainingValidation/' 'tmpoptions' '.mat'],'options');
 
-% layers = freezeWeights(layers) sets the learning rates of all the
-% parameters of the layers in the layer array |layers| to zero.
-% saveTrainingPlot(path,'CNNTraining');
- 
+% ===== helpers =====
 function layers = freezeWeights(layers)
-
 for ii = 1:size(layers,1)
     props = properties(layers(ii));
     for p = 1:numel(props)
@@ -269,72 +308,37 @@ for ii = 1:size(layers,1)
     end
 end
 
-% lgraph = createLgraphUsingConnections(layers,connections) creates a layer
-% graph with the layers in the layer array |layers| connected by the
-% connections in |connections|.
-        
 function lgraph = createLgraphUsingConnections(layers,connections)
-
 lgraph = layerGraph();
 for i = 1:numel(layers)
     lgraph = addLayers(lgraph,layers(i));
 end
-
 for c = 1:size(connections,1)
     lgraph = connectLayers(lgraph,connections.Source{c},connections.Destination{c});
 end
 
 function dataOut = augmenterGrayscale(data)
-    img = im2double(data.input);
-    contrastFactor = 0.8 + 0.4 * rand();  % entre 0.8 et 1.2
-    brightnessOffset = 0.3 * (rand() - 0.5);  % entre -0.15 et 0.15
-    img = img * contrastFactor + brightnessOffset;
-    img = im2uint8(mat2gray(img));  % remise à l'échelle et conversion
-    dataOut = data;
-    dataOut.input = img;
+img = im2double(data.input);
+contrastFactor = 0.8 + 0.4 * rand();
+brightnessOffset = 0.3 * (rand() - 0.5);
+img = img * contrastFactor + brightnessOffset;
+img = im2uint8(mat2gray(img));
+dataOut = data; dataOut.input = img;
 
-
-
-% this function is not used yet 
 function dataOut = augmenterGrayscaleResize(data, inputSize)
-    % --- Image en double
-    img = im2double(data.input);
-
-    % --- Ajustement contraste et luminosité
-    contrastFactor = 0.8 + 0.4 * rand();             % entre 0.8 et 1.2
-    brightnessOffset = 0.3 * (rand() - 0.5);         % entre -0.15 et 0.15
-    img = img * contrastFactor + brightnessOffset;
-
-    % --- Rotation aléatoire (angle entre -20 et 20 degrés)
-    angle = -20 + 40 * rand();
-    img = imrotate(img, angle, 'bilinear', 'crop');
-
-    % --- Translation aléatoire (max ±5 pixels)
-    shiftX = round(-5 + 10 * rand());
-    shiftY = round(-5 + 10 * rand());
-    tform = affine2d([1 0 0; 0 1 0; shiftX shiftY 1]);
-    img = imwarp(img, tform, 'OutputView', imref2d(size(img)));
-
-    % --- Flip horizontal/vertical avec proba 0.5
-    if rand() > 0.5
-        img = fliplr(img);
-    end
-    if rand() > 0.5
-        img = flipud(img);
-    end
-
-    % --- Bruit gaussien (faible) avec proba 0.5
-    if rand() > 0.5
-        img = imnoise(img, 'gaussian', 0, 0.002);
-    end
-
-    % --- Redimensionnement
-    img = imresize(img, inputSize(1:2));
-
-    % --- Clamp et conversion uint8
-    img = im2uint8(mat2gray(img));
-
-    % --- Remise en sortie
-    dataOut = data;
-    dataOut.input = img;
-
+img = im2double(data.input);
+contrastFactor = 0.8 + 0.4 * rand();
+brightnessOffset = 0.3 * (rand() - 0.5);
+img = img * contrastFactor + brightnessOffset;
+angle = -20 + 40 * rand();
+img = imrotate(img, angle, 'bilinear', 'crop');
+shiftX = round(-5 + 10 * rand());
+shiftY = round(-5 + 10 * rand());
+tform = affine2d([1 0 0; 0 1 0; shiftX shiftY 1]);
+img = imwarp(img, tform, 'OutputView', imref2d(size(img)));
+if rand() > 0.5, img = fliplr(img); end
+if rand() > 0.5, img = flipud(img); end
+if rand() > 0.5, img = imnoise(img, 'gaussian', 0, 0.002); end
+img = imresize(img, inputSize(1:2));
+img = im2uint8(mat2gray(img));
+dataOut = data; dataOut.input = img;

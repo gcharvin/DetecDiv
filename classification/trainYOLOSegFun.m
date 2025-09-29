@@ -200,13 +200,9 @@ end
 %    error('Aucune installation de Python détectée. Veuillez configurer un environnement Python actif avec la commande `pyenv`.');
 %end
 
-% Vérifier si l'environnement Python est correctement configuré
-python_env = pyenv();
-if strcmp(python_env.Status, 'NotLoaded')
-    error('L''environnement Python n''est pas chargé. Veuillez activer un environnement Python avant de lancer ce script.');
-else
-    disp(['Environnement Python actif : ', python_env.Executable]);
-end
+
+% test the existence of python environment
+test=select_and_load_conda_env;
 
 % Run the Python script
 try

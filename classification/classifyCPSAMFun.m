@@ -154,6 +154,11 @@ py_script = sprintf( ...
 
 py_path = fullfile(classif.path, 'classify_script.py');
 fid = fopen(py_path, 'w'); fprintf(fid, '%s', py_script); fclose(fid);
+
+% test the existence of python environment
+test=select_and_load_conda_env;
+
+% run python routine
 pyrunfile(py_path);
 
 % ==== Lecture des résultats directement depuis .mat ====
