@@ -397,6 +397,10 @@ fclose(fid);
 % Afficher le chemin pour confirmer
 disp(['Script Python sauvegardé à : ', python_script_path]);
 
+% test the existence of python environment
+test=select_and_load_conda_env;
+
+
   % Appel du script Python pour effectuer l'inférence
     try
         pyrunfile(python_script_path);

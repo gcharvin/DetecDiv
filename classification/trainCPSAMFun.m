@@ -110,6 +110,9 @@ fclose(fid);
 
 disp(['Python script saved to: ' python_script_path]);
 
+% test the existence of python environment
+test=select_and_load_conda_env;
+
 %------------- Execute Python script
 python_env = pyenv();
 if strcmp(python_env.Status, 'NotLoaded')
