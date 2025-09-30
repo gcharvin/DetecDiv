@@ -375,37 +375,33 @@ if trainingParam.assemble_network | ~exist([path '/' name '.mat'])
 
 cnnLayers = layerGraph(netCNN);
 
-% Couche d'extraction utilisée pour le bridge
+% --- remove output layers + any dropout left in the CNN head ---
 switch trainingParam.CNN_network{end}
     case 'googlenet'
-        layerName = "pool5-7x7_s1";
-        baseInput = "conv1-7x7_s2";
         fixedToRemove = ["data","pool5-drop_7x7_s1","new_fc","prob","new_classoutput"];
+        baseInput = "conv1-7x7_s2";
+        layerName = "pool5-7x7_s1";
     case {'resnet50','resnet18'}
-        layerName = "avg_pool";
-        baseInput = "conv1";
         fixedToRemove = ["input_1","new_fc","fc1000_softmax","new_classoutput"];
-    case {'inceptionresnetv2','inceptionv3'}
+        baseInput = "conv1";
         layerName = "avg_pool";
-        baseInput = "conv2d_1";
+    case {'inceptionresnetv2','inceptionv3'}
         fixedToRemove = ["input_1","new_fc","predictions_softmax","new_classoutput"];
+        baseInput = "conv2d_1";
+        layerName = "avg_pool";
     otherwise
         error('Unsupported backbone: %s', trainingParam.CNN_network{end});
 end
 
-% Si on a inséré un dropout custom lors du training ResNet, il faut le retirer
-names = string({cnnLayers.Layers.Name});
-extraToRemove = strings(0,1);
-if any(names=="custom_dropout")
-    extraToRemove(end+1) = "custom_dropout";
-end
-% Pour être robuste si tu changes le nom
-extraToRemove = [extraToRemove; names(startsWith(names,"custom_dropout"))];
+% Remove known output layers (keep only existing ones)
+names = {cnnLayers.Layers.Name};
+toRemove = fixedToRemove( ismember(fixedToRemove, string(names)) );
+if ~isempty(toRemove), cnnLayers = removeLayers(cnnLayers, cellstr(toRemove)); end
 
-toRemove = intersect([fixedToRemove(:); extraToRemove(:)], names);
-if ~isempty(toRemove)
-    cnnLayers = removeLayers(cnnLayers, toRemove);
-end
+% Remove ANY dropout that might remain in the CNN head (e.g., 'custom_dropout')
+dropNames = names( contains(lower(names),'dropout') );
+% keep LSTM dropout (not in cnnLayers yet), so safe to remove all here
+if ~isempty(dropNames), cnnLayers = removeLayers(cnnLayers, dropNames); end
 
 % create layers to adjust to CNN network layers
 fprintf(' create layers to adjust to CNN network layers\n');
