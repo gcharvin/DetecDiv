@@ -185,7 +185,7 @@ end
 
 % --- Paramètres
 repo   = string(classif.trainingParam.repo_path);             % racine du repo Cell-TRACTR
-pyexe  = string(python_env.Executable);                      % ex: C:\Users\...\envs\cell-tractr-116\python.exe
+                   % ex: C:\Users\...\envs\cell-tractr-116\python.exe
 yaml   = fullfile(repo, 'cfgs', ['train_' char(classif.strid) '.yaml']);
 trainpy= fullfile(repo, 'src', 'train.py');
 

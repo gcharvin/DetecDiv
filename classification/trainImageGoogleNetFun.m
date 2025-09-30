@@ -79,12 +79,17 @@ imds = imageDatastore(foldername, ...
     'IncludeSubfolders',true, ...
     'LabelSource','foldernames'); 
 
-classWeights = 1./countcats(imds.Labels);
-classWeights = classWeights'/mean(classWeights);
-
 fprintf('------\n');
 
 [imdsTrain,imdsValidation] = splitEachLabel(imds,trainingParam.CNN_data_splitting_factor);
+
+% -- Recalcule sur le TRAIN uniquement + clamp
+tbl = countEachLabel(imdsTrain);          % table avec variables Label, Count
+cnt = tbl.Count;
+cnt(cnt==0) = 1;                          % évite division par 0
+classWeights = 1 ./ cnt;
+classWeights = classWeights' / mean(classWeights);
+classWeights(~isfinite(classWeights)) = 1; % garde au propre
 
 classes = classif.classes;
 
