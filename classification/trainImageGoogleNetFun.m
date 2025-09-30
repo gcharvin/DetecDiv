@@ -244,6 +244,13 @@ if blockRNG==1
 end
 %===================
 
+% --- Photometric jitter via ReadFcn (train only) ---
+imdsTrainPhot = imageDatastore(imdsTrain.Files, ...
+    'Labels', imdsTrain.Labels, ...
+    'IncludeSubfolders', false);  % files list already resolved
+imdsTrainPhot.ReadFcn = @(fn) photometricReadFcn(fn);  % << appliquer le jitter ici
+
+
 pixelRange = trainingParam.CNN_translation_augmentation;
 rotation   = trainingParam.CNN_rotation_augmentation;
 
@@ -256,13 +263,18 @@ imageAugmenter = imageDataAugmenter( ...
     'RandYTranslation',pixelRange, ...
     'RandRotation',rotation);
 
-augimdsTrain = augmentedImageDatastore(inputSize(1:2),imdsTrain, ...
-    'DataAugmentation',imageAugmenter);
+% --- 3) Datastores d'entraînement / validation ---
+augimdsTrain = augmentedImageDatastore(inputSize(1:2), imdsTrainPhot, ...
+    'DataAugmentation', imageAugmenter);
+
+% augimdsTrain = augmentedImageDatastore(inputSize(1:2),imdsTrain, ...
+%     'DataAugmentation',imageAugmenter);
 
 miniBatchSize = trainingParam.CNN_mini_batch_size;
 valFrequency  = floor(numel(augimdsTrain.Files)/miniBatchSize);
 
 augimdsValidation = augmentedImageDatastore(inputSize(1:2),imdsValidation);
+
 
 if ~isfield(trainingParam,'CNN_learn_rate_drop_factor')
     trainingParam.CNN_learn_rate_drop_factor=0.9;
@@ -325,28 +337,49 @@ for c = 1:size(connections,1)
     lgraph = connectLayers(lgraph,connections.Source{c},connections.Destination{c});
 end
 
-function dataOut = augmenterGrayscale(data)
-img = im2double(data.input);
-contrastFactor = 0.8 + 0.4 * rand();
-brightnessOffset = 0.3 * (rand() - 0.5);
-img = img * contrastFactor + brightnessOffset;
-img = im2uint8(mat2gray(img));
-dataOut = data; dataOut.input = img;
 
-function dataOut = augmenterGrayscaleResize(data, inputSize)
-img = im2double(data.input);
-contrastFactor = 0.8 + 0.4 * rand();
-brightnessOffset = 0.3 * (rand() - 0.5);
-img = img * contrastFactor + brightnessOffset;
-angle = -20 + 40 * rand();
-img = imrotate(img, angle, 'bilinear', 'crop');
-shiftX = round(-5 + 10 * rand());
-shiftY = round(-5 + 10 * rand());
-tform = affine2d([1 0 0; 0 1 0; shiftX shiftY 1]);
-img = imwarp(img, tform, 'OutputView', imref2d(size(img)));
-if rand() > 0.5, img = fliplr(img); end
-if rand() > 0.5, img = flipud(img); end
-if rand() > 0.5, img = imnoise(img, 'gaussian', 0, 0.002); end
-img = imresize(img, inputSize(1:2));
-img = im2uint8(mat2gray(img));
-dataOut = data; dataOut.input = img;
+function I = photometricReadFcn(filename)
+% ReadFcn pour imageDatastore de TRAIN : lit, applique jitter, renvoie uint8.
+I = imread(filename);
+I = photometricJitter(I);
+
+
+function Iout = photometricJitter(Iin)
+% Photometric-only jitter (contraste/luminosité/gamma/bruit/flou léger)
+% Entrée: uint8/uint16/grayscale ou RGB. Sortie: uint8.
+
+I = im2double(Iin);
+isRGB = (ndims(I)==3) && (size(I,3)==3);
+
+% contraste / luminosité / gamma (petits jitters)
+alpha = 0.85 + 0.30*rand();    % 0.85–1.15
+beta  = -0.10 + 0.20*rand();   % -0.10–0.10
+gamma = 0.90 + 0.20*rand();    % 0.9–1.1
+I = I .* alpha + beta;
+I = max(min(I,1),0);
+I = I .^ gamma;
+
+% saturation très légère si RGB
+if isRGB && rand < 0.5
+    HSV = rgb2hsv(I);
+    satJit = 0.95 + 0.10*rand();   % 0.95–1.05
+    HSV(:,:,2) = max(min(HSV(:,:,2)*satJit,1),0);
+    I = hsv2rgb(HSV);
+end
+
+% bruit gaussien léger
+if rand < 0.7
+    var = 1e-4 + 4e-4*rand();      % 0.0001–0.0005
+    I = imnoise(I,'gaussian',0,var);
+end
+
+% défocus léger
+if rand < 0.5
+    sigma = 0.3 + 0.7*rand();      % 0.3–1.0 px
+    ksz   = max(3, 2*ceil(2*sigma)+1);
+    I     = imgaussfilt(I, sigma, 'FilterSize', ksz);
+end
+
+Iout = im2uint8(max(min(I,1),0));
+
+
