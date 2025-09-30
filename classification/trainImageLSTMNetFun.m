@@ -320,7 +320,7 @@ return;
     miniBatchSize = trainingParam.LSTM_mini_batch_size;
     numObservations = numel(sequencesTrain);
     numIterationsPerEpoch = max(1,floor(numObservations / miniBatchSize));
-  
+   patience      = 3;
 
     options = trainingOptions('adam', ...
         'MiniBatchSize',miniBatchSize, ...
@@ -332,6 +332,7 @@ return;
         'Shuffle','every-epoch', ...
         'ValidationData',{sequencesValidation,labelsValidation}, ...
         'ValidationFrequency',numIterationsPerEpoch, ...
+        'ValidationPatience', patience, ...  
         'Plots','training-progress', ...
         'ExecutionEnvironment','auto',...
         'VerboseFrequency',10);
@@ -370,68 +371,71 @@ if trainingParam.assemble_network | ~exist([path '/' name '.mat'])
     fprintf('------\n');
     
     
-    % remove non necessary layers
-    fprintf(' remove output layers from CNN net\n');
-    
-    cnnLayers = layerGraph(netCNN);
-    %layerNames = ["data" "pool5-drop_7x7_s1" "loss3-classifier" "prob" "output"];
-    
-    switch trainingParam.CNN_network{end}
-        case 'googlenet'
-            layerNames = ["data" "pool5-drop_7x7_s1" "new_fc" "prob" "new_classoutput"];
-            
-        case 'resnet50'
-            layerNames = ["input_1" "new_fc" "fc1000_softmax" "new_classoutput"];
+   fprintf(' remove output layers from CNN net\n');
 
-        case {'inceptionresnetv2','inceptionv3'}
-            layerNames = ["input_1" "new_fc" "predictions_softmax" "new_classoutput"];
-    end
+cnnLayers = layerGraph(netCNN);
 
-    cnnLayers = removeLayers(cnnLayers,layerNames);
-    
-    % create layers to adjust to CNN network layers
-    fprintf(' create layers to adjust to CNN network layers\n');
-    
-    inputSize = netCNN.Layers(1).InputSize(1:2);
+% Couche d'extraction utilisée pour le bridge
+switch trainingParam.CNN_network{end}
+    case 'googlenet'
+        layerName = "pool5-7x7_s1";
+        baseInput = "conv1-7x7_s2";
+        fixedToRemove = ["data","pool5-drop_7x7_s1","new_fc","prob","new_classoutput"];
+    case {'resnet50','resnet18'}
+        layerName = "avg_pool";
+        baseInput = "conv1";
+        fixedToRemove = ["input_1","new_fc","fc1000_softmax","new_classoutput"];
+    case {'inceptionresnetv2','inceptionv3'}
+        layerName = "avg_pool";
+        baseInput = "conv2d_1";
+        fixedToRemove = ["input_1","new_fc","predictions_softmax","new_classoutput"];
+    otherwise
+        error('Unsupported backbone: %s', trainingParam.CNN_network{end});
+end
 
-    switch trainingParam.CNN_network{end}
-        case {'googlenet','resnet50'}
-          averageImage = netCNN.Layers(1).Mean;
-              inputLayer = sequenceInputLayer([inputSize 3], ...
-        'Normalization','zerocenter', ...
-        'Mean',averageImage, ...
-        'Name','input');
+% Si on a inséré un dropout custom lors du training ResNet, il faut le retirer
+names = string({cnnLayers.Layers.Name});
+extraToRemove = strings(0,1);
+if any(names=="custom_dropout")
+    extraToRemove(end+1) = "custom_dropout";
+end
+% Pour être robuste si tu changes le nom
+extraToRemove = [extraToRemove; names(startsWith(names,"custom_dropout"))];
 
-        case {'inceptionresnetv2','inceptionv3'}
-          mine = netCNN.Layers(1).Min;
-          maxe = netCNN.Layers(1).Max;
-              inputLayer = sequenceInputLayer([inputSize 3], ...
-        'Normalization','rescale-symmetric', ...
-        'Min',mine, ...
-        'Max',maxe,...
-        'Name','input');   
-    end
+toRemove = intersect([fixedToRemove(:); extraToRemove(:)], names);
+if ~isempty(toRemove)
+    cnnLayers = removeLayers(cnnLayers, toRemove);
+end
 
-    
-    % add the sequence input layer to the layer graph
-    layers = [
-        inputLayer
-        sequenceFoldingLayer('Name','fold')];
-    
-    lgraph = addLayers(cnnLayers,layers);
-    
-      switch trainingParam.CNN_network{end}
-          case 'googlenet'
-  lgraph = connectLayers(lgraph,"fold/out","conv1-7x7_s2");
+% create layers to adjust to CNN network layers
+fprintf(' create layers to adjust to CNN network layers\n');
 
-          case 'resnet50'
-  lgraph = connectLayers(lgraph,"fold/out","conv1");
+inputSize = netCNN.Layers(1).InputSize(1:2);
 
-          case  {'inceptionresnetv2','inceptionv3'}
- lgraph = connectLayers(lgraph,"fold/out","conv2d_1");             
-      end
+switch trainingParam.CNN_network{end}
+    case {'googlenet','resnet50','resnet18'}
+        averageImage = netCNN.Layers(1).Mean;
+        inputLayer = sequenceInputLayer([inputSize 3], ...
+            'Normalization','zerocenter', ...
+            'Mean',averageImage, ...
+            'Name','input');
+    case {'inceptionresnetv2','inceptionv3'}
+        mine = netCNN.Layers(1).Min;
+        maxe = netCNN.Layers(1).Max;
+        inputLayer = sequenceInputLayer([inputSize 3], ...
+            'Normalization','rescale-symmetric', ...
+            'Min',mine, 'Max',maxe, ...
+            'Name','input');
+end
 
-    
+layers = [ inputLayer
+           sequenceFoldingLayer('Name','fold') ];
+lgraph = addLayers(cnnLayers,layers);
+
+% reconnect fold -> première couche du backbone
+lgraph = connectLayers(lgraph,"fold/out", baseInput);
+
+
     % create lstm network and remove first layer (sequence)
   %  fprintf(' create LSTM network\n');
     

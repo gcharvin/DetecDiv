@@ -19,6 +19,8 @@ for i = 1:numel(varargin)
     end
 end
 
+
+
 % Validation fraction
 if isempty(Fraction) || ~isnumeric(Fraction) || ~isscalar(Fraction) || isnan(Fraction)
     Fraction = 1;
@@ -79,7 +81,7 @@ else
 end
 
 if isempty(rois_sel)
-    warning('Aucun ROI sélectionné pour l'export (fraction = %.3f). Fin.', Fraction);
+    warning('Aucun ROI sélectionné pour lexport (fraction = %.3f). Fin.', Fraction);
     warning on all
     return;
 end
@@ -105,64 +107,87 @@ for i = 1:numel(rois_sel)
     if iscell(pix); pix = cell2mat(pix); end
 
     im   = cltmp(ridx).image(:,:,pix,:);
-    data = cltmp(ridx).data;
+   roiSeries = cltmp(ridx).data;   % <== ne PAS réutiliser le nom "data" plus loin
 
-    if numel(data)==0
-        disp('No training data available for this position');
-        continue
+if isempty(roiSeries)
+    disp('No training data available for this position');
+    continue
+end
+
+% Filtre par groupid (classif.strid)
+mask = arrayfun(@(s) strcmp(s.groupid, classif.strid), roiSeries);
+roiSeriesSel = roiSeries(mask);
+
+if isempty(roiSeriesSel)
+    disp('No training data for this classifier group in this ROI');
+    continue
+end
+
+% --- Bounds (sélection de frames par ROI) depuis userData, si présent ---
+bounds = [];
+ud = [];
+try
+    ud = roiSeriesSel(1).userData;
+catch
+    ud = [];
+end
+if isstruct(ud) && isfield(ud, 'bounds')
+    bounds = ud.bounds;
+elseif isa(ud, 'containers.Map') && isKey(ud, 'bounds')
+    bounds = ud('bounds');
+end
+if ~isempty(bounds)
+    if numel(bounds)==1 || bounds(1)==0
+        bounds = [];
     end
+end
 
-    pixdata = arrayfun(@(x) strcmp(x.groupid,classif.strid), data);
-    data    = data(pixdata);
-    bounds  = [];
+% --- Définition de fra (frames) : Frames optionnel puis intersection avec bounds ---
+if isempty(Frames)
+    fra = 1:size(im,4);
+else
+    fra = Frames(:).';
+end
+if ~isempty(bounds)
+    minet = max(bounds(1), fra(1));
+    maxet = bounds(2);
+    if maxet==0, maxet = max(fra); else, maxet = min(maxet, max(fra)); end
+    fra = minet:maxet;
+end
 
-    if isfield(data.userData,'bounds')
-        bounds = data.userData.bounds;
-        if numel(bounds) && bounds(1)==0; bounds = []; end
-        if numel(bounds)==1; bounds = []; end
-    end
+% Bornage de fra à la disponibilité réelle des labels (on fera après getData)
 
-    if isempty(Frames)
-        fra = 1:size(im,4);
-    else
-        fra = Frames;
-    end
+% --- Récupération des labels bruts ---
+rawLabels = roiSeriesSel.getData('labels_training');   % peut être cellstr/string/num
+if isempty(rawLabels)
+    disp('No ''labels_training'' data for this ROI/group; skipping...');
+    continue
+end
+rawLabels = rawLabels(:);   % vecteur colonne
 
-    if numel(bounds) % restricting frames used on a per-ROI basis
-        minet = bounds(1); maxet = bounds(2);
-        minet = max(minet, fra(1));
-        if maxet==0
-            maxet = max(maxet, fra(end));
-        else
-            maxet = min(maxet, fra(end));
-        end
-        fra = minet:maxet;
-    end
+% --- Conversion labels -> indices [0..numel(classif.classes)] ---
+% 0 = non étiqueté
+if isnumeric(rawLabels)
+    labelIdx = rawLabels(:);   % on suppose déjà des indices ou 0
+else
+    % transformer en string puis mapper sur classif.classes
+    catList = string(classif.classes(:));
+    labStr  = string(rawLabels(:));
+    [isIn, idxMap] = ismember(labStr, catList);
+    labelIdx = zeros(size(idxMap));
+    labelIdx(isIn) = idxMap(isIn);
+end
 
-    if isempty(classif.trainingset)
-        param.nframes = 1;
-    else
-        param.nframes = classif.trainingset;
-    end
+% --- Sécuriser fra en fonction de la longueur des labels ---
+nLab = numel(labelIdx);
+fra = fra(fra >= 1 & fra <= nLab);
+if isempty(fra)
+    disp('No frames to process after intersecting with available labels; skipping ROI.');
+    continue
+end
 
-    param  = [];
-    imtest = cltmp(ridx).preProcessROIData(pix,1,param); % determine image size
-
-    if isempty(imtest)
-        disp('Pre-processing failed, likely because the image is void !');
-        continue;
-    end
-
-    vid = uint8(zeros(size(imtest,1), size(imtest,2), 3, 1));
-
-    % ----- Labels (labels_training -> indices 1..numel(classes)) -----
-    dataid  = data.getData('labels_training');
-    catList = string(classif.classes(:));     % Mx1
-    catStr  = string(dataid(:));              % Nx1
-    [isInList, idx] = ismember(catStr, catList);
-    idx(~isInList) = 0;
-    dataid  = idx(:);
-    dataidfra = dataid(fra);
+dataid=labelIdx;
+dataidfra = labelIdx(fra);
 
     if strcmp(classif.category{1},'LSTM')
         pixb = numel(dataidfra);
@@ -186,16 +211,37 @@ for i = 1:numel(rois_sel)
         reverseStr = '';
         cc = 1;
 
+        imtest = cltmp(ridx).preProcessROIData(pix, 1, 1); % dorepmat=1 pour garantir 3 canaux
+if isempty(imtest)
+    disp('Pre-processing failed, likely because the image is void !');
+    continue;
+end
+
+[H0, W0, C0] = size(imtest);
+if C0 ~= 3
+    % Par sécurité, mais preProcessROIData(dorepmat=1) renvoie déjà 3 canaux
+    if C0 == 1, imtest = repmat(imtest, [1 1 3]); C0 = 3; end
+end
+
+vid = uint8(zeros(H0, W0, 3, 1));   % allocation sur la taille de référence
+
+
+
         for j = fra
-            tmp = cltmp(ridx).preProcessROIData(pix,j,param);
+             tmp = cltmp(ridx).preProcessROIData(pix, j, 1); % dorepmat=1 => 3 canaux
+    if isempty(tmp)
+        disp('Pre-processing failed, likely because the image is void !');
+        emptyFrame = 1;
+        break;
+    end
 
-            if isempty(tmp)
-                disp('Pre-processing failed, likely because the image is void !');
-                emptyFrame = 1;
-                break;
-            end
+    % --- Resize si nécessaire vers [H0 W0] ---
+    if size(tmp,1) ~= H0 || size(tmp,2) ~= W0
+        tmp = imresize(tmp, [H0 W0]);  % garde 3 canaux, double [0,1]
+    end
 
-            vid(:,:,:,cc) = uint8(256*tmp);
+    vid(:,:,:,cc) = uint8(256 * tmp);
+
 
             tr = num2str(j);
             while numel(tr)<4, tr = ['0' tr]; end
@@ -219,13 +265,22 @@ for i = 1:numel(rois_sel)
     end
 
     if strcmp(classif.category{1},'LSTM Regression')
-        tmp = zeros(size(im,1), size(im,2), 3, 1);
-        cc  = 1;
-        for j = fra
-            tmp = cltmp(ridx).preProcessROIData(pix,j,param);
-            vid(:,:,:,cc) = uint8(256*tmp);
-            cc = cc + 1;
-        end
+       cc = 1;
+for j = fra
+    tmp = cltmp(ridx).preProcessROIData(pix, j, 1);
+    if isempty(tmp)
+        disp('Pre-processing failed, likely because the image is void !');
+        emptyFrame = 1;
+        break;
+    end
+
+    if size(tmp,1) ~= H0 || size(tmp,2) ~= W0
+        tmp = imresize(tmp, [H0 W0]);
+    end
+
+    vid(:,:,:,cc) = uint8(256 * tmp);
+    cc = cc + 1;
+end
 
         parsaveim([classif.path '/' foldername '/images/' cltmp(ridx).id '.mat'], tmp);
         parsaveresp([classif.path '/' foldername '/response/' cltmp(ridx).id '.mat'], dataidfra);

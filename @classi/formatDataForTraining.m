@@ -2,32 +2,67 @@ function output = formatDataForTraining(classif, varargin)
     % Saves user annotated data to disk - works for Image, Pixel, and LSTM
     % classification
 
-    output = [];
+    output   = [];
+    Frames   = [];
+    Keep     = 0;     % 0: purge le dossier cible | 1: garde le contenu
+    rois     = [];
+    Fraction = 1;     % fraction des ROIs à échantillonner (LSTM)
+    Seed     = 12345; % seed déterministe (LSTM)
 
-    Frames = [];
-    Keep = 0;
-    rois = [];
-
-    for i = 1:numel(varargin)
-        if strcmp(varargin{i}, 'Frames')
-            Frames = varargin{i + 1};
-        end
-        if strcmp(varargin{i}, 'Rois')
-            rois = varargin{i + 1};
-        end
-        if strcmp(varargin{i}, 'Keep') % Keep existing images in folder
-            Keep = 1;
+    % ---- Parse varargin de façon robuste (accepte flags ou paires) ----
+    i = 1;
+    while i <= numel(varargin)
+        arg = varargin{i};
+        if ischar(arg) || isstring(arg)
+            key = lower(string(arg));
+            switch key
+                case "frames"
+                    if i+1 <= numel(varargin), Frames = varargin{i+1}; end
+                    i = i + 2; continue
+                case "rois"
+                    if i+1 <= numel(varargin), rois = varargin{i+1}; end
+                    i = i + 2; continue
+                case "keep"
+                    % accepte 'Keep' seul (=> true) OU 'Keep',value
+                    if i+1 <= numel(varargin) && ~(ischar(varargin{i+1}) || isstring(varargin{i+1}))
+                        Keep = logical(varargin{i+1});
+                        i = i + 2; continue
+                    else
+                        Keep = 1;
+                        i = i + 1; continue
+                    end
+                case "fraction"
+                    if i+1 <= numel(varargin), Fraction = varargin{i+1}; end
+                    i = i + 2; continue
+                case "seed"
+                    if i+1 <= numel(varargin), Seed = varargin{i+1}; end
+                    i = i + 2; continue
+                otherwise
+                    % argument inconnu : l'ignorer proprement
+                    i = i + 1; continue
+            end
+        else
+            i = i + 1; % ignorer tokens non-string
         end
     end
 
-    category = classif.category;
-    category = category{1};
+    % ---- Validation soft des nouveaux paramètres (LSTM) ----
+    if ~(isnumeric(Fraction) && isscalar(Fraction) && ~isnan(Fraction))
+        Fraction = 1;
+    end
+    Fraction = max(0, min(1, Fraction));
+    if ~(isnumeric(Seed) && isscalar(Seed) && isfinite(Seed))
+        Seed = 12345;
+    else
+        Seed = floor(Seed);
+    end
+
+    % ---- Répertoires ----
+    category   = classif.category;  category = category{1};
     foldername = 'trainingdataset';
 
     if Keep == 0
         disp('Removing previous labeled datasets from folders... This can take a very long time...');
-
-        % Remove and recreate all directories
         if isfolder(fullfile(classif.path, foldername))
             try
                 rmdir(fullfile(classif.path, foldername), 's');
@@ -35,59 +70,75 @@ function output = formatDataForTraining(classif, varargin)
                 disp('Error: did not manage to remove directory!');
             end
         end
-
         mkdir(classif.path, foldername);
     end
 
+    % ---- ROIs d'entraînement / validation ----
     if numel(rois) == 0
         rois = classif.trainingset;
-        valrois=setxor(1:numel(classif.roi),rois);
     end
+    valrois = setxor(1:numel(classif.roi), rois);
 
+    % ---- Dispatch par catégorie ----
     switch category
         case {'Image', 'Image Regression'}
             output = formatImageTrainingSet(foldername, classif, rois);
+
         case 'LSTM'
-            if numel(Frames)
-                output = formatLSTMTrainingSet(foldername, classif, rois, 'Frames', Frames);
+            % Passer Frames/Fraction/Seed au formatter LSTM
+            if ~isempty(Frames)
+                output = formatLSTMTrainingSet( ...
+                            foldername, classif, rois, ...
+                            'Frames',   Frames, ...
+                            'Fraction', Fraction, ...
+                            'Seed',     Seed);
             else
-                output = formatLSTMTrainingSet(foldername, classif, rois);
+                output = formatLSTMTrainingSet( ...
+                            foldername, classif, rois, ...
+                            'Fraction', Fraction, ...
+                            'Seed',     Seed);
             end
+
         case 'Pixel'
-      
             if isprop(classif, 'description')
-                if iscell(classif.description{1}) && strcmp(classif.description{1}{1}, 'YOLO instance segmentation')
-                    output = formatPixelTrainingSetYOLO(foldername, classif, rois,valrois);
-                elseif ischar(classif.description{1}) && strcmp(classif.description{1}, 'YOLO instance segmentation')
-                    output = formatPixelTrainingSetYOLO(foldername, classif, rois,valrois);
-                elseif iscell(classif.description{1}) && strcmp(classif.description{1}{1}, 'CellposeSAM')
-                    output = formatPixelTrainingSetCPSAM(foldername, classif, rois,valrois);
-                elseif ischar(classif.description{1}) && strcmp(classif.description{1}, 'CellposeSAM')
-                    output = formatPixelTrainingSetCPSAM(foldername, classif, rois,valrois);
-               elseif iscell(classif.description{1}) && strcmp(classif.description{1}{1}, 'Cell-TRACKTR')
-                    output = formatPixelTrainingSetCellTracktr(foldername, classif, rois,valrois);
-                elseif ischar(classif.description{1}) && strcmp(classif.description{1}, 'Cell-TRACKTR')
-                    output = formatPixelTrainingSetCellTracktr(foldername, classif, rois,valrois);
+                if (iscell(classif.description{1}) && strcmp(classif.description{1}{1}, 'YOLO instance segmentation')) || ...
+                   (ischar(classif.description{1}) && strcmp(classif.description{1},     'YOLO instance segmentation'))
+                    output = formatPixelTrainingSetYOLO(foldername, classif, rois, valrois);
+
+                elseif (iscell(classif.description{1}) && strcmp(classif.description{1}{1}, 'CellposeSAM')) || ...
+                       (ischar(classif.description{1}) && strcmp(classif.description{1},     'CellposeSAM'))
+                    output = formatPixelTrainingSetCPSAM(foldername, classif, rois, valrois);
+
+                elseif (iscell(classif.description{1}) && strcmp(classif.description{1}{1}, 'Cell-TRACKTR')) || ...
+                       (ischar(classif.description{1}) && strcmp(classif.description{1},     'Cell-TRACKTR'))
+                    output = formatPixelTrainingSetCellTracktr(foldername, classif, rois, valrois);
+
                 else
                     output = formatPixelTrainingSet(foldername, classif, rois);
                 end
             else
                 output = formatPixelTrainingSet(foldername, classif, rois);
             end
+
         case 'Object'
             output = formatObjectTrainingSet(foldername, classif, rois);
+
         case 'Pedigree'
             output = formatDeltaPedigreeTrainingSet(foldername, classif, rois);
+
         case 'Tracking'
             output = formatTrackingTrainingSet(foldername, classif, rois);
+
         case 'Timeseries'
             output = formatTimeseriesTrainingSet(foldername, classif, rois);
+
         case 'Delta'
-            if numel(Frames)
+            if ~isempty(Frames)
                 output = formatDeltaTrainingSet(foldername, classif, rois, 'Frames', Frames);
             else
                 output = formatDeltaTrainingSet(foldername, classif, rois);
             end
+
         otherwise
             disp('Unknown category. No action taken.');
     end
