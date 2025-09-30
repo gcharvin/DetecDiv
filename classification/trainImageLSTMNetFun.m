@@ -139,12 +139,20 @@ end
 
 inputSize = netCNN.Layers(1).InputSize(1:2);
 
+
 switch trainingParam.CNN_network{end}
     case 'googlenet'
-layerName = "pool5-7x7_s1";  % layer id where the network will be connected
+        layerName = "pool5-7x7_s1";  % GoogLeNet
+    case 'resnet18'
+        layerName = "pool5";         % ResNet-18
+    case 'resnet50'
+        layerName = "avg_pool";      % ResNet-50
+    case {'inceptionresnetv2','inceptionv3'}
+        layerName = "avg_pool";      % Inception variants
     otherwise
-layerName = "avg_pool"; 
+        error("Unsupported backbone: %s", trainingParam.CNN_network{end});
 end
+
 
 tempFile = [path '/' name '_image_classifier_activations.mat'];
 
