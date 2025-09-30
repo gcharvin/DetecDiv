@@ -132,6 +132,10 @@ function formatData(roiobj,class,type)
         end
         
  
+        if numel(train.(p{i}))==0
+            continue
+        end
+        
         q=fieldnames(train.(p{i}));
 
         for k=1:numel(q)
@@ -156,15 +160,18 @@ function formatData(roiobj,class,type)
 
             case 'prob'
                 for j=1:size(tmp,2)
+                   if numel(roiobj.data(cc).userData)
                  classes=roiobj.data(cc).userData.classes;
                  roiobj.data(cc).addData(tmp(:,j),['prob_' classes{j}],'groups','prob');
+                   end
                 end
 
             case 'probCNN'
                 for j=1:size(tmp,2)
-
+                     if numel(roiobj.data(cc).userData)
                   classes=roiobj.data(cc).userData.classes;
                   roiobj.data(cc).addData(tmp(:,j),['probCNN_' classes{j}],'groups','prob');
+                     end
                 end
 
             otherwise
