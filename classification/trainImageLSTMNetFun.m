@@ -394,6 +394,7 @@ switch trainingParam.CNN_network{end}
         baseInput = "conv1";
         layerName = "avg_pool";
     case 'resnet18'
+        fixedToRemove = ["input_1","new_fc","fc1000","new_classoutput"]; % <-- ajouté
         layerNames = ["input_1" "new_fc" "fc1000" "new_classoutput"];
         baseInput = "conv1";
         layerName = "avg_pool";
