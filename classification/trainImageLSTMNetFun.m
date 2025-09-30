@@ -440,41 +440,69 @@ end
 
 layers = [ inputLayer
            sequenceFoldingLayer('Name','fold') ];
-lgraph = addLayers(cnnLayers,layers);
 
-% -- retirer le(s) imageInputLayer restants, quel que soit leur nom
-isInput = arrayfun(@(L) isa(L,'nnet.cnn.layer.ImageInputLayer'), lgraph.Layers);
-inNames = string({lgraph.Layers(isInput).Name});
-if ~isempty(inNames)
-    lgraph = removeLayers(lgraph, cellstr(inNames));
+
+fprintf(' create layers to adjust to CNN network layers\n');
+
+inputSize = netCNN.Layers(1).InputSize(1:2);
+
+% 1) Prépare l'input sequence (selon backbone)
+switch trainingParam.CNN_network{end}
+    case {'googlenet','resnet50','resnet18'}
+        averageImage = netCNN.Layers(1).Mean;
+        inputLayer = sequenceInputLayer([inputSize 3], ...
+            'Normalization','zerocenter', ...
+            'Mean',averageImage, ...
+            'Name','input_seq');
+    case {'inceptionresnetv2','inceptionv3'}
+        mine = netCNN.Layers(1).Min; maxe = netCNN.Layers(1).Max;
+        inputLayer = sequenceInputLayer([inputSize 3], ...
+            'Normalization','rescale-symmetric', ...
+            'Min',mine,'Max',maxe, ...
+            'Name','input_seq');
+    otherwise
+        error('Unsupported backbone: %s', trainingParam.CNN_network{end});
 end
 
-% -- déconnecter toute source déjà branchée sur baseInput (ex: input_1 -> conv1)
-if ~isempty(lgraph.Connections)
-    maskIn = strcmp(lgraph.Connections.Destination, baseInput);
-    oldSrc = lgraph.Connections.Source(maskIn);
-    for k = 1:numel(oldSrc)
-        lgraph = disconnectLayers(lgraph, oldSrc{k}, baseInput);
-    end
+foldLayer = sequenceFoldingLayer('Name','fold');
+
+% 2) TROUVER les anciens inputs image et LEURS SUCCESSEURS
+%    (peu importe leur nom: 'input_1', 'data', etc.)
+imgIdx   = arrayfun(@(L) isa(L,'nnet.cnn.layer.ImageInputLayer'), cnnLayers.Layers);
+oldInputs = {cnnLayers.Layers(imgIdx).Name};
+downDest  = {};
+for n = 1:numel(oldInputs)
+    m = strcmp(cnnLayers.Connections.Source, oldInputs{n});
+    downDest = [downDest; cnnLayers.Connections.Destination(m)]; %#ok<AGROW>
+end
+downDest = unique(downDest);  % ex: {'conv1'} pour ResNet, {'conv1-7x7_s2'} pour GoogLeNet
+
+% 3) RETIRER les inputs d'origine (ça retire aussi leurs connexions)
+if ~isempty(oldInputs)
+    cnnLayers = removeLayers(cnnLayers, oldInputs);
 end
 
+% 4) AJOUTER notre couple (sequenceInput + fold) et RECÂBLER
+lgraph = addLayers(cnnLayers, [inputLayer, foldLayer]);
 
-% reconnect fold -> première couche du backbone
-lgraph = connectLayers(lgraph,"fold/out", baseInput);
+% 5) Connecter fold/out à TOUTES les anciennes destinations de l'input
+for i = 1:numel(downDest)
+    lgraph = connectLayers(lgraph, "fold/out", downDest{i});
+end
+
 
 
     % create lstm network and remove first layer (sequence)
   %  fprintf(' create LSTM network\n');
     
-    lstmLayers = netLSTM.Layers;
-    lstmLayers(1) = [];
+   lstmLayers = netLSTM.Layers; lstmLayers(1) = [];  % retire le sequenceInput du LSTM
+   lgraph = addLayers(lgraph, [
+    sequenceUnfoldingLayer('Name','unfold')
+    flattenLayer('Name','flatten')
+    lstmLayers
+]);
     
-    layers = [
-        sequenceUnfoldingLayer('Name','unfold')
-        flattenLayer('Name','flatten')
-        lstmLayers];
-    
-    lgraph = addLayers(lgraph,layers);
+   % lgraph = addLayers(lgraph,layers);
     % lgraph = connectLayers(lgraph,"pool5-7x7_s1","unfold/in");
     lgraph = connectLayers(lgraph,layerName,"unfold/in");
     lgraph = connectLayers(lgraph,"fold/miniBatchSize","unfold/miniBatchSize");
