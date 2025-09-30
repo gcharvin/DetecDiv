@@ -397,7 +397,7 @@ switch trainingParam.CNN_network{end}
         fixedToRemove = ["input_1","new_fc","fc1000","new_classoutput"]; % <-- ajouté
         layerNames = ["input_1" "new_fc" "fc1000" "new_classoutput"];
         baseInput = "conv1";
-        layerName = "avg_pool";
+        layerName = "pool5";
 
     case {'inceptionresnetv2','inceptionv3'}
         fixedToRemove = ["input_1","new_fc","predictions_softmax","new_classoutput"];
@@ -441,6 +441,23 @@ end
 layers = [ inputLayer
            sequenceFoldingLayer('Name','fold') ];
 lgraph = addLayers(cnnLayers,layers);
+
+% -- retirer le(s) imageInputLayer restants, quel que soit leur nom
+isInput = arrayfun(@(L) isa(L,'nnet.cnn.layer.ImageInputLayer'), lgraph.Layers);
+inNames = string({lgraph.Layers(isInput).Name});
+if ~isempty(inNames)
+    lgraph = removeLayers(lgraph, cellstr(inNames));
+end
+
+% -- déconnecter toute source déjà branchée sur baseInput (ex: input_1 -> conv1)
+if ~isempty(lgraph.Connections)
+    maskIn = strcmp(lgraph.Connections.Destination, baseInput);
+    oldSrc = lgraph.Connections.Source(maskIn);
+    for k = 1:numel(oldSrc)
+        lgraph = disconnectLayers(lgraph, oldSrc{k}, baseInput);
+    end
+end
+
 
 % reconnect fold -> première couche du backbone
 lgraph = connectLayers(lgraph,"fold/out", baseInput);
