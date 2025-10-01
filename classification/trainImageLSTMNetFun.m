@@ -504,9 +504,7 @@ lgraph = connectLayers(lgraph, "fold/miniBatchSize", "unfold/miniBatchSize");
 analyzeNetwork(lgraph)
 classifier = assembleNetwork(lgraph);
 
-
-
-    save([path '/' name '.mat'],'classifier');
+save([path '/' name '.mat'],'classifier');
 
 
 %     LSTMOptions=struct(options);
