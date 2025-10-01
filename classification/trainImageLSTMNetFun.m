@@ -446,20 +446,31 @@ end
 
 % ---- (C) retirer la tête en aval de "layerName" (prob, fc, softmax, custom_dropout, etc.) ----
 names = string({cnnLayers.Layers.Name});
-toVisit = string(layerName); desc = strings(0,1);
+
+toVisit = string(layerName);
+toVisit = toVisit(:);           % <- IMPORTANT
+desc    = strings(0,1);
+
+desc = strings(0,1);
 while ~isempty(toVisit)
     src = toVisit(1); toVisit(1) = [];
     mask = strcmp(cnnLayers.Connections.Source, src);
     kids = string(cnnLayers.Connections.Destination(mask));
-    newKids = setdiff(kids, [desc; layerName]);
-    desc = unique([desc; kids]);
-    toVisit = unique([toVisit; newKids]);
+    newKids = setdiff(kids, [desc; string(layerName)]);
+desc    = unique([desc; kids], 'stable');
+
+% Normalisation de forme AVANT la concat
+toVisit = toVisit(:);
+newKids = newKids(:);
+
+toVisit = unique([toVisit; newKids], 'stable');
 end
 desc = setdiff(desc, layerName);
 desc = intersect(desc, names);          % garde seulement les couches existantes
 if ~isempty(desc)
     cnnLayers = removeLayers(cnnLayers, cellstr(desc));
 end
+
 
 
 % create layers to adjust to CNN network layers
