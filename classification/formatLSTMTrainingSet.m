@@ -4,7 +4,7 @@ function output = formatLSTMTrainingSet(foldername, classif, rois, varargin)
 Frames     = [];
 Fraction   = 1;       % par défaut : tout le trainingset
 Seed       = 12345;   % seed fixe par défaut (déterministe)
-Crop       = true;   % <-- NEW: activer/désactiver le crop
+Crop       = false;   % <-- NEW: activer/désactiver le crop
 CropCenter = [88 194];% <-- NEW: [cx cy]
 CropSize   = [60 60]; % <-- NEW: [w h]
 
@@ -37,8 +37,8 @@ Fraction = max(0, min(1, Fraction));   % clamp dans [0,1]
 output = 0;
 
 % ---- FS prep ----
-if ~isfolder([classif.path '/' foldername '/images'])
-    mkdir([classif.path '/' foldername], 'images');
+if ~isfolder(fullfile(classif.path, foldername, 'images'))
+    mkdir(fullfile(classif.path, foldername), 'images');
 end
 
 if ~isfolder(fullfile(classif.path, 'TrainingValidation'))
@@ -47,21 +47,22 @@ end
 
 if strcmp(classif.category{1},'LSTM')
     for i = 1:numel(classif.classes)
-        if ~isfolder([classif.path '/' foldername '/images/' classif.classes{i}])
-            mkdir([classif.path '/' foldername '/images'], classif.classes{i});
+        if ~isfolder(fullfile(classif.path, foldername, 'images', classif.classes{i}))
+            mkdir(fullfile(classif.path, foldername, 'images'), classif.classes{i});
         end
     end
 end
 
 if strcmp(classif.category{1},'LSTM Regression')
-    if ~isfolder([classif.path '/' foldername '/response/'])
-        mkdir([classif.path '/' foldername], 'response');
+    if ~isfolder(fullfile(classif.path, foldername, 'response'))
+        mkdir(fullfile(classif.path, foldername), 'response');
     end
 end
 
-if ~isfolder([classif.path '/' foldername '/timeseries'])
-    mkdir([classif.path '/' foldername], 'timeseries');
+if ~isfolder(fullfile(classif.path, foldername, 'timeseries'))
+    mkdir(fullfile(classif.path, foldername), 'timeseries');
 end
+
 
 cltmp = classif.roi;
 
@@ -263,7 +264,9 @@ for i = 1:numel(rois_sel)
             end
 
             if cmp~=0
-                imwrite(tmp, [classif.path '/' foldername '/images/' classif.classes{cmp} '/' cltmp(ridx).id '_frame_' tr '.tif']);
+                imwrite(tmp, fullfile(classif.path, foldername, 'images', classif.classes{cmp}, ...
+    [cltmp(ridx).id '_frame_' tr '.tif']));
+
                 output = output + 1;
             end
 
@@ -313,8 +316,10 @@ for i = 1:numel(rois_sel)
         end
 
         % sauvegardes
-        parsaveim([classif.path '/' foldername '/images/' cltmp(ridx).id '.mat'], imtest);
-        parsaveresp([classif.path '/' foldername '/response/' cltmp(ridx).id '.mat'], dataidfra);
+parsaveim(fullfile(classif.path, foldername, 'images', [cltmp(ridx).id '.mat']), imtest);
+
+parsaveresp(fullfile(classif.path, foldername, 'response', [cltmp(ridx).id '.mat']), dataidfra);
+
         output = output + 1;
     end
 
@@ -323,7 +328,8 @@ for i = 1:numel(rois_sel)
     deep = dataidfra;
 
     if isempty(emptyFrame)
-        parsave([classif.path '/' foldername '/timeseries/lstm_labeled_' cltmp(ridx).id '.mat'], deep, vid, lab);
+        parsave(fullfile(classif.path, foldername, 'timeseries', ...
+    ['lstm_labeled_' cltmp(ridx).id '.mat']), deep, vid, lab);
         cltmp(ridx).save;
     else
         disp('This ROI was not saved because it has empty frames');
