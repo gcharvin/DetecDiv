@@ -70,7 +70,7 @@ switch mode
 
                 if layoutOptions.overlay
                     wid=layoutOptions.Nbrick;
-                elselinea
+                else
                     wid= layoutOptions.Nchannel*layoutOptions.Nbrick;
                 end
 
