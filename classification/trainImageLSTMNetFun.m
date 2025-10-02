@@ -512,7 +512,7 @@ lgraph = connectLayers(lgraph, "fold/miniBatchSize", "unfold/miniBatchSize");
 
 % (optionnel debug) analyzeNetwork(lgraph)
 
-analyzeNetwork(lgraph)
+%analyzeNetwork(lgraph)
 classifier = assembleNetwork(lgraph);
 
 save([path '/' name '.mat'],'classifier');
