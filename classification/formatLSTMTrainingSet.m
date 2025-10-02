@@ -4,7 +4,7 @@ function output = formatLSTMTrainingSet(foldername, classif, rois, varargin)
 Frames     = [];
 Fraction   = 1;       % par défaut : tout le trainingset
 Seed       = 12345;   % seed fixe par défaut (déterministe)
-Crop       = false;   % <-- NEW: activer/désactiver le crop
+Crop       = true;   % <-- NEW: activer/désactiver le crop
 CropCenter = [88 194];% <-- NEW: [cx cy]
 CropSize   = [60 60]; % <-- NEW: [w h]
 
