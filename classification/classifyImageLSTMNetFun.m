@@ -2,6 +2,43 @@ function [data,image]=classifyImageLSTMNetFun(roiobj,classif,classifier,varargin
 
 %load([path '/netCNN.mat']); % load the googlenet to get the input size of image
 
+Crop       = true;      % activer/désactiver le crop
+CropCenter = [88 194];   % [cx cy] (colonnes, lignes)
+CropSize   = [60 60];    % [w h]
+channel=classif.channelName;
+frames=[];
+classifierCNN=[];
+gpu=0;
+
+
+for i=1:numel(varargin)
+    if ischar(varargin{i}) || isstring(varargin{i})
+        key = lower(string(varargin{i}));
+        switch key
+            case "classifiercnn"
+                classifierCNN = varargin{i+1};
+                net = classifierCNN;
+                inputSizeCNN = net.Layers(1).InputSize;
+                classNamesCNN = net.Layers(end).ClassNames;
+                numClassesCNN = numel(classNamesCNN);
+            case "frames"
+                frames = varargin{i+1};
+            case "channel"
+                channel = varargin{i+1};
+            case "exec"
+                gpu = varargin{i+1};
+            % ---- NEW: options de crop ----
+            case "crop"
+                Crop = logical(varargin{i+1});
+            case "cropcenter"
+                CropCenter = varargin{i+1};
+            case "cropsize"
+                CropSize = varargin{i+1};
+        end
+    end
+end
+
+
 % now load and read video
 fprintf('Load videos...\n');
 
@@ -20,30 +57,7 @@ for i=1:numel(classifier.Layers)
 end
 
 
-channel=classif.channelName;
-frames=[];
-classifierCNN=[];
-gpu=0;
 
-for i=1:numel(varargin)
-    if strcmp(varargin{i},'classifierCNN')   
-        classifierCNN=varargin{i+1};
-        net=classifierCNN;
-        inputSizeCNN = net.Layers(1).InputSize;
-        classNamesCNN = net.Layers(end).ClassNames;
-        numClassesCNN = numel(classNamesCNN);
-    end
-      if strcmp(varargin{i},'Frames')
-          frames=varargin{i+1};
-          % not yet implemented
-      end
-        if strcmp(varargin{i},'Channel')
-           channel=varargin{i+1};
-        end
-        if strcmp(varargin{i},'Exec')
-           gpu=varargin{i+1};
-        end
-end
 
 
 
@@ -99,10 +113,17 @@ for j=frames
     
     %tmp = double(imadjust(tmp,[meanphc/65535 maxphc/65535],[0 1]))/65535;
     %tmp=repmat(tmp,[1 1 3]);        
-    vid(:,:,:,cc)=uint8(256*tmp);
+    vid(:,:,:,cc)=uint8(255*tmp);
     end
     cc=cc+1;
 end
+
+% ---- NEW: crop optionnel avant le resize vers inputSize ----
+if Crop
+    vid = cropAroundCenter4D(vid, CropCenter, CropSize); % HxWxCxT
+end
+
+
 
 video = centerCrop(vid,inputSize);
 
@@ -383,6 +404,39 @@ image=roiobj.image;
 
 %roiobj.save;
 %roiobj.clear;
+
+function Vout = cropAroundCenter4D(Vin, center, winsz)
+% Vin  : HxWxCxT (uint8)
+% center = [cx cy] en pixels (colonnes, lignes)
+% winsz  = [w h]
+% Sortie: fenêtre recadrée de taille [h x w x C x T], paddée si besoin.
+
+[H,W,C,T] = size(Vin);
+cx = round(center(1));  % colonnes (x)
+cy = round(center(2));  % lignes   (y)
+w  = round(winsz(1));
+h  = round(winsz(2));
+
+halfw = floor(w/2);
+halfh = floor(h/2);
+
+x1 = cx - halfw;  x2 = x1 + w - 1;
+y1 = cy - halfh;  y2 = y1 + h - 1;
+
+% Intersections avec l'image
+sx1 = max(1, x1);  sx2 = min(W, x2);
+sy1 = max(1, y1);  sy2 = min(H, y2);
+
+% Offsets dans la fenêtre de sortie
+dx1 = 1 + (sx1 - x1);
+dy1 = 1 + (sy1 - y1);
+dx2 = dx1 + (sx2 - sx1);
+dy2 = dy1 + (sy2 - sy1);
+
+Vout = zeros(h, w, C, T, 'like', Vin);
+Vout(dy1:dy2, dx1:dx2, :, :) = Vin(sy1:sy2, sx1:sx2, :, :);
+
+
 
 function videoResized = centerCrop(video,inputSize)
 
