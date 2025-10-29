@@ -529,6 +529,7 @@ if exist(fullfile(userpath, 'tmpcrash.mat'), 'file') % remove temporary crash fi
 end
 
 toc;
+end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 function info = collectTrackedBoundingBoxes(roiObj)
@@ -603,7 +604,7 @@ function newObj = propValues(newObj, orgObj)
             newObj.(pl{k}) = orgObj.(pl{k});
         end
     end
-
+end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 function dumprecovery(fovid, framecell, currentfovid, currentframe)
@@ -614,3 +615,4 @@ function dumprecovery(fovid, framecell, currentfovid, currentframe)
     tmpcrash.currentframe = currentframe;
     save(fullfile(userpath, 'tmpcrash.mat'), 'tmpcrash');
 
+end

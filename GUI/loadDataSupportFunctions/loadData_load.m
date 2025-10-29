@@ -1,4 +1,4 @@
-function shallowObj=loadData_load(parsedData, hprogressbar)
+function shallowObj = loadData_load(parsedData, hprogressbar)
 %% Initialize the progress bar if provided
 if exist('hprogressbar', 'var') && ~isempty(hprogressbar)
     hprogressbar.Value = 0;
@@ -30,12 +30,11 @@ for k = 1:length(vars)
     end
 end
 
-
-
 %% Si aucun projet déjà chargé n'a été trouvé, créer un nouvel objet shallow
 if ~projectLoaded
     [projFolder, projFilename, ~] = fileparts(parsedData.projectPath);
-    shallowObj = shallowNew('path', char(fullfile(projFolder, '/')), 'filename', [char(projFilename) '.mat']);
+    shallowObj = shallowNew('path', char(fullfile(projFolder, '/')), ...
+        'filename', [char(projFilename) '.mat']);
     if isempty(shallowObj)
         disp('Project creation canceled by the user.');
         return;
@@ -45,20 +44,30 @@ if ~projectLoaded
         hprogressbar.Message = 'Shallow project created...';
         drawnow;
     end
+else
+    % garder projFolder / projFilename cohérents si re-load
+    [projFolder, projFilename, ~] = fileparts(parsedData.projectPath);
 end
 
 %% save parsedData in the current project
-shallowObj.parsedData=parsedData;
+shallowObj.parsedData = parsedData;
 
-%% Build the newdata structure to provide to addData
+%% ------------------------------------------------------------------------
+%% Construction de newdata.pos pour shallowObj.addData
+%% et préparation du mode "re-extraction" pour les doublons
+%% ------------------------------------------------------------------------
 newdata.pos = [];
 nPos = numel(parsedData.positions);
-weight_positions = 0.30;  % progress portion allocated to this loop
-newIndex = 0;             % index for newdata.pos
+weight_positions = 0.30;  % portion de progression pour la boucle
+newIndex = 0;             % index dans newdata.pos
+
+% reextractList mémorise les FOV déjà existantes pour lesquelles on veut
+% relancer l'extraction (plage de frames différente, etc.)
+reextractList = struct('fovIndex', {}, 'parsedIndex', {}, 'name', {});
 
 for i = 1:nPos
 
-    % Protection anti-out-of-bounds si parsedData.positions a été modifié entre-temps
+    % Sécuriser si parsedData.positions a bougé
     if i > numel(parsedData.positions)
         break;
     end
@@ -76,19 +85,19 @@ for i = 1:nPos
     end
 
     % ----- Détection doublon -----
-    duplicate = false;
+    duplicate  = false;
+    dupFovIdx  = [];
     if isprop(shallowObj, 'fov') && ~isempty(shallowObj.fov)
-        for k = 1:numel(shallowObj.fov)
-            fovk = shallowObj.fov(k);
+        for kk = 1:numel(shallowObj.fov)
+            fovk = shallowObj.fov(kk);
 
             if isempty(fovk) || ~isprop(fovk,'srcpath') || isempty(fovk.srcpath)
                 continue;
             end
 
-            % on vérifie qu'on peut accéder à srcpath{1} sans crasher
             sameFolder = false;
             if iscell(fovk.srcpath) && ~isempty(fovk.srcpath) && ...
-               isfield(pos,'folder') && ~isempty(pos.folder)
+                    isfield(pos,'folder') && ~isempty(pos.folder)
                 if ~isempty(fovk.srcpath{1})
                     sameFolder = strcmp(fovk.srcpath{1}, pos.folder);
                 end
@@ -96,17 +105,29 @@ for i = 1:nPos
 
             if sameFolder
                 duplicate = true;
-                disp(['Warning : position duplication ! Skipping position addition: ' num2str(i)]);
+                dupFovIdx = kk;
+                disp(['Warning : position duplication ! Will RE-EXTRACT instead of adding: ' num2str(i)]);
                 break;
             end
         end
     end
 
     if duplicate
+        % On enregistre pour la phase re-extraction de cette FOV existante
+        reextractList(end+1).fovIndex    = dupFovIdx;
+        reextractList(end).parsedIndex   = i;
+        if isfield(pos,'userName')
+            reextractList(end).name = pos.userName;
+        else
+            reextractList(end).name = sprintf('Pos%d', i-1);
+        end
+
+        % On NE crée PAS de nouvelle entrée pour cette position,
+        % parce qu'on ne veut pas dupliquer la FOV dans le projet.
         continue;
     end
 
-    % ----- Ok, on va créer une nouvelle entrée dans newdata.pos -----
+    % ----- Sinon : créer une nouvelle entrée dans newdata.pos -----
     newIndex = newIndex + 1;
 
     % Progress bar info
@@ -122,7 +143,7 @@ for i = 1:nPos
         nChannels = 0;
     end
 
-    % Champ name
+    % Nom FOV
     if isfield(pos,'userName') && ~isempty(pos.userName)
         newdata.pos(newIndex).name = pos.userName;
     else
@@ -175,7 +196,7 @@ for i = 1:nPos
         end
     end
 
-    % interval
+    % interval (fréquence par canal)
     if isfield(pos, 'channelFrequencies') && numel(pos.channelFrequencies) >= nChannels
         newdata.pos(newIndex).interval = pos.channelFrequencies(1:nChannels);
     else
@@ -213,15 +234,24 @@ for i = 1:nPos
     if isfield(pos,'isMultiTiff') && ~isempty(pos.isMultiTiff) && pos.isMultiTiff
         newdata.pos(newIndex).isMultiTiff = true;
 
-        % tiffSource : dupliquer la même source pour chaque canal
-        if isfield(pos,'tiffSource') && ~isempty(pos.tiffSource)
-            newdata.pos(newIndex).tiffSource = repmat({pos.tiffSource}, 1, nChannels);
+        % On essaye d'abord multiTiffPath, sinon tiffSource, sinon warning
+        if isfield(pos,'multiTiffPath') && ~isempty(pos.multiTiffPath)
+            thisSourcePath = pos.multiTiffPath;
+        elseif isfield(pos,'tiffSource') && ~isempty(pos.tiffSource)
+            thisSourcePath = pos.tiffSource;
         else
-            % fallback si pas défini
-            newdata.pos(newIndex).tiffSource = repmat({''}, 1, nChannels);
+            thisSourcePath = '';
+            fprintf('DEBUG: WARNING pas de multiTiffPath/tiffSource défini pour la position %d (%s)\n', ...
+                i, newdata.pos(newIndex).name);
         end
 
-        % pageMap : pages = t1/ch1, t1/ch2, t2/ch1, t2/ch2, ...
+        % tiffSource doit être un cell array 1 x nChannels attendu par addData / fov.readImage
+        newdata.pos(newIndex).tiffSource = repmat({thisSourcePath}, 1, nChannels);
+
+        % On garde aussi une trace directe
+        newdata.pos(newIndex).multiTiffPath = thisSourcePath;
+
+        % pageMap : index des pages dans l'ordre t1ch1, t1ch2, t2ch1, ...
         newdata.pos(newIndex).pageMap = cell(1, nChannels);
         for cIdx = 1:nChannels
             nF = newdata.pos(newIndex).frames(cIdx);
@@ -241,16 +271,14 @@ for i = 1:nPos
     end
 end
 
-
-
+%% Barre de progression
 if exist('hprogressbar', 'var') && ~isempty(hprogressbar)
     hprogressbar.Value = 0.45;
     hprogressbar.Message = 'Adding data to the shallow project...';
     drawnow;
 end
 
-
-% AVANT l'ajout :
+%% -------- AVANT l'ajout dans shallowObj --------
 oldFovCount = numel(shallowObj.fov);
 wasFirstDummyFov = false;
 if oldFovCount == 1
@@ -259,307 +287,581 @@ if oldFovCount == 1
         wasFirstDummyFov = true;
     end
 end
-nNewPos = numel(newdata.pos);
 
-
-%% Add data to the shallow project
-shallowObj.addData(newdata);
+%% -------- AJOUT DES DONNÉES AU PROJET --------
 if exist('hprogressbar', 'var') && ~isempty(hprogressbar)
     hprogressbar.Value = 0.50;
+    hprogressbar.Message = 'Adding data to the shallow project...';
+    drawnow;
+end
+
+fprintf('DEBUG: calling shallowObj.addData(newdata)\n');
+shallowObj.addData(newdata);
+fprintf('DEBUG: shallowObj.addData(newdata) DONE\n');
+
+if exist('hprogressbar', 'var') && ~isempty(hprogressbar)
+    hprogressbar.Value = 0.55;
     hprogressbar.Message = 'Data added to the project...';
     drawnow;
 end
 
-
-% APRÈS l'ajout :
+%% -------- APRÈS L'AJOUT : déterminer les nouvelles FOV --------
 newFovCount = numel(shallowObj.fov);
+deltaFov = newFovCount - oldFovCount;
+if deltaFov < 0
+    deltaFov = 0;
+end
 
 if wasFirstDummyFov
-    % Cas spécial : premier import dans un projet vide.
-    % Dans addData, cc repart à 1, donc les nouvelles FOV sont
-    % shallowObj.fov(1 : nNewPos).
+    % Cas spécial : premier import dans un projet vide
     startNewFov = 1;
-    endNewFov   = nNewPos;
+    endNewFov   = newFovCount;
+elseif deltaFov > 0
+    % les nouvelles FOV sont les deltaFov dernières
+    startNewFov = newFovCount - deltaFov + 1;
+    endNewFov   = newFovCount;
 else
-    % Cas général : on append à la fin
-    startNewFov = oldFovCount + 1;
-    endNewFov   = oldFovCount + nNewPos;
+    % rien de nouveau
+    startNewFov = [];
+    endNewFov   = [];
 end
 
-newFovIdx = startNewFov:endNewFov;
-
-
-%% Add ROIs only for the newly-added FOVs
-if exist('hprogressbar', 'var') && ~isempty(hprogressbar)
-    hprogressbar.Value = 0.50;
-    hprogressbar.Message = 'Adding ROIs...';
-    drawnow;
+if isempty(startNewFov) || isempty(endNewFov)
+    newFovIdx = [];
+else
+    newFovIdx = startNewFov:endNewFov;
 end
 
-% Sécurité : nombre de positions dans parsedData (celles du nouvel import)
-nParsedPos = numel(parsedData.positions);
+numJustAdded = numel(newFovIdx);
 
-for localIdx = 1:numel(newFovIdx)
+fprintf('DEBUG: oldFovCount=%d, newFovCount=%d, deltaFov=%d, numJustAdded=%d\n', ...
+    oldFovCount, newFovCount, deltaFov, numJustAdded);
 
-    fovIndex = newFovIdx(localIdx);   % index absolu dans shallowObj.fov
-    posIndex = localIdx;              % index local correspondant dans parsedData.positions
+%% Cas où rien n'a été ajouté ET pas de re-extraction demandée
+if numJustAdded == 0 && isempty(reextractList)
+    fprintf('DEBUG: aucune nouvelle FOV et aucune FOV à réextraire, on ne relance pas l''extraction.\n');
 
-    % Sanity: si pour une raison X, posIndex > nParsedPos, on skip
-    if posIndex > nParsedPos
-        continue;
-    end
+    shallowSave(shallowObj);
 
-    thisPos = parsedData.positions(posIndex);
+    shallowObj.parsedData = loadData_rebuildParsedDataFromProject(shallowObj);
+    shallowSave(shallowObj);
 
-    % Vérifier si la position (dans l'import courant) est sélectionnée
-    isSel = true;
-    if isfield(thisPos,'selected') && ~isempty(thisPos.selected)
-        isSel = logical(thisPos.selected);
-    end
-    if ~isSel
-        continue;
+    if ~projectLoaded
+        fullpath = fullfile(char(projFolder), [char(projFilename) '.mat']);
+        projName = shallowObj.io.file;
+        [shallowObj, msg] = shallowLoad(fullpath);
+        if ~isempty(msg)
+            disp(msg);
+        end
+        assignin('base', projName, shallowObj);
     end
 
     if exist('hprogressbar', 'var') && ~isempty(hprogressbar)
-        hprogressbar.Message = sprintf('Adding ROIs for new FOV %d/%d...', localIdx, numel(newFovIdx));
+        hprogressbar.Value = 1.0;
+        hprogressbar.Message = '';
         drawnow;
     end
 
-    % Choisir les ROI candidates pour CETTE position importée
-    candidateROIs = [];
+    return;
+end
 
-    if isfield(thisPos,'roibb') && ~isempty(thisPos.roibb)
-        candidateROIs = thisPos.roibb;
-    elseif isfield(parsedData,'roibb') && ~isempty(parsedData.roibb)
-        candidateROIs = parsedData.roibb;
-    else
-        % fallback full frame
-        fullW = [];
-        fullH = [];
-        if isfield(thisPos,'channelSizes') && ~isempty(thisPos.channelSizes)
-            dims = sscanf(thisPos.channelSizes{1}, '%d %d');
-            if isempty(dims)
-                dims = sscanf(thisPos.channelSizes{1}, '%d x %d');
+%% =======================================================================
+% Étape A : Associer FOV ↔ parsedData, gérer (ré-)création des ROIs
+%% =======================================================================
+newFovIndicesInProject = [];    % indices FOV dans shallowObj à extraire
+newFovIndicesInParsed  = [];    % indices correspondants dans parsedData.positions
+
+% 1) FOV vraiment nouvelles
+for kAdded = 1:numJustAdded
+    iFovProject = newFovIdx(kAdded);        % index global dans shallowObj.fov
+    refName = newdata.pos(kAdded).name;     % 'Pos0', etc.
+
+    % retrouver iParsed via userName
+    iParsed = [];
+    for p = 1:numel(parsedData.positions)
+        if isfield(parsedData.positions(p),'userName') && ~isempty(parsedData.positions(p).userName)
+            if strcmp(parsedData.positions(p).userName, refName)
+                iParsed = p;
+                break;
             end
-            if ~isempty(dims)
-                fullW = dims(1);
-                fullH = dims(2);
-            end
-        end
-        if ~isempty(fullW) && ~isempty(fullH)
-            candidateROIs = [1 1 fullW fullH];
         end
     end
+    if isempty(iParsed)
+        iParsed = kAdded;
+        fprintf('DEBUG: WARNING pas trouvé par name, fallback iParsed=%d\n', iParsed);
+    else
+        fprintf('DEBUG: mapping newFOV #%d -> parsedData.positions(%d) via userName ''%s''\n', ...
+            kAdded, iParsed, refName);
+    end
 
-    if isempty(candidateROIs)
+    newFovIndicesInProject(end+1) = iFovProject; %#ok<AGROW>
+    newFovIndicesInParsed(end+1)  = iParsed;     %#ok<AGROW>
+end
+
+% 2) FOV en re-extraction (doublons, mais qu'on veut retraiter)
+for rr = 1:numel(reextractList)
+    iFovProject = reextractList(rr).fovIndex;
+    iParsed     = reextractList(rr).parsedIndex;
+    fprintf('DEBUG: re-extraction FOV %d (parsedData.positions(%d) "%s")\n', ...
+        iFovProject, iParsed, reextractList(rr).name);
+
+    newFovIndicesInProject(end+1) = iFovProject;
+    newFovIndicesInParsed(end+1)  = iParsed;
+end
+
+% 3) Pour chaque FOV qu'on va traiter, (ré)injecter les ROIs
+for idxLocal = 1:numel(newFovIndicesInProject)
+    fProj   = newFovIndicesInProject(idxLocal);
+    iParsed = newFovIndicesInParsed(idxLocal);
+
+    % Sécurité
+    if fProj > numel(shallowObj.fov) || iParsed > numel(parsedData.positions)
         continue;
     end
 
-    % Ajouter ces ROIs dans shallowObj.fov(fovIndex) si pas déjà présentes
-    for j = 1:size(candidateROIs,1)
-        roiVal = candidateROIs(j,:);
-        roiID  = sprintf('%s_%d', shallowObj.fov(fovIndex).id, j);
+    posParsed = parsedData.positions(iParsed);
+    thisFOV   = shallowObj.fov(fProj);
 
-        % Vérifier si elle existe déjà
-        roiExists = false;
-        if ~isempty(shallowObj.fov(fovIndex).roi)
-            for k = 1:numel(shallowObj.fov(fovIndex).roi)
-                if strcmp(shallowObj.fov(fovIndex).roi(k).id, roiID) && ...
-                        isequal(shallowObj.fov(fovIndex).roi(k).value, roiVal)
-                    roiExists = true;
-                    break;
+    % Si cette FOV fait partie d'une re-extraction, on efface les anciennes ROIs
+    isReextractThisOne = false;
+    for rr = 1:numel(reextractList)
+        if reextractList(rr).fovIndex == fProj
+            isReextractThisOne = true;
+            break;
+        end
+    end
+    if isReextractThisOne
+        fprintf('DEBUG: wiping previous ROIs in FOV %d before re-extraction\n', fProj);
+        thisFOV.roi = roi;  % on écrase
+
+        % Effacer physiquement les anciens fichiers ROI du disque
+    % chemin dossier où vivent im_<roiID>.mat / data_<roiID>.mat
+    roiFolder = fullfile(shallowObj.io.path, shallowObj.io.file, thisFOV.id);
+
+    % pour chaque ROI existante, supprimer les fichiers correspondants
+    if isprop(thisFOV,'roi') && ~isempty(thisFOV.roi)
+        for r = 1:numel(thisFOV.roi)
+            roiID = thisFOV.roi(r).id;
+
+            % im_<roiID>.mat
+            imgFile  = fullfile(roiFolder, ['im_'   roiID '.mat']);
+            if exist(imgFile,'file')
+                try
+                    delete(imgFile);
+                    fprintf('DEBUG: deleted old ROI image file %s\n', imgFile);
+                catch ME
+                    fprintf('DEBUG: could not delete %s (%s)\n', imgFile, ME.message);
+                end
+            end
+
+            % data_<roiID>.mat
+            dataFile = fullfile(roiFolder, ['data_' roiID '.mat']);
+            if exist(dataFile,'file')
+                try
+                    delete(dataFile);
+                    fprintf('DEBUG: deleted old ROI data file %s\n', dataFile);
+                catch ME
+                    fprintf('DEBUG: could not delete %s (%s)\n', dataFile, ME.message);
                 end
             end
         end
+    end
 
-        if ~roiExists
-            shallowObj.fov(fovIndex).addROI(roiVal, shallowObj.fov(fovIndex).id);
+    end
 
-            if exist('hprogressbar', 'var') && ~isempty(hprogressbar)
-                hprogressbar.Message = sprintf('FOV %d/%d: added ROI %d/%d', ...
-                    localIdx, numel(newFovIdx), j, size(candidateROIs,1));
-                drawnow;
+    % Déterminer les ROI candidates
+    candidateROIs = [];
+
+    % 1. ROI spécifique à cette position ?
+    if isfield(posParsed,'roibb') && ~isempty(posParsed.roibb)
+        fprintf('DEBUG: posParsed.roibb trouvé pour FOV %d: %d ROI(s)\n', ...
+            fProj, size(posParsed.roibb,1));
+        candidateROIs = posParsed.roibb;
+
+        % 2. ROI globale ?
+    elseif isfield(parsedData,'roibb') && ~isempty(parsedData.roibb)
+        fprintf('DEBUG: parsedData.roibb global utilisé pour FOV %d: %d ROI(s)\n', ...
+            fProj, size(parsedData.roibb,1));
+        candidateROIs = parsedData.roibb;
+
+        % 3. fallback "full-frame" si roitype='full'
+    else
+        isFullFrameMode = (isfield(parsedData,'roitype') && strcmpi(parsedData.roitype,'full'));
+
+        if isFullFrameMode
+            fprintf('DEBUG: Aucune ROI explicite. On tente fallback full-frame.\n');
+
+            % Essayer de déduire la taille W,H
+            Wguess = [];
+            Hguess = [];
+
+            % a) à partir de channelSizes "677 946" ou "677 x 946"
+            if isfield(posParsed,'channelSizes') && ~isempty(posParsed.channelSizes) ...
+                    && ~isempty(posParsed.channelSizes{1})
+                dims = sscanf(posParsed.channelSizes{1}, '%d %d');
+                if isempty(dims)
+                    dims = sscanf(posParsed.channelSizes{1}, '%d x %d');
+                end
+                if numel(dims) >= 2
+                    Wguess = dims(1);
+                    Hguess = dims(2);
+                    fprintf('DEBUG: taille extraite de channelSizes: W=%d H=%d\n', Wguess, Hguess);
+                end
+            end
+
+            % b) sinon, multiTIFF -> imfinfo
+            if (isempty(Wguess) || isempty(Hguess)) && ...
+                    isfield(posParsed,'isMultiTiff') && posParsed.isMultiTiff && ...
+                    isfield(posParsed,'multiTiffPath') && ~isempty(posParsed.multiTiffPath)
+                try
+                    infoTmp = imfinfo(posParsed.multiTiffPath);
+                    Wguess = infoTmp(1).Width;
+                    Hguess = infoTmp(1).Height;
+                    fprintf('DEBUG: taille via imfinfo multiTIFF: W=%d H=%d\n', Wguess, Hguess);
+                catch ME
+                    fprintf('DEBUG: imfinfo fallback a échoué pour FOV %d: %s\n', fProj, ME.message);
+                end
+            end
+
+            % c) si toujours rien -> pas de ROI
+            if isempty(Wguess) || isempty(Hguess)
+                fprintf('DEBUG: Impossible de déterminer la taille image pour FOV %d. Pas de ROI ajoutée.\n', fProj);
+                candidateROIs = [];
+            else
+                candidateROIs = [1 1 double(Wguess) double(Hguess)];
+                fprintf('DEBUG: ROI full-frame générée pour FOV %d: [%d %d %d %d]\n', ...
+                    fProj, candidateROIs(1),candidateROIs(2),candidateROIs(3),candidateROIs(4));
+            end
+        else
+            fprintf('DEBUG: roitype != full et aucune ROI détectée pour FOV %d -> pas de ROI.\n', fProj);
+            candidateROIs = [];
+        end
+    end
+
+    % Ajouter physiquement les ROIs
+    if isempty(candidateROIs)
+        fprintf('DEBUG: candidateROIs vide pour FOV %d -> aucune ROI ajoutée.\n', fProj);
+    else
+        for j = 1:size(candidateROIs,1)
+            bb = candidateROIs(j,:);  % [x y w h]
+            if numel(bb) < 4
+                fprintf('DEBUG: ROI #%d pour FOV %d invalide (<4 vals) -> skip.\n', j, fProj);
+                continue;
+            end
+
+            roiID = sprintf('%s_%d', thisFOV.id, j);
+
+            % Vérifier duplication ROI
+            roiExists = false;
+            if ~isempty(thisFOV.roi)
+                for kR = 1:numel(thisFOV.roi)
+                    existingROI = thisFOV.roi(kR);
+                    if isprop(existingROI,'id') && isprop(existingROI,'value') ...
+                            && strcmp(existingROI.id, roiID) && isequal(existingROI.value, bb)
+                        roiExists = true;
+                        fprintf('DEBUG: ROI %s déjà existante dans FOV %d. skip.\n', roiID, fProj);
+                        break;
+                    end
+                end
+            end
+
+            if ~roiExists
+                fprintf('DEBUG: Ajout ROI %s à FOV %d, bb=[%d %d %d %d]\n', ...
+                    roiID, fProj, bb(1),bb(2),bb(3),bb(4));
+                thisFOV.addROI(bb, thisFOV.id);
             end
         end
     end
 
-    if exist('hprogressbar', 'var') && ~isempty(hprogressbar)
-        % on fait monter un peu la barre
-        hprogressbar.Value = 0.50 + 0.10 * (localIdx / max(1,numel(newFovIdx)));
-        drawnow;
-    end
+    % Réinjecter FOV modifiée dans le projet
+    shallowObj.fov(fProj) = thisFOV;
 end
 
-
-
-%% Extract ROI data
-if exist('hprogressbar', 'var') && ~isempty(hprogressbar)
-    hprogressbar.Value = 0.65;
-    hprogressbar.Message = 'Extracting ROI data...';
-    drawnow;
-end
-
-selectedPos = find([parsedData.positions.selected]);
-if isempty(selectedPos)
-    error('No position selected in the table.');
-end
-
-
-% Initialiser les cell arrays pour les frames et les channels
-framesCell = {};
-channelCell = {};
-fovArg = [];
-
-cc = 1;
-for idx = 1:numel(selectedPos)
-    i = selectedPos(idx);
-    pos = parsedData.positions(i);
-    % Ne traiter que les positions dont extractROI est true
-    if pos.extractROI
-        fovArg(end+1) = i;  %#ok<AGROW>
-
-        if exist('hprogressbar', 'var') && ~isempty(hprogressbar)
-            hprogressbar.Message = sprintf('Extracting frames for FOV %d/%d...', cc, numel(selectedPos));
-            drawnow;
-        end
-        if isfield(pos, 'currentMinFrame') && isfield(pos, 'currentMaxFrame') && ...
-                ~isempty(pos.currentMinFrame) && ~isempty(pos.currentMaxFrame)
-            framesCell{cc} = pos.currentMinFrame : pos.currentMaxFrame;
-        else
-            framesCell{cc} = pos.frames;
-        end
-
-        if exist('hprogressbar', 'var') && ~isempty(hprogressbar)
-            hprogressbar.Message = sprintf('Extracting channels for FOV %d/%d...', cc, numel(selectedPos));
-            drawnow;
-        end
-        channelCell{cc} = find(pos.channelsSelected);
-
-        cc = cc + 1;
-    end
-end
-
-% fovArg = selectedPos;
-if parsedData.correctdrift
-    corrDrift = true;
-else
-    corrDrift = false;
-end
-
-if exist('hprogressbar', 'var') && ~isempty(hprogressbar)
-    hprogressbar.Value = 0.70;
-    hprogressbar.Message = 'Saving cropped images...';
-    drawnow;
-end
-
-
-%% Call saveCroppedImages with the constructed arguments
-
-% Build the list of FOVs to crop (new FOVs only),
-% plus les frames/channels demandés pour chaque.
+%% =======================================================================
+% Étape B : Préparer les arguments pour saveCroppedImages
+%% =======================================================================
+fovArg      = [];
 framesCell  = {};
 channelCell = {};
-fovArg      = [];
 
-cc = 1;
-for posLocal = 1:numel(parsedData.positions)
+for idxLocal = 1:numel(newFovIndicesInProject)
+    fProj   = newFovIndicesInProject(idxLocal);  % index FOV dans shallowObj
+    iParsed = newFovIndicesInParsed(idxLocal);   % index parsedData.positions
 
-    thisPos = parsedData.positions(posLocal);
-
-    % seulement si la position est à extraire
-    if isfield(thisPos,'selected') && ~thisPos.selected
+    if fProj > numel(shallowObj.fov)
+        fprintf('DEBUG: fProj=%d dépasse shallowObj.fov. skip.\n', fProj);
         continue;
     end
-    if isfield(thisPos,'extractROI') && ~thisPos.extractROI
+    if iParsed > numel(parsedData.positions)
+        fprintf('DEBUG: iParsed=%d dépasse parsedData.positions. skip.\n', iParsed);
         continue;
     end
 
-    % map position locale -> index FOV absolu
-    if posLocal > numel(newFovIdx)
-        % pas de FOV correspondante (sécurité)
+    posParsed = parsedData.positions(iParsed);
+
+    % Vérifier sélection / extractROI
+    if ~isfield(posParsed,'selected') || ~posParsed.selected
+        fprintf('DEBUG: FOV %d non sélectionnée (selected=false). skip extraction.\n', fProj);
         continue;
     end
-    thisFovIndex = newFovIdx(posLocal);
+    if ~isfield(posParsed,'extractROI') || ~posParsed.extractROI
+        fprintf('DEBUG: FOV %d extractROI=false. skip extraction.\n', fProj);
+        continue;
+    end
 
-    % frames pour cette position
-    if isfield(thisPos,'currentMinFrame') && isfield(thisPos,'currentMaxFrame') && ...
-       ~isempty(thisPos.currentMinFrame) && ~isempty(thisPos.currentMaxFrame)
-        framesHere = thisPos.currentMinFrame : thisPos.currentMaxFrame;
+    % Frames à prendre (UI clamp)
+    if isfield(posParsed,'currentMinFrame') && isfield(posParsed,'currentMaxFrame') && ...
+            ~isempty(posParsed.currentMinFrame) && ~isempty(posParsed.currentMaxFrame)
+
+        startF = max(1, floor(posParsed.currentMinFrame));
+
+        % borne dure = maxFrame si présent (typiquement nb total d'images)
+        if isfield(posParsed,'maxFrame') && ~isempty(posParsed.maxFrame)
+            hardMax = posParsed.maxFrame;
+        else
+            if isfield(posParsed,'frames') && ~isempty(posParsed.frames)
+                hardMax = max(posParsed.frames(:));
+            else
+                hardMax = startF;
+            end
+        end
+
+        stopF  = min( ceil(posParsed.currentMaxFrame), hardMax );
+        if stopF < startF
+            stopF = startF;
+        end
+
+        frameRange = startF:stopF;
+        fprintf('DEBUG: FOV %d frameRange (UI-clamped) = [%d..%d] -> %d frames\n', ...
+            fProj, startF, stopF, numel(frameRange));
+
+    elseif isfield(posParsed,'frames') && ~isempty(posParsed.frames)
+        frameRange = posParsed.frames;
+        fprintf('DEBUG: FOV %d frameRange (full) = [%d..%d] -> %d frames\n', ...
+            fProj, frameRange(1), frameRange(end), numel(frameRange));
     else
-        framesHere = thisPos.frames;
+        frameRange = 1;
+        fprintf('DEBUG: FOV %d frameRange defaulted to [1]\n', fProj);
     end
 
-    % channels sélectionnés pour cette position
-    if isfield(thisPos,'channelsSelected') && ~isempty(thisPos.channelsSelected)
-        chanSel = find(thisPos.channelsSelected);
+    % Channels sélectionnés
+    if isfield(posParsed,'channelsSelected') && ~isempty(posParsed.channelsSelected)
+        chanMask = logical(posParsed.channelsSelected);
     else
-        % fallback : tous les canaux
-        chanSel = 1:numel(thisPos.channelsDir);
+        nChGuess = numel(shallowObj.fov(fProj).channel);
+        if nChGuess==0, nChGuess=1; end
+        chanMask = true(1,nChGuess);
     end
+    chanSelected = find(chanMask);
+    fprintf('DEBUG: FOV %d channelsSelected = %s\n', fProj, mat2str(chanSelected));
 
-    framesCell{cc}  = framesHere;
-    channelCell{cc} = chanSel;
-    fovArg(cc)      = thisFovIndex;
-
-    cc = cc + 1;
+    % Stocker pour saveCroppedImages
+    fovArg(end+1)      = fProj;            %#ok<AGROW>
+    framesCell{end+1}  = frameRange;       %#ok<AGROW>
+    channelCell{end+1} = chanSelected;     %#ok<AGROW>
 end
 
+if isempty(fovArg)
+    fprintf('DEBUG: Aucune FOV à extraire (fovArg vide). On va juste sauver le projet.\n');
+end
+
+%% =======================================================================
+% Étape C : auto-tune du batch (parsedData.maxframeloading)
+%% =======================================================================
 if ~isempty(fovArg)
-    if exist('hprogressbar', 'var') && ~isempty(hprogressbar)
-        hprogressbar.Value = 0.65;
-        hprogressbar.Message = 'Saving cropped images...';
-        drawnow;
+    MemBudget = 1e9;       % ~1 Go
+    bytesPerPixel = 2;     % 16 bits
+
+    totalPerFrameBytes = 0;
+
+    for idxLocal = 1:numel(fovArg)
+        fProj   = fovArg(idxLocal);
+        iParsed = newFovIndicesInParsed(idxLocal);
+
+        thisFOV = shallowObj.fov(fProj);
+        posLoc  = parsedData.positions(iParsed);
+
+        if isfield(posLoc,'channelsSelected') && ~isempty(posLoc.channelsSelected)
+            chanMask = logical(posLoc.channelsSelected);
+        else
+            nChGuess = numel(thisFOV.channel);
+            if nChGuess==0, nChGuess=1; end
+            chanMask = true(1,nChGuess);
+        end
+        chanIdxList = find(chanMask);
+
+        if isempty(chanIdxList)
+            fprintf('DEBUG: FOV %d pas de channel sélectionné -> skip mémoire.\n', fProj);
+            continue;
+        end
+
+        roiList = thisFOV.roi;
+        if isempty(roiList)
+            fprintf('DEBUG: FOV %d aucune ROI finale (thisFOV.roi vide) -> skip mémoire.\n', fProj);
+            continue;
+        end
+
+        for r = 1:numel(roiList)
+            if ~isprop(roiList(r),'value') || isempty(roiList(r).value)
+                fprintf('DEBUG: FOV %d ROI %d sans bbox -> skip mémoire.\n', fProj, r);
+                continue;
+            end
+            bb = roiList(r).value;
+            if numel(bb) < 4
+                fprintf('DEBUG: FOV %d ROI %d bbox invalide (<4 vals) -> skip mémoire.\n', fProj, r);
+                continue;
+            end
+
+            w = double(bb(3));
+            h = double(bb(4));
+            if ~(isfinite(w) && isfinite(h) && w>0 && h>0)
+                fprintf('DEBUG: FOV %d ROI %d bbox bizarre (w/h <=0) -> skip mémoire.\n', fProj, r);
+                continue;
+            end
+
+            bytesOneFrameThisROIChan = w * h * bytesPerPixel;
+            totalPerFrameBytes = totalPerFrameBytes + bytesOneFrameThisROIChan * numel(chanIdxList);
+        end
     end
 
-    if parsedData.correctdrift
+    if totalPerFrameBytes <= 0
+        totalPerFrameBytes = 1;
+        fprintf('DEBUG: totalPerFrameBytes <=0, fallback=1 byte/frame.\n');
+    end
+
+    B_theoretical = floor(MemBudget / totalPerFrameBytes);
+    if ~isfinite(B_theoretical) || B_theoretical < 1
+        B_theoretical = 1;
+    end
+
+    % borne supérieure = plus grand nFrames parmi ces FOV
+    maxFramesAllFOV = 1;
+    for idxLocal = 1:numel(fovArg)
+        posLoc = parsedData.positions(newFovIndicesInParsed(idxLocal));
+
+        if isfield(posLoc,'currentMinFrame') && isfield(posLoc,'currentMaxFrame') && ...
+                ~isempty(posLoc.currentMinFrame) && ~isempty(posLoc.currentMaxFrame)
+            nFramesThisPos = posLoc.currentMaxFrame - posLoc.currentMinFrame + 1;
+        elseif isfield(posLoc,'frames') && ~isempty(posLoc.frames)
+            nFramesThisPos = numel(posLoc.frames);
+        else
+            nFramesThisPos = 1;
+        end
+
+        if nFramesThisPos > maxFramesAllFOV
+            maxFramesAllFOV = nFramesThisPos;
+        end
+    end
+
+    B_clamped = min(B_theoretical, maxFramesAllFOV);
+    if B_clamped < 1
+        B_clamped = 1;
+    end
+
+    parsedData.maxframeloading = B_clamped;
+    fprintf('DEBUG: maxframeloading(auto) = %d (B_theoretical=%d, maxFramesAllFOV=%d)\n', ...
+        parsedData.maxframeloading, B_theoretical, maxFramesAllFOV);
+else
+    fprintf('DEBUG: pas d''extraction -> on ne recalcule pas maxframeloading.\n');
+end
+
+% Sécurité : arrondir maxframeloading à un entier >= 1
+parsedData.maxframeloading = max(1, round(parsedData.maxframeloading));
+fprintf('DEBUG: maxframeloading final (rounded) = %d\n', parsedData.maxframeloading);
+
+%% =======================================================================
+% Étape D : saveCroppedImages ou juste save
+%% =======================================================================
+if ~isempty(fovArg)
+    fprintf('DEBUG: Appel saveCroppedImages sur fovArg=%s\n', mat2str(fovArg));
+    corrDrift = false;
+    if isfield(parsedData,'correctdrift') && parsedData.correctdrift
         corrDrift = true;
-    else
-        corrDrift = false;
     end
 
-    shallowObj.saveCroppedImages( ...
-        'frames',       framesCell, ...
-        'fov',          fovArg, ...
-        'cut',          parsedData.maxframeloading, ...
-        'correctdrift', corrDrift, ...
-        'cropdrift',    1, ...
-        'crashrecovery',0, ...
-        'channel',      channelCell, ...
-        'scale',        parsedData.scale, ...
-        'hprogressbar', hprogressbar );
+    shallowObj.saveCroppedImages('frames',        framesCell, ...
+        'fov',           fovArg, ...
+        'cut',           parsedData.maxframeloading, ...
+        'correctdrift',  corrDrift, ...
+        'cropdrift',     1, ...
+        'crashrecovery', 0, ...
+        'channel',       channelCell, ...
+        'scale',         parsedData.scale, ...
+        'hprogressbar',  hprogressbar);
 
-    if exist('hprogressbar', 'var') && ~isempty(hprogressbar)
-        hprogressbar.Value = 0.80;
-        hprogressbar.Message = 'Cropped images saved...';
-        drawnow;
-    end
+    fprintf('DEBUG: saveCroppedImages terminé.\n');
 
 else
-   
+    fprintf('DEBUG: Rien à extraire -> shallowSave(shallowObj) direct.\n');
+    shallowSave(shallowObj);
 end
 
+%% =======================================================================
+% Étape E : resynchroniser les ROIs en mémoire après extraction/re-extraction
+%% =======================================================================
+% On veut que shallowObj.fov(f).roi(r) ait bien son image/path à jour,
+% sinon ScoreApp pensera qu'il n'y a rien à afficher.
+% fovProcessed = unique([newFovIndicesInProject(:)' [reextractList.fovIndex] ]);
+% for idx = 1:numel(fovProcessed)
+%     fProj = fovProcessed(idx);
+%     if isempty(fProj) || fProj > numel(shallowObj.fov)
+%         continue;
+%     end
+%     thisFOV = shallowObj.fov(fProj);
+%     if isempty(thisFOV.roi)
+%         continue;
+%     end
+% 
+%     for r = 1:numel(thisFOV.roi)
+%         roiObj = thisFOV.roi(r);
+% 
+%         % Tenter de recharger complètement la ROI depuis disque
+%         if ismethod(roiObj,'load')
+%             try
+%                 roiObj.load();
+%                 fprintf('DEBUG: ROI %s reloaded from disk for FOV %d\n', roiObj.id, fProj);
+%             catch ME
+%                 fprintf('DEBUG: reload failed for ROI %s in FOV %d: %s\n', roiObj.id, fProj, ME.message);
+%             end
+%         else
+%             % fallback : si roiObj.path est vide, on essaie de l'inférer
+%             if (~isprop(roiObj,'path') || isempty(roiObj.path)) && isprop(roiObj,'id')
+%                 % On tente un chemin du type <tmpProject>/<FOVID>/im_<ROIID>.mat
+%                 basepath = shallowObj.io.path;
+%                 if isprop(thisFOV,'id')
+%                     guessPath = fullfile(basepath, thisFOV.id, ['im_' roiObj.id '.mat']);
+%                     if exist('guessPath','var') && isfile(guessPath)
+%                         if isprop(roiObj,'path')
+%                             roiObj.path = guessPath;
+%                             fprintf('DEBUG: ROI %s assigned path %s\n', roiObj.id, guessPath);
+%                         end
+%                     end
+%                 end
+%             end
+%         end
+% 
+%         % réécrire dans FOV
+%         thisFOV.roi(r) = roiObj;
+%     end
+% 
+%     shallowObj.fov(fProj) = thisFOV;
+% end
+
+
+%% Après extraction/sauvegarde : reconstruire parsedData depuis le projet
 shallowObj.parsedData = loadData_rebuildParsedDataFromProject(shallowObj);
 shallowSave(shallowObj);
 
-   if exist('hprogressbar', 'var') && ~isempty(hprogressbar)
-        hprogressbar.Value = 0.80;
-        hprogressbar.Message = 'Project saved...';
-        drawnow;
-    end
-
-% disp(['Shallow project created and saved: ' fullpath]);
-
+if exist('hprogressbar', 'var') && ~isempty(hprogressbar)
+    hprogressbar.Value = 0.80;
+    hprogressbar.Message = 'Project saved...';
+    drawnow;
+end
 
 %% Manage the variable in the workspace
-
-if ~projectLoaded % in this case load the project in the workspace
-
+if ~projectLoaded
     fullpath = fullfile(char(projFolder), [char(projFilename) '.mat']);
     projName = shallowObj.io.file;
-    % if evalin('base', sprintf('exist(''%s'', ''var'')', projName))
-    %      evalin('base', sprintf('clear %s', projName));
-    %      disp(['Variable ', projName, ' already existed and has been cleared.']);
-    % end
 
     [shallowObj, msg] = shallowLoad(fullpath);
     if ~isempty(msg)
@@ -568,8 +870,9 @@ if ~projectLoaded % in this case load the project in the workspace
     assignin('base', projName, shallowObj);
 end
 
-
-%% loading regions of interest
+%% =======================================================================
+% Étape F : Préparer l'affichage des ROIs dans ScoreApp
+%% =======================================================================
 if exist('hprogressbar', 'var') && ~isempty(hprogressbar)
     hprogressbar.Value = 0.95;
     hprogressbar.Message = 'Loading ROIs';
@@ -578,70 +881,128 @@ end
 
 nroimax = parsedData.maxroidisplay;
 
-if nroimax==0
+if nroimax == 0
     if exist('hprogressbar', 'var') && ~isempty(hprogressbar)
         hprogressbar.Value = 1.0;
         hprogressbar.Message = '';
         drawnow;
     end
-    return
+    return;
 end
 
-figures = findall(0, 'Type', 'figure');
+figures   = findall(0, 'Type', 'figure');
 appFigure = findobj(figures, 'Name', 'ScoreApp');
 
-% Nombre maximum de ROIs à afficher
-% Initialiser le compteur de ROIs ajoutées
-roiCount = 0;
+% On collecte d'abord les ROIs affichables
+roiToDisplay = {};
 
-% Parcourir tous les FOV de shallowObj
-for f = 1:numel(shallowObj.fov)
+% On veut afficher les FOV nouvellement ajoutées ET les FOV retraitées.
+fovsForDisplay = unique([newFovIdx(:)' [reextractList.fovIndex] ]);
 
-    if numel(find(fovArg==f))==0
-        continue
+
+for f = fovsForDisplay
+    if isempty(f) || f > numel(shallowObj.fov)
+        continue;
     end
 
     currentFOV = shallowObj.fov(f);
 
-    % Tester si ce FOV contient des ROIs
     if isempty(currentFOV.roi) || numel(currentFOV.roi) == 0
         continue;
     end
 
-    % Parcourir chacune des ROIs de ce FOV
     for r = 1:numel(currentFOV.roi)
         roiObj = currentFOV.roi(r);
-        roiCount = roiCount + 1;
 
-        % Si le nombre maximum est atteint, sortir des boucles
-        if roiCount > nroimax
-            break;
+
+        % Heuristique "affichable"
+        hasImage = false;
+
+        % 1. Image déjà en RAM ?
+        if isprop(roiObj,'image') && ~isempty(roiObj.image)
+            hasImage = true;
         end
 
-        roiObj.parent=currentFOV;
+        % 2. ou bien un champ 'path' ou 'imagepath' pointant vers un .mat sur disque ?
+        if ~hasImage
+            candidatePaths = {};
+            if isprop(roiObj,'path') && ~isempty(roiObj.path)
+                candidatePaths{end+1} = roiObj.path;
+            end
+            if isprop(roiObj,'imagepath') && ~isempty(roiObj.imagepath)
+                candidatePaths{end+1} = roiObj.imagepath;
+            end
+            if isprop(roiObj,'datafile') && ~isempty(roiObj.datafile)
+                candidatePaths{end+1} = roiObj.datafile;
+            end
 
-        % Si la figure ScoreApp n'existe pas, la créer en passant la première ROI
-        if isempty(appFigure)
-            appFigure = score(roiObj);
-        else
-            appFigure.RunningAppInstance.addROI(roiObj);
+            for cp = 1:numel(candidatePaths)
+                if ~isempty(candidatePaths{cp}) && exist(candidatePaths{cp},'file')
+                    hasImage = true;
+                    break;
+                end
+            end
+        end
+
+        % 3. en dernier recours : accepte la ROI quand même.
+        %    Pourquoi ? Parce que 'score(roiObj)' sait RE-load la ROI depuis le disk
+        %    (on l'a vu dans les logs : "ROI: ... successfully loaded").
+        %    Donc l'absence d'image immédiate n'est PAS bloquante.
+        if ~hasImage
+            fprintf('DEBUG: ROI %d de FOV %d sans image préchargée, on tente quand même pour ScoreApp.\n', r, f);
+            hasImage = true;
+        end
+
+        % Maintenant on push.
+        roiObj.parent = currentFOV;
+        roiToDisplay{end+1} = roiObj;
+
+
+        if numel(roiToDisplay) >= nroimax
+            break;
         end
     end
 
-    if roiCount >= nroimax
+    if numel(roiToDisplay) >= nroimax
         break;
     end
 end
+
+if isempty(roiToDisplay)
+    disp('Aucune ROI disponible et affichable (pas d''image). ScoreApp ne sera pas lancé.');
+
+    if exist('hprogressbar', 'var') && ~isempty(hprogressbar)
+        hprogressbar.Value = 1.0;
+        hprogressbar.Message = '';
+        drawnow;
+    end
+    return;
+end
+
+% Ici seulement on lance / met à jour ScoreApp
+
+figures=findall(0,'Type','figure');
+appFigure=findobj(figures,'Name','ScoreApp');
+
+
+for k = 1:numel(roiToDisplay)
+
+  roiObj=roiToDisplay{k};
+
+  if isprop(appFigure,'RunningAppInstance')
+        appFigure.RunningAppInstance.addROI(roiObj);
+  else
+        score(roiObj);
+  end
+
+end
+
+
 
 if exist('hprogressbar', 'var') && ~isempty(hprogressbar)
     hprogressbar.Value = 1.0;
     hprogressbar.Message = '';
     drawnow;
-end
-
-if roiCount == 0
-    disp('Aucune ROI disponible pour l''affichage.');
-    return;
 end
 
 end
