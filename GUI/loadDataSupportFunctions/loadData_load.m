@@ -533,18 +533,19 @@ if ~isempty(fovArg)
         hprogressbar.Message = 'Cropped images saved...';
         drawnow;
     end
+
 else
-    % pas de FOV à extraire → juste faire un save projet classique
-    shallowSave(shallowObj);
-    if exist('hprogressbar', 'var') && ~isempty(hprogressbar)
+   
+end
+
+shallowObj.parsedData = loadData_rebuildParsedDataFromProject(shallowObj);
+shallowSave(shallowObj);
+
+   if exist('hprogressbar', 'var') && ~isempty(hprogressbar)
         hprogressbar.Value = 0.80;
         hprogressbar.Message = 'Project saved...';
         drawnow;
     end
-end
-
-
-
 
 % disp(['Shallow project created and saved: ' fullpath]);
 
