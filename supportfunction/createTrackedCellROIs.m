@@ -4,7 +4,8 @@ function created = createTrackedCellROIs(shallowObj, varargin)
 %   shallow project PROJECT for a lineage/label channel and, when found,
 %   creates one ROI per tracked object (cell). The newly created ROIs are
 %   appended to the corresponding FOV and populated with a temporal
-%   dataseries describing the frames where the object is present. Raw image
+%   dataseries describing the frames where the object is present together
+%   with per-frame bounding boxes that follow the tracked contour. Raw image
 %   crops are then extracted by calling PROJECT.saveCroppedImages.
 %
 %   CREATED = CREATETRACKEDCELLROIS(PROJECT, 'FOV', FOVIDS, ...)
@@ -24,9 +25,17 @@ function created = createTrackedCellROIs(shallowObj, varargin)
 %                     bounding boxes. Default = 0.
 %       'Extract'   : Logical flag indicating whether saveCroppedImages
 %                     should be called after ROI creation (default = true).
+%       'ExtractFrames' : Frame indices (numeric vector or cell array per
+%                     FOV) forwarded to saveCroppedImages via its 'frames'
+%                     parameter. Default = [].
+%       'ExtractChannels' : Channel indices (numeric vector or cell array
+%                     per FOV) forwarded to saveCroppedImages via its
+%                     'channel' parameter. Default = [].
 %       'SaveArgs'  : Cell array of additional arguments forwarded to
 %                     saveCroppedImages. Passing a 'fov' argument here is
-%                     not allowed.
+%                     not allowed. When using 'ExtractFrames' or
+%                     'ExtractChannels', do not repeat the corresponding
+%                     parameters inside 'SaveArgs'.
 %
 %   The function returns an array of structs describing the created ROIs
 %   with fields: fov, parentROI, parentROIIndex, cellID, roiIndex, roiID,
@@ -54,6 +63,8 @@ p.addParameter('ROI', [], @(x) isempty(x) || isnumeric(x) || iscell(x));
 p.addParameter('Channel', [], @(x) isempty(x) || ischar(x) || isstring(x) || isnumeric(x));
 p.addParameter('Margin', 0, @(x) isnumeric(x) && isscalar(x) && x>=0);
 p.addParameter('Extract', true, @(x) islogical(x) || isnumeric(x));
+p.addParameter('ExtractFrames', [], @(x) isempty(x) || isnumeric(x) || iscell(x));
+p.addParameter('ExtractChannels', [], @(x) isempty(x) || isnumeric(x) || iscell(x));
 p.addParameter('SaveArgs', {}, @(x) iscell(x));
 p.parse(varargin{:});
 
@@ -62,11 +73,30 @@ roiSelection = p.Results.ROI;
 channelOption = p.Results.Channel;
 marginPixels = double(p.Results.Margin);
 doExtract = logical(p.Results.Extract);
+extractFrames = p.Results.ExtractFrames;
+extractChannels = p.Results.ExtractChannels;
 extraSaveArgs = p.Results.SaveArgs;
 
-if any(strcmpi(extraSaveArgs(1:2:end), 'fov'))
+if mod(numel(extraSaveArgs), 2) ~= 0
+    error('createTrackedCellROIs:InvalidSaveArgs', ...
+        '''SaveArgs'' must contain name/value pairs.');
+end
+
+extraArgNames = lower(string(extraSaveArgs(1:2:end)));
+
+if any(extraArgNames == "fov")
     error('createTrackedCellROIs:InvalidSaveArgs', ...
         'Do not provide a ''fov'' argument inside ''SaveArgs''; use the ''FOV'' parameter instead.');
+end
+
+if ~isempty(extractFrames) && any(extraArgNames == "frames")
+    error('createTrackedCellROIs:ConflictingSaveArgs', ...
+        'Do not provide ''frames'' inside ''SaveArgs'' when using ''ExtractFrames''.');
+end
+
+if ~isempty(extractChannels) && any(extraArgNames == "channel")
+    error('createTrackedCellROIs:ConflictingSaveArgs', ...
+        'Do not provide ''channel'' inside ''SaveArgs'' when using ''ExtractChannels''.');
 end
 
 if isempty(fovSelection)
@@ -76,7 +106,7 @@ else
 end
 
 created = struct('fov', {}, 'parentROI', {}, 'parentROIIndex', {}, 'cellID', {}, 'roiIndex', {}, ...
-    'roiID', {}, 'frames', {}, 'bbox', {}, 'channel', {});
+    'roiID', {}, 'frames', {}, 'bbox', {}, 'channel', {}, 'frameBoundingBoxes', {}, 'frameOffsets', {});
 createdCount = 0;
 
 processedFOV = [];
@@ -141,8 +171,20 @@ end
 
 if doExtract && ~isempty(processedFOV)
     uniqueFOV = unique(processedFOV, 'stable');
+    callArgs = [{'fov', uniqueFOV}];
+
+    if ~isempty(extractFrames)
+        callArgs = [callArgs {'frames', extractFrames}]; %#ok<AGROW>
+    end
+
+    if ~isempty(extractChannels)
+        callArgs = [callArgs {'channel', extractChannels}]; %#ok<AGROW>
+    end
+
+    callArgs = [callArgs extraSaveArgs(:)']; %#ok<AGROW>
+
     try
-        shallowObj.saveCroppedImages('fov', uniqueFOV, extraSaveArgs{:});
+        shallowObj.saveCroppedImages(callArgs{:});
     catch ME
         warning('createTrackedCellROIs:ExtractionFailed', ...
             'saveCroppedImages failed: %s', ME.message);
@@ -309,6 +351,7 @@ for idIdx = 1:numel(uniqueIds)
     cellId = uniqueIds(idIdx);
 
     presence = false(framesCount,1);
+    frameBounds = nan(framesCount, 4);
     minRow = inf;
     minCol = inf;
     maxRow = 0;
@@ -324,20 +367,35 @@ for idIdx = 1:numel(uniqueIds)
         presence(frame) = true;
 
         [rIdx, cIdx] = find(pix);
-        minRow = min(minRow, min(rIdx));
-        maxRow = max(maxRow, max(rIdx));
-        minCol = min(minCol, min(cIdx));
-        maxCol = max(maxCol, max(cIdx));
+        localMinRow = min(rIdx);
+        localMaxRow = max(rIdx);
+        localMinCol = min(cIdx);
+        localMaxCol = max(cIdx);
+
+        paddedMinRow = max(1, floor(localMinRow - marginPixels));
+        paddedMaxRow = min(rows, ceil(localMaxRow + marginPixels));
+        paddedMinCol = max(1, floor(localMinCol - marginPixels));
+        paddedMaxCol = min(cols, ceil(localMaxCol + marginPixels));
+
+        frameBounds(frame, :) = [paddedMinCol, paddedMinRow, ...
+            paddedMaxCol - paddedMinCol + 1, paddedMaxRow - paddedMinRow + 1];
+
+        minRow = min(minRow, paddedMinRow);
+        maxRow = max(maxRow, paddedMaxRow);
+        minCol = min(minCol, paddedMinCol);
+        maxCol = max(maxCol, paddedMaxCol);
     end
 
     if ~any(presence)
         continue;
     end
 
-    minRow = max(1, floor(minRow - marginPixels));
-    minCol = max(1, floor(minCol - marginPixels));
-    maxRow = min(rows, ceil(maxRow + marginPixels));
-    maxCol = min(cols, ceil(maxCol + marginPixels));
+    frameBounds(~presence, :) = NaN;
+
+    minRow = max(1, minRow);
+    minCol = max(1, minCol);
+    maxRow = min(rows, maxRow);
+    maxCol = min(cols, maxCol);
 
     height = maxRow - minRow + 1;
     width  = maxCol - minCol + 1;
@@ -352,6 +410,18 @@ for idIdx = 1:numel(uniqueIds)
 
     newValue = max(newValue, 1);
     newValue = round(newValue);
+
+    frameOffsets = nan(framesCount, 2);
+    frameOffsets(presence, 1) = frameBounds(presence, 1) - minCol;
+    frameOffsets(presence, 2) = frameBounds(presence, 2) - minRow;
+
+    frameBoundsRelative = frameBounds;
+    frameBoundsGlobal = frameBoundsRelative;
+    frameBoundsGlobal(presence, 1) = frameBoundsRelative(presence, 1) + parentVal(1) - 1;
+    frameBoundsGlobal(presence, 2) = frameBoundsRelative(presence, 2) + parentVal(2) - 1;
+
+    unionRelative = [minCol, minRow, width, height];
+    unionGlobal = [newValue(1), newValue(2), width, height];
 
     newIdBase = sprintf('%s_cell%03d', roiObj.id, round(cellId));
     existingIds = string({fovObj.roi.id});
@@ -395,7 +465,12 @@ for idIdx = 1:numel(uniqueIds)
         'sourceROI', roiObj.id, ...
         'frames', find(presence)', ...
         'labelChannelIndex', pixIdx, ...
-        'labelChannelName', channelName);
+        'labelChannelName', channelName, ...
+        'boundingBoxesRelative', frameBoundsRelative, ...
+        'boundingBoxesGlobal', frameBoundsGlobal, ...
+        'boundingBoxUnionRelative', unionRelative, ...
+        'boundingBoxUnionGlobal', unionGlobal, ...
+        'boundingBoxOffsets', frameOffsets);
     ds.plotGroup = {[] [] [] [] [] {'present'}};
     ds.groupProperties = {'present','Plot','auto','auto'};
     newROI.data = ds;
@@ -414,6 +489,8 @@ for idIdx = 1:numel(uniqueIds)
     created(createdCount).frames = find(presence);
     created(createdCount).bbox = uint16([minCol, minRow, width, height]);
     created(createdCount).channel = channelName;
+    created(createdCount).frameBoundingBoxes = frameBoundsGlobal;
+    created(createdCount).frameOffsets = frameOffsets;
 
     processedFOV(end+1) = fovId; %#ok<AGROW>
 end

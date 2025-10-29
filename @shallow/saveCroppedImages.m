@@ -341,11 +341,18 @@ for idfov = 1:numel(fovid)
 
         for l = 1:numel(tmpfov(i).roi) % loop on all ROIs
             tmproi(l).path = fullfile(strpath, tmpfov(i).id);
-            rroi = tmproi(l).value;
+            rroi = double(tmproi(l).value);
+            bboxInfo = collectTrackedBoundingBoxes(tmproi(l));
+            if bboxInfo.hasTracking
+                rroi = bboxInfo.globalBox;
+            end
             % cropping data
             init = 0;
 
-      
+            targetHeight = uint16(max(1, round(scale * rroi(4))));
+            targetWidth = uint16(max(1, round(scale * rroi(3))));
+
+
 
             if ii ~= 1 % if not the first block, reload the 4D image to append data
                 try
@@ -369,10 +376,10 @@ for idfov = 1:numel(fovid)
                 if numel(tmproi(l).image) == 0
                     init = 1;
                 else
-                    roivalue = tmproi(l).value;
+                    roivalue = double(tmproi(l).value);
                     tm=size(tmproi(l).image);
 
-                    if tm(1) ~= uint16(round(scale * rroi(4))) || tm(2) ~= uint16(round(scale * rroi(3)))  || tm(3) ~= ccha %|| ~isequal(roivalue, uint16(scale * rroi))
+                    if tm(1) ~= targetHeight || tm(2) ~= targetWidth  || tm(3) ~= ccha %|| ~isequal(roivalue, uint16(scale * rroi))
                     %    tmproi(l).value = uint16(scale * rroi);
                  %   pause
                         init = 1;
@@ -381,9 +388,9 @@ for idfov = 1:numel(fovid)
                 tmproi(l).display.frame = nframesBlock(1);
             end
 
-     
+
             if init == 1
-                tmproi(l).image = uint16(zeros(uint16(scale * rroi(4)), uint16(scale * rroi(3)), ccha, numel(nframestot)));
+                tmproi(l).image = uint16(zeros(targetHeight, targetWidth, ccha, numel(nframestot)));
               %  tmproi(l).value = uint16(scale * rroi);
               %  pause
                 tmproi(l).display.channel = {};
@@ -430,16 +437,64 @@ for idfov = 1:numel(fovid)
             end
 
             % Test ROI value
-            rroitmp = [];
-            rroitmp(1) = max(rroi(1), 1);
-            rroitmp(2) = max(rroi(2), 1);
-            rroitmp(3) = min(rroi(1) + rroi(3) - 1, size(list, 2));
-            rroitmp(4) = min(rroi(2) + rroi(4) - 1, size(list, 1));
-            tmpfinal = list(rroitmp(2):rroitmp(4), rroitmp(1):rroitmp(3), :, :);
-            if scale ~= 1
-                tmpfinal = imresize(tmpfinal, scale);
+            if bboxInfo.hasTracking
+                canvasHeight = max(1, round(rroi(4)));
+                canvasWidth = max(1, round(rroi(3)));
+                blankCanvas = zeros(canvasHeight, canvasWidth, ccha, 'like', list);
+                for idxFrame = 1:numel(nframesBlock)
+                    frameId = nframesBlock(idxFrame);
+                    frameCanvas = blankCanvas;
+
+                    if frameId <= size(bboxInfo.frameBoxes, 1)
+                        frameBox = bboxInfo.frameBoxes(frameId, :);
+                        if all(isfinite(frameBox)) && all(frameBox(3:4) > 0)
+                            x1 = max(1, round(frameBox(1)));
+                            y1 = max(1, round(frameBox(2)));
+                            x2 = min(size(list, 2), round(frameBox(1) + frameBox(3) - 1));
+                            y2 = min(size(list, 1), round(frameBox(2) + frameBox(4) - 1));
+                            widthFrame = max(0, x2 - x1 + 1);
+                            heightFrame = max(0, y2 - y1 + 1);
+
+                            if widthFrame > 0 && heightFrame > 0
+                                patch = list(y1:y2, x1:x2, :, idxFrame);
+                                colOffset = 0;
+                                rowOffset = 0;
+
+                                colRange = colOffset + (1:widthFrame);
+                                rowRange = rowOffset + (1:heightFrame);
+
+                                frameCanvas(rowRange, colRange, :) = patch;
+                            end
+                        end
+                    end
+
+                    if scale ~= 1
+                        frameCanvas = imresize(frameCanvas, scale);
+                    end
+
+                    [frameHeightScaled, frameWidthScaled, ~] = size(frameCanvas);
+                    if frameHeightScaled ~= double(targetHeight) || frameWidthScaled ~= double(targetWidth)
+                        frameCanvas = imresize(frameCanvas, [double(targetHeight), double(targetWidth)]);
+                    end
+
+                    if frameId > size(tmproi(l).image, 4)
+                        continue;
+                    end
+
+                    tmproi(l).image(:,:,:,frameId) = frameCanvas;
+                end
+            else
+                rroitmp = [];
+                rroitmp(1) = max(rroi(1), 1);
+                rroitmp(2) = max(rroi(2), 1);
+                rroitmp(3) = min(rroi(1) + rroi(3) - 1, size(list, 2));
+                rroitmp(4) = min(rroi(2) + rroi(4) - 1, size(list, 1));
+                tmpfinal = list(rroitmp(2):rroitmp(4), rroitmp(1):rroitmp(3), :, :);
+                if scale ~= 1
+                    tmpfinal = imresize(tmpfinal, scale);
+                end
+                tmproi(l).image(:,:,:,nframesBlock) = tmpfinal;
             end
-            tmproi(l).image(:,:,:,nframesBlock) = tmpfinal;
 
             try
                 tmproi(l).save;
@@ -474,6 +529,71 @@ if exist(fullfile(userpath, 'tmpcrash.mat'), 'file') % remove temporary crash fi
 end
 
 toc;
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+function info = collectTrackedBoundingBoxes(roiObj)
+    info = struct('hasTracking', false, 'globalBox', double(roiObj.value), ...
+        'frameBoxes', [], 'frameOffsets', [], 'presence', []);
+
+    try
+        if isempty(roiObj.data) || (numel(roiObj.data) == 1 && isempty(roiObj.data(1).data))
+            roiObj.load('data');
+        end
+    catch
+        return;
+    end
+
+    if isempty(roiObj.data)
+        return;
+    end
+
+    idx = find(arrayfun(@(x) isprop(x, 'groupid') && strcmp(x.groupid, 'cell_presence'), roiObj.data), 1, 'first');
+    if isempty(idx)
+        return;
+    end
+
+    ds = roiObj.data(idx);
+    if ~isstruct(ds.userData)
+        return;
+    end
+
+    requiredFields = {'boundingBoxesGlobal', 'boundingBoxOffsets', 'boundingBoxUnionGlobal', 'boundingBoxUnionRelative'};
+    for k = 1:numel(requiredFields)
+        if ~isfield(ds.userData, requiredFields{k})
+            return;
+        end
+    end
+
+    frameBoxes = double(ds.userData.boundingBoxesGlobal);
+    offsets = double(ds.userData.boundingBoxOffsets);
+
+    if isempty(frameBoxes) || size(frameBoxes, 2) ~= 4
+        return;
+    end
+
+    if size(offsets, 1) < size(frameBoxes, 1)
+        offsets(size(frameBoxes, 1), 2) = NaN;
+    end
+
+    presence = all(isfinite(frameBoxes), 2) & frameBoxes(:, 3) > 0 & frameBoxes(:, 4) > 0;
+
+    if ~any(presence)
+        info.frameBoxes = frameBoxes;
+        info.frameOffsets = offsets;
+        info.presence = presence;
+        return;
+    end
+
+    unionGlobal = double(ds.userData.boundingBoxUnionGlobal);
+    if numel(unionGlobal) == 4 && all(isfinite(unionGlobal))
+        info.globalBox = unionGlobal;
+    end
+
+    info.hasTracking = true;
+    info.frameBoxes = frameBoxes;
+    info.frameOffsets = offsets;
+    info.presence = presence;
+end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 function newObj = propValues(newObj, orgObj)
