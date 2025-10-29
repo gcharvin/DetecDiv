@@ -7,52 +7,57 @@ function hImage = loadData_preview(app, parsedData, posIndex, channelIndex, slid
     if isempty(lastParams)
         lastParams = [NaN, NaN, NaN];
     end
-% forceUpdate
-%     % Si forceUpdate est false et que les indices n'ont pas changé, on redessine uniquement les ROI.
-%     if ~forceUpdate && posIndex == lastParams(1) && channelIndex == lastParams(2) && sliderFrame == lastParams(3)
-%         %drawROIs(app, parsedData, [], ax);
-%         drawROIs(app, parsedData, ax, [], posIndex);
-%         'okforce'
-%         return;
-%     end
     lastParams = [posIndex, channelIndex, sliderFrame];
 
-    
     if ~isfield(parsedData,'positions') || numel(parsedData.positions)==0
         disp('No position to display; quitting...');
         return; 
     end
-
-    % --- [Code existant de lecture et affichage de l'image] ---
     if posIndex > numel(parsedData.positions)
         error('posIndex (%d) excède le nombre de positions (%d).', posIndex, numel(parsedData.positions));
     end
+
     posData = parsedData.positions(posIndex);
+
     if channelIndex > numel(posData.channelsDir)
         error('channelIndex (%d) excède le nombre de canaux (%d) pour la position %d.', ...
               channelIndex, numel(posData.channelsDir), posIndex);
     end
-    channelFiles = posData.channelsDir{channelIndex};
+
+    % fréquence d'acquisition (frames sautées)
     if isfield(posData, 'channelFrequencies') && numel(posData.channelFrequencies) >= channelIndex
         freq = posData.channelFrequencies(channelIndex);
+        if isempty(freq) || isnan(freq) || freq<=0
+            freq = 1;
+        end
     else
         freq = 1;
     end
+
     effectiveFrame = round(sliderFrame / freq);
+    channelFiles = posData.channelsDir{channelIndex};
     effectiveFrame = max(1, min(effectiveFrame, numel(channelFiles)));
-    fileDetail = channelFiles(effectiveFrame);
-    filePath = fullfile(fileDetail.folder, fileDetail.name);
+
+    % --- Titre temporaire pendant lecture ---
+    chanName = 'Channel ?';
+    if isfield(posData,'userChanName') && numel(posData.userChanName) >= channelIndex
+        chanName = posData.userChanName{channelIndex};
+    end
+    txt = sprintf('Reading frame: %d  position: %s  channel: %s', ...
+                   sliderFrame, posData.userName, chanName);
+    title(ax, regexprep(txt, '\n',' '), 'Interpreter', 'none');
+    pause(0.05);
+
+    % --- Lire l'image via le reader unifié ---
     try
-        str = ['Reading frame: ' num2str(sliderFrame) '  position: ' posData.userName '  channel: ' posData.userChanName{channelIndex}];
-        str = regexprep(str, '\n', ' ');
-        title(ax, str, 'Interpreter', 'none');
-        pause(0.1);
-        img = imread(filePath);
+        img = loadData_readFrameFromParsed(posData, channelIndex, effectiveFrame);
     catch ME
-        warning('Erreur lors de la lecture du fichier %s: %s', filePath, ME.message);
+        warning('Erreur lecture image: %s', ME.message);
         title(ax, 'Reading image failed...');
         img = [];
     end
+
+    % --- Post-traitement d'affichage (stretchlim) ---
     if ~isempty(img)
         if size(img,3)==1
             lims = stretchlim(img, [0.01 0.99]);
@@ -64,14 +69,20 @@ function hImage = loadData_preview(app, parsedData, posIndex, channelIndex, slid
             end
         end
     end
+
+    % --- Affichage / mise à jour ---
     if isempty(hImage) || ~ishandle(hImage)
         hImage = imshow(img, 'Parent', ax, 'InitialMagnification', 'fit');
     else
         set(hImage, 'CData', img);
     end
+
     title(ax, ' ');
+
+    % overlay ROI
     drawROIs(app, parsedData, ax, img, posIndex);
 end
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 function drawROIs(app, parsedData, ax, img, posIndex)

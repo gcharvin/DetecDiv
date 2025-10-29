@@ -1,102 +1,92 @@
 classdef fov < handle
     properties
-        srcpath={''}; % source directory that contains source images; may be updated each time the user loads the project
-        srclist={}; % source file names 
-        channel={}; %channel names when importing images
-        frames=[];
-        interval=[];
-        binning=[];
-        orientation=0;
-        contours=[]; % in case phylocontours are attached to a fov
-        tag='Field of view';
-        comments='';
-        flaggedROIs=[];
-        display=struct('intensity',1,'frame',1,'selectedchannel',1,'binning',1); % Intensity is the scaling applied for each channel
-        % binning=1;
-        id=''; % id string that is specific of each field of view
-        %pathname={''};
-        roi=roi('',[]);
-        number=1;
-        crop=[]; %cropping area for fov
-        pattern=[];
-        drift=[] %  2D vector that specifies how to translate image to suppress stage reporducibility errors
-        parent=[];
+        % --- données d'acquisition / source ---
+        srcpath    = {''};   % cell{ch} : dossier d'origine des images (ou du tiff)
+        srclist    = {};     % cell{ch} : struct array façon dir() pour chaque frame de ce canal
+        channel    = {};     % cell{ch} : noms utilisateurs des canaux ('Channel0', ...)
+        frames     = [];     % frames(ch) = nb de frames pour ce canal
+        interval   = [];     % interval(ch) = "période" relative d'acquisition
+        binning    = [];
+        orientation = 0;
+
+        % --- annotations / suivi ---
+        contours    = [];
+        tag         = 'Field of view';
+        comments    = '';
+        flaggedROIs = [];
+        display     = struct('intensity',1,'frame',1,'selectedchannel',1,'binning',1);
+        id          = '';
+        roi         = roi('',[]);
+        number      = 1;
+        crop        = [];
+        pattern     = [];
+        drift       = [];    % [dx dy] pour correction de dérive
+        parent      = [];
+
+        % --- NOUVEAU: support natif du multi-TIFF ---
+        % Si true, ce FOV ne correspond pas à une série de fichiers individuels,
+        % mais à un (ou plusieurs) gros TIFF empilés.
+        % Dans ce cas srclist{i}(f).name est "virtuel" (ex: base_channel000_time...), pas physiquement présent.
+        isMultiTiff = false;     % bool
+        tiffSource  = {};        % cell{ch}: chemin complet du/ des gros .tif réels
+        pageMap     = {};        % cell{ch}: pageMap{ch}(f) = index de page TIFF à lire via imread(tiffSource{ch}, page)
+                                 % longueur(pageMap{ch}) == frames(ch)
     end
-    
+
     properties (Dependent)
-        channels
+        channels  % nb de canaux, juste un alias pratique
     end
-    
+
     methods
-        function obj = fov(comments) % filename contains a list of path to images used in the movi project
-            %obj.props.path=pathname;
-            %obj.props.name=filename;
-            
+        function obj = fov(comments)
             if nargin==0
-                % pathname={''};
-               % number=1;
-                comments='';
+                comments = '';
             end
-            obj.comments=comments;
-            
+            obj.comments = comments;
         end
-        function setpathlist(obj,pathname,number,filelist,name)
-            % pathname is a cell array of string with folder paths to
-            % channel images
-            
-            % number is the fov id number
-            
-            % filtlist is an extra argument to subselect files associated
-            % with different channels but in the same folder
-            
-            obj.srcpath=pathname;
-            obj.number=number;
-         %   [path , file ]=fileparts(pathname{1});
-            
-            obj.id=[name '_' num2str(number)];
 
-            for i=1:numel(pathname)
-                
-%                 list=dir([obj.srcpath{i} '/*.jpg']);
-%                 list=[list dir([obj.srcpath{i} '/*.tif'])];
-%                 
-%                 if numel(filtlist{i})
-%                 clist=struct2cell(list);
-%                 clist=clist(1,:);
-%                 
-%                 fi=true(ones(1,size(clist,2)));
-%                 temp=filtlist{i};
-%                 
-%                 for k=1:numel(filtlist{i})
-%                    
-%                   if ~iscell(filtlist{i})
-%                       tmp=filtlist{i};
-%                   else
-%                      tmp= filtlist{i}{k};
-%                      
-%                      if iscell(tmp)
-%                          tmp=tmp{1};
-%                      end
-%                   end
-%                   
-%                 occ=regexp(clist,tmp);
-%                 occ=arrayfun(@(x) numel(x{:}),occ)==1;
-%                 fi = fi & occ; % filtering files repeatedly
-%                 end
-%                 
-%                 list=list(fi);
-%              %   return;
-%                 end
-                
-                % here loop to find actual files 
-                
-                obj.srclist(i)=filelist(i);
+        function setpathlist(obj, pathname, number, filelist, name, varargin)
+            % setpathlist :
+            %   pathname : cell{ch} dossiers pour chaque canal
+            %   number   : index interne du FOV dans le projet
+            %   filelist : cell{ch} struct array (un élément par frame du canal)
+            %   name     : base name style 'Pos0'
+            %
+            %   varargin (optionnel) = mtInfo struct avec champs:
+            %       .isMultiTiff (bool)
+            %       .tiffSource  (cell{ch} chemins du gros TIFF)
+            %       .pageMap     (cell{ch} mapping frame->page TIFF)
+            %
+            % Rétro-compatible: si pas de mtInfo, on reste en mode "classique".
+
+            obj.srcpath = pathname;
+            obj.number  = number;
+            obj.id      = [name '_' num2str(number)];
+
+            % copier les listes de fichiers/frames par canal
+            for i = 1:numel(pathname)
+                obj.srclist(i) = filelist(i); % srclist{i} = struct array
             end
-            
 
+            % multi-tiff info ?
+            if ~isempty(varargin)
+                mtInfo = varargin{1};
+                if isfield(mtInfo,'isMultiTiff'), obj.isMultiTiff = logical(mtInfo.isMultiTiff); end
+                if isfield(mtInfo,'tiffSource'),  obj.tiffSource  = mtInfo.tiffSource;          end
+                if isfield(mtInfo,'pageMap'),     obj.pageMap     = mtInfo.pageMap;             end
+            end
+
+            % sécurité: toujours avoir une taille cohérente
+            if isempty(obj.tiffSource)
+                obj.tiffSource = cell(1, numel(pathname));
+            end
+            if isempty(obj.pageMap)
+                obj.pageMap = cell(1, numel(pathname));
+            end
         end
-        function value=get.channels(obj)
-            value=numel(obj.channel);
+
+        function value = get.channels(obj)
+            value = numel(obj.channel);
         end
     end
 end

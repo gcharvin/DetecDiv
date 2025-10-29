@@ -85,7 +85,7 @@ while ~success && attempts < max_attempts
        % end
 
     catch ME
-        disp(['Erreur lors de la sauvegarde de ' filename ' : ' ME.message]);
+        disp(['Erreur lors de la sauvegarde:' ME.message]);
         pause(0.5);  % attendre avant de réessayer
         attempts = attempts + 1;
     end

@@ -266,255 +266,203 @@ end
             file=obj.io.file;
         end
 
-%         function obj = setSrcPath(obj,option) %
-%             % this function will be written to ensure that source image path
-%             % can be updated when necessary
-%             % display current path for first channel of each FOV
-% 
-%             % option : path is changed at the command line. Default : GUI
-%             % change
-%             % HERE
-% 
-%             if numel(obj.fov(1).srcpath{1})~=0 % srce path has been set for at leats one FOV; update ?
-% 
-%                 for i=1:numel(obj.fov)
-%                     disp(['Path for FOV: ' num2str(i)])
-%                     disp([obj.fov(i).srcpath{1}]);
-%                 end
-%             else
-%                 disp('there is no path for FOVs; Quitting !');
-%                 return
-%             end
-% 
-% 
-%             %for i=1
-%             strpath=pwd;
-% 
-% %             prompt='Reassign FOV path all at once? [y/n] (Default: y)';
-% %             defaultclass= input(prompt,'s');
-% %             if numel(defaultclass)==0
-% %                 defaultclass='y';
-% %             end
-% 
-%          %   if strcmp(defaultclass,'y') % path is changed automatically for all FOVs
-% 
-% %                 prompt='Use GUI to change path [y/n] (Default: n)';
-% %                 guipath= input(prompt,'s');
-% %                 if numel(defaultclass)==0
-% %                     guipath='n';
-% %                 end
-% 
-%                 if nargin==1 % path is changed using GUI
-%                     for i=1:numel(obj.fov)
-%                         for k=1:numel(obj.fov(i).srcpath)
-%                             if i==1 && k==1
-% 
-%                                 prompt = {obj.fov(i).srcpath{k}};
-%                                 dlgtitle = 'Please enter the correct path for this directory (ignore / versus \):';
-%                                 dims = [1 150];
-%                                 definput = {obj.fov(i).srcpath{k}};
-%                                 answer = inputdlg(prompt,dlgtitle,dims,definput);
-% 
-%                                 if numel(answer)==0
-%                                     return;
-%                                 end
-% 
-%                                 oldpath=obj.fov(i).srcpath{k};
-%                                 % identidy part of the path to be changed: 
-%                                 str='';
-% 
-% 
-%                                 for n=0:numel(oldpath)-1
-%                                     str=oldpath(end-n:end);
-%                                     if numel(strfind(answer{1},str))==0
-%                                         break
-%                                     end
-%                                 end
-% 
-%                                 yo=oldpath(end-n+1:end);
-%                                 oldbase= oldpath(1:end-n);
-%                                 newbase=split(answer{1},yo);
-%                                 newbase=newbase{1};
-% 
-%                              %   strpath=uigetdir(strpath,'Input the base folder');
-% 
-%                               %  if strpath==0
-%                               %      return;
-%                               %  end
-% 
-% %                                 if ispc
-% %                                     p=strfind(strpath,'\');
-% %                                 else
-% %                                     p=strfind(strpath,'/') ;
-% %                                 end
-%                              %   basepath=strpath(1:p(end-1)-1);
-% 
-%                             end
-% 
-%                             tmp=obj.fov(i).srcpath{k};
-%                             sp=split(tmp,oldbase);
-%                             kep=sp{2};
-% 
-%                        %    if ispc
-%                        %        p=strfind(tmp,'\');
-%                        %    else
-%                       %          p=strfind(tmp,'/');
-%                       %     end
-% 
-%                        %     p
-%                       %      tmp=tmp(p(end-1):end);
-% 
-%                        %     finalpath=[basepath tmp];
-% 
-%                                finalpath=fullfile([newbase kep]);
-%                              %  return
-% 
-%                             if isfolder(finalpath)
-%                                 obj.fov(i).srcpath{k}=finalpath;
-% 
-%                            %     obj.fov(i).srcpath{k}
-%                            %    if ispc
-%                            %        obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'/','\');
-%                           %     else
-%                            %        obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'\','/');
-%                            %    end
-% 
-%                             else
-%                                 disp('Warning : this path does not exsit: cannot change it !');
-%                             end
-%                         end
-%                     end
-%                 else % path is changes as the command line
-%                     disp('Current source path for the FOV:')
-%                     disp(obj.fov(1).srcpath{1})
-%                     prompt='Type the part of the path to be changed:';
-%                     oldpath= input(prompt,'s');
-%                     if numel(oldpath)==0
-%                         return;
-%                     end
-%                     prompt='Type the new base path:';
-%                     newpath= input(prompt,'s');
-%                     if numel(newpath)==0
-%                         return;
-%                     end
-% 
-%                     for i=1:numel(obj.fov)
-%                         for k=1:numel(obj.fov(i).srcpath)
-%                             tmp=obj.fov(i).srcpath{k};
-%                             finalpath=replace(tmp,oldpath,newpath);
-% 
-%                             % if isfolder(finalpath)
-%                             obj.fov(i).srcpath{k}=finalpath;
-% 
-%                             if ispc
-%                                 obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'/','\');
-%                             else
-%                                 obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'\','/');
-%                             end
-% 
-%                             %       else
-%                             %           disp('Warning : this path does not exsit: cannot change it !');
-%                             % end
-%                         end
-%                     end
-%                     disp('Base path of FOVs succesfully changed! ');
-%                 end
-% 
-% %             else % path is changed manually for all FOVs / each channel
-% %                 
-% %                 prompt='Use GUI to change path [y/n] (Default: n)';
-% %                 guipath= input(prompt,'s');
-% %                 if numel(defaultclass)==0
-% %                     guipath='n';
-% %                 end
-% %                 
-% %                 if strcmp(guipath,'y') % path is changed using GUI
-% %                     for i=1:numel(obj.fov)
-% %                         for k=1:numel(obj.fov(i).srcpath)
-% %                             strpath=uigetdir(strpath);
-% %                             obj.fov(i).srcpath{k}=strpath;
-% %                             
-% %                             if ispc
-% %                                 obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'/','\');
-% %                             else
-% %                                 obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'\','/');
-% %                             end
-% %                         end
-% %                     end
-% %                 else % path is changes at the command line 
-% %                     for i=1:numel(obj.fov)
-% %                         
-% %                         disp(['Path for FOV: ' num2str(i)])
-% %                         disp(obj.fov(i).srcpath{1})
-% %                     prompt='Type the part of the path to be changed:';
-% %                     oldpath= input(prompt,'s');
-% %                     if numel(oldpath)==0
-% %                         return;
-% %                     end
-% %                     prompt='Type the new base path:';
-% %                     newpath= input(prompt,'s');
-% %                     if numel(newpath)==0
-% %                         return;
-% %                     end
-% %                     
-% %                     for k=1:numel(obj.fov(i).srcpath)
-% %                             tmp=obj.fov(i).srcpath{k};
-% %                             finalpath=replace(tmp,oldpath,newpath);
-% %                             
-% %                             % if isfolder(finalpath)
-% %                             obj.fov(i).srcpath{k}=finalpath;
-% %                             
-% %                             if ispc
-% %                                 obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'/','\');
-% %                             else
-% %                                 obj.fov(i).srcpath{k} = replace(obj.fov(i).srcpath{k},'\','/');
-% %                             end
-% %                             
-% %                             %       else
-% %                             %           disp('Warning : this path does not exsit: cannot change it !');
-% %                             % end
-% %                     end
-% %                         
-% %                     end
-% %                 end
-%            % end
-% 
-%             % displays new path and check integrity by loading images
-% 
-%             if numel(obj.fov(1).srcpath{1})~=0 % srce path has been set for at leats one FOV; update ?
-% 
-% %                 for i=1:numel(obj.fov)
-% %                     disp(['Path for FOV: ' num2str(i)])
-% %                     disp([obj.fov(i).srcpath{1}]);
-% %                     
-% %                     disp('Loading first image to check path integrity....');
-% %                     
-% %                     im=obj.fov(i).readImage(1,1);
-% %                     
-% %                     if numel(im)>0
-% %                         disp('Path is OK for this FOV');
-% %                         disp('-------------------------');
-% %                     end
-% %                 end
-% 
-% 
-%             else
-%                 disp('there is no path for FOVs; Quitting !');
-%                 return
-%             end
-% 
-% 
-%             % updates each FOV or all FOVs at once
-% 
-% 
-%             % make a loop on all FOV objects to adjust the path for these
-%             % sources objects
-% 
-%             %  obj.props.path=pathname;
-%             % obj.props.name=filename;
-% 
-%             %obj.io.path=path;
-%             %obj.io.file=file;
-%         end
+
+function disp(obj)
+    % Custom display for shallow objects
+
+    if numel(obj) > 1
+        fprintf('[%dx1] shallow objects array\n', numel(obj));
+        return;
+    end
+
+    s = obj; % alias
+
+    %================= HEADER =================
+    fprintf('==============================\n');
+    fprintf('  shallow project\n');
+    fprintf('==============================\n');
+
+    %% --- 1. Infos projet
+    projPath = '';
+    projFile = '';
+    if isfield(s.io,'path') && ~isempty(s.io.path)
+        projPath = strsafe(s.io.path);
+    end
+    if isfield(s.io,'file') && ~isempty(s.io.file)
+        projFile = strsafe(s.io.file);
+    end
+
+    fprintf('Project file : %s\n', projFile);
+    fprintf('Project path : %s\n', projPath);
+    fprintf('\n');
+
+    %% --- 2. Processing overview
+    fprintf('Processing:\n');
+
+    %=== Processors ===
+    nProc = 0;
+    if isfield(s.processing,'processor') && ~isempty(s.processing.processor)
+        nProc = numel(s.processing.processor);
+    end
+    fprintf('  - %d processor(s)\n', nProc);
+
+    if nProc > 0
+        % header processors
+        fprintf('      %-4s %-20s %-28s %-15s\n', 'Idx', 'Name', 'Function', 'Category');
+        for ip = 1:nProc
+            p = s.processing.processor(ip);
+
+            % Index
+            idxStr = num2str(ip);
+
+            % Name (prefer strid, fallback id)
+            pName = '';
+            if isprop(p,'strid') && ~isempty(p.strid)
+                pName = strsafe(p.strid);
+            elseif isprop(p,'id')
+                pName = ['id=' strsafe(num2str(p.id))];
+            else
+                pName = ['processor_' num2str(ip)];
+            end
+
+            % Function
+            pFun = '';
+            if isprop(p,'processFun') && ~isempty(p.processFun)
+                pFun = strsafe(p.processFun);
+            end
+
+            % Category
+            pCat = '';
+            if isprop(p,'category') && ~isempty(p.category)
+                pCat = strsafe(p.category);
+            end
+
+            fprintf('      %-4s %-20s %-28s %-15s\n', idxStr, pName, pFun, pCat);
+        end
+    end
+    fprintf('\n');
+
+    %=== Classifications ===
+    nClass = 0;
+    nClassRoiTotal = 0;
+    if isfield(s.processing,'classification') && ~isempty(s.processing.classification)
+        nClass = numel(s.processing.classification);
+    end
+
+    fprintf('  - %d classification(s)\n', nClass);
+    if nClass > 0
+        % header classifications
+        fprintf('      %-4s %-25s %-12s %-6s\n', 'Idx', 'Name', 'Category', '#ROI');
+
+        for ic = 1:nClass
+            c = s.processing.classification(ic);
+
+            % handle invalid
+            if isobject(c) && isprop(c,'isvalid') && ~isvalid(c)
+                fprintf('      %-4s %-25s %-12s %-6s\n', ...
+                        num2str(ic), '[invalid]', '', '');
+                continue;
+            end
+
+            % Name
+            cName = '';
+            if isprop(c,'strid') && ~isempty(c.strid)
+                cName = strsafe(c.strid);
+            elseif isprop(c,'id')
+                cName = ['class_' strsafe(num2str(c.id))];
+            else
+                cName = ['classif_' num2str(ic)];
+            end
+
+            % Category
+            cCat = '';
+            if isprop(c,'category') && ~isempty(c.category)
+                cCat = strsafe(c.category);
+            end
+
+            % #ROI
+            nRoiC = 0;
+            if isprop(c,'roi') && ~isempty(c.roi)
+                try
+                    nRoiC = numel(c.roi);
+                catch
+                end
+            end
+            nClassRoiTotal = nClassRoiTotal + nRoiC;
+
+            fprintf('      %-4d %-25s %-12s %-6d\n', ic, cName, cCat, nRoiC);
+        end
+    end
+
+    fprintf('    total classified ROI(s): %d\n', nClassRoiTotal);
+    fprintf('\n');
+
+    %% --- 3. Positions / FOVs
+    nPos = 0;
+    if ~isempty(s.fov)
+        nPos = numel(s.fov);
+    end
+
+    fprintf('Positions (FOVs): %d\n', nPos);
+    if nPos > 0
+        % header FOVs
+        fprintf('      %-4s %-20s %-25s %-6s\n', 'Idx', 'FOV_id', 'Name', '#ROI');
+
+        for ip = 1:nPos
+            thisFov = s.fov(ip);
+
+            % #ROI
+            nRoiHere = 0;
+            if isprop(thisFov,'roi') && ~isempty(thisFov.roi)
+                nRoiHere = numel(thisFov.roi);
+            end
+
+            % FOV id
+            fov_id = '';
+            if isprop(thisFov,'id') && ~isempty(thisFov.id)
+                fov_id = strsafe(thisFov.id);
+            end
+
+            % user-visible name
+            fov_name = '';
+            if isprop(thisFov,'name') && ~isempty(thisFov.name)
+                fov_name = strsafe(thisFov.name);
+            elseif isprop(thisFov,'userName') && ~isempty(thisFov.userName)
+                fov_name = strsafe(thisFov.userName);
+            end
+
+            fprintf('      %-4d %-20s %-25s %-6d\n', ip, fov_id, fov_name, nRoiHere);
+        end
+    end
+
+    fprintf('==============================\n');
+
+    %% --- helper local ---
+    function out = strsafe(x)
+        if isempty(x)
+            out = '';
+        elseif ischar(x)
+            out = x;
+        elseif isstring(x)
+            x = x(:);
+            out = strjoin(cellstr(x), ', ');
+        elseif iscell(x)
+            try
+                out = strjoin(cellfun(@strsafe, x, 'UniformOutput', false), ', ');
+            catch
+                out = '[cell]';
+            end
+        elseif isnumeric(x)
+            out = num2str(x);
+        else
+            out = class(x);
+        end
+    end
+end
+
+
+
+
+
     end
 end
