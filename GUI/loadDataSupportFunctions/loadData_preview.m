@@ -1,22 +1,35 @@
 function hImage = loadData_preview(app, parsedData, posIndex, channelIndex, sliderFrame, ax, hImage, forceUpdate)
+    % loadData_preview
+    % Affiche une frame donnée (sliderFrame) d'une position (posIndex) et
+    % d'un canal (channelIndex) dans l'axe ax, avec mise à jour du handle hImage.
+    %
+    % Cette version gère :
+    %   - les FOV déjà présentes dans le projet shallow (lecture via fov.readImage)
+    %   - les nouvelles positions multitiff non encore importées
+    %   - les nouvelles positions basées sur des fichiers individuels
+    %
+    % app.shallowObj doit exister si on prévisualise une FOV déjà importée.
+
     if nargin < 8
         forceUpdate = false;
     end
 
+    % -- On garde un cache de derniers paramètres pour éventuellement éviter du redraw
     persistent lastParams
     if isempty(lastParams)
         lastParams = [NaN, NaN, NaN];
     end
     lastParams = [posIndex, channelIndex, sliderFrame];
 
+    % --- sécurité basique ---
     if ~isfield(parsedData,'positions') || numel(parsedData.positions)==0
         disp('No position to display; quitting...');
-        return; 
+        return;
     end
     if posIndex > numel(parsedData.positions)
-        error('posIndex (%d) excède le nombre de positions (%d).', posIndex, numel(parsedData.positions));
+        error('posIndex (%d) excède le nombre de positions (%d).', ...
+              posIndex, numel(parsedData.positions));
     end
-
     posData = parsedData.positions(posIndex);
 
     if channelIndex > numel(posData.channelsDir)
@@ -24,45 +37,170 @@ function hImage = loadData_preview(app, parsedData, posIndex, channelIndex, slid
               channelIndex, numel(posData.channelsDir), posIndex);
     end
 
-    % fréquence d'acquisition (frames sautées)
+    %========================
+    % 1. Calcul de la frame logique à afficher
+    %========================
     if isfield(posData, 'channelFrequencies') && numel(posData.channelFrequencies) >= channelIndex
         freq = posData.channelFrequencies(channelIndex);
-        if isempty(freq) || isnan(freq) || freq<=0
-            freq = 1;
-        end
     else
         freq = 1;
     end
-
     effectiveFrame = round(sliderFrame / freq);
-    channelFiles = posData.channelsDir{channelIndex};
-    effectiveFrame = max(1, min(effectiveFrame, numel(channelFiles)));
-
-    % --- Titre temporaire pendant lecture ---
-    chanName = 'Channel ?';
-    if isfield(posData,'userChanName') && numel(posData.userChanName) >= channelIndex
-        chanName = posData.userChanName{channelIndex};
-    end
-    txt = sprintf('Reading frame: %d  position: %s  channel: %s', ...
-                   sliderFrame, posData.userName, chanName);
-    title(ax, regexprep(txt, '\n',' '), 'Interpreter', 'none');
-    pause(0.05);
-
-    % --- Lire l'image via le reader unifié ---
-    try
-        img = loadData_readFrameFromParsed(posData, channelIndex, effectiveFrame);
-    catch ME
-        warning('Erreur lecture image: %s', ME.message);
-        title(ax, 'Reading image failed...');
-        img = [];
+    if effectiveFrame < 1
+        effectiveFrame = 1;
     end
 
-    % --- Post-traitement d'affichage (stretchlim) ---
+    %========================
+    % 2. Essayer de trouver si cette position correspond à une FOV
+    %    déjà dans le projet shallow
+    %========================
+    fovMatch = [];
+    if ~isempty(app.shallowObj) && isa(app.shallowObj,'shallow') && isprop(app.shallowObj,'fov') && ~isempty(app.shallowObj.fov)
+        % on suppose: posData.userName == shallowObj.fov(k).id
+        if isfield(posData,'userName') && ~isempty(posData.userName)
+            for kk = 1:numel(app.shallowObj.fov)
+                if isprop(app.shallowObj.fov(kk),'id') && strcmp(app.shallowObj.fov(kk).id, posData.userName)
+                    fovMatch = app.shallowObj.fov(kk);
+                    break;
+                end
+            end
+        end
+    end
+
+    %========================
+    % 3. Lecture de l'image
+    %========================
+    img = [];
+
+    if ~isempty(fovMatch)
+        % -------- CAS "position déjà présente dans le projet" --------
+        % on s'appuie sur fov.readImage pour gérer automatiquement
+        % multitiff, frames, etc.
+        try
+            % clamp frame à ce que le fov connaît
+            totalFramesForChan = 1;
+            if numel(fovMatch.frames) >= channelIndex
+                totalFramesForChan = fovMatch.frames(channelIndex);
+            elseif ~isempty(fovMatch.frames)
+                totalFramesForChan = max(fovMatch.frames);
+            end
+            if effectiveFrame > totalFramesForChan
+                effectiveFrame = totalFramesForChan;
+            end
+
+            img = fovMatch.readImage(effectiveFrame, channelIndex);
+
+            % titre overlay
+            if isfield(posData,'userChanName') && numel(posData.userChanName)>=channelIndex
+                chName = posData.userChanName{channelIndex};
+            else
+                chName = sprintf('Channel%d', channelIndex-1);
+            end
+            str = sprintf('Reading frame %d (pos %s / chan %s)', ...
+                          sliderFrame, posData.userName, chName);
+            title(ax, str, 'Interpreter','none');
+
+        catch ME
+            warning('Erreur lecture image (FOV project mode): %s', ME.message);
+            title(ax, 'Reading image failed...');
+            img = [];
+        end
+
+    else
+        % -------- CAS "nouvelle position pas encore importée dans shallowObj" --------
+        % Deux sous-cas possibles :
+        %   (A) multitiff unique (pas encore éclaté en fichiers physiques)
+        %   (B) vraies images individuelles sur disque
+
+        channelFiles = posData.channelsDir{channelIndex};
+        nFiles = numel(channelFiles);
+
+        if nFiles < 1
+            warning('No files available for this channel.');
+            img = [];
+        else
+            effectiveFrame = min(effectiveFrame, nFiles);
+        end
+
+        try
+            % ---- Sous-cas (A) multitiff virtuel ----
+            if isfield(posData,'isMultiTiff') && posData.isMultiTiff && ...
+               isfield(posData,'multiTiffPath') && ~isempty(posData.multiTiffPath) && ...
+               exist(posData.multiTiffPath,'file')
+
+                % nombre total de canaux dans ce multitiff
+                if isfield(posData,'numChannels') && ~isempty(posData.numChannels)
+                    nChanTotal = posData.numChannels;
+                else
+                    nChanTotal = numel(posData.channelsDir);
+                end
+
+                % index dans la pile TIFF:
+                % ordre supposé: t1 ch1,ch2,...,chN; t2 ch1,ch2,... etc.
+                pix = (effectiveFrame-1)*nChanTotal + channelIndex;
+
+                img = imread(posData.multiTiffPath,'tif',pix);
+
+                % titre preview
+                if isfield(posData,'userChanName') && numel(posData.userChanName)>=channelIndex
+                    chName = posData.userChanName{channelIndex};
+                else
+                    chName = sprintf('Channel%d', channelIndex-1);
+                end
+                str = sprintf('Reading frame %d (pos %s / chan %s) [multitiff preview]', ...
+                              sliderFrame, posData.userName, chName);
+                title(ax, str, 'Interpreter','none');
+
+            else
+                % ---- Sous-cas (B) fichiers physiques par frame ----
+                fileDetail = channelFiles(effectiveFrame);
+
+                % certains structs n'ont pas .folder (selon comment on les a créés)
+                if isfield(fileDetail,'folder') && ~isempty(fileDetail.folder)
+                    baseFolder = fileDetail.folder;
+                elseif isfield(posData,'folder') && ~isempty(posData.folder)
+                    baseFolder = posData.folder;
+                else
+                    baseFolder = '';
+                end
+
+                if isfield(fileDetail,'name')
+                    thisName = fileDetail.name;
+                else
+                    thisName = '';
+                end
+
+                filePath = fullfile(baseFolder, thisName);
+
+                img = imread(filePath);
+
+                if isfield(posData,'userChanName') && numel(posData.userChanName)>=channelIndex
+                    chName = posData.userChanName{channelIndex};
+                else
+                    chName = sprintf('Channel%d', channelIndex-1);
+                end
+                str = sprintf('Reading frame %d (pos %s / chan %s)', ...
+                              sliderFrame, posData.userName, chName);
+                title(ax, str, 'Interpreter','none');
+            end
+
+        catch ME
+            warning('Erreur lecture image (new position preview): %s', ME.message);
+            title(ax, 'Reading image failed...');
+            img = [];
+        end
+    end
+
+    %========================
+    % 4. Post-traitement contraste / dynamique
+    %========================
     if ~isempty(img)
-        if size(img,3)==1
+        if ndims(img)==2
+            % grayscale
             lims = stretchlim(img, [0.01 0.99]);
             img = imadjust(img, lims, []);
-        elseif size(img,3)==3
+        elseif ndims(img)==3 && size(img,3)==3
+            % RGB
             for c = 1:3
                 lims = stretchlim(img(:,:,c), [0.01 0.99]);
                 img(:,:,c) = imadjust(img(:,:,c), lims, []);
@@ -70,16 +208,21 @@ function hImage = loadData_preview(app, parsedData, posIndex, channelIndex, slid
         end
     end
 
-    % --- Affichage / mise à jour ---
+    %========================
+    % 5. Affichage effectif dans l'axe dédié
+    %========================
     if isempty(hImage) || ~ishandle(hImage)
         hImage = imshow(img, 'Parent', ax, 'InitialMagnification', 'fit');
     else
         set(hImage, 'CData', img);
     end
 
+    % on efface le titre "temporaire loading"
     title(ax, ' ');
 
-    % overlay ROI
+    %========================
+    % 6. Dessin des ROIs (bordures vertes / rouges etc.)
+    %========================
     drawROIs(app, parsedData, ax, img, posIndex);
 end
 
