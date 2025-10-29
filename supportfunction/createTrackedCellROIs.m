@@ -44,6 +44,10 @@ arguments
     shallowObj (1,1) shallow
 end
 
+arguments (Repeating)
+    varargin
+end
+
 p = inputParser;
 p.addParameter('FOV', [], @(x) isempty(x) || (isnumeric(x) && all(x>=1)));
 p.addParameter('ROI', [], @(x) isempty(x) || isnumeric(x) || iscell(x));
@@ -358,6 +362,9 @@ for idIdx = 1:numel(uniqueIds)
         newId = sprintf('%s_%d', newIdBase, suffix);
     end
 
+    parentHandle = roiObj;
+    parentValue = roiObj.value;
+
     fovObj.addROI(newValue, fovObj.id);
     newIdx = numel(fovObj.roi);
     newROI = fovObj.roi(newIdx);
@@ -365,6 +372,17 @@ for idIdx = 1:numel(uniqueIds)
     newROI.value = newValue;
     newROI.parent = fovObj;
     newROI.display.frame = find(presence, 1, 'first');
+
+    if parentROIIndex <= numel(fovObj.roi) && fovObj.roi(parentROIIndex) ~= parentHandle
+        warning('createTrackedCellROIs:ParentROIReplaced', ...
+            ['Parent ROI %s in FOV %s was replaced while creating tracked cell ROIs. ' ...
+             'Restoring the original parent ROI handle.'], roiObj.id, fovObj.id);
+        fovObj.roi(parentROIIndex) = parentHandle;
+    end
+
+    if ~isequal(roiObj.value, parentValue)
+        roiObj.value = parentValue;
+    end
 
     ds = dataseries;
     ds.class = "other";
