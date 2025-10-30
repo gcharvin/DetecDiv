@@ -71,7 +71,7 @@ for i=1:numel(varargin)
         roiwithgt=1;
     end
 
-     if strcmp(varargin{i},'GPU') % classify with GPU
+    if strcmp(varargin{i},'GPU') % classify with GPU
         gpu=1;
     end
 end
@@ -117,7 +117,7 @@ if mustload==1
     if numel(classifierStore)==0
         disp('WARNING : could not load main classifier....');
         %%
-       % return;
+        % return;
     end
 end
 
@@ -138,7 +138,7 @@ end
 
 
 if numel(channel)<numel(roiobj) % in case user forces to classify everything
-channel(numel(channel)+1:numel(roiobj))={channel{end}};
+    channel(numel(channel)+1:numel(roiobj))={channel{end}};
 end
 
 
@@ -222,14 +222,14 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
             end
         end
 
-        
+
         % check that the requested number of frames is compatible with that of
         % the roi
 
         if fra~=-1
-        fra=intersect(fra,1:size(roiobj(i).image,4));
+            fra=intersect(fra,1:size(roiobj(i).image,4));
         else
-        fra=1:size(roiobj(i).image,4);
+            fra=1:size(roiobj(i).image,4);
         end
 
 
@@ -249,33 +249,32 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
 
         if para % parallel computing
             if numel(classifierCNN)
-%                 if numel(roiobj(i).image)==0
-%                  roiobj(i).load;
-%                 end
+                %                 if numel(roiobj(i).image)==0
+                %                  roiobj(i).load;
+                %                 end
                 logparf(i)=parfeval(fhandle,2,roiobj(i),classi,classifierStore,'classifierCNN',classifierCNN,'Frames',fra,'Channel',cha,'Exec',gpu); % launch the training function for classification
             else
-%                  if numel(roiobj(i).image)==0
-%                  roiobj(i).load;
-%                  end
+                %                  if numel(roiobj(i).image)==0
+                %                  roiobj(i).load;
+                %                  end
 
                 %disp(['Starting classification of ' num2str(roiobj(i).id)]);
                 logparf(i)=parfeval(fhandle,2,roiobj(i),classi,classifierStore,'Frames',fra,'Channel',cha,'Exec',gpu); % launch the training function for classification
             end
         else
-        
             if  numel(classifierCNN)
-               [data,image]=feval(fhandle,roiobj(i),classi,classifierStore,'classifierCNN',classifierCNN,'Frames',fra,'Channel',cha,'Exec',gpu); % launch the training function for classification
+                [data,image]=feval(fhandle,roiobj(i),classi,classifierStore,'classifierCNN',classifierCNN,'Frames',fra,'Channel',cha,'Exec',gpu); % launch the training function for classification
                 disp(['Classified with separate CNN ' num2str(roiobj(i).id)]);
             else
-               [data,image]=feval(fhandle,roiobj(i),classi,classifierStore,'Frames',fra,'Channel',cha,'Exec',gpu); % launch the training function for classification
-           %    figure, imshow(image(:,:,4:6,1),[]);
+                [data,image]=feval(fhandle,roiobj(i),classi,classifierStore,'Frames',fra,'Channel',cha,'Exec',gpu); % launch the training function for classification
+                %    figure, imshow(image(:,:,4:6,1),[]);
                 disp(['Classified' num2str(roiobj(i).id)]);
             end
 
             % manage ROI here
-     
+
             ROIManagement(roiobj(i),data,image)
-           
+
         end
 
     elseif goclassif==0
@@ -299,15 +298,15 @@ if para % parallel computing
         p.Message='Waiting for job to complete...';
     end
 
-%wait(logparf);
+    %wait(logparf);
 
-for i=1:numel(logparf)
- %   [results,image]=fetchOutputs(logparf(i));
+    for i=1:numel(logparf)
+        %   [results,image]=fetchOutputs(logparf(i));
 
-    [idx,data,image]=fetchNext(logparf(i));
+        [idx,data,image]=fetchNext(logparf(i));
 
-    ROIManagement(roiobj(idx),data, image);
-end
+        ROIManagement(roiobj(idx),data, image);
+    end
 end
 
 if numel(p)
@@ -315,171 +314,157 @@ if numel(p)
     p.Message='Saving project...Please wait...';
 end
 
+end
 
-function ROIpreprocessing(roiobj,classif)
-% in case of pixel segmentation 
 
-% check whether output is segmentation, proba, or postprocessing
-if strcmp(classif.category,'Pixel')
-    gfp=roiobj.image;
+function ROIpreprocessing(roiobj, classif)
+% Prépare les canaux "results_*" dans roiobj avant classification
+% (création ou reset des channels résultats + gestion de l'affichage)
 
-  if ~strcmp(classif.description{3},'Solov2')  
-switch classif.outputType
-    case {'proba',''} % outputs proba of classes
-        pixresults=[];
-        for i=1:numel(classif.classes)
-            pixresultstmp=findChannelID(roiobj,['results_' classif.strid '_' classif.classes{i}]); % gather all channels associated with proba
-            
-            if numel(pixresultstmp)==0 % channel does not exist, hence create them
-                matrix=uint16(zeros(size(gfp,1),size(gfp,2),1,size(gfp,4)));
-                rgb=[1 1 1];
+    % On ne fait quelque chose que pour les classifs Pixel
+    if ~strcmp(classif.category, 'Pixel')
+        return;
+    end
 
-                if ~strcmp(classif.description{3},'Yolov11')
-                intensity=[1 1 1]; % used to display grayscale image in .view
-                else
-                intensity=[0 0 0]; % in yolo the output is indexed image x number of classes
-                end
-                
-                roiobj.addChannel(matrix,['results_' classif.strid '_' classif.classes{i}],rgb,intensity);
-                
-                pixresults=[pixresults size(roiobj.image,3)];
-            else
-                
-                roiobj.image(:,:,pixresultstmp,:)=uint16(zeros(size(gfp,1),size(gfp,2),1,size(gfp,4)));
-                pixresults=[pixresults pixresultstmp];
-            end
+    gfp = roiobj.image;
+    nY  = size(gfp,1);
+    nX  = size(gfp,2);
+    nF  = size(gfp,4);
+
+    % --- Détection segmentation d'instances -------------------------
+    % Ces classif renvoient des masques indexés (instances),
+    % pas des cartes de proba par pixel.
+    isInstanceSeg = strcmp(classif.description{1}, 'YOLO instance segmentation') || ...
+                    strcmp(classif.description{1}, 'CellposeSAM')               || ...
+                    strcmp(classif.description{1}, 'Cell-TRACKTR');
+
+    if isInstanceSeg
+        % Cas "instance segmentation" -> un canal par classe
+        % et affichage en mode indexé (intensity = [0 0 0])
+        for c = 1:numel(classif.classes)
+            chname    = ['results_' classif.strid '_' classif.classes{c}];
+            rgb       = [1 1 1];
+            intensity = [0 0 0];  % masque indexé
+            ensureResultChannel(roiobj, chname, rgb, intensity, nY, nX, nF);
         end
-        
-    otherwise %  outputs segmentation or segmentation after postprocessing
 
-        if strcmp(classif.description{1},'YOLO instance segmentation') || strcmp(classif.description{1},'CellposeSAM') || strcmp(classif.description{1},'Cell-TRACKTR')
+        return; % IMPORTANT : on ne poursuit pas plus loin
+    end
 
-          
-pixresults = [];
+    
+    % --- Pas une segmentation d'instances ---------------------------
+    % On retombe sur la logique historique fondée sur outputType.
 
-for i = 1:numel(classif.classes)
-    chname = ['results_' classif.strid '_' classif.classes{i}];
-    pixid  = findChannelID(roiobj, chname);
-    selectid=roiobj.channelid(pixid);
+    switch classif.outputType
 
-    % Valeurs voulues pour ces channels
-    rgb       = [1 1 1];
-    intensity = [0 0 0];
+        % ============================================================
+        % CAS outputType = 'proba' ou ''  => probas par classe
+        % ============================================================
+        case {'proba',''}
+
+            for c = 1:numel(classif.classes)
+                chname = ['results_' classif.strid '_' classif.classes{c}];
+                rgb    = [1 1 1];
+
+                % Par défaut les probas sont vues comme grayscale [1 1 1]
+                % Exception Yolov11 : on veut un masque indexé [0 0 0]
+                if ~strcmp(classif.description{3}, 'Yolov11')
+                    intensity = [1 1 1];
+                else
+                    intensity = [0 0 0];
+                end
+
+                ensureResultChannel(roiobj, chname, rgb, intensity, nY, nX, nF);
+            end
+
+
+        % ============================================================
+        % CAS outputType autre  => segmentation / postprocessing simple
+        % (un seul canal global)
+        % ============================================================
+        otherwise
+            chname = ['results_' classif.strid];
+            rgb    = [1 1 1];
+
+            % régression => image continue => intensity [1 1 1]
+            % sinon => masque indexé => [0 0 0]
+            if strcmp(classif.description{1}, 'Image pixel regression')
+                intensity = [1 1 1];
+            else
+                intensity = [0 0 0];
+            end
+
+            ensureResultChannel(roiobj, chname, rgb, intensity, nY, nX, nF);
+    end
+end
+
+
+function ensureResultChannel(roiobj, chname, rgb, intensity, nY, nX, nF)
+% Crée ou réinitialise un channel résultat dans roiobj avec le nom chname.
+% - Si le channel n'existe pas : on le crée + on initialise l'affichage.
+% - S'il existe déjà : on remet juste les pixels à zéro, on NE TOUCHE PAS
+%   à l'affichage (intensity/rgb) pour ne pas écraser d'éventuels réglages
+%   manuels faits précédemment.
+
+    pixid = findChannelID(roiobj, chname);
 
     if isempty(pixid)
-        % channel n'existe pas → le créer
-        matrix = uint16(zeros(size(gfp,1), size(gfp,2), 1, size(gfp,4)));
+        % ========== Canal inexistant -> création ==========
+        matrix = uint16(zeros(nY, nX, 1, nF));
         roiobj.addChannel(matrix, chname, rgb, intensity);
-        pixid = size(roiobj.image, 3);  % index du channel nouvellement ajouté
-        selectid=roiobj.channelid(pixid);
-        % On force quand même (au cas où addChannel ne propage pas)
-        [roiobj.display.rgb, roiobj.display.intensity] = ...
-           ensureDisplayRows(roiobj.display.rgb, roiobj.display.intensity, selectid);
-        roiobj.display.rgb(selectid, :)       = rgb;
-        roiobj.display.intensity(selectid, :) = intensity;
-         roiobj.display.selectedchannel(pixid)=true;
+        pixid = size(roiobj.image,3);
+    end
 
-    else
-        % channel existe → on remet les pixels à zéro et on force l'affichage
-        roiobj.image(:, :, pixid, :) = uint16(zeros(size(gfp,1), size(gfp,2), 1, size(gfp,4)));
+        % Initialiser les paramètres d'affichage pour ce nouveau channel
+        selectid = roiobj.channelid(pixid);
 
         [roiobj.display.rgb, roiobj.display.intensity] = ...
             ensureDisplayRows(roiobj.display.rgb, roiobj.display.intensity, selectid);
-        roiobj.display.rgb(selectid, :)       = rgb;
-        roiobj.display.intensity(selectid, :) = intensity;
-        roiobj.display.selectedchannel(selectid)=true;
 
-    end
+        roiobj.display.rgb(selectid, :)          = rgb;
+        roiobj.display.intensity(selectid, :)    = intensity;
+        roiobj.display.selectedchannel(selectid) = true;
 
-    pixresults = [pixresults pixid];
+   % else
+        % ========== Canal existant -> reset contenu uniquement ==========
+     %   roiobj.image(:,:,pixid,:) = uint16(zeros(nY, nX, 1, nF));
+
+        % Ici volontairement :
+        %   - PAS de réécriture de roiobj.display.rgb(...)
+        %   - PAS de réécriture de roiobj.display.intensity(...)
+        %   - PAS de réécriture selectedchannel(...)
+        %
+        % Ça évite d'écraser une intensity [0 0 0] correcte par [1 1 1]
+        % lors d'une reclassification, ou d'écraser un choix d'affichage manuel.
+    %end
 end
 
 
-        else
-        pixresults=findChannelID(roiobj,['results_' classif.strid]);
-        
-        if numel(pixresults)==0 % channels do not exist, hence create them
-            matrix=uint16(zeros(size(gfp,1),size(gfp,2),1,size(gfp,4)));
-            rgb=[1 1 1];
-              if strcmp(classif.description{1},'Image pixel regression')
-            intensity=[1 1 1]; % used to display indexed image in .view
-              else
-            intensity=[0 0 0]; % used to display indexed image in .view
-              end
-            
-            roiobj.addChannel(matrix,['results_' classif.strid],rgb,intensity);
-            
-            pixresults=size(roiobj.image,3);
-        else
-            roiobj.image(:,:,pixresults,:)=uint16(zeros(size(gfp,1),size(gfp,2),1,size(gfp,4)));
-
-        end
-        end
-end
-
-  else
-          pixresults=[];
-
-        for i=1:numel(classif.classes) % display one channel per class 
-            pixresultstmp=findChannelID(roiobj,['results_' classif.strid '_' classif.classes{i}]); % gather all channels associated with proba
-            
-            if numel(pixresultstmp)==0 % channel does not exist, hence create them
-                matrix=uint16(zeros(size(gfp,1),size(gfp,2),1,size(gfp,4)));
-                rgb=[1 1 1];
-                intensity=[0 0 0]; % used to display indexed image
-                
-                roiobj.addChannel(matrix,['results_' classif.strid '_' classif.classes{i}],rgb,intensity);
-                
-                pixresults=[pixresults size(roiobj.image,3)];
-            else
-                
-                roiobj.image(:,:,pixresultstmp,:)=uint16(zeros(size(gfp,1),size(gfp,2),1,size(gfp,4)));
-                pixresults=[pixresults pixresultstmp];
-            end
-        end
-
-        % add an additional channel that contains all objects for all
-        % classes
-
-            pixresultstmp=findChannelID(roiobj,['results_' classif.strid]); % gather all channels associated with proba
-            
-            if numel(pixresultstmp)==0 % channel does not exist, hence create them
-                matrix=uint16(zeros(size(gfp,1),size(gfp,2),1,size(gfp,4)));
-                rgb=[1 1 1];
-                intensity=[0 0 0]; % used to display indexed image
-                
-                roiobj.addChannel(matrix,['results_' classif.strid],rgb,intensity);
-                
-              %  pixresults=[pixresults size(roiobj.image,3)];
-            else
-                
-                roiobj.image(:,:,pixresultstmp,:)=uint16(zeros(size(gfp,1),size(gfp,2),1,size(gfp,4)));
-          %      pixresults=[pixresults pixresultstmp];
-            end
-
-
-  end
-end
-
-function ROIManagement(roiobj,data, image)
- roiobj.data=data; 
- roiobj.image=image; 
- 
- if numel(image)
- roiobj.save; % before we used to save the data only ('data')
- roiobj.clear,
- else
-roiobj.save('data');
- end
-%disp('You must save the shallow project to save these classified data !');
-
-
-% Helpers pour garantir que display.* ont assez de lignes
 function [rgbTab, intTab] = ensureDisplayRows(rgbTab, intTab, idx)
-    if isempty(rgbTab),  rgbTab = ones(0,3); end
-    if isempty(intTab),  intTab = ones(0,3); end
+% S'assure qu'il y a au moins 'idx' lignes dans display.rgb / display.intensity
+% en complétant avec des valeurs par défaut si besoin.
+
+    if isempty(rgbTab), rgbTab = ones(0,3); end
+    if isempty(intTab), intTab = ones(0,3); end
+
     need = max(0, idx - size(rgbTab,1));
     if need > 0
         rgbTab(end+1:idx, :) = 1;  % défaut: blanc
-        intTab(end+1:idx, :) = 0;  % défaut: intensité 1
+        intTab(end+1:idx, :) = 0;  % défaut: intensité nulle
     end
+end
+
+
+
+function ROIManagement(roiobj, data, image)
+    roiobj.data  = data;
+    roiobj.image = image;
+
+    if numel(image)
+        roiobj.save;   % on sauvegarde tout
+        roiobj.clear;
+    else
+        roiobj.save('data');  % seulement les métadonnées
+    end
+end
+

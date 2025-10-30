@@ -97,6 +97,9 @@ for i = 1:numel(fovid)
     idx = fovid(i);
     tmpfov(idx) = obj.fov(idx);
     for j = 1:numel(obj.fov(idx).roi)
+        if j == 1
+            continue; % keep the reference label ROI untouched
+        end
         obj.fov(idx).roi(j).path = fullfile(strpath, obj.fov(idx).id);
     end
 end
@@ -341,6 +344,10 @@ for idfov = 1:numel(fovid)
         end
 
         for l = 1:numel(tmpfov(i).roi) % loop on all ROIs
+            if l == 1
+                bboxCache{l} = [];
+                continue; % reference label ROI is read-only
+            end
             tmproi(l).path = fullfile(strpath, tmpfov(i).id);
             rroi = double(tmproi(l).value);
             bboxInfo = collectTrackedBoundingBoxes(tmproi(l));
