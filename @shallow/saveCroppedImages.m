@@ -8,7 +8,7 @@ function saveCroppedImages(obj, varargin)
 %                     with one element per FOV)
 %    'fov'          : indices of FOVs to process
 %    'cut'          : number of frames loaded at once (default 20)
-%    'correctdrift' : boolean indicating if drift correction should be applied (default true)
+%    'correctdrift' : boolean indicating if drift correction should be applied (default false)
 %    'cropdrift'    : cropping factor for drift (default 1)
 %    'crashrecovery': crash recovery flag (default 0)
 %    'channel'      : indices of channels to process (can be a vector or a cell array,
@@ -23,7 +23,7 @@ tic;
 frames = [];
 fovid = 1:numel(obj.fov);  % Process all FOVs by default
 cut = 20;
-correctdrift = true;
+correctdrift = false;
 crashrecovery = 0;
 cropDrift = 1;
 channels = [];
@@ -335,6 +335,7 @@ for idfov = 1:numel(fovid)
         reverseStr = '';
 
         tmproi = roi;
+        bboxCache = cell(1, numel(tmpfov(i).roi));
         for l = 1:numel(tmpfov(i).roi)
             tmproi(l) = tmpfov(i).roi(l);
         end
@@ -343,6 +344,7 @@ for idfov = 1:numel(fovid)
             tmproi(l).path = fullfile(strpath, tmpfov(i).id);
             rroi = double(tmproi(l).value);
             bboxInfo = collectTrackedBoundingBoxes(tmproi(l));
+            bboxCache{l} = bboxInfo;
             if bboxInfo.hasTracking
                 rroi = bboxInfo.globalBox;
             end
@@ -389,21 +391,36 @@ for idfov = 1:numel(fovid)
             end
 
 
+            if init == 1 && ~bboxInfo.hasTracking && ~isempty(tmproi(l).image)
+                currentSize = size(tmproi(l).image);
+                if numel(currentSize) >= 3 && currentSize(1) == targetHeight && currentSize(2) == targetWidth && currentSize(3) > ccha
+                    init = 0;
+                end
+            end
+
             if init == 1
-                tmproi(l).image = uint16(zeros(targetHeight, targetWidth, ccha, numel(nframestot)));
+                frameCapacity = numel(nframestot);
+                if bboxInfo.hasTracking && ~isempty(bboxInfo.lastFrame)
+                    frameCapacity = min(frameCapacity, bboxInfo.lastFrame);
+                end
+                tmproi(l).image = uint16(zeros(targetHeight, targetWidth, ccha, frameCapacity));
               %  tmproi(l).value = uint16(scale * rroi);
               %  pause
                 tmproi(l).display.channel = {};
-                tmproi(l).display.frame = nframesBlock(1);
+                if bboxInfo.hasTracking && ~isempty(bboxInfo.firstFrame)
+                    tmproi(l).display.frame = bboxInfo.firstFrame;
+                else
+                    tmproi(l).display.frame = nframesBlock(1);
+                end
                 tmproi(l).channelid = [];
                 tmproi(l).display.displaylim = [];
                 temp = [1 1 1];
                 ck = 1;
                 cumck = 1;
                 for k = cha
-            
+
                     if numel(tmpfov(i).channel{k}) == 0
-                       
+
                         tmproi(l).display.channel{ck} = ['Channel_' num2str(k)];
                     else
                         tmproi(l).display.channel{ck} = tmpfov(i).channel{k};
@@ -436,6 +453,10 @@ for idfov = 1:numel(fovid)
                 tmproi(l).save;
             end
 
+            if bboxInfo.hasTracking && ~isempty(bboxInfo.firstFrame)
+                tmproi(l).display.frame = bboxInfo.firstFrame;
+            end
+
             % Test ROI value
             if bboxInfo.hasTracking
                 canvasHeight = max(1, round(rroi(4)));
@@ -443,6 +464,9 @@ for idfov = 1:numel(fovid)
                 blankCanvas = zeros(canvasHeight, canvasWidth, ccha, 'like', list);
                 for idxFrame = 1:numel(nframesBlock)
                     frameId = nframesBlock(idxFrame);
+                    if bboxInfo.hasTracking && ~isempty(bboxInfo.lastFrame) && frameId > bboxInfo.lastFrame
+                        continue;
+                    end
                     frameCanvas = blankCanvas;
 
                     if frameId <= size(bboxInfo.frameBoxes, 1)
@@ -481,7 +505,7 @@ for idfov = 1:numel(fovid)
                         continue;
                     end
 
-                    tmproi(l).image(:,:,:,frameId) = frameCanvas;
+                    tmproi(l).image(:,:,1:ccha,frameId) = frameCanvas;
                 end
             else
                 rroitmp = [];
@@ -493,7 +517,7 @@ for idfov = 1:numel(fovid)
                 if scale ~= 1
                     tmpfinal = imresize(tmpfinal, scale);
                 end
-                tmproi(l).image(:,:,:,nframesBlock) = tmpfinal;
+                tmproi(l).image(:,:,1:ccha,nframesBlock) = tmpfinal;
             end
 
             try
@@ -510,6 +534,19 @@ for idfov = 1:numel(fovid)
     
     % Restore ROI object structure
     for l = 1:numel(tmpfov(i).roi)
+        bboxInfo = bboxCache{l};
+        if ~isempty(bboxInfo) && bboxInfo.hasTracking && ~isempty(bboxInfo.lastFrame)
+            try
+                tmproi(l).load;
+                if size(tmproi(l).image,4) > bboxInfo.lastFrame
+                    tmproi(l).image = tmproi(l).image(:,:,:,1:bboxInfo.lastFrame);
+                    tmproi(l).save;
+                end
+            catch
+                % ignore trimming errors and keep existing data
+            end
+            tmproi(l).clear;
+        end
         tmpfov(i).roi(l) = tmproi(l);
     end
 end
@@ -594,6 +631,73 @@ function info = collectTrackedBoundingBoxes(roiObj)
     info.frameBoxes = frameBoxes;
     info.frameOffsets = offsets;
     info.presence = presence;
+end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+function info = collectTrackedBoundingBoxes(roiObj)
+    info = struct('hasTracking', false, 'globalBox', double(roiObj.value), ...
+        'frameBoxes', [], 'frameOffsets', [], 'presence', [], 'firstFrame', [], 'lastFrame', []);
+
+    try
+        if isempty(roiObj.data) || (numel(roiObj.data) == 1 && isempty(roiObj.data(1).data))
+            roiObj.load('data');
+        end
+    catch
+        return;
+    end
+
+    if isempty(roiObj.data)
+        return;
+    end
+
+    idx = find(arrayfun(@(x) isprop(x, 'groupid') && strcmp(x.groupid, 'cell_presence'), roiObj.data), 1, 'first');
+    if isempty(idx)
+        return;
+    end
+
+    ds = roiObj.data(idx);
+    if ~isstruct(ds.userData)
+        return;
+    end
+
+    requiredFields = {'boundingBoxesGlobal', 'boundingBoxOffsets', 'boundingBoxUnionGlobal', 'boundingBoxUnionRelative'};
+    for k = 1:numel(requiredFields)
+        if ~isfield(ds.userData, requiredFields{k})
+            return;
+        end
+    end
+
+    frameBoxes = double(ds.userData.boundingBoxesGlobal);
+    offsets = double(ds.userData.boundingBoxOffsets);
+
+    if isempty(frameBoxes) || size(frameBoxes, 2) ~= 4
+        return;
+    end
+
+    if size(offsets, 1) < size(frameBoxes, 1)
+        offsets(size(frameBoxes, 1), 2) = NaN;
+    end
+
+    presence = all(isfinite(frameBoxes), 2) & frameBoxes(:, 3) > 0 & frameBoxes(:, 4) > 0;
+
+    if ~any(presence)
+        info.frameBoxes = frameBoxes;
+        info.frameOffsets = offsets;
+        info.presence = presence;
+        return;
+    end
+
+    unionGlobal = double(ds.userData.boundingBoxUnionGlobal);
+    if numel(unionGlobal) == 4 && all(isfinite(unionGlobal))
+        info.globalBox = unionGlobal;
+    end
+
+    info.hasTracking = true;
+    info.frameBoxes = frameBoxes;
+    info.frameOffsets = offsets;
+    info.presence = presence;
+    info.firstFrame = find(presence, 1, 'first');
+    info.lastFrame = find(presence, 1, 'last');
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
