@@ -1,106 +1,81 @@
-function save(obj,option)
-% saves data associated with a given trap and clear memory
-% option==results : saves the roi.result only
+function didSave = save(obj, option, verbose)
+% didSave = save(obj, option, verbose)
+% Retourne true si au moins un des deux fichiers (im_*.mat ou data_*.mat)
+% a été réellement écrit sur disque.
 
-im=obj.image;
-roiobj=obj;
-results=obj.results;
-data=obj.data;
-% save images
-
-resonly=0;
-if nargin==2
-    if strcmp(option,'data') % load only the results
-        resonly=1;
-     %   disp(['Saving data only for ROI ' obj.id]);
+    if nargin < 2 || isempty(option)
+        option = "";
     end
-end
+    if nargin < 3 || isempty(verbose)
+        verbose = true;
+    end
 
-% if resonly==1
-%     obj.log(['Saving data only to ' obj.path '/data_' obj.id '.mat'],'Saving')
-%     disp(['Saving ROI data ' obj.id ' to ' obj.path '/data_' obj.id '.mat']);
-%     eval(['save  ' '''' obj.path '/data_' obj.id '.mat' ''''  ' data']);
-%     return;
-% end
+    im      = obj.image;
+    roiobj  = obj;
+    data    = obj.data;
+    resonly = strcmp(option, 'data');
 
-%if numel(im)~=0
-    %   ['save  ' '''' obj.path '/im_' num2str(obj.id) '.mat' ''''  ' im']
-    %  disp('');
+    didSave = false;  % <--- valeur par défaut
 
-    
-%else
-
- % if numel(im)==0
- %   disp('Image is not loaded ; Load image first ...');
- %   return;
- % end
-
-    % disp(['Saving ROI image and data to ' obj.id ' to ' obj.path '/im_' obj.id '.mat']);   
-    % obj.log(['Saving ROI to ' obj.path '/im_' obj.id '.mat'],'Saving')
- %   obj.log(['Saving data to ' obj.path '/data_' obj.id '.mat'],'Saving')
-
-
-if numel(obj.path)
-   if isfolder(obj.path)
-  %  eval(['save  ' '''' obj.path '/im_' obj.id '.mat' ''''  ' roiobj']);   
-   % disp(['Saving ROI data to ' obj.id ' to ' obj.path '/data_' obj.id '.mat']);
-  %  eval(['save  ' '''' obj.path '/data_' obj.id '.mat' ''''  ' data']);
-
-  
-
-    success = false;
-attempts = 0;
-max_attempts = 5;
-
-%filename = fullfile(obj.path, ['im_' obj.id '.mat']);
-
-
-while ~success && attempts < max_attempts
-    try
-        if ~isempty(im) && resonly==0
-         save(fullfile(obj.path, ['im_' obj.id '.mat']), 'roiobj');
-          obj.log(['Saving ROI to ' obj.path '/im_' obj.id '.mat'],'Saving')
-          disp(['Saving content of ROI# ' obj.id ' to ' obj.path '/im_' obj.id '.mat']);   
-        else
-         if resonly==0
-         disp('Image is not loaded ; Load image first ...');
-         end
-         %success=true;
+    if isempty(obj.path) || ~isfolder(obj.path)
+        if verbose
+            disp('ERROR: Invalid or missing path for ROI save.');
         end
+        return;
+    end
 
-       % if resonly==1
-       
-       if resonly==1 || ( numel(data)>=1  && numel(data.groupid))
-         save(fullfile(obj.path, ['data_' obj.id '.mat']), 'data');
-         obj.log(['Saving data  to ' obj.path '/data_' obj.id '.mat'],'Saving')
-         disp(['Saving data of ROI# ' obj.id ' to ' obj.path 'data_' obj.id '.mat']);
-       end
-       
-       if  (numel(data)>=1  && numel(data.groupid)) 
-       else
-             disp('No data to save....');
-       end
+    success      = false;
+    attempts     = 0;
+    max_attempts = 5;
 
-        success = true;
-       % end
+    while ~success && attempts < max_attempts
+        try
+            % Track what we actually wrote
+            imageSaved = false;
+            dataSaved  = false;
 
-    catch ME
-        disp(['Erreur lors de la sauvegarde:' ME.message]);
-        pause(0.5);  % attendre avant de réessayer
-        attempts = attempts + 1;
+            % === Sauvegarde im_*.mat ===
+            if resonly == 0 && ~isempty(im)
+                save(fullfile(obj.path, ['im_' obj.id '.mat']), 'roiobj');
+                obj.log(['Saving ROI to ' fullfile(obj.path, ['im_' obj.id '.mat'])], 'Saving');
+                imageSaved = true;
+            end
+
+            % === Sauvegarde data_*.mat ===
+            hasDataToSave = ~isempty(data) && isfield(data,'groupid') && ~isempty(data.groupid);
+            if resonly == 1 || hasDataToSave
+                save(fullfile(obj.path, ['data_' obj.id '.mat']), 'data');
+                obj.log(['Saving data to ' fullfile(obj.path, ['data_' obj.id '.mat'])], 'Saving');
+                dataSaved = true;
+            end
+
+            % Message console seulement si quelque chose a été écrit
+            if verbose
+                if imageSaved && dataSaved
+                    fprintf('ROI #%s: image and data saved.\n', obj.id);
+                elseif imageSaved
+                    fprintf('ROI #%s: image saved.\n', obj.id);
+                elseif dataSaved
+                    fprintf('ROI #%s: data saved.\n', obj.id);
+                end
+            end
+
+            % <- est-ce qu'on a vraiment sauvé quelque chose ?
+            didSave = imageSaved || dataSaved;
+
+            success = true;
+
+        catch ME
+            attempts = attempts + 1;
+            if verbose
+                fprintf('Erreur lors de la sauvegarde (tentative %d/%d): %s\n', ...
+                        attempts, max_attempts, ME.message);
+            end
+            pause(0.5);
+        end
+    end
+
+    if ~success
+        error(['Échec de la sauvegarde après ' num2str(max_attempts) ' tentatives.']);
     end
 end
-
-if ~success
-    error(['Échec de la sauvegarde après ' num2str(max_attempts) ' tentatives.']);
-end
-
-    else
-       disp('ERROR: Could not find / access the requested folder !!! ');
-   end
-end
-
-% '''' allows one to use quotes !!!
-
-
- 

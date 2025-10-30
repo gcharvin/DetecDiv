@@ -187,6 +187,7 @@ end
         if debug, fprintf('[DEBUG] sys.version: %s\n', char(pyVer)); end
     catch ME
         warning('Import "sys" failed: %s', ME.message);
+        terminate(pyenv)
     end
 
     try
@@ -205,7 +206,9 @@ end
                 char(torchVer), char(tcdisp), char(avdisp));
         end
     catch ME
+
         if debug, fprintf('[DEBUG] Torch import failed: %s\n', ME.message); end
+        terminate(pyenv)
     end
 
     % -------- 7) Rapport + sortie --------

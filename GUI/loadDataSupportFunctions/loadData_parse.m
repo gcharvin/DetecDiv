@@ -46,20 +46,20 @@ if ~isempty(files)
     end
 
     if all(isMulti)
-    % MODE multi-TIFF PAR POSITION
-    posCells = cell(1, numel(fullPaths));
-    for k = 1:numel(fullPaths)
-        posCells{k} = buildPosFromMultiTiff(fullPaths{k}, infoCache{k}, k-1);
-    end
-    % Convertir cell -> struct array propre, avec union des champs
-    positions = unifyStructArray(posCells);
+        % MODE multi-TIFF PAR POSITION
+        posCells = cell(1, numel(fullPaths));
+        for k = 1:numel(fullPaths)
+            posCells{k} = buildPosFromMultiTiff(fullPaths{k}, infoCache{k}, k-1);
+        end
+        % Convertir cell -> struct array propre, avec union des champs
+        positions = unifyStructArray(posCells);
 
-    % Finaliser (channelsDir, invert, etc.)
-    positions = finalizePositionsArray(positions, invert);
+        % Finaliser (channelsDir, invert, etc.)
+        positions = finalizePositionsArray(positions, invert);
 
-    % Construire parsedData global
-    parsedData = finalizeParsedDataStruct(positions, folder, invert);
-    return;
+        % Construire parsedData global
+        parsedData = finalizeParsedDataStruct(positions, folder, invert);
+        return;
     end
 
 end
@@ -129,415 +129,528 @@ end % ===== fin loadData_parse =====
 
 %% ===== Helper: détecter si un fichier est un multi-TIFF tifffile.py exploitable
 function [tf, infoTif] = isMultiTiffFile(fullpath)
-    tf = false;
-    infoTif = [];
-    if ~isfile(fullpath)
-        return;
-    end
-    [~,~,ext] = fileparts(fullpath);
-    if ~any(strcmpi(ext,{'.tif','.tiff'}))
-        return;
-    end
+tf = false;
+infoTif = [];
+if ~isfile(fullpath)
+    return;
+end
+[~,~,ext] = fileparts(fullpath);
+if ~any(strcmpi(ext,{'.tif','.tiff'}))
+    return;
+end
 
-    try
-        infoTif = imfinfo(fullpath);
-    catch
-        return;
-    end
+try
+    infoTif = imfinfo(fullpath);
+catch
+    return;
+end
 
-    if numel(infoTif) < 2
-        return;
-    end
-    if ~isfield(infoTif(1),'ImageDescription') || isempty(infoTif(1).ImageDescription)
-        return;
-    end
+if numel(infoTif) < 2
+    return;
+end
+if ~isfield(infoTif(1),'ImageDescription') || isempty(infoTif(1).ImageDescription)
+    return;
+end
 
-    shapeOK = regexp(infoTif(1).ImageDescription, '\{\s*"shape"\s*:\s*\[', 'once');
-    if isempty(shapeOK)
-        return;
-    end
+shapeOK = regexp(infoTif(1).ImageDescription, '\{\s*"shape"\s*:\s*\[', 'once');
+if isempty(shapeOK)
+    return;
+end
 
-    tf = true;
+tf = true;
 end
 
 
 %% ===== Helper: construit UNE position à partir d'un multi-TIFF
 function posInfo = buildPosFromMultiTiff(tiffFile, infoTif, posIdxForName)
-    % Lire shape [T C H W]
-    shapeStr = infoTif(1).ImageDescription;
-    shapeNums = regexp(shapeStr, '\[([\d\s,]+)\]', 'tokens', 'once');
-    if isempty(shapeNums)
-        error('Impossible de parser "shape" dans %s', tiffFile);
+% buildPosFromMultiTiff
+% Construit la struct d'une "position" à partir d'un seul fichier multi-TIFF.
+%
+% Hypothèse d'empilement:
+%   ordre des pages = t1: ch1,ch2,...,chC ; t2: ch1,ch2,... ; etc.
+%
+% Donne à posInfo tout ce qui est nécessaire pour:
+%   - lister virtuellement les frames/canaux,
+%   - prévisualiser le contenu avant import (via loadData_preview),
+%   - être injecté ensuite dans shallowObj via loadData_load.
+
+%--------- 1. Récupérer la forme T,C,H,W depuis ImageDescription ----------
+shapeStr = infoTif(1).ImageDescription;
+shapeNums = regexp(shapeStr, '\[([\d\s,]+)\]', 'tokens', 'once');
+if isempty(shapeNums)
+    error('Impossible de parser "shape" dans %s', tiffFile);
+end
+nums = regexp(shapeNums{1}, '\d+', 'match');
+nums = str2double(nums);
+if numel(nums) < 4
+    error('Le champ "shape" ne ressemble pas à [T,C,H,W] dans %s', tiffFile);
+end
+
+T = nums(1); % # timepoints
+C = nums(2); % # channels
+H = nums(3); %#ok<NASGU> % hauteur
+W = nums(4); %#ok<NASGU> % largeur
+
+nPages = numel(infoTif);
+if T*C ~= nPages
+    warning('Attention: T*C ~= nPages dans %s. On continue.', tiffFile);
+end
+
+%--------- 2. Construire une liste virtuelle de "fichiers" par page ----------
+[folderPath, baseName, ~] = fileparts(tiffFile);
+
+virtFileList = cell(1, nPages);
+fileDir      = repmat(struct('name','','folder','','bytes',NaN,'datenum',NaN), 1, nPages);
+
+for k = 1:nPages
+    chID = mod(k-1, C);        % canal (0..C-1)
+    tID  = floor((k-1)/C);     % temps (0..T-1)
+    zID  = 0;
+    pID  = 0;                  % 1 seule position interne
+
+    % on génère un nom "classique", type ..._channel000_..._time000000060...
+    virtName = sprintf('%s_channel%03d_position%03d_time%09d_z%03d.tif', ...
+        baseName, chID, pID, tID, zID);
+    virtFull = fullfile(folderPath, virtName);
+
+    virtFileList{k} = virtFull;
+
+    % remplir la structure style dir()
+    [~, onlyName, onlyExt] = fileparts(virtFull);
+    fileDir(k).name   = [onlyName onlyExt];
+    fileDir(k).folder = folderPath;
+
+    if isfield(infoTif(k),'FileSize')
+        fileDir(k).bytes = infoTif(k).FileSize;
+    else
+        fileDir(k).bytes = NaN;
     end
-    nums = regexp(shapeNums{1}, '\d+', 'match');
-    nums = str2double(nums);
-    if numel(nums) < 4
-        error('Le champ "shape" ne ressemble pas à [T,C,H,W] dans %s', tiffFile);
-    end
-
-    T = nums(1); % timepoints
-    C = nums(2); % channels
-    nPages = numel(infoTif);
-
-    if T*C ~= nPages
-        warning('Attention: T*C ~= nPages dans %s. On continue.', tiffFile);
-    end
-
-    % Construire les noms virtuels (un par page)
-    [folderPath, baseName, ~] = fileparts(tiffFile);
-
-    virtFileList = cell(1, nPages);
-    fileDir      = repmat(struct('name','','folder','','bytes',NaN,'datenum',NaN), 1, nPages);
-
-    for k = 1:nPages
-        chID = mod(k-1, C);        % canal (0..C-1)
-        tID  = floor((k-1)/C);     % time index (0..T-1)
-        zID  = 0;
-        pID  = 0;                  % une seule position interne dans ce TIFF
-
-        virtName = sprintf('%s_channel%03d_position%03d_time%09d_z%03d.tif', ...
-            baseName, chID, pID, tID, zID);
-        virtFull = fullfile(folderPath, virtName);
-
-        virtFileList{k} = virtFull;
-
-        [~, onlyName, onlyExt] = fileparts(virtFull);
-        fileDir(k).name   = [onlyName onlyExt];
-        fileDir(k).folder = folderPath;
-
-        if isfield(infoTif(k),'FileSize')
-            fileDir(k).bytes = infoTif(k).FileSize;
-        else
-            fileDir(k).bytes = NaN;
-        end
-        if isfield(infoTif(k),'FileModDate')
-            try
-                fileDir(k).datenum = datenum(infoTif(k).FileModDate);
-            catch
-                fileDir(k).datenum = now;
-            end
-        else
+    if isfield(infoTif(k),'FileModDate')
+        try
+            fileDir(k).datenum = datenum(infoTif(k).FileModDate);
+        catch
             fileDir(k).datenum = now;
         end
-    end
-
- % Parser les noms virtuels -> frames, channels, etc.
-    posInfo = parseVirtualFileList(virtFileList, fileDir, infoTif);
-
-    % --- Ajouts spécifiques multi-TIFF ---
-    posInfo.isMultiTiff    = true;
-    posInfo.tiffSource     = tiffFile;
-    % On garde l'index de page pour chaque "fichier virtuel"
-    % Ici, virtFileList{k} correspond à la page k du TIFF.
-    posInfo.pageIndexPerFile = 1:numel(infoTif);
-
-    % Champs attendus par l'appli
-    posInfo.folder     = folderPath;
-    posInfo.fileDir    = fileDir;
-    posInfo.selected   = true;
-    posInfo.roibb      = [];
-    posInfo.extractROI = true;
-    posInfo.userName   = sprintf('Pos%d', posIdxForName);
-
-    if ~isempty(posInfo.frames)
-        posInfo.minFrame = min(posInfo.frames);
-        posInfo.maxFrame = max(posInfo.frames);
     else
-        posInfo.minFrame = NaN;
-        posInfo.maxFrame = NaN;
+        fileDir(k).datenum = now;
     end
+end
+
+%--------- 3. Parser ces noms virtuels pour obtenir frames/channels/... ----------
+posInfo = parseVirtualFileList(virtFileList, fileDir, infoTif);
+
+%--------- 4. Compléter les infos nécessaires au preview multitiff ----------
+% >> NOUVEAU / IMPORTANT <<
+posInfo.isMultiTiff      = true;            % flag utilisé par loadData_preview
+posInfo.multiTiffPath    = tiffFile;        % chemin réel du multitiff (pour imread direct)
+posInfo.numChannels      = C;               % utile pour indexer dans le stack
+posInfo.pageIndexPerFile = 1:nPages;        % mapping virtuel page->slice tif (optionnel mais propre)
+
+% frames logiques (temps) : on force ce qui sera utilisé par l'UI / sliders
+% parseVirtualFileList t'a normalement déjà rempli .frames, mais on sécurise:
+posInfo.frames           = 1:T;
+posInfo.numFrames        = T;
+
+% bornes min/max frames
+if ~isempty(posInfo.frames)
+    posInfo.minFrame = min(posInfo.frames);
+    posInfo.maxFrame = max(posInfo.frames);
+else
+    posInfo.minFrame = NaN;
+    posInfo.maxFrame = NaN;
+end
+
+% borne courante pour extraction/preview sliders
+posInfo.currentMinFrame  = posInfo.minFrame;
+posInfo.currentMaxFrame  = posInfo.maxFrame;
+
+%--------- 5. Infos "channelsDir", "userChanName", etc. ----------
+% parseVirtualFileList t'a normalement produit:
+%   posInfo.channelsDir  : {1xC cell}, chaque cell = struct array style dir
+%   posInfo.channelFrequencies
+%   posInfo.channelSizes
+%   posInfo.channelsSelected
+%   posInfo.userChanName (si tu l'initialises dedans)
+%
+% On s'assure que userChanName existe et a C entrées
+if ~isfield(posInfo,'userChanName') || numel(posInfo.userChanName) ~= C
+    posInfo.userChanName = cell(1,C);
+    for cc = 1:C
+        posInfo.userChanName{cc} = sprintf('Channel%d', cc-1);
+    end
+end
+
+%--------- 6. Champs attendus par l'app loadData / UI  ----------
+posInfo.folder       = folderPath;       % racine des données (même si les .tif virtuels n'existent pas)
+posInfo.fileDir      = fileDir;          % struct array style dir()
+posInfo.selected     = true;             % coché par défaut dans la table des positions
+posInfo.extractROI   = true;             % on propose d'extraire des ROIs par défaut
+posInfo.roibb        = [];               % pas de ROI custom initialement
+
+% nom utilisateur / identifiant position affiché dans l'UI
+% posIdxForName doit être l'index logique (0,1,2...) donné par loadData_parse
+posInfo.userName     = sprintf('Pos%d', posIdxForName);
+
+% pour compat UI table (colonne Position) tu peux aussi stocker :
+posInfo.filePosName  = posInfo.userName;
+
+% sécurité pour compatibilité plus tard avec fov.readImage :
+% (ces champs supplémentaires ne gênent pas)
+posInfo.isImportedToProject = false;
 end
 
 
 %% ===== Helper: finalise un array de positions (ajoute channelsDir, gère invert)
 function positionsOut = finalizePositionsArray(positionsIn, invert)
 
-    positions = positionsIn;
+positions = positionsIn;
 
-    % 1. channelsDir pour chaque position si pas déjà présent
-    for i = 1:numel(positions)
-        if ~isfield(positions(i),'channelsDir') || isempty(positions(i).channelsDir)
-            channelsDir = cell(1, numel(positions(i).channels));
-            for c = 1:numel(positions(i).channels)
-                channelID = positions(i).channels{c};  % ex '000_z000'
-                filesPos  = positions(i).files;
-                dirStruct = positions(i).fileDir;
-                matchIDs = cell(size(filesPos));
-                for f = 1:length(filesPos)
-                    tokens = regexp(filesPos{f}, ...
-                        '.*_channel(\d+)_position(\d+)_time(\d+)_z(\d+)', ...
-                        'tokens');
-                    if ~isempty(tokens)
-                        tokens = tokens{1};
-                        chStr = sprintf('%03d_z%03d', ...
-                            str2double(tokens{1}), ...
-                            str2double(tokens{4}));
-                        matchIDs{f} = chStr;
-                    else
-                        matchIDs{f} = '';
-                    end
-                end
-                mask = strcmp(matchIDs, channelID);
-                channelsDir{c} = dirStruct(mask);
-            end
-            positions(i).channelsDir = channelsDir;
-        end
-    end
-
-    % 2. userName, selected, roibb, extractROI, min/maxFrame si manquants
-    for i = 1:numel(positions)
-        if ~isfield(positions(i),'userName') || isempty(positions(i).userName)
-            if isfield(positions(i),'folder') && ~isempty(positions(i).folder)
-                folderPath_i = positions(i).folder;
-                if folderPath_i(end)==filesep || folderPath_i(end)=='/'
-                    folderPath_i = folderPath_i(1:end-1);
-                end
-                idx = find(folderPath_i==filesep | folderPath_i=='/', 1, 'last');
-                if isempty(idx)
-                    posName = folderPath_i;
+% 1. channelsDir pour chaque position si pas déjà présent
+for i = 1:numel(positions)
+    if ~isfield(positions(i),'channelsDir') || isempty(positions(i).channelsDir)
+        channelsDir = cell(1, numel(positions(i).channels));
+        for c = 1:numel(positions(i).channels)
+            channelID = positions(i).channels{c};  % ex '000_z000'
+            filesPos  = positions(i).files;
+            dirStruct = positions(i).fileDir;
+            matchIDs = cell(size(filesPos));
+            for f = 1:length(filesPos)
+                tokens = regexp(filesPos{f}, ...
+                    '.*_channel(\d+)_position(\d+)_time(\d+)_z(\d+)', ...
+                    'tokens');
+                if ~isempty(tokens)
+                    tokens = tokens{1};
+                    chStr = sprintf('%03d_z%03d', ...
+                        str2double(tokens{1}), ...
+                        str2double(tokens{4}));
+                    matchIDs{f} = chStr;
                 else
-                    posName = folderPath_i(idx+1:end);
+                    matchIDs{f} = '';
                 end
-                positions(i).userName = posName;
-            else
-                positions(i).userName = sprintf('Pos%d', i-1);
             end
+            mask = strcmp(matchIDs, channelID);
+            channelsDir{c} = dirStruct(mask);
         end
-
-        if ~isfield(positions(i),'selected'),   positions(i).selected   = true; end
-        if ~isfield(positions(i),'roibb'),      positions(i).roibb      = [];   end
-        if ~isfield(positions(i),'extractROI'), positions(i).extractROI = true; end
-
-        if ~isfield(positions(i),'minFrame') || ~isfield(positions(i),'maxFrame')
-            if ~isempty(positions(i).frames)
-                positions(i).minFrame = min(positions(i).frames);
-                positions(i).maxFrame = max(positions(i).frames);
-            else
-                positions(i).minFrame = NaN;
-                positions(i).maxFrame = NaN;
-            end
-        end
+        positions(i).channelsDir = channelsDir;
     end
+end
 
-    % 3. invert -> fusionner toutes les positions en une seule
-    if invert && numel(positions) > 1
-        mergedPos = positions(1);
-
-        % Fusion channelsDir
-        for c = 1:numel(mergedPos.channels)
-            mergedList = mergedPos.channelsDir{c};
-            for p = 2:numel(positions)
-                if numel(positions(p).channels) >= c
-                    mergedList = [mergedList; positions(p).channelsDir{c}]; %#ok<AGROW>
-                end
+% 2. userName, selected, roibb, extractROI, min/maxFrame si manquants
+for i = 1:numel(positions)
+    if ~isfield(positions(i),'userName') || isempty(positions(i).userName)
+        if isfield(positions(i),'folder') && ~isempty(positions(i).folder)
+            folderPath_i = positions(i).folder;
+            if folderPath_i(end)==filesep || folderPath_i(end)=='/'
+                folderPath_i = folderPath_i(1:end-1);
             end
-            mergedPos.channelsDir{c} = mergedList;
-        end
-
-        % Fusion des listes virtuelles de fichiers
-        mergedPos.files = {};
-        for p = 1:numel(positions)
-            mergedPos.files = [mergedPos.files, positions(p).files]; %#ok<AGROW>
-        end
-
-        mergedPos.userName = 'AllPositions';
-
-        if isfield(positions(1),'folder')
-            mergedPos.folder = positions(1).folder;
+            idx = find(folderPath_i==filesep | folderPath_i=='/', 1, 'last');
+            if isempty(idx)
+                posName = folderPath_i;
+            else
+                posName = folderPath_i(idx+1:end);
+            end
+            positions(i).userName = posName;
         else
-            mergedPos.folder = '';
+            positions(i).userName = sprintf('Pos%d', i-1);
         end
-
-        newFrames = zeros(1, numel(mergedPos.channelsDir));
-        for c = 1:numel(mergedPos.channelsDir)
-            newFrames(c) = numel(mergedPos.channelsDir{c});
-        end
-        mergedPos.frames   = newFrames;
-        mergedPos.minFrame = min(newFrames);
-        mergedPos.maxFrame = max(newFrames);
-
-        positionsOut = mergedPos;
-    else
-        positionsOut = positions;
     end
+
+    if ~isfield(positions(i),'selected'),   positions(i).selected   = true; end
+    if ~isfield(positions(i),'roibb'),      positions(i).roibb      = [];   end
+    if ~isfield(positions(i),'extractROI'), positions(i).extractROI = true; end
+
+    if ~isfield(positions(i),'minFrame') || ~isfield(positions(i),'maxFrame')
+        if ~isempty(positions(i).frames)
+            positions(i).minFrame = min(positions(i).frames);
+            positions(i).maxFrame = max(positions(i).frames);
+        else
+            positions(i).minFrame = NaN;
+            positions(i).maxFrame = NaN;
+        end
+    end
+end
+
+% 3. invert -> fusionner toutes les positions en une seule
+if invert && numel(positions) > 1
+    mergedPos = positions(1);
+
+    % Fusion channelsDir
+    for c = 1:numel(mergedPos.channels)
+        mergedList = mergedPos.channelsDir{c};
+        for p = 2:numel(positions)
+            if numel(positions(p).channels) >= c
+                mergedList = [mergedList; positions(p).channelsDir{c}]; %#ok<AGROW>
+            end
+        end
+        mergedPos.channelsDir{c} = mergedList;
+    end
+
+    % Fusion des listes virtuelles de fichiers
+    mergedPos.files = {};
+    for p = 1:numel(positions)
+        mergedPos.files = [mergedPos.files, positions(p).files]; %#ok<AGROW>
+    end
+
+    mergedPos.userName = 'AllPositions';
+
+    if isfield(positions(1),'folder')
+        mergedPos.folder = positions(1).folder;
+    else
+        mergedPos.folder = '';
+    end
+
+    newFrames = zeros(1, numel(mergedPos.channelsDir));
+    for c = 1:numel(mergedPos.channelsDir)
+        newFrames(c) = numel(mergedPos.channelsDir{c});
+    end
+    mergedPos.frames   = newFrames;
+    mergedPos.minFrame = min(newFrames);
+    mergedPos.maxFrame = max(newFrames);
+
+    positionsOut = mergedPos;
+else
+    positionsOut = positions;
+end
 end
 
 
 %% ===== Helper: finalise parsedData
 function parsedData = finalizeParsedDataStruct(positions, folder, invert)
-    if invert
-        numPos = 1;
-    else
-        numPos = numel(positions);
+if invert
+    numPos = 1;
+else
+    numPos = numel(positions);
+end
+
+parsedData.positions        = positions;
+parsedData.numPositions     = numPos;
+
+parsedData.roitype          = 'full';
+parsedData.roibb            = [];
+parsedData.roipattern       = [];
+parsedData.maxframeloading  = 20;
+parsedData.scale            = 1;
+parsedData.correctdrift     = false;
+parsedData.maxroidisplay    = 10;
+parsedData.allpositions     = true;
+
+parsedData.folder           = folder;
+parsedData.advancedMode     = false;
+parsedData.projectPath      = fullfile(parsedData.folder,'tmpProject.mat');
+
+globalFrames = [];
+for i = 1:numel(positions)
+    if isfield(positions(i),'frames') && ~isempty(positions(i).frames)
+        globalFrames = [globalFrames; positions(i).frames(:)]; %#ok<AGROW>
     end
-
-    parsedData.positions        = positions;
-    parsedData.numPositions     = numPos;
-
-    parsedData.roitype          = 'full';
-    parsedData.roibb            = [];
-    parsedData.roipattern       = [];
-    parsedData.maxframeloading  = 20;
-    parsedData.scale            = 1;
-    parsedData.correctdrift     = false;
-    parsedData.maxroidisplay    = 10;
-    parsedData.allpositions     = true;
-
-    parsedData.folder           = folder;
-    parsedData.advancedMode     = false;
-    parsedData.projectPath      = fullfile(parsedData.folder,'tmpProject.mat');
-
-    globalFrames = [];
-    for i = 1:numel(positions)
-        if isfield(positions(i),'frames') && ~isempty(positions(i).frames)
-            globalFrames = [globalFrames; positions(i).frames(:)]; %#ok<AGROW>
-        end
-    end
-    if ~isempty(globalFrames)
-        parsedData.minFrame = min(globalFrames);
-        parsedData.maxFrame = max(globalFrames);
-    else
-        parsedData.minFrame = NaN;
-        parsedData.maxFrame = NaN;
-    end
-    parsedData.currentMinFrame = parsedData.minFrame;
-    parsedData.currentMaxFrame = parsedData.maxFrame;
+end
+if ~isempty(globalFrames)
+    parsedData.minFrame = min(globalFrames);
+    parsedData.maxFrame = max(globalFrames);
+else
+    parsedData.minFrame = NaN;
+    parsedData.maxFrame = NaN;
+end
+parsedData.currentMinFrame = parsedData.minFrame;
+parsedData.currentMaxFrame = parsedData.maxFrame;
 end
 
 
 %% ===== Helper: getFileList (historique)
 function [fileList, fileDir] = getFileList(folderPath)
-    d = dir(folderPath);
-    d = d(~[d.isdir]);
-    fileList = fullfile(folderPath, {d.name});
-    fileDir = d;
+d = dir(folderPath);
+d = d(~[d.isdir]);
+fileList = fullfile(folderPath, {d.name});
+fileDir = d;
 end
 
 
 %% ===== Helper: parseFileList (historique)
 function info = parseFileList(fileList, forceSinglePosition)
-    if nargin < 2
-        forceSinglePosition = false;
+if nargin < 2
+    forceSinglePosition = false;
+end
+
+acceptedExtensions = {'.tif', '.tiff', '.png', '.jpg', '.jpeg'};
+
+times = [];
+channelsArr = [];
+posArr = [];
+zArr = [];
+
+for i = 1:length(fileList)
+    [~, name, ext] = fileparts(fileList{i});
+    if ~any(strcmpi(ext, acceptedExtensions))
+        continue;
     end
+    fileName = [name, ext];
+    tokens = regexp(fileName, '.*_channel(\d+)_position(\d+)_time(\d+)_z(\d+)', 'tokens');
+    if ~isempty(tokens)
+        tokens = tokens{1};
+        chVal   = str2double(tokens{1});
+        posVal  = str2double(tokens{2});
+        timeVal = str2double(tokens{3});
+        zVal    = str2double(tokens{4});
 
-    acceptedExtensions = {'.tif', '.tiff', '.png', '.jpg', '.jpeg'};
-
-    times = [];
-    channelsArr = [];
-    posArr = [];
-    zArr = [];
-
-    for i = 1:length(fileList)
-        [~, name, ext] = fileparts(fileList{i});
-        if ~any(strcmpi(ext, acceptedExtensions))
-            continue;
-        end
-        fileName = [name, ext];
-        tokens = regexp(fileName, '.*_channel(\d+)_position(\d+)_time(\d+)_z(\d+)', 'tokens');
-        if ~isempty(tokens)
-            tokens = tokens{1};
-            chVal   = str2double(tokens{1});
-            posVal  = str2double(tokens{2});
-            timeVal = str2double(tokens{3});
-            zVal    = str2double(tokens{4});
-
-            channelsArr(end+1) = chVal;
-            posArr(end+1)      = posVal;
-            times(end+1)       = timeVal;
-            zArr(end+1)        = zVal;
-        else
-            continue;
-        end
+        channelsArr(end+1) = chVal;
+        posArr(end+1)      = posVal;
+        times(end+1)       = timeVal;
+        zArr(end+1)        = zVal;
+    else
+        continue;
     end
+end
 
-    if isempty(times)
-        info.numFrames          = 0;
-        info.frames             = [];
-        info.numChannels        = 0;
-        info.channels           = {};
-        info.channelFrequencies = [];
-        info.channelSizes       = {};
-        info.channelsSelected   = [];
-        info.userChanName       = {};
-        if forceSinglePosition
-            info.numPositions = 1;
-            info.positions    = 1;
-        else
-            info.numPositions = 0;
-            info.positions    = [];
-        end
-        info.files = fileList;
-        return;
-    end
-
-    uniqueFrames   = unique(times);
-    info.numFrames = numel(uniqueFrames);
-    info.frames    = 1:numel(uniqueFrames);
-
-    ch_z = arrayfun(@(c,z) sprintf('%03d_z%03d', c, z), channelsArr, zArr, 'UniformOutput', false);
-    uniqueCh = unique(ch_z);
-    info.numChannels = numel(uniqueCh);
-    info.channels    = uniqueCh;
-
-    channelFrequencies = zeros(1, info.numChannels);
-    channelSizes       = cell(1, info.numChannels);
-
-    for c = 1:info.numChannels
-        idx = find(strcmp(ch_z, uniqueCh{c}));
-        channelTimes = sort(times(idx));
-        if numel(channelTimes) > 1
-            diffs = diff(channelTimes);
-            channelFrequencies(c) = median(diffs);
-        else
-            channelFrequencies(c) = 1;
-        end
-
-        firstIdx        = idx(1);
-        fileForChannel  = fileList{firstIdx};
-        [~, ~, extFile] = fileparts(fileForChannel);
-        try
-            if strcmpi(extFile, '.tif') || strcmpi(extFile, '.tiff')
-                infoTif_local = imfinfo(fileForChannel);
-                width         = infoTif_local(1).Width;
-                height        = infoTif_local(1).Height;
-                channelSizes{c} = sprintf('%d %d', width, height);
-            else
-                channelSizes{c} = 'N/A';
-            end
-        catch ME
-            warning('Impossible de lire la taille de l''image pour %s: %s', fileForChannel, ME.message);
-            channelSizes{c} = 'N/A';
-        end
-    end
-
-    info.channelFrequencies = channelFrequencies;
-    info.channelSizes       = channelSizes;
-
-    info.channelsSelected = true(1, info.numChannels);
-    info.userChanName     = cell(1, info.numChannels);
-    for j = 1:info.numChannels
-        info.userChanName{j} = ['Channel' num2str(j-1)];
-    end
-
+if isempty(times)
+    info.numFrames          = 0;
+    info.frames             = [];
+    info.numChannels        = 0;
+    info.channels           = {};
+    info.channelFrequencies = [];
+    info.channelSizes       = {};
+    info.channelsSelected   = [];
+    info.userChanName       = {};
     if forceSinglePosition
         info.numPositions = 1;
         info.positions    = 1;
     else
-        uniquePos = unique(posArr);
-        info.numPositions = numel(uniquePos);
-        info.positions    = uniquePos;
+        info.numPositions = 0;
+        info.positions    = [];
+    end
+    info.files = fileList;
+    return;
+end
+
+uniqueFrames   = unique(times);
+info.numFrames = numel(uniqueFrames);
+info.frames    = 1:numel(uniqueFrames);
+
+ch_z = arrayfun(@(c,z) sprintf('%03d_z%03d', c, z), channelsArr, zArr, 'UniformOutput', false);
+uniqueCh = unique(ch_z);
+info.numChannels = numel(uniqueCh);
+info.channels    = uniqueCh;
+
+channelFrequencies = zeros(1, info.numChannels);
+channelSizes       = cell(1, info.numChannels);
+
+for c = 1:info.numChannels
+    idx = find(strcmp(ch_z, uniqueCh{c}));
+    channelTimes = sort(times(idx));
+    if numel(channelTimes) > 1
+        diffs = diff(channelTimes);
+        channelFrequencies(c) = median(diffs);
+    else
+        channelFrequencies(c) = 1;
     end
 
-    info.files = fileList;
+    firstIdx        = idx(1);
+    fileForChannel  = fileList{firstIdx};
+    [~, ~, extFile] = fileparts(fileForChannel);
+
+    fprintf('DEBUG parseFileList: probing size of "%s"\n', fileForChannel);
+
+    % valeur par défaut
+    channelSizes{c} = 'N/A';
+
+    if strcmpi(extFile, '.tif') || strcmpi(extFile, '.tiff')
+
+        fileForChannel_char = char(fileForChannel);
+
+        if ~isfile(fileForChannel_char)
+            % Chemin cassé -> on log et on passe
+            warning('DEBUG parseFileList: file does not exist on disk: %s', fileForChannel_char);
+        else
+            % 1) tentative imfinfo
+            gotSize = false;
+            try
+                infoTif_local = imfinfo(fileForChannel_char);
+                w = infoTif_local(1).Width;
+                h = infoTif_local(1).Height;
+                channelSizes{c} = sprintf('%d %d', w, h);
+                gotSize = true;
+                fprintf('DEBUG parseFileList: got size from imfinfo = %s\n', channelSizes{c});
+            catch ME1
+                fprintf(['DEBUG parseFileList: imfinfo failed on "%s": %s\n' ...
+                    ' -> will try imread fallback\n'], ...
+                    fileForChannel_char, ME1.message);
+            end
+
+            % 2) fallback imread si imfinfo a échoué
+            if ~gotSize
+                try
+                    imgTmp = imread(fileForChannel_char);
+                    % imgTmp peut être 2D (grayscale) ou 3D (RGB) ou 3D (Zstack compressé bizarre)
+                    sz = size(imgTmp);
+                    % Prenons juste Y,X
+                    h = sz(1);
+                    w = sz(2);
+                    channelSizes{c} = sprintf('%d %d', w, h);
+                    gotSize = true;
+                    fprintf('DEBUG parseFileList: got size from imread = %s\n', channelSizes{c});
+                catch ME2
+                    % même le fallback a raté -> on n'insiste pas.
+                    warning(['DEBUG parseFileList: imread failed on "%s": %s\n' ...
+                        'Channel size set to N/A.'], ...
+                        fileForChannel_char, ME2.message);
+                end
+            end
+        end
+
+    else
+        % pas tiff, genre png/jpg -> on peut aussi tenter imread direct si tu veux
+        try
+            imgTmp = imread(fileForChannel);
+            sz = size(imgTmp);
+            h = sz(1);
+            w = sz(2);
+            channelSizes{c} = sprintf('%d %d', w, h);
+            fprintf('DEBUG parseFileList: got size from imread(non-tif) = %s\n', channelSizes{c});
+        catch
+            % ok, on laisse 'N/A'
+        end
+    end
+end
+
+info.channelFrequencies = channelFrequencies;
+info.channelSizes       = channelSizes;
+
+
+
+
+info.channelFrequencies = channelFrequencies;
+info.channelSizes       = channelSizes;
+
+info.channelsSelected = true(1, info.numChannels);
+info.userChanName     = cell(1, info.numChannels);
+for j = 1:info.numChannels
+    info.userChanName{j} = ['Channel' num2str(j-1)];
+end
+
+if forceSinglePosition
+    info.numPositions = 1;
+    info.positions    = 1;
+else
+    uniquePos = unique(posArr);
+    info.numPositions = numel(uniquePos);
+    info.positions    = uniquePos;
+end
+
+info.files = fileList;
 end
 
 
 %% ===== Helper: parseVirtualFileList (multi-TIFF)
 function info = parseVirtualFileList(virtFileList, fileDir, infoTif)
-    times = [];
-    channelsArr = [];
-    posArr = [];
-    zArr = [];
+    % parseVirtualFileList
+    % Analyse une "liste virtuelle" de fichiers générés à partir d'un multi-TIFF.
+    % virtFileList : cellstr avec des noms synthétiques (...channel000_position000_time000000000_z000.tif)
+    % fileDir      : struct array façon dir() aligné sur virtFileList
+    % infoTif      : imfinfo(multiTiff) -> un entry par page réelle
+
+    times        = [];
+    channelsArr  = [];
+    posArr       = [];
+    zArr         = [];
 
     for i = 1:length(virtFileList)
         [~, name, ext] = fileparts(virtFileList{i});
@@ -573,19 +686,23 @@ function info = parseVirtualFileList(virtFileList, fileDir, infoTif)
         info.numPositions       = 0;
         info.positions          = [];
         info.files              = virtFileList;
+        info.fileDir            = fileDir;
         return;
     end
 
-    uniqueFrames   = unique(times);
-    info.numFrames = numel(uniqueFrames);
-    info.frames    = 1:numel(uniqueFrames); % renumérotation 1..N
+    % Frames
+    uniqueFrames      = unique(times);
+    info.numFrames    = numel(uniqueFrames);
+    info.frames       = 1:numel(uniqueFrames);  % renumérotation 1..N pour l'UI
 
-    ch_z = arrayfun(@(c,z) sprintf('%03d_z%03d', c, z), channelsArr, zArr, ...
-        'UniformOutput', false);
+    % Canaux (clé = "channel###_z###")
+    ch_z = arrayfun(@(c,z) sprintf('%03d_z%03d', c, z), ...
+                    channelsArr, zArr, 'UniformOutput', false);
     uniqueCh = unique(ch_z);
     info.numChannels = numel(uniqueCh);
     info.channels    = uniqueCh;
 
+    % Fréquence et taille par canal
     channelFrequencies = zeros(1, info.numChannels);
     channelSizes       = cell(1, info.numChannels);
 
@@ -599,27 +716,39 @@ function info = parseVirtualFileList(virtFileList, fileDir, infoTif)
             channelFrequencies(c) = 1;
         end
 
+        % Taille -> ici on ne peut pas faire imfinfo() sur virtFileList
+        % car ce sont des fichiers fictifs. Mais on A infoTif(firstIdx).
         firstIdx = idx(1);
-        w = infoTif(firstIdx).Width;
-        h = infoTif(firstIdx).Height;
-        channelSizes{c} = sprintf('%d %d', w, h);
+        % infoTif(firstIdx) correspond à la vraie page du multi-TIFF
+        if firstIdx <= numel(infoTif) && isfield(infoTif(firstIdx),'Width')
+            w = infoTif(firstIdx).Width;
+            h = infoTif(firstIdx).Height;
+            channelSizes{c} = sprintf('%d %d', w, h);
+        else
+            channelSizes{c} = 'N/A';
+        end
     end
 
     info.channelFrequencies = channelFrequencies;
     info.channelSizes       = channelSizes;
 
+    % Sélection des canaux par défaut
     info.channelsSelected = true(1, info.numChannels);
     info.userChanName     = cell(1, info.numChannels);
     for j = 1:info.numChannels
         info.userChanName{j} = ['Channel' num2str(j-1)];
     end
 
+    % Positions logiques
     uniquePos = unique(posArr);
     info.numPositions = numel(uniquePos);
     info.positions    = uniquePos;
 
-    info.files = virtFileList;
+    % Sauvegarde pour la suite
+    info.files   = virtFileList;
+    info.fileDir = fileDir;
 end
+
 
 function S = unifyStructArray(Scell)
 % unifyStructArray
@@ -628,27 +757,27 @@ function S = unifyStructArray(Scell)
 %
 % Règle : si un champ manque dans un élément, il est ajouté avec [].
 
-    if isempty(Scell)
-        S = struct([]);
-        return;
-    end
+if isempty(Scell)
+    S = struct([]);
+    return;
+end
 
-    % 1. construire la liste union de tous les champs
-    allFields = {};
-    for i = 1:numel(Scell)
-        allFields = union(allFields, fieldnames(Scell{i}));
-    end
+% 1. construire la liste union de tous les champs
+allFields = {};
+for i = 1:numel(Scell)
+    allFields = union(allFields, fieldnames(Scell{i}));
+end
 
-    % 2. construire la sortie
-    S = repmat(cell2struct(cell(size(allFields)), allFields, 1), 1, numel(Scell));
+% 2. construire la sortie
+S = repmat(cell2struct(cell(size(allFields)), allFields, 1), 1, numel(Scell));
 
-    % 3. remplir champ par champ
-    for i = 1:numel(Scell)
-        fcur = fieldnames(Scell{i});
-        for f = 1:numel(fcur)
-            fname = fcur{f};
-            S(i).(fname) = Scell{i}.(fname);
-        end
-        % les champs manquants restent []
+% 3. remplir champ par champ
+for i = 1:numel(Scell)
+    fcur = fieldnames(Scell{i});
+    for f = 1:numel(fcur)
+        fname = fcur{f};
+        S(i).(fname) = Scell{i}.(fname);
     end
+    % les champs manquants restent []
+end
 end

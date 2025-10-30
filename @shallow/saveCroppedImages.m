@@ -566,6 +566,72 @@ if exist(fullfile(userpath, 'tmpcrash.mat'), 'file') % remove temporary crash fi
 end
 
 toc;
+end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+function info = collectTrackedBoundingBoxes(roiObj)
+    info = struct('hasTracking', false, 'globalBox', double(roiObj.value), ...
+        'frameBoxes', [], 'frameOffsets', [], 'presence', []);
+
+    try
+        if isempty(roiObj.data) || (numel(roiObj.data) == 1 && isempty(roiObj.data(1).data))
+            roiObj.load('data');
+        end
+    catch
+        return;
+    end
+
+    if isempty(roiObj.data)
+        return;
+    end
+
+    idx = find(arrayfun(@(x) isprop(x, 'groupid') && strcmp(x.groupid, 'cell_presence'), roiObj.data), 1, 'first');
+    if isempty(idx)
+        return;
+    end
+
+    ds = roiObj.data(idx);
+    if ~isstruct(ds.userData)
+        return;
+    end
+
+    requiredFields = {'boundingBoxesGlobal', 'boundingBoxOffsets', 'boundingBoxUnionGlobal', 'boundingBoxUnionRelative'};
+    for k = 1:numel(requiredFields)
+        if ~isfield(ds.userData, requiredFields{k})
+            return;
+        end
+    end
+
+    frameBoxes = double(ds.userData.boundingBoxesGlobal);
+    offsets = double(ds.userData.boundingBoxOffsets);
+
+    if isempty(frameBoxes) || size(frameBoxes, 2) ~= 4
+        return;
+    end
+
+    if size(offsets, 1) < size(frameBoxes, 1)
+        offsets(size(frameBoxes, 1), 2) = NaN;
+    end
+
+    presence = all(isfinite(frameBoxes), 2) & frameBoxes(:, 3) > 0 & frameBoxes(:, 4) > 0;
+
+    if ~any(presence)
+        info.frameBoxes = frameBoxes;
+        info.frameOffsets = offsets;
+        info.presence = presence;
+        return;
+    end
+
+    unionGlobal = double(ds.userData.boundingBoxUnionGlobal);
+    if numel(unionGlobal) == 4 && all(isfinite(unionGlobal))
+        info.globalBox = unionGlobal;
+    end
+
+    info.hasTracking = true;
+    info.frameBoxes = frameBoxes;
+    info.frameOffsets = offsets;
+    info.presence = presence;
+end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 function info = collectTrackedBoundingBoxes(roiObj)
@@ -642,7 +708,7 @@ function newObj = propValues(newObj, orgObj)
             newObj.(pl{k}) = orgObj.(pl{k});
         end
     end
-
+end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 function dumprecovery(fovid, framecell, currentfovid, currentframe)
@@ -653,3 +719,4 @@ function dumprecovery(fovid, framecell, currentfovid, currentframe)
     tmpcrash.currentframe = currentframe;
     save(fullfile(userpath, 'tmpcrash.mat'), 'tmpcrash');
 
+end
