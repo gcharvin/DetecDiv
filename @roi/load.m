@@ -202,7 +202,7 @@ for i = 1:N
     attrs(i).k         = k;
     attrs(i).intensity = readAttOrDefault(h5File,p,'display_intensity',[1 1 1]);
     attrs(i).rgb       = readAttOrDefault(h5File,p,'display_rgb',      [1 1 1]);
-    attrs(i).displaylim       = readAttOrDefault(h5File,p,'display_displaylim',      [1 1 1]);
+    attrs(i).displaylim       = readAttOrDefault(h5File,p,'display_displaylim',      [1 ; 1]);
     attrs(i).indexed   = readAttOrDefault(h5File,p,'display_indexed',  uint8(0));
     attrs(i).alpha     = readAttOrDefault(h5File,p,'display_alpha',    1);
     attrs(i).contour   = readAttOrDefault(h5File,p,'display_contour',  uint8(0));
@@ -471,7 +471,7 @@ end
 % --- Lire les attributs display pour ce canal
 att.intensity  = readAttOrDefault(h5File, pTarget, 'display_intensity',  [1 1 1]);
 att.rgb        = readAttOrDefault(h5File, pTarget, 'display_rgb',        [1 1 1]);
-att.displaylim = readAttOrDefault(h5File, pTarget, 'display_displaylim', [0 1]);
+att.displaylim = readAttOrDefault(h5File, pTarget, 'display_displaylim', [0; 1]);
 att.indexed    = readAttOrDefault(h5File, pTarget, 'display_indexed',    uint8(0));
 att.alpha      = readAttOrDefault(h5File, pTarget, 'display_alpha',      1);
 att.contour    = readAttOrDefault(h5File, pTarget, 'display_contour',    uint8(0));

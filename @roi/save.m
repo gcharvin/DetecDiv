@@ -93,9 +93,12 @@ while ~success && attempts < max_attempts
         % Noms logiques des canaux (ex: {'Brightfield','GFP','SegMaskRGB'})
         logicNames = getLogicalChannelNames(obj);
 
+               
+
+       
+
         % fullSave = on veut tout réécrire dans le HDF5
         % ATTENTION: seulement si on n'est PAS en mode onlyData
-
 
         fullSave = (~onlyData) && isempty(requestedChannels);
 
@@ -108,6 +111,7 @@ while ~success && attempts < max_attempts
         else
             % mode partiel : on ne delete pas h5File
         end
+
 
         % Boucler sur CHAQUE canal LOGIQUE
         for iChan = 1:numel(logicNames)
@@ -122,6 +126,8 @@ while ~success && attempts < max_attempts
             if ~doThisOne
                 continue;
             end
+
+       
 
             % Récupérer les indices de la 3e dimension correspondant à ce canal logique
             idxSet = obj.findChannelID(chanNameLogical, 'exact');  % renvoie un vecteur
@@ -171,6 +177,8 @@ while ~success && attempts < max_attempts
 
             upsertH5Dataset_frames(h5File, h5Path, chanBlock, [H W k T], thisClass);
 
+              
+
             % Attributs utiles
             h5writeatt(h5File, h5Path, 'roi_id',          obj.id);
             h5writeatt(h5File, h5Path, 'bbox',            getBBox(obj));
@@ -194,6 +202,8 @@ while ~success && attempts < max_attempts
                 fprintf('ROI #%s: HDF5 save of "%s" (%d subchan, %d frames).\n',...
                     obj.id, chanNameLogical, k, T);
             end
+
+               
         end
 
         % Après un FULL SAVE (tous les canaux), on allège l'objet
@@ -201,6 +211,8 @@ while ~success && attempts < max_attempts
             obj.image = [];
         end
     end
+
+
 
     % ==================================================
     % 2) Sauvegarde DATA -> .mat
@@ -387,9 +399,11 @@ if isprop(obj,'display') && ~isempty(obj.display) && isstruct(obj.display) ...
     if ~iscell(ch),  ch = {char(string(ch))}; end
     names = ch;
 end
+
 if isempty(names)
     names = {'channel_001'};
 end
+
 end
 
 function bb = getBBox(obj)
@@ -525,8 +539,10 @@ dset_exists = H5L.exists(fid, datasetName, 'H5P_DEFAULT') > 0;
 
 Told = 0; need_reopen_for_write = true;
 
+
 if ~dset_exists
     % 1) Création extensible, chunkée, compressée
+ 
     createResizableDataset(fid, datasetName, thisClass, [H W k Tnew]);
 else
     % 2) Dataset existe -> lire dimensions courantes (ordre HDF5 = [T k W H])
@@ -546,10 +562,10 @@ else
     % Sécuriser le rang
     if numel(dims_h5) < 4, dims_h5(end+1:4) = 1; end
 
-    Told  = dims_h5(4)
-    k_old = dims_h5(3)
-    W_old = dims_h5(2)
-    H_old = dims_h5(1)
+    Told  = dims_h5(4);
+    k_old = dims_h5(3);
+    W_old = dims_h5(2);
+    H_old = dims_h5(1);
 
     if H_old ~= H || W_old ~= W || k_old ~= k
         % 2a) Dimensions incompatibles -> recréer proprement
