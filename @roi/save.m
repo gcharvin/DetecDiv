@@ -1,66 +1,58 @@
 function didSave = save(obj, option, verbose)
 % didSave = save(obj, option, verbose)
-%
-% Sauvegarde une ROI sur disque.
-%
-% - Images (toutes les couches de obj.image) -> im_<id>.h5
-%   * 1 DATASET PAR CANAL LOGIQUE (donné par obj.display.channel)
-%   * chaque dataset = [H W k T] où k = nb de sous-canaux pour ce canal
-%     (ex: 1 pour grayscale, 3 pour RGB, etc.)
-%   * les sous-canaux sont déterminés via obj.findChannelID(channelName)
-%
-% - Dataseries (obj.data) -> data_<id>.mat
-%
-% Après un "full save" (tous les canaux), on purge obj.image et obj.data
-% pour que l'objet ROI devienne léger et sauvable dans le .mat du projet.
-%
-% option :
-%   "" ou []            => full save : tous les canaux logiques + data
-%   "data"              => on ne touche pas au .h5, juste les data_<id>.mat
-%   "GFP"               => on met à jour uniquement le dataset logique "GFP"
-%   {'GFP','SegMaskRGB'}=> on met à jour uniquement ces canaux logiques
-%
-% verbose : booléen
-%
-% didSave = true si au moins une écriture a été faite.
 
-if nargin < 2 || isempty(option)
-    option = "";
-end
-if nargin < 3 || isempty(verbose)
-    verbose = true;
+% ---- Normalize inputs ----
+if nargin < 2, option  = [];   end
+if nargin < 3, verbose = [];   end
+
+% Accept a lone boolean as 'verbose'
+if isempty(verbose) && islogical(option) && isscalar(option)
+    verbose = option;
+    option  = [];
 end
 
-imArray   = obj.image;        % [H W C T], avec T>=1, C>=1
-dsArray   = obj.data;         % dataseries array (peut être vide)
-didSave   = false;
+% Also accept name-value 'Verbose',true/false in 'option'
+if iscell(option)
+    ix = find(strcmpi(option,'Verbose'),1);
+    if ~isempty(ix) && numel(option) >= ix+1 && islogical(option{ix+1})
+        verbose = option{ix+1};
+        option([ix ix+1]) = []; % remove the pair
+    end
+end
+
+if isempty(verbose), verbose = true; end
+
+imArray = obj.image;        % [H W C T]
+dsArray = obj.data;
+didSave = false;
 
 if isempty(obj.path) || ~isfolder(obj.path)
-    if verbose
-        disp('ERROR: Invalid or missing path for ROI save.');
-    end
+    if verbose, disp('ERROR: Invalid or missing path for ROI save.'); end
     return;
 end
 
 h5File   = fullfile(obj.path, ['im_'   obj.id '.h5']);
 dataFile = fullfile(obj.path, ['data_' obj.id '.mat']);
 
-% --- Interpréter 'option'
+% ---------- Interpret 'option' ----------
 onlyData = (ischar(option)   && strcmp(option,'data')) || ...
-    (isstring(option) && strcmp(option,"data"));
+    (isstring(option) && option=="data");
 
 if onlyData
-    % on va sauver UNIQUEMENT les data (.mat), pas d'HDF5 du tout
-    requestedChannels = [];   % <-- IMPORTANT: [] et pas {}
+    requestedChannels = [];   % special marker: only data.mat
 else
-    % normaliser en cell array si c'est un nom de canal spécifique
+    % normalize channel list
     if isstring(option); option = cellstr(option); end
     if ischar(option);   option = {option};        end
     if iscell(option)
-        requestedChannels = option;   % ex {'GFP','SegMaskRGB'} => save partiel
+        requestedChannels = option;   % partial save on these logical channels
     else
-        requestedChannels = {};       % => full save (tous les canaux)
+        requestedChannels = {};       % FULL SAVE (all logical channels)
     end
+end
+
+if iscell(requestedChannels)
+    requestedChannels = cellfun(@(s)char(string(s)), requestedChannels, 'UniformOutput', false);
 end
 
 success      = false;
@@ -73,178 +65,181 @@ if isempty(imArray)
 end
 
 while ~success && attempts < max_attempts
-   % try
-        imageSaved = false;
-        dataSaved  = false;
+    % try
+    imageSaved = false;
+    dataSaved  = false;
 
-        % ==================================================
-        % 1) Sauvegarde HDF5 (images)
-        % ==================================================
-        if ~onlyData && ~isempty(imArray)
+    % ==================================================
+    % 1) Sauvegarde HDF5 (images)
+    % ==================================================
+    if ~onlyData && ~isempty(imArray)
 
-            % Harmoniser la taille de imArray en [H W C T]
-            sz = size(imArray);
-            if numel(sz) < 4
-                if numel(sz)==2
-                    sz = [sz 1 1];
-                    imArray = reshape(imArray, sz);
-                elseif numel(sz)==3
-                    sz = [sz 1];
-                    imArray = reshape(imArray, sz);
-                end
-            end
-            H = sz(1);
-            W = sz(2);
-            C = sz(3);
-            T = sz(4);
-
-            % Noms logiques des canaux (ex: {'Brightfield','GFP','SegMaskRGB'})
-            logicNames = getLogicalChannelNames(obj);
-
-            % fullSave = on veut tout réécrire dans le HDF5
-            % ATTENTION: seulement si on n'est PAS en mode onlyData
-
-
-            if ~onlyData && isequal(requestedChannels, {''})
-                fullSave = true;
-            else
-                fullSave = false;
-            end
-
-
-            if fullSave
-                % on repars d'un .h5 propre
-                if exist(h5File,'file')
-                    delete(h5File);
-                end
-            else
-                % mode partiel : on ne delete pas h5File
-            end
-
-            % Boucler sur CHAQUE canal LOGIQUE
-            for iChan = 1:numel(logicNames)
-                chanNameLogical = logicNames{iChan};
-
-                % Décider si on écrit ce canal logique
-                if fullSave
-                    doThisOne = true;
-                else
-                    doThisOne = any(strcmpi(requestedChannels, chanNameLogical));
-                end
-                if ~doThisOne
-                    continue;
-                end
-
-                % Récupérer les indices de la 3e dimension correspondant à ce canal logique
-                idxSet = obj.findChannelID(chanNameLogical);  % ex [1] ou [3 4 5]
-                idxSet = idxSet(:)';
-
-                if isempty(idxSet)
-                    % rien à sauver pour ce canal
-                    continue;
-                end
-
-                k = numel(idxSet);
-                chanBlock = imArray(:,:,idxSet,:);   % [H W k T]
-                thisClass = class(chanBlock);
-
-                % Prépare le chemin dataset dans le HDF5
-                dsetNameSanitized = sanitizeDatasetName(chanNameLogical);
-                h5Path = ['/' dsetNameSanitized];
-
-                % Chunking
-                chunkT   = min(T,10);
-                chunkDim = [H W k chunkT];
-                %
-                % % Vérifie si dataset existe déjà (en mode partiel)
-                % dsetExists = h5datasetExists(h5File, h5Path);
-                %
-                % if ~dsetExists
-                %     % créer dataset
-                %     h5create(h5File, h5Path, [H W k T], ...
-                %              'Datatype', thisClass, ...
-                %              'ChunkSize', chunkDim);
-                % else
-                %     % dataset existe -> on suppose tailles compatibles;
-                %     % sinon tu pourras rajouter un check h5info ici plus tard
-                % end
-                %
-                % % Écrire / réécrire l'ensemble du bloc
-                % h5write(h5File, h5Path, chanBlock, ...
-                %         [1 1 1 1], [H W k T]);
-
-                writeH5CompressedDataset(h5File, h5Path, chanBlock, chunkDim, thisClass);
-
-
-                % Attributs utiles
-                h5writeatt(h5File, h5Path, 'roi_id',          obj.id);
-                h5writeatt(h5File, h5Path, 'bbox',            getBBox(obj));
-                h5writeatt(h5File, h5Path, 'frames',          getFrames(obj,T));
-                h5writeatt(h5File, h5Path, 'channel_name',    chanNameLogical);
-                h5writeatt(h5File, h5Path, 'channel_indices', idxSet);
-                h5writeatt(h5File, h5Path, 'channelid',       obj.channelid);
-
-
-                % Attributs d'affichage (intensity, rgb, indexed, etc.)
-                dispMeta = buildDisplayMetaForChannel(obj, iChan, k);
-                metaFields = fieldnames(dispMeta);
-                for ff = 1:numel(metaFields)
-                    nm = metaFields{ff};
-                    h5writeatt(h5File, h5Path, nm, dispMeta.(nm));
-                end
-
-                imageSaved = true;
-
-                if verbose
-                    fprintf('ROI #%s: HDF5 save of "%s" (%d subchan, %d frames).\n',...
-                        obj.id, chanNameLogical, k, T);
-                end
-            end
-
-            % Après un FULL SAVE (tous les canaux), on allège l'objet
-            if fullSave
-                obj.image = [];
+        % Harmoniser la taille de imArray en [H W C T]
+        sz = size(imArray);
+        if numel(sz) < 4
+            if numel(sz)==2
+                sz = [sz 1 1];
+                imArray = reshape(imArray, sz);
+            elseif numel(sz)==3
+                sz = [sz 1];
+                imArray = reshape(imArray, sz);
             end
         end
+        H = sz(1);
+        W = sz(2);
+        C = sz(3);
+        T = sz(4);
 
-        % ==================================================
-        % 2) Sauvegarde DATA -> .mat
-        % ==================================================
-        hasDataToSave = false;
-        if ~isempty(dsArray)
-            if isa(dsArray,'dataseries')
-                hasDataToSave = any(arrayfun(@(ds) ...
-                    isprop(ds,'groupid') && ~isempty(ds.groupid), dsArray));
-            elseif isstruct(dsArray)
-                hasDataToSave = isfield(dsArray,'groupid') && ~isempty(dsArray.groupid);
+        % Noms logiques des canaux (ex: {'Brightfield','GFP','SegMaskRGB'})
+        logicNames = getLogicalChannelNames(obj);
+
+        % fullSave = on veut tout réécrire dans le HDF5
+        % ATTENTION: seulement si on n'est PAS en mode onlyData
+
+
+        fullSave = (~onlyData) && isempty(requestedChannels);
+
+
+        if fullSave
+            % on repars d'un .h5 propre
+            if exist(h5File,'file')
+                delete(h5File);
             end
+        else
+            % mode partiel : on ne delete pas h5File
         end
 
-        if onlyData || hasDataToSave
-            data = dsArray; %#ok<NASGU>
-            save(dataFile, 'data');
-            dataSaved = true;
+        % Boucler sur CHAQUE canal LOGIQUE
+        for iChan = 1:numel(logicNames)
+            chanNameLogical = logicNames{iChan};
+
+            % Décider si on écrit ce canal logique
+            if fullSave
+                doThisOne = true;
+            else
+                doThisOne = any(strcmpi(requestedChannels, chanNameLogical));
+            end
+            if ~doThisOne
+                continue;
+            end
+
+            % Récupérer les indices de la 3e dimension correspondant à ce canal logique
+            idxSet = obj.findChannelID(chanNameLogical, 'exact');  % renvoie un vecteur
+            if isempty(idxSet)
+                % fallback déterministe
+                idxSet = find(obj.channelid == iChan).';
+                if isempty(idxSet), idxSet = iChan; end
+            end
+
+            idxSet = idxSet(:)';
+
+            if isempty(idxSet)
+                % rien à sauver pour ce canal
+                continue;
+            end
+
+            k = numel(idxSet);
+            chanBlock = imArray(:,:,idxSet,:);   % [H W k T]
+            thisClass = class(chanBlock);
+
+            % Prépare le chemin dataset dans le HDF5
+            dsetNameSanitized = sanitizeDatasetName(chanNameLogical);
+            h5Path = ['/' dsetNameSanitized];
+
+            % Chunking
+            chunkT   = min(T,10);
+            chunkDim = [H W k chunkT];
+            %
+            % % Vérifie si dataset existe déjà (en mode partiel)
+            % dsetExists = h5datasetExists(h5File, h5Path);
+            %
+            % if ~dsetExists
+            %     % créer dataset
+            %     h5create(h5File, h5Path, [H W k T], ...
+            %              'Datatype', thisClass, ...
+            %              'ChunkSize', chunkDim);
+            % else
+            %     % dataset existe -> on suppose tailles compatibles;
+            %     % sinon tu pourras rajouter un check h5info ici plus tard
+            % end
+            %
+            % % Écrire / réécrire l'ensemble du bloc
+            % h5write(h5File, h5Path, chanBlock, ...
+            %         [1 1 1 1], [H W k T]);
+
+            % writeH5CompressedDataset(h5File, h5Path, chanBlock, chunkDim, thisClass);
+
+            upsertH5Dataset_frames(h5File, h5Path, chanBlock, [H W k T], thisClass);
+
+            % Attributs utiles
+            h5writeatt(h5File, h5Path, 'roi_id',          obj.id);
+            h5writeatt(h5File, h5Path, 'bbox',            getBBox(obj));
+            h5writeatt(h5File, h5Path, 'frames',          getFrames(obj,T));
+            h5writeatt(h5File, h5Path, 'channel_name',    chanNameLogical);
+            h5writeatt(h5File, h5Path, 'channel_indices', idxSet);
+            h5writeatt(h5File, h5Path, 'channelid',       obj.channelid);
+
+
+            % Attributs d'affichage (intensity, rgb, indexed, etc.)
+            dispMeta = buildDisplayMetaForChannel(obj, iChan, k);
+            metaFields = fieldnames(dispMeta);
+            for ff = 1:numel(metaFields)
+                nm = metaFields{ff};
+                h5writeatt(h5File, h5Path, nm, dispMeta.(nm));
+            end
+
+            imageSaved = true;
 
             if verbose
-                fprintf('ROI #%s: MAT data saved (%s).\n', obj.id, dataFile);
+                fprintf('ROI #%s: HDF5 save of "%s" (%d subchan, %d frames).\n',...
+                    obj.id, chanNameLogical, k, T);
             end
-
-            % On purge aussi data pour alléger l'objet stocké dans le projet
-            obj.data = dataseries.empty;
         end
 
-        % ==================================================
-        % 3) Log interne et sortie
-        % ==================================================
-        if imageSaved
-            obj.log(['Saving ROI image datasets to ' h5File], 'Saving');
+        % Après un FULL SAVE (tous les canaux), on allège l'objet
+        if fullSave
+            obj.image = [];
         end
-        if dataSaved
-            obj.log(['Saving ROI data to ' dataFile], 'Saving');
+    end
+
+    % ==================================================
+    % 2) Sauvegarde DATA -> .mat
+    % ==================================================
+    hasDataToSave = false;
+    if ~isempty(dsArray)
+        if isa(dsArray,'dataseries')
+            hasDataToSave = any(arrayfun(@(ds) ...
+                isprop(ds,'groupid') && ~isempty(ds.groupid), dsArray));
+        elseif isstruct(dsArray)
+            hasDataToSave = isfield(dsArray,'groupid') && ~isempty(dsArray.groupid);
+        end
+    end
+
+    if onlyData || hasDataToSave
+        data = dsArray; %#ok<NASGU>
+        save(dataFile, 'data');
+        dataSaved = true;
+
+        if verbose
+            fprintf('ROI #%s: MAT data saved (%s).\n', obj.id, dataFile);
         end
 
-        didSave  = imageSaved || dataSaved;
-        success  = true;
+        % On purge aussi data pour alléger l'objet stocké dans le projet
+        obj.data = dataseries.empty;
+    end
+
+    % ==================================================
+    % 3) Log interne et sortie
+    % ==================================================
+    if imageSaved
+        obj.log(['Saving ROI image datasets to ' h5File], 'Saving');
+    end
+    if dataSaved
+        obj.log(['Saving ROI data to ' dataFile], 'Saving');
+    end
+
+    didSave  = imageSaved || dataSaved;
+    success  = true;
 
     % catch ME
     %     attempts = attempts + 1;
@@ -437,8 +432,10 @@ end
 % rgb (reste tel quel)
 if isfield(d,'displaylim') && ~isempty(d.displaylim)
     row = d.displaylim(:,ival);
+    if isempty(row), row = repmat([0;1], 1, k); end     % ✅ fallback
     dispMeta.display_displaylim = row;
 end
+
 
 % indexed -> uint8
 if isfield(d,'indexed') && ~isempty(d.indexed)
@@ -495,7 +492,7 @@ if isfield(d,'frame') && ~isempty(d.frame)
 end
 
 if isfield(d,'binning') && ~isempty(d.binning)
-    dispMeta.display_frame=d.binning;
+    dispMeta.display_binning=d.binning;
 end
 
 % nb de sous-canaux k (numérique)
@@ -510,5 +507,133 @@ if isempty(s)
     s = 'channel';
 end
 nameOut = s;
+end
+
+
+function upsertH5Dataset_frames(h5filename, datasetName, data, dims_mat, thisClass)
+% data      : [H W k Tnew]
+H = dims_mat(1); W = dims_mat(2); k = dims_mat(3); Tnew = dims_mat(4);
+
+% Ouvrir / créer le fichier
+if exist(h5filename,'file')
+    fid = H5F.open(h5filename, 'H5F_ACC_RDWR', 'H5P_DEFAULT');
+else
+    fid = H5F.create(h5filename, 'H5F_ACC_TRUNC', 'H5P_DEFAULT', 'H5P_DEFAULT');
+end
+
+dset_exists = H5L.exists(fid, datasetName, 'H5P_DEFAULT') > 0;
+
+Told = 0; need_reopen_for_write = true;
+
+if ~dset_exists
+    % 1) Création extensible, chunkée, compressée
+    createResizableDataset(fid, datasetName, thisClass, [H W k Tnew]);
+else
+    % 2) Dataset existe -> lire dimensions courantes (ordre HDF5 = [T k W H])
+    dset_id  = H5D.open(fid, datasetName);
+    space_id = H5D.get_space(dset_id);
+    try
+        info_one = h5info(h5filename, datasetName);
+        dims_h5 = double(info_one.Dataspace.Size);  % [T k W H] normalement
+
+    catch
+        [cur_dims, ~] = H5S.get_simple_extent_dims(space_id);
+        dims_h5 = double(cur_dims(:).');
+
+    end
+    H5S.close(space_id);
+
+    % Sécuriser le rang
+    if numel(dims_h5) < 4, dims_h5(end+1:4) = 1; end
+
+    Told  = dims_h5(4)
+    k_old = dims_h5(3)
+    W_old = dims_h5(2)
+    H_old = dims_h5(1)
+
+    if H_old ~= H || W_old ~= W || k_old ~= k
+        % 2a) Dimensions incompatibles -> recréer proprement
+        H5D.close(dset_id);                 % ⚠️ ici on a bien un handle ouvert
+        H5L.delete(fid, datasetName, 'H5P_DEFAULT');
+        createResizableDataset(fid, datasetName, thisClass, [H W k Tnew]);
+    else
+        % 2b) Possible append -> étendre si besoin
+        if Tnew > Told
+            new_dims_h5 = double([Tnew  k  W  H]);   % [T k W H]
+            H5D.set_extent(dset_id, new_dims_h5);
+        end
+        H5D.close(dset_id);  % ✅ on ferme uniquement si on l'a ouvert
+    end
+end
+
+% 3) Écriture (append ou overwrite partiel) via hyperslab
+dset_id = H5D.open(fid, datasetName);          % (ré)ouvre proprement
+h5type  = matlabClassToH5(thisClass, data);
+fspace  = H5D.get_space(dset_id);
+
+if Tnew > Told
+    % Append: écrire seulement Told+1 : Tnew
+    start = double([Told  0  0  0]);           % [T k W H]
+    count = double([Tnew - Told,  k,  W,  H]);
+    H5S.select_hyperslab(fspace,'H5S_SELECT_SET', start, [], count, []);
+    mspace = H5S.create_simple(4, double([Tnew - Told,  k,  W,  H]), []);
+    H5D.write(dset_id, h5type, mspace, fspace, 'H5P_DEFAULT', data(:,:,:,Told+1:Tnew));
+    H5S.close(mspace);
+else
+    % Overwrite les Tnew premières frames
+    start = double([0  0  0  0]);
+    count = double([Tnew,  k,  W,  H]);
+    H5S.select_hyperslab(fspace,'H5S_SELECT_SET', start, [], count, []);
+    mspace = H5S.create_simple(4, double([Tnew,  k,  W,  H]), []);
+    H5D.write(dset_id, h5type, mspace, fspace, 'H5P_DEFAULT', data(:,:,:,1:Tnew));
+    H5S.close(mspace);
+end
+
+H5S.close(fspace);
+H5D.close(dset_id);
+H5F.close(fid);
+end
+
+
+
+function createResizableDataset(fid, datasetName, thisClass, dims_mat)
+H = dims_mat(1); W = dims_mat(2); k = max(1,dims_mat(3)); T = dims_mat(4); % k>=1
+
+maxT = H5ML.get_constant_value('H5S_UNLIMITED');
+maxdims_h5 = double([maxT  k  W  H]);      % [T k W H]
+curdims_h5 = double([T    k  W  H]);
+
+space_id = H5S.create_simple(4, curdims_h5, maxdims_h5);
+dcpl     = H5P.create('H5P_DATASET_CREATE');
+
+chunkT = max(1, min(T, 10));
+H5P.set_chunk(dcpl, double([chunkT  k  W  H]));
+H5P.set_deflate(dcpl, 4);
+
+h5type  = matlabClassToH5(thisClass, []);
+dset_id = H5D.create(fid, datasetName, h5type, space_id, ...
+                     'H5P_DEFAULT', dcpl, 'H5P_DEFAULT');
+
+H5D.close(dset_id);
+H5P.close(dcpl);
+H5S.close(space_id);
+end
+
+
+
+function h5type = matlabClassToH5(cls, data)
+switch cls
+    case 'uint8',   h5type = 'H5T_NATIVE_UCHAR';
+    case 'int8',    h5type = 'H5T_NATIVE_CHAR';
+    case 'uint16',  h5type = 'H5T_NATIVE_USHORT';
+    case 'int16',   h5type = 'H5T_NATIVE_SHORT';
+    case 'uint32',  h5type = 'H5T_NATIVE_UINT';
+    case 'int32',   h5type = 'H5T_NATIVE_INT';
+    case 'single',  h5type = 'H5T_NATIVE_FLOAT';
+    case 'double',  h5type = 'H5T_NATIVE_DOUBLE';
+    otherwise
+        h5type = 'H5T_NATIVE_DOUBLE';
+        if ~isempty(data), warning('Converting %s to double for HDF5.', cls); end
+end
 end
 

@@ -1,4 +1,4 @@
-function loadROI(obj, option)
+function load(obj, option)
 % loadROI(obj)           : charge TOUT depuis im_<id>.h5 et data_<id>.mat
 % loadROI(obj,'data')    : charge uniquement data_<id>.mat
 % loadROI(obj,'GFP')     : charge uniquement le canal logique "GFP" (image=[H W k T])
@@ -40,20 +40,22 @@ if ~dataOnly
             [img, chId, dispStruct] = loadFromH5_full(h5File);
         else
             chanName = char(option);
-            [img, chId, dispStruct] = loadFromH5_single(h5File, chanName);
+          %  [img, chId, dispStruct] = loadFromH5_single(h5File, chanName);
+            [img, chId, dispStruct] = loadFromH5_single(h5File, chanName, obj.image, obj.channelid, obj.display);
+
         end
 
         % 🧩 Fusion non destructive du display
         if isstruct(obj.display) && ~isempty(fieldnames(obj.display))
-            obj.display = mergeDisplayStructs(obj.display, dispStruct);
+    obj.display = mergeDisplayStructs(obj.display, dispStruct);
         else
-            obj.display = dispStruct;
+    obj.display = dispStruct;
         end
 
 
         obj.image     = img;
         obj.channelid = chId;
-        obj.display   = dispStruct;
+        
     elseif isfile(legacyFile)
         % -------- LEGACY FALLBACK --------
  
@@ -286,6 +288,319 @@ fprintf('[DEBUG] Summary: %d logical channels, total subchannels C=%d, H=%d W=%d
     N, C, H, W, T, hasBadIdx);
 end
 
+function [img, channelid, dispStruct] = loadFromH5_single(h5File, chanName, img0, chId0, disp0)
+% loadFromH5_single
+%   - Charge UNIQUEMENT le dataset logique 'chanName' depuis h5File
+%   - Le place dans l'hypervolume global [H W C T] aux indices C corrects
+%   - Met à jour uniquement les champs de display nécessaires à ce canal
+%
+% Signatures:
+%   [img, channelid, disp] = loadFromH5_single(h5File, chanName)
+%   [img, channelid, disp] = loadFromH5_single(h5File, chanName, img0, chId0, disp0)
+%
+% Entrées optionnelles:
+%   img0   : image globale existante [H W C T] (peut être [])
+%   chId0  : channelid existant (1xC) (peut être [])
+%   disp0  : struct display existant (peut être [])
+
+if nargin < 3, img0  = []; end
+if nargin < 4, chId0 = []; end
+if nargin < 5, disp0 = struct(); end
+
+info  = h5info(h5File);
+dsets = info.Datasets;
+
+if isempty(dsets)
+    error('loadFromH5_single:NoDatasets','No datasets in %s', h5File);
+end
+
+% --- Trouver le dataset par "channel_name" (attribut) ou par nom
+target = [];
+target_idx = [];
+for i = 1:numel(dsets)
+    p = ['/' dsets(i).Name];
+    nm = dsets(i).Name;
+    chn = nm;
+    try
+        chn = h5readatt(h5File, p, 'channel_name');
+    catch
+    end
+    if strcmpi(chn, chanName) || strcmpi(nm, chanName)
+        target = dsets(i);
+        target_idx = i;
+        break;
+    end
+end
+if isempty(target)
+    error('loadFromH5_single:NotFound','Channel "%s" not found in %s', chanName, h5File);
+end
+
+pTarget = ['/' target.Name];
+
+% --- Lire le bloc + normaliser [H W k T]
+blkRaw = h5read(h5File, pTarget);
+szR = size(blkRaw);
+% on suppose déjà rangé [H W k T] (comme ton full loader). Sinon, adapter ici.
+switch numel(szR)
+    case 2, sz = [szR 1 1];
+    case 3, sz = [szR 1];
+    otherwise, sz = szR;
+end
+H = sz(1); W = sz(2); k = sz(3); T = sz(4);
+blk = reshape(blkRaw, H, W, k, T);  % normalisation simple
+
+% --- Lire/estimer les indices globaux pour ce canal
+% Essai 1 : utiliser channel_indices s'il existe
+try
+    idxProvided = h5readatt(h5File, pTarget, 'channel_indices'); idxProvided = idxProvided(:).';
+catch
+    idxProvided = [];
+end
+
+% Pour connaître le C total et les indices occupés par les autres canaux,
+% on scanne vite fait les attributs des autres datasets (pas besoin des data)
+allIdx = {};
+for i = 1:numel(dsets)
+    p = ['/' dsets(i).Name];
+    try
+        ci = h5readatt(h5File, p, 'channel_indices'); ci = ci(:).';
+    catch
+        ci = [];
+    end
+    allIdx{i} = ci;
+end
+
+% Stratégie d'indexation:
+% - Si idxProvided cohérent -> on s'en sert
+% - Sinon, si img0 existe -> on append/replace intelligemment
+% - Sinon, on repack séquentiel minimal (C = somme k de tous les dsets, si dispo),
+%   mais comme on ne charge qu'un canal, on place au début.
+
+destIdx = [];
+if ~isempty(idxProvided) && numel(idxProvided) == k
+    destIdx = idxProvided;
+end
+
+% Taille C existante si img0 fourni
+if ~isempty(img0)
+    C0 = size(img0,3);
+else
+    % sinon, déduire un C théorique à partir des attributs si disponibles
+    C0 = 0;
+    for i = 1:numel(allIdx)
+        if ~isempty(allIdx{i})
+            C0 = max(C0, max(allIdx{i}));
+        end
+    end
+    if C0 == 0
+        % fallback minimal
+        C0 = k;
+    end
+end
+
+% Décide où placer ce bloc:
+if isempty(destIdx)
+    % Pas d'indices fournis -> on essaye de réutiliser un slot existant
+    % si le canal existe déjà dans disp0.channel (par son nom)
+    reuse = false;
+    if isstruct(disp0) && isfield(disp0,'channel') && ~isempty(disp0.channel)
+        % chercher le canal logique par nom exact (insensible à la casse)
+        logicalNames = disp0.channel;
+        hit = find(strcmpi(logicalNames, chanName), 1);
+        if ~isempty(hit) && isfield(disp0,'selectedchannel') && hit <= numel(disp0.selectedchannel)
+            % si on connaît déjà combien de sous-canaux affectés à ce logique
+            % on reconstitue via chId0 (si dispo)
+            if ~isempty(chId0)
+                destIdx = find(chId0 == hit);
+                % si vide ou tailles différentes, on abandonne la réutilisation
+                if numel(destIdx) ~= k
+                    destIdx = [];
+                else
+                    reuse = true;
+                end
+            end
+        end
+    end
+
+    if ~reuse
+        % Append à la fin
+        start = C0 + 1;
+        destIdx = start:(start + k - 1);
+        C0 = start + k - 1;
+    end
+else
+    % S'assure que C0 couvre destIdx
+    C0 = max(C0, max(destIdx));
+end
+
+% --- Construire/étendre l'image globale
+if isempty(img0)
+    img = zeros(H, W, C0, T, 'like', blk);
+else
+    img = img0;
+    % agrandir si nécessaire
+    if size(img,1) ~= H || size(img,2) ~= W || size(img,4) ~= T
+        error('loadFromH5_single:DimMismatch', 'Existing image dims do not match target dataset dims.');
+    end
+    if size(img,3) < max(destIdx)
+        img(:,:,end+1:max(destIdx),:) = 0;
+    end
+end
+
+% Place le bloc
+img(:,:,destIdx,:) = blk;
+
+% --- Mettre à jour channelid
+if isempty(chId0)
+    % On doit reconstruire un id logique minimal: 1 logique unique
+    channelid = zeros(1, size(img,3));
+    channelid(destIdx) = 1;
+else
+    channelid = chId0;
+    if numel(channelid) < size(img,3)
+        channelid(end+1:size(img,3)) = 0;
+    end
+    % Si le canal existe déjà (cas reuse), on garde l'id existant.
+    % Sinon, on crée un nouveau "logique" à la fin.
+    if all(channelid(destIdx) == 0)
+        nextLogical = max(channelid) + 1;
+        channelid(destIdx) = nextLogical;
+    end
+end
+
+% --- Lire les attributs display pour ce canal
+att.intensity  = readAttOrDefault(h5File, pTarget, 'display_intensity',  [1 1 1]);
+att.rgb        = readAttOrDefault(h5File, pTarget, 'display_rgb',        [1 1 1]);
+att.displaylim = readAttOrDefault(h5File, pTarget, 'display_displaylim', [0 1]);
+att.indexed    = readAttOrDefault(h5File, pTarget, 'display_indexed',    uint8(0));
+att.alpha      = readAttOrDefault(h5File, pTarget, 'display_alpha',      1);
+att.contour    = readAttOrDefault(h5File, pTarget, 'display_contour',    uint8(0));
+att.width      = readAttOrDefault(h5File, pTarget, 'display_contourwidth', 1);
+att.frame      = readAttOrDefault(h5File, pTarget, 'display_frame',      1);
+att.binning    = readAttOrDefault(h5File, pTarget, 'display_binning',    1);
+
+% --- Mettre à jour uniquement ce qu'il faut dans le display
+% On part de disp0 si fournit, sinon on crée un squelette minimal
+if isempty(disp0) || ~isstruct(disp0) || ~isfield(disp0,'channel')
+    % squelette minimal: un seul canal logique
+    L = max(channelid);               % nb de canaux logiques
+    C = size(img,3);                  % nb de sous-channels
+    dispStruct = defaultDisplay(L, C);
+else
+    dispStruct = disp0;
+    % Ajuster tailles C si l'image a grandi
+    C = size(img,3);
+    if ~isfield(dispStruct,'displaylim') || size(dispStruct.displaylim,2) ~= C
+        % on ré-étend/recale displaylim en gardant l'existant
+        dlim = repmat([0;1],1,C);
+        if isfield(dispStruct,'displaylim') && ~isempty(dispStruct.displaylim)
+            oldC = size(dispStruct.displaylim,2);
+            dlim(:,1:min(oldC,C)) = dispStruct.displaylim(:,1:min(oldC,C));
+        end
+        dispStruct.displaylim = dlim;
+    end
+    if ~isfield(dispStruct,'rgb') || size(dispStruct.rgb,1) ~= max(1,size(dispStruct.intensity,1))
+        % Par design chez toi, rgb est de taille N x 3 (un par canal logique)
+        % On recale plus bas au bon index logique
+    end
+end
+
+% Nom logique du canal (depuis attribut)
+try
+    logicalName = h5readatt(h5File, pTarget, 'channel_name');
+catch
+    logicalName = target.Name;
+end
+
+% Assigner / créer le canal logique correspondant
+%   - on affecte les propriétés "par canal logique" (intensity, indexed, alpha, contour, width, selectedchannel)
+%   - et les colonnes de displaylim correspondant aux sous-canaux destIdx
+%   - pour le nom, on place/étend dispStruct.channel
+
+logicalId = unique(channelid(destIdx));
+if numel(logicalId) ~= 1
+    % sécurité: tous les destIdx doivent appartenir au même logique
+    logicalId = logicalId(1);
+end
+
+% Assurer la taille des tableaux logiques
+Nlog = max(logicalId, isfield(dispStruct,'intensity')*size(dispStruct.intensity,1));
+if ~isfield(dispStruct,'intensity') || size(dispStruct.intensity,1) < Nlog
+    miss = Nlog - (isfield(dispStruct,'intensity')*size(dispStruct.intensity,1));
+    if ~isfield(dispStruct,'intensity') || isempty(dispStruct.intensity)
+        dispStruct.intensity = repmat([1 1 1], Nlog, 1);
+    else
+        dispStruct.intensity(end+1:end+miss,:) = repmat([1 1 1], miss, 1);
+    end
+end
+fields1xN = {'indexed','alpha','contour','width','selectedchannel','log'};
+for f = fields1xN
+    ff = f{1};
+    if ~isfield(dispStruct,ff) || numel(dispStruct.(ff)) < Nlog
+        cur = [];
+        if isfield(dispStruct,ff), cur = dispStruct.(ff); end
+        def = 0; if any(strcmp(ff,{'alpha','width','selectedchannel'})), def = 1; end
+        dispStruct.(ff) = [cur, repmat(def, 1, Nlog - numel(cur))];
+    end
+end
+if ~isfield(dispStruct,'channel') || numel(dispStruct.channel) < Nlog
+    cur = {};
+    if isfield(dispStruct,'channel') && ~isempty(dispStruct.channel), cur = dispStruct.channel; end
+    cur(end+1:Nlog) = arrayfun(@(k)sprintf('channel_%d',k), (numel(cur)+1):Nlog, 'UniformOutput', false);
+    dispStruct.channel = cur;
+end
+
+% Appliquer les attributs *pour ce canal logique*
+dispStruct.channel{logicalId}     = logicalName;
+dispStruct.intensity(logicalId,:) = double(att.intensity(:).');
+dispStruct.indexed(logicalId)     = double(att.indexed(1));
+dispStruct.alpha(logicalId)       = double(att.alpha(1));
+dispStruct.contour(logicalId)     = double(att.contour(1));
+dispStruct.width(logicalId)       = double(att.width(1));
+if ~isfield(dispStruct,'frame') || isempty(dispStruct.frame)
+    dispStruct.frame = double(att.frame);
+else
+    % on ne change pas le frame global si déjà défini
+end
+if ~isfield(dispStruct,'binning') || isempty(dispStruct.binning)
+    dispStruct.binning = double(att.binning);
+end
+% selectedchannel: on ne touche pas si déjà défini, sinon 1 par défaut
+if ~isfield(dispStruct,'selectedchannel') || isempty(dispStruct.selectedchannel)
+    dispStruct.selectedchannel = ones(1, Nlog);
+end
+if ~isfield(dispStruct,'log') || isempty(dispStruct.log)
+    dispStruct.log = zeros(1, Nlog);
+end
+
+% displaylim par sous-canal (colonnes destIdx)
+dlimChan = double(att.displaylim);
+if isequal(size(dlimChan), [1 2]), dlimChan = dlimChan(:); end % robustesse
+if numel(dlimChan) == 2
+    dlimChan = repmat(dlimChan(:), 1, k);  % 2 x k
+end
+if size(dlimChan,1) ~= 2 || size(dlimChan,2) ~= k
+    % sécurité: fallback [0;1]
+    dlimChan = repmat([0;1], 1, k);
+end
+dispStruct.displaylim(:, destIdx) = dlimChan;
+
+% rgb "par canal logique" (conforme à ton full loader actuel)
+% NB: ton full loader mettait rgb comme N x 3 (un par canal logique)
+if ~isfield(dispStruct,'rgb') || size(dispStruct.rgb,1) < Nlog
+    cur = [];
+    if isfield(dispStruct,'rgb') && ~isempty(dispStruct.rgb), cur = dispStruct.rgb; end
+    dispStruct.rgb = [cur; repmat([1 1 1], Nlog - size(cur,1), 1)];
+end
+dispStruct.rgb(logicalId,:) = double(att.rgb(:).');
+
+% stretchlim inchangé (si existant)
+% fin.
+
+fprintf('[DEBUG] Single-load: placed "%s" into C-indices %s (logical=%d). H=%d W=%d k=%d T=%d\n', ...
+    chanName, mat2str(destIdx), logicalId, H, W, k, T);
+
+end
 
 % ==================== H E L P E R S ====================
 
