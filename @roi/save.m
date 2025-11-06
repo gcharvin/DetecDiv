@@ -31,6 +31,11 @@ if isempty(obj.path) || ~isfolder(obj.path)
     return;
 end
 
+absStart0 = [];
+if isfield(obj.display,'write_abs_start') && ~isempty(obj.display.write_abs_start)
+    absStart0 = double(obj.display.write_abs_start);   % 0-based
+end
+
 h5File   = fullfile(obj.path, ['im_'   obj.id '.h5']);
 dataFile = fullfile(obj.path, ['data_' obj.id '.mat']);
 
@@ -57,7 +62,7 @@ end
 
 success      = false;
 attempts     = 0;
-max_attempts = 1;
+max_attempts = 5;
 
 
 if isempty(imArray)
@@ -65,7 +70,7 @@ if isempty(imArray)
 end
 
 while ~success && attempts < max_attempts
-    % try
+%     try
     imageSaved = false;
     dataSaved  = false;
 
@@ -93,15 +98,10 @@ while ~success && attempts < max_attempts
         % Noms logiques des canaux (ex: {'Brightfield','GFP','SegMaskRGB'})
         logicNames = getLogicalChannelNames(obj);
 
-               
-
-       
-
         % fullSave = on veut tout réécrire dans le HDF5
         % ATTENTION: seulement si on n'est PAS en mode onlyData
 
         fullSave = (~onlyData) && isempty(requestedChannels);
-
 
         if fullSave
             % on repars d'un .h5 propre
@@ -127,8 +127,7 @@ while ~success && attempts < max_attempts
                 continue;
             end
 
-       
-
+     
             % Récupérer les indices de la 3e dimension correspondant à ce canal logique
             idxSet = obj.findChannelID(chanNameLogical, 'exact');  % renvoie un vecteur
             if isempty(idxSet)
@@ -155,27 +154,8 @@ while ~success && attempts < max_attempts
             % Chunking
             chunkT   = min(T,10);
             chunkDim = [H W k chunkT];
-            %
-            % % Vérifie si dataset existe déjà (en mode partiel)
-            % dsetExists = h5datasetExists(h5File, h5Path);
-            %
-            % if ~dsetExists
-            %     % créer dataset
-            %     h5create(h5File, h5Path, [H W k T], ...
-            %              'Datatype', thisClass, ...
-            %              'ChunkSize', chunkDim);
-            % else
-            %     % dataset existe -> on suppose tailles compatibles;
-            %     % sinon tu pourras rajouter un check h5info ici plus tard
-            % end
-            %
-            % % Écrire / réécrire l'ensemble du bloc
-            % h5write(h5File, h5Path, chanBlock, ...
-            %         [1 1 1 1], [H W k T]);
-
-            % writeH5CompressedDataset(h5File, h5Path, chanBlock, chunkDim, thisClass);
-
-            upsertH5Dataset_frames(h5File, h5Path, chanBlock, [H W k T], thisClass);
+           
+            upsertH5Dataset_frames(h5File, h5Path, chanBlock, [H W k T], thisClass,absStart0);
 
               
 
@@ -269,124 +249,25 @@ end
 end
 
 
-function writeH5CompressedDataset(h5filename, datasetName, data, chunkDim, thisClass)
-% h5filename : chemin du .h5
-% datasetName: chemin interne du dataset, ex '/Channel0'
-% data       : bloc [H W k T]
-% chunkDim   : chunk [H W k chunkT] calculé par l'appelant
-% thisClass  : class(data) ('uint16', etc.), calculé par l'appelant
-%
-% Effet : (ré)crée dataset compressé gzip + écrit data
-
-
-
-%     Compression plus forte (fichier plus petit, plus lent à sauver) :
-%
-% H5P.set_deflate(dcpl, 9);      % au lieu de 4
-% chunkT   = min(T, 30);         % au lieu de 10
-% chunkDim = [H W k chunkT];
-%
-%
-% Compression plus rapide (fichier un peu plus gros, écriture plus fluide) :
-%
-% H5P.set_deflate(dcpl, 2);      % au lieu de 4
-% chunkT   = min(T, 5);          % au lieu de 10
-% chunkDim = [H W k chunkT];
-
-% -- Assurer le dossier parent
-parentDir = fileparts(h5filename);
-if ~isempty(parentDir) && ~exist(parentDir,'dir')
-    mkdir(parentDir);
-end
-
-% -- Ouvrir ou créer le fichier .h5
-if exist(h5filename, 'file')
-    file_id = H5F.open(h5filename, 'H5F_ACC_RDWR', 'H5P_DEFAULT');
-else
-    file_id = H5F.create(h5filename, 'H5F_ACC_TRUNC', 'H5P_DEFAULT', 'H5P_DEFAULT');
-end
-
-% -- Si le dataset existe déjà, on le supprime pour le recréer proprement
-if H5L.exists(file_id, datasetName, 'H5P_DEFAULT')
-    H5L.delete(file_id, datasetName, 'H5P_DEFAULT');
-end
-
-% -- Dimensions du tableau tel quel (on garde l'ordre MATLAB [H W k T])
-% dims = size(data);
-% rank = numel(dims);
-%
-% % -- Créer l'espace de datas
-% space_id = H5S.create_simple(rank, dims, []);  % pas de flip -> cohérent avec h5read direct
-
-dims_mat = size(data);           % [H W k T] en MATLAB
-dims_h5  = fliplr(dims_mat);     % -> [T k W H] pour HDF5 C
-
-space_id = H5S.create_simple(numel(dims_h5), dims_h5, []);
-
-% -- Propriétés de création du dataset : chunk + deflate
-dcpl = H5P.create('H5P_DATASET_CREATE');
-
-% on impose le chunking calculé par l'appelant
-% chunkDim doit être même ordre [H W k chunkT] compatible avec dims
-% if numel(chunkDim) ~= numel(dims)
-%     % sécurité minimale si jamais chunkDim ne matche pas
-%     chunkDimSafe = dims;
-%     if rank >= 4
-%         chunkDimSafe(end) = min(dims(end), 10); % fallback
-%     end
-%     H5P.set_chunk(dcpl, chunkDimSafe);
-% else
-%     H5P.set_chunk(dcpl, chunkDim);
-% end
-
-chunk_mat = chunkDim;            % [H W k chunkT]
-chunk_h5  = fliplr(chunk_mat);   % -> [chunkT k W H]
-H5P.set_chunk(dcpl, chunk_h5);
-
-% compression gzip niveau 4
-H5P.set_deflate(dcpl, 4);
-
-% -- Type HDF5 à partir de thisClass
-switch thisClass
-    case 'uint8'
-        h5type = 'H5T_NATIVE_UCHAR';
-    case 'int8'
-        h5type = 'H5T_NATIVE_CHAR';
-    case 'uint16'
-        h5type = 'H5T_NATIVE_USHORT';
-    case 'int16'
-        h5type = 'H5T_NATIVE_SHORT';
-    case 'uint32'
-        h5type = 'H5T_NATIVE_UINT';
-    case 'int32'
-        h5type = 'H5T_NATIVE_INT';
-    case 'single'
-        h5type = 'H5T_NATIVE_FLOAT';
-    case 'double'
-        h5type = 'H5T_NATIVE_DOUBLE';
-    otherwise
-        % fallback : on convertit en double
-        h5type = 'H5T_NATIVE_DOUBLE';
-        data   = double(data);
-end
-
-% -- Créer dataset compressé
-dset_id = H5D.create(file_id, datasetName, h5type, space_id, ...
-    'H5P_DEFAULT', dcpl, 'H5P_DEFAULT');
-
-% -- Écrire le bloc complet
-H5D.write(dset_id, h5type, 'H5S_ALL', 'H5S_ALL', 'H5P_DEFAULT', data);
-
-% -- Fermer proprement
-H5D.close(dset_id);
-H5P.close(dcpl);
-H5S.close(space_id);
-H5F.close(file_id);
-end
-
-
-
 %% ===== Helpers =====
+
+function bpp = bytesPerClass(cls)
+% Renvoie le nombre d'octets par pixel pour une classe MATLAB donnée.
+switch cls
+    case {'uint8','int8'}
+        bpp = 1;
+    case {'uint16','int16'}
+        bpp = 2;
+    case {'uint32','int32','single'}
+        bpp = 4;
+    case {'uint64','int64','double'}
+        bpp = 8;
+    otherwise
+        warning('Classe inconnue (%s), on suppose 2 bytes/pixel.', cls);
+        bpp = 2;
+end
+end
+
 
 function names = getLogicalChannelNames(obj)
 % Renvoie obj.display.channel en cellstr
@@ -524,107 +405,140 @@ nameOut = s;
 end
 
 
-function upsertH5Dataset_frames(h5filename, datasetName, data, dims_mat, thisClass)
-% data      : [H W k Tnew]
-H = dims_mat(1); W = dims_mat(2); k = dims_mat(3); Tnew = dims_mat(4);
+function upsertH5Dataset_frames(h5filename, datasetName, data, dims_mat, thisClass, absStart0)
+% data : [H W k Tblock] (MATLAB order)
+if nargin < 6, absStart0 = []; end
 
-% Ouvrir / créer le fichier
+H = dims_mat(1); W = dims_mat(2); k = dims_mat(3);
+Tblock = size(data,4);
+
+% -- open/create file
 if exist(h5filename,'file')
-    fid = H5F.open(h5filename, 'H5F_ACC_RDWR', 'H5P_DEFAULT');
+    fid = H5F.open(h5filename,'H5F_ACC_RDWR','H5P_DEFAULT');
 else
-    fid = H5F.create(h5filename, 'H5F_ACC_TRUNC', 'H5P_DEFAULT', 'H5P_DEFAULT');
+    fid = H5F.create(h5filename,'H5F_ACC_TRUNC','H5P_DEFAULT','H5P_DEFAULT');
 end
 
-dset_exists = H5L.exists(fid, datasetName, 'H5P_DEFAULT') > 0;
+exists = H5L.exists(fid, datasetName, 'H5P_DEFAULT') > 0;
 
-Told = 0; need_reopen_for_write = true;
+t0 = 0; Told = 0; 
 
-
-if ~dset_exists
-    % 1) Création extensible, chunkée, compressée
- 
-    createResizableDataset(fid, datasetName, thisClass, [H W k Tnew]);
+if ~exists
+    % Crée le dataset extensible à T=0 (ordre fichier [T k W H])
+    createResizableDataset(fid, datasetName, thisClass, [H W k 0]);
 else
-    % 2) Dataset existe -> lire dimensions courantes (ordre HDF5 = [T k W H])
+    % Lire dims actuelles (ordre fichier [T k W H])
     dset_id  = H5D.open(fid, datasetName);
     space_id = H5D.get_space(dset_id);
-    try
-        info_one = h5info(h5filename, datasetName);
-        dims_h5 = double(info_one.Dataspace.Size);  % [T k W H] normalement
+    [~, cur_dims, ~] = H5S.get_simple_extent_dims(space_id);
 
-    catch
-        [cur_dims, ~] = H5S.get_simple_extent_dims(space_id);
-        dims_h5 = double(cur_dims(:).');
-
-    end
     H5S.close(space_id);
+    dims = double(cur_dims(:).');
+    dims(end+1:4)=1;
+    Told  = dims(1);
+    k_old = dims(2) ;
+    W_old = dims(3) ;
+    H_old = dims(4);
+    H5D.close(dset_id);
 
-    % Sécuriser le rang
-    if numel(dims_h5) < 4, dims_h5(end+1:4) = 1; end
+    % Lire l'attribut t0 (origine absolue 0-based), si présent
+    try
+        t0 = double(h5readatt(h5filename, datasetName, 'abs_t0'));
+    catch
+        t0 = 0;   % défaut si absent
+    end
 
-    Told  = dims_h5(4);
-    k_old = dims_h5(3);
-    W_old = dims_h5(2);
-    H_old = dims_h5(1);
 
-    if H_old ~= H || W_old ~= W || k_old ~= k
-        % 2a) Dimensions incompatibles -> recréer proprement
-        H5D.close(dset_id);                 % ⚠️ ici on a bien un handle ouvert
-        H5L.delete(fid, datasetName, 'H5P_DEFAULT');
-        createResizableDataset(fid, datasetName, thisClass, [H W k Tnew]);
-    else
-        % 2b) Possible append -> étendre si besoin
-        if Tnew > Told
-            new_dims_h5 = double([Tnew  k  W  H]);   % [T k W H]
-            H5D.set_extent(dset_id, new_dims_h5);
+    % Si mismatch spatial → recrée à T=0 (on garde t0)
+    if H_old~=H || W_old~=W || k_old~=k
+    
+        if H5L.exists(fid, datasetName, 'H5P_DEFAULT')>0
+            H5L.delete(fid, datasetName, 'H5P_DEFAULT');
         end
-        H5D.close(dset_id);  % ✅ on ferme uniquement si on l'a ouvert
+        createResizableDataset(fid, datasetName, thisClass, [H W k 0]);
+        Told = 0;
     end
 end
 
-% 3) Écriture (append ou overwrite partiel) via hyperslab
-dset_id = H5D.open(fid, datasetName);          % (ré)ouvre proprement
-h5type  = matlabClassToH5(thisClass, data);
-fspace  = H5D.get_space(dset_id);
-
-if Tnew > Told
-    % Append: écrire seulement Told+1 : Tnew
-    start = double([Told  0  0  0]);           % [T k W H]
-    count = double([Tnew - Told,  k,  W,  H]);
-    H5S.select_hyperslab(fspace,'H5S_SELECT_SET', start, [], count, []);
-    mspace = H5S.create_simple(4, double([Tnew - Told,  k,  W,  H]), []);
-    H5D.write(dset_id, h5type, mspace, fspace, 'H5P_DEFAULT', data(:,:,:,Told+1:Tnew));
-    H5S.close(mspace);
+% --- Décider d'où écrire ce bloc en TEMPS ABSOLU ---
+% Si l'appelant a fourni absStart0 (via r.write_abs_start), on l'utilise.
+% Sinon: APPEND → on commence à t0 + Told.
+if ~isempty(absStart0)
+    absStart = max(0, floor(absStart0));
 else
-    % Overwrite les Tnew premières frames
-    start = double([0  0  0  0]);
-    count = double([Tnew,  k,  W,  H]);
-    H5S.select_hyperslab(fspace,'H5S_SELECT_SET', start, [], count, []);
-    mspace = H5S.create_simple(4, double([Tnew,  k,  W,  H]), []);
-    H5D.write(dset_id, h5type, mspace, fspace, 'H5P_DEFAULT', data(:,:,:,1:Tnew));
-    H5S.close(mspace);
+    absStart = t0 + Told;
 end
 
-H5S.close(fspace);
-H5D.close(dset_id);
-H5F.close(fid);
+% Cas "overwrite partiel" avant le début (préfixe) ?
+% Si absStart < t0, on doit étendre vers la GAUCHE. Stratégie simple:
+% - recréer dataset avec nouveau t0 = absStart
+% - déplacer l'ancien bloc à offset (t0 - absStart)
+if absStart < t0 && (Told > 0)
+    new_t0 = absStart;
+    shift  = (t0 - new_t0);                  % >=1
+    % Étendre le dataset pour contenir l'ancien + le nouveau bloc
+    dset_id = H5D.open(fid, datasetName);
+    Tnew_tmp = Told + shift;                 % juste pour décaler l'existant
+    H5D.set_extent(dset_id, double([Tnew_tmp  k  W  H]));
+    % On pourrait copier via hyperslab (optionnel).
+    H5D.close(dset_id);
+    t0 = new_t0;       % on adopte le nouveau t0
+end
+
+% Position relative d'écriture dans le dataset
+startRel = absStart - t0;         % 0-based
+Tnew     = max(Told, startRel + Tblock);
+
+% Étendre si besoin
+dset_id = H5D.open(fid, datasetName);
+if Tnew > Told
+    H5D.set_extent(dset_id, double([Tnew  k  W  H]));
+end
+
+% Hyperslab FICHIER (ordre [T k W H]) : écrire Tblock frames à partir de startRel
+fspace  = H5D.get_space(dset_id);
+start_f = double([startRel  0  0  0]);
+count_f = double([Tblock    k  W  H]);
+H5S.select_hyperslab(fspace,'H5S_SELECT_SET', start_f, [], count_f, []);
+
+% Mémoire: même shape ; data tel quel
+mspace = H5S.create_simple(4, count_f, []);
+h5type = matlabClassToH5(thisClass, data);
+
+H5D.write(dset_id, h5type, mspace, fspace, 'H5P_DEFAULT', data(:,:,:,1:Tblock));
+
+% MAJ attributs de traçabilité
+try, h5writeatt(h5filename, datasetName, 'abs_t0', t0); catch, end
+try, h5writeatt(h5filename, datasetName, 'abs_T',  Tnew); catch, end
+try, h5writeatt(h5filename, datasetName, 'abs_range', [t0, t0+Tnew-1]); catch, end
+
+% close
+H5S.close(mspace); H5S.close(fspace);
+H5D.close(dset_id); H5F.close(fid);
 end
 
 
 
-function createResizableDataset(fid, datasetName, thisClass, dims_mat)
-H = dims_mat(1); W = dims_mat(2); k = max(1,dims_mat(3)); T = dims_mat(4); % k>=1
+function createResizableDataset(fid, datasetName, thisClass, dims_mat, deflateLevel)
+if nargin < 5, deflateLevel = 2; end
 
+H = dims_mat(1); W = dims_mat(2); k = max(1,dims_mat(3)); T = dims_mat(4);
 maxT = H5ML.get_constant_value('H5S_UNLIMITED');
-maxdims_h5 = double([maxT  k  W  H]);      % [T k W H]
-curdims_h5 = double([T    k  W  H]);
 
-space_id = H5S.create_simple(4, curdims_h5, maxdims_h5);
+space_id = H5S.create_simple(4, double([T k W H]), double([maxT k W H]));
 dcpl     = H5P.create('H5P_DATASET_CREATE');
 
-chunkT = max(1, min(T, 10));
-H5P.set_chunk(dcpl, double([chunkT  k  W  H]));
-H5P.set_deflate(dcpl, 4);
+% chunkT par budget (fallback sur min(T,10))
+bpp   = bytesPerClass(thisClass);
+pixPerFrame = H*W*k;
+targetBytes = 4*1024*1024;  % 4 MB
+chunkT = max(1, floor(targetBytes/(pixPerFrame*bpp)));
+if T > 0, chunkT = min(chunkT, T); end
+
+
+H5P.set_chunk(dcpl, double([chunkT k W H]));
+H5P.set_shuffle(dcpl);                % ++ compression pour 16-bit
+H5P.set_deflate(dcpl, deflateLevel);  % 1..9
 
 h5type  = matlabClassToH5(thisClass, []);
 dset_id = H5D.create(fid, datasetName, h5type, space_id, ...
