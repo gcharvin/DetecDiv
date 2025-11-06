@@ -77,9 +77,12 @@ end
 
 
 % =============== LOOP OVER SELECTED FOV ===============
+pbFOV = makeConsolePB('FOV', numel(FOVIndex), 'Indent',0);
+
 for kF = 1:numel(FOVIndex)
     iFov  = FOVIndex(kF);
     fovObj = shallowObj.fov(iFov);
+
 
     % Lien parent ROI <-> FOV
     roiList = getprop(fovObj,'roi',[]);
@@ -203,10 +206,12 @@ for kF = 1:numel(FOVIndex)
     fprintf('   RAM avail ~ %.1f GB → Tblock=%d (H=%d,W=%d,Csel=%d,class=%s)\n', ...
         double(availBytes)/1e9, Tblock_auto, H, W, Csel, sampleClass);
 
+     pbBlk = makeConsolePB(sprintf('  FOV %d/%d — blocs', kF, numel(FOVIndex)), nBlocks, 'Indent',2);
+
     % -------- Progression --------
     doneFrames  = 0; totalFrames = nFramesThisRun;
-    fprintf('      Loading frames  %s\n', progressBarString(doneFrames,totalFrames));
-    fprintf('      Cropping ROIs   %s\n', progressBarString(doneFrames,totalFrames));
+   % fprintf('      Loading frames  %s\n', progressBarString(doneFrames,totalFrames));
+   % fprintf('      Cropping ROIs   %s\n', progressBarString(doneFrames,totalFrames));
 
     % --------- Boucle bloc par bloc ---------
     for ib = 1:nBlocks
@@ -217,8 +222,17 @@ for kF = 1:numel(FOVIndex)
         frameBatch = framesToDo(localRange);% frames absolues
         Tblock     = numel(localRange);
 
+        pbFrm = makeConsolePB(sprintf('    Bloc %d/%d — frames', ib, nBlocks), Csel*Tblock, 'Indent',4);
+
+    
+
         % 1) Lire bloc sur la FOV : [H W Csel Tblock]
-        blockImg = loadFOVBlock_readImage(fovObj, frameBatch, chanSelIdx);
+        blockImg = loadFOVBlock_readImage( ...
+            fovObj, frameBatch, chanSelIdx, ...
+            @(it,NT,msg) pbFrm.update(it, msg) );
+
+        pbFrm.close(); 
+
 
         % 2) Crops + Append immédiat ROI par ROI
         for rIdx = 1:nROI
@@ -281,9 +295,6 @@ for kF = 1:numel(FOVIndex)
             % Sauvegarde append: on passe UNIQUEMENT le bloc courant, avec les noms imposés
             didSave = r.save( chanSelNames, false );
 
-
-            cc=r.display.channel
-            
             if ~didSave
                 fprintf('        ⚠ nothing written for ROI %s\n', ROI(rIdx).id);
             end
@@ -293,23 +304,152 @@ for kF = 1:numel(FOVIndex)
             ROI(rIdx).obj = r;
         end
 
+        pbBlk.update(ib, sprintf('bloc %d/%d terminé', ib, nBlocks));
+
         % 3) Progression
         doneFrames = fe;
-        fprintf('\x1b[2A');
-        fprintf('      Loading frames  %s   block %d/%d\n', ...
-            progressBarString(doneFrames,totalFrames), ib, nBlocks);
-        fprintf('      Cropping ROIs   %s   block %d/%d\n', ...
-            progressBarString(doneFrames,totalFrames), ib, nBlocks);
+       % fprintf('\x1b[2A');
+       % fprintf('      Loading frames  %s   block %d/%d\n', ...
+       %     progressBarString(doneFrames,totalFrames), ib, nBlocks);
+        %fprintf('      Cropping ROIs   %s   block %d/%d\n', ...
+        %    progressBarString(doneFrames,totalFrames), ib, nBlocks);
     end
 
-    fprintf('\n   ✔ done FOV %s (%d ROI)\n', fovId, nROI);
+    pbBlk.close();
+    pbFOV.update(kF, sprintf('FOV %d/%d terminé', kF, numel(FOVIndex)));
+    %fprintf('\n   ✔ done FOV %s (%d ROI)\n', fovId, nROI);
 end
+pbFOV.close();
 
 fprintf('\n✅ Extraction complete (append mode).\n');
 fprintf('=============================================\n\n');
 end
 
 % ========= Helpers =========
+
+function pb = makeConsolePB(titleStr, totalCount, varargin)
+%MAKECONSOLEPB Console progress bar overwriting a single line using backspaces.
+%   pb = makeConsolePB('Blocs', N)
+%   pb = makeConsolePB('Frames', N, 'Indent',4, 'Width',40, 'MinInterval',0.05)
+%
+% Public API:
+%   pb.update(i, msg)   % i in [0..N], msg optional short status
+%   pb.close()
+
+ip = inputParser;
+ip.addParameter('Indent',0,@(x)isnumeric(x)&&isscalar(x));
+ip.addParameter('Width',40,@(x)isnumeric(x)&&isscalar(x)&&x>=5);
+ip.addParameter('MinInterval',0.05,@(x)isnumeric(x)&&isscalar(x)&&x>=0);
+ip.addParameter('ShowETA',true,@(x)islogical(x)&&isscalar(x));
+ip.parse(varargin{:});
+
+indentN = ip.Results.Indent;
+width   = ip.Results.Width;
+minInt  = ip.Results.MinInterval;
+showETA = ip.Results.ShowETA;
+
+indentStr  = repmat(' ',1,max(0,indentN));
+totalCount = max(1, round(totalCount));
+
+state.t0      = tic;
+state.lastT   = -inf;
+state.lastI   = 0;
+state.lastLen = 0;   % printed chars count for backspacing
+state.started = false;
+
+% Titre (ligne séparée), puis on crée la ligne de PB vide
+fprintf('%s%s\n', indentStr, char(titleStr));
+fprintf('%s', indentStr);               % amener le curseur sur la ligne PB
+state.started = true;
+
+pb.update = @updatePB;
+pb.close  = @closePB;
+
+% ==================== nested ====================
+    function updatePB(i, msg)
+        if nargin < 2, msg = ''; end
+        i = min(max(0, round(i)), totalCount);
+
+        nowT = toc(state.t0);
+        if (nowT - state.lastT < minInt) && (i < totalCount)
+            state.lastI = i;
+            return;
+        end
+        state.lastT = nowT;
+
+        frac   = i / totalCount;
+        filled = max(0, min(width, round(frac * width)));
+        barStr = ['[', repmat('=',1,filled), repmat(' ',1,width-filled), ']'];
+        pctStr = sprintf('%3.0f%%', 100*frac);
+
+        if showETA
+            if i > 0
+                rate   = i / max(nowT, eps);
+                remain = (totalCount - i) / max(rate, eps);
+                mm = floor(remain/60);
+                ss = round(remain - 60*mm);
+                etaStr = sprintf(' ETA %02d:%02d', mm, ss);
+            else
+                etaStr = ' ETA --:--';
+            end
+        else
+            etaStr = '';
+        end
+
+        fixed = sprintf('%s %d/%d %s%s', barStr, i, totalCount, pctStr, etaStr);
+
+        % limiter la longueur globale ~100 caractères
+        maxLine = 100;
+        roomForMsg = max(0, maxLine - numel(fixed) - 1);
+        if ~isempty(msg)
+            if numel(msg) > roomForMsg
+                msg = [msg(1:max(0,roomForMsg-3)) '...'];
+            end
+            line = sprintf('%s %s', fixed, msg);
+        else
+            line = fixed;
+        end
+
+        % effacer l'ancienne ligne (backspaces), puis réimprimer
+        if state.started && state.lastLen > 0
+            fprintf('%s', repmat('\b',1,state.lastLen));  % revenir en arrière
+            fprintf('%s', repmat(' ',1,state.lastLen));   % effacer
+            fprintf('%s', repmat('\b',1,state.lastLen));  % revenir au début de la ligne
+        end
+
+        % imprimer la nouvelle ligne (sans \n)
+        fprintf('%s%s', indentStr, line);
+
+        state.lastLen = numel(indentStr) + numel(line);
+        state.lastI   = i;
+
+        % si terminé, on fixe la ligne et passe à la suivante
+        if i >= totalCount
+            fprintf('\n');
+            % réinitialiser le compteur de longueur, ligne validée
+            state.lastLen = 0;
+            % et replacer l'indent pour une future nouvelle PB imbriquée
+            fprintf('%s', indentStr);
+        end
+    end
+
+    function closePB()
+        if state.lastI < totalCount
+            updatePB(totalCount, 'done');
+        elseif state.lastLen > 0
+            % si quelqu'un a imprimé au milieu, sécuriser un retour à la ligne
+            fprintf('\n');
+            state.lastLen = 0;
+        end
+    end
+end
+
+
+function hardResetROIh5(roi)
+if isfile(roi.h5path), delete(roi.h5path); end
+if isfile(roi.matpath), delete(roi.matpath); end % si tu veux repartir de zéro
+end
+
 
 function [availBytes, note] = getAvailableMemoryBytes()
 % Retourne une estimation prudente de la RAM libre pour MATLAB.
@@ -398,31 +538,40 @@ catch
 end
 end
 
-function blockImg = loadFOVBlock_readImage(fovObj, frameIdxVec, channelIdxVec)
-frameIdxVec   = frameIdxVec(:)';
-channelIdxVec = channelIdxVec(:)';
+function blockImg = loadFOVBlock_readImage(fovObj, frameIdxVec, channelIdxVec, progressFcn)
+    if nargin < 4, progressFcn = []; end
 
-testIm = fovObj.readImage(frameIdxVec(1), channelIdxVec(1));
-H = size(testIm,1); W = size(testIm,2);
+    frameIdxVec   = frameIdxVec(:)';
+    channelIdxVec = channelIdxVec(:)';
 
-C = numel(channelIdxVec);
-T = numel(frameIdxVec);
+    testIm = fovObj.readImage(frameIdxVec(1), channelIdxVec(1));
+    [H, W] = size(testIm);
+    C = numel(channelIdxVec);
+    T = numel(frameIdxVec);
 
-blockImg = zeros(H,W,C,T,class(testIm));
+    blockImg = zeros(H, W, C, T, class(testIm));
 
-for ic = 1:C
-    c = channelIdxVec(ic);
-    for it = 1:T
-        t = frameIdxVec(it);
-        im = fovObj.readImage(t,c);
-        if isempty(im), continue; end
-        if size(im,1)~=H || size(im,2)~=W
-            im = safeResizeTo(im,H,W);
+    for ic = 1:C
+        c = channelIdxVec(ic);
+        for it = 1:T
+            t = frameIdxVec(it);
+            im = fovObj.readImage(t, c);
+            if isempty(im), continue; end
+            if size(im,1)~=H || size(im,2)~=W
+                im = safeResizeTo(im, H, W);
+            end
+            blockImg(:,:,ic,it) = im;
+
+            % ⬇️ CHANGE ICI : index cumulé (1..C*T)
+            if ~isempty(progressFcn)
+                idx = (ic-1)*T + it;           % 1..C*T
+                msg = sprintf('ch%d frame %d/%d', c, it, T);
+                progressFcn(idx, [], msg);     % le 2e arg est ignoré par ta PB
+            end
         end
-        blockImg(:,:,ic,it) = im;
     end
 end
-end
+
 
 function im2 = safeResizeTo(im,H,W)
 im2 = zeros(H,W,class(im));
