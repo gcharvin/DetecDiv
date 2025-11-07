@@ -261,8 +261,10 @@ if doExtract && ~isempty(processedFOV)
         if all(framesAvailable)
             if numel(uniqueFOV) == 1
                 callArgs = [callArgs {'frames', frameSelection{1}}];
+                fra=frameSelection{1};
             else
                 callArgs = [callArgs {'frames', frameSelection}];
+                fra=frameSelection;
             end
         end
     else
@@ -271,33 +273,42 @@ if doExtract && ~isempty(processedFOV)
 
     if isempty(extractChannels)
         channelSelection = cell(1, numel(uniqueFOV));
-        channelNamesLog = cell(1, numel(uniqueFOV));
-        for idx = 1:numel(uniqueFOV)
-            fovId = uniqueFOV(idx);
-            channelSelection{idx} = channelsByFOV{fovId};
-            channelNamesLog{idx} = channelNamesByFOV{fovId};
+        for i = 1:numel(uniqueFOV)
+            f = shallowObj.fov(uniqueFOV(i));
+            if ~isempty(f.channel)
+                channelSelection{i} = 1:numel(f.channel);
+            else
+                % fallback si pas de meta FOV : prendre la 1re ROI disponible
+                if ~isempty(f.roi) && ~isempty(f.roi(1).image)
+                    channelSelection{i} = 1:size(f.roi(1).image,3);
+                else
+                    channelSelection{i} = []; % rien si on ne peut pas deviner
+                end
+            end
         end
-        if numel(uniqueFOV) == 1
+
+        if numel(uniqueFOV)==1
             callArgs = [callArgs {'channel', channelSelection{1}}];
         else
             callArgs = [callArgs {'channel', channelSelection}];
         end
-        for idx = 1:numel(uniqueFOV)
-            fovId = uniqueFOV(idx);
-            logNames = channelNamesLog{idx};
-            fovName = shallowObj.fov(fovId).id;
-            if isempty(logNames)
-                fprintf('FOV %s: no channel metadata available to forward.\n', fovName);
-            else
-                fprintf('FOV %s: forwarding channels -> %s\n', fovName, strjoin(logNames, ', '));
-            end
-        end
+
+        % for idx = 1:numel(uniqueFOV)
+        %     fovId = uniqueFOV(idx);
+        %     logNames = channelNamesLog{idx};
+        %     fovName = shallowObj.fov(fovId).id;
+        %     if isempty(logNames)
+        %         fprintf('FOV %s: no channel metadata available to forward.\n', fovName);
+        %     else
+        %         fprintf('FOV %s: forwarding channels -> %s\n', fovName, strjoin(logNames, ', '));
+        %     end
+        % end
     else
         callArgs = [callArgs {'channel', extractChannels}]; %#ok<AGROW>
     end
 
    
-    callArgs = [callArgs {'Extend', true}, {'ForceChannelNames', false}];
+    callArgs = [callArgs {'Extend', false}, {'ForceChannelNames', true}];
     callArgs = [callArgs extraSaveArgs(:)']; %#ok<AGROW>
 
     
@@ -306,6 +317,71 @@ if doExtract && ~isempty(processedFOV)
     catch ME
         warning('createTrackedCellROIs:ExtractionFailed', ...
             'extractAllROICrops failed: %s', ME.message);
+    end
+
+    for kk = 1:numel(created)
+    fovId  = created(kk).fov;
+    roiIdx = created(kk).roiIndex;
+
+    fovObj = shallowObj.fov(fovId);
+    r      = fovObj.roi(roiIdx);
+
+    % Charger le cache virtuel précalculé
+    if ~isfield(created, 'virtFile') || isempty(created(kk).virtFile) || ~isfile(created(kk).virtFile)
+        warning('createTrackedCellROIs:NoVirtCache','Missing virt cache for ROI %s', r.id);
+        continue;
+    end
+    S = load(created(kk).virtFile, 'volFull', 'virtName', 'frameList');
+    volFull  = S.volFull;     % [h w 1 Tfull]
+    virtName = S.virtName;
+
+ 
+% 1) Mémoriser l'état avant append
+prevNames = r.display.channel;
+prevN     = numel(prevNames);
+
+% 2) Append du canal virtuel (volFull déjà à la bonne taille [H W 1 T])
+try
+
+   r.appendVirtualChannel('results_cellposeSAM_1_cell', volFull(:,:,:,fra), true, ...
+    'Display', struct('intensity',[0 0 0], 'alpha',0.5));
+
+    fovObj.roi(roiIdx) = r;    % si besoin de propager la maj
+catch ME
+    warning('createTrackedCellROIs:AppendVirtualFailed', ...
+        'ROI %s: appendVirtualChannel failed: %s', r.id, ME.message);
+    return; % pas la peine d'aller plus loin si l'append a réellement échoué
+end
+
+% 3) Trouver l'index du canal ajouté (sans supposer le nom final)
+newNames = r.display.channel;
+newN     = numel(newNames);
+addedIdx = []; 
+if newN == prevN + 1
+    % en général, append à la fin
+    addedIdx = newN;
+else
+    % fallback : cherche le premier nom qui n'était pas présent avant
+    for i = 1:newN
+        if i > prevN || ~any(strcmp(newNames{i}, prevNames))
+            addedIdx = i; break;
+        end
+    end
+end
+if isempty(addedIdx)
+    % dernier recours : tente par nom exact (au cas où pas de renommage)
+    addedIdx = r.findChannelID(virtName);
+end
+if isempty(addedIdx)
+    warning('createTrackedCellROIs:CannotLocateNewChannel', ...
+        'ROI %s: canal ajouté introuvable (renommage ?).', r.id);
+    return;
+end
+
+    fovObj.roi(roiIdx) = r;
+
+    % Optionnel : supprimer le fichier cache
+     try, delete(created(kk).virtFile); end
     end
 end
 
@@ -684,27 +760,39 @@ function [created, createdCount, processedFOV, createdNow] = processTrackedObjec
         Tfull    = framesCount;
         virtName = char(channelName);                   % renomme si besoin
 
-        % volume masque [hmax x wmax x 1 x Tfull] en uint8
-        volFull = zeros(hmax, wmax, 1, Tfull, 'uint8');
-        for mIdx = 1:numel(frameList)
-            fId = frameList(mIdx);
-            absX = double(Pnorm(mIdx,1)); absY = double(Pnorm(mIdx,2));
-            relX = round(absX - parentVal(1) + 1);
-            relY = round(absY - parentVal(2) + 1);
-            wTake = min(wmax, cols); hTake = min(hmax, rows);
-            relX = max(1, min(cols - wTake + 1, relX));
-            relY = max(1, min(rows - hTake + 1, relY));
-            cR = relX:(relX + wTake - 1);
-            rR = relY:(relY + hTake - 1);
-            slice = labelStack(rR, cR, fId);
-            volFull(1:hTake, 1:wTake, 1, fId) = uint8(slice == cellId);
-        end
 
-        % Écrit le dataset HDF5 /<virtName>, met à jour image (si dims ok), et réconcilie display
-        newROI.appendVirtualChannel(virtName, volFull, true);
+% volume masque [hmax x wmax x 1 x Tfull] en uint8
+volFull = zeros(hmax, wmax, 1, Tfull, 'uint8');
+for mIdx = 1:numel(frameList)
+    fId = frameList(mIdx);
+    absX = double(Pnorm(mIdx,1)); absY = double(Pnorm(mIdx,2));
+    relX = round(absX - parentVal(1) + 1);
+    relY = round(absY - parentVal(2) + 1);
+    wTake = min(wmax, cols); hTake = min(hmax, rows);
+    relX = max(1, min(cols - wTake + 1, relX));
+    relY = max(1, min(rows - hTake + 1, relY));
+    cR = relX:(relX + wTake - 1);
+    rR = relY:(relY + hTake - 1);
+    slice = labelStack(rR, cR, fId);
+    volFull(1:hTake, 1:wTake, 1, fId) = uint8(slice == cellId);
+end
+
+% fichier cache temporaire pour ce child ROI
+virtFile = fullfile(fovOutputPath, sprintf('virt_%s.mat', newROI.id));
+save(virtFile, 'volFull', 'virtName', 'frameList', '-v7.3');
+
+% enregistrer l'info dans 'created'
+ createdCount = createdCount + 1;
+created(createdCount).virtFile = virtFile;
+
+        % 
+        % % Écrit le dataset HDF5 /<virtName>, met à jour image (si dims ok), et réconcilie display
+        % newROI.appendVirtualChannel(virtName, volFull, true);
+
+
         fovObj.roi(newIdx) = newROI;
 
-        createdCount = createdCount + 1;
+       
         created(createdCount).fov                = fovId;
         created(createdCount).parentROI          = roiObj.id;
         created(createdCount).parentROIIndex     = parentROIIndex;
@@ -724,135 +812,6 @@ end
 
 % -------- helpers locaux --------
 
-function D = buildSingleChannelDisplay(name, isIndexed, dispLim)
-if nargin<3 || isempty(dispLim), dispLim = [0;1]; end
-if nargin<2 || isempty(isIndexed), isIndexed = false; end
-D = struct();
-D.intensity       = [1 1 1];
-D.frame           = 1;
-D.selectedchannel = 1;
-D.binning         = 1;
-D.rgb             = [1 1 1];
-D.channel         = {char(name)};
-D.stretchlim      = [];
-D.displaylim      = dispLim;
-D.indexed         = logical(isIndexed);
-D.alpha           = 1;
-D.contour         = 0;
-D.width           = 0;
-D.log             = 0;
-end
 
-function D = upsertLogicalChannelInDisplay(D, name, varargin)
-% Remplace le canal 'name' s'il existe (mise à jour des champs),
-% sinon l'ajoute en fin en étendant proprement toutes les matrices/vecteurs.
-p = inputParser;
-p.addParameter('Indexed', true, @(x)islogical(x)||isnumeric(x));
-p.addParameter('DisplayLim', [0;1], @(x)isnumeric(x)&&isequal(size(x),[2,1]));
-p.addParameter('IntensityRow', [1 1 1], @(x)isnumeric(x)&&numel(x)==3);
-p.addParameter('RgbRow',       [1 1 1], @(x)isnumeric(x)&&numel(x)==3);
-p.addParameter('Alpha', 1, @(x)isnumeric(x)&&isscalar(x));
-p.addParameter('Selected', 1, @(x)isnumeric(x)&&isscalar(x));
-p.addParameter('Contour', 0, @(x)isnumeric(x)&&isscalar(x));
-p.addParameter('Width',   0, @(x)isnumeric(x)&&isscalar(x));
-p.addParameter('Log',     0, @(x)isnumeric(x)&&isscalar(x));
-p.parse(varargin{:});
-opt = p.Results;
-
-nm = string(name);
-if ~isfield(D,'channel') || isempty(D.channel), D.channel = {}; end
-ch = string(D.channel);
-idx = find(ch==nm, 1, 'first');
-
-if isempty(idx)
-    % append
-    D = appendAt(D, numel(ch)+1, nm, opt);
-else
-    % overwrite (garde la position existante)
-    D = appendAt(D, idx, nm, opt, true);
-end
-end
-
-function D = appendAt(D, pos, nm, opt, isOverwrite)
-if nargin<5, isOverwrite = false; end
-N0 = numel(D.channel);
-% assurer tailles actuelles
-D.intensity = ensureRows3(D,'intensity',max(N0,0));
-D.rgb       = ensureRows3(D,'rgb',      max(N0,0));
-D.selectedchannel = ensureRow(D,'selectedchannel',max(N0,0),1);
-D.indexed         = ensureRow(D,'indexed',        max(N0,0),0);
-D.alpha           = ensureRow(D,'alpha',          max(N0,0),1);
-D.contour         = ensureRow(D,'contour',        max(N0,0),0);
-D.width           = ensureRow(D,'width',          max(N0,0),0);
-D.log             = ensureRow(D,'log',            max(N0,0),0);
-if ~isfield(D,'displaylim') || isempty(D.displaylim) || size(D.displaylim,1)~=2
-    D.displaylim = repmat([0;1],1,N0);
-end
-if ~isfield(D,'frame')   || isempty(D.frame),   D.frame = 1; end
-if ~isfield(D,'binning') || isempty(D.binning), D.binning = 1; end
-if ~isfield(D,'stretchlim'), D.stretchlim = []; end
-if ~isfield(D,'channel') || isempty(D.channel), D.channel = {}; end
-
-if ~isOverwrite
-    % insertion à la fin (pos = N0+1)
-    if pos ~= N0+1, pos = N0+1; end
-    D.channel = [D.channel, {char(nm)}];
-    % étendre colonnes
-    if size(D.displaylim,2) < pos, D.displaylim(:,pos) = [0;1]; end
-    D.intensity(pos,:) = opt.IntensityRow;
-    D.rgb(pos,:)       = opt.RgbRow;
-else
-    % overwrite: remplacer seulement les champs de pos
-    D.channel{pos}     = char(nm);
-end
-
-% set des valeurs upsertées
-D.selectedchannel(pos) = opt.Selected;
-D.indexed(pos)         = logical(opt.Indexed);
-D.alpha(pos)           = opt.Alpha;
-D.contour(pos)         = opt.Contour;
-D.width(pos)           = opt.Width;
-D.log(pos)             = opt.Log;
-D.displaylim(:,pos)    = opt.DisplayLim;
-end
-
-function A = ensureRows3(D, field, Nmin)
-if ~isfield(D,field) || isempty(D.(field)) || size(D.(field),2)~=3
-    A = zeros(max(Nmin,0),3); if Nmin>0, A(:) = 1; end
-else
-    A = D.(field);
-    if size(A,1) < Nmin
-        A(end+1:Nmin,:) = repmat([1 1 1], Nmin-size(A,1), 1);
-    end
-end
-end
-
-function v = ensureRow(D, field, Nmin, defVal)
-if ~isfield(D,field) || isempty(D.(field))
-    v = repmat(defVal,1,max(Nmin,0));
-else
-    v = D.(field)(:).';
-    if numel(v) < Nmin
-        v(end+1:Nmin) = defVal;
-    end
-end
-end
-
-function d = defaultDisplay(N, C)
-d = struct();
-d.intensity       = repmat([1 1 1], N, 1);
-d.frame           = 1;
-d.selectedchannel = ones(1,N);
-d.binning         = 1;
-d.rgb             = repmat([1 1 1], N, 1);  % N x 3 (par canal logique)
-d.channel         = arrayfun(@(k)sprintf('channel_%d',k), 1:N, 'UniformOutput', false);
-d.stretchlim      = [];
-d.displaylim      = repmat([0;1], 1, C);
-d.indexed         = zeros(1,N);
-d.alpha           = ones(1,N);
-d.contour         = zeros(1,N);
-d.width           = ones(1,N);
-d.log             = zeros(1,N);
-end
 
 

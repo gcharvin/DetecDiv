@@ -35,7 +35,7 @@ dataFile   = fullfile(obj.path, sprintf('data_%s.mat', obj.id));
 % ---------- IMAGES ----------
 if ~dataOnly
     if isfile(h5File)
-        disp('Loading hd5f file');
+        disp(['Loading hd5f file: ' h5File]);
         if fullLoad
             [img, chId, dispStruct] = loadFromH5_full(h5File);
         else
@@ -641,29 +641,32 @@ for i = 1:N
     alpha(i)       = double(attrs(i).alpha(1));
     contour(i)     = double(attrs(i).contour(1));
     width(i)       = double(attrs(i).width(1));
-    selectedchannel(i)=double(attrs(i).width(1));
 
+    % selectedchannel doit refléter le canal actif (par défaut 1)
+    % -> ne surtout pas copier 'width'
+    selectedchannel(i) = 1;
 
-    rgbSub(i,:)=double(attrs(i).rgb);
-  %  rgbChan = double(attrs(i).rgb(:).')                % 1x3
-   % rgbSub(idx,:) = repmat(rgbChan, numel(idx), 1);
+    % rgb est stocké par CANAL LOGIQUE => N x 3
+    rgbSub(i,:) = double(attrs(i).rgb);
+
+    % display limits pour les sous-canaux
     idx = idxList{i};
-   displimChan = double(attrs(i).displaylim) ;
-  % a= repmat(displimChan, 1, numel(idx))  % 1x3
-   displim(:,idx) = displimChan;
-
+    displimChan = double(attrs(i).displaylim);
+    if numel(displimChan)==2
+        displimChan = repmat(displimChan(:), 1, numel(idx)); % 2 x k
+    end
+    displim(:,idx) = displimChan;
 end
 
-
-frame=double(attrs(1).frame);
-binning=double(attrs(1).binning);
+frame   = double(attrs(1).frame);
+binning = double(attrs(1).binning);
 
 dispStruct = struct();
 dispStruct.intensity       = intensity;          % N x 3
 dispStruct.frame           = frame;
-dispStruct.selectedchannel = selectedchannel;
+dispStruct.selectedchannel = selectedchannel;    % 1 x N
 dispStruct.binning         = binning;
-dispStruct.rgb             = rgbSub;             % C x 3
+dispStruct.rgb             = rgbSub;             % N x 3  ✅
 dispStruct.channel         = names;              % {1xN}
 dispStruct.stretchlim      = [];
 dispStruct.displaylim      = displim;            % 2 x C
@@ -672,6 +675,8 @@ dispStruct.alpha           = alpha;              % 1 x N
 dispStruct.contour         = contour;            % 1 x N
 dispStruct.width           = width;              % 1 x N
 dispStruct.log             = zeros(1,N);
+
+
 end
 
 function d = defaultDisplay(N, C)
@@ -692,26 +697,39 @@ d.width           = ones(1,N);
 d.log             = zeros(1,N);
 end
 
-
 function dispOut = mergeDisplayStructs(dOld, dNew)
-% mergeDisplayStructs  Fusionne deux structs de display sans perdre les anciens champs.
-% Les champs manquants dans dOld sont pris depuis dNew.
-% Si tailles différentes, dNew sert de modèle.
-
+% Favorise dNew (valeurs lues du fichier) champ par champ.
 dispOut = dOld;
 
 fn = fieldnames(dNew);
 for i = 1:numel(fn)
     f = fn{i};
-    if ~isfield(dispOut, f) || isempty(dispOut.(f))
+    if ~isfield(dispOut,f) || isempty(dispOut.(f))
         dispOut.(f) = dNew.(f);
-    else
-        % Pour les matrices, si tailles diffèrent, garder celle de dNew
-        if isnumeric(dispOut.(f)) && isnumeric(dNew.(f))
-            if ~isequal(size(dispOut.(f)), size(dNew.(f)))
-                dispOut.(f) = dNew.(f);
-            end
+        continue;
+    end
+
+    a = dispOut.(f);
+    b = dNew.(f);
+
+    % Si types numériques/logicaux -> on préfère b (la lecture H5)
+    if (isnumeric(a)||islogical(a)) && (isnumeric(b)||islogical(b))
+        % Aligne la taille si nécessaire (on ne jette pas b)
+        if ~isequal(size(a), size(b))
+            dispOut.(f) = b;
+        else
+            dispOut.(f) = b;  % new wins
         end
+    elseif iscell(a) && iscell(b)
+        % Pour cell arrays (ex: channel), prends b si tailles diffèrent, sinon b aussi
+        if ~isequal(size(a), size(b))
+            dispOut.(f) = b;
+        else
+            dispOut.(f) = b;
+        end
+    else
+        % Par défaut, b (plus récent)
+        dispOut.(f) = b;
     end
 end
 end

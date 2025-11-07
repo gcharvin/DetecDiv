@@ -1,54 +1,43 @@
-function appendVirtualChannel(obj, logicalName, dataHWkT, indexed)
-% appendVirtualChannel(obj, logicalName, dataHWkT, indexed)
-% Ajoute (ou appende) un canal virtuel dans le HDF5 de la ROI.
-% - logicalName : nom logique (ex. 'SegMaskRGB', 'testcha')
-% - dataHWkT    : [H W k T] (k=1 ou 3)
-% - indexed     : true/false pour affichage indexé (défaut: false)
+function appendVirtualChannel(obj, logicalName, dataHWkT, indexed, varargin)
+% appendVirtualChannel(obj, logicalName, dataHWkT, indexed, 'Display', struct(...))
+% - Ecrit le dataset (append/upsert)
+% - Met à jour obj.display et obj.channelid
+% - Ecrit IMMÉDIATEMENT les attributs display_* dans le HDF5
 %
-% Politique d'index:
-% → On place le (ou les) sous-canaux au prochain indice C libre:
-%       baseC = max(channelid) + 1   (ou 1 si vide)
-%   et si k>1 : channel_indices = baseC : baseC + k - 1
-%
-% Effets de bord:
-% - Crée le fichier HDF5 s'il n'existe pas encore.
-% - Met à jour les métadonnées d'affichage en mémoire (obj.display).
-% - Met à jour obj.channelid en lui ajoutant k entrées pointant vers le
-%   nouveau canal logique (nCh).
+% Overrides possibles via:
+%   'Display', struct('alpha',0.5,'intensity',[0 0 0],'rgb',[1 1 1], ...
+%                     'indexed',0,'contour',0,'width',1,'log',0,'displaylim',[0;1])
 
     if nargin < 4 || isempty(indexed), indexed = false; end
 
-    % ---- Normaliser data en [H W k T]
+    % ----- parse optional 'Display' overrides -----
+    p = inputParser;
+    addParameter(p,'Display',struct(),@isstruct);
+    parse(p,varargin{:});
+    Dovr = p.Results.Display;
+
+    % ---- Normalize data to [H W k T]
     im = dataHWkT;
     sz = size(im);
     if numel(sz)==2, sz = [sz 1 1]; im = reshape(im,sz); end
     if numel(sz)==3, sz = [sz 1];    im = reshape(im,sz); end
-
     H = sz(1); W = sz(2); k = sz(3); T = sz(4);
-    if ~(k==1 || k==3)
-        error('appendVirtualChannel:BadK','k must be 1 or 3 (got %d).',k);
-    end
+    if ~(k==1 || k==3), error('appendVirtualChannel:BadK','k must be 1 or 3.'); end
     thisClass = class(im);
 
-    % ---- Localiser le HDF5
-    h5File = '';
+    % ---- Locate / create HDF5
     try
         [h5File, exists] = obj.getH5Filename();
     catch
-        % fallback robuste si getH5Filename n'est pas dispo
         if ~isprop(obj,'path') || isempty(obj.path) || ~isfolder(obj.path)
-            error('roi/appendVirtualChannel:NoPath', ...
-                'ROI.path manquant ou invalide, impossible de déduire le HDF5.');
+            error('roi/appendVirtualChannel:NoPath','ROI.path invalid.');
         end
         if ~isprop(obj,'id') || isempty(obj.id)
-            error('roi/appendVirtualChannel:NoID', ...
-                'ROI.id manquant, impossible de déduire le HDF5.');
+            error('roi/appendVirtualChannel:NoID','ROI.id missing.');
         end
         h5File = fullfile(obj.path, ['im_' obj.id '.h5']);
         exists = isfile(h5File);
     end
-
-    % S'assurer que le dossier/fichier existe
     pth = fileparts(h5File);
     if ~isfolder(pth), mkdir(pth); end
     if ~exists
@@ -56,86 +45,115 @@ function appendVirtualChannel(obj, logicalName, dataHWkT, indexed)
         H5F.close(fid);
     end
 
-    % ---- Calculer l'indice C de base (prochain libre)
+    % ---- Decide new subchannel indices (global C)
     if isprop(obj,'channelid') && ~isempty(obj.channelid)
         baseC = max(double(obj.channelid)) + 1;
     else
         baseC = 1;
     end
-    if k==1
-        chanVec = baseC;                 % ex: 4
-    else
-        chanVec = baseC:(baseC+k-1);     % ex: [4 5 6] pour RGB
-    end
+    if k==1, chanVec = baseC; else, chanVec = baseC:(baseC+k-1); end
 
-    % ---- Ecriture HDF5 (append/upsert)
+    % ---- Write / upsert dataset
     dset = ['/' sanitizeDatasetName(logicalName)];
-
     absStart0 = [];
     if isfield(obj.display,'write_abs_start') && ~isempty(obj.display.write_abs_start)
-        absStart0 = double(obj.display.write_abs_start); % 0-based
+        absStart0 = double(obj.display.write_abs_start);
     end
-
     upsertH5Dataset_frames(h5File, dset, im, [H W k T], thisClass, absStart0);
 
-    % Attributs utiles pour le loader
-    try, h5writeatt(h5File, dset, 'roi_id',         obj.id);            end
-    try, h5writeatt(h5File, dset, 'channel_name',   logicalName);       end
-    try, h5writeatt(h5File, dset, 'channel_indices', chanVec);          end  % *** clé ***
-    try, h5writeatt(h5File, dset, 'frames',         1:T);               end
-    try, h5writeatt(h5File, dset, 'indexed',        uint8(indexed~=0)); end
+    % ---- Essential loader attrs
+    try, h5writeatt(h5File, dset, 'roi_id',           obj.id);          end
+    try, h5writeatt(h5File, dset, 'channel_name',     logicalName);     end
+    try, h5writeatt(h5File, dset, 'channel_indices',  chanVec);         end
+    try, h5writeatt(h5File, dset, 'frames',           1:T);             end
+    % IMPORTANT: utiliser la même clé que save() :
+    try, h5writeatt(h5File, dset, 'display_indexed',  uint8(indexed~=0)); end
 
-    % ---- MAJ des métadonnées d'affichage en mémoire
+    % ---- Update in-memory display & channelid
     if ~isfield(obj,'display') || isempty(obj.display) || ~isstruct(obj.display)
         obj.display = struct;
     end
-
-    % Ajouter le nom logique en fin de liste
     if ~isfield(obj.display,'channel') || isempty(obj.display.channel)
         obj.display.channel = {logicalName};
     else
         obj.display.channel(end+1) = {logicalName};
     end
-    nCh = numel(obj.display.channel);  % nouvel index logique
+    nCh = numel(obj.display.channel);        % nouvel index logique
 
-    % Assurer des valeurs cohérentes pour chaque champ d'affichage
-    obj.display = ensureFieldRow(obj.display,'intensity',       [1 1 1],          nCh);
-    obj.display = ensureFieldRow(obj.display,'rgb',             [1 1 1],          nCh);
-    obj.display = ensureFieldRow(obj.display,'selectedchannel', 1,                nCh);
-    obj.display = ensureFieldRow(obj.display,'indexed',         uint8(indexed),   nCh);
-    obj.display = ensureFieldRow(obj.display,'alpha',           1,                nCh);
-    obj.display = ensureFieldRow(obj.display,'contour',         0,                nCh);
-    obj.display = ensureFieldRow(obj.display,'width',           0,                nCh);
-    obj.display = ensureFieldRow(obj.display,'log',             0,                nCh);
+    % Ensure sizes (N x 3 or 1 x N) and set defaults for the new row
+    obj.display = ensureFieldRow(obj.display,'intensity',       [1 1 1],        nCh);
+    obj.display = ensureFieldRow(obj.display,'rgb',             [1 1 1],        nCh);
+    obj.display = ensureFieldRow(obj.display,'selectedchannel', 1,              nCh);
+    obj.display = ensureFieldRow(obj.display,'indexed',         uint8(indexed), nCh);
+    obj.display = ensureFieldRow(obj.display,'alpha',           1,              nCh);
+    obj.display = ensureFieldRow(obj.display,'contour',         0,              nCh);
+    obj.display = ensureFieldRow(obj.display,'width',           1,              nCh); % 1 = 1px
+    obj.display = ensureFieldRow(obj.display,'log',             0,              nCh);
 
-    % displaylim: ajouter k colonnes [0;1]
+    % Apply optional overrides directly into obj.display (logical row nCh)
+    if isfield(Dovr,'intensity'), obj.display.intensity(nCh,:) = double(Dovr.intensity(:)).'; end
+    if isfield(Dovr,'rgb'),       obj.display.rgb(nCh,:)       = double(Dovr.rgb(:)).';       end
+    if isfield(Dovr,'alpha'),     obj.display.alpha(nCh)       = double(Dovr.alpha);          end
+    if isfield(Dovr,'indexed'),   obj.display.indexed(nCh)     = uint8(Dovr.indexed~=0);      end
+    if isfield(Dovr,'contour'),   obj.display.contour(nCh)     = uint8(Dovr.contour~=0);      end
+    if isfield(Dovr,'width'),     obj.display.width(nCh)       = double(Dovr.width);          end
+    if isfield(Dovr,'log'),       obj.display.log(nCh)         = uint8(Dovr.log~=0);          end
+
+    % displaylim : append k cols [0;1] (ou override si fourni)
     if ~isfield(obj.display,'displaylim') || isempty(obj.display.displaylim)
         obj.display.displaylim = repmat([0;1], 1, k);
     else
         obj.display.displaylim = [obj.display.displaylim repmat([0;1],1,k)];
     end
+    if isfield(Dovr,'displaylim') && ~isempty(Dovr.displaylim) && size(Dovr.displaylim,2)==k
+        obj.display.displaylim(:, chanVec) = double(Dovr.displaylim);
+    end
 
-    % ---- MAJ de channelid (mapping sous-canaux -> canal logique)
+    % channelid mapping (subchannels -> logical nCh)
     if ~isprop(obj,'channelid') || isempty(obj.channelid)
         obj.channelid = uint16(ones(1,k) * nCh);
     else
         obj.channelid = [obj.channelid uint16(ones(1,k) * nCh)];
     end
 
-  % Only rebuild if display has no channels yet (fresh/empty child)
-if ~isfield(obj,'display') || ~isstruct(obj.display) || ~isfield(obj.display,'channel') || isempty(obj.display.channel)
-    obj = rebuildDisplayFromH5(obj, h5File);
-end
+    % ---- PERSIST *display_* ATTRIBUTES* FOR THIS DATASET NOW ----
+    % row-vectors to be safe
+    obj.display.alpha           = obj.display.alpha(:)';
+    obj.display.indexed         = obj.display.indexed(:)';
+    obj.display.contour         = obj.display.contour(:)';
+    obj.display.width           = obj.display.width(:)';
+    obj.display.log             = obj.display.log(:)';
+    obj.display.selectedchannel = obj.display.selectedchannel(:)';
+
+    intensity_row = double(obj.display.intensity(nCh,:));
+    rgb_row       = double(obj.display.rgb(nCh,:));
+    alpha_val     = double(obj.display.alpha(nCh));
+    indexed_val   = uint8(obj.display.indexed(nCh)~=0);
+    contour_val   = uint8(obj.display.contour(nCh)~=0);
+    width_val     = double(obj.display.width(nCh));
+
+    if isfield(obj.display,'displaylim') && size(obj.display.displaylim,2) >= max(chanVec)
+        dlim = double(obj.display.displaylim(:, chanVec));  % 2 x k
+    else
+        dlim = repmat([0;1], 1, k);
+    end
+
+    % mêmes clés que save(): display_*
+    try, h5writeatt(h5File, dset, 'display_intensity',    intensity_row); end
+    try, h5writeatt(h5File, dset, 'display_rgb',          rgb_row);       end
+    try, h5writeatt(h5File, dset, 'display_indexed',      indexed_val);   end
+    try, h5writeatt(h5File, dset, 'display_alpha',        alpha_val);     end
+    try, h5writeatt(h5File, dset, 'display_contour',      contour_val);   end
+    try, h5writeatt(h5File, dset, 'display_contourwidth', width_val);     end
+    try, h5writeatt(h5File, dset, 'display_displaylim',   dlim);          end
 
     % ---- Log
     obj.log(sprintf('Appended virtual channel "%s" (%dx%dx%dx%d) → C %s', ...
         logicalName,H,W,k,T, mat2str(chanVec)), 'Saving');
 end
 
-% ==================== Helpers locaux ====================
-
+% ===== helpers (inchangés) =====
 function S = ensureFieldRow(S, field, valueRow, nCh)
-    % Garantit qu'il y a au moins nCh lignes, et écrit la ligne nCh.
     if ~isfield(S,field) || isempty(S.(field))
         S.(field) = repmat(valueRow, nCh, 1);
     else
@@ -156,6 +174,7 @@ function nameOut = sanitizeDatasetName(nameIn)
     if isempty(s), s = 'channel'; end
     nameOut = s;
 end
+
 
 function upsertH5Dataset_frames(h5filename, datasetName, data, dims_mat, thisClass, absStart0)
     if nargin < 6, absStart0 = []; end
