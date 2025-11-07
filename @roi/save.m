@@ -326,8 +326,18 @@ end
 
 % rgb (reste tel quel)
 if isfield(d,'displaylim') && ~isempty(d.displaylim)
+
+    if ival<= size(d.displaylim,2)
     row = d.displaylim(:,ival);
-    if isempty(row), row = repmat([0;1], 1, k); end     % ✅ fallback
+    else
+    row=[];
+    end
+
+    if isempty(row)
+
+        row = repmat([0;1], 1, k);
+    
+    end     % ✅ fallback
     dispMeta.display_displaylim = row;
 end
 

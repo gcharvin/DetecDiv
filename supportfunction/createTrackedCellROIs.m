@@ -253,6 +253,8 @@ if doExtract && ~isempty(processedFOV)
             callArgs = [callArgs {'roi', roiSelection}];
         end
     end
+
+
     
     if isempty(extractFrames)
         framesAvailable = ~cellfun(@isempty, frameSelection);
@@ -294,13 +296,16 @@ if doExtract && ~isempty(processedFOV)
         callArgs = [callArgs {'channel', extractChannels}]; %#ok<AGROW>
     end
 
+   
+    callArgs = [callArgs {'Extend', true}, {'ForceChannelNames', false}];
     callArgs = [callArgs extraSaveArgs(:)']; %#ok<AGROW>
 
+    
     try
-        shallowObj.saveCroppedImages(callArgs{:});
+        shallowObj.extractAllROICrops(callArgs{:})
     catch ME
         warning('createTrackedCellROIs:ExtractionFailed', ...
-            'saveCroppedImages failed: %s', ME.message);
+            'extractAllROICrops failed: %s', ME.message);
     end
 end
 
@@ -529,285 +534,325 @@ function [created, createdCount, processedFOV, createdNow] = processTrackedObjec
         fovObj, roiObj, labelStack, pixIdx, channelName, marginPixels, ...
         fovId, parentROIIndex, fovOutputPath)
 
-    % Dimensions du stack de labels
     [rows, cols, framesCount] = size(labelStack);
 
-    % Liste des IDs d'objets suivis (cellules)
-    uniqueIds = unique(labelStack(:));
-    uniqueIds(~isfinite(uniqueIds) | uniqueIds <= 0) = [];
-
+    % garder uniquement les IDs présents à la 1re frame
+    if framesCount < 1
+        warning('createTrackedCellROIs:EmptyLabelStack', ...
+            'Label stack is empty for ROI %s (FOV %s).', roiObj.id, fovObj.id);
+        createdNow = 0; return;
+    end
+    firstFrameIds = unique(labelStack(:,:,1));
+    firstFrameIds(~isfinite(firstFrameIds) | firstFrameIds <= 0) = [];
+    uniqueIds = firstFrameIds;
     if isempty(uniqueIds)
-        warning('createTrackedCellROIs:EmptyLabels', ...
-            'Label channel for ROI %s (FOV %s) contains no tracked objects.', ...
+        warning('createTrackedCellROIs:NoFirstFrameCells', ...
+            'No tracked objects present at the first frame for ROI %s (FOV %s).', ...
             roiObj.id, fovObj.id);
-        createdNow = 0;
-        return;
+        createdNow = 0; return;
     end
 
-    % ---------------------------------------------------------------------
-    % FIGER L'APPARENCE DE RÉFÉRENCE
-    % On prend un snapshot du display et du channelid de la ROI parente
-    % AVANT de créer des nouvelles ROIs, pour éviter que l'ordre des ROIs
-    % dans fovObj et les réinsertions ne nous fassent perdre ces réglages.
-    % ---------------------------------------------------------------------
-    if ~isempty(roiObj.display)
-        refDisplay = roiObj.display;      % struct => copie par valeur, safe
-    else
-        refDisplay = struct();
-    end
-
-    if isprop(roiObj, 'channelid') && ~isempty(roiObj.channelid)
-        refChannelID = roiObj.channelid;  % typiquement mapping canal -> nom
-    else
-        refChannelID = [];
-    end
-
-    % Valeur d'origine de la ROI parente dans les coords globales du FOV
+    % snapshot display/channelid parent
+    if ~isempty(roiObj.display), refDisplay = roiObj.display; else, refDisplay = struct(); end
+    if isprop(roiObj,'channelid') && ~isempty(roiObj.channelid), refChannelID = roiObj.channelid; else, refChannelID = []; end
     parentVal = double(roiObj.value);
 
     createdNow = 0;
 
-    % ---------------------------------------------------------------------
-    % BOUCLE SUR CHAQUE CELLULE TRACKÉE
-    % ---------------------------------------------------------------------
     for idIdx = 1:numel(uniqueIds)
         cellId = uniqueIds(idIdx);
 
-        % ---- 1. Détection de présence frame par frame et bounding boxes locales
-        presence = false(framesCount,1);
-        frameBounds = nan(framesCount, 4);   % [x y w h] relatif à la ROI parente
-
-        minRow = inf;
-        minCol = inf;
-        maxRow = 0;
-        maxCol = 0;
+        % 1) présence & bbox par frame (repère ROI parente)
+        presence    = false(framesCount,1);
+        frameBounds = nan(framesCount,4);
+        minRow = inf; minCol = inf; maxRow = 0; maxCol = 0;
 
         for frame = 1:framesCount
-            maskFrame = labelStack(:,:,frame);
-            pix = (maskFrame == cellId);
-            if ~any(pix(:))
-                continue;
-            end
-
+            pix = (labelStack(:,:,frame) == cellId);
+            if ~any(pix(:)), continue; end
             presence(frame) = true;
 
             [rIdx, cIdx] = find(pix);
-            localMinRow = min(rIdx);
-            localMaxRow = max(rIdx);
-            localMinCol = min(cIdx);
-            localMaxCol = max(cIdx);
+            lminR = min(rIdx); lmaxR = max(rIdx);
+            lminC = min(cIdx); lmaxC = max(cIdx);
 
-            paddedMinRow = max(1, floor(localMinRow - marginPixels));
-            paddedMaxRow = min(rows, ceil(localMaxRow + marginPixels));
-            paddedMinCol = max(1, floor(localMinCol - marginPixels));
-            paddedMaxCol = min(cols, ceil(localMaxCol + marginPixels));
+            pminR = max(1, floor(lminR - marginPixels));
+            pmaxR = min(rows, ceil(lmaxR + marginPixels));
+            pminC = max(1, floor(lminC - marginPixels));
+            pmaxC = min(cols, ceil(lmaxC + marginPixels));
 
-            frameBounds(frame, :) = [paddedMinCol, paddedMinRow, ...
-                                     paddedMaxCol - paddedMinCol + 1, ...
-                                     paddedMaxRow - paddedMinRow + 1];
+            frameBounds(frame,:) = [pminC, pminR, pmaxC - pminC + 1, pmaxR - pminR + 1];
 
-            minRow = min(minRow, paddedMinRow);
-            maxRow = max(maxRow, paddedMaxRow);
-            minCol = min(minCol, paddedMinCol);
-            maxCol = max(maxCol, paddedMaxCol);
+            minRow = min(minRow, pminR); maxRow = max(maxRow, pmaxR);
+            minCol = min(minCol, pminC); maxCol = max(maxCol, pmaxC);
         end
+        if ~any(presence), continue; end
+        frameBounds(~presence,:) = NaN;
 
-        if ~any(presence)
-            continue;
-        end
+        % 2) bbox union → globale FOV
+        minRow = max(1, minRow); minCol = max(1, minCol);
+        maxRow = min(rows, maxRow); maxCol = min(cols, maxCol);
+        height = maxRow - minRow + 1; width = maxCol - minCol + 1;
+        if height <= 0 || width <= 0, continue; end
 
-        % Nettoyer les frames sans présence
-        frameBounds(~presence, :) = NaN;
+        newValue = [ parentVal(1) + (minCol - 1), parentVal(2) + (minRow - 1), width, height ];
+        newValue = max(newValue, 1); newValue = round(newValue);
 
-        % ---- 2. BBox union (toutes frames) en coordonnées ROI parente
-        minRow = max(1, minRow);
-        minCol = max(1, minCol);
-        maxRow = min(rows, maxRow);
-        maxCol = min(cols, maxCol);
+        frameOffsets = nan(framesCount,2);
+        frameOffsets(presence,1) = frameBounds(presence,1) - minCol;
+        frameOffsets(presence,2) = frameBounds(presence,2) - minRow;
 
-        height = maxRow - minRow + 1;
-        width  = maxCol - minCol + 1;
-
-        if height <= 0 || width <= 0
-            continue;
-        end
-
-        % BBox union en coordonnées FOV globales
-        newValue = [ parentVal(1) + (minCol - 1), ...
-                     parentVal(2) + (minRow - 1), ...
-                     width, height ];
-
-        newValue = max(newValue, 1);
-        newValue = round(newValue);
-
-        % Offsets frame par frame dans la bbox union
-        frameOffsets = nan(framesCount, 2); % [dx dy] pixel offset
-        frameOffsets(presence, 1) = frameBounds(presence, 1) - minCol;
-        frameOffsets(presence, 2) = frameBounds(presence, 2) - minRow;
-
-        % BBox par frame : relative et globale
         frameBoundsRelative = frameBounds;
-        frameBoundsGlobal = frameBoundsRelative;
-        frameBoundsGlobal(presence, 1) = frameBoundsRelative(presence, 1) + parentVal(1) - 1;
-        frameBoundsGlobal(presence, 2) = frameBoundsRelative(presence, 2) + parentVal(2) - 1;
+        frameBoundsGlobal   = frameBoundsRelative;
+        frameBoundsGlobal(presence,1) = frameBoundsRelative(presence,1) + parentVal(1) - 1;
+        frameBoundsGlobal(presence,2) = frameBoundsRelative(presence,2) + parentVal(2) - 1;
 
-        % Union relative (dans coords ROI parente) et globale (coords FOV)
-        unionRelative = [minCol, minRow, width, height];
-        unionGlobal   = [newValue(1), newValue(2), width, height];
+        frameList = find(presence)';
 
-        % ---- 3. Masque union empilé (pour debug / export)
-        frameList  = find(presence)';        % frames où la cellule est présente
-        maskCount  = numel(frameList);
-        maskUnion  = zeros(height, width, maskCount, 'like', labelStack);
-
-        if maskCount > 0
-            unionRows = minRow:maxRow;
-            unionCols = minCol:maxCol;
-            for mIdx = 1:maskCount
-                frameId     = frameList(mIdx);
-                unionSlice  = labelStack(unionRows, unionCols, frameId);
-                maskSlice   = zeros(size(unionSlice), 'like', unionSlice);
-                maskSlice(unionSlice == cellId) = unionSlice(unionSlice == cellId);
-                maskUnion(:, :, mIdx) = maskSlice;
-            end
-        end
-
-        % ---- 4. Création d'un ID unique pour la nouvelle ROI
-        newIdBase = sprintf('%s_cell%03d', roiObj.id, round(cellId));
+        % 3) créer ROI fille
+        newId = sprintf('%s_cell%03d', roiObj.id, round(cellId));
         existingIds = string({fovObj.roi.id});
-        duplicateIdx = find(existingIds == string(newIdBase));
-
+        duplicateIdx = find(existingIds == string(newId));
         if ~isempty(duplicateIdx)
-            % On supprime d'éventuelles anciennes ROIs avec le même ID
-            duplicateIdx = unique(duplicateIdx, 'stable');
-            try
-                fovObj.removeROI(duplicateIdx);
-            catch
-                % On ignore si remove échoue, ce n'est pas bloquant
-            end
+            duplicateIdx = unique(duplicateIdx,'stable');
+            try, fovObj.removeROI(duplicateIdx); end %#ok<TRYNC>
         end
 
-        newId = newIdBase;
-
-        % Sauvegarde d'un handle de la ROI parente pour restauration
-        parentHandle = roiObj;
+        parentHandle    = roiObj;
         parentValueOrig = roiObj.value;
 
-        % ---- 5. Ajouter la nouvelle ROI dans le FOV
         fovObj.addROI(newValue, fovObj.id);
         newIdx = numel(fovObj.roi);
         newROI = fovObj.roi(newIdx);
-
         newROI.id     = newId;
         newROI.value  = newValue;
         newROI.parent = fovObj;
+        if isempty(newROI.path), newROI.path = fovOutputPath; end
 
-        if isempty(newROI.path)
-            newROI.path = fovOutputPath;
-        end
-
-        % ---- 6. HÉRITAGE VISUEL CONTRÔLÉ
-        % On applique le refDisplay figé (copie par valeur) et le refChannelID.
-        % C'est ici qu'on transmet l'intensity, selectedchannel, rgb,
-        % displaylim, stretchlim, etc. de la ROI parente d'origine.
-        if ~isempty(refDisplay)
-            newROI.display = refDisplay;
-        else
-            newROI.display = roiObj.display; % fallback
-        end
-
+        % héritage display/channelid
+        if ~isempty(refDisplay), newROI.display = refDisplay; else, newROI.display = roiObj.display; end
         if ~isempty(refChannelID)
             newROI.channelid = refChannelID;
-        elseif isprop(roiObj, 'channelid') && ~isempty(roiObj.channelid)
+        elseif isprop(roiObj,'channelid') && ~isempty(roiObj.channelid)
             newROI.channelid = roiObj.channelid;
         end
 
-        % Adapter juste la frame d'affichage pour la fille :
-        firstFrame = find(presence, 1, 'first');
-        if ~isempty(firstFrame)
-            newROI.display.frame = firstFrame;
-        else
-            % fallback au frame courant du parent
-            if isfield(newROI.display,'frame') && ~isempty(newROI.display.frame)
-                % keep as is
-            else
-                newROI.display.frame = 1;
-            end
+        % frame d'affichage
+        ff = frameList(1);
+        if ~isempty(ff)
+            newROI.display.frame = ff;
+        elseif ~(isfield(newROI.display,'frame') && ~isempty(newROI.display.frame))
+            newROI.display.frame = 1;
         end
 
-        % Pousser la ROI modifiée dans fovObj
+        % restauration éventuelle parent
         fovObj.roi(newIdx) = newROI;
-
-        % ---- 7. Restauration éventuelle de la ROI parente
-        % Dans certains cas addROI peut décaler les handles, donc on remet
-        % le handle d'origine si MATLAB a "relogé" la parent ROI.
         if parentROIIndex <= numel(fovObj.roi) && fovObj.roi(parentROIIndex) ~= parentHandle
             warning('createTrackedCellROIs:ParentROIReplaced', ...
-                ['Parent ROI %s in FOV %s was replaced while creating tracked cell ROIs. ' ...
-                 'Restoring the original parent ROI handle.'], roiObj.id, fovObj.id);
+                'Parent ROI %s in FOV %s was replaced; restoring handle.', roiObj.id, fovObj.id);
             fovObj.roi(parentROIIndex) = parentHandle;
         end
+        if ~isequal(roiObj.value, parentValueOrig), roiObj.value = parentValueOrig; end
 
-        % Et on restaure sa bbox si elle a bougé
-        if ~isequal(roiObj.value, parentValueOrig)
-            roiObj.value = parentValueOrig;
-        end
-
-        % ---- 8. Ajouter la dataseries "cell_presence" à la nouvelle ROI
+        % 4) dataseries minimal
         ds = dataseries;
         ds.class    = "other";
         ds.type     = "temporal";
         ds.groupid  = 'cell_presence';
         ds.parentid = newROI.id;
+        ds.data = table(logical(presence), 'VariableNames', {'present'});
 
-        presentTable = table(logical(presence), 'VariableNames', {'present'});
-        ds.data = presentTable;
+        % normaliser bbox: w,h fixes = max ; ROI.value = N×4 (frames présentes)
+        Praw = double(frameBoundsGlobal(presence,:)); % N×4
+        wmax = max(round(Praw(:,3)));
+        hmax = max(round(Praw(:,4)));
+        cx = Praw(:,1) + Praw(:,3)/2; cy = Praw(:,2) + Praw(:,4)/2;
+        xmin_adj = round(cx - wmax/2); ymin_adj = round(cy - hmax/2);
+        Pnorm = [xmin_adj, ymin_adj, repmat(wmax,size(Praw,1),1), repmat(hmax,size(Praw,1),1)];
+        newROI.value = Pnorm; fovObj.roi(newIdx) = newROI;
 
-        ds.userData = struct( ...
-            'cellID',                    double(cellId), ...
-            'sourceROI',                 roiObj.id, ...
-            'frames',                    frameList, ...
-            'labelChannelIndex',         pixIdx, ...
-            'labelChannelName',          channelName, ...
-            'boundingBoxesRelative',     frameBoundsRelative, ...
-            'boundingBoxesGlobal',       frameBoundsGlobal, ...
-            'boundingBoxUnionRelative',  unionRelative, ...
-            'boundingBoxUnionGlobal',    unionGlobal, ...
-            'boundingBoxOffsets',        frameOffsets, ...
-            'labelMaskUnion',            maskUnion, ...
-            'labelMaskFrames',           frameList ...
-        );
+        ud = struct();
+        ud.fixed_wh = [wmax, hmax];
+        ud.frames   = frameList;
+        ds.userData = ud;
 
-        % Champs spécifiques à ton écosystème d'affichage / plotting
-        ds.plotGroup = {[] [] [] [] [] {'present'}};
-        ds.groupProperties = {'present','Plot','auto','auto'};
+        newROI.data = ds; fovObj.roi(newIdx) = newROI;
 
-        newROI.data = ds;
+        % 5) canal virtuel = même nom que le canal de labels
+     
+              % 5) Canal virtuel persisté (labels) — écriture HDF5 + display safe
+        Tfull    = framesCount;
+        virtName = char(channelName);                   % renomme si besoin
 
-        % ---- 9. Logging création
-        msg = sprintf('Created tracked cell ROI from %s (cell %d, channel %s).', ...
-            roiObj.id, round(cellId), channelName);
-        newROI.log(msg, 'Creation');
+        % volume masque [hmax x wmax x 1 x Tfull] en uint8
+        volFull = zeros(hmax, wmax, 1, Tfull, 'uint8');
+        for mIdx = 1:numel(frameList)
+            fId = frameList(mIdx);
+            absX = double(Pnorm(mIdx,1)); absY = double(Pnorm(mIdx,2));
+            relX = round(absX - parentVal(1) + 1);
+            relY = round(absY - parentVal(2) + 1);
+            wTake = min(wmax, cols); hTake = min(hmax, rows);
+            relX = max(1, min(cols - wTake + 1, relX));
+            relY = max(1, min(rows - hTake + 1, relY));
+            cR = relX:(relX + wTake - 1);
+            rR = relY:(relY + hTake - 1);
+            slice = labelStack(rR, cR, fId);
+            volFull(1:hTake, 1:wTake, 1, fId) = uint8(slice == cellId);
+        end
 
-        % ---- 10. Renseigner la structure "created" de sortie
+        % Écrit le dataset HDF5 /<virtName>, met à jour image (si dims ok), et réconcilie display
+        newROI.appendVirtualChannel(virtName, volFull, true);
+        fovObj.roi(newIdx) = newROI;
+
         createdCount = createdCount + 1;
-
         created(createdCount).fov                = fovId;
         created(createdCount).parentROI          = roiObj.id;
         created(createdCount).parentROIIndex     = parentROIIndex;
         created(createdCount).cellID             = double(cellId);
         created(createdCount).roiIndex           = newIdx;
-        created(createdCount).roiID              = newId;
+        created(createdCount).roiID              = newROI.id;
         created(createdCount).frames             = frameList;
         created(createdCount).bbox               = uint16([minCol, minRow, width, height]);
-        created(createdCount).channel            = channelName;
+        created(createdCount).channel            = virtName;
         created(createdCount).frameBoundingBoxes = frameBoundsGlobal;
         created(createdCount).frameOffsets       = frameOffsets;
 
-        % Marquer ce FOV comme traité
         processedFOV(end+1) = fovId; %#ok<AGROW>
         createdNow = createdNow + 1;
     end
+end
+
+% -------- helpers locaux --------
+
+function D = buildSingleChannelDisplay(name, isIndexed, dispLim)
+if nargin<3 || isempty(dispLim), dispLim = [0;1]; end
+if nargin<2 || isempty(isIndexed), isIndexed = false; end
+D = struct();
+D.intensity       = [1 1 1];
+D.frame           = 1;
+D.selectedchannel = 1;
+D.binning         = 1;
+D.rgb             = [1 1 1];
+D.channel         = {char(name)};
+D.stretchlim      = [];
+D.displaylim      = dispLim;
+D.indexed         = logical(isIndexed);
+D.alpha           = 1;
+D.contour         = 0;
+D.width           = 0;
+D.log             = 0;
+end
+
+function D = upsertLogicalChannelInDisplay(D, name, varargin)
+% Remplace le canal 'name' s'il existe (mise à jour des champs),
+% sinon l'ajoute en fin en étendant proprement toutes les matrices/vecteurs.
+p = inputParser;
+p.addParameter('Indexed', true, @(x)islogical(x)||isnumeric(x));
+p.addParameter('DisplayLim', [0;1], @(x)isnumeric(x)&&isequal(size(x),[2,1]));
+p.addParameter('IntensityRow', [1 1 1], @(x)isnumeric(x)&&numel(x)==3);
+p.addParameter('RgbRow',       [1 1 1], @(x)isnumeric(x)&&numel(x)==3);
+p.addParameter('Alpha', 1, @(x)isnumeric(x)&&isscalar(x));
+p.addParameter('Selected', 1, @(x)isnumeric(x)&&isscalar(x));
+p.addParameter('Contour', 0, @(x)isnumeric(x)&&isscalar(x));
+p.addParameter('Width',   0, @(x)isnumeric(x)&&isscalar(x));
+p.addParameter('Log',     0, @(x)isnumeric(x)&&isscalar(x));
+p.parse(varargin{:});
+opt = p.Results;
+
+nm = string(name);
+if ~isfield(D,'channel') || isempty(D.channel), D.channel = {}; end
+ch = string(D.channel);
+idx = find(ch==nm, 1, 'first');
+
+if isempty(idx)
+    % append
+    D = appendAt(D, numel(ch)+1, nm, opt);
+else
+    % overwrite (garde la position existante)
+    D = appendAt(D, idx, nm, opt, true);
+end
+end
+
+function D = appendAt(D, pos, nm, opt, isOverwrite)
+if nargin<5, isOverwrite = false; end
+N0 = numel(D.channel);
+% assurer tailles actuelles
+D.intensity = ensureRows3(D,'intensity',max(N0,0));
+D.rgb       = ensureRows3(D,'rgb',      max(N0,0));
+D.selectedchannel = ensureRow(D,'selectedchannel',max(N0,0),1);
+D.indexed         = ensureRow(D,'indexed',        max(N0,0),0);
+D.alpha           = ensureRow(D,'alpha',          max(N0,0),1);
+D.contour         = ensureRow(D,'contour',        max(N0,0),0);
+D.width           = ensureRow(D,'width',          max(N0,0),0);
+D.log             = ensureRow(D,'log',            max(N0,0),0);
+if ~isfield(D,'displaylim') || isempty(D.displaylim) || size(D.displaylim,1)~=2
+    D.displaylim = repmat([0;1],1,N0);
+end
+if ~isfield(D,'frame')   || isempty(D.frame),   D.frame = 1; end
+if ~isfield(D,'binning') || isempty(D.binning), D.binning = 1; end
+if ~isfield(D,'stretchlim'), D.stretchlim = []; end
+if ~isfield(D,'channel') || isempty(D.channel), D.channel = {}; end
+
+if ~isOverwrite
+    % insertion à la fin (pos = N0+1)
+    if pos ~= N0+1, pos = N0+1; end
+    D.channel = [D.channel, {char(nm)}];
+    % étendre colonnes
+    if size(D.displaylim,2) < pos, D.displaylim(:,pos) = [0;1]; end
+    D.intensity(pos,:) = opt.IntensityRow;
+    D.rgb(pos,:)       = opt.RgbRow;
+else
+    % overwrite: remplacer seulement les champs de pos
+    D.channel{pos}     = char(nm);
+end
+
+% set des valeurs upsertées
+D.selectedchannel(pos) = opt.Selected;
+D.indexed(pos)         = logical(opt.Indexed);
+D.alpha(pos)           = opt.Alpha;
+D.contour(pos)         = opt.Contour;
+D.width(pos)           = opt.Width;
+D.log(pos)             = opt.Log;
+D.displaylim(:,pos)    = opt.DisplayLim;
+end
+
+function A = ensureRows3(D, field, Nmin)
+if ~isfield(D,field) || isempty(D.(field)) || size(D.(field),2)~=3
+    A = zeros(max(Nmin,0),3); if Nmin>0, A(:) = 1; end
+else
+    A = D.(field);
+    if size(A,1) < Nmin
+        A(end+1:Nmin,:) = repmat([1 1 1], Nmin-size(A,1), 1);
+    end
+end
+end
+
+function v = ensureRow(D, field, Nmin, defVal)
+if ~isfield(D,field) || isempty(D.(field))
+    v = repmat(defVal,1,max(Nmin,0));
+else
+    v = D.(field)(:).';
+    if numel(v) < Nmin
+        v(end+1:Nmin) = defVal;
+    end
+end
+end
+
+function d = defaultDisplay(N, C)
+d = struct();
+d.intensity       = repmat([1 1 1], N, 1);
+d.frame           = 1;
+d.selectedchannel = ones(1,N);
+d.binning         = 1;
+d.rgb             = repmat([1 1 1], N, 1);  % N x 3 (par canal logique)
+d.channel         = arrayfun(@(k)sprintf('channel_%d',k), 1:N, 'UniformOutput', false);
+d.stretchlim      = [];
+d.displaylim      = repmat([0;1], 1, C);
+d.indexed         = zeros(1,N);
+d.alpha           = ones(1,N);
+d.contour         = zeros(1,N);
+d.width           = ones(1,N);
+d.log             = zeros(1,N);
 end
 
 

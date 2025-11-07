@@ -111,6 +111,7 @@ function addChannel(obj, matrix, str, rgb, intensity)
     % Append du channel (k sous-canaux) sur la 3e dimension
     obj.image(:,:,C+(1:k),:) = matrix;
 
+
     % Métadonnées display (par channel logique, pas par sous-canal)
     obj.display.channel{end+1}   = str;
     obj.display.intensity(end+1,:) = intensity;

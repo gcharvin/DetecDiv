@@ -23,11 +23,25 @@ function extractAllROICrops(shallowObj, varargin)
 FrameList      = [];
 FOVIndex       = [];         % [] => toutes
 RequestedChans = {};         % {} => tous
-
+ROISelect      = [];         % << NEW: [] => toutes (par FOV), peut être numeric ou cell array
 
 % --- AJOUT DANS LE PARSING DES ARGUMENTS ---
 ForceChannelNames = true;  % impose les noms de canaux des ROI = chanSelNames
 Extend            = false; % << NEW: false = hard reset ; true = append/prolong
+
+% --- DRIFT CORRECTION OPTIONS (NEW) ---
+CorrectDrift      = false;    % active ou non la correction
+DriftChannel      = [];       % canal utilisé pour l'estimation du drift
+DriftMethod       = 'circshift'; % 'circshift' | 'subpixel' | 'register'
+DriftRefLocal     = 1;
+DriftSubpixel     = false;    % subpixel shift
+DriftMaxShift     = 20;       % px, [] = pas de limite
+DriftHipassSigma  = 3;        % 0 = off
+DriftApodize      = true;     % fenêtre Hann
+DriftRollingRef   = 0;        % 0..1, 0 = off
+DriftPyrLevels    = 1;        % niveaux pyramide, 1 = off
+DriftMask         = [];       % masque optionnel (HxW logique)
+
 
 for i = 1:2:numel(varargin)
     key = lower(string(varargin{i}));
@@ -42,6 +56,30 @@ for i = 1:2:numel(varargin)
             ForceChannelNames = logical(varargin{i+1});
         case "extend"                        % << NEW
             Extend = logical(varargin{i+1}); % << NEW
+        case "correctdrift"
+            CorrectDrift = logical(varargin{i+1});
+        case "driftchannel"
+            DriftChannel = varargin{i+1};
+        case "driftreflocal"
+            DriftRefLocal = varargin{i+1};
+        case "driftmethod"
+            DriftMethod = char(varargin{i+1});
+        case "driftsubpixel"
+            DriftSubpixel = logical(varargin{i+1});
+        case "driftmaxshift"
+            DriftMaxShift = varargin{i+1};
+        case "drifthipasssigma"
+            DriftHipassSigma = varargin{i+1};
+        case "driftapodize"
+            DriftApodize = logical(varargin{i+1});
+        case "driftrollingref"
+            DriftRollingRef = varargin{i+1};
+        case "driftpyramidlevels"
+            DriftPyrLevels = varargin{i+1};
+        case "driftmask"
+            DriftMask = varargin{i+1};
+        case "roi"                      
+            ROISelect = varargin{i+1};  % numeric (appliqué à chaque FOV) ou cell array par FOV
     end
 end
 
@@ -97,9 +135,16 @@ for kF = 1:numel(FOVIndex)
         end
     end
 
+      % --- NEW: restreindre la liste selon ROISelect pour CE FOV ---
+    selIdx = resolveROISelectionForFOV(roiList, ROISelect, kF, FOVIndex);
+    if isempty(selIdx)
+        fprintf('\n▶ FOV %d/%d — no selected ROI, skipped.\n', kF, numel(FOVIndex));
+        continue;
+    end
+    roiList = roiList(selIdx);   % on garde uniquement les ROIs choisies
+
     if isempty(roiList)
         fprintf('\n▶ FOV %d/%d — no ROI, skipped.\n', kF, numel(FOVIndex));
-
         continue;
     end
 
@@ -142,6 +187,8 @@ for kF = 1:numel(FOVIndex)
         end
     end
 
+   
+
     nFramesThisRun = numel(framesToDo);
 
     % ID FOV & dossier de sortie
@@ -167,14 +214,45 @@ for kF = 1:numel(FOVIndex)
         r.path = fovOutDir;
 
         % BBox
-        validBox = ~isempty(r.value) && numel(r.value) >= 4;
-        if ~validBox
-            ROI(rIdx).bbox = [];
-            ROI(rIdx).h = 0; ROI(rIdx).w = 0;
+        v = getprop(r,'value',[]);
+        if isempty(v) || size(v,2) < 4
+            ROI(rIdx).bbox = []; ROI(rIdx).h = 0; ROI(rIdx).w = 0;
+            ROI(rIdx).mobile = false;
+            ROI(rIdx).bboxPerFrame = [];
         else
-            bb = r.value;  % [xmin ymin w h]
-            ROI(rIdx).bbox = struct('xmin',bb(1),'ymin',bb(2),'w',bb(3),'h',bb(4));
-            ROI(rIdx).h = bb(4); ROI(rIdx).w = bb(3);
+            if size(v,1) == 1
+                % Fixe
+                ROI(rIdx).mobile = false;
+                ROI(rIdx).bbox = struct('xmin',v(1), 'ymin',v(2), 'w',v(3), 'h',v(4));
+                ROI(rIdx).w = v(3); ROI(rIdx).h = v(4);
+            else
+                % Mobile (N×4)
+                ROI(rIdx).mobile = true;
+                ROI(rIdx).bboxPerFrame = v(:,1:4);
+
+                % LIRE fixed_wh & frames dans ds=userData du dataseries EXISTANT
+                fixed_wh = [];
+                framesUD = [];
+                try
+                    if isprop(r,'data') && ~isempty(r.data) && isprop(r.data,'userData') && ~isempty(r.data.userData)
+                        ud = r.data.userData;
+                        if isfield(ud,'fixed_wh') && numel(ud.fixed_wh)==2
+                            fixed_wh = ud.fixed_wh;
+                        end
+                        if isfield(ud,'frames') && ~isempty(ud.frames)
+                            framesUD = ud.frames;
+                        end
+                    end
+                catch, end
+
+                if isempty(fixed_wh), fixed_wh = [v(1,3), v(1,4)]; end
+
+                ROI(rIdx).w = fixed_wh(1);
+                ROI(rIdx).h = fixed_wh(2);
+
+                ROI(rIdx).bbox = struct('xmin',v(1,1),'ymin',v(1,2),'w',ROI(rIdx).w,'h',ROI(rIdx).h);
+                ROI(rIdx).frames_abs = framesUD; % peut être []
+            end
         end
 
         % Display minimal si absent, puis on stocke les noms FOV complets (pour cohérence)
@@ -246,8 +324,6 @@ for kF = 1:numel(FOVIndex)
         roiList(rIdx) = r;
     end
 
-
-
     [h5p, matp] = getROIFilePaths(roiList(rIdx));
     fprintf('   ROI %d: id=%s\n', rIdx, roiList(rIdx).id);
     fprintf('           H5=%s\n', h5p);
@@ -278,7 +354,8 @@ for kF = 1:numel(FOVIndex)
     pbBlk = makeConsolePB(sprintf('  FOV %d/%d — blocs', kF, numel(FOVIndex)), nBlocks, 'Indent',2);
 
     % -------- Progression --------
-    doneFrames  = 0; totalFrames = nFramesThisRun;
+    doneFrames  = 0;
+    totalFrames = nFramesThisRun;
     % fprintf('      Loading frames  %s\n', progressBarString(doneFrames,totalFrames));
     % fprintf('      Cropping ROIs   %s\n', progressBarString(doneFrames,totalFrames));
 
@@ -293,12 +370,54 @@ for kF = 1:numel(FOVIndex)
 
         pbFrm = makeConsolePB(sprintf('    Bloc %d/%d — frames', ib, nBlocks), Csel*Tblock, 'Indent',4);
 
-
-
         % 1) Lire bloc sur la FOV : [H W Csel Tblock]
         blockImg = loadFOVBlock_readImage( ...
             fovObj, frameBatch, chanSelIdx, ...
             @(it,NT,msg) pbFrm.update(it, msg) );
+
+
+        if CorrectDrift
+            disp('Computing drift....');
+
+            [blockImg, driftBlk, scoreBlk] = fovObj.computeDrift('images', blockImg,  ...
+                'channel',      DriftRefLocal, ...   % index local 1..Csel
+                'framesid',     frameBatch, ...      % frames absolues
+                'refframeid',   frameBatch(1), ...
+                'method',       DriftMethod, ...
+                'subpixel',     DriftSubpixel, ...
+                'maxshift',     DriftMaxShift, ...
+                'hipasssigma',  DriftHipassSigma, ...
+                'apodize',      DriftApodize, ...
+                'rollingref',   DriftRollingRef, ...
+                'mask',         DriftMask, ...
+                'crop',         1.0 ...              % ou 0.8 si tu veux un recentrage robuste
+                );
+
+            % journalise dans fovObj.drift (fusion remplaçante)
+            if ~isfield(fovObj,'drift') || ~isstruct(fovObj.drift)
+                fovObj.drift = struct('frames',[],'dx',[],'dy',[],'score',[]);
+            end
+            [allF, ia] = union(fovObj.drift.frames, frameBatch(:)');
+            dxNew = nan(1, numel(allF)); dyNew = dxNew; scNew = dxNew;
+
+            [~,locOld] = ismember(fovObj.drift.frames, allF);
+            dxNew(locOld) = fovObj.drift.x;
+            dyNew(locOld) = fovObj.drift.y;
+            scNew(locOld) = getfield(fovObj.drift, 'score', nan(size(fovObj.drift.x))); %#ok<GFLD>
+
+            [~,locNew] = ismember(frameBatch(:)', allF);
+            dxNew(locNew) = driftBlk.x(frameBatch);
+            dyNew(locNew) = driftBlk.y(frameBatch);
+            scNew(locNew) = scoreBlk(:)';
+
+            tmp=fovObj.drift
+
+            fovObj.drift.frames = allF;
+            fovObj.drift.x      = dxNew;
+            fovObj.drift.y      = dyNew;
+            fovObj.drift.score  = scNew;
+        end
+
 
         pbFrm.close();
 
@@ -316,10 +435,51 @@ for kF = 1:numel(FOVIndex)
 
             % --- Crops du bloc en [h w Csel Tblock]
             h = ROI(rIdx).h; w = ROI(rIdx).w;
+
+
+               % --- BEGIN: Extend idempotent guard (skip if block fully ≤ T_exist) ---
+            if Extend
+                % Détermine un dataset existant pour estimer T_exist
+                h5File = fullfile(fovOutDir, sprintf('im_%s.h5', r.id));
+                T_exist = 0;
+                if isfile(h5File)
+                    try
+                        existingCh = listH5Channels(h5File);
+                        if ~isempty(existingCh)
+                            % on prend le premier canal demandé qui existe réellement
+                            req = string(chanSelNames);
+                            firstHit = intersect(req, existingCh, 'stable');
+                            if ~isempty(firstHit)
+                                dsPath = "/" + firstHit(1);
+                                info   = h5info(h5File, char(dsPath));
+                                if numel(info.Dataspace.Size) >= 4
+                                    T_exist = info.Dataspace.Size(4); % [H W k T]
+                                end
+                            end
+                        end
+                    catch
+                        % si h5info échoue (fichier temporairement lock), on laisse T_exist=0
+                    end
+                end
+        
+                if ~isempty(frameBatch) && max(frameBatch) <= T_exist
+                    % Tout le bloc est déjà écrit → no-op pour cette ROI
+                    fprintf('   • ROI %d/%d (%s): Extend noop (T_exist=%d, frames %d–%d) → skipped block\n', ...
+                        rIdx, nROI, ROI(rIdx).id, T_exist, frameBatch(1), frameBatch(end));
+                    continue; % passe à la ROI suivante pour ce bloc
+                end
+                % (cas "mixte" partiel > T_exist: on ne tranche pas ici; on laisse
+                %  la logique actuelle écrire tout le bloc. Ça suffira à régler le
+                %  cas "2ᵉ fois exactement les mêmes frames", qui est le problème.)
+            end
+
+
             roiBlock = zeros(h, w, Csel, Tblock, sampleClass);
+
             for it = 1:Tblock
+                bb_now = pickBBoxForFrame(ROI(rIdx), frameBatch(it), it, framesToDo);
                 for ic = 1:Csel
-                    roiBlock(:,:,ic,it) = cropWithPad(blockImg(:,:,ic,it), bb.xmin, bb.ymin, w, h);
+                    roiBlock(:,:,ic,it) = cropWithPad(blockImg(:,:,ic,it), bb_now(1), bb_now(2), w, h);
                 end
             end
 
@@ -367,10 +527,13 @@ for kF = 1:numel(FOVIndex)
             % Save (append on T); r.save must create datasets if file was deleted
             r.display.write_abs_start = frameBatch(1) - 1;
 
+
             didSave = r.save(chanSelNames, false);
 
             if ~didSave
                 fprintf('        ⚠ nothing written for ROI %s\n', ROI(rIdx).id);
+            else
+                fprintf('.');
             end
 
             r.image = [];           % free RAM
@@ -378,7 +541,7 @@ for kF = 1:numel(FOVIndex)
             ROI(rIdx).obj = r;      % write-back
 
         end
-
+        fprintf('\n');
         pbBlk.update(ib, sprintf('bloc %d/%d terminé', ib, nBlocks));
 
     end
@@ -685,7 +848,6 @@ for ic = 1:C
 end
 end
 
-
 function im2 = safeResizeTo(im,H,W)
 im2 = zeros(H,W,class(im));
 h0 = min(H,size(im,1));
@@ -724,16 +886,6 @@ if isprop(obj,field)
 else
     val = defaultVal;
 end
-end
-
-function out = progressBarString(doneFrames,totalFrames)
-if totalFrames <= 0, totalFrames = 1; end
-pct = max(0,min(1, doneFrames/totalFrames));
-barLen = 20;
-nFull  = round(pct * barLen);
-nEmpty = barLen - nFull;
-barStr = ['[', repmat('#',1,nFull), repmat('-',1,nEmpty), ']'];
-out = sprintf('%s %3.0f%% (%d/%d)', barStr, pct*100, doneFrames, totalFrames);
 end
 
 function fovOutDir = getFOVOutputPath(shallowObj, fovObj, fovIdFallback)
@@ -853,206 +1005,8 @@ if isfield(oldD,fieldName) && ~isempty(oldD.(fieldName)) ...
 end
 end
 
-
-function [list_aligned, shifts, scores] = estimateAndApplyXYDrift(list, opts)
-% list: H x W x C x T (uint16/uint8/…)
-% opts:
-%   .refFrame        (int)    frame de référence (défaut 1)
-%   .refChannel      (int)    canal utilisé pour l'estimation (défaut 1)
-%   .method          (char)   'phasecorr' (défaut) | 'xcorr' | 'circshift' (pixel)
-%   .subpixel        (logical)true par défaut (affinage quadratique du pic)
-%   .maxShift        (double) [px] borne max | [] pour illimité
-%   .hipassSigma     (double) sigma du flou soustractif (défaut 3) ; 0 = off
-%   .apodize         (logical)fenêtrage cosinus bord (défaut true)
-%   .rollingRef      (double) alpha EMA 0..1 (0 = pas de rolling, défaut 0)
-%   .pyramidLevels   (int)    0/1/2…, multi-échelle (défaut 1 = off)
-%   .mask            (HxW)    masque binaire pour pondérer la corrélation (optionnel)
-
-if nargin<2, opts = struct; end
-opts = setDefault(opts, 'refFrame', 1);
-opts = setDefault(opts, 'refChannel', 1);
-opts = setDefault(opts, 'method', 'phasecorr');
-opts = setDefault(opts, 'subpixel', true);
-opts = setDefault(opts, 'maxShift', []);
-opts = setDefault(opts, 'hipassSigma', 3);
-opts = setDefault(opts, 'apodize', true);
-opts = setDefault(opts, 'rollingRef', 0);
-opts = setDefault(opts, 'pyramidLevels', 1);
-opts = setDefault(opts, 'mask', []);
-
-[H,W,C,T] = size(list);
-list_aligned = list;
-shifts = zeros(T,2);   % [dy, dx] par frame
-scores = zeros(T,1);   % qualité (hauteur du pic)
-
-% --- 1) Prépare image de référence (canal choisi)
-ref = toFloat(list(:,:,opts.refChannel,opts.refFrame));
-ref = preprocess(ref, opts);
-
-% --- 2) Boucle frames: estimate -> apply to all channels
-for t = 1:T
-    mov = toFloat(list(:,:,opts.refChannel,t));
-    mov = preprocess(mov, opts);
-
-    switch lower(opts.method)
-        case 'phasecorr'
-            [dy,dx,score] = drift_phasecorr(ref, mov, opts);
-        case 'xcorr'
-            [dy,dx,score] = drift_xcorr(ref, mov, opts);
-        case 'circshift'
-            % estimation via phasecorr mais application pixel (arrondi)
-            [dy,dx,score] = drift_phasecorr(ref, mov, opts);
-            dy = round(dy); dx = round(dx);
-        otherwise
-            error('Unknown method: %s', opts.method);
-    end
-
-    % Clampe si maxShift défini
-    if ~isempty(opts.maxShift)
-        dy = max(min(dy, opts.maxShift), -opts.maxShift);
-        dx = max(min(dx, opts.maxShift), -opts.maxShift);
-    end
-
-    shifts(t,:) = [dy,dx];
-    scores(t)   = score;
-
-    % Applique au cube multicanal de la frame t
-    for c = 1:C
-        frame = list(:,:,c,t);
-        list_aligned(:,:,c,t) = imtranslate(frame, [dx, dy], 'linear', 'FillValues', 0);
-    end
-
-    % Rolling reference (EMA) si demandé
-    if opts.rollingRef > 0 && t>1
-        % Recalcule image alignée (canal ref) pour lisser la ref
-        movAligned = imtranslate(toFloat(list(:,:,opts.refChannel,t)), [dx, dy], 'linear', 'FillValues', 0);
-        movAligned = preprocess(movAligned, opts);
-        alpha = opts.rollingRef;
-        ref = (1-alpha)*ref + alpha*movAligned;
-    end
-end
-end
-
 % ---------- Helpers ----------
 
-function img = toFloat(img)
-if ~isa(img,'double'), img = double(img); end
-if max(img(:))>0, img = img./max(img(:)); end
-end
-
-function S = setDefault(S, field, val)
-if ~isfield(S, field) || isempty(S.(field)), S.(field) = val; end
-end
-
-function img = preprocess(img, opts)
-if opts.hipassSigma>0
-    img = img - imgaussfilt(img, opts.hipassSigma); % high-pass simple
-end
-if opts.apodize
-    persistent win;
-    if isempty(win) || ~isequal(size(win), size(img))
-        [H,W] = size(img);
-        wy = hann1d(H); wx = hann1d(W);
-        win = wy*wx.';
-    end
-    img = img .* win;
-end
-img = img - mean(img(:));
-if std(img(:))>0, img = img./std(img(:)); end
-end
-
-function w = hann1d(n)
-if n==1, w=1; return; end
-w = 0.5*(1-cos(2*pi*(0:n-1)/(n-1)));
-end
-
-function [dy,dx,score] = drift_phasecorr(ref, mov, opts)
-% Optionnel: pyramide
-levels = max(1, round(opts.pyramidLevels));
-scaleDy = 0; scaleDx = 0;
-for L = levels:-1:1
-    s = 1/(2^(L-1));
-    R = imresize(ref, s, 'bilinear');
-    M = imresize(mov, s, 'bilinear');
-    if ~isempty(opts.mask)
-        mask = imresize(opts.mask, s, 'nearest');
-    else
-        mask = [];
-    end
-    [dyl,dxl,score] = phasecorr2D(R,M,opts.subpixel,mask);
-    % Remonte d'échelle
-    scaleDy = (scaleDy + dyl)/s;
-    scaleDx = (scaleDx + dxl)/s;
-    % Recentre mov pour le niveau supérieur
-    mov = imtranslate(mov, [scaleDx, scaleDy], 'linear', 'FillValues', 0);
-end
-dy = scaleDy; dx = scaleDx;
-end
-
-function [dy,dx,score] = phasecorr2D(A,B,doSubpixel,mask)
-if ~isempty(mask)
-    A = A.*mask; B = B.*mask;
-end
-FA = fft2(A); FB = fft2(B);
-R = FA.*conj(FB);
-R = R ./ max(eps, abs(R));
-r = real(ifft2(R));
-[score, idx] = max(r(:));          % hauteur du pic
-[py,px] = ind2sub(size(r), idx);   % position
-[H,W] = size(r);
-% wrap vers décalage signé
-if py > H/2, py = py - H; end
-if px > W/2, px = px - W; end
-dy = py; dx = px;
-
-if doSubpixel
-    dy = dy + subpixQuad(r, py, px, 1);
-    dx = dx + subpixQuad(r, py, px, 2);
-end
-end
-
-function ofs = subpixQuad(r, py, px, dim)
-% Ajustement quadratique 1D local (dim=1 vertical / 2 horizontal)
-try
-    if dim==1
-        if py<=1 || py>=size(r,1), ofs=0; return; end
-        v = r(py-1:px+1<=px); %#ok<NASGU> % silence l'avertissement
-        y1 = r(py-1,px); y2 = r(py,px); y3 = r(py+1,px);
-    else
-        if px<=1 || px>=size(r,2), ofs=0; return; end
-        y1 = r(py,px-1); y2 = r(py,px); y3 = r(py,px+1);
-    end
-    denom = (y1 - 2*y2 + y3);
-    if abs(denom) < 1e-12, ofs = 0; else, ofs = 0.5*(y1 - y3)/denom; end
-    ofs = max(min(ofs, 0.5), -0.5); % évite les grosses dérives
-catch
-    ofs = 0;
-end
-end
-
-function [dy,dx,score] = drift_xcorr(ref, mov, opts)
-% Normxcorr2 sur une ROI centrale (plus robuste si bords non informatifs)
-win = centerWindow(size(ref), 0.8);  % 80% centre
-tpl = ref(win.r, win.c);
-c = normxcorr2(tpl, mov);
-[score, idx] = max(c(:));
-[py,px] = ind2sub(size(c), idx);
-% Conversion en décalage
-py = py - size(tpl,1);
-px = px - size(tpl,2);
-% Décalage relatif à l'origine du template
-dy = py - (win.r(1)-1);
-dx = px - (win.c(1)-1);
-if ~opts.subpixel, dy=round(dy); dx=round(dx); end
-end
-
-function win = centerWindow(sz, frac)
-H = sz(1); W = sz(2);
-h = max(8, round(H*frac)); w = max(8, round(W*frac));
-r0 = floor((H-h)/2)+1; c0 = floor((W-w)/2)+1;
-win.r = r0:(r0+h-1);
-win.c = c0:(c0+w-1);
-end
 
 function names = listH5Channels(h5path)
 names = string.empty(1,0);
@@ -1065,17 +1019,77 @@ catch
 end
 end
 
-function T = getH5TimeLen(h5path, dset)
-% retourne la taille T (4e dim) si dataset existe, sinon 0
-T = 0;
-if ~isfile(h5path), return; end
-try
-    info = h5info(h5path, ['/' dset]);
-    sz = info.Dataspace.Size;
-    if numel(sz)>=4, T = sz(4); end
-catch
-    % dataset absent
+function bb = pickBBoxForFrame(ROIe, tAbs, tLocal, framesToDo)
+if ~isfield(ROIe,'mobile') || ~ROIe.mobile || ~isfield(ROIe,'bboxPerFrame') || isempty(ROIe.bboxPerFrame)
+    bb = [ROIe.bbox.xmin, ROIe.bbox.ymin, ROIe.bbox.w, ROIe.bbox.h];
+    return;
 end
+
+V = ROIe.bboxPerFrame; N = size(V,1);
+
+if isfield(ROIe,'frames_abs') && ~isempty(ROIe.frames_abs)
+    [tf,loc] = ismember(tAbs, ROIe.frames_abs);
+    row = tf .* loc + (~tf) .* min(max(1,tAbs), N);
+else
+    if numel(framesToDo) == N
+        row = tLocal;
+    else
+        row = min(max(1,tAbs), N);
+    end
+end
+
+xmin = V(row,1); ymin = V(row,2);
+w = ROIe.w; h = ROIe.h;
+bb = [xmin, ymin, w, h];
+end
+
+function selIdx = resolveROISelectionForFOV(roiList, ROISelect, positionInFOVIndex, FOVIndex)
+% ROISelect:
+%   - []            -> toutes les ROIs
+%   - numeric vec   -> indices appliqués à TOUS les FOV sélectionnés
+%   - cell array    -> ROISelect{j} appliqué au j-ième FOV de FOVIndex
+%
+% positionInFOVIndex = rang courant (kF) dans la boucle FOVIndex (1..numel(FOVIndex))
+
+n = numel(roiList);
+if n==0
+    selIdx = [];
+    return;
+end
+
+% A) pas de sélection -> tout
+if isempty(ROISelect)
+    selIdx = 1:n;
+    return;
+end
+
+% B) sélection numérique -> appliquée à tous les FOV
+if isnumeric(ROISelect)
+    vals = ROISelect(:)';
+    mask = vals>=1 & vals<=n;
+    selIdx = unique(vals(mask), 'stable');
+    return;
+end
+
+% C) sélection cell array par FOV
+if iscell(ROISelect)
+    if positionInFOVIndex < 1 || positionInFOVIndex > numel(ROISelect)
+        selIdx = 1:n; % par défaut: toutes si l'entrée n'existe pas
+        return;
+    end
+    cur = ROISelect{positionInFOVIndex};
+    if isempty(cur)
+        selIdx = 1:n;
+        return;
+    end
+    vals = cur(:)';
+    mask = vals>=1 & vals<=n;
+    selIdx = unique(vals(mask), 'stable');
+    return;
+end
+
+% D) fallback
+selIdx = 1:n;
 end
 
 
