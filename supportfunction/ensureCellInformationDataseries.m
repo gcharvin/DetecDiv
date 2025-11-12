@@ -102,6 +102,7 @@ if ~isprop(ds,'groupProperties') || isempty(ds.groupProperties)
     ds.groupProperties = {'lineage','Plot','auto','auto'};
 end
 
+ds.show=0;
 % rien à retourner (handle)
 
 end

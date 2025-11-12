@@ -65,8 +65,8 @@ attempts     = 0;
 max_attempts = 5;
 
 
-if isempty(imArray)
-    disp('Image is empty, cannot save; Load image first !')
+if isempty(imArray) & verbose==true
+    disp('Image was not in memory, hence we don t save')
 end
 
 while ~success && attempts < max_attempts
@@ -170,11 +170,28 @@ while ~success && attempts < max_attempts
 
             % Attributs d'affichage (intensity, rgb, indexed, etc.)
             dispMeta = buildDisplayMetaForChannel(obj, iChan, k);
-            metaFields = fieldnames(dispMeta);
-            for ff = 1:numel(metaFields)
-                nm = metaFields{ff};
-                h5writeatt(h5File, h5Path, nm, dispMeta.(nm));
+            names = fieldnames(dispMeta);
+            for i = 1:numel(names)
+                nm = names{i};
+                v  = dispMeta.(nm);
+                if isempty(v), continue; end
+            
+                v = to_h5_attr(v);
+            
+                try
+                    h5writeatt(h5File, h5Path, nm, v);
+                catch ME
+                    % dernier recours: sérialiser en texte
+                    try
+                        h5writeatt(h5File, h5Path, nm, char(string(v)));
+                    catch
+                        warning('roi:save:AttrWriteFailed', ...
+                                'Attribute %s not written (%s).', nm, ME.message);
+                    end
+                end
             end
+
+
 
             imageSaved = true;
 
@@ -575,5 +592,37 @@ switch cls
         h5type = 'H5T_NATIVE_DOUBLE';
         if ~isempty(data), warning('Converting %s to double for HDF5.', cls); end
 end
+end
+
+
+% --- helper local : rendre les valeurs compatibles HDF5
+function val = to_h5_attr(val)
+    if islogical(val)
+        val = uint8(val);                 % 0/1
+    elseif isstring(val)
+        if isscalar(val)
+            val = char(val);              % string -> char
+        else
+            val = cellstr(val);           % string array -> cellstr
+        end
+    elseif isa(val,'datetime')
+        val = char(val);                  % stocker en texte ISO si tu veux: char(datestr(val,'yyyy-mm-ddTHH:MM:SS'))
+    elseif iscategorical(val)
+        val = cellstr(val);
+    elseif iscell(val)
+        % si cell de logical -> caster
+        if all(cellfun(@islogical,val))
+            val = uint8([val{:}]);
+        elseif all(cellfun(@ischar,val))
+            % OK: cellstr accepté
+        else
+            % fallback générique: JSON texte
+            val = char(jsonencode(val));
+        end
+    elseif istable(val) || isstruct(val)
+        % on ne met pas de gros objets en attribut → JSON texte
+        val = char(jsonencode(val));
+    end
+    % numeric ok tel quel; NaN/Inf passent en double.
 end
 

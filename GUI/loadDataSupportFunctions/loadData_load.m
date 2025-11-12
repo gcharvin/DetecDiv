@@ -578,7 +578,7 @@ for idxLocal = 1:numel(newFovIndicesInProject)
 end
 
 %% =======================================================================
-% Étape B : Préparer les arguments pour saveCroppedImages
+% Étape B : Préparer les arguments pour extractAllROICrops
 %% =======================================================================
 fovArg      = [];
 framesCell  = {};
@@ -598,6 +598,7 @@ for idxLocal = 1:numel(newFovIndicesInProject)
     end
 
     posParsed = parsedData.positions(iParsed);
+    thisFOV   = shallowObj.fov(fProj);   % nécessaire pour récupérer les noms de canaux
 
     % Vérifier sélection / extractROI
     if ~isfield(posParsed,'selected') || ~posParsed.selected
@@ -658,143 +659,72 @@ for idxLocal = 1:numel(newFovIndicesInProject)
     % Stocker pour saveCroppedImages
     fovArg(end+1)      = fProj;            %#ok<AGROW>
     framesCell{end+1}  = frameRange;       %#ok<AGROW>
-    channelCell{end+1} = chanSelected;     %#ok<AGROW>
+   % channelCell{end+1} = chanSelected;     %#ok<AGROW>
+    channelCell{end+1} = cellfun(@char, string(thisFOV.channel(chanSelected)), 'UniformOutput', false);
+
 end
+
+% --- Normalisation des canaux selon le nb de FOVs ---
+% (1) si une seule FOV, on passe directement une cellstr {'Channel0','Channel1'}
+% (2) sinon, on passe une cell (1xNfov) dont chaque élément est une cellstr
+if numel(fovArg) == 1
+    channelsArg = channelCell{1};   % dépaqueter 1x1 cell -> 1xN cell
+else
+    channelsArg = channelCell;      % rester en 1xNfov cell
+end
+
+% --- Forcer le type en cellstr partout (strjoin-compatible) ---
+if iscell(channelsArg)
+    if ~isempty(channelsArg) && iscell(channelsArg{1})
+        % Cas multi-FOV : chaque entrée doit être une cellstr
+        for k = 1:numel(channelsArg)
+            channelsArg{k} = cellfun(@char, string(channelsArg{k}), 'UniformOutput', false);
+        end
+    else
+        % Cas mono-FOV (ou cell plate) : convertir en cellstr
+        channelsArg = cellfun(@char, string(channelsArg), 'UniformOutput', false);
+    end
+elseif isstring(channelsArg)
+    channelsArg = cellstr(channelsArg);
+elseif ischar(channelsArg)
+    channelsArg = {channelsArg};
+else
+    channelsArg = cellstr(string(channelsArg));
+end
+
+
 
 if isempty(fovArg)
     fprintf('DEBUG: Aucune FOV à extraire (fovArg vide). On va juste sauver le projet.\n');
 end
 
-%% =======================================================================
-% Étape C : auto-tune du batch (parsedData.maxframeloading)
-%% =======================================================================
-if ~isempty(fovArg)
-    MemBudget = 1e9;       % ~1 Go
-    bytesPerPixel = 2;     % 16 bits
-
-    totalPerFrameBytes = 0;
-
-    for idxLocal = 1:numel(fovArg)
-        fProj   = fovArg(idxLocal);
-        iParsed = newFovIndicesInParsed(idxLocal);
-
-        thisFOV = shallowObj.fov(fProj);
-        posLoc  = parsedData.positions(iParsed);
-
-        if isfield(posLoc,'channelsSelected') && ~isempty(posLoc.channelsSelected)
-            chanMask = logical(posLoc.channelsSelected);
-        else
-            nChGuess = numel(thisFOV.channel);
-            if nChGuess==0, nChGuess=1; end
-            chanMask = true(1,nChGuess);
-        end
-        chanIdxList = find(chanMask);
-
-        if isempty(chanIdxList)
-            fprintf('DEBUG: FOV %d pas de channel sélectionné -> skip mémoire.\n', fProj);
-            continue;
-        end
-
-        roiList = thisFOV.roi;
-        if isempty(roiList)
-            fprintf('DEBUG: FOV %d aucune ROI finale (thisFOV.roi vide) -> skip mémoire.\n', fProj);
-            continue;
-        end
-
-        for r = 1:numel(roiList)
-            if ~isprop(roiList(r),'value') || isempty(roiList(r).value)
-                fprintf('DEBUG: FOV %d ROI %d sans bbox -> skip mémoire.\n', fProj, r);
-                continue;
-            end
-            bb = roiList(r).value;
-            if numel(bb) < 4
-                fprintf('DEBUG: FOV %d ROI %d bbox invalide (<4 vals) -> skip mémoire.\n', fProj, r);
-                continue;
-            end
-
-            w = double(bb(3));
-            h = double(bb(4));
-            if ~(isfinite(w) && isfinite(h) && w>0 && h>0)
-                fprintf('DEBUG: FOV %d ROI %d bbox bizarre (w/h <=0) -> skip mémoire.\n', fProj, r);
-                continue;
-            end
-
-            bytesOneFrameThisROIChan = w * h * bytesPerPixel;
-            totalPerFrameBytes = totalPerFrameBytes + bytesOneFrameThisROIChan * numel(chanIdxList);
-        end
-    end
-
-    if totalPerFrameBytes <= 0
-        totalPerFrameBytes = 1;
-        fprintf('DEBUG: totalPerFrameBytes <=0, fallback=1 byte/frame.\n');
-    end
-
-    B_theoretical = floor(MemBudget / totalPerFrameBytes);
-    if ~isfinite(B_theoretical) || B_theoretical < 1
-        B_theoretical = 1;
-    end
-
-    % borne supérieure = plus grand nFrames parmi ces FOV
-    maxFramesAllFOV = 1;
-    for idxLocal = 1:numel(fovArg)
-        posLoc = parsedData.positions(newFovIndicesInParsed(idxLocal));
-
-        if isfield(posLoc,'currentMinFrame') && isfield(posLoc,'currentMaxFrame') && ...
-                ~isempty(posLoc.currentMinFrame) && ~isempty(posLoc.currentMaxFrame)
-            nFramesThisPos = posLoc.currentMaxFrame - posLoc.currentMinFrame + 1;
-        elseif isfield(posLoc,'frames') && ~isempty(posLoc.frames)
-            nFramesThisPos = numel(posLoc.frames);
-        else
-            nFramesThisPos = 1;
-        end
-
-        if nFramesThisPos > maxFramesAllFOV
-            maxFramesAllFOV = nFramesThisPos;
-        end
-    end
-
-    B_clamped = min(B_theoretical, maxFramesAllFOV);
-    if B_clamped < 1
-        B_clamped = 1;
-    end
-
-    parsedData.maxframeloading = B_clamped;
-    fprintf('DEBUG: maxframeloading(auto) = %d (B_theoretical=%d, maxFramesAllFOV=%d)\n', ...
-        parsedData.maxframeloading, B_theoretical, maxFramesAllFOV);
-else
-    fprintf('DEBUG: pas d''extraction -> on ne recalcule pas maxframeloading.\n');
-end
-
-% Sécurité : arrondir maxframeloading à un entier >= 1
-parsedData.maxframeloading = max(1, round(parsedData.maxframeloading));
-fprintf('DEBUG: maxframeloading final (rounded) = %d\n', parsedData.maxframeloading);
 
 %% =======================================================================
-% Étape D : saveCroppedImages ou juste save
+% Étape D : extractAllROICrops ou juste save
 %% =======================================================================
 if ~isempty(fovArg)
-    fprintf('DEBUG: Appel saveCroppedImages sur fovArg=%s\n', mat2str(fovArg));
+    fprintf('DEBUG: Appel extractAllROICrops sur fovArg=%s\n', mat2str(fovArg));
     corrDrift = false;
     if isfield(parsedData,'correctdrift') && parsedData.correctdrift
         corrDrift = true;
     end
 
-    shallowObj.saveCroppedImages('frames',        framesCell, ...
-        'fov',           fovArg, ...
-        'cut',           parsedData.maxframeloading, ...
-        'correctdrift',  corrDrift, ...
-        'cropdrift',     1, ...
-        'crashrecovery', 0, ...
-        'channel',       channelCell, ...
-        'scale',         parsedData.scale, ...
-        'hprogressbar',  hprogressbar);
+shallowObj.extractAllROICrops( ...
+    'FOVIndex',      fovArg, ...
+    'Frames',        framesCell, ...
+    'Channels',      channelsArg, ...
+    'CorrectDrift',  corrDrift, ...
+    'CropDrift',     1, ...
+    'CrashRecovery', 0);
 
-    fprintf('DEBUG: saveCroppedImages terminé.\n');
 
+
+    fprintf('DEBUG: extractAllROICrops terminé.\n');
 else
     fprintf('DEBUG: Rien à extraire -> shallowSave(shallowObj) direct.\n');
     shallowSave(shallowObj);
 end
+
 
 %% =======================================================================
 % Étape E : resynchroniser les ROIs en mémoire après extraction/re-extraction

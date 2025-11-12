@@ -1,12 +1,11 @@
 function trainImageLSTMNetFun(classif,setparam)
 
-
 path=fullfile(classif.path);
 name=classif.strid;
 
 %---------------- parameters setting
 if nargin==2 % basic parameter initialization
-    
+
     tip={'Check box to train CNN',...
         'Check box to compute CNN activations',...
         'Check box to train the LSTM network',...
@@ -24,7 +23,7 @@ if nargin==2 % basic parameter initialization
         'Enter the magnitude of rotation for data augmentation (in pixels)',...
         'Specify value for L2 regularization',...
         'Check to use a dropout layer',...
-         'Value for dropout regularization',...
+        'Value for dropout regularization',...
         'Choose the fraction of the data to be used for training vs validation during LSTM training',...
         'Enter the size of the hidden unit',...
         'Choose the size of the mini batch for LSTM training; Higher values require more memory and are prone to errors',...
@@ -34,7 +33,7 @@ if nargin==2 % basic parameter initialization
         'Enter the dropping factor in learning rate',...
         'Choose execution environment',...
         'Select initial version of network to start training with; Default: ImageNet'};
-    
+
     classif.trainingParam=struct('train_CNN_classifier',true,...
         'compute_CNN_activations',true,...
         'train_LSTM_network',true,...
@@ -51,284 +50,343 @@ if nargin==2 % basic parameter initialization
         'CNN_translation_augmentation',[-5 5],...
         'CNN_rotation_augmentation',[-20 20],...
         'CNN_l2_regularization',0.00001,...
-        'CNN_use_dropout',true,...                 % <---- NEW
-        'CNN_dropout',0.5,...                      % <---- NEW
+        'CNN_use_dropout',true,...
+        'CNN_dropout',0.5,...
         'LSTM_data_splitting_factor',0.9,...
         'LSTM_hidden_size',150,...
         'LSTM_mini_batch_size',8,...
         'LSTM_initial_learning_rate', 0.0001,...
         'LSTM_max_epochs', 50,...
         'LSTM_sequence_length', 40,...
-        'LSTM_learn_rate_drop_factor', 0.9,... 
+        'LSTM_learn_rate_drop_factor', 0.9,...
         'execution_environment',{{'auto','parallel','cpu','gpu','multi-gpu','auto'}},...
         'transfer_learning',{{'ImageNet','ImageNet'}},...
         'tip',{tip});
-    
+
     return;
-    %   end
 else
     trainingParam=classif.trainingParam;
-
-     % Backward compatibility defaults
-        if ~isfield(trainingParam,'CNN_use_dropout'); trainingParam.CNN_use_dropout = true; end
-        if ~isfield(trainingParam,'CNN_dropout');      trainingParam.CNN_dropout     = 0.5;  end
-        
-    
+    if ~isfield(trainingParam,'CNN_use_dropout'); trainingParam.CNN_use_dropout = true; end
+    if ~isfield(trainingParam,'CNN_dropout');      trainingParam.CNN_dropout     = 0.5;  end
     if numel(trainingParam)==0
         disp('Could not find training parameters : first launch train with an extra argument to force parameter assignment');
         return;
     end
-    
 end
 %-----------------------------------%
-
 
 blockRNG=1;
 fprintf('Loading training options...\n');
 fprintf('------\n');
 
-
-%load([ path '/options.mat']); % loading options for training --> imageclassifier, cactivations, lstm_training, assemblenet, validation
-
-
 %%% training image classifier
-
 if trainingParam.train_CNN_classifier
-    
-    if strcmp(trainingParam.transfer_learning{end},'ImageNet') 
-    trainImageGoogleNetFun(classif); % trainImageGoogle net first and saves it as netCNN.mat in the LSTM dir
+    if strcmp(trainingParam.transfer_learning{end},'ImageNet')
+        trainImageGoogleNetFun(classif); % saves as netCNN.mat in the LSTM dir
     else
-     src=fullfile(classif.path,['netCNN_' trainingParam.transfer_learning{end}]);
-         if exist(src)
-             load(src); %loads classifier
-         else
-             disp(['Unable to load: ' trainingParam.transfer_learning{end}]);
-            return;
-         end        
-        trainImageGoogleNetFun(classif,'ok',classifier);    
+        src=fullfile(classif.path,['netCNN_' trainingParam.transfer_learning{end}]);
+        if exist(src,"file"); load(src); else; disp(['Unable to load: ' trainingParam.transfer_learning{end}]); return; end
+        trainImageGoogleNetFun(classif,'ok',classifier);
     end
-    
+
     target=fullfile(path,['netCNN_' name '.mat']);
     source=fullfile(path,[name '.mat']);
-  
-    if ~exist(source)
-        disp('Trained CNN does not exist; quitting !');
-        return;
-    end
-    
-    copyfile(source,target); % copies the trained CNN classifieer so that it can later be assembled to the lstm network
+    if ~exist(source,"file"); disp('Trained CNN does not exist; quitting !'); return; end
+    copyfile(source,target);
 end
 
 fprintf('Loading Image classifier...\n');
 fprintf('------\n');
 str=fullfile(path,['netCNN_' name '.mat']);
-
-if exist(str)
-    load(str); % load the image classifier
-    netCNN=classifier;
-else
-    disp('unable to find CNN classifier; first train the CNN classifier; quitting ...!');
-    return;
+if exist(str,"file"); load(str); netCNN=classifier;
+else; disp('unable to find CNN classifier; first train the CNN classifier; quitting ...!'); return;
 end
 
-%%% Calculate activations from the image classifier network based on the training
-%%% set
-
-% load and format data as sequences of vectors using spepcific network
-% layer
-
+%%% choose feature layer
 inputSize = netCNN.Layers(1).InputSize(1:2);
-
-
 switch trainingParam.CNN_network{end}
-    case 'googlenet'
-        layerName = "pool5-7x7_s1";  % GoogLeNet
-    case 'resnet18'
-        layerName = "pool5";         % ResNet-18
-    case 'resnet50'
-        layerName = "avg_pool";      % ResNet-50
-    case {'inceptionresnetv2','inceptionv3'}
-        layerName = "avg_pool";      % Inception variants
-    otherwise
-        error("Unsupported backbone: %s", trainingParam.CNN_network{end});
+    case 'googlenet', layerName = "pool5-7x7_s1";
+    case 'resnet18',  layerName = "pool5";
+    case 'resnet50',  layerName = "avg_pool";
+    case {'inceptionresnetv2','inceptionv3'}, layerName = "avg_pool";
+    otherwise, error("Unsupported backbone: %s", trainingParam.CNN_network{end});
 end
-
 
 tempFile = [path '/' name '_image_classifier_activations.mat'];
 
-if trainingParam.compute_CNN_activations==false && exist(tempFile)  % if acitvations already exist
-    fprintf('Loading Image classifier activation data...\n');
-    fprintf('------\n');
-    
-    load(tempFile,"sequences","labels"); % loads vid, lab, deep variables
-    % label in an array of categorical labels, vid is a video file of uint8
-else % compute acitvations for input data
-    fprintf('Computing Image classifier activation data...\n');
-    fprintf('------\n');
-    
+% ===================== LOCAL BALANCING CONSTANTS (pas dans trainingParam) =====================
+MINORITY_MODE         = 'auto';   % 'auto' or 'none'
+MINORITY_MIN_RATIO    = 0.30;     % activer l'équilibrage si min/max <= 0.30
+MINORITY_PERCENTILE   = 0.20;     % si >2 classes : toutes les classes sous ce quantile
+POS_NEG_RATIO         = 1.0;      % #negatives par #positives (fenêtres)
+WIN_STRIDE_POS_FRAC   = 0.1;     % stridePos = L*0.25
+WIN_STRIDE_NEG_FRAC   = 1.00;     % strideNeg = L*1.0
+KEEP_VALID_DISTRIB    = true;     % ne pas ré-équilibrer la validation (on agit seulement côté génération train)
+% ==============================================================================================
+
+if trainingParam.compute_CNN_activations==false && exist(tempFile,"file")
+    fprintf('Loading Image classifier activation data...\n------\n');
+    load(tempFile,"sequences","labels");
+else
+    fprintf('Computing Image classifier activation data...\n------\n');
     cc=1;
-    
-    % load all the files in the timeseries
     fol= [path '/trainingdataset/timeseries'];
     list=dir([fol '/*.mat']);
     numFiles = numel(list);
-    sequences = cell(numFiles,1);
-    labels = cell(numFiles,1);
-    
-    for i=1:numel(list)
-        fprintf(['Processing movie ' num2str(i) '...']);
-        load([list(i).folder '/' list(i).name]); % loads deep, vid, lab (categories of labels)
-        video = centerCrop(vid,inputSize);
-        fr=1:size(video,4);
-        if trainingParam.LSTM_sequence_length~=0
-        nb=ceil(size(video,4)/trainingParam.LSTM_sequence_length); % packs of 100 frames
-        else
-        nb=1;
+    sequences = cell(numFiles*10,1); % sur-allocation grossière
+    labels    = cell(numFiles*10,1);
+
+    % -------- PRE-SCAN pour détecter les classes minoritaires --------
+
+    % -------- PRE-SCAN pour détecter les classes minoritaires (robuste) --------
+    fprintf('Scanning labels to detect minority classes...\n');
+
+    list = dir([fol '/*.mat']);           % si pas déjà défini au-dessus
+    numFiles = numel(list);
+
+    allCats = [];
+    totalCounts = [];
+
+    for ii = 1:numFiles
+        S = load(fullfile(list(ii).folder, list(ii).name), 'lab');  % ne charge que 'lab'
+        if ii == 1
+            allCats = categories(S.lab);           % cellstr colonne
+            allCats = allCats(:)';                 % -> row 1×K
+            totalCounts = zeros(1, numel(allCats));% row 1×K
         end
-        dis=discretize(fr,nb);
+        % Compter sur les mêmes catégories (taille K), forcer vecteur-ligne
+        cnt = countcats( categorical(S.lab, allCats) );
+        cnt = reshape(cnt, 1, []);                 % -> row 1×K
+        totalCounts = totalCounts + cnt;           % accumulation sûre
+    end
 
-       % return;
+    % Sécurité : si une classe n'apparaît jamais, éviter zéros problématiques
+    nonzero = totalCounts > 0;
+    if ~any(nonzero)
+        % cas pathologique : aucune frame (?) -> fallback
+        warning('No labels counted in dataset. Falling back to uniform split.');
+        minorityClasses = allCats(1);              % arbitraire
+        ratioMinMax = 1;
+    else
+        % Calcul du ratio min/max
+        mn = min(totalCounts(nonzero));
+        mx = max(totalCounts(nonzero));
+        ratioMinMax = mn / max(1, mx);
 
-        for k=1:max(dis)
-        tmpvid=video(:,:,:,fr(dis==k));
+        % Stratégie "min unique" par défaut
+        [~, idxMin] = min(totalCounts);
+        minorityClasses = allCats(idxMin);
 
-        %sequences{cc,1} = activations(netCNN,video,layerName,'OutputAs','columns');
-        %labels{cc,1}= lab;
-         sequences{cc,1} = activations(netCNN,tmpvid,layerName,'OutputAs','columns');
-        labels{cc,1}= lab(fr(dis==k));
+        % Option percentile (si souhaite garder plusieurs minoritaires)
+        if ~isempty(MINORITY_PERCENTILE) && MINORITY_PERCENTILE > 0
+            thr = prctile(totalCounts, MINORITY_PERCENTILE*100);
+            mask = totalCounts <= thr;             % 1×K logique
+            % garantir au moins une classe sélectionnée
+            if ~any(mask)
+                mask = totalCounts == mn;
+            end
+            minorityClasses = allCats(mask);
+        end
+    end
 
- if size(labels{cc,1},1)>1 % swap dim if incorrect ! I don't know how the dims may be incorrect, but I observed it !
-            labels{cc,1}=labels{cc,1}';
- end
+    doBalance = ~strcmp(MINORITY_MODE,'none') && (ratioMinMax <= MINORITY_MIN_RATIO);
 
-        cc=cc+1;
+    fprintf('Classes: %s | counts=%s | minority=%s | balance=%d\n', ...
+        strjoin(string(allCats),','), mat2str(totalCounts), strjoin(string(minorityClasses),','), doBalance);
+    % --------------------------------------------------------------------------
+
+
+    % ------------------------------------------------------------------
+
+    for i=1:numFiles
+        fprintf('Processing movie %d/%d...', i, numFiles);
+        S = load(fullfile(list(i).folder, list(i).name)); % loads deep, vid, lab
+        video = centerCrop(S.vid,inputSize);
+        lab   = S.lab; % categorical (row or col)
+        if size(lab,1)>1 && size(lab,2)>1, error('lab must be 1D categorical'); end
+        if size(lab,1)>size(lab,2), lab = lab'; end
+
+        L = trainingParam.LSTM_sequence_length;
+        if L<=0, L = size(video,4); end
+        T = size(video,4);
+
+        if doBalance
+            isMinor = ismember(lab, categorical(minorityClasses));
+            posIdx  = find(isMinor);
+            winStridePos = max(1, round(L * WIN_STRIDE_POS_FRAC));
+            winStrideNeg = max(1, round(L * WIN_STRIDE_NEG_FRAC));
+            posWins = []; negWins = [];
+
+            % Fenêtres POS centrées
+            for t = posIdx(:).'
+                s = max(1, t - floor(L/2));
+                e = min(T, s + L - 1); s = max(1, e - L + 1);
+                posWins(end+1,:) = [s e]; %#ok<AGROW>
+            end
+            if ~isempty(posWins), posWins = unique(posWins, 'rows', 'stable'); end
+
+            % Fenêtres NEG sans chevauchement POS
+            t0 = 1;
+            while t0 + L - 1 <= T
+                s = t0; e = t0 + L - 1;
+                overlap = ~isempty(posWins) && any( (posWins(:,1) <= e) & (posWins(:,2) >= s) );
+                if ~overlap, negWins(end+1,:) = [s e]; end %#ok<AGROW>
+                t0 = t0 + winStrideNeg;
+            end
+
+            % Equilibrage
+            kpos = size(posWins,1); kneg = size(negWins,1);
+            if kpos==0
+                selNeg = randperm(kneg, min(kneg, 2));
+                useWins = negWins(selNeg,:);
+            else
+                r = min(kneg, max(1, round(POS_NEG_RATIO * kpos)));
+                if r>0, selNeg = randperm(kneg, r); else, selNeg=[]; end
+                useWins = [posWins; negWins(selNeg,:)];
+            end
+
+            % Génération des séquences équilibrées
+            for w = 1:size(useWins,1)
+                s = useWins(w,1); e = useWins(w,2);
+                tmpvid = video(:,:,:,s:e);
+                sequences{cc,1} = activations(netCNN,tmpvid,layerName,'OutputAs','columns');
+
+
+                if strcmp(trainingParam.classifier_output{end},'sequence-to-one')
+                    % Une seule étiquette par séquence
+                    hasMinor = any(ismember(lab(s:e), categorical(minorityClasses)));
+
+                    % Déterminer le nom de la classe majoritaire (tout sauf les minoritaires)
+                    majorCats = setdiff(allCats, minorityClasses, 'stable');
+                    if isempty(majorCats)
+                        majorCats = {'other'};
+                    end
+                    majorName = char(majorCats{1});
+                    minorName = char(minorityClasses{1});
+
+                    % Créer le label catégoriel
+                    labOne = categorical(hasMinor, [false true], {majorName, minorName});
+                    labels{cc,1} = labOne;
+
+                else
+                    % Séquence complète -> vecteur ligne categorical
+                    tmpLab = lab(s:e);
+                    if iscolumn(tmpLab)
+                        tmpLab = tmpLab';
+                    end
+                    if ~iscategorical(tmpLab)
+                        tmpLab = categorical(tmpLab, categories(lab));
+                    end
+                    labels{cc,1} = tmpLab;
+                end
+
+
+
+                cc = cc + 1;
+            end
+        else
+            % Découpage uniforme (fallback)
+            fr = 1:T;
+            nb = max(1, ceil(T / L));
+            dis = discretize(fr, nb);
+            for k=1:max(dis)
+                tmpvid = video(:,:,:,fr(dis==k));
+                sequences{cc,1} = activations(netCNN,tmpvid,layerName,'OutputAs','columns');
+                tmpLab = lab(fr(dis==k));
+                if iscolumn(tmpLab)
+                    tmpLab = tmpLab';
+                end
+                if ~iscategorical(tmpLab)
+                    tmpLab = categorical(tmpLab, categories(lab));
+                end
+                labels{cc,1} = tmpLab;
+
+                cc = cc + 1;
+            end
         end
 
         fprintf('\n');
     end
-    
+
+    % Compacte les cellules si on a sur-alloué
+    sequences = sequences(1:cc-1);
+    labels    = labels(1:cc-1);
+
     save(tempFile,"sequences","labels","-v7.3");
     fprintf('\n');
 end
 
+% ===================== LSTM TRAINING =====================
 str=fullfile(path,['netLSTM_' name '.mat']);
-
-if trainingParam.train_LSTM_network | ~exist(str) % training of LSTM network, if file does not exist, then must train
-    
+if trainingParam.train_LSTM_network || ~exist(str,"file")
     disp('Preparing LSTM network ...');
     fprintf('------\n');
-    
-    %=====BLOCKs RNG====
+
     if blockRNG==1
         stCPU= RandStream('Threefry','Seed',0,'NormalTransform','Inversion');
         stGPU=parallel.gpu.RandStream('Threefry','Seed',0,'NormalTransform','Inversion');
         RandStream.setGlobalStream(stCPU);
         parallel.gpu.RandStream.setGlobalStream(stGPU);
     end
-    %===================
-    
+
     numObservations = numel(sequences);
     idx = randperm(numObservations);
-    N = floor(trainingParam.LSTM_data_splitting_factor* numObservations); 
-    % 0.9 replace
-    
+    N = floor(trainingParam.LSTM_data_splitting_factor * numObservations);
     idxTrain = idx(1:N);
-    %idxTrain=1; % warning
-    
-    sequencesTrain = sequences(idxTrain);
-    labelsTrain = labels(idxTrain);
-    
-    if strcmp(trainingParam.classifier_output{end},'sequence-to-one') % sequence to one classification
-        labelsTrain=[labelsTrain{:}]';
-    end
-    
     idxValidation = idx(N+1:end);
-    %idxValidation = 1; %warning
-    
+
+    sequencesTrain = sequences(idxTrain);
+    labelsTrain    = labels(idxTrain);
     sequencesValidation = sequences(idxValidation);
-    labelsValidation = labels(idxValidation);
-    
-    if strcmp(trainingParam.classifier_output{end},'sequence-to-one') % sequence to one classification
-        labelsValidation = [labelsValidation{:}]';
+    labelsValidation    = labels(idxValidation);
+
+    if strcmp(trainingParam.classifier_output{end},'sequence-to-one')
+        labelsTrain       = [labelsTrain{:}]';
+        labelsValidation  = [labelsValidation{:}]';
     end
-    
-    
-    % labelsValidation{1}= repmat(labelsValidation{1},[1 500])
-    % create LSTM network
-    
+
     numFeatures = size(sequencesTrain{1},1);
-    numClasses = numel(classif.classes);
+    numClasses  = numel(classif.classes);
+    if numClasses==0, disp('There is no classes defined ; Cannot continue !'); return; end
 
-    if numClasses==0
-disp('There is no classes defined ; Cannot continue !')
-return;
-    end
-
-    %numel(categories(labelsTrain{1}));
-    
-    %ntot=countcats(labelsTrain{1});
-    %weights = double(ntot)/double(sum(ntot));
-    
+    % pondérations par classe (sequence-to-sequence : somme des frames)
     sucl=zeros(numObservations,numClasses);
-    
     for i=1:numObservations
         sucl(i,:)=countcats(labels{i});
     end
     sucl=sum(sucl,1);
-    
-    tempsucl=sucl(sucl>0);
-    sucl(sucl==0)=min(tempsucl(:));
-    classWeights = 1./sucl;
-    classWeights = classWeights'/mean(classWeights);
-    
-    %==============OPTIONS=================
-    
+    tempsucl=sucl(sucl>0); sucl(sucl==0)=min(tempsucl(:));
+    classWeights = 1./sucl; classWeights = classWeights'/mean(classWeights);
+
     nh=trainingParam.LSTM_hidden_size;
-
-    cnnLayers = layerGraph(netCNN);
-    [learnableLayer,classLayer] = findLayersToReplace(cnnLayers);
-    sz=size(learnableLayer.Weights);
-
- if strcmp(trainingParam.transfer_learning{end},'ImageNet') 
-     
-    if strcmp(trainingParam.classifier_output{end},'sequence-to-sequence') % seuqence to sequence clssif
-        layers = [
-            sequenceInputLayer(numFeatures,'Name','sequence')
-            bilstmLayer(nh,'OutputMode','sequence','Name','bilstm');%,'InputWeightsInitializer' ,'glorot','RecurrentWeightsInitializer','orthogonal'); %'InputWeights',rand(8*nh,sz(2)),'RecurrentWeights',rand(8*nh,nh),'Bias',zeros(8*nh,1));
-            % lstmLayer(200,'OutputMode','sequence','Name','bilstm')
-            dropoutLayer(0.5,'Name','drop');
-            fullyConnectedLayer(numClasses,'Name','fc')%,'Weights', rand(6,2*nh) ,'Bias',zeros(6,1));
-            softmaxLayer('Name','softmax')
-            weightedLSTMClassificationLayer(classWeights,'classification')]; %,classif.classes)];
-    else % sequence to one classification
-        layers = [
-            sequenceInputLayer(numFeatures,'Name','sequence')
-            bilstmLayer(trainingParam.LSTM_hidden_size,'OutputMode','last','Name','bilstm');%,'InputWeightsInitializer' ,'glorot','RecurrentWeightsInitializer','orthogonal');%'InputWeights',rand(8*nh,sz(2)),'RecurrentWeights',rand(8*nh,nh),'Bias',zeros(8*nh,1));
-            % lstmLayer(200,'OutputMode','sequence','Name','bilstm')
-            dropoutLayer(0.5,'Name','drop');
-            fullyConnectedLayer(numClasses,'Name','fc');%,'Weights', rand(6,2*nh) ,'Bias',zeros(6,1));
-            softmaxLayer('Name','softmax')
-            weightedLSTMClassificationLayer(classWeights,'classification')]; %,classif.classes)];
+    if strcmp(trainingParam.transfer_learning{end},'ImageNet')
+        if strcmp(trainingParam.classifier_output{end},'sequence-to-sequence')
+            layers = [
+                sequenceInputLayer(numFeatures,'Name','sequence')
+                bilstmLayer(nh,'OutputMode','sequence','Name','bilstm')
+                dropoutLayer(0.5,'Name','drop')
+                fullyConnectedLayer(numClasses,'Name','fc')
+                softmaxLayer('Name','softmax')
+                weightedLSTMClassificationLayer(classWeights,'classification')];
+        else
+            layers = [
+                sequenceInputLayer(numFeatures,'Name','sequence')
+                bilstmLayer(nh,'OutputMode','last','Name','bilstm')
+                dropoutLayer(0.5,'Name','drop')
+                fullyConnectedLayer(numClasses,'Name','fc')
+                softmaxLayer('Name','softmax')
+                weightedLSTMClassificationLayer(classWeights,'classification')];
+        end
+    else
+        src=fullfile(classif.path,['netLSTM_' trainingParam.transfer_learning{end}]);
+        if exist(src,"file"); load(src); layers=netLSTM.Layers;
+        else; disp(['Unable to load LSTM network: ' trainingParam.transfer_learning{end}]); return; end
     end
-    
- else % loads existing classifier to extract layers
-    
-     src=fullfile(classif.path,['netLSTM_' trainingParam.transfer_learning{end}]);
-         if exist(src)
-             load(src); %loads netLSTM
-          %   layers=layerGraph(classifier)
-          layers=netLSTM.Layers;
-         else
-             disp(['Unable to load LSTM network: ' trainingParam.transfer_learning{end}]);
-            return;
-         end         
- end
-    % specifiy training options
-    
+
     miniBatchSize = trainingParam.LSTM_mini_batch_size;
     numObservations = numel(sequencesTrain);
     numIterationsPerEpoch = max(1,floor(numObservations / miniBatchSize));
-   patience      = 3;
+    patience      = 10;
 
     options = trainingOptions('adam', ...
         'MiniBatchSize',miniBatchSize, ...
@@ -340,195 +398,126 @@ return;
         'Shuffle','every-epoch', ...
         'ValidationData',{sequencesValidation,labelsValidation}, ...
         'ValidationFrequency',numIterationsPerEpoch, ...
-        'ValidationPatience', patience, ...  
+        'ValidationPatience', patience, ...
         'Plots','training-progress', ...
         'ExecutionEnvironment','auto',...
         'VerboseFrequency',10);
-    
-    % warning : Parallel training of recurrent networks is not supported. 'ExecutionEnvironment' value in trainingOptions function must be 'auto',
-    %'gpu', or 'cpu'.
-    
-    %options.SequenceLength
-    %options.SequencePaddingValue
-    %return;
-    % train network
+
     disp('Training LSTM network ...');
     fprintf('------\n');
-
     [netLSTM,info] = trainNetwork(sequencesTrain,labelsTrain,layers,options);
-    
-     target=fullfile(path,['netLSTM_' name '.mat']);
- 
-    save(target,'netLSTM','info');
+
+    % ---- Seuil optimal sur validation (classe 2 si binaire) ----
+    bestThreshold = 0.5;
+    try
+        classes = classif.classes;
+        posName = classes{min(2,numel(classes))}; % classe 2 par défaut
+        if strcmp(trainingParam.classifier_output{end},'sequence-to-one')
+            [scoreVal, ~] = predict(netLSTM, sequencesValidation, 'MiniBatchSize', miniBatchSize);
+            posIdx = find(strcmp(classes, posName));
+            posScore = scoreVal(:, posIdx);
+            Ytrue    = double(labelsValidation == categorical(posName));
+        else
+            [scoreVal, ~] = predict(netLSTM, sequencesValidation, 'MiniBatchSize', miniBatchSize);
+            posIdx = find(strcmp(classes, posName));
+            posScore = []; Ytrue = [];
+            for i=1:numel(scoreVal)
+                posScore = [posScore; scoreVal{i}(:,posIdx)]; %#ok<AGROW>
+                Ytrue    = [Ytrue; double(labelsValidation{i}(:)==categorical(posName))]; %#ok<AGROW>
+            end
+        end
+        ths = linspace(0,1,101);
+        bestF1=-inf; bestT=0.5;
+        for t = ths
+            yhat = posScore >= t;
+            TP = sum(yhat & Ytrue); FP = sum(yhat & ~Ytrue);
+            FN = sum(~yhat & Ytrue);
+            P = TP / max(1, (TP+FP));
+            R = TP / max(1, (TP+FN));
+            F1 = 2*P*R / max(1e-9, (P+R));
+            if F1 > bestF1, bestF1=F1; bestT=t; end
+        end
+        bestThreshold = bestT;
+        fprintf('Chosen threshold=%.2f (F1=%.2f)\n', bestThreshold, bestF1);
+    catch ME
+        warning('Threshold selection failed: %s', ME.message);
+    end
+
+    target=fullfile(path,['netLSTM_' name '.mat']);
+    save(target,'netLSTM','info','bestThreshold');
     disp('Training LSTM network is done and saved ...');
     fprintf('------\n');
-    
 else
-     target=fullfile(path,['netLSTM_' name '.mat']);
+    target=fullfile(path,['netLSTM_' name '.mat']);
     load(target);
     disp('Loading LSTM network ...');
     fprintf('------\n');
 end
 
-
-%%% assemble the full network
-%%%
-
-if trainingParam.assemble_network | ~exist([path '/' name '.mat'])
+%%% ================= ASSEMBLY =================
+if trainingParam.assemble_network || ~exist([path '/' name '.mat'],"file")
     disp('Assembling full network ...');
     fprintf('------\n');
-    
-    
-   fprintf(' remove output layers from CNN net\n');
 
-cnnLayers = layerGraph(netCNN);
+    cnnLayers = layerGraph(netCNN);
+    % Points d'ancrage
+    switch trainingParam.CNN_network{end}
+        case 'googlenet', baseInput = "conv1-7x7_s2";  layerName = "pool5-7x7_s1";
+        case 'resnet50',  baseInput = "conv1";         layerName = "avg_pool";
+        case 'resnet18',  baseInput = "conv1";         layerName = "pool5";
+        case {'inceptionresnetv2','inceptionv3'}, baseInput = "conv2d_1"; layerName = "avg_pool";
+        otherwise, error('Unsupported backbone: %s', trainingParam.CNN_network{end});
+    end
 
-% % --- remove output layers + any dropout left in the CNN head ---
-% switch trainingParam.CNN_network{end}
-%     case 'googlenet'
-%         fixedToRemove = ["data","pool5-drop_7x7_s1","new_fc","prob","new_classoutput"];
-%         baseInput = "conv1-7x7_s2";
-%         layerName = "pool5-7x7_s1";
-%     case 'resnet50'
-%         fixedToRemove = ["input_1","new_fc","fc1000_softmax","new_classoutput"];
-%         baseInput = "conv1";
-%         layerName = "avg_pool";
-%     case 'resnet18'
-%         fixedToRemove = ["input_1","new_fc","fc1000","new_classoutput"]; % <-- ajouté
-%         layerName = ["input_1" "new_fc" "fc1000" "new_classoutput"];
-%         baseInput = "conv1";
-%         layerName = "pool5";
-% 
-%     case {'inceptionresnetv2','inceptionv3'}
-%         fixedToRemove = ["input_1","new_fc","predictions_softmax","new_classoutput"];
-%         baseInput = "conv2d_1";
-%         layerName = "avg_pool";
-%     otherwise
-%         error('Unsupported backbone: %s', trainingParam.CNN_network{end});
-% end
-% 
-% % Remove known output layers (keep only existing ones)
-% names = {cnnLayers.Layers.Name};
-% toRemove = fixedToRemove( ismember(fixedToRemove, string(names)) );
-% if ~isempty(toRemove), cnnLayers = removeLayers(cnnLayers, cellstr(toRemove)); end
-% 
-% % Remove ANY dropout that might remain in the CNN head (e.g., 'custom_dropout')
-% dropNames = names( contains(lower(names),'dropout') );
-% % keep LSTM dropout (not in cnnLayers yet), so safe to remove all here
-% if ~isempty(dropNames), cnnLayers = removeLayers(cnnLayers, dropNames); end
+    % Retire l'ImageInputLayer d'origine
+    isInput = arrayfun(@(L) isa(L,'nnet.cnn.layer.ImageInputLayer'), cnnLayers.Layers);
+    oldInputs = {cnnLayers.Layers(isInput).Name};
+    if ~isempty(oldInputs), cnnLayers = removeLayers(cnnLayers, oldInputs); end
 
-cnnLayers = layerGraph(netCNN);
+    % Retire tout en aval de layerName (tête FC/softmax/dropouts)
+    names = string({cnnLayers.Layers.Name});
+    toVisit = string(layerName); toVisit = toVisit(:);
+    desc = strings(0,1);
+    while ~isempty(toVisit)
+        src = toVisit(1); toVisit(1) = [];
+        mask = strcmp(cnnLayers.Connections.Source, src);
+        kids = string(cnnLayers.Connections.Destination(mask));
+        newKids = setdiff(kids, [desc; string(layerName)]);
+        desc    = unique([desc; kids], 'stable');
+        toVisit = unique([toVisit; newKids], 'stable');
+    end
+    desc = setdiff(desc, layerName);
+    desc = intersect(desc, names);
+    if ~isempty(desc), cnnLayers = removeLayers(cnnLayers, cellstr(desc)); end
 
-% ---- (A) choix des points d'ancrage par backbone ----
-switch trainingParam.CNN_network{end}
-    case 'googlenet'
-        baseInput = "conv1-7x7_s2";    % 1ère conv
-        layerName = "pool5-7x7_s1";    % features pour le LSTM
-    case 'resnet50'
-        baseInput = "conv1";
-        layerName = "avg_pool";
-    case 'resnet18'
-        baseInput = "conv1";
-        layerName = "pool5";           % IMPORTANT: pas avg_pool
-    case {'inceptionresnetv2','inceptionv3'}
-        baseInput = "conv2d_1";
-        layerName = "avg_pool";
-    otherwise
-        error('Unsupported backbone: %s', trainingParam.CNN_network{end});
-end
+    % Ajoute l'entrée séquence -> folding
+    inputLayer = sequenceInputLayer([inputSize 3], 'Normalization','zerocenter', ...
+        'Mean', netCNN.Layers(1).Mean, 'Name','input');
+    layersAdd = [ inputLayer
+        sequenceFoldingLayer('Name','fold') ];
+    lgraph = addLayers(cnnLayers, layersAdd);
 
-% ---- (B) retirer l'input image d'origine (input_1 / data / etc.) ----
-isInput = arrayfun(@(L) isa(L,'nnet.cnn.layer.ImageInputLayer'), cnnLayers.Layers);
-oldInputs = {cnnLayers.Layers(isInput).Name};
-if ~isempty(oldInputs)
-    cnnLayers = removeLayers(cnnLayers, oldInputs);
-end
+    switch trainingParam.CNN_network{end}
+        case 'googlenet', lgraph = connectLayers(lgraph,"fold/out","conv1-7x7_s2");
+        case 'resnet50',  lgraph = connectLayers(lgraph,"fold/out","conv1");
+        case 'resnet18',  lgraph = connectLayers(lgraph,"fold/out","conv1");
+        case {'inceptionresnetv2','inceptionv3'}, lgraph = connectLayers(lgraph,"fold/out","conv2d_1");
+    end
 
-% ---- (C) retirer la tête en aval de "layerName" (prob, fc, softmax, custom_dropout, etc.) ----
-names = string({cnnLayers.Layers.Name});
+    % Ajoute l'Unfold + LSTM existant (sans sa 1ère couche sequenceInputLayer)
+    lstmLayers = netLSTM.Layers; lstmLayers(1) = [];
+    layersTail = [
+        sequenceUnfoldingLayer('Name','unfold')
+        flattenLayer('Name','flatten')
+        lstmLayers];
+    lgraph = addLayers(lgraph,layersTail);
 
-toVisit = string(layerName);
-toVisit = toVisit(:);           % <- IMPORTANT
-desc    = strings(0,1);
+    lgraph = connectLayers(lgraph, layerName, "unfold/in");
+    lgraph = connectLayers(lgraph, "fold/miniBatchSize", "unfold/miniBatchSize");
 
-desc = strings(0,1);
-while ~isempty(toVisit)
-    src = toVisit(1); toVisit(1) = [];
-    mask = strcmp(cnnLayers.Connections.Source, src);
-    kids = string(cnnLayers.Connections.Destination(mask));
-    newKids = setdiff(kids, [desc; string(layerName)]);
-desc    = unique([desc; kids], 'stable');
-
-% Normalisation de forme AVANT la concat
-toVisit = toVisit(:);
-newKids = newKids(:);
-
-toVisit = unique([toVisit; newKids], 'stable');
-end
-desc = setdiff(desc, layerName);
-desc = intersect(desc, names);          % garde seulement les couches existantes
-if ~isempty(desc)
-    cnnLayers = removeLayers(cnnLayers, cellstr(desc));
-end
-
-
-
-% create layers to adjust to CNN network layers
-fprintf(' create layers to adjust to CNN network layers\n');
-
-inputSize = netCNN.Layers(1).InputSize(1:2);
-
-% add the sequence input layer to the layer graph
-inputLayer = sequenceInputLayer([inputSize 3], 'Normalization','zerocenter', ...
-                                'Mean', netCNN.Layers(1).Mean, 'Name','input');
-layers = [ inputLayer
-           sequenceFoldingLayer('Name','fold') ];
-
-lgraph = addLayers(cnnLayers, layers);
-
-switch trainingParam.CNN_network{end}
-    case 'googlenet'
-        lgraph = connectLayers(lgraph,"fold/out","conv1-7x7_s2");
-    case 'resnet50'
-        lgraph = connectLayers(lgraph,"fold/out","conv1");
-    case 'resnet18'
-        lgraph = connectLayers(lgraph,"fold/out","conv1");
-    case {'inceptionresnetv2','inceptionv3'}
-        lgraph = connectLayers(lgraph,"fold/out","conv2d_1");
-end
-
-% create lstm network and remove first layer (sequence)
-lstmLayers = netLSTM.Layers; lstmLayers(1) = [];
-layers = [
-    sequenceUnfoldingLayer('Name','unfold')
-    flattenLayer('Name','flatten')
-    lstmLayers];
-
-lgraph = addLayers(lgraph,layers);
-
-% connecter la sortie features du CNN vers l'Unfold
-lgraph = connectLayers(lgraph, layerName, "unfold/in");
-lgraph = connectLayers(lgraph, "fold/miniBatchSize", "unfold/miniBatchSize");
-
-% (optionnel debug) analyzeNetwork(lgraph)
-
-%analyzeNetwork(lgraph)
-classifier = assembleNetwork(lgraph);
-
-save([path '/' name '.mat'],'classifier');
-
-
-%     LSTMOptions=struct(options);
-% 
-%     if ~exist(fullfile(path,'TrainingValidation'))
-%     mkdir(path,'TrainingValidation');
-%     end
-%     
-%     save([path '/TrainingValidation/' 'LSTMOptions' '.mat'],'LSTMOptions');
-    
+    classifier = assembleNetwork(lgraph);
+    save([path '/' name '.mat'],'classifier');
     fprintf('Full network is assembled !\n');
-    
-    %   saveTrainingPlot(path, 'LSTMTraining');
 else
     load( [path '/' name '.mat']); % loading the fully assembled network
 end
@@ -537,20 +526,4 @@ end
 
 
 function videoResized = centerCrop(video,inputSize)
-
-% sz = size(video);
-% 
-% if sz(1) < sz(2)
-%     % Video is landscape
-%     idx = floor((sz(2) - sz(1))/2);
-%     video(:,1:(idx-1),:,:) = [];
-%     video(:,(sz(1)+1):end,:,:) = [];
-% 
-% elseif sz(2) < sz(1)
-%     % Video is portrait
-%     idx = floor((sz(1) - sz(2))/2);
-%     video(1:(idx-1),:,:,:) = [];
-%     video((sz(2)+1):end,:,:,:) = [];
-% end
-
 videoResized = imresize(video,inputSize(1:2));

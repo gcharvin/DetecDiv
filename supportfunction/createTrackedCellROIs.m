@@ -214,114 +214,133 @@ for idxF = 1:numel(fovSelection)
 end
 
 if doExtract && ~isempty(processedFOV)
-    uniqueFOV = unique(processedFOV, 'stable');
-    callArgs = [{'fov', uniqueFOV}];
-    roiSelection = cell(1, numel(uniqueFOV));
-    frameSelection = cell(1, numel(uniqueFOV));
+     uniqueFOV = unique(processedFOV, 'stable');
 
-    if ~isempty(created)
-        createdFov = [created.fov];
-        for idx = 1:numel(uniqueFOV)
-            fovId = uniqueFOV(idx);
-            mask = createdFov == fovId;
-            if any(mask)
-                createdSubset = created(mask);
-                roiSelection{idx} = unique(double([createdSubset.roiIndex]));
+    callArgs = [{'FOVIndex', uniqueFOV}];
 
-                frameEnds = [];
-                for kk = 1:numel(createdSubset)
-                    frameVec = createdSubset(kk).frames;
-                    if ~isempty(frameVec)
-                        frameEnds(end+1) = max(frameVec); %#ok<AGROW>
-                    end
-                end
-                if ~isempty(frameEnds)
-                    maxFrame = max(frameEnds);
-                    frameSelection{idx} = 1:maxFrame;
-                end
-            else
-                roiSelection{idx} = [];
-                frameSelection{idx} = [];
-            end
+    % Build per-FOV selections
+    roiSelectionPerFOV    = repmat({[]}, 1, numel(uniqueFOV));
+    frameSelectionPerFOV  = repmat({[]}, 1, numel(uniqueFOV));
+
+
+if ~isempty(created)
+    createdFov = [created.fov];
+    for idx = 1:numel(uniqueFOV)
+        fovId = uniqueFOV(idx);
+        mask  = (createdFov == fovId);
+        if any(mask)
+            createdSubset = created(mask);
+            rois = unique(double([createdSubset.roiIndex]));
+            rois(rois == 1) = [];                      % ← exclude ROI #1
+            roiSelectionPerFOV{idx} = rois;
+
+            ends = arrayfun(@(s) max(s.frames), createdSubset, 'UniformOutput', true);
+            if ~isempty(ends), frameSelectionPerFOV{idx} = 1:max(ends); end
         end
     end
+end
 
-    if any(~cellfun(@isempty, roiSelection))
-        if numel(uniqueFOV) == 1
-            callArgs = [callArgs {'roi', roiSelection{1}}];
-        else
-            callArgs = [callArgs {'roi', roiSelection}];
-        end
-    end
+    % Après: uniqueFOV, roiSelectionPerFOV, frameSelectionPerFOV ont été construits
+nF = numel(uniqueFOV);
+callArgs = [{'FOVIndex', uniqueFOV}];
 
-
-    
-    if isempty(extractFrames)
-        framesAvailable = ~cellfun(@isempty, frameSelection);
-        if all(framesAvailable)
-            if numel(uniqueFOV) == 1
-                callArgs = [callArgs {'frames', frameSelection{1}}];
-                fra=frameSelection{1};
-            else
-                callArgs = [callArgs {'frames', frameSelection}];
-                fra=frameSelection;
-            end
-        end
+% --- ROI ---
+hasAnyROI = nF>0 && any(cellfun(@(c) ~isempty(c), roiSelectionPerFOV));
+if hasAnyROI
+    if nF == 1
+        callArgs = [callArgs {'ROI', roiSelectionPerFOV{1}}];
     else
-        callArgs = [callArgs {'frames', extractFrames}]; %#ok<AGROW>
+        callArgs = [callArgs {'ROI', roiSelectionPerFOV}];
     end
+end
 
-    if isempty(extractChannels)
-        channelSelection = cell(1, numel(uniqueFOV));
-        for i = 1:numel(uniqueFOV)
-            f = shallowObj.fov(uniqueFOV(i));
-            if ~isempty(f.channel)
-                channelSelection{i} = 1:numel(f.channel);
+% --- Frames ---
+if isempty(extractFrames)
+    allFramesKnown = nF>0 && all(cellfun(@(c) ~isempty(c), frameSelectionPerFOV));
+    if allFramesKnown
+        if nF == 1
+            callArgs = [callArgs {'Frames', frameSelectionPerFOV{1}}];
+        else
+            callArgs = [callArgs {'Frames', frameSelectionPerFOV}];
+        end
+    end
+else
+    % l'utilisateur a imposé Frames : accepter vecteur (1 FOV) ou cell (multi-FOV)
+    if nF == 1 && iscell(extractFrames), extractFrames = extractFrames{1}; end
+    callArgs = [callArgs {'Frames', extractFrames}];
+end
+
+% --- Channels (préférer des NOMS quand on force les noms) ---
+forceNames = true;
+if isempty(extractChannels)
+    channelsNamesPerFOV = cell(1, nF);
+    for i = 1:nF
+        f = shallowObj.fov(uniqueFOV(i));
+        if ~isempty(f.channel)
+            channelsNamesPerFOV{i} = f.channel(:).';
+        elseif ~isempty(f.roi) && ~isempty(f.roi(1).image)
+            nC = size(f.roi(1).image,3);
+            channelsNamesPerFOV{i} = arrayfun(@(k) sprintf('Channel%d',k-1), 1:nC, 'UniformOutput', false);
+        else
+            channelsNamesPerFOV{i} = {};
+        end
+    end
+    if nF == 1
+        callArgs = [callArgs {'Channels', channelsNamesPerFOV{1}}];
+    else
+        callArgs = [callArgs {'Channels', channelsNamesPerFOV}];
+    end
+else
+    % L'utilisateur a fourni des indices OU des noms
+    if iscellstr(extractChannels) || (iscell(extractChannels) && all(cellfun(@iscellstr, extractChannels)))
+        % Déjà des noms → OK
+        callArgs = [callArgs {'Channels', extractChannels}];
+    else
+        % Indices → tenter conversion vers noms (si méta FOV dispo), sinon garder indices et ne pas forcer les noms
+        if nF == 1
+            f = shallowObj.fov(uniqueFOV);
+            if ~isempty(f.channel) && isnumeric(extractChannels)
+                callArgs = [callArgs {'Channels', f.channel(extractChannels)}];
             else
-                % fallback si pas de meta FOV : prendre la 1re ROI disponible
-                if ~isempty(f.roi) && ~isempty(f.roi(1).image)
-                    channelSelection{i} = 1:size(f.roi(1).image,3);
+                callArgs = [callArgs {'Channels', extractChannels}];
+                forceNames = false;
+            end
+        else
+            namesOrIdx = cell(1, nF);
+            for i = 1:nF
+                f = shallowObj.fov(uniqueFOV(i));
+                if ~isempty(f.channel) && isnumeric(extractChannels)
+                    namesOrIdx{i} = f.channel(extractChannels);
                 else
-                    channelSelection{i} = []; % rien si on ne peut pas deviner
+                    namesOrIdx{i} = extractChannels; % mêmes indices pour chaque FOV
+                    forceNames = false;
                 end
             end
+            callArgs = [callArgs {'Channels', namesOrIdx}];
         end
-
-        if numel(uniqueFOV)==1
-            callArgs = [callArgs {'channel', channelSelection{1}}];
-        else
-            callArgs = [callArgs {'channel', channelSelection}];
-        end
-
-        % for idx = 1:numel(uniqueFOV)
-        %     fovId = uniqueFOV(idx);
-        %     logNames = channelNamesLog{idx};
-        %     fovName = shallowObj.fov(fovId).id;
-        %     if isempty(logNames)
-        %         fprintf('FOV %s: no channel metadata available to forward.\n', fovName);
-        %     else
-        %         fprintf('FOV %s: forwarding channels -> %s\n', fovName, strjoin(logNames, ', '));
-        %     end
-        % end
-    else
-        callArgs = [callArgs {'channel', extractChannels}]; %#ok<AGROW>
     end
+end
 
-   
-    callArgs = [callArgs {'Extend', false}, {'ForceChannelNames', true}];
-    callArgs = [callArgs extraSaveArgs(:)']; %#ok<AGROW>
+% --- Options additionnelles ---
+callArgs = [callArgs {'Extend', false}, {'ForceChannelNames', forceNames}];
+callArgs = [callArgs extraSaveArgs(:)'];
 
-    
-    try
-        shallowObj.extractAllROICrops(callArgs{:})
-    catch ME
-        warning('createTrackedCellROIs:ExtractionFailed', ...
-            'extractAllROICrops failed: %s', ME.message);
-    end
+% --- Appel extraction ---
+try
+    shallowObj.extractAllROICrops(callArgs{:});
+catch ME
+    warning('createTrackedCellROIs:ExtractionFailed', 'extractAllROICrops failed: %s', ME.message);
+end
+
+
 
     for kk = 1:numel(created)
     fovId  = created(kk).fov;
     roiIdx = created(kk).roiIndex;
+
+     if roiIdx == 1                      % ← hard guard
+        continue;
+    end
 
     fovObj = shallowObj.fov(fovId);
     r      = fovObj.roi(roiIdx);
@@ -334,23 +353,33 @@ if doExtract && ~isempty(processedFOV)
     S = load(created(kk).virtFile, 'volFull', 'virtName', 'frameList');
     volFull  = S.volFull;     % [h w 1 Tfull]
     virtName = S.virtName;
-
+    useFrames = created(kk).frames;
  
 % 1) Mémoriser l'état avant append
 prevNames = r.display.channel;
 prevN     = numel(prevNames);
 
+% (after loading S)
+Tvirt = size(volFull,4);
+try
+    % if r.image is not loaded yet, you can skip this block
+    Tphys = size(r.image,4);
+    if ~isempty(Tphys) && Tphys ~= Tvirt
+        warning('Virtual T (%d) != physical T (%d) for ROI %s; using full volFull anyway.', Tvirt, Tphys, r.id);
+    end
+end
+
 % 2) Append du canal virtuel (volFull déjà à la bonne taille [H W 1 T])
 try
-
-   r.appendVirtualChannel('results_cellposeSAM_1_cell', volFull(:,:,:,fra), true, ...
+%volUse = volFull(:,:,:,useFrames);
+   r.appendVirtualChannel('results_cellposeSAM_1_cell', volFull, true, ...
     'Display', struct('intensity',[0 0 0], 'alpha',0.5));
 
     fovObj.roi(roiIdx) = r;    % si besoin de propager la maj
 catch ME
     warning('createTrackedCellROIs:AppendVirtualFailed', ...
         'ROI %s: appendVirtualChannel failed: %s', r.id, ME.message);
-    return; % pas la peine d'aller plus loin si l'append a réellement échoué
+    continue; % pas la peine d'aller plus loin si l'append a réellement échoué
 end
 
 % 3) Trouver l'index du canal ajouté (sans supposer le nom final)

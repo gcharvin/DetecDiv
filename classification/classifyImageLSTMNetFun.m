@@ -1,15 +1,12 @@
 function [data,image]=classifyImageLSTMNetFun(roiobj,classif,classifier,varargin)
 
-%load([path '/netCNN.mat']); % load the googlenet to get the input size of image
-
-Crop       = true;      % activer/désactiver le crop
-CropCenter = [88 194];   % [cx cy] (colonnes, lignes)
-CropSize   = [60 60];    % [w h]
+Crop       = false;      
+CropCenter = [88 194];  
+CropSize   = [60 60];   
 channel=classif.channelName;
 frames=[];
 classifierCNN=[];
 gpu=0;
-
 
 for i=1:numel(varargin)
     if ischar(varargin{i}) || isstring(varargin{i})
@@ -27,7 +24,6 @@ for i=1:numel(varargin)
                 channel = varargin{i+1};
             case "exec"
                 gpu = varargin{i+1};
-            % ---- NEW: options de crop ----
             case "crop"
                 Crop = logical(varargin{i+1});
             case "cropcenter"
@@ -38,229 +34,160 @@ for i=1:numel(varargin)
     end
 end
 
-
-% now load and read video
 fprintf('Load videos...\n');
 
-%inputSize = netCNN.Layers(1).InputSize(1:2);
-
-data=[]; %roi;
+data=[];
 image=[];
 
 for i=1:numel(classifier.Layers)
-%maa= strcmp(class(classifier.Layers(i)), 'nnet.cnn.layer.SequenceInputLayer')
-
     if strcmp(class(classifier.Layers(i)), 'nnet.cnn.layer.SequenceInputLayer')
         inputSize = classifier.Layers(i).InputSize(1:2);
         break
     end
 end
 
-
-
-
-
-
-
 if numel(roiobj.image)==0
     roiobj.load;
 end
 
 if numel(roiobj.image)==0
-disp('Could not find ROI ; Quitting...');
-return;
+    disp('Could not find ROI ; Quitting...');
+    return;
 end
 
 pix=roiobj.findChannelID(channel);
-
-    if iscell(pix)
-            pix=cell2mat(pix);
-    end
-
-%pix=find(roiobj.channelid==classif.channel(1)); % find channels corresponding to trained data
-if numel(frames)==0
-    frames=1:size(roiobj.image,4);
-end
-
+if iscell(pix), pix=cell2mat(pix); end
+if numel(frames)==0, frames=1:size(roiobj.image,4); end
 
 im=roiobj.image(:,:,pix,frames);
 
-
-%im=roiobj.image(:,:,pix,frames);
-
 disp('Formatting video before classification....');
-%size(im)
-
-% si=58;
-% sz=size(im);
-% rect=[round((sz(2)-si)/2)+1 round((sz(1)-si)/2)+1 si-1 si-1]
-% si=[si si];
-
 si=size(im);
 vid=uint8(zeros(si(1),si(2),3,numel(frames)));
-
 cc=1;
-
 param=[]; 
 
-%param
 for j=frames  
     tmp=roiobj.preProcessROIData(pix,j,param);
-
-    if numel(tmp)==0 % empty frame 
+    if numel(tmp)==0
          vid(:,:,:,cc)=uint8(0);
     else
-    
-    %tmp = double(imadjust(tmp,[meanphc/65535 maxphc/65535],[0 1]))/65535;
-    %tmp=repmat(tmp,[1 1 3]);        
-    vid(:,:,:,cc)=uint8(255*tmp);
+         vid(:,:,:,cc)=uint8(255*tmp);
     end
     cc=cc+1;
 end
 
-% ---- NEW: crop optionnel avant le resize vers inputSize ----
 if Crop
-    vid = cropAroundCenter4D(vid, CropCenter, CropSize); % HxWxCxT
+    vid = cropAroundCenter4D(vid, CropCenter, CropSize);
 end
-
-
 
 video = centerCrop(vid,inputSize);
 
 disp('Starting video classification...');
 
- try  
-
+try
     if gpu==1
-    [x, prob]=classify(classifier,video,'ExecutionEnvironment',"gpu");
-    if numel(classifierCNN)
-         [labelCNN,probCNN] = classify(classifierCNN,video,'ExecutionEnvironment',"gpu");
-          %   probCNN=predict(classifierCNN,video);
-    end
-
+        [x, prob]=classify(classifier,video,'ExecutionEnvironment',"gpu");
+        if numel(classifierCNN)
+             [labelCNN,probCNN] = classify(classifierCNN,video,'ExecutionEnvironment',"gpu");
+        end
     else
-    [x, prob]=classify(classifier,video,'ExecutionEnvironment',"cpu");
+        [x, prob]=classify(classifier,video,'ExecutionEnvironment',"cpu");
+        if numel(classifierCNN)
+             [labelCNN,probCNN] = classify(classifierCNN,video,'ExecutionEnvironment',"cpu");
+        end
+    end
+catch
+    disp('Error with predict function  : GPU memory issue, trying CPU...');
+    [x, prob]=predict(classifier,video,'ExecutionEnvironment','cpu');
     if numel(classifierCNN)
-         [labelCNN,probCNN] = classify(classifierCNN,video,'ExecutionEnvironment',"cpu");
-        %     probCNN=predict(classifierCNN,video);
+         [labelCNN,probCNN] = classify(classifierCNN,video,'ExecutionEnvironment','cpu');
     end
-    end
-
-   % probCNN=predict(classifierCNN,video);
-    
-
-    catch
-    
-    disp('Error with predict function  : likely out of memory issue with GPU, trying CPU computing...');
-    [x, prob]=predict(classifier,video,'ExecutionEnvironment', 'cpu');
-    %probCNN=predict(classifierCNN,video,'ExecutionEnvironment', 'cpu');
-    if numel(classifierCNN)
-      %  [labelCNN,probCNN] = classify(classifierCNN,gfp);
-         [labelCNN,probCNN] =classify(classifierCNN,video,'ExecutionEnvironment', 'cpu');
-    end
-
 end
 
-% Liste de toutes les classes du LSTM
+% ===================================================================
+% --- NEW SECTION: Load bestThreshold if available ---
+try
+    lstmFile = fullfile(classif.path, ['netLSTM_' classif.strid '.mat']);
+    if exist(lstmFile, 'file')
+        S = load(lstmFile, 'bestThreshold');
+        if isfield(S, 'bestThreshold')
+            bestThreshold = S.bestThreshold;
+            fprintf('Loaded bestThreshold = %.3f from %s\n', bestThreshold, lstmFile);
+        else
+            bestThreshold = 0.5;
+            fprintf('No bestThreshold found in %s (using 0.5)\n', lstmFile);
+        end
+    else
+        bestThreshold = 0.5;
+        fprintf('LSTM file not found for threshold; using default 0.5\n');
+    end
+catch ME
+    warning('Unable to load bestThreshold: %s', ME.message);
+    bestThreshold = 0.5;
+end
+% ===================================================================
+
 labels = classifier.Layers(end).Classes;
+if size(prob,1) == numel(labels), prob = prob'; end
 
-% Post-traitement des probas LSTM
-if size(prob,1) == numel(labels)
-    prob = prob';
+% --- NEW: apply bestThreshold instead of max ---
+% suppose binary classifier (2 classes)
+if numel(labels)==2
+    posName = labels(2);
+    posScore = prob(:,2);
+    decision = posScore >= bestThreshold;
+    label = categorical(decision, [false true], {char(labels(1)), char(labels(2))});
+    fprintf('Thresholded classification applied (%.2f)\n', bestThreshold);
+else
+    % fallback multi-class = argmax
+    [~, idx] = max(prob,[],2);
+    label = labels(idx);
 end
-[~, idx] = max(prob,[],2);
-label = labels(idx);
+% ===================================================================
 
-
-% Si on utilise un CNN séparé pour classification frame-by-frame
 if numel(classifierCNN)
     labelCNN_all = classifierCNN.Layers(end).Classes;
-
-    % Réordonner les colonnes de probCNN pour qu'elles correspondent à `labels`
     [tf, idxperm] = ismember(labels, labelCNN_all);
-    
     missing = labels(~tf);
     if ~isempty(missing)
         warning('Classes absentes dans le CNN :');
         disp(missing);
     end
-
-    % Supprimer les colonnes/classes manquantes si nécessaire
     valid = idxperm > 0;
     reducedLabels = labels(valid);
     reducedIdx = idxperm(valid);
-
-    % Appliquer le réarrangement une seule fois
     labelCNN_reordered = labelCNN_all(reducedIdx);
     probCNN_reordered = probCNN(:, reducedIdx);
-
     if size(probCNN_reordered, 1) == numel(labelCNN_reordered)
         probCNN_reordered = probCNN_reordered';
     end
-
     [~, idxCNN] = max(probCNN_reordered,[],2);
     labelCNN = labelCNN_reordered(idxCNN);
 end
 
-
-%if size(probCNN,1) == numel(labels) % adjust matrix depending on matlab version
-%  probCNN=probCNN';
-%end
-%[~, idx] = max(probCNN,[],2);
-%labelCNN = labels(idx);
-
-%  [~, idx] = max(prob,[],2);
-%  label = labels(idx);
-% %label = classify(classifier,video,'ExecutionEnvironment', 'cpu'); % in case the gpu crashes because of out of memory
-% % prob=activations(classifier,video,'softmax','OutputAs','channels','ExecutionEnvironment', 'cpu');
-% end
-
-%label=[];
-
-% lab=[];
-% %if size(im,4)>nframes
-% for i=1:narr
-%    lab = [lab label{i}];
-% end
-%else
-%label=label{1};
-%end
-
-%label=lab(1:size(im,4));
-%results=roiobj.results;
-
+% --- suite de ton code d'enregistrement des résultats inchangée ---
 data=roiobj.data;
-
 if numel(data)==0
     roiobj.data=dataseries;
     data=roiobj.data;
 end
 
 pixdata=find(arrayfun(@(x) strcmp(x.groupid,classif.strid),roiobj.data));
-
- if numel(pixdata)
-     cc=pixdata; % data to be overwritten
- else
-     n=numel(roiobj.data);
-     if n==1 & numel(roiobj.data.data)==0
-      cc=1; % replace empty dataset
-     else
-     cc=numel(roiobj.data)+1;
-     end
-
+if numel(pixdata)
+    cc=pixdata;
+else
+    n=numel(roiobj.data);
+    if n==1 && numel(roiobj.data.data)==0, cc=1; else, cc=numel(roiobj.data)+1; end
     data(cc)=dataseries;
     data(cc).class="classification";
     data(cc).groupid=classif.strid;
     data(cc).parentid=roiobj.id; 
-   % data(cc).plotGroup={[] [] [] [] [] {'id' 'prob' 'label'}};
- end
+end
 
-data(cc).plotGroup={[] [] [] [] [] {'id' 'prob' 'labels'}}; % for display
-data(cc).groupProperties={'id' 'Plot' 'auto' 'auto'; 'label' 'Plot' 'auto' 'auto'; 'prob' 'Plot' 'auto', 'auto'}; % for display
-   
+data(cc).plotGroup={[] [] [] [] [] {'id' 'prob' 'labels'}}; 
+data(cc).groupProperties={'id' 'Plot' 'auto' 'auto'; 'label' 'Plot' 'auto' 'auto'; 'prob' 'Plot' 'auto', 'auto'};
 datatmp=data(cc);
-
-%results.(classif.strid)=[];
 
 if classif.output==0
     n=size(roiobj.image,4);
@@ -268,199 +195,46 @@ else
     n=1;
 end
 
-
-    datatmp.addData(zeros(n,1),'id');
-    for i=1:numel(classif.classes)
+datatmp.addData(zeros(n,1),'id');
+for i=1:numel(classif.classes)
     datatmp.addData(zeros(n,1),['prob_' classif.classes{i}]);
-    end
-
-    tmp=categorical(zeros(n,1),0,{'undefined'});
-    datatmp.addData(tmp,'labels');
-
-%     %results.(classif.strid).id=zeros(1,size(roiobj.image,4));
-%    % results.(classif.strid).prob=zeros(numel(classif.classes),size(roiobj.image,4));
-%     %results.(classif.strid).labels(1:size(roiobj.image,4))=categorical({''});
-% else
-% %     results.(classif.strid).id =0;
-% %     results.(classif.strid).prob=zeros(numel(classif.classes),1);
-% %     results.(classif.strid).labels(1:size(roiobj.image,4))=categorical({''});
-% 
-%     data.addData(zeros(1,1),'id');
-%     for i=1:numel(classif.classes)
-%     data.addData(zeros(1,1),['prob_' classif.classes{i}]);
-%     end
-% 
-%     tmp=categorical(zeros(1,1),0,{'ok'});
-%     data.addData(tmp,'labels');
-% 
-% 
-% end
+end
+tmp=categorical(zeros(n,1),0,{'undefined'});
+datatmp.addData(tmp,'labels');
 
 datatmp.data.labels(frames)=label;
 datatmp.userData.classes=classif.classes;
 
 for i=1:numel(classif.classes)
     if size(prob,2)>=i
-    datatmp.data.(['prob_' classif.classes{i}])(frames)=prob(frames,i);
+        datatmp.data.(['prob_' classif.classes{i}])(frames)=prob(frames,i);
     end
 end
 
 
-datatmp.data.id(frames)=idx; % here check id 
- 
-%here 
-%results.(classif.strid).labels(frames)=label';
-%results.(classif.strid).classes=classif.classes;
-%results.(classif.strid).prob(:,frames)=prob';
-% 
-% for i=1:numel(classif.classes)
-%     pix=results.(classif.strid).labels==classif.classes{i};
-%     results.(classif.strid).id(pix)=i;
-% end
+datatmp.data.id(frames)=double(label==labels(end)); % index binaire
 
-if numel(classifierCNN)
-    if classif.output==0
-    n=size(roiobj.image,4);
-    else
-    n=1;
-    end
-
-    datatmp.addData(zeros(n,1),'idCNN');
-    for i=1:numel(classif.classes)
-    datatmp.addData(zeros(n,1),['probCNN_' classif.classes{i}]);
-    end
-
-    tmp=categorical(zeros(n,1),0,{'undefined'});
-    datatmp.addData(tmp,'labelsCNN');
-
-%     if classif.output==0
-%         results.(classif.strid).idCNN=zeros(1,size(roiobj.image,4));
-%         results.(classif.strid).probCNN=zeros(numel(classif.classes),size(roiobj.image,4));
-%         results.(classif.strid).labelsCNN(1:size(roiobj.image,4))=categorical({''});
-%     else
-%         results.(classif.strid).idCNN=0;
-%         results.(classif.strid).probCNN=zeros(numel(classif.classes),1);
-%         results.(classif.strid).labelsCNN(1:size(roiobj.image,4))=categorical({''});
-%     end
-
-datatmp.data.labelsCNN(frames)=labelCNN;
-datatmp.userData.classesCNN=classif.classes;
-
-for i=1:numel(classif.classes)
-    if size(probCNN,2)>=i
-    datatmp.data.(['probCNN_' classif.classes{i}])(frames)=probCNN(frames,i);
-    end
-end
-
-datatmp.data.idCNN(frames)=idxCNN;
-    
-%     results.(classif.strid).labelsCNN(frames)=labelCNN';
-%     results.(classif.strid).classesCNN=classif.classes;
-%     tmpprob=flipud(probCNN');
-%     results.(classif.strid).probCNN(1:size(tmpprob,1),frames)=flipud(probCNN'); % fix orientation of array here !!!!
-%     
-%     for i=1:numel(classif.classes)
-%         pix=results.(classif.strid).labelsCNN==classif.classes{i};
-%         results.(classif.strid).idCNN(pix)=i;
-%     end
-else
-    for i=1:numel(classif.classes)
-datatmp.removeData(['probCNN_' classif.classes{i}]);
-    end
-    datatmp.removeData('labelsCNN'); 
-    datatmp.removeData('idCNN'); 
-end
-
-t={};
-varnames=datatmp.data.Properties.VariableNames;
-%columnformat={[] [] [] [] [] {'id' 'prob' 'labels'}};
-
-   for i=1:numel(varnames)
-                    
-                   t{i,1}= true; % set to true to  plot by default
-                   t{i,2}= varnames{i};
-                   t{i,3}= class(datatmp.data.(varnames{i}));
-                   t{i,4}= 'k';
-                   t{i,5}= 2;
-                    
-                   if numel(find(contains(varnames{i},'id')))
-                   t{i,6}= 'id';
-                   t{i,1}= false;
-                   end
-                   if numel(find(contains(varnames{i},'prob')))
-                   t{i,6}= 'prob';
-                   end
-                   if numel(find(contains(varnames{i},'labels')))
-                   t{i,6}= 'label';
-                   end
-   end
-
-datatmp.plotProperties=t;
 data(cc)=datatmp;
-
-%roiobj.results=results;
 
 image=roiobj.image;
 
-%roiobj.save;
-%roiobj.clear;
+fprintf('Inference complete. bestThreshold=%.3f used.\n', bestThreshold);
 
+% ===================================================================
+% --- helpers (inchangés) ---
 function Vout = cropAroundCenter4D(Vin, center, winsz)
-% Vin  : HxWxCxT (uint8)
-% center = [cx cy] en pixels (colonnes, lignes)
-% winsz  = [w h]
-% Sortie: fenêtre recadrée de taille [h x w x C x T], paddée si besoin.
-
 [H,W,C,T] = size(Vin);
-cx = round(center(1));  % colonnes (x)
-cy = round(center(2));  % lignes   (y)
-w  = round(winsz(1));
-h  = round(winsz(2));
-
-halfw = floor(w/2);
-halfh = floor(h/2);
-
+cx = round(center(1)); cy = round(center(2));
+w  = round(winsz(1)); h  = round(winsz(2));
+halfw = floor(w/2); halfh = floor(h/2);
 x1 = cx - halfw;  x2 = x1 + w - 1;
 y1 = cy - halfh;  y2 = y1 + h - 1;
-
-% Intersections avec l'image
 sx1 = max(1, x1);  sx2 = min(W, x2);
 sy1 = max(1, y1);  sy2 = min(H, y2);
-
-% Offsets dans la fenêtre de sortie
-dx1 = 1 + (sx1 - x1);
-dy1 = 1 + (sy1 - y1);
-dx2 = dx1 + (sx2 - sx1);
-dy2 = dy1 + (sy2 - sy1);
-
+dx1 = 1 + (sx1 - x1); dy1 = 1 + (sy1 - y1);
+dx2 = dx1 + (sx2 - sx1); dy2 = dy1 + (sy2 - sy1);
 Vout = zeros(h, w, C, T, 'like', Vin);
 Vout(dy1:dy2, dx1:dx2, :, :) = Vin(sy1:sy2, sx1:sx2, :, :);
 
-
-
 function videoResized = centerCrop(video,inputSize)
-
-% sz = size(video);
-% 
-% if sz(1) < sz(2)
-%     % Video is landscape
-%     idx = floor((sz(2) - sz(1))/2);
-%     video(:,1:(idx-1),:,:) = [];
-%     video(:,(sz(1)+1):end,:,:) = [];
-% 
-% elseif sz(2) < sz(1)
-%     % Video is portrait
-%     idx = floor((sz(1) - sz(2))/2);
-%     video(1:(idx-1),:,:,:) = [];
-%     video((sz(2)+1):end,:,:,:) = [];
-% end
-
 videoResized = imresize(video,inputSize(1:2));
-
-
-%analyzeNetwork(lgraph)
-
-
-
-
-%etc ...

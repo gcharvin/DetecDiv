@@ -23,13 +23,13 @@ function extractAllROICrops(shallowObj, varargin)
 FrameList      = [];
 FOVIndex       = [];         % [] => toutes
 RequestedChans = {};         % {} => tous
-ROISelect      = [];         % << NEW: [] => toutes (par FOV), peut être numeric ou cell array
+ROISelect      = [];         % [] => toutes (par FOV), peut être numeric ou cell array
 
-% --- AJOUT DANS LE PARSING DES ARGUMENTS ---
-ForceChannelNames = true;  % impose les noms de canaux des ROI = chanSelNames
-Extend            = false; % << NEW: false = hard reset ; true = append/prolong
+% --- OPTIONS DIVERSES ---
+ForceChannelNames = true;    % impose les noms de canaux des ROI = chanSelNames
+Extend            = false;   % false = hard reset ; true = append/prolong
 
-% --- DRIFT CORRECTION OPTIONS (NEW) ---
+% --- DRIFT CORRECTION OPTIONS ---
 CorrectDrift      = false;    % active ou non la correction
 DriftChannel      = [];       % canal utilisé pour l'estimation du drift
 DriftMethod       = 'circshift'; % 'circshift' | 'subpixel' | 'register'
@@ -42,7 +42,7 @@ DriftRollingRef   = 0;        % 0..1, 0 = off
 DriftPyrLevels    = 1;        % niveaux pyramide, 1 = off
 DriftMask         = [];       % masque optionnel (HxW logique)
 
-
+% ----------------- PARSING -----------------
 for i = 1:2:numel(varargin)
     key = lower(string(varargin{i}));
     switch key
@@ -54,8 +54,8 @@ for i = 1:2:numel(varargin)
             RequestedChans = varargin{i+1};
         case "forcechannelnames"
             ForceChannelNames = logical(varargin{i+1});
-        case "extend"                        % << NEW
-            Extend = logical(varargin{i+1}); % << NEW
+        case "extend"
+            Extend = logical(varargin{i+1});
         case "correctdrift"
             CorrectDrift = logical(varargin{i+1});
         case "driftchannel"
@@ -78,12 +78,12 @@ for i = 1:2:numel(varargin)
             DriftPyrLevels = varargin{i+1};
         case "driftmask"
             DriftMask = varargin{i+1};
-        case "roi"                      
+        case "roi"
             ROISelect = varargin{i+1};  % numeric (appliqué à chaque FOV) ou cell array par FOV
     end
 end
 
-
+% ----------------- CHECK FOVS -----------------
 if ~isprop(shallowObj,'fov') || isempty(shallowObj.fov)
     disp('⚠️  No FOV found in shallow object.');
     return;
@@ -92,7 +92,7 @@ end
 % Liste des FOV à parcourir
 allFOV = 1:numel(shallowObj.fov);
 if ~isempty(FOVIndex)
-    FOVIndex = FOVIndex(:)';
+    FOVIndex = FOVIndex(:)';          % row
     FOVIndex = intersect(allFOV, FOVIndex);
 else
     FOVIndex = allFOV;
@@ -105,10 +105,100 @@ end
 fprintf('\n=============================================\n');
 fprintf('  🧩 ROI Extraction (HDF5 append) Started\n');
 fprintf('  → FOV to process: %s\n', mat2str(FOVIndex));
-if ~isempty(RequestedChans)
-    fprintf('  → Requested channels: {%s}\n', strjoin(RequestedChans, ', '));
+
+% ----------------- NORMALISATION ARGS PAR FOV -----------------
+nF = numel(FOVIndex);
+
+% 1) Channels → ChannelsPerFOV (1xNfov cell ; chaque entrée = cellstr des noms ou [])
+ChannelsPerFOV = cell(1, nF);
+if isempty(RequestedChans)
+    ChannelsPerFOV(:) = {{}};
+elseif nF == 1
+    tmp = RequestedChans;
+    if iscell(tmp) && ~isempty(tmp) && iscell(tmp{1})
+        tmp = tmp{1};
+    end
+    if iscell(tmp)
+        ChannelsPerFOV{1} = cellfun(@char, string(tmp), 'UniformOutput', false);
+    elseif isstring(tmp)
+        ChannelsPerFOV{1} = cellstr(tmp);
+    elseif ischar(tmp)
+        ChannelsPerFOV{1} = {tmp};
+    else
+        ChannelsPerFOV{1} = tmp; % indices numériques éventuels -> convertis plus tard
+    end
+else
+    tmp = RequestedChans;
+    if iscell(tmp) && numel(tmp) == nF && iscell(tmp{1})
+        for ii = 1:nF
+            ChannelsPerFOV{ii} = cellfun(@char, string(tmp{ii}), 'UniformOutput', false);
+        end
+    else
+        if iscell(tmp)
+            one = cellfun(@char, string(tmp), 'UniformOutput', false);
+        elseif isstring(tmp)
+            one = cellstr(tmp);
+        elseif ischar(tmp)
+            one = {tmp};
+        else
+            one = tmp; % indices
+        end
+        ChannelsPerFOV(:) = {one};
+    end
+end
+
+% 2) Frames → FrameListPerFOV (1xNfov cell ; chaque entrée = numeric row vector ou [])
+FrameListPerFOV = cell(1, nF);
+if isempty(FrameList)
+    FrameListPerFOV(:) = {[]};   % [] = toutes les frames
+elseif nF == 1
+    v = FrameList;
+    if iscell(v),    v = v{1}; end
+    if isstring(v),  v = double(v); end
+    if islogical(v), v = find(v);   end
+    FrameListPerFOV{1} = v(:)';     % row vector
+else
+    if iscell(FrameList) && numel(FrameList) == nF
+        for ii = 1:nF
+            v = FrameList{ii};
+            if isstring(v),  v = double(v); end
+            if islogical(v), v = find(v);   end
+            FrameListPerFOV{ii} = v(:)';    % row
+        end
+    else
+        v = FrameList;
+        if iscell(v),    v = v{1}; end
+        if isstring(v),  v = double(v); end
+        if islogical(v), v = find(v);   end
+        v = v(:)';
+        FrameListPerFOV(:) = {v};
+    end
+end
+
+% ----------------- LOG CANAUX DEMANDÉS -----------------
+fprintf('  → Requested channels per FOV:\n');
+for ii = 1:nF
+    ci = ChannelsPerFOV{ii};
+    try
+        if isempty(ci)
+            fprintf('    - FOV %d: {ALL}\n', FOVIndex(ii));
+        elseif iscell(ci)
+            names = cellfun(@char, string(ci), 'UniformOutput', false);
+            fprintf('    - FOV %d: {%s}\n', FOVIndex(ii), strjoin(names, ', '));
+        elseif isstring(ci)
+            fprintf('    - FOV %d: {%s}\n', FOVIndex(ii), strjoin(cellstr(ci), ', '));
+        elseif ischar(ci)
+            fprintf('    - FOV %d: {%s}\n', FOVIndex(ii), ci);
+        else
+            fprintf('    - FOV %d: {indices}\n', FOVIndex(ii));
+        end
+    catch
+        fprintf('    - FOV %d: (unprintable channels arg)\n', FOVIndex(ii));
+    end
 end
 fprintf('=============================================\n');
+
+% ====== Qualifier la RAM dispo + classe d'échantillon en amont ======
 
 % ====== Qualifier la RAM dispo + classe d'échantillon en amont ======
 [availBytes, fallbackReason] = getAvailableMemoryBytes();
@@ -151,45 +241,78 @@ for kF = 1:numel(FOVIndex)
     % Infos temporelles / canaux pour la FOV
     [nFramesTotal, nChannels, sampleClass] = inferFOVTimeline(fovObj);
 
-    % Noms de canaux disponibles dans la FOV
-    chanNamesFOV = getFOVChannelNames(fovObj, nChannels);
+ 
+    % ---------- CANAUX POUR CETTE FOV ----------
+% Noms de canaux disponibles dans la FOV (forcer en cellstr)
+chanNamesFOV = getFOVChannelNames(fovObj, nChannels);
+chanNamesFOV = cellfun(@char, string(chanNamesFOV), 'UniformOutput', false);
 
+% Récupérer l'argument canaux pour CETTE FOV
+chans_for_this_fov = ChannelsPerFOV{kF};
 
-    % Sous-ensemble canaux : par noms → indices
-    if isempty(RequestedChans)
-        chanSelNames = chanNamesFOV;
-        chanSelIdx   = 1:nChannels;
+if isempty(chans_for_this_fov)
+    % Aucun filtre demandé -> tous
+    chanSelIdx   = 1:nChannels;
+    chanSelNames = chanNamesFOV;
+else
+    % Construire la liste de noms demandés "names_req" (cellstr)
+    if isnumeric(chans_for_this_fov) || islogical(chans_for_this_fov)
+        idx = chans_for_this_fov;
+        if islogical(idx), idx = find(idx); end
+        names_req = chanNamesFOV(idx);
+    elseif iscell(chans_for_this_fov)
+        names_req = cellfun(@char, string(chans_for_this_fov), 'UniformOutput', false);
+    elseif isstring(chans_for_this_fov)
+        names_req = cellstr(chans_for_this_fov);
+    elseif ischar(chans_for_this_fov)
+        names_req = {chans_for_this_fov};
     else
-        [isHit, idx] = ismember(RequestedChans, chanNamesFOV);
-        if any(~isHit)
-            miss = RequestedChans(~isHit);
-            warning('⚠ Some requested channels not found in FOV: {%s}', strjoin(miss, ', '));
-        end
-        idx = idx(isHit);
-        if isempty(idx)
-            fprintf('\n▶ FOV %d/%d — none of the requested channels present, skipped.\n', kF, numel(FOVIndex));
-            continue;
-        end
-        chanSelIdx   = idx(:)';
-        chanSelNames = chanNamesFOV(chanSelIdx);
+        % Cas exotique: tentative de conversion générique
+        names_req = cellfun(@char, string(chans_for_this_fov), 'UniformOutput', false);
     end
-    Csel = numel(chanSelIdx);
 
-    % Appliquer sous-ensemble temporel si demandé
-    if isempty(FrameList)
+    % Faire correspondre aux canaux de la FOV
+    [isHit, idx] = ismember(names_req, chanNamesFOV);  % <-- plus de RequestedChans ici
+    if any(~isHit)
+        miss = names_req(~isHit);
+        warning('⚠ Some requested channels not found in FOV: {%s}', strjoin(miss, ', '));
+    end
+    idx = idx(isHit);
+    if isempty(idx)
+        fprintf('\n▶ FOV %d/%d — none of the requested channels present, skipped.\n', kF, numel(FOVIndex));
+        continue;
+    end
+    chanSelIdx   = idx(:)';
+    chanSelNames = chanNamesFOV(chanSelIdx);
+end
+
+Csel = numel(chanSelIdx);
+
+ 
+    % --- Frames pour CETTE FOV (robuste à cell/string/logical) ---
+    frames_for_this_fov = FrameListPerFOV{kF};
+    
+    if isempty(frames_for_this_fov)
+    framesToDo = 1:nFramesTotal;
+    else
+    v = frames_for_this_fov;
+    if iscell(v),    v = v{1};    end   % cell -> contenu
+    if isstring(v),  v = double(v); end % string -> numeric
+    if islogical(v), v = find(v);   end % logical mask -> indices
+    v = double(v(:)');                   % row vector numeric
+    if isempty(v)
         framesToDo = 1:nFramesTotal;
     else
-        framesToDo = FrameList;
-        framesToDo = framesToDo(framesToDo >= 1 & framesToDo <= nFramesTotal);
+        framesToDo = v(v >= 1 & v <= nFramesTotal);
         if isempty(framesToDo)
             disp('   ⚠️  Frame list outside range, skipping this FOV.');
             continue;
         end
     end
-
-   
-
+    end
+    
     nFramesThisRun = numel(framesToDo);
+
 
     % ID FOV & dossier de sortie
     fovId     = safeStr(getprop(fovObj,'id',sprintf('FOV_%d',iFov)));

@@ -146,6 +146,8 @@ roiObj.display.selectedchannel = selected;
 
 end
 
+ensureCellInformationDataseries(roiObj);
+
     figures=findall(0,'Type','figure');
     appFigure=findobj(figures,'Name','ScoreApp');
     if isprop(appFigure,'RunningAppInstance')

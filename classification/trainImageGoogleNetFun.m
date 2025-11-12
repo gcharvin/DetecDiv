@@ -280,7 +280,7 @@ if ~isfield(trainingParam,'CNN_learn_rate_drop_factor')
     trainingParam.CNN_learn_rate_drop_factor=0.9;
 end
 
-patience=3;
+patience=10;
 
 options = trainingOptions(trainingParam.CNN_training_method{end}, ...
     'MiniBatchSize',miniBatchSize, ...

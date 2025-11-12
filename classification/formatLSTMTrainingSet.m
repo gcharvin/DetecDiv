@@ -8,6 +8,9 @@ Crop       = false;   % <-- NEW: activer/désactiver le crop
 CropCenter = [88 194];% <-- NEW: [cx cy]
 CropSize   = [60 60]; % <-- NEW: [w h]
 
+UndersampleMajority = 1;   % 1 = désactivé (100% des frames gardées)
+
+
 for i = 1:numel(varargin)
     if ischar(varargin{i}) || isstring(varargin{i})
         key = lower(string(varargin{i}));
@@ -24,6 +27,8 @@ for i = 1:numel(varargin)
                 CropCenter = varargin{i+1};
             case "cropsize"
                 CropSize = varargin{i+1};
+            case "undersamplemajority"
+                UndersampleMajority = varargin{i+1};
         end
     end
 end
@@ -191,6 +196,38 @@ for i = 1:numel(rois_sel)
 
     dataid    = labelIdx;
     dataidfra = labelIdx(fra);
+
+        % --- Option : undersampling des classes majoritaires ---
+    if exist("UndersampleMajority","var") && UndersampleMajority < 1
+        % calcul de la fréquence de chaque classe
+        classCounts = countcats(categorical(dataidfra, 1:numel(classif.classes)));
+        [maxCount, idxMajor] = max(classCounts);
+        majorityClasses = find(classCounts == maxCount);
+
+        if ~isempty(majorityClasses)
+            fracKeep = UndersampleMajority;
+            fprintf('Undersampling majorities (%.2f) for ROI %s : ', fracKeep, cltmp(ridx).id);
+            disp(strjoin(classif.classes(majorityClasses),','));
+
+            keepIdx = true(size(dataidfra));
+
+            for c = majorityClasses(:)'
+                frames_c = find(dataidfra == c);
+                if numel(frames_c) > 1
+                    nKeep = max(1, round(fracKeep * numel(frames_c)));
+                    frames_keep = randsample(frames_c, nKeep);
+                    drop_mask = ~ismember(1:numel(dataidfra), frames_keep);
+                    keepIdx(drop_mask & dataidfra == c) = false;
+                end
+            end
+
+            % appliquer le sous-échantillonnage
+            dataidfra = dataidfra(keepIdx);
+            fra       = fra(keepIdx);
+            lab       = lab(keepIdx);
+        end
+    end
+
 
     if strcmp(classif.category{1},'LSTM')
         pixb = numel(dataidfra);
