@@ -247,6 +247,8 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
 
         % roiobj(i).classes=classi.classes;
 
+        
+
         if para % parallel computing
             if numel(classifierCNN)
                 %                 if numel(roiobj(i).image)==0
@@ -271,6 +273,7 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
                 disp(['Classified' num2str(roiobj(i).id)]);
             end
 
+           
             % manage ROI here
 
             ROIManagement(roiobj(i),data,image)

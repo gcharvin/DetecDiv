@@ -605,14 +605,14 @@ end
 % ==================== H E L P E R S ====================
 
 
-
-function v = readAttOrDefault(h5f, path, attName, def)
-try
-    v = h5readatt(h5f, path, attName);
-catch
-    v = def;
-end
-end
+% 
+% function v = readAttOrDefault(h5f, path, attName, def)
+% try
+%     v = h5readatt(h5f, path, attName);
+% catch
+%     v = def;
+% end
+% end
 
 function dispStruct = rebuildDisplayFromAttrs(names, idxList, attrs, C)
 % names : {1xN} canaux logiques
@@ -678,58 +678,58 @@ dispStruct.log             = zeros(1,N);
 
 
 end
+% 
+% function d = defaultDisplay(N, C)
+% % N canaux logiques, C sous-channels
+% d = struct();
+% d.intensity       = repmat([1 1 1], N, 1);
+% d.frame           = 1;
+% d.selectedchannel = ones(1,N);
+% d.binning         = 1;
+% d.rgb             = repmat([1 1 1], C, 1);
+% d.channel         = arrayfun(@(k)sprintf('channel_%d',k), 1:N, 'UniformOutput', false);
+% d.stretchlim      = [];
+% d.displaylim      = repmat([0;1], 1, C);
+% d.indexed         = zeros(1,N);
+% d.alpha           = ones(1,N);
+% d.contour         = zeros(1,N);
+% d.width           = ones(1,N);
+% d.log             = zeros(1,N);
+% end
 
-function d = defaultDisplay(N, C)
-% N canaux logiques, C sous-channels
-d = struct();
-d.intensity       = repmat([1 1 1], N, 1);
-d.frame           = 1;
-d.selectedchannel = ones(1,N);
-d.binning         = 1;
-d.rgb             = repmat([1 1 1], C, 1);
-d.channel         = arrayfun(@(k)sprintf('channel_%d',k), 1:N, 'UniformOutput', false);
-d.stretchlim      = [];
-d.displaylim      = repmat([0;1], 1, C);
-d.indexed         = zeros(1,N);
-d.alpha           = ones(1,N);
-d.contour         = zeros(1,N);
-d.width           = ones(1,N);
-d.log             = zeros(1,N);
-end
-
-function dispOut = mergeDisplayStructs(dOld, dNew)
-% Favorise dNew (valeurs lues du fichier) champ par champ.
-dispOut = dOld;
-
-fn = fieldnames(dNew);
-for i = 1:numel(fn)
-    f = fn{i};
-    if ~isfield(dispOut,f) || isempty(dispOut.(f))
-        dispOut.(f) = dNew.(f);
-        continue;
-    end
-
-    a = dispOut.(f);
-    b = dNew.(f);
-
-    % Si types numériques/logicaux -> on préfère b (la lecture H5)
-    if (isnumeric(a)||islogical(a)) && (isnumeric(b)||islogical(b))
-        % Aligne la taille si nécessaire (on ne jette pas b)
-        if ~isequal(size(a), size(b))
-            dispOut.(f) = b;
-        else
-            dispOut.(f) = b;  % new wins
-        end
-    elseif iscell(a) && iscell(b)
-        % Pour cell arrays (ex: channel), prends b si tailles diffèrent, sinon b aussi
-        if ~isequal(size(a), size(b))
-            dispOut.(f) = b;
-        else
-            dispOut.(f) = b;
-        end
-    else
-        % Par défaut, b (plus récent)
-        dispOut.(f) = b;
-    end
-end
-end
+% function dispOut = mergeDisplayStructs(dOld, dNew)
+% % Favorise dNew (valeurs lues du fichier) champ par champ.
+% dispOut = dOld;
+% 
+% fn = fieldnames(dNew);
+% for i = 1:numel(fn)
+%     f = fn{i};
+%     if ~isfield(dispOut,f) || isempty(dispOut.(f))
+%         dispOut.(f) = dNew.(f);
+%         continue;
+%     end
+% 
+%     a = dispOut.(f);
+%     b = dNew.(f);
+% 
+%     % Si types numériques/logicaux -> on préfère b (la lecture H5)
+%     if (isnumeric(a)||islogical(a)) && (isnumeric(b)||islogical(b))
+%         % Aligne la taille si nécessaire (on ne jette pas b)
+%         if ~isequal(size(a), size(b))
+%             dispOut.(f) = b;
+%         else
+%             dispOut.(f) = b;  % new wins
+%         end
+%     elseif iscell(a) && iscell(b)
+%         % Pour cell arrays (ex: channel), prends b si tailles diffèrent, sinon b aussi
+%         if ~isequal(size(a), size(b))
+%             dispOut.(f) = b;
+%         else
+%             dispOut.(f) = b;
+%         end
+%     else
+%         % Par défaut, b (plus récent)
+%         dispOut.(f) = b;
+%     end
+% end
+% end

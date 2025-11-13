@@ -36,8 +36,10 @@ if isfield(obj.display,'write_abs_start') && ~isempty(obj.display.write_abs_star
     absStart0 = double(obj.display.write_abs_start);   % 0-based
 end
 
-h5File   = fullfile(obj.path, ['im_'   obj.id '.h5']);
-dataFile = fullfile(obj.path, ['data_' obj.id '.mat']);
+h5File    = fullfile(obj.path, ['im_'   obj.id '.h5']);
+h5BakFile = fullfile(obj.path, ['im_'   obj.id '.bak']);   %%% ATOMIC WRITE (backup)
+dataFile  = fullfile(obj.path, ['data_' obj.id '.mat']);
+dataBak   = fullfile(obj.path, ['data_' obj.id '.bak']);   %%% ATOMIC WRITE (backup)
 
 % ---------- Interpret 'option' ----------
 onlyData = (ischar(option)   && strcmp(option,'data')) || ...
@@ -64,8 +66,7 @@ success      = false;
 attempts     = 0;
 max_attempts = 5;
 
-
-if isempty(imArray) & verbose==true
+if isempty(imArray) && verbose==true
     disp('Image was not in memory, hence we don t save')
 end
 
@@ -75,7 +76,7 @@ while ~success && attempts < max_attempts
     dataSaved  = false;
 
     % ==================================================
-    % 1) Sauvegarde HDF5 (images)
+    % 1) Sauvegarde HDF5 (images) — ATOMIC
     % ==================================================
     if ~onlyData && ~isempty(imArray)
 
@@ -90,117 +91,111 @@ while ~success && attempts < max_attempts
                 imArray = reshape(imArray, sz);
             end
         end
-        H = sz(1);
-        W = sz(2);
-        C = sz(3);
-        T = sz(4);
+        H = sz(1); W = sz(2); C = sz(3); T = sz(4);
 
-        % Noms logiques des canaux (ex: {'Brightfield','GFP','SegMaskRGB'})
+        % Noms logiques
         logicNames = getLogicalChannelNames(obj);
 
-        % fullSave = on veut tout réécrire dans le HDF5
-        % ATTENTION: seulement si on n'est PAS en mode onlyData
-
+        % fullSave = tous les canaux
         fullSave = (~onlyData) && isempty(requestedChannels);
 
-        if fullSave
-            % on repars d'un .h5 propre
-            if exist(h5File,'file')
-                delete(h5File);
-            end
-        else
-            % mode partiel : on ne delete pas h5File
-        end
+        %%% ATOMIC WRITE: on prépare un fichier de travail temporaire
+        tmpUuid  = char(java.util.UUID.randomUUID);
+        h5Tmp    = [h5File '.tmp.' tmpUuid];
 
+        % Stratégie:
+        % - fullSave      : nouveau fichier propre -> on écrit tout dans h5Tmp
+        % - partial save  : si h5File existe, on le copie vers h5Tmp pour préserver le reste
+        if fullSave
+            % rien à copier — création à l'écriture par upsert
+        else
+            if exist(h5File,'file')
+                copyfile(h5File, h5Tmp, 'f');
+            end
+        end
 
         % Boucler sur CHAQUE canal LOGIQUE
         for iChan = 1:numel(logicNames)
             chanNameLogical = logicNames{iChan};
 
             % Décider si on écrit ce canal logique
-            if fullSave
-                doThisOne = true;
-            else
-                doThisOne = any(strcmpi(requestedChannels, chanNameLogical));
-            end
-            if ~doThisOne
-                continue;
-            end
+            doThisOne = fullSave || any(strcmpi(requestedChannels, chanNameLogical));
+            if ~doThisOne, continue; end
 
-     
-            % Récupérer les indices de la 3e dimension correspondant à ce canal logique
-            idxSet = obj.findChannelID(chanNameLogical, 'exact');  % renvoie un vecteur
+            % Indices de la 3e dimension
+            idxSet = obj.findChannelID(chanNameLogical, 'exact');  % vecteur
             if isempty(idxSet)
-                % fallback déterministe
                 idxSet = find(obj.channelid == iChan).';
                 if isempty(idxSet), idxSet = iChan; end
             end
-
             idxSet = idxSet(:)';
 
-            if isempty(idxSet)
-                % rien à sauver pour ce canal
-                continue;
-            end
+            if isempty(idxSet), continue; end
 
             k = numel(idxSet);
             chanBlock = imArray(:,:,idxSet,:);   % [H W k T]
             thisClass = class(chanBlock);
 
-            % Prépare le chemin dataset dans le HDF5
+            % Dataset path
             dsetNameSanitized = sanitizeDatasetName(chanNameLogical);
             h5Path = ['/' dsetNameSanitized];
 
-            % Chunking
-            chunkT   = min(T,10);
-            chunkDim = [H W k chunkT];
-           
-            upsertH5Dataset_frames(h5File, h5Path, chanBlock, [H W k T], thisClass,absStart0);
+            % Ecriture/Upsert dans le FICHIER TEMP (h5Tmp)
+            upsertH5Dataset_frames(h5Tmp, h5Path, chanBlock, [H W k T], thisClass, absStart0);
 
-              
+            % Attributs
+            h5writeatt(h5Tmp, h5Path, 'roi_id',          obj.id);
+            h5writeatt(h5Tmp, h5Path, 'bbox',            getBBox(obj));
+            h5writeatt(h5Tmp, h5Path, 'frames',          getFrames(obj,T));
+            h5writeatt(h5Tmp, h5Path, 'channel_name',    chanNameLogical);
+            h5writeatt(h5Tmp, h5Path, 'channel_indices', idxSet);
+            h5writeatt(h5Tmp, h5Path, 'channelid',       obj.channelid);
 
-            % Attributs utiles
-            h5writeatt(h5File, h5Path, 'roi_id',          obj.id);
-            h5writeatt(h5File, h5Path, 'bbox',            getBBox(obj));
-            h5writeatt(h5File, h5Path, 'frames',          getFrames(obj,T));
-            h5writeatt(h5File, h5Path, 'channel_name',    chanNameLogical);
-            h5writeatt(h5File, h5Path, 'channel_indices', idxSet);
-            h5writeatt(h5File, h5Path, 'channelid',       obj.channelid);
-
-
-            % Attributs d'affichage (intensity, rgb, indexed, etc.)
+            % Attributs d'affichage
             dispMeta = buildDisplayMetaForChannel(obj, iChan, k);
             names = fieldnames(dispMeta);
             for i = 1:numel(names)
                 nm = names{i};
                 v  = dispMeta.(nm);
                 if isempty(v), continue; end
-            
                 v = to_h5_attr(v);
-            
                 try
-                    h5writeatt(h5File, h5Path, nm, v);
-                catch ME
-                    % dernier recours: sérialiser en texte
+                    h5writeatt(h5Tmp, h5Path, nm, v);
+                catch
                     try
-                        h5writeatt(h5File, h5Path, nm, char(string(v)));
+                        h5writeatt(h5Tmp, h5Path, nm, char(string(v)));
                     catch
-                        warning('roi:save:AttrWriteFailed', ...
-                                'Attribute %s not written (%s).', nm, ME.message);
+                        % silencieux si ~verbose
+                        if verbose
+                            warning('roi:save:AttrWriteFailed','Attribute %s not written.', nm);
+                        end
                     end
                 end
             end
 
-
-
             imageSaved = true;
-
             if verbose
-                fprintf('ROI #%s: HDF5 save of "%s" (%d subchan, %d frames).\n',...
+                fprintf('ROI #%s: HDF5 save of "%s" (%d subchan, %d frames).\n', ...
                     obj.id, chanNameLogical, k, T);
             end
+        end
 
-               
+        % Vérification + bascule atomique
+        if imageSaved
+            if ~localVerifyH5(h5Tmp)
+                if exist(h5Tmp,'file'); delete(h5Tmp); end
+                error('roi:save:verifyH5','Temporary HDF5 verification failed.');
+            end
+            % backup ancien fichier
+            if exist(h5File,'file')
+                copyfile(h5File, h5BakFile, 'f'); %#ok<*NASGU>
+            end
+            % remplacement atomique
+            if exist(h5File,'file'), delete(h5File); end
+            movefile(h5Tmp, h5File, 'f');
+        else
+            % Rien écrit -> si un tmp vide a été créé par erreur, on le retire
+            if exist(h5Tmp,'file'), delete(h5Tmp); end
         end
 
         % Après un FULL SAVE (tous les canaux), on allège l'objet
@@ -209,10 +204,8 @@ while ~success && attempts < max_attempts
         end
     end
 
-
-
     % ==================================================
-    % 2) Sauvegarde DATA -> .mat
+    % 2) Sauvegarde DATA -> .mat — ATOMIC
     % ==================================================
     hasDataToSave = false;
     if ~isempty(dsArray)
@@ -226,7 +219,23 @@ while ~success && attempts < max_attempts
 
     if onlyData || hasDataToSave
         data = dsArray; %#ok<NASGU>
-        save(dataFile, 'data');
+
+        %%% ATOMIC WRITE for data .mat
+        tmpUuidD = char(java.util.UUID.randomUUID);
+        dataTmp  = [dataFile '.tmp.' tmpUuidD];
+        save(dataTmp, 'data', '-v7.3');
+
+        if ~localVerifyMat(dataTmp)
+            if exist(dataTmp,'file'); delete(dataTmp); end
+            error('roi:save:verifyMAT','Temporary MAT verification failed.');
+        end
+
+        if exist(dataFile,'file')
+            copyfile(dataFile, dataBak, 'f');
+        end
+        if exist(dataFile,'file'), delete(dataFile); end
+        movefile(dataTmp, dataFile, 'f');
+
         dataSaved = true;
 
         if verbose
@@ -269,7 +278,6 @@ end
 %% ===== Helpers =====
 
 function bpp = bytesPerClass(cls)
-% Renvoie le nombre d'octets par pixel pour une classe MATLAB donnée.
 switch cls
     case {'uint8','int8'}
         bpp = 1;
@@ -285,23 +293,16 @@ switch cls
 end
 end
 
-
 function names = getLogicalChannelNames(obj)
-% Renvoie obj.display.channel en cellstr
 names = {};
 if isprop(obj,'display') && ~isempty(obj.display) && isstruct(obj.display) ...
         && isfield(obj.display,'channel') && ~isempty(obj.display.channel)
-
     ch = obj.display.channel;
     if isstring(ch), ch = cellstr(ch); end
     if ~iscell(ch),  ch = {char(string(ch))}; end
     names = ch;
 end
-
-if isempty(names)
-    names = {'channel_001'};
-end
-
+if isempty(names), names = {'channel_001'}; end
 end
 
 function bb = getBBox(obj)
@@ -311,55 +312,40 @@ if isprop(obj,'value') && ~isempty(obj.value) && numel(obj.value)>=4
 end
 end
 
-function fr = getFrames(obj,Tfallback)
+function fr = getFrames(~,Tfallback)
 fr = 1:double(Tfallback);
 end
 
 function dispMeta = buildDisplayMetaForChannel(obj, chanLogicalIdx, k)
 d = obj.display;
 nCh = numel(d.channel);
-
 ii = min(chanLogicalIdx, nCh);
 ival=find(obj.channelid==ii);
-
 dispMeta = struct();
 
-% intensity (reste tel quel : vecteur numérique)
 if isfield(d,'intensity') && ~isempty(d.intensity)
     row = d.intensity(ii,:);
     dispMeta.display_intensity = row;
 end
-
 if isfield(d,'selectedchannel') && ~isempty(d.selectedchannel)
     row = d.selectedchannel(ii);
     dispMeta.display_selectedchannel = row;
 end
-
-% rgb (reste tel quel)
 if isfield(d,'rgb') && ~isempty(d.rgb)
     row = d.rgb(ii,:);
     dispMeta.display_rgb = row;
 end
-
-% rgb (reste tel quel)
 if isfield(d,'displaylim') && ~isempty(d.displaylim)
-
     if ival<= size(d.displaylim,2)
-    row = d.displaylim(:,ival);
+        row = d.displaylim(:,ival);
     else
-    row=[];
+        row=[];
     end
-
     if isempty(row)
-
         row = repmat([0;1], 1, k);
-    
-    end     % ✅ fallback
+    end
     dispMeta.display_displaylim = row;
 end
-
-
-% indexed -> uint8
 if isfield(d,'indexed') && ~isempty(d.indexed)
     idxVal = d.indexed;
     if numel(idxVal) >= ii
@@ -368,8 +354,6 @@ if isfield(d,'indexed') && ~isempty(d.indexed)
         dispMeta.display_indexed = uint8(idxVal(1) ~= 0);
     end
 end
-
-% alpha (numérique scalaire)
 if isfield(d,'alpha') && ~isempty(d.alpha)
     aVal = d.alpha;
     if numel(aVal) >= ii
@@ -378,8 +362,6 @@ if isfield(d,'alpha') && ~isempty(d.alpha)
         dispMeta.display_alpha = aVal(1);
     end
 end
-
-% contour -> uint8
 if isfield(d,'contour') && ~isempty(d.contour)
     cVal = d.contour;
     if numel(cVal) >= ii
@@ -388,8 +370,6 @@ if isfield(d,'contour') && ~isempty(d.contour)
         dispMeta.display_contour = uint8(cVal(1) ~= 0);
     end
 end
-
-% contour -> uint8
 if isfield(d,'log') && ~isempty(d.log)
     cVal = d.log;
     if numel(cVal) >= ii
@@ -398,8 +378,6 @@ if isfield(d,'log') && ~isempty(d.log)
         dispMeta.display_log = uint8(cVal(1) ~= 0);
     end
 end
-
-% width (numérique)
 if isfield(d,'width') && ~isempty(d.width)
     wVal = d.width;
     if numel(wVal) >= ii
@@ -408,16 +386,12 @@ if isfield(d,'width') && ~isempty(d.width)
         dispMeta.display_contourwidth = wVal(1);
     end
 end
-
 if isfield(d,'frame') && ~isempty(d.frame)
     dispMeta.display_frame=d.frame;
 end
-
 if isfield(d,'binning') && ~isempty(d.binning)
     dispMeta.display_binning=d.binning;
 end
-
-% nb de sous-canaux k (numérique)
 dispMeta.num_subchannels = k;
 end
 
@@ -425,15 +399,32 @@ function nameOut = sanitizeDatasetName(nameIn)
 s = char(string(nameIn));
 s = regexprep(s,'\s+','_');
 s = regexprep(s,'[^A-Za-z0-9_\-\.]','_');
-if isempty(s)
-    s = 'channel';
-end
+if isempty(s), s = 'channel'; end
 nameOut = s;
 end
 
+function ok = localVerifyMat(matPath)     %%% ATOMIC WRITE helper
+ok = false;
+try
+    vars = whos('-file', matPath);
+    ok   = ~isempty(vars);
+catch
+    ok = false;
+end
+end
+
+function ok = localVerifyH5(h5Path)       %%% ATOMIC WRITE helper
+ok = false;
+try
+    info = h5info(h5Path); %#ok<NASGU>
+    ok = true;
+catch
+    ok = false;
+end
+end
 
 function upsertH5Dataset_frames(h5filename, datasetName, data, dims_mat, thisClass, absStart0)
-% data : [H W k Tblock] (MATLAB order)
+% (inchangé, sauf qu'on écrit maintenant dans un fichier "work" passé en 1er arg)
 if nargin < 6, absStart0 = []; end
 
 H = dims_mat(1); W = dims_mat(2); k = dims_mat(3);
@@ -448,37 +439,19 @@ end
 
 exists = H5L.exists(fid, datasetName, 'H5P_DEFAULT') > 0;
 
-t0 = 0; Told = 0; 
-
+t0 = 0; Told = 0;
 if ~exists
-    % Crée le dataset extensible à T=0 (ordre fichier [T k W H])
     createResizableDataset(fid, datasetName, thisClass, [H W k 0]);
 else
-    % Lire dims actuelles (ordre fichier [T k W H])
     dset_id  = H5D.open(fid, datasetName);
     space_id = H5D.get_space(dset_id);
     [~, cur_dims, ~] = H5S.get_simple_extent_dims(space_id);
-
     H5S.close(space_id);
-    dims = double(cur_dims(:).');
-    dims(end+1:4)=1;
-    Told  = dims(1);
-    k_old = dims(2) ;
-    W_old = dims(3) ;
-    H_old = dims(4);
+    dims = double(cur_dims(:).'); dims(end+1:4)=1;
+    Told  = dims(1); k_old = dims(2); W_old = dims(3); H_old = dims(4);
     H5D.close(dset_id);
-
-    % Lire l'attribut t0 (origine absolue 0-based), si présent
-    try
-        t0 = double(h5readatt(h5filename, datasetName, 'abs_t0'));
-    catch
-        t0 = 0;   % défaut si absent
-    end
-
-
-    % Si mismatch spatial → recrée à T=0 (on garde t0)
+    try, t0 = double(h5readatt(h5filename, datasetName, 'abs_t0')); catch, t0 = 0; end
     if H_old~=H || W_old~=W || k_old~=k
-    
         if H5L.exists(fid, datasetName, 'H5P_DEFAULT')>0
             H5L.delete(fid, datasetName, 'H5P_DEFAULT');
         end
@@ -487,85 +460,63 @@ else
     end
 end
 
-% --- Décider d'où écrire ce bloc en TEMPS ABSOLU ---
-% Si l'appelant a fourni absStart0 (via r.write_abs_start), on l'utilise.
-% Sinon: APPEND → on commence à t0 + Told.
 if ~isempty(absStart0)
     absStart = max(0, floor(absStart0));
 else
     absStart = t0 + Told;
 end
 
-% Cas "overwrite partiel" avant le début (préfixe) ?
-% Si absStart < t0, on doit étendre vers la GAUCHE. Stratégie simple:
-% - recréer dataset avec nouveau t0 = absStart
-% - déplacer l'ancien bloc à offset (t0 - absStart)
 if absStart < t0 && (Told > 0)
-    new_t0 = absStart;
-    shift  = (t0 - new_t0);                  % >=1
-    % Étendre le dataset pour contenir l'ancien + le nouveau bloc
+    new_t0 = absStart; shift = (t0 - new_t0);
     dset_id = H5D.open(fid, datasetName);
-    Tnew_tmp = Told + shift;                 % juste pour décaler l'existant
+    Tnew_tmp = Told + shift;
     H5D.set_extent(dset_id, double([Tnew_tmp  k  W  H]));
-    % On pourrait copier via hyperslab (optionnel).
     H5D.close(dset_id);
-    t0 = new_t0;       % on adopte le nouveau t0
+    t0 = new_t0;
 end
 
-% Position relative d'écriture dans le dataset
 startRel = absStart - t0;         % 0-based
 Tnew     = max(Told, startRel + Tblock);
 
-% Étendre si besoin
 dset_id = H5D.open(fid, datasetName);
 if Tnew > Told
     H5D.set_extent(dset_id, double([Tnew  k  W  H]));
 end
 
-% Hyperslab FICHIER (ordre [T k W H]) : écrire Tblock frames à partir de startRel
 fspace  = H5D.get_space(dset_id);
 start_f = double([startRel  0  0  0]);
 count_f = double([Tblock    k  W  H]);
 H5S.select_hyperslab(fspace,'H5S_SELECT_SET', start_f, [], count_f, []);
 
-% Mémoire: même shape ; data tel quel
 mspace = H5S.create_simple(4, count_f, []);
 h5type = matlabClassToH5(thisClass, data);
-
 H5D.write(dset_id, h5type, mspace, fspace, 'H5P_DEFAULT', data(:,:,:,1:Tblock));
 
-% MAJ attributs de traçabilité
 try, h5writeatt(h5filename, datasetName, 'abs_t0', t0); catch, end
 try, h5writeatt(h5filename, datasetName, 'abs_T',  Tnew); catch, end
 try, h5writeatt(h5filename, datasetName, 'abs_range', [t0, t0+Tnew-1]); catch, end
 
-% close
 H5S.close(mspace); H5S.close(fspace);
 H5D.close(dset_id); H5F.close(fid);
 end
 
-
-
 function createResizableDataset(fid, datasetName, thisClass, dims_mat, deflateLevel)
 if nargin < 5, deflateLevel = 2; end
-
 H = dims_mat(1); W = dims_mat(2); k = max(1,dims_mat(3)); T = dims_mat(4);
 maxT = H5ML.get_constant_value('H5S_UNLIMITED');
 
 space_id = H5S.create_simple(4, double([T k W H]), double([maxT k W H]));
 dcpl     = H5P.create('H5P_DATASET_CREATE');
 
-% chunkT par budget (fallback sur min(T,10))
 bpp   = bytesPerClass(thisClass);
 pixPerFrame = H*W*k;
 targetBytes = 4*1024*1024;  % 4 MB
 chunkT = max(1, floor(targetBytes/(pixPerFrame*bpp)));
 if T > 0, chunkT = min(chunkT, T); end
 
-
 H5P.set_chunk(dcpl, double([chunkT k W H]));
-H5P.set_shuffle(dcpl);                % ++ compression pour 16-bit
-H5P.set_deflate(dcpl, deflateLevel);  % 1..9
+H5P.set_shuffle(dcpl);
+H5P.set_deflate(dcpl, deflateLevel);
 
 h5type  = matlabClassToH5(thisClass, []);
 dset_id = H5D.create(fid, datasetName, h5type, space_id, ...
@@ -575,8 +526,6 @@ H5D.close(dset_id);
 H5P.close(dcpl);
 H5S.close(space_id);
 end
-
-
 
 function h5type = matlabClassToH5(cls, data)
 switch cls
@@ -594,35 +543,22 @@ switch cls
 end
 end
 
-
-% --- helper local : rendre les valeurs compatibles HDF5
 function val = to_h5_attr(val)
     if islogical(val)
-        val = uint8(val);                 % 0/1
+        val = uint8(val);
     elseif isstring(val)
-        if isscalar(val)
-            val = char(val);              % string -> char
-        else
-            val = cellstr(val);           % string array -> cellstr
-        end
+        if isscalar(val), val = char(val); else, val = cellstr(val); end
     elseif isa(val,'datetime')
-        val = char(val);                  % stocker en texte ISO si tu veux: char(datestr(val,'yyyy-mm-ddTHH:MM:SS'))
+        val = char(val);
     elseif iscategorical(val)
         val = cellstr(val);
     elseif iscell(val)
-        % si cell de logical -> caster
         if all(cellfun(@islogical,val))
             val = uint8([val{:}]);
-        elseif all(cellfun(@ischar,val))
-            % OK: cellstr accepté
-        else
-            % fallback générique: JSON texte
+        elseif ~all(cellfun(@ischar,val))
             val = char(jsonencode(val));
         end
     elseif istable(val) || isstruct(val)
-        % on ne met pas de gros objets en attribut → JSON texte
         val = char(jsonencode(val));
     end
-    % numeric ok tel quel; NaN/Inf passent en double.
 end
-

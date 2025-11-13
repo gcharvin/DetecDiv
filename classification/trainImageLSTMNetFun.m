@@ -32,9 +32,17 @@ if nargin==2 % basic parameter initialization
         'Enter the length of the sequences in frames; put 0 if all frames should be used upon training',...
         'Enter the dropping factor in learning rate',...
         'Choose execution environment',...
-        'Select initial version of network to start training with; Default: ImageNet'};
+        'Select initial version of network to start training with; Default: ImageNet',...
+        'Minority balancing mode (none/auto)',...
+        'Activate balancing if min/max ratio ≤ this value',...
+        'Percentile for multi-minority selection (0=off)',...
+        '#Negatives per #Positives windows (e.g. 1 = 1:1)',...
+        'Positive window stride as a fraction of L',...
+        'Negative window stride as a fraction of L',...
+        'Keep validation distribution unbalanced (true/false)'};
 
-    classif.trainingParam=struct('train_CNN_classifier',true,...
+    classif.trainingParam = struct(...
+        'train_CNN_classifier',true,...
         'compute_CNN_activations',true,...
         'train_LSTM_network',true,...
         'assemble_network',true,...
@@ -49,25 +57,45 @@ if nargin==2 % basic parameter initialization
         'CNN_data_splitting_factor',0.7,...
         'CNN_translation_augmentation',[-5 5],...
         'CNN_rotation_augmentation',[-20 20],...
-        'CNN_l2_regularization',0.00001,...
+        'CNN_l2_regularization',1e-5,...
         'CNN_use_dropout',true,...
         'CNN_dropout',0.5,...
         'LSTM_data_splitting_factor',0.9,...
         'LSTM_hidden_size',150,...
         'LSTM_mini_batch_size',8,...
-        'LSTM_initial_learning_rate', 0.0001,...
+        'LSTM_initial_learning_rate', 1e-4,...
         'LSTM_max_epochs', 50,...
         'LSTM_sequence_length', 40,...
         'LSTM_learn_rate_drop_factor', 0.9,...
         'execution_environment',{{'auto','parallel','cpu','gpu','multi-gpu','auto'}},...
         'transfer_learning',{{'ImageNet','ImageNet'}},...
+        ... % ==== nouveaux paramètres de balancing / windowing ====
+        'minority_mode','none',...            % 'none' (par défaut) ou 'auto'
+        'minority_min_ratio',0.30,...         % activer si min/max ≤ 0.30
+        'minority_percentile',0.00,...        % 0 = off ; sinon ex 0.20
+        'pos_neg_ratio',1.0,...               % #negatives per #positives (fenêtres)
+        'win_stride_pos_frac',0.10,...        % stridePos = L*0.10
+        'win_stride_neg_frac',1.00,...        % strideNeg = L*1.00
+        'keep_valid_distrib',true,...
         'tip',{tip});
-
     return;
+
 else
     trainingParam=classif.trainingParam;
-    if ~isfield(trainingParam,'CNN_use_dropout'); trainingParam.CNN_use_dropout = true; end
-    if ~isfield(trainingParam,'CNN_dropout');      trainingParam.CNN_dropout     = 0.5;  end
+
+    % ---- Backward compatibility defaults ----
+    if ~isfield(trainingParam,'CNN_use_dropout');       trainingParam.CNN_use_dropout = true;  end
+    if ~isfield(trainingParam,'CNN_dropout');           trainingParam.CNN_dropout     = 0.5;   end
+    if ~isfield(trainingParam,'CNN_l2_regularization'); trainingParam.CNN_l2_regularization = 1e-5; end
+    % nouveaux champs (minority/windowing)
+    if ~isfield(trainingParam,'minority_mode');         trainingParam.minority_mode       = 'none'; end
+    if ~isfield(trainingParam,'minority_min_ratio');    trainingParam.minority_min_ratio  = 0.30;   end
+    if ~isfield(trainingParam,'minority_percentile');   trainingParam.minority_percentile = 0.00;   end
+    if ~isfield(trainingParam,'pos_neg_ratio');         trainingParam.pos_neg_ratio       = 1.0;    end
+    if ~isfield(trainingParam,'win_stride_pos_frac');   trainingParam.win_stride_pos_frac = 0.10;   end
+    if ~isfield(trainingParam,'win_stride_neg_frac');   trainingParam.win_stride_neg_frac = 1.00;   end
+    if ~isfield(trainingParam,'keep_valid_distrib');    trainingParam.keep_valid_distrib  = true;   end
+
     if numel(trainingParam)==0
         disp('Could not find training parameters : first launch train with an extra argument to force parameter assignment');
         return;
@@ -114,95 +142,73 @@ end
 
 tempFile = [path '/' name '_image_classifier_activations.mat'];
 
-% ===================== LOCAL BALANCING CONSTANTS (pas dans trainingParam) =====================
-MINORITY_MODE         = 'auto';   % 'auto' or 'none'
-MINORITY_MIN_RATIO    = 0.30;     % activer l'équilibrage si min/max <= 0.30
-MINORITY_PERCENTILE   = 0.20;     % si >2 classes : toutes les classes sous ce quantile
-POS_NEG_RATIO         = 1.0;      % #negatives par #positives (fenêtres)
-WIN_STRIDE_POS_FRAC   = 0.1;     % stridePos = L*0.25
-WIN_STRIDE_NEG_FRAC   = 1.00;     % strideNeg = L*1.0
-KEEP_VALID_DISTRIB    = true;     % ne pas ré-équilibrer la validation (on agit seulement côté génération train)
-% ==============================================================================================
-
+% ===================== COMPUTE / LOAD ACTIVATIONS =====================
 if trainingParam.compute_CNN_activations==false && exist(tempFile,"file")
     fprintf('Loading Image classifier activation data...\n------\n');
     load(tempFile,"sequences","labels");
 else
     fprintf('Computing Image classifier activation data...\n------\n');
+
     cc=1;
     fol= [path '/trainingdataset/timeseries'];
     list=dir([fol '/*.mat']);
     numFiles = numel(list);
-    sequences = cell(numFiles*10,1); % sur-allocation grossière
+    sequences = cell(numFiles*10,1); % simple over-allocation
     labels    = cell(numFiles*10,1);
 
-    % -------- PRE-SCAN pour détecter les classes minoritaires --------
-
-    % -------- PRE-SCAN pour détecter les classes minoritaires (robuste) --------
+    % -------- PRE-SCAN labels to detect minority classes (robust) --------
     fprintf('Scanning labels to detect minority classes...\n');
-
-    list = dir([fol '/*.mat']);           % si pas déjà défini au-dessus
-    numFiles = numel(list);
 
     allCats = [];
     totalCounts = [];
 
     for ii = 1:numFiles
-        S = load(fullfile(list(ii).folder, list(ii).name), 'lab');  % ne charge que 'lab'
+        S = load(fullfile(list(ii).folder, list(ii).name), 'lab');
         if ii == 1
-            allCats = categories(S.lab);           % cellstr colonne
-            allCats = allCats(:)';                 % -> row 1×K
-            totalCounts = zeros(1, numel(allCats));% row 1×K
+            allCats = categories(S.lab);      % cellstr
+            allCats = allCats(:)';            % row
+            totalCounts = zeros(1, numel(allCats));
         end
-        % Compter sur les mêmes catégories (taille K), forcer vecteur-ligne
         cnt = countcats( categorical(S.lab, allCats) );
-        cnt = reshape(cnt, 1, []);                 % -> row 1×K
-        totalCounts = totalCounts + cnt;           % accumulation sûre
+        totalCounts = totalCounts + reshape(cnt,1,[]);
     end
 
-    % Sécurité : si une classe n'apparaît jamais, éviter zéros problématiques
     nonzero = totalCounts > 0;
     if ~any(nonzero)
-        % cas pathologique : aucune frame (?) -> fallback
         warning('No labels counted in dataset. Falling back to uniform split.');
-        minorityClasses = allCats(1);              % arbitraire
+        minorityClasses = allCats(1);
         ratioMinMax = 1;
     else
-        % Calcul du ratio min/max
         mn = min(totalCounts(nonzero));
         mx = max(totalCounts(nonzero));
         ratioMinMax = mn / max(1, mx);
 
-        % Stratégie "min unique" par défaut
+        % min unique by default
         [~, idxMin] = min(totalCounts);
         minorityClasses = allCats(idxMin);
 
-        % Option percentile (si souhaite garder plusieurs minoritaires)
-        if ~isempty(MINORITY_PERCENTILE) && MINORITY_PERCENTILE > 0
-            thr = prctile(totalCounts, MINORITY_PERCENTILE*100);
-            mask = totalCounts <= thr;             % 1×K logique
-            % garantir au moins une classe sélectionnée
-            if ~any(mask)
-                mask = totalCounts == mn;
-            end
+        % percentile option (multi-minority)
+        if ~isempty(trainingParam.minority_percentile) && trainingParam.minority_percentile > 0
+            thr = prctile(totalCounts, trainingParam.minority_percentile*100);
+            mask = totalCounts <= thr;
+            if ~any(mask), mask = totalCounts == mn; end
             minorityClasses = allCats(mask);
         end
     end
 
-    doBalance = ~strcmp(MINORITY_MODE,'none') && (ratioMinMax <= MINORITY_MIN_RATIO);
+    doBalance = ~strcmpi(trainingParam.minority_mode,'none') ...
+                && (ratioMinMax <= trainingParam.minority_min_ratio);
 
     fprintf('Classes: %s | counts=%s | minority=%s | balance=%d\n', ...
         strjoin(string(allCats),','), mat2str(totalCounts), strjoin(string(minorityClasses),','), doBalance);
-    % --------------------------------------------------------------------------
 
-
-    % ------------------------------------------------------------------
+    % --------------------------------------------------------------------
 
     for i=1:numFiles
         fprintf('Processing movie %d/%d...', i, numFiles);
         S = load(fullfile(list(i).folder, list(i).name)); % loads deep, vid, lab
         video = centerCrop(S.vid,inputSize);
-        lab   = S.lab; % categorical (row or col)
+        lab   = S.lab; % categorical
         if size(lab,1)>1 && size(lab,2)>1, error('lab must be 1D categorical'); end
         if size(lab,1)>size(lab,2), lab = lab'; end
 
@@ -213,11 +219,13 @@ else
         if doBalance
             isMinor = ismember(lab, categorical(minorityClasses));
             posIdx  = find(isMinor);
-            winStridePos = max(1, round(L * WIN_STRIDE_POS_FRAC));
-            winStrideNeg = max(1, round(L * WIN_STRIDE_NEG_FRAC));
+
+            winStridePos = max(1, round(L * trainingParam.win_stride_pos_frac));
+            winStrideNeg = max(1, round(L * trainingParam.win_stride_neg_frac));
+
             posWins = []; negWins = [];
 
-            % Fenêtres POS centrées
+            % POS windows centered on minority frames
             for t = posIdx(:).'
                 s = max(1, t - floor(L/2));
                 e = min(T, s + L - 1); s = max(1, e - L + 1);
@@ -225,67 +233,53 @@ else
             end
             if ~isempty(posWins), posWins = unique(posWins, 'rows', 'stable'); end
 
-            % Fenêtres NEG sans chevauchement POS
+            % NEG windows (avoid overlap with POS)
             t0 = 1;
             while t0 + L - 1 <= T
                 s = t0; e = t0 + L - 1;
                 overlap = ~isempty(posWins) && any( (posWins(:,1) <= e) & (posWins(:,2) >= s) );
                 if ~overlap, negWins(end+1,:) = [s e]; end %#ok<AGROW>
+                % stride depends on POS/NEG type
                 t0 = t0 + winStrideNeg;
             end
 
-            % Equilibrage
+            % Balance: keep r = pos_neg_ratio * kpos negatives
             kpos = size(posWins,1); kneg = size(negWins,1);
             if kpos==0
                 selNeg = randperm(kneg, min(kneg, 2));
                 useWins = negWins(selNeg,:);
             else
-                r = min(kneg, max(1, round(POS_NEG_RATIO * kpos)));
-                if r>0, selNeg = randperm(kneg, r); else, selNeg=[]; end
+                r = min(kneg, max(0, round(trainingParam.pos_neg_ratio * kpos)));
+                if r>0, selNeg = randperm(kneg, r); else, selNeg = []; end
                 useWins = [posWins; negWins(selNeg,:)];
             end
 
-            % Génération des séquences équilibrées
+            % Build sequences
             for w = 1:size(useWins,1)
                 s = useWins(w,1); e = useWins(w,2);
                 tmpvid = video(:,:,:,s:e);
                 sequences{cc,1} = activations(netCNN,tmpvid,layerName,'OutputAs','columns');
 
-
                 if strcmp(trainingParam.classifier_output{end},'sequence-to-one')
-                    % Une seule étiquette par séquence
+                    % label = "sequence contains any minority"
                     hasMinor = any(ismember(lab(s:e), categorical(minorityClasses)));
-
-                    % Déterminer le nom de la classe majoritaire (tout sauf les minoritaires)
                     majorCats = setdiff(allCats, minorityClasses, 'stable');
-                    if isempty(majorCats)
-                        majorCats = {'other'};
-                    end
+                    if isempty(majorCats), majorCats = {'other'}; end
                     majorName = char(majorCats{1});
-                    minorName = char(minorityClasses{1});
-
-                    % Créer le label catégoriel
-                    labOne = categorical(hasMinor, [false true], {majorName, minorName});
+                    minorName = char(minorityClasses(1));
+                    labOne = categorical(hasMinor,[false true],{majorName,minorName});
                     labels{cc,1} = labOne;
-
                 else
-                    % Séquence complète -> vecteur ligne categorical
                     tmpLab = lab(s:e);
-                    if iscolumn(tmpLab)
-                        tmpLab = tmpLab';
-                    end
-                    if ~iscategorical(tmpLab)
-                        tmpLab = categorical(tmpLab, categories(lab));
-                    end
+                    if iscolumn(tmpLab), tmpLab = tmpLab'; end
+                    tmpLab = categorical(tmpLab, allCats); % force order
                     labels{cc,1} = tmpLab;
                 end
-
-
-
                 cc = cc + 1;
             end
+
         else
-            % Découpage uniforme (fallback)
+            % Uniform slicing fallback
             fr = 1:T;
             nb = max(1, ceil(T / L));
             dis = discretize(fr, nb);
@@ -293,14 +287,9 @@ else
                 tmpvid = video(:,:,:,fr(dis==k));
                 sequences{cc,1} = activations(netCNN,tmpvid,layerName,'OutputAs','columns');
                 tmpLab = lab(fr(dis==k));
-                if iscolumn(tmpLab)
-                    tmpLab = tmpLab';
-                end
-                if ~iscategorical(tmpLab)
-                    tmpLab = categorical(tmpLab, categories(lab));
-                end
+                if iscolumn(tmpLab), tmpLab = tmpLab'; end
+                tmpLab = categorical(tmpLab, categories(lab));
                 labels{cc,1} = tmpLab;
-
                 cc = cc + 1;
             end
         end
@@ -308,7 +297,6 @@ else
         fprintf('\n');
     end
 
-    % Compacte les cellules si on a sur-alloué
     sequences = sequences(1:cc-1);
     labels    = labels(1:cc-1);
 
@@ -349,10 +337,10 @@ if trainingParam.train_LSTM_network || ~exist(str,"file")
     numClasses  = numel(classif.classes);
     if numClasses==0, disp('There is no classes defined ; Cannot continue !'); return; end
 
-    % pondérations par classe (sequence-to-sequence : somme des frames)
+    % class weights (frame-level summed across sequences)
     sucl=zeros(numObservations,numClasses);
     for i=1:numObservations
-        sucl(i,:)=countcats(labels{i});
+        sucl(i,:)=countcats( categorical(labels{i}, classif.classes) );
     end
     sucl=sum(sucl,1);
     tempsucl=sucl(sucl>0); sucl(sucl==0)=min(tempsucl(:));
@@ -407,23 +395,23 @@ if trainingParam.train_LSTM_network || ~exist(str,"file")
     fprintf('------\n');
     [netLSTM,info] = trainNetwork(sequencesTrain,labelsTrain,layers,options);
 
-    % ---- Seuil optimal sur validation (classe 2 si binaire) ----
+    % ---- Simple threshold search on validation (binary) ----
     bestThreshold = 0.5;
     try
         classes = classif.classes;
         posName = classes{min(2,numel(classes))}; % classe 2 par défaut
         if strcmp(trainingParam.classifier_output{end},'sequence-to-one')
-            [scoreVal, ~] = predict(netLSTM, sequencesValidation, 'MiniBatchSize', miniBatchSize);
+            scoreVal = predict(netLSTM, sequencesValidation, 'MiniBatchSize', miniBatchSize);
             posIdx = find(strcmp(classes, posName));
             posScore = scoreVal(:, posIdx);
             Ytrue    = double(labelsValidation == categorical(posName));
         else
-            [scoreVal, ~] = predict(netLSTM, sequencesValidation, 'MiniBatchSize', miniBatchSize);
+            scoreVal = predict(netLSTM, sequencesValidation, 'MiniBatchSize', miniBatchSize);
             posIdx = find(strcmp(classes, posName));
             posScore = []; Ytrue = [];
             for i=1:numel(scoreVal)
                 posScore = [posScore; scoreVal{i}(:,posIdx)]; %#ok<AGROW>
-                Ytrue    = [Ytrue; double(labelsValidation{i}(:)==categorical(posName))]; %#ok<AGROW>
+                Ytrue    = [Ytrue; double(labelsValidation{i}(:)==categororical(posName))]; %#ok<AGROW>
             end
         end
         ths = linspace(0,1,101);
@@ -460,7 +448,7 @@ if trainingParam.assemble_network || ~exist([path '/' name '.mat'],"file")
     fprintf('------\n');
 
     cnnLayers = layerGraph(netCNN);
-    % Points d'ancrage
+    % points d'ancrage
     switch trainingParam.CNN_network{end}
         case 'googlenet', baseInput = "conv1-7x7_s2";  layerName = "pool5-7x7_s1";
         case 'resnet50',  baseInput = "conv1";         layerName = "avg_pool";
@@ -469,12 +457,12 @@ if trainingParam.assemble_network || ~exist([path '/' name '.mat'],"file")
         otherwise, error('Unsupported backbone: %s', trainingParam.CNN_network{end});
     end
 
-    % Retire l'ImageInputLayer d'origine
+    % retire l'input image d'origine
     isInput = arrayfun(@(L) isa(L,'nnet.cnn.layer.ImageInputLayer'), cnnLayers.Layers);
     oldInputs = {cnnLayers.Layers(isInput).Name};
     if ~isempty(oldInputs), cnnLayers = removeLayers(cnnLayers, oldInputs); end
 
-    % Retire tout en aval de layerName (tête FC/softmax/dropouts)
+    % retire la tête en aval de layerName
     names = string({cnnLayers.Layers.Name});
     toVisit = string(layerName); toVisit = toVisit(:);
     desc = strings(0,1);
@@ -490,11 +478,10 @@ if trainingParam.assemble_network || ~exist([path '/' name '.mat'],"file")
     desc = intersect(desc, names);
     if ~isempty(desc), cnnLayers = removeLayers(cnnLayers, cellstr(desc)); end
 
-    % Ajoute l'entrée séquence -> folding
+    % entrée séquence + folding
     inputLayer = sequenceInputLayer([inputSize 3], 'Normalization','zerocenter', ...
         'Mean', netCNN.Layers(1).Mean, 'Name','input');
-    layersAdd = [ inputLayer
-        sequenceFoldingLayer('Name','fold') ];
+    layersAdd = [ inputLayer; sequenceFoldingLayer('Name','fold') ];
     lgraph = addLayers(cnnLayers, layersAdd);
 
     switch trainingParam.CNN_network{end}
@@ -504,12 +491,9 @@ if trainingParam.assemble_network || ~exist([path '/' name '.mat'],"file")
         case {'inceptionresnetv2','inceptionv3'}, lgraph = connectLayers(lgraph,"fold/out","conv2d_1");
     end
 
-    % Ajoute l'Unfold + LSTM existant (sans sa 1ère couche sequenceInputLayer)
+    % Unfold + LSTM (sans sa 1ère couche sequenceInputLayer)
     lstmLayers = netLSTM.Layers; lstmLayers(1) = [];
-    layersTail = [
-        sequenceUnfoldingLayer('Name','unfold')
-        flattenLayer('Name','flatten')
-        lstmLayers];
+    layersTail = [sequenceUnfoldingLayer('Name','unfold'); flattenLayer('Name','flatten'); lstmLayers];
     lgraph = addLayers(lgraph,layersTail);
 
     lgraph = connectLayers(lgraph, layerName, "unfold/in");
@@ -523,7 +507,6 @@ else
 end
 
 %end
-
 
 function videoResized = centerCrop(video,inputSize)
 videoResized = imresize(video,inputSize(1:2));
