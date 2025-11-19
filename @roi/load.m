@@ -146,7 +146,9 @@ kList    = zeros(1,N);        % k réel après normalisation
 sizes    = zeros(N,4);        % tailles normalisées [H W k T] par dataset
 blocks   = cell(1,N);         % blocs normalisés [H W k T]
 attrs    = repmat(struct('intensity',[], 'rgb',[], 'indexed',[], ...
-    'alpha',[], 'contour',[], 'width',[], 'k',[]), 1, N);
+    'alpha',[], 'contour',[], 'width',[], 'k',[], ...
+    'selectedchannel',[]), 1, N);
+
 hasBadIdx = false;
 
 for i = 1:N
@@ -209,6 +211,8 @@ for i = 1:N
     attrs(i).width     = readAttOrDefault(h5File,p,'display_contourwidth', 1);
     attrs(i).frame     = readAttOrDefault(h5File,p,'display_frame', 1);
     attrs(i).binning     = readAttOrDefault(h5File,p,'display_binning', 1);
+    aa=readAttOrDefault(h5File,p,'display_selectedchannel',1)
+    attrs(i).selectedchannel = readAttOrDefault(h5File,p,'display_selectedchannel',1);
 end
 
 % --- Ordonner : d'abord ceux qui ont un premier index connu, puis les autres (stable) ---
@@ -478,6 +482,8 @@ att.contour    = readAttOrDefault(h5File, pTarget, 'display_contour',    uint8(0
 att.width      = readAttOrDefault(h5File, pTarget, 'display_contourwidth', 1);
 att.frame      = readAttOrDefault(h5File, pTarget, 'display_frame',      1);
 att.binning    = readAttOrDefault(h5File, pTarget, 'display_binning',    1);
+att.selectedchannel = readAttOrDefault(h5File, pTarget, 'display_selectedchannel', 1);
+
 
 % --- Mettre à jour uniquement ce qu'il faut dans le display
 % On part de disp0 si fournit, sinon on crée un squelette minimal
@@ -568,6 +574,8 @@ end
 % selectedchannel: on ne touche pas si déjà défini, sinon 1 par défaut
 if ~isfield(dispStruct,'selectedchannel') || isempty(dispStruct.selectedchannel)
     dispStruct.selectedchannel = ones(1, Nlog);
+    dispStruct.selectedchannel(logicalId) = double(att.selectedchannel(1));
+
 end
 if ~isfield(dispStruct,'log') || isempty(dispStruct.log)
     dispStruct.log = zeros(1, Nlog);
@@ -644,7 +652,12 @@ for i = 1:N
 
     % selectedchannel doit refléter le canal actif (par défaut 1)
     % -> ne surtout pas copier 'width'
-    selectedchannel(i) = 1;
+    if ~isempty(attrs(i).selectedchannel)
+        selectedchannel(i) = double(attrs(i).selectedchannel(1));
+    else
+        selectedchannel(i) = 1;  % fallback anciens fichiers
+    end
+
 
     % rgb est stocké par CANAL LOGIQUE => N x 3
     rgbSub(i,:) = double(attrs(i).rgb);
