@@ -211,7 +211,7 @@ for i = 1:N
     attrs(i).width     = readAttOrDefault(h5File,p,'display_contourwidth', 1);
     attrs(i).frame     = readAttOrDefault(h5File,p,'display_frame', 1);
     attrs(i).binning     = readAttOrDefault(h5File,p,'display_binning', 1);
-    aa=readAttOrDefault(h5File,p,'display_selectedchannel',1)
+   % aa=readAttOrDefault(h5File,p,'display_selectedchannel',1)
     attrs(i).selectedchannel = readAttOrDefault(h5File,p,'display_selectedchannel',1);
 end
 

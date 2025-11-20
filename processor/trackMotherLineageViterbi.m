@@ -1,15 +1,36 @@
 function [paramout,dataout,imageout] = trackMotherLineageViterbi(param, roiobj, frames)
-%TRACKMOTHERLINEAGEVITERBI Suivi Viterbi d'une lignée de cellule mère dans un piège.
+%TRACKMOTHERLINEAGEVITERBI Suivi Viterbi d'une lignée mère + bud dans un piège.
 %
 % SYNOPSIS
 %   [paramout, dataout, imageout] = trackMotherLineageViterbi(param, roiobj, frames)
 %
 % DESCRIPTION
-%   Suivi d'une cellule "mère" unique dans un piège microfluidique, en supposant
-%   qu'il y a une seule cellule mère dans la cavité et des buds autour.
-%   L'observation privilégie la cellule la plus proche du centre (et
-%   éventuellement la plus grosse), et le Viterbi impose la continuité
-%   temporelle (faible mouvement, faible variation d'aire, pénalité de switch).
+%   Suivi simultané d'une cellule "mère" et, éventuellement, d'un unique
+%   bourgeon ("bud") dans un piège microfluidique.
+%   À chaque frame t, on cherche l'état optimal (M_t, B_t) où :
+%       - M_t est l'indice de la cellule mère (ou 0 si aucune mère suivie),
+%       - B_t est l'indice du bud (ou 0 si pas de bud),
+%       - au plus un bud à la fois et B_t ~= M_t si B_t>0.
+%
+%   L'observation privilégie :
+%       - pour la mère : la cellule la plus proche du centre et (optionnellement) la plus grosse,
+%       - pour le bud  : une cellule petite et proche de la mère.
+%   Le Viterbi impose une continuité temporelle (faible mouvement, faible variation d'aire,
+%   pénalité pour apparition/disparition et pour changements trop brutaux).
+%
+%   SORTIE CANAUX (sur roiobj.image) :
+%     Soit baseName = param.outputChannelName :
+%
+%       1) Channel baseName (H×W×1×Tfull, uint8) :
+%          - 0   : fond
+%          - 255 : mère
+%          - 2–254 : bud, intensité ∝ aire du bud (normalisée sur toutes les frames traitées)
+%
+%       2) Channel [baseName '_Bconf'] (H×W×1×Tfull, uint8) :
+%          - 0   : pas de bud / confiance nulle
+%          - 1–255 : confiance Viterbi sur le bud, par pixel bud (constante à l'intérieur du bud)
+%          La confiance est basée sur la marge entre l'état (M,B) optimal et
+%          le meilleur état concurrent, passée dans une sigmoïde.
 %
 % INPUTS
 %   param   : struct de paramètres (géré par le GUI) contenant au minimum :
@@ -19,12 +40,14 @@ function [paramout,dataout,imageout] = trackMotherLineageViterbi(param, roiobj, 
 %       - param.mode : {'mother_trap', ...}
 %           Mode de suivi. Pour l'instant seul 'mother_trap' est supporté.
 %       - param.outputChannelName : char
-%           Nom du canal de sortie qui contiendra le masque logique de la lignée mère.
+%           Nom de base des canaux de sortie :
+%             * baseName          : mask mère+bud encodé taille (0, 2–254, 255)
+%             * [baseName '_Bconf']: map de confiance bud.
 %
 %   roiobj  : objet ROI, supposé contenir au moins :
-%       - roiobj.image : tableau [H x W x C x T]
+%       - roiobj.image : tableau [H x W x C x Tfull]
 %           Empilement d'images ou de masques, dont un canal avec les labels d'instance.
-%       - roiobj.data  : données associées (non modifiées ici sauf si besoin futur).
+%       - roiobj.data  : données associées (non modifiées ici).
 %
 %   frames  : (optionnel) vecteur d'indices de frames à traiter (1-based).
 %             Exemples : [] (toutes les frames), 1:T, 30:35, [10 12 20].
@@ -32,23 +55,29 @@ function [paramout,dataout,imageout] = trackMotherLineageViterbi(param, roiobj, 
 %
 % OUTPUTS
 %   paramout : struct param non modifié (placeholder pour compatibilité process)
-%   dataout  : roiobj.data (passe-plat, pour compatibilité)
-%   imageout : roiobj.image mis à jour avec le canal 'outputChannelName'
-%              contenant la lignée mère (masque uint16 logique).
+%   dataout  : roiobj.data (passe-plat)
+%   imageout : roiobj.image mis à jour avec les deux canaux de sortie.
 %
-% PARAMÈTRES INTERNE / RANGES (à tuner éventuellement)
-%   w_center       : poids de la proximité au centre      (recommandé ~1.0)
-%   w_area         : poids de l'aire de l'objet           (0 → ignore la taille,
-%                                                          0.5–2 → donne du poids à la mère)
-%   lambda_jump    : pénalité par pixel de déplacement    (0.01–0.5 typiquement)
-%   lambda_area    : pénalité sur variation d'aire        (0.001–0.1 selon quality segmentation)
-%   lambda_switch  : pénalité de switch d'ID entre frames (1–10, plus grand = trajectoire plus rigide)
+% PARAMÈTRES INTERNES / RANGES (à tuner éventuellement)
+%   wM_center      : poids de la proximité au centre pour la mère (~1.0)
+%   wM_area        : poids de l'aire de la mère       (0–2)
+%   wB_dist        : poids de la proximité mère–bud   (0.5–2)
+%   wB_small       : poids pour favoriser un bud plus petit que la mère (0.5–2)
+%
+%   lambdaM_jump   : pénalité par pixel de déplacement mère     (0.01–0.5)
+%   lambdaM_area   : pénalité sur variation d'aire mère         (0.001–0.1)
+%   lambdaM_appear : pénalité apparition de mère                (0.5–5)
+%   lambdaM_disapp : pénalité disparition de mère               (0.5–5)
+%
+%   lambdaB_jump   : pénalité par pixel de déplacement bud      (0.01–0.5)
+%   lambdaB_area   : pénalité sur variation d'aire bud          (0.001–0.1)
+%   lambdaB_appear : pénalité apparition bud                    (0.5–5)
+%   lambdaB_disapp : pénalité disparition bud                   (0.5–5)
 %
 % DEBUG
 %   La fonction affiche dans la console :
-%   - la trajectoire finale frame par frame (label et état),
-%   - les SWITCHs entre labels successifs,
-%   - les corrections où Viterbi modifie le "best match" greedy local.
+%   - la trajectoire finale frame par frame : M_t (label) et B_t (label),
+%   - les SWITCHs de mère et de bud.
 
 %% ---- GUI configuration / initialisation param par défaut ----
 if nargin == 0
@@ -65,8 +94,7 @@ if nargin == 0
     paramout.tip = { ...
         'Sélectionnez le canal contenant les labels d''instance (ex: CellposeSAM).', ...
         'Mode de suivi (actuellement "mother_trap" uniquement).', ...
-        'Nom du canal de sortie contenant la lignée mère (mask logique).'};
-
+        'Nom de base des canaux de sortie : baseName (mask mère+bud), baseName_Bconf (confiance bud).'};
     dataout  = [];
     imageout = [];
     return;
@@ -115,187 +143,427 @@ for f = 1:nF
     N(f) = size(feats(f).centroid,1);
 end
 
-% Ici on suppose qu'il y a toujours au moins une cellule par frame.
-if any(N == 0)
-    warning('[trackMotherLineageViterbi] Au moins une frame sans cellule détectée (N(f)==0). Viterbi simple sans état null non adapté. Skipping...');
-    return;
-end
+% On autorise N(f)==0 : alors seul l'état (0,0) sera possible sur cette frame.
 
-%% ---- Paramètres Viterbi (mono-occupant, "mère au centre") ----
+%% ---- Paramètres Viterbi (mère + bud) ----
 mode = param.mode{end}; %#ok<NASGU>
 mode = lower(mode);     %#ok<NASGU>
 
-% Poids observation
-w_center = 1.0;  % importance d'être proche du centre
-w_area   = 0.0;  % importance de l'aire (0 = ignore la taille)
-w_bias   = 1e-6; % petit biais pour éviter log(0)
+% Poids observation mère
+wM_center   = 1.0;   % importance d'être proche du centre
+wM_area     = 0.5;   % importance d'être grosse
 
-% Pénalités de transition
-lambda_jump   = 0.05;   % pénalité par pixel de déplacement
-lambda_area   = 0.01;   % pénalité par variation d'aire
-lambda_switch = 1.5;    % pénalité pour changer de candidat (switch d'ID)
+% Poids observation bud
+wB_dist     = 1.0;   % bud proche de la mère
+wB_small    = 1.0;   % bud plus petit que la mère
+
+% Pénalités de transition mère
+lambdaM_jump   = 0.05;   % pénalité par pixel de déplacement
+lambdaM_area   = 0.01;   % pénalité par variation d'aire
+lambdaM_appear = 2.0;    % coût d'apparition d'une mère
+lambdaM_disapp = 2.0;    % coût de disparition de la mère
+
+% Pénalités de transition bud
+lambdaB_jump   = 0.05;   % pénalité par pixel de déplacement
+lambdaB_area   = 0.01;   % pénalité par variation d'aire
+lambdaB_appear = 1.0;    % coût d'apparition d'un bud
+lambdaB_disapp = 1.0;    % coût de disparition du bud
+
+% Paramètre de "température" pour la sigmoïde de confiance
+tempConf = 0.5;
 
 % Géométrie du piège
 center  = [W/2, H/2];
-maxDist = hypot(center(1), center(2));  % distance max pour normalisation
+maxDistCenter = hypot(center(1), center(2));
+maxDistMB     = maxDistCenter;   % même ordre de grandeur
 
-%% ---- Construction des log-scores d'observation logB{f}(k) ----
-logB           = cell(nF,1);
-bestIdxGreedy  = nan(nF,1);
-bestLabelGreedy = nan(nF,1);
+%% ---- Construction des états (M,B) par frame ----
+states = struct('mIdx',{},'bIdx',{});
+K = zeros(nF,1);  % nombre d'états par frame
 
 for f = 1:nF
+    mList = [];
+    bList = [];
 
-    centroids = feats(f).centroid;  % [N x 2]
-    areas     = feats(f).area;      % [N x 1]
+    Nf = N(f);
 
-    % distance au centre
-    dx = centroids(:,1) - center(1);
-    dy = centroids(:,2) - center(2);
-    dist = hypot(dx, dy);          % 0 au centre, maxDist aux coins
-
-    % 1) score de centrage normalisé [0..1]
-    centerScore = 1 - dist ./ maxDist;   % 1 = pile au centre, 0 = très loin
-    centerScore = max(centerScore, 0);   % clamp au cas où
-
-    % 2) score de taille normalisé [0..1]
-    if any(areas)
-        areaNorm = areas ./ max(areas);  % 1 = plus grosse cellule de la frame
-    else
-        areaNorm = zeros(size(areas));
+    % États avec mère (M>0), bud optionnel (B>=0, B~=M si B>0)
+    for m = 1:Nf
+        % mère seule
+        mList(end+1,1) = m; %#ok<AGROW>
+        bList(end+1,1) = 0;
+        % mère + bud
+        for b = 1:Nf
+            if b == m, continue; end
+            mList(end+1,1) = m; %#ok<AGROW>
+            bList(end+1,1) = b;
+        end
     end
 
-    % 3) combinaison pondérée
-    B = w_center * centerScore + w_area * areaNorm + w_bias;
+    % état (0,0) : aucune cellule suivie
+    mList(end+1,1) = 0;
+    bList(end+1,1) = 0;
 
-    % Greedy best match (pour debug)
-    [~, bestIdx] = max(B);
-    bestIdxGreedy(f)   = bestIdx;
-    bestLabelGreedy(f) = feats(f).label(bestIdx);
-
-    % log-observation
-    logB{f} = log(B);
+    states(f).mIdx = mList;
+    states(f).bIdx = bList;
+    K(f)           = numel(mList);
 end
 
-%% ---- Fonction de coût de transition entre états réels ----
-    function val = transLogReal(iState, jState, fidx)
-        % iState in 1..N(fidx), jState in 1..N(fidx+1)
-        ci = feats(fidx).centroid(iState,:);  % [x,y]
-        cj = feats(fidx+1).centroid(jState,:);
-        ai = feats(fidx).area(iState);
-        aj = feats(fidx+1).area(jState);
+%% ---- Construction des scores d'observation logB{f}(k) ----
+logB = cell(nF,1);
 
-        % distance en pixels
-        dist_ij = hypot(ci(1)-cj(1), ci(2)-cj(2));
+for f = 1:nF
+    Nf    = N(f);
+    ctr   = feats(f).centroid;
+    area  = feats(f).area;
+    Kf    = K(f);
 
-        % coût de base : on pénalise les grands déplacements et changements brusques d'aire
-        base = -lambda_jump * dist_ij - lambda_area * abs(ai - aj);
+    logBf = zeros(1,Kf);
 
-        % pénalité de switch : si on change de candidat entre fidx et fidx+1
-        if iState ~= jState
-            base = base - lambda_switch;
+    % Si aucune cellule, tous les états sont (0,0), logBf sera juste 0
+    if Nf > 0
+        dxC = ctr(:,1) - center(1);
+        dyC = ctr(:,2) - center(2);
+        distC = hypot(dxC, dyC);
+
+        if any(area)
+            areaNorm = area ./ max(area);
+        else
+            areaNorm = zeros(size(area));
         end
-
-        val = base;
+        centerScore = 1 - distC ./ maxDistCenter;
+        centerScore = max(centerScore, 0);
+    else
+        areaNorm    = [];
+        centerScore = [];
     end
 
-%% ---- Viterbi dynamique (sans état null) ----
-delta = cell(nF,1);  % delta{f}(j) = meilleur log-score en arrivant à l'état j à f
-psi   = cell(nF,1);  % psi{f}(j)   = index de l'état précédent qui donne ce max
+    for kState = 1:Kf
+        m = states(f).mIdx(kState);
+        b = states(f).bIdx(kState);
 
-% Initialisation f=1
-delta{1} = logB{1};              % [1 x N(1)]
-psi{1}   = zeros(1, N(1));       % 0 = pas de précédent
+        obsM = 0;
+        obsB = 0;
 
-% DP
+        % Mère
+        if m > 0
+            obsM = wM_center * centerScore(m) + ...
+                   wM_area   * areaNorm(m);
+        else
+            % pas de mère : état moins favorable que "bonne" mère
+            obsM = -2.0;
+        end
+
+        % Bud
+        if b > 0 && m > 0 && Nf > 0
+            dxMB = ctr(b,1) - ctr(m,1);
+            dyMB = ctr(b,2) - ctr(m,2);
+            distMB = hypot(dxMB, dyMB);
+            distScore = 1 - distMB ./ maxDistMB;
+            distScore = max(distScore, 0);
+
+            budRelArea = area(b) ./ max(area(m), eps);
+            budRelArea = min(budRelArea, 2);
+            smallScore = 1 - budRelArea; % 1 si bud << mère
+
+            obsB = wB_dist  * distScore + ...
+                   wB_small * smallScore;
+        elseif b > 0 && m == 0
+            % bud sans mère : incohérent
+            obsB = -10;
+        else
+            obsB = 0;   % pas de bud
+        end
+
+        logBf(kState) = obsM + obsB;
+    end
+
+    logB{f} = logBf;
+end
+
+%% ---- Fonction de coût de transition entre états (M,B) ----
+    function val = transLogState(kPrev, kCurr, fidx)
+        mPrev = states(fidx).mIdx(kPrev);
+        bPrev = states(fidx).bIdx(kPrev);
+        mCurr = states(fidx+1).mIdx(kCurr);
+        bCurr = states(fidx+1).bIdx(kCurr);
+
+        ctrPrev  = feats(fidx).centroid;
+        ctrCurr  = feats(fidx+1).centroid;
+        areaPrev = feats(fidx).area;
+        areaCurr = feats(fidx+1).area;
+
+        costM = 0;
+        costB = 0;
+
+        % Mère
+        if mPrev > 0 && mCurr > 0 && ~isempty(ctrPrev) && ~isempty(ctrCurr)
+            dxM = ctrPrev(mPrev,1) - ctrCurr(mCurr,1);
+            dyM = ctrPrev(mPrev,2) - ctrCurr(mCurr,2);
+            distM = hypot(dxM, dyM);
+            dAreaM = abs(areaPrev(mPrev) - areaCurr(mCurr));
+            costM = -lambdaM_jump * distM - lambdaM_area * dAreaM;
+        elseif mPrev > 0 && mCurr == 0
+            costM = -lambdaM_disapp;
+        elseif mPrev == 0 && mCurr > 0
+            costM = -lambdaM_appear;
+        else
+            costM = 0;
+        end
+
+        % Bud
+        if bPrev > 0 && bCurr > 0 && ~isempty(ctrPrev) && ~isempty(ctrCurr)
+            dxB = ctrPrev(bPrev,1) - ctrCurr(bCurr,1);
+            dyB = ctrPrev(bPrev,2) - ctrCurr(bCurr,2);
+            distB = hypot(dxB, dyB);
+            dAreaB = abs(areaPrev(bPrev) - areaCurr(bCurr));
+            costB = -lambdaB_jump * distB - lambdaB_area * dAreaB;
+        elseif bPrev > 0 && bCurr == 0
+            costB = -lambdaB_disapp;
+        elseif bPrev == 0 && bCurr > 0
+            costB = -lambdaB_appear;
+        else
+            costB = 0;
+        end
+
+        val = costM + costB;
+    end
+
+%% ---- Viterbi dynamique sur les états (M,B) ----
+delta = cell(nF,1);
+psi   = cell(nF,1);
+
+delta{1} = logB{1};
+psi{1}   = zeros(1, K(1));
+
 for f = 2:nF
-    Kprev = N(f-1);
-    Kcurr = N(f);
+    Kprev = K(f-1);
+    Kcurr = K(f);
 
     d  = -Inf(1, Kcurr);
     bp = zeros(1, Kcurr);
 
-    for j = 1:Kcurr
+    for kCurr = 1:Kcurr
         best = -Inf;
         arg  = 0;
-        for i = 1:Kprev
-            sc = delta{f-1}(i) + transLogReal(i,j,f-1);
+        for kPrev = 1:Kprev
+            sc = delta{f-1}(kPrev) + transLogState(kPrev, kCurr, f-1);
             if sc > best
                 best = sc;
-                arg  = i;
+                arg  = kPrev;
             end
         end
-        d(j)  = best + logB{f}(j);
-        bp(j) = arg;
+        d(kCurr)  = best + logB{f}(kCurr);
+        bp(kCurr) = arg;
     end
 
     delta{f} = d;
     psi{f}   = bp;
 end
 
-% Backtracking
-main_id = nan(nF,1);  % index candidat (par frame)
-[~, k] = max(delta{nF});   % état final optimal à la dernière frame
-main_id(nF) = k;
+statePath = nan(nF,1);
+[~, kBest] = max(delta{nF});
+statePath(nF) = kBest;
 
 for f = nF:-1:2
-    kPrev = psi{f}(k);
-    main_id(f-1) = kPrev;
-    k = kPrev;
+    kPrev = psi{f}(kBest);
+    statePath(f-1) = kPrev;
+    kBest = kPrev;
 end
 
-%% ---- Readout de tracking frame par frame (debug) ----
-fprintf('[trackMotherLineageViterbi] Viterbi path sur %d frames:\n', nF);
+%% ---- Extraction des chemins mère/bud et readout debug ----
+fprintf('[trackMotherLineageViterbi] Viterbi path (M,B) sur %d frames:\n', nF);
+
+mPath = zeros(nF,1);
+bPath = zeros(nF,1);
+
 for f = 1:nF
-    idx  = main_id(f);
-    lab  = feats(f).label(idx);
+    k     = statePath(f);
+    mIdx  = states(f).mIdx(k);
+    bIdx  = states(f).bIdx(k);
+    mPath(f) = mIdx;
+    bPath(f) = bIdx;
+
     tReal = frameIdx(f);
+
+    if mIdx > 0 && ~isempty(feats(f).label)
+        mLab = feats(f).label(mIdx);
+    else
+        mLab = 0;
+    end
+
+    if bIdx > 0 && ~isempty(feats(f).label)
+        bLab = feats(f).label(bIdx);
+    else
+        bLab = 0;
+    end
 
     if f == 1
-        fprintf('  Frame %3d: START label=%d (state=%d)\n', tReal, lab, idx);
+        fprintf('  Frame %3d: START M=%d (idx=%d), B=%d (idx=%d)\n', ...
+            tReal, mLab, mIdx, bLab, bIdx);
     else
-        prevIdx = main_id(f-1);
-        prevLab = feats(f-1).label(prevIdx);
+        prevMIdx = mPath(f-1);
+        prevBIdx = bPath(f-1);
+        prevMLab = 0;
+        prevBLab = 0;
+        if prevMIdx > 0 && ~isempty(feats(f-1).label), prevMLab = feats(f-1).label(prevMIdx); end
+        if prevBIdx > 0 && ~isempty(feats(f-1).label), prevBLab = feats(f-1).label(prevBIdx); end
 
-        if lab ~= prevLab
-            fprintf('  Frame %3d: SWITCH label %d (state=%d) -> %d (state=%d)\n', ...
-                tReal, prevLab, prevIdx, lab, idx);
-        else
-            fprintf('  Frame %3d: keep   label %d (state=%d)\n', ...
-                tReal, lab, idx);
+        msg = sprintf('  Frame %3d: M=%d (idx=%d), B=%d (idx=%d)', ...
+                      tReal, mLab, mIdx, bLab, bIdx);
+
+        if mLab ~= prevMLab
+            msg = [msg, '  [M-SWITCH]']; %#ok<AGROW>
         end
-    end
+        if bLab ~= prevBLab
+            msg = [msg, '  [B-SWITCH]']; %#ok<AGROW>
+        end
 
-    % Comparaison greedy vs Viterbi
-    gIdx  = bestIdxGreedy(f);
-    gLab  = bestLabelGreedy(f);
-    if gIdx ~= idx
-        fprintf('              (Viterbi override) greedy state=%d (label=%d) -> state=%d (label=%d)\n', ...
-            gIdx, gLab, idx, lab);
+        fprintf('%s\n', msg);
     end
 end
 
-%% ---- Construction du masque de lignée mère ----
-motherMask = uint16(zeros(H,W,1,nF));
+%% ---- Confiance bud (option B : marge vs meilleur compétiteur, sigmoïde) ----
+budConf = zeros(nF,1);
 
 for f = 1:nF
-    idx   = main_id(f);
-    lab   = feats(f).label(idx);
-    tReal = frameIdx(f);
+    bIdx = bPath(f);
+    if bIdx <= 0
+        budConf(f) = 0;
+        continue;
+    end
 
-    frm = maskSeq(:,:,1,tReal);      % labels de la frame réelle
-    motherMask(:,:,1,f) = uint16(frm == lab);
+    d = delta{f};
+    if isempty(d) || any(isinf(d))
+        budConf(f) = 0;
+        continue;
+    end
+
+    kBest = statePath(f);
+    dBest = d(kBest);
+
+    % États compétiteurs : tous sauf ceux avec même bud (y compris B=0)
+    competitors = find(states(f).bIdx ~= bIdx);
+    if isempty(competitors)
+        dComp = min(d);  % aucun concurrent → confiance forte
+    else
+        dComp = max(d(competitors));
+    end
+
+    margin = dBest - dComp;
+    conf   = 1 ./ (1 + exp(-margin / tempConf));  % sigmoïde
+    conf   = max(min(conf,1), 0);
+
+    budConf(f) = conf;
+end
+
+%% ---- Normalisation des tailles pour encoder l'intensité du bud (2–254) ----
+allAreas = [];
+for f = 1:nF
+    if ~isempty(feats(f).area)
+        allAreas = [allAreas; feats(f).area(:)]; %#ok<AGROW>
+    end
+end
+allAreas = allAreas(allAreas > 0);
+
+if isempty(allAreas)
+    minA = 1;
+    maxA = 1;
+else
+    minA = min(allAreas);
+    maxA = max(allAreas);
+    if maxA == minA
+        maxA = minA + 1;
+    end
+end
+
+%% ---- Construction des deux sorties : MBmask et BconfMap ----
+motherBudMask = zeros(H,W,1,nF,'uint8');   % 0=fond, 255=mère, 2–254=bud (taille)
+budConfMap    = zeros(H,W,1,nF,'uint8');   % 0=fond, 1–255=confiance bud
+
+for f = 1:nF
+    tReal = frameIdx(f);
+    frm   = maskSeq(:,:,1,tReal);  % labels image
+
+    mIdx = mPath(f);
+    bIdx = bPath(f);
+
+    planeMask = zeros(H,W,'uint8');
+    planeConf = zeros(H,W,'uint8');
+
+    % Mère = 255 (fixe)
+    if mIdx > 0 && ~isempty(feats(f).label)
+        mLab = feats(f).label(mIdx);
+        planeMask(frm == mLab) = uint8(255);
+    end
+
+    % Bud = 2–254 selon taille, et confiance dans planeConf
+    if bIdx > 0 && ~isempty(feats(f).label) && ~isempty(feats(f).area)
+        bLab  = feats(f).label(bIdx);
+        aBud  = feats(f).area(bIdx);
+        x = (aBud - minA) / (maxA - minA);
+        x = max(min(x,1),0);
+        budVal = 2 + round(x * (254-2));  % [2..254]
+        budVal = uint8(budVal);
+
+        maskB = (frm == bLab);
+        planeMask(maskB) = budVal;
+
+        % Confiance bud (0..1 → 0..255) sur les pixels du bud
+        c = budConf(f);
+        cVal = uint8(round(max(min(c,1),0) * 255));
+        planeConf(maskB) = cVal;
+    end
+
+    motherBudMask(:,:,1,f) = planeMask;
+    budConfMap   (:,:,1,f) = planeConf;
 end
 
 %% ---- Sauvegarde dans roiobj.image ----
-outName = paramout.outputChannelName;
-pix = roiobj.findChannelID(outName);
+baseName   = paramout.outputChannelName;
+cellName   = [baseName '_cell'];
+confName   = [baseName '_conf'];
 
-if ~isempty(pix)
-    disp('[trackMotherLineageViterbi] Masks exist already, overwriting selected frames.');
-    roiobj.image(:,:,pix,frameIdx) = motherMask;
+% Dimensions complètes
+[Hfull,Wfull,~,Tfull] = size(roiobj.image);
+
+% Sanity check spatial
+if Hfull ~= H || Wfull ~= W
+    error('trackMotherLineageViterbi:SizeMismatch', ...
+        'Taille spatiale de roiobj.image [%d %d] différente de maskSeq [%d %d].', ...
+        Hfull, Wfull, H, W);
+end
+
+% --- 1) Canal mask mère+bud encodé taille ---
+pixMask = roiobj.findChannelID(cellName);
+if ~isempty(pixMask)
+    disp('[trackMotherLineageViterbi] Mask mère+bud existe déjà, mise à jour des frames sélectionnées.');
+    for k = 1:nF
+        roiobj.image(:,:,pixMask, frameIdx(k)) = motherBudMask(:,:,1,k);
+    end
 else
-    roiobj.addChannel(motherMask, outName, [1 1 1], [0 0 0]); % blanc, fond noir
+    motherBudMaskFull = zeros(Hfull,Wfull,1,Tfull,'uint8');
+    nFill = min(nF, numel(frameIdx));
+    for k = 1:nFill
+        motherBudMaskFull(:,:,1, frameIdx(k)) = motherBudMask(:,:,1,k);
+    end
+    roiobj.addChannel(motherBudMaskFull, cellName, [1 1 1], [0 0 0]);
+end
+
+% --- 2) Canal confiance bud ---
+pixConf = roiobj.findChannelID(confName);
+if ~isempty(pixConf)
+    disp('[trackMotherLineageViterbi] Canal de confiance bud existe déjà, mise à jour des frames sélectionnées.');
+    for k = 1:nF
+        roiobj.image(:,:,pixConf, frameIdx(k)) = budConfMap(:,:,1,k);
+    end
+else
+    budConfFull = zeros(Hfull,Wfull,1,Tfull,'uint8');
+    nFill = min(nF, numel(frameIdx));
+    for k = 1:nFill
+        budConfFull(:,:,1, frameIdx(k)) = budConfMap(:,:,1,k);
+    end
+    roiobj.addChannel(budConfFull, confName, [1 1 1], [0 0 0]);
 end
 
 dataout  = roiobj.data;
