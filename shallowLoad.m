@@ -100,11 +100,14 @@ disp('');
 
 %% Chargement des classifieurs
 
+%% Chargement des classifieurs
+
 listclassi = dir(fullfile(path, file, 'classification'));
 listclassi = listclassi(~contains({listclassi.name}, {'.', '..'}));
 listclassi = listclassi(arrayfun(@(x) x.isdir, listclassi));
 
 if ~isempty(listclassi)
+    % On trie par numéro à la fin du nom (comme avant)
     arr = zeros(1, numel(listclassi));
     for j = 1:numel(listclassi)
         tmp = regexp(listclassi(j).name, '\d+$', 'match');
@@ -113,15 +116,35 @@ if ~isempty(listclassi)
     [~, ix] = sort(arr);
     listclassi = listclassi(ix);
 
+    % On va reconstruire complètement la liste des classifieurs
+    % → on oublie l'éventuel contenu précédent (numérique, vieux format, etc.)
+    shallowObj.processing.classification = [];  % on repart de zéro
+
     for j = 1:numel(listclassi)
         name = listclassi(j).name;
-        str = fullfile(path, file, 'classification', name, [name '_classification.mat']);
+        str  = fullfile(path, file, 'classification', name, [name '_classification.mat'])
+
         if exist(str, 'file') == 2
             [classiObj, msgclassi] = classiLoad(str);
-            shallowObj.processing.classification(j) = classiObj;
+
+            % Sécurisation minimale : on ne garde que les vrais objets 'classi'
+            if isa(classiObj, 'classi')
+                if isempty(shallowObj.processing.classification)
+                    % Premier classifieur : on initialise directement avec l'objet
+                    shallowObj.processing.classification = classiObj;
+                else
+                    % Suivants : on empile
+                    shallowObj.processing.classification(end+1) = classiObj;
+                end
+            else
+                warning('shallowLoad:InvalidClassi', ...
+                    'Le fichier "%s" ne contient pas un objet de type ''classi'' (type:%s). Ignoré.', ...
+                    str, class(classiObj));
+            end
         end
     end
 end
+
 
 %% Chargement des processeurs
 
