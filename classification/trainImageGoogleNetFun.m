@@ -8,91 +8,228 @@ flagCNN=[];
 %---------------- parameters setting
 if nargin==2 % basic parameter initialization
         
-        tip={'Choose the training method',...
-            'Choose the CNN',...
-            'Choose the size of the mini batch; Higher values require more memory and are prone to errors',...
-            'Enter the number of epochs',...
-            'Enter the initial learning rate',...
-            'Enter the learning rate drop factor',...
-            'Choose whether and how training and validation data should be shuffled during training',...
-            'Enter fraction of the data to be used for training vs validation during training',...
-            'Enter the magnitude of translation for data augmentation (in pixels)',...
-            'Enter the magnitude of rotation for data augmentation (in degrees)',...
-            'Specify value for L2 regularization',...
-            'Check to use a dropout layer',...
-            'Value for dropout regularization',...
-            'Choose execution environment',...
-            'Select initial version of network to start training with; Default: ImageNet'};
-        
-        classif.trainingParam=struct( ...
-            'CNN_training_method',{{'adam','sgdm','adam'}},...
-            'CNN_network',{{'googlenet','inceptionresnetv2','inceptionv3','resnet18','resnet50','resnet101','nasnetlarge','inceptionresnetv2','efficientnetb0','googlenet'}},...
-            'CNN_mini_batch_size',8,...
-            'CNN_max_epochs',6,...
-            'CNN_initial_learning_rate',0.0003,...
-            'CNN_learn_rate_drop_factor',0.9,...
-            'CNN_data_shuffling',{{'once','every-epoch','never','every-epoch'}},...
-            'CNN_data_splitting_factor',0.7,...
-            'CNN_translation_augmentation',[-5 5],...
-            'CNN_rotation_augmentation',[-20 20],...
-            'CNN_l2_regularization',0.0001,...
-            'CNN_use_dropout',true,...                 % <---- NEW
-            'CNN_dropout',0.5,...                      % <---- NEW
-            'execution_environment',{{'auto','parallel','cpu','gpu','multi-gpu','auto'}},...
-            'transfer_learning',{{'ImageNet','ImageNet'}},...
-            'tip',{tip} ...
+    tip = { ...
+        'Choose the training method', ...
+        'Choose the CNN', ...
+        'Choose the size of the mini batch; Higher values require more memory and are prone to errors', ...
+        'Enter the number of epochs', ...
+        'Enter the initial learning rate', ...
+        'Enter the learning rate drop factor', ...
+        'Choose whether and how training and validation data should be shuffled during training', ...
+        'Enter fraction of the data to be used for training vs validation during training', ...
+        'Enter the magnitude of translation for data augmentation (in pixels)', ...
+        'Enter the magnitude of rotation for data augmentation (in degrees)', ...
+        'Specify value for L2 regularization', ...
+        'Check to use a dropout layer', ...
+        'Value for dropout regularization', ...
+        'Choose execution environment', ...
+        'Select initial version of network to start training with; Default: ImageNet', ...
+        'Choose storage backend for CNN training data (''tiff'' or ''hdf5'')', ...
+        'Range of random scale factor for CNN augmentation (e.g. [0.9 1.1])', ...
+        'Enable random flips (left/right & up/down) during CNN augmentation', ...
+        'Crop-in scale range for CNN augmentation (e.g. [0.8 1.0])', ...
+        'Contrast multiplier range for CNN augmentation (e.g. [0.85 1.15])', ...
+        'Maximum hue jitter (0–0.5, small values recommended)', ...
+        'Std-dev of Gaussian noise for CNN augmentation (set 0 to disable)' ...
+        };
+
+    classif.trainingParam = struct( ...
+        'CNN_training_method',{{'adam','sgdm','adam'}}, ...
+        'CNN_network',{{'googlenet','inceptionresnetv2','inceptionv3','resnet18','resnet50','resnet101','nasnetlarge','inceptionresnetv2','efficientnetb0','googlenet'}}, ...
+        'CNN_mini_batch_size',8, ...
+        'CNN_max_epochs',6, ...
+        'CNN_initial_learning_rate',0.0003, ...
+        'CNN_learn_rate_drop_factor',0.9, ...
+        'CNN_data_shuffling',{{'once','every-epoch','never','every-epoch'}}, ...
+        'CNN_data_splitting_factor',0.7, ...
+        'CNN_translation_augmentation',[-5 5], ...
+        'CNN_rotation_augmentation',[-20 20], ...
+        'CNN_l2_regularization',0.0001, ...
+        'CNN_use_dropout',true, ...          % <---- NEW (déjà présent)
+        'CNN_dropout',0.5, ...               % <---- NEW (déjà présent)
+        'execution_environment',{{'auto','parallel','cpu','gpu','multi-gpu','auto'}}, ...
+        'transfer_learning',{{'ImageNet','ImageNet'}}, ...
+        'CNN_storage_backend','tiff', ...        % 'tiff' (historique) ou 'hdf5'
+        'CNN_rand_scale',[0.9 1.1], ...         % RandScale pour TIFF, approx. crop/zoom
+        'CNN_rand_flip',true, ...               % flips aléatoires (TIFF / éventuellement HDF5)
+        'CNN_crop_scale',[0.8 1.0], ...         % crop-in pour HDF5 datastore
+        'CNN_contrast_range',[0.85 1.15], ...   % contraste mult. pour HDF5
+        'CNN_hue_delta',0.05, ...               % jitter de teinte (HDF5)
+        'CNN_noise_sigma',0.02, ...             % sigma bruit gaussien (HDF5)
+        'tip',{tip} ...
         );
-        return;
+    return;
 
 else
-        trainingParam=classif.trainingParam;
+    trainingParam = classif.trainingParam;
 
-        % Backward compatibility defaults
-        if ~isfield(trainingParam,'CNN_use_dropout'); trainingParam.CNN_use_dropout = true; end
-        if ~isfield(trainingParam,'CNN_dropout');      trainingParam.CNN_dropout     = 0.5;  end
+    % ==== Backward compatibility defaults ====
+    if ~isfield(trainingParam,'CNN_use_dropout');        trainingParam.CNN_use_dropout = true;  end
+    if ~isfield(trainingParam,'CNN_dropout');            trainingParam.CNN_dropout     = 0.5;   end
+    if ~isfield(trainingParam,'CNN_learn_rate_drop_factor')
+        trainingParam.CNN_learn_rate_drop_factor = 0.9;
+    end
+
+    % Nouveaux champs backend / augmentation
+    if ~isfield(trainingParam,'CNN_storage_backend'); trainingParam.CNN_storage_backend = 'tiff'; end
+    if ~isfield(trainingParam,'CNN_rand_scale');      trainingParam.CNN_rand_scale      = [0.9 1.1]; end
+    if ~isfield(trainingParam,'CNN_rand_flip');       trainingParam.CNN_rand_flip       = true;      end
+    if ~isfield(trainingParam,'CNN_crop_scale');      trainingParam.CNN_crop_scale      = [0.8 1.0]; end
+    if ~isfield(trainingParam,'CNN_contrast_range');  trainingParam.CNN_contrast_range  = [0.85 1.15]; end
+    if ~isfield(trainingParam,'CNN_hue_delta');       trainingParam.CNN_hue_delta       = 0.05;      end
+    if ~isfield(trainingParam,'CNN_noise_sigma');     trainingParam.CNN_noise_sigma     = 0.02;      end
+
+    % On réinjecte dans classif (au cas où tu sauvegardes ensuite)
+    classif.trainingParam = trainingParam;
+
+    if numel(trainingParam)==0
+        disp('Could not find training parameters : first launch train with an extra argument to force parameter assignment');
+        return;
+    end
         
-        if numel(trainingParam)==0
-            disp('Could not find training parameters : first launch train with an extra argument to force parameter assignment');
-            return;
-        end
-        
-        if nargin==3  % input network is provided to be used instad of a virgin network 
-            flagCNN=inputnetwork;
-        end
+    if nargin==3  % input network is provided to be used instead of a virgin network 
+        flagCNN = inputnetwork;
+    end
 end
 %-----------------------------------%
 
-% gather all classification images in each class and performs the training and outputs and saves the trained net 
-% load training data 
-blockRNG=1;
+blockRNG = 1;
 
 fprintf('Loading data repository...\n');
 fprintf('------\n');
 
-foldername=[path '/trainingdataset/images'];
-if ~exist(foldername,"dir")
-    disp('Folder does not  exist; first export images for training; quitting !')
-    return;
+% === Choix du backend de données pour le CNN ===
+backend = lower(trainingParam.CNN_storage_backend);
+
+%----------------------------------------------------------------------
+% 1) Création des datastores d'entraînement / validation
+%----------------------------------------------------------------------
+
+switch backend
+    case 'tiff'
+        % ----- BACKEND HISTORIQUE : dossiers de TIFF -----
+
+        foldername = fullfile(path,'trainingdataset','images');
+        if ~exist(foldername,"dir")
+            disp('Folder does not exist; first export images for training; quitting !')
+            return;
+        end
+
+        imds = imageDatastore(foldername, ...
+            'IncludeSubfolders',true, ...
+            'LabelSource','foldernames'); 
+
+        fprintf('------\n');
+
+        % Split TRAIN / VAL
+        [imdsTrain,imdsValidation] = splitEachLabel(imds, ...
+            trainingParam.CNN_data_splitting_factor);
+
+        % Class weights calculés sur TRAIN seulement
+        tbl   = countEachLabel(imdsTrain);      % table Label, Count
+        cnt   = tbl.Count;
+        cnt(cnt==0) = 1;
+        classWeights = 1 ./ cnt;
+        classWeights = classWeights' / mean(classWeights);
+        classWeights(~isfinite(classWeights)) = 1;
+
+        % Photometric jitter via ReadFcn (TRAIN seulement)
+        imdsTrainPhot = imageDatastore(imdsTrain.Files, ...
+            'Labels', imdsTrain.Labels, ...
+            'IncludeSubfolders', false);  % files list already résolus
+        imdsTrainPhot.ReadFcn = @(fn) photometricReadFcn(fn);  % jitter photométrique
+
+        % Géométrie via imageDataAugmenter
+        pixelRange = trainingParam.CNN_translation_augmentation;
+        rotation   = trainingParam.CNN_rotation_augmentation;
+        scaleRange = trainingParam.CNN_rand_scale;
+        if numel(scaleRange) ~= 2
+            scaleRange = [0.9 1.1];
+        end
+
+        imageAugmenter = imageDataAugmenter( ...
+            'RandXReflection',trainingParam.CNN_rand_flip, ...
+            'RandYReflection',trainingParam.CNN_rand_flip, ...
+            'RandScale',scaleRange, ...
+            'RandXTranslation',pixelRange, ...
+            'RandYTranslation',pixelRange, ...
+            'RandRotation',rotation);
+
+        % Ces variables seront utilisées plus loin
+        dataTrain   = imdsTrainPhot;
+        dataValBase = imdsValidation;
+        useHDF5     = false;
+
+    case 'hdf5'
+        % ----- NOUVEAU BACKEND : framebank HDF5 -----
+
+        h5File = fullfile(path,'trainingdataset','framebank.h5');
+        if ~exist(h5File,"file")
+            disp('HDF5 framebank file not found:');
+            disp(h5File);
+            disp('Export HDF5 training data first (frames + labels). Quitting !');
+            return;
+        end
+
+        % Datastore HDF5 custom (nécessite H5ImageDatastore.m dans le path)
+        dsAll = H5ImageDatastore(h5File, ...
+            'MiniBatchSize', trainingParam.CNN_mini_batch_size, ...
+            'TransRange',    trainingParam.CNN_translation_augmentation, ...
+            'RotRange',      trainingParam.CNN_rotation_augmentation, ...
+            'CropScale',     trainingParam.CNN_crop_scale, ...
+            'ContrastRange', trainingParam.CNN_contrast_range, ...
+            'HueDelta',      trainingParam.CNN_hue_delta, ...
+            'NoiseSigma',    trainingParam.CNN_noise_sigma, ...
+            'ClassNames',    classif.classes);
+
+        % Split TRAIN / VAL au niveau des indices
+        nObs = numObservations(dsAll);
+        if nObs == 0
+            disp('No observations found in HDF5 dataset; quitting !');
+            return;
+        end
+
+        idxAll = 1:nObs;
+        idxAll = idxAll(randperm(nObs));
+        Ntrain = floor(trainingParam.CNN_data_splitting_factor * nObs);
+        if Ntrain < 1, Ntrain = max(1, nObs-1); end
+
+        idxTrain = idxAll(1:Ntrain);
+        idxVal   = idxAll(Ntrain+1:end);
+        if isempty(idxVal), idxVal = idxTrain; end   % fallback trivial
+
+        dsTrain = subset(dsAll, idxTrain);
+        dsVal   = subset(dsAll, idxVal);
+
+        % Class weights via /labels du HDF5
+        labsAll = h5read(h5File, '/labels');
+        labsAll = squeeze(labsAll);
+        % On se base sur TRAIN uniquement
+        labsTrain = labsAll(idxTrain);
+        if isnumeric(labsTrain)
+            labsTrain = categorical(labsTrain, 1:numel(classif.classes), classif.classes);
+        else
+            labsTrain = categorical(string(labsTrain), classif.classes);
+        end
+        cnt = countcats(labsTrain);
+        cnt(cnt==0) = 1;
+        classWeights = 1 ./ cnt;
+        classWeights = classWeights' / mean(classWeights);
+        classWeights(~isfinite(classWeights)) = 1;
+
+        dataTrain   = dsTrain;
+        dataValBase = dsVal;
+        useHDF5     = true;
+
+    otherwise
+        error('Unknown CNN_storage_backend: %s (use ''tiff'' or ''hdf5'')', ...
+            trainingParam.CNN_storage_backend);
 end
 
-imds = imageDatastore(foldername, ...
-    'IncludeSubfolders',true, ...
-    'LabelSource','foldernames'); 
-
-fprintf('------\n');
-
-[imdsTrain,imdsValidation] = splitEachLabel(imds,trainingParam.CNN_data_splitting_factor);
-
-% -- Recalcule sur le TRAIN uniquement + clamp
-tbl = countEachLabel(imdsTrain);          % table avec variables Label, Count
-cnt = tbl.Count;
-cnt(cnt==0) = 1;                          % évite division par 0
-classWeights = 1 ./ cnt;
-classWeights = classWeights' / mean(classWeights);
-classWeights(~isfinite(classWeights)) = 1; % garde au propre
-
+%----------------------------------------------------------------------
+% 2) Classes (depuis classif)
+%----------------------------------------------------------------------
 classes = classif.classes;
-
 if numel(classes)==0
     disp('There is no classes defined ; Cannot continue !')
     return;
@@ -101,7 +238,10 @@ end
 fprintf('Loading network...\n');
 fprintf('------\n');
 
-if strcmp(trainingParam.transfer_learning{end},'ImageNet')  % creates a new network
+%----------------------------------------------------------------------
+% 3) Chargement / préparation du backbone CNN
+%----------------------------------------------------------------------
+if strcmp(trainingParam.transfer_learning{end},'ImageNet')  % crée un nouveau réseau
     disp('Generating new network');
     net = eval(trainingParam.CNN_network{end});
 
@@ -134,22 +274,18 @@ else
 end
 
 % ===== Insert/adjust DROPOUT before we swap heads =====
-% We will find the current learnable layer to know where to attach dropout (especially for ResNet).
 [learnableLayer,classLayer] = findLayersToReplace(lgraph);
 
-% Apply dropout only if requested
 if trainingParam.CNN_use_dropout
     netName = lower(trainingParam.CNN_network{end});
     pDrop   = trainingParam.CNN_dropout;
 
     if contains(netName,'googlenet')
-        % GoogLeNet: replace existing dropout just before FC head
         if any(strcmp({lgraph.Layers.Name}, 'pool5-drop_7x7_s1'))
             lgraph = replaceLayer(lgraph,'pool5-drop_7x7_s1', ...
                                   dropoutLayer(pDrop,'Name','pool5-drop_7x7_s1'));
             fprintf('Applied dropout %.2f to GoogLeNet (pool5-drop_7x7_s1).\n', pDrop);
         else
-            % Fallback: insert a custom dropout right before the learnable layer
             if any(strcmp({lgraph.Layers.Name}, 'pool5-7x7_s1'))
                 if ~any(strcmp({lgraph.Layers.Name},'custom_dropout'))
                     lgraph = addLayers(lgraph, dropoutLayer(pDrop,'Name','custom_dropout'));
@@ -162,34 +298,28 @@ if trainingParam.CNN_use_dropout
         end
 
     elseif contains(netName,'resnet18') || contains(netName,'resnet50')
-        % ResNet: insert dropout between avg_pool and learnable layer
         if any(strcmp({lgraph.Layers.Name},'avg_pool'))
             if ~any(strcmp({lgraph.Layers.Name},'custom_dropout'))
                 lgraph = addLayers(lgraph, dropoutLayer(pDrop,'Name','custom_dropout'));
-                % disconnect avg_pool -> learnable
                 if any(strcmp(lgraph.Connections.Source,'avg_pool') & strcmp(lgraph.Connections.Destination,learnableLayer.Name))
                     lgraph = disconnectLayers(lgraph,'avg_pool',learnableLayer.Name);
                 else
-                    % More robust: disconnect any outgoing from avg_pool
                     nextIdx = strcmp(lgraph.Connections.Source,'avg_pool');
                     nextDest = lgraph.Connections.Destination(nextIdx);
                     for ii=1:numel(nextDest)
                         lgraph = disconnectLayers(lgraph,'avg_pool',nextDest{ii});
                     end
                 end
-                % reconnect via dropout
                 lgraph = connectLayers(lgraph,'avg_pool','custom_dropout');
                 lgraph = connectLayers(lgraph,'custom_dropout',learnableLayer.Name);
-                fprintf('Inserted custom dropout %.2f after avg\\_pool (ResNet).\n', pDrop);
+                fprintf('Inserted custom dropout %.2f after avg_pool (ResNet).\n', pDrop);
             end
         else
             warning('avg_pool not found; skipping dropout insertion for ResNet.');
         end
     else
-        % Other nets: try a generic insertion right before learnableLayer
         if ~any(strcmp({lgraph.Layers.Name},'custom_dropout'))
             lgraph = addLayers(lgraph, dropoutLayer(pDrop,'Name','custom_dropout'));
-            % find all sources feeding the learnable layer
             srcMask = strcmp(lgraph.Connections.Destination, learnableLayer.Name);
             srcNames = lgraph.Connections.Source(srcMask);
             for ii=1:numel(srcNames)
@@ -205,11 +335,9 @@ end
 
 % Recompute handles in case graph changed
 [learnableLayer,classLayer] = findLayersToReplace(lgraph);
-sz=size(learnableLayer.Weights);
-numClasses = numel(categories(imdsTrain.Labels));
-cates=categories(imdsTrain.Labels);
 
 % adjust the final layers of the net
+numClasses = numel(classes);
 if isa(learnableLayer,'nnet.cnn.layer.FullyConnectedLayer')
     newLearnableLayer = fullyConnectedLayer(numClasses, ...
         'Name','new_fc', ...
@@ -226,7 +354,7 @@ end
 
 lgraph = replaceLayer(lgraph,learnableLayer.Name,newLearnableLayer);
 
-% Use class weights
+% Use class weights (calculés plus haut selon backend)
 newClassLayer = weightedClassificationLayer(classWeights,'new_classoutput');
 lgraph = replaceLayer(lgraph,classLayer.Name,newClassLayer);
 
@@ -235,7 +363,7 @@ inputSize = net.Layers(1).InputSize;
 fprintf('Training network...\n');
 fprintf('------\n');
 
-%=====BLOCKs RNG====
+%=====BLOCK RNG====
 if blockRNG==1
     stCPU= RandStream('Threefry','Seed',0,'NormalTransform','Inversion');
     stGPU=parallel.gpu.RandStream('Threefry','Seed',0,'NormalTransform','Inversion');
@@ -244,77 +372,93 @@ if blockRNG==1
 end
 %===================
 
-% --- Photometric jitter via ReadFcn (train only) ---
-imdsTrainPhot = imageDatastore(imdsTrain.Files, ...
-    'Labels', imdsTrain.Labels, ...
-    'IncludeSubfolders', false);  % files list already resolved
-imdsTrainPhot.ReadFcn = @(fn) photometricReadFcn(fn);  % << appliquer le jitter ici
-
-
-pixelRange = trainingParam.CNN_translation_augmentation;
-rotation   = trainingParam.CNN_rotation_augmentation;
-
-% basic augmentations (portable)
-imageAugmenter = imageDataAugmenter( ...
-    'RandXReflection',true, ...
-    'RandYReflection',true, ...
-    'RandScale',[0.9 1.1], ...
-    'RandXTranslation',pixelRange, ...
-    'RandYTranslation',pixelRange, ...
-    'RandRotation',rotation);
-
-% --- 3) Datastores d'entraînement / validation ---
-augimdsTrain = augmentedImageDatastore(inputSize(1:2), imdsTrainPhot, ...
-    'DataAugmentation', imageAugmenter);
-
-% augimdsTrain = augmentedImageDatastore(inputSize(1:2),imdsTrain, ...
-%     'DataAugmentation',imageAugmenter);
+%----------------------------------------------------------------------
+% 4) Construction des datastores finaux (en fonction du backend)
+%----------------------------------------------------------------------
 
 miniBatchSize = trainingParam.CNN_mini_batch_size;
-valFrequency  = floor(numel(augimdsTrain.Files)/miniBatchSize);
-
-augimdsValidation = augmentedImageDatastore(inputSize(1:2),imdsValidation);
-
 
 if ~isfield(trainingParam,'CNN_learn_rate_drop_factor')
-    trainingParam.CNN_learn_rate_drop_factor=0.9;
+    trainingParam.CNN_learn_rate_drop_factor = 0.9;
 end
 
-patience=10;
+patience = 10;
+
+switch backend
+    case 'tiff'
+        % --- Backend TIFF : augmentedImageDatastore comme avant ---
+        pixelRange = trainingParam.CNN_translation_augmentation;
+        rotation   = trainingParam.CNN_rotation_augmentation;
+        scaleRange = trainingParam.CNN_rand_scale;
+        if numel(scaleRange) ~= 2
+            scaleRange = [0.9 1.1];
+        end
+
+        imageAugmenter = imageDataAugmenter( ...
+            'RandXReflection',trainingParam.CNN_rand_flip, ...
+            'RandYReflection',trainingParam.CNN_rand_flip, ...
+            'RandScale',scaleRange, ...
+            'RandXTranslation',pixelRange, ...
+            'RandYTranslation',pixelRange, ...
+            'RandRotation',rotation);
+
+        augimdsTrain = augmentedImageDatastore(inputSize(1:2), dataTrain, ...
+            'DataAugmentation', imageAugmenter);
+
+        augimdsValidation = augmentedImageDatastore(inputSize(1:2), dataValBase);
+
+        valFrequency = floor(max(1, numel(augimdsTrain.Files)/miniBatchSize));
+
+        trainingData   = augimdsTrain;
+        validationData = augimdsValidation;
+
+    case 'hdf5'
+        % --- Backend HDF5 : H5ImageDatastore directement dans trainNetwork ---
+        % dataTrain = dsTrain ; dataValBase = dsVal
+        nTrainObs = numObservations(dataTrain);
+        valFrequency = floor(max(1, nTrainObs / miniBatchSize));
+
+        trainingData   = dataTrain;
+        validationData = dataValBase;
+end
+
+%----------------------------------------------------------------------
+% 5) trainingOptions & trainNetwork
+%----------------------------------------------------------------------
 
 options = trainingOptions(trainingParam.CNN_training_method{end}, ...
     'MiniBatchSize',miniBatchSize, ...
     'MaxEpochs',trainingParam.CNN_max_epochs, ...
     'InitialLearnRate',trainingParam.CNN_initial_learning_rate, ...
-    'LearnRateSchedule','piecewise',...
-    'LearnRateDropPeriod',2,...
-    'LearnRateDropFactor',trainingParam.CNN_learn_rate_drop_factor,...
+    'LearnRateSchedule','piecewise', ...
+    'LearnRateDropPeriod',2, ...
+    'LearnRateDropFactor',trainingParam.CNN_learn_rate_drop_factor, ...
     'GradientThreshold',0.5, ...
     'L2Regularization',trainingParam.CNN_l2_regularization, ...
     'Shuffle',trainingParam.CNN_data_shuffling{end}, ...
-    'ValidationData',augimdsValidation, ...
+    'ValidationData',validationData, ...
     'ValidationFrequency',valFrequency, ...
-    'ValidationPatience', patience, ...  
-    'VerboseFrequency',10,...
-    'Plots','training-progress',...
+    'ValidationPatience', patience, ...
+    'VerboseFrequency',10, ...
+    'Plots','training-progress', ...
     'ExecutionEnvironment',trainingParam.execution_environment{end});
 
-classifier = trainNetwork(augimdsTrain,lgraph,options);
+classifier = trainNetwork(trainingData,lgraph,options);
 
 fprintf('Training is done...\n');
 fprintf('Saving image classifier ...\n');
 fprintf('------\n');
 
-save([path '/' name '.mat'],'classifier');
-CNNOptions=struct(options);
-CNNOptions.ValidationData=[];
+save(fullfile(path,[name '.mat']),'classifier');
+CNNOptions = struct(options);
+CNNOptions.ValidationData = [];
 
 if ~exist(fullfile(path,'TrainingValidation'),"dir")
     mkdir(path,'TrainingValidation');
 end
 
-save([path '/TrainingValidation/' 'CNNOptions' '.mat'],'CNNOptions');
-save([path '/TrainingValidation/' 'tmpoptions' '.mat'],'options');
+save(fullfile(path,'TrainingValidation','CNNOptions.mat'),'CNNOptions');
+save(fullfile(path,'TrainingValidation','tmpoptions.mat'),'options');
 
 % ===== helpers =====
 function layers = freezeWeights(layers)
@@ -337,12 +481,11 @@ for c = 1:size(connections,1)
     lgraph = connectLayers(lgraph,connections.Source{c},connections.Destination{c});
 end
 
-
 function I = photometricReadFcn(filename)
-% ReadFcn pour imageDatastore de TRAIN : lit, applique jitter, renvoie uint8.
+% ReadFcn pour imageDatastore de TRAIN (backend TIFF) :
+% lit, applique jitter, renvoie uint8.
 I = imread(filename);
 I = photometricJitter(I);
-
 
 function Iout = photometricJitter(Iin)
 % Photometric-only jitter (contraste/luminosité/gamma/bruit/flou léger)
@@ -381,5 +524,4 @@ if rand < 0.5
 end
 
 Iout = im2uint8(max(min(I,1),0));
-
 
