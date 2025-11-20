@@ -178,6 +178,340 @@ classdef roi < handle
             end
 
         end
+
+                      function disp(obj)
+            % Custom display for roi objects
+
+            % Cas tableau : si l'utilisateur fait disp sur un array de ROI
+            if numel(obj) > 1
+                fprintf('[%dx1] roi objects array\n', numel(obj));
+                ids = arrayfun(@(r) r.id, obj, 'UniformOutput', false);
+                try
+                    ids_str = strjoin(ids, ', ');
+                    fprintf('IDs: %s\n', ids_str);
+                catch
+                end
+                return;
+            end
+
+            r = obj; % alias court
+
+            fprintf('==============================\n');
+            fprintf('  ROI object\n');
+            fprintf('==============================\n');
+
+            %% ---- 1. Infos de base
+            fprintf('ID        : %s\n', strsafe(r.id));
+
+            % bounding box / value
+            if ~isempty(r.value)
+                try
+                    bb = r.value;
+                    if isnumeric(bb) && numel(bb) >= 4
+                        fprintf('BBox      : [x=%g  y=%g  w=%g  h=%g]\n', bb(1), bb(2), bb(3), bb(4));
+                    else
+                        fprintf('BBox      : %s\n', strsafe(bb));
+                    end
+                catch
+                    fprintf('BBox      : (unavailable)\n');
+                end
+            else
+                fprintf('BBox      : []\n');
+            end
+
+            % path
+            fprintf('Path      : %s\n', strsafe(r.path));
+
+            % parent info (si dispo)
+            if ~isempty(r.parent)
+                parStr = '';
+                if isprop(r.parent,'id') && ~isempty(r.parent.id)
+                    parStr = sprintf('parent id=%s', strsafe(r.parent.id));
+                elseif isprop(r.parent,'name') && ~isempty(r.parent.name)
+                    parStr = sprintf('parent name=%s', strsafe(r.parent.name));
+                else
+                    parStr = class(r.parent);
+                end
+                fprintf('Parent    : %s\n', parStr);
+            end
+
+            fprintf('\n');
+
+            %% ---- 2. Statut image
+            if isempty(r.image)
+                fprintf('Image     : NOT LOADED\n');
+                fprintf('            -> call roi.load() to load image\n');
+                fprintf('            -> call roi.load(''data'') to load ROI data only\n');
+            else
+                sz = size(r.image);
+                % compléter à 4D
+                while numel(sz) < 4
+                    sz(end+1) = 1;
+                end
+                % rappel: MATLAB stocke classiquement [Y X C T]
+                fprintf('Image     : loaded  [H=%d  W=%d  C=%d  T=%d]\n', sz(1), sz(2), sz(3), sz(4));
+            end
+
+            % channelid
+            if ~isempty(r.channelid)
+                fprintf('channelid : %s\n', num2str(r.channelid(:)'));
+            end
+
+            fprintf('\n');
+
+            %% ---- 3. Display info détaillée (channels, mode, limites)
+            fprintf('Display:\n');
+
+            % frame courant
+            if isfield(r.display,'frame')
+                fprintf('  Current frame      : %s\n', num2str(r.display.frame));
+            end
+
+            % binning (peut être scalaire ou vecteur par canal)
+            if isfield(r.display,'binning') && ~isempty(r.display.binning)
+                fprintf('  Binning            : %s\n', num2str(r.display.binning(:)'));
+            end
+
+            % alpha / contour etc (optionnel, utile debug)
+            if isfield(r.display,'alpha')
+                fprintf('  Alpha              : %s\n', num2str(r.display.alpha));
+            end
+            if isfield(r.display,'contour')
+                fprintf('  Contour overlay    : %s\n', bool2yn(r.display.contour));
+            end
+
+            % Maintenant on détaille canal par canal
+            % On suppose cohérence dimensionnelle entre:
+            %   display.channel        (1 x n cellstr)
+            %   display.selectedchannel(n x 1)
+            %   display.intensity      (n x 3)
+            %   display.rgb            (n x 3)
+            %   display.displaylim     (2 x n) ou (n x 2) selon ta convention
+            %   display.indexed        (bool global ? ou par canal ? -> tu l'as défini globalement,
+            %                            donc on déduira aussi à partir de intensity==0)
+
+            chanNames = {};
+            if isfield(r.display,'channel') && ~isempty(r.display.channel)
+                chanNames = r.display.channel;
+                if isstring(chanNames)
+                    chanNames = cellstr(chanNames);
+                end
+                if ischar(chanNames)
+                    chanNames = {chanNames};
+                end
+            end
+
+            nChan = max([ ...
+                sizeSafe(r.display,'selectedchannel',1), ...
+                sizeSafe(r.display,'intensity',1), ...
+                sizeSafe(r.display,'rgb',1), ...
+                numel(chanNames) ...
+            ]);
+
+            if nChan==0
+                fprintf('  (no channel display info)\n');
+            else
+                fprintf('  Channels (%d):\n', nChan);
+
+                for ci = 1:nChan
+                    % nom du canal
+                    cname = '(unnamed)';
+                    if ci <= numel(chanNames) && ~isempty(chanNames{ci})
+                        cname = strsafe(chanNames{ci});
+                    end
+
+                    % actif ou masqué
+                    activeTxt = '';
+                    if isfield(r.display,'selectedchannel') && ~isempty(r.display.selectedchannel)
+                        if ci <= numel(r.display.selectedchannel) && r.display.selectedchannel(ci)==1
+                            activeTxt = 'ON';
+                        else
+                            activeTxt = 'OFF';
+                        end
+                    end
+
+                    % intensité / rgb
+                    intensRow = getRowSafe(r.display,'intensity',ci,[0 0 0]);
+                    rgbRow    = getRowSafe(r.display,'rgb',ci,[1 1 1]);
+
+                    % type de rendu
+                    % règle:
+                    %  - si intensité == [0 0 0]  OU display.indexed == true -> 'indexed'
+                    %  - sinon si rgbRow genre [r g b] avec >1 composante non nulle -> 'rgb'
+                    %  - sinon -> 'grayscale'
+                    drawType = 'grayscale';
+
+                    isIndexedGlobal = false;
+                    if isfield(r.display,'indexed') && ~isempty(r.display.indexed)
+                        % peut être bool ou tableau
+                        if numel(r.display.indexed)==1
+                            isIndexedGlobal = logical(r.display.indexed);
+                        elseif ci <= numel(r.display.indexed)
+                            isIndexedGlobal = logical(r.display.indexed(ci));
+                        end
+                    end
+
+                    if (all(intensRow==0) && any(intensRow~=0)==false) || isIndexedGlobal
+                        drawType = 'indexed';
+                    else
+                        nonZeroRGB = sum(rgbRow~=0);
+                        if nonZeroRGB>1
+                            drawType = 'rgb';
+                        else
+                            drawType = 'grayscale';
+                        end
+                    end
+
+                    % display limits
+                    dispLimStr = 'N/A';
+                    if isfield(r.display,'displaylim') && ~isempty(r.display.displaylim)
+                        dl = r.display.displaylim;
+                        % tu l'as défini comme n x 2 ou 2 x n ?
+                        % Dans ta def: 'displaylim',[0 ; 1] (donc 2 x nChannels)
+                        % donc on lit colonne ci si possible
+                        if size(dl,2) >= ci && size(dl,1) >= 2
+                            dispLimStr = sprintf('[%g  %g]', dl(1,ci), dl(2,ci));
+                        elseif size(dl,1) >= ci && size(dl,2) >= 2
+                            % fallback si c'est n x 2
+                            dispLimStr = sprintf('[%g  %g]', dl(ci,1), dl(ci,2));
+                        end
+                    end
+
+                    % stretchlim (optionnel)
+                    stretchStr = '';
+                    if isfield(r.display,'stretchlim') && ~isempty(r.display.stretchlim)
+                        sl = r.display.stretchlim;
+                        if ~isempty(sl) && size(sl,1) >= ci && size(sl,2) >= 2
+                            stretchStr = sprintf(' stretch=[%g %g]', sl(ci,1), sl(ci,2));
+                        end
+                    end
+
+                    fprintf('    • Ch %d : %s\n', ci, cname);
+                    fprintf('        status      : %s\n', activeTxt);
+                    fprintf('        type        : %s\n', drawType);
+                    fprintf('        displayLim  : %s%s\n', dispLimStr, stretchStr);
+                end
+            end
+
+            fprintf('\n');
+
+            %% ---- 4. Data / dataseries
+            nDataObj = 0;
+            if ~isempty(r.data)
+                nDataObj = numel(r.data);
+            end
+            fprintf('Data objects linked: %d\n', nDataObj);
+
+            for k = 1:nDataObj
+                ds = r.data(k);
+
+                g = '';
+                if isprop(ds,'groupid')
+                    g = strsafe(ds.groupid);
+                end
+
+                tp = '';
+                if isprop(ds,'type')
+                    tp = strsafe(ds.type);
+                end
+
+                clname = '';
+                if isprop(ds,'class')
+                    clname = strsafe(ds.class);
+                end
+
+                nRows = 0;
+                if isprop(ds,'data') && ~isempty(ds.data)
+                    if istable(ds.data)
+                        nRows = height(ds.data);
+                    elseif isnumeric(ds.data) || iscell(ds.data)
+                        nRows = size(ds.data,1);
+                    else
+                        nRows = 1;
+                    end
+                end
+
+                fprintf('  • [%d] %s', k, g);
+                if ~isempty(tp)
+                    fprintf(' | type=%s', tp);
+                end
+                if ~isempty(clname)
+                    fprintf(' | class=%s', clname);
+                end
+                fprintf(' | entries in .data: %d\n', nRows);
+            end
+
+            fprintf('==============================\n');
+
+            %% ---- helpers
+            function out = strsafe(x)
+                % Convertit divers types en texte pour affichage %s
+                if isempty(x)
+                    out = '';
+                elseif ischar(x)
+                    out = x;
+                elseif isstring(x)
+                    x = x(:);
+                    out = strjoin(cellstr(x), ', ');
+                elseif iscell(x)
+                    try
+                        out = strjoin(cellfun(@strsafe, x, 'UniformOutput', false), ', ');
+                    catch
+                        out = '[cell]';
+                    end
+                elseif isnumeric(x)
+                    out = num2str(x);
+                else
+                    out = class(x);
+                end
+            end
+
+            function n = sizeSafe(structIn, fieldName, dim)
+                % renvoie size(structIn.(fieldName),dim) si dispo, sinon 0
+                n = 0;
+                if isfield(structIn, fieldName) && ~isempty(structIn.(fieldName))
+                    try
+                        n = size(structIn.(fieldName), dim);
+                    catch
+                        n = numel(structIn.(fieldName));
+                    end
+                end
+            end
+
+            function row = getRowSafe(structIn, fieldName, idx, defaultVal)
+                % récupère la ligne idx d'un champ style (n x m), sinon defaultVal
+                row = defaultVal;
+                if isfield(structIn, fieldName) && ~isempty(structIn.(fieldName))
+                    val = structIn.(fieldName);
+                    if size(val,1) >= idx
+                        row = val(idx,:);
+                    elseif size(val,2) >= idx
+                        % fallback si c'est transposé
+                        row = val(:,idx)';
+                    end
+                end
+                if ~isnumeric(row)
+                    % sécurité
+                    row = defaultVal;
+                end
+            end
+
+            function out = bool2yn(b)
+                try
+                    if b
+                        out = 'true';
+                    else
+                        out = 'false';
+                    end
+                catch
+                    out = 'false';
+                end
+            end
+
+        end
+
+
+
     end
 end
 

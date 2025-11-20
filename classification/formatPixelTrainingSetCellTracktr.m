@@ -16,6 +16,10 @@ output = 0;
 base = fullfile(classif.path, foldername, 'moma', 'CTC');
 if ~exist(base, 'dir'), mkdir(base); end
 
+% ===== Mode de division (flag temporaire; pourra être passé en argument plus tard) =====
+% 'symmetric' pour dataset type MOMA ; 'asymmetric' pour bourgeonnement
+division_mode = 'symmetric';
+
 % === Splits ===
 splits = {'train', trainrois; 'val', valrois};
 channel = classif.channelName;
@@ -180,7 +184,12 @@ for s = 1:size(splits,1)
                                     parent_gid = info.gid;
                                 end
                             else
-                                parent_gid = uint32(0); % parent inconnu (rare)
+                                % Mode asymétrique: la mère n'est pas splittée, on peut lire son GID courant
+                                if strcmp(division_mode,'asymmetric') && isKey(local2global, mKey)
+                                    parent_gid = local2global(mKey);
+                                else
+                                    parent_gid = uint32(0); % parent inconnu (rare)
+                                end
                             end
                         end
 
@@ -212,7 +221,7 @@ for s = 1:size(splits,1)
             % ---- 3) FIN DE FRAME: appliquer les splits (clore la mère à N et préparer N+1)
             for mm = 1:numel(mothersToSplitThisFrame)
                 mKey = mothersToSplitThisFrame{mm};
-                if isKey(local2global, mKey)
+                if strcmp(division_mode,'symmetric') && isKey(local2global, mKey)
                     old_m_gid = local2global(mKey);
                     % la ligne de la mère est déjà prolongée jusqu'à frame0
                     % Forcer un nouveau GID pour la mère dès N+1
@@ -293,7 +302,7 @@ for s = 1:size(splits,1)
                 if mom>0 && mom<=maxid, childCounts(mom)=childCounts(mom)+1; end
             end
             bad_moms = find(childCounts~=0 & childCounts~=2);
-            if ~isempty(bad_moms)
+            if strcmp(division_mode,'symmetric') && ~isempty(bad_moms)
                 warning('Mothers with !=0/2 daughters in %s/%s seq %s: %s', splitName, foldername, seqName, mat2str(bad_moms(:)'));
             end
         catch
