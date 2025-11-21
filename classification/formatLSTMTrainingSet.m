@@ -9,6 +9,8 @@ CropCenter = [88 194];% <-- NEW: [cx cy]
 CropSize   = [60 60]; % <-- NEW: [w h]
 
 UndersampleMajority = 1;   % 1 = désactivé (100% des frames gardées)
+UseHDF5            = [];   % si vrai : export dans trainingdataset/framebank.h5
+WriteTiffImages    = [];   % si vrai : continue d'écrire les TIFF par classe
 
 
 for i = 1:numel(varargin)
@@ -29,7 +31,32 @@ for i = 1:numel(varargin)
                 CropSize = varargin{i+1};
             case "undersamplemajority"
                 UndersampleMajority = varargin{i+1};
+            case "usehdf5"
+                UseHDF5 = logical(varargin{i+1});
+            case "writetiffimages"
+                WriteTiffImages = logical(varargin{i+1});
         end
+    end
+end
+
+% ---- Backend par défaut selon trainingParam ----
+if isempty(UseHDF5) || isempty(WriteTiffImages)
+    backend = 'tiff'; % valeur historique
+    if isfield(classif,'trainingParam') && isfield(classif.trainingParam,'CNN_storage_backend')
+        backend = lower(string(classif.trainingParam.CNN_storage_backend));
+    end
+
+    switch backend
+        case "hdf5"
+            UseHDF5         = true;
+            WriteTiffImages = false;
+        case "tiff"
+            UseHDF5         = false;
+            WriteTiffImages = true;
+        otherwise
+            warning('Unknown CNN_storage_backend ''%s'' -> defaulting to TIFF.', backend);
+            UseHDF5         = false;
+            WriteTiffImages = true;
     end
 end
 
@@ -67,6 +94,17 @@ end
 if ~isfolder(fullfile(classif.path, foldername, 'timeseries'))
     mkdir(fullfile(classif.path, foldername), 'timeseries');
 end
+
+% ---- Préparation HDF5 (framebank) ----
+h5Framebank = fullfile(classif.path, foldername, 'framebank.h5');
+if UseHDF5 && exist(h5Framebank,"file")
+    delete(h5Framebank);
+end
+h5Initialized = false;
+nextFrameIdx  = 1;    % index (1-based) de la prochaine frame à écrire
+seriesStart   = [];
+seriesLen     = [];
+seriesIds     = strings(0,1);
 
 
 cltmp = classif.roi;
@@ -300,7 +338,7 @@ for i = 1:numel(rois_sel)
                 cmp = dataid;    % sequence-to-one
             end
 
-            if cmp~=0
+            if cmp~=0 && WriteTiffImages
                 imwrite(tmp, fullfile(classif.path, foldername, 'images', classif.classes{cmp}, ...
     [cltmp(ridx).id '_frame_' tr '.tif']));
 
@@ -311,6 +349,45 @@ for i = 1:numel(rois_sel)
             fprintf([reverseStr, msg]);
             reverseStr = repmat(sprintf('\b'), 1, length(msg));
             cc = cc + 1;
+        end
+
+        % ---- Export HDF5 framebank ----
+        if isempty(emptyFrame) && UseHDF5
+            nbFrames = size(vid,4);
+
+            if ~h5Initialized
+                chunkLab = max(128, min(1024, nbFrames));
+
+                h5create(h5Framebank, '/frames', [H0 W0 3 nbFrames], ...
+                    'Datatype','uint8', 'ChunkSize',[H0 W0 3 1], ...
+                    'Deflate',1, 'MaxSize',[H0 W0 3 Inf]);
+
+                h5create(h5Framebank, '/labels', [1 nbFrames], ...
+                    'Datatype','int32', 'ChunkSize',[1 chunkLab], ...
+                    'Deflate',1, 'MaxSize',[1 Inf]);
+
+                h5create(h5Framebank, '/classNames', [1 numel(classif.classes)], ...
+                    'Datatype','string');
+                h5write(h5Framebank, '/classNames', string(classif.classes));
+
+                h5Initialized = true;
+            else
+                info = h5info(h5Framebank, '/frames');
+                sz = info.Dataspace.Size;
+                if sz(1)~=H0 || sz(2)~=W0
+                    error('HDF5 framebank size mismatch: expected [%d %d], found [%d %d].', ...
+                        H0, W0, sz(1), sz(2));
+                end
+            end
+
+            h5write(h5Framebank, '/frames', vid, [1 1 1 nextFrameIdx], [H0 W0 3 nbFrames]);
+            h5write(h5Framebank, '/labels', int32(double(lab)), [1 nextFrameIdx], [1 nbFrames]);
+
+            seriesStart(end+1,1) = nextFrameIdx; %#ok<AGROW>
+            seriesLen(end+1,1)   = nbFrames;    %#ok<AGROW>
+            seriesIds(end+1,1)   = string(cltmp(ridx).id); %#ok<AGROW>
+
+            nextFrameIdx = nextFrameIdx + nbFrames;
         end
     end
 
@@ -373,6 +450,26 @@ parsaveresp(fullfile(classif.path, foldername, 'response', [cltmp(ridx).id '.mat
     end
 
     disp(['Processing ROI: ' num2str(ridx) ' ... Done !'])
+end
+
+% Finalisation du framebank HDF5 (métadonnées séries)
+if UseHDF5 && h5Initialized
+    nbSeries = numel(seriesStart);
+
+    h5create(h5Framebank, '/series_start', [1 nbSeries], ...
+        'Datatype','int64', 'ChunkSize',[1 max(1, min(1024, nbSeries))], ...
+        'Deflate',1, 'MaxSize',[1 Inf]);
+    h5write(h5Framebank, '/series_start', int64(seriesStart));
+
+    h5create(h5Framebank, '/series_len', [1 nbSeries], ...
+        'Datatype','int64', 'ChunkSize',[1 max(1, min(1024, nbSeries))], ...
+        'Deflate',1, 'MaxSize',[1 Inf]);
+    h5write(h5Framebank, '/series_len', int64(seriesLen));
+
+    if ~isempty(seriesIds)
+        h5create(h5Framebank, '/series_roi_id', [1 nbSeries], 'Datatype','string');
+        h5write(h5Framebank, '/series_roi_id', seriesIds.');
+    end
 end
 
 warning on all;
