@@ -30,83 +30,115 @@ pth=classif.getPath;
 
 disp(['This classfication is of this type: ' cate]);
 switch cate
-    case {'Image','LSTM'}
+ case {'Image','LSTM'}
 
-        classes=classif.classes;
-        nfolder=fullfile(pth, 'trainingdataset/images');
-        l=dir(nfolder);
+    backend = "tiff";
+    if isprop(classif,'trainingParam') && isfield(classif.trainingParam,'CNN_storage_backend')
+        backend = lower(string(classif.trainingParam.CNN_storage_backend{end}));
+    end
+    isHDF5 = strcmp(backend,'hdf5');
 
-        if numel(l)<=2
-            disp('there is no exported dataset in folder; quitting...')
-     
+    pth = classif.getPath;
+
+    if ~isHDF5
+        % --------------------------
+        % ======= MODE TIFF ========
+        % --------------------------
+        nfolder = fullfile(pth, 'trainingdataset/images');
+        l = dir(nfolder);
+
+        if numel(l) <= 2
+            disp('No exported TIFF dataset found.');
             return;
         end
 
-        cd=0;
-
-       ccc=1;
- cc=1;
- 
+        output={};
+        img={};
+        ccc=1; cc=1;
+        totalImages = 0;
 
         for i=3:numel(l)
-            nsfolder=fullfile(nfolder, l(i).name);
-            p=dir(nsfolder);
+            className = l(i).name;
+            nsfolder = fullfile(nfolder, className);
+            p = dir(fullfile(nsfolder,'*.tif'));
 
-            disp(['Folder ' l(i).name ' has ' num2str(numel(p)-2) ' images' ])
-            cd=cd+ numel(p)-2;
+            nb = numel(p);
+            totalImages = totalImages + nb;
 
-             output{ccc,1}=l(i).name;
-             output{ccc,2}=numel(p)-2;
-            
-            if display
-                
-                
-            %    n=10;
-                maxe=min(n,numel(p)-2);
-                if numel(p)>2
+            output{ccc,1} = className;
+            output{ccc,2} = nb;
 
-                    idx=randi([3 numel(p)],[1 maxe]);
-                else
-                    idx=[];
-                end
-
-               
+            if display && nb>0
+                maxe = min(n, nb);
+                idx = randperm(nb, maxe);
                 for j=idx
-                 %   aa=p(j).name
-
-                    tmp=imread(fullfile(p(j).folder,p(j).name));
-               %    aa=l(i).name
-                    fntsize=round(10*size(tmp,1)/50);
-                    tmp=insertText(tmp,[1 1],l(i).name,'TextColor',[255 255 255],'BoxOpacity',0,'FontSize',fntsize);
-                    disp(['Display image: ' p(j).name ])
-                  %  if cc==1
-                   %     img=tmp;
-                     
-                  %  else
-                        img{cc}=tmp;
-                  %  end
-
-                    cc=cc+1;
+                    tmp = imread(fullfile(p(j).folder, p(j).name));
+                    tmp = insertText(tmp, [1 1], className, ...
+                        'TextColor',[255 255 255],'BoxOpacity',0,'FontSize',12);
+                    img{cc} = tmp;
+                    cc = cc + 1;
                 end
-
-                
-               % title(l(i).name)
-                
-           
-      
             end
             ccc=ccc+1;
         end
 
-             if display
-             himg=montage(img);
-             h=gcf;
-             set(h,'Position',[100 100 800 600])
-             end
+        if display && ~isempty(img)
+            himg = montage(img);
+            h=gcf; set(h,'Position',[100 100 800 600]);
+        end
 
+        disp(['Total number of TIFF images in trainingset: ' num2str(totalImages)]);
 
-        disp(['Total number of images in trainingset: ' num2str(cd)]);
+    else
+        % --------------------------
+        % ======= MODE HDF5 ========
+        % --------------------------
+        h5File = fullfile(pth,'trainingdataset','framebank.h5');
 
+        if ~isfile(h5File)
+            disp('No HDF5 framebank found.');
+            return;
+        end
+
+        classNames = h5read(h5File, '/classNames');   % 1×C strings
+        labels     = double(h5read(h5File, '/labels')); % 1×N int
+        totalFrames = numel(labels);
+
+        output={};
+        img={};
+        cc=1;
+
+        % Compter nb frames par classe
+        for ci=1:numel(classNames)
+            cname = classNames(ci);
+            idx = find(labels == ci);   % frames correspondant à la classe
+
+            output{ci,1} = cname;
+            output{ci,2} = numel(idx);
+
+            disp(['Class ' char(cname) ' has ' num2str(numel(idx)) ' frames']);
+
+            if display && ~isempty(idx)
+                pick = idx(randperm(numel(idx), min(n, numel(idx))));
+                for f = pick
+                    tmp = h5read(h5File, '/frames', [1 1 1 f], [Inf Inf 3 1]);
+                    tmp = uint8(tmp);  % sécurité
+                    tmp = insertText(tmp,[1 1],cname,'TextColor',[255 255 255], ...
+                        'BoxOpacity',0,'FontSize',12);
+                    img{cc}=tmp; cc=cc+1;
+                end
+            end
+        end
+
+        % Affichage montage
+        if display && ~isempty(img)
+            figure;
+            himg = montage(img);
+            h=gcf; set(h,'Position',[100 100 800 600]);
+        end
+
+        disp(['Total number of frames in HDF5 framebank: ' num2str(totalFrames)]);
+    end
 
 
     case 'Pixel'
@@ -281,21 +313,56 @@ switch cate
   
 end
 
-fle=fullfile(pth,'sampleImage.png');
-if display==0 
-if exist(fle)
-himg=imread(fle);
-end
+
+% --- Write sampleImage.png in every case ---
+fle = fullfile(pth, 'sampleImage.png');
+
+if display
+    % Mode affichage : on a himg = montage
+    if ~isempty(himg)
+        % himg = handle => récupérer l'image réelle
+        if isgraphics(himg)
+            sample = himg.CData;
+        else
+            sample = himg; % pourrait être déjà une image
+        end
+        imwrite(sample, fle);
+        himg = sample; % on renvoie juste l'image
+    end
+
 else
- if numel(himg)==0
-     return
- end
- 
- if numel(himg.CData)~=0
-imwrite(himg.CData,fle);
- end
-himg=himg.CData;
+    % Mode silencieux : lire sampleImage.png ou en créer un
+    if isfile(fle)
+        himg = imread(fle);
+    else
+        % fabriquer une image simple si aucune image n'a été générée
+        if exist('img','var') && ~isempty(img)
+            sample = img{1};   % première image trouvée
+        else
+            sample = uint8(255 * ones(100,100,3)); % placeholder blanc
+        end
+        imwrite(sample, fle);
+        himg = sample;
+    end
 end
+
+
+
+% fle=fullfile(pth,'sampleImage.png');
+% if display==0 
+% if exist(fle)
+% himg=imread(fle);
+% end
+% else
+%  if numel(himg)==0
+%      return
+%  end
+% 
+%  if numel(himg.CData)~=0
+% imwrite(himg.CData,fle);
+%  end
+% himg=himg.CData;
+% end
 
 
 

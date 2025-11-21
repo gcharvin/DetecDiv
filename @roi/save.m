@@ -269,6 +269,17 @@ while ~success && attempts < max_attempts
     % end
 end
 
+% Si tout s'est bien passé, on nettoie les backups .bak
+if success
+    if exist(h5BakFile,'file')
+        delete(h5BakFile);
+    end
+    if exist(dataBak,'file')
+        delete(dataBak);
+    end
+end
+
+
 if ~success
     error(['Échec de la sauvegarde après ' num2str(max_attempts) ' tentatives.']);
 end

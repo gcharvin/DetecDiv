@@ -79,9 +79,10 @@ if ~isfolder(fullfile(classif.path, 'TrainingValidation'))
     mkdir(classif.path,'TrainingValidation');
 end
 
-if strcmp(classif.category{1},'LSTM')
+if ~UseHDF5 && strcmp(classif.category{1},'LSTM')
     for i = 1:numel(classif.classes)
-        if ~isfolder(fullfile(classif.path, foldername, 'images', classif.classes{i}))
+        p = fullfile(classif.path, foldername, 'images', classif.classes{i});
+        if ~isfolder(p)
             mkdir(fullfile(classif.path, foldername, 'images'), classif.classes{i});
         end
     end
@@ -264,7 +265,7 @@ for i = 1:numel(rois_sel)
             % appliquer le sous-échantillonnage
             dataidfra = dataidfra(keepIdx);
             fra       = fra(keepIdx);
-            lab       = lab(keepIdx);
+           % lab       = lab(keepIdx);
         end
     end
 
@@ -340,7 +341,7 @@ for i = 1:numel(rois_sel)
                 cmp = dataid;    % sequence-to-one
             end
 
-            if cmp~=0 && WriteTiffImages
+            if  ~UseHDF5 && WriteTiffImages && cmp ~= 0
                 imwrite(tmp, fullfile(classif.path, foldername, 'images', classif.classes{cmp}, ...
     [cltmp(ridx).id '_frame_' tr '.tif']));
 
@@ -360,17 +361,23 @@ for i = 1:numel(rois_sel)
             if ~h5Initialized
                 chunkLab = max(128, min(1024, nbFrames));
 
-                h5create(h5Framebank, '/frames', [H0 W0 3 nbFrames], ...
-                    'Datatype','uint8', 'ChunkSize',[H0 W0 3 1], ...
-                    'Deflate',1, 'MaxSize',[H0 W0 3 Inf]);
+               % Dataset extensible : maxdims avec Inf
+h5create(h5Framebank, '/frames', [H0 W0 3 Inf], ...
+    Datatype="uint8", ...
+    ChunkSize=[H0 W0 3 1], ...
+    Deflate=1);
 
-                h5create(h5Framebank, '/labels', [1 nbFrames], ...
-                    'Datatype','int32', 'ChunkSize',[1 chunkLab], ...
-                    'Deflate',1, 'MaxSize',[1 Inf]);
 
-                h5create(h5Framebank, '/classNames', [1 numel(classif.classes)], ...
-                    'Datatype','string');
-                h5write(h5Framebank, '/classNames', string(classif.classes));
+h5create(h5Framebank, '/labels', [1 Inf], ...
+    Datatype="int32", ...
+    ChunkSize=[1 chunkLab], ...
+    Deflate=1);
+
+
+
+               classNames = string(classif.classes(:))';
+h5create(h5Framebank, '/classNames', size(classNames), Datatype="string");
+h5write(h5Framebank, '/classNames', classNames);
 
                 h5Initialized = true;
             else
@@ -383,8 +390,13 @@ for i = 1:numel(rois_sel)
             end
 
             h5write(h5Framebank, '/frames', vid, [1 1 1 nextFrameIdx], [H0 W0 3 nbFrames]);
-            h5write(h5Framebank, '/labels', int32(double(lab)), [1 nextFrameIdx], [1 nbFrames]);
 
+            labVec = int32(double(lab(:)'));   % ligne 1xN
+h5write(h5Framebank, '/labels', labVec, ...
+    [1 nextFrameIdx], [1 nbFrames]);
+
+       output = output + nbFrames;
+       
             seriesStart(end+1,1) = nextFrameIdx; %#ok<AGROW>
             seriesLen(end+1,1)   = nbFrames;    %#ok<AGROW>
             seriesIds(end+1,1)   = string(cltmp(ridx).id); %#ok<AGROW>
@@ -458,19 +470,16 @@ end
 if UseHDF5 && h5Initialized
     nbSeries = numel(seriesStart);
 
-    h5create(h5Framebank, '/series_start', [1 nbSeries], ...
-        'Datatype','int64', 'ChunkSize',[1 max(1, min(1024, nbSeries))], ...
-        'Deflate',1, 'MaxSize',[1 Inf]);
-    h5write(h5Framebank, '/series_start', int64(seriesStart));
+   h5create(h5Framebank, '/series_start', [1 nbSeries], Datatype="int64");
+    h5write(h5Framebank, '/series_start', int64(seriesStart(:))');
 
-    h5create(h5Framebank, '/series_len', [1 nbSeries], ...
-        'Datatype','int64', 'ChunkSize',[1 max(1, min(1024, nbSeries))], ...
-        'Deflate',1, 'MaxSize',[1 Inf]);
-    h5write(h5Framebank, '/series_len', int64(seriesLen));
+    h5create(h5Framebank, '/series_len',   [1 nbSeries], Datatype="int64");
+    h5write(h5Framebank, '/series_len', int64(seriesLen(:))');
 
     if ~isempty(seriesIds)
-        h5create(h5Framebank, '/series_roi_id', [1 nbSeries], 'Datatype','string');
-        h5write(h5Framebank, '/series_roi_id', seriesIds.');
+         seriesIds = seriesIds(:)';  % row vector of strings
+    h5create(h5Framebank, '/series_roi_id', size(seriesIds), Datatype="string");
+    h5write(h5Framebank, '/series_roi_id', seriesIds);
     end
 end
 
