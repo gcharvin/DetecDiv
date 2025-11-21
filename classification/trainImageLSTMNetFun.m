@@ -95,6 +95,17 @@ else
     if ~isfield(trainingParam,'win_stride_pos_frac');   trainingParam.win_stride_pos_frac = 0.10;   end
     if ~isfield(trainingParam,'win_stride_neg_frac');   trainingParam.win_stride_neg_frac = 1.00;   end
     if ~isfield(trainingParam,'keep_valid_distrib');    trainingParam.keep_valid_distrib  = true;   end
+    if ~isfield(trainingParam,'CNN_storage_backend');   trainingParam.CNN_storage_backend = 'tiff'; end
+    if ~isfield(trainingParam,'CNN_translation_augmentation'); trainingParam.CNN_translation_augmentation = [-5 5]; end
+    if ~isfield(trainingParam,'CNN_rotation_augmentation');     trainingParam.CNN_rotation_augmentation     = [-20 20]; end
+    if ~isfield(trainingParam,'CNN_crop_scale');                trainingParam.CNN_crop_scale                = [0.8 1.0]; end
+    if ~isfield(trainingParam,'CNN_contrast_range');            trainingParam.CNN_contrast_range            = [0.85 1.15]; end
+    if ~isfield(trainingParam,'CNN_hue_delta');                 trainingParam.CNN_hue_delta                 = 0.05; end
+    if ~isfield(trainingParam,'CNN_noise_sigma');               trainingParam.CNN_noise_sigma               = 0.02; end
+
+    % Forcer l'utilisation du backend HDF5 pour l'entraînement CNN
+    trainingParam.CNN_storage_backend = 'hdf5';
+    classif.trainingParam = trainingParam;
 
     if numel(trainingParam)==0
         disp('Could not find training parameters : first launch train with an extra argument to force parameter assignment');
@@ -149,10 +160,68 @@ if trainingParam.compute_CNN_activations==false && exist(tempFile,"file")
 else
     fprintf('Computing Image classifier activation data...\n------\n');
 
+    backend = 'tiff';
+    if isfield(trainingParam, 'CNN_storage_backend')
+        backend = char(lower(string(trainingParam.CNN_storage_backend)));
+    end
+
+    h5SeriesFile = fullfile(path,'trainingdataset','framebank.h5');
+    h5Exists = exist(h5SeriesFile,"file")==2;
+    useH5Series = strcmp(backend,'hdf5') && h5Exists;
+    if h5Exists && ~useH5Series
+        fprintf('HDF5 framebank detected but backend ''%s'' configured -> sticking to legacy MAT/TIFF workflow.\n', backend);
+    end
+    h5SeriesStart = [];
+    h5SeriesLen   = [];
+    h5SeriesIds   = strings(0,1);
+    frameSizeH5   = [];
+    h5FrameDS     = [];
+
+    if useH5Series
+        try
+            h5SeriesStart = double(h5read(h5SeriesFile, '/series_start'));
+            h5SeriesLen   = double(h5read(h5SeriesFile, '/series_len'));
+            try
+                h5SeriesIds = string(h5read(h5SeriesFile, '/series_roi_id'));
+            catch
+                h5SeriesIds = strings(numel(h5SeriesStart),1);
+            end
+            infoFrames = h5info(h5SeriesFile, '/frames');
+            frameSizeH5 = infoFrames.Dataspace.Size;
+
+            % Datastore HDF5 avec les mêmes augmentations que pour l'entraînement CNN
+            augParams = localGetH5AugParams(trainingParam);
+            h5FrameDS = H5ImageDatastore(h5SeriesFile, ...
+                'MiniBatchSize', max(1, trainingParam.CNN_mini_batch_size), ...
+                'TransRange',    augParams.TransRange, ...
+                'RotRange',      augParams.RotRange, ...
+                'CropScale',     augParams.CropScale, ...
+                'ContrastRange', augParams.ContrastRange, ...
+                'HueDelta',      augParams.HueDelta, ...
+                'NoiseSigma',    augParams.NoiseSigma, ...
+                'ClassNames',    classif.classes);
+        catch ME
+            warning('Failed to read HDF5 framebank metadata (%s). Falling back to MAT files.', ME.message);
+            useH5Series = false;
+        end
+    end
+
+    if useH5Series
+        numFiles = numel(h5SeriesStart);
+        fprintf('Using HDF5 framebank (%d series).\n', numFiles);
+    elseif strcmp(backend,'hdf5')
+        warning('HDF5 backend requested but framebank.h5 not found; falling back to MAT/TIFF export.');
+        fprintf('HDF5 backend configured but no framebank available -> using legacy MAT/TIFF sequence files.\n');
+        fol= [path '/trainingdataset/timeseries'];
+        list=dir([fol '/*.mat']);
+        numFiles = numel(list);
+    else
+        fol= [path '/trainingdataset/timeseries'];
+        list=dir([fol '/*.mat']);
+        numFiles = numel(list);
+    end
+
     cc=1;
-    fol= [path '/trainingdataset/timeseries'];
-    list=dir([fol '/*.mat']);
-    numFiles = numel(list);
     sequences = cell(numFiles*10,1); % simple over-allocation
     labels    = cell(numFiles*10,1);
 
@@ -163,13 +232,20 @@ else
     totalCounts = [];
 
     for ii = 1:numFiles
-        S = load(fullfile(list(ii).folder, list(ii).name), 'lab');
+        if useH5Series
+            labs = h5read(h5SeriesFile, '/labels', [h5SeriesStart(ii)], [h5SeriesLen(ii)]);
+            labLocal = categorical(labs(:), 1:numel(classif.classes), classif.classes);
+        else
+            S = load(fullfile(list(ii).folder, list(ii).name), 'lab');
+            labLocal = S.lab;
+        end
+
         if ii == 1
-            allCats = categories(S.lab);      % cellstr
-            allCats = allCats(:)';            % row
+            allCats = categories(labLocal); % cellstr
+            allCats = allCats(:)';
             totalCounts = zeros(1, numel(allCats));
         end
-        cnt = countcats( categorical(S.lab, allCats) );
+        cnt = countcats( categorical(labLocal, allCats) );
         totalCounts = totalCounts + reshape(cnt,1,[]);
     end
 
@@ -205,10 +281,34 @@ else
     % --------------------------------------------------------------------
 
     for i=1:numFiles
-        fprintf('Processing movie %d/%d...', i, numFiles);
-        S = load(fullfile(list(i).folder, list(i).name)); % loads deep, vid, lab
-        video = centerCrop(S.vid,inputSize);
-        lab   = S.lab; % categorical
+        if useH5Series
+            roiName = '';
+            if numel(h5SeriesIds) >= i
+                roiName = char(h5SeriesIds(i));
+            end
+            if isempty(roiName), roiName = sprintf('#%d', i); end
+            fprintf('Processing series %d/%d (%s)...', i, numFiles, roiName);
+
+            nbFra = h5SeriesLen(i);
+            idxStart = h5SeriesStart(i);
+            idxEnd   = idxStart + nbFra - 1;
+
+            if isempty(h5FrameDS)
+                video = h5read(h5SeriesFile, '/frames', [1 1 1 idxStart], [frameSizeH5(1) frameSizeH5(2) frameSizeH5(3) nbFra]);
+            else
+                dsSeq = subset(h5FrameDS, idxStart:idxEnd);
+                video = readH5Sequence(dsSeq, frameSizeH5);
+            end
+            labs  = h5read(h5SeriesFile, '/labels', [h5SeriesStart(i)], [nbFra]);
+            lab   = categorical(labs(:), 1:numel(classif.classes), classif.classes);
+        else
+            fprintf('Processing movie %d/%d...', i, numFiles);
+            S = load(fullfile(list(i).folder, list(i).name)); % loads deep, vid, lab
+            video = S.vid;
+            lab   = S.lab; % categorical
+        end
+
+        video = centerCrop(video,inputSize);
         if size(lab,1)>1 && size(lab,2)>1, error('lab must be 1D categorical'); end
         if size(lab,1)>size(lab,2), lab = lab'; end
 
@@ -510,3 +610,39 @@ end
 
 function videoResized = centerCrop(video,inputSize)
 videoResized = imresize(video,inputSize(1:2));
+
+function vid = readH5Sequence(dsSeq, frameSize)
+% Helper: read an ordered sequence from H5ImageDatastore subset
+% frameSize = [H W C N] for consistency checks
+
+reset(dsSeq);
+
+H = frameSize(1); W = frameSize(2); C = frameSize(3);
+T = numObservations(dsSeq);
+
+vid = zeros(H, W, C, T, 'uint8');
+cc = 1;
+while hasdata(dsSeq)
+    [batch, ~] = read(dsSeq);
+    B = size(batch,4);
+    for k = 1:B
+        if cc > T, break; end %#ok<AGROW>
+        vid(:,:,:,cc) = uint8(round(batch(:,:,:,k) * 255));
+        cc = cc + 1;
+    end
+end
+
+if cc-1 ~= T
+    warning('Expected %d frames from HDF5 datastore, got %d.', T, cc-1);
+end
+
+function augParams = localGetH5AugParams(trainingParam)
+% Harmonise les paramètres d'augmentation spécifiques au backend HDF5
+augParams = struct();
+
+augParams.TransRange    = trainingParam.CNN_translation_augmentation;
+augParams.RotRange      = trainingParam.CNN_rotation_augmentation;
+augParams.CropScale     = trainingParam.CNN_crop_scale;
+augParams.ContrastRange = trainingParam.CNN_contrast_range;
+augParams.HueDelta      = trainingParam.CNN_hue_delta;
+augParams.NoiseSigma    = trainingParam.CNN_noise_sigma;
