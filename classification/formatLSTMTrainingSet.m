@@ -39,12 +39,14 @@ for i = 1:numel(varargin)
     end
 end
 
+
 % ---- Backend par défaut selon trainingParam ----
 if isempty(UseHDF5) || isempty(WriteTiffImages)
     backend = 'tiff'; % valeur historique
-    if isfield(classif,'trainingParam') && isfield(classif.trainingParam,'CNN_storage_backend')
-        backend = lower(string(classif.trainingParam.CNN_storage_backend));
+    if isprop(classif,'trainingParam') && isfield(classif.trainingParam,'CNN_storage_backend')
+        backend = lower(string(classif.trainingParam.CNN_storage_backend{end}));
     end
+
 
     switch backend
         case "hdf5"
