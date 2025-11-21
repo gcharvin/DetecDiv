@@ -13,40 +13,46 @@ function [paramout,dataout,imageout] = trackMotherLineageViterbi(param, roiobj, 
 %       - au plus un bud à la fois et B_t ~= M_t si B_t>0.
 %
 %   L'observation privilégie :
-%       - pour la mère : la cellule la plus proche du centre et (optionnellement) la plus grosse,
-%       - pour le bud  : une cellule petite et proche de la mère.
-%   Le Viterbi impose une continuité temporelle (faible mouvement, faible variation d'aire,
-%   pénalité pour apparition/disparition et pour changements trop brutaux).
+%       - Mode 'mother_trap'  : mère proche du centre (et éventuellement grosse),
+%       - Mode 'daughter_trap': mère au FOND de la cavité (bas de l'image),
+%       - Bud : petit et proche de la mère.
+%
+%   Le Viterbi impose une continuité temporelle (faible mouvement, faible
+%   variation d'aire, pénalité pour apparition/disparition et pour changements
+%   trop brutaux). En mode 'daughter_trap', le changement de "mère" n'est
+%   autorisé que lorsqu'un bud en bas devient suffisamment gros (bud->mère).
 %
 %   SORTIE CANAUX (sur roiobj.image) :
 %     Soit baseName = param.outputChannelName :
 %
-%       1) Channel baseName (H×W×1×Tfull, uint8) :
+%       1) Channel [baseName '_cell'] (H×W×1×Tfull, uint8) :
 %          - 0   : fond
 %          - 255 : mère
-%          - 2–254 : bud, intensité ∝ aire du bud (normalisée sur toutes les frames traitées)
+%          - 2–254 : bud, intensité ∝ aire du bud (normalisée sur toutes
+%                    les frames traitées)
 %
-%       2) Channel [baseName '_Bconf'] (H×W×1×Tfull, uint8) :
+%       2) Channel [baseName '_conf'] (H×W×1×Tfull, uint8) :
 %          - 0   : pas de bud / confiance nulle
-%          - 1–255 : confiance Viterbi sur le bud, par pixel bud (constante à l'intérieur du bud)
-%          La confiance est basée sur la marge entre l'état (M,B) optimal et
-%          le meilleur état concurrent, passée dans une sigmoïde.
+%          - 1–255 : confiance Viterbi sur le bud, par pixel bud
+%                    (constante à l'intérieur du bud)
 %
 % INPUTS
 %   param   : struct de paramètres (géré par le GUI) contenant au minimum :
 %       - param.instanceChannelName : cellstr
 %           Liste de noms de canaux possibles pour la segmentation d'instances.
 %           Le canal effectivement utilisé est param.instanceChannelName{end}.
-%       - param.mode : {'mother_trap', ...}
-%           Mode de suivi. Pour l'instant seul 'mother_trap' est supporté.
+%       - param.mode : {'mother_trap', ...} ou {'daughter_trap', ...}
+%           * 'mother_trap'  : mère ~ centre
+%           * 'daughter_trap': lignée fille au fond (bas de la cavité)
 %       - param.outputChannelName : char
 %           Nom de base des canaux de sortie :
-%             * baseName          : mask mère+bud encodé taille (0, 2–254, 255)
-%             * [baseName '_Bconf']: map de confiance bud.
+%             * [baseName '_cell']  : mask mère+bud encodé taille (0,2–254,255)
+%             * [baseName '_conf']  : map de confiance bud.
 %
 %   roiobj  : objet ROI, supposé contenir au moins :
 %       - roiobj.image : tableau [H x W x C x Tfull]
-%           Empilement d'images ou de masques, dont un canal avec les labels d'instance.
+%           Empilement d'images ou de masques, dont un canal avec les
+%           labels d'instance.
 %       - roiobj.data  : données associées (non modifiées ici).
 %
 %   frames  : (optionnel) vecteur d'indices de frames à traiter (1-based).
@@ -59,6 +65,7 @@ function [paramout,dataout,imageout] = trackMotherLineageViterbi(param, roiobj, 
 %   imageout : roiobj.image mis à jour avec les deux canaux de sortie.
 %
 % PARAMÈTRES INTERNES / RANGES (à tuner éventuellement)
+%   (communs mother/daughter, mais interprétés différemment pour la mère)
 %   wM_center      : poids de la proximité au centre pour la mère (~1.0)
 %   wM_area        : poids de l'aire de la mère       (0–2)
 %   wB_dist        : poids de la proximité mère–bud   (0.5–2)
@@ -74,6 +81,11 @@ function [paramout,dataout,imageout] = trackMotherLineageViterbi(param, roiobj, 
 %   lambdaB_appear : pénalité apparition bud                    (0.5–5)
 %   lambdaB_disapp : pénalité disparition bud                   (0.5–5)
 %
+%   (spécifique daughter_trap)
+%   bottomSign     : +1 si le "fond" est vers y croissant (valeur par défaut)
+%   ratioMin       : aire(bud)/aire(mère) minimale pour autoriser bud->mère
+%   bonusSwitch    : petit bonus sur la transition bud->mère valide.
+%
 % DEBUG
 %   La fonction affiche dans la console :
 %   - la trajectoire finale frame par frame : M_t (label) et B_t (label),
@@ -88,13 +100,13 @@ if nargin == 0
     end
 
     paramout.instanceChannelName = ['N/A', ch, ch{end}];
-    paramout.mode               = {'mother_trap','mother_trap'};
+    paramout.mode               = {'mother_trap','mother_trap'};   % mother_trap ou daughter_trap
     paramout.outputChannelName  = 'MotherLineageViterbi';
 
     paramout.tip = { ...
         'Sélectionnez le canal contenant les labels d''instance (ex: CellposeSAM).', ...
-        'Mode de suivi (actuellement "mother_trap" uniquement).', ...
-        'Nom de base des canaux de sortie : baseName (mask mère+bud), baseName_Bconf (confiance bud).'};
+        'Mode de suivi (mother_trap ou daughter_trap).', ...
+        'Nom de base des canaux de sortie : baseName_cell (mask mère+bud), baseName_conf (confiance bud).'};
     dataout  = [];
     imageout = [];
     return;
@@ -142,16 +154,17 @@ N = zeros(nF,1);
 for f = 1:nF
     N(f) = size(feats(f).centroid,1);
 end
-
 % On autorise N(f)==0 : alors seul l'état (0,0) sera possible sur cette frame.
 
 %% ---- Paramètres Viterbi (mère + bud) ----
-mode = param.mode{end}; %#ok<NASGU>
-mode = lower(mode);     %#ok<NASGU>
+mode        = lower(param.mode{end});
+isDaughter  = strcmp(mode,'daughter_trap');   % nouveau flag
+isMother    = strcmp(mode,'mother_trap');
 
 % Poids observation mère
-wM_center   = 1.0;   % importance d'être proche du centre
+wM_center   = 1.0;   % pour mother_trap (proximité centre)
 wM_area     = 0.5;   % importance d'être grosse
+wM_bottom   = 1.0;   % pour daughter_trap (proximité du fond)
 
 % Poids observation bud
 wB_dist     = 1.0;   % bud proche de la mère
@@ -170,7 +183,12 @@ lambdaB_appear = 1.0;    % coût d'apparition d'un bud
 lambdaB_disapp = 1.0;    % coût de disparition du bud
 
 % Paramètre de "température" pour la sigmoïde de confiance
-tempConf = 0.5;
+tempConf   = 0.5;
+
+% Paramètres spécifiques au mode daughter_trap
+bottomSign  = 1.0;   % suppose y croissant vers le fond (changer signe si besoin)
+ratioMin    = 0.4;   % aire(bud)/aire(mère) minimale pour autoriser bud->mère
+bonusSwitch = 1.0;   % petit bonus sur un switch bud->mère valide
 
 % Géométrie du piège
 center  = [W/2, H/2];
@@ -220,8 +238,8 @@ for f = 1:nF
 
     logBf = zeros(1,Kf);
 
-    % Si aucune cellule, tous les états sont (0,0), logBf sera juste 0
     if Nf > 0
+        % Distance au centre
         dxC = ctr(:,1) - center(1);
         dyC = ctr(:,2) - center(2);
         distC = hypot(dxC, dyC);
@@ -231,11 +249,27 @@ for f = 1:nF
         else
             areaNorm = zeros(size(area));
         end
+
         centerScore = 1 - distC ./ maxDistCenter;
         centerScore = max(centerScore, 0);
+
+        % Score "fond de cavité" pour daughter_trap
+        if isDaughter
+            proj   = ctr(:,2) * bottomSign;    % projection sur l'axe vertical
+            minP   = min(proj);
+            maxP   = max(proj);
+            if maxP > minP
+                bottomScore = (proj - minP) ./ (maxP - minP); % 0..1
+            else
+                bottomScore = 0.5 * ones(size(proj));         % tous équivalents
+            end
+        else
+            bottomScore = [];
+        end
     else
         areaNorm    = [];
         centerScore = [];
+        bottomScore = [];
     end
 
     for kState = 1:Kf
@@ -245,16 +279,28 @@ for f = 1:nF
         obsM = 0;
         obsB = 0;
 
-        % Mère
-        if m > 0
-            obsM = wM_center * centerScore(m) + ...
-                   wM_area   * areaNorm(m);
+        % --- Mère ---
+        if m > 0 && Nf > 0
+            if isMother
+                % mode mother_trap : mère proche du centre
+                obsM = wM_center * centerScore(m) + ...
+                       wM_area   * areaNorm(m);
+            elseif isDaughter
+                % mode daughter_trap : mère au fond de la cavité
+                obsM = wM_bottom * bottomScore(m) + ...
+                       wM_area   * areaNorm(m);
+            else
+                obsM = wM_center * centerScore(m) + ...
+                       wM_area   * areaNorm(m);
+            end
+        elseif m > 0 && Nf == 0
+            obsM = -2.0;
         else
-            % pas de mère : état moins favorable que "bonne" mère
+            % pas de mère : état moins favorable qu'une "bonne" mère
             obsM = -2.0;
         end
 
-        % Bud
+        % --- Bud ---
         if b > 0 && m > 0 && Nf > 0
             dxMB = ctr(b,1) - ctr(m,1);
             dyMB = ctr(b,2) - ctr(m,2);
@@ -296,7 +342,7 @@ end
         costM = 0;
         costB = 0;
 
-        % Mère
+        % -------- Mère --------
         if mPrev > 0 && mCurr > 0 && ~isempty(ctrPrev) && ~isempty(ctrCurr)
             dxM = ctrPrev(mPrev,1) - ctrCurr(mCurr,1);
             dyM = ctrPrev(mPrev,2) - ctrCurr(mCurr,2);
@@ -311,7 +357,7 @@ end
             costM = 0;
         end
 
-        % Bud
+        % -------- Bud --------
         if bPrev > 0 && bCurr > 0 && ~isempty(ctrPrev) && ~isempty(ctrCurr)
             dxB = ctrPrev(bPrev,1) - ctrCurr(bCurr,1);
             dyB = ctrPrev(bPrev,2) - ctrCurr(bCurr,2);
@@ -327,6 +373,43 @@ end
         end
 
         val = costM + costB;
+
+        % -------- Contraintes spécifiques au mode daughter_trap --------
+        if isDaughter
+            % Interdire les changements de mère SAUF si c'est
+            % l'ancien bud qui devient mère (bud->mère)
+            if mPrev ~= mCurr
+                % cas autorisé : mPrev>0, bPrev>0, mCurr == bPrev
+                if ~(mPrev > 0 && bPrev > 0 && mCurr == bPrev)
+                    val = -Inf;
+                    return;
+                end
+
+                % On est dans le motif bud->mère : vérifier que le bud est
+                % bien en bas et suffisamment grand (dans la frame fidx)
+                if ~isempty(ctrPrev) && ~isempty(areaPrev)
+                    yM = ctrPrev(mPrev,2);
+                    yB = ctrPrev(bPrev,2);
+                    dy = (yB - yM) * bottomSign;
+
+                    % Bud doit être "en bas" de la mère
+                    if dy <= 0
+                        val = -Inf;
+                        return;
+                    end
+
+                    % Bud doit avoir une aire suffisante pour devenir fille
+                    ratio = areaPrev(bPrev) / max(areaPrev(mPrev), eps);
+                    if ratio < ratioMin
+                        val = -Inf;
+                        return;
+                    end
+
+                    % Switch bud->mère valide : petit bonus
+                    val = val + bonusSwitch;
+                end
+            end
+        end
     end
 
 %% ---- Viterbi dynamique sur les états (M,B) ----
@@ -372,7 +455,7 @@ for f = nF:-1:2
 end
 
 %% ---- Extraction des chemins mère/bud et readout debug ----
-fprintf('[trackMotherLineageViterbi] Viterbi path (M,B) sur %d frames:\n', nF);
+fprintf('[trackMotherLineageViterbi] Viterbi path (M,B) sur %d frames (mode=%s):\n', nF, mode);
 
 mPath = zeros(nF,1);
 bPath = zeros(nF,1);
@@ -423,7 +506,7 @@ for f = 1:nF
     end
 end
 
-%% ---- Confiance bud (option B : marge vs meilleur compétiteur, sigmoïde) ----
+%% ---- Confiance bud (marge vs meilleur compétiteur, sigmoïde) ----
 budConf = zeros(nF,1);
 
 for f = 1:nF
@@ -434,7 +517,7 @@ for f = 1:nF
     end
 
     d = delta{f};
-    if isempty(d) || any(isinf(d))
+    if isempty(d) || all(isinf(d))
         budConf(f) = 0;
         continue;
     end
@@ -442,10 +525,10 @@ for f = 1:nF
     kBest = statePath(f);
     dBest = d(kBest);
 
-    % États compétiteurs : tous sauf ceux avec même bud (y compris B=0)
+    % États compétiteurs : tous sauf ceux avec le même bud (y compris B=0)
     competitors = find(states(f).bIdx ~= bIdx);
     if isempty(competitors)
-        dComp = min(d);  % aucun concurrent → confiance forte
+        dComp = min(d);  % aucun concurrent explicite → confiance forte
     else
         dComp = max(d(competitors));
     end
@@ -524,7 +607,6 @@ baseName   = paramout.outputChannelName;
 cellName   = [baseName '_cell'];
 confName   = [baseName '_conf'];
 
-% Dimensions complètes
 [Hfull,Wfull,~,Tfull] = size(roiobj.image);
 
 % Sanity check spatial
