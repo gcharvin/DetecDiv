@@ -93,7 +93,7 @@ if nargin==2 % basic parameter initialization
         'tip',{tip});
     return;
 
-      
+
 
 else
     trainingParam=classif.trainingParam;
@@ -119,7 +119,7 @@ else
     if ~isfield(trainingParam,'CNN_noise_sigma');               trainingParam.CNN_noise_sigma               = 0.02; end
 
     % Forcer l'utilisation du backend HDF5 pour l'entraînement CNN
-    trainingParam.CNN_storage_backend = 'hdf5';
+
     classif.trainingParam = trainingParam;
 
     if numel(trainingParam)==0
@@ -136,6 +136,7 @@ fprintf('------\n');
 %%% training image classifier
 if trainingParam.train_CNN_classifier
     if strcmp(trainingParam.transfer_learning{end},'ImageNet')
+        aa=classif.trainingParam
         trainImageGoogleNetFun(classif); % saves as netCNN.mat in the LSTM dir
     else
         src=fullfile(classif.path,['netCNN_' trainingParam.transfer_learning{end}]);
@@ -177,7 +178,7 @@ else
 
     backend = 'tiff';
     if isfield(trainingParam, 'CNN_storage_backend')
-        backend = char(lower(string(trainingParam.CNN_storage_backend)));
+        backend = char(lower(string(trainingParam.CNN_storage_backend{end})));
     end
 
     h5SeriesFile = fullfile(path,'trainingdataset','framebank.h5');
@@ -192,6 +193,9 @@ else
     frameSizeH5   = [];
     h5FrameDS     = [];
 
+
+
+
     if useH5Series
         try
             h5SeriesStart = double(h5read(h5SeriesFile, '/series_start'));
@@ -203,18 +207,18 @@ else
             end
             infoFrames = h5info(h5SeriesFile, '/frames');
             frameSizeH5 = infoFrames.Dataspace.Size;
-
+            h5FrameDS = [];
             % Datastore HDF5 avec les mêmes augmentations que pour l'entraînement CNN
-            augParams = localGetH5AugParams(trainingParam);
-            h5FrameDS = H5ImageDatastore(h5SeriesFile, ...
-                'MiniBatchSize', max(1, trainingParam.CNN_mini_batch_size), ...
-                'TransRange',    augParams.TransRange, ...
-                'RotRange',      augParams.RotRange, ...
-                'CropScale',     augParams.CropScale, ...
-                'ContrastRange', augParams.ContrastRange, ...
-                'HueDelta',      augParams.HueDelta, ...
-                'NoiseSigma',    augParams.NoiseSigma, ...
-                'ClassNames',    classif.classes);
+            % augParams = localGetH5AugParams(trainingParam);
+            % h5FrameDS = H5ImageDatastore(h5SeriesFile, ...
+            %     'MiniBatchSize', max(1, trainingParam.CNN_mini_batch_size), ...
+            %     'TransRange',    augParams.TransRange, ...
+            %     'RotRange',      augParams.RotRange, ...
+            %     'CropScale',     augParams.CropScale, ...
+            %     'ContrastRange', augParams.ContrastRange, ...
+            %     'HueDelta',      augParams.HueDelta, ...
+            %     'NoiseSigma',    augParams.NoiseSigma, ...
+            %     'ClassNames',    classif.classes);
         catch ME
             warning('Failed to read HDF5 framebank metadata (%s). Falling back to MAT files.', ME.message);
             useH5Series = false;
@@ -248,7 +252,75 @@ else
 
     for ii = 1:numFiles
         if useH5Series
-            labs = h5read(h5SeriesFile, '/labels', [h5SeriesStart(ii)], [h5SeriesLen(ii)]);
+            % Indices de début / longueur (convertis en double pour h5read)
+            startIdx = double(h5SeriesStart(ii));
+            lenSeq   = double(h5SeriesLen(ii));
+
+            infoLabs = h5info(h5SeriesFile, '/labels');
+            szLabs   = infoLabs.Dataspace.Size;
+            rankLabs = numel(szLabs);
+
+            % --- Nombre total de labels (vecteur ligne ou colonne, ou matrice N×K) ---
+            if rankLabs == 1
+                % Dataset 1D [N]
+                Nlabels = szLabs(1);
+
+            elseif rankLabs == 2
+                if szLabs(1) == 1 || szLabs(2) == 1
+                    % Vecteur ligne [1 N] ou colonne [N 1]
+                    Nlabels = max(szLabs);
+                else
+                    % Matrice [N K] -> N = nb de frames
+                    Nlabels = szLabs(1);
+                end
+            else
+                error('Unexpected rank for /labels dataset: %d', rankLabs);
+            end
+
+            % ======== PROTECTION anti-dépassement ========
+            if startIdx < 1
+                startIdx = 1;
+            end
+            if startIdx > Nlabels
+                error('trainImageLSTMNetFun:StartIdxOutOfBounds', ...
+                    'startIdx (%d) > number of labels (%d)', startIdx, Nlabels);
+            end
+
+            if startIdx + lenSeq - 1 > Nlabels
+                lenSeq = Nlabels - startIdx + 1;   % clip si nécessaire
+            end
+            % =============================================
+
+            switch rankLabs
+                case 1
+                    % /labels est un vecteur 1D [N]
+                    labs = h5read(h5SeriesFile, '/labels', startIdx, lenSeq);
+
+                case 2
+                    if szLabs(1) == 1 && szLabs(2) > 1
+                        % Vecteur ligne [1 N] : on lit en colonne
+                        labs = h5read(h5SeriesFile, '/labels', ...
+                            [1        startIdx], ...
+                            [1        lenSeq  ]);
+                    elseif szLabs(2) == 1 && szLabs(1) > 1
+                        % Vecteur colonne [N 1]
+                        labs = h5read(h5SeriesFile, '/labels', ...
+                            [startIdx 1], ...
+                            [lenSeq   1]);
+                    else
+                        % Matrice [N K] : N = frames, K = nb de colonnes
+                        rowCount = lenSeq;
+                        colCount = szLabs(2);
+                        labs = h5read(h5SeriesFile, '/labels', ...
+                            [startIdx 1], ...
+                            [rowCount colCount]);
+                    end
+
+                otherwise
+                    error('Unexpected rank for /labels dataset: %d', rankLabs);
+            end
+
+
             labLocal = categorical(labs(:), 1:numel(classif.classes), classif.classes);
         else
             S = load(fullfile(list(ii).folder, list(ii).name), 'lab');
@@ -288,7 +360,7 @@ else
     end
 
     doBalance = ~strcmpi(trainingParam.minority_mode,'none') ...
-                && (ratioMinMax <= trainingParam.minority_min_ratio);
+        && (ratioMinMax <= trainingParam.minority_min_ratio);
 
     fprintf('Classes: %s | counts=%s | minority=%s | balance=%d\n', ...
         strjoin(string(allCats),','), mat2str(totalCounts), strjoin(string(minorityClasses),','), doBalance);
@@ -314,7 +386,12 @@ else
                 dsSeq = subset(h5FrameDS, idxStart:idxEnd);
                 video = readH5Sequence(dsSeq, frameSizeH5);
             end
-            labs  = h5read(h5SeriesFile, '/labels', [h5SeriesStart(i)], [nbFra]);
+            startIdx = double(h5SeriesStart(i));
+            lenSeq   = double(nbFra);
+
+            labs = h5read(h5SeriesFile, '/labels', ...
+                [1        startIdx], ...   % start = (row=1, col=startIdx)
+                [1        lenSeq]);        % count = (1 ligne, lenSeq colonnes)
             lab   = categorical(labs(:), 1:numel(classif.classes), classif.classes);
         else
             fprintf('Processing movie %d/%d...', i, numFiles);
@@ -331,83 +408,94 @@ else
         if L<=0, L = size(video,4); end
         T = size(video,4);
 
-        if doBalance
-            isMinor = ismember(lab, categorical(minorityClasses));
-            posIdx  = find(isMinor);
 
-            winStridePos = max(1, round(L * trainingParam.win_stride_pos_frac));
-            winStrideNeg = max(1, round(L * trainingParam.win_stride_neg_frac));
+% === LEGACY : découpe par discretize, sans minority mode ===
+fr = 1:T;
+nb = max(1, ceil(T / L));
+dis = discretize(fr, nb);
+for k = 1:max(dis)
+    tmpvid = video(:,:,:, fr(dis==k));
+    sequences{cc,1} = activations(netCNN,tmpvid,layerName,'OutputAs','columns');
 
-            posWins = []; negWins = [];
+    tmpLab = lab(fr(dis==k));
+    if iscolumn(tmpLab), tmpLab = tmpLab'; end
+    tmpLab = categorical(tmpLab, categories(lab));
+    labels{cc,1} = tmpLab;
 
-            % POS windows centered on minority frames
-            for t = posIdx(:).'
-                s = max(1, t - floor(L/2));
-                e = min(T, s + L - 1); s = max(1, e - L + 1);
-                posWins(end+1,:) = [s e]; %#ok<AGROW>
-            end
-            if ~isempty(posWins), posWins = unique(posWins, 'rows', 'stable'); end
+    cc = cc + 1;
+end
 
-            % NEG windows (avoid overlap with POS)
-            t0 = 1;
-            while t0 + L - 1 <= T
-                s = t0; e = t0 + L - 1;
-                overlap = ~isempty(posWins) && any( (posWins(:,1) <= e) & (posWins(:,2) >= s) );
-                if ~overlap, negWins(end+1,:) = [s e]; end %#ok<AGROW>
-                % stride depends on POS/NEG type
-                t0 = t0 + winStrideNeg;
-            end
 
-            % Balance: keep r = pos_neg_ratio * kpos negatives
-            kpos = size(posWins,1); kneg = size(negWins,1);
-            if kpos==0
-                selNeg = randperm(kneg, min(kneg, 2));
-                useWins = negWins(selNeg,:);
-            else
-                r = min(kneg, max(0, round(trainingParam.pos_neg_ratio * kpos)));
-                if r>0, selNeg = randperm(kneg, r); else, selNeg = []; end
-                useWins = [posWins; negWins(selNeg,:)];
-            end
+        % % --- Sliding windows parameters ---
+        % if isfield(trainingParam,'win_stride_neg_frac') && ~isempty(trainingParam.win_stride_neg_frac)
+        %     stride = max(1, round(L * trainingParam.win_stride_neg_frac));
+        % else
+        %     stride = max(1, floor(L/2));   % défaut : L/2
+        % end
+        % 
+        % % Construire toutes les fenêtres glissantes [s e]
+        % windows = [];
+        % if T <= L
+        %     windows = [1 T];
+        % else
+        %     for s = 1:stride:(T - L + 1)
+        %         windows(end+1,:) = [s s+L-1]; %#ok<AGROW>
+        %     end
+        %     % dernière fenêtre alignée sur la fin si besoin
+        %     if windows(end,2) < T
+        %         windows(end+1,:) = [max(1,T-L+1) T]; %#ok<AGROW>
+        %     end
+        % end
+        % 
+        % if doBalance
+        %     % ---- 1. Marquer les fenêtres contenant des classes minoritaires ----
+        %     isMinor = ismember(lab, categorical(minorityClasses));
+        %     posWins = [];
+        %     negWins = [];
+        % 
+        %     for w = 1:size(windows,1)
+        %         s = windows(w,1);
+        %         e = windows(w,2);
+        %         if any(isMinor(s:e))
+        %             posWins = [posWins; windows(w,:)]; %#ok<AGROW>
+        %         else
+        %             negWins = [negWins; windows(w,:)]; %#ok<AGROW>
+        %         end
+        %     end
+        % 
+        %     % ---- 2. Sous-échantillonnage des NEG selon pos_neg_ratio ----
+        %     kpos = size(posWins,1);
+        %     kneg = size(negWins,1);
+        % 
+        %     if kpos == 0
+        %         useWins = negWins;
+        %     else
+        %         r = min(kneg, round(trainingParam.pos_neg_ratio * kpos));
+        %         selNeg = randperm(kneg, max(r,0));
+        %         useWins = [posWins; negWins(selNeg,:)];
+        %     end
+        % 
+        % else
+        %     % ---- Pas de minority mode : toutes les fenêtres glissantes ----
+        %     useWins = windows;
+        % end
+        % 
+        % % ---- 3. Construction des séquences finales ----
+        % for w = 1:size(useWins,1)
+        %     s = useWins(w,1);
+        %     e = useWins(w,2);
+        % 
+        %     tmpvid = video(:,:,:,s:e);
+        %     sequences{cc,1} = activations(netCNN,tmpvid,layerName,'OutputAs','columns');
+        % 
+        %     tmpLab = lab(s:e);
+        %     if iscolumn(tmpLab), tmpLab = tmpLab'; end
+        %     tmpLab = categorical(tmpLab, categories(lab));
+        %     labels{cc,1} = tmpLab;
+        % 
+        %     cc = cc + 1;
+        % end
 
-            % Build sequences
-            for w = 1:size(useWins,1)
-                s = useWins(w,1); e = useWins(w,2);
-                tmpvid = video(:,:,:,s:e);
-                sequences{cc,1} = activations(netCNN,tmpvid,layerName,'OutputAs','columns');
-
-                if strcmp(trainingParam.classifier_output{end},'sequence-to-one')
-                    % label = "sequence contains any minority"
-                    hasMinor = any(ismember(lab(s:e), categorical(minorityClasses)));
-                    majorCats = setdiff(allCats, minorityClasses, 'stable');
-                    if isempty(majorCats), majorCats = {'other'}; end
-                    majorName = char(majorCats{1});
-                    minorName = char(minorityClasses(1));
-                    labOne = categorical(hasMinor,[false true],{majorName,minorName});
-                    labels{cc,1} = labOne;
-                else
-                    tmpLab = lab(s:e);
-                    if iscolumn(tmpLab), tmpLab = tmpLab'; end
-                    tmpLab = categorical(tmpLab, allCats); % force order
-                    labels{cc,1} = tmpLab;
-                end
-                cc = cc + 1;
-            end
-
-        else
-            % Uniform slicing fallback
-            fr = 1:T;
-            nb = max(1, ceil(T / L));
-            dis = discretize(fr, nb);
-            for k=1:max(dis)
-                tmpvid = video(:,:,:,fr(dis==k));
-                sequences{cc,1} = activations(netCNN,tmpvid,layerName,'OutputAs','columns');
-                tmpLab = lab(fr(dis==k));
-                if iscolumn(tmpLab), tmpLab = tmpLab'; end
-                tmpLab = categorical(tmpLab, categories(lab));
-                labels{cc,1} = tmpLab;
-                cc = cc + 1;
-            end
-        end
 
         fprintf('\n');
     end
@@ -489,7 +577,7 @@ if trainingParam.train_LSTM_network || ~exist(str,"file")
     miniBatchSize = trainingParam.LSTM_mini_batch_size;
     numObservations = numel(sequencesTrain);
     numIterationsPerEpoch = max(1,floor(numObservations / miniBatchSize));
-    patience      = 10;
+    patience      = 20;
 
     options = trainingOptions('adam', ...
         'MiniBatchSize',miniBatchSize, ...
@@ -521,14 +609,27 @@ if trainingParam.train_LSTM_network || ~exist(str,"file")
             posScore = scoreVal(:, posIdx);
             Ytrue    = double(labelsValidation == categorical(posName));
         else
+            % sequence-to-sequence : scoreVal est un cell array
             scoreVal = predict(netLSTM, sequencesValidation, 'MiniBatchSize', miniBatchSize);
-            posIdx = find(strcmp(classes, posName));
-            posScore = []; Ytrue = [];
-            for i=1:numel(scoreVal)
-                posScore = [posScore; scoreVal{i}(:,posIdx)]; %#ok<AGROW>
-                Ytrue    = [Ytrue; double(labelsValidation{i}(:)==categororical(posName))]; %#ok<AGROW>
+            posIdx = find(strcmp(classes, posName), 1);
+            if isempty(posIdx)
+                error('posName "%s" not found in classes.', posName);
+            end
+
+            posScore = [];
+            Ytrue    = [];
+            posCat   = categorical(posName, classes, classes);  % même référentiel
+
+            for i = 1:numel(scoreVal)
+                % scoreVal{i} : [T x K] (probabilités)
+                thisScore = scoreVal{i}(:, posIdx);
+                thisLab   = labelsValidation{i};   % 1xT ou Tx1 categorical
+
+                posScore = [posScore; thisScore(:)]; %#ok<AGROW>
+                Ytrue    = [Ytrue; double(thisLab(:) == posCat)]; %#ok<AGROW>
             end
         end
+
         ths = linspace(0,1,101);
         bestF1=-inf; bestT=0.5;
         for t = ths
@@ -626,30 +727,79 @@ end
 function videoResized = centerCrop(video,inputSize)
 videoResized = imresize(video,inputSize(1:2));
 
-function vid = readH5Sequence(dsSeq, frameSize)
-% Helper: read an ordered sequence from H5ImageDatastore subset
-% frameSize = [H W C N] for consistency checks
+function video = readH5Sequence(dsSeq, frameSizeH5)
+% dsSeq : subset du datastore (TIFF ou HDF5)
+% frameSizeH5 : [H W C] attendu pour la vidéo
+
+H = frameSizeH5(1);
+W = frameSizeH5(2);
+C = frameSizeH5(3);
+
+% Nombre de frames de la séquence = nb d'observations du dsSeq
+nFrames = numObservations(dsSeq);  % ou numObservations(dsSeq) si tu préfères
+
+vid = zeros(H, W, C, nFrames, 'uint8');
 
 reset(dsSeq);
-
-H = frameSize(1); W = frameSize(2); C = frameSize(3);
-T = numObservations(dsSeq);
-
-vid = zeros(H, W, C, T, 'uint8');
 cc = 1;
-while hasdata(dsSeq)
-    [batch, ~] = read(dsSeq);
-    B = size(batch,4);
-    for k = 1:B
-        if cc > T, break; end %#ok<AGROW>
-        vid(:,:,:,cc) = uint8(round(batch(:,:,:,k) * 255));
+
+while hasdata(dsSeq) && cc <= nFrames
+    % Nouveau format : read peut renvoyer une TABLE ou un array
+    batch = read(dsSeq);
+
+    if istable(batch)
+        % Cas H5ImageDatastore : batch.input est une cell B×1
+        if ismember('input', batch.Properties.VariableNames)
+            imgs = batch.input;
+        else
+            % fallback : on prend la 1ère colonne
+            imgs = batch{:,1};
+        end
+    elseif iscell(batch)
+        % Si un jour tu as un datastore qui renvoie un cell array
+        imgs = batch;
+    else
+        % Cas historique : batch est un array [H W C B]
+        B = size(batch,4);
+        imgs = cell(B,1);
+        for k = 1:B
+            imgs{k} = batch(:,:,:,k);
+        end
+    end
+
+    % On remplit la vidéo frame par frame
+    for k = 1:numel(imgs)
+        if cc > nFrames
+            break;
+        end
+
+        img = imgs{k};
+
+        % Normalisation / cast
+        if isa(img,'single') || isa(img,'double')
+            % supposé déjà dans [0,1] pour H5ImageDatastore
+            img01 = img;
+        else
+            img01 = im2single(img);   % uint8 → [0,1]
+        end
+
+        % Resize au besoin
+        if size(img01,1) ~= H || size(img01,2) ~= W
+            img01 = imresize(img01, [H W]);
+        end
+
+        % Forcer 3 canaux
+        if size(img01,3) == 1
+            img01 = repmat(img01, [1 1 3]);
+        end
+
+        vid(:,:,:,cc) = uint8(round(img01 * 255));
         cc = cc + 1;
     end
 end
 
-if cc-1 ~= T
-    warning('Expected %d frames from HDF5 datastore, got %d.', T, cc-1);
-end
+video = vid;
+
 
 function augParams = localGetH5AugParams(trainingParam)
 % Harmonise les paramètres d'augmentation spécifiques au backend HDF5

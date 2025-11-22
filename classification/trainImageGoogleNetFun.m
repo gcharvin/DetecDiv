@@ -49,7 +49,7 @@ if nargin==2 % basic parameter initialization
         'CNN_dropout',0.5, ...               % <---- NEW (déjà présent)
         'execution_environment',{{'auto','parallel','cpu','gpu','multi-gpu','auto'}}, ...
         'transfer_learning',{{'ImageNet','ImageNet'}}, ...
-        'CNN_storage_backend','tiff', ...        % 'tiff' (historique) ou 'hdf5'
+        'CNN_storage_backend',{{'hdf5','tiff','hdf5'}}, ...        % 'tiff' (historique) ou 'hdf5'
         'CNN_rand_scale',[0.9 1.1], ...         % RandScale pour TIFF, approx. crop/zoom
         'CNN_rand_flip',true, ...               % flips aléatoires (TIFF / éventuellement HDF5)
         'CNN_crop_scale',[0.8 1.0], ...         % crop-in pour HDF5 datastore
@@ -71,7 +71,7 @@ else
     end
 
     % Nouveaux champs backend / augmentation
-    if ~isfield(trainingParam,'CNN_storage_backend'); trainingParam.CNN_storage_backend = 'tiff'; end
+    if ~isfield(trainingParam,'CNN_storage_backend'); trainingParam.CNN_storage_backend = {'hdf5','tiff','hdf5'}; end
     if ~isfield(trainingParam,'CNN_rand_scale');      trainingParam.CNN_rand_scale      = [0.9 1.1]; end
     if ~isfield(trainingParam,'CNN_rand_flip');       trainingParam.CNN_rand_flip       = true;      end
     if ~isfield(trainingParam,'CNN_crop_scale');      trainingParam.CNN_crop_scale      = [0.8 1.0]; end
@@ -99,7 +99,7 @@ fprintf('Loading data repository...\n');
 fprintf('------\n');
 
 % === Choix du backend de données pour le CNN ===
-backend = lower(trainingParam.CNN_storage_backend);
+backend = lower(trainingParam.CNN_storage_backend{end});
 
 %----------------------------------------------------------------------
 % 1) Création des datastores d'entraînement / validation
@@ -202,6 +202,14 @@ switch backend
         dsTrain = subset(dsAll, idxTrain);
         dsVal   = subset(dsAll, idxVal);
 
+% === Pas d'augmentation sur la validation ===
+dsVal.TransRange     = [0 0];
+dsVal.RotRange       = [0 0];
+dsVal.CropScale      = [1 1];
+dsVal.ContrastRange  = [1 1];
+dsVal.HueDelta       = 0;
+dsVal.NoiseSigma     = 0;
+
         % Class weights via /labels du HDF5
         labsAll = h5read(h5File, '/labels');
         labsAll = squeeze(labsAll);
@@ -224,8 +232,10 @@ switch backend
 
     otherwise
         error('Unknown CNN_storage_backend: %s (use ''tiff'' or ''hdf5'')', ...
-            trainingParam.CNN_storage_backend);
+            trainingParam.CNN_storage_backend{end});
 end
+
+
 
 %----------------------------------------------------------------------
 % 2) Classes (depuis classif)
@@ -423,6 +433,18 @@ switch backend
         validationData = dataValBase;
 end
 
+% Adapter la taille de sortie du datastore HDF5 à celle du réseau
+if useHDF5
+    % inputSize est défini plus haut : [H W C]
+    targetHW = inputSize(1:2);
+
+    % trainingData / validationData sont des H5ImageDatastore (ou subset)
+    trainingData.OutputSize   = targetHW;
+    validationData.OutputSize = targetHW;
+end
+
+
+
 %----------------------------------------------------------------------
 % 5) trainingOptions & trainNetwork
 %----------------------------------------------------------------------
@@ -462,26 +484,7 @@ save(fullfile(path,'TrainingValidation','CNNOptions.mat'),'CNNOptions');
 save(fullfile(path,'TrainingValidation','tmpoptions.mat'),'options');
 
 % ===== helpers =====
-function augParams = localGetH5AugParams(trainingParam)
-% Paramètres d'augmentation à partager entre entraînement CNN et lecture HDF5
-augParams = struct();
-augParams.TransRange    = trainingParam.CNN_translation_augmentation;
-augParams.RotRange      = trainingParam.CNN_rotation_augmentation;
-augParams.CropScale     = trainingParam.CNN_crop_scale;
-augParams.ContrastRange = trainingParam.CNN_contrast_range;
-augParams.HueDelta      = trainingParam.CNN_hue_delta;
-augParams.NoiseSigma    = trainingParam.CNN_noise_sigma;
 
-function layers = freezeWeights(layers)
-for ii = 1:size(layers,1)
-    props = properties(layers(ii));
-    for p = 1:numel(props)
-        propName = props{p};
-        if ~isempty(regexp(propName, 'LearnRateFactor$', 'once'))
-            layers(ii).(propName) = 0;
-        end
-    end
-end
 
 function lgraph = createLgraphUsingConnections(layers,connections)
 lgraph = layerGraph();

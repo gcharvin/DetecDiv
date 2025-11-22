@@ -21,29 +21,37 @@ classdef H5ImageDatastore < matlab.io.Datastore & ...
     %       - HueDelta       : max ΔH (0–1), jitter dans [-HueDelta, +HueDelta]
     %       - NoiseSigma     : écart-type du bruit gaussien ajouté
 
-    properties
-        % Public config
-        Filename           (1,:) char
-        FrameDataset       (1,:) char = '/frames'
-        LabelDataset       (1,:) char = '/labels'
-        ClassNames                         % cellstr
+properties
+    % Public config
+    Filename           (1,:) char
+    FrameDataset       (1,:) char = '/frames'
+    LabelDataset       (1,:) char = '/labels'
+    ClassNames                         % cellstr
 
-        ImageSize         (1,3) double     % [H W 3]
-        MiniBatchSize     (1,1) double = 32
+    ImageSize         (1,3) double     % [H W 3]
+    MiniBatchSize = 32
 
-        % Augmentation geo basique
-        TransRange        (1,2) double = [0 0]   % ex: [-5 5]
-        RotRange          (1,2) double = [0 0]   % ex: [-20 20]
+    % Taille de sortie (optionnelle) pour adapter au réseau CNN
+    % Si vide -> on garde la taille native du HDF5
+    OutputSize = []    % [H W] ou [H W 3]
 
-        % Augmentation supplémentaires
-        CropScale         (1,2) double = [1 1]   % ex: [0.8 1.0] (crop-in)
-        ContrastRange     (1,2) double = [1 1]   % ex: [0.8 1.2]
-        HueDelta          (1,1) double = 0       % ex: 0.05 -> ±0.05
-        NoiseSigma        (1,1) double = 0       % ex: 0.02 (sur [0,1])
-    end
+    % Augmentation geo basique
+    TransRange        (1,2) double = [0 0]
+    RotRange          (1,2) double = [0 0]
+
+    % Augmentations supplémentaires
+    CropScale         (1,2) double = [1 1]
+    ContrastRange     (1,2) double = [1 1]
+    HueDelta          (1,1) double = 0
+    NoiseSigma        (1,1) double = 0
+end
+
+
+properties (SetAccess = protected)
+    NumObservations = 0;
+end
 
     properties(Access = private)
-        NumObs            (1,1) double = 0      % total frames
         Indices                         % indices logiques (ordre de lecture)
         CurrentIdx        (1,1) double = 1
         LabelsRaw                       % labels tels que stockés dans HDF5
@@ -100,22 +108,29 @@ classdef H5ImageDatastore < matlab.io.Datastore & ...
             end
 
             % --- Infos sur le dataset images ---
-            info = h5info(ds.Filename, ds.FrameDataset);
-            sz   = info.Dataspace.Size;
-            if numel(sz) ~= 4
-                error('Expected /frames to have size [H W 3 N]. Got: %s', mat2str(sz));
-            end
-            ds.ImageSize = sz(1:3);
-            ds.NumObs    = sz(4);
+          % --- Infos sur le dataset images ---
+info = h5info(ds.Filename, ds.FrameDataset);
+sz   = info.Dataspace.Size;
+if numel(sz) ~= 4
+    error('Expected /frames to have size [H W 3 N]. Got: %s', mat2str(sz));
+end
+ds.ImageSize      = sz(1:3);
+ds.NumObservations = sz(4);
 
-            % --- Lecture des labels une fois pour toutes ---
-            labs = h5read(ds.Filename, ds.LabelDataset);
-            labs = squeeze(labs);
-            if numel(labs) ~= ds.NumObs
-                error('Labels length (%d) does not match number of frames (%d).', ...
-                    numel(labs), ds.NumObs);
-            end
-            ds.LabelsRaw = labs;
+
+           % --- Lecture des labels une fois pour toutes ---
+labs = h5read(ds.Filename, ds.LabelDataset);
+labs = squeeze(labs);
+if numel(labs) ~= ds.NumObservations
+    error('Labels length (%d) does not match number of frames (%d).', ...
+        numel(labs), ds.NumObservations);
+end
+ds.LabelsRaw = labs;
+
+% Indices initiaux
+ds.Indices    = 1:ds.NumObservations;
+ds.CurrentIdx = 1;
+
 
             % --- ClassNames depuis HDF5 si pas fournis ---
             if isempty(ds.ClassNames)
@@ -127,9 +142,7 @@ classdef H5ImageDatastore < matlab.io.Datastore & ...
                 end
             end
 
-            % Indices initiaux
-            ds.Indices    = 1:ds.NumObs;
-            ds.CurrentIdx = 1;
+         
         end
 
         %--------------------------------------------------------------
@@ -138,11 +151,16 @@ classdef H5ImageDatastore < matlab.io.Datastore & ...
         end
 
         %--------------------------------------------------------------
-        function [data, labels] = read(ds)
-            % READ  Retourne un minibatch [data, labels]
+           %--------------------------------------------------------------
+        function [dataTbl, info] = read(ds)
+            % READ  Retourne un minibatch sous forme de table B×2
             %
-            % data   : [H W 3 B] single in [0,1]
-            % labels : [B 1] categorical
+            % dataTbl :
+            %   - colonne 'input'   : B×1 cell, chaque cellule = [H W 3] single
+            %   - colonne 'response': B×1 categorical
+            %
+            % [dataTbl, info] = read(ds)
+            %   info : struct optionnel, pour compatibilité avec trainNetwork
 
             if ~hasdata(ds)
                 error('No more data to read. Call reset(ds) to restart.');
@@ -154,29 +172,52 @@ classdef H5ImageDatastore < matlab.io.Datastore & ...
             batchIdx = ds.Indices(startIdx:stopIdx);
             B = numel(batchIdx);
 
-            H = ds.ImageSize(1);
-            W = ds.ImageSize(2);
-            C = ds.ImageSize(3);
+            % Taille native
+            H0 = ds.ImageSize(1);
+            W0 = ds.ImageSize(2);
+            C  = ds.ImageSize(3);
 
-            data = zeros(H, W, C, B, 'single');
+            % Taille cible (pour le réseau)
+            if ~isempty(ds.OutputSize)
+                osz = ds.OutputSize;
+                if numel(osz) >= 2
+                    H = osz(1);
+                    W = osz(2);
+                else
+                    H = H0;
+                    W = W0;
+                end
+            else
+                H = H0;
+                W = W0;
+            end
+
+            % Pré-allocation : une cellule par observation
+            X = cell(B,1);
             labBatchRaw = ds.LabelsRaw(batchIdx);
 
             % --- Lecture frame par frame + augmentation ---
             for k = 1:B
                 idx = batchIdx(k);
-                % HDF5 indices 1-based -> [1 1 1 idx] / [H W 3 1]
+
                 img = h5read(ds.Filename, ds.FrameDataset, ...
-                             [1 1 1 idx], [H W C 1]);
+                             [1 1 1 idx], [H0 W0 C 1]);
 
                 img = squeeze(img);
                 if ndims(img)==2
                     img = repmat(img,[1 1 3]);
                 end
-                img = single(img) / 255; % normalisation simple [0,1]
+                img = single(img) / 255;   % [0,1]
 
+                % Augmentations à la taille native
                 img = ds.applyAugment(img);
 
-                data(:,:,:,k) = img;
+                % Resize vers la taille cible si besoin
+                if H ~= H0 || W ~= W0
+                    img = imresize(img, [H W]);
+                end
+
+                X{k} = img;
             end
 
             % --- Labels -> categorical ---
@@ -184,7 +225,21 @@ classdef H5ImageDatastore < matlab.io.Datastore & ...
 
             % avance le pointeur
             ds.CurrentIdx = stopIdx + 1;
+
+            % === Retourner un TABLE B×2 pour trainNetwork ===
+            dataTbl = table(X, labels, ...
+                'VariableNames', {'input','response'});
+
+            % --- Second output optionnel pour compatibilité ---
+            if nargout > 1
+                info = struct();
+                info.BatchIndices = batchIdx;
+                info.StartIndex   = startIdx;
+                info.StopIndex    = stopIdx;
+            end
         end
+
+
 
         %--------------------------------------------------------------
         function reset(ds)
@@ -200,7 +255,8 @@ classdef H5ImageDatastore < matlab.io.Datastore & ...
 
         %--------------------------------------------------------------
         function n = numObservations(ds)
-            n = numel(ds.Indices);
+    % Nombre logique d'observations = longueur du vecteur d'indices
+    n = numel(ds.Indices);
         end
 
         %--------------------------------------------------------------
@@ -221,38 +277,32 @@ classdef H5ImageDatastore < matlab.io.Datastore & ...
             sel = allIdx(edges(idx)+1:edges(idx+1));
             dsNew.Indices    = sel;
             dsNew.CurrentIdx = 1;
+            dsNew.NumObservations = numel(dsNew.Indices);
         end
 
         %--------------------------------------------------------------
         function dsSub = subset(ds, idx)
-            dsSub = copy(ds);
-            dsSub.Indices    = ds.Indices(idx);
-            dsSub.CurrentIdx = 1;
-        end
+    dsSub = copy(ds);
+    dsSub.Indices    = ds.Indices(idx);
+    dsSub.CurrentIdx = 1;
+
+    % Maintenir NumObservations cohérent (optionnel, mais propre)
+    dsSub.NumObservations = numel(dsSub.Indices);
+end
 
         %--------------------------------------------------------------
         function frac = progress(ds)
             frac = (ds.CurrentIdx-1) / max(1, numel(ds.Indices));
         end
 
+
         %--------------------------------------------------------------
-        function dsCopy = copy(ds)
-            % helper pour créer un "clone" simple
-            dsCopy = H5ImageDatastore(ds.Filename, ...
-                'FrameDataset',  ds.FrameDataset, ...
-                'LabelDataset',  ds.LabelDataset, ...
-                'MiniBatchSize', ds.MiniBatchSize, ...
-                'TransRange',    ds.TransRange, ...
-                'RotRange',      ds.RotRange, ...
-                'CropScale',     ds.CropScale, ...
-                'ContrastRange', ds.ContrastRange, ...
-                'HueDelta',      ds.HueDelta, ...
-                'NoiseSigma',    ds.NoiseSigma, ...
-                'ClassNames',    ds.ClassNames ...
-                );
-            dsCopy.Indices    = ds.Indices;
-            dsCopy.CurrentIdx = ds.CurrentIdx;
-        end
+function dsOut = partitionByIndex(ds, indices)
+    % indices : vecteur d'indices globaux (1..NumObservations)
+    dsOut = subset(ds, indices);
+end
+
+ 
     end
 
     %==================================================================

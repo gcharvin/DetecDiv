@@ -71,7 +71,7 @@ Fraction = max(0, min(1, Fraction));   % clamp dans [0,1]
 output = 0;
 
 % ---- FS prep ----
-if ~isfolder(fullfile(classif.path, foldername, 'images'))
+if ~isfolder(fullfile(classif.path, foldername, 'images')) && ~UseHDF5
     mkdir(fullfile(classif.path, foldername), 'images');
 end
 
@@ -238,7 +238,7 @@ for i = 1:numel(rois_sel)
     dataid    = labelIdx;
     dataidfra = labelIdx(fra);
 
-        % --- Option : undersampling des classes majoritaires ---
+    % --- Option : undersampling des classes majoritaires ---
     if exist("UndersampleMajority","var") && UndersampleMajority < 1
         % calcul de la fréquence de chaque classe
         classCounts = countcats(categorical(dataidfra, 1:numel(classif.classes)));
@@ -265,7 +265,7 @@ for i = 1:numel(rois_sel)
             % appliquer le sous-échantillonnage
             dataidfra = dataidfra(keepIdx);
             fra       = fra(keepIdx);
-           % lab       = lab(keepIdx);
+            % lab       = lab(keepIdx);
         end
     end
 
@@ -295,6 +295,10 @@ for i = 1:numel(rois_sel)
         reverseStr = '';
         cc = 1;
 
+        % === Taille cible pour CNN (GoogLeNet, ResNet18/50) ===  %% NEW
+        targetH = 224;                                           %% NEW
+        targetW = 224;                                           %% NEW
+
         % ---- frame de référence
         imtest = cltmp(ridx).preProcessROIData(pix, 1, 1); % dorepmat=1 => 3 canaux
         if isempty(imtest)
@@ -304,10 +308,13 @@ for i = 1:numel(rois_sel)
         if size(imtest,3)==1, imtest = repmat(imtest,[1 1 3]); end
 
         if Crop
-            imtest = localCrop(imtest, CropCenter, CropSize); % <-- NEW
+            imtest = localCrop(imtest, CropCenter, CropSize); % <-- NEW (inchangé)
         end
 
-        [H0, W0, ~] = size(imtest);
+        % On impose la taille CNN, indépendamment de imtest            %% NEW
+        H0 = targetH;                                                 %% NEW
+        W0 = targetW;                                                 %% NEW
+
         vid = uint8(zeros(H0, W0, 3, numel(fra)));
 
         for j = fra
@@ -319,19 +326,20 @@ for i = 1:numel(rois_sel)
             end
             if size(tmp,3)==1, tmp = repmat(tmp,[1 1 3]); end
 
-            % --- Crop optionnel (sortie = taille fixe)
+            % --- Crop optionnel (sortie encore en taille "native") ---
             if Crop
-                tmp = localCrop(tmp, CropCenter, CropSize); % <-- NEW
-            else
-                % harmonise taille si différence
-                if size(tmp,1)~=H0 || size(tmp,2)~=W0
-                    tmp = imresize(tmp, [H0 W0]);
-                end
+                tmp = localCrop(tmp, CropCenter, CropSize);
             end
 
+            % --- Harmonisation + resize vers taille CNN (224x224) --- %% NEW
+            if size(tmp,1) ~= H0 || size(tmp,2) ~= W0                %% NEW
+                tmp = imresize(tmp, [H0 W0]);                         %% NEW
+            end                                                       %% NEW
+
+            % tmp est supposé être en [0,1] -> on encode en uint8
             vid(:,:,:,cc) = uint8(256 * tmp);
 
-            % Ecriture image par classe si applicable
+            % Ecriture image par classe si applicable (TIFF) ----------
             tr = num2str(j);
             while numel(tr)<4, tr = ['0' tr]; end
 
@@ -342,13 +350,17 @@ for i = 1:numel(rois_sel)
             end
 
             if  ~UseHDF5 && WriteTiffImages && cmp ~= 0
-                imwrite(tmp, fullfile(classif.path, foldername, 'images', classif.classes{cmp}, ...
-    [cltmp(ridx).id '_frame_' tr '.tif']));
+                % ici tmp est déjà en 224x224 : ce n'est pas un problème,
+                % au contraire c'est cohérent avec le CNN.
+                imwrite(tmp, fullfile(classif.path, foldername, 'images', ...
+                    classif.classes{cmp}, ...
+                    [cltmp(ridx).id '_frame_' tr '.tif']));
 
                 output = output + 1;
             end
 
-            msg = sprintf('Processing frame: %d / %d for ROI %s', cc, numel(fra), cltmp(ridx).id);
+            msg = sprintf('Processing frame: %d / %d for ROI %s', ...
+                cc, numel(fra), cltmp(ridx).id);
             fprintf([reverseStr, msg]);
             reverseStr = repmat(sprintf('\b'), 1, length(msg));
             cc = cc + 1;
@@ -361,23 +373,20 @@ for i = 1:numel(rois_sel)
             if ~h5Initialized
                 chunkLab = max(128, min(1024, nbFrames));
 
-               % Dataset extensible : maxdims avec Inf
-h5create(h5Framebank, '/frames', [H0 W0 3 Inf], ...
-    Datatype="uint8", ...
-    ChunkSize=[H0 W0 3 1], ...
-    Deflate=1);
+                % Dataset extensible : maxdims avec Inf
+                h5create(h5Framebank, '/frames', [H0 W0 3 Inf], ...
+                    Datatype="uint8", ...
+                    ChunkSize=[H0 W0 3 1], ...
+                    Deflate=1);
 
+                h5create(h5Framebank, '/labels', [1 Inf], ...
+                    Datatype="int32", ...
+                    ChunkSize=[1 chunkLab], ...
+                    Deflate=1);
 
-h5create(h5Framebank, '/labels', [1 Inf], ...
-    Datatype="int32", ...
-    ChunkSize=[1 chunkLab], ...
-    Deflate=1);
-
-
-
-               classNames = string(classif.classes(:))';
-h5create(h5Framebank, '/classNames', size(classNames), Datatype="string");
-h5write(h5Framebank, '/classNames', classNames);
+                classNames = string(classif.classes(:))';
+                h5create(h5Framebank, '/classNames', size(classNames), Datatype="string");
+                h5write(h5Framebank, '/classNames', classNames);
 
                 h5Initialized = true;
             else
@@ -389,14 +398,16 @@ h5write(h5Framebank, '/classNames', classNames);
                 end
             end
 
-            h5write(h5Framebank, '/frames', vid, [1 1 1 nextFrameIdx], [H0 W0 3 nbFrames]);
+            % vid est déjà en [H0 W0 3 nbFrames] = [224 224 3 nbFrames]
+            h5write(h5Framebank, '/frames', vid, ...
+                [1 1 1 nextFrameIdx], [H0 W0 3 nbFrames]);
 
             labVec = int32(double(lab(:)'));   % ligne 1xN
-h5write(h5Framebank, '/labels', labVec, ...
-    [1 nextFrameIdx], [1 nbFrames]);
+            h5write(h5Framebank, '/labels', labVec, ...
+                [1 nextFrameIdx], [1 nbFrames]);
 
-       output = output + nbFrames;
-       
+            output = output + nbFrames;
+
             seriesStart(end+1,1) = nextFrameIdx; %#ok<AGROW>
             seriesLen(end+1,1)   = nbFrames;    %#ok<AGROW>
             seriesIds(end+1,1)   = string(cltmp(ridx).id); %#ok<AGROW>
@@ -404,6 +415,7 @@ h5write(h5Framebank, '/labels', labVec, ...
             nextFrameIdx = nextFrameIdx + nbFrames;
         end
     end
+
 
     % =======================
     %  LSTM Regression
@@ -444,9 +456,9 @@ h5write(h5Framebank, '/labels', labVec, ...
         end
 
         % sauvegardes
-parsaveim(fullfile(classif.path, foldername, 'images', [cltmp(ridx).id '.mat']), imtest);
+        parsaveim(fullfile(classif.path, foldername, 'images', [cltmp(ridx).id '.mat']), imtest);
 
-parsaveresp(fullfile(classif.path, foldername, 'response', [cltmp(ridx).id '.mat']), dataidfra);
+        parsaveresp(fullfile(classif.path, foldername, 'response', [cltmp(ridx).id '.mat']), dataidfra);
 
         output = output + 1;
     end
@@ -457,7 +469,7 @@ parsaveresp(fullfile(classif.path, foldername, 'response', [cltmp(ridx).id '.mat
 
     if isempty(emptyFrame)
         parsave(fullfile(classif.path, foldername, 'timeseries', ...
-    ['lstm_labeled_' cltmp(ridx).id '.mat']), deep, vid, lab);
+            ['lstm_labeled_' cltmp(ridx).id '.mat']), deep, vid, lab);
         cltmp(ridx).save;
     else
         disp('This ROI was not saved because it has empty frames');
@@ -470,16 +482,16 @@ end
 if UseHDF5 && h5Initialized
     nbSeries = numel(seriesStart);
 
-   h5create(h5Framebank, '/series_start', [1 nbSeries], Datatype="int64");
+    h5create(h5Framebank, '/series_start', [1 nbSeries], Datatype="int64");
     h5write(h5Framebank, '/series_start', int64(seriesStart(:))');
 
     h5create(h5Framebank, '/series_len',   [1 nbSeries], Datatype="int64");
     h5write(h5Framebank, '/series_len', int64(seriesLen(:))');
 
     if ~isempty(seriesIds)
-         seriesIds = seriesIds(:)';  % row vector of strings
-    h5create(h5Framebank, '/series_roi_id', size(seriesIds), Datatype="string");
-    h5write(h5Framebank, '/series_roi_id', seriesIds);
+        seriesIds = seriesIds(:)';  % row vector of strings
+        h5create(h5Framebank, '/series_roi_id', size(seriesIds), Datatype="string");
+        h5write(h5Framebank, '/series_roi_id', seriesIds);
     end
 end
 
