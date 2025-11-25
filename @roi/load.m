@@ -91,6 +91,72 @@ if isfile(dataFile)
 else
     obj.data = dataseries.empty;
 end
+
+
+% -------------------------------------------------------------------------
+% Harmonisation plotProperties / plotGroup
+% Chaque nom de groupe présent dans plotProperties(:,6) doit être listé dans
+% plotGroup{6}. On corrige ici d'éventuelles incohérences au chargement.
+% -------------------------------------------------------------------------
+
+if isprop(obj, 'data') && ~isempty(obj.data)
+    for dd = 1:numel(obj.data)
+        if ~isprop(obj.data(dd),'plotProperties') || isempty(obj.data(dd).plotProperties)
+            continue;
+        end
+        if ~isprop(obj.data(dd),'plotGroup')
+            % Si plotGroup n'existe pas, on initialise une cellule 1x6 vide
+            obj.data(dd).plotGroup = cell(1,6);
+        end
+
+        pp = obj.data(dd).plotProperties;
+        pg = obj.data(dd).plotGroup;
+
+        % S'assurer que plotGroup est une cellule 1x6
+        if ~iscell(pg)
+            pg = cell(1,6);
+        elseif numel(pg) < 6
+            pg(1,6) = {[]};
+        end
+
+        % --- Groupes présents dans plotProperties (6e colonne) ---
+        if size(pp,2) >= 6
+            groupsFromProps = pp(:,6);
+        else
+            groupsFromProps = {};
+        end
+
+        if ~iscell(groupsFromProps)
+            groupsFromProps = num2cell(groupsFromProps);
+        end
+
+        % Garder uniquement les chaînes non vides
+        isNonEmptyStr = cellfun(@(x) (ischar(x) && ~isempty(x)) || ...
+                                         (isstring(x) && strlength(x) > 0), ...
+                                groupsFromProps);
+        groupsFromProps = groupsFromProps(isNonEmptyStr);
+        groupsFromProps = cellfun(@char, groupsFromProps, 'UniformOutput', false);
+
+        % --- Groupes déjà présents dans plotGroup{6} ---
+        existingGroups = {};
+        if numel(pg) >= 6 && ~isempty(pg{6})
+            existingGroups = pg{6};
+            if ischar(existingGroups)
+                existingGroups = {existingGroups};
+            end
+        end
+
+        % Union des deux listes, en conservant l'ordre d'apparition
+        allGroups = unique([existingGroups(:); groupsFromProps(:)]', 'stable');
+
+        % Mise à jour
+        pg{6} = allGroups;
+        obj.data(dd).plotGroup = pg;
+    end
+end
+
+
+
 end
 
 % ==================== H E L P E R S ====================

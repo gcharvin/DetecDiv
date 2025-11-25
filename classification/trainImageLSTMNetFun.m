@@ -136,7 +136,7 @@ fprintf('------\n');
 %%% training image classifier
 if trainingParam.train_CNN_classifier
     if strcmp(trainingParam.transfer_learning{end},'ImageNet')
-        aa=classif.trainingParam
+      
         trainImageGoogleNetFun(classif); % saves as netCNN.mat in the LSTM dir
     else
         src=fullfile(classif.path,['netCNN_' trainingParam.transfer_learning{end}]);
@@ -409,92 +409,92 @@ else
         T = size(video,4);
 
 
-% === LEGACY : découpe par discretize, sans minority mode ===
-fr = 1:T;
-nb = max(1, ceil(T / L));
-dis = discretize(fr, nb);
-for k = 1:max(dis)
-    tmpvid = video(:,:,:, fr(dis==k));
-    sequences{cc,1} = activations(netCNN,tmpvid,layerName,'OutputAs','columns');
+% % === LEGACY : découpe par discretize, sans minority mode ===
+% fr = 1:T;
+% nb = max(1, ceil(T / L));
+% dis = discretize(fr, nb);
+% for k = 1:max(dis)
+%     tmpvid = video(:,:,:, fr(dis==k));
+%     sequences{cc,1} = activations(netCNN,tmpvid,layerName,'OutputAs','columns');
+% 
+%     tmpLab = lab(fr(dis==k));
+%     if iscolumn(tmpLab), tmpLab = tmpLab'; end
+%     tmpLab = categorical(tmpLab, categories(lab));
+%     labels{cc,1} = tmpLab;
+% 
+%     cc = cc + 1;
+% end
 
-    tmpLab = lab(fr(dis==k));
-    if iscolumn(tmpLab), tmpLab = tmpLab'; end
-    tmpLab = categorical(tmpLab, categories(lab));
-    labels{cc,1} = tmpLab;
 
-    cc = cc + 1;
-end
+        % --- Sliding windows parameters ---
+        if isfield(trainingParam,'win_stride_neg_frac') && ~isempty(trainingParam.win_stride_neg_frac)
+            stride = max(1, round(L * trainingParam.win_stride_neg_frac));
+        else
+            stride = max(1, floor(L/2));   % défaut : L/2
+        end
 
+        % Construire toutes les fenêtres glissantes [s e]
+        windows = [];
+        if T <= L
+            windows = [1 T];
+        else
+            for s = 1:stride:(T - L + 1)
+                windows(end+1,:) = [s s+L-1]; %#ok<AGROW>
+            end
+            % dernière fenêtre alignée sur la fin si besoin
+            if windows(end,2) < T
+                windows(end+1,:) = [max(1,T-L+1) T]; %#ok<AGROW>
+            end
+        end
 
-        % % --- Sliding windows parameters ---
-        % if isfield(trainingParam,'win_stride_neg_frac') && ~isempty(trainingParam.win_stride_neg_frac)
-        %     stride = max(1, round(L * trainingParam.win_stride_neg_frac));
-        % else
-        %     stride = max(1, floor(L/2));   % défaut : L/2
-        % end
-        % 
-        % % Construire toutes les fenêtres glissantes [s e]
-        % windows = [];
-        % if T <= L
-        %     windows = [1 T];
-        % else
-        %     for s = 1:stride:(T - L + 1)
-        %         windows(end+1,:) = [s s+L-1]; %#ok<AGROW>
-        %     end
-        %     % dernière fenêtre alignée sur la fin si besoin
-        %     if windows(end,2) < T
-        %         windows(end+1,:) = [max(1,T-L+1) T]; %#ok<AGROW>
-        %     end
-        % end
-        % 
-        % if doBalance
-        %     % ---- 1. Marquer les fenêtres contenant des classes minoritaires ----
-        %     isMinor = ismember(lab, categorical(minorityClasses));
-        %     posWins = [];
-        %     negWins = [];
-        % 
-        %     for w = 1:size(windows,1)
-        %         s = windows(w,1);
-        %         e = windows(w,2);
-        %         if any(isMinor(s:e))
-        %             posWins = [posWins; windows(w,:)]; %#ok<AGROW>
-        %         else
-        %             negWins = [negWins; windows(w,:)]; %#ok<AGROW>
-        %         end
-        %     end
-        % 
-        %     % ---- 2. Sous-échantillonnage des NEG selon pos_neg_ratio ----
-        %     kpos = size(posWins,1);
-        %     kneg = size(negWins,1);
-        % 
-        %     if kpos == 0
-        %         useWins = negWins;
-        %     else
-        %         r = min(kneg, round(trainingParam.pos_neg_ratio * kpos));
-        %         selNeg = randperm(kneg, max(r,0));
-        %         useWins = [posWins; negWins(selNeg,:)];
-        %     end
-        % 
-        % else
-        %     % ---- Pas de minority mode : toutes les fenêtres glissantes ----
-        %     useWins = windows;
-        % end
-        % 
-        % % ---- 3. Construction des séquences finales ----
-        % for w = 1:size(useWins,1)
-        %     s = useWins(w,1);
-        %     e = useWins(w,2);
-        % 
-        %     tmpvid = video(:,:,:,s:e);
-        %     sequences{cc,1} = activations(netCNN,tmpvid,layerName,'OutputAs','columns');
-        % 
-        %     tmpLab = lab(s:e);
-        %     if iscolumn(tmpLab), tmpLab = tmpLab'; end
-        %     tmpLab = categorical(tmpLab, categories(lab));
-        %     labels{cc,1} = tmpLab;
-        % 
-        %     cc = cc + 1;
-        % end
+        if doBalance
+            % ---- 1. Marquer les fenêtres contenant des classes minoritaires ----
+            isMinor = ismember(lab, categorical(minorityClasses));
+            posWins = [];
+            negWins = [];
+
+            for w = 1:size(windows,1)
+                s = windows(w,1);
+                e = windows(w,2);
+                if any(isMinor(s:e))
+                    posWins = [posWins; windows(w,:)]; %#ok<AGROW>
+                else
+                    negWins = [negWins; windows(w,:)]; %#ok<AGROW>
+                end
+            end
+
+            % ---- 2. Sous-échantillonnage des NEG selon pos_neg_ratio ----
+            kpos = size(posWins,1);
+            kneg = size(negWins,1);
+
+            if kpos == 0
+                useWins = negWins;
+            else
+                r = min(kneg, round(trainingParam.pos_neg_ratio * kpos));
+                selNeg = randperm(kneg, max(r,0));
+                useWins = [posWins; negWins(selNeg,:)];
+            end
+
+        else
+            % ---- Pas de minority mode : toutes les fenêtres glissantes ----
+            useWins = windows;
+        end
+
+        % ---- 3. Construction des séquences finales ----
+        for w = 1:size(useWins,1)
+            s = useWins(w,1);
+            e = useWins(w,2);
+
+            tmpvid = video(:,:,:,s:e);
+            sequences{cc,1} = activations(netCNN,tmpvid,layerName,'OutputAs','columns');
+
+            tmpLab = lab(s:e);
+            if iscolumn(tmpLab), tmpLab = tmpLab'; end
+            tmpLab = categorical(tmpLab, categories(lab));
+            labels{cc,1} = tmpLab;
+
+            cc = cc + 1;
+        end
 
 
         fprintf('\n');

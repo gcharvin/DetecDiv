@@ -9,6 +9,9 @@ function output = formatDataForTraining(classif, varargin)
     Fraction = 1;     % fraction des ROIs à échantillonner (LSTM)
     Seed     = 12345; % seed déterministe (LSTM)
 
+    % NEW: collecter les arguments qu'on ne traite pas nous-mêmes
+    extraArgs = {};
+
     % ---- Parse varargin de façon robuste (accepte flags ou paires) ----
     i = 1;
     while i <= numel(varargin)
@@ -18,28 +21,48 @@ function output = formatDataForTraining(classif, varargin)
             switch key
                 case "frames"
                     if i+1 <= numel(varargin), Frames = varargin{i+1}; end
-                    i = i + 2; continue
+                    i = i + 2; 
+                    continue
+
                 case "rois"
                     if i+1 <= numel(varargin), rois = varargin{i+1}; end
-                    i = i + 2; continue
+                    i = i + 2; 
+                    continue
+
                 case "keep"
                     % accepte 'Keep' seul (=> true) OU 'Keep',value
                     if i+1 <= numel(varargin) && ~(ischar(varargin{i+1}) || isstring(varargin{i+1}))
                         Keep = logical(varargin{i+1});
-                        i = i + 2; continue
+                        i = i + 2; 
+                        continue
                     else
                         Keep = 1;
-                        i = i + 1; continue
+                        i = i + 1; 
+                        continue
                     end
+
                 case "fraction"
                     if i+1 <= numel(varargin), Fraction = varargin{i+1}; end
-                    i = i + 2; continue
+                    i = i + 2; 
+                    continue
+
                 case "seed"
                     if i+1 <= numel(varargin), Seed = varargin{i+1}; end
-                    i = i + 2; continue
+                    i = i + 2; 
+                    continue
+
                 otherwise
-                    % argument inconnu : l'ignorer proprement
-                    i = i + 1; continue
+                    % NEW: ne plus jeter, mais forwarder vers le formatter
+                    if i+1 <= numel(varargin) && ~(ischar(varargin{i+1}) || isstring(varargin{i+1}))
+                        % Name-Value pair inconnu => on le stocke
+                        extraArgs = [extraArgs, {arg, varargin{i+1}}];
+                        i = i + 2;
+                    else
+                        % Flag seul => on le forwarde aussi
+                        extraArgs = [extraArgs, {arg}];
+                        i = i + 1;
+                    end
+                    continue
             end
         else
             i = i + 1; % ignorer tokens non-string
@@ -51,6 +74,7 @@ function output = formatDataForTraining(classif, varargin)
         Fraction = 1;
     end
     Fraction = max(0, min(1, Fraction));
+
     if ~(isnumeric(Seed) && isscalar(Seed) && isfinite(Seed))
         Seed = 12345;
     else
@@ -82,22 +106,21 @@ function output = formatDataForTraining(classif, varargin)
     % ---- Dispatch par catégorie ----
     switch category
         case {'Image', 'Image Regression'}
+            % (pour l'instant je ne forwarde pas extraArgs aux formats Image,
+            %  mais on peut le faire si tu veux y brancher le crop, etc.)
             output = formatImageTrainingSet(foldername, classif, rois);
 
         case 'LSTM'
-            % Passer Frames/Fraction/Seed au formatter LSTM
+            % On construit d'abord la liste d'arguments de base
+            baseArgs = {'Fraction', Fraction, 'Seed', Seed};
             if ~isempty(Frames)
-                output = formatLSTMTrainingSet( ...
-                            foldername, classif, rois, ...
-                            'Frames',   Frames, ...
-                            'Fraction', Fraction, ...
-                            'Seed',     Seed);
-            else
-                output = formatLSTMTrainingSet( ...
-                            foldername, classif, rois, ...
-                            'Fraction', Fraction, ...
-                            'Seed',     Seed);
+                baseArgs = [baseArgs, {'Frames', Frames}];
             end
+
+            % NEW: on ajoute tous les extraArgs (UndersampleMajority, Crop, ...)
+            output = formatLSTMTrainingSet( ...
+                        foldername, classif, rois, ...
+                        baseArgs{:}, extraArgs{:});
 
         case 'Pixel'
             if isprop(classif, 'description')
