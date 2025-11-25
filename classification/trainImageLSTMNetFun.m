@@ -143,64 +143,102 @@ fprintf('------\n');
 
 netCNN = [];
 
-% 1) Si on doit entraîner le CNN dans ce run
-if isfield(trainingParam,'train_CNN_classifier') && trainingParam.train_CNN_classifier
-    fprintf('Training CNN classifier (train_CNN_classifier = true)...\n');
+if trainingParam.train_CNN_classifier
     
-    % Ici tu as deux options :
-    %   - soit tu appelles directement trainImageGoogleNetFun
-    %   - soit tu laisses ton code existant qui entraîne le CNN
-    %
-    % Exemple si tu utilises trainImageGoogleNetFun :
-
-    trainImageGoogleNetFun(classif, true);  % ou setparam si nécessaire
-
+    if strcmp(trainingParam.transfer_learning{end},'ImageNet') 
+    trainImageGoogleNetFun(classif); % trainImageGoogle net first and saves it as netCNN.mat in the LSTM dir
+    else
+     src=fullfile(classif.path,['netCNN_' trainingParam.transfer_learning{end}]);
+         if exist(src)
+             load(src); %loads classifier
+         else
+             disp(['Unable to load: ' trainingParam.transfer_learning{end}]);
+            return;
+         end        
+        trainImageGoogleNetFun(classif,'ok',classifier);    
+    end
     
-    % Après training, on s'attend à trouver un fichier <name>.mat avec 'classifier'
-    cnnFile = fullfile(path, [name '.mat']);
-    if exist(cnnFile,'file')
-        S = load(cnnFile);
-        if isfield(S,'classifier')
-            netCNN = S.classifier;
-        else
-            warning('File %s loaded but no ''classifier'' variable found.', cnnFile);
-        end
-    else
-        warning('CNN training supposedly done, but no classifier file found at %s.', cnnFile);
+    target=fullfile(path,['netCNN_' name '.mat']);
+    source=fullfile(path,[name '.mat']);
+  
+    if ~exist(source)
+        disp('Trained CNN does not exist; quitting !');
+        return;
     end
-
-else
-    % 2) Cas où train_CNN_classifier = false :
-    %    on tente de recharger un CNN déjà entraîné
-    fprintf('train_CNN_classifier = false -> trying to load existing CNN classifier from disk...\n');
-    cnnFile = fullfile(path, [name '.mat']);
-    if exist(cnnFile,'file')
-        S = load(cnnFile);
-        if isfield(S,'classifier')
-            netCNN = S.classifier;
-        else
-            warning('Existing CNN file %s does not contain variable ''classifier''.', cnnFile);
-        end
-    else
-        warning('No existing CNN classifier file found at %s.', cnnFile);
-    end
+    
+    copyfile(source,target); % copies the trained CNN classifieer so that it can later be assembled to the lstm network
 end
 
-% 3) Si malgré tout on n'a pas de CNN valide -> on stoppe proprement
-if isempty(netCNN)
-    disp('No CNN backbone available (training skipped or load failed).');
-    disp('Cannot compute activations / InputSize for LSTM. Aborting training.');
+fprintf('Loading Image classifier...\n');
+fprintf('------\n');
+str=fullfile(path,['netCNN_' name '.mat']);
+
+if exist(str)
+    load(str); % load the image classifier
+    netCNN=classifier;
+else
+    disp('unable to find CNN classifier; first train the CNN classifier; quitting ...!');
     return;
 end
 
-
-% 4) Récupération robuste de la taille d'entrée [H W]
-inputSizeHW = getCNNInputSize(netCNN);   % helper ci-dessous
-inputSize   = [inputSizeHW 3];           % si tu as besoin de [H W C] ailleurs
+% % 1) Si on doit entraîner le CNN dans ce run
+% if isfield(trainingParam,'train_CNN_classifier') && trainingParam.train_CNN_classifier
+%     fprintf('Training CNN classifier (train_CNN_classifier = true)...\n');
+% 
+%     % Ici tu as deux options :
+%     %   - soit tu appelles directement trainImageGoogleNetFun
+%     %   - soit tu laisses ton code existant qui entraîne le CNN
+%     %
+%     % Exemple si tu utilises trainImageGoogleNetFun :
+% 
+%     trainImageGoogleNetFun(classif, true);  % ou setparam si nécessaire
+% 
+% 
+%     % Après training, on s'attend à trouver un fichier <name>.mat avec 'classifier'
+%     cnnFile = fullfile(path, [name '.mat']);
+%     if exist(cnnFile,'file')
+%         S = load(cnnFile);
+%         if isfield(S,'classifier')
+%             netCNN = S.classifier;
+%         else
+%             warning('File %s loaded but no ''classifier'' variable found.', cnnFile);
+%         end
+%     else
+%         warning('CNN training supposedly done, but no classifier file found at %s.', cnnFile);
+%     end
+% 
+% else
+%     % 2) Cas où train_CNN_classifier = false :
+%     %    on tente de recharger un CNN déjà entraîné
+%     fprintf('train_CNN_classifier = false -> trying to load existing CNN classifier from disk...\n');
+%     cnnFile = fullfile(path, [name '.mat']);
+%     if exist(cnnFile,'file')
+%         S = load(cnnFile);
+%         if isfield(S,'classifier')
+%             netCNN = S.classifier;
+%         else
+%             warning('Existing CNN file %s does not contain variable ''classifier''.', cnnFile);
+%         end
+%     else
+%         warning('No existing CNN classifier file found at %s.', cnnFile);
+%     end
+% end
+% 
+% % 3) Si malgré tout on n'a pas de CNN valide -> on stoppe proprement
+% if isempty(netCNN)
+%     disp('No CNN backbone available (training skipped or load failed).');
+%     disp('Cannot compute activations / InputSize for LSTM. Aborting training.');
+%     return;
+% end
+% 
+% 
+% % 4) Récupération robuste de la taille d'entrée [H W]
+% inputSizeHW = getCNNInputSize(netCNN);   % helper ci-dessous
+% inputSize   = [inputSizeHW 3];           % si tu as besoin de [H W C] ailleurs
 
 
 %%% choose feature layer
-%inputSize = netCNN.Layers(1).InputSize(1:2);
+inputSize = netCNN.Layers(1).InputSize(1:2);
 switch trainingParam.CNN_network{end}
     case 'googlenet', layerName = "pool5-7x7_s1";
     case 'resnet18',  layerName = "pool5";

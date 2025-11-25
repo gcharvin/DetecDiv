@@ -1,7 +1,7 @@
 classdef H5ImageDatastore < matlab.io.Datastore & ...
-                             matlab.io.datastore.MiniBatchable & ...
-                             matlab.io.datastore.Shuffleable & ...
-                             matlab.io.datastore.PartitionableByIndex
+        matlab.io.datastore.MiniBatchable & ...
+        matlab.io.datastore.Shuffleable & ...
+        matlab.io.datastore.PartitionableByIndex
     %H5ImageDatastore  Datastore HDF5 pour entraînement CNN
     %
     % Hypothèse HDF5 :
@@ -189,7 +189,7 @@ classdef H5ImageDatastore < matlab.io.Datastore & ...
                 idx = batchIdx(k);
 
                 img = h5read(ds.Filename, ds.FrameDataset, ...
-                             [1 1 1 idx], [H0 W0 C 1]);
+                    [1 1 1 idx], [H0 W0 C 1]);
 
                 img = squeeze(img);
                 if ndims(img)==2
@@ -303,8 +303,20 @@ classdef H5ImageDatastore < matlab.io.Datastore & ...
         %----------------------------------------------------------
         function imgOut = applyAugment(ds, imgIn)
             % imgIn / imgOut : [H W 3] single [0,1]
+            % Robustifié : force du réel, vérifie le nombre de canaux avant rgb2hsv.
+
+            % --- Sécurisation de base ---
             imgOut = imgIn;
-            [H,W,~] = size(imgOut);
+
+            % on s'assure qu'on a bien un type flottant réel
+            if ~isfloat(imgOut)
+                imgOut = im2single(imgOut);
+            else
+                imgOut = real(imgOut);
+                imgOut = single(imgOut);
+            end
+
+            [H,W,C] = size(imgOut);
 
             %% 1) Crop-in (zoom) aléatoire + resize
             smin = min(ds.CropScale);
@@ -316,10 +328,12 @@ classdef H5ImageDatastore < matlab.io.Datastore & ...
                 if scale < 1
                     hCrop = max(1, round(H * scale));
                     wCrop = max(1, round(W * scale));
-                    y0 = randi([1, H - hCrop + 1]);
-                    x0 = randi([1, W - wCrop + 1]);
-                    imgCrop = imgOut(y0:y0+hCrop-1, x0:x0+wCrop-1, :);
-                    imgOut = imresize(imgCrop, [H W]);
+                    if hCrop < H || wCrop < W
+                        y0 = randi([1, H - hCrop + 1]);
+                        x0 = randi([1, W - wCrop + 1]);
+                        imgCrop = imgOut(y0:y0+hCrop-1, x0:x0+wCrop-1, :);
+                        imgOut  = imresize(imgCrop, [H W]);
+                    end
                 end
             end
 
@@ -327,86 +341,57 @@ classdef H5ImageDatastore < matlab.io.Datastore & ...
             tx = 0; ty = 0;
             if any(ds.TransRange ~= 0)
                 tx = ds.TransRange(1) + ...
-                     (ds.TransRange(2)-ds.TransRange(1))*rand();
+                    (ds.TransRange(2)-ds.TransRange(1))*rand();
                 ty = ds.TransRange(1) + ...
-                     (ds.TransRange(2)-ds.TransRange(1))*rand();
+                    (ds.TransRange(2)-ds.TransRange(1))*rand();
             end
             if tx ~= 0 || ty ~= 0
                 imgOut = imtranslate(imgOut, [tx ty], ...
-                                     'FillValues',0, ...
-                                     'OutputView','same');
+                    'FillValues',0, ...
+                    'OutputView','same');
             end
 
             %% 3) Rotation aléatoire
             theta = 0;
             if any(ds.RotRange ~= 0)
                 theta = ds.RotRange(1) + ...
-                        (ds.RotRange(2)-ds.RotRange(1))*rand();
+                    (ds.RotRange(2)-ds.RotRange(1))*rand();
             end
             if theta ~= 0
-                imgOut = imrotate(imgOut, theta, ...
-                                  'bilinear', 'crop');
+                imgOut = imrotate(imgOut, theta, 'bilinear', 'crop');
             end
 
-            %% 4) Contraste + brightness (I*alpha + beta)
-            if any(ds.ContrastRange ~= 1) || any(ds.BrightnessRange ~= 0)
+            %% 4) Contraste
+            if any(ds.ContrastRange ~= 1)
                 cmin = ds.ContrastRange(1);
                 cmax = ds.ContrastRange(2);
-                bmin = ds.BrightnessRange(1);
-                bmax = ds.BrightnessRange(2);
                 alpha = cmin + (cmax - cmin)*rand();
-                beta  = bmin + (bmax - bmin)*rand();
-                imgOut = imgOut .* alpha + beta;
+                imgOut = (imgOut - 0.5) * alpha + 0.5;
             end
 
-            %% 5) Gamma
-            if any(ds.GammaRange ~= 1)
-                gmin = ds.GammaRange(1);
-                gmax = ds.GammaRange(2);
-                gammaVal = gmin + (gmax - gmin)*rand();
-                imgOut = imgOut .^ gammaVal;
-            end
+            %% 5) Teinte (Hue) - seulement si 3 canaux et HueDelta > 0
+            if ds.HueDelta > 0 && size(imgOut,3) == 3
+                % on s'assure encore une fois que c'est bien un float réel dans [0,1]
+                imgOut = real(imgOut);
+                imgOut = min(max(imgOut,0),1);
 
-            %% 6) Teinte + saturation (HSV)
-            if ds.HueDelta > 0 || any(ds.SaturationRange ~= 1)
+                delta = (2*rand() - 1) * ds.HueDelta;
                 hsv = rgb2hsv(imgOut);
-
-                % Saturation
-                if any(ds.SaturationRange ~= 1)
-                    smin = ds.SaturationRange(1);
-                    smax = ds.SaturationRange(2);
-                    satJit = smin + (smax - smin)*rand();
-                    hsv(:,:,2) = max(min(hsv(:,:,2)*satJit,1),0);
-                end
-
-                % Hue
-                if ds.HueDelta > 0
-                    delta = (2*rand() - 1) * ds.HueDelta;
-                    h = hsv(:,:,1) + delta;
-                    h = h - floor(h);   % wrap [0,1)
-                    hsv(:,:,1) = h;
-                end
-
+                h = hsv(:,:,1) + delta;
+                h = h - floor(h);      % wrap modulo 1
+                hsv(:,:,1) = h;
                 imgOut = hsv2rgb(hsv);
             end
 
-            %% 7) Bruit gaussien
+            %% 6) Bruit gaussien
             if ds.NoiseSigma > 0
-                imgOut = imgOut + ds.NoiseSigma * randn(size(imgOut), 'like', imgOut);
+                % randn produit du réel, mais on force le type cohérent avec imgOut
+                noise = ds.NoiseSigma * randn(size(imgOut), 'like', imgOut);
+                imgOut = imgOut + noise;
             end
 
-            %% 8) Defocus (flou gaussien)
-            smin = max(0, ds.DefocusSigmaRange(1));
-            smax = max(smin, ds.DefocusSigmaRange(2));
-            if smax > 0 && ds.DefocusProb > 0 && rand < ds.DefocusProb
-                sigma = smin + (smax - smin)*rand();
-                if sigma > 0
-                    ksz = max(3, 2*ceil(2*sigma)+1);
-                    imgOut = imgaussfilt(imgOut, sigma, 'FilterSize', ksz);
-                end
-            end
-
-            %% 9) Clamping
+            %% 7) Clamping final & sécurité "réel"
+            imgOut = real(imgOut);
             imgOut = min(max(imgOut, 0), 1);
         end
     end

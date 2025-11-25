@@ -48,6 +48,7 @@ end
 
 % Dériver UseHDF5 à partir du backend
 UseHDF5 = strcmpi(string(StorageBackend),'hdf5');
+WriteTiffImages= ~UseHDF5; 
 
 % Catégorie (inchangé)
 category = classif.category{1};
@@ -321,7 +322,7 @@ for i = 1:numel(rois_sel)
     lab        = [];
     ridx       = rois_sel(i);
 
-     progressBar(i, numel(rois_sel), ['Processing ROI: ' cltmp(ridx).id]);
+   %  progressBar(i, numel(rois_sel), ['Processing ROI: ' cltmp(ridx).id]);
 
    % disp(['Launching ROI :' num2str(ridx) ' processing...'])
 
@@ -533,6 +534,11 @@ for i = 1:numel(rois_sel)
             end
 
             % Export TIFF pour CNN (undersamplé via keepIdxCNN)
+            UseHDF5 
+            WriteTiffImages 
+            aa=keepIdxCNN(kf) 
+            cmp
+
             if  ~UseHDF5 && WriteTiffImages && keepIdxCNN(kf) && cmp ~= 0
                 tr = num2str(j);
                 while numel(tr)<4, tr = ['0' tr]; end
@@ -648,7 +654,7 @@ for i = 1:numel(rois_sel)
         output = output + 1;
     end
 
-    fprintf('\n');
+   % fprintf('\n');
 
     % --------- Sauvegarde timeseries LSTM (pas undersamplée) ---------
     deep = dataidfra ; % étiquette par frame, dans l'ordre temporel
