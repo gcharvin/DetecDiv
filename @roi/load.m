@@ -1,103 +1,254 @@
-function load(obj, option)
-% loadROI(obj)           : charge TOUT depuis im_<id>.h5 et data_<id>.mat
-% loadROI(obj,'data')    : charge uniquement data_<id>.mat
-% loadROI(obj,'GFP')     : charge uniquement le canal logique "GFP" (image=[H W k T])
+function load(obj, varargin)
+% loadROI(obj)                     : charge TOUT depuis im_<id>.h5 et data_<id>.mat
+% loadROI(obj,'data')              : charge uniquement data_<id>.mat (mode historique)
+% loadROI(obj,'GFP')               : charge/maj uniquement le canal logique "GFP" (image=[H W k T])
+%
+% Nouveau (varargin) :
+%   load(obj,'Channel','GFP')
+%   load(obj,'Channel',{'GFP','phase'})
+%   load(obj,'Data')          ou load(obj,'data')      -> data uniquement
+%   load(obj,'Data',false)                           -> ne pas charger les data
+%   load(obj,'Legacy')                               -> force .mat (legacy)
+%   load(obj,'Silent')
+%   load(obj,'Debug')
 %
 % Reconstruit correctement:
 %   - obj.image : [H W C T] avec C = total des sous-canaux
 %   - obj.channelid : longueur C ; ex [1 2 3 4 4 4 5 ...]
-%   - obj.display :
-%         .channel {1xN} noms logiques
-%         .intensity N x 3
-%         .selectedchannel N x 1 (par défaut = 1)
-%         .binning = 1
-%         .rgb N x 3 (réplication par sous-channel)
-%         .displaylim 2 x C (par défaut [0;1] pour chaque sous-channel)
-%         .indexed 1 x N (0/1)
-%         .alpha   1 x N
-%         .contour 1 x N
-%         .width   1 x N
-%         .log     1 x N (0)
+%   - obj.display : struct d'affichage (channel, intensity, displaylim, etc.)
+%
+% ATTENTION : les fonctions auxiliaires suivantes doivent exister plus bas
+% dans ce fichier (ou en méthodes privées) :
+%   - loadFromH5_full(h5File)
+%   - loadFromH5_single(h5File, chanName, img0, chId0, disp0)
+%   - defaultDisplay(N,C)
+%   - mergeDisplayStructs(dOld,dNew)
+%   - debugPrintf(...)
 
-if nargin < 2, option = ""; end
-dataOnly  = (ischar(option)&&strcmp(option,'data')) || (isstring(option)&&option=="data");
-fullLoad  = (isempty(option)  || (isstring(option)&&option==""));
-oneChan   = ~(dataOnly || fullLoad);
+% ================== PARSING DES OPTIONS ==================
+
+% Defaults
+% Defaults
+wantImages   = true;      % charger les images ?
+wantData     = true;      % charger les data ?
+forceLegacy  = false;     % forcer .mat ?
+silent       = false;     % masquer les fprintf/infos
+DEBUG        = false;     % activer debugPrintf
+chanNames    = {};        % liste de canaux logiques à charger; {} => tous
+
+% --- Compat historique : load(obj,'data') ou load(obj,'GFP') ---
+%     MAIS on ne traite PAS 'silent'/'debug'/'legacy' comme des canaux.
+if numel(varargin) == 1 && (ischar(varargin{1}) || isstring(varargin{1}))
+    keyRaw = char(varargin{1});
+    key    = lower(strtrim(keyRaw));
+
+    if strcmp(key,'data')
+        % mode historique "data only"
+        wantImages = false;
+        wantData   = true;
+        varargin   = {};   % on consomme l'argument
+
+    elseif any(strcmp(key, {'silent','debug','legacy'}))
+        % Ce sont des flags, pas des noms de canal.
+        % On NE les consomme PAS ici : ils seront traités juste après
+        % par la boucle générale sur varargin.
+        % -> on laisse 'varargin' intact.
+
+    else
+        % interprété comme nom de canal logique unique : load(obj,'GFP')
+        chanNames  = {keyRaw};   % on garde la casse originale
+        wantImages = true;
+        wantData   = true;
+        varargin   = {};         % on consomme l'argument
+    end
+end
+
+
+% --- Parsing général name/flag-value ---
+i = 1;
+while i <= numel(varargin)
+    arg = varargin{i};
+
+    if ~(ischar(arg) || isstring(arg))
+        warning('loadROI:BadOption', ...
+                'Option #%d ignorée (doit être un char/string).', i);
+        i = i + 1;
+        continue;
+    end
+
+    key = lower(strtrim(char(arg)));
+
+    switch key
+        case 'channel'
+            % 'Channel', name ou 'Channel', {name1,name2}
+            if i+1 > numel(varargin)
+                error('loadROI:MissingValue', ...
+                      'Valeur manquante après l''option ''Channel''.');
+            end
+            val = varargin{i+1};
+            if ischar(val) || isstring(val)
+                chanNames = {char(val)};
+            elseif iscell(val)
+                chanNames = cellfun(@char, val, 'UniformOutput', false);
+            else
+                error('loadROI:BadChannelValue', ...
+                      'La valeur de ''Channel'' doit être char/string ou cellstr.');
+            end
+            wantImages = true;
+            i = i + 2;
+
+        case 'data'
+            % 'Data' (seul)       -> data uniquement (compat)
+            % 'Data', true/false  -> contrôle explicite
+            if i+1 <= numel(varargin) && islogical(varargin{i+1})
+                wantData = varargin{i+1};
+                i = i + 2;
+            else
+                wantImages = false;
+                wantData   = true;
+                i = i + 1;
+            end
+
+        case 'legacy'
+            forceLegacy = true;
+            i = i + 1;
+
+        case 'silent'
+            silent = true;
+            i = i + 1;
+
+        case 'debug'
+            DEBUG = true;
+            i = i + 1;
+
+        otherwise
+            warning('loadROI:UnknownOption', ...
+                'Option inconnue ''%s'' ignorée.', arg);
+            i = i + 1;
+    end
+end
+
+% Initialisation du debug global pour ce fichier
+debugPrintf('init', DEBUG);
+
+% ================== CHEMINS & PRÉ-CHECK ==================
 
 if isempty(obj.path)
-    warning('loadROI:NoPath','ROI path is empty.'); return;
+    if ~silent
+        warning('loadROI:NoPath','ROI path is empty.');
+    end
+    return;
 end
 
 h5File     = fullfile(obj.path, sprintf('im_%s.h5',  obj.id));
 legacyFile = fullfile(obj.path, sprintf('im_%s.mat', obj.id));
 dataFile   = fullfile(obj.path, sprintf('data_%s.mat', obj.id));
 
-% ---------- IMAGES ----------
-if ~dataOnly
-    if isfile(h5File)
-        disp(['Loading hd5f file: ' h5File]);
-        if fullLoad
+% ================== CHARGEMENT DES IMAGES ==================
+
+if wantImages
+    if ~forceLegacy && isfile(h5File)
+        if ~silent
+            fprintf('Loading HDF5 image file: %s\n', sprintf('im_%s.h5', obj.id));
+        end
+
+        if isempty(chanNames)
+            % ---------- Tous les canaux ----------
             [img, chId, dispStruct] = loadFromH5_full(h5File);
         else
-            chanName = char(option);
-          %  [img, chId, dispStruct] = loadFromH5_single(h5File, chanName);
-            [img, chId, dispStruct] = loadFromH5_single(h5File, chanName, obj.image, obj.channelid, obj.display);
+            % ---------- Un ou plusieurs canaux spécifiques ----------
+            img        = obj.image;
+            chId       = obj.channelid;
+            dispStruct = obj.display;
 
+            for c = 1:numel(chanNames)
+                cname = chanNames{c};
+                [img, chId, dispStruct] = loadFromH5_single( ...
+                    h5File, cname, img, chId, dispStruct);
+            end
         end
 
-        % 🧩 Fusion non destructive du display
+        % Fusion non destructive du display
         if isstruct(obj.display) && ~isempty(fieldnames(obj.display))
-    obj.display = mergeDisplayStructs(obj.display, dispStruct);
+            obj.display = mergeDisplayStructs(obj.display, dispStruct);
         else
-    obj.display = dispStruct;
+            obj.display = dispStruct;
         end
-
 
         obj.image     = img;
         obj.channelid = chId;
-        
+
     elseif isfile(legacyFile)
-        % -------- LEGACY FALLBACK --------
- 
-        disp('Loading mat file (legacy mode)');
+        % -------- LEGACY FALLBACK (.mat) --------
+        if ~silent
+            fprintf('Loading MAT (legacy) image file: %s\n', sprintf('im_%s.mat', obj.id));
+        end
+
         S = load(legacyFile);
         if isfield(S,'roiobj')
-            % ne pas écraser id/path ; on prend image et display si présents
-           % if isfield(S.roiobj,'image'),   obj.image = S.roiobj.image;   end
-           % if isfield(S.roiobj,'display'), obj.display = S.roiobj.display; end
-           % if isfield(S.roiobj,'channelid'), obj.channelid = S.roiobj.channelid; end 
-
-             setProperties(obj, S.roiobj);
+            % ne pas écraser id/path ; on prend les autres props
+            setProperties(obj, S.roiobj);
 
         elseif isfield(S,'im')
             obj.image = S.im;
         else
-            warning('Legacy MAT has no image.');
+            if ~silent
+                warning('Legacy MAT has no image.');
+            end
             obj.image = [];
         end
-        % si channelid/display manquants, on fabrique un minimum
-        %obj = roiobj;
+
+        if isempty(obj.channelid)
+            obj.channelid = 1;
+        end
+        if isempty(obj.display)
+            obj.display = defaultDisplay(1, numel(obj.channelid));
+        end
+
     else
-        warning('No image file (.h5 or legacy .mat) for ROI %s.', obj.id);
-        obj.image = []; obj.channelid = 1; obj.display = defaultDisplay(1,1);
+        % Pas de fichier image pour cette ROI
+        if ~silent
+            warning('No image file (.h5 or legacy .mat) for ROI %s.', obj.id);
+        end
+        % On ne touche obj.image/obj.display que s'ils sont vides
+        if isempty(obj.image)
+            obj.image     = [];
+            obj.channelid = 1;
+            obj.display   = defaultDisplay(1,1);
+        end
     end
 end
 
-% ---------- DATA ----------
-if isfile(dataFile)
-    Sd = load(dataFile,'data');
-    if isfield(Sd,'data'), obj.data = Sd.data; else, obj.data = dataseries.empty; end
-    if ismethod(obj,'fixLabelsInPlotFields'), obj.fixLabelsInPlotFields; end
+% ================== CHARGEMENT DES DONNÉES ==================
+
+if wantData
+    if isfile(dataFile)
+        Sd = load(dataFile,'data');
+        if isfield(Sd,'data')
+            obj.data = Sd.data;
+        else
+            obj.data = dataseries.empty;
+        end
+
+        if ismethod(obj,'fixLabelsInPlotFields')
+            obj.fixLabelsInPlotFields;
+        end
+
+        if ~silent
+            fprintf('Loading data file: %s\n', sprintf('data_%s.mat', obj.id));
+        end
+    else
+        obj.data = dataseries.empty;
+        if ~silent
+            fprintf('No data file for ROI %s (expected: %s).\n', obj.id, dataFile);
+        end
+    end
 else
+    % Demande explicite de ne pas charger les data
     obj.data = dataseries.empty;
 end
 
-
-% -------------------------------------------------------------------------
-% Harmonisation plotProperties / plotGroup
-% Chaque nom de groupe présent dans plotProperties(:,6) doit être listé dans
-% plotGroup{6}. On corrige ici d'éventuelles incohérences au chargement.
-% -------------------------------------------------------------------------
+% ================== HARMONISATION plotProperties / plotGroup ==================
 
 if isprop(obj, 'data') && ~isempty(obj.data)
     for dd = 1:numel(obj.data)
@@ -155,9 +306,8 @@ if isprop(obj, 'data') && ~isempty(obj.data)
     end
 end
 
-
-
 end
+
 
 % ==================== H E L P E R S ====================
 function setProperties(obj, srcObj)
@@ -200,7 +350,7 @@ if isempty(dsets)
     img = [];
     channelid = 1;
     dispStruct = defaultDisplay(1,1);
-    fprintf('[DEBUG] No datasets in %s\n', h5File);
+    debugPrintf('[DEBUG] No datasets in %s\n', h5File);
     return;
 end
 
@@ -241,24 +391,21 @@ for i = 1:N
     rawSz  = size(blkRaw);
     expK   = numel(ci);
 
-    permStr='';
+    permStr=''; %#ok<NASGU>
     blk=blkRaw;
     szN=size(blk);
 
-    Hblk = szN(1); Wblk = szN(2); k = szN(3); Tblk = szN(4);
+    Hblk = szN(1); Wblk = szN(2); k = szN(3); Tblk = szN(4); %#ok<NASGU>
 
     % Debug tailles
-  %  fprintf('[DEBUG] "%s" raw=%s, normalized=[%d %d %d %d], expected_subchannels=%d  %s\n', ...
-  %      names{i}, mat2str(rawSz), Hblk, Wblk, k, Tblk, expK, permStr);
-
-    fprintf('[DEBUG] "%s" raw=%s, normalized=[%d %d %d %d], expected_subchannels=%d  %s\n', ...
-    names{i}, mat2str(rawSz), szN(1), szN(2), szN(3), szN(4), expK, permStr);
-
+    debugPrintf('[DEBUG] "%s" raw=%s, normalized=[%d %d %d %d], expected_subchannels=%d\n', ...
+        names{i}, mat2str(rawSz), szN(1), szN(2), szN(3), szN(4), expK);
 
     % Incohérence k vs channel_indices ?
     if k ~= expK
         hasBadIdx = true;
-        fprintf('[DEBUG]   -> k (%d) ~= expected_subchannels (%d): will repack indices later.\n', k, expK);
+        debugPrintf('[DEBUG]   -> k (%d) ~= expected_subchannels (%d): will repack indices later.\n', ...
+            k, expK);
     end
 
     % Stocker bloc normalisé
@@ -276,8 +423,8 @@ for i = 1:N
     attrs(i).contour   = readAttOrDefault(h5File,p,'display_contour',  uint8(0));
     attrs(i).width     = readAttOrDefault(h5File,p,'display_contourwidth', 1);
     attrs(i).frame     = readAttOrDefault(h5File,p,'display_frame', 1);
-    attrs(i).binning     = readAttOrDefault(h5File,p,'display_binning', 1);
-   % aa=readAttOrDefault(h5File,p,'display_selectedchannel',1)
+    attrs(i).binning   = readAttOrDefault(h5File,p,'display_binning', 1);
+    % aa=readAttOrDefault(h5File,p,'display_selectedchannel',1)
     attrs(i).selectedchannel = readAttOrDefault(h5File,p,'display_selectedchannel',1);
 end
 
@@ -286,7 +433,8 @@ firstIdx = nan(1,N);
 for i = 1:N
     if ~isempty(idxRaw{i}), firstIdx(i) = idxRaw{i}(1); end
 end
-[~,ord] = sortrows([isnan(firstIdx(:)) firstIdx(:) (1:N)']); ord = ord(:).';
+[~,ord] = sortrows([isnan(firstIdx(:)) firstIdx(:) (1:N)']); 
+ord = ord(:).';
 
 names  = names(ord);
 idxRaw = idxRaw(ord);
@@ -312,12 +460,12 @@ if hasBadIdx
         c0 = c0 + k;
     end
     C = sum(kList);
-    fprintf('[DEBUG] Repacked indices sequentially: total C=%d\n', C);
+    debugPrintf('[DEBUG] Repacked indices sequentially: total C=%d\n', C);
 else
     % Utiliser les indices fournis
     idxList = idxRaw;
     C = max([idxList{:}]);
-    fprintf('[DEBUG] Using provided channel_indices: total C=%d\n', C);
+    debugPrintf('[DEBUG] Using provided channel_indices: total C=%d\n', C);
 end
 
 % --- Allocation & remplissage de l'image globale ---
@@ -341,7 +489,7 @@ for i = 1:N
         end
     end
 
-    fprintf('[DEBUG] -> place "%s" into C-indices %s\n', names{i}, mat2str(destIdx));
+    debugPrintf('[DEBUG] -> place "%s" into C-indices %s\n', names{i}, mat2str(destIdx));
     img(:,:,destIdx,:) = blk;
 end
 
@@ -354,7 +502,7 @@ end
 % --- display ---
 dispStruct = rebuildDisplayFromAttrs(names, idxList, attrs, C);
 
-fprintf('[DEBUG] Summary: %d logical channels, total subchannels C=%d, H=%d W=%d T=%d, repack=%d\n', ...
+debugPrintf('[DEBUG] Summary: %d logical channels, total subchannels C=%d, H=%d W=%d T=%d, repack=%d\n', ...
     N, C, H, W, T, hasBadIdx);
 end
 
@@ -397,7 +545,7 @@ for i = 1:numel(dsets)
     end
     if strcmpi(chn, chanName) || strcmpi(nm, chanName)
         target = dsets(i);
-        target_idx = i;
+        target_idx = i; %#ok<NASGU>
         break;
     end
 end
@@ -611,7 +759,8 @@ for f = fields1xN
     if ~isfield(dispStruct,ff) || numel(dispStruct.(ff)) < Nlog
         cur = [];
         if isfield(dispStruct,ff), cur = dispStruct.(ff); end
-        def = 0; if any(strcmp(ff,{'alpha','width','selectedchannel'})), def = 1; end
+        def = 0; 
+        if any(strcmp(ff,{'alpha','width','selectedchannel'})), def = 1; end
         dispStruct.(ff) = [cur, repmat(def, 1, Nlog - numel(cur))];
     end
 end
@@ -641,7 +790,6 @@ end
 if ~isfield(dispStruct,'selectedchannel') || isempty(dispStruct.selectedchannel)
     dispStruct.selectedchannel = ones(1, Nlog);
     dispStruct.selectedchannel(logicalId) = double(att.selectedchannel(1));
-
 end
 if ~isfield(dispStruct,'log') || isempty(dispStruct.log)
     dispStruct.log = zeros(1, Nlog);
@@ -671,13 +819,13 @@ dispStruct.rgb(logicalId,:) = double(att.rgb(:).');
 % stretchlim inchangé (si existant)
 % fin.
 
-fprintf('[DEBUG] Single-load: placed "%s" into C-indices %s (logical=%d). H=%d W=%d k=%d T=%d\n', ...
+debugPrintf('[DEBUG] Single-load: placed "%s" into C-indices %s (logical=%d). H=%d W=%d k=%d T=%d\n', ...
     chanName, mat2str(destIdx), logicalId, H, W, k, T);
 
 end
 
-% ==================== H E L P E R S ====================
 
+% ==================== H E L P E R S ====================
 
 % 
 % function v = readAttOrDefault(h5f, path, attName, def)
@@ -701,7 +849,7 @@ indexed   = zeros(1,N);
 alpha     = ones(1,N);
 contour   = zeros(1,N);
 width     = ones(1,N);
-selectedchannel=ones(1,N);
+selectedchannel = ones(1,N);
 
 rgbSub    = zeros(N,3);
 %rgbSub    = zeros(C,3);
@@ -723,7 +871,6 @@ for i = 1:N
     else
         selectedchannel(i) = 1;  % fallback anciens fichiers
     end
-
 
     % rgb est stocké par CANAL LOGIQUE => N x 3
     rgbSub(i,:) = double(attrs(i).rgb);
@@ -755,7 +902,6 @@ dispStruct.contour         = contour;            % 1 x N
 dispStruct.width           = width;              % 1 x N
 dispStruct.log             = zeros(1,N);
 
-
 end
 % 
 % function d = defaultDisplay(N, C)
@@ -776,39 +922,58 @@ end
 % d.log             = zeros(1,N);
 % end
 
-% function dispOut = mergeDisplayStructs(dOld, dNew)
-% % Favorise dNew (valeurs lues du fichier) champ par champ.
-% dispOut = dOld;
-% 
-% fn = fieldnames(dNew);
-% for i = 1:numel(fn)
-%     f = fn{i};
-%     if ~isfield(dispOut,f) || isempty(dispOut.(f))
-%         dispOut.(f) = dNew.(f);
-%         continue;
-%     end
-% 
-%     a = dispOut.(f);
-%     b = dNew.(f);
-% 
-%     % Si types numériques/logicaux -> on préfère b (la lecture H5)
-%     if (isnumeric(a)||islogical(a)) && (isnumeric(b)||islogical(b))
-%         % Aligne la taille si nécessaire (on ne jette pas b)
-%         if ~isequal(size(a), size(b))
-%             dispOut.(f) = b;
-%         else
-%             dispOut.(f) = b;  % new wins
-%         end
-%     elseif iscell(a) && iscell(b)
-%         % Pour cell arrays (ex: channel), prends b si tailles diffèrent, sinon b aussi
-%         if ~isequal(size(a), size(b))
-%             dispOut.(f) = b;
-%         else
-%             dispOut.(f) = b;
-%         end
-%     else
-%         % Par défaut, b (plus récent)
-%         dispOut.(f) = b;
-%     end
-% end
-% end
+function dispOut = mergeDisplayStructs(dOld, dNew)
+% Favorise dNew (valeurs lues du fichier) champ par champ.
+dispOut = dOld;
+
+fn = fieldnames(dNew);
+for i = 1:numel(fn)
+    f = fn{i};
+    if ~isfield(dispOut,f) || isempty(dispOut.(f))
+        dispOut.(f) = dNew.(f);
+        continue;
+    end
+
+    a = dispOut.(f);
+    b = dNew.(f);
+
+    % Si types numériques/logicaux -> on préfère b (la lecture H5)
+    if (isnumeric(a)||islogical(a)) && (isnumeric(b)||islogical(b))
+        % Aligne la taille si nécessaire (on ne jette pas b)
+        if ~isequal(size(a), size(b))
+            dispOut.(f) = b;
+        else
+            dispOut.(f) = b;  % new wins
+        end
+    elseif iscell(a) && iscell(b)
+        % Pour cell arrays (ex: channel), prends b si tailles diffèrent, sinon b aussi
+        if ~isequal(size(a), size(b))
+            dispOut.(f) = b;
+        else
+            dispOut.(f) = b;
+        end
+    else
+        % Par défaut, b (plus récent)
+        dispOut.(f) = b;
+    end
+end
+end
+
+% ==================== DEBUG PRINT HELPER ====================
+function debugPrintf(varargin)
+% debugPrintf('init', true/false) pour (dés)activer le debug global
+% debugPrintf(fmt, ...) agit comme fprintf si le debug est activé
+
+persistent DEBUG_ENABLED
+
+if nargin >= 2 && ischar(varargin{1}) && strcmp(varargin{1}, 'init')
+    DEBUG_ENABLED = logical(varargin{2});
+    return;
+end
+
+if isempty(DEBUG_ENABLED) || ~DEBUG_ENABLED
+    return;
+end
+
+fprintf(varargin{:});
+end

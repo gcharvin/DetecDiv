@@ -25,12 +25,17 @@ if nargin==2 % basic parameter initialization
         'Choose execution environment', ...
         'Select initial version of network to start training with; Default: ImageNet', ...
         'Choose storage backend for CNN training data (''tiff'' or ''hdf5'')', ...
-        'Range of random scale factor for CNN augmentation (e.g. [0.9 1.1])', ...
+        'Range of random scale factor for CNN augmentation (e.g. [0.8 1.0])', ...
         'Enable random flips (left/right & up/down) during CNN augmentation', ...
         'Crop-in scale range for CNN augmentation (e.g. [0.8 1.0])', ...
         'Contrast multiplier range for CNN augmentation (e.g. [0.85 1.15])', ...
+        'Brightness offset range (additive, e.g. [-0.10 0.10])', ...
+        'Gamma exponent range for CNN augmentation (e.g. [0.9 1.1])', ...
+        'Saturation multiplier range (RGB only, e.g. [0.95 1.05])', ...
         'Maximum hue jitter (0–0.5, small values recommended)', ...
-        'Std-dev of Gaussian noise for CNN augmentation (set 0 to disable)' ...
+        'Std-dev of Gaussian noise for CNN augmentation (set 0 to disable)', ...
+        'Defocus sigma range in pixels (e.g. [0.3 1.0])', ...
+        'Probability to apply defocus blur (e.g. 0.5)' ...
         };
 
     classif.trainingParam = struct( ...
@@ -45,17 +50,22 @@ if nargin==2 % basic parameter initialization
         'CNN_translation_augmentation',[-5 5], ...
         'CNN_rotation_augmentation',[-20 20], ...
         'CNN_l2_regularization',0.0001, ...
-        'CNN_use_dropout',true, ...          % <---- NEW (déjà présent)
-        'CNN_dropout',0.5, ...               % <---- NEW (déjà présent)
+        'CNN_use_dropout',true, ...
+        'CNN_dropout',0.5, ...
         'execution_environment',{{'auto','parallel','cpu','gpu','multi-gpu','auto'}}, ...
         'transfer_learning',{{'ImageNet','ImageNet'}}, ...
-        'CNN_storage_backend',{{'hdf5','tiff','hdf5'}}, ...        % 'tiff' (historique) ou 'hdf5'
-        'CNN_rand_scale',[0.9 1.1], ...         % RandScale pour TIFF, approx. crop/zoom
-        'CNN_rand_flip',true, ...               % flips aléatoires (TIFF / éventuellement HDF5)
-        'CNN_crop_scale',[0.8 1.0], ...         % crop-in pour HDF5 datastore
-        'CNN_contrast_range',[0.85 1.15], ...   % contraste mult. pour HDF5
-        'CNN_hue_delta',0.05, ...               % jitter de teinte (HDF5)
-        'CNN_noise_sigma',0.02, ...             % sigma bruit gaussien (HDF5)
+        'CNN_storage_backend',{{'hdf5','tiff','hdf5'}}, ...  % 'tiff' (historique) ou 'hdf5'
+        'CNN_rand_scale',[0.8 1.0], ...                    % backend TIFF
+        'CNN_rand_flip',true, ...
+        'CNN_crop_scale',[0.8 1.0], ...                    % backend HDF5
+        'CNN_contrast_range',[0.85 1.15], ...              % multiplicateur de contraste
+        'CNN_brightness_range',[-0.10 0.10], ...           % offset additif
+        'CNN_gamma_range',[0.9 1.1], ...                   % exponent
+        'CNN_saturation_range',[0.95 1.05], ...            % multiplicateur S (HSV)
+        'CNN_hue_delta',0.05, ...                          % jitter de teinte max
+        'CNN_noise_sigma',0.02, ...                        % sigma bruit gaussien (0–1)
+        'CNN_defocus_sigma_range',[0.3 1.0], ...           % rayon flou gaussien (px)
+        'CNN_defocus_prob',0.5, ...                        % probabilité d'appliquer le flou
         'tip',{tip} ...
         );
     return;
@@ -72,14 +82,28 @@ else
 
     % Nouveaux champs backend / augmentation
     if ~isfield(trainingParam,'CNN_storage_backend'); trainingParam.CNN_storage_backend = {'hdf5','tiff','hdf5'}; end
-    if ~isfield(trainingParam,'CNN_rand_scale');      trainingParam.CNN_rand_scale      = [0.9 1.1]; end
-    if ~isfield(trainingParam,'CNN_rand_flip');       trainingParam.CNN_rand_flip       = true;      end
-    if ~isfield(trainingParam,'CNN_crop_scale');      trainingParam.CNN_crop_scale      = [0.8 1.0]; end
-    if ~isfield(trainingParam,'CNN_contrast_range');  trainingParam.CNN_contrast_range  = [0.85 1.15]; end
-    if ~isfield(trainingParam,'CNN_hue_delta');       trainingParam.CNN_hue_delta       = 0.05;      end
-    if ~isfield(trainingParam,'CNN_noise_sigma');     trainingParam.CNN_noise_sigma     = 0.02;      end
 
-    % On réinjecte dans classif (au cas où tu sauvegardes ensuite)
+    % Harmonisation rand_scale / crop_scale
+    if ~isfield(trainingParam,'CNN_rand_scale') && ~isfield(trainingParam,'CNN_crop_scale')
+        trainingParam.CNN_rand_scale = [0.8 1.0];
+        trainingParam.CNN_crop_scale = [0.8 1.0];
+    elseif ~isfield(trainingParam,'CNN_rand_scale') && isfield(trainingParam,'CNN_crop_scale')
+        trainingParam.CNN_rand_scale = trainingParam.CNN_crop_scale;
+    elseif ~isfield(trainingParam,'CNN_crop_scale') && isfield(trainingParam,'CNN_rand_scale')
+        trainingParam.CNN_crop_scale = trainingParam.CNN_rand_scale;
+    end
+
+    if ~isfield(trainingParam,'CNN_rand_flip');      trainingParam.CNN_rand_flip      = true;        end
+    if ~isfield(trainingParam,'CNN_contrast_range'); trainingParam.CNN_contrast_range = [0.85 1.15]; end
+    if ~isfield(trainingParam,'CNN_brightness_range'); trainingParam.CNN_brightness_range = [-0.10 0.10]; end
+    if ~isfield(trainingParam,'CNN_gamma_range');      trainingParam.CNN_gamma_range  = [0.9 1.1];   end
+    if ~isfield(trainingParam,'CNN_saturation_range'); trainingParam.CNN_saturation_range = [0.95 1.05]; end
+    if ~isfield(trainingParam,'CNN_hue_delta');      trainingParam.CNN_hue_delta      = 0.05;        end
+    if ~isfield(trainingParam,'CNN_noise_sigma');    trainingParam.CNN_noise_sigma    = 0.02;        end
+    if ~isfield(trainingParam,'CNN_defocus_sigma_range'); trainingParam.CNN_defocus_sigma_range = [0.3 1.0]; end
+    if ~isfield(trainingParam,'CNN_defocus_prob');       trainingParam.CNN_defocus_prob = 0.5;       end
+
+    % On réinjecte dans classif
     classif.trainingParam = trainingParam;
 
     if numel(trainingParam)==0
@@ -136,15 +160,15 @@ switch backend
         % Photometric jitter via ReadFcn (TRAIN seulement)
         imdsTrainPhot = imageDatastore(imdsTrain.Files, ...
             'Labels', imdsTrain.Labels, ...
-            'IncludeSubfolders', false);  % files list already résolus
-        imdsTrainPhot.ReadFcn = @(fn) photometricReadFcn(fn);  % jitter photométrique
+            'IncludeSubfolders', false);
+        imdsTrainPhot.ReadFcn = @(fn) photometricReadFcn(fn, trainingParam);
 
         % Géométrie via imageDataAugmenter
         pixelRange = trainingParam.CNN_translation_augmentation;
         rotation   = trainingParam.CNN_rotation_augmentation;
         scaleRange = trainingParam.CNN_rand_scale;
         if numel(scaleRange) ~= 2
-            scaleRange = [0.9 1.1];
+            scaleRange = [0.8 1.0];
         end
 
         imageAugmenter = imageDataAugmenter( ...
@@ -155,15 +179,14 @@ switch backend
             'RandYTranslation',pixelRange, ...
             'RandRotation',rotation);
 
-        % Ces variables seront utilisées plus loin
         dataTrain   = imdsTrainPhot;
         dataValBase = imdsValidation;
         useHDF5     = false;
 
     case 'hdf5'
-        % ----- NOUVEAU BACKEND : framebank HDF5 -----
+        % ----- BACKEND HDF5 : framebank -----
 
-        h5File = fullfile(path,'trainingdataset','framebank.h5');
+        h5File = fullfile(path,[classif.strid,'_framebank.h5']);
         if ~exist(h5File,"file")
             disp('HDF5 framebank file not found:');
             disp(h5File);
@@ -171,7 +194,6 @@ switch backend
             return;
         end
 
-        % Datastore HDF5 custom (nécessite H5ImageDatastore.m dans le path)
         augParams = localGetH5AugParams(trainingParam);
         dsAll = H5ImageDatastore(h5File, ...
             'MiniBatchSize', trainingParam.CNN_mini_batch_size, ...
@@ -179,8 +201,13 @@ switch backend
             'RotRange',      augParams.RotRange, ...
             'CropScale',     augParams.CropScale, ...
             'ContrastRange', augParams.ContrastRange, ...
+            'BrightnessRange', augParams.BrightnessRange, ...
+            'GammaRange',      augParams.GammaRange, ...
+            'SaturationRange', augParams.SaturationRange, ...
             'HueDelta',      augParams.HueDelta, ...
             'NoiseSigma',    augParams.NoiseSigma, ...
+            'DefocusSigmaRange', augParams.DefocusSigmaRange, ...
+            'DefocusProb',   augParams.DefocusProb, ...
             'ClassNames',    classif.classes);
 
         % Split TRAIN / VAL au niveau des indices
@@ -202,18 +229,22 @@ switch backend
         dsTrain = subset(dsAll, idxTrain);
         dsVal   = subset(dsAll, idxVal);
 
-% === Pas d'augmentation sur la validation ===
-dsVal.TransRange     = [0 0];
-dsVal.RotRange       = [0 0];
-dsVal.CropScale      = [1 1];
-dsVal.ContrastRange  = [1 1];
-dsVal.HueDelta       = 0;
-dsVal.NoiseSigma     = 0;
+        % Pas d'augmentation sur la validation
+        dsVal.TransRange        = [0 0];
+        dsVal.RotRange          = [0 0];
+        dsVal.CropScale         = [1 1];
+        dsVal.ContrastRange     = [1 1];
+        dsVal.BrightnessRange   = [0 0];
+        dsVal.GammaRange        = [1 1];
+        dsVal.SaturationRange   = [1 1];
+        dsVal.HueDelta          = 0;
+        dsVal.NoiseSigma        = 0;
+        dsVal.DefocusSigmaRange = [0 0];
+        dsVal.DefocusProb       = 0;
 
-        % Class weights via /labels du HDF5
+        % Class weights via /labels du HDF5 (TRAIN seulement)
         labsAll = h5read(h5File, '/labels');
         labsAll = squeeze(labsAll);
-        % On se base sur TRAIN uniquement
         labsTrain = labsAll(idxTrain);
         if isnumeric(labsTrain)
             labsTrain = categorical(labsTrain, 1:numel(classif.classes), classif.classes);
@@ -235,8 +266,6 @@ dsVal.NoiseSigma     = 0;
             trainingParam.CNN_storage_backend{end});
 end
 
-
-
 %----------------------------------------------------------------------
 % 2) Classes (depuis classif)
 %----------------------------------------------------------------------
@@ -252,14 +281,13 @@ fprintf('------\n');
 %----------------------------------------------------------------------
 % 3) Chargement / préparation du backbone CNN
 %----------------------------------------------------------------------
-if strcmp(trainingParam.transfer_learning{end},'ImageNet')  % crée un nouveau réseau
+if strcmp(trainingParam.transfer_learning{end},'ImageNet')
     disp('Generating new network');
     net = eval(trainingParam.CNN_network{end});
 
     fprintf('Reformatting net for transfer learning...\n');
     fprintf('------\n');
 
-    % extract layer graph
     if isa(net,'SeriesNetwork') 
         lgraph = layerGraph(net.Layers); 
     else
@@ -344,7 +372,6 @@ if trainingParam.CNN_use_dropout
 end
 % ===== End DROPOUT insertion =====
 
-% Recompute handles in case graph changed
 [learnableLayer,classLayer] = findLayersToReplace(lgraph);
 
 % adjust the final layers of the net
@@ -365,7 +392,7 @@ end
 
 lgraph = replaceLayer(lgraph,learnableLayer.Name,newLearnableLayer);
 
-% Use class weights (calculés plus haut selon backend)
+% Use class weights
 newClassLayer = weightedClassificationLayer(classWeights,'new_classoutput');
 lgraph = replaceLayer(lgraph,classLayer.Name,newClassLayer);
 
@@ -388,21 +415,15 @@ end
 %----------------------------------------------------------------------
 
 miniBatchSize = trainingParam.CNN_mini_batch_size;
-
-if ~isfield(trainingParam,'CNN_learn_rate_drop_factor')
-    trainingParam.CNN_learn_rate_drop_factor = 0.9;
-end
-
 patience = 10;
 
 switch backend
     case 'tiff'
-        % --- Backend TIFF : augmentedImageDatastore comme avant ---
         pixelRange = trainingParam.CNN_translation_augmentation;
         rotation   = trainingParam.CNN_rotation_augmentation;
         scaleRange = trainingParam.CNN_rand_scale;
         if numel(scaleRange) ~= 2
-            scaleRange = [0.9 1.1];
+            scaleRange = [0.8 1.0];
         end
 
         imageAugmenter = imageDataAugmenter( ...
@@ -424,26 +445,18 @@ switch backend
         validationData = augimdsValidation;
 
     case 'hdf5'
-        % --- Backend HDF5 : H5ImageDatastore directement dans trainNetwork ---
-        % dataTrain = dsTrain ; dataValBase = dsVal
         nTrainObs = numObservations(dataTrain);
         valFrequency = floor(max(1, nTrainObs / miniBatchSize));
-
         trainingData   = dataTrain;
         validationData = dataValBase;
 end
 
-% Adapter la taille de sortie du datastore HDF5 à celle du réseau
-if useHDF5
-    % inputSize est défini plus haut : [H W C]
+% Adapter la taille de sortie du datastore HDF5
+if exist('useHDF5','var') && useHDF5
     targetHW = inputSize(1:2);
-
-    % trainingData / validationData sont des H5ImageDatastore (ou subset)
     trainingData.OutputSize   = targetHW;
     validationData.OutputSize = targetHW;
 end
-
-
 
 %----------------------------------------------------------------------
 % 5) trainingOptions & trainNetwork
@@ -485,7 +498,6 @@ save(fullfile(path,'TrainingValidation','tmpoptions.mat'),'options');
 
 % ===== helpers =====
 
-
 function lgraph = createLgraphUsingConnections(layers,connections)
 lgraph = layerGraph();
 for i = 1:numel(layers)
@@ -494,48 +506,93 @@ end
 for c = 1:size(connections,1)
     lgraph = connectLayers(lgraph,connections.Source{c},connections.Destination{c});
 end
+end
 
-function I = photometricReadFcn(filename)
-% ReadFcn pour imageDatastore de TRAIN (backend TIFF) :
-% lit, applique jitter, renvoie uint8.
+function I = photometricReadFcn(filename, trainingParam)
 I = imread(filename);
-I = photometricJitter(I);
+I = photometricJitter(I, trainingParam);
+end
 
-function Iout = photometricJitter(Iin)
-% Photometric-only jitter (contraste/luminosité/gamma/bruit/flou léger)
-% Entrée: uint8/uint16/grayscale ou RGB. Sortie: uint8.
-
+function Iout = photometricJitter(Iin, trainingParam)
+% Photometric jitter paramétrique : contraste, brightness, gamma,
+% saturation, hue, bruit, defocus.
 I = im2double(Iin);
 isRGB = (ndims(I)==3) && (size(I,3)==3);
 
-% contraste / luminosité / gamma (petits jitters)
-alpha = 0.85 + 0.30*rand();    % 0.85–1.15
-beta  = -0.10 + 0.20*rand();   % -0.10–0.10
-gamma = 0.90 + 0.20*rand();    % 0.9–1.1
+cr  = trainingParam.CNN_contrast_range;
+br  = trainingParam.CNN_brightness_range;
+gr  = trainingParam.CNN_gamma_range;
+sr  = trainingParam.CNN_saturation_range;
+hd  = trainingParam.CNN_hue_delta;
+ns  = trainingParam.CNN_noise_sigma;
+dsr = trainingParam.CNN_defocus_sigma_range;
+dp  = trainingParam.CNN_defocus_prob;
+
+% 1) Contraste + brightness : I*alpha + beta
+alpha = cr(1) + (cr(2)-cr(1))*rand();
+beta  = br(1) + (br(2)-br(1))*rand();
 I = I .* alpha + beta;
 I = max(min(I,1),0);
-I = I .^ gamma;
 
-% saturation très légère si RGB
-if isRGB && rand < 0.5
+% 2) Gamma
+gammaVal = gr(1) + (gr(2)-gr(1))*rand();
+I = I .^ gammaVal;
+I = max(min(I,1),0);
+
+% 3) Saturation + Hue (RGB uniquement)
+if isRGB
     HSV = rgb2hsv(I);
-    satJit = 0.95 + 0.10*rand();   % 0.95–1.05
+
+    % Saturation
+    satJit = sr(1) + (sr(2)-sr(1))*rand();
     HSV(:,:,2) = max(min(HSV(:,:,2)*satJit,1),0);
+
+    % Hue
+    if hd > 0
+        dH = (2*rand()-1)*hd;
+        H  = HSV(:,:,1) + dH;
+        H  = H - floor(H); % wrap [0,1)
+        HSV(:,:,1) = H;
+    end
+
     I = hsv2rgb(HSV);
+    I = max(min(I,1),0);
 end
 
-% bruit gaussien léger
-if rand < 0.7
-    var = 1e-4 + 4e-4*rand();      % 0.0001–0.0005
-    I = imnoise(I,'gaussian',0,var);
+% 4) Bruit gaussien
+if ns > 0 && rand < 0.7
+    I = I + ns * randn(size(I));
+    I = max(min(I,1),0);
 end
 
-% défocus léger
-if rand < 0.5
-    sigma = 0.3 + 0.7*rand();      % 0.3–1.0 px
-    ksz   = max(3, 2*ceil(2*sigma)+1);
-    I     = imgaussfilt(I, sigma, 'FilterSize', ksz);
+% 5) Defocus léger (blur gaussien)
+smin = max(0, dsr(1));
+smax = max(smin, dsr(2));
+if smax > 0 && rand < dp
+    sigma = smin + (smax - smin)*rand();
+    if sigma > 0
+        ksz   = max(3, 2*ceil(2*sigma)+1);
+        I     = imgaussfilt(I, sigma, 'FilterSize', ksz);
+    end
 end
 
 Iout = im2uint8(max(min(I,1),0));
+end
 
+function aug = localGetH5AugParams(tp)
+% Prépare une struct de paramètres homogène pour H5ImageDatastore
+aug = struct();
+aug.TransRange        = tp.CNN_translation_augmentation;
+aug.RotRange          = tp.CNN_rotation_augmentation;
+aug.CropScale         = tp.CNN_crop_scale;
+aug.ContrastRange     = tp.CNN_contrast_range;
+aug.BrightnessRange   = tp.CNN_brightness_range;
+aug.GammaRange        = tp.CNN_gamma_range;
+aug.SaturationRange   = tp.CNN_saturation_range;
+aug.HueDelta          = tp.CNN_hue_delta;
+aug.NoiseSigma        = tp.CNN_noise_sigma;
+aug.DefocusSigmaRange = tp.CNN_defocus_sigma_range;
+aug.DefocusProb       = tp.CNN_defocus_prob;
+end
+
+end

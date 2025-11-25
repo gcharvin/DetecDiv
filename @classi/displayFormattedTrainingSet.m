@@ -33,8 +33,8 @@ switch cate
  case {'Image','LSTM'}
 
     backend = "tiff";
-    if isprop(classif,'trainingParam') && isfield(classif.trainingParam,'CNN_storage_backend')
-        backend = lower(string(classif.trainingParam.CNN_storage_backend{end}));
+    if isprop(classif,'trainingParam') && isfield(classif.trainingParam,'Format_StorageBackend')
+        backend = lower(string(classif.trainingParam.Format_StorageBackend{end}));
     end
     isHDF5 = strcmp(backend,'hdf5');
 
@@ -93,7 +93,7 @@ switch cate
         % --------------------------
         % ======= MODE HDF5 ========
         % --------------------------
-        h5File = fullfile(pth,'trainingdataset','framebank.h5');
+        h5File = fullfile(pth,[classif.strid,'_framebank.h5']);
 
         if ~isfile(h5File)
             disp('No HDF5 framebank found.');

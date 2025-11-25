@@ -4,57 +4,66 @@ classdef H5ImageDatastore < matlab.io.Datastore & ...
                              matlab.io.datastore.PartitionableByIndex
     %H5ImageDatastore  Datastore HDF5 pour entraînement CNN
     %
-    %   Hypothèse HDF5 :
-    %       /frames      : [H W 3 N] uint8
-    %       /labels      : [N 1] (numérique ou string)
-    %       /classNames  : [K 1] string (optionnel)
+    % Hypothèse HDF5 :
+    %   /frames      : [H W 3 N] uint8
+    %   /labels      : [N 1] (numérique ou string)
+    %   /classNames  : [K 1] string (optionnel)
     %
-    %   read(ds) retourne [data, labels] :
-    %       data   : [H W 3 B] single in [0,1]
-    %       labels : [B 1] categorical
+    % read(ds) retourne [data, labels] :
+    %   data   : table avec colonne 'input' (images [H W 3] single [0,1])
+    %   labels : colonne 'response' categorical
     %
-    %   Augmentations supportées :
-    %       - TransRange     : [min max] translation en pixels (x,y)
-    %       - RotRange       : [min max] rotation en degrés
-    %       - CropScale      : [smin smax], s<=1 → crop-in + resize
-    %       - ContrastRange  : [cmin cmax], multiplicateur de contraste
-    %       - HueDelta       : max ΔH (0–1), jitter dans [-HueDelta, +HueDelta]
-    %       - NoiseSigma     : écart-type du bruit gaussien ajouté
+    % Augmentations supportées :
+    %   - TransRange         : [min max] translation en pixels (x,y)
+    %   - RotRange           : [min max] rotation en degrés
+    %   - CropScale          : [smin smax], s<=1 → crop-in + resize
+    %   - ContrastRange      : [cmin cmax], multiplicateur de contraste
+    %   - BrightnessRange    : [bmin bmax], offset additif
+    %   - GammaRange         : [gmin gmax], exponent
+    %   - SaturationRange    : [smin smax], multiplicateur de saturation (HSV)
+    %   - HueDelta           : max ΔH (0–1), jitter dans [-HueDelta, +HueDelta]
+    %   - NoiseSigma         : écart-type du bruit gaussien ajouté (0–1)
+    %   - DefocusSigmaRange  : [smin smax] sigma du flou gaussien (en pixels)
+    %   - DefocusProb        : probabilité d'appliquer le flou
 
-properties
-    % Public config
-    Filename           (1,:) char
-    FrameDataset       (1,:) char = '/frames'
-    LabelDataset       (1,:) char = '/labels'
-    ClassNames                         % cellstr
+    properties
+        % Public config
+        Filename           (1,:) char
+        FrameDataset       (1,:) char = '/frames'
+        LabelDataset       (1,:) char = '/labels'
+        ClassNames                         % cellstr
 
-    ImageSize         (1,3) double     % [H W 3]
-    MiniBatchSize = 32
+        ImageSize         (1,3) double     % [H W 3]
+        MiniBatchSize = 32
 
-    % Taille de sortie (optionnelle) pour adapter au réseau CNN
-    % Si vide -> on garde la taille native du HDF5
-    OutputSize = []    % [H W] ou [H W 3]
+        % Taille de sortie (optionnelle) pour adapter au réseau CNN
+        % Si vide -> on garde la taille native du HDF5
+        OutputSize = []    % [H W] ou [H W 3]
 
-    % Augmentation geo basique
-    TransRange        (1,2) double = [0 0]
-    RotRange          (1,2) double = [0 0]
+        % Augmentation géométrique
+        TransRange        (1,2) double = [0 0]
+        RotRange          (1,2) double = [0 0]
 
-    % Augmentations supplémentaires
-    CropScale         (1,2) double = [1 1]
-    ContrastRange     (1,2) double = [1 1]
-    HueDelta          (1,1) double = 0
-    NoiseSigma        (1,1) double = 0
-end
+        % Augmentations photométriques
+        CropScale         (1,2) double = [1 1]
+        ContrastRange     (1,2) double = [1 1]
+        BrightnessRange   (1,2) double = [0 0]
+        GammaRange        (1,2) double = [1 1]
+        SaturationRange   (1,2) double = [1 1]
+        HueDelta          (1,1) double = 0
+        NoiseSigma        (1,1) double = 0
+        DefocusSigmaRange (1,2) double = [0 0]
+        DefocusProb       (1,1) double = 0
+    end
 
-
-properties (SetAccess = protected)
-    NumObservations = 0;
-end
+    properties (SetAccess = protected)
+        NumObservations = 0;
+    end
 
     properties(Access = private)
-        Indices                         % indices logiques (ordre de lecture)
+        Indices
         CurrentIdx        (1,1) double = 1
-        LabelsRaw                       % labels tels que stockés dans HDF5
+        LabelsRaw
     end
 
     %==================================================================
@@ -63,18 +72,6 @@ end
             % Constructor
             %
             % ds = H5ImageDatastore(filename, 'Name',Value,...)
-            %
-            % Options:
-            %   'FrameDataset'   : chemin dataset images
-            %   'LabelDataset'   : chemin dataset labels
-            %   'MiniBatchSize'  : taille minibatch
-            %   'TransRange'     : [min max] translation
-            %   'RotRange'       : [min max] rotation
-            %   'CropScale'      : [smin smax] (s<=1 pour crop-in)
-            %   'ContrastRange'  : [cmin cmax]
-            %   'HueDelta'       : scalar max ΔH (0–0.5 conseillé)
-            %   'NoiseSigma'     : sigma du bruit gaussien
-            %   'ClassNames'     : cellstr ou string (ordre des classes)
 
             p = inputParser;
             p.addRequired('filename', @(x)ischar(x)||isstring(x));
@@ -85,8 +82,13 @@ end
             p.addParameter('RotRange', [0 0], @(x)isnumeric(x)&&numel(x)==2);
             p.addParameter('CropScale', [1 1], @(x)isnumeric(x)&&numel(x)==2);
             p.addParameter('ContrastRange', [1 1], @(x)isnumeric(x)&&numel(x)==2);
+            p.addParameter('BrightnessRange', [0 0], @(x)isnumeric(x)&&numel(x)==2);
+            p.addParameter('GammaRange', [1 1], @(x)isnumeric(x)&&numel(x)==2);
+            p.addParameter('SaturationRange', [1 1], @(x)isnumeric(x)&&numel(x)==2);
             p.addParameter('HueDelta', 0, @(x)isnumeric(x)&&isscalar(x));
             p.addParameter('NoiseSigma', 0, @(x)isnumeric(x)&&isscalar(x));
+            p.addParameter('DefocusSigmaRange', [0 0], @(x)isnumeric(x)&&numel(x)==2);
+            p.addParameter('DefocusProb', 0, @(x)isnumeric(x)&&isscalar(x));
             p.addParameter('ClassNames', [], @(x)iscellstr(x)||isstring(x)||isempty(x));
             p.parse(filename, varargin{:});
 
@@ -97,9 +99,14 @@ end
             ds.TransRange    = p.Results.TransRange;
             ds.RotRange      = p.Results.RotRange;
             ds.CropScale     = p.Results.CropScale;
-            ds.ContrastRange = p.Results.ContrastRange;
-            ds.HueDelta      = p.Results.HueDelta;
-            ds.NoiseSigma    = p.Results.NoiseSigma;
+            ds.ContrastRange   = p.Results.ContrastRange;
+            ds.BrightnessRange = p.Results.BrightnessRange;
+            ds.GammaRange      = p.Results.GammaRange;
+            ds.SaturationRange = p.Results.SaturationRange;
+            ds.HueDelta        = p.Results.HueDelta;
+            ds.NoiseSigma      = p.Results.NoiseSigma;
+            ds.DefocusSigmaRange = p.Results.DefocusSigmaRange;
+            ds.DefocusProb     = p.Results.DefocusProb;
 
             if ~isempty(p.Results.ClassNames)
                 ds.ClassNames = cellstr(p.Results.ClassNames);
@@ -108,31 +115,28 @@ end
             end
 
             % --- Infos sur le dataset images ---
-          % --- Infos sur le dataset images ---
-info = h5info(ds.Filename, ds.FrameDataset);
-sz   = info.Dataspace.Size;
-if numel(sz) ~= 4
-    error('Expected /frames to have size [H W 3 N]. Got: %s', mat2str(sz));
-end
-ds.ImageSize      = sz(1:3);
-ds.NumObservations = sz(4);
+            info = h5info(ds.Filename, ds.FrameDataset);
+            sz   = info.Dataspace.Size;
+            if numel(sz) ~= 4
+                error('Expected /frames to have size [H W 3 N]. Got: %s', mat2str(sz));
+            end
+            ds.ImageSize       = sz(1:3);
+            ds.NumObservations = sz(4);
 
+            % --- Lecture des labels une fois pour toutes ---
+            labs = h5read(ds.Filename, ds.LabelDataset);
+            labs = squeeze(labs);
+            if numel(labs) ~= ds.NumObservations
+                error('Labels length (%d) does not match number of frames (%d).', ...
+                    numel(labs), ds.NumObservations);
+            end
+            ds.LabelsRaw = labs;
 
-           % --- Lecture des labels une fois pour toutes ---
-labs = h5read(ds.Filename, ds.LabelDataset);
-labs = squeeze(labs);
-if numel(labs) ~= ds.NumObservations
-    error('Labels length (%d) does not match number of frames (%d).', ...
-        numel(labs), ds.NumObservations);
-end
-ds.LabelsRaw = labs;
+            % Indices initiaux
+            ds.Indices    = 1:ds.NumObservations;
+            ds.CurrentIdx = 1;
 
-% Indices initiaux
-ds.Indices    = 1:ds.NumObservations;
-ds.CurrentIdx = 1;
-
-
-            % --- ClassNames depuis HDF5 si pas fournis ---
+            % ClassNames depuis HDF5 si pas fournis
             if isempty(ds.ClassNames)
                 try
                     cn = h5read(ds.Filename, '/classNames');
@@ -141,8 +145,6 @@ ds.CurrentIdx = 1;
                     ds.ClassNames = [];
                 end
             end
-
-         
         end
 
         %--------------------------------------------------------------
@@ -151,33 +153,21 @@ ds.CurrentIdx = 1;
         end
 
         %--------------------------------------------------------------
-           %--------------------------------------------------------------
         function [dataTbl, info] = read(ds)
             % READ  Retourne un minibatch sous forme de table B×2
-            %
-            % dataTbl :
-            %   - colonne 'input'   : B×1 cell, chaque cellule = [H W 3] single
-            %   - colonne 'response': B×1 categorical
-            %
-            % [dataTbl, info] = read(ds)
-            %   info : struct optionnel, pour compatibilité avec trainNetwork
-
             if ~hasdata(ds)
                 error('No more data to read. Call reset(ds) to restart.');
             end
 
-            % indices de ce batch
             startIdx = ds.CurrentIdx;
             stopIdx  = min(ds.CurrentIdx + ds.MiniBatchSize - 1, numel(ds.Indices));
             batchIdx = ds.Indices(startIdx:stopIdx);
             B = numel(batchIdx);
 
-            % Taille native
             H0 = ds.ImageSize(1);
             W0 = ds.ImageSize(2);
             C  = ds.ImageSize(3);
 
-            % Taille cible (pour le réseau)
             if ~isempty(ds.OutputSize)
                 osz = ds.OutputSize;
                 if numel(osz) >= 2
@@ -192,11 +182,9 @@ ds.CurrentIdx = 1;
                 W = W0;
             end
 
-            % Pré-allocation : une cellule par observation
             X = cell(B,1);
             labBatchRaw = ds.LabelsRaw(batchIdx);
 
-            % --- Lecture frame par frame + augmentation ---
             for k = 1:B
                 idx = batchIdx(k);
 
@@ -212,7 +200,7 @@ ds.CurrentIdx = 1;
                 % Augmentations à la taille native
                 img = ds.applyAugment(img);
 
-                % Resize vers la taille cible si besoin
+                % Resize vers taille cible
                 if H ~= H0 || W ~= W0
                     img = imresize(img, [H W]);
                 end
@@ -220,17 +208,13 @@ ds.CurrentIdx = 1;
                 X{k} = img;
             end
 
-            % --- Labels -> categorical ---
             labels = ds.formatLabels(labBatchRaw);
 
-            % avance le pointeur
             ds.CurrentIdx = stopIdx + 1;
 
-            % === Retourner un TABLE B×2 pour trainNetwork ===
             dataTbl = table(X, labels, ...
                 'VariableNames', {'input','response'});
 
-            % --- Second output optionnel pour compatibilité ---
             if nargout > 1
                 info = struct();
                 info.BatchIndices = batchIdx;
@@ -238,8 +222,6 @@ ds.CurrentIdx = 1;
                 info.StopIndex    = stopIdx;
             end
         end
-
-
 
         %--------------------------------------------------------------
         function reset(ds)
@@ -255,13 +237,11 @@ ds.CurrentIdx = 1;
 
         %--------------------------------------------------------------
         function n = numObservations(ds)
-    % Nombre logique d'observations = longueur du vecteur d'indices
-    n = numel(ds.Indices);
+            n = numel(ds.Indices);
         end
 
         %--------------------------------------------------------------
         function dsNew = partition(ds, N, idx)
-            % partition pour multi-GPU ou splits
             arguments
                 ds
                 N   (1,1) double {mustBePositive}
@@ -282,33 +262,26 @@ ds.CurrentIdx = 1;
 
         %--------------------------------------------------------------
         function dsSub = subset(ds, idx)
-    dsSub = copy(ds);
-    dsSub.Indices    = ds.Indices(idx);
-    dsSub.CurrentIdx = 1;
-
-    % Maintenir NumObservations cohérent (optionnel, mais propre)
-    dsSub.NumObservations = numel(dsSub.Indices);
-end
+            dsSub = copy(ds);
+            dsSub.Indices    = ds.Indices(idx);
+            dsSub.CurrentIdx = 1;
+            dsSub.NumObservations = numel(dsSub.Indices);
+        end
 
         %--------------------------------------------------------------
         function frac = progress(ds)
             frac = (ds.CurrentIdx-1) / max(1, numel(ds.Indices));
         end
 
-
         %--------------------------------------------------------------
-function dsOut = partitionByIndex(ds, indices)
-    % indices : vecteur d'indices globaux (1..NumObservations)
-    dsOut = subset(ds, indices);
-end
-
- 
+        function dsOut = partitionByIndex(ds, indices)
+            dsOut = subset(ds, indices);
+        end
     end
 
     %==================================================================
     methods(Access = private)
         function labels = formatLabels(ds, labRaw)
-            % labRaw peut être numeric, char, string...
             if isnumeric(labRaw)
                 labRaw = labRaw(:);
                 if ~isempty(ds.ClassNames)
@@ -334,7 +307,6 @@ end
             [H,W,~] = size(imgOut);
 
             %% 1) Crop-in (zoom) aléatoire + resize
-            % On suppose CropScale dans [smin smax], avec s<=1 pour crop-in
             smin = min(ds.CropScale);
             smax = max(ds.CropScale);
             smin = max(0, smin);
@@ -376,32 +348,65 @@ end
                                   'bilinear', 'crop');
             end
 
-            %% 4) Contraste
-            if any(ds.ContrastRange ~= 1)
+            %% 4) Contraste + brightness (I*alpha + beta)
+            if any(ds.ContrastRange ~= 1) || any(ds.BrightnessRange ~= 0)
                 cmin = ds.ContrastRange(1);
                 cmax = ds.ContrastRange(2);
+                bmin = ds.BrightnessRange(1);
+                bmax = ds.BrightnessRange(2);
                 alpha = cmin + (cmax - cmin)*rand();
-                imgOut = (imgOut - 0.5) * alpha + 0.5;
+                beta  = bmin + (bmax - bmin)*rand();
+                imgOut = imgOut .* alpha + beta;
             end
 
-            %% 5) Teinte (Hue)
-            if ds.HueDelta > 0
-                % ΔH dans [-HueDelta, +HueDelta]
-                delta = (2*rand() - 1) * ds.HueDelta;
+            %% 5) Gamma
+            if any(ds.GammaRange ~= 1)
+                gmin = ds.GammaRange(1);
+                gmax = ds.GammaRange(2);
+                gammaVal = gmin + (gmax - gmin)*rand();
+                imgOut = imgOut .^ gammaVal;
+            end
+
+            %% 6) Teinte + saturation (HSV)
+            if ds.HueDelta > 0 || any(ds.SaturationRange ~= 1)
                 hsv = rgb2hsv(imgOut);
-                h = hsv(:,:,1) + delta;
-                % wrap modulo 1
-                h = h - floor(h);
-                hsv(:,:,1) = h;
+
+                % Saturation
+                if any(ds.SaturationRange ~= 1)
+                    smin = ds.SaturationRange(1);
+                    smax = ds.SaturationRange(2);
+                    satJit = smin + (smax - smin)*rand();
+                    hsv(:,:,2) = max(min(hsv(:,:,2)*satJit,1),0);
+                end
+
+                % Hue
+                if ds.HueDelta > 0
+                    delta = (2*rand() - 1) * ds.HueDelta;
+                    h = hsv(:,:,1) + delta;
+                    h = h - floor(h);   % wrap [0,1)
+                    hsv(:,:,1) = h;
+                end
+
                 imgOut = hsv2rgb(hsv);
             end
 
-            %% 6) Bruit gaussien
+            %% 7) Bruit gaussien
             if ds.NoiseSigma > 0
                 imgOut = imgOut + ds.NoiseSigma * randn(size(imgOut), 'like', imgOut);
             end
 
-            %% 7) Clamping final
+            %% 8) Defocus (flou gaussien)
+            smin = max(0, ds.DefocusSigmaRange(1));
+            smax = max(smin, ds.DefocusSigmaRange(2));
+            if smax > 0 && ds.DefocusProb > 0 && rand < ds.DefocusProb
+                sigma = smin + (smax - smin)*rand();
+                if sigma > 0
+                    ksz = max(3, 2*ceil(2*sigma)+1);
+                    imgOut = imgaussfilt(imgOut, sigma, 'FilterSize', ksz);
+                end
+            end
+
+            %% 9) Clamping
             imgOut = min(max(imgOut, 0), 1);
         end
     end

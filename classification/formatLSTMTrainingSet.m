@@ -1,73 +1,88 @@
 function output = formatLSTMTrainingSet(foldername, classif, rois, varargin)
 
-% ---- Params optionnels ----
-Frames     = [];
-Fraction   = 1;        % fraction de ROIs à utiliser
-Seed       = 12345;    % seed pour la sélection de ROIs / RNG locales
-Crop       = false;    % activer/désactiver le crop
-CropCenter = [88 194]; % [cx cy]
-CropSize   = [60 60];  % [w h]
+%FORMATLSTMTRAININGSET Prépare les données pour l'entraînement LSTM.
+%
+%   output = formatLSTMTrainingSet(foldername, classif, rois)
+%   output = formatLSTMTrainingSet(..., 'frames', Frames)
+%
+% Tous les paramètres de formatage (fraction, seed, crop, backend, …)
+% sont lus dans classif.trainingParam (prefixe 'Format_').
+% La seule option acceptée dans varargin est 'frames'.
 
-UndersampleMajority = 1;   % 1 = désactivé (100% des frames gardées)
-UseHDF5            = [];   % si vrai : export HDF5 framebank
-WriteTiffImages    = [];   % si vrai : écrit des TIFF par classe
+% -------------------------------------------------------------------------
+% 0) Valeurs par défaut (seront écrasées par trainingParam si présent)
+% -------------------------------------------------------------------------
+Frames     = [];        % peut être surchargé par varargin
+Fraction   = 1.0;       % fraction de ROIs à utiliser
+Seed       = 12345;     % seed RNG pour la sélection de ROIs / frames
+Crop       = false;     % activer/désactiver le crop
+CropCenter = [88 194];  % [cx cy]
+CropSize   = [60 60];   % [w h]
 
+UndersampleMajority = 1.0;   % 1 = désactivé (100% des frames gardées)
+StorageBackend      = 'hdf5';% 'hdf5' ou 'tiff'
+UseHDF5             = true;  % dérivé de StorageBackend
+WriteTiffImages= ~UseHDF5; 
+
+% -------------------------------------------------------------------------
+% 1) Lire les paramètres de formatage dans classif.trainingParam (Format_*)
+% -------------------------------------------------------------------------
+if isprop(classif,'trainingParam') && ~isempty(classif.trainingParam)
+    tp = classif.trainingParam;
+
+    if isfield(tp,'Format_Fraction'),            Fraction            = tp.Format_Fraction;            end
+    if isfield(tp,'Format_Seed'),                Seed                = tp.Format_Seed;                end
+    if isfield(tp,'Format_Crop'),                Crop                = tp.Format_Crop;                end
+    if isfield(tp,'Format_CropCenter'),          CropCenter          = tp.Format_CropCenter;          end
+    if isfield(tp,'Format_CropSize'),            CropSize            = tp.Format_CropSize;            end
+    if isfield(tp,'Format_UndersampleMajority'), UndersampleMajority = tp.Format_UndersampleMajority; end
+
+    if isfield(tp,'Format_StorageBackend')
+        StorageBackend = tp.Format_StorageBackend;
+        % si c'est un popup style {'hdf5','tiff','hdf5'}, prendre la valeur sélectionnée
+        if iscell(StorageBackend)
+            StorageBackend = StorageBackend{end};
+        end
+    end
+end
+
+% Dériver UseHDF5 à partir du backend
+UseHDF5 = strcmpi(string(StorageBackend),'hdf5');
+
+% Catégorie (inchangé)
+category = classif.category{1};
+
+
+% -------------------------------------------------------------------------
+% 2) Lecture de varargin : seule l'option 'frames' est supportée
+% -------------------------------------------------------------------------
 for i = 1:numel(varargin)
     if ischar(varargin{i}) || isstring(varargin{i})
         key = lower(string(varargin{i}));
         switch key
             case "frames"
-                Frames = varargin{i+1};
-            case "fraction"
-                Fraction = varargin{i+1};
-            case "seed"
-                Seed = varargin{i+1};
-            case "crop"
-                Crop = logical(varargin{i+1});
-            case "cropcenter"
-                CropCenter = varargin{i+1};
-            case "cropsize"
-                CropSize = varargin{i+1};
-            case "undersamplemajority"
-                UndersampleMajority = varargin{i+1};
-            case "usehdf5"
-                UseHDF5 = logical(varargin{i+1});
-            case "writetiffimages"
-                WriteTiffImages = logical(varargin{i+1});
+                if i+1 <= numel(varargin)
+                    Frames = varargin{i+1};
+                    if Frames==0
+                        Frames=[];
+                    end
+                else
+                    error('formatLSTMTrainingSet:MissingValue', ...
+                          'Valeur manquante après l''option "frames".');
+                end
+            otherwise
+                warning('formatLSTMTrainingSet:UnknownOption', ...
+                        'Option "%s" ignorée. Seule l''option "frames" est supportée.', key);
         end
     end
 end
 
-category = classif.category{1};
-
-% ---- Backend par défaut selon trainingParam ----
-if isempty(UseHDF5) || isempty(WriteTiffImages)
-    backend = 'tiff'; % valeur historique
-    if isprop(classif,'trainingParam') && isfield(classif.trainingParam,'CNN_storage_backend')
-        backend = lower(string(classif.trainingParam.CNN_storage_backend{end}));
-    end
-
-    switch backend
-        case "hdf5"
-            UseHDF5         = true;
-            WriteTiffImages = false;
-        case "tiff"
-            UseHDF5         = false;
-            WriteTiffImages = true;
-        otherwise
-            warning('Unknown CNN_storage_backend ''%s'' -> defaulting to TIFF.', backend);
-            UseHDF5         = false;
-            WriteTiffImages = true;
-    end
-end
-
-% Validation fraction
-if isempty(Fraction) || ~isnumeric(Fraction) || ~isscalar(Fraction) || isnan(Fraction)
-    Fraction = 1;
-end
-Fraction = max(0, min(1, Fraction));   % clamp [0,1]
 
 output = 0;
+
+% display classif parameters : 
+classif.displayTrainingParam
+
 
 % ---- FS prep ----
 if ~isfolder(fullfile(classif.path, foldername, 'images')) && ~UseHDF5
@@ -98,10 +113,20 @@ if ~UseHDF5 && ~isfolder(fullfile(classif.path, foldername, 'timeseries'))
 end
 
 % ---- Préparation HDF5 (framebank CNN) ----
-h5Framebank = fullfile(classif.path, foldername, 'framebank.h5');
+h5Framebank = fullfile(classif.path, [classif.strid, '_framebank.h5']);
 if UseHDF5 && exist(h5Framebank,"file")
     delete(h5Framebank);
+
+    % removing trainingdataset folder in case of hdf5
+     if isfolder(fullfile(classif.path, foldername))
+            try
+                rmdir(fullfile(classif.path, foldername), 's');
+            catch
+                disp('Error: did not manage to remove directory!');
+            end
+     end
 end
+
 h5Initialized = false;
 nextFrameIdx  = 1;    % index de la prochaine frame CNN à écrire
 seriesStart   = [];
@@ -110,7 +135,6 @@ seriesIds     = strings(0,1);
 
 cltmp = classif.roi;
 
-disp('Starting parallelized jobs for data formatting....')
 warning off all
 
 channel = classif.channelName;
@@ -147,18 +171,24 @@ majorityClassesGlobal = [];
 %    ET qu'on génère un dataset CNN (TIFF ou HDF5).
 %  - Ne touche PAS aux timeseries LSTM.
 % =====================================================
+
+fprintf('Preprocessing ROIs to evaluate class imbalance \n')
+
+
 if UndersampleMajority < 1 && (UseHDF5 || WriteTiffImages) && strcmp(category,'LSTM')
     globalCounts = zeros(numClasses,1);
 
     for k = 1:numel(rois_sel)
         ridx = rois_sel(k);
 
+        progressBar(k, numel(rois_sel), ['Pre-processing ROI: ' cltmp(ridx).id]);
+
         % on ne charge que les métadonnées si possible
         roiSeries = cltmp(ridx).data;
 
         if isempty(roiSeries(1).data)
             fprintf(['Loading ' cltmp(ridx).id ' dataseries....\n']);
-            cltmp(ridx).load('data');
+            cltmp(ridx).load('data','silent');
             roiSeries = cltmp(ridx).data;
         end
       
@@ -249,31 +279,55 @@ if UndersampleMajority < 1 && (UseHDF5 || WriteTiffImages) && strcmp(category,'L
         majorityClassesGlobal = [];
     end
 
-    fprintf('Global class counts (CNN):\n');
-    for c = 1:numClasses
-        fprintf('  %s : %d frames\n', classif.classes{c}, globalCounts(c));
-    end
-    if ~isempty(majorityClassesGlobal)
-        fprintf('Global majority class(es) for CNN undersampling: %s\n', ...
-            strjoin(classif.classes(majorityClassesGlobal), ', '));
+fprintf('Global class counts (CNN):\n');
+for c = 1:numClasses
+    fprintf('  %s : %d frames\n', classif.classes{c}, globalCounts(c));
+end
+
+% --- Affichage de la classe majoritaire (déjà présent) ---
+if ~isempty(majorityClassesGlobal)
+    fprintf('Global majority class(es) for CNN undersampling: %s\n', ...
+        strjoin(classif.classes(majorityClassesGlobal), ', '));
+else
+    fprintf('No labeled frames found globally for CNN.\n');
+end
+
+% --- AJOUT : affichage du paramètre d'undersampling choisi ---
+if isfield(tp, 'Format_UndersampleMajority')
+    us = tp.Format_UndersampleMajority;
+
+    if us >= 1 || us == 1
+        fprintf('CNN undersampling: DISABLED (Format_UndersampleMajority = %.2f)\n', us);
     else
-        fprintf('No labeled frames found globally for CNN.\n');
+        fprintf('CNN undersampling: ENABLED with factor %.2f (majority classes multiplied by this ratio)\n', us);
     end
+else
+    fprintf('CNN undersampling parameter (Format_UndersampleMajority) not found — default = 1.0 (disabled).\n');
+end
+
+fprintf('------\n');
+
 end
 
 % ==========================
 %     BOUCLE PRINCIPALE
 % ==========================
+fprintf('\n');
+fprintf('Processing ROIs, please wait... \n')
+fprintf('\n');
+
 for i = 1:numel(rois_sel)
     emptyFrame = [];
     lab        = [];
     ridx       = rois_sel(i);
 
-    disp(['Launching ROI :' num2str(ridx) ' processing...'])
+     progressBar(i, numel(rois_sel), ['Processing ROI: ' cltmp(ridx).id]);
+
+   % disp(['Launching ROI :' num2str(ridx) ' processing...'])
 
     % Charger les images + data si nécessaire
     if numel(cltmp(ridx).image)==0 || numel(cltmp(ridx).data)==0
-        cltmp(ridx).load;
+        cltmp(ridx).load('silent');
     end
 
     if numel(cltmp(ridx).image) == 0
@@ -374,9 +428,9 @@ for i = 1:numel(rois_sel)
 
         fracKeep = UndersampleMajority;
 
-        fprintf('CNN undersampling (%.2f) for ROI %s ; majority classes: %s\n', ...
-            fracKeep, cltmp(ridx).id, ...
-            strjoin(classif.classes(majorityClassesGlobal), ', '));
+        %fprintf('CNN undersampling (%.2f) for ROI %s ; majority classes: %s\n', ...
+        %    fracKeep, cltmp(ridx).id, ...
+        %    strjoin(classif.classes(majorityClassesGlobal), ', '));
 
         for c = majorityClassesGlobal(:)'
             frames_c = find(dataidfra == c);
@@ -416,7 +470,7 @@ for i = 1:numel(rois_sel)
 
         lab = categorical(dataidfra, 1:numClasses, classif.classes);
 
-        reverseStr = '';
+        %reverseStr = '';
         cc = 1;
 
         % Taille cible CNN (GoogLeNet, ResNet, ...)
@@ -429,7 +483,7 @@ for i = 1:numel(rois_sel)
             disp('Pre-processing failed, likely because the image is void !');
             continue;
         end
-        
+
         % if size(imtest,3)==1, imtest = repmat(imtest,[1 1 3]); end
         % 
         % if Crop
@@ -535,10 +589,10 @@ for i = 1:numel(rois_sel)
                 output = output + 1;
             end
 
-            msg = sprintf('Processing frame: %d / %d for ROI %s', ...
-                kf, numel(fra), cltmp(ridx).id);
-            fprintf([reverseStr, msg]);
-            reverseStr = repmat(sprintf('\b'), 1, length(msg));
+           % msg = sprintf('Processing frame: %d / %d for ROI %s', ...
+            %    kf, numel(fra), cltmp(ridx).id);
+           % fprintf([reverseStr, msg]);
+            %reverseStr = repmat(sprintf('\b'), 1, length(msg));
             cc = cc + 1;
         end
 
@@ -609,7 +663,7 @@ for i = 1:numel(rois_sel)
         disp('This ROI was not saved because it has empty frames');
     end
 
-    disp(['Processing ROI: ' num2str(ridx) ' ... Done !'])
+   % disp(['Processing ROI: ' num2str(ridx) ' ... Done !'])
 end
 
 % Finalisation du framebank HDF5 (métadonnées CNN séries)
