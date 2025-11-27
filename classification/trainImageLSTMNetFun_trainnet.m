@@ -693,23 +693,39 @@ if trainingParam.train_LSTM_network || ~exist(str,"file")
     % ============================================================
     % 1) DÉFINITION DU LSTM "STANDARD" (plus de weightedLSTM...)
     % ============================================================
+
+% Utilise la liste de classes déjà stockée dans l'objet classif
+classesRaw = classif.classes;    % ce que tu as déjà dans l'objet classi
+
+if iscell(classesRaw)
+    classNames = classesRaw;
+else
+    % si c'est un char array ou un string array
+    classNames = cellstr(classesRaw);
+end
+
+numClasses = numel(classNames);
+
+
     if strcmp(trainingParam.transfer_learning{end},'ImageNet')
         if strcmp(trainingParam.classifier_output{end},'sequence-to-sequence')
+           
             layers = [
                 sequenceInputLayer(numFeatures,'Name','sequence')
                 bilstmLayer(nh,'OutputMode','sequence','Name','bilstm')
                 dropoutLayer(0.5,'Name','drop')
                 fullyConnectedLayer(numClasses,'Name','fc')
                 softmaxLayer('Name','softmax')
-                classificationLayer('Name','classification')];
+                classificationLayer('Name','classification',"Classes", classNames)];
         else
+           
             layers = [
                 sequenceInputLayer(numFeatures,'Name','sequence')
                 bilstmLayer(nh,'OutputMode','last','Name','bilstm')
                 dropoutLayer(0.5,'Name','drop')
                 fullyConnectedLayer(numClasses,'Name','fc')
                 softmaxLayer('Name','softmax')
-                classificationLayer('Name','classification')];
+                classificationLayer('Name','classification',"Classes", classNames)];
         end
     else
         % Cas transfer learning LSTM existant : on garde ton comportement
@@ -833,11 +849,14 @@ if trainingParam.train_LSTM_network || ~exist(str,"file")
     % la classificationLayer et on assemble.
     lgraphTrained = layerGraph(dlNetLSTM.Layers);
 
-    if ~any(strcmp({lgraphTrained.Layers.Name},'classification'))
-        classLayer = classificationLayer('Name','classification');
-        lgraphTrained = addLayers(lgraphTrained, classLayer);
-        lgraphTrained = connectLayers(lgraphTrained, outputLayerName, 'classification');
-    end
+   if ~any(strcmp({lgraphTrained.Layers.Name},'classification'))
+    % réutilise classNames définis plus haut
+    classLayer = classificationLayer('Name','classification', ...
+                                     'Classes', classNames);
+    lgraphTrained = addLayers(lgraphTrained, classLayer);
+    lgraphTrained = connectLayers(lgraphTrained, outputLayerName, 'classification');
+end
+
 
     netLSTM = assembleNetwork(lgraphTrained);
 
@@ -847,56 +866,128 @@ if trainingParam.train_LSTM_network || ~exist(str,"file")
     disp('Training LSTM network is done and saved ...');
     fprintf('------\n');
 
-    % ============================================================
-    % 5) Recherche du meilleur threshold (inchangée)
-    % ============================================================
+        % ================================
+    % 4) Optimisation du seuil LSTM
+    % ================================
     bestThreshold = 0.5;
     try
-        classes = classif.classes;
-        posName = classes{min(2,numel(classes))}; % classe 2 par défaut
+        % --- classes au format cellstr propre ---
+        classesRaw = classif.classes;
+        if iscell(classesRaw)
+            classes = classesRaw(:);
+        else
+            classes = cellstr(classesRaw);   % gère char matrix / string array
+        end
+
+        % nom de la classe positive (2e par défaut)
+        posName = classes{min(2,numel(classes))};
+
+        % index de la classe positive
+        posIdx = find(strcmp(classes, posName), 1);
+        if isempty(posIdx)
+            error('posName "%s" not found in classes.', posName);
+        end
 
         if strcmp(trainingParam.classifier_output{end},'sequence-to-one')
-            scoreVal = predict(netLSTM, sequencesValidation, 'MiniBatchSize', miniBatchSize);
-            posIdx   = find(strcmp(classes, posName));
-            posScore = scoreVal(:, posIdx);
-            Ytrue    = double(labelsValidation == categorical(posName));
-        else
-            scoreVal = predict(netLSTM, sequencesValidation, 'MiniBatchSize', miniBatchSize);
-            posIdx   = find(strcmp(classes, posName), 1);
-            if isempty(posIdx)
-                error('posName "%s" not found in classes.', posName);
+            % ----------------------------------------------------------
+            % Cas sequence-to-one : 1 score par séquence
+            % ----------------------------------------------------------
+            numVal      = numel(sequencesValidation);
+            numClasses  = numel(classes);
+            scoreVal    = zeros(numVal, numClasses, 'single');
+
+            for i = 1:numVal
+                Xi = sequencesValidation{i};                   % T x C
+                Xi = reshape(Xi, size(Xi,1), size(Xi,2), 1);   % T x C x 1
+                dlXi = dlarray(Xi, "TCB");
+
+                dlYi = forward(dlNetLSTM, dlXi);               % C x 1 (format "CB")
+                yi   = gather(extractdata(dlYi));              % C x 1
+
+                scoreVal(i,:) = yi.';                          % 1 x C
             end
+
+            posScore = scoreVal(:, posIdx);                    % N x 1
+
+            % labelsValidation doit être categorical ; on crée un scalar categorical
+            posCat   = categorical({posName}, classes, classes);
+            Ytrue    = double(labelsValidation == posCat);
+
+                else
+            % ----------------------------------------------------------
+            % Cas sequence-to-sequence : 1 score par time step
+            % ----------------------------------------------------------
             posScore = [];
             Ytrue    = [];
-            posCat   = categorical(posName, classes, classes);
+            posCat   = categorical({posName}, classes, classes);
 
-            for i = 1:numel(scoreVal)
-                thisScore = scoreVal{i}(:, posIdx);
-                thisLab   = labelsValidation{i};
-                posScore  = [posScore; thisScore(:)]; %#ok<AGROW>
-                Ytrue     = [Ytrue;  double(thisLab(:) == posCat)]; %#ok<AGROW>
+            numClasses = numel(classes);
+
+            for i = 1:numel(sequencesValidation)
+                Xi = sequencesValidation{i};                   % T x C (features)
+                Xi = reshape(Xi, size(Xi,1), size(Xi,2), 1);   % T x C x 1
+                dlXi = dlarray(Xi, "TCB");
+
+                dlYi   = forward(dlNetLSTM, dlXi);
+                Yidata = gather(extractdata(dlYi));            % dims quelconques
+
+                sz = size(Yidata);
+                % trouver la dimension correspondant aux classes (= numClasses)
+                classDim = find(sz == numClasses, 1);
+                if isempty(classDim)
+                    error('Impossible de trouver une dimension = numClasses (%d) dans la sortie LSTM.', numClasses);
+                end
+
+                % on permute pour mettre les classes en 2e dimension
+                nd = ndims(Yidata);
+                perm = 1:nd;
+                perm([2,classDim]) = perm([classDim,2]);   % swap classDim <-> 2
+                Yperm = permute(Yidata, perm);
+
+                % on a maintenant: ??? x numClasses x ???  -> on aplatit tout sauf la dim classes
+                szp = size(Yperm);
+                numCls = szp(2);
+                other  = prod(szp) / numCls;
+                Yflat  = reshape(Yperm, other, numCls);     % (time*batch) x numClasses
+
+                thisScore = Yflat(:, posIdx);               % scores classe positive
+                thisLab   = labelsValidation{i};            % T x 1 categorical
+
+                posScore = [posScore; thisScore(:)];        %#ok<AGROW>
+                Ytrue    = [Ytrue;  double(thisLab(:) == posCat)]; %#ok<AGROW>
             end
         end
 
+
+        % ----------------------------------------------------------
+        % Recherche du meilleur seuil (F1)
+        % ----------------------------------------------------------
         ths = linspace(0,1,101);
         bestF1 = -inf; bestT = 0.5;
         for t = ths
             yhat = posScore >= t;
-            TP = sum(yhat & Ytrue); FP = sum(yhat & ~Ytrue);
+            TP = sum(yhat & Ytrue);
+            FP = sum(yhat & ~Ytrue);
             FN = sum(~yhat & Ytrue);
             P  = TP / max(1, (TP+FP));
             R  = TP / max(1, (TP+FN));
             F1 = 2*P*R / max(1e-9, (P+R));
-            if F1 > bestF1, bestF1 = F1; bestT = t; end
+            if F1 > bestF1
+                bestF1 = F1;
+                bestT  = t;
+            end
         end
+
         bestThreshold = bestT;
         fprintf('Chosen threshold=%.2f (F1=%.2f)\n', bestThreshold, bestF1);
+
     catch ME
         warning('Threshold selection failed: %s', ME.message);
     end
 
-    % On écrase le fichier pour inclure bestThreshold
-    save(target,'netLSTM','info','bestThreshold');
+    % Sauvegarde : on garde le même nom netLSTM pour compat
+    %netLSTM = dlNetLSTM;
+    save(target,'bestThreshold','-append');
 
 else
     % ==== Cas "pas de nouvel entraînement" : on recharge ====
@@ -905,6 +996,7 @@ else
     disp('Loading LSTM network ...');
     fprintf('------\n');
 end
+
 
 
 
@@ -967,10 +1059,25 @@ end
         case {'inceptionresnetv2','inceptionv3'}, lgraph = connectLayers(lgraph,"fold/out","conv2d_1");
     end
 
-    % Unfold + LSTM (sans sa 1ère couche sequenceInputLayer)
-    lstmLayers = netLSTM.Layers; lstmLayers(1) = [];
-    layersTail = [sequenceUnfoldingLayer('Name','unfold'); flattenLayer('Name','flatten'); lstmLayers];
-    lgraph = addLayers(lgraph,layersTail);
+    % ----- Unfold + LSTM (avec poids entraînés) -----
+    % netLSTM peut être un dlnetwork (trainnet) ou un DAG/SeriesNetwork (legacy)
+    if isa(netLSTM, 'dlnetwork')
+        lgraphLSTM = layerGraph(netLSTM);   % récupère les couches AVEC leurs poids
+    else
+        lgraphLSTM = layerGraph(netLSTM);
+    end
+
+    lstmLayersFull = lgraphLSTM.Layers;
+    % on enlève seulement la première couche sequenceInputLayer
+    lstmLayersFull(1) = [];
+
+    layersTail = [ ...
+        sequenceUnfoldingLayer('Name','unfold'); ...
+        flattenLayer('Name','flatten'); ...
+        lstmLayersFull ...
+    ];
+
+    lgraph = addLayers(lgraph, layersTail);
 
     lgraph = connectLayers(lgraph, layerName, "unfold/in");
     lgraph = connectLayers(lgraph, "fold/miniBatchSize", "unfold/miniBatchSize");
