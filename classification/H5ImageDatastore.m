@@ -213,6 +213,8 @@ ds.LabelsRaw = labs;
                 if H ~= H0 || W ~= W0
                     img = imresize(img, [H W]);
                 end
+                
+                img = uint8(img*256); % added to convert to uint8 format;
 
                 X{k} = img;
             end

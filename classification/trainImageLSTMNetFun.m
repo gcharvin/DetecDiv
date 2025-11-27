@@ -446,8 +446,6 @@ else
 
     % --------------------------------------------------------------------
 
-   
-
     for i = 1:numFiles
         if useH5Series
             % Nom de la série/ROI (si dispo dans le HDF5)
@@ -801,8 +799,6 @@ end
 
 
 try
-
-
     % sequencesTrain / labelsTrain doivent être déjà construits
     % (ce sont ceux passés à trainNetwork / trainnet)
 
@@ -867,9 +863,6 @@ try
 catch ME
     warning('DEBUG LSTM sur TRAIN a échoué: %s', ME.message);
 end
-
-
-
 
 
 else

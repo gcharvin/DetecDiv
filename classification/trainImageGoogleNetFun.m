@@ -326,7 +326,6 @@ fprintf('-------------------------------\n');
                 classif.classes{i}, n, classWeights(i));
         end
 
-
         % Datastores finaux
         dataTrain   = dsTrain;
         dataValBase = dsVal;
@@ -672,9 +671,6 @@ save(fullfile(path,'TrainingValidation','tmpoptions.mat'),'options');
 % catch ME
 %     warning('DEBUG CNN sur TRAIN a échoué : %s', ME.message);
 % end
-
-
-
 
 
 % ===== helpers =====

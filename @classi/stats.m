@@ -159,8 +159,6 @@ if compute==1 % compute new scores
 
 end
 
-aa=classif.score
-
 % ===== plot statistics
 
 if numel(scoreid)==0
