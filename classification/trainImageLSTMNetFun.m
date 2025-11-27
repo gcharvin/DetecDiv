@@ -7,7 +7,7 @@ name=classif.strid;
 %---------------- parameters setting
 if nargin==2 % basic parameter initialization
 
-        tip = { ...
+    tip = { ...
         'Check box to train CNN',...                                                              % train_CNN_classifier
         'Check box to compute CNN activations',...                                               % compute_CNN_activations
         'Check box to train the LSTM network',...                                                % train_LSTM_network
@@ -103,11 +103,11 @@ if nargin==2 % basic parameter initialization
         'execution_environment',{{'auto','parallel','cpu','gpu','multi-gpu','auto'}},...
         'transfer_learning',{{'ImageNet','ImageNet'}},...
         'LSTM_minority_mode','none',...            % 'none' (par défaut) ou 'auto'
-        'LSTM_minority_min_ratio',0.30,...         % activer si min/max ≤ 0.30
+        'LSTM_minority_min_ratio',0.30,...         % activer si min/max ≤ 0.30 : if rare minority events, then use specific augmentation of sequences
         'LSTM_minority_percentile',0.00,...        % 0 = off ; sinon ex 0.20
         'LSTM_pos_neg_ratio',1.0,...               % #negatives per #positives (fenêtres)
-        'LSTM_win_stride_pos_frac',0.10,...        % stridePos = L*0.10
-        'LSTM_win_stride_neg_frac',1.00,...        % strideNeg = L*1.00
+        'LSTM_win_stride_pos_frac',0.10,...        % stridePos = L*0.10 : if minority class, then use a lot of sequences to augment positive cases
+        'LSTM_win_stride_neg_frac',1.00,...        % strideNeg = L*1.00 : if not minority class, use normal shift between sequences
         'LSTM_keep_valid_distrib',true,...
         'Format_Fraction',1.0, ...                 % fraction de ROIs à utiliser
         'Format_Seed',12345, ...                   % seed RNG pour la sélection
@@ -144,28 +144,28 @@ fprintf('------\n');
 netCNN = [];
 
 if trainingParam.train_CNN_classifier
-    
-    if strcmp(trainingParam.transfer_learning{end},'ImageNet') 
-    trainImageGoogleNetFun(classif); % trainImageGoogle net first and saves it as netCNN.mat in the LSTM dir
+
+    if strcmp(trainingParam.transfer_learning{end},'ImageNet')
+        trainImageGoogleNetFun(classif); % trainImageGoogle net first and saves it as netCNN.mat in the LSTM dir
     else
-     src=fullfile(classif.path,['netCNN_' trainingParam.transfer_learning{end}]);
-         if exist(src)
-             load(src); %loads classifier
-         else
-             disp(['Unable to load: ' trainingParam.transfer_learning{end}]);
+        src=fullfile(classif.path,['netCNN_' trainingParam.transfer_learning{end}]);
+        if exist(src)
+            load(src); %loads classifier
+        else
+            disp(['Unable to load: ' trainingParam.transfer_learning{end}]);
             return;
-         end        
-        trainImageGoogleNetFun(classif,'ok',classifier);    
+        end
+        trainImageGoogleNetFun(classif,'ok',classifier);
     end
-    
+
     target=fullfile(path,['netCNN_' name '.mat']);
     source=fullfile(path,[name '.mat']);
-  
+
     if ~exist(source)
         disp('Trained CNN does not exist; quitting !');
         return;
     end
-    
+
     copyfile(source,target); % copies the trained CNN classifieer so that it can later be assembled to the lstm network
 end
 
@@ -184,16 +184,16 @@ end
 % % 1) Si on doit entraîner le CNN dans ce run
 % if isfield(trainingParam,'train_CNN_classifier') && trainingParam.train_CNN_classifier
 %     fprintf('Training CNN classifier (train_CNN_classifier = true)...\n');
-% 
+%
 %     % Ici tu as deux options :
 %     %   - soit tu appelles directement trainImageGoogleNetFun
 %     %   - soit tu laisses ton code existant qui entraîne le CNN
 %     %
 %     % Exemple si tu utilises trainImageGoogleNetFun :
-% 
+%
 %     trainImageGoogleNetFun(classif, true);  % ou setparam si nécessaire
-% 
-% 
+%
+%
 %     % Après training, on s'attend à trouver un fichier <name>.mat avec 'classifier'
 %     cnnFile = fullfile(path, [name '.mat']);
 %     if exist(cnnFile,'file')
@@ -206,7 +206,7 @@ end
 %     else
 %         warning('CNN training supposedly done, but no classifier file found at %s.', cnnFile);
 %     end
-% 
+%
 % else
 %     % 2) Cas où train_CNN_classifier = false :
 %     %    on tente de recharger un CNN déjà entraîné
@@ -223,15 +223,15 @@ end
 %         warning('No existing CNN classifier file found at %s.', cnnFile);
 %     end
 % end
-% 
+%
 % % 3) Si malgré tout on n'a pas de CNN valide -> on stoppe proprement
 % if isempty(netCNN)
 %     disp('No CNN backbone available (training skipped or load failed).');
 %     disp('Cannot compute activations / InputSize for LSTM. Aborting training.');
 %     return;
 % end
-% 
-% 
+%
+%
 % % 4) Récupération robuste de la taille d'entrée [H W]
 % inputSizeHW = getCNNInputSize(netCNN);   % helper ci-dessous
 % inputSize   = [inputSizeHW 3];           % si tu as besoin de [H W C] ailleurs
@@ -327,7 +327,7 @@ else
     totalCounts = [];
 
     for ii = 1:numFiles
-         progressBar(ii, numFiles, ['Prescanning ROIs']);
+        progressBar(ii, numFiles, ['Prescanning ROIs']);
 
         if useH5Series
             % Indices de début / longueur (convertis en double pour h5read)
@@ -430,7 +430,7 @@ else
         minorityClasses = allCats(idxMin);
 
         % percentile option (multi-minority)
-               if ~isempty(trainingParam.LSTM_minority_percentile) && trainingParam.LSTM_minority_percentile > 0
+        if ~isempty(trainingParam.LSTM_minority_percentile) && trainingParam.LSTM_minority_percentile > 0
             thr = prctile(totalCounts, trainingParam.LSTM_minority_percentile*100);
             mask = totalCounts <= thr;
             if ~any(mask), mask = totalCounts == mn; end
@@ -438,7 +438,7 @@ else
         end
     end
 
-        doBalance = ~strcmpi(trainingParam.LSTM_minority_mode,'none') ...
+    doBalance = ~strcmpi(trainingParam.LSTM_minority_mode,'none') ...
         && (ratioMinMax <= trainingParam.LSTM_minority_min_ratio);
 
     fprintf('Classes: %s | counts=%s | minority=%s | balance=%d\n', ...
@@ -462,7 +462,7 @@ else
             %fprintf('%s%s', reverseStr, msg);
             %reverseStr = repmat(sprintf('\b'), 1, length(msg));
 
-            
+
             progressBar(i, numFiles, ['Computing activations (hdf5) : ' roiName]);
 
             % --- lecture des données HDF5 ---
@@ -494,7 +494,7 @@ else
             %fprintf('%s%s', reverseStr, msg);
             %reverseStr = repmat(sprintf('\b'), 1, length(msg));
 
-          
+
             progressBar(i, numFiles, ['Computing activations (mat) : ' list(i).name]);
 
             % --- lecture des données MAT ---
@@ -531,18 +531,27 @@ else
 
 
         % --- Sliding windows parameters ---
-               if isfield(trainingParam,'LSTM_win_stride_neg_frac') && ~isempty(trainingParam.LSTM_win_stride_neg_frac)
-            stride = max(1, round(L * trainingParam.LSTM_win_stride_neg_frac));
+
+        % Stride pour la construction initiale des fenêtres (fin, pour bien couvrir les positifs)
+        if isfield(trainingParam,'LSTM_win_stride_pos_frac') && ~isempty(trainingParam.LSTM_win_stride_pos_frac)
+            stridePos = max(1, round(L * trainingParam.LSTM_win_stride_pos_frac));
         else
-            stride = max(1, floor(L/2));   % défaut : L/2
+            stridePos = max(1, floor(L/2));  % défaut : L/2
         end
 
-        % Construire toutes les fenêtres glissantes [s e]
+        % Stride "effectif" souhaité pour les fenêtres négatives
+        if isfield(trainingParam,'LSTM_win_stride_neg_frac') && ~isempty(trainingParam.LSTM_win_stride_neg_frac)
+            strideNeg = max(1, round(L * trainingParam.LSTM_win_stride_neg_frac));
+        else
+            strideNeg = stridePos;  % par défaut identique
+        end
+
+        % --- 1. Construire toutes les fenêtres glissantes avec stridePos ---
         windows = [];
         if T <= L
             windows = [1 T];
         else
-            for s = 1:stride:(T - L + 1)
+            for s = 1:stridePos:(T - L + 1)
                 windows(end+1,:) = [s s+L-1]; %#ok<AGROW>
             end
             % dernière fenêtre alignée sur la fin si besoin
@@ -552,7 +561,7 @@ else
         end
 
         if doBalance
-            % ---- 1. Marquer les fenêtres contenant des classes minoritaires ----
+            % ---- 2. Marquer les fenêtres contenant la/les classes minoritaires ----
             isMinor = ismember(lab, categorical(minorityClasses));
             posWins = [];
             negWins = [];
@@ -567,24 +576,36 @@ else
                 end
             end
 
-            % ---- 2. Sous-échantillonnage des NEG selon pos_neg_ratio ----
+            % ---- 3. Éclaircir les fenêtres négatives pour approx. strideNeg ----
+            % facteur ~ strideNeg / stridePos
+            if strideNeg > stridePos && size(negWins,1) > 1
+                stepThin = max(1, round(strideNeg / stridePos));
+                negWins  = negWins(1:stepThin:end, :);
+            end
+
+            % ---- 4. Sous-échantillonnage des NEG selon pos_neg_ratio ----
             kpos = size(posWins,1);
             kneg = size(negWins,1);
 
             if kpos == 0
                 useWins = negWins;
             else
-                                r = min(kneg, round(trainingParam.LSTM_pos_neg_ratio * kpos));
-                selNeg = randperm(kneg, max(r,0));
-                useWins = [posWins; negWins(selNeg,:)];
+                r = min(kneg, round(trainingParam.LSTM_pos_neg_ratio * kpos));
+                if r > 0 && kneg > 0
+                    selNeg = randperm(kneg, r);
+                    useWins = [posWins; negWins(selNeg,:)];
+                else
+                    useWins = posWins;
+                end
             end
 
         else
             % ---- Pas de minority mode : toutes les fenêtres glissantes ----
+            % Ici, on n'a pas de notion de minoritaire, donc on garde la grille windows
             useWins = windows;
         end
 
-        % ---- 3. Construction des séquences finales ----
+        % ---- 5. Construction des séquences finales (inchangé) ----
         for w = 1:size(useWins,1)
             s = useWins(w,1);
             e = useWins(w,2);
@@ -599,6 +620,7 @@ else
 
             cc = cc + 1;
         end
+
 
 
         fprintf('\n');
@@ -757,112 +779,112 @@ if trainingParam.train_LSTM_network || ~exist(str,"file")
     fprintf('------\n');
 
 
-% ------------------------------------------------------------------
-% DEBUG LSTM sur TRAIN (sequence-to-one ou sequence-to-sequence)
-% ------------------------------------------------------------------
+    % ------------------------------------------------------------------
+    % DEBUG LSTM sur TRAIN (sequence-to-one ou sequence-to-sequence)
+    % ------------------------------------------------------------------
 
 
 
-% % ===== DEBUG : distribution des labels de TRAIN pour le LSTM =====
-% try
-%     labDbg = labelsTrain;
-% 
-%     % On remet au format "un seul vecteur catégoriel" pour inspection
-%     if iscell(labDbg)
-%         allLabs = [];
-%         for k = 1:numel(labDbg)
-%             yk = labDbg{k};
-%             if isempty(yk), continue; end
-% 
-%             if iscategorical(yk)
-%                 allLabs = [allLabs; yk(:)]; %#ok<AGROW>
-%             else
-%                 allLabs = [allLabs; categorical(yk(:))]; %#ok<AGROW>
-%             end
-%         end
-%     else
-%         if iscategorical(labDbg)
-%             allLabs = labDbg(:);
-%         else
-%             allLabs = categorical(labDbg(:));
-%         end
-%     end
-% 
-%     fprintf('--- DEBUG LSTM: distribution des labels de TRAIN ---\n');
-%     T = tabulate(cellstr(allLabs));
-%     disp(array2table(T, 'VariableNames',{'Label','Count','Percent'}));
-% catch MEdbg
-%     warning('DEBUG LSTM label distribution failed: %s', MEdbg.message);
-% end
-% ================================================================
+    % % ===== DEBUG : distribution des labels de TRAIN pour le LSTM =====
+    % try
+    %     labDbg = labelsTrain;
+    %
+    %     % On remet au format "un seul vecteur catégoriel" pour inspection
+    %     if iscell(labDbg)
+    %         allLabs = [];
+    %         for k = 1:numel(labDbg)
+    %             yk = labDbg{k};
+    %             if isempty(yk), continue; end
+    %
+    %             if iscategorical(yk)
+    %                 allLabs = [allLabs; yk(:)]; %#ok<AGROW>
+    %             else
+    %                 allLabs = [allLabs; categorical(yk(:))]; %#ok<AGROW>
+    %             end
+    %         end
+    %     else
+    %         if iscategorical(labDbg)
+    %             allLabs = labDbg(:);
+    %         else
+    %             allLabs = categorical(labDbg(:));
+    %         end
+    %     end
+    %
+    %     fprintf('--- DEBUG LSTM: distribution des labels de TRAIN ---\n');
+    %     T = tabulate(cellstr(allLabs));
+    %     disp(array2table(T, 'VariableNames',{'Label','Count','Percent'}));
+    % catch MEdbg
+    %     warning('DEBUG LSTM label distribution failed: %s', MEdbg.message);
+    % end
+    % ================================================================
 
 
 
-% try
-%     % sequencesTrain / labelsTrain doivent être déjà construits
-%     % (ce sont ceux passés à trainNetwork / trainnet)
-% 
-%     % Normaliser labelsTrain en cell array pour simplifier
-%     if iscell(labelsTrain)
-%         nSeq = numel(labelsTrain);
-%     else
-%         % cas sequence-to-one classique : vecteur catégoriel
-%         nSeq = numel(labelsTrain);
-%         tmp = cell(nSeq,1);
-%         for k = 1:nSeq
-%             tmp{k} = labelsTrain(k);   % 1 label par séquence
-%         end
-%         labelsTrain = tmp;
-%     end
-% 
-%     trueCells = cell(nSeq,1);
-%     predCells = cell(nSeq,1);
-% 
-%     for k = 1:nSeq
-%         Xk = sequencesTrain{k};
-%         ytrue = labelsTrain{k};   % peut être scalaire ou vectoriel
-%         yhat  = classify(netLSTM, Xk);  % idem
-% 
-%         % Force en colonne
-%         ytrue = ytrue(:);
-%         yhat  = yhat(:);
-% 
-%         % Harmoniser les longueurs pour le debug
-%         if numel(yhat) == 1 && numel(ytrue) > 1
-%             % sequence-to-one vs sequence -> on ne compare que le "label global"
-%             % On peut prendre le mode(ytrue), ou le premier, etc.
-%             % Pour un debug simple : premier élément
-%             ytrue = ytrue(1);
-%         elseif numel(yhat) > 1 && numel(ytrue) == 1
-%             % network renvoie une séquence mais vérité = 1 label global
-%             % On "diffuse" la vérité sur toute la séquence pour voir si le réseau suit
-%             ytrue = repmat(ytrue(1), numel(yhat), 1);
-%         elseif numel(yhat) ~= numel(ytrue)
-%             % Cas tordu : on tronque à la longueur commune
-%             L = min(numel(yhat), numel(ytrue));
-%             ytrue = ytrue(1:L);
-%             yhat  = yhat(1:L);
-%         end
-% 
-%         trueCells{k} = ytrue;
-%         predCells{k} = yhat;
-%     end
-% 
-%     YtrueAll = vertcat(trueCells{:});
-%     YpredAll = vertcat(predCells{:});
-% 
-%     C = confusionmat(YtrueAll, YpredAll);
-%     disp('Confusion matrix LSTM (TRAIN set):');
-%     disp(C);
-% 
-%     nShow = min(20, numel(YtrueAll));
-%     tab = table(YtrueAll(1:nShow), YpredAll(1:nShow), ...
-%         'VariableNames', {'True','Pred'});
-%     disp(tab);
-% 
-% catch ME
-%     warning('DEBUG LSTM sur TRAIN a échoué: %s', ME.message);
-% end
+    % try
+    %     % sequencesTrain / labelsTrain doivent être déjà construits
+    %     % (ce sont ceux passés à trainNetwork / trainnet)
+    %
+    %     % Normaliser labelsTrain en cell array pour simplifier
+    %     if iscell(labelsTrain)
+    %         nSeq = numel(labelsTrain);
+    %     else
+    %         % cas sequence-to-one classique : vecteur catégoriel
+    %         nSeq = numel(labelsTrain);
+    %         tmp = cell(nSeq,1);
+    %         for k = 1:nSeq
+    %             tmp{k} = labelsTrain(k);   % 1 label par séquence
+    %         end
+    %         labelsTrain = tmp;
+    %     end
+    %
+    %     trueCells = cell(nSeq,1);
+    %     predCells = cell(nSeq,1);
+    %
+    %     for k = 1:nSeq
+    %         Xk = sequencesTrain{k};
+    %         ytrue = labelsTrain{k};   % peut être scalaire ou vectoriel
+    %         yhat  = classify(netLSTM, Xk);  % idem
+    %
+    %         % Force en colonne
+    %         ytrue = ytrue(:);
+    %         yhat  = yhat(:);
+    %
+    %         % Harmoniser les longueurs pour le debug
+    %         if numel(yhat) == 1 && numel(ytrue) > 1
+    %             % sequence-to-one vs sequence -> on ne compare que le "label global"
+    %             % On peut prendre le mode(ytrue), ou le premier, etc.
+    %             % Pour un debug simple : premier élément
+    %             ytrue = ytrue(1);
+    %         elseif numel(yhat) > 1 && numel(ytrue) == 1
+    %             % network renvoie une séquence mais vérité = 1 label global
+    %             % On "diffuse" la vérité sur toute la séquence pour voir si le réseau suit
+    %             ytrue = repmat(ytrue(1), numel(yhat), 1);
+    %         elseif numel(yhat) ~= numel(ytrue)
+    %             % Cas tordu : on tronque à la longueur commune
+    %             L = min(numel(yhat), numel(ytrue));
+    %             ytrue = ytrue(1:L);
+    %             yhat  = yhat(1:L);
+    %         end
+    %
+    %         trueCells{k} = ytrue;
+    %         predCells{k} = yhat;
+    %     end
+    %
+    %     YtrueAll = vertcat(trueCells{:});
+    %     YpredAll = vertcat(predCells{:});
+    %
+    %     C = confusionmat(YtrueAll, YpredAll);
+    %     disp('Confusion matrix LSTM (TRAIN set):');
+    %     disp(C);
+    %
+    %     nShow = min(20, numel(YtrueAll));
+    %     tab = table(YtrueAll(1:nShow), YpredAll(1:nShow), ...
+    %         'VariableNames', {'True','Pred'});
+    %     disp(tab);
+    %
+    % catch ME
+    %     warning('DEBUG LSTM sur TRAIN a échoué: %s', ME.message);
+    % end
 
 
 else
@@ -1221,61 +1243,61 @@ function inputSizeHW = getCNNInputSize(netCNN, trainingParam)
 %    trainingParam.CNN_network{end} pour déduire InputSize.
 % 3) Lève une erreur explicite en dernier recours.
 
-    % --- Étape 1 : essayer d'extraire l'input du réseau fourni ---
-    layers = [];
-    if isa(netCNN,'SeriesNetwork') || isa(netCNN,'DAGNetwork')
-        layers = netCNN.Layers;
-    elseif isa(netCNN,'nnet.cnn.LayerGraph')
-        layers = netCNN.Layers;
-    elseif isstruct(netCNN) && isfield(netCNN,'Layers')
-        layers = netCNN.Layers;
-    end
+% --- Étape 1 : essayer d'extraire l'input du réseau fourni ---
+layers = [];
+if isa(netCNN,'SeriesNetwork') || isa(netCNN,'DAGNetwork')
+    layers = netCNN.Layers;
+elseif isa(netCNN,'nnet.cnn.LayerGraph')
+    layers = netCNN.Layers;
+elseif isstruct(netCNN) && isfield(netCNN,'Layers')
+    layers = netCNN.Layers;
+end
 
-    if ~isempty(layers)
-        isInput = arrayfun(@(L) isa(L,'nnet.cnn.layer.ImageInputLayer'), layers);
-        idx = find(isInput, 1, 'first');
-        if ~isempty(idx)
-            sz = layers(idx).InputSize;   % [H W C]
-            inputSizeHW = sz(1:2);
-            return;
+if ~isempty(layers)
+    isInput = arrayfun(@(L) isa(L,'nnet.cnn.layer.ImageInputLayer'), layers);
+    idx = find(isInput, 1, 'first');
+    if ~isempty(idx)
+        sz = layers(idx).InputSize;   % [H W C]
+        inputSizeHW = sz(1:2);
+        return;
+    end
+end
+
+% --- Étape 2 : fallback via l'architecture déclarée dans trainingParam ---
+if nargin >= 2 && isfield(trainingParam,'CNN_network') && ~isempty(trainingParam.CNN_network)
+    netName = trainingParam.CNN_network{end};
+    try
+        backbone = eval(netName);  % ex: googlenet, resnet50, ...
+        if isa(backbone,'SeriesNetwork') || isa(backbone,'DAGNetwork')
+            layersB = backbone.Layers;
+        elseif isa(backbone,'nnet.cnn.LayerGraph')
+            layersB = backbone.Layers;
+        else
+            layersB = [];
         end
-    end
 
-    % --- Étape 2 : fallback via l'architecture déclarée dans trainingParam ---
-    if nargin >= 2 && isfield(trainingParam,'CNN_network') && ~isempty(trainingParam.CNN_network)
-        netName = trainingParam.CNN_network{end};
-        try
-            backbone = eval(netName);  % ex: googlenet, resnet50, ...
-            if isa(backbone,'SeriesNetwork') || isa(backbone,'DAGNetwork')
-                layersB = backbone.Layers;
-            elseif isa(backbone,'nnet.cnn.LayerGraph')
-                layersB = backbone.Layers;
-            else
-                layersB = [];
+        if ~isempty(layersB)
+            isInputB = arrayfun(@(L) isa(L,'nnet.cnn.layer.ImageInputLayer'), layersB);
+            idxB = find(isInputB, 1, 'first');
+            if ~isempty(idxB)
+                sz = layersB(idxB).InputSize;
+                inputSizeHW = sz(1:2);
+                warning('getCNNInputSize:Fallback', ...
+                    ['No ImageInputLayer found in supplied CNN; ', ...
+                    'using backbone "%s" to infer InputSize = [%d %d].'], ...
+                    netName, inputSizeHW(1), inputSizeHW(2));
+                return;
             end
-
-            if ~isempty(layersB)
-                isInputB = arrayfun(@(L) isa(L,'nnet.cnn.layer.ImageInputLayer'), layersB);
-                idxB = find(isInputB, 1, 'first');
-                if ~isempty(idxB)
-                    sz = layersB(idxB).InputSize;
-                    inputSizeHW = sz(1:2);
-                    warning('getCNNInputSize:Fallback', ...
-                        ['No ImageInputLayer found in supplied CNN; ', ...
-                         'using backbone "%s" to infer InputSize = [%d %d].'], ...
-                        netName, inputSizeHW(1), inputSizeHW(2));
-                    return;
-                end
-            end
-        catch ME
-            warning('getCNNInputSize:FallbackFailed', ...
-                'Failed to instantiate backbone %s to infer InputSize (%s).', ...
-                netName, ME.message);
         end
+    catch ME
+        warning('getCNNInputSize:FallbackFailed', ...
+            'Failed to instantiate backbone %s to infer InputSize (%s).', ...
+            netName, ME.message);
     end
+end
 
-    error(['Could not determine CNN input size: ', ...
-           'no ImageInputLayer in provided CNN, and fallback on CNN_network failed.']);
+error(['Could not determine CNN input size: ', ...
+    'no ImageInputLayer in provided CNN, and fallback on CNN_network failed.']);
 
 
 
