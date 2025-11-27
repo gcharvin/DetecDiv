@@ -36,6 +36,13 @@ if nargin==2 % basic parameter initialization
         'Std-dev of Gaussian noise for CNN augmentation (set 0 to disable)', ...
         'Defocus sigma range in pixels (e.g. [0.3 1.0])', ...
         'Probability to apply defocus blur (e.g. 0.5)' ...
+        'Fraction of ROIs used when formatting the LSTM training set', ...       % Format_Fraction
+        'Random seed used when sampling ROIs / frames for formatting', ...       % Format_Seed
+        'Enable cropping when formatting the LSTM training set (true/false)',... % Format_Crop
+        'Crop center [cx cy] used for formatting the LSTM training set', ...     % Format_CropCenter
+        'Crop size [w h] used for formatting the LSTM training set', ...         % Format_CropSize
+        'Undersample majority classes (1 = no undersampling)', ...               % Format_UndersampleMajority
+        'Storage backend for formatted data (''hdf5'' or ''tiff'')' ...          % Format_StorageBackend
         };
 
     classif.trainingParam = struct( ...
@@ -54,7 +61,6 @@ if nargin==2 % basic parameter initialization
         'CNN_dropout',0.5, ...
         'execution_environment',{{'auto','parallel','cpu','gpu','multi-gpu','auto'}}, ...
         'transfer_learning',{{'ImageNet','ImageNet'}}, ...
-        'CNN_storage_backend',{{'hdf5','tiff','hdf5'}}, ...  % 'tiff' (historique) ou 'hdf5'
         'CNN_rand_scale',[0.8 1.0], ...                    % backend TIFF
         'CNN_rand_flip',true, ...
         'CNN_crop_scale',[0.8 1.0], ...                    % backend HDF5
@@ -66,6 +72,13 @@ if nargin==2 % basic parameter initialization
         'CNN_noise_sigma',0.02, ...                        % sigma bruit gaussien (0–1)
         'CNN_defocus_sigma_range',[0.3 1.0], ...           % rayon flou gaussien (px)
         'CNN_defocus_prob',0.5, ...                        % probabilité d'appliquer le flou
+        'Format_Fraction',1.0, ...                 % fraction de ROIs à utiliser
+        'Format_Seed',12345, ...                   % seed RNG pour la sélection
+        'Format_Crop',false, ...                   % activer/désactiver le crop
+        'Format_CropCenter',[88 194], ...          % [cx cy]
+        'Format_CropSize',[60 60], ...             % [w h]
+        'Format_UndersampleMajority',1.0, ...      % 1 = pas d'undersampling
+        'Format_StorageBackend',{{'hdf5','tiff','hdf5'}}, ...  % 'hdf5' ou 'tiff'
         'tip',{tip} ...
         );
     return;
@@ -119,11 +132,54 @@ end
 
 blockRNG = 1;
 
+% ==============================================================
+% DEBUG: désactiver TOUTES les augmentations photométriques
+% ==============================================================
+
+disablePhotometricAug = true;   % passe à false pour revenir au comportement normal
+
+if disablePhotometricAug
+
+    fprintf('Photometric augmentations are disabled\n');
+
+    % --- Côté paramètres globaux (HDF5 + future cohérence) ---
+    if isfield(trainingParam,'CNN_contrast_range')
+        trainingParam.CNN_contrast_range = [1 1];
+    end
+    if isfield(trainingParam,'CNN_brightness_range')
+        trainingParam.CNN_brightness_range = [0 0];
+    end
+    if isfield(trainingParam,'CNN_gamma_range')
+        trainingParam.CNN_gamma_range = [1 1];
+    end
+    if isfield(trainingParam,'CNN_saturation_range')
+        trainingParam.CNN_saturation_range = [1 1];
+    end
+    if isfield(trainingParam,'CNN_hue_delta')
+        trainingParam.CNN_hue_delta = 0;
+    end
+    if isfield(trainingParam,'CNN_noise_sigma')
+        trainingParam.CNN_noise_sigma = 0;
+    end
+    if isfield(trainingParam,'CNN_defocus_sigma_range')
+        trainingParam.CNN_defocus_sigma_range = [0 0];
+    end
+    if isfield(trainingParam,'CNN_defocus_prob')
+        trainingParam.CNN_defocus_prob = 0;
+    end
+
+    % On ré-injecte dans classif pour cohérence si tu sauvegardes après
+  %  classif.trainingParam = trainingParam;
+end
+
+
+
 fprintf('Loading data repository...\n');
 fprintf('------\n');
 
 % === Choix du backend de données pour le CNN ===
-backend = lower(trainingParam.CNN_storage_backend{end});
+
+backend = lower(trainingParam.Format_StorageBackend{end});
 
 %----------------------------------------------------------------------
 % 1) Création des datastores d'entraînement / validation
@@ -157,11 +213,27 @@ switch backend
         classWeights = classWeights' / mean(classWeights);
         classWeights(~isfinite(classWeights)) = 1;
 
+fprintf('--- CNN class weights (TRAIN) ---\n');
+for i = 1:numel(classif.classes)
+    labName = char(classif.classes{i});
+    % retrouver le count correspondant dans tbl
+    ix = find(tbl.Label == labName);
+    if isempty(ix)
+        n = 0;
+    else
+        n = tbl.Count(ix);
+    end
+    fprintf('  %s : count = %d, weight = %.3f\n', labName, n, classWeights(i));
+end
+
+fprintf('-------------------------------\n');
+
+
         % Photometric jitter via ReadFcn (TRAIN seulement)
         imdsTrainPhot = imageDatastore(imdsTrain.Files, ...
             'Labels', imdsTrain.Labels, ...
             'IncludeSubfolders', false);
-        imdsTrainPhot.ReadFcn = @(fn) photometricReadFcn(fn, trainingParam);
+        imdsTrainPhot.ReadFcn = @(fn) CNN_photometricReadFcn(fn, trainingParam);
 
         % Géométrie via imageDataAugmenter
         pixelRange = trainingParam.CNN_translation_augmentation;
@@ -194,7 +266,9 @@ switch backend
             return;
         end
 
+        % Paramètres d'augmentation pour H5ImageDatastore
         augParams = localGetH5AugParams(trainingParam);
+
         dsAll = H5ImageDatastore(h5File, ...
             'MiniBatchSize', trainingParam.CNN_mini_batch_size, ...
             'TransRange',    augParams.TransRange, ...
@@ -210,26 +284,20 @@ switch backend
             'DefocusProb',   augParams.DefocusProb, ...
             'ClassNames',    classif.classes);
 
-        % Split TRAIN / VAL au niveau des indices
-        nObs = numObservations(dsAll);
-        if nObs == 0
+        % ---- Split train/val PAR CLASSE, comme splitEachLabel ----
+        fracTrain = trainingParam.CNN_data_splitting_factor;
+        [idxTrain, idxVal, labsTrain, labsVal] = localSplitTrainValH5( ...
+            h5File, classif.classes, fracTrain, true);  % true = debug print
+
+        if isempty(idxTrain)
             disp('No observations found in HDF5 dataset; quitting !');
             return;
         end
 
-        idxAll = 1:nObs;
-        idxAll = idxAll(randperm(nObs));
-        Ntrain = floor(trainingParam.CNN_data_splitting_factor * nObs);
-        if Ntrain < 1, Ntrain = max(1, nObs-1); end
-
-        idxTrain = idxAll(1:Ntrain);
-        idxVal   = idxAll(Ntrain+1:end);
-        if isempty(idxVal), idxVal = idxTrain; end   % fallback trivial
-
         dsTrain = subset(dsAll, idxTrain);
         dsVal   = subset(dsAll, idxVal);
 
-        % Pas d'augmentation sur la validation
+        % Validation SANS augmentation (comme en TIFF)
         dsVal.TransRange        = [0 0];
         dsVal.RotRange          = [0 0];
         dsVal.CropScale         = [1 1];
@@ -242,28 +310,27 @@ switch backend
         dsVal.DefocusSigmaRange = [0 0];
         dsVal.DefocusProb       = 0;
 
-        % Class weights via /labels du HDF5 (TRAIN seulement)
-        labsAll = h5read(h5File, '/labels');
-        labsAll = squeeze(labsAll);
-        labsTrain = labsAll(idxTrain);
-        if isnumeric(labsTrain)
-            labsTrain = categorical(labsTrain, 1:numel(classif.classes), classif.classes);
-        else
-            labsTrain = categorical(string(labsTrain), classif.classes);
-        end
+        % ---- Class weights calculés sur TRAIN seulement ----
         cnt = countcats(labsTrain);
         cnt(cnt==0) = 1;
         classWeights = 1 ./ cnt;
         classWeights = classWeights' / mean(classWeights);
         classWeights(~isfinite(classWeights)) = 1;
 
+         numClasses = numel(classif.classes);
+        classWeights = ones(1,numClasses);   % <-- poids uniformes
+        fprintf('--- HDF5 CNN class weights FORCÉS À 1 (debug) ---\n');
+        for i = 1:numClasses
+            n = sum(labsTrain == classif.classes{i});
+            fprintf('  %s : count = %d, weight = %.3f\n', ...
+                classif.classes{i}, n, classWeights(i));
+        end
+
+
+        % Datastores finaux
         dataTrain   = dsTrain;
         dataValBase = dsVal;
         useHDF5     = true;
-
-    otherwise
-        error('Unknown CNN_storage_backend: %s (use ''tiff'' or ''hdf5'')', ...
-            trainingParam.CNN_storage_backend{end});
 end
 
 %----------------------------------------------------------------------
@@ -274,6 +341,7 @@ if numel(classes)==0
     disp('There is no classes defined ; Cannot continue !')
     return;
 end
+
 
 fprintf('Loading network...\n');
 fprintf('------\n');
@@ -496,6 +564,119 @@ end
 save(fullfile(path,'TrainingValidation','CNNOptions.mat'),'CNNOptions');
 save(fullfile(path,'TrainingValidation','tmpoptions.mat'),'options');
 
+% 
+% % ------------------------------------------------------------------
+% % 6) DEBUG: évaluer le CNN sur son propre TRAIN set
+% % ------------------------------------------------------------------
+% try
+%     net  = flagCNN;  %classifier;
+% 
+%     Nmax = 500;  % nb max d'observations pour l'éval / debug
+% 
+%     switch backend
+%         case 'tiff'
+%             % ===== BACKEND TIFF : on utilise imdsTrain directement =====
+%             dsEval   = imdsTrain;
+%             YtrueAll = dsEval.Labels;
+% 
+%             if numel(YtrueAll) > Nmax
+%                 idx      = 1:Nmax;
+%                 dsEval   = subset(dsEval, idx');
+%                 YtrueAll = YtrueAll(idx);
+%             end
+% 
+%             fprintf('--- DEBUG CNN (backend TIFF) sur TRAIN ---\n');
+%             YpredAll = classify(net, dsEval);   % classify sait gérer imageDatastore
+% 
+%         case 'hdf5'
+%             % ===== BACKEND HDF5 : même logique que trainImageLSTMNetFun_read =====
+%             dsEval = dsTrain;
+%             reset(dsEval);
+% 
+%             YtrueAll = categorical([]);
+%             YpredAll = categorical([]);
+% 
+%             fprintf('--- DEBUG CNN (backend HDF5) sur TRAIN ---\n');
+% 
+%             while hasdata(dsEval) && numel(YtrueAll) < Nmax
+%                 batch = read(dsEval);
+% 
+%                 if istable(batch)
+%                     % Même pattern que dans trainImageLSTMNetFun_read
+%                     vars = batch.Properties.VariableNames;
+% 
+%                     % 1) Récupérer les images
+%                     if any(strcmp(vars,'input'))
+%                         imgCells = batch.input;
+%                     else
+%                         % fallback: première variable = images
+%                         imgCells = batch.(vars{1});
+%                     end
+% 
+%                     % 2) Récupérer les labels
+%                     if any(strcmp(vars,'response'))
+%                         labCol = batch.response;
+%                     else
+%                         % fallback: seconde variable = labels
+%                         if numel(vars) < 2
+%                             error('Batch HDF5 sans colonne "response" ni 2e variable.');
+%                         end
+%                         labCol = batch.(vars{2});
+%                     end
+% 
+%                     B = numel(imgCells);
+%                     for b = 1:B
+%                         if numel(YtrueAll) >= Nmax
+%                             break;
+%                         end
+%                         I = imgCells{b};
+%                         yhat = classify(net, I);
+%                         YpredAll = [YpredAll; yhat];
+%                         YtrueAll = [YtrueAll; labCol(b)];
+%                     end
+% 
+%                 else
+%                     % Cas plus rare : le datastore renvoie un 4D array directement
+%                     X = batch; % H x W x C x B
+%                     B = size(X,4);
+%                     yhat = classify(net, X);   % renvoie B labels
+% 
+%                     % ⚠ ici il faut les labels vrais : dsTrain doit alors
+%                     % avoir un mécanisme distinct; dans ta version actuelle
+%                     % H5ImageDatastore renvoie justement une table, donc
+%                     % ce branch devrait être très rare.
+%                     warning('Batch HDF5 non-table dans DEBUG CNN; labels non récupérés');
+%                     YpredAll = [YpredAll; yhat(:)];
+%                 end
+%             end
+% 
+%         otherwise
+%             warning('Backend inconnu dans DEBUG CNN: %s', backend);
+%             return;
+%     end
+% 
+%     % --- Confusion matrix ---
+%     if exist('YtrueAll','var') && ~isempty(YtrueAll)
+%         C = confusionmat(YtrueAll, YpredAll);
+%         disp('Confusion matrix (TRAIN set):');
+%         disp(C);
+% 
+%         nShow = min(20, numel(YtrueAll));
+%         tab = table(YtrueAll(1:nShow), YpredAll(1:nShow), ...
+%             'VariableNames', {'True','Pred'});
+%         disp(tab);
+%     else
+%         warning('DEBUG CNN: YtrueAll est vide, aucune observation évaluée.');
+%     end
+% 
+% catch ME
+%     warning('DEBUG CNN sur TRAIN a échoué : %s', ME.message);
+% end
+
+
+
+
+
 % ===== helpers =====
 
 function lgraph = createLgraphUsingConnections(layers,connections)
@@ -506,93 +687,80 @@ end
 for c = 1:size(connections,1)
     lgraph = connectLayers(lgraph,connections.Source{c},connections.Destination{c});
 end
-end
 
-function I = photometricReadFcn(filename, trainingParam)
-I = imread(filename);
-I = photometricJitter(I, trainingParam);
-end
 
-function Iout = photometricJitter(Iin, trainingParam)
-% Photometric jitter paramétrique : contraste, brightness, gamma,
-% saturation, hue, bruit, defocus.
-I = im2double(Iin);
-isRGB = (ndims(I)==3) && (size(I,3)==3);
 
-cr  = trainingParam.CNN_contrast_range;
-br  = trainingParam.CNN_brightness_range;
-gr  = trainingParam.CNN_gamma_range;
-sr  = trainingParam.CNN_saturation_range;
-hd  = trainingParam.CNN_hue_delta;
-ns  = trainingParam.CNN_noise_sigma;
-dsr = trainingParam.CNN_defocus_sigma_range;
-dp  = trainingParam.CNN_defocus_prob;
+function [idxTrain, idxVal, labsTrain, labsVal] = localSplitTrainValH5(h5File, classes, fracTrain, doDebug)
+% localSplitTrainValH5  split HDF5 /labels en TRAIN / VAL par classe
+%
+% [idxTrain, idxVal, labsTrain, labsVal] = localSplitTrainValH5(h5File, classes, fracTrain, doDebug)
 
-% 1) Contraste + brightness : I*alpha + beta
-alpha = cr(1) + (cr(2)-cr(1))*rand();
-beta  = br(1) + (br(2)-br(1))*rand();
-I = I .* alpha + beta;
-I = max(min(I,1),0);
+    if nargin < 4, doDebug = false; end
 
-% 2) Gamma
-gammaVal = gr(1) + (gr(2)-gr(1))*rand();
-I = I .^ gammaVal;
-I = max(min(I,1),0);
+    labsAll = h5read(h5File, '/labels');
+    labsAll = squeeze(labsAll);
 
-% 3) Saturation + Hue (RGB uniquement)
-if isRGB
-    HSV = rgb2hsv(I);
-
-    % Saturation
-    satJit = sr(1) + (sr(2)-sr(1))*rand();
-    HSV(:,:,2) = max(min(HSV(:,:,2)*satJit,1),0);
-
-    % Hue
-    if hd > 0
-        dH = (2*rand()-1)*hd;
-        H  = HSV(:,:,1) + dH;
-        H  = H - floor(H); % wrap [0,1)
-        HSV(:,:,1) = H;
+    % Normalise en categorical avec les mêmes noms que classif.classes
+    if isnumeric(labsAll)
+        labsAll = categorical(labsAll, 1:numel(classes), classes);
+    else
+        labsAll = categorical(string(labsAll), classes);
     end
 
-    I = hsv2rgb(HSV);
-    I = max(min(I,1),0);
-end
+    nObs = numel(labsAll);
 
-% 4) Bruit gaussien
-if ns > 0 && rand < 0.7
-    I = I + ns * randn(size(I));
-    I = max(min(I,1),0);
-end
+    % IMPORTANT : vecteurs colonne vides
+    idxTrain = zeros(0,1);
+    idxVal   = zeros(0,1);
 
-% 5) Defocus léger (blur gaussien)
-smin = max(0, dsr(1));
-smax = max(smin, dsr(2));
-if smax > 0 && rand < dp
-    sigma = smin + (smax - smin)*rand();
-    if sigma > 0
-        ksz   = max(3, 2*ceil(2*sigma)+1);
-        I     = imgaussfilt(I, sigma, 'FilterSize', ksz);
+    % Split par classe (comme splitEachLabel)
+    for ic = 1:numel(classes)
+        cName = classes{ic};
+        maskC = (labsAll == cName);
+        idxC  = find(maskC);      % colonne
+        nC    = numel(idxC);
+        if nC == 0
+            continue;
+        end
+
+        nTrainC = max(1, round(fracTrain * nC));
+        permC   = idxC(randperm(nC));  % colonne aussi
+
+        
+        idxTrain = [idxTrain, permC(1:nTrainC)]; %#ok<AGROW>
+        if nTrainC < nC
+            idxVal = [idxVal, permC(nTrainC+1:end)]; %#ok<AGROW>
+        end
     end
-end
 
-Iout = im2uint8(max(min(I,1),0));
-end
+    % Shuffle global, comme imds après splitEachLabel
+    idxTrain = idxTrain(randperm(numel(idxTrain)));
+    if isempty(idxVal)
+        % fallback trivial : au moins 1 en validation
+        idxVal = idxTrain;
+    else
+        idxVal   = idxVal(randperm(numel(idxVal)));
+    end
 
-function aug = localGetH5AugParams(tp)
-% Prépare une struct de paramètres homogène pour H5ImageDatastore
-aug = struct();
-aug.TransRange        = tp.CNN_translation_augmentation;
-aug.RotRange          = tp.CNN_rotation_augmentation;
-aug.CropScale         = tp.CNN_crop_scale;
-aug.ContrastRange     = tp.CNN_contrast_range;
-aug.BrightnessRange   = tp.CNN_brightness_range;
-aug.GammaRange        = tp.CNN_gamma_range;
-aug.SaturationRange   = tp.CNN_saturation_range;
-aug.HueDelta          = tp.CNN_hue_delta;
-aug.NoiseSigma        = tp.CNN_noise_sigma;
-aug.DefocusSigmaRange = tp.CNN_defocus_sigma_range;
-aug.DefocusProb       = tp.CNN_defocus_prob;
-end
+    labsTrain = labsAll(idxTrain);
+    labsVal   = labsAll(idxVal);
 
-end
+    if doDebug
+        fprintf('--- HDF5 train/val split (per class) ---\n');
+        fprintf('Total obs: %d | Train: %d | Val: %d (fracTrain=%.2f)\n', ...
+            nObs, numel(idxTrain), numel(idxVal), fracTrain);
+
+        cats = categories(labsAll);
+        for ic = 1:numel(cats)
+            cName = cats{ic};
+            nTot  = sum(labsAll == cName);
+            nTr   = sum(labsTrain == cName);
+            nVa   = sum(labsVal   == cName);
+            fprintf('  %s : total=%d, train=%d (%.1f%%), val=%d (%.1f%%)\n', ...
+                cName, nTot, nTr, 100*nTr/max(1,nTot), nVa, 100*nVa/max(1,nTot));
+        end
+        fprintf('----------------------------------------\n');
+    end
+
+
+

@@ -21,6 +21,11 @@ frames       = [];
 classifierCNN= [];
 gpu          = 0;
 
+% --------- DEBUG FLAG CNN ----------
+debugCNN = true;
+
+% Sinon tu peux aussi juste mettre debugCNN=true ici pour un test ponctuel.
+
 % --------- Parse args ----------
 for i = 1:numel(varargin)
     if ischar(varargin{i}) || isstring(varargin{i})
@@ -103,8 +108,6 @@ inputSizeLSTM = [];
 if useLSTM
     try
         if isa(classifier,'dlnetwork')
-            % pas de .Layers public; on suppose l'entrée de taille connue en amont.
-            % On prend la taille de la 1ère dimension spatiale de la vidéo comme fallback.
             inputSizeLSTM = size(vid,[1,2]);
         else
             for ii = 1:numel(classifier.Layers)
@@ -114,16 +117,36 @@ if useLSTM
                 end
             end
             if isempty(inputSizeLSTM)
-                % fallback raisonnable si non trouvé
                 inputSizeLSTM = size(vid,[1,2]);
             end
         end
     catch
+
         inputSizeLSTM = size(vid,[1,2]);
     end
 end
 
 % CNN: taille d'entrée
+% inputSizeCNN = [];
+% if useCNN
+%     inputSizeCNN = classifierCNN.Layers(1).InputSize(1:2);
+% end
+
+% vidéos redimensionnées
+videoLSTM = [];
+videoCNN  = [];
+if useLSTM
+    videoLSTM = resizeTo(vid, inputSizeLSTM);
+end
+
+% if useCNN
+%     if useLSTM && isequal(inputSizeCNN, inputSizeLSTM)
+%         videoCNN = videoLSTM;
+%     else
+%         videoCNN = resizeTo(vid, inputSizeCNN);
+%     end
+% end
+
 inputSizeCNN = [];
 if useCNN
     inputSizeCNN = classifierCNN.Layers(1).InputSize(1:2);
@@ -135,14 +158,14 @@ videoCNN  = [];
 if useLSTM
     videoLSTM = resizeTo(vid, inputSizeLSTM);
 end
+
 if useCNN
-    % si mêmes tailles que LSTM, évite un second resize
-    if useLSTM && isequal(inputSizeCNN, inputSizeLSTM)
-        videoCNN = videoLSTM;
-    else
-        videoCNN = resizeTo(vid, inputSizeCNN);
-    end
+    targetSizeCNN = classifierCNN.Layers(1).InputSize(1:2);
+    videoCNN      = buildCNNVidFromROI(roiobj, classif, frames, ...
+                                       Crop, CropCenter, CropSize, ...
+                                       targetSizeCNN);
 end
+
 
 % --------- Exécution (GPU / CPU avec fallback) ----------
 env = iff(gpu==1, "gpu", "cpu");
@@ -159,7 +182,7 @@ if useLSTM
         [lbl, sc] = classify(classifier, videoLSTM, 'ExecutionEnvironment', 'cpu');
     end
     labelsLSTM = classifier.Layers(end).Classes;  % catégories apprises
-    probLSTM   = sc;                               % Nobs x Nclasses (ou l'inverse selon version)
+    probLSTM   = sc;
     if size(probLSTM,1) == numel(labelsLSTM); probLSTM = probLSTM'; end
     [~, idxLSTM] = max(probLSTM, [], 2);
 end
@@ -189,11 +212,11 @@ end
 
 if primaryIsLSTM
     labelsPrimary = string(labelsLSTM);
-    probPrimary   = probLSTM;   % T x NLstm
+    probPrimary   = probLSTM;
     idxPrimary    = idxLSTM;
 else
     labelsPrimary = string(labelsCNN);
-    probPrimary   = probCNN;    % T x NCnn
+    probPrimary   = probCNN;
     idxPrimary    = idxCNN;
 end
 
@@ -227,6 +250,11 @@ if useCNN
     labelCNNCat = categorical(classesTarget(idxCNNAligned), classesTarget);
 end
 
+% --------- DEBUG CNN (distribution des scores) ----------
+if useCNN && debugCNN
+    debugCNNInference(classifierCNN, classesTarget, probCNNAligned, labelCNNCat, frames, roiobj);
+end
+
 % --------- Écriture dans dataseries (idempotent) ----------
 data = roiobj.data;
 if isempty(data)
@@ -237,7 +265,6 @@ end
 % Cherche dataseries existant pour ce classif
 pixdata = find(arrayfun(@(x) strcmp(x.groupid, classif.strid), roiobj.data), 1, 'first');
 if isempty(pixdata)
-    % crée
     cc = (numel(roiobj.data)==1 && isempty(roiobj.data.data)) * 1 + ...
          (numel(roiobj.data)~=1 || ~isempty(roiobj.data.data)) * (numel(roiobj.data)+1);
     data(cc) = dataseries;
@@ -265,21 +292,18 @@ n = iff(classif.output==0, size(roiobj.image,4), 1);
 if ~isprop(datatmp,'plotGroup') || isempty(datatmp.plotGroup)
     datatmp.plotGroup = {[] [] [] [] [] {'id' 'prob' 'labels'}};
 else
-    % garantir l'index 6 et son type
     if numel(datatmp.plotGroup) < 6 || isempty(datatmp.plotGroup{6})
         datatmp.plotGroup{6} = {'id' 'prob' 'labels'};
     else
         g6 = datatmp.plotGroup{6};
         if ischar(g6)
-            datatmp.plotGroup{6} = cellstr(g6);        % 'id' -> {'id'}
+            datatmp.plotGroup{6} = cellstr(g6);
         elseif ~iscell(g6)
             datatmp.plotGroup{6} = {'id' 'prob' 'labels'};
         end
-        % forcer forme ligne
         datatmp.plotGroup{6} = reshape(datatmp.plotGroup{6}, 1, []);
     end
 end
-
 
 % Initialise (ou vérifie) les colonnes primaires
 ensureNumericCol('id');
@@ -309,7 +333,6 @@ if useCNN
     end
     datatmp.data.idCNN(frames) = idxCNNAligned;
 else
-    % si pas de CNN -> s'assurer qu'on ne laisse pas d'anciens champs CNN
     for ii = 1:numel(classesTarget)
         dropColIfExists("probCNN_" + classesTarget(ii));
     end
@@ -317,30 +340,81 @@ else
     dropColIfExists('idCNN');
 end
 
-% plotProperties idempotent (pas d'empilement)
 % plotProperties idempotent + aligné sur la table
 pp = [];
 if isprop(datatmp,'plotProperties') && ~isempty(datatmp.plotProperties)
     pp = datatmp.plotProperties;
 end
-pp = ensurePlotProperties(pp, string(classif.classes), useCNN, ...
-                           'Prune', true);
-pp = syncPlotPropsToTable(pp, datatmp.data);  % <<< élimine toute réf. manquante
+pp = ensurePlotProperties(pp, string(classif.classes), useCNN, 'Prune', true);
+pp = syncPlotPropsToTable(pp, datatmp.data);
 datatmp.plotProperties = pp;
-
-
 
 % Commit
 data(cc) = datatmp;
 
 % Sorties
-image = roiobj.image;          % on ne modifie pas
-roiobj.data = data;            % reflète les changements
+image = roiobj.image;
+roiobj.data = data;
 
 % ----------------- Helpers locaux -----------------
-function out = resizeTo(V, inSize)
-    out = imresize(V, inSize(1:2));
+    % function out = resizeTo(V, inSize)
+    %     out = imresize(V, inSize(1:2));
+    % end
+
+function Vout = resizeTo(Vin, targetSize)
+    % Vin : H x W x C x T
+    [H,W,C,T] = size(Vin);
+    Vout = zeros(targetSize(1), targetSize(2), C, T, 'like', Vin);
+    for t = 1:T
+        Vout(:,:,:,t) = imresize(Vin(:,:,:,t), targetSize);
+    end
 end
+
+function vid = buildCNNVidFromROI(roiobj, classif, frames, Crop, CropCenter, CropSize, targetSize)
+    % Version alignée sur HDF5/H5ImageDatastore :
+    %  - preProcessROIData -> double [0,1]
+    %  - recopie éventuelle en 3 canaux
+    %  - crop identique à formatLSTMTrainingSet (localCrop)
+    %  - resize -> targetSize
+    %  - sortie en single [0,1], comme H5ImageDatastore
+
+    channel = classif.channelName;
+    pix     = roiobj.findChannelID(channel);
+    if iscell(pix); pix = cell2mat(pix); end
+
+    T  = numel(frames);
+    Ht = targetSize(1);
+    Wt = targetSize(2);
+
+    vid = zeros(Ht, Wt, 3, T, 'single');
+
+    for k = 1:T
+        j   = frames(k);
+        tmp = roiobj.preProcessROIData(pix, j, 1);  % double [0,1], dorepmat=1
+
+        if isempty(tmp)
+            vid(:,:,:,k) = 0;
+            continue;
+        end
+
+        if size(tmp,3) == 1
+            tmp = repmat(tmp,[1 1 3]);
+        end
+
+        if Crop
+            tmp = localCrop(tmp, CropCenter, CropSize);
+        end
+
+        if size(tmp,1) ~= Ht || size(tmp,2) ~= Wt
+            tmp = imresize(tmp, [Ht Wt]);
+        end
+
+        % ⚠ pas de *255 ni uint8 ici
+        vid(:,:,:,k) = single(tmp);
+    end
+end
+
+
 
 function Vout = cropAroundCenter4D(Vin, center, winsz)
     [H,W,C,T] = size(Vin);
@@ -366,7 +440,6 @@ function ensureNumericCol(name)
     if ~ismember(name, datatmp.data.Properties.VariableNames)
         datatmp.addData(zeros(n,1), name);
     else
-        % étend si nécessaire
         cur = datatmp.data.(name);
         if numel(cur) < n
             cur(end+1:n,1) = 0;
@@ -383,7 +456,6 @@ function ensureCategoricalCol(name, undef)
     else
         cur = datatmp.data.(name);
         if numel(cur) < n
-            % pad avec la 1re catégorie si possible
             if iscategorical(cur)
                 pad = repmat(cur(1), n-numel(cur), 1);
             else
@@ -403,9 +475,8 @@ end
 
 function props = ensurePlotProperties(props, classList, addCNN, varargin)
     p = inputParser;
-    p.addParameter('Prune',            true);
+    p.addParameter('Prune', true);
     p.parse(varargin{:});
-   
     doPrune = logical(p.Results.Prune);
 
     if iscell(classList), classList = string(classList); end
@@ -413,7 +484,7 @@ function props = ensurePlotProperties(props, classList, addCNN, varargin)
 
     req = {
         false,  'id_training',     'double',      'k', 2, 'id';
-        true,  'labels_training', 'categorical', 'k', 2, 'label';
+        true,   'labels_training', 'categorical', 'k', 2, 'label';
         false,  'id',              'double',      'k', 2, 'id';
     };
     for c = classList
@@ -427,7 +498,6 @@ function props = ensurePlotProperties(props, classList, addCNN, varargin)
             req(end+1,:) = {false, ['probCNN_' char(c)], 'double', 'k', 2, 'prob'}; %#ok<AGROW>
         end
         req(end+1,:) = {true, 'labelsCNN', 'categorical', 'k', 2, 'label'};
-       
     end
 
     props = upsertProps(props, req);
@@ -439,17 +509,14 @@ function props = ensurePlotProperties(props, classList, addCNN, varargin)
 end
 
 function props = syncPlotPropsToTable(props, tbl)
-    % retire toute ligne qui réfère à un nom de variable absent
     if isempty(props), return; end
     present = ismember(string(props(:,2)), string(tbl.Properties.VariableNames));
     props = props(present, :);
-    % normalise colonne 1 en logical
     for i=1:size(props,1)
         if ~islogical(props{i,1}), props{i,1} = logical(props{i,1}); end
     end
 end
 
-% -- helpers utilisés par ensurePlotProperties --
 function props = upsertProps(props, rows)
     if isempty(props), props = rows; return; end
     names = lower(string(props(:,2)));
@@ -466,10 +533,12 @@ function props = upsertProps(props, rows)
         end
     end
 end
+
 function props = dedupByName(props)
     [~, ia] = unique(lower(string(props(:,2))), 'stable');
     props = props(sort(ia), :);
 end
+
 function props = orderByList(props, referenceRows)
     refNames = lower(string(referenceRows(:,2)));
     curNames = lower(string(props(:,2)));
@@ -478,6 +547,7 @@ function props = orderByList(props, referenceRows)
     tail = props(~ismember(curNames, refNames), :);
     props = [head; tail];
 end
+
 function props = pruneByClassList(props, classList)
     names = string(props(:,2));
     isProb    = startsWith(names, "prob_");
@@ -496,6 +566,54 @@ function props = pruneByClassList(props, classList)
     props = props(keep, :);
 end
 
+% --------- DEBUG helper ---------
+function debugCNNInference(classifierCNN, classesTarget, probCNNAligned, labelCNNCat, frames, roiobj)
+    try
+        netClasses = string(classifierCNN.Layers(end).ClassNames);
+    catch
+        netClasses = strings(0,1);
+    end
 
+    P = gather(probCNNAligned);
+    classesTarget = string(classesTarget);
+
+    fprintf('\n=== DEBUG CNN inference ===\n');
+    fprintf('ROI id: %d | frames: [%d..%d] (N=%d)\n', ...
+        roiobj.id, frames(1), frames(end), numel(frames));
+    fprintf('Net classes      : %s\n', strjoin(netClasses, ', '));
+    fprintf('classif.classes  : %s\n', strjoin(classesTarget, ', '));
+
+    for i = 1:numel(classesTarget)
+        cname = classesTarget(i);
+        col   = P(:, i);
+        if all(col == 0)
+            fprintf('  %s : all scores = 0 (col vide)\n', cname);
+        else
+            q = quantile(col, [0 0.25 0.5 0.75 0.9 0.95 0.99]);
+            fprintf('  %s : q[0 25 50 75 90 95 99] = [%0.3f %0.3f %0.3f %0.3f %0.3f %0.3f %0.3f]\n', ...
+                cname, q);
+        end
+    end
+
+    % Focus spécifique sur "foci" si présent
+    idxFoci = find(classesTarget == "foci", 1);
+    if ~isempty(idxFoci)
+        sf = P(:, idxFoci);
+        fprintf('  "foci" : prop(score>=0.5)=%4.1f%%, >=0.7=%4.1f%%, >=0.9=%4.1f%%\n', ...
+            100*mean(sf>=0.5), 100*mean(sf>=0.7), 100*mean(sf>=0.9));
+    end
+
+    % Petit résumé des labels CNN sur cette ROI
+    if ~isempty(labelCNNCat)
+        lab = labelCNNCat(frames);
+        cats = categories(lab);
+        counts = countcats(lab);
+        fprintf('  LabelsCNN sur cette ROI :\n');
+        for k = 1:numel(cats)
+            fprintf('    %s : %d frames\n', string(cats{k}), counts(k));
+        end
+    end
+    fprintf('===========================\n');
+end
 
 end

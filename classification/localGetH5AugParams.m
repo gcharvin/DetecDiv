@@ -1,20 +1,16 @@
-function augParams = localGetH5AugParams(trainingParam)
-% Paramètres d'augmentation à partager entre entraînement CNN et lecture HDF5
-augParams = struct();
-augParams.TransRange    = trainingParam.CNN_translation_augmentation;
-augParams.RotRange      = trainingParam.CNN_rotation_augmentation;
-augParams.CropScale     = trainingParam.CNN_crop_scale;
-augParams.ContrastRange = trainingParam.CNN_contrast_range;
-augParams.HueDelta      = trainingParam.CNN_hue_delta;
-augParams.NoiseSigma    = trainingParam.CNN_noise_sigma;
-
-function layers = freezeWeights(layers)
-for ii = 1:size(layers,1)
-    props = properties(layers(ii));
-    for p = 1:numel(props)
-        propName = props{p};
-        if ~isempty(regexp(propName, 'LearnRateFactor$', 'once'))
-            layers(ii).(propName) = 0;
-        end
-    end
+function aug = localGetH5AugParams(tp)
+% Prépare une struct de paramètres homogène pour H5ImageDatastore
+aug = struct();
+aug.TransRange        = tp.CNN_translation_augmentation;
+aug.RotRange          = tp.CNN_rotation_augmentation;
+aug.CropScale         = tp.CNN_crop_scale;
+aug.ContrastRange     = tp.CNN_contrast_range;
+aug.BrightnessRange   = tp.CNN_brightness_range;
+aug.GammaRange        = tp.CNN_gamma_range;
+aug.SaturationRange   = tp.CNN_saturation_range;
+aug.HueDelta          = tp.CNN_hue_delta;
+aug.NoiseSigma        = tp.CNN_noise_sigma;
+aug.DefocusSigmaRange = tp.CNN_defocus_sigma_range;
+aug.DefocusProb       = tp.CNN_defocus_prob;
 end
+

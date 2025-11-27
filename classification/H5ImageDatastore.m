@@ -124,13 +124,22 @@ classdef H5ImageDatastore < matlab.io.Datastore & ...
             ds.NumObservations = sz(4);
 
             % --- Lecture des labels une fois pour toutes ---
-            labs = h5read(ds.Filename, ds.LabelDataset);
-            labs = squeeze(labs);
-            if numel(labs) ~= ds.NumObservations
-                error('Labels length (%d) does not match number of frames (%d).', ...
-                    numel(labs), ds.NumObservations);
-            end
-            ds.LabelsRaw = labs;
+          labs = h5read(ds.Filename, ds.LabelDataset);
+labs = squeeze(labs);
+
+% Normalisation des labels numériques potentiellement 0-based
+if isnumeric(labs) && ~isempty(ds.ClassNames)
+    K = numel(ds.ClassNames);
+    minLab = min(labs(:));
+    maxLab = max(labs(:));
+    if minLab == 0 && maxLab == K-1
+        fprintf('H5ImageDatastore: detected 0-based labels -> shifting by +1\n');
+        labs = labs + 1;
+    end
+end
+
+ds.LabelsRaw = labs;
+
 
             % Indices initiaux
             ds.Indices    = 1:ds.NumObservations;

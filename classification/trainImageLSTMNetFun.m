@@ -497,7 +497,7 @@ else
             %reverseStr = repmat(sprintf('\b'), 1, length(msg));
 
           
-            progressBar(i, numFiles, ['Computing activations (mat) : ' roiName]);
+            progressBar(i, numFiles, ['Computing activations (mat) : ' list(i).name]);
 
             % --- lecture des données MAT ---
             S = load(fullfile(list(i).folder, list(i).name));  % loads deep, vid, lab
@@ -757,12 +757,129 @@ if trainingParam.train_LSTM_network || ~exist(str,"file")
     save(target,'netLSTM','info','bestThreshold');
     disp('Training LSTM network is done and saved ...');
     fprintf('------\n');
+
+
+% ------------------------------------------------------------------
+% DEBUG LSTM sur TRAIN (sequence-to-one ou sequence-to-sequence)
+% ------------------------------------------------------------------
+
+
+
+% ===== DEBUG : distribution des labels de TRAIN pour le LSTM =====
+try
+    labDbg = labelsTrain;
+
+    % On remet au format "un seul vecteur catégoriel" pour inspection
+    if iscell(labDbg)
+        allLabs = [];
+        for k = 1:numel(labDbg)
+            yk = labDbg{k};
+            if isempty(yk), continue; end
+
+            if iscategorical(yk)
+                allLabs = [allLabs; yk(:)]; %#ok<AGROW>
+            else
+                allLabs = [allLabs; categorical(yk(:))]; %#ok<AGROW>
+            end
+        end
+    else
+        if iscategorical(labDbg)
+            allLabs = labDbg(:);
+        else
+            allLabs = categorical(labDbg(:));
+        end
+    end
+
+    fprintf('--- DEBUG LSTM: distribution des labels de TRAIN ---\n');
+    T = tabulate(cellstr(allLabs));
+    disp(array2table(T, 'VariableNames',{'Label','Count','Percent'}));
+catch MEdbg
+    warning('DEBUG LSTM label distribution failed: %s', MEdbg.message);
+end
+% ================================================================
+
+
+
+try
+
+
+    % sequencesTrain / labelsTrain doivent être déjà construits
+    % (ce sont ceux passés à trainNetwork / trainnet)
+
+    % Normaliser labelsTrain en cell array pour simplifier
+    if iscell(labelsTrain)
+        nSeq = numel(labelsTrain);
+    else
+        % cas sequence-to-one classique : vecteur catégoriel
+        nSeq = numel(labelsTrain);
+        tmp = cell(nSeq,1);
+        for k = 1:nSeq
+            tmp{k} = labelsTrain(k);   % 1 label par séquence
+        end
+        labelsTrain = tmp;
+    end
+
+    trueCells = cell(nSeq,1);
+    predCells = cell(nSeq,1);
+
+    for k = 1:nSeq
+        Xk = sequencesTrain{k};
+        ytrue = labelsTrain{k};   % peut être scalaire ou vectoriel
+        yhat  = classify(netLSTM, Xk);  % idem
+
+        % Force en colonne
+        ytrue = ytrue(:);
+        yhat  = yhat(:);
+
+        % Harmoniser les longueurs pour le debug
+        if numel(yhat) == 1 && numel(ytrue) > 1
+            % sequence-to-one vs sequence -> on ne compare que le "label global"
+            % On peut prendre le mode(ytrue), ou le premier, etc.
+            % Pour un debug simple : premier élément
+            ytrue = ytrue(1);
+        elseif numel(yhat) > 1 && numel(ytrue) == 1
+            % network renvoie une séquence mais vérité = 1 label global
+            % On "diffuse" la vérité sur toute la séquence pour voir si le réseau suit
+            ytrue = repmat(ytrue(1), numel(yhat), 1);
+        elseif numel(yhat) ~= numel(ytrue)
+            % Cas tordu : on tronque à la longueur commune
+            L = min(numel(yhat), numel(ytrue));
+            ytrue = ytrue(1:L);
+            yhat  = yhat(1:L);
+        end
+
+        trueCells{k} = ytrue;
+        predCells{k} = yhat;
+    end
+
+    YtrueAll = vertcat(trueCells{:});
+    YpredAll = vertcat(predCells{:});
+
+    C = confusionmat(YtrueAll, YpredAll);
+    disp('Confusion matrix LSTM (TRAIN set):');
+    disp(C);
+
+    nShow = min(20, numel(YtrueAll));
+    tab = table(YtrueAll(1:nShow), YpredAll(1:nShow), ...
+        'VariableNames', {'True','Pred'});
+    disp(tab);
+
+catch ME
+    warning('DEBUG LSTM sur TRAIN a échoué: %s', ME.message);
+end
+
+
+
+
+
 else
     target=fullfile(path,['netLSTM_' name '.mat']);
     load(target);
     disp('Loading LSTM network ...');
     fprintf('------\n');
 end
+
+
 
 %%% ================= ASSEMBLY =================
 if trainingParam.assemble_network || ~exist([path '/' name '.mat'],"file")
