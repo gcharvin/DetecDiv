@@ -629,8 +629,10 @@ else
     for k = 1:nFill
         motherBudMaskFull(:,:,1, frameIdx(k)) = motherBudMask(:,:,1,k);
     end
-    roiobj.addChannel(motherBudMaskFull, cellName, [1 1 1], [0 0 0]);
+    roiobj.addChannel(motherBudMaskFull, cellName, [1 0 0], [0 0 0]);
 end
+chid=mean(roiobj.channelid(pixMask));
+roiobj.display.rgb(chid,:)=[1 0 0];
 
 % --- 2) Canal confiance bud ---
 pixConf = roiobj.findChannelID(confName);
@@ -645,8 +647,10 @@ else
     for k = 1:nFill
         budConfFull(:,:,1, frameIdx(k)) = budConfMap(:,:,1,k);
     end
-    roiobj.addChannel(budConfFull, confName, [1 1 1], [0 0 0]);
+    roiobj.addChannel(budConfFull, confName, [0 1 0], [0 0 0]);
 end
+chid=mean(roiobj.channelid(pixConf));
+roiobj.display.rgb(chid,:)=[0 1 0];
 
 dataout  = roiobj.data;
 imageout = roiobj.image;
