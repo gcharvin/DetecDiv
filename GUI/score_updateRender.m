@@ -92,6 +92,7 @@ switch mode
                 hLineAll= graphicsHandles.lineHandles(tileIndex);
                 
                 updateDataPanels(ax,ds,layoutOptions,newframe,hLineAll,roiData);
+
                 updateMarkers(hLineAll, newframe, layoutOptions);
                 %   title(sprintf('Data:%d', ds));
 
@@ -200,7 +201,9 @@ switch mode
                         hLineAll= graphicsHandles.lineHandles(tileIndex);
                         
                         updateDataPanels(ax,ds, layoutOptions,newframe,hLineAll,roiData);
-                        updateMarkers(hLineAll, newframe , layoutOptions);
+                       % newframe
+                        fra=newframe+layoutOptions.frames(1)-1;
+                        updateMarkers(hLineAll, fra , layoutOptions);
 
                         %   title(sprintf('Data:%d', ds));
 

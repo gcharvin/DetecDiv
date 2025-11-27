@@ -757,15 +757,27 @@ if trainingParam.train_LSTM_network || ~exist(str,"file")
     % ============================================================
     % 2) OPTIONS TRAINING (trainnet)
     % ============================================================
+    % --- Mise en forme des séquences pour trainnet ---
+    % trainnet (vector sequences) attend des matrices s-by-c : 
+    %   s = time steps, c = features
+    % Ici on suppose que sequencesTrain et sequencesValidation sont encore
+    % au format [numFeatures x numTime] -> on les transpose en [numTime x numFeatures].
+    sequencesTrain      = cellfun(@(x) x.', sequencesTrain,      'UniformOutput', false);
+    sequencesValidation = cellfun(@(x) x.', sequencesValidation, 'UniformOutput', false);
+
     miniBatchSize        = trainingParam.LSTM_mini_batch_size;
     numObservationsTrain = numel(sequencesTrain);
     numIterationsPerEpoch= max(1,floor(numObservationsTrain / miniBatchSize));
     patience             = 20;
 
-    % Format des données ENTRÉE uniquement (features x time -> "CBT")
-    %   - séquences: C x T  (numFeatures x numTime)
-    %   - batch: dimension B gérée par trainnet
-    inputFmt = "CBT";
+    % Formats pour trainnet :
+    %   X : time x features       -> "TCB" (T = time, C = features, B = batch)
+    %   T :
+    %       - seq-to-seq  : cell array de séquences catégorielles (T×1)
+    %       - seq-to-one  : vecteur catégoriel (B×1)
+    %   --> on laisse trainnet inférer le format des cibles, donc
+    %       PAS de TargetDataFormats (c'est ce qui provoquait l'erreur).
+    inputFmt = "TCB";
 
     options = trainingOptions("adam", ...
         "MiniBatchSize",        miniBatchSize, ...
@@ -781,7 +793,7 @@ if trainingParam.train_LSTM_network || ~exist(str,"file")
         "Plots",                "training-progress", ...
         "ExecutionEnvironment", "auto", ...
         "VerboseFrequency",     10, ...
-        "InputDataFormats",     inputFmt);   % *** PAS de TargetDataFormats ici ***
+        "InputDataFormats",     inputFmt); % <- plus de TargetDataFormats
 
     % ============================================================
     % 3) PASSAGE EN dlnetwork + trainnet (avec class weights)
@@ -799,11 +811,13 @@ if trainingParam.train_LSTM_network || ~exist(str,"file")
     outputLayerName = 'softmax';
     dlNetLSTM = dlnetwork(lgraphDL, "OutputNames", outputLayerName);
 
-    % vectorisation des poids de classes (format attendu par crossentropy)
+       % vectorisation des poids de classes (format attendu par crossentropy)
     classWeightsVec = single(classWeights(:)');   % 1 x C
 
-    % Loss avec pondération de classes (crossentropy gère les cibles catégorielles)
-    lossFcn = @(Y,T) crossentropy(Y, T, classWeightsVec);
+    % Loss avec pondération de classes
+    % Pour des prédictions/targets non vectorielles, il faut préciser WeightsFormat="C"
+    lossFcn = @(Y,T) crossentropy(Y, T, classWeightsVec, "WeightsFormat", "C");
+
 
     disp('Training LSTM network (trainnet) ...');
     fprintf('------\n');
