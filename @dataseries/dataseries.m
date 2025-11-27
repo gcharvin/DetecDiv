@@ -153,12 +153,27 @@ classdef dataseries < handle
             end
 
        
-            if numel(obj.plotGroup{6})==0 || (numel(obj.plotGroup{6})==1 && numel(obj.plotGroup{6}{1})==0)
-           groups={groupitem};
-            else
-           groups=[obj.plotGroup{6} groupitem];
-    
-            end
+            % juste avant la concaténation
+if numel(obj.plotGroup) < 6 || isempty(obj.plotGroup{6})
+    obj.plotGroup{6} = {'id' 'prob' 'labels'};
+elseif ischar(obj.plotGroup{6})
+    obj.plotGroup{6} = cellstr(obj.plotGroup{6});
+elseif ~iscell(obj.plotGroup{6})
+    obj.plotGroup{6} = {'id' 'prob' 'labels'};
+end
+obj.plotGroup{6} = reshape(obj.plotGroup{6}, 1, []);
+
+if ischar(groupitem), groupitem = {groupitem}; end
+
+groups = [obj.plotGroup{6} groupitem];   % <- ne plantera plus
+
+
+           %  if numel(obj.plotGroup{6})==0 || (numel(obj.plotGroup{6})==1 && numel(obj.plotGroup{6}{1})==0)
+           % groups={groupitem};
+           %  else
+           % groups=[obj.plotGroup{6} groupitem];
+           % 
+           %  end
 
             if ischar(arrname)
                 arrname={arrname};

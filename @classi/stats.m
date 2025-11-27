@@ -159,8 +159,6 @@ if compute==1 % compute new scores
 
 end
 
-aa=classif.score
-
 % ===== plot statistics
 
 if numel(scoreid)==0
@@ -900,81 +898,104 @@ for j=roiid
 
         otherwise % image classification
 
-            dataserie = obj.data;
-            pixdata = arrayfun(@(x) strcmp(x.groupid, classistr), dataserie);
-            dataserie = dataserie(pixdata);
+ % image classification (évalue sur labels, pas sur id)
 
-            if isempty(dataserie)
-                obj.load('data');
-                dataserie = obj.data;
-                pixdata = arrayfun(@(x) strcmp(x.groupid, classistr), dataserie);
-                dataserie = dataserie(pixdata);
-                if isempty(dataserie)
-                    disp(['No matching dataseries found for groupid: ' classistr ' in ROI ' obj.id]);
-                    continue;
-                end
+    dataserie = obj.data;
+    pixdata = arrayfun(@(x) strcmp(x.groupid, classistr), dataserie);
+    dataserie = dataserie(pixdata);
+
+    if isempty(dataserie)
+        obj.load('data');
+        dataserie = obj.data;
+        pixdata = arrayfun(@(x) strcmp(x.groupid, classistr), dataserie);
+        dataserie = dataserie(pixdata);
+        if isempty(dataserie)
+            disp(['No matching dataseries found for groupid: ' classistr ' in ROI ' obj.id]);
+            continue;
+        end
+    end
+
+    % --- récupérer GT et prédictions sous forme de labels catégoriels ---
+    labels_training = dataserie.getData('labels_training');   % GT (categorical/string)
+    labels_pred     = dataserie.getData('labels');            % préd LSTM (categorical/string)
+    labels_pred_cnn = dataserie.getData('labelsCNN');         % préd CNN (optionnel)
+
+    % --- présence résultats : au moins un label préd ≠ 'undefined' ---
+    resok = 0;
+    if ~isempty(labels_pred)
+        if iscategorical(labels_pred)
+            resok = any(labels_pred ~= categorical("undefined"));
+        else
+            resok = any(string(labels_pred) ~= "undefined");
+        end
+        if ~resok
+            disp('There is no result available for this classification (only ''undefined'')');
+        end
+    else
+        disp('There is no result available for this roi');
+    end
+
+    % --- présence GT : au moins un label GT ≠ 'undefined' ---
+    ground = 0;
+    id_training = [];
+    if ~isempty(labels_training)
+        if iscategorical(labels_training)
+            ground = any(labels_training ~= categorical("undefined"));
+        else
+            ground = any(string(labels_training) ~= "undefined");
+        end
+
+        if ground
+            % map GT labels -> indices [1..K]
+            labGT = string(labels_training(:));
+            cls   = string(classif.classes(:));
+            id_training = zeros(size(labGT));
+            for k = 1:numel(cls)
+                id_training(labGT == cls(k)) = k;
             end
+            ground = any(id_training > 0);
+        else
+            disp('There is no GT available (only ''undefined'')');
+        end
+    else
+        disp('There is no GT available for this roi');
+    end
 
-            % --- récupération des données ---
-            labels_training = dataserie.getData('labels_training');  % categorical
-            id_results = dataserie.getData('id');                    % prédictions
-            id_CNN = dataserie.getData('idCNN');                     % prédictions CNN (optionnel)
+    % --- comparaison préd / GT sur frames définis ---
+    if ground && resok
+        % map préd labels -> indices [1..K]
+        labP  = string(labels_pred(:));
+        cls   = string(classif.classes(:));
+        id_pred = zeros(size(labP));
+        for k = 1:numel(cls)
+            id_pred(labP == cls(k)) = k;
+        end
 
-            % --- test présence résultats ---
-            if numel(id_results) > 0
-                if any(id_results)
-                    resok = 1;
-                else
-                    disp('There is no result available for this classification id');
-                end
-            else
-                disp('There is no result available for this roi');
+        % frames valides : GT & préd définis (indices > 0)
+        pix = (id_training(:) > 0) & (id_pred(:) > 0);
+        if ~any(pix)
+            disp('There is no coincidence for ground truth and prediction : skipping roi !');
+            continue;
+        end
+
+        fra   = find(pix).';                     % indices des frames utilisés
+        gt    = double(id_training(pix)).';      % ligne
+        pred  = double(id_pred(pix)).';          % ligne
+
+        % CNN (optionnel)
+        if ~isempty(labels_pred_cnn)
+            labPC = string(labels_pred_cnn(:));
+            id_cnn = zeros(size(labPC));
+            for k = 1:numel(cls)
+                id_cnn(labPC == cls(k)) = k;
             end
+            CNNpred = double(id_cnn(pix)).';
+        end
 
-            % --- conversion des labels -> id_training ---
-            ground = 0;
-            if ~isempty(labels_training)
-                labels = string(labels_training);       % conversion en string array
-                class_names = string(classif.classes);  % noms de classes
-                id_training = zeros(size(labels));      % pré-allocation
-
-                for k = 1:numel(class_names)
-                    id_training(labels == class_names(k)) = k;
-                end
-
-                if any(id_training)
-                    ground = 1;
-                else
-                    disp('There is no GT available for this classification id');
-                end
-            else
-                disp('There is no GT available for this roi');
-            end
-
-            % --- comparaison prédictions / GT ---
-            if ground && resok
-                pred = double(id_results(:))';
-                gt = double(id_training(:))';
-
-                if numel(id_CNN)
-                    CNNpred = double(id_CNN(:))';
-                end
-
-                pix = pred & gt;
-                fra = find(pix);
-
-                if numel(fra) == 0
-                    disp('There is no coincidence for ground truth and prediction : skipping roi !');
-                    continue;
-                end
-
-                gt = gt(pix);
-                pred = pred(pix);
-
-                if exist('CNNpred', 'var') && numel(CNNpred) >= numel(pix)
-                    CNNpred = CNNpred(pix);
-                end
-            end
+    else
+        % au moins l'un manque : on passe ce ROI
+        continue;
+    end
 
     end
     % then display the results

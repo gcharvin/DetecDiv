@@ -26,7 +26,7 @@ if perFrames==0
     end
 
     if cmpt==1
-        disp(['No stretch limits found for ROI ' num2str(obj.id) ', computing them...']);
+      %  disp(['No stretch limits found for ROI ' num2str(obj.id) ', computing them...']);
         obj.computeStretchlim;
     end
 end

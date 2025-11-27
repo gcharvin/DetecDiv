@@ -184,6 +184,7 @@ newPath = fullfile(folder, [name '.pdf']);
 
         % Dataseries en dessous
         if layoutOptions.Ndataseries > 0 && ~isempty(roiData.data)
+  
             for ds = 1:layoutOptions.Ndataseries
                 local_row = layoutOptions.Nbrick + ds;
                 local_col = 1;
@@ -208,6 +209,7 @@ newPath = fullfile(folder, [name '.pdf']);
 
                 xtickformat(ax, '%.1f');
 
+                
                 hLine= score_displayDataPanel(ax, ds, layoutOptions, roiData);
                 %  hLine = plot(roiData.data(ds, :));
                 %   title(sprintf('Data:%d', ds));

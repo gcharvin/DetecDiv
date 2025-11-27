@@ -115,6 +115,7 @@ switch mode
         for i = 1:layoutOptions.Nrow
             for j = 1:layoutOptions.Ncol
 
+
                 roiIndex = (i-1)*layoutOptions.Ncol + j;
                 roiData = roiobj(roiIndex);
 

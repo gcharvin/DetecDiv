@@ -1,25 +1,19 @@
 function shallowSave(shallowObj, option, progress)
 % Sauvegarde le projet shallowObj et ses dépendances.
-% - Sauve toutes les ROI (images+data si dispo), classifications et processors
-% - Donne un résumé par FOV : combien de ROIs ont vraiment été écrites sur disque
-% - Affiche un en-tête avec les infos projet
+% - Sauve ROIs, classifieurs, processors (sauf si option 'shallowObj')
+% - Écriture atomique du .mat avec vérification
+% - Conserve un unique backup (.bak) correspondant à l'ancienne version
 
-    % Récupérer chemin + nom du projet
+    % ====== Préparation des chemins ======
     [path, file] = shallowObj.getPath;
+    shallowObjOnly = nargin >= 2 && strcmp(option, 'shallowObj');
 
-    % Mode "shallowObj only" = on ne sauvegarde pas les ROIs/classif/etc.,
-    % juste l'objet global .mat
-    shallowObjOnly = 0;
-    if nargin >= 2 && strcmp(option,'shallowObj')
-        shallowObjOnly = 1;
-    end
-
-    % Infos projet pour le header
-    projectName   = file;  % typiquement le nom du .mat sans extension
+    projectName   = file;
     projectTarget = fullfile(path, [file '.mat']);
+    backupFile    = fullfile(path, [file '.bak']); % unique backup à la racine
     nFovTotal     = numel(shallowObj.fov);
 
-    % ====== HEADER / CONTEXTE ======
+    % ====== HEADER ======
     fprintf('\n============================================\n');
     fprintf(' Saving shallow project\n');
     fprintf('   Name    : %s\n', projectName);
@@ -28,53 +22,38 @@ function shallowSave(shallowObj, option, progress)
     fprintf('   #FOV(s) : %d\n', nFovTotal);
     fprintf('============================================\n\n');
 
-    % ====== 1) Sauvegarde des FOV / ROI ======
-    if shallowObjOnly == 0
-
+    % ====== 1) Sauvegarde FOV / ROI ======
+    if ~shallowObjOnly
         for i = 1:nFovTotal
-
-            % Mettre à jour la barre de progression dans l'UI si on l'a reçue
             if nargin == 3
                 progress.Message = sprintf('Saving position %d / %d ...', i, nFovTotal);
                 progress.Value   = i ./ nFovTotal;
                 pause(0.01);
             end
 
-            % Compteurs ROIs pour ce FOV
             nRoiTotal = numel(shallowObj.fov(i).roi);
             nRoiSaved = 0;
 
             for j = 1:nRoiTotal
                 roiObj = shallowObj.fov(i).roi(j);
-
-                % Appel silencieux : pas de spam par ROI
-                % didSave = true si quelque chose a effectivement été écrit
                 try
                     didSave = roiObj.save([], false);
                 catch
-                    % rétrocompatibilité si ancienne version de roi.save()
-                    roiObj.save();
-                    didSave = true; % hypothèse "ancienne version sauvait vraiment"
+                    roiObj.save(); % rétrocompatibilité
+                    didSave = true;
                 end
-
                 if didSave
                     nRoiSaved = nRoiSaved + 1;
                 end
-
-                % Libérer l'image après sauvegarde pour ne pas garder ça en RAM
                 roiObj.clear;
             end
 
-            % Résumé lisible pour CE FOV uniquement
-            fprintf('FOV %d/%d: saved %d/%d ROIs.\n', ...
-                    i, nFovTotal, nRoiSaved, nRoiTotal);
+            fprintf('FOV %d/%d: saved %d/%d ROIs.\n', i, nFovTotal, nRoiSaved, nRoiTotal);
         end
 
-        % ====== 2) Sauvegarde des classifieurs ======
+        % ====== 2) Classifieurs ======
         nClassif = numel(shallowObj.processing.classification);
-        if nClassif > 0
-            fprintf('\nSaving %d classifier(s)...\n', nClassif);
-        end
+        if nClassif > 0, fprintf('\nSaving %d classifier(s)...\n', nClassif); end
         for i = 1:nClassif
             if nargin == 3
                 progress.Message = sprintf('Saving classifier %d / %d ...', i, nClassif);
@@ -84,11 +63,9 @@ function shallowSave(shallowObj, option, progress)
             classiSave(shallowObj.processing.classification(i));
         end
 
-        % ====== 3) Sauvegarde des processors ======
+        % ====== 3) Processors ======
         nProc = numel(shallowObj.processing.processor);
-        if nProc > 0
-            fprintf('Saving %d processor(s)...\n', nProc);
-        end
+        if nProc > 0, fprintf('Saving %d processor(s)...\n', nProc); end
         for i = 1:nProc
             if nargin == 3
                 progress.Message = sprintf('Saving processor %d / %d ...', i, nProc);
@@ -99,11 +76,81 @@ function shallowSave(shallowObj, option, progress)
         end
     end
 
-    % ====== 4) Sauvegarde finale de l'objet shallow ======
-    save(projectTarget, 'shallowObj');
-
+    % ====== 4) Sauvegarde atomique + vérif + backup .bak ======
     fprintf('\n--------------------------------------------\n');
+    fprintf('[INFO] Writing project MAT (atomic write)...\n');
+
+    tmpUuid   = char(java.util.UUID.randomUUID);
+    tmpTarget = [projectTarget '.tmp.' tmpUuid];
+
+    % 4.a) Écriture vers un fichier temporaire
+    try
+        save(tmpTarget, 'shallowObj', '-v7.3');
+        fprintf('[OK]   Temp file written: %s\n', tmpTarget);
+    catch ME
+        fprintf(2, '[ERR]  Failed to write temp MAT: %s\n', ME.message);
+        if exist(tmpTarget, 'file'); delete(tmpTarget); end
+        fprintf('--------------------------------------------\n\n');
+        return;
+    end
+
+    % 4.b) Vérification du .mat temporaire
+    if ~localVerifyMat(tmpTarget)
+        fprintf(2, '[ERR]  Temp MAT verification failed. Aborting.\n');
+        if exist(tmpTarget, 'file'); delete(tmpTarget); end
+        fprintf('--------------------------------------------\n\n');
+        return;
+    else
+        fprintf('[OK]   Temp MAT verification passed.\n');
+    end
+
+    % 4.c) Sauvegarde de l'ancien fichier en .bak
+    try
+        if exist(projectTarget, 'file')
+            copyfile(projectTarget, backupFile, 'f');
+            if localVerifyMat(backupFile)
+                fprintf('[OK]   Previous version backed up: %s\n', backupFile);
+            else
+                fprintf(2, '[WARN] Backup verification failed: %s\n', backupFile);
+            end
+        else
+            fprintf('[INFO] No previous MAT to backup.\n');
+        end
+    catch ME
+        fprintf(2, '[WARN] Failed to create backup: %s\n', ME.message);
+    end
+
+    % 4.d) Remplacement du fichier principal
+    try
+        if exist(projectTarget, 'file'), delete(projectTarget); end
+        movefile(tmpTarget, projectTarget, 'f');
+        fprintf('[OK]   New MAT moved into place: %s\n', projectTarget);
+    catch ME
+        fprintf(2, '[ERR]  Failed to move new MAT into place: %s\n', ME.message);
+        if exist(tmpTarget, 'file'); delete(tmpTarget); end
+        fprintf('--------------------------------------------\n\n');
+        return;
+    end
+
+    % 4.e) Vérification finale
+    if ~localVerifyMat(projectTarget)
+        fprintf(2, '[WARN] Final MAT verification failed. File may be corrupted.\n');
+    else
+        fprintf('[OK]   Final MAT verification passed.\n');
+    end
+
     fprintf(' ✅ Shallow project successfully saved.\n');
     fprintf('   -> %s\n', projectTarget);
+    fprintf('   .bak -> previous version: %s\n', backupFile);
     fprintf('--------------------------------------------\n\n');
+end
+
+function ok = localVerifyMat(matPath)
+    ok = false;
+    try
+        vars = whos('-file', matPath);
+        ok   = ~isempty(vars);
+    catch
+        ok = false;
+    end
 end

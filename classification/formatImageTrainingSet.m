@@ -24,8 +24,6 @@ end
 
 cltmp=classif.roi;
 
-disp('Starting parallelized jobs for data formatting....')
-
 warning off all
 
 channel=classif.channelName;
