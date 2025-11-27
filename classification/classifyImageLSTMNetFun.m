@@ -22,7 +22,7 @@ classifierCNN= [];
 gpu          = 0;
 
 % --------- DEBUG FLAG CNN ----------
-debugCNN = true;
+debugCNN = false;
 
 % Sinon tu peux aussi juste mettre debugCNN=true ici pour un test ponctuel.
 
@@ -111,7 +111,7 @@ if useLSTM
             inputSizeLSTM = size(vid,[1,2]);
         else
             for ii = 1:numel(classifier.Layers)
-                if strcmp(class(classifier.Layers(ii)), 'nnet.cnn.layer.SequenceInputLayer')
+                if stcmp(class(classifier.Layers(ii)), 'nnet.cnn.layer.SequenceInputLayer')
                     inputSizeLSTM = classifier.Layers(ii).InputSize(1:2);
                     break;
                 end

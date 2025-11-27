@@ -64,14 +64,14 @@ if nargin==2 % basic parameter initialization
         'CNN_rand_scale',[0.8 1.0], ...                    % backend TIFF
         'CNN_rand_flip',true, ...
         'CNN_crop_scale',[0.8 1.0], ...                    % backend HDF5
-        'CNN_contrast_range',[0.85 1.15], ...              % multiplicateur de contraste
-        'CNN_brightness_range',[-0.10 0.10], ...           % offset additif
-        'CNN_gamma_range',[0.9 1.1], ...                   % exponent
-        'CNN_saturation_range',[0.95 1.05], ...            % multiplicateur S (HSV)
-        'CNN_hue_delta',0.05, ...                          % jitter de teinte max
-        'CNN_noise_sigma',0.02, ...                        % sigma bruit gaussien (0–1)
-        'CNN_defocus_sigma_range',[0.3 1.0], ...           % rayon flou gaussien (px)
-        'CNN_defocus_prob',0.5, ...                        % probabilité d'appliquer le flou
+        'CNN_contrast_range',[1 1], ...              % multiplicateur de contraste
+        'CNN_brightness_range',[0 0], ...           % offset additif
+        'CNN_gamma_range',[1 1], ...                   % exponent
+        'CNN_saturation_range',[1 1], ...            % multiplicateur S (HSV)
+        'CNN_hue_delta',0, ...                          % jitter de teinte max
+        'CNN_noise_sigma',0, ...                        % sigma bruit gaussien (0–1)
+        'CNN_defocus_sigma_range',[0 0], ...           % rayon flou gaussien (px)
+        'CNN_defocus_prob',0, ...                        % probabilité d'appliquer le flou
         'Format_Fraction',1.0, ...                 % fraction de ROIs à utiliser
         'Format_Seed',12345, ...                   % seed RNG pour la sélection
         'Format_Crop',false, ...                   % activer/désactiver le crop
@@ -107,14 +107,14 @@ else
     end
 
     if ~isfield(trainingParam,'CNN_rand_flip');      trainingParam.CNN_rand_flip      = true;        end
-    if ~isfield(trainingParam,'CNN_contrast_range'); trainingParam.CNN_contrast_range = [0.85 1.15]; end
-    if ~isfield(trainingParam,'CNN_brightness_range'); trainingParam.CNN_brightness_range = [-0.10 0.10]; end
-    if ~isfield(trainingParam,'CNN_gamma_range');      trainingParam.CNN_gamma_range  = [0.9 1.1];   end
-    if ~isfield(trainingParam,'CNN_saturation_range'); trainingParam.CNN_saturation_range = [0.95 1.05]; end
-    if ~isfield(trainingParam,'CNN_hue_delta');      trainingParam.CNN_hue_delta      = 0.05;        end
-    if ~isfield(trainingParam,'CNN_noise_sigma');    trainingParam.CNN_noise_sigma    = 0.02;        end
-    if ~isfield(trainingParam,'CNN_defocus_sigma_range'); trainingParam.CNN_defocus_sigma_range = [0.3 1.0]; end
-    if ~isfield(trainingParam,'CNN_defocus_prob');       trainingParam.CNN_defocus_prob = 0.5;       end
+    if ~isfield(trainingParam,'CNN_contrast_range'); trainingParam.CNN_contrast_range = [1 1]; end
+    if ~isfield(trainingParam,'CNN_brightness_range'); trainingParam.CNN_brightness_range = [0 0]; end
+    if ~isfield(trainingParam,'CNN_gamma_range');      trainingParam.CNN_gamma_range  = [1 1];   end
+    if ~isfield(trainingParam,'CNN_saturation_range'); trainingParam.CNN_saturation_range = [1 1]; end
+    if ~isfield(trainingParam,'CNN_hue_delta');      trainingParam.CNN_hue_delta      = 0;        end
+    if ~isfield(trainingParam,'CNN_noise_sigma');    trainingParam.CNN_noise_sigma    = 0;        end
+    if ~isfield(trainingParam,'CNN_defocus_sigma_range'); trainingParam.CNN_defocus_sigma_range = [0 0]; end
+    if ~isfield(trainingParam,'CNN_defocus_prob');       trainingParam.CNN_defocus_prob = 0;       end
 
     % On réinjecte dans classif
     classif.trainingParam = trainingParam;
@@ -136,7 +136,7 @@ blockRNG = 1;
 % DEBUG: désactiver TOUTES les augmentations photométriques
 % ==============================================================
 
-disablePhotometricAug = true;   % passe à false pour revenir au comportement normal
+disablePhotometricAug = false;   % passe à false pour revenir au comportement normal
 
 if disablePhotometricAug
 
@@ -317,14 +317,14 @@ fprintf('-------------------------------\n');
         classWeights = classWeights' / mean(classWeights);
         classWeights(~isfinite(classWeights)) = 1;
 
-         numClasses = numel(classif.classes);
-        classWeights = ones(1,numClasses);   % <-- poids uniformes
-        fprintf('--- HDF5 CNN class weights FORCÉS À 1 (debug) ---\n');
-        for i = 1:numClasses
-            n = sum(labsTrain == classif.classes{i});
-            fprintf('  %s : count = %d, weight = %.3f\n', ...
-                classif.classes{i}, n, classWeights(i));
-        end
+        %  numClasses = numel(classif.classes);
+        % classWeights = ones(1,numClasses);   % <-- poids uniformes
+        % fprintf('--- HDF5 CNN class weights FORCÉS À 1 (debug) ---\n');
+        % for i = 1:numClasses
+        %     n = sum(labsTrain == classif.classes{i});
+        %     fprintf('  %s : count = %d, weight = %.3f\n', ...
+        %         classif.classes{i}, n, classWeights(i));
+        % end
 
         % Datastores finaux
         dataTrain   = dsTrain;

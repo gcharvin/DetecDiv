@@ -73,26 +73,26 @@ if nargin==2 % basic parameter initialization
         'CNN_network',{{'googlenet','inceptionresnetv2','inceptionv3','resnet50','resnet18','googlenet'}},...
         'CNN_mini_batch_size',8,...
         'CNN_max_epochs',6,...
-        'CNN_initial_learning_rate',0.00003,...
+        'CNN_initial_learning_rate',0.0001,...
         'CNN_learn_rate_drop_factor',0.9,...
         'CNN_data_shuffling',{{'once','every-epoch','never','every-epoch'}},...
         'CNN_data_splitting_factor',0.7,...
         'CNN_translation_augmentation',[-5 5],...
-        'CNN_rotation_augmentation',[-20 20],...
+        'CNN_rotation_augmentation',[-5 5],...
         'CNN_l2_regularization',1e-5,...
         'CNN_use_dropout',true,...
         'CNN_dropout',0.5,...
         'CNN_rand_scale',[0.8 1.0], ...             % harmonisé avec GoogleNetFun
         'CNN_rand_flip',true, ...                   % flips aléatoires
         'CNN_crop_scale',[0.8 1.0], ...             % crop-in (HDF5) / zoom (TIFF)
-        'CNN_contrast_range',[0.85 1.15], ...       % contraste multiplicatif
-        'CNN_brightness_range',[-0.10 0.10], ...    % offset additif
-        'CNN_gamma_range',[0.9 1.1], ...            % gamma exponent
-        'CNN_saturation_range',[0.95 1.05], ...     % saturation HSV
-        'CNN_hue_delta',0.05, ...                   % jitter de teinte
-        'CNN_noise_sigma',0.02, ...                 % bruit gaussien
-        'CNN_defocus_sigma_range',[0.3 1.0], ...    % flou gaussien (px)
-        'CNN_defocus_prob',0.5, ...                 % probabilité de flou
+        'CNN_contrast_range',[1 1], ...       % contraste multiplicatif
+        'CNN_brightness_range',[0 0], ...    % offset additif
+        'CNN_gamma_range',[1 1], ...            % gamma exponent
+        'CNN_saturation_range',[1 1], ...     % saturation HSV
+        'CNN_hue_delta',0, ...                   % jitter de teinte
+        'CNN_noise_sigma',0, ...                 % bruit gaussien
+        'CNN_defocus_sigma_range',[0 0], ...    % flou gaussien (px)
+        'CNN_defocus_prob',0, ...                 % probabilité de flou
         'LSTM_data_splitting_factor',0.9,...
         'LSTM_hidden_size',150,...
         'LSTM_mini_batch_size',8,...
@@ -763,106 +763,106 @@ if trainingParam.train_LSTM_network || ~exist(str,"file")
 
 
 
-% ===== DEBUG : distribution des labels de TRAIN pour le LSTM =====
-try
-    labDbg = labelsTrain;
-
-    % On remet au format "un seul vecteur catégoriel" pour inspection
-    if iscell(labDbg)
-        allLabs = [];
-        for k = 1:numel(labDbg)
-            yk = labDbg{k};
-            if isempty(yk), continue; end
-
-            if iscategorical(yk)
-                allLabs = [allLabs; yk(:)]; %#ok<AGROW>
-            else
-                allLabs = [allLabs; categorical(yk(:))]; %#ok<AGROW>
-            end
-        end
-    else
-        if iscategorical(labDbg)
-            allLabs = labDbg(:);
-        else
-            allLabs = categorical(labDbg(:));
-        end
-    end
-
-    fprintf('--- DEBUG LSTM: distribution des labels de TRAIN ---\n');
-    T = tabulate(cellstr(allLabs));
-    disp(array2table(T, 'VariableNames',{'Label','Count','Percent'}));
-catch MEdbg
-    warning('DEBUG LSTM label distribution failed: %s', MEdbg.message);
-end
+% % ===== DEBUG : distribution des labels de TRAIN pour le LSTM =====
+% try
+%     labDbg = labelsTrain;
+% 
+%     % On remet au format "un seul vecteur catégoriel" pour inspection
+%     if iscell(labDbg)
+%         allLabs = [];
+%         for k = 1:numel(labDbg)
+%             yk = labDbg{k};
+%             if isempty(yk), continue; end
+% 
+%             if iscategorical(yk)
+%                 allLabs = [allLabs; yk(:)]; %#ok<AGROW>
+%             else
+%                 allLabs = [allLabs; categorical(yk(:))]; %#ok<AGROW>
+%             end
+%         end
+%     else
+%         if iscategorical(labDbg)
+%             allLabs = labDbg(:);
+%         else
+%             allLabs = categorical(labDbg(:));
+%         end
+%     end
+% 
+%     fprintf('--- DEBUG LSTM: distribution des labels de TRAIN ---\n');
+%     T = tabulate(cellstr(allLabs));
+%     disp(array2table(T, 'VariableNames',{'Label','Count','Percent'}));
+% catch MEdbg
+%     warning('DEBUG LSTM label distribution failed: %s', MEdbg.message);
+% end
 % ================================================================
 
 
 
-try
-    % sequencesTrain / labelsTrain doivent être déjà construits
-    % (ce sont ceux passés à trainNetwork / trainnet)
-
-    % Normaliser labelsTrain en cell array pour simplifier
-    if iscell(labelsTrain)
-        nSeq = numel(labelsTrain);
-    else
-        % cas sequence-to-one classique : vecteur catégoriel
-        nSeq = numel(labelsTrain);
-        tmp = cell(nSeq,1);
-        for k = 1:nSeq
-            tmp{k} = labelsTrain(k);   % 1 label par séquence
-        end
-        labelsTrain = tmp;
-    end
-
-    trueCells = cell(nSeq,1);
-    predCells = cell(nSeq,1);
-
-    for k = 1:nSeq
-        Xk = sequencesTrain{k};
-        ytrue = labelsTrain{k};   % peut être scalaire ou vectoriel
-        yhat  = classify(netLSTM, Xk);  % idem
-
-        % Force en colonne
-        ytrue = ytrue(:);
-        yhat  = yhat(:);
-
-        % Harmoniser les longueurs pour le debug
-        if numel(yhat) == 1 && numel(ytrue) > 1
-            % sequence-to-one vs sequence -> on ne compare que le "label global"
-            % On peut prendre le mode(ytrue), ou le premier, etc.
-            % Pour un debug simple : premier élément
-            ytrue = ytrue(1);
-        elseif numel(yhat) > 1 && numel(ytrue) == 1
-            % network renvoie une séquence mais vérité = 1 label global
-            % On "diffuse" la vérité sur toute la séquence pour voir si le réseau suit
-            ytrue = repmat(ytrue(1), numel(yhat), 1);
-        elseif numel(yhat) ~= numel(ytrue)
-            % Cas tordu : on tronque à la longueur commune
-            L = min(numel(yhat), numel(ytrue));
-            ytrue = ytrue(1:L);
-            yhat  = yhat(1:L);
-        end
-
-        trueCells{k} = ytrue;
-        predCells{k} = yhat;
-    end
-
-    YtrueAll = vertcat(trueCells{:});
-    YpredAll = vertcat(predCells{:});
-
-    C = confusionmat(YtrueAll, YpredAll);
-    disp('Confusion matrix LSTM (TRAIN set):');
-    disp(C);
-
-    nShow = min(20, numel(YtrueAll));
-    tab = table(YtrueAll(1:nShow), YpredAll(1:nShow), ...
-        'VariableNames', {'True','Pred'});
-    disp(tab);
-
-catch ME
-    warning('DEBUG LSTM sur TRAIN a échoué: %s', ME.message);
-end
+% try
+%     % sequencesTrain / labelsTrain doivent être déjà construits
+%     % (ce sont ceux passés à trainNetwork / trainnet)
+% 
+%     % Normaliser labelsTrain en cell array pour simplifier
+%     if iscell(labelsTrain)
+%         nSeq = numel(labelsTrain);
+%     else
+%         % cas sequence-to-one classique : vecteur catégoriel
+%         nSeq = numel(labelsTrain);
+%         tmp = cell(nSeq,1);
+%         for k = 1:nSeq
+%             tmp{k} = labelsTrain(k);   % 1 label par séquence
+%         end
+%         labelsTrain = tmp;
+%     end
+% 
+%     trueCells = cell(nSeq,1);
+%     predCells = cell(nSeq,1);
+% 
+%     for k = 1:nSeq
+%         Xk = sequencesTrain{k};
+%         ytrue = labelsTrain{k};   % peut être scalaire ou vectoriel
+%         yhat  = classify(netLSTM, Xk);  % idem
+% 
+%         % Force en colonne
+%         ytrue = ytrue(:);
+%         yhat  = yhat(:);
+% 
+%         % Harmoniser les longueurs pour le debug
+%         if numel(yhat) == 1 && numel(ytrue) > 1
+%             % sequence-to-one vs sequence -> on ne compare que le "label global"
+%             % On peut prendre le mode(ytrue), ou le premier, etc.
+%             % Pour un debug simple : premier élément
+%             ytrue = ytrue(1);
+%         elseif numel(yhat) > 1 && numel(ytrue) == 1
+%             % network renvoie une séquence mais vérité = 1 label global
+%             % On "diffuse" la vérité sur toute la séquence pour voir si le réseau suit
+%             ytrue = repmat(ytrue(1), numel(yhat), 1);
+%         elseif numel(yhat) ~= numel(ytrue)
+%             % Cas tordu : on tronque à la longueur commune
+%             L = min(numel(yhat), numel(ytrue));
+%             ytrue = ytrue(1:L);
+%             yhat  = yhat(1:L);
+%         end
+% 
+%         trueCells{k} = ytrue;
+%         predCells{k} = yhat;
+%     end
+% 
+%     YtrueAll = vertcat(trueCells{:});
+%     YpredAll = vertcat(predCells{:});
+% 
+%     C = confusionmat(YtrueAll, YpredAll);
+%     disp('Confusion matrix LSTM (TRAIN set):');
+%     disp(C);
+% 
+%     nShow = min(20, numel(YtrueAll));
+%     tab = table(YtrueAll(1:nShow), YpredAll(1:nShow), ...
+%         'VariableNames', {'True','Pred'});
+%     disp(tab);
+% 
+% catch ME
+%     warning('DEBUG LSTM sur TRAIN a échoué: %s', ME.message);
+% end
 
 
 else
@@ -1128,14 +1128,14 @@ if ~isfield(trainingParam,'CNN_translation_augmentation'); trainingParam.CNN_tra
 if ~isfield(trainingParam,'CNN_rotation_augmentation');     trainingParam.CNN_rotation_augmentation     = [-20 20]; end
 
 % ---- Paramètres photométriques CNN (alignés sur GoogleNetFun) ----
-if ~isfield(trainingParam,'CNN_contrast_range');      trainingParam.CNN_contrast_range      = [0.85 1.15]; end
-if ~isfield(trainingParam,'CNN_brightness_range');    trainingParam.CNN_brightness_range    = [-0.10 0.10]; end
-if ~isfield(trainingParam,'CNN_gamma_range');         trainingParam.CNN_gamma_range         = [0.9 1.1];    end
-if ~isfield(trainingParam,'CNN_saturation_range');    trainingParam.CNN_saturation_range    = [0.95 1.05]; end
-if ~isfield(trainingParam,'CNN_hue_delta');           trainingParam.CNN_hue_delta           = 0.05;        end
-if ~isfield(trainingParam,'CNN_noise_sigma');         trainingParam.CNN_noise_sigma         = 0.02;        end
-if ~isfield(trainingParam,'CNN_defocus_sigma_range'); trainingParam.CNN_defocus_sigma_range = [0.3 1.0];   end
-if ~isfield(trainingParam,'CNN_defocus_prob');        trainingParam.CNN_defocus_prob        = 0.5;         end
+if ~isfield(trainingParam,'CNN_contrast_range');      trainingParam.CNN_contrast_range      = [1 1]; end
+if ~isfield(trainingParam,'CNN_brightness_range');    trainingParam.CNN_brightness_range    = [0 0]; end
+if ~isfield(trainingParam,'CNN_gamma_range');         trainingParam.CNN_gamma_range         = [1 1];    end
+if ~isfield(trainingParam,'CNN_saturation_range');    trainingParam.CNN_saturation_range    = [1 1]; end
+if ~isfield(trainingParam,'CNN_hue_delta');           trainingParam.CNN_hue_delta           = 0;        end
+if ~isfield(trainingParam,'CNN_noise_sigma');         trainingParam.CNN_noise_sigma         = 0;        end
+if ~isfield(trainingParam,'CNN_defocus_sigma_range'); trainingParam.CNN_defocus_sigma_range = [0 0];   end
+if ~isfield(trainingParam,'CNN_defocus_prob');        trainingParam.CNN_defocus_prob        = 0;         end
 
 % ---- Champs minority/windowing (compat ancienne syntaxe) ----
 if ~isfield(trainingParam,'LSTM_minority_mode')
