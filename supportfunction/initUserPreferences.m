@@ -4,13 +4,13 @@ function initUserPreferences
                  userpath('reset')
              end
 
-            pth=userpath;
+            pth=prefdir;
  
           % fle= fullfile(pth,'Detecdiv/userprefs.mat')
           % pth=userpath;
 if ispc
 fle= fullfile(pth,'Detecdiv/userprefs.mat');
-targetpth=userpath;
+targetpth=prefdir;
 else
 tmpfile=getenv("HOME");
 fle=fullfile(strcat(tmpfile,'/Detecdiv'),'userprefs.mat');
