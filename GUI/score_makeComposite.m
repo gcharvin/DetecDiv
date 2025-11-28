@@ -42,6 +42,12 @@ for ch=1:numel(channel)
         currentCha = pix;
     end
 
+      % Si aucun canal trouvé : on saute ce ch, displayImage reste à 0 (initialisé)
+    if isempty(currentCha)
+        % warning('score_makeComposite: aucun canal trouvé pour ch=%d, on ignore ce canal.', ch);
+        continue;
+    end
+
     %  currentCha
 
     totim =roitmp.image(:,:, currentCha, :); % to get the whole range of map values
@@ -296,14 +302,35 @@ end
         % 
         % else
             % Cas normal (linéaire)
-            if ~isequal(levels{ch}, [-1 -1])
-                if levels{ch}(1) >= levels{ch}(2)
-                    levels{ch}(1) = levels{ch}(2) - 1;
+
+           aa = levels{ch};
+
+        % Si levels{ch} est un cell (cas indexé de type {'-1','lines',[1],[0],[0]}),
+        % on ne tente PAS de faire de comparaison / imadjust dessus.
+        if iscell(aa)
+            % Option 1 : ne rien faire, on garde imtmp2 telle quelle
+            % (éventuellement mettre un warning si tu veux tracer le cas)
+            % warning('score_makeComposite: levels{ch} est un cell (canal indexé) dans la branche multi-chan, aucun ajustement de niveaux appliqué (ch=%d).', ch);
+
+        else
+            % Cas normal (numérique)
+            if ~isequal(aa, [-1 -1])
+                if aa(1) >= aa(2)
+                    aa(1) = aa(2) - 1;
                 end
-
-                imtmp2 = imadjust(imtmp2 , [levels{ch}(1)/65535, levels{ch}(2)/65535]);
-
+                imtmp2 = imadjust(imtmp2, [aa(1)/65535, aa(2)/65535]);
             end
+        end
+
+        if overlay
+            if isempty(weights)
+                comp = imlincomb(1, comp, 1, uint8(double(imtmp2)/256));
+            else
+                comp = imlincomb(1, comp, weights(ch), uint8(double(imtmp2)/256));
+            end
+        else
+            displayImage(:,:,:,ch) = uint8(double(imtmp2)/256);
+        end
       %  end
 
 

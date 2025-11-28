@@ -633,6 +633,7 @@ else
 end
 chid=mean(roiobj.channelid(pixMask));
 roiobj.display.rgb(chid,:)=[1 0 0];
+roiobj.display.alpha(chid)=0.5;
 
 % --- 2) Canal confiance bud ---
 pixConf = roiobj.findChannelID(confName);
@@ -651,6 +652,7 @@ else
 end
 chid=mean(roiobj.channelid(pixConf));
 roiobj.display.rgb(chid,:)=[0 1 0];
+roiobj.display.alpha(chid)=0.5;
 
 dataout  = roiobj.data;
 imageout = roiobj.image;
