@@ -1,4 +1,4 @@
-function [data,image] = classifyImageLSTMNetFun(roiobj, classif, classifier, varargin)
+function [data,image] = classifyImageLSTMNetFun_trainnet(roiobj, classif, classifier, varargin)
 % Classif vidéo avec LSTM et/ou CNN optionnel.
 % - Si LSTM absent et CNN présent -> "CNN only": on remplit les champs primaires (id/prob/labels) avec le CNN.
 % - Si LSTM présent et CNN présent -> LSTM = primaire ; CNN dans les champs *_CNN (idCNN/probCNN_/labelsCNN).
@@ -69,10 +69,13 @@ if isstruct(classifierCNN) && isfield(classifierCNN,'net'); classifierCNN = clas
 if useLSTM && ~(isa(classifier,'DAGNetwork') || isa(classifier,'SeriesNetwork') || isa(classifier,'dlnetwork'))
     error('classifyImageLSTMNetFun:ClassifierType', 'Classifier LSTM type not supported: %s', class(classifier));
 end
-if useCNN && ~(isa(classifierCNN,'DAGNetwork') || isa(classifierCNN,'SeriesNetwork'))
-    % (classify sur dlnetwork n'est pas dispo directement)
-    error('classifyImageLSTMNetFun:CNNType', 'Classifier CNN type not supported: %s', class(classifierCNN));
+if useCNN && ~(isa(classifierCNN,'DAGNetwork') || ...
+               isa(classifierCNN,'SeriesNetwork') || ...
+               isa(classifierCNN,'dlnetwork'))
+    error('classifyImageLSTMNetFun:CNNType', ...
+        'Classifier CNN type not supported: %s', class(classifierCNN));
 end
+
 if ~useLSTM && ~useCNN
     error('classifyImageLSTMNetFun:NoModel', 'Aucun classifieur fourni (ni LSTM, ni CNN).');
 end
@@ -108,23 +111,29 @@ inputSizeLSTM = [];
 if useLSTM
     try
         if isa(classifier,'dlnetwork')
+            % Normalement le full net assemblé est un DAGNetwork, mais au cas où :
             inputSizeLSTM = size(vid,[1,2]);
         else
+            % Cherche explicitement une SequenceInputLayer dans le réseau assemblé
             for ii = 1:numel(classifier.Layers)
-                if stcmp(class(classifier.Layers(ii)), 'nnet.cnn.layer.SequenceInputLayer')
+                if isa(classifier.Layers(ii), 'nnet.cnn.layer.SequenceInputLayer')
+                    % InputSize = [H W C]
                     inputSizeLSTM = classifier.Layers(ii).InputSize(1:2);
                     break;
                 end
             end
+
+            % Fallback : si vraiment rien trouvé, garder la taille native
             if isempty(inputSizeLSTM)
                 inputSizeLSTM = size(vid,[1,2]);
             end
         end
     catch
-
+        % En cas de bug, ne pas crasher l'inférence
         inputSizeLSTM = size(vid,[1,2]);
     end
 end
+
 
 % CNN: taille d'entrée
 % inputSizeCNN = [];
@@ -167,11 +176,14 @@ if useCNN
 end
 
 
+
 % --------- Exécution (GPU / CPU avec fallback) ----------
 env = iff(gpu==1, "gpu", "cpu");
 
 labelsLSTM = []; probLSTM = []; idxLSTM = [];
 labelsCNN  = []; probCNN  = []; idxCNN  = [];
+
+classesTarget = string(classif.classes); % c'est la vérité côté dataseries
 
 % LSTM
 if useLSTM
@@ -188,21 +200,47 @@ if useLSTM
 end
 
 % CNN
+% CNN
 if useCNN
-    try
-        [lblC, scC] = classify(classifierCNN, videoCNN, 'ExecutionEnvironment', env);
-    catch
-        warning('CNN classify failed on %s: falling back to CPU.', upper(string(env)));
-        [lblC, scC] = classify(classifierCNN, videoCNN, 'ExecutionEnvironment', 'cpu');
+    if isa(classifierCNN,'dlnetwork')
+        % --------- Chemin d'inférence pour CNN entraîné avec trainnet (dlnetwork) ---------
+        % videoCNN : H x W x 3 x T (uint8 ou single)
+        X = single(videoCNN);                            % comme pour trainnet
+        dlX = dlarray(X, "SSCB");                        % S S C B  (B = frames)
+
+        % Pour l'instant : exécution CPU (simple et robuste).
+        % Si tu veux utiliser le GPU, on pourra ajouter un bloc pour
+        % basculer aussi les learnables du réseau sur GPU.
+dlY = forward(classifierCNN, dlX);   % logits, dlarray *formaté*
+dlP = softmax(dlY);                  % softmax respecte déjà le format de dlY
+
+
+        P = gather(extractdata(dlP));                    % [C x B]
+        probCNN = P.';                                   % [B x C]
+
+        % On sait que l'ordre des canaux == classif.classes
+        labelsCNN = categorical(classesTarget, classesTarget);
+
+        [~, idxCNN] = max(probCNN, [], 2);
+        lblC = categorical(classesTarget(idxCNN), classesTarget); %#ok<NASGU>
+
+    else
+        % --------- Chemin legacy pour DAG/SeriesNetwork (trainNetwork) ---------
+        try
+            [lblC, scC] = classify(classifierCNN, videoCNN, 'ExecutionEnvironment', env);
+        catch
+            warning('CNN classify failed on %s: falling back to CPU.', upper(string(env)));
+            [lblC, scC] = classify(classifierCNN, videoCNN, 'ExecutionEnvironment', 'cpu');
+        end
+        labelsCNN = classifierCNN.Layers(end).ClassNames;
+        probCNN   = scC;
+        if size(probCNN,1) == numel(labelsCNN); probCNN = probCNN'; end
+        [~, idxCNN] = max(probCNN, [], 2);
     end
-    labelsCNN = classifierCNN.Layers(end).ClassNames;
-    probCNN   = scC;
-    if size(probCNN,1) == numel(labelsCNN); probCNN = probCNN'; end
-    [~, idxCNN] = max(probCNN, [], 2);
 end
 
 % --------- Cible de classes (ordre & noms de colonnes dans dataseries) ----------
-classesTarget = string(classif.classes); % c'est la vérité côté dataseries
+
 
 % Choisir le "primaire"
 primaryIsLSTM = useLSTM; % si LSTM absent -> primaire = CNN
