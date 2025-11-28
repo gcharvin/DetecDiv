@@ -459,9 +459,34 @@ end
 
 lgraph = replaceLayer(lgraph,learnableLayer.Name,newLearnableLayer);
 
-% Use class weights
-newClassLayer = weightedClassificationLayer(classWeights,'new_classoutput');
-lgraph = replaceLayer(lgraph,classLayer.Name,newClassLayer);
+% ---- Trouver la couche softmax qui alimente la classificationLayer ----
+conns = lgraph.Connections;
+mask  = strcmp(conns.Destination, classLayer.Name);
+
+if any(mask)
+    softmaxLayerName = conns.Source{find(mask,1,'first')};
+else
+    % fallback : première couche Softmax du graphe
+    isSoft = arrayfun(@(L) isa(L,'nnet.cnn.layer.SoftmaxLayer'), lgraph.Layers);
+    if any(isSoft)
+        softmaxLayerName = lgraph.Layers(find(isSoft,1,'first')).Name;
+    else
+        error('Impossible de trouver une couche Softmax connectée à %s.', classLayer.Name);
+    end
+end
+
+% ---- Supprimer la couche de classification (trainnet n'en veut pas) ----
+if isa(classLayer,'nnet.cnn.layer.ClassificationOutputLayer')
+    lgraph = removeLayers(lgraph, classLayer.Name);
+end
+
+
+% % Use class weights
+% if isa(classLayer,'nnet.cnn.layer.ClassificationOutputLayer')
+%     lgraph = removeLayers(lgraph, classLayer.Name);
+% else
+%     warning('Expected a ClassificationOutputLayer as classLayer; nothing removed.');
+% end
 
 inputSize = net.Layers(1).InputSize;
 
@@ -526,42 +551,82 @@ if exist('useHDF5','var') && useHDF5
 end
 
 %----------------------------------------------------------------------
-% 5) trainingOptions & trainNetwork
+% 5) trainingOptions & trainnet (NOUVELLE VERSION)
 %----------------------------------------------------------------------
 
-options = trainingOptions(trainingParam.CNN_training_method{end}, ...
-    'MiniBatchSize',miniBatchSize, ...
-    'MaxEpochs',trainingParam.CNN_max_epochs, ...
-    'InitialLearnRate',trainingParam.CNN_initial_learning_rate, ...
-    'LearnRateSchedule','piecewise', ...
-    'LearnRateDropPeriod',2, ...
-    'LearnRateDropFactor',trainingParam.CNN_learn_rate_drop_factor, ...
-    'GradientThreshold',0.5, ...
-    'L2Regularization',trainingParam.CNN_l2_regularization, ...
-    'Shuffle',trainingParam.CNN_data_shuffling{end}, ...
-    'ValidationData',validationData, ...
-    'ValidationFrequency',valFrequency, ...
-    'ValidationPatience', patience, ...
-    'VerboseFrequency',10, ...
-    'Plots','training-progress', ...
-    'ExecutionEnvironment',trainingParam.execution_environment{end});
+% Le dernier layer "appris" (new_fc ou new_conv) sert de sortie logits
+%logitsLayerName = newLearnableLayer.Name;   % 'new_fc' ou 'new_conv'
 
-classifier = trainNetwork(trainingData,lgraph,options);
+% ---- Construction du dlnetwork à partir du lgraph modifié ----
+outputLayerName = softmaxLayerName;   % ex. 'prob'
+dlNet = dlnetwork(lgraph, "OutputNames", outputLayerName);
+
+% ---- Préparation des options d'entraînement (comme avant, + Metrics) ----
+options = trainingOptions(trainingParam.CNN_training_method{end}, ...
+    "MiniBatchSize",        miniBatchSize, ...
+    "MaxEpochs",            trainingParam.CNN_max_epochs, ...
+    "InitialLearnRate",     trainingParam.CNN_initial_learning_rate, ...
+    "LearnRateSchedule",    "piecewise", ...
+    "LearnRateDropPeriod",  2, ...
+    "LearnRateDropFactor",  trainingParam.CNN_learn_rate_drop_factor, ...
+    "GradientThreshold",    0.5, ...
+    "L2Regularization",     trainingParam.CNN_l2_regularization, ...
+    "Shuffle",              trainingParam.CNN_data_shuffling{end}, ...
+    "ValidationData",       validationData, ...
+    "ValidationFrequency",  valFrequency, ...
+    "ValidationPatience",   patience, ...
+    "VerboseFrequency",     10, ...
+    "Plots",                "training-progress", ...
+    "ExecutionEnvironment", trainingParam.execution_environment{end}, ...
+    "Metrics",              "accuracy");   % utile avec trainnet
+
+% ---- Class weights pour crossentropy ----
+% classWeights : 1 x numClasses ou numClasses x 1 (déjà calculé plus haut)
+% On le met dans un vecteur ligne [1 x C] pour WeightsFormat="UC"
+classWeightsVec = reshape(single(classWeights(:)), 1, []);
+
+fprintf('--- CNN class weights (trainnet) ---\n');
+for i = 1:numel(classWeightsVec)
+    fprintf('  %-12s : w = %.3f\n', classif.classes{i}, classWeightsVec(i));
+end
+fprintf('------------------------------------\n');
+
+
+% ---- Loss function pondérée avec crossentropy ----
+% Y : prédictions (dlarray, typiquement format "CB")
+% T : cibles one-hot / probas binaires dans le format attendu par trainnet
+% On pondère par classe via weights = classWeightsVec, avec format "UC"
+lossFcn = @(Y,T) crossentropy(Y, T, classWeightsVec, ...
+                              WeightsFormat="UC");
+
+% ---- Entraînement avec trainnet ----
+[classifier, info] = trainnet(trainingData, dlNet, lossFcn, options);
+
+%lossName = "crossentropy";
+%[classifier, info] = trainnet(trainingData, dlNet, lossName, options);
+
 
 fprintf('Training is done...\n');
 fprintf('Saving image classifier ...\n');
 fprintf('------\n');
 
-save(fullfile(path,[name '.mat']),'classifier');
+% ------------------------------------------------------------------
+% Sauvegarde : classifier est MAINTENANT un dlnetwork
+% (au lieu d'un DAGNetwork/SeriesNetwork avec trainNetwork)
+% ------------------------------------------------------------------
+
+save(fullfile(path,[name '.mat']),"classifier");
+
 CNNOptions = struct(options);
 CNNOptions.ValidationData = [];
 
-if ~exist(fullfile(path,'TrainingValidation'),"dir")
-    mkdir(path,'TrainingValidation');
+if ~exist(fullfile(path,"TrainingValidation"),"dir")
+    mkdir(path,"TrainingValidation");
 end
 
-save(fullfile(path,'TrainingValidation','CNNOptions.mat'),'CNNOptions');
-save(fullfile(path,'TrainingValidation','tmpoptions.mat'),'options');
+save(fullfile(path,"TrainingValidation","CNNOptions.mat"),"CNNOptions");
+save(fullfile(path,"TrainingValidation","tmpoptions.mat"),"options");
+
 
 % 
 % % ------------------------------------------------------------------
