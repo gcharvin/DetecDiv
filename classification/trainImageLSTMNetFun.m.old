@@ -1,5 +1,5 @@
 
-function trainImageLSTMNetFun_trainnet(classif,setparam)
+function trainImageLSTMNetFun(classif,setparam)
 
 path=fullfile(classif.path);
 name=classif.strid;
@@ -146,7 +146,7 @@ netCNN = [];
 if trainingParam.train_CNN_classifier
 
     if strcmp(trainingParam.transfer_learning{end},'ImageNet')
-        trainImageGoogleNetFun_trainnet(classif); % trainImageGoogle net first and saves it as netCNN.mat in the LSTM dir
+        trainImageGoogleNetFun(classif); % trainImageGoogle net first and saves it as netCNN.mat in the LSTM dir
     else
         src=fullfile(classif.path,['netCNN_' trainingParam.transfer_learning{end}]);
         if exist(src)
@@ -155,7 +155,7 @@ if trainingParam.train_CNN_classifier
             disp(['Unable to load: ' trainingParam.transfer_learning{end}]);
             return;
         end
-        trainImageGoogleNetFun_trainnet(classif,'ok',classifier);
+        trainImageGoogleNetFun(classif,'ok',classifier);
     end
 
     target=fullfile(path,['netCNN_' name '.mat']);
@@ -611,7 +611,7 @@ else
             e = useWins(w,2);
 
             tmpvid = video(:,:,:,s:e);
-            sequences{cc,1} = computeCNNActivationsFromBackbone(netCNN, tmpvid, layerName);
+            sequences{cc,1} = activations(netCNN,tmpvid,layerName,'OutputAs','columns');
 
             tmpLab = lab(s:e);
             if iscolumn(tmpLab), tmpLab = tmpLab'; end
@@ -646,357 +646,253 @@ if trainingParam.train_LSTM_network || ~exist(str,"file")
         parallel.gpu.RandStream.setGlobalStream(stGPU);
     end
 
-    % ==== Split TRAIN / VAL (inchangé) ====
-    numObservations   = numel(sequences);
-    idx               = randperm(numObservations);
-    N                 = floor(trainingParam.LSTM_data_splitting_factor * numObservations);
-    idxTrain          = idx(1:N);
-    idxValidation     = idx(N+1:end);
+    numObservations = numel(sequences);
+    idx = randperm(numObservations);
+    N = floor(trainingParam.LSTM_data_splitting_factor * numObservations);
+    idxTrain = idx(1:N);
+    idxValidation = idx(N+1:end);
 
-    sequencesTrain       = sequences(idxTrain);
-    labelsTrain          = labels(idxTrain);
-    sequencesValidation  = sequences(idxValidation);
-    labelsValidation     = labels(idxValidation);
+    sequencesTrain = sequences(idxTrain);
+    labelsTrain    = labels(idxTrain);
+    sequencesValidation = sequences(idxValidation);
+    labelsValidation    = labels(idxValidation);
 
     if strcmp(trainingParam.classifier_output{end},'sequence-to-one')
-        labelsTrain      = [labelsTrain{:}]';
-        labelsValidation = [labelsValidation{:}]';
+        labelsTrain       = [labelsTrain{:}]';
+        labelsValidation  = [labelsValidation{:}]';
     end
 
-    % ==== Dimensions & classes ====
     numFeatures = size(sequencesTrain{1},1);
     numClasses  = numel(classif.classes);
-    if numClasses==0
-        disp('There is no classes defined ; Cannot continue !');
-        return;
+    if numClasses==0, disp('There is no classes defined ; Cannot continue !'); return; end
+
+    % class weights (frame-level summed across sequences)
+    sucl=zeros(numObservations,numClasses);
+    for i=1:numObservations
+        sucl(i,:)=countcats( categorical(labels{i}, classif.classes) );
     end
+    sucl=sum(sucl,1);
+    tempsucl=sucl(sucl>0); sucl(sucl==0)=min(tempsucl(:));
+    classWeights = 1./sucl; classWeights = classWeights'/mean(classWeights);
 
-    % ==== class weights (frame-level sommés sur toutes les séquences) ====
-    sucl = zeros(numObservations, numClasses);
-    for i = 1:numObservations
-        sucl(i,:) = countcats( categorical(labels{i}, classif.classes) );
-    end
-    sucl = sum(sucl,1);
-    tempsucl = sucl(sucl>0);
-    sucl(sucl==0) = min(tempsucl(:));      % évite poids infinis
-    classWeights = 1 ./ sucl;
-    classWeights = classWeights' / mean(classWeights);
-
-    fprintf('--- LSTM class weights ---\n');
-    for k = 1:numClasses
-        fprintf('  %s : w = %.3f\n', string(classif.classes{k}), classWeights(k));
-    end
-    fprintf('--------------------------\n');
-
-    nh = trainingParam.LSTM_hidden_size;
-
-    % ============================================================
-    % 1) DÉFINITION DU LSTM "STANDARD" (plus de weightedLSTM...)
-    % ============================================================
-
-% Utilise la liste de classes déjà stockée dans l'objet classif
-classesRaw = classif.classes;    % ce que tu as déjà dans l'objet classi
-
-if iscell(classesRaw)
-    classNames = classesRaw;
-else
-    % si c'est un char array ou un string array
-    classNames = cellstr(classesRaw);
-end
-
-numClasses = numel(classNames);
-
-
+    nh=trainingParam.LSTM_hidden_size;
     if strcmp(trainingParam.transfer_learning{end},'ImageNet')
         if strcmp(trainingParam.classifier_output{end},'sequence-to-sequence')
-           
             layers = [
                 sequenceInputLayer(numFeatures,'Name','sequence')
                 bilstmLayer(nh,'OutputMode','sequence','Name','bilstm')
                 dropoutLayer(0.5,'Name','drop')
                 fullyConnectedLayer(numClasses,'Name','fc')
                 softmaxLayer('Name','softmax')
-                classificationLayer('Name','classification',"Classes", classNames)];
+                weightedLSTMClassificationLayer(classWeights,'classification')];
         else
-           
             layers = [
                 sequenceInputLayer(numFeatures,'Name','sequence')
                 bilstmLayer(nh,'OutputMode','last','Name','bilstm')
                 dropoutLayer(0.5,'Name','drop')
                 fullyConnectedLayer(numClasses,'Name','fc')
                 softmaxLayer('Name','softmax')
-                classificationLayer('Name','classification',"Classes", classNames)];
+                weightedLSTMClassificationLayer(classWeights,'classification')];
         end
     else
-        % Cas transfer learning LSTM existant : on garde ton comportement
-        src = fullfile(classif.path, ['netLSTM_' trainingParam.transfer_learning{end}]);
-        if exist(src,"file")
-            load(src);                     % charge netLSTM
-            layers = netLSTM.Layers;
-        else
-            disp(['Unable to load LSTM network: ' trainingParam.transfer_learning{end}]);
-            return;
-        end
+        src=fullfile(classif.path,['netLSTM_' trainingParam.transfer_learning{end}]);
+        if exist(src,"file"); load(src); layers=netLSTM.Layers;
+        else; disp(['Unable to load LSTM network: ' trainingParam.transfer_learning{end}]); return; end
     end
 
-    % ============================================================
-    % 2) OPTIONS TRAINING (trainnet)
-    % ============================================================
-    miniBatchSize        = trainingParam.LSTM_mini_batch_size;
-    numObservationsTrain = numel(sequencesTrain);
-    numIterationsPerEpoch= max(1,floor(numObservationsTrain / miniBatchSize));
-    patience             = 20;
+    miniBatchSize = trainingParam.LSTM_mini_batch_size;
+    numObservations = numel(sequencesTrain);
+    numIterationsPerEpoch = max(1,floor(numObservations / miniBatchSize));
+    patience      = 20;
 
-       % ==== NORMALISATION DES LABELS POUR trainnet ====
-    isSeq2Seq = strcmp(trainingParam.classifier_output{end},'sequence-to-sequence');
+    options = trainingOptions('adam', ...
+        'MiniBatchSize',miniBatchSize, ...
+        'MaxEpochs',trainingParam.LSTM_max_epochs,...
+        'InitialLearnRate',trainingParam.LSTM_initial_learning_rate, ...
+        'LearnRateSchedule','piecewise',...
+        'LearnRateDropPeriod',5,...
+        'LearnRateDropFactor',trainingParam.LSTM_learn_rate_drop_factor,...
+        'Shuffle','every-epoch', ...
+        'ValidationData',{sequencesValidation,labelsValidation}, ...
+        'ValidationFrequency',numIterationsPerEpoch, ...
+        'ValidationPatience', patience, ...
+        'Plots','training-progress', ...
+        'ExecutionEnvironment','auto',...
+        'VerboseFrequency',10);
 
-    if isSeq2Seq
-        % Chaque entrée de labelsTrain / labelsValidation doit être T×1
-        for i = 1:numel(labelsTrain)
-            lab = labelsTrain{i};
-            if isrow(lab)
-                labelsTrain{i} = lab.';
-            end
-        end
-        for i = 1:numel(labelsValidation)
-            lab = labelsValidation{i};
-            if isrow(lab)
-                labelsValidation{i} = lab.';
-            end
-        end
-    else
-        % sequence-to-one : labelsTrain / labelsValidation sont déjà des vecteurs
-        % (labelsTrain = [labelsTrain{:}]'; etc. plus haut)
-        % Rien à faire ici.
-    end
-
-    % ============================================================
-    % 2) OPTIONS TRAINING (trainnet)
-    % ============================================================
-    % --- Mise en forme des séquences pour trainnet ---
-    % trainnet (vector sequences) attend des matrices s-by-c : 
-    %   s = time steps, c = features
-    % Ici on suppose que sequencesTrain et sequencesValidation sont encore
-    % au format [numFeatures x numTime] -> on les transpose en [numTime x numFeatures].
-    sequencesTrain      = cellfun(@(x) x.', sequencesTrain,      'UniformOutput', false);
-    sequencesValidation = cellfun(@(x) x.', sequencesValidation, 'UniformOutput', false);
-
-    miniBatchSize        = trainingParam.LSTM_mini_batch_size;
-    numObservationsTrain = numel(sequencesTrain);
-    numIterationsPerEpoch= max(1,floor(numObservationsTrain / miniBatchSize));
-    patience             = 20;
-
-    % Formats pour trainnet :
-    %   X : time x features       -> "TCB" (T = time, C = features, B = batch)
-    %   T :
-    %       - seq-to-seq  : cell array de séquences catégorielles (T×1)
-    %       - seq-to-one  : vecteur catégoriel (B×1)
-    %   --> on laisse trainnet inférer le format des cibles, donc
-    %       PAS de TargetDataFormats (c'est ce qui provoquait l'erreur).
-    inputFmt = "TCB";
-
-    options = trainingOptions("adam", ...
-        "MiniBatchSize",        miniBatchSize, ...
-        "MaxEpochs",            trainingParam.LSTM_max_epochs, ...
-        "InitialLearnRate",     trainingParam.LSTM_initial_learning_rate, ...
-        "LearnRateSchedule",    "piecewise", ...
-        "LearnRateDropPeriod",  5, ...
-        "LearnRateDropFactor",  trainingParam.LSTM_learn_rate_drop_factor, ...
-        "Shuffle",              "every-epoch", ...
-        "ValidationData",       {sequencesValidation, labelsValidation}, ...
-        "ValidationFrequency",  numIterationsPerEpoch, ...
-        "ValidationPatience",   patience, ...
-        "Plots",                "training-progress", ...
-        "ExecutionEnvironment", "auto", ...
-        "VerboseFrequency",     10, ...
-        "InputDataFormats",     inputFmt); % <- plus de TargetDataFormats
-
-    % ============================================================
-    % 3) PASSAGE EN dlnetwork + trainnet (avec class weights)
-    % ============================================================
-    lgraphLSTM = layerGraph(layers);
-
-    % On enlève la classificationLayer pour le dlnetwork (comme pour le CNN)
-    if any(strcmp({lgraphLSTM.Layers.Name},'classification'))
-        lgraphDL = removeLayers(lgraphLSTM,'classification');
-    else
-        lgraphDL = lgraphLSTM;
-    end
-
-    % La sortie du réseau pour la loss = softmax
-    outputLayerName = 'softmax';
-    dlNetLSTM = dlnetwork(lgraphDL, "OutputNames", outputLayerName);
-
-       % vectorisation des poids de classes (format attendu par crossentropy)
-    classWeightsVec = single(classWeights(:)');   % 1 x C
-
-    % Loss avec pondération de classes
-    % Pour des prédictions/targets non vectorielles, il faut préciser WeightsFormat="C"
-    lossFcn = @(Y,T) crossentropy(Y, T, classWeightsVec, "WeightsFormat", "C");
-
-
-    disp('Training LSTM network (trainnet) ...');
+    disp('Training LSTM network ...');
     fprintf('------\n');
+    [netLSTM,info] = trainNetwork(sequencesTrain,labelsTrain,layers,options);
 
-    [dlNetLSTM, info] = trainnet(sequencesTrain, labelsTrain, dlNetLSTM, lossFcn, options);
-
-
-
-    % ============================================================
-    % 4) RECONSTRUCTION d'un DAGNetwork netLSTM pour le framework
-    % ============================================================
-    % On repart des couches entraînées dans dlNetLSTM, on réajoute
-    % la classificationLayer et on assemble.
-    lgraphTrained = layerGraph(dlNetLSTM.Layers);
-
-   if ~any(strcmp({lgraphTrained.Layers.Name},'classification'))
-    % réutilise classNames définis plus haut
-    classLayer = classificationLayer('Name','classification', ...
-                                     'Classes', classNames);
-    lgraphTrained = addLayers(lgraphTrained, classLayer);
-    lgraphTrained = connectLayers(lgraphTrained, outputLayerName, 'classification');
-end
-
-
-    netLSTM = assembleNetwork(lgraphTrained);
-
-    % ==== Sauvegarde identique à avant ====
-    target = fullfile(path,['netLSTM_' name '.mat']);
-    save(target,'netLSTM','info');
-    disp('Training LSTM network is done and saved ...');
-    fprintf('------\n');
-
-        % ================================
-    % 4) Optimisation du seuil LSTM
-    % ================================
+    % ---- Simple threshold search on validation (binary) ----
     bestThreshold = 0.5;
     try
-        % --- classes au format cellstr propre ---
-        classesRaw = classif.classes;
-        if iscell(classesRaw)
-            classes = classesRaw(:);
-        else
-            classes = cellstr(classesRaw);   % gère char matrix / string array
-        end
-
-        % nom de la classe positive (2e par défaut)
-        posName = classes{min(2,numel(classes))};
-
-        % index de la classe positive
-        posIdx = find(strcmp(classes, posName), 1);
-        if isempty(posIdx)
-            error('posName "%s" not found in classes.', posName);
-        end
-
+        classes = classif.classes;
+        posName = classes{min(2,numel(classes))}; % classe 2 par défaut
         if strcmp(trainingParam.classifier_output{end},'sequence-to-one')
-            % ----------------------------------------------------------
-            % Cas sequence-to-one : 1 score par séquence
-            % ----------------------------------------------------------
-            numVal      = numel(sequencesValidation);
-            numClasses  = numel(classes);
-            scoreVal    = zeros(numVal, numClasses, 'single');
-
-            for i = 1:numVal
-                Xi = sequencesValidation{i};                   % T x C
-                Xi = reshape(Xi, size(Xi,1), size(Xi,2), 1);   % T x C x 1
-                dlXi = dlarray(Xi, "TCB");
-
-                dlYi = forward(dlNetLSTM, dlXi);               % C x 1 (format "CB")
-                yi   = gather(extractdata(dlYi));              % C x 1
-
-                scoreVal(i,:) = yi.';                          % 1 x C
+            scoreVal = predict(netLSTM, sequencesValidation, 'MiniBatchSize', miniBatchSize);
+            posIdx = find(strcmp(classes, posName));
+            posScore = scoreVal(:, posIdx);
+            Ytrue    = double(labelsValidation == categorical(posName));
+        else
+            % sequence-to-sequence : scoreVal est un cell array
+            scoreVal = predict(netLSTM, sequencesValidation, 'MiniBatchSize', miniBatchSize);
+            posIdx = find(strcmp(classes, posName), 1);
+            if isempty(posIdx)
+                error('posName "%s" not found in classes.', posName);
             end
 
-            posScore = scoreVal(:, posIdx);                    % N x 1
-
-            % labelsValidation doit être categorical ; on crée un scalar categorical
-            posCat   = categorical({posName}, classes, classes);
-            Ytrue    = double(labelsValidation == posCat);
-
-                else
-            % ----------------------------------------------------------
-            % Cas sequence-to-sequence : 1 score par time step
-            % ----------------------------------------------------------
             posScore = [];
             Ytrue    = [];
-            posCat   = categorical({posName}, classes, classes);
+            posCat   = categorical(posName, classes, classes);  % même référentiel
 
-            numClasses = numel(classes);
+            for i = 1:numel(scoreVal)
+                % scoreVal{i} : [T x K] (probabilités)
+                thisScore = scoreVal{i}(:, posIdx);
+                thisLab   = labelsValidation{i};   % 1xT ou Tx1 categorical
 
-            for i = 1:numel(sequencesValidation)
-                Xi = sequencesValidation{i};                   % T x C (features)
-                Xi = reshape(Xi, size(Xi,1), size(Xi,2), 1);   % T x C x 1
-                dlXi = dlarray(Xi, "TCB");
-
-                dlYi   = forward(dlNetLSTM, dlXi);
-                Yidata = gather(extractdata(dlYi));            % dims quelconques
-
-                sz = size(Yidata);
-                % trouver la dimension correspondant aux classes (= numClasses)
-                classDim = find(sz == numClasses, 1);
-                if isempty(classDim)
-                    error('Impossible de trouver une dimension = numClasses (%d) dans la sortie LSTM.', numClasses);
-                end
-
-                % on permute pour mettre les classes en 2e dimension
-                nd = ndims(Yidata);
-                perm = 1:nd;
-                perm([2,classDim]) = perm([classDim,2]);   % swap classDim <-> 2
-                Yperm = permute(Yidata, perm);
-
-                % on a maintenant: ??? x numClasses x ???  -> on aplatit tout sauf la dim classes
-                szp = size(Yperm);
-                numCls = szp(2);
-                other  = prod(szp) / numCls;
-                Yflat  = reshape(Yperm, other, numCls);     % (time*batch) x numClasses
-
-                thisScore = Yflat(:, posIdx);               % scores classe positive
-                thisLab   = labelsValidation{i};            % T x 1 categorical
-
-                posScore = [posScore; thisScore(:)];        %#ok<AGROW>
-                Ytrue    = [Ytrue;  double(thisLab(:) == posCat)]; %#ok<AGROW>
+                posScore = [posScore; thisScore(:)]; %#ok<AGROW>
+                Ytrue    = [Ytrue; double(thisLab(:) == posCat)]; %#ok<AGROW>
             end
         end
 
-
-        % ----------------------------------------------------------
-        % Recherche du meilleur seuil (F1)
-        % ----------------------------------------------------------
         ths = linspace(0,1,101);
-        bestF1 = -inf; bestT = 0.5;
+        bestF1=-inf; bestT=0.5;
         for t = ths
             yhat = posScore >= t;
-            TP = sum(yhat & Ytrue);
-            FP = sum(yhat & ~Ytrue);
+            TP = sum(yhat & Ytrue); FP = sum(yhat & ~Ytrue);
             FN = sum(~yhat & Ytrue);
-            P  = TP / max(1, (TP+FP));
-            R  = TP / max(1, (TP+FN));
+            P = TP / max(1, (TP+FP));
+            R = TP / max(1, (TP+FN));
             F1 = 2*P*R / max(1e-9, (P+R));
-            if F1 > bestF1
-                bestF1 = F1;
-                bestT  = t;
-            end
+            if F1 > bestF1, bestF1=F1; bestT=t; end
         end
-
         bestThreshold = bestT;
         fprintf('Chosen threshold=%.2f (F1=%.2f)\n', bestThreshold, bestF1);
-
     catch ME
         warning('Threshold selection failed: %s', ME.message);
     end
 
-    % Sauvegarde : on garde le même nom netLSTM pour compat
-    %netLSTM = dlNetLSTM;
-    save(target,'bestThreshold','-append');
+    target=fullfile(path,['netLSTM_' name '.mat']);
+    save(target,'netLSTM','info','bestThreshold');
+    disp('Training LSTM network is done and saved ...');
+    fprintf('------\n');
+
+
+    % ------------------------------------------------------------------
+    % DEBUG LSTM sur TRAIN (sequence-to-one ou sequence-to-sequence)
+    % ------------------------------------------------------------------
+
+
+
+    % % ===== DEBUG : distribution des labels de TRAIN pour le LSTM =====
+    % try
+    %     labDbg = labelsTrain;
+    %
+    %     % On remet au format "un seul vecteur catégoriel" pour inspection
+    %     if iscell(labDbg)
+    %         allLabs = [];
+    %         for k = 1:numel(labDbg)
+    %             yk = labDbg{k};
+    %             if isempty(yk), continue; end
+    %
+    %             if iscategorical(yk)
+    %                 allLabs = [allLabs; yk(:)]; %#ok<AGROW>
+    %             else
+    %                 allLabs = [allLabs; categorical(yk(:))]; %#ok<AGROW>
+    %             end
+    %         end
+    %     else
+    %         if iscategorical(labDbg)
+    %             allLabs = labDbg(:);
+    %         else
+    %             allLabs = categorical(labDbg(:));
+    %         end
+    %     end
+    %
+    %     fprintf('--- DEBUG LSTM: distribution des labels de TRAIN ---\n');
+    %     T = tabulate(cellstr(allLabs));
+    %     disp(array2table(T, 'VariableNames',{'Label','Count','Percent'}));
+    % catch MEdbg
+    %     warning('DEBUG LSTM label distribution failed: %s', MEdbg.message);
+    % end
+    % ================================================================
+
+
+
+    % try
+    %     % sequencesTrain / labelsTrain doivent être déjà construits
+    %     % (ce sont ceux passés à trainNetwork / trainnet)
+    %
+    %     % Normaliser labelsTrain en cell array pour simplifier
+    %     if iscell(labelsTrain)
+    %         nSeq = numel(labelsTrain);
+    %     else
+    %         % cas sequence-to-one classique : vecteur catégoriel
+    %         nSeq = numel(labelsTrain);
+    %         tmp = cell(nSeq,1);
+    %         for k = 1:nSeq
+    %             tmp{k} = labelsTrain(k);   % 1 label par séquence
+    %         end
+    %         labelsTrain = tmp;
+    %     end
+    %
+    %     trueCells = cell(nSeq,1);
+    %     predCells = cell(nSeq,1);
+    %
+    %     for k = 1:nSeq
+    %         Xk = sequencesTrain{k};
+    %         ytrue = labelsTrain{k};   % peut être scalaire ou vectoriel
+    %         yhat  = classify(netLSTM, Xk);  % idem
+    %
+    %         % Force en colonne
+    %         ytrue = ytrue(:);
+    %         yhat  = yhat(:);
+    %
+    %         % Harmoniser les longueurs pour le debug
+    %         if numel(yhat) == 1 && numel(ytrue) > 1
+    %             % sequence-to-one vs sequence -> on ne compare que le "label global"
+    %             % On peut prendre le mode(ytrue), ou le premier, etc.
+    %             % Pour un debug simple : premier élément
+    %             ytrue = ytrue(1);
+    %         elseif numel(yhat) > 1 && numel(ytrue) == 1
+    %             % network renvoie une séquence mais vérité = 1 label global
+    %             % On "diffuse" la vérité sur toute la séquence pour voir si le réseau suit
+    %             ytrue = repmat(ytrue(1), numel(yhat), 1);
+    %         elseif numel(yhat) ~= numel(ytrue)
+    %             % Cas tordu : on tronque à la longueur commune
+    %             L = min(numel(yhat), numel(ytrue));
+    %             ytrue = ytrue(1:L);
+    %             yhat  = yhat(1:L);
+    %         end
+    %
+    %         trueCells{k} = ytrue;
+    %         predCells{k} = yhat;
+    %     end
+    %
+    %     YtrueAll = vertcat(trueCells{:});
+    %     YpredAll = vertcat(predCells{:});
+    %
+    %     C = confusionmat(YtrueAll, YpredAll);
+    %     disp('Confusion matrix LSTM (TRAIN set):');
+    %     disp(C);
+    %
+    %     nShow = min(20, numel(YtrueAll));
+    %     tab = table(YtrueAll(1:nShow), YpredAll(1:nShow), ...
+    %         'VariableNames', {'True','Pred'});
+    %     disp(tab);
+    %
+    % catch ME
+    %     warning('DEBUG LSTM sur TRAIN a échoué: %s', ME.message);
+    % end
+
 
 else
-    % ==== Cas "pas de nouvel entraînement" : on recharge ====
-    target = fullfile(path,['netLSTM_' name '.mat']);
+    target=fullfile(path,['netLSTM_' name '.mat']);
     load(target);
     disp('Loading LSTM network ...');
     fprintf('------\n');
 end
-
 
 
 
@@ -1005,16 +901,7 @@ if trainingParam.assemble_network || ~exist([path '/' name '.mat'],"file")
     disp('Assembling full network ...');
     fprintf('------\n');
 
-if isa(netCNN, 'dlnetwork')
-    % R2024b : conversion directe d'un dlnetwork en layerGraph
-    lgraphCNN = layerGraph(netCNN);
-else
-    % Cas legacy : SeriesNetwork / DAGNetwork
-    lgraphCNN = layerGraph(netCNN);
-end
-
-    cnnLayers = lgraphCNN;
-
+    cnnLayers = layerGraph(netCNN);
     % points d'ancrage
     switch trainingParam.CNN_network{end}
         case 'googlenet', baseInput = "conv1-7x7_s2";  layerName = "pool5-7x7_s1";
@@ -1023,7 +910,6 @@ end
         case {'inceptionresnetv2','inceptionv3'}, baseInput = "conv2d_1"; layerName = "avg_pool";
         otherwise, error('Unsupported backbone: %s', trainingParam.CNN_network{end});
     end
-
 
     % retire l'input image d'origine
     isInput = arrayfun(@(L) isa(L,'nnet.cnn.layer.ImageInputLayer'), cnnLayers.Layers);
@@ -1059,25 +945,10 @@ end
         case {'inceptionresnetv2','inceptionv3'}, lgraph = connectLayers(lgraph,"fold/out","conv2d_1");
     end
 
-    % ----- Unfold + LSTM (avec poids entraînés) -----
-    % netLSTM peut être un dlnetwork (trainnet) ou un DAG/SeriesNetwork (legacy)
-    if isa(netLSTM, 'dlnetwork')
-        lgraphLSTM = layerGraph(netLSTM);   % récupère les couches AVEC leurs poids
-    else
-        lgraphLSTM = layerGraph(netLSTM);
-    end
-
-    lstmLayersFull = lgraphLSTM.Layers;
-    % on enlève seulement la première couche sequenceInputLayer
-    lstmLayersFull(1) = [];
-
-    layersTail = [ ...
-        sequenceUnfoldingLayer('Name','unfold'); ...
-        flattenLayer('Name','flatten'); ...
-        lstmLayersFull ...
-    ];
-
-    lgraph = addLayers(lgraph, layersTail);
+    % Unfold + LSTM (sans sa 1ère couche sequenceInputLayer)
+    lstmLayers = netLSTM.Layers; lstmLayers(1) = [];
+    layersTail = [sequenceUnfoldingLayer('Name','unfold'); flattenLayer('Name','flatten'); lstmLayers];
+    lgraph = addLayers(lgraph,layersTail);
 
     lgraph = connectLayers(lgraph, layerName, "unfold/in");
     lgraph = connectLayers(lgraph, "fold/miniBatchSize", "unfold/miniBatchSize");
@@ -1429,51 +1300,4 @@ error(['Could not determine CNN input size: ', ...
     'no ImageInputLayer in provided CNN, and fallback on CNN_network failed.']);
 
 
-function featSeq = computeCNNActivationsFromBackbone(netCNN, video4D, layerName)
-% computeCNNActivationsFromBackbone
-%   Unifie le calcul des features CNN pour :
-%     - un vieux CNN type SeriesNetwork / DAGNetwork  -> activations(...)
-%     - un nouveau CNN type dlnetwork                 -> forward(..., 'Outputs', layerName)
-%
-%   video4D : [H W C T]  (T = nb de frames)
-%   featSeq : [numFeatures x T]  (comme 'OutputAs','columns' avant)
-
-    % Sécurité type
-    if ndims(video4D) ~= 4
-        error('video4D must be HxWxCxT (4D array).');
-    end
-
-    if isa(netCNN, 'dlnetwork')
-        % === Nouveau cas : CNN stocké comme dlnetwork (trainnet) ===
-        %
-        % On assume que le layer "layerName" est un global pooling
-        % (1x1xF) au-dessus duquel on a mis la tête de classification.
-        % On récupère donc les activations [1 1 F T] puis on reshape
-        % en [F x T].
-
-        % Convertir en single si besoin
-        X = single(video4D);           % [H W C T]
-        dlX = dlarray(X, 'SSCB');      % S=H, S=W, C=canaux, B=temps
-
-        % forward jusqu'au layer intermédiaire
-        dlZ = forward(netCNN, dlX, 'Outputs', layerName);
-
-        % Récupérer les données
-        Z = extractdata(dlZ);          % attendu: [1 1 F T] ou [H' W' F T]
-
-        sz = size(Z);
-        if numel(sz) < 4
-            error('Unexpected activation size at layer "%s" from dlnetwork.', layerName);
-        end
-
-        % Cas habituel : global pooling -> [1 1 F T]
-        % On reformatte en [F x T]
-        numF  = sz(3);
-        seqLen = sz(4);
-        featSeq = reshape(Z, [numF seqLen]);
-
-    else
-        % === Cas legacy : SeriesNetwork / DAGNetwork ===
-        featSeq = activations(netCNN, video4D, layerName, 'OutputAs','columns');
-    end
 
