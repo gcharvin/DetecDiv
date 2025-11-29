@@ -338,11 +338,45 @@ for i = 1:numel(rois_sel)
     end
 
     % Channel index
-    pix = cltmp(ridx).findChannelID(channel);
-    if iscell(pix); pix = cell2mat(pix); end
+        % --------- Channel index : indices de sous-canaux propres ---------
+    % channel = classif.channelName (déjà défini plus haut)
 
+    chanNames = channel;    % alias plus lisible
+    pixList   = [];
+
+    if iscell(chanNames)
+        % Parcours des noms de canaux un par un pour garder l'ordre
+        for cIdx = 1:numel(chanNames)
+            thisPix = cltmp(ridx).findChannelID(chanNames{cIdx});
+            if isempty(thisPix)
+                continue;           % ce canal n'existe pas dans ce ROI
+            end
+            thisPix = thisPix(:).'; % en ligne
+            pixList = [pixList thisPix]; %#ok<AGROW>
+        end
+    else
+        % Cas rare où channel est déjà numérique
+        pixList = chanNames(:).';
+    end
+
+    % Nettoyage : on garde l'ordre, on enlève doublons et indices non valides
+    pixList = unique(pixList, 'stable');
+    pixList = pixList(pixList > 0);
+
+    if isempty(pixList)
+        disp(['ROI# ' num2str(ridx) ' / ' num2str(numel(rois_sel)) ...
+              ' ID: ' cltmp(ridx).id ' has no valid channels; skipping...']);
+        continue;
+    end
+
+    % On garde ce nom pour la suite (appel à preProcessROIData)
+    pix = pixList;
+
+
+    % Image brute uniquement pour récupérer le nombre de frames (T)
     im        = cltmp(ridx).image(:,:,pix,:);
     roiSeries = cltmp(ridx).data;
+
 
     if isempty(roiSeries)
         disp('No training data available for this position');
