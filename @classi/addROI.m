@@ -149,31 +149,25 @@ for i=1:length(rois)
         end
     end
 
-    if numel(adjustChannel) % only import a number of channel in the list = remove channels that should not be present
-        targetChannel=classif.channelName;
-        % adjustChannel
-        %  ccc=classif.roi(cc+1).display.channel
-        currentChannels = classif.roi(cc+1).display.channel;
-        channelsToRemove = setdiff(currentChannels, targetChannel);
-        channelsToRemove = setdiff(channelsToRemove, adjustChannel);
+if ~isempty(adjustChannel)
+    % Tout passe en char/cellstr
+    targetChannel   = cellfun(@char, classif.channelName, 'UniformOutput', false);
+    currentChannels = cellfun(@char, classif.roi(cc+1).display.channel, 'UniformOutput', false);
+    adjustChannel   = cellfun(@char, adjustChannel, 'UniformOutput', false);
 
-        for k = 1:numel(channelsToRemove)
-            classif.roi(cc+1).removeChannel(channelsToRemove{k});
-        end
+    % Ne garder dans adjustChannel que ceux qui existent réellement dans la ROI
+    adjustChannel   = intersect(adjustChannel, currentChannels);
 
-        % ii=1;
-        %  while ii<numel( classif.roi(cc+1).display.channel)
-        %   % aaa=  matches(adjustChannel, classif.roi(cc+1).display.channel{ii})
-        %  %  bbb=  matches(targetChannel,classif.roi(cc+1).display.channel{ii})
-        %
-        %          if numel(find(matches(adjustChannel, classif.roi(cc+1).display.channel{ii})))==0 && numel(find(matches(targetChannel,classif.roi(cc+1).display.channel{ii})))==0 % channel is not in the list of channel to be transferred and is not that of the classifier.
-        %                  classif.roi(cc+1).removeChannel(classif.roi(cc+1).display.channel{ii});
-        %          else
-        %                  ii=ii+1;
-        %          end
-        %  end
+    channelsToRemove = setdiff(currentChannels, targetChannel);
+    channelsToRemove = setdiff(channelsToRemove, adjustChannel);
 
+    % Ici, channelsToRemove ne contient que des noms réellement présents
+    for k = 1:numel(channelsToRemove)
+        classif.roi(cc+1).removeChannel(channelsToRemove{k});
     end
+end
+
+
 
     %size(classif.roi(cc+1).image)
 

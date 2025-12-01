@@ -1,10 +1,17 @@
-function [data, image] = classifyCPSAM(roiobj, classif, classifier, varargin)
+function [data, image] = classifyCPSAMFun(roiobj, classif, classifier, varargin)
 % Segmentation avec CellposeSAM sans tracking (optionnel : tracking basique hongrois)
+%
+% Selon classif.outputType :
+%   - 'proba'         : écrit une carte de probabilité (cellprob) dans un channel non indexé
+%                       nommé [classif.strid '_cellprob'].
+%   - 'segmentation'  : écrit un masque d'instances (comme avant) dans un channel indexé
+%                       nommé ['results_' classif.strid '_' classif.classes{1}].
+%   - 'postprocessing': idem 'segmentation' ici ; le post-traitement sera appliqué ailleurs.
 
-frames = [];
-doTracking = true;
-channel = classif.channelName;
-gpu = 0;
+frames      = [];
+doTracking  = true;
+channel     = classif.channelName;
+gpu         = 0;
 
 for i = 1:numel(varargin)
     if strcmp(varargin{i}, 'Frames')
@@ -23,7 +30,7 @@ if isempty(frames)
 end
 
 image = roiobj.image;
-data = roiobj.data;
+data  = roiobj.data;
 if isempty(data)
     roiobj.load('data');
     data = roiobj.data;
@@ -34,18 +41,29 @@ if iscell(pix)
     pix = cell2mat(pix);
 end
 
-pixresults=[]; cd=1;
-for i=1:numel(classif.classes)
-    pixresultstmp=findChannelID(roiobj, ['results_' classif.strid '_' classif.classes{i}]);
-    if isempty(pixresultstmp)
-        pixresults = [pixresults size(roiobj.image,3)+cd];
-        cd = cd+1;
-    else
-        pixresults = [pixresults pixresultstmp];
+% --- Type de sortie demandé ---
+if isfield(classif, 'outputType') && ~isempty(classif.outputType)
+    outputType = classif.outputType;
+else
+    outputType = 'segmentation'; % comportement historique par défaut
+end
+
+% Pour la segmentation, on garde la logique 'pixresults' existante (un channel par classe)
+pixresults = [];
+cd = 1;
+if ~strcmp(outputType, 'proba')
+    for i = 1:numel(classif.classes)
+        pixresultstmp = findChannelID(roiobj, ['results_' classif.strid '_' classif.classes{i}]);
+        if isempty(pixresultstmp)
+            pixresults = [pixresults size(roiobj.image,3)+cd]; %#ok<AGROW>
+            cd = cd+1;
+        else
+            pixresults = [pixresults pixresultstmp]; %#ok<AGROW>
+        end
     end
 end
 
-% Préparation des images
+% Préparation des images pour CellposeSAM
 gfp = uint8(zeros(size(image, 1), size(image, 2), numel(pix), numel(frames)));
 for i = 1:numel(frames)
     tmp = image(:, :, pix, frames(i));
@@ -56,28 +74,25 @@ tmp_mat_path = fullfile(classif.path, 'tmp.mat');
 save(tmp_mat_path, 'gfp', 'frames');  % on sauvegarde aussi frames
 
 % Paramètres de segmentation
-% Paramètres de segmentation
-diameter = classif.trainingParam.diameter;
-flow_threshold = classif.trainingParam.flow_threshold;
+diameter        = classif.trainingParam.diameter;
+flow_threshold  = classif.trainingParam.flow_threshold;
 
-% NEW: récupère min_size (et un cellprob_threshold par défaut si absent)
 if isfield(classif.trainingParam, 'min_size') && ~isempty(classif.trainingParam.min_size)
     min_size = classif.trainingParam.min_size;
 else
-    min_size = 10; % défaut raisonnable
+    min_size = 10;
 end
 if isfield(classif.trainingParam, 'cell_prob_threshold') && ~isempty(classif.trainingParam.cell_prob_threshold)
     cellprob_threshold = classif.trainingParam.cell_prob_threshold;
 else
-    cellprob_threshold = 0; % défaut permissif
+    cellprob_threshold = 0;
 end
-
 
 gpu_flag = "False";
 if gpu == 1, gpu_flag = "True"; end
 
 % ==== Vérification modèle entraîné localement ====
-model_dir = fullfile(classif.path, 'models');
+model_dir        = fullfile(classif.path, 'models');
 model_path_to_use = 'sam'; % valeur par défaut
 if exist(model_dir, 'dir')
     candidate1 = fullfile(model_dir, classif.strid);
@@ -97,7 +112,15 @@ end
 
 classif_path_clean = strrep(classif.path, '\', '/');
 tmp_mat_path_clean = strrep(tmp_mat_path, '\', '/');
-model_path_clean = strrep(model_path_to_use, '\', '/');
+model_path_clean   = strrep(model_path_to_use, '\', '/');
+
+% On passe outputType jusqu'au script Python
+if strcmp(outputType, 'proba')
+    mode_str = 'proba';
+else
+    % 'segmentation' ou 'postprocessing' -> on délivre des masks d'instances
+    mode_str = 'segmentation';
+end
 
 py_script = sprintf( ...
     "import os\n" + ...
@@ -118,11 +141,16 @@ py_script = sprintf( ...
     "    gfp_reord = np.repeat(gfp_reord, 3, axis=-1)\n" + ...
     "images = [img.astype(np.uint8) for img in gfp_reord]\n" + ...
     "\n" + ...
+    "mode = '%s'\n" + ...
+    "\n" + ...
     "model = models.CellposeModel(gpu=%s, pretrained_model=r'%s')\n" + ...
     "print('Modèle chargé depuis :', r'%s')\n" + ...
     "\n" + ...
     "H, W = images[0].shape[:2]\n" + ...
-    "masks_all = np.zeros((H, W, 1, len(frames_list)), dtype=np.uint16)\n" + ...
+    "if mode == 'segmentation':\n" + ...
+    "    masks_all = np.zeros((H, W, 1, len(frames_list)), dtype=np.uint16)\n" + ...
+    "elif mode == 'proba':\n" + ...
+    "    cellprob_all = np.zeros((H, W, 1, len(frames_list)), dtype=np.float32)\n" + ...
     "\n" + ...
     "for i, (img, frame_idx) in enumerate(zip(images, frames_list)):\n" + ...
     "    masks, flows, styles = model.eval(\n" + ...
@@ -135,12 +163,23 @@ py_script = sprintf( ...
     "        resample=True,\n" + ...
     "        normalize=True\n" + ...
     "    )\n" + ...
-    "    print(f'[Frame {frame_idx}] labels=', int(np.max(masks)))\n" + ...
-    "    masks_all[:, :, 0, i] = masks.astype(np.uint16)\n" + ...
+    "    if mode == 'segmentation':\n" + ...
+    "        print(f'[Frame {frame_idx}] labels=', int(np.max(masks)))\n" + ...
+    "        masks_all[:, :, 0, i] = masks.astype(np.uint16)\n" + ...
+    "    elif mode == 'proba':\n" + ...
+    "        # flows[1] est la carte de probabilité (cell probability) dans Cellpose 2.x\n" + ...
+    "        cellprob = flows[1]\n" + ...
+    "        cellprob_all[:, :, 0, i] = cellprob.astype(np.float32)\n" + ...
     "\n" + ...
-    "sio.savemat(os.path.join(r'%s', 'results.mat'), {'masks_all': masks_all, 'frames_list': frames_list})\n" + ...
+    "out = {'frames_list': frames_list}\n" + ...
+    "if mode == 'segmentation':\n" + ...
+    "    out['masks_all'] = masks_all\n" + ...
+    "elif mode == 'proba':\n" + ...
+    "    out['cellprob_all'] = cellprob_all\n" + ...
+    "sio.savemat(os.path.join(r'%s', 'results.mat'), out)\n" + ...
     "print('CellposeSAM terminé.')\n", ...
     tmp_mat_path_clean, ...
+    mode_str, ...
     gpu_flag, ...
     model_path_clean, ...
     model_path_clean, ...
@@ -151,40 +190,69 @@ py_script = sprintf( ...
     classif_path_clean ...
 );
 
-
 py_path = fullfile(classif.path, 'classify_script.py');
 fid = fopen(py_path, 'w'); fprintf(fid, '%s', py_script); fclose(fid);
 
 % test the existence of python environment
-test=select_and_load_conda_env;
+test = select_and_load_conda_env; %#ok<NASGU>
 
 % run python routine
 pyrunfile(py_path);
 
-% ==== Lecture des résultats directement depuis .mat ====
+% ==== Lecture des résultats depuis results.mat ====
 res = load(fullfile(classif.path, 'results.mat'));
-tmpout = res.masks_all;
 frames_list = res.frames_list;
 
-% === Normalisation des IDs frame par frame ===
-for f = 1:size(tmpout, 4)
-    labels = unique(tmpout(:,:,1,f));
-    labels(labels == 0) = []; % enlever le fond
-    new_frame = zeros(size(tmpout(:,:,1,f)), 'uint16');
-    for k = 1:numel(labels)
-        new_frame(tmpout(:,:,1,f) == labels(k)) = uint16(k);
+if strcmp(outputType, 'proba')
+    % --- MODE PROBA : on intègre la carte de probabilité comme channel non indexé ---
+    if ~isfield(res, 'cellprob_all')
+        error('classifyCPSAMFun: no cellprob_all found in results.mat while outputType=''proba''.');
     end
-    tmpout(:,:,1,f) = new_frame;
+    tmpproba = res.cellprob_all;   % (H, W, 1, Nframes)
+
+    % Nom du channel : [classif.strid '_cellprob']
+    chNameProba = [classif.strid '_cellprob'];
+    pixproba = findChannelID(roiobj, chNameProba);
+    if isempty(pixproba)
+        pixproba = size(image, 3) + 1;
+        % Idéalement, il faudra aussi déclarer ce nouveau channel dans roiobj (meta)
+        % via la méthode adaptée dans ta classe roi.
+    end
+
+    % Intégration dans l'image (on suppose que type double/single est accepté)
+    image(:,:,pixproba, frames_list) = tmpproba;
+
+    disp('✅ Carte de probabilité CellposeSAM intégrée dans image (mode proba).');
+
+else
+    % --- MODE SEGMENTATION (ou postprocessing) : masque d'instances + tracking optionnel ---
+    if ~isfield(res, 'masks_all')
+        error('classifyCPSAMFun: no masks_all found in results.mat while outputType=''segmentation''.');
+    end
+    tmpout = res.masks_all;   % (H, W, 1, Nframes)
+
+    % Normalisation des IDs frame par frame
+    for f = 1:size(tmpout, 4)
+        labels = unique(tmpout(:,:,1,f));
+        labels(labels == 0) = [];
+        new_frame = zeros(size(tmpout(:,:,1,f)), 'uint16');
+        for k = 1:numel(labels)
+            new_frame(tmpout(:,:,1,f) == labels(k)) = uint16(k);
+        end
+        tmpout(:,:,1,f) = new_frame;
+    end
+
+    if doTracking
+        tmpout = trackMasksHungarian(tmpout);
+    end
+
+    % Intégration : même logique qu'avant
+    image(:,:,pixresults, frames_list) = tmpout;
+    disp('✅ Masques CellposeSAM intégrés dans image (mode segmentation).');
 end
 
-
-if doTracking
-    tmpout = trackMasksHungarian(tmpout);
 end
 
-image(:,:,pixresults, frames_list) = tmpout;
-disp('✅ Résultats intégrés dans image');
-end
 
 function val = formatFloat(x)
 if isnan(x)
@@ -193,116 +261,3 @@ else
     val = num2str(x);
 end
 end
-
-function tracked_masks = trackMasksHungarian(masks4D)
-% Hongrois + distance gating ; next_id strictement monotone (pas de saut lié aux frames futures)
-
-[H, W, ~, num_frames] = size(masks4D);
-tracked_masks = masks4D;
-
-% --- next_id basé UNIQUEMENT sur la frame 1 ---
-ids_f1 = unique(masks4D(:,:,1,1)); ids_f1(ids_f1==0) = [];
-if isempty(ids_f1)
-    next_id = uint16(1);
-else
-    next_id = uint16(max(ids_f1) + 1);
-end
-
-disp('[Tracking] Début du suivi (Hongrois + distance gating)...');
-
-for t = 1:(num_frames-1)
-    mask_t  = tracked_masks(:,:,1,t);
-    mask_t1 = masks4D(:,:,1,t+1);   % labels locaux frame t+1 (avant tracking)
-
-    labels_t  = unique(mask_t);  labels_t(labels_t==0) = [];
-    labels_t1 = unique(mask_t1); labels_t1(labels_t1==0) = [];
-
-    if isempty(labels_t) || isempty(labels_t1)
-        tracked_masks(:,:,1,t+1) = mask_t1; % aucune donnée à apparier, on copie tel quel
-        continue;
-    end
-
-    % Aires
-    areas_t  = arrayfun(@(id) sum(mask_t(:)  == id), labels_t);
-    areas_t1 = arrayfun(@(id) sum(mask_t1(:) == id), labels_t1);
-
-    % Centroïdes
-    cent_t  = zeros(numel(labels_t),  2);
-    cent_t1 = zeros(numel(labels_t1), 2);
-    for iL = 1:numel(labels_t)
-        [yy, xx] = find(mask_t == labels_t(iL));
-        cent_t(iL,:) = [mean(xx), mean(yy)];
-    end
-    for jL = 1:numel(labels_t1)
-        [yy, xx] = find(mask_t1 == labels_t1(jL));
-        cent_t1(jL,:) = [mean(xx), mean(yy)];
-    end
-
-    % Diamètre médian pour le seuil de distance
-    diam_t  = sqrt(4*areas_t  / pi);
-    diam_t1 = sqrt(4*areas_t1 / pi);
-    med_diam = median([diam_t(:); diam_t1(:)]);
-    if isempty(med_diam) || ~isfinite(med_diam) || med_diam==0
-        med_diam = min(H,W)/20;
-    end
-    gate_factor = 3.0;
-    dmax = gate_factor * med_diam;
-
-    % Distances (sans pdist2)
-    D = zeros(numel(labels_t), numel(labels_t1));
-    for iL = 1:numel(labels_t)
-        dx = cent_t1(:,1) - cent_t(iL,1);
-        dy = cent_t1(:,2) - cent_t(iL,2);
-        D(iL,:) = sqrt(dx.^2 + dy.^2);
-    end
-
-    % Matrice de coût avec gating distance
-    big = 1e6;
-    costMat = big * ones(numel(labels_t), numel(labels_t1));
-    for iL = 1:numel(labels_t)
-        bin_i = (mask_t == labels_t(iL));
-        Ai = areas_t(iL);
-        for jL = 1:numel(labels_t1)
-            if D(iL,jL) > dmax
-                continue; % paire interdite
-            end
-            bin_j = (mask_t1 == labels_t1(jL));
-            inter = sum(bin_i(:) & bin_j(:));
-            uni   = sum(bin_i(:) | bin_j(:));
-            iou = (uni==0) * 0 + (uni>0) * (inter/uni);
-
-            mean_size_pair = (Ai + areas_t1(jL)) / 2;
-            size_diff = abs(Ai - areas_t1(jL)) / max(1, mean_size_pair);
-
-            dist_term = 0.2 * (D(iL,jL) / dmax); % léger tie-breaker
-
-            costMat(iL,jL) = (1 - iou) + 0.5*size_diff + dist_term;
-        end
-    end
-
-    maxAcceptableCost = 1.6;
-    [assignments, ~, unassigned_t1] = matchpairs(costMat, maxAcceptableCost);
-
-    % Nouvelle frame avec IDs finaux
-    mask_new_t1 = zeros(size(mask_t1), 'uint16');
-
-    % Appariés -> conserver l'ID précédent
-    for a = 1:size(assignments,1)
-        id_t  = labels_t(assignments(a,1));
-        id_t1 = labels_t1(assignments(a,2));
-        mask_new_t1(mask_t1 == id_t1) = id_t;
-    end
-
-    % Naissances -> IDs neufs monotones (jamais recalculés depuis des frames futures)
-    for j = unassigned_t1'
-        id_t1 = labels_t1(j);
-        mask_new_t1(mask_t1 == id_t1) = next_id;
-        next_id = next_id + 1;
-    end
-
-    tracked_masks(:,:,1,t+1) = mask_new_t1;
-end
-
-disp('[Tracking] Terminé.');
-end
-
