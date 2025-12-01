@@ -1,4 +1,4 @@
-function [data,image] = classifyImageLSTMNetFun_trainnet(roiobj, classif, classifier, varargin)
+function [data,image] = classifyImageLSTMNetFun(roiobj, classif, classifier, varargin)
 % Classif vidéo avec LSTM et/ou CNN optionnel.
 % - Si LSTM absent et CNN présent -> "CNN only": on remplit les champs primaires (id/prob/labels) avec le CNN.
 % - Si LSTM présent et CNN présent -> LSTM = primaire ; CNN dans les champs *_CNN (idCNN/probCNN_/labelsCNN).
@@ -81,6 +81,8 @@ if ~useLSTM && ~useCNN
 end
 
 % --------- Trouver frames & canal ---------
+
+
 pix = roiobj.findChannelID(channel);
 if iscell(pix); pix = cell2mat(pix); end
 if isempty(frames); frames = 1:size(roiobj.image,4); end
@@ -105,18 +107,25 @@ if Crop
     vid = cropAroundCenter4D(vid, CropCenter, CropSize);
 end
 
+
+%figure('Position',[100 100 400 400]), imshow(vid(:,:,:,100),[])
+
+
 % --------- Déduire tailles d'entrée ---------
 % LSTM: cherche SequenceInputLayer
 inputSizeLSTM = [];
 if useLSTM
     try
         if isa(classifier,'dlnetwork')
+           
             % Normalement le full net assemblé est un DAGNetwork, mais au cas où :
             inputSizeLSTM = size(vid,[1,2]);
         else
             % Cherche explicitement une SequenceInputLayer dans le réseau assemblé
+
             for ii = 1:numel(classifier.Layers)
                 if isa(classifier.Layers(ii), 'nnet.cnn.layer.SequenceInputLayer')
+              
                     % InputSize = [H W C]
                     inputSizeLSTM = classifier.Layers(ii).InputSize(1:2);
                     break;
@@ -125,12 +134,12 @@ if useLSTM
 
             % Fallback : si vraiment rien trouvé, garder la taille native
             if isempty(inputSizeLSTM)
-                inputSizeLSTM = size(vid,[1,2]);
+                inputSizeLSTM = [224 224] ; %size(vid,[1,2]);
             end
         end
     catch
         % En cas de bug, ne pas crasher l'inférence
-        inputSizeLSTM = size(vid,[1,2]);
+        inputSizeLSTM = [224 224]; % size(vid,[1,2]);
     end
 end
 
@@ -167,6 +176,7 @@ videoCNN  = [];
 if useLSTM
     videoLSTM = resizeTo(vid, inputSizeLSTM);
 end
+
 
 if useCNN
     targetSizeCNN = classifierCNN.Layers(1).InputSize(1:2);

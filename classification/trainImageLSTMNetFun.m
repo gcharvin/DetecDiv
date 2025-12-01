@@ -146,7 +146,7 @@ netCNN = [];
 if trainingParam.train_CNN_classifier
 
     if strcmp(trainingParam.transfer_learning{end},'ImageNet')
-        trainImageGoogleNetFun_trainnet(classif); % trainImageGoogle net first and saves it as netCNN.mat in the LSTM dir
+        trainImageGoogleNetFun(classif); % trainImageGoogle net first and saves it as netCNN.mat in the LSTM dir
     else
         src=fullfile(classif.path,['netCNN_' trainingParam.transfer_learning{end}]);
         if exist(src)
@@ -155,7 +155,7 @@ if trainingParam.train_CNN_classifier
             disp(['Unable to load: ' trainingParam.transfer_learning{end}]);
             return;
         end
-        trainImageGoogleNetFun_trainnet(classif,'ok',classifier);
+        trainImageGoogleNetFun(classif,'ok',classifier);
     end
 
     target=fullfile(path,['netCNN_' name '.mat']);
