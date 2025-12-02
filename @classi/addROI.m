@@ -28,6 +28,12 @@ for i=1:numel(varargin)
 end
 
 
+disp('==== addROI ====');
+disp('rois = '), disp(rois);
+disp('adjustChannel = '), disp(adjustChannel);
+disp('adjustName = '), disp(adjustName);
+
+
 if isa(obj,'fov')
     objtype="fov";
     disp('You want to import ROIs from an existing @fov for training');
@@ -124,7 +130,6 @@ for i=1:length(rois)
         classif.roi(cc+1)=roi('',[]);
     end
 
-
     classif.roi(cc+1)=propValues(classif.roi(cc+1),roitocopy);
     classif.roi(cc+1).path = classif.path;
 
@@ -149,24 +154,36 @@ for i=1:length(rois)
         end
     end
 
-if ~isempty(adjustChannel)
-    % Tout passe en char/cellstr
-    targetChannel   = cellfun(@char, classif.channelName, 'UniformOutput', false);
-    currentChannels = cellfun(@char, classif.roi(cc+1).display.channel, 'UniformOutput', false);
-    adjustChannel   = cellfun(@char, adjustChannel, 'UniformOutput', false);
+    if ~isempty(adjustChannel)
+        % Normaliser en cellstr
+        currentChannels = classif.roi(cc+1).display.channel;
+        if ischar(currentChannels)
+            currentChannels = {currentChannels};
+        elseif isstring(currentChannels)
+            currentChannels = cellstr(currentChannels);
+        end
 
-    % Ne garder dans adjustChannel que ceux qui existent réellement dans la ROI
-    adjustChannel   = intersect(adjustChannel, currentChannels);
+        if ischar(adjustChannel)
+            adjustChannel = {adjustChannel};
+        elseif isstring(adjustChannel)
+            adjustChannel = cellstr(adjustChannel);
+        end
 
-    channelsToRemove = setdiff(currentChannels, targetChannel);
-    channelsToRemove = setdiff(channelsToRemove, adjustChannel);
+        % canaux que l'on souhaite vraiment garder ET qui existent dans la ROI
+        channelsToKeep   = intersect(currentChannels, adjustChannel, 'stable');
+        % tous les autres seront supprimés
+        channelsToRemove = setdiff(currentChannels, channelsToKeep, 'stable');
 
-    % Ici, channelsToRemove ne contient que des noms réellement présents
-    for k = 1:numel(channelsToRemove)
-        classif.roi(cc+1).removeChannel(channelsToRemove{k});
+        % DEBUG (optionnel)
+        % disp('currentChannels = '), disp(currentChannels);
+        % disp('adjustChannel  = '), disp(adjustChannel);
+        % disp('channelsToKeep = '), disp(channelsToKeep);
+        % disp('channelsToRemove = '), disp(channelsToRemove);
+
+        for k = 1:numel(channelsToRemove)
+            classif.roi(cc+1).removeChannel(channelsToRemove{k});
+        end
     end
-end
-
 
 
     %size(classif.roi(cc+1).image)
@@ -307,16 +324,34 @@ trainingSetTransfer=false; % flag to determine whether dataseries for training s
 
 
 
-    % transfer existing dataseries to imported ROI
+disp('Transfer all dataseries from copied ROI');
 
-    data=roitocopy.data;
+roiData = classif.roi(cc+1).data;
 
-    disp('Transfer all dataseries from copied ROI');
-    if  numel(classif.roi(cc+1).data)>=1 & numel(classif.roi(cc+1).data(end).groupid)~=0
-    cd=numel(classif.roi(cc+1).data)+1;
-    else
-    cd=1;
+if isempty(roiData)
+    cd = 1;
+else
+    % roiData peut être un tableau de dataseries ou autre classe, on ne suppose pas que c'est un struct
+    try
+        lastHasGroup = false;
+        if isstruct(roiData) && isfield(roiData(end),'groupid')
+            lastHasGroup = ~isempty(roiData(end).groupid);
+        elseif isprop(roiData(end),'groupid')
+            lastHasGroup = ~isempty(roiData(end).groupid);
+        end
+
+        if lastHasGroup
+            cd = numel(roiData) + 1;
+        else
+            cd = 1;
+        end
+    catch
+        % En cas de doute, on repart de 1
+        cd = 1;
     end
+end
+
+data=roiData;
 
     for ij=1:numel(data)
 
@@ -370,6 +405,7 @@ trainingSetTransfer=false; % flag to determine whether dataseries for training s
 
         if strcmp(classif.category{1},'Pixel') | strcmp(classif.category{1},'Object') |  strcmp(classif.category{1},'Delta')  |  strcmp(classif.category{1},'Pedigree')
             im=classif.roi(cc+1).image;
+
             pix=findChannelID(classif.roi(cc+1), classif.strid);
 
             if numel(pix)>0 %channel is already present in roi , so skip channel creation
@@ -434,7 +470,6 @@ trainingSetTransfer=false; % flag to determine whether dataseries for training s
         %         %     end
         %         %pixelchannel=size(obj.image,3);
         %     end
-
 
         classif.roi(cc+1).save;
         classif.roi(cc+1).clear;
