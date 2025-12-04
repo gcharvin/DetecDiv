@@ -36,7 +36,9 @@ rgb          = param.RGB;
 weights      = param.weights;
 paintChannel = param.paintChannel;
 defaultClass = param.defaultClass;
-mode         = string(param.mode);  % "Display", "Sequence", "Movie"
+%mode         = string(param.mode);  % "Display", "Sequence", "Movie"
+
+mode = lower(string(param.mode));  % "display", "sequence", "movie"
 
 % -------------------------------------------------------------------------
 % 0) REORDONNER LES CANAUX : non indexés d'abord, indexés ensuite
@@ -201,11 +203,13 @@ for ch = 1:numel(channel)
     % 2b) Si canal indexé -> génération d'overlay (vContours OU raster)
     % ------------------------------------------------------------------
     if isIndexed
+      
         % imraw contient la carte de labels / classes
         L = imadjust(imraw, [0 1]);    % comme ton code d'origine
         L = double(L);
 
         % indices à utiliser
+
         indices = str2num(levCh{1}); %#ok<ST2NM>
 
         % liste des canaux indexés
@@ -218,6 +222,7 @@ for ch = 1:numel(channel)
             continue;
         end
 
+
         if isempty(indices) || (numel(indices)==1 && indices==-1)
             if defaultClass && (paintChannel ~= currentIndx)
                 indices = 2:max(L(:));
@@ -225,6 +230,8 @@ for ch = 1:numel(channel)
                 indices = 1:max(L(:));
             end
         end
+
+
 
         if paintChannel == currentIndx
             % couleurs stables par ID
@@ -240,8 +247,13 @@ for ch = 1:numel(channel)
         weiVal   = double(levCh{3});
         fillAlpha = min(1, weiVal);
 
+        
+
         switch mode
-            case ["Sequence","Movie"]
+
+            case {"sequence","movie"}
+
+                
                 % --- Version vectorielle : vContours ---
                 for iii = 1:numel(indices)
                     bw = (L == indices(iii));
@@ -264,7 +276,8 @@ for ch = 1:numel(channel)
                     end
                 end
 
-            case "Display"
+
+            case "display"
                 % --- Version raster : indexedOverlay + alphaOverlay ---
                 for iVal = 1:numel(indices)
                     mask = (L == indices(iVal));
