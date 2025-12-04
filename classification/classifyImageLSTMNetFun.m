@@ -84,7 +84,21 @@ end
 
 
 pix = roiobj.findChannelID(channel);
-if iscell(pix); pix = cell2mat(pix); end
+
+if iscell(pix)
+    % enlever les éléments vides
+    pix = pix(~cellfun(@isempty, pix));
+
+    if isempty(pix)
+        % aucun indice valide → on retourne un vecteur vide et on continue sans erreur
+        pix = [];
+    else
+        % concaténer proprement même si certaines cellules sont lignes/colonnes
+        pix = cellfun(@(x) x(:).', pix, 'UniformOutput', false);
+        pix = [pix{:}];    % concat à la suite
+    end
+end
+
 if isempty(frames); frames = 1:size(roiobj.image,4); end
 
 % empile le canal demandé en 3 canaux uint8 avec preProcessROIData (comme avant)
