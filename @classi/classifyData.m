@@ -337,24 +337,52 @@ function ROIpreprocessing(roiobj, classif)
     % --- Détection segmentation d'instances -------------------------
     % Ces classif renvoient des masques indexés (instances),
     % pas des cartes de proba par pixel.
-    isInstanceSeg = strcmp(classif.description{1}, 'YOLO instance segmentation') || ...
-                    strcmp(classif.description{1}, 'CellposeSAM')               || ...
-                    strcmp(classif.description{1}, 'Cell-TRACKTR');
+isCPSAM = strcmp(classif.description{1}, 'CellposeSAM');
+isInstanceSeg = (strcmp(classif.description{1}, 'YOLO instance segmentation') || ...
+                 strcmp(classif.description{1}, 'Cell-TRACKTR')               || ...
+                 isCPSAM);  % CellposeSAM = instance seg même si 'proba'
 
-    if isInstanceSeg
-        % Cas "instance segmentation" -> un canal par classe
-        % et affichage en mode indexé (intensity = [0 0 0])
-        for c = 1:numel(classif.classes)
-            chname    = ['results_' classif.strid '_' classif.classes{c}];
-            rgb       = [1 1 1];
-            intensity = [0 0 0];  % masque indexé
-            ensureResultChannel(roiobj, chname, rgb, intensity, nY, nX, nF);
-        end
-
-        return; % IMPORTANT : on ne poursuit pas plus loin
+if isInstanceSeg
+    % Cas "instance segmentation" -> un canal par classe (masques indexés)
+    for c = 1:numel(classif.classes)
+        chname      = ['results_' classif.strid '_' classif.classes{c}];
+        rgb         = [1 1 1];
+        intensity   = [0 0 0];   % masque indexé
+        indexedFlag = 1;
+        ensureResultChannel(roiobj, chname, rgb, intensity, indexedFlag, nY, nX, nF);
     end
 
-    
+    % *** CAS PARTICULIER : CellposeSAM en mode 'proba' -> on veut AUSSI un channel de proba ***
+    if isCPSAM && strcmp(classif.outputType, 'proba')
+        chNameProba = [classif.strid '_cellprob'];
+        pixproba = findChannelID(roiobj, chNameProba);
+        if isempty(pixproba)
+            % créer un channel float non indexé pour la heatmap
+            matrix = zeros(nY, nX, 1, nF, 'single');
+            roiobj.addChannel(matrix, chNameProba, [1 0 1], [1 1 1]); % magenta, mode "image"
+
+            pixproba  = size(roiobj.image,3);
+            selectid  = roiobj.channelid(pixproba);
+
+            % s'assurer que display.* a assez de lignes
+            [roiobj.display.rgb, ...
+             roiobj.display.intensity, ...
+             roiobj.display.indexed] = ...
+                 ensureDisplayRows(roiobj.display.rgb, ...
+                                   roiobj.display.intensity, ...
+                                   roiobj.display.indexed, ...
+                                   selectid);
+
+            roiobj.display.rgb(selectid,:)       = [1 0 1];
+            roiobj.display.intensity(selectid,:) = [1 1 1];
+            roiobj.display.indexed(selectid,1)   = false;   % pas indexé
+        end
+    end
+
+    return; % important : on ne continue pas plus loin
+end
+
+
     % --- Pas une segmentation d'instances ---------------------------
     % On retombe sur la logique historique fondée sur outputType.
 
@@ -366,20 +394,21 @@ function ROIpreprocessing(roiobj, classif)
         case {'proba',''}
 
             for c = 1:numel(classif.classes)
-                chname = ['results_' classif.strid '_' classif.classes{c}];
+                chname = ['prob_' classif.strid '_' classif.classes{c}];
                 rgb    = [1 1 1];
 
-                % Par défaut les probas sont vues comme grayscale [1 1 1]
-                % Exception Yolov11 : on veut un masque indexé [0 0 0]
-                if ~strcmp(classif.description{3}, 'Yolov11')
-                    intensity = [1 1 1];
-                else
-                    intensity = [0 0 0];
+                % Probas = image continue => intensity [1 1 1], indexed=0
+                intensity   = [1 1 1];
+                indexedFlag = 0;
+
+                % Exception Yolov11 : on veut un masque indexé
+                if numel(classif.description) >= 3 && strcmp(classif.description{3}, 'Yolov11')
+                    intensity   = [0 0 0];
+                    indexedFlag = 1;
                 end
 
-                ensureResultChannel(roiobj, chname, rgb, intensity, nY, nX, nF);
+                ensureResultChannel(roiobj, chname, rgb, intensity, indexedFlag, nY, nX, nF);
             end
-
 
         % ============================================================
         % CAS outputType autre  => segmentation / postprocessing simple
@@ -389,25 +418,27 @@ function ROIpreprocessing(roiobj, classif)
             chname = ['results_' classif.strid];
             rgb    = [1 1 1];
 
-            % régression => image continue => intensity [1 1 1]
-            % sinon => masque indexé => [0 0 0]
             if strcmp(classif.description{1}, 'Image pixel regression')
-                intensity = [1 1 1];
+                % régression => image continue
+                intensity   = [1 1 1];
+                indexedFlag = 0;
             else
-                intensity = [0 0 0];
+                % segmentation => masque indexé
+                intensity   = [0 0 0];
+                indexedFlag = 1;
             end
 
-            ensureResultChannel(roiobj, chname, rgb, intensity, nY, nX, nF);
+            ensureResultChannel(roiobj, chname, rgb, intensity, indexedFlag, nY, nX, nF);
     end
 end
 
-
-function ensureResultChannel(roiobj, chname, rgb, intensity, nY, nX, nF)
+function ensureResultChannel(roiobj, chname, rgb, intensity, indexedFlag, nY, nX, nF)
 % Crée ou réinitialise un channel résultat dans roiobj avec le nom chname.
-% - Si le channel n'existe pas : on le crée + on initialise l'affichage.
+% - Si le channel n'existe pas : on le crée + on initialise l'affichage
+%   (rgb, intensity, indexed).
 % - S'il existe déjà : on remet juste les pixels à zéro, on NE TOUCHE PAS
-%   à l'affichage (intensity/rgb) pour ne pas écraser d'éventuels réglages
-%   manuels faits précédemment.
+%   à l'affichage (intensity/rgb/indexed) pour ne pas écraser d'éventuels
+%   réglages manuels faits précédemment.
 
     pixid = findChannelID(roiobj, chname);
 
@@ -416,46 +447,57 @@ function ensureResultChannel(roiobj, chname, rgb, intensity, nY, nX, nF)
         matrix = uint16(zeros(nY, nX, 1, nF));
         roiobj.addChannel(matrix, chname, rgb, intensity);
         pixid = size(roiobj.image,3);
-    end
 
         % Initialiser les paramètres d'affichage pour ce nouveau channel
         selectid = roiobj.channelid(pixid);
 
-        [roiobj.display.rgb, roiobj.display.intensity] = ...
-            ensureDisplayRows(roiobj.display.rgb, roiobj.display.intensity, selectid);
+   if isfield(roiobj.display, 'indexed') && ~isempty(roiobj.display.indexed)
+    indexedFlag = roiobj.display.indexed(selectid);
+else
+    % pour les vieux ROIs qui n'ont pas le champ, on peut mettre [] ou false
+    indexedFlag = [];
+    % ou, si tu préfères explicite :
+    % indexedFlag = false;
+end
+
+        [roiobj.display.rgb, ...
+         roiobj.display.intensity, ...
+         roiobj.display.indexed] = ...
+             ensureDisplayRows(roiobj.display.rgb, ...
+                               roiobj.display.intensity, ...
+                               indexedFlag, ... %#ok<GFLD>
+                               selectid);
 
         roiobj.display.rgb(selectid, :)          = rgb;
         roiobj.display.intensity(selectid, :)    = intensity;
+        roiobj.display.indexed(selectid, 1)      = indexedFlag;
         roiobj.display.selectedchannel(selectid) = true;
 
-   % else
+    else
         % ========== Canal existant -> reset contenu uniquement ==========
-     %   roiobj.image(:,:,pixid,:) = uint16(zeros(nY, nX, 1, nF));
-
-        % Ici volontairement :
-        %   - PAS de réécriture de roiobj.display.rgb(...)
-        %   - PAS de réécriture de roiobj.display.intensity(...)
-        %   - PAS de réécriture selectedchannel(...)
-        %
-        % Ça évite d'écraser une intensity [0 0 0] correcte par [1 1 1]
-        % lors d'une reclassification, ou d'écraser un choix d'affichage manuel.
-    %end
-end
-
-
-function [rgbTab, intTab] = ensureDisplayRows(rgbTab, intTab, idx)
-% S'assure qu'il y a au moins 'idx' lignes dans display.rgb / display.intensity
-% en complétant avec des valeurs par défaut si besoin.
-
-    if isempty(rgbTab), rgbTab = ones(0,3); end
-    if isempty(intTab), intTab = ones(0,3); end
-
-    need = max(0, idx - size(rgbTab,1));
-    if need > 0
-        rgbTab(end+1:idx, :) = 1;  % défaut: blanc
-        intTab(end+1:idx, :) = 0;  % défaut: intensité nulle
+        roiobj.image(:,:,pixid,:) = uint16(zeros(nY, nX, 1, nF));
+        % On NE modifie PAS rgb/intensity/indexed pour ne pas écraser
+        % des réglages d'affichage existants.
     end
 end
+
+function [rgbTab, intTab, indexedTab] = ensureDisplayRows(rgbTab, intTab, indexedTab, idx)
+% S'assure qu'il y a au moins 'idx' lignes dans display.rgb / display.intensity
+% et display.indexed, en complétant avec des valeurs par défaut si besoin.
+
+    if isempty(rgbTab),     rgbTab     = ones(0,3); end
+    if isempty(intTab),     intTab     = ones(0,3); end
+    if isempty(indexedTab), indexedTab = zeros(0,1); end
+
+    need = max(0, idx - size(rgbTab,1));
+
+    if need > 0
+        rgbTab(end+1:idx, :)     = 1;  % défaut: blanc
+        intTab(end+1:idx, :)     = 0;  % défaut: intensité nulle
+        indexedTab(end+1:idx, 1) = 0;  % défaut: non indexé
+    end
+end
+
 
 
 

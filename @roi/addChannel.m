@@ -31,72 +31,119 @@ function addChannel(obj, matrix, str, rgb, intensity)
     end
 
     % ============== CAS 1 : INITIALISATION (image vide) ==============
-    if isempty(obj.image)
-        % Initialisation brute
-        obj.image = matrix;  % [H W k T]
+    % ============== CAS 1 : INITIALISATION (image vide) ==============
+if isempty(obj.image)
+    % Initialisation brute de l'image
+    obj.image = matrix;  % [H W k T]
 
-        % Init display si manquant
-        if ~isfield(obj, 'display') || isempty(obj.display)
-            obj.display = struct();
-        end
-        if ~isfield(obj.display, 'channel') || isempty(obj.display.channel)
-            obj.display.channel = {str};
-        else
-            obj.display.channel{end+1} = str;
-        end
-
-        if ~isfield(obj.display, 'frame') || isempty(obj.display.frame)
-            obj.display.frame=1;
-        end
-
-        if ~isfield(obj.display, 'intensity') || isempty(obj.display.intensity)
-            obj.display.intensity = intensity;
-        else
-            obj.display.intensity(end+1,:) = intensity;
-        end
-
-        if ~isfield(obj.display, 'rgb') || isempty(obj.display.rgb)
-            obj.display.rgb = rgb;
-        else
-            obj.display.rgb(end+1,:) = rgb;
-        end
-
-        % Champs optionnels / usuels
-        if ~isfield(obj.display, 'indexed') || isempty(obj.display.indexed)
-            obj.display.indexed = 0;
-        end
-        if ~isfield(obj.display, 'alpha')   || isempty(obj.display.alpha)
-            obj.display.alpha   = 1;
-        end
-        if ~isfield(obj.display, 'contour') || isempty(obj.display.contour)
-            obj.display.contour = 0;
-        end
-        if ~isfield(obj.display, 'width')   || isempty(obj.display.width)
-            obj.display.width   = 0;
-        end
-        if ~isfield(obj.display, 'selectedchannel') || isempty(obj.display.selectedchannel)
-            obj.display.selectedchannel = 1;
-        else
-            obj.display.selectedchannel(end+1) = 1;
-        end
-
-        % Mise à jour 'indexed' selon intensity == 0
-        if sum(intensity)==0
-            obj.display.indexed(end+1) = 1;
-        else
-            obj.display.indexed(end+1) = 0;
-        end
-        obj.display.alpha(end+1)   = 1;
-        obj.display.contour(end+1) = 0;
-        obj.display.width(end+1)   = 0;
-
-        % channelid : pour k sous-canaux, on répète le même id logique
-        baseId = 1; % premier channel logique
-        obj.channelid = baseId * ones(1, k, 'like', k);
-
-        obj.log(sprintf('Initialized ROI image and added first channel "%s".', str), 'Processing');
-        return;
+    % Init display si manquant
+    if ~isfield(obj, 'display') || isempty(obj.display)
+        obj.display = struct();
     end
+
+    % ---- channel : utiliser le premier élément, ne PAS agrandir ----
+    if ~isfield(obj.display, 'channel') || isempty(obj.display.channel)
+        obj.display.channel = {str};
+    else
+        % On se contente d'utiliser la première entrée
+        obj.display.channel{1} = str;
+    end
+
+    % ---- frame ----
+    if ~isfield(obj.display, 'frame') || isempty(obj.display.frame)
+        obj.display.frame = 1;
+    else
+        % On ne touche pas si déjà défini
+    end
+
+    % ---- intensity : 1x3, utiliser la première ligne ----
+    if ~isfield(obj.display, 'intensity') || isempty(obj.display.intensity)
+        obj.display.intensity = intensity;
+    else
+        if size(obj.display.intensity,1) < 1
+            obj.display.intensity(1,:) = intensity;
+        else
+            % Tu peux choisir de respecter le réglage existant ou de le
+            % surcharger. Ici, je surcharge la première ligne :
+            obj.display.intensity(1,:) = intensity;
+        end
+    end
+
+    % ---- rgb : 1x3, utiliser la première ligne ----
+    if ~isfield(obj.display, 'rgb') || isempty(obj.display.rgb)
+        obj.display.rgb = rgb;
+    else
+        if size(obj.display.rgb,1) < 1
+            obj.display.rgb(1,:) = rgb;
+        else
+            obj.display.rgb(1,:) = rgb;
+        end
+    end
+
+    % ---- indexed : bool par channel logique ----
+    idxVal = (sum(intensity) == 0);
+    if ~isfield(obj.display, 'indexed') || isempty(obj.display.indexed)
+        obj.display.indexed = idxVal;
+    else
+        if numel(obj.display.indexed) < 1
+            obj.display.indexed(1) = idxVal;
+        else
+            % à toi de voir si tu veux écraser ou pas ; ici je synchronise
+            obj.display.indexed(1) = idxVal;
+        end
+    end
+
+    % ---- alpha ----
+    if ~isfield(obj.display, 'alpha') || isempty(obj.display.alpha)
+        obj.display.alpha = 1;
+    else
+        if numel(obj.display.alpha) < 1
+            obj.display.alpha(1) = 1;
+        else
+            % on laisse à 1 par défaut pour le premier channel
+            obj.display.alpha(1) = 1;
+        end
+    end
+
+    % ---- contour ----
+    if ~isfield(obj.display, 'contour') || isempty(obj.display.contour)
+        obj.display.contour = 0;
+    else
+        if numel(obj.display.contour) < 1
+            obj.display.contour(1) = 0;
+        end
+        % sinon on laisse tel quel
+    end
+
+    % ---- width ----
+    if ~isfield(obj.display, 'width') || isempty(obj.display.width)
+        obj.display.width = 0;
+    else
+        if numel(obj.display.width) < 1
+            obj.display.width(1) = 0;
+        end
+    end
+
+    % ---- selectedchannel ----
+    if ~isfield(obj.display, 'selectedchannel') || isempty(obj.display.selectedchannel)
+        obj.display.selectedchannel = 1;
+    else
+        if numel(obj.display.selectedchannel) < 1
+            obj.display.selectedchannel(1) = 1;
+        else
+            % on force le premier channel comme sélectionné par défaut
+            obj.display.selectedchannel(1) = 1;
+        end
+    end
+
+    % channelid : pour k sous-canaux, on répète le même id logique
+    baseId = 1; % premier channel logique
+    obj.channelid = baseId * ones(1, k, 'like', k);
+
+    obj.log(sprintf('Initialized ROI image and added first channel "%s".', str), 'Processing');
+    return;
+end
+
 
     % ============== CAS 2 : AJOUT SUR IMAGE EXISTANTE ==============
     [H, W, C, T] = size(obj.image);

@@ -24,6 +24,14 @@ StorageBackend      = 'hdf5';% 'hdf5' ou 'tiff'
 UseHDF5             = true;  % dérivé de StorageBackend
 WriteTiffImages= ~UseHDF5; 
 
+HDF5BatchSize = 64;           % nb de frames CNN écrites d'un coup
+H0_global     = [];
+W0_global     = [];
+frameBuffer   = [];
+labelBuffer   = [];
+bufCount      = 0;
+
+
 % -------------------------------------------------------------------------
 % 1) Lire les paramètres de formatage dans classif.trainingParam (Format_*)
 % -------------------------------------------------------------------------
@@ -338,11 +346,45 @@ for i = 1:numel(rois_sel)
     end
 
     % Channel index
-    pix = cltmp(ridx).findChannelID(channel);
-    if iscell(pix); pix = cell2mat(pix); end
+        % --------- Channel index : indices de sous-canaux propres ---------
+    % channel = classif.channelName (déjà défini plus haut)
 
+    chanNames = channel;    % alias plus lisible
+    pixList   = [];
+
+    if iscell(chanNames)
+        % Parcours des noms de canaux un par un pour garder l'ordre
+        for cIdx = 1:numel(chanNames)
+            thisPix = cltmp(ridx).findChannelID(chanNames{cIdx});
+            if isempty(thisPix)
+                continue;           % ce canal n'existe pas dans ce ROI
+            end
+            thisPix = thisPix(:).'; % en ligne
+            pixList = [pixList thisPix]; %#ok<AGROW>
+        end
+    else
+        % Cas rare où channel est déjà numérique
+        pixList = chanNames(:).';
+    end
+
+    % Nettoyage : on garde l'ordre, on enlève doublons et indices non valides
+    pixList = unique(pixList, 'stable');
+    pixList = pixList(pixList > 0);
+
+    if isempty(pixList)
+        disp(['ROI# ' num2str(ridx) ' / ' num2str(numel(rois_sel)) ...
+              ' ID: ' cltmp(ridx).id ' has no valid channels; skipping...']);
+        continue;
+    end
+
+    % On garde ce nom pour la suite (appel à preProcessROIData)
+    pix = pixList;
+
+
+    % Image brute uniquement pour récupérer le nombre de frames (T)
     im        = cltmp(ridx).image(:,:,pix,:);
     roiSeries = cltmp(ridx).data;
+
 
     if isempty(roiSeries)
         disp('No training data available for this position');
@@ -524,7 +566,13 @@ for i = 1:numel(rois_sel)
             end
 
             % Stockage pour LSTM (timeseries complète)
-            vid(:,:,:,kf) = uint8(256 * tmp);
+          %  vid(:,:,:,kf) = uint8(256 * tmp);
+            % Conversion une fois pour toutes pour LSTM + HDF5
+frameU8 = uint8(256 * tmp);
+
+% Stockage pour LSTM (timeseries complète)
+vid(:,:,:,kf) = frameU8;
+
 
             % Label de la frame pour CNN
             if classif.output==0
@@ -546,50 +594,65 @@ for i = 1:numel(rois_sel)
                 output = output + 1;
             end
 
-            % Export HDF5 framebank pour CNN (undersamplé via keepIdxCNN)
-            if UseHDF5 && keepIdxCNN(kf) && cmp ~= 0
-                if ~h5Initialized
-                    % Création des datasets extensibles
-                    h5create(h5Framebank, '/frames', [H0 W0 3 Inf], ...
-                        Datatype="uint8", ...
-                        ChunkSize=[H0 W0 3 1], ...
-                        Deflate=1);
+      % Export HDF5 framebank pour CNN (undersamplé via keepIdxCNN)
+if UseHDF5 && keepIdxCNN(kf) && cmp ~= 0
+    % Création des datasets extensibles une seule fois
+    if ~h5Initialized
+        H0_global = H0;
+        W0_global = W0;
 
-                    h5create(h5Framebank, '/labels', [1 Inf], ...
-                        Datatype="int32", ...
-                        ChunkSize=[1 max(128,1)], ...
-                        Deflate=1);
+        h5create(h5Framebank, '/frames', [H0_global W0_global 3 Inf], ...
+            Datatype="uint8", ...
+            ChunkSize=[H0_global W0_global 3 HDF5BatchSize]);  % plus de Deflate
 
-                    classNames = string(classif.classes(:))';
-                    h5create(h5Framebank, '/classNames', size(classNames), Datatype="string");
-                    h5write(h5Framebank, '/classNames', classNames);
+        h5create(h5Framebank, '/labels', [1 Inf], ...
+            Datatype="int32", ...
+            ChunkSize=[1 max(128,HDF5BatchSize)]);
 
-                    h5Initialized = true;
-                else
-                    info = h5info(h5Framebank, '/frames');
-                    sz = info.Dataspace.Size;
-                    if sz(1)~=H0 || sz(2)~=W0
-                        error('HDF5 framebank size mismatch: expected [%d %d], found [%d %d].', ...
-                            H0, W0, sz(1), sz(2));
-                    end
-                end
+        classNames = string(classif.classes(:))';
+        h5create(h5Framebank, '/classNames', size(classNames), Datatype="string");
+        h5write(h5Framebank, '/classNames', classNames);
 
-                % Écriture d'une seule frame CNN
-                h5write(h5Framebank, '/frames', uint8(256 * tmp), ...
-                    [1 1 1 nextFrameIdx], [H0 W0 3 1]);
+        % buffers pour écriture par paquets
+        frameBuffer = zeros(H0_global, W0_global, 3, HDF5BatchSize, 'uint8');
+        labelBuffer = zeros(1, HDF5BatchSize, 'int32');
+        bufCount    = 0;
 
-                labVal = int32(cmp);
-                h5write(h5Framebank, '/labels', labVal, ...
-                    [1 nextFrameIdx], [1 1]);
+        h5Initialized = true;
+    else
+        % sécurité : toutes les frames CNN doivent avoir la même taille
+        if H0 ~= H0_global || W0 ~= W0_global
+            error('HDF5 framebank size mismatch: expected [%d %d], found [%d %d].', ...
+                H0_global, W0_global, H0, W0);
+        end
+    end
 
-                if isempty(firstIdxROI_CNN)
-                    firstIdxROI_CNN = nextFrameIdx;
-                end
-                nextFrameIdx   = nextFrameIdx + 1;
-                nFramesROI_CNN = nFramesROI_CNN + 1;
+    % Enregistrer l'index de début de cette ROI dans le framebank (index "logique")
+    if isempty(firstIdxROI_CNN)
+        firstIdxROI_CNN = nextFrameIdx + bufCount;
+    end
 
-                output = output + 1;
-            end
+    % Ajouter la frame au buffer
+    bufCount = bufCount + 1;
+    frameBuffer(:,:,:,bufCount) = frameU8;
+    labelBuffer(bufCount)       = int32(cmp);
+
+    nFramesROI_CNN = nFramesROI_CNN + 1;
+    output         = output + 1;
+
+    % Si le buffer est plein, on écrit un bloc d'un coup
+    if bufCount == HDF5BatchSize
+        h5write(h5Framebank, '/frames', frameBuffer, ...
+            [1 1 1 nextFrameIdx], [H0_global W0_global 3 bufCount]);
+
+        h5write(h5Framebank, '/labels', labelBuffer, ...
+            [1 nextFrameIdx], [1 bufCount]);
+
+        nextFrameIdx = nextFrameIdx + bufCount;
+        bufCount     = 0;
+    end
+end
+
 
            % msg = sprintf('Processing frame: %d / %d for ROI %s', ...
             %    kf, numel(fra), cltmp(ridx).id);
@@ -667,6 +730,19 @@ for i = 1:numel(rois_sel)
 
    % disp(['Processing ROI: ' num2str(ridx) ' ... Done !'])
 end
+
+% Flush final du buffer HDF5 s'il reste des frames non écrites
+if UseHDF5 && h5Initialized && bufCount > 0
+    h5write(h5Framebank, '/frames', frameBuffer(:,:,:,1:bufCount), ...
+        [1 1 1 nextFrameIdx], [H0_global W0_global 3 bufCount]);
+
+    h5write(h5Framebank, '/labels', labelBuffer(1:bufCount), ...
+        [1 nextFrameIdx], [1 bufCount]);
+
+    nextFrameIdx = nextFrameIdx + bufCount;
+    bufCount     = 0;
+end
+
 
 % Finalisation du framebank HDF5 (métadonnées CNN séries)
 if UseHDF5 && h5Initialized
