@@ -337,24 +337,51 @@ function ROIpreprocessing(roiobj, classif)
     % --- Détection segmentation d'instances -------------------------
     % Ces classif renvoient des masques indexés (instances),
     % pas des cartes de proba par pixel.
-    isCPSAM = strcmp(classif.description{1}, 'CellposeSAM');
-    isInstanceSeg = (strcmp(classif.description{1}, 'YOLO instance segmentation') || ...
-                     strcmp(classif.description{1}, 'Cell-TRACKTR')               || ...
-                     (isCPSAM && ~strcmp(classif.outputType, 'proba')));  % CellposeSAM = instance seg sauf si 'proba'
+isCPSAM = strcmp(classif.description{1}, 'CellposeSAM');
+isInstanceSeg = (strcmp(classif.description{1}, 'YOLO instance segmentation') || ...
+                 strcmp(classif.description{1}, 'Cell-TRACKTR')               || ...
+                 isCPSAM);  % CellposeSAM = instance seg même si 'proba'
 
-    if isInstanceSeg
-        % Cas "instance segmentation" -> un canal par classe
-        % et affichage en mode indexé (intensity = [0 0 0], indexed=1)
-        for c = 1:numel(classif.classes)
-            chname      = ['results_' classif.strid '_' classif.classes{c}];
-            rgb         = [1 1 1];
-            intensity   = [0 0 0];   % masque indexé
-            indexedFlag = 1;         % IMPORTANT
-
-            ensureResultChannel(roiobj, chname, rgb, intensity, indexedFlag, nY, nX, nF);
-        end
-        return; % IMPORTANT : on ne poursuit pas plus loin
+if isInstanceSeg
+    % Cas "instance segmentation" -> un canal par classe (masques indexés)
+    for c = 1:numel(classif.classes)
+        chname      = ['results_' classif.strid '_' classif.classes{c}];
+        rgb         = [1 1 1];
+        intensity   = [0 0 0];   % masque indexé
+        indexedFlag = 1;
+        ensureResultChannel(roiobj, chname, rgb, intensity, indexedFlag, nY, nX, nF);
     end
+
+    % *** CAS PARTICULIER : CellposeSAM en mode 'proba' -> on veut AUSSI un channel de proba ***
+    if isCPSAM && strcmp(classif.outputType, 'proba')
+        chNameProba = [classif.strid '_cellprob'];
+        pixproba = findChannelID(roiobj, chNameProba);
+        if isempty(pixproba)
+            % créer un channel float non indexé pour la heatmap
+            matrix = zeros(nY, nX, 1, nF, 'single');
+            roiobj.addChannel(matrix, chNameProba, [1 0 1], [1 1 1]); % magenta, mode "image"
+
+            pixproba  = size(roiobj.image,3);
+            selectid  = roiobj.channelid(pixproba);
+
+            % s'assurer que display.* a assez de lignes
+            [roiobj.display.rgb, ...
+             roiobj.display.intensity, ...
+             roiobj.display.indexed] = ...
+                 ensureDisplayRows(roiobj.display.rgb, ...
+                                   roiobj.display.intensity, ...
+                                   roiobj.display.indexed, ...
+                                   selectid);
+
+            roiobj.display.rgb(selectid,:)       = [1 0 1];
+            roiobj.display.intensity(selectid,:) = [1 1 1];
+            roiobj.display.indexed(selectid,1)   = false;   % pas indexé
+        end
+    end
+
+    return; % important : on ne continue pas plus loin
+end
+
 
     % --- Pas une segmentation d'instances ---------------------------
     % On retombe sur la logique historique fondée sur outputType.
@@ -367,7 +394,7 @@ function ROIpreprocessing(roiobj, classif)
         case {'proba',''}
 
             for c = 1:numel(classif.classes)
-                chname = ['results_' classif.strid '_' classif.classes{c}];
+                chname = ['prob_' classif.strid '_' classif.classes{c}];
                 rgb    = [1 1 1];
 
                 % Probas = image continue => intensity [1 1 1], indexed=0
@@ -424,12 +451,21 @@ function ensureResultChannel(roiobj, chname, rgb, intensity, indexedFlag, nY, nX
         % Initialiser les paramètres d'affichage pour ce nouveau channel
         selectid = roiobj.channelid(pixid);
 
+   if isfield(roiobj.display, 'indexed') && ~isempty(roiobj.display.indexed)
+    indexedFlag = roiobj.display.indexed(selectid);
+else
+    % pour les vieux ROIs qui n'ont pas le champ, on peut mettre [] ou false
+    indexedFlag = [];
+    % ou, si tu préfères explicite :
+    % indexedFlag = false;
+end
+
         [roiobj.display.rgb, ...
          roiobj.display.intensity, ...
          roiobj.display.indexed] = ...
              ensureDisplayRows(roiobj.display.rgb, ...
                                roiobj.display.intensity, ...
-                               getfield(roiobj.display, 'indexed', []), ... %#ok<GFLD>
+                               indexedFlag, ... %#ok<GFLD>
                                selectid);
 
         roiobj.display.rgb(selectid, :)          = rgb;

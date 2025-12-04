@@ -178,38 +178,61 @@ end
     pe = pyenv('Version', char(chosen.python), 'ExecutionMode', 'OutOfProcess');
 
     % -------- 6) Vérifs sys + torch --------
-    okSys = false; pyVer = "";
-    okTorch = false; torchVer = ""; torchCUDA = ""; torchAvail = false;
+       % -------- 6) Vérifs sys + torch --------
+    okSys    = false; 
+    pyVer    = "";
+    okTorch  = false; 
+    torchVer = ""; 
+    torchCUDA = ""; 
+    torchAvail = false;
 
+    % ----- sys -----
     try
         pysys = py.importlib.import_module('sys');
-        pyVer = toStringSafe(pysys.("version")); okSys = true;
-        if debug, fprintf('[DEBUG] sys.version: %s\n', char(pyVer)); end
+        pyVer = toStringSafe(pysys.("version"));
+        okSys = true;
+        if debug
+            fprintf('[DEBUG] sys.version: %s\n', char(pyVer));
+        end
     catch ME
-        warning('Import "sys" failed: %s', ME.message);
-        terminate(pyenv)
+        warning('Import "sys" failed: %s\n', ME.message);
+        terminate(pyenv);
     end
 
+    % ----- torch (import "silencieux") -----
     try
-        torch     = py.importlib.import_module('torch');
-        okTorch   = true;
-        torchVer  = toStringSafe(py.getattr(torch, '__version__'));
-        tv        = py.getattr(torch, 'version');
-        torchCUDA = toStringSafe(py.getattr(tv, 'cuda'));
-        tc        = py.getattr(torch, 'cuda');
-        is_av_fn  = py.getattr(tc, 'is_available');
-        torchAvail= toBoolSafe(is_av_fn());
+        % On coupe TEMPORAIREMENT tous les warnings MATLAB pendant l'import de torch,
+        % car PyTorch/NumPy déclenchent des warnings du style :
+        % "The name 'eq' is already in use as a method name. This will become an error..."
+        oldWarn = warning;                       % snapshot config
+        warning('off','all');
+        c = onCleanup(@() warning(oldWarn));     % restauration auto
+
+        % evalc pour capturer aussi toute sortie texte côté Python
+        evalc('torch = py.importlib.import_module(''torch'');');
+
+        okTorch  = true;
+        torchVer = toStringSafe(py.getattr(torch, '__version__'));
+        tv       = py.getattr(torch, 'version');
+        torchCUDA= toStringSafe(py.getattr(tv, 'cuda'));
+        tc       = py.getattr(torch, 'cuda');
+        is_av_fn = py.getattr(tc, 'is_available');
+        torchAvail = toBoolSafe(is_av_fn());
+
         if debug
             tcdisp = torchCUDA; if tcdisp == "", tcdisp = "(None)"; end
             avdisp = tern(torchAvail, "true", "false");
             fprintf('[DEBUG] torch.__version__: %s | torch.version.cuda: %s | cuda.is_available(): %s\n', ...
                 char(torchVer), char(tcdisp), char(avdisp));
         end
-    catch ME
 
-        if debug, fprintf('[DEBUG] Torch import failed: %s\n', ME.message); end
-        terminate(pyenv)
+    catch ME
+        if debug
+            fprintf('[DEBUG] Torch import failed: %s\n', ME.message);
+        end
+        terminate(pyenv);
     end
+
 
     % -------- 7) Rapport + sortie --------
     printFinal(pe, okSys, pyVer, okTorch, torchVer, torchCUDA, torchAvail);

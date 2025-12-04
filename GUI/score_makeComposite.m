@@ -1,40 +1,97 @@
-function [displayImage, vContours indexedOverlay alphaOverlay]=score_makeComposite(roitmp,fr,param)
 
-channel=param.channel;
-% imageSize=param.imageSize;
-overlay=param.overlay;
+function [displayImage, vContours, indexedOverlay, alphaOverlay] = score_makeComposite(roitmp, fr, param)
+% SCORE_MAKECOMPOSITE
+% - Construit l'image de fond (displayImage)
+% - Construit éventuellement :
+%       * vContours (vectoriel)    pour 'Sequence' / 'Movie'
+%       * indexedOverlay/alphaOverlay (raster) pour 'Display'
+%
+% Entrées :
+%   roitmp : objet ROI avec champs .image (H x W x C x F) et .display
+%   fr    : index de frame (dans param.frames)
+%   param : struct avec champs (min nécessaire) :
+%       .channel        : noms ou ids de canaux à afficher (1..Ndisplay)
+%       .overlay        : bool, composite (=true) ou multi-canaux (=false)
+%       .levels         : cell, par canal : 
+%                            - [min max] ou [-1 -1] (intensité)
+%                            - {idxString, ...}      (canal indexé)
+%       .RGB            : cell 1xNdisplay, chaque = [r g b]
+%       .weights        : (optionnel) poids pour composite overlay
+%       .paintChannel   : index du canal indexé courant (pour paint)
+%       .defaultClass   : bool pour le comportement indices = -1
+%       .mode           : "Display" | "Sequence" | "Movie"
+%
+% Sorties :
+%   displayImage : 
+%       - overlay=false : [H W 3 Ndisplay] uint8
+%       - overlay=true  : [H W 3] uint8 (composite)
+%   vContours    : struct array de patchs (x, y, FaceColor, EdgeColor, ...)
+%   indexedOverlay : [H W 3] double (0..1) pour l'overlay raster
+%   alphaOverlay   : [H W] double (0..1) alpha pour l'overlay raster
 
-% frames=param.frames;
-% snapRate=param.snapRate;
-levels=param.levels;
-rgb=param.RGB;
-weights=param.weights;
-paintChannel=param.paintChannel;
-defaultClass=param.defaultClass;
+channel      = param.channel;
+overlay      = param.overlay;
+levels       = param.levels;
+rgb          = param.RGB;
+weights      = param.weights;
+paintChannel = param.paintChannel;
+defaultClass = param.defaultClass;
+mode         = string(param.mode);  % "Display", "Sequence", "Movie"
 
-%figure, imshow(roitmp.image(:,:,13,1),[]);
-imtmp=preProcessROI(roitmp,param);
+% -------------------------------------------------------------------------
+% 0) REORDONNER LES CANAUX : non indexés d'abord, indexés ensuite
+% -------------------------------------------------------------------------
+nCh = numel(channel);
+isIndexed = false(1, nCh);
+for k = 1:nCh
+    isIndexed(k) = iscell(levels{k});
+end
+order = [find(~isIndexed), find(isIndexed)];
 
-%figure, imshow(imtmp(:,:,13,1),[]);
-
-% here make a distinction : if image has 3 D , then don't display it as
-% overlay , otherwise  do it !
-
-if overlay==false
-    displayImage= zeros([size(imtmp,1), size(imtmp,2) 3 numel(channel)], 'uint8');
-else
-    displayImage= zeros([size(imtmp,1), size(imtmp,2) 3 ], 'uint8');
-    comp=displayImage;
+if ~isequal(order, 1:nCh)
+    % canal peut être numeric ou cell, les deux marchent
+    channel = channel(order);
+    levels  = levels(order);
+    rgb     = rgb(order);
+    if ~isempty(weights)
+        weights = weights(order);
+    end
 end
 
-indexedOverlay = zeros(size(imtmp,1), size(imtmp,2), 3);
-alphaOverlay = zeros(size(imtmp,1), size(imtmp,2));
-alphamask = zeros(size(alphaOverlay));
+% Mettre à jour param pour qu'il reste cohérent si besoin ailleurs
+param.channel = channel;
+param.levels  = levels;
+param.RGB     = rgb;
+param.weights = weights;
+
+% -------------------------------------------------------------------------
+% 1) Prétraitement global (crop, resize, flip, frames)
+% -------------------------------------------------------------------------
+imtmp = preProcessROI(roitmp, param);     % [H W C F]
+[H, W, ~, ~] = size(imtmp);
+
+% Allocation des sorties
+if ~overlay
+    % multi-canaux : une image RGB par canal
+    displayImage = zeros(H, W, 3, numel(channel), 'uint8');
+    comp = [];  % inutilisé
+else
+    % composite : une seule image RGB
+    displayImage = zeros(H, W, 3, 'uint8');
+    comp = displayImage;
+end
+
+indexedOverlay = zeros(H, W, 3);   % double (0..1)
+alphaOverlay   = zeros(H, W);      % double (0..1)
 
 vContours = [];
 
-for ch=1:numel(channel)
-    %fr
+% -------------------------------------------------------------------------
+% 2) Boucle sur les canaux demandés
+% -------------------------------------------------------------------------
+for ch = 1:numel(channel)
+
+    % --- trouver l'index du canal réel dans roitmp.image ---
     if iscell(channel)
         currentCha = roitmp.findChannelID(channel{ch});
     else
@@ -42,190 +99,153 @@ for ch=1:numel(channel)
         currentCha = pix;
     end
 
-      % Si aucun canal trouvé : on saute ce ch, displayImage reste à 0 (initialisé)
     if isempty(currentCha)
-        % warning('score_makeComposite: aucun canal trouvé pour ch=%d, on ignore ce canal.', ch);
+        % canal inexistant : on saute, displayImage reste à 0 pour ce ch
         continue;
     end
 
-    %  currentCha
+    % HxW ou HxWxK (si canal multi-sous-canaux) à la frame fr
+    imraw = imtmp(:, :, currentCha, fr);
 
-    totim =roitmp.image(:,:, currentCha, :); % to get the whole range of map values
+    % Flag canal indexé (labels) ?
+    levCh     = levels{ch};
+    isIndexed = iscell(levCh);
 
-    imtmp2 = imtmp(:,:, currentCha, fr);
-    % class(imtmp2),max(imtmp2(:))
-    % figure, imshow(imtmp2,[]);
+    % Flag log-display ?
+    logdisplay = false;
+    if isprop(roitmp, 'display') && isfield(roitmp.display, 'log') ...
+            && numel(roitmp.display.log) >= currentCha ...
+            && roitmp.display.log(currentCha)
+        logdisplay = true;
+    end
 
-    if numel(currentCha)==1 && ~iscell(levels{ch})
-        % if ~isequal(levels{ch}, [-1 -1])
-        %     if levels{ch}(1)>=levels{ch}(2)
-        %         levels{ch}(1)=levels{ch}(2)-1;
-        %     end
-        %     imtmp2 = imadjust(imtmp2, [levels{ch}(1)/65535, levels{ch}(2)/65535]);
-        % end
+    % ------------------------------------------------------------------
+    % 2a) IMAGE DE FOND pour ce canal (bgRGB in [0..255]), 
+    %     indépendamment du fait qu'il soit indexé ou non.
+    % ------------------------------------------------------------------
+    bg = double(imraw);
 
+    if logdisplay
+        % ---- Cas log comme dans ton code d'origine ----
+        bg = log1p(bg);
+        bg = bg / log1p(65535);
 
-
-        logdisplay=false;
-        if isprop(roitmp, 'display') && isfield(roitmp.display, 'log') && roitmp.display.log(currentCha) == true
-
-            logdisplay=true;
-            imtmp2 = double(imtmp2);  % passage explicite en double pour éviter erreurs
-            % Appliquer log dans l'espace double, éviter log(0)
-            imtmp2 = log1p(imtmp2);
-
-
-            % Appliquer levels dans l'espace log
-            % On suppose que les niveaux sont donnés dans l'espace linéaire et doivent être logés
-            lmin = log1p(double(levels{ch}(1))) / log1p(65535);
-            lmax = log1p(double(levels{ch}(2))) / log1p(65535);
+        % niveaux en log si levCh numérique
+        if ~iscell(levCh) && ~isequal(levCh, [-1 -1])
+            lmin = log1p(double(levCh(1))) / log1p(65535);
+            lmax = log1p(double(levCh(2))) / log1p(65535);
             if lmin >= lmax
                 lmin = lmax - 1e-3;
             end
-
-            imtmp2 = imtmp2 / log1p(65535);
-            imtmp2 = imadjust(imtmp2, [lmin, lmax]);
-            imtmp2=uint16(65535*imtmp2);
-
-
-            % Valeurs de niveaux définies (en linéaire)
-            levelMin = levels{ch}(1);
-            levelMax =  levels{ch}(2);
-
-            % Convertir en bornes log-normalisées
-            lmin = log1p(levelMin) / log1p(65535);
-            lmax = log1p(levelMax) / log1p(65535);
-
-            % Définir les ticks en valeurs linéaires arrondies dans l'intervalle
-            tickValsLin = [1, 10, 100, 1000, 10000, 65535];
-            tickValsLin = tickValsLin(tickValsLin >= levelMin & tickValsLin <= levelMax);
-
-            % Convertir les ticks dans l'échelle log1p normalisée
-            tickValsNorm = log1p(tickValsLin) / log1p(65535);
-
-           %  fig = figure('Position', [100, 100, 300, 600], 'Color', 'w');
-           % 
-           %  % Axe fictif pour le colorbar
-           %  axes('Position', [0, 0, 1, 1], 'Visible', 'off');
-           % 
-           %  % Affichage de la colorbar seule
-           %  colormap(parula2green(256));
-           % 
-           % % colormap(parula(256));
-           %  cb = colorbar('eastoutside');
-           % 
-           %  % Forcer la position et la largeur (plus large que d'habitude)
-           %  cb.Position = [0.3, 0.1, 0.3, 0.8];  % [left, bottom, width, height]
-           % 
-           %  % Échelle + ticks
-           %  caxis([lmin lmax]);
-           %  cb.Ticks = tickValsNorm;
-           %  cb.TickLabels = string(tickValsLin);
-           % 
-           %  % Taille police augmentée
-           %  cb.FontSize = 40;
-           % 
-           %  % Label vertical
-           %  cb.Label.String = 'Fluorescence intensity (a.u.)';
-           %  cb.Label.FontSize = 40;
-           %  cb.Label.FontWeight = 'bold';
-           %  cb.Label.Rotation = 90;
-           % 
-           %  % Export optionnel
-           %  exportgraphics(fig, 'colorbar_log_parula_levels.pdf', 'BackgroundColor', 'none', 'Resolution', 300);
-
-        else
-            % Cas normal (linéaire)
-            if ~isequal(levels{ch}, [-1 -1])
-                if levels{ch}(1) >= levels{ch}(2)
-                    levels{ch}(1) = levels{ch}(2) - 1;
-                end
-
-                imtmp2 = imadjust(imtmp2 , [levels{ch}(1)/65535, levels{ch}(2)/65535]);
-
-            end
+            bg = imadjust(bg, [lmin lmax]);
         end
 
-
-        if overlay
-            imtmp2 = cat(3, imtmp2*rgb{ch}(1), imtmp2*rgb{ch}(2), imtmp2*rgb{ch}(3));
-            if isempty(weights)
-                comp = imlincomb(1, comp, 1, uint8(double(imtmp2)/256));
-            else
-                comp = imlincomb(1, comp, weights(ch), uint8(double(imtmp2)/256));
+    else
+        % ---- Cas linéaire ----
+        if ~iscell(levCh) && ~isequal(levCh, [-1 -1])
+            lo = levCh(1);
+            hi = levCh(2);
+            if lo >= hi
+                lo = hi - 1;
             end
+            bg16 = uint16(bg);  % imadjust aime bien du 16-bit dans ce contexte
+            bg16 = imadjust(bg16, [lo/65535 hi/65535]);
+            bg   = double(bg16) / 65535;
         else
-            if logdisplay
-                % here
-
-                imnorm = double(imtmp2) / 65535;
-                imnorm = min(max(imnorm, 0), 1);
-                imind = uint8(imnorm * 255);
-                cmap = parula2green(256);
-                rgbImage = ind2rgb(imind, cmap);
-                displayImage(:,:,:,ch) = uint8(rgbImage * 255);
-
-            else
-                imtmp2 = cat(3, imtmp2*rgb{ch}(1), imtmp2*rgb{ch}(2), imtmp2*rgb{ch}(3));
-                displayImage(:,:,:,ch) = uint8(double(imtmp2)/256);
+            % pas de niveaux définis -> normalisation simple
+            maxv = max(bg(:));
+            if maxv > 0
+                bg = bg ./ maxv;
             end
         end
+    end
 
+    % clamp [0..1]
+    bg = min(max(bg, 0), 1);
 
+    % ---- convertir en RGB 3 canaux ----
+    if ndims(bg) == 2
+        gray     = bg;
+        thisRGB  = rgb{ch};                   % [r g b]
+        bgRGB    = cat(3, gray*thisRGB(1), gray*thisRGB(2), gray*thisRGB(3));
+    elseif ndims(bg) == 3
+        if size(bg, 3) == 3
+            % déjà RGB (rare mais on gère)
+            bgRGB = bg;
+        else
+            % multi-sous-canaux exotique -> moyenne puis colorisation
+            gray = mean(bg, 3);
+            thisRGB = rgb{ch};
+            bgRGB   = cat(3, gray*thisRGB(1), gray*thisRGB(2), gray*thisRGB(3));
+        end
+    else
+        error('score_makeComposite: imraw dimension inattendue (%dD).', ndims(bg));
+    end
 
+    bgRGBu8 = uint8(bgRGB * 255);
 
-    elseif numel(currentCha)==1 && iscell(levels{ch})
-        imtmp2 = imadjust(imtmp2, [0 1]);
+    % ---- stocker dans displayImage ou composite ----
+    if overlay
+        % Composite : accumulation dans comp
+        if isempty(weights)
+            comp = imlincomb(1, comp, 1, bgRGBu8);
+        else
+            comp = imlincomb(1, comp, weights(ch), bgRGBu8);
+        end
+    else
+        % Multi-canaux : une image par canal
+        displayImage(:, :, :, ch) = bgRGBu8;
+    end
 
-        %   max(imtmp2(:))
-        indices = str2num(levels{ch}{1});
-        % Traitement des canaux indexés
+    % ------------------------------------------------------------------
+    % 2b) Si canal indexé -> génération d'overlay (vContours OU raster)
+    % ------------------------------------------------------------------
+    if isIndexed
+        % imraw contient la carte de labels / classes
+        L = imadjust(imraw, [0 1]);    % comme ton code d'origine
+        L = double(L);
+
+        % indices à utiliser
+        indices = str2num(levCh{1}); %#ok<ST2NM>
+
+        % liste des canaux indexés
         listofindexedcha = find(roitmp.display.indexed);
-        tmpcha = roitmp.channelid(currentCha);
-        currentIndx = find(listofindexedcha == tmpcha);
+        tmpcha           = roitmp.channelid(currentCha);
+        currentIndx      = find(listofindexedcha == tmpcha);
 
-        if  (paintChannel ~= currentIndx) && paintChannel~=0 % in paint mode, discard other channels
-            continue
+        if (paintChannel ~= currentIndx) && paintChannel ~= 0
+            % en mode "paint" on peut ignorer certains canaux
+            continue;
         end
-
 
         if isempty(indices) || (numel(indices)==1 && indices==-1)
             if defaultClass && (paintChannel ~= currentIndx)
-                indices = 2:max(imtmp2(:));
+                indices = 2:max(L(:));
             else
-                indices = 1:max(imtmp2(:));
+                indices = 1:max(L(:));
             end
         end
 
-        %tmp=levels{ch}{2}
+        if paintChannel == currentIndx
+            % couleurs stables par ID
+            levmap = zeros(numel(indices), 3);
+            for ii = 1:numel(indices)
+                levmap(ii,:) = label2color(indices(ii));
+            end
+        else
+            levmap = repmat(roitmp.display.rgb(tmpcha,:), [numel(indices), 1]);
+        end
 
-         if paintChannel == currentIndx
-        %     uni = unique(totim(:));
-        %     uni(uni==0) = [];
-        %     nuni = max(numel(uni),numel(indices));
-        %     levmap = eval([levels{ch}{2} '(' num2str(nuni) ')']);
-        levmap = zeros(numel(indices),3);
-for ii = 1:numel(indices)
-    levmap(ii,:) = label2color(indices(ii));   % <- mapping stable
-end
-         else
-             levmap = repmat(roitmp.display.rgb(tmpcha,:), [numel(indices), 1]);
-         end
-
-
-        % --- Couleurs stables (0..1) pour chaque ID ---
-
-
-        wid = levels{ch}{5};
-        weiVal = double(levels{ch}{3});
+        wid      = levCh{5};
+        weiVal   = double(levCh{3});
         fillAlpha = min(1, weiVal);
 
-        switch param.mode
-            case {"Sequence","Movie"}
-                % build vectors
+        switch mode
+            case ["Sequence","Movie"]
+                % --- Version vectorielle : vContours ---
                 for iii = 1:numel(indices)
-                    bw = imtmp2 == indices(iii);
-                    B = bwboundaries(bw);
+                    bw = (L == indices(iii));
+                    B  = bwboundaries(bw);
                     for kB = 1:length(B)
                         b = B{kB};
                         patchStruct = struct();
@@ -245,117 +265,32 @@ end
                 end
 
             case "Display"
-
-                %  annotationColorImage = zeros(size(indexedOverlay));
-                % alphamask = zeros(size(alphaOverlay));
-
+                % --- Version raster : indexedOverlay + alphaOverlay ---
                 for iVal = 1:numel(indices)
-                    mask = imtmp2 == indices(iVal);
-                    %   figure, imshow(mask,[])
-                    alphamask = alphamask | mask;
+                    mask = (L == indices(iVal));
 
+                    if ~any(mask(:)), continue; end
 
                     for c = 1:3
                         channelOverlay = indexedOverlay(:, :, c);
-                        channelOverlay(mask) =levmap(iVal, c);
+                        channelOverlay(mask) = levmap(iVal, c);
                         indexedOverlay(:, :, c) = channelOverlay;
                     end
 
-                    if numel(find(mask))
-                        alphaOverlay(mask) = fillAlpha;
-                    end
-
+                    alphaOverlay(mask) = fillAlpha;
                 end
-
-                
-    % m = ismember(imtmp2, indices);
-    % Lsub = imtmp2 .* uint16(m);
-    % rgbL = mask2rgb_stable(Lsub);
-    % indexedOverlay = rgbL;
-    % alphaOverlay   = double(m) * fillAlpha;
-
-        end
-    else
-
-        % if ~isequal(levels{ch}, [-1 -1])
-        %    imtmp2 = imadjust(imtmp2, [levels{ch}(1)/65535, levels{ch}(2)/65535]);
-        % end
-        %
-
-        % if isprop(roitmp, 'display') && isfield(roitmp.display, 'log') && roitmp.display.log(currentCha) == true
-        % 
-        %     imtmp2 = double(imtmp2);  % passage explicite en double pour éviter erreurs
-        %     % Appliquer log dans l'espace double, éviter log(0)
-        %     imtmp2 = log1p(imtmp2);
-        % 
-        %     % Appliquer levels dans l'espace log
-        %     % On suppose que les niveaux sont donnés dans l'espace linéaire et doivent être logés
-        %     lmin = log1p(double(levels{ch}(1))) / log1p(65535);
-        %     lmax = log1p(double(levels{ch}(2))) / log1p(65535);
-        %     if lmin >= lmax
-        %         lmin = lmax - 1e-3;
-        %     end
-        % 
-        %     imtmp2 = imtmp2 / log1p(65535);
-        %     imtmp2 = imadjust(imtmp2, [lmin, lmax]);
-        %     imtmp2=uint16(65535*imtmp2);
-        % 
-        % else
-            % Cas normal (linéaire)
-
-           aa = levels{ch};
-
-        % Si levels{ch} est un cell (cas indexé de type {'-1','lines',[1],[0],[0]}),
-        % on ne tente PAS de faire de comparaison / imadjust dessus.
-        if iscell(aa)
-            % Option 1 : ne rien faire, on garde imtmp2 telle quelle
-            % (éventuellement mettre un warning si tu veux tracer le cas)
-            % warning('score_makeComposite: levels{ch} est un cell (canal indexé) dans la branche multi-chan, aucun ajustement de niveaux appliqué (ch=%d).', ch);
-
-        else
-            % Cas normal (numérique)
-            if ~isequal(aa, [-1 -1])
-                if aa(1) >= aa(2)
-                    aa(1) = aa(2) - 1;
-                end
-                imtmp2 = imadjust(imtmp2, [aa(1)/65535, aa(2)/65535]);
-            end
-        end
-
-        if overlay
-            if isempty(weights)
-                comp = imlincomb(1, comp, 1, uint8(double(imtmp2)/256));
-            else
-                comp = imlincomb(1, comp, weights(ch), uint8(double(imtmp2)/256));
-            end
-        else
-            displayImage(:,:,:,ch) = uint8(double(imtmp2)/256);
-        end
-      %  end
-
-
-        if overlay
-            if isempty(weights)
-                comp = imlincomb(1, comp, 1, uint8(double(imtmp2)/256));
-            else
-                comp = imlincomb(1, comp, weights(ch), uint8(double(imtmp2)/256));
-            end
-        else
-
-            displayImage(:,:,:,ch) = uint8(double(imtmp2)/256);
         end
     end
 
+end % for ch
 
-    if overlay
-        displayImage =comp;
-    end
+% Finalisation du composite si nécessaire
+if overlay
+    displayImage = comp;
+end
 
 end
 
-
-
-end
 
 
 
