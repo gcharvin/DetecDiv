@@ -388,14 +388,33 @@ fprintf('Final selection: %d frames -> %d train, %d val (H=%d, W=%d, C=%d).\n', 
 % 5) Création du HDF5 : images [H W C N], masks [H W N]
 % -------------------------------------------------------------------------
 
+% -------------------------------------------------------------------------
+% 5) Création du HDF5 : images [H W C N], masks [H W N]
+% -------------------------------------------------------------------------
+
 fprintf('Creating framebank HDF5: %s\n', framebankPath);
 
-% sécurité : si le fichier existe encore pour une raison quelconque, on le vire
+% --- Sécurité : s'assurer qu'il n'existe *pas* déjà un .h5 à ce chemin ---
 if exist(framebankPath, 'file')
-    warning('Framebank file already exists at creation time, deleting it: %s', framebankPath);
+    fprintf('WARNING: framebank already exists, deleting: %s\n', framebankPath);
     delete(framebankPath);
+
+    % Sur certains FS (NFS, Synology), la suppression peut être légèrement
+    % asynchrone → on attend un peu et on re-vérifie.
+    for retry = 1:20
+        if ~exist(framebankPath, 'file')
+            break;
+        end
+        pause(0.1);   % 100 ms
+    end
+
+    if exist(framebankPath, 'file')
+        error('formatPixelTrainingSetCPSAM:DeleteFailed', ...
+              'Unable to delete existing framebank: %s', framebankPath);
+    end
 end
 
+% À partir d'ici, on est sûr qu'il n'y a plus de fichier .h5
 h5create(framebankPath, '/images',    [H, W, C, N], 'Datatype', 'uint8');
 h5create(framebankPath, '/masks',     [H, W,    N], 'Datatype', 'uint16');
 h5create(framebankPath, '/split',     [N, 1],       'Datatype', 'uint8');
