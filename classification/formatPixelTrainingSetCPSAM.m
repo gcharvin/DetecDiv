@@ -392,34 +392,47 @@ fprintf('Final selection: %d frames -> %d train, %d val (H=%d, W=%d, C=%d).\n', 
 % 5) Création du HDF5 : images [H W C N], masks [H W N]
 % -------------------------------------------------------------------------
 
+% -------------------------------------------------------------------------
+% 5) Création du HDF5 : images [H W C N], masks [H W N]
+% -------------------------------------------------------------------------
+
 fprintf('Creating framebank HDF5: %s\n', framebankPath);
 
 % --- Sécurité : s'assurer qu'il n'existe *pas* déjà un .h5 à ce chemin ---
 if exist(framebankPath, 'file')
     fprintf('WARNING: framebank already exists, deleting: %s\n', framebankPath);
-    delete(framebankPath);
 
-    % Sur certains FS (NFS, Synology), la suppression peut être légèrement
-    % asynchrone → on attend un peu et on re-vérifie.
+    % 1) Tentative de delete MATLAB
+    try
+        delete(framebankPath);
+    catch ME
+        warning('MATLAB delete() failed: %s', ME.message);
+    end
+
+    % 2) Petite boucle d'attente (NFS / réseau)
     for retry = 1:20
         if ~exist(framebankPath, 'file')
             break;
         end
-        pause(0.1);   % 100 ms
+        pause(0.1);  % 100 ms
     end
 
+ 
+
+    % 4) Re-vérifier définitivement
     if exist(framebankPath, 'file')
         error('formatPixelTrainingSetCPSAM:DeleteFailed', ...
-              'Unable to delete existing framebank: %s', framebankPath);
+              'Unable to delete existing framebank:\n%s', framebankPath);
     end
 end
 
-% À partir d'ici, on est sûr qu'il n'y a plus de fichier .h5
+% À partir d'ici, on est sûr qu'il n'y a plus de fichier .h5 (ou on a error)
 h5create(framebankPath, '/images',    [H, W, C, N], 'Datatype', 'uint8');
 h5create(framebankPath, '/masks',     [H, W,    N], 'Datatype', 'uint16');
 h5create(framebankPath, '/split',     [N, 1],       'Datatype', 'uint8');
 h5create(framebankPath, '/roi_id',    [N, 1],       'Datatype', 'int32');
 h5create(framebankPath, '/frame_idx', [N, 1],       'Datatype', 'int32');
+
 
 % -------------------------------------------------------------------------
 % 6) 2e passe : écriture images / masks
