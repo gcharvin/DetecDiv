@@ -31,6 +31,7 @@ fname         = sprintf('%s_framebank.h5', classif.strid);
 framebankPath = fullfile(base, fname);
 
 if exist(framebankPath, 'file')
+
     fprintf('Existing framebank found, deleting: %s\n', framebankPath);
     delete(framebankPath);
 end
@@ -63,8 +64,10 @@ fprintf('Using thresholds: min_train_masks = %d, min_train_pixels = %d\n', ...
 % -------------------------------------------------------------------------
 % Paramètres de training / formatage (MaxTrainImages, Seed)
 % -------------------------------------------------------------------------
-MaxTrainImages = 0;   % 0 = pas de limite (utilise toutes les frames)
-Seed           = [];
+% Paramètres de training / formatage (MaxTrainImages, Seed, NegDownsampleTrainRatio)
+MaxTrainImages          = 0;   % 0 = pas de limite (utilise toutes les frames)
+Seed                    = [];
+NegDownsampleTrainRatio = 0;   % 0 = pas de downsampling spécifique des négatifs
 
 try
     if ~isempty(tp)
@@ -77,9 +80,17 @@ try
         if isfield(tp, 'Seed') && ~isempty(tp.Seed)
             Seed = tp.Seed;
         end
+        if isfield(tp, 'NegDownsampleTrainRatio') && ~isempty(tp.NegDownsampleTrainRatio)
+            NegDownsampleTrainRatio = tp.NegDownsampleTrainRatio;
+            if isempty(NegDownsampleTrainRatio) || NegDownsampleTrainRatio <= 0
+                NegDownsampleTrainRatio = 0;
+            end
+        end
     end
 catch
 end
+
+
 
 if MaxTrainImages > 0
     fprintf('MaxTrainImages set to %d (frames will be randomly subsampled if more are available).\n', MaxTrainImages);
@@ -94,7 +105,8 @@ end
 channel = classif.channelName;
 cltmp   = classif.roi;
 
-all_rois = [trainrois(:).'  valrois(:).'];
+%all_rois = [trainrois(:).'  valrois(:).'];
+all_rois = trainrois(:).';
 
 fprintf('Scanning ROIs to build frame index...\n');
 
@@ -106,6 +118,8 @@ H = [];
 W = [];
 C = 0;
 excludedCount = 0;
+hasMaskVec = false(0,1);   % logical vide
+
 
 % -------------------------------------------------------------------------
 % 4) 1ère passe : H, W, C, frames gardées
@@ -140,11 +154,7 @@ for ii = 1:numel(all_rois)
         end
     end
 
-    if ismember(roi_id, trainrois)
-        splitFlag = uint8(1);
-    else
-        splitFlag = uint8(2);
-    end
+splitFlag = uint8(1);   % tout ce qu'on met dans le framebank = train
 
     % Nom ROI pour log
     roiName = '';
@@ -185,7 +195,7 @@ for ii = 1:numel(all_rois)
             end
         end
 
-        n_masks  = double(max(instMask(:)));
+               n_masks  = double(max(instMask(:)));
         n_pixels = nnz(instMask);
 
         if n_masks < min_train_masks || n_pixels < min_train_pixels
@@ -202,9 +212,11 @@ for ii = 1:numel(all_rois)
         end
         C = max(C, Cframe);
 
-        idx_roi(end+1,1)   = int32(roi_id); %#ok<AGROW>
-        idx_frame(end+1,1) = int32(jj);     %#ok<AGROW>
-        idx_split(end+1,1) = splitFlag;     %#ok<AGROW>
+        idx_roi(end+1,1)    = int32(roi_id);    %#ok<AGROW>
+        idx_frame(end+1,1)  = int32(jj);        %#ok<AGROW>
+        idx_split(end+1,1)  = splitFlag;        %#ok<AGROW>
+        hasMaskVec(end+1,1) = (n_masks > 0);    %#ok<AGROW>  % true = positif (au moins un masque)
+
     end
 
     cltmp(roi_id).clear;
@@ -214,7 +226,7 @@ fprintf('Excluded %d frames not satisfying criteria (min_train_masks=%d, min_tra
     excludedCount, min_train_masks, min_train_pixels);
 
 % -------------------------------------------------------------------------
-% 4b) Sous-échantillonnage global en fonction de MaxTrainImages
+% 4a) Sous-échantillonnage des frames négatives (train uniquement, ici tout est train)
 % -------------------------------------------------------------------------
 
 Ntotal = numel(idx_roi);
@@ -226,22 +238,135 @@ if Ntotal == 0
     return;
 end
 
+if NegDownsampleTrainRatio > 0
+    if numel(hasMaskVec) ~= Ntotal
+        warning('Inconsistent hasMaskVec size (%d) vs Ntotal (%d). Skipping negative downsampling.', ...
+            numel(hasMaskVec), Ntotal);
+    else
+        posIdx = find(hasMaskVec);      % frames avec au moins un masque
+        negIdx = find(~hasMaskVec);     % frames sans masque
+
+        nPos = numel(posIdx);
+        nNeg = numel(negIdx);
+
+        if nPos == 0
+            fprintf('[NegDownsample] No positive frames found (nPos=0). Negative downsampling is skipped.\n');
+        elseif nNeg == 0
+            fprintf('[NegDownsample] No negative frames, nothing to downsample.\n');
+        else
+            maxNegTrain = min(nNeg, floor(NegDownsampleTrainRatio * nPos));
+
+            if maxNegTrain < nNeg
+                if ~isempty(Seed) && isnumeric(Seed) && isscalar(Seed)
+                    rng(Seed);
+                end
+                permNeg      = randperm(nNeg, maxNegTrain);
+                keepNegIdx   = negIdx(permNeg);
+            else
+                keepNegIdx   = negIdx;
+            end
+
+            keepPosIdx = posIdx;                  % on garde tous les positifs
+            idxKeep    = [keepPosIdx; keepNegIdx];
+            idxKeep    = idxKeep(randperm(numel(idxKeep)));
+
+            % Filtrer tous les vecteurs
+            idx_roi    = idx_roi(idxKeep);
+            idx_frame  = idx_frame(idxKeep);
+            idx_split  = idx_split(idxKeep);      % restera tout à 1
+            hasMaskVec = hasMaskVec(idxKeep);
+
+            Ntotal = numel(idx_roi);
+
+            fprintf(['Negative downsampling: kept %d positive and %d negative frames ' ...
+                     '(requested ratio <= %.2f, effective ratio = %.2f).\n'], ...
+                    numel(keepPosIdx), numel(keepNegIdx), ...
+                    NegDownsampleTrainRatio, ...
+                    numel(keepNegIdx)/max(1,numel(keepPosIdx)));
+        end
+    end
+end
+
+
+fprintf('DEBUG: after NegDownsample, train=%d (pos=%d, neg=%d), val=%d.\n', ...
+    sum(idx_split==1), ...
+    sum(idx_split==1 & hasMaskVec), ...
+    sum(idx_split==1 & ~hasMaskVec), ...
+    sum(idx_split==2));
+
+% -------------------------------------------------------------------------
+% 4b) Sous-échantillonnage global en fonction de MaxTrainImages (tout = train)
+% -------------------------------------------------------------------------
+% -------------------------------------------------------------------------
+% 4b) Sous-échantillonnage global en fonction de MaxTrainImages
+%     (ratio final contrôlé par NegDownsampleTrainRatio si >0)
+% -------------------------------------------------------------------------
+
 if MaxTrainImages > 0 && MaxTrainImages < Ntotal
-    % rendre le tirage reproductible si Seed est fourni
     if ~isempty(Seed) && isnumeric(Seed) && isscalar(Seed)
         rng(Seed);
     end
 
-    idxKeep = randperm(Ntotal, MaxTrainImages);
+    posAll = find(hasMaskVec);
+    negAll = find(~hasMaskVec);
 
-    idx_roi   = idx_roi(idxKeep);
-    idx_frame = idx_frame(idxKeep);
-    idx_split = idx_split(idxKeep);
+    nPosAll = numel(posAll);
+    nNegAll = numel(negAll);
 
-    fprintf('Subsampling %d/%d frames according to trainingParam.MaxTrainImages.\n', ...
-        MaxTrainImages, Ntotal);
+    if nPosAll == 0
+        warning('No positive frames at all, cannot balance dataset. Random subsampling only.');
+        idxKeep = randperm(Ntotal, MaxTrainImages);
+    else
+        if NegDownsampleTrainRatio > 0
+            R = NegDownsampleTrainRatio;   % ratio neg/pos souhaité au max
+            % fraction théorique de positifs = 1 / (1+R)
+            fracPos = 1 / (1 + R);
+        else
+            % fallback : 50/50 si pas de ratio demandé
+            fracPos = 0.5;
+        end
 
-    N = MaxTrainImages;
+        % nombre cible de positifs dans le framebank final
+        targetPos = min(nPosAll, max(1, round(MaxTrainImages * fracPos)));
+        targetNeg = MaxTrainImages - targetPos;
+
+        % on ne peut pas dépasser les négatifs disponibles
+        targetNeg = min(nNegAll, max(0, targetNeg));
+
+        % si on n'atteint pas MaxTrainImages, on complète au mieux
+        if targetPos + targetNeg < MaxTrainImages
+            deficit  = MaxTrainImages - (targetPos + targetNeg);
+            % essayer de compléter d'abord avec des positifs, puis négatifs
+            extraPos = min(deficit, nPosAll - targetPos);
+            targetPos = targetPos + extraPos;
+            deficit   = MaxTrainImages - (targetPos + targetNeg);
+            extraNeg  = min(deficit, nNegAll - targetNeg);
+            targetNeg = targetNeg + extraNeg;
+        end
+
+        % tirage aléatoire
+        permPos = randperm(nPosAll, targetPos);
+        permNeg = randperm(nNegAll, targetNeg);
+
+        idxKeep = [posAll(permPos); negAll(permNeg)];
+        idxKeep = idxKeep(randperm(numel(idxKeep)));  % mélange
+    end
+
+    % appliquer
+    idx_roi    = idx_roi(idxKeep);
+    idx_frame  = idx_frame(idxKeep);
+    idx_split  = idx_split(idxKeep);      % tout = 1 (train)
+    hasMaskVec = hasMaskVec(idxKeep);
+
+    N = numel(idx_roi);
+
+    nPosFinal = sum(hasMaskVec);
+    nNegFinal = sum(~hasMaskVec);
+
+    fprintf(['GLOBAL subsampling %d/%d (MaxTrainImages) -> ' ...
+             '%d frames total, %d pos, %d neg (%.1f%% pos, ratio neg/pos=%.2f)\n'], ...
+            N, Ntotal, N, nPosFinal, nNegFinal, ...
+            100*nPosFinal/max(1,N), nNegFinal/max(1,nPosFinal));
 else
     if MaxTrainImages > 0 && MaxTrainImages >= Ntotal
         fprintf('MaxTrainImages (%d) >= available frames (%d): using all frames.\n', ...
@@ -250,13 +375,14 @@ else
     N = Ntotal;
 end
 
-nTrain = sum(idx_split == 1);
-nVal   = sum(idx_split == 2);
-
+nTrain = N;
+nVal   = 0;
 output = N;
 
 fprintf('Final selection: %d frames -> %d train, %d val (H=%d, W=%d, C=%d).\n', ...
     N, nTrain, nVal, H, W, C);
+
+
 
 % -------------------------------------------------------------------------
 % 5) Création du HDF5 : images [H W C N], masks [H W N]
