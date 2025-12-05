@@ -1,4 +1,3 @@
-
 function [displayImage, vContours, indexedOverlay, alphaOverlay] = score_makeComposite(roitmp, fr, param)
 % SCORE_MAKECOMPOSITE
 % - Construit l'image de fond (displayImage)
