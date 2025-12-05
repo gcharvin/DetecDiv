@@ -391,7 +391,7 @@ fprintf('Final selection: %d frames -> %d train, %d val (H=%d, W=%d, C=%d).\n', 
 % -------------------------------------------------------------------------
 
 % Initialiser tous les frames comme TRAIN
-idx_split = uint8(zeros(N,1));  % 0 = train
+idx_split = uint8(ones(N,1));  % 0 = train
 
 if ValFraction > 0
     nVal = round(ValFraction * N);
@@ -402,7 +402,7 @@ if ValFraction > 0
         end
 
         valIdx = randperm(N, nVal);  % indices 1..N
-        idx_split(valIdx) = uint8(1);   % 1 = val
+        idx_split(valIdx) = uint8(0);   % 1 = val
     else
         nVal = 0;
     end
@@ -410,8 +410,8 @@ else
     nVal = 0;
 end
 
-nTrain = sum(idx_split == 0);
-nVal   = sum(idx_split == 1);
+nTrain = sum(idx_split == 1);
+nVal   = sum(idx_split == 0);
 
 fprintf('Internal CPSAM split: %d train frames, %d val frames (ValFraction=%.3f).\n', ...
     nTrain, nVal, ValFraction);
