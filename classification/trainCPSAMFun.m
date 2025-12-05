@@ -24,7 +24,8 @@ if nargin == 2
         'Verbose logging during training' ,                     % verbose
         'Max number of images used for training' ,                      % seed
         'Seed for random number generation',
-        'Downsampling of of negative images (0: no downsampling; 1: at most as many negatives as positives frames)'
+        'Downsampling of of negative images (0: no downsampling; 1: at most as many negatives as positives frames)',
+        ' Train/val splitting ratio'
     };
 
     classif.trainingParam = struct( ...
@@ -42,6 +43,7 @@ if nargin == 2
         'MaxTrainImages',      50, ...
         'Seed', 12345, ...
         'NegDownsampleTrainRatio', 0, ...
+        'CPSAM_ValFraction', 0.2, ...
         'tip',                 {tip} ...
     );
     return;
@@ -66,6 +68,15 @@ if ~isfield(trainingParam, 'MaxTrainImages'),  trainingParam.MaxTrainImages = 50
 if ~isfield(trainingParam, 'Seed'),     trainingParam.Seed = 12345; end
 if ~isfield(trainingParam, 'NegDownsampleTrainRatio'),     trainingParam.NegDownsampleTrainRatio = 0; end
 
+
+ValFraction = 0.1;   % 10% val par défaut
+
+if ~isempty(trainingParam) && isfield(trainingParam, 'CPSAM_ValFraction') && ~isempty(trainingParam.CPSAM_ValFraction)
+    ValFraction = trainingParam.CPSAM_ValFraction;
+end
+
+
+ValFraction = max(0, min(ValFraction, 0.5));  % clamp 0..0.5
 
 % -------------------------------------------------------------------------
 % 2) Chemin du framebank

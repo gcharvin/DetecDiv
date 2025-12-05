@@ -91,6 +91,8 @@ catch
 end
 
 
+ValFraction = tp.CPSAM_ValFraction;
+
 
 if MaxTrainImages > 0
     fprintf('MaxTrainImages set to %d (frames will be randomly subsampled if more are available).\n', MaxTrainImages);
@@ -295,9 +297,6 @@ fprintf('DEBUG: after NegDownsample, train=%d (pos=%d, neg=%d), val=%d.\n', ...
     sum(idx_split==2));
 
 % -------------------------------------------------------------------------
-% 4b) Sous-échantillonnage global en fonction de MaxTrainImages (tout = train)
-% -------------------------------------------------------------------------
-% -------------------------------------------------------------------------
 % 4b) Sous-échantillonnage global en fonction de MaxTrainImages
 %     (ratio final contrôlé par NegDownsampleTrainRatio si >0)
 % -------------------------------------------------------------------------
@@ -383,14 +382,44 @@ fprintf('Final selection: %d frames -> %d train, %d val (H=%d, W=%d, C=%d).\n', 
     N, nTrain, nVal, H, W, C);
 
 
+% -------------------------------------------------------------------------
+% 4c) Split interne train / val (pour CellposeSAM)
+%     - 0 = train
+%     - 1 = val
+%     La validation est tirée SEULEMENT parmi les frames de trainROIs
+%     (ici, le framebank ne contient que les trainROIs)
+% -------------------------------------------------------------------------
 
-% -------------------------------------------------------------------------
-% 5) Création du HDF5 : images [H W C N], masks [H W N]
-% -------------------------------------------------------------------------
+% Initialiser tous les frames comme TRAIN
+idx_split = uint8(zeros(N,1));  % 0 = train
 
-% -------------------------------------------------------------------------
-% 5) Création du HDF5 : images [H W C N], masks [H W N]
-% -------------------------------------------------------------------------
+if ValFraction > 0
+    nVal = round(ValFraction * N);
+
+    if nVal > 0 && nVal < N
+        if ~isempty(Seed) && isnumeric(Seed) && isscalar(Seed)
+            rng(Seed);
+        end
+
+        valIdx = randperm(N, nVal);  % indices 1..N
+        idx_split(valIdx) = uint8(1);   % 1 = val
+    else
+        nVal = 0;
+    end
+else
+    nVal = 0;
+end
+
+nTrain = sum(idx_split == 0);
+nVal   = sum(idx_split == 1);
+
+fprintf('Internal CPSAM split: %d train frames, %d val frames (ValFraction=%.3f).\n', ...
+    nTrain, nVal, ValFraction);
+
+
+output = N;
+fprintf('Final selection: %d frames -> %d train, %d val (H=%d, W=%d, C=%d).\n', ...
+    N, nTrain, nVal, H, W, C);
 
 % -------------------------------------------------------------------------
 % 5) Création du HDF5 : images [H W C N], masks [H W N]
@@ -433,6 +462,9 @@ h5create(framebankPath, '/split',     [N, 1],       'Datatype', 'uint8');
 h5create(framebankPath, '/roi_id',    [N, 1],       'Datatype', 'int32');
 h5create(framebankPath, '/frame_idx', [N, 1],       'Datatype', 'int32');
 
+h5write(framebankPath, '/split',     idx_split, [1 1], [N 1]);
+h5write(framebankPath, '/roi_id',    idx_roi,   [1 1], [N 1]);
+h5write(framebankPath, '/frame_idx', idx_frame, [1 1], [N 1]);
 
 % -------------------------------------------------------------------------
 % 6) 2e passe : écriture images / masks
