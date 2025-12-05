@@ -390,15 +390,17 @@ fprintf('Final selection: %d frames -> %d train, %d val (H=%d, W=%d, C=%d).\n', 
 
 fprintf('Creating framebank HDF5: %s\n', framebankPath);
 
+% sécurité : si le fichier existe encore pour une raison quelconque, on le vire
+if exist(framebankPath, 'file')
+    warning('Framebank file already exists at creation time, deleting it: %s', framebankPath);
+    delete(framebankPath);
+end
+
 h5create(framebankPath, '/images',    [H, W, C, N], 'Datatype', 'uint8');
 h5create(framebankPath, '/masks',     [H, W,    N], 'Datatype', 'uint16');
 h5create(framebankPath, '/split',     [N, 1],       'Datatype', 'uint8');
 h5create(framebankPath, '/roi_id',    [N, 1],       'Datatype', 'int32');
 h5create(framebankPath, '/frame_idx', [N, 1],       'Datatype', 'int32');
-
-h5write(framebankPath, '/split',     idx_split, [1 1], [N 1]);
-h5write(framebankPath, '/roi_id',    idx_roi,   [1 1], [N 1]);
-h5write(framebankPath, '/frame_idx', idx_frame, [1 1], [N 1]);
 
 % -------------------------------------------------------------------------
 % 6) 2e passe : écriture images / masks
