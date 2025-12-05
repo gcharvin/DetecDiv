@@ -22,8 +22,9 @@ if nargin == 2
         'Minimum number of masks per image (USED IN FORMAT)',  % min_train_masks
         'Use pretrained SAM model (True/False)',               % use_pretrained
         'Verbose logging during training' ,                     % verbose
-        'Max number of images used for training' ,                      % verbose
-        'Seed'
+        'Max number of images used for training' ,                      % seed
+        'Seed for random number generation',
+        'Downsampling of of negative images (0: no downsampling; 1: at most as many negatives as positives frames)'
     };
 
     classif.trainingParam = struct( ...
@@ -35,11 +36,12 @@ if nargin == 2
         'learning_rate',       1e-4, ...
         'weight_decay',        1e-5, ...
         'batch_size',          1, ...
-        'min_train_masks',     1, ...   % utilisé côté formatage
+        'min_train_masks',     0, ...   % utilisé côté formatage
         'use_pretrained',      true, ...
         'verbose',             true, ...
         'MaxTrainImages',      50, ...
         'Seed', 12345, ...
+        'NegDownsampleTrainRatio', 0, ...
         'tip',                 {tip} ...
     );
     return;
@@ -62,6 +64,7 @@ if ~isfield(trainingParam, 'weight_decay'),   trainingParam.weight_decay = 1e-5;
 if ~isfield(trainingParam, 'batch_size'),     trainingParam.batch_size = 1; end
 if ~isfield(trainingParam, 'MaxTrainImages'),  trainingParam.MaxTrainImages = 50; end
 if ~isfield(trainingParam, 'Seed'),     trainingParam.Seed = 12345; end
+if ~isfield(trainingParam, 'NegDownsampleTrainRatio'),     trainingParam.NegDownsampleTrainRatio = 0; end
 
 
 % -------------------------------------------------------------------------

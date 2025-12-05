@@ -135,6 +135,7 @@ for i = 1:numel(roiObj.display.selectedchannel)
     if any(strcmp(channel_names{i}, classif.channelName))
         selected(i) = true;
     end
+
     if category=="Pixel"
          if any(strcmp(channel_names{i}, classstr))
         selected(i) = true;

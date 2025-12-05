@@ -247,52 +247,39 @@ switch cate
     % =====================================================================
     %                           PIXEL
     % =====================================================================
-    case 'Pixel'
+case 'Pixel'
     classes = classif.classes; %#ok<NASGU>
 
     if hasPixelFramebank
         % -------------------------------------------------------------
         % ======= MODE HDF5 (framebank Pixel / CPSAM) ========
         % -------------------------------------------------------------
-        h5File = h5FramebankFile;  % déjà construit en haut
+        h5File = h5FramebankFile;  % <strid>_framebank.h5
 
         if ~isfile(h5File)
             disp('No HDF5 framebank found for Pixel trainingset; quitting...');
             return;
         end
 
-        info = h5info(h5File);
-
-        % --- Détection du dataset d'images (frames) ---
-        candFrame = {'/frames','/images','/raw'};
-        dsetFrame = '';
-        for k = 1:numel(candFrame)
-            try
-                h5info(h5File, candFrame{k});
-                dsetFrame = candFrame{k};
-                break;
-            catch
-            end
-        end
-        if isempty(dsetFrame)
-            % fallback : premier dataset du fichier
-            if ~isempty(info.Datasets)
-                dsetFrame = ['/' info.Datasets(1).Name];
-            elseif ~isempty(info.Groups) && ~isempty(info.Groups(1).Datasets)
-                dsetFrame = ['/' info.Groups(1).Name '/' info.Groups(1).Datasets(1).Name];
-            else
-                warning('No suitable image dataset found in %s', h5File);
-                return;
-            end
+        % --- Images : on suppose format CPSAM /images [H W C N] ---
+        try
+            infoImg = h5info(h5File, '/images');
+        catch
+            warning('Dataset /images not found in %s', h5File);
+            return;
         end
 
-        infoFrames = h5info(h5File, dsetFrame);
-        sz = infoFrames.Dataspace.Size;  % [H W C N] ou [H W N]
-
+        sz = infoImg.Dataspace.Size;  % [H W C N] ou [H W N]
         if numel(sz) == 3
-            H = sz(1); W = sz(2); C = 1; Nobs = sz(3);
+            H    = sz(1);
+            W    = sz(2);
+            C    = 1;
+            Nobs = sz(3);
         else
-            H = sz(1); W = sz(2); C = sz(3); Nobs = sz(4);
+            H    = sz(1);
+            W    = sz(2);
+            C    = sz(3);
+            Nobs = sz(4);
         end
 
         if Nobs == 0
@@ -300,18 +287,19 @@ switch cate
             return;
         end
 
-        % --- Détection éventuelle d'un dataset de labels / masques ---
-        candLab   = {'/labels','/masks','/labelmaps'};
-        dsetLabel = '';
-        for k = 1:numel(candLab)
-            try
-                h5info(h5File, candLab{k});
-                dsetLabel = candLab{k};
-                break;
-            catch
+        % --- Masques : format CPSAM /masks [H W N] (optionnel mais attendu) ---
+        hasMasks = false;
+        try
+            infoMask = h5info(h5File, '/masks');
+            szM      = infoMask.Dataspace.Size;   % [H W N] attendu
+            if numel(szM) == 3 && szM(1) == H && szM(2) == W
+                hasMasks = true;
+            else
+                warning('Unexpected /masks size in %s, no overlay will be shown.', h5File);
             end
+        catch
+            % pas de /masks -> pas d'overlay
         end
-        hasLabels = ~isempty(dsetLabel);
 
         output{1,1} = 'images';
         output{1,2} = Nobs;
@@ -325,12 +313,20 @@ switch cate
             cc   = 1;
 
             for j = idx
-                % lecture frame j
-                start = [1 1 1 j];
-                count = [H W C 1];
-                I = h5read(h5File, dsetFrame, start, count);
+                % ---- lecture image j ----
+                if numel(sz) == 3
+                    % [H W N]
+                    startImg = [1 1 j];
+                    countImg = [H W 1];
+                else
+                    % [H W C N]
+                    startImg = [1 1 1 j];
+                    countImg = [H W C 1];
+                end
+                I = h5read(h5File, '/images', startImg, countImg);
                 I = squeeze(I);
 
+                % Passage en RGB
                 if ndims(I) == 2
                     Irgb = repmat(I, [1 1 3]);
                 elseif size(I,3) == 1
@@ -340,28 +336,18 @@ switch cate
                 end
                 Irgb = im2uint8(mat2gray(Irgb));  % safe
 
-                % overlay labels si disponibles
-                if hasLabels
+                % ---- overlay des masques si dispo ----
+                if hasMasks
                     try
-                        infoLab = h5info(h5File, dsetLabel);
-                        szL     = infoLab.Dataspace.Size;
+                        % /masks [H W N]
+                        startM = [1 1 j];
+                        countM = [H W 1];
+                        L = h5read(h5File, '/masks', startM, countM);
+                        L = squeeze(L);
 
-                        if numel(szL) == 3
-                            HL = szL(1); WL = szL(2); NL = szL(3);
-                            startL = [1 1 j];
-                            countL = [HL WL 1];
-                        else
-                            HL = szL(1); WL = szL(2); CL = szL(3); NL = szL(4);
-                            startL = [1 1 1 j];
-                            countL = [HL WL CL 1];
-                        end
-
-                        if NL >= j
-                            L = h5read(h5File, dsetLabel, startL, countL);
-                            L = squeeze(L);
-
-                            if ~islogical(L) && max(L(:)) > 1
-                                % carte de labels -> pseudo-couleurs
+                        if any(L(:) ~= 0)
+                            if max(L(:)) > 1
+                                % Instance map -> pseudo-couleurs
                                 Lrgb = label2rgb(uint16(L), 'jet', 'k', 'shuffle');
                                 Lrgb = im2uint8(mat2gray(Lrgb));
                                 Irgb = imlincomb(0.75, Irgb, 0.25, Lrgb);
@@ -378,8 +364,8 @@ switch cate
                                 end
                             end
                         end
-                    catch
-                        % en cas d'erreur sur les labels, on affiche juste l'image
+                    catch ME
+                        warning('Error reading /masks (frame %d): %s', j, ME.message);
                     end
                 end
 
