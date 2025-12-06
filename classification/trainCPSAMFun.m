@@ -4,8 +4,8 @@ function trainCPSAMFun(classif, setparam)
 % Le framebank HDF5 est supposé être créé par formatPixelTrainingSetCPSAM, avec :
 %   /images : [H W C N] (uint8)   -> Python : (N, C, W, H)
 %   /masks  : [H W N]   (uint16)  -> Python : (N, W, H)
-%   /split  : [N 1]     (uint8)   -> Python : (1, N)  (d'où le .ravel())
-
+%   /split  : [N 1]     (uint8)   -> 1 = train, 0 = val (interne CPSAM)
+%
 % -------------------------------------------------------------------------
 % 0) Initialisation des paramètres (mode setparam)
 % -------------------------------------------------------------------------
@@ -21,11 +21,11 @@ if nargin == 2
         'Batch size',                                          % batch_size
         'Minimum number of masks per image (USED IN FORMAT)',  % min_train_masks
         'Use pretrained SAM model (True/False)',               % use_pretrained
-        'Verbose logging during training' ,                     % verbose
-        'Max number of images used for training' ,                      % seed
-        'Seed for random number generation',
-        'Downsampling of of negative images (0: no downsampling; 1: at most as many negatives as positives frames)',
-        ' Train/val splitting ratio'
+        'Verbose logging during training' ,                    % verbose
+        'Max number of images used for training' ,             % MaxTrainImages
+        'Seed for random number generation',                   % Seed
+        'Downsampling of negative images (0: none; 1: at most as many negatives as positives)', ...
+        'Train/val splitting ratio (internal CPSAM val fraction)'
     };
 
     classif.trainingParam = struct( ...
@@ -41,9 +41,9 @@ if nargin == 2
         'use_pretrained',      true, ...
         'verbose',             true, ...
         'MaxTrainImages',      50, ...
-        'Seed', 12345, ...
+        'Seed',                12345, ...
         'NegDownsampleTrainRatio', 0, ...
-        'CPSAM_ValFraction', 0.2, ...
+        'CPSAM_ValFraction',   0.2, ...
         'tip',                 {tip} ...
     );
     return;
@@ -64,29 +64,51 @@ if ~isfield(trainingParam, 'n_epochs'),       trainingParam.n_epochs = 5; end
 if ~isfield(trainingParam, 'learning_rate'),  trainingParam.learning_rate = 1e-4; end
 if ~isfield(trainingParam, 'weight_decay'),   trainingParam.weight_decay = 1e-5; end
 if ~isfield(trainingParam, 'batch_size'),     trainingParam.batch_size = 1; end
-if ~isfield(trainingParam, 'MaxTrainImages'),  trainingParam.MaxTrainImages = 50; end
-if ~isfield(trainingParam, 'Seed'),     trainingParam.Seed = 12345; end
-if ~isfield(trainingParam, 'NegDownsampleTrainRatio'),     trainingParam.NegDownsampleTrainRatio = 0; end
+if ~isfield(trainingParam, 'MaxTrainImages'), trainingParam.MaxTrainImages = 50; end
+if ~isfield(trainingParam, 'Seed'),           trainingParam.Seed = 12345; end
+if ~isfield(trainingParam, 'NegDownsampleTrainRatio'), trainingParam.NegDownsampleTrainRatio = 0; end
 
-
-ValFraction = 0.1;   % 10% val par défaut
-
+ValFraction = 0.1;   % 10% val par défaut (côté formatage)
 if ~isempty(trainingParam) && isfield(trainingParam, 'CPSAM_ValFraction') && ~isempty(trainingParam.CPSAM_ValFraction)
     ValFraction = trainingParam.CPSAM_ValFraction;
 end
-
-
 ValFraction = max(0, min(ValFraction, 0.5));  % clamp 0..0.5
 
 % -------------------------------------------------------------------------
-% 2) Chemin du framebank
+% 2) Chemin du framebank (robuste avec *_framebank_XXX.h5)
 % -------------------------------------------------------------------------
 base = classif.path;
-framebank_name = sprintf('%s_framebank.h5', classif.strid);
-framebank_path = fullfile(base, framebank_name);
 
-if ~exist(framebank_path, 'file')
-    error('Framebank HDF5 not found: %s\nRun formatPixelTrainingSetCPSAM before training.', framebank_path);
+% On cherche tous les fichiers du type <strid>_framebank*.h5
+pattern = sprintf('%s_framebank*.h5', classif.strid);
+d = dir(fullfile(base, pattern));
+
+if isempty(d)
+    error('Framebank HDF5 not found in %s with pattern %s. Run formatPixelTrainingSetCPSAM before training.', ...
+          base, pattern);
+end
+
+% Trier par date de modification (plus récent d'abord)
+[~, idxSort] = sort([d.datenum], 'descend');
+d = d(idxSort);
+
+framebank_path = '';
+for k = 1:numel(d)
+    cand = fullfile(base, d(k).name);
+    try
+        % Petit sanity check : est-ce un HDF5 lisible ?
+        h5info(cand);
+        framebank_path = cand;
+        fprintf('[INFO] Using framebank file: %s\n', framebank_path);
+        break;
+    catch ME
+        warning('[WARN] HDF5 file %s seems corrupted/unreadable (%s), skipping...', cand, ME.message);
+    end
+end
+
+if isempty(framebank_path)
+    error('No usable HDF5 framebank found in %s for pattern %s (all candidates unreadable).', ...
+          base, pattern);
 end
 
 framebank_clean = strrep(framebank_path, '\', '/');
@@ -106,8 +128,6 @@ if trainingParam.verbose
 else
     logger_line = "";
 end
-
-
 
 % -------------------------------------------------------------------------
 % 4) Script Python – version simplifiée

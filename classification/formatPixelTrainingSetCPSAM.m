@@ -2,10 +2,10 @@ function output = formatPixelTrainingSetCPSAM(foldername, classif, trainrois, va
 % formatPixelTrainingSetCPSAM  Build a Cellpose/CellposeSAM training set
 % stocké dans un framebank HDF5 au lieu d'images individuelles.
 %
-% HDF5 structure (dans classif.path/<strid>_framebank.h5) :
+% HDF5 structure (dans classif.path/<strid>_framebank*.h5) :
 %   /images      : uint8  [H W C N]   (C = 1 ou 3, N = nb de frames gardées)
 %   /masks       : uint16 [H W N]     (0 = background, 1..K = ID instances)
-%   /split       : uint8  [N 1]       (1 = train, 2 = val)
+%   /split       : uint8  [N 1]       (1 = train, 0 = val)
 %   /roi_id      : int32  [N 1]       (ID de ROI dans classif.roi)
 %   /frame_idx   : int32  [N 1]       (index de frame dans la ROI)
 %
@@ -13,7 +13,7 @@ function output = formatPixelTrainingSetCPSAM(foldername, classif, trainrois, va
 %   foldername : ignoré (compatibilité)
 %   classif    : classification project object
 %   trainrois  : indices de ROI pour split train
-%   valrois    : indices de ROI pour split val
+%   valrois    : ignoré ici (on ne met que les trainROIs dans le framebank)
 %
 % Returns
 %   output     : nombre de frames exportées (N)
@@ -22,19 +22,12 @@ output = 0;
 warning('off','all');  %#ok<WNOFF>
 
 % -------------------------------------------------------------------------
-% 1) Chemin du framebank
+% 1) Chemin de base du framebank (pourra être modifié plus bas)
 % -------------------------------------------------------------------------
 
 base = classif.path;  % dossier de la classif
-
-fname         = sprintf('%s_framebank.h5', classif.strid);
-framebankPath = fullfile(base, fname);
-
-if exist(framebankPath, 'file')
-
-    fprintf('Existing framebank found, deleting: %s\n', framebankPath);
-    delete(framebankPath);
-end
+fnameBase    = sprintf('%s_framebank.h5', classif.strid);
+framebankPath = fullfile(base, fnameBase);  % pourra devenir *_framebank_001.h5, etc.
 
 % -------------------------------------------------------------------------
 % 2) Seuils depuis classif.trainingParam (optionnel)
@@ -62,12 +55,12 @@ fprintf('Using thresholds: min_train_masks = %d, min_train_pixels = %d\n', ...
     min_train_masks, min_train_pixels);
 
 % -------------------------------------------------------------------------
-% Paramètres de training / formatage (MaxTrainImages, Seed)
-% -------------------------------------------------------------------------
 % Paramètres de training / formatage (MaxTrainImages, Seed, NegDownsampleTrainRatio)
+% -------------------------------------------------------------------------
 MaxTrainImages          = 0;   % 0 = pas de limite (utilise toutes les frames)
 Seed                    = [];
 NegDownsampleTrainRatio = 0;   % 0 = pas de downsampling spécifique des négatifs
+ValFraction             = 0;   % fraction interne val pour CPSAM
 
 try
     if ~isempty(tp)
@@ -86,13 +79,12 @@ try
                 NegDownsampleTrainRatio = 0;
             end
         end
+        if isfield(tp,'CPSAM_ValFraction') && ~isempty(tp.CPSAM_ValFraction)
+            ValFraction = tp.CPSAM_ValFraction;
+        end
     end
 catch
 end
-
-
-ValFraction = tp.CPSAM_ValFraction;
-
 
 if MaxTrainImages > 0
     fprintf('MaxTrainImages set to %d (frames will be randomly subsampled if more are available).\n', MaxTrainImages);
@@ -107,21 +99,20 @@ end
 channel = classif.channelName;
 cltmp   = classif.roi;
 
-%all_rois = [trainrois(:).'  valrois(:).'];
+% On ne prend QUE les trainROIs dans le framebank (le "val" Python
+% sera géré en interne via ValFraction, uniquement parmi ces frames).
 all_rois = trainrois(:).';
 
 fprintf('Scanning ROIs to build frame index...\n');
 
 idx_roi   = [];
 idx_frame = [];
-idx_split = [];   % 1 = train, 2 = val
-
+idx_split = [];   % 1 = train (CPSAM split sera géré plus tard)
 H = [];
 W = [];
 C = 0;
 excludedCount = 0;
 hasMaskVec = false(0,1);   % logical vide
-
 
 % -------------------------------------------------------------------------
 % 4) 1ère passe : H, W, C, frames gardées
@@ -156,7 +147,7 @@ for ii = 1:numel(all_rois)
         end
     end
 
-splitFlag = uint8(1);   % tout ce qu'on met dans le framebank = train
+    splitFlag = uint8(1);   % tout ce qu'on met dans le framebank = "train" (au sens global)
 
     % Nom ROI pour log
     roiName = '';
@@ -197,7 +188,7 @@ splitFlag = uint8(1);   % tout ce qu'on met dans le framebank = train
             end
         end
 
-               n_masks  = double(max(instMask(:)));
+        n_masks  = double(max(instMask(:)));
         n_pixels = nnz(instMask);
 
         if n_masks < min_train_masks || n_pixels < min_train_pixels
@@ -218,7 +209,6 @@ splitFlag = uint8(1);   % tout ce qu'on met dans le framebank = train
         idx_frame(end+1,1)  = int32(jj);        %#ok<AGROW>
         idx_split(end+1,1)  = splitFlag;        %#ok<AGROW>
         hasMaskVec(end+1,1) = (n_masks > 0);    %#ok<AGROW>  % true = positif (au moins un masque)
-
     end
 
     cltmp(roi_id).clear;
@@ -288,7 +278,6 @@ if NegDownsampleTrainRatio > 0
         end
     end
 end
-
 
 fprintf('DEBUG: after NegDownsample, train=%d (pos=%d, neg=%d), val=%d.\n', ...
     sum(idx_split==1), ...
@@ -381,17 +370,14 @@ output = N;
 fprintf('Final selection: %d frames -> %d train, %d val (H=%d, W=%d, C=%d).\n', ...
     N, nTrain, nVal, H, W, C);
 
-
 % -------------------------------------------------------------------------
 % 4c) Split interne train / val (pour CellposeSAM)
-%     - 0 = train
-%     - 1 = val
+%     - 1 = train
+%     - 0 = val
 %     La validation est tirée SEULEMENT parmi les frames de trainROIs
-%     (ici, le framebank ne contient que les trainROIs)
 % -------------------------------------------------------------------------
 
-% Initialiser tous les frames comme TRAIN
-idx_split = uint8(ones(N,1));  % 0 = train
+idx_split = uint8(ones(N,1));  % 1 = train
 
 if ValFraction > 0
     nVal = round(ValFraction * N);
@@ -402,7 +388,7 @@ if ValFraction > 0
         end
 
         valIdx = randperm(N, nVal);  % indices 1..N
-        idx_split(valIdx) = uint8(0);   % 1 = val
+        idx_split(valIdx) = uint8(0);   % 0 = val
     else
         nVal = 0;
     end
@@ -416,46 +402,21 @@ nVal   = sum(idx_split == 0);
 fprintf('Internal CPSAM split: %d train frames, %d val frames (ValFraction=%.3f).\n', ...
     nTrain, nVal, ValFraction);
 
-
 output = N;
 fprintf('Final selection: %d frames -> %d train, %d val (H=%d, W=%d, C=%d).\n', ...
     N, nTrain, nVal, H, W, C);
 
 % -------------------------------------------------------------------------
-% 5) Création du HDF5 : images [H W C N], masks [H W N]
+% 5) Choix robuste du chemin HDF5 + création des datasets
 % -------------------------------------------------------------------------
+
+% Choisir un chemin de framebank "sain":
+% - si <strid>_framebank.h5 existe et est supprimable -> on le réutilise
+% - s'il est vérolé/verrouillé -> on essaie <strid>_framebank_001.h5, etc.
+framebankPath = chooseFramebankPath(framebankPath);
 
 fprintf('Creating framebank HDF5: %s\n', framebankPath);
 
-% --- Sécurité : s'assurer qu'il n'existe *pas* déjà un .h5 à ce chemin ---
-if exist(framebankPath, 'file')
-    fprintf('WARNING: framebank already exists, deleting: %s\n', framebankPath);
-
-    % 1) Tentative de delete MATLAB
-    try
-        delete(framebankPath);
-    catch ME
-        warning('MATLAB delete() failed: %s', ME.message);
-    end
-
-    % 2) Petite boucle d'attente (NFS / réseau)
-    for retry = 1:20
-        if ~exist(framebankPath, 'file')
-            break;
-        end
-        pause(0.1);  % 100 ms
-    end
-
- 
-
-    % 4) Re-vérifier définitivement
-    if exist(framebankPath, 'file')
-        error('formatPixelTrainingSetCPSAM:DeleteFailed', ...
-              'Unable to delete existing framebank:\n%s', framebankPath);
-    end
-end
-
-% À partir d'ici, on est sûr qu'il n'y a plus de fichier .h5 (ou on a error)
 h5create(framebankPath, '/images',    [H, W, C, N], 'Datatype', 'uint8');
 h5create(framebankPath, '/masks',     [H, W,    N], 'Datatype', 'uint16');
 h5create(framebankPath, '/split',     [N, 1],       'Datatype', 'uint8');
@@ -490,8 +451,8 @@ for ii = 1:numel(all_rois)
 
     T = size(im, 4);
 
-    % === CORRECTION : ne garder que les frames sélectionnés pour CE ROI ===
-    mask_roi       = (idx_roi == int32(roi_id));   % au lieu de (idx_roi == idx_roi)
+    % Ne garder que les frames sélectionnés pour CE ROI
+    mask_roi       = (idx_roi == int32(roi_id));
     frames_for_roi = idx_frame(mask_roi);
 
     % Si aucun frame de ce ROI n'a été retenu après le sous-échantillonnage,
@@ -544,7 +505,7 @@ for ii = 1:numel(all_rois)
 
         % ---- image locale ----
         if numel(pix) >= 3
-            useCh  = pix(1:3);
+            useCh  = pix(1:3); %#ok<NASGU>
             imgLoc = im(:, :, useCh, jj);
             tmpC   = size(imgLoc,3);
             for c = 1:tmpC
@@ -555,7 +516,7 @@ for ii = 1:numel(all_rois)
                 imgLoc(:, :, c) = ch;
             end
         else
-            useCh = pix(1);
+            useCh = pix(1); %#ok<NASGU>
             ch    = im(:, :, useCh, jj);
             if ~isa(ch, 'uint8')
                 imgLoc = uint8(255 * mat2gray(ch));
@@ -615,8 +576,78 @@ if k ~= N
         'Expected %d frames, actually wrote %d.', N, k);
 end
 
-
 warning('on','all');
 fprintf('Exported %d frames to HDF5 framebank:\n  %s\n', output, framebankPath);
+
+% =========================================================================
+% === Nested helper functions =============================================
+% =========================================================================
+
+    function tf = tryDeleteSafe(fpath)
+        % Essaye de supprimer 'fpath' et vérifie qu'il a vraiment disparu.
+        % Renvoie true si supprimé ou absent, false si encore présent.
+        tf = false;
+        if ~exist(fpath, 'file')
+            tf = true;    % déjà absent
+            return;
+        end
+
+        try
+            delete(fpath);
+        catch
+            % delete() a échoué -> fichier suspect
+            return;
+        end
+
+        % Attente brève (filesystem / cache / NFS)
+        for kk = 1:20
+            pause(0.05); % 50 ms
+            if ~exist(fpath, 'file')
+                tf = true;
+                return;
+            end
+        end
+
+        % Toujours présent -> fichier vérolé / fantôme
+        tf = false;
+    end
+
+    function fbPath = chooseFramebankPath(basePath)
+        % Choisit un chemin de framebank "sain" :
+        % - teste basePath, puis basePath_001, basePath_002, ...
+        % - si un chemin existe et est supprimable -> on le réutilise
+        % - si un chemin existe et n'est PAS supprimable -> on le considère vérolé et on passe au suivant
+        [folder, baseName, ext] = fileparts(basePath);
+
+        maxTries = 999;
+        for kk = 0:maxTries
+            if kk == 0
+                candidateName = baseName;
+            else
+                candidateName = sprintf('%s_%03d', baseName, kk);
+            end
+            candidatePath = fullfile(folder, [candidateName ext]);
+
+            if exist(candidatePath, 'file')
+                fprintf('WARNING: candidate framebank exists, trying delete: %s\n', candidatePath);
+                if tryDeleteSafe(candidatePath)
+                    fprintf('  -> old framebank deleted, reusing path: %s\n', candidatePath);
+                    fbPath = candidatePath;
+                    return;
+                else
+                    fprintf('  -> cannot delete (locked/corrupted?), skipping this path.\n');
+                    continue;
+                end
+            else
+                fprintf('Using new framebank path: %s\n', candidatePath);
+                fbPath = candidatePath;
+                return;
+            end
+        end
+
+        error('formatPixelTrainingSetCPSAM:NoFramebankPath', ...
+              'Could not find usable framebank path after %d attempts starting from %s', ...
+              maxTries+1, basePath);
+    end
 
 end
