@@ -63,9 +63,34 @@ pth  = classif.getPath;
 
 disp(['This classification is of this type: ' cate]);
 
-% Détection éventuelle d'un framebank HDF5 (utile en particulier pour Pixel/CPSAM)
-h5FramebankFile     = fullfile(pth, [classif.strid '_framebank.h5']);
-hasPixelFramebank   = isfile(h5FramebankFile);
+% ---------------------------------------------------------------------
+% Recherche robuste d'un framebank Pixel / CPSAM (comme trainCPSAMFun)
+% ---------------------------------------------------------------------
+pattern = sprintf('%s_framebank*.h5', classif.strid);
+d = dir(fullfile(pth, pattern));
+
+h5FramebankFile = '';
+hasPixelFramebank = false;
+
+if ~isempty(d)
+    % Trier par date de modification (plus récent d'abord)
+    [~, idxSort] = sort([d.datenum], 'descend');
+    d = d(idxSort);
+
+    for k = 1:numel(d)
+        cand = fullfile(pth, d(k).name);
+        try
+            h5info(cand);      % test lisibilité
+            h5FramebankFile = cand;
+            hasPixelFramebank = true;
+            fprintf('[INFO] Using framebank: %s\n', h5FramebankFile);
+            break;
+        catch ME
+            warning('[WARN] Unreadable framebank %s (%s). Skipping...', ...
+                cand, ME.message);
+        end
+    end
+end
 
 % Backend (TIFF / HDF5) utile pour Image/LSTM & Augmentation
 backend = "tiff";
