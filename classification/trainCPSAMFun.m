@@ -24,7 +24,7 @@ if nargin == 2
         'Verbose logging during training' ,                    % verbose
         'Max number of images used for training' ,             % MaxTrainImages
         'Seed for random number generation',                   % Seed
-        'Downsampling of negative images (0: none; 1: at most as many negatives as positives)', ...
+        'Downsampling of negative images (0: none; 1: at most as many negatives as positives)',
         'Train/val splitting ratio (internal CPSAM val fraction)'
     };
 
