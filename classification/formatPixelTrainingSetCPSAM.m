@@ -285,6 +285,7 @@ fprintf('DEBUG: after NegDownsample, train=%d (pos=%d, neg=%d), val=%d.\n', ...
     sum(idx_split==1 & ~hasMaskVec), ...
     sum(idx_split==2));
 
+
 % -------------------------------------------------------------------------
 % 4b) Sous-échantillonnage global en fonction de MaxTrainImages
 %     (ratio final contrôlé par NegDownsampleTrainRatio si >0)
@@ -304,14 +305,17 @@ if MaxTrainImages > 0 && MaxTrainImages < Ntotal
     if nPosAll == 0
         warning('No positive frames at all, cannot balance dataset. Random subsampling only.');
         idxKeep = randperm(Ntotal, MaxTrainImages);
+
     else
         if NegDownsampleTrainRatio > 0
+            % --- Mode "contrôle du ratio" ---
             R = NegDownsampleTrainRatio;   % ratio neg/pos souhaité au max
             % fraction théorique de positifs = 1 / (1+R)
             fracPos = 1 / (1 + R);
         else
-            % fallback : 50/50 si pas de ratio demandé
-            fracPos = 0.5;
+            % --- Mode "pas de rebalance global" ---
+            % On garde le ratio tel qu'il est dans le pool courant
+            fracPos = nPosAll / max(1, (nPosAll + nNegAll));
         end
 
         % nombre cible de positifs dans le framebank final
@@ -352,7 +356,7 @@ if MaxTrainImages > 0 && MaxTrainImages < Ntotal
     nNegFinal = sum(~hasMaskVec);
 
     fprintf(['GLOBAL subsampling %d/%d (MaxTrainImages) -> ' ...
-             '%d frames total, %d pos, %d neg (%.1f%% pos, ratio neg/pos=%.2f)\n'], ...
+             '%d frames total, %d pos, %d neg (%.1f%%%% pos, ratio neg/pos=%.2f)\n'], ...
             N, Ntotal, N, nPosFinal, nNegFinal, ...
             100*nPosFinal/max(1,N), nNegFinal/max(1,nPosFinal));
 else
@@ -363,12 +367,6 @@ else
     N = Ntotal;
 end
 
-nTrain = N;
-nVal   = 0;
-output = N;
-
-fprintf('Final selection: %d frames -> %d train, %d val (H=%d, W=%d, C=%d).\n', ...
-    N, nTrain, nVal, H, W, C);
 
 % -------------------------------------------------------------------------
 % 4c) Split interne train / val (pour CellposeSAM)
