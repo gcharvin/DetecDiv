@@ -5,7 +5,10 @@ function output = formatPixelTrainingSetCPSAM(foldername, classif, trainrois, va
 % HDF5 structure (dans classif.path/<strid>_framebank*.h5) :
 %   /images      : uint8  [H W C N]   (C = 1 ou 3, N = nb de frames gardées)
 %   /masks       : uint16 [H W N]     (0 = background, 1..K = ID instances)
-%   /split       : uint8  [N 1]       (1 = train, 0 = val)
+%   /split       : uint8  [N 1]
+%                  0 = test (hold-out, jamais utilisé pour le training)
+%                  1 = train
+%                  2 = val (validation interne pour CellposeSAM)
 %   /roi_id      : int32  [N 1]       (ID de ROI dans classif.roi)
 %   /frame_idx   : int32  [N 1]       (index de frame dans la ROI)
 %
@@ -82,6 +85,21 @@ try
         if isfield(tp,'CPSAM_ValFraction') && ~isempty(tp.CPSAM_ValFraction)
             ValFraction = tp.CPSAM_ValFraction;
         end
+
+        % On va interpréter CPSAM_ValFraction comme fraction de VAL **et** de TEST
+% Exemple : CPSAM_ValFraction = 0.2  ->  60% train, 20% val, 20% test
+if isempty(ValFraction)
+    ValFraction = 0;
+end
+% On évite d'avoir 2*ValFraction >= 1
+if ValFraction < 0
+    ValFraction = 0;
+elseif ValFraction >= 0.5
+    warning('CPSAM_ValFraction=%.3f >= 0.5, clamp to 0.25 (train≈50%%, val≈25%%, test≈25%%).', ValFraction);
+    ValFraction = 0.25;
+end
+
+
     end
 catch
 end
@@ -369,40 +387,91 @@ end
 
 
 % -------------------------------------------------------------------------
-% 4c) Split interne train / val (pour CellposeSAM)
-%     - 1 = train
-%     - 0 = val
-%     La validation est tirée SEULEMENT parmi les frames de trainROIs
+% 4c) Split global train / val / test (pour CellposeSAM)
+%     /split :
+%       0 = test (hold-out, jamais utilisé pour le training)
+%       1 = train
+%       2 = val
+%
+%     On utilise CPSAM_ValFraction comme fraction de VAL et de TEST :
+%       f_val   = ValFraction
+%       f_test  = ValFraction
+%       f_train = 1 - 2*ValFraction
 % -------------------------------------------------------------------------
 
-idx_split = uint8(ones(N,1));  % 1 = train
+idx_split = uint8(zeros(N,1));  % initialement tout en "test" (0)
 
-if ValFraction > 0
-    nVal = round(ValFraction * N);
-
-    if nVal > 0 && nVal < N
-        if ~isempty(Seed) && isnumeric(Seed) && isscalar(Seed)
-            rng(Seed);
-        end
-
-        valIdx = randperm(N, nVal);  % indices 1..N
-        idx_split(valIdx) = uint8(0);   % 0 = val
-    else
-        nVal = 0;
-    end
+if ValFraction <= 0
+    % Pas de val/test : tout en train
+    idx_split(:) = uint8(1);
+    nTrain = N;
+    nVal   = 0;
+    nTest  = 0;
 else
-    nVal = 0;
+    % Fractions théoriques
+    f_val   = ValFraction;
+    f_test  = ValFraction;
+    f_train = 1 - 2*ValFraction;   % ex : 0.6 pour ValFraction=0.2
+
+    if f_train <= 0
+        % Sécurité (ne devrait pas arriver car clampé plus haut)
+        warning('Computed f_train=%.3f <= 0, using fallback fractions 0.6/0.2/0.2.', f_train);
+        f_train = 0.6;
+        f_val   = 0.2;
+        f_test  = 0.2;
+    end
+
+    % Nombres de frames par split (arrondis)
+    nVal   = round(f_val   * N);
+    nTest  = round(f_test  * N);
+    nTrain = N - nVal - nTest;
+
+    % Corrige au cas où les arrondis seraient trop agressifs
+    if nTrain < 1
+        nTrain = 1;
+        remaining = N - nTrain;
+        nVal   = floor(remaining/2);
+        nTest  = remaining - nVal;
+    elseif nVal < 0
+        nVal = 0;
+        nTest = N - nTrain;
+    elseif nTest < 0
+        nTest = 0;
+        nVal = N - nTrain;
+    end
+
+    if nTrain + nVal + nTest ~= N
+        % Sécurité finale si un off-by-one traîne
+        diffN = N - (nTrain + nVal + nTest);
+        nTrain = nTrain + diffN;
+    end
+
+    % Tirage aléatoire reproductible pour répartir les indices
+    if ~isempty(Seed) && isnumeric(Seed) && isscalar(Seed)
+        rng(Seed);
+    end
+    perm = randperm(N);
+
+    trainIdx = perm(1:nTrain);
+    valIdx   = perm(nTrain+1 : nTrain+nVal);
+    testIdx  = perm(nTrain+nVal+1 : nTrain+nVal+nTest);
+
+    idx_split(trainIdx) = uint8(1);  % train
+    idx_split(valIdx)   = uint8(2);  % val
+    idx_split(testIdx)  = uint8(0);  % test
 end
 
 nTrain = sum(idx_split == 1);
-nVal   = sum(idx_split == 0);
+nVal   = sum(idx_split == 2);
+nTest  = sum(idx_split == 0);
 
-fprintf('Internal CPSAM split: %d train frames, %d val frames (ValFraction=%.3f).\n', ...
-    nTrain, nVal, ValFraction);
+fprintf('Global split: %d train, %d val, %d test frames (ValFraction=%.3f -> f_train≈%.3f, f_val≈%.3f, f_test≈%.3f).\n', ...
+    nTrain, nVal, nTest, ValFraction, ...
+    nTrain/max(1,N), nVal/max(1,N), nTest/max(1,N));
 
 output = N;
-fprintf('Final selection: %d frames -> %d train, %d val (H=%d, W=%d, C=%d).\n', ...
-    N, nTrain, nVal, H, W, C);
+fprintf('Final selection: %d frames -> %d train, %d val, %d test (H=%d, W=%d, C=%d).\n', ...
+    N, nTrain, nVal, nTest, H, W, C);
 
 % -------------------------------------------------------------------------
 % 5) Choix robuste du chemin HDF5 + création des datasets
