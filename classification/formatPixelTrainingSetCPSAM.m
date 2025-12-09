@@ -579,6 +579,37 @@ end
 warning('on','all');
 fprintf('Exported %d frames to HDF5 framebank:\n  %s\n', output, framebankPath);
 
+fprintf('Exported %d frames to HDF5 framebank:\n  %s\n', output, framebankPath);
+
+% -------------------------------------------------------------------------
+% 7) Copie de traçabilité dans un sous-dossier "framebank" avec timestamp
+% -------------------------------------------------------------------------
+try
+    backupDir = fullfile(classif.path, 'framebank');
+    if ~exist(backupDir, 'dir')
+        mkdir(backupDir);
+        fprintf('[INFO] Created framebank backup directory: %s\n', backupDir);
+    end
+
+    % Timestamp compact, ex: 20251208_140512
+    ts = datestr(now, 'yyyymmdd_HHMMSS');
+
+    % baseName = nom du fichier sans chemin ni extension
+    [~, baseName, ext] = fileparts(framebankPath);
+    backupName = sprintf('%s_%s%s', baseName, ts, ext);
+    backupPath = fullfile(backupDir, backupName);
+
+    copyfile(framebankPath, backupPath);
+    fprintf('[INFO] Framebank backup copy saved to: %s\n', backupPath);
+catch ME
+    warning('[WARN] Could not create framebank backup copy: %s', ME.message);
+end
+
+warning('on','all');
+fprintf('Exported %d frames to HDF5 framebank:\n  %s\n', output, framebankPath);
+
+
+
 % =========================================================================
 % === Nested helper functions =============================================
 % =========================================================================
