@@ -184,8 +184,36 @@ end
 if plotConfusion
     for j=nscore
         % j
-        mate=classif.score(j).confusion;
-        cate=categorical(classif.classes);
+      mate = classif.score(j).confusion;
+
+        if isempty(mate)
+            warning('No confusion matrix available for score %d. Skipping.', j);
+            continue;
+        end
+
+        % labels utilisés pour la confusion matrix
+        if isfield(classif.score(j), 'confusionLbl') && ~isempty(classif.score(j).confusionLbl)
+            labs = classif.score(j).confusionLbl(:)';
+        else
+            labs = 1:size(mate,1);  % fallback si ancien format
+        end
+
+        % --- noms à afficher sur les axes ---
+        if numel(classif.classes) == numel(labs)
+            % cas standard : 1..K -> classif.classes{k}
+            names = classif.classes;
+        elseif numel(classif.classes) == 1 && numel(labs) == 2
+            % cas CPSAM typique : 2 labels (foreground + background)
+            % on nomme explicitement
+            names = {'background',classif.classes{1}};
+        else
+            % fallback générique
+            names = arrayfun(@(x) sprintf('Class %d', x), labs, 'UniformOutput', false);
+        end
+
+        cate = categorical(names);
+
+
         h=figure;
         cm=confusionchart(mate,cate,'ColumnSummary','column-normalized','RowSummary','row-normalized');
         xlabel('Predicted class');
@@ -603,10 +631,21 @@ end
 
 % ======= confusion matrix ======
 
+% ======= confusion matrix (robuste aux labels) ======
 
-mate=confusionmat(data.gt,data.pred,'Order',1:numel(classif.classes));
-score.confusion=mate; % matrix coeff must match acc and recall values computed above
+% labels effectivement présents dans GT / Pred
+labs = unique([data.gt(:); data.pred(:)]);
+labs = labs(~isnan(labs));  % au cas où
 
+try
+    mate = confusionmat(data.gt, data.pred, 'Order', labs');
+catch ME
+    warning('Could not compute confusion matrix: %s', ME.message);
+    mate = [];
+end
+
+score.confusion    = mate;
+score.confusionLbl = labs;   % on garde les labels utilisés (ex: [0;1] ou [1;2])
 % ===== accuracy & recall & fscore per ROI =====
 
 score.roi=[];
@@ -698,6 +737,8 @@ data.CNNpred=[];
 classistr=classif.strid;
 reg=0;
 
+
+
 for j=roiid
 
     obj=classif.roi(j);
@@ -713,70 +754,137 @@ for j=roiid
     CNNpred=[];
     fra=[];
 
+
     switch classif.category{1}
-        case 'Pixel' % pixel classification
+                case 'Pixel' % pixel classification / segmentation (incl. CellposeSAM)
 
-            chgt=obj.findChannelID(classif.strid);
-            chpred=obj.findChannelID(['results_' classif.strid]);
+               
+     if numel(obj.image)==0
+        obj.load;
+    end
+    im = obj.image;
 
-            if numel(obj.image)==0 % loads the image
-                obj.load;
-            end
-            im=obj.image;
+    % CPSAM
+    isCPSAM = false;
+    chgt_cpsam   = [];
+    chpred_cpsam = [];
 
-            if numel(chgt)>0 % groundtruth channel exists
-                % checks if at least one image has been annotated  first!
+    if ~isempty(classif.classes)
+        baseGT   = [classif.strid '_' classif.classes{1}];
+        basePred = ['results_' classif.strid '_' classif.classes{1}];
+        chgt_cpsam   = obj.findChannelID(baseGT);
+        chpred_cpsam = obj.findChannelID(basePred);
+        if iscell(chgt_cpsam),   chgt_cpsam   = cell2mat(chgt_cpsam);   end
+        if iscell(chpred_cpsam), chpred_cpsam = cell2mat(chpred_cpsam); end
 
-                imgt=im(:,:,chgt,:);
-                if sum(imgt(:))>0 % at least one image was annotated
-                    disp('GT data are available!');
-                    ground=1;
+        fprintf('ROI %d (%s): CPSAM GT=%s, Pred=%s\n', j, obj.id, mat2str(chgt_cpsam), mat2str(chpred_cpsam));
+        isCPSAM = ~isempty(chgt_cpsam) && ~isempty(chpred_cpsam);
+    end
+
+            if isCPSAM
+
+
+                % ================== BRANCHE CELLPoseSAM ==================
+                disp('[CPSAM] Using instance masks <strid>_<class> and results_<strid>_<class>.');
+
+                imgt   = im(:,:,chgt_cpsam,:);   % GT: 0 = bg, >0 = cellule
+                impred = im(:,:,chpred_cpsam,:); % Pred: idem
+
+
+    fprintf('  sum(GT)=%g, sum(Pred)=%g\n', sum(imgt(:)), sum(impred(:)));
+
+                if sum(imgt(:)) > 0
+                    disp('[CPSAM] GT data are available!');
+                    ground = 1;
                 else
-                    disp('there is no GT data !')
+                    disp('[CPSAM] no GT data !');
                 end
-            else
-                disp('there is no GT channel ')
-            end
 
-
-            if numel(chpred)>0
-                impred=im(:,:,chpred,:);
-                if sum(impred(:))>0 % at least one image was annotated
-                    disp('Predictions data are available!');
-                    resok=1;
+                if sum(impred(:)) > 0
+                    disp('[CPSAM] Prediction data are available!');
+                    resok = 1;
                 else
-                    disp('there is no pred data !')
+                    disp('[CPSAM] no prediction data !');
                 end
-            else
-                disp('There is no prediction channel available for this roi');
-            end
 
-            if ground && resok
-                %  for gt, if at least one pixel on the image is annotated, then
-                %  take the whole image as annotated and fill in with
-                %  default class
-                for k=1:size(imgt,4)
-                    bw=imgt(:,:,1,k);
-                    if sum(bw(:))>0
-                        bw= imgt(:,:,1,k);
-                        bw(imgt(:,:,1,k)==0)=1;
-                        imgt(:,:,1,k) = bw;
+                if ground && resok
+                    % Binaire : 0=bg, >0=cell -> labels 0/1
+                    gtBin   = imgt > 0;
+                    predBin = impred > 0;
+
+                    gt   = double(gtBin(:)).';    % 0 ou 1
+                    pred = double(predBin(:)).';  % 0 ou 1
+
+                    % Pas de frames pour CPSAM (évite Excel monstrueux)
+                    fra   = [];
+                end
+
+            else
+                % ================== BRANCHE PIXEL CLASSIQUE ==================
+
+                chgt   = obj.findChannelID(classif.strid);
+                chpred = obj.findChannelID(['results_' classif.strid]);
+
+                if numel(chgt)>0 % groundtruth channel exists
+                    imgt = im(:,:,chgt,:);
+                    if sum(imgt(:))>0 % at least one image was annotated
+                        disp('GT data are available!');
+                        ground=1;
+                    else
+                        disp('there is no GT data !')
                     end
-                end
-
-                pix= imgt & impred;
-
-                if numel(pix)==0
-                    disp('There is no coincidence for ground truth and prediction : skipping roi !');
-                    continue
                 else
-                    disp('GT and prediction pixels match!');
+                    disp('there is no GT channel ')
                 end
 
-                gt= imgt(pix); gt=gt(:); gt=gt';
-                pred=impred(pix); pred=pred(:); pred=pred';
+                if numel(chpred)>0
+                    impred=im(:,:,chpred,:);
+                    if sum(impred(:))>0 % at least one image was annotated
+                        disp('Predictions data are available!');
+                        resok=1;
+                    else
+                        disp('there is no pred data !')
+                    end
+                else
+                    disp('There is no prediction channel available for this roi');
+                end
 
+                if ground && resok
+                    %  for gt, if at least one pixel on the image is annotated, then
+                    %  take the whole image as annotated and fill in with
+                    %  default class
+                    for k=1:size(imgt,4)
+                        bw=imgt(:,:,1,k);
+                        if sum(bw(:))>0
+                            bw= imgt(:,:,1,k);
+                            bw(imgt(:,:,1,k)==0)=1;
+                            imgt(:,:,1,k) = bw;
+                        end
+                    end
+
+                    pix= imgt & impred;
+
+                    if numel(pix)==0
+                        disp('There is no coincidence for ground truth and prediction : skipping roi !');
+                        continue
+                    else
+                        disp('GT and prediction pixels match!');
+                    end
+
+                    gt= imgt(pix);  gt   = gt(:).';
+                    pred=impred(pix); pred = pred(:).';
+
+                    gt_bin = gt > 0;       % 1 = cell, 0 = background
+pred_bin = pred > 0;
+
+gt = gt_bin + 1;       % 2 = background, 1 = cell
+pred = pred_bin + 1;
+
+                    % pas de frames définis dans le code original
+                    fra = [];
+                end
             end
+
 
         case 'Image Regression'
 
