@@ -337,7 +337,17 @@ function ROIpreprocessing(roiobj, classif)
     % --- Détection segmentation d'instances -------------------------
     % Ces classif renvoient des masques indexés (instances),
     % pas des cartes de proba par pixel.
-isCPSAM = strcmp(classif.description{1}, 'CellposeSAM');
+
+    % CPSAM : on teste soit la classifyFun, soit la présence de 'CellposeSAM'
+% dans la description (où qu'il soit).
+isCPSAM = false;
+
+if isprop(classif,'classifyFun') && strcmp(classif.classifyFun,'classifyCPSAMFun')
+    isCPSAM = true;
+elseif isprop(classif,'description') && ~isempty(classif.description)
+    isCPSAM = any(strcmp(classif.description, 'CellposeSAM'));
+end
+
 isInstanceSeg = (strcmp(classif.description{1}, 'YOLO instance segmentation') || ...
                  strcmp(classif.description{1}, 'Cell-TRACKTR')               || ...
                  isCPSAM);  % CellposeSAM = instance seg même si 'proba'
