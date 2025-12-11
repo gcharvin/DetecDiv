@@ -409,17 +409,65 @@ newPath = fullfile(folder, [name '.pdf']);
             end
         end
 
-        % Vidéo setup avec VideoWriter.
-       % outputMoviePath = fullfile(pwd,outputname);
-       [folder, name, ~] = fileparts(outputname);
-% on reconstruit le chemin avec la nouvelle extension
-    newPath = fullfile(folder, [name '.mp4']);
+[folder, name, ~] = fileparts(outputname);
 
-        v = VideoWriter(newPath, 'MPEG-4');
-        v.FrameRate = 10;  % Ajustez le FrameRate selon vos besoins.
-        open(v);
-        fig = get(masterTL, 'Parent');
-        set(fig, 'Visible', 'off','InvertHardcopy', 'off');
+% 1) Profil demandé par l'appli (optionnel)
+if isfield(layoutOptions, 'movieProfile') && ~isempty(layoutOptions.movieProfile)
+    requestedProfile = layoutOptions.movieProfile;  % ex: 'MPEG-4', 'Motion JPEG AVI', ...
+else
+    requestedProfile = 'MPEG-4';  % préférence: MP4 si dispo (Windows)
+end
+
+% 2) Profils disponibles sur cette installation
+profiles = VideoWriter.getProfiles;
+validProfiles = {profiles.Name};
+
+% 3) Si le profil demandé n'est pas dispo, on choisit un fallback
+if ~ismember(requestedProfile, validProfiles)
+    % Ordre de préférence selon ce qui est généralement utile
+    preferenceList = {'MPEG-4', 'Motion JPEG AVI', 'Uncompressed AVI', ...
+                      'Archival', 'Motion JPEG 2000', 'Grayscale AVI', 'Indexed AVI'};
+    fallbackProfile = '';
+
+    for k = 1:numel(preferenceList)
+        if ismember(preferenceList{k}, validProfiles)
+            fallbackProfile = preferenceList{k};
+            break;
+        end
+    end
+
+    if isempty(fallbackProfile)
+        % Au cas très improbable où rien ne match (devrait pas arriver)
+        fallbackProfile = validProfiles{1};
+    end
+
+    warning('Requested movie profile "%s" not available. Using "%s" instead.', ...
+        requestedProfile, fallbackProfile);
+    requestedProfile = fallbackProfile;
+end
+
+% 4) Choix de l'extension en fonction du profil
+switch requestedProfile
+    case 'MPEG-4'
+        fileExt = '.mp4';
+    case {'Motion JPEG 2000','Archival'}
+        % Ceux-là sont souvent stockés en .mj2, mais .avi peut aussi marcher
+        fileExt = '.mj2';  % à adapter si tu préfères .avi
+    otherwise
+        % Motion JPEG AVI, Uncompressed AVI, Grayscale AVI, Indexed AVI, ...
+        fileExt = '.avi';
+end
+
+newPath = fullfile(folder, [name fileExt]);
+
+% 5) Création du VideoWriter avec un profil valide
+v = VideoWriter(newPath, requestedProfile);
+v.FrameRate = 10;  % Ajuste selon tes besoins
+
+open(v);
+fig = get(masterTL, 'Parent');
+set(fig, 'Visible', 'off', 'InvertHardcopy', 'off');
+
 
         for frame = 1:numel(layoutOptions.frames)
             score_updateRender(graphicsHandles, roiobj, layoutOptions, displayHandles,frame)
