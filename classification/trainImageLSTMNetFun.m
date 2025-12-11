@@ -1262,16 +1262,19 @@ switch backendFmt
         return;
 
     case 'hdf5'
-        % Pour LSTM, framebank.h5 est à la racine de la classif
-        h5File = fullfile(path, [classif.strid '_framebank.h5']);
+           % Pour LSTM, le framebank HDF5 est du type <strid>_framebank_XXX.h5
+        % On utilise le helper pour trouver un fichier existant.
+        baseFB = fullfile(path, [classif.strid '_framebank']);
+        h5File = findExistingFramebank(baseFB);
 
-        if ~exist(h5File, 'file')
-            disp('HDF5 framebank.h5 not found for LSTM backend = HDF5.');
-            fprintf('Expected file: %s\n', h5File);
+        if isempty(h5File)
+            disp('No HDF5 framebank (*.h5) found for LSTM backend = HDF5.');
+            fprintf('Searched with base: %s (patterns: %s*.h5)\n', baseFB, baseFB);
             disp('Run "Format LSTM dataset" (backend = HDF5) first.');
             return;
         end
 
+        fprintf('Found HDF5 framebank for LSTM backend: %s\n', h5File);
         ok = true;
         return;
 
