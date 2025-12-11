@@ -258,9 +258,22 @@ else
 
     backend = trainingParam.Format_StorageBackend{end};
 
-    h5SeriesFile = fullfile(path,[classif.strid,'_framebank.h5']);
-    h5Exists = exist(h5SeriesFile,"file")==2;
+    % Recherche robuste du framebank HDF5 éventuellement suffixé
+    h5SeriesFile = "";
+    if strcmp(backend,'hdf5')
+        baseFB = fullfile(path,[classif.strid,'_framebank.h5']);
+        h5SeriesFile = findExistingFramebank(baseFB);   % << nouveau helper
+    end
+
+    h5Exists    = (strlength(h5SeriesFile) > 0) && exist(h5SeriesFile,"file")==2;
     useH5Series = strcmp(backend,'hdf5') && h5Exists;
+
+    if useH5Series
+        fprintf('Using HDF5 framebank: %s\n', h5SeriesFile);
+    elseif strcmp(backend,'hdf5')
+        warning('HDF5 backend requested but no usable framebank found starting from %s. Falling back to MAT/TIFF.', ...
+            fullfile(path,[classif.strid,'_framebank.h5']));
+    end
 
     if h5Exists && ~useH5Series
         fprintf('HDF5 framebank detected but backend ''%s'' configured -> sticking to legacy MAT/TIFF workflow.\n', backend);
@@ -1493,4 +1506,78 @@ function featSeq = computeCNNActivationsFromBackbone(netCNN, video4D, layerName)
         % === Cas legacy : SeriesNetwork / DAGNetwork ===
         featSeq = activations(netCNN, video4D, layerName, 'OutputAs','columns');
     end
+
+
+
+    % =========================================================================
+% === Nested helper functions pour la gestion robuste du framebank CNN ====
+% =========================================================================
+
+    function tf = tryDeleteSafe(fpath)
+        % Essaye de supprimer 'fpath' et vérifie qu'il a vraiment disparu.
+        % Renvoie true si supprimé ou absent, false si encore présent.
+        tf = false;
+        if ~exist(fpath, 'file')
+            tf = true;    % déjà absent
+            return;
+        end
+
+        try
+            delete(fpath);
+        catch
+            % delete() a échoué -> fichier suspect/locké
+            return;
+        end
+
+        % Attente brève (filesystem / cache / NFS)
+        for kk = 1:20
+            pause(0.05); % 50 ms
+            if ~exist(fpath, 'file')
+                tf = true;
+                return;
+            end
+        end
+
+        % Toujours présent -> fichier vérolé / fantôme
+        tf = false;
+    end
+
+    function fbPath = chooseFramebankPath(basePath)
+        % Choisit un chemin de framebank "sain" :
+        % - teste basePath, puis basePath_001, basePath_002, ...
+        % - si un chemin existe et est supprimable -> on le réutilise
+        % - si un chemin existe et n'est PAS supprimable -> on le considère vérolé et on passe au suivant
+        [folder, baseName, ext] = fileparts(basePath);
+
+        maxTries = 999;
+        for kk = 0:maxTries
+            if kk == 0
+                candidateName = baseName;
+            else
+                candidateName = sprintf('%s_%03d', baseName, kk);
+            end
+            candidatePath = fullfile(folder, [candidateName ext]);
+
+            if exist(candidatePath, 'file')
+                fprintf('WARNING: candidate CNN framebank exists, trying delete: %s\n', candidatePath);
+                if tryDeleteSafe(candidatePath)
+                    fprintf('  -> old CNN framebank deleted, reusing path: %s\n', candidatePath);
+                    fbPath = candidatePath;
+                    return;
+                else
+                    fprintf('  -> cannot delete (locked/corrupted?), skipping this path.\n');
+                    continue;
+                end
+            else
+                fprintf('Using new CNN framebank path: %s\n', candidatePath);
+                fbPath = candidatePath;
+                return;
+            end
+        end
+
+        error('formatLSTMTrainingSet:NoFramebankPath', ...
+              'Could not find usable CNN framebank path after %d attempts starting from %s', ...
+              maxTries+1, basePath);
+    end
+
 
