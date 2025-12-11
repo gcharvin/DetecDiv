@@ -1044,17 +1044,24 @@ while ~isempty(toVisit)
     kids = string(cnnLayers.Connections.Destination(mask));
     kids = kids(:);            % <-- IMPORTANT : colonne
 
-    newKids = setdiff(kids, [desc; string(layerName)]);
-    newKids = newKids(:);      % <-- IMPORTANT : colonne
+newKids = setdiff(kids, [desc; string(layerName)]);
+    newKids = newKids(:);      % colonne
 
-    desc    = unique([desc; kids], 'stable');
-    toVisit = unique([toVisit; newKids], 'stable');
+    desc = unique([desc; kids], 'stable');
+
+    % --- NOUVELLE VERSION : PAS DE VERTCAT ---
+    if ~isempty(newKids)
+        % union gère row/col et évite les problèmes de concaténation
+        toVisit = union(toVisit, newKids, 'stable');
+        toVisit = toVisit(:);  % on repasse en colonne pour la suite
+    end
 end
 
-
-    desc = setdiff(desc, layerName);
-    desc = intersect(desc, names);
-    if ~isempty(desc), cnnLayers = removeLayers(cnnLayers, cellstr(desc)); end
+desc = setdiff(desc, layerName);
+desc = intersect(desc, names);
+if ~isempty(desc)
+    cnnLayers = removeLayers(cnnLayers, cellstr(desc));
+end
 
     % entrée séquence + folding
     inputLayer = sequenceInputLayer([inputSize 3], 'Normalization','zerocenter', ...

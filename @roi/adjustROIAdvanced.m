@@ -1,28 +1,5 @@
 function adjustROIAdvanced(obj, varargin)
-
 %ADJUSTROIADVANCED Ajuste une ROI en une seule opération (bbox, channels, dataseries, binning).
-%
-% Usage typique (GUI ou ligne de commande) :
-%   r.adjustROIAdvanced('bbox',[0 0 w h], ...
-%                       'keepChannels',   {'phase','GFP'}, ...
-%                       'keepDataseries', {'mean_fluo','divduration'}, ...
-%                       'binning',        2);
-%
-% - 'bbox' :
-%      []          -> ne change pas la bbox
-%      [x y w h]   -> passe tel quel à adjustROISize
-%      [0 0 w h]   -> avec ton adjustROISize, change w,h en gardant le centre
-%
-% - 'keepChannels' : cellstr de noms de channels (display.channel) à CONSERVER.
-%                    Tous les autres seront supprimés via removeChannel().
-%                    [] ou {} => ne touche pas aux channels.
-%
-% - 'keepDataseries' : cellstr de groupid à CONSERVER dans obj.data.
-%                      Tous les autres dataseries seront supprimés.
-%                      [] ou {} => ne touche pas à obj.data.
-%
-% - 'binning' : scalaire > 0, stocké dans obj.display.binning (un par canal).
-%               N'affecte pas l'image elle-même, seulement les settings de display.
 
     p = inputParser;
     addParameter(p,'bbox',[], @(x)isnumeric(x) && (numel(x)==4 || numel(x)==2));
@@ -36,41 +13,30 @@ function adjustROIAdvanced(obj, varargin)
     keepDS       = cellstr(p.Results.keepDataseries);
     binning      = p.Results.binning;
 
-    % Nettoyage des listes : on vire les strings vides
     keepChannels = keepChannels(~cellfun(@isempty, keepChannels));
     keepDS       = keepDS(~cellfun(@isempty, keepDS));
 
-    %% 1) Resize via ta méthode existante
-    if ~isempty(bbox)
-        % bbox est soit [x y w h], soit [0 0 w h] si tu veux garder le centre
-        obj.adjustROISize(bbox);
-    end
-
-    %% 2) Binning : on ne touche qu'à obj.display.binning
-    if ~isempty(binning)
-        % Normalisation des noms de channels
-        chNames = {};
-        if isfield(obj.display,'channel') && ~isempty(obj.display.channel)
-            chNames = obj.display.channel;
-            if ischar(chNames)
-                chNames = {chNames};
-            elseif isstring(chNames)
-                chNames = cellstr(chNames);
+    %% 1) Géométrie + binning => délégué à adjustROISize
+    if ~isempty(bbox) || ~isempty(binning)
+        if isempty(bbox)
+            val = obj.value;
+            if isempty(val)
+                % fallback : ROI encore non initialisée => on fait rien
+                val = [1 1 1 1];
             end
+        else
+            val = bbox;
         end
 
-        nCh = numel(chNames);
-        if nCh == 0
-            % pas de canaux -> on stocke quand même quelque chose de cohérent
-            obj.display.binning = binning;
+        if isempty(binning)
+            obj.adjustROISize(val);
         else
-            obj.display.binning = repmat(binning, nCh, 1);
+            obj.adjustROISize(val, binning);
         end
     end
 
-    %% 3) Filtrage des channels (via removeChannel qui gère image + display + channelid)
+    %% 2) Filtrage des channels (via removeChannel)
     if ~isempty(keepChannels)
-        % Noms actuels
         names = obj.display.channel;
         if ischar(names)
             names = {names};
@@ -78,18 +44,10 @@ function adjustROIAdvanced(obj, varargin)
             names = cellstr(names);
         end
 
-        if isempty(names)
-            % rien à faire
-        else
-            % Canaux qu'on veut VRAIMENT garder (intersection)
+        if ~isempty(names)
             toKeep = intersect(names, keepChannels, 'stable');
-
-            % Si l'intersection est vide, on ne fait rien pour éviter de tuer la ROI
             if ~isempty(toKeep)
-                % Canaux à supprimer = tous ceux qui ne sont pas dans toKeep
                 toDrop = setdiff(names, toKeep, 'stable');
-
-                % On supprime un par un en utilisant removeChannel(name)
                 for i = 1:numel(toDrop)
                     obj.removeChannel(toDrop{i});
                 end
@@ -97,7 +55,7 @@ function adjustROIAdvanced(obj, varargin)
         end
     end
 
-    %% 4) Filtrage des dataseries dans obj.data (par groupid)
+    %% 3) Filtrage des dataseries dans obj.data (par groupid)
     if ~isempty(keepDS) && ~isempty(obj.data)
         toRemove = [];
         for k = 1:numel(obj.data)
@@ -106,7 +64,6 @@ function adjustROIAdvanced(obj, varargin)
                 gname = char(obj.data(k).groupid);
             end
 
-            % Si pas de nom ou nom non présent dans keepDS => on supprime
             if isempty(gname) || ~ismember(gname, keepDS)
                 toRemove(end+1) = k; %#ok<AGROW>
             end
@@ -117,10 +74,9 @@ function adjustROIAdvanced(obj, varargin)
         end
     end
 
-    %% 5) Logging (optionnel, si tu as roi.log)
+    %% 4) Logging (optionnel)
     try
         obj.log('ROI adjusted (bbox / channels / dataseries / binning)','Processing');
     catch
-        % silencieux si log n'existe pas ou plante
     end
 end
