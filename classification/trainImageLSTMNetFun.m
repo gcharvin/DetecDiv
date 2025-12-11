@@ -1032,16 +1032,26 @@ end
 
     % retire la tête en aval de layerName
     names = string({cnnLayers.Layers.Name});
-    toVisit = string(layerName); toVisit = toVisit(:);
-    desc = strings(0,1);
-    while ~isempty(toVisit)
-        src = toVisit(1); toVisit(1) = [];
-        mask = strcmp(cnnLayers.Connections.Source, src);
-        kids = string(cnnLayers.Connections.Destination(mask));
-        newKids = setdiff(kids, [desc; string(layerName)]);
-        desc    = unique([desc; kids], 'stable');
-        toVisit = unique([toVisit; newKids], 'stable');
-    end
+toVisit = string(layerName);
+toVisit = toVisit(:);          % vecteur colonne
+desc    = strings(0,1);        % vecteur colonne vide
+
+while ~isempty(toVisit)
+    src = toVisit(1);
+    toVisit(1) = [];
+
+    mask = strcmp(cnnLayers.Connections.Source, src);
+    kids = string(cnnLayers.Connections.Destination(mask));
+    kids = kids(:);            % <-- IMPORTANT : colonne
+
+    newKids = setdiff(kids, [desc; string(layerName)]);
+    newKids = newKids(:);      % <-- IMPORTANT : colonne
+
+    desc    = unique([desc; kids], 'stable');
+    toVisit = unique([toVisit; newKids], 'stable');
+end
+
+
     desc = setdiff(desc, layerName);
     desc = intersect(desc, names);
     if ~isempty(desc), cnnLayers = removeLayers(cnnLayers, cellstr(desc)); end
