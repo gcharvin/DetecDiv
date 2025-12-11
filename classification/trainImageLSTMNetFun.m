@@ -1581,3 +1581,37 @@ function featSeq = computeCNNActivationsFromBackbone(netCNN, video4D, layerName)
     
 
 
+function h5File = findExistingFramebank(baseFB)
+%FINDEXISTINGFRAMEBANK  Trouve un fichier framebank HDF5 à partir d'un "tronc" de nom.
+%
+% baseFB : chemin SANS extension, typiquement
+%          fullfile(path, [classif.strid '_framebank'])
+%
+% Retour :
+%   h5File : chemin complet vers un .h5 existant, ou '' si rien trouvé.
+
+    % 1) Cas simple : <baseFB>.h5
+    candidate = [baseFB '.h5'];
+    if exist(candidate, 'file') == 2
+        h5File = candidate;
+        return;
+    end
+
+    % 2) Sinon, on cherche des variantes du type <baseName>*.h5 dans le même dossier
+    [folder, core, ~] = fileparts(baseFB);
+    if isempty(folder)
+        folder = pwd;
+    end
+
+    pattern = [core '*.h5'];
+    d = dir(fullfile(folder, pattern));
+
+    if ~isempty(d)
+        % On prend le plus récent par exemple (ou le premier, comme tu préfères)
+        % ici : le premier trouvé
+        h5File = fullfile(d(1).folder, d(1).name);
+        return;
+    end
+
+    % 3) Rien trouvé -> chaîne vide
+    h5File = '';
