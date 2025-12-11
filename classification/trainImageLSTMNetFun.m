@@ -1540,7 +1540,7 @@ function featSeq = computeCNNActivationsFromBackbone(netCNN, video4D, layerName)
 
         % Toujours présent -> fichier vérolé / fantôme
         tf = false;
-    end
+    
 
     function fbPath = chooseFramebankPath(basePath)
         % Choisit un chemin de framebank "sain" :
@@ -1578,6 +1578,6 @@ function featSeq = computeCNNActivationsFromBackbone(netCNN, video4D, layerName)
         error('formatLSTMTrainingSet:NoFramebankPath', ...
               'Could not find usable CNN framebank path after %d attempts starting from %s', ...
               maxTries+1, basePath);
-    end
+    
 
 
