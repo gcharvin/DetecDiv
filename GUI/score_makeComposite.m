@@ -113,12 +113,20 @@ for ch = 1:numel(channel)
     isIndexed = iscell(levCh);
 
     % Flag log-display ?
+       % Flag log-display ?
     logdisplay = false;
     if isprop(roitmp, 'display') && isfield(roitmp.display, 'log') ...
-            && numel(roitmp.display.log) >= currentCha ...
-            && roitmp.display.log(currentCha)
-        logdisplay = true;
+            && ~isempty(currentCha)
+
+        % On ne garde qu'un index scalaire
+        chaIdx = currentCha(1);
+
+        if chaIdx >= 1 && numel(roitmp.display.log) >= chaIdx ...
+                && roitmp.display.log(chaIdx)
+            logdisplay = true;
+        end
     end
+
 
     % ------------------------------------------------------------------
     % 2a) IMAGE DE FOND pour ce canal (bgRGB in [0..255]), 
