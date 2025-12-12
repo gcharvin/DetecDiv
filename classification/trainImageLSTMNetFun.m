@@ -518,6 +518,9 @@ else
 
 
         video = centerCrop(video,inputSize);
+
+        featAll = computeCNNActivationsFromBackbone(netCNN, video, layerName); % [F x T]
+
         if size(lab,1)>1 && size(lab,2)>1, error('lab must be 1D categorical'); end
         if size(lab,1)>size(lab,2), lab = lab'; end
 
@@ -624,7 +627,8 @@ else
             e = useWins(w,2);
 
             tmpvid = video(:,:,:,s:e);
-            sequences{cc,1} = computeCNNActivationsFromBackbone(netCNN, tmpvid, layerName);
+            sequences{cc,1} =  featAll(:, s:e);  % au lieu de recalculer sur tmpvid
+%computeCNNActivationsFromBackbone(netCNN, tmpvid, layerName);
 
             tmpLab = lab(s:e);
             if iscolumn(tmpLab), tmpLab = tmpLab'; end
