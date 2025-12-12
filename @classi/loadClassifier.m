@@ -215,9 +215,13 @@ while ~isempty(toVisit)
     toVisit(1) = [];
     mask = strcmp(lgraphCNN.Connections.Source, src);
     kids = string(lgraphCNN.Connections.Destination(mask));
-    newKids = setdiff(kids, [desc; string(layerName)]);
-    desc    = unique([desc; kids], 'stable');
-    toVisit = unique([toVisit; newKids], 'stable');
+kids = kids(:);  % <-- CRITIQUE : colonne
+
+newKids = setdiff(kids, [desc; string(layerName)]);
+newKids = newKids(:);  % <-- CRITIQUE : colonne
+
+desc    = unique([desc; kids], 'stable');
+toVisit = unique([toVisit; newKids], 'stable');   % OK maintenant
 end
 desc = setdiff(desc, layerName);
 desc = intersect(desc, names);
@@ -225,9 +229,21 @@ if ~isempty(desc)
     lgraphCNN = removeLayers(lgraphCNN, cellstr(desc));
 end
 
-% --- Ajout : sequenceInputLayer + folding ---
-inputLayer = sequenceInputLayer([inputSize 3], 'Normalization','zerocenter', ...
-    'Name','input');
+meanVal = [];
+origInput = layersCNN(idxIn);
+if isprop(origInput,'Mean')
+    meanVal = origInput.Mean;
+end
+
+if ~isempty(meanVal)
+    inputLayer = sequenceInputLayer([inputSize 3], ...
+        'Normalization','zerocenter', 'Mean', meanVal, 'Name','input');
+    
+else
+    inputLayer = sequenceInputLayer([inputSize 3], ...
+        'Normalization','zerocenter', 'Name','input');
+    fprintf('Sequence input layer has no Mean\n');
+end
 
 % Si tu as un champ Mean dans l'input d'origine, tu peux l'utiliser :
 % (optionnel)
