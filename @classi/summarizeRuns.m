@@ -15,7 +15,8 @@ function T = summarizeRuns(classif, varargin)
 %   validation_scores.mat (optional)  % saved by validateTrainingData/stats
 %
 % Notes:
-% - Handles trainNetwork TrainingInfo objects AND trainnet structs.
+% - Handles TrainingInfo objects with TrainingHistory/ValidationHistory (trainnet),
+%   plus older trainNetwork TrainingInfo and custom structs.
 % - Writes runs_summary.xlsx to <classif.path>/runs (always).
 
 p = inputParser;
@@ -178,11 +179,14 @@ for i = 1:numel(d)
     if exist(fVS,'file')
         try
             Q = load(fVS);
+
+            % accept both "score" or "scores" or first struct variable
             sc = [];
             if isfield(Q,'score')
                 sc = Q.score;
+            elseif isfield(Q,'scores')
+                sc = Q.scores;
             else
-                % fallback: first struct field
                 fn = fieldnames(Q);
                 for kk=1:numel(fn)
                     v = Q.(fn{kk});
@@ -192,6 +196,7 @@ for i = 1:numel(d)
                 end
             end
 
+            % if array, take first element (or best one if you prefer later)
             if numel(sc) > 1
                 sc = sc(1);
             end
@@ -206,6 +211,7 @@ for i = 1:numel(d)
                     S.val_comments = localToString(sc.comments);
                 end
 
+                % per class metrics (NO confusion matrix in table)
                 if isfield(sc,'classes') && ~isempty(sc.classes)
                     C = sc.classes;
                     nC = min(numel(C), K);
@@ -281,7 +287,9 @@ end
 
 end
 
-% --------------------- helpers ---------------------
+% ======================================================================
+% Helpers
+% ======================================================================
 
 function v = localGet(S, field, default)
 v = default;
@@ -328,7 +336,6 @@ try
         n = double(x(end));
         return;
     end
-    % strings/chars -> try parse
     xs = string(x);
     if strlength(xs)>0
         nn = str2double(xs);
@@ -341,6 +348,7 @@ end
 end
 
 function T = localMakeTableExcelSafe(T)
+% Avoid cell columns / weird objects for writetable(xlsx).
 vn = T.Properties.VariableNames;
 for k = 1:numel(vn)
     v = T.(vn{k});
@@ -350,19 +358,64 @@ for k = 1:numel(vn)
             out(i) = localToString(v{i});
         end
         T.(vn{k}) = out;
+    elseif isobject(v)
+        % should not happen for scalar fields, but keep safe
+        try
+            T.(vn{k}) = string(v);
+        catch
+        end
     end
 end
 end
 
 function [valAcc, trainAcc, valLoss, trainLoss, bestValAcc, bestValLoss] = localExtractInfo(info)
+% Supports:
+% - trainnet TrainingInfo (has TrainingHistory/ValidationHistory tables)
+% - trainNetwork TrainingInfo (fields ValidationAccuracy, etc.)
+% - struct wrappers
+
 valAcc = nan; trainAcc = nan; valLoss = nan; trainLoss = nan;
 bestValAcc = nan; bestValLoss = nan;
 
 if isempty(info), return; end
 
-% case 1) trainNetwork TrainingInfo object
+% ---------------- trainnet TrainingInfo (your case) ----------------
 try
-    if isa(info,'nnet.cnn.TrainingInfo')
+    if isobject(info) && isprop(info,'TrainingHistory') && istable(info.TrainingHistory)
+        TH = info.TrainingHistory;
+        if ismember('Loss', TH.Properties.VariableNames) && ~isempty(TH.Loss)
+            trainLoss = double(TH.Loss(end));
+        end
+
+        accName = localPickAccName(TH.Properties.VariableNames);
+        if accName ~= "" && ~isempty(TH.(accName))
+            trainAcc = double(TH.(accName)(end));
+        end
+    end
+
+    if isobject(info) && isprop(info,'ValidationHistory') && istable(info.ValidationHistory)
+        VH = info.ValidationHistory;
+        if ismember('Loss', VH.Properties.VariableNames) && ~isempty(VH.Loss)
+            valLoss = double(VH.Loss(end));
+            bestValLoss = double(min(VH.Loss));
+        end
+
+        accName = localPickAccName(VH.Properties.VariableNames);
+        if accName ~= "" && ~isempty(VH.(accName))
+            valAcc = double(VH.(accName)(end));
+            bestValAcc = double(max(VH.(accName)));
+        end
+    end
+
+    if ~isnan(valAcc) || ~isnan(trainAcc) || ~isnan(valLoss) || ~isnan(trainLoss)
+        return;
+    end
+catch
+end
+
+% ---------------- trainNetwork TrainingInfo (legacy) ----------------
+try
+    if isobject(info)
         if isprop(info,'ValidationAccuracy') && ~isempty(info.ValidationAccuracy)
             valAcc = double(info.ValidationAccuracy(end));
             bestValAcc = double(max(info.ValidationAccuracy));
@@ -377,14 +430,41 @@ try
         if isprop(info,'TrainingLoss') && ~isempty(info.TrainingLoss)
             trainLoss = double(info.TrainingLoss(end));
         end
-        return;
+        if ~isnan(valAcc) || ~isnan(trainAcc) || ~isnan(valLoss) || ~isnan(trainLoss)
+            return;
+        end
     end
 catch
 end
 
-% case 2) struct (trainnet or custom)
+% ---------------- struct fallback ----------------
 try
     if isstruct(info)
+        % struct trainnet-like
+        if isfield(info,'TrainingHistory') && istable(info.TrainingHistory)
+            TH = info.TrainingHistory;
+            if ismember('Loss', TH.Properties.VariableNames) && ~isempty(TH.Loss)
+                trainLoss = double(TH.Loss(end));
+            end
+            accName = localPickAccName(TH.Properties.VariableNames);
+            if accName ~= "" && ~isempty(TH.(accName))
+                trainAcc = double(TH.(accName)(end));
+            end
+        end
+        if isfield(info,'ValidationHistory') && istable(info.ValidationHistory)
+            VH = info.ValidationHistory;
+            if ismember('Loss', VH.Properties.VariableNames) && ~isempty(VH.Loss)
+                valLoss = double(VH.Loss(end));
+                bestValLoss = double(min(VH.Loss));
+            end
+            accName = localPickAccName(VH.Properties.VariableNames);
+            if accName ~= "" && ~isempty(VH.(accName))
+                valAcc = double(VH.(accName)(end));
+                bestValAcc = double(max(VH.(accName)));
+            end
+        end
+
+        % classic fields
         if isfield(info,'ValidationAccuracy') && ~isempty(info.ValidationAccuracy)
             valAcc = double(info.ValidationAccuracy(end));
             bestValAcc = double(max(info.ValidationAccuracy));
@@ -404,12 +484,25 @@ catch
 end
 end
 
+function accName = localPickAccName(varNames)
+accName = "";
+try
+    accFields = ["Accuracy","Top1Accuracy","ClassificationAccuracy"];
+    for k = 1:numel(accFields)
+        if any(string(varNames) == accFields(k))
+            accName = accFields(k);
+            return;
+        end
+    end
+catch
+end
+end
+
 function T = localSortTable(T, sortBy)
 if isempty(T), return; end
 sortBy = lower(string(sortBy));
 
 if sortBy == "timestamp"
-    % robust: try datetime, else string sort
     try
         dt = datetime(T.timestamp);
         [~,ix] = sort(dt,'descend');

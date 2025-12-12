@@ -580,7 +580,7 @@ try
     lossFcn = @(Y,T) crossentropy(Y, T, classWeightsVec, WeightsFormat="UC");
 
     [classifier, info] = trainnet(trainingData, dlNet, lossFcn, options);
-  info 
+  
 
     classif.runSaveTrainingCurves(info, 'CNN');
 
