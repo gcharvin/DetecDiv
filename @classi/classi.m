@@ -29,6 +29,18 @@ classdef classi < handle
 
 
         history=table('Size',[1 3],'VariableTypes',{'datetime','string','string'},'VariableNames',{'Date','Category','Message'});
+
+        run = struct( ...
+            'active', false, ...
+            'runDir', '', ...
+            'consoleFile', '', ...
+            'eventsFile', '', ...
+            'metaFile', '', ...
+            'startTime', [], ...
+            'tag', '', ...
+            'fun', '' );
+
+
         %  inputsize=[]; %size of the network (required for lstm only
     end
     methods
@@ -414,10 +426,291 @@ classdef classi < handle
                 end
             end
         end
+
+function L = runStart(obj, funName, trainingParam, varargin)
+
+if nargin < 3, trainingParam = []; end
+
+p = inputParser;
+addParameter(p,'Tag','',@(x)ischar(x)||isstring(x));
+addParameter(p,'Attach',false,@(x)islogical(x)||isnumeric(x));
+parse(p,varargin{:});
+
+tag    = char(p.Results.Tag);
+attach = logical(p.Results.Attach);
+
+% Attach: reuse active run
+if attach && isstruct(obj.run) && isfield(obj.run,'active') && isequal(obj.run.active,true)
+    try
+        obj.localAppendRunEvent(sprintf('RUN ATTACH fun=%s tag=%s', char(funName), tag));
+        obj.runMsg('AttachRun: using existing runDir=%s', obj.run.runDir);
+    catch
+    end
+    if nargout, L = obj.run; end
+    return;
+end
+
+% Idempotent: if already active, do not create a new folder
+if isstruct(obj.run) && isfield(obj.run,'active') && isequal(obj.run.active,true)
+    try
+        obj.localAppendRunEvent(sprintf('RUN START SKIP (already active) fun=%s tag=%s', char(funName), tag));
+        obj.runMsg('runStart skipped (already active). fun=%s', char(funName));
+    catch
+    end
+    if nargout, L = obj.run; end
+    return;
+end
+
+% Base folder
+base = fullfile(obj.path, 'runs');
+if ~exist(base,'dir'); mkdir(base); end
+
+% timestamp with milliseconds
+ts = datestr(now,'yyyymmdd_HHMMSS_FFF');
+
+safeStrid = regexprep(string(obj.strid), '[^\w\-]', '_');
+safeFun   = regexprep(string(funName),   '[^\w\-]', '_');
+safeTag   = regexprep(string(tag),       '[^\w\-]', '_');
+
+if strlength(safeTag) > 0
+    runDir = fullfile(base, sprintf('%s_%s_%s_%s', ts, safeStrid, safeTag, safeFun));
+else
+    runDir = fullfile(base, sprintf('%s_%s_%s', ts, safeStrid, safeFun));
+end
+if ~exist(runDir,'dir'); mkdir(runDir); end
+
+% Stop previous diary if any
+try, diary off; catch, end
+
+consoleFile = fullfile(runDir,'console.log');
+diary(consoleFile);
+
+% Update state
+obj.run.active      = true;
+obj.run.runDir      = runDir;
+obj.run.consoleFile = consoleFile;
+obj.run.eventsFile  = fullfile(runDir,'events.log');
+obj.run.metaFile    = fullfile(runDir,'run.json');
+obj.run.startTime   = datetime('now');
+obj.run.tag         = tag;
+obj.run.fun         = char(safeFun);
+
+% Meta json
+meta = obj.localCollectRunMeta(funName, trainingParam, runDir, tag);
+obj.localWriteJson(obj.run.metaFile, meta);
+
+% Snapshot trainingParam
+if ~isempty(trainingParam)
+    try
+        save(fullfile(runDir,'trainingParam.mat'),'trainingParam','-v7.3');
+    catch
+    end
+end
+
+obj.localAppendRunEvent(sprintf('RUN START dir=%s', runDir));
+
+if nargout
+    L = obj.run;
+end
+end
+
+
+
+        function runMsg(obj, fmt, varargin)
+            % runMsg  Append a timestamped message into events.log
+            if ~obj.localRunIsActive(), return; end
+
+            if nargin < 2 || isempty(fmt), return; end
+            if isempty(varargin)
+                txt = sprintf('%s', fmt);
+            else
+                txt = sprintf(fmt, varargin{:});
+            end
+            obj.localAppendRunEvent(txt);
+        end
+
+
+        function runSave(obj, fileName, varargin)
+            % runSave  Save name/value pairs into MAT in runDir.
+            %
+            % obj.runSave('stuff.mat', 'var1', var1, 'var2', var2, ...)
+            if ~obj.localRunIsActive(), return; end
+            if nargin < 2 || isempty(fileName), return; end
+
+            S = struct();
+            for k = 1:2:numel(varargin)
+                if k+1 > numel(varargin), break; end
+                key = varargin{k};
+                val = varargin{k+1};
+                if ~(ischar(key) || isstring(key)), continue; end
+                S.(char(key)) = val;
+            end
+
+            fp = fullfile(obj.run.runDir, fileName);
+            try
+                save(fp,'-struct','S','-v7.3');
+                obj.localAppendRunEvent(sprintf('Saved MAT: %s', fp));
+            catch ME
+                obj.localAppendRunEvent(sprintf('WARN runSave failed: %s (%s)', fp, ME.message));
+            end
+        end
+
+
+        function runSaveStruct(obj, fileName, S)
+            % runSaveStruct  Save a struct/object snapshot as variable "obj"
+            if ~obj.localRunIsActive(), return; end
+            if nargin < 2 || isempty(fileName), return; end
+
+            fp = fullfile(obj.run.runDir, fileName);
+            try
+                obj2 = S; %#ok<NASGU>
+                save(fp,'obj2','-v7.3');
+                obj.localAppendRunEvent(sprintf('Saved MAT struct: %s', fp));
+            catch ME
+                obj.localAppendRunEvent(sprintf('WARN runSaveStruct failed: %s (%s)', fp, ME.message));
+            end
+        end
+
+
+        function runJson(obj, fileName, S)
+            % runJson  Save struct as JSON into runDir
+            if ~obj.localRunIsActive(), return; end
+            if nargin < 2 || isempty(fileName), return; end
+
+            fp = fullfile(obj.run.runDir, fileName);
+            try
+                obj.localWriteJson(fp, S);
+                obj.localAppendRunEvent(sprintf('Saved JSON: %s', fp));
+            catch ME
+                obj.localAppendRunEvent(sprintf('WARN runJson failed: %s (%s)', fp, ME.message));
+            end
+        end
+
+
+        function copied = runCopyArtifacts(obj, varargin)
+            % runCopyArtifacts  Copy key classifier artifacts into the active run folder.
+            %
+            % copied = obj.runCopyArtifacts('ExtraFiles', {"/abs/path/other.mat", ...});
+
+            p = inputParser;
+            addParameter(p,'ExtraFiles',{},@(x) iscell(x) || isstring(x) || ischar(x));
+            parse(p,varargin{:});
+
+            if nargout
+                copied = strings(0,1);
+            else
+                copied = [];
+            end
+
+            if ~obj.localRunIsActive(), return; end
+
+            runDir = '';
+            try
+                runDir = obj.run.runDir;
+            catch
+                runDir = '';
+            end
+
+            if ~(ischar(runDir) || isstring(runDir)) || strlength(string(runDir))==0
+                return;
+            end
+
+            runDir = char(runDir);
+            if ~exist(runDir,'dir')
+                try
+                    mkdir(runDir);
+                catch
+                    return;
+                end
+            end
+
+            sid  = '';
+            base = '';
+            try, sid = char(string(obj.strid)); catch, sid = ''; end
+            try, base = char(string(obj.path)); catch, base = ''; end
+
+            candidates = strings(0,1);
+            if ~isempty(base)
+                if ~isempty(sid)
+                    candidates(end+1) = fullfile(base, sprintf('%s_classification.mat', sid)); %#ok<AGROW>
+                    candidates(end+1) = fullfile(base, sprintf('%s.mat', sid)); %#ok<AGROW>
+                    candidates(end+1) = fullfile(base, sprintf('netCNN_%s.mat', sid)); %#ok<AGROW>
+                    candidates(end+1) = fullfile(base, sprintf('netLSTM_%s.mat', sid)); %#ok<AGROW>
+                end
+                candidates(end+1) = fullfile(base, 'netCNN.mat'); %#ok<AGROW>
+                candidates(end+1) = fullfile(base, 'netLSTM.mat'); %#ok<AGROW>
+            end
+
+            extra = string(p.Results.ExtraFiles);
+            candidates = unique([candidates; extra(:)]);
+            candidates = candidates(strlength(candidates) > 0);
+
+            copiedLocal = strings(0,1);
+
+            for i = 1:numel(candidates)
+                src = char(candidates(i));
+                if exist(src,'file') ~= 2
+                    continue;
+                end
+
+                [~, name, ext] = fileparts(src);
+                dst = fullfile(runDir, [name ext]);
+
+                try
+                    copyfile(src, dst);
+                    copiedLocal(end+1) = string(dst); %#ok<AGROW>
+                    obj.runMsg('Copied artifact: %s', dst);
+                catch ME
+                    obj.runMsg('WARN copy artifact failed: %s (%s)', src, ME.message);
+                end
+            end
+
+            if nargout
+                copied = copiedLocal;
+            end
+        end
+
+
+     function runStop(obj)
+% runStop  Stop diary and close the run.
+
+% Robust guard if obj.run or obj.run.active does not exist
+isActive = false;
+try
+    isActive = isstruct(obj.run) && isfield(obj.run,'active') && isequal(obj.run.active,true);
+catch
+    isActive = false;
+end
+
+% Always try to stop diary (avoid nested diaries)
+try, diary off; catch, end
+
+if ~isActive
+    return
+end
+
+try
+    obj.localAppendRunEvent('RUN STOP');
+catch
+end
+
+obj.run.active = false;
+end
+
+
+
+        function L = runGet(obj)
+            % runGet  Returns current run state (even if inactive)
+            L = obj.run;
+        end
+
+
     end
 
-    methods (Static, Access = private)
-        function row = getClasslistRow(className, classIDReq)
+  
+
+    methods (Access = private)
+        function row = getClasslistRow(~, className, classIDReq)
             % getClasslistRow  Renvoie la ligne correspondante de classlist.mat
 
             % On part du principe que @classi est dans .../classification/@classi
@@ -463,6 +756,134 @@ classdef classi < handle
             end
 
             row = classlist(idx,:);
+        end
+
+      function tf = localRunIsActive(obj)
+% localRunIsActive  Robust check for active run (struct OR object)
+
+tf = false;
+
+% 1) obj must have a property "run"
+if ~isprop(obj,'run') || isempty(obj.run)
+    return;
+end
+
+r = obj.run;
+
+try
+    % --- case 1: run is a struct ---
+    if isstruct(r)
+        if isfield(r,'active') && r.active
+            tf = true;
+        end
+
+    % --- case 2: run is an object ---
+    elseif isobject(r)
+        if isprop(r,'active') && r.active
+            tf = true;
+        elseif ismethod(r,'isActive')
+            tf = r.isActive();
+        end
+    end
+catch
+    tf = false;
+end
+end
+
+
+        function localAppendRunEvent(obj, msg)
+            try
+                fid = fopen(obj.run.eventsFile,'a');
+                if fid < 0, return; end
+                fprintf(fid,'[%s] %s\n', datestr(now,'yyyy-mm-dd HH:MM:SS.FFF'), msg);
+                fclose(fid);
+            catch
+            end
+        end
+
+        function meta = localCollectRunMeta(obj, funName, trainingParam, runDir, tag)
+            meta = struct();
+            meta.timestamp = char(datetime('now'));
+            meta.runDir    = runDir;
+            meta.strid     = obj.strid;
+            meta.path      = obj.path;
+            meta.fun       = funName;
+            meta.tag       = tag;
+
+            meta.matlab = struct();
+            meta.matlab.version = version;
+            meta.matlab.release = version('-release');
+            meta.matlab.java    = version('-java');
+
+            meta.system = struct();
+            try
+                meta.system.computer = computer;
+                meta.system.arch     = computer('arch');
+                meta.system.ispc     = ispc;
+                meta.system.ismac    = ismac;
+                meta.system.isunix   = isunix;
+            catch
+            end
+
+            meta.gpu = struct();
+            try
+                g = gpuDevice;
+                meta.gpu.name = g.Name;
+                meta.gpu.computeCapability = g.ComputeCapability;
+                meta.gpu.totalMemoryGB = double(g.TotalMemory)/1e9;
+                meta.gpu.driverVersion = g.DriverVersion;
+            catch
+                meta.gpu = [];
+            end
+
+            meta.rng = struct();
+            try
+                r = rng;
+                meta.rng.type = r.Type;
+                meta.rng.seed = r.Seed;
+            catch
+            end
+
+            % Git (best-effort)
+            [ok, git] = obj.localGitInfo(obj.path);
+            if ok
+                meta.git = git;
+            else
+                meta.git = [];
+            end
+
+            % Light snapshot of trainingParam (may be big; still useful)
+            try
+                meta.trainingParam = trainingParam;
+            catch
+            end
+        end
+
+        function [ok, git] = localGitInfo(obj, repoPath) %#ok<INUSL>
+            ok = false;
+            git = struct('commit','', 'branch','', 'status','');
+            try
+                [s1, out1] = system(sprintf('cd "%s" && git rev-parse HEAD', repoPath));
+                [s2, out2] = system(sprintf('cd "%s" && git rev-parse --abbrev-ref HEAD', repoPath));
+                [s3, out3] = system(sprintf('cd "%s" && git status --porcelain', repoPath));
+                if s1==0
+                    git.commit = strtrim(out1);
+                    git.branch = strtrim(out2);
+                    git.status = strtrim(out3);
+                    ok = true;
+                end
+            catch
+            end
+        end
+
+        function localWriteJson(obj, fp, S) %#ok<INUSL>
+            txt = jsonencode(S);
+            % "pretty-ish"
+            txt = regexprep(txt, ',"', sprintf(',\n"'));
+            fid = fopen(fp,'w');
+            if fid<0, return; end
+            fwrite(fid, txt, 'char');
+            fclose(fid);
         end
 
 

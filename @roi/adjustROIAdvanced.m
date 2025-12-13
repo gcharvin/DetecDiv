@@ -1,41 +1,68 @@
 function adjustROIAdvanced(obj, varargin)
-%ADJUSTROIADVANCED Ajuste une ROI en une seule opération (bbox, channels, dataseries, binning).
+%ADJUSTROIADVANCED Ajuste une ROI en une seule opération
+% (bbox, channels, dataseries, binning).
+%
+% Nouveauté :
+%   'localCrop', true
+%       -> bbox interprétée dans le référentiel LOCAL de la ROI
+%          (patch obj.image), pas en coordonnées FOV
 
+    % ------------------------------------------------------------
+    % Parse inputs
+    % ------------------------------------------------------------
     p = inputParser;
     addParameter(p,'bbox',[], @(x)isnumeric(x) && (numel(x)==4 || numel(x)==2));
     addParameter(p,'keepChannels',{}, @(c)iscellstr(c) || isstring(c));
     addParameter(p,'keepDataseries',{}, @(c)iscellstr(c) || isstring(c));
     addParameter(p,'binning',[], @(x)isnumeric(x) && isscalar(x) && x>0);
+    addParameter(p,'localCrop',false, @(x)islogical(x) && isscalar(x));
     parse(p,varargin{:});
 
     bbox         = p.Results.bbox;
     keepChannels = cellstr(p.Results.keepChannels);
     keepDS       = cellstr(p.Results.keepDataseries);
     binning      = p.Results.binning;
+    localCrop    = p.Results.localCrop;
 
     keepChannels = keepChannels(~cellfun(@isempty, keepChannels));
     keepDS       = keepDS(~cellfun(@isempty, keepDS));
 
-    %% 1) Géométrie + binning => délégué à adjustROISize
+    % ------------------------------------------------------------
+    % 1) Géométrie + binning
+    % ------------------------------------------------------------
     if ~isempty(bbox) || ~isempty(binning)
+
         if isempty(bbox)
             val = obj.value;
             if isempty(val)
-                % fallback : ROI encore non initialisée => on fait rien
+                % ROI non initialisée → on ne fait rien
                 val = [1 1 1 1];
             end
         else
             val = bbox;
         end
 
-        if isempty(binning)
-            obj.adjustROISize(val);
+        % --- APPEL CLÉ ---
+        if localCrop
+            % bbox = coordonnées LOCALES dans la ROI
+            if isempty(binning)
+                obj.adjustROISize(val, 'localCrop', true);
+            else
+                obj.adjustROISize(val, binning, 'localCrop', true);
+            end
         else
-            obj.adjustROISize(val, binning);
+            % comportement historique (bbox FOV ou centerMode)
+            if isempty(binning)
+                obj.adjustROISize(val);
+            else
+                obj.adjustROISize(val, binning);
+            end
         end
     end
 
-    %% 2) Filtrage des channels (via removeChannel)
+    % ------------------------------------------------------------
+    % 2) Filtrage des channels
+    % ------------------------------------------------------------
     if ~isempty(keepChannels)
         names = obj.display.channel;
         if ischar(names)
@@ -55,7 +82,9 @@ function adjustROIAdvanced(obj, varargin)
         end
     end
 
-    %% 3) Filtrage des dataseries dans obj.data (par groupid)
+    % ------------------------------------------------------------
+    % 3) Filtrage des dataseries
+    % ------------------------------------------------------------
     if ~isempty(keepDS) && ~isempty(obj.data)
         toRemove = [];
         for k = 1:numel(obj.data)
@@ -74,9 +103,12 @@ function adjustROIAdvanced(obj, varargin)
         end
     end
 
-    %% 4) Logging (optionnel)
+    % ------------------------------------------------------------
+    % 4) Logging
+    % ------------------------------------------------------------
     try
-        obj.log('ROI adjusted (bbox / channels / dataseries / binning)','Processing');
+        obj.log('ROI adjusted (bbox / channels / dataseries / binning)', ...
+                'Processing');
     catch
     end
 end

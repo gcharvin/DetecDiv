@@ -1,67 +1,65 @@
+function trainImageLSTMNetFun(classif,setparam)
 
-function trainImageLSTMNetFun_trainnet(classif,setparam)
-
-path=fullfile(classif.path);
-name=classif.strid;
+path = fullfile(classif.path);
+name = classif.strid;
 
 %---------------- parameters setting
 if nargin==2 % basic parameter initialization
 
     tip = { ...
-        'Check box to train CNN',...                                                              % train_CNN_classifier
-        'Check box to compute CNN activations',...                                               % compute_CNN_activations
-        'Check box to train the LSTM network',...                                                % train_LSTM_network
-        'Check box to asssemble the CNN and LSTM networks',...                                   % assemble_network
-        'Specify if each frame should be classified, or if one class is expected for the whole sequence of images',... % classifier_output
-        'Choose the training method',...                                                         % CNN_training_method
-        'Choose the CNN',...                                                                     % CNN_network
-        'Choose the size of the mini batch; Higher values require more memory and are prone to errors',... % CNN_mini_batch_size
-        'Enter the number of epochs',...                                                         % CNN_max_epochs
-        'Enter the initial learning rate',...                                                    % CNN_initial_learning_rate
-        'Enter the learning rate drop factor',...                                                % CNN_learn_rate_drop_factor
-        'Choose whether and how training and validation data should be shuffled during training',... % CNN_data_shuffling
-        'Enter fraction of the data to be used for training vs validation during training',...   % CNN_data_splitting_factor
-        'Enter the magnitude of translation for data augmentation (in pixels)',...               % CNN_translation_augmentation
-        'Enter the magnitude of rotation for data augmentation (in degrees)',...                 % CNN_rotation_augmentation
-        'Specify value for L2 regularization',...                                                % CNN_l2_regularization
-        'Check to use a dropout layer',...                                                       % CNN_use_dropout
-        'Value for dropout regularization',...                                                   % CNN_dropout
-        'Range of random scale factor for CNN augmentation (e.g. [0.8 1.0])', ...                % CNN_rand_scale
-        'Enable random flips (left/right & up/down) during CNN augmentation', ...                % CNN_rand_flip
-        'Crop-in scale range for CNN augmentation (e.g. [0.8 1.0])', ...                         % CNN_crop_scale
-        'Contrast multiplier range for CNN augmentation (e.g. [0.85 1.15])', ...                 % CNN_contrast_range
-        'Brightness offset range (additive, e.g. [-0.10 0.10])', ...                             % CNN_brightness_range
-        'Gamma exponent range for CNN augmentation (e.g. [0.9 1.1])', ...                        % CNN_gamma_range
-        'Saturation multiplier range (RGB only, e.g. [0.95 1.05])', ...                          % CNN_saturation_range
-        'Maximum hue jitter (0–0.5, small values recommended)', ...                              % CNN_hue_delta
-        'Std-dev of Gaussian noise for CNN augmentation (set 0 to disable)', ...                 % CNN_noise_sigma
-        'Defocus sigma range in pixels (e.g. [0.3 1.0])', ...                                    % CNN_defocus_sigma_range
-        'Probability to apply defocus blur (e.g. 0.5)', ...                                      % CNN_defocus_prob
-        'Choose the fraction of the data to be used for training vs validation during LSTM training',... % LSTM_data_splitting_factor
-        'Enter the size of the hidden unit',...                                                  % LSTM_hidden_size
-        'Choose the size of the mini batch for LSTM training; Higher values require more memory and are prone to errors',... % LSTM_mini_batch_size
-        'Enter the LSTM initial learning rate',...                                               % LSTM_initial_learning_rate
-        'Enter the number of epochs for LSTM training',...                                       % LSTM_max_epochs
-        'Enter the length of the sequences in frames; put 0 if all frames should be used upon training',... % LSTM_sequence_length
-        'Enter the dropping factor in learning rate',...                                         % LSTM_learn_rate_drop_factor
-        'Choose execution environment',...                                                       % execution_environment
-        'Select initial version of network to start training with; Default: ImageNet',...        % transfer_learning
-        'Minority balancing mode (none/auto)',...                                % LSTM_minority_mode
-        'Activate balancing if min/max ratio ≤ this value',...                   % LSTM_minority_min_ratio
-        'Percentile for multi-minority selection (0=off)',...                    % LSTM_minority_percentile
-        '#Negatives per #Positives windows (e.g. 1 = 1:1)',...                   % LSTM_pos_neg_ratio
-        'Positive window stride as a fraction of L',...                          % LSTM_win_stride_pos_frac
-        'Negative window stride as a fraction of L',...                          % LSTM_win_stride_neg_frac
-        'Keep validation distribution unbalanced (true/false)',...               % LSTM_keep_valid_distrib
-        'Fraction of ROIs used when formatting the LSTM training set', ...       % Format_Fraction
-        'Random seed used when sampling ROIs / frames for formatting', ...       % Format_Seed
-        'Enable cropping when formatting the LSTM training set (true/false)',... % Format_Crop
-        'Crop center [cx cy] used for formatting the LSTM training set', ...     % Format_CropCenter
-        'Crop size [w h] used for formatting the LSTM training set', ...         % Format_CropSize
-        'Undersample majority classes (1 = no undersampling)', ...               % Format_UndersampleMajority
-        'Storage backend for formatted data (''hdf5'' or ''tiff'')' ...          % Format_StorageBackend
+        'Check box to train CNN', ...
+        'Check box to compute CNN activations', ...
+        'Check box to train the LSTM network', ...
+        'Check box to asssemble the CNN and LSTM networks', ...
+        'Specify if each frame should be classified, or if one class is expected for the whole sequence of images', ...
+        'Choose the training method', ...
+        'Choose the CNN', ...
+        'Choose the size of the mini batch; Higher values require more memory and are prone to errors', ...
+        'Enter the number of epochs', ...
+        'Enter the initial learning rate', ...
+        'Enter the learning rate drop factor', ...
+        'Choose whether and how training and validation data should be shuffled during training', ...
+        'Enter fraction of the data to be used for training vs validation during training', ...
+        'Enter the magnitude of translation for data augmentation (in pixels)', ...
+        'Enter the magnitude of rotation for data augmentation (in degrees)', ...
+        'Specify value for L2 regularization', ...
+        'Check to use a dropout layer', ...
+        'Value for dropout regularization', ...
+        'Range of random scale factor for CNN augmentation (e.g. [0.8 1.0])', ...
+        'Enable random flips (left/right & up/down) during CNN augmentation', ...
+        'Crop-in scale range for CNN augmentation (e.g. [0.8 1.0])', ...
+        'Contrast multiplier range for CNN augmentation (e.g. [0.85 1.15])', ...
+        'Brightness offset range (additive, e.g. [-0.10 0.10])', ...
+        'Gamma exponent range for CNN augmentation (e.g. [0.9 1.1])', ...
+        'Saturation multiplier range (RGB only, e.g. [0.95 1.05])', ...
+        'Maximum hue jitter (0–0.5, small values recommended)', ...
+        'Std-dev of Gaussian noise for CNN augmentation (set 0 to disable)', ...
+        'Defocus sigma range in pixels (e.g. [0.3 1.0])', ...
+        'Probability to apply defocus blur (e.g. 0.5)', ...
+        'Choose the fraction of the data to be used for training vs validation during LSTM training', ...
+        'Enter the size of the hidden unit', ...
+        'Choose the size of the mini batch for LSTM training; Higher values require more memory and are prone to errors', ...
+        'Enter the LSTM initial learning rate', ...
+        'Enter the number of epochs for LSTM training', ...
+        'Enter the length of the sequences in frames; put 0 if all frames should be used upon training', ...
+        'Enter the dropping factor in learning rate', ...
+        'Choose execution environment', ...
+        'Select initial version of network to start training with; Default: ImageNet', ...
+        'Minority balancing mode (none/auto)', ...
+        'Activate balancing if min/max ratio ≤ this value', ...
+        'Percentile for multi-minority selection (0=off)', ...
+        '#Negatives per #Positives windows (e.g. 1 = 1:1)', ...
+        'Positive window stride as a fraction of L', ...
+        'Negative window stride as a fraction of L', ...
+        'Keep validation distribution unbalanced (true/false)', ...
+        'Fraction of ROIs used when formatting the LSTM training set', ...
+        'Random seed used when sampling ROIs / frames for formatting', ...
+        'Enable cropping when formatting the LSTM training set (true/false)', ...
+        'Crop center [cx cy] used for formatting the LSTM training set', ...
+        'Crop size [w h] used for formatting the LSTM training set', ...
+        'Undersample majority classes (1 = no undersampling)', ...
+        'Storage backend for formatted data (''hdf5'' or ''tiff'')' ...
         };
-
 
     classif.trainingParam = struct(...
         'train_CNN_classifier',true,...
@@ -82,17 +80,17 @@ if nargin==2 % basic parameter initialization
         'CNN_l2_regularization',1e-5,...
         'CNN_use_dropout',true,...
         'CNN_dropout',0.5,...
-        'CNN_rand_scale',[0.8 1.0], ...             % harmonisé avec GoogleNetFun
-        'CNN_rand_flip',true, ...                   % flips aléatoires
-        'CNN_crop_scale',[0.8 1.0], ...             % crop-in (HDF5) / zoom (TIFF)
-        'CNN_contrast_range',[1 1], ...       % contraste multiplicatif
-        'CNN_brightness_range',[0 0], ...    % offset additif
-        'CNN_gamma_range',[1 1], ...            % gamma exponent
-        'CNN_saturation_range',[1 1], ...     % saturation HSV
-        'CNN_hue_delta',0, ...                   % jitter de teinte
-        'CNN_noise_sigma',0, ...                 % bruit gaussien
-        'CNN_defocus_sigma_range',[0 0], ...    % flou gaussien (px)
-        'CNN_defocus_prob',0, ...                 % probabilité de flou
+        'CNN_rand_scale',[0.8 1.0], ...
+        'CNN_rand_flip',true, ...
+        'CNN_crop_scale',[0.8 1.0], ...
+        'CNN_contrast_range',[1 1], ...
+        'CNN_brightness_range',[0 0], ...
+        'CNN_gamma_range',[1 1], ...
+        'CNN_saturation_range',[1 1], ...
+        'CNN_hue_delta',0, ...
+        'CNN_noise_sigma',0, ...
+        'CNN_defocus_sigma_range',[0 0], ...
+        'CNN_defocus_prob',0, ...
         'LSTM_data_splitting_factor',0.9,...
         'LSTM_hidden_size',150,...
         'LSTM_mini_batch_size',8,...
@@ -102,1031 +100,777 @@ if nargin==2 % basic parameter initialization
         'LSTM_learn_rate_drop_factor', 0.9,...
         'execution_environment',{{'auto','parallel','cpu','gpu','multi-gpu','auto'}},...
         'transfer_learning',{{'ImageNet','ImageNet'}},...
-        'LSTM_minority_mode','none',...            % 'none' (par défaut) ou 'auto'
-        'LSTM_minority_min_ratio',0.30,...         % activer si min/max ≤ 0.30 : if rare minority events, then use specific augmentation of sequences
-        'LSTM_minority_percentile',0.00,...        % 0 = off ; sinon ex 0.20
-        'LSTM_pos_neg_ratio',1.0,...               % #negatives per #positives (fenêtres)
-        'LSTM_win_stride_pos_frac',0.10,...        % stridePos = L*0.10 : if minority class, then use a lot of sequences to augment positive cases
-        'LSTM_win_stride_neg_frac',1.00,...        % strideNeg = L*1.00 : if not minority class, use normal shift between sequences
+        'LSTM_minority_mode','none',...
+        'LSTM_minority_min_ratio',0.30,...
+        'LSTM_minority_percentile',0.00,...
+        'LSTM_pos_neg_ratio',1.0,...
+        'LSTM_win_stride_pos_frac',0.10,...
+        'LSTM_win_stride_neg_frac',1.00,...
         'LSTM_keep_valid_distrib',true,...
-        'Format_Fraction',1.0, ...                 % fraction de ROIs à utiliser
-        'Format_Seed',12345, ...                   % seed RNG pour la sélection
-        'Format_Crop',false, ...                   % activer/désactiver le crop
-        'Format_CropCenter',[88 194], ...          % [cx cy]
-        'Format_CropSize',[60 60], ...             % [w h]
-        'Format_UndersampleMajority',1.0, ...      % 1 = pas d'undersampling
-        'Format_StorageBackend',{{'hdf5','tiff','hdf5'}}, ...  % 'hdf5' ou 'tiff'
+        'Format_Fraction',1.0, ...
+        'Format_Seed',12345, ...
+        'Format_Crop',false, ...
+        'Format_CropCenter',[88 194], ...
+        'Format_CropSize',[60 60], ...
+        'Format_UndersampleMajority',1.0, ...
+        'Format_StorageBackend',{{'hdf5','tiff','hdf5'}}, ...
         'tip',{tip});
     return;
-
-
 
 else
     trainingParam = updateLSTMTrainingParam(classif);
 end
 %-----------------------------------%
 
-
-classif.displayTrainingParam();
-blockRNG=1;
-
-if ~checkLSTMFormattedDataset(classif.path, trainingParam, classif)
-    return;
-end
-
-fprintf('------\n');
-
-%%% training image classifier
-%------------------------------------------
-%  CNN backbone : train / load + InputSize
-%------------------------------------------
-
-netCNN = [];
-
-if trainingParam.train_CNN_classifier
-
-    if strcmp(trainingParam.transfer_learning{end},'ImageNet')
-        trainImageGoogleNetFun(classif); % trainImageGoogle net first and saves it as netCNN.mat in the LSTM dir
-    else
-        src=fullfile(classif.path,['netCNN_' trainingParam.transfer_learning{end}]);
-        if exist(src)
-            load(src); %loads classifier
-        else
-            disp(['Unable to load: ' trainingParam.transfer_learning{end}]);
-            return;
+    function safeRunStop()
+        try
+            classif.runStop();
+        catch
         end
-        trainImageGoogleNetFun(classif,'ok',classifier);
     end
 
-    target=fullfile(path,['netCNN_' name '.mat']);
-    source=fullfile(path,[name '.mat']);
+try
+    classif.runStart('trainImageLSTMNetFun', trainingParam, 'Attach', true);
+    classif.runMsg('Backend=%s', trainingParam.Format_StorageBackend{end});
 
-    if ~exist(source)
-        disp('Trained CNN does not exist; quitting !');
+    classif.displayTrainingParam();
+    blockRNG = 1;
+
+    if ~checkLSTMFormattedDataset(classif.path, trainingParam, classif)
+        safeRunStop();
+        return;
+    end
+    classif.runMsg('Formatted dataset check OK');
+
+    fprintf('------\n');
+
+    %------------------------------------------
+    %  CNN backbone : train / load + InputSize
+    %------------------------------------------
+    netCNN = [];
+
+    if trainingParam.train_CNN_classifier
+
+        if strcmp(trainingParam.transfer_learning{end},'ImageNet')
+
+            classif.runMsg('Start CNN pretrain');
+
+            trainImageGoogleNetFun(classif,'','','AttachRun', true); % will save <name>.mat in this folder
+            
+
+        else
+            src = fullfile(classif.path, ['netCNN_' trainingParam.transfer_learning{end}]);
+            if exist(src,"file")
+                load(src); % loads classifier
+            else
+                disp(['Unable to load: ' trainingParam.transfer_learning{end}]);
+                safeRunStop();
+                return;
+            end
+            trainImageGoogleNetFun(classif,'ok',classifier);
+        end
+
+        target = fullfile(path,['netCNN_' name '.mat']);
+        source = fullfile(path,[name '.mat']);
+
+        if ~exist(source,"file")
+            disp('Trained CNN does not exist; quitting !');
+            safeRunStop();
+            return;
+        end
+
+        copyfile(source,target);
+    end
+
+    fprintf('Loading Image classifier...\n');
+    fprintf('------\n');
+    str = fullfile(path,['netCNN_' name '.mat']);
+
+    if exist(str,"file")
+        load(str); % loads classifier
+        netCNN = classifier;
+    else
+        disp('unable to find CNN classifier; first train the CNN classifier; quitting ...!');
+        safeRunStop();
         return;
     end
 
-    copyfile(source,target); % copies the trained CNN classifieer so that it can later be assembled to the lstm network
-end
+    classif.runMsg('CNN loaded. Network class=%s', class(netCNN));
 
-fprintf('Loading Image classifier...\n');
-fprintf('------\n');
-str=fullfile(path,['netCNN_' name '.mat']);
-
-if exist(str)
-    load(str); % load the image classifier
-    netCNN=classifier;
-else
-    disp('unable to find CNN classifier; first train the CNN classifier; quitting ...!');
-    return;
-end
-
-% % 1) Si on doit entraîner le CNN dans ce run
-% if isfield(trainingParam,'train_CNN_classifier') && trainingParam.train_CNN_classifier
-%     fprintf('Training CNN classifier (train_CNN_classifier = true)...\n');
-%
-%     % Ici tu as deux options :
-%     %   - soit tu appelles directement trainImageGoogleNetFun
-%     %   - soit tu laisses ton code existant qui entraîne le CNN
-%     %
-%     % Exemple si tu utilises trainImageGoogleNetFun :
-%
-%     trainImageGoogleNetFun(classif, true);  % ou setparam si nécessaire
-%
-%
-%     % Après training, on s'attend à trouver un fichier <name>.mat avec 'classifier'
-%     cnnFile = fullfile(path, [name '.mat']);
-%     if exist(cnnFile,'file')
-%         S = load(cnnFile);
-%         if isfield(S,'classifier')
-%             netCNN = S.classifier;
-%         else
-%             warning('File %s loaded but no ''classifier'' variable found.', cnnFile);
-%         end
-%     else
-%         warning('CNN training supposedly done, but no classifier file found at %s.', cnnFile);
-%     end
-%
-% else
-%     % 2) Cas où train_CNN_classifier = false :
-%     %    on tente de recharger un CNN déjà entraîné
-%     fprintf('train_CNN_classifier = false -> trying to load existing CNN classifier from disk...\n');
-%     cnnFile = fullfile(path, [name '.mat']);
-%     if exist(cnnFile,'file')
-%         S = load(cnnFile);
-%         if isfield(S,'classifier')
-%             netCNN = S.classifier;
-%         else
-%             warning('Existing CNN file %s does not contain variable ''classifier''.', cnnFile);
-%         end
-%     else
-%         warning('No existing CNN classifier file found at %s.', cnnFile);
-%     end
-% end
-%
-% % 3) Si malgré tout on n'a pas de CNN valide -> on stoppe proprement
-% if isempty(netCNN)
-%     disp('No CNN backbone available (training skipped or load failed).');
-%     disp('Cannot compute activations / InputSize for LSTM. Aborting training.');
-%     return;
-% end
-%
-%
-% % 4) Récupération robuste de la taille d'entrée [H W]
-% inputSizeHW = getCNNInputSize(netCNN);   % helper ci-dessous
-% inputSize   = [inputSizeHW 3];           % si tu as besoin de [H W C] ailleurs
-
-
-%%% choose feature layer
-inputSize = netCNN.Layers(1).InputSize(1:2);
-switch trainingParam.CNN_network{end}
-    case 'googlenet', layerName = "pool5-7x7_s1";
-    case 'resnet18',  layerName = "pool5";
-    case 'resnet50',  layerName = "avg_pool";
-    case {'inceptionresnetv2','inceptionv3'}, layerName = "avg_pool";
-    otherwise, error("Unsupported backbone: %s", trainingParam.CNN_network{end});
-end
-
-tempFile = [path '/' name '_image_classifier_activations.mat'];
-
-% ===================== COMPUTE / LOAD ACTIVATIONS =====================
-if trainingParam.compute_CNN_activations==false && exist(tempFile,"file")
-    fprintf('Loading Image classifier activation data...\n------\n');
-    load(tempFile,"sequences","labels");
-else
-    fprintf('Computing Image classifier activation data...\n------\n');
-
-    backend = trainingParam.Format_StorageBackend{end};
-
-    % Recherche robuste du framebank HDF5 éventuellement suffixé
-    h5SeriesFile = "";
-    if strcmp(backend,'hdf5')
-        baseFB = fullfile(path,[classif.strid,'_framebank.h5']);
-        h5SeriesFile = findExistingFramebank(baseFB);   % << nouveau helper
+    inputSize = netCNN.Layers(1).InputSize(1:2);
+    switch trainingParam.CNN_network{end}
+        case 'googlenet', layerName = "pool5-7x7_s1";
+        case 'resnet18',  layerName = "pool5";
+        case 'resnet50',  layerName = "avg_pool";
+        case {'inceptionresnetv2','inceptionv3'}, layerName = "avg_pool";
+        otherwise, error("Unsupported backbone: %s", trainingParam.CNN_network{end});
     end
 
-    h5Exists    = (strlength(h5SeriesFile) > 0) && exist(h5SeriesFile,"file")==2;
-    useH5Series = strcmp(backend,'hdf5') && h5Exists;
+    tempFile = [path '/' name '_image_classifier_activations.mat'];
 
-    if useH5Series
-        fprintf('Using HDF5 framebank: %s\n', h5SeriesFile);
-    elseif strcmp(backend,'hdf5')
-        warning('HDF5 backend requested but no usable framebank found starting from %s. Falling back to MAT/TIFF.', ...
-            fullfile(path,[classif.strid,'_framebank.h5']));
-    end
+    % ===================== COMPUTE / LOAD ACTIVATIONS =====================
+    if trainingParam.compute_CNN_activations==false && exist(tempFile,"file")
+        fprintf('Loading Image classifier activation data...\n------\n');
+        load(tempFile,"sequences","labels");
+    else
+        fprintf('Computing Image classifier activation data...\n------\n');
 
-    if h5Exists && ~useH5Series
-        fprintf('HDF5 framebank detected but backend ''%s'' configured -> sticking to legacy MAT/TIFF workflow.\n', backend);
-    end
-    h5SeriesStart = [];
-    h5SeriesLen   = [];
-    h5SeriesIds   = strings(0,1);
-    frameSizeH5   = [];
-    h5FrameDS     = [];
+        backend = trainingParam.Format_StorageBackend{end};
 
-    if useH5Series
-        try
-            h5SeriesStart = double(h5read(h5SeriesFile, '/series_start'));
-            h5SeriesLen   = double(h5read(h5SeriesFile, '/series_len'));
+        h5SeriesFile = "";
+        if strcmp(backend,'hdf5')
+            baseFB = fullfile(path,[classif.strid,'_framebank.h5']);
+            [h5SeriesFile, ~] = findExistingFramebank(baseFB);
+        end
+
+        h5Exists    = (strlength(h5SeriesFile) > 0) && exist(h5SeriesFile,"file")==2;
+        useH5Series = strcmp(backend,'hdf5') && h5Exists;
+
+        if useH5Series
+            fprintf('Using HDF5 framebank: %s\n', h5SeriesFile);
+        elseif strcmp(backend,'hdf5')
+            warning('HDF5 backend requested but no usable framebank found. Falling back to MAT/TIFF.');
+        end
+
+        h5SeriesStart = [];
+        h5SeriesLen   = [];
+        h5SeriesIds   = strings(0,1);
+        frameSizeH5   = [];
+        h5FrameDS     = [];
+
+        if useH5Series
             try
-                h5SeriesIds = string(h5read(h5SeriesFile, '/series_roi_id'));
-            catch
-                h5SeriesIds = strings(numel(h5SeriesStart),1);
-            end
-            infoFrames = h5info(h5SeriesFile, '/frames');
-            frameSizeH5 = infoFrames.Dataspace.Size;
-            h5FrameDS = [];
-            % Datastore HDF5 avec les mêmes augmentations que pour l'entraînement CNN
-            % augParams = localGetH5AugParams(trainingParam);
-            % h5FrameDS = H5ImageDatastore(h5SeriesFile, ...
-            %     'MiniBatchSize', max(1, trainingParam.CNN_mini_batch_size), ...
-            %     'TransRange',    augParams.TransRange, ...
-            %     'RotRange',      augParams.RotRange, ...
-            %     'CropScale',     augParams.CropScale, ...
-            %     'ContrastRange', augParams.ContrastRange, ...
-            %     'HueDelta',      augParams.HueDelta, ...
-            %     'NoiseSigma',    augParams.NoiseSigma, ...
-            %     'ClassNames',    classif.classes);
-        catch ME
-            warning('Failed to read HDF5 framebank metadata (%s). Falling back to MAT files.', ME.message);
-            useH5Series = false;
-        end
-    end
-
-    if useH5Series
-        numFiles = numel(h5SeriesStart);
-        fprintf('Using HDF5 framebank (%d series).\n', numFiles);
-    elseif strcmp(backend,'hdf5')
-        warning('HDF5 backend requested but framebank.h5 not found; falling back to MAT/TIFF export.');
-        fprintf('HDF5 backend configured but no framebank available -> using legacy MAT/TIFF sequence files.\n');
-        fol= [path '/trainingdataset/timeseries'];
-        list=dir([fol '/*.mat']);
-        numFiles = numel(list);
-    else
-        fol= [path '/trainingdataset/timeseries'];
-        list=dir([fol '/*.mat']);
-        numFiles = numel(list);
-    end
-
-    cc=1;
-    sequences = cell(numFiles*10,1); % simple over-allocation
-    labels    = cell(numFiles*10,1);
-
-    % -------- PRE-SCAN labels to detect minority classes (robust) --------
-    fprintf('Scanning labels to detect minority classes...\n');
-    fprintf('Scanning labels to detect minority classes...\n');
-
-    allCats = [];
-    totalCounts = [];
-
-    for ii = 1:numFiles
-        progressBar(ii, numFiles, ['Prescanning ROIs']);
-
-        if useH5Series
-            % Indices de début / longueur (convertis en double pour h5read)
-            startIdx = double(h5SeriesStart(ii));
-            lenSeq   = double(h5SeriesLen(ii));
-
-            infoLabs = h5info(h5SeriesFile, '/labels');
-            szLabs   = infoLabs.Dataspace.Size;
-            rankLabs = numel(szLabs);
-
-            % --- Nombre total de labels (vecteur ligne ou colonne, ou matrice N×K) ---
-            if rankLabs == 1
-                % Dataset 1D [N]
-                Nlabels = szLabs(1);
-
-            elseif rankLabs == 2
-                if szLabs(1) == 1 || szLabs(2) == 1
-                    % Vecteur ligne [1 N] ou colonne [N 1]
-                    Nlabels = max(szLabs);
-                else
-                    % Matrice [N K] -> N = nb de frames
-                    Nlabels = szLabs(1);
+                h5SeriesStart = double(h5read(h5SeriesFile, '/series_start'));
+                h5SeriesLen   = double(h5read(h5SeriesFile, '/series_len'));
+                try
+                    h5SeriesIds = string(h5read(h5SeriesFile, '/series_roi_id'));
+                catch
+                    h5SeriesIds = strings(numel(h5SeriesStart),1);
                 end
-            else
-                error('Unexpected rank for /labels dataset: %d', rankLabs);
+                infoFrames = h5info(h5SeriesFile, '/frames');
+                frameSizeH5 = infoFrames.Dataspace.Size;
+                h5FrameDS = [];
+            catch ME
+                warning('Failed to read HDF5 framebank metadata (%s). Falling back to MAT files.', ME.message);
+                useH5Series = false;
             end
-
-            % ======== PROTECTION anti-dépassement ========
-            if startIdx < 1
-                startIdx = 1;
-            end
-            if startIdx > Nlabels
-                error('trainImageLSTMNetFun:StartIdxOutOfBounds', ...
-                    'startIdx (%d) > number of labels (%d)', startIdx, Nlabels);
-            end
-
-            if startIdx + lenSeq - 1 > Nlabels
-                lenSeq = Nlabels - startIdx + 1;   % clip si nécessaire
-            end
-            % =============================================
-
-            switch rankLabs
-                case 1
-                    % /labels est un vecteur 1D [N]
-                    labs = h5read(h5SeriesFile, '/labels', startIdx, lenSeq);
-
-                case 2
-                    if szLabs(1) == 1 && szLabs(2) > 1
-                        % Vecteur ligne [1 N] : on lit en colonne
-                        labs = h5read(h5SeriesFile, '/labels', ...
-                            [1        startIdx], ...
-                            [1        lenSeq  ]);
-                    elseif szLabs(2) == 1 && szLabs(1) > 1
-                        % Vecteur colonne [N 1]
-                        labs = h5read(h5SeriesFile, '/labels', ...
-                            [startIdx 1], ...
-                            [lenSeq   1]);
-                    else
-                        % Matrice [N K] : N = frames, K = nb de colonnes
-                        rowCount = lenSeq;
-                        colCount = szLabs(2);
-                        labs = h5read(h5SeriesFile, '/labels', ...
-                            [startIdx 1], ...
-                            [rowCount colCount]);
-                    end
-
-                otherwise
-                    error('Unexpected rank for /labels dataset: %d', rankLabs);
-            end
-
-
-            labLocal = categorical(labs(:), 1:numel(classif.classes), classif.classes);
-        else
-            S = load(fullfile(list(ii).folder, list(ii).name), 'lab');
-            labLocal = S.lab;
         end
 
-        if ii == 1
-            allCats = categories(labLocal); % cellstr
-            allCats = allCats(:)';
-            totalCounts = zeros(1, numel(allCats));
-        end
-        cnt = countcats( categorical(labLocal, allCats) );
-        totalCounts = totalCounts + reshape(cnt,1,[]);
-    end
-    fprintf('\n');
-
-    nonzero = totalCounts > 0;
-    if ~any(nonzero)
-        warning('No labels counted in dataset. Falling back to uniform split.');
-        minorityClasses = allCats(1);
-        ratioMinMax = 1;
-    else
-        mn = min(totalCounts(nonzero));
-        mx = max(totalCounts(nonzero));
-        ratioMinMax = mn / max(1, mx);
-
-        % min unique by default
-        [~, idxMin] = min(totalCounts);
-        minorityClasses = allCats(idxMin);
-
-        % percentile option (multi-minority)
-        if ~isempty(trainingParam.LSTM_minority_percentile) && trainingParam.LSTM_minority_percentile > 0
-            thr = prctile(totalCounts, trainingParam.LSTM_minority_percentile*100);
-            mask = totalCounts <= thr;
-            if ~any(mask), mask = totalCounts == mn; end
-            minorityClasses = allCats(mask);
-        end
-    end
-
-    doBalance = ~strcmpi(trainingParam.LSTM_minority_mode,'none') ...
-        && (ratioMinMax <= trainingParam.LSTM_minority_min_ratio);
-
-    fprintf('Classes: %s | counts=%s | minority=%s | balance=%d\n', ...
-        strjoin(string(allCats),','), mat2str(totalCounts), strjoin(string(minorityClasses),','), doBalance);
-
-    % --------------------------------------------------------------------
-
-    for i = 1:numFiles
         if useH5Series
-            % Nom de la série/ROI (si dispo dans le HDF5)
-            roiName = '';
-            if numel(h5SeriesIds) >= i
-                roiName = char(h5SeriesIds(i));
+            numFiles = numel(h5SeriesStart);
+            fprintf('Using HDF5 framebank (%d series).\n', numFiles);
+        else
+            fol  = [path '/trainingdataset/timeseries'];
+            list = dir([fol '/*.mat']);
+            numFiles = numel(list);
+        end
+
+        cc = 1;
+        sequences = cell(numFiles*10,1);
+        labels    = cell(numFiles*10,1);
+
+        % -------- PRE-SCAN labels to detect minority classes --------
+        fprintf('Scanning labels to detect minority classes...\n');
+
+        allCats = [];
+        totalCounts = [];
+
+        for ii = 1:numFiles
+            progressBar(ii, numFiles, ['Prescanning ROIs']);
+
+            if useH5Series
+                startIdx = double(h5SeriesStart(ii));
+                lenSeq   = double(h5SeriesLen(ii));
+
+                infoLabs = h5info(h5SeriesFile, '/labels');
+                szLabs   = infoLabs.Dataspace.Size;
+                rankLabs = numel(szLabs);
+
+                if rankLabs == 1
+                    Nlabels = szLabs(1);
+                elseif rankLabs == 2
+                    if szLabs(1) == 1 || szLabs(2) == 1
+                        Nlabels = max(szLabs);
+                    else
+                        Nlabels = szLabs(1);
+                    end
+                else
+                    error('Unexpected rank for /labels dataset: %d', rankLabs);
+                end
+
+                if startIdx < 1, startIdx = 1; end
+                if startIdx > Nlabels
+                    error('trainImageLSTMNetFun:StartIdxOutOfBounds', ...
+                        'startIdx (%d) > number of labels (%d)', startIdx, Nlabels);
+                end
+                if startIdx + lenSeq - 1 > Nlabels
+                    lenSeq = Nlabels - startIdx + 1;
+                end
+
+                switch rankLabs
+                    case 1
+                        labs = h5read(h5SeriesFile, '/labels', startIdx, lenSeq);
+                    case 2
+                        if szLabs(1) == 1 && szLabs(2) > 1
+                            labs = h5read(h5SeriesFile, '/labels', [1 startIdx], [1 lenSeq]);
+                        elseif szLabs(2) == 1 && szLabs(1) > 1
+                            labs = h5read(h5SeriesFile, '/labels', [startIdx 1], [lenSeq 1]);
+                        else
+                            rowCount = lenSeq;
+                            colCount = szLabs(2);
+                            labs = h5read(h5SeriesFile, '/labels', [startIdx 1], [rowCount colCount]);
+                        end
+                    otherwise
+                        error('Unexpected rank for /labels dataset: %d', rankLabs);
+                end
+
+                labLocal = categorical(labs(:), 1:numel(classif.classes), classif.classes);
+            else
+                S = load(fullfile(list(ii).folder, list(ii).name), 'lab');
+                labLocal = S.lab;
             end
-            if isempty(roiName)
-                roiName = sprintf('#%d', i);
+
+            if ii == 1
+                allCats = categories(labLocal);
+                allCats = allCats(:)';
+                totalCounts = zeros(1, numel(allCats));
             end
+            cnt = countcats(categorical(labLocal, allCats));
+            totalCounts = totalCounts + reshape(cnt,1,[]);
+        end
+        fprintf('\n');
 
-            % Message de progression en une seule ligne
-            %msg = sprintf('Processing series %d/%d (%s)...', i, numFiles, roiName);
-            %fprintf('%s%s', reverseStr, msg);
-            %reverseStr = repmat(sprintf('\b'), 1, length(msg));
+        nonzero = totalCounts > 0;
+        if ~any(nonzero)
+            warning('No labels counted in dataset. Falling back to uniform split.');
+            minorityClasses = allCats(1);
+            ratioMinMax = 1;
+        else
+            mn = min(totalCounts(nonzero));
+            mx = max(totalCounts(nonzero));
+            ratioMinMax = mn / max(1, mx);
 
+            [~, idxMin] = min(totalCounts);
+            minorityClasses = allCats(idxMin);
 
-            progressBar(i, numFiles, ['Computing activations (hdf5) : ' roiName]);
+            if ~isempty(trainingParam.LSTM_minority_percentile) && trainingParam.LSTM_minority_percentile > 0
+                thr = prctile(totalCounts, trainingParam.LSTM_minority_percentile*100);
+                mask = totalCounts <= thr;
+                if ~any(mask), mask = totalCounts == mn; end
+                minorityClasses = allCats(mask);
+            end
+        end
 
-            % --- lecture des données HDF5 ---
-            nbFra    = h5SeriesLen(i);
-            idxStart = h5SeriesStart(i);
-            idxEnd   = idxStart + nbFra - 1;
+        doBalance = ~strcmpi(trainingParam.LSTM_minority_mode,'none') ...
+            && (ratioMinMax <= trainingParam.LSTM_minority_min_ratio);
 
-            if isempty(h5FrameDS)
+        fprintf('Classes: %s | counts=%s | minority=%s | balance=%d\n', ...
+            strjoin(string(allCats),','), mat2str(totalCounts), strjoin(string(minorityClasses),','), doBalance);
+
+        classif.runSave('labelCounts.mat', ...
+            'allCats', allCats, 'totalCounts', totalCounts, ...
+            'minorityClasses', minorityClasses, 'ratioMinMax', ratioMinMax, 'doBalance', doBalance);
+
+        % -------- build sequences/labels --------
+        for i = 1:numFiles
+            if useH5Series
+                roiName = '';
+                if numel(h5SeriesIds) >= i
+                    roiName = char(h5SeriesIds(i));
+                end
+                if isempty(roiName)
+                    roiName = sprintf('#%d', i);
+                end
+
+                progressBar(i, numFiles, ['Computing activations (hdf5) : ' roiName]);
+
+                nbFra    = h5SeriesLen(i);
+                idxStart = h5SeriesStart(i);
+                idxEnd   = idxStart + nbFra - 1; %#ok<NASGU>
+
                 video = h5read(h5SeriesFile, '/frames', ...
                     [1 1 1 idxStart], ...
                     [frameSizeH5(1) frameSizeH5(2) frameSizeH5(3) nbFra]);
+
+                startIdx = double(h5SeriesStart(i));
+                lenSeq   = double(nbFra);
+
+                labs = h5read(h5SeriesFile, '/labels', [1 startIdx], [1 lenSeq]);
+                lab  = categorical(labs(:), 1:numel(classif.classes), classif.classes);
+
             else
-                dsSeq = subset(h5FrameDS, idxStart:idxEnd);
-                video = readH5Sequence(dsSeq, frameSizeH5);
+                progressBar(i, numFiles, ['Computing activations (mat) : ' list(i).name]);
+                S = load(fullfile(list(i).folder, list(i).name));
+                video = S.vid;
+                lab   = S.lab;
             end
 
-            startIdx = double(h5SeriesStart(i));
-            lenSeq   = double(nbFra);
+            video = centerCrop(video,inputSize);
+            featAll = computeCNNActivationsFromBackbone(netCNN, video, layerName);
 
-            labs = h5read(h5SeriesFile, '/labels', ...
-                [1 startIdx], ...
-                [1 lenSeq]);
-            lab = categorical(labs(:), 1:numel(classif.classes), classif.classes);
+            if size(lab,1)>1 && size(lab,2)>1, error('lab must be 1D categorical'); end
+            if size(lab,1)>size(lab,2), lab = lab'; end
 
-        else
-            % Optionnel : afficher aussi le nom du fichier .mat
-            [~, baseName, ~] = fileparts(fullfile(list(i).folder, list(i).name));
-            %msg = sprintf('Processing movie %d/%d (%s)...', i, numFiles, baseName);
-            %fprintf('%s%s', reverseStr, msg);
-            %reverseStr = repmat(sprintf('\b'), 1, length(msg));
+            Lwin = trainingParam.LSTM_sequence_length;
+            if Lwin<=0, Lwin = size(video,4); end
+            T = size(video,4);
 
-
-            progressBar(i, numFiles, ['Computing activations (mat) : ' list(i).name]);
-
-            % --- lecture des données MAT ---
-            S = load(fullfile(list(i).folder, list(i).name));  % loads deep, vid, lab
-            video = S.vid;
-            lab   = S.lab; % categorical
-        end
-
-
-        video = centerCrop(video,inputSize);
-
-        featAll = computeCNNActivationsFromBackbone(netCNN, video, layerName); % [F x T]
-
-        if size(lab,1)>1 && size(lab,2)>1, error('lab must be 1D categorical'); end
-        if size(lab,1)>size(lab,2), lab = lab'; end
-
-        L = trainingParam.LSTM_sequence_length;
-        if L<=0, L = size(video,4); end
-        T = size(video,4);
-
-
-        % % === LEGACY : découpe par discretize, sans minority mode ===
-        % fr = 1:T;
-        % nb = max(1, ceil(T / L));
-        % dis = discretize(fr, nb);
-        % for k = 1:max(dis)
-        %     tmpvid = video(:,:,:, fr(dis==k));
-        %     sequences{cc,1} = activations(netCNN,tmpvid,layerName,'OutputAs','columns');
-        %
-        %     tmpLab = lab(fr(dis==k));
-        %     if iscolumn(tmpLab), tmpLab = tmpLab'; end
-        %     tmpLab = categorical(tmpLab, categories(lab));
-        %     labels{cc,1} = tmpLab;
-        %
-        %     cc = cc + 1;
-        % end
-
-
-        % --- Sliding windows parameters ---
-
-        % Stride pour la construction initiale des fenêtres (fin, pour bien couvrir les positifs)
-        if isfield(trainingParam,'LSTM_win_stride_pos_frac') && ~isempty(trainingParam.LSTM_win_stride_pos_frac)
-            stridePos = max(1, round(L * trainingParam.LSTM_win_stride_pos_frac));
-        else
-            stridePos = max(1, floor(L/2));  % défaut : L/2
-        end
-
-        % Stride "effectif" souhaité pour les fenêtres négatives
-        if isfield(trainingParam,'LSTM_win_stride_neg_frac') && ~isempty(trainingParam.LSTM_win_stride_neg_frac)
-            strideNeg = max(1, round(L * trainingParam.LSTM_win_stride_neg_frac));
-        else
-            strideNeg = stridePos;  % par défaut identique
-        end
-
-        % --- 1. Construire toutes les fenêtres glissantes avec stridePos ---
-        windows = [];
-        if T <= L
-            windows = [1 T];
-        else
-            for s = 1:stridePos:(T - L + 1)
-                windows(end+1,:) = [s s+L-1]; %#ok<AGROW>
+            if isfield(trainingParam,'LSTM_win_stride_pos_frac') && ~isempty(trainingParam.LSTM_win_stride_pos_frac)
+                stridePos = max(1, round(Lwin * trainingParam.LSTM_win_stride_pos_frac));
+            else
+                stridePos = max(1, floor(Lwin/2));
             end
-            % dernière fenêtre alignée sur la fin si besoin
-            if windows(end,2) < T
-                windows(end+1,:) = [max(1,T-L+1) T]; %#ok<AGROW>
+
+            if isfield(trainingParam,'LSTM_win_stride_neg_frac') && ~isempty(trainingParam.LSTM_win_stride_neg_frac)
+                strideNeg = max(1, round(Lwin * trainingParam.LSTM_win_stride_neg_frac));
+            else
+                strideNeg = stridePos;
             end
-        end
 
-        if doBalance
-            % ---- 2. Marquer les fenêtres contenant la/les classes minoritaires ----
-            isMinor = ismember(lab, categorical(minorityClasses));
-            posWins = [];
-            negWins = [];
-
-            for w = 1:size(windows,1)
-                s = windows(w,1);
-                e = windows(w,2);
-                if any(isMinor(s:e))
-                    posWins = [posWins; windows(w,:)]; %#ok<AGROW>
-                else
-                    negWins = [negWins; windows(w,:)]; %#ok<AGROW>
+            windows = [];
+            if T <= Lwin
+                windows = [1 T];
+            else
+                for s = 1:stridePos:(T - Lwin + 1)
+                    windows(end+1,:) = [s s+Lwin-1]; %#ok<AGROW>
+                end
+                if windows(end,2) < T
+                    windows(end+1,:) = [max(1,T-Lwin+1) T]; %#ok<AGROW>
                 end
             end
 
-            % ---- 3. Éclaircir les fenêtres négatives pour approx. strideNeg ----
-            % facteur ~ strideNeg / stridePos
-            if strideNeg > stridePos && size(negWins,1) > 1
-                stepThin = max(1, round(strideNeg / stridePos));
-                negWins  = negWins(1:stepThin:end, :);
-            end
+            if doBalance
+                isMinor = ismember(lab, categorical(minorityClasses));
+                posWins = [];
+                negWins = [];
 
-            % ---- 4. Sous-échantillonnage des NEG selon pos_neg_ratio ----
-            kpos = size(posWins,1);
-            kneg = size(negWins,1);
-
-            if kpos == 0
-                useWins = negWins;
-            else
-                r = min(kneg, round(trainingParam.LSTM_pos_neg_ratio * kpos));
-                if r > 0 && kneg > 0
-                    selNeg = randperm(kneg, r);
-                    useWins = [posWins; negWins(selNeg,:)];
-                else
-                    useWins = posWins;
+                for w = 1:size(windows,1)
+                    s = windows(w,1);
+                    e = windows(w,2);
+                    if any(isMinor(s:e))
+                        posWins = [posWins; windows(w,:)]; %#ok<AGROW>
+                    else
+                        negWins = [negWins; windows(w,:)]; %#ok<AGROW>
+                    end
                 end
+
+                if strideNeg > stridePos && size(negWins,1) > 1
+                    stepThin = max(1, round(strideNeg / stridePos));
+                    negWins  = negWins(1:stepThin:end, :);
+                end
+
+                kpos = size(posWins,1);
+                kneg = size(negWins,1);
+
+                if kpos == 0
+                    useWins = negWins;
+                else
+                    r = min(kneg, round(trainingParam.LSTM_pos_neg_ratio * kpos));
+                    if r > 0 && kneg > 0
+                        selNeg = randperm(kneg, r);
+                        useWins = [posWins; negWins(selNeg,:)];
+                    else
+                        useWins = posWins;
+                    end
+                end
+            else
+                useWins = windows;
             end
 
-        else
-            % ---- Pas de minority mode : toutes les fenêtres glissantes ----
-            % Ici, on n'a pas de notion de minoritaire, donc on garde la grille windows
-            useWins = windows;
+            for w = 1:size(useWins,1)
+                s = useWins(w,1);
+                e = useWins(w,2);
+
+                sequences{cc,1} = featAll(:, s:e);
+
+                tmpLab = lab(s:e);
+                if iscolumn(tmpLab), tmpLab = tmpLab'; end
+                tmpLab = categorical(tmpLab, categories(lab));
+                labels{cc,1} = tmpLab;
+
+                cc = cc + 1;
+            end
         end
 
-        % ---- 5. Construction des séquences finales (inchangé) ----
-        for w = 1:size(useWins,1)
-            s = useWins(w,1);
-            e = useWins(w,2);
+        sequences = sequences(1:cc-1);
+        labels    = labels(1:cc-1);
 
-            tmpvid = video(:,:,:,s:e);
-            sequences{cc,1} =  featAll(:, s:e);  % au lieu de recalculer sur tmpvid
-%computeCNNActivationsFromBackbone(netCNN, tmpvid, layerName);
-
-            tmpLab = lab(s:e);
-            if iscolumn(tmpLab), tmpLab = tmpLab'; end
-            tmpLab = categorical(tmpLab, categories(lab));
-            labels{cc,1} = tmpLab;
-
-            cc = cc + 1;
-        end
-
-
-
+        save(tempFile,"sequences","labels","-v7.3");
+        classif.runMsg('Saved activations: %s', tempFile);
         fprintf('\n');
     end
 
-    sequences = sequences(1:cc-1);
-    labels    = labels(1:cc-1);
 
-    save(tempFile,"sequences","labels","-v7.3");
-    fprintf('\n');
-end
+    % ===================== LSTM TRAINING =====================
+    str = fullfile(path,['netLSTM_' name '.mat']);
+    if trainingParam.train_LSTM_network || ~exist(str,"file")
 
-% ===================== LSTM TRAINING =====================
-str=fullfile(path,['netLSTM_' name '.mat']);
-if trainingParam.train_LSTM_network || ~exist(str,"file")
-    disp('Preparing LSTM network ...');
-    fprintf('------\n');
+        disp('Preparing LSTM network ...');
+        fprintf('------\n');
 
-    if blockRNG==1
-        stCPU= RandStream('Threefry','Seed',0,'NormalTransform','Inversion');
-        stGPU=parallel.gpu.RandStream('Threefry','Seed',0,'NormalTransform','Inversion');
-        RandStream.setGlobalStream(stCPU);
-        parallel.gpu.RandStream.setGlobalStream(stGPU);
-    end
-
-    % ==== Split TRAIN / VAL (inchangé) ====
-    numObservations   = numel(sequences);
-    idx               = randperm(numObservations);
-    N                 = floor(trainingParam.LSTM_data_splitting_factor * numObservations);
-    idxTrain          = idx(1:N);
-    idxValidation     = idx(N+1:end);
-
-    sequencesTrain       = sequences(idxTrain);
-    labelsTrain          = labels(idxTrain);
-    sequencesValidation  = sequences(idxValidation);
-    labelsValidation     = labels(idxValidation);
-
-    if strcmp(trainingParam.classifier_output{end},'sequence-to-one')
-        labelsTrain      = [labelsTrain{:}]';
-        labelsValidation = [labelsValidation{:}]';
-    end
-
-    % ==== Dimensions & classes ====
-    numFeatures = size(sequencesTrain{1},1);
-    numClasses  = numel(classif.classes);
-    if numClasses==0
-        disp('There is no classes defined ; Cannot continue !');
-        return;
-    end
-
-    % ==== class weights (frame-level sommés sur toutes les séquences) ====
-    sucl = zeros(numObservations, numClasses);
-    for i = 1:numObservations
-        sucl(i,:) = countcats( categorical(labels{i}, classif.classes) );
-    end
-    sucl = sum(sucl,1);
-    tempsucl = sucl(sucl>0);
-    sucl(sucl==0) = min(tempsucl(:));      % évite poids infinis
-    classWeights = 1 ./ sucl;
-    classWeights = classWeights' / mean(classWeights);
-
-    fprintf('--- LSTM class weights ---\n');
-    for k = 1:numClasses
-        fprintf('  %s : w = %.3f\n', string(classif.classes{k}), classWeights(k));
-    end
-    fprintf('--------------------------\n');
-
-    nh = trainingParam.LSTM_hidden_size;
-
-    % ============================================================
-    % 1) DÉFINITION DU LSTM "STANDARD" (plus de weightedLSTM...)
-    % ============================================================
-
-% Utilise la liste de classes déjà stockée dans l'objet classif
-classesRaw = classif.classes;    % ce que tu as déjà dans l'objet classi
-
-if iscell(classesRaw)
-    classNames = classesRaw;
-else
-    % si c'est un char array ou un string array
-    classNames = cellstr(classesRaw);
-end
-
-numClasses = numel(classNames);
-
-
-    if strcmp(trainingParam.transfer_learning{end},'ImageNet')
-        if strcmp(trainingParam.classifier_output{end},'sequence-to-sequence')
-           
-            layers = [
-                sequenceInputLayer(numFeatures,'Name','sequence')
-                bilstmLayer(nh,'OutputMode','sequence','Name','bilstm')
-                dropoutLayer(0.5,'Name','drop')
-                fullyConnectedLayer(numClasses,'Name','fc')
-                softmaxLayer('Name','softmax')
-                classificationLayer('Name','classification',"Classes", classNames)];
-        else
-           
-            layers = [
-                sequenceInputLayer(numFeatures,'Name','sequence')
-                bilstmLayer(nh,'OutputMode','last','Name','bilstm')
-                dropoutLayer(0.5,'Name','drop')
-                fullyConnectedLayer(numClasses,'Name','fc')
-                softmaxLayer('Name','softmax')
-                classificationLayer('Name','classification',"Classes", classNames)];
-        end
-    else
-        % Cas transfer learning LSTM existant : on garde ton comportement
-        src = fullfile(classif.path, ['netLSTM_' trainingParam.transfer_learning{end}]);
-        if exist(src,"file")
-            load(src);                     % charge netLSTM
-            layers = netLSTM.Layers;
-        else
-            disp(['Unable to load LSTM network: ' trainingParam.transfer_learning{end}]);
-            return;
-        end
-    end
-
-    % ============================================================
-    % 2) OPTIONS TRAINING (trainnet)
-    % ============================================================
-    miniBatchSize        = trainingParam.LSTM_mini_batch_size;
-    numObservationsTrain = numel(sequencesTrain);
-    numIterationsPerEpoch= max(1,floor(numObservationsTrain / miniBatchSize));
-    patience             = 20;
-
-       % ==== NORMALISATION DES LABELS POUR trainnet ====
-    isSeq2Seq = strcmp(trainingParam.classifier_output{end},'sequence-to-sequence');
-
-    if isSeq2Seq
-        % Chaque entrée de labelsTrain / labelsValidation doit être T×1
-        for i = 1:numel(labelsTrain)
-            lab = labelsTrain{i};
-            if isrow(lab)
-                labelsTrain{i} = lab.';
-            end
-        end
-        for i = 1:numel(labelsValidation)
-            lab = labelsValidation{i};
-            if isrow(lab)
-                labelsValidation{i} = lab.';
-            end
-        end
-    else
-        % sequence-to-one : labelsTrain / labelsValidation sont déjà des vecteurs
-        % (labelsTrain = [labelsTrain{:}]'; etc. plus haut)
-        % Rien à faire ici.
-    end
-
-    % ============================================================
-    % 2) OPTIONS TRAINING (trainnet)
-    % ============================================================
-    % --- Mise en forme des séquences pour trainnet ---
-    % trainnet (vector sequences) attend des matrices s-by-c : 
-    %   s = time steps, c = features
-    % Ici on suppose que sequencesTrain et sequencesValidation sont encore
-    % au format [numFeatures x numTime] -> on les transpose en [numTime x numFeatures].
-    sequencesTrain      = cellfun(@(x) x.', sequencesTrain,      'UniformOutput', false);
-    sequencesValidation = cellfun(@(x) x.', sequencesValidation, 'UniformOutput', false);
-
-    miniBatchSize        = trainingParam.LSTM_mini_batch_size;
-    numObservationsTrain = numel(sequencesTrain);
-    numIterationsPerEpoch= max(1,floor(numObservationsTrain / miniBatchSize));
-    patience             = 20;
-
-    % Formats pour trainnet :
-    %   X : time x features       -> "TCB" (T = time, C = features, B = batch)
-    %   T :
-    %       - seq-to-seq  : cell array de séquences catégorielles (T×1)
-    %       - seq-to-one  : vecteur catégoriel (B×1)
-    %   --> on laisse trainnet inférer le format des cibles, donc
-    %       PAS de TargetDataFormats (c'est ce qui provoquait l'erreur).
-    inputFmt = "TCB";
-
-    options = trainingOptions("adam", ...
-        "MiniBatchSize",        miniBatchSize, ...
-        "MaxEpochs",            trainingParam.LSTM_max_epochs, ...
-        "InitialLearnRate",     trainingParam.LSTM_initial_learning_rate, ...
-        "LearnRateSchedule",    "piecewise", ...
-        "LearnRateDropPeriod",  5, ...
-        "LearnRateDropFactor",  trainingParam.LSTM_learn_rate_drop_factor, ...
-        "Shuffle",              "every-epoch", ...
-        "ValidationData",       {sequencesValidation, labelsValidation}, ...
-        "ValidationFrequency",  numIterationsPerEpoch, ...
-        "ValidationPatience",   patience, ...
-        "Plots",                "training-progress", ...
-        "ExecutionEnvironment", "auto", ...
-        "VerboseFrequency",     10, ...
-        "InputDataFormats",     inputFmt); % <- plus de TargetDataFormats
-
-    % ============================================================
-    % 3) PASSAGE EN dlnetwork + trainnet (avec class weights)
-    % ============================================================
-    lgraphLSTM = layerGraph(layers);
-
-    % On enlève la classificationLayer pour le dlnetwork (comme pour le CNN)
-    if any(strcmp({lgraphLSTM.Layers.Name},'classification'))
-        lgraphDL = removeLayers(lgraphLSTM,'classification');
-    else
-        lgraphDL = lgraphLSTM;
-    end
-
-    % La sortie du réseau pour la loss = softmax
-    outputLayerName = 'softmax';
-    dlNetLSTM = dlnetwork(lgraphDL, "OutputNames", outputLayerName);
-
-       % vectorisation des poids de classes (format attendu par crossentropy)
-    classWeightsVec = single(classWeights(:)');   % 1 x C
-
-    % Loss avec pondération de classes
-    % Pour des prédictions/targets non vectorielles, il faut préciser WeightsFormat="C"
-    lossFcn = @(Y,T) crossentropy(Y, T, classWeightsVec, "WeightsFormat", "C");
-
-
-    disp('Training LSTM network (trainnet) ...');
-    fprintf('------\n');
-
-    [dlNetLSTM, info] = trainnet(sequencesTrain, labelsTrain, dlNetLSTM, lossFcn, options);
-
-
-
-    % ============================================================
-    % 4) RECONSTRUCTION d'un DAGNetwork netLSTM pour le framework
-    % ============================================================
-    % On repart des couches entraînées dans dlNetLSTM, on réajoute
-    % la classificationLayer et on assemble.
-    lgraphTrained = layerGraph(dlNetLSTM.Layers);
-
-   if ~any(strcmp({lgraphTrained.Layers.Name},'classification'))
-    % réutilise classNames définis plus haut
-    classLayer = classificationLayer('Name','classification', ...
-                                     'Classes', classNames);
-    lgraphTrained = addLayers(lgraphTrained, classLayer);
-    lgraphTrained = connectLayers(lgraphTrained, outputLayerName, 'classification');
-end
-
-
-    netLSTM = assembleNetwork(lgraphTrained);
-
-    % ==== Sauvegarde identique à avant ====
-    target = fullfile(path,['netLSTM_' name '.mat']);
-    save(target,'netLSTM','info');
-    disp('Training LSTM network is done and saved ...');
-    fprintf('------\n');
-
-        % ================================
-    % 4) Optimisation du seuil LSTM
-    % ================================
-    bestThreshold = 0.5;
-    try
-        % --- classes au format cellstr propre ---
-        classesRaw = classif.classes;
-        if iscell(classesRaw)
-            classes = classesRaw(:);
-        else
-            classes = cellstr(classesRaw);   % gère char matrix / string array
+        if blockRNG==1
+            stCPU= RandStream('Threefry','Seed',0,'NormalTransform','Inversion');
+            stGPU=parallel.gpu.RandStream('Threefry','Seed',0,'NormalTransform','Inversion');
+            RandStream.setGlobalStream(stCPU);
+            parallel.gpu.RandStream.setGlobalStream(stGPU);
         end
 
-        % nom de la classe positive (2e par défaut)
-        posName = classes{min(2,numel(classes))};
+        numObservations = numel(sequences);
+        idx = randperm(numObservations);
+        N   = floor(trainingParam.LSTM_data_splitting_factor * numObservations);
+        idxTrain      = idx(1:N);
+        idxValidation = idx(N+1:end);
 
-        % index de la classe positive
-        posIdx = find(strcmp(classes, posName), 1);
-        if isempty(posIdx)
-            error('posName "%s" not found in classes.', posName);
-        end
+        sequencesTrain      = sequences(idxTrain);
+        labelsTrain         = labels(idxTrain);
+        sequencesValidation = sequences(idxValidation);
+        labelsValidation    = labels(idxValidation);
 
         if strcmp(trainingParam.classifier_output{end},'sequence-to-one')
-            % ----------------------------------------------------------
-            % Cas sequence-to-one : 1 score par séquence
-            % ----------------------------------------------------------
-            numVal      = numel(sequencesValidation);
-            numClasses  = numel(classes);
-            scoreVal    = zeros(numVal, numClasses, 'single');
+            labelsTrain      = [labelsTrain{:}]';
+            labelsValidation = [labelsValidation{:}]';
+        end
 
-            for i = 1:numVal
-                Xi = sequencesValidation{i};                   % T x C
-                Xi = reshape(Xi, size(Xi,1), size(Xi,2), 1);   % T x C x 1
-                dlXi = dlarray(Xi, "TCB");
+        numFeatures = size(sequencesTrain{1},1);
+        numClasses  = numel(classif.classes);
+        if numClasses==0
+            disp('There is no classes defined ; Cannot continue !');
+            safeRunStop();
+            return;
+        end
 
-                dlYi = forward(dlNetLSTM, dlXi);               % C x 1 (format "CB")
-                yi   = gather(extractdata(dlYi));              % C x 1
+        sucl = zeros(numObservations, numClasses);
+        for i = 1:numObservations
+            sucl(i,:) = countcats(categorical(labels{i}, classif.classes));
+        end
+        sucl = sum(sucl,1);
+        tempsucl = sucl(sucl>0);
+        sucl(sucl==0) = min(tempsucl(:));
+        classWeights = 1 ./ sucl;
+        classWeights = classWeights' / mean(classWeights);
 
-                scoreVal(i,:) = yi.';                          % 1 x C
+        fprintf('--- LSTM class weights ---\n');
+        for k = 1:numClasses
+            fprintf('  %s : w = %.3f\n', string(classif.classes{k}), classWeights(k));
+        end
+        fprintf('--------------------------\n');
+
+        nh = trainingParam.LSTM_hidden_size;
+
+        classesRaw = classif.classes;
+        if iscell(classesRaw)
+            classNames = classesRaw;
+        else
+            classNames = cellstr(classesRaw);
+        end
+        numClasses = numel(classNames);
+
+        if strcmp(trainingParam.transfer_learning{end},'ImageNet')
+            if strcmp(trainingParam.classifier_output{end},'sequence-to-sequence')
+                layers = [
+                    sequenceInputLayer(numFeatures,'Name','sequence')
+                    bilstmLayer(nh,'OutputMode','sequence','Name','bilstm')
+                    dropoutLayer(0.5,'Name','drop')
+                    fullyConnectedLayer(numClasses,'Name','fc')
+                    softmaxLayer('Name','softmax')
+                    classificationLayer('Name','classification',"Classes", classNames)];
+            else
+                layers = [
+                    sequenceInputLayer(numFeatures,'Name','sequence')
+                    bilstmLayer(nh,'OutputMode','last','Name','bilstm')
+                    dropoutLayer(0.5,'Name','drop')
+                    fullyConnectedLayer(numClasses,'Name','fc')
+                    softmaxLayer('Name','softmax')
+                    classificationLayer('Name','classification',"Classes", classNames)];
+            end
+        else
+            src = fullfile(classif.path, ['netLSTM_' trainingParam.transfer_learning{end}]);
+            if exist(src,"file")
+                load(src);
+                layers = netLSTM.Layers;
+            else
+                disp(['Unable to load LSTM network: ' trainingParam.transfer_learning{end}]);
+                safeRunStop();
+                return;
+            end
+        end
+
+        miniBatchSize = trainingParam.LSTM_mini_batch_size;
+        sequencesTrain      = cellfun(@(x) x.', sequencesTrain,      'UniformOutput', false);
+        sequencesValidation = cellfun(@(x) x.', sequencesValidation, 'UniformOutput', false);
+
+        numObservationsTrain = numel(sequencesTrain);
+        numIterationsPerEpoch= max(1,floor(numObservationsTrain / miniBatchSize));
+        patience = 20;
+
+        isSeq2Seq = strcmp(trainingParam.classifier_output{end},'sequence-to-sequence');
+        if isSeq2Seq
+            for i = 1:numel(labelsTrain)
+                if isrow(labelsTrain{i}), labelsTrain{i} = labelsTrain{i}.'; end
+            end
+            for i = 1:numel(labelsValidation)
+                if isrow(labelsValidation{i}), labelsValidation{i} = labelsValidation{i}.'; end
+            end
+        end
+
+        options = trainingOptions("adam", ...
+            "MiniBatchSize",        miniBatchSize, ...
+            "MaxEpochs",            trainingParam.LSTM_max_epochs, ...
+            "InitialLearnRate",     trainingParam.LSTM_initial_learning_rate, ...
+            "LearnRateSchedule",    "piecewise", ...
+            "LearnRateDropPeriod",  5, ...
+            "LearnRateDropFactor",  trainingParam.LSTM_learn_rate_drop_factor, ...
+            "Shuffle",              "every-epoch", ...
+            "ValidationData",       {sequencesValidation, labelsValidation}, ...
+            "ValidationFrequency",  numIterationsPerEpoch, ...
+            "ValidationPatience",   patience, ...
+            "Plots",                "training-progress", ...
+            "ExecutionEnvironment", "auto", ...
+            "VerboseFrequency",     10, ...
+            "InputDataFormats",     "TCB");
+
+        lgraphLSTM = layerGraph(layers);
+        if any(strcmp({lgraphLSTM.Layers.Name},'classification'))
+            lgraphDL = removeLayers(lgraphLSTM,'classification');
+        else
+            lgraphDL = lgraphLSTM;
+        end
+
+        outputLayerName = 'softmax';
+        dlNetLSTM = dlnetwork(lgraphDL, "OutputNames", outputLayerName);
+
+        classWeightsVec = single(classWeights(:)'); % 1xC
+        lossFcn = @(Y,T) crossentropy(Y, T, classWeightsVec, "WeightsFormat", "C");
+
+        disp('Training LSTM network (trainnet) ...');
+        fprintf('------\n');
+
+        [dlNetLSTM, info] = trainnet(sequencesTrain, labelsTrain, dlNetLSTM, lossFcn, options);
+
+        classif.runSaveTrainingCurves(info, 'LSTM');
+
+        lgraphTrained = layerGraph(dlNetLSTM.Layers);
+        if ~any(strcmp({lgraphTrained.Layers.Name},'classification'))
+            classLayer = classificationLayer('Name','classification','Classes', classNames);
+            lgraphTrained = addLayers(lgraphTrained, classLayer);
+            lgraphTrained = connectLayers(lgraphTrained, outputLayerName, 'classification');
+        end
+        netLSTM = assembleNetwork(lgraphTrained);
+
+        target = fullfile(path,['netLSTM_' name '.mat']);
+        save(target,'netLSTM','info');
+
+        disp('Training LSTM network is done and saved ...');
+        fprintf('------\n');
+
+        classif.runSave('LSTM_info.mat', 'info', info);
+        classif.runMsg('Saved netLSTM_%s.mat', name);
+
+        bestThreshold = 0.5;
+        try
+            classesRaw = classif.classes;
+            if iscell(classesRaw), classes = classesRaw(:);
+            else, classes = cellstr(classesRaw);
             end
 
-            posScore = scoreVal(:, posIdx);                    % N x 1
+            posName = classes{min(2,numel(classes))};
+            posIdx = find(strcmp(classes, posName), 1);
+            if isempty(posIdx), error('posName "%s" not found in classes.', posName); end
 
-            % labelsValidation doit être categorical ; on crée un scalar categorical
-            posCat   = categorical({posName}, classes, classes);
-            Ytrue    = double(labelsValidation == posCat);
+            if strcmp(trainingParam.classifier_output{end},'sequence-to-one')
+                numVal     = numel(sequencesValidation);
+                numClasses = numel(classes);
+                scoreVal   = zeros(numVal, numClasses, 'single');
 
-                else
-            % ----------------------------------------------------------
-            % Cas sequence-to-sequence : 1 score par time step
-            % ----------------------------------------------------------
-            posScore = [];
-            Ytrue    = [];
-            posCat   = categorical({posName}, classes, classes);
-
-            numClasses = numel(classes);
-
-            for i = 1:numel(sequencesValidation)
-                Xi = sequencesValidation{i};                   % T x C (features)
-                Xi = reshape(Xi, size(Xi,1), size(Xi,2), 1);   % T x C x 1
-                dlXi = dlarray(Xi, "TCB");
-
-                dlYi   = forward(dlNetLSTM, dlXi);
-                Yidata = gather(extractdata(dlYi));            % dims quelconques
-
-                sz = size(Yidata);
-                % trouver la dimension correspondant aux classes (= numClasses)
-                classDim = find(sz == numClasses, 1);
-                if isempty(classDim)
-                    error('Impossible de trouver une dimension = numClasses (%d) dans la sortie LSTM.', numClasses);
+                for i = 1:numVal
+                    Xi = sequencesValidation{i};
+                    Xi = reshape(Xi, size(Xi,1), size(Xi,2), 1);
+                    dlXi = dlarray(Xi, "TCB");
+                    dlYi = forward(dlNetLSTM, dlXi);
+                    yi   = gather(extractdata(dlYi));
+                    scoreVal(i,:) = yi.';
                 end
 
-                % on permute pour mettre les classes en 2e dimension
-                nd = ndims(Yidata);
-                perm = 1:nd;
-                perm([2,classDim]) = perm([classDim,2]);   % swap classDim <-> 2
-                Yperm = permute(Yidata, perm);
+                posScore = scoreVal(:, posIdx);
+                posCat   = categorical({posName}, classes, classes);
+                Ytrue    = double(labelsValidation == posCat);
+            else
+                posScore = [];
+                Ytrue    = [];
+                posCat   = categorical({posName}, classes, classes);
+                numClasses = numel(classes);
 
-                % on a maintenant: ??? x numClasses x ???  -> on aplatit tout sauf la dim classes
-                szp = size(Yperm);
-                numCls = szp(2);
-                other  = prod(szp) / numCls;
-                Yflat  = reshape(Yperm, other, numCls);     % (time*batch) x numClasses
+                for i = 1:numel(sequencesValidation)
+                    Xi = sequencesValidation{i};
+                    Xi = reshape(Xi, size(Xi,1), size(Xi,2), 1);
+                    dlXi = dlarray(Xi, "TCB");
 
-                thisScore = Yflat(:, posIdx);               % scores classe positive
-                thisLab   = labelsValidation{i};            % T x 1 categorical
+                    dlYi   = forward(dlNetLSTM, dlXi);
+                    Yidata = gather(extractdata(dlYi));
 
-                posScore = [posScore; thisScore(:)];        %#ok<AGROW>
-                Ytrue    = [Ytrue;  double(thisLab(:) == posCat)]; %#ok<AGROW>
+                    sz = size(Yidata);
+                    classDim = find(sz == numClasses, 1);
+                    if isempty(classDim)
+                        error('Impossible de trouver une dimension = numClasses (%d) dans la sortie LSTM.', numClasses);
+                    end
+
+                    nd = ndims(Yidata);
+                    perm = 1:nd;
+                    perm([2,classDim]) = perm([classDim,2]);
+                    Yperm = permute(Yidata, perm);
+
+                    szp = size(Yperm);
+                    numCls = szp(2);
+                    other  = prod(szp) / numCls;
+                    Yflat  = reshape(Yperm, other, numCls);
+
+                    thisScore = Yflat(:, posIdx);
+                    thisLab   = labelsValidation{i};
+
+                    posScore = [posScore; thisScore(:)]; %#ok<AGROW>
+                    Ytrue    = [Ytrue; double(thisLab(:) == posCat)]; %#ok<AGROW>
+                end
             end
+
+            ths = linspace(0,1,101);
+            bestF1 = -inf; bestT = 0.5;
+            for t = ths
+                yhat = posScore >= t;
+                TP = sum(yhat & Ytrue);
+                FP = sum(yhat & ~Ytrue);
+                FN = sum(~yhat & Ytrue);
+                P  = TP / max(1, (TP+FP));
+                R  = TP / max(1, (TP+FN));
+                F1 = 2*P*R / max(1e-9, (P+R));
+                if F1 > bestF1
+                    bestF1 = F1;
+                    bestT  = t;
+                end
+            end
+
+            bestThreshold = bestT;
+            fprintf('Chosen threshold=%.2f (F1=%.2f)\n', bestThreshold, bestF1);
+
+        catch ME
+            warning('Threshold selection failed: %s', ME.message);
         end
 
+        save(target,'bestThreshold','-append');
 
-        % ----------------------------------------------------------
-        % Recherche du meilleur seuil (F1)
-        % ----------------------------------------------------------
-        ths = linspace(0,1,101);
-        bestF1 = -inf; bestT = 0.5;
-        for t = ths
-            yhat = posScore >= t;
-            TP = sum(yhat & Ytrue);
-            FP = sum(yhat & ~Ytrue);
-            FN = sum(~yhat & Ytrue);
-            P  = TP / max(1, (TP+FP));
-            R  = TP / max(1, (TP+FN));
-            F1 = 2*P*R / max(1e-9, (P+R));
-            if F1 > bestF1
-                bestF1 = F1;
-                bestT  = t;
-            end
-        end
-
-        bestThreshold = bestT;
-        fprintf('Chosen threshold=%.2f (F1=%.2f)\n', bestThreshold, bestF1);
-
-    catch ME
-        warning('Threshold selection failed: %s', ME.message);
-    end
-
-    % Sauvegarde : on garde le même nom netLSTM pour compat
-    %netLSTM = dlNetLSTM;
-    save(target,'bestThreshold','-append');
-
-else
-    % ==== Cas "pas de nouvel entraînement" : on recharge ====
-    target = fullfile(path,['netLSTM_' name '.mat']);
-    load(target);
-    disp('Loading LSTM network ...');
-    fprintf('------\n');
-end
-
-
-
-
-%%% ================= ASSEMBLY =================
-if trainingParam.assemble_network || ~exist([path '/' name '.mat'],"file")
-    disp('Assembling full network ...');
-    fprintf('------\n');
-
-if isa(netCNN, 'dlnetwork')
-    % R2024b : conversion directe d'un dlnetwork en layerGraph
-    lgraphCNN = layerGraph(netCNN);
-else
-    % Cas legacy : SeriesNetwork / DAGNetwork
-    lgraphCNN = layerGraph(netCNN);
-end
-
-    cnnLayers = lgraphCNN;
-
-    % points d'ancrage
-    switch trainingParam.CNN_network{end}
-        case 'googlenet', baseInput = "conv1-7x7_s2";  layerName = "pool5-7x7_s1";
-        case 'resnet50',  baseInput = "conv1";         layerName = "avg_pool";
-        case 'resnet18',  baseInput = "conv1";         layerName = "pool5";
-        case {'inceptionresnetv2','inceptionv3'}, baseInput = "conv2d_1"; layerName = "avg_pool";
-        otherwise, error('Unsupported backbone: %s', trainingParam.CNN_network{end});
-    end
-
-
-    % retire l'input image d'origine
-    isInput = arrayfun(@(L) isa(L,'nnet.cnn.layer.ImageInputLayer'), cnnLayers.Layers);
-    oldInputs = {cnnLayers.Layers(isInput).Name};
-    if ~isempty(oldInputs), cnnLayers = removeLayers(cnnLayers, oldInputs); end
-
-    % retire la tête en aval de layerName
-    names = string({cnnLayers.Layers.Name});
-toVisit = string(layerName);
-toVisit = toVisit(:);          % vecteur colonne
-desc    = strings(0,1);        % vecteur colonne vide
-
-while ~isempty(toVisit)
-    src = toVisit(1);
-    toVisit(1) = [];
-
-    mask = strcmp(cnnLayers.Connections.Source, src);
-    kids = string(cnnLayers.Connections.Destination(mask));
-    kids = kids(:);            % <-- IMPORTANT : colonne
-
-newKids = setdiff(kids, [desc; string(layerName)]);
-    newKids = newKids(:);      % colonne
-
-    desc = unique([desc; kids], 'stable');
-
-    % --- NOUVELLE VERSION : PAS DE VERTCAT ---
-    if ~isempty(newKids)
-        % union gère row/col et évite les problèmes de concaténation
-        toVisit = union(toVisit, newKids, 'stable');
-        toVisit = toVisit(:);  % on repasse en colonne pour la suite
-    end
-end
-
-desc = setdiff(desc, layerName);
-desc = intersect(desc, names);
-if ~isempty(desc)
-    cnnLayers = removeLayers(cnnLayers, cellstr(desc));
-end
-
-    % entrée séquence + folding
-    inputLayer = sequenceInputLayer([inputSize 3], 'Normalization','zerocenter', ...
-        'Mean', netCNN.Layers(1).Mean, 'Name','input');
-    layersAdd = [ inputLayer; sequenceFoldingLayer('Name','fold') ];
-    lgraph = addLayers(cnnLayers, layersAdd);
-
-    switch trainingParam.CNN_network{end}
-        case 'googlenet', lgraph = connectLayers(lgraph,"fold/out","conv1-7x7_s2");
-        case 'resnet50',  lgraph = connectLayers(lgraph,"fold/out","conv1");
-        case 'resnet18',  lgraph = connectLayers(lgraph,"fold/out","conv1");
-        case {'inceptionresnetv2','inceptionv3'}, lgraph = connectLayers(lgraph,"fold/out","conv2d_1");
-    end
-
-    % ----- Unfold + LSTM (avec poids entraînés) -----
-    % netLSTM peut être un dlnetwork (trainnet) ou un DAG/SeriesNetwork (legacy)
-    if isa(netLSTM, 'dlnetwork')
-        lgraphLSTM = layerGraph(netLSTM);   % récupère les couches AVEC leurs poids
     else
-        lgraphLSTM = layerGraph(netLSTM);
+        target = fullfile(path,['netLSTM_' name '.mat']);
+        load(target);
+        disp('Loading LSTM network ...');
+        fprintf('------\n');
     end
 
-    lstmLayersFull = lgraphLSTM.Layers;
-    % on enlève seulement la première couche sequenceInputLayer
-    lstmLayersFull(1) = [];
+    % ================= ASSEMBLY =================
+    if trainingParam.assemble_network || ~exist([path '/' name '.mat'],"file")
+        disp('Assembling full network ...');
+        fprintf('------\n');
 
-    layersTail = [ ...
-        sequenceUnfoldingLayer('Name','unfold'); ...
-        flattenLayer('Name','flatten'); ...
-        lstmLayersFull ...
-    ];
+        if isa(netCNN, 'dlnetwork')
+            lgraphCNN = layerGraph(netCNN);
+        else
+            lgraphCNN = layerGraph(netCNN);
+        end
 
-    lgraph = addLayers(lgraph, layersTail);
+        cnnLayers = lgraphCNN;
 
-    lgraph = connectLayers(lgraph, layerName, "unfold/in");
-    lgraph = connectLayers(lgraph, "fold/miniBatchSize", "unfold/miniBatchSize");
+        switch trainingParam.CNN_network{end}
+            case 'googlenet', baseInput = "conv1-7x7_s2";  layerName2 = "pool5-7x7_s1";
+            case 'resnet50',  baseInput = "conv1";         layerName2 = "avg_pool";
+            case 'resnet18',  baseInput = "conv1";         layerName2 = "pool5";
+            case {'inceptionresnetv2','inceptionv3'}, baseInput = "conv2d_1"; layerName2 = "avg_pool";
+            otherwise, error('Unsupported backbone: %s', trainingParam.CNN_network{end});
+        end
 
-    classifier = assembleNetwork(lgraph);
-    save([path '/' name '.mat'],'classifier');
-    fprintf('Full network is assembled !\n');
-else
-    load( [path '/' name '.mat']); % loading the fully assembled network
+        isInput = arrayfun(@(L) isa(L,'nnet.cnn.layer.ImageInputLayer'), cnnLayers.Layers);
+        oldInputs = {cnnLayers.Layers(isInput).Name};
+        if ~isempty(oldInputs), cnnLayers = removeLayers(cnnLayers, oldInputs); end
+
+        names = string({cnnLayers.Layers.Name});
+        toVisit = string(layerName2); toVisit = toVisit(:);
+        desc    = strings(0,1);
+
+        while ~isempty(toVisit)
+            src = toVisit(1);
+            toVisit(1) = [];
+
+            mask = strcmp(cnnLayers.Connections.Source, src);
+            kids = string(cnnLayers.Connections.Destination(mask));
+            kids = kids(:);
+
+            newKids = setdiff(kids, [desc; string(layerName2)]);
+            newKids = newKids(:);
+
+            desc = unique([desc; kids], 'stable');
+
+            if ~isempty(newKids)
+                toVisit = union(toVisit, newKids, 'stable');
+                toVisit = toVisit(:);
+            end
+        end
+
+        desc = setdiff(desc, layerName2);
+        desc = intersect(desc, names);
+        if ~isempty(desc)
+            cnnLayers = removeLayers(cnnLayers, cellstr(desc));
+        end
+
+        inputLayer = sequenceInputLayer([inputSize 3], 'Normalization','zerocenter', ...
+            'Mean', netCNN.Layers(1).Mean, 'Name','input');
+        layersAdd = [ inputLayer; sequenceFoldingLayer('Name','fold') ];
+        lgraph = addLayers(cnnLayers, layersAdd);
+
+        lgraph = connectLayers(lgraph,"fold/out", baseInput);
+
+        if isa(netLSTM, 'dlnetwork')
+            lgraphLSTM = layerGraph(netLSTM);
+        else
+            lgraphLSTM = layerGraph(netLSTM);
+        end
+
+        lstmLayersFull = lgraphLSTM.Layers;
+        lstmLayersFull(1) = [];
+
+        layersTail = [ ...
+            sequenceUnfoldingLayer('Name','unfold'); ...
+            flattenLayer('Name','flatten'); ...
+            lstmLayersFull ...
+        ];
+
+        lgraph = addLayers(lgraph, layersTail);
+
+        lgraph = connectLayers(lgraph, layerName2, "unfold/in");
+        lgraph = connectLayers(lgraph, "fold/miniBatchSize", "unfold/miniBatchSize");
+
+        classifier = assembleNetwork(lgraph);
+        save([path '/' name '.mat'],'classifier');
+        fprintf('Full network is assembled !\n');
+    else
+        load([path '/' name '.mat']);
+    end
+
+  %  classif.runStop();
+
+catch ME
+    try
+        classif.runMsg('FATAL: %s', ME.getReport('extended','hyperlinks','off'));
+    catch
+    end
+    safeRunStop();
+    rethrow(ME);
 end
+end
+
+% -------------------- helpers --------------------
 
 %end
 
 function videoResized = centerCrop(video,inputSize)
 videoResized = imresize(video,inputSize(1:2));
+end
 
 function video = readH5Sequence(dsSeq, frameSizeH5)
 % dsSeq : subset du datastore (TIFF ou HDF5)
@@ -1200,6 +944,7 @@ while hasdata(dsSeq) && cc <= nFrames
 end
 
 video = vid;
+end
 
 function ok = checkLSTMFormattedDataset(path, trainingParam, classif)
 %CHECKLSTMFORMATTEDDATASET  Vérifie que le dataset LSTM existe
@@ -1296,6 +1041,7 @@ switch backendFmt
     otherwise
         warning('Unknown Format_StorageBackend: %s. Expected ''tiff'' or ''hdf5''.', backendFmt);
         return;
+end
 end
 
 function trainingParam = updateLSTMTrainingParam(classif)
@@ -1410,6 +1156,7 @@ if numel(trainingParam)==0
     trainingParam = [];
     return;
 end
+end
 
 
 function inputSizeHW = getCNNInputSize(netCNN, trainingParam)
@@ -1476,6 +1223,7 @@ end
 error(['Could not determine CNN input size: ', ...
     'no ImageInputLayer in provided CNN, and fallback on CNN_network failed.']);
 
+end
 
 function featSeq = computeCNNActivationsFromBackbone(netCNN, video4D, layerName)
 % computeCNNActivationsFromBackbone
@@ -1525,7 +1273,7 @@ function featSeq = computeCNNActivationsFromBackbone(netCNN, video4D, layerName)
         featSeq = activations(netCNN, video4D, layerName, 'OutputAs','columns');
     end
 
-
+end
 
     % =========================================================================
 % === Nested helper functions pour la gestion robuste du framebank CNN ====
@@ -1559,6 +1307,7 @@ function featSeq = computeCNNActivationsFromBackbone(netCNN, video4D, layerName)
         % Toujours présent -> fichier vérolé / fantôme
         tf = false;
     
+    end
 
     function fbPath = chooseFramebankPath(basePath)
         % Choisit un chemin de framebank "sain" :
@@ -1597,5 +1346,5 @@ function featSeq = computeCNNActivationsFromBackbone(netCNN, video4D, layerName)
               'Could not find usable CNN framebank path after %d attempts starting from %s', ...
               maxTries+1, basePath);
     
-
+    end
 
