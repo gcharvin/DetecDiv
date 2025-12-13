@@ -22,6 +22,12 @@ if nargin == 1
 
         classif.runMsg('Training finished successfully');
 
+        try
+            classif.runCopyArtifacts();
+        catch ME
+            classif.runMsg('WARN runCopyArtifacts failed: %s', ME.message);
+        end
+
     catch ME
         % --- Log error with full stack ---
         classif.runMsg('ERROR during training:');
