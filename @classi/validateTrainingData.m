@@ -18,6 +18,9 @@ closeRun  = true;
 statsArgs = {};
 
 argsClassify = {};
+argsSummary  = {};
+
+summaryKeys = ["open","savecsv","runsroot","filter","sortby"];
 
 % ---------------- parse varargin ----------------
 i = 1;
@@ -29,6 +32,17 @@ while i <= numel(varargin)
         continue;
     end
     keyL = lower(strtrim(string(key)));
+
+    if any(keyL == summaryKeys)
+        if i < numel(varargin)
+            argsSummary = [argsSummary, {char(key), varargin{i+1}}]; %#ok<AGROW>
+            i = i + 2;
+        else
+            argsSummary = [argsSummary, {char(key)}]; %#ok<AGROW>
+            i = i + 1;
+        end
+        continue;
+    end
 
     if keyL == "dostats"
         if i < numel(varargin) && (islogical(varargin{i+1}) || isnumeric(varargin{i+1}))
@@ -248,6 +262,15 @@ end
 if runActive && closeRun
     runMsg('--- VALIDATION END ---');
     runStop();
+end
+
+% ---------------- summarize runs (silent update) ----------------
+try
+    summarizeRuns(classif, argsSummary{:});
+catch ME
+    if runActive
+        runMsg('summarizeRuns failed: %s', ME.getReport('basic','hyperlinks','off'));
+    end
 end
 
 end
