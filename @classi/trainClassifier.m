@@ -12,6 +12,7 @@ if nargin == 1
     % ============================================================
     % START RUN (TRAINING)
     % ============================================================
+    classif.runStop;
     classif.runStart(trainingFun, classif.trainingParam, 'Tag', 'Train');
     classif.runMsg('trainClassifier started (nargin=1)');
     classif.runMsg('Classifier: %s', classif.strid);
