@@ -126,8 +126,8 @@ h5FramebankBase = fullfile(classif.path, [classif.strid, '_framebank.h5']);   % 
 if UseHDF5
     % Choix robuste du chemin : si le fichier existe et ne peut pas être
     % supprimé, on bascule vers _framebank_001.h5, _002, etc.              %%% <<<
-    %[h5Framebank, info] = chooseFramebankPath(h5FramebankBase);                    %%% <<<
-    [h5Framebank, info] = findExistingFramebank(h5FramebankBase);
+    h5Framebank = chooseFramebankPath(h5FramebankBase);                    %%% <<<
+    %[h5Framebank, info] = findExistingFramebank(h5FramebankBase);
     
     % removing trainingdataset folder in cas de HDF5 (comme avant)         %%% <<<
     if isfolder(fullfile(classif.path, foldername))
