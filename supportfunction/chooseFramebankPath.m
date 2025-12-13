@@ -35,4 +35,30 @@ function fbPath = chooseFramebankPath(basePath)
               'Could not find usable CNN framebank path after %d attempts starting from %s', ...
               maxTries+1, basePath);
     
+end
+
+    function tf = tryDeleteSafe(fpath)
+        % Essaye de supprimer 'fpath' et vérifie qu'il a vraiment disparu.
+        % Renvoie true si supprimé ou absent, false si encore présent.
+        tf = false;
+        if ~exist(fpath, 'file')
+            tf = true;    % déjà absent
+            return;
+        end
+        try
+            delete(fpath);
+        catch
+            % delete() a échoué -> fichier suspect/locké
+            return;
+        end
+        % Attente brève (filesystem / cache / NFS)
+        for kk = 1:20
+            pause(0.05); % 50 ms
+            if ~exist(fpath, 'file')
+                tf = true;
+                return;
+            end
+        end
+        % Toujours présent -> fichier vérolé / fantôme
+        tf = false;
     end
