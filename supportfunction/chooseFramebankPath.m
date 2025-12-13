@@ -1,4 +1,4 @@
-function fbPath info = chooseFramebankPath(basePath)
+function fbPath = chooseFramebankPath(basePath)
         % Choisit un chemin de framebank "sain" :
         % - teste basePath, puis basePath_001, basePath_002, ...
         % - si un chemin existe et est supprimable -> on le réutilise
