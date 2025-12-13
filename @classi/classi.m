@@ -587,6 +587,90 @@ end
         end
 
 
+        function copied = runCopyArtifacts(obj, varargin)
+            % runCopyArtifacts  Copy key classifier artifacts into the active run folder.
+            %
+            % copied = obj.runCopyArtifacts('ExtraFiles', {"/abs/path/other.mat", ...});
+
+            p = inputParser;
+            addParameter(p,'ExtraFiles',{},@(x) iscell(x) || isstring(x) || ischar(x));
+            parse(p,varargin{:});
+
+            if nargout
+                copied = strings(0,1);
+            else
+                copied = [];
+            end
+
+            if ~obj.localRunIsActive(), return; end
+
+            runDir = '';
+            try
+                runDir = obj.run.runDir;
+            catch
+                runDir = '';
+            end
+
+            if ~(ischar(runDir) || isstring(runDir)) || strlength(string(runDir))==0
+                return;
+            end
+
+            runDir = char(runDir);
+            if ~exist(runDir,'dir')
+                try
+                    mkdir(runDir);
+                catch
+                    return;
+                end
+            end
+
+            sid  = '';
+            base = '';
+            try, sid = char(string(obj.strid)); catch, sid = ''; end
+            try, base = char(string(obj.path)); catch, base = ''; end
+
+            candidates = strings(0,1);
+            if ~isempty(base)
+                if ~isempty(sid)
+                    candidates(end+1) = fullfile(base, sprintf('%s_classification.mat', sid)); %#ok<AGROW>
+                    candidates(end+1) = fullfile(base, sprintf('%s.mat', sid)); %#ok<AGROW>
+                    candidates(end+1) = fullfile(base, sprintf('netCNN_%s.mat', sid)); %#ok<AGROW>
+                    candidates(end+1) = fullfile(base, sprintf('netLSTM_%s.mat', sid)); %#ok<AGROW>
+                end
+                candidates(end+1) = fullfile(base, 'netCNN.mat'); %#ok<AGROW>
+                candidates(end+1) = fullfile(base, 'netLSTM.mat'); %#ok<AGROW>
+            end
+
+            extra = string(p.Results.ExtraFiles);
+            candidates = unique([candidates; extra(:)]);
+            candidates = candidates(strlength(candidates) > 0);
+
+            copiedLocal = strings(0,1);
+
+            for i = 1:numel(candidates)
+                src = char(candidates(i));
+                if exist(src,'file') ~= 2
+                    continue;
+                end
+
+                [~, name, ext] = fileparts(src);
+                dst = fullfile(runDir, [name ext]);
+
+                try
+                    copyfile(src, dst);
+                    copiedLocal(end+1) = string(dst); %#ok<AGROW>
+                    obj.runMsg('Copied artifact: %s', dst);
+                catch ME
+                    obj.runMsg('WARN copy artifact failed: %s (%s)', src, ME.message);
+                end
+            end
+
+            if nargout
+                copied = copiedLocal;
+            end
+        end
+
+
      function runStop(obj)
 % runStop  Stop diary and close the run.
 
