@@ -18,22 +18,28 @@ classdef temporalAttentionLayer < nnet.layer.Layer ...
             layer.b = single(0);
         end
 
-        function Z = predict(layer, X)
-    % X : [H x T x B] (TCB, dlarray possiblement formaté)
+     function Z = predict(layer, X)
+    % X : [H x T x B] (TCB, dlarray formaté)
 
-    % Cast/shape W to broadcast over T and B
-   W = reshape(layer.W, [], 1, 1); % [H 1 1]
+    % --- enlever temporairement les labels ---
+    Xd = stripdims(X);   % devient dlarray non formaté
 
+    % --- poids ---
+    W = reshape(layer.W, [], 1, 1);   % [H x 1 x 1]
 
-    % Linear score per frame: s = sum_k W_k * X_k,t,b  + b
-    s = sum(X .* W, 1) + layer.b;     % [1 x T x B]
+    % --- score linéaire par frame ---
+    s = sum(Xd .* W, 1) + layer.b;    % [1 x T x B]
 
-    % Sigmoid gate
+    % --- gate sigmoid ---
     g = 1 ./ (1 + exp(-s));           % [1 x T x B]
 
-    % Residual gating
-    Z = X .* (1 + g);                 % [H x T x B]
+    % --- gating résiduel ---
+    Zd = Xd .* (1 + g);               % [H x T x B]
+
+    % --- remettre les labels d'origine ---
+    Z = dlarray(Zd, dims(X));         % restaure "TCB"
 end
+
 
     end
 end
