@@ -478,18 +478,31 @@ try
             end
 
             for w = 1:size(useWins,1)
-                s = useWins(w,1);
-                e = useWins(w,2);
+    s = useWins(w,1);
+    e = useWins(w,2);
 
-                sequences{cc,1} = featAll(:, s:e);
+    % ----- Features window -----
+    Fwin = featAll(:, s:e);  % [F x L]
 
-                tmpLab = lab(s:e);
-                if iscolumn(tmpLab), tmpLab = tmpLab'; end
-                tmpLab = categorical(tmpLab, categories(lab));
-                labels{cc,1} = tmpLab;
+    % ----- Delta backward (causal): F(t)-F(t-1) -----
+    dFm = [zeros(size(Fwin,1),1,'like',Fwin), diff(Fwin,1,2)];  % [F x L]
 
-                cc = cc + 1;
-            end
+    % ----- Delta forward (look-ahead): F(t+1)-F(t) -----
+    dFp = [diff(Fwin,1,2), zeros(size(Fwin,1),1,'like',Fwin)];  % [F x L]
+
+    % ----- Concatenate: [F ; dFm ; dFp] -----
+    Xwin = [Fwin; dFm; dFp];  % [3F x L]
+
+    sequences{cc,1} = Xwin;
+
+    tmpLab = lab(s:e);
+    if iscolumn(tmpLab), tmpLab = tmpLab'; end
+    tmpLab = categorical(tmpLab, categories(lab));
+    labels{cc,1} = tmpLab;
+
+    cc = cc + 1;
+end
+
         end
 
         sequences = sequences(1:cc-1);
@@ -532,6 +545,11 @@ try
         end
 
         numFeatures = size(sequencesTrain{1},1);
+
+        classif.runMsg('LSTM input features = %d (base=%d, +d-=%d, +d+=%d)', ...
+    numFeatures, numFeatures/3, numFeatures/3, numFeatures/3);
+
+
         numClasses  = numel(classif.classes);
         if numClasses==0
             disp('There is no classes defined ; Cannot continue !');
@@ -834,11 +852,13 @@ try
         lstmLayersFull = lgraphLSTM.Layers;
         lstmLayersFull(1) = [];
 
-        layersTail = [ ...
-            sequenceUnfoldingLayer('Name','unfold'); ...
-            flattenLayer('Name','flatten'); ...
-            lstmLayersFull ...
-        ];
+     layersTail = [ ...
+    sequenceUnfoldingLayer('Name','unfold'); ...
+    flattenLayer('Name','flatten'); ...
+    deltaFeatureLayer('deltaFeatures'); ...
+    lstmLayersFull ...
+];
+
 
         lgraph = addLayers(lgraph, layersTail);
 
