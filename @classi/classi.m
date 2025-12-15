@@ -641,8 +641,26 @@ end
                 candidates(end+1) = fullfile(base, 'netLSTM.mat'); %#ok<AGROW>
             end
 
-            extra = string(p.Results.ExtraFiles);
-            candidates = unique([candidates; extra(:)]);
+            % --- normalize ExtraFiles to string column ---
+extra = p.Results.ExtraFiles;
+
+if isempty(extra)
+    extra = strings(0,1);
+elseif ischar(extra) || isstring(extra)
+    extra = string(extra(:));
+elseif iscell(extra)
+    extra = string(extra(:));
+else
+    extra = strings(0,1);
+end
+
+% force column + remove empties
+extra = extra(:);
+extra = extra(strlength(extra) > 0);
+
+% concatenate safely
+candidates = unique([candidates(:); extra]);
+
             candidates = candidates(strlength(candidates) > 0);
 
             copiedLocal = strings(0,1);
