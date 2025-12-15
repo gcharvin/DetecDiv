@@ -658,7 +658,19 @@ end
         dlNetLSTM = dlnetwork(lgraphDL, "OutputNames", outputLayerName);
 
         classWeightsVec = single(classWeights(:)'); % 1xC
-        lossFcn = @(Y,T) crossentropy(Y, T, classWeightsVec, "WeightsFormat", "C");
+       % lossFcn = @(Y,T) crossentropy(Y, T, classWeightsVec, "WeightsFormat", "C");
+
+       C = numel(classNames);
+alpha = classWeightsVec; %ones(1,C,'single');
+%idxSmall = find(strcmp(classNames,"small"),1);
+% if ~isempty(idxSmall)
+%     alpha(idxSmall) = 2.0;     % commence à 2 (pas 10)
+% end
+
+gamma = 1.5;                   % 1 → doux, 2 → agressif
+
+lossFcn = @(Y,T) focalLoss(Y, T, alpha, gamma, classNames);
+
 
         disp('Training LSTM network (trainnet) ...');
         fprintf('------\n');

@@ -209,12 +209,24 @@ try
             [imdsTrain,imdsValidation] = splitEachLabel(imds, ...
                 trainingParam.CNN_data_splitting_factor);
 
+            % --- force a fixed class order (critical for weights + focal loss) ---
+imdsTrain.Labels      = categorical(imdsTrain.Labels,      classes, classes);
+imdsValidation.Labels = categorical(imdsValidation.Labels, classes, classes);
+
+
             tbl = countEachLabel(imdsTrain);
-            cnt = tbl.Count;
-            cnt(cnt==0) = 1;
-            classWeights = 1 ./ cnt;
-            classWeights = classWeights' / mean(classWeights);
-            classWeights(~isfinite(classWeights)) = 1;
+
+            % --- counts in the SAME order as "classes" ---
+cnt = zeros(1, numClasses);
+for iC = 1:numClasses
+    cnt(iC) = sum(imdsTrain.Labels == classes{iC});
+end
+cnt(cnt==0) = 1;
+
+classWeights = 1 ./ cnt;
+classWeights = classWeights(:) / mean(classWeights);      % Cx1
+classWeights(~isfinite(classWeights)) = 1;
+
 
             fprintf('--- CNN class weights (TRAIN) ---\n');
             for i = 1:numel(classif.classes)
@@ -348,6 +360,10 @@ try
     % 2) Classes
     %----------------------------------------------------------------------    
     classes = classif.classes;
+if ~iscell(classes), classes = cellstr(classes); end
+classes = classes(:)';              % 1xC cellstr
+numClasses = numel(classes);
+
     if numel(classes)==0
         disp('There is no classes defined ; Cannot continue !')
         safeRunStop();
@@ -577,9 +593,20 @@ try
     end
     fprintf('------------------------------------\n');
 
-    lossFcn = @(Y,T) crossentropy(Y, T, classWeightsVec, WeightsFormat="UC");
+   % lossFcn = @(Y,T) crossentropy(Y, T, classWeightsVec, WeightsFormat="UC");
 
-    [classifier, info] = trainnet(trainingData, dlNet, lossFcn, options);
+classWeightsVec = single(reshape(classWeights, 1, []));  % 1xC aligned with "classes"
+
+alpha = classWeightsVec;      % 1xC
+gamma = single(1.5);
+classNames = classes;         % 1xC cellstr
+
+lossFcn = @(Y,T) focalLoss(Y, T, alpha, gamma, classNames);
+
+
+[classifier, info] = trainnet(trainingData, dlNet, lossFcn, options);
+
+   % [classifier, info] = trainnet(trainingData, dlNet, lossFcn, options);
   
 
     classif.runSaveTrainingCurves(info, 'CNN');
