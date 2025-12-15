@@ -601,8 +601,9 @@ alpha = classWeightsVec;      % 1xC
 gamma = single(1.5);
 classNames = classes;         % 1xC cellstr
 
-lossFcn = @(Y,T) focalLoss(Y, T, alpha, gamma, classNames);
+%lossFcn = @(Y,T) focalLoss(Y, T, alpha, gamma, classNames);
 
+lossFcn = @(Y,T) localFocalCELoss(Y, T, alpha, gamma, classNames);
 
 [classifier, info] = trainnet(trainingData, dlNet, lossFcn, options);
 

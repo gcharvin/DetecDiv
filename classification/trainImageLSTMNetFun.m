@@ -669,7 +669,10 @@ alpha = classWeightsVec; %ones(1,C,'single');
 
 gamma = 1.5;                   % 1 → doux, 2 → agressif
 
-lossFcn = @(Y,T) focalLoss(Y, T, alpha, gamma, classNames);
+%lossFcn = @(Y,T) focalLoss(Y, T, alpha, gamma, classNames);
+
+%isSeq2Seq = strcmp(trainingParam.classifier_output{end},'sequence-to-sequence');
+lossFcn = @(Y,T) localFocalCELossLSTM(Y, T, alpha, gamma, classNames);
 
 
         disp('Training LSTM network (trainnet) ...');
