@@ -130,7 +130,7 @@ end
     end
 
 try
-    classif.runStart('trainImageLSTMNetFun', trainingParam, 'Attach', true);
+   % classif.runStart('trainImageLSTMNetFun', trainingParam, 'Attach', true);
     classif.runMsg('Backend=%s', trainingParam.Format_StorageBackend{end});
 
     classif.displayTrainingParam();
@@ -880,12 +880,12 @@ layersTail = [ ...
         load([path '/' name '.mat']);
     end
 
-    if classif.localRunIsActive()
+    %if classif.localRunIsActive()
     extra = {};
     if exist(fullfile(classif.path,'CNN_info.mat'),'file'), extra{end+1} = fullfile(classif.path,'CNN_info.mat'); end
     if exist(fullfile(classif.path,'LSTM_info.mat'),'file'), extra{end+1} = fullfile(classif.path,'LSTM_info.mat'); end
     classif.runCopyArtifacts('ExtraFiles', extra);
-    end
+    %end
 
 
   %  classif.runStop();
