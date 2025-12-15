@@ -97,11 +97,15 @@ function output = formatDataForTraining(classif, varargin)
         mkdir(classif.path, foldername);
     end
 
+
     % ---- ROIs d'entraînement / validation ----
     if numel(rois) == 0
         rois = classif.trainingset;
     end
     valrois = setxor(1:numel(classif.roi), rois);
+
+   
+
 
     % ---- Dispatch par catégorie ----
     switch category

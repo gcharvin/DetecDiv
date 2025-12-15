@@ -1,65 +1,99 @@
-function [paramout,dataout,imageout]=combineMultipleChannels(param,roiobj,frames)
+function [paramout,dataout,imageout] = combineMultipleChannels(param, roiobj, frames)
 
-
-% listChannels=['N/A', listChannels];
-environment='pc' ;
+environment = 'pc'; %#ok<NASGU>
 
 if nargin==0
-     listChannels=listAvailableChannels;
-    paramout=[];
-    
-    tip={};
-    cc=1;
-    for i=1:numel(listChannels)
-       %
-       %paramout
-        tip{cc}= 'Check this box if this channel should be combined into a new channel'; cc=cc+1;
-        paramout.(listChannels{i})=false;
-        tip{cc}= 'Enter the RGB triplet for this channel in t the output channel eg: [1 0 0]; Discard if channel is not selected'; cc=cc+1;
-        paramout.(['RGB_' listChannels{i}])=[0 0 0];
+    listChannels = listAvailableChannels;
+    paramout = [];
+
+    tip = {};
+    cc = 1;
+    for i = 1:numel(listChannels)
+        tip{cc} = 'Check this box if this channel should be combined into a new channel'; cc=cc+1;
+        paramout.(listChannels{i}) = false;
+
+        tip{cc} = 'Enter the RGB triplet for this channel in the output channel eg: [1 0 0]; Discard if channel is not selected'; cc=cc+1;
+        paramout.(['RGB_' listChannels{i}]) = [0 0 0];
     end
 
-    paramout.outputChannelName='CombinedChannel';
-   tip{end+1}='Please enter the name of the output channel';
+    paramout.outputChannelName = 'CombinedChannel';
+    tip{end+1} = 'Please enter the name of the output channel';
 
-    paramout.listChannelName=[listChannels listChannels{end}];
-   tip{end+1}='Do not edit';
+    paramout.listChannelName = [listChannels listChannels{end}];
+    tip{end+1} = 'Do not edit';
 
-    paramout.tip=tip;
-  
+    % optional (not used by GUI unless you add it)
+    paramout.debug = false;
+    tip{end+1} = 'Optional: set debug=true for verbose console logs';
+
+    paramout.tip = tip;
     return;
 else
-paramout=param; 
+    paramout = param;
 end
 
-dataout=[];
-obj=roiobj;
+dataout  = [];
+imageout = [];
 
-args={};
+fprintf('[combineMultipleChannels] ---- START output="%s" ----\n', string(param.outputChannelName));
 
-f=fieldnames(param);
+% get listChannels
+listChannels = param.listChannelName(1:end-1);
+fprintf('[combineMultipleChannels] listChannels count=%d\n', numel(listChannels));
 
-listChannels=param.listChannelName(1:end-1);
+% collect selection
+cha = {};
+rgb = {};
 
-cha={};
-rgb={};
+for i = 1:numel(listChannels)
+    chName = listChannels{i};
+    flagField = chName;
+    rgbField  = ['RGB_' chName];
 
-for i=1:numel(f)-1
-        pix=find(matches(listChannels,f{i}));
+    if isfield(param, flagField) && isequal(param.(flagField), true)
+        cha{end+1} = chName; %#ok<AGROW>
 
-        if numel(pix)
-                if param.(f{i})==true
-                           cha=[cha listChannels{pix}];
-                            rgb=[rgb param.(f{i+1})];
-                end
+        if isfield(param, rgbField)
+            rgb{end+1} = param.(rgbField); %#ok<AGROW>
+        else
+            rgb{end+1} = [1 1 1]; %#ok<AGROW>
+            fprintf('[combineMultipleChannels] WARNING missing field "%s" -> using [1 1 1]\n', rgbField);
         end
+
+        fprintf('[combineMultipleChannels] SELECT ch="%s" rgb=%s\n', chName, mat2str(rgb{end}));
+    end
 end
 
-roiobj.combineChannels('channels',cha,'rgb',rgb,'name',param.outputChannelName);
-dataout=roiobj.data; 
-imageout=roiobj.image;
+if isempty(cha)
+    fprintf('[combineMultipleChannels] no channel selected -> no-op\n');
+    dataout  = roiobj.data;
+    imageout = roiobj.image;
+    return
+end
 
-%roiobj.combineChannels({'channels',{'ch000-st000'    'ch000-st001'    'ch000-st002'},'rgb',{[1 0 0] [0 1 0] [0 0 1]}})
+% sanitize rgb
+for k = 1:numel(rgb)
+    if isempty(rgb{k}) || ~isnumeric(rgb{k})
+        fprintf('[combineMultipleChannels] WARNING rgb{%d} invalid -> [1 1 1]\n', k);
+        rgb{k} = [1 1 1];
+    end
+    if isvector(rgb{k}) && numel(rgb{k})==3
+        rgb{k} = reshape(rgb{k},1,3);
+    end
+end
 
+doDebug = false;
+if isfield(param,'debug')
+    doDebug = logical(param.debug);
+end
 
+fprintf('[combineMultipleChannels] calling roiobj.combineChannels with %d channels (debug=%d)\n', numel(cha), doDebug);
 
+roiobj.combineChannels('channels', cha, 'rgb', rgb, 'name', param.outputChannelName, 'debug', doDebug);
+
+dataout  = roiobj.data;
+imageout = roiobj.image;
+
+fprintf('[combineMultipleChannels] ---- DONE output="%s" ----\n', string(param.outputChannelName));
+
+end

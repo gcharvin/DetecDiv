@@ -1,160 +1,295 @@
 function combineChannels(obj,varargin)
-
 % combine existing channels in ROI
-
+%
 % channels : ids or strid of channels to be merged into one new channel
-% number of channels must be either 2 or 3 at the most
-% rgb : cell array hat specifies the [r g b] triplet for each channel to be
-% added: { [1 1 0], [1 0 1] }
-% if channel is an indexed image , specify rgb color by adding a colormap for each channel with an indexed image : { [1 1 1], [1 0
-% 0; 0 1 0; 0 0 1]} ,
-% levels : cell array that specifies the levels of the target channel in
-% the final image: { [ 4000 40000] , [ 0 3 ] };
-% if 'rgb' is set to [],only one channel will be copied
-% the output channel is an rgb image
+% rgb      : cell array of [r g b] triplets per channel, or colormap (Nx3) for indexed images
+% levels   : cell array of [low high] per channel (uint16 scale, default [0 65535])
+% name     : output channel name
+% debug    : true/false -> verbose logs
 
-channels=[];
-rgb={};
-levels={};
-name='CombinedChannel';
+channels = [];
+rgb      = {};
+levels   = {};
+name     = 'CombinedChannel';
+debug    = false;
 
-for i=1:numel(varargin)
-
+% ---------------- parse inputs ----------------
+for i = 1:numel(varargin)
     if strcmp(varargin{i},'channels')
-        channels=varargin{i+1};
-        rgb=cell(numel(channels),1);
-        for j=1:numel(channels)
-            rgb{j}=[1 1 1];
-            levels{j}=[0 65535];
+        channels = varargin{i+1};
+    elseif strcmp(varargin{i},'rgb')
+        rgb = varargin{i+1};
+    elseif strcmp(varargin{i},'levels')
+        levels = varargin{i+1};
+    elseif strcmp(varargin{i},'name')
+        name = varargin{i+1};
+    elseif strcmp(varargin{i},'debug')
+        debug = logical(varargin{i+1});
+    end
+end
+
+fprintf('[combineChannels] ---- START ROI=%s output="%s" ----\n', tryGetROIid(obj), string(name));
+
+if isempty(channels)
+    fprintf('[combineChannels] no channel defined; quitting.\n');
+    return
+end
+
+% normalize channels to cell
+if ~iscell(channels)
+    channels = num2cell(channels);
+end
+
+nCh = numel(channels);
+
+% default levels
+if isempty(levels)
+    levels = cell(nCh,1);
+    for j=1:nCh
+        levels{j} = [0 65535];
+    end
+end
+
+% normalize rgb
+wantRGB = ~isempty(rgb);
+if wantRGB
+    if ~iscell(rgb), rgb = {rgb}; end
+    if numel(rgb) ~= nCh
+        fprintf('[combineChannels] WARNING rgb count (%d) != channels count (%d). Padding with white.\n', numel(rgb), nCh);
+        rgb2 = cell(nCh,1);
+        for j=1:nCh
+            if j <= numel(rgb) && ~isempty(rgb{j})
+                rgb2{j} = rgb{j};
+            else
+                rgb2{j} = [1 1 1];
+            end
         end
-    end
-    if strcmp(varargin{i},'rgb')
-        rgb=varargin{i+1};
-
-    end
-
-    if strcmp(varargin{i},'levels')
-        levels=varargin{i+1};
-    end
-    if strcmp(varargin{i},'name')
-        name=varargin{i+1};
+        rgb = rgb2;
     end
 end
 
-
-if numel(levels)==0
-    for j=1:numel(channels)
-        levels{j}=[0 65535];
-    end
-end
-
-if numel(channels)==0
-    disp('no channel defined; Quitting!')
-    return;
-end
-
-
-if numel(obj.image)==0
+% load image
+if isempty(obj.image)
+    fprintf('[combineChannels] obj.image empty -> load()\n');
     obj.load;
 end
-if numel(obj.image)==0
-    disp('could not load image; quitting');
+if isempty(obj.image)
+    fprintf('[combineChannels] could not load image; quitting.\n');
     return;
 end
 
-if numel(rgb)~=0
-    matrix=uint16(zeros(size(obj.image,1),size(obj.image,2),3,size(obj.image,4)));
+H = size(obj.image,1);
+W = size(obj.image,2);
+C = size(obj.image,3);
+T = size(obj.image,4);
+
+fprintf('[combineChannels] obj.image size=%s class=%s (H=%d W=%d C=%d T=%d)\n', ...
+    mat2str(size(obj.image)), class(obj.image), H, W, C, T);
+
+if wantRGB
+    matrix = zeros(H,W,3,T,'uint16');
+    fprintf('[combineChannels] output mode = RGB\n');
 else
-    matrix=uint16(zeros(size(obj.image,1),size(obj.image,2),1,size(obj.image,4)));
+    matrix = zeros(H,W,1,T,'uint16');
+    fprintf('[combineChannels] output mode = MONO\n');
 end
 
-for i=1:numel(channels)
-    if iscell(channels)
-        pix2=obj.findChannelID(channels{i});
-    else
-        pix2=find(obj.channelid==channels(i));
-    end
+% ---------------- main loop ----------------
+for iCh = 1:nCh
 
+    ch = channels{iCh};
 
-    if numel(pix2)==0
-        disp('Channel does not exist; quitting !');
-        return;
-    end
-    if any(pix2> size(obj.image,3))
-        disp('Channel number does not exist; Quitting !');
-        return;
-    end
-
-
-    imtmp= obj.image(:,:,pix2,:);
-
-    if numel(rgb)==0
-
-        for j=1:size(imtmp,4)
-            imtmp(:,:,1,j)=imadjust(imtmp(:,:,1,j),[levels{i}(1)/65535 levels{i}(2)/65535]);
+    % find channel indices
+    pix2 = [];
+    if ischar(ch) || (isstring(ch) && isscalar(ch))
+        pix2 = obj.findChannelID(ch);
+    elseif isnumeric(ch) && isscalar(ch)
+        pix2 = find(obj.channelid == ch);
+    elseif isnumeric(ch)
+        for kk = 1:numel(ch)
+            pix2 = [pix2 find(obj.channelid == ch(kk))]; %#ok<AGROW>
         end
-        % size(imtmp),class(imtmp),size(matrix)
-        matrix=imadd(matrix,imtmp);
-        outrgb=[1 1 1];
+    end
+
+    fprintf('[combineChannels] -- i=%d/%d, query="%s" -> pix2=%s\n', iCh, nCh, string(ch), mat2str(pix2));
+
+    if isempty(pix2)
+        fprintf('[combineChannels] ERROR: channel "%s" not found -> quitting.\n', string(ch));
+        return;
+    end
+    if any(pix2 > size(obj.image,3))
+        fprintf('[combineChannels] ERROR: pix2 out of range for "%s" -> quitting.\n', string(ch));
+        return;
+    end
+
+    % slice
+    imtmp = obj.image(:,:,pix2,:); % HxWxKxT
+
+    fprintf('[combineChannels] imtmp slice size=%s class=%s\n', mat2str(size(imtmp)), class(imtmp));
+
+    % Force 16-bit interpretation if image is double but looks like uint16
+if isa(imtmp,'double') || isa(imtmp,'single')
+    % Heuristic: values look like 16-bit counts
+    mx = max(imtmp(:));
+    if mx > 1
+        imtmp = uint16(max(0, min(65535, round(imtmp))));
+        fprintf('[combineChannels] NOTE: imtmp was %s with max=%g -> cast to uint16 before imadjust.\n', class(obj.image), mx);
+    end
+end
+
+
+    % if multiple matches, collapse
+    if size(imtmp,3) > 1
+        fprintf('[combineChannels] WARNING: pix2 has %d channels matched. Collapsing using MAX projection across 3rd dim.\n', size(imtmp,3));
+        imtmp = max(imtmp, [], 3); % HxWx1xT
+        fprintf('[combineChannels] imtmp collapsed size=%s\n', mat2str(size(imtmp)));
+    end
+
+    % levels
+    lohi = levels{iCh};
+    if isempty(lohi) || numel(lohi)~=2
+        fprintf('[combineChannels] WARNING: bad levels for i=%d -> using [0 65535]\n', iCh);
+        lohi = [0 65535];
+    end
+    fprintf('[combineChannels] levels=[%g %g]\n', lohi(1), lohi(2));
+
+    % stats before adjust (first frame)
+    try
+        a0 = imtmp(:,:,1,1);
+        fprintf('[combineChannels] pre-adjust (frame1) min=%g max=%g\n', double(min(a0(:))), double(max(a0(:))));
+    catch
+    end
+
+    % --- make imadjust coherent w/ class and scale ---
+if isa(imtmp,'double') || isa(imtmp,'single')
+    mx = max(imtmp(:));
+    % If values look like uint16 counts, cast before imadjust
+    if mx > 1
+        fprintf('[combineChannels] NOTE: imtmp is %s with max=%g (looks like uint16 scale) -> cast to uint16 before imadjust.\n', class(imtmp), mx);
+        imtmp = uint16(max(0, min(65535, round(imtmp))));
     else
+        % already in [0,1]
+        fprintf('[combineChannels] NOTE: imtmp is %s in [0,1] scale.\n', class(imtmp));
+    end
+end
 
-        if size(rgb{i},1)==1 % image is not indexed , therefore there is only one triplet
+for j = 1:size(imtmp,4)
+    imtmp(:,:,1,j) = imadjust(imtmp(:,:,1,j), [levels{iCh}(1)/65535 levels{iCh}(2)/65535]);
+end
+    % stats after adjust (first frame)
+    try
+        a1 = imtmp(:,:,1,1);
+        fprintf('[combineChannels] post-adjust (frame1) min=%g max=%g\n', double(min(a1(:))), double(max(a1(:))));
+    catch
+    end
 
-            if numel(pix2)==1 % one single channel
-                for j=1:size(imtmp,4)
-                    imtmp(:,:,1,j)=imadjust(imtmp(:,:,1,j),[levels{i}(1)/65535 levels{i}(2)/65535]);
+    if ~wantRGB
+        % mono
+        if size(imtmp,3) ~= 1
+            fprintf('[combineChannels] WARNING: mono mode but imtmp C=%d -> taking first.\n', size(imtmp,3));
+            imtmp = imtmp(:,:,1,:);
+        end
 
-%                      if i==1 % invert contrast
-%                 imtmp(:,:,1,j)=65535-imtmp(:,:,1,j);
-%                      end
+        % cast
+        if ~isa(imtmp,'uint16')
+            fprintf('[combineChannels] casting imtmp %s -> uint16\n', class(imtmp));
+            imtmp = uint16(imtmp);
+        end
 
-                end
-                imtmp=repmat(imtmp,[1 1 3 1]);
-            end
+        if ~isequal(size(matrix), size(imtmp))
+            fprintf('[combineChannels] ERROR SizeMismatch: matrix=%s vs imtmp=%s\n', mat2str(size(matrix)), mat2str(size(imtmp)));
+            error('combineChannels:SizeMismatch','Size mismatch (mono).');
+        end
+
+        if debug
+            fprintf('[combineChannels][debug] adding mono channel i=%d\n', iCh);
+        end
+        matrix = imadd(matrix, imtmp);
+        outrgb = [1 1 1];
+
+    else
+        % RGB
+        thisRGB = rgb{iCh};
+        if isempty(thisRGB)
+            thisRGB = [1 1 1];
+        end
+
+        fprintf('[combineChannels] rgb spec size=%s\n', mat2str(size(thisRGB)));
+
+        if size(thisRGB,1) == 1
+            % scalar channel -> replicate and scale
+            imtmp = repmat(imtmp,[1 1 3 1]); % HxWx3xT
 
             for k=1:3
-                imtmp(:,:,k,:)=rgb{i}(k)*imtmp(:,:,k,:);
+                imtmp(:,:,k,:) = thisRGB(k) * imtmp(:,:,k,:);
             end
 
-            matrix=imadd(matrix,imtmp);
-        else % provide specific color for each object in the colormap
+            if ~isa(imtmp,'uint16')
+                fprintf('[combineChannels] casting imtmp %s -> uint16\n', class(imtmp));
+                imtmp = uint16(imtmp);
+            end
 
+            if ~isequal(size(matrix), size(imtmp))
+                fprintf('[combineChannels] ERROR SizeMismatch: matrix=%s vs imtmp=%s\n', mat2str(size(matrix)), mat2str(size(imtmp)));
+                error('combineChannels:SizeMismatch','Size mismatch (rgb scalar).');
+            end
 
-            for ii=1:size(rgb{i},1)
-                imtmp2=uint16(zeros(size(imtmp)));
-                imtmp2=repmat(imtmp2,[1 1 3 1]);
+            if debug
+                fprintf('[combineChannels][debug] adding RGB-scaled channel i=%d\n', iCh);
+            end
+            matrix = imadd(matrix, imtmp);
 
-                for j=1:size(imtmp,4)
-                    bw=uint16(imtmp(:,:,1,j)==ii);
-                    if numel(bw)==0
-                        continue
-                    end
+        else
+            % indexed colormap
+            fprintf('[combineChannels] indexed colormap mode (N=%d colors)\n', size(thisRGB,1));
+            for ii = 1:size(thisRGB,1)
+                imtmp2 = zeros(H,W,3,T,'uint16');
 
-                    bw=65535*levels{i}(2)*bw;
+                for j = 1:T
+                    bw = uint16(imtmp(:,:,1,j) == ii);
+                    if ~any(bw(:)), continue; end
 
-                    imtmp2(:,:,1,j)=rgb{i}(ii,1)*bw;
-                    imtmp2(:,:,2,j)=rgb{i}(ii,2)*bw;
-                    imtmp2(:,:,3,j)=rgb{i}(ii,3)*bw;
+                    bw = uint16(65535 * (lohi(2)/65535)) * bw;
+
+                    imtmp2(:,:,1,j) = thisRGB(ii,1) * bw;
+                    imtmp2(:,:,2,j) = thisRGB(ii,2) * bw;
+                    imtmp2(:,:,3,j) = thisRGB(ii,3) * bw;
                 end
 
-                matrix=imadd(matrix,imtmp2);
+                if debug
+                    fprintf('[combineChannels][debug] add indexed color ii=%d rgb=[%g %g %g]\n', ii, thisRGB(ii,1), thisRGB(ii,2), thisRGB(ii,3));
+                end
+                matrix = imadd(matrix, imtmp2);
             end
         end
-        outrgb=[0 0 0];
+
+        outrgb = [0 0 0];
     end
 end
 
-%figure, imshow(matrix(:,:,:,1));
-pix=obj.findChannelID(name);
+fprintf('[combineChannels] final matrix size=%s class=%s\n', mat2str(size(matrix)), class(matrix));
 
-if numel(pix)
+% replace/add channel
+pix = obj.findChannelID(name);
+if ~isempty(pix)
+    fprintf('[combineChannels] output channel "%s" exists -> remove\n', string(name));
     obj.removeChannel(name);
 end
 
-obj.addChannel(matrix,name,[1 1 1],outrgb);
+obj.addChannel(matrix, name, [1 1 1], outrgb);
+obj.log(['Combined channels'], 'Processing');
 
-obj.log(['Combined channels'],'Processing');
-%obj.save;
-%obj.clear;
+fprintf('[combineChannels] ---- DONE output="%s" ----\n', string(name));
 
+end
 
+% ---- helper (no dependency) ----
+function s = tryGetROIid(obj)
+s = '?';
+try
+    if isprop(obj,'id') && ~isempty(obj.id)
+        s = string(obj.id);
+    end
+catch
+end
+end
