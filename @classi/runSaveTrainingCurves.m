@@ -1,91 +1,65 @@
 function runSaveTrainingCurves(obj, info, prefix)
-% runSaveTrainingCurves  Centralized saving of training curves (PNG) + raw info (MAT).
+% runSaveTrainingCurves  Centralized saving of training curves (PNG) + stable raw info (MAT).
 %
-% - Saves raw info into: <prefix>_trainingInfo.mat
-% - ALSO saves alias into: CNN_info.mat or LSTM_info.mat (so summarizeRuns finds it)
-% - Saves PNG: <prefix>_loss.png and <prefix>_accuracy.png
-% - Saves meta: <prefix>_meta.mat
+% What it saves (into active runDir):
+% - <prefix>_trainingInfo.mat  (variable "info" = STRUCT stable across MATLAB versions)
+% - alias CNN_info.mat or LSTM_info.mat (variable "info" = same struct), so summarizeRuns finds it
+% - <prefix>_loss.png / <prefix>_accuracy.png
+% - <prefix>_meta.mat (struct)
+%
+% IMPORTANT:
+% We do NOT save deep.TrainingInfo objects directly, because loading across versions can emit:
+% "Warning: While loading an object of class 'deep.TrainingInfo': Unrecognized field name 'StopReason'."
 
 if nargin < 3 || isempty(prefix)
     prefix = "training";
 end
 prefix = string(prefix);
 
-% --- public-safe "active run" check (run can be struct or object) ---
-runActive = false;
-runDir = "";
-
-if isprop(obj,'run') && ~isempty(obj.run)
-    r = obj.run;
-
-    try
-        if isstruct(r)
-            if isfield(r,'active') && r.active
-                runActive = true;
-            end
-            if isfield(r,'runDir') && ~isempty(r.runDir)
-                runDir = string(r.runDir);
-            end
-
-        elseif isobject(r)
-            if isprop(r,'active') && r.active
-                runActive = true;
-            end
-            if isprop(r,'runDir') && ~isempty(r.runDir)
-                runDir = string(r.runDir);
-            end
-        end
-    catch
-        runActive = false;
-        runDir = "";
-    end
-end
-
+% ------------------------------------------------------------
+% Resolve active run / runDir (run can be struct or object)
+% ------------------------------------------------------------
+[runActive, runDir] = localGetActiveRunDir(obj);
 if ~runActive
     fprintf('Job is not active, cannot save...\n');
     return;
 end
-
-if strlength(runDir)==0
+if strlength(runDir) == 0
     warning('runDir is empty; cannot save training curves.');
     return;
 end
-
-if ~exist(runDir,'dir')
-    warning('runDir does not exist: %s', runDir);
-    return;
-end
-
 runDir = char(runDir);
-
-
-runDir = obj.run.runDir;
 if ~exist(runDir,'dir')
     warning('runDir does not exist: %s', runDir);
     return;
 end
 
-
+% ------------------------------------------------------------
+% Build a version-stable info struct (infoLite)
+% ------------------------------------------------------------
+infoLite = localMakeInfoLite(info);
 
 try
-    % ---- save raw history ----
-    obj.runSave(char(prefix + "_trainingInfo.mat"), 'info', info);
+    % --------------------------------------------------------
+    % Save stable info + aliases for summarizeRuns
+    % --------------------------------------------------------
+    obj.runSave(char(prefix + "_trainingInfo.mat"), 'info', infoLite);
 
-    % ---- alias for summarizeRuns (option 2) ----
-    % summarizeRuns expects CNN_info.mat / LSTM_info.mat with variable "info"
     pfx = lower(prefix);
     if contains(pfx,"cnn")
-        obj.runSave('CNN_info.mat','info',info);
+        obj.runSave('CNN_info.mat','info',infoLite);
     elseif contains(pfx,"lstm")
-        obj.runSave('LSTM_info.mat','info',info);
+        obj.runSave('LSTM_info.mat','info',infoLite);
     end
 
-    % ---- try "trainnet" style first (TrainingHistory/ValidationHistory) ----
+    % --------------------------------------------------------
+    % Try trainnet-style first (TrainingHistory/ValidationHistory tables)
+    % --------------------------------------------------------
     didPlots = false;
 
-    if isstruct(info) && isfield(info,'TrainingHistory') && isfield(info,'ValidationHistory')
-        TH = info.TrainingHistory;
-        VH = info.ValidationHistory;
+    if isstruct(infoLite) && isfield(infoLite,'TrainingHistory') && isfield(infoLite,'ValidationHistory')
+        TH = infoLite.TrainingHistory;
+        VH = infoLite.ValidationHistory;
 
         if istable(TH) && istable(VH)
             thVars = TH.Properties.VariableNames;
@@ -148,18 +122,18 @@ try
             end
 
             % ---------- META ----------
-            meta = struct();
-            if isfield(info,'OutputNetworkIteration'), meta.OutputNetworkIteration = info.OutputNetworkIteration; end
-            if isfield(info,'StopReason'),            meta.StopReason             = info.StopReason; end
+            meta = localExtractMeta(infoLite);
             obj.runSaveStruct(char(prefix + "_meta.mat"), meta);
 
             didPlots = true;
         end
     end
 
-    % ---- fallback: "trainNetwork" TrainingInfo object OR struct-like fields ----
+    % --------------------------------------------------------
+    % Fallback: trainNetwork-style vectors (TrainingLoss, etc.)
+    % --------------------------------------------------------
     if ~didPlots
-        [itT, lossT, itV, lossV, itTA, accT, itVA, accV, meta] = localExtractTrainNetworkStyle(info);
+        [itT, lossT, itV, lossV, itTA, accT, itVA, accV, meta] = localExtractTrainNetworkStyle(infoLite);
 
         % LOSS
         if ~isempty(lossT) || ~isempty(lossV)
@@ -207,48 +181,138 @@ try
 catch ME
     obj.runMsg('WARN: could not save %s training curves (%s)', prefix, ME.getReport('basic','hyperlinks','off'));
 end
+
 end
 
-% ---------------- helpers ----------------
-function [itT, lossT, itV, lossV, itTA, accT, itVA, accV, meta] = localExtractTrainNetworkStyle(info)
-% Extract arrays from either TrainingInfo object (trainNetwork) or struct fields.
-itT=[]; lossT=[]; itV=[]; lossV=[];
-itTA=[]; accT=[]; itVA=[]; accV=[];
-meta = struct();
+% =====================================================================
+% Helpers
+% =====================================================================
+
+function [runActive, runDir] = localGetActiveRunDir(obj)
+runActive = false;
+runDir = "";
+
+if ~(isprop(obj,'run') && ~isempty(obj.run))
+    return;
+end
+
+r = obj.run;
 
 try
-    % TrainingInfo object (trainNetwork)
-    if isa(info,'nnet.cnn.TrainingInfo')
-        nT = numel(info.TrainingLoss);
-        if nT>0
-            itT   = 1:nT;
-            lossT = double(info.TrainingLoss(:))';
+    if isstruct(r)
+        if isfield(r,'active') && islogical(r.active) && isscalar(r.active)
+            runActive = r.active;
         end
-        nV = numel(info.ValidationLoss);
-        if nV>0
-            itV   = 1:nV;
-            lossV = double(info.ValidationLoss(:))';
+        if isfield(r,'runDir') && ~isempty(r.runDir)
+            runDir = string(r.runDir);
         end
 
-        nTA = numel(info.TrainingAccuracy);
-        if nTA>0
-            itTA = 1:nTA;
-            accT = double(info.TrainingAccuracy(:))';
+    elseif isobject(r)
+        if isprop(r,'active')
+            a = r.active;
+            if islogical(a) && isscalar(a)
+                runActive = a;
+            end
         end
-        nVA = numel(info.ValidationAccuracy);
-        if nVA>0
-            itVA = 1:nVA;
-            accV = double(info.ValidationAccuracy(:))';
+        if isprop(r,'runDir')
+            rd = r.runDir;
+            if ~isempty(rd)
+                runDir = string(rd);
+            end
         end
+    end
+catch
+    runActive = false;
+    runDir = "";
+end
+end
 
-        if isprop(info,'OutputNetworkIteration'), meta.OutputNetworkIteration = info.OutputNetworkIteration; end
-        if isprop(info,'StopReason'),            meta.StopReason             = info.StopReason; end
+function infoLite = localMakeInfoLite(info)
+% Build a version-stable struct from various training info formats.
+% Avoids saving deep.TrainingInfo objects directly.
+
+infoLite = struct();
+infoLite.Kind = "";
+infoLite.CreatedOn = datetime('now');
+
+% --- trainnet style: deep.TrainingInfo ---
+try
+    if isa(info,'deep.TrainingInfo')
+        infoLite.Kind = "deep.TrainingInfo";
+        try, infoLite.TrainingHistory   = info.TrainingHistory;   catch, infoLite.TrainingHistory = table(); end
+        try, infoLite.ValidationHistory = info.ValidationHistory; catch, infoLite.ValidationHistory = table(); end
+        try, infoLite.OutputNetworkIteration = info.OutputNetworkIteration; catch, end
+        try, infoLite.StopReason = string(info.StopReason); catch, infoLite.StopReason = ""; end
         return;
     end
 catch
 end
 
-% struct fallback
+% --- trainNetwork style: nnet.cnn.TrainingInfo ---
+try
+    if isa(info,'nnet.cnn.TrainingInfo')
+        infoLite.Kind = "nnet.cnn.TrainingInfo";
+        try, infoLite.TrainingLoss       = double(info.TrainingLoss(:));       catch, infoLite.TrainingLoss = []; end
+        try, infoLite.ValidationLoss     = double(info.ValidationLoss(:));     catch, infoLite.ValidationLoss = []; end
+        try, infoLite.TrainingAccuracy   = double(info.TrainingAccuracy(:));   catch, infoLite.TrainingAccuracy = []; end
+        try, infoLite.ValidationAccuracy = double(info.ValidationAccuracy(:)); catch, infoLite.ValidationAccuracy = []; end
+        try, infoLite.OutputNetworkIteration = info.OutputNetworkIteration; catch, end
+        try, infoLite.StopReason = string(info.StopReason); catch, infoLite.StopReason = ""; end
+        return;
+    end
+catch
+end
+
+% --- already struct ---
+if isstruct(info)
+    infoLite = info;
+    if ~isfield(infoLite,'Kind'), infoLite.Kind = "struct"; end
+    if isfield(infoLite,'StopReason')
+        try, infoLite.StopReason = string(infoLite.StopReason); catch, end
+    end
+    return;
+end
+
+% --- fallback: store just class name ---
+try
+    infoLite.Kind = "unknown";
+    infoLite.SourceClass = string(class(info));
+catch
+    infoLite.Kind = "unknown";
+    infoLite.SourceClass = "";
+end
+end
+
+function meta = localExtractMeta(infoS)
+meta = struct();
+if ~isstruct(infoS), return; end
+
+if isfield(infoS,'OutputNetworkIteration')
+    meta.OutputNetworkIteration = infoS.OutputNetworkIteration;
+end
+if isfield(infoS,'StopReason')
+    try
+        meta.StopReason = string(infoS.StopReason);
+    catch
+        meta.StopReason = "";
+    end
+end
+
+% helpful extras if present
+if isfield(infoS,'Kind'), meta.Kind = infoS.Kind; end
+if isfield(infoS,'SourceClass'), meta.SourceClass = infoS.SourceClass; end
+if isfield(infoS,'CreatedOn'), meta.CreatedOn = infoS.CreatedOn; end
+end
+
+function [itT, lossT, itV, lossV, itTA, accT, itVA, accV, meta] = localExtractTrainNetworkStyle(info)
+% Extract arrays from either:
+% - struct with TrainingLoss/ValidationLoss/TrainingAccuracy/ValidationAccuracy
+% - (we already converted objects to struct in localMakeInfoLite)
+
+itT=[]; lossT=[]; itV=[]; lossV=[];
+itTA=[]; accT=[]; itVA=[]; accV=[];
+meta = localExtractMeta(info);
+
 try
     if isstruct(info)
         if isfield(info,'TrainingLoss') && ~isempty(info.TrainingLoss)
@@ -267,8 +331,6 @@ try
             accV = double(info.ValidationAccuracy(:))';
             itVA = 1:numel(accV);
         end
-        if isfield(info,'OutputNetworkIteration'), meta.OutputNetworkIteration = info.OutputNetworkIteration; end
-        if isfield(info,'StopReason'),            meta.StopReason             = info.StopReason; end
     end
 catch
 end
