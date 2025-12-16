@@ -585,13 +585,28 @@ end
 
         if strcmp(trainingParam.transfer_learning{end},'ImageNet')
             if strcmp(trainingParam.classifier_output{end},'sequence-to-sequence')
-                layers = [
-                    sequenceInputLayer(numFeatures,'Name','sequence')
-                    bilstmLayer(nh,'OutputMode','sequence','Name','bilstm')
-                    dropoutLayer(0.5,'Name','drop')
-                    fullyConnectedLayer(numClasses,'Name','fc')
-                    softmaxLayer('Name','softmax')
-                    classificationLayer('Name','classification',"Classes", classNames)];
+                % layers = [
+                %     sequenceInputLayer(numFeatures,'Name','sequence')
+                %     bilstmLayer(nh,'OutputMode','sequence','Name','bilstm')
+                %     dropoutLayer(0.5,'Name','drop')
+                %     fullyConnectedLayer(numClasses,'Name','fc')
+                %     softmaxLayer('Name','softmax')
+                %     classificationLayer('Name','classification',"Classes", classNames)];
+                 k = 5;              % kernel temporel (3,5,7...)
+    nFilt = 2*nh;        % pour matcher la sortie BiLSTM (2*nh)
+
+    layers = [
+        sequenceInputLayer(numFeatures,'Name','sequence')
+        bilstmLayer(nh,'OutputMode','sequence','Name','bilstm')
+
+        convolution1dLayer(k, nFilt, 'Padding','same', 'Name','tconv1')
+        reluLayer('Name','tconv1_relu')              % optionnel mais souvent utile
+        dropoutLayer(0.3,'Name','drop')              % plutôt après la conv
+
+        fullyConnectedLayer(numClasses,'Name','fc')
+        softmaxLayer('Name','softmax')
+        classificationLayer('Name','classification',"Classes", classNames)
+    ];
             else
                 layers = [
                     sequenceInputLayer(numFeatures,'Name','sequence')
@@ -868,17 +883,24 @@ lossFcn = @(Y,T) localFocalCELossLSTM(Y, T, alpha, gamma, classNames);
         lstmLayersFull(1) = [];
 
         % --- Split LSTM layers ---
-bilstmLayerObj = lstmLayersFull(1);     % bilstm
-otherLstmTail  = lstmLayersFull(2:end); % dropout + fc + ...
+%bilstmLayerObj = lstmLayersFull(1);     % bilstm
+%otherLstmTail  = lstmLayersFull(2:end); % dropout + fc + ...
 
-nh=trainingParam.LSTM_hidden_size;
+%nh=trainingParam.LSTM_hidden_size;
+% layersTail = [ ...
+%     sequenceUnfoldingLayer('Name','unfold'); ...
+%     flattenLayer('Name','flatten'); ...
+%     deltaFeatureLayer('deltaFeatures'); ...
+%     bilstmLayerObj; ...
+%     temporalAttentionLayer('temporalAttention', 2*nh); ...
+%     otherLstmTail ...
+% ];
+
 layersTail = [ ...
     sequenceUnfoldingLayer('Name','unfold'); ...
     flattenLayer('Name','flatten'); ...
     deltaFeatureLayer('deltaFeatures'); ...
-    bilstmLayerObj; ...
-    temporalAttentionLayer('temporalAttention', 2*nh); ...
-    otherLstmTail ...
+    lstmLayersFull ...
 ];
 
 
