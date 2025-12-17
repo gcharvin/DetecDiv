@@ -492,6 +492,7 @@ try
 
     % ----- Concatenate: [F ; dFm ; dFp] -----
     Xwin = [Fwin; dFm; dFp];  % [3F x L]
+    %Xwin = Fwin;
 
     sequences{cc,1} = Xwin;
 
@@ -585,28 +586,28 @@ end
 
         if strcmp(trainingParam.transfer_learning{end},'ImageNet')
             if strcmp(trainingParam.classifier_output{end},'sequence-to-sequence')
-                % layers = [
-                %     sequenceInputLayer(numFeatures,'Name','sequence')
-                %     bilstmLayer(nh,'OutputMode','sequence','Name','bilstm')
-                %     dropoutLayer(0.5,'Name','drop')
-                %     fullyConnectedLayer(numClasses,'Name','fc')
-                %     softmaxLayer('Name','softmax')
-                %     classificationLayer('Name','classification',"Classes", classNames)];
-                 k = 5;              % kernel temporel (3,5,7...)
-    nFilt = 2*nh;        % pour matcher la sortie BiLSTM (2*nh)
-
-    layers = [
-        sequenceInputLayer(numFeatures,'Name','sequence')
-        bilstmLayer(nh,'OutputMode','sequence','Name','bilstm')
-
-        convolution1dLayer(k, nFilt, 'Padding','same', 'Name','tconv1')
-        reluLayer('Name','tconv1_relu')              % optionnel mais souvent utile
-        dropoutLayer(0.3,'Name','drop')              % plutôt après la conv
-
-        fullyConnectedLayer(numClasses,'Name','fc')
-        softmaxLayer('Name','softmax')
-        classificationLayer('Name','classification',"Classes", classNames)
-    ];
+               layers = [
+                    sequenceInputLayer(numFeatures,'Name','sequence')
+                    bilstmLayer(nh,'OutputMode','sequence','Name','bilstm')
+                    dropoutLayer(0.5,'Name','drop')
+                    fullyConnectedLayer(numClasses,'Name','fc')
+                    softmaxLayer('Name','softmax')
+                    classificationLayer('Name','classification',"Classes", classNames)];
+    %              k = 5;              % kernel temporel (3,5,7...)
+    % nFilt = nh/2;        % pour matcher la sortie BiLSTM (2*nh)
+    % 
+    % layers = [
+    %     sequenceInputLayer(numFeatures,'Name','sequence')
+    %     bilstmLayer(nh,'OutputMode','sequence','Name','bilstm')
+    % 
+    %     convolution1dLayer(k, nFilt, 'Padding','same', 'Name','tconv1')
+    %     reluLayer('Name','tconv1_relu')              % optionnel mais souvent utile
+    %     dropoutLayer(0.5,'Name','drop')              % plutôt après la conv
+    % 
+    %     fullyConnectedLayer(numClasses,'Name','fc')
+    %     softmaxLayer('Name','softmax')
+    %     classificationLayer('Name','classification',"Classes", classNames)
+    % ];
             else
                 layers = [
                     sequenceInputLayer(numFeatures,'Name','sequence')
@@ -634,7 +635,7 @@ end
 
         numObservationsTrain = numel(sequencesTrain);
         numIterationsPerEpoch= max(1,floor(numObservationsTrain / miniBatchSize));
-        patience = 20;
+        patience = 10;
 
         isSeq2Seq = strcmp(trainingParam.classifier_output{end},'sequence-to-sequence');
         if isSeq2Seq
@@ -654,9 +655,12 @@ end
             "LearnRateDropPeriod",  5, ...
             "LearnRateDropFactor",  trainingParam.LSTM_learn_rate_drop_factor, ...
             "Shuffle",              "every-epoch", ...
+            "L2Regularization",     1e-5, ...      % <-- teste 1e-4 puis 3e-4
             "ValidationData",       {sequencesValidation, labelsValidation}, ...
             "ValidationFrequency",  numIterationsPerEpoch, ...
             "ValidationPatience",   patience, ...
+            "GradientThresholdMethod","l2norm", ...
+            "GradientThreshold", 1.0, ...
             "Plots",                "training-progress", ...
             "ExecutionEnvironment", "auto", ...
             "VerboseFrequency",     10, ...
@@ -902,6 +906,12 @@ layersTail = [ ...
     deltaFeatureLayer('deltaFeatures'); ...
     lstmLayersFull ...
 ];
+
+% layersTail = [ ...
+%     sequenceUnfoldingLayer('Name','unfold'); ...
+%     flattenLayer('Name','flatten'); ...
+%     lstmLayersFull ...
+% ];
 
 
 

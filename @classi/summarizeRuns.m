@@ -117,32 +117,30 @@ for i = 1:numel(d)
     S.CNN_valLoss    = nan; S.CNN_trainLoss = nan;
     S.CNN_bestValAcc = nan; S.CNN_bestValLoss = nan;
 
-    if S.hasCNN
-        try
-            A = load(fCNN);
-            info = [];
-            if isfield(A,'info'); info = A.info; end
-            [S.CNN_valAcc, S.CNN_trainAcc, S.CNN_valLoss, S.CNN_trainLoss, ...
-             S.CNN_bestValAcc, S.CNN_bestValLoss] = localExtractInfo(info);
-        catch
-        end
-    end
-
     % LSTM
     S.LSTM_valAcc     = nan; S.LSTM_trainAcc = nan;
     S.LSTM_valLoss    = nan; S.LSTM_trainLoss = nan;
     S.LSTM_bestValAcc = nan; S.LSTM_bestValLoss = nan;
 
-    if S.hasLSTM
-        try
-            A = load(fLSTM);
-            info = [];
-            if isfield(A,'info'); info = A.info; end
-            [S.LSTM_valAcc, S.LSTM_trainAcc, S.LSTM_valLoss, S.LSTM_trainLoss, ...
-             S.LSTM_bestValAcc, S.LSTM_bestValLoss] = localExtractInfo(info);
-        catch
-        end
+    % CNN
+if S.hasCNN
+    try
+        info = localLoadInfoNoPlot(fCNN);  % <-- au lieu de A = load(...)
+        [S.CNN_valAcc, S.CNN_trainAcc, S.CNN_valLoss, S.CNN_trainLoss, ...
+         S.CNN_bestValAcc, S.CNN_bestValLoss] = localExtractInfo(info);
+    catch
     end
+end
+
+% LSTM
+if S.hasLSTM
+    try
+        info = localLoadInfoNoPlot(fLSTM); % <-- au lieu de A = load(...)
+        [S.LSTM_valAcc, S.LSTM_trainAcc, S.LSTM_valLoss, S.LSTM_trainLoss, ...
+         S.LSTM_bestValAcc, S.LSTM_bestValLoss] = localExtractInfo(info);
+    catch
+    end
+end
 
     % ---- validation summary (optional) ----
     S.val_nROI = nan; S.val_nClassified = nan; S.val_nSkipped = nan; S.val_nErrors = nan; S.val_seconds = nan;
@@ -541,3 +539,33 @@ try
 catch
 end
 end
+
+function info = localLoadInfoNoPlot(matFile)
+% localLoadInfoNoPlot  Load variable "info" while preventing any training-curve figures.
+info = [];
+
+% snapshot existing figures
+figBefore = findall(0,'Type','figure');
+
+% force figures invisible during load
+oldVis = get(0,'DefaultFigureVisible');
+set(0,'DefaultFigureVisible','off');
+c = onCleanup(@() set(0,'DefaultFigureVisible',oldVis)); %#ok<NASGU>
+
+try
+    A = load(matFile,'info');   % load only what we need
+    if isfield(A,'info')
+        info = A.info;
+    end
+catch
+    info = [];
+end
+
+% close any figures that still popped up
+figAfter = findall(0,'Type','figure');
+newFigs = setdiff(figAfter, figBefore);
+if ~isempty(newFigs)
+    try, close(newFigs); catch, end
+end
+end
+
