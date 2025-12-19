@@ -139,6 +139,7 @@ for ch = 1:numel(channel)
         bg = log1p(bg);
         bg = bg / log1p(65535);
 
+
         % niveaux en log si levCh numérique
         if ~iscell(levCh) && ~isequal(levCh, [-1 -1])
             lmin = log1p(double(levCh(1))) / log1p(65535);
@@ -173,23 +174,43 @@ for ch = 1:numel(channel)
     bg = min(max(bg, 0), 1);
 
     % ---- convertir en RGB 3 canaux ----
-    if ndims(bg) == 2
-        gray     = bg;
-        thisRGB  = rgb{ch};                   % [r g b]
-        bgRGB    = cat(3, gray*thisRGB(1), gray*thisRGB(2), gray*thisRGB(3));
-    elseif ndims(bg) == 3
-        if size(bg, 3) == 3
-            % déjà RGB (rare mais on gère)
-            bgRGB = bg;
+    % ---- convertir en RGB 3 canaux ----
+if ndims(bg) == 2
+    gray = bg;
+
+    if logdisplay
+        % === MODE LOG : colormap (LUT) ===
+        n = 256;
+        cmap = parula2green(n);   % ou une autre LUT
+        idx = 1 + floor(gray*(n-1));       % 1..n
+        idx = min(max(idx,1), n);
+        bgRGB = ind2rgb(uint16(idx), cmap);  % double 0..1, size [H W 3]
+    else
+        % === MODE LINEAIRE : couleur unique (tint) ===
+        thisRGB = rgb{ch};                   % [r g b]
+        bgRGB   = cat(3, gray*thisRGB(1), gray*thisRGB(2), gray*thisRGB(3));
+    end
+
+elseif ndims(bg) == 3
+    if size(bg, 3) == 3
+        bgRGB = bg;  % déjà RGB
+    else
+        gray = mean(bg, 3);
+        if logdisplay
+            n = 256;
+            cmap = parula2green(n);
+            idx = 1 + floor(gray*(n-1));
+            idx = min(max(idx,1), n);
+            bgRGB = ind2rgb(uint16(idx), cmap);
         else
-            % multi-sous-canaux exotique -> moyenne puis colorisation
-            gray = mean(bg, 3);
             thisRGB = rgb{ch};
             bgRGB   = cat(3, gray*thisRGB(1), gray*thisRGB(2), gray*thisRGB(3));
         end
-    else
-        error('score_makeComposite: imraw dimension inattendue (%dD).', ndims(bg));
     end
+else
+    error('score_makeComposite: imraw dimension inattendue (%dD).', ndims(bg));
+end
+
 
     bgRGBu8 = uint8(bgRGB * 255);
 

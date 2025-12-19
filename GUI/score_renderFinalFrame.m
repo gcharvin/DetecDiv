@@ -469,12 +469,44 @@ fig = get(masterTL, 'Parent');
 set(fig, 'Visible', 'off', 'InvertHardcopy', 'off');
 
 
-        for frame = 1:numel(layoutOptions.frames)
-            score_updateRender(graphicsHandles, roiobj, layoutOptions, displayHandles,frame)
-            rgbImage = print(fig, '-RGBImage');
-            disp(['Rendering frame ' num2str(frame) ' / ' num2str(numel(layoutOptions.frames))])
-            writeVideo(v, im2frame(rgbImage));
-        end
+        % for frame = 1:numel(layoutOptions.frames)
+        %     score_updateRender(graphicsHandles, roiobj, layoutOptions, displayHandles,frame)
+        %     rgbImage = print(fig, '-RGBImage');
+        %     disp(['Rendering frame ' num2str(frame) ' / ' num2str(numel(layoutOptions.frames))])
+        %     writeVideo(v, im2frame(rgbImage));
+        % end
+
+        targetHW = [];  % [H W] fixé à la première frame
+
+for frame = 1:numel(layoutOptions.frames)
+    score_updateRender(graphicsHandles, roiobj, layoutOptions, displayHandles, frame);
+    drawnow;  % important pour stabiliser le rendu avant capture
+
+    rgb = print(fig, '-RGBImage');   % uint8 HxWx3
+
+    % --- fixer taille de référence à la 1ère frame ---
+    if isempty(targetHW)
+        targetHW = size(rgb, [1 2]);
+        % force dimensions paires pour H.264
+        targetHW = targetHW - mod(targetHW, 2);
+    end
+
+    Ht = targetHW(1); Wt = targetHW(2);
+    H  = size(rgb,1);  W  = size(rgb,2);
+
+    % --- pad ou crop pour obtenir exactement Ht x Wt ---
+    if H < Ht || W < Wt
+        tmp = zeros(Ht, Wt, 3, 'uint8');
+        tmp(1:min(H,Ht), 1:min(W,Wt), :) = rgb(1:min(H,Ht), 1:min(W,Wt), :);
+        rgb = tmp;
+    else
+        rgb = rgb(1:Ht, 1:Wt, :);
+    end
+
+    fprintf('Rendering frame %d / %d\n', frame, numel(layoutOptions.frames));
+    writeVideo(v, rgb);  % <-- direct, pas im2frame
+end
+
 
         close(v);
         fprintf('Movie saved as MP4: %s\n', newPath);

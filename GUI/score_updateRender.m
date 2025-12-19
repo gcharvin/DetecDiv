@@ -113,11 +113,20 @@ switch mode
         end
         remove(graphicsHandles.vectorHandles, keysToDelete);
 
+        nROI = numel(roiobj);
+
         for i = 1:layoutOptions.Nrow
             for j = 1:layoutOptions.Ncol
 
+                
+
 
                 roiIndex = (i-1)*layoutOptions.Ncol + j;
+
+                if roiIndex > nROI
+    continue;   % ou break; si tu préfères arrêter la ligne
+                end
+                
                 roiData = roiobj(roiIndex);
 
                 [displayImage, vContours]=score_makeComposite(roiData,newframe,layoutOptions);
