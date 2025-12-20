@@ -59,7 +59,7 @@ switch mode
 
   case 'sequence'
    
-    initOrRefreshLineageForSequence(graphicsHandles, roiobj(1), layoutOptions, displayHandles, framesToDraw);
+    initOrRefreshLineageForSequence(graphicsHandles, roiobj, layoutOptions, displayHandles, framesToDraw);
 
 
 
@@ -336,6 +336,13 @@ for i=1:size(pairs,1)
             set(h.arrow,'XData',xm,'YData',ym,'UData',(xd-xm)*0.9,'VData',(yd-ym)*0.9, ...
                 'Visible','on','Color',col,'LineWidth',1.0,'MaxHeadSize',0.5,'AutoScale','off');
         end
+
+        try
+    if isgraphics(h.line),  uistack(h.line,  'top'); end
+    if isgraphics(h.arrow), uistack(h.arrow, 'top'); end
+catch
+end
+
         h.motherID = m;
         L.map(d) = h;
     else
@@ -345,6 +352,19 @@ for i=1:size(pairs,1)
                         'LineWidth',1.0,'MaxHeadSize',0.5,'Color',col, ...
                         'HitTest','off','PickableParts','none','AutoScale','off');
         L.map(d) = struct('line',hLine,'arrow',hArrow,'motherID',m);
+
+        try
+    uistack(hLine,  'top');
+    uistack(hArrow, 'top');
+catch
+        end
+
+
+
+
+
+
+        
     end
 end
 

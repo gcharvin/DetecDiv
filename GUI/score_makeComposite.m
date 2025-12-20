@@ -11,7 +11,7 @@ function [displayImage, vContours, indexedOverlay, alphaOverlay] = score_makeCom
 %   param : struct avec champs (min nécessaire) :
 %       .channel        : noms ou ids de canaux à afficher (1..Ndisplay)
 %       .overlay        : bool, composite (=true) ou multi-canaux (=false)
-%       .levels         : cell, par canal : 
+%       .levels         : cell, par canal :
 %                            - [min max] ou [-1 -1] (intensité)
 %                            - {idxString, ...}      (canal indexé)
 %       .RGB            : cell 1xNdisplay, chaque = [r g b]
@@ -21,7 +21,7 @@ function [displayImage, vContours, indexedOverlay, alphaOverlay] = score_makeCom
 %       .mode           : "Display" | "Sequence" | "Movie"
 %
 % Sorties :
-%   displayImage : 
+%   displayImage :
 %       - overlay=false : [H W 3 Ndisplay] uint8
 %       - overlay=true  : [H W 3] uint8 (composite)
 %   vContours    : struct array de patchs (x, y, FaceColor, EdgeColor, ...)
@@ -113,7 +113,7 @@ for ch = 1:numel(channel)
     isIndexed = iscell(levCh);
 
     % Flag log-display ?
-       % Flag log-display ?
+    % Flag log-display ?
     logdisplay = false;
     if isprop(roitmp, 'display') && isfield(roitmp.display, 'log') ...
             && ~isempty(currentCha)
@@ -129,7 +129,7 @@ for ch = 1:numel(channel)
 
 
     % ------------------------------------------------------------------
-    % 2a) IMAGE DE FOND pour ce canal (bgRGB in [0..255]), 
+    % 2a) IMAGE DE FOND pour ce canal (bgRGB in [0..255]),
     %     indépendamment du fait qu'il soit indexé ou non.
     % ------------------------------------------------------------------
     bg = double(imraw);
@@ -175,41 +175,41 @@ for ch = 1:numel(channel)
 
     % ---- convertir en RGB 3 canaux ----
     % ---- convertir en RGB 3 canaux ----
-if ndims(bg) == 2
-    gray = bg;
+    if ndims(bg) == 2
+        gray = bg;
 
-    if logdisplay
-        % === MODE LOG : colormap (LUT) ===
-        n = 256;
-        cmap = parula2green(n);   % ou une autre LUT
-        idx = 1 + floor(gray*(n-1));       % 1..n
-        idx = min(max(idx,1), n);
-        bgRGB = ind2rgb(uint16(idx), cmap);  % double 0..1, size [H W 3]
-    else
-        % === MODE LINEAIRE : couleur unique (tint) ===
-        thisRGB = rgb{ch};                   % [r g b]
-        bgRGB   = cat(3, gray*thisRGB(1), gray*thisRGB(2), gray*thisRGB(3));
-    end
-
-elseif ndims(bg) == 3
-    if size(bg, 3) == 3
-        bgRGB = bg;  % déjà RGB
-    else
-        gray = mean(bg, 3);
         if logdisplay
+            % === MODE LOG : colormap (LUT) ===
             n = 256;
-            cmap = parula2green(n);
-            idx = 1 + floor(gray*(n-1));
+            cmap = parula2green(n);   % ou une autre LUT
+            idx = 1 + floor(gray*(n-1));       % 1..n
             idx = min(max(idx,1), n);
-            bgRGB = ind2rgb(uint16(idx), cmap);
+            bgRGB = ind2rgb(uint16(idx), cmap);  % double 0..1, size [H W 3]
         else
-            thisRGB = rgb{ch};
+            % === MODE LINEAIRE : couleur unique (tint) ===
+            thisRGB = rgb{ch};                   % [r g b]
             bgRGB   = cat(3, gray*thisRGB(1), gray*thisRGB(2), gray*thisRGB(3));
         end
+
+    elseif ndims(bg) == 3
+        if size(bg, 3) == 3
+            bgRGB = bg;  % déjà RGB
+        else
+            gray = mean(bg, 3);
+            if logdisplay
+                n = 256;
+                cmap = parula2green(n);
+                idx = 1 + floor(gray*(n-1));
+                idx = min(max(idx,1), n);
+                bgRGB = ind2rgb(uint16(idx), cmap);
+            else
+                thisRGB = rgb{ch};
+                bgRGB   = cat(3, gray*thisRGB(1), gray*thisRGB(2), gray*thisRGB(3));
+            end
+        end
+    else
+        error('score_makeComposite: imraw dimension inattendue (%dD).', ndims(bg));
     end
-else
-    error('score_makeComposite: imraw dimension inattendue (%dD).', ndims(bg));
-end
 
 
     bgRGBu8 = uint8(bgRGB * 255);
@@ -231,7 +231,7 @@ end
     % 2b) Si canal indexé -> génération d'overlay (vContours OU raster)
     % ------------------------------------------------------------------
     if isIndexed
-      
+
         % imraw contient la carte de labels / classes
         L = imadjust(imraw, [0 1]);    % comme ton code d'origine
         L = double(L);
@@ -242,12 +242,26 @@ end
 
         % liste des canaux indexés
         listofindexedcha = find(roitmp.display.indexed);
-        tmpcha           = roitmp.channelid(currentCha);
-        currentIndx      = find(listofindexedcha == tmpcha);
 
-        if (paintChannel ~= currentIndx) && paintChannel ~= 0
-            % en mode "paint" on peut ignorer certains canaux
-            continue;
+        % ID logique du canal courant (scalaire)
+        tmpcha = roitmp.channelid(currentCha(1));
+        thisName = string(roitmp.display.channel{tmpcha});
+
+
+        if ischar(paintChannel) || isstring(paintChannel)
+            % Nouveau mode: paintChannel est un NOM
+            if strlength(string(paintChannel)) > 0 && ~strcmpi(thisName, string(paintChannel))
+                continue;
+            end
+        else
+            % Legacy: paintChannel est un RANG dans la liste des canaux indexés de CETTE ROI
+            if paintChannel ~= 0
+                listofindexedcha = find(roitmp.display.indexed);
+                currentIndx = find(listofindexedcha == tmpcha, 1, 'first');
+                if isempty(currentIndx) || paintChannel ~= currentIndx
+                    continue;
+                end
+            end
         end
 
 
@@ -259,9 +273,16 @@ end
             end
         end
 
+        isPaintThis = false;
+        if ischar(paintChannel) || isstring(paintChannel)
+            isPaintThis = (strlength(string(paintChannel)) > 0) && strcmpi(thisName, string(paintChannel));
+        else
+            isPaintThis = (paintChannel ~= 0) && ~isempty(currentIndx) && (paintChannel == currentIndx);
+        end
 
 
-        if paintChannel == currentIndx
+        if isPaintThis
+
             % couleurs stables par ID
             levmap = zeros(numel(indices), 3);
             for ii = 1:numel(indices)
@@ -275,13 +296,13 @@ end
         weiVal   = double(levCh{3});
         fillAlpha = min(1, weiVal);
 
-        
+
 
         switch mode
 
             case {"sequence","movie"}
 
-                
+
                 % --- Version vectorielle : vContours ---
                 for iii = 1:numel(indices)
                     bw = (L == indices(iii));
@@ -391,21 +412,21 @@ function cmap = parula2green(n)
 % Génère un colormap progressif de bleu -> rouge -> vert
 % Bleu (faible), rouge (milieu), vert (fort)
 
-    if nargin < 1
-        n = 256;
-    end
+if nargin < 1
+    n = 256;
+end
 
-    % Points de contrôle : bleu, rouge, vert
-    colors = [ ...
-        0     0     1   ;  % bleu
-        1     0     0   ;  % rouge
-        0     1     0 ];   % vert
+% Points de contrôle : bleu, rouge, vert
+colors = [ ...
+    0     0     1   ;  % bleu
+    1     0     0   ;  % rouge
+    0     1     0 ];   % vert
 
-    % Interpolation sur n points
-    x = linspace(0, 1, size(colors, 1));      % 3 points
-    xi = linspace(0, 1, n);                   % n points
+% Interpolation sur n points
+x = linspace(0, 1, size(colors, 1));      % 3 points
+xi = linspace(0, 1, n);                   % n points
 
-    cmap = interp1(x, colors, xi, 'linear');
+cmap = interp1(x, colors, xi, 'linear');
 end
 
 function cmap = getPalette(n)

@@ -404,8 +404,6 @@ newPath = fullfile(folder, [name '.pdf']);
                 if layoutOptions.debug
                     fprintf('DEBUG: ROI %d rendered in movie mode.\n', roiIndex);
                 end
-
-
             end
         end
 
