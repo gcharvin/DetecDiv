@@ -35,6 +35,29 @@ dsKeyB = dsKeys(2);
 [seqB, TmaxB] = localCollectSequences(roiListShown, dsKeyB);
 Tmax = max(TmaxA, TmaxB);
 
+% ---------------------------------------------------------
+% NEW: drop ROIs for which A or B is totally missing
+% ---------------------------------------------------------
+absA = localSeqCellIsAbsent(seqA);
+absB = localSeqCellIsAbsent(seqB);
+keep = ~(absA | absB);
+
+if ~any(keep)
+    text(ax, 0.5, 0.5, "No comparable data", 'Units','normalized', ...
+        'HorizontalAlignment','center');
+    return;
+end
+
+roiListShown = roiListShown(keep);
+seqA = seqA(keep);
+seqB = seqB(keep);
+
+% recompute Tmax on kept ROIs only
+TmaxA = localMaxLen(seqA);
+TmaxB = localMaxLen(seqB);
+Tmax  = max(TmaxA, TmaxB);
+
+
 if Tmax == 0
     text(ax, 0.5, 0.5, "No data", 'Units','normalized', 'HorizontalAlignment','center');
     return;
@@ -417,4 +440,44 @@ for k = 1:numel(steps)
 end
 xt = 0:step:nFrames;
 if xt(end) ~= nFrames, xt(end+1) = nFrames; end
+end
+
+function absent = localSeqCellIsAbsent(seqs)
+% seqs: cell array, one per ROI, each is row vector (numeric or labels)
+n = numel(seqs);
+absent = false(n,1);
+
+for i = 1:n
+    x = seqs{i};
+    if isempty(x)
+        absent(i) = true;
+        continue;
+    end
+
+    % numeric/logical: absent if all NaN
+    if isnumeric(x) || islogical(x)
+        absent(i) = all(isnan(double(x(:))));
+        continue;
+    end
+
+    % label-like: absent if all empty/whitespace after string conversion
+    s = localToStringLabels(x);
+    if isempty(s)
+        absent(i) = true;
+    else
+        s = strtrim(s);
+        absent(i) = all(strlength(s)==0);
+    end
+end
+end
+
+function Tmax = localMaxLen(seqs)
+if isempty(seqs)
+    Tmax = 0;
+else
+    Tmax = 0;
+    for i=1:numel(seqs)
+        Tmax = max(Tmax, numel(seqs{i}));
+    end
+end
 end

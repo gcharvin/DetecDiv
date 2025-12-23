@@ -119,6 +119,14 @@ else
            'Title', "Compare stats");
         end
 
+        % --- events (compare) ---
+if ~isempty(args.EventRulesByKey) && isa(args.EventRulesByKey,'containers.Map') ...
+        && args.EventRulesByKey.Count > 0
+    out = batonnets_eventsCompare(out, roiListAll, roiListShown, idxShown, dsKeys, args, H, W, Gcmp, Groi);
+end
+
+
+
 end
 
 end
