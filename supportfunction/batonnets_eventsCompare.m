@@ -22,8 +22,14 @@ end
 out.events = localCollectAllEvents(roiListAll, dsKeys, rulesByKey);
 
 % ---- render events figure (only shown subset) ----
-out = localRenderEventsFigure(out, roiListShown, idxShown, dsKeys, H, W, Gcmp, Groi);
+out = localRenderEventsFigure(out, roiListShown, idxShown, dsKeys, H, W, Gcmp, Groi,args);
 
+matchMaxDtFrames = 10; % à ajuster
+if isfield(args,'MatchMaxDtFrames') && ~isempty(args.MatchMaxDtFrames)
+    matchMaxDtFrames = args.MatchMaxDtFrames;
+end
+
+out = localPlotMatchStats(out, roiListShown, idxShown, matchMaxDtFrames);
 
 end
 
@@ -196,15 +202,14 @@ fprintf("[eventsCompare] rule %d: '%s' -> '%s'\n", k, fr, to);
 end
 end
 
-function out = localRenderEventsFigure(out, roiListShown, idxShown, dsKeys, H, W, Gcmp, Groi)
 
-% --- collect sequences on SHOWN to decide keep + Tmax (same logic as compare) ---
+function out = localRenderEventsFigure(out, roiListShown, idxShown, dsKeys, H, W, Gcmp, Groi,args)
+
 dsKeyA = dsKeys(1);
 dsKeyB = dsKeys(2);
 
 [seqA, TmaxA] = localCollectSequences(roiListShown, dsKeyA);
 [seqB, TmaxB] = localCollectSequences(roiListShown, dsKeyB);
-Tmax = max(TmaxA, TmaxB);
 
 absA = localSeqCellIsAbsent(seqA);
 absB = localSeqCellIsAbsent(seqB);
@@ -232,12 +237,14 @@ if Tmax <= 0
     return;
 end
 
-Tw   = Tmax * W;
+% ----- IMPORTANT: integer geometry -----
+W  = max(1, round(W));
+Tw = max(1, round(Tmax * W));
+
 nROI = numel(roiListShown);
 HperROI = 2*H + Gcmp;
 Htot = nROI*HperROI + (nROI-1)*Groi;
 
-% --- FIGURE/AXES (NO tiledlayout) ---
 fe = figure('Name','Batonnets - Events (compare)','Color','w');
 out.eventsFigure = fe;
 ax = axes('Parent', fe);
@@ -246,23 +253,26 @@ ax.YDir = 'normal';
 ax.Box  = 'off';
 ax.Visible = 'on';
 ax.Clipping = 'off';
+
+% background blanc
+ax.Color = 'w';
+
 hold(ax,'on');
 
-% --- base "transparent" image (same spirit as compare classes) ---
+% base image (transparent)
 Cbase = NaN(Htot, Tw);
-A = ~isnan(Cbase);             % false everywhere
+A = ~isnan(Cbase); % false
 imagesc(ax, [0.5 Tw-0.5], [1 Htot], Cbase, 'AlphaData', A);
 
+% lock axes early
 xlim(ax, [0 Tw]);
 ylim(ax, [0.5 Htot+0.5]);
+ax.XLimMode = 'manual';
+ax.YLimMode = 'manual';
+axis(ax,'manual');
+
 xlabel(ax, "Frame");
 
-% ticks frames -> pixels (same logic)
-xtFrames = localNiceFrameTicks(Tmax, 6);
-ax.XTick = xtFrames * W;
-ax.XTickLabel = string(xtFrames);
-
-% y labels
 ax.YTick = localRoiPairCenters(nROI, H, Gcmp, Groi);
 ax.YTickLabel = cellstr(string({roiListShown.label}));
 ax.TickLabelInterpreter = 'none';
@@ -270,183 +280,413 @@ ax.TickLabelInterpreter = 'none';
 title(ax, "Events (compare): " + dsKeys(1) + " ↔ " + dsKeys(2), ...
     'Interpreter','none', 'FontWeight','bold');
 
-% --- overlay events as ONE image ---
-[rgb, alpha] = localBuildEventsOverlay(out.events, idxShown, Tmax, H, W, Gcmp, Groi, nROI);
-image(ax, [0.5 Tw-0.5], [1 Htot], rgb, 'AlphaData', alpha, 'HitTest','off');
+% defaults
+eventWidthFrames = 1;
+if isfield(args,'EventWidthFrames') && ~isempty(args.EventWidthFrames)
+    eventWidthFrames = args.EventWidthFrames;
+end
 
-% HARD lock (important)
-xlim(ax, [0 Tw]); ylim(ax, [0.5 Htot+0.5]);
-ax.XLimMode = 'manual'; ax.YLimMode = 'manual';
+matchMaxDtFrames = 10; % à ajuster
+if isfield(args,'MatchMaxDtFrames') && ~isempty(args.MatchMaxDtFrames)
+    matchMaxDtFrames = args.MatchMaxDtFrames;
+end
+
+[rgbEv, alphaEv, dtAll] = localBuildEventsOverlayMatched( ...
+    out.events, idxShown, Tmax, H, W, Gcmp, Groi, nROI, eventWidthFrames, matchMaxDtFrames);
+
+% interval overlay BW (white->black)
+maxDurDiffForBlack = 10;
+if isfield(args,'IntervalMaxDurDiffForBlack') && ~isempty(args.IntervalMaxDurDiffForBlack)
+    maxDurDiffForBlack = args.IntervalMaxDurDiffForBlack;
+end
+
+[rgbInt, alphaInt, durDiffAll, dtStartAll, durTestAll, durRefAll, matchedLinkFramesAll] = localBuildIntervalsOverlayBW( ...
+    out.events, idxShown, Tmax, H, W, Gcmp, Groi, nROI, matchMaxDtFrames, maxDurDiffForBlack);
+
+out.intervalDurDiffAll = durDiffAll;       % matched only
+out.intervalDtAll      = dtStartAll;       % can be empty
+out.intervalDurTestAll = durTestAll;       % ALL
+out.intervalDurRefAll  = durRefAll;        % ALL
+out.intervalMatchedLinkFramesAll = matchedLinkFramesAll; % optional, if you want
+
+% draw intervals (BW) first
+if any(alphaInt(:))
+    image(ax, [0.5 Tw-0.5], [1 Htot], rgbInt, 'AlphaData', alphaInt, 'HitTest','off');
+end
+
+% draw match links + edges (vector)
+localDrawMatchLinks(ax, out.events, idxShown, Tmax, H, W, Gcmp, Groi, nROI, matchMaxDtFrames);
+localDrawIntervalLinks(ax, out.events, idxShown, Tmax, H, W, Gcmp, Groi, nROI, matchMaxDtFrames);
+localDrawBatonnetEdges(ax, Tmax, H, W, Gcmp, Groi, nROI);
+
+out.dtAll = dtAll;
+
+% draw events overlay last (color)
+if any(alphaEv(:))
+    image(ax, [0.5 Tw-0.5], [1 Htot], rgbEv, 'AlphaData', alphaEv, 'HitTest','off');
+end
+
+% colormap green->red for |dt|
+N = 256;
+a = linspace(0,1,N)';        % 0..1
+cmap = [a, 1-a, zeros(N,1)]; % red, green, 0
+colormap(ax, cmap);
+caxis(ax, [0 matchMaxDtFrames]);
+
+cb = colorbar(ax, 'Location','southoutside');
+cb.Label.String = sprintf('|Δt| (frames), capped at %d', matchMaxDtFrames);
+cb.TickDirection = 'out';
+
+% small text legend for blue meaning
+text(ax, 0.99, 0.02, "Blue = FP(test) or FN(ref)", ...
+    'Units','normalized', 'HorizontalAlignment','right', 'Color',[0 0 1], ...
+    'FontWeight','bold');
+
+% ---- PATCH: second grayscale scale BELOW the Δt colorbar ----
+drawnow; % ensure cb.Position is valid
+
+try
+    pos = cb.Position; % [x y w h] in normalized figure units
+    h2  = pos(4)*0.55;  % height of grayscale bar
+    gap = pos(4)*0.35;  % gap between colorbars
+
+    % create an axes for grayscale bar (no ticks)
+    axg = axes('Parent', fe, 'Units','normalized', ...
+               'Position', [pos(1), pos(2)-h2-gap, pos(3), h2]);
+    axg.Visible = 'off';
+    axg.HitTest = 'off';
+    axg.Clipping = 'off';
+
+    grad = uint8(linspace(255,0,256));                 % white->black
+    gradRGB = repmat(reshape(grad,1,[],1), [12 1 3]);   % small height image
+    image(axg, [0 1], [0 1], gradRGB, 'HitTest','off');
+
+    text(axg, 0, 1.25, sprintf('|Δdur| intervals (frames): white=0 black≥%g', maxDurDiffForBlack), ...
+        'Units','normalized', 'HorizontalAlignment','left', 'Color',[0 0 0], ...
+        'FontSize',9, 'Interpreter','none', 'HitTest','off');
+catch
+    % fail silently: keep only the main colorbar if something goes wrong
+end
+% ---- END PATCH ----
+
+% re-lock after overlay
+xtFrames = localNiceFrameTicks(Tmax, 6);
+set(ax, ...
+    'XLim', [0 Tw], ...
+    'YLim', [0.5 Htot+0.5], ...
+    'XTick', xtFrames * W, ...
+    'XTickLabel', string(xtFrames), ...
+    'XLimMode','manual', ...
+    'YLimMode','manual');
 axis(ax,'manual');
 
 hold(ax,'off');
 
-% (DEBUG) comment this back later
-% localLegendFromEvents(ax, out.events, idxShown);
-
 end
 
-function [rgb, alpha] = localBuildEventsOverlay(Eall, idxShown, Tmax, H, W, Gcmp, Groi, nROI)
-Tw = Tmax * W;
+
+
+function localDrawBatonnetEdges(ax, Tmax, H, W, Gcmp, Groi, nROI)
+Tw = Tmax*W;
 HperROI = 2*H + Gcmp;
-Htot    = nROI*HperROI + (nROI-1)*Groi;
-
-rgb   = zeros(Htot, Tw, 3, 'uint8');
-alpha = zeros(Htot, Tw, 'single');
-
-hMark = max(1, floor(H/2));
-
 row0 = 1;
 for iR = 1:nROI
-    iAll = idxShown(iR);
+    rA0 = row0;           rA1 = row0 + H - 1;
+    rB0 = row0 + H + Gcmp; rB1 = rB0 + H - 1;
 
-    rA1 = row0 + H - 1;
-    rA0 = max(row0, rA1 - hMark + 1);
-
-    rBbase = row0 + H + Gcmp;
-    rB0 = rBbase;
-    rB1 = min(rBbase + hMark - 1, rBbase + H - 1);
-
-    % A events
-    evA = Eall(iAll,1).events;
-    for k = 1:numel(evA)
-        t = evA(k).frame;
-        if ~isfinite(t) || t < 1 || t > Tmax, continue; end
-        c = evA(k).color;
-        if numel(c)~=3 || any(~isfinite(c)), continue; end
-        col0 = (t-1)*W + 1;
-        col1 = min(t*W, Tw);
-        rgb(rA0:rA1, col0:col1, 1) = uint8(255*c(1));
-        rgb(rA0:rA1, col0:col1, 2) = uint8(255*c(2));
-        rgb(rA0:rA1, col0:col1, 3) = uint8(255*c(3));
-        alpha(rA0:rA1, col0:col1)  = 1;
-    end
-
-    % B events
-    evB = Eall(iAll,2).events;
-    for k = 1:numel(evB)
-        t = evB(k).frame;
-        if ~isfinite(t) || t < 1 || t > Tmax, continue; end
-        c = evB(k).color;
-        if numel(c)~=3 || any(~isfinite(c)), continue; end
-        col0 = (t-1)*W + 1;
-        col1 = min(t*W, Tw);
-        rgb(rB0:rB1, col0:col1, 1) = uint8(255*c(1));
-        rgb(rB0:rB1, col0:col1, 2) = uint8(255*c(2));
-        rgb(rB0:rB1, col0:col1, 3) = uint8(255*c(3));
-        alpha(rB0:rB1, col0:col1)  = 1;
-    end
+    % top+bottom lines for each bar
+    plot(ax, [0 Tw], [rA0 rA0], 'k-', 'LineWidth',0.5, 'HitTest','off');
+    plot(ax, [0 Tw], [rA1 rA1], 'k-', 'LineWidth',0.5, 'HitTest','off');
+    plot(ax, [0 Tw], [rB0 rB0], 'k-', 'LineWidth',0.5, 'HitTest','off');
+    plot(ax, [0 Tw], [rB1 rB1], 'k-', 'LineWidth',0.5, 'HitTest','off');
 
     row0 = row0 + HperROI;
-    if iR < nROI
-        row0 = row0 + Groi;
-    end
+    if iR < nROI, row0 = row0 + Groi; end
 end
 end
 
 
-function localOverlayEventsPixels(ax, Eall, idxShown, Tmax, H, W, Gcmp, Groi, nROI)
-% Build an RGB image + Alpha mask, like localOverlayMismatchPixels,
-% but for events (frame -> colored marker bands).
+function out = localPlotMatchStats(out, roiListShown, idxShown, matchMaxDtFrames)
+% Panels:
+% 1) hist |Δt| matched EVENTS
+% 2) bar FP/FN EVENTS
+% 3) hist |Δdur| matched INTERVALS (matched only)
+% 4) hist duration distributions (ALL intervals) TEST vs REF + stats + test
+% 5) loglog scatter matched intervals: REF vs TEST + y=x dashed
 
-Tw = Tmax * W;
+dtAll = [];
+if isfield(out,'dtAll'), dtAll = out.dtAll; end
 
-HperROI = 2*H + Gcmp;
-Htot    = nROI*HperROI + (nROI-1)*Groi;
+durDiffMatchedAbsAll = [];
+if isfield(out,'intervalDurDiffAll'), durDiffMatchedAbsAll = out.intervalDurDiffAll; end
 
-% alpha per event-color: we can't have per-pixel colormap with single alpha,
-% so we build an RGB image with alpha 1 on event pixels.
-rgb   = zeros(Htot, Tw, 3, 'uint8');
-alpha = zeros(Htot, Tw, 'single');
-
-hMark = max(1, floor(H/2));
-
-row0 = 1;
-for iR = 1:nROI
-    iAll = idxShown(iR);
-
-    % A band
-    rA1 = row0 + H - 1;
-    rA0 = max(row0, rA1 - hMark + 1);
-
-    % B band
-    rBbase = row0 + H + Gcmp;
-    rB0 = rBbase;
-    rB1 = min(rBbase + hMark - 1, rBbase + H - 1);
-
-    % --- events A ---
-    evA = Eall(iAll,1).events;
-    for k = 1:numel(evA)
-        t = evA(k).frame;
-        if ~isfinite(t) || t < 1 || t > Tmax, continue; end
-        c = evA(k).color;
-        if numel(c)~=3 || any(~isfinite(c)), continue; end
-
-        col0 = (t-1)*W + 1;
-        col1 = min(t*W, Tw);
-
-        rgb(rA0:rA1, col0:col1, 1) = uint8(255*c(1));
-        rgb(rA0:rA1, col0:col1, 2) = uint8(255*c(2));
-        rgb(rA0:rA1, col0:col1, 3) = uint8(255*c(3));
-        alpha(rA0:rA1, col0:col1)  = 1;
-    end
-
-    % --- events B ---
-    evB = Eall(iAll,2).events;
-    for k = 1:numel(evB)
-        t = evB(k).frame;
-        if ~isfinite(t) || t < 1 || t > Tmax, continue; end
-        c = evB(k).color;
-        if numel(c)~=3 || any(~isfinite(c)), continue; end
-
-        col0 = (t-1)*W + 1;
-        col1 = min(t*W, Tw);
-
-        rgb(rB0:rB1, col0:col1, 1) = uint8(255*c(1));
-        rgb(rB0:rB1, col0:col1, 2) = uint8(255*c(2));
-        rgb(rB0:rB1, col0:col1, 3) = uint8(255*c(3));
-        alpha(rB0:rB1, col0:col1)  = 1;
-    end
-
-    row0 = row0 + HperROI;
-    if iR < nROI
-        row0 = row0 + Groi;
-    end
-end
-
-hold(ax,'on');
-image(ax, [0.5 Tw-0.5], [1 Htot], rgb, 'AlphaData', alpha, 'HitTest','off');
-hold(ax,'off');
-end
-
-function localLegendFromEvents(ax, Eall, idxShown)
-names = strings(0,1);
-cols  = zeros(0,3);
+durTestAll = [];
+durRefAll  = [];
+if isfield(out,'intervalDurTestAll'), durTestAll = out.intervalDurTestAll; end
+if isfield(out,'intervalDurRefAll'),  durRefAll  = out.intervalDurRefAll;  end
 
 nROI = numel(idxShown);
-for j=1:2
-    for iR=1:nROI
-        iAll = idxShown(iR);
-        evs = Eall(iAll,j).events;
-        for k=1:numel(evs)
-            nm = string(evs(k).name);
-            c  = evs(k).color;
-            if strlength(nm)==0 || numel(c)~=3, continue; end
-            names(end+1,1) = nm; %#ok<AGROW>
-            cols(end+1,:)  = c;  %#ok<AGROW>
+
+% event FP/FN aggregation
+nTestE = 0; nRefE = 0; nFP = 0; nFN = 0;
+for iR = 1:nROI
+    iAll = idxShown(iR);
+    evTest = out.events(iAll,1).events;
+    evRef  = out.events(iAll,2).events;
+    mt = localMatchEventsHungarianByName(evTest, evRef, matchMaxDtFrames);
+    nTestE = nTestE + numel(evTest);
+    nRefE  = nRefE  + numel(evRef);
+    nFP    = nFP    + sum(mt.testUnmatched);
+    nFN    = nFN    + sum(mt.refUnmatched);
+end
+fpFrac = nFP / max(1,nTestE);
+fnFrac = nFN / max(1,nRefE);
+
+fs = figure('Name','Events/Intervals matching stats (test vs ref)','Color','w');
+out.eventsStatsFigure = fs;
+
+tl = tiledlayout(fs, 5, 1, 'Padding','compact', 'TileSpacing','compact');
+
+% -------- Panel 1: matched event dt
+ax1 = nexttile(tl,1);
+if isempty(dtAll)
+    text(ax1,0.5,0.5,"No matched events",'Units','normalized','HorizontalAlignment','center'); axis(ax1,'off');
+else
+    histogram(ax1, abs(dtAll), 'BinMethod','integers');
+    xlabel(ax1,'|Δt| matched events (frames)'); ylabel(ax1,'Count');
+    medDt = median(abs(dtAll), 'omitnan');
+    title(ax1, sprintf('Matched events |Δt| (median=%.2f frames)', medDt));
+    xlim(ax1, [0 matchMaxDtFrames]);
+end
+
+% -------- Panel 2: FP/FN events
+ax2 = nexttile(tl,2);
+bar(ax2, [fpFrac fnFrac]);
+ax2.XTickLabel = {'FP(test)','FN(ref)'};
+ylabel(ax2,'Fraction'); ylim(ax2,[0 1]);
+title(ax2, sprintf('Events: FP=%d/%d (%.1f%%), FN=%d/%d (%.1f%%)', ...
+    nFP, nTestE, 100*fpFrac, nFN, nRefE, 100*fnFrac));
+
+% -------- Panel 3: matched interval duration diff
+ax3 = nexttile(tl,3);
+if isempty(durDiffMatchedAbsAll)
+    text(ax3,0.5,0.5,"No matched intervals",'Units','normalized','HorizontalAlignment','center'); axis(ax3,'off');
+else
+    histogram(ax3, durDiffMatchedAbsAll, 'BinMethod','integers');
+    xlabel(ax3,'|Δdur| matched intervals (frames)'); ylabel(ax3,'Count');
+    medDur = median(durDiffMatchedAbsAll,'omitnan');
+    title(ax3, sprintf('Matched intervals |Δdur| (median=%.2f frames)', medDur));
+end
+
+% -------- Panel 4: ALL interval duration distributions (test vs ref) + stats + test
+ax4 = nexttile(tl,4);
+hold(ax4,'on');
+if isempty(durTestAll) && isempty(durRefAll)
+    text(ax4,0.5,0.5,"No intervals",'Units','normalized','HorizontalAlignment','center'); axis(ax4,'off');
+else
+    if ~isempty(durRefAll)
+        histogram(ax4, durRefAll, 'Normalization','probability', 'DisplayStyle','stairs', 'LineWidth',1.5);
+    end
+    if ~isempty(durTestAll)
+        histogram(ax4, durTestAll,'Normalization','probability', 'DisplayStyle','stairs', 'LineWidth',1.5);
+    end
+    xlabel(ax4,'Interval duration (frames)'); ylabel(ax4,'Probability');
+    legend(ax4, {'REF (all intervals)','TEST (all intervals)'}, 'Location','northeast');
+
+    % stats
+    medT = median(durTestAll,'omitnan'); medR = median(durRefAll,'omitnan');
+    iqrT = iqr(durTestAll); iqrR = iqr(durRefAll);
+
+    % test de distribution: KS2 (non-param)
+    p = NaN; ksstat = NaN;
+    if numel(durTestAll) >= 2 && numel(durRefAll) >= 2
+        try
+            [~,p,ksstat] = kstest2(durTestAll, durRefAll);
+        catch
         end
+    end
+
+    title(ax4, sprintf('All interval durations: med(T)=%.2f, IQR(T)=%.2f | med(R)=%.2f, IQR(R)=%.2f | KS2 p=%.3g (D=%.3g)', ...
+        medT, iqrT, medR, iqrR, p, ksstat));
+end
+hold(ax4,'off');
+
+% -------- Panel 5: loglog matched intervals REF vs TEST + diagonal
+ax5 = nexttile(tl,5);
+% We need matched pairs arrays; rebuild quickly from per-ROI (robust and simple)
+xRef = []; yTest = [];
+for iR = 1:nROI
+    iAll = idxShown(iR);
+    evTest = out.events(iAll,1).events;
+    evRef  = out.events(iAll,2).events;
+    mt = localMatchEventsHungarianByName(evTest, evRef, matchMaxDtFrames);
+    I  = localIntervalsAllAndMatchedFromEventMatch(evTest, evRef, mt);
+    if ~isempty(I.matchedRefDur)
+        xRef  = [xRef;  I.matchedRefDur(:)];  %#ok<AGROW>
+        yTest = [yTest; I.matchedTestDur(:)]; %#ok<AGROW>
     end
 end
 
-if isempty(names), return; end
-[un, ia] = unique(names, 'stable');
+if isempty(xRef)
+    text(ax5,0.5,0.5,"No matched intervals for log-log scatter",'Units','normalized','HorizontalAlignment','center'); axis(ax5,'off');
+else
+    % avoid zeros for log
+    ok = isfinite(xRef) & isfinite(yTest) & xRef>0 & yTest>0;
+    xRef = xRef(ok); yTest = yTest(ok);
 
-h = gobjects(0,1);
-for i=1:numel(un)
-    h(end+1) = plot(ax, nan, nan, 'LineWidth', 6, 'Color', cols(ia(i),:)); %#ok<AGROW>
+    loglog(ax5, xRef, yTest, '.', 'MarkerSize',10);
+    hold(ax5,'on');
+    mn = min([xRef; yTest]); mx = max([xRef; yTest]);
+    loglog(ax5, [mn mx], [mn mx], 'k--', 'LineWidth',1); % diagonal y=x
+    hold(ax5,'off');
+
+    xlabel(ax5,'REF interval duration (frames)'); ylabel(ax5,'TEST interval duration (frames)');
+    title(ax5, sprintf('Matched intervals (log-log): REF vs TEST (n=%d)', numel(xRef)));
+    grid(ax5,'on');
 end
-legend(ax, h, cellstr(un), 'Interpreter','none', 'Location','eastoutside');
 end
+
+
+function [rgb, alpha] = localBuildBatonnetBackground(Tmax, H, W, Gcmp, Groi, nROI)
+Tw = Tmax * W;
+HperROI = 2*H + Gcmp;
+Htot    = nROI*HperROI + (nROI-1)*Groi;
+
+rgb   = 255 * ones(Htot, Tw, 3, 'uint8');     % white everywhere
+alpha = zeros(Htot, Tw, 'single');            % transparent by default
+
+% light gray batonnet color
+g = uint8(245);                               % tweak 240..250
+barRGB = cat(3, g, g, g);
+
+row0 = 1;
+for iR = 1:nROI
+    % A bar region
+    rA0 = row0;
+    rA1 = row0 + H - 1;
+
+    % B bar region
+    rB0 = row0 + H + Gcmp;
+    rB1 = rB0 + H - 1;
+
+    % fill A and B with light gray (opaque)
+    rgb(rA0:rA1,:,:) = repmat(barRGB, [rA1-rA0+1, Tw, 1]);
+    rgb(rB0:rB1,:,:) = repmat(barRGB, [rB1-rB0+1, Tw, 1]);
+    alpha(rA0:rA1,:) = 1;
+    alpha(rB0:rB1,:) = 1;
+
+    row0 = row0 + HperROI;
+    if iR < nROI
+        row0 = row0 + Groi;
+    end
+end
+end
+
+
+
+
+function [rgb, alpha, dtAll] = localBuildEventsOverlayMatched(Eall, idxShown, Tmax, H, W, Gcmp, Groi, nROI, eventWidthFrames, matchMaxDtFrames)
+% Colors:
+% - REF (bas): black if matched, blue if FN (unmatched in ref)
+% - TEST (haut): green->red by |dt| if matched, blue if FP (unmatched in test)
+
+if nargin < 9 || isempty(eventWidthFrames), eventWidthFrames = 1; end
+eventWidthFrames = max(1, round(eventWidthFrames));
+eventWidthPx = eventWidthFrames * W;
+
+if nargin < 10 || isempty(matchMaxDtFrames), matchMaxDtFrames = 10; end
+
+Tw = Tmax * W;
+HperROI = 2*H + Gcmp;
+Htot    = nROI*HperROI + (nROI-1)*Groi;
+
+rgb   = zeros(Htot, Tw, 3, 'uint8');
+alpha = zeros(Htot, Tw, 'single');
+
+dtAll = [];
+
+% col constants
+colBlue  = [0 0 1];
+colBlack = [0 0 0];
+
+% dt -> color (green->red)
+dt2col = @(dtAbs, dtMax) [min(dtAbs/dtMax,1), max(0,1-dtAbs/dtMax), 0];
+
+row0 = 1;
+for iR = 1:nROI
+    iAll = idxShown(iR);
+
+    rA0 = row0;
+    rA1 = row0 + H - 1;
+
+    rB0 = row0 + H + Gcmp;
+    rB1 = rB0 + H - 1;
+
+    evTest = Eall(iAll,1).events; % dsKeys(1)=test
+    evRef  = Eall(iAll,2).events; % dsKeys(2)=ref
+
+    mt = localMatchEventsHungarianByName(evTest, evRef, matchMaxDtFrames);
+
+    % --- REF rendering (black if matched, blue if FN) ---
+    for k = 1:numel(evRef)
+        t = evRef(k).frame;
+        if ~isfinite(t) || t < 1 || t > Tmax, continue; end
+
+        if mt.refUnmatched(k)
+            c = colBlue;   % FN in ref => blue
+        else
+            c = colBlack;  % matched => black
+        end
+
+        [col0,col1] = localEventColRange(t, W, Tw, eventWidthPx);
+
+        rgb(rB0:rB1, col0:col1, 1) = uint8(255*c(1));
+        rgb(rB0:rB1, col0:col1, 2) = uint8(255*c(2));
+        rgb(rB0:rB1, col0:col1, 3) = uint8(255*c(3));
+        alpha(rB0:rB1, col0:col1)  = 1;
+    end
+
+    % --- TEST rendering (blue if FP, else green->red by |dt|) ---
+    % build quick map testIndex -> |dt|
+    dtAbsPerTest = nan(numel(evTest),1);
+    for m = 1:size(mt.pairs,1)
+        iTest = mt.pairs(m,1);
+        dtAbsPerTest(iTest) = abs(mt.dt(m));
+    end
+    dtAll = [dtAll; dtAbsPerTest(~isnan(dtAbsPerTest))]; %#ok<AGROW>
+
+    for k = 1:numel(evTest)
+        t = evTest(k).frame;
+        if ~isfinite(t) || t < 1 || t > Tmax, continue; end
+
+        if mt.testUnmatched(k)
+            c = colBlue; % FP in test
+        else
+            c = dt2col(dtAbsPerTest(k), matchMaxDtFrames);
+        end
+
+        [col0,col1] = localEventColRange(t, W, Tw, eventWidthPx);
+
+        rgb(rA0:rA1, col0:col1, 1) = uint8(255*c(1));
+        rgb(rA0:rA1, col0:col1, 2) = uint8(255*c(2));
+        rgb(rA0:rA1, col0:col1, 3) = uint8(255*c(3));
+        alpha(rA0:rA1, col0:col1)  = 1;
+    end
+
+    row0 = row0 + HperROI;
+    if iR < nROI
+        row0 = row0 + Groi;
+    end
+end
+end
+
+function [col0,col1] = localEventColRange(tFrame, W, Tw, eventWidthPx)
+xc = (tFrame-1)*W + floor(W/2) + 1;         % center of frame block
+col0 = max(1, xc - floor(eventWidthPx/2));
+col1 = min(Tw, col0 + eventWidthPx - 1);
+end
+
+
 
 
 % ---- small utilities (self-contained) ----
@@ -601,4 +841,521 @@ for k = 1:numel(steps)
 end
 xt = 0:step:nFrames;
 if xt(end) ~= nFrames, xt(end+1) = nFrames; end
+end
+
+function [frames, names, valid] = localExtractEventFramesNames(ev)
+% Robust extraction of event frames and names
+% NO struct expansion, safe against missing fields
+%
+% Outputs:
+%   frames : [n x 1] double (NaN if invalid)
+%   names  : [n x 1] string
+%   valid  : logical mask of valid events
+
+n = numel(ev);
+frames = nan(n,1);
+names  = strings(n,1);
+
+for i = 1:n
+    if isfield(ev(i),'frame') && isnumeric(ev(i).frame) ...
+            && isscalar(ev(i).frame) && isfinite(ev(i).frame)
+        frames(i) = double(ev(i).frame);
+    end
+
+    if isfield(ev(i),'name') && ~isempty(ev(i).name)
+        names(i) = string(ev(i).name);
+    end
+end
+
+names = strtrim(names);
+valid = isfinite(frames) & (strlength(names) > 0);
+end
+
+
+function match = localMatchEventsHungarianByName(evTest, evRef, maxDt)
+% Match events between test/ref using Hungarian algorithm (matchpairs),
+% separately for each event name. Cost = |dt|, rejected if dt > maxDt.
+
+if nargin < 3 || isempty(maxDt), maxDt = 10; end
+
+% frames + names
+[tFrames, tNames] = localExtractEventFramesNames(evTest);
+[rFrames, rNames] = localExtractEventFramesNames(evRef);
+
+validT = isfinite(tFrames) & strlength(strtrim(tNames))>0;
+validR = isfinite(rFrames) & strlength(strtrim(rNames))>0;
+
+
+
+match = struct();
+match.maxDt = maxDt;
+match.pairs = zeros(0,2);        % [iTest, iRef] indices in evTest/evRef
+match.dt    = zeros(0,1);        % dt = test - ref (signed)
+match.testUnmatched = true(numel(evTest),1);
+match.refUnmatched  = true(numel(evRef),1);
+
+if isempty(evTest) && isempty(evRef), return; end
+if isempty(evTest)
+    % all ref unmatched
+    return;
+end
+if isempty(evRef)
+    % all test unmatched
+    return;
+end
+
+% match by unique names present in either side
+allNames = unique([tNames; rNames]);
+
+for kName = 1:numel(allNames)
+    nm = allNames(kName);
+
+    it = find(validT & (tNames == nm));
+ir = find(validR & (rNames == nm));
+
+
+    if isempty(it) || isempty(ir)
+        continue;
+    end
+
+    % cost matrix |dt|, Inf beyond maxDt
+    Ct = tFrames(it);
+    Cr = rFrames(ir);
+
+    cost = abs(Ct - Cr'); % [nT x nR]
+    cost(cost > maxDt) = Inf;
+
+    % Hungarian
+    % penalty = maxDt -> anything > maxDt was already Inf
+    [ass, ~, ~] = matchpairs(cost, maxDt);
+
+    if isempty(ass), continue; end
+
+    for m = 1:size(ass,1)
+        iTest = it(ass(m,1));
+        iRef  = ir(ass(m,2));
+        match.pairs(end+1,:) = [iTest, iRef]; %#ok<AGROW>
+        match.dt(end+1,1)    = tFrames(iTest) - rFrames(iRef); %#ok<AGROW>
+        match.testUnmatched(iTest) = false;
+        match.refUnmatched(iRef)   = false;
+    end
+end
+end
+
+
+function localDrawMatchLinks(ax, Eall, idxShown, Tmax, H, W, Gcmp, Groi, nROI, matchMaxDtFrames)
+% Draw thin black lines connecting matched events (test top -> ref bottom)
+% Uses vector line objects (one big polyline with NaNs for speed).
+
+Tw = Tmax * W;
+HperROI = 2*H + Gcmp;
+
+xAll = [];
+yAll = [];
+
+row0 = 1;
+for iR = 1:nROI
+    iAll = idxShown(iR);
+
+    rA0 = row0;
+    rB0 = row0 + H + Gcmp;
+
+    yA = rA0 + (H-1)/2;
+    yB = rB0 + (H-1)/2;
+
+    evTest = Eall(iAll,1).events;
+    evRef  = Eall(iAll,2).events;
+
+    mt = localMatchEventsHungarianByName(evTest, evRef, matchMaxDtFrames);
+
+    for m = 1:size(mt.pairs,1)
+        iT = mt.pairs(m,1);
+        iRr = mt.pairs(m,2);
+
+        tT = evTest(iT).frame;
+        tR = evRef(iRr).frame;
+
+        if ~isfinite(tT) || ~isfinite(tR), continue; end
+        if tT < 1 || tT > Tmax || tR < 1 || tR > Tmax, continue; end
+
+        xT = (tT-1)*W + floor(W/2) + 1;
+        xR = (tR-1)*W + floor(W/2) + 1;
+
+        xAll = [xAll; xT; xR; NaN]; %#ok<AGROW>
+        yAll = [yAll; yA; yB; NaN]; %#ok<AGROW>
+    end
+
+    row0 = row0 + HperROI;
+    if iR < nROI
+        row0 = row0 + Groi;
+    end
+end
+
+if ~isempty(xAll)
+    plot(ax, xAll, yAll, '-', 'Color',[0 0 0], 'LineWidth',0.5, 'HitTest','off');
+end
+end
+
+function I = localIntervalsFromEvents(ev)
+% Intervals strictly between successive events (sorted by frame)
+% I: struct array with fields startFrame,endFrame,dur
+
+I = struct('startFrame',{},'endFrame',{},'dur',{});
+if isempty(ev), return; end
+
+frames = nan(numel(ev),1);
+for k=1:numel(ev)
+    if isfield(ev(k),'frame') && isfinite(ev(k).frame) && isscalar(ev(k).frame)
+        frames(k) = double(ev(k).frame);
+    end
+end
+frames = frames(isfinite(frames));
+frames = sort(frames);
+
+if numel(frames) < 2, return; end
+
+n = numel(frames)-1;
+I = repmat(struct('startFrame',0,'endFrame',0,'dur',0), n, 1);
+for i=1:n
+    I(i).startFrame = frames(i);
+    I(i).endFrame   = frames(i+1);
+    I(i).dur        = frames(i+1) - frames(i);
+end
+end
+
+function M = localMatchIntervalsHungarian(It, Ir, maxDt)
+% Match intervals by startFrame proximity (Hungarian).
+% Cost = |start_t - start_r|, reject if > maxDt.
+
+if nargin < 3 || isempty(maxDt), maxDt = 10; end
+
+M = struct();
+M.pairs = zeros(0,2);   % [iIt, iIr]
+M.dtStart = zeros(0,1);
+M.durDiff = zeros(0,1);
+M.testUnmatched = true(numel(It),1);
+M.refUnmatched  = true(numel(Ir),1);
+
+if isempty(It) || isempty(Ir), return; end
+
+stT = [It.startFrame]';  % OK here because non-empty, scalar numeric
+stR = [Ir.startFrame]';
+
+cost = abs(stT - stR');
+cost(cost > maxDt) = Inf;
+
+[ass,~,~] = matchpairs(cost, maxDt);
+if isempty(ass), return; end
+
+for m=1:size(ass,1)
+    iT = ass(m,1);
+    iR = ass(m,2);
+    M.pairs(end+1,:) = [iT iR]; %#ok<AGROW>
+    M.dtStart(end+1,1) = stT(iT) - stR(iR); %#ok<AGROW>
+    M.durDiff(end+1,1) = abs(It(iT).dur - Ir(iR).dur); %#ok<AGROW>
+    M.testUnmatched(iT) = false;
+    M.refUnmatched(iR)  = false;
+end
+end
+
+function [rgb, alpha, durDiffMatchedAbsAll, dtStartAll, durTestAll, durRefAll, matchedLinkFramesAll] = ...
+    localBuildIntervalsOverlayBW(Eall, idxShown, Tmax, H, W, Gcmp, Groi, nROI, matchMaxDtFrames, maxDurDiffForBlack)
+% Draw grayscale ONLY on TEST batonnet (top): |Δdur| for MATCHED intervals only.
+% Interval is matchable ONLY if both bounding events are matched.
+%
+% Also returns:
+% - durTestAll/durRefAll: ALL interval durations (distributions)
+% - durDiffMatchedAbsAll: |Δdur| for matched intervals only (for histogram)
+% - matchedLinkFramesAll: [t0 t1 r0 r1] for drawing black links
+% - dtStartAll: optional (here we use |Δt_mid| as a diagnostic, can be empty)
+
+if nargin < 9 || isempty(matchMaxDtFrames), matchMaxDtFrames = 10; end
+if nargin < 10 || isempty(maxDurDiffForBlack), maxDurDiffForBlack = 10; end
+
+Tw = Tmax * W;
+HperROI = 2*H + Gcmp;
+Htot    = nROI*HperROI + (nROI-1)*Groi;
+
+rgb   = zeros(Htot, Tw, 3, 'uint8');
+alpha = zeros(Htot, Tw, 'single');
+
+durDiffMatchedAbsAll = [];
+dtStartAll = []; % can remain empty if you don't use it
+durTestAll = [];
+durRefAll  = [];
+matchedLinkFramesAll = zeros(0,4);
+
+row0 = 1;
+for iR = 1:nROI
+    iAll = idxShown(iR);
+
+    % TEST on top, REF on bottom (CONVENTION)
+    rT0 = row0;            rT1 = row0 + H - 1;           % TEST (top)
+    rR0 = row0 + H + Gcmp; rR1 = rR0 + H - 1;            % REF  (bottom) not painted in BW
+
+    evTest = Eall(iAll,1).events; % TEST = col 1 (TOP)
+    evRef  = Eall(iAll,2).events; % REF  = col 2 (BOTTOM)
+
+    mt = localMatchEventsHungarianByName(evTest, evRef, matchMaxDtFrames);
+
+    I = localIntervalsAllAndMatchedFromEventMatch(evTest, evRef, mt);
+
+    % collect ALL durations for distributions
+    if ~isempty(I.testDurAll), durTestAll = [durTestAll; I.testDurAll(:)]; end %#ok<AGROW>
+    if ~isempty(I.refDurAll),  durRefAll  = [durRefAll;  I.refDurAll(:)];  end %#ok<AGROW>
+
+    % nothing matched -> skip drawing
+    if isempty(I.matchedDurDiffAbs)
+        row0 = row0 + HperROI;
+        if iR < nROI, row0 = row0 + Groi; end
+        continue;
+    end
+
+    durDiffMatchedAbsAll = [durDiffMatchedAbsAll; I.matchedDurDiffAbs(:)]; %#ok<AGROW>
+    matchedLinkFramesAll = [matchedLinkFramesAll; I.matchedLinkFrames]; %#ok<AGROW>
+
+    % draw grayscale bands ONLY on TEST bar using TEST interval extents [t0,t1]
+    for m = 1:size(I.matchedLinkFrames,1)
+        t0 = I.matchedLinkFrames(m,1);
+        t1 = I.matchedLinkFrames(m,2);
+        dd = I.matchedDurDiffAbs(m);
+
+        if ~isfinite(t0) || ~isfinite(t1) || t1 <= t0, continue; end
+        if t0 < 1 || t1 > Tmax, continue; end
+
+        a01 = min(dd / maxDurDiffForBlack, 1);      % 0..1
+        v   = uint8(255 * (1 - a01));              % 255 white -> 0 black
+
+        c0T = max(1, round((t0-1)*W + 1));
+        c1T = min(Tw, round((t1-1)*W + 1));
+
+        % thin band inside TEST batonnet
+        rr0 = rT0 + floor(H/3);
+        rr1 = rT0 + ceil(2*H/3);
+
+        rgb(rr0:rr1, c0T:c1T, :) = v;
+        alpha(rr0:rr1, c0T:c1T) = 0.85;
+    end
+
+    row0 = row0 + HperROI;
+    if iR < nROI
+        row0 = row0 + Groi;
+    end
+end
+end
+
+function localDrawIntervalLinks(ax, Eall, idxShown, Tmax, H, W, Gcmp, Groi, nROI, matchMaxDtFrames)
+% Draw thin black lines connecting MATCHED intervals (midpoint test -> midpoint ref)
+% Interval is matched ONLY if both bounding events are matched.
+
+HperROI = 2*H + Gcmp;
+
+xAll = [];
+yAll = [];
+
+row0 = 1;
+for iR = 1:nROI
+    iAll = idxShown(iR);
+
+    yTest = row0 + (H-1)/2;
+    yRef  = (row0 + H + Gcmp) + (H-1)/2;
+
+    evTest = Eall(iAll,1).events; % TEST top
+    evRef  = Eall(iAll,2).events; % REF bottom
+
+    mt = localMatchEventsHungarianByName(evTest, evRef, matchMaxDtFrames);
+    I  = localIntervalsAllAndMatchedFromEventMatch(evTest, evRef, mt);
+
+    for m = 1:size(I.matchedLinkFrames,1)
+        t0 = I.matchedLinkFrames(m,1); t1 = I.matchedLinkFrames(m,2);
+        r0 = I.matchedLinkFrames(m,3); r1 = I.matchedLinkFrames(m,4);
+
+        % midpoints
+        tMid = 0.5*(t0+t1);
+        rMid = 0.5*(r0+r1);
+
+        if ~isfinite(tMid) || ~isfinite(rMid), continue; end
+        if tMid < 1 || tMid > Tmax || rMid < 1 || rMid > Tmax, continue; end
+
+        xT = (tMid-1)*W + floor(W/2) + 1;
+        xR = (rMid-1)*W + floor(W/2) + 1;
+
+        xAll = [xAll; xT; xR; NaN]; %#ok<AGROW>
+        yAll = [yAll; yTest; yRef; NaN]; %#ok<AGROW>
+    end
+
+    row0 = row0 + HperROI;
+    if iR < nROI, row0 = row0 + Groi; end
+end
+
+if ~isempty(xAll)
+    plot(ax, xAll, yAll, '-', 'Color',[0 0 0], 'LineWidth',0.5, 'HitTest','off');
+end
+end
+
+function I = localIntervalsAllAndMatchedFromEventMatch(evTest, evRef, mt)
+% localIntervalsAllAndMatchedFromEventMatch
+% Build:
+% - ALL consecutive intervals (TEST + REF) for distributions (independent of matching)
+% - MATCHED intervals ONLY when both bounding events are matched AND matched to each other
+%   in the sense: consecutive in TEST-by-time and their matched REF events are also consecutive
+%   in REF-by-time (no skipping / no cross).
+%
+% Output I fields:
+%   I.testDurAll, I.refDurAll
+%   I.matchedRefDur, I.matchedTestDur, I.matchedDurDiffAbs
+%   I.matchedLinkFrames : [t0_test t1_test r0_ref r1_ref] per matched interval (for drawing)
+
+I = struct();
+I.testDurAll = [];
+I.refDurAll  = [];
+I.matchedRefDur = [];
+I.matchedTestDur = [];
+I.matchedDurDiffAbs = [];
+I.matchedLinkFrames = zeros(0,4);
+
+% -----------------------------
+% 1) Extract valid frames + original indices (robust)
+% -----------------------------
+[tFramesRaw, tOkRaw] = localExtractFramesOnly(evTest);
+[rFramesRaw, rOkRaw] = localExtractFramesOnly(evRef);
+
+tIdxValid = find(tOkRaw);
+rIdxValid = find(rOkRaw);
+
+tFramesValid = tFramesRaw(tIdxValid);
+rFramesValid = rFramesRaw(rIdxValid);
+
+% -----------------------------
+% 2) ALL intervals for distributions (strictly consecutive in TIME)
+% -----------------------------
+tFramesSort = sort(tFramesValid(:));
+rFramesSort = sort(rFramesValid(:));
+
+if numel(tFramesSort) >= 2
+    I.testDurAll = diff(tFramesSort);
+end
+if numel(rFramesSort) >= 2
+    I.refDurAll  = diff(rFramesSort);
+end
+
+% -----------------------------
+% 3) Early exit if no event matches
+% -----------------------------
+if isempty(mt) || ~isstruct(mt) || ~isfield(mt,'pairs') || isempty(mt.pairs)
+    return;
+end
+
+% -----------------------------
+% 4) Build mapping testIndex -> refIndex from mt.pairs (original indices)
+% -----------------------------
+mapT2R = nan(numel(evTest),1);
+pairs = mt.pairs;
+for k = 1:size(pairs,1)
+    iT = pairs(k,1);
+    iR = pairs(k,2);
+    if iT>=1 && iT<=numel(evTest) && iR>=1 && iR<=numel(evRef)
+        mapT2R(iT) = iR;
+    end
+end
+
+% -----------------------------
+% 5) Define "consecutive" in TIME using sorted-by-frame order
+%    (this avoids weird indexing artifacts if events were not stored chronologically)
+% -----------------------------
+% TEST order by time (over valid events only)
+[~, ordT] = sort(tFramesValid);
+tIdxTime  = tIdxValid(ordT);     % original indices in evTest, sorted by frame
+tFramesTime = tFramesValid(ordT);
+
+% REF order by time (over valid events only)
+[~, ordR] = sort(rFramesValid);
+rIdxTime  = rIdxValid(ordR);     % original indices in evRef, sorted by frame
+rFramesTime = rFramesValid(ordR);
+
+% rank maps: original index -> time rank (1..N) for quick "consecutive in time" checks
+rankT = nan(numel(evTest),1);
+for k = 1:numel(tIdxTime), rankT(tIdxTime(k)) = k; end
+rankR = nan(numel(evRef),1);
+for k = 1:numel(rIdxTime), rankR(rIdxTime(k)) = k; end
+
+% -----------------------------
+% 6) Matched intervals:
+%    iterate consecutive TEST events in TIME; interval is matchable if:
+%      - both test events are matched (mapT2R finite)
+%      - their matched REF events are consecutive in REF-by-time
+%      - order is preserved (frames increasing on both sides)
+% -----------------------------
+for kT = 1:(numel(tIdxTime)-1)
+    iT0 = tIdxTime(kT);
+    iT1 = tIdxTime(kT+1);
+
+    iR0 = mapT2R(iT0);
+    iR1 = mapT2R(iT1);
+
+    if ~isfinite(iR0) || ~isfinite(iR1)
+        continue; % one of the bounding events is unmatched
+    end
+
+    % Must also be valid in ref ranking
+    if iR0 < 1 || iR0 > numel(evRef) || iR1 < 1 || iR1 > numel(evRef)
+        continue;
+    end
+    r0Rank = rankR(iR0);
+    r1Rank = rankR(iR1);
+    if ~isfinite(r0Rank) || ~isfinite(r1Rank)
+        continue;
+    end
+
+    % CRITICAL: "matched to each other" => consecutive in REF time order
+    % (prevents matching a long ref interval to multiple small test intervals and double-links)
+    if r1Rank ~= (r0Rank + 1)
+        continue;
+    end
+
+    % Frames (use the time-ordered ones for test; for ref we read from events)
+    t0 = double(tFramesTime(kT));
+    t1 = double(tFramesTime(kT+1));
+
+    r0 = double(evRef(iR0).frame);
+    r1 = double(evRef(iR1).frame);
+
+    if ~(isfinite(t0) && isfinite(t1) && isfinite(r0) && isfinite(r1))
+        continue;
+    end
+
+    % must be strictly increasing (valid interval)
+    if t1 <= t0 || r1 <= r0
+        continue;
+    end
+
+    durT = t1 - t0;
+    durR = r1 - r0;
+
+    I.matchedTestDur(end+1,1)     = durT; %#ok<AGROW>
+    I.matchedRefDur(end+1,1)      = durR; %#ok<AGROW>
+    I.matchedDurDiffAbs(end+1,1)  = abs(durT - durR); %#ok<AGROW>
+    I.matchedLinkFrames(end+1,:)  = [t0 t1 r0 r1]; %#ok<AGROW>
+end
+
+end
+
+% -------------------------------------------------------------------------
+% helper: robust extraction of frames only (NO names), returns raw arrays
+% -------------------------------------------------------------------------
+function [frames, ok] = localExtractFramesOnly(ev)
+n = numel(ev);
+frames = nan(n,1);
+ok = false(n,1);
+
+for i = 1:n
+    if isstruct(ev) && isfield(ev(i),'frame') && ~isempty(ev(i).frame) ...
+            && isnumeric(ev(i).frame) && isscalar(ev(i).frame)
+        f = double(ev(i).frame);
+        if isfinite(f)
+            frames(i) = f;
+            ok(i) = true;
+        end
+    end
+end
 end

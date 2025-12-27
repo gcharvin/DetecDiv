@@ -50,6 +50,9 @@ arguments
     args.StatsFigureHandle = []   % optionnel, pour réutiliser une figure
 
     args.EventRulesByKey = []   % containers.Map(char -> struct array)
+    args.EventWidthFrames (1,1) double = 3   % largeur marqueur event en frames
+    args.MatchMaxDtFrames(1,1) double = 10
+
 end
 
 % --- normalize EventRulesByKey ---
