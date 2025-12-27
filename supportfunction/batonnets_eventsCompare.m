@@ -407,13 +407,15 @@ end
 
 
 function out = localPlotMatchStats(out, roiListShown, idxShown, matchMaxDtFrames)
-% Panels:
-% 1) hist |Δt| matched EVENTS
-% 2) bar FP/FN EVENTS
-% 3) hist |Δdur| matched INTERVALS (matched only)
-% 4) hist duration distributions (ALL intervals) TEST vs REF + stats + test
-% 5) loglog scatter matched intervals: REF vs TEST + y=x dashed
+% Panels (3x2):
+% (1,1) hist |Δt| matched EVENTS
+% (1,2) bar FP/FN EVENTS
+% (2,1) hist |Δdur| matched INTERVALS (matched only)
+% (2,2) hist duration distributions (ALL intervals) TEST vs REF + stats + KS2
+% (3,1) loglog scatter matched intervals: REF vs TEST + y=x dashed + corr
+% (3,2) (empty / reserved)
 
+% -------------------- fetch precomputed aggregates --------------------
 dtAll = [];
 if isfield(out,'dtAll'), dtAll = out.dtAll; end
 
@@ -427,13 +429,15 @@ if isfield(out,'intervalDurRefAll'),  durRefAll  = out.intervalDurRefAll;  end
 
 nROI = numel(idxShown);
 
-% event FP/FN aggregation
+% -------------------- event FP/FN aggregation --------------------
 nTestE = 0; nRefE = 0; nFP = 0; nFN = 0;
 for iR = 1:nROI
-    iAll = idxShown(iR);
+    iAll   = idxShown(iR);
     evTest = out.events(iAll,1).events;
     evRef  = out.events(iAll,2).events;
+
     mt = localMatchEventsHungarianByName(evTest, evRef, matchMaxDtFrames);
+
     nTestE = nTestE + numel(evTest);
     nRefE  = nRefE  + numel(evRef);
     nFP    = nFP    + sum(mt.testUnmatched);
@@ -442,108 +446,166 @@ end
 fpFrac = nFP / max(1,nTestE);
 fnFrac = nFN / max(1,nRefE);
 
+% -------------------- figure / tiledlayout 3x2 --------------------
 fs = figure('Name','Events/Intervals matching stats (test vs ref)','Color','w');
 out.eventsStatsFigure = fs;
 
-tl = tiledlayout(fs, 5, 1, 'Padding','compact', 'TileSpacing','compact');
+tl = tiledlayout(fs, 3, 2, 'Padding','compact', 'TileSpacing','compact');
 
-% -------- Panel 1: matched event dt
-ax1 = nexttile(tl,1);
+% modest binning (smaller bins than integers)
+% (you can tweak these if needed)
+dtBinW    = 0.5;   % frames
+durBinW   = 1.0;   % frames
+durDiffW  = 1.0;   % frames
+
+% ========== (1,1) matched event |dt| ==========
+ax1 = nexttile(tl, 1);
 if isempty(dtAll)
-    text(ax1,0.5,0.5,"No matched events",'Units','normalized','HorizontalAlignment','center'); axis(ax1,'off');
+    text(ax1,0.5,0.5,"No matched events",'Units','normalized','HorizontalAlignment','center');
+    axis(ax1,'off');
 else
-    histogram(ax1, abs(dtAll), 'BinMethod','integers');
+    x = abs(dtAll(:));
+    edges = 0:dtBinW:max(matchMaxDtFrames, max(x,[],'omitnan')+dtBinW);
+    histogram(ax1, x, 'BinEdges', edges);
     xlabel(ax1,'|Δt| matched events (frames)'); ylabel(ax1,'Count');
-    medDt = median(abs(dtAll), 'omitnan');
+    medDt = median(x, 'omitnan');
     title(ax1, sprintf('Matched events |Δt| (median=%.2f frames)', medDt));
     xlim(ax1, [0 matchMaxDtFrames]);
 end
 
-% -------- Panel 2: FP/FN events
-ax2 = nexttile(tl,2);
+% ========== (1,2) FP/FN events ==========
+ax2 = nexttile(tl, 2);
 bar(ax2, [fpFrac fnFrac]);
 ax2.XTickLabel = {'FP(test)','FN(ref)'};
 ylabel(ax2,'Fraction'); ylim(ax2,[0 1]);
 title(ax2, sprintf('Events: FP=%d/%d (%.1f%%), FN=%d/%d (%.1f%%)', ...
     nFP, nTestE, 100*fpFrac, nFN, nRefE, 100*fnFrac));
 
-% -------- Panel 3: matched interval duration diff
-ax3 = nexttile(tl,3);
+% ========== (2,1) matched interval |Δdur| ==========
+ax3 = nexttile(tl, 3);
 if isempty(durDiffMatchedAbsAll)
-    text(ax3,0.5,0.5,"No matched intervals",'Units','normalized','HorizontalAlignment','center'); axis(ax3,'off');
+    text(ax3,0.5,0.5,"No matched intervals",'Units','normalized','HorizontalAlignment','center');
+    axis(ax3,'off');
 else
-    histogram(ax3, durDiffMatchedAbsAll, 'BinMethod','integers');
-    xlabel(ax3,'|Δdur| matched intervals (frames)'); ylabel(ax3,'Count');
-    medDur = median(durDiffMatchedAbsAll,'omitnan');
-    title(ax3, sprintf('Matched intervals |Δdur| (median=%.2f frames)', medDur));
+    x = durDiffMatchedAbsAll(:);
+    x = x(isfinite(x));
+    if isempty(x)
+        text(ax3,0.5,0.5,"No matched intervals",'Units','normalized','HorizontalAlignment','center');
+        axis(ax3,'off');
+    else
+        edges = 0:durDiffW:(max(x)+durDiffW);
+        histogram(ax3, x, 'BinEdges', edges);
+        xlabel(ax3,'|Δdur| matched intervals (frames)'); ylabel(ax3,'Count');
+        medDur = median(x,'omitnan');
+        title(ax3, sprintf('Matched intervals |Δdur| (median=%.2f frames)', medDur));
+    end
 end
 
-% -------- Panel 4: ALL interval duration distributions (test vs ref) + stats + test
-ax4 = nexttile(tl,4);
+% ========== (2,2) ALL interval durations TEST vs REF + stats + KS2 ==========
+ax4 = nexttile(tl, 4);
 hold(ax4,'on');
 if isempty(durTestAll) && isempty(durRefAll)
-    text(ax4,0.5,0.5,"No intervals",'Units','normalized','HorizontalAlignment','center'); axis(ax4,'off');
+    text(ax4,0.5,0.5,"No intervals",'Units','normalized','HorizontalAlignment','center');
+    axis(ax4,'off');
 else
+    durTestAll = durTestAll(:); durRefAll = durRefAll(:);
+    durTestAll = durTestAll(isfinite(durTestAll));
+    durRefAll  = durRefAll(isfinite(durRefAll));
+
+    mx = 0;
+    if ~isempty(durTestAll), mx = max(mx, max(durTestAll)); end
+    if ~isempty(durRefAll),  mx = max(mx, max(durRefAll));  end
+    edges = 0:durBinW:(mx + durBinW);
+
     if ~isempty(durRefAll)
-        histogram(ax4, durRefAll, 'Normalization','probability', 'DisplayStyle','stairs', 'LineWidth',1.5);
+        histogram(ax4, durRefAll, 'BinEdges', edges, 'Normalization','probability', ...
+            'DisplayStyle','stairs', 'LineWidth',1.5);
     end
     if ~isempty(durTestAll)
-        histogram(ax4, durTestAll,'Normalization','probability', 'DisplayStyle','stairs', 'LineWidth',1.5);
+        histogram(ax4, durTestAll, 'BinEdges', edges, 'Normalization','probability', ...
+            'DisplayStyle','stairs', 'LineWidth',1.5);
     end
-    xlabel(ax4,'Interval duration (frames)'); ylabel(ax4,'Probability');
+
+    xlabel(ax4,'Interval duration (frames)');
+    ylabel(ax4,'Probability');
     legend(ax4, {'REF (all intervals)','TEST (all intervals)'}, 'Location','northeast');
 
-    % stats
     medT = median(durTestAll,'omitnan'); medR = median(durRefAll,'omitnan');
-    iqrT = iqr(durTestAll); iqrR = iqr(durRefAll);
+    iqrT = iqr(durTestAll);              iqrR = iqr(durRefAll);
 
-    % test de distribution: KS2 (non-param)
-    p = NaN; ksstat = NaN;
+    p = NaN; ksD = NaN;
     if numel(durTestAll) >= 2 && numel(durRefAll) >= 2
         try
-            [~,p,ksstat] = kstest2(durTestAll, durRefAll);
+            [~,p,ksD] = kstest2(durTestAll, durRefAll);
         catch
         end
     end
 
-    title(ax4, sprintf('All interval durations: med(T)=%.2f, IQR(T)=%.2f | med(R)=%.2f, IQR(R)=%.2f | KS2 p=%.3g (D=%.3g)', ...
-        medT, iqrT, medR, iqrR, p, ksstat));
+    title(ax4, sprintf('All interval durations: med(T)=%.2f IQR(T)=%.2f | med(R)=%.2f IQR(R)=%.2f | KS2 p=%.3g (D=%.3g)', ...
+        medT, iqrT, medR, iqrR, p, ksD));
 end
 hold(ax4,'off');
 
-% -------- Panel 5: loglog matched intervals REF vs TEST + diagonal
-ax5 = nexttile(tl,5);
-% We need matched pairs arrays; rebuild quickly from per-ROI (robust and simple)
+% ========== (3,1) loglog matched intervals REF vs TEST + diag + corr ==========
+ax5 = nexttile(tl, 5);
+
+% rebuild matched duration pairs robustly per ROI
 xRef = []; yTest = [];
 for iR = 1:nROI
-    iAll = idxShown(iR);
+    iAll   = idxShown(iR);
     evTest = out.events(iAll,1).events;
     evRef  = out.events(iAll,2).events;
+
     mt = localMatchEventsHungarianByName(evTest, evRef, matchMaxDtFrames);
     I  = localIntervalsAllAndMatchedFromEventMatch(evTest, evRef, mt);
-    if ~isempty(I.matchedRefDur)
+
+    if isfield(I,'matchedRefDur') && ~isempty(I.matchedRefDur)
         xRef  = [xRef;  I.matchedRefDur(:)];  %#ok<AGROW>
         yTest = [yTest; I.matchedTestDur(:)]; %#ok<AGROW>
     end
 end
 
 if isempty(xRef)
-    text(ax5,0.5,0.5,"No matched intervals for log-log scatter",'Units','normalized','HorizontalAlignment','center'); axis(ax5,'off');
+    text(ax5,0.5,0.5,"No matched intervals for log-log scatter",'Units','normalized','HorizontalAlignment','center');
+    axis(ax5,'off');
 else
-    % avoid zeros for log
     ok = isfinite(xRef) & isfinite(yTest) & xRef>0 & yTest>0;
-    xRef = xRef(ok); yTest = yTest(ok);
+    xRef  = xRef(ok);
+    yTest = yTest(ok);
 
-    loglog(ax5, xRef, yTest, '.', 'MarkerSize',10);
-    hold(ax5,'on');
-    mn = min([xRef; yTest]); mx = max([xRef; yTest]);
-    loglog(ax5, [mn mx], [mn mx], 'k--', 'LineWidth',1); % diagonal y=x
-    hold(ax5,'off');
+    if isempty(xRef)
+        text(ax5,0.5,0.5,"No valid (>0) matched intervals for log-log scatter",'Units','normalized','HorizontalAlignment','center');
+        axis(ax5,'off');
+    else
+        loglog(ax5, xRef, yTest, '.', 'MarkerSize',10);
+        hold(ax5,'on');
+        mn = min([xRef; yTest]);
+        mx = max([xRef; yTest]);
+        loglog(ax5, [mn mx], [mn mx], 'k--', 'LineWidth',1); % y=x
+        hold(ax5,'off');
+        grid(ax5,'on');
 
-    xlabel(ax5,'REF interval duration (frames)'); ylabel(ax5,'TEST interval duration (frames)');
-    title(ax5, sprintf('Matched intervals (log-log): REF vs TEST (n=%d)', numel(xRef)));
-    grid(ax5,'on');
+        % correlation on log scale (more meaningful for log-log), but display both
+        rLin = NaN; rLog = NaN;
+        try
+            if numel(xRef) >= 2
+                rLin = corr(xRef, yTest, 'Rows','complete');
+                rLog = corr(log10(xRef), log10(yTest), 'Rows','complete');
+            end
+        catch
+        end
+
+        xlabel(ax5,'REF interval duration (frames)');
+        ylabel(ax5,'TEST interval duration (frames)');
+        title(ax5, sprintf('Matched intervals (log-log): n=%d | r=%.3f | r(log10)=%.3f', numel(xRef), rLin, rLog));
+    end
 end
+
+% ========== (3,2) empty/reserved ==========
+ax6 = nexttile(tl, 6);
+axis(ax6,'off');
+text(ax6, 0.5, 0.5, " ", 'Units','normalized', 'HorizontalAlignment','center');
+
 end
 
 
