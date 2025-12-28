@@ -449,11 +449,13 @@ end
 
 
 function lgraph = stripAfter(lgraph, layerNameKeep)
-% Remove all descendants strictly downstream of layerNameKeep (keep layerNameKeep itself).
-names = string({lgraph.Layers.Name});
+% stripAfter  Remove all descendants downstream of layerNameKeep (keep it).
 
-toVisit = string(layerNameKeep); toVisit = toVisit(:);
-desc = strings(0,1);
+names   = string({lgraph.Layers.Name});
+keep    = string(layerNameKeep);
+
+toVisit = keep(:);          % FORCE column
+desc    = strings(0,1);     % FORCE column
 
 while ~isempty(toVisit)
     src = toVisit(1);
@@ -461,25 +463,36 @@ while ~isempty(toVisit)
 
     mask = strcmp(lgraph.Connections.Source, src);
     kids = string(lgraph.Connections.Destination(mask));
-    kids = kids(:);
+    kids = kids(:);         % FORCE column
 
-    if ~isempty(kids)
-        desc = unique([desc; kids], 'stable');
-        newKids = setdiff(kids, [string(layerNameKeep); desc], 'stable');
-        % The setdiff above can be tricky; keep it simple:
-        newKids = kids;
-        newKids = setdiff(newKids, string(layerNameKeep));
-        newKids = setdiff(newKids, desc);
-        toVisit = unique([toVisit; newKids(:)], 'stable');
+    if isempty(kids)
+        continue;
+    end
+
+    % accumulate all downstream nodes
+    desc = unique([desc; kids], 'stable');
+    desc = desc(:);         % FORCE column
+
+    % new kids to explore = kids not yet visited and not the keep node
+    newKids = setdiff(kids, [desc; keep], 'stable');
+    newKids = newKids(:);   % FORCE column
+
+    if ~isempty(newKids)
+        % use union to avoid shape issues (and duplicates)
+        toVisit = union(toVisit(:), newKids(:), 'stable');
+        toVisit = toVisit(:); % FORCE column
     end
 end
 
-desc = setdiff(desc, string(layerNameKeep));
-desc = intersect(desc, names);
+% remove everything downstream (desc) except keep
+desc = setdiff(desc, keep, 'stable');
+desc = intersect(desc, names, 'stable');
+
 if ~isempty(desc)
     lgraph = removeLayers(lgraph, cellstr(desc));
 end
 end
+
 
 
 function layersOut = enforceClassOrderIfNeeded(layersIn, classif)
