@@ -98,7 +98,8 @@ end
 
 % =====================================================================
 function classifier = localAssembleFromParts(classif)
-% Rebuild assembled CNN+LSTM network exactly like trainImageLSTMNetFun.
+% Rebuild assembled CNN+LSTM network exactly like trainImageLSTMNetFun,
+% but robust to missing/empty Mean in the CNN.
 
 path = classif.path;
 name = classif.strid;
@@ -130,7 +131,7 @@ else
     cnnLayers = layerGraph(netCNN);
 end
 
-% infer input size safely (same logic as your training code)
+% infer input size
 inputSize = localGetCNNInputSizeHW(netCNN, cnnLayers);
 
 % infer backbone-specific key layer names from existing CNN
@@ -143,7 +144,7 @@ if ~isempty(oldInputs)
     cnnLayers = removeLayers(cnnLayers, oldInputs);
 end
 
-% remove downstream of layerName2 (keep trunk up to pooling)
+% remove downstream of layerName2
 names = string({cnnLayers.Layers.Name});
 toVisit = string(layerName2); toVisit = toVisit(:);
 desc    = strings(0,1);
@@ -171,25 +172,9 @@ if ~isempty(desc)
     cnnLayers = removeLayers(cnnLayers, cellstr(desc));
 end
 
-% build sequence input + folding, keep CNN mean if available
-meanVal = [];
-try
-    if isa(netCNN,'DAGNetwork') || isa(netCNN,'SeriesNetwork')
-        if isprop(netCNN.Layers(1),'Mean'), meanVal = netCNN.Layers(1).Mean; end
-    else
-        % if netCNN is dlnetwork: try from original ImageInputLayer in cnnLayers before removal
-        % (we already removed; so try from SCNN if possible)
-    end
-catch
-end
-
-if ~isempty(meanVal)
-    inputLayer = sequenceInputLayer([inputSize 3], ...
-        'Normalization','zerocenter', 'Mean', meanVal, 'Name','input');
-else
-    inputLayer = sequenceInputLayer([inputSize 3], ...
-        'Normalization','zerocenter', 'Name','input');
-end
+% ---- IMPORTANT FIX: robust Mean handling ----
+meanVal = localExtractCNNMean(netCNN);
+inputLayer = makeSeqInputLayer([inputSize 3], meanVal);  % <-- safe
 
 foldLayer = sequenceFoldingLayer('Name','fold');
 
@@ -210,7 +195,7 @@ if ~isempty(lstmLayersFull) && isa(lstmLayersFull(1),'nnet.cnn.layer.SequenceInp
     lstmLayersFull(1) = [];
 end
 
-% --- EXACTLY like your training assembly ---
+% --- EXACTLY like your working assembly ---
 layersTail = [ ...
     sequenceUnfoldingLayer('Name','unfold'); ...
     flattenLayer('Name','flatten'); ...
@@ -218,21 +203,18 @@ layersTail = [ ...
     lstmLayersFull ...
     ];
 
-% Build tail graph to get its internal connections automatically
 tail = layerGraph(layersTail);
 
-% Add tail layers + tail connections (portable across MATLAB versions)
 lgraph = addLayers(lgraph, tail.Layers);
 lgraph = localAddConnectionsSafe(lgraph, tail.Connections);
 
-% Connect trunk->tail (only 2 explicit connections, like your working code)
+% connect trunk->tail
 lgraph = connectLayers(lgraph, layerName2, "unfold/in");
 lgraph = connectLayers(lgraph, "fold/miniBatchSize", "unfold/miniBatchSize");
 
 % Final assemble
 classifier = assembleNetwork(lgraph);
 
-% Save rebuilt assembled classifier
 save(fullfile(path,[name '.mat']), 'classifier', '-v7.3');
 disp('Rebuilt full CNN+LSTM network and saved assembled classifier.');
 
@@ -240,40 +222,69 @@ end
 
 
 % =====================================================================
-function net = localPickNetFromStruct(S)
-% pick a network-like variable from a loaded .mat struct
-if isfield(S,'classifier')
-    net = S.classifier; return;
-end
-if isfield(S,'net')
-    net = S.net; return;
-end
-if isfield(S,'netCNN')
-    net = S.netCNN; return;
-end
-if isfield(S,'netLSTM')
-    net = S.netLSTM; return;
+function inputLayer = makeSeqInputLayer(seqInputSize, meanVal)
+% makeSeqInputLayer  Create robust sequenceInputLayer:
+% - If meanVal is nonempty -> use zerocenter + Mean
+% - If meanVal is empty/missing -> use Normalization 'none' (MATLAB requires Mean for zerocenter)
+
+if nargin < 2
+    meanVal = [];
 end
 
+if isempty(meanVal)
+    inputLayer = sequenceInputLayer(seqInputSize, ...
+        'Normalization','none', ...
+        'Name','input');
+else
+    inputLayer = sequenceInputLayer(seqInputSize, ...
+        'Normalization','zerocenter', ...
+        'Mean', meanVal, ...
+        'Name','input');
+end
+end
+
+
+function meanVal = localExtractCNNMean(netCNN)
+% Try to get Mean from the original ImageInputLayer (legacy networks).
+meanVal = [];
+
+try
+    if isa(netCNN,'DAGNetwork') || isa(netCNN,'SeriesNetwork')
+        L = netCNN.Layers;
+        isIn = arrayfun(@(x) isa(x,'nnet.cnn.layer.ImageInputLayer'), L);
+        idx = find(isIn,1,'first');
+        if ~isempty(idx) && isprop(L(idx),'Mean')
+            m = L(idx).Mean;
+            if ~isempty(m), meanVal = m; end
+        end
+    end
+catch
+end
+end
+
+
+function net = localPickNetFromStruct(S)
+% pick a network-like variable from a loaded .mat struct
+if isfield(S,'classifier'), net = S.classifier; return; end
+if isfield(S,'net'),        net = S.net;        return; end
+if isfield(S,'netCNN'),     net = S.netCNN;     return; end
+if isfield(S,'netLSTM'),    net = S.netLSTM;    return; end
+
 fn = fieldnames(S);
-net = [];
 for k = 1:numel(fn)
     v = S.(fn{k});
     if isa(v,'DAGNetwork') || isa(v,'SeriesNetwork') || isa(v,'dlnetwork') || isa(v,'nnet.cnn.LayerGraph')
-        net = v;
-        return;
+        net = v; return;
     end
 end
-% fallback: first field
 net = S.(fn{1});
 end
 
 
 function inputSizeHW = localGetCNNInputSizeHW(netCNN, lgraphCNN)
-% Try to find ImageInputLayer InputSize in original network/graph
 inputSizeHW = [];
 
-% 1) Try from netCNN.Layers (legacy)
+% legacy
 try
     if isa(netCNN,'DAGNetwork') || isa(netCNN,'SeriesNetwork')
         layers = netCNN.Layers;
@@ -288,7 +299,7 @@ try
 catch
 end
 
-% 2) Try from layerGraph (if still has ImageInputLayer)
+% from graph
 try
     layers = lgraphCNN.Layers;
     isIn = arrayfun(@(L) isa(L,'nnet.cnn.layer.ImageInputLayer'), layers);
@@ -306,49 +317,30 @@ end
 
 
 function [baseInput, layerName2] = localInferBackbonePorts(lgraphCNN)
-% Infer backbone ports from layer names (no need trainingParam).
-
 nms = string({lgraphCNN.Layers.Name});
 
 if any(nms == "pool5-7x7_s1") && any(nms == "conv1-7x7_s2")
-    % googlenet
     baseInput  = "conv1-7x7_s2";
     layerName2 = "pool5-7x7_s1";
     return;
 end
 
 if any(nms == "avg_pool") && any(nms == "conv1") && any(contains(nms,"res"))
-    % resnet50 often
     baseInput  = "conv1";
     layerName2 = "avg_pool";
     return;
 end
 
 if any(nms == "pool5") && any(nms == "conv1")
-    % resnet18 often
     baseInput  = "conv1";
     layerName2 = "pool5";
     return;
 end
 
 if any(nms == "avg_pool") && any(nms == "conv2d_1")
-    % inceptionv3 / inceptionresnetv2
     baseInput  = "conv2d_1";
     layerName2 = "avg_pool";
     return;
-end
-
-% fallback: try common pooling layer names
-candidates = ["avg_pool","pool5","pool5-7x7_s1"];
-for k = 1:numel(candidates)
-    if any(nms == candidates(k))
-        layerName2 = candidates(k);
-        % guess baseInput
-        if any(nms=="conv1"), baseInput="conv1"; else, baseInput="conv1"; end
-        warning('localInferBackbonePorts:Fallback', ...
-            'Backbone not clearly identified; using layerName2=%s, baseInput=%s.', layerName2, baseInput);
-        return;
-    end
 end
 
 error('localInferBackbonePorts:UnknownBackbone', ...
@@ -359,17 +351,12 @@ end
 function lgraph = localAddConnectionsSafe(lgraph, conns)
 % Add connections, ignoring "already exists" errors.
 
-if isempty(conns)
-    return;
-end
+if isempty(conns), return; end
 
-% conns is a table in most versions
 if istable(conns)
-    src = string(conns.Source);
-    dst = string(conns.Destination);
     for i = 1:height(conns)
-        s = char(src(i));
-        d = char(dst(i));
+        s = char(string(conns.Source(i)));
+        d = char(string(conns.Destination(i)));
         try
             lgraph = connectLayers(lgraph, s, d);
         catch ME
@@ -381,22 +368,6 @@ if istable(conns)
         end
     end
 else
-    % fallback: struct array
-    try
-        src = string({conns.Source});
-        dst = string({conns.Destination});
-        for i = 1:numel(src)
-            try
-                lgraph = connectLayers(lgraph, char(src(i)), char(dst(i)));
-            catch ME
-                if contains(ME.message,'already exists','IgnoreCase',true)
-                else
-                    rethrow(ME);
-                end
-            end
-        end
-    catch
-        error('localAddConnectionsSafe:Unsupported', 'Unsupported connections type: %s', class(conns));
-    end
+    error('localAddConnectionsSafe:Unsupported', 'Unsupported connections type: %s', class(conns));
 end
 end
