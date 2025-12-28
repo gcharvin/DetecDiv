@@ -289,9 +289,10 @@ lgraph = connectLayers(lgraph, trunkOut, "unfold/in");
 lgraph = connectLayers(lgraph, "fold/miniBatchSize", "unfold/miniBatchSize");
 
 % Explicit wiring inside the tail (CRITICAL in layerGraph workflow)
-lgraph = connectLayers(lgraph, "unfold/out", "flatten/in");
-lgraph = connectLayers(lgraph, "flatten",    "deltaFeatures");
-lgraph = connectLayers(lgraph, "deltaFeatures", char(bilstmName));
+lgraph = safeConnect(lgraph, "unfold/out", "flatten/in");
+lgraph = safeConnect(lgraph, "flatten", "deltaFeatures");
+lgraph = safeConnect(lgraph, "deltaFeatures", char(bilstmName));
+
 
 % -------------------- Final assemble --------------------
 % (Optional but very helpful if something is still wrong)
@@ -303,3 +304,20 @@ save(fullfile(path,[name '.mat']), 'classifier', '-v7.3');
 disp('Rebuilt full CNN+LSTM network and saved assembled classifier.');
 
 end
+
+function lgraph = safeConnect(lgraph, src, dst)
+%SAFECONNECT Connect src->dst only if it does not already exist.
+src = char(src); dst = char(dst);
+
+C = lgraph.Connections;
+if ~isempty(C)
+    already = any(strcmp(string(C.Source), string(src)) & strcmp(string(C.Destination), string(dst)));
+else
+    already = false;
+end
+
+if ~already
+    lgraph = connectLayers(lgraph, src, dst);
+end
+end
+
