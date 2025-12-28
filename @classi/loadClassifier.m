@@ -275,6 +275,11 @@ flatLayer   = flattenLayer('Name','flatten');
 % Your custom layer expects X as TCB (F x T x B) and outputs 3F x T x B
 deltaLayer  = deltaFeatureLayer('deltaFeatures');
 
+% -------------------- Tail as a sub-layerGraph (auto-wired) --------------------
+unfoldLayer = sequenceUnfoldingLayer('Name','unfold');
+flatLayer   = flattenLayer('Name','flatten');
+deltaLayer  = deltaFeatureLayer('deltaFeatures'); % custom layer
+
 layersTail = [
     unfoldLayer
     flatLayer
@@ -282,16 +287,16 @@ layersTail = [
     lstmLayersFull(:)
 ];
 
-lgraph = addLayers(lgraph, layersTail);
+tail = layerGraph(layersTail);      % <<< THIS creates the internal sequential connections
 
-% Connect CNN trunk output to unfolding
+% Add tail layers + their internal connections to the main graph
+lgraph = addLayers(lgraph, tail.Layers);
+lgraph = addConnections(lgraph, tail.Connections);
+
+% Now connect only the interface between CNN trunk and tail
 lgraph = connectLayers(lgraph, trunkOut, "unfold/in");
 lgraph = connectLayers(lgraph, "fold/miniBatchSize", "unfold/miniBatchSize");
 
-% Explicit wiring inside the tail (CRITICAL in layerGraph workflow)
-lgraph = safeConnect(lgraph, "unfold", "flatten");
-lgraph = safeConnect(lgraph, "flatten", "deltaFeatures");
-lgraph = safeConnect(lgraph, "deltaFeatures", char(bilstmName));
 
 
 
@@ -304,38 +309,6 @@ classifier = assembleNetwork(lgraph);
 save(fullfile(path,[name '.mat']), 'classifier', '-v7.3');
 disp('Rebuilt full CNN+LSTM network and saved assembled classifier.');
 
-end
-
-function lgraph = safeConnect(lgraph, src, dst)
-%SAFECONNECT Connect src->dst only if it does not already exist.
-% Accepts "layer" or "layer/port" notations and canonicalizes them.
-
-src0 = canonicalLayerName(src);
-dst0 = canonicalLayerName(dst);
-
-C = lgraph.Connections;
-
-already = false;
-if ~isempty(C)
-    srcC = canonicalLayerName(string(C.Source));
-    dstC = canonicalLayerName(string(C.Destination));
-    already = any(srcC == src0 & dstC == dst0);
-end
-
-if ~already
-    % Connect WITHOUT ports (robust for single-in/single-out layers)
-    lgraph = connectLayers(lgraph, char(src0), char(dst0));
-end
-end
-
-function nm = canonicalLayerName(x)
-%CANONICALLAYERNAME Strip "/in", "/out", "/something" from layer/port notations.
-
-sx = string(x);
-% Keep only the part before the first '/'
-nm = extractBefore(sx, "/");
-nm(nm == "") = sx(nm == ""); % if no '/', extractBefore returns ""
-nm = string(nm);
 end
 
 
