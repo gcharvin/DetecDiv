@@ -221,7 +221,12 @@ newKids = setdiff(kids, [desc; string(layerName)]);
 newKids = newKids(:);  % <-- CRITIQUE : colonne
 
 desc    = unique([desc; kids], 'stable');
-toVisit = unique([toVisit; newKids], 'stable');   % OK maintenant
+% Force same shape (column) before concatenation
+% Normalize types (string) and shapes (column)
+toVisit = string(toVisit);
+newKids = string(newKids);
+toVisit = unique([toVisit(:); newKids(:)], 'stable');
+
 end
 desc = setdiff(desc, layerName);
 desc = intersect(desc, names);
