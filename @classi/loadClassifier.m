@@ -289,9 +289,10 @@ lgraph = connectLayers(lgraph, trunkOut, "unfold/in");
 lgraph = connectLayers(lgraph, "fold/miniBatchSize", "unfold/miniBatchSize");
 
 % Explicit wiring inside the tail (CRITICAL in layerGraph workflow)
-lgraph = safeConnect(lgraph, "unfold/out", "flatten/in");
+lgraph = safeConnect(lgraph, "unfold", "flatten");
 lgraph = safeConnect(lgraph, "flatten", "deltaFeatures");
 lgraph = safeConnect(lgraph, "deltaFeatures", char(bilstmName));
+
 
 
 % -------------------- Final assemble --------------------
@@ -307,17 +308,34 @@ end
 
 function lgraph = safeConnect(lgraph, src, dst)
 %SAFECONNECT Connect src->dst only if it does not already exist.
-src = char(src); dst = char(dst);
+% Accepts "layer" or "layer/port" notations and canonicalizes them.
+
+src0 = canonicalLayerName(src);
+dst0 = canonicalLayerName(dst);
 
 C = lgraph.Connections;
+
+already = false;
 if ~isempty(C)
-    already = any(strcmp(string(C.Source), string(src)) & strcmp(string(C.Destination), string(dst)));
-else
-    already = false;
+    srcC = canonicalLayerName(string(C.Source));
+    dstC = canonicalLayerName(string(C.Destination));
+    already = any(srcC == src0 & dstC == dst0);
 end
 
 if ~already
-    lgraph = connectLayers(lgraph, src, dst);
+    % Connect WITHOUT ports (robust for single-in/single-out layers)
+    lgraph = connectLayers(lgraph, char(src0), char(dst0));
 end
 end
+
+function nm = canonicalLayerName(x)
+%CANONICALLAYERNAME Strip "/in", "/out", "/something" from layer/port notations.
+
+sx = string(x);
+% Keep only the part before the first '/'
+nm = extractBefore(sx, "/");
+nm(nm == "") = sx(nm == ""); % if no '/', extractBefore returns ""
+nm = string(nm);
+end
+
 
