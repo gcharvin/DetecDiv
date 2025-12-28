@@ -1,65 +1,76 @@
 function [classifierout, status] = loadClassifier(classif, option)
-% loadClassifier  Load assembled CNN+LSTM classifier for a given classif.
+% loadClassifier  Robust loader for CNN/LSTM assembled classifier.
 %
-% Convention:
-%   <name>.mat                 -> assembled (CNN+LSTM) for inference
-%   netCNN_<name>.mat          -> CNN only
-%   netLSTM_<name>.mat         -> LSTM only
+% Convention (same as yours):
+%   <name>.mat          -> assembled network (CNN+LSTM) for inference
+%   netCNN_<name>.mat   -> CNN only
+%   netLSTM_<name>.mat  -> LSTM only
 %
 % Behavior:
-%   - loads <name>.mat
-%   - if it's a dlnetwork, tries assembleNetwork
-%   - if assembleNetwork fails, rebuilds assembled net from netCNN_/netLSTM_ and saves <name>.mat
+%   1) If classifier already exists in base workspace (and valid), reuse it unless 'force'
+%   2) Load <name>.mat; if it's a valid assembled net -> return it
+%   3) If it's a dlnetwork or invalid/incomplete -> rebuild from netCNN_/netLSTM_
+%      using the SAME assembly logic as trainImageLSTMNetFun (with deltaFeatureLayer).
+%   4) Critical: preserve proper zerocenter Mean (fallback from pretrained backbone if missing).
+%   5) Ensure class order consistency between classif.classes and LSTM classification layer.
+%
+% option:
+%   'force' : ignore existing base variable; reload from disk
+%   'check' : only check if a valid classifier is already in base workspace
+
+status = false;
+classifierout = [];
 
 path = classif.path;
 name = classif.strid;
 
-force  = false;
-check  = false;
-status = false;
-
+force = false;
+check = false;
 if nargin >= 2 && ~isempty(option)
-    if strcmpi(option,'force'), force = true; end
-    if strcmpi(option,'check'), check = true; end
+    force = strcmpi(option,'force');
+    check = strcmpi(option,'check');
 end
 
 validNetClasses = {'DAGNetwork','SeriesNetwork','dlnetwork'};
 
-% --- check workspace ---
+% ------------------- workspace fast path -------------------
 W = evalin('base','whos');
-doesExist = ismember(name,{W(:).name});
+doesExist = ismember(name, {W(:).name});
 
 if check
-    classifierout = [];
     if doesExist
-        tmp = evalin('base',name);
+        tmp = evalin('base', name);
         status = any(strcmp(class(tmp), validNetClasses));
+    else
+        status = false;
     end
+    classifierout = [];
     return;
 end
 
 if doesExist && ~force
-    tmp = evalin('base',name);
+    tmp = evalin('base', name);
     if any(strcmp(class(tmp), validNetClasses))
-        disp('Classifier is already loaded in the workspace');
+        disp('Classifier already loaded in base workspace.');
         classifierout = tmp;
         status = true;
         return;
     end
 end
 
-% --- load from disk ---
+% ------------------- load from disk -------------------
 disp(['Loading classifier: ' name]);
-
-matMain = fullfile(path,[name '.mat']);
-if ~exist(matMain,'file')
-    disp('Classifier does not exist ! Has training been done?');
+mainFile = fullfile(path, [name '.mat']);
+if exist(mainFile,'file') ~= 2
+    warning('Classifier file does not exist: %s', mainFile);
     classifierout = [];
+    status = false;
     return;
 end
 
-S = load(matMain);
+S = load(mainFile);
 
+% Backward compatible field names
 candidateFields = {'classifier','net','netLSTM_dag','netLSTM','netCNN'};
 classifier = [];
 for k = 1:numel(candidateFields)
@@ -70,151 +81,191 @@ for k = 1:numel(candidateFields)
     end
 end
 if isempty(classifier)
-    error('No classifier-like variable found in %s.', matMain);
+    % As a last resort, try the first variable in the MAT
+    fn = fieldnames(S);
+    if ~isempty(fn)
+        classifier = S.(fn{1});
+    end
+end
+if isempty(classifier)
+    error('No network-like variable found in %s', mainFile);
 end
 
-% --- dlnetwork -> try assembleNetwork, else rebuild from parts ---
+% If already assembled DAG/Series and seems valid -> done
+if isa(classifier,'DAGNetwork') || isa(classifier,'SeriesNetwork')
+    disp(['Loaded classifier of type: ' class(classifier)]);
+    classifierout = classifier;
+    status = true;
+    assignin('base', name, classifierout);
+    return;
+end
+
+% If dlnetwork: try assembleNetwork; if fails -> rebuild from parts
 if isa(classifier,'dlnetwork')
     try
         disp('Loaded classifier is dlnetwork -> trying assembleNetwork...');
         lgraph = layerGraph(classifier);
         classifier = assembleNetwork(lgraph);
         disp('dlnetwork successfully converted to DAGNetwork.');
+        classifierout = classifier;
+        status = true;
+        assignin('base', name, classifierout);
+        return;
     catch ME
-        warning(['assembleNetwork failed on dlnetwork (%s). ', ...
-                 'Rebuilding full CNN+LSTM network from netCNN_/netLSTM_ files...'], ME.message);
+        warning(['assembleNetwork failed on dlnetwork (%s). Rebuilding full CNN+LSTM ' ...
+                 'network from netCNN_/netLSTM_ files...'], ME.message);
         classifier = localAssembleFromParts(classif);
+        classifierout = classifier;
+        status = true;
+        assignin('base', name, classifierout);
+        return;
     end
 end
 
-disp(['Loaded classifier of type: ' class(classifier)]);
+% Anything else: try rebuild
+warning('Loaded object is type "%s" -> rebuilding from parts...', class(classifier));
+classifier = localAssembleFromParts(classif);
 classifierout = classifier;
 status = true;
-
-assignin('base',name,classifierout);
+assignin('base', name, classifierout);
 
 end
 
 
 % =====================================================================
 function classifier = localAssembleFromParts(classif)
-% Rebuild assembled CNN+LSTM network exactly like trainImageLSTMNetFun,
-% but robust to missing/empty Mean in the CNN.
+% localAssembleFromParts  Rebuild CNN+LSTM assembled graph the SAME way as trainImageLSTMNetFun.
+%
+% - Loads netCNN_<name>.mat and netLSTM_<name>.mat
+% - Determines backbone and the pooling layerName2
+% - Builds:
+%     sequenceInput -> sequenceFolding -> CNN trunk -> sequenceUnfolding -> flatten -> deltaFeatureLayer -> LSTM tail
+% - Ensures correct zerocenter Mean for sequenceInputLayer (fallback if missing)
+% - Ensures class order consistency (classif.classes vs LSTM classification layer)
 
 path = classif.path;
 name = classif.strid;
 
 % ---------- load CNN ----------
 srcCNN = fullfile(path, ['netCNN_' name '.mat']);
-if ~exist(srcCNN,'file')
+if exist(srcCNN,'file') ~= 2
     error('localAssembleFromParts:MissingCNN', 'Cannot find CNN file: %s', srcCNN);
 end
 SCNN = load(srcCNN);
-netCNN = localPickNetFromStruct(SCNN);
+netCNN = pickFirstNet(SCNN, {'classifier','netCNN','net'});
 
 % ---------- load LSTM ----------
 srcLSTM = fullfile(path, ['netLSTM_' name '.mat']);
-if ~exist(srcLSTM,'file')
+if exist(srcLSTM,'file') ~= 2
     error('localAssembleFromParts:MissingLSTM', 'Cannot find LSTM file: %s', srcLSTM);
 end
 SLSTM = load(srcLSTM);
-if isfield(SLSTM,'netLSTM')
-    netLSTM = SLSTM.netLSTM;
-else
-    netLSTM = localPickNetFromStruct(SLSTM);
+netLSTM = pickFirstNet(SLSTM, {'netLSTM','classifier','net'});
+
+% ---------- trainingParam (optional but useful for backbone name) ----------
+trainingParam = [];
+try
+    trainingParam = classif.trainingParam;
+catch
+    trainingParam = [];
 end
 
-% ---------- CNN layerGraph ----------
-if isa(netCNN,'dlnetwork')
-    cnnLayers = layerGraph(netCNN);
-else
-    cnnLayers = layerGraph(netCNN);
-end
+% ---------- infer backbone + layer names from trainingParam OR from netCNN ----------
+[backbone, baseInput, layerName2] = inferBackboneAndTap(netCNN, trainingParam);
 
-% infer input size
-inputSize = localGetCNNInputSizeHW(netCNN, cnnLayers);
+% ---------- CNN graph ----------
+cnnLayers = layerGraph(netCNN);
 
-% infer backbone-specific key layer names from existing CNN
-[baseInput, layerName2] = localInferBackbonePorts(cnnLayers);
+% Infer inputSize from the ORIGINAL CNN image input (or fallback)
+inputSize = inferCNNInputSize(netCNN, trainingParam);
 
-% remove original image input(s)
+% Remove original ImageInputLayer(s)
 isInput = arrayfun(@(L) isa(L,'nnet.cnn.layer.ImageInputLayer'), cnnLayers.Layers);
 oldInputs = {cnnLayers.Layers(isInput).Name};
 if ~isempty(oldInputs)
     cnnLayers = removeLayers(cnnLayers, oldInputs);
 end
 
-% remove downstream of layerName2
-names = string({cnnLayers.Layers.Name});
-toVisit = string(layerName2); toVisit = toVisit(:);
-desc    = strings(0,1);
+% Remove head downstream of layerName2 (keep up to pool layer)
+cnnLayers = stripAfter(cnnLayers, layerName2);
 
-while ~isempty(toVisit)
-    src = toVisit(1); toVisit(1) = [];
-    mask = strcmp(cnnLayers.Connections.Source, src);
-    kids = string(cnnLayers.Connections.Destination(mask));
-    kids = kids(:);
-
-    newKids = setdiff(kids, [desc; string(layerName2)]);
-    newKids = newKids(:);
-
-    desc = unique([desc; kids], 'stable');
-
-    if ~isempty(newKids)
-        toVisit = union(toVisit, newKids, 'stable');
-        toVisit = toVisit(:);
-    end
+% ---------- build new input + fold ----------
+meanVal = extractCNNMean(netCNN);
+if isempty(meanVal)
+    % critical fallback: use pretrained backbone default mean
+    meanVal = backboneDefaultMean(backbone);
+end
+if isempty(meanVal)
+    error(['Cannot assemble: Mean is empty and no backbone default mean available. ' ...
+           'Provide trainingParam.CNN_network{end} or ensure netCNN input layer has Mean.']);
 end
 
-desc = setdiff(desc, layerName2);
-desc = intersect(desc, names);
-if ~isempty(desc)
-    cnnLayers = removeLayers(cnnLayers, cellstr(desc));
-end
-
-% ---- IMPORTANT FIX: robust Mean handling ----
-meanVal = localExtractCNNMean(netCNN);
-inputLayer = makeSeqInputLayer([inputSize 3], meanVal);  % <-- safe
+inputLayer = sequenceInputLayer([inputSize 3], ...
+    'Normalization','zerocenter', ...
+    'Mean', meanVal, ...
+    'Name','input');
 
 foldLayer = sequenceFoldingLayer('Name','fold');
 
 lgraph = addLayers(cnnLayers, [inputLayer; foldLayer]);
+
+% Connect fold to CNN base input
 lgraph = connectLayers(lgraph, "fold/out", baseInput);
 
-% ---------- LSTM layerGraph ----------
-if isa(netLSTM,'dlnetwork')
-    lgraphLSTM = layerGraph(netLSTM);
-else
-    lgraphLSTM = layerGraph(netLSTM);
-end
-
+% ---------- LSTM graph ----------
+lgraphLSTM = layerGraph(netLSTM);
 lstmLayersFull = lgraphLSTM.Layers;
 
-% remove LSTM sequence input (first layer)
+% Remove the first SequenceInputLayer from LSTM (exactly like your training fun)
 if ~isempty(lstmLayersFull) && isa(lstmLayersFull(1),'nnet.cnn.layer.SequenceInputLayer')
     lstmLayersFull(1) = [];
 end
+if isempty(lstmLayersFull)
+    error('localAssembleFromParts:EmptyLSTM', 'LSTM tail is empty after removing its input layer.');
+end
 
-% --- EXACTLY like your working assembly ---
+% Ensure class order consistency (if classification layer exists)
+lstmLayersFull = enforceClassOrderIfNeeded(lstmLayersFull, classif);
+
+% ---------- add unfolding + flatten + delta + lstm tail ----------
+unfoldLayer  = sequenceUnfoldingLayer('Name','unfold');
+flattenLayerObj = flattenLayer('Name','flatten');
+deltaLayer = deltaFeatureLayer('deltaFeatures'); % your custom layer
+
 layersTail = [ ...
-    sequenceUnfoldingLayer('Name','unfold'); ...
-    flattenLayer('Name','flatten'); ...
-    deltaFeatureLayer('deltaFeatures'); ...
-    lstmLayersFull ...
+    unfoldLayer; ...
+    flattenLayerObj; ...
+    deltaLayer; ...
+    lstmLayersFull(:) ...
     ];
 
-tail = layerGraph(layersTail);
+lgraph = addLayers(lgraph, layersTail);
 
-lgraph = addLayers(lgraph, tail.Layers);
-lgraph = localAddConnectionsSafe(lgraph, tail.Connections);
-
-% connect trunk->tail
+% Mandatory fold/unfold wiring
 lgraph = connectLayers(lgraph, layerName2, "unfold/in");
 lgraph = connectLayers(lgraph, "fold/miniBatchSize", "unfold/miniBatchSize");
 
-% Final assemble
-classifier = assembleNetwork(lgraph);
+% IMPORTANT: do NOT manually connect unfold->flatten etc.
+% Because addLayers(layersTail) keeps internal sequential connections:
+% unfold -> flatten -> deltaFeatures -> firstLstmLayer -> ...
+% Adding extra connectLayers here often triggers "connection already exists".
 
+% ---------- assemble ----------
+try
+    classifier = assembleNetwork(lgraph);
+catch ME
+    % Provide a more actionable message
+    msg = ME.message;
+    if contains(msg, 'Empty Mean property', 'IgnoreCase', true)
+        msg = [msg newline ...
+            'Fix: ensure sequenceInputLayer uses Normalization=zerocenter with a NONEMPTY Mean.' newline ...
+            'This loader already falls back to pretrained backbone Mean; if backbone cannot be inferred, ' ...
+            'set classif.trainingParam.CNN_network{end} (e.g. ''googlenet'').'];
+    end
+    error('localAssembleFromParts:AssembleFailed', 'assembleNetwork failed: %s', msg);
+end
+
+% Save assembled classifier for future fast loads
 save(fullfile(path,[name '.mat']), 'classifier', '-v7.3');
 disp('Rebuilt full CNN+LSTM network and saved assembled classifier.');
 
@@ -222,152 +273,262 @@ end
 
 
 % =====================================================================
-function inputLayer = makeSeqInputLayer(seqInputSize, meanVal)
-% makeSeqInputLayer  Create robust sequenceInputLayer:
-% - If meanVal is nonempty -> use zerocenter + Mean
-% - If meanVal is empty/missing -> use Normalization 'none' (MATLAB requires Mean for zerocenter)
-
-if nargin < 2
-    meanVal = [];
-end
-
-if isempty(meanVal)
-    inputLayer = sequenceInputLayer(seqInputSize, ...
-        'Normalization','none', ...
-        'Name','input');
-else
-    inputLayer = sequenceInputLayer(seqInputSize, ...
-        'Normalization','zerocenter', ...
-        'Mean', meanVal, ...
-        'Name','input');
-end
-end
-
-
-function meanVal = localExtractCNNMean(netCNN)
-% Try to get Mean from the original ImageInputLayer (legacy networks).
-meanVal = [];
-
-try
-    if isa(netCNN,'DAGNetwork') || isa(netCNN,'SeriesNetwork')
-        L = netCNN.Layers;
-        isIn = arrayfun(@(x) isa(x,'nnet.cnn.layer.ImageInputLayer'), L);
-        idx = find(isIn,1,'first');
-        if ~isempty(idx) && isprop(L(idx),'Mean')
-            m = L(idx).Mean;
-            if ~isempty(m), meanVal = m; end
-        end
+function net = pickFirstNet(S, preferredFields)
+net = [];
+for k = 1:numel(preferredFields)
+    f = preferredFields{k};
+    if isfield(S,f)
+        net = S.(f);
+        return;
     end
-catch
 end
-end
-
-
-function net = localPickNetFromStruct(S)
-% pick a network-like variable from a loaded .mat struct
-if isfield(S,'classifier'), net = S.classifier; return; end
-if isfield(S,'net'),        net = S.net;        return; end
-if isfield(S,'netCNN'),     net = S.netCNN;     return; end
-if isfield(S,'netLSTM'),    net = S.netLSTM;    return; end
-
 fn = fieldnames(S);
 for k = 1:numel(fn)
     v = S.(fn{k});
     if isa(v,'DAGNetwork') || isa(v,'SeriesNetwork') || isa(v,'dlnetwork') || isa(v,'nnet.cnn.LayerGraph')
-        net = v; return;
+        net = v;
+        return;
     end
 end
-net = S.(fn{1});
-end
-
-
-function inputSizeHW = localGetCNNInputSizeHW(netCNN, lgraphCNN)
-inputSizeHW = [];
-
-% legacy
-try
-    if isa(netCNN,'DAGNetwork') || isa(netCNN,'SeriesNetwork')
-        layers = netCNN.Layers;
-        isIn = arrayfun(@(L) isa(L,'nnet.cnn.layer.ImageInputLayer'), layers);
-        idx = find(isIn,1,'first');
-        if ~isempty(idx)
-            sz = layers(idx).InputSize;
-            inputSizeHW = sz(1:2);
-            return;
-        end
+if isempty(net)
+    % last resort: first field
+    if ~isempty(fn)
+        net = S.(fn{1});
     end
-catch
+end
 end
 
-% from graph
-try
-    layers = lgraphCNN.Layers;
-    isIn = arrayfun(@(L) isa(L,'nnet.cnn.layer.ImageInputLayer'), layers);
-    idx = find(isIn,1,'first');
+
+function inputSizeHW = inferCNNInputSize(netCNN, trainingParam)
+% Prefer true ImageInputLayer.InputSize from the provided netCNN.
+layers = [];
+if isa(netCNN,'DAGNetwork') || isa(netCNN,'SeriesNetwork')
+    layers = netCNN.Layers;
+elseif isa(netCNN,'dlnetwork')
+    layers = netCNN.Layers;
+elseif isa(netCNN,'nnet.cnn.LayerGraph')
+    layers = netCNN.Layers;
+end
+
+if ~isempty(layers)
+    isInput = arrayfun(@(L) isa(L,'nnet.cnn.layer.ImageInputLayer'), layers);
+    idx = find(isInput, 1, 'first');
     if ~isempty(idx)
         sz = layers(idx).InputSize;
         inputSizeHW = sz(1:2);
         return;
     end
-catch
 end
 
-error('localGetCNNInputSizeHW:Failed', 'Cannot infer CNN input size.');
+% Fallback: instantiate backbone from trainingParam if possible
+netName = '';
+if nargin >= 2 && ~isempty(trainingParam) && isfield(trainingParam,'CNN_network') && ~isempty(trainingParam.CNN_network)
+    netName = trainingParam.CNN_network{end};
 end
-
-
-function [baseInput, layerName2] = localInferBackbonePorts(lgraphCNN)
-nms = string({lgraphCNN.Layers.Name});
-
-if any(nms == "pool5-7x7_s1") && any(nms == "conv1-7x7_s2")
-    baseInput  = "conv1-7x7_s2";
-    layerName2 = "pool5-7x7_s1";
-    return;
-end
-
-if any(nms == "avg_pool") && any(nms == "conv1") && any(contains(nms,"res"))
-    baseInput  = "conv1";
-    layerName2 = "avg_pool";
-    return;
-end
-
-if any(nms == "pool5") && any(nms == "conv1")
-    baseInput  = "conv1";
-    layerName2 = "pool5";
-    return;
-end
-
-if any(nms == "avg_pool") && any(nms == "conv2d_1")
-    baseInput  = "conv2d_1";
-    layerName2 = "avg_pool";
-    return;
-end
-
-error('localInferBackbonePorts:UnknownBackbone', ...
-    'Cannot infer backbone port/layer names from CNN. Known patterns not found.');
-end
-
-
-function lgraph = localAddConnectionsSafe(lgraph, conns)
-% Add connections, ignoring "already exists" errors.
-
-if isempty(conns), return; end
-
-if istable(conns)
-    for i = 1:height(conns)
-        s = char(string(conns.Source(i)));
-        d = char(string(conns.Destination(i)));
-        try
-            lgraph = connectLayers(lgraph, s, d);
-        catch ME
-            if contains(ME.message,'already exists','IgnoreCase',true)
-                % ignore
-            else
-                rethrow(ME);
-            end
+if ~isempty(netName)
+    try
+        bb = feval(netName); %#ok<FVAL>
+        layersB = bb.Layers;
+        isInputB = arrayfun(@(L) isa(L,'nnet.cnn.layer.ImageInputLayer'), layersB);
+        idxB = find(isInputB, 1, 'first');
+        if ~isempty(idxB)
+            sz = layersB(idxB).InputSize;
+            inputSizeHW = sz(1:2);
+            warning('inferCNNInputSize:Fallback', ...
+                'CNN input size inferred from backbone "%s": [%d %d].', netName, inputSizeHW(1), inputSizeHW(2));
+            return;
         end
+    catch
     end
-else
-    error('localAddConnectionsSafe:Unsupported', 'Unsupported connections type: %s', class(conns));
+end
+
+error('inferCNNInputSize:Failed', ...
+    'Cannot determine CNN input size (no ImageInputLayer found, and backbone fallback failed).');
+end
+
+
+function meanVal = extractCNNMean(netCNN)
+meanVal = [];
+try
+    layers = netCNN.Layers;
+catch
+    meanVal = [];
+    return;
+end
+isInput = arrayfun(@(L) isa(L,'nnet.cnn.layer.ImageInputLayer'), layers);
+idx = find(isInput, 1, 'first');
+if isempty(idx), return; end
+
+L = layers(idx);
+if isprop(L,'Mean')
+    try
+        meanVal = L.Mean;
+        if isempty(meanVal), meanVal = []; end
+    catch
+        meanVal = [];
+    end
+end
+end
+
+
+function meanVal = backboneDefaultMean(backbone)
+meanVal = [];
+try
+    switch lower(backbone)
+        case 'googlenet'
+            net = googlenet;
+        case 'resnet18'
+            net = resnet18;
+        case 'resnet50'
+            net = resnet50;
+        case 'inceptionv3'
+            net = inceptionv3;
+        case 'inceptionresnetv2'
+            net = inceptionresnetv2;
+        otherwise
+            net = [];
+    end
+    if ~isempty(net)
+        meanVal = net.Layers(1).Mean;
+        if isempty(meanVal), meanVal = []; end
+    end
+catch
+    meanVal = [];
+end
+end
+
+
+function [backbone, baseInput, layerName2] = inferBackboneAndTap(netCNN, trainingParam)
+% 1) prefer trainingParam.CNN_network{end}
+backbone = '';
+if ~isempty(trainingParam) && isfield(trainingParam,'CNN_network') && ~isempty(trainingParam.CNN_network)
+    try backbone = trainingParam.CNN_network{end}; catch, backbone = ''; end
+end
+
+% 2) if missing, infer from layer names
+if isempty(backbone)
+    names = string({layerGraph(netCNN).Layers.Name});
+    if any(names == "pool5-7x7_s1") && any(names == "conv1-7x7_s2")
+        backbone = 'googlenet';
+    elseif any(names == "avg_pool") && any(names == "conv1")
+        % could be resnet50 or inception family; disambiguate by presence of "res5a_branch2a" etc.
+        if any(contains(names,"res"))
+            backbone = 'resnet50';
+        else
+            % safest: treat as inception-like tap
+            backbone = 'inceptionv3';
+        end
+    elseif any(names == "pool5") && any(names == "conv1")
+        backbone = 'resnet18';
+    elseif any(names == "conv2d_1") && any(names == "avg_pool")
+        backbone = 'inceptionv3';
+    else
+        error('inferBackboneAndTap:Unknown', ...
+            ['Cannot infer backbone. Provide classif.trainingParam.CNN_network{end} ' ...
+             '(e.g. ''googlenet'',''resnet18'',''resnet50'',''inceptionv3'',''inceptionresnetv2'').']);
+    end
+end
+
+switch lower(backbone)
+    case 'googlenet'
+        baseInput  = "conv1-7x7_s2";
+        layerName2 = "pool5-7x7_s1";
+    case 'resnet50'
+        baseInput  = "conv1";
+        layerName2 = "avg_pool";
+    case 'resnet18'
+        baseInput  = "conv1";
+        layerName2 = "pool5";
+    case {'inceptionresnetv2','inceptionv3'}
+        baseInput  = "conv2d_1";
+        layerName2 = "avg_pool";
+    otherwise
+        error('inferBackboneAndTap:Unsupported', 'Unsupported backbone: %s', backbone);
+end
+end
+
+
+function lgraph = stripAfter(lgraph, layerNameKeep)
+% Remove all descendants strictly downstream of layerNameKeep (keep layerNameKeep itself).
+names = string({lgraph.Layers.Name});
+
+toVisit = string(layerNameKeep); toVisit = toVisit(:);
+desc = strings(0,1);
+
+while ~isempty(toVisit)
+    src = toVisit(1);
+    toVisit(1) = [];
+
+    mask = strcmp(lgraph.Connections.Source, src);
+    kids = string(lgraph.Connections.Destination(mask));
+    kids = kids(:);
+
+    if ~isempty(kids)
+        desc = unique([desc; kids], 'stable');
+        newKids = setdiff(kids, [string(layerNameKeep); desc], 'stable');
+        % The setdiff above can be tricky; keep it simple:
+        newKids = kids;
+        newKids = setdiff(newKids, string(layerNameKeep));
+        newKids = setdiff(newKids, desc);
+        toVisit = unique([toVisit; newKids(:)], 'stable');
+    end
+end
+
+desc = setdiff(desc, string(layerNameKeep));
+desc = intersect(desc, names);
+if ~isempty(desc)
+    lgraph = removeLayers(lgraph, cellstr(desc));
+end
+end
+
+
+function layersOut = enforceClassOrderIfNeeded(layersIn, classif)
+layersOut = layersIn;
+
+% If no classes info in classif, nothing to do
+clsObj = [];
+try
+    clsObj = classif.classes;
+catch
+    clsObj = [];
+end
+if isempty(clsObj)
+    return;
+end
+if isstring(clsObj), clsObj = cellstr(clsObj); end
+if ischar(clsObj), clsObj = {clsObj}; end
+clsObj = clsObj(:)';
+
+% Find classificationLayer in LSTM
+idx = find(arrayfun(@(L) isa(L,'nnet.cnn.layer.ClassificationOutputLayer'), layersOut), 1, 'last');
+if isempty(idx)
+    % Sometimes it's a custom classification layer; if not found, ignore.
+    return;
+end
+
+L = layersOut(idx);
+if ~isprop(L,'Classes')
+    return;
+end
+
+try
+    clsNet = L.Classes;
+catch
+    clsNet = [];
+end
+if isempty(clsNet)
+    return;
+end
+clsNetCell = cellstr(string(clsNet(:))');
+
+% If same set but different order, rebuild layer with correct order
+if numel(clsNetCell) == numel(clsObj) && all(ismember(clsObj, clsNetCell)) && ~isequal(clsNetCell, clsObj)
+    warning('loadClassifier:ClassOrderMismatch', ...
+        'Class order mismatch between netLSTM and classif.classes. Rebuilding classification layer with classif.classes order.');
+    try
+        layersOut(idx) = classificationLayer('Name', L.Name, 'Classes', clsObj);
+    catch ME
+        warning('Failed to rebuild classificationLayer with classif.classes order (%s). Keeping net''s order.', ME.message);
+    end
 end
 end
