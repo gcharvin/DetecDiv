@@ -115,7 +115,7 @@ function classifier = localAssembleFromParts(classif)
 path = classif.path;
 name = classif.strid;
 
-if ~isfield(classif,'trainingParam') || isempty(classif.trainingParam)
+if ~isprop(classif,'trainingParam') || isempty(classif.trainingParam)
     error('localAssembleFromParts:MissingTrainingParam', ...
         'classif.trainingParam is missing/empty; cannot infer backbone/layer names.');
 end
