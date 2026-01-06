@@ -183,13 +183,27 @@ try
         if isfield(trainingParam,'CNN_defocus_prob'),        trainingParam.CNN_defocus_prob = 0; end
     end
 
+        %----------------------------------------------------------------------    
+    % 1) Classes
+    %----------------------------------------------------------------------    
+    classes = classif.classes;
+if ~iscell(classes), classes = cellstr(classes); end
+classes = classes(:)';              % 1xC cellstr
+numClasses = numel(classes);
+
+    if numel(classes)==0
+        disp('There is no classes defined ; Cannot continue !')
+        safeRunStop();
+        return;
+    end
+
     fprintf('Loading data repository...\n');
     fprintf('------\n');
 
     backend = lower(trainingParam.Format_StorageBackend{end});
 
     %----------------------------------------------------------------------    
-    % 1) Datastores train/val + class weights
+    % 2) Datastores train/val + class weights
     %----------------------------------------------------------------------    
     switch backend
         case 'tiff'
@@ -356,19 +370,7 @@ classWeights(~isfinite(classWeights)) = 1;
         'miniBatchSize', trainingParam.CNN_mini_batch_size, ...
         'classWeights', classWeights);
 
-    %----------------------------------------------------------------------    
-    % 2) Classes
-    %----------------------------------------------------------------------    
-    classes = classif.classes;
-if ~iscell(classes), classes = cellstr(classes); end
-classes = classes(:)';              % 1xC cellstr
-numClasses = numel(classes);
 
-    if numel(classes)==0
-        disp('There is no classes defined ; Cannot continue !')
-        safeRunStop();
-        return;
-    end
 
     fprintf('Loading network...\n');
     fprintf('------\n');
