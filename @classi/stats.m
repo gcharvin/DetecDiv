@@ -189,6 +189,7 @@ if compute==1 % compute new scores
 
             if cc==1
 
+         
                 classif.score= measureAccuracyRecall(classif,data.gt, data.pred, data.roi, data.frames, num2str(i),mismatchDir);  % score for given classification
                 classif.score.comments='Classification benchmarks using main classifier';
                 classif.score.thr=i;
@@ -246,27 +247,59 @@ if plotConfusion
             continue;
         end
 
-        % labels utilisés pour la confusion matrix
-        if isfield(classif.score(j), 'confusionLbl') && ~isempty(classif.score(j).confusionLbl)
-            labs = classif.score(j).confusionLbl(:)';
-        else
-            labs = 1:size(mate,1);  % fallback si ancien format
-        end
+     
 
-        % --- noms à afficher sur les axes ---
-        if numel(classif.classes) == numel(labs)
-            % cas standard : 1..K -> classif.classes{k}
-            names = classif.classes;
-        elseif numel(classif.classes) == 1 && numel(labs) == 2
-            % cas CPSAM typique : 2 labels (foreground + background)
-            % on nomme explicitement
-            names = {'background',classif.classes{1}};
-        else
-            % fallback générique
-            names = arrayfun(@(x) sprintf('Class %d', x), labs, 'UniformOutput', false);
-        end
+      % labels utilisés pour la confusion matrix
+if isfield(classif.score(j), 'confusionLbl') && ~isempty(classif.score(j).confusionLbl)
+    labs = classif.score(j).confusionLbl(:)';   % ordre = axes du mate
+else
+    labs = 1:size(mate,1);                      % ancien format
+end
 
-        cate = categorical(names);
+% sécurité : s'assurer que labs colle à la taille du mate
+if numel(labs) ~= size(mate,1)
+    labs = 1:size(mate,1);
+end
+
+K = numel(classif.classes);
+
+% --- noms à afficher sur les axes (toujours de longueur numel(labs)) ---
+names = cell(1, numel(labs));
+
+% 1) si labs sont déjà des noms (string/cellstr/categorical), on les garde
+if iscellstr(labs) || isstring(labs) || iscategorical(labs)
+    names = cellstr(labs);
+
+else
+    % 2) labs numériques : on mappe chaque label vers classif.classes{label} si possible
+    labsNum = double(labs);
+
+    % Cas particulier CellposeSAM : 2 labels (background + foreground), classif.classes = {foreground}
+    if K == 1 && numel(labsNum) == 2
+        % heuristique robuste pour savoir lequel est le background
+        % (souvent 0, sinon on prend le premier comme background)
+        bgPos = find(labsNum == 0, 1);
+        if isempty(bgPos), bgPos = 1; end
+        fgPos = setdiff(1:2, bgPos);
+
+        names{bgPos} = 'background';
+        names{fgPos} = classif.classes{1};
+
+    else
+        % Cas général : subset / non-contigu / labels "exotiques"
+        for ii = 1:numel(labsNum)
+            lab = labsNum(ii);
+            if isfinite(lab) && lab == round(lab) && lab >= 1 && lab <= K
+                names{ii} = classif.classes{lab};
+            else
+                % label hors range ou non-entier : on garde une étiquette explicite
+                names{ii} = sprintf('Class %g', lab);
+            end
+        end
+    end
+end
+
+cate = categorical(names);  % ordre = ordre de names (= ordre de labs)
 
 
        h = newFig(silent);
@@ -698,8 +731,12 @@ end
 % ======= confusion matrix (robuste aux labels) ======
 
 % labels effectivement présents dans GT / Pred
+
+
 labs = unique([data.gt(:); data.pred(:)]);
 labs = labs(~isnan(labs));  % au cas où
+
+
 
 try
     mate = confusionmat(data.gt, data.pred, 'Order', labs');
@@ -1171,7 +1208,6 @@ for j=roiid
 
     end
     % then display the results
-
 
     % if ground ==1 && resok==1 % list of rois used to compute stats
     data.gt=[data.gt gt];
