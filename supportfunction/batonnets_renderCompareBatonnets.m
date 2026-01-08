@@ -1,28 +1,50 @@
 function out = batonnets_renderCompareBatonnets(out, tl, roiListShown, roiListAll, dsKeys, H, W, Gcmp, Groi, globalLabelMap, globalLabels, globalCmap, args)
 % BATONNETS_RENDERCOMPAREBATONNETS  Render compare mode (2 dsKeys) in one tile.
 %
-% SYNTAX
-%   out = batonnets_renderCompareBatonnets(out, tl, roiListShown, roiListAll, dsKeys, ...
-%       H, W, Gcmp, Groi, globalLabelMap, globalLabels, globalCmap, args)
-%
-% INPUTS
-%   roiListShown : subset displayed
-%   roiListAll   : all ROIs (kept for downstream processing; can also be used for stats later)
-%   dsKeys       : string array with exactly 2 keys: dsKeys(1)=A, dsKeys(2)=B
-%
-% OUTPUT
-%   out.axes(1)      : axes handle
-%   out.classNames{1}: class names used
-%
-% NOTES
-% - mismatch markers are drawn as ONE alpha overlay image (fast)
-% - if one series is totally absent for a ROI (all NaN), no marker is drawn for that ROI
-% - marker placement: bottom of A (top trace) and top of B (bottom trace)
+% DEBUG:
+%   Enable by passing args.DebugCompare = true (and optionally args.DebugMaxRoiPrint)
+
+% -------------------------
+% Debug options
+% -------------------------
+dbg = true;
+dbgMax = 5;
+try
+    if isfield(args,'DebugCompare'), dbg = logical(args.DebugCompare); end
+    if isfield(args,'DebugMaxRoiPrint'), dbgMax = max(0, round(args.DebugMaxRoiPrint)); end
+catch
+end
+
+dprintf = @(varargin) fprintf(varargin{:});
+dline   = @() fprintf('\n');
+
+if dbg
+    dline();
+    dprintf('[compare] ===== batonnets_renderCompareBatonnets =====\n');
+    dprintf('[compare] roiListShown=%d, roiListAll=%d\n', numel(roiListShown), numel(roiListAll));
+    dprintf('[compare] H=%d W=%d Gcmp=%d Groi=%d\n', H, W, Gcmp, Groi);
+    dprintf('[compare] dsKeys: (%d)\n', numel(dsKeys));
+    disp(dsKeys);
+    try
+        dprintf('[compare] globalLabelMap.Count=%d, globalLabels=%d, globalCmap=%dx%d\n', ...
+            globalLabelMap.Count, numel(globalLabels), size(globalCmap,1), size(globalCmap,2));
+    catch
+    end
+end
 
 ax = nexttile(tl);
 out.axes = ax;
 ax.YDir = 'normal';
 ax.Box  = 'off';
+
+% --- ds keys
+if numel(dsKeys) < 2
+    if dbg
+        dprintf('[compare] ERROR: dsKeys has <2 elements\n');
+    end
+    text(ax, 0.5, 0.5, "Compare needs 2 dsKeys", 'Units','normalized','HorizontalAlignment','center');
+    return;
+end
 
 dsKeyA = dsKeys(1);
 dsKeyB = dsKeys(2);
@@ -30,19 +52,51 @@ dsKeyB = dsKeys(2);
 [dsNameA, varNameA] = localSplitKey(dsKeyA);
 [dsNameB, varNameB] = localSplitKey(dsKeyB);
 
-% compute CA/CB on SHOWN only (fast display)
+if dbg
+    dprintf('[compare] dsKeyA=%s | split: ds=%s var=%s\n', string(dsKeyA), dsNameA, varNameA);
+    dprintf('[compare] dsKeyB=%s | split: ds=%s var=%s\n', string(dsKeyB), dsNameB, varNameB);
+end
+
+% -------------------------
+% Collect sequences (shown only)
+% -------------------------
 [seqA, TmaxA] = localCollectSequences(roiListShown, dsKeyA);
 [seqB, TmaxB] = localCollectSequences(roiListShown, dsKeyB);
 Tmax = max(TmaxA, TmaxB);
 
+if dbg
+    dprintf('[compare] localCollectSequences: TmaxA=%d TmaxB=%d Tmax=%d\n', TmaxA, TmaxB, Tmax);
+    dprintf('[compare] seqA cells=%d, seqB cells=%d\n', numel(seqA), numel(seqB));
+end
+
 % ---------------------------------------------------------
-% NEW: drop ROIs for which A or B is totally missing
+% Drop ROIs for which A or B is totally missing
 % ---------------------------------------------------------
 absA = localSeqCellIsAbsent(seqA);
 absB = localSeqCellIsAbsent(seqB);
 keep = ~(absA | absB);
 
+if dbg
+    dprintf('[compare] absent A: %d/%d, absent B: %d/%d\n', nnz(absA), numel(absA), nnz(absB), numel(absB));
+    dprintf('[compare] keep: %d/%d\n', nnz(keep), numel(keep));
+    if dbgMax > 0
+        ii = find(true(size(keep)));
+        ii = ii(1:min(numel(ii), dbgMax));
+        for k = 1:numel(ii)
+            r = ii(k);
+            la = 0; lb = 0;
+            try, la = numel(seqA{r}); end
+            try, lb = numel(seqB{r}); end
+            dprintf('[compare] ROI #%d label="%s" lenA=%d lenB=%d absA=%d absB=%d keep=%d\n', ...
+                r, string(roiListShown(r).label), la, lb, absA(r), absB(r), keep(r));
+        end
+    end
+end
+
 if ~any(keep)
+    if dbg
+        dprintf('[compare] No comparable data after keep-filter.\n');
+    end
     text(ax, 0.5, 0.5, "No comparable data", 'Units','normalized', ...
         'HorizontalAlignment','center');
     return;
@@ -57,21 +111,73 @@ TmaxA = localMaxLen(seqA);
 TmaxB = localMaxLen(seqB);
 Tmax  = max(TmaxA, TmaxB);
 
+if dbg
+    dprintf('[compare] after keep: roiListShown=%d, TmaxA=%d TmaxB=%d Tmax=%d\n', numel(roiListShown), TmaxA, TmaxB, Tmax);
+end
 
 if Tmax == 0
+    if dbg, dprintf('[compare] Tmax==0 -> No data\n'); end
     text(ax, 0.5, 0.5, "No data", 'Units','normalized', 'HorizontalAlignment','center');
     return;
 end
 
+% -------------------------
+% Build index matrices CA/CB
+% -------------------------
 [CA, CB, classNames, cmap, isLabel] = localBuildCompareIndexMatrices( ...
     seqA, seqB, Tmax, globalLabelMap, globalCmap, args.NumbersColormapName);
 
-% stack: [2*nROI x T]
+if dbg
+    dprintf('[compare] build matrices: CA=%dx%d CB=%dx%d isLabel=%d\n', size(CA,1), size(CA,2), size(CB,1), size(CB,2), isLabel);
+    dprintf('[compare] classNames=%d cmap=%dx%d\n', numel(classNames), size(cmap,1), size(cmap,2));
+
+    % Quick mismatch stats on indices
+    try
+        m = (CA ~= CB) & ~isnan(CA) & ~isnan(CB);
+        dprintf('[compare] mismatch frames (index space): %d / %d (%.2f%%)\n', nnz(m), nnz(~isnan(CA) & ~isnan(CB)), 100*nnz(m)/max(1,nnz(~isnan(CA) & ~isnan(CB))));
+    catch
+    end
+
+    % Preview first few sequences (raw)
+    if dbgMax > 0
+        nPrev = min(numel(seqA), dbgMax);
+        for i = 1:nPrev
+            a = seqA{i}; b = seqB{i};
+            if isLabel
+                sa = localToStringLabels(a); sb = localToStringLabels(b);
+                ua = unique(strtrim(sa)); ua = ua(strlength(ua)>0);
+                ub = unique(strtrim(sb)); ub = ub(strlength(ub)>0);
+                dprintf('[compare] ROIprev #%d "%s": uniqA(%d)=%s | uniqB(%d)=%s\n', ...
+                    i, string(roiListShown(i).label), numel(ua), join(ua(1:min(5,end)),","), numel(ub), join(ub(1:min(5,end)),","));
+            else
+                xa = []; xb = [];
+                try, xa = double(a(:)); end
+                try, xb = double(b(:)); end
+                xa = xa(~isnan(xa)); xb = xb(~isnan(xb));
+                ra = "[empty]"; rb = "[empty]";
+                if ~isempty(xa), ra = sprintf('[%.3g..%.3g] n=%d', min(xa), max(xa), numel(xa)); end
+                if ~isempty(xb), rb = sprintf('[%.3g..%.3g] n=%d', min(xb), max(xb), numel(xb)); end
+                dprintf('[compare] ROIprev #%d "%s": rangeA=%s rangeB=%s\n', i, string(roiListShown(i).label), ra, rb);
+            end
+        end
+    end
+end
+
+% -------------------------
+% Stack A/B : [2*nROI x T]
+% -------------------------
 nROI = numel(roiListShown);
 C2 = NaN(2*nROI, Tmax);
 C2(1:2:end,:) = CA;
 C2(2:2:end,:) = CB;
 
+if dbg
+    dprintf('[compare] stacked C2=%dx%d\n', size(C2,1), size(C2,2));
+end
+
+% -------------------------
+% Render + mismatch overlay
+% -------------------------
 localRenderCompareOnAxis(ax, C2, cmap, H, W, Gcmp, Groi);
 localOverlayMismatchPixels(ax, CA, CB, H, W, Gcmp, Groi);
 
@@ -102,12 +208,16 @@ if args.ShowColorbar
     cb.TickLabelInterpreter = 'none';
 end
 
-% NOTE: stats figure sur roiListAll -> on la fait dans un autre script (ou plus tard)
-% pour rester à 3 fichiers max.
 out.roiListAll_forStats = roiListAll;
 out.dsKeysCompare = dsKeys;
 
+if dbg
+    dprintf('[compare] DONE renderCompare.\n');
+    dprintf('[compare] ===========================================\n');
 end
+
+end
+
 
 % =========================
 % Local helpers (compare)
@@ -123,10 +233,22 @@ seqs = cell(numel(roiList),1);
 Tmax = 0;
 for iR = 1:numel(roiList)
     rr = roiList(iR).roiObj;
+    needLoad = true;
+
+try
+    if isprop(rr,'data') && ~isempty(rr.data) && ~isempty(rr.data(1).data)
+        needLoad = false;
+    end
+end
+
+if needLoad
     try
-        if ismethod(rr,'load'), rr.load('data'); end
+        if ismethod(rr,'load')
+            rr.load('data');
+        end
     catch
     end
+end
     s = localGetSequenceForKey(rr, dsKey);
     s = s(:)'; % row
     seqs{iR} = s;

@@ -100,7 +100,21 @@ else
 end
 
 ax = axes('Parent', f, 'Units','normalized', 'Position',[0.08 0.12 0.85 0.8]); %#ok<LAXES>
-localPlotConfusion(ax, cm, classNames, ttl, stats.mismatchRate, stats.nPairs);
+cc = localPlotConfusion(ax, cm, classNames, ttl, stats.mismatchRate, stats.nPairs);
+
+% --- export-friendly handles + extra metrics ---
+stats.figure = f;
+stats.confusionchart = [];
+try, stats.confusionchart = cc; catch, end
+
+% Simple global metrics
+try
+    tot = sum(cm(:));
+    diagv = sum(diag(cm));
+    stats.accuracy = diagv / max(1, tot);
+catch
+    stats.accuracy = NaN;
+end
 
 end
 
@@ -112,10 +126,22 @@ seqs = cell(numel(roiList),1);
 Tmax = 0;
 for iR = 1:numel(roiList)
     rr = roiList(iR).roiObj;
+    needLoad = true;
+
+try
+    if isprop(rr,'data') && ~isempty(rr.data) && ~isempty(rr.data(1).data)
+        needLoad = false;
+    end
+end
+
+if needLoad
     try
-        if ismethod(rr,'load'), rr.load('data'); end
+        if ismethod(rr,'load')
+            rr.load('data');
+        end
     catch
     end
+end
     s = localGetSequenceForKey(rr, dsKey);
     s = s(:)'; % row
     seqs{iR} = s;

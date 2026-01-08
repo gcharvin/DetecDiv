@@ -1,6 +1,7 @@
 classdef classi < handle
     properties
         id=[] % number that identifies the classification algo
+        florian=[]
 
         typeid=1; % default category for classification found the classilist.mat file in the classification folde
         trainingset=[]; % % list of ROI ids used for training
@@ -487,7 +488,12 @@ diary(consoleFile);
 
 % Update state
 obj.run.active      = true;
-obj.run.runDir      = runDir;
+
+%obj.run.runDir      = runDir;
+obj.run.runDirAbs = runDir;
+%obj.run.runDir    = fullfile('runs', string(runDir(numel(base)+2:end))); % ou plus simple :
+obj.run.runDir    = fullfile('runs', string(extractAfter(runDir, [base filesep])));
+
 obj.run.consoleFile = consoleFile;
 obj.run.eventsFile  = fullfile(runDir,'events.log');
 obj.run.metaFile    = fullfile(runDir,'run.json');

@@ -52,8 +52,15 @@ arguments
     args.EventRulesByKey = []   % containers.Map(char -> struct array)
     args.EventWidthFrames (1,1) double = 3   % largeur marqueur event en frames
     args.MatchMaxDtFrames(1,1) double = 10
+    args.ClassifierInfo = []   % struct from ROIclassiMismatchGUI (ownerVarStr/strid/path/run/exists)
+
 
 end
+
+logf = @(varargin) fprintf('[batonnets_proceedRender %s] %s\n', ...
+    datestr(now,'HH:MM:SS.FFF'), sprintf(varargin{:}));
+
+dbg=true;
 
 % --- normalize EventRulesByKey ---
 if isempty(args.EventRulesByKey)
@@ -73,6 +80,12 @@ if isnan(args.GapROI),     Groi = max(1, round(H/3)); else, Groi = max(0, round(
 if isnan(args.GapCompare), Gcmp = max(1, round(H/6)); else, Gcmp = max(0, round(args.GapCompare)); end
 
 doCompare = args.Compare && (numel(dsKeys) == 2);
+
+if ~isempty(args.ClassifierInfo) && isstruct(args.ClassifierInfo) ...
+        && isfield(args.ClassifierInfo,'exists') && args.ClassifierInfo.exists
+    fprintf('[batonnets_proceedRender] classifier=%s\n', args.ClassifierInfo.ownerVarStr);
+end
+
 
 % --- figure ---
 if isempty(args.FigureHandle) || ~ishandle(args.FigureHandle)
@@ -107,11 +120,39 @@ out.globalLabels  = globalLabels;
 out.globalLabelMap = globalLabelMap;
 
 out.compareStats = [];
+out.classifierInfo = args.ClassifierInfo;
+
+runDirAbs = localResolveRunDirAbs_(out.classifierInfo);
+out.runDirAbs = runDirAbs;
+
 % --- dispatch ---
 if ~doCompare
     out = batonnets_renderStackedBatonnets(out, tl, roiListShown, dsKeys, ...
         H, W, Groi, globalLabelMap, globalCmap, args);
 else
+
+
+    % --- DEBUG rules ---
+disp("---- DEBUG EventRulesByKey ----")
+disp("dsKeys used:");
+disp(dsKeys)
+
+if isa(args.EventRulesByKey,'containers.Map')
+    disp("Map keys:");
+    disp(string(args.EventRulesByKey.keys))
+end
+
+for k = 1:numel(dsKeys)
+    kk = char(dsKeys(k));
+    if isKey(args.EventRulesByKey, kk)
+        rr = args.EventRulesByKey(kk);
+        fprintf("rules for %s: %d\n", kk, numel(rr));
+        if ~isempty(rr), disp(rr(1)); end
+    else
+        fprintf("NO rules found for %s\n", kk);
+    end
+end
+
     out = batonnets_renderCompareBatonnets(out, tl, roiListShown, roiListAll, dsKeys, ...
         H, W, Gcmp, Groi, globalLabelMap, globalLabels, globalCmap, args);
 
@@ -121,7 +162,8 @@ else
            'FigureHandle', args.StatsFigureHandle, ...
            'Title', "Compare stats");
         end
-
+        
+    
         % --- events (compare) ---
 if ~isempty(args.EventRulesByKey) && isa(args.EventRulesByKey,'containers.Map') ...
         && args.EventRulesByKey.Count > 0
@@ -132,11 +174,243 @@ end
 
 end
 
+% ----------------------------------------------------------
+% EXPORTS to runDir (if available)
+% ----------------------------------------------------------
+if dbg
+    if isempty(runDirAbs)
+        logf('EXPORTS skipped: runDirAbs is empty');
+    else
+        logf('EXPORTS enabled: runDirAbs = %s', runDirAbs);
+    end
+end
+
+
+if ~isempty(runDirAbs)
+
+    if dbg
+        logf('EXPORT figure: batonnets_main');
+    end
+    % Main batonnets figure
+    localSafeFigureExport_(out.figure, runDirAbs, "batonnets_main");
+
+    % Compare stats figure (from out.compareStats.figure)
+       try
+        if isfield(out,'compareStats') && isstruct(out.compareStats) ...
+                && isfield(out.compareStats,'figure') && ishandle(out.compareStats.figure)
+
+            if dbg
+                logf('EXPORT figure: batonnets_compareStats');
+            end
+            localSafeFigureExport_(out.compareStats.figure, runDirAbs, "batonnets_compareStats");
+        elseif dbg
+            logf('EXPORT figure skipped: compareStats.figure not found');
+        end
+    catch ME
+        if dbg
+            logf('EXPORT figure FAILED: batonnets_compareStats (%s)', ME.message);
+        end
+    end
+
+
+    % Events figures
+      try
+        if isfield(out,'eventsFigure') && ishandle(out.eventsFigure)
+            if dbg
+                logf('EXPORT figure: batonnets_events');
+            end
+            localSafeFigureExport_(out.eventsFigure, runDirAbs, "batonnets_events");
+        elseif dbg
+            logf('EXPORT figure skipped: eventsFigure not found');
+        end
+
+        if isfield(out,'eventsStatsFigure') && ishandle(out.eventsStatsFigure)
+            if dbg
+                logf('EXPORT figure: batonnets_eventsStats');
+            end
+            localSafeFigureExport_(out.eventsStatsFigure, runDirAbs, "batonnets_eventsStats");
+        elseif dbg
+            logf('EXPORT figure skipped: eventsStatsFigure not found');
+        end
+    catch ME
+        if dbg
+            logf('EXPORT events figures FAILED (%s)', ME.message);
+        end
+    end
+
+
+    % Save out struct for reproducibility
+       try
+        save(fullfile(runDirAbs,'batonnets_out.mat'),'out','dsKeys','args','-v7.3');
+        if dbg
+            logf('EXPORT MAT: batonnets_out.mat');
+        end
+    catch ME
+        if dbg
+            logf('EXPORT MAT FAILED (%s)', ME.message);
+        end
+    end
+
+
+    % Excel
+       try
+        localWriteExcelStrict_(runDirAbs, out, dsKeys, args);
+        if dbg
+            logf('EXPORT Excel: comparison tables written in %s', runDirAbs);
+        end
+    catch ME
+        if dbg
+            logf('EXPORT Excel FAILED (%s)', ME.message);
+        end
+    end
+end
+
+
 end
 
 % =========================
 % Local small helpers (main)
 % =========================
+
+function runDirAbs = localResolveRunDirAbs_(classifierInfo)
+runDirAbs = '';
+try
+    if isempty(classifierInfo) || ~isstruct(classifierInfo), return; end
+    if ~isfield(classifierInfo,'exists') || ~classifierInfo.exists, return; end
+    if ~isfield(classifierInfo,'path') || ~isfield(classifierInfo,'run'), return; end
+    if ~isfield(classifierInfo.run,'runDir'), return; end
+
+    base = char(string(classifierInfo.path));
+    rd   = char(string(classifierInfo.run.runDir));
+    if isempty(base) || isempty(rd), return; end
+
+    if ispc
+        isAbs = ~isempty(regexp(rd,'^[A-Za-z]:[\\/]', 'once')) || startsWith(rd,'\\');
+    else
+        isAbs = startsWith(rd,'/');
+    end
+
+    if isAbs, runDirAbs = rd;
+    else,     runDirAbs = fullfile(base, rd);
+    end
+
+    if ~exist(runDirAbs,'dir'), mkdir(runDirAbs); end
+catch
+    runDirAbs = '';
+end
+end
+
+
+function localSafeFigureExport_(figH, runDirAbs, baseName)
+if isempty(runDirAbs) || ~exist(runDirAbs,'dir'), return; end
+if isempty(figH) || ~ishandle(figH), return; end
+try
+    png = fullfile(runDirAbs, baseName + ".png");
+    fig = fullfile(runDirAbs, baseName + ".fig");
+    try
+        exportgraphics(figH, png, 'Resolution', 200);
+    catch
+        saveas(figH, png);
+    end
+    try, savefig(figH, fig); catch, end
+catch
+end
+end
+
+
+function localWriteExcelStrict_(runDirAbs, out, dsKeys, args)
+
+xlsxFile = fullfile(runDirAbs, 'compare_metrics.xlsx');
+
+% ---------------- meta ----------------
+meta = table();
+meta.timestamp = datetime('now');
+meta.dsKeyA = ""; meta.dsKeyB = "";
+if numel(dsKeys) >= 1, meta.dsKeyA = dsKeys(1); end
+if numel(dsKeys) >= 2, meta.dsKeyB = dsKeys(2); end
+meta.nROIsAll   = out.nROIsAll;
+meta.nROIsShown = out.nROIsShown;
+meta.Compare = args.Compare;
+writetable(meta, xlsxFile, 'Sheet','meta', 'WriteMode','overwritesheet');
+
+% ---------------- compareStats: confusion matrix + per-class ----------------
+if isfield(out,'compareStats') && isstruct(out.compareStats) && isfield(out.compareStats,'confusionMatrix')
+    cm = out.compareStats.confusionMatrix;
+    cn = string(out.compareStats.classNames(:));
+    if isempty(cn), cn = "class"+string(1:size(cm,1)); end
+
+    % Confusion as table with row/col labels
+    Tcm = array2table(cm, 'VariableNames', matlab.lang.makeValidName(cn));
+    Tcm.Row = cn;
+    Tcm = movevars(Tcm,'Row','Before',1);
+    writetable(Tcm, xlsxFile, 'Sheet','compare_confusion', 'WriteMode','overwritesheet');
+
+    % Per-class recall/precision
+    diagv = diag(cm);
+    rowSum = sum(cm,2);
+    colSum = sum(cm,1)';
+    recall = diagv ./ max(1,rowSum);
+    precision = diagv ./ max(1,colSum);
+
+    Tpc = table(cn, diagv, rowSum, colSum, recall, precision, ...
+        'VariableNames',{'Class','TP','RowSum','ColSum','Recall','Precision'});
+    writetable(Tpc, xlsxFile, 'Sheet','compare_perclass', 'WriteMode','overwritesheet');
+
+    % Global
+    tot = sum(cm(:));
+    acc = sum(diagv) / max(1,tot);
+    misc = table(acc, out.compareStats.mismatchRate, out.compareStats.nPairs, ...
+        'VariableNames',{'Accuracy','MismatchRate','nPairs'});
+    writetable(misc, xlsxFile, 'Sheet','compare_summary', 'WriteMode','overwritesheet');
+else
+    writetable(table("no compareStats"), xlsxFile, 'Sheet','compare_summary', 'WriteMode','overwritesheet');
+end
+
+% ---------------- events / intervals stats (from out.eventsStats) ----------------
+if isfield(out,'eventsStats') && isstruct(out.eventsStats)
+
+    % events summary
+    e = out.eventsStats.events;
+    Te = struct2table(e);
+    writetable(Te, xlsxFile, 'Sheet','events_summary', 'WriteMode','overwritesheet');
+
+    % dt histogram
+    dh = out.eventsStats.events.dtHist;
+    Tdh = table(dh.edges(1:end-1)', dh.edges(2:end)', dh.counts(:), ...
+        'VariableNames',{'EdgeLeft','EdgeRight','Count'});
+    writetable(Tdh, xlsxFile, 'Sheet','events_dt_hist', 'WriteMode','overwritesheet');
+
+    % intervals summary
+    it = out.eventsStats.intervals;
+    % flatten a bit
+    Ti = table();
+    Ti.nMatched = it.nMatched;
+    Ti.durDiffAbs_median = it.durDiffAbs_median;
+    Ti.durDiffAbs_mean   = it.durDiffAbs_mean;
+    Ti.durDiffAbs_p90    = it.durDiffAbs_p90;
+    Ti.nTest = it.all.nTest;
+    Ti.nRef  = it.all.nRef;
+    Ti.medTest = it.all.medTest;
+    Ti.medRef  = it.all.medRef;
+    Ti.iqrTest = it.all.iqrTest;
+    Ti.iqrRef  = it.all.iqrRef;
+    Ti.ks2_p = it.all.ks2_p;
+    Ti.ks2_D = it.all.ks2_D;
+    writetable(Ti, xlsxFile, 'Sheet','intervals_summary', 'WriteMode','overwritesheet');
+
+    % intervals histogram (durDiff)
+    ih = out.eventsStats.intervals.durDiffHist;
+    Tih = table(ih.edges(1:end-1)', ih.edges(2:end)', ih.counts(:), ...
+        'VariableNames',{'EdgeLeft','EdgeRight','Count'});
+    writetable(Tih, xlsxFile, 'Sheet','intervals_hist', 'WriteMode','overwritesheet');
+
+else
+    writetable(table("no eventsStats"), xlsxFile, 'Sheet','events_summary', 'WriteMode','overwritesheet');
+end
+
+end
+
+
 function [roiListAll, roiListShown, idxShown] = localSampleROIs(roiList, maxShow, seed)
 roiListAll = roiList;
 nAll = numel(roiListAll);
