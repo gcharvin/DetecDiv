@@ -91,6 +91,63 @@ batVars = [ ...
 % which of these should be numeric? (spoiler: all)
 batIsNum = true(size(batVars));
 
+rows = table();
+K = numel(classif.classes);
+
+% ------------------------------------------------------------
+% Force a fixed schema across runs (prevents "split tables" in Excel)
+% ------------------------------------------------------------
+
+batFields = strings(size(batVars));
+for k = 1:numel(batVars)
+    batFields(k) = matlab.lang.makeValidName(char(batPrefix + batVars(k)));
+end
+
+coreFields = [ ...
+    "runDir","runName","timestamp","trainingFun","strid","backend", ...
+    "CNN_epochs","CNN_miniBatch","CNN_lr","CNN_net", ...
+    "LSTM_epochs","LSTM_miniBatch","LSTM_lr","LSTM_hidden","LSTM_L", ...
+    "hasCNN","hasLSTM", ...
+    "CNN_valAcc","CNN_trainAcc","CNN_valLoss","CNN_trainLoss","CNN_bestValAcc","CNN_bestValLoss", ...
+    "LSTM_valAcc","LSTM_trainAcc","LSTM_valLoss","LSTM_trainLoss","LSTM_bestValAcc","LSTM_bestValLoss", ...
+    "val_nROI","val_nClassified","val_nSkipped","val_nErrors","val_seconds", ...
+    "val_thr","val_accuracy","val_recall","val_fscore","val_N","val_comments", ...
+    "bestThreshold" ...
+];
+
+perClassFields = strings(1,0);
+for c = 1:K
+    perClassFields(end+1) = sprintf("val_c%d_accuracy",c); %#ok<AGROW>
+    perClassFields(end+1) = sprintf("val_c%d_recall",c);   %#ok<AGROW>
+    perClassFields(end+1) = sprintf("val_c%d_fscore",c);   %#ok<AGROW>
+    perClassFields(end+1) = sprintf("val_c%d_N",c);        %#ok<AGROW>
+end
+
+allFields = [batFields(:)' coreFields perClassFields];
+
+
+
+for i = 1:numel(d)
+
+    runDir = fullfile(d(i).folder, d(i).name);
+    jf = fullfile(runDir,'run.json');
+    if ~exist(jf,'file')
+        continue;
+    end
+
+    S = struct();
+
+    % ------------------------------------------------------------
+    % Initialize batonnets columns (always same fields across runs)
+    % ------------------------------------------------------------
+    for k = 1:numel(batVars)
+        fn = matlab.lang.makeValidName(char(batPrefix + batVars(k)));
+        if batIsNum(k)
+            S.(fn) = nan;
+        else
+            S.(fn) = "";
+        end
+    end
 
 
     S.runDir  = string(runDir);
@@ -295,6 +352,27 @@ if exist(fx,'file')==2 && ~isempty(batVars)
 end
 
 
+% ------------------------------------------------------------
+% Ensure S has ALL fields (same schema every row), then order them
+% ------------------------------------------------------------
+for kk = 1:numel(allFields)
+    fn = char(allFields(kk));
+    if ~isfield(S, fn)
+        % defaults by "kind"
+        if startsWith(string(fn),"bat_") || startsWith(string(fn),"val_c") || startsWith(string(fn),"CNN_") || startsWith(string(fn),"LSTM_") ...
+                || startsWith(string(fn),"val_") || string(fn)=="bestThreshold"
+            S.(fn) = nan;
+        elseif string(fn)=="hasCNN" || string(fn)=="hasLSTM"
+            S.(fn) = false;
+        else
+            S.(fn) = "";
+        end
+    end
+end
+
+% force stable order
+S = orderfields(S, cellstr(allFields));
+
 
     rows = [rows; struct2table(S,'AsArray',true)]; %#ok<AGROW>
 end
@@ -309,6 +387,14 @@ T = rows;
 % ---- sorting ----
 sortBy = lower(string(opt.SortBy));
 T = localSortTable(T, sortBy);
+
+vn = string(T.Properties.VariableNames);
+isBat = startsWith(vn,"bat_");
+
+idx = [find(~isBat).'; find(isBat).'];   % force column vectors, then vertical concat OK
+idx = idx(:).';                         % final row vector for indexing
+T = T(:, idx);
+
 
 % ---- outputs ----
 outDir = fullfile(classif.path,'runs');
@@ -655,4 +741,5 @@ if ~isempty(newFigs)
     try, close(newFigs); catch, end
 end
 end
+
 
