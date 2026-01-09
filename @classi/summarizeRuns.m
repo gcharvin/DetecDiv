@@ -56,17 +56,43 @@ if strlength(flt)>0
     d = d(keep);
 end
 
-rows = table();
-K = numel(classif.classes);
 
-for i = 1:numel(d)
-    runDir = fullfile(d(i).folder, d(i).name);
-    jf = fullfile(runDir,'run.json');
-    if ~exist(jf,'file')
-        continue;
-    end
+% ------------------------------------------------------------
+% Batonnets strict_summary: fixed set of columns we expect
+% ------------------------------------------------------------
+batPrefix = "bat_";
+batVars = [ ...
+    "Events_nTest"
+    "Events_nRef"
+    "Events_TP"
+    "Events_FP"
+    "Events_FN"
+    "Events_FP_rate_test"
+    "Events_FN_rate_ref"
+    "Events_TP_rate_test"
+    "Events_TP_rate_ref"
+    "Events_dtAbs_n"
+    "Events_dtAbs_median"
+    "Events_dtAbs_max"
+    "Intervals_nMatched"
+    "Intervals_durDiffAbs_median"
+    "Intervals_durDiffAbs_max"
+    "Intervals_All_nTest"
+    "Intervals_All_nRef"
+    "Intervals_All_medianTest"
+    "Intervals_All_medianRef"
+    "Intervals_All_KS2_p"
+    "Intervals_All_KS2_D"
+    "Intervals_Matched_corr_n"
+    "Intervals_Matched_corr_Pearson"
+    "Intervals_Matched_corr_Spearman" ...
+];
 
-    S = struct();
+% which of these should be numeric? (spoiler: all)
+batIsNum = true(size(batVars));
+
+
+
     S.runDir  = string(runDir);
     S.runName = string(d(i).name);
 
@@ -238,6 +264,38 @@ end
         end
     end
 
+    % ------------------------------------------------------------
+% Batonnets strict_summary (optional) -> add as columns
+% ------------------------------------------------------------
+fx = fullfile(runDir,'batonnets_compare_metrics.xlsx');
+if exist(fx,'file')==2 && ~isempty(batVars)
+    try
+        Tbat = readtable(fx,'Sheet','strict_summary');
+
+        if ~isempty(Tbat) && height(Tbat) >= 1
+            r = Tbat(1,:);
+
+            % normalize names once
+            vns = string(r.Properties.VariableNames(:));
+            vns = string(matlab.lang.makeUniqueStrings(matlab.lang.makeValidName(vns)));
+            r.Properties.VariableNames = cellstr(vns);
+
+            for k = 1:numel(batVars)
+                vnWanted = matlab.lang.makeValidName(char(batVars(k)));
+                fnOut    = matlab.lang.makeValidName(char(batPrefix + batVars(k)));
+
+                if ismember(vnWanted, string(r.Properties.VariableNames))
+                    val = r.(vnWanted);
+                    S.(fnOut) = localScalarNum(val);
+                end
+            end
+        end
+    catch
+    end
+end
+
+
+
     rows = [rows; struct2table(S,'AsArray',true)]; %#ok<AGROW>
 end
 
@@ -324,26 +382,55 @@ catch
 end
 end
 
+
 function n = localScalarNum(x)
 n = nan;
 try
     if isempty(x), return; end
-    if iscell(x), x = x{end}; end
-    if islogical(x), x = double(x); end
+
+    % unwrap table/cell
+    if istable(x)
+        x = x{1,1};
+    end
+    if iscell(x)
+        if isempty(x), return; end
+        x = x{end};
+    end
+    if iscategorical(x)
+        x = string(x);
+    end
+
+    % numeric/logical already OK
+    if islogical(x)
+        n = double(x(end));
+        return;
+    end
     if isnumeric(x)
         n = double(x(end));
         return;
     end
+
+    % parse string/char with possible decimal comma
     xs = string(x);
-    if strlength(xs)>0
-        nn = str2double(xs);
-        if ~isnan(nn)
-            n = nn;
-        end
+    xs = strtrim(xs);
+
+    if strlength(xs)==0, return; end
+
+    % IMPORTANT: decimal comma -> dot
+    xs = replace(xs, ",", ".");
+
+    % also remove spaces (some exports add them)
+    xs = replace(xs, " ", "");
+
+    nn = str2double(xs);
+    if ~isnan(nn)
+        n = nn;
     end
 catch
 end
 end
+
+
 
 function T = localMakeTableExcelSafe(T)
 % Avoid cell columns / weird objects for writetable(xlsx).
