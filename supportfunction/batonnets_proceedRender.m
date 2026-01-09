@@ -52,15 +52,13 @@ arguments
     args.EventRulesByKey = []   % containers.Map(char -> struct array)
     args.EventWidthFrames (1,1) double = 3   % largeur marqueur event en frames
     args.MatchMaxDtFrames(1,1) double = 10
-    args.ClassifierInfo = []   % struct from ROIclassiMismatchGUI (ownerVarStr/strid/path/run/exists)
-
-
+    args.Classifier = []   % struct from ROIclassiMismatchGUI (ownerVarStr/strid/path/run/exists)
 end
 
 logf = @(varargin) fprintf('[batonnets_proceedRender %s] %s\n', ...
     datestr(now,'HH:MM:SS.FFF'), sprintf(varargin{:}));
 
-dbg=true;
+dbg=false;
 
 % --- normalize EventRulesByKey ---
 if isempty(args.EventRulesByKey)
@@ -81,10 +79,7 @@ if isnan(args.GapCompare), Gcmp = max(1, round(H/6)); else, Gcmp = max(0, round(
 
 doCompare = args.Compare && (numel(dsKeys) == 2);
 
-if ~isempty(args.ClassifierInfo) && isstruct(args.ClassifierInfo) ...
-        && isfield(args.ClassifierInfo,'exists') && args.ClassifierInfo.exists
-    fprintf('[batonnets_proceedRender] classifier=%s\n', args.ClassifierInfo.ownerVarStr);
-end
+
 
 
 % --- figure ---
@@ -120,10 +115,22 @@ out.globalLabels  = globalLabels;
 out.globalLabelMap = globalLabelMap;
 
 out.compareStats = [];
-out.classifierInfo = args.ClassifierInfo;
+out.classifier = args.Classifier;
 
-runDirAbs = localResolveRunDirAbs_(out.classifierInfo);
+runDirAbs = localResolveRunDirAbs_(out.classifier);
 out.runDirAbs = runDirAbs;
+
+if dbg
+    try
+        rdRaw = '';
+        if ~isempty(out.classifier) && isfield(out.classifier,'run') && isfield(out.classifier.run,'runDir')
+            rdRaw = char(string(out.classifier.run.runDir));
+        end
+        logf('runDir resolve: base=%s | raw=%s | abs=%s', char(string(out.classifier.path)), rdRaw, runDirAbs);
+    catch
+    end
+end
+
 
 % --- dispatch ---
 if ~doCompare
@@ -272,33 +279,88 @@ end
 % Local small helpers (main)
 % =========================
 
-function runDirAbs = localResolveRunDirAbs_(classifierInfo)
+
+
+function runDirAbs = localResolveRunDirAbs_(classifier)
 runDirAbs = '';
+
 try
-    if isempty(classifierInfo) || ~isstruct(classifierInfo), return; end
-    if ~isfield(classifierInfo,'exists') || ~classifierInfo.exists, return; end
-    if ~isfield(classifierInfo,'path') || ~isfield(classifierInfo,'run'), return; end
-    if ~isfield(classifierInfo.run,'runDir'), return; end
 
-    base = char(string(classifierInfo.path));
-    rd   = char(string(classifierInfo.run.runDir));
-    if isempty(base) || isempty(rd), return; end
+    base = char(string(classifier.path));      % racine projet locale (sur cette machine)
+    rd0  = char(string(classifier.run.runDir)); % runDir tel que fourni (peut être relatif/abs/hybride)
 
-    if ispc
-        isAbs = ~isempty(regexp(rd,'^[A-Za-z]:[\\/]', 'once')) || startsWith(rd,'\\');
-    else
-        isAbs = startsWith(rd,'/');
+    if isempty(base) || isempty(rd0), return; end
+
+    % Normaliser séparateurs pour les tests
+    rd = rd0;
+    rd = strrep(rd, '/', filesep);
+    rd = strrep(rd, '\', filesep);
+
+    % Helpers
+    isAbsWin = ~isempty(regexp(rd,'^[A-Za-z]:[\\/]', 'once')) || startsWith(rd, ['\\' filesep]) || startsWith(rd, ['\\']);
+    isAbsUnix = startsWith(rd0,'/') || startsWith(rd,'/'); % rd0 pour être sûr
+
+    % ------------------------------------------------------------
+    % 1) CAS HYBRIDE DÉJÀ CASSÉ : "C:\...\viterbi_1\homes\...\runs\..."
+    %    => on rebased sur base + suffixe "\runs\..."
+    % ------------------------------------------------------------
+    if isAbsWin && contains(rd, [filesep 'homes' filesep])
+        k = strfind(rd, [filesep 'runs' filesep]);
+        if ~isempty(k)
+            suffix = rd(k(1):end);              % "\runs\...."
+            runDirAbs = fullfile(base, suffix); % fullfile gère le \runs\...
+            if ~exist(runDirAbs,'dir'), mkdir(runDirAbs); end
+            return;
+        end
+        % si pas de "\runs\" trouvé : on garde tel quel (fallback)
+        runDirAbs = rd;
+        if ~exist(runDirAbs,'dir'), mkdir(runDirAbs); end
+        return;
     end
 
-    if isAbs, runDirAbs = rd;
-    else,     runDirAbs = fullfile(base, rd);
+    % ------------------------------------------------------------
+    % 2) CAS ABSOLU UNIX : "/homes/.../runs/...."
+    %    => on essaie de garder seulement "/runs/..." et on rebased sur base
+    % ------------------------------------------------------------
+    if isAbsUnix && ~isAbsWin
+        % normaliser en filesep
+        rdU = strrep(rd0, '/', filesep);
+        rdU = strrep(rdU, '\', filesep);
+
+        k = strfind(rdU, [filesep 'runs' filesep]);
+        if ~isempty(k)
+            suffix = rdU(k(1):end);             % "\runs\...."
+            runDirAbs = fullfile(base, suffix);
+        else
+            % Pas de "runs" : fallback -> tenter base + basename du dossier
+            [~, leaf] = fileparts(rdU);
+            runDirAbs = fullfile(base, 'runs', leaf);
+        end
+
+        if ~exist(runDirAbs,'dir'), mkdir(runDirAbs); end
+        return;
     end
 
+    % ------------------------------------------------------------
+    % 3) CAS ABSOLU WINDOWS : "C:\..." ou UNC "\\server\share\..."
+    % ------------------------------------------------------------
+    if isAbsWin
+        runDirAbs = rd;
+        if ~exist(runDirAbs,'dir'), mkdir(runDirAbs); end
+        return;
+    end
+
+    % ------------------------------------------------------------
+    % 4) CAS RELATIF : "runs\...."
+    % ------------------------------------------------------------
+    runDirAbs = fullfile(base, rd);
     if ~exist(runDirAbs,'dir'), mkdir(runDirAbs); end
+
 catch
     runDirAbs = '';
 end
 end
+
 
 
 function localSafeFigureExport_(figH, runDirAbs, baseName)
@@ -317,20 +379,25 @@ catch
 end
 end
 
-
 function localWriteExcelStrict_(runDirAbs, out, dsKeys, args)
 
-xlsxFile = fullfile(runDirAbs, 'compare_metrics.xlsx');
+xlsxFile = fullfile(runDirAbs, 'batonnets_compare_metrics.xlsx');
 
 % ---------------- meta ----------------
 meta = table();
 meta.timestamp = datetime('now');
 meta.dsKeyA = ""; meta.dsKeyB = "";
-if numel(dsKeys) >= 1, meta.dsKeyA = dsKeys(1); end
-if numel(dsKeys) >= 2, meta.dsKeyB = dsKeys(2); end
-meta.nROIsAll   = out.nROIsAll;
-meta.nROIsShown = out.nROIsShown;
-meta.Compare = args.Compare;
+if numel(dsKeys) >= 1, meta.dsKeyA = string(dsKeys(1)); end
+if numel(dsKeys) >= 2, meta.dsKeyB = string(dsKeys(2)); end
+
+meta.nROIsAll   = NaN;
+meta.nROIsShown = NaN;
+try, meta.nROIsAll = out.nROIsAll; end
+try, meta.nROIsShown = out.nROIsShown; end
+
+meta.Compare = false;
+try, meta.Compare = logical(args.Compare); end
+
 writetable(meta, xlsxFile, 'Sheet','meta', 'WriteMode','overwritesheet');
 
 % ---------------- compareStats: confusion matrix + per-class ----------------
@@ -340,15 +407,20 @@ if isfield(out,'compareStats') && isstruct(out.compareStats) && isfield(out.comp
     if isempty(cn), cn = "class"+string(1:size(cm,1)); end
 
     % Confusion as table with row/col labels
-    Tcm = array2table(cm, 'VariableNames', matlab.lang.makeValidName(cn));
-    Tcm.Row = cn;
-    Tcm = movevars(Tcm,'Row','Before',1);
-    writetable(Tcm, xlsxFile, 'Sheet','compare_confusion', 'WriteMode','overwritesheet');
+    % Confusion as table with row/col labels
+Tcm = array2table(cm, 'VariableNames', matlab.lang.makeValidName(cn));
+
+% Ajouter une vraie colonne "Class" (robuste Excel)
+Tcm = addvars(Tcm, cn(:), 'Before', 1, 'NewVariableNames', "Class");
+
+writetable(Tcm, xlsxFile, 'Sheet','compare_confusion', 'WriteMode','overwritesheet');
+
 
     % Per-class recall/precision
     diagv = diag(cm);
     rowSum = sum(cm,2);
     colSum = sum(cm,1)';
+
     recall = diagv ./ max(1,rowSum);
     precision = diagv ./ max(1,colSum);
 
@@ -359,56 +431,253 @@ if isfield(out,'compareStats') && isstruct(out.compareStats) && isfield(out.comp
     % Global
     tot = sum(cm(:));
     acc = sum(diagv) / max(1,tot);
-    misc = table(acc, out.compareStats.mismatchRate, out.compareStats.nPairs, ...
-        'VariableNames',{'Accuracy','MismatchRate','nPairs'});
+
+    mm = NaN; np = NaN;
+    try, mm = out.compareStats.mismatchRate; end
+    try, np = out.compareStats.nPairs; end
+
+    misc = table(acc, mm, np, 'VariableNames',{'Accuracy','MismatchRate','nPairs'});
     writetable(misc, xlsxFile, 'Sheet','compare_summary', 'WriteMode','overwritesheet');
 else
     writetable(table("no compareStats"), xlsxFile, 'Sheet','compare_summary', 'WriteMode','overwritesheet');
 end
 
-% ---------------- events / intervals stats (from out.eventsStats) ----------------
+% ---------------- events / intervals stats (STRICT metrics) ----------------
+% We will write ONE strict summary sheet + keep your existing sheets (hist etc.) if available.
+
+Tstrict = table();
+
+% ---------------- EVENTS strict ----------------
+% Default NaNs
+E_nTest = NaN; E_nRef = NaN; E_TP = NaN; E_FP = NaN; E_FN = NaN;
+E_FP_rate_test = NaN; E_FN_rate_ref = NaN;
+E_TP_rate_test = NaN; E_TP_rate_ref = NaN;
+
+DT_n = 0; DT_median = NaN; DT_max = NaN;
+
+if isfield(out,'eventsStats') && isstruct(out.eventsStats) && isfield(out.eventsStats,'events') && isstruct(out.eventsStats.events)
+    e = out.eventsStats.events;
+
+    % counts
+    if isfield(e,'nTest'), E_nTest = double(e.nTest); end
+    if isfield(e,'nRef'),  E_nRef  = double(e.nRef);  end
+    if isfield(e,'TP'),    E_TP    = double(e.TP);    end
+    if isfield(e,'FP'),    E_FP    = double(e.FP);    end
+    if isfield(e,'FN'),    E_FN    = double(e.FN);    end
+
+    % rates (strictly as requested)
+    if isfinite(E_nTest) && E_nTest > 0
+        E_FP_rate_test = E_FP / E_nTest;
+        E_TP_rate_test = E_TP / E_nTest;
+    end
+    if isfinite(E_nRef) && E_nRef > 0
+        E_FN_rate_ref = E_FN / E_nRef;
+        E_TP_rate_ref = E_TP / E_nRef;
+    end
+
+    % dt stats (use e.dt if present, else compute from hist if possible)
+    if isfield(e,'dt') && isstruct(e.dt)
+        if isfield(e.dt,'n'),      DT_n      = double(e.dt.n); end
+        if isfield(e.dt,'median'), DT_median = double(e.dt.median); end
+        if isfield(e.dt,'max'),    DT_max    = double(e.dt.max); end
+    end
+
+    % If max missing but we have out.dtAll (or can infer)
+    if ~isfinite(DT_max)
+        try
+            if isfield(out,'dtAll') && ~isempty(out.dtAll)
+                x = abs(double(out.dtAll(:)));
+                x = x(isfinite(x));
+                if ~isempty(x)
+                    DT_max = max(x);
+                    if ~isfinite(DT_median), DT_median = median(x,'omitnan'); end
+                    DT_n = numel(x);
+                end
+            end
+        catch
+        end
+    end
+end
+
+% Populate strict events columns
+Tstrict.Events_nTest = E_nTest;
+Tstrict.Events_nRef  = E_nRef;
+
+Tstrict.Events_TP = E_TP;
+Tstrict.Events_FP = E_FP;
+Tstrict.Events_FN = E_FN;
+
+Tstrict.Events_FP_rate_test = E_FP_rate_test;  % FP / nTest
+Tstrict.Events_FN_rate_ref  = E_FN_rate_ref;   % FN / nRef
+Tstrict.Events_TP_rate_test = E_TP_rate_test;  % TP / nTest
+Tstrict.Events_TP_rate_ref  = E_TP_rate_ref;   % TP / nRef
+
+Tstrict.Events_dtAbs_n      = DT_n;
+Tstrict.Events_dtAbs_median = DT_median;
+Tstrict.Events_dtAbs_max    = DT_max;
+
+% ---------------- INTERVALS strict ----------------
+% Defaults
+I_nMatched = NaN;
+I_durDiffAbs_median = NaN;
+I_durDiffAbs_max    = NaN;
+
+I_nTestAll = NaN;
+I_nRefAll  = NaN;
+I_medTestAll = NaN;
+I_medRefAll  = NaN;
+
+I_ks2_p = NaN;
+I_ks2_D = NaN;
+
+I_corr_pearson  = NaN;
+I_corr_spearman = NaN;
+I_corr_n = 0;
+
+% Pull from out.eventsStats if present
+if isfield(out,'eventsStats') && isstruct(out.eventsStats) && isfield(out.eventsStats,'intervals') && isstruct(out.eventsStats.intervals)
+
+    it = out.eventsStats.intervals;
+
+    if isfield(it,'nMatched'), I_nMatched = double(it.nMatched); end
+    if isfield(it,'durDiffAbs_median'), I_durDiffAbs_median = double(it.durDiffAbs_median); end
+
+    % max: prefer computing from out.intervalDurDiffAll (matched diffs)
+    try
+        if isfield(out,'intervalDurDiffAll') && ~isempty(out.intervalDurDiffAll)
+            x = double(out.intervalDurDiffAll(:));
+            x = x(isfinite(x));
+            if ~isempty(x)
+                I_durDiffAbs_max = max(x);
+                if ~isfinite(I_durDiffAbs_median)
+                    I_durDiffAbs_median = median(x,'omitnan');
+                end
+                if ~isfinite(I_nMatched)
+                    I_nMatched = numel(x);
+                end
+            end
+        end
+    catch
+    end
+
+    if isfield(it,'all') && isstruct(it.all)
+        if isfield(it.all,'nTest'),   I_nTestAll = double(it.all.nTest); end
+        if isfield(it.all,'nRef'),    I_nRefAll  = double(it.all.nRef);  end
+        if isfield(it.all,'medTest'), I_medTestAll = double(it.all.medTest); end
+        if isfield(it.all,'medRef'),  I_medRefAll  = double(it.all.medRef);  end
+        if isfield(it.all,'ks2_p'),   I_ks2_p = double(it.all.ks2_p); end
+        if isfield(it.all,'ks2_D'),   I_ks2_D = double(it.all.ks2_D); end
+    end
+end
+
+% Correlation REF/TEST for matched intervals
+% Prefer intervalMatchedLinkFramesAll = [t0 t1 r0 r1]
+try
+    if isfield(out,'intervalMatchedLinkFramesAll') && ~isempty(out.intervalMatchedLinkFramesAll)
+        L = double(out.intervalMatchedLinkFramesAll);
+        if size(L,2) >= 4
+            durT = L(:,2) - L(:,1);
+            durR = L(:,4) - L(:,3);
+
+            ok = isfinite(durT) & isfinite(durR) & (durT > 0) & (durR > 0);
+            durT = durT(ok);
+            durR = durR(ok);
+
+            I_corr_n = numel(durT);
+            if I_corr_n >= 2
+                I_corr_pearson  = corr(durR(:), durT(:), 'Rows','complete', 'Type','Pearson');
+                I_corr_spearman = corr(durR(:), durT(:), 'Rows','complete', 'Type','Spearman');
+            end
+
+            % also compute durDiff max/median if missing
+            if ~isfinite(I_durDiffAbs_max) || ~isfinite(I_durDiffAbs_median)
+                dd = abs(durT - durR);
+                if ~isempty(dd)
+                    if ~isfinite(I_durDiffAbs_max),    I_durDiffAbs_max    = max(dd); end
+                    if ~isfinite(I_durDiffAbs_median), I_durDiffAbs_median = median(dd,'omitnan'); end
+                    if ~isfinite(I_nMatched),          I_nMatched          = numel(dd); end
+                end
+            end
+        end
+    end
+catch
+end
+
+% Fill strict interval columns
+Tstrict.Intervals_nMatched = I_nMatched;
+Tstrict.Intervals_durDiffAbs_median = I_durDiffAbs_median;
+Tstrict.Intervals_durDiffAbs_max    = I_durDiffAbs_max;
+
+Tstrict.Intervals_All_nTest = I_nTestAll;
+Tstrict.Intervals_All_nRef  = I_nRefAll;
+Tstrict.Intervals_All_medianTest = I_medTestAll;
+Tstrict.Intervals_All_medianRef  = I_medRefAll;
+
+Tstrict.Intervals_All_KS2_p = I_ks2_p;
+Tstrict.Intervals_All_KS2_D = I_ks2_D;
+
+Tstrict.Intervals_Matched_corr_n = I_corr_n;
+Tstrict.Intervals_Matched_corr_Pearson  = I_corr_pearson;
+Tstrict.Intervals_Matched_corr_Spearman = I_corr_spearman;
+
+% Write strict summary
+writetable(Tstrict, xlsxFile, 'Sheet','strict_summary', 'WriteMode','overwritesheet');
+
+% ---------------- Keep your existing detailed sheets (optional) ----------------
 if isfield(out,'eventsStats') && isstruct(out.eventsStats)
 
-    % events summary
-    e = out.eventsStats.events;
-    Te = struct2table(e);
-    writetable(Te, xlsxFile, 'Sheet','events_summary', 'WriteMode','overwritesheet');
+    % events summary (keep, but now you also have strict_summary)
+    try
+        e = out.eventsStats.events;
+        Te = struct2table(e);
+        writetable(Te, xlsxFile, 'Sheet','events_summary', 'WriteMode','overwritesheet');
+    catch
+    end
 
     % dt histogram
-    dh = out.eventsStats.events.dtHist;
-    Tdh = table(dh.edges(1:end-1)', dh.edges(2:end)', dh.counts(:), ...
-        'VariableNames',{'EdgeLeft','EdgeRight','Count'});
-    writetable(Tdh, xlsxFile, 'Sheet','events_dt_hist', 'WriteMode','overwritesheet');
+    try
+        dh = out.eventsStats.events.dtHist;
+        Tdh = table(dh.edges(1:end-1)', dh.edges(2:end)', dh.counts(:), ...
+            'VariableNames',{'EdgeLeft','EdgeRight','Count'});
+        writetable(Tdh, xlsxFile, 'Sheet','events_dt_hist', 'WriteMode','overwritesheet');
+    catch
+    end
 
-    % intervals summary
-    it = out.eventsStats.intervals;
-    % flatten a bit
-    Ti = table();
-    Ti.nMatched = it.nMatched;
-    Ti.durDiffAbs_median = it.durDiffAbs_median;
-    Ti.durDiffAbs_mean   = it.durDiffAbs_mean;
-    Ti.durDiffAbs_p90    = it.durDiffAbs_p90;
-    Ti.nTest = it.all.nTest;
-    Ti.nRef  = it.all.nRef;
-    Ti.medTest = it.all.medTest;
-    Ti.medRef  = it.all.medRef;
-    Ti.iqrTest = it.all.iqrTest;
-    Ti.iqrRef  = it.all.iqrRef;
-    Ti.ks2_p = it.all.ks2_p;
-    Ti.ks2_D = it.all.ks2_D;
-    writetable(Ti, xlsxFile, 'Sheet','intervals_summary', 'WriteMode','overwritesheet');
+    % intervals summary (flatten)
+    try
+        it = out.eventsStats.intervals;
+        Ti = table();
+        Ti.nMatched = it.nMatched;
+        Ti.durDiffAbs_median = it.durDiffAbs_median;
+        Ti.durDiffAbs_mean   = it.durDiffAbs_mean;
+        Ti.durDiffAbs_p90    = it.durDiffAbs_p90;
+        Ti.nTest = it.all.nTest;
+        Ti.nRef  = it.all.nRef;
+        Ti.medTest = it.all.medTest;
+        Ti.medRef  = it.all.medRef;
+        Ti.iqrTest = it.all.iqrTest;
+        Ti.iqrRef  = it.all.iqrRef;
+        Ti.ks2_p = it.all.ks2_p;
+        Ti.ks2_D = it.all.ks2_D;
+        writetable(Ti, xlsxFile, 'Sheet','intervals_summary', 'WriteMode','overwritesheet');
+    catch
+    end
 
     % intervals histogram (durDiff)
-    ih = out.eventsStats.intervals.durDiffHist;
-    Tih = table(ih.edges(1:end-1)', ih.edges(2:end)', ih.counts(:), ...
-        'VariableNames',{'EdgeLeft','EdgeRight','Count'});
-    writetable(Tih, xlsxFile, 'Sheet','intervals_hist', 'WriteMode','overwritesheet');
+    try
+        ih = out.eventsStats.intervals.durDiffHist;
+        Tih = table(ih.edges(1:end-1)', ih.edges(2:end)', ih.counts(:), ...
+            'VariableNames',{'EdgeLeft','EdgeRight','Count'});
+        writetable(Tih, xlsxFile, 'Sheet','intervals_hist', 'WriteMode','overwritesheet');
+    catch
+    end
 
 else
     writetable(table("no eventsStats"), xlsxFile, 'Sheet','events_summary', 'WriteMode','overwritesheet');
 end
 
 end
+
 
 
 function [roiListAll, roiListShown, idxShown] = localSampleROIs(roiList, maxShow, seed)

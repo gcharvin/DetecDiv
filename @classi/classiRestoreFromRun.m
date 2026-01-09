@@ -254,6 +254,55 @@ if copyClassif && out.copied.classificationSnapshot.copied
     end
 end
 
+
+% ----------------------- update classif.run (inactive) -----------------------
+try
+    % Determine run folder name relative to <base>/runs
+    runDirAbs = runDir; % already absolute here
+    % Extract run name if it's under base/runs
+    baseRuns = fullfile(base,'runs');
+
+    relRun = '';
+    if startsWith(string(runDirAbs), string(baseRuns))
+        % rel path after ".../runs/"
+        relRun = char(string(runDirAbs));
+        relRun = relRun(numel(baseRuns)+2:end); % skip file sep
+        relRun = fullfile('runs', relRun);
+    else
+        % fallback: just take folder name
+        [~, rn] = fileparts(runDirAbs);
+        relRun = fullfile('runs', rn);
+    end
+
+    % Ensure run struct exists
+    if ~isprop(classif,'run') || isempty(classif.run) || ~isstruct(classif.run)
+        classif.run = struct( ...
+            'active', false, ...
+            'runDir', '', ...
+            'runDirAbs', '', ...
+            'consoleFile', '', ...
+            'eventsFile', '', ...
+            'metaFile', '', ...
+            'startTime', [], ...
+            'tag', '', ...
+            'fun', '' );
+    end
+
+    classif.run.active    = false;
+    classif.run.runDir    = relRun;
+    classif.run.runDirAbs = fullfile(base, relRun);
+
+    % standard rel files
+    classif.run.consoleFile = fullfile(relRun,'console.log');
+    classif.run.eventsFile  = fullfile(relRun,'events.log');
+    classif.run.metaFile    = fullfile(relRun,'run.json');
+
+    % Final normalization (defensive)
+    classif.runNormalizePaths();
+catch
+end
+
+
 % ----------------------- final log -----------------------
 logf('Restored classifier from run:\n  %s\n', runDir);
 logf('Destination base:\n  %s\n', base);

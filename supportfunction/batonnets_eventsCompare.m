@@ -19,7 +19,7 @@ elseif ~isa(rulesByKey,'containers.Map')
 end
 
 % ---- DEBUG options ----
-dbg = true;
+dbg = false;
 if isfield(args,'DebugEventsCompare') && ~isempty(args.DebugEventsCompare)
     dbg = logical(args.DebugEventsCompare);
 end
@@ -51,7 +51,8 @@ logf = @(varargin) fprintf('[eventsCompare %s] %s\n', datestr(now,'HH:MM:SS.FFF'
 
 if dbg
     logf('START batonnets_eventsCompare');
-    logf('dsKeys = {%s} , {%s}', string(dsKeys(1)), string(dsKeys(2)));
+    logf('dsKeys = {%s} , {%s}', char(string(dsKeys(1))), char(string(dsKeys(2))));
+
     logf('roiListAll=%d, roiListShown=%d', numel(roiListAll), numel(roiListShown));
 end
 
@@ -116,26 +117,34 @@ function S = localBuildExportStats(out, idxShown, matchMaxDtFrames)
 
 S = struct();
 
-% ---------- Events FP/FN/TP ----------
+% ---------- Events FP/FN/TP (NO artificial duplication) ----------
 nROI = numel(idxShown);
 nTestE = 0; nRefE = 0; nFP = 0; nFN = 0; nTP = 0;
 
 dtAll = [];
-if isfield(out,'dtAll') && ~isempty(out.dtAll)
-    dtAll = out.dtAll(:);
-end
 
 for iR = 1:nROI
     iAll = idxShown(iR);
-    evTest = out.events(iAll,1).events;
-    evRef  = out.events(iAll,2).events;
-    mt = localMatchEventsHungarianByName(evTest, evRef, matchMaxDtFrames);
+
+    % raw events
+    evTestRaw = out.events(iAll,1).events;
+    evRefRaw  = out.events(iAll,2).events;
+
+    % collapse start/end duplicates for STATS
+    evTest = localCollapseEventsForStats_(evTestRaw);
+    evRef  = localCollapseEventsForStats_(evRefRaw);
+
+    mt = localMatchEventsHungarianByName_IgnoreType_(evTest, evRef, matchMaxDtFrames);
 
     nTestE = nTestE + numel(evTest);
     nRefE  = nRefE  + numel(evRef);
     nFP    = nFP    + sum(mt.testUnmatched);
     nFN    = nFN    + sum(mt.refUnmatched);
     nTP    = nTP    + size(mt.pairs,1);
+
+    if isfield(mt,'dt') && ~isempty(mt.dt)
+        dtAll = [dtAll; mt.dt(:)]; %#ok<AGROW>
+    end
 end
 
 S.events = struct();
@@ -149,13 +158,13 @@ S.events.recall    = nTP / max(1,(nTP+nFN));
 S.events.fpFrac    = nFP / max(1,nTestE);
 S.events.fnFrac    = nFN / max(1,nRefE);
 
-% dt stats
+% dt stats (events)
 S.events.dt = struct();
 if ~isempty(dtAll)
     S.events.dt.n = numel(dtAll);
-    S.events.dt.median = median(dtAll,'omitnan');
-    S.events.dt.mean   = mean(dtAll,'omitnan');
-    S.events.dt.p90    = prctile(dtAll,90);
+    S.events.dt.median = median(abs(dtAll),'omitnan');
+    S.events.dt.mean   = mean(abs(dtAll),'omitnan');
+    S.events.dt.p90    = prctile(abs(dtAll),90);
 else
     S.events.dt.n = 0;
     S.events.dt.median = NaN;
@@ -165,7 +174,7 @@ end
 
 % dt histogram (fixed bins 0..matchMaxDtFrames by 0.5)
 binW = 0.5;
-edges = 0:binW:matchMaxDtFrames;
+edges = 0:binW:(matchMaxDtFrames+binW);
 if edges(end) < matchMaxDtFrames, edges(end+1)=matchMaxDtFrames; end
 if ~isempty(dtAll)
     counts = histcounts(abs(dtAll), edges);
@@ -174,7 +183,7 @@ else
 end
 S.events.dtHist = struct('edges',edges,'counts',counts,'binW',binW);
 
-% ---------- Intervals ----------
+% ---------- Intervals (unchanged, from precomputed aggregates if present) ----------
 durDiff = [];
 durTest = [];
 durRef  = [];
@@ -205,7 +214,6 @@ else
     S.intervals.durDiffAbs_p90    = NaN;
 end
 
-% Distributions (ALL intervals)
 S.intervals.all = struct();
 S.intervals.all.nTest = numel(durTest);
 S.intervals.all.nRef  = numel(durRef);
@@ -214,7 +222,6 @@ S.intervals.all.medRef  = median(durRef,'omitnan');
 S.intervals.all.iqrTest = iqr(durTest);
 S.intervals.all.iqrRef  = iqr(durRef);
 
-% KS2 test
 S.intervals.all.ks2_p = NaN;
 S.intervals.all.ks2_D = NaN;
 if numel(durTest) >= 2 && numel(durRef) >= 2
@@ -226,7 +233,6 @@ if numel(durTest) >= 2 && numel(durRef) >= 2
     end
 end
 
-% Histogram for durDiff
 binW2 = 1.0;
 mx = 0;
 if ~isempty(durDiff), mx = max(mx, max(durDiff)); end
@@ -336,7 +342,8 @@ seqLabels = seq;               % <-- FIX (on passe la séquence brute, la foncti
 E(iR,iDS).dsKey = dsKeyStr;
 
 if isempty(seqLabels)
-    E(iR,iDS).events  = struct('frame',{},'name',{},'color',{},'marker',{},'linewidth',{});
+    E(iR,iDS).events  = struct('frame',{},'name',{},'type',{},'color',{},'marker',{},'linewidth',{});
+
     E(iR,iDS).nFrames = 0;
 else
     E(iR,iDS).nFrames = numel(seqLabels);
@@ -355,61 +362,63 @@ end
 
 function rules = localConvertGUIRules(rulesGUI, args)
 % GUI rules fields: name,type,from,to
-% Output rules fields: From,To,Name,Color,Marker,LineWidth
+% Output rules fields: From,To,Name,Type,Color,Marker,LineWidth
 
 localLog(args,'ConvertGUIRules: input=%d', numel(rulesGUI));
 
 % canonical empty struct (ALL fields present)
 emptyRule = struct( ...
-    'From',     "", ...
-    'To',       "", ...
-    'Name',     "", ...
-    'Color',    [0 0 0], ...
-    'Marker',   '|', ...
+    'From',      "", ...
+    'To',        "", ...
+    'Name',      "", ...
+    'Type',      "", ...          % <-- KEEP type ("start"/"end")
+    'Color',     [0 0 0], ...
+    'Marker',    '|', ...
     'LineWidth', 2);
 
-% start empty
 rules = repmat(emptyRule, 0, 1);
-
-if isempty(rulesGUI)
-    return;
-end
+if isempty(rulesGUI), return; end
 
 names = strings(0,1);
 
 for i = 1:numel(rulesGUI)
 
-    % robust field access (in case some fields missing)
-    fr = "";
-    to = "";
-    nm = "";
+    fr = ""; to = ""; nm = ""; tp = "";
 
     try, if isfield(rulesGUI(i),'from'), fr = string(rulesGUI(i).from); end, catch, end
     try, if isfield(rulesGUI(i),'to'),   to = string(rulesGUI(i).to);   end, catch, end
     try, if isfield(rulesGUI(i),'name'), nm = string(rulesGUI(i).name); end, catch, end
+    try, if isfield(rulesGUI(i),'type'), tp = string(rulesGUI(i).type); end, catch, end
 
     fr = strtrim(fr);
     to = strtrim(to);
     nm = strtrim(nm);
+    tp = lower(strtrim(tp));
 
     if strlength(fr)==0 || strlength(to)==0
-    localLog(args,'  SKIP rule i=%d (from="%s", to="%s", name="%s")', i, fr, to, nm);
-    continue;
-    end
-
-    % skip invalid
-    if strlength(fr)==0 || strlength(to)==0
+        localLog(args,'  SKIP rule i=%d (from="%s", to="%s", name="%s")', i, fr, to, nm);
         continue;
     end
 
-    if strlength(nm)==0
-        nm = fr + "->" + to;
+    % normalize type
+    if tp == "start" || tp == "begin"
+        tp = "start";
+    elseif tp == "end" || tp == "stop" || tp == "finish"
+        tp = "end";
+    else
+        % default: treat unknown/empty as "start" (conservative)
+        tp = "start";
     end
 
-    r = emptyRule;          % IMPORTANT: same fields as rules
+    if strlength(nm)==0
+        nm = fr + "->" + to; % keep stable naming
+    end
+
+    r = emptyRule;
     r.From = fr;
     r.To   = to;
     r.Name = nm;
+    r.Type = tp;
 
     rules(end+1,1) = r; %#ok<AGROW>
     names(end+1,1) = nm; %#ok<AGROW>
@@ -417,10 +426,7 @@ end
 
 localLog(args,'ConvertGUIRules: output=%d uniqueNames=%d', numel(rules), numel(unique(names,'stable')));
 
-
-if isempty(rules)
-    return;
-end
+if isempty(rules), return; end
 
 % stable colormap by unique names
 u = unique(names, 'stable');
@@ -435,17 +441,20 @@ end
 
 
 function ev = localDetectEventsFromTransitions(seqLabels, rules, args, iR, iDS, dsKeyStr)
+% Detect transition events. Each rule produces events with:
+%   frame, name, type ("start"/"end"), color, marker, linewidth
+%
+% NOTE: event frame is the "curr" index (transition prev->curr occurs at idx+1)
+
 [dbg, dbgMaxROI, dbgMaxLabels] = localGetDbg(args);
+
 L = localToStringLabels(seqLabels);
-L = strtrim(L);          % <- IMPORTANT
-L = lower(L);   
+L = strtrim(L);
+L = lower(L);
 L = L(:);
 n = numel(L);
 
-u = unique(L);
-
-
-ev = struct('frame',{},'name',{},'color',{},'marker',{},'linewidth',{});
+ev = struct('frame',{},'name',{},'type',{},'color',{},'marker',{},'linewidth',{});
 if n < 2 || isempty(rules)
     if dbg && iR <= dbgMaxROI
         localLog(args,'DetectEvents ROI%d ds=%d %s: n=%d rules=%d -> early return', iR, iDS, dsKeyStr, n, numel(rules));
@@ -453,7 +462,7 @@ if n < 2 || isempty(rules)
     return;
 end
 
-% sanitize empty
+% sanitize empty labels
 isEmpty = (strlength(L)==0);
 L(isEmpty) = "<missing>";
 
@@ -472,25 +481,33 @@ nHitTot = 0;
 for k = 1:numel(rules)
     fr = lower(strtrim(string(rules(k).From)));
     to = lower(strtrim(string(rules(k).To)));
+    tp = lower(strtrim(string(rules(k).Type))); % "start"/"end"
+    if tp ~= "start" && tp ~= "end"
+        tp = "start";
+    end
 
     hit = (prev == fr) & (curr == to);
     idx = find(hit) + 1;
 
     if dbg && iR <= dbgMaxROI
-        localLog(args,'  rule[%d] "%s": "%s"->"%s" hits=%d', k, string(rules(k).Name), fr, to, numel(idx));
-        if numel(idx)>0
+        localLog(args,'  rule[%d] "%s" (%s): "%s"->"%s" hits=%d', ...
+            k, string(rules(k).Name), tp, fr, to, numel(idx));
+        if ~isempty(idx)
             localLog(args,'    frames sample: %s', mat2str(idx(1:min(8,end))'));
         end
     end
 
     for ii = 1:numel(idx)
+        e = struct();
         e.frame = idx(ii);
-        e.name = string(rules(k).Name);
+        e.name  = string(rules(k).Name);
+        e.type  = tp; % <-- CRITICAL
         e.color = rules(k).Color;
         e.marker = rules(k).Marker;
         e.linewidth = rules(k).LineWidth;
         ev(end+1) = e; %#ok<AGROW>
     end
+
     nHitTot = nHitTot + numel(idx);
 end
 
@@ -500,12 +517,12 @@ end
 end
 
 function out = localRenderEventsFigure(out, roiListShown, idxShown, dsKeys, H, W, Gcmp, Groi, args)
-% Render events figure in Compare mode using a stable tiled layout:
-%   tile(1): main batonnet/events overlay
-%   tile(2): manual Δt "colorbar" (green->red)
-%   tile(3): manual Δdur grayscale bar (white->black)
+% Render events figure in Compare mode with a HARD PIXEL CAP to avoid
+% graphics timeout / handshaking issues.
 %
-% This avoids MATLAB colorbar overlap/layout issues entirely.
+% - Caps total raster size by downscaling W/H/Gcmp/Groi if needed.
+% - Keeps event marks visible (min pixel width).
+% - Builds figure with Visible='off' then shows it.
 
 dsKeyA = dsKeys(1); % TEST (top)
 dsKeyB = dsKeys(2); % REF  (bottom)
@@ -540,14 +557,6 @@ if Tmax <= 0
     return;
 end
 
-% -------------------- geometry (integer px) --------------------
-W  = max(1, round(W));
-Tw = max(1, round(Tmax * W));
-
-nROI   = numel(roiListShown);
-HperROI = 2*H + Gcmp;
-Htot    = nROI*HperROI + (nROI-1)*Groi;
-
 % -------------------- parameters --------------------
 eventWidthFrames = 1;
 if isfield(args,'EventWidthFrames') && ~isempty(args.EventWidthFrames)
@@ -564,18 +573,7 @@ if isfield(args,'IntervalMaxDurDiffForBlack') && ~isempty(args.IntervalMaxDurDif
     maxDurDiffForBlack = double(args.IntervalMaxDurDiffForBlack);
 end
 
-% Optional: control bar heights
-dtBarH = 0.045;
-duBarH = 0.032;
-if isfield(args,'DtBarHeight') && ~isempty(args.DtBarHeight), dtBarH = double(args.DtBarHeight); end
-if isfield(args,'DurBarHeight') && ~isempty(args.DurBarHeight), duBarH = double(args.DurBarHeight); end
-
-% -------------------- figure + tiled layout --------------------
-fe = figure('Name','Batonnets - Events (compare)','Color','w');
-out.eventsFigure = fe;
-
-% ---------- manual layout proportions ----------
-% You can tweak these:
+% Manual bars geometry (normalized units)
 left   = 0.08;
 right  = 0.02;
 top    = 0.06;
@@ -585,14 +583,59 @@ gap    = 0.05;
 hDu = 0.05;  % grayscale bar height
 hDt = 0.05;  % dt bar height
 
+% Optional overrides
+if isfield(args,'DtBarHeight') && ~isempty(args.DtBarHeight), hDt = double(args.DtBarHeight); end
+if isfield(args,'DurBarHeight') && ~isempty(args.DurBarHeight), hDu = double(args.DurBarHeight); end
+
+% -------------------- HARD PIXEL CAP (key part) --------------------
+% Compute current raster size
+W  = max(1, round(W));
+H  = max(2, round(H));
+Gcmp = max(1, round(Gcmp));
+Groi = max(1, round(Groi));
+
+nROI    = numel(roiListShown);
+HperROI = 2*H + Gcmp;
+Htot    = nROI*HperROI + (nROI-1)*Groi;
+Tw      = Tmax * W;
+
+% Caps (can be overridden via args)
+maxPixW = 2000;
+maxPixH = 1500;
+if isfield(args,'MaxEventsFigPixW') && ~isempty(args.MaxEventsFigPixW), maxPixW = double(args.MaxEventsFigPixW); end
+if isfield(args,'MaxEventsFigPixH') && ~isempty(args.MaxEventsFigPixH), maxPixH = double(args.MaxEventsFigPixH); end
+
+scaleW = min(1, maxPixW / max(1, Tw));
+scaleH = min(1, maxPixH / max(1, Htot));
+scale  = min(scaleW, scaleH);
+
+if scale < 1
+    W    = max(1, round(W * scale));
+    H    = max(2, round(H * scale));
+    Gcmp = max(1, round(Gcmp * scale));
+    Groi = max(1, round(Groi * scale));
+
+    % recompute after scaling
+    HperROI = 2*H + Gcmp;
+    Htot    = nROI*HperROI + (nROI-1)*Groi;
+    Tw      = Tmax * W;
+end
+
+% -------------------- keep marks visible after downscale --------------------
+eventWidthFrames = max(1, round(eventWidthFrames));
+eventWidthPx     = max(2, eventWidthFrames * W);  % min 2 px so you still see it
+
+% -------------------- figure + axes layout (build offscreen) --------------------
+fe = figure('Name','Batonnets - Events (compare)', 'Color','w', 'Visible','off');
+out.eventsFigure = fe;
+
 wAll = 1 - left - right;
 
-yDu = bottom;
-yDt = yDu + hDu + gap;
+yDu   = bottom;
+yDt   = yDu + hDu + gap;
 yMain = yDt + hDt + gap;
 hMain = 1 - top - yMain;
 
-% Create axes with explicit positions
 ax   = axes('Parent', fe, 'Units','normalized', 'Position', [left yMain wAll hMain]);
 axDt = axes('Parent', fe, 'Units','normalized', 'Position', [left yDt  wAll hDt]);
 axDu = axes('Parent', fe, 'Units','normalized', 'Position', [left yDu  wAll hDu]);
@@ -605,9 +648,9 @@ ax.Clipping = 'off';
 ax.Color = 'w';
 hold(ax,'on');
 
-% Transparent base image to lock coordinates
+% Transparent base image to lock coordinates (no huge background RGB)
 Cbase = NaN(Htot, Tw);
-A = ~isnan(Cbase); % false
+A = ~isnan(Cbase); % false everywhere
 imagesc(ax, [0.5 Tw-0.5], [1 Htot], Cbase, 'AlphaData', A);
 
 xlim(ax, [0 Tw]);
@@ -626,10 +669,11 @@ title(ax, "Events (compare): " + dsKeys(1) + " ↔ " + dsKeys(2), ...
     'Interpreter','none', 'FontWeight','bold');
 
 % -------------------- build overlays --------------------
-% NOTE: localBuildEventsOverlayMatched needs args in your codebase
+% Events overlay (color, matched/unmatched)
 [rgbEv, alphaEv, dtAll] = localBuildEventsOverlayMatched( ...
     out.events, idxShown, Tmax, H, W, Gcmp, Groi, nROI, eventWidthFrames, matchMaxDtFrames, args);
 
+% Intervals overlay (BW on TEST)
 [rgbInt, alphaInt, durDiffAll, dtStartAll, durTestAll, durRefAll, matchedLinkFramesAll] = localBuildIntervalsOverlayBW( ...
     out.events, idxShown, Tmax, H, W, Gcmp, Groi, nROI, matchMaxDtFrames, maxDurDiffForBlack);
 
@@ -646,10 +690,19 @@ if any(alphaInt(:))
     image(ax, [0.5 Tw-0.5], [1 Htot], rgbInt, 'AlphaData', alphaInt, 'HitTest','off');
 end
 
-% vector links + edges
-localDrawMatchLinks(ax, out.events, idxShown, Tmax, H, W, Gcmp, Groi, nROI, matchMaxDtFrames);
-localDrawIntervalLinks(ax, out.events, idxShown, Tmax, H, W, Gcmp, Groi, nROI, matchMaxDtFrames);
-localDrawBatonnetEdges(ax, Tmax, H, W, Gcmp, Groi, nROI);
+% vector links + edges (keep line widths minimal but visible)
+try
+    localDrawMatchLinks(ax, out.events, idxShown, Tmax, H, W, Gcmp, Groi, nROI, matchMaxDtFrames);
+catch
+end
+try
+    localDrawIntervalLinks(ax, out.events, idxShown, Tmax, H, W, Gcmp, Groi, nROI, matchMaxDtFrames);
+catch
+end
+try
+    localDrawBatonnetEdges(ax, Tmax, H, W, Gcmp, Groi, nROI);
+catch
+end
 
 % draw events overlay last (color)
 if any(alphaEv(:))
@@ -667,7 +720,6 @@ set(ax, ...
     'YLimMode','manual');
 axis(ax,'manual');
 
-% small legend note (kept inside main axes)
 text(ax, 0.99, 0.02, "Blue = FP(test) or FN(ref)", ...
     'Units','normalized', 'HorizontalAlignment','right', 'Color',[0 0 1], ...
     'FontWeight','bold', 'HitTest','off');
@@ -694,7 +746,7 @@ image(axDt, [0 matchMaxDtFrames], [0 1], grad, 'HitTest','off');
 xlim(axDt, [0 matchMaxDtFrames]);
 ylim(axDt, [0 1]);
 axDt.YTick = [];
-axDt.XTick = unique([0, round(linspace(0, matchMaxDtFrames, min(matchMaxDtFrames+1, 6)))]);
+axDt.XTick = unique([0, round(linspace(0, matchMaxDtFrames, min(matchMaxDtFrames+1, 6)))]); %#ok<NBRAK>
 xlabel(axDt, sprintf('|Δt| (frames), capped at %d', matchMaxDtFrames), 'Interpreter','none');
 
 % -------------------- Δdur manual grayscale bar (white -> black) --------------------
@@ -713,10 +765,30 @@ image(axDu, [0 maxDurDiffForBlack], [0 1], grad2, 'HitTest','off');
 xlim(axDu, [0 maxDurDiffForBlack]);
 ylim(axDu, [0 1]);
 axDu.YTick = [];
-axDu.XTick = unique([0, round(linspace(0, maxDurDiffForBlack, min(maxDurDiffForBlack+1, 6)))]);
+axDu.XTick = unique([0, round(linspace(0, maxDurDiffForBlack, min(maxDurDiffForBlack+1, 6)))]); %#ok<NBRAK>
 xlabel(axDu, sprintf('|Δdur| intervals (frames): white=0 black≥%g', maxDurDiffForBlack), 'Interpreter','none');
 
+% -------------------- show figure (after build) --------------------
+drawnow limitrate nocallbacks
+fe.Visible = 'on';
+drawnow
+
+% Optional: expose applied scaling (useful for debugging)
+out.eventsFigureRender = struct();
+out.eventsFigureRender.Tmax = Tmax;
+out.eventsFigureRender.nROI = nROI;
+out.eventsFigureRender.W = W;
+out.eventsFigureRender.H = H;
+out.eventsFigureRender.Gcmp = Gcmp;
+out.eventsFigureRender.Groi = Groi;
+out.eventsFigureRender.Tw = Tw;
+out.eventsFigureRender.Htot = Htot;
+out.eventsFigureRender.maxPixW = maxPixW;
+out.eventsFigureRender.maxPixH = maxPixH;
+out.eventsFigureRender.scaleApplied = scale;
+
 end
+
 
 
 function localDrawBatonnetEdges(ax, Tmax, H, W, Gcmp, Groi, nROI)
@@ -738,25 +810,44 @@ for iR = 1:nROI
 end
 end
 
-
 function out = localPlotMatchStats(out, roiListShown, idxShown, matchMaxDtFrames, args)
-
-% Panels (3x2):
-% (1,1) hist |Δt| matched EVENTS
-% (1,2) bar FP/FN EVENTS
-% (2,1) hist |Δdur| matched INTERVALS (matched only)
-% (2,2) hist duration distributions (ALL intervals) TEST vs REF + stats + KS2
-% (3,1) loglog scatter matched intervals: REF vs TEST + y=x dashed + corr
-% (3,2) (empty / reserved)
-
-% -------------------- fetch precomputed aggregates --------------------
 
 nROI = numel(idxShown);
 localLog(args,'PlotMatchStats: nROI=%d', nROI);
 
+% -------------------- aggregate EVENT dt + FP/FN with NO-type matching --------------------
 dtAll = [];
-if isfield(out,'dtAll'), dtAll = out.dtAll; end
+nTestE = 0; nRefE = 0; nFP = 0; nFN = 0;
 
+for iR = 1:nROI
+    iAll   = idxShown(iR);
+
+    evTestRaw = out.events(iAll,1).events;
+    evRefRaw  = out.events(iAll,2).events;
+
+    evTest = localCollapseEventsForStats_(evTestRaw);
+    evRef  = localCollapseEventsForStats_(evRefRaw);
+
+    roiTag = sprintf('ROI%d(allIdx=%d)', iR, iAll);
+    mt = localMatchEventsHungarianByName_IgnoreType_(evTest, evRef, matchMaxDtFrames, args, roiTag);
+
+    nTestE = nTestE + numel(evTest);
+    nRefE  = nRefE  + numel(evRef);
+    nFP    = nFP    + sum(mt.testUnmatched);
+    nFN    = nFN    + sum(mt.refUnmatched);
+
+    if ~isempty(mt.dt)
+        dtAll = [dtAll; mt.dt(:)]; %#ok<AGROW>
+    end
+end
+
+fpFrac = nFP / max(1,nTestE);
+fnFrac = nFN / max(1,nRefE);
+
+localLog(args,'PlotMatchStats totals (events collapsed): nTestE=%d nRefE=%d nFP=%d nFN=%d', ...
+    nTestE, nRefE, nFP, nFN);
+
+% -------------------- interval aggregates (unchanged) --------------------
 durDiffMatchedAbsAll = [];
 if isfield(out,'intervalDurDiffAll'), durDiffMatchedAbsAll = out.intervalDurDiffAll; end
 
@@ -765,49 +856,15 @@ durRefAll  = [];
 if isfield(out,'intervalDurTestAll'), durTestAll = out.intervalDurTestAll; end
 if isfield(out,'intervalDurRefAll'),  durRefAll  = out.intervalDurRefAll;  end
 
-
-% -------------------- event FP/FN aggregation --------------------
-nTestE = 0; nRefE = 0; nFP = 0; nFN = 0;
-for iR = 1:nROI
-    iAll   = idxShown(iR);
-    evTest = out.events(iAll,1).events;
-    evRef  = out.events(iAll,2).events;
-
-    roiTag = sprintf('shownROIidx=%d allIdx=%d', iR, iAll);
-localLog(args,'-- %s: evTest=%d evRef=%d', roiTag, numel(evTest), numel(evRef));
-
- %   mt = localMatchEventsHungarianByName(evTest, evRef, matchMaxDtFrames);
-   
-mt = localMatchEventsHungarianByName(evTest, evRef, matchMaxDtFrames, args, sprintf('ROI%d', iR));
-
-localLog(args,'   pairs=%d FP=%d FN=%d', size(mt.pairs,1), sum(mt.testUnmatched), sum(mt.refUnmatched));
-if ~isempty(mt.dt)
-    localLog(args,'   dt sample: %s', mat2str(mt.dt(1:min(10,end))'));
-end
-
-    nTestE = nTestE + numel(evTest);
-    nRefE  = nRefE  + numel(evRef);
-    nFP    = nFP    + sum(mt.testUnmatched);
-    nFN    = nFN    + sum(mt.refUnmatched);
-end
-
-fpFrac = nFP / max(1,nTestE);
-fnFrac = nFN / max(1,nRefE);
-
-localLog(args,'PlotMatchStats totals: nTestE=%d nRefE=%d nFP=%d nFN=%d fpFrac=%.3f fnFrac=%.3f', ...
-    nTestE, nRefE, nFP, nFN, fpFrac, fnFrac);
-
 % -------------------- figure / tiledlayout 3x2 --------------------
 fs = figure('Name','Events/Intervals matching stats (test vs ref)','Color','w');
 out.eventsStatsFigure = fs;
 
 tl = tiledlayout(fs, 3, 2, 'Padding','compact', 'TileSpacing','compact');
 
-% modest binning (smaller bins than integers)
-% (you can tweak these if needed)
-dtBinW    = 0.5;   % frames
-durBinW   = 1.0;   % frames
-durDiffW  = 1.0;   % frames
+dtBinW    = 0.5;
+durBinW   = 1.0;
+durDiffW  = 1.0;
 
 % ========== (1,1) matched event |dt| ==========
 ax1 = nexttile(tl, 1);
@@ -819,8 +876,7 @@ else
     edges = 0:dtBinW:max(matchMaxDtFrames, max(x,[],'omitnan')+dtBinW);
     histogram(ax1, x, 'BinEdges', edges);
     xlabel(ax1,'|Δt| matched events (frames)'); ylabel(ax1,'Count');
-    medDt = median(x, 'omitnan');
-    title(ax1, sprintf('Matched events |Δt| (median=%.2f frames)', medDt));
+    title(ax1, sprintf('Matched EVENTS |Δt| (median=%.2f frames)', median(x,'omitnan')));
     xlim(ax1, [0 matchMaxDtFrames]);
 end
 
@@ -829,7 +885,7 @@ ax2 = nexttile(tl, 2);
 bar(ax2, [fpFrac fnFrac]);
 ax2.XTickLabel = {'FP(test)','FN(ref)'};
 ylabel(ax2,'Fraction'); ylim(ax2,[0 1]);
-title(ax2, sprintf('Events: FP=%d/%d (%.1f%%), FN=%d/%d (%.1f%%)', ...
+title(ax2, sprintf('Events (collapsed start/end): FP=%d/%d (%.1f%%), FN=%d/%d (%.1f%%)', ...
     nFP, nTestE, 100*fpFrac, nFN, nRefE, 100*fnFrac));
 
 % ========== (2,1) matched interval |Δdur| ==========
@@ -847,12 +903,11 @@ else
         edges = 0:durDiffW:(max(x)+durDiffW);
         histogram(ax3, x, 'BinEdges', edges);
         xlabel(ax3,'|Δdur| matched intervals (frames)'); ylabel(ax3,'Count');
-        medDur = median(x,'omitnan');
-        title(ax3, sprintf('Matched intervals |Δdur| (median=%.2f frames)', medDur));
+        title(ax3, sprintf('Matched INTERVALS |Δdur| (median=%.2f frames)', median(x,'omitnan')));
     end
 end
 
-% ========== (2,2) ALL interval durations TEST vs REF + stats + KS2 ==========
+% ========== (2,2) ALL interval durations TEST vs REF ==========
 ax4 = nexttile(tl, 4);
 hold(ax4,'on');
 if isempty(durTestAll) && isempty(durRefAll)
@@ -897,10 +952,9 @@ else
 end
 hold(ax4,'off');
 
-% ========== (3,1) loglog matched intervals REF vs TEST + diag + corr ==========
+% ========== (3,1) loglog matched intervals REF vs TEST (unchanged) ==========
 ax5 = nexttile(tl, 5);
 
-% rebuild matched duration pairs robustly per ROI
 xRef = []; yTest = [];
 for iR = 1:nROI
     iAll   = idxShown(iR);
@@ -932,11 +986,10 @@ else
         hold(ax5,'on');
         mn = min([xRef; yTest]);
         mx = max([xRef; yTest]);
-        loglog(ax5, [mn mx], [mn mx], 'k--', 'LineWidth',1); % y=x
+        loglog(ax5, [mn mx], [mn mx], 'k--', 'LineWidth',1);
         hold(ax5,'off');
         grid(ax5,'on');
 
-        % correlation on log scale (more meaningful for log-log), but display both
         rLin = NaN; rLog = NaN;
         try
             if numel(xRef) >= 2
@@ -952,7 +1005,7 @@ else
     end
 end
 
-% ========== (3,2) empty/reserved ==========
+% ========== (3,2) empty ==========
 ax6 = nexttile(tl, 6);
 axis(ax6,'off');
 text(ax6, 0.5, 0.5, " ", 'Units','normalized', 'HorizontalAlignment','center');
@@ -996,12 +1049,7 @@ end
 end
 
 
-
-
 function [rgb, alpha, dtAll] = localBuildEventsOverlayMatched(Eall, idxShown, Tmax, H, W, Gcmp, Groi, nROI, eventWidthFrames, matchMaxDtFrames,args)
-% Colors:
-% - REF (bas): black if matched, blue if FN (unmatched in ref)
-% - TEST (haut): green->red by |dt| if matched, blue if FP (unmatched in test)
 
 if nargin < 9 || isempty(eventWidthFrames), eventWidthFrames = 1; end
 eventWidthFrames = max(1, round(eventWidthFrames));
@@ -1018,11 +1066,8 @@ alpha = zeros(Htot, Tw, 'single');
 
 dtAll = [];
 
-% col constants
 colBlue  = [0 0 1];
 colBlack = [0 0 0];
-
-% dt -> color (green->red)
 dt2col = @(dtAbs, dtMax) [min(dtAbs/dtMax,1), max(0,1-dtAbs/dtMax), 0];
 
 row0 = 1;
@@ -1035,12 +1080,14 @@ for iR = 1:nROI
     rB0 = row0 + H + Gcmp;
     rB1 = rB0 + H - 1;
 
-    evTest = Eall(iAll,1).events; % dsKeys(1)=test
-    evRef  = Eall(iAll,2).events; % dsKeys(2)=ref
+    evTestRaw = Eall(iAll,1).events; % test top
+    evRefRaw  = Eall(iAll,2).events; % ref bottom
 
-  %  mt = localMatchEventsHungarianByName(evTest, evRef, matchMaxDtFrames);
-    mt = localMatchEventsHungarianByName(evTest, evRef, matchMaxDtFrames, args, sprintf('ROI%d', iR));
+    % collapse duplicates for display logic (so FP/FN not doubled)
+    evTest = localCollapseEventsForStats_(evTestRaw);
+    evRef  = localCollapseEventsForStats_(evRefRaw);
 
+    mt = localMatchEventsHungarianByName_IgnoreType_(evTest, evRef, matchMaxDtFrames, args, sprintf('ROI%d', iR));
 
     % --- REF rendering (black if matched, blue if FN) ---
     for k = 1:numel(evRef)
@@ -1048,9 +1095,9 @@ for iR = 1:nROI
         if ~isfinite(t) || t < 1 || t > Tmax, continue; end
 
         if mt.refUnmatched(k)
-            c = colBlue;   % FN in ref => blue
+            c = colBlue;
         else
-            c = colBlack;  % matched => black
+            c = colBlack;
         end
 
         [col0,col1] = localEventColRange(t, W, Tw, eventWidthPx);
@@ -1062,7 +1109,6 @@ for iR = 1:nROI
     end
 
     % --- TEST rendering (blue if FP, else green->red by |dt|) ---
-    % build quick map testIndex -> |dt|
     dtAbsPerTest = nan(numel(evTest),1);
     for m = 1:size(mt.pairs,1)
         iTest = mt.pairs(m,1);
@@ -1075,7 +1121,7 @@ for iR = 1:nROI
         if ~isfinite(t) || t < 1 || t > Tmax, continue; end
 
         if mt.testUnmatched(k)
-            c = colBlue; % FP in test
+            c = colBlue;
         else
             c = dt2col(dtAbsPerTest(k), matchMaxDtFrames);
         end
@@ -1094,6 +1140,8 @@ for iR = 1:nROI
     end
 end
 end
+
+
 
 function [col0,col1] = localEventColRange(tFrame, W, Tw, eventWidthPx)
 xc = (tFrame-1)*W + floor(W/2) + 1;         % center of frame block
@@ -1259,128 +1307,160 @@ xt = 0:step:nFrames;
 if xt(end) ~= nFrames, xt(end+1) = nFrames; end
 end
 
-function [frames, names, valid] = localExtractEventFramesNames(ev)
-% Robust extraction of event frames and names
-% NO struct expansion, safe against missing fields
-%
-% Outputs:
-%   frames : [n x 1] double (NaN if invalid)
-%   names  : [n x 1] string
-%   valid  : logical mask of valid events
+function [frames, keys, valid] = localExtractEventFramesKeys(ev)
+% Robust extraction of event frames + matching key (name|type)
+n = numel(ev);
+frames = nan(n,1);
+keys   = strings(n,1);
+
+for i = 1:n
+    % frame
+    if isfield(ev(i),'frame') && isnumeric(ev(i).frame) && isscalar(ev(i).frame) && isfinite(ev(i).frame)
+        frames(i) = double(ev(i).frame);
+    end
+
+    % name
+    nm = "";
+    if isfield(ev(i),'name') && ~isempty(ev(i).name)
+        nm = string(ev(i).name);
+    end
+    nm = lower(strtrim(nm));
+
+    % type
+    tp = "";
+    if isfield(ev(i),'type') && ~isempty(ev(i).type)
+        tp = string(ev(i).type);
+    end
+    tp = lower(strtrim(tp));
+    if tp ~= "start" && tp ~= "end"
+        tp = "start"; % fallback conservative
+    end
+
+    if strlength(nm) > 0
+        keys(i) = nm + "|" + tp;   % <-- CRITICAL
+    end
+end
+
+valid = isfinite(frames) & (strlength(keys) > 0);
+end
+
+function ev2 = localCollapseEventsForStats_(ev)
+% Collapse "start/end artifice" so one transition counts once:
+% key = lower(name) + "@" + frame
+% Keeps one representative per (name,frame). Type is kept but irrelevant.
+
+ev2 = ev;
+if isempty(ev), return; end
 
 n = numel(ev);
 frames = nan(n,1);
 names  = strings(n,1);
 
 for i = 1:n
-    if isfield(ev(i),'frame') && isnumeric(ev(i).frame) ...
-            && isscalar(ev(i).frame) && isfinite(ev(i).frame)
+    if isfield(ev(i),'frame') && isnumeric(ev(i).frame) && isscalar(ev(i).frame) && isfinite(ev(i).frame)
         frames(i) = double(ev(i).frame);
     end
-
+    nm = "";
     if isfield(ev(i),'name') && ~isempty(ev(i).name)
-        names(i) = string(ev(i).name);
+        nm = lower(strtrim(string(ev(i).name)));
     end
+    names(i) = nm;
 end
 
-names = strtrim(names);
 valid = isfinite(frames) & (strlength(names) > 0);
+if ~any(valid)
+    ev2 = ev([]); % empty, same type
+    return;
+end
+
+frames = frames(valid);
+names  = names(valid);
+idxMap = find(valid);
+
+% build unique key per transition occurrence
+keys = names + "@" + string(frames);
+
+% keep first occurrence for each key (stable)
+[~, ia] = unique(keys, 'stable');
+keepIdx = idxMap(ia);
+
+ev2 = ev(keepIdx);
+
+% Optional: sort by frame (stable)
+try
+    fr2 = arrayfun(@(e) double(e.frame), ev2);
+    [~,ord] = sort(fr2);
+    ev2 = ev2(ord);
+catch
+end
 end
 
 
-function match = localMatchEventsHungarianByName(evTest, evRef, maxDt, args, roiTag)
-% Match events between test/ref using Hungarian algorithm (matchpairs),
-% separately for each event name. Cost = |dt|, rejected if dt > maxDt.
+function match = localMatchEventsHungarianByName_IgnoreType_(evTest, evRef, maxDt, args, roiTag)
+% Match events by NAME ONLY (ignore start/end), after collapsing duplicates.
+% Cost = |dt|, rejected if dt > maxDt.
 
 if nargin < 4, args = struct(); end
 if nargin < 5, roiTag = ""; end
-
-localLog(args,'MatchEvents %s: nTest=%d nRef=%d maxDt=%g', roiTag, numel(evTest), numel(evRef), maxDt);
-
 if nargin < 3 || isempty(maxDt), maxDt = 10; end
 
-% frames + names
-[tFrames, tNames] = localExtractEventFramesNames(evTest);
-[rFrames, rNames] = localExtractEventFramesNames(evRef);
+% collapse the "start/end artifice" duplicates
+evTest = localCollapseEventsForStats_(evTest);
+evRef  = localCollapseEventsForStats_(evRef);
 
-validT = isfinite(tFrames) & strlength(strtrim(tNames))>0;
-validR = isfinite(rFrames) & strlength(strtrim(rNames))>0;
+localLog(args,'MatchEvents(noType) %s: nTest=%d nRef=%d maxDt=%g', roiTag, numel(evTest), numel(evRef), maxDt);
 
-if any(~validT) && numel(evTest)>0
-    localLog(args,'  %s invalid test events: %d/%d', roiTag, sum(~validT), numel(evTest));
+% frames + keys (NAME ONLY)
+nT = numel(evTest); nR = numel(evRef);
+tFrames = nan(nT,1); tKeys = strings(nT,1);
+rFrames = nan(nR,1); rKeys = strings(nR,1);
+
+for i=1:nT
+    if isfield(evTest(i),'frame') && isfinite(evTest(i).frame), tFrames(i)=double(evTest(i).frame); end
+    nm=""; if isfield(evTest(i),'name') && ~isempty(evTest(i).name), nm=string(evTest(i).name); end
+    tKeys(i)=lower(strtrim(nm));
 end
-if any(~validR) && numel(evRef)>0
-    localLog(args,'  %s invalid ref events: %d/%d', roiTag, sum(~validR), numel(evRef));
+for i=1:nR
+    if isfield(evRef(i),'frame') && isfinite(evRef(i).frame), rFrames(i)=double(evRef(i).frame); end
+    nm=""; if isfield(evRef(i),'name') && ~isempty(evRef(i).name), nm=string(evRef(i).name); end
+    rKeys(i)=lower(strtrim(nm));
 end
 
-tNames2 = strtrim(lower(string(tNames)));
-rNames2 = strtrim(lower(string(rNames)));
-uT = unique(tNames2(validT));
-uR = unique(rNames2(validR));
-uI = intersect(uT,uR);
-
-localLog(args,'  %s uniqueNames: test=%d ref=%d intersect=%d', roiTag, numel(uT), numel(uR), numel(uI));
-if ~isempty(uT), localLog(args,'   test names sample: %s', strjoin(uT(1:min(8,end)), ", ")); end
-if ~isempty(uR), localLog(args,'   ref  names sample: %s', strjoin(uR(1:min(8,end)), ", ")); end
+validT = isfinite(tFrames) & (strlength(tKeys)>0);
+validR = isfinite(rFrames) & (strlength(rKeys)>0);
 
 match = struct();
 match.maxDt = maxDt;
-match.pairs = zeros(0,2);        % [iTest, iRef] indices in evTest/evRef
-match.dt    = zeros(0,1);        % dt = test - ref (signed)
-match.testUnmatched = true(numel(evTest),1);
-match.refUnmatched  = true(numel(evRef),1);
+match.pairs = zeros(0,2);
+match.dt    = zeros(0,1);
+match.testUnmatched = true(nT,1);
+match.refUnmatched  = true(nR,1);
 
-if isempty(evTest) && isempty(evRef), return; end
-if isempty(evTest)
-    % all ref unmatched
-    return;
-end
-if isempty(evRef)
-    % all test unmatched
+if isempty(evTest) || isempty(evRef) || ~any(validT) || ~any(validR)
     return;
 end
 
-% match by unique names present in either side
-tN = strtrim(lower(string(tNames)));
-rN = strtrim(lower(string(rNames)));
+allKeys = unique([tKeys(validT); rKeys(validR)]);
 
-allNames = unique([tN(validT); rN(validR)]);
+for kKey = 1:numel(allKeys)
+    kk = allKeys(kKey);
 
-for kName = 1:numel(allNames)
-    nm = allNames(kName);
+    it = find(validT & (tKeys == kk));
+    ir = find(validR & (rKeys == kk));
+    if isempty(it) || isempty(ir), continue; end
 
-    it = find(validT & (tN == nm));
-    ir = find(validR & (rN == nm));
-
-    if isempty(it) || isempty(ir)
-        continue;
-    end
-
-    localLog(args,'  %s name="%s": nT=%d nR=%d', roiTag, nm, numel(it), numel(ir));
-if isempty(it) || isempty(ir)
-    continue;
-end
-
-    % cost matrix |dt|, Inf beyond maxDt
     Ct = tFrames(it);
     Cr = rFrames(ir);
 
-    cost = abs(Ct - Cr'); % [nT x nR]
+    cost = abs(Ct - Cr');
     cost(cost > maxDt) = Inf;
-    nFinite = sum(isfinite(cost(:)));
-localLog(args,'    cost finite=%d/%d min=%.3g', nFinite, numel(cost), min(cost(isfinite(cost)),[],'omitnan'));
 
-    % Hungarian
-    % penalty = maxDt -> anything > maxDt was already Inf
+    if ~any(isfinite(cost(:)))
+        continue;
+    end
+
     [ass, ~, ~] = matchpairs(cost, maxDt);
-
-    if isempty(ass)
-    localLog(args,'    matchpairs -> empty (all costs>maxDt?)');
-    continue;
-else
-    localLog(args,'    matchpairs -> %d pairs', size(ass,1));
-end
-
+    if isempty(ass), continue; end
 
     for m = 1:size(ass,1)
         iTest = it(ass(m,1));
@@ -1390,17 +1470,106 @@ end
         match.testUnmatched(iTest) = false;
         match.refUnmatched(iRef)   = false;
     end
+end
+
+localLog(args,'MatchEvents(noType) %s DONE: pairs=%d', roiTag, size(match.pairs,1));
+end
+
+
+function match = localMatchEventsHungarianByName(evTest, evRef, maxDt, args, roiTag)
+% Match events using Hungarian (matchpairs), by key = lower(name)|type.
+% Cost = |dt|, rejected if dt > maxDt.
+
+if nargin < 4, args = struct(); end
+if nargin < 5, roiTag = ""; end
+if nargin < 3 || isempty(maxDt), maxDt = 10; end
+
+localLog(args,'MatchEvents %s: nTest=%d nRef=%d maxDt=%g', roiTag, numel(evTest), numel(evRef), maxDt);
+
+% frames + keys
+[tFrames, tKeys, validT] = localExtractEventFramesKeys(evTest);
+[rFrames, rKeys, validR] = localExtractEventFramesKeys(evRef);
+
+if any(~validT) && numel(evTest)>0
+    localLog(args,'  %s invalid test events: %d/%d', roiTag, sum(~validT), numel(evTest));
+end
+if any(~validR) && numel(evRef)>0
+    localLog(args,'  %s invalid ref events: %d/%d', roiTag, sum(~validR), numel(evRef));
+end
+
+uT = unique(tKeys(validT));
+uR = unique(rKeys(validR));
+uI = intersect(uT,uR);
+
+localLog(args,'  %s uniqueKeys: test=%d ref=%d intersect=%d', roiTag, numel(uT), numel(uR), numel(uI));
+if ~isempty(uT), localLog(args,'   test keys sample: %s', strjoin(uT(1:min(8,end)), ", ")); end
+if ~isempty(uR), localLog(args,'   ref  keys sample: %s', strjoin(uR(1:min(8,end)), ", ")); end
+
+match = struct();
+match.maxDt = maxDt;
+match.pairs = zeros(0,2);                 % [iTest, iRef] indices in evTest/evRef
+match.dt    = zeros(0,1);                 % signed dt = test - ref
+match.testUnmatched = true(numel(evTest),1);
+match.refUnmatched  = true(numel(evRef),1);
+
+if isempty(evTest) || isempty(evRef)
+    return;
+end
+
+allKeys = unique([tKeys(validT); rKeys(validR)]);
+
+for kKey = 1:numel(allKeys)
+    kk = allKeys(kKey);
+
+    it = find(validT & (tKeys == kk));
+    ir = find(validR & (rKeys == kk));
+    if isempty(it) || isempty(ir)
+        continue;
+    end
+
+    localLog(args,'  %s key="%s": nT=%d nR=%d', roiTag, kk, numel(it), numel(ir));
+
+    Ct = tFrames(it);
+    Cr = rFrames(ir);
+
+    cost = abs(Ct - Cr');        % [nT x nR]
+    cost(cost > maxDt) = Inf;
+
+    nFinite = sum(isfinite(cost(:)));
+    if nFinite == 0
+        localLog(args,'    cost finite=0/%d -> skip (all costs>maxDt)', numel(cost));
+        continue;
+    else
+        localLog(args,'    cost finite=%d/%d min=%.3g', nFinite, numel(cost), min(cost(isfinite(cost))));
+    end
+
+    [ass, ~, ~] = matchpairs(cost, maxDt);
+
+    if isempty(ass)
+        localLog(args,'    matchpairs -> empty');
+        continue;
+    else
+        localLog(args,'    matchpairs -> %d pairs', size(ass,1));
+    end
+
+    for m = 1:size(ass,1)
+        iTest = it(ass(m,1));
+        iRef  = ir(ass(m,2));
+        match.pairs(end+1,:) = [iTest, iRef]; %#ok<AGROW>
+        match.dt(end+1,1)    = tFrames(iTest) - rFrames(iRef); %#ok<AGROW>
+        match.testUnmatched(iTest) = false;
+        match.refUnmatched(iRef)   = false;
+    end
+end
 
 localLog(args,'MatchEvents %s DONE: pairs=%d', roiTag, size(match.pairs,1));
-end
 end
 
 
 function localDrawMatchLinks(ax, Eall, idxShown, Tmax, H, W, Gcmp, Groi, nROI, matchMaxDtFrames)
 % Draw thin black lines connecting matched events (test top -> ref bottom)
-% Uses vector line objects (one big polyline with NaNs for speed).
+% Using collapsed events (ignore type) to avoid double links.
 
-Tw = Tmax * W;
 HperROI = 2*H + Gcmp;
 
 xAll = [];
@@ -1416,13 +1585,13 @@ for iR = 1:nROI
     yA = rA0 + (H-1)/2;
     yB = rB0 + (H-1)/2;
 
-    evTest = Eall(iAll,1).events;
-    evRef  = Eall(iAll,2).events;
+    evTest = localCollapseEventsForStats_(Eall(iAll,1).events);
+    evRef  = localCollapseEventsForStats_(Eall(iAll,2).events);
 
-    mt = localMatchEventsHungarianByName(evTest, evRef, matchMaxDtFrames);
+    mt = localMatchEventsHungarianByName_IgnoreType_(evTest, evRef, matchMaxDtFrames);
 
     for m = 1:size(mt.pairs,1)
-        iT = mt.pairs(m,1);
+        iT  = mt.pairs(m,1);
         iRr = mt.pairs(m,2);
 
         tT = evTest(iT).frame;
@@ -1449,32 +1618,6 @@ if ~isempty(xAll)
 end
 end
 
-function I = localIntervalsFromEvents(ev)
-% Intervals strictly between successive events (sorted by frame)
-% I: struct array with fields startFrame,endFrame,dur
-
-I = struct('startFrame',{},'endFrame',{},'dur',{});
-if isempty(ev), return; end
-
-frames = nan(numel(ev),1);
-for k=1:numel(ev)
-    if isfield(ev(k),'frame') && isfinite(ev(k).frame) && isscalar(ev(k).frame)
-        frames(k) = double(ev(k).frame);
-    end
-end
-frames = frames(isfinite(frames));
-frames = sort(frames);
-
-if numel(frames) < 2, return; end
-
-n = numel(frames)-1;
-I = repmat(struct('startFrame',0,'endFrame',0,'dur',0), n, 1);
-for i=1:n
-    I(i).startFrame = frames(i);
-    I(i).endFrame   = frames(i+1);
-    I(i).dur        = frames(i+1) - frames(i);
-end
-end
 
 function M = localMatchIntervalsHungarian(It, Ir, maxDt)
 % Match intervals by startFrame proximity (Hungarian).
@@ -1647,17 +1790,15 @@ end
 end
 
 function I = localIntervalsAllAndMatchedFromEventMatch(evTest, evRef, mt)
-% localIntervalsAllAndMatchedFromEventMatch
 % Build:
-% - ALL consecutive intervals (TEST + REF) for distributions (independent of matching)
-% - MATCHED intervals ONLY when both bounding events are matched AND matched to each other
-%   in the sense: consecutive in TEST-by-time and their matched REF events are also consecutive
-%   in REF-by-time (no skipping / no cross).
+% - ALL interval durations (TEST + REF) for distributions, from typed intervals
+% - MATCHED intervals by Hungarian matching on interval start (|dtStart| <= mt.maxDt or 10)
 %
-% Output I fields:
-%   I.testDurAll, I.refDurAll
-%   I.matchedRefDur, I.matchedTestDur, I.matchedDurDiffAbs
-%   I.matchedLinkFrames : [t0_test t1_test r0_ref r1_ref] per matched interval (for drawing)
+% INTERVAL DEFINITION (as agreed):
+% - Any START with any END can define an interval, but in practice we build
+%   intervals by scanning events ordered by (frame asc, END before START at same frame).
+% - Valid interval requires endFrame >= startFrame + 1 (no zero-length).
+% - If startFrame == endFrame: close previous (if any) and immediately open new (END then START).
 
 I = struct();
 I.testDurAll = [];
@@ -1665,133 +1806,136 @@ I.refDurAll  = [];
 I.matchedRefDur = [];
 I.matchedTestDur = [];
 I.matchedDurDiffAbs = [];
-I.matchedLinkFrames = zeros(0,4);
+I.matchedLinkFrames = zeros(0,4);  % [t0 t1 r0 r1]
 
-% -----------------------------
-% 1) Extract valid frames + original indices (robust)
-% -----------------------------
-[tFramesRaw, tOkRaw] = localExtractFramesOnly(evTest);
-[rFramesRaw, rOkRaw] = localExtractFramesOnly(evRef);
-
-tIdxValid = find(tOkRaw);
-rIdxValid = find(rOkRaw);
-
-tFramesValid = tFramesRaw(tIdxValid);
-rFramesValid = rFramesRaw(rIdxValid);
-
-% -----------------------------
-% 2) ALL intervals for distributions (strictly consecutive in TIME)
-% -----------------------------
-tFramesSort = sort(tFramesValid(:));
-rFramesSort = sort(rFramesValid(:));
-
-if numel(tFramesSort) >= 2
-    I.testDurAll = diff(tFramesSort);
-end
-if numel(rFramesSort) >= 2
-    I.refDurAll  = diff(rFramesSort);
+% derive maxDt
+maxDt = 10;
+try
+    if isstruct(mt) && isfield(mt,'maxDt') && ~isempty(mt.maxDt) && isfinite(mt.maxDt)
+        maxDt = double(mt.maxDt);
+    end
+catch
 end
 
-% -----------------------------
-% 3) Early exit if no event matches
-% -----------------------------
-if isempty(mt) || ~isstruct(mt) || ~isfield(mt,'pairs') || isempty(mt.pairs)
+% typed intervals for each side
+It = localIntervalsFromTypedEvents_(evTest);
+Ir = localIntervalsFromTypedEvents_(evRef);
+
+% ALL durations (for distributions)
+if ~isempty(It)
+    I.testDurAll = [It.dur]';
+end
+if ~isempty(Ir)
+    I.refDurAll  = [Ir.dur]';
+end
+
+% MATCH intervals by startFrame proximity (Hungarian), then compute dur diffs
+M = localMatchIntervalsHungarian(It, Ir, maxDt);
+if isempty(M) || ~isfield(M,'pairs') || isempty(M.pairs)
     return;
 end
 
-% -----------------------------
-% 4) Build mapping testIndex -> refIndex from mt.pairs (original indices)
-% -----------------------------
-mapT2R = nan(numel(evTest),1);
-pairs = mt.pairs;
-for k = 1:size(pairs,1)
-    iT = pairs(k,1);
-    iR = pairs(k,2);
-    if iT>=1 && iT<=numel(evTest) && iR>=1 && iR<=numel(evRef)
-        mapT2R(iT) = iR;
-    end
-end
+for m = 1:size(M.pairs,1)
+    iT = M.pairs(m,1);
+    iR = M.pairs(m,2);
 
-% -----------------------------
-% 5) Define "consecutive" in TIME using sorted-by-frame order
-%    (this avoids weird indexing artifacts if events were not stored chronologically)
-% -----------------------------
-% TEST order by time (over valid events only)
-[~, ordT] = sort(tFramesValid);
-tIdxTime  = tIdxValid(ordT);     % original indices in evTest, sorted by frame
-tFramesTime = tFramesValid(ordT);
+    t0 = double(It(iT).startFrame);
+    t1 = double(It(iT).endFrame);
+    r0 = double(Ir(iR).startFrame);
+    r1 = double(Ir(iR).endFrame);
 
-% REF order by time (over valid events only)
-[~, ordR] = sort(rFramesValid);
-rIdxTime  = rIdxValid(ordR);     % original indices in evRef, sorted by frame
-rFramesTime = rFramesValid(ordR);
+    durT = double(It(iT).dur);
+    durR = double(Ir(iR).dur);
 
-% rank maps: original index -> time rank (1..N) for quick "consecutive in time" checks
-rankT = nan(numel(evTest),1);
-for k = 1:numel(tIdxTime), rankT(tIdxTime(k)) = k; end
-rankR = nan(numel(evRef),1);
-for k = 1:numel(rIdxTime), rankR(rIdxTime(k)) = k; end
-
-% -----------------------------
-% 6) Matched intervals:
-%    iterate consecutive TEST events in TIME; interval is matchable if:
-%      - both test events are matched (mapT2R finite)
-%      - their matched REF events are consecutive in REF-by-time
-%      - order is preserved (frames increasing on both sides)
-% -----------------------------
-for kT = 1:(numel(tIdxTime)-1)
-    iT0 = tIdxTime(kT);
-    iT1 = tIdxTime(kT+1);
-
-    iR0 = mapT2R(iT0);
-    iR1 = mapT2R(iT1);
-
-    if ~isfinite(iR0) || ~isfinite(iR1)
-        continue; % one of the bounding events is unmatched
-    end
-
-    % Must also be valid in ref ranking
-    if iR0 < 1 || iR0 > numel(evRef) || iR1 < 1 || iR1 > numel(evRef)
-        continue;
-    end
-    r0Rank = rankR(iR0);
-    r1Rank = rankR(iR1);
-    if ~isfinite(r0Rank) || ~isfinite(r1Rank)
-        continue;
-    end
-
-    % CRITICAL: "matched to each other" => consecutive in REF time order
-    % (prevents matching a long ref interval to multiple small test intervals and double-links)
-    if r1Rank ~= (r0Rank + 1)
-        continue;
-    end
-
-    % Frames (use the time-ordered ones for test; for ref we read from events)
-    t0 = double(tFramesTime(kT));
-    t1 = double(tFramesTime(kT+1));
-
-    r0 = double(evRef(iR0).frame);
-    r1 = double(evRef(iR1).frame);
-
-    if ~(isfinite(t0) && isfinite(t1) && isfinite(r0) && isfinite(r1))
-        continue;
-    end
-
-    % must be strictly increasing (valid interval)
-    if t1 <= t0 || r1 <= r0
-        continue;
-    end
-
-    durT = t1 - t0;
-    durR = r1 - r0;
-
-    I.matchedTestDur(end+1,1)     = durT; %#ok<AGROW>
-    I.matchedRefDur(end+1,1)      = durR; %#ok<AGROW>
-    I.matchedDurDiffAbs(end+1,1)  = abs(durT - durR); %#ok<AGROW>
-    I.matchedLinkFrames(end+1,:)  = [t0 t1 r0 r1]; %#ok<AGROW>
+    I.matchedTestDur(end+1,1)    = durT; %#ok<AGROW>
+    I.matchedRefDur(end+1,1)     = durR; %#ok<AGROW>
+    I.matchedDurDiffAbs(end+1,1) = abs(durT - durR); %#ok<AGROW>
+    I.matchedLinkFrames(end+1,:) = [t0 t1 r0 r1]; %#ok<AGROW>
 end
 
 end
+
+% -------------------------------------------------------------------------
+% Local helper: build intervals from typed events with END before START tie
+% -------------------------------------------------------------------------
+function Itv = localIntervalsFromTypedEvents_(ev)
+% Returns struct array with fields startFrame,endFrame,dur
+
+Itv = struct('startFrame',{},'endFrame',{},'dur',{});
+if isempty(ev), return; end
+
+% extract valid frame + type
+n = numel(ev);
+frames = nan(n,1);
+isEnd  = false(n,1);   % end has priority at same frame
+valid  = false(n,1);
+
+for i = 1:n
+    % frame
+    if isstruct(ev) && isfield(ev(i),'frame') && isnumeric(ev(i).frame) && isscalar(ev(i).frame) && isfinite(ev(i).frame)
+        frames(i) = double(ev(i).frame);
+    end
+
+    % type
+    tp = "";
+    if isstruct(ev) && isfield(ev(i),'type') && ~isempty(ev(i).type)
+        tp = lower(strtrim(string(ev(i).type)));
+    end
+    if tp == "end"
+        isEnd(i) = true;
+    elseif tp == "start"
+        isEnd(i) = false;
+    else
+        % default unknown -> start (conservative)
+        isEnd(i) = false;
+    end
+
+    valid(i) = isfinite(frames(i));
+end
+
+frames = frames(valid);
+isEnd  = isEnd(valid);
+
+if isempty(frames), return; end
+
+% sort by frame asc, and for ties: END first
+% (i.e. isEnd==true should come before isEnd==false)
+[~, ord] = sortrows([frames, double(~isEnd)]); % ~isEnd: end->0, start->1
+frames = frames(ord);
+isEnd  = isEnd(ord);
+
+openStart = NaN;
+kOut = 0;
+
+for k = 1:numel(frames)
+    t = frames(k);
+
+    if isEnd(k)
+        % close if open
+        if isfinite(openStart)
+            if t >= openStart + 1
+                kOut = kOut + 1;
+                Itv(kOut,1).startFrame = openStart;
+                Itv(kOut,1).endFrame   = t;
+                Itv(kOut,1).dur        = t - openStart;
+            end
+            % close regardless (even if t==openStart, we discard zero-length)
+            openStart = NaN;
+        end
+
+    else
+        % start
+        if ~isfinite(openStart)
+            openStart = t;
+        else
+            % multiple starts without end: keep the FIRST (conservative)
+            % If you prefer "last start wins", replace with: openStart = t;
+        end
+    end
+end
+
+end
+
 
 % -------------------------------------------------------------------------
 % helper: robust extraction of frames only (NO names), returns raw arrays

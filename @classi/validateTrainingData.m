@@ -1,25 +1,33 @@
 function validateTrainingData(classif, roiobj, varargin)
 % validateTrainingData
-% Wrapper de validation autour de classifyData:
-%   - appelle classifyData (mêmes chemins d'inférence, mêmes outputs écrits dans les ROIs)
-%   - puis appelle stats() (export dans run folder si run actif)
-%   - optionnellement ferme le run
+% Clean validation wrapper around classifyData:
+%   - calls classifyData (writes inference outputs into ROI objects)
+%   - optionally calls stats() and exports into the RUN FOLDER
+%   - ALWAYS logs validation into <runDirAbs>/events_validation.log
+%   - mirrors messages into classif.runMsg() ONLY if run is active
 %
-% Options propres à la validation (name/value ou flags):
+% Assumption / invariant (as agreed):
+%   classif.run.runDir     : REL (portable)
+%   classif.run.runDirAbs  : ABS (local)  <-- source of truth for I/O
+%   classif.run.active     : runtime only (may be false during validation)
+%
+% Options (name/value or flags):
 %   'DoStats'     : 0/1 (default 1)
-%   'CloseRun'    : 0/1 (default 1)
-%   'StatsArgs'   : cell array d'args additionnels pour stats(classif,...)
+%   'CloseRun'    : 0/1 (default 0)   % usually false if training already closes run
+%   'StatsArgs'   : cell array of extra args for stats(classif,...)
+%   'RunDirAbs'   : override target folder (absolute) [optional]
 %
-% Tout le reste des varargin est forwardé tel quel à classifyData.
+% Any other varargin is forwarded to classifyData unchanged
+% (except summary keys: open/savecsv/runsroot/filter/sortby -> summarizeRuns).
 
 % ---------------- defaults ----------------
 doStats   = true;
-closeRun  = true;
+closeRun  = false;
 statsArgs = {};
+runDirAbsOverride = '';
 
 argsClassify = {};
 argsSummary  = {};
-
 summaryKeys = ["open","savecsv","runsroot","filter","sortby"];
 
 % ---------------- parse varargin ----------------
@@ -33,6 +41,7 @@ while i <= numel(varargin)
     end
     keyL = lower(strtrim(string(key)));
 
+    % ---- summarizeRuns args ----
     if any(keyL == summaryKeys)
         if i < numel(varargin)
             argsSummary = [argsSummary, {char(key), varargin{i+1}}]; %#ok<AGROW>
@@ -44,6 +53,7 @@ while i <= numel(varargin)
         continue;
     end
 
+    % ---- validation options ----
     if keyL == "dostats"
         if i < numel(varargin) && (islogical(varargin{i+1}) || isnumeric(varargin{i+1}))
             doStats = logical(varargin{i+1});
@@ -76,6 +86,16 @@ while i <= numel(varargin)
         continue;
     end
 
+    if keyL == "rundirabs"
+        if i < numel(varargin)
+            runDirAbsOverride = char(string(varargin{i+1}));
+            i = i + 2;
+        else
+            i = i + 1;
+        end
+        continue;
+    end
+
     % ---- forward to classifyData ----
     if i < numel(varargin)
         nxt = varargin{i+1};
@@ -100,90 +120,49 @@ end
 
 nROI = numel(roiobj);
 
-% ---------------- run helpers (run est une PROP) ----------------
-runActive = false;
-runDir = '';
+% ---------------- resolve runDirAbs + runActive ----------------
+[runDirAbs, runActive] = localGetRunDirAbsAndActive_(classif, runDirAbsOverride);
 
-hasRunProp = isprop(classif, 'run') && ~isempty(classif.run);
-
-if hasRunProp
-    try
-        % run peut être struct OU objet; on teste "active"
-        if isstruct(classif.run)
-            if isfield(classif.run,'active') && classif.run.active
-                runActive = true;
-            end
-            if isfield(classif.run,'runDir')
-                runDir = classif.run.runDir;
-            end
-        else
-            % objet: access via dot
-            if isprop(classif.run,'active') && classif.run.active
-                runActive = true;
-            elseif isfield(classif.run,'active') && classif.run.active %#ok<ISFLD>
-                runActive = true;
-            end
-
-            if isprop(classif.run,'runDir')
-                runDir = classif.run.runDir;
-            elseif isfield(classif.run,'runDir') %#ok<ISFLD>
-                runDir = classif.run.runDir;
-            end
-        end
-    catch
-        runActive = false;
-        runDir = '';
-    end
+if isempty(runDirAbs)
+    error('validateTrainingData:NoRunDirAbs', ...
+        'No run directory available. classif.run.runDirAbs is empty and no RunDirAbs override was provided.');
 end
 
-% petites fonctions safe pour éviter de crash si runMsg/runSave/runStop absents
-runMsg  = @(varargin) [];
-runSave = @(varargin) [];
-runStop = @() [];
-
-if hasRunProp
-    if ismethod(classif,'runMsg')
-        runMsg = @(varargin) classif.runMsg(varargin{:});
-    end
-    if ismethod(classif,'runSave')
-        runSave = @(varargin) classif.runSave(varargin{:});
-    end
-    if ismethod(classif,'runStop')
-        runStop = @() classif.runStop();
-    end
+if ~exist(runDirAbs,'dir')
+    mkdir(runDirAbs);
 end
 
-% ---------------- run logging: start ----------------
-if runActive
-    runMsg('--- VALIDATION START ---');
-    runMsg('validateTrainingData: nROI=%d | DoStats=%d | CloseRun=%d', nROI, doStats, closeRun);
-    try
-        runSave('validation_context.mat', ...
-            'roi_ids', {roiobj.id}, ...
-            'argsClassify', argsClassify, ...
-            'doStats', doStats, ...
-            'closeRun', closeRun);
-    catch
-    end
-end
+% ---------------- logging (always to file, plus runMsg if active) ----------------
+vlog = @(fmt,varargin) localLogBoth_(classif, runDirAbs, runActive, fmt, varargin{:});
 
-tStart = tic;
+vlog('--- VALIDATION START ---');
+vlog('validateTrainingData: nROI=%d | DoStats=%d | CloseRun=%d | runDirAbs=%s', nROI, doStats, closeRun, runDirAbs);
+
+% save context snapshot in the run folder
+try
+    roi_ids = {roiobj.id}; %#ok<NASGU>
+    argsClassify_local = argsClassify; %#ok<NASGU>
+    doStats_local = doStats; %#ok<NASGU>
+    closeRun_local = closeRun; %#ok<NASGU>
+    save(fullfile(runDirAbs,'validation_context.mat'), ...
+        'roi_ids','argsClassify_local','doStats_local','closeRun_local','-v7.3');
+catch ME
+    vlog('WARN: could not save validation_context.mat (%s)', ME.message);
+end
 
 % ---------------- call inference engine ----------------
 disp('--- validateTrainingData: calling classifyData(...) ---');
-classifyData(classif, roiobj, argsClassify{:});
 
+tStart = tic;
+classifyData(classif, roiobj, argsClassify{:});
 elapsedClassify = toc(tStart);
 
-if runActive
-    runMsg('classifyData done (%.1fs)', elapsedClassify);
-end
+vlog('classifyData done (%.1fs)', elapsedClassify);
 
-% ---------------- stats (optional) ----------------
 % ---------------- stats (optional) ----------------
 if doStats
     try
-        % map roiobj -> indices classif.roi si possible
+        % map roiobj -> indices in classif.roi if possible
         roiid = [];
         try
             allIDs = strtrim(string({classif.roi.id}));
@@ -194,29 +173,8 @@ if doStats
             roiid = [];
         end
 
-        % --- choisir un dossier d'export dans TOUS les cas ---
-        if runActive && ~isempty(runDir) && exist(runDir,'dir')
-            exportDir = runDir;
-        else
-            stamp = char(datetime('now','Format','yyyyMMdd_HHmmss'));
-            exportDir = fullfile(classif.path,'runs',['validation_' stamp]);
-            if ~exist(exportDir,'dir'), mkdir(exportDir); end
-        end
+        exportBase = fullfile(runDirAbs, sprintf('validation_%s', char(string(classif.strid))));
 
-        exportBase = fullfile(exportDir, sprintf('validation_%s', classif.strid));
-
-        % --- sauver context quoi qu'il arrive (run ou pas) ---
-        try
-            roi_ids = {roiobj.id}; %#ok<NASGU>
-            argsClassify_local = argsClassify; %#ok<NASGU>
-            doStats_local = doStats; %#ok<NASGU>
-            closeRun_local = closeRun; %#ok<NASGU>
-            save(fullfile(exportDir,'validation_context.mat'), ...
-                'roi_ids','argsClassify_local','doStats_local','closeRun_local','-v7.3');
-        catch
-        end
-
-        % --- appeler stats avec export + silent ---
         args = {'Force'};
         if ~isempty(roiid)
             args = [args, {'Rois', roiid}];
@@ -228,48 +186,229 @@ if doStats
         end
 
         stats(classif, args{:});
+        vlog('stats() done (exportBase=%s)', exportBase);
 
-        % --- sauver scores quoi qu'il arrive ---
+        % snapshot scores into run folder
         try
             if ~isempty(classif.score)
                 score = classif.score; %#ok<NASGU>
-                save(fullfile(exportDir,'validation_scores.mat'), 'score','-v7.3');
+                save(fullfile(runDirAbs,'validation_scores.mat'), 'score','-v7.3');
             end
         catch
         end
 
-        % --- si run actif, on loggue aussi via runSave (bonus) ---
-        if runActive
-            runMsg('stats() done (exportDir=%s)', exportDir);
-            try
-                if ~isempty(classif.score)
-                    runSave('validation_scores.mat', 'score', classif.score);
-                end
-            catch
-            end
-        end
-
     catch ME
-        if runActive
-            runMsg('stats() FAILED: %s', ME.getReport('basic','hyperlinks','off'));
-        else
-            warning('validateTrainingData: stats failed: %s', ME.message);
-        end
+        vlog('stats() FAILED: %s', ME.getReport('basic','hyperlinks','off'));
+        warning('validateTrainingData: stats failed: %s', ME.message);
     end
 end
 
-% ---------------- close run (optional) ----------------
-if runActive && closeRun
-    runMsg('--- VALIDATION END ---');
-    runStop();
+% ==========================================================
+% OPTIONAL: batonnets_proceedRender (only for LSTM + CNN)
+% ==========================================================
+try
+    doBatonnets = localIsLSTMCNN_(classif);
+
+    if ~doBatonnets
+    vlog('batonnets_proceedRender skipped (classifier ≠ "LSTM + CNN")');
+else
+    aa = struct();
+    aa.BarHeight            = 10;
+    aa.FrameWidth           = 2;
+    aa.ShowColorbar         = 1;
+    aa.LabelColormapName    = "lines";
+    aa.NumbersColormapName  = "jet";
+
+    k1 = string(classif.strid) + "|labels";
+    k2 = string(classif.strid) + "|labels_training";
+    compareKeys = [k1 k2];
+
+    gapROI     = max(1, round(aa.BarHeight / 2));
+    gapCompare = max(1, round(aa.BarHeight / 4));
+
+    % auto EventRulesByKey
+    classNames  = string(classif.classes(:)');
+    classNamesL = lower(strtrim(classNames));
+
+    % --- class2 list: prefer "small", else fallback to smallb/smallt ---
+    class2List = strings(1,0);
+    if any(classNamesL == "small")
+        class2List = "small";
+    else
+        if any(classNamesL == "smallb"), class2List(end+1) = "smallb"; end %#ok<AGROW>
+        if any(classNamesL == "smallt"), class2List(end+1) = "smallt"; end %#ok<AGROW>
+    end
+
+    % --- class1 list: we want both large and unbud if present ---
+    class1Wanted = ["large","unbud"];
+    class1List = strings(1,0);
+    for c1 = class1Wanted
+        if any(classNamesL == c1)
+            class1List(end+1) = c1; %#ok<AGROW>
+        end
+    end
+
+    % --- build rules: Start + End for every (class1, class2) pair ---
+    rules = struct('name',{},'type',{},'from',{},'to',{});
+    if ~isempty(class1List) && ~isempty(class2List)
+        for c1 = class1List
+            for c2 = class2List
+                rules(end+1) = struct('name',"Event", 'type',"Start", 'from',c1, 'to',c2); %#ok<AGROW>
+                rules(end+1) = struct('name',"Event", 'type',"End",   'from',c1, 'to',c2); %#ok<AGROW>
+            end
+        end
+    end
+
+    eventRulesByKey = containers.Map('KeyType','char','ValueType','any');
+    eventRulesByKey(char(k1)) = rules;
+    eventRulesByKey(char(k2)) = rules;
+
+    % ---- convert ROI objects -> roiList struct expected by batonnets_proceedRender ----
+    roiList = localMakeRoiList_(roiobj);
+
+    batonnets_proceedRender(roiList, compareKeys, ...
+        'BarHeight', aa.BarHeight, ...
+        'FrameWidth', aa.FrameWidth, ...
+        'ShowColorbar', aa.ShowColorbar, ...
+        'LabelColormapName', aa.LabelColormapName, ...
+        'NumbersColormapName', aa.NumbersColormapName, ...
+        'DisplayMaxTraj', Inf, ...
+        'EventRulesByKey', eventRulesByKey, ...
+        'Compare', true, ...
+        'GapROI', gapROI, ...
+        'GapCompare', gapCompare, ...
+        'Classifier', classif);
+
+    vlog('batonnets_proceedRender done (LSTM + CNN | nRules=%d)', numel(rules));
 end
 
-% ---------------- summarize runs (silent update) ----------------
+
+catch MEb
+    vlog('batonnets_proceedRender FAILED: %s', MEb.getReport('basic','hyperlinks','off'));
+    warning('validateTrainingData: batonnets_proceedRender failed: %s', MEb.message);
+end
+
+% % ---------------- optional close run (only if active) ----------------
+% if runActive && closeRun
+%     vlog('--- VALIDATION END (closing run) ---');
+%     try
+%         if ismethod(classif,'runStop')
+%             classif.runStop();
+%         end
+%     catch
+%     end
+% else
+%     vlog('--- VALIDATION END ---');
+% end
+
+% ---------------- summarize runs (best effort) ----------------
 try
     summarizeRuns(classif, argsSummary{:});
 catch ME
-    if runActive
-        runMsg('summarizeRuns failed: %s', ME.getReport('basic','hyperlinks','off'));
+    vlog('summarizeRuns failed: %s', ME.getReport('basic','hyperlinks','off'));
+end
+
+end
+
+% =====================================================================
+% LOCAL HELPERS (kept minimal on purpose)
+% =====================================================================
+
+function roiList = localMakeRoiList_(roiobj)
+% Build the roiList struct required by batonnets_proceedRender
+n = numel(roiobj);
+roiList = repmat(struct('roiObj',[], 'label',""), 1, n);
+
+for k = 1:n
+    roiList(k).roiObj = roiobj(k);
+    try
+        % prefer ROI id if available
+        roiList(k).label = string(roiobj(k).id);
+    catch
+        roiList(k).label = "ROI " + k;
+    end
+end
+end
+
+
+function [runDirAbs, runActive] = localGetRunDirAbsAndActive_(classif, overrideAbs)
+runDirAbs = '';
+runActive = false;
+
+% override wins
+if nargin >= 2 && ~isempty(overrideAbs)
+    runDirAbs = char(string(overrideAbs));
+end
+
+% else use classif.run.runDirAbs
+if isempty(runDirAbs)
+    try
+        if isprop(classif,'run') && isstruct(classif.run)
+            if isfield(classif.run,'runDirAbs') && ~isempty(classif.run.runDirAbs)
+                runDirAbs = char(string(classif.run.runDirAbs));
+            end
+        end
+    catch
+    end
+end
+
+% runActive only controls mirroring to runMsg / optional runStop
+try
+    if isprop(classif,'run') && isstruct(classif.run)
+        if isfield(classif.run,'active') && isequal(classif.run.active,true)
+            runActive = true;
+        end
+    end
+catch
+    runActive = false;
+end
+
+end
+
+function tf = localIsLSTMCNN_(classif)
+tf = false;
+try
+    if isprop(classif,'description') && ~isempty(classif.description)
+        if numel(classif.description) >= 3
+            d3 = classif.description{3};
+            if ischar(d3) || isstring(d3)
+                tf = string(d3) == "LSTM + CNN";
+            end
+        end
+    end
+catch
+    tf = false;
+end
+end
+
+function localLogBoth_(classif, runDirAbs, runActive, fmt, varargin)
+% Always append to <runDirAbs>/events_validation.log.
+% Mirror to classif.runMsg only if runActive.
+
+% 1) file log (always)
+try
+    fp = fullfile(runDirAbs,'events_validation.log');
+    fid = fopen(fp,'a');
+    if fid >= 0
+        if isempty(varargin)
+            msg = sprintf('%s', fmt);
+        else
+            msg = sprintf(fmt, varargin{:});
+        end
+        fprintf(fid,'[%s] %s\n', datestr(now,'yyyy-mm-dd HH:MM:SS.FFF'), msg);
+        fclose(fid);
+    end
+catch
+    try, fclose(fid); catch, end %#ok<TRYNC>
+end
+
+% 2) runMsg mirror (only if active)
+if runActive
+    try
+        if ismethod(classif,'runMsg')
+            classif.runMsg(fmt, varargin{:});
+        end
+    catch
     end
 end
 

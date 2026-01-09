@@ -31,15 +31,17 @@ classdef classi < handle
 
         history=table('Size',[1 3],'VariableTypes',{'datetime','string','string'},'VariableNames',{'Date','Category','Message'});
 
-        run = struct( ...
-            'active', false, ...
-            'runDir', '', ...
-            'consoleFile', '', ...
-            'eventsFile', '', ...
-            'metaFile', '', ...
-            'startTime', [], ...
-            'tag', '', ...
-            'fun', '' );
+     run = struct( ...
+    'active', false, ...
+    'runDir', '', ...
+    'runDirAbs', '', ...      % <--- AJOUT
+    'consoleFile', '', ...
+    'eventsFile', '', ...
+    'metaFile', '', ...
+    'startTime', [], ...
+    'tag', '', ...
+    'fun', '' );
+
 
 
         %  inputsize=[]; %size of the network (required for lstm only
@@ -181,24 +183,10 @@ classdef classi < handle
             %   aa= obj.path
 
             oldpath=fixpath(obj.path);
-
-            % oldpath(strfind(oldpath,'\'))='/';
-
-            %oldpath,pathe
-
             oldfile=obj.strid;
 
             obj.path=pathe;
-            %
-            %  obj.strid=strid;
-
-            % also adjust set path of dependencies
-
-            %   oldfullpath=fullfile(oldpath);
-
-            %    newpath=fullfile(pathe);
-
-
+    
 
             for j=1:numel(obj.roi)
 
@@ -207,6 +195,45 @@ classdef classi < handle
                 %     obj.roi(j).path = replace(obj.roi(j).path,oldfullpath,newpath);
 
             end
+
+            % --- keep run paths coherent with the new obj.path ---
+try
+    if isprop(obj,'run')
+        % Ensure struct has expected fields (retro-compat)
+        if isempty(obj.run) || ~isstruct(obj.run)
+            obj.run = struct( ...
+                'active', false, ...
+                'runDir', '', ...
+                'runDirAbs', '', ...
+                'consoleFile', '', ...
+                'eventsFile', '', ...
+                'metaFile', '', ...
+                'startTime', [], ...
+                'tag', '', ...
+                'fun', '' );
+        else
+            % backfill missing fields
+            f = fieldnames(obj.run);
+            if ~ismember('active',f),      obj.run.active=false; end
+            if ~ismember('runDir',f),      obj.run.runDir=''; end
+            if ~ismember('runDirAbs',f),   obj.run.runDirAbs=''; end
+            if ~ismember('consoleFile',f), obj.run.consoleFile=''; end
+            if ~ismember('eventsFile',f),  obj.run.eventsFile=''; end
+            if ~ismember('metaFile',f),    obj.run.metaFile=''; end
+            if ~ismember('startTime',f),   obj.run.startTime=[]; end
+            if ~ismember('tag',f),         obj.run.tag=''; end
+            if ~ismember('fun',f),         obj.run.fun=''; end
+        end
+
+        % After moving path, the run cannot be considered active safely
+        obj.run.active = false;
+
+        % Normalize: ABS->REL by cutting before "/runs/", then rebuild runDirAbs from obj.path
+        obj.runNormalizePaths();
+    end
+catch
+end
+
 
 
             function pathout=fixpath(pathin)
@@ -428,7 +455,15 @@ classdef classi < handle
             end
         end
 
-function L = runStart(obj, funName, trainingParam, varargin)
+
+        function L = runStart(obj, funName, trainingParam, varargin)
+% runStart  Start (or attach to) a run folder under <obj.path>/runs
+% - obj.run.runDir    : RELATIVE path (portable)     e.g. "runs\2025..._strid_tag_fun"
+% - obj.run.runDirAbs : ABSOLUTE local path          e.g. "C:\...\<obj.path>\runs\..."
+%
+% Options:
+%   'Tag'    : string/char tag added to folder name
+%   'Attach' : true -> reuse current run if active
 
 if nargin < 3, trainingParam = []; end
 
@@ -440,8 +475,22 @@ parse(p,varargin{:});
 tag    = char(p.Results.Tag);
 attach = logical(p.Results.Attach);
 
+% Ensure run struct exists (defensive)
+if ~isprop(obj,'run') || isempty(obj.run) || ~isstruct(obj.run)
+    obj.run = struct( ...
+        'active', false, ...
+        'runDir', '', ...
+        'runDirAbs', '', ...
+        'consoleFile', '', ...
+        'eventsFile', '', ...
+        'metaFile', '', ...
+        'startTime', [], ...
+        'tag', '', ...
+        'fun', '' );
+end
+
 % Attach: reuse active run
-if attach && isstruct(obj.run) && isfield(obj.run,'active') && isequal(obj.run.active,true)
+if attach && isfield(obj.run,'active') && isequal(obj.run.active,true)
     try
         obj.localAppendRunEvent(sprintf('RUN ATTACH fun=%s tag=%s', char(funName), tag));
         obj.runMsg('AttachRun: using existing runDir=%s', obj.run.runDir);
@@ -452,7 +501,7 @@ if attach && isstruct(obj.run) && isfield(obj.run,'active') && isequal(obj.run.a
 end
 
 % Idempotent: if already active, do not create a new folder
-if isstruct(obj.run) && isfield(obj.run,'active') && isequal(obj.run.active,true)
+if isfield(obj.run,'active') && isequal(obj.run.active,true)
     try
         obj.localAppendRunEvent(sprintf('RUN START SKIP (already active) fun=%s tag=%s', char(funName), tag));
         obj.runMsg('runStart skipped (already active). fun=%s', char(funName));
@@ -462,9 +511,10 @@ if isstruct(obj.run) && isfield(obj.run,'active') && isequal(obj.run.active,true
     return;
 end
 
-% Base folder
-base = fullfile(obj.path, 'runs');
-if ~exist(base,'dir'); mkdir(base); end
+% ---- base (REL + ABS) ----
+baseRel = 'runs';
+baseAbs = fullfile(obj.path, baseRel);
+if ~exist(baseAbs,'dir'); mkdir(baseAbs); end
 
 % timestamp with milliseconds
 ts = datestr(now,'yyyymmdd_HHMMSS_FFF');
@@ -474,50 +524,58 @@ safeFun   = regexprep(string(funName),   '[^\w\-]', '_');
 safeTag   = regexprep(string(tag),       '[^\w\-]', '_');
 
 if strlength(safeTag) > 0
-    runDir = fullfile(base, sprintf('%s_%s_%s_%s', ts, safeStrid, safeTag, safeFun));
+    runFolder = sprintf('%s_%s_%s_%s', ts, safeStrid, safeTag, safeFun);
 else
-    runDir = fullfile(base, sprintf('%s_%s_%s', ts, safeStrid, safeFun));
+    runFolder = sprintf('%s_%s_%s', ts, safeStrid, safeFun);
 end
-if ~exist(runDir,'dir'); mkdir(runDir); end
+
+runDirRel = fullfile(baseRel, runFolder);     % "runs\xxxx"
+runDirAbs = fullfile(obj.path, runDirRel);    % "<obj.path>\runs\xxxx"
+if ~exist(runDirAbs,'dir'); mkdir(runDirAbs); end
 
 % Stop previous diary if any
 try, diary off; catch, end
 
-consoleFile = fullfile(runDir,'console.log');
-diary(consoleFile);
+% Console diary (ABS)
+consoleAbs = fullfile(runDirAbs,'console.log');
+try, diary(consoleAbs); catch, end
 
-% Update state
-obj.run.active      = true;
+% Update run state
+obj.run.active    = true;
+obj.run.runDir    = char(runDirRel);
+obj.run.runDirAbs = char(runDirAbs);
 
-%obj.run.runDir      = runDir;
-obj.run.runDirAbs = runDir;
-%obj.run.runDir    = fullfile('runs', string(runDir(numel(base)+2:end))); % ou plus simple :
-obj.run.runDir    = fullfile('runs', string(extractAfter(runDir, [base filesep])));
+% Store REL paths for portability
+obj.run.consoleFile = char(fullfile(runDirRel,'console.log'));
+obj.run.eventsFile  = char(fullfile(runDirRel,'events.log'));
+obj.run.metaFile    = char(fullfile(runDirRel,'run.json'));
 
-obj.run.consoleFile = consoleFile;
-obj.run.eventsFile  = fullfile(runDir,'events.log');
-obj.run.metaFile    = fullfile(runDir,'run.json');
-obj.run.startTime   = datetime('now');
-obj.run.tag         = tag;
-obj.run.fun         = char(safeFun);
+obj.run.startTime = datetime('now');
+obj.run.tag       = tag;
+obj.run.fun       = char(safeFun);
 
-% Meta json
-meta = obj.localCollectRunMeta(funName, trainingParam, runDir, tag);
-obj.localWriteJson(obj.run.metaFile, meta);
+% Meta json (write to ABS, but meta stores REL)
+try
+    meta = obj.localCollectRunMeta(funName, trainingParam, runDirRel, tag);
+    obj.localWriteJson(fullfile(runDirAbs,'run.json'), meta);
+catch
+end
 
 % Snapshot trainingParam
 if ~isempty(trainingParam)
     try
-        save(fullfile(runDir,'trainingParam.mat'),'trainingParam','-v7.3');
+        save(fullfile(runDirAbs,'trainingParam.mat'),'trainingParam','-v7.3');
     catch
     end
 end
 
-obj.localAppendRunEvent(sprintf('RUN START dir=%s', runDir));
-
-if nargout
-    L = obj.run;
+% Log start
+try
+    obj.localAppendRunEvent(sprintf('RUN START dirRel=%s dirAbs=%s', char(runDirRel), char(runDirAbs)));
+catch
 end
+
+if nargout, L = obj.run; end
 end
 
 
@@ -552,7 +610,8 @@ end
                 S.(char(key)) = val;
             end
 
-            fp = fullfile(obj.run.runDir, fileName);
+            runDirAbs = obj.localGetRunDirAbs();
+            fp = fullfile(runDirAbs, fileName);
             try
                 save(fp,'-struct','S','-v7.3');
                 obj.localAppendRunEvent(sprintf('Saved MAT: %s', fp));
@@ -567,7 +626,8 @@ end
             if ~obj.localRunIsActive(), return; end
             if nargin < 2 || isempty(fileName), return; end
 
-            fp = fullfile(obj.run.runDir, fileName);
+            runDirAbs = obj.localGetRunDirAbs();
+            fp = fullfile(runDirAbs, fileName);
             try
                 obj2 = S; %#ok<NASGU>
                 save(fp,'obj2','-v7.3');
@@ -583,7 +643,9 @@ end
             if ~obj.localRunIsActive(), return; end
             if nargin < 2 || isempty(fileName), return; end
 
-            fp = fullfile(obj.run.runDir, fileName);
+            runDirAbs = obj.localGetRunDirAbs();
+            fp = fullfile(runDirAbs, fileName);
+
             try
                 obj.localWriteJson(fp, S);
                 obj.localAppendRunEvent(sprintf('Saved JSON: %s', fp));
@@ -610,25 +672,14 @@ end
 
             if ~obj.localRunIsActive(), return; end
 
-            runDir = '';
-            try
-                runDir = obj.run.runDir;
-            catch
-                runDir = '';
-            end
-
-            if ~(ischar(runDir) || isstring(runDir)) || strlength(string(runDir))==0
-                return;
-            end
-
-            runDir = char(runDir);
-            if ~exist(runDir,'dir')
-                try
-                    mkdir(runDir);
-                catch
-                    return;
-                end
-            end
+            runDir = obj.localGetRunDirAbs();
+if ~(ischar(runDir) || isstring(runDir)) || strlength(string(runDir))==0
+    return;
+end
+runDir = char(runDir);
+if ~exist(runDir,'dir')
+    try, mkdir(runDir); catch, return; end
+end
 
             sid  = '';
             base = '';
@@ -729,11 +780,218 @@ end
         end
 
 
+      function runNormalizePaths(obj)
+% runNormalizePaths  Force obj.run.* paths to be REL to obj.path, keep runDirAbs ABS.
+% Handles Windows paths, UNC, and Linux/WSL paths (starting with "/").
+
+try
+    if ~isprop(obj,'run') || isempty(obj.run) || ~isstruct(obj.run)
+        return;
     end
 
+    baseAbs = char(string(obj.path));
+
+    % ---- helpers ----
+    toChar = @(x) char(string(x));
+    normSep = @(p) strrep(strrep(toChar(p),'\','/'),'//','/');
+
+    isAbsAny = @(p) localIsAbsAny_(toChar(p));
+
+    % Extract "runs/<suffix>" from any absolute path that contains ".../runs/<suffix>"
+    extractRunsRel = @(p) localExtractRunsRel_(toChar(p));
+
+    % Ensure rel starts with "runs"
+    ensureRunsPrefix = @(rel) localEnsureRunsPrefix_(toChar(rel));
+
+    % --------------------------------
+    % 1) normalize runDir -> REL
+    % --------------------------------
+    if isfield(obj.run,'runDir') && ~isempty(obj.run.runDir)
+        rd = toChar(obj.run.runDir);
+
+        if isAbsAny(rd)
+            rel = extractRunsRel(rd);
+            if isempty(rel)
+                % If it's inside obj.path, relativize to obj.path
+                rdN = normSep(rd);
+                baseN = normSep(baseAbs);
+                if startsWith(rdN, baseN)
+                    rel = rdN(numel(baseN)+2:end);
+                else
+                    % last resort: keep leaf folder name under runs
+                    [~,name] = fileparts(rd);
+                    rel = fullfile('runs', name);
+                end
+            end
+            obj.run.runDir = ensureRunsPrefix(rel);
+        else
+            obj.run.runDir = ensureRunsPrefix(rd);
+        end
+    end
+
+    % --------------------------------
+    % 2) rebuild runDirAbs from REL
+    % --------------------------------
+    if isfield(obj.run,'runDir') && ~isempty(obj.run.runDir)
+        runDirRel = toChar(obj.run.runDir);
+        candAbs = fullfile(baseAbs, runDirRel);
+
+        % Prefer the reconstructed one if it exists OR if current runDirAbs is empty/bad
+        curAbs = '';
+        if isfield(obj.run,'runDirAbs') && ~isempty(obj.run.runDirAbs)
+            curAbs = toChar(obj.run.runDirAbs);
+        end
+
+        curAbsN = normSep(curAbs);
+        baseN   = normSep(baseAbs);
+        candAbsN = normSep(candAbs);
+
+        curLooksValid = ~isempty(curAbs) && (exist(curAbs,'dir')==7) && startsWith(curAbsN, baseN);
+        candLooksValid = (exist(candAbs,'dir')==7) || startsWith(candAbsN, baseN);
+
+        if ~curLooksValid && candLooksValid
+            obj.run.runDirAbs = candAbs;
+        elseif isempty(curAbs) && candLooksValid
+            obj.run.runDirAbs = candAbs;
+        elseif ~curLooksValid && ~isempty(candAbs)
+            % even if folder doesn't exist yet, keep it coherent relative to obj.path
+            obj.run.runDirAbs = candAbs;
+        end
+    end
+
+    % --------------------------------
+    % 3) normalize file fields -> REL
+    % --------------------------------
+    fileFields = {'consoleFile','eventsFile','metaFile'};
+    for i = 1:numel(fileFields)
+        ff = fileFields{i};
+        if ~isfield(obj.run,ff) || isempty(obj.run.(ff)), continue; end
+
+        fp = toChar(obj.run.(ff));
+        if isAbsAny(fp)
+            rel = extractRunsRel(fp);
+            if isempty(rel)
+                % inside obj.path?
+                fpN = normSep(fp);
+                baseN = normSep(baseAbs);
+                if startsWith(fpN, baseN)
+                    rel = fpN(numel(baseN)+2:end);
+                else
+                    % fallback: put it under runDir
+                    if isfield(obj.run,'runDir') && ~isempty(obj.run.runDir)
+                        [~,name,ext] = fileparts(fp);
+                        rel = fullfile(toChar(obj.run.runDir), [name ext]);
+                    else
+                        rel = ''; % give up
+                    end
+                end
+            end
+            if ~isempty(rel)
+                obj.run.(ff) = ensureRunsPrefix(rel);
+            end
+        else
+            obj.run.(ff) = ensureRunsPrefix(fp);
+        end
+    end
+
+catch
+end
+
+    % ===== local helpers =====
+    function tf = localIsAbsAny_(p)
+        p = char(string(p));
+        if isempty(p), tf = false; return; end
+        % Windows drive
+        if ~isempty(regexp(p,'^[A-Za-z]:[\\/]', 'once')), tf = true; return; end
+        % UNC
+        if startsWith(p,'\\'), tf = true; return; end
+        % Linux/WSL absolute
+        if startsWith(p,'/'), tf = true; return; end
+        % Tilde home
+        if startsWith(p,'~'), tf = true; return; end
+        tf = false;
+    end
+
+    function rel = localExtractRunsRel_(p)
+        rel = '';
+        pN = normSep(p);
+        % Find last occurrence of "/runs/"
+        k = strfind(pN, '/runs/');
+        if isempty(k)
+            % also tolerate ending with "/runs"
+            k2 = strfind(pN, '/runs');
+            if ~isempty(k2) && (k2(end)+4 == strlength(string(pN)))
+                rel = 'runs';
+            end
+            return;
+        end
+        suffix = pN(k(end)+6:end); % after "/runs/"
+        if isempty(suffix)
+            rel = 'runs';
+        else
+            rel = fullfile('runs', suffix);
+        end
+    end
+
+    function rel2 = localEnsureRunsPrefix_(rel)
+        rel = char(string(rel));
+        if isempty(rel), rel2 = rel; return; end
+        relN = normSep(rel);
+        if startsWith(relN,'runs/')
+            rel2 = rel;
+        elseif strcmp(relN,'runs')
+            rel2 = 'runs';
+        else
+            rel2 = fullfile('runs', rel);
+        end
+    end
+end
+  
+  
+    end
   
 
     methods (Access = private)
+
+        function p = localGetRunDirAbs(obj)
+% Always return absolute run directory (or '')
+
+p = '';
+try
+    if ~isprop(obj,'run') || isempty(obj.run), return; end
+    r = obj.run;
+
+    % Prefer runDirAbs if present
+    if isstruct(r) && isfield(r,'runDirAbs') && strlength(string(r.runDirAbs))>0
+        p = char(string(r.runDirAbs));
+        return;
+    end
+
+    % Else build from relative runDir
+    % Else build from relative runDir (ensure it's really relative)
+if isstruct(r) && isfield(r,'runDir') && strlength(string(r.runDir))>0
+    rd = char(string(r.runDir));
+
+    if ispc
+        isAbs = ~isempty(regexp(rd,'^[A-Za-z]:[\\/]', 'once')) || startsWith(rd,'\\');
+    else
+        isAbs = startsWith(rd,'/');
+    end
+
+    if isAbs
+        p = rd;               % accept as-is (best effort)
+    else
+        p = fullfile(obj.path, rd);
+    end
+    return;
+end
+
+catch
+    p = '';
+end
+end
+
+
         function row = getClasslistRow(~, className, classIDReq)
             % getClasslistRow  Renvoie la ligne correspondante de classlist.mat
 
@@ -815,15 +1073,40 @@ end
 end
 
 
-        function localAppendRunEvent(obj, msg)
-            try
-                fid = fopen(obj.run.eventsFile,'a');
-                if fid < 0, return; end
-                fprintf(fid,'[%s] %s\n', datestr(now,'yyyy-mm-dd HH:MM:SS.FFF'), msg);
-                fclose(fid);
-            catch
-            end
-        end
+       function localAppendRunEvent(obj, msg)
+% Append one line to events.log in the active run folder (ABS if possible)
+
+try
+    if ~isprop(obj,'run') || isempty(obj.run) || ~isstruct(obj.run)
+        return;
+    end
+
+    % Resolve events.log absolute path
+    fp = '';
+    if isfield(obj.run,'runDirAbs') && ~isempty(obj.run.runDirAbs)
+        fp = fullfile(char(obj.run.runDirAbs), 'events.log');
+    elseif isfield(obj.run,'eventsFile') && ~isempty(obj.run.eventsFile)
+        fp = fullfile(obj.path, char(obj.run.eventsFile)); % eventsFile is REL
+    elseif isfield(obj.run,'runDir') && ~isempty(obj.run.runDir)
+        fp = fullfile(obj.path, char(obj.run.runDir), 'events.log');
+    else
+        return;
+    end
+
+    % Ensure folder exists
+    d = fileparts(fp);
+    if ~exist(d,'dir'); mkdir(d); end
+
+    fid = fopen(fp,'a');
+    if fid < 0, return; end
+    fprintf(fid,'[%s] %s\n', datestr(now,'yyyy-mm-dd HH:MM:SS.FFF'), msg);
+    fclose(fid);
+
+catch
+    try, fclose(fid); catch, end %#ok<TRYNC>
+end
+end
+
 
         function meta = localCollectRunMeta(obj, funName, trainingParam, runDir, tag)
             meta = struct();

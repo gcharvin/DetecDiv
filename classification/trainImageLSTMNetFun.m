@@ -945,6 +945,8 @@ catch ME
     safeRunStop();
     rethrow(ME);
 end
+
+classif.runStop();
 end
 
 % -------------------- helpers --------------------

@@ -92,6 +92,19 @@ else
 classiObj.setPath([path '\'],file); % adjust path 
 end
 
+% --- normalize run paths (old projects may have ABS stored) ---
+try
+    if isprop(classiObj,'run')
+        % Never trust "active" state after reload
+        if isstruct(classiObj.run) && isfield(classiObj.run,'active')
+            classiObj.run.active = false;
+        end
+        classiObj.runNormalizePaths();
+    end
+catch
+end
+
+
 msg=['Classification was loaded with this path:' path];
 
 classiObj.log(['Classi was loaded with this path:' path],'Creation');
