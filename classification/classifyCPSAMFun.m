@@ -208,8 +208,8 @@ pyrunfile(py_path);
 res = load(fullfile(classif.path, 'results.mat'));
 frames_list = res.frames_list;
 
-max_val = max(res.cellprob_all(:));
-min_val = min(res.cellprob_all(:));
+%max_val = max(res.cellprob_all(:));
+%min_val = min(res.cellprob_all(:));
 
 if strcmp(outputType, 'proba')
     % ---------- 1) Carte de proba -> channel <strid>_cellprob (non indexé) ----------
