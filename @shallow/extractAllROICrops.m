@@ -23,28 +23,162 @@ function extractAllROICrops(shallowObj, varargin)
 FrameList      = [];
 FOVIndex       = [];         % [] => toutes
 RequestedChans = {};         % {} => tous
-ROISelect      = [];         % [] => toutes (par FOV), peut être numeric ou cell array
+ROISelect      = [];         % [] => toutes (par FOV), numeric ou cell array
 
 % --- OPTIONS DIVERSES ---
 ForceChannelNames = true;    % impose les noms de canaux des ROI = chanSelNames
 Extend            = false;   % false = hard reset ; true = append/prolong
 
-% --- DRIFT CORRECTION OPTIONS ---
-CorrectDrift      = false;    % active ou non la correction
-DriftChannel      = [];       % canal utilisé pour l'estimation du drift
-DriftMethod       = 'circshift'; % 'circshift' | 'subpixel' | 'register'
-DriftRefLocal     = 1;
-DriftSubpixel     = false;    % subpixel shift
-DriftMaxShift     = 20;       % px, [] = pas de limite
-DriftHipassSigma  = 3;        % 0 = off
-DriftApodize      = true;     % fenêtre Hann
-DriftRollingRef   = 0;        % 0..1, 0 = off
-DriftPyrLevels    = 1;        % niveaux pyramide, 1 = off
-DriftMask         = [];       % masque optionnel (HxW logique)
+%% NEW (saveCroppedImages-compat)
+Scale        = 1;            % scale factor on crops (1 = no resize)
+CropDrift    = 1.0;          % fraction pour estimation drift (1 = full frame)
+hprogressbar = [];           % ui handle (uiprogressdlg or compatible)
+
+% =========================================================
+% DRIFT CORRECTION OPTIONS — robust to jitter + slow drift
+% =========================================================
+
+CorrectDrift       = true;          
+% Enable / disable drift correction.
+% Range: true | false
+% Use false for debugging or if data are already stable.
+
+DriftChannel       = [];            
+% Channel used for drift estimation.
+% [] = auto-select first selected channel.
+% Can be channel index (1..N) or channel name (string).
+
+DriftMethod        = 'subpixel';    
+% Drift estimation method:
+% 'circshift' = integer pixel correlation (fast, coarse)
+% 'subpixel'  = phase correlation (FFT-based, subpixel accuracy)
+% 'register'  = imregtform translation (slow, no score)
+% Recommended: 'subpixel'
+
+DriftRefMode       = 'previous';    
+% Reference strategy:
+% 'previous' = incremental (frame-to-frame), best for drift
+% 'first'    = all frames compared to first frame
+% Recommended: 'previous'
+
+DriftSubpixel      = true;          
+% Enable subpixel peak refinement.
+% Range: true | false
+% Only meaningful for 'subpixel' method.
+
+% ---------------------------------------------------------
+% HARD SAFETY LIMIT (catastrophic failure protection)
+% ---------------------------------------------------------
+DriftMaxShift      = 20;            
+% Absolute clamp per frame (px).
+% Range: ~10–50
+% Should be large enough to NEVER trigger in normal operation.
+% Acts only as a last-resort safety bumper.
+
+% ---------------------------------------------------------
+% IMAGE PREPROCESSING (stability of correlation)
+% ---------------------------------------------------------
+DriftHipassSigma   = 1;             
+% High-pass filter sigma (px).
+% Range: 0 (off) to ~3
+% Removes low-frequency background; improves phase correlation.
+% Recommended: 1
+
+DriftApodize       = true;          
+% Apply Hann window before FFT.
+% Range: true | false
+% Strongly recommended to reduce FFT edge artefacts.
+
+DriftMask          = [];            
+% Optional logical mask (HxW).
+% [] = no mask.
+% Useful to ignore static borders or background regions.
+
+% ---------------------------------------------------------
+% ROLLING REFERENCE (anti-jitter, pre-estimation smoothing)
+% ---------------------------------------------------------
+DriftRollingRef    = 0.05;           
+% Exponential moving average (EMA) of aligned reference image.
+% Range: 0 (off) to ~0.3
+% 0.05 → weak smoothing (~20 frames memory)
+% 0.1  → good compromise (jitter reduction, keeps slow drift)
+% 0.2  → strong smoothing (less reactive)
+% Recommended: 0.1 for jitter + slow drift
+
+% ---------------------------------------------------------
+% ROBUSTNESS / QUALITY CONTROL
+% ---------------------------------------------------------
+DriftWarmupFrames  = 0;             
+% Ignore drift correction for first N frames.
+% Range: 0–5
+% Useful for focus settling or illumination stabilization.
+
+DriftPsrRadius     = 6;             
+% Radius (px) excluded around correlation peak for PSR estimation.
+% Range: 4–10
+% Larger = more conservative noise estimation.
+
+DriftPsrMin        = 12;            
+% Minimum Peak-to-Sidelobe Ratio (PSR) to trust estimation.
+% Range: ~8–20
+% Lower = more permissive (noisy data)
+% Higher = stricter (risk of freezing if texture is weak)
+% Recommended: 10–15
+
+DriftMaxJump       = Inf;             
+% Maximum allowed change of step vs previous frame (px).
+% Range: 1–5 or Inf (disable)
+% Acts only when PSR is poor.
+% Helps suppress sporadic spikes due to noise.
+
+DriftRejectMode    = 'hold';        
+% Behaviour when a step is rejected:
+% 'hold'  = reuse previous step (smooth but can stall)
+% 'clamp' = limit variation
+% 'none'  = disable rejection logic
+% Recommended: 'hold'
+
+% ---------------------------------------------------------
+% PHYSICAL PRIOR (frame-to-frame plausibility)
+% ---------------------------------------------------------
+DriftMaxStep       = 10;             
+% Maximum allowed absolute step per frame (px).
+% Range: 1–5 (depends on frame rate and microscope stability)
+% Should reflect physically plausible drift.
+% Prevents large spurious jumps.
+
+DriftMaxStepMode   = 'clamp';       
+% How to handle steps exceeding DriftMaxStep:
+% 'clamp' = limit magnitude (recommended)
+% 'hold'  = reuse previous step (more aggressive)
+
+% ---------------------------------------------------------
+% POST-HOC TRAJECTORY SMOOTHING
+% ---------------------------------------------------------
+DriftSmoothWin     = 0;             
+% Window size for smoothing cumulative drift trajectory.
+% Range: 0 (off) or odd integer (3,5,7,...)
+% Use 0 during debugging.
+% Recommended: 5 in production.
+
+DriftSmoothMethod  = 'median';      
+% Smoothing method:
+% 'median' = robust to spikes (recommended)
+% 'mean'   = smoother but sensitive to outliers
+
+
+% Debug drift
+DriftDebug         = true;
+DriftDebugEvery    = 1;
 
 % ----------------- PARSING -----------------
 for i = 1:2:numel(varargin)
     key = lower(string(varargin{i}));
+
+    % aliases for saveCroppedImages-style naming
+    if key=="fov",     key = "fovindex"; end
+    if key=="channel", key = "channels"; end
+
     switch key
         case "frames"
             FrameList = varargin{i+1};
@@ -56,14 +190,30 @@ for i = 1:2:numel(varargin)
             ForceChannelNames = logical(varargin{i+1});
         case "extend"
             Extend = logical(varargin{i+1});
+
+        % drift high-level
         case "correctdrift"
             CorrectDrift = logical(varargin{i+1});
         case "driftchannel"
             DriftChannel = varargin{i+1};
-        case "driftreflocal"
-            DriftRefLocal = varargin{i+1};
         case "driftmethod"
             DriftMethod = char(varargin{i+1});
+
+        % drift ref mode (NEW)
+        case "driftrefmode"
+            DriftRefMode = char(varargin{i+1});
+
+        % legacy compat (si tu reçois encore DriftRefLocal)
+        case "driftreflocal"
+            % ancien champ -> map simple:
+            % 1 => previous ; 0/other => first
+            if isequal(varargin{i+1},1)
+                DriftRefMode = 'previous';
+            else
+                DriftRefMode = 'first';
+            end
+
+        % drift numeric params
         case "driftsubpixel"
             DriftSubpixel = logical(varargin{i+1});
         case "driftmaxshift"
@@ -74,13 +224,56 @@ for i = 1:2:numel(varargin)
             DriftApodize = logical(varargin{i+1});
         case "driftrollingref"
             DriftRollingRef = varargin{i+1};
-        case "driftpyramidlevels"
-            DriftPyrLevels = varargin{i+1};
         case "driftmask"
             DriftMask = varargin{i+1};
+
+        % NEW robustness params
+        case "driftwarmupframes"
+            DriftWarmupFrames = varargin{i+1};
+        case "driftpsrradius"
+            DriftPsrRadius = varargin{i+1};
+        case "driftpsrmin"
+            DriftPsrMin = varargin{i+1};
+        case "driftmaxjump"
+            DriftMaxJump = varargin{i+1};
+        case "driftrejectmode"
+            DriftRejectMode = char(varargin{i+1});
+
+        case "driftmaxstep"
+            DriftMaxStep = varargin{i+1};
+        case "driftmaxstepmode"
+            DriftMaxStepMode = char(varargin{i+1});
+
+        case "driftsmoothwin"
+            DriftSmoothWin = varargin{i+1};
+        case "driftsmoothmethod"
+            DriftSmoothMethod = char(varargin{i+1});
+
+        case "driftdebug"
+            DriftDebug = logical(varargin{i+1});
+        case "driftdebugevery"
+            DriftDebugEvery = varargin{i+1};
+
         case "roi"
-            ROISelect = varargin{i+1};  % numeric (appliqué à chaque FOV) ou cell array par FOV
+            ROISelect = varargin{i+1};
+
+        % scale + cropdrift + progress handle
+        case "scale"
+            Scale = varargin{i+1};
+        case "cropdrift"
+            CropDrift = varargin{i+1};
+        case "hprogressbar"
+            hprogressbar = varargin{i+1};
     end
+end
+
+
+% normalize scale
+if isempty(Scale), Scale = 1; end
+if islogical(Scale), Scale = double(Scale); end
+if ~isscalar(Scale) || ~isfinite(Scale) || Scale<=0
+    warning('Invalid Scale=%s -> forcing Scale=1', mat2str(Scale));
+    Scale = 1;
 end
 
 % ----------------- CHECK FOVS -----------------
@@ -112,7 +305,7 @@ nF = numel(FOVIndex);
 % 1) Channels → ChannelsPerFOV (1xNfov cell ; chaque entrée = cellstr des noms ou [])
 ChannelsPerFOV = cell(1, nF);
 if isempty(RequestedChans)
-    ChannelsPerFOV(:) = {{}};
+    ChannelsPerFOV(:) = {{}}; % ALL
 elseif nF == 1
     tmp = RequestedChans;
     if iscell(tmp) && ~isempty(tmp) && iscell(tmp{1})
@@ -199,13 +392,10 @@ end
 fprintf('=============================================\n');
 
 % ====== Qualifier la RAM dispo + classe d'échantillon en amont ======
-
-% ====== Qualifier la RAM dispo + classe d'échantillon en amont ======
 [availBytes, fallbackReason] = getAvailableMemoryBytes();
 if ~isempty(fallbackReason)
     fprintf('   (mem) %s\n', fallbackReason);
 end
-
 
 % =============== LOOP OVER SELECTED FOV ===============
 pbFOV = makeConsolePB('FOV', numel(FOVIndex), 'Indent',0);
@@ -213,7 +403,6 @@ pbFOV = makeConsolePB('FOV', numel(FOVIndex), 'Indent',0);
 for kF = 1:numel(FOVIndex)
     iFov  = FOVIndex(kF);
     fovObj = shallowObj.fov(iFov);
-
 
     % Lien parent ROI <-> FOV
     roiList = getprop(fovObj,'roi',[]);
@@ -225,13 +414,13 @@ for kF = 1:numel(FOVIndex)
         end
     end
 
-      % --- NEW: restreindre la liste selon ROISelect pour CE FOV ---
+    % --- restreindre la liste selon ROISelect pour CE FOV ---
     selIdx = resolveROISelectionForFOV(roiList, ROISelect, kF, FOVIndex);
     if isempty(selIdx)
         fprintf('\n▶ FOV %d/%d — no selected ROI, skipped.\n', kF, numel(FOVIndex));
         continue;
     end
-    roiList = roiList(selIdx);   % on garde uniquement les ROIs choisies
+    roiList = roiList(selIdx);
 
     if isempty(roiList)
         fprintf('\n▶ FOV %d/%d — no ROI, skipped.\n', kF, numel(FOVIndex));
@@ -241,78 +430,68 @@ for kF = 1:numel(FOVIndex)
     % Infos temporelles / canaux pour la FOV
     [nFramesTotal, nChannels, sampleClass] = inferFOVTimeline(fovObj);
 
- 
     % ---------- CANAUX POUR CETTE FOV ----------
-% Noms de canaux disponibles dans la FOV (forcer en cellstr)
-chanNamesFOV = getFOVChannelNames(fovObj, nChannels);
-chanNamesFOV = cellfun(@char, string(chanNamesFOV), 'UniformOutput', false);
+    chanNamesFOV = getFOVChannelNames(fovObj, nChannels);
+    chanNamesFOV = cellfun(@char, string(chanNamesFOV), 'UniformOutput', false);
 
-% Récupérer l'argument canaux pour CETTE FOV
-chans_for_this_fov = ChannelsPerFOV{kF};
+    chans_for_this_fov = ChannelsPerFOV{kF};
 
-if isempty(chans_for_this_fov)
-    % Aucun filtre demandé -> tous
-    chanSelIdx   = 1:nChannels;
-    chanSelNames = chanNamesFOV;
-else
-    % Construire la liste de noms demandés "names_req" (cellstr)
-    if isnumeric(chans_for_this_fov) || islogical(chans_for_this_fov)
-        idx = chans_for_this_fov;
-        if islogical(idx), idx = find(idx); end
-        names_req = chanNamesFOV(idx);
-    elseif iscell(chans_for_this_fov)
-        names_req = cellfun(@char, string(chans_for_this_fov), 'UniformOutput', false);
-    elseif isstring(chans_for_this_fov)
-        names_req = cellstr(chans_for_this_fov);
-    elseif ischar(chans_for_this_fov)
-        names_req = {chans_for_this_fov};
+    if isempty(chans_for_this_fov)
+        chanSelIdx   = 1:nChannels;
+        chanSelNames = chanNamesFOV;
     else
-        % Cas exotique: tentative de conversion générique
-        names_req = cellfun(@char, string(chans_for_this_fov), 'UniformOutput', false);
-    end
+        if isnumeric(chans_for_this_fov) || islogical(chans_for_this_fov)
+            idx = chans_for_this_fov;
+            if islogical(idx), idx = find(idx); end
+            names_req = chanNamesFOV(idx);
+        elseif iscell(chans_for_this_fov)
+            names_req = cellfun(@char, string(chans_for_this_fov), 'UniformOutput', false);
+        elseif isstring(chans_for_this_fov)
+            names_req = cellstr(chans_for_this_fov);
+        elseif ischar(chans_for_this_fov)
+            names_req = {chans_for_this_fov};
+        else
+            names_req = cellfun(@char, string(chans_for_this_fov), 'UniformOutput', false);
+        end
 
-    % Faire correspondre aux canaux de la FOV
-    [isHit, idx] = ismember(names_req, chanNamesFOV);  % <-- plus de RequestedChans ici
-    if any(~isHit)
-        miss = names_req(~isHit);
-        warning('⚠ Some requested channels not found in FOV: {%s}', strjoin(miss, ', '));
-    end
-    idx = idx(isHit);
-    if isempty(idx)
-        fprintf('\n▶ FOV %d/%d — none of the requested channels present, skipped.\n', kF, numel(FOVIndex));
-        continue;
-    end
-    chanSelIdx   = idx(:)';
-    chanSelNames = chanNamesFOV(chanSelIdx);
-end
-
-Csel = numel(chanSelIdx);
-
- 
-    % --- Frames pour CETTE FOV (robuste à cell/string/logical) ---
-    frames_for_this_fov = FrameListPerFOV{kF};
-    
-    if isempty(frames_for_this_fov)
-    framesToDo = 1:nFramesTotal;
-    else
-    v = frames_for_this_fov;
-    if iscell(v),    v = v{1};    end   % cell -> contenu
-    if isstring(v),  v = double(v); end % string -> numeric
-    if islogical(v), v = find(v);   end % logical mask -> indices
-    v = double(v(:)');                   % row vector numeric
-    if isempty(v)
-        framesToDo = 1:nFramesTotal;
-    else
-        framesToDo = v(v >= 1 & v <= nFramesTotal);
-        if isempty(framesToDo)
-            disp('   ⚠️  Frame list outside range, skipping this FOV.');
+        [isHit, idx] = ismember(names_req, chanNamesFOV);
+        if any(~isHit)
+            miss = names_req(~isHit);
+            warning('⚠ Some requested channels not found in FOV: {%s}', strjoin(miss, ', '));
+        end
+        idx = idx(isHit);
+        if isempty(idx)
+            fprintf('\n▶ FOV %d/%d — none of the requested channels present, skipped.\n', kF, numel(FOVIndex));
             continue;
         end
+        chanSelIdx   = idx(:)';
+        chanSelNames = chanNamesFOV(chanSelIdx);
     end
-    end
-    
-    nFramesThisRun = numel(framesToDo);
 
+    Csel = numel(chanSelIdx);
+
+    % --- Frames pour CETTE FOV ---
+    frames_for_this_fov = FrameListPerFOV{kF};
+    if isempty(frames_for_this_fov)
+        framesToDo = 1:nFramesTotal;
+    else
+        v = frames_for_this_fov;
+        if iscell(v),    v = v{1};    end
+        if isstring(v),  v = double(v); end
+        if islogical(v), v = find(v);   end
+        v = double(v(:)');
+        if isempty(v)
+            framesToDo = 1:nFramesTotal;
+        else
+            framesToDo = v(v >= 1 & v <= nFramesTotal);
+            if isempty(framesToDo)
+                disp('   ⚠️  Frame list outside range, skipping this FOV.');
+                continue;
+            end
+        end
+    end
+
+    nFramesThisRun = numel(framesToDo);
 
     % ID FOV & dossier de sortie
     fovId     = safeStr(getprop(fovObj,'id',sprintf('FOV_%d',iFov)));
@@ -321,7 +500,10 @@ Csel = numel(chanSelIdx);
         kF, numel(FOVIndex), fovId, nFramesThisRun, nChannels, Csel);
     fprintf('   Output dir: %s\n', fovOutDir);
 
-    % -------- Préparer les ROI (path + display minimal + bbox) --------
+    % UI PB update
+    pbUpdateUI(hprogressbar, (kF-1)/max(1,numel(FOVIndex)), sprintf('FOV %d/%d', kF, numel(FOVIndex)));
+
+    % -------- Préparer les ROI --------
     nROI = numel(roiList);
 
     ROI = struct('obj',[],'bbox',[],'h',0,'w',0,'id','', 'chanNames',{{}});
@@ -333,10 +515,8 @@ Csel = numel(chanSelIdx);
         ROI(rIdx).id  = safeStr(getprop(r,'id',sprintf('%s_ROI_%02d',fovId,rIdx)));
         ROI(rIdx).didInit = false;
 
-        % Path projet/FOV
         r.path = fovOutDir;
 
-        % BBox
         v = getprop(r,'value',[]);
         if isempty(v) || size(v,2) < 4
             ROI(rIdx).bbox = []; ROI(rIdx).h = 0; ROI(rIdx).w = 0;
@@ -344,16 +524,13 @@ Csel = numel(chanSelIdx);
             ROI(rIdx).bboxPerFrame = [];
         else
             if size(v,1) == 1
-                % Fixe
                 ROI(rIdx).mobile = false;
                 ROI(rIdx).bbox = struct('xmin',v(1), 'ymin',v(2), 'w',v(3), 'h',v(4));
                 ROI(rIdx).w = v(3); ROI(rIdx).h = v(4);
             else
-                % Mobile (N×4)
                 ROI(rIdx).mobile = true;
                 ROI(rIdx).bboxPerFrame = v(:,1:4);
 
-                % LIRE fixed_wh & frames dans ds=userData du dataseries EXISTANT
                 fixed_wh = [];
                 framesUD = [];
                 try
@@ -374,29 +551,24 @@ Csel = numel(chanSelIdx);
                 ROI(rIdx).h = fixed_wh(2);
 
                 ROI(rIdx).bbox = struct('xmin',v(1,1),'ymin',v(1,2),'w',ROI(rIdx).w,'h',ROI(rIdx).h);
-                ROI(rIdx).frames_abs = framesUD; % peut être []
+                ROI(rIdx).frames_abs = framesUD;
             end
         end
 
-        % Display minimal si absent, puis on stocke les noms FOV complets (pour cohérence)
         if ~isstruct(r.display) || ~isfield(r.display,'channel') || isempty(r.display.channel)
             r.display = defaultDisplay(numel(chanNamesFOV), numel(chanNamesFOV));
             r.display.channel = chanNamesFOV;
         end
         ROI(rIdx).chanNames = r.display.channel;
 
-        % channelid trivial sur base FOV complète ; sera réajusté si ForceChannelNames
         if isempty(r.channelid) || numel(r.channelid) ~= numel(chanNamesFOV)
             r.channelid = 1:numel(chanNamesFOV);
         end
 
-        % Ecrire retour dans l'objet
         roiList(rIdx) = r;
     end
 
-    % --- AFTER the loop that fills ROI(...) and updates roiList(rIdx) = r;
-    %     We now have: chanSelNames, Csel, fovOutDir defined.
-
+    % init ROI files / channels
     for rIdx = 1:nROI
         r = roiList(rIdx);
         if ~isprop(r,'id') || isempty(r.id), r.id = ROI(rIdx).id; end
@@ -405,7 +577,6 @@ Csel = numel(chanSelIdx);
         if isprop(r,'matpath'), r.matpath = fullfile(fovOutDir, sprintf('data_%s.mat',r.id)); end
 
         if ~Extend
-            % HARD RESET (inchangé)
             hardResetROIh5(r);
             r.image     = [];
             r.channelid = 1:Csel;
@@ -413,11 +584,9 @@ Csel = numel(chanSelIdx);
             r.display.channel = chanSelNames(:)';
             ROI(rIdx).didInit = true;
         else
-            % EXTEND: lire canaux existants et ordonner chanSelNames en conséquence
             [h5p, ~] = getROIFilePaths(r);
-            existing = listH5Channels(h5p); % ex: ["Channel0","Channel1","Channel2"]
+            existing = listH5Channels(h5p);
             if isempty(existing)
-                % Pas de fichier/datasets → on se comporte comme un hard reset implicite (sans delete)
                 r.image     = [];
                 r.channelid = 1:Csel;
                 if ForceChannelNames
@@ -426,16 +595,13 @@ Csel = numel(chanSelIdx);
                 end
                 ROI(rIdx).didInit = true;
             else
-                % On restreint et ORDRE = celui du fichier !
                 req = string(chanSelNames);
                 keep = existing(ismember(existing, req));
                 if isempty(keep)
                     warning('ROI %s: none of requested channels exist in H5 → nothing to append.', r.id);
                 else
-                    % impose l'ordre fichier pour éviter "1 canal seulement"
-                    chanSelNames = cellstr(keep); %#ok<NASGU>  % IMPORTANT: écrase pour la suite !
+                    chanSelNames = cellstr(keep); %#ok<NASGU>
                     Csel = numel(keep);
-                    % aligne l'affichage
                     if ForceChannelNames
                         r = normalizeROIChannels(r, chanSelNames);
                     end
@@ -447,28 +613,13 @@ Csel = numel(chanSelIdx);
         roiList(rIdx) = r;
     end
 
-    [h5p, matp] = getROIFilePaths(roiList(rIdx));
-    fprintf('   ROI %d: id=%s\n', rIdx, roiList(rIdx).id);
-    fprintf('           H5=%s\n', h5p);
-    fprintf('           MAT=%s\n', matp);
-    if ~Extend
-        fprintf('           (hard reset ON)\n');
-    else
-        fprintf('           (extend mode)\n');
-    end
-
     % -------- Estimation mémoire & taille de bloc temporel --------
-    % Lire une image témoin pour H,W et bytes/sample
     [H,W,sampleBytes] = probeFrameSpec(fovObj, chanSelIdx(1));
 
-    % Mémoire à réserver par bloc : FOV-block ~ H*W*Csel*Tblock*sampleBytes
-    % On garde une marge (overhead MATLAB + crops) : on cible ~25% de la RAM libre
-    perBlockBudget = max(64e6, 0.25 * double(availBytes)); % >=64MB, sinon trop petit
+    perBlockBudget = max(64e6, 0.25 * double(availBytes));
     Tblock_auto    = max(1, floor(perBlockBudget / double(H*W*Csel*sampleBytes)));
-    % Sécurité : pas plus que les frames restantes, pas moins que 1
     Tblock_auto    = max(1, min(Tblock_auto, nFramesThisRun));
 
-    % Découpage en blocs
     frameStarts = 1:Tblock_auto:nFramesThisRun;
     nBlocks     = numel(frameStarts);
     fprintf('   RAM avail ~ %.1f GB → Tblock=%d (H=%d,W=%d,Csel=%d,class=%s)\n', ...
@@ -476,76 +627,213 @@ Csel = numel(chanSelIdx);
 
     pbBlk = makeConsolePB(sprintf('  FOV %d/%d — blocs', kF, numel(FOVIndex)), nBlocks, 'Indent',2);
 
-    % -------- Progression --------
-    doneFrames  = 0;
-    totalFrames = nFramesThisRun;
-    % fprintf('      Loading frames  %s\n', progressBarString(doneFrames,totalFrames));
-    % fprintf('      Cropping ROIs   %s\n', progressBarString(doneFrames,totalFrames));
-
     % --------- Boucle bloc par bloc ---------
     for ib = 1:nBlocks
         fs = frameStarts(ib);
         fe = min(fs+Tblock_auto-1, nFramesThisRun);
 
-        localRange = fs:fe;                 % indices temps locaux (dans framesToDo)
-        frameBatch = framesToDo(localRange);% frames absolues
+        localRange = fs:fe;
+        frameBatch = framesToDo(localRange);
         Tblock     = numel(localRange);
 
         pbFrm = makeConsolePB(sprintf('    Bloc %d/%d — frames', ib, nBlocks), Csel*Tblock, 'Indent',4);
 
-        % 1) Lire bloc sur la FOV : [H W Csel Tblock]
+        % 1) Lire bloc FOV (grayscale enforced)
         blockImg = loadFOVBlock_readImage( ...
             fovObj, frameBatch, chanSelIdx, ...
             @(it,NT,msg) pbFrm.update(it, msg) );
 
+        % UI update
+        fracGlobal = ((kF-1) + (ib-1)/max(1,nBlocks)) / max(1,numel(FOVIndex));
+        pbUpdateUI(hprogressbar, fracGlobal, sprintf('FOV %d/%d - bloc %d/%d', kF, numel(FOVIndex), ib, nBlocks));
 
-        if CorrectDrift
-            disp('Computing drift....');
 
-            [blockImg, driftBlk, scoreBlk] = fovObj.computeDrift('images', blockImg,  ...
-                'channel',      DriftRefLocal, ...   % index local 1..Csel
-                'framesid',     frameBatch, ...      % frames absolues
-                'refframeid',   frameBatch(1), ...
-                'method',       DriftMethod, ...
-                'subpixel',     DriftSubpixel, ...
-                'maxshift',     DriftMaxShift, ...
-                'hipasssigma',  DriftHipassSigma, ...
-                'apodize',      DriftApodize, ...
-                'rollingref',   DriftRollingRef, ...
-                'mask',         DriftMask, ...
-                'crop',         1.0 ...              % ou 0.8 si tu veux un recentrage robuste
-                );
+      % =========================================================
+% DEBUG: inject synthetic drift (1 px right + 1 px down / frame)
+% =========================================================
+% if DriftDebug
+%     fprintf('[drift inject] incremental drift + jitter (bounded per-frame steps)\n');
+% 
+%     T = size(blockImg,4);
+%     C = size(blockImg,3);
+% 
+%     % target per-frame step (what computeDrift should recover with ref=previous)
+%     driftStep_col = 1.0;     % px/frame
+%     driftStep_row = 1.0;     % px/frame
+% 
+%     jitterStdStep = 0.5;     % px RMS on the STEP (not on absolute position)
+%     maxStepJitter = 1.5;     % clamp step jitter
+% 
+%     injCol = zeros(1,T);
+%     injRow = zeros(1,T);
+% 
+%     for it = 2:T
+%         jCol = max(min(jitterStdStep*randn(), maxStepJitter), -maxStepJitter);
+%         jRow = max(min(jitterStdStep*randn(), maxStepJitter), -maxStepJitter);
+% 
+%         stepCol = driftStep_col + jCol;
+%         stepRow = driftStep_row + jRow;
+% 
+%         injCol(it) = injCol(it-1) + stepCol;
+%         injRow(it) = injRow(it-1) + stepRow;
+%     end
+% 
+%     % Apply translation
+%     for it = 1:T
+%         for ic = 1:C
+%             fv = median(blockImg(:,:,ic,it), 'all');
+%             blockImg(:,:,ic,it) = imtranslate(blockImg(:,:,ic,it), [injCol(it) injRow(it)], ...
+%                 'linear', 'FillValues', fv);
+%         end
+%         fprintf('[drift inject] frame %02d: (col,row)=(%+.2f,%+.2f)\n', it, injCol(it), injRow(it));
+%     end
+% 
+%     fprintf('[drift inject] step stats: mean(|d|) col=%.2f row=%.2f ; max(|d|) col=%.2f row=%.2f\n', ...
+%         mean(abs(diff(injCol))), mean(abs(diff(injRow))), max(abs(diff(injCol))), max(abs(diff(injRow))));
+% end
 
-            % journalise dans fovObj.drift (fusion remplaçante)
-            if ~isfield(fovObj,'drift') || ~isstruct(fovObj.drift)
-                fovObj.drift = struct('frames',[],'dx',[],'dy',[],'score',[]);
+
+
+
+    if CorrectDrift
+    disp('Computing drift....');
+
+    % --- Choose channel used for drift estimation (local index in chanSelNames/blockImg)
+    driftLocal = 1;
+    if ~isempty(DriftChannel)
+        if isnumeric(DriftChannel)
+            driftLocal = double(DriftChannel(1));
+        else
+            try
+                [tf, loc] = ismember(string(DriftChannel), string(chanSelNames));
+                if tf && loc>0
+                    driftLocal = loc;
+                else
+                    [tf2, loc2] = ismember(lower(string(DriftChannel)), lower(string(chanSelNames)));
+                    if tf2 && loc2>0, driftLocal = loc2; end
+                end
+            catch
             end
-            [allF, ia] = union(fovObj.drift.frames, frameBatch(:)');
-            dxNew = nan(1, numel(allF)); dyNew = dxNew; scNew = dxNew;
-
-            [~,locOld] = ismember(fovObj.drift.frames, allF);
-            dxNew(locOld) = fovObj.drift.x;
-            dyNew(locOld) = fovObj.drift.y;
-            scNew(locOld) = getfield(fovObj.drift, 'score', nan(size(fovObj.drift.x))); %#ok<GFLD>
-
-            [~,locNew] = ismember(frameBatch(:)', allF);
-            dxNew(locNew) = driftBlk.x(frameBatch);
-            dyNew(locNew) = driftBlk.y(frameBatch);
-            scNew(locNew) = scoreBlk(:)';
-
-            tmp=fovObj.drift
-
-            fovObj.drift.frames = allF;
-            fovObj.drift.x      = dxNew;
-            fovObj.drift.y      = dyNew;
-            fovObj.drift.score  = scNew;
         end
+    end
+    driftLocal = max(1, min(Csel, round(driftLocal)));
+
+    % sanitize crop (computeDrift needs ]0,1])
+cropReal = CropDrift;
+if isempty(cropReal) || (islogical(cropReal) && ~cropReal), cropReal = 1; end
+cropReal = double(cropReal(1));
+if ~isfinite(cropReal) || cropReal <= 0 || cropReal > 1, cropReal = 1; end
+
+driftArgs = { ...
+    'channel',      driftLocal, ...
+    'method',       DriftMethod, ...
+    'refmode',      DriftRefMode, ...
+    'subpixel',     DriftSubpixel, ...
+    'maxshift',     DriftMaxShift, ...
+    'hipasssigma',  DriftHipassSigma, ...
+    'apodize',      DriftApodize, ...
+    'rollingref',   DriftRollingRef, ...
+    'mask',         DriftMask, ...
+    'crop',         cropReal, ...
+    'warmupframes', DriftWarmupFrames, ...
+    'psrradius',    DriftPsrRadius, ...
+    'psrmin',       DriftPsrMin, ...
+    'maxjump',      DriftMaxJump, ...
+    'rejectmode',   DriftRejectMode, ...
+    'maxstep',      DriftMaxStep, ...
+    'maxstepmode',  DriftMaxStepMode, ...
+    'smoothwin',    DriftSmoothWin, ...
+    'smoothmethod', DriftSmoothMethod, ...
+    'debug',        DriftDebug, ...
+    'debugevery',   DriftDebugEvery ...
+};
+
+
+%  if DriftDebug && Tblock >= 10
+%     tmp = blockImg;
+% 
+%     % inject known shift at local frame #10
+%     I10 = tmp(:,:,driftLocal,10);
+%     fv  = median(I10(:));
+%     tmp(:,:,driftLocal,10) = imtranslate(I10, [3 -2], 'FillValues', fv);
+% 
+%     % run drift, keep corrected images
+%     [tmpCorr, ~, scoreT] = fovObj.computeDrift('images', tmp, driftArgs{:});
+% 
+%    % --- build preprocess like computeDrift ---
+% prep = @(I) preprocess(cropCenter(toGray(I), cropReal), DriftHipassSigma, DriftApodize, DriftMask);
+% 
+% A0 = prep(tmp(:,:,driftLocal,9));
+% B0 = prep(tmp(:,:,driftLocal,10));
+% A1 = prep(tmpCorr(:,:,driftLocal,9));
+% B1 = prep(tmpCorr(:,:,driftLocal,10));
+% 
+% [r0,c0] = phaseShift(A0,B0);
+% [r1,c1] = phaseShift(A1,B1);
+% 
+% fprintf('[drift test] BEFORE(prep) est shift (row %+g, col %+g)\n', r0, c0);
+% fprintf('[drift test] AFTER (prep) est shift (row %+g, col %+g)\n', r1, c1);
+% 
+% end
+
+
+
+   [blockImg, driftBlk, scoreBlk] = fovObj.computeDrift( ...
+    'images', blockImg, ...
+    'framesid', frameBatch, ...
+    driftArgs{:});
+
+ 
+
+
+    % ---- journalise dans fovObj.drift (frames ABS) ----
+    if ~isfield(fovObj,'drift') || ~isstruct(fovObj.drift)
+        fovObj.drift = struct('frames',[],'x',[],'y',[],'score',[]);
+    end
+
+    oldF = [];
+    if isfield(fovObj.drift,'frames') && ~isempty(fovObj.drift.frames)
+        oldF = fovObj.drift.frames(:)';
+    end
+    allF = union(oldF, frameBatch(:)');
+
+    xNew  = nan(1, numel(allF));
+    yNew  = nan(1, numel(allF));
+    scNew = nan(1, numel(allF));
+
+    if ~isempty(oldF)
+        [~,locOld] = ismember(oldF, allF);
+        if isfield(fovObj.drift,'x') && ~isempty(fovObj.drift.x), xNew(locOld) = fovObj.drift.x; end
+        if isfield(fovObj.drift,'y') && ~isempty(fovObj.drift.y), yNew(locOld) = fovObj.drift.y; end
+        if isfield(fovObj.drift,'score') && ~isempty(fovObj.drift.score), scNew(locOld) = fovObj.drift.score; end
+    end
+
+    [~,locNew] = ismember(frameBatch(:)', allF);
+
+    % driftBlk may be indexed by absolute frame id OR by local block index.
+    if numel(driftBlk.x) >= max(frameBatch)  % looks like absolute indexing
+        xNew(locNew) = driftBlk.x(frameBatch);
+        yNew(locNew) = driftBlk.y(frameBatch);
+    else                                     % local indexing 1..Tblock
+        xNew(locNew) = driftBlk.x(:)';
+        yNew(locNew) = driftBlk.y(:)';
+    end
+
+    if numel(scoreBlk) >= numel(frameBatch)
+        scNew(locNew) = scoreBlk(:)';
+    end
+
+    fovObj.drift.frames = allF;
+    fovObj.drift.x      = xNew;
+    fovObj.drift.y      = yNew;
+    fovObj.drift.score  = scNew;
+end
+
 
 
         pbFrm.close();
 
-
-        % 2) Crops + Append immédiat ROI par ROI
+        % 2) Crops + Append ROI par ROI
         for rIdx = 1:nROI
             r  = ROI(rIdx).obj;
             bb = ROI(rIdx).bbox;
@@ -555,76 +843,72 @@ Csel = numel(chanSelIdx);
                 continue;
             end
 
-
-            % --- Crops du bloc en [h w Csel Tblock]
             h = ROI(rIdx).h; w = ROI(rIdx).w;
 
-
-               % --- BEGIN: Extend idempotent guard (skip if block fully ≤ T_exist) ---
+            % --- Extend idempotent guard ---
             if Extend
-                % Détermine un dataset existant pour estimer T_exist
                 h5File = fullfile(fovOutDir, sprintf('im_%s.h5', r.id));
                 T_exist = 0;
                 if isfile(h5File)
                     try
                         existingCh = listH5Channels(h5File);
                         if ~isempty(existingCh)
-                            % on prend le premier canal demandé qui existe réellement
                             req = string(chanSelNames);
                             firstHit = intersect(req, existingCh, 'stable');
                             if ~isempty(firstHit)
                                 dsPath = "/" + firstHit(1);
                                 info   = h5info(h5File, char(dsPath));
                                 if numel(info.Dataspace.Size) >= 4
-                                    T_exist = info.Dataspace.Size(4); % [H W k T]
+                                    T_exist = info.Dataspace.Size(4);
                                 end
                             end
                         end
                     catch
-                        % si h5info échoue (fichier temporairement lock), on laisse T_exist=0
                     end
                 end
-        
+
                 if ~isempty(frameBatch) && max(frameBatch) <= T_exist
-                    % Tout le bloc est déjà écrit → no-op pour cette ROI
                     fprintf('   • ROI %d/%d (%s): Extend noop (T_exist=%d, frames %d–%d) → skipped block\n', ...
                         rIdx, nROI, ROI(rIdx).id, T_exist, frameBatch(1), frameBatch(end));
-                    continue; % passe à la ROI suivante pour ce bloc
+                    continue;
                 end
-                % (cas "mixte" partiel > T_exist: on ne tranche pas ici; on laisse
-                %  la logique actuelle écrire tout le bloc. Ça suffira à régler le
-                %  cas "2ᵉ fois exactement les mêmes frames", qui est le problème.)
             end
-
 
             roiBlock = zeros(h, w, Csel, Tblock, sampleClass);
 
             for it = 1:Tblock
                 bb_now = pickBBoxForFrame(ROI(rIdx), frameBatch(it), it, framesToDo);
                 for ic = 1:Csel
-                    roiBlock(:,:,ic,it) = cropWithPad(blockImg(:,:,ic,it), bb_now(1), bb_now(2), w, h);
+                    crop = cropWithPad(blockImg(:,:,ic,it), bb_now(1), bb_now(2), w, h);
+
+                    %% NEW: scale on crop
+                    if Scale ~= 1
+                        crop = imresize(crop, Scale); % keeps class for numeric types
+                    end
+
+                    % if scaled, roiBlock size must match → handle by allocating resized block if needed
+                    if Scale ~= 1 && (it==1) && (ic==1)
+                        [hh,ww] = size(crop);
+                        roiBlock = zeros(hh, ww, Csel, Tblock, sampleClass);
+                    end
+                    roiBlock(:,:,ic,it) = crop;
                 end
             end
 
-            % Sauvegarde append: on passe UNIQUEMENT le bloc courant
-            r.image     = roiBlock;          % [h w Csel Tblock]
-            r.channelid = 1:Csel;            % 1 logique par canal sélectionné
+            r.image     = roiBlock;
+            r.channelid = 1:Csel;
 
             if ~isstruct(r.display) || ~isfield(r.display,'channel') || isempty(r.display.channel)
                 r.display = defaultDisplay(Csel, Csel);
-                r.display.channel = chanNamesFOV; % base complète (on filtra à l'appel)
+                r.display.channel = chanNamesFOV;
             end
 
             r.path = fovOutDir;
 
-            % -- Normalisation des noms de canaux de la ROI pour coller à chanSelNames --
             if ForceChannelNames
-                % On force la ROI à adopter EXACTEMENT les noms demandés pour cette extraction
-                r.display.channel = chanSelNames;   % ex. {'GFP','RFP'}
-
-                r.channelid       = 1:Csel;         % mapping 1:1 avec roiBlock(:,:,ic,:)
+                r.display.channel = chanSelNames;
+                r.channelid       = 1:Csel;
             else
-                % Si on ne force pas, on vérifie que tous les noms demandés existent côté ROI
                 [ok,~] = ismember(chanSelNames, r.display.channel);
                 if ~all(ok)
                     warning('ROI %s: requested channels not present in ROI.display.channel and ForceChannelNames=false → skipping write.', ROI(rIdx).id);
@@ -634,22 +918,16 @@ Csel = numel(chanSelIdx);
                 end
             end
 
-            % -- Normalisation des noms & dimensions de display pour coller à chanSelNames --
             r = normalizeROIChannels(r, chanSelNames);
 
+            r.image     = roiBlock;
+            r.channelid = 1:Csel;
+            r.path      = fovOutDir;
 
-            % Minimal assignments before save:
-            r.image     = roiBlock;              % [h w Csel Tblock]
-            r.channelid = 1:Csel;                % mapping 1:1
-            r.path      = fovOutDir;             % ensure it stays valid
-
-            % If your roi class uses explicit paths, keep them consistent
             if isprop(r,'h5path');  r.h5path  = fullfile(fovOutDir, sprintf('im_%s.h5',  r.id)); end
             if isprop(r,'matpath'); r.matpath = fullfile(fovOutDir, sprintf('data_%s.mat', r.id)); end
 
-            % Save (append on T); r.save must create datasets if file was deleted
             r.display.write_abs_start = frameBatch(1) - 1;
-
 
             didSave = r.save(chanSelNames, false);
 
@@ -659,21 +937,21 @@ Csel = numel(chanSelIdx);
                 fprintf('.');
             end
 
-            r.image = [];           % free RAM
+            r.image = [];
             r.display.write_abs_start = [];
-            ROI(rIdx).obj = r;      % write-back
-
+            ROI(rIdx).obj = r;
         end
+
         fprintf('\n');
         pbBlk.update(ib, sprintf('bloc %d/%d terminé', ib, nBlocks));
-
     end
 
     pbBlk.close();
     pbFOV.update(kF, sprintf('FOV %d/%d terminé', kF, numel(FOVIndex)));
-    %fprintf('\n   ✔ done FOV %s (%d ROI)\n', fovId, nROI);
 end
 pbFOV.close();
+
+pbUpdateUI(hprogressbar, 1, 'done');
 
 fprintf('\n✅ Extraction complete (append mode).\n');
 fprintf('=============================================\n\n');
@@ -681,14 +959,98 @@ end
 
 % ========= Helpers =========
 
-function pb = makeConsolePB(titleStr, totalCount, varargin)
-%MAKECONSOLEPB Console progress bar on a single line.
-%   pb = makeConsolePB('Task', N, 'Indent',4, 'Width',40, 'MinInterval',0.05, 'Mode','auto')
-%
-% Public API:
-%   pb.update(i, msg)   % 0 <= i <= N ; msg optionnel (court)
-%   pb.close()
+function [row,col] = phaseShift(ref, mov)
+    ref = ref - mean(ref(:));
+    mov = mov - mean(mov(:));
+    R = fft2(ref).*conj(fft2(mov));
+    R = R ./ max(abs(R), eps);
+    r = real(ifft2(R));
+    [~,ix] = max(r(:));
+    [py,px] = ind2sub(size(r),ix);
+    H=size(r,1); W=size(r,2);
+    row = py-1; col = px-1;
+    if row>H/2, row=row-H; end
+    if col>W/2, col=col-W; end
+end
 
+
+function img = toGray(img)
+if ndims(img)==3 && size(img,3)==3
+    img = rgb2gray(img);
+end
+end
+
+function out = cropCenter(im, frac)
+if frac==1, out = im; return; end
+if ~(frac>0 && frac<=1), error('cropping factor must be ]0,1]'); end
+[H,W] = size(im);
+h = round(H*frac); w = round(W*frac);
+r0 = floor((H-h)/2)+1; c0 = floor((W-w)/2)+1;
+out = im(r0:r0+h-1, c0:c0+w-1);
+end
+
+function im2 = preprocess(im, hipasssigma, apodize, mask)
+im2 = double(im);
+if hipasssigma>0
+    im2 = im2 - imgaussfilt(im2, hipasssigma);
+end
+if apodize
+    persistent win;
+    if isempty(win) || ~isequal(size(win), size(im2))
+        [H,W] = size(im2);
+        wy = hann1d(H);
+        wx = hann1d(W);
+        win = wy * (wx.');
+    end
+    im2 = im2 .* win;
+end
+if ~isempty(mask)
+    im2 = im2 .* double(mask);
+end
+im2 = im2 - mean(im2(:));
+s = std(im2(:));
+if s>0, im2 = im2./s; end
+end
+
+function w = hann1d(n)
+if n <= 1
+    w = 1;
+    return;
+end
+w = 0.5*(1 - cos(2*pi*(0:n-1)/(n-1)));
+w = w(:);
+end
+
+function pbUpdateUI(h, frac, msg)
+% Compatible with uiprogressdlg or any handle exposing Value/Message
+if isempty(h) || ~isvalidHandle(h), return; end
+try
+    if isprop(h,'Value') && ~isempty(frac) && isfinite(frac)
+        h.Value = min(max(double(frac),0),1);
+    end
+    if nargin>=3 && ~isempty(msg) && isprop(h,'Message')
+        h.Message = char(string(msg));
+    end
+    drawnow limitrate;
+catch
+end
+end
+
+function tf = isvalidHandle(h)
+tf = false;
+try
+    tf = ~isempty(h) && isvalid(h);
+catch
+    try
+        tf = ~isempty(h) && ishghandle(h);
+    catch
+        tf = false;
+    end
+end
+end
+
+function pb = makeConsolePB(titleStr, totalCount, varargin)
+% (UNCHANGED) ...
 ip = inputParser;
 ip.addParameter('Indent',0,@(x)isnumeric(x)&&isscalar(x));
 ip.addParameter('Width',40,@(x)isnumeric(x)&&isscalar(x)&&x>=5);
@@ -706,31 +1068,26 @@ mode    = lower(ip.Results.Mode);
 indentStr  = repmat(' ',1,max(0,indentN));
 totalCount = max(1, round(totalCount));
 
-% Mode auto: si diary ON, évite les backspaces -> CR
-diaryState = get(0,'Diary'); % 'on'/'off'
+diaryState = get(0,'Diary');
 if strcmp(mode,'auto')
     if strcmpi(diaryState,'on')
         mode = 'cr';
     else
-        mode = 'cr'; % CR est le plus robuste dans le Command Window/Live Script
+        mode = 'cr';
     end
 end
 
-% --- état interne
 st.t0      = tic;
 st.lastT   = -inf;
 st.lastI   = 0;
-st.lastLen = 0;    % longueur imprimée (pour padding)
-st.lineOpen = false; % vrai dès qu'une ligne de PB est affichée
+st.lastLen = 0;
+st.lineOpen = false;
 
-% Titre sur sa propre ligne
 fprintf('%s%s\n', indentStr, char(titleStr));
 
-% API
 pb.update = @updatePB;
 pb.close  = @closePB;
 
-% ================= nested =================
     function updatePB(i, msg)
         if nargin < 2, msg = ''; end
         i = min(max(0, round(i)), totalCount);
@@ -742,7 +1099,6 @@ pb.close  = @closePB;
         end
         st.lastT = nowT;
 
-        % contenu barre
         frac   = i/totalCount;
         filled = max(0, min(width, round(frac*width)));
         barStr = ['[', repmat('=',1,filled), repmat(' ',1,width-filled), ']'];
@@ -764,7 +1120,6 @@ pb.close  = @closePB;
 
         fixed = sprintf('%s %d/%d %s%s', barStr, i, totalCount, pctStr, etaStr);
 
-        % limite douce de la longueur ~100 char
         maxLine = 100;
         roomForMsg = max(0, maxLine - numel(fixed) - 1);
         if ~isempty(msg)
@@ -783,36 +1138,33 @@ pb.close  = @closePB;
             line = sprintf('%s%s %s', indentStr, fixed, msg);
         end
 
-        % calcul padding pour effacer les restes d'une ligne plus longue
         pad = max(0, st.lastLen - numel(line));
         tail = repmat(' ',1,pad);
 
         switch mode
             case 'cr'
-                % CR: on réécrit LA MÊME LIGNE, pas de \n avant la fin
                 if st.lineOpen
-                    fprintf('\r'); % retour début de ligne courante
+                    fprintf('\r');
                 end
                 fprintf('%s%s', line, tail);
                 st.lineOpen = true;
 
             case 'bs'
-                % Backspaces (déconseillé si diary on)
                 if st.lineOpen && st.lastLen > 0
-                    fprintf('%s', repmat('\b',1,st.lastLen)); % reculer
-                    fprintf('%s', repmat(' ',1,st.lastLen));  % effacer
-                    fprintf('%s', repmat('\b',1,st.lastLen)); % revenir
+                    fprintf('%s', repmat('\b',1,st.lastLen));
+                    fprintf('%s', repmat(' ',1,st.lastLen));
+                    fprintf('%s', repmat('\b',1,st.lastLen));
                 end
                 fprintf('%s', line);
                 st.lineOpen = true;
         end
 
         if i>=totalCount
-            fprintf('\n');    % on valide la ligne puis saute à la suivante
+            fprintf('\n');
             st.lineOpen = false;
             st.lastLen = 0;
         else
-            st.lastLen = numel(line); % mémoriser la longueur pour le prochain padding
+            st.lastLen = numel(line);
         end
 
         st.lastI = i;
@@ -822,7 +1174,7 @@ pb.close  = @closePB;
         if st.lastI < totalCount
             updatePB(totalCount, 'done');
         elseif st.lineOpen
-            fprintf('\n'); % sécurité : terminer la ligne en cours
+            fprintf('\n');
             st.lineOpen = false;
             st.lastLen = 0;
         end
@@ -830,7 +1182,6 @@ pb.close  = @closePB;
 end
 
 function [h5path, matpath] = getROIFilePaths(r)
-% Construit les chemins attendus: im_<id>.h5 et data_<id>.mat dans r.path
 roiId = safeStr(getprop(r,'id','ROI'));
 roiDir = safeStr(getprop(r,'path',pwd));
 h5path  = fullfile(roiDir, sprintf('im_%s.h5',  roiId));
@@ -838,7 +1189,6 @@ matpath = fullfile(roiDir, sprintf('data_%s.mat',roiId));
 end
 
 function hardResetROIh5(r)
-% Supprime proprement H5 + MAT si présents (compat: avec ou sans r.h5path/matpath)
 h5p = ''; matp = '';
 if isprop(r,'h5path') && ~isempty(r.h5path),   h5p  = r.h5path;  end
 if isprop(r,'matpath') && ~isempty(r.matpath), matp = r.matpath; end
@@ -849,22 +1199,17 @@ if isfile(h5p),  delete(h5p);  end
 if isfile(matp), delete(matp); end
 end
 
-
 function [availBytes, note] = getAvailableMemoryBytes()
-% Retourne une estimation prudente de la RAM libre pour MATLAB.
-% Windows: memory(); Linux/macOS: heuristique via feature('memstats') si dispo, sinon fallback.
 note = '';
-availBytes = 2e9; % fallback 2GB
+availBytes = 2e9;
 try
     if ispc
-        m = memory; % Windows only
-        availBytes = double(m.MaxPossibleArrayBytes); % conservateur
+        m = memory;
+        availBytes = double(m.MaxPossibleArrayBytes);
         note = sprintf('Windows memory(): MaxPossibleArrayBytes=%.1f GB', availBytes/1e9);
     else
-        % Tentatives alternatives
         try
-            s = feature('memstats'); %#ok<NASGU>
-            % Pas de champ standardisé ⇒ on reste sur le fallback 2GB.
+            feature('memstats'); %#ok<NASGU>
             note = 'feature(''memstats'') available (no unified free bytes) → using 2 GB fallback.';
         catch
             note = 'No memory() on this platform → using 2 GB fallback.';
@@ -873,25 +1218,24 @@ try
 catch
     note = 'Unable to query memory → using 2 GB fallback.';
 end
-% garder une marge pour l'OS et le reste
 availBytes = max(256e6, 0.8 * availBytes);
 end
 
 function [H,W,sampleBytes] = probeFrameSpec(fovObj, firstChan)
 if nargin<2 || isempty(firstChan), firstChan = 1; end
 testIm = fovObj.readImage(1, firstChan);
-if isempty(testIm)
-    testIm = uint16(0);
-    H=1; W=1;
-else
+if ~isempty(testIm)
+    testIm = forceGray(testIm); % NEW
     [H,W] = size(testIm);
+else
+    testIm = uint16(0); H=1; W=1;
 end
 switch class(testIm)
     case {'uint8','int8'},     sampleBytes = 1;
     case {'uint16','int16'},   sampleBytes = 2;
     case {'uint32','int32','single'}, sampleBytes = 4;
     case {'uint64','int64','double'}, sampleBytes = 8;
-    otherwise, sampleBytes = 2; % conservateur
+    otherwise, sampleBytes = 2;
 end
 end
 
@@ -930,6 +1274,7 @@ try
     if isempty(testIm)
         sampleClass = 'uint16';
     else
+        testIm = forceGray(testIm); % NEW
         sampleClass = class(testIm);
     end
 catch
@@ -944,6 +1289,7 @@ frameIdxVec   = frameIdxVec(:)';
 channelIdxVec = channelIdxVec(:)';
 
 testIm = fovObj.readImage(frameIdxVec(1), channelIdxVec(1));
+testIm = forceGray(testIm); % NEW
 [H, W] = size(testIm);
 C = numel(channelIdxVec);
 T = numel(frameIdxVec);
@@ -956,18 +1302,30 @@ for ic = 1:C
         t = frameIdxVec(it);
         im = fovObj.readImage(t, c);
         if isempty(im), continue; end
+        im = forceGray(im); % NEW
         if size(im,1)~=H || size(im,2)~=W
             im = safeResizeTo(im, H, W);
         end
         blockImg(:,:,ic,it) = im;
 
-        % ⬇️ CHANGE ICI : index cumulé (1..C*T)
         if ~isempty(progressFcn)
-            idx = (ic-1)*T + it;           % 1..C*T
+            idx = (ic-1)*T + it;
             msg = sprintf('ch%d frame %d/%d', c, it, T);
-            progressFcn(idx, [], msg);     % le 2e arg est ignoré par ta PB
+            progressFcn(idx, [], msg);
         end
     end
+end
+end
+
+function im = forceGray(im)
+% NEW: ensure grayscale 2D
+try
+    if ndims(im)==3 && size(im,3)==3
+        im = rgb2gray(im);
+    elseif ndims(im)>2
+        im = im(:,:,1);
+    end
+catch
 end
 end
 
@@ -1050,7 +1408,7 @@ d.intensity       = repmat([1 1 1], N, 1);
 d.frame           = 1;
 d.selectedchannel = ones(1,N);
 d.binning         = 1;
-d.rgb             = repmat([1 1 1], N, 1);  % N x 3 (par canal logique)
+d.rgb             = repmat([1 1 1], N, 1);
 d.channel         = arrayfun(@(k)sprintf('channel_%d',k), 1:N, 'UniformOutput', false);
 d.stretchlim      = [];
 d.displaylim      = repmat([0;1], 1, C);
@@ -1062,23 +1420,19 @@ d.log             = zeros(1,N);
 end
 
 function r = normalizeROIChannels(r, chanSelNames)
-% Force r.display & r.channelid à correspondre exactement à chanSelNames
 Csel = numel(chanSelNames);
 oldD = struct();
 if isstruct(r.display), oldD = r.display; end
 
-% Nouveau display "propre" de taille Csel
 newD = defaultDisplay(Csel, Csel);
-newD.channel = chanSelNames(:)';  % impose les noms
+newD.channel = chanSelNames(:)';
 
-% Si l'ancien display a des noms, essaie de répliquer les per-channel props
 if isfield(oldD,'channel') && ~isempty(oldD.channel)
     oldNames = string(oldD.channel);
     for ii = 1:Csel
         nm = string(chanSelNames{ii});
-        jj = find(oldNames==nm, 1); % map par nom
+        jj = find(oldNames==nm, 1);
         if ~isempty(jj)
-            % Copie "safe" champ par champ si dimension ok
             newD = copyIfValidRow(oldD, newD, 'intensity', jj, ii);
             newD = copyIfValidRow(oldD, newD, 'rgb',       jj, ii);
             newD = copyIfValidRowScal(oldD, newD, 'selectedchannel', jj, ii);
@@ -1090,10 +1444,7 @@ if isfield(oldD,'channel') && ~isempty(oldD.channel)
         end
     end
 
-    % displaylim: taille attendue 2 x C. Si oldD.displaylim correspond,
-    % on copie colonne par colonne par nom de canal.
     if isfield(oldD,'displaylim') && ~isempty(oldD.displaylim) && size(oldD.displaylim,1)==2
-        % On suppose oldD.displaylim a autant de colonnes que oldD.channel
         for ii = 1:Csel
             nm = string(chanSelNames{ii});
             jj = find(oldNames==nm, 1);
@@ -1104,9 +1455,8 @@ if isfield(oldD,'channel') && ~isempty(oldD.channel)
     end
 end
 
-% Affecte le display normalisé
 r.display   = newD;
-r.channelid = 1:Csel;  % mapping 1:1 (un dataset logique par canal)
+r.channelid = 1:Csel;
 end
 
 function newD = copyIfValidRow(oldD, newD, fieldName, jOld, iNew)
@@ -1128,9 +1478,6 @@ if isfield(oldD,fieldName) && ~isempty(oldD.(fieldName)) ...
 end
 end
 
-% ---------- Helpers ----------
-
-
 function names = listH5Channels(h5path)
 names = string.empty(1,0);
 if ~isfile(h5path), return; end
@@ -1138,7 +1485,6 @@ try
     info = h5info(h5path,'/');
     names = string({info.Datasets.Name});
 catch
-    % fichier vide/incomplet → aucun dataset détecté
 end
 end
 
@@ -1167,26 +1513,17 @@ bb = [xmin, ymin, w, h];
 end
 
 function selIdx = resolveROISelectionForFOV(roiList, ROISelect, positionInFOVIndex, FOVIndex)
-% ROISelect:
-%   - []            -> toutes les ROIs
-%   - numeric vec   -> indices appliqués à TOUS les FOV sélectionnés
-%   - cell array    -> ROISelect{j} appliqué au j-ième FOV de FOVIndex
-%
-% positionInFOVIndex = rang courant (kF) dans la boucle FOVIndex (1..numel(FOVIndex))
-
 n = numel(roiList);
 if n==0
     selIdx = [];
     return;
 end
 
-% A) pas de sélection -> tout
 if isempty(ROISelect)
     selIdx = 1:n;
     return;
 end
 
-% B) sélection numérique -> appliquée à tous les FOV
 if isnumeric(ROISelect)
     vals = ROISelect(:)';
     mask = vals>=1 & vals<=n;
@@ -1194,10 +1531,9 @@ if isnumeric(ROISelect)
     return;
 end
 
-% C) sélection cell array par FOV
 if iscell(ROISelect)
     if positionInFOVIndex < 1 || positionInFOVIndex > numel(ROISelect)
-        selIdx = 1:n; % par défaut: toutes si l'entrée n'existe pas
+        selIdx = 1:n;
         return;
     end
     cur = ROISelect{positionInFOVIndex};
@@ -1211,8 +1547,5 @@ if iscell(ROISelect)
     return;
 end
 
-% D) fallback
 selIdx = 1:n;
 end
-
-

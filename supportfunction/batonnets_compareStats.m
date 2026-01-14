@@ -158,23 +158,41 @@ function [C, classNames] = localSequencesToGlobalIndex(seqs, Tmax, globalMap)
 n = numel(seqs);
 C = NaN(n, Tmax);
 
+% reconstruire l'ordre des classes depuis la map
 classNames = strings(globalMap.Count,1);
 ks = globalMap.keys;
 for i=1:numel(ks)
     classNames(globalMap(ks{i})) = string(ks{i});
 end
 
-for i=1:n
+for i = 1:n
     lab = localToStringLabels(seqs{i});
+    if isempty(lab), continue; end
+
     T = min(Tmax, numel(lab));
     for t = 1:T
-        key = char(lab(t));
+        s = lab(t);
+
+        % --- FIX: filtrer missing/vide/undefined AVANT char() ---
+        if ismissing(s) || strlength(s)==0
+            continue;
+        end
+        if s == "<missing>" || s == "<undefined>"
+            continue;
+        end
+
+        key = strtrim(char(s));   % conversion sûre ici
+        if key==""                % double sécurité après trim
+            continue;
+        end
+
         if globalMap.isKey(key)
             C(i,t) = globalMap(key);
         end
     end
 end
 end
+
 
 function [C, classNames] = localNumericToBinnedIndex(seqs, Tmax)
 allv = [];
@@ -315,15 +333,25 @@ end
 
 function s = localToStringLabels(x)
 try
-    if iscategorical(x), s = string(x(:));
-    elseif isstring(x),   s = x(:);
-    elseif ischar(x),     s = string(x);
+    if iscategorical(x)
+        s = string(x(:));
+    elseif isstring(x)
+        s = x(:);
+    elseif ischar(x)
+        s = string(x(:));
     elseif iscell(x)
         s = strings(numel(x),1);
         for i=1:numel(x)
-            if isstring(x{i}), s(i)=x{i};
-            elseif ischar(x{i}), s(i)=string(x{i});
-            else, s(i)="";
+            xi = x{i};
+            if isempty(xi)
+                s(i) = missing;
+            elseif isstring(xi)
+                s(i) = xi;
+            elseif ischar(xi)
+                s(i) = string(xi);
+            else
+                % ex: numeric/other -> missing plutôt que ""
+                s(i) = missing;
             end
         end
     else
@@ -333,3 +361,4 @@ catch
     s = strings(0,1);
 end
 end
+

@@ -15,6 +15,8 @@ masterTL = displayHandles.masterTiledLayout;
 mode = lower(layoutOptions.mode);
 switch mode
     case 'display'
+
+   
         % Mode DISPLAY : mise à jour de la ROI affichée (roiobj(1)).
         roiData = roiobj(1);
 

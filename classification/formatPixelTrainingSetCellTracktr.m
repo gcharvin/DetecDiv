@@ -32,10 +32,10 @@ end
 
 % ===== Mode de division (flag temporaire; pourra être passé en argument plus tard) =====
 % 'symmetric' pour dataset type MOMA ; 'asymmetric' pour bourgeonnement
-division_mode = 'symmetric';
+division_mode = 'asymmetric';
 
-layoutMode="split_root";
-%layoutMode="ctc_root"
+layoutMode="split_root";  % train/CTC/01 etc....
+%layoutMode="ctc_root"    % CTC/train/01 etc....
 % =========================
 % Roots depending on layout
 % =========================
