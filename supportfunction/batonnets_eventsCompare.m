@@ -83,10 +83,21 @@ if dbg, logf('RenderEventsFigure...'); end
 out = localRenderEventsFigure(out, roiListShown, idxShown, dsKeys, H, W, Gcmp, Groi, args);
 if dbg, logf('RenderEventsFigure DONE'); end
 
+% -------------------- choose ROIs to include in STATS --------------------
+[idxStats, maskStats, infoStats] = localComputeIdxStats(roiListAll, dsKeys);
+
+if dbg
+    logf('Stats ROI filter: nStats=%d/%d | absentA=%d absentB=%d badA=%d badB=%d', ...
+        infoStats.nStats, infoStats.nAll, infoStats.absA, infoStats.absB, infoStats.badA, infoStats.badB);
+end
+
+out.eventsStatsFilter = infoStats;   % pratique pour debug / export
+
+
 if dbg, logf('PlotMatchStats...'); end
-out = localPlotMatchStats(out, roiListShown, idxShown, matchMaxDtFrames, args);
-% --- build export-ready numeric stats (for Excel) ---
-out.eventsStats = localBuildExportStats(out, idxShown, matchMaxDtFrames);
+out = localPlotMatchStats(out, roiListShown, idxStats, matchMaxDtFrames, args);
+out.eventsStats = localBuildExportStats(out, idxStats, matchMaxDtFrames);
+
 
 if dbg
     logf('EXPORT STATS built: out.eventsStats created (struct)');
@@ -516,6 +527,33 @@ if dbg && iR <= dbgMaxROI
 end
 end
 
+function [idxStats, maskStats, info] = localComputeIdxStats(roiListAll, dsKeys)
+% Retourne les indices (dans roiListAll) des ROIs valides pour stats
+dsKeyA = dsKeys(1); % TEST
+dsKeyB = dsKeys(2); % REF
+
+[seqA_all, ~] = localCollectSequences(roiListAll, dsKeyA);
+[seqB_all, ~] = localCollectSequences(roiListAll, dsKeyB);
+
+absA = localSeqCellIsAbsent(seqA_all);
+absB = localSeqCellIsAbsent(seqB_all);
+
+badA = cellfun(@localHasMissingLabels, seqA_all);
+badB = cellfun(@localHasMissingLabels, seqB_all);
+
+maskStats = ~(absA | absB | badA | badB);
+idxStats  = find(maskStats);
+
+info = struct();
+info.absA = sum(absA);
+info.absB = sum(absB);
+info.badA = sum(badA & ~absA);  % optionnel
+info.badB = sum(badB & ~absB);
+info.nAll = numel(roiListAll);
+info.nStats = numel(idxStats);
+end
+
+
 function out = localRenderEventsFigure(out, roiListShown, idxShown, dsKeys, H, W, Gcmp, Groi, args)
 % Render events figure in Compare mode with a HARD PIXEL CAP to avoid
 % graphics timeout / handshaking issues.
@@ -533,7 +571,21 @@ dsKeyB = dsKeys(2); % REF  (bottom)
 
 absA = localSeqCellIsAbsent(seqA);
 absB = localSeqCellIsAbsent(seqB);
+
+% ROI traitées des deux côtés
 keep = ~(absA | absB);
+
+% ROI "propres" (pas de missing/undefined)
+badA = cellfun(@localHasMissingLabels, seqA);
+badB = cellfun(@localHasMissingLabels, seqB);
+
+validForStats = keep & ~badA & ~badB;
+
+% (optionnel) logs pour comprendre ce qui sort
+fprintf('[compare] excluded absent: A=%d B=%d\n', sum(absA), sum(absB));
+fprintf('[compare] excluded missing labels: A=%d B=%d\n', sum(badA & keep), sum(badB & keep));
+fprintf('[compare] validForStats: %d/%d\n', sum(validForStats), numel(validForStats));
+
 
 if ~any(keep)
     fe = figure('Name','Batonnets - Events (compare)','Color','w');
@@ -543,10 +595,11 @@ if ~any(keep)
     return;
 end
 
-roiListShown = roiListShown(keep);
-idxShown     = idxShown(keep);
-seqA         = seqA(keep);
-seqB         = seqB(keep);
+keepShow = keep & ~badA & ~badB;   % cohérent avec "ROI mauvaise -> on ne traite pas"
+roiListShown = roiListShown(keepShow);
+idxShown     = idxShown(keepShow);
+seqA         = seqA(keepShow);
+seqB         = seqB(keepShow);
 
 Tmax = max(localMaxLen(seqA), localMaxLen(seqB));
 if Tmax <= 0
@@ -1046,6 +1099,29 @@ for iR = 1:nROI
         row0 = row0 + Groi;
     end
 end
+end
+
+function tf = localHasMissingLabels(lab)
+% True si lab contient missing/undefined/vides -> ROI invalide pour stats (ou affichage)
+tf = false;
+if isempty(lab), return; end
+
+% Convert robuste en string (gère string/cellstr/char/categorical/numeric)
+try
+    s = string(lab);
+catch
+    try
+        s = string(localToStringLabels(lab)); % fallback via ta fonction existante
+    catch
+        tf = true;  % si on ne sait pas lire, on exclut
+        return;
+    end
+end
+
+s = strtrim(s(:));
+
+% Cas categorical undefined peut ressortir comme "<undefined>"
+tf = any( ismissing(s) | strlength(s)==0 | strcmpi(s,"<undefined>") );
 end
 
 

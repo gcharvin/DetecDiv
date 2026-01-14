@@ -403,27 +403,58 @@ hold(ax,'off');
 end
 
 % --- mapping helpers (same as stacked, local copy to avoid extra files) ---
-function [C, classNames] = localSequencesToGlobalIndex(seqs, Tmax, globalMap)
-n = numel(seqs);
-C = NaN(n, Tmax);
+function [C, classNames] = localSequencesToGlobalIndex(seqs, Tmax, globalLabelMap)
+% seqs : cell array, seqs{i} = labels sur le temps (string/cellstr/categorical/numeric)
+% C    : nRoi x Tmax, indices globaux (0 = absent/missing)
 
-classNames = strings(globalMap.Count,1);
-ks = globalMap.keys;
-for i=1:numel(ks)
-    classNames(globalMap(ks{i})) = string(ks{i});
+n = numel(seqs);
+C = zeros(n, Tmax, 'uint16');
+
+for i = 1:n
+    lab = seqs{i};
+    if isempty(lab)
+        continue;
+    end
+
+    % Convertit tout en string (gère cellstr, char, categorical, string)
+    s = string(lab);
+
+    % Sécurise la longueur
+    if numel(s) < Tmax
+        s(Tmax) = missing;   % pad
+    elseif numel(s) > Tmax
+        s = s(1:Tmax);
+    end
+
+    for t = 1:Tmax
+        st = s(t);
+
+        % ---> coeur du fix : ne JAMAIS char() sur missing / vide
+      if ismissing(st) || strlength(st)==0
+    fprintf('[compare] missing label: roi=%d t=%d (class=0)\n', i, t);
+    C(i,t) = 0;
+    continue;
 end
 
-for i=1:n
-    lab = localToStringLabels(seqs{i});
-    T = min(Tmax, numel(lab));
-    for t = 1:T
-        key = char(lab(t));
-        if globalMap.isKey(key)
-            C(i,t) = globalMap(key);
+        key = char(st);  % maintenant c'est safe
+
+        if isKey(globalLabelMap, key)
+            C(i,t) = uint16(globalLabelMap(key));
+        else
+            % option: inconnu => 0 (ou warning)
+            C(i,t) = 0;
         end
     end
 end
+
+% classNames si tu en as besoin côté affichage
+try
+    classNames = string(keys(globalLabelMap));
+catch
+    classNames = string.empty;
 end
+end
+
 
 function [C, classNames] = localNumericToBinnedIndex(seqs, Tmax)
 allv = [];
