@@ -489,17 +489,31 @@ for i = 1:numel(rois_sel)
     %  LSTM Classification
     % =======================
     if strcmp(category,'LSTM')
-        pixb = numel(dataidfra);
-        pixa = find(dataidfra==0);
+        isSeq2Seq = strcmp(classif.trainingParam.classifier_output{end}, 'sequence-to-sequence');
 
-        if numel(pixa)>0 || (numel(pixa)==0 && pixb==0)
-            if strcmp(classif.trainingParam.classifier_output{end},'sequence-to-sequence')
-                disp('Error: some images are not labeled in this ROI - LSTM requires all images to be labeled in the timeseries!');
-            else
-                disp('Error: no images are labeled : sequence-to-one LSTM requires some images to be labeled in the timeseries!');
-            end
-            continue
-        end
+isSeq2Seq = strcmp(classif.trainingParam.classifier_output{end}, 'sequence-to-sequence');
+
+if isSeq2Seq
+    % seq-to-seq : toutes les frames doivent être annotées
+    if any(dataidfra == 0)
+        disp('Error: some images are not labeled in this ROI - seq-to-seq requires all frames labeled.');
+        continue
+    end
+else
+    % seq-to-one : on autorise des trous, MAIS on impose un label ROI
+    if all(dataidfra == 0)
+        disp('Error: no labeled frames in this ROI - seq-to-one needs at least one label.');
+        continue
+    end
+
+    % IMPORTANT : la dernière frame de la séquence doit porter le label ROI
+    if dataidfra(end) == 0
+        disp('Error: last frame is not labeled - seq-to-one expects ROI label on the last frame.');
+        continue
+    end
+end
+
+
 
         lab = categorical(dataidfra, 1:numClasses, classif.classes);
 
@@ -555,11 +569,14 @@ for i = 1:numel(rois_sel)
             vid(:,:,:,kf) = frameU8;
 
             % Label de la frame pour CNN
-            if classif.output==0
-                cmp = dataid(j);  % sequence-to-sequence
-            else
-                cmp = dataid;     % sequence-to-one (code historique)
-            end
+            % if classif.output==0
+            %     cmp = dataid(j);  % sequence-to-sequence
+            % else
+            %     cmp = dataid;     % sequence-to-one (code historique)
+            % end
+            % CNN dataset : TOUJOURS supervision par frame
+            cmp = dataid(j);
+
 
             % Export TIFF pour CNN (undersamplé via keepIdxCNN)
             if  ~UseHDF5 && WriteTiffImages && keepIdxCNN(kf) && cmp ~= 0

@@ -69,6 +69,8 @@ if isstruct(classifierCNN) && isfield(classifierCNN,'net'); classifierCNN = clas
 if useLSTM && ~(isa(classifier,'DAGNetwork') || isa(classifier,'SeriesNetwork') || isa(classifier,'dlnetwork'))
     error('classifyImageLSTMNetFun:ClassifierType', 'Classifier LSTM type not supported: %s', class(classifier));
 end
+
+
 if useCNN && ~(isa(classifierCNN,'DAGNetwork') || ...
                isa(classifierCNN,'SeriesNetwork') || ...
                isa(classifierCNN,'dlnetwork'))
@@ -209,6 +211,30 @@ labelsCNN  = []; probCNN  = []; idxCNN  = [];
 
 classesTarget = string(classif.classes); % c'est la vérité côté dataseries
 
+% --------- classifier_output (source of truth) ----------
+tp = [];
+try
+    tp = classif.trainingParam;
+catch
+end
+
+outMode = "sequence-to-sequence"; % default
+if ~isempty(tp) && isfield(tp,'classifier_output') && ~isempty(tp.classifier_output)
+    if iscell(tp.classifier_output)
+        outMode = string(tp.classifier_output{end});
+    else
+        outMode = string(tp.classifier_output);
+    end
+end
+
+isSeq2One = strcmpi(outMode, "sequence-to-one");
+isSeq2Seq = strcmpi(outMode, "sequence-to-sequence");
+if ~isSeq2One && ~isSeq2Seq
+    warning('Unknown classifier_output="%s" -> defaulting to sequence-to-sequence.', outMode);
+    isSeq2Seq = true;
+end
+
+
 % LSTM
 if useLSTM
     try
@@ -222,6 +248,27 @@ if useLSTM
     if size(probLSTM,1) == numel(labelsLSTM); probLSTM = probLSTM'; end
     [~, idxLSTM] = max(probLSTM, [], 2);
 end
+
+% --------- Normalize LSTM outputs to per-frame ----------
+if useLSTM
+    if isSeq2One
+        % sc is 1xC (or Cx1) -> make it 1xC
+        if size(probLSTM,1) ~= 1
+            probLSTM = probLSTM(1,:); % safety
+        end
+        % Broadcast to T frames
+        probLSTM = repmat(probLSTM, [T 1]);      % [T x C]
+        idxLSTM  = repmat(idxLSTM(1), [T 1]);    % [T x 1]
+    else
+        % seq2seq: expect [T x C] already
+        if size(probLSTM,1) ~= T
+            warning('LSTM seq2seq: unexpected #rows=%d, expected T=%d. Forcing broadcast of first row.', size(probLSTM,1), T);
+            probLSTM = repmat(probLSTM(1,:), [T 1]);
+            idxLSTM  = repmat(idxLSTM(1), [T 1]);
+        end
+    end
+end
+
 
 % CNN
 % CNN
@@ -262,6 +309,24 @@ dlP = softmax(dlY);                  % softmax respecte déjà le format de dlY
         [~, idxCNN] = max(probCNN, [], 2);
     end
 end
+
+% --------- Normalize CNN outputs to per-frame ----------
+if useCNN
+    if isSeq2One
+        if size(probCNN,1) ~= 1
+            probCNN = probCNN(1,:); % safety
+        end
+        probCNN = repmat(probCNN, [T 1]);
+        idxCNN  = repmat(idxCNN(1), [T 1]);
+    else
+        if size(probCNN,1) ~= T
+            warning('CNN seq2seq: unexpected #rows=%d, expected T=%d. Forcing broadcast of first row.', size(probCNN,1), T);
+            probCNN = repmat(probCNN(1,:), [T 1]);
+            idxCNN  = repmat(idxCNN(1), [T 1]);
+        end
+    end
+end
+
 
 % --------- Cible de classes (ordre & noms de colonnes dans dataseries) ----------
 
@@ -348,7 +413,9 @@ end
 datatmp = data(cc);
 
 % Nombre de lignes à écrire
-n = iff(classif.output==0, size(roiobj.image,4), 1);
+% Nombre de lignes = nb total de frames ROI (dataseries alignée ROI)
+n = size(roiobj.image,4);
+
 
 % --- NORMALISATION PLOTGROUP (évite horzcat char vs cell) ---
 if ~isprop(datatmp,'plotGroup') || isempty(datatmp.plotGroup)
@@ -375,11 +442,20 @@ end
 ensureCategoricalCol('labels', 'undefined');
 
 % Valeurs (restreintes aux frames)
-datatmp.data.labels(frames) = labelPrimaryCat;
+% --------- Write ONLY on requested frames ----------
+datatmp.data.labels(frames) = labelPrimaryCat;  % labelPrimaryCat is length T
+
 for ii = 1:numel(classesTarget)
-    datatmp.data.("prob_" + classesTarget(ii))(frames) = probPrimaryAligned(frames, ii);
+    colName = "prob_" + classesTarget(ii);
+    v = datatmp.data.(colName);
+    v(frames) = probPrimaryAligned(:, ii);      % <-- no extra indexing
+    datatmp.data.(colName) = v;
 end
-datatmp.data.id(frames) = idxP;
+
+idv = datatmp.data.id;
+idv(frames) = idxP;                              % idxP length T
+datatmp.data.id = idv;
+
 
 % Champs CNN additionnels
 if useCNN
@@ -389,11 +465,19 @@ if useCNN
     end
     ensureCategoricalCol('labelsCNN', 'undefined');
 
-    datatmp.data.labelsCNN(frames) = labelCNNCat;
-    for ii = 1:numel(classesTarget)
-        datatmp.data.("probCNN_" + classesTarget(ii))(frames) = probCNNAligned(frames, ii);
-    end
-    datatmp.data.idCNN(frames) = idxCNNAligned;
+  datatmp.data.labelsCNN(frames) = labelCNNCat;
+
+for ii = 1:numel(classesTarget)
+    colName = "probCNN_" + classesTarget(ii);
+    v = datatmp.data.(colName);
+    v(frames) = probCNNAligned(:, ii);          % <-- no extra indexing
+    datatmp.data.(colName) = v;
+end
+
+idv = datatmp.data.idCNN;
+idv(frames) = idxCNNAligned;                      % idxCNNAligned length T
+datatmp.data.idCNN = idv;
+
 else
     for ii = 1:numel(classesTarget)
         dropColIfExists("probCNN_" + classesTarget(ii));

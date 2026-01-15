@@ -411,71 +411,91 @@ try
             if size(lab,1)>1 && size(lab,2)>1, error('lab must be 1D categorical'); end
             if size(lab,1)>size(lab,2), lab = lab'; end
 
-            Lwin = trainingParam.LSTM_sequence_length;
-            if Lwin<=0, Lwin = size(video,4); end
+            isSeq2One = strcmp(trainingParam.classifier_output{end}, 'sequence-to-one');
+
             T = size(video,4);
 
-            if isfield(trainingParam,'LSTM_win_stride_pos_frac') && ~isempty(trainingParam.LSTM_win_stride_pos_frac)
-                stridePos = max(1, round(Lwin * trainingParam.LSTM_win_stride_pos_frac));
+% --- SEQ2ONE: 1 ROI = 1 séquence, on ignore le découpage/balancing ---
+if isSeq2One
+    useWins = [1 T];
+
+    if trainingParam.LSTM_sequence_length ~= 0
+        % juste un log (on ignore le param, mais on ne le supprime pas)
+        try
+            classif.runMsg('Seq2One: ignoring LSTM_sequence_length=%d (using full ROI length T=%d).', ...
+                trainingParam.LSTM_sequence_length, T);
+        catch
+        end
+    end
+
+else
+    % --- SEQ2SEQ: fenêtre glissante + balancing éventuel ---
+    Lwin = trainingParam.LSTM_sequence_length;
+    if Lwin <= 0, Lwin = T; end
+
+    if isfield(trainingParam,'LSTM_win_stride_pos_frac') && ~isempty(trainingParam.LSTM_win_stride_pos_frac)
+        stridePos = max(1, round(Lwin * trainingParam.LSTM_win_stride_pos_frac));
+    else
+        stridePos = max(1, floor(Lwin/2));
+    end
+
+    if isfield(trainingParam,'LSTM_win_stride_neg_frac') && ~isempty(trainingParam.LSTM_win_stride_neg_frac)
+        strideNeg = max(1, round(Lwin * trainingParam.LSTM_win_stride_neg_frac));
+    else
+        strideNeg = stridePos;
+    end
+
+    windows = [];
+    if T <= Lwin
+        windows = [1 T];
+    else
+        for s = 1:stridePos:(T - Lwin + 1)
+            windows(end+1,:) = [s s+Lwin-1]; %#ok<AGROW>
+        end
+        if windows(end,2) < T
+            windows(end+1,:) = [max(1,T-Lwin+1) T]; %#ok<AGROW>
+        end
+    end
+
+    if doBalance
+        isMinor = ismember(lab, categorical(minorityClasses));
+        posWins = [];
+        negWins = [];
+
+        for w = 1:size(windows,1)
+            s = windows(w,1);
+            e = windows(w,2);
+            if any(isMinor(s:e))
+                posWins = [posWins; windows(w,:)]; %#ok<AGROW>
             else
-                stridePos = max(1, floor(Lwin/2));
+                negWins = [negWins; windows(w,:)]; %#ok<AGROW>
             end
+        end
 
-            if isfield(trainingParam,'LSTM_win_stride_neg_frac') && ~isempty(trainingParam.LSTM_win_stride_neg_frac)
-                strideNeg = max(1, round(Lwin * trainingParam.LSTM_win_stride_neg_frac));
+        if strideNeg > stridePos && size(negWins,1) > 1
+            stepThin = max(1, round(strideNeg / stridePos));
+            negWins  = negWins(1:stepThin:end, :);
+        end
+
+        kpos = size(posWins,1);
+        kneg = size(negWins,1);
+
+        if kpos == 0
+            useWins = negWins;
+        else
+            r = min(kneg, round(trainingParam.LSTM_pos_neg_ratio * kpos));
+            if r > 0 && kneg > 0
+                selNeg = randperm(kneg, r);
+                useWins = [posWins; negWins(selNeg,:)];
             else
-                strideNeg = stridePos;
+                useWins = posWins;
             end
+        end
+    else
+        useWins = windows;
+    end
+end
 
-            windows = [];
-            if T <= Lwin
-                windows = [1 T];
-            else
-                for s = 1:stridePos:(T - Lwin + 1)
-                    windows(end+1,:) = [s s+Lwin-1]; %#ok<AGROW>
-                end
-                if windows(end,2) < T
-                    windows(end+1,:) = [max(1,T-Lwin+1) T]; %#ok<AGROW>
-                end
-            end
-
-            if doBalance
-                isMinor = ismember(lab, categorical(minorityClasses));
-                posWins = [];
-                negWins = [];
-
-                for w = 1:size(windows,1)
-                    s = windows(w,1);
-                    e = windows(w,2);
-                    if any(isMinor(s:e))
-                        posWins = [posWins; windows(w,:)]; %#ok<AGROW>
-                    else
-                        negWins = [negWins; windows(w,:)]; %#ok<AGROW>
-                    end
-                end
-
-                if strideNeg > stridePos && size(negWins,1) > 1
-                    stepThin = max(1, round(strideNeg / stridePos));
-                    negWins  = negWins(1:stepThin:end, :);
-                end
-
-                kpos = size(posWins,1);
-                kneg = size(negWins,1);
-
-                if kpos == 0
-                    useWins = negWins;
-                else
-                    r = min(kneg, round(trainingParam.LSTM_pos_neg_ratio * kpos));
-                    if r > 0 && kneg > 0
-                        selNeg = randperm(kneg, r);
-                        useWins = [posWins; negWins(selNeg,:)];
-                    else
-                        useWins = posWins;
-                    end
-                end
-            else
-                useWins = windows;
-            end
 
             for w = 1:size(useWins,1)
     s = useWins(w,1);
@@ -496,13 +516,24 @@ try
 
     sequences{cc,1} = Xwin;
 
-    tmpLab = lab(s:e);
-    if iscolumn(tmpLab), tmpLab = tmpLab'; end
-    tmpLab = categorical(tmpLab, categories(lab));
-    labels{cc,1} = tmpLab;
+   tmpLab = lab(s:e);
+tmpLab = tmpLab(:); % colonne
+
+if isSeq2One
+    % Label ROI unique (convention: état final)
+    y = tmpLab(end);
+
+    % Alternative (majorité):
+    % y = mode(tmpLab);
+
+    labels{cc,1} = categorical(y, categories(lab)); % scalaire
+else
+    labels{cc,1} = categorical(tmpLab, categories(lab)); % séquence
+end
+
 
     cc = cc + 1;
-end
+        end
 
         end
 
@@ -540,10 +571,14 @@ end
         sequencesValidation = sequences(idxValidation);
         labelsValidation    = labels(idxValidation);
 
-        if strcmp(trainingParam.classifier_output{end},'sequence-to-one')
-            labelsTrain      = [labelsTrain{:}]';
-            labelsValidation = [labelsValidation{:}]';
-        end
+       isSeq2One = strcmp(trainingParam.classifier_output{end}, 'sequence-to-one');
+
+if isSeq2One
+    % labelsTrain/Validation sont des cell scalaires -> vector categorical Nx1
+    labelsTrain      = categorical(cellfun(@(c) c(1), labelsTrain(:)));
+    labelsValidation = categorical(cellfun(@(c) c(1), labelsValidation(:)));
+end
+
 
         numFeatures = size(sequencesTrain{1},1);
 
@@ -558,10 +593,14 @@ end
             return;
         end
 
-        sucl = zeros(numObservations, numClasses);
-        for i = 1:numObservations
-            sucl(i,:) = countcats(categorical(labels{i}, classif.classes));
-        end
+       sucl = zeros(numObservations, numClasses);
+for ii = 1:numObservations
+    yi = labels{ii};
+    if iscell(yi), yi = yi{1}; end
+    yi = categorical(yi, classif.classes);  % force même set de catégories
+    sucl(ii,:) = countcats(yi);
+end
+
         sucl = sum(sucl,1);
         tempsucl = sucl(sucl>0);
         sucl(sucl==0) = min(tempsucl(:));

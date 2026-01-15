@@ -97,32 +97,25 @@ else % image based classification and regression
        options=  'dataAnnotation';
        pix=[];
 
-        for i = 1:numel(roiObj.data)
-          
-            data=roiObj.data(i);
-            
-            % Vérifie que le groupid correspond au strid de l'objet classification
-            if strcmp(data.groupid, classif.strid)
-                data.show=true;
-                % Vérifie que le champ show est actif
-                pp = data.plotProperties;
-                pix=i;
-                % Parcourt les lignes et modifie la colonne 1
-                for jj = 1:size(pp,1)
-                    label = pp{jj,2};
-                    if ~strcmp(label, 'labels_training')
-                        pp{jj,1} = false;
-                    else
-                        pp{jj,1} = true;
-                    end
-                end
+ for i = 1:numel(roiObj.data)
+    data = roiObj.data(i);
 
-                % Applique les modifications
-                data.plotProperties = pp;
-            else
-                data.show=false;
-            end
+    if strcmp(data.groupid, classif.strid)
+        data.show = true;
+
+        pp = data.plotProperties;
+        for jj = 1:size(pp,1)
+            label = pp{jj,2};
+            pp{jj,1} = strcmp(label,'labels_training');
         end
+        data.plotProperties = pp;
+    else
+        data.show = false;
+    end
+
+    roiObj.data(i) = data; % <-- IMPORTANT
+end
+
        
     end
 
