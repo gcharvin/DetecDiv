@@ -13,7 +13,20 @@ function im = readImage(obj, frame, channel)
         return;
     end
 
+
     nChan = numel(obj.channel);
+
+
+    % --------- ensure raw path is accessible (just-in-time relink) ---------
+try
+    [obj, ok] = detecdiv_paths_ensure_fov_ready(obj, channel);
+    if ~ok
+        return;
+    end
+catch ME
+    warning('Rawdata relink check failed: %s', ME.message);
+end
+
 
     % --------- gestion interval (sous-échantillonnage canal) ---------
     frameEff = frame;

@@ -56,17 +56,15 @@ else
     shallowObj.setPath([path '\'], file);
 end
 
+% éviter de charger 2x le même projet dans le workspace
 normalizePathClean = @(p) regexprep(lower(strrep(p, '\', '/')), '/+$', '');
-
 expectedPath = normalizePathClean(path);
 expectedFile = lower(file);
 
 varlist = evalin('base', 'who');
 for i = 1:numel(varlist)
     varName = varlist{i};
-    if strcmp(varName, 'ans')
-        continue;
-    end
+    if strcmp(varName, 'ans'), continue; end
 
     try
         tmp = evalin('base', varName);
@@ -75,7 +73,6 @@ for i = 1:numel(varlist)
     end
 
     if isa(tmp, 'shallow') && isprop(tmp, 'io') && isfield(tmp.io, 'path') && isfield(tmp.io, 'file')
-
         tmpPath = normalizePathClean(tmp.io.path);
         tmpFile = lower(tmp.io.file);
 
@@ -87,6 +84,7 @@ for i = 1:numel(varlist)
         end
     end
 end
+
 msg = ['Successfully loaded shallow project ' fullfile(path, [file '.mat']) '!'];
 disp(msg);
 disp('');
@@ -98,7 +96,6 @@ listclassi = listclassi(~contains({listclassi.name}, {'.', '..'}));
 listclassi = listclassi(arrayfun(@(x) x.isdir, listclassi));
 
 if ~isempty(listclassi)
-    % Tri par numéro à la fin du nom
     arr = zeros(1, numel(listclassi));
     for j = 1:numel(listclassi)
         tmp = regexp(listclassi(j).name, '\d+$', 'match');
@@ -107,7 +104,6 @@ if ~isempty(listclassi)
     [~, ix] = sort(arr);
     listclassi = listclassi(ix);
 
-    % Sécurisation : si le champ existait avec un type foireux, on le signale
     if isfield(shallowObj.processing, 'classification') && ...
             ~isempty(shallowObj.processing.classification) && ...
             ~isa(shallowObj.processing.classification, 'classi')
@@ -117,19 +113,14 @@ if ~isempty(listclassi)
              class(shallowObj.processing.classification));
     end
 
-    % Réinitialisation typée propre
     shallowObj.processing.classification = classi.empty;
 
     for j = 1:numel(listclassi)
         name = listclassi(j).name;
         str  = fullfile(path, file, 'classification', name, [name '_classification.mat']);
-        % fprintf('Chargement classification : %s\n', str);  % debug optionnel
-
         if exist(str, 'file') == 2
-            [classiObj, msgclassi] = classiLoad(str); %#ok<NASGU>
-
+            [classiObj, ~] = classiLoad(str); %#ok<NASGU>
             if isa(classiObj, 'classi')
-                % Empilage direct dans un tableau de classi
                 shallowObj.processing.classification(end+1) = classiObj;
             else
                 warning('shallowLoad:InvalidClassi', ...
@@ -146,7 +137,6 @@ listproc = dir(fullfile(path, file, 'processor'));
 listproc = listproc(~contains({listproc.name}, {'.', '..'}));
 listproc = listproc(arrayfun(@(x) x.isdir, listproc));
 
-% initialisation typée sûre
 shallowObj.processing.processor = process.empty;
 
 if ~isempty(listproc)
@@ -158,38 +148,73 @@ if ~isempty(listproc)
     [~, ix] = sort(arr);
     listproc = listproc(ix);
 
-    procList = process.empty;  % tableau typé
-
+    procList = process.empty;
     for j = 1:numel(listproc)
         name = listproc(j).name;
         str = fullfile(path, file, 'processor', name, [name '_processor.mat']);
         if exist(str, 'file') == 2
             try
-                [procObj, msgproc] = processLoad(str); %#ok<NASGU>
+                [procObj, ~] = processLoad(str); %#ok<NASGU>
                 procList(end+1) = procObj;
             catch ME
                 warning('Erreur processLoad : %s', ME.message);
             end
         end
     end
-
     shallowObj.processing.processor = procList;
 end
 
-%% Vérification des FOV
-if numel(shallowObj.fov) ~= 0
-    if numel(shallowObj.fov(1).srcpath{1}) ~= 0
-        disp('* Warning *');
-        disp('* This project contains at least one FOV with the following path:');
+%% Vérification des FOV (PAS d'auto-fix ici)
+
+anyMissing = false;
+
+% Charger prefs si dispo (pour mémoriser passivement les chemins valides)
+try
+    userprefs = detecdiv_prefs_load();
+catch
+    userprefs = [];
+end
+
+if numel(shallowObj.fov) ~= 0 && isprop(shallowObj.fov(1), 'srcpath') && ~isempty(shallowObj.fov(1).srcpath)
+
+    for i = 1:numel(shallowObj.fov)
+        shallowObj.fov(i).parent = shallowObj;
+
+        if ~iscell(shallowObj.fov(i).srcpath), continue; end
+        for ch = 1:numel(shallowObj.fov(i).srcpath)
+            p = shallowObj.fov(i).srcpath{ch};
+            if isempty(p), continue; end
+
+            if isfolder(p)
+                % mémorisation passive : on stocke ce qui marche (optionnel)
+                if ~isempty(userprefs)
+                    userprefs = detecdiv_paths_register_one(userprefs, p);
+                end
+            else
+                anyMissing = true;
+            end
+        end
+    end
+
+    % Sauver prefs si modifiées
+    if ~isempty(userprefs)
+        try, detecdiv_prefs_save(userprefs); catch, end
+    end
+
+    if anyMissing
+        disp('* Note * Some rawdata srcpath are missing/unreachable.');
+        disp('* They will be requested only when needed (open FOV / extract ROI).');
+        disp('* You can also use shallowObj.setSrcPath manually if you want to relink now.');
+    end
+
+    % Affichage informatif (channel 1)
+    if ~isempty(shallowObj.fov(1).srcpath) && numel(shallowObj.fov(1).srcpath{1}) ~= 0
+        disp('* Project contains FOV srcpath (channel 1 shown):');
         for i = 1:numel(shallowObj.fov)
             disp(shallowObj.fov(i).srcpath{1});
-            shallowObj.fov(i).parent = shallowObj;
         end
-        disp('* Need to update the path of the source images ?');
-        disp('* To do so, use the shallowObj.setSrcPath function');
-    else
-        disp('There is no available FOV in this project!');
     end
+
 else
     disp('There is no available FOV in this project!');
 end

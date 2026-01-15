@@ -1071,7 +1071,13 @@ dlgtitle = 'Input movie export parameters';
 dims = [1 100];
 
 fra=obj.frames(1);
-pth=fullfile(obj.srcpath{1},'mymovie');
+try
+    [obj, ok] = detecdiv_paths_ensure_fov_ready(obj, 1);
+    if ~ok, return; end
+catch
+end
+pth = fullfile(obj.srcpath{1}, 'mymovie');
+
 definput = {['1:' num2str(fra)],pth,'10','10','20','0','0'};%, num2str(inte)};
 answer = inputdlg(prompt,dlgtitle,dims,definput);
 
