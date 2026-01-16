@@ -397,7 +397,8 @@ function updateDataPanels(ax, groupIdx, layoutOptions, currentframe, hLineAll, r
 dataIndices = layoutOptions.plotidx{groupIdx}; % indices des données à afficher
 data = roiData.data(layoutOptions.dataidx{groupIdx});
 
-ydata = data.data{:, layoutOptions.plotidx{groupIdx}};
+[ydata, ~] = score_extractYData(data.data, layoutOptions.plotidx{groupIdx});
+
 % here 
 
 xdata = (1:size(ydata,1)) * layoutOptions.framerate;
@@ -465,86 +466,3 @@ else  % Mode courbes
 end
 end
 
-
-% function updateDataPanels(ax,layoutOptions,currentframe,hLineAll)
-% 
-% 
-% if strcmp(class(hLineAll(1)),'matlab.graphics.primitive.Image') % traj mode
-% 
-%     Nframes=size(hLineAll.CData,2);
-%     alphaVec = ones(1, Nframes);           % tout transparent par défaut
-% 
-% if currentframe <= Nframes
-%     alphaVec(currentframe:end) = 0.2;      % 20% d’opacité à droite
-% end
-% 
-% alphaImage = repmat(alphaVec, size(hLineAll.CData,1), 1);
-% set(hLineAll,'AlphaData',alphaImage);
-% 
-% else % plot mode 
-% 
-% framerate=layoutOptions.framerate;
-% 
-% track=false;
-% if layoutOptions.track
-%     if layoutOptions.mode~="Sequence"
-%         track=true;
-%     end
-% end
-% 
-% if track
-%     amin=(currentframe-layoutOptions.trackWindow)*framerate;
-%     amax=(currentframe+layoutOptions.trackWindow)*framerate;
-%    % ax.UserData.xlim=[amin amax];
-% else % no tracking mode
-%     lims=ax.UserData.xlim;
-% 
-%     if ischar(lims) & lims=="auto"
-% 
-%         lines = findall(ax, 'Type', 'line');  % Trouve tous les objets 'line' dans l'axe
-% 
-%         if isempty(lines)
-%             warning('Aucune courbe trouvée dans cet axe.');
-%             xmin = NaN;
-%             xmax = NaN;
-%             return;
-%         end
-% 
-%         allX = [];
-% 
-%         for k = 1:length(lines)
-%             xdata = get(lines(k), 'XData');
-%             allX = [allX, xdata]; %#ok<AGROW> % Concatène tous les X
-%         end
-% 
-%         xmin = min(allX);
-%         xmax = max(allX);
-% 
-%         if xmin>0
-%             xmin=0.95*xmin-0.01;
-%         else
-%             xmin=1.05*xmin-0.01;
-%         end
-% 
-%         if xmax>0
-%             xmax=0.95*xmax-0.01;
-%         else
-%             xmax=1.05*xmax+0.01;
-%         end
-% 
-% 
-%     else
-% 
-%         xmin=ax.UserData.xlim(1);
-%         xmax=ax.UserData.xlim(2);
-%     end
-% 
-%     amin=xmin;
-%     amax=xmax;
-% 
-% end
-% 
-% xlim(ax,  [amin amax]);
-% 
-% end
-% end

@@ -14,11 +14,13 @@ fontsize=layoutOptions.fontSize;
 scalingFactor=layoutOptions.scalingFactor;
 
 
-%aa=layoutOptions.dataidx{groupIdx};
-dataIndices = layoutOptions.plotidx{groupIdx}; % indices des données à afficher
+
+dataIndices = layoutOptions.plotidx{groupIdx};
 data = roiobj.data(layoutOptions.dataidx{groupIdx});
 
-ydata = data.data{:, layoutOptions.plotidx{groupIdx}};
+[ydata, varname, yTickInfo] = score_extractYData(data.data, dataIndices);
+
+str = cellstr(varname);
 
 
 groupname=layoutOptions.plotidxgroup{groupIdx};
@@ -46,12 +48,12 @@ end
 
 
 % Extraction des noms de variables pour la légende
-varname = data.data.Properties.VariableNames(dataIndices);
-str = cell(1, size(ydata,2));
-
-for i = 1:size(ydata,2)
-    str{i} = varname{i};
-end
+%varname = data.data.Properties.VariableNames(dataIndices);
+% str = cell(1, size(ydata,2));
+% 
+% for i = 1:size(ydata,2)
+%     str{i} = varname{i};
+% end
 
 if plottype=="Plot"
 
@@ -136,6 +138,12 @@ if plottype=="Plot"
     legend off;
  end
 
+ % Si ce panel contient des labels, afficher les noms sur l'axe Y
+if any(yTickInfo.isLabel)
+    yticks(ax, yTickInfo.ticks);
+    yticklabels(ax, yTickInfo.labels);
+end
+
     
 
     % Configuration des axes : affichage uniquement des axes gauche et inférieur
@@ -149,6 +157,8 @@ if plottype=="Plot"
             track=true;
         end
     end
+
+
 
 
     if track
