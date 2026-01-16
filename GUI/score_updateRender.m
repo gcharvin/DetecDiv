@@ -394,75 +394,126 @@ end
 
 function updateDataPanels(ax, groupIdx, layoutOptions, currentframe, hLineAll, roiData)
 
-dataIndices = layoutOptions.plotidx{groupIdx}; % indices des données à afficher
+dataIndices = layoutOptions.plotidx{groupIdx};
 data = roiData.data(layoutOptions.dataidx{groupIdx});
 
-[ydata, ~] = score_extractYData(data.data, layoutOptions.plotidx{groupIdx});
+% Extraction robuste (numeric + categorical) + infos ticks/labels
+[ydata, ~, yTickInfo] = score_extractYData(data.data, dataIndices);
 
-% here 
-
+% X axis
 xdata = (1:size(ydata,1)) * layoutOptions.framerate;
+
 if layoutOptions.timeOffset
     xdata = xdata - layoutOptions.frames(1) * layoutOptions.framerate;
-    pix = xdata >= 0;
-    xdata = xdata(pix);
-    ydata = ydata(pix, :);
+    keep = xdata >= 0;
+    xdata = xdata(keep);
+    ydata = ydata(keep, :);
+
+    % frame relatif dans les données tronquées
+    currentframe_rel = currentframe - layoutOptions.frames(1) + 1;
+else
+    currentframe_rel = currentframe;
 end
 
-for i = 1:numel(hLineAll)
-    if isgraphics(hLineAll(i)) && i <= size(ydata, 2)
-        set(hLineAll(i), ...
-            'XData', xdata, ...
-            'YData', ydata(:, i));
+% ------------------------------------------------------------
+% 1) Mettre à jour uniquement les "vraies" lignes (pas les markers)
+% ------------------------------------------------------------
+lineIdx = find(arrayfun(@(h) isgraphics(h) && isa(h, 'matlab.graphics.chart.primitive.Line'), hLineAll));
+nLines = min(numel(lineIdx), size(ydata,2));
+
+for i = 1:nLines
+    h = hLineAll(lineIdx(i));
+    set(h, 'XData', xdata, 'YData', ydata(:, i));
+end
+
+% ------------------------------------------------------------
+% 2) Mettre à jour les marqueurs (leurs positions), si présents
+% ------------------------------------------------------------
+markerIdx = find(arrayfun(@(h) isgraphics(h) && isa(h, 'matlab.graphics.chart.primitive.Line') && ...
+    ~isempty(h.Marker) && h.Marker ~= "none", hLineAll));
+
+if ~isempty(markerIdx) && ~isempty(layoutOptions.frames)
+    cc = 1;
+    for k = 1:length(layoutOptions.frames)
+        fIdx = layoutOptions.frames(k);
+
+        if layoutOptions.timeOffset
+            xMarker = (fIdx - layoutOptions.frames(1)) * layoutOptions.framerate;
+            fRel = fIdx - layoutOptions.frames(1) + 1;
+        else
+            xMarker = fIdx * layoutOptions.framerate;
+            fRel = fIdx;
+        end
+
+        if fRel >= 1 && fRel <= size(ydata,1)
+            for j = 1:nLines
+                if cc <= numel(markerIdx)
+                    hm = hLineAll(markerIdx(cc));
+                    set(hm, 'XData', xMarker, 'YData', ydata(fRel, j));
+                    cc = cc + 1;
+                end
+            end
+        end
     end
 end
 
+% ------------------------------------------------------------
+% 3) Si c'est un panel categorical, forcer Y ticks/labels stables
+%    (on prend la 1ère colonne comme référence)
+% ------------------------------------------------------------
+if ~isempty(yTickInfo) && ~isempty(yTickInfo.isLabel) && any(yTickInfo.isLabel)
+    % Si plusieurs colonnes, on utilise la première qui a un mapping
+    ref = find(yTickInfo.isLabel, 1, 'first');
+    if ~isempty(ref) && ~isempty(yTickInfo.ticks) && ~isempty(yTickInfo.labels)
+        yticks(ax, yTickInfo.ticks);
+        yticklabels(ax, yTickInfo.labels);
+        ylim(ax, [min(yTickInfo.ticks)-0.5, max(yTickInfo.ticks)+0.5]);
+        set(ax, 'YTickMode', 'manual', 'YTickLabelMode', 'manual');
+    end
+end
 
-if isa(hLineAll(1), 'matlab.graphics.primitive.Image')  % Mode trajectoire
-    Nframes = size(hLineAll.CData, 2);
+% ------------------------------------------------------------
+% 4) Opacité mode trajectoire / ou tracking XLim
+% ------------------------------------------------------------
+if isgraphics(hLineAll(1)) && isa(hLineAll(1), 'matlab.graphics.primitive.Image')
+    % Mode trajectoire
+    Nframes = size(hLineAll(1).CData, 2);
     alphaVec = ones(1, Nframes);
-    if currentframe <= Nframes
-        alphaVec(currentframe:end) = 0.2;  % faible opacité à droite
+
+    if currentframe_rel <= Nframes
+        alphaVec(currentframe_rel:end) = 0.2;
     end
-    alphaImage = repmat(alphaVec, size(hLineAll.CData,1), 1);
-    hLineAll.AlphaData = alphaImage;
-else  % Mode courbes
+
+    alphaImage = repmat(alphaVec, size(hLineAll(1).CData,1), 1);
+    hLineAll(1).AlphaData = alphaImage;
+
+else
+    % Mode courbes: tracking XLim
     framerate = layoutOptions.framerate;
 
-    % Tracking automatique
     if isfield(layoutOptions, 'track') && layoutOptions.track && ~strcmpi(layoutOptions.mode, 'sequence')
-        aMin = (currentframe - layoutOptions.trackWindow) * framerate;
-        aMax = (currentframe + layoutOptions.trackWindow) * framerate;
+        aMin = (currentframe_rel - layoutOptions.trackWindow) * framerate;
+        aMax = (currentframe_rel + layoutOptions.trackWindow) * framerate;
     else
         lims = ax.UserData.xlim;
         if ischar(lims) && strcmp(lims, 'auto')
-            % Optimisation : utiliser hLineAll directement au lieu de `findall`
-            xdatas = get(hLineAll, {'XData'});
+            xdatas = get(hLineAll(lineIdx(1:nLines)), {'XData'});
             allX = horzcat(xdatas{:});
-
-            if isempty(allX)
-                return
-            end
-
-            xmin = min(allX);
-            xmax = max(allX);
-
-            % Petit padding
+            if isempty(allX), return; end
+            xmin = min(allX); xmax = max(allX);
             xmin = xmin - 0.01 * abs(xmin);
             xmax = xmax + 0.01 * abs(xmax);
-
-            aMin = xmin;
-            aMax = xmax;
+            aMin = xmin; aMax = xmax;
         else
-            aMin = lims(1);
-            aMax = lims(2);
+            aMin = lims(1); aMax = lims(2);
         end
     end
 
-    % Ne mettre à jour que si nécessaire
     if ~isequal(ax.XLim, [aMin, aMax])
         xlim(ax, [aMin, aMax]);
     end
 end
+
 end
+
 
