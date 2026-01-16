@@ -495,6 +495,17 @@ pp = ensurePlotProperties(pp, string(classif.classes), useCNN, 'Prune', true);
 pp = syncPlotPropsToTable(pp, datatmp.data);
 datatmp.plotProperties = pp;
 
+classesTarget = string(classif.classes); % c'est la vérité côté dataseries
+% classes à exposer à l'UI (garantit 'unclassified')
+classesUI = classesTarget(:).';
+if ~any(classesUI == "unclassified")
+    classesUI(end+1) = "unclassified";
+end
+
+% --- Ensure userData.classes is always present (for UI consistency) ---
+datatmp = ensureUserDataClasses(datatmp, classesUI);
+
+
 % Commit
 data(cc) = datatmp;
 
@@ -763,3 +774,27 @@ function debugCNNInference(classifierCNN, classesTarget, probCNNAligned, labelCN
 end
 
 end
+
+
+function ds = ensureUserDataClasses(ds, classesUI)
+    % ds : dataseries
+    % classesUI : string row
+
+    if isempty(classesUI)
+        classesUI = "unclassified";
+    end
+    classesUI = string(classesUI(:).');
+    classesUI(classesUI=="") = [];
+    if ~any(classesUI == "unclassified")
+        classesUI(end+1) = "unclassified";
+    end
+
+    % userData doit être une struct
+    if ~isprop(ds,'userData') || isempty(ds.userData) || ~isstruct(ds.userData)
+        ds.userData = struct();
+    end
+
+    % stocker en cellstr row (le plus compatible AppDesigner)
+    ds.userData.classes = cellstr(classesUI);
+end
+
