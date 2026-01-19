@@ -22,7 +22,9 @@ output = 0;
 % =========================
 p = inputParser;
 p.addParameter('layoutMode', "ctc_root", @(s) (ischar(s) || isstring(s)));
+p.addParameter('mergeBudN', 3, @(x) isnumeric(x) && isscalar(x) && x>=0 && isfinite(x));
 p.parse(varargin{:});
+mergeBudN = uint32(p.Results.mergeBudN);
 layoutMode = string(p.Results.layoutMode);
 layoutMode = lower(layoutMode);
 
@@ -123,6 +125,8 @@ for s = 1:size(splits,1)
         childAllowedStart   = containers.Map('KeyType','char','ValueType','uint32');
         motherPendingParent = containers.Map('KeyType','char','ValueType','any');
         seenLocalKey        = containers.Map('KeyType','char','ValueType','logical');
+        childBirthFrame = containers.Map('KeyType','char','ValueType','uint32'); % frame0 où le bud est vu pour la 1ère fois
+
 
         % ==== BOUCLE FRAMES ====
         for jj = 1:T
@@ -158,7 +162,20 @@ for s = 1:size(splits,1)
                     end
 
                     if ~isempty(motherOf) && isKey(motherOf, int32(id)) && ~isKey(childAllowedStart, key)
-                        childAllowedStart(key) = frame0 + 1;
+                        % --- première apparition d'un bud: mémorise sa "naissance" ---
+if ~isKey(childBirthFrame, key)
+    childBirthFrame(key) = frame0; % naissance = première frame où il est vu
+end
+
+% --- quand le bud est autorisé à exister comme objet séparé ---
+% N=0 : logique actuelle (1 frame de délai)
+% N>0 : bud séparé seulement à partir de birthFrame + N
+if mergeBudN == 0
+    childAllowedStart(key) = frame0 + 1;
+else
+    childAllowedStart(key) = childBirthFrame(key) + mergeBudN;
+end
+
 
                         motherId  = uint32(motherOf(int32(id)));
                         mKey = makeKey(kk, motherId);
@@ -185,11 +202,41 @@ for s = 1:size(splits,1)
 
                     key = makeKey(kk, id);
 
-                    if ~isempty(motherOf) && isKey(motherOf, int32(id)) ...
-                            && isKey(childAllowedStart, key) ...
-                            && frame0 < childAllowedStart(key)
-                        continue;
-                    end
+               if ~isempty(motherOf) && isKey(motherOf, int32(id)) ...
+        && isKey(childAllowedStart, key) ...
+        && frame0 < childAllowedStart(key)
+
+    % --- N=0 : ne touche pas à la logique actuelle ---
+    if mergeBudN == 0
+        continue;
+    end
+
+    % --- N>0 : on fusionne artificiellement le bud dans la mère ---
+    motherId = uint32(motherOf(int32(id)));
+    mKey     = makeKey(kk, motherId);
+
+    % Si la mère n'a pas encore de GID, on la crée maintenant (parent=0 par défaut)
+    if ~isKey(local2global, mKey)
+        globalID = globalID + 1;
+        mgid = globalID;
+        local2global(mKey) = mgid;
+
+        trackTable = [trackTable; double([mgid, frame0, frame0, 0])]; %#ok<AGROW>
+        trackRowOfGID(mgid) = size(trackTable,1);
+    else
+        mgid = local2global(mKey);
+        rowM = trackRowOfGID(mgid);
+        trackTable(rowM,3) = double(frame0);
+    end
+
+    % Ecriture dans SEG/TRA sous l'ID/GID de la mère
+    segMask(pixz)   = uint16(motherId + kk);
+    trackMask(pixz) = uint16(mgid);
+
+    % Ne PAS créer/mettre à jour le GID du bud sur cette frame
+    continue;
+end
+
 
                     segMask(pixz) = uint16(id + kk);
 

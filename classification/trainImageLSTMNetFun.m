@@ -275,6 +275,12 @@ try
         allCats = [];
         totalCounts = [];
 
+        isSeq2OneGlobal = strcmp(trainingParam.classifier_output{end}, 'sequence-to-one');
+L = trainingParam.LSTM_sequence_length;
+if isempty(L) || ~isscalar(L), L = 0; end
+L = round(L);
+
+
         for ii = 1:numFiles
             progressBar(ii, numFiles, ['Prescanning ROIs']);
 
@@ -335,8 +341,42 @@ try
                 allCats = allCats(:)';
                 totalCounts = zeros(1, numel(allCats));
             end
-            cnt = countcats(categorical(labLocal, allCats));
-            totalCounts = totalCounts + reshape(cnt,1,[]);
+            % --- compter selon le "granularity" réel du dataset ---
+if isSeq2OneGlobal
+    % seq2one fenêtré : compter 1 label par fenêtre (majorité ignore 0)
+    Tloc = numel(labLocal);
+
+    % L=0 => 1 seule fenêtre = toute la séquence
+    if L <= 0 || L >= Tloc
+        starts = 1;
+        Luse = Tloc;
+    else
+        starts = 1:L:Tloc;
+        Luse = L;
+    end
+
+    yWins = categorical(); % empty
+    for ws = starts
+        we = min(Tloc, ws + Luse - 1);
+        y = majorityLabelIgnoringZero(labLocal(ws:we));
+        if ~ismissing(y)
+            % remettre les mêmes catégories que allCats
+            yWins(end+1,1) = categorical(y, allCats); %#ok<AGROW>
+        end
+    end
+
+    if isempty(yWins)
+        cnt = zeros(1, numel(allCats));
+    else
+        cnt = countcats(categorical(yWins, allCats));
+    end
+else
+    % seq2seq : compter frame-by-frame (comme avant)
+    cnt = countcats(categorical(labLocal, allCats));
+end
+
+totalCounts = totalCounts + reshape(cnt,1,[]);
+
         end
         fprintf('\n');
 
@@ -415,21 +455,29 @@ try
 
             T = size(video,4);
 
-% --- SEQ2ONE: 1 ROI = 1 séquence, on ignore le découpage/balancing ---
-if isSeq2One
-    useWins = [1 T];
+isSeq2One = strcmp(trainingParam.classifier_output{end}, 'sequence-to-one');
+T = size(video,4);
 
-    if trainingParam.LSTM_sequence_length ~= 0
-        % juste un log (on ignore le param, mais on ne le supprime pas)
-        try
-            classif.runMsg('Seq2One: ignoring LSTM_sequence_length=%d (using full ROI length T=%d).', ...
-                trainingParam.LSTM_sequence_length, T);
-        catch
+if isSeq2One
+    % ===== SEQ2ONE fenêtré : fenêtres contiguës non chevauchantes =====
+    Lwin = trainingParam.LSTM_sequence_length;
+    if isempty(Lwin) || ~isscalar(Lwin), Lwin = 0; end
+    Lwin = round(Lwin);
+
+    if Lwin <= 0 || Lwin >= T
+        useWins = [1 T];  % une seule fenêtre = toute la ROI
+    else
+        starts = 1:Lwin:T;
+        useWins = zeros(numel(starts),2);
+        for k = 1:numel(starts)
+            s = starts(k);
+            e = min(T, s + Lwin - 1);
+            useWins(k,:) = [s e];
         end
     end
 
 else
-    % --- SEQ2SEQ: fenêtre glissante + balancing éventuel ---
+    % ===== SEQ2SEQ : fenêtre glissante + balancing éventuel (inchangé) =====
     Lwin = trainingParam.LSTM_sequence_length;
     if Lwin <= 0, Lwin = T; end
 
@@ -497,6 +545,7 @@ else
 end
 
 
+
             for w = 1:size(useWins,1)
     s = useWins(w,1);
     e = useWins(w,2);
@@ -514,25 +563,28 @@ end
     Xwin = [Fwin; dFm; dFp];  % [3F x L]
     %Xwin = Fwin;
 
-    sequences{cc,1} = Xwin;
+% ... compute Xwin ...
 
-   tmpLab = lab(s:e);
-tmpLab = tmpLab(:); % colonne
+tmpLab = lab(s:e);
+tmpLab = tmpLab(:);
 
 if isSeq2One
-    % Label ROI unique (convention: état final)
-    y = tmpLab(end);
-
-    % Alternative (majorité):
-    % y = mode(tmpLab);
-
-    labels{cc,1} = categorical(y, categories(lab)); % scalaire
-else
-    labels{cc,1} = categorical(tmpLab, categories(lab)); % séquence
+    y = majorityLabelIgnoringZero(tmpLab);
+    if ismissing(y)
+        continue; % skip window with no labeled frames
+    end
 end
 
+sequences{cc,1} = Xwin;
 
-    cc = cc + 1;
+if isSeq2One
+    labels{cc,1} = categorical(y, categories(lab));
+else
+    labels{cc,1} = categorical(tmpLab, categories(lab));
+end
+
+cc = cc + 1;
+
         end
 
         end
@@ -1432,6 +1484,60 @@ end
         tf = false;
     
     end
+
+
+function y = majorityLabelIgnoringZero(tmpLab)
+% tmpLab : categorical ou numeric (labels 0..C)
+% y : categorical scalaire (la classe majoritaire, ignore 0)
+% tie-break: dernier label non-zero
+
+if isempty(tmpLab)
+    y = categorical(missing);
+    return;
+end
+
+% Convertir en indices numériques 0..C si besoin
+if iscategorical(tmpLab)
+    % tmpLab peut contenir <undefined> : on le traite comme 0
+    idx = double(tmpLab);
+    idx(isundefined(tmpLab)) = 0;
+else
+    idx = double(tmpLab);
+end
+
+idx = idx(:);
+idxNZ = idx(idx > 0);
+
+if isempty(idxNZ)
+    y = categorical(missing);
+    return;
+end
+
+u = unique(idxNZ);
+counts = zeros(size(u));
+for k = 1:numel(u)
+    counts(k) = nnz(idxNZ == u(k));
+end
+maxc = max(counts);
+cand = u(counts == maxc);
+
+if numel(cand) == 1
+    winIdx = cand;
+else
+    lastLab = idxNZ(end);
+    if any(cand == lastLab)
+        winIdx = lastLab;
+    else
+        winIdx = cand(1);
+    end
+end
+
+% On renvoie un categorical "simple" avec juste cet élément;
+% le caller fera le recast sur categories(lab) si nécessaire.
+y = categorical(winIdx);
+
+end
+
 
   
 

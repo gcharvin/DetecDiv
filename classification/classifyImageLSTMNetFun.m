@@ -234,40 +234,93 @@ if ~isSeq2One && ~isSeq2Seq
     isSeq2Seq = true;
 end
 
+% --------- Windowing for seq2one inference ----------
+Lwin = 0;
+if ~isempty(tp) && isfield(tp,'LSTM_sequence_length') && ~isempty(tp.LSTM_sequence_length)
+    Lwin = tp.LSTM_sequence_length;
+end
+if isempty(Lwin) || ~isscalar(Lwin), Lwin = 0; end
+Lwin = round(Lwin);
 
-% LSTM
-if useLSTM
-    try
-        [lbl, sc] = classify(classifier, videoLSTM, 'ExecutionEnvironment', env);
-    catch
-        warning('LSTM classify failed on %s: falling back to CPU.', upper(string(env)));
-        [lbl, sc] = classify(classifier, videoLSTM, 'ExecutionEnvironment', 'cpu');
+% Fenêtres contiguës (comme training) : [s e]
+useWins = [];
+if isSeq2One
+    if Lwin <= 0 || Lwin >= T
+        useWins = [1 T];
+    else
+        starts = 1:Lwin:T;
+        useWins = zeros(numel(starts),2);
+        for k = 1:numel(starts)
+            s = starts(k);
+            e = min(T, s + Lwin - 1);
+            useWins(k,:) = [s e];
+        end
     end
-    labelsLSTM = classifier.Layers(end).Classes;  % catégories apprises
-    probLSTM   = sc;
-    if size(probLSTM,1) == numel(labelsLSTM); probLSTM = probLSTM'; end
-    [~, idxLSTM] = max(probLSTM, [], 2);
 end
 
-% --------- Normalize LSTM outputs to per-frame ----------
+
+
+% =========================
+% LSTM inference
+% =========================
 if useLSTM
+    labelsLSTM = classifier.Layers(end).Classes;  % catégories apprises
+    C = numel(labelsLSTM);
+
     if isSeq2One
-        % sc is 1xC (or Cx1) -> make it 1xC
-        if size(probLSTM,1) ~= 1
-            probLSTM = probLSTM(1,:); % safety
+        % --- seq2one fenêtré : prédire 1 fois par fenêtre, puis "déplier" par frame ---
+        probLSTM = zeros(T, C, 'single');
+        idxLSTM  = zeros(T, 1, 'int32');
+
+        for w = 1:size(useWins,1)
+            s = useWins(w,1);
+            e = useWins(w,2);
+
+            clip = videoLSTM(:,:,:,s:e);
+
+            try
+                [~, scW] = classify(classifier, clip, 'ExecutionEnvironment', env);
+            catch
+                warning('LSTM window classify failed on %s: falling back to CPU.', upper(string(env)));
+                [~, scW] = classify(classifier, clip, 'ExecutionEnvironment', 'cpu');
+            end
+
+            % scW attendu: 1xC (ou Cx1). Sécuriser en 1xC.
+            if size(scW,1) == C && size(scW,2) == 1
+                scW = scW';
+            elseif size(scW,1) ~= 1
+                scW = scW(1,:); % safety
+            end
+
+            [~, idW] = max(scW, [], 2); % scalaire
+
+            probLSTM(s:e, :) = repmat(single(scW), [e-s+1, 1]);
+            idxLSTM(s:e, 1)  = int32(idW);
         end
-        % Broadcast to T frames
-        probLSTM = repmat(probLSTM, [T 1]);      % [T x C]
-        idxLSTM  = repmat(idxLSTM(1), [T 1]);    % [T x 1]
+
     else
-        % seq2seq: expect [T x C] already
+        % --- seq2seq : comportement actuel (une prédiction par frame) ---
+        try
+            [~, sc] = classify(classifier, videoLSTM, 'ExecutionEnvironment', env);
+        catch
+            warning('LSTM classify failed on %s: falling back to CPU.', upper(string(env)));
+            [~, sc] = classify(classifier, videoLSTM, 'ExecutionEnvironment', 'cpu');
+        end
+
+        probLSTM = sc;
+        if size(probLSTM,1) == C
+            probLSTM = probLSTM'; % [T x C]
+        end
+
         if size(probLSTM,1) ~= T
             warning('LSTM seq2seq: unexpected #rows=%d, expected T=%d. Forcing broadcast of first row.', size(probLSTM,1), T);
             probLSTM = repmat(probLSTM(1,:), [T 1]);
-            idxLSTM  = repmat(idxLSTM(1), [T 1]);
         end
+
+        [~, idxLSTM] = max(probLSTM, [], 2);
     end
 end
+
 
 
 % CNN
@@ -310,22 +363,18 @@ dlP = softmax(dlY);                  % softmax respecte déjà le format de dlY
     end
 end
 
-% --------- Normalize CNN outputs to per-frame ----------
+% --------- Normalize CNN outputs to per-frame (only if CNN actually returned 1xC) ----------
 if useCNN
-    if isSeq2One
-        if size(probCNN,1) ~= 1
-            probCNN = probCNN(1,:); % safety
-        end
+    if size(probCNN,1) == 1 && T > 1
         probCNN = repmat(probCNN, [T 1]);
         idxCNN  = repmat(idxCNN(1), [T 1]);
-    else
-        if size(probCNN,1) ~= T
-            warning('CNN seq2seq: unexpected #rows=%d, expected T=%d. Forcing broadcast of first row.', size(probCNN,1), T);
-            probCNN = repmat(probCNN(1,:), [T 1]);
-            idxCNN  = repmat(idxCNN(1), [T 1]);
-        end
+    elseif size(probCNN,1) ~= T
+        warning('CNN: unexpected #rows=%d, expected T=%d. Forcing broadcast of first row.', size(probCNN,1), T);
+        probCNN = repmat(probCNN(1,:), [T 1]);
+        idxCNN  = repmat(idxCNN(1), [T 1]);
     end
 end
+
 
 
 % --------- Cible de classes (ordre & noms de colonnes dans dataseries) ----------

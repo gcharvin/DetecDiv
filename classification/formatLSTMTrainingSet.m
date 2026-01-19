@@ -52,6 +52,24 @@ if isprop(classif,'trainingParam') && ~isempty(classif.trainingParam)
             StorageBackend = StorageBackend{end};
         end
     end
+
+    L = [];
+if isfield(tp,'LSTM_sequence_length')
+    L = tp.LSTM_sequence_length;
+    if iscell(L), L = L{end}; end
+end
+
+% >>> AJOUT: 0 => pas de découpage, on prend toute la séquence
+if isempty(L) || ~isscalar(L)
+    L = 30; % fallback
+end
+L = round(L);
+if L == 0
+    L = Inf; % une seule fenêtre = toute la ROI
+end
+if L < 0
+    L = 30; % sécurité
+end
 end
 
 % Dériver UseHDF5 à partir du backend
@@ -485,7 +503,7 @@ for i = 1:numel(rois_sel)
         end
     end
 
-    % =======================
+    % =======================           
     %  LSTM Classification
     % =======================
     if strcmp(category,'LSTM')
@@ -512,8 +530,6 @@ else
         continue
     end
 end
-
-
 
         lab = categorical(dataidfra, 1:numClasses, classif.classes);
 
@@ -652,6 +668,8 @@ end
             cc = cc + 1;
         end
 
+
+
         % Métadonnées de séries CNN (optionnel)
         if UseHDF5 && nFramesROI_CNN > 0 && ~isempty(firstIdxROI_CNN)
             seriesStart(end+1,1) = firstIdxROI_CNN; %#ok<AGROW>
@@ -659,6 +677,77 @@ end
             seriesIds(end+1,1)   = string(cltmp(ridx).id); %#ok<AGROW>
         end
     end
+
+% ===========================
+%  POST: Seq2One fenêtré
+% ===========================
+if strcmp(category,'LSTM') && ~isSeq2Seq && isempty(emptyFrame)
+
+    % Fenêtres contiguës non chevauchantes de longueur L (dernière fenêtre partielle gardée)
+    nF = numel(fra);
+    if isinf(L) || L >= nF
+    starts = 1;        % une seule fenêtre
+else
+    starts = 1:L:nF;   % fenêtres contiguës
+end
+
+
+    winCountSaved = 0;
+
+    for ws = starts
+        we = min(nF, ws + L - 1);
+        winIdx = ws:we;
+
+        % labels de la fenêtre (dans l'espace 'fra' => dataidfra)
+        winLab = dataidfra(winIdx);
+
+        % ignorer les frames non annotées
+        winLabNZ = winLab(winLab > 0);
+
+        % si aucune annotation dans la fenêtre -> on skip
+        if isempty(winLabNZ)
+            continue
+        end
+
+        % label majoritaire (mode). Tie-break simple: si égalité, prendre le dernier label annoté de la fenêtre.
+        u = unique(winLabNZ);
+        counts = zeros(size(u));
+        for uu = 1:numel(u)
+            counts(uu) = nnz(winLabNZ == u(uu));
+        end
+        maxc = max(counts);
+        cand = u(counts == maxc);
+
+        if numel(cand) == 1
+            winLabelIdx = cand;
+        else
+            % tie-break: dernier label annoté de la fenêtre
+            lastLab = winLabNZ(end);
+            if any(cand == lastLab)
+                winLabelIdx = lastLab;
+            else
+                winLabelIdx = cand(1); % fallback stable
+            end
+        end
+
+        % construire sample fenêtre
+        vid_win  = vid(:,:,:,winIdx);
+        deep_win = winLab; % labels par frame (avec 0 possibles), pour debug/analyses
+        lab_win  = categorical(winLabelIdx, 1:numClasses, classif.classes); % scalaire
+
+        % sauvegarde (un fichier par fenêtre)
+        if ~UseHDF5
+            winCountSaved = winCountSaved + 1;
+            fname = sprintf('lstm_seq2one_%s_w%04d.mat', cltmp(ridx).id, winCountSaved);
+            parsave(fullfile(classif.path, foldername, 'timeseries', fname), deep_win, vid_win, lab_win);
+        end
+    end
+
+    % Important: en seq2one fenêtré, on ne veut PAS sauver le gros fichier ROI complet plus bas.
+end
+
+
+
 
     % =======================
     %  LSTM Regression
@@ -705,16 +794,25 @@ end
     end
 
     % --------- Sauvegarde timeseries LSTM (pas undersamplée) ---------
-    deep = dataidfra ; % étiquette par frame, dans l'ordre temporel
+  % --------- Sauvegarde timeseries LSTM (pas undersamplée) ---------
+% seq2seq : 1 fichier par ROI (comme avant)
+% seq2one fenêtré : déjà sauvé plus haut (1 fichier par fenêtre)
 
-    if isempty(emptyFrame)
-        if ~UseHDF5
+deep = dataidfra;
+
+if isempty(emptyFrame)
+    if ~UseHDF5
+        if isSeq2Seq
             parsave(fullfile(classif.path, foldername, 'timeseries', ...
                 ['lstm_labeled_' cltmp(ridx).id '.mat']), deep, vid, lab);
+        else
+            % seq2one fenêtré : ne rien faire ici
         end
-    else
-        disp('This ROI was not saved because it has empty frames');
     end
+else
+    disp('This ROI was not saved because it has empty frames');
+end
+
 end
 
 % Flush final du buffer HDF5 s'il reste des frames non écrites

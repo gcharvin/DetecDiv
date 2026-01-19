@@ -38,138 +38,32 @@ hprogressbar = [];           % ui handle (uiprogressdlg or compatible)
 % DRIFT CORRECTION OPTIONS — robust to jitter + slow drift
 % =========================================================
 
-CorrectDrift       = true;          
-% Enable / disable drift correction.
-% Range: true | false
-% Use false for debugging or if data are already stable.
+CorrectDrift      = true;
+DriftMethod       = 'subpixel';
+DriftRefMode      = 'previous';
+DriftSubpixel     = true;
 
-DriftChannel       = [];            
-% Channel used for drift estimation.
-% [] = auto-select first selected channel.
-% Can be channel index (1..N) or channel name (string).
+DriftMaxShift     = 20;
+DriftHipassSigma  = 3;
+DriftApodize      = true;
+DriftMask         = [];
 
-DriftMethod        = 'subpixel';    
-% Drift estimation method:
-% 'circshift' = integer pixel correlation (fast, coarse)
-% 'subpixel'  = phase correlation (FFT-based, subpixel accuracy)
-% 'register'  = imregtform translation (slow, no score)
-% Recommended: 'subpixel'
+DriftRollingRef   = 0;     % IMPORTANT pour le test
+DriftWarmupFrames = 0;
 
-DriftRefMode       = 'previous';    
-% Reference strategy:
-% 'previous' = incremental (frame-to-frame), best for drift
-% 'first'    = all frames compared to first frame
-% Recommended: 'previous'
+DriftPsrMin       = 10;
+DriftPsrRadius    = 6;
 
-DriftSubpixel      = true;          
-% Enable subpixel peak refinement.
-% Range: true | false
-% Only meaningful for 'subpixel' method.
+DriftMaxStep      = 10;
+DriftSmoothWin    = 0;
 
-% ---------------------------------------------------------
-% HARD SAFETY LIMIT (catastrophic failure protection)
-% ---------------------------------------------------------
-DriftMaxShift      = 20;            
-% Absolute clamp per frame (px).
-% Range: ~10–50
-% Should be large enough to NEVER trigger in normal operation.
-% Acts only as a last-resort safety bumper.
+DriftDebug        = true;
+DriftDebugEvery   = 1;
 
-% ---------------------------------------------------------
-% IMAGE PREPROCESSING (stability of correlation)
-% ---------------------------------------------------------
-DriftHipassSigma   = 1;             
-% High-pass filter sigma (px).
-% Range: 0 (off) to ~3
-% Removes low-frequency background; improves phase correlation.
-% Recommended: 1
-
-DriftApodize       = true;          
-% Apply Hann window before FFT.
-% Range: true | false
-% Strongly recommended to reduce FFT edge artefacts.
-
-DriftMask          = [];            
-% Optional logical mask (HxW).
-% [] = no mask.
-% Useful to ignore static borders or background regions.
-
-% ---------------------------------------------------------
-% ROLLING REFERENCE (anti-jitter, pre-estimation smoothing)
-% ---------------------------------------------------------
-DriftRollingRef    = 0.05;           
-% Exponential moving average (EMA) of aligned reference image.
-% Range: 0 (off) to ~0.3
-% 0.05 → weak smoothing (~20 frames memory)
-% 0.1  → good compromise (jitter reduction, keeps slow drift)
-% 0.2  → strong smoothing (less reactive)
-% Recommended: 0.1 for jitter + slow drift
-
-% ---------------------------------------------------------
-% ROBUSTNESS / QUALITY CONTROL
-% ---------------------------------------------------------
-DriftWarmupFrames  = 0;             
-% Ignore drift correction for first N frames.
-% Range: 0–5
-% Useful for focus settling or illumination stabilization.
-
-DriftPsrRadius     = 6;             
-% Radius (px) excluded around correlation peak for PSR estimation.
-% Range: 4–10
-% Larger = more conservative noise estimation.
-
-DriftPsrMin        = 12;            
-% Minimum Peak-to-Sidelobe Ratio (PSR) to trust estimation.
-% Range: ~8–20
-% Lower = more permissive (noisy data)
-% Higher = stricter (risk of freezing if texture is weak)
-% Recommended: 10–15
-
-DriftMaxJump       = Inf;             
-% Maximum allowed change of step vs previous frame (px).
-% Range: 1–5 or Inf (disable)
-% Acts only when PSR is poor.
-% Helps suppress sporadic spikes due to noise.
-
-DriftRejectMode    = 'hold';        
-% Behaviour when a step is rejected:
-% 'hold'  = reuse previous step (smooth but can stall)
-% 'clamp' = limit variation
-% 'none'  = disable rejection logic
-% Recommended: 'hold'
-
-% ---------------------------------------------------------
-% PHYSICAL PRIOR (frame-to-frame plausibility)
-% ---------------------------------------------------------
-DriftMaxStep       = 10;             
-% Maximum allowed absolute step per frame (px).
-% Range: 1–5 (depends on frame rate and microscope stability)
-% Should reflect physically plausible drift.
-% Prevents large spurious jumps.
-
-DriftMaxStepMode   = 'clamp';       
-% How to handle steps exceeding DriftMaxStep:
-% 'clamp' = limit magnitude (recommended)
-% 'hold'  = reuse previous step (more aggressive)
-
-% ---------------------------------------------------------
-% POST-HOC TRAJECTORY SMOOTHING
-% ---------------------------------------------------------
-DriftSmoothWin     = 0;             
-% Window size for smoothing cumulative drift trajectory.
-% Range: 0 (off) or odd integer (3,5,7,...)
-% Use 0 during debugging.
-% Recommended: 5 in production.
-
-DriftSmoothMethod  = 'median';      
-% Smoothing method:
-% 'median' = robust to spikes (recommended)
-% 'mean'   = smoother but sensitive to outliers
+DriftChannel = []; 
+DriftRejectMode = 'hold';
 
 
-% Debug drift
-DriftDebug         = true;
-DriftDebugEvery    = 1;
 
 % ----------------- PARSING -----------------
 for i = 1:2:numel(varargin)
@@ -266,6 +160,25 @@ for i = 1:2:numel(varargin)
             hprogressbar = varargin{i+1};
     end
 end
+
+% ---- Drift fallbacks (avoid missing vars during refactor) ----
+if ~exist('DriftMethod','var')       || isempty(DriftMethod),       DriftMethod = 'subpixel'; end
+if ~exist('DriftRefMode','var')      || isempty(DriftRefMode),      DriftRefMode = 'previous'; end
+if ~exist('DriftSubpixel','var')     || isempty(DriftSubpixel),     DriftSubpixel = true; end
+if ~exist('DriftMaxShift','var')     || isempty(DriftMaxShift),     DriftMaxShift = 20; end
+if ~exist('DriftHipassSigma','var')  || isempty(DriftHipassSigma),  DriftHipassSigma = 3; end
+if ~exist('DriftApodize','var')      || isempty(DriftApodize),      DriftApodize = true; end
+if ~exist('DriftMask','var'),                                   DriftMask = []; end
+if ~exist('DriftWarmupFrames','var') || isempty(DriftWarmupFrames), DriftWarmupFrames = 0; end
+if ~exist('DriftPsrRadius','var')    || isempty(DriftPsrRadius),    DriftPsrRadius = 6; end
+if ~exist('DriftPsrMin','var')       || isempty(DriftPsrMin),       DriftPsrMin = 10; end
+if ~exist('DriftRejectMode','var')   || isempty(DriftRejectMode),   DriftRejectMode = 'hold'; end
+if ~exist('DriftMaxStep','var')      || isempty(DriftMaxStep),      DriftMaxStep = 10; end
+if ~exist('DriftSmoothWin','var')    || isempty(DriftSmoothWin),    DriftSmoothWin = 0; end
+if ~exist('DriftSmoothMethod','var') || isempty(DriftSmoothMethod), DriftSmoothMethod = 'median'; end
+if ~exist('DriftDebug','var')        || isempty(DriftDebug),        DriftDebug = false; end
+if ~exist('DriftDebugEvery','var')   || isempty(DriftDebugEvery),   DriftDebugEvery = 10; end
+
 
 
 % normalize scale
@@ -725,28 +638,26 @@ cropReal = double(cropReal(1));
 if ~isfinite(cropReal) || cropReal <= 0 || cropReal > 1, cropReal = 1; end
 
 driftArgs = { ...
-    'channel',      driftLocal, ...
-    'method',       DriftMethod, ...
-    'refmode',      DriftRefMode, ...
-    'subpixel',     DriftSubpixel, ...
-    'maxshift',     DriftMaxShift, ...
-    'hipasssigma',  DriftHipassSigma, ...
-    'apodize',      DriftApodize, ...
-    'rollingref',   DriftRollingRef, ...
-    'mask',         DriftMask, ...
-    'crop',         cropReal, ...
-    'warmupframes', DriftWarmupFrames, ...
-    'psrradius',    DriftPsrRadius, ...
-    'psrmin',       DriftPsrMin, ...
-    'maxjump',      DriftMaxJump, ...
-    'rejectmode',   DriftRejectMode, ...
-    'maxstep',      DriftMaxStep, ...
-    'maxstepmode',  DriftMaxStepMode, ...
-    'smoothwin',    DriftSmoothWin, ...
-    'smoothmethod', DriftSmoothMethod, ...
-    'debug',        DriftDebug, ...
-    'debugevery',   DriftDebugEvery ...
+  'channel',      driftLocal, ...
+  'method',       DriftMethod, ...
+  'refmode',      DriftRefMode, ...
+  'subpixel',     DriftSubpixel, ...
+  'maxshift',     DriftMaxShift, ...
+  'hipasssigma',  DriftHipassSigma, ...
+  'apodize',      DriftApodize, ...
+  'mask',         DriftMask, ...
+  'crop',         cropReal, ...
+  'warmupframes', DriftWarmupFrames, ...
+  'psrradius',    DriftPsrRadius, ...
+  'psrmin',       DriftPsrMin, ...
+  'rejectmode',   DriftRejectMode, ...   % (PSR reject)
+  'maxstep',      DriftMaxStep, ...
+  'smoothwin',    DriftSmoothWin, ...
+  'smoothmethod', DriftSmoothMethod, ...
+  'debug',        DriftDebug, ...
+  'debugevery',   DriftDebugEvery ...
 };
+
 
 
 %  if DriftDebug && Tblock >= 10

@@ -1,18 +1,23 @@
 function [list, drift, score] = computeDrift(obj, varargin)
-% COMPUTEDRIFT  XY drift correction for a FOV (legacy + block mode).
+% COMPUTEDRIFT  Simple + robust XY drift correction for a FOV (legacy + block mode)
+% + per-frame residual effectiveness metric.
 %
-% Incremental (ref=previous): estimate per-frame delta shift, accumulate, apply.
-% Robustness: PSR score, maxStep clamp/hold, optional jump gating, warmup ignore,
-%             + corrAfter-based gate (tests step=0, step, -step BEFORE accumulating).
+% Key points:
+%   - refMode='previous' estimates a *residual* step in a stabilized reference frame
+%     (current pre-aligned by the previous cumulative drift).
+%   - Handles block processing: if obj.drift exists and framesid(1)>1, we seed the
+%     initial cumulative drift from the previous absolute frame, so blocks stitch.
+%   - Logs residual drift after correction at each frame:
+%       residual(row,col) and residualNorm (px)
 %
 % Methods:
-%   'circshift' : normxcorr2
+%   'circshift' : normxcorr2 (integer px)
 %   'subpixel'  : phase correlation FFT + optional quadratic subpixel
 %   'register'  : imregtform translation (no score)
 
 % ---------- Defaults ----------
-method      = 'circshift';
-refMode     = '';
+method      = 'subpixel';
+refMode     = 'previous';
 channel     = 1;
 images      = [];
 framesid    = [];
@@ -20,36 +25,32 @@ displayFlag = 0;
 refimage    = [];
 refframeid  = 1;
 crop        = 1.0;
-subpixel    = false;
-maxshift    = 20;
+subpixel    = true;
+maxshift    = 20;     % hard per-frame clamp (catastrophic protection)
 hipasssigma = 3;
 apodize     = true;
-rollingref  = 0;
 mask        = [];
 
-% ---- Robustness ----
+% ---- Robustness (simple) ----
 warmupFrames = 0;
 psrRadius    = 6;
-psrMin       = 15;
-maxJump      = 3;
-rejectMode   = 'hold';
+psrMin       = 10;      % 0 => no PSR reject
+maxStep      = 10;      % physically plausible per-frame step (px); 0 => off
+onReject     = 'hold';  % 'hold' | 'zero'  (when PSR too low)
 
-maxStep     = 0.75;    % px
-maxStepMode = 'clamp'; % 'clamp' | 'hold'
-
-% ---- Smoothing ----
-smoothWin     = 5;
-smoothMethod  = 'median';
+% ---- Optional smoothing ----
+smoothWin     = 0;        % 0 off; odd integer
+smoothMethod  = 'median'; % 'median'|'mean'
+smoothTarget  = 'step';   % 'step'|'cum'
 
 % ---- Debug/profile ----
 debug       = false;
-debugEvery  = 10;
+debugEvery  = 1;
 debugFcn    = [];
 doTiming    = true;
 
-% ---- corrAfter gate ----
-corrGateCrop = 0.8;
-corrGateTol  = 0.01;
+% ---- Block stitch option (default ON) ----
+stitchFromObjDrift = true;  % if true: seed cum from obj.drift at framesid(1)-1
 
 % ---------- Parse ----------
 for i = 1:2:numel(varargin)
@@ -69,20 +70,16 @@ for i = 1:2:numel(varargin)
         case "maxshift",     maxshift = val;
         case "hipasssigma",  hipasssigma = val;
         case "apodize",      apodize = logical(val);
-        case "rollingref",   rollingref = double(val);
         case "mask",         mask = val;
 
         case "warmupframes", warmupFrames = max(0, round(double(val)));
         case "psrradius",    psrRadius = max(1, round(double(val)));
         case "psrmin",       psrMin = double(val);
-        case "maxjump",      maxJump = double(val);
-        case "rejectmode",   rejectMode = char(val);
-
         case "maxstep",      maxStep = double(val);
-        case "maxstepmode",  maxStepMode = char(val);
-
+        case "rejectmode",   onReject = char(val);   % compat
         case "smoothwin",    smoothWin = round(double(val));
         case "smoothmethod", smoothMethod = char(val);
+        case "smoothtarget", smoothTarget = char(val);
 
         case "debug",        debug = logical(val);
         case "verbose",      debug = logical(val);
@@ -90,26 +87,25 @@ for i = 1:2:numel(varargin)
         case "debugfcn",     debugFcn = val;
         case "timing",       doTiming = logical(val);
 
-        case "corrgatecrop", corrGateCrop = double(val);
-        case "corrgatetol",  corrGateTol  = double(val);
+        case "stitch",       stitchFromObjDrift = logical(val);
     end
 end
 
 % sanitize ref mode
 if isempty(refMode)
-    if strcmpi(method,'subpixel')
-        refMode = 'previous';
-    else
-        refMode = 'first';
+    if strcmpi(method,'subpixel'), refMode = 'previous';
+    else,                          refMode = 'first';
     end
 end
 refMode = lower(string(refMode));
 
 % sanitize smoothing
-if smoothWin < 0, smoothWin = 0; end
-if smoothWin > 0 && mod(smoothWin,2)==0, smoothWin = smoothWin + 1; end
 smoothMethod = lower(string(smoothMethod));
 if smoothMethod ~= "median" && smoothMethod ~= "mean", smoothMethod = "median"; end
+smoothTarget = lower(string(smoothTarget));
+if smoothTarget ~= "step" && smoothTarget ~= "cum", smoothTarget = "step"; end
+if smoothWin < 0, smoothWin = 0; end
+if smoothWin > 0 && mod(smoothWin,2)==0, smoothWin = smoothWin + 1; end
 
 wantObs = debug || ~isempty(debugFcn);
 if ~wantObs, doTiming = false; end
@@ -132,11 +128,22 @@ end
 
 nT = numel(framesid);
 
+% ---------- histories ----------
 stepRow_hist = zeros(1,nT);
 stepCol_hist = zeros(1,nT);
+cumRow_hist  = zeros(1,nT);
+cumCol_hist  = zeros(1,nT);
+score        = NaN(1,nT);
+
+% residual effectiveness (after correction)
+resRow_hist  = NaN(1,nT);
+resCol_hist  = NaN(1,nT);
+resNorm_hist = NaN(1,nT);
 
 % ---------- drift struct ----------
-if isempty(obj) || ~isprop(obj,'drift') || isempty(obj.drift)
+% We keep existing obj.drift.x/y as "global correction history" over absolute frames.
+if isempty(obj) || ~isprop(obj,'drift') || isempty(obj.drift) || ...
+        ~isstruct(obj.drift) || ~isfield(obj.drift,'x') || ~isfield(obj.drift,'y')
     drift.x = zeros(1, max(framesid));
     drift.y = zeros(1, max(framesid));
 else
@@ -145,18 +152,16 @@ else
         drift.x(max(framesid)) = 0; drift.y(max(framesid)) = 0;
     end
 end
-score = zeros(1, nT);
 
 % ---------- Debug header ----------
 if wantObs
-    if legacyMode, modeStr = 'legacy'; else, modeStr = 'block'; end
+    modeStr = tern(legacyMode,'legacy','block');
     localDebugPrint(debug, debugFcn, struct('stage','start'), ...
-        sprintf(['[computeDrift] mode=%s method=%s ref=%s chan=%s frames=%d crop=%.3g subpixel=%d ' ...
-                 'maxshift=%s hipass=%.3g apodize=%d rolling=%.3g mask=%d | ' ...
-                 'PSR(rad=%d,min=%.3g) maxJump=%.3g reject=%s | maxStep=%.3g(%s) | warmup=%d | smooth=%d(%s)'], ...
+        sprintf(['[computeDrift] (simple+residual) mode=%s method=%s ref=%s chan=%s frames=%d crop=%.3g subpixel=%d ' ...
+                 'maxshift=%s hipass=%.3g apodize=%d mask=%d | PSR(rad=%d,min=%.3g) maxStep=%.3g reject=%s | smooth=%d(%s,%s) | stitch=%d'], ...
             modeStr, method, char(refMode), mat2str(channel), nT, crop, subpixel, ...
-            mat2str(maxshift), hipasssigma, apodize, rollingref, ~isempty(mask), ...
-            psrRadius, psrMin, maxJump, rejectMode, maxStep, maxStepMode, warmupFrames, smoothWin, char(smoothMethod)));
+            mat2str(maxshift), hipasssigma, apodize, ~isempty(mask), ...
+            psrRadius, psrMin, maxStep, char(onReject), smoothWin, char(smoothMethod), char(smoothTarget), stitchFromObjDrift));
 end
 
 % ---------- initial reference ----------
@@ -169,10 +174,9 @@ if isempty(refimage)
     end
 end
 refGray0 = toGray(refimage);
-refProc0 = preprocess(cropCenter(refGray0, crop), hipasssigma, apodize, mask);
 tPrepRef = toc(tPrepRef);
 
-% ---------- register config ----------
+% register config
 if strcmpi(method, 'register')
     tRegCfg = tic;
     [optimizer, metric] = imregconfig('monomodal');
@@ -182,28 +186,36 @@ else
     tRegCfg = 0;
 end
 
-% ---------- timing ----------
+% timing
 if doTiming
-    TT = struct('prepRef',tPrepRef,'regCfg',tRegCfg,'load',0,'prep',0,'estimate',0,'apply',0,'rolling',0,'total',0);
+    TT = struct('prepRef',tPrepRef,'regCfg',tRegCfg,'load',0,'prep',0,'estimate',0,'apply',0,'residual',0,'total',0);
 else
     TT = [];
 end
 tTotal = tic;
 
 % ---------- state ----------
-prevProc = refProc0;  % used for estimation in previous mode
 cumRow = 0; cumCol = 0;
 
-cumRow_hist = zeros(1, nT);
-cumCol_hist = zeros(1, nT);
+% ---- Seed cumRow/cumCol from obj.drift for block stitching ----
+% drift.x/y store cumulative *applied correction* (in old code: drift.x += -cumRow).
+% We invert: cumRow0 = -drift.x(prevAbsFrame), cumCol0 = -drift.y(prevAbsFrame)
+if stitchFromObjDrift && ~legacyMode && refMode == "previous" && ~isempty(obj) ...
+        && isprop(obj,'drift') && ~isempty(obj.drift) && isstruct(obj.drift) ...
+        && isfield(obj.drift,'x') && isfield(obj.drift,'y') ...
+        && ~isempty(framesid) && framesid(1) > 1
 
-prevStepRow = 0; prevStepCol = 0; hasPrevStep = false;
+    prevAbs = framesid(1) - 1;
+    if numel(obj.drift.x) >= prevAbs && numel(obj.drift.y) >= prevAbs
+        cumRow = -double(obj.drift.x(prevAbs));
+        cumCol = -double(obj.drift.y(prevAbs));
+    end
+end
+
+% prevProc in corrected reference space (for refMode='previous')
+prevProc = preprocess(cropCenter(refGray0, crop), hipasssigma, apodize, mask);
 
 cc = 1;
-prevRawGray = [];
-corrBefore_hist = NaN(1,nT);
-corrAfter_hist  = NaN(1,nT);
-
 for j = framesid
     % load
     tLoad = tic;
@@ -217,33 +229,40 @@ for j = framesid
 
     imGray = toGray(imFull);
 
-    % corr BEFORE (raw consecutive)
-    if wantObs && cc > 1 && ~isempty(prevRawGray)
-        A = cropCenter(double(prevRawGray), corrGateCrop);
-        B = cropCenter(double(imGray),      corrGateCrop);
-        corrBefore = corr2(A,B);
+    % -------- build estimation image in a stable reference frame --------
+    % Pre-align current raw frame by previous cumulative drift (global space).
+    if cc > 1 && refMode == "previous"
+        fv0 = median(imGray(:));
+        imGrayEst = imtranslate(imGray, [-cumCol -cumRow], 'linear', 'FillValues', fv0);
     else
-        corrBefore = NaN;
+        % IMPORTANT: for cc==1 in a stitched block, we still want imGrayEst to be in
+        % the global corrected space, otherwise the first corrected frame won't match
+        % previous block. So if cum != 0, apply it even at cc==1.
+        if (cc == 1) && (refMode == "previous") && (cumRow ~= 0 || cumCol ~= 0)
+            fv0 = median(imGray(:));
+            imGrayEst = imtranslate(imGray, [-cumCol -cumRow], 'linear', 'FillValues', fv0);
+        else
+            imGrayEst = imGray;
+        end
     end
-    corrBefore_hist(cc) = corrBefore;
 
-    % preprocess current
+    % preprocess for estimation
     tPrep = tic;
-    imProc = preprocess(cropCenter(imGray, crop), hipasssigma, apodize, mask);
+    imProc = preprocess(cropCenter(imGrayEst, crop), hipasssigma, apodize, mask);
     if doTiming, TT.prep = TT.prep + toc(tPrep); end
 
     % choose reference for estimation
     if refMode == "first"
-        refEst = refProc0;
+        refEst = preprocess(cropCenter(refGray0, crop), hipasssigma, apodize, mask);
     else
         if cc == 1
-            refEst = imProc; % dummy; step forced to 0
+            refEst = imProc; % step forced to 0 below
         else
-            refEst = prevProc;
+            refEst = prevProc; % already in corrected frame
         end
     end
 
-    % estimate per-step
+    % estimate residual step
     tEst = tic;
     sc = NaN;
     if (cc == 1) && (refMode == "previous")
@@ -251,7 +270,7 @@ for j = framesid
     else
         switch lower(method)
             case 'circshift'
-                [stepRow, stepCol, sc] = xcorrShift(refEst, imProc, false);
+                [stepRow, stepCol, sc] = xcorrShift(refEst, imProc);
             case 'subpixel'
                 [stepRow, stepCol, sc] = phasecorrShift(refEst, imProc, subpixel, psrRadius);
             case 'register'
@@ -263,11 +282,11 @@ for j = framesid
                 error('Unknown method: %s', method);
         end
     end
-    rawRow = stepRow;
-    rawCol = stepCol;
     if doTiming, TT.estimate = TT.estimate + toc(tEst); end
 
-    % ----- decision accumulator -----
+    rawRow = stepRow; rawCol = stepCol;
+
+    % -------- accept / clamp (simple) --------
     decisionParts = strings(1,0);
 
     % warmup
@@ -276,99 +295,42 @@ for j = framesid
         decisionParts(end+1) = "warmup";
     end
 
-    % clamp absolute per-step
-    if ~isempty(maxshift)
+    % PSR reject (only meaningful for subpixel)
+    if strcmpi(method,'subpixel') && psrMin > 0 && ~isnan(sc) && sc < psrMin
+        if strcmpi(onReject,'zero')
+            stepRow = 0; stepCol = 0;
+            decisionParts(end+1) = "psrReject|zero";
+        else
+            stepRow = stepRow_hist(max(1,cc-1));
+            stepCol = stepCol_hist(max(1,cc-1));
+            decisionParts(end+1) = "psrReject|hold";
+        end
+    end
+
+    % catastrophic clamp
+    if ~isempty(maxshift) && maxshift > 0
         stepRow = max(min(stepRow, maxshift), -maxshift);
         stepCol = max(min(stepCol, maxshift), -maxshift);
     end
 
-    % maxStep prior (subpixel)
-    isPhase = strcmpi(method,'subpixel');
-    tooBig = false;
-    if isPhase && ~isempty(maxStep) && maxStep > 0
-        tooBig = (abs(stepRow) > maxStep) || (abs(stepCol) > maxStep);
-        if tooBig
-            if strcmpi(string(maxStepMode),"hold")
-                stepRow = prevStepRow; stepCol = prevStepCol;
-                decisionParts(end+1) = "maxStep|hold";
-            else
-                stepRow = max(min(stepRow, maxStep), -maxStep);
-                stepCol = max(min(stepCol, maxStep), -maxStep);
-                decisionParts(end+1) = "maxStep|clamp";
-            end
-        end
+    % physical clamp
+    if ~isempty(maxStep) && maxStep > 0
+        stepRow = max(min(stepRow, maxStep), -maxStep);
+        stepCol = max(min(stepCol, maxStep), -maxStep);
     end
 
-    % jump/psr gating
-    jumpBad = hasPrevStep && (abs(stepRow - prevStepRow) > maxJump || abs(stepCol - prevStepCol) > maxJump);
-    psrBad  = isPhase && ~isnan(sc) && (sc > 0) && (sc < psrMin);
-
-    accept = true;
-    if ~strcmpi(rejectMode,'none')
-        if jumpBad && psrBad
-            accept = false;
-        end
-    end
-
-    if ~accept
-        if strcmpi(rejectMode,'hold')
-            stepRow = prevStepRow; stepCol = prevStepCol;
-        elseif strcmpi(rejectMode,'clamp')
-            stepRow = prevStepRow + max(min(stepRow - prevStepRow,  maxJump), -maxJump);
-            stepCol = prevStepCol + max(min(stepCol - prevStepCol,  maxJump), -maxJump);
-        else
-            stepRow = prevStepRow; stepCol = prevStepCol;
-        end
-        decisionParts(end+1) = "reject|" + string(rejectMode);
-    end
-
-    % corrAfter-based gate (ref=previous only)
-    if refMode == "previous" && cc > 1
-        PrevCorr = cropCenter(double(toGray(list(:,:,channel,cc-1))), corrGateCrop);
-        fv = median(imGray(:));
-
-        evalCand = @(dRow,dCol) corr2( ...
-            PrevCorr, ...
-            cropCenter(double(toGray( ...
-                imtranslate(imGray, [-(cumCol+dCol) -(cumRow+dRow)], 'linear', 'FillValues', fv) ...
-            )), corrGateCrop) ...
-        );
-
-        c0 = evalCand(0,0);
-        c1 = evalCand(stepRow,  stepCol);
-        c2 = evalCand(-stepRow, -stepCol);
-
-        [cBest, kBest] = max([c0 c1 c2]);
-
-        if cBest < (c0 - corrGateTol)
-            stepRow = 0; stepCol = 0;
-            decisionParts(end+1) = "hold|corrAfterWorse";
-        else
-            if kBest == 1
-                stepRow = 0; stepCol = 0;
-                decisionParts(end+1) = "hold|corrAfterBest0";
-            elseif kBest == 3
-                stepRow = -stepRow; stepCol = -stepCol;
-                decisionParts(end+1) = "flip|corrAfterBestNeg";
-            else
-                decisionParts(end+1) = "ok|corrAfterBest";
-            end
-        end
-    end
-
-    % update per-step state
-    prevStepRow = stepRow; prevStepCol = stepCol; hasPrevStep = true;
+    % store step + score
     stepRow_hist(cc) = stepRow;
     stepCol_hist(cc) = stepCol;
+    score(cc) = sc;
 
-    % accumulate
+    % integrate cumulative drift
     cumRow = cumRow + stepRow;
     cumCol = cumCol + stepCol;
     cumRow_hist(cc) = cumRow;
     cumCol_hist(cc) = cumCol;
-    score(cc) = sc;
 
-    % apply cumulative shift to all channels
+    % apply cumulative shift to all channels (output)
     tApp = tic;
     for c = 1:size(list,3)
         fvC = median(list(:,:,c,cc), 'all');
@@ -376,25 +338,31 @@ for j = framesid
     end
     if doTiming, TT.apply = TT.apply + toc(tApp); end
 
-    % corr AFTER (corrected consecutive)
-    if wantObs && cc > 1
-        A = cropCenter(double(toGray(list(:,:,channel,cc-1))), corrGateCrop);
-        B = cropCenter(double(toGray(list(:,:,channel,cc))),   corrGateCrop);
-        corrAfter = corr2(A,B);
-    else
-        corrAfter = NaN;
-    end
-    corrAfter_hist(cc) = corrAfter;
-
-    % update estimation reference for next iteration (RAW/EMA processed)
+    % update prevProc reference (use corrected frame)
     if refMode == "previous"
-        prevProc_new = preprocess(cropCenter(imGray, crop), hipasssigma, apodize, mask);
-        if rollingref > 0
-            a = rollingref;
-            prevProc = (1-a)*prevProc + a*prevProc_new;
-        else
-            prevProc = prevProc_new;
-        end
+        prevCorr = toGray(list(:,:,min(channel,size(list,3)),cc));
+        prevProc = preprocess(cropCenter(prevCorr, crop), hipasssigma, apodize, mask);
+    end
+
+    % -------- residual effectiveness metric (after correction) --------
+    % Measure remaining shift between corrected (t-1) and corrected (t).
+    if cc > 1
+        tRes = tic;
+
+        A = toGray(list(:,:,min(channel,size(list,3)),cc-1));
+        B = toGray(list(:,:,min(channel,size(list,3)),cc));
+
+        A = preprocess(cropCenter(A, crop), hipasssigma, apodize, mask);
+        B = preprocess(cropCenter(B, crop), hipasssigma, apodize, mask);
+
+        % residual shift should be near (0,0) if correction is effective
+        [rRes, cRes, ~] = phasecorrShift(A, B, true, psrRadius);
+
+        resRow_hist(cc)  = rRes;
+        resCol_hist(cc)  = cRes;
+        resNorm_hist(cc) = hypot(rRes, cRes);
+
+        if doTiming, TT.residual = TT.residual + toc(tRes); end
     end
 
     % optional display
@@ -404,65 +372,84 @@ for j = framesid
         title(sprintf('Cumulative drift row=%.3f col=%.3f (step %.3f,%.3f)', cumRow, cumCol, stepRow, stepCol));
     end
 
-    % decision string
-    if isempty(decisionParts)
-        decision = "ok";
-    else
-        decision = strjoin(decisionParts, "|");
-    end
-
-    % debug print
+    % debug print (per frame)
     if wantObs && (cc == 1 || cc == nT || mod(cc, debugEvery) == 0)
+        if isempty(decisionParts), decision = "ok"; else, decision = strjoin(decisionParts,"|"); end
+
+        if cc > 1 && ~isnan(resNorm_hist(cc))
+            resStr = sprintf(' residual(row,col)=(%.3g,%.3g)|%.3gpx', resRow_hist(cc), resCol_hist(cc), resNorm_hist(cc));
+        else
+            resStr = '';
+        end
+
         localDebugPrint(debug, debugFcn, struct('stage','frame'), ...
-            sprintf(['[computeDrift] %d/%d frame=%d ' ...
-                     'raw(row,col)=(%.3g,%.3g) step(row,col)=(%.3g,%.3g) ' ...
-                     'cum=(%.3g,%.3g) PSR=%.3g corrBefore=%.3f corrAfter=%.3f ' ...
-                     'decision=%s method=%s ref=%s'], ...
-                cc, nT, j, ...
-                rawRow, rawCol, stepRow, stepCol, ...
-                cumRow, cumCol, sc, corrBefore, corrAfter, ...
-                char(decision), method, char(refMode)));
+            sprintf(['[computeDrift] %d/%d frame=%d raw(row,col)=(%.3g,%.3g) step(row,col)=(%.3g,%.3g) ' ...
+                     'cum=(%.3g,%.3g)%s PSR=%.3g decision=%s method=%s ref=%s'], ...
+                cc, nT, j, rawRow, rawCol, stepRow, stepCol, cumRow, cumCol, resStr, sc, char(decision), method, char(refMode)));
     end
 
-    prevRawGray = imGray;
     cc = cc + 1;
 end
 
-% drift history
-drift.stepRow = stepRow_hist;
-drift.stepCol = stepCol_hist;
-drift.cumRow  = cumRow_hist;
-drift.cumCol  = cumCol_hist;
-
-% ---------- Optional smoothing on cumulative trajectory ----------
+% ---------- Optional smoothing ----------
+% Post-hoc smoothing and re-apply the delta implied by smoothing.
 if smoothWin > 1
-    switch smoothMethod
-        case "median"
-            cumRow_sm = movmedian(cumRow_hist, smoothWin);
-            cumCol_sm = movmedian(cumCol_hist, smoothWin);
-        otherwise
-            cumRow_sm = movmean(cumRow_hist, smoothWin);
-            cumCol_sm = movmean(cumCol_hist, smoothWin);
+    switch smoothTarget
+        case "step"
+            sRow = stepRow_hist; sCol = stepCol_hist;
+            if smoothMethod == "median"
+                sRow2 = movmedian(sRow, smoothWin);
+                sCol2 = movmedian(sCol, smoothWin);
+            else
+                sRow2 = movmean(sRow, smoothWin);
+                sCol2 = movmean(sCol, smoothWin);
+            end
+            cumRow2 = cumsum(sRow2);
+            cumCol2 = cumsum(sCol2);
+
+        otherwise % "cum"
+            if smoothMethod == "median"
+                cumRow2 = movmedian(cumRow_hist, smoothWin);
+                cumCol2 = movmedian(cumCol_hist, smoothWin);
+            else
+                cumRow2 = movmean(cumRow_hist, smoothWin);
+                cumCol2 = movmean(cumCol_hist, smoothWin);
+            end
     end
 
     for kk = 1:nT
-        dRow = cumRow_sm(kk) - cumRow_hist(kk);
-        dCol = cumCol_sm(kk) - cumCol_hist(kk);
+        dRow = cumRow2(kk) - cumRow_hist(kk);
+        dCol = cumCol2(kk) - cumCol_hist(kk);
         if dRow ~= 0 || dCol ~= 0
             for c = 1:size(list,3)
                 fvC = median(list(:,:,c,kk), 'all');
                 list(:,:,c,kk) = imtranslate(list(:,:,c,kk), [-dCol -dRow], 'linear', 'FillValues', fvC);
             end
         end
-        cumRow_hist(kk) = cumRow_sm(kk);
-        cumCol_hist(kk) = cumCol_sm(kk);
     end
 
-    drift.cumRow = cumRow_hist;
-    drift.cumCol = cumCol_hist;
+    cumRow_hist = cumRow2;
+    cumCol_hist = cumCol2;
+    if smoothTarget == "step"
+        stepRow_hist = [cumRow_hist(1) diff(cumRow_hist)];
+        stepCol_hist = [cumCol_hist(1) diff(cumCol_hist)];
+    end
+
+    % NOTE: after smoothing, residual metrics are stale; recompute if you care.
 end
 
+% ---------- pack drift ----------
+drift.stepRow = stepRow_hist;
+drift.stepCol = stepCol_hist;
+drift.cumRow  = cumRow_hist;
+drift.cumCol  = cumCol_hist;
+
+drift.residualRow  = resRow_hist;
+drift.residualCol  = resCol_hist;
+drift.residualNorm = resNorm_hist;
+
 % ---------- Write back drift (absolute frames) ----------
+% drift.x/y are "global correction" histories stored over absolute frames.
 for k = 1:nT
     jj = framesid(k);
     drift.x(jj) = drift.x(jj) + (-cumRow_hist(k));
@@ -473,8 +460,8 @@ end
 if doTiming
     TT.total = toc(tTotal);
     localDebugPrint(debug, debugFcn, struct('stage','end','timing',TT), ...
-        sprintf('[computeDrift] DONE frames=%d total=%.2fs | prepRef=%.2fs regCfg=%.2fs load=%.2fs prep=%.2fs estimate=%.2fs apply=%.2fs rolling=%.2fs', ...
-        nT, TT.total, TT.prepRef, TT.regCfg, TT.load, TT.prep, TT.estimate, TT.apply, TT.rolling));
+        sprintf('[computeDrift] DONE frames=%d total=%.2fs | prepRef=%.2fs regCfg=%.2fs load=%.2fs prep=%.2fs estimate=%.2fs apply=%.2fs residual=%.2fs', ...
+        nT, TT.total, TT.prepRef, TT.regCfg, TT.load, TT.prep, TT.estimate, TT.apply, TT.residual));
 end
 
 if ~isempty(obj)
@@ -482,21 +469,15 @@ if ~isempty(obj)
 end
 end
 
-
 % ===== Helpers =====
 
 function localDebugPrint(debug, debugFcn, msgStruct, msgLine)
 try
-    if debug
-        fprintf('%s\n', msgLine);
-    end
+    if debug, fprintf('%s\n', msgLine); end
 catch
 end
 if ~isempty(debugFcn)
-    try
-        debugFcn(msgStruct);
-    catch
-    end
+    try, debugFcn(msgStruct); catch, end
 end
 end
 
@@ -507,6 +488,8 @@ end
 function img = toGray(img)
 if ndims(img)==3 && size(img,3)==3
     img = rgb2gray(img);
+elseif ndims(img)>2
+    img = img(:,:,1);
 end
 end
 
@@ -542,7 +525,7 @@ s = std(im2(:));
 if s>0, im2 = im2./s; end
 end
 
-function [row,col,score] = xcorrShift(ref, mov, ~)
+function [row,col,score] = xcorrShift(ref, mov)
 c = normxcorr2(ref, mov);
 [score, ix] = max(c(:));
 [row, col]  = ind2sub(size(c), ix);
@@ -569,8 +552,7 @@ maskSB(r1:r2, c1:c2) = false;
 sb = r(maskSB);
 mu = mean(sb);
 sd = std(sb);
-sdFloor = 1e-6;
-if sd < sdFloor
+if sd < 1e-6
     score = 0;
 else
     score = (peak - mu) / sd;
@@ -589,8 +571,6 @@ if subpixel
     row = row - subpixQuad(r, py, px, 1);
     col = col - subpixQuad(r, py, px, 2);
 end
-
-
 end
 
 function ofs = subpixQuad(r, py, px, dim)
@@ -603,21 +583,16 @@ try
         y1=r(py,px-1); y2=r(py,px); y3=r(py,px+1);
     end
     d = (y1 - 2*y2 + y3);
-    ofs = 0;
-    if abs(d)>=1e-12
-        ofs = 0.5*(y1 - y3)/d;
-        ofs = max(min(ofs,0.5),-0.5);
-    end
+    if abs(d)<1e-12, ofs=0; return; end
+    ofs = 0.5*(y1 - y3)/d;
+    ofs = max(min(ofs,0.5),-0.5);
 catch
     ofs = 0;
 end
 end
 
 function w = hann1d(n)
-if n <= 1
-    w = 1;
-    return;
-end
+if n <= 1, w = 1; return; end
 w = 0.5*(1 - cos(2*pi*(0:n-1)/(n-1)));
 w = w(:);
 end
