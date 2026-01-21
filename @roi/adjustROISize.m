@@ -23,6 +23,7 @@ function adjustROISize(obj, val, varargin)
     % ------------------------------------------------------------
     binning   = [];
     localCrop = false;
+frames = [];   % vecteur de frames à recadrer (indices dans obj.image)
 
     if ~isempty(varargin)
         % binning si premier arg numérique scalaire
@@ -40,11 +41,29 @@ function adjustROISize(obj, val, varargin)
                     switch lower(string(key))
                         case "localcrop"
                             localCrop = logical(varargin{k+1});
+                            case "frames"
+    frames = varargin{k+1};
+
                     end
                 end
             end
         end
     end
+
+    % normalise frames
+if ~isempty(frames)
+    if ~isnumeric(frames)
+        warning('adjustROISize:InvalidFrames','frames must be numeric vector. Ignoring.');
+        frames = [];
+    else
+        frames = unique(round(frames(:)'));
+        frames = frames(isfinite(frames) & frames>=1);
+        if isempty(frames)
+            frames = [];
+        end
+    end
+end
+
 
     % On garde une copie de l'ancienne bbox si besoin
     oldValue = obj.value; %#ok<NASGU>
@@ -81,20 +100,38 @@ function adjustROISize(obj, val, varargin)
             return;
         end
 
-        im = obj.image;
-        [hImg, wImg, nC, nT] = size(im);
+im = obj.image;
+[hImg, wImg, nC, nT] = size(im);
 
-        % clamp top-left dans l'image
-        xRel = max(1, min(xRel, wImg));
-        yRel = max(1, min(yRel, hImg));
+% --- clamp frames si demandé ---
+if ~isempty(frames)
+    frames = frames(frames <= nT);
+    if isempty(frames)
+        warning('adjustROISize:FramesOutOfRange', ...
+            'frames requested but none are within 1..%d (ROI "%s"). Ignoring frames.', nT, obj.id);
+        frames = [];
+    end
+end
 
-        % clamp bottom-right
-        x2 = min(wImg, xRel + wNew - 1);
-        y2 = min(hImg, yRel + hNew - 1);
+% --- NEW: clamp xRel/yRel and compute x2/y2 ---
+xRel = max(1, min(xRel, wImg));
+yRel = max(1, min(yRel, hImg));
 
-        % recadre image (toujours indices entiers)
-        imCropped = im(yRel:y2, xRel:x2, :, :);
-        obj.image = imCropped;
+x2 = min(wImg, xRel + wNew - 1);
+y2 = min(hImg, yRel + hNew - 1);
+
+% (optionnel) si la ROI demandée dépasse, w/h effectifs changent
+% wEff = x2 - xRel + 1;  hEff = y2 - yRel + 1;
+
+% --- crop ---
+if isempty(frames)
+    imCropped = im(yRel:y2, xRel:x2, :, :);
+else
+    imCropped = im(yRel:y2, xRel:x2, :, frames);
+end
+obj.image = imCropped;
+
+
 
         % mise à jour bbox FOV :
         % obj.value(1:2) est l'origine absolue FOV du patch actuel.
