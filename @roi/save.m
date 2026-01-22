@@ -223,9 +223,15 @@ while ~success && attempts < max_attempts
         %%% ATOMIC WRITE for data .mat
         tmpUuidD = char(java.util.UUID.randomUUID);
         dataTmp  = [dataFile '.tmp.' tmpUuidD '.mat'];
+
         save(dataTmp, 'data', '-v7.3');
 
-        [ok, ME] = localVerifyMat(dataTmp);
+        for k = 1:5
+    [ok, ME] = localVerifyMat(dataTmp);
+    if ok, break; end
+    pause(0.2);
+        end
+        
 if ~ok
     if exist(dataTmp,'file')
         d = dir(dataTmp);
@@ -434,6 +440,16 @@ catch ME
 end
 end
 
+
+function ok = localVerifyH5(h5Path)       %%% ATOMIC WRITE helper
+ok = false;
+try
+    info = h5info(h5Path); %#ok<NASGU>
+    ok = true;
+catch
+    ok = false;
+end
+end
 
 function upsertH5Dataset_frames(h5filename, datasetName, data, dims_mat, thisClass, absStart0)
 % (inchangé, sauf qu'on écrit maintenant dans un fichier "work" passé en 1er arg)
