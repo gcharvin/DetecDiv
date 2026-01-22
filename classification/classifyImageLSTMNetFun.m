@@ -438,6 +438,19 @@ if isempty(data)
     data = roiobj.data;
 end
 
+% --- sanitize: remove invalid/deleted dataseries handles ---
+try
+    if isa(data,'handle')
+        data = data(isvalid(data));
+    end
+catch
+end
+if isempty(data)
+    data = dataseries;
+end
+roiobj.data = data;   % important: write back sanitized array
+
+
 % Cherche dataseries existant pour ce classif
 pixdata = find(arrayfun(@(x) strcmp(x.groupid, classif.strid), roiobj.data), 1, 'first');
 if isempty(pixdata)
@@ -464,6 +477,25 @@ datatmp = data(cc);
 % Nombre de lignes à écrire
 % Nombre de lignes = nb total de frames ROI (dataseries alignée ROI)
 n = size(roiobj.image,4);
+
+% ============================================================
+% Inference hygiene:
+% - Drop previous inference columns (id/labels/prob_*, CNN*) to avoid pollution
+% - Keep training columns: labels_training, id_training
+% - Reset inference columns on ALL frames (1:n), then write only on 'frames'
+% ============================================================
+
+datatmp = pruneInferenceColsKeepTraining(datatmp);
+
+% Reset inference outputs (for all frames) so partial inference doesn't leave stale values
+classesUI = classesTarget(:).';
+if ~any(classesUI == "unclassified")
+    classesUI(end+1) = "unclassified";
+end
+catsLabels = ["undefined", classesUI];
+
+datatmp = resetInferenceOutputs(datatmp, classesTarget, useCNN, catsLabels, n);
+
 
 
 % --- NORMALISATION PLOTGROUP (évite horzcat char vs cell) ---
@@ -675,7 +707,7 @@ end
 function dropColIfExists(name)
     name = char(name);
     if ismember(name, datatmp.data.Properties.VariableNames)
-        datatmp.removeData(name);
+        datatmp.removeData(char(string(name)));
     end
 end
 
@@ -845,5 +877,115 @@ function ds = ensureUserDataClasses(ds, classesUI)
 
     % stocker en cellstr row (le plus compatible AppDesigner)
     ds.userData.classes = cellstr(classesUI);
+end
+
+function ds = pruneInferenceColsKeepTraining(ds)
+    if isempty(ds.data) || ~istable(ds.data), return; end
+
+    vars = string(ds.data.Properties.VariableNames);
+
+    % ---- Colonnes d'inférence à retirer (match exact) ----
+    drop = strings(0,1);
+
+    % exact names
+    exact = ["id","labels","idCNN","labelsCNN"];
+    drop = [drop; exact(ismember(exact, vars)).'];
+
+    % prob_*
+    % --- ensure consistent type + shape ---
+varsS = string(vars);                  % safe even if vars is cellstr
+drop  = string(drop);                  % idem
+drop  = drop(:);                       % force column
+
+drop  = [drop; varsS(startsWith(varsS,"prob_")).'];  % <-- attention au .'
+drop  = unique(drop,'stable');         % optional, but usually useful
+
+
+    % ---- Mais on protège explicitement les colonnes d'annotation ----
+    protect = ["id_training","labels_training"];
+    drop = setdiff(drop, protect, 'stable');
+
+    drop = unique(drop, 'stable');
+    if isempty(drop), return; end
+
+    % 1) remove from table (exact var names)
+    ds.data = removevars(ds.data, cellstr(drop));
+
+    % 2) sync plotProperties (col 2 = varname)
+    if ~isempty(ds.plotProperties)
+        try
+            toDel = ismember(string(ds.plotProperties(:,2)), drop);
+            ds.plotProperties(toDel,:) = [];
+        catch
+        end
+    end
+
+    % 3) sync plotGroup{6} from remaining plotProperties (safe)
+    try
+        if isempty(ds.plotProperties)
+            ds.plotGroup{6} = {};
+        else
+            ds.plotGroup{6} = unique(ds.plotProperties(:,6));
+        end
+    catch
+    end
+end
+
+
+function ds = resetInferenceOutputs(ds, classesTarget, useCNN, catsLabels, n)
+    % classesTarget: string row (classes "truth" côté dataseries)
+    % catsLabels  : string row, e.g. ["undefined", classes..., "unclassified"]
+    % n           : nb total frames ROI
+
+    % --- Primary outputs ---
+    % id
+    if ~ismember("id", string(ds.data.Properties.VariableNames))
+        ds.addData(zeros(n,1), 'id', 'groups', 'id');
+    else
+        ds.data.id = zeros(n,1);
+    end
+
+    % labels
+    if ~ismember("labels", string(ds.data.Properties.VariableNames))
+        ds.addData(categorical(repmat("undefined",n,1), catsLabels), 'labels', 'groups', 'labels');
+
+    else
+        ds.data.labels = categorical(repmat("undefined",n,1), catsLabels);
+    end
+
+    % prob_*
+    for ii = 1:numel(classesTarget)
+        nm = "prob_" + classesTarget(ii);
+        if ~ismember(nm, string(ds.data.Properties.VariableNames))
+           % ds.addData(zeros(n,1), char(nm));
+            ds.addData(zeros(n,1), char(nm), 'groups', 'prob');
+        else
+            ds.data.(char(nm)) = zeros(n,1);
+        end
+    end
+
+    % --- CNN secondary outputs ---
+    if useCNN
+        if ~ismember("idCNN", string(ds.data.Properties.VariableNames))
+            ds.addData(zeros(n,1), 'idCNN');
+        else
+            ds.data.idCNN = zeros(n,1);
+        end
+
+        if ~ismember("labelsCNN", string(ds.data.Properties.VariableNames))
+            ds.addData(categorical(repmat("undefined",n,1), catsLabels), 'labelsCNN');
+        else
+            ds.data.labelsCNN = categorical(repmat("undefined",n,1), catsLabels);
+        end
+
+        for ii = 1:numel(classesTarget)
+            nm = "probCNN_" + classesTarget(ii);
+            if ~ismember(nm, string(ds.data.Properties.VariableNames))
+                ds.addData(zeros(n,1), char(nm));
+            else
+                ds.data.(char(nm)) = zeros(n,1);
+            end
+        end
+    end
 end
 

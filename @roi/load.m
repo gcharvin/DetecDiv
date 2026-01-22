@@ -242,6 +242,20 @@ if wantData
             obj.data = dataseries.empty;
         end
 
+        % --- sanitize dataseries handles (remove invalid/deleted) ---
+try
+    if isa(obj.data,'handle')
+        obj.data = obj.data(isvalid(obj.data));
+    end
+catch
+end
+
+% si tout a sauté, remettre un dataseries vide (optionnel mais pratique)
+if isempty(obj.data)
+    obj.data = dataseries;
+end
+
+
         if ismethod(obj,'fixLabelsInPlotFields')
             obj.fixLabelsInPlotFields;
         end

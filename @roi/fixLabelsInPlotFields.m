@@ -5,8 +5,25 @@ function obj = fixLabelsInPlotFields(obj)
 % - groupProperties(:,1)
 % pour chaque dataseries de obj.data
 
+    if isempty(obj.data), return; end
+
+    % --- skip invalid dataseries handles ---
+    try
+        if isa(obj.data,'handle')
+            obj.data = obj.data(isvalid(obj.data));
+        end
+    catch
+    end
+    if isempty(obj.data), return; end
+
     for k = 1:numel(obj.data)
         ds = obj.data(k);  % une instance de dataseries
+
+       % ds = obj.data(i);
+if isa(ds,'handle') && ~isvalid(ds)
+    continue;
+end
+
 
         % --- Corriger plotGroup{6}
         pg = ds.plotGroup;
