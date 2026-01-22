@@ -341,39 +341,57 @@ L = round(L);
                 allCats = allCats(:)';
                 totalCounts = zeros(1, numel(allCats));
             end
+
             % --- compter selon le "granularity" réel du dataset ---
 if isSeq2OneGlobal
     % seq2one fenêtré : compter 1 label par fenêtre (majorité ignore 0)
     Tloc = numel(labLocal);
 
-    % L=0 => 1 seule fenêtre = toute la séquence
+    % L <= 0 (ou trop grand) => 1 seule fenêtre = toute la séquence
     if L <= 0 || L >= Tloc
         starts = 1;
-        Luse = Tloc;
+        Luse   = Tloc;
     else
-        starts = 1:L:Tloc;
-        Luse = L;
+        starts = 1:L:Tloc;   % fenêtres contiguës non chevauchantes
+        Luse   = L;
     end
 
-    yWins = categorical(); % empty
+    % Accumulateur des labels "fenêtre" avec catégories fixes = allCats
+    yWins = categorical([], 1:numel(allCats), allCats);
+
+
     for ws = starts
         we = min(Tloc, ws + Luse - 1);
-        y = majorityLabelIgnoringZero(labLocal(ws:we));
-        if ~ismissing(y)
-            % remettre les mêmes catégories que allCats
-            yWins(end+1,1) = categorical(y, allCats); %#ok<AGROW>
+
+        % Renvoie un INDEX numérique (1..C) ou [] si aucun label non-zero
+        yIdx = majorityLabelIgnoringZero(labLocal(ws:we));
+
+        if ~isempty(yIdx)
+            % Cast sûr : index -> catégories (allCats)
+            yWins(end+1,1) = categorical(yIdx, 1:numel(allCats), allCats); %#ok<AGROW>
         end
     end
 
     if isempty(yWins)
         cnt = zeros(1, numel(allCats));
     else
-        cnt = countcats(categorical(yWins, allCats));
+        % yWins a déjà les bonnes catégories
+        cnt = countcats(yWins);
+        cnt = reshape(cnt, 1, []);
+
+%        disp('--- DEBUG yWins ---');
+%disp(categories(removecats(yWins)));
+%disp(countcats(removecats(yWins)));
+
     end
+
 else
-    % seq2seq : compter frame-by-frame (comme avant)
-    cnt = countcats(categorical(labLocal, allCats));
+    % seq2seq : compter frame-by-frame (ignore <undefined> automatiquement)
+    labC = categorical(string(labLocal), allCats, allCats);
+    cnt  = countcats(labC);
+    cnt  = reshape(cnt, 1, []);
 end
+
 
 totalCounts = totalCounts + reshape(cnt,1,[]);
 
@@ -438,12 +456,19 @@ totalCounts = totalCounts + reshape(cnt,1,[]);
                 labs = h5read(h5SeriesFile, '/labels', [1 startIdx], [1 lenSeq]);
                 lab  = categorical(labs(:), 1:numel(classif.classes), classif.classes);
 
+                %disp('--- DEBUG lab (after read) ---');
+%disp(categories(removecats(lab)));
+%disp(countcats(removecats(lab)));
+
+
             else
                 progressBar(i, numFiles, ['Computing activations (mat) : ' list(i).name]);
                 S = load(fullfile(list(i).folder, list(i).name));
                 video = S.vid;
                 lab   = S.lab;
             end
+
+           
 
             video = centerCrop(video,inputSize);
             featAll = computeCNNActivationsFromBackbone(netCNN, video, layerName);
@@ -565,23 +590,25 @@ end
 
 % ... compute Xwin ...
 
+
 tmpLab = lab(s:e);
 tmpLab = tmpLab(:);
 
-if isSeq2One
-    y = majorityLabelIgnoringZero(tmpLab);
-    if ismissing(y)
-        continue; % skip window with no labeled frames
-    end
-end
+C = numel(classif.classes);
 
 sequences{cc,1} = Xwin;
 
 if isSeq2One
-    labels{cc,1} = categorical(y, categories(lab));
+    yIdx = majorityLabelIgnoringZero(tmpLab);   % <- int
+    if isempty(yIdx)
+        continue; % fenêtre sans frames labellées
+    end
+    labels{cc,1} = categorical(yIdx, 1:C, classif.classes);   % <- SAFE
 else
-    labels{cc,1} = categorical(tmpLab, categories(lab));
+    % seq2seq : recast par NOM, pas via categorical(categorical,...)
+    labels{cc,1} = categorical(string(tmpLab), classif.classes, classif.classes);
 end
+
 
 cc = cc + 1;
 
@@ -645,6 +672,9 @@ end
             return;
         end
 
+
+
+        
        sucl = zeros(numObservations, numClasses);
 for ii = 1:numObservations
     yi = labels{ii};
@@ -653,7 +683,7 @@ for ii = 1:numObservations
     sucl(ii,:) = countcats(yi);
 end
 
-        sucl = sum(sucl,1);
+        sucl = sum(sucl,1)
         tempsucl = sucl(sucl>0);
         sucl(sucl==0) = min(tempsucl(:));
         classWeights = 1 ./ sucl;
@@ -1486,19 +1516,16 @@ end
     end
 
 
-function y = majorityLabelIgnoringZero(tmpLab)
+function winIdx = majorityLabelIgnoringZero(tmpLab)
 % tmpLab : categorical ou numeric (labels 0..C)
-% y : categorical scalaire (la classe majoritaire, ignore 0)
-% tie-break: dernier label non-zero
+% winIdx : entier (1..C) ou [] si aucun label non-zero
 
 if isempty(tmpLab)
-    y = categorical(missing);
+    winIdx = [];
     return;
 end
 
-% Convertir en indices numériques 0..C si besoin
 if iscategorical(tmpLab)
-    % tmpLab peut contenir <undefined> : on le traite comme 0
     idx = double(tmpLab);
     idx(isundefined(tmpLab)) = 0;
 else
@@ -1509,7 +1536,7 @@ idx = idx(:);
 idxNZ = idx(idx > 0);
 
 if isempty(idxNZ)
-    y = categorical(missing);
+    winIdx = [];
     return;
 end
 
@@ -1518,6 +1545,7 @@ counts = zeros(size(u));
 for k = 1:numel(u)
     counts(k) = nnz(idxNZ == u(k));
 end
+
 maxc = max(counts);
 cand = u(counts == maxc);
 
@@ -1531,12 +1559,8 @@ else
         winIdx = cand(1);
     end
 end
-
-% On renvoie un categorical "simple" avec juste cet élément;
-% le caller fera le recast sur categories(lab) si nécessaire.
-y = categorical(winIdx);
-
 end
+
 
 
   
