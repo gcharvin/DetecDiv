@@ -222,13 +222,24 @@ while ~success && attempts < max_attempts
 
         %%% ATOMIC WRITE for data .mat
         tmpUuidD = char(java.util.UUID.randomUUID);
-        dataTmp  = [dataFile '.tmp.' tmpUuidD];
+        dataTmp  = [dataFile '.tmp.' tmpUuidD '.mat'];
         save(dataTmp, 'data', '-v7.3');
 
-        if ~localVerifyMat(dataTmp)
-            if exist(dataTmp,'file'); delete(dataTmp); end
-            error('roi:save:verifyMAT','Temporary MAT verification failed.');
-        end
+        [ok, ME] = localVerifyMat(dataTmp);
+if ~ok
+    if exist(dataTmp,'file')
+        d = dir(dataTmp);
+        warning('MAT tmp: %s (bytes=%d, date=%s)', dataTmp, d.bytes, d.date);
+    else
+        warning('MAT tmp does not exist: %s', dataTmp);
+    end
+    if ~isempty(ME)
+        disp(getReport(ME,'extended'));
+    end
+    if exist(dataTmp,'file'); delete(dataTmp); end
+    error('roi:save:verifyMAT','Temporary MAT verification failed.');
+end
+
 
         if exist(dataFile,'file')
             copyfile(dataFile, dataBak, 'f');
@@ -407,25 +418,22 @@ dispMeta.num_subchannels = k;
 end
 
 
-function ok = localVerifyMat(matPath)     %%% ATOMIC WRITE helper
-ok = false;
+function [ok, ME] = localVerifyMat(matPath)
+ok = false; ME = [];
 try
+    if ~exist(matPath,'file')
+        error('roi:save:matMissing','File not found: %s', matPath);
+    end
     vars = whos('-file', matPath);
     ok   = ~isempty(vars);
-catch
+    if ~ok
+        error('roi:save:matEmpty','No variables found in MAT: %s', matPath);
+    end
+catch ME
     ok = false;
 end
 end
 
-function ok = localVerifyH5(h5Path)       %%% ATOMIC WRITE helper
-ok = false;
-try
-    info = h5info(h5Path); %#ok<NASGU>
-    ok = true;
-catch
-    ok = false;
-end
-end
 
 function upsertH5Dataset_frames(h5filename, datasetName, data, dims_mat, thisClass, absStart0)
 % (inchangé, sauf qu'on écrit maintenant dans un fichier "work" passé en 1er arg)
