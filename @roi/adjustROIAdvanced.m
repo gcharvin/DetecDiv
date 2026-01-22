@@ -16,6 +16,11 @@ function adjustROIAdvanced(obj, varargin)
     addParameter(p,'keepDataseries',{}, @(c)iscellstr(c) || isstring(c));
     addParameter(p,'binning',[], @(x)isnumeric(x) && isscalar(x) && x>0);
     addParameter(p,'localCrop',false, @(x)islogical(x) && isscalar(x));
+    addParameter(p,'renameChannels',[], @(x) isempty(x) || isstruct(x) || isa(x,'containers.Map'));
+    addParameter(p,'renameDataseries',[], @(x) isempty(x) || isstruct(x) || isa(x,'containers.Map'));
+    addParameter(p,'frames',[], @(x)isnumeric(x) && (isempty(x) || isvector(x)));
+
+
     parse(p,varargin{:});
 
     bbox         = p.Results.bbox;
@@ -26,6 +31,15 @@ function adjustROIAdvanced(obj, varargin)
 
     keepChannels = keepChannels(~cellfun(@isempty, keepChannels));
     keepDS       = keepDS(~cellfun(@isempty, keepDS));
+
+    renameCh = p.Results.renameChannels;
+    renameDS = p.Results.renameDataseries;
+
+frames = p.Results.frames;
+if ~isempty(frames)
+    frames = unique(round(frames(:)'));
+    frames = frames(frames>=1 & isfinite(frames));
+end
 
     % ------------------------------------------------------------
     % 1) Géométrie + binning
@@ -43,14 +57,21 @@ function adjustROIAdvanced(obj, varargin)
         end
 
         % --- APPEL CLÉ ---
-        if localCrop
-            % bbox = coordonnées LOCALES dans la ROI
-            if isempty(binning)
-                obj.adjustROISize(val, 'localCrop', true);
-            else
-                obj.adjustROISize(val, binning, 'localCrop', true);
-            end
+       if localCrop
+    if isempty(binning)
+        if isempty(frames)
+            obj.adjustROISize(val, 'localCrop', true);
         else
+            obj.adjustROISize(val, 'localCrop', true, 'frames', frames);
+        end
+    else
+        if isempty(frames)
+            obj.adjustROISize(val, binning, 'localCrop', true);
+        else
+            obj.adjustROISize(val, binning, 'localCrop', true, 'frames', frames);
+        end
+    end
+else
             % comportement historique (bbox FOV ou centerMode)
             if isempty(binning)
                 obj.adjustROISize(val);
@@ -83,6 +104,25 @@ function adjustROIAdvanced(obj, varargin)
     end
 
     % ------------------------------------------------------------
+% 2bis) Rename channels (metadata)
+% ------------------------------------------------------------
+if ~isempty(renameCh)
+    names = obj.display.channel;
+    if ischar(names), names = {names}; end
+    names = cellstr(names);
+
+    for i = 1:numel(names)
+        src = names{i};
+        dst = localMapLookup(renameCh, src);
+        if ~isempty(dst) && ~strcmp(dst, src)
+            names{i} = dst;
+        end
+    end
+
+    obj.display.channel = names;
+end
+
+    % ------------------------------------------------------------
     % 3) Filtrage des dataseries
     % ------------------------------------------------------------
     if ~isempty(keepDS) && ~isempty(obj.data)
@@ -104,6 +144,22 @@ function adjustROIAdvanced(obj, varargin)
     end
 
     % ------------------------------------------------------------
+% 3bis) Rename dataseries groupid (metadata)
+% ------------------------------------------------------------
+if ~isempty(renameDS) && ~isempty(obj.data)
+    for k = 1:numel(obj.data)
+        if isprop(obj.data(k),'groupid') && ~isempty(obj.data(k).groupid)
+            src = char(obj.data(k).groupid);
+            dst = localMapLookup(renameDS, src);
+            if ~isempty(dst) && ~strcmp(dst, src)
+                obj.data(k).groupid = dst;
+            end
+        end
+    end
+end
+
+
+    % ------------------------------------------------------------
     % 4) Logging
     % ------------------------------------------------------------
     try
@@ -111,4 +167,20 @@ function adjustROIAdvanced(obj, varargin)
                 'Processing');
     catch
     end
+end
+
+% --- helper local ---
+function dst = localMapLookup(mp, src)
+dst = '';
+if isempty(mp) || isempty(src), return; end
+if isa(mp,'containers.Map')
+    if isKey(mp, src), dst = mp(src); end
+elseif isstruct(mp)
+    % attend struct array avec fields src/dst
+    if isfield(mp,'src') && isfield(mp,'dst')
+        idx = find(strcmp({mp.src}, src), 1);
+        if ~isempty(idx), dst = mp(idx).dst; end
+    end
+end
+dst = strtrim(char(dst));
 end

@@ -60,7 +60,7 @@ DriftSmoothWin    = 0;
 DriftDebug        = true;
 DriftDebugEvery   = 1;
 
-DriftChannel = []; 
+DriftChannel = [];
 DriftRejectMode = 'hold';
 
 
@@ -85,7 +85,7 @@ for i = 1:2:numel(varargin)
         case "extend"
             Extend = logical(varargin{i+1});
 
-        % drift high-level
+            % drift high-level
         case "correctdrift"
             CorrectDrift = logical(varargin{i+1});
         case "driftchannel"
@@ -93,11 +93,11 @@ for i = 1:2:numel(varargin)
         case "driftmethod"
             DriftMethod = char(varargin{i+1});
 
-        % drift ref mode (NEW)
+            % drift ref mode (NEW)
         case "driftrefmode"
             DriftRefMode = char(varargin{i+1});
 
-        % legacy compat (si tu reçois encore DriftRefLocal)
+            % legacy compat (si tu reçois encore DriftRefLocal)
         case "driftreflocal"
             % ancien champ -> map simple:
             % 1 => previous ; 0/other => first
@@ -107,7 +107,7 @@ for i = 1:2:numel(varargin)
                 DriftRefMode = 'first';
             end
 
-        % drift numeric params
+            % drift numeric params
         case "driftsubpixel"
             DriftSubpixel = logical(varargin{i+1});
         case "driftmaxshift"
@@ -121,7 +121,7 @@ for i = 1:2:numel(varargin)
         case "driftmask"
             DriftMask = varargin{i+1};
 
-        % NEW robustness params
+            % NEW robustness params
         case "driftwarmupframes"
             DriftWarmupFrames = varargin{i+1};
         case "driftpsrradius"
@@ -151,7 +151,7 @@ for i = 1:2:numel(varargin)
         case "roi"
             ROISelect = varargin{i+1};
 
-        % scale + cropdrift + progress handle
+            % scale + cropdrift + progress handle
         case "scale"
             Scale = varargin{i+1};
         case "cropdrift"
@@ -540,6 +540,7 @@ for kF = 1:numel(FOVIndex)
 
     pbBlk = makeConsolePB(sprintf('  FOV %d/%d — blocs', kF, numel(FOVIndex)), nBlocks, 'Indent',2);
 
+    
     % --------- Boucle bloc par bloc ---------
     for ib = 1:nBlocks
         fs = frameStarts(ib);
@@ -561,184 +562,184 @@ for kF = 1:numel(FOVIndex)
         pbUpdateUI(hprogressbar, fracGlobal, sprintf('FOV %d/%d - bloc %d/%d', kF, numel(FOVIndex), ib, nBlocks));
 
 
-      % =========================================================
-% DEBUG: inject synthetic drift (1 px right + 1 px down / frame)
-% =========================================================
-% if DriftDebug
-%     fprintf('[drift inject] incremental drift + jitter (bounded per-frame steps)\n');
-% 
-%     T = size(blockImg,4);
-%     C = size(blockImg,3);
-% 
-%     % target per-frame step (what computeDrift should recover with ref=previous)
-%     driftStep_col = 1.0;     % px/frame
-%     driftStep_row = 1.0;     % px/frame
-% 
-%     jitterStdStep = 0.5;     % px RMS on the STEP (not on absolute position)
-%     maxStepJitter = 1.5;     % clamp step jitter
-% 
-%     injCol = zeros(1,T);
-%     injRow = zeros(1,T);
-% 
-%     for it = 2:T
-%         jCol = max(min(jitterStdStep*randn(), maxStepJitter), -maxStepJitter);
-%         jRow = max(min(jitterStdStep*randn(), maxStepJitter), -maxStepJitter);
-% 
-%         stepCol = driftStep_col + jCol;
-%         stepRow = driftStep_row + jRow;
-% 
-%         injCol(it) = injCol(it-1) + stepCol;
-%         injRow(it) = injRow(it-1) + stepRow;
-%     end
-% 
-%     % Apply translation
-%     for it = 1:T
-%         for ic = 1:C
-%             fv = median(blockImg(:,:,ic,it), 'all');
-%             blockImg(:,:,ic,it) = imtranslate(blockImg(:,:,ic,it), [injCol(it) injRow(it)], ...
-%                 'linear', 'FillValues', fv);
-%         end
-%         fprintf('[drift inject] frame %02d: (col,row)=(%+.2f,%+.2f)\n', it, injCol(it), injRow(it));
-%     end
-% 
-%     fprintf('[drift inject] step stats: mean(|d|) col=%.2f row=%.2f ; max(|d|) col=%.2f row=%.2f\n', ...
-%         mean(abs(diff(injCol))), mean(abs(diff(injRow))), max(abs(diff(injCol))), max(abs(diff(injRow))));
-% end
+        % =========================================================
+        % DEBUG: inject synthetic drift (1 px right + 1 px down / frame)
+        % =========================================================
+        % if DriftDebug
+        %     fprintf('[drift inject] incremental drift + jitter (bounded per-frame steps)\n');
+        %
+        %     T = size(blockImg,4);
+        %     C = size(blockImg,3);
+        %
+        %     % target per-frame step (what computeDrift should recover with ref=previous)
+        %     driftStep_col = 1.0;     % px/frame
+        %     driftStep_row = 1.0;     % px/frame
+        %
+        %     jitterStdStep = 0.5;     % px RMS on the STEP (not on absolute position)
+        %     maxStepJitter = 1.5;     % clamp step jitter
+        %
+        %     injCol = zeros(1,T);
+        %     injRow = zeros(1,T);
+        %
+        %     for it = 2:T
+        %         jCol = max(min(jitterStdStep*randn(), maxStepJitter), -maxStepJitter);
+        %         jRow = max(min(jitterStdStep*randn(), maxStepJitter), -maxStepJitter);
+        %
+        %         stepCol = driftStep_col + jCol;
+        %         stepRow = driftStep_row + jRow;
+        %
+        %         injCol(it) = injCol(it-1) + stepCol;
+        %         injRow(it) = injRow(it-1) + stepRow;
+        %     end
+        %
+        %     % Apply translation
+        %     for it = 1:T
+        %         for ic = 1:C
+        %             fv = median(blockImg(:,:,ic,it), 'all');
+        %             blockImg(:,:,ic,it) = imtranslate(blockImg(:,:,ic,it), [injCol(it) injRow(it)], ...
+        %                 'linear', 'FillValues', fv);
+        %         end
+        %         fprintf('[drift inject] frame %02d: (col,row)=(%+.2f,%+.2f)\n', it, injCol(it), injRow(it));
+        %     end
+        %
+        %     fprintf('[drift inject] step stats: mean(|d|) col=%.2f row=%.2f ; max(|d|) col=%.2f row=%.2f\n', ...
+        %         mean(abs(diff(injCol))), mean(abs(diff(injRow))), max(abs(diff(injCol))), max(abs(diff(injRow))));
+        % end
 
 
 
 
-    if CorrectDrift
-    disp('Computing drift....');
+        if CorrectDrift
+            disp('Computing drift....');
 
-    % --- Choose channel used for drift estimation (local index in chanSelNames/blockImg)
-    driftLocal = 1;
-    if ~isempty(DriftChannel)
-        if isnumeric(DriftChannel)
-            driftLocal = double(DriftChannel(1));
-        else
-            try
-                [tf, loc] = ismember(string(DriftChannel), string(chanSelNames));
-                if tf && loc>0
-                    driftLocal = loc;
+            % --- Choose channel used for drift estimation (local index in chanSelNames/blockImg)
+            driftLocal = 1;
+            if ~isempty(DriftChannel)
+                if isnumeric(DriftChannel)
+                    driftLocal = double(DriftChannel(1));
                 else
-                    [tf2, loc2] = ismember(lower(string(DriftChannel)), lower(string(chanSelNames)));
-                    if tf2 && loc2>0, driftLocal = loc2; end
+                    try
+                        [tf, loc] = ismember(string(DriftChannel), string(chanSelNames));
+                        if tf && loc>0
+                            driftLocal = loc;
+                        else
+                            [tf2, loc2] = ismember(lower(string(DriftChannel)), lower(string(chanSelNames)));
+                            if tf2 && loc2>0, driftLocal = loc2; end
+                        end
+                    catch
+                    end
                 end
-            catch
             end
+            driftLocal = max(1, min(Csel, round(driftLocal)));
+
+            % sanitize crop (computeDrift needs ]0,1])
+            cropReal = CropDrift;
+            if isempty(cropReal) || (islogical(cropReal) && ~cropReal), cropReal = 1; end
+            cropReal = double(cropReal(1));
+            if ~isfinite(cropReal) || cropReal <= 0 || cropReal > 1, cropReal = 1; end
+
+            driftArgs = { ...
+                'channel',      driftLocal, ...
+                'method',       DriftMethod, ...
+                'refmode',      DriftRefMode, ...
+                'subpixel',     DriftSubpixel, ...
+                'maxshift',     DriftMaxShift, ...
+                'hipasssigma',  DriftHipassSigma, ...
+                'apodize',      DriftApodize, ...
+                'mask',         DriftMask, ...
+                'crop',         cropReal, ...
+                'warmupframes', DriftWarmupFrames, ...
+                'psrradius',    DriftPsrRadius, ...
+                'psrmin',       DriftPsrMin, ...
+                'rejectmode',   DriftRejectMode, ...   % (PSR reject)
+                'maxstep',      DriftMaxStep, ...
+                'smoothwin',    DriftSmoothWin, ...
+                'smoothmethod', DriftSmoothMethod, ...
+                'debug',        DriftDebug, ...
+                'debugevery',   DriftDebugEvery ...
+                };
+
+
+
+            %  if DriftDebug && Tblock >= 10
+            %     tmp = blockImg;
+            %
+            %     % inject known shift at local frame #10
+            %     I10 = tmp(:,:,driftLocal,10);
+            %     fv  = median(I10(:));
+            %     tmp(:,:,driftLocal,10) = imtranslate(I10, [3 -2], 'FillValues', fv);
+            %
+            %     % run drift, keep corrected images
+            %     [tmpCorr, ~, scoreT] = fovObj.computeDrift('images', tmp, driftArgs{:});
+            %
+            %    % --- build preprocess like computeDrift ---
+            % prep = @(I) preprocess(cropCenter(toGray(I), cropReal), DriftHipassSigma, DriftApodize, DriftMask);
+            %
+            % A0 = prep(tmp(:,:,driftLocal,9));
+            % B0 = prep(tmp(:,:,driftLocal,10));
+            % A1 = prep(tmpCorr(:,:,driftLocal,9));
+            % B1 = prep(tmpCorr(:,:,driftLocal,10));
+            %
+            % [r0,c0] = phaseShift(A0,B0);
+            % [r1,c1] = phaseShift(A1,B1);
+            %
+            % fprintf('[drift test] BEFORE(prep) est shift (row %+g, col %+g)\n', r0, c0);
+            % fprintf('[drift test] AFTER (prep) est shift (row %+g, col %+g)\n', r1, c1);
+            %
+            % end
+
+
+
+            [blockImg, driftBlk, scoreBlk] = fovObj.computeDrift( ...
+                'images', blockImg, ...
+                'framesid', frameBatch, ...
+                driftArgs{:});
+
+
+
+
+            % ---- journalise dans fovObj.drift (frames ABS) ----
+            if ~isfield(fovObj,'drift') || ~isstruct(fovObj.drift)
+                fovObj.drift = struct('frames',[],'x',[],'y',[],'score',[]);
+            end
+
+            oldF = [];
+            if isfield(fovObj.drift,'frames') && ~isempty(fovObj.drift.frames)
+                oldF = fovObj.drift.frames(:)';
+            end
+            allF = union(oldF, frameBatch(:)');
+
+            xNew  = nan(1, numel(allF));
+            yNew  = nan(1, numel(allF));
+            scNew = nan(1, numel(allF));
+
+            if ~isempty(oldF)
+                [~,locOld] = ismember(oldF, allF);
+                if isfield(fovObj.drift,'x') && ~isempty(fovObj.drift.x), xNew(locOld) = fovObj.drift.x; end
+                if isfield(fovObj.drift,'y') && ~isempty(fovObj.drift.y), yNew(locOld) = fovObj.drift.y; end
+                if isfield(fovObj.drift,'score') && ~isempty(fovObj.drift.score), scNew(locOld) = fovObj.drift.score; end
+            end
+
+            [~,locNew] = ismember(frameBatch(:)', allF);
+
+            % driftBlk may be indexed by absolute frame id OR by local block index.
+            if numel(driftBlk.x) >= max(frameBatch)  % looks like absolute indexing
+                xNew(locNew) = driftBlk.x(frameBatch);
+                yNew(locNew) = driftBlk.y(frameBatch);
+            else                                     % local indexing 1..Tblock
+                xNew(locNew) = driftBlk.x(:)';
+                yNew(locNew) = driftBlk.y(:)';
+            end
+
+            if numel(scoreBlk) >= numel(frameBatch)
+                scNew(locNew) = scoreBlk(:)';
+            end
+
+            fovObj.drift.frames = allF;
+            fovObj.drift.x      = xNew;
+            fovObj.drift.y      = yNew;
+            fovObj.drift.score  = scNew;
         end
-    end
-    driftLocal = max(1, min(Csel, round(driftLocal)));
-
-    % sanitize crop (computeDrift needs ]0,1])
-cropReal = CropDrift;
-if isempty(cropReal) || (islogical(cropReal) && ~cropReal), cropReal = 1; end
-cropReal = double(cropReal(1));
-if ~isfinite(cropReal) || cropReal <= 0 || cropReal > 1, cropReal = 1; end
-
-driftArgs = { ...
-  'channel',      driftLocal, ...
-  'method',       DriftMethod, ...
-  'refmode',      DriftRefMode, ...
-  'subpixel',     DriftSubpixel, ...
-  'maxshift',     DriftMaxShift, ...
-  'hipasssigma',  DriftHipassSigma, ...
-  'apodize',      DriftApodize, ...
-  'mask',         DriftMask, ...
-  'crop',         cropReal, ...
-  'warmupframes', DriftWarmupFrames, ...
-  'psrradius',    DriftPsrRadius, ...
-  'psrmin',       DriftPsrMin, ...
-  'rejectmode',   DriftRejectMode, ...   % (PSR reject)
-  'maxstep',      DriftMaxStep, ...
-  'smoothwin',    DriftSmoothWin, ...
-  'smoothmethod', DriftSmoothMethod, ...
-  'debug',        DriftDebug, ...
-  'debugevery',   DriftDebugEvery ...
-};
-
-
-
-%  if DriftDebug && Tblock >= 10
-%     tmp = blockImg;
-% 
-%     % inject known shift at local frame #10
-%     I10 = tmp(:,:,driftLocal,10);
-%     fv  = median(I10(:));
-%     tmp(:,:,driftLocal,10) = imtranslate(I10, [3 -2], 'FillValues', fv);
-% 
-%     % run drift, keep corrected images
-%     [tmpCorr, ~, scoreT] = fovObj.computeDrift('images', tmp, driftArgs{:});
-% 
-%    % --- build preprocess like computeDrift ---
-% prep = @(I) preprocess(cropCenter(toGray(I), cropReal), DriftHipassSigma, DriftApodize, DriftMask);
-% 
-% A0 = prep(tmp(:,:,driftLocal,9));
-% B0 = prep(tmp(:,:,driftLocal,10));
-% A1 = prep(tmpCorr(:,:,driftLocal,9));
-% B1 = prep(tmpCorr(:,:,driftLocal,10));
-% 
-% [r0,c0] = phaseShift(A0,B0);
-% [r1,c1] = phaseShift(A1,B1);
-% 
-% fprintf('[drift test] BEFORE(prep) est shift (row %+g, col %+g)\n', r0, c0);
-% fprintf('[drift test] AFTER (prep) est shift (row %+g, col %+g)\n', r1, c1);
-% 
-% end
-
-
-
-   [blockImg, driftBlk, scoreBlk] = fovObj.computeDrift( ...
-    'images', blockImg, ...
-    'framesid', frameBatch, ...
-    driftArgs{:});
-
- 
-
-
-    % ---- journalise dans fovObj.drift (frames ABS) ----
-    if ~isfield(fovObj,'drift') || ~isstruct(fovObj.drift)
-        fovObj.drift = struct('frames',[],'x',[],'y',[],'score',[]);
-    end
-
-    oldF = [];
-    if isfield(fovObj.drift,'frames') && ~isempty(fovObj.drift.frames)
-        oldF = fovObj.drift.frames(:)';
-    end
-    allF = union(oldF, frameBatch(:)');
-
-    xNew  = nan(1, numel(allF));
-    yNew  = nan(1, numel(allF));
-    scNew = nan(1, numel(allF));
-
-    if ~isempty(oldF)
-        [~,locOld] = ismember(oldF, allF);
-        if isfield(fovObj.drift,'x') && ~isempty(fovObj.drift.x), xNew(locOld) = fovObj.drift.x; end
-        if isfield(fovObj.drift,'y') && ~isempty(fovObj.drift.y), yNew(locOld) = fovObj.drift.y; end
-        if isfield(fovObj.drift,'score') && ~isempty(fovObj.drift.score), scNew(locOld) = fovObj.drift.score; end
-    end
-
-    [~,locNew] = ismember(frameBatch(:)', allF);
-
-    % driftBlk may be indexed by absolute frame id OR by local block index.
-    if numel(driftBlk.x) >= max(frameBatch)  % looks like absolute indexing
-        xNew(locNew) = driftBlk.x(frameBatch);
-        yNew(locNew) = driftBlk.y(frameBatch);
-    else                                     % local indexing 1..Tblock
-        xNew(locNew) = driftBlk.x(:)';
-        yNew(locNew) = driftBlk.y(:)';
-    end
-
-    if numel(scoreBlk) >= numel(frameBatch)
-        scNew(locNew) = scoreBlk(:)';
-    end
-
-    fovObj.drift.frames = allF;
-    fovObj.drift.x      = xNew;
-    fovObj.drift.y      = yNew;
-    fovObj.drift.score  = scNew;
-end
 
 
 
@@ -778,11 +779,13 @@ end
                     end
                 end
 
-                if ~isempty(frameBatch) && max(frameBatch) <= T_exist
-                    fprintf('   • ROI %d/%d (%s): Extend noop (T_exist=%d, frames %d–%d) → skipped block\n', ...
-                        rIdx, nROI, ROI(rIdx).id, T_exist, frameBatch(1), frameBatch(end));
+                if Extend && (fe <= T_exist)
+                    fprintf('   • ROI %d/%d (%s): Extend noop (T_exist=%d, local %d–%d) → skipped block\n', ...
+                        rIdx, nROI, ROI(rIdx).id, T_exist, fs, fe);
                     continue;
                 end
+
+
             end
 
             roiBlock = zeros(h, w, Csel, Tblock, sampleClass);
@@ -838,9 +841,46 @@ end
             if isprop(r,'h5path');  r.h5path  = fullfile(fovOutDir, sprintf('im_%s.h5',  r.id)); end
             if isprop(r,'matpath'); r.matpath = fullfile(fovOutDir, sprintf('data_%s.mat', r.id)); end
 
-            r.display.write_abs_start = frameBatch(1) - 1;
+            % =========================================================
+            % DROP-IN: robust local indexing (no black padding) + Extend-safe
+            % =========================================================
 
+            % Local offset within the requested Frames list (framesToDo)
+            % We want output dataset T == numel(framesToDo) when Extend=false,
+            % and contiguous append when Extend=true.
+            loc0 = find(framesToDo == frameBatch(1), 1, 'first');
+            if isempty(loc0)
+                % fallback: since frameBatch = framesToDo(fs:fe), loc0 should be fs
+                loc0 = fs;
+            end
+            write0 = loc0 - 1;  % 0-based start index expected by writer
+
+            % --- Extend mode: append after existing T (contiguous) ---
+            if Extend
+                % T_exist computed above (0 if none / unknown)
+                % If the dataset already contains some frames, append after them.
+                % This guarantees no holes even if framesToDo starts at a large absolute index.
+                write0 = write0 + T_exist;
+            end
+
+            % Optional metadata for traceability (ignored if save() doesn't use it)
+            if ~isstruct(r.display) || isempty(r.display)
+                r.display = defaultDisplay(Csel, Csel);
+            end
+            r.display.write_abs_start = write0;
+            r.display.write_frame_ids = frameBatch(:)';   % absolute frame ids for this block
+            r.display.write_local_ids = (loc0 : (loc0 + Tblock - 1)); % local indices in framesToDo
+
+            % --- Do the write ---
             didSave = r.save(chanSelNames, false);
+
+            % --- Cleanup (important: keep routine re-entrant & avoid side effects) ---
+            r.display.write_abs_start = [];
+            if isfield(r.display,'write_frame_ids'),  r.display = rmfield(r.display,'write_frame_ids');  end
+            if isfield(r.display,'write_local_ids'),  r.display = rmfield(r.display,'write_local_ids');  end
+
+
+           % didSave = r.save(chanSelNames, false);
 
             if ~didSave
                 fprintf('        ⚠ nothing written for ROI %s\n', ROI(rIdx).id);
@@ -871,17 +911,17 @@ end
 % ========= Helpers =========
 
 function [row,col] = phaseShift(ref, mov)
-    ref = ref - mean(ref(:));
-    mov = mov - mean(mov(:));
-    R = fft2(ref).*conj(fft2(mov));
-    R = R ./ max(abs(R), eps);
-    r = real(ifft2(R));
-    [~,ix] = max(r(:));
-    [py,px] = ind2sub(size(r),ix);
-    H=size(r,1); W=size(r,2);
-    row = py-1; col = px-1;
-    if row>H/2, row=row-H; end
-    if col>W/2, col=col-W; end
+ref = ref - mean(ref(:));
+mov = mov - mean(mov(:));
+R = fft2(ref).*conj(fft2(mov));
+R = R ./ max(abs(R), eps);
+r = real(ifft2(R));
+[~,ix] = max(r(:));
+[py,px] = ind2sub(size(r),ix);
+H=size(r,1); W=size(r,2);
+row = py-1; col = px-1;
+if row>H/2, row=row-H; end
+if col>W/2, col=col-W; end
 end
 
 
