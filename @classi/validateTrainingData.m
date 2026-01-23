@@ -414,19 +414,42 @@ end
 
 function tf = localIsLSTMCNN_(classif)
 tf = false;
+
 try
-    if isprop(classif,'description') && ~isempty(classif.description)
-        if numel(classif.description) >= 3
-            d3 = classif.description{3};
-            if ischar(d3) || isstring(d3)
-                tf = string(d3) == "LSTM + CNN";
-            end
-        end
+    if ~isprop(classif,'description') || isempty(classif.description)
+        return;
     end
+    if numel(classif.description) < 3
+        return;
+    end
+
+    d3 = classif.description{3};
+
+    % Unwrap cell nesting (ex: 1x1 cell containing char)
+    while iscell(d3) && numel(d3) == 1
+        d3 = d3{1};
+    end
+
+    % Normalize to scalar string
+    if ischar(d3)
+        d3 = string(d3);
+    elseif isstring(d3)
+        d3 = string(d3);
+    else
+        return;
+    end
+
+    d3 = strtrim(d3);
+
+    % Robust comparison (case-insensitive optional)
+    tf = strcmp(d3, "LSTM + CNN workflow");
+    % or: tf = strcmpi(d3, "LSTM + CNN workflow");
+
 catch
     tf = false;
 end
 end
+
 
 function localLog_(classif, runDirAbs, haveRunDir, runActive, fmt, varargin)
 % If haveRunDir: append to <runDirAbs>/events_validation.log.
