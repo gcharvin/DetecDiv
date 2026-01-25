@@ -27,6 +27,8 @@ graphicsHandles.imgHandles     = containers.Map('KeyType','double','ValueType','
 graphicsHandles.lineHandles    = containers.Map('KeyType','double','ValueType','any');
 graphicsHandles.overlayHandles = containers.Map('KeyType','double','ValueType','any');
 graphicsHandles.vectorHandles = containers.Map('KeyType','double','ValueType','any');
+graphicsHandles.textHandles = containers.Map('KeyType','double','ValueType','any');
+
 
 graphicsHandles.lineageHandles = containers.Map('KeyType','double','ValueType','any');
 % find number of image rows and columns
@@ -338,6 +340,21 @@ newPath = fullfile(folder, [name '.pdf']);
 
                     imshow(displayImage, []);
 
+titleStr = localBuildMovieRoiTitle_(layoutOptions, roiData);
+if strlength(titleStr) > 0
+    text(ax, 0.99, 0.99, titleStr, ...
+        'Units','normalized', ...
+        'HorizontalAlignment','right', ...
+        'VerticalAlignment','top', ...
+        'Color', textColor, ...
+        'FontSize', floor(sqrt(scalingFactor)*fontsize), ...
+        'Interpreter','none', ...
+        'Clipping','on');
+end
+
+
+
+
                     [htext, hvector]=score_displayVectorGraphics(ax, 1, 1, vContours , layoutOptions);
 
                     graphicsHandles.vectorHandles(tileIndex)=[htext hvector];
@@ -359,6 +376,21 @@ newPath = fullfile(folder, [name '.pdf']);
                         [displayImage, vContours]=score_makeComposite(roiData,1,layoutOptions);
                         %  img = roiData.image(:,:,ch,1);
                         imshow(displayImage(:,:,:,ch), []);
+
+if ch == 1
+    titleStr = localBuildMovieRoiTitle_(layoutOptions, roiData);
+    if strlength(titleStr) > 0
+        text(ax, 0.99, 0.99, titleStr, ...
+            'Units','normalized', ...
+            'HorizontalAlignment','right', ...
+            'VerticalAlignment','top', ...
+            'Color', textColor, ...
+            'FontSize', floor(sqrt(scalingFactor)*fontsize), ...
+            'Interpreter','none', ...
+            'Clipping','on');
+    end
+end
+
                         %  title(sprintf('ROI(%d) Ch:%d', roiIndex, ch));
 
                         [htext, hvector]=score_displayVectorGraphics(ax, 1, ch, vContours , layoutOptions);
@@ -562,5 +594,25 @@ yCenter = mean(ylim_);
 wid=2*nbrick*scalingFactor;
 line(ax, [xRight xRight], ylim_, ...
     'Color', background, 'LineWidth', wid, 'LineStyle', '-');
+end
+
+
+function str = localBuildMovieRoiTitle_(layoutOptions, roiData)
+
+parts = strings(0);
+
+if isfield(layoutOptions,'title') && ~isempty(layoutOptions.title)
+    parts(end+1) = string(layoutOptions.title);
+end
+
+if isfield(layoutOptions,'ROITitle') && layoutOptions.ROITitle
+    parts(end+1) = string(roiData.id);
+end
+
+if isempty(parts)
+    str = "";
+else
+    str = strjoin(parts, " | ");
+end
 end
 
