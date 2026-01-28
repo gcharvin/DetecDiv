@@ -81,6 +81,9 @@ for i = 1:numel(newdata.pos)
     obj.fov(cc).frames             = newdata.pos(i).frames;
     obj.fov(cc).interval           = newdata.pos(i).interval;
     obj.fov(cc).parent             = obj;
+    if isfield(newdata.pos(i),'metadataText') && ~isempty(newdata.pos(i).metadataText)
+        obj.fov(cc).comments = newdata.pos(i).metadataText;
+    end
 
     cc = cc+1;
 end
