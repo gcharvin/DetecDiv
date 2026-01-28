@@ -17,6 +17,7 @@ end
 
 % --- determine missing path ---
 isMT = isprop(obj,'isMultiTiff') && obj.isMultiTiff;
+isND = isprop(obj,'isNDTiff') && obj.isNDTiff;
 
 if isMT
     if channel <= numel(obj.tiffSource) && ~isempty(obj.tiffSource{channel})
@@ -26,6 +27,16 @@ if isMT
     end
 
     if exist(p0,'file')
+        return;
+    end
+elseif isND
+    if isprop(obj,'ndtiffPath') && ~isempty(obj.ndtiffPath)
+        p0 = string(obj.ndtiffPath);
+    else
+        p0 = "";
+    end
+
+    if strlength(p0) > 0 && isfolder(p0)
         return;
     end
 else
@@ -61,6 +72,8 @@ for r = 1:numel(roots)
 
     if isMT
         [p2, ok2] = detecdiv_paths_rebase_file(p0, root, debug);
+    elseif isND
+        [p2, ok2] = detecdiv_paths_rebase_ndtiff(p0, root, debug);
     else
         [p2, ok2] = detecdiv_paths_rebase_pospath(p0, root, debug);
     end
@@ -69,6 +82,19 @@ for r = 1:numel(roots)
         % apply silently
         if isMT
             obj.tiffSource{channel} = char(p2);
+        elseif isND
+            obj.ndtiffPath = char(p2);
+            if iscell(obj.srcpath) && ~isempty(obj.srcpath)
+                obj.srcpath{channel} = char(p2);
+            end
+            try
+                if channel <= numel(obj.srclist) && ~isempty(obj.srclist{channel})
+                    L = obj.srclist{channel};
+                    for k=1:numel(L), L(k).folder = char(p2); end
+                    obj.srclist{channel} = L;
+                end
+            catch
+            end
         else
             obj.srcpath{channel} = char(p2);
             try
@@ -105,6 +131,9 @@ root = string(root);
 if isMT
     [p2, ok2] = detecdiv_paths_rebase_file(p0, root, debug);
     how = "";
+elseif isND
+    [p2, ok2] = detecdiv_paths_rebase_ndtiff(p0, root, debug);
+    how = "";
 else
     [p2, ok2, how] = detecdiv_paths_rebase_pospath(p0, root, debug);
 end
@@ -123,6 +152,19 @@ end
 % --- apply ---
 if isMT
     obj.tiffSource{channel} = char(p2);
+elseif isND
+    obj.ndtiffPath = char(p2);
+    if iscell(obj.srcpath) && ~isempty(obj.srcpath)
+        obj.srcpath{channel} = char(p2);
+    end
+    try
+        if channel <= numel(obj.srclist) && ~isempty(obj.srclist{channel})
+            L = obj.srclist{channel};
+            for k=1:numel(L), L(k).folder = char(p2); end
+            obj.srclist{channel} = L;
+        end
+    catch
+    end
 else
     obj.srcpath{channel} = char(p2);
     try
@@ -163,4 +205,72 @@ catch
 end
 
 ok = true;
+end
+
+function [p2, ok] = detecdiv_paths_rebase_ndtiff(oldPath, root, debug)
+% Rebase NDTiff dataset path by matching dataset folder name and NDTiff.index
+if nargin < 3, debug = true; end
+ok = false;
+p2 = "";
+
+oldPath = string(oldPath);
+root = string(root);
+
+if strlength(oldPath)==0 || strlength(root)==0 || ~isfolder(root)
+    return;
+end
+
+[~, datasetName] = fileparts(oldPath);
+if strlength(datasetName)==0
+    return;
+end
+
+% direct candidate
+cand = fullfile(root, datasetName);
+if isfolder(cand) && exist(fullfile(cand,'NDTiff.index'),'file')==2
+    p2 = string(cand);
+    ok = true;
+    return;
+end
+
+% scan limited depth
+maxDepth = 6;
+found = localFindNDTiff(root, datasetName, maxDepth, debug);
+if strlength(found) > 0
+    p2 = found;
+    ok = true;
+end
+end
+
+function out = localFindNDTiff(root, targetName, maxDepth, debug)
+out = "";
+if maxDepth <= 0
+    return;
+end
+
+try
+    d = dir(root);
+catch ME
+    if debug, fprintf('[paths] dir() failed at %s : %s\n', string(root), ME.message); end
+    return;
+end
+
+d = d([d.isdir]);
+names = string({d.name});
+names = names(~ismember(names,[".",".."]));
+
+for i = 1:numel(names)
+    if strcmpi(names(i), targetName)
+        cand = string(fullfile(root, names(i)));
+        if exist(fullfile(cand,'NDTiff.index'),'file')==2
+            out = cand;
+            return;
+        end
+    end
+end
+
+for i = 1:numel(names)
+    out = localFindNDTiff(fullfile(root, names(i)), targetName, maxDepth-1, debug);
+    if strlength(out)>0, return; end
+end
 end

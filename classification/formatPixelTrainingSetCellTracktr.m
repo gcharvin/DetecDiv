@@ -25,7 +25,8 @@ p.addParameter('layoutMode', "ctc_root", @(s) (ischar(s) || isstring(s)));
 p.addParameter('mergeBudN', 3, @(x) isnumeric(x) && isscalar(x) && x>=0 && isfinite(x));
 p.parse(varargin{:});
 mergeBudN = uint32(p.Results.mergeBudN);
-mergeBudN = 5 ;
+mergeBudN = 0 ;
+
 layoutMode = string(p.Results.layoutMode);
 layoutMode = lower(layoutMode);
 

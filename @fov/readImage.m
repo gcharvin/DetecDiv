@@ -64,6 +64,71 @@ end
     end
     thisEntry = chanList(frameEff);  % struct with .name, .folder, etc.
 
+    % --------- mode NDTiff ---------
+    if isprop(obj,'isNDTiff') && obj.isNDTiff
+        dsPath = obj.ndtiffPath;
+        if isempty(dsPath) && ~isempty(obj.srcpath)
+            dsPath = obj.srcpath{1};
+        end
+        if ~isfolder(dsPath)
+            warning('NDTiff dataset folder not found: %s', dsPath);
+            return;
+        end
+
+        try
+            % cache dataset objects per path
+            persistent ndtiffCache
+            if isempty(ndtiffCache)
+                ndtiffCache = containers.Map('KeyType','char','ValueType','any');
+            end
+            key = char(dsPath);
+            if ndtiffCache.isKey(key)
+                dataset = ndtiffCache(key);
+            else
+                dataset = javaObject('org.micromanager.ndtiffstorage.NDTiffStorage', key);
+                ndtiffCache(key) = dataset;
+            end
+
+            % axes (0-based)
+            if ~isempty(obj.ndtiffChannels) && channel <= numel(obj.ndtiffChannels)
+                chIdx = obj.ndtiffChannels(channel);
+            else
+                chIdx = channel - 1;
+            end
+            tIdx = double(frameEff) - 1;
+            zIdx = 0;
+            if isprop(obj,'ndtiffZ') && ~isempty(obj.ndtiffZ)
+                zIdx = double(obj.ndtiffZ);
+            end
+            pIdx = 0;
+            if isprop(obj,'ndtiffPosition') && ~isempty(obj.ndtiffPosition)
+                pIdx = double(obj.ndtiffPosition);
+            end
+
+            axes = java.util.HashMap();
+            axes.put("channel", chIdx);
+            axes.put("time", tIdx);
+            axes.put("z", zIdx);
+            axes.put("position", pIdx);
+
+            taggedImg = dataset.getImage(axes);
+            pixels = taggedImg.pix;
+            imgBounds = dataset.getImageBounds();
+            xsize = imgBounds(3);
+            ysize = imgBounds(4);
+            im = reshape(pixels, [xsize, ysize])';
+        catch ME
+            warning('Failed to read NDTiff image: %s', ME.message);
+            return;
+        end
+
+        % appliquer rotation si besoin
+        if ~isempty(obj.orientation) && obj.orientation ~= 0
+            im = imrotate(im, obj.orientation);
+        end
+        return;
+    end
+
     % --------- mode multi-TIFF ---------
     if obj.isMultiTiff
         % on s'attend à :

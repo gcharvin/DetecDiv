@@ -67,6 +67,21 @@ end
 list=dir(pathdir);
 list = list(~startsWith({list.name}, '._')); % remove ._ files in mac os .
 
+% --- detect NDTiff dataset(s) ---
+ndtiffDirs = {};
+if exist(fullfile(pathdir,'NDTiff.index'), 'file')==2
+    ndtiffDirs = {pathdir};
+else
+    subdirs = list([list.isdir]);
+    subdirs = subdirs(~ismember({subdirs.name},{'.','..'}));
+    for k = 1:numel(subdirs)
+        p = fullfile(subdirs(k).folder, subdirs(k).name, 'NDTiff.index');
+        if exist(p, 'file')==2
+            ndtiffDirs{end+1} = fullfile(subdirs(k).folder, subdirs(k).name); %#ok<AGROW>
+        end
+    end
+end
+
 % if there are directories avaialable, ignore files in the folder and
 % consider directories as distinct positions
 % unless there is .mat file corresponding to a phyloCell project
@@ -79,7 +94,11 @@ end
 pix=[list.isdir];
 phyloproj=[];
 
-if sum(pix)>2 % there are folders available (. and .. are not real folders)
+if ~isempty(ndtiffDirs)
+    disp('NDTiff dataset(s) detected');
+    typ='ndtiff';
+    info='Processing NDTiff dataset(s)...';
+elseif sum(pix)>2 % there are folders available (. and .. are not real folders)
     % check if there is a phyloCell project
     phyloproj=list((contains({list.name},{'-project.mat'})) & (~contains({list.name},{'BK-project.mat'})) &  (~contains({list.name},{'-project.mat.bk'})));
     
@@ -174,6 +193,10 @@ switch typ
         
         output.comments=['The folder contains (a) series of multi-tiff images' char(10)];
         output=buildmultitif(list,output,progress);
+        
+    case 'ndtiff'
+        output.comments=['The folder contains one or more NDTiff datasets' char(10)];
+        output=buildndtiff(ndtiffDirs,output,progress);
 end
 
 output.datatype=typ;
