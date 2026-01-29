@@ -62,7 +62,7 @@ if frameEff > numel(chanList)
     disp('Frame exceeds available images for this channel; quitting !');
     return;
 end
-thisEntry = chanList(frameEff);  % struct with .name, .folder, etc.
+    thisEntry = chanList(frameEff);  % struct with .name, .folder, etc.
 
 % --------- mode NDTiff ---------
 if isprop(obj,'isNDTiff') && obj.isNDTiff
@@ -95,7 +95,15 @@ if isprop(obj,'isNDTiff') && obj.isNDTiff
         else
             chIdx = channel - 1;
         end
-        tIdx = double(frameEff) - 1;
+        if isprop(obj,'ndtiffTimes') && ~isempty(obj.ndtiffTimes)
+            if numel(obj.ndtiffTimes) >= frameEff
+                tIdx = double(obj.ndtiffTimes(frameEff));
+            else
+                tIdx = double(obj.ndtiffTimes(end));
+            end
+        else
+            tIdx = double(frameEff) - 1;
+        end
             zIdx = 0;
             if isprop(obj,'ndtiffZ') && ~isempty(obj.ndtiffZ)
                 if numel(obj.ndtiffZ) >= channel
@@ -116,7 +124,22 @@ if isprop(obj,'isNDTiff') && obj.isNDTiff
         axes.put("position", pIdx);
 
         taggedImg = dataset.getImage(axes);
-        pixels = taggedImg.pix;
+        if isempty(taggedImg)
+            warning('NDTiff image missing at pos=%d ch=%d z=%d t=%d (%s)', ...
+                pIdx, chIdx, zIdx, tIdx, dsPath);
+            return;
+        end
+        try
+            pixels = taggedImg.pix;
+        catch
+            try
+                pixels = taggedImg.getPix();
+            catch
+                warning('NDTiff image returned unexpected type (%s) at pos=%d ch=%d z=%d t=%d (%s)', ...
+                    class(taggedImg), pIdx, chIdx, zIdx, tIdx, dsPath);
+                return;
+            end
+        end
         imgBounds = dataset.getImageBounds();
         xsize = imgBounds(3);
         ysize = imgBounds(4);
@@ -124,7 +147,7 @@ if isprop(obj,'isNDTiff') && obj.isNDTiff
         if isa(im,'int16')
             im = uint16(im);
         end
-        class(im)
+       
     catch ME
         warning('Failed to read NDTiff image: %s', ME.message);
         return;
@@ -175,7 +198,24 @@ if obj.isMultiTiff
 
 else
     % --------- mode fichiers classiques ---------
-    foldert = thisEntry.folder;
+        foldert = '';
+        if isfield(thisEntry,'folder')
+            foldert = thisEntry.folder;
+        end
+        if isempty(foldert)
+            % fallback: if name contains a path, extract its folder
+            if isfield(thisEntry,'name') && ~isempty(thisEntry.name)
+                [fp, ~, ~] = fileparts(thisEntry.name);
+                if ~isempty(fp)
+                    foldert = fp;
+                end
+            end
+        end
+        if isempty(foldert)
+            if iscell(obj.srcpath) && channel <= numel(obj.srcpath) && ~isempty(obj.srcpath{channel})
+                foldert = obj.srcpath{channel};
+            end
+        end
     if ~isfolder(foldert)
         disp('folder does not exist ! Quitting....');
         return;

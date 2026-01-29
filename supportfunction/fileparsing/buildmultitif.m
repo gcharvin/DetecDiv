@@ -141,7 +141,7 @@ for i=1:numel(output.pos) % loop on positions
     %      framelist=[framelist pix];
     %   end
     
-    sut=struct('name',output.pos(cc).name);
+    sut=struct('name',output.pos(cc).name, 'folder', foldername);
     
     output.pos(cc).channels=nch;
     output.pos(cc).frames=nframes;
@@ -150,13 +150,38 @@ for i=1:numel(output.pos) % loop on positions
     %  for k=1:nch
     %   output.pos(cc).filelist=[ output.pos(cc).filelist sut];
     %   output.pos(cc).pathlist=[output.pos(cc).pathlist foldername];
-    output.pos(cc).filelist={sut};
-    output.pos(cc).pathlist={foldername};
+    % --- multi-TIFF support: virtual srclist + page map ---
+    output.pos(cc).isMultiTiff = true;
+    output.pos(cc).tiffSource  = cell(1,nch);
+    output.pos(cc).pageMap     = cell(1,nch);
+
+    output.pos(cc).filelist = cell(1,nch);
+    output.pos(cc).pathlist = cell(1,nch);
+
+    % number of pages in the big tiff
+    nPages = nimages;
+
+    for j=1:nch
+        output.pos(cc).tiffSource{j} = fullfile(foldername, output.pos(cc).name);
+        output.pos(cc).pathlist{j}   = foldername;
+
+        % virtual entries for frame count (needed by readImage length check)
+        entries = repmat(struct('name',output.pos(cc).name,'folder',foldername), 1, nframes);
+        output.pos(cc).filelist{j} = entries;
+
+        % page map: frame -> page index
+        pm = (j:nch:nPages);
+        if numel(pm) < nframes
+            % fallback: assume contiguous t1..tN ordering
+            pm = ((0:nframes-1)*nch + j);
+        end
+        output.pos(cc).pageMap{j} = pm(1:nframes);
+    end
     %  end
     
-    output.pos(cc).unfilteredpathlist={foldername};
+    output.pos(cc).unfilteredpathlist=output.pos(cc).pathlist;
     
-    output.pos(cc).unfilteredfilelist={sut};
+    output.pos(cc).unfilteredfilelist=output.pos(cc).filelist;
     
     output.pos(cc).binning=ones(1,nch);
     output.pos(cc).interval=interval;

@@ -82,6 +82,14 @@ else
     end
 end
 
+% If user selected a subfolder inside an NDTiff dataset, check parent
+if isempty(ndtiffDirs)
+    [parentDir, ~, ~] = fileparts(pathdir);
+    if ~isempty(parentDir) && exist(fullfile(parentDir,'NDTiff.index'), 'file')==2
+        ndtiffDirs = {parentDir};
+    end
+end
+
 % if there are directories avaialable, ignore files in the folder and
 % consider directories as distinct positions
 % unless there is .mat file corresponding to a phyloCell project

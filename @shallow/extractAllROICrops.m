@@ -25,6 +25,8 @@ FOVIndex       = [];         % [] => toutes
 RequestedChans = {};         % {} => tous
 ROISelect      = [];         % [] => toutes (par FOV), numeric ou cell array
 
+PadExtraChannels = false;    % append zeros for extra ROI channels (seg masks, etc.)
+
 % --- OPTIONS DIVERSES ---
 ForceChannelNames = true;    % impose les noms de canaux des ROI = chanSelNames
 Extend            = false;   % false = hard reset ; true = append/prolong
@@ -158,6 +160,8 @@ for i = 1:2:numel(varargin)
             CropDrift = varargin{i+1};
         case "hprogressbar"
             hprogressbar = varargin{i+1};
+        case "padextrachannels"
+            PadExtraChannels = logical(varargin{i+1});
     end
 end
 
@@ -874,6 +878,21 @@ for kF = 1:numel(FOVIndex)
             % --- Do the write ---
             didSave = r.save(chanSelNames, false);
 
+            % --- Optional: pad extra channels (segmentation masks, etc.) ---
+            if Extend && PadExtraChannels && didSave
+                try
+                    h5File = fullfile(fovOutDir, sprintf('im_%s.h5', r.id));
+                    extraNames = listH5Channels(h5File);
+                    extraNames = extraNames(~ismember(extraNames, string(chanSelNames)));
+                    if ~isempty(extraNames)
+                        padExtraH5Channels(h5File, extraNames, size(roiBlock,1), size(roiBlock,2), ...
+                            Tblock, write0, class(roiBlock));
+                    end
+                catch ME
+                    warning('PadExtraChannels failed for ROI %s: %s', r.id, ME.message);
+                end
+            end
+
             % --- Cleanup (important: keep routine re-entrant & avoid side effects) ---
             r.display.write_abs_start = [];
             if isfield(r.display,'write_frame_ids'),  r.display = rmfield(r.display,'write_frame_ids');  end
@@ -1437,6 +1456,119 @@ try
     names = string({info.Datasets.Name});
 catch
 end
+end
+
+function padExtraH5Channels(h5File, extraNames, H, W, Tblock, absStart0, refClass)
+if ~isfile(h5File) || isempty(extraNames), return; end
+for i = 1:numel(extraNames)
+    dsName = char(extraNames(i));
+    dsPath = ['/' dsName];
+    try
+        info = h5info(h5File, dsPath);
+    catch
+        continue;
+    end
+
+    dims = double(info.Dataspace.Size);
+    dims(end+1:4) = 1;
+    Tcur = dims(1);
+    k = dims(2);
+    Wold = dims(3);
+    Hold = dims(4);
+
+    if Hold ~= H || Wold ~= W
+        warning('PadExtraChannels: size mismatch for %s (H,W=%d,%d vs %d,%d) -> skip', dsName, Hold, Wold, H, W);
+        continue;
+    end
+
+    % determine class from dataset
+    thisClass = refClass;
+    try
+        sample = h5read(h5File, dsPath, [1 1 1 1], [1 1 1 1]);
+        thisClass = class(sample);
+    catch
+    end
+
+    % prepare zeros block
+    zblock = zeros(H, W, k, Tblock, thisClass);
+
+    % append at absStart0
+    upsertH5Dataset_frames_local(h5File, dsPath, zblock, [H W k Tblock], thisClass, absStart0, Tcur);
+end
+end
+
+function upsertH5Dataset_frames_local(h5filename, datasetName, data, dims_mat, thisClass, absStart0, ToldHint)
+if nargin < 6, absStart0 = []; end
+if nargin < 7, ToldHint = []; end
+H = dims_mat(1); W = dims_mat(2); k = dims_mat(3);
+Tblock = size(data,4);
+
+fid = H5F.open(h5filename,'H5F_ACC_RDWR','H5P_DEFAULT');
+exists = H5L.exists(fid, datasetName, 'H5P_DEFAULT') > 0;
+if ~exists
+    H5F.close(fid);
+    return;
+end
+
+dset_id  = H5D.open(fid, datasetName);
+space_id = H5D.get_space(dset_id);
+[~, cur_dims, ~] = H5S.get_simple_extent_dims(space_id);
+H5S.close(space_id);
+dims = double(cur_dims(:).'); dims(end+1:4)=1;
+Told  = dims(1); k_old = dims(2); W_old = dims(3); H_old = dims(4);
+
+if ~isempty(ToldHint), Told = ToldHint; end
+
+if H_old~=H || W_old~=W || k_old~=k
+    H5D.close(dset_id); H5F.close(fid);
+    warning('PadExtraChannels: dataset dims mismatch for %s -> skip', datasetName);
+    return;
+end
+
+try, t0 = double(h5readatt(h5filename, datasetName, 'abs_t0')); catch, t0 = 0; end
+
+if ~isempty(absStart0)
+    absStart = max(0, floor(absStart0));
+else
+    absStart = t0 + Told;
+end
+
+startRel = absStart - t0;
+Tnew     = max(Told, startRel + Tblock);
+
+if Tnew > Told
+    H5D.set_extent(dset_id, double([Tnew k W H]));
+end
+
+fspace  = H5D.get_space(dset_id);
+start_f = double([startRel 0 0 0]);
+count_f = double([Tblock   k W H]);
+H5S.select_hyperslab(fspace,'H5S_SELECT_SET', start_f, [], count_f, []);
+
+mspace = H5S.create_simple(4, count_f, []);
+h5type = matlabClassToH5_local(thisClass);
+H5D.write(dset_id, h5type, mspace, fspace, 'H5P_DEFAULT', data(:,:,:,1:Tblock));
+
+try, h5writeatt(h5filename, datasetName, 'abs_t0', t0);             end
+try, h5writeatt(h5filename, datasetName, 'abs_T',  Tnew);           end
+try, h5writeatt(h5filename, datasetName, 'abs_range', [t0, t0+Tnew-1]); end
+
+H5S.close(mspace); H5S.close(fspace);
+H5D.close(dset_id); H5F.close(fid);
+end
+
+function h5type = matlabClassToH5_local(cls)
+    switch cls
+        case 'uint8',   h5type = 'H5T_NATIVE_UCHAR';
+        case 'int8',    h5type = 'H5T_NATIVE_CHAR';
+        case 'uint16',  h5type = 'H5T_NATIVE_USHORT';
+        case 'int16',   h5type = 'H5T_NATIVE_SHORT';
+        case 'uint32',  h5type = 'H5T_NATIVE_UINT';
+        case 'int32',   h5type = 'H5T_NATIVE_INT';
+        case 'single',  h5type = 'H5T_NATIVE_FLOAT';
+        case 'double',  h5type = 'H5T_NATIVE_DOUBLE';
+        otherwise,      h5type = 'H5T_NATIVE_DOUBLE';
+    end
 end
 
 function bb = pickBBoxForFrame(ROIe, tAbs, tLocal, framesToDo)

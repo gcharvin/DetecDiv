@@ -30,6 +30,13 @@ for d = 1:numel(ndtiffDirs)
     end
 
     % Open dataset (Java)
+    [okIdx, reason] = localWaitForNDTiffIndex(dsPath, 5);
+    if ~okIdx
+        msg = sprintf('NDTiff index locked or not ready (%s). Acquisition may be running: %s', reason, dsPath);
+        warning('%s', msg);
+        output.comments = [output.comments msg char(10)];
+        continue;
+    end
     try
         dataset = javaObject('org.micromanager.ndtiffstorage.NDTiffStorage', dsPath);
     catch ME
@@ -37,8 +44,12 @@ for d = 1:numel(ndtiffDirs)
         continue;
     end
 
-    % Extract axes values
-    [posVals, chVals, tVals, zVals] = localGetAxesValues(dataset);
+    % Extract axes values (per-image)
+    axesTable = localGetAxesTable(dataset);
+    posVals = axesTable.pos;
+    chVals  = axesTable.ch;
+    tVals   = axesTable.t;
+    zVals   = axesTable.z;
 
     % Summary metadata (text + channel names)
     summaryText = '';
@@ -76,8 +87,6 @@ for d = 1:numel(ndtiffDirs)
 
     nPos = numel(posVals);
     nCh  = numel(chVals);
-    nT   = numel(tVals);
-    nZ   = numel(zVals);
 
     % Normalize channel names
     chNamesBase = chNamesFromMM;
@@ -96,40 +105,55 @@ for d = 1:numel(ndtiffDirs)
         chNamesBase = chNamesBase(:).';
     end
 
-    % Build virtual filelist per displayed channel (channel x z)
-    nDispCh = nCh * nZ;
-    virtList = cell(1, nDispCh);
-    dispChNames = cell(1, nDispCh);
-    dispChMap = zeros(1, nDispCh);
-    dispZMap  = zeros(1, nDispCh);
-
-    ccDisp = 1;
-    for c = 1:nCh
-        for zi = 1:nZ
-            entries = repmat(struct('name','', 'folder', dsPath), 1, nT);
-            for f = 1:nT
-                entries(f).name = sprintf('ndtiff_ch%03d_z%03d_t%09d.tif', chVals(c), zVals(zi), tVals(f));
-                entries(f).folder = dsPath;
-            end
-            virtList{ccDisp} = entries;
-            dispChNames{ccDisp} = sprintf('%s_z%d', chNamesBase{c}, zVals(zi)+1);
-            dispChMap(ccDisp) = chVals(c);
-            dispZMap(ccDisp)  = zVals(zi);
-            ccDisp = ccDisp + 1;
-        end
-    end
-
-    pathList = repmat({dsPath}, 1, nDispCh);
-
     [~, dsName] = fileparts(dsPath);
 
     for p = 1:nPos
+        posMask = axesTable.pos == posVals(p);
+        tValsPos = unique(double(axesTable.t(posMask))');
+        if isempty(tValsPos), tValsPos = 0; end
+        tValsPos = sort(tValsPos);
+
+        % Build per-position channel x z list (only existing combos)
+        dispChNames = {};
+        dispChMap = [];
+        dispZMap = [];
+        virtList = {};
+        ccDisp = 1;
+
+        for c = 1:nCh
+            chVal = chVals(c);
+            zValsPos = unique(double(axesTable.z(posMask & axesTable.ch == chVal))');
+            if isempty(zValsPos)
+                continue;
+            end
+            zValsPos = sort(zValsPos);
+            for zi = 1:numel(zValsPos)
+                entries = repmat(struct('name','', 'folder', dsPath), 1, numel(tValsPos));
+                for f = 1:numel(tValsPos)
+                    entries(f).name = sprintf('ndtiff_ch%03d_z%03d_t%09d.tif', chVal, zValsPos(zi), tValsPos(f));
+                    entries(f).folder = dsPath;
+                end
+                virtList{ccDisp} = entries; %#ok<AGROW>
+                dispChNames{ccDisp} = sprintf('%s_z%d', chNamesBase{c}, zValsPos(zi)+1); %#ok<AGROW>
+                dispChMap(ccDisp) = chVal; %#ok<AGROW>
+                dispZMap(ccDisp)  = zValsPos(zi); %#ok<AGROW>
+                ccDisp = ccDisp + 1;
+            end
+        end
+
+        nDispCh = numel(dispChNames);
+        if nDispCh == 0
+            continue;
+        end
+
+        pathList = repmat({dsPath}, 1, nDispCh);
+
         if cc ~= 1
             output.pos(cc) = output.pos(1);
         end
 
         % Defaults
-        output.pos(cc).frames = nT;
+        output.pos(cc).frames = numel(tValsPos);
         output.pos(cc).channels = nDispCh;
         output.pos(cc).filelist = virtList;
         output.pos(cc).pathlist = pathList;
@@ -154,7 +178,7 @@ for d = 1:numel(ndtiffDirs)
         output.pos(cc).ndtiffPath = dsPath;
         output.pos(cc).ndtiffPosition = posVals(p);
         output.pos(cc).ndtiffChannels = dispChMap;
-        output.pos(cc).ndtiffTimes = tVals;
+        output.pos(cc).ndtiffTimes = tValsPos;
         output.pos(cc).ndtiffZ = dispZMap;
         output.pos(cc).metadataText = summaryText;
 
@@ -166,17 +190,121 @@ output.comments = [output.comments num2str(cc-1) ' NDTiff position(s) detected' 
 end
 
 
-function [posVals, chVals, tVals, zVals] = localGetAxesValues(dataset)
-posVals = [];
-chVals  = [];
-tVals   = [];
-zVals   = [];
+function axesTable = localGetAxesTable(dataset)
+axesTable.pos = [];
+axesTable.ch  = [];
+axesTable.t   = [];
+axesTable.z   = [];
 
 try
     axesSet = dataset.getAxesSet();
     axesArray = axesSet.toArray();
 catch
     return;
+end
+
+n = length(axesArray);
+keyPos = javaObject('java.lang.String','position');
+keyCh  = javaObject('java.lang.String','channel');
+keyT   = javaObject('java.lang.String','time');
+keyZ   = javaObject('java.lang.String','z');
+posVals = zeros(1, n);
+chVals = zeros(1, n);
+tVals = zeros(1, n);
+zVals = zeros(1, n);
+for i = 1:n
+    axes1 = axesArray(i);
+
+    if axes1.containsKey(keyPos)
+        posVals(i) = double(axes1.get(keyPos));
+    else
+        posVals(i) = 0;
+    end
+
+    if axes1.containsKey(keyCh)
+        chVals(i) = double(axes1.get(keyCh));
+    else
+        chVals(i) = 0;
+    end
+
+    if axes1.containsKey(keyT)
+        tVals(i) = double(axes1.get(keyT));
+    else
+        tVals(i) = 0;
+    end
+
+    if axes1.containsKey(keyZ)
+        zVals(i) = double(axes1.get(keyZ));
+    else
+        zVals(i) = 0;
+    end
+end
+axesTable.pos = posVals;
+axesTable.ch  = chVals;
+axesTable.t   = tVals;
+axesTable.z   = zVals;
+end
+
+function [ok, reason] = localWaitForNDTiffIndex(dsPath, maxWaitSec)
+% Wait for NDTiff.index to exist and be stable (size not changing + readable)
+ok = false;
+reason = 'unknown';
+idx = fullfile(dsPath, 'NDTiff.index');
+if exist(idx, 'file') ~= 2
+    reason = 'NDTiff.index missing';
+    return;
+end
+
+prevBytes = -1;
+stableCount = 0;
+everLocked = false;
+tick = 0.2;
+maxIter = max(1, round(maxWaitSec / tick));
+
+for i = 1:maxIter
+    if exist(idx, 'file') ~= 2
+        reason = 'NDTiff.index missing';
+        return;
+    end
+    d = dir(idx);
+    if isempty(d)
+        reason = 'NDTiff.index not accessible';
+        return;
+    end
+
+    % check if readable
+    fid = fopen(idx, 'r');
+    if fid > 0
+        fclose(fid);
+        canRead = true;
+    else
+        canRead = false;
+        everLocked = true;
+    end
+
+    if d.bytes == prevBytes && canRead
+        stableCount = stableCount + 1;
+    else
+        stableCount = 0;
+    end
+
+    if stableCount >= 3
+        ok = true;
+        reason = '';
+        return;
+    end
+
+    prevBytes = d.bytes;
+    pause(tick);
+end
+
+if ~ok
+    if everLocked
+        reason = 'NDTiff.index locked (file in use)';
+    else
+        reason = 'NDTiff.index changing';
+    end
+end
 end
 
 function chNames = localGetChannelNamesFromSummary(smd, summaryText)
@@ -274,39 +402,5 @@ try
     end
 catch
     out = {};
-end
-end
-
-n = length(axesArray);
-keyPos = javaObject('java.lang.String','position');
-keyCh  = javaObject('java.lang.String','channel');
-keyT   = javaObject('java.lang.String','time');
-keyZ   = javaObject('java.lang.String','z');
-for i = 1:n
-    axes1 = axesArray(i);
-
-    if axes1.containsKey(keyPos)
-        posVals(end+1) = double(axes1.get(keyPos)); %#ok<AGROW>
-    else
-        posVals(end+1) = 0; %#ok<AGROW>
-    end
-
-    if axes1.containsKey(keyCh)
-        chVals(end+1) = double(axes1.get(keyCh)); %#ok<AGROW>
-    else
-        chVals(end+1) = 0; %#ok<AGROW>
-    end
-
-    if axes1.containsKey(keyT)
-        tVals(end+1) = double(axes1.get(keyT)); %#ok<AGROW>
-    else
-        tVals(end+1) = 0; %#ok<AGROW>
-    end
-
-    if axes1.containsKey(keyZ)
-        zVals(end+1) = double(axes1.get(keyZ)); %#ok<AGROW>
-    else
-        zVals(end+1) = 0; %#ok<AGROW>
-    end
 end
 end
