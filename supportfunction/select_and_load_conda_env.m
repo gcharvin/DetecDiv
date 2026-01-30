@@ -404,7 +404,7 @@ function [st,out] = runConda(subcmd, debug, condaCmd)
 end
 
 
-function [data, out, src] = getCondaEnvs(debug)
+function [data, out, src] = getCondaEnvs(debug,condaCmd)
      [st, out] = runConda('info --json', debug, condaCmd);
     if st == 0
         try
