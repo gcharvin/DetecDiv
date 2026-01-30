@@ -381,15 +381,15 @@ function defIdx = pickDefaultIndex(envList, defPrefix, preferred)
     if isempty(defIdx), defIdx = 1; end
 end
 
-function [st,out] = runConda(subcmd, debug)
-% Unix : bash -lic "conda-init; conda <subcmd>"
-% Win  : "<path_to_conda>" <subcmd>
+function [st,out] = runConda(subcmd, debug, condaCmd)
     if isunix
         cmd = sprintf('bash -lic "conda-init; conda %s"', subcmd);
     else
-        cmd = sprintf('%s %s', quoteIfNeeded(findCondaCmd(false)), subcmd);
+        % condaCmd pointe vers conda.bat OU conda.exe
+        cmd = sprintf('cmd /c ""%s" %s"', condaCmd, subcmd);
     end
     [st,out] = system(cmd);
+
     if debug
         fprintf('[DEBUG] runConda: %s\n[DEBUG] rc=%d\n', cmd, st);
         if ~isempty(out)
@@ -403,8 +403,9 @@ function [st,out] = runConda(subcmd, debug)
     end
 end
 
+
 function [data, out, src] = getCondaEnvs(debug)
-    [st, out] = runConda('info --json', debug);
+     [st, out] = runConda('info --json', debug, condaCmd);
     if st == 0
         try
             data = jsondecode(out);
@@ -415,7 +416,7 @@ function [data, out, src] = getCondaEnvs(debug)
             warnJson(ME, out);
         end
     end
-    [st2, out2] = runConda('env list --json', debug);
+   [st2, out2] = runConda('env list --json', debug, condaCmd);
     if st2 ~= 0, error('Both "conda info --json" and "conda env list --json" failed.'); end
     try
         data = jsondecode(out2); src = 'conda env list --json'; out = out2;
@@ -425,6 +426,24 @@ function [data, out, src] = getCondaEnvs(debug)
 end
 
 function cmd = findCondaCmd(debug)
+
+        % 0) Try PowerShell: conda may be a PowerShell function, but "conda info --base" works.
+    [stPS, outPS] = system('powershell -NoProfile -Command "conda info --base"');
+    if stPS == 0
+        base = strtrim(string(outPS));
+        candBat = fullfile(base, "condabin", "conda.bat");
+        candExe = fullfile(base, "Scripts",  "conda.exe");
+        if isfile(candBat)
+            cmd = char(candBat);
+            if debug, fprintf('[DEBUG] conda base via PS: %s\n', cmd); end
+            return;
+        elseif isfile(candExe)
+            cmd = char(candExe);
+            if debug, fprintf('[DEBUG] conda base via PS: %s\n', cmd); end
+            return;
+        end
+    end
+
     candidates = {};
     ex = getenv('CONDA_EXE'); if ~isempty(ex), candidates{end+1} = ex; end
     ex = getenv('CONDA_BAT'); if ~isempty(ex), candidates{end+1} = ex; end
@@ -464,6 +483,8 @@ function cmd = findCondaCmd(debug)
         end
     end
     cmd = 'conda';
+
+    error('Conda introuvable depuis MATLAB/cmd. PowerShell ok mais conda.bat/conda.exe non localisé.');
 end
 
 function c = buildProbeCmd(p)
