@@ -59,7 +59,7 @@ function info = select_and_load_conda_env(varargin)
     end
 
     % -------- 2) Lister les envs --------
-    [data, rawOut, src] = getCondaEnvs(debug);
+    [data, rawOut, src] = getCondaEnvs(debug,condaCmd);
     if debug, fprintf('[DEBUG] Envs source: %s | JSON length: %d chars\n', src, strlength(string(rawOut))); end
     if ~isfield(data,'envs') || isempty(data.envs)
         rawShort = char(string(rawOut)); if numel(rawShort)>500, rawShort = [rawShort(1:500) ' ... [truncated]']; end
