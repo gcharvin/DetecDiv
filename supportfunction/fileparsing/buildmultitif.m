@@ -1,198 +1,246 @@
-function output=buildmultitif(filelist,outputin,progress)
-% build list offiles and parse channels based on a multif files
+function output = buildmultitif(filelist, outputin, progress)
+% buildmultitif
+% Build list of positions from multi-page TIFF files and parse channels/frames.
+%
+% Supports metadata in:
+% - ImageJ (ImageDescription: "channels=..", "frames=..")
+% - OME-XML (ImageDescription contains SizeC/SizeT)
+% - tifffile.py JSON (ImageDescription: {"shape":[T,C,Y,X]} or variants)
+%
+% Output format:
+% - output.pos(i).channels  = #channels
+% - output.pos(i).frames    = #frames (timepoints)
+% - output.pos(i).isMultiTiff = true
+% - output.pos(i).tiffSource{c} = full path of source tiff
+% - output.pos(i).pageMap{c}(t) = page index within tiff for channel c, frame t
+% - output.pos(i).filelist{c}(t) = virtual struct array for compatibility
 
-output=outputin;
+output = outputin;
 
-filelist= filelist([filelist.isdir]==0);
-filelist=filelist(contains({filelist.name},{'.tif','.jpg'})); % takes all image files
+% --- filter files ---
+filelist = filelist([filelist.isdir] == 0);
+filelist = filelist(contains({filelist.name},{'.tif','.tiff'},'IgnoreCase',true)); % only tiffs here
 
-res=[];
-
-foldername=filelist(1).folder;
-
-cc=1;
-for i=1:numel(filelist)
-    if cc~=1
-        output.pos(cc)=output.pos(1);
-    end
-    output.pos(cc).name=filelist(i).name;
-    cc=cc+1;
+if isempty(filelist)
+    output.comments = [output.comments 'No TIFF files found for multi-TIFF parsing.' char(10)];
+    return;
 end
 
-cc=1;
+foldername = filelist(1).folder;
 
-for i=1:numel(filelist)
-    [pth fle ext]=fileparts(filelist(i).name);
-    
-   % tmp=regexp(fle, '\d+$','match');
-    tmp = regexp(fle, '(\d+)(\.ome)?$', 'tokens');
+% --- Ensure struct schema has required fields (prevent dissimilar-struct assignment) ---
+output.pos = local_ensureMultitiffFields(output.pos);
 
-    if numel(tmp)==0 % there is no trailing number
+% --- Initialize positions with filenames (one file = one position) ---
+for i = 1:numel(filelist)
+    if i ~= 1
+        output.pos(i) = output.pos(1); %#ok<AGROW>
+    end
+    output.pos(i).name = filelist(i).name;
+end
+
+% --- detect trailing numeric suffix for sorting positions ---
+res = nan(1,numel(filelist));
+okSuffix = true;
+for i = 1:numel(filelist)
+    [~, fle] = fileparts(filelist(i).name);
+    tok = regexp(fle, '(\d+)(\.ome)?$', 'tokens', 'once'); % supports "...123" or "...123.ome"
+    if isempty(tok)
+        okSuffix = false;
         break;
     end
-    
-    %res(cc)= str2double(tmp{1});
-    res(cc) = str2double(tmp{1}{1});
-    cc=cc+1;
+    res(i) = str2double(tok{1});
 end
 
-if numel(res) > 0
+if okSuffix && all(isfinite(res))
     [sortedres, ix] = sort(res);
     output.pos = output.pos(ix);
 else
-    sortedres = 1:numel(output.pos); % Définit un tri par défaut
+    sortedres = 1:numel(output.pos);
 end
 
+output.comments = [output.comments num2str(numel(output.pos)) ' positions were identifed' char(10)];
 
-cc=1;
-output.comments=[output.comments num2str(numel(output.pos)) ' positions were identifed' char(10)];
+% --- loop over positions (each = one multi-page TIFF) ---
+for i = 1:numel(output.pos)
 
-for i=1:numel(output.pos) % loop on positions
-    
-    info=['Processing position: ' num2str(i) '/' num2str(numel(output.pos))];
+    info = ['Processing position: ' num2str(i) '/' num2str(numel(output.pos))];
     disp(info);
-    if numel(progress)
-        progress.Message=info;
-        progress.Value=min(1,0.67+0.33*(i-1));
+    if ~isempty(progress)
+        progress.Message = info;
+        progress.Value = min(1, 0.67 + 0.33*(i-1)/max(1,numel(output.pos)));
     end
-    
-    im=imfinfo(fullfile(foldername,output.pos(i).name));
-    nimages=numel(im);
-    
+
+    tiffPath = fullfile(foldername, output.pos(i).name);
+
+    % Read tiff directory
+    im = imfinfo(tiffPath);
+    nPages = numel(im);
+
+    % --- extract metadata string (may be empty except on first page) ---
+    desc = '';
     if isfield(im,'ImageDescription')
-        str=im(1).ImageDescription;
-        
-        if ~isempty(str)
-        nch=[];
-        nframes=[];
-        
-        if contains(str,'ImageJ')
-            nch=regexp(str,['(?<=channels=)\d+'],'match');
-            nframes=regexp(str,['(?<=frames=)\d+'],'match');
+        % your dataset: only page 1 has the JSON -> checking page 1 is enough,
+        % but we scan a few pages anyway for robustness
+        for ii = 1:min(nPages, 10)
+            if ~isempty(im(ii).ImageDescription)
+                desc = im(ii).ImageDescription;
+                break;
+            end
         end
-        
-        if contains(str,'OME')
-            nch=regexp(str,['(?<=SizeC=")\d+'],'match');
-            nframes=regexp(str,['(?<=SizeT=")\d+'],'match');
-        end
-        end
-    else % not fiji or OME, probably matlab based
-        nch=[];
-        nframes=[];
     end
-   
-   % to be improved
 
-    % if numel(nch)==0 % parsing using ImageDescription failed, trying metadata.txt
-    % 
-    %         if endsWith(fle, '.ome')
-    %             fle2 = extractBefore(fle, strlength(fle) - 3);
-    %         else
-    %             fle2 = fle;
-    %         end
-    % 
-    % 
-    %         % Construct the metadata file path
-    %         metadataFilePath = fullfile(pth, [fle2 'metadata.txt'])
-    % 
-    %         % Read the metadata file
-    %         if exist(metadataFilePath, 'file')
-    %             metadata = fileread(metadataFilePath);
-    %             metadata = jsondecode(metadata);
-    % 
-    %             % Extract channel information from metadata
-    %             if isfield(metadata.Summary, 'IntendedDimensions')
-    %                 nch = metadata.Summary.IntendedDimensions.channel;
-    %                 nframes = metadata.Summary.IntendedDimensions.time;
-    %             else
-    %                 nch = 1;
-    %                 nframes = nimages;
-    %             end
-    %         else
-    %             nch = 1;
-    %             nframes = nimages;
-    %         end
-    % end
-    
-    if numel(nch)==0 % channel parsing failed, will consider only one channel
-        nch=1;
+    % --- parse nch / nframes from metadata ---
+    [nch, nframes] = local_parseChannelsFrames(desc, nPages);
+
+    % Final safety
+    if isempty(nch) || ~isfinite(nch) || nch < 1
+        nch = 1;
+    end
+    nch = max(1, round(nch));
+
+    if isempty(nframes) || ~isfinite(nframes) || nframes < 1
+        nframes = floor(nPages / nch);
     else
-        nch=str2double(nch{1});
+        nframes = floor(nframes);
     end
-    
-    
-    if numel(nframes)
-        nframes=str2double(nframes{1});
-    else
-        nframes=nimages./nch;
-    end
-    
-    %  interval=regexp(str,['(?<=finterval=)\d+'],'match');
-    %   if numel(interval)
-    %        interval=str2double(interval{1});
-    %   else
-    interval=ones(1,nch); % an array that represents the reletaive frequency of each channel
-    %  end
-    
-    
-    %   framelist={};
-    %   for j=1:nch
-    %       pix={j:nch:nimages};
-    %      framelist=[framelist pix];
-    %   end
-    
-    sut=struct('name',output.pos(cc).name, 'folder', foldername);
-    
-    output.pos(cc).channels=nch;
-    output.pos(cc).frames=nframes;
-    
-    
-    %  for k=1:nch
-    %   output.pos(cc).filelist=[ output.pos(cc).filelist sut];
-    %   output.pos(cc).pathlist=[output.pos(cc).pathlist foldername];
-    % --- multi-TIFF support: virtual srclist + page map ---
-    output.pos(cc).isMultiTiff = true;
-    output.pos(cc).tiffSource  = cell(1,nch);
-    output.pos(cc).pageMap     = cell(1,nch);
 
-    output.pos(cc).filelist = cell(1,nch);
-    output.pos(cc).pathlist = cell(1,nch);
+    % Interval placeholder (per-channel relative frequency)
+    interval = ones(1, nch);
 
-    % number of pages in the big tiff
-    nPages = nimages;
+    % --- fill output.pos(i) (no dissimilar struct) ---
+    output.pos(i).channels = nch;
+    output.pos(i).frames   = nframes;
 
-    for j=1:nch
-        output.pos(cc).tiffSource{j} = fullfile(foldername, output.pos(cc).name);
-        output.pos(cc).pathlist{j}   = foldername;
+    output.pos(i).isMultiTiff = true;
 
-        % virtual entries for frame count (needed by readImage length check)
-        entries = repmat(struct('name',output.pos(cc).name,'folder',foldername), 1, nframes);
-        output.pos(cc).filelist{j} = entries;
+    output.pos(i).tiffSource = cell(1, nch);
+    output.pos(i).pageMap    = cell(1, nch);
+    output.pos(i).filelist   = cell(1, nch);
+    output.pos(i).pathlist   = cell(1, nch);
 
-        % page map: frame -> page index
-        pm = (j:nch:nPages);
+    entries = repmat(struct('name', output.pos(i).name, 'folder', foldername), 1, nframes);
+
+    for c = 1:nch
+        output.pos(i).tiffSource{c} = tiffPath;
+        output.pos(i).pathlist{c}   = foldername;
+        output.pos(i).filelist{c}   = entries;
+
+        pm = (c:nch:nPages);
         if numel(pm) < nframes
-            % fallback: assume contiguous t1..tN ordering
-            pm = ((0:nframes-1)*nch + j);
+            pm = ((0:nframes-1) * nch + c);
         end
-        output.pos(cc).pageMap{j} = pm(1:nframes);
+        output.pos(i).pageMap{c} = pm(1:nframes);
     end
-    %  end
-    
-    output.pos(cc).unfilteredpathlist=output.pos(cc).pathlist;
-    
-    output.pos(cc).unfilteredfilelist=output.pos(cc).filelist;
-    
-    output.pos(cc).binning=ones(1,nch);
-    output.pos(cc).interval=interval;
-    output.pos(cc).name= ['pos' num2str(sortedres(cc))];
-    output.pos(cc).channelfilter={''};
-    output.pos(cc).stackfilter={''};
-    
-    for j=1:nch
-        output.pos(cc).channelname{j}=['ch' num2str(j)];
+
+    output.pos(i).unfilteredpathlist = output.pos(i).pathlist;
+    output.pos(i).unfilteredfilelist = output.pos(i).filelist;
+
+    output.pos(i).binning  = ones(1, nch);
+    output.pos(i).interval = interval;
+
+    % Standardize name to posN (as before)
+    output.pos(i).name = ['pos' num2str(sortedres(i))];
+    output.pos(i).channelfilter = {''};
+    output.pos(i).stackfilter   = {''};
+
+    output.pos(i).channelname = cell(1, nch);
+    for c = 1:nch
+        output.pos(i).channelname{c} = ['ch' num2str(c)];
     end
-    
-    cc=cc+1;
-    
+end
+
+end
+
+% -------------------------------------------------------------------------
+function pos = local_ensureMultitiffFields(pos)
+% Ensure all required fields exist so assignments don't create dissimilar structs.
+
+% if pos is empty, create a minimal template
+if isempty(pos)
+    pos = struct();
+end
+
+required = {
+    'isMultiTiff', false
+    'tiffSource',  {}
+    'pageMap',     {}
+};
+
+for k = 1:size(required,1)
+    fn = required{k,1};
+    dv = required{k,2};
+    if ~isfield(pos, fn)
+        [pos.(fn)] = deal(dv); %#ok<AGROW>
+    end
+end
+
+% Also ensure these exist (they already exist in your pipeline usually)
+if ~isfield(pos,'filelist'),           [pos.filelist] = deal({}); end
+if ~isfield(pos,'pathlist'),           [pos.pathlist] = deal({}); end
+if ~isfield(pos,'unfilteredfilelist'), [pos.unfilteredfilelist] = deal({}); end
+if ~isfield(pos,'unfilteredpathlist'), [pos.unfilteredpathlist] = deal({}); end
+if ~isfield(pos,'channelname'),        [pos.channelname] = deal({}); end
+if ~isfield(pos,'channels'),           [pos.channels] = deal([]); end
+if ~isfield(pos,'frames'),             [pos.frames] = deal([]); end
+if ~isfield(pos,'binning'),            [pos.binning] = deal([]); end
+if ~isfield(pos,'interval'),           [pos.interval] = deal([]); end
+if ~isfield(pos,'channelfilter'),      [pos.channelfilter] = deal({''}); end
+if ~isfield(pos,'stackfilter'),        [pos.stackfilter] = deal({''}); end
+if ~isfield(pos,'name'),               [pos.name] = deal(''); end
+
+end
+
+% -------------------------------------------------------------------------
+function [nch, nframes] = local_parseChannelsFrames(desc, nPages)
+% Returns nch, nframes (may be empty) from ImageDescription string.
+
+nch = [];
+nframes = [];
+
+if isempty(desc)
+    return;
+end
+
+s = desc;
+sTrim = strtrim(s);
+
+% 1) tifffile.py JSON: {"shape":[T,C,Y,X]} or {"shape": [61, 2, ...]}
+if ~isempty(sTrim) && sTrim(1) == '{'
+    try
+        md = jsondecode(sTrim);
+        if isstruct(md) && isfield(md,'shape') && ~isempty(md.shape)
+            sh = double(md.shape(:))';
+            if numel(sh) >= 2
+                nframes = sh(1);
+                nch     = sh(2);
+                return;
+            end
+        end
+    catch
+        % ignore JSON errors
+    end
+end
+
+% 2) ImageJ style: channels=, frames=
+if contains(s,'imagej','IgnoreCase',true)
+    t = regexp(s,'channels\s*=\s*(\d+)','tokens','once','ignorecase');
+    if ~isempty(t), nch = str2double(t{1}); end
+    t = regexp(s,'frames\s*=\s*(\d+)','tokens','once','ignorecase');
+    if ~isempty(t), nframes = str2double(t{1}); end
+    return;
+end
+
+% 3) OME-XML: SizeC / SizeT
+t = regexp(s,'SizeC\s*=\s*["''](\d+)["'']','tokens','once','ignorecase');
+if ~isempty(t), nch = str2double(t{1}); end
+
+t = regexp(s,'SizeT\s*=\s*["''](\d+)["'']','tokens','once','ignorecase');
+if ~isempty(t), nframes = str2double(t{1}); end
+
+% 4) If only nch known, infer frames from pages
+if ~isempty(nch) && (isempty(nframes) || ~isfinite(nframes) || nframes < 1)
+    nframes = nPages / nch;
+end
+
 end
