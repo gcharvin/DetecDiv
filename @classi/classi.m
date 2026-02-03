@@ -27,6 +27,8 @@ classdef classi < handle
         outputType=''; % other options are : proba (outputs probabilities of class rather than segmentation), postpocressing (uses a default @post function for postprocessing), segmentation
         outputFun=[];
         outputArg={};
+        status=[];
+        userData=[];
 
 
         history=table('Size',[1 3],'VariableTypes',{'datetime','string','string'},'VariableNames',{'Date','Category','Message'});
