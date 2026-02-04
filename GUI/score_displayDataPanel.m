@@ -1,226 +1,278 @@
-function hLine=score_displayDataPanel(ax, groupIdx, layoutOptions, roiobj)
+function hLine = score_displayDataPanel(ax, groupIdx, layoutOptions, roiobj)
 % Fonction d'affichage d'un panel de données.
 % Les données X (frames) sont converties en minutes,
 % le titre est affiché en ylabel et un xlabel "Time(min)" est ajouté.
 %
-% dataIndices : indices des données à afficher (extrait de layout.plotidx{groupIdx})
+% Robustesse:
+% - supporte des variables table hétérogènes (numeric + categorical + string)
+% - évite les concaténations de table variables incompatibles
+% - force des YTick/YTickLabel stables quand la donnée est categorical
+% - corrige l'indexation des marqueurs en mode timeoffset
 
-ax.XTickMode = 'manual'; % ne pas recalculer automatiquement les ticks
-ax.XTickLabelMode = 'manual'; % ne pas recalculer automatiquement les labels
+ax.XTickMode = 'manual';
+ax.XTickLabelMode = 'manual';
 
-timeoffset = layoutOptions.timeOffset;
-framerate  = layoutOptions.framerate;
-fontsize=layoutOptions.fontSize;
-scalingFactor=layoutOptions.scalingFactor;
+% IMPORTANT: éviter d'hériter des ticks/labels d'un panel précédent
+set(ax, 'YTickMode', 'auto', 'YTickLabelMode', 'auto');
 
+timeoffset    = layoutOptions.timeOffset;
+framerate     = layoutOptions.framerate;
+scalingFactor = layoutOptions.scalingFactor;
 
-%aa=layoutOptions.dataidx{groupIdx};
-dataIndices = layoutOptions.plotidx{groupIdx}; % indices des données à afficher
+dataIndices = layoutOptions.plotidx{groupIdx};
 data = roiobj.data(layoutOptions.dataidx{groupIdx});
 
-ydata = data.data{:, layoutOptions.plotidx{groupIdx}};
+% --- Extraction robuste de ydata (sans concat table variables incompatibles) ---
+Tsel_raw = data.data(:, dataIndices);
+nRow = height(Tsel_raw);
+nCol = width(Tsel_raw);
 
+ydata = nan(nRow, nCol);
 
-groupname=layoutOptions.plotidxgroup{groupIdx};
-pix=find(matches(data.groupProperties(:,1),groupname));
+% On garde une référence categorical (si dispo) pour afficher les noms sur Y
+refCat = [];
+refCats = {};
+hasUndefined = false;
 
-plottype=data.groupProperties{pix,2};
+for k = 1:nCol
+    vraw = Tsel_raw{:, k};
 
+    if isnumeric(vraw) || islogical(vraw)
+        ydata(:, k) = double(vraw);
 
-ybounds=[]; xbounds=[];
-if numel(pix)
-    ybounds=data.groupProperties{pix,4};
-    xbounds=data.groupProperties{pix,3};
+    elseif iscategorical(vraw)
+        % Codes 1..K, et 0 pour <undefined>
+        ydata(:, k) = double(vraw);
+
+        if isempty(refCat)
+            refCat = vraw;
+            refCats = categories(refCat);
+            % <undefined> présent ?
+            try
+                hasUndefined = any(isundefined(refCat));
+            catch
+                hasUndefined = any(double(refCat)==0);
+            end
+        end
+
+    elseif isstring(vraw)
+        c = categorical(vraw);
+        ydata(:, k) = double(c);
+
+        if isempty(refCat)
+            refCat = c;
+            refCats = categories(refCat);
+            hasUndefined = any(double(refCat)==0);
+        end
+
+    elseif iscellstr(vraw) || ischar(vraw)
+        c = categorical(string(vraw));
+        ydata(:, k) = double(c);
+
+        if isempty(refCat)
+            refCat = c;
+            refCats = categories(refCat);
+            hasUndefined = any(double(refCat)==0);
+        end
+
+    else
+        % dernier recours
+        try
+            ydata(:, k) = double(vraw);
+        catch
+            ydata(:, k) = nan(nRow, 1);
+        end
+    end
 end
 
-% Conversion de l'axe X : on utilise le nombre de points dans ydata et param.framerate
+% --- Métadonnées panel ---
+groupname = layoutOptions.plotidxgroup{groupIdx};
+pix = find(matches(data.groupProperties(:,1), groupname));
+plottype = data.groupProperties{pix,2};
+
+ybounds = []; xbounds = [];
+if numel(pix)
+    ybounds = data.groupProperties{pix,4};
+    xbounds = data.groupProperties{pix,3};
+end
+
+% --- Axe X (minutes) ---
 if timeoffset
-    % Si timeoffset est activé, on soustrait la première frame de layout.frames
     xdata = ((1:size(ydata,1)) - layoutOptions.frames(1)) * framerate;
-            pix=xdata>=0;
-          ydata = ydata(pix, :);  % indexation sur les lignes pour préserver les colonnes
-          xdata = xdata(pix);
+    keep = xdata >= 0;
+    xdata = xdata(keep);
+    ydata = ydata(keep, :);
 else
     xdata = (1:size(ydata,1)) * framerate;
 end
 
-
-% Extraction des noms de variables pour la légende
-varname = data.data.Properties.VariableNames(dataIndices);
+% --- Légendes (noms de colonnes) ---
+varname = Tsel_raw.Properties.VariableNames;
 str = cell(1, size(ydata,2));
-
 for i = 1:size(ydata,2)
     str{i} = varname{i};
 end
 
 if plottype=="Plot"
 
-    % Tracé des données avec conversion de l'axe X en minutes et récupération des handles
-
-    cmap=eval([layoutOptions.dataColormap '(' num2str(size(ydata,2)) ')']);
-    ax.ColorOrder = cmap ;
+    % --- Plot lignes ---
+    cmap = eval([layoutOptions.dataColormap '(' num2str(size(ydata,2)) ')']);
+    ax.ColorOrder = cmap;
     ax.NextPlot = 'add';
 
-    cc=1;
+    cc = 1;
     hold(ax, 'on');
-    for i=1:size(ydata,2)
-        wid=data.plotProperties{dataIndices(i),5};
-        col=data.plotProperties{dataIndices(i),4};
+    hLine = gobjects(1, size(ydata,2));
+
+    for i = 1:size(ydata,2)
+        wid = data.plotProperties{dataIndices(i),5};
+        col = data.plotProperties{dataIndices(i),4};
         rgb = parseRGBstring(col);
 
-        if col=="k" | col=="auto"
-            color=cmap(cc,:);
-            cc=cc+1;
+        if col=="k" || col=="auto"
+            color = cmap(cc,:);
+            cc = cc + 1;
         elseif numel(rgb)
-            color=rgb;
+            color = rgb;
         else
-            color=[0.5 0.5 0.5];
+            color = [0.5 0.5 0.5];
         end
-        hLine(i) = plot(ax, xdata, ydata(:,i), 'LineWidth', wid,'Color',color);
 
+        hLine(i) = plot(ax, xdata, ydata(:,i), 'LineWidth', wid, 'Color', color);
     end
 
-    hLine2 = gobjects(0);  % au lieu de hLine2 = [];
-    cc=1;
-    % Pour chaque élément dans layout.frames, ajouter un gros rond plein sur chaque courbe
-    markerSize = 10;  % Taille du marker (ajustable)
+    % --- Marqueurs sur frames (corrige timeoffset) ---
+    hLine2 = gobjects(0);
+    cc = 1;
+    markerSize = 10;
+
     for k = 1:length(layoutOptions.frames)
         fIdx = layoutOptions.frames(k);
-        % Vérifier que fIdx est dans les limites de ydata
+
         if timeoffset
             xMarker = (fIdx - layoutOptions.frames(1)) * framerate;
+            fRel = fIdx - layoutOptions.frames(1) + 1; % <-- index relatif dans ydata tronqué
         else
             xMarker = fIdx * framerate;
+            fRel = fIdx;
         end
 
-        if fIdx <= size(ydata,1)
-            % Calcul de la position x pour le marker
-            % Pour chaque courbe (chaque colonne de ydata)
+        if fRel >= 1 && fRel <= size(ydata,1)
             for j = 1:length(hLine)
-                yMarker = ydata(fIdx, j);
-                % Utilisation de la couleur propre à la courbe p(j)
-                %  hLine2(cc)=plot(ax, xMarker, yMarker, 'o', 'MarkerSize', markerSize, 'MarkerFaceColor', hLine(j).Color, 'MarkerEdgeColor', hLine(j).Color);
-                hLine2(cc) = plot(ax, xMarker, yMarker, 'o', 'MarkerSize', markerSize, ...
-                    'MarkerFaceColor', hLine(j).Color, 'MarkerEdgeColor', hLine(j).Color);
-                %aa=hLine(j).Color
-                % On lie le marker à sa ligne correspondante
-                %   hLine2(cc).UserData.LinkedLine = hLine(j);
+                yMarker = ydata(fRel, j);
+                hLine2(cc) = plot(ax, xMarker, yMarker, 'o', ...
+                    'MarkerSize', markerSize, ...
+                    'MarkerFaceColor', hLine(j).Color, ...
+                    'MarkerEdgeColor', hLine(j).Color);
                 hLine2(cc).UserData = struct('LinkedLine', hLine(j));
-
-                cc=cc+1;
+                cc = cc + 1;
             end
         end
     end
 
-    hLine=[hLine'; hLine2'];
+    hLine = [hLine(:); hLine2(:)];
     hold(ax, 'off');
 
-    % Affichage du titre en ylabel (au lieu d'un titre en haut)
+    % --- Labels axes ---
     ylabel(ax, layoutOptions.plotidxgroup{groupIdx}, ...
         'FontSize', floor(layoutOptions.fontSize), ...
-        'FontName', 'Arial', 'Color', layoutOptions.textColor, 'Interpreter', 'none');
+        'FontName', 'Arial', 'Color', layoutOptions.textColor, ...
+        'Interpreter', 'none');
 
-    % Ajout d'un label pour l'axe X
     xlabel(ax, 'Time(min)', 'FontName', 'Arial', ...
         'FontSize', floor(layoutOptions.fontSize), ...
         'Color', layoutOptions.textColor);
 
- if layoutOptions.legend
-    % Création et configuration de la légende
-    lgd = legend(ax, str);
-    set(lgd, 'Color', layoutOptions.background, ...        % Fond identique à celui de la figure
-        'Interpreter', 'none', ...             % Pas d'interprétation en LaTeX
-        'TextColor', layoutOptions.textColor);         % Texte de la légende en param.textColor
-
- else
-    legend off;
- end
-
-    
-
-    % Configuration des axes : affichage uniquement des axes gauche et inférieur
-    set(ax, 'XColor', layoutOptions.textColor, 'YColor', layoutOptions.textColor, 'Box', 'off');
-    set(ax, 'Color', layoutOptions.background,'FontSize',floor(sqrt(scalingFactor)*layoutOptions.fontSize));
-
-    % setting up x axes
-    track=false;
-    if layoutOptions.track
-        if layoutOptions.mode~="Sequence"
-            track=true;
-        end
+    % --- Légende ---
+    if layoutOptions.legend
+        lgd = legend(ax, str);
+        set(lgd, 'Color', layoutOptions.background, ...
+            'Interpreter', 'none', ...
+            'TextColor', layoutOptions.textColor);
+    else
+        legend(ax, 'off');
     end
 
+    % --- Style axes ---
+    set(ax, 'XColor', layoutOptions.textColor, ...
+            'YColor', layoutOptions.textColor, ...
+            'Box', 'off');
+    set(ax, 'Color', layoutOptions.background, ...
+            'FontSize', floor(sqrt(scalingFactor)*layoutOptions.fontSize));
+
+    % --- XLim (tracking/auto/bornes) ---
+    track = false;
+    if layoutOptions.track
+        if layoutOptions.mode ~= "Sequence"
+            track = true;
+        end
+    end
 
     if track
-        amin=xMarker-layoutOptions.trackWindow*framerate;
-        amax=xMarker+layoutOptions.trackWindow*framerate;
-        ax.UserData.xlim=[amin amax];
+        amin = xMarker - layoutOptions.trackWindow * framerate;
+        amax = xMarker + layoutOptions.trackWindow * framerate;
+        ax.UserData.xlim = [amin amax];
+    else
+        if isempty(xbounds) || xbounds=="auto"
+            amin = min(xdata);
+            if amin>0, amin = 0.95*amin-0.01; else, amin = 1.05*amin-0.01; end
 
-    else % no tracking mode
+            amax = max(xdata);
+            if amax>0, amax = 0.95*amax-0.01; else, amax = 1.05*amax+0.01; end
 
-        if numel(xbounds)==0 || xbounds=="auto"
-            amin=min(xdata);
-            if amin>0
-                amin=0.95*amin-0.01;
-            else
-                amin=1.05*amin-0.01;
-            end
-
-            amax=max(xdata);
-            if amax>0
-                amax=0.95*amax-0.01;
-            else
-                amax=1.05*amax+0.01;
-            end
-
-            ax.UserData.xlim='auto';
-    
+            ax.UserData.xlim = 'auto';
         else
-            xbounds=str2num(xbounds);
-            amin= xbounds(1);
-            amax=xbounds(2);
-            ax.UserData.xlim=[amin amax];
+            xb = str2num(xbounds); %#ok<ST2NM>
+            amin = xb(1); amax = xb(2);
+            ax.UserData.xlim = [amin amax];
+        end
+    end
+    xlim(ax, [amin amax]);
+
+    % --- Y: si on a une référence categorical => ticks/labels stables ---
+    if ~isempty(refCat) && ~isempty(refCats)
+        % ticks 1..K (+0 si undefined présent)
+        K = numel(refCats);
+
+        % Si <undefined> présent OU codes 0 présents dans ydata, on ajoute le tick 0
+        has0 = any(ydata(:)==0);
+        if hasUndefined || has0
+            ticksY = [0, 1:K];
+            labelsY = [{'undefined'}; refCats(:)];
+        else
+            ticksY = 1:K;
+            labelsY = refCats(:);
+        end
+
+        yticks(ax, ticksY);
+        yticklabels(ax, labelsY);
+        ylim(ax, [min(ticksY)-0.5, max(ticksY)+0.5]);
+
+        set(ax, 'YTickMode', 'manual', 'YTickLabelMode', 'manual');
+        ax.UserData.ylim = 'labels';
+    else
+        % --- YLim normal (numérique) ---
+        if isempty(ybounds) || ybounds=="auto" || isnan(str2num(ybounds)) %#ok<ST2NM>
+            ax.UserData.ylim = 'auto';
+        else
+            yb = str2num(ybounds); %#ok<ST2NM>
+            amin = yb(1); amax = yb(2);
+            ylim(ax, [amin amax]);
+            ax.UserData.ylim = [amin amax];
         end
     end
 
+    % --- XTicks (joli) ---
+    amin = min(xdata);
+    if amin>0, amin = 0.95*amin-0.01; else, amin = 1.05*amin-0.01; end
 
-    xlim(ax, [amin amax]);
+    amax = max(xdata);
+    if amax>0, amax = 0.95*amax-0.01; else, amax = 1.05*amax+0.01; end
 
-    % setting up y axes
+    xlims = [amin amax];
+    ticks = niceTicks(xlims(1), xlims(2), 10);
+    set(ax, 'XTick', ticks);
 
-    if numel(ybounds)==0 | ybounds=="auto" | isnan(str2num(ybounds))
-        ax.UserData.ylim='auto';
-    else
-        ybounds=str2num(ybounds);
-        amin= ybounds(1);
-        amax=ybounds(2);
-        ylim([amin amax])
-        ax.UserData.ylim=[amin amax];
-    end
-
-    % Seul le plot tout en bas (dernier panel) affiche les étiquettes des X ticks
-
-       amin=min(xdata);
-            if amin>0
-                amin=0.95*amin-0.01;
-            else
-                amin=1.05*amin-0.01;
-            end
-
-            amax=max(xdata);
-            if amax>0
-                amax=0.95*amax-0.01;
-            else
-                amax=1.05*amax+0.01;
-            end
-
-         xlims =  [amin amax]; % get(ax, 'XLim');
-        % [xmin xmax]
-        % Créer 5 ticks également espacés
-        ticks = niceTicks(xlims(1), xlims(2), 10);
-        % Appliquer les ticks
-        set(ax, 'XTick', ticks);
-        
     if groupIdx < layoutOptions.ngroup
         set(ax, 'XTickLabel', []);
     else
@@ -228,84 +280,69 @@ if plottype=="Plot"
         set(ax, 'XTickLabel', xticklabels);
     end
 
+    set(ax, 'box', 'off');
 
-    set(ax,'box','off');
-
-else  % traj mode
+else
+    % ===========================
+    % ======= TRAJ MODE =========
+    % ===========================
 
     if timeoffset
-            pix=xdata>=0;
-            ydata=ydata(pix,:);
-            xdata=xdata(pix);
+        keep = xdata >= 0;
+        ydata = ydata(keep,:);
+        xdata = xdata(keep);
     end
 
-    if numel(ybounds)==0 | ybounds=="auto" | isnan(str2num(ybounds))
-        ax.UserData.ylim='auto';
-        amin=min(ydata(:));
-        amax=max(ydata(:));
+    % Y bounds
+    if isempty(ybounds) || ybounds=="auto" || isnan(str2num(ybounds)) %#ok<ST2NM>
+        ax.UserData.ylim = 'auto';
+        amin = min(ydata(:));
+        amax = max(ydata(:));
     else
-        ybounds=str2num(ybounds);
-        amin= ybounds(1);
-        amax=ybounds(2);
-        %  ylim([amin amax])
-        ax.UserData.ylim=[amin amax];
+        yb = str2num(ybounds); %#ok<ST2NM>
+        amin = yb(1); amax = yb(2);
+        ax.UserData.ylim = [amin amax];
     end
 
-     hold(ax, 'on');
+    hold(ax, 'on');
 
-    [rgbImage, alphaImage, color] = render_ydata_as_image(ydata, amin, amax , layoutOptions,data, dataIndices);
+    [rgbImage, alphaImage, color] = render_ydata_as_image(ydata, amin, amax, layoutOptions, data, dataIndices);
 
-    hLine = imagesc(ax, rgbImage,'AlphaData', alphaImage);
-    axis(ax, 'normal');  % clé pour permettre l'étirement
-    %ax.PositionConstraint = 'outerposition';  % empêche les marges inutiles
-    % Configuration des axes : affichage uniquement des axes gauche et inférieur
+    hLine = imagesc(ax, rgbImage, 'AlphaData', alphaImage);
+    axis(ax, 'normal');
+
     set(ax, 'XColor', layoutOptions.textColor, 'YColor', layoutOptions.background, 'Box', 'off');
-    set(ax, 'Color', layoutOptions.background,'FontSize',floor(sqrt(scalingFactor)*layoutOptions.fontSize));
-  
+    set(ax, 'Color', layoutOptions.background, 'FontSize', floor(sqrt(scalingFactor)*layoutOptions.fontSize));
 
-    % Affichage du titre en ylabel (au lieu d'un titre en haut)
     ylabel(ax, layoutOptions.plotidxgroup{groupIdx}, ...
-        'FontSize', floor(layoutOptions.fontSize), ...
-        'FontName', 'Arial', 'Color', layoutOptions.textColor, 'Interpreter', 'none','FontSize',floor(sqrt(scalingFactor)*layoutOptions.fontSize));
+        'FontName', 'Arial', 'Color', layoutOptions.textColor, ...
+        'Interpreter', 'none', 'FontSize', floor(sqrt(scalingFactor)*layoutOptions.fontSize));
 
-    % Ajout d'un label pour l'axe X
     xlabel(ax, 'Time(min)', 'FontName', 'Arial', ...
         'FontSize', floor(sqrt(scalingFactor)*layoutOptions.fontSize), ...
         'Color', layoutOptions.textColor);
 
-    %  xlim(ax, [0.5, imwidth + 0.5]);
     ylim(ax, [-1, size(rgbImage,1) + 1]);
 
-    if numel(xbounds)==0 || xbounds=="auto"
-        amin=min(xdata);
-        if amin>0
-            amin=0.95*amin-0.01;
-        else
-            amin=1.05*amin-0.01;
-        end
+    if isempty(xbounds) || xbounds=="auto"
+        amin = min(xdata);
+        if amin>0, amin = 0.95*amin-0.01; else, amin = 1.05*amin-0.01; end
 
-        amax=max(xdata);
-        if amax>0
-            amax=0.95*amax-0.01;
-        else
-            amax=1.05*amax+0.01;
-        end
-        ax.UserData.xlim='auto';
+        amax = max(xdata);
+        if amax>0, amax = 0.95*amax-0.01; else, amax = 1.05*amax+0.01; end
+
+        ax.UserData.xlim = 'auto';
     else
-        xbounds=str2num(xbounds);
-        amin= xbounds(1);
-        amax=xbounds(2);
-        ax.UserData.xlim=[amin amax];
+        xb = str2num(xbounds); %#ok<ST2NM>
+        amin = xb(1); amax = xb(2);
+        ax.UserData.xlim = [amin amax];
     end
 
-    xlim([amin amax]/layoutOptions.framerate) ;
+    xlim(ax, [amin amax] / layoutOptions.framerate);
 
-     xlims = layoutOptions.framerate*get(ax, 'XLim');
-        % [xmin xmax]
-        % Créer 5 ticks également espacés
-        ticks = niceTicks(xlims(1), xlims(2), 5);
-        % Appliquer les ticks
-        set(ax, 'XTick', ticks/ layoutOptions.framerate);
+    xlims = layoutOptions.framerate * get(ax, 'XLim');
+    ticks = niceTicks(xlims(1), xlims(2), 5);
+    set(ax, 'XTick', ticks / layoutOptions.framerate);
 
     if groupIdx < layoutOptions.ngroup
         set(ax, 'XTickLabel', []);
@@ -314,33 +351,26 @@ else  % traj mode
         set(ax, 'XTickLabel', xticklabels);
     end
 
+    axPos = get(ax, 'Position');
+    W = 0.2;
+    H = 0.3 * size(ydata,2) * (axPos(4)-0.05);
 
-    hold on;
+    panelLeft   = axPos(1) + axPos(3) - W - 0.01;
+    panelBottom = axPos(2) + axPos(4) - H;
 
-    axPos = get(ax, 'Position');  % [left, bottom, width, height]
-    W = 0.2;  % largeur
-    H = 0.3*size(ydata,2)*(axPos(4)-0.05); % hauteur
+    if layoutOptions.legend
+        addHorizontalColorbarLegend(ax.Parent.Parent, ydata, color, [panelLeft, panelBottom, W, H], layoutOptions, str);
+    end
 
-    % Récupérer la position de l'axe
-    %drawnow;
-    
-
-    % Calculer la position du panel en haut à gauche de l'axe
-    panelLeft = axPos(1) + axPos(3) - W-0.01;      % bord droit de l'axe - largeur du panel
-    panelBottom = axPos(2) + axPos(4) - H  ;    % bord haut de l'axe - hauteur du panel
-
-     if layoutOptions.legend
-   axLegend = addHorizontalColorbarLegend(ax.Parent.Parent, ydata, color, [panelLeft, panelBottom, W, H], layoutOptions,str);
-     end
-
-    hold off;
-
-    % axis(ax, 'off');
-
-    %hLine= imshow(rgbImage,[],'Parent', ax,'InitialMagnification','fit');
+    hold(ax, 'off');
+end
 
 end
-end
+
+
+% =======================
+% ===== Subfunctions =====
+% =======================
 
 function rgb = parseRGBstring(str)
 rgb = [];
@@ -354,342 +384,243 @@ catch
 end
 end
 
+
 function [rgbImage_rescaled, alphaImage_rescaled, colorsOrColormap] = render_ydata_as_image(ydata, minVal, maxVal, layoutOptions, data, dataIndices)
-    % Nombre de séries (colonnes de ydata)
-    num_series = size(ydata, 2);
-    
-    % Récupérer le colormap de base défini dans layoutOptions.dataColormap 
-    % utilisé pour les couleurs "auto" ou "k"
-    baseCmap = eval([layoutOptions.dataColormap '(' num2str(num_series) ')']);
-    cc = 1;
-    
-    % Pré-allocation pour la couleur de référence et un flag indiquant
-    % si l'on doit utiliser directement le colormap spécifié par layoutOptions.colormap
-    refColor = zeros(num_series, 3);
-    useCustomColormap = false(num_series,1);
-    
-    % Pour chaque série, on récupère la spécification dans data.plotProperties
-    for i = 1:num_series        
-        % On vérifie que dataIndices comporte un indice pour cette série
-        if i <= numel(dataIndices)
-            colSpec = data.plotProperties{dataIndices(i), 4};  
-            wid = data.plotProperties{dataIndices(i), 5};  %#ok<NASGU>
-        else
-            colSpec = "auto";  % Valeur par défaut
-        end
 
-        % Si la spécification vaut "colormap", on indique que l'on utilisera
-        % directement le colormap MATLAB défini dans layoutOptions.colormap.
-        if strcmp(colSpec, "colormap")
-            useCustomColormap(i) = true;
-            refColor(i,:) = [0 0 0];  % Valeur par défaut, non utilisée ici
-        else
-            % Tenter de parser la chaîne pour obtenir un vecteur RGB
-            rgbVal = parseRGBstring(colSpec);
-            % Si la spécification vaut "k" ou "auto", utiliser la couleur du colormap de base
-            if strcmp(colSpec, "k") || strcmp(colSpec, "auto")
-                refColor(i,:) = baseCmap(cc,:);
-                cc = cc + 1;
-            elseif numel(rgbVal)==3
-                refColor(i,:) = rgbVal;
-            else
-                refColor(i,:) = [0.5 0.5 0.5];  % Couleur par défaut
-            end
-        end
-    end
+num_series = size(ydata, 2);
+baseCmap = eval([layoutOptions.dataColormap '(' num2str(num_series) ')']);
+cc = 1;
 
-    % Cas particulier d'une unique série avec "auto" ou "k"
-    if num_series == 1 && (strcmp(data.plotProperties{dataIndices(1), 4}, "k") || strcmp(data.plotProperties{dataIndices(1), 4}, "auto"))
-        refColor = eval([layoutOptions.dataColormap '(256)']);  
-        % Ce cas sera traité par la suite via le mapping sur le gradient
-    end
+refColor = zeros(num_series, 3);
+useCustomColormap = false(num_series,1);
 
-       % Récupération et parsing de la couleur de fond
-    bgColor = parseRGBstring(layoutOptions.background);
-    if isempty(bgColor) || numel(bgColor) ~= 3
-        bgColor = [0 0 0];  % Fond par défaut noir
-    end
-
-    % Détermination du nombre de niveaux dans le gradient
-    if strcmp(layoutOptions.dataColormap, 'lines')
-        % Lorsque le colormap est "lines", et que les données sont quantifiées,
-        % on adapte le nombre de niveaux au nombre de valeurs uniques.
-        uniqueVals = unique(ydata(:));
-        if numel(uniqueVals) < 256
-            nSteps = numel(uniqueVals);
-        else
-            nSteps = 256;
-        end
+for i = 1:num_series
+    if i <= numel(dataIndices)
+        colSpec = data.plotProperties{dataIndices(i), 4};
     else
-        nSteps = 256;  % Par défaut, 256 niveaux
+        colSpec = "auto";
     end
 
-    % Construction du gradient pour chaque série
-    gradMap = cell(num_series,1);
-    for i = 1:num_series
-        if useCustomColormap(i)
-            % Pour cette série, le gradient est directement celui généré par le
-            % colormap MATLAB défini dans layoutOptions.colormap (ex: 'jet', 'lines', etc.)
-            gradMap{i} = eval([layoutOptions.colormap '(' num2str(nSteps) ')']);
+    if strcmp(colSpec, "colormap")
+        useCustomColormap(i) = true;
+        refColor(i,:) = [0 0 0];
+    else
+        rgbVal = parseRGBstring(colSpec);
+        if strcmp(colSpec, "k") || strcmp(colSpec, "auto")
+            refColor(i,:) = baseCmap(cc,:);
+            cc = cc + 1;
+        elseif numel(rgbVal)==3
+            refColor(i,:) = rgbVal;
         else
-            % Construction linéaire d'un gradient entre bgColor et la couleur de référence
-            gradMap{i} = [linspace(bgColor(1), refColor(i,1), nSteps)', ...
-                          linspace(bgColor(2), refColor(i,2), nSteps)', ...
-                          linspace(bgColor(3), refColor(i,3), nSteps)'];
+            refColor(i,:) = [0.5 0.5 0.5];
         end
     end
+end
 
+if num_series == 1 && (strcmp(data.plotProperties{dataIndices(1), 4}, "k") || strcmp(data.plotProperties{dataIndices(1), 4}, "auto"))
+    refColor = eval([layoutOptions.dataColormap '(256)']);
+end
 
-    % En sortie, renvoyer le gradient pour chaque série
-    colorsOrColormap = gradMap;
-    
-    % Détermination de fadeFrame en fonction de layoutOptions.mode
-    if strcmp(layoutOptions.mode, "Sequence")
-        fadeFrame = -1;  % par exemple : layoutOptions.frames(end)+1
+bgColor = parseRGBstring(layoutOptions.background);
+if isempty(bgColor) || numel(bgColor) ~= 3
+    bgColor = [0 0 0];
+end
+
+if strcmp(layoutOptions.dataColormap, 'lines')
+    uniqueVals = unique(ydata(:));
+    if numel(uniqueVals) < 256
+        nSteps = numel(uniqueVals);
     else
-        fadeFrame = layoutOptions.frames;
+        nSteps = 256;
     end
+else
+    nSteps = 256;
+end
 
-    % Construction de l'image temporaire : ici N représente la hauteur (en pixels)
-    N = 60;
-    [Nframes, nb_col] = size(ydata);  % Nframes = nombre de "frames" (lignes de ydata), nb_col = nombre de séries
-    rgbImage = zeros(N, Nframes, 3);   % Image RGB de taille N x Nframes
-    
-    % Normalisation des données de ydata dans l'intervalle [0, 1]
-    ydataNorm = (ydata - minVal) / (maxVal - minVal);
-    ydataNorm = min(max(ydataNorm, 0), 1);  % Clamp
+gradMap = cell(num_series,1);
+for i = 1:num_series
+    if useCustomColormap(i)
+        gradMap{i} = eval([layoutOptions.colormap '(' num2str(nSteps) ')']);
+    else
+        gradMap{i} = [linspace(bgColor(1), refColor(i,1), nSteps)', ...
+                      linspace(bgColor(2), refColor(i,2), nSteps)', ...
+                      linspace(bgColor(3), refColor(i,3), nSteps)'];
+    end
+end
 
-    % Mapping des données sur le gradient de couleur
-    if nb_col == 1
-        % Cas d'une seule série : utilisation du gradient associé
-        grad = gradMap{1};
-        idx = round(ydataNorm * (nSteps - 1)) + 1;
-        idx = min(max(idx, 1), nSteps);
+colorsOrColormap = gradMap;
+
+if strcmp(layoutOptions.mode, "Sequence")
+    fadeFrame = -1;
+else
+    fadeFrame = layoutOptions.frames;
+end
+
+N = 60;
+[Nframes, nb_col] = size(ydata);
+rgbImage = zeros(N, Nframes, 3);
+
+ydataNorm = (ydata - minVal) / (maxVal - minVal);
+ydataNorm = min(max(ydataNorm, 0), 1);
+
+if nb_col == 1
+    grad = gradMap{1};
+    idx = round(ydataNorm * (nSteps - 1)) + 1;
+    idx = min(max(idx, 1), nSteps);
+    for j = 1:Nframes
+        rgbImage(:, j, :) = repmat(reshape(grad(idx(j), :), 1, 1, 3), N, 1);
+    end
+else
+    for s = 1:nb_col
+        grad = gradMap{s};
         for j = 1:Nframes
-            rgbImage(:, j, :) = repmat(reshape(grad(idx(j), :), 1, 1, 3), N, 1);
+            idx = round(ydataNorm(j, s) * (nSteps - 1)) + 1;
+            idx = min(max(idx, 1), nSteps);
+            colorPixel = grad(idx, :);
+            rgbImage(:, j, :) = rgbImage(:, j, :) + repmat(reshape(colorPixel, 1, 1, 3), N, 1);
         end
-    else
-        % Cas multiserie : blending additif des contributions
-        for s = 1:nb_col
-            grad = gradMap{s};
-            for j = 1:Nframes
-                idx = round(ydataNorm(j, s) * (nSteps - 1)) + 1;
-                idx = min(max(idx, 1), nSteps);
-                colorPixel = grad(idx, :);
-                rgbImage(:, j, :) = rgbImage(:, j, :) + repmat(reshape(colorPixel, 1, 1, 3), N, 1);
-            end
-        end
-        rgbImage = min(rgbImage, 1);  % Clamp pour éviter de dépasser 1
     end
+    rgbImage = min(rgbImage, 1);
+end
 
-% Définir les couleurs cibles pour le gradient (à adapter selon vos besoins)
-RGBtop    = [0.1, 0.1, 0.1];  % Exemple : couleur vers laquelle on interpole en haut
-RGBbottom = [0.8, 0.8, 0.8];  % Exemple : couleur vers laquelle on interpole en bas
-
-% Forcer RGBtop et RGBbottom à être des vecteurs ligne 1×3
+RGBtop    = [0.1, 0.1, 0.1];
+RGBbottom = [0.8, 0.8, 0.8];
 RGBtop = reshape(RGBtop, [1, 3]);
 RGBbottom = reshape(RGBbottom, [1, 3]);
 
-% Récupérer le nombre de colonnes de l'image (nombre de frames)
 numCols = size(rgbImage, 2);
-
-% Définir la répartition verticale : 25 % en haut, 25 % en bas, le reste au milieu
 nTop    = round(0.25 * N);
 nBottom = round(0.25 * N);
 nMiddle = N - nTop - nBottom;
 
 newImg = zeros(size(rgbImage));
 for r = 1:N
-    % Extraire la ligne r sous forme d'une matrice 2D [numCols x 3]
     rowColors = reshape(rgbImage(r, :, :), [numCols, 3]);
     if r <= nTop
-        % Zone supérieure : interpolation entre RGBtop et la couleur originale
         if nTop > 1
-            factor = (r - 1) / (nTop - 1);  % factor varie de 0 (pour r=1) à 1 (pour r=nTop)
+            factor = (r - 1) / (nTop - 1);
         else
             factor = 1;
         end
-        targetTop = repmat(RGBtop, [numCols, 1]); % Répétition sur numCols lignes
+        targetTop = repmat(RGBtop, [numCols, 1]);
         newLine = (1 - factor) * targetTop + factor * rowColors;
     elseif r <= nTop + nMiddle
-        % Zone centrale : conserver la couleur originale
         newLine = rowColors;
     else
-        % Zone inférieure : interpolation entre la couleur originale et RGBbottom
         r_blend = r - (nTop + nMiddle);
         if nBottom > 1
-            t = (r_blend - 1) / (nBottom - 1);  % t varie de 0 à 1
+            t = (r_blend - 1) / (nBottom - 1);
         else
             t = 1;
         end
         targetBottom = repmat(RGBbottom, [numCols, 1]);
         newLine = (1 - t) * rowColors + t * targetBottom;
     end
-    % Remettre la ligne sous forme [1 x numCols x 3] et l'affecter
     newImg(r, :, :) = reshape(newLine, [1, numCols, 3]);
 end
 rgbImage = newImg;
 
-    %---------------------------------------------------------------------
-    % Gestion de l'opacité (alpha) en fonction de fadeFrame
-    %---------------------------------------------------------------------
-    if isempty(fadeFrame) || ~isscalar(fadeFrame) || ~isnumeric(fadeFrame) || fadeFrame < 0
-        fadeFrame = Nframes;
-    end
-    fadeFrame = max(1, min(round(fadeFrame), Nframes));
-    alphaVec = ones(1, Nframes);
-    if fadeFrame <= Nframes
-        alphaVec(fadeFrame:end) = 0.2;
-    end
-    alphaImage = repmat(alphaVec, N, 1);
-    
-    % Redimensionnement de l'image finale pour obtenir Nfinal colonnes
-    Nfinal = size(ydata, 1);
-    rgbImage_rescaled = imresize(rgbImage, [N, Nfinal], 'nearest');
-    alphaImage_rescaled = imresize(alphaImage, [N, Nfinal], 'nearest');
+if isempty(fadeFrame) || ~isscalar(fadeFrame) || ~isnumeric(fadeFrame) || fadeFrame < 0
+    fadeFrame = Nframes;
+end
+fadeFrame = max(1, min(round(fadeFrame), Nframes));
+alphaVec = ones(1, Nframes);
+if fadeFrame <= Nframes
+    alphaVec(fadeFrame:end) = 0.2;
+end
+alphaImage = repmat(alphaVec, N, 1);
+
+Nfinal = size(ydata, 1);
+rgbImage_rescaled = imresize(rgbImage, [N, Nfinal], 'nearest');
+alphaImage_rescaled = imresize(alphaImage, [N, Nfinal], 'nearest');
 end
 
 
 function axLegend = addHorizontalColorbarLegend(parentFigOrPanel, ydata, cmap, panelPosition, layoutOptions, varName)
-% addHorizontalColorbarLegend
-% Crée une légende colorée horizontale pour CHAQUE série de données,
-% en créant directement des axes dans la figure, même si un tiledlayout existe.
-%
-% Arguments :
-%   - parentFigOrPanel : figure dans laquelle créer les axes de légende.
-%   - ydata : tableau de données (utilisé pour min et max)
-%   - cmap : cell array contenant un colormap (Nx3) pour chaque série,
-%            i.e. numel(cmap) == size(ydata,2).
-%   - panelPosition : [x y width height] définissant la région dans la figure
-%                     (en unités normalisées) où placer les légendes.
-%   - layoutOptions : structure contenant par exemple background, textColor et fontSize.
-%   - varName : cell array de chaînes contenant le nom de la variable pour chaque série.
-%
-% Retour :
-%   - axLegend : cell array contenant les handles des axes de légende (un par série).
 
-    % Déterminer les bornes de l’échelle
-    minVal = min(ydata(:), [], 'omitnan');
-    maxVal = max(ydata(:), [], 'omitnan');
+minVal = min(ydata(:), [], 'omitnan');
+maxVal = max(ydata(:), [], 'omitnan');
 
-    % Ici, on va utiliser directement la figure (parentFigOrPanel) comme conteneur.
-    % panelPosition définit la zone dans la figure où placer nos axes.
-    
-    % Nombre de séries (nombre d'axes à créer)
-    numSeries = numel(cmap);
+numSeries = numel(cmap);
+axLegend = cell(1, numSeries);
+subH = 1 / numSeries;
 
-    % On subdivise verticalement la zone définie par panelPosition.
-    axLegend = cell(1, numSeries);
-    subH = 1 / numSeries;  % Hauteur relative de chaque axe dans la zone
-    subW = 1;              % Toute la largeur de la zone
+for i = 1:numSeries
+    subY = 1 - i * subH;
+    pos = [ panelPosition(1), ...
+            panelPosition(2) + subY * panelPosition(4), ...
+            panelPosition(3), ...
+            subH * panelPosition(4) ];
 
-    for i = 1:numSeries
-        % Calculer la position relative pour l'axe dans panelPosition.
-        % Positions relatives dans le panel (0-1) converties en coordonnées figures:
-        subY = 1 - i * subH;  % La première série en haut
-        pos = [ panelPosition(1), ...                        % x
-                panelPosition(2) + subY * panelPosition(4), ...% y
-                panelPosition(3), ...                        % width
-                subH * panelPosition(4) ];                    % height
-        
-        % Créer l'axe directement dans la figure.
-        ax = axes('Parent', parentFigOrPanel, ...
-                  'Units', 'normalized', ...
-                  'Position', pos, ...
-                  'Color', layoutOptions.background);
-              
-        % Extraire le colormap (assuré numérique) pour la série i
-        currentCmap = cmap{i};
-        if ~isa(currentCmap, 'double')
-            currentCmap = double(currentCmap);
-        end
-        
-        % Nombre de niveaux dans le colormap
-        nColor = size(currentCmap, 1);
-        gradientVal = linspace(0, 1, nColor);
-        indices = round(gradientVal * (nColor - 1)) + 1;
-        legendRGB = ind2rgb(indices, currentCmap);
-        legendRGB = reshape(legendRGB, [1, nColor, 3]);  % Image 1 x nColor x 3
-        
-        % Afficher le dégradé dans l'axe
-        imagesc([minVal, maxVal], [0, 1], legendRGB);
-        axis(ax, 'normal');  % Laisser les limites définies par imagesc
-        
-        % Insetter légèrement l'axe pour que les ticks et labels soient bien visibles.
-        posInset = pos;
-        marginX = 0.1 * pos(3);
-        marginY = 0.2 * pos(4);
-        posInset(1) = pos(1) + marginX;
-        posInset(2) = pos(2) + marginY;
-        posInset(3) = pos(3) - 2*marginX;
-        posInset(4) = pos(4) - marginY;
-        set(ax, 'Position', posInset);
-        
-        % Définir seulement deux ticks aux valeurs extrêmes
-        %ticks = [minVal, maxVal];
-        %tickLabels = {num2str(minVal, '%.2f'), num2str(maxVal, '%.2f')};
-        % set(ax, 'XTick', ticks, 'XTickLabel', tickLabels, 'YTick', [],...
-        %     'FontSize', floor(layoutOptions.fontSize));
-        ax.XColor = layoutOptions.textColor;
-        ax.YColor = layoutOptions.textColor;
+    ax = axes('Parent', parentFigOrPanel, ...
+              'Units', 'normalized', ...
+              'Position', pos, ...
+              'Color', layoutOptions.background);
 
-        % Supprimer les xticks automatiques
-set(ax, 'XTick', []);
-set(ax, 'YTick', []);
-
-% Récupérer les limites de l'axe
-xLimits = get(ax, 'XLim');  % devrait correspondre à [minVal, maxVal]
-yLimits = get(ax, 'YLim');  % ici généralement [0, 1]
-
-% Ajouter un texte à gauche et à droite aux extrémités de l'axe.
-% On place le texte près du bas de l'axe (par exemple, en alignement vertical "top").
-text(ax, xLimits(1), mean(yLimits), num2str(minVal, '%.1f'), ...
-     'Units', 'data', ...
-     'Color', layoutOptions.textColor, ...
-     'FontSize', floor(layoutOptions.fontSize), ...
-     'HorizontalAlignment', 'left', ...
-     'VerticalAlignment', 'middle');
-     
-text(ax, xLimits(2)+0.01, mean(yLimits) , num2str(maxVal, '%.1f'), ...
-     'Units', 'data', ...
-     'Color', layoutOptions.textColor, ...
-     'FontSize', floor(layoutOptions.fontSize), ...
-     'HorizontalAlignment', 'right', ...
-     'VerticalAlignment', 'middle');
-
-        
-        % Insérer un texte centré dans l'axe pour le nom de la variable
-        xCenter = mean(xLimits);
-        yCenter = mean(yLimits);
-        text(ax, xCenter, yCenter, varName{i}, ...
-             'Color', layoutOptions.textColor, ...
-             'FontWeight', 'bold', ...
-             'HorizontalAlignment', 'center', ...
-             'VerticalAlignment', 'middle', 'Interpreter', 'none');
-        
-        % Stocker le handle dans le tableau de sorties.
-        axLegend{i} = ax;
+    currentCmap = cmap{i};
+    if ~isa(currentCmap, 'double')
+        currentCmap = double(currentCmap);
     end
+
+    nColor = size(currentCmap, 1);
+    gradientVal = linspace(0, 1, nColor);
+    indices = round(gradientVal * (nColor - 1)) + 1;
+    legendRGB = ind2rgb(indices, currentCmap);
+    legendRGB = reshape(legendRGB, [1, nColor, 3]);
+
+    imagesc([minVal, maxVal], [0, 1], legendRGB);
+    axis(ax, 'normal');
+
+    posInset = pos;
+    marginX = 0.1 * pos(3);
+    marginY = 0.2 * pos(4);
+    posInset(1) = pos(1) + marginX;
+    posInset(2) = pos(2) + marginY;
+    posInset(3) = pos(3) - 2*marginX;
+    posInset(4) = pos(4) - marginY;
+    set(ax, 'Position', posInset);
+
+    ax.XColor = layoutOptions.textColor;
+    ax.YColor = layoutOptions.textColor;
+
+    set(ax, 'XTick', []);
+    set(ax, 'YTick', []);
+
+    xLimits = get(ax, 'XLim');
+    yLimits = get(ax, 'YLim');
+
+    text(ax, xLimits(1), mean(yLimits), num2str(minVal, '%.1f'), ...
+        'Units', 'data', 'Color', layoutOptions.textColor, ...
+        'FontSize', floor(layoutOptions.fontSize), ...
+        'HorizontalAlignment', 'left', 'VerticalAlignment', 'middle');
+
+    text(ax, xLimits(2)+0.01, mean(yLimits), num2str(maxVal, '%.1f'), ...
+        'Units', 'data', 'Color', layoutOptions.textColor, ...
+        'FontSize', floor(layoutOptions.fontSize), ...
+        'HorizontalAlignment', 'right', 'VerticalAlignment', 'middle');
+
+    xCenter = mean(xLimits);
+    yCenter = mean(yLimits);
+    text(ax, xCenter, yCenter, varName{i}, ...
+        'Color', layoutOptions.textColor, 'FontWeight', 'bold', ...
+        'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
+        'Interpreter', 'none');
+
+    axLegend{i} = ax;
+end
 end
 
 
 function ticks = niceTicks(xmin, xmax, nticks)
-% Trouve des ticks "ronds" entre xmin et xmax (nticks environ)
 range = xmax - xmin;
 rawStep = range / (nticks - 1);
 
-% Trouve une "belle" taille de pas (10^n * 1, 2, ou 5)
 mag = 10^floor(log10(rawStep));
-niceSteps = [0,1, 2, 3, 4, 5, 6, 7 ,8, 9,10];
 niceSteps = [0,1, 2, 5, 10];
 step = mag * niceSteps(find(rawStep <= mag * niceSteps, 1));
 
-% Début et fin arrondis
 tmin = floor(xmin / step) * step;
 tmax = ceil(xmax / step) * step;
 
 ticks = tmin:step:tmax;
 end
-
-
-

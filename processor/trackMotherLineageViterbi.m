@@ -564,43 +564,41 @@ end
 motherBudMask = zeros(H,W,1,nF,'uint8');   % 0=fond, 255=mère, 2–254=bud (taille)
 budConfMap    = zeros(H,W,1,nF,'uint8');   % 0=fond, 1–255=confiance bud
 
+%% ---- Construction des deux sorties : motherMask et budMask ----
+% motherBudMask : masque binaire (0/1) de la mère uniquement
+% budConfMap    : masque binaire (0/1) du bud uniquement
+
+motherBudMask = zeros(H, W, 1, nF, 'single');   % 1 = mère, 0 = fond
+budConfMap    = zeros(H, W, 1, nF, 'single');   % 1 = bud,   0 = fond
+
 for f = 1:nF
     tReal = frameIdx(f);
-    frm   = maskSeq(:,:,1,tReal);  % labels image
+    frm   = maskSeq(:,:,1, tReal);  % labels d'instances
 
-    mIdx = mPath(f);
-    bIdx = bPath(f);
+    mIdx = mPath(f);   % index mère
+    bIdx = bPath(f);   % index bud
 
-    planeMask = zeros(H,W,'uint8');
-    planeConf = zeros(H,W,'uint8');
+    planeMother = zeros(H, W, 'single');
+    planeBud    = zeros(H, W, 'single');
 
-    % Mère = 255 (fixe)
+    % ----- MÈRE -----
     if mIdx > 0 && ~isempty(feats(f).label)
-        mLab = feats(f).label(mIdx);
-        planeMask(frm == mLab) = uint8(255);
+        mLab = feats(f).label(mIdx);   % label d'instance de la mère
+        maskM = (frm == mLab);
+        planeMother(maskM) = 1;        % mère = 1
     end
 
-    % Bud = 2–254 selon taille, et confiance dans planeConf
-    if bIdx > 0 && ~isempty(feats(f).label) && ~isempty(feats(f).area)
-        bLab  = feats(f).label(bIdx);
-        aBud  = feats(f).area(bIdx);
-        x = (aBud - minA) / (maxA - minA);
-        x = max(min(x,1),0);
-        budVal = 2 + round(x * (254-2));  % [2..254]
-        budVal = uint8(budVal);
-
+    % ----- BUD -----
+    if bIdx > 0 && ~isempty(feats(f).label)
+        bLab = feats(f).label(bIdx);   % label d'instance du bud
         maskB = (frm == bLab);
-        planeMask(maskB) = budVal;
-
-        % Confiance bud (0..1 → 0..255) sur les pixels du bud
-        c = budConf(f);
-        cVal = uint8(round(max(min(c,1),0) * 255));
-        planeConf(maskB) = cVal;
+        planeBud(maskB) = 1;           % bud = 1
     end
 
-    motherBudMask(:,:,1,f) = planeMask;
-    budConfMap   (:,:,1,f) = planeConf;
+    motherBudMask(:,:,1,f) = planeMother;
+    budConfMap   (:,:,1,f) = planeBud;
 end
+
 
 %% ---- Sauvegarde dans roiobj.image ----
 baseName   = paramout.outputChannelName;

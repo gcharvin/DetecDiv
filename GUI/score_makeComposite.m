@@ -1,361 +1,396 @@
-function [displayImage, vContours indexedOverlay alphaOverlay]=score_makeComposite(roitmp,fr,param)
+function [displayImage, vContours, indexedOverlay, alphaOverlay] = score_makeComposite(roitmp, fr, param)
+% SCORE_MAKECOMPOSITE
+% - Construit l'image de fond (displayImage)
+% - Construit éventuellement :
+%       * vContours (vectoriel)    pour 'Sequence' / 'Movie'
+%       * indexedOverlay/alphaOverlay (raster) pour 'Display'
+%
+% Entrées :
+%   roitmp : objet ROI avec champs .image (H x W x C x F) et .display
+%   fr    : index de frame (dans param.frames)
+%   param : struct avec champs (min nécessaire) :
+%       .channel        : noms ou ids de canaux à afficher (1..Ndisplay)
+%       .overlay        : bool, composite (=true) ou multi-canaux (=false)
+%       .levels         : cell, par canal :
+%                            - [min max] ou [-1 -1] (intensité)
+%                            - {idxString, ...}      (canal indexé)
+%       .RGB            : cell 1xNdisplay, chaque = [r g b]
+%       .weights        : (optionnel) poids pour composite overlay
+%       .paintChannel   : index du canal indexé courant (pour paint) OU nom
+%       .defaultClass   : bool pour le comportement indices = -1
+%       .mode           : "Display" | "Sequence" | "Movie"
+%
+% Sorties :
+%   displayImage :
+%       - overlay=false : [H W 3 Ndisplay] uint8
+%       - overlay=true  : [H W 3] uint8 (composite)
+%   vContours    : struct array de patchs (x, y, FaceColor, EdgeColor, ...)
+%   indexedOverlay : [H W 3] double (0..1) pour l'overlay raster
+%   alphaOverlay   : [H W] double (0..1) alpha pour l'overlay raster
 
-channel=param.channel;
-% imageSize=param.imageSize;
-overlay=param.overlay;
+% ------------------- unpack param (robuste) -------------------
+channel      = param.channel;
+overlay      = param.overlay;
+levels       = param.levels;
+rgb          = param.RGB;
+paintChannel = param.paintChannel;
+defaultClass = param.defaultClass;
 
-% frames=param.frames;
-% snapRate=param.snapRate;
-levels=param.levels;
-rgb=param.RGB;
-weights=param.weights;
-paintChannel=param.paintChannel;
-defaultClass=param.defaultClass;
+if isfield(param,'weights'), weights = param.weights; else, weights = []; end
+if ~isfield(param,'mode') || isempty(param.mode), param.mode = "display"; end
+mode = lower(string(param.mode));  % "display", "sequence", "movie"
 
-%figure, imshow(roitmp.image(:,:,13,1),[]);
-imtmp=preProcessROI(roitmp,param);
+% -------------------------------------------------------------------------
+% 0) REORDONNER LES CANAUX : non indexés d'abord, indexés ensuite
+% -------------------------------------------------------------------------
+nCh = numel(channel);
+isIndexedReq = false(1, nCh);
+for k = 1:nCh
+    isIndexedReq(k) = iscell(levels{k});
+end
+order = [find(~isIndexedReq), find(isIndexedReq)];
 
-%figure, imshow(imtmp(:,:,13,1),[]);
-
-% here make a distinction : if image has 3 D , then don't display it as
-% overlay , otherwise  do it !
-
-if overlay==false
-    displayImage= zeros([size(imtmp,1), size(imtmp,2) 3 numel(channel)], 'uint8');
-else
-    displayImage= zeros([size(imtmp,1), size(imtmp,2) 3 ], 'uint8');
-    comp=displayImage;
+if ~isequal(order, 1:nCh)
+    channel = channel(order);
+    levels  = levels(order);
+    rgb     = rgb(order);
+    if ~isempty(weights)
+        weights = weights(order);
+    end
 end
 
-indexedOverlay = zeros(size(imtmp,1), size(imtmp,2), 3);
-alphaOverlay = zeros(size(imtmp,1), size(imtmp,2));
-alphamask = zeros(size(alphaOverlay));
+% garder param cohérent (si réutilisé ailleurs)
+param.channel = channel;
+param.levels  = levels;
+param.RGB     = rgb;
+param.weights = weights;
 
+% -------------------------------------------------------------------------
+% 1) Prétraitement global (crop, resize, flip, frames)
+% -------------------------------------------------------------------------
+imtmp = preProcessROI(roitmp, param);   % [H W C F] sur frames=param.frames
+[H, W, ~, ~] = size(imtmp);
+
+% Allocation des sorties
+if ~overlay
+    displayImage = zeros(H, W, 3, numel(channel), 'uint8');  % une image RGB par canal
+    comp = [];
+else
+    displayImage = zeros(H, W, 3, 'uint8');                  % composite
+    comp = displayImage;
+end
+
+indexedOverlay = zeros(H, W, 3);   % double (0..1)
+alphaOverlay   = zeros(H, W);      % double (0..1)
 vContours = [];
 
-for ch=1:numel(channel)
-    %fr
+% -------------------------------------------------------------------------
+% 2) Boucle sur les canaux demandés
+% -------------------------------------------------------------------------
+for ch = 1:numel(channel)
+
+    % --- index(es) du canal réel dans roitmp.image ---
     if iscell(channel)
-        currentCha = roitmp.findChannelID(channel{ch});
+        currentCha = roitmp.findChannelID(channel{ch});  % peut être vecteur
     else
-        pix = find(roitmp.channelid == channel(ch));
-        currentCha = pix;
+        currentCha = find(roitmp.channelid == channel(ch)); %#ok<FNDSB>
     end
 
-      % Si aucun canal trouvé : on saute ce ch, displayImage reste à 0 (initialisé)
     if isempty(currentCha)
-        % warning('score_makeComposite: aucun canal trouvé pour ch=%d, on ignore ce canal.', ch);
         continue;
     end
 
-    %  currentCha
+    % HxW (ou HxWxK) à la frame fr
+    imraw = imtmp(:, :, currentCha, fr);
 
-    totim =roitmp.image(:,:, currentCha, :); % to get the whole range of map values
+    levCh     = levels{ch};
+    isIndexed = iscell(levCh);
 
-    imtmp2 = imtmp(:,:, currentCha, fr);
-    % class(imtmp2),max(imtmp2(:))
-    % figure, imshow(imtmp2,[]);
+    % ---------------------------------------------------------------------
+    % 2a) Flag log-display (ROBUSTE)
+    %  - accepte roitmp.display.log scalaire OU vecteur
+    %  - IMPORTANT : indexation sur l'espace "image channel index" (currentCha)
+    % ---------------------------------------------------------------------
+    logdisplay = false;
+    if isprop(roitmp,'display') && isstruct(roitmp.display) && isfield(roitmp.display,'log') ...
+            && ~isempty(currentCha)
 
-    if numel(currentCha)==1 && ~iscell(levels{ch})
-        % if ~isequal(levels{ch}, [-1 -1])
-        %     if levels{ch}(1)>=levels{ch}(2)
-        %         levels{ch}(1)=levels{ch}(2)-1;
-        %     end
-        %     imtmp2 = imadjust(imtmp2, [levels{ch}(1)/65535, levels{ch}(2)/65535]);
-        % end
+        lf = roitmp.display.log;
+        chaIdx = currentCha(1); % index image (dimension 3)
 
-
-
-        logdisplay=false;
-        if isprop(roitmp, 'display') && isfield(roitmp.display, 'log') && roitmp.display.log(currentCha) == true
-
-            logdisplay=true;
-            imtmp2 = double(imtmp2);  % passage explicite en double pour éviter erreurs
-            % Appliquer log dans l'espace double, éviter log(0)
-            imtmp2 = log1p(imtmp2);
-
-
-            % Appliquer levels dans l'espace log
-            % On suppose que les niveaux sont donnés dans l'espace linéaire et doivent être logés
-            lmin = log1p(double(levels{ch}(1))) / log1p(65535);
-            lmax = log1p(double(levels{ch}(2))) / log1p(65535);
-            if lmin >= lmax
-                lmin = lmax - 1e-3;
-            end
-
-            imtmp2 = imtmp2 / log1p(65535);
-            imtmp2 = imadjust(imtmp2, [lmin, lmax]);
-            imtmp2=uint16(65535*imtmp2);
-
-
-            % Valeurs de niveaux définies (en linéaire)
-            levelMin = levels{ch}(1);
-            levelMax =  levels{ch}(2);
-
-            % Convertir en bornes log-normalisées
-            lmin = log1p(levelMin) / log1p(65535);
-            lmax = log1p(levelMax) / log1p(65535);
-
-            % Définir les ticks en valeurs linéaires arrondies dans l'intervalle
-            tickValsLin = [1, 10, 100, 1000, 10000, 65535];
-            tickValsLin = tickValsLin(tickValsLin >= levelMin & tickValsLin <= levelMax);
-
-            % Convertir les ticks dans l'échelle log1p normalisée
-            tickValsNorm = log1p(tickValsLin) / log1p(65535);
-
-           %  fig = figure('Position', [100, 100, 300, 600], 'Color', 'w');
-           % 
-           %  % Axe fictif pour le colorbar
-           %  axes('Position', [0, 0, 1, 1], 'Visible', 'off');
-           % 
-           %  % Affichage de la colorbar seule
-           %  colormap(parula2green(256));
-           % 
-           % % colormap(parula(256));
-           %  cb = colorbar('eastoutside');
-           % 
-           %  % Forcer la position et la largeur (plus large que d'habitude)
-           %  cb.Position = [0.3, 0.1, 0.3, 0.8];  % [left, bottom, width, height]
-           % 
-           %  % Échelle + ticks
-           %  caxis([lmin lmax]);
-           %  cb.Ticks = tickValsNorm;
-           %  cb.TickLabels = string(tickValsLin);
-           % 
-           %  % Taille police augmentée
-           %  cb.FontSize = 40;
-           % 
-           %  % Label vertical
-           %  cb.Label.String = 'Fluorescence intensity (a.u.)';
-           %  cb.Label.FontSize = 40;
-           %  cb.Label.FontWeight = 'bold';
-           %  cb.Label.Rotation = 90;
-           % 
-           %  % Export optionnel
-           %  exportgraphics(fig, 'colorbar_log_parula_levels.pdf', 'BackgroundColor', 'none', 'Resolution', 300);
-
-        else
-            % Cas normal (linéaire)
-            if ~isequal(levels{ch}, [-1 -1])
-                if levels{ch}(1) >= levels{ch}(2)
-                    levels{ch}(1) = levels{ch}(2) - 1;
-                end
-
-                imtmp2 = imadjust(imtmp2 , [levels{ch}(1)/65535, levels{ch}(2)/65535]);
-
-            end
-        end
-
-
-        if overlay
-            imtmp2 = cat(3, imtmp2*rgb{ch}(1), imtmp2*rgb{ch}(2), imtmp2*rgb{ch}(3));
-            if isempty(weights)
-                comp = imlincomb(1, comp, 1, uint8(double(imtmp2)/256));
+        if ~isempty(lf)
+            if isscalar(lf)
+                logdisplay = logical(lf);
             else
-                comp = imlincomb(1, comp, weights(ch), uint8(double(imtmp2)/256));
-            end
-        else
-            if logdisplay
-                % here
-
-                imnorm = double(imtmp2) / 65535;
-                imnorm = min(max(imnorm, 0), 1);
-                imind = uint8(imnorm * 255);
-                cmap = parula2green(256);
-                rgbImage = ind2rgb(imind, cmap);
-                displayImage(:,:,:,ch) = uint8(rgbImage * 255);
-
-            else
-                imtmp2 = cat(3, imtmp2*rgb{ch}(1), imtmp2*rgb{ch}(2), imtmp2*rgb{ch}(3));
-                displayImage(:,:,:,ch) = uint8(double(imtmp2)/256);
-            end
-        end
-
-
-
-
-    elseif numel(currentCha)==1 && iscell(levels{ch})
-        imtmp2 = imadjust(imtmp2, [0 1]);
-
-        %   max(imtmp2(:))
-        indices = str2num(levels{ch}{1});
-        % Traitement des canaux indexés
-        listofindexedcha = find(roitmp.display.indexed);
-        tmpcha = roitmp.channelid(currentCha);
-        currentIndx = find(listofindexedcha == tmpcha);
-
-        if  (paintChannel ~= currentIndx) && paintChannel~=0 % in paint mode, discard other channels
-            continue
-        end
-
-
-        if isempty(indices) || (numel(indices)==1 && indices==-1)
-            if defaultClass && (paintChannel ~= currentIndx)
-                indices = 2:max(imtmp2(:));
-            else
-                indices = 1:max(imtmp2(:));
-            end
-        end
-
-        %tmp=levels{ch}{2}
-
-         if paintChannel == currentIndx
-        %     uni = unique(totim(:));
-        %     uni(uni==0) = [];
-        %     nuni = max(numel(uni),numel(indices));
-        %     levmap = eval([levels{ch}{2} '(' num2str(nuni) ')']);
-        levmap = zeros(numel(indices),3);
-for ii = 1:numel(indices)
-    levmap(ii,:) = label2color(indices(ii));   % <- mapping stable
-end
-         else
-             levmap = repmat(roitmp.display.rgb(tmpcha,:), [numel(indices), 1]);
-         end
-
-
-        % --- Couleurs stables (0..1) pour chaque ID ---
-
-
-        wid = levels{ch}{5};
-        weiVal = double(levels{ch}{3});
-        fillAlpha = min(1, weiVal);
-
-        switch param.mode
-            case {"Sequence","Movie"}
-                % build vectors
-                for iii = 1:numel(indices)
-                    bw = imtmp2 == indices(iii);
-                    B = bwboundaries(bw);
-                    for kB = 1:length(B)
-                        b = B{kB};
-                        patchStruct = struct();
-                        patchStruct.x = b(:,2);
-                        patchStruct.y = b(:,1);
-                        patchStruct.FaceColor = levmap(iii,:);
-                        patchStruct.FaceAlpha = fillAlpha;
-                        if roitmp.display.contour(tmpcha) == 1
-                            patchStruct.EdgeColor = levmap(iii,:);
-                            patchStruct.LineWidth = wid;
-                        else
-                            patchStruct.EdgeColor = 'none';
-                            patchStruct.LineWidth = [];
-                        end
-                        vContours = [vContours, patchStruct];
-                    end
+                if chaIdx >= 1 && chaIdx <= numel(lf)
+                    logdisplay = logical(lf(chaIdx));
+                else
+                    logdisplay = false;
                 end
+            end
+        end
+    end
 
-            case "Display"
+    % ------------------------------------------------------------------
+    % 2b) IMAGE DE FOND pour ce canal
+    % ------------------------------------------------------------------
+    bg = double(imraw);
 
-                %  annotationColorImage = zeros(size(indexedOverlay));
-                % alphamask = zeros(size(alphaOverlay));
+    if logdisplay
+        bg = log1p(bg);
+        bg = bg / log1p(65535);
 
-                for iVal = 1:numel(indices)
-                    mask = imtmp2 == indices(iVal);
-                    %   figure, imshow(mask,[])
-                    alphamask = alphamask | mask;
-
-
-                    for c = 1:3
-                        channelOverlay = indexedOverlay(:, :, c);
-                        channelOverlay(mask) =levmap(iVal, c);
-                        indexedOverlay(:, :, c) = channelOverlay;
-                    end
-
-                    if numel(find(mask))
-                        alphaOverlay(mask) = fillAlpha;
-                    end
-
-                end
-
-                
-    % m = ismember(imtmp2, indices);
-    % Lsub = imtmp2 .* uint16(m);
-    % rgbL = mask2rgb_stable(Lsub);
-    % indexedOverlay = rgbL;
-    % alphaOverlay   = double(m) * fillAlpha;
-
+        if ~iscell(levCh) && ~isequal(levCh, [-1 -1])
+            lmin = log1p(double(levCh(1))) / log1p(65535);
+            lmax = log1p(double(levCh(2))) / log1p(65535);
+            if lmin >= lmax, lmin = lmax - 1e-3; end
+            bg = imadjust(bg, [lmin lmax]);
         end
     else
-
-        % if ~isequal(levels{ch}, [-1 -1])
-        %    imtmp2 = imadjust(imtmp2, [levels{ch}(1)/65535, levels{ch}(2)/65535]);
-        % end
-        %
-
-        % if isprop(roitmp, 'display') && isfield(roitmp.display, 'log') && roitmp.display.log(currentCha) == true
-        % 
-        %     imtmp2 = double(imtmp2);  % passage explicite en double pour éviter erreurs
-        %     % Appliquer log dans l'espace double, éviter log(0)
-        %     imtmp2 = log1p(imtmp2);
-        % 
-        %     % Appliquer levels dans l'espace log
-        %     % On suppose que les niveaux sont donnés dans l'espace linéaire et doivent être logés
-        %     lmin = log1p(double(levels{ch}(1))) / log1p(65535);
-        %     lmax = log1p(double(levels{ch}(2))) / log1p(65535);
-        %     if lmin >= lmax
-        %         lmin = lmax - 1e-3;
-        %     end
-        % 
-        %     imtmp2 = imtmp2 / log1p(65535);
-        %     imtmp2 = imadjust(imtmp2, [lmin, lmax]);
-        %     imtmp2=uint16(65535*imtmp2);
-        % 
-        % else
-            % Cas normal (linéaire)
-
-           aa = levels{ch};
-
-        % Si levels{ch} est un cell (cas indexé de type {'-1','lines',[1],[0],[0]}),
-        % on ne tente PAS de faire de comparaison / imadjust dessus.
-        if iscell(aa)
-            % Option 1 : ne rien faire, on garde imtmp2 telle quelle
-            % (éventuellement mettre un warning si tu veux tracer le cas)
-            % warning('score_makeComposite: levels{ch} est un cell (canal indexé) dans la branche multi-chan, aucun ajustement de niveaux appliqué (ch=%d).', ch);
-
+        if ~iscell(levCh) && ~isequal(levCh, [-1 -1])
+            lo = levCh(1); hi = levCh(2);
+            if lo >= hi, lo = hi - 1; end
+            bg16 = uint16(bg);
+            bg16 = imadjust(bg16, [lo/65535 hi/65535]);
+            bg   = double(bg16) / 65535;
         else
-            % Cas normal (numérique)
-            if ~isequal(aa, [-1 -1])
-                if aa(1) >= aa(2)
-                    aa(1) = aa(2) - 1;
-                end
-                imtmp2 = imadjust(imtmp2, [aa(1)/65535, aa(2)/65535]);
+            maxv = max(bg(:));
+            if maxv > 0
+                bg = bg ./ maxv;
             end
-        end
-
-        if overlay
-            if isempty(weights)
-                comp = imlincomb(1, comp, 1, uint8(double(imtmp2)/256));
-            else
-                comp = imlincomb(1, comp, weights(ch), uint8(double(imtmp2)/256));
-            end
-        else
-            displayImage(:,:,:,ch) = uint8(double(imtmp2)/256);
-        end
-      %  end
-
-
-        if overlay
-            if isempty(weights)
-                comp = imlincomb(1, comp, 1, uint8(double(imtmp2)/256));
-            else
-                comp = imlincomb(1, comp, weights(ch), uint8(double(imtmp2)/256));
-            end
-        else
-
-            displayImage(:,:,:,ch) = uint8(double(imtmp2)/256);
         end
     end
 
+    bg = min(max(bg, 0), 1);
 
+    % ---- conversion en RGB ----
+    if ndims(bg) == 2
+        gray = bg;
+
+        if logdisplay
+            n = 256;
+            cmap = parula2green(n);
+            idx = 1 + floor(gray*(n-1));
+            idx = min(max(idx,1), n);
+            bgRGB = ind2rgb(uint16(idx), cmap);
+        else
+            thisRGB = rgb{ch};
+            bgRGB = cat(3, gray*thisRGB(1), gray*thisRGB(2), gray*thisRGB(3));
+        end
+
+    elseif ndims(bg) == 3
+        if size(bg,3) == 3
+            bgRGB = bg;
+        else
+            gray = mean(bg,3);
+            if logdisplay
+                n = 256;
+                cmap = parula2green(n);
+                idx = 1 + floor(gray*(n-1));
+                idx = min(max(idx,1), n);
+                bgRGB = ind2rgb(uint16(idx), cmap);
+            else
+                thisRGB = rgb{ch};
+                bgRGB = cat(3, gray*thisRGB(1), gray*thisRGB(2), gray*thisRGB(3));
+            end
+        end
+    else
+        error('score_makeComposite: imraw dimension inattendue (%dD).', ndims(bg));
+    end
+
+    bgRGBu8 = uint8(bgRGB * 255);
+
+    % ---- stockage ----
     if overlay
-        displayImage =comp;
+        if isempty(weights)
+            comp = imlincomb(1, comp, 1, bgRGBu8);
+        else
+            comp = imlincomb(1, comp, weights(ch), bgRGBu8);
+        end
+    else
+        displayImage(:, :, :, ch) = bgRGBu8;
     end
 
+    % ------------------------------------------------------------------
+    % 2c) Overlay si canal indexé
+    % ------------------------------------------------------------------
+    if ~isIndexed
+        continue;
+    end
+
+    % imraw contient la carte de labels/classes
+    L = imadjust(imraw, [0 1]);
+    L = double(L);
+
+    indices = str2num(levCh{1}); %#ok<ST2NM>
+
+    % --- mapping sûr vers l'espace "display.*" ---
+    % tmpcha : ID "canal" (peut être 10, 12, etc.)
+    tmpcha = roitmp.channelid(currentCha(1));
+
+    % dispIdx : index valide pour roitmp.display.* (souvent 1..Ndisplay)
+    dispIdx = getDisplayIndex(roitmp, tmpcha, channel, ch);
+
+    % Nom du canal (pour paintChannel par nom)
+    thisName = "";
+    if isprop(roitmp,'display') && isstruct(roitmp.display) && isfield(roitmp.display,'channel')
+        if dispIdx >= 1 && dispIdx <= numel(roitmp.display.channel)
+            thisName = string(roitmp.display.channel{dispIdx});
+        end
+    end
+
+    % liste des canaux indexés (dans l'espace display)
+    currentIndx = [];
+    if isprop(roitmp,'display') && isstruct(roitmp.display) && isfield(roitmp.display,'indexed') ...
+            && ~isempty(roitmp.display.indexed)
+        listofindexedcha = find(roitmp.display.indexed); % indices display
+        currentIndx = find(listofindexedcha == dispIdx, 1, 'first');
+    else
+        listofindexedcha = [];
+    end
+
+    % Filtre paintChannel
+    if ischar(paintChannel) || isstring(paintChannel)
+        if strlength(string(paintChannel)) > 0 && ~strcmpi(thisName, string(paintChannel))
+            continue;
+        end
+    else
+        if paintChannel ~= 0
+            if isempty(currentIndx) || paintChannel ~= currentIndx
+                continue;
+            end
+        end
+    end
+
+    % indices par défaut
+    if isempty(indices) || (numel(indices)==1 && indices==-1)
+        if defaultClass && ~isempty(currentIndx) && ~(paintChannel == currentIndx)
+            indices = 2:max(L(:));
+        else
+            indices = 1:max(L(:));
+        end
+    end
+
+    % ce canal est-il le canal "paint" ?
+    if ischar(paintChannel) || isstring(paintChannel)
+        isPaintThis = (strlength(string(paintChannel)) > 0) && strcmpi(thisName, string(paintChannel));
+    else
+        isPaintThis = (paintChannel ~= 0) && ~isempty(currentIndx) && (paintChannel == currentIndx);
+    end
+
+    % couleurs
+    if isPaintThis
+        levmap = zeros(numel(indices), 3);
+        for ii = 1:numel(indices)
+            levmap(ii,:) = label2color(indices(ii));
+        end
+    else
+        % fallback si pas de rgb ou index hors limites
+        if isprop(roitmp,'display') && isstruct(roitmp.display) && isfield(roitmp.display,'rgb') ...
+                && dispIdx >= 1 && dispIdx <= size(roitmp.display.rgb,1)
+            levmap = repmat(roitmp.display.rgb(dispIdx,:), [numel(indices), 1]);
+        else
+            levmap = repmat([1 1 1], [numel(indices), 1]);
+        end
+    end
+
+    % paramètres overlay
+    wid       = levCh{5};
+    weiVal    = double(levCh{3});
+    fillAlpha = min(1, weiVal);
+
+    switch mode
+        case {"sequence","movie"}
+            % --- version vectorielle : vContours ---
+            for iii = 1:numel(indices)
+                bw = (L == indices(iii));
+                B  = bwboundaries(bw);
+                for kB = 1:numel(B)
+                    b = B{kB};
+                    patchStruct = struct();
+                    patchStruct.x = b(:,2);
+                    patchStruct.y = b(:,1);
+                    patchStruct.FaceColor = levmap(iii,:);
+                    patchStruct.FaceAlpha = fillAlpha;
+
+                    doContour = false;
+                    if isprop(roitmp,'display') && isstruct(roitmp.display) && isfield(roitmp.display,'contour') ...
+                            && dispIdx >= 1 && dispIdx <= numel(roitmp.display.contour)
+                        doContour = (roitmp.display.contour(dispIdx) == 1);
+                    end
+
+                    if doContour
+                        patchStruct.EdgeColor = levmap(iii,:);
+                        patchStruct.LineWidth = wid;
+                    else
+                        patchStruct.EdgeColor = 'none';
+                        patchStruct.LineWidth = [];
+                    end
+
+                    vContours = [vContours, patchStruct]; %#ok<AGROW>
+                end
+            end
+
+        case "display"
+            % --- version raster : indexedOverlay + alphaOverlay ---
+            for iVal = 1:numel(indices)
+                mask = (L == indices(iVal));
+                if ~any(mask(:)), continue; end
+
+                for c = 1:3
+                    tmp = indexedOverlay(:,:,c);
+                    tmp(mask) = levmap(iVal,c);
+                    indexedOverlay(:,:,c) = tmp;
+                end
+                alphaOverlay(mask) = fillAlpha;
+            end
+    end
+
+end % for ch
+
+% Finalisation du composite si nécessaire
+if overlay
+    displayImage = comp;
+end
+
+end % score_makeComposite
+
+% -------------------------------------------------------------------------
+% Helper: map tmpcha (ID canal) -> dispIdx (index sûr pour roitmp.display.*)
+% -------------------------------------------------------------------------
+function dispIdx = getDisplayIndex(roitmp, tmpcha, channel, ch)
+
+dispIdx = tmpcha; % cas simple si aligné
+
+nDisp = 0;
+if isprop(roitmp,'display') && isstruct(roitmp.display) && isfield(roitmp.display,'channel')
+    nDisp = numel(roitmp.display.channel);
+end
+if nDisp <= 0
+    return;
+end
+
+% OK si déjà dans les bornes
+if dispIdx >= 1 && dispIdx <= nDisp
+    return;
+end
+
+% Fallback par nom si channel est une liste de noms
+if iscell(channel)
+    reqName = string(channel{ch});
+    hit = find(strcmpi(string(roitmp.display.channel), reqName), 1, 'first');
+    if ~isempty(hit)
+        dispIdx = hit;
+        return;
+    end
+end
+
+% Dernier fallback: borne (évite crash)
+dispIdx = min(max(1, dispIdx), nDisp);
+
 end
 
 
-
-end
 
 
 
@@ -415,21 +450,21 @@ function cmap = parula2green(n)
 % Génère un colormap progressif de bleu -> rouge -> vert
 % Bleu (faible), rouge (milieu), vert (fort)
 
-    if nargin < 1
-        n = 256;
-    end
+if nargin < 1
+    n = 256;
+end
 
-    % Points de contrôle : bleu, rouge, vert
-    colors = [ ...
-        0     0     1   ;  % bleu
-        1     0     0   ;  % rouge
-        0     1     0 ];   % vert
+% Points de contrôle : bleu, rouge, vert
+colors = [ ...
+    0     0     1   ;  % bleu
+    1     0     0   ;  % rouge
+    0     1     0 ];   % vert
 
-    % Interpolation sur n points
-    x = linspace(0, 1, size(colors, 1));      % 3 points
-    xi = linspace(0, 1, n);                   % n points
+% Interpolation sur n points
+x = linspace(0, 1, size(colors, 1));      % 3 points
+xi = linspace(0, 1, n);                   % n points
 
-    cmap = interp1(x, colors, xi, 'linear');
+cmap = interp1(x, colors, xi, 'linear');
 end
 
 function cmap = getPalette(n)

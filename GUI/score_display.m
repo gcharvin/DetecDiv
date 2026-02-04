@@ -33,6 +33,10 @@ end
  %cmap=app.MoviecolormapEditField.Value;
  opts=score_updateLayout(opts,selectedROI);
 
+ %opts.paintChannel = app.DisplaySettings.Movie.paintChannel;  % peut être 0, un rang, ou un nom
+
+ 
+
  if numel(opts)==0 % layout returned an error, should quit
             disp('Display is aborted due to layout error!')
             return;

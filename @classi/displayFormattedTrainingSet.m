@@ -63,6 +63,35 @@ pth  = classif.getPath;
 
 disp(['This classification is of this type: ' cate]);
 
+% ---------------------------------------------------------------------
+% Recherche robuste d'un framebank Pixel / CPSAM (comme trainCPSAMFun)
+% ---------------------------------------------------------------------
+pattern = sprintf('%s_framebank*.h5', classif.strid);
+d = dir(fullfile(pth, pattern));
+
+h5FramebankFile = '';
+hasPixelFramebank = false;
+
+if ~isempty(d)
+    % Trier par date de modification (plus récent d'abord)
+    [~, idxSort] = sort([d.datenum], 'descend');
+    d = d(idxSort);
+
+    for k = 1:numel(d)
+        cand = fullfile(pth, d(k).name);
+        try
+            h5info(cand);      % test lisibilité
+            h5FramebankFile = cand;
+            hasPixelFramebank = true;
+            fprintf('[INFO] Using framebank: %s\n', h5FramebankFile);
+            break;
+        catch ME
+            warning('[WARN] Unreadable framebank %s (%s). Skipping...', ...
+                cand, ME.message);
+        end
+    end
+end
+
 % Backend (TIFF / HDF5) utile pour Image/LSTM & Augmentation
 backend = "tiff";
 if isprop(classif,'trainingParam') && isfield(classif.trainingParam,'Format_StorageBackend')
@@ -141,60 +170,63 @@ switch cate
                     disp(['Total number of TIFF images in trainingset: ' num2str(totalImages)]);
 
                 else
-                    % -----------------------------------------------------
-                    % ======= MODE HDF5 (RAW) ========
-                    % -----------------------------------------------------
-                    h5File = fullfile(pth,[classif.strid,'_framebank.h5']);
+                  % -----------------------------------------------------
+                % ======= MODE HDF5 (RAW) ========
+                % -----------------------------------------------------
+                % On réutilise le framebank détecté au début
+                h5File = h5FramebankFile;
 
-                    if ~isfile(h5File)
-                        disp('No HDF5 framebank found.');
-                        return;
-                    end
+                if isempty(h5File) || ~isfile(h5File)
+                    disp('No HDF5 framebank found for Image/LSTM trainingset.');
+                    return;
+                end
 
-                    classNames  = h5read(h5File, '/classNames');    % 1×C strings
-                    labels      = double(h5read(h5File, '/labels')); % 1×N int
-                    totalFrames = numel(labels);
+                fprintf('[INFO] Using framebank: %s\n', h5File);
 
-                    output = {};
-                    img    = {};
-                    cc     = 1;
+                classNames  = h5read(h5File, '/classNames');    % 1×C strings
+                labels      = double(h5read(h5File, '/labels')); % 1×N int
+                totalFrames = numel(labels);
 
-                    % Compter nb frames par classe
-                    for ci = 1:numel(classNames)
-                        cname = classNames(ci);
-                        idx   = find(labels == ci);
+                output = {};
+                img    = {};
+                cc     = 1;
 
-                        output{ci,1} = cname;
-                        output{ci,2} = numel(idx);
+                % Compter nb frames par classe
+                for ci = 1:numel(classNames)
+                    cname = classNames(ci);
+                    idx   = find(labels == ci);
 
-                        disp(['Class ' char(cname) ' has ' num2str(numel(idx)) ' frames']);
+                    output{ci,1} = cname;
+                    output{ci,2} = numel(idx);
 
-                        if display && ~isempty(idx)
-                            pick = idx(randperm(numel(idx), min(n, numel(idx))));
-                            for f = pick
-                                % On suppose /frames [H W C N]
-                                tmp = h5read(h5File, '/frames', [1 1 1 f], [Inf Inf Inf 1]);
-                                tmp = squeeze(tmp);
-                                if ndims(tmp) == 2
-                                    tmp = repmat(tmp,[1 1 3]);
-                                elseif size(tmp,3) == 1
-                                    tmp = repmat(tmp,[1 1 3]);
-                                end
-                                tmp = uint8(tmp);  % sécurité
-                                tmp = insertText(tmp,[1 1],cname,'TextColor',[255 255 255], ...
-                                    'BoxOpacity',0,'FontSize',24);
-                                img{cc} = tmp; 
-                                cc = cc + 1;
+                    disp(['Class ' char(cname) ' has ' num2str(numel(idx)) ' frames']);
+
+                    if display && ~isempty(idx)
+                        pick = idx(randperm(numel(idx), min(n, numel(idx))));
+                        for f = pick
+                            % On suppose /frames [H W C N]
+                            tmp = h5read(h5File, '/frames', [1 1 1 f], [Inf Inf Inf 1]);
+                            tmp = squeeze(tmp);
+                            if ndims(tmp) == 2
+                                tmp = repmat(tmp,[1 1 3]);
+                            elseif size(tmp,3) == 1
+                                tmp = repmat(tmp,[1 1 3]);
                             end
+                            tmp = uint8(tmp);  % sécurité
+                            tmp = insertText(tmp,[1 1],cname,'TextColor',[255 255 255], ...
+                                'BoxOpacity',0,'FontSize',24);
+                            img{cc} = tmp; 
+                            cc = cc + 1;
                         end
                     end
+                end
 
-                    % Affichage montage
-                    if display && ~isempty(img)
-                        figure;
-                        himg = montage(img);
-                        h = gcf; set(h,'Position',[100 100 800 600]);
-                    end
+                % Affichage montage
+                if display && ~isempty(img)
+                    figure;
+                    himg = montage(img);
+                    h = gcf; set(h,'Position',[100 100 800 600]);
+                end
 
                     disp(['Total number of frames in HDF5 framebank: ' num2str(totalFrames)]);
                 end
@@ -226,10 +258,10 @@ switch cate
                 end
 
                 % Figure 1 : paires RAW / AUG
-                localShowPairsAugmentation(classif, backend, tp, n, inputSizeHW);
+               localShowPairsAugmentation(classif, backend, tp, n, inputSizeHW, h5FramebankFile);
 
                 % Figure 2 : tableau types x colonnes (RAW + plusieurs AUG)
-                localShowTypesGridAugmentation(classif, backend, tp, nAugPerType, inputSizeHW);
+                localShowTypesGridAugmentation(classif, backend, tp, nAugPerType, inputSizeHW, h5FramebankFile);
 
                 % Pas de PNG, pas de montage en sortie
                 himg   = [];
@@ -243,9 +275,143 @@ switch cate
     % =====================================================================
     %                           PIXEL
     % =====================================================================
-    case 'Pixel'
-        % --- Code original conservé (RAW uniquement) ---
-        classes = classif.classes;
+case 'Pixel'
+    classes = classif.classes; %#ok<NASGU>
+
+    if hasPixelFramebank
+        % -------------------------------------------------------------
+        % ======= MODE HDF5 (framebank Pixel / CPSAM) ========
+        % -------------------------------------------------------------
+        h5File = h5FramebankFile;  % <strid>_framebank.h5
+
+        if ~isfile(h5File)
+            disp('No HDF5 framebank found for Pixel trainingset; quitting...');
+            return;
+        end
+
+        % --- Images : on suppose format CPSAM /images [H W C N] ---
+        try
+            infoImg = h5info(h5File, '/images');
+        catch
+            warning('Dataset /images not found in %s', h5File);
+            return;
+        end
+
+        sz = infoImg.Dataspace.Size;  % [H W C N] ou [H W N]
+        if numel(sz) == 3
+            H    = sz(1);
+            W    = sz(2);
+            C    = 1;
+            Nobs = sz(3);
+        else
+            H    = sz(1);
+            W    = sz(2);
+            C    = sz(3);
+            Nobs = sz(4);
+        end
+
+        if Nobs == 0
+            disp('No frames in HDF5 Pixel trainingset; quitting...');
+            return;
+        end
+
+        % --- Masques : format CPSAM /masks [H W N] (optionnel mais attendu) ---
+        hasMasks = false;
+        try
+            infoMask = h5info(h5File, '/masks');
+            szM      = infoMask.Dataspace.Size;   % [H W N] attendu
+            if numel(szM) == 3 && szM(1) == H && szM(2) == W
+                hasMasks = true;
+            else
+                warning('Unexpected /masks size in %s, no overlay will be shown.', h5File);
+            end
+        catch
+            % pas de /masks -> pas d'overlay
+        end
+
+        output{1,1} = 'images';
+        output{1,2} = Nobs;
+
+        disp(['Total number of frames in HDF5 Pixel trainingset: ' num2str(Nobs)]);
+
+        if display
+            img  = {};
+            maxe = min(n, Nobs);
+            idx  = randperm(Nobs, maxe);
+            cc   = 1;
+
+            for j = idx
+                % ---- lecture image j ----
+                if numel(sz) == 3
+                    % [H W N]
+                    startImg = [1 1 j];
+                    countImg = [H W 1];
+                else
+                    % [H W C N]
+                    startImg = [1 1 1 j];
+                    countImg = [H W C 1];
+                end
+                I = h5read(h5File, '/images', startImg, countImg);
+                I = squeeze(I);
+
+                % Passage en RGB
+                if ndims(I) == 2
+                    Irgb = repmat(I, [1 1 3]);
+                elseif size(I,3) == 1
+                    Irgb = repmat(I, [1 1 3]);
+                else
+                    Irgb = I;
+                end
+                Irgb = im2uint8(mat2gray(Irgb));  % safe
+
+                % ---- overlay des masques si dispo ----
+                if hasMasks
+                    try
+                        % /masks [H W N]
+                        startM = [1 1 j];
+                        countM = [H W 1];
+                        L = h5read(h5File, '/masks', startM, countM);
+                        L = squeeze(L);
+
+                        if any(L(:) ~= 0)
+                            if max(L(:)) > 1
+                                % Instance map -> pseudo-couleurs
+                                Lrgb = label2rgb(uint16(L), 'jet', 'k', 'shuffle');
+                                Lrgb = im2uint8(mat2gray(Lrgb));
+                                Irgb = imlincomb(0.75, Irgb, 0.25, Lrgb);
+                            else
+                                % masque binaire
+                                mask = L ~= 0;
+                                try
+                                    Irgb = insertObjectMask(Irgb, mask, ...
+                                        'Opacity',0.4, 'LineOpacity',1, 'LineWidth',2);
+                                catch
+                                    mr = Irgb(:,:,1);
+                                    mr(mask) = 255;
+                                    Irgb(:,:,1) = mr;
+                                end
+                            end
+                        end
+                    catch ME
+                        warning('Error reading /masks (frame %d): %s', j, ME.message);
+                    end
+                end
+
+                img{cc} = Irgb; %#ok<AGROW>
+                cc = cc + 1;
+            end
+
+            try
+                figure;
+                himg = montage(img);
+            catch
+            end
+        end
+
+    else
+        % -------------------------------------------------------------
+        % ======= MODE TIFF (code historique) ========
+        % -------------------------------------------------------------
         nfolder = fullfile(pth, 'trainingdataset/images');
         l       = dir(nfolder);
 
@@ -315,6 +481,9 @@ switch cate
             catch
             end
         end
+    end
+
+
 
     % =====================================================================
     %                           DELTA
@@ -486,7 +655,9 @@ end
 % ---------------------------------------------------------------------
 % Figure 1 : pairs RAW / AUG
 % ---------------------------------------------------------------------
-function localShowPairsAugmentation(classif, backend, tp, Npairs, inputSizeHW)
+%function localShowPairsAugmentation(classif, backend, tp, Npairs, inputSizeHW)
+function localShowPairsAugmentation(classif, backend, tp, Npairs, inputSizeHW, h5FramebankFile)
+
 
     backend = lower(string(backend));
     imgsRaw = {};
@@ -567,11 +738,15 @@ function localShowPairsAugmentation(classif, backend, tp, Npairs, inputSizeHW)
             end
 
         case "hdf5"
-            h5File = fullfile(classif.path,[classif.strid '_framebank.h5']);
-            if ~isfile(h5File)
-                warning('HDF5 framebank not found: %s', h5File);
+               % Utilise le framebank déjà détecté plus haut
+            h5File = h5FramebankFile;
+            if isempty(h5File) || ~isfile(h5File)
+                warning('HDF5 framebank not found for augmentation preview (pairs).');
                 return;
             end
+
+            fprintf('[INFO] Using framebank (Aug pairs): %s\n', h5File);
+
 
             infoFrames = h5info(h5File,'/frames');
             sz = infoFrames.Dataspace.Size; % [H W C N]
@@ -702,7 +877,8 @@ end
 % ---------------------------------------------------------------------
 % Figure 2 : types d'augmentation x (RAW + N versions)
 % ---------------------------------------------------------------------
-function localShowTypesGridAugmentation(classif, backend, tp, nAugPerType, inputSizeHW)
+function localShowTypesGridAugmentation(classif, backend, tp, nAugPerType, inputSizeHW, h5FramebankFile)
+
 
     backend = lower(string(backend));
     augCfg  = localGetAugConfigFromTP(tp);
@@ -727,11 +903,15 @@ function localShowTypesGridAugmentation(classif, backend, tp, nAugPerType, input
             Iraw = imread(imds.Files{idxBase});
 
         case "hdf5"
-            h5File = fullfile(classif.path,[classif.strid '_framebank.h5']);
-            if ~isfile(h5File)
-                warning('HDF5 framebank not found: %s', h5File);
+               % Utilise le framebank déjà détecté plus haut
+            h5File = h5FramebankFile;
+            if isempty(h5File) || ~isfile(h5File)
+                warning('HDF5 framebank not found for augmentation grid.');
                 return;
             end
+
+            fprintf('[INFO] Using framebank (Aug grid): %s\n', h5File);
+
             infoFrames = h5info(h5File,'/frames');
             sz = infoFrames.Dataspace.Size; % [H W C N]
             H = sz(1); W = sz(2);

@@ -27,6 +27,8 @@ graphicsHandles.imgHandles     = containers.Map('KeyType','double','ValueType','
 graphicsHandles.lineHandles    = containers.Map('KeyType','double','ValueType','any');
 graphicsHandles.overlayHandles = containers.Map('KeyType','double','ValueType','any');
 graphicsHandles.vectorHandles = containers.Map('KeyType','double','ValueType','any');
+graphicsHandles.textHandles = containers.Map('KeyType','double','ValueType','any');
+
 
 graphicsHandles.lineageHandles = containers.Map('KeyType','double','ValueType','any');
 % find number of image rows and columns
@@ -171,6 +173,7 @@ newPath = fullfile(folder, [name '.pdf']);
         fprintf('Sequence saved as PDF: %s\n', newPath);
 
     case 'display'
+    
         % --- Mode DISPLAY ---
         % Ici, on affiche une seule ROI avec layout display.
 
@@ -183,8 +186,10 @@ newPath = fullfile(folder, [name '.pdf']);
         % figure, imshow(alphaOverlay,[]);
 
         % Dataseries en dessous
+        
         if layoutOptions.Ndataseries > 0 && ~isempty(roiData.data)
   
+           
             for ds = 1:layoutOptions.Ndataseries
                 local_row = layoutOptions.Nbrick + ds;
                 local_col = 1;
@@ -195,6 +200,8 @@ newPath = fullfile(folder, [name '.pdf']);
                 else
                     wid= layoutOptions.Nchannel*layoutOptions.Nbrick;
                 end
+
+             
 
                 ax = nexttile(masterTL, tileIndex, [1, wid]);
                 if layoutOptions.Ndataseries>1 && ds~=layoutOptions.Ndataseries
@@ -209,7 +216,7 @@ newPath = fullfile(folder, [name '.pdf']);
 
                 xtickformat(ax, '%.1f');
 
-                
+           
                 hLine= score_displayDataPanel(ax, ds, layoutOptions, roiData);
                 %  hLine = plot(roiData.data(ds, :));
                 %   title(sprintf('Data:%d', ds));
@@ -333,6 +340,21 @@ newPath = fullfile(folder, [name '.pdf']);
 
                     imshow(displayImage, []);
 
+titleStr = localBuildMovieRoiTitle_(layoutOptions, roiData);
+if strlength(titleStr) > 0
+    text(ax, 0.99, 0.99, titleStr, ...
+        'Units','normalized', ...
+        'HorizontalAlignment','right', ...
+        'VerticalAlignment','top', ...
+        'Color', textColor, ...
+        'FontSize', floor(sqrt(scalingFactor)*fontsize), ...
+        'Interpreter','none', ...
+        'Clipping','on');
+end
+
+
+
+
                     [htext, hvector]=score_displayVectorGraphics(ax, 1, 1, vContours , layoutOptions);
 
                     graphicsHandles.vectorHandles(tileIndex)=[htext hvector];
@@ -354,6 +376,21 @@ newPath = fullfile(folder, [name '.pdf']);
                         [displayImage, vContours]=score_makeComposite(roiData,1,layoutOptions);
                         %  img = roiData.image(:,:,ch,1);
                         imshow(displayImage(:,:,:,ch), []);
+
+if ch == 1
+    titleStr = localBuildMovieRoiTitle_(layoutOptions, roiData);
+    if strlength(titleStr) > 0
+        text(ax, 0.99, 0.99, titleStr, ...
+            'Units','normalized', ...
+            'HorizontalAlignment','right', ...
+            'VerticalAlignment','top', ...
+            'Color', textColor, ...
+            'FontSize', floor(sqrt(scalingFactor)*fontsize), ...
+            'Interpreter','none', ...
+            'Clipping','on');
+    end
+end
+
                         %  title(sprintf('ROI(%d) Ch:%d', roiIndex, ch));
 
                         [htext, hvector]=score_displayVectorGraphics(ax, 1, ch, vContours , layoutOptions);
@@ -404,29 +441,107 @@ newPath = fullfile(folder, [name '.pdf']);
                 if layoutOptions.debug
                     fprintf('DEBUG: ROI %d rendered in movie mode.\n', roiIndex);
                 end
-
-
             end
         end
 
-        % Vidéo setup avec VideoWriter.
-       % outputMoviePath = fullfile(pwd,outputname);
-       [folder, name, ~] = fileparts(outputname);
-% on reconstruit le chemin avec la nouvelle extension
-    newPath = fullfile(folder, [name '.mp4']);
+[folder, name, ~] = fileparts(outputname);
 
-        v = VideoWriter(newPath, 'MPEG-4');
-        v.FrameRate = 10;  % Ajustez le FrameRate selon vos besoins.
-        open(v);
-        fig = get(masterTL, 'Parent');
-        set(fig, 'Visible', 'off','InvertHardcopy', 'off');
+% 1) Profil demandé par l'appli (optionnel)
+if isfield(layoutOptions, 'movieProfile') && ~isempty(layoutOptions.movieProfile)
+    requestedProfile = layoutOptions.movieProfile;  % ex: 'MPEG-4', 'Motion JPEG AVI', ...
+else
+    requestedProfile = 'MPEG-4';  % préférence: MP4 si dispo (Windows)
+end
 
-        for frame = 1:numel(layoutOptions.frames)
-            score_updateRender(graphicsHandles, roiobj, layoutOptions, displayHandles,frame)
-            rgbImage = print(fig, '-RGBImage');
-            disp(['Rendering frame ' num2str(frame) ' / ' num2str(numel(layoutOptions.frames))])
-            writeVideo(v, im2frame(rgbImage));
+% 2) Profils disponibles sur cette installation
+profiles = VideoWriter.getProfiles;
+validProfiles = {profiles.Name};
+
+% 3) Si le profil demandé n'est pas dispo, on choisit un fallback
+if ~ismember(requestedProfile, validProfiles)
+    % Ordre de préférence selon ce qui est généralement utile
+    preferenceList = {'MPEG-4', 'Motion JPEG AVI', 'Uncompressed AVI', ...
+                      'Archival', 'Motion JPEG 2000', 'Grayscale AVI', 'Indexed AVI'};
+    fallbackProfile = '';
+
+    for k = 1:numel(preferenceList)
+        if ismember(preferenceList{k}, validProfiles)
+            fallbackProfile = preferenceList{k};
+            break;
         end
+    end
+
+    if isempty(fallbackProfile)
+        % Au cas très improbable où rien ne match (devrait pas arriver)
+        fallbackProfile = validProfiles{1};
+    end
+
+    warning('Requested movie profile "%s" not available. Using "%s" instead.', ...
+        requestedProfile, fallbackProfile);
+    requestedProfile = fallbackProfile;
+end
+
+% 4) Choix de l'extension en fonction du profil
+switch requestedProfile
+    case 'MPEG-4'
+        fileExt = '.mp4';
+    case {'Motion JPEG 2000','Archival'}
+        % Ceux-là sont souvent stockés en .mj2, mais .avi peut aussi marcher
+        fileExt = '.mj2';  % à adapter si tu préfères .avi
+    otherwise
+        % Motion JPEG AVI, Uncompressed AVI, Grayscale AVI, Indexed AVI, ...
+        fileExt = '.avi';
+end
+
+newPath = fullfile(folder, [name fileExt]);
+
+% 5) Création du VideoWriter avec un profil valide
+v = VideoWriter(newPath, requestedProfile);
+v.FrameRate = 10;  % Ajuste selon tes besoins
+
+open(v);
+fig = get(masterTL, 'Parent');
+set(fig, 'Visible', 'off', 'InvertHardcopy', 'off');
+
+
+        % for frame = 1:numel(layoutOptions.frames)
+        %     score_updateRender(graphicsHandles, roiobj, layoutOptions, displayHandles,frame)
+        %     rgbImage = print(fig, '-RGBImage');
+        %     disp(['Rendering frame ' num2str(frame) ' / ' num2str(numel(layoutOptions.frames))])
+        %     writeVideo(v, im2frame(rgbImage));
+        % end
+
+        targetHW = [];  % [H W] fixé à la première frame
+
+for frame = 1:numel(layoutOptions.frames)
+    score_updateRender(graphicsHandles, roiobj, layoutOptions, displayHandles, frame);
+    drawnow;  % important pour stabiliser le rendu avant capture
+
+    rgb = print(fig, '-RGBImage');   % uint8 HxWx3
+
+    % --- fixer taille de référence à la 1ère frame ---
+    if isempty(targetHW)
+        targetHW = size(rgb, [1 2]);
+        % force dimensions paires pour H.264
+        targetHW = targetHW - mod(targetHW, 2);
+    end
+
+    Ht = targetHW(1); Wt = targetHW(2);
+    H  = size(rgb,1);  W  = size(rgb,2);
+
+    % --- pad ou crop pour obtenir exactement Ht x Wt ---
+    if H < Ht || W < Wt
+        tmp = zeros(Ht, Wt, 3, 'uint8');
+        tmp(1:min(H,Ht), 1:min(W,Wt), :) = rgb(1:min(H,Ht), 1:min(W,Wt), :);
+        rgb = tmp;
+    else
+        rgb = rgb(1:Ht, 1:Wt, :);
+    end
+
+    fprintf('Rendering frame %d / %d\n', frame, numel(layoutOptions.frames));
+    writeVideo(v, rgb);  % <-- direct, pas im2frame
+end
+
 
         close(v);
         fprintf('Movie saved as MP4: %s\n', newPath);
@@ -479,5 +594,25 @@ yCenter = mean(ylim_);
 wid=2*nbrick*scalingFactor;
 line(ax, [xRight xRight], ylim_, ...
     'Color', background, 'LineWidth', wid, 'LineStyle', '-');
+end
+
+
+function str = localBuildMovieRoiTitle_(layoutOptions, roiData)
+
+parts = strings(0);
+
+if isfield(layoutOptions,'title') && ~isempty(layoutOptions.title)
+    parts(end+1) = string(layoutOptions.title);
+end
+
+if isfield(layoutOptions,'ROITitle') && layoutOptions.ROITitle
+    parts(end+1) = string(roiData.id);
+end
+
+if isempty(parts)
+    str = "";
+else
+    str = strjoin(parts, " | ");
+end
 end
 

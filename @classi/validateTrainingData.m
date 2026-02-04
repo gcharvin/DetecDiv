@@ -1,238 +1,502 @@
-function validateTrainingData(classif,roiobj,varargin)
-% high level function to classify data using a classifier on ROIs in a
-% @classi object.
+function validateTrainingData(classif, roiobj, varargin)
+% validateTrainingData
+% Safe wrapper around classifyData:
+%   - always calls classifyData (writes inference outputs into ROI objects)
+%   - optionally logs/stats/exports into a RUN FOLDER (if enabled and available)
+%
+% Behavior (as requested):
+%   - If DoStats == false  -> ONLY classifyData (no run I/O, no stats, no batonnets, no summarizeRuns)
+%   - If DoStats == true   -> requires run I/O (runDirAbs). If missing -> degrade to classify-only.
+%   - Run I/O is controlled by LogMode: 'auto' (default), 'off', 'on'
+%
+% Assumption / invariant:
+%   classif.run.runDir     : REL (portable)
+%   classif.run.runDirAbs  : ABS (local)  <-- source of truth for I/O (when enabled)
+%   classif.run.active     : runtime only (may be false during validation)
+%
+% Options (name/value or flags):
+%   'LogMode'     : 'auto'|'off'|'on' (default 'auto')
+%   'DoStats'     : 0/1 (default 1)
+%   'CloseRun'    : 0/1 (default 0)
+%   'StatsArgs'   : cell array of extra args for stats(classif,...)
+%   'RunDirAbs'   : override target folder (absolute) [optional]
+%
+% Any other varargin is forwarded to classifyData unchanged
+% (except summary keys: open/savecsv/runsroot/filter/sortby -> summarizeRuns).
 
-% classif is the ref to a @classi object
+% ---------------- defaults ----------------
+doStats   = true;
+closeRun  = false;
+statsArgs = {};
+runDirAbsOverride = '';
+logMode = "auto";  % "auto"|"off"|"on"
 
-% 'roilist' is a vector containing ROI  from the classi object
+argsClassify = {};
+argsSummary  = {};
+summaryKeys = ["open","savecsv","runsroot","filter","sortby"];
 
-% 'roiwithgt' option only validates rois with  groundth data
+% ---------------- parse varargin ----------------
+i = 1;
+while i <= numel(varargin)
 
-%'Classifier' loads the classifier
-
-
-frames=[];
-p=[];
-flag=[];
-channel=classif.channelName;
-roiwithgt=0;
-para=0;
-classifier=[];
-classifierCNN=[];
-CNNflag=0;
-
-for i=1:numel(varargin)
-    if strcmp(varargin{i},'Classifier')
-        classifier=varargin{i+1};
+    key = varargin{i};
+    if ~(ischar(key) || isstring(key))
+        i = i + 1;
+        continue;
     end
-    
-    if strcmp(varargin{i},'ClassifierCNN')
-       % classifierCNN=varargin{i+1};
-        CNNflag=1;
-    end
-    
-    if strcmp(varargin{i},'Frames') % is a numeric array 
-        frames=str2num(varargin{i+1});
-        if numel(frames)==1
-            if frames==-1
-                frames=[];
-            end
+    keyL = lower(strtrim(string(key)));
+
+    % ---- summarizeRuns args ----
+    if any(keyL == summaryKeys)
+        if i < numel(varargin)
+            argsSummary = [argsSummary, {char(key), varargin{i+1}}]; %#ok<AGROW>
+            i = i + 2;
+        else
+            argsSummary = [argsSummary, {char(key)}]; %#ok<AGROW>
+            i = i + 1;
         end
+        continue;
     end
-    
-    if strcmp(varargin{i},'Progress') % update progress bar
-        p=varargin{i+1};
-    end
-    
-    if strcmp(varargin{i},'Channel') % specify a different channel to classify
-        channel=varargin{i+1}; % channel must have the same size as Fovs
-    end
-    
-    if strcmp(varargin{i},'Parallel') % parallel computing
-        para=1;
-    end
-    
-    if strcmp(varargin{i},'RoiWithGT') % classify only ROIs and frames that have a groundtruth available
-        roiwithgt=1;
-    end
-end
 
-
-
-classifyFun=classif.classifyFun;
-fhandle=eval(['@' classifyFun]);
-
-disp(['Classifying data used as groundtruth in ' classif.strid ' for validation purposes using ' classifyFun]);
-
-if numel(p)
-    p.Value=0.1;
-    p.Message='Preparing classification....';
-end
-
-%classif=obj.processing.classification(classiid);
-
-
-% loading the CNN network as well for comparison purposes
-
- if CNNflag==1
-     str=fullfile(classif.path,['netCNN_' classif.strid '.mat']);
-      
-        if exist(str)
-            load(str);
-            disp(['Loading CNN classifier: ' ['netCNN_' classif.strid '.mat']]);
-            classifierCNN=classifier;
-        else 
-             disp(['Could not find CNN classifier: ' ['netCNN_' classif.strid '.mat']]);
-            classifierCNN=[];
+    % ---- validation options ----
+    if keyL == "logmode"
+        if i < numel(varargin)
+            logMode = lower(strtrim(string(varargin{i+1})));
+            i = i + 2;
+        else
+            i = i + 1;
         end
- else
-     classifierCNN=[];
- end
-
- % first load classifier if not loadad to save some time
-%if numel(classifier)==0
-    disp(['Loading classifier: ' classif.strid]);
-    % str=[path '/' name '.mat'];
-    
-    
-    classifier=classif.loadClassifier;
-    
-    if numel(classifier)==0
-        disp('could not load main classifier.... quitting');
-        return;
+        continue;
     end
-    
-%end
 
-
-if numel(p)
-    p.Value=0.2;
-    p.Message='Classifier is loaded.';
-end
-
-disp([num2str(numel(roiobj)) ' ROIs to classify, be patient...']);
-
-
-if para
-    logparf(1:numel(roiobj))= parallel.FevalFuture;
-else
-    
-    logparf=1;
-end
-
-
-for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel computing
-    
-    goclassif=1;
-    
-    
-    if roiwithgt==1 % checks if goclassif truth data are avaiable for this ROI, otherwise skips the ROI
-        switch classif.category{1}
-            case 'Pixel' % pixel classification
-                
-                
-                ch= roiobj(i).findChannelID(classif.strid);
-                
-                if numel(ch)>0 % groundtruth channel exists
-                    % checks if at least one image has been annotated  first!
-                    
-                    if numel( roiobj(i).image)==0 % loads the image
-                        roiobj(i).load;
-                    end
-                    
-                    im= roiobj(i).image;
-                    fram=1:size(im,4);
-                    
-                    imch=im(:,:,ch,:);
-                    
-                    if sum(imch(:))>0 % at least one image was annotated
-                        goclassif=1;
-                        flag=[];
-                        for f=fram
-                            if max(max(imch(:,:,1,f)))>0 %takes only frames with cells annotated
-                                flag=[flag, f];
-                            end
-                        end
-                        % frames=flag;%frames to classify - disabled to
-                        % classify all frames
-                        
-                    else
-                        goclassif=0;
-                    end
-                end
-                
-            otherwise % image classification
-                classistr=classif.strid;
-                % if roi was used for user training, display the training data first
-                if numel( roiobj(i).train)~=0
-                    if isfield(roiobj(i).train,classistr)
-                        if numel(roiobj(i).train.(classistr).id) > 0
-                            if sum(roiobj(i).train.(classistr).id)>0 ||  ( numel(roiobj(i).train.(classistr).id)==1 && ~isnan(roiobj(i).train.(classistr).id))  % training exists for this ROI ! put a condition if there is only one element
-                                goclassif=1;
-                            else
-                                goclassif=0;
-                            end
-                        end
-                    end
-                end
+    if keyL == "dostats"
+        if i < numel(varargin) && (islogical(varargin{i+1}) || isnumeric(varargin{i+1}))
+            doStats = logical(varargin{i+1});
+            i = i + 2;
+        else
+            doStats = true;
+            i = i + 1;
         end
+        continue;
     end
-   
-    
-    
-    if goclassif==1
-        
-          if numel( roiobj(i).image)==0 % loads the image
-                        roiobj(i).load;
-          end
-        
-          im= roiobj(i).image; 
-         fra=1:size(im,4);
-    
-    if numel(frames)~=0
-      %  if iscell(frames)
-        %    if numel(frames)>=i
-         %       fra=frames{i};
-        %    end
-      %  else
-            fra=frames;
-      %  end
-    end
-    
-    if numel(flag)
-        fra=intersect(fra,flag);
-    end
-    
-        
-        if numel(p)
-            p.Value=0.9* double(i)./numel(roiobj);
-            p.Message=['Classifying ROI  ' roiobj(i).id];
+
+    if keyL == "closerun"
+        if i < numel(varargin) && (islogical(varargin{i+1}) || isnumeric(varargin{i+1}))
+            closeRun = logical(varargin{i+1});
+            i = i + 2;
+        else
+            closeRun = true;
+            i = i + 1;
         end
-        
-        disp('-----------');
-        disp(['Classifying ' num2str(roiobj(i).id) ' - ' num2str(i)]);
-        
-        if para % parallel computing
-            if numel(classifierCNN)
-                logparf(i)=parfeval(fhandle,0,roiobj(i),classif,classifier,'classifierCNN',classifierCNN,'Frames',fra,'Channel',channel); % launch the training function for classification
+        continue;
+    end
+
+    if keyL == "statsargs"
+        if i < numel(varargin) && iscell(varargin{i+1})
+            statsArgs = varargin{i+1};
+            i = i + 2;
+        else
+            i = i + 1;
+        end
+        continue;
+    end
+
+    if keyL == "rundirabs"
+        if i < numel(varargin)
+            runDirAbsOverride = char(string(varargin{i+1}));
+            i = i + 2;
+        else
+            i = i + 1;
+        end
+        continue;
+    end
+
+    % ---- forward to classifyData ----
+    if i < numel(varargin)
+        nxt = varargin{i+1};
+        if (ischar(nxt) || isstring(nxt))
+            flags = ["gpu","cpu","parallel","classifiercnn","roiwithgt"];
+            if any(keyL == flags)
+                argsClassify = [argsClassify, {char(key)}]; %#ok<AGROW>
+                i = i + 1;
             else
-                disp(['Starting classification of ' num2str(roiobj(i).id)]);
-                logparf(i)=parfeval(fhandle,0,roiobj(i),classif,classifier,'Frames',fra,'Channel',channel); % launch the training function for classification
+                argsClassify = [argsClassify, {char(key), nxt}]; %#ok<AGROW>
+                i = i + 2;
             end
         else
-            if  numel(classifierCNN)
-                feval(fhandle,roiobj(i),classif,classifier,'classifierCNN',classifierCNN,'Frames',fra,'Channel',channel); % launch the training function for classification
-                disp(['Classified with separate CNN ' num2str(roiobj(i).id)]);
-            else
-                feval(fhandle,roiobj(i),classif,classifier,'Frames',fra,'Channel',channel); % launch the training function for classification
-                disp(['Classified' num2str(roiobj(i).id)]);
-            end
+            argsClassify = [argsClassify, {char(key), nxt}]; %#ok<AGROW>
+            i = i + 2;
         end
-        
-    elseif goclassif==0
-        disp(['There is no groundtruth available for roi ' num2str(roiobj(i).id) ' , skipping roi...']);
+    else
+        argsClassify = [argsClassify, {char(key)}]; %#ok<AGROW>
+        i = i + 1;
     end
 end
 
-%disp('You must save the shallow project to save these classified data !');
+nROI = numel(roiobj);
 
+% ---------------- resolve runDirAbs + runActive ----------------
+[runDirAbs, runActive] = localGetRunDirAbsAndActive_(classif, runDirAbsOverride);
+
+% ---------------- decide if run I/O is enabled ----------------
+logMode = lower(strtrim(string(logMode)));
+wantRunIO = true;
+
+if logMode == "off"
+    wantRunIO = false;
+elseif logMode == "on"
+    wantRunIO = true;
+else
+    % "auto": enable only if we have a runDirAbs
+    wantRunIO = ~isempty(runDirAbs);
+end
+
+haveRunDir = wantRunIO && ~isempty(runDirAbs);
+
+% If user forced "on" but we still don't have a directory: degrade gracefully
+if wantRunIO && isempty(runDirAbs)
+    haveRunDir = false;
+    warning('validateTrainingData:NoRunDirAbs', ...
+        'LogMode="on" requested but no runDirAbs available. Falling back to classify-only (no logging/stats/exports).');
+end
+
+% If stats requested but no run directory: degrade to classify-only (your new rule)
+if doStats && ~haveRunDir
+    warning('validateTrainingData:NoRunDirForStats', ...
+        'DoStats=1 requested but no run directory is available/enabled. Falling back to classify-only.');
+    doStats = false;
+end
+
+% Make folder only if we will use it
+if haveRunDir
+    if ~exist(runDirAbs,'dir')
+        mkdir(runDirAbs);
+    end
+end
+
+% ---------------- logging function ----------------
+% - If haveRunDir: append to file + mirror to runMsg if active
+% - Else: console only (and no runMsg)
+vlog = @(fmt,varargin) localLog_(classif, runDirAbs, haveRunDir, runActive, fmt, varargin{:});
+
+vlog('--- VALIDATION START ---');
+vlog('validateTrainingData: nROI=%d | DoStats=%d | CloseRun=%d | LogMode=%s | haveRunDir=%d | runDirAbs=%s', ...
+    nROI, doStats, closeRun, char(logMode), haveRunDir, string(runDirAbs));
+
+% save context snapshot (only if we will do stats/run I/O)
+if doStats && haveRunDir
+    try
+        roi_ids = {roiobj.id}; %#ok<NASGU>
+        argsClassify_local = argsClassify; %#ok<NASGU>
+        doStats_local = doStats; %#ok<NASGU>
+        closeRun_local = closeRun; %#ok<NASGU>
+        save(fullfile(runDirAbs,'validation_context.mat'), ...
+            'roi_ids','argsClassify_local','doStats_local','closeRun_local','-v7.3');
+    catch ME
+        vlog('WARN: could not save validation_context.mat (%s)', ME.message);
+    end
+end
+
+% ---------------- call inference engine (always) ----------------
+disp('--- validateTrainingData: calling classifyData(...) ---');
+tStart = tic;
+classifyData(classif, roiobj, argsClassify{:});
+elapsedClassify = toc(tStart);
+vlog('classifyData done (%.1fs)', elapsedClassify);
+
+% If DoStats is false => we stop here (your requested behavior)
+if ~doStats
+    vlog('DoStats=0 => skipping stats/batonnets/summarizeRuns (classify-only mode)');
+    vlog('--- VALIDATION END ---');
+    return;
+end
+
+% ---------------- stats (only if DoStats==true and run I/O enabled) ----------------
+try
+    % map roiobj -> indices in classif.roi if possible
+    roiid = [];
+    try
+        allIDs = strtrim(string({classif.roi.id}));
+        selIDs = strtrim(string({roiobj.id}));
+        [tf, loc] = ismember(selIDs, allIDs);
+        roiid = loc(tf);
+    catch
+        roiid = [];
+    end
+
+    exportBase = fullfile(runDirAbs, sprintf('validation_%s', char(string(classif.strid))));
+
+    args = {'Force'};
+    if ~isempty(roiid)
+        args = [args, {'Rois', roiid}];
+    end
+    args = [args, {'Export', exportBase, 'Confusion', 'ROI', 'Classes', 'Silent'}];
+
+    if ~isempty(statsArgs)
+        args = [args, statsArgs];
+    end
+
+    stats(classif, args{:});
+    vlog('stats() done (exportBase=%s)', exportBase);
+
+    % snapshot scores into run folder
+    try
+        if ~isempty(classif.score)
+            score = classif.score; %#ok<NASGU>
+            save(fullfile(runDirAbs,'validation_scores.mat'), 'score','-v7.3');
+        end
+    catch
+    end
+
+catch ME
+    vlog('stats() FAILED: %s', ME.getReport('basic','hyperlinks','off'));
+    warning('validateTrainingData: stats failed: %s', ME.message);
+end
+
+% ==========================================================
+% batonnets_proceedRender (only if LSTM + CNN, and only when DoStats==true)
+% ==========================================================
+try
+    doBatonnets = localIsLSTMCNN_(classif);
+
+    if ~doBatonnets
+        vlog('batonnets_proceedRender skipped (classifier ≠ "LSTM + CNN")');
+    else
+        aa = struct();
+        aa.BarHeight            = 10;
+        aa.FrameWidth           = 2;
+        aa.ShowColorbar         = 1;
+        aa.LabelColormapName    = "lines";
+        aa.NumbersColormapName  = "jet";
+
+        k1 = string(classif.strid) + "|labels";
+        k2 = string(classif.strid) + "|labels_training";
+        compareKeys = [k1 k2];
+
+        gapROI     = max(1, round(aa.BarHeight / 2));
+        gapCompare = max(1, round(aa.BarHeight / 4));
+
+        % auto EventRulesByKey
+        classNames  = string(classif.classes(:)');
+        classNamesL = lower(strtrim(classNames));
+
+        % --- class2 list: prefer "small", else fallback to smallb/smallt ---
+        class2List = strings(1,0);
+        if any(classNamesL == "small")
+            class2List = "small";
+        else
+            if any(classNamesL == "smallb"), class2List(end+1) = "smallb"; end %#ok<AGROW>
+            if any(classNamesL == "smallt"), class2List(end+1) = "smallt"; end %#ok<AGROW>
+        end
+
+        % --- class1 list: we want both large and unbud if present ---
+        class1Wanted = ["large","unbud"];
+        class1List = strings(1,0);
+        for c1 = class1Wanted
+            if any(classNamesL == c1)
+                class1List(end+1) = c1; %#ok<AGROW>
+            end
+        end
+
+        % --- build rules: Start + End for every (class1, class2) pair ---
+        rules = struct('name',{},'type',{},'from',{},'to',{});
+        if ~isempty(class1List) && ~isempty(class2List)
+            for c1 = class1List
+                for c2 = class2List
+                    rules(end+1) = struct('name',"Event", 'type',"Start", 'from',c1, 'to',c2); %#ok<AGROW>
+                    rules(end+1) = struct('name',"Event", 'type',"End",   'from',c1, 'to',c2); %#ok<AGROW>
+                end
+            end
+        end
+
+        eventRulesByKey = containers.Map('KeyType','char','ValueType','any');
+        eventRulesByKey(char(k1)) = rules;
+        eventRulesByKey(char(k2)) = rules;
+
+        % ---- convert ROI objects -> roiList struct expected by batonnets_proceedRender ----
+        roiList = localMakeRoiList_(roiobj);
+
+        batonnets_proceedRender(roiList, compareKeys, ...
+            'BarHeight', aa.BarHeight, ...
+            'FrameWidth', aa.FrameWidth, ...
+            'ShowColorbar', aa.ShowColorbar, ...
+            'LabelColormapName', aa.LabelColormapName, ...
+            'NumbersColormapName', aa.NumbersColormapName, ...
+            'DisplayMaxTraj', Inf, ...
+            'EventRulesByKey', eventRulesByKey, ...
+            'Compare', true, ...
+            'GapROI', gapROI, ...
+            'GapCompare', gapCompare, ...
+            'Classifier', classif);
+
+        vlog('batonnets_proceedRender done (LSTM + CNN | nRules=%d)', numel(rules));
+    end
+
+catch MEb
+    vlog('batonnets_proceedRender FAILED: %s', MEb.getReport('basic','hyperlinks','off'));
+    warning('validateTrainingData: batonnets_proceedRender failed: %s', MEb.message);
+end
+
+% ---------------- summarize runs (only when DoStats==true and run I/O enabled) ----------------
+try
+    if ~isempty(argsSummary)
+        summarizeRuns(classif, argsSummary{:});
+    else
+        % still okay to call summarizeRuns if you want default behavior,
+        % but keeping it conditional avoids side effects.
+        % summarizeRuns(classif);
+    end
+catch ME
+    vlog('summarizeRuns failed: %s', ME.getReport('basic','hyperlinks','off'));
+end
+
+% ---------------- close run (best-effort, only if requested + active) ----------------
+if closeRun
+    try
+        if runActive && isprop(classif,'run') && isstruct(classif.run)
+            % If you have a dedicated close method, call it here.
+            % Example: classif.runClose();
+        end
+    catch
+    end
+end
+
+vlog('--- VALIDATION END ---');
+
+end
+
+% =====================================================================
+% LOCAL HELPERS (keep in same file, below main function)
+% =====================================================================
+
+function roiList = localMakeRoiList_(roiobj)
+n = numel(roiobj);
+roiList = repmat(struct('roiObj',[], 'label',""), 1, n);
+for k = 1:n
+    roiList(k).roiObj = roiobj(k);
+    try
+        roiList(k).label = string(roiobj(k).id);
+    catch
+        roiList(k).label = "ROI " + k;
+    end
+end
+end
+
+function [runDirAbs, runActive] = localGetRunDirAbsAndActive_(classif, overrideAbs)
+runDirAbs = '';
+runActive = false;
+
+if nargin >= 2 && ~isempty(overrideAbs)
+    runDirAbs = char(string(overrideAbs));
+end
+
+if isempty(runDirAbs)
+    try
+        if isprop(classif,'run') && isstruct(classif.run)
+            if isfield(classif.run,'runDirAbs') && ~isempty(classif.run.runDirAbs)
+                runDirAbs = char(string(classif.run.runDirAbs));
+            end
+        end
+    catch
+    end
+end
+
+try
+    if isprop(classif,'run') && isstruct(classif.run)
+        if isfield(classif.run,'active') && isequal(classif.run.active,true)
+            runActive = true;
+        end
+    end
+catch
+    runActive = false;
+end
+end
+
+function tf = localIsLSTMCNN_(classif)
+tf = false;
+
+try
+    if ~isprop(classif,'description') || isempty(classif.description)
+        return;
+    end
+    if numel(classif.description) < 3
+        return;
+    end
+
+    d3 = classif.description{3};
+
+    % Unwrap cell nesting (ex: 1x1 cell containing char)
+    while iscell(d3) && numel(d3) == 1
+        d3 = d3{1};
+    end
+
+    % Normalize to scalar string
+    if ischar(d3)
+        d3 = string(d3);
+    elseif isstring(d3)
+        d3 = string(d3);
+    else
+        return;
+    end
+
+    d3 = strtrim(d3);
+
+    % Robust comparison (case-insensitive optional)
+    tf = strcmp(d3, "LSTM + CNN workflow");
+    % or: tf = strcmpi(d3, "LSTM + CNN workflow");
+
+catch
+    tf = false;
+end
+end
+
+
+function localLog_(classif, runDirAbs, haveRunDir, runActive, fmt, varargin)
+% If haveRunDir: append to <runDirAbs>/events_validation.log.
+% Mirror to classif.runMsg only if runActive.
+% If no run dir: console only.
+
+% Build message
+try
+    if isempty(varargin)
+        msg = sprintf('%s', fmt);
+    else
+        msg = sprintf(fmt, varargin{:});
+    end
+catch
+    msg = 'LOG_FORMAT_ERROR';
+end
+
+ts = datestr(now,'yyyy-mm-dd HH:MM:SS.FFF');
+line = sprintf('[%s] %s', ts, msg);
+
+% 1) file log or console
+if haveRunDir
+    fp = fullfile(runDirAbs,'events_validation.log');
+    fid = -1;
+    try
+        fid = fopen(fp,'a');
+        if fid >= 0
+            fprintf(fid,'%s\n', line);
+            fclose(fid);
+        end
+    catch
+        try, if fid>=0, fclose(fid); end; catch, end %#ok<TRYNC>
+    end
+else
+    try
+        disp(line);
+    catch
+    end
+end
+
+% 2) runMsg mirror (only if active)
+if runActive
+    try
+        if ismethod(classif,'runMsg')
+            classif.runMsg(fmt, varargin{:});
+        end
+    catch
+    end
+end
+end

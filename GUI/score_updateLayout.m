@@ -35,9 +35,16 @@ dsC.selectedchannel=dsC.selectedchannel(1:numel(dsC.channel)); % remove this lin
 selCh = find(dsC.selectedchannel);
 cmap=layoutOptions.colormap;
 
- if size( dsC.displaylim,2)~=numel(roitmp.channelid)
-roitmp.computeDisplaylim;
- end
+%  if size( dsC.displaylim,2)~=numel(roitmp.channelid)
+% roitmp.computeDisplaylim;
+%  end
+
+if ~isfield(dsC,'displaylim') || isempty(dsC.displaylim) || size(dsC.displaylim,2) ~= numel(dsC.channel)
+    roitmp.computeDisplaylim; % logique
+    dsC = roitmp.display;
+end
+
+
 
 
 if ~isempty(selCh)
@@ -53,6 +60,7 @@ if ~isempty(selCh)
 
         lowVal  = round(65535 * dsC.displaylim(1, idx));
         highVal = round(65535 * dsC.displaylim(2, idx));
+
         levels{i} = [lowVal, highVal];
 
         if dsC.indexed(idx)

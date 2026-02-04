@@ -178,6 +178,18 @@ if wantImages
         obj.image     = img;
         obj.channelid = chId;
 
+                % --- Normalize datatype: many pipelines expect uint16-like intensities ---
+        if isa(obj.image,'double') || isa(obj.image,'single')
+            mx = max(obj.image(:));
+            if mx > 1
+                if ~silent
+                    fprintf('[loadROI] NOTE: HDF5 image loaded as %s with max=%g -> casting to uint16\n', class(obj.image), mx);
+                end
+                obj.image = uint16(max(0, min(65535, round(obj.image))));
+            end
+        end
+
+
     elseif isfile(legacyFile)
         % -------- LEGACY FALLBACK (.mat) --------
         if ~silent
@@ -229,6 +241,20 @@ if wantData
         else
             obj.data = dataseries.empty;
         end
+
+        % --- sanitize dataseries handles (remove invalid/deleted) ---
+try
+    if isa(obj.data,'handle')
+        obj.data = obj.data(isvalid(obj.data));
+    end
+catch
+end
+
+% si tout a sauté, remettre un dataseries vide (optionnel mais pratique)
+if isempty(obj.data)
+    obj.data = dataseries;
+end
+
 
         if ismethod(obj,'fixLabelsInPlotFields')
             obj.fixLabelsInPlotFields;

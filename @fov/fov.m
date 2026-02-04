@@ -31,6 +31,13 @@ classdef fov < handle
         tiffSource  = {};        % cell{ch}: chemin complet du/ des gros .tif réels
         pageMap     = {};        % cell{ch}: pageMap{ch}(f) = index de page TIFF à lire via imread(tiffSource{ch}, page)
                                  % longueur(pageMap{ch}) == frames(ch)
+
+        % --- NDTiff support ---
+        isNDTiff       = false;  % bool
+        ndtiffPath     = '';     % dataset folder (contains NDTiff.index)
+        ndtiffPosition = 0;      % 0-based position index in dataset
+        ndtiffChannels = [];     % 0-based channel indices
+        ndtiffZ        = 0;      % 0-based z index (if present)
     end
 
     properties (Dependent)

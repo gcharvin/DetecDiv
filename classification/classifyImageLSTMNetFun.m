@@ -69,6 +69,8 @@ if isstruct(classifierCNN) && isfield(classifierCNN,'net'); classifierCNN = clas
 if useLSTM && ~(isa(classifier,'DAGNetwork') || isa(classifier,'SeriesNetwork') || isa(classifier,'dlnetwork'))
     error('classifyImageLSTMNetFun:ClassifierType', 'Classifier LSTM type not supported: %s', class(classifier));
 end
+
+
 if useCNN && ~(isa(classifierCNN,'DAGNetwork') || ...
                isa(classifierCNN,'SeriesNetwork') || ...
                isa(classifierCNN,'dlnetwork'))
@@ -84,7 +86,21 @@ end
 
 
 pix = roiobj.findChannelID(channel);
-if iscell(pix); pix = cell2mat(pix); end
+
+if iscell(pix)
+    % enlever les éléments vides
+    pix = pix(~cellfun(@isempty, pix));
+
+    if isempty(pix)
+        % aucun indice valide → on retourne un vecteur vide et on continue sans erreur
+        pix = [];
+    else
+        % concaténer proprement même si certaines cellules sont lignes/colonnes
+        pix = cellfun(@(x) x(:).', pix, 'UniformOutput', false);
+        pix = [pix{:}];    % concat à la suite
+    end
+end
+
 if isempty(frames); frames = 1:size(roiobj.image,4); end
 
 % empile le canal demandé en 3 canaux uint8 avec preProcessROIData (comme avant)
@@ -195,19 +211,117 @@ labelsCNN  = []; probCNN  = []; idxCNN  = [];
 
 classesTarget = string(classif.classes); % c'est la vérité côté dataseries
 
-% LSTM
-if useLSTM
-    try
-        [lbl, sc] = classify(classifier, videoLSTM, 'ExecutionEnvironment', env);
-    catch
-        warning('LSTM classify failed on %s: falling back to CPU.', upper(string(env)));
-        [lbl, sc] = classify(classifier, videoLSTM, 'ExecutionEnvironment', 'cpu');
-    end
-    labelsLSTM = classifier.Layers(end).Classes;  % catégories apprises
-    probLSTM   = sc;
-    if size(probLSTM,1) == numel(labelsLSTM); probLSTM = probLSTM'; end
-    [~, idxLSTM] = max(probLSTM, [], 2);
+% --------- classifier_output (source of truth) ----------
+tp = [];
+try
+    tp = classif.trainingParam;
+catch
 end
+
+outMode = "sequence-to-sequence"; % default
+if ~isempty(tp) && isfield(tp,'classifier_output') && ~isempty(tp.classifier_output)
+    if iscell(tp.classifier_output)
+        outMode = string(tp.classifier_output{end});
+    else
+        outMode = string(tp.classifier_output);
+    end
+end
+
+isSeq2One = strcmpi(outMode, "sequence-to-one");
+isSeq2Seq = strcmpi(outMode, "sequence-to-sequence");
+if ~isSeq2One && ~isSeq2Seq
+    warning('Unknown classifier_output="%s" -> defaulting to sequence-to-sequence.', outMode);
+    isSeq2Seq = true;
+end
+
+% --------- Windowing for seq2one inference ----------
+Lwin = 0;
+if ~isempty(tp) && isfield(tp,'LSTM_sequence_length') && ~isempty(tp.LSTM_sequence_length)
+    Lwin = tp.LSTM_sequence_length;
+end
+if isempty(Lwin) || ~isscalar(Lwin), Lwin = 0; end
+Lwin = round(Lwin);
+
+% Fenêtres contiguës (comme training) : [s e]
+useWins = [];
+if isSeq2One
+    if Lwin <= 0 || Lwin >= T
+        useWins = [1 T];
+    else
+        starts = 1:Lwin:T;
+        useWins = zeros(numel(starts),2);
+        for k = 1:numel(starts)
+            s = starts(k);
+            e = min(T, s + Lwin - 1);
+            useWins(k,:) = [s e];
+        end
+    end
+end
+
+
+
+% =========================
+% LSTM inference
+% =========================
+if useLSTM
+    labelsLSTM = classifier.Layers(end).Classes;  % catégories apprises
+    C = numel(labelsLSTM);
+
+    if isSeq2One
+        % --- seq2one fenêtré : prédire 1 fois par fenêtre, puis "déplier" par frame ---
+        probLSTM = zeros(T, C, 'single');
+        idxLSTM  = zeros(T, 1, 'int32');
+
+        for w = 1:size(useWins,1)
+            s = useWins(w,1);
+            e = useWins(w,2);
+
+            clip = videoLSTM(:,:,:,s:e);
+
+            try
+                [~, scW] = classify(classifier, clip, 'ExecutionEnvironment', env);
+            catch
+                warning('LSTM window classify failed on %s: falling back to CPU.', upper(string(env)));
+                [~, scW] = classify(classifier, clip, 'ExecutionEnvironment', 'cpu');
+            end
+
+            % scW attendu: 1xC (ou Cx1). Sécuriser en 1xC.
+            if size(scW,1) == C && size(scW,2) == 1
+                scW = scW';
+            elseif size(scW,1) ~= 1
+                scW = scW(1,:); % safety
+            end
+
+            [~, idW] = max(scW, [], 2); % scalaire
+
+            probLSTM(s:e, :) = repmat(single(scW), [e-s+1, 1]);
+            idxLSTM(s:e, 1)  = int32(idW);
+        end
+
+    else
+        % --- seq2seq : comportement actuel (une prédiction par frame) ---
+        try
+            [~, sc] = classify(classifier, videoLSTM, 'ExecutionEnvironment', env);
+        catch
+            warning('LSTM classify failed on %s: falling back to CPU.', upper(string(env)));
+            [~, sc] = classify(classifier, videoLSTM, 'ExecutionEnvironment', 'cpu');
+        end
+
+        probLSTM = sc;
+        if size(probLSTM,1) == C
+            probLSTM = probLSTM'; % [T x C]
+        end
+
+        if size(probLSTM,1) ~= T
+            warning('LSTM seq2seq: unexpected #rows=%d, expected T=%d. Forcing broadcast of first row.', size(probLSTM,1), T);
+            probLSTM = repmat(probLSTM(1,:), [T 1]);
+        end
+
+        [~, idxLSTM] = max(probLSTM, [], 2);
+    end
+end
+
+
 
 % CNN
 % CNN
@@ -248,6 +362,20 @@ dlP = softmax(dlY);                  % softmax respecte déjà le format de dlY
         [~, idxCNN] = max(probCNN, [], 2);
     end
 end
+
+% --------- Normalize CNN outputs to per-frame (only if CNN actually returned 1xC) ----------
+if useCNN
+    if size(probCNN,1) == 1 && T > 1
+        probCNN = repmat(probCNN, [T 1]);
+        idxCNN  = repmat(idxCNN(1), [T 1]);
+    elseif size(probCNN,1) ~= T
+        warning('CNN: unexpected #rows=%d, expected T=%d. Forcing broadcast of first row.', size(probCNN,1), T);
+        probCNN = repmat(probCNN(1,:), [T 1]);
+        idxCNN  = repmat(idxCNN(1), [T 1]);
+    end
+end
+
+
 
 % --------- Cible de classes (ordre & noms de colonnes dans dataseries) ----------
 
@@ -310,6 +438,19 @@ if isempty(data)
     data = roiobj.data;
 end
 
+% --- sanitize: remove invalid/deleted dataseries handles ---
+try
+    if isa(data,'handle')
+        data = data(isvalid(data));
+    end
+catch
+end
+if isempty(data)
+    data = dataseries;
+end
+roiobj.data = data;   % important: write back sanitized array
+
+
 % Cherche dataseries existant pour ce classif
 pixdata = find(arrayfun(@(x) strcmp(x.groupid, classif.strid), roiobj.data), 1, 'first');
 if isempty(pixdata)
@@ -334,7 +475,28 @@ end
 datatmp = data(cc);
 
 % Nombre de lignes à écrire
-n = iff(classif.output==0, size(roiobj.image,4), 1);
+% Nombre de lignes = nb total de frames ROI (dataseries alignée ROI)
+n = size(roiobj.image,4);
+
+% ============================================================
+% Inference hygiene:
+% - Drop previous inference columns (id/labels/prob_*, CNN*) to avoid pollution
+% - Keep training columns: labels_training, id_training
+% - Reset inference columns on ALL frames (1:n), then write only on 'frames'
+% ============================================================
+
+datatmp = pruneInferenceColsKeepTraining(datatmp);
+
+% Reset inference outputs (for all frames) so partial inference doesn't leave stale values
+classesUI = classesTarget(:).';
+if ~any(classesUI == "unclassified")
+    classesUI(end+1) = "unclassified";
+end
+catsLabels = ["undefined", classesUI];
+
+datatmp = resetInferenceOutputs(datatmp, classesTarget, useCNN, catsLabels, n);
+
+
 
 % --- NORMALISATION PLOTGROUP (évite horzcat char vs cell) ---
 if ~isprop(datatmp,'plotGroup') || isempty(datatmp.plotGroup)
@@ -361,11 +523,20 @@ end
 ensureCategoricalCol('labels', 'undefined');
 
 % Valeurs (restreintes aux frames)
-datatmp.data.labels(frames) = labelPrimaryCat;
+% --------- Write ONLY on requested frames ----------
+datatmp.data.labels(frames) = labelPrimaryCat;  % labelPrimaryCat is length T
+
 for ii = 1:numel(classesTarget)
-    datatmp.data.("prob_" + classesTarget(ii))(frames) = probPrimaryAligned(frames, ii);
+    colName = "prob_" + classesTarget(ii);
+    v = datatmp.data.(colName);
+    v(frames) = probPrimaryAligned(:, ii);      % <-- no extra indexing
+    datatmp.data.(colName) = v;
 end
-datatmp.data.id(frames) = idxP;
+
+idv = datatmp.data.id;
+idv(frames) = idxP;                              % idxP length T
+datatmp.data.id = idv;
+
 
 % Champs CNN additionnels
 if useCNN
@@ -375,11 +546,19 @@ if useCNN
     end
     ensureCategoricalCol('labelsCNN', 'undefined');
 
-    datatmp.data.labelsCNN(frames) = labelCNNCat;
-    for ii = 1:numel(classesTarget)
-        datatmp.data.("probCNN_" + classesTarget(ii))(frames) = probCNNAligned(frames, ii);
-    end
-    datatmp.data.idCNN(frames) = idxCNNAligned;
+  datatmp.data.labelsCNN(frames) = labelCNNCat;
+
+for ii = 1:numel(classesTarget)
+    colName = "probCNN_" + classesTarget(ii);
+    v = datatmp.data.(colName);
+    v(frames) = probCNNAligned(:, ii);          % <-- no extra indexing
+    datatmp.data.(colName) = v;
+end
+
+idv = datatmp.data.idCNN;
+idv(frames) = idxCNNAligned;                      % idxCNNAligned length T
+datatmp.data.idCNN = idv;
+
 else
     for ii = 1:numel(classesTarget)
         dropColIfExists("probCNN_" + classesTarget(ii));
@@ -396,6 +575,17 @@ end
 pp = ensurePlotProperties(pp, string(classif.classes), useCNN, 'Prune', true);
 pp = syncPlotPropsToTable(pp, datatmp.data);
 datatmp.plotProperties = pp;
+
+classesTarget = string(classif.classes); % c'est la vérité côté dataseries
+% classes à exposer à l'UI (garantit 'unclassified')
+classesUI = classesTarget(:).';
+if ~any(classesUI == "unclassified")
+    classesUI(end+1) = "unclassified";
+end
+
+% --- Ensure userData.classes is always present (for UI consistency) ---
+datatmp = ensureUserDataClasses(datatmp, classesUI);
+
 
 % Commit
 data(cc) = datatmp;
@@ -517,7 +707,7 @@ end
 function dropColIfExists(name)
     name = char(name);
     if ismember(name, datatmp.data.Properties.VariableNames)
-        datatmp.removeData(name);
+        datatmp.removeData(char(string(name)));
     end
 end
 
@@ -665,3 +855,137 @@ function debugCNNInference(classifierCNN, classesTarget, probCNNAligned, labelCN
 end
 
 end
+
+
+function ds = ensureUserDataClasses(ds, classesUI)
+    % ds : dataseries
+    % classesUI : string row
+
+    if isempty(classesUI)
+        classesUI = "unclassified";
+    end
+    classesUI = string(classesUI(:).');
+    classesUI(classesUI=="") = [];
+    if ~any(classesUI == "unclassified")
+        classesUI(end+1) = "unclassified";
+    end
+
+    % userData doit être une struct
+    if ~isprop(ds,'userData') || isempty(ds.userData) || ~isstruct(ds.userData)
+        ds.userData = struct();
+    end
+
+    % stocker en cellstr row (le plus compatible AppDesigner)
+    ds.userData.classes = cellstr(classesUI);
+end
+
+function ds = pruneInferenceColsKeepTraining(ds)
+    if isempty(ds.data) || ~istable(ds.data), return; end
+
+    vars = string(ds.data.Properties.VariableNames);
+
+    % ---- Colonnes d'inférence à retirer (match exact) ----
+    drop = strings(0,1);
+
+    % exact names
+    exact = ["id","labels","idCNN","labelsCNN"];
+    drop = [drop; exact(ismember(exact, vars)).'];
+
+    % prob_*
+    % --- ensure consistent type + shape ---
+varsS = string(vars);                  % safe even if vars is cellstr
+drop  = string(drop);                  % idem
+drop  = drop(:);                       % force column
+
+drop  = [drop; varsS(startsWith(varsS,"prob_")).'];  % <-- attention au .'
+drop  = unique(drop,'stable');         % optional, but usually useful
+
+
+    % ---- Mais on protège explicitement les colonnes d'annotation ----
+    protect = ["id_training","labels_training"];
+    drop = setdiff(drop, protect, 'stable');
+
+    drop = unique(drop, 'stable');
+    if isempty(drop), return; end
+
+    % 1) remove from table (exact var names)
+    ds.data = removevars(ds.data, cellstr(drop));
+
+    % 2) sync plotProperties (col 2 = varname)
+    if ~isempty(ds.plotProperties)
+        try
+            toDel = ismember(string(ds.plotProperties(:,2)), drop);
+            ds.plotProperties(toDel,:) = [];
+        catch
+        end
+    end
+
+    % 3) sync plotGroup{6} from remaining plotProperties (safe)
+    try
+        if isempty(ds.plotProperties)
+            ds.plotGroup{6} = {};
+        else
+            ds.plotGroup{6} = unique(ds.plotProperties(:,6));
+        end
+    catch
+    end
+end
+
+
+function ds = resetInferenceOutputs(ds, classesTarget, useCNN, catsLabels, n)
+    % classesTarget: string row (classes "truth" côté dataseries)
+    % catsLabels  : string row, e.g. ["undefined", classes..., "unclassified"]
+    % n           : nb total frames ROI
+
+    % --- Primary outputs ---
+    % id
+    if ~ismember("id", string(ds.data.Properties.VariableNames))
+        ds.addData(zeros(n,1), 'id', 'groups', 'id');
+    else
+        ds.data.id = zeros(n,1);
+    end
+
+    % labels
+    if ~ismember("labels", string(ds.data.Properties.VariableNames))
+        ds.addData(categorical(repmat("undefined",n,1), catsLabels), 'labels', 'groups', 'labels');
+
+    else
+        ds.data.labels = categorical(repmat("undefined",n,1), catsLabels);
+    end
+
+    % prob_*
+    for ii = 1:numel(classesTarget)
+        nm = "prob_" + classesTarget(ii);
+        if ~ismember(nm, string(ds.data.Properties.VariableNames))
+           % ds.addData(zeros(n,1), char(nm));
+            ds.addData(zeros(n,1), char(nm), 'groups', 'prob');
+        else
+            ds.data.(char(nm)) = zeros(n,1);
+        end
+    end
+
+    % --- CNN secondary outputs ---
+    if useCNN
+        if ~ismember("idCNN", string(ds.data.Properties.VariableNames))
+            ds.addData(zeros(n,1), 'idCNN');
+        else
+            ds.data.idCNN = zeros(n,1);
+        end
+
+        if ~ismember("labelsCNN", string(ds.data.Properties.VariableNames))
+            ds.addData(categorical(repmat("undefined",n,1), catsLabels), 'labelsCNN');
+        else
+            ds.data.labelsCNN = categorical(repmat("undefined",n,1), catsLabels);
+        end
+
+        for ii = 1:numel(classesTarget)
+            nm = "probCNN_" + classesTarget(ii);
+            if ~ismember(nm, string(ds.data.Properties.VariableNames))
+                ds.addData(zeros(n,1), char(nm));
+            else
+                ds.data.(char(nm)) = zeros(n,1);
+            end
+        end
+    end
+end
+

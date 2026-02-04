@@ -1,459 +1,638 @@
-function addROI(classif,obj,varargin)
+function addROI(classif, obj, varargin)
+% addROI Import ROIs into a @classi object (training set builder).
+%
+% This function imports ROIs from either:
+%   - a @fov (shallow project position), or
+%   - another @classi (existing classifier),
+% and makes the imported ROIs consistent with the destination classifier:
+%   - channel selection (keep/remove)
+%   - channel renaming / mapping (including classifier INPUT and OUTPUT mapping)
+%   - ensures training dataseries exists (critical for annotation tools)
+%   - optionally transfers/preserves annotations (training set) if requested
+%
+% Side effects / guarantees:
+%   1) Every imported ROI will contain a valid training dataseries for classif.strid
+%      (even if the source ROI had no dataseries at all).
+%   2) The training dataseries length will match size(roi.image,4) (sequence length),
+%      except for seq2one where a scalar id is stored in ROI.train but the dataseries
+%      still exists to keep GUI logic stable.
+%   3) Compatible with roiImporterGUI mapping:
+%        ioMap(i).ioChannel is either:
+%          - '-' (none),
+%          - one of classif.channelName (INPUT channel),
+%          - classif.strid (OUTPUT annotation mapping).
+%        If ioChannel matches an INPUT, we FORCE rename source channel to that INPUT name.
+%        If ioChannel == classif.strid, we treat it as output mapping (handled later).
+%
+% Parameters (varargin pairs):
+%   'rois'         : vector of ROI indices to import (default all)
+%   'convert'      : {srcClassesString, dstClassesString} for class mapping / preserve training
+%   'adjustChannel': list of source channel names to keep (others removed)
+%   'adjustName'   : legacy mapping helper (kept for backward compatibility)
+%   'ioMap'        : struct array mapping channels (from roiImporterGUI)
+%
+% NOTE:
+% - This file assumes helper functions exist:
+%     - formatInDataSeries(roiObj)
+%     - propValues(newObj,orgObj) (defined at end)
+% - It also uses ROI methods:
+%     - roi.removeChannel(name)
+%     - roi.addChannel(matrix, name, rgb, lim)
+%     - roi.findChannelID(name)
+%
+% ------------------------------------------------------------
 
-% add ROI to object classif
+% ---------- Parse inputs ----------
+rois         = [];
+convert      = {};
+adjustName   = {};   % legacy channel-name mapping helper
+adjustChannel= {};
+ioMap        = [];
 
-% ROIs are imported from obj, which is either another classification, or a FOV from a shallow project
+for i = 1:2:numel(varargin)
+    key = varargin{i};
+    if i+1 > numel(varargin), break; end
+    val = varargin{i+1};
 
-% Option : a vector that contains the list of ROIs to be added
-
-rois=[];
-convert={};
-adjustName={}; %classif.channelName;
-adjustChannel={};
-
-for i=1:numel(varargin)
-    if strcmp(varargin{i},'rois') % input rois
-        rois=varargin{i+1};
-    end
-    if strcmp(varargin{i},'convert') % provide character to explain how all classes will be converted
-        convert=varargin{i+1};
-    end
-    if strcmp(varargin{i},'adjustName') % provide character to explain how all classes will be converted
-        adjustName=varargin{i+1};
-    end
-
-    if strcmp(varargin{i},'adjustChannel') % provide character to explain which channels should be preserved/transferred
-        adjustChannel=varargin{i+1};
+    switch lower(string(key))
+        case "rois"
+            rois = val;
+        case "convert"
+            convert = val;
+        case "adjustname"
+            adjustName = val;
+        case "adjustchannel"
+            adjustChannel = val;
+        case "iomap"
+            ioMap = val;
     end
 end
 
+disp('==== addROI ====');
+disp('rois = '), disp(rois);
+disp('adjustChannel = '), disp(adjustChannel);
+disp('adjustName = '), disp(adjustName);
 
+% ---------- Source type ----------
 if isa(obj,'fov')
     objtype="fov";
     disp('You want to import ROIs from an existing @fov for training');
 elseif isa(obj,'classi')
     objtype="classi";
     disp('You want to import ROIs from an existing @classi for training');
-    %disp('Training datasets (ground truth) may be preserved when transferring ROIs');
 else
     disp('The object to transfer from is incompatible ! quitting');
     return;
 end
 
-if numel(rois)==0
-    rois=1:numel(obj.roi);
+% default import all ROIs
+if isempty(rois)
+    rois = 1:numel(obj.roi);
 end
-
-
-% if nargin==2
-%     disp(['This ' objtype ' has ' num2str(numel(obj.roi)) ' ROIs available']);
-%     disp('You did not specify which ROI you want to import.');
-%     prompt='Please enter the ROIs tu use as training sets: [ROI1id ROI2id ROI3id] (Default: [1 2 3])';
-%     rois= input(prompt);
-%     if numel(rois)==0
-%         rois=[1 2 3];
-%     end
-%
-% end
-
-% if nargin==3 % use ROI numbers provdied as an extra argument
-%     rois=option;
-% end
 
 disp('These ROIs will be imported:');
 disp(rois);
 
-%classif.addTrainingData(rois);
-
-% copy dedicated ROIs to local classification folder and change path
-cc=numel(classif.roi);
-
-if cc==1
-    if  numel(classif.roi(1).id)==0
-        cc=0;
-    end
+% ---------- Determine append index in classif.roi ----------
+cc = numel(classif.roi);
+if cc==1 && isempty(classif.roi(1).id)
+    cc=0;
 end
 
-preserv='';
+% ---------- Main loop ----------
+for ii = 1:length(rois)
+    disp(['Processing ROI ' num2str(ii) '/' num2str(length(rois))]);
 
-arr={};
+    duplicate = 0;
 
-for i=1:length(rois)
-    disp(['Processing ROI ' num2str(i) '/' num2str(length(rois))]);
-
-    duplicate=0;
-
-    roitocopy=obj.roi(rois(i));
-
-    if numel(roitocopy.image)==0
+    roitocopy = obj.roi(rois(ii));
+    if isempty(roitocopy.image)
         roitocopy.load;
-
-         if numel(roitocopy.image)==0
-                disp('ROI cannot be loaded or does not exist; Quitting !')
-                continue
-         end
+        if isempty(roitocopy.image)
+            disp('ROI cannot be loaded or does not exist; skipping')
+            continue
+        end
     end
 
-
-    % checking ROIs are already existing in this classi, based on the name
+    % ----- Prevent duplicates by ROI name -----
     for j=1:numel(classif.roi)
-        if strcmp(roitocopy.id,classif.roi(j).id)
-            disp(['WARNING: The imported ROIs ' roitocopy.id ' has the same name as an existing ROI in ' classif.strid]);
-            disp('Therefore, we will not  not create a new ROI !');
+        if strcmp(roitocopy.id, classif.roi(j).id)
+            disp(['WARNING: Imported ROI "' roitocopy.id '" already exists in ' classif.strid '. Skipping.']);
             duplicate=j;
             break
         end
     end
-
-
-    if duplicate > 0 % in this case, the roi can just be updated and that's it !
-        %   pth=classif.roi(j).path;
-        % classif.roi(j)=roitocopy;
-        % classif.roi(j).path = pth;
-
-        %   classif.roi(j)=propValues(classif.roi(j),roitocopy);
-        %   classif.roi(j).path=pth;
-        %   classif.roi(j).save;
-        %    classif.roi(j).clear;
+    if duplicate > 0
         continue
     end
 
+    % ----- Allocate new ROI slot -----
     if cc==0
-        classif.roi=roi('',[]);
+        classif.roi = roi('',[]);
     else
-        classif.roi(cc+1)=roi('',[]);
+        classif.roi(cc+1) = roi('',[]);
     end
 
-
-    classif.roi(cc+1)=propValues(classif.roi(cc+1),roitocopy);
+    % Copy properties (but not .data; propValues excludes 'data')
+    classif.roi(cc+1) = propValues(classif.roi(cc+1), roitocopy);
     classif.roi(cc+1).path = classif.path;
+    classif.roi(cc+1).classes = classif.classes;
 
-    classif.roi(cc+1).classes=classif.classes;
+    % ============================================================
+    % 1) CHANNEL ADJUSTMENTS (selection + mapping)
+    % ============================================================
 
-    if numel(adjustName) % adjust the name of the channels to fit that of the target classifier
-        targetChannel=classif.channelName;
+    % ----- Legacy adjustName mapping (kept for backward compatibility) -----
+    % adjustName is assumed to contain *source names* to be renamed into classif.channelName{k}.
+    % (This is older behavior and may be inconsistent with roiImporterGUI, but we keep it.)
+    if ~isempty(adjustName)
+        targetChannel = classif.channelName;
+        for k = 1:numel(adjustName)
+            thisName = adjustName{k};
+            if isempty(thisName), continue; end
+            if isstring(thisName), thisName = char(thisName); end
+            if ~ischar(thisName), continue; end
 
-        for ii=1:numel(adjustName)
-             thisName = adjustName{ii};
-
-            if isempty(thisName)
-                continue
+            idx = find(matches(classif.roi(cc+1).display.channel, thisName));
+            if ~isempty(idx) && k <= numel(targetChannel)
+                classif.roi(cc+1).display.channel{idx(1)} = targetChannel{k};
             end
-            
-            if ~ischar(thisName) && ~isstring(thisName)
-              thisName = string(thisName); % conversion prudente
-            end
-            pix = find(matches(classif.roi(cc+1).display.channel, thisName));
-
-            classif.roi(cc+1).display.channel{pix}=targetChannel{ii};
         end
     end
 
-    if numel(adjustChannel) % only import a number of channel in the list = remove channels that should not be present
-        targetChannel=classif.channelName;
-        % adjustChannel
-        %  ccc=classif.roi(cc+1).display.channel
+    % ----- Keep only selected channels (adjustChannel) -----
+    if ~isempty(adjustChannel)
         currentChannels = classif.roi(cc+1).display.channel;
-        channelsToRemove = setdiff(currentChannels, targetChannel);
-        channelsToRemove = setdiff(channelsToRemove, adjustChannel);
+        if ischar(currentChannels), currentChannels = {currentChannels}; end
+        if isstring(currentChannels), currentChannels = cellstr(currentChannels); end
+        if ~iscell(currentChannels), currentChannels = {}; end
+
+        if ischar(adjustChannel), adjustChannel = {adjustChannel}; end
+        if isstring(adjustChannel), adjustChannel = cellstr(adjustChannel); end
+
+        channelsToKeep   = intersect(currentChannels, adjustChannel, 'stable');
+        channelsToRemove = setdiff(currentChannels, channelsToKeep, 'stable');
 
         for k = 1:numel(channelsToRemove)
             classif.roi(cc+1).removeChannel(channelsToRemove{k});
         end
-
-        % ii=1;
-        %  while ii<numel( classif.roi(cc+1).display.channel)
-        %   % aaa=  matches(adjustChannel, classif.roi(cc+1).display.channel{ii})
-        %  %  bbb=  matches(targetChannel,classif.roi(cc+1).display.channel{ii})
-        %
-        %          if numel(find(matches(adjustChannel, classif.roi(cc+1).display.channel{ii})))==0 && numel(find(matches(targetChannel,classif.roi(cc+1).display.channel{ii})))==0 % channel is not in the list of channel to be transferred and is not that of the classifier.
-        %                  classif.roi(cc+1).removeChannel(classif.roi(cc+1).display.channel{ii});
-        %          else
-        %                  ii=ii+1;
-        %          end
-        %  end
-
     end
 
-    %size(classif.roi(cc+1).image)
+    % ============================================================
+    % 2) TRAINING / DATASERIES CREATION OR TRANSFER
+    % ============================================================
 
-    %% Warning : there is still a "train" property here that has not been replaced !!!
+    % If we import from another classi and user requested conversion,
+    % we may preserve training set by transferring the source dataseries
+    trainingSetTransfer = false;
+    pixtransferdata     = [];
 
-    if strcmp(classif.category{1},'Image Regression') || strcmp(classif.category{1},'LSTM Regression')
-        classif.roi(cc+1).train.(classif.strid)=[];
-        classif.roi(cc+1).train.(classif.strid).id= nan*ones(1,size(classif.roi(cc+1).image,4));
+    if strcmp(classif.category{1},'Image') || strcmp(classif.category{1},'LSTM') || strcmp(classif.category{1},'Timeseries')
+        srcData = roitocopy.data;
 
-        if classif.output==1 % sequence-to-one regression
-            classif.roi(cc+1).train.(classif.strid).id= nan;
-        end
-
-        if isa(obj,'classi')
-            if isfield(roitocopy.train,obj.strid) % test if previous ROI has training
-                classif.roi(cc+1).train.(classif.strid).id=roitocopy.train.(obj.strid).id;
-            end
-        end
-    end
-    
-trainingSetTransfer=false; % flag to determine whether dataseries for training set has to be generated
-    if strcmp(classif.category{1},'Image') | strcmp(classif.category{1},'LSTM') | strcmp(classif.category{1},'Timeseries')
-
-        
-        data=roitocopy.data;
-
-        if objtype=="classi" && ~isempty(convert) % users resquest conversion from classi
-            pixtransferdata=find(arrayfun(@(x) strcmp(x.groupid, obj.strid),data)); % index of data to be stransferred
-            if numel(pixtransferdata) %
-                trainingSetTransfer=true;
+        if objtype=="classi" && ~isempty(convert) && ~isempty(srcData)
+            pixtransferdata = find(arrayfun(@(x) strcmp(x.groupid, obj.strid), srcData));
+            if ~isempty(pixtransferdata)
+                trainingSetTransfer = true;
             end
         end
 
+        % If no transfer, create empty training arrays and convert them to dataseries
+        if ~trainingSetTransfer
+            disp('No training set available, creating empty training + dataseries');
 
-        % to be done if mapping between different classi must be done
-        % if isfield(roitocopy.train,obj.strid) % test if previous ROI has training
-        %     if numel(convert) % preserve training set
-        %
-        %
-        %         nclasses1=length(classif.classes);
-        %         nclasses2=length(obj.classes);
-        %
-        %         %if  nclasses1~=nclasses2
-        %         if numel(arr)==0
-        %
-        %
-        %             disp(['current @classi has ' num2str(nclasses1) 'classes:']);
-        %             disp(classif.classes);
-        %
-        %             disp(['@classi to import from has ' num2str(nclasses2) 'classes:']);
-        %             disp(obj.classes);
-        %
-        %             % disp('You must map the first set of classes to the second');
-        %
-        %             tmp = textscan(strip(convert{2},'left'),'%s','Delimiter',' ');
-        %
-        %             tmp=tmp{1};
-        %
-        %             arr=[];
-        %             for j=1:nclasses1
-        %
-        %                 %                             str='';
-        %                 %                             for k=1:nclasses2
-        %                 %                                 str=[str num2str(k) ' - ' obj.classes{k} ';'];
-        %                 %                             end
-        %                 %
-        %                 %                             disp(['Enter the id number(s) of the  class corresponding to ' classif.classes{j}  ]);
-        %                 %
-        %                 %                             prompt=['Among these classes: ' str '; Type 0 if this class has no match; Default :'  num2str(j)];
-        %                 %                             idclass= input(prompt);
-        %                 %
-        %                 %                             if numel(idclass)==0
-        %                 %                                 idclass=j;
-        %                 %                             end
-        %
-        %                 %         arr{j}=idclass;
-        %                 %   arr(j)=0;
-        %                 %  aa=
-        %
-        %                 pix=find(contains(tmp,classif.classes{j}));
-        %                 if numel(pix)==0
-        %                     pix=0;
-        %                 end
-        %
-        %                 arr(j)= pix;
-        %             end
-        %
-        %         end
-        %
-        %         %         arr
-        %         %arr
-        %
-        %         %classif.roi(cc+1).train.(classif.strid).id=roitocopy.train(obj.strid).id;
-        %
-        %         for j=1:nclasses1
-        %             for k=1:numel(arr)
-        %
-        %                 if arr(j)~=0
-        %                     pix=roitocopy.train.(obj.strid).id==arr(j);
-        %                     %j
-        %                     %aa=classif.roi(cc+1).train.(classif.strid).id
-        %
-        %                     classif.roi(cc+1).train.(classif.strid).id(pix)=j;
-        %
-        %                     %bb=classif.roi(cc+1).train.(classif.strid).id
-        %                 end
-        %
-        %             end
-        %         end
-        %
-        %         % else % classes are identical betwen old and new classes
-        %         %     classif.roi(cc+1).train.(classif.strid).id=roitocopy.train.(obj.strid).id;
-        %         % end
-        %
-        %     end
-        % end
+            classif.roi(cc+1).train = [];
+            classif.roi(cc+1).results = [];
+            classif.roi(cc+1).train.(classif.strid) = [];
 
-        if ~trainingSetTransfer % create new dataseries with empty arrays
-            disp('No training set available, creating empty dataseries');
+            nT = size(classif.roi(cc+1).image,4);
 
-            
-            classif.roi(cc+1).train=[];
-            classif.roi(cc+1).results=[];
-            classif.roi(cc+1).train.(classif.strid)=[];
-            classif.roi(cc+1).train.(classif.strid).id= zeros(1,size(classif.roi(cc+1).image,4));
-            if classif.output==1 % sequence-to-one classification
-                classif.roi(cc+1).train.(classif.strid).id= 0;
+            % id vector for seq2seq; scalar for seq2one
+            classif.roi(cc+1).train.(classif.strid).id = zeros(1, nT);
+            if isprop(classif,'output') && classif.output == 1
+                classif.roi(cc+1).train.(classif.strid).id = 0;
             end
-            classif.roi(cc+1).train.(classif.strid).classes=classif.classes;
- 
-            formatInDataSeries(classif.roi(cc+1)); % converts train object to datseries;
-            
-  
-        end
 
+            classif.roi(cc+1).train.(classif.strid).classes = classif.classes;
+
+            % Convert ROI.train to dataseries (must create something under roi.data)
+            formatInDataSeries(classif.roi(cc+1));
+        end
     end
 
-
-
-    % transfer existing dataseries to imported ROI
-
-    data=roitocopy.data;
-
+    % ============================================================
+    % 3) TRANSFER DATASERIES FROM SOURCE ROI (non-empty ones)
+    % ============================================================
     disp('Transfer all dataseries from copied ROI');
-    if  numel(classif.roi(cc+1).data)>=1 & numel(classif.roi(cc+1).data(end).groupid)~=0
-    cd=numel(classif.roi(cc+1).data)+1;
+
+    roiData = classif.roi(cc+1).data;
+
+    % Find first insertion index for extra dataseries
+    if isempty(roiData)
+        cd = 1;
     else
-    cd=1;
-    end
-
-    for ij=1:numel(data)
-
-        % find if object exists already
-
-        % if numel(pixdata) % checks if dataset is available
-
-        %  ij=pixdata(1);
-        % copy all datasets
-
-        if numel(data(ij).groupid) % dataseries is not empty
-
-            classif.roi(cc+1).data(cd)=dataseries;
-            classif.roi(cc+1).data(cd)=propValues(classif.roi(cc+1).data(cd),data(ij));
-            %classif.roi(cc+1).data(ij).groupid=classif.strid;
-            classif.roi(cc+1).data(cd).data = data(ij).data;
-
-            %     if strcmp(class(obj),'classi') & strcmp(data(ij).groupid,obj.strid) % change data groupid to match the name of the  new classifier
-            %         classif.roi(cc+1).data(ij).groupid=classif.strid;
-            %     end
-
-            if trainingSetTransfer % transfer dataset but modify data groupid
-                if ij==pixtransferdata 
-                     disp('Found and transferred training set data from copied ROI');
-                    classif.roi(cc+1).data(cd).groupid=classif.strid;
-                     classif.roi(cc+1).data(cd).removeData('train','keep') % only keep training fields and remove previous classif results
-                end
+        try
+            lastHasGroup = false;
+            if isstruct(roiData) && isfield(roiData(end),'groupid')
+                lastHasGroup = ~isempty(roiData(end).groupid);
+            elseif isprop(roiData(end),'groupid')
+                lastHasGroup = ~isempty(roiData(end).groupid);
             end
-            cd=cd+1;
-        end
-    end
-
-
-        % classif.roi(cc+1).train= zeros(1,size(classif.roi(cc+1).image,4));
-
-        if strcmp(classif.category{1},'Pedigree')
-            classif.roi(cc+1).train.(classif.strid)=[];
-            classif.roi(cc+1).train.(classif.strid).id= zeros(1,size(classif.roi(cc+1).image,4));
-            classif.roi(cc+1).train.(classif.strid).classes=classif.classes;
-            classif.roi(cc+1).train.(classif.strid).mother= [];%zeros(1,size(classif.roi(cc+1).image,4));
-            % classif.roi(cc+1).train= zeros(1,size(classif.roi(cc+1).image,4));
-
-            %   im=classif.roi(cc+1).image;
-            %size(im)
-            %   ch=classif.roi(cc+1).findChannelID(classif.channelName{2});
-            %   matrix=im(:,:,ch,:);
-
-            %   classif.roi(cc+1).addChannel(matrix,classif.strid,[1 1 1],[0 0 0]);
-        end
-
-
-        if strcmp(classif.category{1},'Pixel') | strcmp(classif.category{1},'Object') |  strcmp(classif.category{1},'Delta')  |  strcmp(classif.category{1},'Pedigree')
-            im=classif.roi(cc+1).image;
-            pix=findChannelID(classif.roi(cc+1), classif.strid);
-
-            if numel(pix)>0 %channel is already present in roi , so skip channel creation
-
+            if lastHasGroup
+                cd = numel(roiData) + 1;
             else
-                % add channel is necessary
-                matrix=uint16(zeros(size(im,1),size(im,2),1,size(im,4)));
-                for k=1:numel(classif.classes)
-                    classif.roi(cc+1).addChannel(matrix,[classif.strid '_' classif.classes{k}],[1 1 1],[0 0 0]);
-                    classif.roi(cc+1).display.selectedchannel(end)=1;
-                end
+                cd = 1;
             end
-
-
-
-
-
-            if isa(obj,'classi')
-                %   if  strcmp(obj.category{1},'Pixel') % phenocopy the groundtruth
-
-                %   aa=obj.strid
-
-
-
-                pixid= roitocopy.findChannelID(obj.strid);
-                pixidnew=classif.roi(cc+1).findChannelID(classif.strid);
-
-
-                if numel(pixid) && numel(pixidnew) % copy the groundthruth to new classi
-                    classif.roi(cc+1).image(:,:,pixidnew,:)= roitocopy.image(:,:,pixid,:);
-                end
-
-
-
-
-                % pixid=      classif.roi(cc+1).findChannelID(obj.strid);
-                % pixidnew=classif.roi(cc+1).findChannelID(classif.strid);
-                %
-                %
-                % if numel(pixid) && numel(pixidnew) % copy the groundthruth to new classi
-                %     classif.roi(cc+1).image(:,:,pixidnew,:)= classif.roi(cc+1).image(:,:,pixid,:);
-                % end
-
-                %classif.roi(i).display.channel{pixid}=classif.strid;
-            end
-            %  end
-            %pixelchannel=size(obj.image,3);
+        catch
+            cd = 1;
         end
-
-
-        %     if strcmp(classif.category{1},'Object') |  strcmp(classif.category{1},'Delta')  |  strcmp(classif.category{1},'Pedigree')
-        %         im=classif.roi(cc+1).image;
-        %         %size(im)
-        %
-        %         matrix=uint16(im(:,:,classif.channel(2),:)>0);
-        %
-        %         classif.roi(cc+1).addChannel(matrix,classif.strid,[1 1 1],[0 0 0]);
-        %
-        %         %     if isa(obj,'classi')
-        %         %         pixid=classif.roi(i).findChannelID(obj.strid);
-        %         %         classif.roi(i).display.channel{pixid}=classif.strid;
-        %         %     end
-        %         %pixelchannel=size(obj.image,3);
-        %     end
-
-
-        classif.roi(cc+1).save;
-        classif.roi(cc+1).clear;
-
-        cc=cc+1;
     end
 
+    dataToCopy = classif.roi(cc+1).data; %#ok<NASGU> % only to preserve old semantics
 
-function newObj=propValues(newObj,orgObj)
+    % NOTE: we must copy from roitocopy.data, not from classif.roi(cc+1).data
+    dataSrc = roitocopy.data;
+
+    for ij = 1:numel(dataSrc)
+        if ~isempty(dataSrc(ij).groupid)
+
+            classif.roi(cc+1).data(cd) = dataseries;
+            classif.roi(cc+1).data(cd) = propValues(classif.roi(cc+1).data(cd), dataSrc(ij));
+            classif.roi(cc+1).data(cd).data = dataSrc(ij).data;
+
+            % If we transfer training dataseries, we rewrite groupid to destination strid
+            % and keep only training fields
+            if trainingSetTransfer && ~isempty(pixtransferdata) && any(ij == pixtransferdata)
+                disp('Found and transferred training set data from copied ROI');
+                classif.roi(cc+1).data(cd).groupid = classif.strid;
+
+                % Keep only training columns, remove previous results columns
+                % This method is expected to exist on dataseries
+                try
+                    classif.roi(cc+1).data(cd).removeData('train','keep');
+                catch
+                    % If removeData signature differs, do not crash import
+                    warning('addROI:removeDataFailed','Could not prune dataseries fields; leaving as-is.');
+                end
+            end
+
+            cd = cd + 1;
+        end
+    end
+
+    % ============================================================
+    % 4) ENSURE TRAINING DATASERIES EXISTS (CRITICAL FOR ANNOTATION GUI)
+    % ============================================================
+    % Even after copying, the ROI might still not have a dataseries for classif.strid.
+    % We guarantee it exists and has correct length.
+    ensureTrainingDataseriesExists(classif.roi(cc+1), classif);
+
+    % ============================================================
+    % 5) APPLY roiImporterGUI CHANNEL MAP (ioMap)
+    % ============================================================
+    % This is the key compatibility fix:
+    % - If ioMap(mm).ioChannel matches an INPUT channel (classif.channelName),
+    %   then rename the source channel name to EXACTLY that input name.
+    % - If ioMap(mm).ioChannel == classif.strid, it is output/annotation mapping:
+    %   we do not rename here; output is handled later via outName.
+    % - Otherwise if ioMap(mm).destName is specified, apply generic rename.
+    if ~isempty(ioMap) && isstruct(ioMap)
+        applyIOMapChannelRename(classif.roi(cc+1), classif, ioMap);
+    end
+
+    % ============================================================
+    % 6) PIXEL/OBJECT/DELTA/PEDIGREE OUTPUT CHANNEL HANDLING
+    % ============================================================
+    if strcmp(classif.category{1},'Pixel') || strcmp(classif.category{1},'Object') || ...
+       strcmp(classif.category{1},'Delta') || strcmp(classif.category{1},'Pedigree')
+
+        im = classif.roi(cc+1).image;
+
+        % Determine final annotation channel name (output)
+        if isempty(classif.classes)
+            outName = [classif.strid '_cell'];
+        else
+            outName = [classif.strid '_' classif.classes{1}];
+        end
+
+        % Special case: Pixel output channel may already exist in imported ROI and should be reused.
+        if strcmp(classif.category{1},'Pixel') && ~isempty(ioMap) && isstruct(ioMap)
+            reuseGT = reuseOutputAnnotationIfMapped(classif.roi(cc+1), classif, ioMap, outName);
+        else
+            reuseGT = false; %#ok<NASGU>
+        end
+
+        % If output channel does not exist, create blank ones (one per class)
+        pixOut = classif.roi(cc+1).findChannelID(outName);
+        if isempty(pixOut)
+            matrix = uint16(zeros(size(im,1), size(im,2), 1, size(im,4)));
+
+            if ~isempty(classif.classes)
+                for k = 1:numel(classif.classes)
+                    newName = [classif.strid '_' classif.classes{k}];
+                    classif.roi(cc+1).addChannel(matrix, newName, [1 1 1], [0 0 0]);
+                    classif.roi(cc+1).display.selectedchannel(end) = 1;
+                end
+            else
+                classif.roi(cc+1).addChannel(matrix, outName, [1 1 1], [0 0 0]);
+                classif.roi(cc+1).display.selectedchannel(end) = 1;
+            end
+        end
+
+        % If importing from another classi, and both have a channel named by their strid,
+        % copy pixels from source annotation channel to new annotation channel (legacy behavior)
+        if isa(obj,'classi')
+            pixid    = roitocopy.findChannelID(obj.strid);
+            pixidnew = classif.roi(cc+1).findChannelID(classif.strid);
+
+            if ~isempty(pixid) && ~isempty(pixidnew)
+                classif.roi(cc+1).image(:,:,pixidnew,:) = roitocopy.image(:,:,pixid,:);
+            end
+        end
+    end
+
+    % ============================================================
+    % 7) FINALIZE ROI
+    % ============================================================
+    classif.roi(cc+1).save;
+    classif.roi(cc+1).clear;
+
+    cc = cc + 1;
+end
+
+% ------------------------------------------------------------
+% LOCAL HELPERS
+% ------------------------------------------------------------
+
+    function ensureTrainingDataseriesExists(roiObj, classifObj)
+        % Ensure there is a dataseries with groupid==classif.strid and that it has
+        % at least the columns needed by annotation routines.
+        %
+        % This prevents errors like "pix undefined" in score/addROI when no dataseries exists.
+
+        if isempty(roiObj.data)
+            roiObj.data = dataseries;
+        end
+
+        % Find existing ds for this classifier
+        dsIdx = find(arrayfun(@(x) isprop(x,'groupid') && strcmp(x.groupid, classifObj.strid), roiObj.data), 1, 'first');
+
+        % Create if missing
+        if isempty(dsIdx)
+            % Append safely
+            if numel(roiObj.data)==1 && isempty(roiObj.data(1).data) && isempty(roiObj.data(1).groupid)
+                dsIdx = 1;
+            else
+                dsIdx = numel(roiObj.data) + 1;
+                roiObj.data(dsIdx) = dataseries;
+            end
+            roiObj.data(dsIdx).class    = "classification";
+            roiObj.data(dsIdx).groupid  = classifObj.strid;
+            roiObj.data(dsIdx).parentid = roiObj.id;
+        end
+
+        ds = roiObj.data(dsIdx);
+
+        % Determine full length
+        nT = size(roiObj.image,4);
+
+        % Guarantee a table exists
+        if isempty(ds.data)
+            ds.data = table;
+        end
+
+        % Ensure required columns exist
+        % - labels_training is what GUI expects to show/hide for annotation.
+        % - id_training can be useful for training targets.
+        % - We keep consistent size (nT x 1) even if only a subset will be filled later.
+
+        if ~ismember('labels_training', ds.data.Properties.VariableNames)
+            ds.data.labels_training = categorical(repmat("undefined", nT, 1));
+        else
+            ds.data.labels_training = padCategorical(ds.data.labels_training, nT, "undefined");
+        end
+
+        if ~ismember('id_training', ds.data.Properties.VariableNames)
+            ds.data.id_training = zeros(nT,1);
+        else
+            ds.data.id_training = padNumeric(ds.data.id_training, nT, 0);
+        end
+
+        % Basic plotting metadata (some UIs expect these fields)
+        if ~isprop(ds,'plotProperties') || isempty(ds.plotProperties)
+            % Minimal plotProperties containing labels_training
+            ds.plotProperties = {
+                true,  'labels_training', 'categorical', 'k', 2, 'label';
+                false, 'id_training',     'double',      'k', 2, 'id';
+            };
+        else
+            % Make sure labels_training row exists and is enabled
+            pp = ds.plotProperties;
+            names = lower(string(pp(:,2)));
+            pidx = find(names=="labels_training",1);
+            if isempty(pidx)
+                pp(end+1,:) = {true, 'labels_training', 'categorical', 'k', 2, 'label'};
+            else
+                pp{pidx,1} = true;
+            end
+            ds.plotProperties = pp;
+        end
+
+        % Commit
+        roiObj.data(dsIdx) = ds;
+
+        % Also ensure ROI.train structure exists (used by some legacy tools)
+        if ~isfield(roiObj,'train') || isempty(roiObj.train) || ~isfield(roiObj.train, classifObj.strid)
+            roiObj.train.(classifObj.strid) = [];
+            if isprop(classifObj,'output') && classifObj.output==1
+                roiObj.train.(classifObj.strid).id = 0;
+            else
+                roiObj.train.(classifObj.strid).id = zeros(1,nT);
+            end
+            roiObj.train.(classifObj.strid).classes = classifObj.classes;
+        end
+    end
+
+    function applyIOMapChannelRename(roiObj, classifObj, ioMapLocal)
+        % Apply channel mapping as built by roiImporterGUI.
+        % Expected struct fields: import, sourceName, destName, ioChannel.
+        % ioChannel is either '-' / inputName / classif.strid (output).
+        %
+        % Key guarantee: if ioChannel is an INPUT channel, rename to that exact name.
+
+        % Get current channel list
+        chNames = {};
+        if isfield(roiObj.display,'channel') && ~isempty(roiObj.display.channel)
+            chNames = roiObj.display.channel;
+            if ischar(chNames), chNames = {chNames}; end
+            if isstring(chNames), chNames = cellstr(chNames); end
+            if ~iscell(chNames), chNames = {}; end
+        end
+
+        if isempty(chNames)
+            return
+        end
+
+        for mm = 1:numel(ioMapLocal)
+            % Robust import flag
+            doImport = true;
+            if isfield(ioMapLocal,'import')
+                val = ioMapLocal(mm).import;
+                if isempty(val)
+                    doImport = false;
+                elseif islogical(val) && isscalar(val)
+                    doImport = val;
+                elseif isnumeric(val) && isscalar(val)
+                    doImport = (val ~= 0);
+                else
+                    doImport = false;
+                end
+            end
+            if ~doImport
+                continue
+            end
+
+            % Source name
+            src = '';
+            if isfield(ioMapLocal,'sourceName'), src = ioMapLocal(mm).sourceName; end
+            if isstring(src), src = char(src); end
+            if ~ischar(src) || isempty(strtrim(src))
+                continue
+            end
+            src = strtrim(src);
+
+            % Destination name
+            dest = '';
+            if isfield(ioMapLocal,'destName'), dest = ioMapLocal(mm).destName; end
+            if isstring(dest), dest = char(dest); end
+            if ~ischar(dest), dest = ''; end
+            dest = strtrim(dest);
+
+            % I/O mapping channel
+            ioCh = '';
+            if isfield(ioMapLocal,'ioChannel'), ioCh = ioMapLocal(mm).ioChannel; end
+            if isstring(ioCh), ioCh = char(ioCh); end
+            if ~ischar(ioCh), ioCh = ''; end
+            ioCh = strtrim(ioCh);
+
+            % Find index of this source channel
+            idx = find(strcmp(chNames, src), 1);
+            if isempty(idx)
+                % fallback: matches (case-insensitive)
+                idx = find(matches(chNames, src), 1);
+            end
+            if isempty(idx)
+                continue
+            end
+
+            % 1) If mapped to OUTPUT (annotation), do not rename here.
+            if ~isempty(ioCh) && strcmp(ioCh, classifObj.strid)
+                % handled later by output channel logic
+                continue
+            end
+
+            % 2) If mapped to a classifier INPUT: force rename to ioCh
+            if ~isempty(ioCh) && ~isempty(classifObj.channelName) && any(strcmp(classifObj.channelName, ioCh))
+                roiObj.display.channel{idx} = ioCh;
+                chNames{idx} = ioCh;
+                continue
+            end
+
+            % 3) Otherwise apply generic rename src -> dest if provided
+            if ~isempty(dest) && ~strcmp(dest, src)
+                roiObj.display.channel{idx} = dest;
+                chNames{idx} = dest;
+            end
+        end
+    end
+
+    function reuseGT = reuseOutputAnnotationIfMapped(roiObj, classifObj, ioMapLocal, outName)
+        % If the imported ROI already has an annotation channel that the user mapped to OUTPUT,
+        % rename that existing channel to outName so we reuse it instead of creating a blank one.
+        reuseGT = false;
+
+        % Channel list
+        chNames = roiObj.display.channel;
+        if ischar(chNames), chNames = {chNames}; end
+        if isstring(chNames), chNames = cellstr(chNames); end
+        if ~iscell(chNames), chNames = {}; end
+
+        for mm = 1:numel(ioMapLocal)
+            if ~isfield(ioMapLocal,'import') || ~logical(ioMapLocal(mm).import)
+                continue
+            end
+
+            ioCh = '';
+            if isfield(ioMapLocal,'ioChannel'), ioCh = ioMapLocal(mm).ioChannel; end
+            if isstring(ioCh), ioCh = char(ioCh); end
+            if ~ischar(ioCh), ioCh = ''; end
+            ioCh = strtrim(ioCh);
+
+            if ~strcmp(ioCh, classifObj.strid)
+                continue
+            end
+
+            srcName  = '';
+            destName = '';
+
+            if isfield(ioMapLocal,'sourceName'), srcName = ioMapLocal(mm).sourceName; end
+            if isstring(srcName), srcName = char(srcName); end
+            if ~ischar(srcName), srcName = ''; end
+
+            if isfield(ioMapLocal,'destName'), destName = ioMapLocal(mm).destName; end
+            if isstring(destName), destName = char(destName); end
+            if ~ischar(destName), destName = ''; end
+
+            if isempty(destName)
+                destName = srcName;
+            end
+
+            idxGT = find(matches(chNames, destName), 1);
+            if isempty(idxGT) && ~isempty(srcName)
+                idxGT = find(matches(chNames, srcName), 1);
+            end
+
+            if ~isempty(idxGT)
+                roiObj.display.channel{idxGT} = outName;
+                reuseGT = true;
+                break
+            end
+        end
+    end
+
+    function v = padNumeric(v, n, fill)
+        v = v(:);
+        if numel(v) >= n
+            v = v(1:n);
+        else
+            v(end+1:n,1) = fill;
+        end
+    end
+
+    function c = padCategorical(c, n, undef)
+        if ~iscategorical(c)
+            c = categorical(c);
+        end
+        c = c(:);
+        if numel(c) >= n
+            c = c(1:n);
+        else
+            pad = categorical(repmat(string(undef), n-numel(c), 1));
+            c = [c; pad];
+        end
+    end
+
+end % --- end addROI ---
+
+
+% ------------------------------------------------------------
+% propValues helper (keeps original semantics: do not copy .data)
+% ------------------------------------------------------------
+function newObj = propValues(newObj, orgObj)
 pl = properties(orgObj);
 for k = 1:length(pl)
-    if isprop(newObj,pl{k}) && ~strcmp(pl{k},'data')
+    if isprop(newObj, pl{k}) && ~strcmp(pl{k}, 'data')
         newObj.(pl{k}) = orgObj.(pl{k});
     end
 end
-
+end

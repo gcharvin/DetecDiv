@@ -55,6 +55,19 @@ for i = 1:numel(newdata.pos)
             newdata.pos(i).name);
     end
 
+    % NDTiff info
+    if isfield(newdata.pos(i),'isNDTiff') && newdata.pos(i).isNDTiff
+        obj.fov(cc).isNDTiff       = true;
+        obj.fov(cc).ndtiffPath     = newdata.pos(i).ndtiffPath;
+        obj.fov(cc).ndtiffPosition = newdata.pos(i).ndtiffPosition;
+        obj.fov(cc).ndtiffChannels = newdata.pos(i).ndtiffChannels;
+        if isfield(newdata.pos(i),'ndtiffZ')
+            obj.fov(cc).ndtiffZ = newdata.pos(i).ndtiffZ;
+        else
+            obj.fov(cc).ndtiffZ = 0;
+        end
+    end
+
     % copier les autres infos
     if isfield(newdata.pos(i),'contours')
         obj.fov(cc).contours = newdata.pos(i).contours;
@@ -68,6 +81,9 @@ for i = 1:numel(newdata.pos)
     obj.fov(cc).frames             = newdata.pos(i).frames;
     obj.fov(cc).interval           = newdata.pos(i).interval;
     obj.fov(cc).parent             = obj;
+    if isfield(newdata.pos(i),'metadataText') && ~isempty(newdata.pos(i).metadataText)
+        obj.fov(cc).comments = newdata.pos(i).metadataText;
+    end
 
     cc = cc+1;
 end

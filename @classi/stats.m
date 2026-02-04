@@ -20,6 +20,7 @@ plotScore=[];
 compute=0;
 scoreid=[];
 export='';
+silent=0;
 
 if numel(classif.score)==0
     compute=1;
@@ -66,7 +67,61 @@ for i=1:numel(varargin)
     if strcmp(varargin{i},'Force') % forces the caluclation of scores
         compute=1;
     end
+    if strcmp(varargin{i},'Silent')  % mode silencieux
+        silent = 1;
+    end
+
 end
+
+    function h = newFig(silent)
+        if silent
+            h = figure('Color','w','Visible','off');
+        else
+            h = figure('Color','w');
+        end
+    end
+
+
+% --- sanitize export to char (évite comportements bizarres si string) ---
+if isstring(export), export = char(export); end
+
+
+% folder for generated artifacts (xlsx mismatch, etc.)
+% folder for generated artifacts (xlsx mismatch, etc.)
+mismatchDir = classif.path;
+
+if ~isempty(export)
+    try
+        mismatchDir = fileparts(export);
+        if ~exist(mismatchDir,'dir'); mkdir(mismatchDir); end
+    catch
+        mismatchDir = classif.path;
+    end
+else
+    % run peut être struct OU objet
+    try
+        if isprop(classif,'run') && ~isempty(classif.run)
+            runObj = classif.run;
+
+            isActive = false;
+            runDir   = '';
+
+            if isstruct(runObj)
+                if isfield(runObj,'active'), isActive = runObj.active; end
+                if isfield(runObj,'runDir'), runDir   = runObj.runDir; end
+            else
+                if isprop(runObj,'active'), isActive = runObj.active; end
+                if isprop(runObj,'runDir'), runDir   = runObj.runDir; end
+            end
+
+            if isActive && ~isempty(runDir) && exist(runDir,'dir')
+                mismatchDir = runDir;
+            end
+        end
+    catch
+    end
+end
+
 
 
 if compute==1
@@ -134,11 +189,12 @@ if compute==1 % compute new scores
 
             if cc==1
 
-                classif.score= measureAccuracyRecall(classif,data.gt, data.pred, data.roi, data.frames, num2str(i));  % score for given classification
+         
+                classif.score= measureAccuracyRecall(classif,data.gt, data.pred, data.roi, data.frames, num2str(i),mismatchDir);  % score for given classification
                 classif.score.comments='Classification benchmarks using main classifier';
                 classif.score.thr=i;
             else
-                classif.score(cc)= measureAccuracyRecall(classif,data.gt, data.pred, data.roi, data.frames, num2str(i));  % score for given classification
+                classif.score(cc)= measureAccuracyRecall(classif,data.gt, data.pred, data.roi, data.frames, num2str(i),mismatchDir);  % score for given classification
                 classif.score(cc).comments='Classification benchmarks using main classifier';
                 classif.score(cc).thr=i;
             end
@@ -147,7 +203,7 @@ if compute==1 % compute new scores
                 if numel( data.CNNpred) && numel(data.gt)==numel(data.CNNpred)
 
                     cc=cc+1;
-                    classif.score(cc)= measureAccuracyRecall(classif,data.gt, data.CNNpred, data.roi, data.frames, ['LSTM_' num2str(i)]);  % score for given classification
+                    classif.score(cc)= measureAccuracyRecall(classif,data.gt, data.CNNpred, data.roi, data.frames, ['LSTM_' num2str(i)],mismatchDir);  % score for given classification
                     classif.score(cc).comments='Classification benchmarks using CNN classifier for LSTM architecture';
                     classif.score(cc).thr=i;
                 end
@@ -184,12 +240,72 @@ end
 if plotConfusion
     for j=nscore
         % j
-        mate=classif.score(j).confusion;
-        cate=categorical(classif.classes);
-        h=figure;
-        cm=confusionchart(mate,cate,'ColumnSummary','column-normalized','RowSummary','row-normalized');
-        xlabel('Predicted class');
-        ylabel('Groundtruth');
+        mate = classif.score(j).confusion;
+
+        if isempty(mate)
+            warning('No confusion matrix available for score %d. Skipping.', j);
+            continue;
+        end
+
+     
+
+      % labels utilisés pour la confusion matrix
+if isfield(classif.score(j), 'confusionLbl') && ~isempty(classif.score(j).confusionLbl)
+    labs = classif.score(j).confusionLbl(:)';   % ordre = axes du mate
+else
+    labs = 1:size(mate,1);                      % ancien format
+end
+
+% sécurité : s'assurer que labs colle à la taille du mate
+if numel(labs) ~= size(mate,1)
+    labs = 1:size(mate,1);
+end
+
+K = numel(classif.classes);
+
+% --- noms à afficher sur les axes (toujours de longueur numel(labs)) ---
+names = cell(1, numel(labs));
+
+% 1) si labs sont déjà des noms (string/cellstr/categorical), on les garde
+if iscellstr(labs) || isstring(labs) || iscategorical(labs)
+    names = cellstr(labs);
+
+else
+    % 2) labs numériques : on mappe chaque label vers classif.classes{label} si possible
+    labsNum = double(labs);
+
+    % Cas particulier CellposeSAM : 2 labels (background + foreground), classif.classes = {foreground}
+    if K == 1 && numel(labsNum) == 2
+        % heuristique robuste pour savoir lequel est le background
+        % (souvent 0, sinon on prend le premier comme background)
+        bgPos = find(labsNum == 0, 1);
+        if isempty(bgPos), bgPos = 1; end
+        fgPos = setdiff(1:2, bgPos);
+
+        names{bgPos} = 'background';
+        names{fgPos} = classif.classes{1};
+
+    else
+        % Cas général : subset / non-contigu / labels "exotiques"
+        for ii = 1:numel(labsNum)
+            lab = labsNum(ii);
+            if isfinite(lab) && lab == round(lab) && lab >= 1 && lab <= K
+                names{ii} = classif.classes{lab};
+            else
+                % label hors range ou non-entier : on garde une étiquette explicite
+                names{ii} = sprintf('Class %g', lab);
+            end
+        end
+    end
+end
+
+cate = categorical(names);  % ordre = ordre de names (= ordre de labs)
+
+
+       h = newFig(silent);
+cm = confusionchart(mate,cate,'ColumnSummary','column-normalized','RowSummary','row-normalized');
+xlabel('Predicted class');
+ylabel('Groundtruth');
 
         str=num2str(classif.score(j).thr);
 
@@ -205,11 +321,12 @@ if plotConfusion
         set(gca,'FontSize',14);
 
         if numel(export)
-            savefig(h,[export '_score_' num2str(j) '_confusion.fig']);
-            try
-                exportgraphics(h,[export '_score_' num2str(j) '_confusion.pdf']);
-            catch
-            end
+             savefig(h,[export '_score_' num2str(j) '_confusion.fig']);
+    try
+        exportgraphics(h,[export '_score_' num2str(j) '_confusion.png'],'Resolution',300);
+    catch
+    end
+    if silent, close(h); end
 
             fileID = fopen([export '.txt'],'a+');
             fprintf(fileID,'=======\n');
@@ -242,7 +359,7 @@ if plotROI
 
         roi=classif.score(j).roi;
 
-        h=figure;
+        h = newFig(silent);
         recall=[];
         accuracy=[];
         fscore=[];
@@ -272,9 +389,10 @@ if plotROI
         if numel(export)
             savefig(h,[export  '_score_' num2str(j) '_roi.fig']);
             try
-                exportgraphics(h,[export  '_score_' num2str(j) '_roi.pdf']);
-            catch
-            end
+    exportgraphics(h,[export  '_score_' num2str(j) '_roi.png'],'Resolution',300);
+catch
+end
+if silent, close(h); end
 
             fileID = fopen([export '.txt'],'a+');
             fprintf(fileID,'=======\n');
@@ -328,7 +446,7 @@ if plotClasses
 
         classes=classif.score(j).classes;
 
-        h=figure;
+        h = newFig(silent);
         recall=[];
         accuracy=[];
         fscore=[];
@@ -365,11 +483,12 @@ if plotClasses
         ylabel('Benchmark (%)');
 
         if numel(export)
-            savefig(h,[export  '_score_' num2str(j) '_classes.fig']);
-            try
-                exportgraphics(h,[export  '_score_' num2str(j) '_classes.pdf']);
-            catch
-            end
+          savefig(h,[export  '_score_' num2str(j) '_classes.fig']);
+try
+    exportgraphics(h,[export  '_score_' num2str(j) '_classes.png'],'Resolution',300);
+catch
+end
+if silent, close(h); end
 
             fileID = fopen([export '.txt'],'a+');
 
@@ -431,8 +550,8 @@ if numel(plotScore)
 
     str={};
 
-    h=figure;
-    ax1=subplot(2,1,1);
+    h = newFig(silent);
+ax1=subplot(2,1,1);
 
     if numel(cl3)
         %  x=[x 2];
@@ -520,10 +639,12 @@ if numel(plotScore)
 
     if numel(export)
         savefig(h,[export  '_score.fig']);
-        try
-            exportgraphics(h,[export  '_score.pdf']);
-        catch
-        end
+try
+    exportgraphics(h,[export  '_score.png'],'Resolution',300);
+catch
+end
+if silent, close(h); end
+
 
         fileID = fopen([export '.txt'],'a+');
         fprintf(fileID,'=======\n');
@@ -545,9 +666,9 @@ if numel(plotScore)
 
 
 end
+end
 
-
-function score=measureAccuracyRecall(classif, groundtruth, predictions, roi, frames, str)
+function score=measureAccuracyRecall(classif, groundtruth, predictions, roi, frames, str,mismatchDir)
 
 % str is a flag for the excell export file
 
@@ -591,22 +712,41 @@ for i=1:numel(classif.classes)
     roiid={classif.roi.id};
     inc_pix=~(pred & gt) & gt; % select mismatch frames for all GT classes
 
+    % outputs inconsistencies as an excel file per class
     if numel(frames2)
-        inc_roi=roi2(inc_pix);
-        inc_frames=frames2(inc_pix);
-        roiid=roiid(inc_roi);
-        pth=classif.path;
-        pthtot=fullfile(pth,[classif.strid '_mismatch_' str '.xlsx']);
-        writecell([(num2cell(inc_roi,1))', roiid', (num2cell(inc_frames))'],pthtot,'sheet',classif.classes{i},'WriteMode','overwritesheet');
+        inc_roi    = roi2(inc_pix);
+        inc_frames = frames2(inc_pix);
+        roiid_cell = {classif.roi.id};
+        roiid_cell = roiid_cell(inc_roi);
+
+        pthtot = fullfile(mismatchDir, [classif.strid '_mismatch_' str '.xlsx']);
+        writecell([(num2cell(inc_roi,1))', roiid_cell', (num2cell(inc_frames))'], ...
+            pthtot, 'sheet', classif.classes{i}, 'WriteMode', 'overwritesheet');
     end
+
 end
 
 % ======= confusion matrix ======
 
+% ======= confusion matrix (robuste aux labels) ======
 
-mate=confusionmat(data.gt,data.pred,'Order',1:numel(classif.classes));
-score.confusion=mate; % matrix coeff must match acc and recall values computed above
+% labels effectivement présents dans GT / Pred
 
+
+labs = unique([data.gt(:); data.pred(:)]);
+labs = labs(~isnan(labs));  % au cas où
+
+
+
+try
+    mate = confusionmat(data.gt, data.pred, 'Order', labs');
+catch ME
+    warning('Could not compute confusion matrix: %s', ME.message);
+    mate = [];
+end
+
+score.confusion    = mate;
+score.confusionLbl = labs;   % on garde les labels utilisés (ex: [0;1] ou [1;2])
 % ===== accuracy & recall & fscore per ROI =====
 
 score.roi=[];
@@ -683,7 +823,7 @@ score.accuracy=accuracy;
 score.recall=recall;
 score.fscore=2*accuracy*recall./(accuracy+recall);
 score.N=sum([score.classes(:).N]);
-
+end
 
 function data=collectROIData(classif,roiid)
 
@@ -697,6 +837,8 @@ data.pred=[];
 data.CNNpred=[];
 classistr=classif.strid;
 reg=0;
+
+
 
 for j=roiid
 
@@ -713,70 +855,137 @@ for j=roiid
     CNNpred=[];
     fra=[];
 
+
     switch classif.category{1}
-        case 'Pixel' % pixel classification
+        case 'Pixel' % pixel classification / segmentation (incl. CellposeSAM)
 
-            chgt=obj.findChannelID(classif.strid);
-            chpred=obj.findChannelID(['results_' classif.strid]);
 
-            if numel(obj.image)==0 % loads the image
+            if numel(obj.image)==0
                 obj.load;
             end
-            im=obj.image;
+            im = obj.image;
 
-            if numel(chgt)>0 % groundtruth channel exists
-                % checks if at least one image has been annotated  first!
+            % CPSAM
+            isCPSAM = false;
+            chgt_cpsam   = [];
+            chpred_cpsam = [];
 
-                imgt=im(:,:,chgt,:);
-                if sum(imgt(:))>0 % at least one image was annotated
-                    disp('GT data are available!');
-                    ground=1;
-                else
-                    disp('there is no GT data !')
-                end
-            else
-                disp('there is no GT channel ')
+            if ~isempty(classif.classes)
+                baseGT   = [classif.strid '_' classif.classes{1}];
+                basePred = ['results_' classif.strid '_' classif.classes{1}];
+                chgt_cpsam   = obj.findChannelID(baseGT);
+                chpred_cpsam = obj.findChannelID(basePred);
+                if iscell(chgt_cpsam),   chgt_cpsam   = cell2mat(chgt_cpsam);   end
+                if iscell(chpred_cpsam), chpred_cpsam = cell2mat(chpred_cpsam); end
+
+                fprintf('ROI %d (%s): CPSAM GT=%s, Pred=%s\n', j, obj.id, mat2str(chgt_cpsam), mat2str(chpred_cpsam));
+                isCPSAM = ~isempty(chgt_cpsam) && ~isempty(chpred_cpsam);
             end
 
+            if isCPSAM
 
-            if numel(chpred)>0
-                impred=im(:,:,chpred,:);
-                if sum(impred(:))>0 % at least one image was annotated
-                    disp('Predictions data are available!');
-                    resok=1;
+
+                % ================== BRANCHE CELLPoseSAM ==================
+                disp('[CPSAM] Using instance masks <strid>_<class> and results_<strid>_<class>.');
+
+                imgt   = im(:,:,chgt_cpsam,:);   % GT: 0 = bg, >0 = cellule
+                impred = im(:,:,chpred_cpsam,:); % Pred: idem
+
+
+                fprintf('  sum(GT)=%g, sum(Pred)=%g\n', sum(imgt(:)), sum(impred(:)));
+
+                if sum(imgt(:)) > 0
+                    disp('[CPSAM] GT data are available!');
+                    ground = 1;
                 else
-                    disp('there is no pred data !')
+                    disp('[CPSAM] no GT data !');
                 end
-            else
-                disp('There is no prediction channel available for this roi');
-            end
 
-            if ground && resok
-                %  for gt, if at least one pixel on the image is annotated, then
-                %  take the whole image as annotated and fill in with
-                %  default class
-                for k=1:size(imgt,4)
-                    bw=imgt(:,:,1,k);
-                    if sum(bw(:))>0
-                        bw= imgt(:,:,1,k);
-                        bw(imgt(:,:,1,k)==0)=1;
-                        imgt(:,:,1,k) = bw;
+                if sum(impred(:)) > 0
+                    disp('[CPSAM] Prediction data are available!');
+                    resok = 1;
+                else
+                    disp('[CPSAM] no prediction data !');
+                end
+
+                if ground && resok
+                    % Binaire : 0=bg, >0=cell -> labels 0/1
+                    gtBin   = imgt > 0;
+                    predBin = impred > 0;
+
+                    gt   = double(gtBin(:)).';    % 0 ou 1
+                    pred = double(predBin(:)).';  % 0 ou 1
+
+                    % Pas de frames pour CPSAM (évite Excel monstrueux)
+                    fra   = [];
+                end
+
+            else
+                % ================== BRANCHE PIXEL CLASSIQUE ==================
+
+                chgt   = obj.findChannelID(classif.strid);
+                chpred = obj.findChannelID(['results_' classif.strid]);
+
+                if numel(chgt)>0 % groundtruth channel exists
+                    imgt = im(:,:,chgt,:);
+                    if sum(imgt(:))>0 % at least one image was annotated
+                        disp('GT data are available!');
+                        ground=1;
+                    else
+                        disp('there is no GT data !')
                     end
-                end
-
-                pix= imgt & impred;
-
-                if numel(pix)==0
-                    disp('There is no coincidence for ground truth and prediction : skipping roi !');
-                    continue
                 else
-                    disp('GT and prediction pixels match!');
+                    disp('there is no GT channel ')
                 end
 
-                gt= imgt(pix); gt=gt(:); gt=gt';
-                pred=impred(pix); pred=pred(:); pred=pred';
+                if numel(chpred)>0
+                    impred=im(:,:,chpred,:);
+                    if sum(impred(:))>0 % at least one image was annotated
+                        disp('Predictions data are available!');
+                        resok=1;
+                    else
+                        disp('there is no pred data !')
+                    end
+                else
+                    disp('There is no prediction channel available for this roi');
+                end
 
+                if ground && resok
+                    %  for gt, if at least one pixel on the image is annotated, then
+                    %  take the whole image as annotated and fill in with
+                    %  default class
+                    for k=1:size(imgt,4)
+                        bw=imgt(:,:,1,k);
+                        if sum(bw(:))>0
+                            bw= imgt(:,:,1,k);
+                            bw(imgt(:,:,1,k)==0)=1;
+                            imgt(:,:,1,k) = bw;
+                        end
+                    end
+
+                    pix= imgt & impred;
+
+                    if numel(pix)==0
+                        disp('There is no coincidence for ground truth and prediction : skipping roi !');
+                        continue
+                    else
+                        disp('GT and prediction pixels match!');
+                    end
+
+                    gt= imgt(pix);  gt   = gt(:).';
+                    pred=impred(pix); pred = pred(:).';
+
+                    gt_bin = gt > 0;       % 1 = cell, 0 = background
+                    pred_bin = pred > 0;
+
+                    gt = gt_bin + 1;       % 2 = background, 1 = cell
+                    pred = pred_bin + 1;
+
+                    % pas de frames définis dans le code original
+                    fra = [];
+                end
             end
+
 
         case 'Image Regression'
 
@@ -898,108 +1107,107 @@ for j=roiid
 
         otherwise % image classification
 
- % image classification (évalue sur labels, pas sur id)
+            % image classification (évalue sur labels, pas sur id)
 
-    dataserie = obj.data;
-    pixdata = arrayfun(@(x) strcmp(x.groupid, classistr), dataserie);
-    dataserie = dataserie(pixdata);
+            dataserie = obj.data;
+            pixdata = arrayfun(@(x) strcmp(x.groupid, classistr), dataserie);
+            dataserie = dataserie(pixdata);
 
-    if isempty(dataserie)
-        obj.load('data');
-        dataserie = obj.data;
-        pixdata = arrayfun(@(x) strcmp(x.groupid, classistr), dataserie);
-        dataserie = dataserie(pixdata);
-        if isempty(dataserie)
-            disp(['No matching dataseries found for groupid: ' classistr ' in ROI ' obj.id]);
-            continue;
-        end
-    end
-
-    % --- récupérer GT et prédictions sous forme de labels catégoriels ---
-    labels_training = dataserie.getData('labels_training');   % GT (categorical/string)
-    labels_pred     = dataserie.getData('labels');            % préd LSTM (categorical/string)
-    labels_pred_cnn = dataserie.getData('labelsCNN');         % préd CNN (optionnel)
-
-    % --- présence résultats : au moins un label préd ≠ 'undefined' ---
-    resok = 0;
-    if ~isempty(labels_pred)
-        if iscategorical(labels_pred)
-            resok = any(labels_pred ~= categorical("undefined"));
-        else
-            resok = any(string(labels_pred) ~= "undefined");
-        end
-        if ~resok
-            disp('There is no result available for this classification (only ''undefined'')');
-        end
-    else
-        disp('There is no result available for this roi');
-    end
-
-    % --- présence GT : au moins un label GT ≠ 'undefined' ---
-    ground = 0;
-    id_training = [];
-    if ~isempty(labels_training)
-        if iscategorical(labels_training)
-            ground = any(labels_training ~= categorical("undefined"));
-        else
-            ground = any(string(labels_training) ~= "undefined");
-        end
-
-        if ground
-            % map GT labels -> indices [1..K]
-            labGT = string(labels_training(:));
-            cls   = string(classif.classes(:));
-            id_training = zeros(size(labGT));
-            for k = 1:numel(cls)
-                id_training(labGT == cls(k)) = k;
+            if isempty(dataserie)
+                obj.load('data');
+                dataserie = obj.data;
+                pixdata = arrayfun(@(x) strcmp(x.groupid, classistr), dataserie);
+                dataserie = dataserie(pixdata);
+                if isempty(dataserie)
+                    disp(['No matching dataseries found for groupid: ' classistr ' in ROI ' obj.id]);
+                    continue;
+                end
             end
-            ground = any(id_training > 0);
-        else
-            disp('There is no GT available (only ''undefined'')');
-        end
-    else
-        disp('There is no GT available for this roi');
-    end
 
-    % --- comparaison préd / GT sur frames définis ---
-    if ground && resok
-        % map préd labels -> indices [1..K]
-        labP  = string(labels_pred(:));
-        cls   = string(classif.classes(:));
-        id_pred = zeros(size(labP));
-        for k = 1:numel(cls)
-            id_pred(labP == cls(k)) = k;
-        end
+            % --- récupérer GT et prédictions sous forme de labels catégoriels ---
+            labels_training = dataserie.getData('labels_training');   % GT (categorical/string)
+            labels_pred     = dataserie.getData('labels');            % préd LSTM (categorical/string)
+            labels_pred_cnn = dataserie.getData('labelsCNN');         % préd CNN (optionnel)
 
-        % frames valides : GT & préd définis (indices > 0)
-        pix = (id_training(:) > 0) & (id_pred(:) > 0);
-        if ~any(pix)
-            disp('There is no coincidence for ground truth and prediction : skipping roi !');
-            continue;
-        end
-
-        fra   = find(pix).';                     % indices des frames utilisés
-        gt    = double(id_training(pix)).';      % ligne
-        pred  = double(id_pred(pix)).';          % ligne
-
-        % CNN (optionnel)
-        if ~isempty(labels_pred_cnn)
-            labPC = string(labels_pred_cnn(:));
-            id_cnn = zeros(size(labPC));
-            for k = 1:numel(cls)
-                id_cnn(labPC == cls(k)) = k;
+            % --- présence résultats : au moins un label préd ≠ 'undefined' ---
+            resok = 0;
+            if ~isempty(labels_pred)
+                if iscategorical(labels_pred)
+                    resok = any(labels_pred ~= categorical("undefined"));
+                else
+                    resok = any(string(labels_pred) ~= "undefined");
+                end
+                if ~resok
+                    disp('There is no result available for this classification (only ''undefined'')');
+                end
+            else
+                disp('There is no result available for this roi');
             end
-            CNNpred = double(id_cnn(pix)).';
-        end
 
-    else
-        % au moins l'un manque : on passe ce ROI
-        continue;
-    end
+            % --- présence GT : au moins un label GT ≠ 'undefined' ---
+            ground = 0;
+            id_training = [];
+            if ~isempty(labels_training)
+                if iscategorical(labels_training)
+                    ground = any(labels_training ~= categorical("undefined"));
+                else
+                    ground = any(string(labels_training) ~= "undefined");
+                end
+
+                if ground
+                    % map GT labels -> indices [1..K]
+                    labGT = string(labels_training(:));
+                    cls   = string(classif.classes(:));
+                    id_training = zeros(size(labGT));
+                    for k = 1:numel(cls)
+                        id_training(labGT == cls(k)) = k;
+                    end
+                    ground = any(id_training > 0);
+                else
+                    disp('There is no GT available (only ''undefined'')');
+                end
+            else
+                disp('There is no GT available for this roi');
+            end
+
+            % --- comparaison préd / GT sur frames définis ---
+            if ground && resok
+                % map préd labels -> indices [1..K]
+                labP  = string(labels_pred(:));
+                cls   = string(classif.classes(:));
+                id_pred = zeros(size(labP));
+                for k = 1:numel(cls)
+                    id_pred(labP == cls(k)) = k;
+                end
+
+                % frames valides : GT & préd définis (indices > 0)
+                pix = (id_training(:) > 0) & (id_pred(:) > 0);
+                if ~any(pix)
+                    disp('There is no coincidence for ground truth and prediction : skipping roi !');
+                    continue;
+                end
+
+                fra   = find(pix).';                     % indices des frames utilisés
+                gt    = double(id_training(pix)).';      % ligne
+                pred  = double(id_pred(pix)).';          % ligne
+
+                % CNN (optionnel)
+                if ~isempty(labels_pred_cnn)
+                    labPC = string(labels_pred_cnn(:));
+                    id_cnn = zeros(size(labPC));
+                    for k = 1:numel(cls)
+                        id_cnn(labPC == cls(k)) = k;
+                    end
+                    CNNpred = double(id_cnn(pix)).';
+                end
+
+            else
+                % au moins l'un manque : on passe ce ROI
+                continue;
+            end
 
     end
     % then display the results
-
 
     % if ground ==1 && resok==1 % list of rois used to compute stats
     data.gt=[data.gt gt];
@@ -1010,5 +1218,6 @@ for j=roiid
     data.reg=reg;
     %end
 
+end
 end
 
