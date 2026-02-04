@@ -317,8 +317,6 @@ function ensurePlotProperties(obj)
 % - Keeps existing settings when possible (matched by variable name)
 % - Adds default rows for missing variables
 % - Drops orphan rows (vars no longer in the table)
-%
-% obj is a handle.
 
     if ~istable(obj.data)
         return
@@ -328,7 +326,6 @@ function ensurePlotProperties(obj)
     vnames = t.Properties.VariableNames;
 
     % --------- read old pp (if any) ---------
-    ppOld = [];
     hasOld = isprop(obj,'plotProperties') && ~isempty(obj.plotProperties) && iscell(obj.plotProperties);
 
     if hasOld
@@ -349,12 +346,9 @@ function ensurePlotProperties(obj)
     if isempty(ppNames)
         ppNames = {};
     else
-        % normalize name cells
         if isstring(ppNames), ppNames = cellstr(ppNames); end
         ppNames = cellfun(@(x) char(string(x)), ppNames, 'UniformOutput', false);
     end
-
-    used = false(size(ppOld,1),1);
 
     % --------- build new pp in table order ---------
     ppNew = cell(numel(vnames), 6);
@@ -365,215 +359,197 @@ function ensurePlotProperties(obj)
         idx = find(strcmp(ppNames, nm), 1, 'first');
 
         if ~isempty(idx)
-            % keep old row
             row = ppOld(idx,:);
-            used(idx) = true;
         else
-            % default row
             row = obj.localDefaultRow(t, nm);
         end
 
-        % always enforce correct name + type (type may change over time)
+        % enforce correct name + type
         row{2} = nm;
         row{3} = obj.localTypeOf(t.(nm));
 
-        % if show flag is empty, re-infer default
-        if isempty(row{1})
-            row{1} = obj.localDefaultShow(nm);
-        end
-
-        % if role is empty, infer
-        if isempty(row{6})
-            row{6} = obj.localDefaultRole(nm);
-        end
-
-        % if color empty, default
-        if isempty(row{4})
-            row{4} = 'k';
-        end
-
-        % if col5 empty, default to 2 (as in your conventions)
-        if isempty(row{5})
-            row{5} = 2;
-        end
+        if isempty(row{1}), row{1} = obj.localDefaultShow(nm); end
+        if isempty(row{6}), row{6} = obj.localDefaultRole(nm); end
+        if isempty(row{4}), row{4} = 'k'; end
+        if isempty(row{5}), row{5} = 2; end
 
         ppNew(k,:) = row;
     end
 
-    % drop orphans: rows in old pp not used (vars removed from table)
     obj.plotProperties = ppNew;
 
-% ==========================================================
-% Ensure plotGroup{6} & groupProperties consistency
-% ==========================================================
+    % ==========================================================
+    % Ensure plotGroup{6} & groupProperties consistency (FIXED)
+    % ==========================================================
 
-% normaliser plotProperties(:,6) en char scalaire (pas de cell-in-cell)
-for i = 1:size(obj.plotProperties,1)
-    g = obj.plotProperties{i,6};
-    if iscell(g)
-        if isempty(g), g = ''; else, g = g{1}; end
-    end
-    obj.plotProperties{i,6} = char(string(g));
-end
+    % ---- 1) Normalize plotProperties(:,6) strictly ----
+    for i = 1:size(obj.plotProperties,1)
+        g = obj.plotProperties{i,6};
 
-% roles utilisés (col 6)
-roles = obj.plotProperties(:,6);
-roles = cellfun(@(x) char(string(x)), roles, 'UniformOutput', false);
-roles = roles(~cellfun(@isempty, roles));
-roles = unique(roles, 'stable');
-
-roles(strcmp(roles,'labels')) = {'label'};
-% et aussi dans plotProperties(:,6) si besoin :
-for i=1:size(obj.plotProperties,1)
-    if ischar(obj.plotProperties{i,6}) || isstring(obj.plotProperties{i,6})
-        if strcmp(char(string(obj.plotProperties{i,6})), 'labels')
-            obj.plotProperties{i,6} = 'label';
-        end
-    end
-end
-
-
-defaultGroups = {'id','label','prob'};
-
-% --- normaliser plotGroup en {[] [] [] [] [] {groups}} ---
-if isempty(obj.plotGroup) || ~iscell(obj.plotGroup) || numel(obj.plotGroup) < 6
-    obj.plotGroup = {[] [] [] [] [] defaultGroups};
-end
-if isempty(obj.plotGroup{6})
-    obj.plotGroup{6} = defaultGroups;
-end
-if ischar(obj.plotGroup{6}) || isstring(obj.plotGroup{6})
-    obj.plotGroup{6} = cellstr(obj.plotGroup{6});
-end
-obj.plotGroup{6} = cellfun(@(x) char(string(x)), obj.plotGroup{6}, 'UniformOutput', false);
-obj.plotGroup{6} = unique(obj.plotGroup{6}(:)', 'stable');
-
-% ajouter roles manquants
-for k = 1:numel(roles)
-    if ~any(strcmp(obj.plotGroup{6}, roles{k}))
-        obj.plotGroup{6}{end+1} = roles{k}; %#ok<AGROW>
-    end
-end
-
-% remettre defaultGroups en tête si présents
-pg = obj.plotGroup{6};
-pg2 = {};
-for k = 1:numel(defaultGroups)
-    if any(strcmp(pg, defaultGroups{k}))
-        pg2{end+1} = defaultGroups{k}; %#ok<AGROW>
-    end
-end
-pg = [pg2, setdiff(pg, pg2, 'stable')];
-obj.plotGroup{6} = pg;
-
-% --- groupProperties aligné sur plotGroup{6} ---
-pg = obj.plotGroup{6};
-
-if isempty(obj.groupProperties) || ~iscell(obj.groupProperties)
-    gpOld = cell(0,4);
-else
-    gpOld = obj.groupProperties;
-end
-if size(gpOld,2) < 4, gpOld(:, end+1:4) = {[]}; end
-if size(gpOld,2) > 4, gpOld = gpOld(:,1:4); end
-
-gpNames = gpOld(:,1);
-gpNames = cellfun(@(x) char(string(x)), gpNames, 'UniformOutput', false);
-
-gpNew = cell(numel(pg),4);
-for k = 1:numel(pg)
-    gname = pg{k};
-    idx = find(strcmp(gpNames, gname), 1, 'first');
-    if ~isempty(idx)
-        row = gpOld(idx,:);
-    else
-        row = {gname,'Plot','auto','auto'};
-    end
-    row{1} = gname;
-    if isempty(row{2}), row{2}='Plot'; end
-    if isempty(row{3}), row{3}='auto'; end
-    if isempty(row{4}), row{4}='auto'; end
-    gpNew(k,:) = row;
-end
-obj.groupProperties = gpNew;
-
-% ==========================================================
-% Ensure userData.classes for label-like variables (stable ref)
-% ==========================================================
-if isempty(obj.userData) || ~isstruct(obj.userData)
-    obj.userData = struct();
-end
-
-% repère les colonnes de type label (via plotProperties col6 ou nom)
-pp = obj.plotProperties;
-varNames = obj.data.Properties.VariableNames;
-
-isLabelVar = false(1, numel(varNames));
-for k = 1:numel(varNames)
-    nm = varNames{k};
-
-    % critère 1: role/group déclaré
-    if size(pp,2) >= 6
-        idx = find(strcmp(pp(:,2), nm), 1);
-        if ~isempty(idx)
-            g = pp{idx,6};
-            if iscell(g), g = g{1}; end
-            g = char(string(g));
-            if strcmp(g,'label') || strcmp(g,'labels')
-                isLabelVar(k) = true;
-                continue
-            end
-        end
-    end
-
-    % critère 2: fallback sur nom
-    if contains(nm,'label','IgnoreCase',true)
-        isLabelVar(k) = true;
-    end
-end
-
-labelVars = varNames(isLabelVar);
-
-% Si on a des labels et pas de classes -> on les construit
-if ~isempty(labelVars)
-    if ~isfield(obj.userData,'classes') || isempty(obj.userData.classes)
-        allCats = {};
-        for k = 1:numel(labelVars)
-            col = obj.data.(labelVars{k});
-            if iscategorical(col)
-                allCats = [allCats, categories(col)]; %#ok<AGROW>
+        % unwrap cell-in-cell
+        if iscell(g)
+            if isempty(g)
+                g = '';
             else
-                allCats = [allCats, categories(categorical(string(col)))]; %#ok<AGROW>
+                g = g{1};
             end
         end
-        allCats = unique(allCats, 'stable');
 
-        % option: forcer unclassified à la fin si tu veux
-        if ~any(strcmp(allCats,'unclassified'))
-            allCats{end+1} = 'unclassified';
+        % normalize char + trim
+        g = char(strtrim(string(g)));
+
+        % alias mapping
+        if strcmpi(g,'labels')
+            g = 'label';
         end
 
-        obj.userData.classes = allCats;
+        obj.plotProperties{i,6} = g;
+    end
+
+    % ---- 2) Build roles from plotProperties(:,6) (source of truth) ----
+    roles = obj.plotProperties(:,6);
+    roles = cellfun(@(x) char(strtrim(string(x))), roles, 'UniformOutput', false);
+    roles(strcmpi(roles,'labels')) = {'label'};
+    roles = roles(~cellfun(@isempty, roles));
+    roles = unique(roles(:)', 'stable');  % stable + no duplicates
+
+    % ---- 3) Rebuild plotGroup{6} from roles (+ defaults) ----
+    defaultGroups = {'id','label','prob'};
+
+    pg = roles;
+
+    % ensure defaults exist even if not used
+    for k = 1:numel(defaultGroups)
+        if ~any(strcmp(pg, defaultGroups{k}))
+            pg{end+1} = defaultGroups{k}; %#ok<AGROW>
+        end
+    end
+
+    % put defaults first
+    pg2 = {};
+    for k = 1:numel(defaultGroups)
+        if any(strcmp(pg, defaultGroups{k}))
+            pg2{end+1} = defaultGroups{k}; %#ok<AGROW>
+        end
+    end
+    pg = [pg2, setdiff(pg, pg2, 'stable')];
+
+    obj.plotGroup = {[] [] [] [] [] pg};
+
+    % ---- 4) Rebuild groupProperties aligned on plotGroup{6} ----
+    pg = obj.plotGroup{6};
+
+    % read old groupProperties safely
+    if isempty(obj.groupProperties) || ~iscell(obj.groupProperties)
+        gpOld = cell(0,4);
     else
-        % normalisation
-        obj.userData.classes = cellstr(string(obj.userData.classes(:)'));
+        gpOld = obj.groupProperties;
+    end
+    if size(gpOld,2) < 4, gpOld(:, end+1:4) = {[]}; end
+    if size(gpOld,2) > 4, gpOld = gpOld(:,1:4); end
+
+    % normalize old names + alias + trim
+    if ~isempty(gpOld)
+        gpNames = gpOld(:,1);
+        gpNames = cellfun(@(x) char(strtrim(string(x))), gpNames, 'UniformOutput', false);
+        gpNames(strcmpi(gpNames,'labels')) = {'label'};
+
+        % drop duplicates in old (keep first)
+        [~, ia] = unique(gpNames, 'stable');
+        gpOld   = gpOld(ia,:);
+        gpNames = gpNames(ia);
+    else
+        gpNames = {};
     end
 
-    % Option fortement conseillée: recaster toutes les colonnes label sur ces classes
-    classes = obj.userData.classes;
-    for k = 1:numel(labelVars)
-        nm = labelVars{k};
-        col = obj.data.(nm);
-        if ~iscategorical(col)
-            col = categorical(string(col));
+    gpNew = cell(numel(pg),4);
+    for k = 1:numel(pg)
+        gname = char(strtrim(string(pg{k})));
+        if strcmpi(gname,'labels'), gname = 'label'; end
+
+        idx = find(strcmp(gpNames, gname), 1, 'first');
+        if ~isempty(idx)
+            row = gpOld(idx,:);
+        else
+            row = {gname,'Plot','auto','auto'};
         end
-        obj.data.(nm) = categorical(col, classes); % même base, mêmes codes
+
+        row{1} = gname;
+        if isempty(row{2}), row{2}='Plot'; end
+        if isempty(row{3}), row{3}='auto'; end
+        if isempty(row{4}), row{4}='auto'; end
+
+        gpNew(k,:) = row;
     end
-end
+    obj.groupProperties = gpNew;
 
+    % ==========================================================
+    % Ensure userData.classes for label-like variables (unchanged)
+    % ==========================================================
+    if isempty(obj.userData) || ~isstruct(obj.userData)
+        obj.userData = struct();
+    end
 
+    pp = obj.plotProperties;
+    varNames = obj.data.Properties.VariableNames;
 
+    isLabelVar = false(1, numel(varNames));
+    for k = 1:numel(varNames)
+        nm = varNames{k};
 
+        if size(pp,2) >= 6
+            idx = find(strcmp(pp(:,2), nm), 1);
+            if ~isempty(idx)
+                g = pp{idx,6};
+                if iscell(g), g = g{1}; end
+                g = char(strtrim(string(g)));
+                if strcmpi(g,'labels'), g = 'label'; end
+                if strcmp(g,'label')
+                    isLabelVar(k) = true;
+                    continue
+                end
+            end
+        end
+
+        if contains(nm,'label','IgnoreCase',true)
+            isLabelVar(k) = true;
+        end
+    end
+
+    labelVars = varNames(isLabelVar);
+
+    if ~isempty(labelVars)
+        if ~isfield(obj.userData,'classes') || isempty(obj.userData.classes)
+            allCats = {};
+            for k = 1:numel(labelVars)
+                col = obj.data.(labelVars{k});
+                if iscategorical(col)
+                    allCats = [allCats, categories(col)]; %#ok<AGROW>
+                else
+                    allCats = [allCats, categories(categorical(string(col)))]; %#ok<AGROW>
+                end
+            end
+            allCats = unique(allCats, 'stable');
+
+            if ~any(strcmp(allCats,'unclassified'))
+                allCats{end+1} = 'unclassified';
+            end
+
+            obj.userData.classes = allCats;
+        else
+            obj.userData.classes = cellstr(string(obj.userData.classes(:)'));
+        end
+
+        classes = obj.userData.classes;
+        for k = 1:numel(labelVars)
+            nm = labelVars{k};
+            col = obj.data.(nm);
+            if ~iscategorical(col)
+                col = categorical(string(col));
+            end
+            obj.data.(nm) = categorical(col, classes);
+        end
+    end
 end
 
 
