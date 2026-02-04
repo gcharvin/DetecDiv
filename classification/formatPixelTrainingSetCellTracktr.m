@@ -152,9 +152,11 @@ for jj = 1:T
     output = output + 1;
     maxid=uint16(0);
 
-   rawImg = im(:,:,pix(1),jj);
-raw8   = normalizeFrameToUint8(rawImg);   % robust 1–99.8%
-imwrite(raw8, fullfile(imgDir, sprintf('t%03d.tif', frame0)));
+%    rawImg = im(:,:,pix(1),jj);
+% raw8   = normalizeFrameToUint8(rawImg);   % robust 1–99.8%
+% imwrite(raw8, fullfile(imgDir, sprintf('t%03d.tif', frame0)));
+    rawImg = im(:,:,pix(1),jj);
+    imwrite(uint16(rawImg), fullfile(imgDir, sprintf('t%03d.tif', frame0)));
 
 
     segMask   = zeros(H, W, 'uint16');
@@ -323,8 +325,10 @@ end
     end
 
     
-    imwrite(uint8(segMask),   fullfile(segDir, sprintf('man_seg%03d.tif',   frame0)));
-    imwrite(uint8(trackMask), fullfile(traDir, sprintf('man_track%03d.tif', frame0)));
+   % imwrite(uint8(segMask),   fullfile(segDir, sprintf('man_seg%03d.tif',   frame0)));
+  %  imwrite(uint8(trackMask), fullfile(traDir, sprintf('man_track%03d.tif', frame0)));
+    imwrite(uint16(segMask),   fullfile(segDir, sprintf('man_seg%03d.tif',   frame0)));
+    imwrite(uint16(trackMask), fullfile(traDir, sprintf('man_track%03d.tif', frame0)));
 
     % ---- 3) FIN DE FRAME
     for mm = 1:numel(mothersToSplitThisFrame)
