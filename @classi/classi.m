@@ -1,7 +1,6 @@
 classdef classi < handle
     properties
         id=[] % number that identifies the classification algo
-        florian=[]
 
         typeid=1; % default category for classification found the classilist.mat file in the classification folde
         trainingset=[]; % % list of ROI ids used for training
@@ -498,6 +497,14 @@ end
                 dot = strfind(f, '.');
                 if ~isempty(dot)
                     pkg = f(1:dot(1)-1);
+                    return;
+                end
+
+                % Legacy mappings (no dot)
+                if any(strcmp(f, {'trainImageLSTMNetFun','classifyImageLSTMNetFun'}))
+                    pkg = 'cnn_lstm';
+                elseif any(strcmp(f, {'trainImageGoogleNetFun','classifyImageGoogleNetFun'}))
+                    pkg = 'cnn';
                 end
             end
         end

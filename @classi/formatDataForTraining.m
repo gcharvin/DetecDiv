@@ -13,9 +13,6 @@ Seed     = 12345; % seed déterministe (LSTM)
 extraArgs = {};
 
 
-'ok'
-return
-
 % ---- Parse varargin de façon robuste (accepte flags ou paires) ----
 i = 1;
 while i <= numel(varargin)
@@ -174,13 +171,14 @@ else
     end
 end
 
-if ~isempty(pkg)
-    fmtFun = [pkg '.format'];
-    if exist(fmtFun, 'file') == 2
-        output = feval(fmtFun, classif, rois, ctx);
-        return;
+    if ~isempty(pkg)
+        fmtFun = [pkg '.format'];
+        if ~isempty(which(fmtFun))
+            disp(['[PKG FORMAT] ' fmtFun]);
+            output = feval(fmtFun, classif, rois, ctx);
+            return;
+        end
     end
-end
 
 % ---- Legacy fallback by category (kept for other classifiers) ----
 switch category

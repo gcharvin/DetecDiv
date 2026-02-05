@@ -52,6 +52,8 @@ end
 
 classifier   = getExecOpt(ctx, 'classifier', []);
 classifierCNN= getExecOpt(ctx, 'classifierCNN', []);
+classifierProvided = getExecOpt(ctx, 'classifierProvided', false);
+classifierCNNProvided = getExecOpt(ctx, 'classifierCNNProvided', false);
 if isempty(classifier) && isfield(params, 'classifier'), classifier = params.classifier; end
 if isempty(classifierCNN) && isfield(params, 'classifierCNN'), classifierCNN = params.classifierCNN; end
 
@@ -77,7 +79,7 @@ end
 
 % --------- Guard: classifieurs présents / types ----------
 % --------- 3) Load classifiers (optional from ctx) ----------
-if isempty(classifier)
+if isempty(classifier) && ~classifierProvided
     try
         classifier = classif.loadClassifier('force');
     catch
@@ -85,7 +87,7 @@ if isempty(classifier)
     end
 end
 
-if isempty(classifierCNN)
+if isempty(classifierCNN) && ~classifierCNNProvided
     try
         str = fullfile(classif.path, ['netCNN_' classif.strid '.mat']);
         if exist(str,'file')
@@ -329,7 +331,7 @@ if useLSTM
             try
                 [~, scW] = classify(classifier, clip, 'ExecutionEnvironment', env);
             catch
-                warning('LSTM window classify failed on %s: falling back to CPU.', upper(string(env)));
+                warnGpuFallback('LSTM window', env, classif);
                 [~, scW] = classify(classifier, clip, 'ExecutionEnvironment', 'cpu');
             end
 
@@ -351,7 +353,7 @@ if useLSTM
         try
             [~, sc] = classify(classifier, videoLSTM, 'ExecutionEnvironment', env);
         catch
-            warning('LSTM classify failed on %s: falling back to CPU.', upper(string(env)));
+            warnGpuFallback('LSTM', env, classif);
             [~, sc] = classify(classifier, videoLSTM, 'ExecutionEnvironment', 'cpu');
         end
 
@@ -401,7 +403,7 @@ dlP = softmax(dlY);                  % softmax respecte déjà le format de dlY
         try
             [lblC, scC] = classify(classifierCNN, videoCNN, 'ExecutionEnvironment', env);
         catch
-            warning('CNN classify failed on %s: falling back to CPU.', upper(string(env)));
+            warnGpuFallback('CNN', env, classif);
             [lblC, scC] = classify(classifierCNN, videoCNN, 'ExecutionEnvironment', 'cpu');
         end
         labelsCNN = classifierCNN.Layers(end).ClassNames;
@@ -1093,5 +1095,40 @@ function ds = cloneDataseries(ds0)
     try, ds.userData = ds0.userData; end
     try, ds.show = ds0.show; end
     try, ds.parent = ds0.parent; end
+end
+
+function warnGpuFallback(stage, env, classif)
+    % warnGpuFallback  Emit GPU fallback warning once and log to run.
+    persistent didWarn
+    if isempty(didWarn), didWarn = false; end
+    if didWarn, return; end
+    didWarn = true;
+
+    if nargin < 1 || isempty(stage), stage = 'LSTM'; end
+    if nargin < 2, env = ''; end
+
+    try
+        if ~isempty(env)
+            warning('cnn_lstm:GpuFallback', ...
+                '%s classify failed on GPU: falling back to CPU (env=%s).', ...
+                char(stage), char(env));
+        else
+            warning('cnn_lstm:GpuFallback', ...
+                '%s classify failed on GPU: falling back to CPU.', ...
+                char(stage));
+        end
+    catch
+    end
+
+    try
+        if nargin >= 3 && ismethod(classif,'runMsg')
+            if ~isempty(env)
+                classif.runMsg('GPU fallback: %s (env=%s)', char(stage), char(env));
+            else
+                classif.runMsg('GPU fallback: %s', char(stage));
+            end
+        end
+    catch
+    end
 end
 

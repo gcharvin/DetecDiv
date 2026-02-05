@@ -134,6 +134,69 @@ try
 catch
 end
 
+% --- backfill classifierPkg + report framework (visible) ---
+try
+    wasPkg = false;
+    if isprop(classiObj,'classifierPkg') && ~isempty(classiObj.classifierPkg)
+        wasPkg = true;
+    end
+
+    if isprop(classiObj,'classifierPkg') && isempty(classiObj.classifierPkg)
+        % infer from training/classify function
+        f = '';
+        try
+            if isprop(classiObj,'trainingFun') && ~isempty(classiObj.trainingFun)
+                f = classiObj.trainingFun;
+            elseif isprop(classiObj,'classifyFun') && ~isempty(classiObj.classifyFun)
+                f = classiObj.classifyFun;
+            end
+        catch
+            f = '';
+        end
+
+        if isa(f,'function_handle'), f = func2str(f); end
+        if isstring(f), f = char(f); end
+
+        dot = strfind(f,'.');
+        if ~isempty(dot)
+            classiObj.classifierPkg = f(1:dot(1)-1);
+        elseif any(strcmp(f, {'trainImageLSTMNetFun','classifyImageLSTMNetFun'}))
+            classiObj.classifierPkg = 'cnn_lstm';
+        elseif any(strcmp(f, {'trainImageGoogleNetFun','classifyImageGoogleNetFun'}))
+            classiObj.classifierPkg = 'cnn';
+        end
+    end
+
+    % Prepare ID string
+    idStr = '';
+    try
+        if isprop(classiObj,'strid') && ~isempty(classiObj.strid)
+            idStr = char(classiObj.strid);
+        elseif isprop(classiObj,'id')
+            idStr = ['classi_' num2str(classiObj.id)];
+        end
+    catch
+        idStr = '';
+    end
+
+    if isprop(classiObj,'classifierPkg') && ~isempty(classiObj.classifierPkg)
+        disp('===============================================================');
+        disp(['[CLASSI LOAD] NEW PACKAGE FRAMEWORK: ' classiObj.classifierPkg]);
+        if ~isempty(idStr)
+            disp(['[CLASSI LOAD] ID: ' idStr]);
+        end
+        disp('===============================================================');
+    else
+        disp('===============================================================');
+        disp('[CLASSI LOAD] LEGACY FRAMEWORK (trainingFun/classifyFun)');
+        if ~isempty(idStr)
+            disp(['[CLASSI LOAD] ID: ' idStr]);
+        end
+        disp('===============================================================');
+    end
+catch
+end
+
 
 msg=['Classification was loaded with this path:' path];
 
@@ -163,5 +226,7 @@ end
                 out.(k) = v;
             end
         end
-    end
+   
+
+
 

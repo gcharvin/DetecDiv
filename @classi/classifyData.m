@@ -91,6 +91,15 @@ fhandle   = eval(['@' classifyFun]);
 isPipelineFun = usesPkg || any(strcmpi(classifyFun, {'classifyImageLSTMNetFun','cnn_lstm.classify'}));
 
 disp(['Classifying roi data using ' classifyFun]);
+if usesPkg
+    disp(['[PKG CLASSIFY] ' classifyFun]);
+    try
+        if ismethod(classi,'runMsg')
+            classi.runMsg('PKG CLASSIFY %s', classifyFun);
+        end
+    catch
+    end
+end
 
 if ~isempty(p)
     p.Value   = 0.1;
@@ -257,7 +266,8 @@ for i = 1:numel(roiobj)
         if isPipelineFun
             ctx = struct();
             ctx.sel = struct('frames', fra, 'channels', cha);
-            ctx.exec = struct('gpu', gpu, 'classifier', classifierStore, 'classifierCNN', classifierCNN);
+            ctx.exec = struct('gpu', gpu, 'classifier', classifierStore, 'classifierCNN', classifierCNN, ...
+                'classifierProvided', ~isempty(classifierStore), 'classifierCNNProvided', ~isempty(classifierCNN));
             ctx.names = struct('outputName', char(outputName));
             try
                 ctx = classi.buildCtx('classify', ctx);
@@ -283,14 +293,26 @@ for i = 1:numel(roiobj)
         if isPipelineFun
             ctx = struct();
             ctx.sel = struct('frames', fra, 'channels', cha);
-            ctx.exec = struct('gpu', gpu, 'classifier', classifierStore, 'classifierCNN', classifierCNN);
+            ctx.exec = struct('gpu', gpu, 'classifier', classifierStore, 'classifierCNN', classifierCNN, ...
+                'classifierProvided', ~isempty(classifierStore), 'classifierCNNProvided', ~isempty(classifierCNN));
             ctx.names = struct('outputName', char(outputName));
             try
                 ctx = classi.buildCtx('classify', ctx);
             catch
             end
             out = feval(fhandle, roiobj(i), classi, ctx);
-            roiApplyPatch(roiobj(i), out.patch, ctx);
+            if isstruct(out) && isfield(out,'patch') && ~isempty(out.patch) && exist('roiApplyPatch','file') == 2
+                roiApplyPatch(roiobj(i), out.patch, ctx);
+            else
+                if exist('roiApplyPatch','file') ~= 2
+                    warning('roiApplyPatch not found on path; falling back to ROIManagement.');
+                end
+                if isstruct(out) && (isfield(out,'data') || isfield(out,'image'))
+                    if ~isfield(out,'data'), out.data = []; end
+                    if ~isfield(out,'image'), out.image = []; end
+                    ROIManagement(roiobj(i), out.data, out.image, outputName, classiobj);
+                end
+            end
             disp(['Classified (pipeline) ' num2str(roiobj(i).id)]);
         else
             if ~isempty(classifierCNN)
@@ -326,7 +348,18 @@ if para
         if isPipelineFun
             [idx, out] = fetchNext(logparf(i));
             ctx = ctxByIdx{idx};
-            roiApplyPatch(roiobj(idx), out.patch, ctx);
+            if isstruct(out) && isfield(out,'patch') && ~isempty(out.patch) && exist('roiApplyPatch','file') == 2
+                roiApplyPatch(roiobj(idx), out.patch, ctx);
+            else
+                if exist('roiApplyPatch','file') ~= 2
+                    warning('roiApplyPatch not found on path; falling back to ROIManagement.');
+                end
+                if isstruct(out) && (isfield(out,'data') || isfield(out,'image'))
+                    if ~isfield(out,'data'), out.data = []; end
+                    if ~isfield(out,'image'), out.image = []; end
+                    ROIManagement(roiobj(idx), out.data, out.image, outputName, classiobj);
+                end
+            end
         else
             [idx, data, image] = fetchNext(logparf(i));
             ROIManagement(roiobj(idx),data,image, outputName, classiobj);
@@ -631,7 +664,7 @@ end
 
 if ~isempty(pkg)
     cand = [pkg '.classify'];
-    if exist(cand,'file') == 2
+    if ~isempty(which(cand))
         fun = cand;
         usesPkg = true;
         return;
@@ -651,5 +684,12 @@ if isstring(f), f = char(f); end
 dot = strfind(f, '.');
 if ~isempty(dot)
     pkg = f(1:dot(1)-1);
+    return;
+end
+
+if any(strcmp(f, {'trainImageLSTMNetFun','classifyImageLSTMNetFun'}))
+    pkg = 'cnn_lstm';
+elseif any(strcmp(f, {'trainImageGoogleNetFun','classifyImageGoogleNetFun'}))
+    pkg = 'cnn';
 end
 end
