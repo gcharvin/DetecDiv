@@ -18,6 +18,7 @@ classdef classi < handle
         classes={}; % names of the classes
         classifyFun='';
         trainingFun='';
+        classifierPkg=''; % package folder name (e.g. "cnn_lstm") for standardized dispatch
         colormap=[];
         bounds= struct('Type','Auto','Rules',struct('Dataseries',{[]},'Dataset',{[]},'Value',{[]},'Occurence',[0],'Offset',[0 ])); % type can be : auto,  manual, rules;   'Rules' is a struc that specifies the type of rules : ; 'Values' specifies the automated interval set for all ROIs
 
@@ -29,6 +30,8 @@ classdef classi < handle
         outputArg={};
         status=[];
         userData=[];
+        runProfiles = struct('train', struct(), 'classify', struct(), 'format', struct());
+        dataset = struct('classes', {{}}, 'channels', {{}}, 'split', struct('train', [], 'val', [], 'test', []));
 
 
         history=table('Size',[1 3],'VariableTypes',{'datetime','string','string'},'VariableNames',{'Date','Category','Message'});
@@ -121,6 +124,17 @@ classdef classi < handle
                 obj.description = row.Description{1};
                 obj.category    = row.Category{1};
 
+                % Optional package name (preferred for standardized dispatch)
+                if istable(row) && ismember('Package', row.Properties.VariableNames)
+                    try
+                        pkgVal = row.Package{1};
+                        if isstring(pkgVal) || ischar(pkgVal)
+                            obj.classifierPkg = char(pkgVal);
+                        end
+                    catch
+                    end
+                end
+
                 if ~isempty(row.TrainingFun)
                     obj.trainingFun = row.TrainingFun{1};
                 end
@@ -131,6 +145,11 @@ classdef classi < handle
                     end
                 end
 
+                % Backfill classifierPkg from standardized function names (legacy classlist)
+                if isempty(obj.classifierPkg)
+                    obj.classifierPkg = localInferPkg(obj.trainingFun, obj.classifyFun);
+                end
+
                 % ----------------------------
                 % 6) Initialisation trainingParam via trainXXX(classif,1)
                 % ----------------------------
@@ -138,9 +157,13 @@ classdef classi < handle
                     try
                         funHandle = str2func(obj.trainingFun);
 
-                        % Appel en "mode init" : la fonction détecte nargin==2
-                        % et remplit obj.trainingParam par effet de bord
-                        funHandle(obj, 'init');   % ou 1, 'ok', etc.
+                        % Appel en "mode init"
+                        if any(strcmpi(obj.trainingFun, {'trainImageLSTMNetFun','cnn_lstm.train'}))
+                            ctx = struct('mode', 'init');
+                            funHandle(obj, ctx);
+                        else
+                            funHandle(obj, 'init');   % legacy init path
+                        end
 
                         % si un jour certaines fonctions renvoient un objet en plus,
                         % on pourra adapter, mais pour l'instant on ne s'y attend pas.
@@ -355,6 +378,9 @@ end
             fprintf('Channel   : %s\n', chanLine);
 
             % --- Functions
+            if ~isempty(c.classifierPkg)
+                fprintf('Classifier pkg : %s\n', strsafe(c.classifierPkg));
+            end
             if ~isempty(c.classifyFun)
                 fprintf('Classify fun : %s\n', fun2char(c.classifyFun));
             end
@@ -455,6 +481,102 @@ end
                     out = '[unknown function spec]';
                 end
             end
+
+            function pkg = localInferPkg(trainFun, classifyFun)
+                pkg = '';
+                f = '';
+                if ~isempty(trainFun)
+                    f = trainFun;
+                elseif ~isempty(classifyFun)
+                    f = classifyFun;
+                end
+                if isempty(f), return; end
+                if isa(f,'function_handle')
+                    f = func2str(f);
+                end
+                if isstring(f), f = char(f); end
+                dot = strfind(f, '.');
+                if ~isempty(dot)
+                    pkg = f(1:dot(1)-1);
+                end
+            end
+        end
+
+        function ctx = buildCtx(obj, kind, overrides)
+            % buildCtx  Merge persisted runProfiles with explicit overrides.
+            %
+            % kind: 'train' | 'classify' | 'format'
+            if nargin < 3 || isempty(overrides), overrides = struct(); end
+            if nargin < 2 || isempty(kind), kind = ''; end
+
+            base = struct();
+            try
+                if isprop(obj,'runProfiles') && isstruct(obj.runProfiles)
+                    if isfield(obj.runProfiles, kind)
+                        base = obj.runProfiles.(kind);
+                    end
+                end
+            catch
+            end
+
+            ctx = obj.localMergeStruct(base, overrides);
+        end
+
+        function syncDatasetFromLegacy(obj)
+            % syncDatasetFromLegacy  Populate dataset.* from legacy fields.
+            if ~isprop(obj,'dataset') || ~isstruct(obj.dataset)
+                obj.dataset = struct('classes', {{}}, 'channels', {{}}, ...
+                    'split', struct('train', [], 'val', [], 'test', []));
+            end
+
+            if ~isfield(obj.dataset,'classes') || isempty(obj.dataset.classes)
+                obj.dataset.classes = obj.classes;
+            end
+            if ~isfield(obj.dataset,'channels') || isempty(obj.dataset.channels)
+                obj.dataset.channels = obj.channelName;
+            end
+            if ~isfield(obj.dataset,'split') || ~isstruct(obj.dataset.split)
+                obj.dataset.split = struct('train', [], 'val', [], 'test', []);
+            end
+            if ~isfield(obj.dataset.split,'train') || isempty(obj.dataset.split.train)
+                obj.dataset.split.train = obj.trainingset;
+            end
+            if ~isfield(obj.dataset.split,'val')
+                obj.dataset.split.val = [];
+            end
+            if ~isfield(obj.dataset.split,'test')
+                obj.dataset.split.test = [];
+            end
+        end
+
+        function syncLegacyFromDataset(obj)
+            % syncLegacyFromDataset  Update legacy fields from dataset.*.
+            if ~isprop(obj,'dataset') || ~isstruct(obj.dataset)
+                return;
+            end
+
+            if isfield(obj.dataset,'classes') && ~isempty(obj.dataset.classes)
+                obj.classes = obj.dataset.classes;
+            end
+            if isfield(obj.dataset,'channels') && ~isempty(obj.dataset.channels)
+                obj.channelName = obj.dataset.channels;
+            end
+            if isfield(obj.dataset,'split') && isstruct(obj.dataset.split)
+                if isfield(obj.dataset.split,'train') && ~isempty(obj.dataset.split.train)
+                    obj.trainingset = obj.dataset.split.train;
+                end
+            end
+        end
+
+        function ch = getInputChannels(obj)
+            % getInputChannels  Preferred input channels for training/classify.
+            ch = [];
+            if isprop(obj,'dataset') && isstruct(obj.dataset) && ...
+                    isfield(obj.dataset,'channels') && ~isempty(obj.dataset.channels)
+                ch = obj.dataset.channels;
+                return;
+            end
+            ch = obj.channelName;
         end
 
 
@@ -954,6 +1076,24 @@ end
   
 
     methods (Access = private)
+
+        function out = localMergeStruct(~, base, override)
+            % Recursive struct merge: override wins, but merges nested structs.
+            out = base;
+            if ~isstruct(out), out = struct(); end
+            if ~isstruct(override), return; end
+
+            f = fieldnames(override);
+            for i = 1:numel(f)
+                k = f{i};
+                v = override.(k);
+                if isstruct(v) && isfield(out, k) && isstruct(out.(k))
+                    out.(k) = localMergeStruct([], out.(k), v);
+                else
+                    out.(k) = v;
+                end
+            end
+        end
 
         function p = localGetRunDirAbs(obj)
 % Always return absolute run directory (or '')

@@ -83,8 +83,12 @@ end
 classifierStore = classifier;
 
 classi     = classiobj;
-classifyFun = classi.classifyFun;
+[classifyFun, usesPkg] = resolveClassifyFun(classi);
+if isempty(classifyFun)
+    error('classifyData:NoClassifyFun','No classification function available for this classifier.');
+end
 fhandle   = eval(['@' classifyFun]);
+isPipelineFun = usesPkg || any(strcmpi(classifyFun, {'classifyImageLSTMNetFun','cnn_lstm.classify'}));
 
 disp(['Classifying roi data using ' classifyFun]);
 
@@ -131,6 +135,9 @@ disp([num2str(numel(roiobj)) ' ROIs to classify, be patient...']);
 
 if para
     logparf(1:numel(roiobj)) = parallel.FevalFuture;
+    if isPipelineFun
+        ctxByIdx = cell(1, numel(roiobj));
+    end
 else
     logparf = 1;
 end
@@ -229,7 +236,11 @@ for i = 1:numel(roiobj)
 
     % Channel selection
     if isempty(channel)
-        cha = classiobj.channelName;
+        try
+            cha = classiobj.getInputChannels();
+        catch
+            cha = classiobj.channelName;
+        end
     else
         cha = channel{i};
     end
@@ -243,36 +254,62 @@ for i = 1:numel(roiobj)
     % Dispatch
     % ---------------------------------------------------------
     if para
-        if ~isempty(classifierCNN)
-            logparf(i) = parfeval( ...
-                fhandle, 2, roiobj(i), classi, classifierStore, ...
-                'classifierCNN', classifierCNN, ...
-                'Frames', fra, 'Channel', cha, 'Exec', gpu, ...
-                'OutputName', char(outputName)); % NEW
+        if isPipelineFun
+            ctx = struct();
+            ctx.sel = struct('frames', fra, 'channels', cha);
+            ctx.exec = struct('gpu', gpu, 'classifier', classifierStore, 'classifierCNN', classifierCNN);
+            ctx.names = struct('outputName', char(outputName));
+            try
+                ctx = classi.buildCtx('classify', ctx);
+            catch
+            end
+            ctxByIdx{i} = ctx; %#ok<AGROW>
+            logparf(i) = parfeval(fhandle, 1, roiobj(i), classi, ctx);
         else
-            logparf(i) = parfeval( ...
-                fhandle, 2, roiobj(i), classi, classifierStore, ...
-                'Frames', fra, 'Channel', cha, 'Exec', gpu, ...
-                'OutputName', char(outputName)); % NEW
+            if ~isempty(classifierCNN)
+                logparf(i) = parfeval( ...
+                    fhandle, 2, roiobj(i), classi, classifierStore, ...
+                    'classifierCNN', classifierCNN, ...
+                    'Frames', fra, 'Channel', cha, 'Exec', gpu, ...
+                    'OutputName', char(outputName)); % NEW
+            else
+                logparf(i) = parfeval( ...
+                    fhandle, 2, roiobj(i), classi, classifierStore, ...
+                    'Frames', fra, 'Channel', cha, 'Exec', gpu, ...
+                    'OutputName', char(outputName)); % NEW
+            end
         end
     else
-        if ~isempty(classifierCNN)
-            [data, image] = feval( ...
-                fhandle, roiobj(i), classi, classifierStore, ...
-                'classifierCNN', classifierCNN, ...
-                'Frames', fra, 'Channel', cha, 'Exec', gpu, ...
-                'OutputName', char(outputName)); % NEW
-            disp(['Classified with separate CNN ' num2str(roiobj(i).id)]);
+        if isPipelineFun
+            ctx = struct();
+            ctx.sel = struct('frames', fra, 'channels', cha);
+            ctx.exec = struct('gpu', gpu, 'classifier', classifierStore, 'classifierCNN', classifierCNN);
+            ctx.names = struct('outputName', char(outputName));
+            try
+                ctx = classi.buildCtx('classify', ctx);
+            catch
+            end
+            out = feval(fhandle, roiobj(i), classi, ctx);
+            roiApplyPatch(roiobj(i), out.patch, ctx);
+            disp(['Classified (pipeline) ' num2str(roiobj(i).id)]);
         else
-            [data, image] = feval( ...
-                fhandle, roiobj(i), classi, classifierStore, ...
-                'Frames', fra, 'Channel', cha, 'Exec', gpu, ...
-                'OutputName', char(outputName)); % NEW
-            disp(['Classified ' num2str(roiobj(i).id)]);
+            if ~isempty(classifierCNN)
+                [data, image] = feval( ...
+                    fhandle, roiobj(i), classi, classifierStore, ...
+                    'classifierCNN', classifierCNN, ...
+                    'Frames', fra, 'Channel', cha, 'Exec', gpu, ...
+                    'OutputName', char(outputName)); % NEW
+                disp(['Classified with separate CNN ' num2str(roiobj(i).id)]);
+            else
+                [data, image] = feval( ...
+                    fhandle, roiobj(i), classi, classifierStore, ...
+                    'Frames', fra, 'Channel', cha, 'Exec', gpu, ...
+                    'OutputName', char(outputName)); % NEW
+                disp(['Classified ' num2str(roiobj(i).id)]);
+            end
+
+            ROIManagement(roiobj(i),data,image, outputName, classiobj)
         end
-
-        ROIManagement(roiobj(i),data,image, outputName, classiobj)
-
     end
 end
 
@@ -286,8 +323,14 @@ if para
     end
 
     for i = 1:numel(logparf)
-        [idx, data, image] = fetchNext(logparf(i));
-        ROIManagement(roiobj(idx),data,image, outputName, classiobj);
+        if isPipelineFun
+            [idx, out] = fetchNext(logparf(i));
+            ctx = ctxByIdx{idx};
+            roiApplyPatch(roiobj(idx), out.patch, ctx);
+        else
+            [idx, data, image] = fetchNext(logparf(i));
+            ROIManagement(roiobj(idx),data,image, outputName, classiobj);
+        end
 
     end
 end
@@ -570,4 +613,43 @@ function data = applyGroupIdToDataseries(data, outputName)
         end
         return
     end
+end
+
+function [fun, usesPkg] = resolveClassifyFun(classif)
+% Prefer standardized package dispatch if available.
+usesPkg = false;
+fun = '';
+
+pkg = '';
+if isprop(classif,'classifierPkg') && ~isempty(classif.classifierPkg)
+    pkg = classif.classifierPkg;
+else
+    if isprop(classif,'classifyFun') && ~isempty(classif.classifyFun)
+        pkg = localInferPkg(classif.classifyFun);
+    end
+end
+
+if ~isempty(pkg)
+    cand = [pkg '.classify'];
+    if exist(cand,'file') == 2
+        fun = cand;
+        usesPkg = true;
+        return;
+    end
+end
+
+if isprop(classif,'classifyFun')
+    fun = classif.classifyFun;
+end
+end
+
+function pkg = localInferPkg(funSpec)
+pkg = '';
+f = funSpec;
+if isa(f,'function_handle'), f = func2str(f); end
+if isstring(f), f = char(f); end
+dot = strfind(f, '.');
+if ~isempty(dot)
+    pkg = f(1:dot(1)-1);
+end
 end

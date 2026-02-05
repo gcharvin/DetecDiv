@@ -4,7 +4,10 @@ function trainClassifier(classif, setparam)
 % nargin == 1 : launch actual training
 % nargin == 2 : initialize / set training parameters
 
-trainingFun = classif.trainingFun;
+[trainingFun, usesPkg] = resolveTrainingFun(classif);
+if isempty(trainingFun)
+    error('trainClassifier:NoTrainingFun','No training function available for this classifier.');
+end
 
 if nargin == 1
     disp(['Launching training procedure with ' trainingFun]);
@@ -19,7 +22,16 @@ if nargin == 1
 
     try
         % --- Actual training ---
-        feval(trainingFun, classif);
+        if usesPkg || any(strcmpi(trainingFun, {'trainImageLSTMNetFun','cnn_lstm.train'}))
+            ctx = struct('mode', 'train');
+            try
+                ctx = classif.buildCtx('train', ctx);
+            catch
+            end
+            feval(trainingFun, classif, ctx);
+        else
+            feval(trainingFun, classif);
+        end
 
         classif.runMsg('Training finished successfully');
 
@@ -49,7 +61,16 @@ else
     % ============================================================
     % PARAMETER INITIALIZATION
     % ============================================================
-    feval(trainingFun, classif, setparam);
+    if usesPkg || any(strcmpi(trainingFun, {'trainImageLSTMNetFun','cnn_lstm.train'}))
+        ctx = struct('mode', 'init');
+        try
+            ctx = classif.buildCtx('train', ctx);
+        catch
+        end
+        feval(trainingFun, classif, ctx);
+    else
+        feval(trainingFun, classif, setparam);
+    end
 
     % Backward compatibility: ensure transfer_learning exists
     if ~isfield(classif.trainingParam,'transfer_learning')
@@ -73,5 +94,45 @@ else
     classif.runSaveStruct('trainingParam.mat', classif.trainingParam);
 
     classif.runStop();
+end
+
+function [fun, usesPkg] = resolveTrainingFun(classif)
+% Prefer standardized package dispatch if available.
+usesPkg = false;
+fun = '';
+
+pkg = '';
+if isprop(classif,'classifierPkg') && ~isempty(classif.classifierPkg)
+    pkg = classif.classifierPkg;
+else
+    % Backfill from legacy trainingFun (if package-style)
+    if isprop(classif,'trainingFun') && ~isempty(classif.trainingFun)
+        pkg = localInferPkg(classif.trainingFun);
+    end
+end
+
+if ~isempty(pkg)
+    cand = [pkg '.train'];
+    if exist(cand,'file') == 2
+        fun = cand;
+        usesPkg = true;
+        return;
+    end
+end
+
+if isprop(classif,'trainingFun')
+    fun = classif.trainingFun;
+end
+end
+
+function pkg = localInferPkg(funSpec)
+pkg = '';
+f = funSpec;
+if isa(f,'function_handle'), f = func2str(f); end
+if isstring(f), f = char(f); end
+dot = strfind(f, '.');
+if ~isempty(dot)
+    pkg = f(1:dot(1)-1);
+end
 end
 end

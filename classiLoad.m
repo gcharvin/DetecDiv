@@ -104,10 +104,64 @@ try
 catch
 end
 
+% --- load dataset.json if present (merge with existing) ---
+try
+    dsFile = fullfile(path, 'dataset.json');
+    if exist(dsFile,'file') == 2
+        txt = fileread(dsFile);
+        ds = jsondecode(txt);
+        if isprop(classiObj,'dataset') && isstruct(classiObj.dataset)
+            classiObj.dataset = localMergeStruct(classiObj.dataset, ds);
+        else
+            classiObj.dataset = ds;
+        end
+    end
+catch
+end
+
+% --- load runProfiles.json if present (merge with existing) ---
+try
+    rpFile = fullfile(path, 'runProfiles.json');
+    if exist(rpFile,'file') == 2
+        txt = fileread(rpFile);
+        rp = jsondecode(txt);
+        if isprop(classiObj,'runProfiles') && isstruct(classiObj.runProfiles)
+            classiObj.runProfiles = localMergeStruct(classiObj.runProfiles, rp);
+        else
+            classiObj.runProfiles = rp;
+        end
+    end
+catch
+end
+
 
 msg=['Classification was loaded with this path:' path];
 
 classiObj.log(['Classi was loaded with this path:' path],'Creation');
 
 disp(['Successfully loaded classification ' fullfile(path,[file '.mat']) '!']);
+
+% --- ensure dataset / legacy fields are consistent ---
+try
+    classiObj.syncDatasetFromLegacy();
+    classiObj.syncLegacyFromDataset();
+catch
+end
+
+    function out = localMergeStruct(base, override)
+        out = base;
+        if ~isstruct(out), out = struct(); end
+        if ~isstruct(override), return; end
+
+        f = fieldnames(override);
+        for i = 1:numel(f)
+            k = f{i};
+            v = override.(k);
+            if isstruct(v) && isfield(out, k) && isstruct(out.(k))
+                out.(k) = localMergeStruct(out.(k), v);
+            else
+                out.(k) = v;
+            end
+        end
+    end
 
