@@ -164,6 +164,8 @@ try
             classiObj.classifierPkg = 'cnn_lstm';
         elseif any(strcmp(f, {'trainImageGoogleNetFun','classifyImageGoogleNetFun'}))
             classiObj.classifierPkg = 'cnn';
+        elseif any(strcmp(f, {'trainCPSAMFun','classifyCPSAMFun'}))
+            classiObj.classifierPkg = 'cellposesam';
         end
     end
 

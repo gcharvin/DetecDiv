@@ -503,9 +503,11 @@ end
                 % Legacy mappings (no dot)
                 if any(strcmp(f, {'trainImageLSTMNetFun','classifyImageLSTMNetFun'}))
                     pkg = 'cnn_lstm';
-                elseif any(strcmp(f, {'trainImageGoogleNetFun','classifyImageGoogleNetFun'}))
-                    pkg = 'cnn';
-                end
+            elseif any(strcmp(f, {'trainImageGoogleNetFun','classifyImageGoogleNetFun'}))
+                pkg = 'cnn';
+            elseif any(strcmp(f, {'trainCPSAMFun','classifyCPSAMFun'}))
+                pkg = 'cellposesam';
+            end
             end
         end
 

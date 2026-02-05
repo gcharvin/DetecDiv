@@ -1,0 +1,49 @@
+params:
+  - name: diameter
+    value: NaN
+    tip: Expected average diameter of objects
+  - name: min_size
+    value: 10
+    tip: Minimum size to keep (object)
+  - name: flow_threshold
+    value: 0.4
+    tip: Flow threshold
+  - name: cell_prob_threshold
+    value: 0
+    tip: Cell probability threshold -6 --> 6; default : 0
+  - name: n_epochs
+    value: 50
+    tip: Number of training epochs
+  - name: learning_rate
+    value: 0.0001
+    tip: Learning rate
+  - name: weight_decay
+    value: 0.00001
+    tip: Weight decay (L2 regularization)
+  - name: batch_size
+    value: 1
+    tip: Batch size
+  - name: min_train_masks
+    value: 0
+    tip: Minimum number of masks per image (USED IN FORMAT)
+  - name: min_train_pixels
+    value: 0
+    tip: Minimum number of foreground pixels per image (USED IN FORMAT)
+  - name: use_pretrained
+    value: true
+    tip: Use pretrained SAM model (true/false)
+  - name: verbose
+    value: true
+    tip: Verbose logging during training
+  - name: MaxTrainImages
+    value: 200
+    tip: Max number of images used for training
+  - name: Seed
+    value: 12345
+    tip: Seed for random number generation
+  - name: NegDownsampleTrainRatio
+    value: 1
+    tip: Downsampling of negative images (0: none; 1: at most as many negatives as positives)
+  - name: CPSAM_ValFraction
+    value: 0.2
+    tip: Train/val/test splitting ratio (used in FORMAT to define /split fractions)
