@@ -6,6 +6,7 @@ if nargin < 3 || isempty(ctx)
 end
 
 out = cellposesam.utils.outInitSafe('cellposesam.classify');
+persistent runnerMod runnerPathCached
 
 frames = [];
 channels = [];
@@ -27,14 +28,20 @@ end
 
 out.data = data;
 out.image = image;
+out.patch = [];
 out.status = "OK";
 end
 
 function [data, image] = classifyCellposeInternal(roiobj, classif, frames, channel, gpu, outputName)
 % Segmentation avec CellposeSAM sans tracking (optionnel : tracking basique hongrois)
+persistent runnerNS runnerPathCached
 
 if nargin < 6
     outputName = '';
+end
+try
+    disp('[DEBUG] cellposesam.classify: version=2026-02-06T13:10');
+catch
 end
 
 if isempty(outputName)
@@ -50,6 +57,19 @@ doTracking = true;
 
 if isempty(frames)
     frames = 1:size(roiobj.image, 4);
+end
+try
+    if isempty(roiobj.id)
+        roiIdStr = '(id empty)';
+    else
+        roiIdStr = num2str(roiobj.id);
+    end
+catch
+    roiIdStr = '(id unavailable)';
+end
+try
+    disp(['[DEBUG] cellposesam.classify: ROI ' roiIdStr ' frames=' mat2str(frames)]);
+catch
 end
 
 image = roiobj.image;
@@ -79,20 +99,47 @@ end
 
 % --- Channels results (instance mask) ---
 pixresults = [];
-cd = 1;
 for i = 1:numel(classif.classes)
-    pixresultstmp = findChannelID(roiobj, ['results_' outputName '_' classif.classes{i}]);
+    chName = ['results_' outputName '_' classif.classes{i}];
+    pixresultstmp = findChannelID(roiobj, chName);
     if isempty(pixresultstmp)
-        pixresults = [pixresults size(roiobj.image,3)+cd]; %#ok<AGROW>
-        cd = cd+1;
-    else
-        pixresults = [pixresults pixresultstmp]; %#ok<AGROW>
+        matrix = uint16(zeros(size(image,1), size(image,2), 1, size(image,4)));
+        rgb = [1 1 1];
+        intensity = [0 0 0]; % indexed mask
+        roiobj.addChannel(matrix, chName, rgb, intensity);
+        pixresultstmp = findChannelID(roiobj, chName);
     end
+    pixresults = [pixresults pixresultstmp]; %#ok<AGROW>
 end
 if isempty(pixresults)
     error('cellposesam.classify: impossible de determiner/ajouter un channel results_* pour %s', classif.strid);
 end
 pixresults = pixresults(1);
+
+% refresh local image after channel creation
+image = roiobj.image;
+
+% Try to auto-select the results channel for display
+try
+    if isfield(roiobj, 'channelid') && ~isempty(roiobj.channelid)
+        logIdx = roiobj.channelid(pixresults);
+        if isfield(roiobj, 'display') && isstruct(roiobj.display)
+            if ~isfield(roiobj.display,'selectedchannel') || isempty(roiobj.display.selectedchannel)
+                roiobj.display.selectedchannel = zeros(1, numel(roiobj.display.channel));
+            end
+            roiobj.display.selectedchannel(:) = 0;
+            if numel(roiobj.display.selectedchannel) < logIdx
+                roiobj.display.selectedchannel(logIdx) = 1;
+            else
+                roiobj.display.selectedchannel(logIdx) = 1;
+            end
+            if isfield(roiobj.display,'indexed') && numel(roiobj.display.indexed) >= logIdx
+                roiobj.display.indexed(logIdx) = 1;
+            end
+        end
+    end
+catch
+end
 
 % Preparation des images pour CellposeSAM
 if isempty(pix)
@@ -104,9 +151,23 @@ for i = 1:numel(frames)
     tmp = image(:, :, pix, frames(i));
     gfp(:, :, :, i) = uint8(255 * mat2gray(tmp));
 end
+try
+    disp(['[DEBUG] cellposesam.classify: gfp size=' mat2str(size(gfp)) ' frames_len=' num2str(numel(frames))]);
+    if ~isempty(frames)
+        disp(['[DEBUG] cellposesam.classify: frames min=' num2str(min(frames)) ' max=' num2str(max(frames))]);
+    end
+catch
+end
 
 tmp_mat_path = fullfile(classif.path, 'tmp.mat');
 save(tmp_mat_path, 'gfp', 'frames');
+try
+    infoTmp = dir(tmp_mat_path);
+    if ~isempty(infoTmp)
+        disp(['[DEBUG] cellposesam.classify: tmp.mat bytes=' num2str(infoTmp.bytes) ' date=' infoTmp.date]);
+    end
+catch
+end
 
 % Parameters
 if isfield(classif.trainingParam, 'diameter')
@@ -162,6 +223,7 @@ scriptPath = fullfile(fileparts(mfilename('fullpath')), 'py', 'classify_cellpose
 if exist(scriptPath, 'file') ~= 2
     error('CellposeSAM python script not found: %s', scriptPath);
 end
+runnerPath = fullfile(fileparts(mfilename('fullpath')), 'py', 'cellposesam_runner.py');
 
 cfg = struct();
 cfg.tmp_mat_path = strrep(tmp_mat_path, '\\', '/');
@@ -185,22 +247,176 @@ fclose(fid);
 setenv('CPSAM_CONFIG', configPath);
 disp(['[INFO] CellposeSAM classify script: ' scriptPath]);
 disp(['[INFO] CellposeSAM config: ' configPath]);
+try
+    disp(['[DEBUG] cellposesam.classify: cfg.tmp_mat_path=' cfg.tmp_mat_path]);
+    disp(['[DEBUG] cellposesam.classify: cfg.classif_path=' cfg.classif_path]);
+    disp(['[DEBUG] cellposesam.classify: cfg.model_path=' cfg.model_path]);
+    infoCfg = dir(configPath);
+    if ~isempty(infoCfg)
+        disp(['[DEBUG] cellposesam.classify: config bytes=' num2str(infoCfg.bytes) ' date=' infoCfg.date]);
+    end
+catch
+end
 
 % test the existence of python environment
-test = select_and_load_conda_env; %#ok<NASGU>
+test = select_and_load_conda_env('classif', classif); %#ok<NASGU>
+cellposesam.utils.ensurePythonDeps(classif);
 
-% run python routine
-pyrunfile(scriptPath);
+% run python routine (prefer persistent module)
+didRun = false;
+try
+    pyPath = fileparts(runnerPath);
+    if count(py.sys.path, pyPath) == 0
+        insert(py.sys.path, int32(0), pyPath);
+    end
+    % Load runner into a persistent namespace (avoids module cache issues)
+    if isempty(runnerNS) || isempty(runnerPathCached) || ~strcmp(runnerPathCached, runnerPath)
+        try
+            runnerSrc = fileread(runnerPath);
+        catch ME
+            error('cellposesam_runner load failed (read): %s', ME.message);
+        end
+        runnerNS = py.dict();
+        try
+            py.exec(runnerSrc, runnerNS, runnerNS);
+        catch ME
+            error('cellposesam_runner load failed (exec): %s', ME.message);
+        end
+        runnerPathCached = runnerPath;
+    end
+    try
+        disp('[DEBUG] cellposesam.classify: runner namespace loaded');
+    catch
+    end
+    resultsPath = fullfile(classif.path, 'results.mat');
+    disp('[DEBUG] cellposesam: using persistent python runner');
+    tRun = tic;
+    try
+        try
+            runFunc = runnerNS{'run'};
+        catch
+            error('cellposesam_runner namespace missing run()');
+        end
+        pyOut = runFunc(py.str(configPath));
+    catch ME
+        try
+            errPath = fullfile(classif.path, 'runner_error.txt');
+            if exist(errPath, 'file') == 2
+                disp('[DEBUG] cellposesam.classify: runner_error.txt contents:');
+                disp(fileread(errPath));
+            else
+                disp('[DEBUG] cellposesam.classify: runner_error.txt missing');
+            end
+        catch
+        end
+        error('cellposesam_runner run() failed: %s', ME.message);
+    end
+    runSec = toc(tRun);
+    disp(['[DEBUG] cellposesam.classify: runner time=' num2str(runSec, '%.3f') 's']);
+    try
+        disp(['[DEBUG] cellposesam.classify: runner pyOut class=' class(pyOut)]);
+        try
+            if strcmp(class(pyOut),'py.dict')
+                keys = pyOut.keys();
+                disp(['[DEBUG] cellposesam.classify: runner keys=' char(py.str(keys))]);
+            end
+        catch
+        end
+        framesLen = double(pyOut{'frames_len'});
+        fmin = double(pyOut{'frames_min'});
+        fmax = double(pyOut{'frames_max'});
+        gfpShape = char(py.repr(pyOut{'gfp_shape'}));
+        resPath = char(pyOut{'results_path'});
+        resBytes = double(pyOut{'results_bytes'});
+        disp(['[DEBUG] cellposesam.classify: runner frames_len=' num2str(framesLen) ...
+            ' frames_min=' num2str(fmin) ' frames_max=' num2str(fmax) ...
+            ' gfp_shape=' gfpShape]);
+        disp(['[DEBUG] cellposesam.classify: runner results_path=' resPath ' bytes=' num2str(resBytes)]);
+    catch
+        disp('[DEBUG] cellposesam.classify: runner output unreadable');
+        try
+            keys = py.list(pyOut.keys());
+            disp(['[DEBUG] cellposesam.classify: runner keys=' char(py.str(keys))]);
+        catch
+        end
+    end
+    didRun = true;
+catch ME
+    try
+        errPath = fullfile(classif.path, 'runner_error.txt');
+        if exist(errPath, 'file') == 2
+            disp('[DEBUG] cellposesam.classify: runner_error.txt contents:');
+            disp(fileread(errPath));
+        end
+    catch
+    end
+    error('cellposesam_runner failed (fallback disabled): %s', ME.message);
+end
+% If results.mat missing, force reload + retry once
+resultsPath = fullfile(classif.path, 'results.mat');
+try
+    disp(['[DEBUG] cellposesam.classify: results.mat exists after runner? ' num2str(exist(resultsPath,'file'))]);
+catch
+end
+if exist(resultsPath, 'file') ~= 2
+    disp('[WARN] cellposesam.classify: results.mat missing after runner; reloading module and retrying once...');
+    try
+        runnerSrc = fileread(runnerPath);
+        runnerNS = py.dict();
+        py.exec(runnerSrc, runnerNS, runnerNS);
+        runFunc = runnerNS{'run'};
+        tRun = tic;
+        pyOut = runFunc(py.str(configPath));
+        runSec = toc(tRun);
+        disp(['[DEBUG] cellposesam.classify: retry runner time=' num2str(runSec, '%.3f') 's']);
+    catch ME
+        error('cellposesam_runner retry failed: %s', ME.message);
+    end
+end
+try
+    infoRes = dir(fullfile(classif.path, 'results.mat'));
+    if ~isempty(infoRes)
+        disp(['[DEBUG] cellposesam.classify: results.mat bytes=' num2str(infoRes.bytes) ' date=' infoRes.date]);
+    end
+catch
+end
+if exist(fullfile(classif.path, 'results.mat'), 'file') ~= 2
+    try
+        stampPath = fullfile(classif.path, 'runner_stamp.txt');
+        if exist(stampPath, 'file') == 2
+            disp('[DEBUG] cellposesam.classify: runner_stamp.txt exists');
+            disp(fileread(stampPath));
+        else
+            disp('[DEBUG] cellposesam.classify: runner_stamp.txt missing');
+        end
+        d = dir(fullfile(classif.path, '*results*'));
+        if ~isempty(d)
+            disp('[DEBUG] cellposesam.classify: files matching *results* in classif.path:');
+            for k = 1:numel(d)
+                disp(['  ' d(k).name]);
+            end
+        end
+    catch
+    end
+end
 
 % Read results
 res = load(fullfile(classif.path, 'results.mat'));
 frames_list = res.frames_list;
+try
+    disp(['[DEBUG] cellposesam.classify: results loaded frames=' num2str(numel(frames_list))]);
+catch
+end
 
 if ~isfield(res, 'masks_all')
     error('cellposesam.classify: no masks_all found in results.mat.');
 end
 
 tmpout = res.masks_all;
+try
+    disp(['[DEBUG] cellposesam.classify: masks_all size=' mat2str(size(tmpout))]);
+catch
+end
 
 % Normalize IDs per frame
 for f = 1:size(tmpout, 4)
@@ -218,7 +434,7 @@ if doTracking
 end
 
 image(:,:,pixresults, frames_list) = tmpout;
-disp('? Masques CellposeSAM integres dans image.');
+disp('Masques CellposeSAM integres dans image.');
 
 if strcmpi(outputType, 'proba')
     if ~isfield(res, 'cellprob_all')
@@ -346,5 +562,3 @@ for t = 1:(num_frames-1)
     tracked_masks(:,:,1,t+1) = mask_new_t1;
 end
 end
-
-

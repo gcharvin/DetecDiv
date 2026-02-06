@@ -10,11 +10,12 @@ function info = select_and_load_conda_env(varargin)
 %     'use_gui'      (logical, default true)   % fallback console si GUI indisponible
 %     'preferred'    (string, default "" )     % nom OU chemin de l'env à pré-sélectionner
 %     'auto_select'  (logical, default false)  % si preferred matche => choisir sans demander
+%     'classif'      (classi handle)           % use/save classif.runProfiles.pythonEnv
 %
 % Renvoie une struct 'info' (env choisi + résumé torch/sys).
 
     % -------- Parse options --------
-    opts = struct('debug', true, 'use_gui', true, 'preferred', "", 'auto_select', false);
+    opts = struct('debug', true, 'use_gui', true, 'preferred', "", 'auto_select', false, 'classif', []);
     if mod(nargin,2)~=0
         error('Arguments must be Name,Value pairs.');
     end
@@ -26,10 +27,23 @@ function info = select_and_load_conda_env(varargin)
             case "use_gui",     opts.use_gui = logical(val);
             case "preferred",   opts.preferred = string(val);
             case "auto_select", opts.auto_select = logical(val);
+            case "classif",     opts.classif = val;
             otherwise, error('Unknown option "%s".', name);
         end
     end
     debug = opts.debug;
+
+    % If classif provided and has saved python env, prefer it and auto-select.
+    if opts.preferred == "" && ~isempty(opts.classif)
+        pref = getClassifPreferred(opts.classif);
+        if pref ~= ""
+            opts.preferred = pref;
+            opts.auto_select = true;
+            if debug
+                fprintf('[DEBUG] Using saved python env from classif.runProfiles.pythonEnv: %s\n', char(pref));
+            end
+        end
+    end
 
     % -------- 0) Si Python déjà chargé, tester santé --------
     pe = pyenv;
@@ -42,6 +56,9 @@ function info = select_and_load_conda_env(varargin)
                 printSummary(pe, sysver, torchInfo);
             end
             info = packInfoExisting(pe, sysver, torchInfo, debug);
+            envPath = string(fileparts(pe.Executable));
+            envName = getLastPathComponent(envPath);
+            tryStoreClassifEnv(opts.classif, envName, envPath, string(pe.Executable), debug);
             return;
         else
             if debug, fprintf('[DEBUG] Current pyenv unhealthy -> terminate(pyenv) and select a conda env.\n'); end
@@ -120,9 +137,16 @@ names = string({envList.name});
 paths = string({envList.path});
 listStr = cellstr(names + "  -  " + paths);
 
+prefIdx = findPreferredIndex(envList, opts.preferred);
 idx = [];
 useUI = false;
-if opts.use_gui && usejava('awt') && feature('ShowFigureWindows')
+if opts.auto_select && ~isempty(prefIdx)
+    idx = prefIdx;
+    fprintf('[CONDA] Auto-selecting saved env: %s (%s)\n', char(envList(idx).name), char(envList(idx).path));
+elseif opts.auto_select && opts.preferred ~= ""
+    fprintf('[CONDA] Saved env not found: %s. Falling back to selection.\n', char(opts.preferred));
+end
+if isempty(idx) && opts.use_gui && usejava('awt') && feature('ShowFigureWindows')
     useUI = true;
     try
         [idx, ok] = listdlg( ...
@@ -157,7 +181,11 @@ if isempty(idx)
 end
 
 if debug
-    fprintf('[DEBUG] Selection method: %s | index=%d\n', tern(useUI,'UI','console'), idx);
+    method = tern(useUI,'UI','console');
+    if opts.auto_select && ~isempty(prefIdx)
+        method = 'auto';
+    end
+    fprintf('[DEBUG] Selection method: %s | index=%d\n', method, idx);
 end
 
 chosen = envList(idx);
@@ -246,6 +274,7 @@ end
         'torch', struct('installed', okTorch, 'version', torchVer, 'cuda', torchCUDA, 'is_available', torchAvail), ...
         'debug', debug ...
     );
+    tryStoreClassifEnv(opts.classif, chosen.name, chosen.path, chosen.python, debug);
 end
 
 % =================== Helpers ===================
@@ -379,6 +408,65 @@ function defIdx = pickDefaultIndex(envList, defPrefix, preferred)
     end
     % 4) fallback
     if isempty(defIdx), defIdx = 1; end
+end
+
+function idx = findPreferredIndex(envList, preferred)
+    idx = [];
+    if preferred == ""
+        return;
+    end
+    for i = 1:numel(envList)
+        if strcmpi(char(envList(i).path), char(preferred)) ...
+                || strcmpi(char(envList(i).name), char(preferred)) ...
+                || strcmpi(char(envList(i).python), char(preferred))
+            idx = i;
+            return;
+        end
+    end
+end
+
+function pref = getClassifPreferred(classif)
+    pref = "";
+    try
+        if isempty(classif), return; end
+        if ~isprop(classif,'runProfiles') || ~isstruct(classif.runProfiles), return; end
+        if ~isfield(classif.runProfiles,'pythonEnv'), return; end
+        pe = classif.runProfiles.pythonEnv;
+        if isstruct(pe)
+            if isfield(pe,'path') && ~isempty(pe.path)
+                pref = string(pe.path);
+                return;
+            end
+            if isfield(pe,'name') && ~isempty(pe.name)
+                pref = string(pe.name);
+                return;
+            end
+            if isfield(pe,'python') && ~isempty(pe.python)
+                pref = string(pe.python);
+                return;
+            end
+        end
+    catch
+    end
+end
+
+function tryStoreClassifEnv(classif, name, path, python, debug)
+    if nargin < 5, debug = false; end
+    try
+        if isempty(classif), return; end
+        if ~isprop(classif,'runProfiles') || ~isstruct(classif.runProfiles)
+            classif.runProfiles = struct();
+        end
+        classif.runProfiles.pythonEnv = struct( ...
+            'name', char(string(name)), ...
+            'path', char(string(path)), ...
+            'python', char(string(python)) ...
+        );
+        if debug
+            fprintf('[DEBUG] Saved python env to classif.runProfiles.pythonEnv: %s\n', char(string(path)));
+        end
+    catch
+    end
 end
 
 function [st,out] = runConda(subcmd, debug, condaCmd)

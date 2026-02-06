@@ -33,6 +33,7 @@ if isnumeric(output)
     out.metrics.outputCount = output;
 end
 end
+
 function output = formatPixelTrainingSetCPSAMInternal(foldername, classif, trainrois, valrois)
 % formatPixelTrainingSetCPSAM  Build a Cellpose/CellposeSAM training set
 % stocké dans un framebank HDF5 au lieu d'images individuelles.
@@ -122,17 +123,17 @@ try
         end
 
         % On va interpréter CPSAM_ValFraction comme fraction de VAL **et** de TEST
-% Exemple : CPSAM_ValFraction = 0.2  ->  60% train, 20% val, 20% test
-if isempty(ValFraction)
-    ValFraction = 0;
-end
-% On évite d'avoir 2*ValFraction >= 1
-if ValFraction < 0
-    ValFraction = 0;
-elseif ValFraction >= 0.5
-    warning('CPSAM_ValFraction=%.3f >= 0.5, clamp to 0.25 (train≈50%%, val≈25%%, test≈25%%).', ValFraction);
-    ValFraction = 0.25;
-end
+        % Exemple : CPSAM_ValFraction = 0.2  ->  60% train, 20% val, 20% test
+        if isempty(ValFraction)
+            ValFraction = 0;
+        end
+        % On évite d'avoir 2*ValFraction >= 1
+        if ValFraction < 0
+            ValFraction = 0;
+        elseif ValFraction >= 0.5
+            warning('CPSAM_ValFraction=%.3f >= 0.5, clamp to 0.25 (train≈50%%, val≈25%%, test≈25%%).', ValFraction);
+            ValFraction = 0.25;
+        end
 
 
     end
@@ -324,10 +325,10 @@ if NegDownsampleTrainRatio > 0
             Ntotal = numel(idx_roi);
 
             fprintf(['Negative downsampling: kept %d positive and %d negative frames ' ...
-                     '(requested ratio <= %.2f, effective ratio = %.2f).\n'], ...
-                    numel(keepPosIdx), numel(keepNegIdx), ...
-                    NegDownsampleTrainRatio, ...
-                    numel(keepNegIdx)/max(1,numel(keepPosIdx)));
+                '(requested ratio <= %.2f, effective ratio = %.2f).\n'], ...
+                numel(keepPosIdx), numel(keepNegIdx), ...
+                NegDownsampleTrainRatio, ...
+                numel(keepNegIdx)/max(1,numel(keepPosIdx)));
         end
     end
 end
@@ -409,9 +410,9 @@ if MaxTrainImages > 0 && MaxTrainImages < Ntotal
     nNegFinal = sum(~hasMaskVec);
 
     fprintf(['GLOBAL subsampling %d/%d (MaxTrainImages) -> ' ...
-             '%d frames total, %d pos, %d neg (%.1f%%%% pos, ratio neg/pos=%.2f)\n'], ...
-            N, Ntotal, N, nPosFinal, nNegFinal, ...
-            100*nPosFinal/max(1,N), nNegFinal/max(1,nPosFinal));
+        '%d frames total, %d pos, %d neg (%.1f%%%% pos, ratio neg/pos=%.2f)\n'], ...
+        N, Ntotal, N, nPosFinal, nNegFinal, ...
+        100*nPosFinal/max(1,N), nNegFinal/max(1,nPosFinal));
 else
     if MaxTrainImages > 0 && MaxTrainImages >= Ntotal
         fprintf('MaxTrainImages (%d) >= available frames (%d): using all frames.\n', ...
@@ -779,8 +780,8 @@ fprintf('Exported %d frames to HDF5 framebank:\n  %s\n', output, framebankPath);
         end
 
         error('formatPixelTrainingSetCPSAM:NoFramebankPath', ...
-              'Could not find usable framebank path after %d attempts starting from %s', ...
-              maxTries+1, basePath);
+            'Could not find usable framebank path after %d attempts starting from %s', ...
+            maxTries+1, basePath);
     end
 
 end

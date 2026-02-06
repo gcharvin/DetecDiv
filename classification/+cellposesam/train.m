@@ -127,10 +127,11 @@ disp(['[INFO] CellposeSAM config: ' configPath]);
 % Python environment & execution
 % -------------------------------------------------------------------------
 try
-    test = select_and_load_conda_env; %#ok<NASGU>
+    test = select_and_load_conda_env('classif', classif); %#ok<NASGU>
 catch ME
     warning('select_and_load_conda_env failed: %s', ME.message);
 end
+cellposesam.utils.ensurePythonDeps(classif);
 
 python_env = pyenv();
 if strcmp(python_env.Status, 'NotLoaded')

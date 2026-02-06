@@ -128,6 +128,10 @@ def train_model():
     seed = int(cfg.get("seed", 12345))
     use_pretrained = bool(cfg.get("use_pretrained", True))
     verbose = bool(cfg.get("verbose", True))
+    gpu = bool(cfg.get("gpu", True))
+    if gpu and not torch.cuda.is_available():
+        print("[WARN] GPU requested but not available. Falling back to CPU.")
+        gpu = False
 
     weight_decay = float(cfg.get("weight_decay", 1e-5))
     learning_rate = float(cfg.get("learning_rate", 1e-4))
@@ -150,13 +154,13 @@ def train_model():
     imgs, labels, val_imgs, val_labels = load_from_framebank(framebank_path, seed=seed)
     print(f"[INFO] loaded {len(imgs)} train images and {len(val_imgs)} val images FROM framebank")
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if gpu and torch.cuda.is_available() else "cpu")
     print(f"[INFO] device: {device}")
 
     pretrained_model = "sam" if use_pretrained else None
 
     model = models.CellposeModel(
-        gpu=True,
+        gpu=gpu,
         device=device,
         pretrained_model=pretrained_model,
     )

@@ -162,6 +162,17 @@ end
 for i = 1:numel(roiobj)
 
     goclassif = 1;
+    roiIdStr = '';
+    try
+        if isempty(roiobj(i).id)
+            roiIdStr = ['#' num2str(i)];
+        else
+            roiIdStr = num2str(roiobj(i).id);
+        end
+    catch
+        roiIdStr = ['#' num2str(i)];
+    end
+    disp(['[DEBUG] classifyData: ROI ' num2str(i) '/' num2str(numel(roiobj)) ' id=' roiIdStr]);
 
     % ---------------------------------------------------------
     % Optional: classify only ROIs/frames with GT available
@@ -204,6 +215,11 @@ for i = 1:numel(roiobj)
     end
 
     if goclassif==0
+        if roiwithgt==1
+            disp(['[DEBUG] classifyData: RoiWithGT enabled and no GT for ROI ' roiIdStr ' -> skipping']);
+        else
+            disp(['[DEBUG] classifyData: goclassif=0 for ROI ' roiIdStr ' -> skipping']);
+        end
         disp(['There is no groundtruth available for roi ' num2str(roiobj(i).id) ' , skipping roi...']);
         continue;
     end
@@ -212,11 +228,16 @@ for i = 1:numel(roiobj)
     % Load ROI image if needed
     % ---------------------------------------------------------
     if isempty(roiobj(i).image)
+        disp(['[DEBUG] classifyData: ROI ' roiIdStr ' has empty image -> loading']);
         roiobj(i).load;
     end
     if isempty(roiobj(i).image)
-        warning('ROI is empty; skipping...');
+        warning(['ROI is empty; skipping... (ROI ' roiIdStr ')']);
         continue;
+    end
+    try
+        disp(['[DEBUG] classifyData: ROI ' roiIdStr ' image size = ' mat2str(size(roiobj(i).image))]);
+    catch
     end
 
     % ---------------------------------------------------------
@@ -225,14 +246,17 @@ for i = 1:numel(roiobj)
     ROIpreprocessing(roiobj(i), classiobj, outputName);
 
     fra = 1:size(roiobj(i).image,4);
+    reqFraStr = 'all';
 
     if ~isempty(frames)
         if iscell(frames)
             if numel(frames) >= i
                 fra = frames{i};
+                reqFraStr = mat2str(fra);
             end
         else
             fra = frames;
+            reqFraStr = mat2str(fra);
         end
     end
 
@@ -241,6 +265,14 @@ for i = 1:numel(roiobj)
         fra = intersect(fra, 1:size(roiobj(i).image,4));
     else
         fra = 1:size(roiobj(i).image,4);
+    end
+    try
+        disp(['[DEBUG] classifyData: ROI ' roiIdStr ' frames req=' reqFraStr ' -> using ' mat2str(fra)]);
+    catch
+    end
+    if isempty(fra)
+        disp(['[DEBUG] classifyData: ROI ' roiIdStr ' has no frames after intersection -> skipping']);
+        continue;
     end
 
     % Channel selection
@@ -252,6 +284,17 @@ for i = 1:numel(roiobj)
         end
     else
         cha = channel{i};
+    end
+    try
+        if iscell(cha)
+            chaStr = strjoin(cha, ',');
+        elseif isnumeric(cha)
+            chaStr = mat2str(cha);
+        else
+            chaStr = char(string(cha));
+        end
+        disp(['[DEBUG] classifyData: ROI ' roiIdStr ' channels=' chaStr]);
+    catch
     end
 
     if ~isempty(p)
@@ -302,6 +345,11 @@ for i = 1:numel(roiobj)
             end
             out = feval(fhandle, roiobj(i), classi, ctx);
             if isstruct(out) && isfield(out,'patch') && ~isempty(out.patch) && exist('roiApplyPatch','file') == 2
+                try
+                    disp(['[DEBUG] classifyData: using roiApplyPatch for ROI ' num2str(roiobj(i).id)]);
+                catch
+                    disp('[DEBUG] classifyData: using roiApplyPatch for ROI (id unavailable)');
+                end
                 roiApplyPatch(roiobj(i), out.patch, ctx);
             else
                 if exist('roiApplyPatch','file') ~= 2
@@ -310,6 +358,11 @@ for i = 1:numel(roiobj)
                 if isstruct(out) && (isfield(out,'data') || isfield(out,'image'))
                     if ~isfield(out,'data'), out.data = []; end
                     if ~isfield(out,'image'), out.image = []; end
+                    try
+                        disp(['[DEBUG] classifyData: using ROIManagement for ROI ' num2str(roiobj(i).id)]);
+                    catch
+                        disp('[DEBUG] classifyData: using ROIManagement for ROI (id unavailable)');
+                    end
                     ROIManagement(roiobj(i), out.data, out.image, outputName, classiobj);
                 end
             end
@@ -349,6 +402,11 @@ if para
             [idx, out] = fetchNext(logparf(i));
             ctx = ctxByIdx{idx};
             if isstruct(out) && isfield(out,'patch') && ~isempty(out.patch) && exist('roiApplyPatch','file') == 2
+                try
+                    disp(['[DEBUG] classifyData: using roiApplyPatch for ROI ' num2str(roiobj(idx).id)]);
+                catch
+                    disp('[DEBUG] classifyData: using roiApplyPatch for ROI (id unavailable)');
+                end
                 roiApplyPatch(roiobj(idx), out.patch, ctx);
             else
                 if exist('roiApplyPatch','file') ~= 2
@@ -357,6 +415,11 @@ if para
                 if isstruct(out) && (isfield(out,'data') || isfield(out,'image'))
                     if ~isfield(out,'data'), out.data = []; end
                     if ~isfield(out,'image'), out.image = []; end
+                    try
+                        disp(['[DEBUG] classifyData: using ROIManagement for ROI ' num2str(roiobj(idx).id)]);
+                    catch
+                        disp('[DEBUG] classifyData: using ROIManagement for ROI (id unavailable)');
+                    end
                     ROIManagement(roiobj(idx), out.data, out.image, outputName, classiobj);
                 end
             end
@@ -538,10 +601,22 @@ function ROIManagement(roiobj, data, image, outputName, classiobj)
     roiobj.image = image;
 
     if numel(image)
+        try
+            disp(['[DEBUG] ROIManagement: calling roi.save for ROI ' num2str(roiobj.id)]);
+        catch
+            disp('[DEBUG] ROIManagement: calling roi.save (id unavailable)');
+        end
         roiobj.save;   % sauvegarde tout
         roiobj.clear;
+        disp('[DEBUG] ROIManagement: roi.save done (image+data), roi.clear called.');
     else
-        roiobj.save('data');  % seulement les métadonnées
+        try
+            disp(['[DEBUG] ROIManagement: calling roi.save(''data'') for ROI ' num2str(roiobj.id)]);
+        catch
+            disp('[DEBUG] ROIManagement: calling roi.save(''data'') (id unavailable)');
+        end
+        roiobj.save('data');  % seulement les metadonnees
+        disp('[DEBUG] ROIManagement: roi.save(''data'') done.');
     end
 end
 

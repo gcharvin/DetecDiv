@@ -50,10 +50,33 @@ def main():
     classif_path = cfg["classif_path"]
     model_path = cfg.get("model_path", "sam")
     gpu = bool(cfg.get("gpu", False))
-    diameter = cfg.get("diameter", None)
-    flow_threshold = cfg.get("flow_threshold", 0.4)
-    cell_prob_threshold = cfg.get("cell_prob_threshold", 0.0)
-    min_size = int(cfg.get("min_size", 10))
+    if gpu and not torch.cuda.is_available():
+        print("[WARN] GPU requested but not available. Falling back to CPU.")
+        gpu = False
+    def to_float(v, default=None):
+        if v is None:
+            return default
+        if isinstance(v, str):
+            vs = v.strip().lower()
+            if vs in ["", "nan", "none", "null"]:
+                return default
+            return float(vs)
+        return float(v)
+
+    def to_int(v, default=0):
+        if v is None:
+            return default
+        if isinstance(v, str):
+            vs = v.strip().lower()
+            if vs in ["", "nan", "none", "null"]:
+                return default
+            return int(float(vs))
+        return int(v)
+
+    diameter = to_float(cfg.get("diameter", None), None)
+    flow_threshold = to_float(cfg.get("flow_threshold", 0.4), 0.4)
+    cell_prob_threshold = to_float(cfg.get("cell_prob_threshold", 0.0), 0.0)
+    min_size = to_int(cfg.get("min_size", 10), 10)
     mode = cfg.get("mode", "segmentation")
 
     print("torch.cuda.is_available():", torch.cuda.is_available())
@@ -64,9 +87,45 @@ def main():
     gfp = mat_data["gfp"]
     frames_list = mat_data["frames"].flatten().astype(int)
 
-    gfp_reord = np.transpose(gfp, (3, 0, 1, 2))
+    def to_nhwc(arr, nframes):
+        arr = np.asarray(arr)
+        if arr.ndim == 4:
+            if arr.shape[0] == nframes:
+                nhwc = arr
+            elif arr.shape[-1] == nframes:
+                nhwc = np.transpose(arr, (3, 0, 1, 2))
+            elif arr.shape[2] == nframes:
+                nhwc = np.transpose(arr, (2, 0, 1, 3))
+            elif arr.shape[0] in (1, 3, 4) and arr.shape[-1] == nframes:
+                nhwc = np.transpose(arr, (3, 1, 2, 0))
+            else:
+                nhwc = np.transpose(arr, (3, 0, 1, 2))
+            return nhwc
+        if arr.ndim == 3:
+            if arr.shape[0] == nframes:
+                nhw = arr
+            elif arr.shape[-1] == nframes:
+                nhw = np.transpose(arr, (2, 0, 1))
+            elif arr.shape[2] in (1, 3, 4):
+                return arr[np.newaxis, ...]
+            else:
+                nhw = np.transpose(arr, (2, 0, 1))
+            return nhw[..., np.newaxis]
+        if arr.ndim == 2:
+            return arr[np.newaxis, ..., np.newaxis]
+        raise ValueError(f"Unsupported gfp ndim={arr.ndim}, shape={arr.shape}")
+
+    print("gfp shape (raw):", np.asarray(gfp).shape)
+    gfp_reord = to_nhwc(gfp, len(frames_list))
+    print("gfp shape (NHWC):", gfp_reord.shape)
     if gfp_reord.shape[-1] == 1:
         gfp_reord = np.repeat(gfp_reord, 3, axis=-1)
+
+    if gfp_reord.shape[0] != len(frames_list):
+        n = min(gfp_reord.shape[0], len(frames_list))
+        print(f"[WARN] frame count mismatch: gfp={gfp_reord.shape[0]} vs frames={len(frames_list)}. Truncating to {n}.")
+        gfp_reord = gfp_reord[:n]
+        frames_list = frames_list[:n]
 
     images = [img.astype(np.uint8) for img in gfp_reord]
 
