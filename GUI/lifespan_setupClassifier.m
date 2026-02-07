@@ -35,21 +35,31 @@ function [processObj, shallowObj] = lifespan_setupClassifier(app, processorName,
         shallowObj.addProcessor('name', processorName);
         processObj = shallowObj.processing.processor(end);
     
-        % Charger la liste des processors
-        procListFile = fullfile(fileparts(which('shallowNew.m')), 'processor', 'processlist.mat');
-        if exist(procListFile, 'file')
-            load(procListFile, 'processlist'); 
-        else
-            uialert(app.LifespanizerUIFigure, 'Processor list not found.', 'Error');
+        % Charger la liste des processors (packages first)
+        processlist = listProcessPackages();
+        if isempty(processlist) || index > size(processlist,1)
+            uialert(app.LifespanizerUIFigure, 'Processor list not found or index out of range.', 'Error');
             return;
         end
 
-       
         processObj.processFun = processlist{index,5}{1};
         processObj.processArg = {};
 
-        % Initialiser les arguments du processor en appelant la fonction sans input
-        param = feval(processObj.processFun);
+        % Initialiser les arguments du processor (prefer pkg.setparam)
+        param = [];
+        try
+            if contains(processObj.processFun,'.')
+                pkg = extractBefore(processObj.processFun,'.');
+                setparamFun = pkg + ".setparam";
+                if exist(setparamFun,'file')
+                    param = feval(setparamFun);
+                end
+            end
+        catch
+        end
+        if isempty(param)
+            param = feval(processObj.processFun);
+        end
         processObj.processArg = param;
     
         % Sauvegarder la configuration du processor
