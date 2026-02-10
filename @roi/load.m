@@ -473,7 +473,26 @@ attrs  = attrs(ord);
 % Consistance H/W/T
 H = sizes(1,1); W = sizes(1,2); T = sizes(1,4);
 if any(sizes(:,1) ~= H) || any(sizes(:,2) ~= W) || any(sizes(:,4) ~= T)
-    error('loadFromH5_full:DimMismatch', 'H/W/T not consistent across datasets.');
+    % Best-effort: drop datasets with mismatched H/W/T
+    good = (sizes(:,1) == H) & (sizes(:,2) == W) & (sizes(:,4) == T);
+    if ~any(good)
+        error('loadFromH5_full:DimMismatch', 'H/W/T not consistent across datasets.');
+    end
+
+    badNames = names(~good);
+    if ~isempty(badNames)
+        warning('loadFromH5_full:DimMismatch', ...
+            'Dropping %d dataset(s) with inconsistent H/W/T: %s', ...
+            numel(badNames), strjoin(badNames, ', '));
+    end
+
+    names  = names(good);
+    idxRaw = idxRaw(good);
+    kList  = kList(good);
+    sizes  = sizes(good,:);
+    blocks = blocks(good);
+    attrs  = attrs(good);
+    N      = numel(names);
 end
 
 if hasBadIdx

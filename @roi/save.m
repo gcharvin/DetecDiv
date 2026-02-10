@@ -99,6 +99,17 @@ while ~success && attempts < max_attempts
         % fullSave = tous les canaux
         fullSave = (~onlyData) && isempty(requestedChannels);
 
+        % If partial save but H5 is inconsistent (or size changed), fallback to full save
+        if ~fullSave && exist(h5File,'file')
+            if ~localH5DimsConsistent(h5File, [H W T], verbose)
+                if verbose
+                    disp('Partial save disabled: H5 dimensions inconsistent, falling back to full save.');
+                end
+                fullSave = true;
+                requestedChannels = {};
+            end
+        end
+
         %%% ATOMIC WRITE: on prépare un fichier de travail temporaire
         tmpUuid  = char(java.util.UUID.randomUUID);
         h5Tmp    = [h5File '.tmp.' tmpUuid];
@@ -139,6 +150,21 @@ while ~success && attempts < max_attempts
             % Dataset path
             dsetNameSanitized = sanitizeDatasetName(chanNameLogical);
             h5Path = ['/' dsetNameSanitized];
+
+            % For partial save, always replace the dataset to avoid appending
+            if ~fullSave
+                try
+                    if exist(h5Tmp,'file')
+                        fid = H5F.open(h5Tmp,'H5F_ACC_RDWR','H5P_DEFAULT');
+                        if H5L.exists(fid, h5Path, 'H5P_DEFAULT') > 0
+                            H5L.delete(fid, h5Path, 'H5P_DEFAULT');
+                        end
+                        H5F.close(fid);
+                    end
+                catch
+                    % ignore if delete fails (will upsert)
+                end
+            end
 
             % Ecriture/Upsert dans le FICHIER TEMP (h5Tmp)
             upsertH5Dataset_frames(h5Tmp, h5Path, chanBlock, [H W k T], thisClass, absStart0);
@@ -445,6 +471,56 @@ function ok = localVerifyH5(h5Path)       %%% ATOMIC WRITE helper
 ok = false;
 try
     info = h5info(h5Path); %#ok<NASGU>
+    ok = true;
+catch
+    ok = false;
+end
+end
+
+function ok = localH5DimsConsistent(h5File, curHWT, verbose)
+% Verify that all datasets in H5 share same H/W/T and match current image.
+ok = false;
+try
+    info = h5info(h5File);
+    dsets = info.Datasets;
+    if isempty(dsets)
+        ok = false;
+        return;
+    end
+
+    H0 = []; W0 = []; T0 = [];
+    for i = 1:numel(dsets)
+        sz = dsets(i).Dataspace.Size;
+        if isempty(sz), continue; end
+        if numel(sz) < 4
+            sz(end+1:4) = 1;
+        end
+        H = sz(1); W = sz(2); T = sz(4);
+        if isempty(H0)
+            H0 = H; W0 = W; T0 = T;
+        else
+            if H ~= H0 || W ~= W0 || T ~= T0
+                if verbose
+                    fprintf('H5 dim mismatch: %s has [%d %d %d] vs [%d %d %d]\n', ...
+                        dsets(i).Name, H, W, T, H0, W0, T0);
+                end
+                ok = false;
+                return;
+            end
+        end
+    end
+
+    if ~isempty(curHWT)
+        if H0 ~= curHWT(1) || W0 ~= curHWT(2) || T0 ~= curHWT(3)
+            if verbose
+                fprintf('H5 dims [%d %d %d] do not match current image [%d %d %d]\n', ...
+                    H0, W0, T0, curHWT(1), curHWT(2), curHWT(3));
+            end
+            ok = false;
+            return;
+        end
+    end
+
     ok = true;
 catch
     ok = false;
