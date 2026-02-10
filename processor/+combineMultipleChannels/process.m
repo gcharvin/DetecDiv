@@ -1,15 +1,19 @@
-function [paramout, dataout, imageout] = process(param, roiobj, frames)
+function [paramout, dataout, imageout] = process(param, roiobj, ctx)
 % combineMultipleChannels.process  Combine selected channels into one.
+% Supports ctx struct for pipeline-style execution.
+
+    if nargin < 3
+        ctx = struct();
+    elseif ~isstruct(ctx)
+        % Back-compat: third argument was "frames" (unused here)
+        ctx = struct('frames', ctx);
+    end
 
     if nargin == 0 || isempty(param)
-        paramout = combineMultipleChannels.setparam();
+        paramout = combineMultipleChannels.setparam(ctx);
         dataout = [];
         imageout = [];
         return;
-    end
-
-    if nargin < 3
-        frames = []; %#ok<NASGU>
     end
 
     paramout = param;
@@ -18,6 +22,11 @@ function [paramout, dataout, imageout] = process(param, roiobj, frames)
 
     if ~isfield(paramout, 'outputChannelName')
         paramout.outputChannelName = 'CombinedChannel';
+    end
+    if isfield(ctx,'outputName') && ~isempty(ctx.outputName)
+        if isempty(paramout.outputChannelName)
+            paramout.outputChannelName = ctx.outputName;
+        end
     end
     if isfield(paramout,'outputChannelName')
         paramout.outputChannelName = strtrim(paramout.outputChannelName);

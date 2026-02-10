@@ -42,6 +42,8 @@ function cat = inferProcessCategory(pkgName)
     switch lower(pkgName)
         case 'combinemultiplechannels'
             cat = 'Image';
+        case 'basicobjecttracking'
+            cat = 'Tracking';
         otherwise
             cat = 'Image';
     end

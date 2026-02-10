@@ -14,6 +14,9 @@ classdef process < handle
         processFun='';
 
         processArg={};
+
+        % Saved run profiles (e.g., last ROI/frames selection)
+        runProfiles = struct('process', struct(), 'selection', struct());
         
         
         history=table('Size',[1 3],'VariableTypes',{'datetime','string','string'},'VariableNames',{'Date','Category','Message'});

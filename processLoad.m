@@ -40,6 +40,14 @@ if ~found
     return;
 end
 
+% Ensure runProfiles exists
+try
+    if ~isprop(processObj,'runProfiles') || isempty(processObj.runProfiles)
+        processObj.runProfiles = struct('process', struct(), 'selection', struct());
+    end
+catch
+end
+
 % Vérifie si déjà présent dans le workspace
 varlist = evalin('base', 'who');
 for i = 1:numel(varlist)

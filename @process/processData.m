@@ -20,8 +20,8 @@ function processData(classiobj,roiobj,varargin)
 para=0;
 frames=[];
 p=[];
-
 gpu=0;
+ctxBase=struct();
 
 for i=1:numel(varargin)
 
@@ -40,12 +40,34 @@ for i=1:numel(varargin)
      if strcmp(varargin{i},'GPU') % classify with GPU
         gpu=1;
     end
+
+    if strcmp(varargin{i},'Ctx') % pipeline context (struct)
+        ctxBase=varargin{i+1};
+        if isempty(ctxBase) || ~isstruct(ctxBase)
+            ctxBase=struct();
+        end
+    end
 end
 
 classi=classiobj;
 classifyFun=classi.processFun;
 fhandle=eval(['@' classifyFun]);
 param=classi.processArg;
+
+% ---- Inform which execution path is used ----
+useCtx = false;
+if ischar(classifyFun) || isstring(classifyFun)
+    useCtx = contains(string(classifyFun), '.process');
+end
+if useCtx
+    if ~isempty(fieldnames(ctxBase))
+        disp(['[processData] Using package/ctx processor: ' char(string(classifyFun)) ' (ctx override)']);
+    else
+        disp(['[processData] Using package/ctx processor: ' char(string(classifyFun)) ' (auto ctx)']);
+    end
+else
+    disp(['[processData] Using legacy processor signature: ' char(string(classifyFun))]);
+end
 
 disp(['Prcoessing roi data using ' classifyFun]);
 
@@ -83,7 +105,7 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
                 fra=frames;
             end
         else
-                fra=-1;
+            fra=-1;
         end
 
         
@@ -109,13 +131,39 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
 
         % roiobj(i).classes=classi.classes;
 
-        if para % parallel computing
-                logparf(i)=parfeval(fhandle,2,param,roiobj(i),fra); % launch the training function for classification
-        else
-         %       aa=       roiobj(i)
+        % Build ctx for pipeline-compatible processors
+        ctx = ctxBase;
+        ctx.frames = fra;
+        ctx.gpu = gpu;
+        if isprop(classi,'strid') && (~isfield(ctx,'outputName') || isempty(ctx.outputName))
+            ctx.outputName = classi.strid;
+        end
 
-               [paramout,data,image]=feval(fhandle,param,roiobj(i),fra); % launch the training function for classification
-                disp(['Processed ' num2str(roiobj(i).id)]);
+        % Merge params: ctx.params overrides classif.processArg
+        paramEff = param;
+        if isfield(ctx,'params') && ~isempty(ctx.params) && isstruct(ctx.params)
+            if isempty(paramEff), paramEff = struct(); end
+            if isstruct(paramEff)
+                paramEff = mergeParamStruct(paramEff, ctx.params);
+            else
+                % if legacy param is non-struct, prefer ctx.params
+                paramEff = ctx.params;
+            end
+        end
+
+        if para % parallel computing
+            if useCtx
+                logparf(i)=parfeval(fhandle,2,paramEff,roiobj(i),ctx);
+            else
+                logparf(i)=parfeval(fhandle,2,paramEff,roiobj(i),fra);
+            end
+        else
+            if useCtx
+                [paramout,data,image]=feval(fhandle,paramEff,roiobj(i),ctx);
+            else
+                [paramout,data,image]=feval(fhandle,paramEff,roiobj(i),fra);
+            end
+            disp(['Processed ' num2str(roiobj(i).id)]);
 
          % bb=       roiobj(i)
          %        size(image)
@@ -130,7 +178,7 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
                       saveChannels = {char(string(paramout.outputChannelName))};
                   end
               end
-              ROIManagement(roiobj(i),image,data,saveChannels);
+            ROIManagement(roiobj(i),image,data,saveChannels);
            
         end
 end
@@ -173,7 +221,15 @@ function ROIManagement(roiobj,image,data,saveChannels)
 
  if nargin < 4
      saveChannels = {};
- end
+end
+
+function out = mergeParamStruct(base, override)
+    out = base;
+    fn = fieldnames(override);
+    for k = 1:numel(fn)
+        out.(fn{k}) = override.(fn{k});
+    end
+end
 
  roiobj.data=data; 
  roiobj.image=image; 
