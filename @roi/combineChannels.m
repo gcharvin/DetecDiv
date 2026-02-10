@@ -27,6 +27,10 @@ for i = 1:numel(varargin)
         debug = logical(varargin{i+1});
     end
 end
+% sanitize output channel name
+if isstring(name) || ischar(name)
+    name = strtrim(char(name));
+end
 
 fprintf('[combineChannels] ---- START ROI=%s output="%s" ----\n', tryGetROIid(obj), string(name));
 
@@ -93,6 +97,7 @@ else
     matrix = zeros(H,W,1,T,'uint16');
     fprintf('[combineChannels] output mode = MONO\n');
 end
+outIntensity = [1 1 1];
 
 % ---------------- main loop ----------------
 for iCh = 1:nCh
@@ -205,7 +210,6 @@ end
             fprintf('[combineChannels][debug] adding mono channel i=%d\n', iCh);
         end
         matrix = imadd(matrix, imtmp);
-        outrgb = [1 1 1];
 
     else
         % RGB
@@ -217,7 +221,7 @@ end
         fprintf('[combineChannels] rgb spec size=%s\n', mat2str(size(thisRGB)));
 
         if size(thisRGB,1) == 1
-            % scalar channel -> replicate and scale
+            % scalar channel -> replicate and scale (non-indexed RGB)
             imtmp = repmat(imtmp,[1 1 3 1]); % HxWx3xT
 
             for k=1:3
@@ -239,6 +243,8 @@ end
             end
             matrix = imadd(matrix, imtmp);
 
+            % keep non-indexed
+            outIntensity = [1 1 1];
         else
             % indexed colormap
             fprintf('[combineChannels] indexed colormap mode (N=%d colors)\n', size(thisRGB,1));
@@ -261,9 +267,10 @@ end
                 end
                 matrix = imadd(matrix, imtmp2);
             end
-        end
 
-        outrgb = [0 0 0];
+            % indexed output
+            outIntensity = [0 0 0];
+        end
     end
 end
 
@@ -276,7 +283,12 @@ if ~isempty(pix)
     obj.removeChannel(name);
 end
 
-obj.addChannel(matrix, name, [1 1 1], outrgb);
+obj.addChannel(matrix, name, [1 1 1], outIntensity);
+% ensure display limits are refreshed for new channel
+try
+    obj.computeDisplaylim;
+catch
+end
 obj.log(['Combined channels'], 'Processing');
 
 fprintf('[combineChannels] ---- DONE output="%s" ----\n', string(name));

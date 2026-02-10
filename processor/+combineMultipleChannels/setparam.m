@@ -1,33 +1,53 @@
-function paramout = setparam()
+function paramout = setparam(ctx)
 % combineMultipleChannels.setparam  Default parameters for channel combining.
+% ctx.channels (optional) provides channel list from selected ROIs.
 
-    listChannels = listAvailableChannels;
+    if nargin < 1
+        ctx = struct();
+    end
+
+    listChannels = {};
+    if isfield(ctx,'channels')
+        listChannels = ctx.channels;
+    end
+    if isempty(listChannels) && ~(isfield(ctx,'useProvidedChannels') && ctx.useProvidedChannels)
+        listChannels = listAvailableChannels;
+    end
     if isempty(listChannels)
         listChannels = {''};
     end
 
+    % dropdown choices (last entry is selected)
+    choices = [{'none'}, listChannels];
+
     paramout = struct();
     tip = {};
-    cc = 1;
 
-    for i = 1:numel(listChannels)
-        ch = listChannels{i};
+    % fixed max number of channels
+    maxSlots = 5;
+    defaultRGB = [ ...
+        1 0 0; ...
+        0 1 0; ...
+        0 0 1; ...
+        1 1 0; ...
+        1 0 1];
 
-        tip{cc} = 'Check this box if this channel should be combined into a new channel'; %#ok<AGROW>
-        paramout.(ch) = false; %#ok<AGROW>
-        cc = cc + 1;
+    for i = 1:maxSlots
+        key = sprintf('Channel%d', i);
+        tip{end+1} = 'Select a channel to combine (none = skip)'; %#ok<AGROW>
+        paramout.(key) = [choices {'none'}]; %#ok<AGROW>
 
-        tip{cc} = 'Enter the RGB triplet for this channel in the output channel eg: [1 0 0]; Discard if channel is not selected'; %#ok<AGROW>
-        paramout.(['RGB_' ch]) = [0 0 0]; %#ok<AGROW>
-        cc = cc + 1;
+        rgbKey = sprintf('RGB_Channel%d', i);
+        tip{end+1} = 'RGB triplet for this channel eg: [1 0 0]'; %#ok<AGROW>
+        if i <= size(defaultRGB,1)
+            paramout.(rgbKey) = defaultRGB(i,:); %#ok<AGROW>
+        else
+            paramout.(rgbKey) = [1 1 1]; %#ok<AGROW>
+        end
     end
 
     paramout.outputChannelName = 'CombinedChannel';
     tip{end+1} = 'Please enter the name of the output channel'; %#ok<AGROW>
-
-    % Keep legacy GUI behavior: listChannelName has a duplicate last entry
-    paramout.listChannelName = [listChannels listChannels{end}];
-    tip{end+1} = 'Do not edit'; %#ok<AGROW>
 
     paramout.debug = false;
     tip{end+1} = 'Optional: set debug=true for verbose console logs'; %#ok<AGROW>

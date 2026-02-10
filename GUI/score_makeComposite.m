@@ -219,6 +219,10 @@ for ch = 1:numel(channel)
     end
 
     % imraw contient la carte de labels/classes
+    % ensure indexed channels are 2D (avoid mask size mismatch)
+    if isIndexed && ndims(imraw) > 2
+        imraw = imraw(:,:,1);
+    end
     L = imadjust(imraw, [0 1]);
     L = double(L);
 
@@ -403,7 +407,13 @@ scalingFactor=param.scalingFactor;
 imageSize=param.imageSize;
 flip=param.flip;
 
-if isempty(roitmp.image), roitmp.load; end
+if isempty(roitmp.image)
+    roitmp.load;
+elseif ~isempty(roitmp.channelid)
+    if size(roitmp.image,3) ~= numel(roitmp.channelid) || max(roitmp.channelid) > size(roitmp.image,3)
+        roitmp.load;
+    end
+end
 
 %disp(['ROI ' roitmp.id ' is loaded']);
 

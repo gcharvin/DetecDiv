@@ -121,7 +121,16 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
          %        size(image)
          %        size(roiobj(i).image)
          %        return
-              ROIManagement(roiobj(i),image,data);
+              % Save only newly created channel if provided by processor
+              saveChannels = {};
+              if isstruct(paramout)
+                  if isfield(paramout,'saveChannels') && ~isempty(paramout.saveChannels)
+                      saveChannels = paramout.saveChannels;
+                  elseif isfield(paramout,'outputChannelName') && ~isempty(paramout.outputChannelName)
+                      saveChannels = {char(string(paramout.outputChannelName))};
+                  end
+              end
+              ROIManagement(roiobj(i),image,data,saveChannels);
            
         end
 end
@@ -160,12 +169,20 @@ if numel(p)
 end
 
 
-function ROIManagement(roiobj,image,data)
+function ROIManagement(roiobj,image,data,saveChannels)
+
+ if nargin < 4
+     saveChannels = {};
+ end
 
  roiobj.data=data; 
  roiobj.image=image; 
  if numel(image)
- roiobj.save; % before we used to save the data only ('data')
+     if ~isempty(saveChannels)
+         roiobj.save(saveChannels);
+     else
+         roiobj.save; % before we used to save the data only ('data')
+     end
  roiobj.clear,
  else
  %   data

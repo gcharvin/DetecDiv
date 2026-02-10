@@ -39,7 +39,7 @@ cmap=layoutOptions.colormap;
 % roitmp.computeDisplaylim;
 %  end
 
-if ~isfield(dsC,'displaylim') || isempty(dsC.displaylim) || size(dsC.displaylim,2) ~= numel(dsC.channel)
+if ~isfield(dsC,'displaylim') || isempty(dsC.displaylim) || size(dsC.displaylim,2) ~= numel(roitmp.channelid)
     roitmp.computeDisplaylim; % logique
     dsC = roitmp.display;
 end
@@ -58,8 +58,13 @@ if ~isempty(selCh)
 
        
 
-        lowVal  = round(65535 * dsC.displaylim(1, idx));
-        highVal = round(65535 * dsC.displaylim(2, idx));
+        % map logical channel -> first sub-channel index
+        subIdx = find(roitmp.channelid == idx, 1, 'first');
+        if isempty(subIdx)
+            subIdx = idx; % fallback
+        end
+        lowVal  = round(65535 * dsC.displaylim(1, subIdx));
+        highVal = round(65535 * dsC.displaylim(2, subIdx));
 
         levels{i} = [lowVal, highVal];
 

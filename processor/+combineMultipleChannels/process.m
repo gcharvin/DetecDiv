@@ -19,52 +19,64 @@ function [paramout, dataout, imageout] = process(param, roiobj, frames)
     if ~isfield(paramout, 'outputChannelName')
         paramout.outputChannelName = 'CombinedChannel';
     end
+    if isfield(paramout,'outputChannelName')
+        paramout.outputChannelName = strtrim(paramout.outputChannelName);
+    end
 
     fprintf('[combineMultipleChannels] ---- START output="%s" ----\n', string(paramout.outputChannelName));
 
-    listChannels = {};
-    if isfield(paramout, 'listChannelName')
-        listChannels = paramout.listChannelName(1:end-1);
-    end
-    fprintf('[combineMultipleChannels] listChannels count=%d\n', numel(listChannels));
-
+    maxSlots = 5;
     cha = {};
     rgb = {};
 
-    for i = 1:numel(listChannels)
-        chName = listChannels{i};
-        flagField = chName;
-        rgbField  = ['RGB_' chName];
+    for i = 1:maxSlots
+        key = sprintf('Channel%d', i);
+        rgbKey = sprintf('RGB_Channel%d', i);
 
-        if isfield(paramout, flagField) && isequal(paramout.(flagField), true)
-            cha{end+1} = chName; %#ok<AGROW>
-
-            if isfield(paramout, rgbField)
-                rgb{end+1} = paramout.(rgbField); %#ok<AGROW>
-            else
-                rgb{end+1} = [1 1 1]; %#ok<AGROW>
-                fprintf('[combineMultipleChannels] WARNING missing field "%s" -> using [1 1 1]\n', rgbField);
-            end
-
-            fprintf('[combineMultipleChannels] SELECT ch="%s" rgb=%s\n', chName, mat2str(rgb{end}));
+        if ~isfield(paramout, key)
+            continue;
         end
+
+        chVal = paramout.(key);
+        if iscell(chVal)
+            chName = chVal{end};
+        else
+            chName = char(string(chVal));
+        end
+
+        if isempty(chName) || strcmpi(chName,'none')
+            continue;
+        end
+
+        cha{end+1} = chName; %#ok<AGROW>
+
+        if isfield(paramout, rgbKey)
+            rgbVal = paramout.(rgbKey);
+        else
+            rgbVal = [1 1 1];
+            fprintf('[combineMultipleChannels] WARNING missing field "%s" -> using [1 1 1]\n', rgbKey);
+        end
+
+        if ischar(rgbVal) || isstring(rgbVal)
+            try
+                rgbVal = str2num(char(string(rgbVal))); %#ok<ST2NM>
+            catch
+            end
+        end
+        if isempty(rgbVal) || ~isnumeric(rgbVal)
+            rgbVal = [1 1 1];
+        end
+        if isvector(rgbVal) && numel(rgbVal) == 3
+            rgbVal = reshape(rgbVal, 1, 3);
+        end
+
+        rgb{end+1} = rgbVal; %#ok<AGROW>
+        fprintf('[combineMultipleChannels] SELECT ch="%s" rgb=%s\n', chName, mat2str(rgbVal));
     end
 
     if isempty(cha)
-        fprintf('[combineMultipleChannels] no channel selected -> no-op\n');
-        dataout  = roiobj.data;
-        imageout = roiobj.image;
-        return
-    end
-
-    for k = 1:numel(rgb)
-        if isempty(rgb{k}) || ~isnumeric(rgb{k})
-            fprintf('[combineMultipleChannels] WARNING rgb{%d} invalid -> [1 1 1]\n', k);
-            rgb{k} = [1 1 1];
-        end
-        if isvector(rgb{k}) && numel(rgb{k}) == 3
-            rgb{k} = reshape(rgb{k}, 1, 3);
-        end
+        error('combineMultipleChannels:NoChannel', ...
+            'No input channel selected. Please choose at least one channel.');
     end
 
     doDebug = false;

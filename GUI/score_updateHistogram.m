@@ -71,8 +71,12 @@ function score_updateHistogram(app, mode)
         if ~isempty(app.HistogramLimits) && (numel(app.HistogramLimits) == 2 * length(app.HistogramChannels))
             for k = 1:length(app.HistogramChannels)
                 channelIdx = app.HistogramChannels(k);
-                lowVal = selectedROI.display.displaylim(1, channelIdx) * 65535;
-                highVal = selectedROI.display.displaylim(2, channelIdx) * 65535;
+                subIdx = find(selectedROI.channelid == channelIdx, 1, 'first');
+                if isempty(subIdx)
+                    subIdx = channelIdx;
+                end
+                lowVal = selectedROI.display.displaylim(1, subIdx) * 65535;
+                highVal = selectedROI.display.displaylim(2, subIdx) * 65535;
                 if ~isvalid(app.HistogramLimits(2*k-1)) || ~isvalid(app.HistogramLimits(2*k))
                     score_updateHistogram(app, 'slow');
                     return;
@@ -117,7 +121,10 @@ function score_updateHistogram(app, mode)
             rawB = double(selectedROI.image(:, :, pix(3), frameIndex));
             imgChannel = 0.2989 * rawR + 0.5870 * rawG + 0.1140 * rawB;
         else
-            imgChannel = double(selectedROI.image(:, :, channelIdx, frameIndex));
+            if isempty(pix)
+                continue;
+            end
+            imgChannel = double(selectedROI.image(:, :, pix(1), frameIndex));
         end
         
         % Calcul de l'histogramme sur les valeurs brutes
@@ -167,8 +174,12 @@ numLimits = 2 * length(displayedChannels);
 hLimits = gobjects(numLimits, 1);
 for k = 1:length(displayedChannels)
     channelIdx = displayedChannels(k);
-    lowVal = selectedROI.display.displaylim(1, channelIdx) * 65535;
-    highVal = selectedROI.display.displaylim(2, channelIdx) * 65535;
+    subIdx = find(selectedROI.channelid == channelIdx, 1, 'first');
+    if isempty(subIdx)
+        subIdx = channelIdx;
+    end
+    lowVal = selectedROI.display.displaylim(1, subIdx) * 65535;
+    highVal = selectedROI.display.displaylim(2, subIdx) * 65535;
     rgbColor = selectedROI.display.rgb(channelIdx, :);
     if all(rgbColor >= 0.99)
         rgbColorPlot = [0, 0, 0];
