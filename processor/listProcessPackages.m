@@ -44,6 +44,10 @@ function cat = inferProcessCategory(pkgName)
             cat = 'Image';
         case 'basicobjecttracking'
             cat = 'Tracking';
+        case {'computemetrics','computerls','computelineage','formatindataseries'}
+            cat = 'Processing';
+        case 'computemaxprojection'
+            cat = 'Image';
         otherwise
             cat = 'Image';
     end
