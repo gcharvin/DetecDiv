@@ -164,6 +164,44 @@ if ~isempty(listproc)
     shallowObj.processing.processor = procList;
 end
 
+%% Chargement des pipelines
+
+listpipe = dir(fullfile(path, file, 'pipeline'));
+listpipe = listpipe(~contains({listpipe.name}, {'.', '..'}));
+listpipe = listpipe(arrayfun(@(x) x.isdir, listpipe));
+
+shallowObj.processing.pipeline = pipeline.empty;
+
+if ~isempty(listpipe)
+    arr = zeros(1, numel(listpipe));
+    for j = 1:numel(listpipe)
+        tmp = regexp(listpipe(j).name, '\\d+$', 'match');
+        if ~isempty(tmp)
+            arr(j) = str2double(tmp{1});
+        else
+            arr(j) = j;
+        end
+    end
+    [~, ix] = sort(arr);
+    listpipe = listpipe(ix);
+
+    pipeList = pipeline.empty;
+    for j = 1:numel(listpipe)
+        pth = fullfile(path, file, 'pipeline', listpipe(j).name);
+        try
+            [pipeObj, msg] = pipelineLoad(pth);
+            if isempty(pipeObj)
+                warning('pipelineLoad failed: %s', msg);
+                continue;
+            end
+            pipeList(end+1) = pipeObj; %#ok<AGROW>
+        catch ME
+            warning('pipelineLoad error: %s', ME.message);
+        end
+    end
+    shallowObj.processing.pipeline = pipeList;
+end
+
 %% Vérification des FOV (PAS d'auto-fix ici)
 
 anyMissing = false;

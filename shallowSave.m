@@ -76,7 +76,19 @@ function shallowSave(shallowObj, option, progress)
         end
     end
 
-    % ====== 4) Sauvegarde atomique + vérif + backup .bak ======
+        % ====== 4) Pipelines ======
+        nPipe = numel(shallowObj.processing.pipeline);
+        if nPipe > 0, fprintf('Saving %d pipeline(s)...\n', nPipe); end
+        for i = 1:nPipe
+            try
+                pipelineSave(shallowObj.processing.pipeline(i));
+            catch ME
+                warning('pipelineSave failed: %s', ME.message);
+            end
+        end
+
+
+    % ====== 5) Sauvegarde atomique + v?rif + backup .bak ======
     fprintf('\n--------------------------------------------\n');
     fprintf('[INFO] Writing project MAT (atomic write)...\n');
 

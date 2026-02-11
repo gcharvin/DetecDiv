@@ -6,6 +6,7 @@ classdef shallow < handle
         parsedData;
         fov=fov();%fov({},1,'');
         processing=struct('roi',[],'classification',[],'processor',[],'pipeline',[]);%,'classification',classi());
+        runProfiles = struct(); % pipeline/dataloading checkpoints and params
         
         
         tag='shallow project';
@@ -135,9 +136,18 @@ classdef shallow < handle
                 end
             end
             
-             for i=1:numel(obj.processing.processor)
+            for i=1:numel(obj.processing.processor)
                 obj.processing.processor(i).path=fixpath(fullfile(obj.processing.processor(i).path));
                 obj.processing.processor(i).path = replace(obj.processing.processor(i).path,oldfullpath,newpath);
+             end
+
+             % pipeline path update
+             for i=1:numel(obj.processing.pipeline)
+                 try
+                     obj.processing.pipeline(i).path=fixpath(fullfile(obj.processing.pipeline(i).path));
+                     obj.processing.pipeline(i).path = replace(obj.processing.pipeline(i).path,oldfullpath,newpath);
+                 catch
+                 end
              end
                 
             
