@@ -1,4 +1,4 @@
-function formatInDataSeries(roiobj)
+function core(roiobj)
 
 for i=1:numel(roiobj)
     

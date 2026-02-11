@@ -24,8 +24,8 @@ if isfield(ctx,'frames') && ~isempty(ctx.frames)
 end
 
 if isempty(frames) || (isnumeric(frames) && all(frames == -1))
-    [paramout, dataout, imageout] = computeLineage(paramout, roiobj);
+    [paramout, dataout, imageout] = computeLineage.core(paramout, roiobj);
 else
-    [paramout, dataout, imageout] = computeLineage(paramout, roiobj, frames);
+    [paramout, dataout, imageout] = computeLineage.core(paramout, roiobj, frames);
 end
 end

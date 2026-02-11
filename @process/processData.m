@@ -50,7 +50,8 @@ for i=1:numel(varargin)
 end
 
 classi=classiobj;
-classifyFun=classi.processFun;
+classifyFun=normalizeProcessFun(classi.processFun);
+classi.processFun=classifyFun;
 fhandle=eval(['@' classifyFun]);
 param=classi.processArg;
 
@@ -216,6 +217,25 @@ if numel(p)
     p.Message='Saving project...Please wait...';
 end
 
+
+function f = normalizeProcessFun(f)
+    if isempty(f)
+        return;
+    end
+    if isa(f,'function_handle')
+        f = func2str(f);
+    end
+    f = char(string(f));
+    if contains(f,'.process')
+        return;
+    end
+    if contains(f,'.')
+        return;
+    end
+    if ~isempty(which([f '.process']))
+        f = [f '.process'];
+    end
+end
 
 function ROIManagement(roiobj,image,data,saveChannels)
 

@@ -24,8 +24,8 @@ if isfield(ctx,'frames') && ~isempty(ctx.frames)
 end
 
 if isempty(frames) || (isnumeric(frames) && all(frames == -1))
-    [paramout, dataout, imageout] = computeRLS(paramout, roiobj);
+    [paramout, dataout, imageout] = computeRLS.core(paramout, roiobj);
 else
-    [paramout, dataout, imageout] = computeRLS(paramout, roiobj, frames);
+    [paramout, dataout, imageout] = computeRLS.core(paramout, roiobj, frames);
 end
 end

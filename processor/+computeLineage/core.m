@@ -1,4 +1,4 @@
-function [paramout, dataout, image]=computeLineage(param,roiobj,frames)
+function [paramout, dataout, image]=core(param,roiobj,frames)
 
 image=[];
 

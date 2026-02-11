@@ -33,7 +33,7 @@ function addROI(classif, obj, varargin)
 %
 % NOTE:
 % - This file assumes helper functions exist:
-%     - formatInDataSeries(roiObj)
+%     - formatInDataSeries.core(roiObj)
 %     - propValues(newObj,orgObj) (defined at end)
 % - It also uses ROI methods:
 %     - roi.removeChannel(name)
@@ -216,7 +216,7 @@ for ii = 1:length(rois)
             classif.roi(cc+1).train.(classif.strid).classes = classif.classes;
 
             % Convert ROI.train to dataseries (must create something under roi.data)
-            formatInDataSeries(classif.roi(cc+1));
+            formatInDataSeries.core(classif.roi(cc+1));
         end
     end
 

@@ -1,4 +1,4 @@
-function [paramout,dataout,imageout]=computeMaxProjection(param,roiobj,frames)
+function [paramout,dataout,imageout]=core(param,roiobj,frames)
 
 
 % listChannels=['N/A', listChannels];

@@ -15,7 +15,7 @@ if nargin == 0 || isempty(param)
 end
 
 paramout = param;
-formatInDataSeries(roiobj);
+formatInDataSeries.core(roiobj);
 
 dataout = roiobj.data;
 imageout = roiobj.image;

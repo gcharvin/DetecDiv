@@ -48,6 +48,14 @@ try
 catch
 end
 
+% Normalize processFun to package-style if available
+try
+    if isprop(processObj,'processFun') && ~isempty(processObj.processFun)
+        processObj.processFun = normalizeProcessFun(processObj.processFun);
+    end
+catch
+end
+
 % Vérifie si déjà présent dans le workspace
 varlist = evalin('base', 'who');
 for i = 1:numel(varlist)
@@ -80,4 +88,23 @@ msg = ['Process was loaded with this path: ' path];
 processObj.log(msg, 'Creation');
 
 disp(['✅ Successfully loaded processor ' fullfile(path, [file '.mat']) '!']);
+end
+
+function f = normalizeProcessFun(f)
+    if isempty(f)
+        return;
+    end
+    if isa(f,'function_handle')
+        f = func2str(f);
+    end
+    f = char(string(f));
+    if contains(f,'.process')
+        return;
+    end
+    if contains(f,'.')
+        return;
+    end
+    if ~isempty(which([f '.process']))
+        f = [f '.process'];
+    end
 end

@@ -1,4 +1,4 @@
-function [paramout,dataout, imageout]=computeMetrics(param,roiobj,frames)
+function [paramout,dataout, imageout]=core(param,roiobj,frames)
 
 imageout=[];
 

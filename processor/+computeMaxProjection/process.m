@@ -36,8 +36,8 @@ if isempty(frames) || (isnumeric(frames) && all(frames == -1))
 end
 
 if isempty(frames)
-    [paramout, dataout, imageout] = computeMaxProjection(paramout, roiobj);
+    [paramout, dataout, imageout] = computeMaxProjection.core(paramout, roiobj);
 else
-    [paramout, dataout, imageout] = computeMaxProjection(paramout, roiobj, frames);
+    [paramout, dataout, imageout] = computeMaxProjection.core(paramout, roiobj, frames);
 end
 end
