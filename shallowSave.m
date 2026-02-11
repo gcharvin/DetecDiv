@@ -81,9 +81,14 @@ function shallowSave(shallowObj, option, progress)
         if nPipe > 0, fprintf('Saving %d pipeline(s)...\n', nPipe); end
         for i = 1:nPipe
             try
-                pipelineSave(shallowObj.processing.pipeline(i));
+                p = shallowObj.processing.pipeline(i);
+                if isa(p,'pipelineRun')
+                    pipelineRunSave(p);
+                else
+                    pipelineSave(p);
+                end
             catch ME
-                warning('pipelineSave failed: %s', ME.message);
+                warning('pipeline save failed: %s', ME.message);
             end
         end
 
