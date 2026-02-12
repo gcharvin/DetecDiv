@@ -51,6 +51,15 @@ function [ctx, report] = runPipeline(pipe, ctx)
         nodeId = report.order{i};
         node = nodeMap(nodeId);
 
+        % run-level subset selection (optional)
+        if shouldSkipByRunSelection(ctx, nodeId)
+            executed(nodeId) = true;
+            continue;
+        end
+
+        % run-level parameter override (optional)
+        node = applyRunNodeOverride(node, ctx, nodeId);
+
         if shouldSkipNode(node, ctx, edges, executed)
             executed(nodeId) = true;
             continue;
@@ -98,6 +107,65 @@ function [ctx, report] = runPipeline(pipe, ctx)
         pipe.runState.status = 'done';
         pipe.runState.currentNode = '';
         pipe.log('Pipeline completed','Run');
+    end
+end
+
+function tf = shouldSkipByRunSelection(ctx, nodeId)
+    tf = false;
+    if ~isfield(ctx,'run') || isempty(ctx.run)
+        return;
+    end
+    runCfg = ctx.run;
+    if ~isstruct(runCfg) || ~isfield(runCfg,'selectedNodes') || isempty(runCfg.selectedNodes)
+        return;
+    end
+    ids = cellstr(runCfg.selectedNodes(:));
+    tf = ~any(strcmp(ids, nodeId));
+end
+
+function node = applyRunNodeOverride(node, ctx, nodeId)
+    if ~isfield(ctx,'run') || isempty(ctx.run)
+        return;
+    end
+    runCfg = ctx.run;
+    if ~isstruct(runCfg) || ~isfield(runCfg,'nodeParams') || isempty(runCfg.nodeParams)
+        return;
+    end
+
+    np = runCfg.nodeParams;
+    if ~isstruct(np)
+        return;
+    end
+
+    if isfield(np,'id')
+        for i = 1:numel(np)
+            if strcmp(char(string(np(i).id)), nodeId)
+                if isfield(np(i),'params') && isstruct(np(i).params)
+                    node.params = mergeStruct(node.params, np(i).params);
+                end
+                return;
+            end
+        end
+    else
+        % map-style fallback: ctx.run.nodeParams.<nodeId> = struct(...)
+        f = matlab.lang.makeValidName(nodeId);
+        if isfield(np, f) && isstruct(np.(f))
+            node.params = mergeStruct(node.params, np.(f));
+        end
+    end
+end
+
+function out = mergeStruct(base, patch)
+    if nargin < 1 || ~isstruct(base) || isempty(base)
+        base = struct();
+    end
+    out = base;
+    if nargin < 2 || ~isstruct(patch) || isempty(patch)
+        return;
+    end
+    fn = fieldnames(patch);
+    for i = 1:numel(fn)
+        out.(fn{i}) = patch.(fn{i});
     end
 end
 

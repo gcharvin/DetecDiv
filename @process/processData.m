@@ -14,7 +14,6 @@ function processData(classiobj,roiobj,varargin)
 
 % 'Parallel' : usd for parallele computing
 
-
 % results outputs the array of future objects with information about errors
 % etc...
 para=0;
@@ -37,7 +36,7 @@ for i=1:numel(varargin)
         para=1;
     end
 
-     if strcmp(varargin{i},'GPU') % classify with GPU
+    if strcmp(varargin{i},'GPU') % classify with GPU
         gpu=1;
     end
 
@@ -97,91 +96,91 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
 
 
 
-        if numel(frames)>0
-            if iscell(frames)
-                if numel(frames)>=i
-                    fra=frames{i};
-                end
-            else
-                fra=frames;
+    if numel(frames)>0
+        if iscell(frames)
+            if numel(frames)>=i
+                fra=frames{i};
             end
         else
-            fra=-1;
+            fra=frames;
+        end
+    else
+        fra=-1;
+    end
+
+
+    % check that the requested number of frames is compatible with that of
+    % the roi
+
+    if fra~=-1
+        % fra=intersect(fra,1:size(roiobj(i).image,4));
+    else
+        if numel(roiobj(i).image)==0
+            roiobj(i).load;
         end
 
-        
-        % check that the requested number of frames is compatible with that of
-        % the roi
+        fra=1:size(roiobj(i).image,4);
+        %    fra=1:size(roiobj(i).image,4);
+    end
 
-        if fra~=-1
-       % fra=intersect(fra,1:size(roiobj(i).image,4));
+    if numel(p)
+        p.Value=0.9* double(i)./numel(roiobj);
+
+        p.Message=['Processing ROI  ' roiobj(i).id];
+    end
+
+    % roiobj(i).classes=classi.classes;
+
+    % Build ctx for pipeline-compatible processors
+    ctx = ctxBase;
+    ctx.frames = fra;
+    ctx.gpu = gpu;
+    if isprop(classi,'strid') && (~isfield(ctx,'outputName') || isempty(ctx.outputName))
+        ctx.outputName = classi.strid;
+    end
+
+    % Merge params: ctx.params overrides classif.processArg
+    paramEff = param;
+    if isfield(ctx,'params') && ~isempty(ctx.params) && isstruct(ctx.params)
+        if isempty(paramEff), paramEff = struct(); end
+        if isstruct(paramEff)
+            paramEff = mergeParamStruct(paramEff, ctx.params);
         else
-          if numel(roiobj(i).image)==0
-             roiobj(i).load;
-          end
-
-         fra=1:size(roiobj(i).image,4);
-    %    fra=1:size(roiobj(i).image,4);
+            % if legacy param is non-struct, prefer ctx.params
+            paramEff = ctx.params;
         end
+    end
 
-        if numel(p)
-            p.Value=0.9* double(i)./numel(roiobj);
-
-            p.Message=['Processing ROI  ' roiobj(i).id];
-        end
-
-        % roiobj(i).classes=classi.classes;
-
-        % Build ctx for pipeline-compatible processors
-        ctx = ctxBase;
-        ctx.frames = fra;
-        ctx.gpu = gpu;
-        if isprop(classi,'strid') && (~isfield(ctx,'outputName') || isempty(ctx.outputName))
-            ctx.outputName = classi.strid;
-        end
-
-        % Merge params: ctx.params overrides classif.processArg
-        paramEff = param;
-        if isfield(ctx,'params') && ~isempty(ctx.params) && isstruct(ctx.params)
-            if isempty(paramEff), paramEff = struct(); end
-            if isstruct(paramEff)
-                paramEff = mergeParamStruct(paramEff, ctx.params);
-            else
-                % if legacy param is non-struct, prefer ctx.params
-                paramEff = ctx.params;
-            end
-        end
-
-        if para % parallel computing
-            if useCtx
-                logparf(i)=parfeval(fhandle,2,paramEff,roiobj(i),ctx);
-            else
-                logparf(i)=parfeval(fhandle,2,paramEff,roiobj(i),fra);
-            end
+    if para % parallel computing
+        if useCtx
+            logparf(i)=parfeval(fhandle,2,paramEff,roiobj(i),ctx);
         else
-            if useCtx
-                [paramout,data,image]=feval(fhandle,paramEff,roiobj(i),ctx);
-            else
-                [paramout,data,image]=feval(fhandle,paramEff,roiobj(i),fra);
-            end
-            disp(['Processed ' num2str(roiobj(i).id)]);
-
-         % bb=       roiobj(i)
-         %        size(image)
-         %        size(roiobj(i).image)
-         %        return
-              % Save only newly created channel if provided by processor
-              saveChannels = {};
-              if isstruct(paramout)
-                  if isfield(paramout,'saveChannels') && ~isempty(paramout.saveChannels)
-                      saveChannels = paramout.saveChannels;
-                  elseif isfield(paramout,'outputChannelName') && ~isempty(paramout.outputChannelName)
-                      saveChannels = {char(string(paramout.outputChannelName))};
-                  end
-              end
-            ROIManagement(roiobj(i),image,data,saveChannels);
-           
+            logparf(i)=parfeval(fhandle,2,paramEff,roiobj(i),fra);
         end
+    else
+        if useCtx
+            [paramout,data,image]=feval(fhandle,paramEff,roiobj(i),ctx);
+        else
+            [paramout,data,image]=feval(fhandle,paramEff,roiobj(i),fra);
+        end
+        disp(['Processed ' num2str(roiobj(i).id)]);
+
+        % bb=       roiobj(i)
+        %        size(image)
+        %        size(roiobj(i).image)
+        %        return
+        % Save only newly created channel if provided by processor
+        saveChannels = {};
+        if isstruct(paramout)
+            if isfield(paramout,'saveChannels') && ~isempty(paramout.saveChannels)
+                saveChannels = paramout.saveChannels;
+            elseif isfield(paramout,'outputChannelName') && ~isempty(paramout.outputChannelName)
+                saveChannels = {char(string(paramout.outputChannelName))};
+            end
+        end
+        ROIManagement(roiobj(i),image,data,saveChannels);
+
+    end
 end
 
 if para % parallel computing
@@ -190,26 +189,26 @@ if para % parallel computing
         p.Message='Waiting for job to complete...';
     end
 
-%wait(logparf);
+    %wait(logparf);
 
-for i=1:numel(logparf)
- %   [results,image]=fetchOutputs(logparf(i));
+    for i=1:numel(logparf)
+        %   [results,image]=fetchOutputs(logparf(i));
 
-    [idx,param,data,image]=fetchNext(logparf(i));
+        [idx,param,data,image]=fetchNext(logparf(i));
 
 
-    ROIManagement(roiobj(idx),data);
-%     roiobj(idx).results=results; 
-% 
-%     roiobj(idx).image=image; 
-%     roiobj(idx).save
-%     roiobj(idx).clear;
+        ROIManagement(roiobj(idx),data);
+        %     roiobj(idx).results=results;
+        %
+        %     roiobj(idx).image=image;
+        %     roiobj(idx).save
+        %     roiobj(idx).clear;
 
- %   aa=results.my_classi_1.id
-    % here image is empty !!!!
-  %  roiout.save; 
-  %  roiout.clear,
-end
+        %   aa=results.my_classi_1.id
+        % here image is empty !!!!
+        %  roiout.save;
+        %  roiout.clear,
+    end
 end
 
 if numel(p)
@@ -218,50 +217,50 @@ if numel(p)
 end
 
 
-function f = normalizeProcessFun(f)
-    if isempty(f)
-        return;
+    function f = normalizeProcessFun(f)
+        if isempty(f)
+            return;
+        end
+        if isa(f,'function_handle')
+            f = func2str(f);
+        end
+        f = char(string(f));
+        if contains(f,'.process')
+            return;
+        end
+        if contains(f,'.')
+            return;
+        end
+        if ~isempty(which([f '.process']))
+            f = [f '.process'];
+        end
     end
-    if isa(f,'function_handle')
-        f = func2str(f);
-    end
-    f = char(string(f));
-    if contains(f,'.process')
-        return;
-    end
-    if contains(f,'.')
-        return;
-    end
-    if ~isempty(which([f '.process']))
-        f = [f '.process'];
-    end
-end
 
-function ROIManagement(roiobj,image,data,saveChannels)
+    function ROIManagement(roiobj,image,data,saveChannels)
 
- if nargin < 4
-     saveChannels = {};
-end
+        if nargin < 4
+            saveChannels = {};
+        end
 
-function out = mergeParamStruct(base, override)
-    out = base;
-    fn = fieldnames(override);
-    for k = 1:numel(fn)
-        out.(fn{k}) = override.(fn{k});
-    end
-end
+        function out = mergeParamStruct(base, override)
+            out = base;
+            fn = fieldnames(override);
+            for k = 1:numel(fn)
+                out.(fn{k}) = override.(fn{k});
+            end
+        end
 
- roiobj.data=data; 
- roiobj.image=image; 
- if numel(image)
-     if ~isempty(saveChannels)
-         roiobj.save(saveChannels);
-     else
-         roiobj.save; % before we used to save the data only ('data')
-     end
- roiobj.clear,
- else
- %   data
-roiobj.save('data');
- end
-%disp('You must save the shallow project to save these classified data !');
+        roiobj.data=data;
+        roiobj.image=image;
+        if numel(image)
+            if ~isempty(saveChannels)
+                roiobj.save(saveChannels);
+            else
+                roiobj.save; % before we used to save the data only ('data')
+            end
+            roiobj.clear,
+        else
+            %   data
+            roiobj.save('data');
+        end
+        %disp('You must save the shallow project to save these classified data !');
