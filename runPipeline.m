@@ -5,7 +5,26 @@ function [ctx, report] = runPipeline(pipe, ctx)
         ctx = struct();
     end
 
-    [ok, report] = validatePipeline(pipe, ctx);
+    if isfield(ctx,'dryRun') && ~isempty(ctx.dryRun) && logical(ctx.dryRun)
+        [~, report] = runPipelineDry(pipe, ctx);
+        return;
+    end
+
+    % normalize project handle
+    if isfield(ctx,'shallowObj') && ~isfield(ctx,'shallow')
+        ctx.shallow = ctx.shallowObj;
+    elseif isfield(ctx,'shallow') && ~isfield(ctx,'shallowObj')
+        ctx.shallowObj = ctx.shallow;
+    end
+
+    allowGui = false;
+    if isfield(ctx,'allowGUI') && ~isempty(ctx.allowGUI)
+        allowGui = logical(ctx.allowGUI);
+    elseif isfield(ctx,'interactive') && ~isempty(ctx.interactive)
+        allowGui = logical(ctx.interactive);
+    end
+
+    [ok, report] = validatePipeline(pipe, ctx, struct('allowGui', allowGui));
     if ~ok
         error('runPipeline:Invalid','Pipeline validation failed: %s', strjoin(report.errors, ' | '));
     end
@@ -37,6 +56,28 @@ function [ctx, report] = runPipeline(pipe, ctx)
             continue;
         end
 
+        % ensure required params are present; launch GUI if allowed
+        missing = missingParamsForNode(node, ctx);
+        if ~isempty(missing)
+            if allowGui && hasNodeGui(node)
+                [ctx, guiCompleted] = runNodeGui(node, ctx);
+                ctx = syncCtxFromShallow(ctx);
+
+                if guiCompleted && isGuiReplace(node)
+                    ctx = ensureOutputs(node, ctx);
+                    executed(nodeId) = true;
+                    continue;
+                end
+
+                missing = missingParamsForNode(node, ctx);
+            end
+
+            if ~isempty(missing)
+                error('runPipeline:MissingParams', ...
+                    'Node %s missing params: %s', nodeId, strjoin(missing, ', '));
+            end
+        end
+
         ctx.pipeline = struct('currentNode', nodeId, 'nodeType', node.type);
         ctx = applyNodeParams(ctx, node);
 
@@ -61,7 +102,7 @@ function [ctx, report] = runPipeline(pipe, ctx)
 end
 
 function ctx = executeNode(node, ctx)
-    fun = resolveNodeFunc(node.type);
+    fun = resolveNodeFunc(node);
 
     % prefer ctx-aware calling
     try
@@ -71,17 +112,16 @@ function ctx = executeNode(node, ctx)
     end
 
     % optional output coherence check
-    if isfield(node,'outputs') && ~isempty(node.outputs)
-        outs = cellstr(node.outputs(:));
-        for k = 1:numel(outs)
-            if ~isfield(ctx, outs{k})
-                ctx.(outs{k}) = [];
-            end
-        end
-    end
+    ctx = ensureOutputs(node, ctx);
 end
 
-function fun = resolveNodeFunc(typeStr)
+function fun = resolveNodeFunc(node)
+    if isfield(node,'func') && ~isempty(node.func)
+        typeStr = node.func;
+    else
+        typeStr = node.type;
+    end
+
     if isa(typeStr,'function_handle')
         fun = typeStr;
         return;
@@ -170,5 +210,102 @@ function P = pipelineToStructLocal(pipe)
         P.branches = pipe.branches;
     else
         P = pipe;
+    end
+end
+
+function missing = missingParamsForNode(node, ctx)
+    missing = {};
+    req = {};
+    if isfield(node,'paramRequired') && ~isempty(node.paramRequired)
+        req = cellstr(node.paramRequired(:));
+    elseif isfield(node,'requiredParams') && ~isempty(node.requiredParams)
+        req = cellstr(node.requiredParams(:));
+    end
+    if isempty(req)
+        return;
+    end
+
+    p = struct();
+    if isfield(node,'params') && ~isempty(node.params)
+        p = node.params;
+    end
+
+    for i = 1:numel(req)
+        k = char(string(req{i}));
+        if isfield(p,k) && ~isempty(p.(k))
+            continue;
+        end
+        if isfield(ctx,k) && ~isempty(ctx.(k))
+            continue;
+        end
+        if isfield(ctx,'params') && isfield(ctx.params,k) && ~isempty(ctx.params.(k))
+            continue;
+        end
+        if isfield(ctx,'dataLoader') && isfield(ctx.dataLoader,k) && ~isempty(ctx.dataLoader.(k))
+            continue;
+        end
+        if isfield(ctx,'roiIdentify') && isfield(ctx.roiIdentify,k) && ~isempty(ctx.roiIdentify.(k))
+            continue;
+        end
+        if isfield(ctx,'roiExtract') && isfield(ctx.roiExtract,k) && ~isempty(ctx.roiExtract.(k))
+            continue;
+        end
+        missing{end+1} = k; %#ok<AGROW>
+    end
+end
+
+function tf = hasNodeGui(node)
+    tf = isfield(node,'gui') && ~isempty(node.gui);
+end
+
+function tf = isGuiReplace(node)
+    tf = true;
+    if isfield(node,'guiMode') && ~isempty(node.guiMode)
+        tf = strcmpi(char(string(node.guiMode)),'replace');
+    end
+end
+
+function [ctx, completed] = runNodeGui(node, ctx)
+    completed = false;
+    if ~isfield(node,'gui') || isempty(node.gui)
+        return;
+    end
+    guiFun = node.gui;
+    try
+        ctxOut = feval(guiFun, ctx);
+        if ~isempty(ctxOut)
+            ctx = ctxOut;
+        end
+        completed = true;
+    catch
+        % ignore GUI errors here; validation will catch missing params
+    end
+end
+
+function ctx = syncCtxFromShallow(ctx)
+    if isfield(ctx,'shallow') && ~isempty(ctx.shallow)
+        try
+            ctx.fovList = ctx.shallow.fov;
+        catch
+        end
+        if isfield(ctx,'fovList') && ~isempty(ctx.fovList)
+            try
+                if ~isfield(ctx,'channels') || isempty(ctx.channels)
+                    ctx.channels = ctx.fovList(1).channel;
+                end
+            catch
+            end
+        end
+    end
+end
+
+function ctx = ensureOutputs(node, ctx)
+    if isfield(node,'outputs') && ~isempty(node.outputs)
+        outs = cellstr(node.outputs(:));
+        for k = 1:numel(outs)
+            if ~isfield(ctx, outs{k})
+                ctx.(outs{k}) = [];
+            end
+        end
     end
 end

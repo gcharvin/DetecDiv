@@ -166,6 +166,12 @@ function ctx = process(ctx)
 
     ctx.fovList = fovList;
     ctx.roiList = collectROIs(fovList);
+    if ~isempty(ctx.fovList)
+        try
+            ctx.channels = ctx.fovList(1).channel;
+        catch
+        end
+    end
 
     % store params/pattern back
     if ~isempty(shallowObj) && isprop(shallowObj,'runProfiles')

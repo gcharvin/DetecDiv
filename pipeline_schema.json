@@ -30,7 +30,18 @@
       "properties": {
         "id": { "type": "string" },
         "type": { "type": "string" },
+        "func": { "type": "string" },
         "params": { "type": "object" },
+        "paramRequired": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "requiredParams": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "gui": { "type": "string" },
+        "guiMode": { "type": "string" },
         "inputs": {
           "type": "array",
           "items": { "type": "string" }

@@ -111,6 +111,7 @@ function ctx = process(ctx)
 
     ctx.fovList = fovList;
     ctx.roiList = collectROIs(fovList);
+    ctx.dataSeries = collectDataSeries(ctx.roiList);
 end
 
 % ---------------- helpers ----------------
@@ -134,6 +135,29 @@ function roiList = collectROIs(fovList)
         if ~isempty(r)
             roiList = [roiList r(:)']; %#ok<AGROW>
         end
+    end
+end
+
+function ds = collectDataSeries(roiList)
+    ds = {};
+    if isempty(roiList)
+        return;
+    end
+    for i = 1:numel(roiList)
+        try
+            r = roiList(i);
+            if isprop(r,'data') && ~isempty(r.data)
+                for k = 1:numel(r.data)
+                    if isprop(r.data(k),'groupid') && ~isempty(r.data(k).groupid)
+                        ds{end+1} = char(r.data(k).groupid); %#ok<AGROW>
+                    end
+                end
+            end
+        catch
+        end
+    end
+    if ~isempty(ds)
+        ds = unique(ds,'stable');
     end
 end
 

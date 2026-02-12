@@ -1,11 +1,19 @@
-function [ok, report] = validatePipeline(pipe, ctx)
+function [ok, report] = validatePipeline(pipe, ctx, opts)
 % validatePipeline  Validate pipeline structure and dependencies.
 
     ok = true;
     report = struct('errors',{{}}, 'order', [], 'nodes', [], 'edges', []);
 
-    if nargin < 2
+    if nargin < 2 || isempty(ctx)
         ctx = struct();
+    end
+    if nargin < 3 || isempty(opts)
+        opts = struct();
+    end
+
+    allowGui = false;
+    if isfield(opts,'allowGui') && ~isempty(opts.allowGui)
+        allowGui = logical(opts.allowGui);
     end
 
     P = pipelineToStructLocal(pipe);
@@ -14,6 +22,8 @@ function [ok, report] = validatePipeline(pipe, ctx)
 
     report.nodes = nodes;
     report.edges = edges;
+    report.missingParams = {};
+    report.needsGui = {};
 
     if isempty(nodes)
         ok = false;
@@ -63,6 +73,19 @@ function [ok, report] = validatePipeline(pipe, ctx)
                 if ~isempty(missing)
                     ok = false;
                     report.errors{end+1} = ['Missing inputs for node ' node.id ': ' strjoin(missing, ', ')];
+                end
+            end
+            % required params check
+            missParams = missingParamsForNode(node, ctx);
+            if ~isempty(missParams)
+                report.missingParams{end+1} = struct( ...
+                    'node', char(string(node.id)), ...
+                    'missing', {missParams});
+                if hasNodeGui(node) && allowGui
+                    report.needsGui{end+1} = char(string(node.id));
+                else
+                    ok = false;
+                    report.errors{end+1} = ['Missing params for node ' node.id ': ' strjoin(missParams, ', ')];
                 end
             end
             if isfield(node,'outputs') && ~isempty(node.outputs)
@@ -168,4 +191,49 @@ function [order, cycle] = topoSort(ids, edges)
     if numel(order) ~= numel(ids)
         cycle = true;
     end
+end
+
+function missing = missingParamsForNode(node, ctx)
+    missing = {};
+    req = {};
+    if isfield(node,'paramRequired') && ~isempty(node.paramRequired)
+        req = cellstr(node.paramRequired(:));
+    elseif isfield(node,'requiredParams') && ~isempty(node.requiredParams)
+        req = cellstr(node.requiredParams(:));
+    end
+    if isempty(req)
+        return;
+    end
+
+    p = struct();
+    if isfield(node,'params') && ~isempty(node.params)
+        p = node.params;
+    end
+
+    for i = 1:numel(req)
+        k = char(string(req{i}));
+        if isfield(p,k) && ~isempty(p.(k))
+            continue;
+        end
+        if isfield(ctx,k) && ~isempty(ctx.(k))
+            continue;
+        end
+        if isfield(ctx,'params') && isfield(ctx.params,k) && ~isempty(ctx.params.(k))
+            continue;
+        end
+        if isfield(ctx,'dataLoader') && isfield(ctx.dataLoader,k) && ~isempty(ctx.dataLoader.(k))
+            continue;
+        end
+        if isfield(ctx,'roiIdentify') && isfield(ctx.roiIdentify,k) && ~isempty(ctx.roiIdentify.(k))
+            continue;
+        end
+        if isfield(ctx,'roiExtract') && isfield(ctx.roiExtract,k) && ~isempty(ctx.roiExtract.(k))
+            continue;
+        end
+        missing{end+1} = k; %#ok<AGROW>
+    end
+end
+
+function tf = hasNodeGui(node)
+    tf = isfield(node,'gui') && ~isempty(node.gui);
 end

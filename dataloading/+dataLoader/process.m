@@ -83,6 +83,12 @@ function ctx = process(ctx)
     end
 
     ctx.fovList = ctx.shallow.fov;
+    if ~isempty(ctx.fovList)
+        try
+            ctx.channels = ctx.fovList(1).channel;
+        catch
+        end
+    end
 
     % store last params in project
     if isprop(ctx.shallow,'runProfiles')
