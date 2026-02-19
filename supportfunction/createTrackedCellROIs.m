@@ -234,8 +234,13 @@ if ~isempty(created)
             rois(rois == 1) = [];                      % ← exclude ROI #1
             roiSelectionPerFOV{idx} = rois;
 
-            ends = arrayfun(@(s) max(s.frames), createdSubset, 'UniformOutput', true);
-            if ~isempty(ends), frameSelectionPerFOV{idx} = 1:max(ends); end
+            frameCounts = arrayfun(@(s) size(s.frameBoundingBoxes, 1), createdSubset, 'UniformOutput', true);
+            if ~isempty(frameCounts) && any(frameCounts > 0)
+                frameSelectionPerFOV{idx} = 1:max(frameCounts);
+            else
+                ends = arrayfun(@(s) max(s.frames), createdSubset, 'UniformOutput', true);
+                if ~isempty(ends), frameSelectionPerFOV{idx} = 1:max(ends); end
+            end
         end
     end
 end
@@ -243,6 +248,7 @@ end
     % Après: uniqueFOV, roiSelectionPerFOV, frameSelectionPerFOV ont été construits
 nF = numel(uniqueFOV);
 callArgs = [{'FOVIndex', uniqueFOV}];
+appliedFramesPerFOV = repmat({[]}, 1, numel(shallowObj.fov));
 
 % --- ROI ---
 hasAnyROI = nF>0 && any(cellfun(@(c) ~isempty(c), roiSelectionPerFOV));
@@ -263,11 +269,34 @@ if isempty(extractFrames)
         else
             callArgs = [callArgs {'Frames', frameSelectionPerFOV}];
         end
+        for i = 1:nF
+            appliedFramesPerFOV{uniqueFOV(i)} = frameSelectionPerFOV{i};
+        end
     end
 else
     % l'utilisateur a imposé Frames : accepter vecteur (1 FOV) ou cell (multi-FOV)
-    if nF == 1 && iscell(extractFrames), extractFrames = extractFrames{1}; end
-    callArgs = [callArgs {'Frames', extractFrames}];
+    extractFramesArg = extractFrames;
+    if nF == 1 && iscell(extractFramesArg), extractFramesArg = extractFramesArg{1}; end
+    callArgs = [callArgs {'Frames', extractFramesArg}];
+    if nF == 1
+        appliedFramesPerFOV{uniqueFOV(1)} = extractFramesArg;
+    elseif iscell(extractFramesArg) && numel(extractFramesArg) == nF
+        for i = 1:nF
+            appliedFramesPerFOV{uniqueFOV(i)} = extractFramesArg{i};
+        end
+    else
+        sharedFrames = extractFramesArg;
+        if iscell(sharedFrames)
+            if isempty(sharedFrames)
+                sharedFrames = [];
+            else
+                sharedFrames = sharedFrames{1};
+            end
+        end
+        for i = 1:nF
+            appliedFramesPerFOV{uniqueFOV(i)} = sharedFrames;
+        end
+    end
 end
 
 % --- Channels (préférer des NOMS quand on force les noms) ---
@@ -332,7 +361,7 @@ catch ME
     warning('createTrackedCellROIs:ExtractionFailed', 'extractAllROICrops failed: %s', ME.message);
 end
 
-
+tMismatchCount = 0;
 
     for kk = 1:numel(created)
     fovId  = created(kk).fov;
@@ -353,7 +382,11 @@ end
     S = load(created(kk).virtFile, 'volFull', 'virtName', 'frameList');
     volFull  = S.volFull;     % [h w 1 Tfull]
     virtName = S.virtName;
-    useFrames = created(kk).frames;
+    frameSelectionAbs = [];
+    if fovId <= numel(appliedFramesPerFOV)
+        frameSelectionAbs = appliedFramesPerFOV{fovId};
+    end
+    [physicalT, hasPhysicalT] = getROIH5TemporalLength(r);
  
 % 1) Mémoriser l'état avant append
 prevNames = r.display.channel;
@@ -361,18 +394,60 @@ prevN     = numel(prevNames);
 
 % (after loading S)
 Tvirt = size(volFull,4);
-try
-    % if r.image is not loaded yet, you can skip this block
-    Tphys = size(r.image,4);
-    if ~isempty(Tphys) && Tphys ~= Tvirt
-        warning('Virtual T (%d) != physical T (%d) for ROI %s; using full volFull anyway.', Tvirt, Tphys, r.id);
+if hasPhysicalT && Tvirt ~= physicalT
+    if tMismatchCount < 1
+        warning(['Virtual T differs from physical T in extracted ROI HDF5. ' ...
+            'Example ROI %s: virtual=%d physical=%d. ' ...
+            'Virtual channel will be forced to physical T for all ROIs.'], ...
+            r.id, Tvirt, physicalT);
     end
+    tMismatchCount = tMismatchCount + 1;
 end
 
 % 2) Append du canal virtuel (volFull déjà à la bonne taille [H W 1 T])
 try
-%volUse = volFull(:,:,:,useFrames);
-   r.appendVirtualChannel('results_cellposeSAM_1_cell', volFull, true, ...
+    volToWrite = volFull;
+    if ~isempty(frameSelectionAbs)
+        if iscell(frameSelectionAbs)
+            if isempty(frameSelectionAbs)
+                frameSelectionAbs = [];
+            elseif numel(frameSelectionAbs) == 1
+                frameSelectionAbs = frameSelectionAbs{1};
+            else
+                frameSelectionAbs = [frameSelectionAbs{:}];
+            end
+        end
+        frameSelectionAbs = double(frameSelectionAbs(:)');
+        frameSelectionAbs = frameSelectionAbs(isfinite(frameSelectionAbs));
+        frameSelectionAbs = round(frameSelectionAbs);
+        frameSelectionAbs = frameSelectionAbs(frameSelectionAbs >= 1 & frameSelectionAbs <= size(volFull,4));
+        if isempty(frameSelectionAbs)
+            warning('createTrackedCellROIs:NoValidAppendFrames', ...
+                'No valid frames available to append virtual channel for ROI %s.', r.id);
+            continue;
+        end
+        volToWrite = volFull(:,:,:,frameSelectionAbs);
+    end
+
+    targetT = size(volToWrite,4);
+    if hasPhysicalT && physicalT > 0
+        targetT = physicalT;
+    end
+    if targetT < 1
+        warning('createTrackedCellROIs:NoTargetFrames', ...
+            'No valid target frame count for ROI %s.', r.id);
+        continue;
+    end
+
+    curT = size(volToWrite,4);
+    if curT > targetT
+        volToWrite = volToWrite(:,:,:,1:targetT);
+    elseif curT < targetT
+        padBlock = zeros(size(volToWrite,1), size(volToWrite,2), size(volToWrite,3), targetT-curT, 'like', volToWrite);
+        volToWrite = cat(4, volToWrite, padBlock);
+    end
+
+   r.appendVirtualChannel(char(virtName), volToWrite, true, ...
     'Display', struct('intensity',[0 0 0], 'alpha',0.5));
 
     fovObj.roi(roiIdx) = r;    % si besoin de propager la maj
@@ -411,6 +486,12 @@ end
 
     % Optionnel : supprimer le fichier cache
      try, delete(created(kk).virtFile); end
+    end
+
+    if tMismatchCount > 1
+        warning('createTrackedCellROIs:TemporalMismatchSummary', ...
+            '%d ROI(s) had virtual/physical temporal mismatch; virtual channel was aligned to existing HDF5 T.', ...
+            tMismatchCount);
     end
 end
 
@@ -660,7 +741,29 @@ function [created, createdCount, processedFOV, createdNow] = processTrackedObjec
     % snapshot display/channelid parent
     if ~isempty(roiObj.display), refDisplay = roiObj.display; else, refDisplay = struct(); end
     if isprop(roiObj,'channelid') && ~isempty(roiObj.channelid), refChannelID = roiObj.channelid; else, refChannelID = []; end
-    parentVal = double(roiObj.value);
+
+    parentVal = [];
+    if isnumeric(roiObj.value) && ~isempty(roiObj.value)
+        try
+            if size(roiObj.value,2) >= 4
+                parentVal = double(roiObj.value(1,1:4));
+            else
+                parentVal = double(roiObj.value(:)');
+            end
+        catch
+            parentVal = [];
+        end
+    end
+    if isempty(parentVal) || numel(parentVal) < 2
+        parentVal = [1 1 cols rows];
+    end
+    if numel(parentVal) < 4
+        parentVal(end+1:4) = [cols rows];
+    end
+    if ~isfinite(parentVal(1)) || parentVal(1) < 1, parentVal(1) = 1; end
+    if ~isfinite(parentVal(2)) || parentVal(2) < 1, parentVal(2) = 1; end
+    if ~isfinite(parentVal(3)) || parentVal(3) <= 0, parentVal(3) = cols; end
+    if ~isfinite(parentVal(4)) || parentVal(4) <= 0, parentVal(4) = rows; end
 
     createdNow = 0;
 
@@ -840,6 +943,48 @@ created(createdCount).virtFile = virtFile;
 end
 
 % -------- helpers locaux --------
+
+function [T, ok] = getROIH5TemporalLength(r)
+T = [];
+ok = false;
+
+if ~isprop(r,'path') || isempty(r.path) || ~isfolder(r.path) || ~isprop(r,'id') || isempty(r.id)
+    return;
+end
+
+h5File = fullfile(r.path, ['im_' char(r.id) '.h5']);
+if ~isfile(h5File)
+    return;
+end
+
+try
+    info = h5info(h5File, '/');
+catch
+    return;
+end
+
+if ~isfield(info,'Datasets') || isempty(info.Datasets)
+    return;
+end
+
+for d = 1:numel(info.Datasets)
+    ds = info.Datasets(d);
+    if ~isfield(ds,'Dataspace') || ~isfield(ds.Dataspace,'Size') || isempty(ds.Dataspace.Size)
+        continue;
+    end
+    sz = double(ds.Dataspace.Size);
+    if numel(sz) < 4
+        sz(end+1:4) = 1;
+    end
+    % Convention DetecDiv actuelle: T sur la 4e dimension
+    Td = sz(4);
+    if isfinite(Td) && Td >= 1
+        T = Td;
+        ok = true;
+        return;
+    end
+end
+end
 
 
 
