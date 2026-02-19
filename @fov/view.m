@@ -29,6 +29,22 @@ end
 
 h=findobj('Tag',['Fov' obj.id]);
 
+% Ensure raw data is reachable once per view call.
+selCh = find(obj.display.selectedchannel==1, 1, 'first');
+if isempty(selCh), selCh = 1; end
+try
+    % Non-blocking in view: avoid modal dialogs / long recursive scans.
+    [obj, okRaw] = detecdiv_paths_ensure_fov_ready(obj, selCh, false, false);
+    if ~okRaw
+        warning(['Raw data not accessible for FOV %s (channel %d). ' ...
+            'Relink paths first, then reopen view.'], obj.id, selCh);
+        return;
+    end
+catch ME
+    warning('Unable to access rawdata for FOV %s: %s', obj.id, ME.message);
+    return;
+end
+
 if numel(h) && numel(h.Children) && rebuild==0% handle exists already
  
 

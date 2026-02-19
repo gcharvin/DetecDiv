@@ -1,9 +1,11 @@
-function [obj, ok] = detecdiv_paths_ensure_fov_ready(obj, channel, debug)
+function [obj, ok] = detecdiv_paths_ensure_fov_ready(obj, channel, debug, interactive, rootHint)
 % Ensure raw source exists. If not, ask user to pick a RAWDATA root and try to rebase.
 % Silent by default. Console output only on real problems.
 
 if nargin < 2 || isempty(channel), channel = 1; end
 if nargin < 3, debug = false; end   % <-- SILENT by default
+if nargin < 4, interactive = true; end
+if nargin < 5, rootHint = ""; end
 
 ok = true;
 channel = max(1, min(channel, numel(obj.channel)));
@@ -61,9 +63,10 @@ if debug
 end
 
 % --- known roots ---
-roots = strings(0,1);
-if ~isempty(userprefs) && isfield(userprefs,'paths') && isfield(userprefs.paths,'rootCandidates')
-    roots = string(userprefs.paths.rootCandidates(:));
+roots = localCollectKnownRoots(userprefs);
+rootHint = string(rootHint);
+if strlength(rootHint) > 0
+    roots = unique([rootHint; roots], 'stable');
 end
 
 % --- try known roots silently ---
@@ -71,7 +74,7 @@ for r = 1:numel(roots)
     root = roots(r);
 
     if isMT
-        [p2, ok2] = detecdiv_paths_rebase_file(p0, root, debug);
+        [p2, ok2] = detecdiv_paths_rebase_file(p0, root, debug, 0);
     elseif isND
         [p2, ok2] = detecdiv_paths_rebase_ndtiff(p0, root, debug);
     else
@@ -110,15 +113,35 @@ for r = 1:numel(roots)
     end
 end
 
+% Non-interactive mode must be fast and non-blocking for display/render calls.
+if ~interactive
+    ok = false;
+    return;
+end
+
 % --- ask user (only now) ---
-msg = sprintf(['Raw data not found for FOV %s.\n\n' ...
-               'Expected:\n%s\n\n' ...
-               'Please select the RAWDATA folder.'], obj.id, p0);
+if ~usejava('desktop')
+    if debug
+        fprintf('[paths] no desktop UI for folder picker; aborting interactive relink\n');
+    end
+    warning(['No desktop UI available for RAWDATA picker. ' ...
+        'Provide a root path explicitly or run relink from desktop MATLAB.']);
+    ok = false;
+    return;
+end
 
-uiwait(warndlg(msg, 'Missing rawdata', 'modal'));
+if debug
+    fprintf('[paths] Prompting user for RAWDATA folder...\n');
+end
+startDir = pwd;
+if strlength(rootHint) > 0 && isfolder(rootHint)
+    startDir = char(rootHint);
+elseif ~isempty(roots) && isfolder(roots(1))
+    startDir = char(roots(1));
+end
 
-root = uigetdir(pwd, 'Select RAWDATA folder');
-if isequal(root,0)
+[root, pickedOk] = detecdiv_paths_prompt_root(string(startDir), p0, obj.id);
+if ~pickedOk
     if debug
         fprintf('[paths] user cancelled RAWDATA selection for FOV %s\n', obj.id);
     end
@@ -129,7 +152,7 @@ root = string(root);
 
 % --- try user selection ---
 if isMT
-    [p2, ok2] = detecdiv_paths_rebase_file(p0, root, debug);
+    [p2, ok2] = detecdiv_paths_rebase_file(p0, root, debug, 0);
     how = "";
 elseif isND
     [p2, ok2] = detecdiv_paths_rebase_ndtiff(p0, root, debug);
@@ -140,11 +163,9 @@ end
 
 if ~ok2
     if debug
-        fprintf('[paths] FAIL: user root did not match dataset\n');
+        fprintf('[paths] FAIL: user root did not match dataset (fast mode)\n');
     end
-    uiwait(warndlg( ...
-        'Selected folder does not match this dataset.', ...
-        'Rawdata relink failed', 'modal'));
+    warning('Selected folder does not match this dataset.');
     ok = false;
     return;
 end
@@ -239,6 +260,111 @@ found = localFindNDTiff(root, datasetName, maxDepth, debug);
 if strlength(found) > 0
     p2 = found;
     ok = true;
+end
+end
+
+function roots = localCollectKnownRoots(userprefs)
+roots = strings(0,1);
+if isempty(userprefs) || ~isstruct(userprefs) || ~isfield(userprefs,'paths') || ~isstruct(userprefs.paths)
+    return;
+end
+
+p = userprefs.paths;
+
+if isfield(p,'rootCandidates') && ~isempty(p.rootCandidates)
+    roots = [roots; string(p.rootCandidates(:))];
+end
+
+if isfield(p,'rawPathHistory') && ~isempty(p.rawPathHistory)
+    roots = [roots; string(p.rawPathHistory(:))];
+end
+
+if isfield(p,'rootMap') && isstruct(p.rootMap) && ~isempty(fieldnames(p.rootMap))
+    fn = fieldnames(p.rootMap);
+    for i = 1:numel(fn)
+        v = p.rootMap.(fn{i});
+        if ischar(v) || isstring(v)
+            roots = [roots; string(v)];
+        end
+    end
+end
+
+roots = strip(roots);
+roots = roots(strlength(roots) > 0);
+roots = unique(roots, 'stable');
+roots = roots(arrayfun(@localIsLikelyReachableRoot, roots));
+if numel(roots) > 8
+    roots = roots(1:8);
+end
+end
+
+function tf = localIsLikelyReachableRoot(p)
+tf = false;
+p = string(p);
+if strlength(p) == 0
+    return;
+end
+
+% Avoid potentially blocking UNC probes in fast auto mode.
+if startsWith(p, "\\")
+    return;
+end
+
+if ispc
+    token = regexp(char(p), '^[A-Za-z]:', 'match', 'once');
+    if ~isempty(token)
+        drive = upper(token(1));
+        if localDriveIsSlowOrUnavailable(drive)
+            return;
+        end
+        try
+            r = java.io.File.listRoots();
+            avail = strings(numel(r),1);
+            for i = 1:numel(r)
+                rr = char(r(i).getPath());
+                if numel(rr) >= 1
+                    avail(i) = upper(string(rr(1)));
+                end
+            end
+            if ~any(avail == string(drive))
+                return;
+            end
+        catch
+            % If Java listing fails, keep probing the path.
+        end
+    end
+end
+
+tf = true;
+end
+
+function tf = localDriveIsSlowOrUnavailable(driveLetter)
+tf = false;
+try
+    drives = System.IO.DriveInfo.GetDrives();
+    for i = 1:drives.Length
+        d = drives(i);
+        nm = char(d.Name);
+        if isempty(nm) || upper(nm(1)) ~= driveLetter
+            continue;
+        end
+        try
+            if ~d.IsReady
+                tf = true;
+                return;
+            end
+        catch
+        end
+        try
+            if d.DriveType == System.IO.DriveType.Network
+                tf = true;
+                return;
+            end
+        catch
+        end
+        return;
+    end
+catch
 end
 end
 

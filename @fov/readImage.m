@@ -19,7 +19,7 @@ nChan = numel(obj.channel);
 
 % --------- ensure raw path is accessible (just-in-time relink) ---------
 try
-    [obj, ok] = detecdiv_paths_ensure_fov_ready(obj, channel);
+    [obj, ok] = detecdiv_paths_ensure_fov_ready(obj, channel, false, false);
     if ~ok
         return;
     end

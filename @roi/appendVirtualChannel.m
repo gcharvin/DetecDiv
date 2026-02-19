@@ -47,7 +47,9 @@ function appendVirtualChannel(obj, logicalName, dataHWkT, indexed, varargin)
 
     % ---- Decide new subchannel indices (global C)
     if isprop(obj,'channelid') && ~isempty(obj.channelid)
-        baseC = max(double(obj.channelid)) + 1;
+        baseC = numel(obj.channelid) + 1;
+    elseif isprop(obj,'image') && ~isempty(obj.image)
+        baseC = size(obj.image,3) + 1;
     else
         baseC = 1;
     end
