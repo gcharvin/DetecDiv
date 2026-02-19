@@ -568,12 +568,12 @@ end
 
 function ensureDetecdivPackages(condaCmd, debug)
     envName = "detecdiv_python";
+    useGPU = hasNvidiaGPU(debug);
 
     % --- torch ---
     fprintf('[Detecdiv]   - Checking torch...\n');
     hasTorch = condaRunPyImport(condaCmd, envName, "torch", debug);
     if ~hasTorch
-        useGPU = hasNvidiaGPU(debug);
         fprintf('[Detecdiv]   - Installing torch (GPU=%d, cuda=12.1 if GPU)... Be patient !\n', useGPU);
 
         if useGPU
@@ -606,7 +606,34 @@ function ensureDetecdivPackages(condaCmd, debug)
 
     % --- final torch verification via conda run ---
     fprintf('[Detecdiv]   - Verifying torch execution...\n');
-    verifyTorch(condaCmd, envName, debug);
+    [okTorch, outTorch] = verifyTorch(condaCmd, envName, debug);
+    if okTorch
+        return;
+    end
+
+    % Auto-heal for known Linux runtime issue:
+    % ImportError ... libtorch_cpu.so: undefined symbol: iJIT_NotifyEvent
+    if isTorchIjitError(outTorch)
+        fprintf('[Detecdiv]   - Detected Torch iJIT runtime issue -> trying auto-repair...\n');
+        repaired = attemptTorchIjitRepair(condaCmd, envName, debug);
+        if repaired
+            [okTorch2, outTorch2] = verifyTorch(condaCmd, envName, debug);
+            if okTorch2
+                fprintf('[Detecdiv]   - Torch runtime repaired successfully.\n');
+                return;
+            end
+            outTorch = outTorch2;
+        end
+    end
+
+    % Last resort: pip wheels fallback (often more robust for mixed conda stacks).
+    fprintf('[Detecdiv]   - Trying pip fallback for torch...\n');
+    if attemptTorchPipFallback(condaCmd, envName, useGPU, debug)
+        fprintf('[Detecdiv]   - Torch pip fallback succeeded.\n');
+        return;
+    end
+
+    error('Torch verification failed:\n%s', outTorch);
 end
 
 function ok = condaRunPyImport(condaCmd, envName, moduleName, debug)
@@ -619,7 +646,7 @@ function ok = condaRunPyImport(condaCmd, envName, moduleName, debug)
     end
 end
 
-function verifyTorch(condaCmd, envName, debug)
+function [ok, out] = verifyTorch(condaCmd, envName, debug)
     pycode = [
         "import torch;", ...
         "print('torch', torch.__version__);", ...
@@ -630,10 +657,90 @@ function verifyTorch(condaCmd, envName, debug)
     sub  = sprintf('run -n %s python -c "%s"', envName, code);
 
     [st,out] = runConda(sub, debug, condaCmd);
-    if st ~= 0
-        error('Torch verification failed:\n%s', out);
+    ok = (st == 0);
+    if ok
+        fprintf('[Detecdiv]   - torch verification OK:\n%s\n', out);
+    else
+        if debug
+            fprintf('[DEBUG] torch verification failed:\n%s\n', out);
+        end
     end
-    fprintf('[Detecdiv]   - torch verification OK:\n%s\n', out);
+end
+
+function tf = isTorchIjitError(out)
+s = lower(string(out));
+tf = contains(s, "ijit_notifyevent") || ...
+     (contains(s, "libtorch_cpu.so") && contains(s, "undefined symbol"));
+end
+
+function ok = attemptTorchIjitRepair(condaCmd, envName, debug)
+ok = false;
+
+repairCmds = [
+    "install -y -n " + envName + " intel-openmp mkl mkl-service", ...
+    "install -y -n " + envName + " -c conda-forge libgcc-ng libstdcxx-ng"
+];
+
+for i = 1:numel(repairCmds)
+    sub = repairCmds(i);
+    fprintf('[Detecdiv]   - Repair step %d/%d: %s\n', i, numel(repairCmds), char(sub));
+    [st,out] = runConda(sub, debug, condaCmd);
+    if st ~= 0
+        if debug
+            fprintf('[DEBUG] Repair step failed (non-fatal for next step):\n%s\n', out);
+        end
+    else
+        ok = true;
+    end
+end
+end
+
+function ok = attemptTorchPipFallback(condaCmd, envName, useGPU, debug)
+ok = false;
+
+% Cleanup existing torch stack (best effort; failures are non-fatal).
+cleanupCmds = [
+    "remove -y -n " + envName + " pytorch torchvision torchaudio pytorch-cuda", ...
+    "run -n " + envName + " python -m pip uninstall -y torch torchvision torchaudio", ...
+    "run -n " + envName + " python -m pip install --upgrade pip"
+];
+for i = 1:numel(cleanupCmds)
+    [st,out] = runConda(cleanupCmds(i), debug, condaCmd);
+    if st ~= 0 && debug
+        fprintf('[DEBUG] pip fallback cleanup step failed (non-fatal):\n%s\n', out);
+    end
+end
+
+if useGPU
+    wheelTags = ["cu121", "cu118", "cpu"];
+else
+    wheelTags = ["cpu"];
+end
+
+for i = 1:numel(wheelTags)
+    tag = wheelTags(i);
+    fprintf('[Detecdiv]   - pip torch candidate %d/%d: %s\n', i, numel(wheelTags), char(tag));
+
+    sub = sprintf([ ...
+        'run -n %s python -m pip install --no-cache-dir --force-reinstall ' ...
+        '--index-url https://download.pytorch.org/whl/%s torch torchvision torchaudio'], ...
+        envName, tag);
+    [st,out] = runConda(sub, debug, condaCmd);
+    if st ~= 0
+        if debug
+            fprintf('[DEBUG] pip torch install failed for %s:\n%s\n', char(tag), out);
+        end
+        continue;
+    end
+
+    [okTorch, outTorch] = verifyTorch(condaCmd, envName, debug);
+    if okTorch
+        ok = true;
+        return;
+    elseif debug
+        fprintf('[DEBUG] pip torch candidate %s did not verify:\n%s\n', char(tag), outTorch);
+    end
+end
 end
 
 function tf = hasNvidiaGPU(debug)
