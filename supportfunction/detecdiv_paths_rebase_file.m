@@ -17,8 +17,7 @@ if strlength(oldFilePath) == 0 || strlength(newRoot) == 0
     return;
 end
 
-[~, fname, ext] = fileparts(oldFilePath);
-target = strtrim(fname + ext);
+[target, oldLeaf] = localExtractTargetAndLeaf(oldFilePath);
 targetNorm = localNormName(target);
 
 % Case 1: user passed a file directly.
@@ -39,8 +38,6 @@ end
 cands = strings(0,1);
 cands(end+1,1) = fullfile(newRoot, target);
 
-oldDir = fileparts(oldFilePath);
-[~, oldLeaf] = fileparts(oldDir);
 if strlength(oldLeaf) > 0
     cands(end+1,1) = fullfile(newRoot, oldLeaf, target);
 end
@@ -90,8 +87,8 @@ end
 
 function out = localSuffixAfterRawData(oldFilePath)
 out = "";
-s = replace(string(oldFilePath), "/", filesep);
-token = [filesep 'raw_data' filesep];
+s = replace(string(oldFilePath), "\", "/");
+token = '/raw_data/';
 ix = strfind(lower(char(s)), lower(token));
 if isempty(ix)
     return;
@@ -99,6 +96,32 @@ end
 k = ix(end) + strlength(token);
 if k <= strlength(s)
     out = extractAfter(s, k-1);
+    out = replace(out, "/", filesep);
+end
+end
+
+function [target, oldLeaf] = localExtractTargetAndLeaf(oldFilePath)
+% OS-agnostic parser for legacy paths that may contain either '\' or '/'.
+target = "";
+oldLeaf = "";
+
+p = string(oldFilePath);
+if strlength(p) == 0
+    return;
+end
+
+p = replace(p, "\", "/");
+p = regexprep(p, '/+', '/');
+
+parts = split(p, "/");
+parts = parts(parts ~= "");
+if isempty(parts)
+    return;
+end
+
+target = strtrim(parts(end));
+if numel(parts) >= 2
+    oldLeaf = strtrim(parts(end-1));
 end
 end
 
@@ -164,4 +187,3 @@ function n = localNormName(s)
 n = lower(strtrim(string(s)));
 n = regexprep(n, '\s+', '');
 end
-
