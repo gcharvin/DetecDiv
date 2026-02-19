@@ -249,10 +249,10 @@ function [st,out] = runConda(subcmd, debug, condaCmd)
         % Always use absolute condaCmd (bat or exe) through cmd /c
         cmd = sprintf('cmd /c ""%s" %s"', cc, subcmd);
     else
-        % On Unix/mac: if condaCmd is an absolute path, use it directly.
-        % Otherwise rely on shell "conda".
+        % On Unix/mac: if condaCmd is an absolute path, execute it directly.
+        % Otherwise rely on shell initialization via bash -lc.
         if cc ~= "" && isfile(cc)
-            cmd = sprintf('bash -lc "%s %s"', cc, subcmd);
+            cmd = sprintf('"%s" %s', cc, subcmd);
         else
             cmd = sprintf('bash -lc "conda %s"', subcmd);
         end
@@ -329,59 +329,171 @@ function dd_saveUserPrefs(userprefs)
 end
 
 function [condaCmd, userprefs] = resolveCondaCmd(userprefs, debug)
-    % 1) prefs first (absolute path)
+    % Build candidate list (prefs, env vars, PATH, common locations)
+    candidates = strings(0,1);
+
+    % 1) prefs first
     prefCmd = "";
     if isfield(userprefs,'conda') && isfield(userprefs.conda,'condaCmd')
         prefCmd = string(userprefs.conda.condaCmd);
     end
     if prefCmd ~= ""
-        if probeConda(prefCmd, debug)
-            condaCmd = prefCmd;
-            userprefs.conda.lastCheck = char(datetime('now'));
-            return;
+        candidates = localPushUnique(candidates, prefCmd);
+    end
+
+    % 2) env hints
+    condaExe = string(getenv('CONDA_EXE'));
+    if strlength(condaExe) > 0
+        candidates = localPushUnique(candidates, condaExe);
+    end
+
+    condaPrefix = string(getenv('CONDA_PREFIX'));
+    if strlength(condaPrefix) > 0
+        if ispc
+            candidates = localPushUnique(candidates, fullfile(condaPrefix, 'condabin', 'conda.bat'));
+            candidates = localPushUnique(candidates, fullfile(condaPrefix, 'Scripts', 'conda.exe'));
         else
-            if debug, fprintf('[DEBUG] Pref condaCmd invalid/unusable: %s\n', char(prefCmd)); end
+            candidates = localPushUnique(candidates, fullfile(condaPrefix, 'bin', 'conda'));
+            parentPrefix = string(fileparts(condaPrefix));
+            if strlength(parentPrefix) > 0
+                candidates = localPushUnique(candidates, fullfile(parentPrefix, 'bin', 'conda'));
+            end
         end
     end
 
-    % 2) PATH lookup
-    condaCmd = "";
+    % 3) PATH lookup
     if ispc
         [st,out] = system('where conda');
         if st == 0
             lines = splitlines(string(out));
             lines(lines=="") = [];
-            if ~isempty(lines)
-                condaCmd = strtrim(lines(1)); % may be conda.bat; OK
+            for i = 1:numel(lines)
+                candidates = localPushUnique(candidates, strtrim(lines(i)));
             end
         end
     else
-        [st,out] = system('which conda');
+        [st,out] = system('bash -lc "command -v conda"');
         if st == 0
-            condaCmd = strtrim(string(out)); % absolute path
+            lines = splitlines(string(out));
+            lines(lines=="") = [];
+            for i = 1:numel(lines)
+                candidates = localPushUnique(candidates, strtrim(lines(i)));
+            end
         end
     end
 
-    if condaCmd ~= "" && probeConda(condaCmd, debug)
-        userprefs.conda.condaCmd = condaCmd;
-        userprefs.conda.lastCheck = char(datetime('now'));
-        return;
+    % 4) common install locations
+    commonCands = localCommonCondaCandidates();
+    for i = 1:numel(commonCands)
+        candidates = localPushUnique(candidates, commonCands(i));
     end
 
-    % 3) fail with actionable guidance
+    % 5) probe in order
+    condaCmd = "";
+    for i = 1:numel(candidates)
+        cand = localNormalizeCandidate(candidates(i));
+        if strlength(cand) == 0
+            continue;
+        end
+        if probeConda(cand, debug)
+            condaCmd = cand;
+            userprefs.conda.condaCmd = condaCmd;
+            userprefs.conda.lastCheck = char(datetime('now'));
+            return;
+        end
+        if debug
+            fprintf('[DEBUG] Conda candidate not usable: %s\n', char(cand));
+        end
+    end
+
+    % 6) fail with actionable guidance
     userprefs.conda.lastCheck = char(datetime('now'));
     dd_saveUserPrefs(userprefs);
 
+    if ispc
+        osExamples = [
+            "Exemples Windows:", newline, ...
+            "  C:\Users\<you>\miniconda3\condabin\conda.bat", newline, ...
+            "  C:\Users\<you>\miniconda3\Scripts\conda.exe"
+        ];
+    else
+        osExamples = [
+            "Exemples Linux/macOS:", newline, ...
+            "  /home/<you>/miniconda3/bin/conda", newline, ...
+            "  /home/<you>/miniforge3/bin/conda", newline, ...
+            "  /opt/conda/bin/conda"
+        ];
+    end
+
     msg = [
-        "Conda est introuvable (ni dans le PATH, ni via le chemin stocké dans les préférences).", newline, ...
-        "➡️ Installe Miniconda/Miniforge, puis relance Detecdiv.", newline, ...
-        "➡️ Ou renseigne manuellement le chemin absolu dans Detecdiv > Preferences :", newline, ...
+        "Conda est introuvable (preferences, variables d'environnement, PATH, emplacements standards).", newline, ...
+        "-> Installe Miniconda/Miniforge, puis relance Detecdiv.", newline, ...
+        "-> Ou renseigne manuellement le chemin absolu dans Detecdiv > Preferences :", newline, ...
         "   userprefs.conda.condaCmd", newline, ...
-        "Exemples Windows:", newline, ...
-        "  C:\Users\<you>\miniconda3\condabin\conda.bat", newline, ...
-        "  C:\Users\<you>\miniconda3\Scripts\conda.exe"
+        osExamples
     ];
     error('%s', char(msg));
+end
+
+function out = localPushUnique(arr, v)
+out = arr;
+sv = localNormalizeCandidate(v);
+if strlength(sv) == 0
+    return;
+end
+if ~any(out == sv)
+    out(end+1,1) = sv;
+end
+end
+
+function sv = localNormalizeCandidate(v)
+sv = string(v);
+if numel(sv) ~= 1
+    sv = join(sv, " ");
+end
+sv = strtrim(sv);
+if strlength(sv) >= 2
+    if (startsWith(sv, '"') && endsWith(sv, '"')) || (startsWith(sv, "'") && endsWith(sv, "'"))
+        sv = extractBetween(sv, 2, strlength(sv)-1);
+        sv = string(sv);
+        if isempty(sv), sv = ""; end
+    end
+end
+end
+
+function cands = localCommonCondaCandidates()
+cands = strings(0,1);
+
+if ispc
+    home = string(getenv('USERPROFILE'));
+    local = string(getenv('LOCALAPPDATA'));
+    bases = [ ...
+        fullfile(home, "miniconda3"); ...
+        fullfile(home, "anaconda3"); ...
+        fullfile(home, "miniforge3"); ...
+        fullfile(home, "mambaforge") ...
+    ];
+    if strlength(local) > 0
+        bases = [bases; fullfile(local, "miniforge3")];
+    end
+    for i = 1:numel(bases)
+        b = bases(i);
+        cands(end+1,1) = fullfile(b, "condabin", "conda.bat"); %#ok<AGROW>
+        cands(end+1,1) = fullfile(b, "Scripts", "conda.exe"); %#ok<AGROW>
+    end
+else
+    home = string(getenv('HOME'));
+    cands = [ ...
+        fullfile(home, "miniconda3", "bin", "conda"); ...
+        fullfile(home, "anaconda3", "bin", "conda"); ...
+        fullfile(home, "miniforge3", "bin", "conda"); ...
+        fullfile(home, "mambaforge", "bin", "conda"); ...
+        fullfile(home, ".local", "miniforge3", "bin", "conda"); ...
+        "/opt/conda/bin/conda"; ...
+        "/usr/local/miniconda3/bin/conda"; ...
+        "/usr/local/miniforge3/bin/conda" ...
+    ];
+end
 end
 
 function ok = probeConda(condaCmd, debug)
@@ -393,9 +505,9 @@ function ok = probeConda(condaCmd, debug)
         cmd = sprintf('cmd /c ""%s" --version"', c);
     else
         if isfile(c)
-            cmd = sprintf('bash -lc "%s --version"', c);
+            cmd = sprintf('"%s" --version', c);
         else
-            cmd = sprintf('bash -lc "conda --version"');
+            cmd = sprintf('bash -lc "%s --version"', c);
         end
     end
 
@@ -574,3 +686,4 @@ end
 function x = tern(cond, a, b)
     if cond, x = a; else, x = b; end
 end
+
