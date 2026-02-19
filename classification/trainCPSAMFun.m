@@ -12,22 +12,22 @@ function trainCPSAMFun(classif, setparam)
 % 0) Initialisation des paramètres (mode setparam)
 % -------------------------------------------------------------------------
 if nargin == 2
-    tip = {
-        'Expected average diameter of objects',                % diameter
-        'Minimum size to keep (object)',                       % min_size
-        'Flow threshold',                                      % flow_threshold
-        'Cell probability threshold -6 --> 6; default : 0',    % cell_prob_threshold
-        'Number of training epochs',                           % n_epochs
-        'Learning rate',                                       % learning_rate
-        'Weight decay (L2 regularization)',                    % weight_decay
-        'Batch size',                                          % batch_size
-        'Minimum number of masks per image (USED IN FORMAT)',  % min_train_masks
-        'Use pretrained SAM model (True/False)',               % use_pretrained
-        'Verbose logging during training' ,                    % verbose
-        'Max number of images used for training' ,             % MaxTrainImages
-        'Seed for random number generation',                   % Seed
-        'Downsampling of negative images (0: none; 1: at most as many negatives as positives)', ...
-        'Train/val splitting ratio (used in FORMAT to define /split fractions)'
+    tip = { ...
+        'Expected average diameter of objects'; ...                 % diameter
+        'Minimum size to keep (object)'; ...                        % min_size
+        'Flow threshold'; ...                                       % flow_threshold
+        'Cell probability threshold -6 --> 6; default : 0'; ...    % cell_prob_threshold
+        'Number of training epochs'; ...                            % n_epochs
+        'Learning rate'; ...                                        % learning_rate
+        'Weight decay (L2 regularization)'; ...                     % weight_decay
+        'Batch size'; ...                                           % batch_size
+        'Minimum number of masks per image (USED IN FORMAT)'; ...  % min_train_masks
+        'Use pretrained SAM model (True/False)'; ...                % use_pretrained
+        'Verbose logging during training'; ...                      % verbose
+        'Max number of images used for training'; ...               % MaxTrainImages
+        'Seed for random number generation'; ...                    % Seed
+        'Downsampling of negative images (0: none; 1: at most as many negatives as positives)'; ...
+        'Train/val splitting ratio (used in FORMAT to define /split fractions)' ...
     };
 
     classif.trainingParam = struct( ...
