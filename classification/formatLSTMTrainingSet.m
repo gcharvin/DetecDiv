@@ -172,6 +172,23 @@ cltmp = classif.roi;
 warning off all
 
 channel = classif.channelName;
+[boundsMode, boundsGlobal] = localGetBoundsPolicy(classif);
+
+switch lower(string(boundsMode))
+    case "auto"
+        if isempty(boundsGlobal)
+            disp('[BOUNDS][START] Mode=Auto. No global min:max specified -> all selected frames are considered.');
+        else
+            disp(sprintf('[BOUNDS][START] Mode=Auto. Global min:max active: [%d %d]. Frames outside these bounds are ignored.', ...
+                boundsGlobal(1), boundsGlobal(2)));
+        end
+    case "manual"
+        disp('[BOUNDS][START] Mode=Manual. ROI-specific bounds (userbounds/bounds) are used when available.');
+    case "rules"
+        disp('[BOUNDS][START] Mode=Rules. Rule-based ROI bounds are used when available.');
+    otherwise
+        disp(sprintf('[BOUNDS][START] Mode=%s. ROI bounds are used when available.', string(boundsMode)));
+end
 
 % ---- Sélection déterministe d'une fraction de ROIs ----
 n_all = numel(rois);
@@ -235,24 +252,8 @@ if UndersampleMajority < 1 && (UseHDF5 || WriteTiffImages) && strcmp(category,'L
             continue;
         end
 
-        % Bounds depuis userData
-        bounds = [];
-        ud = [];
-        try
-            ud = roiSeriesSel(1).userData;
-        catch
-            ud = [];
-        end
-        if isstruct(ud) && isfield(ud,'bounds')
-            bounds = ud.bounds;
-        elseif isa(ud,'containers.Map') && isKey(ud,'bounds')
-            bounds = ud('bounds');
-        end
-        if ~isempty(bounds)
-            if numel(bounds)==1 || bounds(1)==0
-                bounds = [];
-            end
-        end
+        % Bounds selon mode classif.bounds.Type (Auto / Manual / Rules)
+        bounds = resolveROIFrameBounds(roiSeriesSel, classif);
 
         % Labels bruts
         rawLabels = roiSeriesSel.getData('labels_training');
@@ -347,6 +348,9 @@ fprintf('\n');
 fprintf('Processing ROIs, please wait... \n')
 fprintf('\n');
 
+nBoundsApplied = 0;
+nBoundsMissing = 0;
+
 for i = 1:numel(rois_sel)
     emptyFrame = [];
     lab        = [];
@@ -415,23 +419,12 @@ for i = 1:numel(rois_sel)
         continue
     end
 
-    % --- Bounds depuis userData ---
-    bounds = [];
-    ud = [];
-    try
-        ud = roiSeriesSel(1).userData;
-    catch
-        ud = [];
-    end
-    if isstruct(ud) && isfield(ud,'bounds')
-        bounds = ud.bounds;
-    elseif isa(ud,'containers.Map') && isKey(ud,'bounds')
-        bounds = ud('bounds');
-    end
-    if ~isempty(bounds)
-        if numel(bounds)==1 || bounds(1)==0
-            bounds = [];
-        end
+    % --- Bounds selon mode classif.bounds.Type (Auto / Manual / Rules) ---
+    bounds = resolveROIFrameBounds(roiSeriesSel, classif);
+    if isempty(bounds)
+        nBoundsMissing = nBoundsMissing + 1;
+    else
+        nBoundsApplied = nBoundsApplied + 1;
     end
 
     % --- Frames pour cette ROI ---
@@ -816,6 +809,13 @@ end
 end
 
 % Flush final du buffer HDF5 s'il reste des frames non écrites
+if strcmpi(boundsMode,'auto') && isempty(boundsGlobal)
+    disp('[BOUNDS][END] Summary: no specific bounds configured (all selected frames processed, before label filtering).');
+else
+    disp(sprintf('[BOUNDS][END] Summary: specific bounds applied on %d/%d ROI(s); %d ROI(s) had no usable bounds.', ...
+        nBoundsApplied, numel(rois_sel), nBoundsMissing));
+end
+
 if UseHDF5 && h5Initialized && bufCount > 0
     h5write(h5Framebank, '/frames', frameBuffer(:,:,:,1:bufCount), ...
         [1 1 1 nextFrameIdx], [H0_global W0_global 3 bufCount]);
@@ -886,6 +886,164 @@ end
 x1p = x1 + padL; x2p = x2 + padL;
 y1p = y1 + padT; y2p = y1 + padT + (ch-1);
 out = in(y1p:y2p, x1p:x2p, :);
+
+function bounds = resolveROIFrameBounds(roiSeriesSel, classif)
+% Resolve frame bounds for one ROI according to classif.bounds.Type:
+%   Auto   -> use classif.bounds.Values as global bounds (if provided),
+%             otherwise no bounds filtering (all frames)
+%   Manual -> prefer userbounds, fallback to bounds
+%   Rules  -> use bounds (rule-computed values, if any)
+
+mode = "Manual";
+globalBounds = readGlobalBoundsFromClassif(classif);
+try
+    if isprop(classif,'bounds') && isstruct(classif.bounds) && isfield(classif.bounds,'Type')
+        mode = string(classif.bounds.Type);
+    end
+catch
+    mode = "Manual";
+end
+
+ud = [];
+try
+    ud = roiSeriesSel(1).userData;
+catch
+    ud = [];
+end
+
+switch lower(mode)
+    case "auto"
+        bounds = globalBounds;
+    case "manual"
+        bounds = readBoundsField(ud, 'userbounds');
+        if isempty(bounds)
+            bounds = readBoundsField(ud, 'bounds');
+        end
+    case "rules"
+        bounds = readBoundsField(ud, 'bounds');
+    otherwise
+        bounds = readBoundsField(ud, 'bounds');
+end
+
+bounds = sanitizeBounds(bounds);
+
+function val = readGlobalBoundsFromClassif(classif)
+val = [];
+
+try
+    if ~(isprop(classif,'bounds') && isstruct(classif.bounds) && isfield(classif.bounds,'Values'))
+        return;
+    end
+    raw = classif.bounds.Values;
+catch
+    return;
+end
+
+if isempty(raw)
+    return;
+end
+
+if isnumeric(raw)
+    val = raw;
+    return;
+end
+
+if iscell(raw)
+    raw = raw{1};
+end
+
+if isstring(raw) || ischar(raw)
+    txt = char(string(raw));
+    nums = regexp(txt, '[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?', 'match');
+    if numel(nums) >= 2
+        val = [str2double(nums{1}) str2double(nums{2})];
+    end
+end
+
+function val = readBoundsField(ud, fieldName)
+val = [];
+if isstruct(ud) && isfield(ud, fieldName)
+    val = ud.(fieldName);
+elseif isa(ud,'containers.Map') && isKey(ud, fieldName)
+    val = ud(fieldName);
+end
+
+function bounds = sanitizeBounds(bounds)
+if isempty(bounds)
+    return;
+end
+
+bounds = double(bounds(:)');
+if numel(bounds) < 2 || ~all(isfinite(bounds(1:2)))
+    bounds = [];
+    return;
+end
+
+bounds = round(bounds(1:2));
+
+% Legacy convention: first bound = 0 means "no bounds".
+if bounds(1) == 0
+    bounds = [];
+    return;
+end
+
+if bounds(2) ~= 0 && bounds(2) < bounds(1)
+    bounds = [bounds(2) bounds(1)];
+end
+
+function [boundsType, globalBounds] = localGetBoundsPolicy(classif)
+boundsType = "Auto";
+globalBounds = [];
+
+if ~(isprop(classif,'bounds') && isstruct(classif.bounds))
+    return;
+end
+
+if isfield(classif.bounds,'Type') && ~isempty(classif.bounds.Type)
+    boundsType = string(classif.bounds.Type);
+end
+
+if isfield(classif.bounds,'Values')
+    globalBounds = localNormalizeBounds(classif.bounds.Values);
+end
+
+function bounds = localNormalizeBounds(raw)
+bounds = [];
+
+if isempty(raw)
+    return;
+end
+
+if iscell(raw)
+    raw = raw{1};
+end
+
+if ischar(raw) || isstring(raw)
+    nums = regexp(char(string(raw)), '[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?', 'match');
+    if numel(nums) < 2
+        return;
+    end
+    raw = [str2double(nums{1}) str2double(nums{2})];
+end
+
+if ~isnumeric(raw)
+    return;
+end
+
+raw = double(raw(:)');
+if numel(raw) < 2 || any(~isfinite(raw(1:2)))
+    return;
+end
+
+bounds = round(raw(1:2));
+if bounds(1) == 0
+    bounds = [];
+    return;
+end
+
+if bounds(2) ~= 0 && bounds(2) < bounds(1)
+    bounds = bounds([2 1]);
+end
 
 % =========================================================================
 % === Helpers pour gestion robuste du framebank CNN =======================

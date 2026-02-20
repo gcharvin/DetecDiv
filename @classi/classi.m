@@ -19,7 +19,7 @@ classdef classi < handle
         classifyFun='';
         trainingFun='';
         colormap=[];
-        bounds= struct('Type','Auto','Rules',struct('Dataseries',{[]},'Dataset',{[]},'Value',{[]},'Occurence',[0],'Offset',[0 ])); % type can be : auto,  manual, rules;   'Rules' is a struc that specifies the type of rules : ; 'Values' specifies the automated interval set for all ROIs
+        bounds= struct('Type','Auto','Values',[],'Rules',struct('Dataseries',{[]},'Dataset',{[]},'Value',{[]},'Occurence',[0],'Offset',[0 ])); % type can be : auto,  manual, rules;   'Rules' is a struc that specifies the type of rules : ; 'Values' specifies the automated interval set for all ROIs
 
         score=[]; %struct('roisid',[],'recall',[],'accuracy',[],'fscore',[],'confusion',[],'classes',[],'rois',[]); %  a structure that stores the scores of the classification , which is done by the stats method
 
