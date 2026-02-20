@@ -197,7 +197,7 @@ if para % parallel computing
         [idx,param,data,image]=fetchNext(logparf(i));
 
 
-        ROIManagement(roiobj(idx),data);
+        ROIManagement(roiobj(idx),image,data);
         %     roiobj(idx).results=results;
         %
         %     roiobj(idx).image=image;
@@ -236,18 +236,18 @@ end
         end
     end
 
+    function out = mergeParamStruct(base, override)
+        out = base;
+        fn = fieldnames(override);
+        for k = 1:numel(fn)
+            out.(fn{k}) = override.(fn{k});
+        end
+    end
+
     function ROIManagement(roiobj,image,data,saveChannels)
 
         if nargin < 4
             saveChannels = {};
-        end
-
-        function out = mergeParamStruct(base, override)
-            out = base;
-            fn = fieldnames(override);
-            for k = 1:numel(fn)
-                out.(fn{k}) = override.(fn{k});
-            end
         end
 
         roiobj.data=data;
@@ -260,7 +260,8 @@ end
             end
             roiobj.clear,
         else
-            %   data
             roiobj.save('data');
         end
         %disp('You must save the shallow project to save these classified data !');
+    end
+end

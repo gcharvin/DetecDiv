@@ -18,7 +18,11 @@ tok = regexp(base,'^im_(?<id>.+)$','names');
 if ~isempty(tok)
     try
         idnum = str2double(tok.id);
-        r.id = isnan(idnum) ? tok.id : idnum; %#ok<*COLND>
+        if isnan(idnum)
+            r.id = tok.id;
+        else
+            r.id = idnum;
+        end
     catch
         r.id = tok.id;
     end
