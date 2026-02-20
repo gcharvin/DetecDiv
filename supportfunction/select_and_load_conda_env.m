@@ -1,41 +1,61 @@
 function info = select_and_load_conda_env(varargin)
-% SELECT_AND_LOAD_CONDA_ENV (forced detecdiv_python + self-heal)
+% SELECT_AND_LOAD_CONDA_ENV (interactive env selection + optional auto-setup)
 %
 % Strategy (standardised):
-%   - If pyenv is already Loaded AND OutOfProcess AND passes a quick health check:
-%       -> keep it and return summary
-%   - Otherwise:
-%       1) Resolve conda command (prefs path first, then PATH)
-%          - store absolute conda path in userprefs (editable later in GUI via struct2GUI)
-%       2) Ensure conda env "detecdiv_python" exists (python=3.10)
-%       3) Ensure required packages:
-%            - torch (GPU: pytorch-cuda=12.1 if NVIDIA detected, else CPU)
-%            - cellpose (Cellpose-SAM) via pip "cellpose[gui]"
-%          and verify torch execution (version + cuda availability)
-%       4) Set MATLAB pyenv to detecdiv_python (OutOfProcess)
-%       5) Print final report + return info struct
+%   - Ask user (GUI) to choose:
+%       * default env "detecdiv_python" (auto-configure/install allowed)
+%       * another existing conda env (no install done by Detecdiv)
+%   - Optional checkbox can lock this choice in userprefs until 'reset' is used.
+%   - If pyenv is already Loaded + OutOfProcess + healthy and matches selected env:
+%       -> keep it and return summary.
 %
 % Options (Name,Value):
 %   'debug'   (logical, default true)
+%   'reset'   (logical, default false) clear remembered env choice
 
     % -------- Parse options --------
-    opts = struct('debug', true);
-    if mod(nargin,2)~=0
-        error('Arguments must be Name,Value pairs.');
-    end
-    for k = 1:2:nargin
-        name = lower(string(varargin{k}));
-        val  = varargin{k+1};
-        switch name
-            case "debug", opts.debug = logical(val);
-            otherwise, error('Unknown option "%s".', name);
+    opts = struct('debug', true, 'reset', false);
+    if nargin == 1 && (strcmpi(string(varargin{1}), "reset"))
+        opts.reset = true;
+    else
+        if mod(nargin,2)~=0
+            error('Arguments must be Name,Value pairs (or ''reset'').');
+        end
+        for k = 1:2:nargin
+            name = lower(string(varargin{k}));
+            val  = varargin{k+1};
+            switch name
+                case "debug", opts.debug = logical(val);
+                case "reset", opts.reset = logical(val);
+                otherwise, error('Unknown option "%s".', name);
+            end
         end
     end
     debug = opts.debug;
+    doReset = opts.reset;
 
     fprintf('\n[Detecdiv] Python bootstrap starting...\n');
 
-    % -------- 0) If Python already loaded: require Loaded + OutOfProcess + healthy --------
+    % -------- 0) Selection mode (default/custom) --------
+    userprefs = dd_loadUserPrefs();
+    if doReset
+        userprefs = clearRememberedCondaSelection(userprefs);
+        dd_saveUserPrefs(userprefs);
+        fprintf('[Detecdiv] Reset requested: remembered env choice cleared.\n');
+    end
+
+    [selection, userprefs] = resolveCondaSelection(userprefs, debug);
+    dd_saveUserPrefs(userprefs);
+    fprintf('[Detecdiv] Selected mode: %s', char(selection.mode));
+    if selection.mode == "custom"
+        fprintf(' | env=%s', char(selection.envName));
+    end
+    if selection.remember
+        fprintf(' | remembered=1');
+    end
+    fprintf('\n');
+
+    % -------- 1) If Python already loaded: require Loaded + OutOfProcess + healthy --------
     pe = pyenv;
     if pe.Status == "Loaded"
         fprintf('[Detecdiv] Detected existing pyenv: Loaded (mode=%s)\n', char(string(pe.ExecutionMode)));
@@ -47,10 +67,15 @@ function info = select_and_load_conda_env(varargin)
             fprintf('[Detecdiv] Existing pyenv is OutOfProcess -> quick health check...\n');
             [ok, sysver, torchInfo] = quickPythonHealthCheck(debug);
             if ok
-                fprintf('[Detecdiv] Existing pyenv is healthy -> keeping it.\n');
-                printSummary(pe, sysver, torchInfo);
-                info = packInfoExisting(pe, sysver, torchInfo, debug);
-                return;
+                if pyenvMatchesSelection(pe, selection)
+                    fprintf('[Detecdiv] Existing pyenv is healthy and matches selection -> keeping it.\n');
+                    printSummary(pe, sysver, torchInfo);
+                    info = packInfoExisting(pe, sysver, torchInfo, debug);
+                    return;
+                else
+                    fprintf('[Detecdiv] Existing pyenv does not match selection -> terminating...\n');
+                    try, terminate(pyenv); catch, end
+                end
             else
                 fprintf('[Detecdiv] Existing pyenv unhealthy -> terminating...\n');
                 try, terminate(pyenv); catch, end
@@ -60,24 +85,67 @@ function info = select_and_load_conda_env(varargin)
         fprintf('[Detecdiv] No active pyenv (Status=%s)\n', char(string(pe.Status)));
     end
 
-    % -------- 1) Resolve conda command (prefs/path) --------
+    % -------- 2) Resolve conda command (prefs/path) --------
     fprintf('[Detecdiv] Step 1/5: Resolving conda...\n');
-    userprefs = dd_loadUserPrefs();
-    [condaCmd, userprefs] = resolveCondaCmd(userprefs, debug);
+    try
+        [condaCmd, userprefs] = resolveCondaCmd(userprefs, debug);
+    catch ME
+        if selection.mode == "custom"
+            uiErrorAndThrow( ...
+                "Conda was not found. Cannot use a custom conda environment.", ...
+                "Detecdiv - Conda Not Found", ME);
+        else
+            rethrow(ME);
+        end
+    end
     dd_saveUserPrefs(userprefs);
     fprintf('[Detecdiv] Conda command: %s\n', char(condaCmd));
 
-    % -------- 2) Ensure env detecdiv_python (python=3.10) --------
+    if selection.mode == "custom"
+        % Custom env: do not install anything, just resolve + load.
+        fprintf('[Detecdiv] Step 2/5: Resolving selected conda env...\n');
+        [detPath, detPy] = resolveExistingCondaEnv(condaCmd, selection, debug);
+        fprintf('[Detecdiv] Selected env path: %s\n', char(detPath));
+        fprintf('[Detecdiv] Selected env python: %s\n', char(detPy));
+
+        fprintf('[Detecdiv] Step 3/5: Custom mode -> no package installation.\n');
+        fprintf('[Detecdiv] Step 4/5: Configuring MATLAB pyenv (OutOfProcess)...\n');
+        pe = pyenv;
+        if pe.Status == "Loaded"
+            if ~strcmpi(char(pe.Executable), char(detPy)) || string(pe.ExecutionMode) ~= "OutOfProcess"
+                fprintf('[Detecdiv] Terminating existing Python engine...\n');
+                try, terminate(pyenv); catch, end
+            end
+        end
+        pe = pyenv('Version', char(detPy), 'ExecutionMode', 'OutOfProcess');
+
+        fprintf('[Detecdiv] Step 5/5: Final checks (sys + torch import in MATLAB)...\n');
+        [okSys, pyVer, okTorch, torchVer, torchCUDA, torchAvail] = matlabTorchChecks(debug);
+        printFinal(pe, okSys, pyVer, okTorch, torchVer, torchCUDA, torchAvail);
+
+        info = struct( ...
+            'name', string(selection.envName), ...
+            'path', string(detPath), ...
+            'python', string(detPy), ...
+            'pyenv', pe, ...
+            'python_sys_version', string(pyVer), ...
+            'torch', struct('installed', okTorch, 'version', string(torchVer), 'cuda', string(torchCUDA), 'is_available', logical(torchAvail)), ...
+            'debug', debug ...
+        );
+        return;
+    end
+
+    % -------- 3) Ensure env detecdiv_python (python=3.10) --------
     fprintf('[Detecdiv] Step 2/5: Ensuring conda env "detecdiv_python" (python=3.10)...\n');
     [detPath, detPy] = ensureDetecdivEnv(condaCmd, debug);
     fprintf('[Detecdiv] detecdiv_python path: %s\n', char(detPath));
     fprintf('[Detecdiv] detecdiv_python python: %s\n', char(detPy));
 
-    % -------- 3) Ensure packages (torch + cellpose) --------
+    % -------- 4) Ensure packages (torch + cellpose) --------
     fprintf('[Detecdiv] Step 3/5: Ensuring required Python packages (torch + cellpose)...\n');
     ensureDetecdivPackages(condaCmd, debug);
 
-    % -------- 4) Configure MATLAB pyenv to detecdiv_python (OutOfProcess) --------
+    % -------- 5) Configure MATLAB pyenv to detecdiv_python (OutOfProcess) --------
     fprintf('[Detecdiv] Step 4/5: Configuring MATLAB pyenv (OutOfProcess)...\n');
     pe = pyenv;
     if pe.Status == "Loaded"
@@ -88,7 +156,7 @@ function info = select_and_load_conda_env(varargin)
     end
     pe = pyenv('Version', char(detPy), 'ExecutionMode', 'OutOfProcess');
 
-    % -------- 5) Final checks + report --------
+    % -------- 6) Final checks + report --------
     fprintf('[Detecdiv] Step 5/5: Final checks (sys + torch import in MATLAB)...\n');
     [okSys, pyVer, okTorch, torchVer, torchCUDA, torchAvail] = matlabTorchChecks(debug);
 
@@ -242,6 +310,329 @@ function info = packInfoExisting(pe, sysver, torchInfo, debug)
     );
 end
 
+function userprefs = clearRememberedCondaSelection(userprefs)
+if ~isfield(userprefs,'conda') || ~isstruct(userprefs.conda)
+    userprefs.conda = struct();
+end
+userprefs.conda.selectionLock = false;
+userprefs.conda.selectionMode = "default";
+userprefs.conda.selectionEnvName = "detecdiv_python";
+userprefs.conda.selectionEnvPath = "";
+end
+
+function [selection, userprefs] = resolveCondaSelection(userprefs, debug)
+selection = struct( ...
+    'mode', "default", ...
+    'envName', "detecdiv_python", ...
+    'envPath', "", ...
+    'remember', false);
+
+% If locked, reuse stored choice and skip UI entirely.
+if isfield(userprefs,'conda') && isstruct(userprefs.conda) && ...
+        isfield(userprefs.conda,'selectionLock') && logical(userprefs.conda.selectionLock)
+    mode = lower(string(userprefs.conda.selectionMode));
+    if ~any(mode == ["default","custom"])
+        mode = "default";
+    end
+    selection.mode = mode;
+    if mode == "custom"
+        nm = string(userprefs.conda.selectionEnvName);
+        if strlength(nm) == 0, nm = "base"; end
+        selection.envName = nm;
+        selection.envPath = string(userprefs.conda.selectionEnvPath);
+    end
+    selection.remember = true;
+    if debug
+        fprintf('[DEBUG] Using remembered conda selection: mode=%s env=%s\n', ...
+            char(selection.mode), char(selection.envName));
+    end
+    return;
+end
+
+if ~usejava('desktop')
+    if debug
+        fprintf('[DEBUG] No desktop UI available -> defaulting to detecdiv_python.\n');
+    end
+    return;
+end
+
+[mode, remember, ok] = promptCondaSelectionDialog();
+if ~ok
+    error('Conda environment selection cancelled by user.');
+end
+selection.mode = mode;
+selection.remember = remember;
+
+if mode == "custom"
+    try
+        [condaCmd, userprefs] = resolveCondaCmd(userprefs, debug);
+    catch ME
+        uiErrorAndThrow( ...
+            "Conda was not found. Cannot list conda environments.", ...
+            "Detecdiv - Conda Not Found", ME);
+    end
+
+    try
+        [data, ~, ~] = getCondaEnvs(debug, condaCmd);
+    catch ME
+        uiErrorAndThrow( ...
+            "Unable to read the conda environment list.", ...
+            "Detecdiv - Conda Error", ME);
+    end
+    [names, paths, labels] = buildCondaEnvList(data);
+    if isempty(labels)
+        uiErrorAndThrow( ...
+            "No conda environments were found.", ...
+            "Detecdiv - No Conda Environments");
+    end
+
+    [idx, okSel] = listdlg( ...
+        'PromptString', 'Select a conda environment:', ...
+        'SelectionMode', 'single', ...
+        'ListString', cellstr(labels), ...
+        'ListSize', [760 320], ...
+        'Name', 'Detecdiv - Select Conda Environment');
+
+    if ~okSel || isempty(idx)
+        error('Conda environment selection cancelled by user.');
+    end
+
+    selection.envName = names(idx(1));
+    selection.envPath = paths(idx(1));
+end
+
+if remember
+    if ~isfield(userprefs,'conda') || ~isstruct(userprefs.conda)
+        userprefs.conda = struct();
+    end
+    userprefs.conda.selectionLock = true;
+    userprefs.conda.selectionMode = char(selection.mode);
+    userprefs.conda.selectionEnvName = char(selection.envName);
+    userprefs.conda.selectionEnvPath = char(selection.envPath);
+else
+    userprefs = clearRememberedCondaSelection(userprefs);
+end
+end
+
+function [mode, remember, ok] = promptCondaSelectionDialog()
+mode = "default";
+remember = false;
+ok = false;
+
+dlg = dialog( ...
+    'Name', 'Detecdiv Python Environment', ...
+    'Position', [400 320 560 260], ...
+    'WindowStyle', 'modal', ...
+    'Resize', 'off');
+
+uicontrol(dlg, ...
+    'Style', 'text', ...
+    'Position', [20 190 520 50], ...
+    'HorizontalAlignment', 'left', ...
+    'String', ['Select Python environment mode.' newline ...
+               'Default: detecdiv_python (auto-install allowed).']);
+
+bg = uibuttongroup(dlg, ...
+    'Position', [0.04 0.36 0.92 0.30], ...
+    'BorderType', 'none');
+
+uicontrol(bg, ...
+    'Style', 'radiobutton', ...
+    'String', 'Use detecdiv_python (recommended)', ...
+    'Tag', 'default', ...
+    'Position', [10 36 460 22], ...
+    'Value', 1);
+
+uicontrol(bg, ...
+    'Style', 'radiobutton', ...
+    'String', 'Choose another conda environment (no automatic installation)', ...
+    'Tag', 'custom', ...
+    'Position', [10 10 520 22], ...
+    'Value', 0);
+
+hRemember = uicontrol(dlg, ...
+    'Style', 'checkbox', ...
+    'Position', [20 74 520 22], ...
+    'String', 'Remember this choice permanently (use reset to change)');
+
+uicontrol(dlg, ...
+    'Style', 'pushbutton', ...
+    'Position', [360 20 80 34], ...
+    'String', 'Cancel', ...
+    'Callback', @(~,~) onCancel());
+
+uicontrol(dlg, ...
+    'Style', 'pushbutton', ...
+    'Position', [450 20 80 34], ...
+    'String', 'OK', ...
+    'Callback', @(~,~) onOk());
+
+uiwait(dlg);
+
+if ishghandle(dlg)
+    if isappdata(dlg, 'selection_ok')
+        ok = logical(getappdata(dlg, 'selection_ok'));
+        mode = string(getappdata(dlg, 'selection_mode'));
+        remember = logical(getappdata(dlg, 'selection_remember'));
+    end
+    delete(dlg);
+end
+
+    function onCancel()
+        setappdata(dlg, 'selection_ok', false);
+        uiresume(dlg);
+    end
+
+    function onOk()
+        modeTag = string(bg.SelectedObject.Tag);
+        setappdata(dlg, 'selection_ok', true);
+        setappdata(dlg, 'selection_mode', modeTag);
+        setappdata(dlg, 'selection_remember', logical(hRemember.Value));
+        uiresume(dlg);
+    end
+end
+
+function tf = pyenvMatchesSelection(pe, selection)
+tf = false;
+if pe.Status ~= "Loaded" || string(pe.ExecutionMode) ~= "OutOfProcess"
+    return;
+end
+
+target = "detecdiv_python";
+if selection.mode == "custom"
+    target = string(selection.envName);
+end
+
+exe = string(pe.Executable);
+currentName = inferCondaEnvNameFromPythonExe(exe);
+if strcmpi(char(currentName), char(target))
+    tf = true;
+    return;
+end
+
+if selection.mode == "custom" && strlength(selection.envPath) > 0
+    exeN = normalizePathForCompare(exe);
+    rootN = normalizePathForCompare(selection.envPath);
+    tf = startsWith(exeN, rootN + "/");
+end
+end
+
+function name = inferCondaEnvNameFromPythonExe(pyexe)
+name = "";
+p = lower(replace(string(pyexe), "\", "/"));
+token = "/envs/";
+ix = strfind(char(p), token);
+if ~isempty(ix)
+    k = ix(end) + strlength(token);
+    tail = extractAfter(p, k-1);
+    parts = split(tail, "/");
+    parts(parts=="") = [];
+    if ~isempty(parts)
+        name = string(parts(1));
+        return;
+    end
+end
+name = "base";
+end
+
+function s = normalizePathForCompare(p)
+s = replace(string(p), "\", "/");
+s = regexprep(s, '/+', '/');
+s = strip(s);
+if strlength(s) > 1 && endsWith(s, "/")
+    s = extractBefore(s, strlength(s));
+end
+if ispc
+    s = lower(s);
+end
+end
+
+function [envPath, pyexe] = resolveExistingCondaEnv(condaCmd, selection, debug)
+[data, ~, ~] = getCondaEnvs(debug, condaCmd);
+[names, paths, ~] = buildCondaEnvList(data);
+
+envPath = "";
+if strlength(selection.envPath) > 0
+    target = normalizePathForCompare(selection.envPath);
+    for i = 1:numel(paths)
+        if normalizePathForCompare(paths(i)) == target
+            envPath = paths(i);
+            break;
+        end
+    end
+end
+
+if envPath == ""
+    nm = lower(string(selection.envName));
+    idx = find(lower(names) == nm, 1, 'first');
+    if ~isempty(idx)
+        envPath = paths(idx);
+    end
+end
+
+if envPath == ""
+    error('Selected conda environment "%s" not found.', char(selection.envName));
+end
+
+if ispc
+    pyexe = fullfile(envPath, "python.exe");
+else
+    pyexe = fullfile(envPath, "bin", "python");
+end
+if ~isfile(pyexe)
+    error('Python executable missing for selected env: %s', pyexe);
+end
+end
+
+function [names, paths, labels] = buildCondaEnvList(data)
+paths = strings(0,1);
+if isfield(data,'envs') && ~isempty(data.envs)
+    paths = string(data.envs(:));
+end
+paths = paths(strlength(paths) > 0);
+paths = unique(paths, 'stable');
+
+rootPrefix = "";
+if isfield(data,'root_prefix') && ~isempty(data.root_prefix)
+    rootPrefix = string(data.root_prefix);
+end
+rootN = normalizePathForCompare(rootPrefix);
+
+names = strings(numel(paths),1);
+labels = strings(numel(paths),1);
+for i = 1:numel(paths)
+    p = paths(i);
+    pN = normalizePathForCompare(p);
+    if strlength(rootN) > 0 && pN == rootN
+        nm = "base";
+    else
+        nm = getLastPathComponent(p);
+    end
+    if strlength(nm) == 0
+        nm = "env_" + string(i);
+    end
+    names(i) = nm;
+    labels(i) = nm + "    |    " + p;
+end
+end
+
+function uiErrorAndThrow(msg, titleText, ME)
+if nargin < 2 || strlength(string(titleText)) == 0
+    titleText = "Detecdiv error";
+end
+if usejava('desktop')
+    try
+        errordlg(char(string(msg)), char(string(titleText)), 'modal');
+    catch
+    end
+end
+if nargin >= 3 && ~isempty(ME)
+    error('%s\n\n%s', char(string(msg)), ME.message);
+else
+    error('%s', char(string(msg)));
+end
+end
+
 function [st,out] = runConda(subcmd, debug, condaCmd)
     cc = string(condaCmd);
 
@@ -318,6 +709,18 @@ function userprefs = dd_loadUserPrefs()
     end
     if ~isfield(userprefs.conda,'lastCheck')
         userprefs.conda.lastCheck = "";
+    end
+    if ~isfield(userprefs.conda,'selectionLock')
+        userprefs.conda.selectionLock = false;
+    end
+    if ~isfield(userprefs.conda,'selectionMode')
+        userprefs.conda.selectionMode = "default";
+    end
+    if ~isfield(userprefs.conda,'selectionEnvName')
+        userprefs.conda.selectionEnvName = "detecdiv_python";
+    end
+    if ~isfield(userprefs.conda,'selectionEnvPath')
+        userprefs.conda.selectionEnvPath = "";
     end
 end
 
@@ -412,13 +815,13 @@ function [condaCmd, userprefs] = resolveCondaCmd(userprefs, debug)
 
     if ispc
         osExamples = [
-            "Exemples Windows:", newline, ...
+            "Windows examples:", newline, ...
             "  C:\Users\<you>\miniconda3\condabin\conda.bat", newline, ...
             "  C:\Users\<you>\miniconda3\Scripts\conda.exe"
         ];
     else
         osExamples = [
-            "Exemples Linux/macOS:", newline, ...
+            "Linux/macOS examples:", newline, ...
             "  /home/<you>/miniconda3/bin/conda", newline, ...
             "  /home/<you>/miniforge3/bin/conda", newline, ...
             "  /opt/conda/bin/conda"
@@ -426,9 +829,9 @@ function [condaCmd, userprefs] = resolveCondaCmd(userprefs, debug)
     end
 
     msg = [
-        "Conda est introuvable (preferences, variables d'environnement, PATH, emplacements standards).", newline, ...
-        "-> Installe Miniconda/Miniforge, puis relance Detecdiv.", newline, ...
-        "-> Ou renseigne manuellement le chemin absolu dans Detecdiv > Preferences :", newline, ...
+        "Conda was not found (preferences, environment variables, PATH, standard locations).", newline, ...
+        "-> Install Miniconda/Miniforge, then restart Detecdiv.", newline, ...
+        "-> Or set the absolute path manually in Detecdiv > Preferences:", newline, ...
         "   userprefs.conda.condaCmd", newline, ...
         osExamples
     ];
