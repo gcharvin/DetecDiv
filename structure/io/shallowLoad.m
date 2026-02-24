@@ -49,6 +49,9 @@ end
 if ~isfield(shallowObj.processing, 'processor')
     shallowObj.processing.processor = process.empty;
 end
+if ~isfield(shallowObj.processing, 'pipelineRun')
+    shallowObj.processing.pipelineRun = pipelineRun.empty;
+end
 
 if isunix || ismac
     shallowObj.setPath([path '/'], file);
@@ -170,7 +173,7 @@ listpipe = dir(fullfile(path, file, 'pipeline'));
 listpipe = listpipe(~contains({listpipe.name}, {'.', '..'}));
 listpipe = listpipe(arrayfun(@(x) x.isdir, listpipe));
 
-shallowObj.processing.pipeline = pipelineRun.empty;
+shallowObj.processing.pipelineRun = pipelineRun.empty;
 
 if ~isempty(listpipe)
     arr = zeros(1, numel(listpipe));
@@ -199,7 +202,7 @@ if ~isempty(listpipe)
             warning('pipelineRunLoad error: %s', ME.message);
         end
     end
-    shallowObj.processing.pipeline = pipeList;
+    shallowObj.processing.pipelineRun = pipeList;
 end
 
 %% Vérification des FOV (PAS d'auto-fix ici)

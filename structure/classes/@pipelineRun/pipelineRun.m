@@ -4,8 +4,11 @@ classdef pipelineRun < handle
         runId = ''
         templateId = ''
         templatePath = ''
+        pipelineRef = struct('id','','path','','version','')
         projectPath = ''
         projectName = ''
+        targetRef = struct('type','shallow','projectPath','','projectName','','fovIds',[], ...
+            'roiIds',{{}},'classiPath','','notes','')
         path = ''
         status = 'new' % new/running/done/failed
         ctx = struct()
@@ -42,6 +45,11 @@ classdef pipelineRun < handle
                 if ~exist(obj.path, 'dir')
                     mkdir(obj.path);
                 end
+
+                [~, projectName] = fileparts(projectPath);
+                obj.projectName = projectName;
+                obj.targetRef.projectPath = projectPath;
+                obj.targetRef.projectName = projectName;
             end
 
             obj.createdAt = char(datetime('now'));

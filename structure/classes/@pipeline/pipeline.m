@@ -30,7 +30,7 @@ classdef pipeline < handle
             end
 
             obj.id = id;
-            obj.strid = [name '_' num2str(id)];
+            obj.strid = char(string(name));
             obj.path = path;
 
             if ~isempty(path)
@@ -56,6 +56,60 @@ classdef pipeline < handle
             obj.path = pathe;
             if nargin >= 3 && ~isempty(file)
                 obj.strid = file;
+            end
+        end
+
+
+        function [runs, idx] = findDependentRuns(obj, shallowObj)
+            % findDependentRuns  Return project runs linked to this pipeline template.
+            runs = pipelineRun.empty;
+            idx = [];
+
+            if nargin < 2 || isempty(shallowObj) || ~isa(shallowObj,'shallow')
+                return;
+            end
+            if ~isfield(shallowObj.processing,'pipelineRun') || isempty(shallowObj.processing.pipelineRun)
+                return;
+            end
+
+            for i = 1:numel(shallowObj.processing.pipelineRun)
+                pr = shallowObj.processing.pipelineRun(i);
+                if obj.isLinked(pr, obj)
+                    runs(end+1) = pr; %#ok<AGROW>
+                    idx(end+1) = i; %#ok<AGROW>
+                end
+            end
+        end
+
+        function tf = isLinked(~, runObj, pipeObj)
+            tf = false;
+
+            if isprop(runObj,'pipelineRef') && isstruct(runObj.pipelineRef)
+                ref = runObj.pipelineRef;
+                if isfield(ref,'id') && strcmp(char(string(ref.id)), char(string(pipeObj.strid)))
+                    tf = true;
+                    return;
+                end
+                if isfield(ref,'path') && ~isempty(ref.path) && ~isempty(pipeObj.path)
+                    if strcmp(normPath(ref.path), normPath(pipeObj.path))
+                        tf = true;
+                        return;
+                    end
+                end
+            end
+
+            % legacy fallback
+            if isprop(runObj,'templateId') && strcmp(char(string(runObj.templateId)), char(string(pipeObj.strid)))
+                tf = true;
+                return;
+            end
+            if isprop(runObj,'templatePath') && ~isempty(runObj.templatePath) && ~isempty(pipeObj.path)
+                tf = strcmp(normPath(runObj.templatePath), normPath(pipeObj.path));
+            end
+
+            function p = normPath(in)
+                p = lower(strrep(char(string(in)), '\', '/'));
+                p = regexprep(p, '/+$', '');
             end
         end
 

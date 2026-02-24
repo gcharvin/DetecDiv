@@ -76,21 +76,20 @@ function shallowSave(shallowObj, option, progress)
         end
     end
 
-        % ====== 4) Pipelines ======
-        nPipe = numel(shallowObj.processing.pipeline);
-        if nPipe > 0, fprintf('Saving %d pipeline(s)...\n', nPipe); end
-        for i = 1:nPipe
+        % ====== 4) Pipeline runs ======
+        nRun = 0;
+        if isfield(shallowObj.processing,'pipelineRun')
+            nRun = numel(shallowObj.processing.pipelineRun);
+        end
+        if nRun > 0, fprintf('Saving %d pipeline run(s)...\n', nRun); end
+        for i = 1:nRun
             try
-                p = shallowObj.processing.pipeline(i);
-                if isa(p,'pipelineRun')
-                    pipelineRunSave(p);
-                else
-                    pipelineSave(p);
-                end
+                pipelineRunSave(shallowObj.processing.pipelineRun(i));
             catch ME
-                warning('pipeline save failed: %s', ME.message);
+                warning('pipeline run save failed: %s', ME.message);
             end
         end
+        % Pipeline templates are independent objects and are not persisted in shallowObj.
 
 
     % ====== 5) Sauvegarde atomique + v?rif + backup .bak ======

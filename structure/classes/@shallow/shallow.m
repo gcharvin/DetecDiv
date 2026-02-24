@@ -5,7 +5,7 @@ classdef shallow < handle
         io=struct('path','','file','');
         parsedData;
         fov=fov();%fov({},1,'');
-        processing=struct('roi',[],'classification',[],'processor',[],'pipeline',[]);%,'classification',classi());
+        processing=struct('roi',[],'classification',[],'processor',[],'pipelineRun',[]);
         runProfiles = struct(); % pipeline/dataloading checkpoints and params
         
         
@@ -141,14 +141,17 @@ classdef shallow < handle
                 obj.processing.processor(i).path = replace(obj.processing.processor(i).path,oldfullpath,newpath);
              end
 
-             % pipeline path update
-             for i=1:numel(obj.processing.pipeline)
-                 try
-                     obj.processing.pipeline(i).path=fixpath(fullfile(obj.processing.pipeline(i).path));
-                     obj.processing.pipeline(i).path = replace(obj.processing.pipeline(i).path,oldfullpath,newpath);
-                 catch
+             % pipeline run path update
+             if isfield(obj.processing,'pipelineRun')
+                 for i=1:numel(obj.processing.pipelineRun)
+                     try
+                         obj.processing.pipelineRun(i).path=fixpath(fullfile(obj.processing.pipelineRun(i).path));
+                         obj.processing.pipelineRun(i).path = replace(obj.processing.pipelineRun(i).path,oldfullpath,newpath);
+                     catch
+                     end
                  end
              end
+
                 
             
             function pathout=fixpath(pathin)

@@ -16,18 +16,35 @@ function runObj = pipelineRunNew(shallowObj, templateId, templatePath, varargin)
     description = '';
     ctx = struct();
     status = 'new';
+    pipelineRef = struct();
+    targetRef = struct();
 
-    for i = 1:numel(varargin)
-        if strcmpi(varargin{i}, 'runId')
-            runId = varargin{i+1};
-        elseif strcmpi(varargin{i}, 'description')
-            description = varargin{i+1};
-        elseif strcmpi(varargin{i}, 'ctx')
-            ctx = varargin{i+1};
-        elseif strcmpi(varargin{i}, 'status')
-            status = varargin{i+1};
+    i = 1;
+    while i <= numel(varargin)
+        key = varargin{i};
+        if ~ischar(key) && ~isstring(key)
+            i = i + 1;
+            continue;
         end
+
+        switch lower(char(string(key)))
+            case 'runid'
+                runId = varargin{i+1};
+            case 'description'
+                description = varargin{i+1};
+            case 'ctx'
+                ctx = varargin{i+1};
+            case 'status'
+                status = varargin{i+1};
+            case 'pipelineref'
+                pipelineRef = varargin{i+1};
+            case 'targetref'
+                targetRef = varargin{i+1};
+        end
+        i = i + 2;
     end
+
+    ensurePipelineRunField(shallowObj);
 
     % compute runId if missing
     if isempty(runId)
@@ -35,28 +52,108 @@ function runObj = pipelineRunNew(shallowObj, templateId, templatePath, varargin)
     end
 
     projectPath = fullfile(shallowObj.io.path, shallowObj.io.file);
-    runObj = pipelineRun(projectPath, runId, numel(shallowObj.processing.pipeline)+1);
-    runObj.projectPath = projectPath;
-    runObj.projectName = shallowObj.io.file;
-    runObj.templateId = templateId;
-    runObj.templatePath = templatePath;
+    runObj = pipelineRun(projectPath, runId, numel(shallowObj.processing.pipelineRun)+1);
+
+    if isempty(pipelineRef) || ~isstruct(pipelineRef)
+        pipelineRef = struct();
+    end
+    if isempty(targetRef) || ~isstruct(targetRef)
+        targetRef = struct();
+    end
+
+    if isempty(fieldnames(pipelineRef)) && isfield(ctx,'pipelineRef') && isstruct(ctx.pipelineRef)
+        pipelineRef = ctx.pipelineRef;
+    end
+    if isempty(fieldnames(targetRef)) && isfield(ctx,'targetRef') && isstruct(ctx.targetRef)
+        targetRef = ctx.targetRef;
+    end
+
+    runObj.pipelineRef = normalizePipelineRef(pipelineRef, templateId, templatePath);
+    runObj.targetRef = normalizeTargetRef(targetRef, shallowObj);
+
+    % Compatibility fields
+    runObj.templateId = runObj.pipelineRef.id;
+    runObj.templatePath = runObj.pipelineRef.path;
+    runObj.projectPath = runObj.targetRef.projectPath;
+    runObj.projectName = runObj.targetRef.projectName;
+
     runObj.description = description;
     runObj.ctx = ctx;
     runObj.status = status;
 
-    % attach to project
-    if ~isfield(shallowObj.processing,'pipeline') || isempty(shallowObj.processing.pipeline)
-        shallowObj.processing.pipeline = pipelineRun.empty;
+    if ~isfield(runObj.ctx,'pipelineRef') || ~isstruct(runObj.ctx.pipelineRef)
+        runObj.ctx.pipelineRef = runObj.pipelineRef;
     end
-    shallowObj.processing.pipeline(end+1) = runObj;
+    if ~isfield(runObj.ctx,'targetRef') || ~isstruct(runObj.ctx.targetRef)
+        runObj.ctx.targetRef = runObj.targetRef;
+    end
+
+    % attach to project
+    shallowObj.processing.pipelineRun(end+1) = runObj;
+end
+
+function ensurePipelineRunField(shallowObj)
+    if ~isfield(shallowObj.processing,'pipelineRun') || isempty(shallowObj.processing.pipelineRun)
+        shallowObj.processing.pipelineRun = pipelineRun.empty;
+    end
+end
+
+function out = normalizePipelineRef(ref, templateId, templatePath)
+    out = struct('id', char(string(templateId)), 'path', char(string(templatePath)), 'version', '');
+    if nargin < 1 || isempty(ref) || ~isstruct(ref)
+        return;
+    end
+
+    if isfield(ref,'id') && ~isempty(ref.id)
+        out.id = char(string(ref.id));
+    end
+    if isfield(ref,'path') && ~isempty(ref.path)
+        out.path = char(string(ref.path));
+    end
+    if isfield(ref,'version') && ~isempty(ref.version)
+        out.version = char(string(ref.version));
+    end
+end
+
+function out = normalizeTargetRef(ref, shallowObj)
+    projectPath = fullfile(shallowObj.io.path, shallowObj.io.file);
+    out = struct('type','shallow', 'projectPath', projectPath, 'projectName', shallowObj.io.file, ...
+        'fovIds', [], 'roiIds', {{}}, 'classiPath', '', 'notes', '');
+
+    if nargin < 1 || isempty(ref) || ~isstruct(ref)
+        return;
+    end
+
+    if isfield(ref,'type') && ~isempty(ref.type)
+        out.type = char(string(ref.type));
+    end
+    if isfield(ref,'projectPath') && ~isempty(ref.projectPath)
+        out.projectPath = char(string(ref.projectPath));
+    end
+    if isfield(ref,'projectName') && ~isempty(ref.projectName)
+        out.projectName = char(string(ref.projectName));
+    end
+    if isfield(ref,'fovIds') && ~isempty(ref.fovIds)
+        out.fovIds = ref.fovIds;
+    end
+    if isfield(ref,'roiIds') && ~isempty(ref.roiIds)
+        out.roiIds = ref.roiIds;
+    end
+    if isfield(ref,'classiPath') && ~isempty(ref.classiPath)
+        out.classiPath = char(string(ref.classiPath));
+    end
+    if isfield(ref,'notes') && ~isempty(ref.notes)
+        out.notes = char(string(ref.notes));
+    end
 end
 
 function runId = nextRunId(shallowObj, templateId)
     runId = [templateId '_1'];
-    if ~isfield(shallowObj.processing,'pipeline') || isempty(shallowObj.processing.pipeline)
+    if ~isfield(shallowObj.processing,'pipelineRun') || isempty(shallowObj.processing.pipelineRun)
         return;
     end
-    existing = shallowObj.processing.pipeline;
+
+    existing = shallowObj.processing.pipelineRun;
     names = arrayfun(@(p) p.runId, existing, 'UniformOutput', false);
     n = 1;
     while any(strcmp(names, [templateId '_' num2str(n)]))
