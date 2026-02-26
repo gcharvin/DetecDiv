@@ -1,9 +1,8 @@
 function processlist = listProcessPackages()
 % listProcessPackages  Build processor list from package folders.
 
-    str = which('shallowNew.m');
-    [pth, ~, ~] = fileparts(str);
-    rootPath = fullfile(pth, 'processor');
+    % Use this file location as canonical processor root.
+    rootPath = fileparts(mfilename('fullpath'));
 
     if ~exist(rootPath, 'dir')
         processlist = {};

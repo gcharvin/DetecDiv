@@ -210,7 +210,7 @@ if copyClassif && out.copied.classificationSnapshot.copied
 
             % Optional additional safe metadata (best effort)
             try, classif.description = snap.description; end
-            try, classif.category    = snap.category;    end
+            try, classif.category    = classiNormalizeCategory(snap.category); end
             try, classif.outputType  = snap.outputType;  end
             try, classif.outputFun   = snap.outputFun;   end
             try, classif.outputArg   = snap.outputArg;   end

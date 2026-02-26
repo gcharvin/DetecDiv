@@ -180,7 +180,7 @@ switch nargin
             
             obj.typeid=classitype;
             obj.description=[classlist{classitype,2} ' -' classlist{classitype,3}];
-            obj.category=classlist{classitype,4};
+            obj.category=classiNormalizeCategory(classlist{classitype,4});
             obj.classifyFun=classlist{classitype,6}{1};
             obj.trainingFun=classlist{classitype,5}{1};
             obj.channel=channeltype;
@@ -217,6 +217,7 @@ switch nargin
         obj.importFromClassi(classitocopy)
 end
 
+obj.category = classiNormalizeCategory(obj.category);
 obj.log('Parameter initialization was termnated succesfully','Creation')
 disp(['Initialization was successful']);
 classiSave(obj);

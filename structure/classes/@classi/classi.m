@@ -9,7 +9,7 @@ classdef classi < handle
         path='' %  path where
         strid=''; % string id of the classi object
         description='';
-        category='';
+        category={''};
         roi=roi('',[]);
         channel=1;
         channelName='';
@@ -121,7 +121,7 @@ classdef classi < handle
 
                 obj.typeid      = row.ID;
                 obj.description = row.Description{1};
-                obj.category    = row.Category{1};
+                obj.category    = classiNormalizeCategory(row.Category{1});
 
                 % Optional package name (preferred for standardized dispatch)
                 if istable(row) && ismember('Package', row.Properties.VariableNames)
@@ -179,6 +179,9 @@ classdef classi < handle
                 warning('classi:ClasslistError', ...
                     'Error loading classifier type info: %s', ME.message);
             end
+
+            % Keep category format stable across legacy/new objects (1x1 cellstr)
+            obj.category = classiNormalizeCategory(obj.category);
         end
 
 

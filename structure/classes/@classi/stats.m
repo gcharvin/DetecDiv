@@ -199,7 +199,8 @@ if compute==1 % compute new scores
                 classif.score(cc).thr=i;
             end
 
-            if classif.category=="LSTM" % for LSTM classification, compute CNN benchmarks
+            [~, catStr] = classiNormalizeCategory(classif.category);
+            if strcmp(catStr,'LSTM') % for LSTM classification, compute CNN benchmarks
                 if numel( data.CNNpred) && numel(data.gt)==numel(data.CNNpred)
 
                     cc=cc+1;

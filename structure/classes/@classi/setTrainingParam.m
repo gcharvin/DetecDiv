@@ -54,23 +54,23 @@ if ~strcmp(trai,'n')
         
         trainingParam.output=classif.output; % sequence-to-sequence vs sequence-to-one
     end
-    
-    if classi.category{1}=="Image" || (classi.category{1}=="LSTM"  & strcmp(trainingParam.imageclassifier,'y')) || classi.category{1}=="Image Regression" || (classi.category{1}=="LSTM Regression" & strcmp(trainingParam.imageclassifier,'y'))
+    [~, catStr] = classiNormalizeCategory(classif.category);
+
+    if strcmp(catStr,'Image') || (strcmp(catStr,'LSTM') && strcmp(trainingParam.imageclassifier,'y')) || strcmp(catStr,'Image Regression') || (strcmp(catStr,'LSTM Regression') && strcmp(trainingParam.imageclassifier,'y'))
         trainingParam=imageTraining(trainingParam);
     end
-    
-    if classi.category{1}=="LSTM" || classi.category{1}=="LSTM Regression"  % LSTM specific
+
+    if strcmp(catStr,'LSTM') || strcmp(catStr,'LSTM Regression')  % LSTM specific
         trainingParam=LSTMTraining(trainingParam);
     end
-    
-    if classi.category{1}=="Pixel" % seg specific
+
+    if strcmp(catStr,'Pixel') % seg specific
         trainingParam=SegTraining(trainingParam);
     end
-    
-    if classi.category{1}=="Timeseries"% timeseries trainingset
-       
-         trainingParam=LSTMTraining(trainingParam);
-            trainingParam.output=classif.output; % sequence-to-sequence vs sequence-to-one
+
+    if strcmp(catStr,'Timeseries') % timeseries trainingset
+        trainingParam=LSTMTraining(trainingParam);
+        trainingParam.output=classif.output; % sequence-to-sequence vs sequence-to-one
     end
         
 

@@ -62,6 +62,12 @@ if ~isa(classiObj,'classi')
 
 end
 
+% Normalize legacy category storage (char/string -> 1x1 cellstr)
+try
+    classiObj.category = classiNormalizeCategory(classiObj.category);
+catch
+end
+
 % check if processor is already open in the workspace
 varlist=evalin('base','who');
 for i=1:numel(varlist)
