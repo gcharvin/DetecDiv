@@ -67,7 +67,7 @@ else
     % ============================================================
     if ~isempty(setparamFun)
         disp(['[PKG SETPARAM] ' setparamFun]);
-        feval(setparamFun, classif);
+        classif = callSetparamCompat(classif, setparamFun);
     elseif usesPkg || any(strcmpi(trainingFun, {'trainImageLSTMNetFun','cnn_lstm.train'}))
         ctx = struct('mode', 'init');
         try
@@ -172,5 +172,59 @@ if ~isempty(pkg)
         fun = cand;
         return;
     end
+end
+end
+
+function classif = callSetparamCompat(classif, setparamFun)
+% callSetparamCompat  Support legacy and pkg setparam signatures:
+%   - setparam(classif)
+%   - setparam() returning trainingParam struct
+%   - setparam(classif) returning refs/status struct
+
+called = false;
+lastErr = [];
+res = [];
+
+% 1) Preferred signature: setparam(classif)
+try
+    res = feval(setparamFun, classif);
+    called = true;
+catch ME
+    lastErr = ME;
+end
+
+% 2) Fallback: setparam()
+if ~called
+    try
+        res = feval(setparamFun);
+        called = true;
+    catch ME
+        lastErr = ME;
+    end
+end
+
+if ~called
+    if isempty(lastErr)
+        error('trainClassifier:SetparamCallFailed', ...
+            'Could not call setparam function: %s', setparamFun);
+    else
+        rethrow(lastErr);
+    end
+end
+
+% Harmonize returned payload if any
+if isempty(res) || ~isstruct(res)
+    return;
+end
+
+% Pure trainingParam struct (e.g. cnn_lstm.setparam)
+if isfield(res,'tip') || isfield(res,'ExecutionEnvironment') || isfield(res,'Parallel')
+    classif.trainingParam = res;
+    return;
+end
+
+% Wrapper struct with refs.trainingParam (e.g. cellposesam.setparam)
+if isfield(res,'refs') && isstruct(res.refs) && isfield(res.refs,'trainingParam')
+    classif.trainingParam = res.refs.trainingParam;
 end
 end

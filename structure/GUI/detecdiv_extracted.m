@@ -223,8 +223,8 @@ classdef detecdiv < matlab.apps.AppBase
                 if i <= numel(app.Data.PipelineModules) && ~isempty(app.Data.PipelineModules{i})
                     for k=1:numel(app.Data.PipelineModules{i})
                         cm2=uicontextmenu(app.DetecDivUIFigure);
-                        m = uimenu(cm2,'Text','Open module in pipeline GUI...');
-                        m.MenuSelectedFcn={@contextMenuPipelineFcn,i,'Pipeline'};
+                        m = uimenu(cm2,'Text','Open module...');
+                        m.MenuSelectedFcn={@contextMenuOpenPipelineModuleFcn,[i,k],'PipelineModule'};
                         m = uimenu(cm2,'Text','Delete module');
                         m.MenuSelectedFcn={@contextMenuDeletePipelineModuleFcn,[i,k],'PipelineModule'};
 
@@ -492,6 +492,16 @@ end
                 end
             end
 
+            function contextMenuOpenPipelineModuleFcn(src,event,arg,str) %#ok<INUSD>
+                if ~strcmp(str,'PipelineModule')
+                    return;
+                end
+                if numel(arg) < 2
+                    return;
+                end
+                app.openPipelineModuleByIndex(arg(1), arg(2));
+            end
+
             function contextMenuOpenPipelineJsonFcn(src,event,arg,str) %#ok<INUSD>
                 if ~strcmp(str,'Pipeline')
                     return;
@@ -621,7 +631,7 @@ end
                 node = pipe.nodes(modIdx);
                 nodeId = getStructFieldText(node, 'id', ['node_' num2str(modIdx)]);
                 choice = uiconfirm(app.DetecDivUIFigure, ...
-                    ['Delete module  nodeId  from pipeline?'], 'Warning');
+                    ['Delete module ' nodeId ' from pipeline?'], 'Warning');
                 if ~strcmp(choice,'OK')
                     return;
                 end
@@ -715,7 +725,7 @@ end
 
                 runObj = shallowObj.processing.pipelineRun(runIdx);
                 choice = uiconfirm(app.DetecDivUIFigure, ...
-                    ['Delete run  runObj.runId ?'], 'Warning');
+                    ['Delete run ' runObj.runId '?'], 'Warning');
                 if ~strcmp(choice,'OK')
                     return;
                 end
@@ -758,6 +768,143 @@ end
                 end
                 if ~isa(pipe,'pipeline')
                     pipe = [];
+                end
+            end
+
+            function [ok,node,pipeObj] = getPipelineNodeByIndex(pipeIdx, modIdx)
+                ok = false;
+                node = struct();
+                pipeObj = [];
+
+                pipeObj = getPipelineByIndex(pipeIdx);
+                if isempty(pipeObj) || ~isprop(pipeObj,'nodes') || modIdx > numel(pipeObj.nodes)
+                    return;
+                end
+
+                node = pipeObj.nodes(modIdx);
+                ok = true;
+            end
+
+            function [nType, modObj] = buildPipelineModuleObject(node)
+                nType = '';
+                modObj = [];
+
+                if ~(isstruct(node) && isfield(node,'type') && ~isempty(node.type))
+                    return;
+                end
+
+                nType = lower(char(string(node.type)));
+
+                if strcmp(nType,'processor')
+                    tmpProc = process(tempdir, 'pipeline_module', randi(1e9));
+
+                    pkgName = '';
+                    if isfield(node,'pkg') && ~isempty(node.pkg)
+                        pkgName = char(string(node.pkg));
+                    end
+
+                    if ~isempty(pkgName)
+                        tmpProc.processFun = [pkgName '.process'];
+                        try
+                            p0 = feval([pkgName '.setparam'], struct());
+                        catch
+                            p0 = struct();
+                        end
+                        if isstruct(p0)
+                            tmpProc.processArg = p0;
+                        end
+                    elseif isfield(node,'func') && ~isempty(node.func)
+                        tmpProc.processFun = char(string(node.func));
+                    end
+
+                    if isfield(node,'params') && isstruct(node.params)
+                        if isempty(tmpProc.processArg) || ~isstruct(tmpProc.processArg)
+                            tmpProc.processArg = node.params;
+                        else
+                            fn = fieldnames(node.params);
+                            for fi = 1:numel(fn)
+                                tmpProc.processArg.(fn{fi}) = node.params.(fn{fi});
+                            end
+                        end
+                    end
+
+                    if isfield(node,'id') && ~isempty(node.id)
+                        tmpProc.strid = char(string(node.id));
+                    end
+
+                    modObj = tmpProc;
+                    return;
+                end
+
+                if strcmp(nType,'classifier')
+                    tmpClassi = classi(tempdir, 'pipeline_module', randi(1e9));
+
+                    if isfield(node,'id') && ~isempty(node.id)
+                        tmpClassi.strid = char(string(node.id));
+                    end
+
+                    pkgName = '';
+                    if isfield(node,'pkg') && ~isempty(node.pkg)
+                        pkgName = char(string(node.pkg));
+                    end
+
+                    if ~isempty(pkgName)
+                        tmpClassi.classifierPkg = pkgName;
+                        if isempty(tmpClassi.classifyFun)
+                            tmpClassi.classifyFun = [pkgName '.classify'];
+                        end
+                        if isempty(tmpClassi.trainingFun)
+                            tmpClassi.trainingFun = [pkgName '.train'];
+                        end
+
+                        if strcmpi(pkgName,'cellposesam')
+                            tmpClassi.category = {'Pixel'};
+                        elseif strcmpi(pkgName,'cnn_lstm')
+                            tmpClassi.category = {'LSTM'};
+                        else
+                            tmpClassi.category = {'Image'};
+                        end
+                    else
+                        tmpClassi.category = {'Image'};
+                    end
+
+                    if isfield(node,'func') && ~isempty(node.func)
+                        tmpClassi.classifyFun = char(string(node.func));
+                    end
+
+                    if isfield(node,'params') && isstruct(node.params)
+                        if isfield(node.params,'classes') && ~isempty(node.params.classes)
+                            cls = node.params.classes;
+                            if isstring(cls), cls = cellstr(cls); end
+                            if ischar(cls), cls = {cls}; end
+                            tmpClassi.classes = cls;
+                        end
+                    end
+
+                    tmpClassi.category = classiNormalizeCategory(tmpClassi.category);
+                    modObj = tmpClassi;
+                    return;
+                end
+            end
+
+            function openPipelineModuleByIndex(pipeIdx, modIdx)
+                [ok,node,pipeObj] = app.getPipelineNodeByIndex(pipeIdx, modIdx);
+                if ~ok
+                    return;
+                end
+
+                [nType, modObj] = buildPipelineModuleObject(node);
+                try
+                    switch nType
+                        case 'processor'
+                            processDataGUI([], modObj);
+                        case 'classifier'
+                            classifierGUI(modObj);
+                        otherwise
+                            pipelineGUI([], pipeObj);
+                    end
+                catch ME
+                    uialert(app.DetecDivUIFigure, ME.message, 'Module GUI error', 'Icon', 'error');
                 end
             end
 
@@ -900,34 +1047,46 @@ end
                         typeName = 'dataLoader';
                         funcName = 'dataLoader.process';
                         inNames = {};
-                        outNames = {'fovList','channels'};
+                        outNames = {'images'};
                         req = {'path'};
-                        params = struct();
+                        try
+                            params = dataLoader.setparam(struct());
+                        catch
+                            params = struct();
+                        end
                     case 'roiidentify'
                         typeName = 'roiIdentify';
                         funcName = 'roiIdentify.process';
-                        inNames = {'fovList'};
-                        outNames = {'roiList','channels'};
+                        inNames = {'images'};
+                        outNames = {'roiList'};
                         req = {};
-                        params = struct();
+                        try
+                            params = roiIdentify.setparam(struct());
+                        catch
+                            params = struct();
+                        end
                     case 'roiextract'
                         typeName = 'roiExtract';
                         funcName = 'roiExtract.process';
                         inNames = {'roiList'};
-                        outNames = {'roiList','dataSeries'};
+                        outNames = {'channels'};
                         req = {};
-                        params = struct();
+                        try
+                            params = roiExtract.setparam(struct());
+                        catch
+                            params = struct();
+                        end
                     case 'processor'
                         typeName = 'processor';
                         funcName = '';
-                        inNames = {'roiList'};
+                        inNames = {'inputChannels'};
                         outNames = {'dataSeries'};
                         req = {'pkg'};
                         params = struct('pkg','');
                     case 'classifier'
                         typeName = 'classifier';
                         funcName = '';
-                        inNames = {'roiList'};
+                        inNames = {'inputChannels'};
                         outNames = {'dataSeries'};
                         req = {'pkg'};
                         params = struct('pkg','');
@@ -960,6 +1119,16 @@ end
                     node.func = [pkgName '.process'];
                     node.gui = 'processDataGUI';
                     node.params.pkg = pkgName;
+                    try
+                        p0 = feval([pkgName '.setparam'], struct());
+                        if isstruct(p0)
+                            fn = fieldnames(p0);
+                            for fi=1:numel(fn)
+                                node.params.(fn{fi}) = p0.(fn{fi});
+                            end
+                        end
+                    catch
+                    end
                 end
                 if strcmp(typeName,'classifier') && ~isempty(pkgName)
                     node.gui = 'classifierGUI';
@@ -1597,6 +1766,284 @@ end
             imshow(im,'parent',app.UIAxes);
         end
 
+
+        function [ok,node,pipeObj] = getPipelineNodeByIndex(app, pipeIdx, modIdx)
+            ok = false;
+            node = struct();
+            pipeObj = [];
+
+            if pipeIdx > numel(app.Data.Pipeline)
+                return;
+            end
+
+            pipeVar = app.Data.Pipeline{pipeIdx};
+            try
+                pipeObj = evalin('base', pipeVar);
+            catch
+                return;
+            end
+
+            if ~isa(pipeObj,'pipeline') || ~isprop(pipeObj,'nodes') || modIdx > numel(pipeObj.nodes)
+                pipeObj = [];
+                return;
+            end
+
+            node = pipeObj.nodes(modIdx);
+            ok = true;
+        end
+
+        function [nType, modObj] = buildPipelineModuleObject(app, node) %#ok<INUSD>
+            nType = '';
+            modObj = [];
+
+            if ~(isstruct(node) && isfield(node,'type') && ~isempty(node.type))
+                return;
+            end
+
+            nType = lower(char(string(node.type)));
+
+            if strcmp(nType,'processor')
+                tmpProc = process(tempdir, 'pipeline_module', randi(1e9));
+
+                pkgName = '';
+                if isfield(node,'pkg') && ~isempty(node.pkg)
+                    pkgName = char(string(node.pkg));
+                end
+
+                if ~isempty(pkgName)
+                    tmpProc.processFun = [pkgName '.process'];
+                    try
+                        p0 = feval([pkgName '.setparam'], struct());
+                    catch
+                        p0 = struct();
+                    end
+                    if isstruct(p0)
+                        tmpProc.processArg = p0;
+                    end
+                elseif isfield(node,'func') && ~isempty(node.func)
+                    tmpProc.processFun = char(string(node.func));
+                end
+
+                if isfield(node,'params') && isstruct(node.params)
+                    if isempty(tmpProc.processArg) || ~isstruct(tmpProc.processArg)
+                        tmpProc.processArg = node.params;
+                    else
+                        fn = fieldnames(node.params);
+                        for fi = 1:numel(fn)
+                            tmpProc.processArg.(fn{fi}) = node.params.(fn{fi});
+                        end
+                    end
+                end
+
+                if isfield(node,'id') && ~isempty(node.id)
+                    tmpProc.strid = char(string(node.id));
+                end
+
+                modObj = tmpProc;
+                return;
+            end
+
+            if strcmp(nType,'classifier')
+                tmpClassi = classi(tempdir, 'pipeline_module', randi(1e9));
+
+                if isfield(node,'id') && ~isempty(node.id)
+                    tmpClassi.strid = char(string(node.id));
+                end
+
+                pkgName = '';
+                if isfield(node,'pkg') && ~isempty(node.pkg)
+                    pkgName = char(string(node.pkg));
+                end
+
+                if ~isempty(pkgName)
+                    tmpClassi.classifierPkg = pkgName;
+                    if isempty(tmpClassi.classifyFun)
+                        tmpClassi.classifyFun = [pkgName '.classify'];
+                    end
+                    if isempty(tmpClassi.trainingFun)
+                        tmpClassi.trainingFun = [pkgName '.train'];
+                    end
+
+                    if strcmpi(pkgName,'cellposesam')
+                        tmpClassi.category = {'Pixel'};
+                    elseif strcmpi(pkgName,'cnn_lstm')
+                        tmpClassi.category = {'LSTM'};
+                    else
+                        tmpClassi.category = {'Image'};
+                    end
+                else
+                    tmpClassi.category = {'Image'};
+                end
+
+                if isfield(node,'func') && ~isempty(node.func)
+                    tmpClassi.classifyFun = char(string(node.func));
+                end
+
+                if isfield(node,'params') && isstruct(node.params)
+                    if isfield(node.params,'classes') && ~isempty(node.params.classes)
+                        cls = node.params.classes;
+                        if isstring(cls), cls = cellstr(cls); end
+                        if ischar(cls), cls = {cls}; end
+                        tmpClassi.classes = cls;
+                    end
+                end
+
+                tmpClassi.category = classiNormalizeCategory(tmpClassi.category);
+                modObj = tmpClassi;
+                return;
+            end
+        end
+
+        function openPipelineModuleByIndex(app, pipeIdx, modIdx)
+            [ok,node,pipeObj] = app.getPipelineNodeByIndex(pipeIdx, modIdx);
+            if ~ok
+                return;
+            end
+
+            [nType, modObj] = app.buildPipelineModuleObject(node);
+            switch nType
+                case 'processor'
+                    processDataGUI([], modObj);
+                case 'classifier'
+                    classifierGUI(modObj);
+                otherwise
+                    pipelineGUI([], pipeObj);
+            end
+        end
+
+        function autoLoadPipelinesForProjectRuns(app, shallowObj)
+            if isempty(shallowObj) || ~isa(shallowObj,'shallow')
+                return;
+            end
+            if ~isfield(shallowObj.processing,'pipelineRun') || isempty(shallowObj.processing.pipelineRun)
+                return;
+            end
+
+            runs = shallowObj.processing.pipelineRun;
+            loaded = containers.Map('KeyType','char','ValueType','logical');
+
+            existingPaths = app.listLoadedPipelinePaths();
+
+            for iRun = 1:numel(runs)
+                runObj = runs(iRun);
+                pipePath = '';
+
+                if isprop(runObj,'pipelineRef') && isstruct(runObj.pipelineRef)
+                    if isfield(runObj.pipelineRef,'path') && ~isempty(runObj.pipelineRef.path)
+                        pipePath = char(string(runObj.pipelineRef.path));
+                    end
+                end
+                if isempty(pipePath) && isprop(runObj,'templatePath') && ~isempty(runObj.templatePath)
+                    pipePath = char(string(runObj.templatePath));
+                end
+                if isempty(pipePath)
+                    continue;
+                end
+
+                key = app.normalizeFsPath(pipePath);
+                if isempty(key)
+                    continue;
+                end
+                if isKey(existingPaths, key) || isKey(loaded, key)
+                    continue;
+                end
+
+                [pipeObj, msg] = pipelineLoad(pipePath);
+                if isempty(pipeObj)
+                    if ~isempty(msg)
+                        warning('detecdiv:autoLoadPipelinesForRuns', ...
+                            'Run %s: cannot load pipeline at %s (%s)', ...
+                            char(string(runObj.runId)), pipePath, msg);
+                    else
+                        warning('detecdiv:autoLoadPipelinesForRuns', ...
+                            'Run %s: cannot load pipeline at %s', ...
+                            char(string(runObj.runId)), pipePath);
+                    end
+                    continue;
+                end
+
+                varName = app.nextPipelineVarName(pipeObj);
+                assignin('base', varName, pipeObj);
+
+                loaded(key) = true;
+                existingPaths(key) = true;
+
+                try
+                    app.registerRecentPipeline(string(pipeObj.path));
+                catch
+                end
+            end
+        end
+
+        function paths = listLoadedPipelinePaths(app) %#ok<INUSD>
+            paths = containers.Map('KeyType','char','ValueType','logical');
+            try
+                vars = evalin('base','who');
+            catch
+                return;
+            end
+
+            for iVar = 1:numel(vars)
+                vname = vars{iVar};
+                try
+                    obj = evalin('base', vname);
+                catch
+                    continue;
+                end
+                if ~isa(obj,'pipeline')
+                    continue;
+                end
+                if ~isprop(obj,'path') || isempty(obj.path)
+                    continue;
+                end
+                key = app.normalizeFsPath(obj.path);
+                if ~isempty(key)
+                    paths(key) = true;
+                end
+            end
+        end
+
+        function varName = nextPipelineVarName(app, pipeObj) %#ok<INUSD>
+            baseName = char(string(pipeObj.strid));
+            if isempty(baseName)
+                baseName = 'pipeline';
+            end
+            baseName = matlab.lang.makeValidName(baseName);
+
+            varName = baseName;
+            idx = 1;
+            while evalin('base', sprintf('exist(''%s'',''var'')', varName))
+                try
+                    obj = evalin('base', varName);
+                    if isa(obj,'pipeline') && isprop(obj,'path') && isprop(pipeObj,'path')
+                        if strcmp(app.normalizeFsPath(obj.path), app.normalizeFsPath(pipeObj.path))
+                            return;
+                        end
+                    end
+                catch
+                end
+                idx = idx + 1;
+                varName = sprintf('%s_%d', baseName, idx);
+            end
+        end
+
+        function key = normalizeFsPath(app, inPath) %#ok<INUSD>
+            key = '';
+            if isempty(inPath)
+                return;
+            end
+            try
+                p = char(string(inPath));
+            catch
+                return;
+            end
+            p = strrep(p,'\','/');
+            p = lower(p);
+            p = regexprep(p,'/+$','');
+            key = p;
+        end
+
+
    function registerRecentProject(app, projectPath)
 
     % --- Normaliser input -> string scalar
@@ -1933,6 +2380,9 @@ function openRecentProjectCallback(app, projectPath)
     name = proj.io.file;
     assignin('base', name, proj);
 
+    % Auto-load pipeline templates referenced by existing project runs
+    app.autoLoadPipelinesForProjectRuns(proj);
+
     % on réenregistre le chemin propre (pas le tableau chelou)
     app.registerRecentProject(string(projectPathChar));
 
@@ -2179,6 +2629,150 @@ end
 
     app.cleanRecentPipelinesList();
     app.refreshRecentPipelinesMenu();
+        function [ok,node,pipeObj] = getPipelineNodeByIndex(app, pipeIdx, modIdx)
+            ok = false;
+            node = struct();
+            pipeObj = [];
+
+            if pipeIdx > numel(app.Data.Pipeline)
+                return;
+            end
+
+            pipeVar = app.Data.Pipeline{pipeIdx};
+            try
+                pipeObj = evalin('base', pipeVar);
+            catch
+                return;
+            end
+
+            if ~isa(pipeObj,'pipeline') || ~isprop(pipeObj,'nodes') || modIdx > numel(pipeObj.nodes)
+                pipeObj = [];
+                return;
+            end
+
+            node = pipeObj.nodes(modIdx);
+            ok = true;
+        end
+
+        function [nType, modObj] = buildPipelineModuleObject(app, node) %#ok<INUSD>
+            nType = '';
+            modObj = [];
+
+            if ~(isstruct(node) && isfield(node,'type') && ~isempty(node.type))
+                return;
+            end
+
+            nType = lower(char(string(node.type)));
+
+            if strcmp(nType,'processor')
+                tmpProc = process(tempdir, 'pipeline_module', randi(1e9));
+
+                pkgName = '';
+                if isfield(node,'pkg') && ~isempty(node.pkg)
+                    pkgName = char(string(node.pkg));
+                end
+
+                if ~isempty(pkgName)
+                    tmpProc.processFun = [pkgName '.process'];
+                    try
+                        p0 = feval([pkgName '.setparam'], struct());
+                    catch
+                        p0 = struct();
+                    end
+                    if isstruct(p0)
+                        tmpProc.processArg = p0;
+                    end
+                elseif isfield(node,'func') && ~isempty(node.func)
+                    tmpProc.processFun = char(string(node.func));
+                end
+
+                if isfield(node,'params') && isstruct(node.params)
+                    if isempty(tmpProc.processArg) || ~isstruct(tmpProc.processArg)
+                        tmpProc.processArg = node.params;
+                    else
+                        fn = fieldnames(node.params);
+                        for fi = 1:numel(fn)
+                            tmpProc.processArg.(fn{fi}) = node.params.(fn{fi});
+                        end
+                    end
+                end
+
+                if isfield(node,'id') && ~isempty(node.id)
+                    tmpProc.strid = char(string(node.id));
+                end
+
+                modObj = tmpProc;
+                return;
+            end
+
+            if strcmp(nType,'classifier')
+                tmpClassi = classi(tempdir, 'pipeline_module', randi(1e9));
+
+                if isfield(node,'id') && ~isempty(node.id)
+                    tmpClassi.strid = char(string(node.id));
+                end
+
+                pkgName = '';
+                if isfield(node,'pkg') && ~isempty(node.pkg)
+                    pkgName = char(string(node.pkg));
+                end
+
+                if ~isempty(pkgName)
+                    tmpClassi.classifierPkg = pkgName;
+                    if isempty(tmpClassi.classifyFun)
+                        tmpClassi.classifyFun = [pkgName '.classify'];
+                    end
+                    if isempty(tmpClassi.trainingFun)
+                        tmpClassi.trainingFun = [pkgName '.train'];
+                    end
+
+                    if strcmpi(pkgName,'cellposesam')
+                        tmpClassi.category = {'Pixel'};
+                    elseif strcmpi(pkgName,'cnn_lstm')
+                        tmpClassi.category = {'LSTM'};
+                    else
+                        tmpClassi.category = {'Image'};
+                    end
+                else
+                    tmpClassi.category = {'Image'};
+                end
+
+                if isfield(node,'func') && ~isempty(node.func)
+                    tmpClassi.classifyFun = char(string(node.func));
+                end
+
+                if isfield(node,'params') && isstruct(node.params)
+                    if isfield(node.params,'classes') && ~isempty(node.params.classes)
+                        cls = node.params.classes;
+                        if isstring(cls), cls = cellstr(cls); end
+                        if ischar(cls), cls = {cls}; end
+                        tmpClassi.classes = cls;
+                    end
+                end
+
+                tmpClassi.category = classiNormalizeCategory(tmpClassi.category);
+                modObj = tmpClassi;
+                return;
+            end
+        end
+
+        function openPipelineModuleByIndex(app, pipeIdx, modIdx)
+            [ok,node,pipeObj] = app.getPipelineNodeByIndex(pipeIdx, modIdx);
+            if ~ok
+                return;
+            end
+
+            [nType, modObj] = app.buildPipelineModuleObject(node);
+            switch nType
+                case 'processor'
+                    processDataGUI([], modObj);
+                case 'classifier'
+                    classifierGUI(modObj);
+                otherwise
+                    pipelineGUI([], pipeObj);
+            end
+        end
+
 end
 
 
@@ -2405,7 +2999,8 @@ end
                 end
 
                 if numel(clas.category)
-                    t=[t clas.category{1} char(13)];
+                    [catCell, ~] = classiNormalizeCategory(clas.category);
+                    t=[t catCell{1} char(13)];
                 end
 
                 if numel(clas.classes)
@@ -2470,7 +3065,8 @@ end
                 end
 
                 %                 if numel(clas.category)
-                %                 t=[t clas.category{1} char(13)];
+                %                 [catCell, ~] = classiNormalizeCategory(clas.category);
+                    t=[t catCell{1} char(13)];
                 %                 end
 
 
@@ -2525,7 +3121,8 @@ end
                 end
 
                 if numel(clas.category)
-                    t=[t clas.category{1} newline newline];
+                    [catCell, ~] = classiNormalizeCategory(clas.category);
+                    t=[t catCell{1} newline newline];
                 end
 
                 if numel(clas.classes)
@@ -2550,7 +3147,8 @@ end
                 app.ProjectInformationLabel.Text=t;
 
                 if numel(clas.category)
-                    if ~strcmp(char(string(clas.category{1})),'Timeseries')
+                    [catCell, ~] = classiNormalizeCategory(clas.category);
+                    if ~strcmp(char(string(catCell{1})),'Timeseries')
                         displayClassiImage(app,clas);
                     end
                 end
@@ -2587,28 +3185,136 @@ end
             end
 
             if strcmp(selectedNodes.Tag,'PipelineModule')
-                app.ProjectsPanel.Title='Pipeline module';
                 app.OpenButton.Visible='on';
-                app.OpenButton.Text='Open Pipeline...';
 
                 cc=app.Tree.SelectedNodes.UserData;
                 pipeIdx = cc(1);
                 modIdx = cc(2);
 
-                if pipeIdx <= numel(app.Data.Pipeline)
-                    pipeVar = app.Data.Pipeline{pipeIdx};
-                    pipeObj = evalin('base', pipeVar);
-                    if isprop(pipeObj,'nodes') && modIdx <= numel(pipeObj.nodes)
-                        node = pipeObj.nodes(modIdx);
-                        t='';
-                        t=[t 'Pipeline: ' pipeVar newline newline];
-                        if isfield(node,'id'), t=[t 'Module id: ' char(string(node.id)) newline]; end
-                        if isfield(node,'name'), t=[t 'Name: ' char(string(node.name)) newline]; end
-                        if isfield(node,'type'), t=[t 'Type: ' char(string(node.type)) newline]; end
-                        if isfield(node,'pkg') && ~isempty(node.pkg), t=[t 'Package: ' char(string(node.pkg)) newline]; end
-                        if isfield(node,'func') && ~isempty(node.func), t=[t 'Function: ' char(string(node.func)) newline]; end
-                        app.ProjectInformationLabel.Text=t;
+                [ok,node,pipeObj] = app.getPipelineNodeByIndex(pipeIdx, modIdx);
+                if ~ok
+                    return;
+                end
+                pipeVar = app.Data.Pipeline{pipeIdx};
+
+                [nodeType, modObj] = app.buildPipelineModuleObject(node);
+
+                if strcmp(nodeType,'classifier')
+                    app.ProjectsPanel.Title='Classifier';
+                    app.OpenButton.Text='Open Classifier...';
+                    app.UIAxes.Visible='on';
+
+                    clas = modObj;
+                    t='';
+                    t=[t 'Classification path: ' newline newline];
+                    if isprop(clas,'path') && ~isempty(clas.path)
+                        t=[t clas.path newline newline];
+                    else
+                        t=[t '(not saved yet)' newline newline];
                     end
+
+                    if isprop(clas,'description') && numel(clas.description)
+                        desc = clas.description;
+                        if iscell(desc)
+                            descTxt = char(string(desc{1}));
+                        else
+                            descTxt = char(string(desc));
+                        end
+                        t=[t 'Description: ' descTxt ' - '];
+                    end
+
+                    if isprop(clas,'category') && numel(clas.category)
+                        [catCell, ~] = classiNormalizeCategory(clas.category);
+                        t=[t catCell{1} newline newline];
+                    end
+
+                    if isprop(clas,'classes') && numel(clas.classes)
+                        t=[t 'Classes: ' newline newline];
+                        cls = clas.classes;
+                        if isstring(cls), cls = cellstr(cls); end
+                        if ischar(cls), cls = {cls}; end
+                        for i=1:numel(cls)
+                            t=[t char(string(cls{i})) newline];
+                        end
+                    end
+
+                    t=[t newline];
+                    if isprop(clas,'roi')
+                        n=numel(clas.roi);
+                        if n==1 && numel(clas.roi(1).id)==0
+                            n=0;
+                        end
+                    else
+                        n=0;
+                    end
+                    t=[t num2str(n) ' ROIs as training/test sets' newline newline];
+                    app.ProjectInformationLabel.Text=t;
+
+                    try
+                        [catCell, ~] = classiNormalizeCategory(clas.category);
+                        hasRoi = false;
+                        if isprop(clas,'roi') && ~isempty(clas.roi)
+                            hasRoi = ~(numel(clas.roi)==1 && isempty(clas.roi(1).id));
+                        end
+                        if hasRoi && ~strcmp(char(string(catCell{1})),'Timeseries')
+                            displayClassiImage(app,clas);
+                        else
+                            cla(app.UIAxes);
+                        end
+                    catch
+                        cla(app.UIAxes);
+                    end
+
+                elseif strcmp(nodeType,'processor')
+                    app.ProjectsPanel.Title='Processor';
+                    app.OpenButton.Text='Open Processor...';
+                    app.UIAxes.Visible='off';
+
+                    proc = modObj;
+                    t='';
+                    t=[t 'Processor path: ' newline newline];
+                    if isprop(proc,'path') && ~isempty(proc.path)
+                        t=[t proc.path newline newline];
+                    else
+                        t=[t '(not saved yet)' newline newline];
+                    end
+
+                    if isfield(node,'pkg') && ~isempty(node.pkg)
+                        t=[t 'Package: ' char(string(node.pkg)) newline];
+                    end
+                    if isprop(proc,'processFun') && ~isempty(proc.processFun)
+                        t=[t 'Function: ' char(string(proc.processFun)) newline];
+                    end
+
+                    if isprop(proc,'processArg') && isstruct(proc.processArg)
+                        fn = fieldnames(proc.processArg);
+                        if ~isempty(fn)
+                            t=[t newline 'Parameters: ' num2str(numel(fn)) newline];
+                            nShow = min(numel(fn), 8);
+                            for ii=1:nShow
+                                t=[t '- ' fn{ii} newline];
+                            end
+                            if numel(fn) > nShow
+                                t=[t '...'];
+                            end
+                        end
+                    end
+
+                    app.ProjectInformationLabel.Text=t;
+
+                else
+                    app.ProjectsPanel.Title='Pipeline module';
+                    app.OpenButton.Text='Open Pipeline...';
+                    app.UIAxes.Visible='off';
+
+                    t='';
+                    t=[t 'Pipeline: ' pipeVar newline newline];
+                    if isfield(node,'id'), t=[t 'Module id: ' char(string(node.id)) newline]; end
+                    if isfield(node,'name'), t=[t 'Name: ' char(string(node.name)) newline]; end
+                    if isfield(node,'type'), t=[t 'Type: ' char(string(node.type)) newline]; end
+                    if isfield(node,'pkg') && ~isempty(node.pkg), t=[t 'Package: ' char(string(node.pkg)) newline]; end
+                    if isfield(node,'func') && ~isempty(node.func), t=[t 'Function: ' char(string(node.func)) newline]; end
+                    app.ProjectInformationLabel.Text=t;
                 end
             end
 
@@ -2785,6 +3491,9 @@ end
             % mettre l'objet dans le workspace base sous son nom
             name = proj.io.file;
             assignin('base', name, proj);
+
+    % Auto-load pipeline templates referenced by existing project runs
+    app.autoLoadPipelinesForProjectRuns(proj);
 
             % chemin absolu du .mat du projet
 
@@ -3799,13 +4508,10 @@ shallowObj.extractAllROICrops( ...
         end
 
         if strcmp(str,'PipelineModule')
-            d.Message = 'Opening pipeline GUI...';
+            d.Message = 'Opening pipeline module...';
             pipeIdx = arg(1);
-            if pipeIdx <= numel(app.Data.Pipeline)
-                pipeVar = app.Data.Pipeline{pipeIdx};
-                pipeObj = evalin('base', pipeVar);
-                pipelineGUI([], pipeObj);
-            end
+            modIdx = arg(2);
+            app.openPipelineModuleByIndex(pipeIdx, modIdx);
         end
 
         if strcmp(str,'ProjectpipelineRun')

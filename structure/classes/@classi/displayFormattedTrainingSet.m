@@ -58,7 +58,8 @@ mode = lower(mode);
 himg   = [];
 output = {};
 
-cate = classif.category{1};
+[catCell, ~] = classiNormalizeCategory(classif.category);
+cate = catCell{1};
 pth  = classif.getPath;
 
 disp(['This classification is of this type: ' cate]);

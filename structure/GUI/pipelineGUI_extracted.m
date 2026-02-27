@@ -484,7 +484,7 @@ classdef pipelineGUI < matlab.apps.AppBase
                 'gui','dataLoader.ui', ...
                 'paramRequired',{{'path'}}, ...
                 'inputs',{{}}, ...
-                'outputs',{{'fovList','channels'}}, ...
+                'outputs',{{'images'}}, ...
                 'defaultParams',safeSetParam(app, 'dataLoader.setparam'), ...
                 'color',[0.18 0.52 0.94]);
 
@@ -494,8 +494,8 @@ classdef pipelineGUI < matlab.apps.AppBase
                 'func','roiIdentify.process', ...
                 'gui','roiIdentify.ui', ...
                 'paramRequired',{{}}, ...
-                'inputs',{{'fovList'}}, ...
-                'outputs',{{'roiList','channels'}}, ...
+                'inputs',{{'images'}}, ...
+                'outputs',{{'roiList'}}, ...
                 'defaultParams',safeSetParam(app, 'roiIdentify.setparam'), ...
                 'color',[0.98 0.60 0.20]);
 
@@ -506,7 +506,7 @@ classdef pipelineGUI < matlab.apps.AppBase
                 'gui','', ...
                 'paramRequired',{{}}, ...
                 'inputs',{{'roiList'}}, ...
-                'outputs',{{'roiList','dataSeries'}}, ...
+                'outputs',{{'channels'}}, ...
                 'defaultParams',safeSetParam(app, 'roiExtract.setparam'), ...
                 'color',[0.10 0.68 0.38]);
 
@@ -516,7 +516,7 @@ classdef pipelineGUI < matlab.apps.AppBase
                 'func','', ...
                 'gui','processDataGUI', ...
                 'paramRequired',{{'pkg'}}, ...
-                'inputs',{{'roiList'}}, ...
+                'inputs',{{'inputChannels'}}, ...
                 'outputs',{{'dataSeries'}}, ...
                 'defaultParams',struct('pkg',''), ...
                 'color',[0.55 0.55 0.55]);
@@ -527,7 +527,7 @@ classdef pipelineGUI < matlab.apps.AppBase
                 'func','', ...
                 'gui','classifierGUI', ...
                 'paramRequired',{{'pkg'}}, ...
-                'inputs',{{'roiList'}}, ...
+                'inputs',{{'inputChannels'}}, ...
                 'outputs',{{'dataSeries'}}, ...
                 'defaultParams',struct('pkg',''), ...
                 'color',[0.40 0.40 0.70]);
@@ -618,7 +618,7 @@ classdef pipelineGUI < matlab.apps.AppBase
             hPatch.UserData = idx;
 
             hText = text(app.UIModulesAxes, x+1, y+h/2, buildNodeCaption(app,node), ...
-                'VerticalAlignment','middle', 'FontSize',8, 'Interpreter','none');
+                'VerticalAlignment','middle', 'FontSize',12, 'Interpreter','none');
 
             hMarker = plot(app.UIModulesAxes, x+w-2, y+2, 'o', 'MarkerSize',6, ...
                 'MarkerEdgeColor','k', 'MarkerFaceColor',[0 0.8 0], 'Visible','off');
@@ -668,8 +668,19 @@ classdef pipelineGUI < matlab.apps.AppBase
                 hMarker.Visible = 'on';
                 hMarker.XData = x+w-2;
                 hMarker.YData = y+2;
+                st = lower(char(string(getfielddefault(app, node, 'status', ''))));
+                if isNodeConnected(app, node)
+                    hMarker.MarkerFaceColor = [0 0.75 0.2];
+                elseif contains(st,'disabled')
+                    hMarker.MarkerFaceColor = [0.6 0.6 0.6];
+                else
+                    hMarker.MarkerFaceColor = [0.90 0.20 0.20];
+                end
             else
-                hMarker.Visible = 'off';
+                hMarker.Visible = 'on';
+                hMarker.XData = x+w-2;
+                hMarker.YData = y+2;
+                hMarker.MarkerFaceColor = [0.6 0.6 0.6];
             end
 
             drawPortsForModule(app, idx);
@@ -712,7 +723,7 @@ classdef pipelineGUI < matlab.apps.AppBase
                 ht = text(app.UIModulesAxes, x-0.8, y, char(string(pname)), ...
                     'HorizontalAlignment','right', ...
                     'VerticalAlignment','middle', ...
-                    'FontSize',7, ...
+                    'FontSize',11, ...
                     'Color',[0.00 0.45 0.74], ...
                     'Interpreter','none', ...
                     'ButtonDownFcn',@app.portButtonDown);
@@ -746,7 +757,7 @@ classdef pipelineGUI < matlab.apps.AppBase
                 ht = text(app.UIModulesAxes, x+0.8, y, char(string(pname)), ...
                     'HorizontalAlignment','left', ...
                     'VerticalAlignment','middle', ...
-                    'FontSize',7, ...
+                    'FontSize',11, ...
                     'Color',[0.20 0.50 0.10], ...
                     'Interpreter','none', ...
                     'ButtonDownFcn',@app.portButtonDown);
@@ -1035,7 +1046,7 @@ classdef pipelineGUI < matlab.apps.AppBase
                 lbl = [getEdgeField(app, e,'fromPort','') ' -> ' getEdgeField(app, e,'toPort','')];
                 if ~strcmp(strtrim(lbl), '->')
                     ht = text(app.UIModulesAxes, (x1+x2)/2, (y1+y2)/2, lbl, ...
-                        'FontSize',7, 'Color',[0.2 0.2 0.2], 'Interpreter','none', ...
+                        'FontSize',10, 'Color',[0.2 0.2 0.2], 'Interpreter','none', ...
                         'BackgroundColor',[1 1 1], 'Margin',1, 'HorizontalAlignment','center');
                     app.EdgeLabelHandles(end+1) = ht; %#ok<AGROW>
                 end
@@ -1193,7 +1204,7 @@ classdef pipelineGUI < matlab.apps.AppBase
             data = cell(numel(fn),2);
             for i = 1:numel(fn)
                 data{i,1} = fn{i};
-                data{i,2} = paramValueToTableCell(app, node.params.(fn{i}));
+                data{i,2} = toUITableCellValue(app, paramValueToTableCell(app, node.params.(fn{i})));
             end
             app.UIModuleParametersTable.Data = data;
         end
@@ -1221,10 +1232,78 @@ classdef pipelineGUI < matlab.apps.AppBase
                 try
                     out = jsonencode(v);
                 catch
-                    out = char(string(v));
+                    try
+                        out = evalc('disp(v)');
+                        out = strtrim(out);
+                    catch
+                        out = class(v);
+                    end
                 end
             else
+                try
+                    out = char(string(v));
+                catch
+                    out = class(v);
+                end
+            end
+        end
+
+        function out = toUITableCellValue(app, v) %#ok<INUSD>
+            if ischar(v) || isnumeric(v) || islogical(v)
+                out = v;
+                return;
+            end
+            if isstring(v)
+                out = char(v);
+                return;
+            end
+            try
                 out = char(string(v));
+            catch
+                try
+                    out = jsonencode(v);
+                catch
+                    out = class(v);
+                end
+            end
+        end
+
+        function tf = isNodeConnected(app, node)
+            tf = true;
+            c = getNodeContract(app, node);
+            if ~isfield(c,'in') || isempty(c.in)
+                return;
+            end
+
+            nodeId = char(string(node.id));
+            for k = 1:numel(c.in)
+                pin = c.in(k);
+                if ~isfield(pin,'required') || ~logical(pin.required)
+                    continue;
+                end
+                srcMode = 'edge';
+                if isfield(pin,'source') && ~isempty(pin.source)
+                    srcMode = lower(char(string(pin.source)));
+                end
+                if strcmp(srcMode,'ctx')
+                    continue;
+                end
+                pname = char(string(pin.name));
+                ok = false;
+                for e = 1:numel(app.Data.edges)
+                    ed = app.Data.edges(e);
+                    if ~strcmp(getEdgeField(app, ed, 'to', ''), nodeId)
+                        continue;
+                    end
+                    if strcmp(getEdgeField(app, ed, 'toPort', ''), pname)
+                        ok = true;
+                        break;
+                    end
+                end
+                if ~ok
+                    tf = false;
+                    return;
+                end
             end
         end
 
@@ -1329,6 +1408,9 @@ classdef pipelineGUI < matlab.apps.AppBase
 
             app.Data.nodes = nodes;
             updateModuleListTable(app);
+            for ii = 1:numel(app.Data.nodes)
+                redrawModule(app, ii);
+            end
 
             if showAlert && (~ok || ~okPorts)
                 errs = {};
@@ -1610,35 +1692,35 @@ classdef pipelineGUI < matlab.apps.AppBase
 
             switch t
                 case 'dataloader'
-                    out = [portDef('fovList','fovList',true), portDef('channels','channelSet',true)];
+                    out = portDef('images','imageSet',true,'edge');
+
                 case 'roiidentify'
-                    in  = portDef('fovList','fovList',true,'either');
-                    out = [portDef('roiList','roiList',true), portDef('channels','channelSet',false)];
+                    in  = portDef('images','imageSet',true,'edge');
+                    out = portDef('roiList','roiList',true,'edge');
+
                 case 'roiextract'
-                    in  = [portDef('roiList','roiList',true,'either'), portDef('channels','channelSet',false,'either')];
-                    out = [portDef('roiList','roiList',false), portDef('dataSeries','dataSeriesSet',true)];
+                    in  = portDef('roiList','roiList',true,'edge');
+                    out = portDef('channels','channelSet',true,'edge');
+
                 case 'processor'
+                    in  = portDef('inputChannels','channelSet',true,'edge');
                     if strcmp(p, 'combinemultiplechannels')
-                        in  = [portDef('roiList','roiList',true,'either'), portDef('inputChannels','channelSet',true,'edge')];
-                        out = portDef('combinedChannel','channelSet',true);
+                        out = portDef('combinedChannel','channelSet',true,'edge');
                     else
-                        in  = [portDef('roiList','roiList',true,'either'), portDef('inputChannels','channelSet',false,'edge')];
-                        out = portDef('dataSeries','dataSeriesSet',true);
+                        out = portDef('dataSeries','dataSeriesSet',true,'edge');
                     end
+
                 case 'classifier'
-                    if any(strcmp(p, {'cnn','cnn_lstm','cellposesam'}))
-                        in = [portDef('roiList','roiList',true,'either'), portDef('inputChannels','channelSet',true,'edge')];
-                    else
-                        in = [portDef('roiList','roiList',true,'either'), portDef('inputChannels','channelSet',false,'edge')];
-                    end
+                    in = portDef('inputChannels','channelSet',true,'edge');
                     if strcmp(p, 'cellposesam')
-                        out = [portDef('masks','maskSet',true), portDef('dataSeries','dataSeriesSet',false)];
+                        out = [portDef('masks','maskSet',true,'edge'), portDef('dataSeries','dataSeriesSet',false,'edge')];
                     else
-                        out = portDef('dataSeries','dataSeriesSet',true);
+                        out = portDef('dataSeries','dataSeriesSet',true,'edge');
                     end
+
                 otherwise
-                    in = portDef('roiList','roiList',false,'either');
-                    out = portDef('dataSeries','dataSeriesSet',false);
+                    in = struct('name',{},'type',{},'required',{},'source',{});
+                    out = struct('name',{},'type',{},'required',{},'source',{});
             end
 
             c = struct('in',in,'out',out);
@@ -1778,8 +1860,9 @@ classdef pipelineGUI < matlab.apps.AppBase
             function tf = contextProvidesType(tp, cctx)
                 tf = false;
                 switch lower(char(string(tp)))
-                    case 'fovlist'
-                        tf = isfield(cctx,'fovList') && ~isempty(cctx.fovList);
+                    case {'imageset','fovlist'}
+                        tf = (isfield(cctx,'images') && ~isempty(cctx.images)) || ...
+                             (isfield(cctx,'fovList') && ~isempty(cctx.fovList));
                         if ~tf
                             tf = isfield(cctx,'shallow') && ~isempty(cctx.shallow);
                         end
@@ -1881,33 +1964,78 @@ classdef pipelineGUI < matlab.apps.AppBase
 
             try
                 if strcmpi(node.type,'processor')
-                    if ~isempty(shallowObj)
-                        % Same syntax as detecdiv: processDataGUI(shallowObj, proc)
-                        tmpProc = process(tempdir, 'pipeline_module', 1);
-                        if ~isempty(getfielddefault(app,node,'pkg',''))
-                            tmpProc.processFun = [node.pkg '.process'];
-                        elseif ~isempty(getfielddefault(app,node,'func',''))
-                            tmpProc.processFun = node.func;
+                    tmpProc = process(tempdir, 'pipeline_module', randi(1e9));
+                    pkgName = char(string(getfielddefault(app,node,'pkg','')));
+                    if ~isempty(pkgName)
+                        tmpProc.processFun = [pkgName '.process'];
+                        try
+                            p0 = feval([pkgName '.setparam'], struct());
+                        catch
+                            p0 = struct();
                         end
-                        if isfield(node,'params') && isstruct(node.params)
+                        if isstruct(p0)
+                            tmpProc.processArg = p0;
+                        end
+                    elseif ~isempty(getfielddefault(app,node,'func',''))
+                        tmpProc.processFun = char(string(node.func));
+                    end
+
+                    if isfield(node,'params') && isstruct(node.params)
+                        if isempty(tmpProc.processArg) || ~isstruct(tmpProc.processArg)
                             tmpProc.processArg = node.params;
+                        else
+                            fn = fieldnames(node.params);
+                            for fi = 1:numel(fn)
+                                tmpProc.processArg.(fn{fi}) = node.params.(fn{fi});
+                            end
                         end
+                    end
+
+                    if ~isempty(shallowObj)
                         processDataGUI(shallowObj, tmpProc);
                     else
-                        processDataGUI;
+                        processDataGUI([], tmpProc);
                     end
                     return;
                 end
 
                 if strcmpi(node.type,'classifier')
-                    % Same syntax as detecdiv: classifierGUI(classiObj)
-                    tmpClassi = classi(tempdir, 'pipeline_module', 1);
-                    if ~isempty(getfielddefault(app,node,'pkg',''))
-                        tmpClassi.classifierPkg = node.pkg;
+                    tmpClassi = classi(tempdir, 'pipeline_module', randi(1e9));
+
+                    pkgName = char(string(getfielddefault(app,node,'pkg','')));
+                    if ~isempty(pkgName)
+                        tmpClassi.classifierPkg = pkgName;
+                        if isempty(tmpClassi.classifyFun)
+                            tmpClassi.classifyFun = [pkgName '.classify'];
+                        end
+                        if isempty(tmpClassi.trainingFun)
+                            tmpClassi.trainingFun = [pkgName '.train'];
+                        end
+                        if strcmpi(pkgName,'cellposesam')
+                            tmpClassi.category = {'Pixel'};
+                        elseif strcmpi(pkgName,'cnn_lstm')
+                            tmpClassi.category = {'LSTM'};
+                        else
+                            tmpClassi.category = {'Image'};
+                        end
+                    else
+                        tmpClassi.category = {'Image'};
                     end
+
                     if ~isempty(getfielddefault(app,node,'func',''))
-                        tmpClassi.classifyFun = node.func;
+                        tmpClassi.classifyFun = char(string(node.func));
                     end
+
+                    if isfield(node,'params') && isstruct(node.params)
+                        if isfield(node.params,'classes') && ~isempty(node.params.classes)
+                            cls = node.params.classes;
+                            if isstring(cls), cls = cellstr(cls); end
+                            if ischar(cls), cls = {cls}; end
+                            tmpClassi.classes = cls;
+                        end
+                    end
+
+                    tmpClassi.category = classiNormalizeCategory(tmpClassi.category);
                     classifierGUI(tmpClassi);
                     return;
                 end
@@ -2026,6 +2154,52 @@ classdef pipelineGUI < matlab.apps.AppBase
             app.Data.nodes(idx) = node;
         end
 
+        function node = populateNodeParamsFromPackage(app, node, forceRefresh)
+            if nargin < 3
+                forceRefresh = false;
+            end
+
+            pkgName = char(string(getfielddefault(app, node, 'pkg', '')));
+            if isempty(pkgName)
+                return;
+            end
+
+            if ~isfield(node,'params') || ~isstruct(node.params) || isempty(node.params)
+                node.params = struct();
+            end
+
+            if strcmpi(char(string(node.type)), 'processor')
+                hasOnlyPkg = numel(fieldnames(node.params)) <= 1 && isfield(node.params,'pkg');
+                if forceRefresh || isempty(fieldnames(node.params)) || hasOnlyPkg
+                    p0 = safeSetParam(app, [pkgName '.setparam']);
+                    if isstruct(p0) && ~isempty(fieldnames(p0))
+                        fn = fieldnames(p0);
+                        for fi = 1:numel(fn)
+                            if forceRefresh || ~isfield(node.params, fn{fi}) || isempty(node.params.(fn{fi}))
+                                node.params.(fn{fi}) = p0.(fn{fi});
+                            end
+                        end
+                    end
+                end
+                node.params.pkg = pkgName;
+                node.func = [pkgName '.process'];
+                node.gui = 'processDataGUI';
+                node.paramRequired = {'pkg'};
+
+            elseif strcmpi(char(string(node.type)), 'classifier')
+                node.params.pkg = pkgName;
+                if ~isfield(node,'func') || isempty(node.func)
+                    row = getClasslistRowByName(app, pkgName);
+                    fun = getClassifyFunFromRow(app, row);
+                    if ~isempty(fun)
+                        node.func = fun;
+                    end
+                end
+                node.gui = 'classifierGUI';
+                node.paramRequired = {'pkg'};
+            end
+        end
+
         function col = getModuleColor(app, node)
             reg = getModuleRegistry(app);
             idx = find(strcmpi({reg.type}, node.type), 1);
@@ -2069,6 +2243,7 @@ classdef pipelineGUI < matlab.apps.AppBase
                 if ~isfield(nodes(i),'pkg')
                     nodes(i).pkg = '';
                 end
+                nodes(i) = populateNodeParamsFromPackage(app, nodes(i), false);
                 nodes(i).contract = getNodeContract(app, nodes(i));
                 [nodes(i).inputs, nodes(i).outputs] = ioFromContract(app, nodes(i).contract);
             end
@@ -2285,6 +2460,7 @@ classdef pipelineGUI < matlab.apps.AppBase
             app.UIModuleListTable.CellEditCallback = createCallbackFcn(app, @UIModuleListTableCellEdit, true);
             app.UIModuleListTable.SelectionChangedFcn = createCallbackFcn(app, @UIModuleListTableSelectionChanged, true);
             app.UIModuleListTable.Position = [37 252 593 185];
+            app.UIModuleListTable.FontSize = 14;
 
             % Create RunpipelineButton
             app.RunpipelineButton = uibutton(app.UIFigure, 'push');
@@ -2323,6 +2499,7 @@ classdef pipelineGUI < matlab.apps.AppBase
             app.UIModuleParametersTable.CellEditCallback = createCallbackFcn(app, @UIModuleParametersTableCellEdit, true);
             app.UIModuleParametersTable.SelectionChangedFcn = createCallbackFcn(app, @UIModuleParametersTableSelectionChanged, true);
             app.UIModuleParametersTable.Position = [40 55 590 185];
+            app.UIModuleParametersTable.FontSize = 14;
 
             % Create ConnectDisconnectmodulesButton
             app.ConnectDisconnectmodulesButton = uibutton(app.UIFigure, 'push');

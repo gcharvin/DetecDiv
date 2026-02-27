@@ -102,8 +102,11 @@ classdef classi < handle
                 if ~exist(path, "dir")
                     mkdir(path);
                 end
-                mkdir(path, obj.strid);
-                obj.path = fullfile(path, obj.strid);
+                targetDir = fullfile(path, obj.strid);
+                if ~exist(targetDir, "dir")
+                    mkdir(path, obj.strid);
+                end
+                obj.path = targetDir;
             end
 
             % ----------------------------
