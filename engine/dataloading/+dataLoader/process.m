@@ -54,6 +54,9 @@ function ctx = process(ctx)
         if isfield(p,'stackFilter') && ~isempty(p.stackFilter)
             args = [args {'stackfilter'} {p.stackFilter}];
         end
+        if isfield(p,'progress') && ~isempty(p.progress)
+            args = [args {'progress'} {p.progress}];
+        end
         out = parseInputData(p.path, args{:});
     end
 

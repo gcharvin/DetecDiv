@@ -503,7 +503,7 @@ classdef pipelineGUI < matlab.apps.AppBase
                 'display','ROI extraction', ...
                 'type','roiExtract', ...
                 'func','roiExtract.process', ...
-                'gui','', ...
+                'gui','roiExtract.ui', ...
                 'paramRequired',{{}}, ...
                 'inputs',{{'roiList'}}, ...
                 'outputs',{{'channels'}}, ...
@@ -2037,6 +2037,50 @@ classdef pipelineGUI < matlab.apps.AppBase
 
                     tmpClassi.category = classiNormalizeCategory(tmpClassi.category);
                     classifierGUI(tmpClassi);
+                    return;
+                end
+
+                if strcmpi(node.type,'roiIdentify')
+                    if isempty(shallowObj)
+                        uialert(app.UIFigure, 'ROI identification GUI needs a project context.', 'Info');
+                        return;
+                    end
+                    ctx = struct();
+                    ctx.shallow = shallowObj;
+                    if isfield(node,'params') && isstruct(node.params)
+                        ctx.roiIdentify = node.params;
+                        ctx.params = node.params;
+                    end
+                    ctx = roiIdentify.ui(ctx);
+                    if isfield(ctx,'roiIdentify') && isstruct(ctx.roiIdentify)
+                        node.params = ctx.roiIdentify;
+                        app.Data.nodes(idx) = node;
+                        updateModuleListTable(app);
+                        updateParamsTable(app, idx);
+                    end
+                    refreshStatus(app);
+                    return;
+                end
+
+                if strcmpi(node.type,'roiExtract')
+                    if isempty(shallowObj)
+                        uialert(app.UIFigure, 'ROI extraction GUI needs a project context.', 'Info');
+                        return;
+                    end
+                    ctx = struct();
+                    ctx.shallow = shallowObj;
+                    if isfield(node,'params') && isstruct(node.params)
+                        ctx.roiExtract = node.params;
+                        ctx.params = node.params;
+                    end
+                    ctx = roiExtract.ui(ctx);
+                    if isfield(ctx,'roiExtract') && isstruct(ctx.roiExtract)
+                        node.params = ctx.roiExtract;
+                        app.Data.nodes(idx) = node;
+                        updateModuleListTable(app);
+                        updateParamsTable(app, idx);
+                    end
+                    refreshStatus(app);
                     return;
                 end
 

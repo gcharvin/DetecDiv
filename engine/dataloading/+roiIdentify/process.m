@@ -27,22 +27,24 @@ function ctx = process(ctx)
     end
 
     % ---- params ----
-    p = struct();
-    if isfield(ctx,'roiIdentify') && ~isempty(ctx.roiIdentify)
-        p = ctx.roiIdentify;
-    elseif isfield(ctx,'params') && ~isempty(ctx.params)
-        p = ctx.params;
-    else
-        p = roiIdentify.setparam(ctx);
-    end
+    p = roiIdentify.setparam(ctx);
 
-    % override with stored params if missing
+    % stored params provide project defaults
     if ~isempty(shallowObj) && isprop(shallowObj,'runProfiles')
         rp = shallowObj.runProfiles;
         if isfield(rp,'dataloading') && isfield(rp.dataloading,'roiIdentify')
             s = rp.dataloading.roiIdentify;
-            p = mergeStructDefaults(p, s);
+            if isstruct(s)
+                p = mergeStructOverride(p, s);
+            end
         end
+    end
+
+    % explicit ctx params override stored project defaults
+    if isfield(ctx,'roiIdentify') && isstruct(ctx.roiIdentify) && ~isempty(ctx.roiIdentify)
+        p = mergeStructOverride(p, ctx.roiIdentify);
+    elseif isfield(ctx,'params') && isstruct(ctx.params) && ~isempty(ctx.params)
+        p = mergeStructOverride(p, ctx.params);
     end
 
     if ~isfield(p,'fallbackFullFrame'), p.fallbackFullFrame = true; end
@@ -70,6 +72,8 @@ function ctx = process(ctx)
     pattern = struct();
     if isfield(ctx,'pattern') && ~isempty(ctx.pattern)
         pattern = ctx.pattern;
+    elseif isfield(p,'patternList') && isstruct(p.patternList) && ~isempty(p.patternList)
+        pattern = p.patternList(1);
     elseif ~isempty(shallowObj)
         pattern = loadPattern(shallowObj);
     end
@@ -272,14 +276,12 @@ function idx = resolveChannelIndex(fov, p)
     end
 end
 
-function out = mergeStructDefaults(base, override)
+function out = mergeStructOverride(base, override)
     out = base;
     if isempty(override), return; end
     fn = fieldnames(override);
     for i = 1:numel(fn)
         k = fn{i};
-        if ~isfield(out,k) || isempty(out.(k))
-            out.(k) = override.(k);
-        end
+        out.(k) = override.(k);
     end
 end

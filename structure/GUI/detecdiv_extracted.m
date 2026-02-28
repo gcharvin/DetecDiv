@@ -901,7 +901,7 @@ end
                         case 'classifier'
                             classifierGUI(modObj);
                         otherwise
-                            pipelineGUI([], pipeObj);
+                            app.openPipelineWithContext(pipeObj);
                     end
                 catch ME
                     uialert(app.DetecDivUIFigure, ME.message, 'Module GUI error', 'Icon', 'error');
@@ -1907,73 +1907,187 @@ end
                 case 'classifier'
                     classifierGUI(modObj);
                 otherwise
-                    pipelineGUI([], pipeObj);
+                    app.openPipelineWithContext(pipeObj);
             end
         end
+
+        function openPipelineWithContext(app, pipeObj)
+            projectObj = [];
+            [found, projectObj] = app.findLinkedProjectForPipeline(pipeObj);
+            if found
+                pipelineGUI(projectObj, pipeObj);
+            else
+                pipelineGUI([], pipeObj);
+            end
+        end
+
+        function [found, shallowObj] = findLinkedProjectForPipeline(app, pipeObj)
+            found = false;
+            shallowObj = [];
+            if isempty(pipeObj) || ~isa(pipeObj,'pipeline')
+                return;
+            end
+
+            pipeJson = fullfile(pipeObj.path, 'pipeline.json');
+            targetKey = app.normalizeFsPath(pipeJson);
+            if isempty(targetKey)
+                return;
+            end
+
+            try
+                vars = evalin('base','who');
+            catch
+                return;
+            end
+
+            for iVar = 1:numel(vars)
+                try
+                    obj = evalin('base', vars{iVar});
+                catch
+                    continue;
+                end
+                if ~isa(obj,'shallow')
+                    continue;
+                end
+
+                projectKey = app.normalizeFsPath(app.getProjectDefaultPipelinePath(obj));
+                if ~isempty(projectKey) && strcmp(projectKey, targetKey)
+                    found = true;
+                    shallowObj = obj;
+                    return;
+                end
+
+                try
+                    runs = obj.processing.pipelineRun;
+                catch
+                    runs = [];
+                end
+                for iRun = 1:numel(runs)
+                    runPath = '';
+                    try
+                        if isprop(runs(iRun),'pipelineRef') && isstruct(runs(iRun).pipelineRef) && isfield(runs(iRun).pipelineRef,'path')
+                            runPath = char(string(runs(iRun).pipelineRef.path));
+                        elseif isprop(runs(iRun),'templatePath')
+                            runPath = char(string(runs(iRun).templatePath));
+                        end
+                    catch
+                    end
+                    if ~isempty(runPath) && strcmp(app.normalizeFsPath(runPath), targetKey)
+                        found = true;
+                        shallowObj = obj;
+                        return;
+                    end
+                end
+            end
+        end
+
 
         function autoLoadPipelinesForProjectRuns(app, shallowObj)
             if isempty(shallowObj) || ~isa(shallowObj,'shallow')
                 return;
             end
-            if ~isfield(shallowObj.processing,'pipelineRun') || isempty(shallowObj.processing.pipelineRun)
-                return;
-            end
 
-            runs = shallowObj.processing.pipelineRun;
             loaded = containers.Map('KeyType','char','ValueType','logical');
-
             existingPaths = app.listLoadedPipelinePaths();
 
-            for iRun = 1:numel(runs)
-                runObj = runs(iRun);
-                pipePath = '';
+            % 1) explicit project -> default pipeline link
+            defaultPath = app.getProjectDefaultPipelinePath(shallowObj);
+            if ~isempty(defaultPath)
+                [~, existingPaths, loaded] = app.loadPipelineTemplateIfNeeded(defaultPath, existingPaths, loaded, 'project default');
+            end
 
-                if isprop(runObj,'pipelineRef') && isstruct(runObj.pipelineRef)
-                    if isfield(runObj.pipelineRef,'path') && ~isempty(runObj.pipelineRef.path)
-                        pipePath = char(string(runObj.pipelineRef.path));
+            % 2) pipelines referenced by existing runs
+            if isfield(shallowObj.processing,'pipelineRun') && ~isempty(shallowObj.processing.pipelineRun)
+                runs = shallowObj.processing.pipelineRun;
+                for iRun = 1:numel(runs)
+                    runObj = runs(iRun);
+                    pipePath = '';
+
+                    if isprop(runObj,'pipelineRef') && isstruct(runObj.pipelineRef)
+                        if isfield(runObj.pipelineRef,'path') && ~isempty(runObj.pipelineRef.path)
+                            pipePath = char(string(runObj.pipelineRef.path));
+                        end
                     end
-                end
-                if isempty(pipePath) && isprop(runObj,'templatePath') && ~isempty(runObj.templatePath)
-                    pipePath = char(string(runObj.templatePath));
-                end
-                if isempty(pipePath)
-                    continue;
-                end
-
-                key = app.normalizeFsPath(pipePath);
-                if isempty(key)
-                    continue;
-                end
-                if isKey(existingPaths, key) || isKey(loaded, key)
-                    continue;
-                end
-
-                [pipeObj, msg] = pipelineLoad(pipePath);
-                if isempty(pipeObj)
-                    if ~isempty(msg)
-                        warning('detecdiv:autoLoadPipelinesForRuns', ...
-                            'Run %s: cannot load pipeline at %s (%s)', ...
-                            char(string(runObj.runId)), pipePath, msg);
-                    else
-                        warning('detecdiv:autoLoadPipelinesForRuns', ...
-                            'Run %s: cannot load pipeline at %s', ...
-                            char(string(runObj.runId)), pipePath);
+                    if isempty(pipePath) && isprop(runObj,'templatePath') && ~isempty(runObj.templatePath)
+                        pipePath = char(string(runObj.templatePath));
                     end
-                    continue;
+                    if isempty(pipePath)
+                        continue;
+                    end
+
+                    label = 'pipeline run';
+                    try
+                        if isprop(runObj,'runId') && ~isempty(runObj.runId)
+                            label = ['run ' char(string(runObj.runId))];
+                        end
+                    catch
+                    end
+                    [~, existingPaths, loaded] = app.loadPipelineTemplateIfNeeded(pipePath, existingPaths, loaded, label);
                 end
+            end
 
-                varName = app.nextPipelineVarName(pipeObj);
-                assignin('base', varName, pipeObj);
-
-                loaded(key) = true;
-                existingPaths(key) = true;
-
-                try
-                    app.registerRecentPipeline(string(pipeObj.path));
-                catch
+            % 3) fallback: scan project folder for pipeline.json if no explicit link exists
+            if isempty(defaultPath)
+                candidates = app.resolveProjectPipelineJsonCandidates(shallowObj);
+                if ~isempty(candidates)
+                    for iPath = 1:numel(candidates)
+                        [pipeObj, existingPaths, loaded] = app.loadPipelineTemplateIfNeeded(candidates{iPath}, existingPaths, loaded, 'project scan');
+                        if iPath == 1 && ~isempty(pipeObj)
+                            if app.setProjectDefaultPipelineRef(shallowObj, pipeObj)
+                                try
+                                    shallowSave(shallowObj);
+                                catch
+                                end
+                            end
+                        end
+                    end
                 end
             end
         end
+
+        function [pipeObj, existingPaths, loaded] = loadPipelineTemplateIfNeeded(app, pipePath, existingPaths, loaded, sourceLabel)
+            pipeObj = [];
+            if nargin < 5 || isempty(sourceLabel)
+                sourceLabel = 'pipeline';
+            end
+            if isempty(pipePath)
+                return;
+            end
+
+            key = app.normalizeFsPath(pipePath);
+            if isempty(key)
+                return;
+            end
+            if isKey(existingPaths, key) || isKey(loaded, key)
+                return;
+            end
+
+            [pipeObj, msg] = pipelineLoad(pipePath);
+            if isempty(pipeObj)
+                if ~isempty(msg)
+                    warning('detecdiv:autoLoadPipeline', ...
+                        '%s: cannot load pipeline at %s (%s)', ...
+                        sourceLabel, pipePath, msg);
+                else
+                    warning('detecdiv:autoLoadPipeline', ...
+                        '%s: cannot load pipeline at %s', ...
+                        sourceLabel, pipePath);
+                end
+                return;
+            end
+
+            varName = app.nextPipelineVarName(pipeObj);
+            assignin('base', varName, pipeObj);
+
+            loaded(key) = true;
+            existingPaths(key) = true;
+
+            try
+                app.registerRecentPipeline(string(fullfile(pipeObj.path, 'pipeline.json')));
+            catch
+            end
+        end
+
 
         function paths = listLoadedPipelinePaths(app) %#ok<INUSD>
             paths = containers.Map('KeyType','char','ValueType','logical');
@@ -2043,8 +2157,264 @@ end
             key = p;
         end
 
+        function n = getProjectFovCount(app, shallowObj) %#ok<INUSD>
+            n = 0;
+            if isempty(shallowObj) || ~isa(shallowObj,'shallow')
+                return;
+            end
+            if isempty(shallowObj.fov)
+                return;
+            end
+            if numel(shallowObj.fov)==1
+                try
+                    if isempty(shallowObj.fov(1).srcpath) || isempty(shallowObj.fov(1).srcpath{1})
+                        return;
+                    end
+                catch
+                    return;
+                end
+            end
+            n = numel(shallowObj.fov);
+        end
+
+        function pipeObj = ensureDefaultPipelineForProject(app, shallowObj)
+            pipeObj = [];
+            if isempty(shallowObj) || ~isa(shallowObj,'shallow')
+                return;
+            end
+            if isempty(shallowObj.io.path) || isempty(shallowObj.io.file)
+                return;
+            end
+
+            defaultPath = app.getProjectDefaultPipelinePath(shallowObj);
+            candidateJson = defaultPath;
+            if isempty(candidateJson)
+                candidates = app.resolveProjectPipelineJsonCandidates(shallowObj);
+                if ~isempty(candidates)
+                    candidateJson = candidates{1};
+                end
+            end
+
+            if ~isempty(candidateJson)
+                [pipeObj,msg] = pipelineLoad(candidateJson);
+                if isempty(pipeObj)
+                    warning('detecdiv:defaultPipeline', 'Cannot load existing pipeline template: %s', msg);
+                    return;
+                end
+            else
+                projectRoot = fullfile(char(string(shallowObj.io.path)), char(string(shallowObj.io.file)));
+                if ~exist(projectRoot,'dir')
+                    return;
+                end
+
+                pipeName = [char(string(shallowObj.io.file)) '_pipeline'];
+                try
+                    pipeObj = pipelineNew('path', projectRoot, 'name', pipeName, 'workspace', false);
+                catch ME
+                    warning('detecdiv:defaultPipeline', 'Cannot create default pipeline: %s', ME.message);
+                    return;
+                end
+                if isempty(pipeObj)
+                    return;
+                end
+            end
+
+            rawPath = app.deriveRawDataPathFromProject(shallowObj);
+            changed = false;
+            if ~isempty(rawPath)
+                changed = app.populateDefaultDataLoaderPath(pipeObj, rawPath) || changed;
+            end
+            changed = app.setProjectDefaultPipelineRef(shallowObj, pipeObj) || changed;
+
+            if changed
+                try
+                    pipelineSave(pipeObj);
+                catch
+                end
+                try
+                    shallowSave(shallowObj);
+                catch
+                end
+            end
+
+            existingPaths = app.listLoadedPipelinePaths();
+            key = app.normalizeFsPath(pipeObj.path);
+            if ~isempty(key) && isKey(existingPaths, key)
+                return;
+            end
+
+            varName = app.nextPipelineVarName(pipeObj);
+            assignin('base', varName, pipeObj);
+
+            try
+                app.registerRecentPipeline(string(fullfile(pipeObj.path,'pipeline.json')));
+            catch
+            end
+        end
+
+        function rawPath = deriveRawDataPathFromProject(app, shallowObj) %#ok<INUSD>
+            rawPath = '';
+
+            try
+                if isprop(shallowObj,'runProfiles') && isfield(shallowObj.runProfiles,'dataloading')
+                    dl = shallowObj.runProfiles.dataloading;
+                    if isfield(dl,'dataLoader') && isstruct(dl.dataLoader)
+                        if isfield(dl.dataLoader,'path') && ~isempty(dl.dataLoader.path)
+                            rawPath = char(string(dl.dataLoader.path));
+                            if exist(rawPath,'dir')
+                                return;
+                            end
+                            rawPath = '';
+                        end
+                    end
+                end
+            catch
+                rawPath = '';
+            end
+
+            try
+                if ~isempty(shallowObj.fov) && numel(shallowObj.fov)>=1
+                    src = shallowObj.fov(1).srcpath;
+                    if iscell(src) && ~isempty(src) && ~isempty(src{1})
+                        rawPath = char(string(src{1}));
+                        if exist(rawPath,'dir')
+                            return;
+                        end
+                    end
+                end
+            catch
+                rawPath = '';
+            end
+        end
+
+        function changed = populateDefaultDataLoaderPath(app, pipeObj, rawPath) %#ok<INUSD>
+            changed = false;
+            if isempty(pipeObj) || ~isa(pipeObj,'pipeline')
+                return;
+            end
+            if isempty(pipeObj.nodes)
+                return;
+            end
+            if isempty(rawPath)
+                return;
+            end
+
+            for iNode = 1:numel(pipeObj.nodes)
+                n = pipeObj.nodes(iNode);
+                if ~isfield(n,'type') || ~strcmpi(char(string(n.type)),'dataloader')
+                    continue;
+                end
+
+                if ~isfield(n,'params') || ~isstruct(n.params)
+                    n.params = struct();
+                end
+
+                hasPath = isfield(n.params,'path') && ~isempty(n.params.path);
+                if ~hasPath || ~strcmp(char(string(n.params.path)), char(string(rawPath)))
+                    n.params.path = rawPath;
+                    pipeObj.nodes(iNode) = n;
+                    changed = true;
+                end
+            end
+        end
+
+        function defaultPath = getProjectDefaultPipelinePath(app, shallowObj) %#ok<INUSD>
+            defaultPath = '';
+            try
+                if ~isprop(shallowObj,'runProfiles') || isempty(shallowObj.runProfiles)
+                    return;
+                end
+                if ~isfield(shallowObj.runProfiles,'pipeline') || isempty(shallowObj.runProfiles.pipeline)
+                    return;
+                end
+                p = shallowObj.runProfiles.pipeline;
+                if isfield(p,'defaultTemplatePath') && ~isempty(p.defaultTemplatePath)
+                    defaultPath = char(string(p.defaultTemplatePath));
+                    if ~exist(defaultPath,'file')
+                        defaultPath = '';
+                    end
+                end
+            catch
+                defaultPath = '';
+            end
+        end
+
+        function changed = setProjectDefaultPipelineRef(app, shallowObj, pipeObj) %#ok<INUSD>
+            changed = false;
+            if isempty(shallowObj) || ~isa(shallowObj,'shallow') || isempty(pipeObj) || ~isa(pipeObj,'pipeline')
+                return;
+            end
+
+            if ~isprop(shallowObj,'runProfiles') || isempty(shallowObj.runProfiles) || ~isstruct(shallowObj.runProfiles)
+                shallowObj.runProfiles = struct();
+            end
+            if ~isfield(shallowObj.runProfiles,'pipeline') || isempty(shallowObj.runProfiles.pipeline) || ~isstruct(shallowObj.runProfiles.pipeline)
+                shallowObj.runProfiles.pipeline = struct();
+            end
+
+            pipeInfo = shallowObj.runProfiles.pipeline;
+            jsonPath = fullfile(pipeObj.path, 'pipeline.json');
+            pipeId = char(string(pipeObj.strid));
+
+            curPath = '';
+            curId = '';
+            if isfield(pipeInfo,'defaultTemplatePath') && ~isempty(pipeInfo.defaultTemplatePath)
+                curPath = char(string(pipeInfo.defaultTemplatePath));
+            end
+            if isfield(pipeInfo,'defaultTemplateId') && ~isempty(pipeInfo.defaultTemplateId)
+                curId = char(string(pipeInfo.defaultTemplateId));
+            end
+
+            if ~strcmp(app.normalizeFsPath(curPath), app.normalizeFsPath(jsonPath))
+                pipeInfo.defaultTemplatePath = jsonPath;
+                changed = true;
+            end
+            if ~strcmp(curId, pipeId)
+                pipeInfo.defaultTemplateId = pipeId;
+                changed = true;
+            end
+
+            shallowObj.runProfiles.pipeline = pipeInfo;
+        end
+
+        function paths = resolveProjectPipelineJsonCandidates(app, shallowObj) %#ok<INUSD>
+            paths = {};
+            if isempty(shallowObj) || ~isa(shallowObj,'shallow')
+                return;
+            end
+            if isempty(shallowObj.io.path) || isempty(shallowObj.io.file)
+                return;
+            end
+
+            projectRoot = fullfile(char(string(shallowObj.io.path)), char(string(shallowObj.io.file)));
+            if ~exist(projectRoot,'dir')
+                return;
+            end
+
+            d = dir(fullfile(projectRoot,'*','pipeline.json'));
+            if isempty(d) && exist(fullfile(projectRoot,'pipeline.json'),'file')
+                d = dir(fullfile(projectRoot,'pipeline.json'));
+            end
+            if isempty(d)
+                return;
+            end
+
+            seen = containers.Map('KeyType','char','ValueType','logical');
+            for i = 1:numel(d)
+                p = fullfile(d(i).folder, d(i).name);
+                key = app.normalizeFsPath(p);
+                if isempty(key) || isKey(seen, key)
+                    continue;
+                end
+                seen(key) = true;
+                paths{end+1} = p; %#ok<AGROW>
+            end
+        end
+
 
    function registerRecentProject(app, projectPath)
+
+
 
     % --- Normaliser input -> string scalar
     projectPath = string(projectPath);
@@ -2769,7 +3139,7 @@ end
                 case 'classifier'
                     classifierGUI(modObj);
                 otherwise
-                    pipelineGUI([], pipeObj);
+                    app.openPipelineWithContext(pipeObj);
             end
         end
 
@@ -2860,6 +3230,27 @@ end
                 t=[t 'Number of positions: ' num2str(n) newline newline];
 
                 t=[t 'Number of classifiers in project: ' num2str(numel(shallowObj.processing.classification)) newline newline];
+
+                defaultPipePath = app.getProjectDefaultPipelinePath(shallowObj);
+                if ~isempty(defaultPipePath)
+                    defaultPipeId = '';
+                    try
+                        if isfield(shallowObj.runProfiles,'pipeline') && isfield(shallowObj.runProfiles.pipeline,'defaultTemplateId')
+                            defaultPipeId = char(string(shallowObj.runProfiles.pipeline.defaultTemplateId));
+                        end
+                    catch
+                    end
+
+                    t=[t 'Default pipeline: '];
+                    if ~isempty(defaultPipeId)
+                        t=[t defaultPipeId newline];
+                    else
+                        [~, pipeFolder] = fileparts(fileparts(defaultPipePath));
+                        t=[t pipeFolder newline];
+                    end
+                    t=[t defaultPipePath newline newline];
+                end
+
                 if isfield(shallowObj.processing,'pipelineRun')
                     t=[t 'Number of pipeline runs in project: ' num2str(numel(shallowObj.processing.pipelineRun)) newline newline];
                 end
@@ -3676,20 +4067,22 @@ end
                 return;
             end
             i=app.Tree.SelectedNodes.UserData;
-            % store=app.Tree.SelectedNodes;
             proj=app.Data.Project{i};
             shallowObj=evalin('base',proj);
-            addDataGUI(shallowObj,app);
 
+            nBefore = app.getProjectFovCount(shallowObj);
+
+            addDataGUI(shallowObj,app);
             uiwait(app.DetecDivUIFigure);
+
+            nAfter = app.getProjectFovCount(shallowObj);
+            if nAfter > nBefore
+                app.ensureDefaultPipelineForProject(shallowObj);
+            end
 
             TreeSelectionChanged(app, event)
             gatherVarsFromWorkspace(app);
-
-
             displayNodes(app);
-
-            % app.Tree.SelectedNodes=store;
 
         end
 
@@ -4503,7 +4896,7 @@ shallowObj.extractAllROICrops( ...
             if cc <= numel(app.Data.Pipeline)
                 pipeVar = app.Data.Pipeline{cc};
                 pipeObj = evalin('base', pipeVar);
-                pipelineGUI([], pipeObj);
+                app.openPipelineWithContext(pipeObj);
             end
         end
 
@@ -5059,17 +5452,21 @@ shallowObj.extractAllROICrops( ...
                 return;
             end
             i=app.Tree.SelectedNodes.UserData;
-            % store=app.Tree.SelectedNodes;
             proj=app.Data.Project{i};
             shallowObj=evalin('base',proj);
-            addDataGUI(shallowObj,app);
 
+            nBefore = app.getProjectFovCount(shallowObj);
+
+            addDataGUI(shallowObj,app);
             uiwait(app.DetecDivUIFigure);
+
+            nAfter = app.getProjectFovCount(shallowObj);
+            if nAfter > nBefore
+                app.ensureDefaultPipelineForProject(shallowObj);
+            end
 
             TreeSelectionChanged(app, event)
             gatherVarsFromWorkspace(app);
-
-
             displayNodes(app);
         end
 

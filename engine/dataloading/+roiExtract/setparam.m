@@ -9,6 +9,9 @@ function param = setparam(ctx)
     param.correctDrift = true;
     param.driftChannel = [];
     param.driftMethod = 'subpixel';
+    param.driftRefMode = 'previous';
+    param.driftSubpixel = true;
+    param.driftMaxShift = 20;
     param.scale = 1;
     param.cropDrift = 1.0;
 

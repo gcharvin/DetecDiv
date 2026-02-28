@@ -5,6 +5,14 @@ function ctx = process(ctx)
         ctx = struct();
     end
 
+    % interactive path
+    if isfield(ctx,'interactive') && ctx.interactive
+        ctx = roiExtract.ui(ctx);
+        if isfield(ctx,'cancelled') && ctx.cancelled
+            return;
+        end
+    end
+
     % resolve shallow
     shallowObj = [];
     if isfield(ctx,'shallow') && ~isempty(ctx.shallow)
@@ -21,15 +29,24 @@ function ctx = process(ctx)
     end
 
     % params
-    p = struct();
-    if isfield(ctx,'roiExtract') && ~isempty(ctx.roiExtract)
-        p = ctx.roiExtract;
-    elseif isfield(ctx,'extract') && ~isempty(ctx.extract)
-        p = ctx.extract;
-    elseif isfield(ctx,'params') && ~isempty(ctx.params)
-        p = ctx.params;
-    else
-        p = roiExtract.setparam(ctx);
+    p = roiExtract.setparam(ctx);
+    if ~isempty(shallowObj)
+        try
+            if isfield(shallowObj.runProfiles,'dataloading') && isfield(shallowObj.runProfiles.dataloading,'roiExtract')
+                stored = shallowObj.runProfiles.dataloading.roiExtract;
+                if isstruct(stored)
+                    p = mergeStructOverride(p, stored);
+                end
+            end
+        catch
+        end
+    end
+    if isfield(ctx,'roiExtract') && isstruct(ctx.roiExtract) && ~isempty(ctx.roiExtract)
+        p = mergeStructOverride(p, ctx.roiExtract);
+    elseif isfield(ctx,'extract') && isstruct(ctx.extract) && ~isempty(ctx.extract)
+        p = mergeStructOverride(p, ctx.extract);
+    elseif isfield(ctx,'params') && isstruct(ctx.params) && ~isempty(ctx.params)
+        p = mergeStructOverride(p, ctx.params);
     end
 
     % fov selection
@@ -112,6 +129,16 @@ function ctx = process(ctx)
     ctx.fovList = fovList;
     ctx.roiList = collectROIs(fovList);
     ctx.dataSeries = collectDataSeries(ctx.roiList);
+
+    if ~isempty(shallowObj)
+        try
+            if ~isfield(shallowObj.runProfiles,'dataloading') || isempty(shallowObj.runProfiles.dataloading)
+                shallowObj.runProfiles.dataloading = struct();
+            end
+            shallowObj.runProfiles.dataloading.roiExtract = p;
+        catch
+        end
+    end
 end
 
 % ---------------- helpers ----------------
@@ -184,10 +211,30 @@ function args = buildExtractArgs(p)
     if isfield(p,'driftMethod') && ~isempty(p.driftMethod)
         args = [args {'DriftMethod'} {p.driftMethod}];
     end
+    if isfield(p,'driftRefMode') && ~isempty(p.driftRefMode)
+        args = [args {'DriftRefMode'} {p.driftRefMode}];
+    end
+    if isfield(p,'driftSubpixel')
+        args = [args {'DriftSubpixel'} {p.driftSubpixel}];
+    end
+    if isfield(p,'driftMaxShift') && ~isempty(p.driftMaxShift)
+        args = [args {'DriftMaxShift'} {p.driftMaxShift}];
+    end
     if isfield(p,'scale') && ~isempty(p.scale)
         args = [args {'Scale'} {p.scale}];
     end
     if isfield(p,'cropDrift') && ~isempty(p.cropDrift)
         args = [args {'CropDrift'} {p.cropDrift}];
+    end
+end
+
+function out = mergeStructOverride(base, override)
+    out = base;
+    if isempty(override)
+        return;
+    end
+    fn = fieldnames(override);
+    for i = 1:numel(fn)
+        out.(fn{i}) = override.(fn{i});
     end
 end
