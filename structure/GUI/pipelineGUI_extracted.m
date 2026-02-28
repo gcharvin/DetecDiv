@@ -1403,6 +1403,7 @@ classdef pipelineGUI < matlab.apps.AppBase
                 else
                     node.status = 'OK';
                 end
+                node.status = decorateNodeStatus(app, node);
                 nodes(i) = node;
             end
 
@@ -1438,6 +1439,36 @@ classdef pipelineGUI < matlab.apps.AppBase
                 if strcmp(getEdgeField(app, e,'from',''), fromId) && strcmp(getEdgeField(app, e,'to',''), toId)
                     idx(end+1) = i; %#ok<AGROW>
                 end
+            end
+        end
+
+        function status = decorateNodeStatus(app, node) %#ok<INUSD>
+            status = char(string(getfielddefault(app, node, 'status', '')));
+            if ~strcmpi(char(string(getfielddefault(app, node, 'type', ''))), 'roiIdentify')
+                return;
+            end
+
+            params = getfielddefault(app, node, 'params', struct());
+            if ~isstruct(params) || ~isfield(params, 'patternList') || isempty(params.patternList)
+                return;
+            end
+
+            nPat = numel(params.patternList);
+            patIdx = 1;
+            if isfield(params, 'activePatternIndex') && ~isempty(params.activePatternIndex)
+                try
+                    if params.activePatternIndex >= 1 && params.activePatternIndex <= nPat
+                        patIdx = params.activePatternIndex;
+                    end
+                catch
+                end
+            end
+
+            tag = sprintf('Pattern #%d/%d', patIdx, nPat);
+            if isempty(status)
+                status = tag;
+            else
+                status = [status ' (' tag ')'];
             end
         end
 
@@ -1996,6 +2027,35 @@ classdef pipelineGUI < matlab.apps.AppBase
                     else
                         processDataGUI([], tmpProc);
                     end
+                    return;
+                end
+
+                if strcmpi(node.type,'dataLoader')
+                    ctx = struct();
+                    if ~isempty(shallowObj)
+                        ctx.shallow = shallowObj;
+                    end
+                    if isfield(node,'params') && isstruct(node.params)
+                        ctx.dataLoader = node.params;
+                        ctx.params = node.params;
+                    end
+                    ctx = dataLoader.ui(ctx);
+                    if isfield(ctx,'dataLoader') && isstruct(ctx.dataLoader)
+                        params = ctx.dataLoader;
+                        filtered = struct();
+                        keep = {'path','positionFilter','channelFilter','stackFilter','label','write','interactive'};
+                        for kk = 1:numel(keep)
+                            key = keep{kk};
+                            if isfield(params, key)
+                                filtered.(key) = params.(key);
+                            end
+                        end
+                        node.params = filtered;
+                        app.Data.nodes(idx) = node;
+                        updateModuleListTable(app);
+                        updateParamsTable(app, idx);
+                    end
+                    refreshStatus(app);
                     return;
                 end
 

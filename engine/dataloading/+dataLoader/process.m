@@ -5,23 +5,18 @@ function ctx = process(ctx)
         ctx = struct();
     end
 
-    % --- params ---
-    p = struct();
-    if isfield(ctx,'dataLoader') && ~isempty(ctx.dataLoader)
-        p = ctx.dataLoader;
-    elseif isfield(ctx,'params') && ~isempty(ctx.params)
-        p = ctx.params;
+    p = dataLoader.setparam(struct());
+    if isfield(ctx,'dataLoader') && isstruct(ctx.dataLoader) && ~isempty(ctx.dataLoader)
+        p = mergeStructOverride(p, ctx.dataLoader);
+    elseif isfield(ctx,'params') && isstruct(ctx.params) && ~isempty(ctx.params)
+        p = mergeStructOverride(p, ctx.params);
     end
 
-    % allow ctx.path override
     if isfield(ctx,'path') && ~isempty(ctx.path)
         p.path = ctx.path;
     end
-
     if ~isfield(p,'write'), p.write = true; end
     if ~isfield(p,'interactive'), p.interactive = false; end
-
-    % --- interactive GUI ---
     if isfield(ctx,'interactive') && ctx.interactive
         p.interactive = true;
     end
@@ -31,9 +26,11 @@ function ctx = process(ctx)
         if isfield(ctx,'cancelled') && ctx.cancelled
             return;
         end
+        if isfield(ctx,'dataLoader') && isstruct(ctx.dataLoader)
+            p = mergeStructOverride(p, ctx.dataLoader);
+        end
     end
 
-    % --- get or build output ---
     out = [];
     if isfield(ctx,'dataOutput') && ~isempty(ctx.dataOutput)
         out = ctx.dataOutput;
@@ -60,7 +57,16 @@ function ctx = process(ctx)
         out = parseInputData(p.path, args{:});
     end
 
-    % add label prefix if requested
+    if isfield(p,'positionIdx') && ~isempty(p.positionIdx) && isfield(out,'pos') && ~isempty(out.pos)
+        idx = p.positionIdx(:)';
+        idx = idx(idx >= 1 & idx <= numel(out.pos));
+        if ~isempty(idx)
+            out.pos = out.pos(idx);
+        else
+            out.pos = out.pos([]);
+        end
+    end
+
     if isfield(p,'label') && ~isempty(p.label) && isfield(out,'pos')
         lab = char(string(p.label));
         for i = 1:numel(out.pos)
@@ -72,7 +78,6 @@ function ctx = process(ctx)
 
     ctx.dataOutput = out;
 
-    % --- attach to project ---
     if ~isfield(ctx,'shallow') || isempty(ctx.shallow)
         ctx.shallow = shallow();
     end
@@ -92,8 +97,16 @@ function ctx = process(ctx)
         catch
         end
     end
+    if isfield(p,'positionIdx') && ~isempty(p.positionIdx)
+        ctx.positionIdx = p.positionIdx;
+    end
+    if isfield(p,'channelIdx') && ~isempty(p.channelIdx)
+        ctx.channelIdx = p.channelIdx;
+    end
+    if isfield(p,'frameRange') && ~isempty(p.frameRange)
+        ctx.frameRange = p.frameRange;
+    end
 
-    % store last params in project
     if isprop(ctx.shallow,'runProfiles')
         rp = ctx.shallow.runProfiles;
         if ~isfield(rp,'dataloading') || isempty(rp.dataloading)
@@ -101,5 +114,16 @@ function ctx = process(ctx)
         end
         rp.dataloading.dataLoader = p;
         ctx.shallow.runProfiles = rp;
+    end
+end
+
+function out = mergeStructOverride(base, patch)
+    out = base;
+    if nargin < 2 || ~isstruct(patch) || isempty(patch)
+        return;
+    end
+    fn = fieldnames(patch);
+    for i = 1:numel(fn)
+        out.(fn{i}) = patch.(fn{i});
     end
 end

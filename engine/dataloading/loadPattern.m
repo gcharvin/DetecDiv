@@ -15,7 +15,16 @@ function pattern = loadPattern(shallowObj)
     if isfield(rp.dataloading,'roiIdentify') && isstruct(rp.dataloading.roiIdentify)
         ri = rp.dataloading.roiIdentify;
         if isfield(ri,'patternList') && isstruct(ri.patternList) && ~isempty(ri.patternList)
-            pattern = ri.patternList(1);
+            idx = 1;
+            if isfield(ri,'activePatternIndex') && ~isempty(ri.activePatternIndex)
+                try
+                    if ri.activePatternIndex >= 1 && ri.activePatternIndex <= numel(ri.patternList)
+                        idx = ri.activePatternIndex;
+                    end
+                catch
+                end
+            end
+            pattern = ri.patternList(idx);
             return;
         end
     end

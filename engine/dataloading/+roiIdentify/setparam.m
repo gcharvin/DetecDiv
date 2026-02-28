@@ -10,6 +10,7 @@ function param = setparam(ctx)
     param.crop = [];
     param.fallbackFullFrame = true;
     param.patternList = struct([]);
+    param.activePatternIndex = [];
 
     if nargin < 1 || isempty(ctx)
         return;

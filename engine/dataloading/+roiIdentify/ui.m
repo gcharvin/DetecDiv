@@ -1,5 +1,5 @@
 function ctx = ui(ctx)
-% roiIdentify.ui  Launch ROIextracterGUI and persist calibration into ctx/node params.
+% roiIdentify.ui  Launch standardized ROI identification editor and persist settings.
 
     if nargin < 1 || isempty(ctx)
         ctx = struct();
@@ -8,30 +8,19 @@ function ctx = ui(ctx)
     if isa(ctx,'shallow')
         ctx = struct('shallow', ctx);
     elseif isa(ctx,'fov')
-        try
-            sh = ctx.flaggedROIs;
-        catch
-            sh = [];
-        end
-        fovId = '';
-        try
-            fovId = ctx.id;
-        catch
-        end
-        ctx = struct('shallow', sh, 'fovId', fovId);
+        error('roiIdentify.ui:FovInput', 'Use a project context for roiIdentify.ui.');
     end
 
     if ~isstruct(ctx)
-        error('roiIdentify.ui:InvalidInput','Input must be a ctx struct, shallow, or fov.');
+        error('roiIdentify.ui:InvalidInput','Input must be a ctx struct or shallow object.');
     end
-    if ~isfield(ctx,'shallow') || isempty(ctx.shallow)
-        error('roiIdentify.ui:NoProject','shallow project required for ROIextracterGUI.');
+    if ~isfield(ctx,'shallow') || isempty(ctx.shallow) || ~isa(ctx.shallow, 'shallow')
+        error('roiIdentify.ui:NoProject','A shallow project is required.');
     end
 
     shallowObj = ctx.shallow;
 
     p = roiIdentify.setparam(struct());
-
     if isprop(shallowObj,'runProfiles') && isstruct(shallowObj.runProfiles)
         try
             if isfield(shallowObj.runProfiles,'dataloading') && isfield(shallowObj.runProfiles.dataloading,'roiIdentify')
@@ -50,180 +39,76 @@ function ctx = ui(ctx)
         p = mergeStructOverride(p, ctx.params);
     end
 
-    patList = struct([]);
-    if isfield(p,'patternList') && ~isempty(p.patternList)
-        patList = p.patternList;
-    else
+    if (~isfield(p,'patternList') || isempty(p.patternList))
         try
             pat = loadPattern(shallowObj);
             if isstruct(pat) && ~isempty(fieldnames(pat))
-                patList = pat;
+                p.patternList = pat;
             end
         catch
         end
     end
-    p.patternList = patList;
 
-    refIdx = resolveReferenceFovIndex(shallowObj, ctx, p.patternList);
-    if refIdx < 1 || refIdx > numel(shallowObj.fov)
-        refIdx = 1;
+    app = roiIdentifyGUI(shallowObj, p);
+    try
+        uiwait(app.UIFigure);
+    catch
     end
 
-    fovobj = shallowObj.fov(refIdx);
-
-    app = ROIextracterGUI(fovobj);
+    cancelled = true;
     try
-        if isfield(p,'referenceFrame') && ~isempty(p.referenceFrame)
-            app.ReferenceframeEditField.Value = p.referenceFrame;
+        cancelled = app.Cancelled;
+    catch
+    end
+    if cancelled
+        ctx.cancelled = true;
+        try
+            delete(app);
+        catch
+        end
+        return;
+    end
+
+    p = app.Result;
+    try
+        delete(app);
+    catch
+    end
+
+    try
+        if ~isfield(shallowObj.runProfiles,'dataloading') || isempty(shallowObj.runProfiles.dataloading)
+            shallowObj.runProfiles.dataloading = struct();
         end
     catch
+        shallowObj.runProfiles = struct('dataloading', struct());
     end
-    try
-        if isfield(p,'threshold') && ~isempty(p.threshold)
-            app.ThresholdEditField.Value = p.threshold;
+
+    shallowObj.runProfiles.dataloading.roiIdentify = p;
+    if isfield(p,'patternList') && isstruct(p.patternList) && ~isempty(p.patternList)
+        patIdx = 1;
+        if isfield(p,'activePatternIndex') && ~isempty(p.activePatternIndex)
+            try
+                if p.activePatternIndex >= 1 && p.activePatternIndex <= numel(p.patternList)
+                    patIdx = p.activePatternIndex;
+                end
+            catch
+            end
         end
-    catch
-    end
-    try
-        if isfield(p,'channel') && ~isempty(p.channel)
-            app.channelnameEditField.Value = char(string(p.channel));
-        end
-    catch
-    end
-
-    origClose = [];
-    try, origClose = app.ROIidentifierUIFigure.CloseRequestFcn; catch, end
-    app.ROIidentifierUIFigure.CloseRequestFcn = @(src,evt)onClose(src,evt,origClose);
-
-    origBtn = [];
-    try, origBtn = app.CloseButton.ButtonPushedFcn; catch, end
-    try
-        app.CloseButton.ButtonPushedFcn = @(src,evt)onClose(src,evt,origBtn);
-    catch
+        storePattern(shallowObj, p.patternList(patIdx));
+        ctx.pattern = p.patternList(patIdx);
+        ctx.patternList = p.patternList;
     end
 
     try
-        waitfor(app.ROIidentifierUIFigure);
+        shallowSave(shallowObj);
     catch
     end
 
+    ctx.roiIdentify = p;
+    ctx.params = p;
     ctx.shallow = shallowObj;
     ctx.fovList = shallowObj.fov;
     ctx.roiList = collectROIs(ctx.fovList);
-
-    function onClose(src, evt, origFcn)
-        try
-            if isempty(shallowObj)
-                return;
-            end
-
-            pat = struct();
-            try, pat.rect = fovobj.pattern; catch, pat.rect = []; end
-            try, pat.crop = fovobj.crop; catch, pat.crop = []; end
-            try, pat.fovId = fovobj.id; catch, pat.fovId = ''; end
-            pat.fovIndex = refIdx;
-            try, pat.frame = app.ReferenceframeEditField.Value; catch, pat.frame = 1; end
-            try, pat.channel = app.channelnameEditField.Value; catch, pat.channel = ''; end
-            try
-                if isprop(fovobj,'channel')
-                    pix = find(matches(fovobj.channel, pat.channel),1);
-                    if ~isempty(pix)
-                        pat.channelIndex = pix;
-                    end
-                end
-            catch
-            end
-
-            if isfield(p,'patternList') && ~isempty(p.patternList)
-                patListLocal = p.patternList;
-            else
-                patListLocal = struct([]);
-            end
-            if ~isempty(pat.rect)
-                patListLocal = upsertPattern(patListLocal, pat);
-            end
-
-            try
-                if ~isfield(shallowObj.runProfiles,'dataloading') || isempty(shallowObj.runProfiles.dataloading)
-                    shallowObj.runProfiles.dataloading = struct();
-                end
-            catch
-                shallowObj.runProfiles = struct('dataloading', struct());
-            end
-
-            p.referenceFrame = safeNumeric(app.ReferenceframeEditField.Value, p.referenceFrame);
-            p.threshold = safeNumeric(app.ThresholdEditField.Value, p.threshold);
-            p.channel = char(string(app.channelnameEditField.Value));
-            if isfield(pat,'channelIndex') && ~isempty(pat.channelIndex)
-                p.channelIndex = pat.channelIndex;
-            end
-            if isfield(pat,'crop')
-                p.crop = pat.crop;
-            end
-            p.patternList = patListLocal;
-
-            shallowObj.runProfiles.dataloading.roiIdentify = p;
-            if ~isempty(pat.rect)
-                storePattern(shallowObj, pat); % legacy single-pattern storage
-            end
-
-            ctx.roiIdentify = p;
-            ctx.params = p;
-            if ~isempty(pat.rect)
-                ctx.pattern = pat;
-            end
-            ctx.patternList = patListLocal;
-
-            try, shallowSave(shallowObj); catch, end
-        catch
-        end
-
-        if ~isempty(origFcn)
-            try
-                feval(origFcn, src, evt);
-            catch
-                try
-                    origFcn(src, evt);
-                catch
-                end
-            end
-        end
-    end
-end
-
-function idx = resolveReferenceFovIndex(shallowObj, ctx, patList)
-idx = 1;
-
-try
-    if isfield(ctx,'fovIndex') && ~isempty(ctx.fovIndex)
-        idx = ctx.fovIndex(1);
-        return;
-    end
-catch
-end
-
-try
-    if isfield(ctx,'fovId') && ~isempty(ctx.fovId)
-        wanted = char(string(ctx.fovId));
-        for i = 1:numel(shallowObj.fov)
-            if isprop(shallowObj.fov(i),'id') && strcmp(shallowObj.fov(i).id, wanted)
-                idx = i;
-                return;
-            end
-        end
-    end
-catch
-end
-
-if isstruct(patList) && ~isempty(patList)
-    try
-        if isfield(patList(1),'fovIndex') && ~isempty(patList(1).fovIndex)
-            idx = patList(1).fovIndex;
-            return;
-        end
-    catch
-    end
-end
 end
 
 function roiList = collectROIs(fovList)
@@ -238,38 +123,11 @@ end
 
 function out = mergeStructOverride(base, override)
 out = base;
-if isempty(override), return; end
+if isempty(override)
+    return;
+end
 fn = fieldnames(override);
 for i = 1:numel(fn)
     out.(fn{i}) = override.(fn{i});
-end
-end
-
-function pats = upsertPattern(pats, pat)
-if isempty(pats)
-    pats = pat;
-    return;
-end
-for i = 1:numel(pats)
-    try
-        sameFov = isfield(pats(i),'fovId') && strcmp(char(string(pats(i).fovId)), char(string(pat.fovId)));
-    catch
-        sameFov = false;
-    end
-    if sameFov
-        pats(i) = pat;
-        return;
-    end
-end
-pats(end+1) = pat;
-end
-
-function v = safeNumeric(val, fallback)
-v = fallback;
-try
-    if ~isempty(val)
-        v = val;
-    end
-catch
 end
 end

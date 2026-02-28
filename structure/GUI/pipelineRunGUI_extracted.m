@@ -23,6 +23,7 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             'shallowObj', [], ...
             'projectVars', {{}}, ...
             'selectedNode', [], ...
+            'nodeTemplateParams', {{}}, ...
             'nodeParams', {{}}, ...
             'templateId', 'pipeline', ...
             'templatePath', '' )
@@ -137,6 +138,7 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             nodes = app.Data.pipelineSpec.nodes;
             n = numel(nodes);
             data = cell(n,4);
+            app.Data.nodeTemplateParams = cell(n,1);
             app.Data.nodeParams = cell(n,1);
 
             for i = 1:n
@@ -151,13 +153,12 @@ classdef pipelineRunGUI < matlab.apps.AppBase
                 data{i,3} = char(string(node.type));
                 data{i,4} = pkg;
 
-                p = struct();
+                tpl = struct();
                 if isfield(node,'params') && isstruct(node.params)
-                    p = node.params;
+                    tpl = node.params;
                 end
-                dflt = getRunDefaults(app, node);
-                p = mergeDefaults(app, p, dflt);
-                app.Data.nodeParams{i} = p;
+                app.Data.nodeTemplateParams{i} = tpl;
+                app.Data.nodeParams{i} = getRunDefaults(app, node);
             end
 
             app.NodeTable.Data = data;
@@ -175,13 +176,16 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             t = lower(char(string(node.type)));
             switch t
                 case 'dataloader'
-                    dflt = struct('path','','positionIdx','','channelIdx','','frameRange','');
+                    dflt = struct('path','','positionIdx',[],'channelIdx',[],'frameRange',[],'label','');
                 case 'roiidentify'
-                    dflt = struct('fovIndex','','frameId',1,'channel','','threshold',0.5,'useStoredPattern',true,'fallbackFullFrame',true);
+                    dflt = struct('fovIndex',[],'referenceFrame',[],'channel','','channelIndex',[],'threshold',[], ...
+                        'activePatternIndex',[],'fallbackFullFrame',[],'keepExisting',[]);
                 case 'roiextract'
-                    dflt = struct('fovIndex','','channels','','frames','','correctDrift',false,'scale',1);
+                    dflt = struct('fovIndex',[],'channels',[],'frames',[],'correctDrift',[], ...
+                        'driftChannel',[],'driftMethod','','driftRefMode','','driftSubpixel',[], ...
+                        'driftMaxShift',[],'scale',[],'cropDrift',[],'extend',[],'forceChannelNames',[]);
                 case {'processor','classifier'}
-                    dflt = struct('roiList','','channels','','frames','');
+                    dflt = struct('roiList',[],'channels',[],'frames',[]);
                 otherwise
                     dflt = struct();
             end
@@ -205,17 +209,28 @@ classdef pipelineRunGUI < matlab.apps.AppBase
                 app.ParamTable.Data = {};
                 return;
             end
-            p = app.Data.nodeParams{row};
-            if ~isstruct(p)
-                app.ParamTable.Data = {};
-                return;
+
+            tpl = getTemplateParams(app, row);
+            runP = app.Data.nodeParams{row};
+            if ~isstruct(runP)
+                runP = struct();
             end
 
-            fn = fieldnames(p);
-            data = cell(numel(fn),2);
-            for i = 1:numel(fn)
-                data{i,1} = fn{i};
-                data{i,2} = valueToDisplay(app, p.(fn{i}));
+            fnTpl = fieldnames(tpl);
+            fnRun = fieldnames(runP);
+            data = cell(numel(fnTpl) + numel(fnRun), 3);
+            c = 1;
+            for i = 1:numel(fnTpl)
+                data{c,1} = 'Template';
+                data{c,2} = fnTpl{i};
+                data{c,3} = valueToDisplay(app, tpl.(fnTpl{i}));
+                c = c + 1;
+            end
+            for i = 1:numel(fnRun)
+                data{c,1} = 'Run';
+                data{c,2} = fnRun{i};
+                data{c,3} = runOverrideDisplayValue(app, row, fnRun{i}, runP.(fnRun{i}));
+                c = c + 1;
             end
             app.ParamTable.Data = data;
         end
@@ -241,6 +256,116 @@ classdef pipelineRunGUI < matlab.apps.AppBase
                 end
             else
                 out = char(string(v));
+            end
+        end
+
+        function out = runOverrideDisplayValue(app, row, key, v)
+            if isDefaultRunValue(app, row, key, v)
+                out = '<inherit>';
+                return;
+            end
+            out = valueToDisplay(app, v);
+        end
+
+        function tf = isDefaultRunValue(app, row, key, v)
+            tf = false;
+            if isempty(app.Data.pipelineSpec.nodes) || row < 1 || row > numel(app.Data.pipelineSpec.nodes)
+                return;
+            end
+            dflt = getRunDefaults(app, app.Data.pipelineSpec.nodes(row));
+            if isstruct(dflt) && isfield(dflt, key)
+                try
+                    tf = isequaln(v, dflt.(key));
+                catch
+                    tf = false;
+                end
+            end
+        end
+
+        function v = getRunDefaultValue(app, row, key)
+            v = [];
+            if isempty(app.Data.pipelineSpec.nodes) || row < 1 || row > numel(app.Data.pipelineSpec.nodes)
+                return;
+            end
+            dflt = getRunDefaults(app, app.Data.pipelineSpec.nodes(row));
+            if isstruct(dflt) && isfield(dflt, key)
+                v = dflt.(key);
+            end
+        end
+
+        function p = getTemplateParams(app, row)
+            p = struct();
+            if row >= 1 && row <= numel(app.Data.nodeTemplateParams)
+                tmp = app.Data.nodeTemplateParams{row};
+                if isstruct(tmp)
+                    p = tmp;
+                end
+            end
+        end
+
+        function p = getMergedNodeParams(app, row)
+            p = getTemplateParams(app, row);
+            if row >= 1 && row <= numel(app.Data.nodeParams)
+                ov = app.Data.nodeParams{row};
+                if isstruct(ov)
+                    p = mergeStructLocal(app, p, ov);
+                end
+            end
+        end
+
+        function out = mergeStructLocal(app, base, patch) %#ok<INUSD>
+            if nargin < 2 || ~isstruct(base) || isempty(base)
+                base = struct();
+            end
+            out = base;
+            if nargin < 3 || ~isstruct(patch) || isempty(patch)
+                return;
+            end
+            fn = fieldnames(patch);
+            for i = 1:numel(fn)
+                out.(fn{i}) = patch.(fn{i});
+            end
+        end
+
+        function out = extractRunOverrides(app, node, templateParams, mergedParams)
+            out = getRunDefaults(app, node);
+            if ~isstruct(out)
+                out = struct();
+                return;
+            end
+            fn = fieldnames(out);
+            for i = 1:numel(fn)
+                k = fn{i};
+                if ~isfield(mergedParams, k)
+                    continue;
+                end
+                newVal = mergedParams.(k);
+                tplVal = [];
+                if isstruct(templateParams) && isfield(templateParams, k)
+                    tplVal = templateParams.(k);
+                end
+                try
+                    sameAsTemplate = isequaln(newVal, tplVal);
+                catch
+                    sameAsTemplate = false;
+                end
+                if ~sameAsTemplate
+                    out.(k) = newVal;
+                end
+            end
+        end
+
+        function out = pruneRunOverrides(app, row, p)
+            out = struct();
+            if ~isstruct(p)
+                return;
+            end
+            fn = fieldnames(p);
+            for i = 1:numel(fn)
+                k = fn{i};
+                if ~isDefaultRunValue(app, row, k, p.(k))
+                    out.(k) = p.(k);
+                end
             end
         end
 
@@ -348,10 +473,81 @@ classdef pipelineRunGUI < matlab.apps.AppBase
                 return;
             end
             node = app.Data.pipelineSpec.nodes(row);
-            params = app.Data.nodeParams{row};
+            templateParams = getTemplateParams(app, row);
+            params = getMergedNodeParams(app, row);
             shallowObj = resolveSelectedProject(app);
 
             try
+                if strcmpi(node.type,'dataloader')
+                    dlg = dataLoaderGUI(params);
+                    try
+                        uiwait(dlg.UIFigure);
+                    catch
+                    end
+                    cancelled = true;
+                    try
+                        cancelled = dlg.Cancelled;
+                    catch
+                    end
+                    if ~cancelled
+                        app.Data.nodeParams{row} = extractRunOverrides(app, node, templateParams, dlg.Result);
+                        updateParamTable(app, row);
+                    end
+                    try
+                        delete(dlg);
+                    catch
+                    end
+                    return;
+                end
+
+                if strcmpi(node.type,'roiidentify')
+                    if isempty(shallowObj)
+                        uialert(app.UIFigure, 'ROI identify run overrides need a project context.', 'Info');
+                        return;
+                    end
+                    dlg = roiIdentifyGUI(shallowObj, params);
+                    try
+                        uiwait(dlg.UIFigure);
+                    catch
+                    end
+                    cancelled = true;
+                    try
+                        cancelled = dlg.Cancelled;
+                    catch
+                    end
+                    if ~cancelled
+                        app.Data.nodeParams{row} = extractRunOverrides(app, node, templateParams, dlg.Result);
+                        updateParamTable(app, row);
+                    end
+                    try
+                        delete(dlg);
+                    catch
+                    end
+                    return;
+                end
+
+                if strcmpi(node.type,'roiextract')
+                    dlg = roiExtractGUI(params);
+                    try
+                        uiwait(dlg.UIFigure);
+                    catch
+                    end
+                    cancelled = true;
+                    try
+                        cancelled = dlg.Cancelled;
+                    catch
+                    end
+                    if ~cancelled
+                        app.Data.nodeParams{row} = extractRunOverrides(app, node, templateParams, dlg.Result);
+                        updateParamTable(app, row);
+                    end
+                    try
+                        delete(dlg);
+                    catch
+                    end
+                    return;
+                end
+
                 if strcmpi(node.type,'processor')
                     if isempty(shallowObj)
                         processDataGUI;
@@ -450,9 +646,26 @@ classdef pipelineRunGUI < matlab.apps.AppBase
                 return;
             end
 
-            key = char(string(data{row,1}));
+            scope = char(string(data{row,1}));
+            if ~strcmpi(scope, 'Run')
+                return;
+            end
+
+            key = char(string(data{row,2}));
             oldVal = p.(key);
-            p.(key) = parseDisplayValue(app, event.NewData, oldVal);
+            rawStr = strtrim(char(string(event.NewData)));
+            if isempty(rawStr) || strcmpi(rawStr, '<inherit>')
+                p.(key) = getRunDefaultValue(app, nodeRow, key);
+            else
+                typeRef = oldVal;
+                if isempty(typeRef)
+                    tpl = getTemplateParams(app, nodeRow);
+                    if isstruct(tpl) && isfield(tpl, key)
+                        typeRef = tpl.(key);
+                    end
+                end
+                p.(key) = parseDisplayValue(app, event.NewData, typeRef);
+            end
             app.Data.nodeParams{nodeRow} = p;
 
             updateParamTable(app, nodeRow);
@@ -502,7 +715,7 @@ classdef pipelineRunGUI < matlab.apps.AppBase
                 nodeId = char(string(nodes(i).id));
                 ctx.run.selectedNodes{end+1} = nodeId; %#ok<AGROW>
                 ctx.run.nodeParams(end+1).id = nodeId; %#ok<AGROW>
-                ctx.run.nodeParams(end).params = app.Data.nodeParams{i};
+                ctx.run.nodeParams(end).params = pruneRunOverrides(app, i, app.Data.nodeParams{i});
             end
 
             try
@@ -574,13 +787,13 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             app.NodeTable.Position = [20 300 800 240];
 
             app.ParamTableLabel = uilabel(app.UIFigure);
-            app.ParamTableLabel.Position = [20 268 160 22];
-            app.ParamTableLabel.Text = 'Run parameters (selected node)';
+            app.ParamTableLabel.Position = [20 268 220 22];
+            app.ParamTableLabel.Text = 'Template params and run overrides';
 
             app.ParamTable = uitable(app.UIFigure);
-            app.ParamTable.ColumnName = {'Parameter'; 'Value'};
+            app.ParamTable.ColumnName = {'Scope'; 'Parameter'; 'Value'};
             app.ParamTable.RowName = {};
-            app.ParamTable.ColumnEditable = [false true];
+            app.ParamTable.ColumnEditable = [false false true];
             app.ParamTable.CellEditCallback = createCallbackFcn(app, @ParamTableCellEdit, true);
             app.ParamTable.Position = [20 60 800 200];
 

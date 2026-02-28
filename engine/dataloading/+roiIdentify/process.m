@@ -1,17 +1,15 @@
 function ctx = process(ctx)
-% roiIdentify.process  Identify ROIs using stored pattern or ctx params.
+% roiIdentify.process  Identify ROIs using stored or per-FOV patterns.
 
     if nargin < 1 || isempty(ctx)
         ctx = struct();
     end
 
-    % interactive path
     if isfield(ctx,'interactive') && ctx.interactive
         ctx = roiIdentify.ui(ctx);
         return;
     end
 
-    % ---- resolve shallow & fov list ----
     shallowObj = [];
     if isfield(ctx,'shallow') && ~isempty(ctx.shallow)
         shallowObj = ctx.shallow;
@@ -22,14 +20,11 @@ function ctx = process(ctx)
         error('roiIdentify.process:NoFOV','No shallow or fovList provided.');
     end
 
-    if ~exist('fovList','var') || isempty(fovList)
+    if isempty(fovList)
         return;
     end
 
-    % ---- params ----
     p = roiIdentify.setparam(ctx);
-
-    % stored params provide project defaults
     if ~isempty(shallowObj) && isprop(shallowObj,'runProfiles')
         rp = shallowObj.runProfiles;
         if isfield(rp,'dataloading') && isfield(rp.dataloading,'roiIdentify')
@@ -39,122 +34,79 @@ function ctx = process(ctx)
             end
         end
     end
-
-    % explicit ctx params override stored project defaults
     if isfield(ctx,'roiIdentify') && isstruct(ctx.roiIdentify) && ~isempty(ctx.roiIdentify)
         p = mergeStructOverride(p, ctx.roiIdentify);
     elseif isfield(ctx,'params') && isstruct(ctx.params) && ~isempty(ctx.params)
         p = mergeStructOverride(p, ctx.params);
     end
 
-    if ~isfield(p,'fallbackFullFrame'), p.fallbackFullFrame = true; end
-    if ~isfield(p,'keepExisting'), p.keepExisting = false; end
+    if ~isfield(p,'fallbackFullFrame')
+        p.fallbackFullFrame = true;
+    end
+    if ~isfield(p,'keepExisting')
+        p.keepExisting = false;
+    end
 
-    % ---- fov selection ----
     if isfield(ctx,'fovIndex') && ~isempty(ctx.fovIndex)
         fovIdx = ctx.fovIndex(:)';
     else
         fovIdx = 1:numel(fovList);
     end
 
-    % ---- progress ----
     resume = true;
-    if isfield(ctx,'resume'), resume = logical(ctx.resume); end
+    if isfield(ctx,'resume')
+        resume = logical(ctx.resume);
+    end
     saveProgress = true;
-    if isfield(ctx,'saveProgress'), saveProgress = logical(ctx.saveProgress); end
+    if isfield(ctx,'saveProgress')
+        saveProgress = logical(ctx.saveProgress);
+    end
 
     prog = progressLoad(shallowObj, ctx, 'roiIdentify');
     if isempty(prog) || ~resume
         prog = progressInit(shallowObj, ctx, 'roiIdentify', fovIdx, p);
     end
 
-    % ---- pattern ----
-    pattern = struct();
-    if isfield(ctx,'pattern') && ~isempty(ctx.pattern)
-        pattern = ctx.pattern;
-    elseif isfield(p,'patternList') && isstruct(p.patternList) && ~isempty(p.patternList)
-        pattern = p.patternList(1);
-    elseif ~isempty(shallowObj)
-        pattern = loadPattern(shallowObj);
-    end
+    patternList = normalizePatternList(ctx, p, shallowObj, fovList);
 
-    if (isempty(pattern) || ~isfield(pattern,'rect') || isempty(pattern.rect)) && ...
-            isprop(fovList(1),'pattern') && ~isempty(fovList(1).pattern)
-        pattern.rect = fovList(1).pattern;
-        pattern.fovIndex = 1;
-        if isprop(fovList(1),'id')
-            pattern.fovId = fovList(1).id;
-        end
-        if isprop(fovList(1),'crop') && ~isempty(fovList(1).crop)
-            pattern.crop = fovList(1).crop;
-        end
-    end
-
-    % full-frame fallback
-    if isempty(pattern) || ~isstruct(pattern) || ~isfield(pattern,'rect') || isempty(pattern.rect)
-        if p.fallbackFullFrame
-            for i = fovIdx
-                f = fovList(i);
-                try
-                    if isempty(f.roi) || (numel(f.roi)==1 && isempty(f.roi(1).id))
-                        % use first channel, first frame
-                        im = readImage(f, p.referenceFrame, resolveChannelIndex(f, p));
-                        if isempty(im)
-                            continue;
-                        end
-                        [H,W] = size(im);
-                        f.addROI([1 1 W H], f.id);
-                    end
-                    progressMark(shallowObj, ctx, 'roiIdentify', i, 1:numel(f.roi));
-                catch
-                end
-            end
-            if saveProgress && ~isempty(shallowObj)
-                try, shallowSave(shallowObj); catch, end
-            end
-            ctx.fovList = fovList;
-            ctx.roiList = collectROIs(fovList);
-            return;
-        else
-            error('roiIdentify.process:NoPattern','No pattern available and fallback disabled.');
-        end
-    end
-
-    % ---- build pattern patch ----
-    [pattimg, chanIdx, refFrame, crop] = buildPatternPatch(fovList, pattern, p);
-
-    % ---- select fovs to process based on progress ----
-    fovsToProcess = [];
     fovIdxToProcess = [];
     for i = fovIdx
         if resume && isDoneFov(prog, i)
             continue;
         end
-        fovsToProcess = [fovsToProcess fovList(i)]; %#ok<AGROW>
         fovIdxToProcess(end+1) = i; %#ok<AGROW>
     end
 
-    if isempty(fovsToProcess)
+    if isempty(fovIdxToProcess)
         ctx.fovList = fovList;
         ctx.roiList = collectROIs(fovList);
+        ctx.patternList = patternList;
         return;
     end
 
-    % ---- call identifyROIs ----
-    identifyROIs('FOV', fovsToProcess, ...
-        'Frames', refFrame, ...
-        'Threshold', p.threshold, ...
-        'Pattern', pattimg, ...
-        'Crop', crop, ...
-        'Channel', chanIdx, ...
-        'Keep', p.keepExisting);
-
-    % ---- update progress ----
     for k = 1:numel(fovIdxToProcess)
         i = fovIdxToProcess(k);
+        currentFov = fovList(i);
+        pattern = selectPatternForFov(currentFov, i, ctx, p, patternList);
+
+        if hasValidPattern(pattern)
+            [pattimg, chanIdx, refFrame, crop] = buildPatternPatch(fovList, pattern, p);
+            identifyROIs('FOV', currentFov, ...
+                'Frames', refFrame, ...
+                'Threshold', p.threshold, ...
+                'Pattern', pattimg, ...
+                'Crop', crop, ...
+                'Channel', chanIdx, ...
+                'Keep', p.keepExisting);
+        elseif p.fallbackFullFrame
+            applyFullFrameFallback(currentFov, p);
+        else
+            error('roiIdentify.process:NoPattern', 'No pattern available for FOV %d.', i);
+        end
+
         try
-            n = numel(fovList(i).roi);
-            if n==1 && isempty(fovList(i).roi(1).id)
+            n = numel(currentFov.roi);
+            if n == 1 && isempty(currentFov.roi(1).id)
                 n = 0;
             end
             if n > 0
@@ -165,11 +117,21 @@ function ctx = process(ctx)
     end
 
     if saveProgress && ~isempty(shallowObj)
-        try, shallowSave(shallowObj); catch, end
+        try
+            shallowSave(shallowObj);
+        catch
+        end
     end
 
     ctx.fovList = fovList;
     ctx.roiList = collectROIs(fovList);
+    ctx.patternList = patternList;
+    if ~isempty(patternList)
+        defaultPattern = selectPatternForFov(fovList(1), 1, struct(), p, patternList);
+        if hasValidPattern(defaultPattern)
+            ctx.pattern = defaultPattern;
+        end
+    end
     if ~isempty(ctx.fovList)
         try
             ctx.channels = ctx.fovList(1).channel;
@@ -177,19 +139,138 @@ function ctx = process(ctx)
         end
     end
 
-    % store params/pattern back
     if ~isempty(shallowObj) && isprop(shallowObj,'runProfiles')
         rp = shallowObj.runProfiles;
         if ~isfield(rp,'dataloading') || isempty(rp.dataloading)
             rp.dataloading = struct();
         end
+        p.patternList = patternList;
         rp.dataloading.roiIdentify = p;
         shallowObj.runProfiles = rp;
-        storePattern(shallowObj, pattern);
+        if ~isempty(patternList)
+            patIdx = 1;
+            if isfield(p, 'activePatternIndex') && ~isempty(p.activePatternIndex)
+                try
+                    if p.activePatternIndex >= 1 && p.activePatternIndex <= numel(patternList)
+                        patIdx = p.activePatternIndex;
+                    end
+                catch
+                end
+            end
+            storePattern(shallowObj, patternList(patIdx));
+        end
     end
 end
 
-% ---------------- helpers ----------------
+function patternList = normalizePatternList(ctx, p, shallowObj, fovList)
+patternList = struct([]);
+
+if isfield(ctx,'pattern') && isstruct(ctx.pattern) && hasValidPattern(ctx.pattern)
+    patternList = ctx.pattern;
+    return;
+end
+
+if isfield(p,'patternList') && isstruct(p.patternList) && ~isempty(p.patternList)
+    patternList = p.patternList;
+    return;
+end
+
+if ~isempty(shallowObj)
+    try
+        stored = loadPattern(shallowObj);
+        if isstruct(stored) && ~isempty(stored)
+            patternList = stored;
+            return;
+        end
+    catch
+    end
+end
+
+try
+    if isprop(fovList(1), 'pattern') && ~isempty(fovList(1).pattern)
+        pat.rect = fovList(1).pattern;
+        pat.fovIndex = 1;
+        try
+            pat.fovId = fovList(1).id;
+        catch
+            pat.fovId = '';
+        end
+        try
+            pat.crop = fovList(1).crop;
+        catch
+            pat.crop = [];
+        end
+        pat.frame = p.referenceFrame;
+        if isfield(p, 'channel')
+            pat.channel = p.channel;
+        end
+        if isfield(p, 'channelIndex')
+            pat.channelIndex = p.channelIndex;
+        end
+        patternList = pat;
+    end
+catch
+end
+end
+
+function pattern = selectPatternForFov(fovObj, fovIndex, ctx, p, patternList)
+pattern = struct();
+
+if isfield(ctx,'pattern') && isstruct(ctx.pattern) && hasValidPattern(ctx.pattern)
+    pattern = ctx.pattern;
+    return;
+end
+
+if isempty(patternList)
+    return;
+end
+
+for i = 1:numel(patternList)
+    try
+        if isfield(patternList(i), 'fovId') && isprop(fovObj, 'id') && strcmp(char(string(patternList(i).fovId)), char(string(fovObj.id)))
+            pattern = patternList(i);
+            return;
+        end
+    catch
+    end
+end
+
+for i = 1:numel(patternList)
+    try
+        if isfield(patternList(i), 'fovIndex') && ~isempty(patternList(i).fovIndex) && patternList(i).fovIndex == fovIndex
+            pattern = patternList(i);
+            return;
+        end
+    catch
+    end
+end
+
+activeIdx = [];
+if isfield(p, 'activePatternIndex') && ~isempty(p.activePatternIndex)
+    activeIdx = p.activePatternIndex;
+end
+if ~isempty(activeIdx) && activeIdx >= 1 && activeIdx <= numel(patternList)
+    pattern = patternList(activeIdx);
+    return;
+end
+
+pattern = patternList(1);
+end
+
+function tf = hasValidPattern(pattern)
+tf = isstruct(pattern) && ~isempty(pattern) && isfield(pattern,'rect') && ~isempty(pattern.rect);
+end
+
+function applyFullFrameFallback(fovObj, p)
+    if isempty(fovObj.roi) || (numel(fovObj.roi) == 1 && isempty(fovObj.roi(1).id))
+        im = readImage(fovObj, p.referenceFrame, resolveChannelIndex(fovObj, p));
+        if isempty(im)
+            return;
+        end
+        [h, w] = size(im);
+        fovObj.addROI([1 1 w h], fovObj.id);
+    end
+end
 
 function ok = isDoneFov(prog, fovIdx)
     ok = false;
@@ -197,7 +278,9 @@ function ok = isDoneFov(prog, fovIdx)
         return;
     end
     pos = find(prog.fovIds == fovIdx, 1);
-    if isempty(pos), return; end
+    if isempty(pos)
+        return;
+    end
     if numel(prog.done) >= pos && ~isempty(prog.done{pos})
         ok = true;
     end
@@ -221,7 +304,6 @@ function [pattimg, chanIdx, refFrame, crop] = buildPatternPatch(fovList, pattern
         refFrame = pattern.frame;
     end
 
-    % resolve reference fov
     refFov = fovList(1);
     if isfield(pattern,'fovIndex') && ~isempty(pattern.fovIndex)
         if pattern.fovIndex <= numel(fovList)
@@ -246,8 +328,8 @@ function [pattimg, chanIdx, refFrame, crop] = buildPatternPatch(fovList, pattern
     tmp = readImage(refFov, refFrame, chanIdx);
     rect = pattern.rect;
 
-    % rect = [x y w h]
-    x1 = rect(1); y1 = rect(2);
+    x1 = rect(1);
+    y1 = rect(2);
     x2 = rect(1) + rect(3);
     y2 = rect(2) + rect(4);
 
@@ -278,10 +360,11 @@ end
 
 function out = mergeStructOverride(base, override)
     out = base;
-    if isempty(override), return; end
+    if isempty(override)
+        return;
+    end
     fn = fieldnames(override);
     for i = 1:numel(fn)
-        k = fn{i};
-        out.(k) = override.(k);
+        out.(fn{i}) = override.(fn{i});
     end
 end
