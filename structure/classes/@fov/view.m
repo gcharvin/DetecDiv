@@ -401,8 +401,11 @@ end
 
 
 function closeWindow(handles,event,h)
-if numel(h.UserData.callingApp)
-    uiresume(h.UserData.callingApp)
+try
+    if isprop(h,'UserData') && isstruct(h.UserData) && isfield(h.UserData,'callingApp') && ~isempty(h.UserData.callingApp)
+        uiresume(h.UserData.callingApp)
+    end
+catch
 end
 delete(h)
 end

@@ -177,9 +177,13 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             switch t
                 case 'dataloader'
                     dflt = struct('path','','positionIdx',[],'channelIdx',[],'frameRange',[],'label','');
-                case 'roiidentify'
+                case {'roiidentify','roipattern'}
                     dflt = struct('fovIndex',[],'referenceFrame',[],'channel','','channelIndex',[],'threshold',[], ...
                         'activePatternIndex',[],'fallbackFullFrame',[],'keepExisting',[]);
+                case 'roimanual'
+                    dflt = struct('fovIndex',[],'keepExisting',[],'openFirstOnly',[]);
+                case 'roigrid'
+                    dflt = struct('fovIndex',[],'mode','','gridCount',[],'keepExisting',[]);
                 case 'roiextract'
                     dflt = struct('fovIndex',[],'channels',[],'frames',[],'correctDrift',[], ...
                         'driftChannel',[],'driftMethod','','driftRefMode','','driftSubpixel',[], ...
@@ -500,12 +504,72 @@ classdef pipelineRunGUI < matlab.apps.AppBase
                     return;
                 end
 
-                if strcmpi(node.type,'roiidentify')
+                if strcmpi(node.type,'roiidentify') || strcmpi(node.type,'roiPattern')
                     if isempty(shallowObj)
-                        uialert(app.UIFigure, 'ROI identify run overrides need a project context.', 'Info');
+                        uialert(app.UIFigure, 'ROI pattern run overrides need a project context.', 'Info');
                         return;
                     end
                     dlg = roiIdentifyGUI(shallowObj, params);
+                    try
+                        uiwait(dlg.UIFigure);
+                    catch
+                    end
+                    cancelled = true;
+                    try
+                        cancelled = dlg.Cancelled;
+                    catch
+                    end
+                    if ~cancelled
+                        app.Data.nodeParams{row} = extractRunOverrides(app, node, templateParams, dlg.Result);
+                        updateParamTable(app, row);
+                    end
+                    try
+                        delete(dlg);
+                    catch
+                    end
+                    return;
+                end
+
+                if strcmpi(node.type,'roiManual')
+                    fovCount = 0;
+                    if ~isempty(shallowObj)
+                        try
+                            fovCount = numel(shallowObj.fov);
+                        catch
+                            fovCount = 0;
+                        end
+                    end
+                    dlg = roiManualGUI(params, fovCount);
+                    try
+                        uiwait(dlg.UIFigure);
+                    catch
+                    end
+                    cancelled = true;
+                    try
+                        cancelled = dlg.Cancelled;
+                    catch
+                    end
+                    if ~cancelled
+                        app.Data.nodeParams{row} = extractRunOverrides(app, node, templateParams, dlg.Result);
+                        updateParamTable(app, row);
+                    end
+                    try
+                        delete(dlg);
+                    catch
+                    end
+                    return;
+                end
+
+                if strcmpi(node.type,'roiGrid')
+                    fovCount = 0;
+                    if ~isempty(shallowObj)
+                        try
+                            fovCount = numel(shallowObj.fov);
+                        catch
+                            fovCount = 0;
+                        end
+                    end
+                    dlg = roiGridGUI(params, fovCount);
                     try
                         uiwait(dlg.UIFigure);
                     catch

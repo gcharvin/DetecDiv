@@ -189,7 +189,7 @@ classdef pipelineGUI < matlab.apps.AppBase
                     node.name = char(string(val));
                 case 3
                     pkgVal = char(string(val));
-                    if strcmp(pkgVal, '<none>')
+                    if strcmp(pkgVal, '<none>') || strcmpi(pkgVal, 'builtin')
                         pkgVal = '';
                     end
                     node.pkg = pkgVal;
@@ -489,7 +489,18 @@ classdef pipelineGUI < matlab.apps.AppBase
                 'color',[0.18 0.52 0.94]);
 
             reg(2) = struct( ...
-                'display','ROI identification', ...
+                'display','ROI pattern', ...
+                'type','roiPattern', ...
+                'func','roiPattern.process', ...
+                'gui','roiPattern.ui', ...
+                'paramRequired',{{}}, ...
+                'inputs',{{'images'}}, ...
+                'outputs',{{'roiList'}}, ...
+                'defaultParams',safeSetParam(app, 'roiPattern.setparam'), ...
+                'color',[0.98 0.60 0.20]);
+
+            reg(3) = struct( ...
+                'display','ROI pattern (legacy)', ...
                 'type','roiIdentify', ...
                 'func','roiIdentify.process', ...
                 'gui','roiIdentify.ui', ...
@@ -499,7 +510,29 @@ classdef pipelineGUI < matlab.apps.AppBase
                 'defaultParams',safeSetParam(app, 'roiIdentify.setparam'), ...
                 'color',[0.98 0.60 0.20]);
 
-            reg(3) = struct( ...
+            reg(4) = struct( ...
+                'display','ROI manual', ...
+                'type','roiManual', ...
+                'func','roiManual.process', ...
+                'gui','roiManual.ui', ...
+                'paramRequired',{{}}, ...
+                'inputs',{{'images'}}, ...
+                'outputs',{{'roiList'}}, ...
+                'defaultParams',safeSetParam(app, 'roiManual.setparam'), ...
+                'color',[0.82 0.74 0.28]);
+
+            reg(5) = struct( ...
+                'display','ROI grid', ...
+                'type','roiGrid', ...
+                'func','roiGrid.process', ...
+                'gui','roiGrid.ui', ...
+                'paramRequired',{{}}, ...
+                'inputs',{{'images'}}, ...
+                'outputs',{{'roiList'}}, ...
+                'defaultParams',safeSetParam(app, 'roiGrid.setparam'), ...
+                'color',[0.15 0.72 0.72]);
+
+            reg(6) = struct( ...
                 'display','ROI extraction', ...
                 'type','roiExtract', ...
                 'func','roiExtract.process', ...
@@ -510,7 +543,7 @@ classdef pipelineGUI < matlab.apps.AppBase
                 'defaultParams',safeSetParam(app, 'roiExtract.setparam'), ...
                 'color',[0.10 0.68 0.38]);
 
-            reg(4) = struct( ...
+            reg(7) = struct( ...
                 'display','Processor', ...
                 'type','processor', ...
                 'func','', ...
@@ -521,7 +554,7 @@ classdef pipelineGUI < matlab.apps.AppBase
                 'defaultParams',struct('pkg',''), ...
                 'color',[0.55 0.55 0.55]);
 
-            reg(5) = struct( ...
+            reg(8) = struct( ...
                 'display','Classifier', ...
                 'type','classifier', ...
                 'func','', ...
@@ -1151,6 +1184,11 @@ classdef pipelineGUI < matlab.apps.AppBase
             end
         end
 
+        function tf = isBuiltinNodeType(app, nodeType) %#ok<INUSD>
+            t = lower(char(string(nodeType)));
+            tf = any(strcmp(t, {'dataloader','roiidentify','roipattern','roimanual','roigrid','roiextract','roitracked'}));
+        end
+
         function updateModuleListTable(app)
             n = numel(app.Data.nodes);
             data = cell(n,6);
@@ -1160,7 +1198,11 @@ classdef pipelineGUI < matlab.apps.AppBase
                 data{i,2} = getfielddefault(app, node,'name',node.id);
                 pkg = getfielddefault(app, node,'pkg','');
                 if isempty(pkg)
-                    pkg = '<none>';
+                    if isBuiltinNodeType(app, getfielddefault(app, node,'type',''))
+                        pkg = 'builtin';
+                    else
+                        pkg = '<none>';
+                    end
                 end
                 data{i,3} = pkg;
                 data{i,4} = strjoin(cellstr(node.inputs(:)), ', ');
@@ -1177,12 +1219,21 @@ classdef pipelineGUI < matlab.apps.AppBase
                 switch t
                     case 'processor'
                         list = getProcessorPackageList(app);
+                        list = list(~cellfun(@isempty, list));
+                        list = unique(list, 'stable');
+                        list = [{'<none>'} list(:)'];
                     case 'classifier'
                         list = getClassifierPackageList(app);
+                        list = list(~cellfun(@isempty, list));
+                        list = unique(list, 'stable');
+                        list = [{'<none>'} list(:)'];
+                    otherwise
+                        if isBuiltinNodeType(app, t)
+                            list = {'builtin'};
+                        else
+                            list = {'<none>'};
+                        end
                 end
-                list = list(~cellfun(@isempty, list));
-                list = unique(list, 'stable');
-                list = [{'<none>'} list(:)'];
             end
 
             fmt = app.UIModuleListTable.ColumnFormat;
@@ -1444,27 +1495,108 @@ classdef pipelineGUI < matlab.apps.AppBase
 
         function status = decorateNodeStatus(app, node) %#ok<INUSD>
             status = char(string(getfielddefault(app, node, 'status', '')));
-            if ~strcmpi(char(string(getfielddefault(app, node, 'type', ''))), 'roiIdentify')
-                return;
-            end
-
+            nodeType = char(string(getfielddefault(app, node, 'type', '')));
             params = getfielddefault(app, node, 'params', struct());
-            if ~isstruct(params) || ~isfield(params, 'patternList') || isempty(params.patternList)
+            if ~isstruct(params)
                 return;
             end
 
-            nPat = numel(params.patternList);
-            patIdx = 1;
-            if isfield(params, 'activePatternIndex') && ~isempty(params.activePatternIndex)
-                try
-                    if params.activePatternIndex >= 1 && params.activePatternIndex <= nPat
-                        patIdx = params.activePatternIndex;
+            tag = '';
+            if strcmpi(nodeType, 'roiIdentify') || strcmpi(nodeType, 'roiPattern')
+                if isfield(params, 'patternList') && ~isempty(params.patternList)
+                    nPat = numel(params.patternList);
+                    patIdx = 1;
+                    if isfield(params, 'activePatternIndex') && ~isempty(params.activePatternIndex)
+                        try
+                            if params.activePatternIndex >= 1 && params.activePatternIndex <= nPat
+                                patIdx = params.activePatternIndex;
+                            end
+                        catch
+                        end
                     end
-                catch
+                    tag = sprintf('Pattern #%d/%d', patIdx, nPat);
+                end
+            elseif strcmpi(nodeType, 'roiGrid')
+                tags = {};
+                modeName = 'fullframe';
+                if isfield(params, 'mode') && ~isempty(params.mode)
+                    modeName = lower(char(string(params.mode)));
+                end
+                if strcmp(modeName, 'grid')
+                    gridCount = 1;
+                    if isfield(params, 'gridCount') && ~isempty(params.gridCount)
+                        gridCount = params.gridCount;
+                    end
+                    tags{end+1} = sprintf('Grid %d', round(double(gridCount))); %#ok<AGROW>
+                else
+                    tags{end+1} = 'Full frame'; %#ok<AGROW>
+                end
+                if isfield(params, 'fovIndex') && ~isempty(params.fovIndex)
+                    try
+                        tags{end+1} = sprintf('FOVs %d', numel(params.fovIndex)); %#ok<AGROW>
+                    catch
+                    end
+                end
+                if isfield(params, 'keepExisting') && logical(params.keepExisting)
+                    tags{end+1} = 'Keep existing'; %#ok<AGROW>
+                end
+                tag = strjoin(tags, ', ');
+            elseif strcmpi(nodeType, 'roiManual')
+                tags = {};
+                if isfield(params, 'fovIndex') && ~isempty(params.fovIndex)
+                    try
+                        tags{end+1} = sprintf('FOVs %d', numel(params.fovIndex)); %#ok<AGROW>
+                    catch
+                    end
+                end
+                if isfield(params, 'keepExisting') && logical(params.keepExisting)
+                    tags{end+1} = 'Keep existing'; %#ok<AGROW>
+                end
+                if isfield(params, 'openFirstOnly') && logical(params.openFirstOnly)
+                    tags{end+1} = 'First only'; %#ok<AGROW>
+                end
+                tag = strjoin(tags, ', ');
+            elseif strcmpi(nodeType, 'dataLoader')
+                tags = {};
+                if isfield(params, 'path') && ~isempty(params.path)
+                    rawPath = char(string(params.path));
+                    rawPath = regexprep(rawPath, '[\/]+$', '');
+                    [~, leaf] = fileparts(rawPath);
+                    if isempty(leaf)
+                        leaf = rawPath;
+                    end
+                    tags{end+1} = ['Path ' leaf]; %#ok<AGROW>
+                end
+
+                nFilters = 0;
+                filterKeys = {'positionFilter','channelFilter','stackFilter'};
+                for kk = 1:numel(filterKeys)
+                    key = filterKeys{kk};
+                    if ~isfield(params, key) || isempty(params.(key))
+                        continue;
+                    end
+                    try
+                        nFilters = nFilters + numel(params.(key));
+                    catch
+                        nFilters = nFilters + 1;
+                    end
+                end
+                if nFilters > 0
+                    tags{end+1} = sprintf('Filters %d', nFilters); %#ok<AGROW>
+                end
+
+                if isfield(params, 'label') && ~isempty(params.label)
+                    tags{end+1} = ['Label ' char(string(params.label))]; %#ok<AGROW>
+                end
+
+                if ~isempty(tags)
+                    tag = strjoin(tags, ', ');
                 end
             end
 
-            tag = sprintf('Pattern #%d/%d', patIdx, nPat);
+            if isempty(tag)
+                return;
+            end
             if isempty(status)
                 status = tag;
             else
@@ -1725,7 +1857,15 @@ classdef pipelineGUI < matlab.apps.AppBase
                 case 'dataloader'
                     out = portDef('images','imageSet',true,'edge');
 
-                case 'roiidentify'
+                case {'roiidentify','roipattern'}
+                    in  = portDef('images','imageSet',true,'edge');
+                    out = portDef('roiList','roiList',true,'edge');
+
+                case 'roimanual'
+                    in  = portDef('images','imageSet',true,'edge');
+                    out = portDef('roiList','roiList',true,'edge');
+
+                case 'roigrid'
                     in  = portDef('images','imageSet',true,'edge');
                     out = portDef('roiList','roiList',true,'edge');
 
@@ -2100,20 +2240,64 @@ classdef pipelineGUI < matlab.apps.AppBase
                     return;
                 end
 
-                if strcmpi(node.type,'roiIdentify')
+                if strcmpi(node.type,'roiIdentify') || strcmpi(node.type,'roiPattern')
                     if isempty(shallowObj)
-                        uialert(app.UIFigure, 'ROI identification GUI needs a project context.', 'Info');
+                        uialert(app.UIFigure, 'ROI pattern GUI needs a project context.', 'Info');
                         return;
                     end
                     ctx = struct();
                     ctx.shallow = shallowObj;
                     if isfield(node,'params') && isstruct(node.params)
-                        ctx.roiIdentify = node.params;
+                        ctx.roiPattern = node.params;
                         ctx.params = node.params;
                     end
-                    ctx = roiIdentify.ui(ctx);
-                    if isfield(ctx,'roiIdentify') && isstruct(ctx.roiIdentify)
-                        node.params = ctx.roiIdentify;
+                    ctx = roiPattern.ui(ctx);
+                    if isfield(ctx,'roiPattern') && isstruct(ctx.roiPattern)
+                        node.params = ctx.roiPattern;
+                        app.Data.nodes(idx) = node;
+                        updateModuleListTable(app);
+                        updateParamsTable(app, idx);
+                    end
+                    refreshStatus(app);
+                    return;
+                end
+
+                if strcmpi(node.type,'roiManual')
+                    if isempty(shallowObj)
+                        uialert(app.UIFigure, 'ROI manual GUI needs a project context.', 'Info');
+                        return;
+                    end
+                    ctx = struct();
+                    ctx.shallow = shallowObj;
+                    if isfield(node,'params') && isstruct(node.params)
+                        ctx.roiManual = node.params;
+                        ctx.params = node.params;
+                    end
+                    ctx = roiManual.ui(ctx);
+                    if isfield(ctx,'roiManual') && isstruct(ctx.roiManual)
+                        node.params = ctx.roiManual;
+                        app.Data.nodes(idx) = node;
+                        updateModuleListTable(app);
+                        updateParamsTable(app, idx);
+                    end
+                    refreshStatus(app);
+                    return;
+                end
+
+                if strcmpi(node.type,'roiGrid')
+                    if isempty(shallowObj)
+                        uialert(app.UIFigure, 'ROI grid GUI needs a project context.', 'Info');
+                        return;
+                    end
+                    ctx = struct();
+                    ctx.shallow = shallowObj;
+                    if isfield(node,'params') && isstruct(node.params)
+                        ctx.roiGrid = node.params;
+                        ctx.params = node.params;
+                    end
+                    ctx = roiGrid.ui(ctx);
+                    if isfield(ctx,'roiGrid') && isstruct(ctx.roiGrid)
+                        node.params = ctx.roiGrid;
                         app.Data.nodes(idx) = node;
                         updateModuleListTable(app);
                         updateParamsTable(app, idx);
@@ -2139,6 +2323,14 @@ classdef pipelineGUI < matlab.apps.AppBase
                         app.Data.nodes(idx) = node;
                         updateModuleListTable(app);
                         updateParamsTable(app, idx);
+                        if isfield(ctx,'runNow') && ctx.runNow
+                            try
+                                runCtx = struct('shallow', shallowObj, 'roiExtract', ctx.roiExtract, 'params', ctx.roiExtract);
+                                roiExtract.process(runCtx);
+                            catch ME
+                                uialert(app.UIFigure, ME.message, 'ROI extraction failed', 'Icon','warning');
+                            end
+                        end
                     end
                     refreshStatus(app);
                     return;
@@ -2546,7 +2738,7 @@ classdef pipelineGUI < matlab.apps.AppBase
 
             % Create ModuletypeDropDown
             app.ModuletypeDropDown = uidropdown(app.UIFigure);
-            app.ModuletypeDropDown.Items = {'Dataloader', 'ROI identification', 'ROI extraction', 'Processor', 'Classifier'};
+            app.ModuletypeDropDown.Items = {'Dataloader', 'ROI pattern', 'ROI manual', 'ROI grid', 'ROI extraction', 'Processor', 'Classifier'};
             app.ModuletypeDropDown.Position = [105 760 100 22];
             app.ModuletypeDropDown.Value = 'Dataloader';
 

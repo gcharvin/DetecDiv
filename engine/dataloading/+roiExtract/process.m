@@ -52,6 +52,8 @@ function ctx = process(ctx)
     % fov selection
     if isfield(ctx,'fovIndex') && ~isempty(ctx.fovIndex)
         fovIdx = ctx.fovIndex(:)';
+    elseif isfield(p,'fovIndex') && ~isempty(p.fovIndex)
+        fovIdx = p.fovIndex(:)';
     else
         fovIdx = 1:numel(fovList);
     end

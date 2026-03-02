@@ -23,28 +23,38 @@ classdef roiExtractGUI < matlab.apps.AppBase
         CropDriftEditField              matlab.ui.control.NumericEditField
         ExtendCheckBox                  matlab.ui.control.CheckBox
         ForceChannelNamesCheckBox       matlab.ui.control.CheckBox
+        FovTable                        matlab.ui.control.Table
+        FovButtonsLayout                matlab.ui.container.GridLayout
+        SelectAllButton                 matlab.ui.control.Button
+        DeselectAllButton               matlab.ui.control.Button
         DescriptionTextArea             matlab.ui.control.TextArea
         ButtonLayout                    matlab.ui.container.GridLayout
         CancelButton                    matlab.ui.control.Button
+        RunNowButton                    matlab.ui.control.Button
         SaveButton                      matlab.ui.control.Button
     end
 
     properties (Access = public)
         Result struct = struct()
         Cancelled logical = true
+        RunNow logical = false
     end
 
     properties (Access = private)
         InitialParams struct = struct()
+        FovMeta struct = struct('index',{},'label',{},'roiCount',{},'selected',{},'hasRoi',{})
     end
 
     methods (Access = private)
 
-        function startupFcn(app, params)
+        function startupFcn(app, params, fovMeta)
             if nargin < 2 || isempty(params) || ~isstruct(params)
                 params = roiExtract.setparam(struct());
             else
                 params = mergeWithDefaults(app, params);
+            end
+            if nargin >= 3 && isstruct(fovMeta)
+                app.FovMeta = fovMeta;
             end
 
             app.InitialParams = params;
@@ -76,6 +86,38 @@ classdef roiExtractGUI < matlab.apps.AppBase
             app.CropDriftEditField.Value = defaultNumeric(app, params.cropDrift, 1);
             app.ExtendCheckBox.Value = logical(defaultLogical(app, params.extend, false));
             app.ForceChannelNamesCheckBox.Value = logical(defaultLogical(app, params.forceChannelNames, true));
+            populateFovTable(app, params);
+        end
+
+        function populateFovTable(app, params)
+            if isempty(app.FovMeta)
+                app.FovTable.Data = cell(0,4);
+                return;
+            end
+
+            selected = [];
+            if isfield(params, 'fovIndex') && ~isempty(params.fovIndex)
+                selected = reshape(double(params.fovIndex), 1, []);
+            end
+
+            data = cell(numel(app.FovMeta), 4);
+            for i = 1:numel(app.FovMeta)
+                m = app.FovMeta(i);
+                if isempty(selected)
+                    sel = logical(m.selected);
+                else
+                    sel = any(selected == m.index);
+                end
+                data{i,1} = sel;
+                data{i,2} = m.label;
+                data{i,3} = sprintf('%d', m.roiCount);
+                if m.roiCount > 0
+                    data{i,4} = 'ready';
+                else
+                    data{i,4} = 'no ROIs';
+                end
+            end
+            app.FovTable.Data = data;
         end
 
         function value = defaultLogical(app, value, fallback) %#ok<INUSD>
@@ -110,6 +152,25 @@ classdef roiExtractGUI < matlab.apps.AppBase
             if ischar(v)
                 s = v;
                 return;
+            end
+            if isnumeric(v) && isvector(v)
+                v = v(:)';
+                if numel(v) >= 2
+                    if all(abs(v - v(1)) < eps(max(1, abs(v(1)))))
+                        s = sprintf('%g', v(1));
+                        return;
+                    end
+                    dv = diff(v);
+                    if all(abs(dv - dv(1)) < eps(max(1, abs(dv(1)))))
+                        step = dv(1);
+                        if abs(step - 1) < eps(max(1, abs(step)))
+                            s = sprintf('%g:%g', v(1), v(end));
+                        else
+                            s = sprintf('%g:%g:%g', v(1), step, v(end));
+                        end
+                        return;
+                    end
+                end
             end
             try
                 s = mat2str(v);
@@ -174,8 +235,45 @@ classdef roiExtractGUI < matlab.apps.AppBase
             out = parts;
         end
 
+        function idx = getSelectedFovIndices(app)
+            idx = [];
+            if isempty(app.FovMeta) || isempty(app.FovTable.Data)
+                return;
+            end
+            tbl = app.FovTable.Data;
+            for i = 1:min(size(tbl,1), numel(app.FovMeta))
+                if logical(tbl{i,1})
+                    idx(end+1) = app.FovMeta(i).index; %#ok<AGROW>
+                end
+            end
+        end
+
+        function setAllFovSelection(app, state)
+            if isempty(app.FovTable.Data)
+                return;
+            end
+            tbl = app.FovTable.Data;
+            for i = 1:size(tbl,1)
+                tbl{i,1} = logical(state);
+            end
+            app.FovTable.Data = tbl;
+        end
+
+        function SelectAllButtonPushed(app, event) %#ok<INUSD>
+            setAllFovSelection(app, true);
+        end
+
+        function DeselectAllButtonPushed(app, event) %#ok<INUSD>
+            setAllFovSelection(app, false);
+        end
+
+        function FovTableCellEdit(app, event) %#ok<INUSD>
+            % Checkbox state is already stored in table Data.
+        end
+
         function saveAndClose(app)
             params = app.InitialParams;
+            params.fovIndex = getSelectedFovIndices(app);
             params.frames = parseNumericAnswer(app, app.FramesEditField.Value);
             params.channels = parseChannelsAnswer(app, app.ChannelsEditField.Value);
             params.correctDrift = logical(app.CorrectDriftCheckBox.Value);
@@ -191,7 +289,13 @@ classdef roiExtractGUI < matlab.apps.AppBase
 
             app.Result = params;
             app.Cancelled = false;
+            app.RunNow = false;
             resumeAndClose(app);
+        end
+
+        function runNowAndClose(app)
+            saveAndClose(app);
+            app.RunNow = true;
         end
 
         function cancelAndClose(app)
@@ -214,6 +318,10 @@ classdef roiExtractGUI < matlab.apps.AppBase
             cancelAndClose(app);
         end
 
+        function RunNowButtonPushed(app, event) %#ok<INUSD>
+            runNowAndClose(app);
+        end
+
         function UIFigureCloseRequest(app, event) %#ok<INUSD>
             cancelAndClose(app);
         end
@@ -224,14 +332,14 @@ classdef roiExtractGUI < matlab.apps.AppBase
         function createComponents(app)
 
             app.UIFigure = uifigure('Visible', 'off');
-            app.UIFigure.Position = [100 100 640 520];
+            app.UIFigure.Position = [100 100 780 760];
             app.UIFigure.Name = 'ROI extraction parameters';
             app.UIFigure.CloseRequestFcn = createCallbackFcn(app, @UIFigureCloseRequest, true);
             app.UIFigure.WindowStyle = 'modal';
 
             app.MainLayout = uigridlayout(app.UIFigure);
             app.MainLayout.ColumnWidth = {170, '1x'};
-            app.MainLayout.RowHeight = {24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 70, 44};
+            app.MainLayout.RowHeight = {24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 170, 30, 80, 44};
             app.MainLayout.Padding = [12 12 12 12];
             app.MainLayout.RowSpacing = 8;
             app.MainLayout.ColumnSpacing = 12;
@@ -333,34 +441,70 @@ classdef roiExtractGUI < matlab.apps.AppBase
             app.ForceChannelNamesCheckBox.Layout.Row = 11;
             app.ForceChannelNamesCheckBox.Layout.Column = 2;
 
+            app.FovTable = uitable(app.MainLayout);
+            app.FovTable.ColumnName = {'Select','FOV','ROIs','Status'};
+            app.FovTable.ColumnEditable = [true false false false];
+            app.FovTable.RowName = {};
+            app.FovTable.ColumnWidth = {70, '1x', 80, 90};
+            app.FovTable.CellEditCallback = createCallbackFcn(app, @FovTableCellEdit, true);
+            app.FovTable.Layout.Row = 12;
+            app.FovTable.Layout.Column = [1 2];
+
+            app.FovButtonsLayout = uigridlayout(app.MainLayout);
+            app.FovButtonsLayout.ColumnWidth = {110, 120, '1x'};
+            app.FovButtonsLayout.RowHeight = {24};
+            app.FovButtonsLayout.Padding = [0 0 0 0];
+            app.FovButtonsLayout.ColumnSpacing = 8;
+            app.FovButtonsLayout.Layout.Row = 13;
+            app.FovButtonsLayout.Layout.Column = [1 2];
+
+            app.SelectAllButton = uibutton(app.FovButtonsLayout, 'push');
+            app.SelectAllButton.Text = 'Select all';
+            app.SelectAllButton.ButtonPushedFcn = createCallbackFcn(app, @SelectAllButtonPushed, true);
+            app.SelectAllButton.Layout.Row = 1;
+            app.SelectAllButton.Layout.Column = 1;
+
+            app.DeselectAllButton = uibutton(app.FovButtonsLayout, 'push');
+            app.DeselectAllButton.Text = 'Deselect all';
+            app.DeselectAllButton.ButtonPushedFcn = createCallbackFcn(app, @DeselectAllButtonPushed, true);
+            app.DeselectAllButton.Layout.Row = 1;
+            app.DeselectAllButton.Layout.Column = 2;
+
             app.DescriptionTextArea = uitextarea(app.MainLayout);
             app.DescriptionTextArea.Editable = 'off';
             app.DescriptionTextArea.Value = { ...
                 'Frames: numeric expression, blank = all.', ...
                 'Channels: comma-separated names or numeric expression.', ...
+                'Select exactly which FOVs will be extracted in the table.', ...
                 'Drift channel: leave blank to use package default.'};
-            app.DescriptionTextArea.Layout.Row = 12;
+            app.DescriptionTextArea.Layout.Row = 14;
             app.DescriptionTextArea.Layout.Column = [1 2];
 
             app.ButtonLayout = uigridlayout(app.MainLayout);
-            app.ButtonLayout.ColumnWidth = {'1x', 100, 100};
+            app.ButtonLayout.ColumnWidth = {'1x', 110, 110, 100};
             app.ButtonLayout.RowHeight = {30};
             app.ButtonLayout.Padding = [0 0 0 0];
             app.ButtonLayout.ColumnSpacing = 10;
-            app.ButtonLayout.Layout.Row = 13;
+            app.ButtonLayout.Layout.Row = 15;
             app.ButtonLayout.Layout.Column = [1 2];
+
+            app.RunNowButton = uibutton(app.ButtonLayout, 'push');
+            app.RunNowButton.Text = 'Run now';
+            app.RunNowButton.ButtonPushedFcn = createCallbackFcn(app, @RunNowButtonPushed, true);
+            app.RunNowButton.Layout.Row = 1;
+            app.RunNowButton.Layout.Column = 2;
 
             app.CancelButton = uibutton(app.ButtonLayout, 'push');
             app.CancelButton.Text = 'Cancel';
             app.CancelButton.ButtonPushedFcn = createCallbackFcn(app, @CancelButtonPushed, true);
             app.CancelButton.Layout.Row = 1;
-            app.CancelButton.Layout.Column = 2;
+            app.CancelButton.Layout.Column = 3;
 
             app.SaveButton = uibutton(app.ButtonLayout, 'push');
-            app.SaveButton.Text = 'OK';
+            app.SaveButton.Text = 'Save';
             app.SaveButton.ButtonPushedFcn = createCallbackFcn(app, @SaveButtonPushed, true);
             app.SaveButton.Layout.Row = 1;
-            app.SaveButton.Layout.Column = 3;
+            app.SaveButton.Layout.Column = 4;
 
             app.UIFigure.Visible = 'on';
         end

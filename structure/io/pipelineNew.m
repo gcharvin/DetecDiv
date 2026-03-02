@@ -50,7 +50,8 @@ function pipeObj = pipelineNew(varargin)
 
     pipeObj = pipeline(path, name, id);
 
-    % Default template: dataloader -> ROI identification -> ROI extraction
+    % Default template: dataloader only. ROI-producing and ROI-extraction
+    % modules are added on demand when the user chooses a concrete workflow.
     n1 = struct();
     n1.id = 'dataloader_1';
     n1.name = 'dataloader_1';
@@ -71,53 +72,8 @@ function pipeObj = pipelineNew(varargin)
     n1.status = '';
     n1.layout = [10 10 20 10];
 
-    n2 = struct();
-    n2.id = 'roiidentify_1';
-    n2.name = 'roiidentify_1';
-    n2.type = 'roiIdentify';
-    n2.func = 'roiIdentify.process';
-    n2.gui = 'roiIdentify.ui';
-    n2.guiMode = 'replace';
-    n2.paramRequired = {};
-    n2.pkg = '';
-    try
-        n2.params = roiIdentify.setparam(struct());
-    catch
-        n2.params = struct();
-    end
-    n2.inputs = {'images'};
-    n2.outputs = {'roiList'};
-    n2.enabled = true;
-    n2.status = '';
-    n2.layout = [40 10 20 10];
-
-    n3 = struct();
-    n3.id = 'roiextract_1';
-    n3.name = 'roiextract_1';
-    n3.type = 'roiExtract';
-    n3.func = 'roiExtract.process';
-    n3.gui = 'roiExtract.ui';
-    n3.guiMode = 'replace';
-    n3.paramRequired = {};
-    n3.pkg = '';
-    try
-        n3.params = roiExtract.setparam(struct());
-    catch
-        n3.params = struct();
-    end
-    n3.inputs = {'roiList'};
-    n3.outputs = {'channels'};
-    n3.enabled = true;
-    n3.status = '';
-    n3.layout = [70 10 20 10];
-
-    pipeObj.nodes = [n1 n2 n3];
-    pipeObj.edges = struct( ...
-        'from', {'dataloader_1','roiidentify_1'}, ...
-        'to', {'roiidentify_1','roiextract_1'}, ...
-        'fromPort', {'images','roiList'}, ...
-        'toPort', {'images','roiList'}, ...
-        'condition', {'',''});
+    pipeObj.nodes = n1;
+    pipeObj.edges = struct('from',{},'to',{},'fromPort',{},'toPort',{},'condition',{});
 
     pipeObj.log('Pipeline creation', 'Creation');
 

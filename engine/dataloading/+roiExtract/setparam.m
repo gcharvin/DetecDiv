@@ -2,6 +2,7 @@ function param = setparam(ctx)
 % roiExtract.setparam  Default params for ROI extraction.
 
     param = struct();
+    param.fovIndex = [];
     param.frames = [];
     param.channels = {};
     param.extend = false;

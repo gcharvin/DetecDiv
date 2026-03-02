@@ -1032,8 +1032,16 @@ end
                 switch t
                     case {'dataloader'}
                         t = 'dataloader';
-                    case {'roiidentification','roiidentify'}
-                        t = 'roiidentify';
+                    case {'roipattern','roiidentification','roiidentify'}
+                        if strcmp(t, 'roipattern')
+                            t = 'roipattern';
+                        else
+                            t = 'roiidentify';
+                        end
+                    case {'roimanual'}
+                        t = 'roimanual';
+                    case {'roigrid'}
+                        t = 'roigrid';
                     case {'roiextraction','roiextract'}
                         t = 'roiextract';
                     case {'processor','classifier'}
@@ -1054,6 +1062,17 @@ end
                         catch
                             params = struct();
                         end
+                    case 'roipattern'
+                        typeName = 'roiPattern';
+                        funcName = 'roiPattern.process';
+                        inNames = {'images'};
+                        outNames = {'roiList'};
+                        req = {};
+                        try
+                            params = roiPattern.setparam(struct());
+                        catch
+                            params = struct();
+                        end
                     case 'roiidentify'
                         typeName = 'roiIdentify';
                         funcName = 'roiIdentify.process';
@@ -1062,6 +1081,28 @@ end
                         req = {};
                         try
                             params = roiIdentify.setparam(struct());
+                        catch
+                            params = struct();
+                        end
+                    case 'roimanual'
+                        typeName = 'roiManual';
+                        funcName = 'roiManual.process';
+                        inNames = {'images'};
+                        outNames = {'roiList'};
+                        req = {};
+                        try
+                            params = roiManual.setparam(struct());
+                        catch
+                            params = struct();
+                        end
+                    case 'roigrid'
+                        typeName = 'roiGrid';
+                        funcName = 'roiGrid.process';
+                        inNames = {'images'};
+                        outNames = {'roiList'};
+                        req = {};
+                        try
+                            params = roiGrid.setparam(struct());
                         catch
                             params = struct();
                         end
@@ -1177,7 +1218,7 @@ end
                         iconFile = 'processor.png';
                     case {'dataloader','dataload'}
                         iconFile = 'data.png';
-                    case {'roiidentify','roiidentification','roiextract','roiextraction'}
+                    case {'roipattern','roiidentify','roiidentification','roimanual','roigrid','roiextract','roiextraction'}
                         iconFile = 'roi.png';
                     otherwise
                         iconFile = 'processor.png';
@@ -1218,7 +1259,7 @@ end
                 pkgName = '';
                 nodeName = '';
 
-                typeChoices = {'dataLoader','roiIdentify','roiExtract','processor','classifier'};
+                typeChoices = {'dataLoader','roiPattern','roiManual','roiGrid','roiExtract','processor','classifier'};
                 procPkgs = getProcessorPackageChoices();
                 classPkgs = getClassifierPackageChoices();
 
@@ -2229,6 +2270,7 @@ end
             if changed
                 try
                     pipelineSave(pipeObj);
+                    app.publishPipelineObjectToWorkspace(pipeObj);
                 catch
                 end
                 try
@@ -2318,6 +2360,47 @@ end
             end
         end
 
+        function publishPipelineObjectToWorkspace(app, pipeObj)
+            if isempty(pipeObj) || ~isa(pipeObj, 'pipeline')
+                return;
+            end
+
+            targetKey = app.normalizeFsPath(pipeObj.path);
+            if isempty(targetKey)
+                return;
+            end
+
+            try
+                vars = evalin('base', 'who');
+            catch
+                vars = {};
+            end
+
+            for iVar = 1:numel(vars)
+                vname = vars{iVar};
+                try
+                    obj = evalin('base', vname);
+                catch
+                    continue;
+                end
+                if ~isa(obj, 'pipeline') || ~isprop(obj, 'path')
+                    continue;
+                end
+                if strcmp(app.normalizeFsPath(obj.path), targetKey)
+                    try
+                        assignin('base', vname, pipeObj);
+                    catch
+                    end
+                    return;
+                end
+            end
+
+            try
+                assignin('base', app.nextPipelineVarName(pipeObj), pipeObj);
+            catch
+            end
+        end
+
         function defaultPath = getProjectDefaultPipelinePath(app, shallowObj) %#ok<INUSD>
             defaultPath = '';
             try
@@ -2336,6 +2419,551 @@ end
                 end
             catch
                 defaultPath = '';
+            end
+        end
+
+        function [found, pipeObj] = getProjectDefaultPipelineObject(app, shallowObj)
+            found = false;
+            pipeObj = [];
+
+            jsonPath = app.getProjectDefaultPipelinePath(shallowObj);
+            if isempty(jsonPath)
+                return;
+            end
+            targetKey = app.normalizeFsPath(jsonPath);
+
+            try
+                vars = evalin('base', 'who');
+            catch
+                vars = {};
+            end
+
+            for iVar = 1:numel(vars)
+                try
+                    obj = evalin('base', vars{iVar});
+                catch
+                    continue;
+                end
+                if ~isa(obj, 'pipeline')
+                    continue;
+                end
+                thisKey = app.normalizeFsPath(fullfile(obj.path, 'pipeline.json'));
+                if ~isempty(thisKey) && strcmp(thisKey, targetKey)
+                    found = true;
+                    pipeObj = obj;
+                    return;
+                end
+            end
+
+            [pipeObj, msg] = pipelineLoad(jsonPath);
+            if isempty(pipeObj)
+                if ~isempty(msg)
+                    warning('detecdiv:PipelineLoad', '%s', msg);
+                end
+                return;
+            end
+
+            found = true;
+            try
+                assignin('base', pipeObj.strid, pipeObj);
+            catch
+            end
+        end
+
+        function changed = ensureProjectDefaultPipelineNode(app, shallowObj, nodeType, params)
+            changed = false;
+            if nargin < 4 || isempty(params) || ~isstruct(params)
+                params = struct();
+            end
+            if isempty(shallowObj) || ~isa(shallowObj, 'shallow')
+                return;
+            end
+
+            pipeObj = app.ensureDefaultPipelineForProject(shallowObj);
+            if isempty(pipeObj) || ~isa(pipeObj, 'pipeline')
+                [found, pipeObj] = app.getProjectDefaultPipelineObject(shallowObj);
+                if ~found || isempty(pipeObj) || ~isa(pipeObj, 'pipeline')
+                    return;
+                end
+            end
+
+            targetType = lower(char(string(nodeType)));
+            for iNode = 1:numel(pipeObj.nodes)
+                node = pipeObj.nodes(iNode);
+                if isfield(node, 'type') && strcmpi(char(string(node.type)), targetType)
+                    return;
+                end
+            end
+
+            switch targetType
+                case 'roiextract'
+                    defaults = roiExtract.setparam(struct());
+                    node = struct( ...
+                        'id', 'roiextract_1', ...
+                        'name', 'roiextract_1', ...
+                        'type', 'roiExtract', ...
+                        'func', 'roiExtract.process', ...
+                        'gui', 'roiExtract.ui', ...
+                        'guiMode', 'replace', ...
+                        'paramRequired', {{}}, ...
+                        'pkg', '', ...
+                        'params', defaults, ...
+                        'inputs', {{'roiList'}}, ...
+                        'outputs', {{'channels'}}, ...
+                        'enabled', true, ...
+                        'status', '', ...
+                        'layout', [70 10 20 10]);
+                otherwise
+                    return;
+            end
+
+            if ~isempty(fieldnames(params))
+                node.params = params;
+            end
+
+            nodes = pipeObj.nodes;
+            insertIdx = numel(nodes) + 1;
+            roiTypes = {'roiidentify','roipattern','roimanual','roigrid','roitracked'};
+            for iNode = 1:numel(nodes)
+                t = '';
+                if isfield(nodes(iNode), 'type')
+                    t = lower(char(string(nodes(iNode).type)));
+                end
+                if any(strcmp(t, roiTypes))
+                    insertIdx = iNode + 1;
+                end
+            end
+
+            if insertIdx > numel(nodes)
+                nodes(end+1) = node; %#ok<AGROW>
+            else
+                nodes = [nodes(1:insertIdx-1) node nodes(insertIdx:end)]; %#ok<AGROW>
+            end
+            pipeObj.nodes = nodes;
+
+            roiId = '';
+            for iNode = 1:numel(nodes)
+                t = '';
+                if isfield(nodes(iNode), 'type')
+                    t = lower(char(string(nodes(iNode).type)));
+                end
+                if any(strcmp(t, roiTypes))
+                    roiId = char(string(nodes(iNode).id));
+                end
+            end
+            if ~isempty(roiId)
+                pipeObj.edges(end+1) = struct('from', roiId, 'to', node.id, 'fromPort', 'roiList', 'toPort', 'roiList', 'condition', ''); %#ok<AGROW>
+            end
+
+            try
+                pipelineSave(pipeObj);
+                app.publishPipelineObjectToWorkspace(pipeObj);
+                changed = true;
+            catch ME
+                warning('detecdiv:PipelineSave', '%s', ME.message);
+            end
+        end
+
+        function changed = updateProjectDefaultPipelineNodeParams(app, shallowObj, nodeType, params)
+            changed = false;
+            if isempty(shallowObj) || ~isa(shallowObj, 'shallow')
+                return;
+            end
+
+            [found, pipeObj] = app.getProjectDefaultPipelineObject(shallowObj);
+            if ~found || isempty(pipeObj) || ~isa(pipeObj, 'pipeline')
+                return;
+            end
+
+            for iNode = 1:numel(pipeObj.nodes)
+                node = pipeObj.nodes(iNode);
+                if ~isfield(node, 'type') || ~strcmpi(char(string(node.type)), char(string(nodeType)))
+                    continue;
+                end
+                node.params = params;
+                pipeObj.nodes(iNode) = node;
+                changed = true;
+                break;
+            end
+
+            if changed
+                try
+                    pipelineSave(pipeObj);
+                    app.publishPipelineObjectToWorkspace(pipeObj);
+                catch ME
+                    warning('detecdiv:PipelineSave', '%s', ME.message);
+                end
+            end
+        end
+
+        function changed = replaceProjectDefaultRoiProducerNode(app, shallowObj, nodeType, params)
+            changed = false;
+            if isempty(shallowObj) || ~isa(shallowObj, 'shallow')
+                return;
+            end
+
+            pipeObj = app.ensureDefaultPipelineForProject(shallowObj);
+            if isempty(pipeObj) || ~isa(pipeObj, 'pipeline')
+                [found, pipeObj] = app.getProjectDefaultPipelineObject(shallowObj);
+                if ~found || isempty(pipeObj) || ~isa(pipeObj, 'pipeline')
+                    return;
+                end
+            end
+
+            roiTypes = {'roiidentify','roipattern','roigrid','roimanual','roitracked'};
+            modeName = lower(char(string(nodeType)));
+            switch modeName
+                case {'roiidentify','roipattern'}
+                    workflowMode = 'pattern';
+                case 'roigrid'
+                    workflowMode = 'grid';
+                otherwise
+                    workflowMode = modeName;
+            end
+
+            nodes = pipeObj.nodes;
+            roiIdx = [];
+            roiOldId = '';
+            roiLayout = [40 10 20 10];
+            for iNode = 1:numel(nodes)
+                t = '';
+                if isfield(nodes(iNode), 'type')
+                    t = lower(char(string(nodes(iNode).type)));
+                end
+                if any(strcmp(t, roiTypes))
+                    roiIdx = iNode;
+                    roiOldId = char(string(nodes(iNode).id));
+                    if isfield(nodes(iNode), 'layout') && ~isempty(nodes(iNode).layout)
+                        roiLayout = nodes(iNode).layout;
+                    end
+                    break;
+                end
+            end
+
+            newNode = app.buildDefaultRoiProducerNode(nodeType, params, roiLayout);
+            if isempty(newNode)
+                return;
+            end
+
+            if isempty(roiIdx)
+                insertIdx = numel(nodes) + 1;
+                for iNode = 1:numel(nodes)
+                    t = '';
+                    if isfield(nodes(iNode), 'type')
+                        t = lower(char(string(nodes(iNode).type)));
+                    end
+                    if strcmp(t, 'roiextract')
+                        insertIdx = iNode;
+                        break;
+                    end
+                end
+                if insertIdx > numel(nodes)
+                    nodes(end+1) = newNode; %#ok<AGROW>
+                else
+                    nodes = [nodes(1:insertIdx-1) newNode nodes(insertIdx:end)]; %#ok<AGROW>
+                end
+            else
+                nodes(roiIdx) = newNode;
+            end
+
+            pipeObj.nodes = nodes;
+
+            normEdges = struct('from',{},'to',{},'fromPort',{},'toPort',{},'condition',{});
+            roiIds = {newNode.id};
+            if ~isempty(roiOldId)
+                roiIds{end+1} = roiOldId; %#ok<AGROW>
+            end
+            for iNode = 1:numel(nodes)
+                t = '';
+                if isfield(nodes(iNode), 'type')
+                    t = lower(char(string(nodes(iNode).type)));
+                end
+                if any(strcmp(t, roiTypes))
+                    idVal = char(string(nodes(iNode).id));
+                    if ~any(strcmp(roiIds, idVal))
+                        roiIds{end+1} = idVal; %#ok<AGROW>
+                    end
+                end
+            end
+
+            for iEdge = 1:numel(pipeObj.edges)
+                e = pipeObj.edges(iEdge);
+                fromId = '';
+                toId = '';
+                if isfield(e, 'from'), fromId = char(string(e.from)); end
+                if isfield(e, 'to'), toId = char(string(e.to)); end
+                if any(strcmp(roiIds, fromId)) || any(strcmp(roiIds, toId))
+                    continue;
+                end
+                normEdges(end+1) = e; %#ok<AGROW>
+            end
+
+            loaderId = '';
+            extractId = '';
+            for iNode = 1:numel(nodes)
+                t = '';
+                if isfield(nodes(iNode), 'type')
+                    t = lower(char(string(nodes(iNode).type)));
+                end
+                if strcmp(t, 'dataloader') && isempty(loaderId)
+                    loaderId = char(string(nodes(iNode).id));
+                elseif strcmp(t, 'roiextract') && isempty(extractId)
+                    extractId = char(string(nodes(iNode).id));
+                end
+            end
+
+            if ~isempty(loaderId)
+                normEdges(end+1) = struct('from', loaderId, 'to', newNode.id, 'fromPort', 'images', 'toPort', 'images', 'condition', ''); %#ok<AGROW>
+            end
+            if ~isempty(extractId)
+                normEdges(end+1) = struct('from', newNode.id, 'to', extractId, 'fromPort', 'roiList', 'toPort', 'roiList', 'condition', ''); %#ok<AGROW>
+            end
+            pipeObj.edges = normEdges;
+
+            if ~isfield(pipeObj.runProfiles, 'roiWorkflow') || ~isstruct(pipeObj.runProfiles.roiWorkflow)
+                pipeObj.runProfiles.roiWorkflow = struct();
+            end
+            pipeObj.runProfiles.roiWorkflow.mode = workflowMode;
+
+            try
+                pipelineSave(pipeObj);
+                app.publishPipelineObjectToWorkspace(pipeObj);
+                changed = true;
+            catch ME
+                warning('detecdiv:PipelineSave', '%s', ME.message);
+            end
+        end
+
+        function node = buildDefaultRoiProducerNode(app, nodeType, params, layout) %#ok<INUSD>
+            node = [];
+            if nargin < 4 || isempty(layout)
+                layout = [40 10 20 10];
+            end
+
+            t = lower(char(string(nodeType)));
+            switch t
+                case {'roiidentify','roipattern'}
+                    defaults = roiPattern.setparam(struct());
+                    node = struct( ...
+                        'id', 'roipattern_1', ...
+                        'name', 'roipattern_1', ...
+                        'type', 'roiPattern', ...
+                        'func', 'roiPattern.process', ...
+                        'gui', 'roiPattern.ui', ...
+                        'guiMode', 'replace', ...
+                        'paramRequired', {{}}, ...
+                        'pkg', '', ...
+                        'params', defaults, ...
+                        'inputs', {{'images'}}, ...
+                        'outputs', {{'roiList'}}, ...
+                        'enabled', true, ...
+                        'status', '', ...
+                        'layout', layout);
+                case 'roimanual'
+                    defaults = roiManual.setparam(struct());
+                    node = struct( ...
+                        'id', 'roimanual_1', ...
+                        'name', 'roimanual_1', ...
+                        'type', 'roiManual', ...
+                        'func', 'roiManual.process', ...
+                        'gui', 'roiManual.ui', ...
+                        'guiMode', 'replace', ...
+                        'paramRequired', {{}}, ...
+                        'pkg', '', ...
+                        'params', defaults, ...
+                        'inputs', {{'images'}}, ...
+                        'outputs', {{'roiList'}}, ...
+                        'enabled', true, ...
+                        'status', '', ...
+                        'layout', layout);
+                case 'roigrid'
+                    defaults = roiGrid.setparam(struct());
+                    node = struct( ...
+                        'id', 'roigrid_1', ...
+                        'name', 'roigrid_1', ...
+                        'type', 'roiGrid', ...
+                        'func', 'roiGrid.process', ...
+                        'gui', 'roiGrid.ui', ...
+                        'guiMode', 'replace', ...
+                        'paramRequired', {{}}, ...
+                        'pkg', '', ...
+                        'params', defaults, ...
+                        'inputs', {{'images'}}, ...
+                        'outputs', {{'roiList'}}, ...
+                        'enabled', true, ...
+                        'status', '', ...
+                        'layout', layout);
+                otherwise
+                    return;
+            end
+
+            if nargin >= 3 && isstruct(params) && ~isempty(params)
+                node.params = params;
+            end
+        end
+
+        function changed = setProjectDefaultPipelineRoiMode(app, shallowObj, modeName)
+            changed = false;
+            if isempty(shallowObj) || ~isa(shallowObj, 'shallow')
+                return;
+            end
+
+            pipeObj = app.ensureDefaultPipelineForProject(shallowObj);
+            if isempty(pipeObj) || ~isa(pipeObj, 'pipeline')
+                [found, pipeObj] = app.getProjectDefaultPipelineObject(shallowObj);
+                if ~found || isempty(pipeObj) || ~isa(pipeObj, 'pipeline')
+                    return;
+                end
+            end
+
+            modeName = lower(char(string(modeName)));
+            roiNodeChanged = false;
+            roiNodeFound = false;
+
+            for iNode = 1:numel(pipeObj.nodes)
+                node = pipeObj.nodes(iNode);
+                if ~isfield(node, 'type')
+                    continue;
+                end
+                if ~strcmpi(char(string(node.type)), 'roiidentify') && ~strcmpi(char(string(node.type)), 'roipattern') && ~strcmpi(char(string(node.type)), 'roimanual') && ~strcmpi(char(string(node.type)), 'roigrid')
+                    continue;
+                end
+
+                roiNodeFound = true;
+                if ~isfield(node, 'params') || ~isstruct(node.params)
+                    node.params = struct();
+                end
+
+                if strcmpi(char(string(node.type)), 'roiidentify') || strcmpi(char(string(node.type)), 'roiPattern')
+                    newEnabled = strcmp(modeName, 'pattern');
+                elseif strcmpi(char(string(node.type)), 'roiManual')
+                    newEnabled = strcmp(modeName, 'manual');
+                else
+                    newEnabled = strcmp(modeName, 'grid');
+                end
+                if ~isfield(node, 'enabled') || logical(node.enabled) ~= newEnabled
+                    node.enabled = newEnabled;
+                    roiNodeChanged = true;
+                end
+                if ~isfield(node.params, 'roiMode') || ~strcmp(char(string(node.params.roiMode)), modeName)
+                    node.params.roiMode = modeName;
+                    roiNodeChanged = true;
+                end
+
+                pipeObj.nodes(iNode) = node;
+            end
+
+            if ~isfield(pipeObj.runProfiles, 'roiWorkflow') || ~isstruct(pipeObj.runProfiles.roiWorkflow)
+                pipeObj.runProfiles.roiWorkflow = struct();
+            end
+            currentMode = '';
+            if isfield(pipeObj.runProfiles.roiWorkflow, 'mode') && ~isempty(pipeObj.runProfiles.roiWorkflow.mode)
+                currentMode = char(string(pipeObj.runProfiles.roiWorkflow.mode));
+            end
+            if ~strcmp(currentMode, modeName)
+                pipeObj.runProfiles.roiWorkflow.mode = modeName;
+                changed = true;
+            end
+
+            if roiNodeFound && roiNodeChanged
+                changed = true;
+            end
+
+            if changed
+                try
+                    pipelineSave(pipeObj);
+                    app.publishPipelineObjectToWorkspace(pipeObj);
+                catch ME
+                    warning('detecdiv:PipelineSave', '%s', ME.message);
+                end
+            end
+        end
+
+        function nodeType = getProjectCurrentRoiProducerType(app, shallowObj)
+            nodeType = '';
+            if isempty(shallowObj) || ~isa(shallowObj, 'shallow')
+                return;
+            end
+
+            [found, pipeObj] = app.getProjectDefaultPipelineObject(shallowObj);
+            if ~found || isempty(pipeObj) || ~isa(pipeObj, 'pipeline')
+                return;
+            end
+
+            roiTypes = {'roiidentify','roipattern','roimanual','roigrid','roitracked'};
+            for iNode = 1:numel(pipeObj.nodes)
+                node = pipeObj.nodes(iNode);
+                if ~isfield(node, 'type')
+                    continue;
+                end
+                t = lower(char(string(node.type)));
+                if any(strcmp(t, roiTypes))
+                    nodeType = t;
+                    return;
+                end
+            end
+        end
+
+        function outType = canonicalRoiProducerType(app, nodeType) %#ok<INUSD>
+            outType = lower(char(string(nodeType)));
+            switch outType
+                case {'roiidentify','roipattern'}
+                    outType = 'roipattern';
+            end
+        end
+
+        function changed = applyProjectRoiProducerChoice(app, shallowObj, nodeType, params)
+            changed = false;
+            if isempty(shallowObj) || ~isa(shallowObj, 'shallow')
+                return;
+            end
+
+            currentType = app.getProjectCurrentRoiProducerType(shallowObj);
+            targetCanon = app.canonicalRoiProducerType(nodeType);
+            currentCanon = app.canonicalRoiProducerType(currentType);
+
+            if ~isempty(currentType) && strcmp(currentCanon, targetCanon) && ~strcmpi(currentType, 'roiidentify')
+                changed = app.updateProjectDefaultPipelineNodeParams(shallowObj, currentType, params);
+            else
+                changed = app.replaceProjectDefaultRoiProducerNode(shallowObj, nodeType, params);
+            end
+        end
+
+        function params = getProjectDefaultPipelineNodeParams(app, shallowObj, nodeType)
+            params = struct();
+            if isempty(shallowObj) || ~isa(shallowObj, 'shallow')
+                return;
+            end
+
+            [found, pipeObj] = app.getProjectDefaultPipelineObject(shallowObj);
+            if ~found || isempty(pipeObj) || ~isa(pipeObj, 'pipeline')
+                return;
+            end
+
+            targetType = lower(char(string(nodeType)));
+            switch targetType
+                case {'roipattern','roiidentify'}
+                    matchTypes = {'roipattern','roiidentify'};
+                case 'roimanual'
+                    matchTypes = {'roimanual'};
+                case 'roigrid'
+                    matchTypes = {'roigrid'};
+                otherwise
+                    matchTypes = {targetType};
+            end
+
+            for iNode = 1:numel(pipeObj.nodes)
+                node = pipeObj.nodes(iNode);
+                if ~isfield(node, 'type')
+                    continue;
+                end
+                if ~any(strcmpi(char(string(node.type)), matchTypes))
+                    continue;
+                end
+                if isfield(node, 'params') && isstruct(node.params)
+                    params = node.params;
+                end
+                return;
             end
         end
 
@@ -4236,47 +4864,142 @@ end
                 uialert(app.DetecDivUIFigure,'First select a project in the tree window!','Error');
                 return;
             end
-
-            i=app.Tree.SelectedNodes.UserData;
-            % store=app.Tree.SelectedNodes;
-            proj=app.Data.Project{i};
-            shallowObj=evalin('base',proj);
-
-
-            if numel(shallowObj.fov)==1 && numel(shallowObj.fov(1).srcpath)==0
-                uialert(app.DetecDivUIFigure,'First add data and identify a pattern for ROI detection!','Error');
+            if ~strcmp(app.Tree.SelectedNodes.Tag,'Project')
+                uialert(app.DetecDivUIFigure,'The selected node is not a project!','Error');
                 return;
             end
 
+            i = app.Tree.SelectedNodes.UserData;
+            proj = app.Data.Project{i};
+            shallowObj = evalin('base', proj);
 
-            shallowObj.fov(1).view(shallowObj.fov(1).display.frame,[],shallowObj);
-            obj=shallowObj.fov(1);
-
-            %ROIextracterGUI(app,shallowObj);
-
-            h=findall(groot,'Tag','ROIExtracter') ;
-            if numel(h)==0
-                ROIextracterGUI(obj);
-            else
-                ll= h.Children(2).Children(3); % update roi size
-                ll.Text=['Pattern found in FOV Pos22_Pos1_1;  Size : ' num2str(obj.pattern(3)) 'x'  num2str(obj.pattern(4))];
-
-                % update channel name
-                pix=find(obj.display.selectedchannel,1,'first');
-                h.Children(2).Children(1).Value=obj.channel{pix};
-
-
-                figure(h);
-
+            if numel(shallowObj.fov)==1 && numel(shallowObj.fov(1).srcpath)==0
+                uialert(app.DetecDivUIFigure,'First add data before defining or generating ROIs.','Error');
+                return;
             end
 
+            options = { ...
+                'Pattern calibration + detection', ...
+                'Manual ROI drawing', ...
+                'Full-frame / grid ROIs', ...
+                'Tracked ROIs from masks'};
+            [sel, ok] = listdlg('ListString', options, ...
+                'SelectionMode', 'single', ...
+                'PromptString', 'Choose how to define ROIs for this project:', ...
+                'ListSize', [260 130], ...
+                'Name', 'ROI workflow');
+            if ~ok || isempty(sel)
+                return;
+            end
 
+            switch sel
+                case 1
+                    params = app.getProjectDefaultPipelineNodeParams(shallowObj, 'roiPattern');
+                    ctx = struct('shallow', shallowObj);
+                    if ~isempty(fieldnames(params))
+                        ctx.roiPattern = params;
+                        ctx.params = params;
+                    end
+                    ctx = roiPattern.ui(ctx);
+                    if isfield(ctx,'cancelled') && ctx.cancelled
+                        return;
+                    end
+                    if ~isfield(ctx,'roiPattern') || ~isstruct(ctx.roiPattern)
+                        return;
+                    end
 
+                    app.applyProjectRoiProducerChoice(shallowObj, 'roiPattern', ctx.roiPattern);
+                    RefreshtreewindowMenuSelected(app, event);
 
+                case 2
+                    params = app.getProjectDefaultPipelineNodeParams(shallowObj, 'roiManual');
+                    ctx = struct('shallow', shallowObj);
+                    if ~isempty(fieldnames(params))
+                        ctx.roiManual = params;
+                        ctx.params = params;
+                    end
+                    ctx = roiManual.ui(ctx);
+                    if isfield(ctx,'cancelled') && ctx.cancelled
+                        return;
+                    end
+                    if ~isfield(ctx,'roiManual') || ~isstruct(ctx.roiManual)
+                        return;
+                    end
 
-            %uiwait(app.DetecDivUIFigure)
-            %gatherVarsFromWorkspace(app);
-            %displayNodes(app);
+                    app.applyProjectRoiProducerChoice(shallowObj, 'roiManual', ctx.roiManual);
+
+                    try
+                        runCtx = struct('shallow', shallowObj, 'roiManual', ctx.roiManual, 'params', ctx.roiManual);
+                        roiManual.process(runCtx);
+                        uialert(app.DetecDivUIFigure, ...
+                            'Use the raw data viewer to draw or edit ROIs manually, then save/close the viewer when done.', ...
+                            'Manual ROI mode', 'Icon', 'info');
+                    catch ME
+                        uialert(app.DetecDivUIFigure, ME.message, 'Manual ROI setup failed', 'Icon', 'error');
+                        return;
+                    end
+
+                    RefreshtreewindowMenuSelected(app, event);
+
+                case 3
+                    params = app.getProjectDefaultPipelineNodeParams(shallowObj, 'roiGrid');
+                    ctx = struct('shallow', shallowObj);
+                    if ~isempty(fieldnames(params))
+                        ctx.roiGrid = params;
+                        ctx.params = params;
+                    end
+                    ctx = roiGrid.ui(ctx);
+                    if isfield(ctx,'cancelled') && ctx.cancelled
+                        return;
+                    end
+                    if ~isfield(ctx,'roiGrid') || ~isstruct(ctx.roiGrid)
+                        return;
+                    end
+
+                    app.applyProjectRoiProducerChoice(shallowObj, 'roiGrid', ctx.roiGrid);
+
+                    d = uiprogressdlg(app.DetecDivUIFigure, ...
+                        'Title', 'Please Wait...', ...
+                        'Message', 'Generating grid ROIs...');
+                    try
+                        runCtx = struct('shallow', shallowObj, 'roiGrid', ctx.roiGrid, 'params', ctx.roiGrid);
+                        roiGrid.process(runCtx);
+                        close(d);
+                        uialert(app.DetecDivUIFigure, 'ROI generation is complete.', 'Success', 'Icon', 'success');
+                    catch ME
+                        close(d);
+                        uialert(app.DetecDivUIFigure, ME.message, 'ROI generation failed', 'Icon', 'error');
+                        return;
+                    end
+
+                    RefreshtreewindowMenuSelected(app, event);
+
+                case 4
+                    choice = uiconfirm(app.DetecDivUIFigure, ...
+                        ['This uses tracked masks already present in ROI data to generate moving ROIs.' newline ...
+                         'Run createTrackedCellROIs on the current project using default settings?'], ...
+                        'Tracked ROIs', ...
+                        'Options', {'Run','Cancel'}, ...
+                        'DefaultOption', 'Run', ...
+                        'CancelOption', 'Cancel');
+                    if ~strcmp(choice, 'Run')
+                        return;
+                    end
+                    d = uiprogressdlg(app.DetecDivUIFigure, ...
+                        'Title', 'Please Wait...', ...
+                        'Message', 'Creating tracked ROIs from masks...');
+                    try
+                        createTrackedCellROIs(shallowObj);
+                        app.setProjectDefaultPipelineRoiMode(shallowObj, 'tracked');
+                        close(d);
+                        uialert(app.DetecDivUIFigure, 'Tracked ROI creation is complete.', 'Success', 'Icon', 'success');
+                    catch ME
+                        close(d);
+                        uialert(app.DetecDivUIFigure, ME.message, 'Tracked ROI creation failed', 'Icon', 'error');
+                        return;
+                    end
+                    RefreshtreewindowMenuSelected(app, event);
+            end
         end
 
         % Button pushed function: ExtractROIhypervolumesButton
@@ -4285,125 +5008,56 @@ end
                 uialert(app.DetecDivUIFigure,'First select a project in the tree window!','Error');
                 return;
             end
-
-            i=app.Tree.SelectedNodes.UserData;
-            % store=app.Tree.SelectedNodes;
-            proj=app.Data.Project{i};
-            shallowObj=evalin('base',proj);
-
-            if numel(shallowObj.fov)==1 & numel(shallowObj.fov(1).srcpath)==0
-                uialert(app.DetecDivUIFigure,'There is not position avaialable for ROI extraction','Error');
+            if ~strcmp(app.Tree.SelectedNodes.Tag,'Project')
+                uialert(app.DetecDivUIFigure,'The selected node is not a project!','Error');
                 return;
             end
 
-            if numel(shallowObj.fov(1).frames)==0
-                nframes=numel(shallowObj.fov(1).srclist{1});
-            else
-                nframes=shallowObj.fov(1).frames(1);
-            end
+            i = app.Tree.SelectedNodes.UserData;
+            proj = app.Data.Project{i};
+            shallowObj = evalin('base', proj);
 
-            npos=numel(shallowObj.fov);
-
-            if numel(shallowObj.fov(1).interval)==0
-                inte=ones(1,numel(shallowObj.fov(1).channel));
-            else
-                inte=shallowObj.fov(1).interval;
-            end
-
-            ncha=numel(shallowObj.fov(1).channel);
-
-
-            % deffov=['1:'  num2str(numel(shallowObj.fov)) ];
-
-         results = myDialog( ...
-    {'Frames','Positions','Channels','XY_Drift_Correction','Scale'}, ...
-    {['1:' num2str(nframes)], ['1:' num2str(npos)], ['1:' num2str(ncha)], false, 1}, ...
-    'Tip', { ...
-        'Frames to process (e.g. 1:100)', ...
-        'Positions to process (e.g. 1:5)', ...
-        'Channels to process (e.g. 1:2)', ...
-        'Apply XY drift correction', ...
-        'Scale factor for exported ROIs' }, ...
-    'CallingApp', app.DetecDivUIFigure, ...
-    'Title', 'Choose ROI extraction parameters');
-
-
-            if numel(results)==0
+            if numel(shallowObj.fov)==1 && numel(shallowObj.fov(1).srcpath)==0
+                uialert(app.DetecDivUIFigure,'There is no position available for ROI extraction.','Error');
                 return;
             end
 
-
-
-            %             prompt = {'Array of frames to process (leave this field blank if all frames should be processed):','Array of positions to process:',...
-            %                 'Max number of frames in memory','Correct XY drift (0: no , 1: yes)',...
-            %                 'Crash recovery (0: no; 1: yes)','Drift correction cropping factor (between 0 and 1):',...
-            %                 'Array of channels to process'};%,'Period between frames for each channel (in frames units):'};
-            %             dlgtitle = 'Input ROI extraction parameters';
-            %
-            %             dims = [1 100];
-
-            crash=0;
-            if exist(fullfile(userpath, 'tmpcrash.mat')) % a crash recovery file exists
-                crash=1;
+            app.ensureProjectDefaultPipelineNode(shallowObj, 'roiExtract');
+            params = app.getProjectDefaultPipelineNodeParams(shallowObj, 'roiExtract');
+            ctx = struct('shallow', shallowObj);
+            if ~isempty(fieldnames(params))
+                ctx.roiExtract = params;
+                ctx.params = params;
+            end
+            ctx = roiExtract.ui(ctx);
+            if isfield(ctx,'cancelled') && ctx.cancelled
+                return;
+            end
+            if ~isfield(ctx,'roiExtract') || ~isstruct(ctx.roiExtract)
+                return;
             end
 
-            %      definput = {['1:' num2str(nframes)],['1:' num2str(npos)], '20', '0',num2str(crash),'1',['1:' num2str(ncha)]};%, num2str(inte)};
-            %     answer = inputdlg(prompt,dlgtitle,dims,definput);
+            app.updateProjectDefaultPipelineNodeParams(shallowObj, 'roiExtract', ctx.roiExtract);
 
-            %      if numel(answer)==0
-            %          return;
-            %      end
+            if ~isfield(ctx,'runNow') || ~ctx.runNow
+                RefreshtreewindowMenuSelected(app, event);
+                return;
+            end
 
-            selection=uiconfirm(app.DetecDivUIFigure,'Are you sure that you want to extract ROI data from raw images? All previous ROI data will be overwritten! This process may take a VERY long time...','Warning');
-
-            %  answer
-
-            if strcmp(selection,'OK')
-
-                cou=[];
-                for i=str2num(results.Positions) %1:numel(shallowObj.fov)
-                    %             shallowObj.fov(i).interval=str2num(answer{4});
-                    if numel(shallowObj.fov(i).roi(1).id)==0
-                        cou=[cou i];
-                    end
-                end
-
-                if numel(cou)
-                    uialert(app.DetecDivUIFigure,['There is no ROI in position(s): ' newline num2str(cou) newline ' These positions will be skipped!'],'Warning');
-                    % return;
-                end
-
-                fovs=setxor(str2num(results.Positions),cou);
-                if numel(fovs)
-                    if size(fovs,1)>size(fovs,2)
-                        fovs=fovs';
-
-                    end
-                    %fov
-
-                   % shallowObj.saveCroppedImages('frames',str2num(results.Frames),'fov',fovs,'cut',results.Frames_In_Memory,'correctdrift', logical(results.XY_Drift_Correction), 'crashrecovery',results.Crash_Recovery,'cropdrift',results.Drift_Cropping,'channel',str2num(results.Channels),'scale',results.Scale);%, 'channelint', str2num(answer{4}));
-                    %shallowSave(shallowObj);
-
-                    % --- New extraction routine (streaming HDF5 append) ---
-shallowObj.extractAllROICrops( ...
-    'Frames',        str2num(results.Frames), ...
-    'FOVIndex',      fovs, ...
-    'Channels',      str2num(results.Channels), ...
-    'CorrectDrift',  logical(results.XY_Drift_Correction), ...
-    'Scale',         results.Scale ...
-    );
-
-
-
-
-                end
+            d = uiprogressdlg(app.DetecDivUIFigure, ...
+                'Title', 'Please Wait...', ...
+                'Message', 'Extracting ROI hypervolumes...');
+            try
+                runCtx = struct('shallow', shallowObj, 'roiExtract', ctx.roiExtract, 'params', ctx.roiExtract);
+                roiExtract.process(runCtx);
+                close(d);
                 uialert(app.DetecDivUIFigure,'ROI extraction is complete!','Success','Icon','success');
+                RefreshtreewindowMenuSelected(app, event);
+            catch ME
+                close(d);
+                uialert(app.DetecDivUIFigure, ME.message, 'ROI extraction failed', 'Icon', 'error');
+                return;
             end
-
-
-
-
-
         end
 
         % Callback function
@@ -6551,7 +7205,7 @@ end
             app.IdentifyROIsinpositionsButton.Visible = 'off';
             app.IdentifyROIsinpositionsButton.Tooltip = {'This allows you to use a pattern to identify multiple ROIs automatically. The pattern must be defined in one of the positions'};
             app.IdentifyROIsinpositionsButton.Position = [20 211 385 46];
-            app.IdentifyROIsinpositionsButton.Text = 'Identify ROIs in positions...';
+            app.IdentifyROIsinpositionsButton.Text = 'Define / generate ROIs...';
 
             % Create ExtractROIhypervolumesButton
             app.ExtractROIhypervolumesButton = uibutton(app.ProjectsPanel, 'push');

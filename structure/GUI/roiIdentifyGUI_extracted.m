@@ -15,6 +15,8 @@ classdef roiIdentifyGUI < matlab.apps.AppBase
         PatternInfoTextArea         matlab.ui.control.TextArea
         ButtonLayout                matlab.ui.container.GridLayout
         CalibrateButton             matlab.ui.control.Button
+        TestCurrentButton           matlab.ui.control.Button
+        ApplySelectedButton         matlab.ui.control.Button
         RemovePatternButton         matlab.ui.control.Button
         CancelButton                matlab.ui.control.Button
         SaveButton                  matlab.ui.control.Button
@@ -260,22 +262,54 @@ classdef roiIdentifyGUI < matlab.apps.AppBase
 
         function CalibrateButtonPushed(app, event) %#ok<INUSD>
             fovObj = getSelectedFov(app);
-            child = ROIextracterGUI(fovObj);
+            oldStyle = 'modal';
             try
-                child.ReferenceframeEditField.Value = app.ReferenceFrameEditField.Value;
-            catch
-            end
-            try
-                child.ThresholdEditField.Value = app.ThresholdEditField.Value;
-            catch
-            end
-            try
-                child.channelnameEditField.Value = app.ChannelDropDown.Value;
+                oldStyle = app.UIFigure.WindowStyle;
+                app.UIFigure.WindowStyle = 'normal';
             catch
             end
 
             try
-                uiwait(child.ROIidentifierUIFigure);
+                if isprop(fovObj, 'display') && isstruct(fovObj.display)
+                    appFrame = max(1, round(app.ReferenceFrameEditField.Value));
+                    fovObj.display.frame = appFrame;
+                    chanName = char(string(app.ChannelDropDown.Value));
+                    if isprop(fovObj, 'channel') && ~isempty(fovObj.channel)
+                        sel = zeros(1, numel(fovObj.channel));
+                        idx = find(strcmp(fovObj.channel, chanName), 1, 'first');
+                        if isempty(idx)
+                            idx = 1;
+                        end
+                        sel(idx) = 1;
+                        fovObj.display.selectedchannel = sel;
+                    end
+                end
+            catch
+            end
+
+            h = [];
+            try
+                h = fovObj.view(fovObj.display.frame, [], []);
+            catch
+                try
+                    h = fovObj.view(fovObj.display.frame, []);
+                catch
+                    h = fovObj.view(fovObj.display.frame);
+                end
+            end
+
+            try
+                if ~isempty(h) && isgraphics(h)
+                    waitfor(h);
+                end
+            catch
+            end
+
+            try
+                if isvalid(app.UIFigure)
+                    app.UIFigure.WindowStyle = oldStyle;
+                    figure(app.UIFigure);
+                end
             catch
             end
 
@@ -373,7 +407,7 @@ classdef roiIdentifyGUI < matlab.apps.AppBase
             refreshPatternTable(app);
         end
 
-        function SaveButtonPushed(app, event) %#ok<INUSD>
+        function params = collectParamsFromUi(app)
             params = app.InitialParams;
             params.referenceFrame = app.ReferenceFrameEditField.Value;
             params.threshold = app.ThresholdEditField.Value;
@@ -399,8 +433,67 @@ classdef roiIdentifyGUI < matlab.apps.AppBase
                 catch
                 end
             end
+        end
 
+        function idx = promptTargetPositions(app)
+            idx = [];
+            shallowObj = app.Data.shallowObj;
+            if isempty(shallowObj) || ~isa(shallowObj, 'shallow')
+                return;
+            end
+            defaultExpr = sprintf('1:%d', numel(shallowObj.fov));
+            answer = inputdlg({'Positions to process:'}, 'ROI pattern detection', 1, {defaultExpr});
+            if isempty(answer)
+                return;
+            end
+            try
+                tmp = eval(['[' char(string(answer{1})) ']']); %#ok<EVLDIR>
+                if isnumeric(tmp)
+                    tmp = reshape(double(tmp), 1, []);
+                    idx = unique(tmp(isfinite(tmp) & tmp >= 1 & tmp <= numel(shallowObj.fov)));
+                end
+            catch
+                idx = [];
+            end
+        end
+
+        function runPatternDetection(app, fovIdx, openViewerAfter)
+            if nargin < 3
+                openViewerAfter = false;
+            end
+            params = collectParamsFromUi(app);
             app.Result = params;
+            shallowObj = app.Data.shallowObj;
+            runCtx = struct('shallow', shallowObj, 'roiPattern', params, 'params', params, 'fovIndex', fovIdx);
+            try
+                roiPattern.process(runCtx);
+                if openViewerAfter && ~isempty(fovIdx)
+                    k = fovIdx(1);
+                    try
+                        shallowObj.fov(k).view(shallowObj.fov(k).display.frame, [], shallowObj);
+                    catch
+                    end
+                end
+            catch ME
+                uialert(app.UIFigure, ME.message, 'ROI detection failed', 'Icon', 'warning');
+            end
+        end
+
+        function TestCurrentButtonPushed(app, event) %#ok<INUSD>
+            idx = app.ReferencePositionDropDown.Value;
+            runPatternDetection(app, idx, true);
+        end
+
+        function ApplySelectedButtonPushed(app, event) %#ok<INUSD>
+            idx = promptTargetPositions(app);
+            if isempty(idx)
+                return;
+            end
+            runPatternDetection(app, idx, true);
+        end
+
+        function SaveButtonPushed(app, event) %#ok<INUSD>
+            app.Result = collectParamsFromUi(app);
             app.Cancelled = false;
             closeFigure(app);
         end
@@ -497,7 +590,7 @@ classdef roiIdentifyGUI < matlab.apps.AppBase
             app.PatternInfoTextArea.Layout.Column = [1 2];
 
             app.ButtonLayout = uigridlayout(app.MainLayout);
-            app.ButtonLayout.ColumnWidth = {150, 120, '1x', 100, 100};
+            app.ButtonLayout.ColumnWidth = {150, 110, 130, 120, '1x', 100, 100};
             app.ButtonLayout.RowHeight = {30};
             app.ButtonLayout.Padding = [0 0 0 0];
             app.ButtonLayout.ColumnSpacing = 8;
@@ -510,23 +603,35 @@ classdef roiIdentifyGUI < matlab.apps.AppBase
             app.CalibrateButton.Layout.Row = 1;
             app.CalibrateButton.Layout.Column = 1;
 
+            app.TestCurrentButton = uibutton(app.ButtonLayout, 'push');
+            app.TestCurrentButton.Text = 'Test current';
+            app.TestCurrentButton.ButtonPushedFcn = createCallbackFcn(app, @TestCurrentButtonPushed, true);
+            app.TestCurrentButton.Layout.Row = 1;
+            app.TestCurrentButton.Layout.Column = 2;
+
+            app.ApplySelectedButton = uibutton(app.ButtonLayout, 'push');
+            app.ApplySelectedButton.Text = 'Apply to positions';
+            app.ApplySelectedButton.ButtonPushedFcn = createCallbackFcn(app, @ApplySelectedButtonPushed, true);
+            app.ApplySelectedButton.Layout.Row = 1;
+            app.ApplySelectedButton.Layout.Column = 3;
+
             app.RemovePatternButton = uibutton(app.ButtonLayout, 'push');
             app.RemovePatternButton.Text = 'Remove pattern';
             app.RemovePatternButton.ButtonPushedFcn = createCallbackFcn(app, @RemovePatternButtonPushed, true);
             app.RemovePatternButton.Layout.Row = 1;
-            app.RemovePatternButton.Layout.Column = 2;
+            app.RemovePatternButton.Layout.Column = 4;
 
             app.CancelButton = uibutton(app.ButtonLayout, 'push');
             app.CancelButton.Text = 'Cancel';
             app.CancelButton.ButtonPushedFcn = createCallbackFcn(app, @CancelButtonPushed, true);
             app.CancelButton.Layout.Row = 1;
-            app.CancelButton.Layout.Column = 4;
+            app.CancelButton.Layout.Column = 6;
 
             app.SaveButton = uibutton(app.ButtonLayout, 'push');
-            app.SaveButton.Text = 'OK';
+            app.SaveButton.Text = 'Save';
             app.SaveButton.ButtonPushedFcn = createCallbackFcn(app, @SaveButtonPushed, true);
             app.SaveButton.Layout.Row = 1;
-            app.SaveButton.Layout.Column = 5;
+            app.SaveButton.Layout.Column = 7;
 
             app.UIFigure.Visible = 'on';
         end
