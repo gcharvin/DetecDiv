@@ -61,12 +61,12 @@ function ctx = process(ctx)
     for iOpen = 1:numel(openList)
         openIdx = openList(iOpen);
         try
-            h = shallowObj.fov(openIdx).view(shallowObj.fov(openIdx).display.frame, [], shallowObj);
+            h = shallowObj.fov(openIdx).view(shallowObj.fov(openIdx).display.frame, []);
             if ~isempty(h) && isgraphics(h)
                 waitfor(h);
             end
         catch
-            shallowObj.fov(openIdx).view(shallowObj.fov(openIdx).display.frame, [], shallowObj);
+            shallowObj.fov(openIdx).view(shallowObj.fov(openIdx).display.frame, []);
         end
     end
 

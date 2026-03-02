@@ -1381,9 +1381,7 @@ end
                     end
                 end
 
-
-
-                shallowObj.fov(pos).view(shallowObj.fov(pos).display.frame,[],shallowObj);
+                shallowObj.fov(pos).view(shallowObj.fov(pos).display.frame,[]);
 
 
                 d.Value=0.9;
@@ -2623,7 +2621,7 @@ end
 
             nodes = pipeObj.nodes;
             roiIdx = [];
-            roiOldId = '';
+            roiOldIds = {};
             roiLayout = [40 10 20 10];
             for iNode = 1:numel(nodes)
                 t = '';
@@ -2631,12 +2629,11 @@ end
                     t = lower(char(string(nodes(iNode).type)));
                 end
                 if any(strcmp(t, roiTypes))
-                    roiIdx = iNode;
-                    roiOldId = char(string(nodes(iNode).id));
+                    roiIdx(end+1) = iNode; %#ok<AGROW>
+                    roiOldIds{end+1} = char(string(nodes(iNode).id)); %#ok<AGROW>
                     if isfield(nodes(iNode), 'layout') && ~isempty(nodes(iNode).layout)
                         roiLayout = nodes(iNode).layout;
                     end
-                    break;
                 end
             end
 
@@ -2663,15 +2660,25 @@ end
                     nodes = [nodes(1:insertIdx-1) newNode nodes(insertIdx:end)]; %#ok<AGROW>
                 end
             else
-                nodes(roiIdx) = newNode;
+                insertIdx = roiIdx(1);
+                keepMask = true(1, numel(nodes));
+                keepMask(roiIdx) = false;
+                keptNodes = nodes(keepMask);
+                if insertIdx <= 1
+                    nodes = [newNode keptNodes]; %#ok<AGROW>
+                elseif insertIdx > numel(keptNodes)
+                    nodes = [keptNodes newNode]; %#ok<AGROW>
+                else
+                    nodes = [keptNodes(1:insertIdx-1) newNode keptNodes(insertIdx:end)]; %#ok<AGROW>
+                end
             end
 
             pipeObj.nodes = nodes;
 
             normEdges = struct('from',{},'to',{},'fromPort',{},'toPort',{},'condition',{});
             roiIds = {newNode.id};
-            if ~isempty(roiOldId)
-                roiIds{end+1} = roiOldId; %#ok<AGROW>
+            if ~isempty(roiOldIds)
+                roiIds = [roiIds roiOldIds]; %#ok<AGROW>
             end
             for iNode = 1:numel(nodes)
                 t = '';
@@ -2891,6 +2898,7 @@ end
             end
 
             roiTypes = {'roiidentify','roipattern','roimanual','roigrid','roitracked'};
+            fallbackType = '';
             for iNode = 1:numel(pipeObj.nodes)
                 node = pipeObj.nodes(iNode);
                 if ~isfield(node, 'type')
@@ -2898,10 +2906,20 @@ end
                 end
                 t = lower(char(string(node.type)));
                 if any(strcmp(t, roiTypes))
-                    nodeType = t;
-                    return;
+                    enabled = true;
+                    if isfield(node, 'enabled') && ~isempty(node.enabled)
+                        enabled = logical(node.enabled);
+                    end
+                    if enabled
+                        nodeType = t;
+                        return;
+                    end
+                    if isempty(fallbackType)
+                        fallbackType = t;
+                    end
                 end
             end
+            nodeType = fallbackType;
         end
 
         function outType = canonicalRoiProducerType(app, nodeType) %#ok<INUSD>
@@ -5531,7 +5549,7 @@ end
 
             d.Message = 'Opening field of view...';
             shallowObj.fov(pos).view( ...
-                shallowObj.fov(pos).display.frame, [], shallowObj);
+                shallowObj.fov(pos).display.frame, []);
         end
 
         if strcmp(str,'Projectprocess')

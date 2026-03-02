@@ -271,7 +271,10 @@ classdef roiExtractGUI < matlab.apps.AppBase
             % Checkbox state is already stored in table Data.
         end
 
-        function saveAndClose(app)
+        function saveAndClose(app, runNow)
+            if nargin < 2
+                runNow = false;
+            end
             params = app.InitialParams;
             params.fovIndex = getSelectedFovIndices(app);
             params.frames = parseNumericAnswer(app, app.FramesEditField.Value);
@@ -289,13 +292,12 @@ classdef roiExtractGUI < matlab.apps.AppBase
 
             app.Result = params;
             app.Cancelled = false;
-            app.RunNow = false;
+            app.RunNow = logical(runNow);
             resumeAndClose(app);
         end
 
         function runNowAndClose(app)
-            saveAndClose(app);
-            app.RunNow = true;
+            saveAndClose(app, true);
         end
 
         function cancelAndClose(app)
@@ -311,7 +313,7 @@ classdef roiExtractGUI < matlab.apps.AppBase
         end
 
         function SaveButtonPushed(app, event) %#ok<INUSD>
-            saveAndClose(app);
+            saveAndClose(app, false);
         end
 
         function CancelButtonPushed(app, event) %#ok<INUSD>

@@ -13,6 +13,7 @@ classdef roiIdentifyGUI < matlab.apps.AppBase
         ThresholdEditField          matlab.ui.control.NumericEditField
         PatternTable                matlab.ui.control.Table
         PatternInfoTextArea         matlab.ui.control.TextArea
+        TestStatusLabel             matlab.ui.control.Label
         ButtonLayout                matlab.ui.container.GridLayout
         CalibrateButton             matlab.ui.control.Button
         TestCurrentButton           matlab.ui.control.Button
@@ -407,6 +408,41 @@ classdef roiIdentifyGUI < matlab.apps.AppBase
             refreshPatternTable(app);
         end
 
+        function count = countRoisInFovs(app, shallowObj, fovIdx) %#ok<INUSD>
+            count = 0;
+            if isempty(shallowObj) || ~isa(shallowObj, 'shallow') || isempty(fovIdx)
+                return;
+            end
+            fovIdx = reshape(double(fovIdx), 1, []);
+            for i = fovIdx
+                if ~isfinite(i) || i < 1 || i > numel(shallowObj.fov)
+                    continue;
+                end
+                try
+                    r = shallowObj.fov(i).roi;
+                    if isempty(r)
+                        continue;
+                    end
+                    if numel(r) == 1 && isempty(r(1).id)
+                        continue;
+                    end
+                    count = count + numel(r);
+                catch
+                end
+            end
+        end
+
+        function setTestStatus(app, message, color)
+            if nargin < 3 || isempty(color)
+                color = [0.25 0.25 0.25];
+            end
+            try
+                app.TestStatusLabel.Text = message;
+                app.TestStatusLabel.FontColor = color;
+            catch
+            end
+        end
+
         function params = collectParamsFromUi(app)
             params = app.InitialParams;
             params.referenceFrame = app.ReferenceFrameEditField.Value;
@@ -461,27 +497,46 @@ classdef roiIdentifyGUI < matlab.apps.AppBase
             if nargin < 3
                 openViewerAfter = false;
             end
+            openViewerAfter = logical(openViewerAfter); %#ok<NASGU>
             params = collectParamsFromUi(app);
             app.Result = params;
             shallowObj = app.Data.shallowObj;
+            beforeCount = countRoisInFovs(app, shallowObj, fovIdx);
             runCtx = struct('shallow', shallowObj, 'roiPattern', params, 'params', params, 'fovIndex', fovIdx);
             try
-                roiPattern.process(runCtx);
-                if openViewerAfter && ~isempty(fovIdx)
-                    k = fovIdx(1);
-                    try
-                        shallowObj.fov(k).view(shallowObj.fov(k).display.frame, [], shallowObj);
-                    catch
-                    end
+                outCtx = roiPattern.process(runCtx);
+                if isstruct(outCtx) && isfield(outCtx, 'shallow') && isa(outCtx.shallow, 'shallow')
+                    shallowObj = outCtx.shallow;
+                    app.Data.shallowObj = shallowObj;
                 end
+                afterCount = countRoisInFovs(app, shallowObj, fovIdx);
+                deltaCount = afterCount - beforeCount;
+                if isempty(fovIdx)
+                    scopeLabel = 'selection';
+                elseif isscalar(fovIdx)
+                    scopeLabel = sprintf('FOV %d', fovIdx(1));
+                else
+                    scopeLabel = sprintf('%d FOVs', numel(fovIdx));
+                end
+                if afterCount > 0 && deltaCount >= 0
+                    color = [0.10 0.55 0.10];
+                elseif afterCount > 0
+                    color = [0.80 0.45 0.00];
+                else
+                    color = [0.75 0.15 0.15];
+                end
+                msg = sprintf('Test %s: %d ROI(s) before, %d after (delta %+d).', ...
+                    scopeLabel, beforeCount, afterCount, deltaCount);
+                setTestStatus(app, msg, color);
             catch ME
+                setTestStatus(app, ['Test failed: ' ME.message], [0.75 0.15 0.15]);
                 uialert(app.UIFigure, ME.message, 'ROI detection failed', 'Icon', 'warning');
             end
         end
 
         function TestCurrentButtonPushed(app, event) %#ok<INUSD>
             idx = app.ReferencePositionDropDown.Value;
-            runPatternDetection(app, idx, true);
+            runPatternDetection(app, idx, false);
         end
 
         function ApplySelectedButtonPushed(app, event) %#ok<INUSD>
@@ -489,7 +544,7 @@ classdef roiIdentifyGUI < matlab.apps.AppBase
             if isempty(idx)
                 return;
             end
-            runPatternDetection(app, idx, true);
+            runPatternDetection(app, idx, false);
         end
 
         function SaveButtonPushed(app, event) %#ok<INUSD>
@@ -531,7 +586,7 @@ classdef roiIdentifyGUI < matlab.apps.AppBase
 
             app.MainLayout = uigridlayout(app.UIFigure);
             app.MainLayout.ColumnWidth = {160, '1x'};
-            app.MainLayout.RowHeight = {24, 24, 24, 24, 180, 80, 40};
+            app.MainLayout.RowHeight = {24, 24, 24, 24, 180, 80, 24, 40};
             app.MainLayout.Padding = [12 12 12 12];
             app.MainLayout.RowSpacing = 8;
             app.MainLayout.ColumnSpacing = 12;
@@ -589,12 +644,18 @@ classdef roiIdentifyGUI < matlab.apps.AppBase
             app.PatternInfoTextArea.Layout.Row = 6;
             app.PatternInfoTextArea.Layout.Column = [1 2];
 
+            app.TestStatusLabel = uilabel(app.MainLayout);
+            app.TestStatusLabel.Text = 'Test status will appear here.';
+            app.TestStatusLabel.FontColor = [0.25 0.25 0.25];
+            app.TestStatusLabel.Layout.Row = 7;
+            app.TestStatusLabel.Layout.Column = [1 2];
+
             app.ButtonLayout = uigridlayout(app.MainLayout);
             app.ButtonLayout.ColumnWidth = {150, 110, 130, 120, '1x', 100, 100};
             app.ButtonLayout.RowHeight = {30};
             app.ButtonLayout.Padding = [0 0 0 0];
             app.ButtonLayout.ColumnSpacing = 8;
-            app.ButtonLayout.Layout.Row = 7;
+            app.ButtonLayout.Layout.Row = 8;
             app.ButtonLayout.Layout.Column = [1 2];
 
             app.CalibrateButton = uibutton(app.ButtonLayout, 'push');
