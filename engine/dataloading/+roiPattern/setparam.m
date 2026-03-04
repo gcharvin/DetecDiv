@@ -20,7 +20,12 @@ function p = setparam(p)
             'keepExisting', false, ...
             'patternList', [], ...
             'activePatternIndex', 1, ...
-            'fallbackFullFrame', true);
+            'fallbackFullFrame', true, ...
+            'fovIndex', []);
+    end
+
+    if ~isfield(defaults, 'fovIndex')
+        defaults.fovIndex = [];
     end
 
     fn = fieldnames(defaults);
