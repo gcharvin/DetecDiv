@@ -2707,6 +2707,7 @@ end
 
             loaderId = '';
             extractId = '';
+            maskSourceId = '';
             for iNode = 1:numel(nodes)
                 t = '';
                 if isfield(nodes(iNode), 'type')
@@ -2716,11 +2717,22 @@ end
                     loaderId = char(string(nodes(iNode).id));
                 elseif strcmp(t, 'roiextract') && isempty(extractId)
                     extractId = char(string(nodes(iNode).id));
+                elseif strcmp(t, 'classifier') && isempty(maskSourceId)
+                    outs = {};
+                    if isfield(nodes(iNode),'outputs') && ~isempty(nodes(iNode).outputs)
+                        outs = lower(cellstr(nodes(iNode).outputs(:)));
+                    end
+                    if any(strcmp(outs,'masks'))
+                        maskSourceId = char(string(nodes(iNode).id));
+                    end
                 end
             end
 
             if ~isempty(loaderId)
                 normEdges(end+1) = struct('from', loaderId, 'to', newNode.id, 'fromPort', 'images', 'toPort', 'images', 'condition', ''); %#ok<AGROW>
+            end
+            if strcmpi(newNode.type, 'roiTracked') && ~isempty(maskSourceId)
+                normEdges(end+1) = struct('from', maskSourceId, 'to', newNode.id, 'fromPort', 'masks', 'toPort', 'masks', 'condition', ''); %#ok<AGROW>
             end
             if ~isempty(extractId)
                 normEdges(end+1) = struct('from', newNode.id, 'to', extractId, 'fromPort', 'roiList', 'toPort', 'roiList', 'condition', ''); %#ok<AGROW>
@@ -2800,6 +2812,23 @@ end
                         'enabled', true, ...
                         'status', '', ...
                         'layout', layout);
+                case 'roitracked'
+                    defaults = roiTracked.setparam(struct());
+                    node = struct( ...
+                        'id', 'roitracked_1', ...
+                        'name', 'roitracked_1', ...
+                        'type', 'roiTracked', ...
+                        'func', 'roiTracked.process', ...
+                        'gui', 'roiTracked.ui', ...
+                        'guiMode', 'replace', ...
+                        'paramRequired', {{}}, ...
+                        'pkg', '', ...
+                        'params', defaults, ...
+                        'inputs', {{'roiList','masks'}}, ...
+                        'outputs', {{'roiList'}}, ...
+                        'enabled', true, ...
+                        'status', '', ...
+                        'layout', layout);
                 otherwise
                     return;
             end
@@ -2832,7 +2861,7 @@ end
                 if ~isfield(node, 'type')
                     continue;
                 end
-                if ~strcmpi(char(string(node.type)), 'roiidentify') && ~strcmpi(char(string(node.type)), 'roipattern') && ~strcmpi(char(string(node.type)), 'roimanual') && ~strcmpi(char(string(node.type)), 'roigrid')
+                if ~strcmpi(char(string(node.type)), 'roiidentify') && ~strcmpi(char(string(node.type)), 'roipattern') && ~strcmpi(char(string(node.type)), 'roimanual') && ~strcmpi(char(string(node.type)), 'roigrid') && ~strcmpi(char(string(node.type)), 'roitracked')
                     continue;
                 end
 
@@ -2845,6 +2874,8 @@ end
                     newEnabled = strcmp(modeName, 'pattern');
                 elseif strcmpi(char(string(node.type)), 'roiManual')
                     newEnabled = strcmp(modeName, 'manual');
+                elseif strcmpi(char(string(node.type)), 'roiTracked')
+                    newEnabled = strcmp(modeName, 'tracked');
                 else
                     newEnabled = strcmp(modeName, 'grid');
                 end
@@ -4988,6 +5019,10 @@ end
                     RefreshtreewindowMenuSelected(app, event);
 
                 case 4
+                    trackedParams = app.getProjectDefaultPipelineNodeParams(shallowObj, 'roiTracked');
+                    if isempty(trackedParams) || ~isstruct(trackedParams) || isempty(fieldnames(trackedParams))
+                        trackedParams = roiTracked.setparam(struct());
+                    end
                     choice = uiconfirm(app.DetecDivUIFigure, ...
                         ['This uses tracked masks already present in ROI data to generate moving ROIs.' newline ...
                          'Run createTrackedCellROIs on the current project using default settings?'], ...
@@ -5003,6 +5038,7 @@ end
                         'Message', 'Creating tracked ROIs from masks...');
                     try
                         createTrackedCellROIs(shallowObj);
+                        app.applyProjectRoiProducerChoice(shallowObj, 'roiTracked', trackedParams);
                         app.setProjectDefaultPipelineRoiMode(shallowObj, 'tracked');
                         close(d);
                         uialert(app.DetecDivUIFigure, 'Tracked ROI creation is complete.', 'Success', 'Icon', 'success');

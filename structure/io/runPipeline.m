@@ -16,6 +16,20 @@ function [ctx, report] = runPipeline(pipe, ctx)
     elseif isfield(ctx,'shallow') && ~isfield(ctx,'shallowObj')
         ctx.shallowObj = ctx.shallow;
     end
+    if (~isfield(ctx,'masks') || isempty(ctx.masks))
+        try
+            roisForMask = [];
+            if isfield(ctx,'roiList') && ~isempty(ctx.roiList)
+                roisForMask = ctx.roiList;
+            elseif isfield(ctx,'shallow') && ~isempty(ctx.shallow) && isa(ctx.shallow,'shallow')
+                roisForMask = collectRoisFromProject(ctx.shallow);
+            end
+            if ~isempty(roisForMask)
+                ctx.masks = inferMaskChannelsFromRois(roisForMask);
+            end
+        catch
+        end
+    end
 
     allowGui = false;
     if isfield(ctx,'allowGUI') && ~isempty(ctx.allowGUI)
@@ -53,6 +67,12 @@ function [ctx, report] = runPipeline(pipe, ctx)
 
         % run-level subset selection (optional)
         if shouldSkipByRunSelection(ctx, nodeId)
+            executed(nodeId) = true;
+            continue;
+        end
+
+        % disabled nodes are always skipped
+        if isfield(node,'enabled') && ~isempty(node.enabled) && ~logical(node.enabled)
             executed(nodeId) = true;
             continue;
         end
@@ -170,13 +190,62 @@ function out = mergeStruct(base, patch)
 end
 
 function ctx = executeNode(node, ctx)
-    fun = resolveNodeFunc(node);
+    nodeType = lower(char(string(getfielddefault(node,'type',''))));
 
-    % prefer ctx-aware calling
-    try
-        ctx = feval(fun, ctx);
-    catch ME
-        error('runPipeline:NodeFailed','Node %s failed: %s', node.id, ME.message);
+    switch nodeType
+        case 'dataloader'
+            try
+                ctx = dataLoader.process(ctx);
+            catch ME
+                error('runPipeline:NodeFailed','Node %s failed: %s', node.id, ME.message);
+            end
+        case 'roiidentify'
+            try
+                ctx = roiIdentify.process(ctx);
+            catch ME
+                error('runPipeline:NodeFailed','Node %s failed: %s', node.id, ME.message);
+            end
+        case 'roipattern'
+            try
+                ctx = roiPattern.process(ctx);
+            catch ME
+                error('runPipeline:NodeFailed','Node %s failed: %s', node.id, ME.message);
+            end
+        case 'roimanual'
+            try
+                ctx = roiManual.process(ctx);
+            catch ME
+                error('runPipeline:NodeFailed','Node %s failed: %s', node.id, ME.message);
+            end
+        case 'roigrid'
+            try
+                ctx = roiGrid.process(ctx);
+            catch ME
+                error('runPipeline:NodeFailed','Node %s failed: %s', node.id, ME.message);
+            end
+        case 'roitracked'
+            try
+                ctx = roiTracked.process(ctx);
+            catch ME
+                error('runPipeline:NodeFailed','Node %s failed: %s', node.id, ME.message);
+            end
+        case 'roiextract'
+            try
+                ctx = roiExtract.process(ctx);
+            catch ME
+                error('runPipeline:NodeFailed','Node %s failed: %s', node.id, ME.message);
+            end
+        case 'processor'
+            ctx = executeProcessorNode(node, ctx);
+        case 'classifier'
+            ctx = executeClassifierNode(node, ctx);
+        otherwise
+            fun = resolveNodeFunc(node);
+            try
+                ctx = feval(fun, ctx);
+            catch ME
+                error('runPipeline:NodeFailed','Node %s failed: %s', node.id, ME.message);
+            end
     end
 
     % optional output coherence check
@@ -224,8 +293,20 @@ function ctx = applyNodeParams(ctx, node)
             ctx.dataLoader = node.params;
         case 'roiidentify'
             ctx.roiIdentify = node.params;
+        case 'roipattern'
+            ctx.roiPattern = node.params;
+        case 'roimanual'
+            ctx.roiManual = node.params;
+        case 'roigrid'
+            ctx.roiGrid = node.params;
+        case 'roitracked'
+            ctx.roiTracked = node.params;
         case 'roiextract'
             ctx.roiExtract = node.params;
+        case 'processor'
+            ctx.processor = node.params;
+        case 'classifier'
+            ctx.classifier = node.params;
     end
 end
 
@@ -318,6 +399,15 @@ function missing = missingParamsForNode(node, ctx)
         if isfield(ctx,'roiExtract') && isfield(ctx.roiExtract,k) && ~isempty(ctx.roiExtract.(k))
             continue;
         end
+        if isfield(ctx,'roiTracked') && isfield(ctx.roiTracked,k) && ~isempty(ctx.roiTracked.(k))
+            continue;
+        end
+        if isfield(ctx,'processor') && isfield(ctx.processor,k) && ~isempty(ctx.processor.(k))
+            continue;
+        end
+        if isfield(ctx,'classifier') && isfield(ctx.classifier,k) && ~isempty(ctx.classifier.(k))
+            continue;
+        end
         missing{end+1} = k; %#ok<AGROW>
     end
 end
@@ -376,4 +466,300 @@ function ctx = ensureOutputs(node, ctx)
             end
         end
     end
+end
+
+function ctx = executeProcessorNode(node, ctx)
+    shallowObj = getShallowObject(ctx);
+    if isempty(shallowObj)
+        error('runPipeline:ProcessorNoProject', ...
+            'Processor node %s requires a shallow project context.', char(string(node.id)));
+    end
+
+    rois = selectRoisForNode(ctx, node);
+    if isempty(rois)
+        warning('runPipeline:ProcessorNoROI', ...
+            'Processor node %s has no ROI to process; skipping.', char(string(node.id)));
+        return;
+    end
+
+    pkgName = resolveNodePackage(node);
+    procFun = '';
+    if ~isempty(pkgName)
+        procFun = [pkgName '.process'];
+    elseif isfield(node,'func') && ~isempty(node.func)
+        procFun = char(string(node.func));
+    end
+    if isempty(procFun)
+        error('runPipeline:ProcessorNoPackage', ...
+            'Processor node %s is missing package/function information.', char(string(node.id)));
+    end
+
+    procObj = process(tempdir, 'pipeline_processor', randi(1e9));
+    procObj.processFun = procFun;
+    procObj.processArg = getfielddefault(node, 'params', struct());
+    procObj.strid = char(string(node.id));
+
+    p = procObj.processArg;
+    procCtx = struct();
+    procCtx.params = p;
+    procCtx.run = getfielddefault(ctx, 'run', struct());
+    procCtx.pipeline = getfielddefault(ctx, 'pipeline', struct());
+    if isfield(ctx,'names') && isstruct(ctx.names) && isfield(ctx.names,'outputName') && ~isempty(ctx.names.outputName)
+        procCtx.outputName = ctx.names.outputName;
+    elseif isfield(p,'outputName') && ~isempty(p.outputName)
+        procCtx.outputName = p.outputName;
+    end
+
+    args = {'Ctx', procCtx};
+    if isfield(p,'frames') && ~isempty(p.frames)
+        args = [args {'Frames', p.frames}]; %#ok<AGROW>
+    end
+    if isfield(p,'parallel') && ~isempty(p.parallel) && logical(p.parallel)
+        args = [args {'Parallel'}]; %#ok<AGROW>
+    end
+    if isfield(p,'gpu') && ~isempty(p.gpu) && logical(p.gpu)
+        args = [args {'GPU'}]; %#ok<AGROW>
+    end
+
+    try
+        processData(procObj, rois, args{:});
+    catch ME
+        error('runPipeline:NodeFailed','Node %s failed: %s', node.id, ME.message);
+    end
+
+    ctx.roiList = rois;
+    ctx.dataSeries = collectDataSeriesFromRois(rois);
+    ctx.channels = inferChannelsFromRois(rois, ctx);
+end
+
+function ctx = executeClassifierNode(node, ctx)
+    shallowObj = getShallowObject(ctx);
+    if isempty(shallowObj)
+        error('runPipeline:ClassifierNoProject', ...
+            'Classifier node %s requires a shallow project context.', char(string(node.id)));
+    end
+
+    rois = selectRoisForNode(ctx, node);
+    if isempty(rois)
+        warning('runPipeline:ClassifierNoROI', ...
+            'Classifier node %s has no ROI to classify; skipping.', char(string(node.id)));
+        return;
+    end
+
+    pkgName = resolveNodePackage(node);
+    clsObj = classi(tempdir, 'pipeline_classifier', randi(1e9), 'InitTraining', false);
+    clsObj.strid = char(string(node.id));
+    if ~isempty(pkgName)
+        clsObj.classifierPkg = pkgName;
+        clsObj.classifyFun = [pkgName '.classify'];
+    elseif isfield(node,'func') && ~isempty(node.func)
+        clsObj.classifyFun = char(string(node.func));
+    else
+        error('runPipeline:ClassifierNoPackage', ...
+            'Classifier node %s is missing package/function information.', char(string(node.id)));
+    end
+
+    p = getfielddefault(node, 'params', struct());
+    if isfield(p,'classes') && ~isempty(p.classes)
+        clsObj.classes = p.classes;
+    end
+    if isfield(p,'category') && ~isempty(p.category)
+        clsObj.category = classiNormalizeCategory(p.category);
+    end
+    if isfield(p,'outputType') && ~isempty(p.outputType)
+        clsObj.outputType = p.outputType;
+    end
+
+    outputName = char(string(node.id));
+    if isfield(ctx,'names') && isstruct(ctx.names) && isfield(ctx.names,'outputName') && ~isempty(ctx.names.outputName)
+        outputName = char(string(ctx.names.outputName));
+    elseif isfield(p,'outputName') && ~isempty(p.outputName)
+        outputName = char(string(p.outputName));
+    elseif isfield(p,'out_dataSeries_name') && ~isempty(p.out_dataSeries_name)
+        outputName = char(string(p.out_dataSeries_name));
+    end
+
+    args = {'OutputName', outputName};
+    if isfield(p,'frames') && ~isempty(p.frames)
+        args = [args {'Frames', p.frames}]; %#ok<AGROW>
+    end
+    if isfield(p,'channels') && ~isempty(p.channels)
+        ch = normalizeClassifierChannels(p.channels);
+        args = [args {'Channel', ch}]; %#ok<AGROW>
+    end
+    if isfield(p,'parallel') && ~isempty(p.parallel) && logical(p.parallel)
+        args = [args {'Parallel'}]; %#ok<AGROW>
+    end
+    if isfield(p,'gpu') && ~isempty(p.gpu) && logical(p.gpu)
+        args = [args {'GPU'}]; %#ok<AGROW>
+    end
+
+    try
+        classifyData(clsObj, rois, args{:});
+    catch ME
+        error('runPipeline:NodeFailed','Node %s failed: %s', node.id, ME.message);
+    end
+
+    ctx.roiList = rois;
+    ctx.dataSeries = collectDataSeriesFromRois(rois);
+    ctx.channels = inferChannelsFromRois(rois, ctx);
+    ctx.masks = inferMaskChannelsFromRois(rois);
+end
+
+function v = getfielddefault(S, key, defaultVal)
+    v = defaultVal;
+    if isstruct(S) && isfield(S,key) && ~isempty(S.(key))
+        v = S.(key);
+    end
+end
+
+function shallowObj = getShallowObject(ctx)
+    shallowObj = [];
+    if isfield(ctx,'shallow') && ~isempty(ctx.shallow)
+        shallowObj = ctx.shallow;
+    elseif isfield(ctx,'shallowObj') && ~isempty(ctx.shallowObj)
+        shallowObj = ctx.shallowObj;
+    end
+    if ~isempty(shallowObj) && ~isa(shallowObj, 'shallow')
+        shallowObj = [];
+    end
+end
+
+function rois = selectRoisForNode(ctx, node)
+    rois = [];
+    if isfield(ctx,'roiList') && ~isempty(ctx.roiList)
+        rois = ctx.roiList;
+    end
+
+    if isempty(rois)
+        shallowObj = getShallowObject(ctx);
+        if ~isempty(shallowObj)
+            rois = collectRoisFromProject(shallowObj);
+        end
+    end
+
+    p = getfielddefault(node, 'params', struct());
+    if isstruct(p) && isfield(p,'roiList') && ~isempty(p.roiList) && ~isempty(rois)
+        idx = double(p.roiList(:)');
+        idx = idx(isfinite(idx));
+        idx = round(idx);
+        idx = idx(idx >= 1 & idx <= numel(rois));
+        if ~isempty(idx)
+            rois = rois(idx);
+        else
+            rois = rois([]);
+        end
+    end
+end
+
+function rois = collectRoisFromProject(shallowObj)
+    rois = [];
+    if isempty(shallowObj) || ~isa(shallowObj, 'shallow') || isempty(shallowObj.fov)
+        return;
+    end
+    for i = 1:numel(shallowObj.fov)
+        try
+            r = shallowObj.fov(i).roi;
+            if ~isempty(r)
+                rois = [rois r(:)']; %#ok<AGROW>
+            end
+        catch
+        end
+    end
+end
+
+function pkgName = resolveNodePackage(node)
+    pkgName = '';
+    if isfield(node,'pkg') && ~isempty(node.pkg)
+        pkgName = char(string(node.pkg));
+        return;
+    end
+    if isfield(node,'params') && isstruct(node.params) && isfield(node.params,'pkg') && ~isempty(node.params.pkg)
+        pkgName = char(string(node.params.pkg));
+        return;
+    end
+    if isfield(node,'func') && ~isempty(node.func)
+        f = char(string(node.func));
+        dot = strfind(f, '.');
+        if ~isempty(dot)
+            pkgName = f(1:dot(1)-1);
+        end
+    end
+end
+
+function ds = collectDataSeriesFromRois(rois)
+    ds = {};
+    if isempty(rois)
+        return;
+    end
+    for i = 1:numel(rois)
+        try
+            r = rois(i);
+            if isempty(r.data)
+                r.load('data');
+            end
+            for k = 1:numel(r.data)
+                if isprop(r.data(k), 'groupid') && ~isempty(r.data(k).groupid)
+                    ds{end+1} = char(string(r.data(k).groupid)); %#ok<AGROW>
+                end
+            end
+        catch
+        end
+    end
+    if ~isempty(ds)
+        ds = unique(ds, 'stable');
+    end
+end
+
+function ch = inferChannelsFromRois(rois, ctx)
+    ch = {};
+    if isfield(ctx,'channels') && ~isempty(ctx.channels)
+        ch = ctx.channels;
+        return;
+    end
+    if isempty(rois)
+        return;
+    end
+    try
+        r0 = rois(1);
+        if isfield(r0.display,'channel') && ~isempty(r0.display.channel)
+            ch = r0.display.channel;
+        end
+    catch
+    end
+end
+
+function masks = inferMaskChannelsFromRois(rois)
+    masks = {};
+    if isempty(rois)
+        return;
+    end
+    try
+        r0 = rois(1);
+        if ~isempty(r0.display) && isfield(r0.display,'channel') && ~isempty(r0.display.channel)
+            names = r0.display.channel;
+            keep = false(1, numel(names));
+            for i = 1:numel(names)
+                nm = lower(char(string(names{i})));
+                keep(i) = contains(nm, 'mask') || contains(nm, 'result') || contains(nm, 'track');
+            end
+            masks = names(keep);
+        end
+    catch
+    end
+end
+
+function ch = normalizeClassifierChannels(inCh)
+    if isstring(inCh)
+        inCh = cellstr(inCh);
+    elseif ischar(inCh)
+        inCh = {inCh};
+    end
+    if isnumeric(inCh)
+        inCh = {inCh};
+    end
+    if ~iscell(inCh)
+        inCh = {inCh};
+    end
+    ch = inCh;
 end

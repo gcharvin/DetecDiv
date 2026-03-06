@@ -230,6 +230,15 @@ function missing = missingParamsForNode(node, ctx)
         if isfield(ctx,'roiExtract') && isfield(ctx.roiExtract,k) && ~isempty(ctx.roiExtract.(k))
             continue;
         end
+        if isfield(ctx,'roiTracked') && isfield(ctx.roiTracked,k) && ~isempty(ctx.roiTracked.(k))
+            continue;
+        end
+        if isfield(ctx,'processor') && isfield(ctx.processor,k) && ~isempty(ctx.processor.(k))
+            continue;
+        end
+        if isfield(ctx,'classifier') && isfield(ctx.classifier,k) && ~isempty(ctx.classifier.(k))
+            continue;
+        end
         missing{end+1} = k; %#ok<AGROW>
     end
 end

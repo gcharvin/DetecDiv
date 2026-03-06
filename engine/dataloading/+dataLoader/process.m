@@ -91,6 +91,8 @@ function ctx = process(ctx)
     end
 
     ctx.fovList = ctx.shallow.fov;
+    % Keep a contract-level alias used by pipeline contracts.
+    ctx.images = ctx.fovList;
     if ~isempty(ctx.fovList)
         try
             ctx.channels = ctx.fovList(1).channel;

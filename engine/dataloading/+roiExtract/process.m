@@ -149,6 +149,16 @@ function ctx = process(ctx)
     ctx.fovList = fovList;
     ctx.roiList = collectROIs(fovList);
     ctx.dataSeries = collectDataSeries(ctx.roiList);
+    if ~isfield(ctx,'channels') || isempty(ctx.channels)
+        if isfield(p,'channels') && ~isempty(p.channels)
+            ctx.channels = p.channels;
+        elseif ~isempty(fovList)
+            try
+                ctx.channels = fovList(1).channel;
+            catch
+            end
+        end
+    end
 
     if ~isempty(shallowObj)
         try
