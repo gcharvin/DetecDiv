@@ -70,7 +70,7 @@ function ctx = process(ctx)
         callArgs = [callArgs, {'SaveArgs', p.saveArgs}]; %#ok<AGROW>
     end
 
-    created = createTrackedCellROIs(shallowObj, callArgs{:});
+    created = roiTracked.createTrackedCellROIs(shallowObj, callArgs{:});
 
     try
         if ~isfield(shallowObj.runProfiles, 'dataloading') || isempty(shallowObj.runProfiles.dataloading)
@@ -110,3 +110,4 @@ for i = 1:numel(fovList)
     end
 end
 end
+

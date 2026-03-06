@@ -1,5 +1,5 @@
 function ctx = process(ctx)
-% roiPattern.process  Run pattern-based ROI detection using the legacy backend.
+% roiPattern.process  Run pattern-based ROI identification.
 
     if nargin < 1 || isempty(ctx)
         ctx = struct();
@@ -12,17 +12,10 @@ function ctx = process(ctx)
         end
     end
 
+    ctx = roiPattern.runCore(ctx);
+
     if isfield(ctx, 'roiPattern') && isstruct(ctx.roiPattern)
-        ctx.roiIdentify = ctx.roiPattern;
         ctx.params = ctx.roiPattern;
-    elseif isfield(ctx, 'params') && isstruct(ctx.params)
-        ctx.roiIdentify = ctx.params;
-    end
-
-    ctx = roiIdentify.process(ctx);
-
-    if isfield(ctx, 'roiIdentify') && isstruct(ctx.roiIdentify)
-        ctx.roiPattern = ctx.roiIdentify;
     end
 
     if isfield(ctx, 'shallow') && ~isempty(ctx.shallow)
