@@ -58,12 +58,28 @@ function ctx = runCore(ctx)
         saveProgress = logical(ctx.saveProgress);
     end
 
+    testOnly = false;
+    if isfield(ctx,'testOnly')
+        testOnly = logical(ctx.testOnly);
+    end
+
+    patternList = normalizePatternList(ctx, p, shallowObj, fovList);
+
+    if testOnly
+        detections = runPatternTest(fovList, fovIdx, ctx, p, patternList);
+        ctx.fovList = fovList;
+        ctx.roiList = collectROIs(fovList);
+        ctx.patternList = patternList;
+        ctx.patternDetection = detections;
+        ctx.roiPattern = p;
+        ctx.params = p;
+        return;
+    end
+
     prog = progressLoadLocal(shallowObj, ctx, 'roiPattern');
     if isempty(prog) || ~resume
         prog = progressInitLocal(shallowObj, ctx, 'roiPattern', fovIdx, p);
     end
-
-    patternList = normalizePatternList(ctx, p, shallowObj, fovList);
 
     fovIdxToProcess = [];
     for i = fovIdx
@@ -354,6 +370,43 @@ function idx = resolveChannelIndex(fov, p)
         catch
         end
     end
+end
+
+function out = runPatternTest(fovList, fovIdx, ctx, p, patternList)
+out = struct([]);
+for kk = 1:numel(fovIdx)
+    i = fovIdx(kk);
+    currentFov = fovList(i);
+    pattern = selectPatternForFov(currentFov, i, ctx, p, patternList);
+    if ~hasValidPattern(pattern)
+        continue;
+    end
+
+    [pattimg, chanIdx, refFrame, crop] = buildPatternPatch(fovList, pattern, p);
+    args = {'FOV', currentFov, ...
+        'Frames', refFrame, ...
+        'Threshold', p.threshold, ...
+        'Pattern', pattimg, ...
+        'Channel', chanIdx, ...
+        'Test'};
+    if ~isempty(crop)
+        args = [args {'Crop'} {crop}];
+    end
+
+    thisOut = identifyROIsLocal(args{:});
+    if isempty(thisOut)
+        continue;
+    end
+
+    for jj = 1:numel(thisOut)
+        try
+            thisOut(jj).fovid = kk;
+        catch
+        end
+    end
+
+    out = [out thisOut(:)']; %#ok<AGROW>
+end
 end
 
 function out = mergeStructOverride(base, override)

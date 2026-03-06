@@ -5259,9 +5259,6 @@ classdef workflow < matlab.apps.AppBase
             app.refreshAll();
 
         end
-
-
-
         function out = runPatternDetection(app, fovIndex, testOnly)
 
             if nargin < 3
@@ -5270,74 +5267,89 @@ classdef workflow < matlab.apps.AppBase
 
             end
 
-            [fovs, frameid, thr, pattimg, cropVal, pix] = app.resolvePatternDetectionInputs(fovIndex);
+            idx = app.findNodeIndex('roiPattern');
 
-            pattRect = app.getPatternCrop();
+            if isempty(idx)
 
-            pattSize = size(pattimg);
+                error('roiPattern node is missing.');
 
-            disp(sprintf('[workflow][roiPattern] frame=%d threshold=%g channel=%d fovCount=%d', frameid, thr, pix, numel(fovs)));
+            end
 
-            disp(sprintf('[workflow][roiPattern] fovIndex=%s', mat2str(fovIndex)));
+            params = app.Pipeline.nodes(idx).params;
 
-            disp(sprintf('[workflow][roiPattern] patternRect=%s', mat2str(round(double(pattRect)))));
+            pat = struct([]);
 
-            disp(sprintf('[workflow][roiPattern] patternSize=[%d %d]', pattSize(1), pattSize(2)));
+            if isfield(params,'pattern') && ~isempty(params.pattern)
 
-            args = {'FOV', fovs, 'Frames', frameid, 'Threshold', thr, 'Pattern', pattimg, 'Channel', pix};
+                pat = params.pattern;
+
+            end
+
+            if isempty(pat)
+
+                error('Pattern is not defined. Use Draw pattern first.');
+
+            end
+
+            if nargin < 2 || isempty(fovIndex)
+
+                fovIndex = app.SelectedFov;
+
+            end
+
+            if isempty(fovIndex)
+
+                fovIndex = 1;
+
+            end
+
+            fovIndex = reshape(double(fovIndex), 1, []);
+
+            ctx = struct('shallow', app.Project, ...
+                'roiPattern', params, ...
+                'interactive', false, ...
+                'fovIndex', fovIndex, ...
+                'resume', false, ...
+                'saveProgress', false, ...
+                'testOnly', logical(testOnly));
+
+            disp(sprintf('[workflow][roiPattern] testOnly=%d fovIndex=%s', logical(testOnly), mat2str(fovIndex)));
+
+            ctx = roiPattern.process(ctx);
+
+            app.Project = ctx.shallow;
 
             if testOnly
 
-                args = [args {'Test'}];
+                if isfield(ctx,'patternDetection') && ~isempty(ctx.patternDetection)
 
-            else
+                    out = ctx.patternDetection;
 
-                idx = app.findNodeIndex('roiPattern');
+                else
 
-                if ~isempty(idx)
-
-                    params = app.Pipeline.nodes(idx).params;
-
-                    if isfield(params,'keepExisting') && logical(params.keepExisting)
-
-                        args = [args {'Keep'} {true}];
-
-                    end
+                    out = struct([]);
 
                 end
 
-            end
-
-            if ~isempty(cropVal)
-
-                args = [args {'Crop'} {cropVal}];
+                return;
 
             end
 
-            out = identifyROIs(args{:});
+            if isfield(ctx,'roiPattern') && isstruct(ctx.roiPattern) && ~isempty(ctx.roiPattern)
 
-            try
+                app.Pipeline.nodes(idx).params = ctx.roiPattern;
 
-                totalCount = 0;
+                pipelineSave(app.Pipeline);
 
-                for ii = 1:numel(out)
+                app.storePipelineLink(app.Pipeline);
 
-                    if isfield(out(ii),'scaled') && ~isempty(out(ii).scaled)
-
-                        totalCount = totalCount + size(out(ii).scaled, 1);
-
-                    end
-
-                end
-
-                disp(sprintf('[workflow][roiPattern] identifyROIs returned %d ROI(s)', totalCount));
-
-            catch
+                app.publishPipelineToWorkspace();
 
             end
+
+            out = struct([]);
 
         end
-
 
 
         function [fovs, frameid, thr, pattimg, cropVal, pix] = resolvePatternDetectionInputs(app, fovIndex)
