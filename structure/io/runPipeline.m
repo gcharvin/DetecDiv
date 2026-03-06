@@ -197,43 +197,43 @@ function ctx = executeNode(node, ctx)
             try
                 ctx = dataLoader.process(ctx);
             catch ME
-                error('runPipeline:NodeFailed','Node %s failed: %s', node.id, ME.message);
+                error('runPipeline:NodeFailed','Node %s failed: %s', node.id, formatNodeError(ME));
             end
         case 'roiidentify'
             try
                 ctx = roiIdentify.process(ctx);
             catch ME
-                error('runPipeline:NodeFailed','Node %s failed: %s', node.id, ME.message);
+                error('runPipeline:NodeFailed','Node %s failed: %s', node.id, formatNodeError(ME));
             end
         case 'roipattern'
             try
                 ctx = roiPattern.process(ctx);
             catch ME
-                error('runPipeline:NodeFailed','Node %s failed: %s', node.id, ME.message);
+                error('runPipeline:NodeFailed','Node %s failed: %s', node.id, formatNodeError(ME));
             end
         case 'roimanual'
             try
                 ctx = roiManual.process(ctx);
             catch ME
-                error('runPipeline:NodeFailed','Node %s failed: %s', node.id, ME.message);
+                error('runPipeline:NodeFailed','Node %s failed: %s', node.id, formatNodeError(ME));
             end
         case 'roigrid'
             try
                 ctx = roiGrid.process(ctx);
             catch ME
-                error('runPipeline:NodeFailed','Node %s failed: %s', node.id, ME.message);
+                error('runPipeline:NodeFailed','Node %s failed: %s', node.id, formatNodeError(ME));
             end
         case 'roitracked'
             try
                 ctx = roiTracked.process(ctx);
             catch ME
-                error('runPipeline:NodeFailed','Node %s failed: %s', node.id, ME.message);
+                error('runPipeline:NodeFailed','Node %s failed: %s', node.id, formatNodeError(ME));
             end
         case 'roiextract'
             try
                 ctx = roiExtract.process(ctx);
             catch ME
-                error('runPipeline:NodeFailed','Node %s failed: %s', node.id, ME.message);
+                error('runPipeline:NodeFailed','Node %s failed: %s', node.id, formatNodeError(ME));
             end
         case 'processor'
             ctx = executeProcessorNode(node, ctx);
@@ -244,12 +244,26 @@ function ctx = executeNode(node, ctx)
             try
                 ctx = feval(fun, ctx);
             catch ME
-                error('runPipeline:NodeFailed','Node %s failed: %s', node.id, ME.message);
+                error('runPipeline:NodeFailed','Node %s failed: %s', node.id, formatNodeError(ME));
             end
     end
 
     % optional output coherence check
     ctx = ensureOutputs(node, ctx);
+end
+
+function msg = formatNodeError(ME)
+    msg = char(string(ME.message));
+    try
+        if ~isempty(ME.identifier)
+            msg = sprintf('%s [%s]', msg, char(string(ME.identifier)));
+        end
+        if ~isempty(ME.stack)
+            top = ME.stack(1);
+            msg = sprintf('%s @ %s:%d', msg, char(string(top.name)), top.line);
+        end
+    catch
+    end
 end
 
 function fun = resolveNodeFunc(node)

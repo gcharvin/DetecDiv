@@ -46,10 +46,7 @@ end
 
 %frameid
 % read image
-out=[];
-out.positions=[];
-out.scaled=[];
-out.fovid=[];
+out=struct('positions', {}, 'scaled', {}, 'fovid', {});
 scale=1;
 cc=1;
 
@@ -204,10 +201,16 @@ end
 
 if ~test
     disp('Now creating ROIs for selected FOVs....');
-    
-    
+    if isempty(out)
+        disp('No ROIs were detected for selected FOVs. Nothing to create.');
+        return;
+    end
+
     %reverseStr = '';
     for j=1:numel(out)
+        if isempty(out(j).fovid) || out(j).fovid < 1 || out(j).fovid > numel(fovs)
+            continue;
+        end
         
         existingROI=numel(fovs(out(j).fovid).roi);
         
