@@ -34,10 +34,22 @@ function storePattern(shallowObj, pattern)
                 break;
             end
         end
+        allFields = union(fieldnames(pattern), fieldnames(pats));
+        for j = 1:numel(allFields)
+            fname = allFields{j};
+            if ~isfield(pattern, fname)
+                pattern.(fname) = [];
+            end
+            for k = 1:numel(pats)
+                if ~isfield(pats(k), fname)
+                    pats(k).(fname) = [];
+                end
+            end
+        end
         if ~replaced
             pats(end+1) = pattern;
         end
-        rp.dataloading.roiIdentify.patternList = pats;
+        rp.dataloading.roiIdentify.patternList = orderfields(pats);
     end
 
     shallowObj.runProfiles = rp;

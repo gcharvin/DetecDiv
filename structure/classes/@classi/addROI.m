@@ -288,7 +288,17 @@ for ii = 1:length(rois)
     ensureTrainingDataseriesExists(classif.roi(cc+1), classif);
 
     % ============================================================
-    % 5) APPLY roiImporterGUI CHANNEL MAP (ioMap)
+    % 5) APPLY roiImporterGUI CLASS MAPPING (convert)
+    % ============================================================
+    % For LSTM/classification import with "Preserve annotations",
+    % roiImporterGUI sends convert = {sourceClasses, destinationClasses}.
+    % We must remap transferred training labels/ids to destination classes.
+    if trainingSetTransfer && ~isempty(convert)
+        applyConvertClassMapping(classif.roi(cc+1), classif, convert);
+    end
+
+    % ============================================================
+    % 6) APPLY roiImporterGUI CHANNEL MAP (ioMap)
     % ============================================================
     % This is the key compatibility fix:
     % - If ioMap(mm).ioChannel matches an INPUT channel (classif.channelName),
@@ -301,7 +311,7 @@ for ii = 1:length(rois)
     end
 
     % ============================================================
-    % 6) PIXEL/OBJECT/DELTA/PEDIGREE OUTPUT CHANNEL HANDLING
+    % 7) PIXEL/OBJECT/DELTA/PEDIGREE OUTPUT CHANNEL HANDLING
     % ============================================================
     if strcmp(classif.category{1},'Pixel') || strcmp(classif.category{1},'Object') || ...
        strcmp(classif.category{1},'Delta') || strcmp(classif.category{1},'Pedigree')
@@ -352,7 +362,7 @@ for ii = 1:length(rois)
     end
 
     % ============================================================
-    % 7) FINALIZE ROI
+    % 8) FINALIZE ROI
     % ============================================================
     classif.roi(cc+1).save;
     classif.roi(cc+1).clear;
@@ -544,6 +554,158 @@ end
                 chNames{idx} = dest;
             end
         end
+    end
+
+    function applyConvertClassMapping(roiObj, classifObj, convertSpec)
+        % Apply class remapping requested in roiImporterGUI:
+        % convertSpec = {sourceClassList, destinationClassList}
+        % Example: {'bud neck cell', 'bud 0 cell'}.
+
+        [srcClasses, dstTokens] = parseConvertSpec_(convertSpec);
+        if isempty(srcClasses) || isempty(dstTokens) || isempty(classifObj.classes)
+            return
+        end
+
+        nSrc = numel(srcClasses);
+        remapIdx = zeros(nSrc,1); % old idx -> new idx (0 = delete)
+
+        for kk = 1:nSrc
+            tok = strtrim(char(string(dstTokens{kk})));
+            if isempty(tok) || strcmp(tok,'0') || strcmp(tok,'-') || strcmp(tok,'--')
+                remapIdx(kk) = 0;
+                continue
+            end
+            j = find(strcmp(classifObj.classes, tok), 1);
+            if isempty(j)
+                remapIdx(kk) = 0;
+            else
+                remapIdx(kk) = j;
+            end
+        end
+
+        if isempty(roiObj.data)
+            return
+        end
+
+        dsIdx = find(arrayfun(@(x) isprop(x,'groupid') && strcmp(x.groupid, classifObj.strid), roiObj.data), 1, 'first');
+        if isempty(dsIdx)
+            return
+        end
+
+        ds = roiObj.data(dsIdx);
+        T  = ds.data;
+        if ~istable(T) || isempty(T)
+            return
+        end
+
+        vars = T.Properties.VariableNames;
+        changed = false;
+
+        if ismember('id_training', vars) && isnumeric(T.id_training)
+            idOld = T.id_training;
+            idNew = zeros(size(idOld));
+            valid = idOld >= 1 & idOld <= nSrc;
+            idNew(valid) = remapIdx(idOld(valid));
+            if ~isequaln(idOld, idNew)
+                T.id_training = idNew;
+                changed = true;
+            end
+        end
+
+        if ismember('labels_training', vars)
+            lab = T.labels_training;
+            if iscategorical(lab)
+                s = string(lab);
+            elseif isstring(lab)
+                s = lab;
+            elseif iscell(lab)
+                s = string(lab);
+            else
+                s = string(lab);
+            end
+
+            out = s;
+            for kk = 1:nSrc
+                srcName = string(srcClasses{kk});
+                newIdx  = remapIdx(kk);
+                if newIdx > 0
+                    out(s == srcName) = string(classifObj.classes{newIdx});
+                else
+                    out(s == srcName) = "";
+                end
+            end
+            out(ismissing(s)) = "";
+            labNew = categorical(out, string(classifObj.classes));
+
+            if ~isequaln(lab, labNew)
+                T.labels_training = labNew;
+                changed = true;
+            end
+        end
+
+        if changed
+            ds.data = T;
+            try
+                if isempty(ds.userData) || ~isstruct(ds.userData)
+                    ds.userData = struct();
+                end
+                ds.userData.classes = classifObj.classes;
+            catch
+            end
+            roiObj.data(dsIdx) = ds;
+        end
+    end
+
+    function [srcClasses, dstTokens] = parseConvertSpec_(convertSpec)
+        srcClasses = {};
+        dstTokens  = {};
+
+        if isempty(convertSpec) || ~iscell(convertSpec) || numel(convertSpec) < 2
+            return
+        end
+
+        srcClasses = splitClassList_(convertSpec{1});
+        dstTokens  = splitClassList_(convertSpec{2});
+
+        if isempty(srcClasses) || isempty(dstTokens)
+            srcClasses = {};
+            dstTokens  = {};
+            return
+        end
+
+        nSrc = numel(srcClasses);
+        if numel(dstTokens) < nSrc
+            dstTokens(end+1:nSrc) = {''};
+        elseif numel(dstTokens) > nSrc
+            dstTokens = dstTokens(1:nSrc);
+        end
+    end
+
+    function out = splitClassList_(in)
+        out = {};
+
+        if ischar(in) || (isstring(in) && isscalar(in))
+            txt = char(string(in));
+        elseif isstring(in)
+            txt = strjoin(cellstr(in(:)'), ' ');
+        elseif iscell(in)
+            try
+                txt = strjoin(cellfun(@(x) char(string(x)), in(:)', 'UniformOutput', false), ' ');
+            catch
+                txt = '';
+            end
+        else
+            txt = '';
+        end
+
+        txt = strtrim(txt);
+        if isempty(txt)
+            return
+        end
+
+        parts = regexp(txt, '[,;\s]+', 'split');
+        parts = parts(~cellfun(@isempty, parts));
+        out   = cellfun(@(x) char(string(x)), parts, 'UniformOutput', false);
     end
 
     function reuseGT = reuseOutputAnnotationIfMapped(roiObj, classifObj, ioMapLocal, outName)

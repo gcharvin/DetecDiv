@@ -5,6 +5,8 @@ function ctx = process(ctx)
         ctx = struct();
     end
 
+    ctx.errors = {};
+
     % interactive path
     if isfield(ctx,'interactive') && ctx.interactive
         ctx = roiExtract.ui(ctx);
@@ -76,6 +78,11 @@ function ctx = process(ctx)
         prog = progressInit(shallowObj, ctx, 'roiExtract', fovIdx, p);
     end
 
+    progressDlg = [];
+    if isfield(ctx,'progressDlg') && ~isempty(ctx.progressDlg)
+        progressDlg = ctx.progressDlg;
+    end
+
     % loop per fov for ROI-granularity
     for i = fovIdx
         if i > numel(fovList)
@@ -102,7 +109,17 @@ function ctx = process(ctx)
             continue;
         end
 
-        args = buildExtractArgs(p);
+        if ~isempty(progressDlg)
+            try
+                if isprop(progressDlg,'CancelRequested') && progressDlg.CancelRequested
+                    ctx.canceled = true;
+                    break;
+                end
+            catch
+            end
+        end
+
+        args = buildExtractArgs(p, progressDlg);
         args = [args {'FOVIndex'} {i} {'ROISelect'} {todo}];
 
         try
@@ -120,6 +137,7 @@ function ctx = process(ctx)
             end
         catch ME
             prog.errors{end+1} = ME.message; %#ok<AGROW>
+            ctx.errors{end+1} = ME.message; %#ok<AGROW>
             if ~isempty(shallowObj)
                 rp = shallowObj.runProfiles;
                 rp.dataloading.runs.(getRunId(ctx)) = prog;
@@ -190,7 +208,7 @@ function ds = collectDataSeries(roiList)
     end
 end
 
-function args = buildExtractArgs(p)
+function args = buildExtractArgs(p, progressDlg)
     args = {};
     if isfield(p,'frames') && ~isempty(p.frames)
         args = [args {'Frames'} {p.frames}];
@@ -227,6 +245,9 @@ function args = buildExtractArgs(p)
     end
     if isfield(p,'cropDrift') && ~isempty(p.cropDrift)
         args = [args {'CropDrift'} {p.cropDrift}];
+    end
+    if nargin >= 2 && ~isempty(progressDlg)
+        args = [args {'hprogressbar'} {progressDlg}];
     end
 end
 
