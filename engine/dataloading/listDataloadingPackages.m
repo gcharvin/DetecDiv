@@ -38,7 +38,10 @@ function cat = inferDataloadingCategory(pkgName)
             cat = 'ROI';
         case 'roiextract'
             cat = 'ROI';
+        case 'roitracked'
+            cat = 'ROI';
         otherwise
             cat = 'Pipeline';
     end
 end
+

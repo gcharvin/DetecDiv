@@ -199,6 +199,25 @@ while ~success && attempts < max_attempts
                 end
             end
 
+            % Extraction marker persisted in H5 for fast status checks.
+            try
+                if isprop(obj,'extraction') && isstruct(obj.extraction)
+                    if isfield(obj.extraction,'status') && ~isempty(obj.extraction.status)
+                        h5writeatt(h5Tmp, h5Path, 'roi_extraction_status', char(string(obj.extraction.status)));
+                    end
+                    if isfield(obj.extraction,'updatedAt') && ~isempty(obj.extraction.updatedAt)
+                        h5writeatt(h5Tmp, h5Path, 'roi_extraction_updatedAt', char(string(obj.extraction.updatedAt)));
+                    end
+                    if isfield(obj.extraction,'runId') && ~isempty(obj.extraction.runId)
+                        h5writeatt(h5Tmp, h5Path, 'roi_extraction_runId', char(string(obj.extraction.runId)));
+                    end
+                end
+            catch
+                if verbose
+                    warning('roi:save:ExtractionAttrWriteFailed','Could not write extraction attributes for %s.', obj.id);
+                end
+            end
+
             imageSaved = true;
             if verbose
                 fprintf('ROI #%s: HDF5 save of "%s" (%d subchan, %d frames).\n', ...

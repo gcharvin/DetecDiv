@@ -902,9 +902,18 @@ for kF = 1:numel(FOVIndex)
            % didSave = r.save(chanSelNames, false);
 
             if ~didSave
-                fprintf('        ⚠ nothing written for ROI %s\n', ROI(rIdx).id);
+                fprintf('        ? nothing written for ROI %s
+', ROI(rIdx).id);
+                try
+                    r.setExtractionStatus('stale');
+                catch
+                end
             else
                 fprintf('.');
+                try
+                    r.setExtractionStatus('extracted');
+                catch
+                end
             end
 
             r.image = [];

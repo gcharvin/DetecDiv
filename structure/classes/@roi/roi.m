@@ -35,6 +35,8 @@ classdef roi < handle
 
         data=dataseries; % array of dataseries objects
 
+        extraction=struct('status','unknown','updatedAt','','runId',''); % extraction tracking flag
+
     end
     properties (Transient)
              parent=[] % reference of the parent field of view
@@ -49,6 +51,52 @@ classdef roi < handle
 
             obj.id=id;
             obj.value=roiarr;
+            obj.setExtractionStatus('not_extracted');
+        end
+
+        function setExtractionStatus(obj, status, runId)
+            if nargin < 2 || isempty(status)
+                status = 'unknown';
+            end
+            st = lower(char(string(status)));
+            if ~any(strcmp(st, {'unknown','not_extracted','extracted','stale'}))
+                st = 'unknown';
+            end
+
+            if ~isstruct(obj.extraction) || isempty(obj.extraction)
+                obj.extraction = struct();
+            end
+
+            obj.extraction.status = st;
+            try
+                obj.extraction.updatedAt = char(datetime('now','Format','yyyy-MM-dd HH:mm:ss'));
+            catch
+                obj.extraction.updatedAt = '';
+            end
+
+            if nargin >= 3 && ~isempty(runId)
+                obj.extraction.runId = char(string(runId));
+            elseif ~isfield(obj.extraction,'runId')
+                obj.extraction.runId = '';
+            end
+        end
+
+        function st = getExtractionStatus(obj)
+            st = 'unknown';
+            try
+                if isstruct(obj.extraction) && isfield(obj.extraction,'status') && ~isempty(obj.extraction.status)
+                    st = lower(char(string(obj.extraction.status)));
+                end
+            catch
+                st = 'unknown';
+            end
+            if ~any(strcmp(st, {'unknown','not_extracted','extracted','stale'}))
+                st = 'unknown';
+            end
+        end
+
+        function tf = isExtracted(obj)
+            tf = strcmp(obj.getExtractionStatus(), 'extracted');
         end
 
         function dataout=getData(roiobj,str)

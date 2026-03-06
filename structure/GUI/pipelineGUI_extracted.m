@@ -533,6 +533,17 @@ classdef pipelineGUI < matlab.apps.AppBase
                 'color',[0.15 0.72 0.72]);
 
             reg(6) = struct( ...
+                'display','ROI tracked', ...
+                'type','roiTracked', ...
+                'func','roiTracked.process', ...
+                'gui','roiTracked.ui', ...
+                'paramRequired',{{}}, ...
+                'inputs',{{'roiList'}}, ...
+                'outputs',{{'roiList'}}, ...
+                'defaultParams',safeSetParam(app, 'roiTracked.setparam'), ...
+                'color',[0.76 0.44 0.88]);
+
+            reg(7) = struct( ...
                 'display','ROI extraction', ...
                 'type','roiExtract', ...
                 'func','roiExtract.process', ...
@@ -543,7 +554,7 @@ classdef pipelineGUI < matlab.apps.AppBase
                 'defaultParams',safeSetParam(app, 'roiExtract.setparam'), ...
                 'color',[0.10 0.68 0.38]);
 
-            reg(7) = struct( ...
+            reg(8) = struct( ...
                 'display','Processor', ...
                 'type','processor', ...
                 'func','', ...
@@ -554,7 +565,7 @@ classdef pipelineGUI < matlab.apps.AppBase
                 'defaultParams',struct('pkg',''), ...
                 'color',[0.55 0.55 0.55]);
 
-            reg(8) = struct( ...
+            reg(9) = struct( ...
                 'display','Classifier', ...
                 'type','classifier', ...
                 'func','', ...
@@ -1516,6 +1527,21 @@ classdef pipelineGUI < matlab.apps.AppBase
                     end
                     tag = sprintf('Pattern #%d/%d', patIdx, nPat);
                 end
+            elseif strcmpi(nodeType, 'roiTracked')
+                tags = {};
+                if isfield(params, 'channel') && ~isempty(params.channel)
+                    tags{end+1} = ['Channel ' char(string(params.channel))]; %#ok<AGROW>
+                end
+                if isfield(params, 'margin') && ~isempty(params.margin)
+                    tags{end+1} = sprintf('Margin %g', double(params.margin)); %#ok<AGROW>
+                end
+                if isfield(params, 'fovIndex') && ~isempty(params.fovIndex)
+                    try
+                        tags{end+1} = sprintf('FOVs %d', numel(params.fovIndex)); %#ok<AGROW>
+                    catch
+                    end
+                end
+                tag = strjoin(tags, ', ');
             elseif strcmpi(nodeType, 'roiGrid')
                 tags = {};
                 modeName = 'fullframe';
@@ -1867,6 +1893,10 @@ classdef pipelineGUI < matlab.apps.AppBase
 
                 case 'roigrid'
                     in  = portDef('images','imageSet',true,'edge');
+                    out = portDef('roiList','roiList',true,'edge');
+
+                case 'roitracked'
+                    in  = portDef('roiList','roiList',true,'edge');
                     out = portDef('roiList','roiList',true,'edge');
 
                 case 'roiextract'
@@ -2298,6 +2328,28 @@ classdef pipelineGUI < matlab.apps.AppBase
                     ctx = roiGrid.ui(ctx);
                     if isfield(ctx,'roiGrid') && isstruct(ctx.roiGrid)
                         node.params = ctx.roiGrid;
+                        app.Data.nodes(idx) = node;
+                        updateModuleListTable(app);
+                        updateParamsTable(app, idx);
+                    end
+                    refreshStatus(app);
+                    return;
+                end
+
+                if strcmpi(node.type,'roiTracked')
+                    if isempty(shallowObj)
+                        uialert(app.UIFigure, 'Tracked ROI GUI needs a project context.', 'Info');
+                        return;
+                    end
+                    ctx = struct();
+                    ctx.shallow = shallowObj;
+                    if isfield(node,'params') && isstruct(node.params)
+                        ctx.roiTracked = node.params;
+                        ctx.params = node.params;
+                    end
+                    ctx = roiTracked.ui(ctx);
+                    if isfield(ctx,'roiTracked') && isstruct(ctx.roiTracked)
+                        node.params = ctx.roiTracked;
                         app.Data.nodes(idx) = node;
                         updateModuleListTable(app);
                         updateParamsTable(app, idx);

@@ -82,6 +82,8 @@ classdef workflow < matlab.apps.AppBase
 
         GridselectiongridButton        matlab.ui.control.RadioButton
 
+        TrackedmasksButton             matlab.ui.control.RadioButton
+
         PatterndetectionpatternButton  matlab.ui.control.RadioButton
 
         ManualselectionmanualButton    matlab.ui.control.RadioButton
@@ -138,13 +140,17 @@ classdef workflow < matlab.apps.AppBase
 
         FovCropListener = []
 
+        FocusModule char = ''
+
     end
 
 
 
     methods (Access = private)
 
-        function startupFcn(app, shallowObj)
+        function startupFcn(app, shallowObj, varargin)
+
+            opts = app.parseStartupOptions(varargin{:});
 
             app.configureUi();
 
@@ -172,9 +178,131 @@ classdef workflow < matlab.apps.AppBase
 
             end
 
+            if ~isempty(opts.FocusModule)
+
+                target = app.normalizeFocusModuleName(opts.FocusModule);
+
+                if any(strcmpi(target, {'roimanual','roipattern','roigrid','roitracked'}))
+
+                    app.ensureRoiNode(target);
+
+                    app.FocusModule = target;
+
+                    app.TabGroup.SelectedTab = app.ROIsIDTab;
+
+                elseif strcmpi(target, 'roiextract')
+
+                    app.ensureExtractNode();
+
+                    app.TabGroup.SelectedTab = app.ROIsExtractionTab;
+
+                elseif strcmpi(target, 'display')
+
+                    app.TabGroup.SelectedTab = app.DisplayTab;
+
+                end
+
+            end
+
             app.refreshAll();
 
             app.markDirty(false);
+
+        end
+
+
+
+        function opts = parseStartupOptions(app, varargin) %#ok<INUSD>
+
+            opts = struct('FocusModule', '');
+
+            if isempty(varargin)
+
+                return;
+
+            end
+
+            if numel(varargin) == 1 && (ischar(varargin{1}) || isstring(varargin{1}))
+
+                opts.FocusModule = char(string(varargin{1}));
+
+                return;
+
+            end
+
+            i = 1;
+
+            while i <= numel(varargin)
+
+                key = varargin{i};
+
+                if ~(ischar(key) || isstring(key))
+
+                    i = i + 1;
+
+                    continue;
+
+                end
+
+                if i == numel(varargin)
+
+                    break;
+
+                end
+
+                val = varargin{i+1};
+
+                switch lower(char(string(key)))
+
+                    case {'focus', 'focusmodule', 'module', 'moduletype'}
+
+                        opts.FocusModule = char(string(val));
+
+                end
+
+                i = i + 2;
+
+            end
+
+        end
+
+
+
+        function mode = normalizeFocusModuleName(app, mode) %#ok<INUSD>
+
+            mode = lower(strtrim(char(string(mode))));
+
+            switch mode
+
+                case {'roitracked', 'tracked', 'trackedroi', 'roitracking'}
+
+                    mode = 'roitracked';
+
+                case {'roipattern', 'pattern', 'roiidentify', 'identify'}
+
+                    mode = 'roipattern';
+
+                case {'roigrid', 'grid'}
+
+                    mode = 'roigrid';
+
+                case {'roimanual', 'manual'}
+
+                    mode = 'roimanual';
+
+                case {'roiextract', 'extract'}
+
+                    mode = 'roiextract';
+
+                case {'display'}
+
+                    mode = 'display';
+
+                otherwise
+
+                    mode = '';
+
+            end
 
         end
 
@@ -654,6 +782,10 @@ classdef workflow < matlab.apps.AppBase
 
                     app.ROIgenerationmodeButtonGroup.SelectedObject = app.GridselectiongridButton;
 
+                case 'roitracked'
+
+                    app.ROIgenerationmodeButtonGroup.SelectedObject = app.TrackedmasksButton;
+
                 otherwise
 
                     app.ROIgenerationmodeButtonGroup.SelectedObject = app.ManualselectionmanualButton;
@@ -1098,11 +1230,13 @@ classdef workflow < matlab.apps.AppBase
 
                 end
 
-                pos = app.getRoiPosition(fovObj.roi(i));
+                roiObj = fovObj.roi(i);
+
+                pos = app.getRoiPosition(roiObj);
 
                 if ~isempty(pos)
 
-                    edge = [0 1 1];
+                    edge = app.getRoiEdgeColor(roiObj);
 
                     lw = 1.6;
 
@@ -1690,6 +1824,128 @@ classdef workflow < matlab.apps.AppBase
 
 
 
+        function edge = getRoiEdgeColor(app, roiObj)
+
+            st = app.getRoiExtractionState(roiObj);
+
+            switch st
+
+                case 'extracted'
+
+                    edge = [1 0.2 0.2];
+
+                case 'stale'
+
+                    edge = [1 0.6 0.1];
+
+                otherwise
+
+                    edge = [0 1 1];
+
+            end
+
+        end
+
+
+
+        function st = getRoiExtractionState(app, roiObj)
+
+            st = 'unknown';
+
+            try
+
+                if ismethod(roiObj, 'getExtractionStatus')
+
+                    st = char(string(roiObj.getExtractionStatus()));
+
+                elseif isprop(roiObj,'extraction') && isstruct(roiObj.extraction) && isfield(roiObj.extraction,'status') && ~isempty(roiObj.extraction.status)
+
+                    st = char(string(roiObj.extraction.status));
+
+                end
+
+            catch
+
+            end
+
+            st = lower(strtrim(st));
+
+            if any(strcmp(st, {'not_extracted','extracted','stale'}))
+
+                return;
+
+            end
+
+            st = 'unknown';
+
+            try
+
+                roiPath = char(string(roiObj.path));
+
+                roiId = char(string(roiObj.id));
+
+                if ~isempty(roiPath) && ~isempty(roiId)
+
+                    h5File = fullfile(roiPath, ['im_' roiId '.h5']);
+
+                    if isfile(h5File)
+
+                        st = 'extracted';
+
+                    else
+
+                        st = 'not_extracted';
+
+                    end
+
+                end
+
+            catch
+
+            end
+
+        end
+
+
+
+        function setRoiExtractionStatus(app, roiObj, status)
+
+            if isempty(roiObj)
+
+                return;
+
+            end
+
+            try
+
+                if ismethod(roiObj,'setExtractionStatus')
+
+                    roiObj.setExtractionStatus(status);
+
+                elseif isprop(roiObj,'extraction')
+
+                    ex = struct('status',char(string(status)),'updatedAt','','runId','');
+
+                    try
+
+                        ex.updatedAt = char(datetime('now','Format','yyyy-MM-dd HH:mm:ss'));
+
+                    catch
+
+                    end
+
+                    roiObj.extraction = ex;
+
+                end
+
+            catch
+
+            end
+
+        end
+
+
+
         function crop = getPatternCrop(app)
 
             crop = [];
@@ -1760,6 +2016,14 @@ classdef workflow < matlab.apps.AppBase
 
         function mode = getCurrentRoiMode(app)
 
+            if ~isempty(app.FocusModule) && ~isempty(app.findNodeIndex(app.FocusModule))
+
+                mode = app.FocusModule;
+
+                return;
+
+            end
+
             mode = 'roiManual';
 
             if ~isempty(app.findNodeIndex('roiPattern')) || ~isempty(app.findNodeIndex('roiIdentify'))
@@ -1773,6 +2037,10 @@ classdef workflow < matlab.apps.AppBase
             elseif ~isempty(app.findNodeIndex('roiManual'))
 
                 mode = 'roiManual';
+
+            elseif ~isempty(app.findNodeIndex('roiTracked'))
+
+                mode = 'roiTracked';
 
             end
 
@@ -1789,6 +2057,10 @@ classdef workflow < matlab.apps.AppBase
             elseif isequal(app.ROIgenerationmodeButtonGroup.SelectedObject, app.GridselectiongridButton)
 
                 mode = 'roiGrid';
+
+            elseif isequal(app.ROIgenerationmodeButtonGroup.SelectedObject, app.TrackedmasksButton)
+
+                mode = 'roiTracked';
 
             else
 
@@ -1820,6 +2092,10 @@ classdef workflow < matlab.apps.AppBase
 
                     params = roiGrid.setparam(struct());
 
+                case 'roitracked'
+
+                    params = roiTracked.setparam(struct());
+
                 case 'roiextract'
 
                     params = roiExtract.setparam(struct());
@@ -1836,27 +2112,35 @@ classdef workflow < matlab.apps.AppBase
 
         function ensureRoiNode(app, typeName)
 
-            current = app.getCurrentRoiMode();
+            typeName = char(string(typeName));
 
-            if strcmpi(current,typeName) && ~isempty(app.findNodeIndex(typeName))
+            if ~isempty(app.findNodeIndex(typeName))
+
+                app.FocusModule = typeName;
 
                 return;
 
             end
 
-            keep = true(1, numel(app.Pipeline.nodes));
+            nodes = app.Pipeline.nodes;
 
-            for i = 1:numel(app.Pipeline.nodes)
+            if any(strcmpi(typeName, {'roiPattern','roiIdentify','roiManual','roiGrid'}))
 
-                if any(strcmpi(char(string(app.Pipeline.nodes(i).type)), {'roiPattern','roiIdentify','roiManual','roiGrid'}))
+                keep = true(1, numel(nodes));
 
-                    keep(i) = false;
+                for i = 1:numel(nodes)
+
+                    if any(strcmpi(char(string(nodes(i).type)), {'roiPattern','roiIdentify','roiManual','roiGrid'}))
+
+                        keep(i) = false;
+
+                    end
 
                 end
 
-            end
+                nodes = nodes(keep);
 
-            nodes = app.Pipeline.nodes(keep);
+            end
 
             newNode = app.buildBuiltinNode(typeName);
 
@@ -1864,7 +2148,15 @@ classdef workflow < matlab.apps.AppBase
 
             for i = 1:numel(nodes)
 
-                if strcmpi(char(string(nodes(i).type)),'dataLoader')
+                t = char(string(nodes(i).type));
+
+                if strcmpi(t,'dataLoader')
+
+                    insertPos = i + 1;
+
+                end
+
+                if strcmpi(typeName,'roiTracked') && any(strcmpi(t, {'roiPattern','roiIdentify','roiManual','roiGrid'}))
 
                     insertPos = i + 1;
 
@@ -1883,6 +2175,8 @@ classdef workflow < matlab.apps.AppBase
             app.storePipelineLink(app.Pipeline);
 
             app.publishPipelineToWorkspace();
+
+            app.FocusModule = typeName;
 
             app.markDirty(true);
 
@@ -1906,7 +2200,7 @@ classdef workflow < matlab.apps.AppBase
 
             for i = 1:numel(nodes)
 
-                if any(strcmpi(char(string(nodes(i).type)), {'roiPattern','roiManual','roiGrid','roiIdentify'}))
+                if any(strcmpi(char(string(nodes(i).type)), {'roiPattern','roiManual','roiGrid','roiIdentify','roiTracked'}))
 
                     insertPos = i + 1;
 
@@ -1936,7 +2230,7 @@ classdef workflow < matlab.apps.AppBase
 
             keep = true(1, numel(app.Pipeline.edges));
 
-            coreTypes = {'dataLoader','roiPattern','roiIdentify','roiManual','roiGrid','roiExtract'};
+            coreTypes = {'dataLoader','roiPattern','roiIdentify','roiManual','roiGrid','roiTracked','roiExtract'};
 
             for i = 1:numel(app.Pipeline.edges)
 
@@ -1956,19 +2250,49 @@ classdef workflow < matlab.apps.AppBase
 
             dlId = app.nodeIdByType('dataLoader');
 
-            roiId = app.nodeIdByType(app.getCurrentRoiMode());
+            sourceId = '';
 
-            exId = app.nodeIdByType('roiExtract');
+            if ~isempty(app.nodeIdByType('roiPattern'))
 
-            if ~isempty(dlId) && ~isempty(roiId)
+                sourceId = app.nodeIdByType('roiPattern');
 
-                edges(end+1) = struct('from',dlId,'to',roiId,'fromPort','images','toPort','images','condition','');
+            elseif ~isempty(app.nodeIdByType('roiGrid'))
+
+                sourceId = app.nodeIdByType('roiGrid');
+
+            elseif ~isempty(app.nodeIdByType('roiManual'))
+
+                sourceId = app.nodeIdByType('roiManual');
+
+            elseif ~isempty(app.nodeIdByType('roiIdentify'))
+
+                sourceId = app.nodeIdByType('roiIdentify');
 
             end
 
-            if ~isempty(roiId) && ~isempty(exId)
+            trackedId = app.nodeIdByType('roiTracked');
 
-                edges(end+1) = struct('from',roiId,'to',exId,'fromPort','roiList','toPort','roiList','condition','');
+            exId = app.nodeIdByType('roiExtract');
+
+            if ~isempty(dlId) && ~isempty(sourceId)
+
+                edges(end+1) = struct('from',dlId,'to',sourceId,'fromPort','images','toPort','images','condition','');
+
+            end
+
+            if ~isempty(sourceId) && ~isempty(trackedId)
+
+                edges(end+1) = struct('from',sourceId,'to',trackedId,'fromPort','roiList','toPort','roiList','condition','');
+
+            end
+
+            if ~isempty(trackedId) && ~isempty(exId)
+
+                edges(end+1) = struct('from',trackedId,'to',exId,'fromPort','roiList','toPort','roiList','condition','');
+
+            elseif ~isempty(sourceId) && ~isempty(exId)
+
+                edges(end+1) = struct('from',sourceId,'to',exId,'fromPort','roiList','toPort','roiList','condition','');
 
             end
 
@@ -1995,6 +2319,10 @@ classdef workflow < matlab.apps.AppBase
                 case 'roigrid'
 
                     node.id = 'roigrid_1'; node.name = 'roigrid_1'; node.type = 'roiGrid'; node.func = 'roiGrid.process'; node.gui = 'roiGrid.ui'; node.params = app.getDefaultParams('roiGrid'); node.inputs = {'images'}; node.outputs = {'roiList'}; node.layout = [35 10 20 10];
+
+                case 'roitracked'
+
+                    node.id = 'roitracked_1'; node.name = 'roitracked_1'; node.type = 'roiTracked'; node.func = 'roiTracked.process'; node.gui = 'roiTracked.ui'; node.params = app.getDefaultParams('roiTracked'); node.inputs = {'roiList'}; node.outputs = {'roiList'}; node.layout = [48 10 20 10];
 
                 case 'roiextract'
 
@@ -2312,7 +2640,7 @@ classdef workflow < matlab.apps.AppBase
 
                     app.ensureExtractNode();
 
-                case {'roipattern','roimanual','roigrid'}
+                case {'roipattern','roimanual','roigrid','roitracked'}
 
                     app.ensureRoiNode(nodeType);
 
@@ -3626,6 +3954,8 @@ classdef workflow < matlab.apps.AppBase
 
             fovObj.roi(app.SelectedRoi).value(1:4) = uint16(round(pos));
 
+            app.setRoiExtractionStatus(fovObj.roi(app.SelectedRoi), 'stale');
+
             app.markDirty(true);
 
         end
@@ -4146,7 +4476,11 @@ classdef workflow < matlab.apps.AppBase
 
             end
 
-            app.ensureRoiNode(app.getSelectedRoiMode());
+            selectedMode = app.getSelectedRoiMode();
+
+            app.ensureRoiNode(selectedMode);
+
+            app.FocusModule = selectedMode;
 
             app.PreviewRoiPositions = zeros(0,4);
 
@@ -4364,7 +4698,7 @@ classdef workflow < matlab.apps.AppBase
 
             overwriteFovs = [];
 
-            if ~keepExisting
+            if ~strcmpi(mode,'roitracked') && ~keepExisting
 
                 for ff = reshape(fovIndex,1,[])
 
@@ -4478,6 +4812,44 @@ classdef workflow < matlab.apps.AppBase
 
                         app.markDirty(true);
 
+                    case 'roitracked'
+
+                        idxTracked = app.findNodeIndex('roiTracked');
+
+                        d = uiprogressdlg(app.UIFigure,'Title','Tracked ROI','Message',['Generating tracked ROIs on ' scopeLabel '...']);
+
+                        try, d.Indeterminate = 'on'; catch, end
+
+                        ctxTracked = struct('shallow', app.Project, 'roiTracked', app.Pipeline.nodes(idxTracked).params, 'interactive', false, 'fovIndex', fovIndex);
+
+                        ctxTracked = roiTracked.process(ctxTracked);
+
+                        close(d);
+
+                        if isfield(ctxTracked,'roiTracked') && isstruct(ctxTracked.roiTracked)
+
+                            app.Pipeline.nodes(idxTracked).params = ctxTracked.roiTracked;
+
+                            pipelineSave(app.Pipeline);
+
+                            app.storePipelineLink(app.Pipeline);
+
+                            app.publishPipelineToWorkspace();
+
+                        end
+
+                        app.PreviewRoiPositions = zeros(0,4);
+
+                        app.markDirty(true);
+
+                        out = [];
+
+                        if isfield(ctxTracked,'createdTracked')
+
+                            out = ctxTracked.createdTracked;
+
+                        end
+
                     case 'roigrid'
 
                         idxGrid = app.findNodeIndex('roiGrid');
@@ -4546,35 +4918,57 @@ classdef workflow < matlab.apps.AppBase
 
             summary = cell(0,1);
 
-            for ff = reshape(fovIndex,1,[])
+            if strcmpi(mode,'roitracked') && exist('out','var') && ~isempty(out)
 
-                afterCount = 0;
+                for ff = reshape(fovIndex,1,[])
 
-                try
+                    nCreated = 0;
 
-                    afterCount = numel(app.Project.fov(ff).roi);
+                    try
 
-                    if afterCount == 1 && isempty(app.Project.fov(ff).roi(1).id)
+                        nCreated = sum(double([out.fov]) == ff);
 
-                        afterCount = 0;
+                    catch
 
                     end
 
-                catch
+                    summary{end+1,1} = sprintf('FOV %d: %d tracked ROI(s)', ff, nCreated); %#ok<AGROW>
 
                 end
 
-                if keepExisting
+            else
 
-                    created = max(0, afterCount - beforeCounts(ff));
+                for ff = reshape(fovIndex,1,[])
 
-                else
+                    afterCount = 0;
 
-                    created = afterCount;
+                    try
+
+                        afterCount = numel(app.Project.fov(ff).roi);
+
+                        if afterCount == 1 && isempty(app.Project.fov(ff).roi(1).id)
+
+                            afterCount = 0;
+
+                        end
+
+                    catch
+
+                    end
+
+                    if keepExisting
+
+                        created = max(0, afterCount - beforeCounts(ff));
+
+                    else
+
+                        created = afterCount;
+
+                    end
+
+                    summary{end+1,1} = sprintf('FOV %d: %d ROI(s)', ff, created); %#ok<AGROW>
 
                 end
-
-                summary{end+1,1} = sprintf('FOV %d: %d ROI(s)', ff, created); %#ok<AGROW>
 
             end
 
@@ -4635,6 +5029,8 @@ classdef workflow < matlab.apps.AppBase
                     if ~isempty(newPos)
 
                         fovObj.roi(row).value(1:4) = uint16(round(newPos));
+
+                        app.setRoiExtractionStatus(fovObj.roi(row), 'stale');
 
                         app.SelectedRoi = row;
 
@@ -5252,13 +5648,15 @@ classdef workflow < matlab.apps.AppBase
 
             app.ROIsIDTab = uitab(app.TabGroup); app.ROIsIDTab.Title = 'ROIs ID';
 
-            app.ROIgenerationmodeButtonGroup = uibuttongroup(app.ROIsIDTab); app.ROIgenerationmodeButtonGroup.Title = 'ROI generation mode'; app.ROIgenerationmodeButtonGroup.Position = [9 571 341 93];
+            app.ROIgenerationmodeButtonGroup = uibuttongroup(app.ROIsIDTab); app.ROIgenerationmodeButtonGroup.Title = 'ROI generation mode'; app.ROIgenerationmodeButtonGroup.Position = [9 548 341 116];
 
-            app.ManualselectionmanualButton = uiradiobutton(app.ROIgenerationmodeButtonGroup); app.ManualselectionmanualButton.Text = 'Manual selection (manual)'; app.ManualselectionmanualButton.Position = [11 47 163 22]; app.ManualselectionmanualButton.Value = true;
+            app.ManualselectionmanualButton = uiradiobutton(app.ROIgenerationmodeButtonGroup); app.ManualselectionmanualButton.Text = 'Manual selection (manual)'; app.ManualselectionmanualButton.Position = [11 69 163 22]; app.ManualselectionmanualButton.Value = true;
 
-            app.PatterndetectionpatternButton = uiradiobutton(app.ROIgenerationmodeButtonGroup); app.PatterndetectionpatternButton.Text = 'Pattern detection (pattern)'; app.PatterndetectionpatternButton.Position = [11 25 161 22];
+            app.PatterndetectionpatternButton = uiradiobutton(app.ROIgenerationmodeButtonGroup); app.PatterndetectionpatternButton.Text = 'Pattern detection (pattern)'; app.PatterndetectionpatternButton.Position = [11 47 161 22];
 
-            app.GridselectiongridButton = uiradiobutton(app.ROIgenerationmodeButtonGroup); app.GridselectiongridButton.Text = 'Grid selection (grid)'; app.GridselectiongridButton.Position = [11 3 127 22];
+            app.GridselectiongridButton = uiradiobutton(app.ROIgenerationmodeButtonGroup); app.GridselectiongridButton.Text = 'Grid selection (grid)'; app.GridselectiongridButton.Position = [11 25 127 22];
+
+            app.TrackedmasksButton = uiradiobutton(app.ROIgenerationmodeButtonGroup); app.TrackedmasksButton.Text = 'Tracked masks (tracked)'; app.TrackedmasksButton.Position = [11 3 154 22];
 
             app.UIROIParametersTable = uitable(app.ROIsIDTab); app.UIROIParametersTable.Position = [11 300 339 262];
 
