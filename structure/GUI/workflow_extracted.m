@@ -1168,9 +1168,49 @@ classdef workflow < matlab.apps.AppBase
 
             end
 
-            for i = active(:)'
+            activeList = reshape(active,1,[]);
+
+            nActive = numel(activeList);
+
+            tLoad = tic;
+
+            dLoad = [];
+
+            for k = 1:nActive
+
+                i = activeList(k);
+
+                key = sprintf('%d|%d|%d', app.SelectedFov, app.SelectedFrame, i);
+
+                wasCached = isKey(app.Cache, key);
 
                 imgs{i} = app.getImage(i);
+
+                if ~wasCached && isempty(dLoad) && toc(tLoad) > 0.35 && k < nActive
+
+                    dLoad = uiprogressdlg(app.UIFigure, ...
+                        'Title','Loading raw frame', ...
+                        'Message','Reading channels...', ...
+                        'Value', max(0, (k-1) / nActive), ...
+                        'Cancelable','off');
+
+                end
+
+                if ~isempty(dLoad)
+
+                    dLoad.Value = min(1, k / nActive);
+
+                    dLoad.Message = sprintf('Reading channel %d/%d (frame %d)...', k, nActive, app.SelectedFrame);
+
+                    drawnow limitrate nocallbacks;
+
+                end
+
+            end
+
+            if ~isempty(dLoad)
+
+                try, close(dLoad); catch, end
 
             end
 

@@ -14,11 +14,80 @@ if isempty(selectedROIIndex)
 end
 
 selectedROI = app.content.ROIList{selectedROIIndex};
-if isempty(selectedROI.image)
-    selectedROI.load();
+roiId = string(selectedROI.id);
+
+chanToLoad = {};
+try
+    if isfield(selectedROI.display,'channel') && isfield(selectedROI.display,'selectedchannel')
+        allNames = selectedROI.display.channel;
+        selMask = logical(selectedROI.display.selectedchannel(:)');
+
+        % Prefer current UI channel checkboxes when available.
+        try
+            if isprop(app,'UIChannelTable') && ~isempty(app.UIChannelTable.Data)
+                uiMask = logical(cell2mat(app.UIChannelTable.Data(:,1))');
+                nu = min(numel(selMask), numel(uiMask));
+                if nu > 0
+                    selMask(1:nu) = uiMask(1:nu);
+                end
+            end
+        catch
+        end
+
+        n = min(numel(allNames), numel(selMask));
+        if n > 0
+            keep = find(selMask(1:n));
+            if ~isempty(keep)
+                chanToLoad = allNames(keep);
+            end
+        end
+    end
+catch
+    chanToLoad = {};
 end
 
-roiId = string(selectedROI.id);   % <— ajoute cette ligne
+if isempty(chanToLoad)
+    if isempty(selectedROI.image)
+        fprintf('[score] ROI %s: loading full image (no channel filter).\n', char(roiId));
+        selectedROI.load();
+    end
+else
+    missing = chanToLoad;
+    if ~isempty(selectedROI.image)
+        missing = {};
+        cLoaded = size(selectedROI.image,3);
+        for ii = 1:numel(chanToLoad)
+            name = chanToLoad{ii};
+            pix = [];
+            try
+                pix = selectedROI.findChannelID(name,'exact');
+            catch
+                try
+                    pix = selectedROI.findChannelID(name);
+                catch
+                    pix = [];
+                end
+            end
+            if isempty(pix) || any(pix > cLoaded)
+                missing{end+1} = name; %#ok<AGROW>
+            end
+        end
+    end
+
+    if ~isempty(missing)
+        try
+            fprintf('[score] ROI %s: loading channel(s): %s\n', char(roiId), strjoin(string(missing), ', '));
+            selectedROI.load('Channel', missing, 'Data', false, 'Silent');
+        catch
+            selectedROI.load('Channel', missing);
+        end
+    elseif isempty(selectedROI.image)
+        fprintf('[score] ROI %s: loading selected channel(s): %s\n', char(roiId), strjoin(string(chanToLoad), ', '));
+        selectedROI.load('Channel', chanToLoad);
+    end
+end
+
+   % <— ajoute cette ligne
 
 currentFrame=selectedROI.display.frame;
 numFrames = size(selectedROI.image, 4);

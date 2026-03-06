@@ -99,6 +99,35 @@ classdef roi < handle
             tf = strcmp(obj.getExtractionStatus(), 'extracted');
         end
 
+        function didSave = saveDisplayedChannels(obj, verbose)
+            if nargin < 2 || isempty(verbose)
+                verbose = true;
+            end
+
+            chanNames = {};
+            try
+                if isfield(obj.display,'channel') && isfield(obj.display,'selectedchannel')
+                    names = obj.display.channel;
+                    sel = logical(obj.display.selectedchannel(:)');
+                    n = min(numel(names), numel(sel));
+                    if n > 0
+                        keep = find(sel(1:n));
+                        if ~isempty(keep)
+                            chanNames = names(keep);
+                        end
+                    end
+                end
+            catch
+                chanNames = {};
+            end
+
+            if isempty(chanNames)
+                didSave = save(obj, [], verbose);
+            else
+                didSave = save(obj, chanNames, verbose);
+            end
+        end
+
         function dataout=getData(roiobj,str)
 
             if numel(roiobj.data)==0 || (numel(roiobj.data)==1 && numel(roiobj.data(1).data)==0)
