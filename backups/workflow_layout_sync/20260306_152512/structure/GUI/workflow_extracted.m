@@ -8,7 +8,7 @@ classdef workflow < matlab.apps.AppBase
         FOVsPositionsPanel             matlab.ui.container.Panel
         UIFOVTable                     matlab.ui.control.Table
         ChannelsPanel                  matlab.ui.container.Panel
-        selectedFOVEditField           matlab.ui.control.TextArea
+        selectedFOVEditField           matlab.ui.control.EditField
         UIDisplayChannelTable          matlab.ui.control.Table
         ResetzoomButton                matlab.ui.control.Button
         PanButton                      matlab.ui.control.Button
@@ -89,14 +89,6 @@ classdef workflow < matlab.apps.AppBase
 
         FocusModule char = ''
 
-        LastTableRoiRow double = NaN
-
-        LastTableRoiClickTime double = 0
-
-        LastGraphicRoiRow double = NaN
-
-        LastGraphicRoiClickTime double = 0
-
     end
 
 
@@ -151,7 +143,7 @@ classdef workflow < matlab.apps.AppBase
 
                     app.TabGroup.SelectedTab = app.ROIsExtractionTab;
 
-                elseif any(strcmpi(target, {'display','dataloader'}))
+                elseif strcmpi(target, 'display')
 
                     app.TabGroup.SelectedTab = app.DataloaderTab;
 
@@ -253,10 +245,6 @@ classdef workflow < matlab.apps.AppBase
 
                     mode = 'display';
 
-                case {'dataloader','loader','rawpath','relink'}
-
-                    mode = 'dataloader';
-
                 otherwise
 
                     mode = '';
@@ -270,12 +258,10 @@ classdef workflow < matlab.apps.AppBase
         function configureUi(app)
 
             app.UIFigure.Name = 'Workflow';
-            app.UIFigure.AutoResizeChildren = 'off';
 
             app.UIFigure.WindowKeyPressFcn = createCallbackFcn(app,@UIFigureWindowKeyPress,true);
 
             app.UIFigure.CloseRequestFcn = createCallbackFcn(app,@UIFigureCloseRequest,true);
-            app.UIFigure.SizeChangedFcn = createCallbackFcn(app,@UIFigureSizeChanged,true);
 
 
 
@@ -288,8 +274,6 @@ classdef workflow < matlab.apps.AppBase
             title(app.UIAxes,'Display','Interpreter','none');
 
             cmAxes = uicontextmenu(app.UIFigure);
-
-            uimenu(cmAxes, 'Text', 'Open selected ROI in score...', 'MenuSelectedFcn', @(src,evt)app.OpenSelectedRoiInScoreMenuSelected());
 
             uimenu(cmAxes, 'Text', 'Draw inclusion crop (current FOV)', 'MenuSelectedFcn', @(src,evt)app.DrawFovCropMenuSelected());
 
@@ -442,67 +426,6 @@ classdef workflow < matlab.apps.AppBase
             app.UIROIsExtractionTable.CellEditCallback = createCallbackFcn(app,@UIROIsExtractionTableCellEdit,true);
 
             app.ExtractROIsButton.ButtonPushedFcn = createCallbackFcn(app,@ExtractROIsButtonPushed,true);
-
-            app.reflowTables();
-
-        end
-
-
-        function reflowTables(app)
-
-            app.localSetTwoColWidth(app.UIDataLoaderTable, 150);
-            app.localSetTwoColWidth(app.UIROIParametersTable, 150);
-            app.localSetTwoColWidth(app.UIROIsExtractionTable, 150);
-
-            if ~isempty(app.UIFOVTable) && isvalid(app.UIFOVTable)
-                tw = max(180, app.UIFOVTable.Position(3) - 18);
-                w1 = 90;
-                w2 = max(120, tw - w1);
-                app.UIFOVTable.ColumnWidth = {w1, w2};
-            end
-
-            if ~isempty(app.UIDisplayChannelTable) && isvalid(app.UIDisplayChannelTable)
-                tw = max(300, app.UIDisplayChannelTable.Position(3) - 18);
-                w = [55, 120, 95, 80, 70, 45];
-                w(2) = max(120, tw - sum(w([1 3 4 5 6])));
-                if sum(w) > tw
-                    scale = tw / sum(w);
-                    w = max(40, floor(w .* scale));
-                end
-                app.UIDisplayChannelTable.ColumnWidth = num2cell(w);
-            end
-
-            if ~isempty(app.UIExistingROIsTable) && isvalid(app.UIExistingROIsTable)
-                tw = max(240, app.UIExistingROIsTable.Position(3) - 18);
-                w = [60, 55, 140, max(110, tw - (60 + 55 + 140))];
-                if sum(w) > tw
-                    scale = tw / sum(w);
-                    w = max(35, floor(w .* scale));
-                end
-                app.UIExistingROIsTable.ColumnWidth = num2cell(w);
-            end
-
-        end
-
-
-
-        function localSetTwoColWidth(app, tbl, w1)
-
-            if isempty(tbl) || ~isvalid(tbl)
-                return;
-            end
-            tw = max(220, tbl.Position(3) - 18);
-            w1 = min(max(90, w1), max(90, tw - 120));
-            w2 = max(120, tw - w1);
-            tbl.ColumnWidth = {w1, w2};
-
-        end
-
-
-
-        function UIFigureSizeChanged(app, event) %#ok<INUSD>
-
-            app.reflowTables();
 
         end
 
@@ -683,8 +606,8 @@ classdef workflow < matlab.apps.AppBase
             else
 
                 raw = workflowui.describeFov(fovObj);
-                lines = regexp(raw, '\s*\|\s*', 'split');
-                app.selectedFOVEditField.Value = lines(:);
+
+                app.selectedFOVEditField.Value = regexp(raw, '\s*\|\s*', 'split');
 
             end
 
@@ -1278,21 +1201,19 @@ classdef workflow < matlab.apps.AppBase
 
                     p = patch(app.UIAxes, x, y, edge, 'FaceAlpha', 0.02, 'EdgeColor', 'none');
 
-                    cmRoi = app.createRoiContextMenu(i);
+                    try, p.ContextMenu = app.UIAxes.ContextMenu; catch, end
 
-                    try, p.ContextMenu = cmRoi; catch, end
-
-                    p.ButtonDownFcn = @(src,evt)app.onRoiGraphicClicked(i);
+                    p.ButtonDownFcn = @(src,evt)app.selectRoi(i);
 
                     hRect = rectangle(app.UIAxes,'Position',pos,'EdgeColor',edge,'LineWidth',lw);
 
-                    try, hRect.ContextMenu = cmRoi; catch, end
+                    try, hRect.ContextMenu = app.UIAxes.ContextMenu; catch, end
 
-                    hRect.ButtonDownFcn = @(src,evt)app.onRoiGraphicClicked(i);
+                    hRect.ButtonDownFcn = @(src,evt)app.selectRoi(i);
 
-                    ht=text(app.UIAxes, pos(1), max(1,pos(2)-2), sprintf('%d', i), 'Color', edge, 'FontSize', 14, 'FontWeight', 'bold', 'Interpreter', 'none', 'ButtonDownFcn', @(src,evt)app.onRoiGraphicClicked(i));
+                    ht=text(app.UIAxes, pos(1), max(1,pos(2)-2), sprintf('%d', i), 'Color', edge, 'FontSize', 14, 'FontWeight', 'bold', 'Interpreter', 'none', 'ButtonDownFcn', @(src,evt)app.selectRoi(i));
 
-                    try, ht.ContextMenu = cmRoi; catch, end
+                    try, ht.ContextMenu = app.UIAxes.ContextMenu; catch, end
 
                 end
 
@@ -2084,7 +2005,7 @@ classdef workflow < matlab.apps.AppBase
 
                 mode = 'roiGrid';
 
-            elseif strcmpi(app.getCurrentRoiMode(),'roiTracked')
+            elseif strcmpi(app.getCurrentRoiMode(),tracked)
 
                 mode = 'roiTracked';
 
@@ -3728,198 +3649,6 @@ classdef workflow < matlab.apps.AppBase
 
 
 
-        function cm = createRoiContextMenu(app, idx)
-
-            cm = uicontextmenu(app.UIFigure);
-
-            uimenu(cm, 'Text', sprintf('Open ROI %d in score...', idx), 'MenuSelectedFcn', @(src,evt)app.openRoiInScoreByIndex(idx));
-
-            uimenu(cm, 'Text', sprintf('Select ROI %d', idx), 'MenuSelectedFcn', @(src,evt)app.selectRoi(idx));
-
-        end
-
-
-
-        function OpenSelectedRoiInScoreMenuSelected(app)
-
-            if isempty(app.SelectedRoi)
-
-                uialert(app.UIFigure, 'Select one ROI first.', 'Open ROI', 'Icon', 'warning');
-
-                return;
-
-            end
-
-            app.openRoiInScoreByIndex(app.SelectedRoi);
-
-        end
-
-
-
-        function onRoiGraphicClicked(app, idx)
-
-            isDouble = app.isDoubleClickOnRow(idx, 'graphic');
-
-            app.selectRoi(idx);
-
-            if isDouble
-
-                app.openRoiInScoreByIndex(idx);
-
-            end
-
-        end
-
-
-
-        function tf = isDoubleClickOnRow(app, row, source)
-
-            t = posixtime(datetime('now'));
-
-            if strcmpi(source, 'graphic')
-
-                tf = isequal(app.LastGraphicRoiRow, row) && ((t - app.LastGraphicRoiClickTime) <= 0.45);
-
-                app.LastGraphicRoiRow = row;
-
-                app.LastGraphicRoiClickTime = t;
-
-            else
-
-                tf = isequal(app.LastTableRoiRow, row) && ((t - app.LastTableRoiClickTime) <= 0.45);
-
-                app.LastTableRoiRow = row;
-
-                app.LastTableRoiClickTime = t;
-
-            end
-
-        end
-
-
-
-        function openRoiInScoreByIndex(app, idx)
-
-            fovObj = app.getSelectedFov();
-
-            if isempty(fovObj) || idx < 1 || idx > numel(fovObj.roi)
-
-                return;
-
-            end
-
-            roiObj = fovObj.roi(idx);
-
-            if ~app.isRoiExtractedForOpen(roiObj)
-
-                uialert(app.UIFigure, sprintf('ROI %d is not extracted yet. Run ROI extraction first.', idx), 'ROI not extracted', 'Icon', 'warning');
-
-                return;
-
-            end
-
-            try
-
-                roiObj.parent = fovObj;
-
-            catch
-
-            end
-
-            try
-
-                if isempty(roiObj.image)
-
-                    roiObj.load;
-
-                end
-
-            catch ME
-
-                uialert(app.UIFigure, ME.message, 'ROI loading error', 'Icon', 'error');
-
-                return;
-
-            end
-
-            if isempty(roiObj.image)
-
-                uialert(app.UIFigure, sprintf('ROI %d has no extracted image on disk.', idx), 'ROI loading error', 'Icon', 'warning');
-
-                return;
-
-            end
-
-            try
-
-                figures = findall(0,'Type','figure');
-
-                scoreFig = findobj(figures,'Name','ScoreApp');
-
-                if ~isempty(scoreFig) && isprop(scoreFig,'RunningAppInstance')
-
-                    scoreApp = scoreFig(1).RunningAppInstance;
-
-                    if ~isempty(scoreApp) && isvalid(scoreApp)
-
-                        scoreApp.addROI(roiObj);
-
-                        return;
-
-                    end
-
-                end
-
-            catch
-
-            end
-
-            try
-
-                score(roiObj);
-
-            catch ME
-
-                uialert(app.UIFigure, ME.message, 'Open ROI error', 'Icon', 'error');
-
-            end
-
-        end
-
-
-
-        function tf = isRoiExtractedForOpen(app, roiObj)
-
-            tf = false;
-
-            st = app.getRoiExtractionState(roiObj);
-
-            if strcmp(st, 'extracted')
-
-                tf = true;
-
-                return;
-
-            end
-
-            try
-
-                if ismethod(roiObj, 'isExtracted')
-
-                    tf = logical(roiObj.isExtracted());
-
-                    return;
-
-                end
-
-            catch
-
-            end
-
-        end
-
-
-
         function rebuildEditors(app)
 
             if strcmpi(app.getSelectedRoiMode(),'roiPattern')
@@ -4049,8 +3778,6 @@ classdef workflow < matlab.apps.AppBase
             if strcmpi(modeName, 'selected')
 
                 cm = uicontextmenu(app.UIFigure);
-
-                uimenu(cm, 'Text', 'Open ROI in score...', 'MenuSelectedFcn', @(src,evt)app.openRoiInScoreByIndex(app.SelectedRoi));
 
                 uimenu(cm, 'Text', 'Delete ROI', 'MenuSelectedFcn', @(src,evt)app.deleteSelectedRoi());
 
@@ -4414,6 +4141,8 @@ classdef workflow < matlab.apps.AppBase
 
             app.SelectedFov = event.Selection(1);
 
+            app.SelectedFrame = 1;
+
             app.PreviewRoiPositions = zeros(0,4);
 
             app.Cache = containers.Map('KeyType','char','ValueType','any');
@@ -4435,6 +4164,8 @@ classdef workflow < matlab.apps.AppBase
             if logical(event.NewData)
 
                 app.SelectedFov = event.Indices(1);
+
+                app.SelectedFrame = 1;
 
                 app.PreviewRoiPositions = zeros(0,4);
 
@@ -5278,23 +5009,11 @@ classdef workflow < matlab.apps.AppBase
 
             app.SelectedRoiRows = rows;
 
-            if isempty(rows)
+            if ~isempty(rows)
 
-                return;
+                app.SelectedRoi = rows(1);
 
-            end
-
-            row = rows(1);
-
-            isDouble = app.isDoubleClickOnRow(row, 'table');
-
-            app.SelectedRoi = row;
-
-            app.selectRoi(row);
-
-            if isDouble
-
-                app.openRoiInScoreByIndex(row);
+                app.selectRoi(rows(1));
 
             end
 
@@ -6046,9 +5765,7 @@ classdef workflow < matlab.apps.AppBase
             app.UIDisplayChannelTable.Position = [9 147 494 122];
 
             % Create selectedFOVEditField
-            app.selectedFOVEditField = uitextarea(app.ChannelsPanel);
-            app.selectedFOVEditField.Editable = 'off';
-            app.selectedFOVEditField.WordWrap = 'on';
+            app.selectedFOVEditField = uieditfield(app.ChannelsPanel, 'text');
             app.selectedFOVEditField.Tooltip = {'Display : path, size of image'};
             app.selectedFOVEditField.Position = [12 9 811 127];
 
@@ -6104,7 +5821,6 @@ classdef workflow < matlab.apps.AppBase
     end
 
 end
-
 
 
 

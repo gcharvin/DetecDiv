@@ -20,7 +20,7 @@ function ctx = runCore(ctx)
         return;
     end
 
-    p = roiPattern.setparam(ctx);
+    p = roiPattern.setparam(struct());
     if ~isempty(shallowObj) && isprop(shallowObj,'runProfiles')
         rp = shallowObj.runProfiles;
         if isfield(rp,'dataloading') && isfield(rp.dataloading,'roiPattern')
@@ -35,6 +35,8 @@ function ctx = runCore(ctx)
     elseif isfield(ctx,'params') && isstruct(ctx.params) && ~isempty(ctx.params)
         p = mergeStructOverride(p, ctx.params);
     end
+
+    p = sanitizeParamsForStorage(p);
 
     if ~isfield(p,'fallbackFullFrame')
         p.fallbackFullFrame = true;
@@ -102,7 +104,7 @@ function ctx = runCore(ctx)
         pattern = selectPatternForFov(currentFov, i, ctx, p, patternList);
 
         if hasValidPattern(pattern)
-            [pattimg, chanIdx, refFrame, crop] = buildPatternPatch(fovList, pattern, p);
+            [pattimg, chanIdx, refFrame, crop] = buildPatternPatch(fovList, currentFov, pattern, p);
             identifyROIsLocal('FOV', currentFov, ...
                 'Frames', refFrame, ...
                 'Threshold', p.threshold, ...
@@ -181,6 +183,11 @@ patternList = struct([]);
 
 if isfield(ctx,'pattern') && isstruct(ctx.pattern) && hasValidPattern(ctx.pattern)
     patternList = ctx.pattern;
+    return;
+end
+
+if isfield(p,'pattern') && isstruct(p.pattern) && hasValidPattern(p.pattern)
+    patternList = p.pattern;
     return;
 end
 
@@ -310,22 +317,26 @@ function roiList = collectROIs(fovList)
     end
 end
 
-function [pattimg, chanIdx, refFrame, crop] = buildPatternPatch(fovList, pattern, p)
-    refFrame = p.referenceFrame;
-    crop = p.crop;
+function [pattimg, chanIdx, refFrame, crop] = buildPatternPatch(fovList, targetFov, pattern, p)
+    refFrame = 1;
+    if isfield(p,'referenceFrame') && ~isempty(p.referenceFrame)
+        refFrame = round(double(p.referenceFrame(1)));
+    end
+    crop = [];
 
     if isfield(pattern,'frame') && ~isempty(pattern.frame)
-        refFrame = pattern.frame;
+        refFrame = round(double(pattern.frame(1)));
     end
 
     refFov = fovList(1);
     if isfield(pattern,'fovIndex') && ~isempty(pattern.fovIndex)
-        if pattern.fovIndex <= numel(fovList)
-            refFov = fovList(pattern.fovIndex);
+        candIdx = round(double(pattern.fovIndex(1)));
+        if candIdx >= 1 && candIdx <= numel(fovList)
+            refFov = fovList(candIdx);
         end
     elseif isfield(pattern,'fovId') && ~isempty(pattern.fovId)
         for i = 1:numel(fovList)
-            if isprop(fovList(i),'id') && strcmp(fovList(i).id, pattern.fovId)
+            if isprop(fovList(i),'id') && strcmp(char(string(fovList(i).id)), char(string(pattern.fovId)))
                 refFov = fovList(i);
                 break;
             end
@@ -334,31 +345,65 @@ function [pattimg, chanIdx, refFrame, crop] = buildPatternPatch(fovList, pattern
 
     chanIdx = resolveChannelIndex(refFov, p);
     if isfield(pattern,'channelIndex') && ~isempty(pattern.channelIndex)
-        chanIdx = pattern.channelIndex;
+        chanIdx = round(double(pattern.channelIndex(1)));
     elseif isfield(pattern,'channel') && ~isempty(pattern.channel)
         chanIdx = resolveChannelIndex(refFov, pattern);
     end
+    chanIdx = max(1, round(double(chanIdx)));
 
     tmp = readImage(refFov, refFrame, chanIdx);
-    rect = pattern.rect;
+    if isempty(tmp)
+        error('roiPattern.runCore:PatternImageReadFailed', 'Cannot read pattern reference image.');
+    end
 
-    x1 = rect(1);
-    y1 = rect(2);
-    x2 = rect(1) + rect(3);
-    y2 = rect(2) + rect(4);
+    rect = double(pattern.rect(:)');
+    if numel(rect) < 4
+        error('roiPattern.runCore:InvalidPatternRect', 'Pattern rect must contain [x y w h].');
+    end
+    x = round(rect(1));
+    y = round(rect(2));
+    w = max(1, round(rect(3)));
+    h = max(1, round(rect(4)));
+
+    x1 = max(1, x);
+    y1 = max(1, y);
+    x2 = min(size(tmp,2), x1 + w - 1);
+    y2 = min(size(tmp,1), y1 + h - 1);
+    if x2 < x1
+        x2 = x1;
+    end
+    if y2 < y1
+        y2 = y1;
+    end
 
     pattimg = tmp(y1:y2, x1:x2);
 
-    if isempty(crop) && isfield(pattern,'crop')
-        crop = pattern.crop;
+    if isempty(crop)
+        try
+            if isprop(targetFov,'crop') && ~isempty(targetFov.crop)
+                crop = normalizeCropForIdentify(targetFov.crop);
+            end
+        catch
+        end
     end
+
 end
 
 function idx = resolveChannelIndex(fov, p)
     idx = 1;
     if isfield(p,'channelIndex') && ~isempty(p.channelIndex)
-        idx = p.channelIndex;
-        return;
+        try
+            if ischar(p.channelIndex) || isstring(p.channelIndex)
+                v = str2double(char(string(p.channelIndex)));
+            else
+                v = double(p.channelIndex(1));
+            end
+            if isfinite(v) && v >= 1
+                idx = round(v);
+                return;
+            end
+        catch
+        end
     end
     if isfield(p,'channel') && ~isempty(p.channel)
         q = char(string(p.channel));
@@ -372,6 +417,52 @@ function idx = resolveChannelIndex(fov, p)
     end
 end
 
+function cropOut = normalizeCropForIdentify(cropIn)
+cropOut = [];
+if nargin < 1 || isempty(cropIn)
+    return;
+end
+
+arr = [];
+try
+    if ischar(cropIn) || isstring(cropIn)
+        s = strtrim(char(string(cropIn)));
+        if isempty(s) || strcmp(s, '[]')
+            return;
+        end
+        arr = str2num(s); %#ok<ST2NM>
+    else
+        arr = double(cropIn);
+    end
+catch
+    return;
+end
+
+if isempty(arr) || ~isnumeric(arr)
+    return;
+end
+
+if isvector(arr) && numel(arr) >= 4
+    x = double(arr(1));
+    y = double(arr(2));
+    w = double(arr(3));
+    h = double(arr(4));
+    if ~(isfinite(x) && isfinite(y) && isfinite(w) && isfinite(h) && w > 0 && h > 0)
+        return;
+    end
+    x1 = x;
+    y1 = y;
+    x2 = x + w;
+    y2 = y + h;
+    cropOut = [x1 y1; x2 y1; x2 y2; x1 y2];
+    return;
+end
+
+if size(arr,2) == 2 && size(arr,1) >= 3
+    cropOut = arr;
+end
+end
+
 function out = runPatternTest(fovList, fovIdx, ctx, p, patternList)
 out = struct([]);
 for kk = 1:numel(fovIdx)
@@ -382,7 +473,9 @@ for kk = 1:numel(fovIdx)
         continue;
     end
 
-    [pattimg, chanIdx, refFrame, crop] = buildPatternPatch(fovList, pattern, p);
+    [pattimg, chanIdx, refFrame, crop] = buildPatternPatch(fovList, currentFov, pattern, p);
+    disp(sprintf('[roiPattern][test] targetFOV=%d refFrame=%d channel=%d patternSize=[%d %d]', i, refFrame, chanIdx, size(pattimg,1), size(pattimg,2)));
+
     args = {'FOV', currentFov, ...
         'Frames', refFrame, ...
         'Threshold', p.threshold, ...
@@ -390,7 +483,10 @@ for kk = 1:numel(fovIdx)
         'Channel', chanIdx, ...
         'Test'};
     if ~isempty(crop)
+        disp(sprintf('[roiPattern][test] applying crop for FOV %d', i));
         args = [args {'Crop'} {crop}];
+    else
+        disp(sprintf('[roiPattern][test] no crop for FOV %d', i));
     end
 
     thisOut = identifyROIsLocal(args{:});
@@ -406,6 +502,32 @@ for kk = 1:numel(fovIdx)
     end
 
     out = [out thisOut(:)']; %#ok<AGROW>
+end
+end
+
+function p = sanitizeParamsForStorage(p)
+if ~isstruct(p)
+    p = struct();
+    return;
+end
+
+legacyFields = {'shallow','fovList','roiList','project','Project','ctx'};
+for k = 1:numel(legacyFields)
+    if isfield(p, legacyFields{k})
+        p = rmfield(p, legacyFields{k});
+    end
+end
+
+fn = fieldnames(p);
+for i = 1:numel(fn)
+    key = fn{i};
+    try
+        val = p.(key);
+        if isobject(val)
+            p = rmfield(p, key);
+        end
+    catch
+    end
 end
 end
 

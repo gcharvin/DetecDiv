@@ -4735,17 +4735,27 @@ end
             end
 
             i=app.Tree.SelectedNodes.UserData;
-            % store=app.Tree.SelectedNodes;
             proj=app.Data.Project{i};
             shallowObj=evalin('base',proj);
-            shallowObj.setSrcPath;
-            check = checkImagePath(app,shallowObj);
 
-            %  pix=find(check==0);
+            try
+                [~, report] = detecdiv_paths_relink_project(shallowObj);
+                if ~isempty(report)
+                    okCount = sum([report.ok]);
+                    totalCount = numel(report);
+                    msg = sprintf('Raw path relink done: %d/%d channel entries valid.', okCount, totalCount);
+                    uialert(app.DetecDivUIFigure, msg, 'Relink raw data path', 'Icon', 'success');
+                end
+            catch ME
+                % Fallback to legacy relink dialog if helper fails for any reason.
+                warning('Raw path relink helper failed: %s', ME.message);
+                shallowObj.setSrcPath;
+            end
 
-            %  warndlg(['These positions have an incorrect path : ' num2str(pix)]);
-
-
+            checkImagePath(app,shallowObj);
+            TreeSelectionChanged(app, event)
+            gatherVarsFromWorkspace(app);
+            displayNodes(app);
 
         end
 

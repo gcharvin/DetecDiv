@@ -1,48 +1,101 @@
 classdef workflow < matlab.apps.AppBase
+
+
+
     properties (Access = public)
+
         UIFigure                       matlab.ui.Figure
+
         FileMenu                       matlab.ui.container.Menu
+
         EditMenu                       matlab.ui.container.Menu
+
         ViewMenu                       matlab.ui.container.Menu
+
         AboutMenu                      matlab.ui.container.Menu
-        FOVsPositionsPanel             matlab.ui.container.Panel
-        UIFOVTable                     matlab.ui.control.Table
-        ChannelsPanel                  matlab.ui.container.Panel
-        selectedFOVEditField           matlab.ui.control.TextArea
-        UIDisplayChannelTable          matlab.ui.control.Table
-        ResetzoomButton                matlab.ui.control.Button
-        PanButton                      matlab.ui.control.Button
-        FrameEditField                 matlab.ui.control.NumericEditField
-        colorColorPicker               matlab.ui.control.ColorPicker
-        colorColorPickerLabel          matlab.ui.control.Label
-        ZoomSlider                     matlab.ui.control.Slider
-        ZoomSliderLabel                matlab.ui.control.Label
-        FrameSlider                    matlab.ui.control.Slider
-        FrameSliderLabel               matlab.ui.control.Label
-        LevelsSlider                   matlab.ui.control.RangeSlider
-        LevelsSliderLabel              matlab.ui.control.Label
+
         TabGroup                       matlab.ui.container.TabGroup
+
+        FOVsPositionsPanel             matlab.ui.container.Panel
+
+        UIDisplayPanel                 matlab.ui.container.Panel
+
         DataloaderTab                  matlab.ui.container.Tab
+
         AdddataButton                  matlab.ui.control.Button
+
         UIDataLoaderTable              matlab.ui.control.Table
+
+        DisplayTab                     matlab.ui.container.Tab
+
+        PanButton                      matlab.ui.control.Button
+
+        ResetzoomButton                matlab.ui.control.Button
+
+        DisplaycolorColorPicker        matlab.ui.control.ColorPicker
+
+        DisplaycolorColorPickerLabel   matlab.ui.control.Label
+
+        ZoomSlider                     matlab.ui.control.Slider
+
+        ZoomSliderLabel                matlab.ui.control.Label
+
+        FrameEditField                 matlab.ui.control.NumericEditField
+
+        FrameEditFieldLabel            matlab.ui.control.Label
+
+        FrameSlider                    matlab.ui.control.Slider
+
+        FrameSliderLabel               matlab.ui.control.Label
+
+        LevelsSlider                   matlab.ui.control.RangeSlider
+
+        LevelsSliderLabel              matlab.ui.control.Label
+
+        UIDisplayChannelTable          matlab.ui.control.Table
+
+        selectedFOVEditField           matlab.ui.control.TextArea
+
+        selectedFOVEditFieldLabel      matlab.ui.control.Label
+
+        UIFOVTable                     matlab.ui.control.Table
+
         ROIsIDTab                      matlab.ui.container.Tab
-        removeselectedButton           matlab.ui.control.Button
-        deselectallButton              matlab.ui.control.Button
-        selectallButton                matlab.ui.control.Button
-        ROIsLabel                      matlab.ui.control.Label
+
+        RemoveselectedButton           matlab.ui.control.Button
+
+        DeselectallButton              matlab.ui.control.Button
+
+        SelectallButton                matlab.ui.control.Button
+
         GenerateROIsButton             matlab.ui.control.Button
+
         TestROIdetectionButton         matlab.ui.control.Button
+
         UIExistingROIsTable            matlab.ui.control.Table
-        SavepatternButton              matlab.ui.control.Button
+
+        DrawpatternButton              matlab.ui.control.Button
+
         UIROIParametersTable           matlab.ui.control.Table
+
         ROIgenerationmodeButtonGroup   matlab.ui.container.ButtonGroup
+
         GridselectiongridButton        matlab.ui.control.RadioButton
+
+        TrackedmasksButton             matlab.ui.control.RadioButton
+
         PatterndetectionpatternButton  matlab.ui.control.RadioButton
+
         ManualselectionmanualButton    matlab.ui.control.RadioButton
+
         ROIsExtractionTab              matlab.ui.container.Tab
+
         ExtractROIsButton              matlab.ui.control.Button
+
         UIROIsExtractionTable          matlab.ui.control.Table
+
         UIAxes                         matlab.ui.control.UIAxes
+
     end
 
 
@@ -88,14 +141,6 @@ classdef workflow < matlab.apps.AppBase
         FovCropListener = []
 
         FocusModule char = ''
-
-        LastTableRoiRow double = NaN
-
-        LastTableRoiClickTime double = 0
-
-        LastGraphicRoiRow double = NaN
-
-        LastGraphicRoiClickTime double = 0
 
     end
 
@@ -151,9 +196,9 @@ classdef workflow < matlab.apps.AppBase
 
                     app.TabGroup.SelectedTab = app.ROIsExtractionTab;
 
-                elseif any(strcmpi(target, {'display','dataloader'}))
+                elseif strcmpi(target, 'display')
 
-                    app.TabGroup.SelectedTab = app.DataloaderTab;
+                    app.TabGroup.SelectedTab = app.DisplayTab;
 
                 end
 
@@ -253,10 +298,6 @@ classdef workflow < matlab.apps.AppBase
 
                     mode = 'display';
 
-                case {'dataloader','loader','rawpath','relink'}
-
-                    mode = 'dataloader';
-
                 otherwise
 
                     mode = '';
@@ -270,12 +311,10 @@ classdef workflow < matlab.apps.AppBase
         function configureUi(app)
 
             app.UIFigure.Name = 'Workflow';
-            app.UIFigure.AutoResizeChildren = 'off';
 
             app.UIFigure.WindowKeyPressFcn = createCallbackFcn(app,@UIFigureWindowKeyPress,true);
 
             app.UIFigure.CloseRequestFcn = createCallbackFcn(app,@UIFigureCloseRequest,true);
-            app.UIFigure.SizeChangedFcn = createCallbackFcn(app,@UIFigureSizeChanged,true);
 
 
 
@@ -288,8 +327,6 @@ classdef workflow < matlab.apps.AppBase
             title(app.UIAxes,'Display','Interpreter','none');
 
             cmAxes = uicontextmenu(app.UIFigure);
-
-            uimenu(cmAxes, 'Text', 'Open selected ROI in score...', 'MenuSelectedFcn', @(src,evt)app.OpenSelectedRoiInScoreMenuSelected());
 
             uimenu(cmAxes, 'Text', 'Draw inclusion crop (current FOV)', 'MenuSelectedFcn', @(src,evt)app.DrawFovCropMenuSelected());
 
@@ -381,7 +418,7 @@ classdef workflow < matlab.apps.AppBase
 
             app.ZoomSlider.ValueChangedFcn = createCallbackFcn(app,@ZoomSliderValueChanged,true);
 
-            app.colorColorPicker.ValueChangedFcn = createCallbackFcn(app,@colorColorPickerValueChanged,true);
+            app.DisplaycolorColorPicker.ValueChangedFcn = createCallbackFcn(app,@DisplaycolorColorPickerValueChanged,true);
 
             app.ResetzoomButton.ButtonPushedFcn = createCallbackFcn(app,@ResetzoomButtonPushed,true);
 
@@ -403,7 +440,7 @@ classdef workflow < matlab.apps.AppBase
 
             app.UIROIParametersTable.CellEditCallback = createCallbackFcn(app,@UIROIParametersTableCellEdit,true);
 
-            app.SavepatternButton.ButtonPushedFcn = createCallbackFcn(app,@SavepatternButtonPushed,true);
+            app.DrawpatternButton.ButtonPushedFcn = createCallbackFcn(app,@DrawpatternButtonPushed,true);
 
             app.TestROIdetectionButton.ButtonPushedFcn = createCallbackFcn(app,@TestROIdetectionButtonPushed,true);
 
@@ -423,11 +460,11 @@ classdef workflow < matlab.apps.AppBase
 
             app.UIExistingROIsTable.SelectionChangedFcn = createCallbackFcn(app,@UIExistingROIsTableSelectionChanged,true);
 
-            app.selectallButton.ButtonPushedFcn = createCallbackFcn(app,@selectallButtonPushed,true);
+            app.SelectallButton.ButtonPushedFcn = createCallbackFcn(app,@SelectallButtonPushed,true);
 
-            app.deselectallButton.ButtonPushedFcn = createCallbackFcn(app,@deselectallButtonPushed,true);
+            app.DeselectallButton.ButtonPushedFcn = createCallbackFcn(app,@DeselectallButtonPushed,true);
 
-            app.removeselectedButton.ButtonPushedFcn = createCallbackFcn(app,@removeselectedButtonPushed,true);
+            app.RemoveselectedButton.ButtonPushedFcn = createCallbackFcn(app,@RemoveselectedButtonPushed,true);
 
 
 
@@ -442,67 +479,6 @@ classdef workflow < matlab.apps.AppBase
             app.UIROIsExtractionTable.CellEditCallback = createCallbackFcn(app,@UIROIsExtractionTableCellEdit,true);
 
             app.ExtractROIsButton.ButtonPushedFcn = createCallbackFcn(app,@ExtractROIsButtonPushed,true);
-
-            app.reflowTables();
-
-        end
-
-
-        function reflowTables(app)
-
-            app.localSetTwoColWidth(app.UIDataLoaderTable, 150);
-            app.localSetTwoColWidth(app.UIROIParametersTable, 150);
-            app.localSetTwoColWidth(app.UIROIsExtractionTable, 150);
-
-            if ~isempty(app.UIFOVTable) && isvalid(app.UIFOVTable)
-                tw = max(180, app.UIFOVTable.Position(3) - 18);
-                w1 = 90;
-                w2 = max(120, tw - w1);
-                app.UIFOVTable.ColumnWidth = {w1, w2};
-            end
-
-            if ~isempty(app.UIDisplayChannelTable) && isvalid(app.UIDisplayChannelTable)
-                tw = max(300, app.UIDisplayChannelTable.Position(3) - 18);
-                w = [55, 120, 95, 80, 70, 45];
-                w(2) = max(120, tw - sum(w([1 3 4 5 6])));
-                if sum(w) > tw
-                    scale = tw / sum(w);
-                    w = max(40, floor(w .* scale));
-                end
-                app.UIDisplayChannelTable.ColumnWidth = num2cell(w);
-            end
-
-            if ~isempty(app.UIExistingROIsTable) && isvalid(app.UIExistingROIsTable)
-                tw = max(240, app.UIExistingROIsTable.Position(3) - 18);
-                w = [60, 55, 140, max(110, tw - (60 + 55 + 140))];
-                if sum(w) > tw
-                    scale = tw / sum(w);
-                    w = max(35, floor(w .* scale));
-                end
-                app.UIExistingROIsTable.ColumnWidth = num2cell(w);
-            end
-
-        end
-
-
-
-        function localSetTwoColWidth(app, tbl, w1)
-
-            if isempty(tbl) || ~isvalid(tbl)
-                return;
-            end
-            tw = max(220, tbl.Position(3) - 18);
-            w1 = min(max(90, w1), max(90, tw - 120));
-            w2 = max(120, tw - w1);
-            tbl.ColumnWidth = {w1, w2};
-
-        end
-
-
-
-        function UIFigureSizeChanged(app, event) %#ok<INUSD>
-
-            app.reflowTables();
 
         end
 
@@ -683,8 +659,8 @@ classdef workflow < matlab.apps.AppBase
             else
 
                 raw = workflowui.describeFov(fovObj);
-                lines = regexp(raw, '\s*\|\s*', 'split');
-                app.selectedFOVEditField.Value = lines(:);
+
+                app.selectedFOVEditField.Value = regexp(raw, '\s*\|\s*', 'split');
 
             end
 
@@ -784,7 +760,7 @@ classdef workflow < matlab.apps.AppBase
 
             app.LevelsSlider.Value = app.levelsToSliderValue(double(app.ChannelCfg(row).levels));
 
-            app.colorColorPicker.Value = app.ChannelCfg(row).color;
+            app.DisplaycolorColorPicker.Value = app.ChannelCfg(row).color;
 
         end
 
@@ -808,7 +784,7 @@ classdef workflow < matlab.apps.AppBase
 
                 case 'roitracked'
 
-                    app.ROIgenerationmodeButtonGroup.SelectedObject = app.PatterndetectionpatternButton;
+                    app.ROIgenerationmodeButtonGroup.SelectedObject = app.TrackedmasksButton;
 
                 otherwise
 
@@ -822,25 +798,25 @@ classdef workflow < matlab.apps.AppBase
 
                 case 'roipattern'
 
-                    app.SavepatternButton.Enable = 'on';
+                    app.DrawpatternButton.Enable = 'on';
 
-                    app.SavepatternButton.Text = 'Draw pattern';
+                    app.DrawpatternButton.Text = 'Draw pattern';
 
                     app.TestROIdetectionButton.Enable = 'on';
 
                 case 'roimanual'
 
-                    app.SavepatternButton.Enable = 'on';
+                    app.DrawpatternButton.Enable = 'on';
 
-                    app.SavepatternButton.Text = 'Draw ROI';
+                    app.DrawpatternButton.Text = 'Draw ROI';
 
                     app.TestROIdetectionButton.Enable = 'off';
 
                 otherwise
 
-                    app.SavepatternButton.Enable = 'off';
+                    app.DrawpatternButton.Enable = 'off';
 
-                    app.SavepatternButton.Text = 'Draw pattern';
+                    app.DrawpatternButton.Text = 'Draw pattern';
 
                     app.TestROIdetectionButton.Enable = 'off';
 
@@ -1278,21 +1254,19 @@ classdef workflow < matlab.apps.AppBase
 
                     p = patch(app.UIAxes, x, y, edge, 'FaceAlpha', 0.02, 'EdgeColor', 'none');
 
-                    cmRoi = app.createRoiContextMenu(i);
+                    try, p.ContextMenu = app.UIAxes.ContextMenu; catch, end
 
-                    try, p.ContextMenu = cmRoi; catch, end
-
-                    p.ButtonDownFcn = @(src,evt)app.onRoiGraphicClicked(i);
+                    p.ButtonDownFcn = @(src,evt)app.selectRoi(i);
 
                     hRect = rectangle(app.UIAxes,'Position',pos,'EdgeColor',edge,'LineWidth',lw);
 
-                    try, hRect.ContextMenu = cmRoi; catch, end
+                    try, hRect.ContextMenu = app.UIAxes.ContextMenu; catch, end
 
-                    hRect.ButtonDownFcn = @(src,evt)app.onRoiGraphicClicked(i);
+                    hRect.ButtonDownFcn = @(src,evt)app.selectRoi(i);
 
-                    ht=text(app.UIAxes, pos(1), max(1,pos(2)-2), sprintf('%d', i), 'Color', edge, 'FontSize', 14, 'FontWeight', 'bold', 'Interpreter', 'none', 'ButtonDownFcn', @(src,evt)app.onRoiGraphicClicked(i));
+                    ht=text(app.UIAxes, pos(1), max(1,pos(2)-2), sprintf('%d', i), 'Color', edge, 'FontSize', 14, 'FontWeight', 'bold', 'Interpreter', 'none', 'ButtonDownFcn', @(src,evt)app.selectRoi(i));
 
-                    try, ht.ContextMenu = cmRoi; catch, end
+                    try, ht.ContextMenu = app.UIAxes.ContextMenu; catch, end
 
                 end
 
@@ -2084,7 +2058,7 @@ classdef workflow < matlab.apps.AppBase
 
                 mode = 'roiGrid';
 
-            elseif strcmpi(app.getCurrentRoiMode(),'roiTracked')
+            elseif isequal(app.ROIgenerationmodeButtonGroup.SelectedObject, app.TrackedmasksButton)
 
                 mode = 'roiTracked';
 
@@ -3728,198 +3702,6 @@ classdef workflow < matlab.apps.AppBase
 
 
 
-        function cm = createRoiContextMenu(app, idx)
-
-            cm = uicontextmenu(app.UIFigure);
-
-            uimenu(cm, 'Text', sprintf('Open ROI %d in score...', idx), 'MenuSelectedFcn', @(src,evt)app.openRoiInScoreByIndex(idx));
-
-            uimenu(cm, 'Text', sprintf('Select ROI %d', idx), 'MenuSelectedFcn', @(src,evt)app.selectRoi(idx));
-
-        end
-
-
-
-        function OpenSelectedRoiInScoreMenuSelected(app)
-
-            if isempty(app.SelectedRoi)
-
-                uialert(app.UIFigure, 'Select one ROI first.', 'Open ROI', 'Icon', 'warning');
-
-                return;
-
-            end
-
-            app.openRoiInScoreByIndex(app.SelectedRoi);
-
-        end
-
-
-
-        function onRoiGraphicClicked(app, idx)
-
-            isDouble = app.isDoubleClickOnRow(idx, 'graphic');
-
-            app.selectRoi(idx);
-
-            if isDouble
-
-                app.openRoiInScoreByIndex(idx);
-
-            end
-
-        end
-
-
-
-        function tf = isDoubleClickOnRow(app, row, source)
-
-            t = posixtime(datetime('now'));
-
-            if strcmpi(source, 'graphic')
-
-                tf = isequal(app.LastGraphicRoiRow, row) && ((t - app.LastGraphicRoiClickTime) <= 0.45);
-
-                app.LastGraphicRoiRow = row;
-
-                app.LastGraphicRoiClickTime = t;
-
-            else
-
-                tf = isequal(app.LastTableRoiRow, row) && ((t - app.LastTableRoiClickTime) <= 0.45);
-
-                app.LastTableRoiRow = row;
-
-                app.LastTableRoiClickTime = t;
-
-            end
-
-        end
-
-
-
-        function openRoiInScoreByIndex(app, idx)
-
-            fovObj = app.getSelectedFov();
-
-            if isempty(fovObj) || idx < 1 || idx > numel(fovObj.roi)
-
-                return;
-
-            end
-
-            roiObj = fovObj.roi(idx);
-
-            if ~app.isRoiExtractedForOpen(roiObj)
-
-                uialert(app.UIFigure, sprintf('ROI %d is not extracted yet. Run ROI extraction first.', idx), 'ROI not extracted', 'Icon', 'warning');
-
-                return;
-
-            end
-
-            try
-
-                roiObj.parent = fovObj;
-
-            catch
-
-            end
-
-            try
-
-                if isempty(roiObj.image)
-
-                    roiObj.load;
-
-                end
-
-            catch ME
-
-                uialert(app.UIFigure, ME.message, 'ROI loading error', 'Icon', 'error');
-
-                return;
-
-            end
-
-            if isempty(roiObj.image)
-
-                uialert(app.UIFigure, sprintf('ROI %d has no extracted image on disk.', idx), 'ROI loading error', 'Icon', 'warning');
-
-                return;
-
-            end
-
-            try
-
-                figures = findall(0,'Type','figure');
-
-                scoreFig = findobj(figures,'Name','ScoreApp');
-
-                if ~isempty(scoreFig) && isprop(scoreFig,'RunningAppInstance')
-
-                    scoreApp = scoreFig(1).RunningAppInstance;
-
-                    if ~isempty(scoreApp) && isvalid(scoreApp)
-
-                        scoreApp.addROI(roiObj);
-
-                        return;
-
-                    end
-
-                end
-
-            catch
-
-            end
-
-            try
-
-                score(roiObj);
-
-            catch ME
-
-                uialert(app.UIFigure, ME.message, 'Open ROI error', 'Icon', 'error');
-
-            end
-
-        end
-
-
-
-        function tf = isRoiExtractedForOpen(app, roiObj)
-
-            tf = false;
-
-            st = app.getRoiExtractionState(roiObj);
-
-            if strcmp(st, 'extracted')
-
-                tf = true;
-
-                return;
-
-            end
-
-            try
-
-                if ismethod(roiObj, 'isExtracted')
-
-                    tf = logical(roiObj.isExtracted());
-
-                    return;
-
-                end
-
-            catch
-
-            end
-
-        end
-
-
-
         function rebuildEditors(app)
 
             if strcmpi(app.getSelectedRoiMode(),'roiPattern')
@@ -4049,8 +3831,6 @@ classdef workflow < matlab.apps.AppBase
             if strcmpi(modeName, 'selected')
 
                 cm = uicontextmenu(app.UIFigure);
-
-                uimenu(cm, 'Text', 'Open ROI in score...', 'MenuSelectedFcn', @(src,evt)app.openRoiInScoreByIndex(app.SelectedRoi));
 
                 uimenu(cm, 'Text', 'Delete ROI', 'MenuSelectedFcn', @(src,evt)app.deleteSelectedRoi());
 
@@ -4414,6 +4194,8 @@ classdef workflow < matlab.apps.AppBase
 
             app.SelectedFov = event.Selection(1);
 
+            app.SelectedFrame = 1;
+
             app.PreviewRoiPositions = zeros(0,4);
 
             app.Cache = containers.Map('KeyType','char','ValueType','any');
@@ -4435,6 +4217,8 @@ classdef workflow < matlab.apps.AppBase
             if logical(event.NewData)
 
                 app.SelectedFov = event.Indices(1);
+
+                app.SelectedFrame = 1;
 
                 app.PreviewRoiPositions = zeros(0,4);
 
@@ -4590,7 +4374,7 @@ classdef workflow < matlab.apps.AppBase
 
 
 
-        function colorColorPickerValueChanged(app, event) %#ok<INUSD>
+        function DisplaycolorColorPickerValueChanged(app, event) %#ok<INUSD>
 
             if isempty(app.ChannelCfg)
 
@@ -4600,7 +4384,7 @@ classdef workflow < matlab.apps.AppBase
 
             row = min(max(1,app.SelectedChannelRow), numel(app.ChannelCfg));
 
-            app.ChannelCfg(row).color = app.colorColorPicker.Value;
+            app.ChannelCfg(row).color = app.DisplaycolorColorPicker.Value;
 
             app.persistDisplaySettings();
 
@@ -4726,7 +4510,7 @@ classdef workflow < matlab.apps.AppBase
 
 
 
-        function SavepatternButtonPushed(app, event) %#ok<INUSD>
+        function DrawpatternButtonPushed(app, event) %#ok<INUSD>
 
             if isempty(app.Project) || isempty(app.getSelectedFov())
 
@@ -5278,23 +5062,11 @@ classdef workflow < matlab.apps.AppBase
 
             app.SelectedRoiRows = rows;
 
-            if isempty(rows)
+            if ~isempty(rows)
 
-                return;
+                app.SelectedRoi = rows(1);
 
-            end
-
-            row = rows(1);
-
-            isDouble = app.isDoubleClickOnRow(row, 'table');
-
-            app.SelectedRoi = row;
-
-            app.selectRoi(row);
-
-            if isDouble
-
-                app.openRoiInScoreByIndex(row);
+                app.selectRoi(rows(1));
 
             end
 
@@ -5302,7 +5074,7 @@ classdef workflow < matlab.apps.AppBase
 
 
 
-        function selectallButtonPushed(app, event) %#ok<INUSD>
+        function SelectallButtonPushed(app, event) %#ok<INUSD>
 
             if isempty(app.RoiDisplayMask), return; end
 
@@ -5318,7 +5090,7 @@ classdef workflow < matlab.apps.AppBase
 
 
 
-        function deselectallButtonPushed(app, event) %#ok<INUSD>
+        function DeselectallButtonPushed(app, event) %#ok<INUSD>
 
             if isempty(app.RoiDisplayMask), return; end
 
@@ -5336,7 +5108,7 @@ classdef workflow < matlab.apps.AppBase
 
 
 
-        function removeselectedButtonPushed(app, event) %#ok<INUSD>
+        function RemoveselectedButtonPushed(app, event) %#ok<INUSD>
 
             fovObj = app.getSelectedFov();
 
@@ -5838,236 +5610,97 @@ classdef workflow < matlab.apps.AppBase
 
 
 
-    
     methods (Access = private)
 
-        % Create UIFigure and components
         function createComponents(app)
 
-            % Create UIFigure and hide until all components are created
             app.UIFigure = uifigure('Visible', 'off');
+
             app.UIFigure.Position = [100 100 1298 975];
+
             app.UIFigure.Name = 'MATLAB App';
 
-            % Create FileMenu
-            app.FileMenu = uimenu(app.UIFigure);
-            app.FileMenu.Text = 'File';
 
-            % Create EditMenu
-            app.EditMenu = uimenu(app.UIFigure);
-            app.EditMenu.Text = 'Edit';
 
-            % Create ViewMenu
-            app.ViewMenu = uimenu(app.UIFigure);
-            app.ViewMenu.Text = 'View';
+            app.FileMenu = uimenu(app.UIFigure); app.FileMenu.Text = 'File';
 
-            % Create AboutMenu
-            app.AboutMenu = uimenu(app.UIFigure);
-            app.AboutMenu.Text = 'About';
+            app.EditMenu = uimenu(app.UIFigure); app.EditMenu.Text = 'Edit';
 
-            % Create UIAxes
-            app.UIAxes = uiaxes(app.UIFigure);
-            title(app.UIAxes, 'Title')
-            xlabel(app.UIAxes, 'X')
-            ylabel(app.UIAxes, 'Y')
-            zlabel(app.UIAxes, 'Z')
-            app.UIAxes.Position = [533 312 755 656];
+            app.ViewMenu = uimenu(app.UIFigure); app.ViewMenu.Text = 'View';
 
-            % Create TabGroup
-            app.TabGroup = uitabgroup(app.UIFigure);
-            app.TabGroup.Position = [11 321 513 645];
+            app.AboutMenu = uimenu(app.UIFigure); app.AboutMenu.Text = 'About';
 
-            % Create DataloaderTab
-            app.DataloaderTab = uitab(app.TabGroup);
-            app.DataloaderTab.Title = 'Dataloader';
+            app.UIAxes = uiaxes(app.UIFigure); title(app.UIAxes,'Display','Interpreter','none'); xlabel(app.UIAxes,'X'); ylabel(app.UIAxes,'Y'); zlabel(app.UIAxes,'Z'); app.UIAxes.Position = [387 260 901 708];
+            app.TabGroup = uitabgroup(app.UIFigure); app.TabGroup.Position = [11 268 367 698];
+            app.FOVsPositionsPanel = uipanel(app.UIFigure); app.FOVsPositionsPanel.Title = 'FOVs (Positions)'; app.FOVsPositionsPanel.Position = [19 15 395 237];
+            app.UIDisplayPanel = uipanel(app.UIFigure); app.UIDisplayPanel.Title = 'Display'; app.UIDisplayPanel.Position = [428 15 860 237];
 
-            % Create UIDataLoaderTable
-            app.UIDataLoaderTable = uitable(app.DataloaderTab);
-            app.UIDataLoaderTable.ColumnName = {'Column 1'; 'Column 2'; 'Column 3'; 'Column 4'};
-            app.UIDataLoaderTable.RowName = {};
-            app.UIDataLoaderTable.Position = [9 247 494 364];
+            app.DataloaderTab = uitab(app.TabGroup); app.DataloaderTab.Title = 'Dataloader';
+            app.UIDataLoaderTable = uitable(app.DataloaderTab); app.UIDataLoaderTable.Position = [13 264 340 389];
+            app.AdddataButton = uibutton(app.DataloaderTab,'push'); app.AdddataButton.Position = [18 14 332 226]; app.AdddataButton.Text = 'Add data....';
 
-            % Create AdddataButton
-            app.AdddataButton = uibutton(app.DataloaderTab, 'push');
-            app.AdddataButton.Position = [14 12 489 226];
-            app.AdddataButton.Text = 'Add data....';
+            app.UIFOVTable = uitable(app.FOVsPositionsPanel); app.UIFOVTable.ColumnName = {'Select FOV'; 'Name'}; app.UIFOVTable.Position = [9 13 374 195];
+            app.selectedFOVEditFieldLabel = uilabel(app.UIDisplayPanel); app.selectedFOVEditFieldLabel.HorizontalAlignment = 'right'; app.selectedFOVEditFieldLabel.Position = [9 41 81 22]; app.selectedFOVEditFieldLabel.Text = 'selected FOV:';
+            app.selectedFOVEditField = uitextarea(app.UIDisplayPanel); app.selectedFOVEditField.Editable = 'off'; app.selectedFOVEditField.Tooltip = {'Display : path, size of image'}; app.selectedFOVEditField.Position = [105 13 744 50];
+            app.UIDisplayChannelTable = uitable(app.UIDisplayPanel); app.UIDisplayChannelTable.ColumnName = {'Display'; 'Name'; 'Levels'; 'RGB'; 'Weights'; 'auto'}; app.UIDisplayChannelTable.Position = [9 72 494 136];
+            app.LevelsSliderLabel = uilabel(app.UIDisplayPanel); app.LevelsSliderLabel.HorizontalAlignment = 'right'; app.LevelsSliderLabel.Position = [522 186 40 22]; app.LevelsSliderLabel.Text = 'Levels';
+            app.LevelsSlider = uislider(app.UIDisplayPanel,'range'); app.LevelsSlider.Position = [584 195 150 3];
+            app.FrameSliderLabel = uilabel(app.UIDisplayPanel); app.FrameSliderLabel.HorizontalAlignment = 'right'; app.FrameSliderLabel.Position = [523 143 40 22]; app.FrameSliderLabel.Text = 'Frame';
+            app.FrameSlider = uislider(app.UIDisplayPanel); app.FrameSlider.Position = [585 152 150 3];
+            app.FrameEditFieldLabel = uilabel(app.UIDisplayPanel); app.FrameEditFieldLabel.HorizontalAlignment = 'right'; app.FrameEditFieldLabel.Position = [723 142 40 22]; app.FrameEditFieldLabel.Text = 'Frame';
+            app.FrameEditField = uieditfield(app.UIDisplayPanel,'numeric'); app.FrameEditField.Position = [761 142 53 22];
+            app.ZoomSliderLabel = uilabel(app.UIDisplayPanel); app.ZoomSliderLabel.HorizontalAlignment = 'right'; app.ZoomSliderLabel.Position = [528 91 36 22]; app.ZoomSliderLabel.Text = 'Zoom';
+            app.ZoomSlider = uislider(app.UIDisplayPanel); app.ZoomSlider.Position = [588 104 150 3];
+            app.DisplaycolorColorPickerLabel = uilabel(app.UIDisplayPanel); app.DisplaycolorColorPickerLabel.HorizontalAlignment = 'right'; app.DisplaycolorColorPickerLabel.Position = [762 183 34 22]; app.DisplaycolorColorPickerLabel.Text = 'color:';
+            app.DisplaycolorColorPicker = uicolorpicker(app.UIDisplayPanel); app.DisplaycolorColorPicker.Position = [811 183 38 22];
+            app.ResetzoomButton = uibutton(app.UIDisplayPanel,'push'); app.ResetzoomButton.Position = [762 110 78 23]; app.ResetzoomButton.Text = 'Reset zoom';
+            app.PanButton = uibutton(app.UIDisplayPanel,'push'); app.PanButton.Position = [764 80 76 23]; app.PanButton.Text = 'Pan';
 
-            % Create ROIsIDTab
-            app.ROIsIDTab = uitab(app.TabGroup);
-            app.ROIsIDTab.Title = 'ROIs ID';
 
-            % Create ROIgenerationmodeButtonGroup
-            app.ROIgenerationmodeButtonGroup = uibuttongroup(app.ROIsIDTab);
-            app.ROIgenerationmodeButtonGroup.Title = 'ROI generation mode';
-            app.ROIgenerationmodeButtonGroup.Position = [9 495 494 116];
 
-            % Create ManualselectionmanualButton
-            app.ManualselectionmanualButton = uiradiobutton(app.ROIgenerationmodeButtonGroup);
-            app.ManualselectionmanualButton.Text = 'Manual selection (manual)';
-            app.ManualselectionmanualButton.Position = [11 70 163 22];
-            app.ManualselectionmanualButton.Value = true;
+            app.ROIsIDTab = uitab(app.TabGroup); app.ROIsIDTab.Title = 'ROIs ID';
 
-            % Create PatterndetectionpatternButton
-            app.PatterndetectionpatternButton = uiradiobutton(app.ROIgenerationmodeButtonGroup);
-            app.PatterndetectionpatternButton.Text = 'Pattern detection (pattern)';
-            app.PatterndetectionpatternButton.Position = [11 48 161 22];
+            app.ROIgenerationmodeButtonGroup = uibuttongroup(app.ROIsIDTab); app.ROIgenerationmodeButtonGroup.Title = 'ROI generation mode'; app.ROIgenerationmodeButtonGroup.Position = [9 548 341 116];
 
-            % Create GridselectiongridButton
-            app.GridselectiongridButton = uiradiobutton(app.ROIgenerationmodeButtonGroup);
-            app.GridselectiongridButton.Text = 'Grid selection (grid)';
-            app.GridselectiongridButton.Position = [11 26 127 22];
+            app.ManualselectionmanualButton = uiradiobutton(app.ROIgenerationmodeButtonGroup); app.ManualselectionmanualButton.Text = 'Manual selection (manual)'; app.ManualselectionmanualButton.Position = [11 69 163 22]; app.ManualselectionmanualButton.Value = true;
 
-            % Create UIROIParametersTable
-            app.UIROIParametersTable = uitable(app.ROIsIDTab);
-            app.UIROIParametersTable.ColumnName = {'Column 1'; 'Column 2'; 'Column 3'; 'Column 4'};
-            app.UIROIParametersTable.RowName = {};
-            app.UIROIParametersTable.Position = [15 247 488 235];
+            app.PatterndetectionpatternButton = uiradiobutton(app.ROIgenerationmodeButtonGroup); app.PatterndetectionpatternButton.Text = 'Pattern detection (pattern)'; app.PatterndetectionpatternButton.Position = [11 47 161 22];
 
-            % Create SavepatternButton
-            app.SavepatternButton = uibutton(app.ROIsIDTab, 'push');
-            app.SavepatternButton.Position = [400 131 106 44];
-            app.SavepatternButton.Text = 'Save pattern';
+            app.GridselectiongridButton = uiradiobutton(app.ROIgenerationmodeButtonGroup); app.GridselectiongridButton.Text = 'Grid selection (grid)'; app.GridselectiongridButton.Position = [11 25 127 22];
 
-            % Create UIExistingROIsTable
-            app.UIExistingROIsTable = uitable(app.ROIsIDTab);
-            app.UIExistingROIsTable.ColumnName = {'Display'; 'Size'};
-            app.UIExistingROIsTable.RowName = {};
-            app.UIExistingROIsTable.Position = [12 12 380 196];
+            app.TrackedmasksButton = uiradiobutton(app.ROIgenerationmodeButtonGroup); app.TrackedmasksButton.Text = 'Tracked masks (tracked)'; app.TrackedmasksButton.Position = [11 3 154 22];
 
-            % Create TestROIdetectionButton
-            app.TestROIdetectionButton = uibutton(app.ROIsIDTab, 'push');
-            app.TestROIdetectionButton.Position = [400 79 103 42];
-            app.TestROIdetectionButton.Text = 'Test ROI detection';
+            app.UIROIParametersTable = uitable(app.ROIsIDTab); app.UIROIParametersTable.Position = [11 300 339 262];
 
-            % Create GenerateROIsButton
-            app.GenerateROIsButton = uibutton(app.ROIsIDTab, 'push');
-            app.GenerateROIsButton.FontWeight = 'bold';
-            app.GenerateROIsButton.Position = [403 10 100 59];
-            app.GenerateROIsButton.Text = 'Generate ROIs';
+            app.DrawpatternButton = uibutton(app.ROIsIDTab,'push'); app.DrawpatternButton.Position = [13 247 106 44]; app.DrawpatternButton.Text = 'Draw pattern';
 
-            % Create ROIsLabel
-            app.ROIsLabel = uilabel(app.ROIsIDTab);
-            app.ROIsLabel.Position = [15 216 36 22];
-            app.ROIsLabel.Text = 'ROIs:';
+            app.UIExistingROIsTable = uitable(app.ROIsIDTab); app.UIExistingROIsTable.Position = [11 44 339 196];
 
-            % Create selectallButton
-            app.selectallButton = uibutton(app.ROIsIDTab, 'push');
-            app.selectallButton.Position = [57 215 100 23];
-            app.selectallButton.Text = 'select all';
+            app.TestROIdetectionButton = uibutton(app.ROIsIDTab,'push'); app.TestROIdetectionButton.Position = [124 248 114 42]; app.TestROIdetectionButton.Text = 'Test ROI detection';
 
-            % Create deselectallButton
-            app.deselectallButton = uibutton(app.ROIsIDTab, 'push');
-            app.deselectallButton.Position = [167 215 100 23];
-            app.deselectallButton.Text = 'deselect all';
+            app.GenerateROIsButton = uibutton(app.ROIsIDTab,'push'); app.GenerateROIsButton.Position = [244 250 100 39]; app.GenerateROIsButton.Text = 'Generate ROIs';
 
-            % Create removeselectedButton
-            app.removeselectedButton = uibutton(app.ROIsIDTab, 'push');
-            app.removeselectedButton.Position = [278 215 103 23];
-            app.removeselectedButton.Text = 'remove selected';
+            app.SelectallButton = uibutton(app.ROIsIDTab,'push'); app.SelectallButton.Position = [10 10 100 23]; app.SelectallButton.Text = 'Select all';
 
-            % Create ROIsExtractionTab
-            app.ROIsExtractionTab = uitab(app.TabGroup);
-            app.ROIsExtractionTab.Title = 'ROIs Extraction';
+            app.DeselectallButton = uibutton(app.ROIsIDTab,'push'); app.DeselectallButton.Position = [118 10 100 23]; app.DeselectallButton.Text = 'Deselect all';
 
-            % Create UIROIsExtractionTable
-            app.UIROIsExtractionTable = uitable(app.ROIsExtractionTab);
-            app.UIROIsExtractionTable.ColumnName = {'Column 1'; 'Column 2'; 'Column 3'; 'Column 4'};
-            app.UIROIsExtractionTable.RowName = {};
-            app.UIROIsExtractionTable.Position = [10 108 493 503];
+            app.RemoveselectedButton = uibutton(app.ROIsIDTab,'push'); app.RemoveselectedButton.Position = [228 10 108 23]; app.RemoveselectedButton.Text = 'Remove selected';
 
-            % Create ExtractROIsButton
-            app.ExtractROIsButton = uibutton(app.ROIsExtractionTab, 'push');
-            app.ExtractROIsButton.Position = [10 12 493 84];
-            app.ExtractROIsButton.Text = 'Extract ROIs';
 
-            % Create ChannelsPanel
-            app.ChannelsPanel = uipanel(app.UIFigure);
-            app.ChannelsPanel.Title = 'Channels';
-            app.ChannelsPanel.Position = [459 15 832 298];
 
-            % Create LevelsSliderLabel
-            app.LevelsSliderLabel = uilabel(app.ChannelsPanel);
-            app.LevelsSliderLabel.HorizontalAlignment = 'right';
-            app.LevelsSliderLabel.Position = [505 247 40 22];
-            app.LevelsSliderLabel.Text = 'Levels';
+            app.ROIsExtractionTab = uitab(app.TabGroup); app.ROIsExtractionTab.Title = 'ROIs Extraction';
 
-            % Create LevelsSlider
-            app.LevelsSlider = uislider(app.ChannelsPanel, 'range');
-            app.LevelsSlider.Position = [559 256 150 3];
+            app.UIROIsExtractionTable = uitable(app.ROIsExtractionTab); app.UIROIsExtractionTable.Position = [10 161 340 503];
 
-            % Create FrameSliderLabel
-            app.FrameSliderLabel = uilabel(app.ChannelsPanel);
-            app.FrameSliderLabel.HorizontalAlignment = 'right';
-            app.FrameSliderLabel.Position = [500 208 40 22];
-            app.FrameSliderLabel.Text = 'Frame';
+            app.ExtractROIsButton = uibutton(app.ROIsExtractionTab,'push'); app.ExtractROIsButton.Position = [8 10 342 136]; app.ExtractROIsButton.Text = 'Extract ROIs';
 
-            % Create FrameSlider
-            app.FrameSlider = uislider(app.ChannelsPanel);
-            app.FrameSlider.Position = [560 217 150 3];
 
-            % Create ZoomSliderLabel
-            app.ZoomSliderLabel = uilabel(app.ChannelsPanel);
-            app.ZoomSliderLabel.HorizontalAlignment = 'right';
-            app.ZoomSliderLabel.Position = [505 163 36 22];
-            app.ZoomSliderLabel.Text = 'Zoom';
 
-            % Create ZoomSlider
-            app.ZoomSlider = uislider(app.ChannelsPanel);
-            app.ZoomSlider.Position = [563 176 150 3];
-
-            % Create colorColorPickerLabel
-            app.colorColorPickerLabel = uilabel(app.ChannelsPanel);
-            app.colorColorPickerLabel.HorizontalAlignment = 'right';
-            app.colorColorPickerLabel.Position = [726 244 34 22];
-            app.colorColorPickerLabel.Text = 'color:';
-
-            % Create colorColorPicker
-            app.colorColorPicker = uicolorpicker(app.ChannelsPanel);
-            app.colorColorPicker.Position = [768 244 38 22];
-
-            % Create FrameEditField
-            app.FrameEditField = uieditfield(app.ChannelsPanel, 'numeric');
-            app.FrameEditField.Position = [736 210 53 22];
-
-            % Create PanButton
-            app.PanButton = uibutton(app.ChannelsPanel, 'push');
-            app.PanButton.Position = [739 147 76 23];
-            app.PanButton.Text = 'Pan';
-
-            % Create ResetzoomButton
-            app.ResetzoomButton = uibutton(app.ChannelsPanel, 'push');
-            app.ResetzoomButton.Position = [737 177 78 23];
-            app.ResetzoomButton.Text = 'Reset zoom';
-
-            % Create UIDisplayChannelTable
-            app.UIDisplayChannelTable = uitable(app.ChannelsPanel);
-            app.UIDisplayChannelTable.ColumnName = {'Display'; 'Name'; 'Levels'; 'RGB'; 'Weights'; 'auto'};
-            app.UIDisplayChannelTable.RowName = {};
-            app.UIDisplayChannelTable.Position = [9 147 494 122];
-
-            % Create selectedFOVEditField
-            app.selectedFOVEditField = uitextarea(app.ChannelsPanel);
-            app.selectedFOVEditField.Editable = 'off';
-            app.selectedFOVEditField.WordWrap = 'on';
-            app.selectedFOVEditField.Tooltip = {'Display : path, size of image'};
-            app.selectedFOVEditField.Position = [12 9 811 127];
-
-            % Create FOVsPositionsPanel
-            app.FOVsPositionsPanel = uipanel(app.UIFigure);
-            app.FOVsPositionsPanel.Title = 'FOVs (Positions)';
-            app.FOVsPositionsPanel.Position = [9 16 443 295];
-
-            % Create UIFOVTable
-            app.UIFOVTable = uitable(app.FOVsPositionsPanel);
-            app.UIFOVTable.ColumnName = {'Select'; 'Name'};
-            app.UIFOVTable.RowName = {};
-            app.UIFOVTable.Position = [9 9 424 257];
-
-            % Show the figure after all components are created
             app.UIFigure.Visible = 'on';
-        end
-    end
 
+        end
+
+    end
 
 
 
@@ -6104,7 +5737,6 @@ classdef workflow < matlab.apps.AppBase
     end
 
 end
-
 
 
 
