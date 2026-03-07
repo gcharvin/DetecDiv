@@ -148,6 +148,7 @@ function ctx = process(ctx)
 
     ctx.fovList = fovList;
     ctx.roiList = collectROIs(fovList);
+    ctx = maybeWarmRoiCache(ctx, p);
     ctx.dataSeries = collectDataSeries(ctx.roiList);
     if ~isfield(ctx,'channels') || isempty(ctx.channels)
         if isfield(p,'channels') && ~isempty(p.channels)
@@ -168,6 +169,84 @@ function ctx = process(ctx)
             shallowObj.runProfiles.dataloading.roiExtract = p;
         catch
         end
+    end
+end
+
+function ctx = maybeWarmRoiCache(ctx, p)
+    cachePolicy = resolveCachePolicy(ctx);
+    if strcmp(cachePolicy, 'disk')
+        return;
+    end
+
+    rois = [];
+    if isfield(ctx,'roiList') && ~isempty(ctx.roiList)
+        rois = ctx.roiList;
+    end
+    if isempty(rois)
+        return;
+    end
+
+    if strcmp(cachePolicy, 'auto') && ~shouldAutoWarmCache(rois)
+        return;
+    end
+
+    for i = 1:numel(rois)
+        try
+            if isempty(rois(i).image)
+                rois(i).load('Silent');
+            elseif isempty(rois(i).data)
+                rois(i).load('Data', true, 'Silent');
+            end
+        catch
+        end
+    end
+
+    ctx.roiList = rois;
+end
+
+function tf = shouldAutoWarmCache(rois)
+    tf = false;
+    if isempty(rois)
+        return;
+    end
+    if numel(rois) > 64
+        return;
+    end
+
+    totalBytes = 0;
+    for i = 1:numel(rois)
+        try
+            h5File = fullfile(rois(i).path, ['im_' rois(i).id '.h5']);
+            d = dir(h5File);
+            if ~isempty(d)
+                totalBytes = totalBytes + d(1).bytes;
+            end
+        catch
+        end
+        if totalBytes > 512 * 1024 * 1024
+            return;
+        end
+    end
+    tf = totalBytes > 0 && totalBytes <= 512 * 1024 * 1024;
+end
+
+function policy = resolveCachePolicy(ctx)
+    policy = 'auto';
+    try
+        if isfield(ctx,'io') && isstruct(ctx.io) && isfield(ctx.io,'cachePolicy') && ~isempty(ctx.io.cachePolicy)
+            policy = lower(char(string(ctx.io.cachePolicy)));
+        elseif isfield(ctx,'store') && isstruct(ctx.store) && isfield(ctx.store,'cacheMode') && ~isempty(ctx.store.cacheMode)
+            policy = lower(char(string(ctx.store.cacheMode)));
+        elseif isfield(ctx,'cachePolicy') && ~isempty(ctx.cachePolicy)
+            policy = lower(char(string(ctx.cachePolicy)));
+        end
+    catch
+        policy = 'auto';
+    end
+    switch policy
+        case {'memory','disk','auto'}
+        otherwise
+            policy = 'auto';
     end
 end
 

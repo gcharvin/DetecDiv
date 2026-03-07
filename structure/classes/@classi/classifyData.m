@@ -36,6 +36,7 @@ roiwithgt     = 0;
 gpu           = 0;
 
 outputName    = "";   % NEW
+cachePolicy   = 'auto';
 
 for i = 1:numel(varargin)
     if strcmp(varargin{i},'Classifier')
@@ -81,6 +82,7 @@ else
 end
 
 classifierStore = classifier;
+cachePolicy = resolveCachePolicyLocal(classiobj);
 
 classi     = classiobj;
 [classifyFun, usesPkg] = resolveClassifyFun(classi);
@@ -144,6 +146,8 @@ disp([num2str(numel(roiobj)) ' ROIs to classify, be patient...']);
 
 if para
     logparf(1:numel(roiobj)) = parallel.FevalFuture;
+    hadImageByIdx = false(1, numel(roiobj));
+    hadDataByIdx = false(1, numel(roiobj));
     if isPipelineFun
         ctxByIdx = cell(1, numel(roiobj));
     end
@@ -173,6 +177,12 @@ for i = 1:numel(roiobj)
         roiIdStr = ['#' num2str(i)];
     end
     disp(['[DEBUG] classifyData: ROI ' num2str(i) '/' num2str(numel(roiobj)) ' id=' roiIdStr]);
+    hadImageInMemory = ~isempty(roiobj(i).image);
+    hadDataInMemory = ~isempty(roiobj(i).data);
+    if para
+        hadImageByIdx(i) = hadImageInMemory;
+        hadDataByIdx(i) = hadDataInMemory;
+    end
 
     % ---------------------------------------------------------
     % Optional: classify only ROIs/frames with GT available
@@ -309,6 +319,8 @@ for i = 1:numel(roiobj)
         if isPipelineFun
             ctx = struct();
             ctx.sel = struct('frames', fra, 'channels', cha);
+            ctx.io = buildCacheIoStruct(cachePolicy);
+            ctx.store = struct('cacheMode', cachePolicy);
             ctx.exec = struct('gpu', gpu, 'classifier', classifierStore, 'classifierCNN', classifierCNN, ...
                 'classifierProvided', ~isempty(classifierStore), 'classifierCNNProvided', ~isempty(classifierCNN));
             ctx.names = struct('outputName', char(outputName));
@@ -359,11 +371,11 @@ for i = 1:numel(roiobj)
                     if ~isfield(out,'data'), out.data = []; end
                     if ~isfield(out,'image'), out.image = []; end
                     try
-                        disp(['[DEBUG] classifyData: using ROIManagement for ROI ' num2str(roiobj(i).id)]);
-                    catch
-                        disp('[DEBUG] classifyData: using ROIManagement for ROI (id unavailable)');
-                    end
-                    ROIManagement(roiobj(i), out.data, out.image, outputName, classiobj);
+                    disp(['[DEBUG] classifyData: using ROIManagement for ROI ' num2str(roiobj(i).id)]);
+                catch
+                    disp('[DEBUG] classifyData: using ROIManagement for ROI (id unavailable)');
+                end
+                    ROIManagement(roiobj(i), out.data, out.image, outputName, classiobj, cachePolicy, hadImageInMemory, hadDataInMemory);
                 end
             end
             disp(['Classified (pipeline) ' num2str(roiobj(i).id)]);
@@ -383,7 +395,7 @@ for i = 1:numel(roiobj)
                 disp(['Classified ' num2str(roiobj(i).id)]);
             end
 
-            ROIManagement(roiobj(i),data,image, outputName, classiobj)
+            ROIManagement(roiobj(i),data,image, outputName, classiobj, cachePolicy, hadImageInMemory, hadDataInMemory)
         end
     end
 end
@@ -420,12 +432,12 @@ if para
                     catch
                         disp('[DEBUG] classifyData: using ROIManagement for ROI (id unavailable)');
                     end
-                    ROIManagement(roiobj(idx), out.data, out.image, outputName, classiobj);
+                    ROIManagement(roiobj(idx), out.data, out.image, outputName, classiobj, cachePolicy, hadImageByIdx(idx), hadDataByIdx(idx));
                 end
             end
         else
             [idx, data, image] = fetchNext(logparf(i));
-            ROIManagement(roiobj(idx),data,image, outputName, classiobj);
+            ROIManagement(roiobj(idx),data,image, outputName, classiobj, cachePolicy, hadImageByIdx(idx), hadDataByIdx(idx));
         end
 
     end
@@ -590,13 +602,20 @@ end
 % ROI management + saving
 %   NEW: apply outputName to dataseries.groupid (NO HEURISTICS)
 % ========================================================================
-function ROIManagement(roiobj, data, image, outputName, classiobj)
+function ROIManagement(roiobj, data, image, outputName, classiobj, cachePolicyLocal, hadImageBefore, hadDataBefore)
 
     % --- Only re-group classification outputs that belong to this classifier ---
     if nargin >= 5 && ~isempty(outputName) && isa(data,'dataseries')
         data = remapOnlyClassifierDataseries(data, classiobj, outputName);
     end
+    if nargin < 6 || isempty(cachePolicyLocal)
+        cachePolicyLocal = 'auto';
+    end
+    if nargin < 7, hadImageBefore = false; end
+    if nargin < 8, hadDataBefore = false; end
 
+    imageCache = image;
+    dataCache = data;
     roiobj.data  = data;
     roiobj.image = image;
 
@@ -607,8 +626,14 @@ function ROIManagement(roiobj, data, image, outputName, classiobj)
             disp('[DEBUG] ROIManagement: calling roi.save (id unavailable)');
         end
         roiobj.save;   % sauvegarde tout
-        roiobj.clear;
-        disp('[DEBUG] ROIManagement: roi.save done (image+data), roi.clear called.');
+        if shouldKeepRoiInMemory(cachePolicyLocal, hadImageBefore, hadDataBefore)
+            roiobj.image = imageCache;
+            roiobj.data = dataCache;
+            disp('[DEBUG] ROIManagement: roi.save done, ROI kept in memory.');
+        else
+            roiobj.clear;
+            disp('[DEBUG] ROIManagement: roi.save done (image+data), roi.clear called.');
+        end
     else
         try
             disp(['[DEBUG] ROIManagement: calling roi.save(''data'') for ROI ' num2str(roiobj.id)]);
@@ -616,8 +641,51 @@ function ROIManagement(roiobj, data, image, outputName, classiobj)
             disp('[DEBUG] ROIManagement: calling roi.save(''data'') (id unavailable)');
         end
         roiobj.save('data');  % seulement les metadonnees
-        disp('[DEBUG] ROIManagement: roi.save(''data'') done.');
+        if shouldKeepRoiInMemory(cachePolicyLocal, hadImageBefore, hadDataBefore)
+            roiobj.data = dataCache;
+            disp('[DEBUG] ROIManagement: roi.save(''data'') done, data kept in memory.');
+        else
+            disp('[DEBUG] ROIManagement: roi.save(''data'') done.');
+        end
     end
+end
+
+function tf = shouldKeepRoiInMemory(policy, hadImageBefore, hadDataBefore)
+    switch lower(char(string(policy)))
+        case 'memory'
+            tf = true;
+        case 'auto'
+            tf = logical(hadImageBefore || hadDataBefore);
+        otherwise
+            tf = false;
+    end
+end
+
+function policy = resolveCachePolicyLocal(classiobj)
+    policy = 'auto';
+    try
+        if isprop(classiobj,'runProfiles') && isstruct(classiobj.runProfiles) && isfield(classiobj.runProfiles,'classify')
+            rp = classiobj.runProfiles.classify;
+            if isstruct(rp)
+                if isfield(rp,'io') && isstruct(rp.io) && isfield(rp.io,'cachePolicy') && ~isempty(rp.io.cachePolicy)
+                    policy = lower(char(string(rp.io.cachePolicy)));
+                elseif isfield(rp,'store') && isstruct(rp.store) && isfield(rp.store,'cacheMode') && ~isempty(rp.store.cacheMode)
+                    policy = lower(char(string(rp.store.cacheMode)));
+                elseif isfield(rp,'cachePolicy') && ~isempty(rp.cachePolicy)
+                    policy = lower(char(string(rp.cachePolicy)));
+                end
+            end
+        end
+    catch
+        policy = 'auto';
+    end
+    if ~any(strcmp(policy, {'auto','memory','disk'}))
+        policy = 'auto';
+    end
+end
+
+function io = buildCacheIoStruct(cachePolicy)
+    io = struct('cachePolicy', cachePolicy);
 end
 
 function out = remapOnlyClassifierDataseries(in, classiobj, outputName)

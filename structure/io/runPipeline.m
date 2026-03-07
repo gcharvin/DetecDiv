@@ -200,6 +200,9 @@ function ctx = normalizeExecutionContext(ctx)
     if ~isfield(ctx,'io') || ~isstruct(ctx.io) || isempty(ctx.io)
         ctx.io = struct();
     end
+    if ~isfield(ctx,'store') || ~isstruct(ctx.store) || isempty(ctx.store)
+        ctx.store = struct();
+    end
     if ~isfield(ctx,'names') || ~isstruct(ctx.names) || isempty(ctx.names)
         ctx.names = struct();
     end
@@ -225,6 +228,16 @@ function ctx = normalizeExecutionContext(ctx)
     else
         ctx.io.existingPolicy = normalizeExistingPolicy(ctx.io.existingPolicy, 'replace');
     end
+
+    if ~isfield(ctx.io,'cachePolicy') || isempty(ctx.io.cachePolicy)
+        if isfield(ctx.store,'cacheMode') && ~isempty(ctx.store.cacheMode)
+            ctx.io.cachePolicy = char(string(ctx.store.cacheMode));
+        else
+            ctx.io.cachePolicy = 'auto';
+        end
+    end
+    ctx.io.cachePolicy = normalizeCachePolicy(ctx.io.cachePolicy);
+    ctx.store.cacheMode = ctx.io.cachePolicy;
 
     if ~isfield(ctx,'resume') || isempty(ctx.resume)
         ctx.resume = ctx.run.resume;
@@ -330,6 +343,15 @@ function ctx = applyPolicyToContext(ctx, node, policy)
         ctx.io = struct();
     end
     ctx.io.existingPolicy = policy.existingPolicy;
+    if ~isfield(ctx.io,'cachePolicy') || isempty(ctx.io.cachePolicy)
+        ctx.io.cachePolicy = 'auto';
+    end
+    ctx.io.cachePolicy = normalizeCachePolicy(ctx.io.cachePolicy);
+
+    if ~isfield(ctx,'store') || ~isstruct(ctx.store) || isempty(ctx.store)
+        ctx.store = struct();
+    end
+    ctx.store.cacheMode = ctx.io.cachePolicy;
 
     if any(strcmpi(char(string(getfielddefault(node,'type',''))), {'processor','classifier'}))
         if ~isfield(ctx,'names') || ~isstruct(ctx.names) || isempty(ctx.names)
@@ -502,6 +524,20 @@ function policy = normalizeExistingPolicy(policy, fallback)
             policy = 'upsert';
         otherwise
             policy = fallback;
+    end
+end
+
+function policy = normalizeCachePolicy(policy)
+    policy = lower(strtrim(char(string(policy))));
+    switch policy
+        case {'', 'auto'}
+            policy = 'auto';
+        case {'memory', 'ram', 'keep'}
+            policy = 'memory';
+        case {'disk', 'reload', 'none'}
+            policy = 'disk';
+        otherwise
+            policy = 'auto';
     end
 end
 
@@ -910,6 +946,8 @@ function ctx = executeProcessorNode(node, ctx)
     procCtx.params = p;
     procCtx.run = getfielddefault(ctx, 'run', struct());
     procCtx.pipeline = getfielddefault(ctx, 'pipeline', struct());
+    procCtx.io = getfielddefault(ctx, 'io', struct());
+    procCtx.store = getfielddefault(ctx, 'store', struct());
     procCtx.executionPolicy = getfielddefault(ctx, 'executionPolicy', struct());
     if isfield(ctx,'names') && isstruct(ctx.names) && isfield(ctx.names,'outputName') && ~isempty(ctx.names.outputName)
         procCtx.outputName = ctx.names.outputName;
@@ -993,6 +1031,12 @@ function ctx = executeClassifierNode(node, ctx)
     end
     if isfield(p,'outputType') && ~isempty(p.outputType)
         clsObj.outputType = p.outputType;
+    end
+    try
+        clsObj.runProfiles.classify = struct( ...
+            'io', getfielddefault(ctx, 'io', struct()), ...
+            'store', getfielddefault(ctx, 'store', struct()));
+    catch
     end
 
     outputName = char(string(node.id));

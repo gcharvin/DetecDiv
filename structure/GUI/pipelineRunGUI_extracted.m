@@ -8,6 +8,12 @@ classdef pipelineRunGUI < matlab.apps.AppBase
         RunIdEditField              matlab.ui.control.EditField
         DescriptionEditFieldLabel   matlab.ui.control.Label
         DescriptionEditField        matlab.ui.control.EditField
+        RunPolicyDropDownLabel      matlab.ui.control.Label
+        RunPolicyDropDown           matlab.ui.control.DropDown
+        ExistingPolicyDropDownLabel matlab.ui.control.Label
+        ExistingPolicyDropDown      matlab.ui.control.DropDown
+        CachePolicyDropDownLabel    matlab.ui.control.Label
+        CachePolicyDropDown         matlab.ui.control.DropDown
         NodeTableLabel              matlab.ui.control.Label
         NodeTable                   matlab.ui.control.Table
         ParamTableLabel             matlab.ui.control.Label
@@ -64,6 +70,10 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             else
                 app.RunIdEditField.Value = [templateId '_run'];
             end
+
+            app.RunPolicyDropDown.Value = 'resume';
+            app.ExistingPolicyDropDown.Value = '<module default>';
+            app.CachePolicyDropDown.Value = 'auto';
         end
 
         function [spec, templateId, templatePath] = normalizePipelineSpec(app, pipeIn) %#ok<INUSD>
@@ -196,6 +206,18 @@ classdef pipelineRunGUI < matlab.apps.AppBase
                 otherwise
                     dflt = struct();
             end
+            dflt = addCommonRunDefaults(app, t, dflt);
+        end
+
+        function dflt = addCommonRunDefaults(app, nodeType, dflt)
+            common = struct('runPolicy','','existingPolicy','');
+            if any(strcmp(nodeType, {'roiextract','roitracked','processor','classifier'}))
+                common.cachePolicy = '';
+            end
+            if any(strcmp(nodeType, {'processor','classifier'}))
+                common.outputName = '';
+            end
+            dflt = mergeStructLocal(app, common, dflt);
         end
 
         function p = mergeDefaults(app, p, dflt) %#ok<INUSD>
@@ -790,8 +812,18 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             ctx.shallow = shallowObj;
             ctx.shallowObj = shallowObj;
             ctx.run = struct();
+            ctx.run.runId = runId;
+            ctx.run.runPolicy = char(string(app.RunPolicyDropDown.Value));
+            ctx.run.resume = strcmpi(ctx.run.runPolicy, 'resume');
             ctx.run.selectedNodes = {};
             ctx.run.nodeParams = struct('id',{},'params',{});
+            ctx.io = struct();
+            existingPolicy = char(string(app.ExistingPolicyDropDown.Value));
+            if ~strcmpi(existingPolicy, '<module default>')
+                ctx.io.existingPolicy = existingPolicy;
+            end
+            ctx.io.cachePolicy = char(string(app.CachePolicyDropDown.Value));
+            ctx.store = struct('cacheMode', ctx.io.cachePolicy);
 
             for i = 1:numel(nodes)
                 if ~selectedMask(i)
@@ -828,39 +860,69 @@ classdef pipelineRunGUI < matlab.apps.AppBase
 
         function createComponents(app)
             app.UIFigure = uifigure('Visible','off');
-            app.UIFigure.Position = [100 100 840 620];
+            app.UIFigure.Position = [100 100 840 660];
             app.UIFigure.Name = 'Pipeline Run Builder';
             app.UIFigure.CloseRequestFcn = createCallbackFcn(app, @UIFigureCloseRequest, true);
 
             app.ProjectDropDownLabel = uilabel(app.UIFigure);
             app.ProjectDropDownLabel.HorizontalAlignment = 'right';
-            app.ProjectDropDownLabel.Position = [18 586 52 22];
+            app.ProjectDropDownLabel.Position = [18 626 52 22];
             app.ProjectDropDownLabel.Text = 'Project';
 
             app.ProjectDropDown = uidropdown(app.UIFigure);
-            app.ProjectDropDown.Position = [84 586 190 22];
+            app.ProjectDropDown.Position = [84 626 190 22];
             app.ProjectDropDown.Items = {'<no project in workspace>'};
             app.ProjectDropDown.Value = '<no project in workspace>';
 
             app.RunIdEditFieldLabel = uilabel(app.UIFigure);
             app.RunIdEditFieldLabel.HorizontalAlignment = 'right';
-            app.RunIdEditFieldLabel.Position = [289 586 43 22];
+            app.RunIdEditFieldLabel.Position = [289 626 43 22];
             app.RunIdEditFieldLabel.Text = 'Run ID';
 
             app.RunIdEditField = uieditfield(app.UIFigure, 'text');
-            app.RunIdEditField.Position = [346 586 170 22];
+            app.RunIdEditField.Position = [346 626 170 22];
             app.RunIdEditField.Value = 'pipeline_run_1';
 
             app.DescriptionEditFieldLabel = uilabel(app.UIFigure);
             app.DescriptionEditFieldLabel.HorizontalAlignment = 'right';
-            app.DescriptionEditFieldLabel.Position = [530 586 67 22];
+            app.DescriptionEditFieldLabel.Position = [530 626 67 22];
             app.DescriptionEditFieldLabel.Text = 'Description';
 
             app.DescriptionEditField = uieditfield(app.UIFigure, 'text');
-            app.DescriptionEditField.Position = [611 586 210 22];
+            app.DescriptionEditField.Position = [611 626 210 22];
+
+            app.RunPolicyDropDownLabel = uilabel(app.UIFigure);
+            app.RunPolicyDropDownLabel.HorizontalAlignment = 'right';
+            app.RunPolicyDropDownLabel.Position = [14 590 68 22];
+            app.RunPolicyDropDownLabel.Text = 'Run policy';
+
+            app.RunPolicyDropDown = uidropdown(app.UIFigure);
+            app.RunPolicyDropDown.Items = {'resume', 'restart'};
+            app.RunPolicyDropDown.Position = [96 590 120 22];
+            app.RunPolicyDropDown.Value = 'resume';
+
+            app.ExistingPolicyDropDownLabel = uilabel(app.UIFigure);
+            app.ExistingPolicyDropDownLabel.HorizontalAlignment = 'right';
+            app.ExistingPolicyDropDownLabel.Position = [232 590 82 22];
+            app.ExistingPolicyDropDownLabel.Text = 'Existing data';
+
+            app.ExistingPolicyDropDown = uidropdown(app.UIFigure);
+            app.ExistingPolicyDropDown.Items = {'<module default>', 'replace', 'append', 'skip', 'error'};
+            app.ExistingPolicyDropDown.Position = [328 590 135 22];
+            app.ExistingPolicyDropDown.Value = '<module default>';
+
+            app.CachePolicyDropDownLabel = uilabel(app.UIFigure);
+            app.CachePolicyDropDownLabel.HorizontalAlignment = 'right';
+            app.CachePolicyDropDownLabel.Position = [479 590 75 22];
+            app.CachePolicyDropDownLabel.Text = 'ROI cache';
+
+            app.CachePolicyDropDown = uidropdown(app.UIFigure);
+            app.CachePolicyDropDown.Items = {'auto', 'memory', 'disk'};
+            app.CachePolicyDropDown.Position = [568 590 120 22];
+            app.CachePolicyDropDown.Value = 'auto';
 
             app.NodeTableLabel = uilabel(app.UIFigure);
-            app.NodeTableLabel.Position = [20 549 99 22];
+            app.NodeTableLabel.Position = [20 553 99 22];
             app.NodeTableLabel.Text = 'Pipeline nodes';
 
             app.NodeTable = uitable(app.UIFigure);
@@ -869,10 +931,10 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             app.NodeTable.ColumnEditable = [true false false false];
             app.NodeTable.CellEditCallback = createCallbackFcn(app, @NodeTableCellEdit, true);
             app.NodeTable.SelectionChangedFcn = createCallbackFcn(app, @NodeTableSelectionChanged, true);
-            app.NodeTable.Position = [20 300 800 240];
+            app.NodeTable.Position = [20 304 800 240];
 
             app.ParamTableLabel = uilabel(app.UIFigure);
-            app.ParamTableLabel.Position = [20 268 220 22];
+            app.ParamTableLabel.Position = [20 272 220 22];
             app.ParamTableLabel.Text = 'Template params and run overrides';
 
             app.ParamTable = uitable(app.UIFigure);
@@ -880,7 +942,7 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             app.ParamTable.RowName = {};
             app.ParamTable.ColumnEditable = [false false true];
             app.ParamTable.CellEditCallback = createCallbackFcn(app, @ParamTableCellEdit, true);
-            app.ParamTable.Position = [20 60 800 200];
+            app.ParamTable.Position = [20 64 800 200];
 
             app.OpenNodeGUIButton = uibutton(app.UIFigure, 'push');
             app.OpenNodeGUIButton.Position = [20 20 160 28];

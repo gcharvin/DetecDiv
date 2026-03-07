@@ -21,6 +21,7 @@ frames=[];
 p=[];
 gpu=0;
 ctxBase=struct();
+cachePolicy='auto';
 
 for i=1:numel(varargin)
 
@@ -47,6 +48,8 @@ for i=1:numel(varargin)
         end
     end
 end
+
+cachePolicy = resolveCachePolicyLocal(ctxBase);
 
 classi=classiobj;
 classifyFun=normalizeProcessFun(classi.processFun);
@@ -86,6 +89,8 @@ disp([num2str(numel(roiobj)) ' ROIs to process, be patient...']);
 
 if para
     logparf(1:numel(roiobj))= parallel.FevalFuture;
+    hadImageByIdx = false(1, numel(roiobj));
+    hadDataByIdx = false(1, numel(roiobj));
 else
 
     logparf=1;
@@ -106,6 +111,13 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
         end
     else
         fra=-1;
+    end
+
+    hadImageInMemory = ~isempty(roiobj(i).image);
+    hadDataInMemory = ~isempty(roiobj(i).data);
+    if para
+        hadImageByIdx(i) = hadImageInMemory;
+        hadDataByIdx(i) = hadDataInMemory;
     end
 
 
@@ -178,7 +190,7 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
                 saveChannels = {char(string(paramout.outputChannelName))};
             end
         end
-        ROIManagement(roiobj(i),image,data,saveChannels);
+        ROIManagement(roiobj(i),image,data,saveChannels,cachePolicy,hadImageInMemory,hadDataInMemory);
 
     end
 end
@@ -197,7 +209,7 @@ if para % parallel computing
         [idx,param,data,image]=fetchNext(logparf(i));
 
 
-        ROIManagement(roiobj(idx),image,data);
+        ROIManagement(roiobj(idx),image,data,{},cachePolicy,hadImageByIdx(idx),hadDataByIdx(idx));
         %     roiobj(idx).results=results;
         %
         %     roiobj(idx).image=image;
@@ -244,12 +256,19 @@ end
         end
     end
 
-    function ROIManagement(roiobj,image,data,saveChannels)
+    function ROIManagement(roiobj,image,data,saveChannels,cachePolicyLocal,hadImageBefore,hadDataBefore)
 
         if nargin < 4
             saveChannels = {};
         end
+        if nargin < 5 || isempty(cachePolicyLocal)
+            cachePolicyLocal = 'auto';
+        end
+        if nargin < 6, hadImageBefore = false; end
+        if nargin < 7, hadDataBefore = false; end
 
+        imageCache = image;
+        dataCache = data;
         roiobj.data=data;
         roiobj.image=image;
         if numel(image)
@@ -258,10 +277,50 @@ end
             else
                 roiobj.save; % before we used to save the data only ('data')
             end
-            roiobj.clear,
+            if shouldKeepRoiInMemory(cachePolicyLocal, hadImageBefore, hadDataBefore)
+                roiobj.image = imageCache;
+                roiobj.data = dataCache;
+            else
+                roiobj.clear,
+            end
         else
             roiobj.save('data');
+            if shouldKeepRoiInMemory(cachePolicyLocal, hadImageBefore, hadDataBefore)
+                roiobj.data = dataCache;
+            end
         end
         %disp('You must save the shallow project to save these classified data !');
+    end
+
+    function tf = shouldKeepRoiInMemory(policy, hadImageBefore, hadDataBefore)
+        switch lower(char(string(policy)))
+            case 'memory'
+                tf = true;
+            case 'auto'
+                tf = logical(hadImageBefore || hadDataBefore);
+            otherwise
+                tf = false;
+        end
+    end
+
+    function policy = resolveCachePolicyLocal(ctx)
+        policy = 'auto';
+        if ~isstruct(ctx) || isempty(fieldnames(ctx))
+            return;
+        end
+        try
+            if isfield(ctx,'io') && isstruct(ctx.io) && isfield(ctx.io,'cachePolicy') && ~isempty(ctx.io.cachePolicy)
+                policy = lower(char(string(ctx.io.cachePolicy)));
+            elseif isfield(ctx,'store') && isstruct(ctx.store) && isfield(ctx.store,'cacheMode') && ~isempty(ctx.store.cacheMode)
+                policy = lower(char(string(ctx.store.cacheMode)));
+            elseif isfield(ctx,'cachePolicy') && ~isempty(ctx.cachePolicy)
+                policy = lower(char(string(ctx.cachePolicy)));
+            end
+        catch
+            policy = 'auto';
+        end
+        if ~any(strcmp(policy, {'auto','memory','disk'}))
+            policy = 'auto';
+        end
     end
 end

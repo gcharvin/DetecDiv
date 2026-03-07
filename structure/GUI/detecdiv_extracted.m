@@ -967,6 +967,16 @@ end
                 catch ME
                     runObj.status = 'failed';
                     runObj.updatedAt = char(datetime('now'));
+                    runObj.outputs = struct('error', struct( ...
+                        'message', ME.message, ...
+                        'identifier', ME.identifier));
+                    try
+                        lastReport = getappdata(0, 'DetecDivLastPipelineReport');
+                        if ~isempty(lastReport)
+                            runObj.outputs.report = lastReport;
+                        end
+                    catch
+                    end
                     try
                         pipelineRunSave(runObj);
                     catch
@@ -5643,23 +5653,43 @@ end
                 error('Could not resolve pipeline template for this run.');
             end
 
-            runObj.status = 'running';
-            pipelineRunSave(runObj);
+            try
+                runObj.status = 'running';
+                pipelineRunSave(runObj);
 
-            ctx = runObj.ctx;
-            ctx.shallow = shallowObj;
-            ctx.shallowObj = shallowObj;
-            ctx.allowGUI = true;
+                ctx = runObj.ctx;
+                ctx.shallow = shallowObj;
+                ctx.shallowObj = shallowObj;
+                ctx.allowGUI = true;
 
-            [ctxOut, report] = runPipeline(pipeObj, ctx);
+                [ctxOut, report] = runPipeline(pipeObj, ctx);
 
-            runObj.ctx = ctxOut;
-            runObj.outputs = struct('report', report);
-            runObj.status = 'done';
-            runObj.updatedAt = char(datetime('now'));
-            pipelineRunSave(runObj);
+                runObj.ctx = ctxOut;
+                runObj.outputs = struct('report', report);
+                runObj.status = 'done';
+                runObj.updatedAt = char(datetime('now'));
+                pipelineRunSave(runObj);
 
-            RefreshtreewindowMenuSelected(app);
+                RefreshtreewindowMenuSelected(app);
+            catch MErun
+                runObj.status = 'failed';
+                runObj.updatedAt = char(datetime('now'));
+                runObj.outputs = struct('error', struct( ...
+                    'message', MErun.message, ...
+                    'identifier', MErun.identifier));
+                try
+                    lastReport = getappdata(0, 'DetecDivLastPipelineReport');
+                    if ~isempty(lastReport)
+                        runObj.outputs.report = lastReport;
+                    end
+                catch
+                end
+                try
+                    pipelineRunSave(runObj);
+                catch
+                end
+                rethrow(MErun)
+            end
         end
 
     catch ME
