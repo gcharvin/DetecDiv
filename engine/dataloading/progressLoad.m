@@ -21,9 +21,9 @@ function prog = progressLoad(shallowObj, ctx, stage)
         prog = rp.dataloading.runs.(runId);
     end
 
-    if nargin >= 3 && ~isempty(stage) && isfield(prog,'stage')
-        if ~strcmpi(prog.stage, stage)
-            % stage mismatch -> ignore existing progress
+    if nargin >= 3 && ~isempty(stage)
+        if ~isfield(prog,'stage') || isempty(prog.stage) || ~strcmpi(prog.stage, stage)
+            % stage mismatch (or legacy progress without stage) -> ignore
             prog = struct();
         end
     end

@@ -7,5 +7,9 @@ function runId = getRunIdLocal(ctx)
     end
     if isstruct(ctx) && isfield(ctx,'runId') && ~isempty(ctx.runId)
         runId = char(string(ctx.runId));
+        runId = matlab.lang.makeValidName(runId);
+        if isempty(runId)
+            runId = 'default';
+        end
     end
 end

@@ -142,11 +142,6 @@ end
 
 function key = buildFovKey(f)
 key = '';
-name = '';
-if isprop(f,'id') && ~isempty(f.id)
-    name = char(string(f.id));
-    name = regexprep(name, '_\d+$', '');
-end
 
 chanSig = signatureList(f.channel);
 
@@ -154,7 +149,9 @@ if isprop(f,'isNDTiff') && f.isNDTiff
     src = normPath(getMaybe(f,'ndtiffPath',''));
     pos = num2str(getMaybe(f,'ndtiffPosition',-1));
     zst = num2str(getMaybe(f,'ndtiffZ',0));
-    key = lower(sprintf('ndtiff|%s|%s|%s|%s|%s', src, pos, zst, chanSig, name));
+    % Name can vary across imports (e.g. legacy long ids vs PosX), so avoid
+    % using it in dedup signatures.
+    key = lower(sprintf('ndtiff|%s|%s|%s|%s', src, pos, zst, chanSig));
     return;
 end
 
@@ -164,25 +161,24 @@ if isprop(f,'isMultiTiff') && f.isMultiTiff
         src = firstNonEmptyCell(f.srcpath);
     end
     src = normPath(src);
-    key = lower(sprintf('multitiff|%s|%s|%s', src, chanSig, name));
+    key = lower(sprintf('multitiff|%s|%s', src, chanSig));
     return;
 end
 
 src = firstNonEmptyCell(f.srcpath);
 sample = firstFileFromFov(f);
-key = lower(sprintf('files|%s|%s|%s|%s', normPath(src), normPath(sample), chanSig, name));
+key = lower(sprintf('files|%s|%s|%s', normPath(src), normPath(sample), chanSig));
 end
 
 function key = buildIncomingPosKey(pos)
 key = '';
-name = char(string(getField(pos,'name','')));
 chanSig = signatureList(getField(pos,'channelname',{}));
 
 if isfield(pos,'isNDTiff') && pos.isNDTiff
     src = normPath(getField(pos,'ndtiffPath',''));
     p = num2str(getField(pos,'ndtiffPosition',-1));
     z = num2str(getField(pos,'ndtiffZ',0));
-    key = lower(sprintf('ndtiff|%s|%s|%s|%s|%s', src, p, z, chanSig, name));
+    key = lower(sprintf('ndtiff|%s|%s|%s|%s', src, p, z, chanSig));
     return;
 end
 
@@ -191,13 +187,13 @@ if isfield(pos,'isMultiTiff') && pos.isMultiTiff
     if isempty(src)
         src = firstNonEmptyCell(getField(pos,'pathlist',{}));
     end
-    key = lower(sprintf('multitiff|%s|%s|%s', normPath(src), chanSig, name));
+    key = lower(sprintf('multitiff|%s|%s', normPath(src), chanSig));
     return;
 end
 
 src = firstNonEmptyCell(getField(pos,'pathlist',{}));
 sample = firstFileFromParsedPos(pos);
-key = lower(sprintf('files|%s|%s|%s|%s', normPath(src), normPath(sample), chanSig, name));
+key = lower(sprintf('files|%s|%s|%s', normPath(src), normPath(sample), chanSig));
 end
 
 function v = getMaybe(obj, name, defaultVal)

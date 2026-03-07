@@ -16,6 +16,11 @@ function [ctx, report] = runPipeline(pipe, ctx)
     elseif isfield(ctx,'shallow') && ~isfield(ctx,'shallowObj')
         ctx.shallowObj = ctx.shallow;
     end
+
+    % Use a per-invocation run id by default so progress checkpoints from
+    % previous runs do not silently skip nodes.
+    ctx = normalizeRunId(ctx);
+
     if (~isfield(ctx,'masks') || isempty(ctx.masks))
         try
             roisForMask = [];
@@ -128,6 +133,27 @@ function [ctx, report] = runPipeline(pipe, ctx)
         pipe.runState.currentNode = '';
         pipe.log('Pipeline completed','Run');
     end
+end
+
+function ctx = normalizeRunId(ctx)
+    if ~isstruct(ctx)
+        return;
+    end
+
+    if isfield(ctx,'runId') && ~isempty(ctx.runId)
+        runId = char(string(ctx.runId));
+    elseif isfield(ctx,'run') && isstruct(ctx.run) && isfield(ctx.run,'runId') && ~isempty(ctx.run.runId)
+        runId = char(string(ctx.run.runId));
+    else
+        stamp = char(datetime('now','Format','yyyyMMdd_HHmmss_SSS'));
+        runId = ['pipelineRun_' stamp];
+    end
+
+    runId = matlab.lang.makeValidName(runId);
+    if isempty(runId)
+        runId = 'pipelineRun_default';
+    end
+    ctx.runId = runId;
 end
 
 function tf = shouldSkipByRunSelection(ctx, nodeId)

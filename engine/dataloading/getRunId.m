@@ -7,5 +7,9 @@ function runId = getRunId(ctx)
     end
     if isfield(ctx,'runId') && ~isempty(ctx.runId)
         runId = char(string(ctx.runId));
+        runId = matlab.lang.makeValidName(runId);
+        if isempty(runId)
+            runId = 'default';
+        end
     end
 end
