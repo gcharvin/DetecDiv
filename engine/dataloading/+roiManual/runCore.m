@@ -39,6 +39,29 @@ function ctx = runCore(ctx)
         return;
     end
 
+    if p.errorOnExisting
+        for i = 1:numel(fovIdx)
+            if fovHasValidRois(shallowObj.fov(fovIdx(i)))
+                error('roiManual.runCore:ExistingROI', ...
+                    'FOV %d already contains ROIs and existingPolicy=error.', fovIdx(i));
+            end
+        end
+    end
+    if p.skipExisting
+        keep = false(size(fovIdx));
+        for i = 1:numel(fovIdx)
+            keep(i) = ~fovHasValidRois(shallowObj.fov(fovIdx(i)));
+        end
+        fovIdx = fovIdx(keep);
+        if isempty(fovIdx)
+            ctx.shallow = shallowObj;
+            ctx.roiManual = p;
+            ctx.params = p;
+            ctx.roiList = [];
+            return;
+        end
+    end
+
     if ~p.keepExisting
         for i = 1:numel(fovIdx)
             shallowObj.fov(fovIdx(i)).roi = roi;
@@ -94,6 +117,19 @@ function out = mergeStructOverride(base, override)
 out = base;
 if isempty(override)
     return;
+end
+
+function tf = fovHasValidRois(fovObj)
+tf = false;
+try
+    r = fovObj.roi;
+    if isempty(r)
+        return;
+    end
+    tf = ~(numel(r) == 1 && isempty(r(1).id));
+catch
+    tf = false;
+end
 end
 fn = fieldnames(override);
 for i = 1:numel(fn)

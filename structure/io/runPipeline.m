@@ -20,6 +20,7 @@ function [ctx, report] = runPipeline(pipe, ctx)
     % Use a per-invocation run id by default so progress checkpoints from
     % previous runs do not silently skip nodes.
     ctx = normalizeRunId(ctx);
+    ctx = normalizeExecutionContext(ctx);
 
     if (~isfield(ctx,'masks') || isempty(ctx.masks))
         try
@@ -47,6 +48,7 @@ function [ctx, report] = runPipeline(pipe, ctx)
     if ~ok
         error('runPipeline:Invalid','Pipeline validation failed: %s', strjoin(report.errors, ' | '));
     end
+    report = initRunReport(report, ctx);
 
     P = pipelineToStructLocal(pipe);
     nodes = report.nodes;
@@ -70,22 +72,29 @@ function [ctx, report] = runPipeline(pipe, ctx)
         nodeId = report.order{i};
         node = nodeMap(nodeId);
 
+        % run-level parameter override (optional)
+        node = applyRunNodeOverride(node, ctx, nodeId);
+        [node, policy] = applyNodeExecutionPolicy(node, ctx);
+
         % run-level subset selection (optional)
         if shouldSkipByRunSelection(ctx, nodeId)
+            report = appendNodeRun(report, node, policy, 'skipped_selection', ...
+                captureContextStats(ctx), captureContextStats(ctx), 0, '');
             executed(nodeId) = true;
             continue;
         end
 
         % disabled nodes are always skipped
         if isfield(node,'enabled') && ~isempty(node.enabled) && ~logical(node.enabled)
+            report = appendNodeRun(report, node, policy, 'skipped_disabled', ...
+                captureContextStats(ctx), captureContextStats(ctx), 0, '');
             executed(nodeId) = true;
             continue;
         end
 
-        % run-level parameter override (optional)
-        node = applyRunNodeOverride(node, ctx, nodeId);
-
         if shouldSkipNode(node, ctx, edges, executed)
+            report = appendNodeRun(report, node, policy, 'skipped_condition', ...
+                captureContextStats(ctx), captureContextStats(ctx), 0, '');
             executed(nodeId) = true;
             continue;
         end
@@ -120,7 +129,28 @@ function [ctx, report] = runPipeline(pipe, ctx)
             pipe.runState.progress = (i-1) / max(1,total);
         end
 
-        ctx = executeNode(node, ctx);
+        beforeStats = captureContextStats(ctx);
+        tNode = tic;
+        try
+            ctx = applyPolicyToContext(ctx, node, policy);
+            ctx = executeNode(node, ctx);
+            afterStats = captureContextStats(ctx);
+            report = appendNodeRun(report, node, policy, 'done', ...
+                beforeStats, afterStats, toc(tNode), '');
+        catch ME
+            afterStats = captureContextStats(ctx);
+            report = appendNodeRun(report, node, policy, 'failed', ...
+                beforeStats, afterStats, toc(tNode), formatNodeError(ME));
+            report.endedAt = char(datetime('now'));
+            report.summary = buildRunSummary(report);
+            stashRunReport(report);
+            if isa(pipe,'pipeline')
+                pipe.runState.status = 'failed';
+                pipe.runState.currentNode = nodeId;
+                pipe.runState.errors = [pipe.runState.errors {formatNodeError(ME)}];
+            end
+            rethrow(ME);
+        end
 
         executed(nodeId) = true;
         if isa(pipe,'pipeline')
@@ -133,6 +163,9 @@ function [ctx, report] = runPipeline(pipe, ctx)
         pipe.runState.currentNode = '';
         pipe.log('Pipeline completed','Run');
     end
+    report.endedAt = char(datetime('now'));
+    report.summary = buildRunSummary(report);
+    stashRunReport(report);
 end
 
 function ctx = normalizeRunId(ctx)
@@ -154,6 +187,339 @@ function ctx = normalizeRunId(ctx)
         runId = 'pipelineRun_default';
     end
     ctx.runId = runId;
+end
+
+function ctx = normalizeExecutionContext(ctx)
+    if ~isstruct(ctx)
+        ctx = struct();
+    end
+
+    if ~isfield(ctx,'run') || ~isstruct(ctx.run) || isempty(ctx.run)
+        ctx.run = struct();
+    end
+    if ~isfield(ctx,'io') || ~isstruct(ctx.io) || isempty(ctx.io)
+        ctx.io = struct();
+    end
+    if ~isfield(ctx,'names') || ~isstruct(ctx.names) || isempty(ctx.names)
+        ctx.names = struct();
+    end
+
+    if ~isfield(ctx.run,'runPolicy') || isempty(ctx.run.runPolicy)
+        if isfield(ctx.run,'resume') && ~isempty(ctx.run.resume) && ~logical(ctx.run.resume)
+            ctx.run.runPolicy = 'restart';
+        else
+            ctx.run.runPolicy = 'resume';
+        end
+    end
+    ctx.run.runPolicy = normalizeRunPolicy(ctx.run.runPolicy);
+    ctx.run.resume = strcmpi(ctx.run.runPolicy, 'resume');
+
+    if ~isfield(ctx.io,'existingPolicy') || isempty(ctx.io.existingPolicy)
+        if isfield(ctx.io,'overwrite') && ~isempty(ctx.io.overwrite) && logical(ctx.io.overwrite)
+            ctx.io.existingPolicy = 'replace';
+        elseif isfield(ctx.io,'writePolicy') && ~isempty(ctx.io.writePolicy)
+            ctx.io.existingPolicy = char(string(ctx.io.writePolicy));
+        else
+            ctx.io.existingPolicy = '';
+        end
+    else
+        ctx.io.existingPolicy = normalizeExistingPolicy(ctx.io.existingPolicy, 'replace');
+    end
+
+    if ~isfield(ctx,'resume') || isempty(ctx.resume)
+        ctx.resume = ctx.run.resume;
+    end
+    if ~isfield(ctx,'saveProgress') || isempty(ctx.saveProgress)
+        ctx.saveProgress = true;
+    end
+end
+
+function report = initRunReport(report, ctx)
+    report.runId = getfielddefault(ctx, 'runId', '');
+    report.startedAt = char(datetime('now'));
+    report.endedAt = '';
+    report.nodeRuns = struct( ...
+        'nodeId', {}, 'nodeType', {}, 'status', {}, ...
+        'runPolicy', {}, 'existingPolicy', {}, 'outputName', {}, ...
+        'durationSec', {}, 'before', {}, 'after', {}, 'message', {});
+    report.summary = struct();
+end
+
+function [node, policy] = applyNodeExecutionPolicy(node, ctx)
+    policy = resolveNodeExecutionPolicy(node, ctx);
+
+    if ~isfield(node,'params') || isempty(node.params) || ~isstruct(node.params)
+        node.params = struct();
+    end
+    node.params.runPolicy = policy.runPolicy;
+    node.params.existingPolicy = policy.existingPolicy;
+
+    switch lower(char(string(getfielddefault(node,'type',''))))
+        case {'roiidentify','roipattern','roimanual','roigrid'}
+            switch policy.existingPolicy
+                case 'append'
+                    node.params.keepExisting = true;
+                case 'replace'
+                    node.params.keepExisting = false;
+                case 'skip'
+                    node.params.keepExisting = true;
+                    node.params.skipExisting = true;
+                case 'error'
+                    node.params.keepExisting = true;
+                    node.params.errorOnExisting = true;
+            end
+        case {'processor','classifier'}
+            if ~isempty(policy.outputName)
+                node.params.outputName = policy.outputName;
+                if strcmpi(char(string(getfielddefault(node,'type',''))), 'classifier')
+                    node.params.out_dataSeries_name = policy.outputName;
+                end
+            end
+    end
+end
+
+function policy = resolveNodeExecutionPolicy(node, ctx)
+    nodeType = lower(char(string(getfielddefault(node,'type',''))));
+    p = getfielddefault(node, 'params', struct());
+
+    policy = struct();
+    policy.runPolicy = normalizeRunPolicy(getFirstNonEmpty( ...
+        getfielddefault(p,'runPolicy',''), ...
+        getfielddefault(getfielddefault(ctx,'run',struct()),'runPolicy',''), ...
+        ternary(getfielddefault(ctx,'resume',true), 'resume', 'restart')));
+    policy.resume = strcmpi(policy.runPolicy, 'resume');
+
+    policy.existingPolicy = normalizeExistingPolicy(getFirstNonEmpty( ...
+        getfielddefault(p,'existingPolicy',''), ...
+        getfielddefault(getfielddefault(ctx,'io',struct()),'existingPolicy',''), ...
+        defaultExistingPolicyForNode(nodeType)), defaultExistingPolicyForNode(nodeType));
+
+    explicitOutputName = getFirstNonEmpty( ...
+        getfielddefault(p,'outputName',''), ...
+        getfielddefault(p,'out_dataSeries_name',''), ...
+        getfielddefault(getfielddefault(ctx,'names',struct()),'outputName',''));
+
+    if isempty(explicitOutputName) && any(strcmp(nodeType, {'processor','classifier'}))
+        if strcmpi(policy.existingPolicy, 'append')
+            explicitOutputName = [char(string(node.id)) '_' char(string(getfielddefault(ctx,'runId','run')))];
+        else
+            explicitOutputName = char(string(node.id));
+        end
+    end
+
+    policy.outputName = char(string(explicitOutputName));
+end
+
+function ctx = applyPolicyToContext(ctx, node, policy)
+    if ~isstruct(ctx)
+        ctx = struct();
+    end
+    ctx.resume = policy.resume;
+    if ~isfield(ctx,'saveProgress') || isempty(ctx.saveProgress)
+        ctx.saveProgress = true;
+    end
+    ctx.executionPolicy = policy;
+
+    if ~isfield(ctx,'run') || ~isstruct(ctx.run) || isempty(ctx.run)
+        ctx.run = struct();
+    end
+    ctx.run.runPolicy = policy.runPolicy;
+    ctx.run.resume = policy.resume;
+
+    if ~isfield(ctx,'io') || ~isstruct(ctx.io) || isempty(ctx.io)
+        ctx.io = struct();
+    end
+    ctx.io.existingPolicy = policy.existingPolicy;
+
+    if any(strcmpi(char(string(getfielddefault(node,'type',''))), {'processor','classifier'}))
+        if ~isfield(ctx,'names') || ~isstruct(ctx.names) || isempty(ctx.names)
+            ctx.names = struct();
+        end
+        if ~isempty(policy.outputName)
+            ctx.names.outputName = policy.outputName;
+        end
+    end
+end
+
+function report = appendNodeRun(report, node, policy, status, beforeStats, afterStats, durationSec, message)
+    row = struct( ...
+        'nodeId', char(string(getfielddefault(node,'id',''))), ...
+        'nodeType', char(string(getfielddefault(node,'type',''))), ...
+        'status', char(string(status)), ...
+        'runPolicy', char(string(getfielddefault(policy,'runPolicy',''))), ...
+        'existingPolicy', char(string(getfielddefault(policy,'existingPolicy',''))), ...
+        'outputName', char(string(getfielddefault(policy,'outputName',''))), ...
+        'durationSec', double(durationSec), ...
+        'before', beforeStats, ...
+        'after', afterStats, ...
+        'message', char(string(message)));
+    report.nodeRuns(end+1) = row; %#ok<AGROW>
+end
+
+function stats = captureContextStats(ctx)
+    stats = struct('fovCount', 0, 'roiCount', 0, 'dataSeriesCount', 0, 'maskCount', 0);
+
+    fovList = [];
+    if isfield(ctx,'fovList') && ~isempty(ctx.fovList)
+        fovList = ctx.fovList;
+    else
+        shallowObj = getShallowObject(ctx);
+        if ~isempty(shallowObj)
+            try
+                fovList = shallowObj.fov;
+            catch
+            end
+        end
+    end
+    try
+        stats.fovCount = numel(fovList);
+    catch
+    end
+
+    rois = [];
+    if isfield(ctx,'roiList') && ~isempty(ctx.roiList)
+        rois = ctx.roiList;
+    elseif ~isempty(fovList)
+        try
+            rois = collectRoisFromProject(getShallowObject(ctx));
+        catch
+        end
+    end
+    try
+        stats.roiCount = countValidRois(rois);
+    catch
+    end
+
+    if isfield(ctx,'dataSeries') && ~isempty(ctx.dataSeries)
+        try
+            stats.dataSeriesCount = numel(ctx.dataSeries);
+        catch
+        end
+    elseif ~isempty(rois)
+        try
+            stats.dataSeriesCount = numel(collectDataSeriesFromRois(rois));
+        catch
+        end
+    end
+
+    if isfield(ctx,'masks') && ~isempty(ctx.masks)
+        try
+            stats.maskCount = numel(ctx.masks);
+        catch
+        end
+    end
+end
+
+function n = countValidRois(rois)
+    n = 0;
+    if isempty(rois)
+        return;
+    end
+    n = numel(rois);
+    try
+        if n == 1 && isempty(rois(1).id)
+            n = 0;
+        end
+    catch
+    end
+end
+
+function summary = buildRunSummary(report)
+    summary = struct('totalNodes', 0, 'doneNodes', 0, 'skippedNodes', 0, 'failedNodes', 0);
+    if ~isfield(report,'nodeRuns') || isempty(report.nodeRuns)
+        return;
+    end
+    statusList = {report.nodeRuns.status};
+    summary.totalNodes = numel(statusList);
+    summary.doneNodes = sum(strcmp(statusList, 'done'));
+    summary.skippedNodes = sum(startsWith(string(statusList), "skipped"));
+    summary.failedNodes = sum(strcmp(statusList, 'failed'));
+end
+
+function stashRunReport(report)
+    try
+        setappdata(0, 'DetecDivLastPipelineReport', report);
+    catch
+    end
+end
+
+function out = getFirstNonEmpty(varargin)
+    out = '';
+    for i = 1:numel(varargin)
+        v = varargin{i};
+        if isstring(v)
+            v = char(string(v));
+        end
+        if ischar(v)
+            if ~isempty(strtrim(v))
+                out = v;
+                return;
+            end
+        elseif ~isempty(v)
+            out = v;
+            return;
+        end
+    end
+end
+
+function out = ternary(cond, a, b)
+    if cond
+        out = a;
+    else
+        out = b;
+    end
+end
+
+function policy = normalizeRunPolicy(policy)
+    policy = lower(strtrim(char(string(policy))));
+    switch policy
+        case {'', 'resume', 'continue'}
+            policy = 'resume';
+        case {'restart', 'rerun', 'fresh'}
+            policy = 'restart';
+        otherwise
+            policy = 'resume';
+    end
+end
+
+function policy = normalizeExistingPolicy(policy, fallback)
+    if nargin < 2 || isempty(fallback)
+        fallback = 'replace';
+    end
+    policy = lower(strtrim(char(string(policy))));
+    switch policy
+        case {'', 'default'}
+            policy = fallback;
+        case {'replace', 'overwrite', 'reset'}
+            policy = 'replace';
+        case {'append', 'add'}
+            policy = 'append';
+        case {'skip', 'resume'}
+            policy = 'skip';
+        case {'error', 'fail'}
+            policy = 'error';
+        case {'upsert', 'merge'}
+            policy = 'upsert';
+        otherwise
+            policy = fallback;
+    end
+end
+
+function policy = defaultExistingPolicyForNode(nodeType)
+    switch lower(char(string(nodeType)))
+        case 'dataloader'
+            policy = 'skip';
+        case {'roiidentify','roipattern','roimanual','roigrid'}
+            policy = 'replace';
+        case 'roitracked'
+            policy = 'upsert';
+        case 'roiextract'
+            policy = 'replace';
+        case {'processor','classifier'}
+            policy = 'replace';
+        otherwise
+            policy = 'replace';
+    end
 end
 
 function tf = shouldSkipByRunSelection(ctx, nodeId)
@@ -544,10 +910,29 @@ function ctx = executeProcessorNode(node, ctx)
     procCtx.params = p;
     procCtx.run = getfielddefault(ctx, 'run', struct());
     procCtx.pipeline = getfielddefault(ctx, 'pipeline', struct());
+    procCtx.executionPolicy = getfielddefault(ctx, 'executionPolicy', struct());
     if isfield(ctx,'names') && isstruct(ctx.names) && isfield(ctx.names,'outputName') && ~isempty(ctx.names.outputName)
         procCtx.outputName = ctx.names.outputName;
     elseif isfield(p,'outputName') && ~isempty(p.outputName)
         procCtx.outputName = p.outputName;
+    end
+
+    if isfield(procCtx,'outputName') && ~isempty(procCtx.outputName)
+        existingPolicy = normalizeExistingPolicy(getfielddefault(p,'existingPolicy','replace'), 'replace');
+        if any(strcmp(existingPolicy, {'skip','error'})) && roiOutputsExist(rois, char(string(procCtx.outputName)))
+            if strcmp(existingPolicy, 'error')
+                error('runPipeline:ProcessorOutputExists', ...
+                    'Processor node %s output %s already exists.', ...
+                    char(string(node.id)), char(string(procCtx.outputName)));
+            end
+            warning('runPipeline:ProcessorSkippedExisting', ...
+                'Processor node %s skipped because output %s already exists.', ...
+                char(string(node.id)), char(string(procCtx.outputName)));
+            ctx.roiList = rois;
+            ctx.dataSeries = collectDataSeriesFromRois(rois);
+            ctx.channels = inferChannelsFromRois(rois, ctx);
+            return;
+        end
     end
 
     args = {'Ctx', procCtx};
@@ -617,6 +1002,23 @@ function ctx = executeClassifierNode(node, ctx)
         outputName = char(string(p.outputName));
     elseif isfield(p,'out_dataSeries_name') && ~isempty(p.out_dataSeries_name)
         outputName = char(string(p.out_dataSeries_name));
+    end
+
+    existingPolicy = normalizeExistingPolicy(getfielddefault(p,'existingPolicy','replace'), 'replace');
+    if any(strcmp(existingPolicy, {'skip','error'})) && roiOutputsExist(rois, outputName)
+        if strcmp(existingPolicy, 'error')
+            error('runPipeline:ClassifierOutputExists', ...
+                'Classifier node %s output %s already exists.', ...
+                char(string(node.id)), outputName);
+        end
+        warning('runPipeline:ClassifierSkippedExisting', ...
+            'Classifier node %s skipped because output %s already exists.', ...
+            char(string(node.id)), outputName);
+        ctx.roiList = rois;
+        ctx.dataSeries = collectDataSeriesFromRois(rois);
+        ctx.channels = inferChannelsFromRois(rois, ctx);
+        ctx.masks = inferMaskChannelsFromRois(rois);
+        return;
     end
 
     args = {'OutputName', outputName};
@@ -748,6 +1150,50 @@ function ds = collectDataSeriesFromRois(rois)
     end
     if ~isempty(ds)
         ds = unique(ds, 'stable');
+    end
+end
+
+function tf = roiOutputsExist(rois, outputName)
+    tf = false;
+    if isempty(rois) || isempty(outputName)
+        return;
+    end
+    outputName = char(string(outputName));
+    probeNames = { ...
+        outputName, ...
+        ['results_' outputName], ...
+        ['prob_' outputName], ...
+        ['results_' outputName '_cell'], ...
+        ['prob_' outputName '_cell']};
+
+    for i = 1:numel(rois)
+        try
+            r = rois(i);
+            if isempty(r.data)
+                r.load('data');
+            end
+            if ~isempty(r.data)
+                groupIds = arrayfun(@(x) char(string(x.groupid)), r.data, 'UniformOutput', false);
+                if any(strcmp(groupIds, outputName))
+                    tf = true;
+                    return;
+                end
+            end
+        catch
+        end
+        try
+            names = {};
+            if isfield(r.display,'channel') && ~isempty(r.display.channel)
+                names = cellfun(@char, cellstr(string(r.display.channel)), 'UniformOutput', false);
+            end
+            if ~isempty(names)
+                if any(cellfun(@(nm) any(strcmp(nm, probeNames)) || contains(nm, [outputName '_']), names))
+                    tf = true;
+                    return;
+                end
+            end
+        catch
+        end
     end
 end
 

@@ -53,6 +53,13 @@ function ctx = runCore(ctx)
 
     for i = 1:numel(fovIdx)
         idx = fovIdx(i);
+        if p.errorOnExisting && fovHasValidRois(fovList(idx))
+            error('roiGrid.runCore:ExistingROI', ...
+                'FOV %d already contains ROIs and existingPolicy=error.', idx);
+        end
+        if p.skipExisting && fovHasValidRois(fovList(idx))
+            continue;
+        end
         img = readImage(fovList(idx), 1, 1);
         if isempty(img)
             error('roiGrid.runCore:ReadImageFailed', 'Cannot read reference image for FOV %d.', idx);
@@ -148,5 +155,18 @@ for i = 1:numel(fovList)
         end
     catch
     end
+end
+
+function tf = fovHasValidRois(fovObj)
+tf = false;
+try
+    r = fovObj.roi;
+    if isempty(r)
+        return;
+    end
+    tf = ~(numel(r) == 1 && isempty(r(1).id));
+catch
+    tf = false;
+end
 end
 end

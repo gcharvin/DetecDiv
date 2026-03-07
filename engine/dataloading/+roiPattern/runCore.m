@@ -44,6 +44,12 @@ function ctx = runCore(ctx)
     if ~isfield(p,'keepExisting')
         p.keepExisting = false;
     end
+    if ~isfield(p,'skipExisting')
+        p.skipExisting = false;
+    end
+    if ~isfield(p,'errorOnExisting')
+        p.errorOnExisting = false;
+    end
 
     if isfield(ctx,'fovIndex') && ~isempty(ctx.fovIndex)
         fovIdx = ctx.fovIndex(:)';
@@ -85,6 +91,13 @@ function ctx = runCore(ctx)
 
     fovIdxToProcess = [];
     for i = fovIdx
+        if shouldSkipExistingFov(fovList(i), p)
+            continue;
+        end
+        if shouldErrorExistingFov(fovList(i), p)
+            error('roiPattern.runCore:ExistingROI', ...
+                'FOV %d already contains ROIs and existingPolicy=error.', i);
+        end
         if resume && isDoneFov(prog, i)
             continue;
         end
@@ -176,6 +189,35 @@ function ctx = runCore(ctx)
             storePatternLocal(shallowObj, patternList(patIdx));
         end
     end
+end
+
+function tf = shouldSkipExistingFov(fovObj, p)
+tf = false;
+if ~isfield(p,'skipExisting') || ~logical(p.skipExisting)
+    return;
+end
+tf = fovHasValidRois(fovObj);
+end
+
+function tf = shouldErrorExistingFov(fovObj, p)
+tf = false;
+if ~isfield(p,'errorOnExisting') || ~logical(p.errorOnExisting)
+    return;
+end
+tf = fovHasValidRois(fovObj);
+end
+
+function tf = fovHasValidRois(fovObj)
+tf = false;
+try
+    r = fovObj.roi;
+    if isempty(r)
+        return;
+    end
+    tf = ~(numel(r) == 1 && isempty(r(1).id));
+catch
+    tf = false;
+end
 end
 
 function patternList = normalizePatternList(ctx, p, shallowObj, fovList)
