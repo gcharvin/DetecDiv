@@ -29,8 +29,6 @@ function report = detecdiv_catalog_index_projects(projectRoots, dbFile, varargin
 
     [conn, dbFile] = detecdiv_catalog_init(dbFile);
     cleanupObj = onCleanup(@() close(conn)); %#ok<NASGU>
-    conn.AutoCommit = 'off';
-    exec(conn, 'BEGIN TRANSACTION');
 
     report = struct();
     report.dbFile = dbFile;
@@ -64,10 +62,12 @@ function report = detecdiv_catalog_index_projects(projectRoots, dbFile, varargin
                 seenMap(lower(proj.projectMatAbs)) = true;
 
                 try
+                    localBeginTransaction(conn);
                     projectInfo = localInspectProject(proj, rootPath, opts.LoadProjectMetadata);
                     projectId = localUpsertProject(conn, rootId, projectInfo);
                     localReplaceRawSources(conn, projectId, projectInfo.rawSources);
                     localReplacePipelineRuns(conn, projectId, projectInfo.pipelineRuns, projectInfo.scanTime);
+                    localCommitTransaction(conn);
 
                     rootReport.indexedCount = rootReport.indexedCount + 1;
                     report.projects(end+1) = struct( ... %#ok<AGROW>
@@ -80,6 +80,7 @@ function report = detecdiv_catalog_index_projects(projectRoots, dbFile, varargin
                         fprintf('[catalog] indexed: %s [%s]\n', projectInfo.projectMatAbs, projectInfo.healthStatus);
                     end
                 catch ME
+                    localRollbackQuiet(conn);
                     rootReport.errorCount = rootReport.errorCount + 1;
                     report.projects(end+1) = struct( ... %#ok<AGROW>
                         'projectMat', proj.projectMatAbs, ...
@@ -95,18 +96,23 @@ function report = detecdiv_catalog_index_projects(projectRoots, dbFile, varargin
             end
 
             if opts.MarkMissingProjects
-                rootReport.missingCount = localMarkMissingProjects(conn, rootId, seenMap);
+                localBeginTransaction(conn);
+                try
+                    rootReport.missingCount = localMarkMissingProjects(conn, rootId, seenMap);
+                    localCommitTransaction(conn);
+                catch ME
+                    localRollbackQuiet(conn);
+                    if opts.Verbose
+                        fprintf(2, '[catalog] mark-missing failed for root %s\n', rootPath);
+                        fprintf(2, '          %s\n', ME.message);
+                    end
+                end
             end
 
             report.roots(end+1) = rootReport; %#ok<AGROW>
         end
-
-        commit(conn);
     catch ME
-        try
-            rollback(conn);
-        catch
-        end
+        localRollbackQuiet(conn);
         rethrow(ME);
     end
 
@@ -599,6 +605,31 @@ function scalar = localFetchScalar(conn, sql)
         scalar = data{1};
     else
         scalar = data(1);
+    end
+end
+
+function localBeginTransaction(conn)
+    conn.AutoCommit = 'off';
+    exec(conn, 'BEGIN TRANSACTION');
+end
+
+function localRollbackQuiet(conn)
+    try
+        rollback(conn);
+    catch
+    end
+    localRestoreAutoCommit(conn);
+end
+
+function localCommitTransaction(conn)
+    commit(conn);
+    localRestoreAutoCommit(conn);
+end
+
+function localRestoreAutoCommit(conn)
+    try
+        conn.AutoCommit = 'on';
+    catch
     end
 end
 

@@ -22,6 +22,11 @@ function [conn, dbFile] = detecdiv_catalog_init(dbFile)
     end
 
     conn = sqlite(dbFile, mode);
+    try
+        localExec(conn, 'PRAGMA journal_mode = WAL');
+    catch
+    end
+    localExec(conn, 'PRAGMA synchronous = NORMAL');
     localExec(conn, 'PRAGMA foreign_keys = ON');
 
     localExec(conn, ['CREATE TABLE IF NOT EXISTS catalog_meta (' ...

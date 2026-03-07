@@ -24,6 +24,7 @@ function fig = detecdivCatalogBrowser(varargin)
     state.selectedRow = [];
     state.job = [];
     state.pollTimer = [];
+    state.lastVisibleProjectCount = 0;
 
     fig = uifigure( ...
         'Name', 'DetecDiv Catalog Browser', ...
@@ -337,20 +338,30 @@ function fig = detecdivCatalogBrowser(varargin)
                 setBusyState(false);
                 cleanupFinishedJob();
             otherwise
-                setStatus('Background indexing running...');
+                refreshProjectsTable('PreserveStatus', true);
+                setStatus(sprintf('Background indexing running... %d visible project(s).', ...
+                    state.lastVisibleProjectCount));
         end
     end
 
-    function refreshProjectsTable()
+    function refreshProjectsTable(varargin)
+        ipLocal = inputParser;
+        ipLocal.addParameter('PreserveStatus', false, @(x)islogical(x) || isnumeric(x));
+        ipLocal.parse(varargin{:});
+        preserveStatus = logical(ipLocal.Results.PreserveStatus);
+
         projects = detecdiv_catalog_list_projects(state.settings.dbFile);
         state.projects = projects;
+        state.lastVisibleProjectCount = height(projects);
 
         if isempty(projects)
             projectTable.Data = table();
             projectTable.ColumnName = {};
             state.selectedRow = [];
             updateSelectionState();
-            setStatus('No indexed projects found in the local catalog DB.');
+            if ~preserveStatus
+                setStatus('No indexed projects found in the local catalog DB.');
+            end
             return;
         end
 
@@ -370,7 +381,9 @@ function fig = detecdivCatalogBrowser(varargin)
         restorePreviousSelection();
         updateSelectionState();
 
-        setStatus(sprintf('%d indexed project(s) loaded from %s.', height(projects), state.settings.dbFile));
+        if ~preserveStatus
+            setStatus(sprintf('%d indexed project(s) loaded from %s.', height(projects), state.settings.dbFile));
+        end
     end
 
     function restorePreviousSelection()
@@ -435,7 +448,7 @@ function fig = detecdivCatalogBrowser(varargin)
 
     function setBusyState(tf)
         indexButton.Enable = onOff(~tf);
-        refreshButton.Enable = onOff(~tf);
+        refreshButton.Enable = 'on';
         browseButton.Enable = onOff(~tf);
         saveRootButton.Enable = onOff(~tf);
         backgroundCheck.Enable = onOff(~tf);
