@@ -86,6 +86,54 @@ The browser can:
 - browse indexed projects from the local SQLite DB
 - load a selected project into the MATLAB workspace
 
+## Remote hub API
+
+The worktree also includes a minimal MATLAB client for `detecdiv-hub`.
+It can list projects from the remote API, fetch one project detail, resolve
+the best local path, and call `shallowLoad` locally.
+
+Configure the hub URL:
+
+```matlab
+hub = detecdiv_hub_settings_get();
+hub.baseUrl = 'http://127.0.0.1:8000';
+detecdiv_hub_settings_set(hub);
+```
+
+List projects from the API:
+
+```matlab
+projects = detecdiv_hub_list_projects();
+projects(1)
+```
+
+Get one project detail and inspect its published locations:
+
+```matlab
+projectDetail = detecdiv_hub_get_project(projects(1).id);
+projectDetail.locations
+```
+
+Load a project locally from hub metadata:
+
+```matlab
+[shallowObj, msg, projectDetail, resolutionInfo] = detecdiv_hub_load_project(projects(1).id);
+```
+
+If the API only knows a server-side root, define a local override in
+`hub.storageRootMap` using the storage root name as the field key:
+
+```matlab
+hub = detecdiv_hub_settings_get();
+hub.storageRootMap.server_projects = 'Z:\detecdiv';
+detecdiv_hub_settings_set(hub);
+```
+
+The resolver tries:
+
+- the path returned directly by the hub
+- then `hub.storageRootMap.<storage_root.name>` if present
+
 ## Current project detection rule
 
 A project candidate is currently detected when both exist:
