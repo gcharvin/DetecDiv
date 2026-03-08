@@ -19,9 +19,25 @@ function payload = detecdiv_hub_write_json(endpoint, body, hubSettings)
         'MediaType', 'application/json', ...
         'ContentType', 'json');
 
-    payload = webwrite([baseUrl endpoint], body, options);
+    requestUrl = localAppendUserKey([baseUrl endpoint], hubSettings);
+    payload = webwrite(requestUrl, body, options);
 end
 
 function out = localTrimTrailingSlash(in)
     out = regexprep(in, '[\\/]+$', '');
+end
+
+function url = localAppendUserKey(url, hubSettings)
+    if ~isfield(hubSettings, 'userKey')
+        return;
+    end
+    userKey = strtrim(char(string(hubSettings.userKey)));
+    if isempty(userKey)
+        return;
+    end
+    separator = '?';
+    if contains(url, '?')
+        separator = '&';
+    end
+    url = [url separator 'user_key=' urlencode(userKey)];
 end

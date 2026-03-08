@@ -586,6 +586,7 @@ function fig = detecdivCatalogBrowser(varargin)
                 ['Loaded         : ' localYesNo(localProjectLoadedPath(projectMatPath))]
                 ['Health         : ' char(string(row.health_status))]
                 ['Status         : ' char(string(row.status))]
+                ['Total size     : ' localHumanBytes(row.total_bytes)]
                 ['Locations      : ' num2str(locationCount)]
                 ['Resolved MAT   : ' localTextOr(projectMatPath, '<not resolved>')]
                 ['Resolution     : ' localTextOr(localStructField(resolutionInfo, 'resolutionMethod'), '<none>')]
@@ -804,6 +805,9 @@ function projects = localNormalizeHubProjects(items)
     mats = strings(n, 1);
     dirs = strings(n, 1);
     relPaths = strings(n, 1);
+    matBytes = zeros(n, 1);
+    dirBytes = zeros(n, 1);
+    totalBytes = zeros(n, 1);
 
     for i = 1:n
         item = items{i};
@@ -819,6 +823,9 @@ function projects = localNormalizeHubProjects(items)
         mats(i) = string(localStructField(metadata, 'project_mat_abs'));
         dirs(i) = string(localStructField(metadata, 'project_dir_abs'));
         relPaths(i) = string(localStructField(metadata, 'project_rel_from_root'));
+        matBytes(i) = localNumericField(item, 'project_mat_bytes');
+        dirBytes(i) = localNumericField(item, 'project_dir_bytes');
+        totalBytes(i) = localNumericField(item, 'total_bytes');
     end
 
     projects = table();
@@ -838,6 +845,9 @@ function projects = localNormalizeHubProjects(items)
     projects.project_dir_abs = dirs;
     projects.root_abs_path = repmat("", n, 1);
     projects.project_rel_from_root = relPaths;
+    projects.project_mat_bytes = matBytes;
+    projects.project_dir_bytes = dirBytes;
+    projects.total_bytes = totalBytes;
 end
 
 function displayTable = localBuildDisplayTable(projects, sourceMode)
@@ -857,7 +867,7 @@ function displayTable = localBuildDisplayTable(projects, sourceMode)
         displayTable.Runs = projects.pipeline_run_count;
         displayTable.MissingRaw = projects.missing_raw_count;
     else
-        displayTable.MAT = string(projects.project_mat_abs);
+        displayTable.SizeGB = round(double(projects.total_bytes) ./ 1e9, 2);
     end
     displayTable.RelativePath = string(projects.project_rel_from_root);
 end
@@ -866,6 +876,13 @@ function value = localStructField(in, fieldName)
     value = '';
     if isstruct(in) && isfield(in, fieldName)
         value = in.(fieldName);
+    end
+end
+
+function value = localNumericField(in, fieldName)
+    value = 0;
+    if isstruct(in) && isfield(in, fieldName) && ~isempty(in.(fieldName))
+        value = double(in.(fieldName));
     end
 end
 
@@ -885,6 +902,17 @@ function out = localTextOr(in, fallback)
     else
         out = txt;
     end
+end
+
+function out = localHumanBytes(value)
+    value = double(value);
+    units = {'B', 'KB', 'MB', 'GB', 'TB'};
+    idx = 1;
+    while value >= 1024 && idx < numel(units)
+        value = value / 1024;
+        idx = idx + 1;
+    end
+    out = sprintf('%.2f %s', value, units{idx});
 end
 
 function labels = localLoadedLabels(projects)

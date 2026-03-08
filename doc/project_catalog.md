@@ -111,6 +111,7 @@ Configure the hub URL:
 ```matlab
 hub = detecdiv_hub_settings_get();
 hub.baseUrl = 'http://127.0.0.1:8000';
+hub.userKey = 'localdev';
 detecdiv_hub_settings_set(hub);
 ```
 
@@ -148,6 +149,9 @@ The resolver tries:
 - the path returned directly by the hub
 - then `hub.storageRootMap.<storage_root.name>` if present
 - then any saved remote-prefix to local-prefix mapping in `hub.pathPrefixMap`
+
+If the hub enforces per-user visibility, set `hub.userKey` so MATLAB sends
+`?user_key=...` on API requests.
 
 ## Current project detection rule
 
