@@ -102,9 +102,14 @@ In hub mode:
 - `Hub Root` is the canonical root known by the server or API
 - `Local Mount` is the client-side path that maps the same storage over Samba
 - saving the configuration stores a remote-to-local path-prefix mapping
+- `User` sets the hub identity used for ownership and visibility filtering
 - `Index Root` calls `POST /indexing` on the hub instead of the local MATLAB indexer
 - `Refresh` lists projects from the API
 - `Load Project` resolves the local `.mat` path from the remote metadata and the saved mapping
+- `Group` filters the visible project list to one user-owned project group
+- `Owned only` restricts the listing to projects owned by the current hub user
+- the details panel shows owner, visibility, size, notes count, ACL count, and group membership
+- `Notes...`, `Group...`, `Share...`, and `Delete...` expose the first governance actions directly from MATLAB
 
 Configure the hub URL:
 
@@ -152,6 +157,20 @@ The resolver tries:
 
 If the hub enforces per-user visibility, set `hub.userKey` so MATLAB sends
 `?user_key=...` on API requests.
+
+The browser uses these governance endpoints when running against the hub:
+
+- `GET /users/me`
+- `GET /project-groups`
+- `GET /project-groups/{id}`
+- `POST /project-groups`
+- `POST /project-groups/{id}/projects/{project_id}`
+- `GET /projects/{id}/notes`
+- `POST /projects/{id}/notes`
+- `GET /projects/{id}/acl`
+- `POST /projects/{id}/acl`
+- `POST /projects/{id}/deletion-preview`
+- `DELETE /projects/{id}`
 
 ## Current project detection rule
 

@@ -28,6 +28,10 @@ function fig = detecdivCatalogBrowser(varargin)
     state.job = [];
     state.pollTimer = [];
     state.lastVisibleProjectCount = 0;
+    state.currentUser = struct();
+    state.hubGroups = struct([]);
+    state.hubSelectedGroupId = '';
+    state.hubOwnedOnly = false;
 
     fig = uifigure( ...
         'Name', 'DetecDiv Catalog Browser', ...
@@ -36,15 +40,15 @@ function fig = detecdivCatalogBrowser(varargin)
         'CloseRequestFcn', @onCloseFigure);
 
     mainGrid = uigridlayout(fig, [4 1]);
-    mainGrid.RowHeight = {122, 28, '1x', 38};
+    mainGrid.RowHeight = {154, 28, '1x', 38};
     mainGrid.ColumnWidth = {'1x'};
     mainGrid.Padding = [14 14 14 14];
     mainGrid.RowSpacing = 10;
 
-    controlGrid = uigridlayout(mainGrid, [3 8]);
+    controlGrid = uigridlayout(mainGrid, [4 10]);
     controlGrid.Layout.Row = 1;
-    controlGrid.RowHeight = {24, 32, 32};
-    controlGrid.ColumnWidth = {78, 120, '1x', 90, '1x', 110, 110, 110};
+    controlGrid.RowHeight = {24, 32, 32, 32};
+    controlGrid.ColumnWidth = {78, 120, 65, '1x', 70, '1x', 95, 110, 110, 120};
     controlGrid.ColumnSpacing = 8;
     controlGrid.Padding = [0 0 0 0];
 
@@ -60,18 +64,30 @@ function fig = detecdivCatalogBrowser(varargin)
     sourceDropDown.Layout.Row = 1;
     sourceDropDown.Layout.Column = 2;
 
-    sourceInfoLabel = uilabel(controlGrid, ...
+    userKeyLabel = uilabel(controlGrid, 'Text', 'User', 'FontWeight', 'bold');
+    userKeyLabel.Layout.Row = 1;
+    userKeyLabel.Layout.Column = 3;
+
+    userKeyEdit = uieditfield(controlGrid, 'text', 'Value', state.hubSettings.userKey);
+    userKeyEdit.Layout.Row = 1;
+    userKeyEdit.Layout.Column = 4;
+
+    currentUserTitleLabel = uilabel(controlGrid, 'Text', 'Current', 'FontWeight', 'bold');
+    currentUserTitleLabel.Layout.Row = 1;
+    currentUserTitleLabel.Layout.Column = 5;
+
+    currentUserLabel = uilabel(controlGrid, ...
         'Text', '', ...
         'HorizontalAlignment', 'left', ...
         'FontAngle', 'italic');
-    sourceInfoLabel.Layout.Row = 1;
-    sourceInfoLabel.Layout.Column = [3 5];
+    currentUserLabel.Layout.Row = 1;
+    currentUserLabel.Layout.Column = [6 8];
 
     backgroundCheck = uicheckbox(controlGrid, ...
         'Text', 'Background indexing', ...
         'Value', logical(state.catalogSettings.backgroundIndexing));
     backgroundCheck.Layout.Row = 1;
-    backgroundCheck.Layout.Column = [6 8];
+    backgroundCheck.Layout.Column = [9 10];
 
     baseUrlLabel = uilabel(controlGrid, 'Text', 'Hub URL', 'FontWeight', 'bold');
     baseUrlLabel.Layout.Row = 2;
@@ -79,15 +95,15 @@ function fig = detecdivCatalogBrowser(varargin)
 
     baseUrlEdit = uieditfield(controlGrid, 'text', 'Value', state.hubSettings.baseUrl);
     baseUrlEdit.Layout.Row = 2;
-    baseUrlEdit.Layout.Column = [2 5];
+    baseUrlEdit.Layout.Column = [2 6];
 
     localMountLabel = uilabel(controlGrid, 'Text', 'Local Mount', 'FontWeight', 'bold');
     localMountLabel.Layout.Row = 2;
-    localMountLabel.Layout.Column = 6;
+    localMountLabel.Layout.Column = 7;
 
     localMountEdit = uieditfield(controlGrid, 'text', 'Value', state.hubSettings.defaultLocalProjectRoot);
     localMountEdit.Layout.Row = 2;
-    localMountEdit.Layout.Column = [7 8];
+    localMountEdit.Layout.Column = [8 10];
 
     rootLabel = uilabel(controlGrid, 'Text', '', 'FontWeight', 'bold', ...
         'HorizontalAlignment', 'left');
@@ -96,27 +112,69 @@ function fig = detecdivCatalogBrowser(varargin)
 
     rootEdit = uieditfield(controlGrid, 'text');
     rootEdit.Layout.Row = 3;
-    rootEdit.Layout.Column = [2 4];
+    rootEdit.Layout.Column = [2 6];
 
     browseButton = uibutton(controlGrid, 'push', 'Text', 'Browse...', ...
         'ButtonPushedFcn', @onBrowseRoot);
     browseButton.Layout.Row = 3;
-    browseButton.Layout.Column = 5;
+    browseButton.Layout.Column = 7;
 
     saveRootButton = uibutton(controlGrid, 'push', 'Text', 'Save Config', ...
         'ButtonPushedFcn', @onSaveConfiguration);
     saveRootButton.Layout.Row = 3;
-    saveRootButton.Layout.Column = 6;
+    saveRootButton.Layout.Column = 8;
 
     indexButton = uibutton(controlGrid, 'push', 'Text', 'Index Root', ...
         'ButtonPushedFcn', @onIndexRoot);
     indexButton.Layout.Row = 3;
-    indexButton.Layout.Column = 7;
+    indexButton.Layout.Column = 9;
 
     refreshButton = uibutton(controlGrid, 'push', 'Text', 'Refresh', ...
         'ButtonPushedFcn', @onRefreshProjects);
     refreshButton.Layout.Row = 3;
-    refreshButton.Layout.Column = 8;
+    refreshButton.Layout.Column = 10;
+
+    groupLabel = uilabel(controlGrid, 'Text', 'Group', 'FontWeight', 'bold');
+    groupLabel.Layout.Row = 4;
+    groupLabel.Layout.Column = 1;
+
+    groupDropDown = uidropdown(controlGrid, ...
+        'Items', {'All projects'}, ...
+        'ItemsData', {''}, ...
+        'Value', '', ...
+        'ValueChangedFcn', @onGroupFilterChanged);
+    groupDropDown.Layout.Row = 4;
+    groupDropDown.Layout.Column = [2 5];
+
+    ownedOnlyCheck = uicheckbox(controlGrid, ...
+        'Text', 'Owned only', ...
+        'Value', false, ...
+        'ValueChangedFcn', @onOwnedOnlyChanged);
+    ownedOnlyCheck.Layout.Row = 4;
+    ownedOnlyCheck.Layout.Column = 6;
+
+    refreshGroupsButton = uibutton(controlGrid, 'push', 'Text', 'Groups', ...
+        'ButtonPushedFcn', @onRefreshGroups);
+    refreshGroupsButton.Layout.Row = 4;
+    refreshGroupsButton.Layout.Column = 7;
+
+    addToGroupButton = uibutton(controlGrid, 'push', 'Text', 'Add To Group', ...
+        'Enable', 'off', ...
+        'ButtonPushedFcn', @onAddToGroup);
+    addToGroupButton.Layout.Row = 4;
+    addToGroupButton.Layout.Column = 8;
+
+    newGroupButton = uibutton(controlGrid, 'push', 'Text', 'New Group', ...
+        'ButtonPushedFcn', @onCreateGroup);
+    newGroupButton.Layout.Row = 4;
+    newGroupButton.Layout.Column = 9;
+
+    sourceInfoLabel = uilabel(controlGrid, ...
+        'Text', '', ...
+        'HorizontalAlignment', 'left', ...
+        'FontAngle', 'italic');
+    sourceInfoLabel.Layout.Row = 4;
+    sourceInfoLabel.Layout.Column = 10;
 
     statusLabel = uilabel(mainGrid, ...
         'Text', 'Ready.', ...
@@ -141,7 +199,7 @@ function fig = detecdivCatalogBrowser(varargin)
     sideGrid = uigridlayout(bodyGrid, [3 1]);
     sideGrid.Layout.Row = 1;
     sideGrid.Layout.Column = 2;
-    sideGrid.RowHeight = {24, '1x', 40};
+    sideGrid.RowHeight = {24, '1x', 78};
     sideGrid.RowSpacing = 8;
     sideGrid.Padding = [0 0 0 0];
 
@@ -153,9 +211,10 @@ function fig = detecdivCatalogBrowser(varargin)
         'FontName', 'Consolas');
     detailsArea.Layout.Row = 2;
 
-    actionGrid = uigridlayout(sideGrid, [1 2]);
+    actionGrid = uigridlayout(sideGrid, [2 3]);
     actionGrid.Layout.Row = 3;
-    actionGrid.ColumnWidth = {'1x', '1x'};
+    actionGrid.ColumnWidth = {'1x', '1x', '1x'};
+    actionGrid.RowHeight = {32, 32};
     actionGrid.ColumnSpacing = 8;
     actionGrid.Padding = [0 0 0 0];
 
@@ -168,6 +227,26 @@ function fig = detecdivCatalogBrowser(varargin)
         'Enable', 'off', 'ButtonPushedFcn', @onOpenFolder);
     openFolderButton.Layout.Row = 1;
     openFolderButton.Layout.Column = 2;
+
+    notesButton = uibutton(actionGrid, 'push', 'Text', 'Notes...', ...
+        'Enable', 'off', 'ButtonPushedFcn', @onManageNotes);
+    notesButton.Layout.Row = 1;
+    notesButton.Layout.Column = 3;
+
+    groupButton = uibutton(actionGrid, 'push', 'Text', 'Group...', ...
+        'Enable', 'off', 'ButtonPushedFcn', @onAddToGroup);
+    groupButton.Layout.Row = 2;
+    groupButton.Layout.Column = 1;
+
+    aclButton = uibutton(actionGrid, 'push', 'Text', 'Share...', ...
+        'Enable', 'off', 'ButtonPushedFcn', @onManageAcl);
+    aclButton.Layout.Row = 2;
+    aclButton.Layout.Column = 2;
+
+    deleteButton = uibutton(actionGrid, 'push', 'Text', 'Delete...', ...
+        'Enable', 'off', 'ButtonPushedFcn', @onPreviewDelete);
+    deleteButton.Layout.Row = 2;
+    deleteButton.Layout.Column = 3;
 
     footerLabel = uilabel(mainGrid, ...
         'Text', 'Local mode uses SQLite. Hub mode uses the API and maps server roots to local mounts when needed.', ...
@@ -185,6 +264,67 @@ function fig = detecdivCatalogBrowser(varargin)
         detecdiv_hub_settings_set(state.hubSettings);
         syncUiFromState();
         refreshProjectsTable();
+    end
+
+    function onGroupFilterChanged(~, ~)
+        state.hubSelectedGroupId = char(string(groupDropDown.Value));
+        refreshProjectsTable('PreserveStatus', true);
+    end
+
+    function onOwnedOnlyChanged(~, ~)
+        state.hubOwnedOnly = logical(ownedOnlyCheck.Value);
+        refreshProjectsTable('PreserveStatus', true);
+    end
+
+    function onRefreshGroups(~, ~)
+        if ~strcmp(state.sourceMode, 'hub')
+            return;
+        end
+        try
+            refreshHubContext();
+            setStatus(sprintf('Loaded %d project group(s) for %s.', ...
+                numel(state.hubGroups), localCurrentUserLabel()));
+        catch ME
+            uialert(fig, ME.message, 'Group Refresh Failed');
+            setStatus(['Group refresh failed: ' ME.message]);
+        end
+    end
+
+    function onCreateGroup(~, ~)
+        if ~strcmp(state.sourceMode, 'hub')
+            return;
+        end
+
+        answer = inputdlg( ...
+            {'Display name', 'Group key', 'Description'}, ...
+            'Create Project Group', ...
+            [1 60; 1 60; 3 60], ...
+            {'', '', ''});
+        if isempty(answer)
+            return;
+        end
+
+        displayName = strtrim(answer{1});
+        groupKey = strtrim(answer{2});
+        description = strtrim(answer{3});
+        if isempty(displayName)
+            uialert(fig, 'The group display name cannot be empty.', 'Invalid Group');
+            return;
+        end
+        if isempty(groupKey)
+            groupKey = matlab.lang.makeValidName(lower(displayName));
+        end
+
+        try
+            group = detecdiv_hub_create_project_group(groupKey, displayName, description, state.hubSettings);
+            refreshHubContext();
+            groupDropDown.Value = char(string(group.id));
+            state.hubSelectedGroupId = groupDropDown.Value;
+            refreshProjectsTable('PreserveStatus', true);
+            setStatus(sprintf('Created project group "%s".', displayName));
+        catch ME
+            uialert(fig, ME.message, 'Create Group Failed');
+        end
     end
 
     function onBrowseRoot(~, ~)
@@ -229,6 +369,7 @@ function fig = detecdivCatalogBrowser(varargin)
         localMount = sanitizeRoot(localMountEdit.Value, 'RequireExisting', false);
 
         state.hubSettings.baseUrl = strtrim(baseUrlEdit.Value);
+        state.hubSettings.userKey = strtrim(userKeyEdit.Value);
         state.hubSettings.defaultRemoteProjectRoot = hubRoot;
         state.hubSettings.defaultLocalProjectRoot = localMount;
         state.hubSettings.sourceMode = state.sourceMode;
@@ -270,6 +411,7 @@ function fig = detecdivCatalogBrowser(varargin)
         end
 
         state.hubSettings.baseUrl = strtrim(baseUrlEdit.Value);
+        state.hubSettings.userKey = strtrim(userKeyEdit.Value);
         state.hubSettings.defaultRemoteProjectRoot = hubRoot;
         state.hubSettings.defaultLocalProjectRoot = localMount;
         state.hubSettings.sourceMode = state.sourceMode;
@@ -369,6 +511,164 @@ function fig = detecdivCatalogBrowser(varargin)
             openPath(projectDir);
         else
             uialert(fig, 'Could not resolve a local folder for this hub project.', 'Open Failed');
+        end
+    end
+
+    function onAddToGroup(~, ~)
+        row = getSelectedProjectRow();
+        if isempty(row) || ~strcmp(state.sourceMode, 'hub')
+            return;
+        end
+
+        try
+            if isempty(state.hubGroups)
+                refreshHubContext();
+            end
+            if isempty(state.hubGroups)
+                onCreateGroup();
+                if isempty(state.hubGroups)
+                    return;
+                end
+            end
+
+            groupItems = cell(numel(state.hubGroups), 1);
+            groupIds = cell(numel(state.hubGroups), 1);
+            for i = 1:numel(state.hubGroups)
+                groupItems{i} = char(string(state.hubGroups(i).display_name));
+                groupIds{i} = char(string(state.hubGroups(i).id));
+            end
+
+            [selectedIdx, ok] = listdlg( ...
+                'PromptString', 'Select a project group', ...
+                'SelectionMode', 'single', ...
+                'ListString', groupItems, ...
+                'ListSize', [320 220]);
+            if ~ok || isempty(selectedIdx)
+                return;
+            end
+
+            detecdiv_hub_add_project_to_group(groupIds{selectedIdx}, char(string(row.project_id)), state.hubSettings);
+            refreshProjectsTable('PreserveStatus', true);
+            setStatus(sprintf('Added "%s" to group "%s".', ...
+                char(string(row.name)), groupItems{selectedIdx}));
+        catch ME
+            uialert(fig, ME.message, 'Group Update Failed');
+        end
+    end
+
+    function onManageNotes(~, ~)
+        row = getSelectedProjectRow();
+        if isempty(row) || ~strcmp(state.sourceMode, 'hub')
+            return;
+        end
+
+        try
+            notes = detecdiv_hub_list_project_notes(char(string(row.project_id)), state.hubSettings);
+            noteSummary = localFormatNotes(notes);
+            answer = inputdlg( ...
+                {sprintf('Existing notes for %s', char(string(row.name))), 'New note (leave empty to only review)', 'Pin new note (0/1)'}, ...
+                'Project Notes', ...
+                [12 80; 6 80; 1 8], ...
+                {noteSummary, '', '0'});
+            if isempty(answer)
+                return;
+            end
+
+            newNote = strtrim(answer{2});
+            if isempty(newNote)
+                setStatus(sprintf('Reviewed %d note(s) for "%s".', numel(localEnsureStructArray(notes)), char(string(row.name))));
+                return;
+            end
+
+            isPinned = strcmpi(strtrim(answer{3}), '1') || strcmpi(strtrim(answer{3}), 'true');
+            detecdiv_hub_create_project_note(char(string(row.project_id)), newNote, isPinned, state.hubSettings);
+            updateSelectionState();
+            setStatus(sprintf('Added note to "%s".', char(string(row.name))));
+        catch ME
+            uialert(fig, ME.message, 'Notes Failed');
+        end
+    end
+
+    function onManageAcl(~, ~)
+        row = getSelectedProjectRow();
+        if isempty(row) || ~strcmp(state.sourceMode, 'hub')
+            return;
+        end
+
+        try
+            aclEntries = detecdiv_hub_list_project_acl(char(string(row.project_id)), state.hubSettings);
+            aclSummary = localFormatAclEntries(aclEntries);
+            answer = inputdlg( ...
+                {sprintf('Existing access for %s', char(string(row.name))), 'Share with user key', 'Access level (viewer/editor)'}, ...
+                'Project Access', ...
+                [10 80; 1 32; 1 20], ...
+                {aclSummary, '', 'viewer'});
+            if isempty(answer)
+                return;
+            end
+
+            targetUserKey = strtrim(answer{2});
+            if isempty(targetUserKey)
+                setStatus(sprintf('Reviewed ACL for "%s".', char(string(row.name))));
+                return;
+            end
+
+            accessLevel = lower(strtrim(answer{3}));
+            if ~ismember(accessLevel, {'viewer', 'editor'})
+                uialert(fig, 'Access level must be "viewer" or "editor".', 'Invalid Access Level');
+                return;
+            end
+
+            detecdiv_hub_create_project_acl(char(string(row.project_id)), targetUserKey, accessLevel, state.hubSettings);
+            updateSelectionState();
+            setStatus(sprintf('Granted %s access on "%s" to %s.', ...
+                accessLevel, char(string(row.name)), targetUserKey));
+        catch ME
+            uialert(fig, ME.message, 'ACL Update Failed');
+        end
+    end
+
+    function onPreviewDelete(~, ~)
+        row = getSelectedProjectRow();
+        if isempty(row) || ~strcmp(state.sourceMode, 'hub')
+            return;
+        end
+
+        deleteChoices = {'DB Only', 'Delete Project Files', 'Cancel'};
+        choice = questdlg( ...
+            sprintf('How do you want to remove "%s"?', char(string(row.name))), ...
+            'Delete Project', ...
+            deleteChoices{:}, ...
+            'Cancel');
+        if isempty(choice) || strcmp(choice, 'Cancel')
+            return;
+        end
+
+        deleteProjectFiles = strcmp(choice, 'Delete Project Files');
+
+        try
+            preview = detecdiv_hub_preview_project_deletion( ...
+                char(string(row.project_id)), state.hubSettings, ...
+                'DeleteProjectFiles', deleteProjectFiles, ...
+                'DeleteLinkedRawData', false);
+            previewText = localFormatDeletionPreview(preview);
+            confirmChoice = questdlg( ...
+                sprintf('%s\n\nContinue?', previewText), ...
+                'Confirm Project Deletion', ...
+                'Delete', 'Cancel', 'Cancel');
+            if ~strcmp(confirmChoice, 'Delete')
+                return;
+            end
+
+            detecdiv_hub_delete_project( ...
+                char(string(row.project_id)), state.hubSettings, ...
+                'DeleteProjectFiles', deleteProjectFiles, ...
+                'DeleteLinkedRawData', false, ...
+                'Confirm', true);
+            refreshProjectsTable();
+            setStatus(sprintf('Deleted project "%s".', char(string(row.name))));
+        catch ME
+            uialert(fig, ME.message, 'Delete Failed');
         end
     end
 
@@ -488,8 +788,13 @@ function fig = detecdivCatalogBrowser(varargin)
             end
 
             state.hubSettings.baseUrl = strtrim(baseUrlEdit.Value);
+            state.hubSettings.userKey = strtrim(userKeyEdit.Value);
             detecdiv_hub_settings_set(state.hubSettings);
-            projects = localNormalizeHubProjects(detecdiv_hub_list_projects(state.hubSettings));
+            refreshHubContext();
+            projects = localNormalizeHubProjects(detecdiv_hub_list_projects( ...
+                state.hubSettings, ...
+                'GroupId', state.hubSelectedGroupId, ...
+                'OwnedOnly', state.hubOwnedOnly));
             state.projects = projects;
             state.lastVisibleProjectCount = height(projects);
             projectTable.Data = localBuildDisplayTable(projects, 'hub');
@@ -544,6 +849,11 @@ function fig = detecdivCatalogBrowser(varargin)
 
         loadButton.Enable = onOff(hasRow);
         openFolderButton.Enable = onOff(hasRow);
+        notesButton.Enable = onOff(hasRow && strcmp(state.sourceMode, 'hub'));
+        groupButton.Enable = onOff(hasRow && strcmp(state.sourceMode, 'hub'));
+        aclButton.Enable = onOff(hasRow && strcmp(state.sourceMode, 'hub'));
+        deleteButton.Enable = onOff(hasRow && strcmp(state.sourceMode, 'hub'));
+        addToGroupButton.Enable = onOff(hasRow && strcmp(state.sourceMode, 'hub'));
 
         if ~hasRow
             detailsArea.Value = {'No project selected.'};
@@ -575,18 +885,29 @@ function fig = detecdivCatalogBrowser(varargin)
 
         try
             [projectDetail, projectMatPath, resolutionInfo] = resolveSelectedHubProject();
+            notes = detecdiv_hub_list_project_notes(char(string(row.project_id)), state.hubSettings);
+            aclEntries = detecdiv_hub_list_project_acl(char(string(row.project_id)), state.hubSettings);
+            groups = detecdiv_hub_list_project_groups_for_project(char(string(row.project_id)), state.hubSettings);
             locationCount = 0;
             if isstruct(projectDetail) && isfield(projectDetail, 'locations')
                 locationCount = numel(projectDetail.locations);
             end
+            ownerLabel = localOwnerLabel(projectDetail);
             detailsArea.Value = {
                 'Source         : hub API'
                 ['Project id     : ' char(string(row.project_id))]
                 ['Name           : ' char(string(row.name))]
                 ['Loaded         : ' localYesNo(localProjectLoadedPath(projectMatPath))]
+                ['Owner          : ' ownerLabel]
+                ['Visibility     : ' char(string(localStructField(projectDetail, 'visibility')))]
                 ['Health         : ' char(string(row.health_status))]
                 ['Status         : ' char(string(row.status))]
                 ['Total size     : ' localHumanBytes(row.total_bytes)]
+                ['Project MAT sz : ' localHumanBytes(row.project_mat_bytes)]
+                ['Project Dir sz : ' localHumanBytes(row.project_dir_bytes)]
+                ['Notes          : ' num2str(numel(localEnsureStructArray(notes)))]
+                ['ACL entries     : ' num2str(numel(localEnsureStructArray(aclEntries)))]
+                ['Groups         : ' localJoinedNames(groups, 'display_name')]
                 ['Locations      : ' num2str(locationCount)]
                 ['Resolved MAT   : ' localTextOr(projectMatPath, '<not resolved>')]
                 ['Resolution     : ' localTextOr(localStructField(resolutionInfo, 'resolutionMethod'), '<none>')]
@@ -626,6 +947,42 @@ function fig = detecdivCatalogBrowser(varargin)
         [projectMatPath, resolutionInfo] = detecdiv_hub_resolve_project_location(projectDetail, state.hubSettings);
     end
 
+    function refreshHubContext()
+        if ~strcmp(state.sourceMode, 'hub')
+            state.currentUser = struct();
+            state.hubGroups = struct([]);
+            syncGroupDropDown();
+            if isvalid(fig)
+                currentUserLabel.Text = localCurrentUserLabel();
+            end
+            return;
+        end
+
+        state.currentUser = detecdiv_hub_get_current_user(state.hubSettings);
+        groups = detecdiv_hub_list_project_groups(state.hubSettings);
+        state.hubGroups = localEnsureStructArray(groups);
+        syncGroupDropDown();
+        if isvalid(fig)
+            currentUserLabel.Text = localCurrentUserLabel();
+        end
+    end
+
+    function syncGroupDropDown()
+        items = {'All projects'};
+        itemsData = {''};
+        for i = 1:numel(state.hubGroups)
+            items{end + 1} = char(string(state.hubGroups(i).display_name)); %#ok<AGROW>
+            itemsData{end + 1} = char(string(state.hubGroups(i).id)); %#ok<AGROW>
+        end
+        groupDropDown.Items = items;
+        groupDropDown.ItemsData = itemsData;
+        if isempty(state.hubSelectedGroupId) || ~any(strcmp(itemsData, state.hubSelectedGroupId))
+            state.hubSelectedGroupId = '';
+        end
+        groupDropDown.Value = state.hubSelectedGroupId;
+        ownedOnlyCheck.Value = logical(state.hubOwnedOnly);
+    end
+
     function syncUiFromState()
         if strcmp(state.sourceMode, 'local')
             rootLabel.Text = 'Project Root';
@@ -634,16 +991,27 @@ function fig = detecdivCatalogBrowser(varargin)
         else
             rootLabel.Text = 'Hub Root';
             rootEdit.Value = char(string(state.hubSettings.defaultRemoteProjectRoot));
-            sourceInfoLabel.Text = ['Hub: ' char(string(state.hubSettings.baseUrl))];
+            if isempty(state.hubSelectedGroupId)
+                sourceInfoLabel.Text = 'All';
+            else
+                sourceInfoLabel.Text = 'Filtered';
+            end
         end
 
         baseUrlEdit.Value = char(string(state.hubSettings.baseUrl));
+        userKeyEdit.Value = char(string(state.hubSettings.userKey));
         localMountEdit.Value = char(string(state.hubSettings.defaultLocalProjectRoot));
         sourceDropDown.Value = state.sourceMode;
         backgroundCheck.Value = logical(state.catalogSettings.backgroundIndexing);
         backgroundCheck.Enable = onOff(strcmp(state.sourceMode, 'local'));
         baseUrlEdit.Editable = onOff(strcmp(state.sourceMode, 'hub'));
         localMountEdit.Editable = onOff(strcmp(state.sourceMode, 'hub'));
+        userKeyEdit.Editable = onOff(strcmp(state.sourceMode, 'hub'));
+        groupDropDown.Enable = onOff(strcmp(state.sourceMode, 'hub'));
+        ownedOnlyCheck.Enable = onOff(strcmp(state.sourceMode, 'hub'));
+        refreshGroupsButton.Enable = onOff(strcmp(state.sourceMode, 'hub'));
+        newGroupButton.Enable = onOff(strcmp(state.sourceMode, 'hub'));
+        currentUserLabel.Text = localCurrentUserLabel();
     end
 
     function setBusyState(tf)
@@ -656,12 +1024,39 @@ function fig = detecdivCatalogBrowser(varargin)
         rootEdit.Editable = onOff(~tf);
         baseUrlEdit.Editable = onOff(~tf && strcmp(state.sourceMode, 'hub'));
         localMountEdit.Editable = onOff(~tf && strcmp(state.sourceMode, 'hub'));
+        userKeyEdit.Editable = onOff(~tf && strcmp(state.sourceMode, 'hub'));
+        groupDropDown.Enable = onOff(~tf && strcmp(state.sourceMode, 'hub'));
+        ownedOnlyCheck.Enable = onOff(~tf && strcmp(state.sourceMode, 'hub'));
+        refreshGroupsButton.Enable = onOff(~tf && strcmp(state.sourceMode, 'hub'));
+        newGroupButton.Enable = onOff(~tf && strcmp(state.sourceMode, 'hub'));
     end
 
     function setStatus(msg)
         if isvalid(fig)
             statusLabel.Text = char(string(msg));
             drawnow limitrate;
+        end
+    end
+
+    function label = localCurrentUserLabel()
+        if strcmp(state.sourceMode, 'local')
+            label = 'n/a';
+            return;
+        end
+
+        if isempty(fieldnames(state.currentUser))
+            label = '<not resolved>';
+            return;
+        end
+
+        displayName = char(string(localStructField(state.currentUser, 'display_name')));
+        userKey = char(string(localStructField(state.currentUser, 'user_key')));
+        if isempty(displayName)
+            label = localTextOr(userKey, '<unknown>');
+        elseif isempty(userKey) || strcmp(displayName, userKey)
+            label = displayName;
+        else
+            label = sprintf('%s (%s)', displayName, userKey);
         end
     end
 
@@ -808,6 +1203,8 @@ function projects = localNormalizeHubProjects(items)
     matBytes = zeros(n, 1);
     dirBytes = zeros(n, 1);
     totalBytes = zeros(n, 1);
+    visibility = strings(n, 1);
+    ownerKeys = strings(n, 1);
 
     for i = 1:n
         item = items{i};
@@ -815,11 +1212,17 @@ function projects = localNormalizeHubProjects(items)
         if isfield(item, 'metadata_json') && isstruct(item.metadata_json)
             metadata = item.metadata_json;
         end
+        owner = struct();
+        if isfield(item, 'owner') && isstruct(item.owner)
+            owner = item.owner;
+        end
 
         names(i) = string(localStructField(item, 'project_name'));
         projectIds(i) = string(localStructField(item, 'id'));
         statuses(i) = string(localStructField(item, 'status'));
         health(i) = string(localStructField(item, 'health_status'));
+        visibility(i) = string(localStructField(item, 'visibility'));
+        ownerKeys(i) = string(localStructField(owner, 'user_key'));
         mats(i) = string(localStructField(metadata, 'project_mat_abs'));
         dirs(i) = string(localStructField(metadata, 'project_dir_abs'));
         relPaths(i) = string(localStructField(metadata, 'project_rel_from_root'));
@@ -848,6 +1251,8 @@ function projects = localNormalizeHubProjects(items)
     projects.project_mat_bytes = matBytes;
     projects.project_dir_bytes = dirBytes;
     projects.total_bytes = totalBytes;
+    projects.visibility = visibility;
+    projects.owner_user_key = ownerKeys;
 end
 
 function displayTable = localBuildDisplayTable(projects, sourceMode)
@@ -859,6 +1264,9 @@ function displayTable = localBuildDisplayTable(projects, sourceMode)
     displayTable = table();
     displayTable.Name = string(projects.name);
     displayTable.Loaded = localLoadedLabels(projects);
+    if ismember('owner_user_key', projects.Properties.VariableNames)
+        displayTable.Owner = string(projects.owner_user_key);
+    end
     displayTable.Health = string(projects.health_status);
     displayTable.Status = string(projects.status);
     if strcmp(sourceMode, 'local')
@@ -867,6 +1275,7 @@ function displayTable = localBuildDisplayTable(projects, sourceMode)
         displayTable.Runs = projects.pipeline_run_count;
         displayTable.MissingRaw = projects.missing_raw_count;
     else
+        displayTable.Visibility = string(projects.visibility);
         displayTable.SizeGB = round(double(projects.total_bytes) ./ 1e9, 2);
     end
     displayTable.RelativePath = string(projects.project_rel_from_root);
@@ -982,4 +1391,131 @@ end
 
 function out = localNormalizeLoadedPath(pathIn)
     out = regexprep(lower(strrep(char(string(pathIn)), '\', '/')), '/+$', '');
+end
+
+function value = localOwnerLabel(projectDetail)
+    value = '<unknown>';
+    if ~isstruct(projectDetail) || ~isfield(projectDetail, 'owner') || ~isstruct(projectDetail.owner)
+        return;
+    end
+    owner = projectDetail.owner;
+    displayName = char(string(localStructField(owner, 'display_name')));
+    userKey = char(string(localStructField(owner, 'user_key')));
+    if isempty(displayName)
+        value = localTextOr(userKey, '<unknown>');
+    elseif isempty(userKey) || strcmp(displayName, userKey)
+        value = displayName;
+    else
+        value = sprintf('%s (%s)', displayName, userKey);
+    end
+end
+
+function text = localJoinedNames(items, fieldName)
+    items = localEnsureStructArray(items);
+    if isempty(items)
+        text = '<none>';
+        return;
+    end
+
+    labels = strings(numel(items), 1);
+    for i = 1:numel(items)
+        labels(i) = string(localStructField(items(i), fieldName));
+    end
+    labels(labels == "") = [];
+    if isempty(labels)
+        text = '<none>';
+    else
+        text = strjoin(cellstr(labels), ', ');
+    end
+end
+
+function out = localEnsureStructArray(in)
+    if isempty(in)
+        out = struct([]);
+        return;
+    end
+    if iscell(in)
+        if isempty(in)
+            out = struct([]);
+        else
+            out = [in{:}];
+        end
+        return;
+    end
+    out = in;
+end
+
+function txt = localFormatNotes(notes)
+    notes = localEnsureStructArray(notes);
+    if isempty(notes)
+        txt = '<no notes>';
+        return;
+    end
+
+    lines = strings(numel(notes), 1);
+    for i = 1:numel(notes)
+        authorLabel = '<unknown>';
+        if isfield(notes(i), 'author') && isstruct(notes(i).author)
+            authorLabel = localOwnerLabel(struct('owner', notes(i).author));
+        end
+        prefix = '';
+        if isfield(notes(i), 'is_pinned') && logical(notes(i).is_pinned)
+            prefix = '[PIN] ';
+        end
+        updatedAt = char(string(localStructField(notes(i), 'updated_at')));
+        noteText = char(string(localStructField(notes(i), 'note_text')));
+        lines(i) = string(sprintf('%s%s | %s | %s', prefix, updatedAt, authorLabel, noteText));
+    end
+    txt = strjoin(cellstr(lines), newline);
+end
+
+function txt = localFormatAclEntries(aclEntries)
+    aclEntries = localEnsureStructArray(aclEntries);
+    if isempty(aclEntries)
+        txt = '<owner only>';
+        return;
+    end
+
+    lines = strings(numel(aclEntries), 1);
+    for i = 1:numel(aclEntries)
+        userLabel = '<unknown>';
+        if isfield(aclEntries(i), 'user') && isstruct(aclEntries(i).user)
+            userLabel = localOwnerLabel(struct('owner', aclEntries(i).user));
+        end
+        accessLevel = char(string(localStructField(aclEntries(i), 'access_level')));
+        lines(i) = string(sprintf('%s | %s', userLabel, accessLevel));
+    end
+    txt = strjoin(cellstr(lines), newline);
+end
+
+function txt = localFormatDeletionPreview(preview)
+    previewJson = struct();
+    if isstruct(preview) && isfield(preview, 'preview_json') && isstruct(preview.preview_json)
+        previewJson = preview.preview_json;
+    end
+    projectFiles = localCountStructArray(localStructField(previewJson, 'project_file_paths'));
+    projectDirs = localCountStructArray(localStructField(previewJson, 'project_directories'));
+    rawItems = localCountStructArray(localStructField(previewJson, 'raw_dataset_candidates'));
+    txt = sprintf(['Project: %s\n' ...
+        'Recoverable: %s\n' ...
+        'Project files: %d\n' ...
+        'Project folders: %d\n' ...
+        'Raw datasets touched: %d'], ...
+        char(string(localStructField(preview, 'project_name'))), ...
+        localHumanBytes(localNumericField(preview, 'reclaimable_bytes')), ...
+        projectFiles, projectDirs, rawItems);
+end
+
+function count = localCountStructArray(value)
+    if isempty(value)
+        count = 0;
+        return;
+    end
+    if isstruct(value)
+        count = numel(value);
+    elseif iscell(value)
+        count = numel(value);
+    else
+        count = 0;
+    end
 end
