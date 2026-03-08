@@ -61,6 +61,13 @@ function [candidatePath, method] = localMetadataCandidate(projectDetail, hubSett
     if isfield(metadata, 'project_mat_abs') && ~isempty(metadata.project_mat_abs)
         candidatePath = char(string(metadata.project_mat_abs));
         method = 'metadata_json.project_mat_abs';
+        if ~isfile(candidatePath)
+            [mappedPath, mappedMethod] = detecdiv_hub_apply_path_mapping(candidatePath, hubSettings);
+            if ~isempty(mappedPath)
+                candidatePath = mappedPath;
+                method = ['metadata_json.project_mat_abs|' mappedMethod];
+            end
+        end
         return;
     end
 
@@ -113,6 +120,12 @@ function [candidatePaths, methods] = localLocationCandidates(location, hubSettin
     if ~isempty(directPath)
         candidatePaths{end+1} = directPath; %#ok<AGROW>
         methods{end+1} = 'direct'; %#ok<AGROW>
+
+        [mappedPath, mappedMethod] = detecdiv_hub_apply_path_mapping(directPath, hubSettings);
+        if ~isempty(mappedPath) && ~any(strcmp(candidatePaths, mappedPath))
+            candidatePaths{end+1} = mappedPath; %#ok<AGROW>
+            methods{end+1} = ['direct|' mappedMethod]; %#ok<AGROW>
+        end
     end
 
     mappedPrefix = localLookupMappedRoot(hubSettings, rootName);

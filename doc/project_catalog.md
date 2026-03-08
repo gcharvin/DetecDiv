@@ -92,6 +92,20 @@ The worktree also includes a minimal MATLAB client for `detecdiv-hub`.
 It can list projects from the remote API, fetch one project detail, resolve
 the best local path, and call `shallowLoad` locally.
 
+The catalog browser GUI now supports two modes:
+
+- `Local SQLite`
+- `Hub API`
+
+In hub mode:
+
+- `Hub Root` is the canonical root known by the server or API
+- `Local Mount` is the client-side path that maps the same storage over Samba
+- saving the configuration stores a remote-to-local path-prefix mapping
+- `Index Root` calls `POST /indexing` on the hub instead of the local MATLAB indexer
+- `Refresh` lists projects from the API
+- `Load Project` resolves the local `.mat` path from the remote metadata and the saved mapping
+
 Configure the hub URL:
 
 ```matlab
@@ -133,6 +147,7 @@ The resolver tries:
 
 - the path returned directly by the hub
 - then `hub.storageRootMap.<storage_root.name>` if present
+- then any saved remote-prefix to local-prefix mapping in `hub.pathPrefixMap`
 
 ## Current project detection rule
 
