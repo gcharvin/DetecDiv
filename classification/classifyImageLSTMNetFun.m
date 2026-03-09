@@ -434,6 +434,13 @@ end
 % --------- Écriture dans dataseries (idempotent) ----------
 data = roiobj.data;
 if isempty(data)
+    try
+        roiobj.load('data');
+        data = roiobj.data;
+    catch
+    end
+end
+if isempty(data)
     roiobj.data = dataseries;
     data = roiobj.data;
 end
@@ -452,10 +459,10 @@ roiobj.data = data;   % important: write back sanitized array
 
 
 % Cherche dataseries existant pour ce classif
-pixdata = find(arrayfun(@(x) strcmp(x.groupid, classif.strid), roiobj.data), 1, 'first');
+pixdata = find(arrayfun(@(x) strcmp(x.groupid, classif.strid), data), 1, 'first');
 if isempty(pixdata)
-    cc = (numel(roiobj.data)==1 && isempty(roiobj.data.data)) * 1 + ...
-         (numel(roiobj.data)~=1 || ~isempty(roiobj.data.data)) * (numel(roiobj.data)+1);
+    cc = (numel(data)==1 && isempty(data.data)) * 1 + ...
+         (numel(data)~=1 || ~isempty(data.data)) * (numel(data)+1);
     data(cc) = dataseries;
     data(cc).class    = "classification";
     data(cc).groupid  = classif.strid;
