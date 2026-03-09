@@ -39,7 +39,7 @@ end
 h5File    = fullfile(obj.path, ['im_'   obj.id '.h5']);
 h5BakFile = fullfile(obj.path, ['im_'   obj.id '.bak']);   %%% ATOMIC WRITE (backup)
 dataFile  = fullfile(obj.path, ['data_' obj.id '.mat']);
-dataBak   = fullfile(obj.path, ['data_' obj.id '.bak']);   %%% ATOMIC WRITE (backup)
+dataBak   = fullfile(obj.path, ['data_' obj.id '.bak']);   %%% persistent one-step-behind backup
 
 % ---------- Interpret 'option' ----------
 onlyData = (ischar(option)   && strcmp(option,'data')) || ...
@@ -249,6 +249,9 @@ end
 
         if exist(dataFile,'file')
             copyfile(dataFile, dataBak, 'f');
+        elseif exist(dataBak,'file')
+            % No current MAT means there is no valid "previous version" to keep.
+            delete(dataBak);
         end
         if exist(dataFile,'file'), delete(dataFile); end
         movefile(dataTmp, dataFile, 'f');
@@ -286,14 +289,9 @@ end
     % end
 end
 
-% Si tout s'est bien passé, on nettoie les backups .bak
-if success
-    if exist(h5BakFile,'file')
-        delete(h5BakFile);
-    end
-    if exist(dataBak,'file')
-        delete(dataBak);
-    end
+% Keep only the MAT backup as persistent one-step-behind.
+if success && exist(h5BakFile,'file')
+    delete(h5BakFile);
 end
 
 
