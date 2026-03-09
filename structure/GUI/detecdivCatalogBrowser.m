@@ -1033,18 +1033,22 @@ function fig = detecdivCatalogBrowser(varargin)
     end
 
     function syncUiFromState()
-        if strcmp(state.sourceMode, 'local')
+        isLocal = strcmp(state.sourceMode, 'local');
+        if isLocal
             rootLabel.Text = 'Project Root';
             rootEdit.Value = char(string(state.catalogSettings.defaultProjectRoot));
             sourceInfoLabel.Text = ['DB: ' char(string(state.catalogSettings.dbFile))];
+            footerLabel.Text = 'Local SQLite mode uses only the local DB and local project paths.';
         else
-            rootLabel.Text = 'Hub Root';
+            rootLabel.Text = 'Remote Root';
             rootEdit.Value = char(string(state.hubSettings.defaultRemoteProjectRoot));
             if isempty(state.hubSelectedGroupId)
-                sourceInfoLabel.Text = 'All';
+                sourceInfoLabel.Text = 'Hub listing: all visible projects';
             else
-                sourceInfoLabel.Text = 'Filtered';
+                sourceInfoLabel.Text = 'Hub listing: group filter active';
             end
+            footerLabel.Text = ['Hub API mode uses server paths plus local mount mapping for loading .mat files.' ...
+                ' Local SQLite mode remains available in the same browser.'];
         end
 
         baseUrlEdit.Value = char(string(state.hubSettings.baseUrl));
@@ -1052,16 +1056,37 @@ function fig = detecdivCatalogBrowser(varargin)
         localMountEdit.Value = char(string(state.hubSettings.defaultLocalProjectRoot));
         sourceDropDown.Value = state.sourceMode;
         backgroundCheck.Value = logical(state.catalogSettings.backgroundIndexing);
-        backgroundCheck.Enable = onOff(strcmp(state.sourceMode, 'local'));
-        baseUrlEdit.Editable = onOff(strcmp(state.sourceMode, 'hub'));
-        localMountEdit.Editable = onOff(strcmp(state.sourceMode, 'hub'));
-        userKeyEdit.Editable = onOff(strcmp(state.sourceMode, 'hub'));
-        loginButton.Enable = onOff(strcmp(state.sourceMode, 'hub'));
-        logoutButton.Enable = onOff(strcmp(state.sourceMode, 'hub'));
-        groupDropDown.Enable = onOff(strcmp(state.sourceMode, 'hub'));
-        ownedOnlyCheck.Enable = onOff(strcmp(state.sourceMode, 'hub'));
-        refreshGroupsButton.Enable = onOff(strcmp(state.sourceMode, 'hub'));
-        newGroupButton.Enable = onOff(strcmp(state.sourceMode, 'hub'));
+        backgroundCheck.Enable = onOff(isLocal);
+        baseUrlEdit.Editable = onOff(~isLocal);
+        localMountEdit.Editable = onOff(~isLocal);
+        userKeyEdit.Editable = onOff(~isLocal);
+        loginButton.Enable = onOff(~isLocal);
+        logoutButton.Enable = onOff(~isLocal);
+        groupDropDown.Enable = onOff(~isLocal);
+        ownedOnlyCheck.Enable = onOff(~isLocal);
+        refreshGroupsButton.Enable = onOff(~isLocal);
+        newGroupButton.Enable = onOff(~isLocal);
+
+        controlGrid.RowHeight = localHeaderRowHeights(isLocal);
+        localSetVisible(baseUrlLabel, ~isLocal);
+        localSetVisible(baseUrlEdit, ~isLocal);
+        localSetVisible(localMountLabel, ~isLocal);
+        localSetVisible(localMountEdit, ~isLocal);
+        localSetVisible(userKeyLabel, ~isLocal);
+        localSetVisible(userKeyEdit, ~isLocal);
+        localSetVisible(currentUserTitleLabel, ~isLocal);
+        localSetVisible(currentUserLabel, ~isLocal);
+        localSetVisible(loginButton, ~isLocal);
+        localSetVisible(logoutButton, ~isLocal);
+        localSetVisible(groupLabel, ~isLocal);
+        localSetVisible(groupDropDown, ~isLocal);
+        localSetVisible(ownedOnlyCheck, ~isLocal);
+        localSetVisible(refreshGroupsButton, ~isLocal);
+        localSetVisible(addToGroupButton, ~isLocal);
+        localSetVisible(newGroupButton, ~isLocal);
+
+        browseButton.Text = ternaryText(isLocal, 'Browse...', 'Map...');
+        sourceLabel.Text = 'Source';
         currentUserLabel.Text = localCurrentUserLabel();
     end
 
@@ -1220,6 +1245,29 @@ function fig = detecdivCatalogBrowser(varargin)
         else
             value = 'off';
         end
+    end
+end
+
+function heights = localHeaderRowHeights(isLocal)
+    if isLocal
+        heights = {24, 0, 32, 0};
+    else
+        heights = {24, 32, 32, 32};
+    end
+end
+
+function localSetVisible(component, tf)
+    try
+        component.Visible = onOff(tf);
+    catch
+    end
+end
+
+function txt = ternaryText(tf, trueText, falseText)
+    if tf
+        txt = trueText;
+    else
+        txt = falseText;
     end
 end
 
