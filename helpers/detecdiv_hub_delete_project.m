@@ -22,16 +22,17 @@ function result = detecdiv_hub_delete_project(projectId, hubSettings, varargin)
         localLogicalString(opts.DeleteProjectFiles), ...
         localLogicalString(opts.DeleteLinkedRawData), ...
         localLogicalString(opts.Confirm));
-    requestUrl = localAppendUserKey([baseUrl endpoint], hubSettings);
+    requestUrl = localAppendIdentity([baseUrl endpoint], hubSettings);
 
     import matlab.net.URI
     import matlab.net.http.RequestMessage
     import matlab.net.http.MessageBody
+    import matlab.net.http.HeaderField
     import matlab.net.http.field.ContentTypeField
 
     request = RequestMessage( ...
         'delete', ...
-        ContentTypeField('application/json'), ...
+        localRequestFields(hubSettings, ContentTypeField('application/json')), ...
         MessageBody(''));
     response = send(request, URI(requestUrl));
     if response.StatusCode ~= matlab.net.http.StatusCode.OK
@@ -56,7 +57,13 @@ function out = localLogicalString(value)
     end
 end
 
-function url = localAppendUserKey(url, hubSettings)
+function url = localAppendIdentity(url, hubSettings)
+    if isfield(hubSettings, 'sessionToken')
+        token = strtrim(char(string(hubSettings.sessionToken)));
+        if ~isempty(token)
+            return;
+        end
+    end
     if ~isfield(hubSettings, 'userKey')
         return;
     end
@@ -69,6 +76,23 @@ function url = localAppendUserKey(url, hubSettings)
         separator = '&';
     end
     url = [url separator 'user_key=' urlencode(userKey)];
+end
+
+function fields = localRequestFields(hubSettings, varargin)
+    import matlab.net.http.HeaderField
+    fields = HeaderField.empty;
+    for i = 1:numel(varargin)
+        fields(end + 1) = varargin{i}; %#ok<AGROW>
+    end
+    if ~isfield(hubSettings, 'sessionToken')
+        return;
+    end
+    token = strtrim(char(string(hubSettings.sessionToken)));
+    if isempty(token)
+        return;
+    end
+    import matlab.net.http.field.GenericField
+    fields(end + 1) = GenericField('Authorization', ['Bearer ' token]); %#ok<AGROW>
 end
 
 function txt = localResponseText(response)

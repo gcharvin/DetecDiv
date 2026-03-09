@@ -45,10 +45,10 @@ function fig = detecdivCatalogBrowser(varargin)
     mainGrid.Padding = [14 14 14 14];
     mainGrid.RowSpacing = 10;
 
-    controlGrid = uigridlayout(mainGrid, [4 10]);
+    controlGrid = uigridlayout(mainGrid, [4 11]);
     controlGrid.Layout.Row = 1;
     controlGrid.RowHeight = {24, 32, 32, 32};
-    controlGrid.ColumnWidth = {78, 120, 65, '1x', 70, '1x', 95, 110, 110, 120};
+    controlGrid.ColumnWidth = {78, 120, 65, '1x', 70, '1x', 85, 110, 95, 95, 105};
     controlGrid.ColumnSpacing = 8;
     controlGrid.Padding = [0 0 0 0];
 
@@ -83,11 +83,21 @@ function fig = detecdivCatalogBrowser(varargin)
     currentUserLabel.Layout.Row = 1;
     currentUserLabel.Layout.Column = [6 8];
 
+    loginButton = uibutton(controlGrid, 'push', 'Text', 'Login...', ...
+        'ButtonPushedFcn', @onHubLogin);
+    loginButton.Layout.Row = 1;
+    loginButton.Layout.Column = 9;
+
+    logoutButton = uibutton(controlGrid, 'push', 'Text', 'Logout', ...
+        'ButtonPushedFcn', @onHubLogout);
+    logoutButton.Layout.Row = 1;
+    logoutButton.Layout.Column = 10;
+
     backgroundCheck = uicheckbox(controlGrid, ...
-        'Text', 'Background indexing', ...
+        'Text', 'BG index', ...
         'Value', logical(state.catalogSettings.backgroundIndexing));
     backgroundCheck.Layout.Row = 1;
-    backgroundCheck.Layout.Column = [9 10];
+    backgroundCheck.Layout.Column = 11;
 
     baseUrlLabel = uilabel(controlGrid, 'Text', 'Hub URL', 'FontWeight', 'bold');
     baseUrlLabel.Layout.Row = 2;
@@ -103,7 +113,7 @@ function fig = detecdivCatalogBrowser(varargin)
 
     localMountEdit = uieditfield(controlGrid, 'text', 'Value', state.hubSettings.defaultLocalProjectRoot);
     localMountEdit.Layout.Row = 2;
-    localMountEdit.Layout.Column = [8 10];
+    localMountEdit.Layout.Column = [8 11];
 
     rootLabel = uilabel(controlGrid, 'Text', '', 'FontWeight', 'bold', ...
         'HorizontalAlignment', 'left');
@@ -264,6 +274,45 @@ function fig = detecdivCatalogBrowser(varargin)
         detecdiv_hub_settings_set(state.hubSettings);
         syncUiFromState();
         refreshProjectsTable();
+    end
+
+    function onHubLogin(~, ~)
+        if ~strcmp(state.sourceMode, 'hub')
+            return;
+        end
+
+        [userKey, password] = localPromptHubCredentials(userKeyEdit.Value);
+        if isempty(userKey) || isempty(password)
+            return;
+        end
+
+        state.hubSettings.baseUrl = strtrim(baseUrlEdit.Value);
+        try
+            [sessionInfo, state.hubSettings] = detecdiv_hub_login(userKey, password, state.hubSettings); %#ok<NASGU>
+            userKeyEdit.Value = state.hubSettings.userKey;
+            refreshProjectsTable();
+            setStatus(sprintf('Hub session opened for %s.', state.hubSettings.userKey));
+        catch ME
+            uialert(fig, ME.message, 'Hub Login Failed');
+            setStatus(['Hub login failed: ' ME.message]);
+        end
+    end
+
+    function onHubLogout(~, ~)
+        if ~strcmp(state.sourceMode, 'hub')
+            return;
+        end
+
+        try
+            state.hubSettings = detecdiv_hub_logout(state.hubSettings);
+            state.currentUser = struct();
+            syncUiFromState();
+            refreshProjectsTable('PreserveStatus', true);
+            setStatus('Hub session cleared.');
+        catch ME
+            uialert(fig, ME.message, 'Hub Logout Failed');
+            setStatus(['Hub logout failed: ' ME.message]);
+        end
     end
 
     function onGroupFilterChanged(~, ~)
@@ -1007,6 +1056,8 @@ function fig = detecdivCatalogBrowser(varargin)
         baseUrlEdit.Editable = onOff(strcmp(state.sourceMode, 'hub'));
         localMountEdit.Editable = onOff(strcmp(state.sourceMode, 'hub'));
         userKeyEdit.Editable = onOff(strcmp(state.sourceMode, 'hub'));
+        loginButton.Enable = onOff(strcmp(state.sourceMode, 'hub'));
+        logoutButton.Enable = onOff(strcmp(state.sourceMode, 'hub'));
         groupDropDown.Enable = onOff(strcmp(state.sourceMode, 'hub'));
         ownedOnlyCheck.Enable = onOff(strcmp(state.sourceMode, 'hub'));
         refreshGroupsButton.Enable = onOff(strcmp(state.sourceMode, 'hub'));
@@ -1025,6 +1076,8 @@ function fig = detecdivCatalogBrowser(varargin)
         baseUrlEdit.Editable = onOff(~tf && strcmp(state.sourceMode, 'hub'));
         localMountEdit.Editable = onOff(~tf && strcmp(state.sourceMode, 'hub'));
         userKeyEdit.Editable = onOff(~tf && strcmp(state.sourceMode, 'hub'));
+        loginButton.Enable = onOff(~tf && strcmp(state.sourceMode, 'hub'));
+        logoutButton.Enable = onOff(~tf && strcmp(state.sourceMode, 'hub'));
         groupDropDown.Enable = onOff(~tf && strcmp(state.sourceMode, 'hub'));
         ownedOnlyCheck.Enable = onOff(~tf && strcmp(state.sourceMode, 'hub'));
         refreshGroupsButton.Enable = onOff(~tf && strcmp(state.sourceMode, 'hub'));
@@ -1057,6 +1110,10 @@ function fig = detecdivCatalogBrowser(varargin)
             label = displayName;
         else
             label = sprintf('%s (%s)', displayName, userKey);
+        end
+        authMode = char(string(state.hubSettings.authMode));
+        if ~isempty(authMode)
+            label = sprintf('%s [%s]', label, authMode);
         end
     end
 
@@ -1517,5 +1574,52 @@ function count = localCountStructArray(value)
         count = numel(value);
     else
         count = 0;
+    end
+end
+
+function [userKey, password] = localPromptHubCredentials(defaultUserKey)
+    userKey = '';
+    password = '';
+
+    dlg = uifigure( ...
+        'Name', 'Hub Login', ...
+        'Position', [300 300 360 150], ...
+        'WindowStyle', 'modal', ...
+        'Resize', 'off');
+    grid = uigridlayout(dlg, [3 2]);
+    grid.RowHeight = {24, 32, 42};
+    grid.ColumnWidth = {90, '1x'};
+    grid.Padding = [12 12 12 12];
+
+    uilabel(grid, 'Text', 'User key');
+    userEdit = uieditfield(grid, 'text', 'Value', char(string(defaultUserKey)));
+    userEdit.Layout.Row = 1;
+    userEdit.Layout.Column = 2;
+
+    passwordLabel = uilabel(grid, 'Text', 'Password');
+    passwordLabel.Layout.Row = 2;
+    passwordLabel.Layout.Column = 1;
+    passwordEdit = uieditfield(grid, 'text');
+    passwordEdit.Layout.Row = 2;
+    passwordEdit.Layout.Column = 2;
+    passwordEdit.Value = '';
+
+    buttonGrid = uigridlayout(grid, [1 2]);
+    buttonGrid.Layout.Row = 3;
+    buttonGrid.Layout.Column = [1 2];
+    buttonGrid.ColumnWidth = {'1x', '1x'};
+    buttonGrid.Padding = [0 0 0 0];
+
+    uibutton(buttonGrid, 'push', 'Text', 'Cancel', ...
+        'ButtonPushedFcn', @(~, ~) delete(dlg));
+    uibutton(buttonGrid, 'push', 'Text', 'Login', ...
+        'ButtonPushedFcn', @onSubmit);
+
+    uiwait(dlg);
+
+    function onSubmit(~, ~)
+        userKey = strtrim(char(string(userEdit.Value)));
+        password = char(string(passwordEdit.Value));
+        delete(dlg);
     end
 end

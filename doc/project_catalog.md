@@ -103,6 +103,8 @@ In hub mode:
 - `Local Mount` is the client-side path that maps the same storage over Samba
 - saving the configuration stores a remote-to-local path-prefix mapping
 - `User` sets the hub identity used for ownership and visibility filtering
+- `Login...` opens a password-backed hub session and stores the bearer token locally
+- `Logout` clears the stored bearer token while preserving the local hub configuration
 - `Index Root` calls `POST /indexing` on the hub instead of the local MATLAB indexer
 - `Refresh` lists projects from the API
 - `Load Project` resolves the local `.mat` path from the remote metadata and the saved mapping
@@ -118,6 +120,18 @@ hub = detecdiv_hub_settings_get();
 hub.baseUrl = 'http://127.0.0.1:8000';
 hub.userKey = 'localdev';
 detecdiv_hub_settings_set(hub);
+```
+
+Open a password-backed session explicitly:
+
+```matlab
+[sessionInfo, hub] = detecdiv_hub_login('localdev', 'change_me');
+```
+
+Clear the stored token:
+
+```matlab
+hub = detecdiv_hub_logout();
 ```
 
 List projects from the API:
@@ -155,8 +169,8 @@ The resolver tries:
 - then `hub.storageRootMap.<storage_root.name>` if present
 - then any saved remote-prefix to local-prefix mapping in `hub.pathPrefixMap`
 
-If the hub enforces per-user visibility, set `hub.userKey` so MATLAB sends
-`?user_key=...` on API requests.
+If the hub still allows legacy identity mode, `hub.userKey` remains the fallback
+used to send `?user_key=...` on API requests when no bearer token is stored.
 
 The browser uses these governance endpoints when running against the hub:
 
