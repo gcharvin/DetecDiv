@@ -1,0 +1,21 @@
+Run ID: pipeline_gui_run_1
+Status: done
+Project: C:\Users\charvin\SynologyDrive\Data\temp\cavityproject
+Pipeline: pipeline_gui
+Created: 07-Mar-2026 10:13:26
+Updated: 07-Mar-2026 10:24:41
+
+Summary
+  totalNodes: 3
+  doneNodes: 3
+  skippedNodes: 0
+  failedNodes: 0
+  startedAt: 07-Mar-2026 10:13:58
+  endedAt: 07-Mar-2026 10:24:41
+
+Nodes
+- dataloader_1 [dataLoader] status=done runPolicy=resume existingPolicy=skip duration=10.772s fov=7->7 roi=51->51
+- roipattern_1 [roiPattern] status=done runPolicy=resume existingPolicy=skip duration=0.067s fov=7->7 roi=51->51
+- roiextract_1 [roiExtract] status=done runPolicy=resume existingPolicy=skip duration=631.526s fov=7->7 roi=51->51
+
+History

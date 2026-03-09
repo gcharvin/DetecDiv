@@ -68,6 +68,14 @@ function ctx = process(ctx)
         p.channels = ctx.channels;
     end
 
+    existingPolicy = resolveExistingPolicy(ctx, p);
+    switch existingPolicy
+        case {'append','upsert'}
+            p.extend = true;
+        case 'replace'
+            p.extend = false;
+    end
+
     resume = true;
     if isfield(ctx,'resume'), resume = logical(ctx.resume); end
     saveProgress = true;
@@ -103,6 +111,13 @@ function ctx = process(ctx)
             todo = setdiff(1:n, done);
         else
             todo = 1:n;
+        end
+
+        [todo, existingTodo] = filterTodoByExistingPolicy(f.roi, todo, existingPolicy);
+        if strcmp(existingPolicy, 'error') && ~isempty(existingTodo)
+            error('roiExtract.process:ExistingOutputs', ...
+                'ROI extraction outputs already exist for FOV %d, ROI(s) %s.', ...
+                i, mat2str(existingTodo));
         end
 
         if isempty(todo)
@@ -247,6 +262,85 @@ function policy = resolveCachePolicy(ctx)
         case {'memory','disk','auto'}
         otherwise
             policy = 'auto';
+    end
+end
+
+function policy = resolveExistingPolicy(ctx, p)
+    policy = '';
+    try
+        if nargin >= 2 && isstruct(p) && isfield(p,'existingPolicy') && ~isempty(p.existingPolicy)
+            policy = char(string(p.existingPolicy));
+        elseif isfield(ctx,'executionPolicy') && isstruct(ctx.executionPolicy) && ...
+                isfield(ctx.executionPolicy,'existingPolicy') && ~isempty(ctx.executionPolicy.existingPolicy)
+            policy = char(string(ctx.executionPolicy.existingPolicy));
+        elseif isfield(ctx,'io') && isstruct(ctx.io) && isfield(ctx.io,'effectiveExistingPolicy') && ...
+                ~isempty(ctx.io.effectiveExistingPolicy)
+            policy = char(string(ctx.io.effectiveExistingPolicy));
+        elseif isfield(ctx,'io') && isstruct(ctx.io) && isfield(ctx.io,'existingPolicy') && ...
+                ~isempty(ctx.io.existingPolicy)
+            policy = char(string(ctx.io.existingPolicy));
+        end
+    catch
+        policy = '';
+    end
+
+    policy = lower(strtrim(policy));
+    switch policy
+        case {'replace','append','skip','error','upsert'}
+        otherwise
+            policy = 'replace';
+    end
+end
+
+function [todo, existingTodo] = filterTodoByExistingPolicy(roiList, todo, existingPolicy)
+    existingTodo = [];
+    if isempty(todo) || ~any(strcmp(existingPolicy, {'skip','error'}))
+        return;
+    end
+
+    keepMask = true(size(todo));
+    for k = 1:numel(todo)
+        idx = todo(k);
+        if idx < 1 || idx > numel(roiList)
+            continue;
+        end
+        if roiExtractOutputExists(roiList(idx))
+            existingTodo(end+1) = idx; %#ok<AGROW>
+            keepMask(k) = false;
+        end
+    end
+
+    if strcmp(existingPolicy, 'skip')
+        todo = todo(keepMask);
+    end
+end
+
+function tf = roiExtractOutputExists(r)
+    tf = false;
+    try
+        [~, tf] = r.getH5Filename();
+        if tf
+            return;
+        end
+    catch
+    end
+
+    try
+        if isprop(r,'path') && ~isempty(r.path) && isprop(r,'id') && ~isempty(r.id)
+            tf = isfile(fullfile(r.path, ['im_' char(string(r.id)) '.h5']));
+            if tf
+                return;
+            end
+        end
+    catch
+    end
+
+    try
+        if isprop(r,'extraction') && isstruct(r.extraction) && isfield(r.extraction,'status') && ...
+                strcmpi(char(string(r.extraction.status)), 'done')
+            tf = true;
+        end
+    catch
     end
 end
 

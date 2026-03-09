@@ -66,6 +66,8 @@ p.addParameter('Extract', true, @(x) islogical(x) || isnumeric(x));
 p.addParameter('ExtractFrames', [], @(x) isempty(x) || isnumeric(x) || iscell(x));
 p.addParameter('ExtractChannels', [], @(x) isempty(x) || isnumeric(x) || iscell(x));
 p.addParameter('SaveArgs', {}, @(x) iscell(x));
+p.addParameter('ExistingPolicy', 'upsert', @(x) ischar(x) || isstring(x));
+p.addParameter('IdPrefix', '', @(x) ischar(x) || isstring(x));
 p.parse(varargin{:});
 
 fovSelection = p.Results.FOV;
@@ -76,6 +78,9 @@ doExtract = logical(p.Results.Extract);
 extractFrames = p.Results.ExtractFrames;
 extractChannels = p.Results.ExtractChannels;
 extraSaveArgs = p.Results.SaveArgs;
+existingPolicy = normalizeExistingPolicyLocal(p.Results.ExistingPolicy, 'upsert');
+idPrefix = char(string(p.Results.IdPrefix));
+idPrefix = regexprep(idPrefix, '[^A-Za-z0-9_]', '_');
 
 if mod(numel(extraSaveArgs), 2) ~= 0
     error('createTrackedCellROIs:InvalidSaveArgs', ...
@@ -127,15 +132,19 @@ for idxF = 1:numel(fovSelection)
     end
 
     fovObj = shallowObj.fov(fovId);
-    removedTracked = clearTrackedCellROIs(fovObj);
-    if ~isempty(removedTracked)
-        fprintf('Removed %d tracked cell ROI(s) from FOV %s before regeneration.\n', numel(removedTracked), fovObj.id);
-    end
     roiIndices = resolveROISelection(fovObj, roiSelection, idxF);
     if isempty(roiIndices)
         warning('createTrackedCellROIs:NoROI', ...
             'No ROI to process for FOV %s (index %d).', fovObj.id, fovId);
         continue;
+    end
+
+    if strcmp(existingPolicy, 'replace')
+        parentIds = resolveParentROIIds(fovObj, roiIndices);
+        removedTracked = clearTrackedCellROIs(fovObj, parentIds, idPrefix);
+        if ~isempty(removedTracked)
+            fprintf('Removed %d tracked cell ROI(s) from FOV %s before regeneration.\n', numel(removedTracked), fovObj.id);
+        end
     end
 
     fovOutputPath = fullfile(shallowObj.io.path, shallowObj.io.file, fovObj.id);
@@ -156,6 +165,17 @@ for idxF = 1:numel(fovSelection)
         if contains(roiObj.id, '_cell')
             % already a tracked ROI, skip to avoid regenerating children of children
             continue;
+        end
+        if any(strcmp(existingPolicy, {'skip','error'}))
+            hasExistingTracked = parentHasTrackedChildren(fovObj, roiObj.id, idPrefix);
+            if hasExistingTracked
+                if strcmp(existingPolicy, 'error')
+                    error('createTrackedCellROIs:ExistingTrackedROI', ...
+                        'Tracked ROIs already exist for parent ROI %s in FOV %s.', roiObj.id, fovObj.id);
+                end
+                fprintf('Skipping parent ROI %s in FOV %s because tracked ROIs already exist.\n', roiObj.id, fovObj.id);
+                continue;
+            end
         end
         if isempty(roiObj.path)
             roiObj.path = fovOutputPath;
@@ -497,16 +517,25 @@ end
 
 end
 
-function removedIdx = clearTrackedCellROIs(fovObj)
+function removedIdx = clearTrackedCellROIs(fovObj, parentIds, idPrefix)
 removedIdx = [];
 if isempty(fovObj.roi)
     return;
+end
+if nargin < 2 || isempty(parentIds)
+    parentIds = {};
+end
+if nargin < 3
+    idPrefix = '';
 end
 
 toRemove = [];
 for idx = 2:numel(fovObj.roi)
     roiObj = fovObj.roi(idx);
-    if isTrackedCellROIObject(roiObj) || contains(roiObj.id, '_cell')
+    if ~(isTrackedCellROIObject(roiObj) || contains(roiObj.id, '_cell'))
+        continue;
+    end
+    if isempty(parentIds) || matchesTrackedParentPrefix(roiObj, parentIds, idPrefix)
         toRemove(end+1) = idx; %#ok<AGROW>
     end
 end
@@ -528,6 +557,68 @@ end
 
 fovObj.removeROI(toRemove);
 removedIdx = toRemove;
+end
+
+function tf = parentHasTrackedChildren(fovObj, parentId, idPrefix)
+tf = false;
+if isempty(fovObj.roi)
+    return;
+end
+parentIds = {char(string(parentId))};
+for idx = 2:numel(fovObj.roi)
+    roiObj = fovObj.roi(idx);
+    if ~(isTrackedCellROIObject(roiObj) || contains(roiObj.id, '_cell'))
+        continue;
+    end
+    if matchesTrackedParentPrefix(roiObj, parentIds, idPrefix)
+        tf = true;
+        return;
+    end
+end
+end
+
+function tf = matchesTrackedParentPrefix(roiObj, parentIds, idPrefix)
+tf = false;
+roiId = char(string(roiObj.id));
+prefix = char(string(idPrefix));
+for i = 1:numel(parentIds)
+    parentId = char(string(parentIds{i}));
+    if isempty(prefix)
+        token = [parentId '_cell'];
+    else
+        token = [parentId '_' prefix '_cell'];
+    end
+    if startsWith(roiId, token)
+        tf = true;
+        return;
+    end
+end
+end
+
+function parentIds = resolveParentROIIds(fovObj, roiIndices)
+parentIds = {};
+for i = 1:numel(roiIndices)
+    idx = roiIndices(i);
+    if idx < 1 || idx > numel(fovObj.roi)
+        continue;
+    end
+    roiId = char(string(fovObj.roi(idx).id));
+    if contains(roiId, '_cell')
+        continue;
+    end
+    parentIds{end+1} = roiId; %#ok<AGROW>
+end
+parentIds = unique(parentIds, 'stable');
+end
+
+function newId = buildTrackedChildId(parentId, cellId, idPrefix)
+parentId = char(string(parentId));
+idPrefix = char(string(idPrefix));
+if isempty(idPrefix)
+    newId = sprintf('%s_cell%03d', parentId, round(cellId));
+else
+    newId = sprintf('%s_%s_cell%03d', parentId, idPrefix, round(cellId));
+end
 end
 
 function tf = isTrackedCellROIObject(roiObj)
@@ -587,6 +678,26 @@ if iscell(roiSelection)
 end
 
 roiIndices = [];
+end
+
+function out = normalizeExistingPolicyLocal(policy, fallback)
+out = lower(strtrim(char(string(policy))));
+switch out
+    case {'', 'default'}
+        out = fallback;
+    case {'replace', 'overwrite', 'reset'}
+        out = 'replace';
+    case {'append', 'add'}
+        out = 'append';
+    case {'skip', 'resume'}
+        out = 'skip';
+    case {'error', 'fail'}
+        out = 'error';
+    case {'upsert', 'merge'}
+        out = 'upsert';
+    otherwise
+        out = fallback;
+end
 end
 
 function [labelStack, pixIdx, channelName] = extractLabelStack(roiObj, channelOption)
@@ -818,7 +929,7 @@ function [created, createdCount, processedFOV, createdNow] = processTrackedObjec
         frameList = find(presence)';
 
         % 3) créer ROI fille
-        newId = sprintf('%s_cell%03d', roiObj.id, round(cellId));
+        newId = buildTrackedChildId(roiObj.id, round(cellId), idPrefix);
         existingIds = string({fovObj.roi.id});
         duplicateIdx = find(existingIds == string(newId));
         if ~isempty(duplicateIdx)

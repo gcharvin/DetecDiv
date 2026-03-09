@@ -38,6 +38,27 @@ function ctx = process(ctx)
 
     p = roiTracked.setparam(p);
 
+    existingPolicy = 'upsert';
+    if isfield(ctx, 'executionPolicy') && isstruct(ctx.executionPolicy) && isfield(ctx.executionPolicy, 'existingPolicy') ...
+            && ~isempty(ctx.executionPolicy.existingPolicy)
+        existingPolicy = normalizeExistingPolicyLocal(ctx.executionPolicy.existingPolicy, 'upsert');
+    elseif isfield(p, 'existingPolicy') && ~isempty(p.existingPolicy)
+        existingPolicy = normalizeExistingPolicyLocal(p.existingPolicy, 'upsert');
+    elseif isfield(ctx, 'io') && isstruct(ctx.io) && isfield(ctx.io, 'effectiveExistingPolicy') && ~isempty(ctx.io.effectiveExistingPolicy)
+        existingPolicy = normalizeExistingPolicyLocal(ctx.io.effectiveExistingPolicy, 'upsert');
+    end
+
+    outputName = '';
+    if isfield(ctx, 'names') && isstruct(ctx.names) && isfield(ctx.names, 'outputName') && ~isempty(ctx.names.outputName)
+        outputName = char(string(ctx.names.outputName));
+    elseif isfield(p, 'outputName') && ~isempty(p.outputName)
+        outputName = char(string(p.outputName));
+    end
+
+    if strcmp(existingPolicy, 'append') && isempty(strtrim(outputName))
+        outputName = char(string(getRunIdLocal(ctx)));
+    end
+
     if isfield(ctx, 'fovIndex') && ~isempty(ctx.fovIndex)
         p.fovIndex = round(double(ctx.fovIndex(:)'));
         p.fovIndex = p.fovIndex(isfinite(p.fovIndex) & p.fovIndex >= 1);
@@ -59,6 +80,10 @@ function ctx = process(ctx)
     end
 
     callArgs = [callArgs, {'Extract', logical(p.extract)}]; %#ok<AGROW>
+    callArgs = [callArgs, {'ExistingPolicy', existingPolicy}]; %#ok<AGROW>
+    if ~isempty(outputName)
+        callArgs = [callArgs, {'IdPrefix', outputName}]; %#ok<AGROW>
+    end
 
     if ~isempty(p.extractFrames)
         callArgs = [callArgs, {'ExtractFrames', p.extractFrames}]; %#ok<AGROW>
@@ -83,6 +108,10 @@ function ctx = process(ctx)
     ctx.shallow = shallowObj;
     ctx.roiTracked = p;
     ctx.params = p;
+    ctx.executionPolicy.existingPolicy = existingPolicy;
+    if ~isempty(outputName)
+        ctx.names.outputName = outputName;
+    end
     ctx.createdTracked = created;
     ctx.roiList = collectROIsLocal(shallowObj.fov);
 end
@@ -108,6 +137,40 @@ for i = 1:numel(fovList)
         end
     catch
     end
+end
+
+function out = normalizeExistingPolicyLocal(policy, fallback)
+out = char(string(policy));
+out = lower(strtrim(out));
+switch out
+    case {'', 'default'}
+        out = fallback;
+    case {'replace', 'overwrite', 'reset'}
+        out = 'replace';
+    case {'append', 'add'}
+        out = 'append';
+    case {'skip', 'resume'}
+        out = 'skip';
+    case {'error', 'fail'}
+        out = 'error';
+    case {'upsert', 'merge'}
+        out = 'upsert';
+    otherwise
+        out = fallback;
+end
+end
+
+function runId = getRunIdLocal(ctx)
+runId = 'run';
+if isfield(ctx, 'runId') && ~isempty(ctx.runId)
+    runId = char(string(ctx.runId));
+elseif isfield(ctx, 'run') && isstruct(ctx.run) && isfield(ctx.run, 'id') && ~isempty(ctx.run.id)
+    runId = char(string(ctx.run.id));
+end
+runId = regexprep(runId, '[^A-Za-z0-9_]', '_');
+if isempty(runId)
+    runId = 'run';
+end
 end
 end
 

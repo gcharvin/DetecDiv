@@ -14,6 +14,10 @@ classdef pipelineRunGUI < matlab.apps.AppBase
         ExistingPolicyDropDown      matlab.ui.control.DropDown
         CachePolicyDropDownLabel    matlab.ui.control.Label
         CachePolicyDropDown         matlab.ui.control.DropDown
+        InputSourceDropDownLabel    matlab.ui.control.Label
+        InputSourceDropDown         matlab.ui.control.DropDown
+        FovSelectionEditFieldLabel  matlab.ui.control.Label
+        FovSelectionEditField       matlab.ui.control.EditField
         NodeTableLabel              matlab.ui.control.Label
         NodeTable                   matlab.ui.control.Table
         ParamTableLabel             matlab.ui.control.Label
@@ -57,6 +61,9 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             end
 
             [spec, templateId, templatePath] = normalizePipelineSpec(app, pipeIn);
+            if isempty(templatePath)
+                templatePath = inferTemplatePathFromProject(app, shallowObj, templateId);
+            end
             app.Data.pipelineSpec = spec;
             app.Data.templateId = templateId;
             app.Data.templatePath = templatePath;
@@ -74,6 +81,9 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             app.RunPolicyDropDown.Value = 'resume';
             app.ExistingPolicyDropDown.Value = '<module default>';
             app.CachePolicyDropDown.Value = 'auto';
+            app.InputSourceDropDown.Value = 'Pipeline start (dataloader)';
+            app.FovSelectionEditField.Value = '';
+            updateRunSourceSelectionUi(app);
         end
 
         function [spec, templateId, templatePath] = normalizePipelineSpec(app, pipeIn) %#ok<INUSD>
@@ -102,6 +112,32 @@ classdef pipelineRunGUI < matlab.apps.AppBase
                 if isfield(pipeIn, 'path') && ~isempty(pipeIn.path)
                     templatePath = char(string(pipeIn.path));
                 end
+            end
+        end
+
+        function templatePath = inferTemplatePathFromProject(app, shallowObj, templateId) %#ok<INUSD>
+            templatePath = '';
+            if isempty(shallowObj) || ~isa(shallowObj, 'shallow')
+                return;
+            end
+            try
+                if ~isprop(shallowObj,'runProfiles') || isempty(shallowObj.runProfiles) || ...
+                        ~isfield(shallowObj.runProfiles,'pipeline') || isempty(shallowObj.runProfiles.pipeline)
+                    return;
+                end
+                p = shallowObj.runProfiles.pipeline;
+                if isfield(p,'defaultTemplatePath') && ~isempty(p.defaultTemplatePath)
+                    candidate = char(string(p.defaultTemplatePath));
+                    if exist(candidate, 'file') == 2
+                        if nargin < 3 || isempty(templateId) || ...
+                                ~isfield(p,'defaultTemplateId') || isempty(p.defaultTemplateId) || ...
+                                strcmp(char(string(p.defaultTemplateId)), char(string(templateId)))
+                            templatePath = fileparts(candidate);
+                        end
+                    end
+                end
+            catch
+                templatePath = '';
             end
         end
 
@@ -203,6 +239,11 @@ classdef pipelineRunGUI < matlab.apps.AppBase
                         'driftMaxShift',[],'scale',[],'cropDrift',[],'extend',[],'forceChannelNames',[]);
                 case {'processor','classifier'}
                     dflt = struct('roiList',[],'channels',[],'frames',[]);
+                    if strcmp(t, 'classifier')
+                        dflt.moduleVar = '';
+                        dflt.modulePath = '';
+                        dflt.moduleId = '';
+                    end
                 otherwise
                     dflt = struct();
             end
@@ -782,6 +823,10 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             openSelectedNodeGUI(app);
         end
 
+        function InputSourceDropDownValueChanged(app, event)
+            updateRunSourceSelectionUi(app);
+        end
+
         function CreateRunButtonPushed(app, event)
             shallowObj = resolveSelectedProject(app);
             if isempty(shallowObj)
@@ -805,8 +850,38 @@ classdef pipelineRunGUI < matlab.apps.AppBase
                 runId = suggestRunId(app, shallowObj, app.Data.templateId);
             end
             descr = strtrim(app.DescriptionEditField.Value);
+            templatePath = app.Data.templatePath;
+            if isempty(templatePath)
+                templatePath = inferTemplatePathFromProject(app, shallowObj, app.Data.templateId);
+                if ~isempty(templatePath)
+                    app.Data.templatePath = templatePath;
+                end
+            end
 
             nodes = app.Data.pipelineSpec.nodes;
+            selectedMask = cell2mat(app.NodeTable.Data(:,1));
+            inputSource = char(string(app.InputSourceDropDown.Value));
+            selectedFovs = parseIndexSelection(app, app.FovSelectionEditField.Value);
+            if ~strcmpi(inputSource, 'Pipeline start (dataloader)')
+                hasSelectedLoader = false;
+                for ii = 1:numel(nodes)
+                    if selectedMask(ii) && strcmpi(char(string(nodes(ii).type)), 'dataloader')
+                        hasSelectedLoader = true;
+                        break;
+                    end
+                end
+                if hasSelectedLoader
+                    uialert(app.UIFigure, ...
+                        'Disable the dataloader node when starting from existing project FOVs.', ...
+                        'Incompatible run source', 'Icon', 'warning');
+                    return;
+                end
+            end
+            [sourceOk, sourceMsg] = validateRunSourceAvailability(app, shallowObj, inputSource, selectedFovs);
+            if ~sourceOk
+                uialert(app.UIFigure, sourceMsg, 'Run source unavailable', 'Icon', 'warning');
+                return;
+            end
             ctx = struct();
             ctx.allowGUI = true;
             ctx.shallow = shallowObj;
@@ -815,6 +890,7 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             ctx.run.runId = runId;
             ctx.run.runPolicy = char(string(app.RunPolicyDropDown.Value));
             ctx.run.resume = strcmpi(ctx.run.runPolicy, 'resume');
+            ctx.run.inputSource = inputSource;
             ctx.run.selectedNodes = {};
             ctx.run.nodeParams = struct('id',{},'params',{});
             ctx.io = struct();
@@ -824,6 +900,10 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             end
             ctx.io.cachePolicy = char(string(app.CachePolicyDropDown.Value));
             ctx.store = struct('cacheMode', ctx.io.cachePolicy);
+            ctx.sel = struct();
+            ctx.sel.fovs = selectedFovs;
+            ctx.pipelineSpec = app.Data.pipelineSpec;
+            ctx.pipelineRef = struct('id', app.Data.templateId, 'path', templatePath, 'version', '');
 
             for i = 1:numel(nodes)
                 if ~selectedMask(i)
@@ -836,11 +916,12 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             end
 
             try
-                runObj = pipelineRunNew(shallowObj, app.Data.templateId, app.Data.templatePath, ...
+                runObj = pipelineRunNew(shallowObj, app.Data.templateId, templatePath, ...
                     'runId', runId, 'description', descr, 'ctx', ctx, 'status', 'new');
-                pipelineRunSave(runObj);
-                shallowSave(shallowObj, 'shallowObj');
-                uialert(app.UIFigure, ['Pipeline run created: ' runObj.runId], 'Success', 'Icon', 'success');
+                uialert(app.UIFigure, ...
+                    ['Pipeline run created in memory: ' runObj.runId newline ...
+                     'It will be saved when you launch it.'], ...
+                    'Success', 'Icon', 'success');
                 app.RunIdEditField.Value = suggestRunId(app, shallowObj, app.Data.templateId);
             catch ME
                 uialert(app.UIFigure, ME.message, 'Create run failed', 'Icon', 'error');
@@ -854,13 +935,184 @@ classdef pipelineRunGUI < matlab.apps.AppBase
         function UIFigureCloseRequest(app, event)
             delete(app);
         end
+
+        function updateRunSourceSelectionUi(app)
+            src = char(string(app.InputSourceDropDown.Value));
+            switch lower(src)
+                case 'pipeline start (dataloader)'
+                    app.FovSelectionEditFieldLabel.Text = 'Selection';
+                    app.FovSelectionEditField.Placeholder = 'Not used when starting from the dataloader';
+                    app.FovSelectionEditField.Enable = 'off';
+                case 'existing project fovs'
+                    app.FovSelectionEditFieldLabel.Text = 'Project FOVs';
+                    app.FovSelectionEditField.Placeholder = 'empty = all | ex: 1 3 5 or 1:7';
+                    app.FovSelectionEditField.Enable = 'on';
+                case 'existing rois'
+                    app.FovSelectionEditFieldLabel.Text = 'ROI source';
+                    app.FovSelectionEditField.Placeholder = 'FOVs whose existing ROI sets seed the run';
+                    app.FovSelectionEditField.Enable = 'on';
+                case 'existing masks'
+                    app.FovSelectionEditFieldLabel.Text = 'Mask source';
+                    app.FovSelectionEditField.Placeholder = 'FOVs whose existing masks seed the run';
+                    app.FovSelectionEditField.Enable = 'on';
+                case 'existing dataseries'
+                    app.FovSelectionEditFieldLabel.Text = 'DataSeries source';
+                    app.FovSelectionEditField.Placeholder = 'FOVs whose existing dataseries seed the run';
+                    app.FovSelectionEditField.Enable = 'on';
+                otherwise
+                    app.FovSelectionEditFieldLabel.Text = 'Selection';
+                    app.FovSelectionEditField.Placeholder = 'empty = all | ex: 1 3 5 or 1:7';
+                    app.FovSelectionEditField.Enable = 'on';
+            end
+        end
+
+        function vals = parseIndexSelection(app, raw) %#ok<INUSD>
+            vals = [];
+            raw = char(string(raw));
+            raw = strtrim(raw);
+            if isempty(raw)
+                return;
+            end
+            raw = regexprep(raw, '[;,]+', ' ');
+            if contains(raw, ':')
+                try
+                    vals = eval(['[' raw ']']); %#ok<EVLDIR>
+                catch
+                    vals = [];
+                end
+            else
+                parts = regexp(raw, '\s+', 'split');
+                nums = str2double(parts);
+                nums = nums(~isnan(nums));
+                vals = nums;
+            end
+            vals = unique(round(double(vals(:)')), 'stable');
+            vals = vals(isfinite(vals) & vals >= 1);
+        end
+
+        function [ok, msg] = validateRunSourceAvailability(app, shallowObj, inputSource, selectedFovs)
+            ok = true;
+            msg = '';
+            if isempty(shallowObj) || ~isa(shallowObj, 'shallow')
+                ok = false;
+                msg = 'No valid project selected.';
+                return;
+            end
+            if strcmpi(inputSource, 'Pipeline start (dataloader)')
+                return;
+            end
+
+            fovs = selectProjectFovs(app, shallowObj, selectedFovs);
+            if isempty(fovs)
+                ok = false;
+                msg = 'No project FOV matches the current run selection.';
+                return;
+            end
+
+            rois = collectProjectRois(app, fovs);
+            switch lower(char(string(inputSource)))
+                case 'existing project fovs'
+                    return;
+                case 'existing rois'
+                    ok = ~isempty(rois);
+                    if ~ok
+                        msg = 'No ROI found in the selected project FOVs.';
+                    end
+                case 'existing masks'
+                    ok = ~isempty(collectProjectMasks(app, rois));
+                    if ~ok
+                        msg = 'No mask-like ROI channels found in the selected project FOVs.';
+                    end
+                case 'existing dataseries'
+                    ok = ~isempty(collectProjectDataSeries(app, rois));
+                    if ~ok
+                        msg = 'No dataseries found in the selected project FOVs.';
+                    end
+                otherwise
+                    ok = true;
+            end
+        end
+
+        function fovs = selectProjectFovs(app, shallowObj, selectedFovs) %#ok<INUSD>
+            fovs = [];
+            try
+                allFovs = shallowObj.fov;
+            catch
+                return;
+            end
+            if isempty(selectedFovs)
+                fovs = allFovs;
+                return;
+            end
+            idx = selectedFovs(selectedFovs >= 1 & selectedFovs <= numel(allFovs));
+            if isempty(idx)
+                return;
+            end
+            fovs = allFovs(idx);
+        end
+
+        function rois = collectProjectRois(app, fovs) %#ok<INUSD>
+            rois = [];
+            for i = 1:numel(fovs)
+                try
+                    r = fovs(i).roi;
+                    if ~isempty(r)
+                        rois = [rois r(:)']; %#ok<AGROW>
+                    end
+                catch
+                end
+            end
+        end
+
+        function masks = collectProjectMasks(app, rois) %#ok<INUSD>
+            masks = {};
+            if isempty(rois)
+                return;
+            end
+            try
+                r0 = rois(1);
+                names = {};
+                if isfield(r0.display,'channel') && ~isempty(r0.display.channel)
+                    names = r0.display.channel;
+                end
+                keep = false(1, numel(names));
+                for i = 1:numel(names)
+                    nm = lower(char(string(names{i})));
+                    keep(i) = contains(nm, 'mask') || contains(nm, 'result') || contains(nm, 'track');
+                end
+                masks = names(keep);
+            catch
+                masks = {};
+            end
+        end
+
+        function ds = collectProjectDataSeries(app, rois) %#ok<INUSD>
+            ds = {};
+            for i = 1:numel(rois)
+                try
+                    r = rois(i);
+                    if isempty(r.data)
+                        r.load('data');
+                    end
+                    for k = 1:numel(r.data)
+                        if isprop(r.data(k), 'groupid') && ~isempty(r.data(k).groupid)
+                            ds{end+1} = char(string(r.data(k).groupid)); %#ok<AGROW>
+                        end
+                    end
+                catch
+                end
+            end
+            if ~isempty(ds)
+                ds = unique(ds, 'stable');
+            end
+        end
     end
 
     methods (Access = private)
 
         function createComponents(app)
             app.UIFigure = uifigure('Visible','off');
-            app.UIFigure.Position = [100 100 840 660];
+            app.UIFigure.Position = [100 100 900 710];
             app.UIFigure.Name = 'Pipeline Run Builder';
             app.UIFigure.CloseRequestFcn = createCallbackFcn(app, @UIFigureCloseRequest, true);
 
@@ -921,8 +1173,33 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             app.CachePolicyDropDown.Position = [568 590 120 22];
             app.CachePolicyDropDown.Value = 'auto';
 
+            app.InputSourceDropDownLabel = uilabel(app.UIFigure);
+            app.InputSourceDropDownLabel.HorizontalAlignment = 'right';
+            app.InputSourceDropDownLabel.Position = [13 554 72 22];
+            app.InputSourceDropDownLabel.Text = 'Run source';
+
+            app.InputSourceDropDown = uidropdown(app.UIFigure);
+            app.InputSourceDropDown.Items = { ...
+                'Pipeline start (dataloader)', ...
+                'Existing project FOVs', ...
+                'Existing ROIs', ...
+                'Existing masks', ...
+                'Existing dataSeries'};
+            app.InputSourceDropDown.Position = [96 554 180 22];
+            app.InputSourceDropDown.Value = 'Pipeline start (dataloader)';
+            app.InputSourceDropDown.ValueChangedFcn = createCallbackFcn(app, @InputSourceDropDownValueChanged, true);
+
+            app.FovSelectionEditFieldLabel = uilabel(app.UIFigure);
+            app.FovSelectionEditFieldLabel.HorizontalAlignment = 'right';
+            app.FovSelectionEditFieldLabel.Position = [289 554 98 22];
+            app.FovSelectionEditFieldLabel.Text = 'Project FOVs';
+
+            app.FovSelectionEditField = uieditfield(app.UIFigure, 'text');
+            app.FovSelectionEditField.Position = [401 554 287 22];
+            app.FovSelectionEditField.Placeholder = 'empty = all | ex: 1 3 5 or 1:7';
+
             app.NodeTableLabel = uilabel(app.UIFigure);
-            app.NodeTableLabel.Position = [20 553 99 22];
+            app.NodeTableLabel.Position = [20 518 99 22];
             app.NodeTableLabel.Text = 'Pipeline nodes';
 
             app.NodeTable = uitable(app.UIFigure);
@@ -931,7 +1208,7 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             app.NodeTable.ColumnEditable = [true false false false];
             app.NodeTable.CellEditCallback = createCallbackFcn(app, @NodeTableCellEdit, true);
             app.NodeTable.SelectionChangedFcn = createCallbackFcn(app, @NodeTableSelectionChanged, true);
-            app.NodeTable.Position = [20 304 800 240];
+            app.NodeTable.Position = [20 304 860 205];
 
             app.ParamTableLabel = uilabel(app.UIFigure);
             app.ParamTableLabel.Position = [20 272 220 22];
@@ -942,7 +1219,7 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             app.ParamTable.RowName = {};
             app.ParamTable.ColumnEditable = [false false true];
             app.ParamTable.CellEditCallback = createCallbackFcn(app, @ParamTableCellEdit, true);
-            app.ParamTable.Position = [20 64 800 200];
+            app.ParamTable.Position = [20 64 860 200];
 
             app.OpenNodeGUIButton = uibutton(app.UIFigure, 'push');
             app.OpenNodeGUIButton.Position = [20 20 160 28];
@@ -950,12 +1227,12 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             app.OpenNodeGUIButton.ButtonPushedFcn = createCallbackFcn(app, @OpenNodeGUIButtonPushed, true);
 
             app.CreateRunButton = uibutton(app.UIFigure, 'push');
-            app.CreateRunButton.Position = [560 20 120 28];
+            app.CreateRunButton.Position = [620 20 120 28];
             app.CreateRunButton.Text = 'Create run';
             app.CreateRunButton.ButtonPushedFcn = createCallbackFcn(app, @CreateRunButtonPushed, true);
 
             app.CloseButton = uibutton(app.UIFigure, 'push');
-            app.CloseButton.Position = [700 20 120 28];
+            app.CloseButton.Position = [760 20 120 28];
             app.CloseButton.Text = 'Close';
             app.CloseButton.ButtonPushedFcn = createCallbackFcn(app, @CloseButtonPushed, true);
 
