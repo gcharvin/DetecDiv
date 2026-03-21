@@ -11,6 +11,8 @@ function hLine = score_displayDataPanel(ax, groupIdx, layoutOptions, roiobj)
 
 ax.XTickMode = 'manual';
 ax.XTickLabelMode = 'manual';
+ax.XScale = 'linear';
+ax.YScale = 'linear';
 
 % IMPORTANT: éviter d'hériter des ticks/labels d'un panel précédent
 set(ax, 'YTickMode', 'auto', 'YTickLabelMode', 'auto');
@@ -96,6 +98,9 @@ if numel(pix)
     xbounds = data.groupProperties{pix,3};
 end
 
+[xBoundsParsed, xBoundsIsLog] = parseAxisBounds(xbounds);
+[yBoundsParsed, yBoundsIsLog] = parseAxisBounds(ybounds);
+
 % --- Axe X (minutes) ---
 if timeoffset
     xdata = ((1:size(ydata,1)) - layoutOptions.frames(1)) * framerate;
@@ -113,7 +118,7 @@ for i = 1:size(ydata,2)
     str{i} = varname{i};
 end
 
-if plottype=="Plot"
+if strcmpi(string(plottype), "Plot")
 
     % --- Plot lignes ---
     cmap = eval([layoutOptions.dataColormap '(' num2str(size(ydata,2)) ')']);
@@ -129,7 +134,7 @@ if plottype=="Plot"
         col = data.plotProperties{dataIndices(i),4};
         rgb = parseRGBstring(col);
 
-        if col=="k" || col=="auto"
+        if strcmpi(string(col), "k") || strcmpi(string(col), "auto")
             color = cmap(cc,:);
             cc = cc + 1;
         elseif numel(rgb)
@@ -213,7 +218,7 @@ if plottype=="Plot"
         amax = xMarker + layoutOptions.trackWindow * framerate;
         ax.UserData.xlim = [amin amax];
     else
-        if isempty(xbounds) || xbounds=="auto"
+        if isempty(xBoundsParsed)
             amin = min(xdata);
             if amin>0, amin = 0.95*amin-0.01; else, amin = 1.05*amin-0.01; end
 
@@ -222,7 +227,7 @@ if plottype=="Plot"
 
             ax.UserData.xlim = 'auto';
         else
-            xb = str2num(xbounds); %#ok<ST2NM>
+            xb = xBoundsParsed;
             amin = xb(1); amax = xb(2);
             ax.UserData.xlim = [amin amax];
         end
@@ -252,10 +257,29 @@ if plottype=="Plot"
         ax.UserData.ylim = 'labels';
     else
         % --- YLim normal (numérique) ---
-        if isempty(ybounds) || ybounds=="auto" || isnan(str2num(ybounds)) %#ok<ST2NM>
-            ax.UserData.ylim = 'auto';
+        if yBoundsIsLog
+            ax.YScale = 'log';
+        end
+        if isempty(yBoundsParsed)
+            if yBoundsIsLog
+                yPositive = ydata(isfinite(ydata) & ydata > 0);
+                if ~isempty(yPositive)
+                    amin = min(yPositive);
+                    amax = max(yPositive);
+                    if amin == amax
+                        amin = amin * 0.9;
+                        amax = amax * 1.1;
+                    end
+                    ylim(ax, [amin amax]);
+                    ax.UserData.ylim = [amin amax];
+                else
+                    ax.UserData.ylim = 'auto';
+                end
+            else
+                ax.UserData.ylim = 'auto';
+            end
         else
-            yb = str2num(ybounds); %#ok<ST2NM>
+            yb = yBoundsParsed;
             amin = yb(1); amax = yb(2);
             ylim(ax, [amin amax]);
             ax.UserData.ylim = [amin amax];
@@ -294,12 +318,12 @@ else
     end
 
     % Y bounds
-    if isempty(ybounds) || ybounds=="auto" || isnan(str2num(ybounds)) %#ok<ST2NM>
+    if isempty(yBoundsParsed)
         ax.UserData.ylim = 'auto';
         amin = min(ydata(:));
         amax = max(ydata(:));
     else
-        yb = str2num(ybounds); %#ok<ST2NM>
+        yb = yBoundsParsed;
         amin = yb(1); amax = yb(2);
         ax.UserData.ylim = [amin amax];
     end
@@ -324,7 +348,7 @@ else
 
     ylim(ax, [-1, size(rgbImage,1) + 1]);
 
-    if isempty(xbounds) || xbounds=="auto"
+    if isempty(xBoundsParsed)
         amin = min(xdata);
         if amin>0, amin = 0.95*amin-0.01; else, amin = 1.05*amin-0.01; end
 
@@ -333,7 +357,7 @@ else
 
         ax.UserData.xlim = 'auto';
     else
-        xb = str2num(xbounds); %#ok<ST2NM>
+        xb = xBoundsParsed;
         amin = xb(1); amax = xb(2);
         ax.UserData.xlim = [amin amax];
     end
@@ -381,6 +405,73 @@ try
     end
 catch
     rgb = [];
+end
+end
+
+
+function [bounds, isLogScale] = parseAxisBounds(spec)
+bounds = [];
+isLogScale = false;
+
+if isempty(spec)
+    return;
+end
+
+if iscell(spec)
+    if isempty(spec)
+        return;
+    end
+    spec = spec{1};
+end
+
+if isa(spec, 'missing')
+    return;
+end
+
+if isnumeric(spec)
+    vals = double(spec(:)');
+    if numel(vals) >= 2 && all(isfinite(vals(1:2)))
+        bounds = vals(1:2);
+    end
+    return;
+end
+
+if iscategorical(spec)
+    if numel(spec) ~= 1 || isundefined(spec)
+        return;
+    end
+    spec = char(string(spec));
+elseif isstring(spec)
+    if numel(spec) ~= 1
+        return;
+    end
+    spec = char(spec);
+elseif ~ischar(spec)
+    try
+        spec = char(string(spec));
+    catch
+        return;
+    end
+end
+
+spec = strtrim(spec);
+if isempty(spec) || strcmpi(spec, 'auto')
+    return;
+end
+
+if ~isempty(regexpi(spec, 'log\s*\(', 'once'))
+    isLogScale = true;
+    spec = regexprep(spec, 'log\s*\(\s*([^)]+)\s*\)', '$1', 'ignorecase');
+    spec = strtrim(spec);
+end
+
+vals = str2num(spec); %#ok<ST2NM>
+if isnumeric(vals) && numel(vals) >= 2 && all(isfinite(vals(1:2)))
+    bounds = vals(1:2);
+    if isLogScale && any(bounds <= 0)
+        bounds = [];
+        isLogScale = false;
+    end
 end
 end
 
