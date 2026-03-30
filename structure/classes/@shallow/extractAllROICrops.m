@@ -288,10 +288,12 @@ end
 % ----------------- LOG CANAUX DEMANDÉS -----------------
 fprintf('  → Requested channels per FOV:\n');
 for ii = 1:nF
-    ci = ChannelsPerFOV{ii};
+    ci = normalizeRequestedChannels(ChannelsPerFOV{ii});
     try
         if isempty(ci)
             fprintf('    - FOV %d: {ALL}\n', FOVIndex(ii));
+        elseif isnumeric(ci) || islogical(ci)
+            fprintf('    - FOV %d: %s\n', FOVIndex(ii), mat2str(double(ci(:)')));
         elseif iscell(ci)
             names = cellfun(@char, string(ci), 'UniformOutput', false);
             fprintf('    - FOV %d: {%s}\n', FOVIndex(ii), strjoin(names, ', '));
@@ -357,18 +359,21 @@ for kF = 1:numel(FOVIndex)
         chanSelIdx   = 1:nChannels;
         chanSelNames = chanNamesFOV;
     else
-        if isnumeric(chans_for_this_fov) || islogical(chans_for_this_fov)
-            idx = chans_for_this_fov;
+        chanSpec = normalizeRequestedChannels(chans_for_this_fov);
+        if isnumeric(chanSpec) || islogical(chanSpec)
+            idx = chanSpec;
             if islogical(idx), idx = find(idx); end
+            idx = double(idx(:)');
+            idx = idx(idx >= 1 & idx <= nChannels);
             names_req = chanNamesFOV(idx);
-        elseif iscell(chans_for_this_fov)
-            names_req = cellfun(@char, string(chans_for_this_fov), 'UniformOutput', false);
-        elseif isstring(chans_for_this_fov)
-            names_req = cellstr(chans_for_this_fov);
-        elseif ischar(chans_for_this_fov)
-            names_req = {chans_for_this_fov};
+        elseif iscell(chanSpec)
+            names_req = cellfun(@char, string(chanSpec), 'UniformOutput', false);
+        elseif isstring(chanSpec)
+            names_req = cellstr(chanSpec);
+        elseif ischar(chanSpec)
+            names_req = {chanSpec};
         else
-            names_req = cellfun(@char, string(chans_for_this_fov), 'UniformOutput', false);
+            names_req = cellfun(@char, string(chanSpec), 'UniformOutput', false);
         end
 
         [isHit, idx] = ismember(names_req, chanNamesFOV);
@@ -1601,6 +1606,119 @@ end
 xmin = V(row,1); ymin = V(row,2);
 w = ROIe.w; h = ROIe.h;
 bb = [xmin, ymin, w, h];
+end
+
+function out = normalizeRequestedChannels(spec)
+if isempty(spec)
+    out = {};
+    return;
+end
+
+if islogical(spec)
+    out = find(spec);
+    return;
+end
+
+if isnumeric(spec)
+    out = double(spec(:)');
+    return;
+end
+
+if isstring(spec)
+    if isscalar(spec)
+        out = normalizeRequestedChannels(char(spec));
+    else
+        out = cellstr(spec(:)');
+    end
+    return;
+end
+
+if ischar(spec)
+    txt = strtrim(spec);
+    if isempty(txt) || strcmp(txt, '[]')
+        out = {};
+        return;
+    end
+
+    [vals, ok] = tryParseNumericVector(txt);
+    if ok
+        out = vals;
+        return;
+    end
+
+    parts = regexp(txt, '\s*,\s*', 'split');
+    parts = parts(~cellfun('isempty', parts));
+    if isempty(parts)
+        out = {txt};
+    else
+        out = parts;
+    end
+    return;
+end
+
+if iscell(spec)
+    if isempty(spec)
+        out = {};
+        return;
+    end
+    if numel(spec) == 1
+        out = normalizeRequestedChannels(spec{1});
+        return;
+    end
+
+    allNumeric = true;
+    numericVals = [];
+    textVals = {};
+    for i = 1:numel(spec)
+        item = normalizeRequestedChannels(spec{i});
+        if isnumeric(item) || islogical(item)
+            numericVals = [numericVals double(item(:)')]; %#ok<AGROW>
+        else
+            allNumeric = false;
+            if iscell(item)
+                textVals = [textVals item(:)']; %#ok<AGROW>
+            else
+                textVals{end+1} = char(string(item)); %#ok<AGROW>
+            end
+        end
+    end
+
+    if allNumeric
+        out = numericVals;
+    else
+        out = textVals;
+    end
+    return;
+end
+
+out = spec;
+end
+
+function [vals, ok] = tryParseNumericVector(txt)
+vals = [];
+ok = false;
+
+if ~(ischar(txt) || isstring(txt))
+    return;
+end
+
+txt = strtrim(char(string(txt)));
+if isempty(txt)
+    ok = true;
+    return;
+end
+
+if isempty(regexp(txt, '^[0-9eE\+\-\.\,\:\;\[\]\(\)\s]+$', 'once'))
+    return;
+end
+
+vals = str2num(txt); %#ok<ST2NM>
+if isempty(vals) && ~strcmp(txt, '[]')
+    return;
+end
+
+vals = double(vals(:)');
+ok = true;
 end
 
 function selIdx = resolveROISelectionForFOV(roiList, ROISelect, positionInFOVIndex, FOVIndex)

@@ -2903,6 +2903,59 @@ classdef workflow < matlab.apps.AppBase
 
         end
 
+        function parsed = parseChannelValue(app, newData) %#ok<INUSD>
+
+            if isnumeric(newData)
+
+                parsed = double(newData(:)');
+
+                return;
+
+            end
+
+            if islogical(newData)
+
+                parsed = find(newData);
+
+                return;
+
+            end
+
+            txt = strtrim(char(string(newData)));
+
+            if isempty(txt) || strcmp(txt, '[]')
+
+                parsed = {};
+
+                return;
+
+            end
+
+            if ~isempty(regexp(txt, '^[0-9eE\\+\\-\\.\\,\\:\\;\\[\\]\\(\\)\\s]+$', 'once'))
+
+                vals = str2num(txt); %#ok<ST2NM>
+
+                if ~isempty(vals) || strcmp(txt, '[]')
+
+                    parsed = double(vals(:)');
+
+                    return;
+
+                end
+
+            end
+
+            parts = regexp(txt, '\s*,\s*', 'split');
+            parsed = parts(~cellfun('isempty', parts));
+
+            if isempty(parsed)
+
+                parsed = {txt};
+
+            end
+
+        end
+
         function tf = isEditableParamValue(app, template) %#ok<INUSD>
 
             tf = ischar(template) || isstring(template) || islogical(template) || isnumeric(template) || iscell(template) || isempty(template);
@@ -3018,6 +3071,10 @@ classdef workflow < matlab.apps.AppBase
                     warning('workflow:fovIndexAdjusted', 'Current displayed FOV (%s) was added to fovIndex.', app.getFovLabel(app.SelectedFov));
 
                 end
+
+            elseif strcmpi(key, 'channels')
+
+                params.(key) = app.parseChannelValue(newValue);
 
             else
 
