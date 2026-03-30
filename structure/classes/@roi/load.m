@@ -416,10 +416,24 @@ for i = 1:N
 
     rawSz  = size(blkRaw);
     expK   = numel(ci);
+    frameAttr = readAttOrDefault(h5File, p, 'frames', []);
+    expT = numel(frameAttr);
+    if isempty(expT) || expT < 1
+        expT = 1;
+    end
+    kAttr = readAttOrDefault(h5File, p, 'num_subchannels', []);
+    if isempty(expK) || expK < 1
+        if ~isempty(kAttr)
+            expK = double(kAttr(1));
+        else
+            expK = 1;
+        end
+    end
 
     permStr=''; %#ok<NASGU>
-    blk=blkRaw;
-    szN=size(blk);
+    blk = normalizeH5BlockForLoad(blkRaw, expK, expT, names{i});
+    szN = size(blk);
+    szN(end+1:4) = 1;
 
     Hblk = szN(1); Wblk = szN(2); k = szN(3); Tblk = szN(4); %#ok<NASGU>
 
@@ -867,6 +881,54 @@ dispStruct.rgb(logicalId,:) = double(att.rgb(:).');
 debugPrintf('[DEBUG] Single-load: placed "%s" into C-indices %s (logical=%d). H=%d W=%d k=%d T=%d\n', ...
     chanName, mat2str(destIdx), logicalId, H, W, k, T);
 
+end
+
+function blk = normalizeH5BlockForLoad(blkRaw, expK, expT, datasetName)
+if nargin < 2 || isempty(expK) || ~isfinite(expK) || expK < 1
+    expK = 1;
+end
+if nargin < 3 || isempty(expT) || ~isfinite(expT) || expT < 1
+    expT = 1;
+end
+if nargin < 4 || isempty(datasetName)
+    datasetName = '<unknown>';
+end
+
+rawSz = size(blkRaw);
+nDims = ndims(blkRaw);
+
+switch nDims
+    case 2
+        sz = [rawSz 1 1];
+    case 3
+        sz = [rawSz 1];
+        thirdDim = rawSz(3);
+
+        if expK == 1 && expT > 1
+            sz = [rawSz(1) rawSz(2) 1 thirdDim];
+        elseif expK > 1 && expT == 1
+            sz = [rawSz(1) rawSz(2) thirdDim 1];
+        elseif expK > 1 && expT > 1
+            if thirdDim == expK
+                sz = [rawSz(1) rawSz(2) thirdDim 1];
+            elseif thirdDim == expT
+                sz = [rawSz(1) rawSz(2) 1 thirdDim];
+            elseif thirdDim == expK * expT
+                sz = [rawSz(1) rawSz(2) expK expT];
+            end
+        end
+    otherwise
+        sz = rawSz;
+        sz(end+1:4) = 1;
+end
+
+try
+    blk = reshape(blkRaw, sz(1), sz(2), sz(3), sz(4));
+catch ME
+    error('loadFromH5_full:BadDatasetShape', ...
+        'Cannot reshape dataset %s from raw size %s to [H W k T]=[%d %d %d %d]: %s', ...
+        char(string(datasetName)), mat2str(rawSz), sz(1), sz(2), sz(3), sz(4), ME.message);
+end
 end
 
 
