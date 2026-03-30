@@ -2317,6 +2317,14 @@ classdef workflow < matlab.apps.AppBase
             end
 
             edges = app.Pipeline.edges(keep);
+            if isempty(edges) || ~isstruct(edges)
+                edges = struct( ...
+                    'from', {}, ...
+                    'to', {}, ...
+                    'fromPort', {}, ...
+                    'toPort', {}, ...
+                    'condition', {});
+            end
 
             dlId = app.nodeIdByType('dataLoader');
 
@@ -2894,8 +2902,6 @@ classdef workflow < matlab.apps.AppBase
             parsed = newData;
 
         end
-
-
 
         function tf = isEditableParamValue(app, template) %#ok<INUSD>
 
