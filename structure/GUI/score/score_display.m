@@ -206,18 +206,30 @@ app.updateAssignValueControls(); % this updates the value of the data plotted in
 % histo update
 %if strcmp(mode, 'slow')
 if app.DisplaySettings.panels.DisplaysettingsPanel=="on"
-score_updateHistogram(app, mode);
+try
+    score_updateHistogram(app, mode);
+catch ME
+    warning("score_updateHistogram failed: %s", ME.message);
+end
 end
 %end
 
 if app.DisplaySettings.panels.IntensityQuantificationPanel=="on"
 if app.LineIntensityprofileButton.Value
       createIntensityLine(app);
-    score_updateIntensityProfile(app, getPosition(app.LineIntensityProfileLine));
+    try
+        score_updateIntensityProfile(app, getPosition(app.LineIntensityProfileLine));
+    catch ME
+        warning("score_updateIntensityProfile failed: %s", ME.message);
+    end
 end
 if app.ShapeButton.Value
     createEllipse(app);
-    score_updateEllipticalProfile(app, app.EllipseIntensityProfileObj);
+    try
+        score_updateEllipticalProfile(app, app.EllipseIntensityProfileObj);
+    catch ME
+        warning("score_updateEllipticalProfile failed: %s", ME.message);
+    end
 end
 end
 

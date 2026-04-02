@@ -28,7 +28,7 @@ function [pipe, msg] = pipelineLoad(inputPath)
     txt = fileread(jsonFile);
     S = jsondecode(txt);
 
-    pipe = pipeline('', '', 1);
+    pipe = pipelineConstruct('', '', 1);
     try
         pipe.id = getField(S,'id',1);
         pipe.strid = getField(S,'name','pipeline');

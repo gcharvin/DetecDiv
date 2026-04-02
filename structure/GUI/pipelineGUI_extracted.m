@@ -2,23 +2,26 @@ classdef pipelineGUI < matlab.apps.AppBase
 
     % Properties that correspond to app components
     properties (Access = public)
-        UIFigure                        matlab.ui.Figure
-        RefreshlibraryButton           matlab.ui.control.Button
-        DuplicatefromlibraryButton     matlab.ui.control.Button
-        UIModuleLibraryTable           matlab.ui.control.Table
-        ModulelibraryLabel             matlab.ui.control.Label
-        ConnectDisconnectmodulesButton  matlab.ui.control.Button
-        UIModuleParametersTable         matlab.ui.control.Table
-        OpenselectedmoduleButton        matlab.ui.control.Button
-        CreaterunButton                 matlab.ui.control.Button
-        CheckpipelineButton             matlab.ui.control.Button
-        CloseButton                     matlab.ui.control.Button
-        RunpipelineButton               matlab.ui.control.Button
-        UIModuleListTable               matlab.ui.control.Table
-        AddmoduleButton                 matlab.ui.control.Button
-        ModuletypeDropDown              matlab.ui.control.DropDown
-        ModuletypeDropDownLabel         matlab.ui.control.Label
-        UIModulesAxes                   matlab.ui.control.UIAxes
+        UIFigure                      matlab.ui.Figure
+        FileMenu                      matlab.ui.container.Menu
+        NewpipelineMenu               matlab.ui.container.Menu
+        SavepipelineMenu              matlab.ui.container.Menu
+        SavepipelineasMenu            matlab.ui.container.Menu
+        RevealpipelineinexplorerMenu  matlab.ui.container.Menu
+        OpenpipelineJSONfileMenu      matlab.ui.container.Menu
+        RunMenu                       matlab.ui.container.Menu
+        CheckpipelineMenu             matlab.ui.container.Menu
+        CreaterunMenu                 matlab.ui.container.Menu
+        UITable                       matlab.ui.control.Table
+        PipelinesketchLabel           matlab.ui.control.Label
+        ModulesinworkspaceLabel       matlab.ui.control.Label
+        ButtonMoveToCanva             matlab.ui.control.Button
+        UIModuleParametersTable       matlab.ui.control.Table
+        CheckpipelineButton           matlab.ui.control.Button
+        CreaterunButton               matlab.ui.control.Button
+        CloseButton                   matlab.ui.control.Button
+        UIModuleListTable             matlab.ui.control.Table
+        UIModulesAxes                 matlab.ui.control.UIAxes
     end
 
     properties (Access = private)
@@ -27,6 +30,9 @@ classdef pipelineGUI < matlab.apps.AppBase
         ModuleTextHandles = gobjects(0)
         ModuleBadgeHandles = gobjects(0)
         ModuleMarkers = gobjects(0)
+        LibraryHandles = gobjects(0)
+        LibraryTextHandles = gobjects(0)
+        LibraryBadgeHandles = gobjects(0)
         EdgeHandles = gobjects(0)
         EdgeLabelHandles = gobjects(0)
         InPortHandles cell = {}
@@ -40,6 +46,7 @@ classdef pipelineGUI < matlab.apps.AppBase
         DraggingModule double = NaN
         DragOffset double = [0 0]
         ModuleIdCounter double = 0
+        CanvasContextPoint double = [32 12]
         LibraryEntries struct = struct('name',{},'type',{},'pkg',{},'source',{},'node',{},'signature',{}, ...
             'refPath',{},'refId',{},'refKind',{},'isOffline',{})
         SelectedLibraryRow double = NaN
@@ -67,9 +74,11 @@ classdef pipelineGUI < matlab.apps.AppBase
             app.ModuleIdCounter = numel(app.Data.nodes);
 
             initAxes(app);
+            initMenus(app);
             initTables(app);
+            initButtons(app);
+            refreshAppTitle(app);
             redrawAll(app);
-            createDynamicSaveButton(app);
         end
 
         % Button pushed function: AddmoduleButton
@@ -178,15 +187,31 @@ classdef pipelineGUI < matlab.apps.AppBase
 
         % Button down function: UIModulesAxes
         function UIModulesAxesButtonDown(app, event)
-            if app.PendingAddModule
-                pt = app.UIModulesAxes.CurrentPoint;
-                pos = [pt(1,1) pt(1,2)];
-                addModuleAt(app, pos);
-                app.PendingAddModule = false;
+            pt = app.UIModulesAxes.CurrentPoint;
+            app.CanvasContextPoint = [pt(1,1) pt(1,2)];
+
+            if strcmp(app.UIFigure.SelectionType, 'alt')
                 return;
             end
-
             clearSelection(app);
+        end
+
+        function UILibraryAxesButtonDown(app, event)
+            if strcmp(app.UIFigure.SelectionType, 'alt')
+                return;
+            end
+            app.SelectedLibraryRow = NaN;
+            updateLibrarySelectionStyle(app);
+        end
+
+        function UITableSelectionChanged(app, event)
+            sel = app.UITable.Selection;
+            if isempty(sel)
+                app.SelectedLibraryRow = NaN;
+            else
+                app.SelectedLibraryRow = sel(1,1);
+            end
+            updateLibrarySelectionStyle(app);
         end
 
         % Selection changed function: UIModuleListTable
@@ -202,7 +227,6 @@ classdef pipelineGUI < matlab.apps.AppBase
 
             clearPortSelection(app);
             setSelection(app, row, false);
-            refreshPackageColumnForRow(app, row);
             updateParamsTable(app, row);
         end
 
@@ -227,14 +251,6 @@ classdef pipelineGUI < matlab.apps.AppBase
                     node.enabled = logical(val);
                 case 2
                     node.name = char(string(val));
-                case 3
-                    pkgVal = char(string(val));
-                    if strcmp(pkgVal, '<none>') || strcmpi(pkgVal, 'builtin')
-                        pkgVal = '';
-                    end
-                    node.pkg = pkgVal;
-                    applyPackageToNode(app, row, node.pkg);
-                    node = app.Data.nodes(row);
             end
 
             app.Data.nodes(row) = node;
@@ -294,26 +310,53 @@ classdef pipelineGUI < matlab.apps.AppBase
         % Selection changed function: UIModuleParametersTable
         function UIModuleParametersTableSelectionChanged(app, event)
             selection = app.UIModuleParametersTable.Selection;
-            
+            if isempty(selection) || size(selection,1) ~= 1
+                return;
+            end
+            if selection(1,2) ~= 2 || isempty(app.SelectedModules)
+                return;
+            end
+
+            modIdx = app.SelectedModules(1);
+            if modIdx < 1 || modIdx > numel(app.Data.nodes)
+                return;
+            end
+
+            data = app.UIModuleParametersTable.Data;
+            row = selection(1,1);
+            if isempty(data) || row > size(data,1)
+                return;
+            end
+
+            node = app.Data.nodes(modIdx);
+            key = char(string(data{row,1}));
+            if ~isChannelSelectorParam(app, node, key)
+                return;
+            end
+
+            [newVal, applied] = chooseChannelSelectorForNode(app, node, key);
+            if ~applied
+                return;
+            end
+
+            if ~isfield(node,'params') || isempty(node.params)
+                node.params = struct();
+            end
+            node.params.(key) = newVal;
+            app.Data.nodes(modIdx) = node;
+
+            updateParamsTable(app, modIdx);
+            refreshStatus(app);
         end
 
         % Button pushed function: RunpipelineButton
         function RunpipelineButtonPushed(app, event)
-            pipe = buildPipelineStruct(app, false);
-            ctx = app.Context;
-            if ~isfield(ctx,'allowGUI')
-                ctx.allowGUI = true;
-            end
-            try
-                runPipeline(pipe, ctx);
-            catch ME
-                uialert(app.UIFigure, ME.message, 'Run failed', 'Icon','error');
-            end
-            refreshStatus(app);
+            CreaterunButtonPushed(app, event);
         end
 
         % Button pushed function: SavepipelineButton
         function SavepipelineButtonPushed(app, event)
+            commitVisibleParamTable(app);
             try
                 savePipelineFromGUI(app);
             catch ME
@@ -336,6 +379,7 @@ classdef pipelineGUI < matlab.apps.AppBase
 
         % Button pushed function: CreaterunButton
         function CreaterunButtonPushed(app, event)
+            commitVisibleParamTable(app);
             pipe = buildPipelineStruct(app, true);
             shallowObj = [];
             if isfield(app.Context,'shallow') && ~isempty(app.Context.shallow)
@@ -358,6 +402,81 @@ classdef pipelineGUI < matlab.apps.AppBase
         % Button pushed function: CloseButton
         function CloseButtonPushed(app, event)
             delete(app)
+        end
+
+        function ButtonMoveToCanvaPushed(app, event)
+            duplicateSelectedLibraryModule(app);
+        end
+
+        function NewpipelineMenuSelected(app, event)
+            if ~confirmDiscardCurrentPipeline(app)
+                return;
+            end
+
+            app.Data.nodes = struct([]);
+            app.Data.edges = struct('from',{},'to',{},'fromPort',{},'toPort',{},'condition',{});
+            app.ModuleIdCounter = 0;
+            app.SelectedModules = [];
+            app.SelectedPorts = struct('moduleIdx',{},'isOut',{},'portName',{});
+            app.SelectedLibraryRow = NaN;
+            app.Context.pipeObj = pipelineConstruct('', 'pipeline', 1);
+
+            refreshAppTitle(app);
+            redrawAll(app);
+            updateParamsTable(app, inf);
+        end
+
+        function SavepipelineMenuSelected(app, event)
+            SavepipelineButtonPushed(app, event);
+        end
+
+        function SavepipelineasMenuSelected(app, event)
+            try
+                savePipelineFromGUI(app, true);
+            catch ME
+                uialert(app.UIFigure, ME.message, 'Save failed', 'Icon','error');
+            end
+        end
+
+        function RevealpipelineinexplorerMenuSelected(app, event)
+            pipeObj = getCurrentPipelineObject(app);
+            if isempty(pipeObj) || isempty(pipeObj.path) || ~isfolder(pipeObj.path)
+                uialert(app.UIFigure, 'Save the pipeline first to create its folder.', 'No saved pipeline', 'Icon','info');
+                return;
+            end
+            try
+                winopen(pipeObj.path);
+            catch ME
+                uialert(app.UIFigure, ME.message, 'Explorer error', 'Icon','warning');
+            end
+        end
+
+        function OpenpipelineJSONfileMenuSelected(app, event)
+            pipeObj = getCurrentPipelineObject(app);
+            if isempty(pipeObj) || isempty(pipeObj.path)
+                uialert(app.UIFigure, 'Save the pipeline first to create pipeline.json.', 'No saved pipeline', 'Icon','info');
+                return;
+            end
+
+            jsonFile = fullfile(pipeObj.path, 'pipeline.json');
+            if ~exist(jsonFile, 'file')
+                uialert(app.UIFigure, sprintf('File not found:\n%s', jsonFile), 'Missing file', 'Icon','warning');
+                return;
+            end
+
+            try
+                winopen(jsonFile);
+            catch ME
+                uialert(app.UIFigure, ME.message, 'Open file error', 'Icon','warning');
+            end
+        end
+
+        function CheckpipelineMenuSelected(app, event)
+            CheckpipelineButtonPushed(app, event);
+        end
+
+        function CreaterunMenuSelected(app, event)
+            CreaterunButtonPushed(app, event);
         end
 
         % Window motion for dragging
@@ -394,6 +513,7 @@ classdef pipelineGUI < matlab.apps.AppBase
 
         function initAxes(app)
             cla(app.UIModulesAxes);
+            disableDefaultInteractivity(app.UIModulesAxes);
             app.UIModulesAxes.XLim = [0 100];
             app.UIModulesAxes.YLim = [0 100];
             app.UIModulesAxes.YDir = 'reverse';
@@ -402,22 +522,50 @@ classdef pipelineGUI < matlab.apps.AppBase
         end
 
         function initTables(app)
-            app.UIModuleListTable.ColumnEditable = [true true true false false false];
+            app.UIModuleListTable.ColumnEditable = [true true false false false false];
             app.UIModuleListTable.ColumnFormat = { ...
                 'logical', ...
                 'char', ...
-                getModulePackageList(app), ...
+                'char', ...
                 'char', ...
                 'char', ...
                 'char' ...
             };
-            app.ModuletypeDropDown.Items = getModuleTypeDisplay(app);
 
             app.UIModuleParametersTable.ColumnEditable = [false true];
-            app.UIModuleLibraryTable.ColumnEditable = [false false false false false];
+            app.UITable.ColumnEditable = [false false false false];
+            app.UITable.ColumnName = {'Name'; 'Type'; 'Package'; 'Source'};
+            app.UITable.SelectionChangedFcn = createCallbackFcn(app, @UITableSelectionChanged, true);
             updateModuleListTable(app);
             updateModuleLibraryTable(app);
-            refreshPackageColumnForRow(app, 1);
+        end
+
+        function initButtons(app)
+            app.ButtonMoveToCanva.ButtonPushedFcn = createCallbackFcn(app, @ButtonMoveToCanvaPushed, true);
+            app.CreaterunButton.ButtonPushedFcn = createCallbackFcn(app, @CreaterunButtonPushed, true);
+            app.CheckpipelineButton.ButtonPushedFcn = createCallbackFcn(app, @CheckpipelineButtonPushed, true);
+            app.CloseButton.ButtonPushedFcn = createCallbackFcn(app, @CloseButtonPushed, true);
+            app.UIFigure.WindowButtonMotionFcn = createCallbackFcn(app, @UIFigureWindowButtonMotion, true);
+            app.UIFigure.WindowButtonUpFcn = createCallbackFcn(app, @UIFigureWindowButtonUp, true);
+        end
+
+        function initMenus(app)
+            app.NewpipelineMenu.MenuSelectedFcn = createCallbackFcn(app, @NewpipelineMenuSelected, true);
+            app.SavepipelineMenu.MenuSelectedFcn = createCallbackFcn(app, @SavepipelineMenuSelected, true);
+            app.SavepipelineasMenu.MenuSelectedFcn = createCallbackFcn(app, @SavepipelineasMenuSelected, true);
+            app.RevealpipelineinexplorerMenu.MenuSelectedFcn = createCallbackFcn(app, @RevealpipelineinexplorerMenuSelected, true);
+            app.OpenpipelineJSONfileMenu.MenuSelectedFcn = createCallbackFcn(app, @OpenpipelineJSONfileMenuSelected, true);
+            app.CheckpipelineMenu.MenuSelectedFcn = createCallbackFcn(app, @CheckpipelineMenuSelected, true);
+            app.CreaterunMenu.MenuSelectedFcn = createCallbackFcn(app, @CreaterunMenuSelected, true);
+
+            cm = uicontextmenu(app.UIFigure);
+            reg = getModuleRegistry(app);
+            for i = 1:numel(reg)
+                mi = uimenu(cm, 'Text', ['Add ' char(string(reg(i).display))]);
+                mi.UserData = char(string(reg(i).display));
+                mi.MenuSelectedFcn = @(src,evt)addModuleFromCanvasContext(app, src.UserData);
+            end
+            app.UIModulesAxes.ContextMenu = cm;
         end
 
         function list = getModuleTypeDisplay(app)
@@ -652,10 +800,13 @@ classdef pipelineGUI < matlab.apps.AppBase
             end
         end
 
-        function addModuleAt(app, pos)
-            tpl = app.PendingTemplate;
+        function addModuleAt(app, pos, tpl)
+            if nargin < 3 || isempty(tpl) || ~isstruct(tpl) || isempty(fieldnames(tpl))
+                tpl = app.PendingTemplate;
+            end
             if isempty(fieldnames(tpl))
-                tpl = getTemplateByDisplay(app, app.ModuletypeDropDown.Value);
+                reg = getModuleRegistry(app);
+                tpl = reg(1);
             end
 
             app.ModuleIdCounter = app.ModuleIdCounter + 1;
@@ -682,7 +833,7 @@ classdef pipelineGUI < matlab.apps.AppBase
             node.enabled = true;
             node.status = '';
             node.pkg = '';
-            node.layout = [pos(1) pos(2) 20 10];
+            node.layout = [pos(1) pos(2) 26 16];
             node.contract = makeNodeContract(app, node.type, node.pkg);
             [node.inputs, node.outputs] = ioFromContract(app, node.contract);
 
@@ -699,29 +850,35 @@ classdef pipelineGUI < matlab.apps.AppBase
 
         function drawModule(app, idx)
             node = app.Data.nodes(idx);
+            layout = normalizeModuleLayout(app, node);
+            node.layout = layout;
+            app.Data.nodes(idx) = node;
             [x,y,w,h] = deal(node.layout(1), node.layout(2), node.layout(3), node.layout(4));
-            pts = [x y; x+w-4 y; x+w y+h/2; x+w-4 y+h; x y+h];
+            pts = [x y; x+w y; x+w y+h; x y+h];
 
-            col = getModuleColor(app, node);
-
-            hPatch = patch(app.UIModulesAxes, pts(:,1), pts(:,2), col, ...
-                'EdgeColor','k','LineWidth',0.5,'ButtonDownFcn',@app.modulePatchButtonDown);
+            hPatch = patch(app.UIModulesAxes, pts(:,1), pts(:,2), [1 1 1], ...
+                'EdgeColor','k','LineWidth',0.5,'ButtonDownFcn',@app.modulePatchButtonDown, ...
+                'PickableParts','all');
             hPatch.UserData = idx;
 
-            hText = text(app.UIModulesAxes, x+1, y+h/2, buildNodeCaption(app,node), ...
-                'VerticalAlignment','middle', 'FontSize',12, 'Interpreter','none');
-            hBadge = text(app.UIModulesAxes, x+0.8, y+h-0.7, buildNodeBadge(app,node), ...
+            hText = text(app.UIModulesAxes, x+1.2, y+2.0, buildNodeCaption(app,node), ...
+                'VerticalAlignment','middle', 'HorizontalAlignment','left', ...
+                'FontSize',12, 'FontWeight','bold', 'Interpreter','none', ...
+                'ButtonDownFcn',@app.modulePatchButtonDown, ...
+                'PickableParts','all');
+            hText.UserData = idx;
+            hBadge = text(app.UIModulesAxes, x+1.2, y+4.4, buildNodeBadge(app,node), ...
                 'HorizontalAlignment','left', ...
-                'VerticalAlignment','top', ...
-                'FontSize',8, ...
-                'FontWeight','bold', ...
-                'Interpreter','none', ...
-                'Color',[0.15 0.15 0.15], ...
-                'BackgroundColor',[0.98 0.95 0.72], ...
-                'Margin',1);
+                'VerticalAlignment','middle', ...
+                'FontSize',9, ...
+                'Interpreter','tex', ...
+                'Color',[0.25 0.25 0.25], ...
+                'ButtonDownFcn',@app.modulePatchButtonDown, ...
+                'PickableParts','all');
+            hBadge.UserData = idx;
 
-            hMarker = plot(app.UIModulesAxes, x+w-2, y+2, 'o', 'MarkerSize',6, ...
-                'MarkerEdgeColor','k', 'MarkerFaceColor',[0 0.8 0], 'Visible','off');
+            hMarker = plot(app.UIModulesAxes, [x+1.0 x+w-1.0], [y+6.0 y+6.0], '-', ...
+                'Color',[0.85 0.85 0.85], 'LineWidth',1.0, 'HitTest','off');
 
             if idx > numel(app.ModuleHandles)
                 app.ModuleHandles(idx) = hPatch;
@@ -736,9 +893,18 @@ classdef pipelineGUI < matlab.apps.AppBase
             end
 
             cm = uicontextmenu(app.UIFigure);
-            uimenu(cm,'Text','Open module','MenuSelectedFcn',@(s,e)openModule(app, idx));
-            uimenu(cm,'Text','Delete module','MenuSelectedFcn',@(s,e)deleteModule(app, idx));
+            miOpen = uimenu(cm,'Text','Open module');
+            miOpen.UserData = idx;
+            miOpen.MenuSelectedFcn = @(src,evt)openModule(app, src.UserData);
+            miDuplicate = uimenu(cm,'Text','Duplicate module');
+            miDuplicate.UserData = idx;
+            miDuplicate.MenuSelectedFcn = @(src,evt)duplicateModule(app, src.UserData);
+            miDelete = uimenu(cm,'Text','Delete module');
+            miDelete.UserData = idx;
+            miDelete.MenuSelectedFcn = @(src,evt)deleteModule(app, src.UserData, true);
             hPatch.ContextMenu = cm;
+            hText.ContextMenu = cm;
+            hBadge.ContextMenu = cm;
 
             drawPortsForModule(app, idx);
             redrawModule(app, idx);
@@ -750,6 +916,9 @@ classdef pipelineGUI < matlab.apps.AppBase
                 return;
             end
             node = app.Data.nodes(idx);
+            layout = normalizeModuleLayout(app, node);
+            node.layout = layout;
+            app.Data.nodes(idx) = node;
             hPatch = app.ModuleHandles(idx);
             hText = app.ModuleTextHandles(idx);
             hBadge = app.ModuleBadgeHandles(idx);
@@ -759,17 +928,20 @@ classdef pipelineGUI < matlab.apps.AppBase
             end
 
             [x,y,w,h] = deal(node.layout(1), node.layout(2), node.layout(3), node.layout(4));
-            pts = [x y; x+w-4 y; x+w y+h/2; x+w-4 y+h; x y+h];
+            pts = [x y; x+w y; x+w y+h; x y+h];
             hPatch.XData = pts(:,1);
             hPatch.YData = pts(:,2);
-            hPatch.FaceColor = getModuleColor(app, node);
+            hPatch.FaceColor = [1 1 1];
+            hPatch.UserData = idx;
 
-            hText.Position = [x+1 y+h/2 0];
+            hText.Position = [x+1.2 y+2.0 0];
             hText.String = buildNodeCaption(app,node);
+            hText.UserData = idx;
             if ~isempty(hBadge) && isvalid(hBadge)
                 badgeTxt = buildNodeBadge(app,node);
-                hBadge.Position = [x+0.8 y+h-0.7 0];
+                hBadge.Position = [x+1.2 y+4.4 0];
                 hBadge.String = badgeTxt;
+                hBadge.UserData = idx;
                 if isempty(badgeTxt)
                     hBadge.Visible = 'off';
                 else
@@ -777,85 +949,30 @@ classdef pipelineGUI < matlab.apps.AppBase
                 end
             end
 
-            if node.enabled
+            if ~isempty(hMarker) && isvalid(hMarker)
                 hMarker.Visible = 'on';
-                hMarker.XData = x+w-2;
-                hMarker.YData = y+2;
-                st = lower(char(string(getfielddefault(app, node, 'status', ''))));
-                if isNodeConnected(app, node)
-                    hMarker.MarkerFaceColor = [0 0.75 0.2];
-                elseif contains(st,'disabled')
-                    hMarker.MarkerFaceColor = [0.6 0.6 0.6];
-                else
-                    hMarker.MarkerFaceColor = [0.90 0.20 0.20];
-                end
-            else
-                hMarker.Visible = 'on';
-                hMarker.XData = x+w-2;
-                hMarker.YData = y+2;
-                hMarker.MarkerFaceColor = [0.6 0.6 0.6];
+                hMarker.XData = [x+1.0 x+w-1.0];
+                hMarker.YData = [y+6.0 y+6.0];
             end
 
+            applyModuleOutlineStyle(app, idx);
             drawPortsForModule(app, idx);
             updateSelectionStyle(app);
         end
 
         function cap = buildNodeCaption(app, node)
-            pkg = getfielddefault(app, node, 'pkg', '');
-            if isempty(pkg)
-                cap = char(string(node.name));
-            else
-                cap = sprintf('%s\n[%s]', char(string(node.name)), char(string(pkg)));
-            end
+            cap = char(string(node.name));
         end
 
         function badge = buildNodeBadge(app, node)
-            badge = '';
-            c = getNodeContract(app, node);
-            if isempty(c) || ~isstruct(c)
-                return;
-            end
-
-            tokens = {};
-            req = getfielddefault(app, c, 'requirements', struct());
-            cap = getfielddefault(app, c, 'capabilities', struct());
-
-            if isfield(req,'images') && isstruct(req.images) && logical(getfielddefault(app, req.images, 'required', false))
-                n = double(getfielddefault(app, req.images, 'channelsMin', 0));
-                if n > 0
-                    tokens{end+1} = sprintf('IMG %dch', n); %#ok<AGROW>
-                else
-                    tokens{end+1} = 'IMG'; %#ok<AGROW>
-                end
-            end
-
-            if isfield(req,'roi') && isstruct(req.roi) && logical(getfielddefault(app, req.roi, 'required', false))
-                n = double(getfielddefault(app, req.roi, 'channelsMin', 0));
-                if n > 0
-                    tokens{end+1} = sprintf('ROI %dch', n); %#ok<AGROW>
-                else
-                    tokens{end+1} = 'ROI'; %#ok<AGROW>
-                end
-                if logical(getfielddefault(app, req.roi, 'masks', false))
-                    tokens{end+1} = 'MASK'; %#ok<AGROW>
-                end
-                if logical(getfielddefault(app, req.roi, 'dataSeries', false))
-                    tokens{end+1} = 'DS'; %#ok<AGROW>
-                end
-            end
-
-            if logical(getfielddefault(app, cap, 'outputsMasks', false))
-                tokens{end+1} = '+MASK'; %#ok<AGROW>
-            end
-            if logical(getfielddefault(app, cap, 'outputsDataSeries', false))
-                tokens{end+1} = '+DS'; %#ok<AGROW>
-            end
-            if logical(getfielddefault(app, cap, 'outputsChannels', false))
-                tokens{end+1} = '+CH'; %#ok<AGROW>
-            end
-
-            if ~isempty(tokens)
-                badge = strjoin(tokens, ' | ');
+            typeLabel = getDisplayFromType(app, getfielddefault(app, node, 'type', ''));
+            pkg = char(string(getfielddefault(app, node, 'pkg', '')));
+            typeLabel = strrep(char(string(typeLabel)), '_', '\_');
+            pkg = strrep(pkg, '_', '\_');
+            if isempty(pkg)
+                badge = ['\it ' char(string(typeLabel))];
+            else
+                badge = ['\it ' char(string(typeLabel)) ' - ' pkg];
             end
         end
 
@@ -875,19 +992,21 @@ classdef pipelineGUI < matlab.apps.AppBase
                 pname = c.in(k).name;
                 [x,y] = edgeAnchor(app, node, false, pname);
                 meta = struct('moduleIdx',idx,'isOut',false,'portName',char(string(pname)));
+                portColor = getPortDisplayColor(app, idx, false, pname);
                 h = plot(app.UIModulesAxes, x, y, 'o', ...
-                    'MarkerSize',7, ...
-                    'MarkerEdgeColor',[0.00 0.45 0.74], ...
+                    'MarkerSize',9, ...
+                    'MarkerEdgeColor',portColor, ...
                     'MarkerFaceColor',[1 1 1], ...
-                    'LineWidth',1.2, ...
+                    'LineWidth',1.6, ...
                     'ButtonDownFcn',@app.portButtonDown);
                 h.UserData = meta;
 
-                ht = text(app.UIModulesAxes, x-0.8, y, char(string(pname)), ...
-                    'HorizontalAlignment','right', ...
+                ht = text(app.UIModulesAxes, x+2.0, y, buildPortDisplayText(app, node, false, pname), ...
+                    'HorizontalAlignment','left', ...
                     'VerticalAlignment','middle', ...
-                    'FontSize',11, ...
-                    'Color',[0.00 0.45 0.74], ...
+                    'FontSize',10, ...
+                    'FontAngle','italic', ...
+                    'Color',[0.08 0.08 0.08], ...
                     'Interpreter','none', ...
                     'ButtonDownFcn',@app.portButtonDown);
                 ht.UserData = meta;
@@ -909,19 +1028,21 @@ classdef pipelineGUI < matlab.apps.AppBase
                 pname = c.out(k).name;
                 [x,y] = edgeAnchor(app, node, true, pname);
                 meta = struct('moduleIdx',idx,'isOut',true,'portName',char(string(pname)));
+                portColor = getPortDisplayColor(app, idx, true, pname);
                 h = plot(app.UIModulesAxes, x, y, 'o', ...
-                    'MarkerSize',7, ...
-                    'MarkerEdgeColor',[0.47 0.67 0.19], ...
+                    'MarkerSize',9, ...
+                    'MarkerEdgeColor',portColor, ...
                     'MarkerFaceColor',[1 1 1], ...
-                    'LineWidth',1.2, ...
+                    'LineWidth',1.6, ...
                     'ButtonDownFcn',@app.portButtonDown);
                 h.UserData = meta;
 
-                ht = text(app.UIModulesAxes, x+0.8, y, char(string(pname)), ...
-                    'HorizontalAlignment','left', ...
+                ht = text(app.UIModulesAxes, x-2.0, y, buildPortDisplayText(app, node, true, pname), ...
+                    'HorizontalAlignment','right', ...
                     'VerticalAlignment','middle', ...
-                    'FontSize',11, ...
-                    'Color',[0.20 0.50 0.10], ...
+                    'FontSize',10, ...
+                    'FontAngle','italic', ...
+                    'Color',[0.08 0.08 0.08], ...
                     'Interpreter','none', ...
                     'ButtonDownFcn',@app.portButtonDown);
                 ht.UserData = meta;
@@ -1204,7 +1325,7 @@ classdef pipelineGUI < matlab.apps.AppBase
                 [x1,y1] = edgeAnchor(app, n1, true,  getEdgeField(app, e,'fromPort',''));
                 [x2,y2] = edgeAnchor(app, n2, false, getEdgeField(app, e,'toPort',''));
 
-                h = plot(app.UIModulesAxes, [x1 x2], [y1 y2], '-', 'Color',[0 0 0]);
+                h = plot(app.UIModulesAxes, [x1 x2], [y1 y2], '-', 'Color',[0 0 0], 'HitTest','off');
                 app.EdgeHandles(end+1) = h; %#ok<AGROW>
             end
         end
@@ -1239,13 +1360,51 @@ classdef pipelineGUI < matlab.apps.AppBase
                 if isempty(app.ModuleHandles(i)) || ~isvalid(app.ModuleHandles(i))
                     continue;
                 end
-                if ismember(i, app.SelectedModules)
-                    app.ModuleHandles(i).LineWidth = 2;
-                else
-                    app.ModuleHandles(i).LineWidth = 0.5;
-                end
+                applyModuleOutlineStyle(app, i);
             end
             updatePortSelectionStyle(app);
+        end
+
+        function applyModuleOutlineStyle(app, idx)
+            if idx < 1 || idx > numel(app.Data.nodes) || idx > numel(app.ModuleHandles)
+                return;
+            end
+            hPatch = app.ModuleHandles(idx);
+            if isempty(hPatch) || ~isvalid(hPatch)
+                return;
+            end
+
+            node = app.Data.nodes(idx);
+            [edgeColor, lineWidth] = getModuleOutlineStyle(app, node);
+            if ismember(idx, app.SelectedModules)
+                lineWidth = max(lineWidth, 2.5);
+            end
+            hPatch.EdgeColor = edgeColor;
+            hPatch.LineWidth = lineWidth;
+        end
+
+        function [edgeColor, lineWidth] = getModuleOutlineStyle(app, node) %#ok<INUSD>
+            edgeColor = [0.20 0.20 0.20];
+            lineWidth = 1.0;
+
+            if ~getfielddefault(app, node, 'enabled', true)
+                edgeColor = [0.55 0.55 0.55];
+                return;
+            end
+
+            status = strtrim(char(string(getfielddefault(app, node, 'status', ''))));
+            if isNodeStatusOk(app, status)
+                edgeColor = [0.12 0.62 0.27];
+                lineWidth = 1.4;
+            else
+                edgeColor = [0.86 0.20 0.18];
+                lineWidth = 1.4;
+            end
+        end
+
+        function tf = isNodeStatusOk(app, status) %#ok<INUSD>
+            status = strtrim(char(string(status)));
+            tf = startsWith(lower(status), 'ok');
         end
 
         function updatePortSelectionStyle(app)
@@ -1255,7 +1414,7 @@ classdef pipelineGUI < matlab.apps.AppBase
                 for k = 1:numel(hh)
                     if ~isgraphics(hh(k)), continue; end
                     hh(k).MarkerFaceColor = [1 1 1];
-                    hh(k).MarkerSize = 7;
+                    hh(k).MarkerSize = 9;
                 end
             end
 
@@ -1265,7 +1424,7 @@ classdef pipelineGUI < matlab.apps.AppBase
                 for k = 1:numel(hh)
                     if ~isgraphics(hh(k)), continue; end
                     hh(k).MarkerFaceColor = [1 1 1];
-                    hh(k).MarkerSize = 7;
+                    hh(k).MarkerSize = 9;
                 end
             end
 
@@ -1301,7 +1460,7 @@ classdef pipelineGUI < matlab.apps.AppBase
                     ud = hh(k).UserData;
                     if isstruct(ud) && strcmp(char(string(ud.portName)), char(string(meta.portName)))
                         hh(k).MarkerFaceColor = [1.0 0.85 0.15];
-                        hh(k).MarkerSize = 9;
+                        hh(k).MarkerSize = 11;
                     end
                 end
             end
@@ -1319,21 +1478,13 @@ classdef pipelineGUI < matlab.apps.AppBase
                 node = app.Data.nodes(i);
                 data{i,1} = logical(getfielddefault(app, node,'enabled',true));
                 data{i,2} = getfielddefault(app, node,'name',node.id);
-                pkg = getfielddefault(app, node,'pkg','');
-                if isempty(pkg)
-                    if isBuiltinNodeType(app, getfielddefault(app, node,'type',''))
-                        pkg = 'builtin';
-                    else
-                        pkg = '<none>';
-                    end
-                end
-                data{i,3} = pkg;
+                data{i,3} = getDisplayFromType(app, getfielddefault(app, node,'type',''));
                 data{i,4} = strjoin(cellstr(node.inputs(:)), ', ');
                 data{i,5} = strjoin(cellstr(node.outputs(:)), ', ');
                 data{i,6} = getfielddefault(app, node,'status','');
             end
             app.UIModuleListTable.Data = data;
-            if ~isempty(app.UIModuleLibraryTable) && isvalid(app.UIModuleLibraryTable)
+            if ~isempty(app.UITable) && isvalid(app.UITable)
                 updateModuleLibraryTable(app);
             end
         end
@@ -1341,38 +1492,159 @@ classdef pipelineGUI < matlab.apps.AppBase
         function updateModuleLibraryTable(app)
             entries = collectModuleLibraryEntries(app);
             app.LibraryEntries = entries;
+
             n = numel(entries);
-            data = cell(n,5);
-            for i = 1:n
-                data{i,1} = entries(i).name;
-                data{i,2} = entries(i).type;
-                if isempty(entries(i).pkg)
-                    data{i,3} = 'builtin';
-                else
-                    data{i,3} = entries(i).pkg;
-                end
-                data{i,4} = entries(i).source;
-                data{i,5} = strjoin(cellstr(string(entries(i).node.outputs(:))), ', ');
-            end
-            app.UIModuleLibraryTable.Data = data;
             if n == 0
                 app.SelectedLibraryRow = NaN;
+                app.ButtonMoveToCanva.Enable = 'off';
+                app.UITable.Data = cell(0,4);
+                app.UITable.Selection = [];
                 return;
             end
             if isnan(app.SelectedLibraryRow) || app.SelectedLibraryRow < 1 || app.SelectedLibraryRow > n
                 app.SelectedLibraryRow = 1;
             end
-            app.UIModuleLibraryTable.Selection = [app.SelectedLibraryRow 1];
+
+            data = cell(n,4);
+            for i = 1:n
+                data{i,1} = char(string(entries(i).name));
+                data{i,2} = char(string(getDisplayFromType(app, entries(i).type)));
+                if isempty(entries(i).pkg)
+                    data{i,3} = 'builtin';
+                else
+                    data{i,3} = char(string(entries(i).pkg));
+                end
+                src = char(string(entries(i).source));
+                src = regexprep(src, '\s+', ' ');
+                data{i,4} = src;
+            end
+            app.UITable.Data = data;
+            updateLibrarySelectionStyle(app);
+            app.ButtonMoveToCanva.Enable = 'on';
+        end
+
+        function drawLibraryEntry(app, idx, layout)
+            if idx < 1 || idx > numel(app.LibraryEntries)
+                return;
+            end
+
+            entry = app.LibraryEntries(idx);
+            node = normalizeLibraryNode(app, entry.node);
+            node.layout = normalizeModuleLayout(app, node, layout);
+            [x,y,w,h] = deal(node.layout(1), node.layout(2), node.layout(3), node.layout(4));
+            pts = [x y; x+w y; x+w y+h; x y+h];
+
+            hPatch = patch(app.UILibraryAxes, pts(:,1), pts(:,2), [1 1 1], ...
+                'EdgeColor',[0.72 0.72 0.72], ...
+                'LineWidth',0.8, ...
+                'ButtonDownFcn',@app.libraryItemButtonDown);
+            hPatch.UserData = idx;
+
+            hText = text(app.UILibraryAxes, x+1.2, y+1.9, buildLibraryCaption(app, entry), ...
+                'HorizontalAlignment','left', ...
+                'VerticalAlignment','middle', ...
+                'FontSize',10, ...
+                'FontWeight','bold', ...
+                'Interpreter','none', ...
+                'ButtonDownFcn',@app.libraryItemButtonDown);
+            hText.UserData = idx;
+
+            hBadge = text(app.UILibraryAxes, x+1.2, y+4.1, buildLibraryBadge(app, entry), ...
+                'HorizontalAlignment','left', ...
+                'VerticalAlignment','middle', ...
+                'FontSize',8, ...
+                'Interpreter','tex', ...
+                'Color',[0.25 0.25 0.25], ...
+                'ButtonDownFcn',@app.libraryItemButtonDown);
+            hBadge.UserData = idx;
+
+            line(app.UILibraryAxes, [x+1.0 x+w-1.0], [y+5.6 y+5.6], 'Color',[0.88 0.88 0.88], 'LineWidth',1.0, 'HitTest','off');
+
+            c = getNodeContract(app, node);
+            for k = 1:numel(c.in)
+                py = getPortRowY(app, node, false, k);
+                plot(app.UILibraryAxes, x+1.5, py, 'o', ...
+                    'MarkerSize',8, ...
+                    'MarkerEdgeColor',[0.55 0.55 0.55], ...
+                    'MarkerFaceColor',[1 1 1], ...
+                    'LineWidth',1.3, ...
+                    'HitTest','off');
+                text(app.UILibraryAxes, x+4.0, py, buildPortDisplayText(app, node, false, c.in(k).name), ...
+                    'HorizontalAlignment','left', ...
+                    'VerticalAlignment','middle', ...
+                    'FontSize',9, ...
+                    'FontAngle','italic', ...
+                    'Color',[0.10 0.10 0.10], ...
+                    'Interpreter','none', ...
+                    'HitTest','off');
+            end
+
+            for k = 1:numel(c.out)
+                py = getPortRowY(app, node, true, k);
+                plot(app.UILibraryAxes, x+w-1.5, py, 'o', ...
+                    'MarkerSize',8, ...
+                    'MarkerEdgeColor',[0.55 0.55 0.55], ...
+                    'MarkerFaceColor',[1 1 1], ...
+                    'LineWidth',1.3, ...
+                    'HitTest','off');
+                text(app.UILibraryAxes, x+w-4.0, py, buildPortDisplayText(app, node, true, c.out(k).name), ...
+                    'HorizontalAlignment','right', ...
+                    'VerticalAlignment','middle', ...
+                    'FontSize',9, ...
+                    'FontAngle','italic', ...
+                    'Color',[0.10 0.10 0.10], ...
+                    'Interpreter','none', ...
+                    'HitTest','off');
+            end
+
+            app.LibraryHandles(idx) = hPatch;
+            app.LibraryTextHandles(idx) = hText;
+            app.LibraryBadgeHandles(idx) = hBadge;
+        end
+
+        function caption = buildLibraryCaption(app, entry) %#ok<INUSD>
+            caption = char(string(entry.name));
+        end
+
+        function badge = buildLibraryBadge(app, entry)
+            badge = ['\it ' strrep(char(string(getDisplayFromType(app, entry.type))), '_', '\_')];
+        end
+
+        function libraryItemButtonDown(app, src, event)
+            if ~isprop(src, 'UserData') || isempty(src.UserData)
+                return;
+            end
+            row = double(src.UserData);
+            if row < 1 || row > numel(app.LibraryEntries)
+                return;
+            end
+            app.SelectedLibraryRow = row;
+            updateLibrarySelectionStyle(app);
+            if strcmp(app.UIFigure.SelectionType, 'open')
+                duplicateSelectedLibraryModule(app);
+            end
+        end
+
+        function updateLibrarySelectionStyle(app)
+            if ~isempty(app.UITable) && isvalid(app.UITable)
+                if isnan(app.SelectedLibraryRow)
+                    app.UITable.Selection = [];
+                else
+                    app.UITable.Selection = [app.SelectedLibraryRow 1];
+                end
+            end
+
+            if isnan(app.SelectedLibraryRow)
+                app.ButtonMoveToCanva.Enable = 'off';
+            else
+                app.ButtonMoveToCanva.Enable = 'on';
+            end
         end
 
         function entries = collectModuleLibraryEntries(app)
             entries = struct('name',{},'type',{},'pkg',{},'source',{},'node',{},'signature',{}, ...
                 'refPath',{},'refId',{},'refKind',{},'isOffline',{});
-
-            for i = 1:numel(app.Data.nodes)
-                entry = makeLibraryEntryFromNode(app, app.Data.nodes(i), 'current pipeline');
-                entries = appendLibraryEntry(app, entries, entry);
-            end
+            currentNodeSigs = getCurrentCanvasLibrarySignatures(app);
 
             try
                 vars = evalin('base', 'whos');
@@ -1388,9 +1660,15 @@ classdef pipelineGUI < matlab.apps.AppBase
                         case 'pipeline'
                             obj = evalin('base', vname);
                             for j = 1:numel(obj)
+                                if isSameAsCurrentPipeline(app, obj(j))
+                                    continue;
+                                end
                                 [nodes, ~] = unpackPipeline(app, obj(j));
                                 for k = 1:numel(nodes)
                                     entry = makeLibraryEntryFromNode(app, nodes(k), ['workspace pipeline: ' vname]);
+                                    if shouldSkipLibraryEntry(app, entry, currentNodeSigs)
+                                        continue;
+                                    end
                                     entries = appendLibraryEntry(app, entries, entry);
                                 end
                             end
@@ -1398,17 +1676,23 @@ classdef pipelineGUI < matlab.apps.AppBase
                             obj = evalin('base', vname);
                             for j = 1:numel(obj)
                                 entry = makeLibraryEntryFromProcess(app, obj(j), ['workspace processor: ' vname]);
+                                if shouldSkipLibraryEntry(app, entry, currentNodeSigs)
+                                    continue;
+                                end
                                 entries = appendLibraryEntry(app, entries, entry);
                             end
                         case 'classi'
                             obj = evalin('base', vname);
                             for j = 1:numel(obj)
                                 entry = makeLibraryEntryFromClassi(app, obj(j), ['workspace classifier: ' vname]);
+                                if shouldSkipLibraryEntry(app, entry, currentNodeSigs)
+                                    continue;
+                                end
                                 entries = appendLibraryEntry(app, entries, entry);
                             end
                         case 'shallow'
                             obj = evalin('base', vname);
-                            entries = appendProjectLibraryEntries(app, entries, obj, ['workspace project: ' vname]);
+                            entries = appendProjectLibraryEntries(app, entries, obj, ['workspace project: ' vname], currentNodeSigs);
                     end
                 catch
                 end
@@ -1421,22 +1705,28 @@ classdef pipelineGUI < matlab.apps.AppBase
                 shallowObj = app.Context.shallowObj;
             end
             if ~isempty(shallowObj)
-                entries = appendProjectLibraryEntries(app, entries, shallowObj, 'current project');
+                entries = appendProjectLibraryEntries(app, entries, shallowObj, 'current project', currentNodeSigs);
             end
 
             offlineEntries = loadOfflineLibraryEntries(app);
             for i = 1:numel(offlineEntries)
+                if shouldSkipLibraryEntry(app, offlineEntries(i), currentNodeSigs)
+                    continue;
+                end
                 entries = appendLibraryEntry(app, entries, offlineEntries(i));
             end
         end
 
-        function entries = appendProjectLibraryEntries(app, entries, shallowObj, sourcePrefix)
+        function entries = appendProjectLibraryEntries(app, entries, shallowObj, sourcePrefix, currentNodeSigs)
+            if nargin < 5
+                currentNodeSigs = getCurrentCanvasLibrarySignatures(app);
+            end
             if isempty(shallowObj) || ~isa(shallowObj, 'shallow')
                 return;
             end
             if numel(shallowObj) > 1
                 for ii = 1:numel(shallowObj)
-                    entries = appendProjectLibraryEntries(app, entries, shallowObj(ii), sprintf('%s #%d', sourcePrefix, ii));
+                    entries = appendProjectLibraryEntries(app, entries, shallowObj(ii), sprintf('%s #%d', sourcePrefix, ii), currentNodeSigs);
                 end
                 return;
             end
@@ -1446,6 +1736,9 @@ classdef pipelineGUI < matlab.apps.AppBase
                     try
                         if isa(procList(i), 'process') && isvalid(procList(i))
                             entry = makeLibraryEntryFromProcess(app, procList(i), [sourcePrefix ' processors']);
+                            if shouldSkipLibraryEntry(app, entry, currentNodeSigs)
+                                continue;
+                            end
                             entries = appendLibraryEntry(app, entries, entry);
                         end
                     catch
@@ -1459,6 +1752,9 @@ classdef pipelineGUI < matlab.apps.AppBase
                     try
                         if isa(classList(i), 'classi') && isvalid(classList(i))
                             entry = makeLibraryEntryFromClassi(app, classList(i), [sourcePrefix ' classifiers']);
+                            if shouldSkipLibraryEntry(app, entry, currentNodeSigs)
+                                continue;
+                            end
                             entries = appendLibraryEntry(app, entries, entry);
                         end
                     catch
@@ -1476,7 +1772,8 @@ classdef pipelineGUI < matlab.apps.AppBase
                 entries = entry;
                 return;
             end
-            if any(strcmp({entries.signature}, entry.signature))
+            existingCanonical = arrayfun(@(e) canonicalLibrarySignature(app, e), entries, 'UniformOutput', false);
+            if any(strcmp(existingCanonical, canonicalLibrarySignature(app, entry)))
                 return;
             end
             entries(end+1) = entry; %#ok<AGROW>
@@ -1573,6 +1870,98 @@ classdef pipelineGUI < matlab.apps.AppBase
             entry.signature = lower(sprintf('%s|%s|%s|%s|%s|%s', ...
                 char(string(entry.source)), char(string(entry.type)), char(string(entry.pkg)), ...
                 char(string(entry.name)), sigPath, char(string(refId))));
+        end
+
+        function sig = canonicalLibrarySignature(app, entry)
+            sig = '';
+            if isempty(entry) || ~isstruct(entry)
+                return;
+            end
+
+            node = getObjectFieldDefault(app, entry, 'node', struct());
+            node = normalizeLibraryNode(app, node);
+            [refPath, refId, refKind] = extractNodeReference(app, node);
+            params = getfielddefault(app, node, 'params', struct());
+            if ~isstruct(params)
+                params = struct();
+            end
+            drop = intersect(fieldnames(params), {'linkSource'});
+            if ~isempty(drop)
+                params = rmfield(params, drop);
+            end
+
+            paramText = safeJsonText(app, params);
+            sig = lower(sprintf('%s|%s|%s|%s|%s|%s', ...
+                char(string(getfielddefault(app, node, 'type', ''))), ...
+                char(string(getfielddefault(app, node, 'pkg', ''))), ...
+                char(string(getfielddefault(app, node, 'name', ''))), ...
+                lower(char(string(refPath))), ...
+                char(string(refId)), ...
+                char(string(refKind))));
+            sig = [sig '|' lower(paramText)];
+        end
+
+        function txt = safeJsonText(app, value) %#ok<INUSD>
+            try
+                txt = jsonencode(orderfields(value));
+            catch
+                try
+                    txt = evalc('disp(value)');
+                catch
+                    txt = class(value);
+                end
+            end
+        end
+
+        function sigs = getCurrentCanvasLibrarySignatures(app)
+            sigs = cell(0,1);
+            if isempty(app.Data.nodes)
+                return;
+            end
+            sigs = cell(numel(app.Data.nodes),1);
+            for ii = 1:numel(app.Data.nodes)
+                entry = makeLibraryEntryFromNode(app, app.Data.nodes(ii), 'current pipeline');
+                sigs{ii} = canonicalLibrarySignature(app, entry);
+            end
+        end
+
+        function tf = shouldSkipLibraryEntry(app, entry, currentNodeSigs)
+            if nargin < 3
+                currentNodeSigs = getCurrentCanvasLibrarySignatures(app);
+            end
+            tf = false;
+            if isempty(entry) || ~isstruct(entry)
+                return;
+            end
+            tf = any(strcmp(currentNodeSigs, canonicalLibrarySignature(app, entry)));
+        end
+
+        function tf = isSameAsCurrentPipeline(app, pipeObj)
+            tf = false;
+            if isempty(pipeObj) || ~isa(pipeObj, 'pipeline')
+                return;
+            end
+            if ~isfield(app.Context, 'pipeObj') || ~isa(app.Context.pipeObj, 'pipeline') || isempty(app.Context.pipeObj)
+                return;
+            end
+            cur = app.Context.pipeObj;
+            try
+                if isequal(cur, pipeObj)
+                    tf = true;
+                    return;
+                end
+            catch
+            end
+
+            try
+                curPath = lower(strrep(char(string(cur.path)), '\', '/'));
+                objPath = lower(strrep(char(string(pipeObj.path)), '\', '/'));
+                curId = char(string(cur.strid));
+                objId = char(string(pipeObj.strid));
+                tf = ~isempty(curPath) && strcmp(curPath, objPath) && strcmp(curId, objId);
+            catch
+                tf = false;
+            end
         end
 
         function entry = ensureLibraryEntryFields(app, entry) %#ok<INUSD>
@@ -1845,6 +2234,36 @@ classdef pipelineGUI < matlab.apps.AppBase
             refreshStatus(app);
         end
 
+        function duplicateModule(app, idx)
+            if idx < 1 || idx > numel(app.Data.nodes)
+                return;
+            end
+
+            node = normalizeLibraryNode(app, app.Data.nodes(idx));
+            baseLayout = getfielddefault(app, node, 'layout', [32 12 28 15]);
+            node.layout = baseLayout;
+            node.layout(1) = node.layout(1) + 4;
+            node.layout(2) = node.layout(2) + 4;
+            node.id = nextModuleId(app, node.type);
+            node.name = nextModuleName(app, char(string(getfielddefault(app, node, 'name', node.id))));
+            node.status = '';
+            node.enabled = true;
+
+            if isempty(app.Data.nodes)
+                app.Data.nodes = node;
+            else
+                app.Data.nodes(end+1) = node;
+            end
+
+            newIdx = numel(app.Data.nodes);
+            drawModule(app, newIdx);
+            clearPortSelection(app);
+            setSelection(app, newIdx, false);
+            updateParamsTable(app, newIdx);
+            updateModuleListTable(app);
+            refreshStatus(app);
+        end
+
         function linkSelectedNodeFromLibrary(app)
             if isempty(app.SelectedModules)
                 uialert(app.UIFigure, 'Select a node in the pipeline first.', 'No node selected', 'Icon', 'info');
@@ -1932,8 +2351,8 @@ classdef pipelineGUI < matlab.apps.AppBase
         end
 
         function layout = getNextLibraryDropLayout(app)
-            w = 20;
-            h = 10;
+            w = 28;
+            h = 15;
             if isempty(app.Data.nodes)
                 layout = [32 12 w h];
                 return;
@@ -1978,6 +2397,494 @@ classdef pipelineGUI < matlab.apps.AppBase
                 k = k + 1;
             end
             nameOut = sprintf('%s_copy%d', root, k);
+        end
+
+        function layout = normalizeModuleLayout(app, node, layoutIn)
+            c = getNodeContract(app, node);
+            rowCount = max([numel(c.in), numel(c.out), 1]);
+            minW = 28;
+            minH = 9.5 + 3.0 * rowCount;
+
+            if nargin >= 3 && ~isempty(layoutIn)
+                layout = layoutIn;
+            else
+                layout = getfielddefault(app, node, 'layout', [0 0 minW minH]);
+            end
+            if numel(layout) < 4
+                layout = [layout(1:min(end,2)) minW minH];
+            end
+            if numel(layout) < 4
+                layout = [0 0 minW minH];
+            end
+
+            layout = double(layout(:)');
+            layout(3) = max(layout(3), minW);
+            layout(4) = max(layout(4), minH);
+        end
+
+        function txt = buildPortDisplayText(app, node, isOut, portName)
+            c = getNodeContract(app, node);
+            txt = normalizePortDisplayName(app, portName);
+            qualifier = '';
+
+            if ~isOut
+                req = getfielddefault(app, c, 'requirements', struct());
+                switch lower(char(string(portName)))
+                    case 'images'
+                        qualifier = formatCountQualifier(app, getfielddefault(app, getfielddefault(app, req, 'images', struct()), 'channelsMin', 0));
+                    case 'roilist'
+                        roiReq = getfielddefault(app, req, 'roi', struct());
+                        if isstruct(roiReq)
+                            parts = {};
+                            n = double(getfielddefault(app, roiReq, 'channelsMin', 0));
+                            if n > 0
+                                parts{end+1} = num2str(round(n)); %#ok<AGROW>
+                            end
+                            if logical(getfielddefault(app, roiReq, 'masks', false))
+                                parts{end+1} = 'masks'; %#ok<AGROW>
+                            end
+                            if logical(getfielddefault(app, roiReq, 'dataSeries', false))
+                                parts{end+1} = 'data'; %#ok<AGROW>
+                            end
+                            qualifier = strjoin(parts, ', ');
+                        end
+                end
+            else
+                switch lower(char(string(portName)))
+                    case 'channels'
+                        qualifier = inferChannelQualifierFromNode(app, node);
+                end
+            end
+
+            if ~isempty(qualifier)
+                txt = sprintf('%s (%s)', txt, qualifier);
+            end
+        end
+
+        function nameOut = normalizePortDisplayName(app, portName) %#ok<INUSD>
+            key = lower(char(string(portName)));
+            switch key
+                case 'images'
+                    nameOut = 'Images';
+                case 'roilist'
+                    nameOut = 'ROI List';
+                case 'channels'
+                    nameOut = 'Channels';
+                case 'dataseries'
+                    nameOut = 'Data Series';
+                case 'fovlist'
+                    nameOut = 'FOV List';
+                case 'masks'
+                    nameOut = 'Masks';
+                case 'inputchannels'
+                    nameOut = 'Channels';
+                otherwise
+                    nameOut = char(string(portName));
+            end
+        end
+
+        function qualifier = formatCountQualifier(app, count) %#ok<INUSD>
+            qualifier = '';
+            try
+                count = double(count);
+            catch
+                count = 0;
+            end
+            if ~isfinite(count) || count <= 1
+                return;
+            end
+            qualifier = num2str(round(count));
+        end
+
+        function qualifier = inferChannelQualifierFromNode(app, node) %#ok<INUSD>
+            qualifier = '';
+            params = getfielddefault(app, node, 'params', struct());
+            if ~isstruct(params)
+                return;
+            end
+
+            if isfield(params, 'channels')
+                qualifier = countSelectionValues(app, params.channels);
+                if ~isempty(qualifier)
+                    return;
+                end
+            end
+            if isfield(params, 'channel')
+                qualifier = countSelectionValues(app, params.channel);
+            end
+        end
+
+        function qualifier = countSelectionValues(app, value) %#ok<INUSD>
+            qualifier = '';
+            if isempty(value)
+                return;
+            end
+
+            if isnumeric(value)
+                if isscalar(value)
+                    return;
+                end
+                qualifier = num2str(numel(value));
+                return;
+            end
+
+            if isstring(value)
+                value = cellstr(value);
+            end
+            if iscell(value)
+                if numel(value) <= 1
+                    return;
+                end
+                qualifier = num2str(numel(value));
+                return;
+            end
+
+            s = strtrim(char(string(value)));
+            if isempty(s) || any(strcmpi(s, {'all','*',':'}))
+                return;
+            end
+
+            if contains(s, ',')
+                parts = strtrim(strsplit(s, ','));
+                parts = parts(~cellfun(@isempty, parts));
+                if numel(parts) > 1
+                    qualifier = num2str(numel(parts));
+                end
+            end
+        end
+
+        function tf = isChannelSelectorParam(app, node, key) %#ok<INUSD>
+            tf = false;
+            if ~isstruct(node)
+                return;
+            end
+            key = lower(strtrim(char(string(key))));
+            if ~any(strcmp(key, {'channel','channels'}))
+                return;
+            end
+            params = struct();
+            if isfield(node,'params') && isstruct(node.params)
+                params = node.params;
+            end
+            if isfield(params, key)
+                tf = true;
+                return;
+            end
+            if strcmp(key, 'channel') && requiresSingleExplicitChannel(app, node)
+                tf = true;
+            end
+        end
+
+        function [newVal, applied] = chooseChannelSelectorForNode(app, node, key)
+            newVal = [];
+            applied = false;
+
+            choices = getNodeSelectableChannels(app, node);
+            if isempty(choices)
+                return;
+            end
+
+            key = lower(strtrim(char(string(key))));
+            allowMulti = strcmp(key, 'channels') && ~requiresSingleExplicitChannel(app, node);
+
+            currentVal = [];
+            if isfield(node,'params') && isstruct(node.params) && isfield(node.params, key)
+                currentVal = node.params.(key);
+            end
+            initialNames = normalizeChannelChoiceList(app, currentVal);
+            initialIdx = find(ismember(lower(choices), lower(initialNames)));
+            if isempty(initialIdx) && ~isempty(choices)
+                initialIdx = 1;
+            end
+
+            prompt = 'Select input channel';
+            titleText = 'Choose channel';
+            mode = 'single';
+            if allowMulti
+                prompt = 'Select input channels';
+                titleText = 'Choose channels';
+                mode = 'multiple';
+            end
+
+            [sel, ok] = listdlg( ...
+                'ListString', choices, ...
+                'SelectionMode', mode, ...
+                'InitialValue', initialIdx, ...
+                'PromptString', prompt, ...
+                'Name', titleText);
+            if ~ok || isempty(sel)
+                return;
+            end
+
+            picked = choices(sel);
+            if allowMulti
+                newVal = picked(:)';
+            else
+                newVal = picked{1};
+            end
+            applied = true;
+        end
+
+        function names = getNodeSelectableChannels(app, nodeOrIdx)
+            names = {};
+
+            if isnumeric(nodeOrIdx)
+                idx = double(nodeOrIdx);
+                if idx < 1 || idx > numel(app.Data.nodes)
+                    return;
+                end
+                node = app.Data.nodes(idx);
+            else
+                node = nodeOrIdx;
+                idx = find(strcmp(cellstr(string({app.Data.nodes.id})), char(string(getfielddefault(app, node, 'id', '')))), 1, 'first');
+            end
+
+            names = mergeChannelChoiceLists(app, names, getContextChannelChoices(app));
+            names = mergeChannelChoiceLists(app, names, getNodeLocalChannelHints(app, node));
+
+            if ~isempty(idx)
+                upstreamIdx = getUpstreamNodeIndices(app, idx);
+                for ii = 1:numel(upstreamIdx)
+                    upNode = app.Data.nodes(upstreamIdx(ii));
+                    names = mergeChannelChoiceLists(app, names, getNodeLocalChannelHints(app, upNode));
+                end
+            end
+        end
+
+        function names = getContextChannelChoices(app)
+            names = {};
+            ctx = app.Context;
+            if ~isstruct(ctx)
+                return;
+            end
+
+            if isfield(ctx,'channels') && ~isempty(ctx.channels)
+                names = mergeChannelChoiceLists(app, names, ctx.channels);
+            end
+
+            try
+                if isfield(ctx,'fovList') && ~isempty(ctx.fovList)
+                    f0 = ctx.fovList(1);
+                    if isprop(f0,'channel') && ~isempty(f0.channel)
+                        names = mergeChannelChoiceLists(app, names, f0.channel);
+                    elseif isfield(f0,'channel') && ~isempty(f0.channel)
+                        names = mergeChannelChoiceLists(app, names, f0.channel);
+                    end
+                end
+            catch
+            end
+
+            try
+                shallowObj = [];
+                if isfield(ctx,'shallow') && ~isempty(ctx.shallow)
+                    shallowObj = ctx.shallow;
+                elseif isfield(ctx,'shallowObj') && ~isempty(ctx.shallowObj)
+                    shallowObj = ctx.shallowObj;
+                end
+                if ~isempty(shallowObj) && isprop(shallowObj,'fov') && ~isempty(shallowObj.fov)
+                    f0 = shallowObj.fov(1);
+                    if isprop(f0,'channel') && ~isempty(f0.channel)
+                        names = mergeChannelChoiceLists(app, names, f0.channel);
+                    end
+                end
+            catch
+            end
+        end
+
+        function names = getNodeLocalChannelHints(app, node)
+            names = {};
+            params = getfielddefault(app, node, 'params', struct());
+            if ~isstruct(params)
+                return;
+            end
+
+            probeFields = {'channel','channels','channelFilter','channelName'};
+            for ii = 1:numel(probeFields)
+                key = probeFields{ii};
+                if isfield(params, key) && ~isempty(params.(key))
+                    names = mergeChannelChoiceLists(app, names, params.(key));
+                end
+            end
+        end
+
+        function idxList = getUpstreamNodeIndices(app, idx)
+            idxList = [];
+            if idx < 1 || idx > numel(app.Data.nodes) || isempty(app.Data.edges)
+                return;
+            end
+
+            targetId = char(string(app.Data.nodes(idx).id));
+            visited = false(1, numel(app.Data.nodes));
+            stack = {targetId};
+
+            while ~isempty(stack)
+                curId = stack{1};
+                stack(1) = [];
+                for ee = 1:numel(app.Data.edges)
+                    ed = app.Data.edges(ee);
+                    if ~strcmp(getEdgeField(app, ed, 'to', ''), curId)
+                        continue;
+                    end
+                    srcId = char(string(getEdgeField(app, ed, 'from', '')));
+                    srcIdx = find(strcmp(cellstr(string({app.Data.nodes.id})), srcId), 1, 'first');
+                    if isempty(srcIdx) || visited(srcIdx)
+                        continue;
+                    end
+                    visited(srcIdx) = true;
+                    idxList(end+1) = srcIdx; %#ok<AGROW>
+                    stack{end+1} = srcId; %#ok<AGROW>
+                end
+            end
+        end
+
+        function names = mergeChannelChoiceLists(app, a, b) %#ok<INUSD>
+            names = unique([normalizeChannelChoiceList(app, a), normalizeChannelChoiceList(app, b)], 'stable');
+        end
+
+        function names = normalizeChannelChoiceList(app, v) %#ok<INUSD>
+            names = {};
+            if isempty(v)
+                return;
+            end
+
+            if ischar(v) || (isstring(v) && isscalar(v))
+                s = strtrim(char(string(v)));
+                if isempty(s) || isAllChannelToken(app, s)
+                    return;
+                end
+                if startsWith(s, '[') && endsWith(s, ']')
+                    try
+                        tmp = jsondecode(s);
+                        names = normalizeChannelChoiceList(app, tmp);
+                        return;
+                    catch
+                    end
+                end
+                if contains(s, ',')
+                    parts = strtrim(strsplit(s, ','));
+                    parts = parts(~cellfun(@isempty, parts));
+                    for ii = 1:numel(parts)
+                        if ~isAllChannelToken(app, parts{ii})
+                            names{end+1} = parts{ii}; %#ok<AGROW>
+                        end
+                    end
+                    names = unique(names, 'stable');
+                    return;
+                end
+                names = {s};
+                return;
+            end
+
+            if isstring(v)
+                names = normalizeChannelChoiceList(app, cellstr(v(:)'));
+                return;
+            end
+
+            if iscell(v)
+                tmp = {};
+                for ii = 1:numel(v)
+                    tmp = [tmp normalizeChannelChoiceList(app, v{ii})]; %#ok<AGROW>
+                end
+                names = unique(tmp, 'stable');
+                return;
+            end
+
+            if isnumeric(v)
+                vals = double(v(:)');
+                vals = vals(isfinite(vals));
+                for ii = 1:numel(vals)
+                    names{end+1} = num2str(vals(ii)); %#ok<AGROW>
+                end
+                names = unique(names, 'stable');
+            end
+        end
+
+        function tf = isAllChannelToken(app, s) %#ok<INUSD>
+            s = lower(strtrim(char(string(s))));
+            tf = any(strcmp(s, {'all','*',':'}));
+        end
+
+        function tf = requiresSingleExplicitChannel(app, node) %#ok<INUSD>
+            tf = strcmpi(char(string(getfielddefault(app, node, 'type', ''))), 'classifier') && ...
+                strcmpi(char(string(getfielddefault(app, node, 'pkg', ''))), 'cellposesam');
+        end
+
+        function issue = getCustomNodeValidationIssue(app, node)
+            issue = '';
+            if ~requiresSingleExplicitChannel(app, node)
+                return;
+            end
+
+            params = getfielddefault(app, node, 'params', struct());
+            if ~isstruct(params)
+                issue = 'Choose exactly 1 input channel';
+                return;
+            end
+
+            if isfield(params,'channel') && ~isempty(params.channel)
+                selected = normalizeChannelChoiceList(app, params.channel);
+                usedKey = 'channel';
+            elseif isfield(params,'channels') && ~isempty(params.channels)
+                selected = normalizeChannelChoiceList(app, params.channels);
+                usedKey = 'channels';
+            else
+                selected = {};
+                usedKey = '';
+            end
+
+            if isempty(selected)
+                rawSelection = [];
+                if ~isempty(usedKey) && isfield(params, usedKey)
+                    rawSelection = params.(usedKey);
+                end
+                rawNames = normalizeChannelChoiceList(app, rawSelection);
+                if isempty(rawNames) && (ischar(rawSelection) || (isstring(rawSelection) && isscalar(rawSelection))) && ...
+                        isAllChannelToken(app, rawSelection)
+                    issue = 'Choose 1 input channel, not "all"';
+                else
+                    issue = 'Choose exactly 1 input channel';
+                end
+                return;
+            end
+
+            if numel(selected) ~= 1
+                issue = 'Choose exactly 1 input channel';
+                return;
+            end
+
+            available = getNodeSelectableChannels(app, node);
+            if ~isempty(available) && ~any(strcmpi(selected{1}, available))
+                issue = ['Unknown input channel: ' selected{1}];
+            end
+        end
+
+        function col = getPortDisplayColor(app, idx, isOut, portName)
+            node = app.Data.nodes(idx);
+            if ~getfielddefault(app, node, 'enabled', true)
+                col = [0.60 0.60 0.60];
+                return;
+            end
+
+            if isOut
+                col = [0.12 0.78 0.24];
+                return;
+            end
+
+            nodeId = char(string(getfielddefault(app, node, 'id', '')));
+            tf = false;
+            for ii = 1:numel(app.Data.edges)
+                e = app.Data.edges(ii);
+                if strcmp(getEdgeField(app, e, 'to', ''), nodeId) && strcmp(getEdgeField(app, e, 'toPort', ''), char(string(portName)))
+                    tf = true;
+                    break;
+                end
+            end
+
+            if tf
+                col = [0.12 0.78 0.24];
+            else
+                col = [0.90 0.12 0.12];
+            end
         end
 
         function pkgName = inferPkgFromFunction(app, funName, suffix) %#ok<INUSD>
@@ -2053,8 +2960,40 @@ classdef pipelineGUI < matlab.apps.AppBase
                     data{i,2} = toUITableCellValue(app, paramValueToTableCell(app, node.params.(fn{i})));
                 end
             end
+            data = injectExpectedSelectorRows(app, node, data);
+            availableChannels = getNodeSelectableChannels(app, node);
+            if ~isempty(availableChannels)
+                data(end+1,:) = {'[contract] available channels', strjoin(availableChannels, ', ')}; %#ok<AGROW>
+            elseif requiresSingleExplicitChannel(app, node)
+                data(end+1,:) = {'[contract] available channels', '<unknown until data are loaded>'}; %#ok<AGROW>
+            end
             data = [data; buildLinkedModuleRows(app, node); buildContractTableRows(app, node)];
             app.UIModuleParametersTable.Data = data;
+        end
+
+        function data = injectExpectedSelectorRows(app, node, data)
+            if nargin < 3 || isempty(data)
+                data = cell(0,2);
+            end
+
+            if requiresSingleExplicitChannel(app, node)
+                keys = lower(string(data(:,1)));
+                if ~any(keys == "channel")
+                    defaultVal = '';
+                    params = getfielddefault(app, node, 'params', struct());
+                    if isstruct(params)
+                        if isfield(params,'channel') && ~isempty(params.channel)
+                            defaultVal = params.channel;
+                        elseif isfield(params,'channels') && ~isempty(params.channels)
+                            ch = normalizeChannelChoiceList(app, params.channels);
+                            if ~isempty(ch)
+                                defaultVal = ch{1};
+                            end
+                        end
+                    end
+                    data(end+1,:) = {'channel', toUITableCellValue(app, paramValueToTableCell(app, defaultVal))}; %#ok<AGROW>
+                end
+            end
         end
 
         function tf = isReadOnlyParamKey(app, key) %#ok<INUSD>
@@ -2242,7 +3181,7 @@ classdef pipelineGUI < matlab.apps.AppBase
                 elseif isscalar(v)
                     out = num2str(v);
                 else
-                    out = mat2str(v);
+                    out = compactNumericDisplay(app, v);
                 end
             elseif iscell(v) || isstruct(v)
                 try
@@ -2261,6 +3200,69 @@ classdef pipelineGUI < matlab.apps.AppBase
                 catch
                     out = class(v);
                 end
+            end
+        end
+
+        function out = compactNumericDisplay(app, v) %#ok<INUSD>
+            if ~isnumeric(v) || isempty(v)
+                out = '';
+                return;
+            end
+
+            if ~isvector(v)
+                out = mat2str(v);
+                return;
+            end
+
+            x = double(v(:)');
+            if numel(x) <= 1
+                out = num2str(x);
+                return;
+            end
+
+            if all(isfinite(x))
+                d = diff(x);
+                if ~isempty(d) && all(abs(d - d(1)) < 1e-12)
+                    step = d(1);
+                    if abs(step - 1) < 1e-12
+                        out = sprintf('%s:%s', num2str(x(1)), num2str(x(end)));
+                        return;
+                    end
+                    out = sprintf('%s:%s:%s', num2str(x(1)), num2str(step), num2str(x(end)));
+                    return;
+                end
+
+                if all(abs(x - round(x)) < 1e-12)
+                    parts = {};
+                    startVal = x(1);
+                    prevVal = x(1);
+                    for ii = 2:numel(x)
+                        if abs(x(ii) - (prevVal + 1)) < 1e-12
+                            prevVal = x(ii);
+                            continue;
+                        end
+                        parts{end+1} = makeIntegerRunString(app, startVal, prevVal); %#ok<AGROW>
+                        startVal = x(ii);
+                        prevVal = x(ii);
+                    end
+                    parts{end+1} = makeIntegerRunString(app, startVal, prevVal); %#ok<AGROW>
+                    if numel(parts) > 1
+                        out = ['[' strjoin(parts, ' ') ']'];
+                        return;
+                    end
+                end
+            end
+
+            out = mat2str(v);
+        end
+
+        function txt = makeIntegerRunString(app, a, b) %#ok<INUSD>
+            if abs(a - b) < 1e-12
+                txt = num2str(round(a));
+            elseif abs(b - (a + 1)) < 1e-12
+                txt = sprintf('%d %d', round(a), round(b));
+            else
+                txt = sprintf('%d:%d', round(a), round(b));
             end
         end
 
@@ -2370,9 +3372,52 @@ classdef pipelineGUI < matlab.apps.AppBase
 
             out = char(string(raw));
         end
+
+        function commitVisibleParamTable(app)
+            if isempty(app.SelectedModules)
+                return;
+            end
+            modIdx = app.SelectedModules(1);
+            if modIdx < 1 || modIdx > numel(app.Data.nodes)
+                return;
+            end
+
+            data = app.UIModuleParametersTable.Data;
+            if isempty(data)
+                return;
+            end
+
+            node = app.Data.nodes(modIdx);
+            if ~isfield(node,'params') || isempty(node.params) || ~isstruct(node.params)
+                node.params = struct();
+            end
+
+            for row = 1:size(data,1)
+                key = char(string(data{row,1}));
+                if isempty(key) || isReadOnlyParamKey(app, key)
+                    continue;
+                end
+                rawVal = data{row,2};
+                oldVal = '';
+                if isfield(node.params, key)
+                    oldVal = node.params.(key);
+                end
+                node.params.(key) = parseParamValueFromTable(app, rawVal, oldVal);
+            end
+
+            app.Data.nodes(modIdx) = node;
+        end
+
         function refreshStatus(app, showAlert)
             if nargin < 2
                 showAlert = false;
+            end
+
+            if isempty(app.Data.nodes)
+                setCheckPipelineVisualState(app, false);
+                updateModuleListTable(app);
+                app.UIModuleParametersTable.Data = {};
+                return;
             end
 
             pipe = buildPipelineStruct(app, true);
@@ -2401,6 +3446,8 @@ classdef pipelineGUI < matlab.apps.AppBase
                 end
             end
             semanticHints = extractSemanticHints(app, report);
+            customIssueMap = containers.Map('KeyType','char','ValueType','char');
+            customErrors = {};
 
             nodes = app.Data.nodes;
             if isempty(nodes)
@@ -2416,6 +3463,11 @@ classdef pipelineGUI < matlab.apps.AppBase
             for i = 1:numel(nodes)
                 node = nodes(i);
                 nodeId = char(string(node.id));
+                customIssue = getCustomNodeValidationIssue(app, node);
+                if ~isempty(customIssue)
+                    customIssueMap(nodeId) = customIssue;
+                    customErrors{end+1} = ['Node ' nodeId ': ' customIssue]; %#ok<AGROW>
+                end
                 if ~getfielddefault(app, node,'enabled',true)
                     node.status = 'Disabled';
                 elseif isKey(portReport.nodeIssues, nodeId)
@@ -2427,6 +3479,8 @@ classdef pipelineGUI < matlab.apps.AppBase
                 elseif isKey(deferredMap, nodeId)
                     miss = deferredMap(nodeId);
                     node.status = ['Deferred: ' strjoin(miss, ', ')];
+                elseif isKey(customIssueMap, nodeId)
+                    node.status = ['Missing: ' customIssueMap(nodeId)];
                 elseif isKey(semanticHints, nodeId)
                     node.status = semanticHints(nodeId);
                 else
@@ -2448,6 +3502,9 @@ classdef pipelineGUI < matlab.apps.AppBase
                 redrawModule(app, ii);
             end
 
+            hasBlockingError = ~(ok && okPorts) || ~isempty(customErrors);
+            setCheckPipelineVisualState(app, ~hasBlockingError);
+
             if showAlert
                 errs = {};
                 warns = {};
@@ -2456,6 +3513,9 @@ classdef pipelineGUI < matlab.apps.AppBase
                 end
                 if isfield(portReport,'errors') && ~isempty(portReport.errors)
                     errs = [errs portReport.errors];
+                end
+                if ~isempty(customErrors)
+                    errs = [errs customErrors];
                 end
                 if isfield(report,'warnings') && ~isempty(report.warnings)
                     warns = [warns report.warnings];
@@ -3086,10 +4146,10 @@ classdef pipelineGUI < matlab.apps.AppBase
             c = getNodeContract(app, node);
             if isOut
                 ports = c.out;
-                x = x0 + w;
+                x = x0 + w - 1.5;
             else
                 ports = c.in;
-                x = x0;
+                x = x0 + 1.5;
             end
             y = y0 + h/2;
             if isempty(ports)
@@ -3099,12 +4159,49 @@ classdef pipelineGUI < matlab.apps.AppBase
             if isempty(idx)
                 idx = 1;
             end
-            y = y0 + (idx * h) / (numel(ports)+1);
+            y = getPortRowY(app, node, isOut, idx);
         end
 
-        function deleteModule(app, idx)
+        function y = getPortRowY(app, node, isOut, idx)
+            [~,y0,~,h] = deal(node.layout(1), node.layout(2), node.layout(3), node.layout(4));
+            c = getNodeContract(app, node);
+            if isOut
+                count = numel(c.out);
+            else
+                count = numel(c.in);
+            end
+            count = max(count, 1);
+            idx = min(max(round(double(idx)), 1), count);
+
+            topY = y0 + 7.6;
+            bottomY = y0 + h - 1.6;
+            if count == 1
+                y = (topY + bottomY) / 2;
+            else
+                y = topY + (idx - 1) * ((bottomY - topY) / (count - 1));
+            end
+        end
+
+        function deleteModule(app, idx, askConfirm)
+            if nargin < 3
+                askConfirm = true;
+            end
             if idx > numel(app.Data.nodes)
                 return;
+            end
+
+            if askConfirm
+                nodeName = char(string(getfielddefault(app, app.Data.nodes(idx), 'name', app.Data.nodes(idx).id)));
+                choice = uiconfirm(app.UIFigure, ...
+                    sprintf('Delete module "%s" from the pipeline?', nodeName), ...
+                    'Delete module', ...
+                    'Options', {'Delete','Cancel'}, ...
+                    'DefaultOption', 2, ...
+                    'CancelOption', 2, ...
+                    'Icon', 'warning');
+                if ~strcmp(choice, 'Delete')
+                    return;
+                end
             end
 
             nodeId = char(string(app.Data.nodes(idx).id));
@@ -3140,16 +4237,7 @@ classdef pipelineGUI < matlab.apps.AppBase
             app.SelectedModules = app.SelectedModules(app.SelectedModules ~= idx);
             app.SelectedModules(app.SelectedModules > idx) = app.SelectedModules(app.SelectedModules > idx) - 1;
             clearPortSelection(app);
-
-            for i = 1:numel(app.ModuleHandles)
-                if isvalid(app.ModuleHandles(i))
-                    app.ModuleHandles(i).UserData = i;
-                end
-            end
-
-            redrawEdges(app);
-            updateModuleListTable(app);
-            refreshStatus(app);
+            redrawAll(app);
         end
 
         function openModule(app, idx)
@@ -3711,24 +4799,38 @@ classdef pipelineGUI < matlab.apps.AppBase
             end
         end
 
-        function savePipelineFromGUI(app)
+        function savePipelineFromGUI(app, forcePrompt)
+            if nargin < 2
+                forcePrompt = false;
+            end
             pipeObj = [];
             if isfield(app.Context,'pipeObj') && isa(app.Context.pipeObj,'pipeline')
                 pipeObj = app.Context.pipeObj;
             end
 
-            if isempty(pipeObj)
-                pipeObj = pipelineNew();
-                if isempty(pipeObj)
+            if isempty(pipeObj) || forcePrompt || isempty(pipeObj.path)
+                [parentPath, pipeName, ok] = promptPipelineLocation(app, getDefaultPipelineName(app));
+                if ~ok
                     return;
                 end
-                app.Context.pipeObj = pipeObj;
+
+                if isempty(pipeObj)
+                    pipeObj = pipelineConstruct(parentPath, pipeName, 1);
+                    app.Context.pipeObj = pipeObj;
+                else
+                    pipeObj.path = fullfile(parentPath, pipeName);
+                    pipeObj.strid = pipeName;
+                    if ~exist(pipeObj.path, 'dir')
+                        mkdir(pipeObj.path);
+                    end
+                end
             end
 
             pipe = buildPipelineStruct(app, true);
             pipeObj.nodes = pipe.nodes;
             pipeObj.edges = pipe.edges;
             pipelineSave(pipeObj);
+            refreshAppTitle(app);
             rememberPipelineNodesInOfflineLibrary(app, pipe.nodes, 'offline library');
             updateModuleLibraryTable(app);
         end
@@ -3750,6 +4852,12 @@ classdef pipelineGUI < matlab.apps.AppBase
 
         function modulePatchButtonDown(app, src, event)
             idx = src.UserData;
+            if strcmp(app.UIFigure.SelectionType,'alt')
+                clearPortSelection(app);
+                setSelection(app, idx, false);
+                updateParamsTable(app, idx);
+                return;
+            end
             if strcmp(app.UIFigure.SelectionType,'open')
                 openModule(app, idx);
                 return;
@@ -3765,6 +4873,111 @@ classdef pipelineGUI < matlab.apps.AppBase
             node = app.Data.nodes(idx);
             app.DraggingModule = idx;
             app.DragOffset = [pt(1,1) - node.layout(1), pt(1,2) - node.layout(2)];
+        end
+
+        function addModuleFromCanvasContext(app, displayName)
+            pt = app.CanvasContextPoint;
+            if numel(pt) < 2 || any(isnan(pt))
+                pt = [32 12];
+            end
+            tpl = getTemplateByDisplay(app, displayName);
+            addModuleAt(app, pt, tpl);
+        end
+
+        function tf = confirmDiscardCurrentPipeline(app)
+            tf = true;
+            if isempty(app.Data.nodes) && isempty(app.Data.edges)
+                return;
+            end
+
+            choice = uiconfirm(app.UIFigure, ...
+                'Discard the current pipeline and start a new one?', ...
+                'New pipeline', ...
+                'Options', {'Discard','Cancel'}, ...
+                'DefaultOption', 2, ...
+                'CancelOption', 2, ...
+                'Icon', 'warning');
+            tf = strcmp(choice, 'Discard');
+        end
+
+        function pipeObj = getCurrentPipelineObject(app)
+            pipeObj = [];
+            if isfield(app.Context,'pipeObj') && isa(app.Context.pipeObj,'pipeline')
+                pipeObj = app.Context.pipeObj;
+            end
+        end
+
+        function nameOut = getDefaultPipelineName(app)
+            nameOut = 'pipeline';
+            pipeObj = getCurrentPipelineObject(app);
+            if ~isempty(pipeObj) && ~isempty(pipeObj.strid)
+                nameOut = char(string(pipeObj.strid));
+                return;
+            end
+            if ~isempty(app.Data.nodes)
+                nameOut = 'pipeline_gui';
+            end
+        end
+
+        function [parentPath, pipeName, ok] = promptPipelineLocation(app, defaultName)
+            ok = false;
+            parentPath = '';
+            pipeName = char(string(defaultName));
+
+            if nargin < 2 || isempty(pipeName)
+                pipeName = 'pipeline';
+            end
+
+            parentPath = uigetdir(pwd, 'Select parent folder for the pipeline');
+            if isequal(parentPath, 0)
+                parentPath = '';
+                return;
+            end
+
+            answer = inputdlg({'Pipeline name:'}, 'Save pipeline', [1 60], {pipeName});
+            if isempty(answer)
+                parentPath = '';
+                return;
+            end
+
+            pipeName = strtrim(char(string(answer{1})));
+            if isempty(pipeName)
+                uialert(app.UIFigure, 'Pipeline name cannot be empty.', 'Invalid name', 'Icon','warning');
+                parentPath = '';
+                return;
+            end
+
+            ok = true;
+        end
+
+        function refreshAppTitle(app)
+            baseTitle = 'Pipeline GUI';
+            pipeObj = getCurrentPipelineObject(app);
+            if isempty(pipeObj)
+                app.UIFigure.Name = baseTitle;
+                return;
+            end
+
+            pipeName = '';
+            try
+                pipeName = char(string(pipeObj.strid));
+            catch
+            end
+            if isempty(pipeName)
+                app.UIFigure.Name = baseTitle;
+            else
+                app.UIFigure.Name = sprintf('%s - %s', baseTitle, pipeName);
+            end
+        end
+
+        function setCheckPipelineVisualState(app, isValid)
+            if isValid
+                app.CheckpipelineButton.BackgroundColor = [0.18 0.62 0.27];
+                app.CheckpipelineButton.FontColor = [1 1 1];
+            else
+                app.CheckpipelineButton.BackgroundColor = [0.82 0.22 0.20];
+                app.CheckpipelineButton.FontColor = [1 1 1];
+            end
         end
 
         function val = getfielddefault(varargin)
@@ -3798,39 +5011,45 @@ classdef pipelineGUI < matlab.apps.AppBase
 
             % Create UIFigure and hide until all components are created
             app.UIFigure = uifigure('Visible', 'off');
-            app.UIFigure.Position = [80 60 1320 880];
-            app.UIFigure.Name = 'Pipeline GUI';
-            app.UIFigure.WindowButtonMotionFcn = createCallbackFcn(app, @UIFigureWindowButtonMotion, true);
-            app.UIFigure.WindowButtonUpFcn = createCallbackFcn(app, @UIFigureWindowButtonUp, true);
+            app.UIFigure.Position = [100 100 1160 766];
+            app.UIFigure.Name = 'MATLAB App';
 
-            % Create ModulelibraryLabel
-            app.ModulelibraryLabel = uilabel(app.UIFigure);
-            app.ModulelibraryLabel.Position = [18 822 140 22];
-            app.ModulelibraryLabel.Text = 'Module library';
+            % Create FileMenu
+            app.FileMenu = uimenu(app.UIFigure);
+            app.FileMenu.Text = 'File';
 
-            % Create RefreshlibraryButton
-            app.RefreshlibraryButton = uibutton(app.UIFigure, 'push');
-            app.RefreshlibraryButton.ButtonPushedFcn = createCallbackFcn(app, @RefreshlibraryButtonPushed, true);
-            app.RefreshlibraryButton.Position = [128 820 95 24];
-            app.RefreshlibraryButton.Text = 'Refresh';
+            % Create NewpipelineMenu
+            app.NewpipelineMenu = uimenu(app.FileMenu);
+            app.NewpipelineMenu.Text = 'New pipeline';
 
-            % Create UIModuleLibraryTable
-            app.UIModuleLibraryTable = uitable(app.UIFigure);
-            app.UIModuleLibraryTable.ColumnName = {'Name'; 'Type'; 'Package'; 'Source'; 'Provides'};
-            app.UIModuleLibraryTable.RowName = {};
-            app.UIModuleLibraryTable.SelectionChangedFcn = createCallbackFcn(app, @UIModuleLibraryTableSelectionChanged, true);
-            app.UIModuleLibraryTable.Position = [18 138 205 674];
-            app.UIModuleLibraryTable.FontSize = 12;
-            cmLib = uicontextmenu(app.UIFigure);
-            uimenu(cmLib, 'Text', 'Duplicate into graph', ...
-                'MenuSelectedFcn', createCallbackFcn(app, @DuplicatefromlibraryButtonPushed, true));
-            app.UIModuleLibraryTable.ContextMenu = cmLib;
+            % Create SavepipelineMenu
+            app.SavepipelineMenu = uimenu(app.FileMenu);
+            app.SavepipelineMenu.Text = 'Save pipeline';
 
-            % Create DuplicatefromlibraryButton
-            app.DuplicatefromlibraryButton = uibutton(app.UIFigure, 'push');
-            app.DuplicatefromlibraryButton.ButtonPushedFcn = createCallbackFcn(app, @DuplicatefromlibraryButtonPushed, true);
-            app.DuplicatefromlibraryButton.Position = [18 100 205 26];
-            app.DuplicatefromlibraryButton.Text = 'Duplicate into graph';
+            % Create SavepipelineasMenu
+            app.SavepipelineasMenu = uimenu(app.FileMenu);
+            app.SavepipelineasMenu.Text = 'Save pipeline as...';
+
+            % Create RevealpipelineinexplorerMenu
+            app.RevealpipelineinexplorerMenu = uimenu(app.FileMenu);
+            app.RevealpipelineinexplorerMenu.Separator = 'on';
+            app.RevealpipelineinexplorerMenu.Text = 'Reveal pipeline in explorer';
+
+            % Create OpenpipelineJSONfileMenu
+            app.OpenpipelineJSONfileMenu = uimenu(app.FileMenu);
+            app.OpenpipelineJSONfileMenu.Text = 'Open pipeline JSON file';
+
+            % Create RunMenu
+            app.RunMenu = uimenu(app.UIFigure);
+            app.RunMenu.Text = 'Run';
+
+            % Create CheckpipelineMenu
+            app.CheckpipelineMenu = uimenu(app.RunMenu);
+            app.CheckpipelineMenu.Text = 'Check pipeline...';
+
+            % Create CreaterunMenu
+            app.CreaterunMenu = uimenu(app.RunMenu);
+            app.CreaterunMenu.Text = 'Create run...';
 
             % Create UIModulesAxes
             app.UIModulesAxes = uiaxes(app.UIFigure);
@@ -3838,73 +5057,34 @@ classdef pipelineGUI < matlab.apps.AppBase
             app.UIModulesAxes.XTick = [];
             app.UIModulesAxes.YTick = [];
             app.UIModulesAxes.ButtonDownFcn = createCallbackFcn(app, @UIModulesAxesButtonDown, true);
-            app.UIModulesAxes.Position = [240 468 1060 332];
-
-            % Create ModuletypeDropDownLabel
-            app.ModuletypeDropDownLabel = uilabel(app.UIFigure);
-            app.ModuletypeDropDownLabel.HorizontalAlignment = 'right';
-            app.ModuletypeDropDownLabel.Position = [240 823 70 22];
-            app.ModuletypeDropDownLabel.Text = 'Module type';
-
-            % Create ModuletypeDropDown
-            app.ModuletypeDropDown = uidropdown(app.UIFigure);
-            app.ModuletypeDropDown.Items = {'Dataloader', 'ROI pattern', 'ROI manual', 'ROI grid', 'ROI tracked', 'ROI extraction', 'Processor', 'Classifier'};
-            app.ModuletypeDropDown.Position = [326 822 112 24];
-            app.ModuletypeDropDown.Value = 'Dataloader';
-
-            % Create AddmoduleButton
-            app.AddmoduleButton = uibutton(app.UIFigure, 'push');
-            app.AddmoduleButton.ButtonPushedFcn = createCallbackFcn(app, @AddmoduleButtonPushed, true);
-            app.AddmoduleButton.Position = [452 821 108 24];
-            app.AddmoduleButton.Text = 'Add module';
+            app.UIModulesAxes.Position = [363 403 786 333];
 
             % Create UIModuleListTable
             app.UIModuleListTable = uitable(app.UIFigure);
-            app.UIModuleListTable.ColumnName = {'Select'; 'Name'; 'Package'; 'Requires'; 'Provides'; 'Status'};
+            app.UIModuleListTable.ColumnName = {'Select'; 'Name'; 'Type'; 'Requires'; 'Provides'; 'Status'};
             app.UIModuleListTable.RowName = {};
             app.UIModuleListTable.ColumnEditable = [true true true false false false];
             app.UIModuleListTable.CellEditCallback = createCallbackFcn(app, @UIModuleListTableCellEdit, true);
             app.UIModuleListTable.SelectionChangedFcn = createCallbackFcn(app, @UIModuleListTableSelectionChanged, true);
-            app.UIModuleListTable.Position = [240 255 1060 190];
-            app.UIModuleListTable.FontSize = 14;
-            cmNode = uicontextmenu(app.UIFigure);
-            uimenu(cmNode, 'Text', 'Link selected node from selected library module', ...
-                'MenuSelectedFcn', createCallbackFcn(app, @LinkselectednodefromlibraryMenuSelected, true));
-            uimenu(cmNode, 'Text', 'Save selected node to offline library', ...
-                'MenuSelectedFcn', createCallbackFcn(app, @SaveselectednodetolibraryMenuSelected, true));
-            uimenu(cmNode, 'Text', 'Unlink selected node reference', ...
-                'MenuSelectedFcn', createCallbackFcn(app, @UnlinkselectednodeMenuSelected, true));
-            app.UIModuleListTable.ContextMenu = cmNode;
-
-            % Create RunpipelineButton
-            app.RunpipelineButton = uibutton(app.UIFigure, 'push');
-            app.RunpipelineButton.ButtonPushedFcn = createCallbackFcn(app, @RunpipelineButtonPushed, true);
-            app.RunpipelineButton.Position = [240 16 110 24];
-            app.RunpipelineButton.Text = 'Run pipeline';
+            app.UIModuleListTable.Position = [12 219 1129 185];
 
             % Create CloseButton
             app.CloseButton = uibutton(app.UIFigure, 'push');
             app.CloseButton.ButtonPushedFcn = createCallbackFcn(app, @CloseButtonPushed, true);
-            app.CloseButton.Position = [1190 16 110 24];
+            app.CloseButton.Position = [752 22 389 39];
             app.CloseButton.Text = 'Close';
-
-            % Create CheckpipelineButton
-            app.CheckpipelineButton = uibutton(app.UIFigure, 'push');
-            app.CheckpipelineButton.ButtonPushedFcn = createCallbackFcn(app, @CheckpipelineButtonPushed, true);
-            app.CheckpipelineButton.Position = [364 16 112 24];
-            app.CheckpipelineButton.Text = 'Check pipeline';
-
-            % Create OpenselectedmoduleButton
-            app.OpenselectedmoduleButton = uibutton(app.UIFigure, 'push');
-            app.OpenselectedmoduleButton.ButtonPushedFcn = createCallbackFcn(app, @OpenselectedmoduleButtonPushed, true);
-            app.OpenselectedmoduleButton.Position = [490 16 150 24];
-            app.OpenselectedmoduleButton.Text = 'Open selected module';
 
             % Create CreaterunButton
             app.CreaterunButton = uibutton(app.UIFigure, 'push');
             app.CreaterunButton.ButtonPushedFcn = createCallbackFcn(app, @CreaterunButtonPushed, true);
-            app.CreaterunButton.Position = [654 16 145 24];
-            app.CreaterunButton.Text = 'Create run...';
+            app.CreaterunButton.Position = [752 79 389 56];
+            app.CreaterunButton.Text = 'Create run';
+
+            % Create CheckpipelineButton
+            app.CheckpipelineButton = uibutton(app.UIFigure, 'push');
+            app.CheckpipelineButton.ButtonPushedFcn = createCallbackFcn(app, @CheckpipelineButtonPushed, true);
+            app.CheckpipelineButton.Position = [752 145 389 62];
+            app.CheckpipelineButton.Text = 'Check pipeline';
 
             % Create UIModuleParametersTable
             app.UIModuleParametersTable = uitable(app.UIFigure);
@@ -3912,15 +5092,28 @@ classdef pipelineGUI < matlab.apps.AppBase
             app.UIModuleParametersTable.RowName = {};
             app.UIModuleParametersTable.CellEditCallback = createCallbackFcn(app, @UIModuleParametersTableCellEdit, true);
             app.UIModuleParametersTable.SelectionChangedFcn = createCallbackFcn(app, @UIModuleParametersTableSelectionChanged, true);
-            app.UIModuleParametersTable.Position = [240 52 1060 190];
-            app.UIModuleParametersTable.FontSize = 14;
+            app.UIModuleParametersTable.Position = [12 22 724 185];
 
-            % Create ConnectDisconnectmodulesButton
-            app.ConnectDisconnectmodulesButton = uibutton(app.UIFigure, 'push');
-            app.ConnectDisconnectmodulesButton.ButtonPushedFcn = createCallbackFcn(app, @ConnectDisconnectmodulesButtonPushed, true);
-            app.ConnectDisconnectmodulesButton.Position = [575 821 192 24];
-            app.ConnectDisconnectmodulesButton.Tooltip = {'Click 2 ports to connect/disconnect directly, or select 2 modules then press this button.'};
-            app.ConnectDisconnectmodulesButton.Text = 'Connect/Disconnect modules';
+            % Create ButtonMoveToCanva
+            app.ButtonMoveToCanva = uibutton(app.UIFigure, 'push');
+            app.ButtonMoveToCanva.Position = [314 417 52 316];
+            app.ButtonMoveToCanva.Text = '>>>';
+
+            % Create ModulesinworkspaceLabel
+            app.ModulesinworkspaceLabel = uilabel(app.UIFigure);
+            app.ModulesinworkspaceLabel.Position = [4 732 130 35];
+            app.ModulesinworkspaceLabel.Text = 'Modules in workspace: ';
+
+            % Create PipelinesketchLabel
+            app.PipelinesketchLabel = uilabel(app.UIFigure);
+            app.PipelinesketchLabel.Position = [381 732 130 35];
+            app.PipelinesketchLabel.Text = 'Pipeline sketch:';
+
+            % Create UITable
+            app.UITable = uitable(app.UIFigure);
+            app.UITable.ColumnName = {'Column 1'; 'Column 2'; 'Column 3'; 'Column 4'};
+            app.UITable.RowName = {};
+            app.UITable.Position = [12 417 295 316];
 
             % Show the figure after all components are created
             app.UIFigure.Visible = 'on';

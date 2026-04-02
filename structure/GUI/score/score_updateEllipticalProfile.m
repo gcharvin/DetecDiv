@@ -42,7 +42,17 @@ function score_updateEllipticalProfile(app, ellipseObj)
         return;
     end
     checkboxValues = cell2mat(app.UIChannelTable.Data(:,1));
-    displayedChannels = colorChannels(checkboxValues);
+    checkboxValues = logical(checkboxValues(:)');
+    nMask = min(numel(colorChannels), numel(checkboxValues));
+    if nMask == 0
+        cla(app.UIProfileAxes);
+        return;
+    end
+    checkboxValues = checkboxValues(1:nMask);
+    colorChannels = colorChannels(1:nMask);
+    selectedIdx = find(checkboxValues);
+    selectedIdx = selectedIdx(selectedIdx >= 1 & selectedIdx <= numel(colorChannels));
+    displayedChannels = colorChannels(selectedIdx);
     if isempty(displayedChannels)
         cla(app.UIProfileAxes);
         return;

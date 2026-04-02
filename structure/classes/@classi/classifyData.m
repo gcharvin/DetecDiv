@@ -164,6 +164,7 @@ end
 % Main loop
 % -----------------------------
 for i = 1:numel(roiobj)
+    checkClassifyCancellation(classiobj);
 
     goclassif = 1;
     roiIdStr = '';
@@ -311,6 +312,7 @@ for i = 1:numel(roiobj)
         p.Value   = 0.9 * double(i) / numel(roiobj);
         p.Message = ['Classifying ROI  ' roiobj(i).id];
     end
+    checkClassifyCancellation(classiobj);
 
     % ---------------------------------------------------------
     % Dispatch
@@ -449,6 +451,32 @@ if ~isempty(p)
 end
 
 end % classifyData
+
+function checkClassifyCancellation(classiobj)
+try
+    cancelInfo = [];
+    if isprop(classiobj, 'runProfiles') && isstruct(classiobj.runProfiles) ...
+            && isfield(classiobj.runProfiles, 'classify') && isstruct(classiobj.runProfiles.classify) ...
+            && isfield(classiobj.runProfiles.classify, 'cancel')
+        cancelInfo = classiobj.runProfiles.classify.cancel;
+    end
+    if isstruct(cancelInfo) && isfield(cancelInfo, 'tokenFile') && ~isempty(cancelInfo.tokenFile)
+        tokenFile = char(string(cancelInfo.tokenFile));
+        if exist(tokenFile, 'file') == 2
+            try
+                pe = pyenv;
+                if pe.Status == "Loaded"
+                    terminate(pyenv);
+                end
+            catch
+            end
+            error('runPipeline:Cancelled', 'Pipeline run cancelled by user.');
+        end
+    end
+catch ME
+    rethrow(ME);
+end
+end
 
 
 % ========================================================================
@@ -618,6 +646,7 @@ function ROIManagement(roiobj, data, image, outputName, classiobj, cachePolicyLo
     dataCache = data;
     roiobj.data  = data;
     roiobj.image = image;
+    localNormalizeIndexedResultChannels(roiobj);
 
     if numel(image)
         try
@@ -648,6 +677,61 @@ function ROIManagement(roiobj, data, image, outputName, classiobj, cachePolicyLo
             disp('[DEBUG] ROIManagement: roi.save(''data'') done.');
         end
     end
+end
+
+function localNormalizeIndexedResultChannels(roiobj)
+try
+    if ~isprop(roiobj,'display') || isempty(roiobj.display) || ~isstruct(roiobj.display)
+        return;
+    end
+    if ~isfield(roiobj.display,'channel') || isempty(roiobj.display.channel)
+        return;
+    end
+
+    nLog = numel(roiobj.display.channel);
+    if ~isfield(roiobj.display,'indexed') || isempty(roiobj.display.indexed)
+        roiobj.display.indexed = zeros(1, nLog);
+    elseif numel(roiobj.display.indexed) < nLog
+        roiobj.display.indexed(end+1:nLog) = 0;
+    end
+
+    if ~isfield(roiobj.display,'intensity') || isempty(roiobj.display.intensity)
+        roiobj.display.intensity = ones(nLog, 3);
+    elseif size(roiobj.display.intensity,1) < nLog
+        roiobj.display.intensity(end+1:nLog,:) = 1;
+    end
+
+    if ~isfield(roiobj.display,'alpha') || isempty(roiobj.display.alpha)
+        roiobj.display.alpha = ones(1, nLog);
+    elseif numel(roiobj.display.alpha) < nLog
+        roiobj.display.alpha(end+1:nLog) = 1;
+    end
+
+    if ~isfield(roiobj.display,'width') || isempty(roiobj.display.width)
+        roiobj.display.width = ones(1, nLog);
+    elseif numel(roiobj.display.width) < nLog
+        roiobj.display.width(end+1:nLog) = 1;
+    end
+
+    for iLog = 1:nLog
+        chName = lower(string(roiobj.display.channel{iLog}));
+        isMaskLike = startsWith(chName, "results_") || contains(chName, "mask") || contains(chName, "track");
+        if ~isMaskLike
+            continue;
+        end
+        row = double(roiobj.display.intensity(iLog,:));
+        if isempty(row) || all(row == 0)
+            roiobj.display.indexed(iLog) = 1;
+            if roiobj.display.alpha(iLog) <= 0
+                roiobj.display.alpha(iLog) = 1;
+            end
+            if roiobj.display.width(iLog) <= 0
+                roiobj.display.width(iLog) = 1;
+            end
+        end
+    end
+catch
+end
 end
 
 function tf = shouldKeepRoiInMemory(policy, hadImageBefore, hadDataBefore)

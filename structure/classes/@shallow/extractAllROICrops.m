@@ -1639,6 +1639,10 @@ if ischar(spec)
         out = {};
         return;
     end
+    if any(strcmpi(txt, {'all', '*', ':'}))
+        out = {};
+        return;
+    end
 
     [vals, ok] = tryParseNumericVector(txt);
     if ok

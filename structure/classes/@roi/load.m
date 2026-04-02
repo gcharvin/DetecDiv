@@ -837,6 +837,9 @@ dispStruct.indexed(logicalId)     = double(att.indexed(1));
 dispStruct.alpha(logicalId)       = double(att.alpha(1));
 dispStruct.contour(logicalId)     = double(att.contour(1));
 dispStruct.width(logicalId)       = double(att.width(1));
+if localShouldForceIndexedChannel(logicalName, dispStruct.intensity(logicalId,:))
+    dispStruct.indexed(logicalId) = 1;
+end
 if ~isfield(dispStruct,'frame') || isempty(dispStruct.frame)
     dispStruct.frame = double(att.frame);
 else
@@ -970,6 +973,9 @@ for i = 1:N
     alpha(i)       = double(attrs(i).alpha(1));
     contour(i)     = double(attrs(i).contour(1));
     width(i)       = double(attrs(i).width(1));
+    if localShouldForceIndexedChannel(names{i}, intensity(i,:))
+        indexed(i) = 1;
+    end
 
     % selectedchannel doit refléter le canal actif (par défaut 1)
     % -> ne surtout pas copier 'width'
@@ -1009,6 +1015,21 @@ dispStruct.contour         = contour;            % 1 x N
 dispStruct.width           = width;              % 1 x N
 dispStruct.log             = zeros(1,N);
 
+end
+
+function tf = localShouldForceIndexedChannel(channelName, intensityRow)
+tf = false;
+try
+    name = lower(string(channelName));
+    isMaskLikeName = startsWith(name, "results_") || contains(name, "mask") || contains(name, "track");
+    if ~isMaskLikeName
+        return;
+    end
+    row = double(intensityRow(:).');
+    tf = isempty(row) || all(row == 0);
+catch
+    tf = false;
+end
 end
 % 
 % function d = defaultDisplay(N, C)

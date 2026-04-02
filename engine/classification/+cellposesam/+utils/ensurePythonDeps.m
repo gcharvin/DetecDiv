@@ -157,6 +157,8 @@ catch ME
     rethrow(ME);
 end
 
+end
+
 function ok = canImport(pyExe, pkg)
     cmd = sprintf('"%s" -c "import importlib; importlib.import_module(''%s'')"', pyExe, pkg);
     [st, ~] = system(cmd);

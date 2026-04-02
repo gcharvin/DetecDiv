@@ -76,6 +76,9 @@ classdef detecdiv < matlab.apps.AppBase
         RecentClassifiersFile string             % stockage persistant
         RecentPipelines string = strings(0)      % chemins complets vers pipeline.json
         RecentPipelinesFile string               % stockage persistant
+        ActivePipelineCancelFile string = ""
+        ActivePipelineCancelTimer = []
+        ActivePipelineProgressDialog = []
 
     end
 
@@ -983,7 +986,7 @@ end
                     ctx.shallowObj = shallowObj;
                     ctx.allowGUI = true;
 
-                    [ctxOut, report] = runPipeline(pipeObj, ctx);
+                    [ctxOut, report] = app.runStructuredPipeline(pipeObj, ctx);
 
                     runObj.ctx = ctxOut;
                     runObj.outputs = struct('report', report);
@@ -1022,6 +1025,19 @@ end
             function [pipeObj, msg] = resolvePipelineFromRun(runObj, shallowObj)
                 pipeObj = [];
                 msg = 'Could not resolve pipeline for this run.';
+
+                try
+                    spec = runObj.ctx.pipelineSpec;
+                    if isstruct(spec) && isfield(spec,'nodes') && ~isempty(spec.nodes)
+                        pipeObj = spec;
+                        if ~isfield(pipeObj,'edges') || isempty(pipeObj.edges)
+                            pipeObj.edges = struct([]);
+                        end
+                        msg = '';
+                        return;
+                    end
+                catch
+                end
 
                 if isprop(runObj,'pipelineRef') && isstruct(runObj.pipelineRef)
                     if isfield(runObj.pipelineRef,'path') && ~isempty(runObj.pipelineRef.path)
@@ -1083,18 +1099,6 @@ end
                     end
                 end
 
-                try
-                    spec = runObj.ctx.pipelineSpec;
-                    if isstruct(spec) && isfield(spec,'nodes') && ~isempty(spec.nodes)
-                        pipeObj = spec;
-                        if ~isfield(pipeObj,'edges') || isempty(pipeObj.edges)
-                            pipeObj.edges = struct([]);
-                        end
-                        msg = '';
-                        return;
-                    end
-                catch
-                end
             end
 
             function runObj = backfillRunPipelineRef(runObj, pipeObj, shallowObj)
@@ -4956,6 +4960,40 @@ end
                         roiObj.parent=clas;
                 end
 
+                try
+                    if isfield(roiObj,'display') && isstruct(roiObj.display) ...
+                            && isfield(roiObj.display,'channel') && ~isempty(roiObj.display.channel)
+                        nLog = numel(roiObj.display.channel);
+                        if ~isfield(roiObj.display,'indexed') || isempty(roiObj.display.indexed)
+                            roiObj.display.indexed = zeros(1, nLog);
+                        elseif numel(roiObj.display.indexed) < nLog
+                            roiObj.display.indexed(end+1:nLog) = 0;
+                        end
+                        for iLog = 1:nLog
+                            chName = lower(string(roiObj.display.channel{iLog}));
+                            isMaskLike = startsWith(chName, "results_") || contains(chName, "mask") || contains(chName, "track");
+                            if ~isMaskLike
+                                continue;
+                            end
+                            if isfield(roiObj.display,'intensity') && size(roiObj.display.intensity,1) >= iLog
+                                row = double(roiObj.display.intensity(iLog,:));
+                                if all(row == 0)
+                                    roiObj.display.indexed(iLog) = 1;
+                                end
+                            else
+                                roiObj.display.indexed(iLog) = 1;
+                            end
+                        end
+                    end
+                catch
+                end
+
+                try
+                    clear score_display score_updateHistogram score_updateIntensityProfile score_updateEllipticalProfile
+                    rehash
+                catch
+                end
+
                 figures=findall(0,'Type','figure');
                 appFigure=findobj(figures,'Name','ScoreApp');
                 if isprop(appFigure,'RunningAppInstance')
@@ -6022,6 +6060,19 @@ end
 
     try
         selectedNodes = app.Tree.SelectedNodes;
+        if isempty(selectedNodes) || ~isobject(selectedNodes)
+            try, close(d); catch, end
+            uialert(app.DetecDivUIFigure, 'Select one item in the tree first.', 'Open');
+            return;
+        end
+        if numel(selectedNodes) > 1
+            selectedNodes = selectedNodes(1);
+        end
+        if ~isprop(selectedNodes, 'UserData') || ~isprop(selectedNodes, 'Tag')
+            try, close(d); catch, end
+            uialert(app.DetecDivUIFigure, 'The selected tree item cannot be opened.', 'Open');
+            return;
+        end
 
         arg = selectedNodes.UserData;
         str = selectedNodes.Tag;
@@ -6095,7 +6146,6 @@ end
         end
 
         if strcmp(str,'ProjectpipelineRun')
-            d.Message = 'Running pipeline run...';
             proj = app.Data.Project{cc(1)};
             runIdx = arg(2);
             shallowObj = evalin('base', proj);
@@ -6104,9 +6154,25 @@ end
             end
 
             runObj = shallowObj.processing.pipelineRun(runIdx);
+            try
+                close(d);
+            catch
+            end
+            d = app.createPipelineRunProgressDialog(runObj.runId);
+            cancelTokenFile = app.startActivePipelineCancelMonitor(d, runObj.runId);
 
             pipeObj = [];
-            if isprop(runObj,'pipelineRef') && isstruct(runObj.pipelineRef) && isfield(runObj.pipelineRef,'path') ...
+            try
+                spec = runObj.ctx.pipelineSpec;
+                if isstruct(spec) && isfield(spec,'nodes') && ~isempty(spec.nodes)
+                    pipeObj = spec;
+                    if ~isfield(pipeObj,'edges') || isempty(pipeObj.edges)
+                        pipeObj.edges = struct([]);
+                    end
+                end
+            catch
+            end
+            if isempty(pipeObj) && isprop(runObj,'pipelineRef') && isstruct(runObj.pipelineRef) && isfield(runObj.pipelineRef,'path') ...
                     && ~isempty(runObj.pipelineRef.path)
                 [pipeObj, ~] = pipelineLoad(runObj.pipelineRef.path);
             end
@@ -6124,18 +6190,6 @@ end
                         end
                         if isempty(wantId) || strcmp(defaultPipe.strid, wantId)
                             pipeObj = defaultPipe;
-                        end
-                    end
-                catch
-                end
-            end
-            if isempty(pipeObj)
-                try
-                    spec = runObj.ctx.pipelineSpec;
-                    if isstruct(spec) && isfield(spec,'nodes') && ~isempty(spec.nodes)
-                        pipeObj = spec;
-                        if ~isfield(pipeObj,'edges') || isempty(pipeObj.edges)
-                            pipeObj.edges = struct([]);
                         end
                     end
                 catch
@@ -6187,8 +6241,9 @@ end
                 ctx.shallow = shallowObj;
                 ctx.shallowObj = shallowObj;
                 ctx.allowGUI = true;
+                ctx.cancel = struct('tokenFile', cancelTokenFile);
 
-                [ctxOut, report] = runPipeline(pipeObj, ctx);
+                [ctxOut, report] = app.runStructuredPipeline(pipeObj, ctx);
 
                 runObj.ctx = ctxOut;
                 runObj.outputs = struct('report', report);
@@ -6198,7 +6253,14 @@ end
 
                 RefreshtreewindowMenuSelected(app);
             catch MErun
-                runObj.status = 'failed';
+                isCancelled = strcmp(MErun.identifier, 'runPipeline:Cancelled') ...
+                    || strcmp(MErun.identifier, 'classifyData:Cancelled') ...
+                    || contains(lower(MErun.message), 'cancelled by user');
+                if isCancelled
+                    runObj.status = 'cancelled';
+                else
+                    runObj.status = 'failed';
+                end
                 runObj.updatedAt = char(datetime('now'));
                 runObj.outputs = struct('error', struct( ...
                     'message', MErun.message, ...
@@ -6214,11 +6276,18 @@ end
                     pipelineRunSave(runObj);
                 catch
                 end
+                RefreshtreewindowMenuSelected(app);
+                if isCancelled
+                    app.stopActivePipelineCancelMonitor(true);
+                    return;
+                end
                 rethrow(MErun)
             end
+            app.stopActivePipelineCancelMonitor(true);
         end
 
     catch ME
+        app.stopActivePipelineCancelMonitor(true);
         try
             close(d);
         catch
@@ -6226,8 +6295,131 @@ end
         rethrow(ME)
     end
 
-    close(d);
+    app.stopActivePipelineCancelMonitor(true);
+    try
+        close(d);
+    catch
+    end
 
+        end
+
+        function [ctxOut, report] = runStructuredPipeline(app, pipeObj, ctx) %#ok<INUSD>
+            [ctxOut, report] = runPipelineDetecDiv(pipeObj, ctx);
+        end
+
+        function d = createPipelineRunProgressDialog(app, runId)
+            if nargin < 2 || isempty(runId)
+                runId = 'pipeline_run';
+            end
+            d = uiprogressdlg(app.DetecDivUIFigure, ...
+                'Title', 'Please wait', ...
+                'Message', ['Running pipeline run ' char(string(runId)) '...'], ...
+                'Indeterminate', 'on', ...
+                'Cancelable', 'on');
+        end
+
+        function tokenFile = startActivePipelineCancelMonitor(app, d, runId)
+            app.stopActivePipelineCancelMonitor(true);
+
+            if nargin < 3 || isempty(runId)
+                runId = char(datetime('now','Format','yyyyMMdd_HHmmss_SSS'));
+            else
+                runId = char(string(runId));
+            end
+            tokenFile = [tempname(tempdir) '_' matlab.lang.makeValidName(runId) '.cancel'];
+            app.ActivePipelineCancelFile = string(tokenFile);
+            app.ActivePipelineProgressDialog = d;
+
+            t = timer( ...
+                'ExecutionMode', 'fixedSpacing', ...
+                'Period', 0.25, ...
+                'BusyMode', 'drop', ...
+                'TimerFcn', @(~,~) app.pollActivePipelineCancelRequest());
+            app.ActivePipelineCancelTimer = t;
+            start(t);
+        end
+
+        function pollActivePipelineCancelRequest(app)
+            try
+                d = app.ActivePipelineProgressDialog;
+                if isempty(d) || ~isvalid(d)
+                    return;
+                end
+                if d.CancelRequested
+                    app.requestActivePipelineCancellation();
+                end
+            catch
+            end
+        end
+
+        function requestActivePipelineCancellation(app)
+            tokenFile = char(app.ActivePipelineCancelFile);
+            if isempty(tokenFile)
+                return;
+            end
+
+            try
+                if exist(tokenFile, 'file') ~= 2
+                    fid = fopen(tokenFile, 'w');
+                    if fid ~= -1
+                        fprintf(fid, 'cancelled_at=%s\n', char(datetime('now')));
+                        fclose(fid);
+                    end
+                end
+            catch
+            end
+
+            try
+                d = app.ActivePipelineProgressDialog;
+                if ~isempty(d) && isvalid(d)
+                    d.Message = 'Cancellation requested... stopping MATLAB/Python work.';
+                end
+            catch
+            end
+
+            try
+                pe = pyenv;
+                if pe.Status == "Loaded"
+                    terminate(pyenv);
+                end
+            catch
+            end
+        end
+
+        function stopActivePipelineCancelMonitor(app, deleteToken)
+            if nargin < 2
+                deleteToken = false;
+            end
+
+            try
+                t = app.ActivePipelineCancelTimer;
+                if ~isempty(t) && isvalid(t)
+                    stop(t);
+                    delete(t);
+                end
+            catch
+            end
+            app.ActivePipelineCancelTimer = [];
+
+            try
+                d = app.ActivePipelineProgressDialog;
+                if ~isempty(d) && isvalid(d)
+                    close(d);
+                end
+            catch
+            end
+            app.ActivePipelineProgressDialog = [];
+
+            if deleteToken
+                try
+                    tokenFile = char(app.ActivePipelineCancelFile);
+                    if ~isempty(tokenFile) && exist(tokenFile, 'file') == 2
+                        delete(tokenFile);
+                    end
+                catch
+                end
+            end
+            app.ActivePipelineCancelFile = "";
         end
 
         % Button pushed function: InspectRunButton
@@ -7941,6 +8133,7 @@ end
 
         % Code that executes before app deletion
         function delete(app)
+            app.stopActivePipelineCancelMonitor(true);
 
             % Delete UIFigure when app is deleted
             delete(app.DetecDivUIFigure)

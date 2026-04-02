@@ -10,7 +10,7 @@ function pipe = pipelineTemplateMinimal(path, name)
         name = 'pipeline_minimal';
     end
 
-    pipe = pipeline(path, name, 1);
+    pipe = pipelineConstruct(path, name, 1);
     pipe.description = 'Load data -> Identify ROIs -> Extract ROI crops';
 
     n1 = struct();

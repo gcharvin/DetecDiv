@@ -12,6 +12,7 @@ function info = select_and_load_conda_env(varargin)
 % Options (Name,Value):
 %   'debug'   (logical, default true)
 %   'reset'   (logical, default false) clear remembered env choice
+%   'classif' / 'classifier' : legacy no-op, accepted for backward compatibility
 
     % -------- Parse options --------
     opts = struct('debug', true, 'reset', false);
@@ -27,6 +28,10 @@ function info = select_and_load_conda_env(varargin)
             switch name
                 case "debug", opts.debug = logical(val);
                 case "reset", opts.reset = logical(val);
+                case {"classif","classifier"}
+                    % Legacy callers still pass the classifier object here.
+                    % The current helper no longer needs it, but keeping this
+                    % option avoids breaking existing package code.
                 otherwise, error('Unknown option "%s".', name);
             end
         end
@@ -110,17 +115,15 @@ function info = select_and_load_conda_env(varargin)
 
         fprintf('[Detecdiv] Step 3/5: Custom mode -> no package installation.\n');
         fprintf('[Detecdiv] Step 4/5: Configuring MATLAB pyenv (OutOfProcess)...\n');
-        pe = pyenv;
-        if pe.Status == "Loaded"
-            if ~strcmpi(char(pe.Executable), char(detPy)) || string(pe.ExecutionMode) ~= "OutOfProcess"
-                fprintf('[Detecdiv] Terminating existing Python engine...\n');
-                try, terminate(pyenv); catch, end
-            end
-        end
-        pe = pyenv('Version', char(detPy), 'ExecutionMode', 'OutOfProcess');
+        pe = configurePyenvOutOfProcess(detPy, debug);
 
         fprintf('[Detecdiv] Step 5/5: Final checks (sys + torch import in MATLAB)...\n');
         [okSys, pyVer, okTorch, torchVer, torchCUDA, torchAvail] = matlabTorchChecks(debug);
+        if ~okSys
+            fprintf('[Detecdiv] MATLAB pyenv check failed once -> resetting and retrying...\n');
+            pe = configurePyenvOutOfProcess(detPy, debug);
+            [okSys, pyVer, okTorch, torchVer, torchCUDA, torchAvail] = matlabTorchChecks(debug);
+        end
         printFinal(pe, okSys, pyVer, okTorch, torchVer, torchCUDA, torchAvail);
 
         info = struct( ...
@@ -147,18 +150,16 @@ function info = select_and_load_conda_env(varargin)
 
     % -------- 5) Configure MATLAB pyenv to detecdiv_python (OutOfProcess) --------
     fprintf('[Detecdiv] Step 4/5: Configuring MATLAB pyenv (OutOfProcess)...\n');
-    pe = pyenv;
-    if pe.Status == "Loaded"
-        if ~strcmpi(char(pe.Executable), char(detPy)) || string(pe.ExecutionMode) ~= "OutOfProcess"
-            fprintf('[Detecdiv] Terminating existing Python engine...\n');
-            try, terminate(pyenv); catch, end
-        end
-    end
-    pe = pyenv('Version', char(detPy), 'ExecutionMode', 'OutOfProcess');
+    pe = configurePyenvOutOfProcess(detPy, debug);
 
     % -------- 6) Final checks + report --------
     fprintf('[Detecdiv] Step 5/5: Final checks (sys + torch import in MATLAB)...\n');
     [okSys, pyVer, okTorch, torchVer, torchCUDA, torchAvail] = matlabTorchChecks(debug);
+    if ~okSys
+        fprintf('[Detecdiv] MATLAB pyenv check failed once -> resetting and retrying...\n');
+        pe = configurePyenvOutOfProcess(detPy, debug);
+        [okSys, pyVer, okTorch, torchVer, torchCUDA, torchAvail] = matlabTorchChecks(debug);
+    end
 
     printFinal(pe, okSys, pyVer, okTorch, torchVer, torchCUDA, torchAvail);
 
@@ -174,6 +175,20 @@ function info = select_and_load_conda_env(varargin)
 end
 
 % =================== Helpers ===================
+
+function pe = configurePyenvOutOfProcess(detPy, debug)
+    pe = pyenv;
+    if pe.Status ~= "NotLoaded"
+        if debug
+            fprintf('[Detecdiv] Resetting existing Python engine (Status=%s)...\n', char(string(pe.Status)));
+        end
+        try
+            terminate(pyenv);
+        catch
+        end
+    end
+    pe = pyenv('Version', char(detPy), 'ExecutionMode', 'OutOfProcess');
+end
 
 function [ok, sysver, torchInfo] = quickPythonHealthCheck(debug)
     % "Healthy" here:

@@ -395,6 +395,7 @@ nCh = numel(d.channel);
 ii = min(chanLogicalIdx, nCh);
 ival=find(obj.channelid==ii);
 dispMeta = struct();
+forceIndexed = localShouldForceIndexedChannel(d, ii);
 
 if isfield(d,'intensity') && ~isempty(d.intensity)
     row = d.intensity(ii,:);
@@ -426,6 +427,9 @@ if isfield(d,'indexed') && ~isempty(d.indexed)
     else
         dispMeta.display_indexed = uint8(idxVal(1) ~= 0);
     end
+end
+if forceIndexed
+    dispMeta.display_indexed = uint8(1);
 end
 if isfield(d,'alpha') && ~isempty(d.alpha)
     aVal = d.alpha;
@@ -466,6 +470,29 @@ if isfield(d,'binning') && ~isempty(d.binning)
     dispMeta.display_binning=d.binning;
 end
 dispMeta.num_subchannels = k;
+end
+
+function tf = localShouldForceIndexedChannel(d, ii)
+tf = false;
+try
+    if ~isfield(d,'channel') || isempty(d.channel) || ii < 1 || ii > numel(d.channel)
+        return;
+    end
+    name = lower(string(d.channel{ii}));
+    isMaskLikeName = startsWith(name, "results_") || contains(name, "mask") || contains(name, "track");
+    if ~isMaskLikeName
+        return;
+    end
+
+    if isfield(d,'intensity') && ~isempty(d.intensity) && size(d.intensity,1) >= ii
+        row = double(d.intensity(ii,:));
+        tf = all(row == 0);
+    else
+        tf = true;
+    end
+catch
+    tf = false;
+end
 end
 
 

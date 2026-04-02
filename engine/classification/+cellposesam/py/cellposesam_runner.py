@@ -1,6 +1,7 @@
 import os
 import json
 import traceback
+import builtins
 import numpy as np
 import scipy.io as sio
 import torch
@@ -11,6 +12,11 @@ MODEL_PATH = None
 MODEL_GPU = None
 
 
+def check_cancel(cancel_path, where="run"):
+    if cancel_path and os.path.exists(cancel_path):
+        raise RuntimeError(f"CellposeSAM run cancelled by user ({where}).")
+
+
 def load_config(cfg_path=None):
     if cfg_path is None:
         cfg_path = os.environ.get("CPSAM_CONFIG", "")
@@ -18,6 +24,23 @@ def load_config(cfg_path=None):
         raise RuntimeError("CPSAM_CONFIG env var not set and no cfg_path provided.")
     with open(cfg_path, "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def install_log_tee(log_path):
+    if not log_path:
+        return
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+    log_handle = open(log_path, "a", encoding="utf-8", buffering=1)
+    base_print = builtins.print
+
+    def tee_print(*args, **kwargs):
+        base_print(*args, **kwargs)
+        file_kwargs = dict(kwargs)
+        file_kwargs["file"] = log_handle
+        file_kwargs.setdefault("flush", True)
+        base_print(*args, **file_kwargs)
+
+    builtins.print = tee_print
 
 
 def to_float(v, default=None):
@@ -83,6 +106,19 @@ def get_model(model_path, gpu):
     return MODEL
 
 
+def should_retry_cpu(exc):
+    msg = str(exc).lower()
+    keys = [
+        "cuda",
+        "cudnn",
+        "gpu",
+        "out of memory",
+        "not compiled with cuda",
+        "device-side assert",
+    ]
+    return any(k in msg for k in keys)
+
+
 def run(cfg_path=None):
     try:
         this_file = __file__
@@ -95,6 +131,7 @@ def run(cfg_path=None):
         tmp_mat_path = cfg["tmp_mat_path"]
         classif_path = cfg["classif_path"]
         model_path = cfg.get("model_path", "sam")
+        install_log_tee(cfg.get("log_path", ""))
     except Exception:
         tb = traceback.format_exc()
         try:
@@ -104,6 +141,7 @@ def run(cfg_path=None):
             pass
         raise
     gpu = bool(cfg.get("gpu", False))
+    cancel_path = cfg.get("cancel_path", "")
     if gpu and not torch.cuda.is_available():
         print("[WARN] GPU requested but not available. Falling back to CPU.")
         gpu = False
@@ -116,6 +154,7 @@ def run(cfg_path=None):
     print("torch.cuda.is_available():", torch.cuda.is_available())
     if torch.cuda.is_available():
         print("GPU utilise :", torch.cuda.get_device_name(0))
+    check_cancel(cancel_path, "before_load")
 
     if not os.path.exists(tmp_mat_path):
         raise RuntimeError(f"tmp_mat_path not found: {tmp_mat_path}")
@@ -167,16 +206,29 @@ def run(cfg_path=None):
         raise RuntimeError("No images generated from gfp; check gfp shape and frames_list.")
 
     print("Mode =", mode, flush=True)
-    model = get_model(model_path, gpu)
+    requested_gpu = bool(gpu)
+    check_cancel(cancel_path, "before_model")
+    try:
+        model = get_model(model_path, gpu)
+    except Exception as exc:
+        if requested_gpu and should_retry_cpu(exc):
+            print(f"[WARN] GPU model load failed, retrying on CPU: {exc}", flush=True)
+            gpu = False
+            model = get_model(model_path, gpu)
+        else:
+            raise
     print("Modele charge depuis :", model_path, flush=True)
 
     H, W = images[0].shape[:2]
     masks_all = np.zeros((H, W, 1, len(frames_list)), dtype=np.uint16)
+    counts_all = np.zeros((len(frames_list),), dtype=np.int32)
     cellprob_all = None
     if mode == "proba":
         cellprob_all = np.zeros((H, W, 1, len(frames_list)), dtype=np.float32)
 
     for i, (img, frame_idx) in enumerate(zip(images, frames_list)):
+        check_cancel(cancel_path, f"frame_{int(frame_idx)}_start")
+        print(f"[PY] Frame {i+1}/{len(frames_list)} start (frame_id={int(frame_idx)})", flush=True)
         try:
             masks, flows, styles = model.eval(
                 img,
@@ -186,16 +238,33 @@ def run(cfg_path=None):
                 cellprob_threshold=cell_prob_threshold,
                 min_size=min_size,
             )
-        except Exception:
-            tb = traceback.format_exc()
-            try:
-                with open(os.path.join(classif_path, "runner_error.txt"), "w", encoding="utf-8") as f:
-                    f.write(tb)
-                    f.write(f"\nframe_index={i} frame_id={frame_idx} img_shape={getattr(img,'shape',None)}\n")
-            except Exception:
-                pass
-            raise
+        except Exception as exc:
+            if gpu and should_retry_cpu(exc):
+                print(f"[WARN] GPU inference failed on frame {int(frame_idx)}, retrying on CPU: {exc}", flush=True)
+                gpu = False
+                model = get_model(model_path, gpu)
+                masks, flows, styles = model.eval(
+                    img,
+                    diameter=diameter,
+                    channels=[0, 0],
+                    flow_threshold=flow_threshold,
+                    cellprob_threshold=cell_prob_threshold,
+                    min_size=min_size,
+                )
+            else:
+                tb = traceback.format_exc()
+                try:
+                    with open(os.path.join(classif_path, "runner_error.txt"), "w", encoding="utf-8") as f:
+                        f.write(tb)
+                        f.write(f"\nframe_index={i} frame_id={frame_idx} img_shape={getattr(img,'shape',None)}\n")
+                except Exception:
+                    pass
+                raise
+        check_cancel(cancel_path, f"frame_{int(frame_idx)}_done")
         masks = np.asarray(masks, dtype=np.uint16)
+        nobj = int(len(np.unique(masks)) - (1 if np.any(masks == 0) else 0))
+        counts_all[i] = nobj
+        print(f"[PY] Frame {i+1}/{len(frames_list)} done (frame_id={int(frame_idx)}, objects={nobj})", flush=True)
         masks_all[:, :, 0, i] = masks
 
         if mode == "proba":
@@ -204,7 +273,7 @@ def run(cfg_path=None):
                 cp = np.zeros((H, W), dtype=np.float32)
             cellprob_all[:, :, 0, i] = cp
 
-    out = {"frames_list": frames_list, "masks_all": masks_all}
+    out = {"frames_list": frames_list, "masks_all": masks_all, "counts_all": counts_all}
     if mode == "proba":
         out["cellprob_all"] = cellprob_all
 
@@ -270,4 +339,6 @@ def extract_cellprob(flows):
 
 
 if __name__ == "__main__":
-    run()
+    import sys
+    cfg_arg = sys.argv[1] if len(sys.argv) > 1 else None
+    run(cfg_arg)

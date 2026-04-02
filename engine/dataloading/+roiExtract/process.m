@@ -165,14 +165,11 @@ function ctx = process(ctx)
     ctx.roiList = collectROIs(fovList);
     ctx = maybeWarmRoiCache(ctx, p);
     ctx.dataSeries = collectDataSeries(ctx.roiList);
-    if ~isfield(ctx,'channels') || isempty(ctx.channels)
-        if isfield(p,'channels') && ~isempty(p.channels)
+    if ~isfield(ctx,'channels') || isempty(ctx.channels) || isAllChannelSelector(getfieldlocal(p, 'channels', []))
+        if ~isempty(fovList)
+            ctx.channels = inferFovChannels(fovList);
+        elseif isfield(p,'channels') && ~isempty(p.channels) && ~isAllChannelSelector(p.channels)
             ctx.channels = p.channels;
-        elseif ~isempty(fovList)
-            try
-                ctx.channels = fovList(1).channel;
-            catch
-            end
         end
     end
 
@@ -396,7 +393,7 @@ function args = buildExtractArgs(p, progressDlg)
     if isfield(p,'frames') && ~isempty(p.frames)
         args = [args {'Frames'} {p.frames}];
     end
-    if isfield(p,'channels') && ~isempty(p.channels)
+    if isfield(p,'channels') && ~isempty(p.channels) && ~isAllChannelSelector(p.channels)
         args = [args {'Channels'} {p.channels}];
     end
     if isfield(p,'forceChannelNames')
@@ -442,5 +439,96 @@ function out = mergeStructOverride(base, override)
     fn = fieldnames(override);
     for i = 1:numel(fn)
         out.(fn{i}) = override.(fn{i});
+    end
+end
+
+function tf = isAllChannelSelector(spec)
+    tf = false;
+    if isempty(spec)
+        return;
+    end
+
+    if ischar(spec) || (isstring(spec) && isscalar(spec))
+        token = lower(strtrim(char(string(spec))));
+        tf = any(strcmp(token, {'all', '*', ':'}));
+        return;
+    end
+
+    if isstring(spec)
+        vals = cellstr(spec(:));
+        vals = vals(~cellfun(@(x) isempty(strtrim(x)), vals));
+        if numel(vals) == 1
+            tf = isAllChannelSelector(vals{1});
+        end
+        return;
+    end
+
+    if iscell(spec)
+        vals = spec(~cellfun(@isempty, spec));
+        if numel(vals) == 1
+            tf = isAllChannelSelector(vals{1});
+        end
+    end
+end
+
+function ch = inferFovChannels(fovList)
+    ch = {};
+    if isempty(fovList)
+        return;
+    end
+
+    try
+        f0 = fovList(1);
+        if isprop(f0,'channel') && ~isempty(f0.channel)
+            ch = normalizeChannelListLocal(f0.channel);
+            return;
+        end
+        if isfield(f0,'channel') && ~isempty(f0.channel)
+            ch = normalizeChannelListLocal(f0.channel);
+        end
+    catch
+        ch = {};
+    end
+end
+
+function names = normalizeChannelListLocal(v)
+    names = {};
+    if isempty(v)
+        return;
+    end
+    if ischar(v) || (isstring(v) && isscalar(v))
+        s = strtrim(char(string(v)));
+        if ~isempty(s)
+            names = {s};
+        end
+        return;
+    end
+    if isstring(v)
+        names = cellstr(v(:))';
+        names = names(~cellfun(@(x) isempty(strtrim(x)), names));
+        return;
+    end
+    if iscell(v)
+        tmp = {};
+        for i = 1:numel(v)
+            if isempty(v{i})
+                continue;
+            end
+            try
+                s = strtrim(char(string(v{i})));
+                if ~isempty(s)
+                    tmp{end+1} = s; %#ok<AGROW>
+                end
+            catch
+            end
+        end
+        names = tmp;
+    end
+end
+
+function v = getfieldlocal(S, name, defaultVal)
+    v = defaultVal;
+    if isstruct(S) && isfield(S, name) && ~isempty(S.(name))
+        v = S.(name);
     end
 end

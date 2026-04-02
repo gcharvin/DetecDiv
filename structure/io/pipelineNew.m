@@ -48,7 +48,7 @@ function pipeObj = pipelineNew(varargin)
         end
     end
 
-    pipeObj = pipeline(path, name, id);
+    pipeObj = pipelineConstruct(path, name, id);
 
     % Default template: dataloader only. ROI-producing and ROI-extraction
     % modules are added on demand when the user chooses a concrete workflow.

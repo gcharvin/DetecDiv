@@ -1322,15 +1322,23 @@ classdef workflow < matlab.apps.AppBase
 
                     try, p.ContextMenu = cmRoi; catch, end
 
-                    p.ButtonDownFcn = @(src,evt)app.onRoiGraphicClicked(i);
+                    p.UserData = i;
+
+                    p.ButtonDownFcn = createCallbackFcn(app,@onRoiGraphicObjectClicked,true);
 
                     hRect = rectangle(app.UIAxes,'Position',pos,'EdgeColor',edge,'LineWidth',lw);
 
                     try, hRect.ContextMenu = cmRoi; catch, end
 
-                    hRect.ButtonDownFcn = @(src,evt)app.onRoiGraphicClicked(i);
+                    hRect.UserData = i;
 
-                    ht=text(app.UIAxes, pos(1), max(1,pos(2)-2), sprintf('%d', i), 'Color', edge, 'FontSize', 14, 'FontWeight', 'bold', 'Interpreter', 'none', 'ButtonDownFcn', @(src,evt)app.onRoiGraphicClicked(i));
+                    hRect.ButtonDownFcn = createCallbackFcn(app,@onRoiGraphicObjectClicked,true);
+
+                    ht=text(app.UIAxes, pos(1), max(1,pos(2)-2), sprintf('%d', i), 'Color', edge, 'FontSize', 14, 'FontWeight', 'bold', 'Interpreter', 'none');
+
+                    ht.UserData = i;
+
+                    ht.ButtonDownFcn = createCallbackFcn(app,@onRoiGraphicObjectClicked,true);
 
                     try, ht.ContextMenu = cmRoi; catch, end
 
@@ -3274,27 +3282,46 @@ classdef workflow < matlab.apps.AppBase
 
             try
 
-                if ~isempty(app.Pipeline)
-
-                    pipelineSave(app.Pipeline);
-
-                    app.publishPipelineToWorkspace();
-
-                end
-
-                if ~isempty(app.Project)
-
-                    shallowSave(app.Project,'shallowObj');
-
-                end
-
-                app.markDirty(false);
+                app.saveWorkflowStateWithProgress();
 
             catch ME
 
                 uialert(app.UIFigure, ME.message, 'Save error', 'Icon', 'error');
 
             end
+
+        end
+
+        function saveWorkflowStateWithProgress(app)
+
+            d = uiprogressdlg(app.UIFigure, ...
+                'Title','Save project', ...
+                'Message','Preparing save...', ...
+                'Cancelable','off');
+
+            cleanupDlg = onCleanup(@() deleteProgressDialogLocal(d)); %#ok<NASGU>
+
+            try, d.Indeterminate = 'on'; catch, end
+
+            if ~isempty(app.Pipeline)
+
+                try, d.Message = 'Saving pipeline template...'; catch, end
+
+                pipelineSave(app.Pipeline);
+
+                app.publishPipelineToWorkspace();
+
+            end
+
+            if ~isempty(app.Project)
+
+                try, d.Message = 'Saving project data...'; catch, end
+
+                shallowSave(app.Project,'shallowObj');
+
+            end
+
+            app.markDirty(false);
 
         end
 
@@ -4083,6 +4110,28 @@ classdef workflow < matlab.apps.AppBase
                 app.openRoiInScoreByIndex(idx);
 
             end
+
+        end
+
+        function onRoiGraphicObjectClicked(app, src, event) %#ok<INUSD>
+
+            idx = [];
+
+            try
+
+                idx = double(src.UserData);
+
+            catch
+
+            end
+
+            if isempty(idx) || ~isscalar(idx) || ~isfinite(idx)
+
+                return;
+
+            end
+
+            app.onRoiGraphicClicked(round(idx));
 
         end
 
@@ -6118,21 +6167,7 @@ classdef workflow < matlab.apps.AppBase
 
                     try
 
-                        if ~isempty(app.Pipeline)
-
-                            pipelineSave(app.Pipeline);
-
-                            app.publishPipelineToWorkspace();
-
-                        end
-
-                        if ~isempty(app.Project)
-
-                            shallowSave(app.Project,'shallowObj');
-
-                        end
-
-                        app.markDirty(false);
+                        app.saveWorkflowStateWithProgress();
 
                     catch ME
 
@@ -6419,6 +6454,18 @@ classdef workflow < matlab.apps.AppBase
 
     end
 
+end
+
+function deleteProgressDialogLocal(d)
+if isempty(d)
+    return;
+end
+try
+    if isvalid(d)
+        close(d);
+    end
+catch
+end
 end
 
 

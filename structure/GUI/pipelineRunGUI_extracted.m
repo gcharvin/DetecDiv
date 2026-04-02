@@ -83,6 +83,7 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             app.CachePolicyDropDown.Value = 'auto';
             app.InputSourceDropDown.Value = 'Pipeline start (dataloader)';
             app.FovSelectionEditField.Value = '';
+            initTooltips(app);
             updateRunSourceSelectionUi(app);
         end
 
@@ -312,7 +313,7 @@ classdef pipelineRunGUI < matlab.apps.AppBase
                 if isscalar(v)
                     out = num2str(v);
                 else
-                    out = mat2str(v);
+                    out = compactNumericDisplay(app, v);
                 end
             elseif ischar(v)
                 out = v;
@@ -326,6 +327,113 @@ classdef pipelineRunGUI < matlab.apps.AppBase
                 end
             else
                 out = char(string(v));
+            end
+        end
+
+        function initTooltips(app)
+            projectTip = { ...
+                'Project that will own this pipeline run.', ...
+                'If this window was opened from an existing project, the project is locked here.'};
+            app.ProjectDropDown.Tooltip = projectTip;
+            app.ProjectDropDownLabel.Tooltip = projectTip;
+
+            runPolicyTip = { ...
+                'Run policy controls how a rerun behaves.', ...
+                'resume: reuse prior progress when possible.', ...
+                'restart: execute the run again from scratch.'};
+            app.RunPolicyDropDown.Tooltip = runPolicyTip;
+            app.RunPolicyDropDownLabel.Tooltip = runPolicyTip;
+
+            existingTip = { ...
+                'Existing data policy controls what to do if outputs already exist.', ...
+                '<module default>: keep the behavior defined by each module.', ...
+                'replace: overwrite existing outputs.', ...
+                'append: add new outputs alongside existing ones.', ...
+                'skip: keep existing outputs and skip the step.', ...
+                'error: stop if outputs already exist.', ...
+                'upsert: update when possible, otherwise create.'};
+            app.ExistingPolicyDropDown.Tooltip = existingTip;
+            app.ExistingPolicyDropDownLabel.Tooltip = existingTip;
+
+            cacheTip = { ...
+                'ROI cache controls where extracted ROI image data is cached during the run.', ...
+                'auto: let the runner choose.', ...
+                'memory: prefer RAM cache.', ...
+                'disk: prefer on-disk cache.'};
+            app.CachePolicyDropDown.Tooltip = cacheTip;
+            app.CachePolicyDropDownLabel.Tooltip = cacheTip;
+
+            sourceTip = { ...
+                'Run source defines where execution starts and which existing project data is reused.', ...
+                'Pipeline start (dataloader): start from raw data loading.', ...
+                'Existing project FOVs: start from FOVs already present in the project.', ...
+                'Existing ROIs: reuse ROI already present in the project.', ...
+                'Existing masks: reuse mask-like ROI channels already present.', ...
+                'Existing dataSeries: reuse quantitative data already present.'};
+            app.InputSourceDropDown.Tooltip = sourceTip;
+            app.InputSourceDropDownLabel.Tooltip = sourceTip;
+        end
+
+        function out = compactNumericDisplay(app, v) %#ok<INUSD>
+            if ~isnumeric(v) || isempty(v)
+                out = '';
+                return;
+            end
+
+            if ~isvector(v)
+                out = mat2str(v);
+                return;
+            end
+
+            x = double(v(:)');
+            if numel(x) <= 1
+                out = num2str(x);
+                return;
+            end
+
+            if all(isfinite(x))
+                d = diff(x);
+                if ~isempty(d) && all(abs(d - d(1)) < 1e-12)
+                    step = d(1);
+                    if abs(step - 1) < 1e-12
+                        out = sprintf('%s:%s', num2str(x(1)), num2str(x(end)));
+                        return;
+                    end
+                    out = sprintf('%s:%s:%s', num2str(x(1)), num2str(step), num2str(x(end)));
+                    return;
+                end
+
+                if all(abs(x - round(x)) < 1e-12)
+                    parts = {};
+                    startVal = x(1);
+                    prevVal = x(1);
+                    for ii = 2:numel(x)
+                        if abs(x(ii) - (prevVal + 1)) < 1e-12
+                            prevVal = x(ii);
+                            continue;
+                        end
+                        parts{end+1} = makeIntegerRunString(app, startVal, prevVal); %#ok<AGROW>
+                        startVal = x(ii);
+                        prevVal = x(ii);
+                    end
+                    parts{end+1} = makeIntegerRunString(app, startVal, prevVal); %#ok<AGROW>
+                    if numel(parts) > 1
+                        out = ['[' strjoin(parts, ' ') ']'];
+                        return;
+                    end
+                end
+            end
+
+            out = mat2str(v);
+        end
+
+        function txt = makeIntegerRunString(app, a, b) %#ok<INUSD>
+            if abs(a - b) < 1e-12
+                txt = num2str(round(a));
+            elseif abs(b - (a + 1)) < 1e-12
+                txt = sprintf('%d %d', round(a), round(b));
+            else
+                txt = sprintf('%d:%d', round(a), round(b));
             end
         end
 
@@ -548,6 +656,16 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             shallowObj = resolveSelectedProject(app);
 
             try
+                if any(strcmpi(char(string(node.type)), {'dataloader','roigrid','roiextract'}))
+                    if isempty(shallowObj)
+                        uialert(app.UIFigure, 'Workflow needs a project context.', 'Info');
+                        return;
+                    end
+                    focusTarget = lower(char(string(node.type)));
+                    workflow(shallowObj, focusTarget);
+                    return;
+                end
+
                 if strcmpi(node.type,'dataloader')
                     dlg = dataLoaderGUI(params);
                     try
@@ -794,13 +912,11 @@ classdef pipelineRunGUI < matlab.apps.AppBase
                 return;
             end
 
-            scope = char(string(data{row,1}));
-            if ~strcmpi(scope, 'Run')
-                return;
-            end
-
             key = char(string(data{row,2}));
-            oldVal = p.(key);
+            oldVal = [];
+            if isfield(p, key)
+                oldVal = p.(key);
+            end
             rawStr = strtrim(char(string(event.NewData)));
             if isempty(rawStr) || strcmpi(rawStr, '<inherit>')
                 p.(key) = getRunDefaultValue(app, nodeRow, key);
@@ -819,6 +935,96 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             updateParamTable(app, nodeRow);
         end
 
+        function commitVisibleParamTable(app)
+            if isempty(app.Data.selectedNode)
+                return;
+            end
+
+            nodeRow = app.Data.selectedNode;
+            if nodeRow < 1 || nodeRow > numel(app.Data.nodeParams)
+                return;
+            end
+
+            data = app.ParamTable.Data;
+            if isempty(data) || size(data,2) < 3
+                return;
+            end
+
+            tpl = getTemplateParams(app, nodeRow);
+            p = app.Data.nodeParams{nodeRow};
+            if ~isstruct(p)
+                p = struct();
+            end
+
+            rowKeys = strings(size(data,1),1);
+            rowScopes = strings(size(data,1),1);
+            rowVals = strings(size(data,1),1);
+            for ii = 1:size(data,1)
+                rowScopes(ii) = string(data{ii,1});
+                rowKeys(ii) = string(data{ii,2});
+                rowVals(ii) = string(data{ii,3});
+            end
+
+            % First commit explicit Run rows.
+            for ii = 1:size(data,1)
+                if ~strcmpi(rowScopes(ii), "Run")
+                    continue;
+                end
+                key = char(rowKeys(ii));
+                rawStr = strtrim(char(rowVals(ii)));
+                if isempty(rawStr) || strcmpi(rawStr, '<inherit>')
+                    p.(key) = getRunDefaultValue(app, nodeRow, key);
+                    continue;
+                end
+
+                typeRef = [];
+                if isfield(p, key) && ~isempty(p.(key))
+                    typeRef = p.(key);
+                elseif isstruct(tpl) && isfield(tpl, key)
+                    typeRef = tpl.(key);
+                end
+                p.(key) = parseDisplayValue(app, rawStr, typeRef);
+            end
+
+            % If a Template row was edited away from the template value while the
+            % corresponding Run row still shows <inherit>, treat that as an intended
+            % run override.
+            runKeys = rowKeys(strcmpi(rowScopes, "Run"));
+            for ii = 1:size(data,1)
+                if ~strcmpi(rowScopes(ii), "Template")
+                    continue;
+                end
+                key = char(rowKeys(ii));
+                if ~isstruct(tpl) || ~isfield(tpl, key)
+                    continue;
+                end
+
+                runMatch = find(strcmpi(runKeys, key), 1);
+                if isempty(runMatch)
+                    continue;
+                end
+
+                runRow = find(strcmpi(rowScopes, "Run") & strcmpi(rowKeys, key), 1);
+                if isempty(runRow)
+                    continue;
+                end
+                runRaw = strtrim(char(rowVals(runRow)));
+                if ~(isempty(runRaw) || strcmpi(runRaw, '<inherit>'))
+                    continue;
+                end
+
+                tplDisplay = char(string(valueToDisplay(app, tpl.(key))));
+                tplRaw = strtrim(char(rowVals(ii)));
+                if strcmp(tplRaw, tplDisplay)
+                    continue;
+                end
+
+                p.(key) = parseDisplayValue(app, tplRaw, tpl.(key));
+            end
+
+            app.Data.nodeParams{nodeRow} = p;
+        end
+
         function OpenNodeGUIButtonPushed(app, event)
             openSelectedNodeGUI(app);
         end
@@ -828,6 +1034,7 @@ classdef pipelineRunGUI < matlab.apps.AppBase
         end
 
         function CreateRunButtonPushed(app, event)
+            commitVisibleParamTable(app);
             shallowObj = resolveSelectedProject(app);
             if isempty(shallowObj)
                 uialert(app.UIFigure, 'No project selected/available.', 'Error', 'Icon', 'error');
@@ -918,11 +1125,11 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             try
                 runObj = pipelineRunNew(shallowObj, app.Data.templateId, templatePath, ...
                     'runId', runId, 'description', descr, 'ctx', ctx, 'status', 'new');
-                uialert(app.UIFigure, ...
-                    ['Pipeline run created in memory: ' runObj.runId newline ...
-                     'It will be saved when you launch it.'], ...
-                    'Success', 'Icon', 'success');
-                app.RunIdEditField.Value = suggestRunId(app, shallowObj, app.Data.templateId);
+                msgbox({ ...
+                    ['Pipeline run created: ' runObj.runId], ...
+                    'It will be saved when you launch it.'}, ...
+                    'Success', 'help');
+                delete(app);
             catch ME
                 uialert(app.UIFigure, ME.message, 'Create run failed', 'Icon', 'error');
             end
@@ -943,27 +1150,48 @@ classdef pipelineRunGUI < matlab.apps.AppBase
                     app.FovSelectionEditFieldLabel.Text = 'Selection';
                     app.FovSelectionEditField.Placeholder = 'Not used when starting from the dataloader';
                     app.FovSelectionEditField.Enable = 'off';
+                    selTip = { ...
+                        'Not used for this run source.', ...
+                        'When starting from the dataloader, the pipeline decides the FOV set itself.'};
                 case 'existing project fovs'
                     app.FovSelectionEditFieldLabel.Text = 'Project FOVs';
                     app.FovSelectionEditField.Placeholder = 'empty = all | ex: 1 3 5 or 1:7';
                     app.FovSelectionEditField.Enable = 'on';
+                    selTip = { ...
+                        'Subset of project FOVs to use as input.', ...
+                        'Leave empty to use all FOVs.', ...
+                        'Examples: 1:7 or 1 3 5'};
                 case 'existing rois'
                     app.FovSelectionEditFieldLabel.Text = 'ROI source';
                     app.FovSelectionEditField.Placeholder = 'FOVs whose existing ROI sets seed the run';
                     app.FovSelectionEditField.Enable = 'on';
+                    selTip = { ...
+                        'Subset of project FOVs whose existing ROIs will seed the run.', ...
+                        'Leave empty to use all project FOVs that already contain ROIs.'};
                 case 'existing masks'
                     app.FovSelectionEditFieldLabel.Text = 'Mask source';
                     app.FovSelectionEditField.Placeholder = 'FOVs whose existing masks seed the run';
                     app.FovSelectionEditField.Enable = 'on';
+                    selTip = { ...
+                        'Subset of project FOVs whose existing masks will seed the run.', ...
+                        'Leave empty to use all compatible project FOVs.'};
                 case 'existing dataseries'
                     app.FovSelectionEditFieldLabel.Text = 'DataSeries source';
                     app.FovSelectionEditField.Placeholder = 'FOVs whose existing dataseries seed the run';
                     app.FovSelectionEditField.Enable = 'on';
+                    selTip = { ...
+                        'Subset of project FOVs whose existing dataseries will seed the run.', ...
+                        'Leave empty to use all compatible project FOVs.'};
                 otherwise
                     app.FovSelectionEditFieldLabel.Text = 'Selection';
                     app.FovSelectionEditField.Placeholder = 'empty = all | ex: 1 3 5 or 1:7';
                     app.FovSelectionEditField.Enable = 'on';
+                    selTip = { ...
+                        'Optional FOV selection for the chosen run source.', ...
+                        'Leave empty to use all compatible FOVs.'};
             end
+            app.FovSelectionEditField.Tooltip = selTip;
+            app.FovSelectionEditFieldLabel.Tooltip = selTip;
         end
 
         function vals = parseIndexSelection(app, raw) %#ok<INUSD>

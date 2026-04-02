@@ -1,4 +1,4 @@
-function [ctx, report] = runPipeline(pipe, ctx)
+function [ctx, report] = runPipelineStructured(pipe, ctx)
 % runPipeline  Execute a pipeline against ctx.
 
     if nargin < 2 || isempty(ctx)
@@ -22,6 +22,7 @@ function [ctx, report] = runPipeline(pipe, ctx)
     ctx = normalizeRunId(ctx);
     ctx = normalizeExecutionContext(ctx);
     ctx = seedContextFromProject(ctx);
+    checkPipelineCancellation(ctx, 'initialize', '');
 
     if (~isfield(ctx,'masks') || isempty(ctx.masks))
         try
@@ -72,6 +73,7 @@ function [ctx, report] = runPipeline(pipe, ctx)
     for i = 1:numel(report.order)
         nodeId = report.order{i};
         node = nodeMap(nodeId);
+        checkPipelineCancellation(ctx, 'before_node', nodeId);
 
         % run-level parameter override (optional)
         node = applyRunNodeOverride(node, ctx, nodeId);
@@ -124,6 +126,7 @@ function [ctx, report] = runPipeline(pipe, ctx)
 
         ctx.pipeline = struct('currentNode', nodeId, 'nodeType', node.type);
         ctx = applyNodeParams(ctx, node);
+        checkPipelineCancellation(ctx, 'prepared_node', nodeId);
 
         if isa(pipe,'pipeline')
             pipe.runState.currentNode = nodeId;
@@ -134,19 +137,30 @@ function [ctx, report] = runPipeline(pipe, ctx)
         tNode = tic;
         try
             ctx = applyPolicyToContext(ctx, node, policy);
+            checkPipelineCancellation(ctx, 'before_execute', nodeId);
             ctx = executeNode(node, ctx);
+            checkPipelineCancellation(ctx, 'after_execute', nodeId);
             afterStats = captureContextStats(ctx);
             report = appendNodeRun(report, node, policy, 'done', ...
                 beforeStats, afterStats, toc(tNode), '');
         catch ME
+            wasCancelled = strcmp(ME.identifier, 'runPipeline:Cancelled');
             afterStats = captureContextStats(ctx);
-            report = appendNodeRun(report, node, policy, 'failed', ...
+            nodeStatus = 'failed';
+            if wasCancelled
+                nodeStatus = 'cancelled';
+            end
+            report = appendNodeRun(report, node, policy, nodeStatus, ...
                 beforeStats, afterStats, toc(tNode), formatNodeError(ME));
             report.endedAt = char(datetime('now'));
             report.summary = buildRunSummary(report);
             stashRunReport(report);
             if isa(pipe,'pipeline')
-                pipe.runState.status = 'failed';
+                if wasCancelled
+                    pipe.runState.status = 'cancelled';
+                else
+                    pipe.runState.status = 'failed';
+                end
                 pipe.runState.currentNode = nodeId;
                 pipe.runState.errors = [pipe.runState.errors {formatNodeError(ME)}];
             end
@@ -164,9 +178,61 @@ function [ctx, report] = runPipeline(pipe, ctx)
         pipe.runState.currentNode = '';
         pipe.log('Pipeline completed','Run');
     end
+    ctx = stripEphemeralExecutionFields(ctx);
     report.endedAt = char(datetime('now'));
     report.summary = buildRunSummary(report);
     stashRunReport(report);
+end
+
+function checkPipelineCancellation(ctx, stage, nodeId)
+    if nargin < 2 || isempty(stage)
+        stage = 'run';
+    end
+    if nargin < 3
+        nodeId = '';
+    end
+
+    drawnow;
+
+    tokenFile = '';
+    try
+        if isstruct(ctx) && isfield(ctx,'cancel') && isstruct(ctx.cancel) ...
+                && isfield(ctx.cancel,'tokenFile') && ~isempty(ctx.cancel.tokenFile)
+            tokenFile = char(string(ctx.cancel.tokenFile));
+        end
+    catch
+        tokenFile = '';
+    end
+
+    if isempty(tokenFile) || exist(tokenFile, 'file') ~= 2
+        return;
+    end
+
+    try
+        pe = pyenv;
+        if pe.Status == "Loaded"
+            terminate(pyenv);
+        end
+    catch
+    end
+
+    msg = 'Pipeline run cancelled by user.';
+    if ~isempty(nodeId)
+        msg = sprintf('Pipeline run cancelled by user during %s (%s).', char(string(nodeId)), char(string(stage)));
+    end
+    error('runPipeline:Cancelled', '%s', msg);
+end
+
+function ctx = stripEphemeralExecutionFields(ctx)
+    if ~isstruct(ctx)
+        return;
+    end
+    try
+        if isfield(ctx,'cancel')
+            ctx = rmfield(ctx,'cancel');
+        end
+    catch
+    end
 end
 
 function ctx = normalizeRunId(ctx)
@@ -1178,11 +1244,16 @@ function ctx = executeProcessorNode(node, ctx)
     end
     if isfield(p,'gpu') && ~isempty(p.gpu) && logical(p.gpu)
         args = [args {'GPU'}]; %#ok<AGROW>
+    elseif strcmpi(char(string(pkgName)), 'cellposesam')
+        args = [args {'GPU'}]; %#ok<AGROW>
     end
 
     try
         processData(procObj, rois, args{:});
     catch ME
+        if strcmp(ME.identifier, 'runPipeline:Cancelled') || contains(lower(ME.message), 'cancelled by user')
+            rethrow(ME);
+        end
         error('runPipeline:NodeFailed','Node %s failed: %s', node.id, ME.message);
     end
 
@@ -1245,7 +1316,8 @@ function ctx = executeClassifierNode(node, ctx)
     try
         clsObj.runProfiles.classify = struct( ...
             'io', getfielddefault(ctx, 'io', struct()), ...
-            'store', getfielddefault(ctx, 'store', struct()));
+            'store', getfielddefault(ctx, 'store', struct()), ...
+            'cancel', getfielddefault(ctx, 'cancel', struct()));
     catch
     end
 
@@ -1298,13 +1370,27 @@ function ctx = executeClassifierNode(node, ctx)
     if isfield(p,'parallel') && ~isempty(p.parallel) && logical(p.parallel)
         args = [args {'Parallel'}]; %#ok<AGROW>
     end
+    classifierPkgForRun = '';
+    try
+        if isprop(clsObj, 'classifierPkg') && ~isempty(clsObj.classifierPkg)
+            classifierPkgForRun = char(string(clsObj.classifierPkg));
+        elseif ~isempty(pkgName)
+            classifierPkgForRun = char(string(pkgName));
+        end
+    catch
+    end
     if isfield(p,'gpu') && ~isempty(p.gpu) && logical(p.gpu)
+        args = [args {'GPU'}]; %#ok<AGROW>
+    elseif strcmpi(classifierPkgForRun, 'cellposesam')
         args = [args {'GPU'}]; %#ok<AGROW>
     end
 
     try
         classifyData(clsObj, rois, args{:});
     catch ME
+        if strcmp(ME.identifier, 'runPipeline:Cancelled') || contains(lower(ME.message), 'cancelled by user')
+            rethrow(ME);
+        end
         error('runPipeline:NodeFailed','Node %s failed: %s', node.id, ME.message);
     end
 

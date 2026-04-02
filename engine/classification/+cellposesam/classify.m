@@ -10,8 +10,9 @@ persistent runnerMod runnerPathCached
 
 frames = [];
 channels = [];
-gpu = 0;
+gpu = true;
 outputName = '';
+cancelPath = '';
 
 if isfield(ctx,'sel') && isstruct(ctx.sel)
     if isfield(ctx.sel,'frames'),   frames   = ctx.sel.frames;   end
@@ -23,8 +24,13 @@ end
 if isfield(ctx,'names') && isstruct(ctx.names)
     if isfield(ctx.names,'outputName'), outputName = ctx.names.outputName; end
 end
+if isfield(ctx,'cancel') && isstruct(ctx.cancel)
+    if isfield(ctx.cancel,'tokenFile') && ~isempty(ctx.cancel.tokenFile)
+        cancelPath = char(string(ctx.cancel.tokenFile));
+    end
+end
 
-[data, image] = classifyCellposeInternal(roiobj, classif, frames, channels, gpu, outputName);
+[data, image] = classifyCellposeInternal(roiobj, classif, frames, channels, gpu, outputName, cancelPath);
 
 out.data = data;
 out.image = image;
@@ -32,12 +38,14 @@ out.patch = [];
 out.status = "OK";
 end
 
-function [data, image] = classifyCellposeInternal(roiobj, classif, frames, channel, gpu, outputName)
+function [data, image] = classifyCellposeInternal(roiobj, classif, frames, channel, gpu, outputName, cancelPath)
 % Segmentation avec CellposeSAM sans tracking (optionnel : tracking basique hongrois)
-persistent runnerNS runnerPathCached
 
 if nargin < 6
     outputName = '';
+end
+if nargin < 7
+    cancelPath = '';
 end
 try
     disp('[DEBUG] cellposesam.classify: version=2026-02-06T13:10');
@@ -123,20 +131,7 @@ image = roiobj.image;
 try
     if isfield(roiobj, 'channelid') && ~isempty(roiobj.channelid)
         logIdx = roiobj.channelid(pixresults);
-        if isfield(roiobj, 'display') && isstruct(roiobj.display)
-            if ~isfield(roiobj.display,'selectedchannel') || isempty(roiobj.display.selectedchannel)
-                roiobj.display.selectedchannel = zeros(1, numel(roiobj.display.channel));
-            end
-            roiobj.display.selectedchannel(:) = 0;
-            if numel(roiobj.display.selectedchannel) < logIdx
-                roiobj.display.selectedchannel(logIdx) = 1;
-            else
-                roiobj.display.selectedchannel(logIdx) = 1;
-            end
-            if isfield(roiobj.display,'indexed') && numel(roiobj.display.indexed) >= logIdx
-                roiobj.display.indexed(logIdx) = 1;
-            end
-        end
+        localConfigureIndexedAnnotationDisplay(roiobj, logIdx);
     end
 catch
 end
@@ -235,6 +230,8 @@ cfg.flow_threshold = flow_threshold;
 cfg.cell_prob_threshold = cellprob_threshold;
 cfg.min_size     = round(min_size);
 cfg.mode         = mode_str;
+cfg.cancel_path  = char(string(cancelPath));
+cfg.log_path     = strrep(fullfile(classif.path, 'runner_live.log'), '\\', '/');
 
 configPath = fullfile(classif.path, 'classify_cellposesam_config.json');
 fid = fopen(configPath, 'w');
@@ -247,6 +244,9 @@ fclose(fid);
 setenv('CPSAM_CONFIG', configPath);
 disp(['[INFO] CellposeSAM classify script: ' scriptPath]);
 disp(['[INFO] CellposeSAM config: ' configPath]);
+if ~isempty(cancelPath) && exist(cancelPath, 'file') == 2
+    error('runPipeline:Cancelled', 'Pipeline run cancelled by user before CellposeSAM execution.');
+end
 try
     disp(['[DEBUG] cellposesam.classify: cfg.tmp_mat_path=' cfg.tmp_mat_path]);
     disp(['[DEBUG] cellposesam.classify: cfg.classif_path=' cfg.classif_path]);
@@ -262,96 +262,19 @@ end
 test = select_and_load_conda_env('classif', classif); %#ok<NASGU>
 cellposesam.utils.ensurePythonDeps(classif);
 
-% run python routine (prefer persistent module)
-didRun = false;
-try
-    pyPath = fileparts(runnerPath);
-    if count(py.sys.path, pyPath) == 0
-        insert(py.sys.path, int32(0), pyPath);
-    end
-    % Load runner into a persistent namespace (avoids module cache issues)
-    if isempty(runnerNS) || isempty(runnerPathCached) || ~strcmp(runnerPathCached, runnerPath)
-        try
-            runnerSrc = fileread(runnerPath);
-        catch ME
-            error('cellposesam_runner load failed (read): %s', ME.message);
-        end
-        runnerNS = py.dict();
-        try
-            py.exec(runnerSrc, runnerNS, runnerNS);
-        catch ME
-            error('cellposesam_runner load failed (exec): %s', ME.message);
-        end
-        runnerPathCached = runnerPath;
-    end
-    try
-        disp('[DEBUG] cellposesam.classify: runner namespace loaded');
-    catch
-    end
-    resultsPath = fullfile(classif.path, 'results.mat');
-    disp('[DEBUG] cellposesam: using persistent python runner');
-    tRun = tic;
-    try
-        try
-            runFunc = runnerNS{'run'};
-        catch
-            error('cellposesam_runner namespace missing run()');
-        end
-        pyOut = runFunc(py.str(configPath));
-    catch ME
-        try
-            errPath = fullfile(classif.path, 'runner_error.txt');
-            if exist(errPath, 'file') == 2
-                disp('[DEBUG] cellposesam.classify: runner_error.txt contents:');
-                disp(fileread(errPath));
-            else
-                disp('[DEBUG] cellposesam.classify: runner_error.txt missing');
-            end
-        catch
-        end
-        error('cellposesam_runner run() failed: %s', ME.message);
-    end
-    runSec = toc(tRun);
-    disp(['[DEBUG] cellposesam.classify: runner time=' num2str(runSec, '%.3f') 's']);
-    try
-        disp(['[DEBUG] cellposesam.classify: runner pyOut class=' class(pyOut)]);
-        try
-            if strcmp(class(pyOut),'py.dict')
-                keys = pyOut.keys();
-                disp(['[DEBUG] cellposesam.classify: runner keys=' char(py.str(keys))]);
-            end
-        catch
-        end
-        framesLen = double(pyOut{'frames_len'});
-        fmin = double(pyOut{'frames_min'});
-        fmax = double(pyOut{'frames_max'});
-        gfpShape = char(py.repr(pyOut{'gfp_shape'}));
-        resPath = char(pyOut{'results_path'});
-        resBytes = double(pyOut{'results_bytes'});
-        disp(['[DEBUG] cellposesam.classify: runner frames_len=' num2str(framesLen) ...
-            ' frames_min=' num2str(fmin) ' frames_max=' num2str(fmax) ...
-            ' gfp_shape=' gfpShape]);
-        disp(['[DEBUG] cellposesam.classify: runner results_path=' resPath ' bytes=' num2str(resBytes)]);
-    catch
-        disp('[DEBUG] cellposesam.classify: runner output unreadable');
-        try
-            keys = py.list(pyOut.keys());
-            disp(['[DEBUG] cellposesam.classify: runner keys=' char(py.str(keys))]);
-        catch
-        end
-    end
-    didRun = true;
-catch ME
-    try
-        errPath = fullfile(classif.path, 'runner_error.txt');
-        if exist(errPath, 'file') == 2
-            disp('[DEBUG] cellposesam.classify: runner_error.txt contents:');
-            disp(fileread(errPath));
-        end
-    catch
-    end
-    error('cellposesam_runner failed (fallback disabled): %s', ME.message);
-end
+% run python routine as an external process so MATLAB stays responsive and
+% can cancel the job, including killing the Python process.
+pe = pyenv;
+pythonExe = char(pe.Executable);
+stdoutPath = fullfile(classif.path, 'runner_stdout.txt');
+stderrPath = fullfile(classif.path, 'runner_stderr.txt');
+liveLogPath = fullfile(classif.path, 'runner_live.log');
+disp('[DEBUG] cellposesam: using external python runner');
+tRun = tic;
+runCellposeRunnerProcess(pythonExe, runnerPath, configPath, classif.path, cancelPath, stdoutPath, stderrPath, liveLogPath);
+runSec = toc(tRun);
+disp(['[DEBUG] cellposesam.classify: runner time=' num2str(runSec, '%.3f') 's']);
+
 % If results.mat missing, force reload + retry once
 resultsPath = fullfile(classif.path, 'results.mat');
 try
@@ -359,14 +282,10 @@ try
 catch
 end
 if exist(resultsPath, 'file') ~= 2
-    disp('[WARN] cellposesam.classify: results.mat missing after runner; reloading module and retrying once...');
+    disp('[WARN] cellposesam.classify: results.mat missing after runner; retrying once...');
     try
-        runnerSrc = fileread(runnerPath);
-        runnerNS = py.dict();
-        py.exec(runnerSrc, runnerNS, runnerNS);
-        runFunc = runnerNS{'run'};
         tRun = tic;
-        pyOut = runFunc(py.str(configPath));
+        runCellposeRunnerProcess(pythonExe, runnerPath, configPath, classif.path, cancelPath, stdoutPath, stderrPath, liveLogPath);
         runSec = toc(tRun);
         disp(['[DEBUG] cellposesam.classify: retry runner time=' num2str(runSec, '%.3f') 's']);
     catch ME
@@ -461,6 +380,169 @@ if strcmpi(outputType, 'proba')
     end
 
     disp('? Carte de probabilite CellposeSAM integree (channel *_cellprob).');
+end
+end
+
+function localConfigureIndexedAnnotationDisplay(roiobj, logIdx)
+if ~isfield(roiobj, 'display') || ~isstruct(roiobj.display)
+    return;
+end
+
+nLog = max(double(logIdx), numel(roiobj.display.channel));
+
+if ~isfield(roiobj.display,'selectedchannel') || isempty(roiobj.display.selectedchannel)
+    roiobj.display.selectedchannel = zeros(1, nLog);
+elseif numel(roiobj.display.selectedchannel) < nLog
+    roiobj.display.selectedchannel(end+1:nLog) = 0;
+end
+
+if ~isfield(roiobj.display,'indexed') || isempty(roiobj.display.indexed)
+    roiobj.display.indexed = zeros(1, nLog);
+elseif numel(roiobj.display.indexed) < nLog
+    roiobj.display.indexed(end+1:nLog) = 0;
+end
+
+if ~isfield(roiobj.display,'alpha') || isempty(roiobj.display.alpha)
+    roiobj.display.alpha = ones(1, nLog);
+elseif numel(roiobj.display.alpha) < nLog
+    roiobj.display.alpha(end+1:nLog) = 1;
+end
+
+if ~isfield(roiobj.display,'contour') || isempty(roiobj.display.contour)
+    roiobj.display.contour = zeros(1, nLog);
+elseif numel(roiobj.display.contour) < nLog
+    roiobj.display.contour(end+1:nLog) = 0;
+end
+
+if ~isfield(roiobj.display,'width') || isempty(roiobj.display.width)
+    roiobj.display.width = ones(1, nLog);
+elseif numel(roiobj.display.width) < nLog
+    roiobj.display.width(end+1:nLog) = 1;
+end
+
+if ~isfield(roiobj.display,'intensity') || isempty(roiobj.display.intensity)
+    roiobj.display.intensity = ones(nLog, 3);
+elseif size(roiobj.display.intensity,1) < nLog
+    roiobj.display.intensity(end+1:nLog,:) = 1;
+end
+
+if ~isfield(roiobj.display,'rgb') || isempty(roiobj.display.rgb)
+    roiobj.display.rgb = ones(nLog, 3);
+elseif size(roiobj.display.rgb,1) < nLog
+    roiobj.display.rgb(end+1:nLog,:) = 1;
+end
+
+roiobj.display.selectedchannel(logIdx) = 1;
+roiobj.display.indexed(logIdx) = 1;
+roiobj.display.intensity(logIdx,:) = [0 0 0];
+roiobj.display.rgb(logIdx,:) = [1 1 1];
+
+if roiobj.display.alpha(logIdx) <= 0
+    roiobj.display.alpha(logIdx) = 1;
+end
+if roiobj.display.width(logIdx) <= 0
+    roiobj.display.width(logIdx) = 1;
+end
+end
+
+function runCellposeRunnerProcess(pythonExe, runnerPath, configPath, classifPath, cancelPath, stdoutPath, stderrPath, liveLogPath)
+if exist(stdoutPath, 'file') == 2
+    delete(stdoutPath);
+end
+if exist(stderrPath, 'file') == 2
+    delete(stderrPath);
+end
+if exist(liveLogPath, 'file') == 2
+    delete(liveLogPath);
+end
+
+psi = System.Diagnostics.ProcessStartInfo();
+psi.FileName = char(string(pythonExe));
+psi.Arguments = ['-u "' char(string(runnerPath)) '" "' char(string(configPath)) '"'];
+psi.UseShellExecute = false;
+psi.CreateNoWindow = true;
+psi.WorkingDirectory = char(string(classifPath));
+
+proc = System.Diagnostics.Process();
+proc.StartInfo = psi;
+
+if ~proc.Start()
+    error('cellposesam_runner failed to start Python process.');
+end
+
+cleanupObj = onCleanup(@() localCleanupProcess(proc));
+lastLogBytes = 0;
+while ~proc.HasExited
+    pause(0.2);
+    drawnow;
+    localFlushRunnerLog(liveLogPath, lastLogBytes);
+    lastLogBytes = localFileBytes(liveLogPath);
+    if ~isempty(cancelPath) && exist(cancelPath, 'file') == 2
+        try
+            proc.Kill();
+        catch
+        end
+        error('runPipeline:Cancelled', 'Pipeline run cancelled by user during CellposeSAM execution.');
+    end
+end
+localFlushRunnerLog(liveLogPath, lastLogBytes);
+
+runnerErr = '';
+
+exitCode = double(proc.ExitCode);
+if exitCode ~= 0
+    try
+        errPath = fullfile(classifPath, 'runner_error.txt');
+        if exist(errPath, 'file') == 2
+            extra = fileread(errPath);
+            if ~isempty(strtrim(extra))
+                runnerErr = strtrim(string(runnerErr) + newline + extra);
+            end
+        end
+    catch
+    end
+    if strlength(strtrim(string(runnerErr))) == 0
+        runnerErr = sprintf('Python runner exited with code %d.', exitCode);
+    end
+    error('cellposesam_runner failed: %s', char(string(runnerErr)));
+end
+end
+
+function localCleanupProcess(proc)
+try
+    if ~isempty(proc) && ~proc.HasExited
+        proc.Kill();
+    end
+catch
+end
+end
+
+function localFlushRunnerLog(logPath, alreadyPrintedBytes)
+try
+    if exist(logPath, 'file') ~= 2
+        return;
+    end
+    txt = fileread(logPath);
+    n = numel(txt);
+    startIdx = max(1, alreadyPrintedBytes + 1);
+    if n >= startIdx
+        delta = txt(startIdx:n);
+        if ~isempty(delta)
+            fprintf('%s', delta);
+        end
+    end
+catch
+end
+end
+
+function n = localFileBytes(p)
+n = 0;
+try
+    info = dir(p);
+    if ~isempty(info)
+        n = info.bytes;
+    end
+catch
 end
 end
 
