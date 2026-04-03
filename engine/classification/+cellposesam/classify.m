@@ -259,7 +259,8 @@ catch
 end
 
 % test the existence of python environment
-test = select_and_load_conda_env('classif', classif); %#ok<NASGU>
+selectArgs = buildPythonSelectionArgsLocal(ctx, classif);
+test = select_and_load_conda_env(selectArgs{:}); %#ok<NASGU>
 cellposesam.utils.ensurePythonDeps(classif);
 
 % run python routine as an external process so MATLAB stays responsive and
@@ -380,6 +381,51 @@ if strcmpi(outputType, 'proba')
     end
 
     disp('? Carte de probabilite CellposeSAM integree (channel *_cellprob).');
+end
+end
+
+function args = buildPythonSelectionArgsLocal(ctx, classif)
+args = {'classif', classif};
+
+pyCfg = struct();
+try
+    if isfield(ctx,'exec') && isstruct(ctx.exec) && isfield(ctx.exec,'python') && isstruct(ctx.exec.python)
+        pyCfg = ctx.exec.python;
+    end
+catch
+    pyCfg = struct();
+end
+
+if isempty(fieldnames(pyCfg))
+    return;
+end
+
+mode = 'default';
+try
+    if isfield(pyCfg,'mode') && ~isempty(pyCfg.mode)
+        mode = lower(strtrim(char(string(pyCfg.mode))));
+    end
+catch
+    mode = 'default';
+end
+
+switch mode
+    case 'custom'
+        args = [args, {'mode','custom'}]; %#ok<AGROW>
+        try
+            if isfield(pyCfg,'envName') && ~isempty(pyCfg.envName)
+                args = [args, {'envName', char(string(pyCfg.envName))}]; %#ok<AGROW>
+            end
+        catch
+        end
+        try
+            if isfield(pyCfg,'envPath') && ~isempty(pyCfg.envPath)
+                args = [args, {'envPath', char(string(pyCfg.envPath))}]; %#ok<AGROW>
+            end
+        catch
+        end
+    otherwise
+        args = [args, {'mode','default'}]; %#ok<AGROW>
 end
 end
 

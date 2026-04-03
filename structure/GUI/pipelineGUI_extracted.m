@@ -51,6 +51,7 @@ classdef pipelineGUI < matlab.apps.AppBase
             'refPath',{},'refId',{},'refKind',{},'isOffline',{})
         SelectedLibraryRow double = NaN
         Context struct = struct()
+        Dirty logical = false
     end
 
     % Callbacks that handle component events
@@ -77,6 +78,7 @@ classdef pipelineGUI < matlab.apps.AppBase
             initMenus(app);
             initTables(app);
             initButtons(app);
+            app.Dirty = false;
             refreshAppTitle(app);
             redrawAll(app);
         end
@@ -155,6 +157,7 @@ classdef pipelineGUI < matlab.apps.AppBase
                     [ok, edgeIdx] = askDisconnectEdge(app, pairEdges);
                     if ok
                         app.Data.edges(edgeIdx) = [];
+                        markDirty(app, true);
                         redrawEdges(app);
                         refreshStatus(app);
                     end
@@ -181,6 +184,7 @@ classdef pipelineGUI < matlab.apps.AppBase
 
             autoHarmonizeConnection(app, fromId, toId, fromPort, toPort);
 
+            markDirty(app, true);
             redrawEdges(app);
             refreshStatus(app);
         end
@@ -254,6 +258,7 @@ classdef pipelineGUI < matlab.apps.AppBase
             end
 
             app.Data.nodes(row) = node;
+            markDirty(app, true);
             redrawModule(app, row);
             updateModuleListTable(app);
             refreshStatus(app);
@@ -303,6 +308,7 @@ classdef pipelineGUI < matlab.apps.AppBase
             node.params.(key) = parseParamValueFromTable(app, rawVal, oldVal);
             app.Data.nodes(modIdx) = node;
 
+            markDirty(app, true);
             updateParamsTable(app, modIdx);
             refreshStatus(app);
         end
@@ -345,6 +351,7 @@ classdef pipelineGUI < matlab.apps.AppBase
             node.params.(key) = newVal;
             app.Data.nodes(modIdx) = node;
 
+            markDirty(app, true);
             updateParamsTable(app, modIdx);
             refreshStatus(app);
         end
@@ -401,7 +408,18 @@ classdef pipelineGUI < matlab.apps.AppBase
 
         % Button pushed function: CloseButton
         function CloseButtonPushed(app, event)
-            delete(app)
+            UIFigureCloseRequest(app, event);
+        end
+
+        function UIFigureCloseRequest(app, event) %#ok<INUSD>
+            if ~confirmClosePipelineGUI(app)
+                return;
+            end
+            try
+                app.UIFigure.CloseRequestFcn = '';
+            catch
+            end
+            delete(app);
         end
 
         function ButtonMoveToCanvaPushed(app, event)
@@ -421,6 +439,7 @@ classdef pipelineGUI < matlab.apps.AppBase
             app.SelectedLibraryRow = NaN;
             app.Context.pipeObj = pipelineConstruct('', 'pipeline', 1);
 
+            markDirty(app, true);
             refreshAppTitle(app);
             redrawAll(app);
             updateParamsTable(app, inf);
@@ -504,6 +523,9 @@ classdef pipelineGUI < matlab.apps.AppBase
 
         % Window up to stop dragging
         function UIFigureWindowButtonUp(app, event)
+            if ~isnan(app.DraggingModule)
+                markDirty(app, true);
+            end
             app.DraggingModule = NaN;
         end
     end
@@ -534,7 +556,7 @@ classdef pipelineGUI < matlab.apps.AppBase
 
             app.UIModuleParametersTable.ColumnEditable = [false true];
             app.UITable.ColumnEditable = [false false false false];
-            app.UITable.ColumnName = {'Name'; 'Type'; 'Package'; 'Source'};
+            app.UITable.ColumnName = {'Name'; 'Type'; 'Package'; 'Location'};
             app.UITable.SelectionChangedFcn = createCallbackFcn(app, @UITableSelectionChanged, true);
             updateModuleListTable(app);
             updateModuleLibraryTable(app);
@@ -833,9 +855,12 @@ classdef pipelineGUI < matlab.apps.AppBase
             node.enabled = true;
             node.status = '';
             node.pkg = '';
+            node.importMode = 'blank';
             node.layout = [pos(1) pos(2) 26 16];
             node.contract = makeNodeContract(app, node.type, node.pkg);
             [node.inputs, node.outputs] = ioFromContract(app, node.contract);
+            node = normalizeLibraryNode(app, node);
+            app.Data.nodes = normalizeNodeArray(app, app.Data.nodes);
 
             if isempty(app.Data.nodes)
                 app.Data.nodes = node;
@@ -843,6 +868,7 @@ classdef pipelineGUI < matlab.apps.AppBase
                 app.Data.nodes(end+1) = node;
             end
 
+            markDirty(app, true);
             drawModule(app, numel(app.Data.nodes));
             updateModuleListTable(app);
             refreshStatus(app);
@@ -899,6 +925,9 @@ classdef pipelineGUI < matlab.apps.AppBase
             miDuplicate = uimenu(cm,'Text','Duplicate module');
             miDuplicate.UserData = idx;
             miDuplicate.MenuSelectedFcn = @(src,evt)duplicateModule(app, src.UserData);
+            miLocal = uimenu(cm,'Text','Convert to local copy');
+            miLocal.UserData = idx;
+            miLocal.MenuSelectedFcn = @(src,evt)convertNodeToLocalCopy(app, src.UserData);
             miDelete = uimenu(cm,'Text','Delete module');
             miDelete.UserData = idx;
             miDelete.MenuSelectedFcn = @(src,evt)deleteModule(app, src.UserData, true);
@@ -973,6 +1002,9 @@ classdef pipelineGUI < matlab.apps.AppBase
                 badge = ['\it ' char(string(typeLabel))];
             else
                 badge = ['\it ' char(string(typeLabel)) ' - ' pkg];
+            end
+            if nodeHasReference(app, node)
+                badge = [badge '   \bf[ref]'];
             end
         end
 
@@ -1202,6 +1234,7 @@ classdef pipelineGUI < matlab.apps.AppBase
                 autoHarmonizeConnection(app, fromId, toId, fromMeta.portName, toMeta.portName);
             end
 
+            markDirty(app, true);
             redrawEdges(app);
             refreshStatus(app);
             clearPortSelection(app);
@@ -1264,6 +1297,7 @@ classdef pipelineGUI < matlab.apps.AppBase
             end
 
             app.Data.edges(edgeIdx) = [];
+            markDirty(app, true);
             redrawEdges(app);
             refreshStatus(app);
         end
@@ -1514,9 +1548,7 @@ classdef pipelineGUI < matlab.apps.AppBase
                 else
                     data{i,3} = char(string(entries(i).pkg));
                 end
-                src = char(string(entries(i).source));
-                src = regexprep(src, '\s+', ' ');
-                data{i,4} = src;
+                data{i,4} = formatLibraryLocation(app, entries(i));
             end
             app.UITable.Data = data;
             updateLibrarySelectionStyle(app);
@@ -1708,13 +1740,6 @@ classdef pipelineGUI < matlab.apps.AppBase
                 entries = appendProjectLibraryEntries(app, entries, shallowObj, 'current project', currentNodeSigs);
             end
 
-            offlineEntries = loadOfflineLibraryEntries(app);
-            for i = 1:numel(offlineEntries)
-                if shouldSkipLibraryEntry(app, offlineEntries(i), currentNodeSigs)
-                    continue;
-                end
-                entries = appendLibraryEntry(app, entries, offlineEntries(i));
-            end
         end
 
         function entries = appendProjectLibraryEntries(app, entries, shallowObj, sourcePrefix, currentNodeSigs)
@@ -1777,6 +1802,58 @@ classdef pipelineGUI < matlab.apps.AppBase
                 return;
             end
             entries(end+1) = entry; %#ok<AGROW>
+        end
+
+        function txt = formatLibraryLocation(app, entry) %#ok<INUSD>
+            txt = '';
+            if isempty(entry) || ~isstruct(entry)
+                return;
+            end
+            src = char(string(getObjectFieldDefault(app, entry, 'source', '')));
+            src = regexprep(src, '\s+', ' ');
+            src = strtrim(src);
+            if isempty(src)
+                return;
+            end
+
+            if startsWith(lower(src), 'workspace project:')
+                tail = strtrim(extractAfter(string(src), ':'));
+                txt = char(tail);
+                txt = strrep(txt, ' classifiers', ' / classifiers');
+                txt = strrep(txt, ' processors', ' / processors');
+                return;
+            end
+
+            if startsWith(lower(src), 'current project')
+                txt = strrep(src, ' classifiers', ' / classifiers');
+                txt = strrep(txt, ' processors', ' / processors');
+                return;
+            end
+
+            if startsWith(lower(src), 'workspace pipeline:')
+                tail = strtrim(extractAfter(string(src), ':'));
+                txt = ['pipeline / ' char(tail)];
+                return;
+            end
+
+            if startsWith(lower(src), 'workspace classifier:')
+                tail = strtrim(extractAfter(string(src), ':'));
+                txt = ['workspace / classifier / ' char(tail)];
+                return;
+            end
+
+            if startsWith(lower(src), 'workspace processor:')
+                tail = strtrim(extractAfter(string(src), ':'));
+                txt = ['workspace / processor / ' char(tail)];
+                return;
+            end
+
+            if contains(lower(src), 'offline library')
+                txt = '';
+                return;
+            end
+
+            txt = src;
         end
 
         function entries = loadOfflineLibraryEntries(app)
@@ -2014,9 +2091,43 @@ classdef pipelineGUI < matlab.apps.AppBase
             end
         end
 
+        function procObj = loadOriginProcessReference(app, node)
+            procObj = [];
+            [refPath, refId, refKind] = extractNodeOrigin(app, node);
+            if ~strcmpi(refKind, 'processor') || isempty(refPath) || isempty(refId)
+                return;
+            end
+            snap = fullfile(refPath, [refId '_processor.mat']);
+            if exist(snap, 'file') ~= 2
+                return;
+            end
+            try
+                [procObj, ~] = processLoad(snap);
+            catch
+                procObj = [];
+            end
+        end
+
         function classObj = loadLinkedClassifierReference(app, node)
             classObj = [];
             [refPath, refId, refKind] = extractNodeReference(app, node);
+            if ~strcmpi(refKind, 'classifier') || isempty(refPath) || isempty(refId)
+                return;
+            end
+            snap = fullfile(refPath, [refId '_classification.mat']);
+            if exist(snap, 'file') ~= 2
+                return;
+            end
+            try
+                [classObj, ~] = classiLoad(snap);
+            catch
+                classObj = [];
+            end
+        end
+
+        function classObj = loadOriginClassifierReference(app, node)
+            classObj = [];
+            [refPath, refId, refKind] = extractNodeOrigin(app, node);
             if ~strcmpi(refKind, 'classifier') || isempty(refPath) || isempty(refId)
                 return;
             end
@@ -2144,9 +2255,21 @@ classdef pipelineGUI < matlab.apps.AppBase
             if ~isempty(cls)
                 params.classes = cls;
             end
+            trainingParam = getObjectFieldDefault(app, classObj, 'trainingParam', struct());
+            if isstruct(trainingParam) && ~isempty(fieldnames(trainingParam))
+                params.trainingParam = trainingParam;
+            end
             outType = char(string(getObjectFieldDefault(app, classObj, 'outputType', '')));
             if ~isempty(outType)
                 params.outputType = outType;
+            end
+            outFun = getObjectFieldDefault(app, classObj, 'outputFun', []);
+            if ~isempty(outFun)
+                params.outputFun = outFun;
+            end
+            outArg = getObjectFieldDefault(app, classObj, 'outputArg', []);
+            if ~isempty(outArg)
+                params.outputArg = outArg;
             end
             refPath = char(string(getObjectFieldDefault(app, classObj, 'path', '')));
             refId = char(string(getObjectFieldDefault(app, classObj, 'strid', '')));
@@ -2198,9 +2321,39 @@ classdef pipelineGUI < matlab.apps.AppBase
             if ~isfield(node,'paramRequired')
                 node.paramRequired = {};
             end
+            if ~isfield(node,'origin') || isempty(node.origin) || ~isstruct(node.origin)
+                node.origin = struct('path','','id','','kind','');
+            else
+                if ~isfield(node.origin,'path') || isempty(node.origin.path), node.origin.path = ''; end
+                if ~isfield(node.origin,'id') || isempty(node.origin.id), node.origin.id = ''; end
+                if ~isfield(node.origin,'kind') || isempty(node.origin.kind), node.origin.kind = ''; end
+            end
+            if ~isfield(node,'importMode') || isempty(node.importMode)
+                if nodeHasReference(app, node)
+                    node.importMode = 'reference';
+                else
+                    node.importMode = 'configured_copy';
+                end
+            end
             node = populateNodeParamsFromPackage(app, node, false);
             node.contract = getNodeContract(app, node);
             [node.inputs, node.outputs] = ioFromContract(app, node.contract);
+        end
+
+        function nodes = normalizeNodeArray(app, nodes)
+            if isempty(nodes)
+                return;
+            end
+            src = nodes;
+            nodes = struct([]);
+            for ii = 1:numel(src)
+                nodei = normalizeLibraryNode(app, src(ii));
+                if isempty(nodes)
+                    nodes = nodei;
+                else
+                    nodes(end+1) = nodei; %#ok<AGROW>
+                end
+            end
         end
 
         function duplicateSelectedLibraryModule(app)
@@ -2211,12 +2364,13 @@ classdef pipelineGUI < matlab.apps.AppBase
             end
 
             entry = app.LibraryEntries(row);
-            node = normalizeLibraryNode(app, entry.node);
+            node = buildConfiguredCopyImportedNode(app, entry.node);
             node.layout = getNextLibraryDropLayout(app);
             node.id = nextModuleId(app, node.type);
             node.name = nextModuleName(app, char(string(getfielddefault(app, node, 'name', node.id))));
             node.status = '';
             node.enabled = true;
+            app.Data.nodes = normalizeNodeArray(app, app.Data.nodes);
 
             if isempty(app.Data.nodes)
                 app.Data.nodes = node;
@@ -2224,6 +2378,7 @@ classdef pipelineGUI < matlab.apps.AppBase
                 app.Data.nodes(end+1) = node;
             end
 
+            markDirty(app, true);
             idx = numel(app.Data.nodes);
             drawModule(app, idx);
             clearPortSelection(app);
@@ -2248,6 +2403,7 @@ classdef pipelineGUI < matlab.apps.AppBase
             node.name = nextModuleName(app, char(string(getfielddefault(app, node, 'name', node.id))));
             node.status = '';
             node.enabled = true;
+            app.Data.nodes = normalizeNodeArray(app, app.Data.nodes);
 
             if isempty(app.Data.nodes)
                 app.Data.nodes = node;
@@ -2255,6 +2411,7 @@ classdef pipelineGUI < matlab.apps.AppBase
                 app.Data.nodes(end+1) = node;
             end
 
+            markDirty(app, true);
             newIdx = numel(app.Data.nodes);
             drawModule(app, newIdx);
             clearPortSelection(app);
@@ -2344,10 +2501,102 @@ classdef pipelineGUI < matlab.apps.AppBase
                     node.params = rmfield(node.params, drop{i});
                 end
             end
+            node.importMode = 'configured_copy';
             app.Data.nodes(idx) = node;
+            markDirty(app, true);
             updateModuleListTable(app);
             updateParamsTable(app, idx);
             refreshStatus(app);
+        end
+
+        function convertNodeToLocalCopy(app, idx)
+            if idx < 1 || idx > numel(app.Data.nodes)
+                return;
+            end
+            node = app.Data.nodes(idx);
+            if ~nodeHasReference(app, node)
+                return;
+            end
+            node = stripNodeReference(app, node);
+            app.Data.nodes(idx) = node;
+            markDirty(app, true);
+            redrawModule(app, idx);
+            updateModuleListTable(app);
+            if ismember(idx, app.SelectedModules)
+                updateParamsTable(app, idx);
+            end
+            refreshStatus(app);
+        end
+
+        function node = buildConfiguredCopyImportedNode(app, sourceNode)
+            node = sourceNode;
+            node = attachImportOrigin(app, node);
+            node = stripNodeReference(app, node);
+            node = resetImportSensitiveSelectors(app, node);
+            node.importMode = 'configured_copy';
+        end
+
+        function node = attachImportOrigin(app, node)
+            if ~isstruct(node)
+                return;
+            end
+            [refPath, refId, refKind] = extractNodeReference(app, node);
+            if isempty(refPath) && isempty(refId)
+                return;
+            end
+            node.origin = struct( ...
+                'path', char(string(refPath)), ...
+                'id', char(string(refId)), ...
+                'kind', char(string(refKind)));
+        end
+
+        function node = stripNodeReference(app, node)
+            if ~isfield(node,'params') || ~isstruct(node.params)
+                node.params = struct();
+                return;
+            end
+            drop = intersect(fieldnames(node.params), {'modulePath','moduleId','moduleVar','moduleKind','linkSource'});
+            if ~isempty(drop)
+                node.params = rmfield(node.params, drop);
+            end
+            if isfield(node,'importMode')
+                node.importMode = 'configured_copy';
+            end
+        end
+
+        function node = resetImportSensitiveSelectors(app, node)
+            if ~isfield(node,'params') || ~isstruct(node.params)
+                return;
+            end
+            if requiresSingleExplicitChannel(app, node)
+                drop = intersect(fieldnames(node.params), {'channel','channels'});
+                if ~isempty(drop)
+                    node.params = rmfield(node.params, drop);
+                end
+            end
+        end
+
+        function tf = nodeHasReference(app, node)
+            [refPath, refId, ~] = extractNodeReference(app, node);
+            tf = ~isempty(refPath) || ~isempty(refId);
+        end
+
+        function [refPath, refId, refKind] = extractNodeOrigin(app, node) %#ok<INUSD>
+            refPath = '';
+            refId = '';
+            refKind = '';
+            if ~isstruct(node) || ~isfield(node, 'origin') || ~isstruct(node.origin)
+                return;
+            end
+            if isfield(node.origin, 'path') && ~isempty(node.origin.path)
+                refPath = char(string(node.origin.path));
+            end
+            if isfield(node.origin, 'id') && ~isempty(node.origin.id)
+                refId = char(string(node.origin.id));
+            end
+            if isfield(node.origin, 'kind') && ~isempty(node.origin.kind)
+                refKind = char(string(node.origin.kind));
+            end
         end
 
         function layout = getNextLibraryDropLayout(app)
@@ -2805,8 +3054,12 @@ classdef pipelineGUI < matlab.apps.AppBase
         end
 
         function tf = requiresSingleExplicitChannel(app, node) %#ok<INUSD>
-            tf = strcmpi(char(string(getfielddefault(app, node, 'type', ''))), 'classifier') && ...
-                strcmpi(char(string(getfielddefault(app, node, 'pkg', ''))), 'cellposesam');
+            if ~strcmpi(char(string(getfielddefault(app, node, 'type', ''))), 'classifier')
+                tf = false;
+                return;
+            end
+            pkg = lower(char(string(getfielddefault(app, node, 'pkg', ''))));
+            tf = any(strcmp(pkg, {'cellposesam','cnn_lstm'}));
         end
 
         function issue = getCustomNodeValidationIssue(app, node)
@@ -3007,7 +3260,7 @@ classdef pipelineGUI < matlab.apps.AppBase
             if isempty(refPath) && isempty(refId)
                 return;
             end
-            rows(end+1,:) = {'[link] mode', 'Referenced source folder with local pipeline overrides'}; %#ok<AGROW>
+            rows(end+1,:) = {'[link] mode', 'Reference with local pipeline overrides'}; %#ok<AGROW>
             if ~isempty(refKind)
                 rows(end+1,:) = {'[link] kind', refKind}; %#ok<AGROW>
             end
@@ -3018,7 +3271,10 @@ classdef pipelineGUI < matlab.apps.AppBase
                 rows(end+1,:) = {'[link] source folder', refPath}; %#ok<AGROW>
             end
             if isfield(node, 'params') && isstruct(node.params) && isfield(node.params, 'linkSource') && ~isempty(node.params.linkSource)
-                rows(end+1,:) = {'[link] source entry', char(string(node.params.linkSource))}; %#ok<AGROW>
+                srcEntry = char(string(node.params.linkSource));
+                if ~contains(lower(srcEntry), 'offline library')
+                    rows(end+1,:) = {'[link] source entry', srcEntry}; %#ok<AGROW>
+                end
             end
         end
 
@@ -4215,6 +4471,7 @@ classdef pipelineGUI < matlab.apps.AppBase
 
             clearPortGraphicsForModule(app, idx);
             app.Data.nodes(idx) = [];
+            markDirty(app, true);
 
             if idx <= numel(app.ModuleHandles)
                 delete(app.ModuleHandles(idx));
@@ -4255,11 +4512,26 @@ classdef pipelineGUI < matlab.apps.AppBase
 
             try
                 if strcmpi(node.type,'processor')
-                    tmpProc = process(tempdir, 'pipeline_module', randi(1e9));
+                    originProc = loadOriginProcessReference(app, node);
+                    if ~isempty(originProc)
+                        if ~isempty(shallowObj)
+                            processDataGUI(shallowObj, originProc);
+                        else
+                            processDataGUI([], originProc);
+                        end
+                        return;
+                    end
                     refProc = loadLinkedProcessReference(app, node);
                     if ~isempty(refProc)
-                        tmpProc = applyProcessReferenceForGui(app, tmpProc, refProc);
+                        if ~isempty(shallowObj)
+                            processDataGUI(shallowObj, refProc);
+                        else
+                            processDataGUI([], refProc);
+                        end
+                        return;
                     end
+
+                    tmpProc = process(tempdir, 'pipeline_module', randi(1e9));
                     pkgName = char(string(getfielddefault(app,node,'pkg','')));
                     if ~isempty(pkgName)
                         tmpProc.processFun = [pkgName '.process'];
@@ -4324,11 +4596,18 @@ classdef pipelineGUI < matlab.apps.AppBase
                 end
 
                 if strcmpi(node.type,'classifier')
-                    tmpClassi = classi(tempdir, 'pipeline_module', randi(1e9));
+                    originClassi = loadOriginClassifierReference(app, node);
+                    if ~isempty(originClassi)
+                        classifierGUI(originClassi);
+                        return;
+                    end
                     refClassi = loadLinkedClassifierReference(app, node);
                     if ~isempty(refClassi)
-                        tmpClassi = applyClassifierReferenceForGui(app, tmpClassi, refClassi);
+                        classifierGUI(refClassi);
+                        return;
                     end
+
+                    tmpClassi = classi(tempdir, 'pipeline_module', randi(1e9));
 
                     pkgName = char(string(getfielddefault(app,node,'pkg','')));
                     if ~isempty(pkgName)
@@ -4693,22 +4972,28 @@ classdef pipelineGUI < matlab.apps.AppBase
                 return;
             end
 
-            for i = 1:numel(nodes)
-                if ~isfield(nodes(i),'layout') || isempty(nodes(i).layout)
-                    nodes(i).layout = [10 10 20 10];
+            srcNodes = nodes;
+            nodes = struct([]);
+            for i = 1:numel(srcNodes)
+                nodei = srcNodes(i);
+                if ~isfield(nodei,'layout') || isempty(nodei.layout)
+                    nodei.layout = [10 10 20 10];
                 end
-                if ~isfield(nodes(i),'name') || isempty(nodes(i).name)
-                    nodes(i).name = char(string(nodes(i).id));
+                if ~isfield(nodei,'name') || isempty(nodei.name)
+                    nodei.name = char(string(nodei.id));
                 end
-                if ~isfield(nodes(i),'enabled')
-                    nodes(i).enabled = true;
+                if ~isfield(nodei,'enabled')
+                    nodei.enabled = true;
                 end
-                if ~isfield(nodes(i),'pkg')
-                    nodes(i).pkg = '';
+                if ~isfield(nodei,'pkg')
+                    nodei.pkg = '';
                 end
-                nodes(i) = populateNodeParamsFromPackage(app, nodes(i), false);
-                nodes(i).contract = getNodeContract(app, nodes(i));
-                [nodes(i).inputs, nodes(i).outputs] = ioFromContract(app, nodes(i).contract);
+                nodei = normalizeLibraryNode(app, nodei);
+                if isempty(nodes)
+                    nodes = nodei;
+                else
+                    nodes(end+1) = nodei; %#ok<AGROW>
+                end
             end
 
             % Normalize edges to id/port form
@@ -4830,6 +5115,7 @@ classdef pipelineGUI < matlab.apps.AppBase
             pipeObj.nodes = pipe.nodes;
             pipeObj.edges = pipe.edges;
             pipelineSave(pipeObj);
+            markDirty(app, false);
             refreshAppTitle(app);
             rememberPipelineNodesInOfflineLibrary(app, pipe.nodes, 'offline library');
             updateModuleLibraryTable(app);
@@ -4900,6 +5186,22 @@ classdef pipelineGUI < matlab.apps.AppBase
             tf = strcmp(choice, 'Discard');
         end
 
+        function tf = confirmClosePipelineGUI(app)
+            tf = true;
+            if ~app.Dirty
+                return;
+            end
+
+            choice = uiconfirm(app.UIFigure, ...
+                'This pipeline has unsaved changes. Close anyway?', ...
+                'Unsaved pipeline', ...
+                'Options', {'Close without saving','Cancel'}, ...
+                'DefaultOption', 2, ...
+                'CancelOption', 2, ...
+                'Icon', 'warning');
+            tf = strcmp(choice, 'Close without saving');
+        end
+
         function pipeObj = getCurrentPipelineObject(app)
             pipeObj = [];
             if isfield(app.Context,'pipeObj') && isa(app.Context.pipeObj,'pipeline')
@@ -4954,20 +5256,37 @@ classdef pipelineGUI < matlab.apps.AppBase
             baseTitle = 'Pipeline GUI';
             pipeObj = getCurrentPipelineObject(app);
             if isempty(pipeObj)
-                app.UIFigure.Name = baseTitle;
+                if app.Dirty
+                    app.UIFigure.Name = [baseTitle ' *'];
+                else
+                    app.UIFigure.Name = baseTitle;
+                end
                 return;
             end
 
             pipeName = '';
+            hasSavedPath = false;
             try
                 pipeName = char(string(pipeObj.strid));
+                hasSavedPath = ~isempty(char(string(pipeObj.path)));
             catch
             end
+            isUnsaved = logical(app.Dirty) || ~hasSavedPath;
             if isempty(pipeName)
-                app.UIFigure.Name = baseTitle;
+                titleText = baseTitle;
             else
-                app.UIFigure.Name = sprintf('%s - %s', baseTitle, pipeName);
+                titleText = sprintf('%s - %s', baseTitle, pipeName);
             end
+            if isUnsaved
+                app.UIFigure.Name = [titleText ' *'];
+            else
+                app.UIFigure.Name = titleText;
+            end
+        end
+
+        function markDirty(app, tf)
+            app.Dirty = logical(tf);
+            refreshAppTitle(app);
         end
 
         function setCheckPipelineVisualState(app, isValid)
@@ -5011,6 +5330,7 @@ classdef pipelineGUI < matlab.apps.AppBase
 
             % Create UIFigure and hide until all components are created
             app.UIFigure = uifigure('Visible', 'off');
+            app.UIFigure.CloseRequestFcn = createCallbackFcn(app, @UIFigureCloseRequest, true);
             app.UIFigure.Position = [100 100 1160 766];
             app.UIFigure.Name = 'MATLAB App';
 

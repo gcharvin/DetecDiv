@@ -225,7 +225,7 @@ for idxF = 1:numel(fovSelection)
 
         [created, createdCount, processedFOV, createdNow] = ...
             processTrackedObjects(created, createdCount, processedFOV, ...
-            fovObj, roiObj, labelStack, pixIdx, channelName, marginPixels, fovId, roiId, fovOutputPath);
+            fovObj, roiObj, labelStack, pixIdx, channelName, marginPixels, fovId, roiId, fovOutputPath, idPrefix);
         totalCreatedForROI = totalCreatedForROI + createdNow;
         fprintf('FOV %s / ROI %s: detected %d tracked cell(s).\n', fovObj.id, roiObj.id, createdNow);
     end
@@ -829,7 +829,7 @@ end
 function [created, createdCount, processedFOV, createdNow] = processTrackedObjects( ...
         created, createdCount, processedFOV, ...
         fovObj, roiObj, labelStack, pixIdx, channelName, marginPixels, ...
-        fovId, parentROIIndex, fovOutputPath)
+        fovId, parentROIIndex, fovOutputPath, idPrefix)
 
     [rows, cols, framesCount] = size(labelStack);
 

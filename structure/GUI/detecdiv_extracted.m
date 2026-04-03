@@ -29,6 +29,7 @@ classdef detecdiv < matlab.apps.AppBase
         ExportdataMenu                 matlab.ui.container.Menu
         MakeROImoviesMenu              matlab.ui.container.Menu
         ProjectMenu                    matlab.ui.container.Menu
+        ReloadprojectfromdiskMenu      matlab.ui.container.Menu
         PositionsMenu                  matlab.ui.container.Menu
         AddPositionsDataMenu           matlab.ui.container.Menu
         SetFrameOrientationMenu        matlab.ui.container.Menu
@@ -190,7 +191,7 @@ classdef detecdiv < matlab.apps.AppBase
                         cm=uicontextmenu(app.DetecDivUIFigure);
                         m = uimenu(cm,'Text','Run now...');
                         m.MenuSelectedFcn={@contextMenuRunPipelineRunFcn,[i,k],'ProjectpipelineRun'};
-                        m = uimenu(cm,'Text','Open run.json...');
+                        m = uimenu(cm,'Text','Edit run...');
                         m.MenuSelectedFcn={@contextMenuOpenPipelineRunFcn,[i,k],'ProjectpipelineRun'};
                         m = uimenu(cm,'Text','Delete run');
                         m.MenuSelectedFcn={@contextMenuDeletePipelineRunFcn,[i,k],'ProjectpipelineRun'};
@@ -703,7 +704,7 @@ end
                 if isempty(runObj)
                     return;
                 end
-                openProjectPipelineRunInspector(arg(1), arg(2));
+                openProjectPipelineRunEditor(arg(1), arg(2));
             end
 
             function contextMenuDeletePipelineRunFcn(src,event,arg,str) %#ok<INUSD>
@@ -950,6 +951,22 @@ end
                         edit(runJson);
                     end
                     uialert(app.DetecDivUIFigure, ME.message, 'Pipeline run viewer error', 'Icon', 'warning');
+                end
+            end
+
+            function openProjectPipelineRunEditor(projIdx, runIdx)
+                shallowObj = getProjectByIndex(projIdx);
+                runObj = getProjectRunByIndex(projIdx, runIdx);
+                if isempty(runObj)
+                    return;
+                end
+                try
+                    dlg = pipelineRunGUI(runObj, shallowObj);
+                    dlg.UIFigure.WindowStyle = 'modal';
+                    uiwait(dlg.UIFigure);
+                    RefreshtreewindowMenuSelected(app, []);
+                catch ME
+                    uialert(app.DetecDivUIFigure, ME.message, 'Pipeline run editor error', 'Icon', 'warning');
                 end
             end
 
@@ -3559,7 +3576,7 @@ end
     projectPath = projectPath(1);
 
     % --- Purge + normaliser liste existante -> string colonne
-    app.cleanRecentProjectsList();
+    app.cleanRecentProjectsList(false);
 
     old = app.RecentProjects;
     if isempty(old)
@@ -3603,7 +3620,7 @@ function registerRecentClassifier(app, classiMatPath)
     classiMatPath = classiMatPath(1);
 
     % --- Purge + normaliser liste existante -> string colonne
-    app.cleanRecentClassifiersList();
+    app.cleanRecentClassifiersList(false);
 
     old = app.RecentClassifiers;
     if isempty(old)
@@ -3645,7 +3662,7 @@ function registerRecentPipeline(app, pipelineJsonPath)
     pipelineJsonPath = string(pipelineJsonPath);
     pipelineJsonPath = pipelineJsonPath(1);
 
-    app.cleanRecentPipelinesList();
+    app.cleanRecentPipelinesList(false);
 
     old = app.RecentPipelines;
     if isempty(old)
@@ -3728,7 +3745,7 @@ function openRecentPipelineCallback(app, pipelineJsonPath)
             'Missing pipeline', ...
             'Icon','warning');
 
-        app.cleanRecentPipelinesList();
+        app.cleanRecentPipelinesList(true);
         app.refreshRecentPipelinesMenu();
         return;
     end
@@ -3862,7 +3879,7 @@ function openRecentProjectCallback(app, projectPath)
             'Missing project', ...
             'Icon','warning');
 
-        app.cleanRecentProjectsList();
+        app.cleanRecentProjectsList(true);
         app.refreshRecentProjectsMenu();
         return;
     end
@@ -3914,7 +3931,7 @@ function openRecentClassifierCallback(app, classiMatPath)
             'Missing classifier', ...
             'Icon','warning');
 
-        app.cleanRecentClassifiersList();
+        app.cleanRecentClassifiersList(true);
         app.refreshRecentClassifiersMenu();
         return;
     end
@@ -3951,13 +3968,19 @@ function openRecentClassifierCallback(app, classiMatPath)
     close(d);
 end
 
-function cleanRecentClassifiersList(app)
+function cleanRecentClassifiersList(app, validateExisting)
+    if nargin < 2 || isempty(validateExisting)
+        validateExisting = true;
+    end
     rc = string(app.RecentClassifiers(:));
     rc = rc(rc ~= "");  % vire les vides
 
-    keep = false(size(rc));
-    for k = 1:numel(rc)
-        keep(k) = isfile(rc(k));  % on ne garde que les chemins encore valides
+    keep = true(size(rc));
+    if validateExisting
+        keep = false(size(rc));
+        for k = 1:numel(rc)
+            keep(k) = isfile(rc(k));  % on ne garde que les chemins encore valides
+        end
     end
     rc = rc(keep);
 
@@ -3975,13 +3998,19 @@ end
 
 
 
-function cleanRecentPipelinesList(app)
+function cleanRecentPipelinesList(app, validateExisting)
+    if nargin < 2 || isempty(validateExisting)
+        validateExisting = true;
+    end
     rp = string(app.RecentPipelines(:));
     rp = rp(rp ~= "");
 
-    keep = false(size(rp));
-    for k = 1:numel(rp)
-        keep(k) = isfile(rp(k));
+    keep = true(size(rp));
+    if validateExisting
+        keep = false(size(rp));
+        for k = 1:numel(rp)
+            keep(k) = isfile(rp(k));
+        end
     end
     rp = rp(keep);
 
@@ -3996,13 +4025,19 @@ function cleanRecentPipelinesList(app)
 end
 
 
-         function cleanRecentProjectsList(app)
+         function cleanRecentProjectsList(app, validateExisting)
+        if nargin < 2 || isempty(validateExisting)
+            validateExisting = true;
+        end
         rp = string(app.RecentProjects(:));
         rp = rp(rp ~= "");
 
-        keep = false(size(rp));
-        for k = 1:numel(rp)
-            keep(k) = isfile(rp(k)); % le .mat doit exister encore
+        keep = true(size(rp));
+        if validateExisting
+            keep = false(size(rp));
+            for k = 1:numel(rp)
+                keep(k) = isfile(rp(k)); % le .mat doit exister encore
+            end
         end
         rp = rp(keep);
 
@@ -4129,13 +4164,13 @@ end
     end
 
     % Nettoyer / rafra?chir menus
-    app.cleanRecentProjectsList();
+    app.cleanRecentProjectsList(false);
     app.refreshRecentProjectsMenu();
 
-    app.cleanRecentClassifiersList();
+    app.cleanRecentClassifiersList(false);
     app.refreshRecentClassifiersMenu();
 
-    app.cleanRecentPipelinesList();
+    app.cleanRecentPipelinesList(false);
     app.refreshRecentPipelinesMenu();
         function [ok,node,pipeObj] = getPipelineNodeByIndex(app, pipeIdx, modIdx)
             ok = false;
@@ -4293,6 +4328,8 @@ end
 
         % Code that executes after component creation
         function startupFcn(app)
+            app.applyMainWindowLayout();
+            app.resetMainPanelState();
             checkInstalledToolboxes;
             initUserPreferences;
 
@@ -4301,6 +4338,51 @@ end
 
             gatherVarsFromWorkspace(app)
             displayNodes(app)
+        end
+
+        function applyMainWindowLayout(app)
+            if ~isvalid(app.DetecDivUIFigure)
+                return;
+            end
+
+            app.DetecDivUIFigure.Position = [100 100 708 646];
+            app.Tree.Position = [13 13 241 622];
+            app.ProjectsPanel.Position = [269 13 427 626];
+
+            app.UIAxes.Position = [0 16 417 341];
+            app.ProjectInformationLabel.Position = [8 361 410 240];
+            app.AdddataButton.Position = [20 286 175 40];
+            app.UpdaterawdatapathButton.Position = [249 284 169 45];
+            app.IdentifyROIsinpositionsButton.Position = [20 211 385 46];
+            app.ExtractROIhypervolumesButton.Position = [20 153 389 47];
+            app.AddclassifierButton.Position = [20 74 175 43];
+            app.AddprocessorButton.Position = [232 74 151 43];
+            app.ClassifydataButton.Position = [20 12 175 43];
+            app.ProcessdataButton.Position = [232 12 149 43];
+            app.OpenButton.Position = [283 365 134 37];
+            app.InspectRunButton.Position = [283 320 134 37];
+        end
+
+        function resetMainPanelState(app)
+            app.ProjectsPanel.Title = 'Projects';
+            app.ProjectInformationLabel.Text = 'Project Information';
+            app.ProjectInformationLabel.Visible = 'on';
+
+            app.AdddataButton.Visible='off';
+            app.AddclassifierButton.Visible='off';
+            app.UpdaterawdatapathButton.Visible='off';
+            app.IdentifyROIsinpositionsButton.Visible='off';
+            app.ExtractROIhypervolumesButton.Visible='off';
+            app.ClassifydataButton.Visible='off';
+            app.AddprocessorButton.Visible='off';
+            app.ProcessdataButton.Visible='off';
+            app.InspectRunButton.Visible='off';
+            app.OpenButton.Visible='off';
+
+            if isvalid(app.UIAxes)
+                cla(app.UIAxes);
+                app.UIAxes.Visible='off';
+            end
         end
 
         % Selection changed function: Tree
@@ -4853,7 +4935,7 @@ end
             if strcmp(selectedNodes.Tag,'ProjectpipelineRun')
                 app.ProjectsPanel.Title='Pipeline run';
                 app.InspectRunButton.Visible='on';
-                app.InspectRunButton.Text='Open Pipeline Run...';
+                app.InspectRunButton.Text='Edit Pipeline Run...';
                 app.OpenButton.Visible='on';
                 app.OpenButton.Text='Run Pipeline Run...';
 
@@ -5227,6 +5309,53 @@ end
                 uialert(app.DetecDivUIFigure,'No project was selected in the window!','Error','Icon','warning');
             end
 
+        end
+
+        % Menu selected function: ReloadprojectfromdiskMenu
+        function ReloadprojectfromdiskMenuSelected(app, event) %#ok<INUSD>
+            if numel(app.Tree.SelectedNodes)==0
+                uialert(app.DetecDivUIFigure,'First select a project in the tree window!','Error');
+                return;
+            end
+
+            if ~strcmp(app.Tree.SelectedNodes.Tag,'Project')
+                uialert(app.DetecDivUIFigure,'Select a project node to reload it from disk.','Error','Icon','warning');
+                return;
+            end
+
+            i = app.Tree.SelectedNodes.UserData;
+            projVar = app.Data.Project{i};
+            shallowObj = evalin('base', projVar);
+
+            if isempty(shallowObj) || ~isa(shallowObj, 'shallow')
+                uialert(app.DetecDivUIFigure,'This project does not exist in the workspace.','Error','Icon','warning');
+                return;
+            end
+
+            projectPathChar = app.getProjectMatPathFromObject(shallowObj);
+            if isempty(projectPathChar) || exist(projectPathChar, 'file') ~= 2
+                uialert(app.DetecDivUIFigure, ...
+                    sprintf('Project file not found:\n%s', projectPathChar), ...
+                    'Missing project file', ...
+                    'Icon','warning');
+                return;
+            end
+
+            selection = uiconfirm(app.DetecDivUIFigure, ...
+                sprintf(['Reload selected project from disk?\n\n' ...
+                'This will replace the in-memory object "%s" with:\n%s'], ...
+                projVar, projectPathChar), ...
+                'Reload project', ...
+                'Options', {'Reload','Cancel'}, ...
+                'DefaultOption', 1, ...
+                'CancelOption', 2, ...
+                'Icon', 'warning');
+
+            if ~strcmp(selection, 'Reload')
+                return;
+            end
+
+            openRecentProjectCallback(app, projectPathChar);
         end
 
         % Button pushed function: AddclassifierButton
@@ -6235,6 +6364,8 @@ end
 
             try
                 runObj.status = 'running';
+                shallowObj.processing.pipelineRun(runIdx) = runObj;
+                assignin('base', proj, shallowObj);
                 pipelineRunSave(runObj);
 
                 ctx = runObj.ctx;
@@ -6250,6 +6381,7 @@ end
                 runObj.status = 'done';
                 runObj.updatedAt = char(datetime('now'));
                 pipelineRunSave(runObj);
+                app.syncProjectAfterPipelineRun(proj, ctxOut, runObj, runIdx);
 
                 RefreshtreewindowMenuSelected(app);
             catch MErun
@@ -6274,6 +6406,10 @@ end
                 end
                 try
                     pipelineRunSave(runObj);
+                catch
+                end
+                try
+                    app.syncProjectAfterPipelineRun(proj, shallowObj, runObj, runIdx);
                 catch
                 end
                 RefreshtreewindowMenuSelected(app);
@@ -6305,6 +6441,206 @@ end
 
         function [ctxOut, report] = runStructuredPipeline(app, pipeObj, ctx) %#ok<INUSD>
             [ctxOut, report] = runPipelineDetecDiv(pipeObj, ctx);
+        end
+
+        function syncProjectAfterPipelineRun(app, projectVarName, projectSource, runObj, runIdx)
+            projectObj = app.extractProjectObjectFromRunSource(projectSource);
+            if isempty(projectObj)
+                return;
+            end
+
+            runObj = app.sanitizeRunForPersistence(runObj);
+
+            try
+                if isfield(projectObj.processing, 'pipelineRun') && runIdx >= 1 && runIdx <= numel(projectObj.processing.pipelineRun)
+                    projectObj.processing.pipelineRun(runIdx) = runObj;
+                end
+            catch
+            end
+
+            projectObj = app.sanitizeProjectForPersistence(projectObj);
+
+            try
+                assignin('base', projectVarName, projectObj);
+            catch
+            end
+
+            savedOk = false;
+            projectMatPath = app.getProjectMatPathFromObject(projectObj);
+            if ~isempty(projectMatPath)
+                try
+                    shallowSave(projectObj);
+                    savedOk = true;
+                catch
+                end
+            end
+
+            if savedOk && ~isempty(projectMatPath) && exist(projectMatPath, 'file') == 2
+                try
+                    reloadedObj = app.loadProjectMatRaw(projectMatPath);
+                    if isa(reloadedObj, 'shallow')
+                        assignin('base', projectVarName, reloadedObj);
+                        try
+                            app.autoLoadPipelinesForProjectRuns(reloadedObj);
+                        catch
+                        end
+                    end
+                catch
+                end
+            end
+        end
+
+        function runObj = sanitizeRunForPersistence(app, runObj) %#ok<INUSD>
+            if isempty(runObj) || ~isa(runObj, 'pipelineRun')
+                return;
+            end
+            try
+                runObj.ctx = app.sanitizeCtxForPersistence(runObj.ctx);
+            catch
+            end
+            try
+                runObj.outputs = app.sanitizeCtxForPersistence(runObj.outputs);
+            catch
+            end
+            try
+                runObj.progress = app.sanitizeCtxForPersistence(runObj.progress);
+            catch
+            end
+        end
+
+        function projectObj = sanitizeProjectForPersistence(app, projectObj)
+            if isempty(projectObj) || ~isa(projectObj, 'shallow')
+                return;
+            end
+            try
+                if isfield(projectObj.processing, 'pipelineRun') && ~isempty(projectObj.processing.pipelineRun)
+                    for ii = 1:numel(projectObj.processing.pipelineRun)
+                        projectObj.processing.pipelineRun(ii) = app.sanitizeRunForPersistence(projectObj.processing.pipelineRun(ii));
+                    end
+                end
+            catch
+            end
+        end
+
+        function S = sanitizeCtxForPersistence(app, S) %#ok<INUSD>
+            if ~isstruct(S)
+                return;
+            end
+            fn = fieldnames(S);
+            for ii = 1:numel(S)
+                for jj = 1:numel(fn)
+                    key = fn{jj};
+                    try
+                        val = S(ii).(key);
+                    catch
+                        continue;
+                    end
+                    if isstruct(val)
+                        S(ii).(key) = app.sanitizeCtxForPersistence(val);
+                    elseif iscell(val)
+                        S(ii).(key) = cellfun(@(c) app.sanitizeCellValueForPersistence(c), val, 'UniformOutput', false);
+                    else
+                        try
+                            if isa(val, 'matlab.lang.OnOffSwitchState') || isa(val, 'string') || ischar(val) || isnumeric(val) || islogical(val) || isdatetime(val)
+                                continue;
+                            end
+                            if isa(val, 'handle')
+                                S(ii).(key) = struct('className', class(val), 'note', 'omitted for MAT persistence');
+                            end
+                        catch
+                        end
+                    end
+                end
+            end
+            try
+                if isfield(S, 'exec') && isstruct(S.exec) && isfield(S.exec, 'python') && isstruct(S.exec.python)
+                    py = S.exec.python;
+                    if isfield(py, 'info')
+                        py = rmfield(py, 'info');
+                    end
+                    if isfield(py, 'pyenv')
+                        py = rmfield(py, 'pyenv');
+                    end
+                    S.exec.python = py;
+                end
+            catch
+            end
+        end
+
+        function value = sanitizeCellValueForPersistence(app, value)
+            if isstruct(value)
+                value = app.sanitizeCtxForPersistence(value);
+                return;
+            end
+            try
+                if isa(value, 'handle')
+                    value = struct('className', class(value), 'note', 'omitted for MAT persistence');
+                end
+            catch
+            end
+        end
+
+        function projectObj = loadProjectMatRaw(app, projectMatPath) %#ok<INUSD>
+            projectObj = [];
+            if isempty(projectMatPath) || exist(projectMatPath, 'file') ~= 2
+                return;
+            end
+            S = load(projectMatPath, 'shallowObj');
+            if isfield(S, 'shallowObj') && isa(S.shallowObj, 'shallow')
+                projectObj = S.shallowObj;
+                try
+                    [pathstr, namestr] = fileparts(projectMatPath);
+                    if isunix || ismac
+                        projectObj.setPath([pathstr '/'], namestr);
+                    else
+                        projectObj.setPath([pathstr '\'], namestr);
+                    end
+                catch
+                end
+            end
+        end
+
+        function projectObj = extractProjectObjectFromRunSource(app, source) %#ok<INUSD>
+            projectObj = [];
+            try
+                if isa(source, 'shallow')
+                    projectObj = source;
+                    return;
+                end
+            catch
+            end
+            if ~isstruct(source)
+                return;
+            end
+            try
+                if isfield(source, 'shallow') && isa(source.shallow, 'shallow') && ~isempty(source.shallow)
+                    projectObj = source.shallow;
+                    return;
+                end
+            catch
+            end
+            try
+                if isfield(source, 'shallowObj') && isa(source.shallowObj, 'shallow') && ~isempty(source.shallowObj)
+                    projectObj = source.shallowObj;
+                    return;
+                end
+            catch
+            end
+        end
+
+        function projectMatPath = getProjectMatPathFromObject(app, projectObj) %#ok<INUSD>
+            projectMatPath = '';
+            try
+                if isempty(projectObj) || ~isa(projectObj, 'shallow')
+                    return;
+                end
+                if isempty(projectObj.io.path) || isempty(projectObj.io.file)
+                    return;
+                end
+                projectMatPath = fullfile(char(string(projectObj.io.path)), [char(string(projectObj.io.file)) '.mat']);
+            catch
+                projectMatPath = '';
+            end
         end
 
         function d = createPipelineRunProgressDialog(app, runId)
@@ -6441,9 +6777,12 @@ end
             end
             runObj = shallowObj.processing.pipelineRun(runIdx);
             try
-                pipelineRunInspector(runObj, shallowObj);
+                dlg = pipelineRunGUI(runObj, shallowObj);
+                dlg.UIFigure.WindowStyle = 'modal';
+                uiwait(dlg.UIFigure);
+                RefreshtreewindowMenuSelected(app, []);
             catch ME
-                uialert(app.DetecDivUIFigure, ME.message, 'Pipeline run viewer error', 'Icon', 'warning');
+                uialert(app.DetecDivUIFigure, ME.message, 'Pipeline run editor error', 'Icon', 'warning');
             end
         end
 
@@ -7883,8 +8222,14 @@ end
             app.ProjectMenu = uimenu(app.DetecDivUIFigure);
             app.ProjectMenu.Text = 'Project';
 
+            % Create ReloadprojectfromdiskMenu
+            app.ReloadprojectfromdiskMenu = uimenu(app.ProjectMenu);
+            app.ReloadprojectfromdiskMenu.MenuSelectedFcn = createCallbackFcn(app, @ReloadprojectfromdiskMenuSelected, true);
+            app.ReloadprojectfromdiskMenu.Text = 'Reload project from disk';
+
             % Create PositionsMenu
             app.PositionsMenu = uimenu(app.ProjectMenu);
+            app.PositionsMenu.Separator = 'on';
             app.PositionsMenu.Text = 'Positions';
 
             % Create AddPositionsDataMenu
@@ -8122,6 +8467,10 @@ end
 
                 % Focus the running singleton app
                 figure(runningApp.DetecDivUIFigure)
+                runningApp.applyMainWindowLayout();
+                runningApp.resetMainPanelState();
+                RefreshtreewindowMenuSelected(runningApp, []);
+                drawnow;
 
                 app = runningApp;
             end

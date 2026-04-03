@@ -14,10 +14,16 @@ classdef pipelineRunGUI < matlab.apps.AppBase
         ExistingPolicyDropDown      matlab.ui.control.DropDown
         CachePolicyDropDownLabel    matlab.ui.control.Label
         CachePolicyDropDown         matlab.ui.control.DropDown
+        GpuPolicyDropDownLabel      matlab.ui.control.Label
+        GpuPolicyDropDown           matlab.ui.control.DropDown
         InputSourceDropDownLabel    matlab.ui.control.Label
         InputSourceDropDown         matlab.ui.control.DropDown
         FovSelectionEditFieldLabel  matlab.ui.control.Label
         FovSelectionEditField       matlab.ui.control.EditField
+        PythonEnvModeDropDownLabel  matlab.ui.control.Label
+        PythonEnvModeDropDown       matlab.ui.control.DropDown
+        PythonEnvNameEditFieldLabel matlab.ui.control.Label
+        PythonEnvNameEditField      matlab.ui.control.EditField
         NodeTableLabel              matlab.ui.control.Label
         NodeTable                   matlab.ui.control.Table
         ParamTableLabel             matlab.ui.control.Label
@@ -31,6 +37,9 @@ classdef pipelineRunGUI < matlab.apps.AppBase
         Data struct = struct( ...
             'pipelineSpec', struct('nodes',[],'edges',[]), ...
             'shallowObj', [], ...
+            'runObj', [], ...
+            'editMode', false, ...
+            'dirty', false, ...
             'projectVars', {{}}, ...
             'selectedNode', [], ...
             'nodeTemplateParams', {{}}, ...
@@ -44,14 +53,21 @@ classdef pipelineRunGUI < matlab.apps.AppBase
         function startupFcn(app, varargin)
             pipeIn = [];
             shallowObj = [];
+            runObj = [];
 
             for i = 1:numel(varargin)
                 arg = varargin{i};
                 if isa(arg, 'shallow')
                     shallowObj = arg;
+                elseif isa(arg, 'pipelineRun')
+                    runObj = arg;
                 elseif isa(arg, 'pipeline') || (isstruct(arg) && isfield(arg,'nodes'))
                     pipeIn = arg;
                 end
+            end
+
+            if isempty(pipeIn) && ~isempty(runObj)
+                pipeIn = resolvePipelineSpecFromRun(app, runObj);
             end
 
             if isempty(pipeIn)
@@ -68,23 +84,79 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             app.Data.templateId = templateId;
             app.Data.templatePath = templatePath;
             app.Data.shallowObj = shallowObj;
+            app.Data.runObj = runObj;
+            app.Data.editMode = ~isempty(runObj);
 
             initProjectList(app);
             initNodeTable(app);
 
-            if ~isempty(shallowObj)
+            if ~isempty(runObj)
+                loadRunIntoUi(app, runObj);
+                app.CreateRunButton.Text = 'Save run';
+                app.RunIdEditField.Editable = 'off';
+            elseif ~isempty(shallowObj)
                 app.RunIdEditField.Value = suggestRunId(app, shallowObj, templateId);
+                app.RunPolicyDropDown.Value = 'resume';
+                app.ExistingPolicyDropDown.Value = '<module default>';
+                app.CachePolicyDropDown.Value = 'auto';
+                app.GpuPolicyDropDown.Value = '<module default>';
+                app.InputSourceDropDown.Value = 'Pipeline start (dataloader)';
+                app.FovSelectionEditField.Value = '';
+                app.PythonEnvModeDropDown.Value = 'detecdiv_python';
+                app.PythonEnvNameEditField.Value = '';
             else
                 app.RunIdEditField.Value = [templateId '_run'];
+                app.RunPolicyDropDown.Value = 'resume';
+                app.ExistingPolicyDropDown.Value = '<module default>';
+                app.CachePolicyDropDown.Value = 'auto';
+                app.GpuPolicyDropDown.Value = '<module default>';
+                app.InputSourceDropDown.Value = 'Pipeline start (dataloader)';
+                app.FovSelectionEditField.Value = '';
+                app.PythonEnvModeDropDown.Value = 'detecdiv_python';
+                app.PythonEnvNameEditField.Value = '';
             end
-
-            app.RunPolicyDropDown.Value = 'resume';
-            app.ExistingPolicyDropDown.Value = '<module default>';
-            app.CachePolicyDropDown.Value = 'auto';
-            app.InputSourceDropDown.Value = 'Pipeline start (dataloader)';
-            app.FovSelectionEditField.Value = '';
             initTooltips(app);
             updateRunSourceSelectionUi(app);
+            updatePythonEnvUi(app);
+            app.Data.dirty = ~app.Data.editMode;
+            updateWindowTitle(app);
+        end
+
+        function pipeIn = resolvePipelineSpecFromRun(app, runObj)
+            pipeIn = [];
+            try
+                spec = runObj.ctx.pipelineSpec;
+                if isstruct(spec) && isfield(spec,'nodes') && ~isempty(spec.nodes)
+                    pipeIn = spec;
+                    if ~isfield(pipeIn,'edges') || isempty(pipeIn.edges)
+                        pipeIn.edges = struct([]);
+                    end
+                    if ~isfield(pipeIn,'name') || isempty(pipeIn.name)
+                        pipeIn.name = char(string(runObj.templateId));
+                    end
+                    if ~isfield(pipeIn,'path') || isempty(pipeIn.path)
+                        pipeIn.path = char(string(runObj.templatePath));
+                    end
+                    return;
+                end
+            catch
+            end
+
+            try
+                refPath = '';
+                if isprop(runObj,'pipelineRef') && isstruct(runObj.pipelineRef) && isfield(runObj.pipelineRef,'path') && ~isempty(runObj.pipelineRef.path)
+                    refPath = char(string(runObj.pipelineRef.path));
+                elseif isprop(runObj,'templatePath') && ~isempty(runObj.templatePath)
+                    refPath = char(string(runObj.templatePath));
+                end
+                if ~isempty(refPath)
+                    [pipeObj, ~] = pipelineLoad(refPath);
+                    if ~isempty(pipeObj)
+                        pipeIn = pipeObj;
+                    end
+                end
+            catch
+            end
         end
 
         function [spec, templateId, templatePath] = normalizePipelineSpec(app, pipeIn) %#ok<INUSD>
@@ -219,6 +291,109 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             end
         end
 
+        function loadRunIntoUi(app, runObj)
+            if isempty(runObj) || ~isa(runObj, 'pipelineRun')
+                return;
+            end
+
+            try
+                if ~isempty(runObj.runId)
+                    app.RunIdEditField.Value = char(string(runObj.runId));
+                end
+            catch
+            end
+            try
+                if ~isempty(runObj.description)
+                    app.DescriptionEditField.Value = char(string(runObj.description));
+                end
+            catch
+            end
+
+            try
+                if isstruct(runObj.ctx) && isfield(runObj.ctx,'run') && isstruct(runObj.ctx.run)
+                    runCfg = runObj.ctx.run;
+                    if isfield(runCfg,'runPolicy') && ~isempty(runCfg.runPolicy)
+                        app.RunPolicyDropDown.Value = char(string(runCfg.runPolicy));
+                    end
+                    if isfield(runCfg,'gpuPolicy') && ~isempty(runCfg.gpuPolicy)
+                        app.GpuPolicyDropDown.Value = gpuPolicyToLabel(app, runCfg.gpuPolicy);
+                    end
+                    if isfield(runCfg,'inputSource') && ~isempty(runCfg.inputSource)
+                        app.InputSourceDropDown.Value = char(string(runCfg.inputSource));
+                    end
+                    if isfield(runCfg,'selectedNodes') && ~isempty(runCfg.selectedNodes)
+                        selectedIds = cellstr(runCfg.selectedNodes(:));
+                        data = app.NodeTable.Data;
+                        for ii = 1:size(data,1)
+                            data{ii,1} = any(strcmp(selectedIds, char(string(data{ii,2}))));
+                        end
+                        app.NodeTable.Data = data;
+                    end
+                    if isfield(runCfg,'nodeParams') && isstruct(runCfg.nodeParams) && ~isempty(runCfg.nodeParams)
+                        for ii = 1:numel(runCfg.nodeParams)
+                            nodeId = char(string(runCfg.nodeParams(ii).id));
+                            idx = find(strcmp({app.Data.pipelineSpec.nodes.id}, nodeId), 1);
+                            if ~isempty(idx) && isstruct(runCfg.nodeParams(ii).params)
+                                app.Data.nodeParams{idx} = runCfg.nodeParams(ii).params;
+                            end
+                        end
+                    end
+                end
+            catch
+            end
+
+            try
+                if isstruct(runObj.ctx) && isfield(runObj.ctx,'io') && isstruct(runObj.ctx.io)
+                    ioCfg = runObj.ctx.io;
+                    if isfield(ioCfg,'existingPolicy') && ~isempty(ioCfg.existingPolicy)
+                        existingLabel = char(string(ioCfg.existingPolicy));
+                        if any(strcmp(app.ExistingPolicyDropDown.Items, existingLabel))
+                            app.ExistingPolicyDropDown.Value = existingLabel;
+                        end
+                    end
+                    if isfield(ioCfg,'cachePolicy') && ~isempty(ioCfg.cachePolicy)
+                        cacheLabel = char(string(ioCfg.cachePolicy));
+                        if any(strcmp(app.CachePolicyDropDown.Items, cacheLabel))
+                            app.CachePolicyDropDown.Value = cacheLabel;
+                        end
+                    end
+                end
+            catch
+            end
+
+            try
+                if isstruct(runObj.ctx) && isfield(runObj.ctx,'sel') && isstruct(runObj.ctx.sel) ...
+                        && isfield(runObj.ctx.sel,'fovs') && ~isempty(runObj.ctx.sel.fovs)
+                    app.FovSelectionEditField.Value = valueToDisplay(app, runObj.ctx.sel.fovs);
+                end
+            catch
+            end
+
+            try
+                if isstruct(runObj.ctx) && isfield(runObj.ctx,'exec') && isstruct(runObj.ctx.exec)
+                    execCfg = runObj.ctx.exec;
+                    if isfield(execCfg,'python') && isstruct(execCfg.python)
+                        py = execCfg.python;
+                        mode = char(string(getfielddefault(py,'mode','default')));
+                        if strcmpi(mode,'custom')
+                            app.PythonEnvModeDropDown.Value = 'custom conda env';
+                            app.PythonEnvNameEditField.Value = char(string(getfielddefault(py,'envName','')));
+                        else
+                            app.PythonEnvModeDropDown.Value = 'detecdiv_python';
+                            app.PythonEnvNameEditField.Value = '';
+                        end
+                    end
+                end
+            catch
+            end
+
+            updateRunSourceSelectionUi(app);
+            updatePythonEnvUi(app);
+            if ~isempty(app.Data.selectedNode)
+                updateParamTable(app, app.Data.selectedNode);
+            end
+        end
+
         function dflt = getRunDefaults(app, node) %#ok<INUSD>
             t = lower(char(string(node.type)));
             switch t
@@ -289,12 +464,22 @@ classdef pipelineRunGUI < matlab.apps.AppBase
 
             fnTpl = fieldnames(tpl);
             fnRun = fieldnames(runP);
-            data = cell(numel(fnTpl) + numel(fnRun), 3);
+            inheritedRows = {};
+            inheritedFrames = getInheritedFramesDisplay(app, row);
+            if ~isempty(inheritedFrames)
+                inheritedRows = {'Inherited', 'frames', inheritedFrames};
+            end
+
+            data = cell(numel(fnTpl) + numel(fnRun) + size(inheritedRows,1), 3);
             c = 1;
             for i = 1:numel(fnTpl)
                 data{c,1} = 'Template';
                 data{c,2} = fnTpl{i};
                 data{c,3} = valueToDisplay(app, tpl.(fnTpl{i}));
+                c = c + 1;
+            end
+            for i = 1:size(inheritedRows,1)
+                data(c,:) = inheritedRows(i,:);
                 c = c + 1;
             end
             for i = 1:numel(fnRun)
@@ -363,6 +548,14 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             app.CachePolicyDropDown.Tooltip = cacheTip;
             app.CachePolicyDropDownLabel.Tooltip = cacheTip;
 
+            gpuTip = { ...
+                'Global GPU policy for this run.', ...
+                '<module default>: keep each module''s own GPU behavior.', ...
+                'Force GPU: request GPU everywhere a compatible node supports it.', ...
+                'Force CPU: disable GPU even for modules that default to GPU, useful for debug and thermal limits.'};
+            app.GpuPolicyDropDown.Tooltip = gpuTip;
+            app.GpuPolicyDropDownLabel.Tooltip = gpuTip;
+
             sourceTip = { ...
                 'Run source defines where execution starts and which existing project data is reused.', ...
                 'Pipeline start (dataloader): start from raw data loading.', ...
@@ -372,6 +565,20 @@ classdef pipelineRunGUI < matlab.apps.AppBase
                 'Existing dataSeries: reuse quantitative data already present.'};
             app.InputSourceDropDown.Tooltip = sourceTip;
             app.InputSourceDropDownLabel.Tooltip = sourceTip;
+
+            pythonTip = { ...
+                'Python environment prepared at the very beginning of the run for Python-backed nodes.', ...
+                'detecdiv_python: use the standard Detecdiv conda env with no mid-run prompt.', ...
+                'custom conda env: resolve a specific existing conda env by name.'};
+            app.PythonEnvModeDropDown.Tooltip = pythonTip;
+            app.PythonEnvModeDropDownLabel.Tooltip = pythonTip;
+
+            pythonNameTip = { ...
+                'Name of the custom conda environment to use for this run.', ...
+                'Example: cellpose_env', ...
+                'Ignored when Python env is set to detecdiv_python.'};
+            app.PythonEnvNameEditField.Tooltip = pythonNameTip;
+            app.PythonEnvNameEditFieldLabel.Tooltip = pythonNameTip;
         end
 
         function out = compactNumericDisplay(app, v) %#ok<INUSD>
@@ -488,6 +695,50 @@ classdef pipelineRunGUI < matlab.apps.AppBase
                 if isstruct(ov)
                     p = mergeStructLocal(app, p, ov);
                 end
+            end
+        end
+
+        function out = getInheritedFramesDisplay(app, row)
+            out = '';
+            if row < 1 || row > numel(app.Data.pipelineSpec.nodes)
+                return;
+            end
+
+            currentParams = getMergedNodeParams(app, row);
+            if isstruct(currentParams) && isfield(currentParams, 'frames') ...
+                    && ~isempty(currentParams.frames) && ~(isnumeric(currentParams.frames) && isequal(currentParams.frames, -1))
+                return;
+            end
+
+            if isempty(app.NodeTable.Data)
+                return;
+            end
+
+            selectedMask = false(size(app.NodeTable.Data, 1), 1);
+            try
+                selectedMask = logical(cell2mat(app.NodeTable.Data(:,1)));
+            catch
+            end
+
+            if row > numel(selectedMask) || ~selectedMask(row)
+                return;
+            end
+
+            for ii = row-1:-1:1
+                if ii > numel(selectedMask) || ~selectedMask(ii)
+                    continue;
+                end
+                params = getMergedNodeParams(app, ii);
+                if ~isstruct(params) || ~isfield(params, 'frames') || isempty(params.frames)
+                    continue;
+                end
+                framesVal = params.frames;
+                if isnumeric(framesVal) && isequal(framesVal, -1)
+                    continue;
+                end
+                sourceId = char(string(app.Data.pipelineSpec.nodes(ii).id));
+                out = sprintf('%s (from %s)', valueToDisplay(app, framesVal), sourceId);
+                return;
             end
         end
 
@@ -885,6 +1136,7 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             data = app.NodeTable.Data;
             data{row,1} = logical(event.NewData);
             app.NodeTable.Data = data;
+            markDirty(app, true);
         end
 
         function ParamTableCellEdit(app, event)
@@ -911,6 +1163,11 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             if row > size(data,1)
                 return;
             end
+            scope = char(string(data{row,1}));
+            if strcmpi(scope, 'Inherited')
+                updateParamTable(app, nodeRow);
+                return;
+            end
 
             key = char(string(data{row,2}));
             oldVal = [];
@@ -933,6 +1190,7 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             app.Data.nodeParams{nodeRow} = p;
 
             updateParamTable(app, nodeRow);
+            markDirty(app, true);
         end
 
         function commitVisibleParamTable(app)
@@ -1031,6 +1289,123 @@ classdef pipelineRunGUI < matlab.apps.AppBase
 
         function InputSourceDropDownValueChanged(app, event)
             updateRunSourceSelectionUi(app);
+            markDirty(app, true);
+        end
+
+        function DescriptionEditFieldValueChanged(app, event) %#ok<INUSD>
+            markDirty(app, true);
+        end
+
+        function RunIdEditFieldValueChanged(app, event) %#ok<INUSD>
+            markDirty(app, true);
+        end
+
+        function RunPolicyDropDownValueChanged(app, event) %#ok<INUSD>
+            markDirty(app, true);
+        end
+
+        function ExistingPolicyDropDownValueChanged(app, event) %#ok<INUSD>
+            markDirty(app, true);
+        end
+
+        function CachePolicyDropDownValueChanged(app, event) %#ok<INUSD>
+            markDirty(app, true);
+        end
+
+        function GpuPolicyDropDownValueChanged(app, event) %#ok<INUSD>
+            markDirty(app, true);
+        end
+
+        function FovSelectionEditFieldValueChanged(app, event) %#ok<INUSD>
+            markDirty(app, true);
+        end
+
+        function PythonEnvModeDropDownValueChanged(app, event) %#ok<INUSD>
+            updatePythonEnvUi(app);
+            markDirty(app, true);
+        end
+
+        function PythonEnvNameEditFieldValueChanged(app, event) %#ok<INUSD>
+            markDirty(app, true);
+        end
+
+        function updatePythonEnvUi(app)
+            mode = char(string(app.PythonEnvModeDropDown.Value));
+            isCustom = strcmpi(mode, 'custom conda env');
+            if isCustom
+                app.PythonEnvNameEditField.Enable = 'on';
+                app.PythonEnvNameEditFieldLabel.Enable = 'on';
+                app.PythonEnvNameEditField.Placeholder = 'existing conda env name';
+            else
+                app.PythonEnvNameEditField.Enable = 'off';
+                app.PythonEnvNameEditFieldLabel.Enable = 'off';
+                app.PythonEnvNameEditField.Placeholder = 'Not used with detecdiv_python';
+            end
+        end
+
+        function pyCfg = buildPythonRunConfig(app)
+            modeLabel = char(string(app.PythonEnvModeDropDown.Value));
+            pyCfg = struct('mode', 'default', 'envName', '', 'preflight', true);
+            if strcmpi(modeLabel, 'custom conda env')
+                envName = strtrim(char(string(app.PythonEnvNameEditField.Value)));
+                if isempty(envName)
+                    error('Enter a conda environment name or choose detecdiv_python.');
+                end
+                pyCfg.mode = 'custom';
+                pyCfg.envName = envName;
+            end
+        end
+
+        function label = gpuPolicyToLabel(app, policy) %#ok<INUSD>
+            key = lower(strtrim(char(string(policy))));
+            switch key
+                case 'force_gpu'
+                    label = 'Force GPU';
+                case 'force_cpu'
+                    label = 'Force CPU';
+                otherwise
+                    label = '<module default>';
+            end
+        end
+
+        function markDirty(app, tf)
+            if nargin < 2 || isempty(tf)
+                tf = true;
+            end
+            app.Data.dirty = logical(tf);
+            updateWindowTitle(app);
+        end
+
+        function updateWindowTitle(app)
+            baseName = 'Pipeline Run Builder';
+            if app.Data.editMode && isa(app.Data.runObj, 'pipelineRun') && ~isempty(app.Data.runObj)
+                try
+                    baseName = sprintf('Pipeline Run Builder - %s', char(string(app.Data.runObj.runId)));
+                catch
+                end
+            elseif strlength(string(app.RunIdEditField.Value)) > 0
+                baseName = sprintf('Pipeline Run Builder - %s', char(string(app.RunIdEditField.Value)));
+            end
+
+            if app.Data.dirty
+                app.UIFigure.Name = ['* ' baseName];
+            else
+                app.UIFigure.Name = baseName;
+            end
+        end
+
+        function policy = normalizeGpuPolicyLabel(app, value) %#ok<INUSD>
+            policy = lower(strtrim(char(string(value))));
+            switch policy
+                case {'', '<module default>', 'module default', 'default'}
+                    policy = 'module_default';
+                case {'force gpu', 'gpu'}
+                    policy = 'force_gpu';
+                case {'force cpu', 'cpu'}
+                    policy = 'force_cpu';
+                otherwise
+                    policy = 'module_default';
+            end
         end
 
         function CreateRunButtonPushed(app, event)
@@ -1097,6 +1472,7 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             ctx.run.runId = runId;
             ctx.run.runPolicy = char(string(app.RunPolicyDropDown.Value));
             ctx.run.resume = strcmpi(ctx.run.runPolicy, 'resume');
+            ctx.run.gpuPolicy = normalizeGpuPolicyLabel(app, app.GpuPolicyDropDown.Value);
             ctx.run.inputSource = inputSource;
             ctx.run.selectedNodes = {};
             ctx.run.nodeParams = struct('id',{},'params',{});
@@ -1109,6 +1485,9 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             ctx.store = struct('cacheMode', ctx.io.cachePolicy);
             ctx.sel = struct();
             ctx.sel.fovs = selectedFovs;
+            ctx.exec = struct();
+            ctx.exec.gpuPolicy = ctx.run.gpuPolicy;
+            ctx.exec.python = buildPythonRunConfig(app);
             ctx.pipelineSpec = app.Data.pipelineSpec;
             ctx.pipelineRef = struct('id', app.Data.templateId, 'path', templatePath, 'version', '');
 
@@ -1123,23 +1502,129 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             end
 
             try
-                runObj = pipelineRunNew(shallowObj, app.Data.templateId, templatePath, ...
-                    'runId', runId, 'description', descr, 'ctx', ctx, 'status', 'new');
-                msgbox({ ...
-                    ['Pipeline run created: ' runObj.runId], ...
-                    'It will be saved when you launch it.'}, ...
-                    'Success', 'help');
-                delete(app);
+                if app.Data.editMode && isa(app.Data.runObj, 'pipelineRun') && ~isempty(app.Data.runObj)
+                    runObj = app.Data.runObj;
+                    runObj.description = descr;
+                    runObj.ctx = ctx;
+                    runObj.templateId = app.Data.templateId;
+                    runObj.templatePath = templatePath;
+                    if isfield(ctx,'pipelineRef') && isstruct(ctx.pipelineRef)
+                        runObj.pipelineRef = ctx.pipelineRef;
+                    end
+                    runObj.projectPath = fullfile(shallowObj.io.path, shallowObj.io.file);
+                    runObj.projectName = shallowObj.io.file;
+                    if isprop(runObj,'targetRef') && isstruct(runObj.targetRef)
+                        runObj.targetRef.projectPath = runObj.projectPath;
+                        runObj.targetRef.projectName = runObj.projectName;
+                    end
+                    if isempty(runObj.status)
+                        runObj.status = 'new';
+                    end
+
+                    runIdx = findRunIndexInProject(app, shallowObj, runObj);
+                    if isempty(runIdx)
+                        error('Could not find this pipeline run in the selected project.');
+                    end
+                    shallowObj.processing.pipelineRun(runIdx) = runObj;
+
+                    try
+                        assignin('base', shallowObj.io.file, shallowObj);
+                    catch
+                    end
+                    try
+                        pipelineRunSave(runObj);
+                    catch
+                    end
+                    try
+                        shallowSave(shallowObj, 'shallowObj');
+                    catch
+                    end
+                    app.Data.runObj = runObj;
+                    markDirty(app, false);
+
+                    msgbox({ ...
+                        ['Pipeline run updated: ' runObj.runId], ...
+                        'Changes were saved.'}, ...
+                        'Success', 'help');
+                else
+                    runObj = pipelineRunNew(shallowObj, app.Data.templateId, templatePath, ...
+                        'runId', runId, 'description', descr, 'ctx', ctx, 'status', 'new');
+                    try
+                        assignin('base', shallowObj.io.file, shallowObj);
+                    catch
+                    end
+                    try
+                        pipelineRunSave(runObj);
+                    catch
+                    end
+                    try
+                        shallowSave(shallowObj, 'shallowObj');
+                    catch
+                    end
+                    msgbox({ ...
+                        ['Pipeline run created: ' runObj.runId], ...
+                        'Run settings were saved.'}, ...
+                        'Success', 'help');
+                    app.Data.runObj = runObj;
+                    app.Data.editMode = true;
+                    app.CreateRunButton.Text = 'Save run';
+                    app.RunIdEditField.Editable = 'off';
+                    markDirty(app, false);
+                end
             catch ME
                 uialert(app.UIFigure, ME.message, 'Create run failed', 'Icon', 'error');
             end
         end
 
+        function runIdx = findRunIndexInProject(app, shallowObj, runObj) %#ok<INUSD>
+            runIdx = [];
+            if isempty(shallowObj) || ~isa(shallowObj, 'shallow')
+                return;
+            end
+            if ~isfield(shallowObj.processing,'pipelineRun') || isempty(shallowObj.processing.pipelineRun)
+                return;
+            end
+
+            try
+                for ii = 1:numel(shallowObj.processing.pipelineRun)
+                    cand = shallowObj.processing.pipelineRun(ii);
+                    if cand == runObj
+                        runIdx = ii;
+                        return;
+                    end
+                end
+            catch
+            end
+
+            try
+                names = arrayfun(@(r) char(string(r.runId)), shallowObj.processing.pipelineRun, 'UniformOutput', false);
+                runIdx = find(strcmp(names, char(string(runObj.runId))), 1);
+            catch
+                runIdx = [];
+            end
+        end
+
         function CloseButtonPushed(app, event)
-            delete(app);
+            requestClose(app);
         end
 
         function UIFigureCloseRequest(app, event)
+            requestClose(app);
+        end
+
+        function requestClose(app)
+            if app.Data.dirty
+                choice = uiconfirm(app.UIFigure, ...
+                    'This pipeline run has unsaved changes. Close without saving?', ...
+                    'Unsaved changes', ...
+                    'Options', {'Close','Cancel'}, ...
+                    'DefaultOption', 2, ...
+                    'CancelOption', 2, ...
+                    'Icon', 'warning');
+                if ~strcmp(choice, 'Close')
+                    return;
+                end
+            end
             delete(app);
         end
 
@@ -1362,6 +1847,7 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             app.RunIdEditField = uieditfield(app.UIFigure, 'text');
             app.RunIdEditField.Position = [346 626 170 22];
             app.RunIdEditField.Value = 'pipeline_run_1';
+            app.RunIdEditField.ValueChangedFcn = createCallbackFcn(app, @RunIdEditFieldValueChanged, true);
 
             app.DescriptionEditFieldLabel = uilabel(app.UIFigure);
             app.DescriptionEditFieldLabel.HorizontalAlignment = 'right';
@@ -1370,6 +1856,7 @@ classdef pipelineRunGUI < matlab.apps.AppBase
 
             app.DescriptionEditField = uieditfield(app.UIFigure, 'text');
             app.DescriptionEditField.Position = [611 626 210 22];
+            app.DescriptionEditField.ValueChangedFcn = createCallbackFcn(app, @DescriptionEditFieldValueChanged, true);
 
             app.RunPolicyDropDownLabel = uilabel(app.UIFigure);
             app.RunPolicyDropDownLabel.HorizontalAlignment = 'right';
@@ -1380,6 +1867,7 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             app.RunPolicyDropDown.Items = {'resume', 'restart'};
             app.RunPolicyDropDown.Position = [96 590 120 22];
             app.RunPolicyDropDown.Value = 'resume';
+            app.RunPolicyDropDown.ValueChangedFcn = createCallbackFcn(app, @RunPolicyDropDownValueChanged, true);
 
             app.ExistingPolicyDropDownLabel = uilabel(app.UIFigure);
             app.ExistingPolicyDropDownLabel.HorizontalAlignment = 'right';
@@ -1390,6 +1878,7 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             app.ExistingPolicyDropDown.Items = {'<module default>', 'replace', 'append', 'skip', 'error'};
             app.ExistingPolicyDropDown.Position = [328 590 135 22];
             app.ExistingPolicyDropDown.Value = '<module default>';
+            app.ExistingPolicyDropDown.ValueChangedFcn = createCallbackFcn(app, @ExistingPolicyDropDownValueChanged, true);
 
             app.CachePolicyDropDownLabel = uilabel(app.UIFigure);
             app.CachePolicyDropDownLabel.HorizontalAlignment = 'right';
@@ -1400,6 +1889,18 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             app.CachePolicyDropDown.Items = {'auto', 'memory', 'disk'};
             app.CachePolicyDropDown.Position = [568 590 120 22];
             app.CachePolicyDropDown.Value = 'auto';
+            app.CachePolicyDropDown.ValueChangedFcn = createCallbackFcn(app, @CachePolicyDropDownValueChanged, true);
+
+            app.GpuPolicyDropDownLabel = uilabel(app.UIFigure);
+            app.GpuPolicyDropDownLabel.HorizontalAlignment = 'right';
+            app.GpuPolicyDropDownLabel.Position = [700 590 62 22];
+            app.GpuPolicyDropDownLabel.Text = 'GPU';
+
+            app.GpuPolicyDropDown = uidropdown(app.UIFigure);
+            app.GpuPolicyDropDown.Items = {'<module default>', 'Force GPU', 'Force CPU'};
+            app.GpuPolicyDropDown.Position = [774 590 106 22];
+            app.GpuPolicyDropDown.Value = '<module default>';
+            app.GpuPolicyDropDown.ValueChangedFcn = createCallbackFcn(app, @GpuPolicyDropDownValueChanged, true);
 
             app.InputSourceDropDownLabel = uilabel(app.UIFigure);
             app.InputSourceDropDownLabel.HorizontalAlignment = 'right';
@@ -1425,9 +1926,31 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             app.FovSelectionEditField = uieditfield(app.UIFigure, 'text');
             app.FovSelectionEditField.Position = [401 554 287 22];
             app.FovSelectionEditField.Placeholder = 'empty = all | ex: 1 3 5 or 1:7';
+            app.FovSelectionEditField.ValueChangedFcn = createCallbackFcn(app, @FovSelectionEditFieldValueChanged, true);
+
+            app.PythonEnvModeDropDownLabel = uilabel(app.UIFigure);
+            app.PythonEnvModeDropDownLabel.HorizontalAlignment = 'right';
+            app.PythonEnvModeDropDownLabel.Position = [12 518 73 22];
+            app.PythonEnvModeDropDownLabel.Text = 'Python env';
+
+            app.PythonEnvModeDropDown = uidropdown(app.UIFigure);
+            app.PythonEnvModeDropDown.Items = {'detecdiv_python', 'custom conda env'};
+            app.PythonEnvModeDropDown.Position = [96 518 180 22];
+            app.PythonEnvModeDropDown.Value = 'detecdiv_python';
+            app.PythonEnvModeDropDown.ValueChangedFcn = createCallbackFcn(app, @PythonEnvModeDropDownValueChanged, true);
+
+            app.PythonEnvNameEditFieldLabel = uilabel(app.UIFigure);
+            app.PythonEnvNameEditFieldLabel.HorizontalAlignment = 'right';
+            app.PythonEnvNameEditFieldLabel.Position = [289 518 98 22];
+            app.PythonEnvNameEditFieldLabel.Text = 'Custom env';
+
+            app.PythonEnvNameEditField = uieditfield(app.UIFigure, 'text');
+            app.PythonEnvNameEditField.Position = [401 518 287 22];
+            app.PythonEnvNameEditField.Placeholder = 'existing conda env name';
+            app.PythonEnvNameEditField.ValueChangedFcn = createCallbackFcn(app, @PythonEnvNameEditFieldValueChanged, true);
 
             app.NodeTableLabel = uilabel(app.UIFigure);
-            app.NodeTableLabel.Position = [20 518 99 22];
+            app.NodeTableLabel.Position = [20 488 99 22];
             app.NodeTableLabel.Text = 'Pipeline nodes';
 
             app.NodeTable = uitable(app.UIFigure);
@@ -1436,10 +1959,10 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             app.NodeTable.ColumnEditable = [true false false false];
             app.NodeTable.CellEditCallback = createCallbackFcn(app, @NodeTableCellEdit, true);
             app.NodeTable.SelectionChangedFcn = createCallbackFcn(app, @NodeTableSelectionChanged, true);
-            app.NodeTable.Position = [20 304 860 205];
+            app.NodeTable.Position = [20 274 860 205];
 
             app.ParamTableLabel = uilabel(app.UIFigure);
-            app.ParamTableLabel.Position = [20 272 220 22];
+            app.ParamTableLabel.Position = [20 242 220 22];
             app.ParamTableLabel.Text = 'Template params and run overrides';
 
             app.ParamTable = uitable(app.UIFigure);
@@ -1447,7 +1970,7 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             app.ParamTable.RowName = {};
             app.ParamTable.ColumnEditable = [false false true];
             app.ParamTable.CellEditCallback = createCallbackFcn(app, @ParamTableCellEdit, true);
-            app.ParamTable.Position = [20 64 860 200];
+            app.ParamTable.Position = [20 64 860 170];
 
             app.OpenNodeGUIButton = uibutton(app.UIFigure, 'push');
             app.OpenNodeGUIButton.Position = [20 20 160 28];

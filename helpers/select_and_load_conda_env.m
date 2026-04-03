@@ -12,10 +12,15 @@ function info = select_and_load_conda_env(varargin)
 % Options (Name,Value):
 %   'debug'   (logical, default true)
 %   'reset'   (logical, default false) clear remembered env choice
+%   'mode'    ('default'|'custom') bypass GUI selection
+%   'envName' custom conda env name when mode='custom'
+%   'envPath' custom conda env path hint when mode='custom'
+%   'remember' (logical) persist the provided selection
 %   'classif' / 'classifier' : legacy no-op, accepted for backward compatibility
 
     % -------- Parse options --------
-    opts = struct('debug', true, 'reset', false);
+    opts = struct('debug', true, 'reset', false, ...
+        'mode', "", 'envName', "", 'envPath', "", 'remember', []);
     if nargin == 1 && (strcmpi(string(varargin{1}), "reset"))
         opts.reset = true;
     else
@@ -28,6 +33,10 @@ function info = select_and_load_conda_env(varargin)
             switch name
                 case "debug", opts.debug = logical(val);
                 case "reset", opts.reset = logical(val);
+                case "mode", opts.mode = string(val);
+                case "envname", opts.envName = string(val);
+                case "envpath", opts.envPath = string(val);
+                case "remember", opts.remember = logical(val);
                 case {"classif","classifier"}
                     % Legacy callers still pass the classifier object here.
                     % The current helper no longer needs it, but keeping this
@@ -49,7 +58,13 @@ function info = select_and_load_conda_env(varargin)
         fprintf('[Detecdiv] Reset requested: remembered env choice cleared.\n');
     end
 
-    [selection, userprefs] = resolveCondaSelection(userprefs, debug);
+    forcedSelection = buildForcedSelection(opts);
+    if isempty(forcedSelection)
+        [selection, userprefs] = resolveCondaSelection(userprefs, debug);
+    else
+        selection = forcedSelection;
+        userprefs = persistForcedSelection(userprefs, selection);
+    end
     dd_saveUserPrefs(userprefs);
     fprintf('[Detecdiv] Selected mode: %s', char(selection.mode));
     if selection.mode == "custom"
@@ -172,6 +187,62 @@ function info = select_and_load_conda_env(varargin)
         'torch', struct('installed', okTorch, 'version', string(torchVer), 'cuda', string(torchCUDA), 'is_available', logical(torchAvail)), ...
         'debug', debug ...
     );
+end
+
+function selection = buildForcedSelection(opts)
+selection = [];
+mode = lower(strtrim(char(string(opts.mode))));
+if isempty(mode)
+    return;
+end
+
+switch mode
+    case 'default'
+        selection = struct( ...
+            'mode', "default", ...
+            'envName', "detecdiv_python", ...
+            'envPath', "", ...
+            'remember', logical(defaultRememberValue(opts)));
+    case 'custom'
+        envName = string(opts.envName);
+        envPath = string(opts.envPath);
+        if strlength(envName) == 0 && strlength(envPath) == 0
+            error('select_and_load_conda_env:CustomEnvMissing', ...
+                'A custom Python env requires envName or envPath.');
+        end
+        if strlength(envName) == 0 && strlength(envPath) > 0
+            [~, nm] = fileparts(char(envPath));
+            envName = string(nm);
+        end
+        selection = struct( ...
+            'mode', "custom", ...
+            'envName', envName, ...
+            'envPath', envPath, ...
+            'remember', logical(defaultRememberValue(opts)));
+    otherwise
+        error('select_and_load_conda_env:UnknownMode', 'Unknown Python env mode "%s".', mode);
+end
+end
+
+function tf = defaultRememberValue(opts)
+tf = false;
+if ~isempty(opts.remember)
+    tf = logical(opts.remember);
+end
+end
+
+function userprefs = persistForcedSelection(userprefs, selection)
+if selection.remember
+    if ~isfield(userprefs,'conda') || ~isstruct(userprefs.conda)
+        userprefs.conda = struct();
+    end
+    userprefs.conda.selectionLock = true;
+    userprefs.conda.selectionMode = char(selection.mode);
+    userprefs.conda.selectionEnvName = char(selection.envName);
+    userprefs.conda.selectionEnvPath = char(selection.envPath);
+else
+    userprefs = clearRememberedCondaSelection(userprefs);
+end
 end
 
 % =================== Helpers ===================

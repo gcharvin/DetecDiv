@@ -138,6 +138,7 @@ for i = 1:numel(fovList)
     catch
     end
 end
+end
 
 function out = normalizeExistingPolicyLocal(policy, fallback)
 out = char(string(policy));
@@ -170,7 +171,6 @@ end
 runId = regexprep(runId, '[^A-Za-z0-9_]', '_');
 if isempty(runId)
     runId = 'run';
-end
 end
 end
 

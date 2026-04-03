@@ -127,7 +127,8 @@ disp(['[INFO] CellposeSAM config: ' configPath]);
 % Python environment & execution
 % -------------------------------------------------------------------------
 try
-    test = select_and_load_conda_env('classif', classif); %#ok<NASGU>
+    selectArgs = buildPythonSelectionArgsLocal(ctx, classif);
+    test = select_and_load_conda_env(selectArgs{:}); %#ok<NASGU>
 catch ME
     warning('select_and_load_conda_env failed: %s', ME.message);
 end
@@ -138,6 +139,51 @@ if strcmp(python_env.Status, 'NotLoaded')
     error('Python environment not loaded. Activate an environment before running this script.');
 else
     disp(['[INFO] Active Python env: ' python_env.Executable]);
+end
+
+function args = buildPythonSelectionArgsLocal(ctx, classif)
+args = {'classif', classif};
+
+pyCfg = struct();
+try
+    if isfield(ctx,'exec') && isstruct(ctx.exec) && isfield(ctx.exec,'python') && isstruct(ctx.exec.python)
+        pyCfg = ctx.exec.python;
+    end
+catch
+    pyCfg = struct();
+end
+
+if isempty(fieldnames(pyCfg))
+    return;
+end
+
+mode = 'default';
+try
+    if isfield(pyCfg,'mode') && ~isempty(pyCfg.mode)
+        mode = lower(strtrim(char(string(pyCfg.mode))));
+    end
+catch
+    mode = 'default';
+end
+
+switch mode
+    case 'custom'
+        args = [args, {'mode','custom'}]; %#ok<AGROW>
+        try
+            if isfield(pyCfg,'envName') && ~isempty(pyCfg.envName)
+                args = [args, {'envName', char(string(pyCfg.envName))}]; %#ok<AGROW>
+            end
+        catch
+        end
+        try
+            if isfield(pyCfg,'envPath') && ~isempty(pyCfg.envPath)
+                args = [args, {'envPath', char(string(pyCfg.envPath))}]; %#ok<AGROW>
+            end
+        catch
+        end
+    otherwise
+        args = [args, {'mode','default'}]; %#ok<AGROW>
+end
 end
 
 try

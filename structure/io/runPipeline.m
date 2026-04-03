@@ -21,6 +21,7 @@ function [ctx, report] = runPipeline(pipe, ctx)
     % previous runs do not silently skip nodes.
     ctx = normalizeRunId(ctx);
     ctx = normalizeExecutionContext(ctx);
+    ctx = preparePythonEnvironmentIfNeeded(pipe, ctx);
     ctx = seedContextFromProject(ctx);
 
     if (~isfield(ctx,'masks') || isempty(ctx.masks))
@@ -169,6 +170,102 @@ function [ctx, report] = runPipeline(pipe, ctx)
     stashRunReport(report);
 end
 
+function ctx = preparePythonEnvironmentIfNeeded(pipe, ctx)
+if ~pipelineUsesPythonBackend(pipe, ctx)
+    return;
+end
+cfg = resolvePythonPreflightConfig(ctx);
+args = {'debug', true, 'mode', cfg.mode};
+if strcmpi(cfg.mode, 'custom')
+    args = [args {'envName', cfg.envName}]; %#ok<AGROW>
+    if ~isempty(cfg.envPath)
+        args = [args {'envPath', cfg.envPath}]; %#ok<AGROW>
+    end
+end
+info = select_and_load_conda_env(args{:});
+if ~isfield(ctx,'exec') || ~isstruct(ctx.exec) || isempty(ctx.exec)
+    ctx.exec = struct();
+end
+if ~isfield(ctx.exec,'python') || ~isstruct(ctx.exec.python) || isempty(ctx.exec.python)
+    ctx.exec.python = struct();
+end
+ctx.exec.python = mergeStruct(ctx.exec.python, struct( ...
+    'mode', cfg.mode, ...
+    'envName', cfg.envName, ...
+    'envPath', cfg.envPath, ...
+    'preflight', true, ...
+    'preflightDone', true, ...
+    'info', info));
+end
+
+function cfg = resolvePythonPreflightConfig(ctx)
+cfg = struct('mode', 'default', 'envName', '', 'envPath', '');
+try
+    if isfield(ctx,'exec') && isstruct(ctx.exec) && isfield(ctx.exec,'python') && isstruct(ctx.exec.python)
+        py = ctx.exec.python;
+        if isfield(py,'mode') && ~isempty(py.mode)
+            cfg.mode = lower(char(string(py.mode)));
+        end
+        if isfield(py,'envName') && ~isempty(py.envName)
+            cfg.envName = char(string(py.envName));
+        end
+        if isfield(py,'envPath') && ~isempty(py.envPath)
+            cfg.envPath = char(string(py.envPath));
+        end
+    end
+catch
+end
+if ~any(strcmp(cfg.mode, {'default','custom'}))
+    cfg.mode = 'default';
+end
+end
+
+function tf = pipelineUsesPythonBackend(pipe, ctx)
+tf = false;
+P = pipelineToStructLocal(pipe);
+nodes = getfielddefault(P, 'nodes', struct([]));
+if isempty(nodes)
+    return;
+end
+selectedIds = {};
+try
+    if isfield(ctx,'run') && isstruct(ctx.run) && isfield(ctx.run,'selectedNodes') && ~isempty(ctx.run.selectedNodes)
+        selectedIds = cellstr(ctx.run.selectedNodes(:));
+    end
+catch
+end
+for i = 1:numel(nodes)
+    node = nodes(i);
+    try
+        if ~isempty(selectedIds) && ~any(strcmp(selectedIds, char(string(node.id))))
+            continue;
+        end
+    catch
+    end
+    if isPythonBackedNode(node)
+        tf = true;
+        return;
+    end
+end
+end
+
+function tf = isPythonBackedNode(node)
+tf = false;
+pkg = lower(strtrim(char(string(resolveNodePackage(node)))));
+func = '';
+try
+    func = lower(strtrim(char(string(getfielddefault(node, 'func', '')))));
+catch
+end
+if any(strcmp(pkg, {'cellposesam','yoloseg','celltracktr'}))
+    tf = true;
+    return;
+end
+if contains(func, 'cellpose') || contains(func, 'yolo') || contains(func, 'tracktr') || contains(func, 'python')
+    tf = true;
+end
+end
+
 function ctx = normalizeRunId(ctx)
     if ~isstruct(ctx)
         return;
@@ -220,6 +317,14 @@ function ctx = normalizeExecutionContext(ctx)
     end
     ctx.run.runPolicy = normalizeRunPolicy(ctx.run.runPolicy);
     ctx.run.resume = strcmpi(ctx.run.runPolicy, 'resume');
+    if ~isfield(ctx.run,'gpuPolicy') || isempty(ctx.run.gpuPolicy)
+        if isfield(ctx,'exec') && isstruct(ctx.exec) && isfield(ctx.exec,'gpuPolicy') && ~isempty(ctx.exec.gpuPolicy)
+            ctx.run.gpuPolicy = ctx.exec.gpuPolicy;
+        else
+            ctx.run.gpuPolicy = 'module_default';
+        end
+    end
+    ctx.run.gpuPolicy = normalizeGpuPolicy(ctx.run.gpuPolicy);
 
     if ~isfield(ctx.io,'existingPolicy') || isempty(ctx.io.existingPolicy)
         if isfield(ctx.io,'overwrite') && ~isempty(ctx.io.overwrite) && logical(ctx.io.overwrite)
@@ -254,6 +359,10 @@ function ctx = normalizeExecutionContext(ctx)
     if ~isfield(ctx,'saveProgress') || isempty(ctx.saveProgress)
         ctx.saveProgress = true;
     end
+    if ~isfield(ctx,'exec') || ~isstruct(ctx.exec) || isempty(ctx.exec)
+        ctx.exec = struct();
+    end
+    ctx.exec.gpuPolicy = ctx.run.gpuPolicy;
 
     if ~isfield(ctx.sel,'fovs') || isempty(ctx.sel.fovs)
         if isfield(ctx.run,'fovIndex') && ~isempty(ctx.run.fovIndex)
@@ -263,6 +372,16 @@ function ctx = normalizeExecutionContext(ctx)
         end
     else
         ctx.sel.fovs = normalizeIndexVectorLocal(ctx.sel.fovs);
+    end
+
+    if ~isfield(ctx.sel,'frames') || isempty(ctx.sel.frames)
+        if isfield(ctx.run,'frames') && ~isempty(ctx.run.frames)
+            ctx.sel.frames = normalizeIndexVectorLocal(ctx.run.frames);
+        else
+            ctx.sel.frames = [];
+        end
+    else
+        ctx.sel.frames = normalizeIndexVectorLocal(ctx.sel.frames);
     end
 end
 
@@ -759,6 +878,7 @@ function ctx = applyNodeParams(ctx, node)
 
     % attach node params to ctx
     ctx.params = node.params;
+    ctx = updateGlobalSelectionFromNodeParams(ctx, node);
 
     % map known dataloading nodes to ctx fields
     switch lower(char(string(node.type)))
@@ -783,6 +903,23 @@ function ctx = applyNodeParams(ctx, node)
     end
 end
 
+function ctx = updateGlobalSelectionFromNodeParams(ctx, node)
+    if ~isfield(ctx,'sel') || ~isstruct(ctx.sel) || isempty(ctx.sel)
+        ctx.sel = struct();
+    end
+    if ~isfield(node,'params') || ~isstruct(node.params) || isempty(node.params)
+        return;
+    end
+
+    nodeType = lower(char(string(getfielddefault(node,'type',''))));
+    if supportsInheritedFrames(nodeType)
+        if isfield(node.params,'frames') && ~isempty(node.params.frames) ...
+                && isnumeric(node.params.frames) && ~isequal(node.params.frames, -1)
+            ctx.sel.frames = normalizeIndexVectorLocal(node.params.frames);
+        end
+    end
+end
+
 function node = injectGlobalSelectionIntoNode(node, ctx)
     if ~isfield(node,'params') || ~isstruct(node.params)
         node.params = struct();
@@ -792,15 +929,94 @@ function node = injectGlobalSelectionIntoNode(node, ctx)
         fovs = normalizeIndexVectorLocal(ctx.sel.fovs);
     end
     if isempty(fovs)
-        return;
-    end
-
-    nodeType = lower(char(string(getfielddefault(node,'type',''))));
-    if any(strcmp(nodeType, {'roiidentify','roipattern','roimanual','roigrid','roiextract','roitracked'}))
-        if ~isfield(node.params,'fovIndex') || isempty(node.params.fovIndex)
-            node.params.fovIndex = fovs;
+    else
+        nodeType = lower(char(string(getfielddefault(node,'type',''))));
+        if any(strcmp(nodeType, {'roiidentify','roipattern','roimanual','roigrid','roiextract','roitracked'}))
+            if ~isfield(node.params,'fovIndex') || isempty(node.params.fovIndex)
+                node.params.fovIndex = fovs;
+            end
         end
     end
+
+    frames = [];
+    if isfield(ctx,'sel') && isstruct(ctx.sel) && isfield(ctx.sel,'frames') && ~isempty(ctx.sel.frames)
+        frames = normalizeIndexVectorLocal(ctx.sel.frames);
+    end
+    if ~isempty(frames)
+        nodeType = lower(char(string(getfielddefault(node,'type',''))));
+        if supportsInheritedFrames(nodeType)
+            if ~isfield(node.params,'frames') || isempty(node.params.frames)
+                node.params.frames = frames;
+            end
+        end
+    end
+end
+
+function tf = supportsInheritedFrames(nodeType)
+tf = any(strcmp(nodeType, {'dataloader','roiidentify','roipattern','roimanual','roigrid','roitracked','roiextract','processor','classifier'}));
+end
+
+function policy = normalizeGpuPolicy(policy)
+policy = lower(strtrim(char(string(policy))));
+switch policy
+    case {'', '<module default>', 'module default', 'default', 'module_default'}
+        policy = 'module_default';
+    case {'force gpu', 'gpu', 'true', '1', 'on', 'force_gpu'}
+        policy = 'force_gpu';
+    case {'force cpu', 'cpu', 'false', '0', 'off', 'force_cpu'}
+        policy = 'force_cpu';
+    otherwise
+        policy = 'module_default';
+end
+end
+
+function [gpuDecision, hasGpuDecision] = resolveEffectiveGpuDecision(p, ctx, pkgName)
+gpuDecision = false;
+hasGpuDecision = false;
+
+runPolicy = 'module_default';
+try
+    if isfield(ctx,'run') && isstruct(ctx.run) && isfield(ctx.run,'gpuPolicy') && ~isempty(ctx.run.gpuPolicy)
+        runPolicy = normalizeGpuPolicy(ctx.run.gpuPolicy);
+    end
+catch
+end
+
+switch runPolicy
+    case 'force_gpu'
+        gpuDecision = true;
+        hasGpuDecision = true;
+        return;
+    case 'force_cpu'
+        gpuDecision = false;
+        hasGpuDecision = true;
+        return;
+end
+
+if isstruct(p) && isfield(p,'gpu') && ~isempty(p.gpu)
+    gpuDecision = logicalizeGpuValue(p.gpu);
+    hasGpuDecision = true;
+    return;
+end
+
+pkgName = lower(strtrim(char(string(pkgName))));
+if strcmp(pkgName, 'cellposesam')
+    gpuDecision = true;
+    hasGpuDecision = true;
+end
+end
+
+function tf = logicalizeGpuValue(v)
+if islogical(v)
+    tf = logical(v);
+    return;
+end
+if isnumeric(v)
+    tf = logical(v ~= 0);
+    return;
+end
+s = lower(strtrim(char(string(v))));
+tf = any(strcmp(s, {'1','true','yes','on','gpu','force gpu'}));
 end
 
 function tf = shouldSkipNode(node, ctx, edges, executed)
@@ -1088,7 +1304,7 @@ function ctx = executeProcessorNode(node, ctx)
 
     pkgName = resolveNodePackage(node);
     p = getfielddefault(node, 'params', struct());
-    refProc = resolveProcessorReference(p);
+    refProc = resolveProcessorReference(node, p);
     procObj = process(tempdir, 'pipeline_processor', randi(1e9));
     if ~isempty(refProc)
         procObj = applyProcessorReference(procObj, refProc);
@@ -1176,7 +1392,8 @@ function ctx = executeProcessorNode(node, ctx)
     if isfield(p,'parallel') && ~isempty(p.parallel) && logical(p.parallel)
         args = [args {'Parallel'}]; %#ok<AGROW>
     end
-    if isfield(p,'gpu') && ~isempty(p.gpu) && logical(p.gpu)
+    [gpuDecision, hasGpuDecision] = resolveEffectiveGpuDecision(p, ctx, pkgName);
+    if hasGpuDecision && gpuDecision
         args = [args {'GPU'}]; %#ok<AGROW>
     end
 
@@ -1207,7 +1424,7 @@ function ctx = executeClassifierNode(node, ctx)
 
     pkgName = resolveNodePackage(node);
     p = getfielddefault(node, 'params', struct());
-    refClassi = resolveClassifierReference(p);
+    refClassi = resolveClassifierReference(node, p);
     clsObj = classi(tempdir, 'pipeline_classifier', randi(1e9), 'InitTraining', false);
     clsObj.strid = char(string(node.id));
 
@@ -1298,7 +1515,8 @@ function ctx = executeClassifierNode(node, ctx)
     if isfield(p,'parallel') && ~isempty(p.parallel) && logical(p.parallel)
         args = [args {'Parallel'}]; %#ok<AGROW>
     end
-    if isfield(p,'gpu') && ~isempty(p.gpu) && logical(p.gpu)
+    [gpuDecision, hasGpuDecision] = resolveEffectiveGpuDecision(p, ctx, classifierPkgForRun);
+    if hasGpuDecision && gpuDecision
         args = [args {'GPU'}]; %#ok<AGROW>
     end
 
@@ -1314,10 +1532,10 @@ function ctx = executeClassifierNode(node, ctx)
     ctx.masks = inferMaskChannelsFromRois(rois);
 end
 
-function refClassi = resolveClassifierReference(p)
+function refClassi = resolveClassifierReference(node, p)
 refClassi = [];
 if ~isstruct(p) || isempty(fieldnames(p))
-    return;
+    p = struct();
 end
 
 if isfield(p,'moduleVar') && ~isempty(p.moduleVar)
@@ -1334,8 +1552,9 @@ if isfield(p,'moduleVar') && ~isempty(p.moduleVar)
     end
 end
 
-if isfield(p,'modulePath') && ~isempty(p.modulePath)
-    refClassi = loadClassifierReferenceFromPath(p);
+refInfo = resolveNodeModuleReference(node, p, 'classifier');
+if ~isempty(refInfo)
+    refClassi = loadClassifierReferenceFromPath(refInfo);
 end
 end
 
@@ -1356,10 +1575,10 @@ for i = 1:numel(props)
 end
 end
 
-function refProc = resolveProcessorReference(p)
+function refProc = resolveProcessorReference(node, p)
 refProc = [];
 if ~isstruct(p) || isempty(fieldnames(p))
-    return;
+    p = struct();
 end
 
 if isfield(p,'moduleVar') && ~isempty(p.moduleVar)
@@ -1374,8 +1593,9 @@ if isfield(p,'moduleVar') && ~isempty(p.moduleVar)
     end
 end
 
-if isfield(p,'modulePath') && ~isempty(p.modulePath)
-    refProc = loadProcessorReferenceFromPath(p);
+refInfo = resolveNodeModuleReference(node, p, 'processor');
+if ~isempty(refInfo)
+    refProc = loadProcessorReferenceFromPath(refInfo);
 end
 end
 
@@ -1440,6 +1660,39 @@ switch lower(char(string(kind)))
     case 'processor'
         snap = fullfile(base, [sid '_processor.mat']);
 end
+end
+
+function refInfo = resolveNodeModuleReference(node, p, kind)
+refInfo = struct();
+if nargin < 2 || ~isstruct(p) || isempty(p)
+    p = struct();
+end
+if isfield(p,'modulePath') && ~isempty(p.modulePath)
+    refInfo = p;
+    return;
+end
+if ~isstruct(node) || ~isfield(node,'origin') || ~isstruct(node.origin)
+    refInfo = [];
+    return;
+end
+origin = node.origin;
+originKind = char(string(getfielddefault(origin, 'kind', '')));
+if ~strcmpi(originKind, kind)
+    refInfo = [];
+    return;
+end
+originPath = char(string(getfielddefault(origin, 'path', '')));
+originId = char(string(getfielddefault(origin, 'id', '')));
+if isempty(originPath)
+    refInfo = [];
+    return;
+end
+refInfo = p;
+refInfo.modulePath = originPath;
+if ~isempty(originId)
+    refInfo.moduleId = originId;
+end
+refInfo.moduleKind = kind;
 end
 
 function v = getfielddefault(S, key, defaultVal)
