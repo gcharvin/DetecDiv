@@ -7,6 +7,7 @@ classdef pipelineGUI < matlab.apps.AppBase
         NewpipelineMenu               matlab.ui.container.Menu
         SavepipelineMenu              matlab.ui.container.Menu
         SavepipelineasMenu            matlab.ui.container.Menu
+        ExportpipelineMenu            matlab.ui.container.Menu
         RevealpipelineinexplorerMenu  matlab.ui.container.Menu
         OpenpipelineJSONfileMenu      matlab.ui.container.Menu
         RunMenu                       matlab.ui.container.Menu
@@ -457,6 +458,14 @@ classdef pipelineGUI < matlab.apps.AppBase
             end
         end
 
+        function ExportpipelineMenuSelected(app, event)
+            try
+                exportPipelineFromGUI(app);
+            catch ME
+                uialert(app.UIFigure, ME.message, 'Export failed', 'Icon','error');
+            end
+        end
+
         function RevealpipelineinexplorerMenuSelected(app, event)
             pipeObj = getCurrentPipelineObject(app);
             if isempty(pipeObj) || isempty(pipeObj.path) || ~isfolder(pipeObj.path)
@@ -575,6 +584,7 @@ classdef pipelineGUI < matlab.apps.AppBase
             app.NewpipelineMenu.MenuSelectedFcn = createCallbackFcn(app, @NewpipelineMenuSelected, true);
             app.SavepipelineMenu.MenuSelectedFcn = createCallbackFcn(app, @SavepipelineMenuSelected, true);
             app.SavepipelineasMenu.MenuSelectedFcn = createCallbackFcn(app, @SavepipelineasMenuSelected, true);
+            app.ExportpipelineMenu.MenuSelectedFcn = createCallbackFcn(app, @ExportpipelineMenuSelected, true);
             app.RevealpipelineinexplorerMenu.MenuSelectedFcn = createCallbackFcn(app, @RevealpipelineinexplorerMenuSelected, true);
             app.OpenpipelineJSONfileMenu.MenuSelectedFcn = createCallbackFcn(app, @OpenpipelineJSONfileMenuSelected, true);
             app.CheckpipelineMenu.MenuSelectedFcn = createCallbackFcn(app, @CheckpipelineMenuSelected, true);
@@ -925,6 +935,9 @@ classdef pipelineGUI < matlab.apps.AppBase
             miDuplicate = uimenu(cm,'Text','Duplicate module');
             miDuplicate.UserData = idx;
             miDuplicate.MenuSelectedFcn = @(src,evt)duplicateModule(app, src.UserData);
+            miExport = uimenu(cm,'Text','Export module...');
+            miExport.UserData = idx;
+            miExport.MenuSelectedFcn = @(src,evt)exportModuleBundle(app, src.UserData);
             miLocal = uimenu(cm,'Text','Convert to local copy');
             miLocal.UserData = idx;
             miLocal.MenuSelectedFcn = @(src,evt)convertNodeToLocalCopy(app, src.UserData);
@@ -2074,12 +2087,47 @@ classdef pipelineGUI < matlab.apps.AppBase
             end
         end
 
+        function refPath = resolveNodeReferencePathForGui(app, refPath)
+            refPath = char(string(refPath));
+            if isempty(refPath)
+                return;
+            end
+            if isAbsolutePathGuiLocal(app, refPath)
+                return;
+            end
+            pipeObj = getCurrentPipelineObject(app);
+            if isempty(pipeObj) || ~isa(pipeObj, 'pipeline') || isempty(pipeObj.path)
+                return;
+            end
+            base = char(string(pipeObj.path));
+            if exist(base, 'file') == 2
+                base = fileparts(base);
+            end
+            if exist(base, 'dir') == 7
+                refPath = fullfile(base, refPath);
+            end
+        end
+
+        function tf = isAbsolutePathGuiLocal(app, p) %#ok<INUSD>
+            tf = false;
+            p = char(string(p));
+            if isempty(p)
+                return;
+            end
+            if ispc
+                tf = ~isempty(regexp(p, '^[A-Za-z]:[\\/]', 'once')) || startsWith(p, '\\');
+            else
+                tf = startsWith(p, '/');
+            end
+        end
+
         function procObj = loadLinkedProcessReference(app, node)
             procObj = [];
             [refPath, refId, refKind] = extractNodeReference(app, node);
             if ~strcmpi(refKind, 'processor') || isempty(refPath) || isempty(refId)
                 return;
             end
+            refPath = resolveNodeReferencePathForGui(app, refPath);
             snap = fullfile(refPath, [refId '_processor.mat']);
             if exist(snap, 'file') ~= 2
                 return;
@@ -2097,6 +2145,7 @@ classdef pipelineGUI < matlab.apps.AppBase
             if ~strcmpi(refKind, 'processor') || isempty(refPath) || isempty(refId)
                 return;
             end
+            refPath = resolveNodeReferencePathForGui(app, refPath);
             snap = fullfile(refPath, [refId '_processor.mat']);
             if exist(snap, 'file') ~= 2
                 return;
@@ -2114,6 +2163,7 @@ classdef pipelineGUI < matlab.apps.AppBase
             if ~strcmpi(refKind, 'classifier') || isempty(refPath) || isempty(refId)
                 return;
             end
+            refPath = resolveNodeReferencePathForGui(app, refPath);
             snap = fullfile(refPath, [refId '_classification.mat']);
             if exist(snap, 'file') ~= 2
                 return;
@@ -2131,6 +2181,7 @@ classdef pipelineGUI < matlab.apps.AppBase
             if ~strcmpi(refKind, 'classifier') || isempty(refPath) || isempty(refId)
                 return;
             end
+            refPath = resolveNodeReferencePathForGui(app, refPath);
             snap = fullfile(refPath, [refId '_classification.mat']);
             if exist(snap, 'file') ~= 2
                 return;
@@ -4446,8 +4497,10 @@ classdef pipelineGUI < matlab.apps.AppBase
                 return;
             end
 
+            nodeToDelete = app.Data.nodes(idx);
+
             if askConfirm
-                nodeName = char(string(getfielddefault(app, app.Data.nodes(idx), 'name', app.Data.nodes(idx).id)));
+                nodeName = char(string(getfielddefault(app, nodeToDelete, 'name', nodeToDelete.id)));
                 choice = uiconfirm(app.UIFigure, ...
                     sprintf('Delete module "%s" from the pipeline?', nodeName), ...
                     'Delete module', ...
@@ -4460,7 +4513,7 @@ classdef pipelineGUI < matlab.apps.AppBase
                 end
             end
 
-            nodeId = char(string(app.Data.nodes(idx).id));
+            nodeId = char(string(nodeToDelete.id));
             keep = true(1,numel(app.Data.edges));
             for i = 1:numel(app.Data.edges)
                 if strcmp(getEdgeField(app, app.Data.edges(i),'from',''), nodeId) || strcmp(getEdgeField(app, app.Data.edges(i),'to',''), nodeId)
@@ -4471,6 +4524,7 @@ classdef pipelineGUI < matlab.apps.AppBase
 
             clearPortGraphicsForModule(app, idx);
             app.Data.nodes(idx) = [];
+            cleanupDeletedNodeFolders(app, nodeToDelete);
             markDirty(app, true);
 
             if idx <= numel(app.ModuleHandles)
@@ -4495,6 +4549,140 @@ classdef pipelineGUI < matlab.apps.AppBase
             app.SelectedModules(app.SelectedModules > idx) = app.SelectedModules(app.SelectedModules > idx) - 1;
             clearPortSelection(app);
             redrawAll(app);
+        end
+
+        function cleanupDeletedNodeFolders(app, node)
+            pipeObj = getCurrentPipelineObject(app);
+            if isempty(pipeObj) || isempty(pipeObj.path) || ~isfolder(pipeObj.path)
+                return;
+            end
+
+            nodeId = char(string(getfielddefault(app, node, 'id', '')));
+            if ~isempty(nodeId)
+                tryDeleteOwnedPathLocal(app, fullfile(pipeObj.path, 'modules', sanitizeOwnedPathNameLocal(app, nodeId)), pipeObj.path);
+            end
+
+            owned = collectNodeOwnedPathsLocal(app, node, pipeObj.path);
+            for ii = 1:numel(owned)
+                tryDeleteOwnedPathLocal(app, owned{ii}, pipeObj.path);
+            end
+
+            try
+                modulesRoot = fullfile(pipeObj.path, 'modules');
+                if isfolder(modulesRoot)
+                    d = dir(modulesRoot);
+                    d = d(~ismember({d.name}, {'.','..'}));
+                    if isempty(d)
+                        rmdir(modulesRoot, 's');
+                    end
+                end
+            catch
+            end
+        end
+
+        function paths = collectNodeOwnedPathsLocal(app, node, pipeRoot)
+            paths = {};
+            candidates = {};
+
+            try
+                params = getfielddefault(app, node, 'params', struct());
+                if isstruct(params) && isfield(params, 'modulePath') && ~isempty(params.modulePath)
+                    candidates{end+1} = char(string(params.modulePath)); %#ok<AGROW>
+                end
+            catch
+            end
+            try
+                if isstruct(node) && isfield(node, 'origin') && isstruct(node.origin) ...
+                        && isfield(node.origin, 'path') && ~isempty(node.origin.path)
+                    candidates{end+1} = char(string(node.origin.path)); %#ok<AGROW>
+                end
+            catch
+            end
+
+            for ii = 1:numel(candidates)
+                p = absolutizeOwnedPathLocal(app, candidates{ii}, pipeRoot);
+                if isempty(p)
+                    continue;
+                end
+                if isSubPathOfLocal(app, p, pipeRoot)
+                    paths{end+1} = p; %#ok<AGROW>
+                end
+            end
+            paths = unique(paths, 'stable');
+        end
+
+        function out = absolutizeOwnedPathLocal(app, p, pipeRoot)
+            out = char(string(p));
+            if isempty(out)
+                return;
+            end
+            if isAbsoluteOwnedPathLocal(app, out)
+                return;
+            end
+            if nargin >= 3 && ~isempty(pipeRoot) && isfolder(pipeRoot)
+                out = fullfile(pipeRoot, out);
+            end
+        end
+
+        function tf = isSubPathOfLocal(app, childPath, parentPath)
+            tf = false;
+            childPath = normalizeOwnedPathLocal(app, childPath);
+            parentPath = normalizeOwnedPathLocal(app, parentPath);
+            if isempty(childPath) || isempty(parentPath)
+                return;
+            end
+            if strcmpi(childPath, parentPath)
+                tf = true;
+                return;
+            end
+            if ~endsWith(parentPath, '/')
+                parentPath = [parentPath '/'];
+            end
+            tf = startsWith(childPath, parentPath, 'IgnoreCase', true);
+        end
+
+        function out = normalizeOwnedPathLocal(~, p)
+            out = lower(strrep(char(string(p)), '\', '/'));
+            out = regexprep(out, '/+$', '');
+        end
+
+        function tf = isAbsoluteOwnedPathLocal(~, p)
+            tf = false;
+            if isempty(p)
+                return;
+            end
+            p = char(string(p));
+            if ispc
+                tf = ~isempty(regexp(p, '^[A-Za-z]:[\\/]', 'once')) || startsWith(p, '\\');
+            else
+                tf = startsWith(p, '/');
+            end
+        end
+
+        function out = sanitizeOwnedPathNameLocal(~, nameIn)
+            out = regexprep(char(string(nameIn)), '[^a-zA-Z0-9_\-]', '_');
+            if isempty(out)
+                out = 'node';
+            end
+        end
+
+        function tryDeleteOwnedPathLocal(app, targetPath, pipeRoot)
+            if nargin < 2 || isempty(targetPath)
+                return;
+            end
+            targetPath = char(string(targetPath));
+            if nargin >= 3 && ~isempty(pipeRoot) && ~isSubPathOfLocal(app, targetPath, pipeRoot)
+                return;
+            end
+
+            try
+                if isfolder(targetPath)
+                    rmdir(targetPath, 's');
+                elseif exist(targetPath, 'file') == 2
+                    delete(targetPath);
+                end
+            catch
+            end
         end
 
         function openModule(app, idx)
@@ -5121,6 +5309,436 @@ classdef pipelineGUI < matlab.apps.AppBase
             updateModuleLibraryTable(app);
         end
 
+        function exportPipelineFromGUI(app)
+            exportCfg = promptPipelineExportOptions(app);
+            if ~isstruct(exportCfg) || ~isfield(exportCfg, 'ok') || ~exportCfg.ok
+                return;
+            end
+
+            defaultName = [getDefaultPipelineName(app) '_export'];
+            [parentPath, bundleName, ok] = promptExportBundleLocation(app, defaultName);
+            if ~ok
+                return;
+            end
+
+            bundlePath = fullfile(parentPath, bundleName);
+            overwrite = false;
+            if exist(bundlePath, 'dir') == 7
+                choice = uiconfirm(app.UIFigure, ...
+                    sprintf('Export folder already exists:\n%s\n\nReplace it?', bundlePath), ...
+                    'Overwrite export', ...
+                    'Options', {'Replace','Cancel'}, ...
+                    'DefaultOption', 2, ...
+                    'CancelOption', 2, ...
+                    'Icon', 'warning');
+                if ~strcmp(choice, 'Replace')
+                    return;
+                end
+                overwrite = true;
+            end
+
+            pipeStruct = buildPipelineStruct(app, true);
+            pipeObj = getCurrentPipelineObject(app);
+            if ~isempty(pipeObj)
+                pipeStruct.name = char(string(pipeObj.strid));
+                pipeStruct.path = char(string(pipeObj.path));
+                pipeStruct.id = pipeObj.id;
+                pipeStruct.description = pipeObj.description;
+                pipeStruct.version = pipeObj.version;
+                pipeStruct.runProfiles = pipeObj.runProfiles;
+                pipeStruct.runState = pipeObj.runState;
+            else
+                pipeStruct.name = getDefaultPipelineName(app);
+                pipeStruct.path = '';
+                pipeStruct.id = 1;
+                pipeStruct.description = '';
+                pipeStruct.version = '1.0';
+            end
+
+            shallowObj = getCurrentProjectObject(app);
+            runList = pipelineRun.empty;
+            if exportCfg.includeRunResults
+                runList = collectRunsForCurrentPipelineExport(app, shallowObj, pipeObj, pipeStruct);
+            end
+
+            progressDlg = uiprogressdlg(app.UIFigure, ...
+                'Title', 'Exporting pipeline...', ...
+                'Message', 'Preparing export...', ...
+                'Indeterminate', 'on', ...
+                'Cancelable', 'off');
+            exportProgress = struct('done', 0, 'total', 1);
+            cleanupProgress = onCleanup(@()closeExportProgressLocal(progressDlg));
+
+            [bundlePath, manifest] = pipelineExport( ...
+                pipeStruct, bundlePath, ...
+                'includeWeights', exportCfg.includeWeights, ...
+                'includeTrainingData', exportCfg.includeTrainingData, ...
+                'includeTrainingRois', exportCfg.includeTrainingRois, ...
+                'includeRunResults', exportCfg.includeRunResults, ...
+                'runObjects', runList, ...
+                'projectObj', shallowObj, ...
+                'overwrite', overwrite, ...
+                'progressFcn', @updateExportProgressLocal);
+
+            clear cleanupProgress
+
+            warnCount = countExportWarningsLocal(app, manifest);
+            msg = sprintf('Pipeline export created:\n%s', bundlePath);
+            if warnCount > 0
+                msg = sprintf('%s\n\nWarnings: %d', msg, warnCount);
+            end
+            choice = uiconfirm(app.UIFigure, msg, 'Export complete', ...
+                'Options', {'Open folder','OK'}, ...
+                'DefaultOption', 2, ...
+                'CancelOption', 2, ...
+                'Icon', 'info');
+            if strcmp(choice, 'Open folder')
+                try
+                    winopen(bundlePath);
+                catch
+                end
+            end
+
+            function updateExportProgressLocal(action, info)
+                if isempty(progressDlg) || ~isvalid(progressDlg)
+                    return;
+                end
+                if nargin < 2 || ~isstruct(info)
+                    info = struct();
+                end
+                switch lower(char(string(action)))
+                    case 'begin'
+                        exportProgress.total = max(1, double(getfielddefault(app, info, 'totalUnits', 1)));
+                        exportProgress.done = 0;
+                        progressDlg.Indeterminate = 'off';
+                        progressDlg.Value = 0;
+                        progressDlg.Message = 'Preparing export...';
+                    case {'node','file','run','write'}
+                        exportProgress.done = min(exportProgress.total, exportProgress.done + 1);
+                        progressDlg.Indeterminate = 'off';
+                        progressDlg.Value = exportProgress.done / exportProgress.total;
+                        progressDlg.Message = char(string(getfielddefault(app, info, 'message', 'Working...')));
+                    case 'phase'
+                        progressDlg.Message = char(string(getfielddefault(app, info, 'message', 'Working...')));
+                    case 'end'
+                        progressDlg.Indeterminate = 'off';
+                        progressDlg.Value = 1;
+                        progressDlg.Message = 'Export complete.';
+                    otherwise
+                        progressDlg.Message = char(string(getfielddefault(app, info, 'message', 'Working...')));
+                end
+                drawnow limitrate
+            end
+
+            function closeExportProgressLocal(dlg)
+                try
+                    if ~isempty(dlg) && isvalid(dlg)
+                        close(dlg);
+                    end
+                catch
+                end
+            end
+        end
+
+        function exportModuleBundle(app, idx)
+            if idx < 1 || idx > numel(app.Data.nodes)
+                return;
+            end
+
+            exportCfg = promptPipelineExportOptions(app);
+            if ~isstruct(exportCfg) || ~isfield(exportCfg, 'ok') || ~exportCfg.ok
+                return;
+            end
+            exportCfg.includeRunResults = false;
+
+            node = app.Data.nodes(idx);
+            pipeObj = getCurrentPipelineObject(app);
+            pipePath = '';
+            pipeName = getDefaultPipelineName(app);
+            if ~isempty(pipeObj)
+                pipePath = char(string(pipeObj.path));
+                pipeName = char(string(pipeObj.strid));
+            end
+
+            defaultName = sprintf('%s_%s_export', pipeName, char(string(getfielddefault(app, node, 'id', sprintf('node_%d', idx)))));
+            [parentPath, bundleName, ok] = promptExportBundleLocation(app, defaultName);
+            if ~ok
+                return;
+            end
+
+            bundlePath = fullfile(parentPath, bundleName);
+            overwrite = false;
+            if exist(bundlePath, 'dir') == 7
+                choice = uiconfirm(app.UIFigure, ...
+                    sprintf('Export folder already exists:\n%s\n\nReplace it?', bundlePath), ...
+                    'Overwrite export', ...
+                    'Options', {'Replace','Cancel'}, ...
+                    'DefaultOption', 2, ...
+                    'CancelOption', 2, ...
+                    'Icon', 'warning');
+                if ~strcmp(choice, 'Replace')
+                    return;
+                end
+                overwrite = true;
+            end
+
+            moduleStruct = struct();
+            moduleStruct.name = char(string(getfielddefault(app, node, 'name', getfielddefault(app, node, 'id', 'module'))));
+            moduleStruct.path = pipePath;
+            moduleStruct.id = idx;
+            moduleStruct.description = sprintf('Single-module export for %s', moduleStruct.name);
+            moduleStruct.version = '1.0';
+            moduleStruct.nodes = node;
+            moduleStruct.edges = struct([]);
+            moduleStruct.runProfiles = struct();
+            moduleStruct.runState = struct();
+
+            shallowObj = getCurrentProjectObject(app);
+            progressDlg = uiprogressdlg(app.UIFigure, ...
+                'Title', 'Exporting module...', ...
+                'Message', 'Preparing export...', ...
+                'Indeterminate', 'on', ...
+                'Cancelable', 'off');
+            exportProgress = struct('done', 0, 'total', 1);
+            cleanupProgress = onCleanup(@()closeExportProgressLocal(progressDlg));
+
+            [bundlePath, manifest] = pipelineExport( ...
+                moduleStruct, bundlePath, ...
+                'includeWeights', exportCfg.includeWeights, ...
+                'includeTrainingData', exportCfg.includeTrainingData, ...
+                'includeTrainingRois', exportCfg.includeTrainingRois, ...
+                'includeRunResults', false, ...
+                'runObjects', pipelineRun.empty, ...
+                'projectObj', shallowObj, ...
+                'overwrite', overwrite, ...
+                'progressFcn', @updateExportProgressLocal);
+
+            clear cleanupProgress
+
+            warnCount = countExportWarningsLocal(app, manifest);
+            msg = sprintf('Module export created:\n%s', bundlePath);
+            if warnCount > 0
+                msg = sprintf('%s\n\nWarnings: %d', msg, warnCount);
+            end
+            choice = uiconfirm(app.UIFigure, msg, 'Export complete', ...
+                'Options', {'Open folder','OK'}, ...
+                'DefaultOption', 2, ...
+                'CancelOption', 2, ...
+                'Icon', 'info');
+            if strcmp(choice, 'Open folder')
+                try
+                    winopen(bundlePath);
+                catch
+                end
+            end
+
+            function updateExportProgressLocal(action, info)
+                if isempty(progressDlg) || ~isvalid(progressDlg)
+                    return;
+                end
+                if nargin < 2 || ~isstruct(info)
+                    info = struct();
+                end
+                switch lower(char(string(action)))
+                    case 'begin'
+                        exportProgress.total = max(1, double(getfielddefault(app, info, 'totalUnits', 1)));
+                        exportProgress.done = 0;
+                        progressDlg.Indeterminate = 'off';
+                        progressDlg.Value = 0;
+                        progressDlg.Message = 'Preparing export...';
+                    case {'node','file','run','write'}
+                        exportProgress.done = min(exportProgress.total, exportProgress.done + 1);
+                        progressDlg.Indeterminate = 'off';
+                        progressDlg.Value = exportProgress.done / exportProgress.total;
+                        progressDlg.Message = char(string(getfielddefault(app, info, 'message', 'Working...')));
+                    case 'phase'
+                        progressDlg.Message = char(string(getfielddefault(app, info, 'message', 'Working...')));
+                    case 'end'
+                        progressDlg.Indeterminate = 'off';
+                        progressDlg.Value = 1;
+                        progressDlg.Message = 'Export complete.';
+                    otherwise
+                        progressDlg.Message = char(string(getfielddefault(app, info, 'message', 'Working...')));
+                end
+                drawnow limitrate
+            end
+
+            function closeExportProgressLocal(dlg)
+                try
+                    if ~isempty(dlg) && isvalid(dlg)
+                        close(dlg);
+                    end
+                catch
+                end
+            end
+        end
+
+        function cfg = promptPipelineExportOptions(app)
+            cfg = struct('ok', false, ...
+                'includeWeights', true, ...
+                'includeTrainingData', false, ...
+                'includeTrainingRois', false, ...
+                'includeRunResults', false);
+
+            dlg = uifigure('Name', 'Export pipeline', ...
+                'Position', [100 100 460 270], ...
+                'Resize', 'off', ...
+                'WindowStyle', 'modal');
+            dlg.UserData = cfg;
+            dlg.CloseRequestFcn = @(src,evt)uiresume(src);
+
+            uilabel(dlg, ...
+                'Text', 'Choose which assets should be bundled with the pipeline export.', ...
+                'Position', [20 225 420 24]);
+
+            cbWeights = uicheckbox(dlg, ...
+                'Text', 'Include model weights / inference assets', ...
+                'Value', true, ...
+                'Position', [24 185 320 22]);
+            cbTraining = uicheckbox(dlg, ...
+                'Text', 'Include training assets', ...
+                'Value', false, ...
+                'Position', [24 155 320 22]);
+            cbRois = uicheckbox(dlg, ...
+                'Text', 'Include training ROIs', ...
+                'Value', false, ...
+                'Position', [24 125 320 22]);
+            cbRuns = uicheckbox(dlg, ...
+                'Text', 'Include run results', ...
+                'Value', false, ...
+                'Position', [24 95 320 22]);
+
+            uibutton(dlg, 'push', ...
+                'Text', 'Cancel', ...
+                'Position', [250 24 90 34], ...
+                'ButtonPushedFcn', @(src,evt)uiresume(dlg));
+            uibutton(dlg, 'push', ...
+                'Text', 'Export', ...
+                'Position', [350 24 90 34], ...
+                'ButtonPushedFcn', @(src,evt)confirmExportDialogLocal(dlg, cbWeights, cbTraining, cbRois, cbRuns));
+
+            uiwait(dlg);
+            if isvalid(dlg)
+                cfg = dlg.UserData;
+                delete(dlg);
+            end
+
+            function confirmExportDialogLocal(fig, c1, c2, c3, c4)
+                fig.UserData = struct( ...
+                    'ok', true, ...
+                    'includeWeights', logical(c1.Value), ...
+                    'includeTrainingData', logical(c2.Value), ...
+                    'includeTrainingRois', logical(c3.Value), ...
+                    'includeRunResults', logical(c4.Value));
+                uiresume(fig);
+            end
+        end
+
+        function [parentPath, bundleName, ok] = promptExportBundleLocation(app, defaultName)
+            ok = false;
+            parentPath = '';
+            bundleName = char(string(defaultName));
+            if nargin < 2 || isempty(bundleName)
+                bundleName = 'pipeline_export';
+            end
+
+            startDir = pwd;
+            pipeObj = getCurrentPipelineObject(app);
+            if ~isempty(pipeObj) && ~isempty(pipeObj.path)
+                try
+                    startDir = fileparts(pipeObj.path);
+                catch
+                end
+            end
+
+            parentPath = uigetdir(startDir, 'Select parent folder for the export bundle');
+            if isequal(parentPath, 0)
+                parentPath = '';
+                return;
+            end
+
+            answer = inputdlg({'Export folder name:'}, 'Export pipeline', [1 60], {bundleName});
+            if isempty(answer)
+                parentPath = '';
+                return;
+            end
+            bundleName = strtrim(char(string(answer{1})));
+            if isempty(bundleName)
+                uialert(app.UIFigure, 'Export folder name cannot be empty.', 'Invalid name', 'Icon', 'warning');
+                parentPath = '';
+                return;
+            end
+            ok = true;
+        end
+
+        function shallowObj = getCurrentProjectObject(app)
+            shallowObj = [];
+            if isfield(app.Context, 'shallowObj') && isa(app.Context.shallowObj, 'shallow')
+                shallowObj = app.Context.shallowObj;
+            elseif isfield(app.Context, 'shallow') && isa(app.Context.shallow, 'shallow')
+                shallowObj = app.Context.shallow;
+            end
+        end
+
+        function runs = collectRunsForCurrentPipelineExport(app, shallowObj, pipeObj, pipeStruct) %#ok<INUSD>
+            runs = pipelineRun.empty;
+            if isempty(shallowObj) || ~isa(shallowObj, 'shallow')
+                return;
+            end
+            if ~isfield(shallowObj.processing, 'pipelineRun') || isempty(shallowObj.processing.pipelineRun)
+                return;
+            end
+
+            if ~isempty(pipeObj) && isa(pipeObj, 'pipeline')
+                [runs, ~] = pipeObj.findDependentRuns(shallowObj);
+                return;
+            end
+
+            targetId = char(string(getfielddefault(app, pipeStruct, 'name', '')));
+            targetPath = char(string(getfielddefault(app, pipeStruct, 'path', '')));
+            for ii = 1:numel(shallowObj.processing.pipelineRun)
+                pr = shallowObj.processing.pipelineRun(ii);
+                try
+                    if isstruct(pr.pipelineRef)
+                        if ~isempty(targetPath) && isfield(pr.pipelineRef, 'path') && strcmpi(normalizePathForExportCompareLocal(app, pr.pipelineRef.path), normalizePathForExportCompareLocal(app, targetPath))
+                            runs(end+1) = pr; %#ok<AGROW>
+                            continue;
+                        end
+                        if ~isempty(targetId) && isfield(pr.pipelineRef, 'id') && strcmp(char(string(pr.pipelineRef.id)), targetId)
+                            runs(end+1) = pr; %#ok<AGROW>
+                        end
+                    end
+                catch
+                end
+            end
+        end
+
+        function out = normalizePathForExportCompareLocal(~, in)
+            out = lower(strrep(char(string(in)), '\', '/'));
+            out = regexprep(out, '/+$', '');
+        end
+
+        function n = countExportWarningsLocal(~, manifest)
+            n = 0;
+            try
+                if isfield(manifest, 'nodes') && ~isempty(manifest.nodes)
+                    for ii = 1:numel(manifest.nodes)
+                        if isfield(manifest.nodes(ii), 'warnings') && ~isempty(manifest.nodes(ii).warnings)
+                            n = n + numel(manifest.nodes(ii).warnings);
+                        end
+                    end
+                end
+                if isfield(manifest, 'runs') && ~isempty(manifest.runs)
+                    for ii = 1:numel(manifest.runs)
+                        if isfield(manifest.runs(ii), 'warnings') && ~isempty(manifest.runs(ii).warnings)
+                            n = n + numel(manifest.runs(ii).warnings);
+                        end
+                    end
+                end
+            catch
+            end
+        end
+
         function createDynamicSaveButton(app)
             if isfield(app.Context,'savePipelineButton')
                 hb = app.Context.savePipelineButton;
@@ -5349,6 +5967,10 @@ classdef pipelineGUI < matlab.apps.AppBase
             % Create SavepipelineasMenu
             app.SavepipelineasMenu = uimenu(app.FileMenu);
             app.SavepipelineasMenu.Text = 'Save pipeline as...';
+
+            % Create ExportpipelineMenu
+            app.ExportpipelineMenu = uimenu(app.FileMenu);
+            app.ExportpipelineMenu.Text = 'Export pipeline...';
 
             % Create RevealpipelineinexplorerMenu
             app.RevealpipelineinexplorerMenu = uimenu(app.FileMenu);

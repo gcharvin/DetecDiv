@@ -13,11 +13,9 @@ function [pipe, msg] = pipelineLoad(inputPath)
         inputPath = fullfile(path, file);
     end
 
-    if exist(inputPath, 'dir')
-        jsonFile = fullfile(inputPath, 'pipeline.json');
-    else
-        jsonFile = inputPath;
-        inputPath = fileparts(jsonFile);
+    [jsonFile, inputPath, msg] = resolvePipelineJsonTarget(inputPath);
+    if ~isempty(msg)
+        return;
     end
 
     if ~exist(jsonFile,'file')
@@ -54,5 +52,94 @@ function v = getField(S, name, default)
         v = S.(name);
     else
         v = default;
+    end
+end
+
+function [jsonFile, basePath, msg] = resolvePipelineJsonTarget(inputPath)
+    msg = '';
+    jsonFile = '';
+    basePath = '';
+
+    inputPath = char(string(inputPath));
+    if exist(inputPath, 'dir')
+        basePath = inputPath;
+        directJson = fullfile(basePath, 'pipeline.json');
+        if exist(directJson, 'file') == 2
+            jsonFile = directJson;
+            return;
+        end
+
+        manifestPath = fullfile(basePath, 'export_manifest.json');
+        if exist(manifestPath, 'file') == 2
+            [jsonFile, msg] = resolvePipelineJsonFromManifest(manifestPath, basePath);
+            if isempty(msg)
+                basePath = fileparts(jsonFile);
+            end
+            return;
+        end
+
+        pipelineSub = fullfile(basePath, 'pipeline', 'pipeline.json');
+        if exist(pipelineSub, 'file') == 2
+            jsonFile = pipelineSub;
+            basePath = fileparts(jsonFile);
+            return;
+        end
+
+        msg = ['Pipeline JSON not found in folder: ' inputPath];
+        return;
+    end
+
+    jsonFile = inputPath;
+    basePath = fileparts(jsonFile);
+
+    [~, fname, ext] = fileparts(jsonFile);
+    if strcmpi(ext, '.json') && strcmpi(fname, 'export_manifest')
+        [jsonFile, msg] = resolvePipelineJsonFromManifest(jsonFile, basePath);
+        if isempty(msg)
+            basePath = fileparts(jsonFile);
+        end
+    end
+end
+
+function [jsonFile, msg] = resolvePipelineJsonFromManifest(manifestPath, basePath)
+    msg = '';
+    jsonFile = '';
+    try
+        txt = fileread(manifestPath);
+        S = jsondecode(txt);
+    catch ME
+        msg = ['Could not read export manifest: ' ME.message];
+        return;
+    end
+
+    if ~isstruct(S) || ~isfield(S, 'pipeline') || ~isstruct(S.pipeline) || ...
+            ~isfield(S.pipeline, 'bundlePipelinePath') || isempty(S.pipeline.bundlePipelinePath)
+        msg = ['Invalid export manifest: ' manifestPath];
+        return;
+    end
+
+    relPath = char(string(S.pipeline.bundlePipelinePath));
+    if isAbsolutePathLocal(relPath)
+        candidate = relPath;
+    else
+        candidate = fullfile(basePath, relPath);
+    end
+    if exist(candidate, 'file') ~= 2
+        msg = ['Bundle pipeline JSON not found from manifest: ' candidate];
+        return;
+    end
+    jsonFile = candidate;
+end
+
+function tf = isAbsolutePathLocal(p)
+    tf = false;
+    p = char(string(p));
+    if isempty(p)
+        return;
+    end
+    if ispc
+        tf = ~isempty(regexp(p, '^[A-Za-z]:[\\/]', 'once')) || startsWith(p, '\\');
+    else
+        tf = startsWith(p, '/');
     end
 end
