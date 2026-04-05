@@ -117,7 +117,7 @@ function ctx = runCore(ctx)
         pattern = selectPatternForFov(currentFov, i, ctx, p, patternList);
 
         if hasValidPattern(pattern)
-            [pattimg, chanIdx, refFrame, crop] = buildPatternPatch(fovList, currentFov, pattern, p);
+            [pattimg, chanIdx, refFrame, crop] = buildPatternPatch(fovList, currentFov, pattern, p, ctx);
             identifyROIsLocal('FOV', currentFov, ...
                 'Frames', refFrame, ...
                 'Threshold', p.threshold, ...
@@ -359,12 +359,15 @@ function roiList = collectROIs(fovList)
     end
 end
 
-function [pattimg, chanIdx, refFrame, crop] = buildPatternPatch(fovList, targetFov, pattern, p)
+function [pattimg, chanIdx, refFrame, crop] = buildPatternPatch(fovList, targetFov, pattern, p, ctx)
     refFrame = 1;
     if isfield(p,'referenceFrame') && ~isempty(p.referenceFrame)
         refFrame = round(double(p.referenceFrame(1)));
     end
     crop = [];
+    if nargin < 5
+        ctx = struct();
+    end
 
     if isfield(pattern,'frame') && ~isempty(pattern.frame)
         refFrame = round(double(pattern.frame(1)));
@@ -393,32 +396,35 @@ function [pattimg, chanIdx, refFrame, crop] = buildPatternPatch(fovList, targetF
     end
     chanIdx = max(1, round(double(chanIdx)));
 
-    tmp = readImage(refFov, refFrame, chanIdx);
-    if isempty(tmp)
-        error('roiPattern.runCore:PatternImageReadFailed', 'Cannot read pattern reference image.');
-    end
+    [pattimg, ok] = tryLoadExportedPatternPatch(pattern, ctx);
+    if ~ok
+        tmp = readImage(refFov, refFrame, chanIdx);
+        if isempty(tmp)
+            error('roiPattern.runCore:PatternImageReadFailed', 'Cannot read pattern reference image.');
+        end
 
-    rect = double(pattern.rect(:)');
-    if numel(rect) < 4
-        error('roiPattern.runCore:InvalidPatternRect', 'Pattern rect must contain [x y w h].');
-    end
-    x = round(rect(1));
-    y = round(rect(2));
-    w = max(1, round(rect(3)));
-    h = max(1, round(rect(4)));
+        rect = double(pattern.rect(:)');
+        if numel(rect) < 4
+            error('roiPattern.runCore:InvalidPatternRect', 'Pattern rect must contain [x y w h].');
+        end
+        x = round(rect(1));
+        y = round(rect(2));
+        w = max(1, round(rect(3)));
+        h = max(1, round(rect(4)));
 
-    x1 = max(1, x);
-    y1 = max(1, y);
-    x2 = min(size(tmp,2), x1 + w - 1);
-    y2 = min(size(tmp,1), y1 + h - 1);
-    if x2 < x1
-        x2 = x1;
-    end
-    if y2 < y1
-        y2 = y1;
-    end
+        x1 = max(1, x);
+        y1 = max(1, y);
+        x2 = min(size(tmp,2), x1 + w - 1);
+        y2 = min(size(tmp,1), y1 + h - 1);
+        if x2 < x1
+            x2 = x1;
+        end
+        if y2 < y1
+            y2 = y1;
+        end
 
-    pattimg = tmp(y1:y2, x1:x2);
+        pattimg = tmp(y1:y2, x1:x2);
+    end
 
     if isempty(crop)
         try
@@ -429,6 +435,82 @@ function [pattimg, chanIdx, refFrame, crop] = buildPatternPatch(fovList, targetF
         end
     end
 
+end
+
+function [pattimg, ok] = tryLoadExportedPatternPatch(pattern, ctx)
+pattimg = [];
+ok = false;
+
+if ~isfield(pattern, 'patchFile') || isempty(pattern.patchFile)
+    return;
+end
+
+patchPath = resolvePatternPatchPath(pattern.patchFile, ctx);
+if exist(patchPath, 'file') ~= 2
+    return;
+end
+
+try
+    [~, ~, ext] = fileparts(patchPath);
+    switch lower(ext)
+        case '.mat'
+            S = load(patchPath);
+            if isfield(S, 'patternImage')
+                pattimg = S.patternImage;
+            elseif isfield(S, 'pattimg')
+                pattimg = S.pattimg;
+            elseif isfield(S, 'patch')
+                pattimg = S.patch;
+            end
+        otherwise
+            pattimg = imread(patchPath);
+    end
+    ok = ~isempty(pattimg);
+catch
+    pattimg = [];
+    ok = false;
+end
+end
+
+function patchPath = resolvePatternPatchPath(patchPath, ctx)
+patchPath = char(string(patchPath));
+if isempty(patchPath) || isAbsolutePathLocal(patchPath)
+    return;
+end
+
+base = '';
+try
+    if isfield(ctx,'pipelineRef') && isstruct(ctx.pipelineRef) && isfield(ctx.pipelineRef,'path') && ~isempty(ctx.pipelineRef.path)
+        base = char(string(ctx.pipelineRef.path));
+    elseif isfield(ctx,'templatePath') && ~isempty(ctx.templatePath)
+        base = char(string(ctx.templatePath));
+    end
+catch
+    base = '';
+end
+
+if isempty(base)
+    return;
+end
+if exist(base, 'file') == 2
+    base = fileparts(base);
+end
+if exist(base, 'dir') == 7
+    patchPath = fullfile(base, patchPath);
+end
+end
+
+function tf = isAbsolutePathLocal(p)
+tf = false;
+if isempty(p)
+    return;
+end
+p = char(string(p));
+if ispc
+    tf = ~isempty(regexp(p, '^[A-Za-z]:[\\/]', 'once')) || startsWith(p, '\\');
+else
+    tf = startsWith(p, '/');
+end
 end
 
 function idx = resolveChannelIndex(fov, p)
@@ -515,7 +597,7 @@ for kk = 1:numel(fovIdx)
         continue;
     end
 
-    [pattimg, chanIdx, refFrame, crop] = buildPatternPatch(fovList, currentFov, pattern, p);
+    [pattimg, chanIdx, refFrame, crop] = buildPatternPatch(fovList, currentFov, pattern, p, ctx);
     disp(sprintf('[roiPattern][test] targetFOV=%d refFrame=%d channel=%d patternSize=[%d %d]', i, refFrame, chanIdx, size(pattimg,1), size(pattimg,2)));
 
     args = {'FOV', currentFov, ...

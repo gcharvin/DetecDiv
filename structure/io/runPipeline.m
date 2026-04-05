@@ -1304,7 +1304,7 @@ function ctx = executeProcessorNode(node, ctx)
 
     pkgName = resolveNodePackage(node);
     p = getfielddefault(node, 'params', struct());
-    refProc = resolveProcessorReference(node, p);
+    refProc = resolveProcessorReference(node, p, ctx);
     procObj = process(tempdir, 'pipeline_processor', randi(1e9));
     if ~isempty(refProc)
         procObj = applyProcessorReference(procObj, refProc);
@@ -1424,7 +1424,7 @@ function ctx = executeClassifierNode(node, ctx)
 
     pkgName = resolveNodePackage(node);
     p = getfielddefault(node, 'params', struct());
-    refClassi = resolveClassifierReference(node, p);
+    refClassi = resolveClassifierReference(node, p, ctx);
     clsObj = classi(tempdir, 'pipeline_classifier', randi(1e9), 'InitTraining', false);
     clsObj.strid = char(string(node.id));
 
@@ -1532,10 +1532,13 @@ function ctx = executeClassifierNode(node, ctx)
     ctx.masks = inferMaskChannelsFromRois(rois);
 end
 
-function refClassi = resolveClassifierReference(node, p)
+function refClassi = resolveClassifierReference(node, p, ctx)
 refClassi = [];
 if ~isstruct(p) || isempty(fieldnames(p))
     p = struct();
+end
+if nargin < 3 || ~isstruct(ctx)
+    ctx = struct();
 end
 
 if isfield(p,'moduleVar') && ~isempty(p.moduleVar)
@@ -1552,7 +1555,7 @@ if isfield(p,'moduleVar') && ~isempty(p.moduleVar)
     end
 end
 
-refInfo = resolveNodeModuleReference(node, p, 'classifier');
+refInfo = resolveNodeModuleReference(node, p, 'classifier', ctx);
 if ~isempty(refInfo)
     refClassi = loadClassifierReferenceFromPath(refInfo);
 end
@@ -1575,10 +1578,13 @@ for i = 1:numel(props)
 end
 end
 
-function refProc = resolveProcessorReference(node, p)
+function refProc = resolveProcessorReference(node, p, ctx)
 refProc = [];
 if ~isstruct(p) || isempty(fieldnames(p))
     p = struct();
+end
+if nargin < 3 || ~isstruct(ctx)
+    ctx = struct();
 end
 
 if isfield(p,'moduleVar') && ~isempty(p.moduleVar)
@@ -1593,7 +1599,7 @@ if isfield(p,'moduleVar') && ~isempty(p.moduleVar)
     end
 end
 
-refInfo = resolveNodeModuleReference(node, p, 'processor');
+refInfo = resolveNodeModuleReference(node, p, 'processor', ctx);
 if ~isempty(refInfo)
     refProc = loadProcessorReferenceFromPath(refInfo);
 end
@@ -1662,13 +1668,17 @@ switch lower(char(string(kind)))
 end
 end
 
-function refInfo = resolveNodeModuleReference(node, p, kind)
+function refInfo = resolveNodeModuleReference(node, p, kind, ctx)
 refInfo = struct();
 if nargin < 2 || ~isstruct(p) || isempty(p)
     p = struct();
 end
+if nargin < 4 || ~isstruct(ctx)
+    ctx = struct();
+end
 if isfield(p,'modulePath') && ~isempty(p.modulePath)
     refInfo = p;
+    refInfo = absolutizeModuleReferencePath(refInfo, ctx);
     return;
 end
 if ~isstruct(node) || ~isfield(node,'origin') || ~isstruct(node.origin)
@@ -1693,6 +1703,63 @@ if ~isempty(originId)
     refInfo.moduleId = originId;
 end
 refInfo.moduleKind = kind;
+refInfo = absolutizeModuleReferencePath(refInfo, ctx);
+end
+
+function refInfo = absolutizeModuleReferencePath(refInfo, ctx)
+if ~isstruct(refInfo) || ~isfield(refInfo,'modulePath') || isempty(refInfo.modulePath)
+    return;
+end
+modulePath = char(string(refInfo.modulePath));
+if isAbsolutePathLocal(modulePath)
+    refInfo.modulePath = modulePath;
+    return;
+end
+
+bases = {};
+try
+    if isfield(ctx,'pipelineRef') && isstruct(ctx.pipelineRef) && isfield(ctx.pipelineRef,'path') && ~isempty(ctx.pipelineRef.path)
+        bases{end+1} = char(string(ctx.pipelineRef.path)); %#ok<AGROW>
+    end
+catch
+end
+try
+    if isfield(ctx,'templatePath') && ~isempty(ctx.templatePath)
+        bases{end+1} = char(string(ctx.templatePath)); %#ok<AGROW>
+    end
+catch
+end
+
+for i = 1:numel(bases)
+    base = bases{i};
+    if isempty(base)
+        continue;
+    end
+    if exist(base, 'file') == 2
+        base = fileparts(base);
+    end
+    if exist(base, 'dir') ~= 7
+        continue;
+    end
+    candidate = fullfile(base, modulePath);
+    if exist(candidate, 'dir') == 7 || exist(candidate, 'file') == 2
+        refInfo.modulePath = candidate;
+        return;
+    end
+end
+end
+
+function tf = isAbsolutePathLocal(p)
+tf = false;
+if isempty(p)
+    return;
+end
+p = char(string(p));
+if ispc
+    tf = ~isempty(regexp(p, '^[A-Za-z]:[\\/]', 'once')) || startsWith(p, '\\');
+else
+    tf = startsWith(p, '/');
+end
 end
 
 function v = getfielddefault(S, key, defaultVal)
