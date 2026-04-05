@@ -1,5 +1,5 @@
 function addedPaths = detecdiv_setup_path(repoRoot, varargin)
-% detecdiv_setup_path  Configure a clean MATLAB path for a DetecDiv tree.
+% detecdiv_setup_path  Configure MATLAB path for detecdiv-catalog + DetecDiv runtime.
 %
 % Usage
 %   detecdiv_setup_path()
@@ -17,15 +17,23 @@ function addedPaths = detecdiv_setup_path(repoRoot, varargin)
     ip.addParameter('ResetPath', true, @(x)islogical(x) || isnumeric(x));
     ip.addParameter('Verbose', true, @(x)islogical(x) || isnumeric(x));
     ip.addParameter('IncludeRoot', true, @(x)islogical(x) || isnumeric(x));
+    ip.addParameter('DetecDivRoot', '', @(x)ischar(x) || isstring(x));
     ip.parse(varargin{:});
     opts = ip.Results;
     opts.ResetPath = logical(opts.ResetPath);
     opts.Verbose = logical(opts.Verbose);
     opts.IncludeRoot = logical(opts.IncludeRoot);
 
-    repoRoot = localCanonicalPath(repoRoot);
-    if ~isfolder(repoRoot)
-        error('detecdiv_setup_path:RootNotFound', 'Repo root not found: %s', repoRoot);
+    catalogRoot = localCanonicalPath(repoRoot);
+    if ~isfolder(catalogRoot)
+        error('detecdiv_setup_path:RootNotFound', 'Catalog root not found: %s', catalogRoot);
+    end
+
+    detecdivRoot = localResolveDetecDivRoot(catalogRoot, opts.DetecDivRoot);
+    useExternalRuntime = ~isempty(detecdivRoot) && isfolder(detecdivRoot) && ~strcmpi(detecdivRoot, catalogRoot);
+
+    if ~useExternalRuntime
+        detecdivRoot = catalogRoot;
     end
 
     if opts.ResetPath
@@ -33,21 +41,63 @@ function addedPaths = detecdiv_setup_path(repoRoot, varargin)
         rehash toolboxcache;
     end
 
+    addedPaths = {};
+    seen = containers.Map('KeyType', 'char', 'ValueType', 'logical');
+    addedPaths = localCollectRuntimePaths(addedPaths, seen, detecdivRoot, opts.IncludeRoot);
+    if useExternalRuntime
+        addedPaths = localCollectCatalogClientPaths(addedPaths, seen, catalogRoot);
+    end
+
+    if ~isempty(addedPaths)
+        addpath(strjoin(addedPaths, pathsep));
+    end
+
+    if opts.Verbose
+        fprintf('[path] Catalog root : %s\n', catalogRoot);
+        fprintf('[path] DetecDiv root: %s\n', detecdivRoot);
+        if useExternalRuntime
+            fprintf('[path] Runtime mode: external DetecDiv\n');
+        else
+            fprintf('[path] Runtime mode: embedded catalog fallback\n');
+        end
+        fprintf('[path] Added %d folder(s).\n', numel(addedPaths));
+    end
+end
+
+function addedPaths = localCollectRuntimePaths(addedPaths, seen, runtimeRoot, includeRoot)
     baseDirs = {};
-    if opts.IncludeRoot
-        baseDirs{end+1} = repoRoot; %#ok<AGROW>
+    if includeRoot
+        baseDirs{end+1} = runtimeRoot; %#ok<AGROW>
     end
 
     for rel = {'engine', 'helpers', 'structure'}
-        absDir = fullfile(repoRoot, rel{1});
+        absDir = fullfile(runtimeRoot, rel{1});
         if isfolder(absDir)
             baseDirs{end+1} = absDir; %#ok<AGROW>
         end
     end
 
-    addedPaths = {};
-    seen = containers.Map('KeyType', 'char', 'ValueType', 'logical');
+    addedPaths = localAppendPathTree(addedPaths, seen, baseDirs, runtimeRoot, false);
+end
 
+function addedPaths = localCollectCatalogClientPaths(addedPaths, seen, catalogRoot)
+    rootDir = catalogRoot;
+    if isfolder(rootDir)
+        addedPaths = localAppendExactPath(addedPaths, seen, rootDir);
+    end
+
+    helpersDir = fullfile(catalogRoot, 'helpers');
+    if isfolder(helpersDir)
+        addedPaths = localAppendPathTree(addedPaths, seen, {helpersDir}, catalogRoot, true);
+    end
+
+    guiDir = fullfile(catalogRoot, 'catalog_gui');
+    if isfolder(guiDir)
+        addedPaths = localAppendExactPath(addedPaths, seen, guiDir);
+    end
+end
+
+function addedPaths = localAppendPathTree(addedPaths, seen, baseDirs, rootPath, catalogClientMode)
     for i = 1:numel(baseDirs)
         allPaths = strsplit(genpath(baseDirs{i}), pathsep);
         for j = 1:numel(allPaths)
@@ -55,7 +105,7 @@ function addedPaths = detecdiv_setup_path(repoRoot, varargin)
             if isempty(p) || ~isfolder(p)
                 continue;
             end
-            if localShouldExclude(p, repoRoot)
+            if localShouldExclude(p, rootPath, catalogClientMode)
                 continue;
             end
             key = lower(p);
@@ -66,18 +116,22 @@ function addedPaths = detecdiv_setup_path(repoRoot, varargin)
             addedPaths{end+1} = p; %#ok<AGROW>
         end
     end
-
-    if ~isempty(addedPaths)
-        addpath(strjoin(addedPaths, pathsep));
-    end
-
-    if opts.Verbose
-        fprintf('[path] DetecDiv root: %s\n', repoRoot);
-        fprintf('[path] Added %d folder(s).\n', numel(addedPaths));
-    end
 end
 
-function tf = localShouldExclude(pathStr, repoRoot)
+function addedPaths = localAppendExactPath(addedPaths, seen, dirPath)
+    p = localCanonicalPath(dirPath);
+    if isempty(p) || ~isfolder(p)
+        return;
+    end
+    key = lower(p);
+    if isKey(seen, key)
+        return;
+    end
+    seen(key) = true;
+    addedPaths{end+1} = p; %#ok<AGROW>
+end
+
+function tf = localShouldExclude(pathStr, repoRoot, catalogClientMode)
     tf = false;
 
     rel = localRelativePath(repoRoot, pathStr);
@@ -98,6 +152,23 @@ function tf = localShouldExclude(pathStr, repoRoot)
     if startsWith(leaf, '.', 'IgnoreCase', false)
         tf = true;
         return;
+    end
+
+    if catalogClientMode
+        relNorm = lower(strrep(rel, '\', '/'));
+        if strcmp(relNorm, 'engine') || startsWith(relNorm, 'engine/') || ...
+                strcmp(relNorm, 'structure/classes') || startsWith(relNorm, 'structure/classes/') || ...
+                strcmp(relNorm, 'structure/io') || startsWith(relNorm, 'structure/io/') || ...
+                strcmp(relNorm, 'structure/processor') || startsWith(relNorm, 'structure/processor/') || ...
+                strcmp(relNorm, 'structure/classification') || startsWith(relNorm, 'structure/classification/')
+            tf = true;
+            return;
+        end
+
+        if strcmp(relNorm, 'structure/gui') || startsWith(relNorm, 'structure/gui/')
+            tf = true;
+            return;
+        end
     end
 end
 
@@ -140,4 +211,45 @@ function out = localCanonicalPath(pathIn)
         out = char(java.io.File(out).getCanonicalPath());
     catch
     end
+end
+
+function detecdivRoot = localResolveDetecDivRoot(catalogRoot, explicitRoot)
+    detecdivRoot = '';
+
+    candidates = {};
+    if strlength(string(explicitRoot)) > 0
+        candidates{end+1} = char(string(explicitRoot)); %#ok<AGROW>
+    end
+
+    envRoot = getenv('DETECDIV_ROOT');
+    if ~isempty(envRoot)
+        candidates{end+1} = envRoot; %#ok<AGROW>
+    end
+
+    siblingRoot = fullfile(fileparts(catalogRoot), 'DetecDiv');
+    candidates{end+1} = siblingRoot; %#ok<AGROW>
+
+    for i = 1:numel(candidates)
+        cand = localCanonicalPath(candidates{i});
+        if localLooksLikeDetecDivRuntime(cand)
+            detecdivRoot = cand;
+            return;
+        end
+    end
+end
+
+function tf = localLooksLikeDetecDivRuntime(rootPath)
+    tf = false;
+    if isempty(rootPath) || ~isfolder(rootPath)
+        return;
+    end
+
+    requiredPaths = { ...
+        fullfile(rootPath, 'engine'), ...
+        fullfile(rootPath, 'helpers'), ...
+        fullfile(rootPath, 'structure'), ...
+        fullfile(rootPath, 'structure', 'GUI', 'detecdiv_extracted.m'), ...
+        fullfile(rootPath, 'structure', 'io', 'runPipeline.m')};
+
+    tf = all(cellfun(@(p) exist(p, 'file') == 2 || exist(p, 'dir') == 7, requiredPaths));
 end

@@ -16,7 +16,7 @@ function fig = detecdivCatalogBrowser(varargin)
         catalogSettings.dbFile = char(string(opts.DbFile));
     end
 
-    repoDir = fileparts(fileparts(fileparts(mfilename('fullpath'))));
+    repoDir = fileparts(fileparts(mfilename('fullpath')));
     detecdiv_catalog_init(catalogSettings.dbFile);
 
     state = struct();
@@ -607,55 +607,14 @@ function fig = detecdivCatalogBrowser(varargin)
                 return;
             end
 
-            pipeLabels = cell(numel(pipelines), 1);
-            for i = 1:numel(pipelines)
-                pipeLabels{i} = localPipelineListLabel(pipelines(i));
-            end
-            [pipeIdx, ok] = listdlg( ...
-                'PromptString', 'Select a pipeline to submit', ...
-                'SelectionMode', 'single', ...
-                'ListString', pipeLabels, ...
-                'ListSize', [420 260]);
-            if ~ok || isempty(pipeIdx)
-                return;
-            end
-            pipelineInfo = pipelines(pipeIdx);
-
             targets = detecdiv_hub_list_execution_targets(state.hubSettings);
-            targetLabels = {'<auto target>'};
-            if ~isempty(targets)
-                for i = 1:numel(targets)
-                    targetLabels{end+1} = localExecutionTargetLabel(targets(i)); %#ok<AGROW>
-                end
-            end
-            [targetIdx, okTarget] = listdlg( ...
-                'PromptString', 'Select an execution target', ...
-                'SelectionMode', 'single', ...
-                'ListString', targetLabels, ...
-                'InitialValue', 1, ...
-                'ListSize', [420 220]);
-            if ~okTarget || isempty(targetIdx)
+            runDraft = localPromptHubPipelineRun(pipelines, targets);
+            if isempty(runDraft)
                 return;
             end
-
-            answers = inputdlg( ...
-                {'Run ID', 'Requested mode (auto/server/local)', 'Run policy (resume/restart)', ...
-                 'Existing data policy', 'ROI cache policy', 'GPU mode (module_default/force_gpu/force_cpu)', ...
-                 'Python mode (default/custom)', 'Custom Python env', ...
-                 'Selected nodes (comma-separated)', 'Description', 'Priority', 'Node overrides JSON'}, ...
-                'Submit Pipeline Run To Hub', ...
-                [1 48; 1 30; 1 24; 1 24; 1 24; 1 32; 1 20; 1 32; 2 48; 2 48; 1 10; 4 64], ...
-                {'', 'auto', 'resume', 'replace', 'auto', 'module_default', 'default', 'detecdiv_python', '', '', '100', '[]'});
-            if isempty(answers)
-                return;
-            end
-
-            nodeParamsJson = strtrim(answers{12});
-            if isempty(nodeParamsJson)
-                nodeParams = struct('id', {}, 'params', {});
-            else
-                nodeParams = jsondecode(nodeParamsJson);
-            end
+            pipelineInfo = runDraft.pipeline;
+            targetInfo = runDraft.target;
+            nodeParams = runDraft.nodeParams;
 
             [projectDetail, projectMatPath] = resolveSelectedHubProject();
             projectRef = struct( ...
@@ -669,11 +628,11 @@ function fig = detecdivCatalogBrowser(varargin)
             if ~isempty(pipelineInfo.id)
                 payload.pipeline_id = char(string(pipelineInfo.id));
             end
-            if targetIdx > 1 && ~isempty(targets)
-                payload.execution_target_id = char(string(targets(targetIdx - 1).id));
+            if ~isempty(targetInfo) && isstruct(targetInfo) && isfield(targetInfo, 'id') && ~isempty(targetInfo.id)
+                payload.execution_target_id = char(string(targetInfo.id));
             end
-            payload.requested_mode = strtrim(answers{2});
-            payload.priority = max(0, round(str2double(answers{11})));
+            payload.requested_mode = runDraft.requestedMode;
+            payload.priority = max(0, round(runDraft.priority));
             if isnan(payload.priority)
                 payload.priority = 100;
             end
@@ -682,17 +641,17 @@ function fig = detecdivCatalogBrowser(varargin)
             payload.project_ref = projectRef;
             payload.pipeline_ref = pipelineRef;
             payload.run_request = struct( ...
-                'run_id', strtrim(answers{1}), ...
-                'description', strtrim(answers{10}), ...
-                'selected_nodes', localParseCommaSeparatedList(answers{9}), ...
+                'run_id', runDraft.runId, ...
+                'description', runDraft.description, ...
+                'selected_nodes', runDraft.selectedNodes, ...
                 'node_params', nodeParams, ...
-                'run_policy', strtrim(answers{3}), ...
-                'existing_data_policy', strtrim(answers{4}), ...
-                'roi_cache_policy', strtrim(answers{5}), ...
+                'run_policy', runDraft.runPolicy, ...
+                'existing_data_policy', runDraft.existingPolicy, ...
+                'roi_cache_policy', runDraft.cachePolicy, ...
                 'python', struct( ...
-                    'mode', strtrim(answers{7}), ...
-                    'env_name', strtrim(answers{8})), ...
-                'gpu', struct('mode', strtrim(answers{6})));
+                    'mode', runDraft.pythonMode, ...
+                    'env_name', runDraft.pythonEnv), ...
+                'gpu', struct('mode', runDraft.gpuMode));
             payload.execution = struct('allow_gui', false);
 
             job = detecdiv_hub_create_pipeline_run(payload, state.hubSettings);
@@ -1853,6 +1812,221 @@ function [userKey, password] = localPromptHubCredentials(defaultUserKey)
         userKey = strtrim(char(string(userEdit.Value)));
         password = char(string(passwordEdit.Value));
         delete(dlg);
+    end
+end
+
+function draft = localPromptHubPipelineRun(pipelines, targets)
+    draft = struct([]);
+    dlg = uifigure( ...
+        'Name', 'Submit Pipeline Run To Hub', ...
+        'Position', [280 180 760 520], ...
+        'WindowStyle', 'modal', ...
+        'Resize', 'off');
+
+    grid = uigridlayout(dlg, [8 4]);
+    grid.RowHeight = {22, 30, 30, 30, 30, 30, '1x', 42};
+    grid.ColumnWidth = {120, '1x', 120, '1x'};
+    grid.Padding = [12 12 12 12];
+    grid.RowSpacing = 8;
+    grid.ColumnSpacing = 10;
+
+    pipelineLabels = cell(numel(pipelines), 1);
+    pipelineValues = cell(numel(pipelines), 1);
+    for i = 1:numel(pipelines)
+        pipelineLabels{i} = localPipelineListLabel(pipelines(i));
+        pipelineValues{i} = num2str(i);
+    end
+
+    targetLabels = {'<auto target>'};
+    targetValues = {'0'};
+    for i = 1:numel(targets)
+        targetLabels{end + 1} = localExecutionTargetLabel(targets(i)); %#ok<AGROW>
+        targetValues{end + 1} = num2str(i); %#ok<AGROW>
+    end
+
+    uilabel(grid, 'Text', 'Pipeline', 'FontWeight', 'bold');
+    pipelineDropDown = uidropdown(grid, 'Items', pipelineLabels, 'ItemsData', pipelineValues, 'Value', pipelineValues{1});
+    pipelineDropDown.Layout.Row = 1;
+    pipelineDropDown.Layout.Column = [2 4];
+
+    lbl = uilabel(grid, 'Text', 'Execution target', 'FontWeight', 'bold');
+    lbl.Layout.Row = 2;
+    lbl.Layout.Column = 1;
+    targetDropDown = uidropdown(grid, 'Items', targetLabels, 'ItemsData', targetValues, 'Value', '0');
+    targetDropDown.Layout.Row = 2;
+    targetDropDown.Layout.Column = 2;
+
+    lbl = uilabel(grid, 'Text', 'Requested mode', 'FontWeight', 'bold');
+    lbl.Layout.Row = 2;
+    lbl.Layout.Column = 3;
+    requestedModeDropDown = uidropdown(grid, 'Items', {'auto', 'server', 'local'}, 'Value', 'auto');
+    requestedModeDropDown.Layout.Row = 2;
+    requestedModeDropDown.Layout.Column = 4;
+
+    lbl = uilabel(grid, 'Text', 'Run ID', 'FontWeight', 'bold');
+    lbl.Layout.Row = 3;
+    lbl.Layout.Column = 1;
+    runIdEdit = uieditfield(grid, 'text', 'Value', '');
+    runIdEdit.Layout.Row = 3;
+    runIdEdit.Layout.Column = 2;
+
+    lbl = uilabel(grid, 'Text', 'Priority', 'FontWeight', 'bold');
+    lbl.Layout.Row = 3;
+    lbl.Layout.Column = 3;
+    priorityEdit = uieditfield(grid, 'numeric', 'Value', 100, 'RoundFractionalValues', 'on');
+    priorityEdit.Layout.Row = 3;
+    priorityEdit.Layout.Column = 4;
+
+    lbl = uilabel(grid, 'Text', 'Run policy', 'FontWeight', 'bold');
+    lbl.Layout.Row = 4;
+    lbl.Layout.Column = 1;
+    runPolicyDropDown = uidropdown(grid, 'Items', {'resume', 'restart'}, 'Value', 'resume');
+    runPolicyDropDown.Layout.Row = 4;
+    runPolicyDropDown.Layout.Column = 2;
+
+    lbl = uilabel(grid, 'Text', 'Existing data', 'FontWeight', 'bold');
+    lbl.Layout.Row = 4;
+    lbl.Layout.Column = 3;
+    existingDropDown = uidropdown(grid, 'Items', {'replace', 'append', 'skip', 'error', 'upsert'}, 'Value', 'replace');
+    existingDropDown.Layout.Row = 4;
+    existingDropDown.Layout.Column = 4;
+
+    lbl = uilabel(grid, 'Text', 'ROI cache', 'FontWeight', 'bold');
+    lbl.Layout.Row = 5;
+    lbl.Layout.Column = 1;
+    cacheDropDown = uidropdown(grid, 'Items', {'auto', 'memory', 'disk'}, 'Value', 'auto');
+    cacheDropDown.Layout.Row = 5;
+    cacheDropDown.Layout.Column = 2;
+
+    lbl = uilabel(grid, 'Text', 'GPU mode', 'FontWeight', 'bold');
+    lbl.Layout.Row = 5;
+    lbl.Layout.Column = 3;
+    gpuDropDown = uidropdown(grid, 'Items', {'module_default', 'force_gpu', 'force_cpu'}, 'Value', 'module_default');
+    gpuDropDown.Layout.Row = 5;
+    gpuDropDown.Layout.Column = 4;
+
+    lbl = uilabel(grid, 'Text', 'Python mode', 'FontWeight', 'bold');
+    lbl.Layout.Row = 6;
+    lbl.Layout.Column = 1;
+    pythonModeDropDown = uidropdown(grid, 'Items', {'default', 'custom'}, 'Value', 'default');
+    pythonModeDropDown.Layout.Row = 6;
+    pythonModeDropDown.Layout.Column = 2;
+
+    lbl = uilabel(grid, 'Text', 'Custom env', 'FontWeight', 'bold');
+    lbl.Layout.Row = 6;
+    lbl.Layout.Column = 3;
+    pythonEnvEdit = uieditfield(grid, 'text', 'Value', 'detecdiv_python');
+    pythonEnvEdit.Layout.Row = 6;
+    pythonEnvEdit.Layout.Column = 4;
+
+    uilabel(grid, 'Text', 'Selected nodes / description / overrides JSON', 'FontWeight', 'bold');
+    notesArea = uitextarea(grid, ...
+        'Value', { ...
+            'Selected nodes: ', ...
+            'Description: ', ...
+            'Node overrides JSON: []'}, ...
+        'FontName', 'Consolas');
+    notesArea.Layout.Row = 7;
+    notesArea.Layout.Column = [1 4];
+
+    buttonGrid = uigridlayout(grid, [1 3]);
+    buttonGrid.Layout.Row = 8;
+    buttonGrid.Layout.Column = [1 4];
+    buttonGrid.ColumnWidth = {'1x', '1x', '1x'};
+    buttonGrid.Padding = [0 0 0 0];
+
+    uibutton(buttonGrid, 'push', 'Text', 'Cancel', 'ButtonPushedFcn', @(~, ~) delete(dlg));
+    uibutton(buttonGrid, 'push', 'Text', 'Reset', 'ButtonPushedFcn', @onReset);
+    uibutton(buttonGrid, 'push', 'Text', 'Submit', 'ButtonPushedFcn', @onSubmit);
+
+    updatePythonEnvState();
+    pythonModeDropDown.ValueChangedFcn = @(~, ~) updatePythonEnvState();
+
+    uiwait(dlg);
+
+    function updatePythonEnvState()
+        if strcmp(pythonModeDropDown.Value, 'custom')
+            pythonEnvEdit.Editable = 'on';
+        else
+            pythonEnvEdit.Editable = 'off';
+        end
+    end
+
+    function onReset(~, ~)
+        targetDropDown.Value = '0';
+        requestedModeDropDown.Value = 'auto';
+        runIdEdit.Value = '';
+        priorityEdit.Value = 100;
+        runPolicyDropDown.Value = 'resume';
+        existingDropDown.Value = 'replace';
+        cacheDropDown.Value = 'auto';
+        gpuDropDown.Value = 'module_default';
+        pythonModeDropDown.Value = 'default';
+        pythonEnvEdit.Value = 'detecdiv_python';
+        notesArea.Value = {'Selected nodes: ', 'Description: ', 'Node overrides JSON: []'};
+        updatePythonEnvState();
+    end
+
+    function onSubmit(~, ~)
+        try
+            selectedPipeline = pipelines(str2double(pipelineDropDown.Value));
+            selectedTarget = struct([]);
+            targetIdx = str2double(targetDropDown.Value);
+            if targetIdx >= 1 && targetIdx <= numel(targets)
+                selectedTarget = targets(targetIdx);
+            end
+
+            [selectedNodes, description, nodeParams] = localParseHubRunNotes(notesArea.Value);
+            draft = struct( ...
+                'pipeline', selectedPipeline, ...
+                'target', selectedTarget, ...
+                'requestedMode', char(string(requestedModeDropDown.Value)), ...
+                'runId', strtrim(char(string(runIdEdit.Value))), ...
+                'priority', double(priorityEdit.Value), ...
+                'runPolicy', char(string(runPolicyDropDown.Value)), ...
+                'existingPolicy', char(string(existingDropDown.Value)), ...
+                'cachePolicy', char(string(cacheDropDown.Value)), ...
+                'gpuMode', char(string(gpuDropDown.Value)), ...
+                'pythonMode', char(string(pythonModeDropDown.Value)), ...
+                'pythonEnv', strtrim(char(string(pythonEnvEdit.Value))), ...
+                'selectedNodes', {selectedNodes}, ...
+                'description', description, ...
+                'nodeParams', nodeParams);
+            delete(dlg);
+        catch ME
+            uialert(dlg, ME.message, 'Invalid Run Draft');
+        end
+    end
+end
+
+function [selectedNodes, description, nodeParams] = localParseHubRunNotes(lines)
+    if ischar(lines) || isstring(lines)
+        lines = cellstr(string(lines));
+    end
+    selectedNodes = {};
+    description = '';
+    nodeParams = struct('id', {}, 'params', {});
+
+    for i = 1:numel(lines)
+        lineText = char(string(lines{i}));
+        parts = regexp(lineText, '^\s*([^:]+):\s*(.*)$', 'tokens', 'once');
+        if isempty(parts)
+            continue;
+        end
+        key = lower(strtrim(parts{1}));
+        value = strtrim(parts{2});
+        switch key
+            case 'selected nodes'
+                selectedNodes = localParseCommaSeparatedList(value);
+            case 'description'
+                description = value;
+            case 'node overrides json'
+                if isempty(value)
+                    nodeParams = struct('id', {}, 'params', {});
+                else
+                    nodeParams = jsondecode(value);
+                end
+        end
     end
 end
 
