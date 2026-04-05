@@ -671,6 +671,7 @@ end
                     pipe.edges = pipe.edges(keep);
                 end
 
+                cleanupPipelineNodeDiskArtifacts(pipe, node);
                 try
                     pipelineSave(pipe);
                 catch ME
@@ -679,6 +680,107 @@ end
                 end
 
                 RefreshtreewindowMenuSelected(app);
+            end
+
+            function cleanupPipelineNodeDiskArtifacts(pipeObj, nodeStruct)
+                if isempty(pipeObj) || ~isa(pipeObj, 'pipeline') || isempty(pipeObj.path) || ~isfolder(pipeObj.path)
+                    return;
+                end
+
+                nodeIdLocal = getStructFieldText(nodeStruct, 'id', '');
+                if ~isempty(nodeIdLocal)
+                    tryDeletePipelineOwnedPath(fullfile(pipeObj.path, 'modules', sanitizePipelineOwnedName(nodeIdLocal)), pipeObj.path);
+                end
+
+                paramsLocal = getStructField(nodeStruct, 'params', struct());
+                if isstruct(paramsLocal) && isfield(paramsLocal, 'modulePath') && ~isempty(paramsLocal.modulePath)
+                    tryDeletePipelineOwnedPath(resolvePipelineOwnedPath(paramsLocal.modulePath, pipeObj.path), pipeObj.path);
+                end
+                if isfield(nodeStruct, 'origin') && isstruct(nodeStruct.origin) && isfield(nodeStruct.origin, 'path') && ~isempty(nodeStruct.origin.path)
+                    tryDeletePipelineOwnedPath(resolvePipelineOwnedPath(nodeStruct.origin.path, pipeObj.path), pipeObj.path);
+                end
+
+                try
+                    modulesRoot = fullfile(pipeObj.path, 'modules');
+                    if isfolder(modulesRoot)
+                        d = dir(modulesRoot);
+                        d = d(~ismember({d.name}, {'.','..'}));
+                        if isempty(d)
+                            rmdir(modulesRoot, 's');
+                        end
+                    end
+                catch
+                end
+            end
+
+            function out = resolvePipelineOwnedPath(p, pipeRoot)
+                out = char(string(p));
+                if isempty(out)
+                    return;
+                end
+                if isAbsolutePipelineOwnedPath(out)
+                    return;
+                end
+                if ~isempty(pipeRoot) && isfolder(pipeRoot)
+                    out = fullfile(pipeRoot, out);
+                end
+            end
+
+            function tf = isAbsolutePipelineOwnedPath(p)
+                tf = false;
+                if isempty(p)
+                    return;
+                end
+                p = char(string(p));
+                if ispc
+                    tf = ~isempty(regexp(p, '^[A-Za-z]:[\\/]', 'once')) || startsWith(p, '\\');
+                else
+                    tf = startsWith(p, '/');
+                end
+            end
+
+            function tf = isPipelineOwnedSubPath(childPath, parentPath)
+                tf = false;
+                childPath = lower(strrep(char(string(childPath)), '\', '/'));
+                parentPath = lower(strrep(char(string(parentPath)), '\', '/'));
+                childPath = regexprep(childPath, '/+$', '');
+                parentPath = regexprep(parentPath, '/+$', '');
+                if isempty(childPath) || isempty(parentPath)
+                    return;
+                end
+                if strcmpi(childPath, parentPath)
+                    tf = true;
+                    return;
+                end
+                if ~endsWith(parentPath, '/')
+                    parentPath = [parentPath '/'];
+                end
+                tf = startsWith(childPath, parentPath, 'IgnoreCase', true);
+            end
+
+            function tryDeletePipelineOwnedPath(targetPath, pipeRoot)
+                if isempty(targetPath)
+                    return;
+                end
+                targetPath = char(string(targetPath));
+                if ~isPipelineOwnedSubPath(targetPath, pipeRoot)
+                    return;
+                end
+                try
+                    if isfolder(targetPath)
+                        rmdir(targetPath, 's');
+                    elseif exist(targetPath, 'file') == 2
+                        delete(targetPath);
+                    end
+                catch
+                end
+            end
+
+            function out = sanitizePipelineOwnedName(nameIn)
+                out = regexprep(char(string(nameIn)), '[^a-zA-Z0-9_\-]', '_');
+                if isempty(out)
+                    out = 'node';
+                end
             end
 
             function contextMenuCreatePipelineRunFcn(src,event,arg,str) %#ok<INUSD>

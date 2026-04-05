@@ -67,48 +67,46 @@ function syncModuleArtifacts(pipePath, nodes)
         mkdir(modulesRoot);
     end
 
-    if isempty(nodes)
-        return;
-    end
-
     keepDirs = strings(0,1);
-    for i = 1:numel(nodes)
-        node = nodes(i);
-        nodeId = getNodeId(node, i);
-        dirName = sanitizeName(nodeId);
-        nodeDir = fullfile(modulesRoot, dirName);
-        keepDirs(end+1,1) = string(dirName); %#ok<AGROW>
+    if ~isempty(nodes)
+        for i = 1:numel(nodes)
+            node = nodes(i);
+            nodeId = getNodeId(node, i);
+            dirName = sanitizeName(nodeId);
+            nodeDir = fullfile(modulesRoot, dirName);
+            keepDirs(end+1,1) = string(dirName); %#ok<AGROW>
 
-        if ~exist(nodeDir, 'dir')
-            mkdir(nodeDir);
-        end
+            if ~exist(nodeDir, 'dir')
+                mkdir(nodeDir);
+            end
 
-        M = struct();
-        M.id = nodeId;
-        M.type = getField(node,'type','');
-        M.pkg = getField(node,'pkg','');
-        M.func = getField(node,'func','');
-        M.params = sanitizeForJson(getField(node,'params',struct()));
-        M.inputs = getField(node,'inputs',{});
-        M.outputs = getField(node,'outputs',{});
-        M.updatedAt = char(datetime('now'));
+            M = struct();
+            M.id = nodeId;
+            M.type = getField(node,'type','');
+            M.pkg = getField(node,'pkg','');
+            M.func = getField(node,'func','');
+            M.params = sanitizeForJson(getField(node,'params',struct()));
+            M.inputs = getField(node,'inputs',{});
+            M.outputs = getField(node,'outputs',{});
+            M.updatedAt = char(datetime('now'));
 
-        writeJson(fullfile(nodeDir,'module.json'), M);
+            writeJson(fullfile(nodeDir,'module.json'), M);
 
-        t = lower(char(string(M.type)));
-        if strcmp(t,'classifier')
-            helperDir = fullfile(nodeDir,'helpers');
-            if ~exist(helperDir,'dir')
-                mkdir(helperDir);
+            t = lower(char(string(M.type)));
+            if strcmp(t,'classifier')
+                helperDir = fullfile(nodeDir,'helpers');
+                if ~exist(helperDir,'dir')
+                    mkdir(helperDir);
+                end
+            end
+
+            if strcmp(t,'processor')
+                save(fullfile(nodeDir,'params.mat'), 'M');
             end
         end
-
-        if strcmp(t,'processor')
-            save(fullfile(nodeDir,'params.mat'), 'M');
-        end
     end
 
-    % Cleanup stale module directories
+    % Cleanup stale module directories even when the node list is empty.
     d = dir(modulesRoot);
     d = d([d.isdir]);
     names = string({d.name});
@@ -119,6 +117,16 @@ function syncModuleArtifacts(pipePath, nodes)
             rmdir(fullfile(modulesRoot, char(stale(i))), 's');
         catch
         end
+    end
+
+    % Remove the modules root itself when it becomes empty.
+    try
+        d = dir(modulesRoot);
+        d = d(~ismember({d.name}, {'.','..'}));
+        if isempty(d)
+            rmdir(modulesRoot, 's');
+        end
+    catch
     end
 end
 
