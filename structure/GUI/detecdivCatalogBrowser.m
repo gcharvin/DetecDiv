@@ -209,7 +209,7 @@ function fig = detecdivCatalogBrowser(varargin)
     sideGrid = uigridlayout(bodyGrid, [3 1]);
     sideGrid.Layout.Row = 1;
     sideGrid.Layout.Column = 2;
-    sideGrid.RowHeight = {24, '1x', 78};
+    sideGrid.RowHeight = {24, '1x', 116};
     sideGrid.RowSpacing = 8;
     sideGrid.Padding = [0 0 0 0];
 
@@ -221,10 +221,10 @@ function fig = detecdivCatalogBrowser(varargin)
         'FontName', 'Consolas');
     detailsArea.Layout.Row = 2;
 
-    actionGrid = uigridlayout(sideGrid, [2 3]);
+    actionGrid = uigridlayout(sideGrid, [3 3]);
     actionGrid.Layout.Row = 3;
     actionGrid.ColumnWidth = {'1x', '1x', '1x'};
-    actionGrid.RowHeight = {32, 32};
+    actionGrid.RowHeight = {32, 32, 32};
     actionGrid.ColumnSpacing = 8;
     actionGrid.Padding = [0 0 0 0];
 
@@ -238,25 +238,35 @@ function fig = detecdivCatalogBrowser(varargin)
     openFolderButton.Layout.Row = 1;
     openFolderButton.Layout.Column = 2;
 
+    runLocalButton = uibutton(actionGrid, 'push', 'Text', 'Run locally...', ...
+        'Enable', 'off', 'ButtonPushedFcn', @onRunLocally);
+    runLocalButton.Layout.Row = 1;
+    runLocalButton.Layout.Column = 3;
+
+    submitRunButton = uibutton(actionGrid, 'push', 'Text', 'Submit to hub...', ...
+        'Enable', 'off', 'ButtonPushedFcn', @onSubmitRunToHub);
+    submitRunButton.Layout.Row = 2;
+    submitRunButton.Layout.Column = 1;
+
     notesButton = uibutton(actionGrid, 'push', 'Text', 'Notes...', ...
         'Enable', 'off', 'ButtonPushedFcn', @onManageNotes);
-    notesButton.Layout.Row = 1;
-    notesButton.Layout.Column = 3;
+    notesButton.Layout.Row = 2;
+    notesButton.Layout.Column = 2;
 
     groupButton = uibutton(actionGrid, 'push', 'Text', 'Group...', ...
         'Enable', 'off', 'ButtonPushedFcn', @onAddToGroup);
     groupButton.Layout.Row = 2;
-    groupButton.Layout.Column = 1;
+    groupButton.Layout.Column = 3;
 
     aclButton = uibutton(actionGrid, 'push', 'Text', 'Share...', ...
         'Enable', 'off', 'ButtonPushedFcn', @onManageAcl);
-    aclButton.Layout.Row = 2;
-    aclButton.Layout.Column = 2;
+    aclButton.Layout.Row = 3;
+    aclButton.Layout.Column = 1;
 
     deleteButton = uibutton(actionGrid, 'push', 'Text', 'Delete...', ...
         'Enable', 'off', 'ButtonPushedFcn', @onPreviewDelete);
-    deleteButton.Layout.Row = 2;
-    deleteButton.Layout.Column = 3;
+    deleteButton.Layout.Row = 3;
+    deleteButton.Layout.Column = 2;
 
     footerLabel = uilabel(mainGrid, ...
         'Text', 'Local mode uses SQLite. Hub mode uses the API and maps server roots to local mounts when needed.', ...
@@ -560,6 +570,136 @@ function fig = detecdivCatalogBrowser(varargin)
             openPath(projectDir);
         else
             uialert(fig, 'Could not resolve a local folder for this hub project.', 'Open Failed');
+        end
+    end
+
+    function onRunLocally(~, ~)
+        row = getSelectedProjectRow();
+        if isempty(row)
+            return;
+        end
+
+        try
+            [shallowObj, projectMatPath] = ensureProjectLoadedForRun(row); %#ok<ASGLU>
+            [pipeObj, jsonPath] = resolvePipelineForRun(shallowObj); %#ok<ASGLU>
+            if isempty(pipeObj)
+                uialert(fig, 'No pipeline could be resolved for this project.', 'Run Failed');
+                return;
+            end
+            pipelineRunGUI(pipeObj, shallowObj);
+            setStatus(sprintf('Opened local run builder for "%s".', char(string(row.name))));
+        catch ME
+            uialert(fig, ME.message, 'Run Failed');
+            setStatus(['Local run failed: ' ME.message]);
+        end
+    end
+
+    function onSubmitRunToHub(~, ~)
+        row = getSelectedProjectRow();
+        if isempty(row) || ~strcmp(state.sourceMode, 'hub')
+            return;
+        end
+
+        try
+            pipelines = detecdiv_hub_list_pipelines(state.hubSettings, 'IncludeObserved', true);
+            if isempty(pipelines)
+                uialert(fig, 'No hub pipelines are available.', 'Submit Failed');
+                return;
+            end
+
+            pipeLabels = cell(numel(pipelines), 1);
+            for i = 1:numel(pipelines)
+                pipeLabels{i} = localPipelineListLabel(pipelines(i));
+            end
+            [pipeIdx, ok] = listdlg( ...
+                'PromptString', 'Select a pipeline to submit', ...
+                'SelectionMode', 'single', ...
+                'ListString', pipeLabels, ...
+                'ListSize', [420 260]);
+            if ~ok || isempty(pipeIdx)
+                return;
+            end
+            pipelineInfo = pipelines(pipeIdx);
+
+            targets = detecdiv_hub_list_execution_targets(state.hubSettings);
+            targetLabels = {'<auto target>'};
+            if ~isempty(targets)
+                for i = 1:numel(targets)
+                    targetLabels{end+1} = localExecutionTargetLabel(targets(i)); %#ok<AGROW>
+                end
+            end
+            [targetIdx, okTarget] = listdlg( ...
+                'PromptString', 'Select an execution target', ...
+                'SelectionMode', 'single', ...
+                'ListString', targetLabels, ...
+                'InitialValue', 1, ...
+                'ListSize', [420 220]);
+            if ~okTarget || isempty(targetIdx)
+                return;
+            end
+
+            answers = inputdlg( ...
+                {'Run ID', 'Requested mode (auto/server/local)', 'Run policy (resume/restart)', ...
+                 'Existing data policy', 'ROI cache policy', 'GPU mode (module_default/force_gpu/force_cpu)', ...
+                 'Python mode (default/custom)', 'Custom Python env', ...
+                 'Selected nodes (comma-separated)', 'Description', 'Priority', 'Node overrides JSON'}, ...
+                'Submit Pipeline Run To Hub', ...
+                [1 48; 1 30; 1 24; 1 24; 1 24; 1 32; 1 20; 1 32; 2 48; 2 48; 1 10; 4 64], ...
+                {'', 'auto', 'resume', 'replace', 'auto', 'module_default', 'default', 'detecdiv_python', '', '', '100', '[]'});
+            if isempty(answers)
+                return;
+            end
+
+            nodeParamsJson = strtrim(answers{12});
+            if isempty(nodeParamsJson)
+                nodeParams = struct('id', {}, 'params', {});
+            else
+                nodeParams = jsondecode(nodeParamsJson);
+            end
+
+            [projectDetail, projectMatPath] = resolveSelectedHubProject();
+            projectRef = struct( ...
+                'project_id', char(string(row.project_id)), ...
+                'project_key', char(string(localStructField(projectDetail, 'project_key'))), ...
+                'project_mat_path', char(string(projectMatPath)));
+            pipelineRef = localPipelineRefForSubmission(pipelineInfo);
+
+            payload = struct();
+            payload.project_id = char(string(row.project_id));
+            if ~isempty(pipelineInfo.id)
+                payload.pipeline_id = char(string(pipelineInfo.id));
+            end
+            if targetIdx > 1 && ~isempty(targets)
+                payload.execution_target_id = char(string(targets(targetIdx - 1).id));
+            end
+            payload.requested_mode = strtrim(answers{2});
+            payload.priority = max(0, round(str2double(answers{11})));
+            if isnan(payload.priority)
+                payload.priority = 100;
+            end
+            payload.requested_by = char(string(state.hubSettings.userKey));
+            payload.requested_from_host = localHostName();
+            payload.project_ref = projectRef;
+            payload.pipeline_ref = pipelineRef;
+            payload.run_request = struct( ...
+                'run_id', strtrim(answers{1}), ...
+                'description', strtrim(answers{10}), ...
+                'selected_nodes', localParseCommaSeparatedList(answers{9}), ...
+                'node_params', nodeParams, ...
+                'run_policy', strtrim(answers{3}), ...
+                'existing_data_policy', strtrim(answers{4}), ...
+                'roi_cache_policy', strtrim(answers{5}), ...
+                'python', struct( ...
+                    'mode', strtrim(answers{7}), ...
+                    'env_name', strtrim(answers{8})), ...
+                'gpu', struct('mode', strtrim(answers{6})));
+            payload.execution = struct('allow_gui', false);
+
+            job = detecdiv_hub_create_pipeline_run(payload, state.hubSettings);
+            setStatus(sprintf('Queued hub run %s for "%s".', char(string(localStructField(job, 'id'))), char(string(row.name))));
+        catch ME
+            uialert(fig, ME.message, 'Submit Failed');
+            setStatus(['Hub submission failed: ' ME.message]);
         end
     end
 
@@ -898,6 +1038,8 @@ function fig = detecdivCatalogBrowser(varargin)
 
         loadButton.Enable = onOff(hasRow);
         openFolderButton.Enable = onOff(hasRow);
+        runLocalButton.Enable = onOff(hasRow);
+        submitRunButton.Enable = onOff(hasRow && strcmp(state.sourceMode, 'hub'));
         notesButton.Enable = onOff(hasRow && strcmp(state.sourceMode, 'hub'));
         groupButton.Enable = onOff(hasRow && strcmp(state.sourceMode, 'hub'));
         aclButton.Enable = onOff(hasRow && strcmp(state.sourceMode, 'hub'));
@@ -994,6 +1136,48 @@ function fig = detecdivCatalogBrowser(varargin)
         end
         projectDetail = detecdiv_hub_get_project(char(string(row.project_id)), state.hubSettings);
         [projectMatPath, resolutionInfo] = detecdiv_hub_resolve_project_location(projectDetail, state.hubSettings);
+    end
+
+    function [shallowObj, projectMatPath] = ensureProjectLoadedForRun(row)
+        projectMatPath = '';
+        if strcmp(state.sourceMode, 'local')
+            projectMatPath = char(string(row.project_mat_abs));
+        else
+            [~, projectMatPath] = resolveSelectedHubProject();
+        end
+        if isempty(projectMatPath)
+            error('Could not resolve the project MAT path.');
+        end
+
+        shallowObj = localFindLoadedProjectByMatPath(projectMatPath);
+        if isempty(shallowObj)
+            [shallowObj, msg] = shallowLoad(projectMatPath);
+            if isempty(shallowObj)
+                error('%s', msg);
+            end
+            try
+                assignin('base', matlab.lang.makeValidName(char(string(shallowObj.io.file))), shallowObj);
+            catch
+            end
+        end
+    end
+
+    function [pipeObj, jsonPath] = resolvePipelineForRun(shallowObj)
+        pipeObj = [];
+        jsonPath = localProjectDefaultPipelinePath(shallowObj);
+        if isempty(jsonPath)
+            [fileName, folderName] = uigetfile({'*.json', 'Pipeline JSON (*.json)'}, ...
+                'Select a pipeline JSON');
+            if isequal(fileName, 0)
+                return;
+            end
+            jsonPath = fullfile(folderName, fileName);
+        end
+
+        [pipeObj, msg] = pipelineLoad(jsonPath);
+        if isempty(pipeObj)
+            error('%s', msg);
+        end
     end
 
     function refreshHubContext()
@@ -1669,5 +1853,160 @@ function [userKey, password] = localPromptHubCredentials(defaultUserKey)
         userKey = strtrim(char(string(userEdit.Value)));
         password = char(string(passwordEdit.Value));
         delete(dlg);
+    end
+end
+
+function shallowObj = localFindLoadedProjectByMatPath(projectMatPath)
+    shallowObj = [];
+    projectMatPath = char(string(projectMatPath));
+    if isempty(projectMatPath)
+        return;
+    end
+
+    [pathstr, namestr, ext] = fileparts(projectMatPath);
+    if isempty(ext)
+        ext = '.mat';
+    end
+    expectedPath = localNormalizeLoadedPath(pathstr);
+    expectedFile = lower([namestr ext]);
+
+    try
+        varlist = evalin('base', 'who');
+    catch
+        return;
+    end
+
+    for i = 1:numel(varlist)
+        varName = varlist{i};
+        if strcmp(varName, 'ans')
+            continue;
+        end
+        try
+            tmp = evalin('base', varName);
+        catch
+            continue;
+        end
+        if ~isa(tmp, 'shallow') || ~isprop(tmp, 'io') || ~isfield(tmp.io, 'path') || ~isfield(tmp.io, 'file')
+            continue;
+        end
+        loadedPath = localNormalizeLoadedPath(tmp.io.path);
+        loadedFile = lower([char(string(tmp.io.file)) '.mat']);
+        if strcmp(loadedPath, expectedPath) && strcmp(loadedFile, expectedFile)
+            shallowObj = tmp;
+            return;
+        end
+    end
+end
+
+function jsonPath = localProjectDefaultPipelinePath(shallowObj)
+    jsonPath = '';
+    try
+        if ~isprop(shallowObj, 'runProfiles') || isempty(shallowObj.runProfiles)
+            return;
+        end
+        if ~isfield(shallowObj.runProfiles, 'pipeline') || isempty(shallowObj.runProfiles.pipeline)
+            return;
+        end
+        pipeInfo = shallowObj.runProfiles.pipeline;
+        if isfield(pipeInfo, 'defaultTemplatePath') && ~isempty(pipeInfo.defaultTemplatePath)
+            jsonPath = char(string(pipeInfo.defaultTemplatePath));
+            if exist(jsonPath, 'file') ~= 2
+                jsonPath = '';
+            end
+        end
+    catch
+        jsonPath = '';
+    end
+end
+
+function label = localPipelineListLabel(pipelineInfo)
+    source = char(string(localStructField(pipelineInfo, 'source')));
+    runtimeKind = char(string(localStructField(pipelineInfo, 'runtime_kind')));
+    displayName = char(string(localStructField(pipelineInfo, 'display_name')));
+    key = char(string(localStructField(pipelineInfo, 'pipeline_key')));
+    if isempty(displayName)
+        displayName = '<unnamed pipeline>';
+    end
+    if isempty(key)
+        label = sprintf('%s [%s | %s]', displayName, source, runtimeKind);
+    else
+        label = sprintf('%s (%s) [%s | %s]', displayName, key, source, runtimeKind);
+    end
+end
+
+function label = localExecutionTargetLabel(targetInfo)
+    displayName = char(string(localStructField(targetInfo, 'display_name')));
+    kind = char(string(localStructField(targetInfo, 'target_kind')));
+    hostName = char(string(localStructField(targetInfo, 'host_name')));
+    gpuTxt = ternaryText(logical(localNumericField(targetInfo, 'supports_gpu')), 'GPU', 'CPU');
+    if isempty(hostName)
+        label = sprintf('%s [%s | %s]', displayName, kind, gpuTxt);
+    else
+        label = sprintf('%s [%s | %s | %s]', displayName, kind, hostName, gpuTxt);
+    end
+end
+
+function values = localParseCommaSeparatedList(rawText)
+    rawText = char(string(rawText));
+    if isempty(strtrim(rawText))
+        values = {};
+        return;
+    end
+    pieces = regexp(rawText, '[,\n;]+', 'split');
+    pieces = cellfun(@(s) strtrim(char(string(s))), pieces, 'UniformOutput', false);
+    pieces = pieces(~cellfun(@isempty, pieces));
+    values = pieces(:)';
+end
+
+function ref = localPipelineRefForSubmission(pipelineInfo)
+    ref = struct();
+    pipelineKey = char(string(localStructField(pipelineInfo, 'pipeline_key')));
+    if ~isempty(pipelineKey)
+        ref.pipeline_key = pipelineKey;
+    end
+    metadata = struct();
+    if isstruct(pipelineInfo) && isfield(pipelineInfo, 'metadata_json') && isstruct(pipelineInfo.metadata_json)
+        metadata = pipelineInfo.metadata_json;
+    end
+    observed = struct();
+    if isfield(metadata, 'observed') && isstruct(metadata.observed)
+        observed = metadata.observed;
+    end
+    pathHint = localFirstNonEmptyText({ ...
+        localStructField(metadata, 'export_manifest_uri'), ...
+        localStructField(metadata, 'pipeline_bundle_uri'), ...
+        localStructField(metadata, 'pipeline_json_path'), ...
+        localStructField(metadata, 'pipeline_path'), ...
+        localStructField(observed, 'export_manifest_uri'), ...
+        localStructField(observed, 'pipeline_bundle_uri'), ...
+        localStructField(observed, 'pipeline_json_path'), ...
+        localStructField(observed, 'pipeline_path')});
+    if ~isempty(pathHint)
+        if endsWith(lower(pathHint), 'export_manifest.json')
+            ref.export_manifest_uri = pathHint;
+        else
+            ref.pipeline_json_path = pathHint;
+        end
+    end
+end
+
+function out = localFirstNonEmptyText(values)
+    out = '';
+    for i = 1:numel(values)
+        txt = char(string(values{i}));
+        if ~isempty(strtrim(txt))
+            out = txt;
+            return;
+        end
+    end
+end
+
+function name = localHostName()
+    name = strtrim(char(string(getenv('COMPUTERNAME'))));
+    if isempty(name)
+        name = strtrim(char(string(getenv('HOSTNAME'))));
+    end
+    if isempty(name)
+        name = 'catalog-client';
     end
 end
