@@ -49,6 +49,7 @@ classdef fov < handle
         omeZarrDtype        = '';    % zarr data_type
         omeZarrDimensionNames = {};  % dimension names, e.g. {'t','c','y','x'}
         omeZarrChannelIndices = [];  % 0-based source channel indices per display channel
+        omeZarrZIndices       = [];  % 0-based source z indices per display channel
     end
 
     properties (Dependent)

@@ -275,7 +275,11 @@ if isempty(seriesName)
 end
 arrayPath = obj.omeZarrArrayPath;
 if isempty(arrayPath)
-    arrayPath = '0';
+    if exist(fullfile(zarrPath, seriesName, '.zarray'), 'file') == 2
+        arrayPath = '';
+    else
+        arrayPath = '0';
+    end
 end
 
 shape = obj.omeZarrShape;
@@ -286,6 +290,7 @@ if isempty(dimNames)
 end
 tDim = find(strcmpi(dimNames, 't'), 1, 'first');
 cDim = find(strcmpi(dimNames, 'c'), 1, 'first');
+zDim = find(strcmpi(dimNames, 'z'), 1, 'first');
 yDim = find(strcmpi(dimNames, 'y'), 1, 'first');
 xDim = find(strcmpi(dimNames, 'x'), 1, 'first');
 if isempty(tDim), tDim = 1; end
@@ -307,10 +312,22 @@ sourceChannel = channel - 1;
 if ~isempty(obj.omeZarrChannelIndices) && channel <= numel(obj.omeZarrChannelIndices)
     sourceChannel = obj.omeZarrChannelIndices(channel);
 end
+sourceZ = 0;
+if isprop(obj,'omeZarrZIndices') && ~isempty(obj.omeZarrZIndices) && channel <= numel(obj.omeZarrZIndices)
+    sourceZ = obj.omeZarrZIndices(channel);
+end
 
 coord = zeros(1, numel(shape));
 coord(tDim) = double(frameEff) - 1;
 coord(cDim) = double(sourceChannel);
+if ~isempty(zDim)
+    coord(zDim) = double(sourceZ);
+end
+
+if exist(fullfile(zarrPath, seriesName, arrayPath, '.zarray'), 'file') == 2
+    im = localReadOMEZarrPlanePython(zarrPath, seriesName, arrayPath, coord, shape, dimNames, char(string(obj.omeZarrDtype)));
+    return;
+end
 
 chunkPath = fullfile(zarrPath, seriesName, arrayPath, 'c');
 for i = 1:numel(coord)
@@ -329,13 +346,13 @@ if isempty(dtype)
 end
 
 switch lower(dtype)
-    case 'uint16'
+    case {'uint16','<u2','|u2','>u2'}
         precision = 'uint16=>uint16';
         bytesPerPixel = 2;
-    case 'uint8'
+    case {'uint8','<u1','|u1','>u1'}
         precision = 'uint8=>uint8';
         bytesPerPixel = 1;
-    case 'int16'
+    case {'int16','<i2','|i2','>i2'}
         precision = 'int16=>int16';
         bytesPerPixel = 2;
     otherwise
@@ -346,7 +363,7 @@ fid = fopen(chunkPath, 'r', 'ieee-le');
 if fid < 0
     error('Cannot open OME-Zarr chunk: %s', chunkPath);
 end
-cleaner = onCleanup(@() fclose(fid)); %#ok<NASGU>
+cleaner = onCleanup(@() fclose(fid));
 nPix = shape(yDim) * shape(xDim);
 raw = fread(fid, nPix, precision);
 if numel(raw) ~= nPix
@@ -355,4 +372,117 @@ if numel(raw) ~= nPix
 end
 
 im = reshape(raw, [shape(xDim), shape(yDim)])';
+end
+
+function im = localReadOMEZarrPlanePython(zarrPath, seriesName, arrayPath, coord, shape, dimNames, dtype)
+yDim = find(strcmpi(dimNames, 'y'), 1, 'first');
+xDim = find(strcmpi(dimNames, 'x'), 1, 'first');
+if isempty(yDim), yDim = numel(shape)-1; end
+if isempty(xDim), xDim = numel(shape); end
+
+arrayDir = fullfile(zarrPath, seriesName, arrayPath);
+tmpFile = [tempname '.raw'];
+cleaner = onCleanup(@() localDeleteIfExists(tmpFile));
+
+code = [ ...
+    "import zarr, numpy as np" newline ...
+    "arr = zarr.open(path, mode='r')" newline ...
+    "idx = [int(v) for v in coord]" newline ...
+    "idx[y_dim] = slice(None)" newline ...
+    "idx[x_dim] = slice(None)" newline ...
+    "plane = np.ascontiguousarray(arr[tuple(idx)])" newline ...
+    "with open(out_path, 'wb') as fh:" newline ...
+    "    fh.write(plane.tobytes(order='C'))" ...
+    ];
+
+try
+    pyrun(code, path=arrayDir, coord=int64(coord), y_dim=int64(yDim-1), x_dim=int64(xDim-1), out_path=tmpFile);
+catch
+    localReadOMEZarrPlaneSystemPython(arrayDir, tmpFile, coord, yDim-1, xDim-1);
+end
+
+fid = fopen(tmpFile, 'r', 'ieee-le');
+if fid < 0
+    error('Cannot open temporary OME-Zarr plane: %s', tmpFile);
+end
+nPix = shape(yDim) * shape(xDim);
+
+switch lower(char(string(dtype)))
+    case {'uint16','<u2','|u2','>u2'}
+        precision = 'uint16=>uint16';
+    case {'uint8','<u1','|u1','>u1'}
+        precision = 'uint8=>uint8';
+    case {'int16','<i2','|i2','>i2'}
+        precision = 'int16=>int16';
+    otherwise
+        error('Unsupported OME-Zarr dtype: %s', char(string(dtype)));
+end
+
+raw = fread(fid, nPix, precision);
+fclose(fid);
+if numel(raw) ~= nPix
+    error('OME-Zarr Python read returned %d pixels, expected %d.', numel(raw), nPix);
+end
+im = reshape(raw, [shape(xDim), shape(yDim)])';
+end
+
+function localDeleteIfExists(pathStr)
+if exist(pathStr, 'file') == 2
+    delete(pathStr);
+end
+end
+
+function localReadOMEZarrPlaneSystemPython(arrayDir, tmpFile, coord, yDim0, xDim0)
+scriptPath = which('read_omezarr_plane_to_raw.py');
+if isempty(scriptPath)
+    buildPath = which('buildomezarr');
+    if ~isempty(buildPath)
+        scriptPath = fullfile(fileparts(buildPath), 'read_omezarr_plane_to_raw.py');
+    end
+end
+if isempty(scriptPath) || exist(scriptPath, 'file') ~= 2
+    error('Cannot find read_omezarr_plane_to_raw.py for compressed OME-Zarr reads.');
+end
+
+cfgFile = [tempname '.json'];
+cfgCleaner = onCleanup(@() localDeleteIfExists(cfgFile));
+cfg = struct();
+cfg.array_dir = arrayDir;
+cfg.out_path = tmpFile;
+cfg.coord = num2cell(double(coord));
+cfg.y_dim = double(yDim0);
+cfg.x_dim = double(xDim0);
+fid = fopen(cfgFile, 'w');
+if fid < 0
+    error('Cannot create temporary OME-Zarr Python config: %s', cfgFile);
+end
+fprintf(fid, '%s', jsonencode(cfg));
+fclose(fid);
+
+pyexe = localGetPythonExecutable();
+if isempty(pyexe)
+    cmd = sprintf('python "%s" "%s"', scriptPath, cfgFile);
+else
+    cmd = sprintf('"%s" "%s" "%s"', pyexe, scriptPath, cfgFile);
+end
+[status, msg] = system(cmd);
+if status ~= 0
+    error('System Python OME-Zarr read failed: %s', strtrim(msg));
+end
+end
+
+function pyexe = localGetPythonExecutable()
+pyexe = '';
+try
+    pe = pyenv;
+    candidates = {char(string(pe.Executable)), char(string(pe.Version))};
+    for i = 1:numel(candidates)
+        cand = candidates{i};
+        if ~isempty(cand) && exist(cand, 'file') == 2
+            pyexe = cand;
+            return;
+        end
+    end
+catch
+end
 end

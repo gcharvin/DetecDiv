@@ -65,6 +65,14 @@ classdef workflow < matlab.apps.AppBase
 
         Cache
 
+        CacheBytes
+
+        CacheOrder cell = {}
+
+        CacheSizeBytes double = 0
+
+        CacheMaxBytes double = 536870912
+
         Dirty logical = false
 
         Suppress logical = false
@@ -109,7 +117,7 @@ classdef workflow < matlab.apps.AppBase
 
             app.configureUi();
 
-            app.Cache = containers.Map('KeyType','char','ValueType','any');
+            app.resetImageCache();
 
             if nargin < 2 || isempty(shallowObj) || ~isa(shallowObj,'shallow')
 
@@ -1180,9 +1188,9 @@ classdef workflow < matlab.apps.AppBase
 
                 i = activeList(k);
 
-                key = sprintf('%d|%d|%d', app.SelectedFov, app.SelectedFrame, i);
+                key = app.getImageCacheKey(app.SelectedFov, app.SelectedFrame, i);
 
-                wasCached = isKey(app.Cache, key);
+                wasCached = app.isImageCachedKey(key);
 
                 imgs{i} = app.getImage(i);
 
@@ -1472,21 +1480,159 @@ classdef workflow < matlab.apps.AppBase
 
 
 
-        function im = getImage(app, channelIdx)
+        function resetImageCache(app)
 
-            im = [];
+            app.Cache = containers.Map('KeyType','char','ValueType','any');
 
-            if isempty(app.SelectedFov)
+            app.CacheBytes = containers.Map('KeyType','char','ValueType','double');
+
+            app.CacheOrder = {};
+
+            app.CacheSizeBytes = 0;
+
+        end
+
+
+
+        function key = getImageCacheKey(app, fovIdx, frameIdx, channelIdx) %#ok<INUSL>
+
+            key = sprintf('%d|%d|%d', double(fovIdx), double(frameIdx), double(channelIdx));
+
+        end
+
+
+
+        function tf = isImageCachedKey(app, key)
+
+            tf = ~isempty(app.Cache) && isKey(app.Cache, key);
+
+        end
+
+
+
+        function touchImageCacheKey(app, key)
+
+            if isempty(app.CacheOrder)
+
+                app.CacheOrder = {key};
 
                 return;
 
             end
 
-            key = sprintf('%d|%d|%d', app.SelectedFov, app.SelectedFrame, channelIdx);
+            app.CacheOrder(strcmp(app.CacheOrder, key)) = [];
 
-            if isKey(app.Cache,key)
+            app.CacheOrder{end+1} = key;
+
+        end
+
+
+
+        function storeImageCacheKey(app, key, im)
+
+            if isempty(im)
+
+                return;
+
+            end
+
+            if isempty(app.Cache) || isempty(app.CacheBytes)
+
+                app.resetImageCache();
+
+            end
+
+            bytes = app.estimateImageBytes(im);
+
+            if isKey(app.Cache, key)
+
+                app.CacheSizeBytes = app.CacheSizeBytes - app.CacheBytes(key);
+
+            end
+
+            app.Cache(key) = im;
+
+            app.CacheBytes(key) = bytes;
+
+            app.CacheSizeBytes = app.CacheSizeBytes + bytes;
+
+            app.touchImageCacheKey(key);
+
+            app.trimImageCache();
+
+        end
+
+
+
+        function trimImageCache(app)
+
+            while app.CacheSizeBytes > app.CacheMaxBytes && ~isempty(app.CacheOrder)
+
+                key = app.CacheOrder{1};
+
+                app.CacheOrder(1) = [];
+
+                if isempty(app.Cache) || ~isKey(app.Cache, key)
+
+                    continue;
+
+                end
+
+                if ~isempty(app.CacheBytes) && isKey(app.CacheBytes, key)
+
+                    app.CacheSizeBytes = max(0, app.CacheSizeBytes - app.CacheBytes(key));
+
+                    remove(app.CacheBytes, key);
+
+                end
+
+                remove(app.Cache, key);
+
+            end
+
+        end
+
+
+
+        function bytes = estimateImageBytes(app, im) %#ok<INUSL>
+
+            info = whos('im');
+
+            bytes = double(info.bytes);
+
+        end
+
+
+
+        function im = getImage(app, channelIdx, fovIdx, frameIdx)
+
+            im = [];
+
+            if nargin < 3 || isempty(fovIdx)
+
+                fovIdx = app.SelectedFov;
+
+            end
+
+            if nargin < 4 || isempty(frameIdx)
+
+                frameIdx = app.SelectedFrame;
+
+            end
+
+            if isempty(fovIdx) || isempty(app.Project) || fovIdx < 1 || fovIdx > app.getFovCount()
+
+                return;
+
+            end
+
+            key = app.getImageCacheKey(fovIdx, frameIdx, channelIdx);
+
+            if app.isImageCachedKey(key)
 
                 im = app.Cache(key);
+
+                app.touchImageCacheKey(key);
 
                 return;
 
@@ -1494,9 +1640,9 @@ classdef workflow < matlab.apps.AppBase
 
             try
 
-                im = readImage(app.Project.fov(app.SelectedFov), app.SelectedFrame, channelIdx);
+                im = readImage(app.Project.fov(fovIdx), frameIdx, channelIdx);
 
-                app.Cache(key) = im;
+                app.storeImageCacheKey(key, im);
 
             catch ME
 
@@ -1592,7 +1738,7 @@ classdef workflow < matlab.apps.AppBase
 
             try
 
-                im = readImage(fovObj, app.SelectedFrame, chanIdx);
+                im = app.getImage(chanIdx);
 
                 if ~isempty(im)
 
@@ -4605,7 +4751,7 @@ classdef workflow < matlab.apps.AppBase
 
             try
 
-                src = readImage(app.Project.fov(app.SelectedFov), app.SelectedFrame, chanIdx);
+                src = app.getImage(chanIdx);
 
                 if ~isempty(src)
 
@@ -4731,7 +4877,7 @@ classdef workflow < matlab.apps.AppBase
 
             end
 
-            app.Cache = containers.Map('KeyType','char','ValueType','any');
+            app.resetImageCache();
 
             if isempty(app.SelectedFov) && app.getFovCount() > 0
 
@@ -4781,8 +4927,6 @@ classdef workflow < matlab.apps.AppBase
 
             app.PreviewRoiPositions = zeros(0,4);
 
-            app.Cache = containers.Map('KeyType','char','ValueType','any');
-
             app.refreshAll();
 
         end
@@ -4802,8 +4946,6 @@ classdef workflow < matlab.apps.AppBase
                 app.SelectedFov = event.Indices(1);
 
                 app.PreviewRoiPositions = zeros(0,4);
-
-                app.Cache = containers.Map('KeyType','char','ValueType','any');
 
             end
 
@@ -5196,8 +5338,6 @@ classdef workflow < matlab.apps.AppBase
                     if ~isempty(detIdx)
 
                         app.SelectedFov = fovIndex(detIdx);
-
-                        app.Cache = containers.Map('KeyType','char','ValueType','any');
 
                         currentIdx = detIdx;
 
@@ -6065,9 +6205,7 @@ classdef workflow < matlab.apps.AppBase
 
                 end
 
-                srcFov = app.Project.fov(srcIdx);
-
-                tmp = readImage(srcFov, frameid, pix);
+                tmp = app.getImage(pix, srcIdx, frameid);
 
                 if isempty(tmp)
 

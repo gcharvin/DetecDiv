@@ -72,14 +72,14 @@ end
 if inputIsFile
     list=dir(pathdir);
     pathdir = list(1).folder;
-    if strcmpi(inputFileName, 'zarr.json')
+    if any(strcmpi(inputFileName, {'zarr.json', '.zattrs', '.zgroup'}))
         % A user may select the Zarr index file rather than the containing
         % folder. If it is nested inside a *.ome.zarr store, normalize to
         % the store root so buildomezarr sees the whole dataset.
         zroot = pathdir;
         probe = pathdir;
         for up = 1:10
-            if endsWith(probe, '.ome.zarr', 'IgnoreCase', true) && exist(fullfile(probe, 'zarr.json'), 'file') == 2
+            if endsWith(probe, '.ome.zarr', 'IgnoreCase', true) && localHasZarrRootMetadata(probe)
                 zroot = probe;
                 break;
             end
@@ -94,13 +94,13 @@ if inputIsFile
         list=dir(pathdir);
     end
 else
-    if exist(fullfile(pathdir,'zarr.json'), 'file') == 2
+    if localHasZarrRootMetadata(pathdir)
         % If a nested Zarr group was selected inside a *.ome.zarr store,
         % normalize to the root folder.
         probe = pathdir;
         zroot = '';
         for up = 1:10
-            if endsWith(probe, '.ome.zarr', 'IgnoreCase', true) && exist(fullfile(probe, 'zarr.json'), 'file') == 2
+            if endsWith(probe, '.ome.zarr', 'IgnoreCase', true) && localHasZarrRootMetadata(probe)
                 zroot = probe;
                 break;
             end
@@ -135,7 +135,7 @@ end
 
 % --- detect OME-Zarr dataset(s) ---
 omezarrDirs = {};
-if ~inputIsFile && exist(fullfile(pathdir,'zarr.json'), 'file')==2 && ...
+if ~inputIsFile && localHasZarrRootMetadata(pathdir) && ...
         (endsWith(pathdir, '.ome.zarr', 'IgnoreCase', true) || localLooksLikeOmeZarrRoot(pathdir, list))
     omezarrDirs = {pathdir};
 elseif ~inputIsFile
@@ -143,7 +143,7 @@ elseif ~inputIsFile
     subdirs = subdirs(~ismember({subdirs.name},{'.','..'}));
     for k = 1:numel(subdirs)
         zp = fullfile(subdirs(k).folder, subdirs(k).name);
-        if exist(fullfile(zp,'zarr.json'), 'file')==2 && ...
+        if localHasZarrRootMetadata(zp) && ...
                 (endsWith(zp, '.ome.zarr', 'IgnoreCase', true) || localLooksLikeOmeZarrRoot(zp, dir(zp)))
             omezarrDirs{end+1} = zp; %#ok<AGROW>
         end
@@ -285,8 +285,12 @@ end
 
 output.datatype=typ;
 
+end
 
-
+function tf = localHasZarrRootMetadata(pathstr)
+tf = exist(fullfile(pathstr,'zarr.json'), 'file') == 2 || ...
+    (exist(fullfile(pathstr,'.zattrs'), 'file') == 2 && exist(fullfile(pathstr,'.zgroup'), 'file') == 2);
+end
 
 
 

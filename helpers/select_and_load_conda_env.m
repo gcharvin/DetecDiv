@@ -1079,6 +1079,17 @@ function ensureDetecdivPackages(condaCmd, debug)
         fprintf('[Detecdiv]   - torch already installed.\n');
     end
 
+    % --- OME-Zarr I/O ---
+    fprintf('[Detecdiv]   - Checking zarr...\n');
+    hasZarr = condaRunPyImport(condaCmd, envName, "zarr", debug);
+    if ~hasZarr
+        fprintf('[Detecdiv]   - Installing zarr for OME-Zarr data loading...\n');
+        [stZ,oZ] = runConda("run -n detecdiv_python python -m pip install zarr", debug, condaCmd);
+        if stZ ~= 0, error('zarr install failed:\n%s', oZ); end
+    else
+        fprintf('[Detecdiv]   - zarr already installed.\n');
+    end
+
     % --- cellpose (Cellpose-SAM) ---
     fprintf('[Detecdiv]   - Checking cellpose...\n');
     hasCellpose = condaRunPyImport(condaCmd, envName, "cellpose", debug);

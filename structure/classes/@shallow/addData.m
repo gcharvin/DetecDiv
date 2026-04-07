@@ -100,6 +100,9 @@ for i = 1:numel(newdata.pos)
         obj.fov(cc).omeZarrDtype = posStruct.omeZarrDtype;
         obj.fov(cc).omeZarrDimensionNames = posStruct.omeZarrDimensionNames;
         obj.fov(cc).omeZarrChannelIndices = posStruct.omeZarrChannelIndices;
+        if isfield(posStruct,'omeZarrZIndices')
+            obj.fov(cc).omeZarrZIndices = posStruct.omeZarrZIndices;
+        end
     end
 
     % copier les autres infos
