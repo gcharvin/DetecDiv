@@ -29,11 +29,16 @@ output.datatype='';
 progress=[];
 typ=[];
 
-% check if stringrepresents a valid file or folder
+% check if string represents a valid file or folder
+inputIsFile = false;
+inputFileName = '';
 
 switch exist(pathdir)
     case 7 % is a dir
-        
+    case 2 % is a file
+        inputIsFile = true;
+        [~, inputFileName, inputExt] = fileparts(pathdir);
+        inputFileName = [inputFileName inputExt];
     otherwise
         disp('this directory does not exist ! Quitting !')
         output.comments='Folder does not exist!';
@@ -64,14 +69,60 @@ if numel(progress)
     progress.Message=info;
 end
 
-list=dir(pathdir);
+if inputIsFile
+    list=dir(pathdir);
+    pathdir = list(1).folder;
+    if strcmpi(inputFileName, 'zarr.json')
+        % A user may select the Zarr index file rather than the containing
+        % folder. If it is nested inside a *.ome.zarr store, normalize to
+        % the store root so buildomezarr sees the whole dataset.
+        zroot = pathdir;
+        probe = pathdir;
+        for up = 1:10
+            if endsWith(probe, '.ome.zarr', 'IgnoreCase', true) && exist(fullfile(probe, 'zarr.json'), 'file') == 2
+                zroot = probe;
+                break;
+            end
+            parentDir = fileparts(probe);
+            if isempty(parentDir) || strcmp(parentDir, probe)
+                break;
+            end
+            probe = parentDir;
+        end
+        pathdir = zroot;
+        inputIsFile = false;
+        list=dir(pathdir);
+    end
+else
+    if exist(fullfile(pathdir,'zarr.json'), 'file') == 2
+        % If a nested Zarr group was selected inside a *.ome.zarr store,
+        % normalize to the root folder.
+        probe = pathdir;
+        zroot = '';
+        for up = 1:10
+            if endsWith(probe, '.ome.zarr', 'IgnoreCase', true) && exist(fullfile(probe, 'zarr.json'), 'file') == 2
+                zroot = probe;
+                break;
+            end
+            parentDir = fileparts(probe);
+            if isempty(parentDir) || strcmp(parentDir, probe)
+                break;
+            end
+            probe = parentDir;
+        end
+        if ~isempty(zroot)
+            pathdir = zroot;
+        end
+    end
+    list=dir(pathdir);
+end
 list = list(~startsWith({list.name}, '._')); % remove ._ files in mac os .
 
 % --- detect NDTiff dataset(s) ---
 ndtiffDirs = {};
-if exist(fullfile(pathdir,'NDTiff.index'), 'file')==2
+if ~inputIsFile && exist(fullfile(pathdir,'NDTiff.index'), 'file')==2
     ndtiffDirs = {pathdir};
-else
+elseif ~inputIsFile
     subdirs = list([list.isdir]);
     subdirs = subdirs(~ismember({subdirs.name},{'.','..'}));
     for k = 1:numel(subdirs)
@@ -82,8 +133,25 @@ else
     end
 end
 
+% --- detect OME-Zarr dataset(s) ---
+omezarrDirs = {};
+if ~inputIsFile && exist(fullfile(pathdir,'zarr.json'), 'file')==2 && ...
+        (endsWith(pathdir, '.ome.zarr', 'IgnoreCase', true) || localLooksLikeOmeZarrRoot(pathdir, list))
+    omezarrDirs = {pathdir};
+elseif ~inputIsFile
+    subdirs = list([list.isdir]);
+    subdirs = subdirs(~ismember({subdirs.name},{'.','..'}));
+    for k = 1:numel(subdirs)
+        zp = fullfile(subdirs(k).folder, subdirs(k).name);
+        if exist(fullfile(zp,'zarr.json'), 'file')==2 && ...
+                (endsWith(zp, '.ome.zarr', 'IgnoreCase', true) || localLooksLikeOmeZarrRoot(zp, dir(zp)))
+            omezarrDirs{end+1} = zp; %#ok<AGROW>
+        end
+    end
+end
+
 % If user selected a subfolder inside an NDTiff dataset, check parent
-if isempty(ndtiffDirs)
+if isempty(ndtiffDirs) && ~inputIsFile
     [parentDir, ~, ~] = fileparts(pathdir);
     if ~isempty(parentDir) && exist(fullfile(parentDir,'NDTiff.index'), 'file')==2
         ndtiffDirs = {parentDir};
@@ -106,7 +174,11 @@ if ~isempty(ndtiffDirs)
     disp('NDTiff dataset(s) detected');
     typ='ndtiff';
     info='Processing NDTiff dataset(s)...';
-elseif sum(pix)>2 % there are folders available (. and .. are not real folders)
+elseif ~isempty(omezarrDirs)
+    disp('OME-Zarr dataset(s) detected');
+    typ='omezarr';
+    info='Processing OME-Zarr dataset(s)...';
+elseif ~inputIsFile && sum(pix)>2 % there are folders available (. and .. are not real folders)
     % check if there is a phyloCell project
     phyloproj=list((contains({list.name},{'-project.mat'})) & (~contains({list.name},{'BK-project.mat'})) &  (~contains({list.name},{'-project.mat.bk'})));
     
@@ -119,7 +191,7 @@ elseif sum(pix)>2 % there are folders available (. and .. are not real folders)
         typ='folders';
         output.posinfolder=1;
     end
-else % only files available
+else % only files available, or a single image file was selected
     disp('This folder contains one or several files but no folders');
     plist= list([list.isdir]==0);
     plist=plist(contains({plist.name},{'.tif','.jpg','.png'})); % takes all image files
@@ -205,6 +277,10 @@ switch typ
     case 'ndtiff'
         output.comments=['The folder contains one or more NDTiff datasets' char(10)];
         output=buildndtiff(ndtiffDirs,output,progress);
+
+    case 'omezarr'
+        output.comments=['The folder contains one or more OME-Zarr datasets' char(10)];
+        output=buildomezarr(omezarrDirs,output,progress);
 end
 
 output.datatype=typ;

@@ -56,6 +56,9 @@ for i = 1:numel(newdata.pos)
         mtInfo.tiffSource  = posStruct.tiffSource; % cell{ch}
         mtInfo.pageMap     = posStruct.pageMap;    % cell{ch}, mapping frame->page
     end
+    if isfield(posStruct,'isOMEZarr') && posStruct.isOMEZarr
+        mtInfo.isOMEZarr = true;
+    end
 
     % Appeler setpathlist avec ou sans mtInfo
     if ~isempty(fieldnames(mtInfo))
@@ -84,6 +87,19 @@ for i = 1:numel(newdata.pos)
         else
             obj.fov(cc).ndtiffZ = 0;
         end
+    end
+
+    % OME-Zarr info
+    if isfield(posStruct,'isOMEZarr') && posStruct.isOMEZarr
+        obj.fov(cc).isOMEZarr = true;
+        obj.fov(cc).omeZarrPath = posStruct.omeZarrPath;
+        obj.fov(cc).omeZarrSeries = posStruct.omeZarrSeries;
+        obj.fov(cc).omeZarrArrayPath = posStruct.omeZarrArrayPath;
+        obj.fov(cc).omeZarrShape = posStruct.omeZarrShape;
+        obj.fov(cc).omeZarrChunkShape = posStruct.omeZarrChunkShape;
+        obj.fov(cc).omeZarrDtype = posStruct.omeZarrDtype;
+        obj.fov(cc).omeZarrDimensionNames = posStruct.omeZarrDimensionNames;
+        obj.fov(cc).omeZarrChannelIndices = posStruct.omeZarrChannelIndices;
     end
 
     % copier les autres infos
@@ -161,7 +177,15 @@ if isprop(f,'isMultiTiff') && f.isMultiTiff
         src = firstNonEmptyCell(f.srcpath);
     end
     src = normPath(src);
-    key = lower(sprintf('multitiff|%s|%s', src, chanSig));
+    key = lower(sprintf('multitiff|%s|%s|%s', src, chanSig, pageMapSignature(f.pageMap)));
+    return;
+end
+
+if isprop(f,'isOMEZarr') && f.isOMEZarr
+    src = normPath(getMaybe(f,'omeZarrPath',''));
+    seriesName = char(string(getMaybe(f,'omeZarrSeries','')));
+    arrayPath = char(string(getMaybe(f,'omeZarrArrayPath','0')));
+    key = lower(sprintf('omezarr|%s|%s|%s|%s', src, seriesName, arrayPath, chanSig));
     return;
 end
 
@@ -187,7 +211,15 @@ if isfield(pos,'isMultiTiff') && pos.isMultiTiff
     if isempty(src)
         src = firstNonEmptyCell(getField(pos,'pathlist',{}));
     end
-    key = lower(sprintf('multitiff|%s|%s', normPath(src), chanSig));
+    key = lower(sprintf('multitiff|%s|%s|%s', normPath(src), chanSig, pageMapSignature(getField(pos,'pageMap',{}))));
+    return;
+end
+
+if isfield(pos,'isOMEZarr') && pos.isOMEZarr
+    src = normPath(getField(pos,'omeZarrPath',''));
+    seriesName = char(string(getField(pos,'omeZarrSeries','')));
+    arrayPath = char(string(getField(pos,'omeZarrArrayPath','0')));
+    key = lower(sprintf('omezarr|%s|%s|%s|%s', src, seriesName, arrayPath, chanSig));
     return;
 end
 
@@ -314,4 +346,25 @@ catch
 end
 p = strrep(p,'\\','/');
 p = regexprep(p,'/+$','');
+end
+
+function s = pageMapSignature(pageMap)
+s = '';
+if isempty(pageMap) || ~iscell(pageMap)
+    return;
+end
+parts = cell(1, numel(pageMap));
+for i = 1:numel(pageMap)
+    pm = pageMap{i};
+    if isempty(pm)
+        parts{i} = '';
+        continue;
+    end
+    try
+        parts{i} = sprintf('%d:%d:%d', double(pm(1)), double(pm(end)), numel(pm));
+    catch
+        parts{i} = '';
+    end
+end
+s = strjoin(parts, ',');
 end

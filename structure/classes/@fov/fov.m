@@ -38,6 +38,17 @@ classdef fov < handle
         ndtiffPosition = 0;      % 0-based position index in dataset
         ndtiffChannels = [];     % 0-based channel indices
         ndtiffZ        = 0;      % 0-based z index (if present)
+
+        % --- OME-Zarr support ---
+        isOMEZarr           = false; % bool
+        omeZarrPath         = '';    % dataset folder (*.ome.zarr)
+        omeZarrSeries       = '';    % series/group name, e.g. '0'
+        omeZarrArrayPath    = '0';   % multiscale array path inside series
+        omeZarrShape        = [];    % array shape, usually [T C Y X]
+        omeZarrChunkShape   = [];    % chunk shape
+        omeZarrDtype        = '';    % zarr data_type
+        omeZarrDimensionNames = {};  % dimension names, e.g. {'t','c','y','x'}
+        omeZarrChannelIndices = [];  % 0-based source channel indices per display channel
     end
 
     properties (Dependent)
@@ -81,6 +92,7 @@ classdef fov < handle
                 if isfield(mtInfo,'isMultiTiff'), obj.isMultiTiff = logical(mtInfo.isMultiTiff); end
                 if isfield(mtInfo,'tiffSource'),  obj.tiffSource  = mtInfo.tiffSource;          end
                 if isfield(mtInfo,'pageMap'),     obj.pageMap     = mtInfo.pageMap;             end
+                if isfield(mtInfo,'isOMEZarr'),   obj.isOMEZarr   = logical(mtInfo.isOMEZarr);  end
             end
 
             % sécurité: toujours avoir une taille cohérente

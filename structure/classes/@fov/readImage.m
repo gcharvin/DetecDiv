@@ -160,6 +160,22 @@ if isprop(obj,'isNDTiff') && obj.isNDTiff
     return;
 end
 
+% --------- mode OME-Zarr ---------
+if isprop(obj,'isOMEZarr') && obj.isOMEZarr
+    try
+        im = localReadOMEZarrPlane(obj, frameEff, channel);
+    catch ME
+        warning('Failed to read OME-Zarr image: %s', ME.message);
+        im = [];
+        return;
+    end
+
+    if ~isempty(obj.orientation) && obj.orientation ~= 0
+        im = imrotate(im, obj.orientation);
+    end
+    return;
+end
+
 % --------- mode multi-TIFF ---------
 if obj.isMultiTiff
     % on s'attend à :
@@ -240,4 +256,103 @@ end
 if ~isempty(obj.orientation) && obj.orientation ~= 0
     im = imrotate(im, obj.orientation);
 end
+end
+
+function im = localReadOMEZarrPlane(obj, frameEff, channel)
+zarrPath = obj.omeZarrPath;
+if isempty(zarrPath) && ~isempty(obj.srcpath)
+    zarrPath = obj.srcpath{1};
+end
+if ~isfolder(zarrPath)
+    warning('OME-Zarr dataset folder not found: %s', zarrPath);
+    im = [];
+    return;
+end
+
+seriesName = obj.omeZarrSeries;
+if isempty(seriesName)
+    seriesName = '0';
+end
+arrayPath = obj.omeZarrArrayPath;
+if isempty(arrayPath)
+    arrayPath = '0';
+end
+
+shape = obj.omeZarrShape;
+chunks = obj.omeZarrChunkShape;
+dimNames = obj.omeZarrDimensionNames;
+if isempty(dimNames)
+    dimNames = {'t','c','y','x'};
+end
+tDim = find(strcmpi(dimNames, 't'), 1, 'first');
+cDim = find(strcmpi(dimNames, 'c'), 1, 'first');
+yDim = find(strcmpi(dimNames, 'y'), 1, 'first');
+xDim = find(strcmpi(dimNames, 'x'), 1, 'first');
+if isempty(tDim), tDim = 1; end
+if isempty(cDim), cDim = 2; end
+if isempty(yDim), yDim = 3; end
+if isempty(xDim), xDim = 4; end
+
+if isempty(shape) || numel(shape) < max([tDim cDim yDim xDim])
+    arrayJson = jsondecode(fileread(fullfile(zarrPath, seriesName, arrayPath, 'zarr.json')));
+    shape = double(arrayJson.shape(:))';
+    chunks = double(arrayJson.chunk_grid.configuration.chunk_shape(:))';
+end
+
+if isempty(chunks) || chunks(yDim) ~= shape(yDim) || chunks(xDim) ~= shape(xDim)
+    error('Only one full Y/X chunk per image is supported for OME-Zarr lazy reads.');
+end
+
+sourceChannel = channel - 1;
+if ~isempty(obj.omeZarrChannelIndices) && channel <= numel(obj.omeZarrChannelIndices)
+    sourceChannel = obj.omeZarrChannelIndices(channel);
+end
+
+coord = zeros(1, numel(shape));
+coord(tDim) = double(frameEff) - 1;
+coord(cDim) = double(sourceChannel);
+
+chunkPath = fullfile(zarrPath, seriesName, arrayPath, 'c');
+for i = 1:numel(coord)
+    chunkPath = fullfile(chunkPath, num2str(coord(i)));
+end
+
+if exist(chunkPath, 'file') ~= 2
+    warning('OME-Zarr chunk not found: %s', chunkPath);
+    im = [];
+    return;
+end
+
+dtype = char(string(obj.omeZarrDtype));
+if isempty(dtype)
+    dtype = 'uint16';
+end
+
+switch lower(dtype)
+    case 'uint16'
+        precision = 'uint16=>uint16';
+        bytesPerPixel = 2;
+    case 'uint8'
+        precision = 'uint8=>uint8';
+        bytesPerPixel = 1;
+    case 'int16'
+        precision = 'int16=>int16';
+        bytesPerPixel = 2;
+    otherwise
+        error('Unsupported OME-Zarr data_type: %s', dtype);
+end
+
+fid = fopen(chunkPath, 'r', 'ieee-le');
+if fid < 0
+    error('Cannot open OME-Zarr chunk: %s', chunkPath);
+end
+cleaner = onCleanup(@() fclose(fid)); %#ok<NASGU>
+nPix = shape(yDim) * shape(xDim);
+raw = fread(fid, nPix, precision);
+if numel(raw) ~= nPix
+    info = dir(chunkPath);
+    error('OME-Zarr chunk has %d bytes, expected %d bytes.', info.bytes, nPix * bytesPerPixel);
+end
+
+im = reshape(raw, [shape(xDim), shape(yDim)])';
 end
