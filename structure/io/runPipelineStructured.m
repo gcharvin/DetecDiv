@@ -139,12 +139,18 @@ function [ctx, report] = runPipelineStructured(pipe, ctx)
         try
             ctx = applyPolicyToContext(ctx, node, policy);
             checkPipelineCancellation(ctx, 'before_execute', nodeId);
+            fprintf('DETECDIV_PIPELINE_PROGRESS node_start id=%s type=%s index=%d total=%d\n', ...
+                char(string(nodeId)), char(string(node.type)), i, total);
             ctx = executeNode(node, ctx);
             checkPipelineCancellation(ctx, 'after_execute', nodeId);
+            fprintf('DETECDIV_PIPELINE_PROGRESS node_done id=%s type=%s index=%d total=%d elapsed=%.3f\n', ...
+                char(string(nodeId)), char(string(node.type)), i, total, toc(tNode));
             afterStats = captureContextStats(ctx);
             report = appendNodeRun(report, node, policy, 'done', ...
                 beforeStats, afterStats, toc(tNode), '');
         catch ME
+            fprintf('DETECDIV_PIPELINE_PROGRESS node_failed id=%s type=%s index=%d total=%d elapsed=%.3f\n', ...
+                char(string(nodeId)), char(string(node.type)), i, total, toc(tNode));
             wasCancelled = strcmp(ME.identifier, 'runPipeline:Cancelled');
             afterStats = captureContextStats(ctx);
             nodeStatus = 'failed';
