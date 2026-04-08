@@ -1498,7 +1498,7 @@ function ctx = executeClassifierNode(node, ctx)
             char(string(node.id)), outputName);
     end
 
-    args = {'OutputName', outputName};
+    args = {'OutputName', outputName, 'Ctx', ctx};
     if isfield(p,'frames') && ~isempty(p.frames)
         args = [args {'Frames', p.frames}]; %#ok<AGROW>
     end

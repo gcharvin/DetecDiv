@@ -24,24 +24,29 @@ ctxBase=struct();
 cachePolicy='auto';
 
 for i=1:numel(varargin)
+    key=varargin{i};
+    if isstring(key), key=char(key); end
+    if ~ischar(key)
+        continue;
+    end
 
-    if strcmp(varargin{i},'Frames') % is a cell array with the same number of elements as number of rois. If it s a numeric array, then apply to all rois
+    if strcmp(key,'Frames') % is a cell array with the same number of elements as number of rois. If it s a numeric array, then apply to all rois
         frames=varargin{i+1};
     end
 
-    if strcmp(varargin{i},'Progress') % update progress bar
+    if strcmp(key,'Progress') % update progress bar
         p=varargin{i+1};
     end
 
-    if strcmp(varargin{i},'Parallel') % parallel computing
+    if strcmp(key,'Parallel') % parallel computing
         para=1;
     end
 
-    if strcmp(varargin{i},'GPU') % classify with GPU
+    if strcmp(key,'GPU') % classify with GPU
         gpu=1;
     end
 
-    if strcmp(varargin{i},'Ctx') % pipeline context (struct)
+    if strcmp(key,'Ctx') % pipeline context (struct)
         ctxBase=varargin{i+1};
         if isempty(ctxBase) || ~isstruct(ctxBase)
             ctxBase=struct();

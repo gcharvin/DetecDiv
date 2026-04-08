@@ -34,41 +34,51 @@ classifier    = [];
 CNNflag       = 0;
 roiwithgt     = 0;
 gpu           = 0;
+ctxBase       = struct();
 
 outputName    = "";   % NEW
 cachePolicy   = 'auto';
 
 for i = 1:numel(varargin)
-    if strcmp(varargin{i},'Classifier')
+    key = varargin{i};
+    if isstring(key), key = char(key); end
+    if ~ischar(key)
+        continue;
+    end
+
+    if strcmp(key,'Classifier')
         classifier = varargin{i+1};
     end
-    if strcmp(varargin{i},'ClassifierCNN')
+    if strcmp(key,'ClassifierCNN')
         CNNflag = 1;
     end
-    if strcmp(varargin{i},'Frames')
+    if strcmp(key,'Frames')
         frames = varargin{i+1};
     end
-    if strcmp(varargin{i},'Progress')
+    if strcmp(key,'Progress')
         p = varargin{i+1};
     end
-    if strcmp(varargin{i},'Channel')
+    if strcmp(key,'Channel')
         channel = varargin{i+1};
     end
-    if strcmp(varargin{i},'Parallel')
+    if strcmp(key,'Parallel')
         para = 1;
     end
-    if strcmp(varargin{i},'RoiWithGT')
+    if strcmp(key,'RoiWithGT')
         roiwithgt = 1;
     end
-    if strcmp(varargin{i},'GPU')
+    if strcmp(key,'GPU')
         gpu = 1;
+    end
+    if strcmp(key,'Ctx')
+        ctxBase = varargin{i+1};
+        if isempty(ctxBase) || ~isstruct(ctxBase)
+            ctxBase = struct();
+        end
     end
 
     % NEW (accept aliases)
-   key = varargin{i};
-if isstring(key), key = char(key); end
-
-if ischar(key) && any(strcmpi(key, {'OutputName','GroupId','GroupID'}))
+if any(strcmpi(key, {'OutputName','GroupId','GroupID'}))
     outputName = string(varargin{i+1});
 end
 
@@ -319,13 +329,7 @@ for i = 1:numel(roiobj)
     % ---------------------------------------------------------
     if para
         if isPipelineFun
-            ctx = struct();
-            ctx.sel = struct('frames', fra, 'channels', cha);
-            ctx.io = buildCacheIoStruct(cachePolicy);
-            ctx.store = struct('cacheMode', cachePolicy);
-            ctx.exec = struct('gpu', gpu, 'classifier', classifierStore, 'classifierCNN', classifierCNN, ...
-                'classifierProvided', ~isempty(classifierStore), 'classifierCNNProvided', ~isempty(classifierCNN));
-            ctx.names = struct('outputName', char(outputName));
+            ctx = buildPipelineClassifyCtx(ctxBase, fra, cha, gpu, classifierStore, classifierCNN, outputName, cachePolicy);
             try
                 ctx = classi.buildCtx('classify', ctx);
             catch
@@ -348,11 +352,7 @@ for i = 1:numel(roiobj)
         end
     else
         if isPipelineFun
-            ctx = struct();
-            ctx.sel = struct('frames', fra, 'channels', cha);
-            ctx.exec = struct('gpu', gpu, 'classifier', classifierStore, 'classifierCNN', classifierCNN, ...
-                'classifierProvided', ~isempty(classifierStore), 'classifierCNNProvided', ~isempty(classifierCNN));
-            ctx.names = struct('outputName', char(outputName));
+            ctx = buildPipelineClassifyCtx(ctxBase, fra, cha, gpu, classifierStore, classifierCNN, outputName, cachePolicy);
             try
                 ctx = classi.buildCtx('classify', ctx);
             catch
@@ -770,6 +770,46 @@ end
 
 function io = buildCacheIoStruct(cachePolicy)
     io = struct('cachePolicy', cachePolicy);
+end
+
+function ctx = buildPipelineClassifyCtx(ctxBase, fra, cha, gpu, classifierStore, classifierCNN, outputName, cachePolicy)
+    if nargin < 1 || isempty(ctxBase) || ~isstruct(ctxBase)
+        ctx = struct();
+    else
+        ctx = ctxBase;
+    end
+
+    if ~isfield(ctx,'sel') || ~isstruct(ctx.sel)
+        ctx.sel = struct();
+    end
+    ctx.sel.frames = fra;
+    ctx.sel.channels = cha;
+
+    if ~isfield(ctx,'io') || ~isstruct(ctx.io)
+        ctx.io = buildCacheIoStruct(cachePolicy);
+    elseif ~isfield(ctx.io,'cachePolicy') || isempty(ctx.io.cachePolicy)
+        ctx.io.cachePolicy = cachePolicy;
+    end
+
+    if ~isfield(ctx,'store') || ~isstruct(ctx.store)
+        ctx.store = struct('cacheMode', cachePolicy);
+    elseif ~isfield(ctx.store,'cacheMode') || isempty(ctx.store.cacheMode)
+        ctx.store.cacheMode = cachePolicy;
+    end
+
+    if ~isfield(ctx,'exec') || ~isstruct(ctx.exec)
+        ctx.exec = struct();
+    end
+    ctx.exec.gpu = gpu;
+    ctx.exec.classifier = classifierStore;
+    ctx.exec.classifierCNN = classifierCNN;
+    ctx.exec.classifierProvided = ~isempty(classifierStore);
+    ctx.exec.classifierCNNProvided = ~isempty(classifierCNN);
+
+    if ~isfield(ctx,'names') || ~isstruct(ctx.names)
+        ctx.names = struct();
+    end
+    ctx.names.outputName = char(outputName);
 end
 
 function out = remapOnlyClassifierDataseries(in, classiobj, outputName)
