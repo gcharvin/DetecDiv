@@ -1861,7 +1861,8 @@ end
 
                     for k=1:numel(tmp.fov)
                         %  k
-                        if numel(tmp.fov(k).srcpath{1})>0
+                        if isprop(tmp.fov(k), 'srcpath') && iscell(tmp.fov(k).srcpath) && ...
+                                numel(tmp.fov(k).srcpath) >= 1 && ~isempty(tmp.fov(k).srcpath{1})
                             tmpproj = [tmpproj [num2str(k) ' - ' tmp.fov(k).id]];
                             %  aa=tmp.fov(k).srcpath
                         end
