@@ -505,41 +505,23 @@ if exist(liveLogPath, 'file') == 2
     delete(liveLogPath);
 end
 
-psi = System.Diagnostics.ProcessStartInfo();
-psi.FileName = char(string(pythonExe));
-psi.Arguments = ['-u "' char(string(runnerPath)) '" "' char(string(configPath)) '"'];
-psi.UseShellExecute = false;
-psi.CreateNoWindow = true;
-psi.WorkingDirectory = char(string(classifPath));
-
-proc = System.Diagnostics.Process();
-proc.StartInfo = psi;
-
-if ~proc.Start()
-    error('cellposesam_runner failed to start Python process.');
-end
-
-cleanupObj = onCleanup(@() localCleanupProcess(proc));
 lastLogBytes = 0;
-while ~proc.HasExited
-    pause(0.2);
-    drawnow;
-    localFlushRunnerLog(liveLogPath, lastLogBytes);
-    lastLogBytes = localFileBytes(liveLogPath);
-    if ~isempty(cancelPath) && exist(cancelPath, 'file') == 2
-        try
-            proc.Kill();
-        catch
-        end
-        error('runPipeline:Cancelled', 'Pipeline run cancelled by user during CellposeSAM execution.');
-    end
-end
+cmd = sprintf('cd %s && %s -u %s %s > %s 2> %s', ...
+    localShellQuote(classifPath), ...
+    localShellQuote(pythonExe), ...
+    localShellQuote(runnerPath), ...
+    localShellQuote(configPath), ...
+    localShellQuote(stdoutPath), ...
+    localShellQuote(stderrPath));
+[exitCode, runnerOut] = system(cmd);
 localFlushRunnerLog(liveLogPath, lastLogBytes);
 
 runnerErr = '';
 
-exitCode = double(proc.ExitCode);
 if exitCode ~= 0
+    if ~isempty(cancelPath) && exist(cancelPath, 'file') == 2
+        error('runPipeline:Cancelled', 'Pipeline run cancelled by user during CellposeSAM execution.');
+    end
     try
         errPath = fullfile(classifPath, 'runner_error.txt');
         if exist(errPath, 'file') == 2
@@ -550,6 +532,21 @@ if exitCode ~= 0
         end
     catch
     end
+    try
+        if strlength(strtrim(string(runnerErr))) == 0 && exist(stderrPath, 'file') == 2
+            extra = fileread(stderrPath);
+            if ~isempty(strtrim(extra))
+                runnerErr = strtrim(string(runnerErr) + newline + extra);
+            end
+        end
+    catch
+    end
+    try
+        if strlength(strtrim(string(runnerErr))) == 0 && ~isempty(strtrim(runnerOut))
+            runnerErr = strtrim(runnerOut);
+        end
+    catch
+    end
     if strlength(strtrim(string(runnerErr))) == 0
         runnerErr = sprintf('Python runner exited with code %d.', exitCode);
     end
@@ -557,12 +554,12 @@ if exitCode ~= 0
 end
 end
 
-function localCleanupProcess(proc)
-try
-    if ~isempty(proc) && ~proc.HasExited
-        proc.Kill();
-    end
-catch
+function out = localShellQuote(value)
+text = char(string(value));
+if ispc
+    out = ['"' strrep(text, '"', '\"') '"'];
+else
+    out = ['''' strrep(text, '''', '''"''"''') ''''];
 end
 end
 
