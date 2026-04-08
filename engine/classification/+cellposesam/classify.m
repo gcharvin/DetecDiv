@@ -505,16 +505,12 @@ if exist(liveLogPath, 'file') == 2
     delete(liveLogPath);
 end
 
-lastLogBytes = 0;
-cmd = sprintf('cd %s && %s -u %s %s > %s 2> %s', ...
-    localShellQuote(classifPath), ...
-    localShellQuote(pythonExe), ...
-    localShellQuote(runnerPath), ...
-    localShellQuote(configPath), ...
-    localShellQuote(stdoutPath), ...
-    localShellQuote(stderrPath));
-[exitCode, runnerOut] = system(cmd);
-localFlushRunnerLog(liveLogPath, lastLogBytes);
+if ispc
+    [exitCode, runnerOut] = runCellposeRunnerSystem(pythonExe, runnerPath, configPath, classifPath, stdoutPath, stderrPath);
+    localFlushRunnerLog(liveLogPath, 0);
+else
+    [exitCode, runnerOut] = runCellposeRunnerBackground(pythonExe, runnerPath, configPath, classifPath, cancelPath, stdoutPath, stderrPath, liveLogPath);
+end
 
 runnerErr = '';
 
@@ -554,12 +550,128 @@ if exitCode ~= 0
 end
 end
 
+function [exitCode, runnerOut] = runCellposeRunnerSystem(pythonExe, runnerPath, configPath, classifPath, stdoutPath, stderrPath)
+cmd = sprintf('cd %s && %s -u %s %s > %s 2> %s', ...
+    localShellQuote(classifPath), ...
+    localShellQuote(pythonExe), ...
+    localShellQuote(runnerPath), ...
+    localShellQuote(configPath), ...
+    localShellQuote(stdoutPath), ...
+    localShellQuote(stderrPath));
+[exitCode, runnerOut] = system(cmd);
+end
+
+function [exitCode, runnerOut] = runCellposeRunnerBackground(pythonExe, runnerPath, configPath, classifPath, cancelPath, stdoutPath, stderrPath, liveLogPath)
+pidPath = fullfile(classifPath, 'runner_pid.txt');
+statusPath = fullfile(classifPath, 'runner_status.txt');
+if exist(pidPath, 'file') == 2
+    delete(pidPath);
+end
+if exist(statusPath, 'file') == 2
+    delete(statusPath);
+end
+
+innerCmd = sprintf('cd %s && %s -u %s %s > %s 2> %s; echo $? > %s', ...
+    localShellQuote(classifPath), ...
+    localShellQuote(pythonExe), ...
+    localShellQuote(runnerPath), ...
+    localShellQuote(configPath), ...
+    localShellQuote(stdoutPath), ...
+    localShellQuote(stderrPath), ...
+    localShellQuote(statusPath));
+cmd = sprintf('sh -c %s & echo $! > %s', localShellQuote(innerCmd), localShellQuote(pidPath));
+[launchStatus, runnerOut] = system(cmd);
+if launchStatus ~= 0
+    exitCode = launchStatus;
+    return;
+end
+
+pid = localReadPid(pidPath);
+lastLogBytes = 0;
+while true
+    pause(0.5);
+    drawnow;
+    localFlushRunnerLog(liveLogPath, lastLogBytes);
+    lastLogBytes = localFileBytes(liveLogPath);
+
+    if ~isempty(cancelPath) && exist(cancelPath, 'file') == 2
+        localKillProcess(pid);
+        error('runPipeline:Cancelled', 'Pipeline run cancelled by user during CellposeSAM execution.');
+    end
+
+    if exist(statusPath, 'file') == 2
+        break;
+    end
+
+    if ~isempty(pid) && ~localProcessExists(pid)
+        break;
+    end
+end
+localFlushRunnerLog(liveLogPath, lastLogBytes);
+
+exitCode = localReadExitCode(statusPath);
+end
+
 function out = localShellQuote(value)
 text = char(string(value));
 if ispc
     out = ['"' strrep(text, '"', '\"') '"'];
 else
     out = ['''' strrep(text, '''', '''"''"''') ''''];
+end
+end
+
+function pid = localReadPid(pidPath)
+pid = '';
+try
+    if exist(pidPath, 'file') == 2
+        pid = strtrim(fileread(pidPath));
+    end
+catch
+    pid = '';
+end
+end
+
+function code = localReadExitCode(statusPath)
+code = 1;
+try
+    if exist(statusPath, 'file') == 2
+        txt = strtrim(fileread(statusPath));
+        val = str2double(txt);
+        if ~isnan(val)
+            code = val;
+        end
+    end
+catch
+    code = 1;
+end
+end
+
+function tf = localProcessExists(pid)
+tf = false;
+try
+    if isempty(pid)
+        return;
+    end
+    [status, ~] = system(sprintf('kill -0 %s 2>/dev/null', pid));
+    tf = status == 0;
+catch
+    tf = false;
+end
+end
+
+function localKillProcess(pid)
+try
+    if isempty(pid)
+        return;
+    end
+    system(sprintf('kill %s 2>/dev/null', pid));
+    pause(1);
+    [status, ~] = system(sprintf('kill -0 %s 2>/dev/null', pid));
+    if status == 0
+        system(sprintf('kill -9 %s 2>/dev/null', pid));
+    end
+catch
 end
 end
 
