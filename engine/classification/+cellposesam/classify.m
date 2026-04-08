@@ -505,12 +505,7 @@ if exist(liveLogPath, 'file') == 2
     delete(liveLogPath);
 end
 
-if ispc
-    [exitCode, runnerOut] = runCellposeRunnerSystem(pythonExe, runnerPath, configPath, classifPath, stdoutPath, stderrPath);
-    localFlushRunnerLog(liveLogPath, 0);
-else
-    [exitCode, runnerOut] = runCellposeRunnerBackground(pythonExe, runnerPath, configPath, classifPath, cancelPath, stdoutPath, stderrPath, liveLogPath);
-end
+[exitCode, runnerOut] = runCellposeRunnerBackground(pythonExe, runnerPath, configPath, classifPath, cancelPath, stdoutPath, stderrPath, liveLogPath);
 
 runnerErr = '';
 
@@ -550,17 +545,6 @@ if exitCode ~= 0
 end
 end
 
-function [exitCode, runnerOut] = runCellposeRunnerSystem(pythonExe, runnerPath, configPath, classifPath, stdoutPath, stderrPath)
-cmd = sprintf('cd %s && %s -u %s %s > %s 2> %s', ...
-    localShellQuote(classifPath), ...
-    localShellQuote(pythonExe), ...
-    localShellQuote(runnerPath), ...
-    localShellQuote(configPath), ...
-    localShellQuote(stdoutPath), ...
-    localShellQuote(stderrPath));
-[exitCode, runnerOut] = system(cmd);
-end
-
 function [exitCode, runnerOut] = runCellposeRunnerBackground(pythonExe, runnerPath, configPath, classifPath, cancelPath, stdoutPath, stderrPath, liveLogPath)
 pidPath = fullfile(classifPath, 'runner_pid.txt');
 statusPath = fullfile(classifPath, 'runner_status.txt');
@@ -571,15 +555,22 @@ if exist(statusPath, 'file') == 2
     delete(statusPath);
 end
 
-innerCmd = sprintf('cd %s && %s -u %s %s > %s 2> %s; echo $? > %s', ...
-    localShellQuote(classifPath), ...
-    localShellQuote(pythonExe), ...
-    localShellQuote(runnerPath), ...
-    localShellQuote(configPath), ...
-    localShellQuote(stdoutPath), ...
-    localShellQuote(stderrPath), ...
-    localShellQuote(statusPath));
-cmd = sprintf('sh -c %s & echo $! > %s', localShellQuote(innerCmd), localShellQuote(pidPath));
+if ispc
+    launcherPath = fullfile(classifPath, 'runner_launcher.ps1');
+    localWriteWindowsRunnerLauncher(launcherPath, pythonExe, runnerPath, configPath, classifPath, stdoutPath, stderrPath, pidPath, statusPath);
+    cmd = sprintf('cmd /C start "" /B powershell.exe -NoProfile -ExecutionPolicy Bypass -File %s', ...
+        localCmdQuote(launcherPath));
+else
+    innerCmd = sprintf('cd %s && %s -u %s %s > %s 2> %s; echo $? > %s', ...
+        localShellQuote(classifPath), ...
+        localShellQuote(pythonExe), ...
+        localShellQuote(runnerPath), ...
+        localShellQuote(configPath), ...
+        localShellQuote(stdoutPath), ...
+        localShellQuote(stderrPath), ...
+        localShellQuote(statusPath));
+    cmd = sprintf('sh -c %s & echo $! > %s', localShellQuote(innerCmd), localShellQuote(pidPath));
+end
 [launchStatus, runnerOut] = system(cmd);
 if launchStatus ~= 0
     exitCode = launchStatus;
@@ -612,6 +603,38 @@ localFlushRunnerLog(liveLogPath, lastLogBytes);
 exitCode = localReadExitCode(statusPath);
 end
 
+function localWriteWindowsRunnerLauncher(launcherPath, pythonExe, runnerPath, configPath, classifPath, stdoutPath, stderrPath, pidPath, statusPath)
+script = sprintf([ ...
+    "$ErrorActionPreference = 'Stop'\n" ...
+    "try {\n" ...
+    "    $p = Start-Process -FilePath %s -ArgumentList @('-u', %s, %s) -WorkingDirectory %s -RedirectStandardOutput %s -RedirectStandardError %s -PassThru -WindowStyle Hidden\n" ...
+    "    Set-Content -LiteralPath %s -Value $p.Id\n" ...
+    "    $p.WaitForExit()\n" ...
+    "    Set-Content -LiteralPath %s -Value $p.ExitCode\n" ...
+    "} catch {\n" ...
+    "    $_ | Out-File -LiteralPath %s -Append\n" ...
+    "    Set-Content -LiteralPath %s -Value 1\n" ...
+    "}\n"], ...
+    localPowerShellQuote(pythonExe), ...
+    localPowerShellQuote(runnerPath), ...
+    localPowerShellQuote(configPath), ...
+    localPowerShellQuote(classifPath), ...
+    localPowerShellQuote(stdoutPath), ...
+    localPowerShellQuote(stderrPath), ...
+    localPowerShellQuote(pidPath), ...
+    localPowerShellQuote(statusPath), ...
+    localPowerShellQuote(stderrPath), ...
+    localPowerShellQuote(statusPath));
+
+fid = fopen(launcherPath, 'w');
+if fid < 0
+    error('Unable to create CellposeSAM Windows launcher: %s', launcherPath);
+end
+cleanup = onCleanup(@() fclose(fid));
+fprintf(fid, '%s', script);
+clear cleanup;
+end
+
 function out = localShellQuote(value)
 text = char(string(value));
 if ispc
@@ -619,6 +642,16 @@ if ispc
 else
     out = ['''' strrep(text, '''', '''"''"''') ''''];
 end
+end
+
+function out = localCmdQuote(value)
+text = char(string(value));
+out = ['"' strrep(text, '"', '""') '"'];
+end
+
+function out = localPowerShellQuote(value)
+text = char(string(value));
+out = ['''' strrep(text, '''', '''''') ''''];
 end
 
 function pid = localReadPid(pidPath)
@@ -653,7 +686,11 @@ try
     if isempty(pid)
         return;
     end
-    [status, ~] = system(sprintf('kill -0 %s 2>/dev/null', pid));
+    if ispc
+        [status, ~] = system(sprintf('powershell.exe -NoProfile -Command "if (Get-Process -Id %s -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"', pid));
+    else
+        [status, ~] = system(sprintf('kill -0 %s 2>/dev/null', pid));
+    end
     tf = status == 0;
 catch
     tf = false;
@@ -665,11 +702,15 @@ try
     if isempty(pid)
         return;
     end
-    system(sprintf('kill %s 2>/dev/null', pid));
-    pause(1);
-    [status, ~] = system(sprintf('kill -0 %s 2>/dev/null', pid));
-    if status == 0
-        system(sprintf('kill -9 %s 2>/dev/null', pid));
+    if ispc
+        system(sprintf('powershell.exe -NoProfile -Command "Stop-Process -Id %s -Force -ErrorAction SilentlyContinue"', pid));
+    else
+        system(sprintf('kill %s 2>/dev/null', pid));
+        pause(1);
+        [status, ~] = system(sprintf('kill -0 %s 2>/dev/null', pid));
+        if status == 0
+            system(sprintf('kill -9 %s 2>/dev/null', pid));
+        end
     end
 catch
 end
