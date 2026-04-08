@@ -74,7 +74,7 @@ for r = 1:numel(roots)
     root = roots(r);
 
     if isMT
-        [p2, ok2] = detecdiv_paths_rebase_file(p0, root, debug, 0);
+        [p2, ok2] = detecdiv_paths_rebase_file(p0, root, debug, 6);
     elseif isND
         [p2, ok2] = detecdiv_paths_rebase_ndtiff(p0, root, debug);
     else

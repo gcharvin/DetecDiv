@@ -32,6 +32,7 @@ function result = detecdiv_run_pipeline_job(jobInput)
         if isempty(shallowObj)
             error('detecdiv_run_pipeline_job:ProjectLoadFailed', '%s', msg);
         end
+        shallowObj = localRelinkRawPaths(shallowObj, payload);
 
         pipelineInputPath = localResolvePipelineInputPath(payload);
         [pipeObj, msg] = pipelineLoad(pipelineInputPath);
@@ -324,6 +325,79 @@ function localMaybeSaveProject(shallowObj, payload)
     end
     if saveProject
         shallowSave(shallowObj);
+    end
+end
+
+function shallowObj = localRelinkRawPaths(shallowObj, payload)
+    rawRoots = localRawRootCandidates(payload);
+    if isempty(rawRoots)
+        return;
+    end
+
+    for i = 1:numel(rawRoots)
+        rawRoot = char(string(rawRoots{i}));
+        if isempty(rawRoot) || exist(rawRoot, 'dir') ~= 7
+            continue;
+        end
+
+        try
+            [shallowObj, report] = detecdiv_paths_relink_project(shallowObj, rawRoot, 'Debug', false);
+            okCount = localReportOkCount(report);
+            fprintf('[pipeline-job] Raw path relink candidate %s: %d/%d entries ready.\n', ...
+                rawRoot, okCount, numel(report));
+            if okCount == numel(report) && ~isempty(report)
+                return;
+            end
+        catch ME
+            fprintf('[pipeline-job] Raw path relink skipped for %s: %s\n', rawRoot, ME.message);
+        end
+    end
+end
+
+function rawRoots = localRawRootCandidates(payload)
+    rawRoots = {};
+    rawRoots = localAppendStringList(rawRoots, localGetField(localGetField(payload, 'project_ref', struct()), 'raw_root_candidates', {}));
+    rawRoots = localAppendStringList(rawRoots, localGetField(localGetField(payload, 'project_ref', struct()), 'raw_root', {}));
+    rawRoots = localAppendStringList(rawRoots, localGetField(localGetField(payload, 'execution', struct()), 'raw_root_candidates', {}));
+    rawRoots = localAppendStringList(rawRoots, localGetField(localGetField(payload, 'execution', struct()), 'raw_root', {}));
+    rawRoots = unique(rawRoots, 'stable');
+end
+
+function out = localAppendStringList(out, value)
+    if nargin < 1 || isempty(out)
+        out = {};
+    end
+    if isempty(value)
+        return;
+    end
+    if iscell(value)
+        for i = 1:numel(value)
+            out = localAppendStringList(out, value{i});
+        end
+        return;
+    end
+    if isstring(value)
+        for i = 1:numel(value)
+            txt = char(value(i));
+            if ~isempty(txt)
+                out{end+1} = txt; %#ok<AGROW>
+            end
+        end
+        return;
+    end
+    if ischar(value)
+        out{end+1} = value; %#ok<AGROW>
+    end
+end
+
+function okCount = localReportOkCount(report)
+    okCount = 0;
+    try
+        if isstruct(report) && isfield(report, 'ok')
+            okCount = sum([report.ok]);
+        end
+    catch
+        okCount = 0;
     end
 end
 
