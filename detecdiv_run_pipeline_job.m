@@ -78,9 +78,17 @@ function result = detecdiv_run_pipeline_job(jobInput)
             report = struct();
         end
 
+        isCancelled = strcmp(ME.identifier, 'runPipeline:Cancelled') ...
+            || contains(lower(ME.message), 'cancelled by user') ...
+            || contains(lower(ME.message), 'canceled by user');
+
         try
             if exist('runObj', 'var') && ~isempty(runObj)
-                runObj.status = 'failed';
+                if isCancelled
+                    runObj.status = 'cancelled';
+                else
+                    runObj.status = 'failed';
+                end
                 if exist('ctxOut', 'var') && ~isempty(ctxOut)
                     runObj.ctx = ctxOut;
                 elseif exist('ctx', 'var') && ~isempty(ctx)
@@ -115,7 +123,11 @@ function result = detecdiv_run_pipeline_job(jobInput)
         catch
         end
 
-        result.status = 'failed';
+        if isCancelled
+            result.status = 'cancelled';
+        else
+            result.status = 'failed';
+        end
         result.error = getReport(ME, 'extended', 'hyperlinks', 'off');
         result.summary = localBuildFailureSummary(report);
         localWriteResultIfRequested(resultPath, result);
@@ -266,6 +278,10 @@ function ctx = localBuildExecutionContext(payload, shallowObj, pipeObj)
         end
         if isfield(payload.execution, 'dry_run') && logical(payload.execution.dry_run)
             ctx.dryRun = true;
+        end
+        cancelTokenFile = localGetText(payload, {'execution','cancel_token_file'}, '');
+        if ~isempty(cancelTokenFile)
+            ctx.cancel = struct('tokenFile', cancelTokenFile);
         end
     end
 end

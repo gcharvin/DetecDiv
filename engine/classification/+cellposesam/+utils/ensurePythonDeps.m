@@ -66,10 +66,12 @@ function info = ensurePythonDeps(classif, varargin)
     if ~opts.use_conda
         condaOk = false;
     end
-    if ~condaOk
+    if ~condaOk && ~opts.pip_fallback
         error(['Conda not found. Create a conda env (Python 3.10 recommended) and try again:' newline ...
                '  conda create -n cellposesam python=3.10 -y' newline ...
                '  conda activate cellposesam']);
+    elseif ~condaOk && opts.debug
+        fprintf('[PYDEPS] conda not available; checking imports and using pip fallback for missing packages.\n');
     end
 
     % Warn if Python version is not 3.10 (Cellpose recommendation)
@@ -230,10 +232,16 @@ function [cmd, ok] = findCondaCmdLocal(debug)
             end
             candBat = fullfile(base, "condabin", "conda.bat");
             candExe = fullfile(base, "Scripts",  "conda.exe");
+            candBin = fullfile(base, "bin", "conda");
+            candCondaBin = fullfile(base, "condabin", "conda");
             if isfile(candBat)
                 cmd = char(candBat); ok = true; return;
             elseif isfile(candExe)
                 cmd = char(candExe); ok = true; return;
+            elseif isfile(candBin)
+                cmd = char(candBin); ok = true; return;
+            elseif isfile(candCondaBin)
+                cmd = char(candCondaBin); ok = true; return;
             end
         end
     catch
