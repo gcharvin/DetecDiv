@@ -249,10 +249,12 @@ if numel(shallowObj.fov) ~= 0 && isprop(shallowObj.fov(1), 'srcpath') && ~isempt
     end
 
     % Affichage informatif (channel 1)
-    if ~isempty(shallowObj.fov(1).srcpath) && numel(shallowObj.fov(1).srcpath{1}) ~= 0
+    if ~isempty(shallowObj.fov(1).srcpath) && numel(shallowObj.fov(1).srcpath) >= 1 && numel(shallowObj.fov(1).srcpath{1}) ~= 0
         disp('* Project contains FOV srcpath (channel 1 shown):');
         for i = 1:numel(shallowObj.fov)
-            disp(shallowObj.fov(i).srcpath{1});
+            if iscell(shallowObj.fov(i).srcpath) && numel(shallowObj.fov(i).srcpath) >= 1 && ~isempty(shallowObj.fov(i).srcpath{1})
+                disp(shallowObj.fov(i).srcpath{1});
+            end
         end
     end
 

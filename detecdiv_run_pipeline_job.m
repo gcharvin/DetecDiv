@@ -360,6 +360,14 @@ function rawRoots = localRawRootCandidates(payload)
     rawRoots = localAppendStringList(rawRoots, localGetField(localGetField(payload, 'project_ref', struct()), 'raw_root', {}));
     rawRoots = localAppendStringList(rawRoots, localGetField(localGetField(payload, 'execution', struct()), 'raw_root_candidates', {}));
     rawRoots = localAppendStringList(rawRoots, localGetField(localGetField(payload, 'execution', struct()), 'raw_root', {}));
+    projectMatPath = localGetText(payload, {'project_ref','project_mat_path'}, '');
+    if ~isempty(projectMatPath) && exist('detecdiv_paths_infer_raw_roots', 'file') == 2
+        try
+            rawRoots = localAppendStringList(rawRoots, detecdiv_paths_infer_raw_roots(projectMatPath));
+        catch ME
+            fprintf('[pipeline-job] Raw root inference skipped for %s: %s\n', projectMatPath, ME.message);
+        end
+    end
     rawRoots = unique(rawRoots, 'stable');
 end
 
