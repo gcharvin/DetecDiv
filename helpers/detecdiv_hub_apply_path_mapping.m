@@ -19,6 +19,7 @@ function [mappedPath, method] = detecdiv_hub_apply_path_mapping(pathIn, hubSetti
     end
 
     normInput = localNormalizePath(pathIn);
+    displayInput = localNormalizePathPreserveCase(pathIn);
     bestLen = -1;
     bestPath = '';
     for i = 1:numel(entries)
@@ -27,7 +28,7 @@ function [mappedPath, method] = detecdiv_hub_apply_path_mapping(pathIn, hubSetti
             continue;
         end
         if localHasPathPrefix(normInput, remotePrefix)
-            suffix = extractAfter(normInput, strlength(remotePrefix));
+            suffix = extractAfter(displayInput, strlength(remotePrefix));
             suffix = char(suffix);
             if ~isempty(suffix) && any(suffix(1) == ['/' '\'])
                 suffix = suffix(2:end);
@@ -107,6 +108,15 @@ function out = localNormalizePath(pathIn)
     if ispc
         out = lower(out);
     end
+end
+
+function out = localNormalizePathPreserveCase(pathIn)
+    out = char(string(pathIn));
+    if isempty(out)
+        return;
+    end
+    out = strrep(out, '\', '/');
+    out = regexprep(out, '/+$', '');
 end
 
 function out = localSuffixToFilesep(pathIn)

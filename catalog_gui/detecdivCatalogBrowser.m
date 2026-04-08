@@ -1,4 +1,4 @@
-function fig = detecdivCatalogBrowser(varargin)
+function varargout = detecdivCatalogBrowser(varargin)
 % detecdivCatalogBrowser  Browse indexed DetecDiv projects from local DB or hub API.
 
     ip = inputParser;
@@ -402,6 +402,10 @@ function fig = detecdivCatalogBrowser(varargin)
         if isequal(selectedRoot, 0)
             return;
         end
+        if strcmp(state.sourceMode, 'hub')
+            localMountEdit.Value = char(selectedRoot);
+            return;
+        end
         rootEdit.Value = char(selectedRoot);
     end
 
@@ -530,21 +534,81 @@ function fig = detecdivCatalogBrowser(varargin)
 
         try
             if strcmp(state.sourceMode, 'local')
-                [shallowObj, msg] = shallowLoad(char(string(row.project_mat_abs)));
+                projectMatPath = char(string(row.project_mat_abs));
             else
-                [shallowObj, msg] = detecdiv_hub_load_project(char(string(row.project_id)), state.hubSettings);
+                [~, projectMatPath] = resolveSelectedHubProject();
+            end
+
+            if isempty(projectMatPath)
+                error('Could not resolve the project MAT path.');
+            end
+
+            [shallowObj, loadedVarName] = localFindLoadedProjectByMatPath(projectMatPath);
+            if ~isempty(shallowObj)
+                refreshLoadedIndicators();
+                setStatus(sprintf('Project already loaded in workspace as "%s".', loadedVarName));
+                return;
+            end
+
+            progressDlg = showLoadProgress(projectMatPath);
+            cleanupProgress = onCleanup(@() closeProgressDialog(progressDlg)); %#ok<NASGU>
+            [shallowObj, msg] = shallowLoad(projectMatPath);
+            if isempty(msg)
+                msg = 'shallowLoad returned an empty project.';
             end
             if isempty(shallowObj)
                 setStatus(msg);
                 return;
             end
 
-            varName = matlab.lang.makeValidName(['proj_' char(string(row.name))]);
+            varName = matlab.lang.makeValidName(char(string(row.name)));
+            if isempty(varName)
+                varName = 'project';
+            end
             assignin('base', varName, shallowObj);
-            refreshProjectsTable('PreserveStatus', true);
+            refreshLoadedIndicators();
             setStatus(sprintf('Project loaded into workspace as "%s".', varName));
         catch ME
-            uialert(fig, ME.message, 'Load Project Failed');
+            message = localErrorMessage(ME);
+            uialert(fig, message, 'Load Project Failed');
+            setStatus(['Load failed: ' message]);
+        end
+    end
+
+    function refreshLoadedIndicators()
+        try
+            if isempty(state.projects)
+                return;
+            end
+            projectTable.Data = localBuildDisplayTable(state.projects, state.sourceMode, state.hubSettings);
+            applyProjectTableStyles();
+            updateSelectionState();
+        catch
+        end
+    end
+
+    function progressDlg = showLoadProgress(projectMatPath)
+        progressDlg = [];
+        try
+            progressDlg = uiprogressdlg(fig, ...
+                'Title', 'Loading Project', ...
+                'Message', ['Loading ' char(string(projectMatPath))], ...
+                'Indeterminate', 'on');
+            drawnow;
+        catch
+            progressDlg = [];
+        end
+    end
+
+    function closeProgressDialog(progressDlg)
+        if isempty(progressDlg)
+            return;
+        end
+        try
+            if isvalid(progressDlg)
+                close(progressDlg);
+            end
+        catch
         end
     end
 
@@ -567,6 +631,10 @@ function fig = detecdivCatalogBrowser(varargin)
 
         projectDir = localHubMetadataField(projectDetail, 'project_dir_abs');
         if ~isempty(projectDir)
+            [mappedProjectDir, ~] = detecdiv_hub_apply_path_mapping(projectDir, state.hubSettings);
+            if ~isempty(mappedProjectDir)
+                projectDir = mappedProjectDir;
+            end
             openPath(projectDir);
         else
             uialert(fig, 'Could not resolve a local folder for this hub project.', 'Open Failed');
@@ -921,7 +989,8 @@ function fig = detecdivCatalogBrowser(varargin)
                     detecdiv_catalog_list_projects(state.catalogSettings.dbFile));
                 state.projects = projects;
                 state.lastVisibleProjectCount = height(projects);
-                projectTable.Data = localBuildDisplayTable(projects, 'local');
+                projectTable.Data = localBuildDisplayTable(projects, 'local', state.hubSettings);
+                applyProjectTableStyles();
                 restorePreviousSelection();
                 updateSelectionState();
                 if ~preserveStatus
@@ -935,8 +1004,7 @@ function fig = detecdivCatalogBrowser(varargin)
                 return;
             end
 
-            state.hubSettings.baseUrl = strtrim(baseUrlEdit.Value);
-            state.hubSettings.userKey = strtrim(userKeyEdit.Value);
+            syncHubSettingsFromControls();
             detecdiv_hub_settings_set(state.hubSettings);
             refreshHubContext();
             projects = localNormalizeHubProjects(detecdiv_hub_list_projects( ...
@@ -945,7 +1013,8 @@ function fig = detecdivCatalogBrowser(varargin)
                 'OwnedOnly', state.hubOwnedOnly));
             state.projects = projects;
             state.lastVisibleProjectCount = height(projects);
-            projectTable.Data = localBuildDisplayTable(projects, 'hub');
+            projectTable.Data = localBuildDisplayTable(projects, 'hub', state.hubSettings);
+            applyProjectTableStyles();
             restorePreviousSelection();
             updateSelectionState();
             if ~preserveStatus
@@ -959,11 +1028,24 @@ function fig = detecdivCatalogBrowser(varargin)
         catch ME
             state.projects = table();
             projectTable.Data = table();
+            applyProjectTableStyles();
             state.selectedRow = [];
             updateSelectionState();
             if ~preserveStatus
                 setStatus(['Refresh failed: ' ME.message]);
             end
+        end
+    end
+
+    function applyProjectTableStyles()
+        try
+            removeStyle(projectTable);
+            loadedRows = localLoadedRows(state.projects, state.sourceMode, state.hubSettings);
+            if ~isempty(loadedRows)
+                loadedStyle = uistyle('BackgroundColor', [0.83 0.94 0.86]);
+                addStyle(projectTable, loadedStyle, 'row', loadedRows);
+            end
+        catch
         end
     end
 
@@ -1093,8 +1175,26 @@ function fig = detecdivCatalogBrowser(varargin)
         if isempty(row)
             error('No project selected.');
         end
+        syncHubSettingsFromControls();
         projectDetail = detecdiv_hub_get_project(char(string(row.project_id)), state.hubSettings);
         [projectMatPath, resolutionInfo] = detecdiv_hub_resolve_project_location(projectDetail, state.hubSettings);
+    end
+
+    function syncHubSettingsFromControls()
+        if ~strcmp(state.sourceMode, 'hub')
+            return;
+        end
+
+        hubRoot = sanitizeRoot(rootEdit.Value, 'RequireExisting', false);
+        localMount = sanitizeRoot(localMountEdit.Value, 'RequireExisting', false);
+        state.hubSettings.baseUrl = strtrim(baseUrlEdit.Value);
+        state.hubSettings.userKey = strtrim(userKeyEdit.Value);
+        state.hubSettings.defaultRemoteProjectRoot = hubRoot;
+        state.hubSettings.defaultLocalProjectRoot = localMount;
+        state.hubSettings.sourceMode = state.sourceMode;
+        if ~isempty(hubRoot) && ~isempty(localMount)
+            state.hubSettings = detecdiv_hub_upsert_path_mapping(state.hubSettings, hubRoot, localMount);
+        end
     end
 
     function [shallowObj, projectMatPath] = ensureProjectLoadedForRun(row)
@@ -1389,6 +1489,10 @@ function fig = detecdivCatalogBrowser(varargin)
             value = 'off';
         end
     end
+
+    if nargout > 0
+        varargout{1} = fig;
+    end
 end
 
 function heights = localHeaderRowHeights(isLocal)
@@ -1503,15 +1607,18 @@ function projects = localNormalizeHubProjects(items)
     projects.owner_user_key = ownerKeys;
 end
 
-function displayTable = localBuildDisplayTable(projects, sourceMode)
+function displayTable = localBuildDisplayTable(projects, sourceMode, hubSettings)
     if isempty(projects)
         displayTable = table();
         return;
     end
+    if nargin < 3
+        hubSettings = struct();
+    end
 
     displayTable = table();
     displayTable.Name = string(projects.name);
-    displayTable.Loaded = localLoadedLabels(projects);
+    displayTable.Loaded = localLoadedLabels(projects, sourceMode, hubSettings);
     if ismember('owner_user_key', projects.Properties.VariableNames)
         displayTable.Owner = string(projects.owner_user_key);
     end
@@ -1572,15 +1679,58 @@ function out = localHumanBytes(value)
     out = sprintf('%.2f %s', value, units{idx});
 end
 
-function labels = localLoadedLabels(projects)
+function message = localErrorMessage(ME)
+    message = char(string(ME.message));
+    if isempty(message)
+        message = getReport(ME, 'basic', 'hyperlinks', 'off');
+    end
+    if isempty(strtrim(message))
+        message = 'MATLAB raised an error without a message.';
+    end
+end
+
+function labels = localLoadedLabels(projects, sourceMode, hubSettings)
     if isempty(projects)
         labels = strings(0, 1);
         return;
     end
+    if nargin < 2
+        sourceMode = 'local';
+    end
+    if nargin < 3
+        hubSettings = struct();
+    end
 
     labels = strings(height(projects), 1);
     for i = 1:height(projects)
-        labels(i) = string(localYesNo(localProjectLoadedPath(char(string(projects.project_mat_abs(i))))));
+        labels(i) = string(localYesNo(localProjectLoadedPath( ...
+            localLoadedComparableMatPath(projects(i, :), sourceMode, hubSettings))));
+    end
+end
+
+function rows = localLoadedRows(projects, sourceMode, hubSettings)
+    rows = [];
+    if isempty(projects)
+        return;
+    end
+    if nargin < 3
+        hubSettings = struct();
+    end
+
+    for i = 1:height(projects)
+        if localProjectLoadedPath(localLoadedComparableMatPath(projects(i, :), sourceMode, hubSettings))
+            rows(end+1) = i; %#ok<AGROW>
+        end
+    end
+end
+
+function projectMatPath = localLoadedComparableMatPath(projectRow, sourceMode, hubSettings)
+    projectMatPath = char(string(projectRow.project_mat_abs));
+    if strcmp(sourceMode, 'hub') && ~isempty(projectMatPath)
+        [mappedPath, ~] = detecdiv_hub_apply_path_mapping(projectMatPath, hubSettings);
+        if ~isempty(mappedPath)
+            projectMatPath = mappedPath;
+        end
     end
 end
 
@@ -1629,11 +1779,19 @@ function tf = localProjectLoadedPath(projectMatPath)
         end
 
         loadedPath = localNormalizeLoadedPath(tmp.io.path);
-        loadedFile = lower([char(string(tmp.io.file)) '.mat']);
+        loadedFile = localNormalizeLoadedFileName(tmp.io.file);
         if strcmp(loadedPath, expectedPath) && strcmp(loadedFile, expectedFile)
             tf = true;
             return;
         end
+    end
+end
+
+function fileName = localNormalizeLoadedFileName(fileIn)
+    fileName = lower(char(string(fileIn)));
+    [~, ~, ext] = fileparts(fileName);
+    if isempty(ext)
+        fileName = [fileName '.mat'];
     end
 end
 
@@ -2030,8 +2188,9 @@ function [selectedNodes, description, nodeParams] = localParseHubRunNotes(lines)
     end
 end
 
-function shallowObj = localFindLoadedProjectByMatPath(projectMatPath)
+function [shallowObj, loadedVarName] = localFindLoadedProjectByMatPath(projectMatPath)
     shallowObj = [];
+    loadedVarName = '';
     projectMatPath = char(string(projectMatPath));
     if isempty(projectMatPath)
         return;
@@ -2064,9 +2223,10 @@ function shallowObj = localFindLoadedProjectByMatPath(projectMatPath)
             continue;
         end
         loadedPath = localNormalizeLoadedPath(tmp.io.path);
-        loadedFile = lower([char(string(tmp.io.file)) '.mat']);
+        loadedFile = localNormalizeLoadedFileName(tmp.io.file);
         if strcmp(loadedPath, expectedPath) && strcmp(loadedFile, expectedFile)
             shallowObj = tmp;
+            loadedVarName = varName;
             return;
         end
     end

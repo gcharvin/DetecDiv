@@ -141,6 +141,34 @@ function [candidatePaths, methods] = localLocationCandidates(location, hubSettin
         end
     end
 
+    siblingMatPath = localBuildProjectSiblingMatPath(prefix, relativePath, projectFileName);
+    if ~isempty(siblingMatPath)
+        if ~any(strcmp(candidatePaths, siblingMatPath))
+            candidatePaths{end+1} = siblingMatPath; %#ok<AGROW>
+            methods{end+1} = 'directSiblingMat'; %#ok<AGROW>
+        end
+
+        [mappedPath, mappedMethod] = detecdiv_hub_apply_path_mapping(siblingMatPath, hubSettings);
+        if ~isempty(mappedPath) && ~any(strcmp(candidatePaths, mappedPath))
+            candidatePaths{end+1} = mappedPath; %#ok<AGROW>
+            methods{end+1} = ['directSiblingMat|' mappedMethod]; %#ok<AGROW>
+        end
+    end
+
+    localMountPath = localBuildProjectMatPath( ...
+        localDefaultLocalProjectRoot(hubSettings), relativePath, projectFileName);
+    if ~isempty(localMountPath) && ~isempty(prefix) && ~any(strcmp(candidatePaths, localMountPath))
+        candidatePaths{end+1} = localMountPath; %#ok<AGROW>
+        methods{end+1} = ['storageRootPrefix:' prefix '|defaultLocalProjectRoot']; %#ok<AGROW>
+    end
+
+    localMountSiblingMatPath = localBuildProjectSiblingMatPath( ...
+        localDefaultLocalProjectRoot(hubSettings), relativePath, projectFileName);
+    if ~isempty(localMountSiblingMatPath) && ~isempty(prefix) && ~any(strcmp(candidatePaths, localMountSiblingMatPath))
+        candidatePaths{end+1} = localMountSiblingMatPath; %#ok<AGROW>
+        methods{end+1} = ['storageRootPrefix:' prefix '|defaultLocalProjectRootSiblingMat']; %#ok<AGROW>
+    end
+
     mappedPrefix = localLookupMappedRoot(hubSettings, rootName);
     if ~isempty(mappedPrefix)
         mappedPath = localBuildProjectMatPath(mappedPrefix, relativePath, projectFileName);
@@ -148,6 +176,28 @@ function [candidatePaths, methods] = localLocationCandidates(location, hubSettin
             candidatePaths{end+1} = mappedPath; %#ok<AGROW>
             methods{end+1} = ['storageRootMap:' rootName]; %#ok<AGROW>
         end
+    end
+end
+
+function out = localBuildProjectSiblingMatPath(prefix, relativePath, projectFileName)
+    out = '';
+    if isempty(prefix) || isempty(relativePath) || isempty(projectFileName)
+        return;
+    end
+
+    [parentPath, leafName] = fileparts(char(string(relativePath)));
+    [~, matStem] = fileparts(char(string(projectFileName)));
+    if isempty(leafName) || ~strcmp(leafName, matStem)
+        return;
+    end
+
+    out = localBuildProjectMatPath(prefix, parentPath, projectFileName);
+end
+
+function localRoot = localDefaultLocalProjectRoot(hubSettings)
+    localRoot = '';
+    if isfield(hubSettings, 'defaultLocalProjectRoot') && ~isempty(hubSettings.defaultLocalProjectRoot)
+        localRoot = char(string(hubSettings.defaultLocalProjectRoot));
     end
 end
 
