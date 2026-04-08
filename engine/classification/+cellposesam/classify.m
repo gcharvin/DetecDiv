@@ -30,7 +30,7 @@ if isfield(ctx,'cancel') && isstruct(ctx.cancel)
     end
 end
 
-[data, image] = classifyCellposeInternal(roiobj, classif, frames, channels, gpu, outputName, cancelPath);
+[data, image] = classifyCellposeInternal(roiobj, classif, frames, channels, gpu, outputName, cancelPath, ctx);
 
 out.data = data;
 out.image = image;
@@ -38,7 +38,7 @@ out.patch = [];
 out.status = "OK";
 end
 
-function [data, image] = classifyCellposeInternal(roiobj, classif, frames, channel, gpu, outputName, cancelPath)
+function [data, image] = classifyCellposeInternal(roiobj, classif, frames, channel, gpu, outputName, cancelPath, ctx)
 % Segmentation avec CellposeSAM sans tracking (optionnel : tracking basique hongrois)
 
 if nargin < 6
@@ -46,6 +46,9 @@ if nargin < 6
 end
 if nargin < 7
     cancelPath = '';
+end
+if nargin < 8 || isempty(ctx)
+    ctx = struct();
 end
 try
     disp('[DEBUG] cellposesam.classify: version=2026-02-06T13:10');
