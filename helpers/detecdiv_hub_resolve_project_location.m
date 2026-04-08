@@ -2,8 +2,9 @@ function [projectMatPath, info] = detecdiv_hub_resolve_project_location(projectD
 % detecdiv_hub_resolve_project_location  Resolve a local .mat path for a hub project.
 %
 % Resolution order:
-%   1) Use location.storage_root.path_prefix directly
+%   1) Use projectDetail.locations and apply path prefix mappings
 %   2) Apply hubSettings.storageRootMap.<storage_root.name> if defined
+%   3) Fall back to legacy metadata_json project paths
 
     if nargin < 2 || isempty(hubSettings)
         hubSettings = detecdiv_hub_settings_get();
@@ -17,6 +18,24 @@ function [projectMatPath, info] = detecdiv_hub_resolve_project_location(projectD
         'candidatePaths', {{}});
     projectMatPath = '';
 
+    if isstruct(projectDetail) && isfield(projectDetail, 'locations') && ~isempty(projectDetail.locations)
+        locations = localSortLocations(projectDetail.locations);
+        for i = 1:numel(locations)
+            [candidatePaths, methods] = localLocationCandidates(locations(i), hubSettings);
+            for j = 1:numel(candidatePaths)
+                info.candidatePaths{end+1} = candidatePaths{j}; %#ok<AGROW>
+                if isfile(candidatePaths{j})
+                    projectMatPath = candidatePaths{j};
+                    info.locationId = localGetFieldOr(locations(i), 'id', []);
+                    info.storageRootName = localGetStorageRootField(locations(i), 'name');
+                    info.storageRootPathPrefix = localGetStorageRootField(locations(i), 'path_prefix');
+                    info.resolutionMethod = methods{j};
+                    return;
+                end
+            end
+        end
+    end
+
     [metadataCandidate, metadataMethod] = localMetadataCandidate(projectDetail, hubSettings);
     if ~isempty(metadataCandidate)
         info.candidatePaths{end+1} = metadataCandidate; %#ok<AGROW>
@@ -24,26 +43,6 @@ function [projectMatPath, info] = detecdiv_hub_resolve_project_location(projectD
             projectMatPath = metadataCandidate;
             info.resolutionMethod = metadataMethod;
             return;
-        end
-    end
-
-    if ~isstruct(projectDetail) || ~isfield(projectDetail, 'locations') || isempty(projectDetail.locations)
-        return;
-    end
-
-    locations = localSortLocations(projectDetail.locations);
-    for i = 1:numel(locations)
-        [candidatePaths, methods] = localLocationCandidates(locations(i), hubSettings);
-        for j = 1:numel(candidatePaths)
-            info.candidatePaths{end+1} = candidatePaths{j}; %#ok<AGROW>
-            if isfile(candidatePaths{j})
-                projectMatPath = candidatePaths{j};
-                info.locationId = localGetFieldOr(locations(i), 'id', []);
-                info.storageRootName = localGetStorageRootField(locations(i), 'name');
-                info.storageRootPathPrefix = localGetStorageRootField(locations(i), 'path_prefix');
-                info.resolutionMethod = methods{j};
-                return;
-            end
         end
     end
 end
@@ -115,11 +114,25 @@ function [candidatePaths, methods] = localLocationCandidates(location, hubSettin
     rootName = char(string(localGetStorageRootField(location, 'name')));
     relativePath = localNormalizeRelativePath(localGetFieldOr(location, 'relative_path', ''));
     projectFileName = char(string(localGetFieldOr(location, 'project_file_name', '')));
+    hubProjectMatPath = char(string(localGetFieldOr(location, 'project_mat_path', '')));
+
+    if ~isempty(hubProjectMatPath)
+        candidatePaths{end+1} = localNormalizeCandidatePath(hubProjectMatPath); %#ok<AGROW>
+        methods{end+1} = 'location.project_mat_path'; %#ok<AGROW>
+
+        [mappedPath, mappedMethod] = detecdiv_hub_apply_path_mapping(hubProjectMatPath, hubSettings);
+        if ~isempty(mappedPath) && ~any(strcmp(candidatePaths, mappedPath))
+            candidatePaths{end+1} = mappedPath; %#ok<AGROW>
+            methods{end+1} = ['location.project_mat_path|' mappedMethod]; %#ok<AGROW>
+        end
+    end
 
     directPath = localBuildProjectMatPath(prefix, relativePath, projectFileName);
     if ~isempty(directPath)
-        candidatePaths{end+1} = directPath; %#ok<AGROW>
-        methods{end+1} = 'direct'; %#ok<AGROW>
+        if ~any(strcmp(candidatePaths, directPath))
+            candidatePaths{end+1} = directPath; %#ok<AGROW>
+            methods{end+1} = 'direct'; %#ok<AGROW>
+        end
 
         [mappedPath, mappedMethod] = detecdiv_hub_apply_path_mapping(directPath, hubSettings);
         if ~isempty(mappedPath) && ~any(strcmp(candidatePaths, mappedPath))
@@ -135,6 +148,18 @@ function [candidatePaths, methods] = localLocationCandidates(location, hubSettin
             candidatePaths{end+1} = mappedPath; %#ok<AGROW>
             methods{end+1} = ['storageRootMap:' rootName]; %#ok<AGROW>
         end
+    end
+end
+
+function out = localNormalizeCandidatePath(pathIn)
+    out = char(string(pathIn));
+    if isempty(out)
+        return;
+    end
+    if ispc
+        out = strrep(out, '/', '\');
+    else
+        out = strrep(out, '\', '/');
     end
 end
 

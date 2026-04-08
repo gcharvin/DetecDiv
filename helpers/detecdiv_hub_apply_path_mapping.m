@@ -26,7 +26,7 @@ function [mappedPath, method] = detecdiv_hub_apply_path_mapping(pathIn, hubSetti
         if isempty(remotePrefix)
             continue;
         end
-        if startsWith(normInput, remotePrefix, 'IgnoreCase', ispc)
+        if localHasPathPrefix(normInput, remotePrefix)
             suffix = extractAfter(normInput, strlength(remotePrefix));
             suffix = char(suffix);
             if ~isempty(suffix) && any(suffix(1) == ['/' '\'])
@@ -52,6 +52,14 @@ end
 function entries = localCollectEntries(hubSettings)
     entries = struct('remotePrefix', {}, 'localPrefix', {}, 'method', {});
 
+    if isfield(hubSettings, 'defaultRemoteProjectRoot') && isfield(hubSettings, 'defaultLocalProjectRoot') && ...
+            ~isempty(hubSettings.defaultRemoteProjectRoot) && ~isempty(hubSettings.defaultLocalProjectRoot)
+        entries(end+1) = struct( ... %#ok<AGROW>
+            'remotePrefix', char(string(hubSettings.defaultRemoteProjectRoot)), ...
+            'localPrefix', char(string(hubSettings.defaultLocalProjectRoot)), ...
+            'method', 'defaultProjectRoot');
+    end
+
     if isfield(hubSettings, 'pathPrefixMap') && isstruct(hubSettings.pathPrefixMap)
         names = fieldnames(hubSettings.pathPrefixMap);
         for i = 1:numel(names)
@@ -68,6 +76,25 @@ function entries = localCollectEntries(hubSettings)
                 'method', ['pathPrefixMap:' names{i}]);
         end
     end
+end
+
+function tf = localHasPathPrefix(pathIn, prefix)
+    tf = false;
+    pathIn = char(string(pathIn));
+    prefix = char(string(prefix));
+    if isempty(pathIn) || isempty(prefix)
+        return;
+    end
+    if ~startsWith(pathIn, prefix, 'IgnoreCase', ispc)
+        return;
+    end
+    if strlength(pathIn) == strlength(prefix)
+        tf = true;
+        return;
+    end
+    nextChar = extractAfter(string(pathIn), strlength(prefix));
+    nextChar = char(nextChar);
+    tf = ~isempty(nextChar) && any(nextChar(1) == ['/' '\']);
 end
 
 function out = localNormalizePath(pathIn)
