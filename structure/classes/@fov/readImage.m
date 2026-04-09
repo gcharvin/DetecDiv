@@ -161,7 +161,7 @@ if isprop(obj,'isNDTiff') && obj.isNDTiff
 end
 
 % --------- mode OME-Zarr ---------
-if isprop(obj,'isOMEZarr') && obj.isOMEZarr
+if localShouldUseOMEZarr(obj, thisEntry, channel)
     try
         im = localReadOMEZarrPlane(obj, frameEff, channel);
     catch ME
@@ -214,30 +214,46 @@ if obj.isMultiTiff
 
 else
     % --------- mode fichiers classiques ---------
-        foldert = '';
-        if isfield(thisEntry,'folder')
-            foldert = thisEntry.folder;
-        end
-        if isempty(foldert)
-            % fallback: if name contains a path, extract its folder
-            if isfield(thisEntry,'name') && ~isempty(thisEntry.name)
-                [fp, ~, ~] = fileparts(thisEntry.name);
-                if ~isempty(fp)
-                    foldert = fp;
-                end
+    foldert = '';
+    fileName = '';
+    if isfield(thisEntry,'name') && ~isempty(thisEntry.name)
+        fileName = thisEntry.name;
+    end
+    if isfield(thisEntry,'folder')
+        foldert = thisEntry.folder;
+    end
+    if isempty(foldert)
+        % fallback: if name contains a path, extract its folder
+        if ~isempty(fileName)
+            [fp, ~, ~] = fileparts(fileName);
+            if ~isempty(fp)
+                foldert = fp;
             end
         end
-        if isempty(foldert)
-            if iscell(obj.srcpath) && channel <= numel(obj.srcpath) && ~isempty(obj.srcpath{channel})
-                foldert = obj.srcpath{channel};
-            end
+    end
+    if isempty(foldert)
+        if iscell(obj.srcpath) && channel <= numel(obj.srcpath) && ~isempty(obj.srcpath{channel})
+            foldert = obj.srcpath{channel};
         end
+    end
     if ~isfolder(foldert)
         disp('folder does not exist ! Quitting....');
         return;
     end
 
-    imstr = fullfile(foldert, thisEntry.name);
+    % Some legacy projects store an absolute path directly in srclist.name.
+    % In that case, do not prepend folder again.
+    imstr = fileName;
+    if isempty(imstr)
+        disp('Image entry has no filename ! Quitting....');
+        return;
+    end
+    if exist(imstr,'file') ~= 2
+        [fp, ~, ~] = fileparts(imstr);
+        if isempty(fp)
+            imstr = fullfile(foldert, imstr);
+        end
+    end
 
     if ~exist(imstr,'file')
         disp('folder exists, but file does not ! Quitting....');
@@ -259,6 +275,7 @@ end
 end
 
 function im = localReadOMEZarrPlane(obj, frameEff, channel)
+obj = localPopulateLegacyOMEZarrInfo(obj, channel);
 zarrPath = obj.omeZarrPath;
 if isempty(zarrPath) && ~isempty(obj.srcpath)
     zarrPath = obj.srcpath{1};
@@ -480,6 +497,208 @@ try
         cand = candidates{i};
         if ~isempty(cand) && exist(cand, 'file') == 2
             pyexe = cand;
+            return;
+        end
+    end
+catch
+end
+end
+
+function tf = localShouldUseOMEZarr(obj, thisEntry, channel)
+tf = false;
+if isprop(obj,'isOMEZarr') && obj.isOMEZarr
+    tf = true;
+    return;
+end
+
+zarrPath = '';
+if isprop(obj,'omeZarrPath') && ~isempty(obj.omeZarrPath)
+    zarrPath = char(string(obj.omeZarrPath));
+elseif iscell(obj.srcpath) && channel <= numel(obj.srcpath) && ~isempty(obj.srcpath{channel})
+    zarrPath = char(string(obj.srcpath{channel}));
+end
+
+if isempty(zarrPath) || ~isfolder(zarrPath)
+    return;
+end
+
+hasZarrRoot = exist(fullfile(zarrPath,'zarr.json'), 'file') == 2 || ...
+    (exist(fullfile(zarrPath,'.zattrs'), 'file') == 2 && exist(fullfile(zarrPath,'.zgroup'), 'file') == 2);
+if ~hasZarrRoot
+    return;
+end
+
+nameStr = '';
+if isfield(thisEntry,'name') && ~isempty(thisEntry.name)
+    nameStr = char(string(thisEntry.name));
+end
+tf = endsWith(zarrPath, '.ome.zarr', 'IgnoreCase', true) || startsWith(nameStr, 'omezarr_', 'IgnoreCase', true);
+end
+
+function obj = localPopulateLegacyOMEZarrInfo(obj, channel)
+if isprop(obj,'omeZarrPath') && ~isempty(obj.omeZarrPath) && ...
+        isprop(obj,'omeZarrShape') && ~isempty(obj.omeZarrShape)
+    return;
+end
+
+zarrPath = '';
+if isprop(obj,'omeZarrPath') && ~isempty(obj.omeZarrPath)
+    zarrPath = char(string(obj.omeZarrPath));
+elseif iscell(obj.srcpath) && channel <= numel(obj.srcpath) && ~isempty(obj.srcpath{channel})
+    zarrPath = char(string(obj.srcpath{channel}));
+elseif iscell(obj.srcpath) && ~isempty(obj.srcpath) && ~isempty(obj.srcpath{1})
+    zarrPath = char(string(obj.srcpath{1}));
+end
+if isempty(zarrPath) || ~isfolder(zarrPath)
+    return;
+end
+
+seriesName = '';
+arrayPath = '';
+if isprop(obj,'omeZarrSeries') && ~isempty(obj.omeZarrSeries)
+    seriesName = char(string(obj.omeZarrSeries));
+end
+if isprop(obj,'omeZarrArrayPath') && ~isempty(obj.omeZarrArrayPath)
+    arrayPath = char(string(obj.omeZarrArrayPath));
+end
+
+% Legacy imported projects may only keep a virtual file name like omezarr_1_0.
+if (isempty(seriesName) || isempty(arrayPath)) && iscell(obj.srclist) && channel <= numel(obj.srclist) && ~isempty(obj.srclist{channel})
+    try
+        entry = obj.srclist{channel}(1);
+        if isfield(entry,'name') && ~isempty(entry.name)
+            tok = regexp(char(string(entry.name)), '^omezarr_(.+)_(.+)$', 'tokens', 'once');
+            if ~isempty(tok)
+                if isempty(seriesName), seriesName = tok{1}; end
+                if isempty(arrayPath), arrayPath = tok{2}; end
+            end
+        end
+    catch
+    end
+end
+
+% Fallback to first numeric series / first array if metadata is absent.
+if isempty(seriesName)
+    d = dir(zarrPath);
+    d = d([d.isdir]);
+    d = d(~ismember({d.name},{'.','..','OME'}));
+    seriesCandidates = {d.name};
+    if ~isempty(seriesCandidates)
+        nums = nan(size(seriesCandidates));
+        for i = 1:numel(seriesCandidates)
+            nums(i) = str2double(seriesCandidates{i});
+        end
+        if any(isfinite(nums))
+            [~, ix] = min(nums(isfinite(nums)));
+            finiteNames = seriesCandidates(isfinite(nums));
+            seriesName = finiteNames{ix};
+        else
+            seriesName = seriesCandidates{1};
+        end
+    else
+        seriesName = '0';
+    end
+end
+if isempty(arrayPath)
+    if exist(fullfile(zarrPath, seriesName, '0', 'zarr.json'), 'file') == 2
+        arrayPath = '0';
+    elseif exist(fullfile(zarrPath, seriesName, '.zarray'), 'file') == 2
+        arrayPath = '';
+    else
+        arrayPath = '0';
+    end
+end
+
+if isprop(obj,'isOMEZarr')
+    obj.isOMEZarr = true;
+end
+if isprop(obj,'omeZarrPath')
+    obj.omeZarrPath = zarrPath;
+end
+if isprop(obj,'omeZarrSeries')
+    obj.omeZarrSeries = seriesName;
+end
+if isprop(obj,'omeZarrArrayPath')
+    obj.omeZarrArrayPath = arrayPath;
+end
+
+arrayJsonPath = fullfile(zarrPath, seriesName, arrayPath, 'zarr.json');
+if exist(arrayJsonPath, 'file') == 2
+    try
+        arrayJson = jsondecode(fileread(arrayJsonPath));
+        shapeVal = [];
+        if isprop(obj,'omeZarrShape') && isfield(arrayJson,'shape')
+            shapeVal = double(arrayJson.shape(:))';
+            obj.omeZarrShape = shapeVal;
+        end
+        if isprop(obj,'omeZarrChunkShape') && isfield(arrayJson,'chunk_grid') && ...
+                isfield(arrayJson.chunk_grid,'configuration') && ...
+                isfield(arrayJson.chunk_grid.configuration,'chunk_shape')
+            obj.omeZarrChunkShape = double(arrayJson.chunk_grid.configuration.chunk_shape(:))';
+        end
+        if isprop(obj,'omeZarrDtype') && isfield(arrayJson,'data_type')
+            obj.omeZarrDtype = char(string(arrayJson.data_type));
+        end
+        if isprop(obj,'omeZarrDimensionNames') && isfield(arrayJson,'dimension_names') && ~isempty(arrayJson.dimension_names)
+            obj.omeZarrDimensionNames = cellstr(string(arrayJson.dimension_names));
+        end
+
+        if isprop(obj,'omeZarrDimensionNames') && ~isempty(obj.omeZarrDimensionNames) && ...
+                isprop(obj,'omeZarrZIndices') && isempty(obj.omeZarrZIndices) && ...
+                ~isempty(shapeVal) && iscell(obj.channel) && ~isempty(obj.channel)
+            cDim = find(strcmpi(obj.omeZarrDimensionNames, 'c'), 1, 'first');
+            zDim = find(strcmpi(obj.omeZarrDimensionNames, 'z'), 1, 'first');
+            if ~isempty(cDim) && ~isempty(zDim) && numel(shapeVal) >= max(cDim, zDim)
+                nC = shapeVal(cDim);
+                nZ = shapeVal(zDim);
+                nProjCh = numel(obj.channel);
+                if nProjCh == nC && nZ > 1
+                    commonZ = localFindCommonZIndex(fullfile(zarrPath, seriesName, 'zarr.json'), nC);
+                    if isempty(commonZ)
+                        commonZ = floor((nZ - 1) / 2);
+                    end
+                    obj.omeZarrChannelIndices = 0:(nProjCh-1);
+                    obj.omeZarrZIndices = repmat(commonZ, 1, nProjCh);
+                end
+            end
+        end
+    catch
+    end
+end
+end
+
+function zIdx = localFindCommonZIndex(seriesJsonPath, nC)
+zIdx = [];
+if exist(seriesJsonPath, 'file') ~= 2
+    return;
+end
+try
+    seriesJson = jsondecode(fileread(seriesJsonPath));
+    fm = seriesJson.attributes.ome_writers.frame_metadata;
+    if isempty(fm)
+        return;
+    end
+    pairs = [];
+    maxScan = min(numel(fm), 500);
+    for i = 1:maxScan
+        if ~isfield(fm(i), 'storage_index')
+            continue;
+        end
+        idx = double(fm(i).storage_index(:))';
+        if numel(idx) < 3
+            continue;
+        end
+        pairs(end+1,:) = idx(2:3); %#ok<AGROW>
+    end
+    if isempty(pairs)
+        return;
+    end
+    zVals = unique(pairs(:,2), 'stable');
+    for i = 1:numel(zVals)
+        z = zVals(i);
+        cVals = unique(pairs(pairs(:,2) == z, 1));
+        if numel(cVals) >= nC
+            zIdx = z;
             return;
         end
     end
