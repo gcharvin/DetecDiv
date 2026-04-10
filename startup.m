@@ -1,15 +1,13 @@
 function startup
 %STARTUP Normalize MATLAB path for the current DetecDiv checkout.
 %
-% This repo exists with at least two layouts across branches:
+% DetecDiv exists with at least two layouts across branches:
 % - legacy root layout (GUI/, supportfunction/, classification/, ...)
-% - newer structure/ layout on other branches
+% - newer structure/ layout (structure/GUI, structure/classes, ...)
 %
-% On dev, stale structure/ paths left in MATLAB's persistent path can make
-% App Designer resolve the wrong app layout, which breaks callbacks such as
-% detecdiv.TreeSelectionChanged. This startup keeps the path aligned with
-% the files present in the current checkout only, and flushes MATLAB class
-% caches that would otherwise still point to files from another branch.
+% After a git branch switch, MATLAB can keep stale paths and cached class
+% definitions from the previous layout. This startup resets repo paths and
+% class caches so function resolution matches the current checkout.
 
 rootDir = fileparts(mfilename('fullpath'));
 layout = detectLayout_(rootDir);
