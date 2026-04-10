@@ -82,6 +82,7 @@ for s = 1:numel(seriesNames)
     dimNames = localGetV3DimNames(arrayJson);
     tDim = localFindDim(dimNames, 't', 1);
     cDim = localFindDim(dimNames, 'c', 2);
+    zDim = localFindDim(dimNames, 'z', 3);
 
     if numel(shape) < 4 || isempty(tDim) || isempty(cDim)
         warning('Unsupported OME-Zarr array dimensions in %s', arrayJsonPath);
@@ -90,9 +91,12 @@ for s = 1:numel(seriesNames)
 
     nFrames = shape(tDim);
     nCh = shape(cDim);
-    channelNames = localGetV3ChannelNames(seriesJson, nCh);
-    channelIndices = 0:(nCh-1);
-    zIndices = zeros(1, nCh);
+    if isempty(zDim) || zDim > numel(shape)
+        nZ = 1;
+    else
+        nZ = shape(zDim);
+    end
+    [channelIndices, zIndices, channelNames] = localGetV3ChannelZMap(seriesJson, nCh, nZ);
 
     cc = cc + 1;
     pos = localMakePos(templatePos, zarrPath, zarrName, seriesName, arrayPath, ...
@@ -364,7 +368,11 @@ end
 function names = localGetV3ChannelNames(seriesJson, nCh)
 names = {};
 try
-    ch = seriesJson.attributes.ome.omero.channels;
+    if isfield(seriesJson.attributes, 'omero')
+        ch = seriesJson.attributes.omero.channels;
+    else
+        ch = seriesJson.attributes.ome.omero.channels;
+    end
     for i = 1:min(numel(ch), nCh)
         names{i} = char(string(ch(i).label)); %#ok<AGROW>
     end
@@ -373,6 +381,54 @@ catch
 end
 if numel(names) ~= nCh
     names = arrayfun(@(i)sprintf('ch%d', i), 1:nCh, 'UniformOutput', false);
+end
+end
+
+function [channelIndices, zIndices, names] = localGetV3ChannelZMap(seriesJson, nC, nZ)
+pairs = [];
+baseNames = localGetV3ChannelNames(seriesJson, nC);
+
+try
+    fm = seriesJson.attributes.ome_writers.frame_metadata;
+    for i = 1:numel(fm)
+        if ~isfield(fm(i), 'storage_index') || isempty(fm(i).storage_index)
+            continue;
+        end
+        idx = double(fm(i).storage_index(:))';
+        if numel(idx) < 3
+            continue;
+        end
+        c = idx(2);
+        z = idx(3);
+        if c >= 0 && c < nC && z >= 0 && z < nZ
+            pairs(end+1,:) = [c z]; %#ok<AGROW>
+        end
+    end
+catch
+end
+
+if isempty(pairs)
+    if nZ > 1
+        [cc, zz] = ndgrid(0:(nC-1), 0:(nZ-1));
+        pairs = [cc(:) zz(:)];
+    else
+        pairs = [(0:(nC-1))' zeros(nC, 1)];
+    end
+else
+    pairs = unique(pairs, 'rows', 'stable');
+end
+
+channelIndices = pairs(:,1)';
+zIndices = pairs(:,2)';
+names = cell(1, size(pairs,1));
+appendZ = nZ > 1;
+for i = 1:size(pairs,1)
+    base = baseNames{pairs(i,1)+1};
+    if appendZ
+        names{i} = sprintf('%s_z%d', base, pairs(i,2)+1);
+    else
+        names{i} = base;
+    end
 end
 end
 
