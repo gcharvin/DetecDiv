@@ -58,10 +58,8 @@ else
 end
 
 % ---- here: RAWDATA really missing ----
-if debug
-    fprintf('[paths] missing rawdata for FOV %s ch=%d\n', obj.id, channel);
-    fprintf('[paths] expected: %s\n', p0);
-end
+fprintf('[paths] rawdata missing for FOV %s ch=%d\n', localFovLabel(obj), channel);
+fprintf('[paths] expected source: %s\n', p0);
 
 % --- known roots ---
 roots = localCollectKnownRoots(userprefs);
@@ -69,10 +67,15 @@ rootHint = string(rootHint);
 if strlength(rootHint) > 0
     roots = unique([rootHint; roots], 'stable');
 end
+fprintf('[paths] trying %d candidate root(s) for FOV %s ch=%d\n', ...
+    numel(roots), localFovLabel(obj), channel);
 
 % --- try known roots silently ---
 for r = 1:numel(roots)
     root = roots(r);
+    if debug
+        fprintf('[paths] try root %d/%d: %s\n', r, numel(roots), root);
+    end
 
     if isMT
         [p2, ok2] = detecdiv_paths_rebase_file(p0, root, debug, 6);
@@ -112,12 +115,18 @@ for r = 1:numel(roots)
             catch
             end
         end
+        fprintf('[paths] relink success FOV %s ch=%d\n', localFovLabel(obj), channel);
+        fprintf('[paths]   from: %s\n', p0);
+        fprintf('[paths]   to  : %s\n', p2);
+        fprintf('[paths]   via : %s\n', root);
         return;
     end
 end
 
 % Non-interactive mode must be fast and non-blocking for display/render calls.
 if ~interactive
+    fprintf('[paths] relink failed for FOV %s ch=%d in non-interactive mode\n', ...
+        localFovLabel(obj), channel);
     ok = false;
     return;
 end
@@ -167,9 +176,8 @@ else
 end
 
 if ~ok2
-    if debug
-        fprintf('[paths] FAIL: user root did not match dataset (fast mode)\n');
-    end
+    fprintf('[paths] selected root does not match dataset for FOV %s ch=%d\n', ...
+        localFovLabel(obj), channel);
     warning('Selected folder does not match this dataset.');
     ok = false;
     return;
@@ -230,7 +238,25 @@ try
 catch
 end
 
+fprintf('[paths] relink success FOV %s ch=%d after user selection\n', localFovLabel(obj), channel);
+fprintf('[paths]   from: %s\n', p0);
+fprintf('[paths]   to  : %s\n', p2);
+fprintf('[paths]   via : %s\n', root);
+
 ok = true;
+end
+
+function label = localFovLabel(obj)
+label = '';
+try
+    if isprop(obj,'id') && ~isempty(obj.id)
+        label = char(string(obj.id));
+    end
+catch
+end
+if isempty(label)
+    label = '<unnamed>';
+end
 end
 
 function [p2, ok] = detecdiv_paths_rebase_ndtiff(oldPath, root, debug)

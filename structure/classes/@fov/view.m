@@ -28,6 +28,8 @@ if nargin>=4
 end
 
 h=findobj('Tag',['Fov' obj.id]);
+fprintf('[view] opening FOV=%s frame=%d selectedChannels=%s\n', ...
+    localFovLabel(obj), frame, mat2str(find(obj.display.selectedchannel==1)));
 
 % Ensure raw data is reachable once per view call.
 selCh = find(obj.display.selectedchannel==1, 1, 'first');
@@ -36,6 +38,7 @@ try
     % Non-blocking in view: avoid modal dialogs / long recursive scans.
     [obj, okRaw] = detecdiv_paths_ensure_fov_ready(obj, selCh, false, false);
     if ~okRaw
+        fprintf('[view] rawdata unavailable for FOV=%s selectedChannel=%d\n', localFovLabel(obj), selCh);
         warning(['Raw data not accessible for FOV %s (channel %d). ' ...
             'Relink paths first, then reopen view.'], obj.id, selCh);
         return;
@@ -122,6 +125,8 @@ if ishandle(hp)
 else
 return;
 end
+
+fprintf('[view] viewer ready for FOV=%s frame=%d\n', localFovLabel(obj), obj.display.frame);
 
     
     % create display menu
@@ -1173,6 +1178,19 @@ obj.export(arg{:});
 
 
 
+end
+
+function label = localFovLabel(obj)
+label = '';
+try
+    if isprop(obj,'id') && ~isempty(obj.id)
+        label = char(string(obj.id));
+    end
+catch
+end
+if isempty(label)
+    label = '<unnamed>';
+end
 end
 
 
