@@ -6,6 +6,7 @@ function im = readImage(obj, frame, channel)
 %   - mode multi-TIFF          : images empilées dans tiffSource{ch}, accès par pageMap{ch}(f)
 
 im = [];
+fprintf('[readImage] request FOV=%s frame=%d channel=%d\n', localFovLabel(obj), frame, channel);
 
 % --------- sécurité indices ---------
 if channel > numel(obj.channel) || channel < 1
@@ -21,6 +22,7 @@ nChan = numel(obj.channel);
 try
     [obj, ok] = detecdiv_paths_ensure_fov_ready(obj, channel, false, false);
     if ~ok
+        fprintf('[readImage] rawdata unavailable for FOV=%s channel=%d\n', localFovLabel(obj), channel);
         return;
     end
 catch ME
@@ -76,6 +78,7 @@ if isprop(obj,'isNDTiff') && obj.isNDTiff
     end
 
     try
+        fprintf('[readImage] mode=NDTiff source=%s\n', string(dsPath));
         % cache dataset objects per path
         persistent ndtiffCache
         if isempty(ndtiffCache)
@@ -157,12 +160,15 @@ if isprop(obj,'isNDTiff') && obj.isNDTiff
     if ~isempty(obj.orientation) && obj.orientation ~= 0
         im = imrotate(im, obj.orientation);
     end
+    localLogLoadedImage(obj, channel, frameEff, im, "NDTiff", string(dsPath));
     return;
 end
 
 % --------- mode OME-Zarr ---------
 if localShouldUseOMEZarr(obj, thisEntry, channel)
     try
+        fprintf('[readImage] mode=OME-Zarr dataset=%s entry=%s\n', ...
+            string(localGetSourcePath(obj, channel)), string(localGetEntryName(thisEntry)));
         im = localReadOMEZarrPlane(obj, frameEff, channel);
     catch ME
         warning('Failed to read OME-Zarr image: %s', ME.message);
@@ -173,6 +179,7 @@ if localShouldUseOMEZarr(obj, thisEntry, channel)
     if ~isempty(obj.orientation) && obj.orientation ~= 0
         im = imrotate(im, obj.orientation);
     end
+    localLogLoadedImage(obj, channel, frameEff, im, "OME-Zarr", string(localGetSourcePath(obj, channel)));
     return;
 end
 
@@ -205,6 +212,7 @@ if obj.isMultiTiff
     end
 
     try
+        fprintf('[readImage] mode=Multi-TIFF source=%s page=%d\n', string(bigTiffPath), pageToRead);
         im = imread(bigTiffPath, pageToRead);
     catch ME
         warning('Failed to read multi-TIFF page %d from %s: %s', ...
@@ -261,6 +269,7 @@ else
     end
 
     try
+        fprintf('[readImage] mode=File source=%s\n', string(imstr));
         im = imread(imstr);
     catch ME
         warning('Could not read image file %s: %s', imstr, ME.message);
@@ -271,6 +280,62 @@ end
 % appliquer rotation si besoin
 if ~isempty(obj.orientation) && obj.orientation ~= 0
     im = imrotate(im, obj.orientation);
+end
+localLogLoadedImage(obj, channel, frameEff, im, "File", string(localGetSourcePath(obj, channel)));
+end
+
+function localLogLoadedImage(obj, channel, frameEff, im, modeName, sourcePath)
+if isempty(im)
+    fprintf('[readImage] loaded empty image FOV=%s channel=%d frame=%d mode=%s source=%s\n', ...
+        localFovLabel(obj), channel, frameEff, string(modeName), string(sourcePath));
+    return;
+end
+fprintf('[readImage] loaded FOV=%s channel=%d frame=%d mode=%s size=%s class=%s source=%s\n', ...
+    localFovLabel(obj), channel, frameEff, string(modeName), mat2str(size(im)), class(im), string(sourcePath));
+end
+
+function s = localGetSourcePath(obj, channel)
+s = "";
+try
+    if isprop(obj,'isNDTiff') && obj.isNDTiff && isprop(obj,'ndtiffPath') && ~isempty(obj.ndtiffPath)
+        s = string(obj.ndtiffPath);
+        return;
+    end
+    if isprop(obj,'isOMEZarr') && obj.isOMEZarr && isprop(obj,'omeZarrPath') && ~isempty(obj.omeZarrPath)
+        s = string(obj.omeZarrPath);
+        return;
+    end
+    if isprop(obj,'isMultiTiff') && obj.isMultiTiff && channel <= numel(obj.tiffSource) && ~isempty(obj.tiffSource{channel})
+        s = string(obj.tiffSource{channel});
+        return;
+    end
+    if iscell(obj.srcpath) && channel <= numel(obj.srcpath) && ~isempty(obj.srcpath{channel})
+        s = string(obj.srcpath{channel});
+    end
+catch
+end
+end
+
+function s = localGetEntryName(entry)
+s = "";
+try
+    if isfield(entry,'name') && ~isempty(entry.name)
+        s = string(entry.name);
+    end
+catch
+end
+end
+
+function label = localFovLabel(obj)
+label = '';
+try
+    if isprop(obj,'id') && ~isempty(obj.id)
+        label = char(string(obj.id));
+    end
+catch
+end
+if isempty(label)
+    label = '<unnamed>';
 end
 end
 
