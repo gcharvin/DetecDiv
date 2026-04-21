@@ -276,12 +276,12 @@ end
 
 p = userprefs.paths;
 
-if isfield(p,'rootCandidates') && ~isempty(p.rootCandidates)
-    roots = [roots; string(p.rootCandidates(:))];
+if isfield(p,'scanRoots') && ~isempty(p.scanRoots)
+    roots = [roots; string(p.scanRoots(:))];
 end
 
-if isfield(p,'rawPathHistory') && ~isempty(p.rawPathHistory)
-    roots = [roots; string(p.rawPathHistory(:))];
+if isfield(p,'rootCandidates') && ~isempty(p.rootCandidates)
+    roots = [roots; string(p.rootCandidates(:))];
 end
 
 if isfield(p,'rootMap') && isstruct(p.rootMap) && ~isempty(fieldnames(p.rootMap))
@@ -294,12 +294,16 @@ if isfield(p,'rootMap') && isstruct(p.rootMap) && ~isempty(fieldnames(p.rootMap)
     end
 end
 
+if isfield(p,'rawPathHistory') && ~isempty(p.rawPathHistory)
+    roots = [roots; string(p.rawPathHistory(:))];
+end
+
 roots = strip(roots);
 roots = roots(strlength(roots) > 0);
 roots = unique(roots, 'stable');
 roots = roots(arrayfun(@localIsLikelyReachableRoot, roots));
-if numel(roots) > 8
-    roots = roots(1:8);
+if numel(roots) > 24
+    roots = roots(1:24);
 end
 end
 
@@ -355,13 +359,6 @@ try
         end
         try
             if ~d.IsReady
-                tf = true;
-                return;
-            end
-        catch
-        end
-        try
-            if d.DriveType == System.IO.DriveType.Network
                 tf = true;
                 return;
             end
