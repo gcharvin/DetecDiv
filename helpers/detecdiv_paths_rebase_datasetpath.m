@@ -19,7 +19,8 @@ if strlength(oldDatasetPath) == 0 || strlength(newRoot) == 0
     return;
 end
 
-datasetName = localLeafName(oldDatasetPath);
+info = localParseDatasetPath(oldDatasetPath);
+datasetName = info.datasetName;
 if strlength(datasetName) == 0
     return;
 end
@@ -98,9 +99,8 @@ tf = exist(fullfile(pathStr, 'zarr.json'), 'file') == 2 || ...
 end
 
 function suffixes = localSuffixCandidates(p0)
-p = strrep(string(p0), '\', '/');
-parts = split(p, '/');
-parts(parts == "") = [];
+p = localParseDatasetPath(p0);
+parts = p.parts;
 suffixes = {};
 for k = 2:min(8, numel(parts))
     tail = cellstr(parts(end-k+1:end));
@@ -109,14 +109,13 @@ end
 end
 
 function leaf = localLeafName(p0)
-[~, leaf, ext] = fileparts(char(string(p0)));
-leaf = string([leaf ext]);
+info = localParseDatasetPath(p0);
+leaf = info.datasetName;
 end
 
 function leaf = localParentLeafName(p0)
-parent = fileparts(char(string(p0)));
-[~, leaf] = fileparts(parent);
-leaf = string(leaf);
+info = localParseDatasetPath(p0);
+leaf = info.parentLeaf;
 end
 
 function out = localFindDatasetFolder(root, datasetName, maxDepth)
@@ -159,4 +158,39 @@ end
 function n = localNormName(s)
 n = lower(strtrim(string(s)));
 n = regexprep(n, '\s+', '');
+end
+
+function info = localParseDatasetPath(p0)
+info = struct( ...
+    'parts', strings(0,1), ...
+    'datasetName', "", ...
+    'parentLeaf', "");
+
+p = strrep(string(p0), '\', '/');
+p = regexprep(p, '/+', '/');
+parts = split(p, '/');
+parts(parts == "") = [];
+if isempty(parts)
+    return;
+end
+
+leaf = parts(end);
+
+% Recover malformed legacy OME-Zarr path like:
+%   .../2026_04_09Yam740Yak108_18_004.ome.zarr
+% where the separator before the dataset folder was lost.
+tok = regexp(char(leaf), '^(\d{4}[_-]\d{2}[_-]\d{2})([^/\\]+\.ome\.zarr)$', 'tokens', 'once', 'ignorecase');
+if ~isempty(tok)
+    if numel(parts) >= 1
+        parts(end) = string(tok{1});
+        parts(end+1) = string(tok{2});
+        leaf = parts(end);
+    end
+end
+
+info.parts = parts;
+info.datasetName = string(leaf);
+if numel(parts) >= 2
+    info.parentLeaf = string(parts(end-1));
+end
 end
