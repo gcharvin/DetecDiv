@@ -342,8 +342,12 @@ end
 function im = localReadOMEZarrPlane(obj, frameEff, channel)
 obj = localPopulateLegacyOMEZarrInfo(obj, channel);
 zarrPath = obj.omeZarrPath;
-if isempty(zarrPath) && ~isempty(obj.srcpath)
-    zarrPath = obj.srcpath{1};
+if (~isfolder(zarrPath)) && ~isempty(obj.srcpath)
+    if channel <= numel(obj.srcpath) && ~isempty(obj.srcpath{channel}) && isfolder(obj.srcpath{channel})
+        zarrPath = obj.srcpath{channel};
+    elseif ~isempty(obj.srcpath{1}) && isfolder(obj.srcpath{1})
+        zarrPath = obj.srcpath{1};
+    end
 end
 if ~isfolder(zarrPath)
     warning('OME-Zarr dataset folder not found: %s', zarrPath);

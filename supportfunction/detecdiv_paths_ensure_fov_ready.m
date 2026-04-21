@@ -104,6 +104,31 @@ for r = 1:numel(roots)
                 end
             catch
             end
+        elseif isOZ
+            obj.omeZarrPath = char(p2);
+            obj.srcpath{channel} = char(p2);
+            try
+                if iscell(obj.srcpath) && ~isempty(obj.srcpath)
+                    for ii = 1:numel(obj.srcpath)
+                        if ~isempty(obj.srcpath{ii})
+                            obj.srcpath{ii} = char(p2);
+                        end
+                    end
+                end
+            catch
+            end
+            try
+                if iscell(obj.srclist)
+                    for ii = 1:numel(obj.srclist)
+                        if ~isempty(obj.srclist{ii})
+                            L = obj.srclist{ii};
+                            for k = 1:numel(L), L(k).folder = char(p2); end
+                            obj.srclist{ii} = L;
+                        end
+                    end
+                end
+            catch
+            end
         else
             obj.srcpath{channel} = char(p2);
             try
@@ -196,6 +221,31 @@ elseif isND
             L = obj.srclist{channel};
             for k=1:numel(L), L(k).folder = char(p2); end
             obj.srclist{channel} = L;
+        end
+    catch
+    end
+elseif isOZ
+    obj.omeZarrPath = char(p2);
+    obj.srcpath{channel} = char(p2);
+    try
+        if iscell(obj.srcpath) && ~isempty(obj.srcpath)
+            for ii = 1:numel(obj.srcpath)
+                if ~isempty(obj.srcpath{ii})
+                    obj.srcpath{ii} = char(p2);
+                end
+            end
+        end
+    catch
+    end
+    try
+        if iscell(obj.srclist)
+            for ii = 1:numel(obj.srclist)
+                if ~isempty(obj.srclist{ii})
+                    L = obj.srclist{ii};
+                    for k = 1:numel(L), L(k).folder = char(p2); end
+                    obj.srclist{ii} = L;
+                end
+            end
         end
     catch
     end
