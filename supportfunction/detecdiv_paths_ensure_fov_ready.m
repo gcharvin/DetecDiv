@@ -20,6 +20,7 @@ end
 % --- determine missing path ---
 isMT = isprop(obj,'isMultiTiff') && obj.isMultiTiff;
 isND = isprop(obj,'isNDTiff') && obj.isNDTiff;
+isOZ = isprop(obj,'isOMEZarr') && obj.isOMEZarr;
 
 if isMT
     if channel <= numel(obj.tiffSource) && ~isempty(obj.tiffSource{channel})
@@ -77,6 +78,8 @@ for r = 1:numel(roots)
         [p2, ok2] = detecdiv_paths_rebase_file(p0, root, debug, 0);
     elseif isND
         [p2, ok2] = detecdiv_paths_rebase_ndtiff(p0, root, debug);
+    elseif isOZ
+        [p2, ok2] = detecdiv_paths_rebase_datasetpath(p0, root, debug, 4);
     else
         [p2, ok2] = detecdiv_paths_rebase_pospath(p0, root, debug);
     end
@@ -157,6 +160,8 @@ if isMT
 elseif isND
     [p2, ok2] = detecdiv_paths_rebase_ndtiff(p0, root, debug);
     how = "";
+elseif isOZ
+    [p2, ok2, how] = detecdiv_paths_rebase_datasetpath(p0, root, debug, 6);
 else
     [p2, ok2, how] = detecdiv_paths_rebase_pospath(p0, root, debug);
 end
