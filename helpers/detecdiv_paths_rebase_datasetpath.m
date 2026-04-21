@@ -19,20 +19,24 @@ if strlength(oldDatasetPath) == 0 || strlength(newRoot) == 0
     return;
 end
 
-info = localParseDatasetPath(oldDatasetPath);
-datasetName = info.datasetName;
-if strlength(datasetName) == 0
+infos = localDatasetInfoCandidates(oldDatasetPath);
+if isempty(infos)
     return;
 end
+datasetNames = unique(string({infos.datasetName}), 'stable');
+datasetName = datasetNames(1);
 
 % User picked the dataset folder directly.
 if isfolder(newRoot)
-    if localNormName(localLeafName(newRoot)) == localNormName(datasetName) && ...
-            localLooksLikeDatasetFolder(newRoot)
-        p2 = newRoot;
-        ok = true;
-        how = "pickedDataset";
-        return;
+    newRootLeaf = localLeafName(newRoot);
+    for iInfo = 1:numel(datasetNames)
+        if localNormName(newRootLeaf) == localNormName(datasetNames(iInfo)) && ...
+                localLooksLikeDatasetFolder(newRoot)
+            p2 = newRoot;
+            ok = true;
+            how = "pickedDataset";
+            return;
+        end
     end
 else
     return;
@@ -40,14 +44,15 @@ end
 
 % Deterministic candidates from the selected root.
 cands = strings(0,1);
-suffixes = localSuffixCandidates(oldDatasetPath);
-for i = 1:numel(suffixes)
-    cands(end+1,1) = string(fullfile(char(newRoot), char(string(suffixes{i})))); %#ok<AGROW>
-end
-cands(end+1,1) = string(fullfile(char(newRoot), char(datasetName)));
-oldParentLeaf = localParentLeafName(oldDatasetPath);
-if strlength(oldParentLeaf) > 0
-    cands(end+1,1) = string(fullfile(char(newRoot), char(oldParentLeaf), char(datasetName)));
+for j = 1:numel(infos)
+    suffixes = localSuffixCandidatesFromInfo(infos(j));
+    for i = 1:numel(suffixes)
+        cands(end+1,1) = string(fullfile(char(newRoot), char(string(suffixes{i})))); %#ok<AGROW>
+    end
+    cands(end+1,1) = string(fullfile(char(newRoot), char(infos(j).datasetName)));
+    if strlength(infos(j).parentLeaf) > 0
+        cands(end+1,1) = string(fullfile(char(newRoot), char(infos(j).parentLeaf), char(infos(j).datasetName)));
+    end
 end
 
 cands = unique(cands, 'stable');
@@ -63,12 +68,14 @@ end
 
 % Optional bounded recursive search by dataset folder name.
 if maxDepth > 0
-    found = localFindDatasetFolder(newRoot, datasetName, maxDepth);
-    if strlength(found) > 0
-        p2 = found;
-        ok = true;
-        how = "scan";
-        return;
+    for iInfo = 1:numel(datasetNames)
+        found = localFindDatasetFolder(newRoot, datasetNames(iInfo), maxDepth);
+        if strlength(found) > 0
+            p2 = found;
+            ok = true;
+            how = "scan";
+            return;
+        end
     end
 end
 
@@ -98,9 +105,8 @@ tf = exist(fullfile(pathStr, 'zarr.json'), 'file') == 2 || ...
      exist(fullfile(pathStr, '.zgroup'), 'file') == 2);
 end
 
-function suffixes = localSuffixCandidates(p0)
-p = localParseDatasetPath(p0);
-parts = p.parts;
+function suffixes = localSuffixCandidatesFromInfo(info)
+parts = info.parts;
 suffixes = {};
 for k = 2:min(8, numel(parts))
     tail = cellstr(parts(end-k+1:end));
@@ -109,13 +115,21 @@ end
 end
 
 function leaf = localLeafName(p0)
-info = localParseDatasetPath(p0);
-leaf = info.datasetName;
+infos = localDatasetInfoCandidates(p0);
+if isempty(infos)
+    leaf = "";
+else
+    leaf = infos(1).datasetName;
+end
 end
 
 function leaf = localParentLeafName(p0)
-info = localParseDatasetPath(p0);
-leaf = info.parentLeaf;
+infos = localDatasetInfoCandidates(p0);
+if isempty(infos)
+    leaf = "";
+else
+    leaf = infos(1).parentLeaf;
+end
 end
 
 function out = localFindDatasetFolder(root, datasetName, maxDepth)
@@ -160,11 +174,11 @@ n = lower(strtrim(string(s)));
 n = regexprep(n, '\s+', '');
 end
 
-function info = localParseDatasetPath(p0)
-info = struct( ...
+function infos = localDatasetInfoCandidates(p0)
+infos = repmat(struct( ...
     'parts', strings(0,1), ...
     'datasetName', "", ...
-    'parentLeaf', "");
+    'parentLeaf', ""), 0, 1);
 
 p = strrep(string(p0), '\', '/');
 p = regexprep(p, '/+', '/');
@@ -175,22 +189,27 @@ if isempty(parts)
 end
 
 leaf = parts(end);
-
-% Recover malformed legacy OME-Zarr path like:
-%   .../2026_04_09Yam740Yak108_18_004.ome.zarr
-% where the separator before the dataset folder was lost.
-tok = regexp(char(leaf), '^(\d{4}[_-]\d{2}[_-]\d{2})([^/\\]+\.ome\.zarr)$', 'tokens', 'once', 'ignorecase');
-if ~isempty(tok)
-    if numel(parts) >= 1
-        parts(end) = string(tok{1});
-        parts(end+1) = string(tok{2});
-        leaf = parts(end);
-    end
-end
-
+info = struct( ...
+    'parts', strings(0,1), ...
+    'datasetName', "", ...
+    'parentLeaf', "");
 info.parts = parts;
 info.datasetName = string(leaf);
 if numel(parts) >= 2
     info.parentLeaf = string(parts(end-1));
+end
+infos(end+1) = info; %#ok<AGROW>
+
+% Also support a legacy malformed serialization where a separator before
+% the dataset leaf may have been lost.
+tok = regexp(char(leaf), '^(\d{4}[_-]\d{2}[_-]\d{2})([^/\\]+\.ome\.zarr)$', 'tokens', 'once', 'ignorecase');
+if ~isempty(tok)
+    info2 = info;
+    info2.parts = parts;
+    info2.parts(end) = string(tok{1});
+    info2.parts(end+1) = string(tok{2});
+    info2.datasetName = string(tok{2});
+    info2.parentLeaf = string(tok{1});
+    infos(end+1) = info2; %#ok<AGROW>
 end
 end
