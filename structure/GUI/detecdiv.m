@@ -4683,9 +4683,78 @@ end
                 i=app.Tree.SelectedNodes.UserData;
                 proj=app.Data.Project{i};
 
-                evalin('base',['clear ' proj]);
+                shallowObj = [];
+                try
+                    shallowObj = evalin('base', proj);
+                catch
+                end
+
+                clearVars = {proj};
+                if isfield(app.Data,'Pipeline') && ~isempty(app.Data.Pipeline)
+                    clearVars = [clearVars localFindLinkedPipelineVars(app, shallowObj, proj)]; %#ok<AGROW>
+                end
+                clearVars = unique(clearVars, 'stable');
+                evalin('base',['clear ' strjoin(clearVars,' ')]);
                 gatherVarsFromWorkspace(app);
                 displayNodes(app)
+            end
+        end
+
+        function vars = localFindLinkedPipelineVars(app, shallowObj, projVar)
+            vars = {};
+            if ~isfield(app.Data,'Pipeline') || isempty(app.Data.Pipeline)
+                return;
+            end
+
+            projectRoot = "";
+            if ~isempty(shallowObj)
+                try
+                    projectRoot = localNormalizeFsPath(fullfile(shallowObj.io.path, shallowObj.io.file));
+                catch
+                end
+            end
+
+            prefix = [char(string(projVar)) '_pipeline'];
+            for idx = 1:numel(app.Data.Pipeline)
+                pipeVar = app.Data.Pipeline{idx};
+                if isempty(pipeVar)
+                    continue;
+                end
+
+                pipeVarChar = char(string(pipeVar));
+                if strcmp(pipeVarChar, prefix) || startsWith(pipeVarChar, [prefix '_'], 'IgnoreCase', true)
+                    vars{end+1} = pipeVarChar; %#ok<AGROW>
+                    continue;
+                end
+
+                try
+                    pipeObj = evalin('base', pipeVarChar);
+                catch
+                    continue;
+                end
+
+                try
+                    pipePath = localNormalizeFsPath(pipeObj.path);
+                catch
+                    pipePath = "";
+                end
+
+                if strlength(projectRoot) > 0 && strlength(pipePath) > 0 && ...
+                        startsWith(pipePath, projectRoot, 'IgnoreCase', true)
+                    vars{end+1} = pipeVarChar; %#ok<AGROW>
+                end
+            end
+        end
+
+        function out = localNormalizeFsPath(p)
+            out = string(p);
+            if strlength(out) == 0
+                return;
+            end
+            out = replace(out, '/', filesep);
+            out = replace(out, '\', filesep);
+            while endsWith(out, filesep) && strlength(out) > 3
+                out = extractBefore(out, strlength(out));
             end
         end
 
