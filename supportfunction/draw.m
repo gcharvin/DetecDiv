@@ -347,33 +347,7 @@ h.WindowButtonUpFcn = '';
 % add buttons and fcn to chanfe frame
 
 
-pth=userpath;
-if ispc
-fle= fullfile(pth,'Detecdiv/userprefs.mat');
-else
-tmpfile=getenv("HOME");
-fle=fullfile(strcat(tmpfile,'/Detecdiv'),'userprefs.mat');
-end
-
-if exist(fle)
-    load(fle) % loads userprefs variable
-    keys=textscan(userprefs.roi_view_shortcut_keys,'%s');
-    keys=keys{1};
-    keys=keys';
-
-
-    specialkeys={};
-    tmp=userprefs.roi_view_corr_shortcut_keys;  tmp=textscan(tmp,'%s');   tmp=tmp{1}; tmp=tmp'; specialkeys{1}=tmp;
-    tmp=userprefs.roi_view_bounds_shortcut_keys;  tmp=textscan(tmp,'%s');   tmp=tmp{1}; tmp=tmp'; specialkeys{2}=tmp;
-    tmp=userprefs.roi_view_frames_jump_size;  tmp=textscan(tmp,'%s');   tmp=tmp{1}; tmp=tmp'; specialkeys{3}=tmp;
-    tmp=userprefs.painting_fill_holes_shortcut;  tmp=textscan(tmp,'%s');   tmp=tmp{1}; tmp=tmp'; specialkeys{4}=tmp;
-    tmp=userprefs.painting_transparency_shortcut;  tmp=textscan(tmp,'%s');   tmp=tmp{1}; tmp=tmp'; specialkeys{5}=tmp;
-
-else % structure must me created
-    errordlg('Could not file the shortcut preferences; Please reset user preferences before launching this window again!,Error');
-    close
-    return;
-end
+[keys, specialkeys, userprefs] = detecdiv_prefs_get_shortcuts();
 
 %keys={'a' 'z' 'e' 'r' 't' 'y' 'u' 'i' 'o' 'p'};
 h.KeyPressFcn={@changeframe,obj,him,hp,keys,classif,specialkeys,userprefs};
