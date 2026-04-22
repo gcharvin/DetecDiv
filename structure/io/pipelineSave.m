@@ -37,6 +37,13 @@ function pipelineSave(pipe)
         warning('pipelineSave:Artifacts','Could not sync module artifacts: %s', ME.message);
     end
 
+    try
+        audit = pipelineAuditDependencies(path, 'Mode', 'save');
+        writeJson(fullfile(path, 'dependency_audit.json'), audit);
+    catch ME
+        warning('pipelineSave:DependencyAudit', 'Could not write dependency audit: %s', ME.message);
+    end
+
     pipe.log(['Pipeline saved to ' jsonFile], 'Save');
     fprintf('Pipeline saved: %s\n', jsonFile);
 end

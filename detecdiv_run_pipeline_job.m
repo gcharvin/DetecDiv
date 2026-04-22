@@ -39,6 +39,7 @@ function result = detecdiv_run_pipeline_job(jobInput)
         if isempty(pipeObj)
             error('detecdiv_run_pipeline_job:PipelineLoadFailed', '%s', msg);
         end
+        dependencyAudit = pipelineAuditDependencies(pipeObj, 'Mode', 'run');
 
         ctx = localBuildExecutionContext(payload, shallowObj, pipeObj);
         runId = char(string(localGetText(payload, {'run_request','run_id'}, '')));
@@ -71,6 +72,7 @@ function result = detecdiv_run_pipeline_job(jobInput)
         result.run_json_path = fullfile(runObj.path, 'run.json');
         result.artifacts = localBuildArtifacts(result.run_json_path);
         result.summary = localBuildResultSummary(pipeObj, report, ctxOut);
+        result.dependency_audit = dependencyAudit;
     catch ME
         try
             report = getappdata(0, 'DetecDivLastPipelineReport');
@@ -127,6 +129,9 @@ function result = detecdiv_run_pipeline_job(jobInput)
             result.status = 'cancelled';
         else
             result.status = 'failed';
+        end
+        if exist('dependencyAudit', 'var') && ~isempty(dependencyAudit)
+            result.dependency_audit = dependencyAudit;
         end
         result.error = getReport(ME, 'extended', 'hyperlinks', 'off');
         result.summary = localBuildFailureSummary(report);
