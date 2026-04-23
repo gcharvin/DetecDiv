@@ -933,10 +933,20 @@ end
                 end
 
                 runObj = shallowObj.processing.pipelineRun(runIdx);
-                [pipeObj, msg] = resolvePipelineFromRun(runObj);
+                [pipeObj, msg] = resolvePipelineFromRun(runObj, shallowObj);
                 if isempty(pipeObj)
                     uialert(app.DetecDivUIFigure, msg, 'Run error', 'Icon', 'error');
                     return;
+                end
+
+                [runObj, runChanged] = backfillRunPipelineRef(runObj, pipeObj, shallowObj);
+                if runChanged
+                    shallowObj.processing.pipelineRun(runIdx) = runObj;
+                    assignin('base', projVar, shallowObj);
+                    try
+                        pipelineRunSave(runObj);
+                    catch
+                    end
                 end
 
                 d = uiprogressdlg(app.DetecDivUIFigure,'Title','Please Wait...', ...
@@ -978,9 +988,22 @@ end
                 RefreshtreewindowMenuSelected(app);
             end
 
-            function [pipeObj, msg] = resolvePipelineFromRun(runObj)
+            function [pipeObj, msg] = resolvePipelineFromRun(runObj, shallowObj)
                 pipeObj = [];
                 msg = 'Could not resolve pipeline for this run.';
+
+                try
+                    spec = runObj.ctx.pipelineSpec;
+                    if isstruct(spec) && isfield(spec,'nodes') && ~isempty(spec.nodes)
+                        pipeObj = spec;
+                        if ~isfield(pipeObj,'edges') || isempty(pipeObj.edges)
+                            pipeObj.edges = struct([]);
+                        end
+                        msg = '';
+                        return;
+                    end
+                catch
+                end
 
                 if isprop(runObj,'pipelineRef') && isstruct(runObj.pipelineRef)
                     if isfield(runObj.pipelineRef,'path') && ~isempty(runObj.pipelineRef.path)
@@ -1020,6 +1043,80 @@ end
                             msg = '';
                             return;
                         end
+                    end
+                end
+
+                try
+                    [foundDefault, defaultPipe] = app.getProjectDefaultPipelineObject(shallowObj);
+                catch
+                    foundDefault = false;
+                    defaultPipe = [];
+                end
+                if foundDefault && ~isempty(defaultPipe)
+                    wantId = '';
+                    try
+                        wantId = char(string(runObj.pipelineRef.id));
+                    catch
+                    end
+                    if isempty(wantId) || strcmp(defaultPipe.strid, wantId)
+                        pipeObj = defaultPipe;
+                        msg = '';
+                        return;
+                    end
+                end
+            end
+
+            function [runObj, changed] = backfillRunPipelineRef(runObj, pipeObj, shallowObj)
+                changed = false;
+                if nargin < 1 || isempty(runObj)
+                    return;
+                end
+
+                resolvedPath = '';
+                try
+                    if isa(pipeObj,'pipeline') && isprop(pipeObj,'path') && ~isempty(pipeObj.path)
+                        resolvedPath = char(string(pipeObj.path));
+                    end
+                catch
+                end
+
+                if isempty(resolvedPath)
+                    try
+                        defaultJson = app.getProjectDefaultPipelinePath(shallowObj);
+                        if ~isempty(defaultJson)
+                            resolvedPath = fileparts(defaultJson);
+                        end
+                    catch
+                    end
+                end
+
+                if isempty(resolvedPath)
+                    return;
+                end
+
+                if ~isprop(runObj,'pipelineRef') || isempty(runObj.pipelineRef) || ~isstruct(runObj.pipelineRef)
+                    runObj.pipelineRef = struct('id','','path','','version','');
+                    changed = true;
+                end
+                if ~isfield(runObj.pipelineRef,'path') || ~strcmp(char(string(runObj.pipelineRef.path)), resolvedPath)
+                    runObj.pipelineRef.path = resolvedPath;
+                    changed = true;
+                end
+                if isprop(runObj,'templatePath') && ~strcmp(char(string(runObj.templatePath)), resolvedPath)
+                    runObj.templatePath = resolvedPath;
+                    changed = true;
+                end
+                if isprop(runObj,'templateId') && isempty(runObj.templateId) && isfield(runObj.pipelineRef,'id')
+                    runObj.templateId = runObj.pipelineRef.id;
+                    changed = true;
+                end
+                if isstruct(runObj.ctx)
+                    if ~isfield(runObj.ctx,'pipelineRef') || ~isstruct(runObj.ctx.pipelineRef)
+                        runObj.ctx.pipelineRef = runObj.pipelineRef;
+                        changed = true;
+                    elseif ~isfield(runObj.ctx.pipelineRef,'path') || ~strcmp(char(string(runObj.ctx.pipelineRef.path)), resolvedPath)
+                        runObj.ctx.pipelineRef.path = resolvedPath;
+                        changed = true;
                     end
                 end
             end
@@ -2029,6 +2126,7 @@ end
 
             loaded = containers.Map('KeyType','char','ValueType','logical');
             existingPaths = app.listLoadedPipelinePaths();
+            runsChanged = false;
 
             % 1) explicit project -> default pipeline link
             defaultPath = app.getProjectDefaultPipelinePath(shallowObj);
@@ -2041,18 +2139,15 @@ end
                 runs = shallowObj.processing.pipelineRun;
                 for iRun = 1:numel(runs)
                     runObj = runs(iRun);
-                    pipePath = '';
-
-                    if isprop(runObj,'pipelineRef') && isstruct(runObj.pipelineRef)
-                        if isfield(runObj.pipelineRef,'path') && ~isempty(runObj.pipelineRef.path)
-                            pipePath = char(string(runObj.pipelineRef.path));
-                        end
-                    end
-                    if isempty(pipePath) && isprop(runObj,'templatePath') && ~isempty(runObj.templatePath)
-                        pipePath = char(string(runObj.templatePath));
-                    end
-                    if isempty(pipePath)
+                    [pipeObj, ~] = app.resolvePipelineFromRun(runObj, shallowObj);
+                    if isempty(pipeObj)
                         continue;
+                    end
+
+                    [runObj, runChanged] = app.backfillRunPipelineRef(runObj, pipeObj, shallowObj);
+                    if runChanged
+                        shallowObj.processing.pipelineRun(iRun) = runObj;
+                        runsChanged = true;
                     end
 
                     label = 'pipeline run';
@@ -2062,7 +2157,24 @@ end
                         end
                     catch
                     end
-                    [~, existingPaths, loaded] = app.loadPipelineTemplateIfNeeded(pipePath, existingPaths, loaded, label);
+
+                    key = app.normalizeFsPath(pipeObj.path);
+                    if isempty(key)
+                        continue;
+                    end
+                    if isKey(existingPaths, key) || isKey(loaded, key)
+                        continue;
+                    end
+
+                    varName = app.nextPipelineVarName(pipeObj);
+                    assignin('base', varName, pipeObj);
+                    loaded(key) = true;
+                    existingPaths(key) = true;
+
+                    try
+                        app.registerRecentPipeline(string(fullfile(pipeObj.path, 'pipeline.json')));
+                    catch
+                    end
                 end
             end
 
@@ -2081,6 +2193,13 @@ end
                             end
                         end
                     end
+                end
+            end
+
+            if runsChanged
+                try
+                    shallowSave(shallowObj);
+                catch
                 end
             end
         end
@@ -2195,6 +2314,139 @@ end
             p = lower(p);
             p = regexprep(p,'/+$','');
             key = p;
+        end
+
+        function [pipeObj, msg] = resolvePipelineFromRun(app, runObj, shallowObj)
+            pipeObj = [];
+            msg = 'Could not resolve pipeline for this run.';
+
+            try
+                spec = runObj.ctx.pipelineSpec;
+                if isstruct(spec) && isfield(spec,'nodes') && ~isempty(spec.nodes)
+                    pipeObj = spec;
+                    if ~isfield(pipeObj,'edges') || isempty(pipeObj.edges)
+                        pipeObj.edges = struct([]);
+                    end
+                    msg = '';
+                    return;
+                end
+            catch
+            end
+
+            if isprop(runObj,'pipelineRef') && isstruct(runObj.pipelineRef)
+                if isfield(runObj.pipelineRef,'path') && ~isempty(runObj.pipelineRef.path)
+                    [pipeObj, m] = pipelineLoad(runObj.pipelineRef.path);
+                    if ~isempty(pipeObj)
+                        msg = '';
+                        return;
+                    end
+                    if ~isempty(m)
+                        msg = m;
+                    end
+                end
+            end
+
+            if isprop(runObj,'templatePath') && ~isempty(runObj.templatePath)
+                [pipeObj, m] = pipelineLoad(runObj.templatePath);
+                if ~isempty(pipeObj)
+                    msg = '';
+                    return;
+                end
+                if ~isempty(m)
+                    msg = m;
+                end
+            end
+
+            if isprop(runObj,'pipelineRef') && isstruct(runObj.pipelineRef) && isfield(runObj.pipelineRef,'id') ...
+                    && ~isempty(runObj.pipelineRef.id)
+                vars = evalin('base','who');
+                for vi = 1:numel(vars)
+                    try
+                        tmp = evalin('base', vars{vi});
+                    catch
+                        continue;
+                    end
+                    if isa(tmp,'pipeline') && strcmp(tmp.strid, char(string(runObj.pipelineRef.id)))
+                        pipeObj = tmp;
+                        msg = '';
+                        return;
+                    end
+                end
+            end
+
+            try
+                [foundDefault, defaultPipe] = app.getProjectDefaultPipelineObject(shallowObj);
+            catch
+                foundDefault = false;
+                defaultPipe = [];
+            end
+            if foundDefault && ~isempty(defaultPipe)
+                wantId = '';
+                try
+                    wantId = char(string(runObj.pipelineRef.id));
+                catch
+                end
+                if isempty(wantId) || strcmp(defaultPipe.strid, wantId)
+                    pipeObj = defaultPipe;
+                    msg = '';
+                    return;
+                end
+            end
+        end
+
+        function [runObj, changed] = backfillRunPipelineRef(app, runObj, pipeObj, shallowObj)
+            changed = false;
+            if nargin < 2 || isempty(runObj)
+                return;
+            end
+
+            resolvedPath = '';
+            try
+                if isa(pipeObj,'pipeline') && isprop(pipeObj,'path') && ~isempty(pipeObj.path)
+                    resolvedPath = char(string(pipeObj.path));
+                end
+            catch
+            end
+
+            if isempty(resolvedPath)
+                try
+                    defaultJson = app.getProjectDefaultPipelinePath(shallowObj);
+                    if ~isempty(defaultJson)
+                        resolvedPath = fileparts(defaultJson);
+                    end
+                catch
+                end
+            end
+
+            if isempty(resolvedPath)
+                return;
+            end
+
+            if ~isprop(runObj,'pipelineRef') || isempty(runObj.pipelineRef) || ~isstruct(runObj.pipelineRef)
+                runObj.pipelineRef = struct('id','','path','','version','');
+                changed = true;
+            end
+            if ~isfield(runObj.pipelineRef,'path') || ~strcmp(char(string(runObj.pipelineRef.path)), resolvedPath)
+                runObj.pipelineRef.path = resolvedPath;
+                changed = true;
+            end
+            if isprop(runObj,'templatePath') && ~strcmp(char(string(runObj.templatePath)), resolvedPath)
+                runObj.templatePath = resolvedPath;
+                changed = true;
+            end
+            if isprop(runObj,'templateId') && isempty(runObj.templateId) && isfield(runObj.pipelineRef,'id')
+                runObj.templateId = runObj.pipelineRef.id;
+                changed = true;
+            end
+            if isstruct(runObj.ctx)
+                if ~isfield(runObj.ctx,'pipelineRef') || ~isstruct(runObj.ctx.pipelineRef)
+                    runObj.ctx.pipelineRef = runObj.pipelineRef;
+                    changed = true;
+                elseif ~isfield(runObj.ctx.pipelineRef,'path') || ~strcmp(char(string(runObj.ctx.pipelineRef.path)), resolvedPath)
+                    runObj.ctx.pipelineRef.path = resolvedPath;
+                    changed = true;
+                end
+            end
         end
 
         function n = getProjectFovCount(app, shallowObj) %#ok<INUSD>
@@ -5691,16 +5943,16 @@ end
 
             runObj = shallowObj.processing.pipelineRun(runIdx);
 
-            pipeObj = [];
-            if isprop(runObj,'pipelineRef') && isstruct(runObj.pipelineRef) && isfield(runObj.pipelineRef,'path') ...
-                    && ~isempty(runObj.pipelineRef.path)
-                [pipeObj, ~] = pipelineLoad(runObj.pipelineRef.path);
-            end
-            if isempty(pipeObj) && isprop(runObj,'templatePath') && ~isempty(runObj.templatePath)
-                [pipeObj, ~] = pipelineLoad(runObj.templatePath);
-            end
+            [pipeObj, msg] = app.resolvePipelineFromRun(runObj, shallowObj);
             if isempty(pipeObj)
-                error('Could not resolve pipeline template for this run.');
+                error(msg);
+            end
+
+            [runObj, runChanged] = app.backfillRunPipelineRef(runObj, pipeObj, shallowObj);
+            if runChanged
+                shallowObj.processing.pipelineRun(runIdx) = runObj;
+                assignin('base', proj, shallowObj);
+                pipelineRunSave(runObj);
             end
 
             runObj.status = 'running';
