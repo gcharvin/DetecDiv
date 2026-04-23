@@ -2818,24 +2818,20 @@ end
         end
 
         function defaultPath = getProjectDefaultPipelinePath(app, shallowObj) %#ok<INUSD>
-            defaultPath = '';
+            configuredPath = '';
             try
-                if ~isprop(shallowObj,'runProfiles') || isempty(shallowObj.runProfiles)
-                    return;
-                end
-                if ~isfield(shallowObj.runProfiles,'pipeline') || isempty(shallowObj.runProfiles.pipeline)
-                    return;
-                end
-                p = shallowObj.runProfiles.pipeline;
-                if isfield(p,'defaultTemplatePath') && ~isempty(p.defaultTemplatePath)
-                    defaultPath = char(string(p.defaultTemplatePath));
-                    if ~exist(defaultPath,'file')
-                        defaultPath = '';
+                if isprop(shallowObj,'runProfiles') && ~isempty(shallowObj.runProfiles) ...
+                        && isfield(shallowObj.runProfiles,'pipeline') && ~isempty(shallowObj.runProfiles.pipeline)
+                    p = shallowObj.runProfiles.pipeline;
+                    if isfield(p,'defaultTemplatePath') && ~isempty(p.defaultTemplatePath)
+                        configuredPath = char(string(p.defaultTemplatePath));
                     end
                 end
             catch
-                defaultPath = '';
+                configuredPath = '';
             end
+
+            defaultPath = app.resolveProjectPreferredPipelineJson(shallowObj, configuredPath);
         end
 
         function [found, pipeObj] = getProjectDefaultPipelineObject(app, shallowObj)
@@ -3842,6 +3838,58 @@ end
                 end
                 seen(key) = true;
                 paths{end+1} = p; %#ok<AGROW>
+            end
+        end
+
+        function preferredPath = resolveProjectPreferredPipelineJson(app, shallowObj, configuredPath) %#ok<INUSD>
+            preferredPath = '';
+            if nargin < 3 || isempty(configuredPath)
+                configuredPath = '';
+            else
+                configuredPath = char(string(configuredPath));
+            end
+
+            candidates = app.resolveProjectPipelineJsonCandidates(shallowObj);
+
+            if ~isempty(configuredPath)
+                cfgKey = app.normalizeFsPath(configuredPath);
+                for i = 1:numel(candidates)
+                    candPath = char(string(candidates{i}));
+                    if strcmp(app.normalizeFsPath(candPath), cfgKey)
+                        preferredPath = candPath;
+                        return;
+                    end
+                end
+
+                cfgFolder = '';
+                try
+                    [cfgParent,~,~] = fileparts(configuredPath);
+                    [~,cfgFolder] = fileparts(cfgParent);
+                    cfgFolder = char(string(cfgFolder));
+                catch
+                    cfgFolder = '';
+                end
+
+                if ~isempty(cfgFolder)
+                    for i = 1:numel(candidates)
+                        candPath = char(string(candidates{i}));
+                        [candParent,~,~] = fileparts(candPath);
+                        [~,candFolder] = fileparts(candParent);
+                        if strcmpi(char(string(candFolder)), cfgFolder)
+                            preferredPath = candPath;
+                            return;
+                        end
+                    end
+                end
+            end
+
+            if ~isempty(configuredPath) && exist(configuredPath,'file')
+                preferredPath = configuredPath;
+                return;
+            end
+
+            if numel(candidates) == 1
+                preferredPath = char(string(candidates{1}));
             end
         end
 
