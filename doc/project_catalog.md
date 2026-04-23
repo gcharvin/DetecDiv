@@ -109,6 +109,7 @@ In hub mode:
 - `Refresh` lists projects from the API
 - `Load Project` resolves the local `.mat` path from the remote metadata and the saved mapping
 - `Group` filters the visible project list to one user-owned project group
+- the same filter dropdown also lists hub users as owner filters when visible to the session
 - `Owned only` restricts the listing to projects owned by the current hub user
 - the details panel shows owner, visibility, size, notes count, ACL count, and group membership
 - `Notes...`, `Group...`, `Share...`, and `Delete...` expose the first governance actions directly from MATLAB

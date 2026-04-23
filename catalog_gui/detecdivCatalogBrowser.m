@@ -30,7 +30,9 @@ function varargout = detecdivCatalogBrowser(varargin)
     state.lastVisibleProjectCount = 0;
     state.currentUser = struct();
     state.hubGroups = struct([]);
+    state.hubUsers = struct([]);
     state.hubSelectedGroupId = '';
+    state.hubSelectedOwnerKey = '';
     state.hubOwnedOnly = false;
 
     fig = uifigure( ...
@@ -144,7 +146,7 @@ function varargout = detecdivCatalogBrowser(varargin)
     refreshButton.Layout.Row = 3;
     refreshButton.Layout.Column = 10;
 
-    groupLabel = uilabel(controlGrid, 'Text', 'Group', 'FontWeight', 'bold');
+    groupLabel = uilabel(controlGrid, 'Text', 'Owner/Group', 'FontWeight', 'bold');
     groupLabel.Layout.Row = 4;
     groupLabel.Layout.Column = 1;
 
@@ -163,7 +165,7 @@ function varargout = detecdivCatalogBrowser(varargin)
     ownedOnlyCheck.Layout.Row = 4;
     ownedOnlyCheck.Layout.Column = 6;
 
-    refreshGroupsButton = uibutton(controlGrid, 'push', 'Text', 'Groups', ...
+    refreshGroupsButton = uibutton(controlGrid, 'push', 'Text', 'Refresh', ...
         'ButtonPushedFcn', @onRefreshGroups);
     refreshGroupsButton.Layout.Row = 4;
     refreshGroupsButton.Layout.Column = 7;
@@ -326,7 +328,7 @@ function varargout = detecdivCatalogBrowser(varargin)
     end
 
     function onGroupFilterChanged(~, ~)
-        state.hubSelectedGroupId = char(string(groupDropDown.Value));
+        [state.hubSelectedGroupId, state.hubSelectedOwnerKey] = localParseHubFilterValue(groupDropDown.Value);
         refreshProjectsTable('PreserveStatus', true);
     end
 
@@ -377,8 +379,9 @@ function varargout = detecdivCatalogBrowser(varargin)
         try
             group = detecdiv_hub_create_project_group(groupKey, displayName, description, state.hubSettings);
             refreshHubContext();
-            groupDropDown.Value = char(string(group.id));
-            state.hubSelectedGroupId = groupDropDown.Value;
+            state.hubSelectedGroupId = char(string(group.id));
+            state.hubSelectedOwnerKey = '';
+            groupDropDown.Value = localGroupFilterValue(state.hubSelectedGroupId);
             refreshProjectsTable('PreserveStatus', true);
             setStatus(sprintf('Created project group "%s".', displayName));
         catch ME
@@ -1010,6 +1013,7 @@ function varargout = detecdivCatalogBrowser(varargin)
             projects = localNormalizeHubProjects(detecdiv_hub_list_projects( ...
                 state.hubSettings, ...
                 'GroupId', state.hubSelectedGroupId, ...
+                'OwnerKey', state.hubSelectedOwnerKey, ...
                 'OwnedOnly', state.hubOwnedOnly));
             state.projects = projects;
             state.lastVisibleProjectCount = height(projects);
@@ -1243,6 +1247,7 @@ function varargout = detecdivCatalogBrowser(varargin)
         if ~strcmp(state.sourceMode, 'hub')
             state.currentUser = struct();
             state.hubGroups = struct([]);
+            state.hubUsers = struct([]);
             syncGroupDropDown();
             if isvalid(fig)
                 currentUserLabel.Text = localCurrentUserLabel();
@@ -1253,6 +1258,8 @@ function varargout = detecdivCatalogBrowser(varargin)
         state.currentUser = detecdiv_hub_get_current_user(state.hubSettings);
         groups = detecdiv_hub_list_project_groups(state.hubSettings);
         state.hubGroups = localEnsureStructArray(groups);
+        users = detecdiv_hub_list_users(state.hubSettings);
+        state.hubUsers = localEnsureStructArray(users);
         syncGroupDropDown();
         if isvalid(fig)
             currentUserLabel.Text = localCurrentUserLabel();
@@ -1262,16 +1269,27 @@ function varargout = detecdivCatalogBrowser(varargin)
     function syncGroupDropDown()
         items = {'All projects'};
         itemsData = {''};
+        for i = 1:numel(state.hubUsers)
+            userKey = char(string(localStructField(state.hubUsers(i), 'user_key')));
+            if isempty(userKey)
+                continue;
+            end
+            items{end + 1} = ['Owner: ' localUserOptionLabel(state.hubUsers(i))]; %#ok<AGROW>
+            itemsData{end + 1} = localOwnerFilterValue(userKey); %#ok<AGROW>
+        end
         for i = 1:numel(state.hubGroups)
-            items{end + 1} = char(string(state.hubGroups(i).display_name)); %#ok<AGROW>
-            itemsData{end + 1} = char(string(state.hubGroups(i).id)); %#ok<AGROW>
+            items{end + 1} = ['Group: ' char(string(state.hubGroups(i).display_name))]; %#ok<AGROW>
+            itemsData{end + 1} = localGroupFilterValue(state.hubGroups(i).id); %#ok<AGROW>
         end
         groupDropDown.Items = items;
         groupDropDown.ItemsData = itemsData;
-        if isempty(state.hubSelectedGroupId) || ~any(strcmp(itemsData, state.hubSelectedGroupId))
+        selectedValue = localHubFilterValue(state.hubSelectedGroupId, state.hubSelectedOwnerKey);
+        if isempty(selectedValue) || ~any(strcmp(itemsData, selectedValue))
             state.hubSelectedGroupId = '';
+            state.hubSelectedOwnerKey = '';
+            selectedValue = '';
         end
-        groupDropDown.Value = state.hubSelectedGroupId;
+        groupDropDown.Value = selectedValue;
         ownedOnlyCheck.Value = logical(state.hubOwnedOnly);
     end
 
@@ -1285,8 +1303,10 @@ function varargout = detecdivCatalogBrowser(varargin)
         else
             rootLabel.Text = 'Remote Root';
             rootEdit.Value = char(string(state.hubSettings.defaultRemoteProjectRoot));
-            if isempty(state.hubSelectedGroupId)
+            if isempty(state.hubSelectedGroupId) && isempty(state.hubSelectedOwnerKey)
                 sourceInfoLabel.Text = 'Hub listing: all visible projects';
+            elseif ~isempty(state.hubSelectedOwnerKey)
+                sourceInfoLabel.Text = 'Hub listing: owner filter active';
             else
                 sourceInfoLabel.Text = 'Hub listing: group filter active';
             end
@@ -1813,6 +1833,53 @@ function value = localOwnerLabel(projectDetail)
         value = displayName;
     else
         value = sprintf('%s (%s)', displayName, userKey);
+    end
+end
+
+function label = localUserOptionLabel(userInfo)
+    displayName = char(string(localStructField(userInfo, 'display_name')));
+    userKey = char(string(localStructField(userInfo, 'user_key')));
+    if isempty(displayName)
+        label = localTextOr(userKey, '<unknown>');
+    elseif isempty(userKey) || strcmp(displayName, userKey)
+        label = displayName;
+    else
+        label = sprintf('%s (%s)', displayName, userKey);
+    end
+end
+
+function value = localOwnerFilterValue(userKey)
+    value = ['owner:' char(string(userKey))];
+end
+
+function value = localGroupFilterValue(groupId)
+    value = ['group:' char(string(groupId))];
+end
+
+function value = localHubFilterValue(groupId, ownerKey)
+    groupId = char(string(groupId));
+    ownerKey = char(string(ownerKey));
+    if ~isempty(ownerKey)
+        value = localOwnerFilterValue(ownerKey);
+    elseif ~isempty(groupId)
+        value = localGroupFilterValue(groupId);
+    else
+        value = '';
+    end
+end
+
+function [groupId, ownerKey] = localParseHubFilterValue(rawValue)
+    groupId = '';
+    ownerKey = '';
+    rawValue = char(string(rawValue));
+    if startsWith(rawValue, 'owner:')
+        ownerKey = extractAfter(rawValue, strlength('owner:'));
+        ownerKey = char(string(ownerKey));
+    elseif startsWith(rawValue, 'group:')
+        groupId = extractAfter(rawValue, strlength('group:'));
+        groupId = char(string(groupId));
+    elseif ~isempty(rawValue)
+        groupId = rawValue;
     end
 end
 

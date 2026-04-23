@@ -7,6 +7,7 @@ function projects = detecdiv_hub_list_projects(hubSettings, varargin)
 
     ip = inputParser;
     ip.addParameter('GroupId', '', @(x)ischar(x) || isstring(x));
+    ip.addParameter('OwnerKey', '', @(x)ischar(x) || isstring(x));
     ip.addParameter('OwnedOnly', false, @(x)islogical(x) || isnumeric(x));
     ip.parse(varargin{:});
     opts = ip.Results;
@@ -16,10 +17,14 @@ function projects = detecdiv_hub_list_projects(hubSettings, varargin)
 
     groupId = strtrim(char(string(opts.GroupId)));
     if ~isempty(groupId)
-        params(end + 1, 1) = "group_id=" + string(urlencode(groupId)); %#ok<AGROW>
+        params(end + 1, 1) = "group_id=" + string(urlencode(groupId));
+    end
+    ownerKey = strtrim(char(string(opts.OwnerKey)));
+    if ~isempty(ownerKey)
+        params(end + 1, 1) = "owner_key=" + string(urlencode(ownerKey));
     end
     if logical(opts.OwnedOnly)
-        params(end + 1, 1) = "owned_only=true"; %#ok<AGROW>
+        params(end + 1, 1) = "owned_only=true";
     end
     if ~isempty(params)
         endpoint = [endpoint '?' strjoin(cellstr(params), '&')];
