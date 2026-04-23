@@ -2158,7 +2158,24 @@ end
                     catch
                     end
 
-                    key = app.normalizeFsPath(pipeObj.path);
+                    loadablePipe = pipeObj;
+                    if ~(isa(loadablePipe,'pipeline') && isprop(loadablePipe,'path') && ~isempty(loadablePipe.path))
+                        try
+                            if isprop(runObj,'pipelineRef') && isstruct(runObj.pipelineRef) ...
+                                    && isfield(runObj.pipelineRef,'path') && ~isempty(runObj.pipelineRef.path)
+                                [tmpPipe, ~] = pipelineLoad(runObj.pipelineRef.path);
+                                if ~isempty(tmpPipe)
+                                    loadablePipe = tmpPipe;
+                                end
+                            end
+                        catch
+                        end
+                    end
+                    if ~(isa(loadablePipe,'pipeline') && isprop(loadablePipe,'path') && ~isempty(loadablePipe.path))
+                        continue;
+                    end
+
+                    key = app.normalizeFsPath(loadablePipe.path);
                     if isempty(key)
                         continue;
                     end
@@ -2166,13 +2183,13 @@ end
                         continue;
                     end
 
-                    varName = app.nextPipelineVarName(pipeObj);
-                    assignin('base', varName, pipeObj);
+                    varName = app.nextPipelineVarName(loadablePipe);
+                    assignin('base', varName, loadablePipe);
                     loaded(key) = true;
                     existingPaths(key) = true;
 
                     try
-                        app.registerRecentPipeline(string(fullfile(pipeObj.path, 'pipeline.json')));
+                        app.registerRecentPipeline(string(fullfile(loadablePipe.path, 'pipeline.json')));
                     catch
                     end
                 end
