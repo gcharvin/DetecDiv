@@ -2213,12 +2213,6 @@ end
                 end
             end
 
-            if runsChanged
-                try
-                    shallowSave(shallowObj);
-                catch
-                end
-            end
         end
 
         function [pipeObj, existingPaths, loaded] = loadPipelineTemplateIfNeeded(app, pipePath, existingPaths, loaded, sourceLabel)
