@@ -20,3 +20,12 @@ classification/classifyImageLSTMNetFun-PP1-1017-B.m
 @classi/stats-PP1-1017-B.m
 @classi/formatDataForTraining-PP1-1017-B.m
 GUI/datapickerGUI.m
+
+# Generated local artifacts
+**/__pycache__/
+*.pyc
+structure/cache/
+
+# Auto-generated GUI sync snapshots
+backups/mlapp_sync/
+backups/pipelineGUI_layout_sync/
