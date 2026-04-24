@@ -5316,12 +5316,10 @@ classdef pipelineGUI < matlab.apps.AppBase
             end
 
             defaultName = [getDefaultPipelineName(app) '_export'];
-            [parentPath, bundleName, ok] = promptExportBundleLocation(app, defaultName);
+            [bundlePath, ok] = promptExportBundleLocation(app, defaultName);
             if ~ok
                 return;
             end
-
-            bundlePath = fullfile(parentPath, bundleName);
             overwrite = false;
             if exist(bundlePath, 'dir') == 7
                 choice = uiconfirm(app.UIFigure, ...
@@ -5461,12 +5459,10 @@ classdef pipelineGUI < matlab.apps.AppBase
             end
 
             defaultName = sprintf('%s_%s_export', pipeName, char(string(getfielddefault(app, node, 'id', sprintf('node_%d', idx)))));
-            [parentPath, bundleName, ok] = promptExportBundleLocation(app, defaultName);
+            [bundlePath, ok] = promptExportBundleLocation(app, defaultName);
             if ~ok
                 return;
             end
-
-            bundlePath = fullfile(parentPath, bundleName);
             overwrite = false;
             if exist(bundlePath, 'dir') == 7
                 choice = uiconfirm(app.UIFigure, ...
@@ -5634,12 +5630,11 @@ classdef pipelineGUI < matlab.apps.AppBase
             end
         end
 
-        function [parentPath, bundleName, ok] = promptExportBundleLocation(app, defaultName)
+        function [bundlePath, ok] = promptExportBundleLocation(app, defaultName)
             ok = false;
-            parentPath = '';
-            bundleName = char(string(defaultName));
-            if nargin < 2 || isempty(bundleName)
-                bundleName = 'pipeline_export';
+            bundlePath = '';
+            if nargin < 2 || isempty(defaultName)
+                defaultName = 'pipeline_export';
             end
 
             startDir = pwd;
@@ -5651,23 +5646,12 @@ classdef pipelineGUI < matlab.apps.AppBase
                 end
             end
 
-            parentPath = uigetdir(startDir, 'Select parent folder for the export bundle');
-            if isequal(parentPath, 0)
-                parentPath = '';
+            selectedPath = uigetdir(startDir, sprintf('Select export folder (%s)', char(string(defaultName))));
+            if isequal(selectedPath, 0)
                 return;
             end
 
-            answer = inputdlg({'Export folder name:'}, 'Export pipeline', [1 60], {bundleName});
-            if isempty(answer)
-                parentPath = '';
-                return;
-            end
-            bundleName = strtrim(char(string(answer{1})));
-            if isempty(bundleName)
-                uialert(app.UIFigure, 'Export folder name cannot be empty.', 'Invalid name', 'Icon', 'warning');
-                parentPath = '';
-                return;
-            end
+            bundlePath = char(string(selectedPath));
             ok = true;
         end
 
