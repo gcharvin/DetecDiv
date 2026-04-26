@@ -1310,7 +1310,12 @@ function ctx = executeProcessorNode(node, ctx)
         procObj = applyProcessorReference(procObj, refProc);
     end
     if isfield(p,'modulePath') && ~isempty(p.modulePath)
-        procObj.path = char(string(p.modulePath));
+        refInfoForPath = resolveNodeModuleReference(node, p, 'processor', ctx);
+        if isstruct(refInfoForPath) && isfield(refInfoForPath,'modulePath') && ~isempty(refInfoForPath.modulePath)
+            procObj.path = char(string(refInfoForPath.modulePath));
+        else
+            procObj.path = char(string(p.modulePath));
+        end
     end
     if isfield(p,'moduleId') && ~isempty(p.moduleId)
         procObj.strid = char(string(p.moduleId));
@@ -1432,7 +1437,12 @@ function ctx = executeClassifierNode(node, ctx)
         clsObj = applyClassifierReference(clsObj, refClassi);
     end
     if isfield(p,'modulePath') && ~isempty(p.modulePath)
-        clsObj.path = char(string(p.modulePath));
+        refInfoForPath = resolveNodeModuleReference(node, p, 'classifier', ctx);
+        if isstruct(refInfoForPath) && isfield(refInfoForPath,'modulePath') && ~isempty(refInfoForPath.modulePath)
+            clsObj.path = char(string(refInfoForPath.modulePath));
+        else
+            clsObj.path = char(string(p.modulePath));
+        end
     end
     if isfield(p,'moduleId') && ~isempty(p.moduleId)
         clsObj.strid = char(string(p.moduleId));

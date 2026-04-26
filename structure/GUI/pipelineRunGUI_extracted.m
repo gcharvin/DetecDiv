@@ -16,6 +16,8 @@ classdef pipelineRunGUI < matlab.apps.AppBase
         CachePolicyDropDown         matlab.ui.control.DropDown
         GpuPolicyDropDownLabel      matlab.ui.control.Label
         GpuPolicyDropDown           matlab.ui.control.DropDown
+        ExecutionModeDropDownLabel  matlab.ui.control.Label
+        ExecutionModeDropDown       matlab.ui.control.DropDown
         InputSourceDropDownLabel    matlab.ui.control.Label
         InputSourceDropDown         matlab.ui.control.DropDown
         FovSelectionEditFieldLabel  matlab.ui.control.Label
@@ -29,6 +31,9 @@ classdef pipelineRunGUI < matlab.apps.AppBase
         ParamTableLabel             matlab.ui.control.Label
         ParamTable                  matlab.ui.control.Table
         OpenNodeGUIButton           matlab.ui.control.Button
+        HubStatusLabel              matlab.ui.control.Label
+        RefreshHubButton            matlab.ui.control.Button
+        RunOnHubButton              matlab.ui.control.Button
         CreateRunButton             matlab.ui.control.Button
         CloseButton                 matlab.ui.control.Button
     end
@@ -104,6 +109,7 @@ classdef pipelineRunGUI < matlab.apps.AppBase
                 app.FovSelectionEditField.Value = '';
                 app.PythonEnvModeDropDown.Value = 'detecdiv_python';
                 app.PythonEnvNameEditField.Value = '';
+                app.ExecutionModeDropDown.Value = 'Local';
             else
                 app.RunIdEditField.Value = [templateId '_run'];
                 app.RunPolicyDropDown.Value = 'resume';
@@ -114,10 +120,12 @@ classdef pipelineRunGUI < matlab.apps.AppBase
                 app.FovSelectionEditField.Value = '';
                 app.PythonEnvModeDropDown.Value = 'detecdiv_python';
                 app.PythonEnvNameEditField.Value = '';
+                app.ExecutionModeDropDown.Value = 'Local';
             end
             initTooltips(app);
             updateRunSourceSelectionUi(app);
             updatePythonEnvUi(app);
+            updateHubStatusUi(app);
             app.Data.dirty = ~app.Data.editMode;
             updateWindowTitle(app);
         end
@@ -318,6 +326,9 @@ classdef pipelineRunGUI < matlab.apps.AppBase
                     if isfield(runCfg,'gpuPolicy') && ~isempty(runCfg.gpuPolicy)
                         app.GpuPolicyDropDown.Value = gpuPolicyToLabel(app, runCfg.gpuPolicy);
                     end
+                    if isfield(runCfg,'executionMode') && ~isempty(runCfg.executionMode)
+                        app.ExecutionModeDropDown.Value = executionModeToLabel(app, runCfg.executionMode);
+                    end
                     if isfield(runCfg,'inputSource') && ~isempty(runCfg.inputSource)
                         app.InputSourceDropDown.Value = char(string(runCfg.inputSource));
                     end
@@ -338,6 +349,12 @@ classdef pipelineRunGUI < matlab.apps.AppBase
                             end
                         end
                     end
+                end
+            catch
+            end
+            try
+                if strcmpi(app.ExecutionModeDropDown.Value, 'Local') && ~isempty(localRunHubJobId(app, runObj))
+                    app.ExecutionModeDropDown.Value = 'Hub';
                 end
             catch
             end
@@ -556,6 +573,13 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             app.GpuPolicyDropDown.Tooltip = gpuTip;
             app.GpuPolicyDropDownLabel.Tooltip = gpuTip;
 
+            executionTip = { ...
+                'Execution mode for this pipeline run.', ...
+                'Local keeps execution on this MATLAB session.', ...
+                'Hub submits the saved pipelineRun to detecdiv-hub for remote execution.'};
+            app.ExecutionModeDropDown.Tooltip = executionTip;
+            app.ExecutionModeDropDownLabel.Tooltip = executionTip;
+
             sourceTip = { ...
                 'Run source defines where execution starts and which existing project data is reused.', ...
                 'Pipeline start (dataloader): start from raw data loading.', ...
@@ -579,6 +603,9 @@ classdef pipelineRunGUI < matlab.apps.AppBase
                 'Ignored when Python env is set to detecdiv_python.'};
             app.PythonEnvNameEditField.Tooltip = pythonNameTip;
             app.PythonEnvNameEditFieldLabel.Tooltip = pythonNameTip;
+
+            app.RunOnHubButton.Tooltip = 'Submit the saved pipelineRun to detecdiv-hub.';
+            app.RefreshHubButton.Tooltip = 'Refresh the current hub job status.';
         end
 
         function out = compactNumericDisplay(app, v) %#ok<INUSD>
@@ -857,7 +884,7 @@ classdef pipelineRunGUI < matlab.apps.AppBase
 
         function shallowObj = resolveSelectedProject(app)
             shallowObj = [];
-            if ~isempty(app.Data.shallowObj)
+            if ~isempty(app.Data.shallowObj) && isa(app.Data.shallowObj, 'shallow')
                 shallowObj = app.Data.shallowObj;
                 return;
             end
@@ -877,6 +904,34 @@ classdef pipelineRunGUI < matlab.apps.AppBase
                     shallowObj = tmp;
                 end
             catch
+            end
+        end
+
+        function shallowObj = resolveProjectForRun(app, runObj)
+            shallowObj = resolveSelectedProject(app);
+            if ~isempty(shallowObj)
+                return;
+            end
+
+            try
+                vars = evalin('base', 'who');
+            catch
+                vars = {};
+            end
+            for iVar = 1:numel(vars)
+                try
+                    candidate = evalin('base', vars{iVar});
+                    if ~isa(candidate, 'shallow')
+                        continue;
+                    end
+                    idx = findRunIndexInProject(app, candidate, runObj);
+                    if ~isempty(idx)
+                        shallowObj = candidate;
+                        app.Data.shallowObj = shallowObj;
+                        return;
+                    end
+                catch
+                end
             end
         end
 
@@ -1316,6 +1371,11 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             markDirty(app, true);
         end
 
+        function ExecutionModeDropDownValueChanged(app, event) %#ok<INUSD>
+            markDirty(app, true);
+            updateHubStatusUi(app);
+        end
+
         function FovSelectionEditFieldValueChanged(app, event) %#ok<INUSD>
             markDirty(app, true);
         end
@@ -1374,6 +1434,211 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             end
             app.Data.dirty = logical(tf);
             updateWindowTitle(app);
+            updateHubStatusUi(app);
+        end
+
+        function updateHubStatusUi(app)
+            hasRun = app.Data.editMode && isa(app.Data.runObj, 'pipelineRun') && ~isempty(app.Data.runObj);
+            isHubMode = false;
+            try
+                isHubMode = strcmpi(char(string(app.ExecutionModeDropDown.Value)), 'Hub');
+            catch
+            end
+            if hasRun && isHubMode
+                app.RunOnHubButton.Enable = 'on';
+            else
+                app.RunOnHubButton.Enable = 'off';
+            end
+            if hasRun
+                app.RefreshHubButton.Enable = 'on';
+            else
+                app.RefreshHubButton.Enable = 'off';
+            end
+
+            label = 'Hub: no job';
+            try
+                jobId = localRunHubJobId(app, app.Data.runObj);
+                if ~isempty(jobId)
+                    status = localRunHubStatus(app, app.Data.runObj);
+                    if isempty(status)
+                        status = 'unknown';
+                    end
+                    label = sprintf('Hub: %s (%s)', status, jobId);
+                elseif hasRun && isHubMode
+                    label = 'Hub: ready';
+                elseif hasRun
+                    label = 'Hub: local mode';
+                end
+                if app.Data.dirty && hasRun
+                    label = [label ' - unsaved'];
+                end
+            catch
+            end
+            app.HubStatusLabel.Text = label;
+        end
+
+        function RunOnHubButtonPushed(app, event) %#ok<INUSD>
+            if app.Data.dirty
+                choice = uiconfirm(app.UIFigure, ...
+                    'Save this pipeline run before submitting it to the hub?', ...
+                    'Save before hub submit', ...
+                    'Options', {'Save and submit','Cancel'}, ...
+                    'DefaultOption', 1, ...
+                    'CancelOption', 2, ...
+                    'Icon', 'warning');
+                if ~strcmp(choice, 'Save and submit')
+                    return;
+                end
+                CreateRunButtonPushed(app, []);
+                if app.Data.dirty
+                    return;
+                end
+            end
+
+            runObj = app.Data.runObj;
+            shallowObj = resolveProjectForRun(app, runObj);
+            if isempty(shallowObj) || isempty(runObj) || ~isa(runObj, 'pipelineRun')
+                uialert(app.UIFigure, 'Save the run before submitting it to the hub.', 'Run on hub', 'Icon', 'warning');
+                return;
+            end
+
+            choice = uiconfirm(app.UIFigure, ...
+                {'Submit this existing pipeline run to the hub?', ...
+                 'The local project should be reloaded after the server job completes.'}, ...
+                'Run on hub', ...
+                'Options', {'Submit','Cancel'}, ...
+                'DefaultOption', 1, ...
+                'CancelOption', 2, ...
+                'Icon', 'warning');
+            if ~strcmp(choice, 'Submit')
+                return;
+            end
+
+            d = uiprogressdlg(app.UIFigure, 'Title', 'Please Wait...', ...
+                'Message', ['Submitting hub job for ' char(string(runObj.runId)) '...'], ...
+                'Indeterminate', 'on');
+            try
+                try
+                    detecdiv_hub_release_project_open(shallowObj);
+                catch
+                end
+                job = detecdiv_hub_submit_pipeline_run(runObj, shallowObj);
+                app.Data.runObj = runObj;
+                app.Data.editMode = true;
+                app.RunIdEditField.Editable = 'off';
+                localStoreRunInProject(app, shallowObj, runObj);
+                try
+                    if isprop(shallowObj, 'runProfiles')
+                        if ~isfield(shallowObj.runProfiles, 'hub') || ~isstruct(shallowObj.runProfiles.hub)
+                            shallowObj.runProfiles.hub = struct();
+                        end
+                        shallowObj.runProfiles.hub.read_only = true;
+                        shallowObj.runProfiles.hub.reason = 'Hub pipeline job submitted; reload project before further local editing.';
+                    end
+                    assignin('base', shallowObj.io.file, shallowObj);
+                catch
+                end
+                markDirty(app, false);
+                close(d);
+                uialert(app.UIFigure, ...
+                    sprintf('Hub job submitted: %s\nStatus: %s\nReload the project after completion before local editing.', ...
+                    char(string(job.id)), char(string(job.status))), ...
+                    'Hub job submitted', 'Icon', 'success');
+            catch ME
+                close(d);
+                uialert(app.UIFigure, localErrorReport(app, ME), 'Hub submit failed', 'Icon', 'error');
+            end
+            updateHubStatusUi(app);
+        end
+
+        function RefreshHubButtonPushed(app, event) %#ok<INUSD>
+            runObj = app.Data.runObj;
+            jobId = localRunHubJobId(app, runObj);
+            if isempty(jobId)
+                uialert(app.UIFigure, 'This run has no hub job id yet.', 'Hub status', 'Icon', 'warning');
+                return;
+            end
+
+            shallowObj = resolveSelectedProject(app);
+            try
+                job = detecdiv_hub_get_pipeline_run(jobId);
+                if ~isstruct(runObj.ctx)
+                    runObj.ctx = struct();
+                end
+                if ~isfield(runObj.ctx, 'hub') || ~isstruct(runObj.ctx.hub)
+                    runObj.ctx.hub = struct();
+                end
+                runObj.ctx.hub.job_id = char(string(job.id));
+                runObj.ctx.hub.status = char(string(job.status));
+                runObj.ctx.hub.refreshed_at = char(datetime('now'));
+                runObj.status = ['hub_' char(string(job.status))];
+                app.Data.runObj = runObj;
+                if ~isempty(shallowObj)
+                    localStoreRunInProject(app, shallowObj, runObj);
+                end
+                try
+                    pipelineRunSave(runObj);
+                catch
+                end
+                updateHubStatusUi(app);
+
+                msg = sprintf('Hub job: %s\nStatus: %s', char(string(job.id)), char(string(job.status)));
+                if any(strcmp(char(string(job.status)), {'done','failed','cancelled'}))
+                    msg = sprintf('%s\n\nProject changed on hub/server. Reload before local editing.', msg);
+                end
+                uialert(app.UIFigure, msg, 'Hub status', 'Icon', 'info');
+            catch ME
+                uialert(app.UIFigure, localErrorReport(app, ME), 'Hub status failed', 'Icon', 'error');
+            end
+        end
+
+        function msg = localErrorReport(app, ME) %#ok<INUSD>
+            msg = ME.message;
+            try
+                if ~isempty(ME.identifier)
+                    msg = sprintf('%s\n\nIdentifier: %s', msg, ME.identifier);
+                end
+                if ~isempty(ME.stack)
+                    lines = cell(1, min(numel(ME.stack), 6));
+                    for iStack = 1:numel(lines)
+                        lines{iStack} = sprintf('%s:%d', ME.stack(iStack).name, ME.stack(iStack).line);
+                    end
+                    msg = sprintf('%s\n\nStack:\n%s', msg, strjoin(lines, newline));
+                end
+            catch
+            end
+        end
+
+        function jobId = localRunHubJobId(app, runObj) %#ok<INUSD>
+            jobId = '';
+            try
+                if isa(runObj, 'pipelineRun') && isstruct(runObj.ctx) && isfield(runObj.ctx, 'hub') && isstruct(runObj.ctx.hub)
+                    if isfield(runObj.ctx.hub, 'job_id') && ~isempty(runObj.ctx.hub.job_id)
+                        jobId = char(string(runObj.ctx.hub.job_id));
+                    elseif isfield(runObj.ctx.hub, 'hub_job_id') && ~isempty(runObj.ctx.hub.hub_job_id)
+                        jobId = char(string(runObj.ctx.hub.hub_job_id));
+                    end
+                end
+            catch
+            end
+        end
+
+        function status = localRunHubStatus(app, runObj) %#ok<INUSD>
+            status = '';
+            try
+                if isa(runObj, 'pipelineRun') && isstruct(runObj.ctx) && isfield(runObj.ctx, 'hub') && ...
+                        isstruct(runObj.ctx.hub) && isfield(runObj.ctx.hub, 'status') && ~isempty(runObj.ctx.hub.status)
+                    status = char(string(runObj.ctx.hub.status));
+                end
+            catch
+            end
+        end
+
+        function localStoreRunInProject(app, shallowObj, runObj)
+            runIdx = findRunIndexInProject(app, shallowObj, runObj);
+            if ~isempty(runIdx)
+                shallowObj.processing.pipelineRun(runIdx) = runObj;
+            end
         end
 
         function updateWindowTitle(app)
@@ -1405,6 +1670,26 @@ classdef pipelineRunGUI < matlab.apps.AppBase
                     policy = 'force_cpu';
                 otherwise
                     policy = 'module_default';
+            end
+        end
+
+        function mode = normalizeExecutionModeLabel(app, value) %#ok<INUSD>
+            mode = lower(strtrim(char(string(value))));
+            switch mode
+                case {'hub', 'remote', 'run on hub'}
+                    mode = 'hub';
+                otherwise
+                    mode = 'local';
+            end
+        end
+
+        function label = executionModeToLabel(app, mode) %#ok<INUSD>
+            key = lower(strtrim(char(string(mode))));
+            switch key
+                case {'hub', 'remote', 'run on hub'}
+                    label = 'Hub';
+                otherwise
+                    label = 'Local';
             end
         end
 
@@ -1473,9 +1758,11 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             ctx.run.runPolicy = char(string(app.RunPolicyDropDown.Value));
             ctx.run.resume = strcmpi(ctx.run.runPolicy, 'resume');
             ctx.run.gpuPolicy = normalizeGpuPolicyLabel(app, app.GpuPolicyDropDown.Value);
+            ctx.run.executionMode = normalizeExecutionModeLabel(app, app.ExecutionModeDropDown.Value);
             ctx.run.inputSource = inputSource;
             ctx.run.selectedNodes = {};
             ctx.run.nodeParams = struct('id',{},'params',{});
+            ctx.executionMode = ctx.run.executionMode;
             ctx.io = struct();
             existingPolicy = char(string(app.ExistingPolicyDropDown.Value));
             if ~strcmpi(existingPolicy, '<module default>')
@@ -1541,6 +1828,7 @@ classdef pipelineRunGUI < matlab.apps.AppBase
                     end
                     app.Data.runObj = runObj;
                     markDirty(app, false);
+                    updateHubStatusUi(app);
 
                     msgbox({ ...
                         ['Pipeline run updated: ' runObj.runId], ...
@@ -1570,6 +1858,7 @@ classdef pipelineRunGUI < matlab.apps.AppBase
                     app.CreateRunButton.Text = 'Save run';
                     app.RunIdEditField.Editable = 'off';
                     markDirty(app, false);
+                    updateHubStatusUi(app);
                 end
             catch ME
                 uialert(app.UIFigure, ME.message, 'Create run failed', 'Icon', 'error');
@@ -1902,6 +2191,17 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             app.GpuPolicyDropDown.Value = '<module default>';
             app.GpuPolicyDropDown.ValueChangedFcn = createCallbackFcn(app, @GpuPolicyDropDownValueChanged, true);
 
+            app.ExecutionModeDropDownLabel = uilabel(app.UIFigure);
+            app.ExecutionModeDropDownLabel.HorizontalAlignment = 'right';
+            app.ExecutionModeDropDownLabel.Position = [700 554 62 22];
+            app.ExecutionModeDropDownLabel.Text = 'Execution';
+
+            app.ExecutionModeDropDown = uidropdown(app.UIFigure);
+            app.ExecutionModeDropDown.Items = {'Local', 'Hub'};
+            app.ExecutionModeDropDown.Position = [774 554 106 22];
+            app.ExecutionModeDropDown.Value = 'Local';
+            app.ExecutionModeDropDown.ValueChangedFcn = createCallbackFcn(app, @ExecutionModeDropDownValueChanged, true);
+
             app.InputSourceDropDownLabel = uilabel(app.UIFigure);
             app.InputSourceDropDownLabel.HorizontalAlignment = 'right';
             app.InputSourceDropDownLabel.Position = [13 554 72 22];
@@ -1976,6 +2276,20 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             app.OpenNodeGUIButton.Position = [20 20 160 28];
             app.OpenNodeGUIButton.Text = 'Open selected node GUI';
             app.OpenNodeGUIButton.ButtonPushedFcn = createCallbackFcn(app, @OpenNodeGUIButtonPushed, true);
+
+            app.HubStatusLabel = uilabel(app.UIFigure);
+            app.HubStatusLabel.Position = [196 20 210 28];
+            app.HubStatusLabel.Text = 'Hub: no job';
+
+            app.RefreshHubButton = uibutton(app.UIFigure, 'push');
+            app.RefreshHubButton.Position = [420 20 88 28];
+            app.RefreshHubButton.Text = 'Refresh hub';
+            app.RefreshHubButton.ButtonPushedFcn = createCallbackFcn(app, @RefreshHubButtonPushed, true);
+
+            app.RunOnHubButton = uibutton(app.UIFigure, 'push');
+            app.RunOnHubButton.Position = [520 20 88 28];
+            app.RunOnHubButton.Text = 'Run on hub';
+            app.RunOnHubButton.ButtonPushedFcn = createCallbackFcn(app, @RunOnHubButtonPushed, true);
 
             app.CreateRunButton = uibutton(app.UIFigure, 'push');
             app.CreateRunButton.Position = [620 20 120 28];

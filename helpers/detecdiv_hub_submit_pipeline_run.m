@@ -1,15 +1,21 @@
 function [job, runObj] = detecdiv_hub_submit_pipeline_run(runObj, shallowObj, varargin)
 % detecdiv_hub_submit_pipeline_run  Submit an existing pipelineRun to detecdiv-hub.
 
-    if nargin < 1 || isempty(runObj) || ~isa(runObj, 'pipelineRun')
+    if nargin < 1 || isempty(runObj) || ~localIsClass(runObj, 'pipelineRun')
         error('detecdiv_hub_submit_pipeline_run:MissingRun', 'A pipelineRun object is required.');
     end
-    if nargin < 2 || isempty(shallowObj) || ~isa(shallowObj, 'shallow')
-        error('detecdiv_hub_submit_pipeline_run:MissingProject', 'A shallow project is required.');
+    if nargin < 2
+        shallowObj = [];
+    end
+    projectArgClass = localClassName(shallowObj);
+    shallowObj = localResolveShallowProject(runObj, shallowObj);
+    if isempty(shallowObj)
+        error('detecdiv_hub_submit_pipeline_run:MissingProject', ...
+            'A shallow project is required. Received project argument class: %s.', projectArgClass);
     end
 
-    opts = localParse(varargin{:});
-    ref = detecdiv_hub_project_ref(shallowObj, opts.hub);
+    opts = localRunStage('parse options', @() localParse(varargin{:}));
+    ref = localRunStage('resolve hub project reference', @() detecdiv_hub_project_ref(shallowObj, opts.hub));
     if isempty(ref.project_id)
         error('detecdiv_hub_submit_pipeline_run:MissingProjectId', ...
             'This project has no hub project id. Store it in shallowObj.runProfiles.hub.hub_project_id.');
@@ -20,15 +26,130 @@ function [job, runObj] = detecdiv_hub_submit_pipeline_run(runObj, shallowObj, va
     payload.requested_mode = opts.requestedMode;
     payload.priority = opts.priority;
     payload.requested_by = opts.requestedBy;
-    payload.requested_from_host = localHostName();
-    payload.project_ref = localBuildProjectRef(ref);
-    payload.pipeline_ref = localBuildPipelineRef(runObj);
-    payload.run_request = localBuildRunRequest(runObj);
-    payload.execution = localBuildExecution(opts);
+    payload.requested_from_host = localRunStage('resolve local host name', @() localHostName());
+    payload.project_ref = localRunStage('build project reference payload', @() localBuildProjectRef(ref));
+    payload.pipeline_ref = localRunStage('build pipeline reference payload', @() localBuildPipelineRef(runObj, ref));
+    payload.run_request = localRunStage('build run request payload', @() localBuildRunRequest(runObj));
+    payload.execution = localRunStage('build execution payload', @() localBuildExecution(opts));
 
-    job = detecdiv_hub_request('POST', '/pipeline-runs', payload, opts.hub);
-    runObj = localAttachHubJob(runObj, job, ref);
+    job = localRunStage('POST /pipeline-runs', @() detecdiv_hub_request('POST', '/pipeline-runs', payload, opts.hub));
+    runObj = localRunStage('attach hub job to pipelineRun', @() localAttachHubJob(runObj, job, ref));
+    localRunStageNoOutput('save pipelineRun after hub submit', @() localSavePipelineRun(runObj));
+end
+
+function tf = localIsClass(value, className)
+    tf = false;
+    try
+        tf = isa(value, className);
+    catch
+        tf = false;
+    end
+end
+
+function shallowObj = localResolveShallowProject(runObj, candidate)
+    shallowObj = [];
+    if localIsClass(candidate, 'shallow')
+        shallowObj = candidate;
+        return;
+    end
+
+    shallowObj = localFindProjectInBaseWorkspace(runObj);
+end
+
+function shallowObj = localFindProjectInBaseWorkspace(runObj)
+    shallowObj = [];
+    try
+        names = evalin('base', 'who');
+    catch
+        names = {};
+    end
+    for i = 1:numel(names)
+        try
+            candidate = evalin('base', names{i});
+            if ~localIsClass(candidate, 'shallow')
+                continue;
+            end
+            if localProjectContainsRun(candidate, runObj)
+                shallowObj = candidate;
+                return;
+            end
+        catch
+        end
+    end
+end
+
+function tf = localProjectContainsRun(shallowObj, runObj)
+    tf = false;
+    try
+        if ~isfield(shallowObj.processing, 'pipelineRun') || isempty(shallowObj.processing.pipelineRun)
+            return;
+        end
+        runs = shallowObj.processing.pipelineRun;
+        for i = 1:numel(runs)
+            try
+                if runs(i) == runObj
+                    tf = true;
+                    return;
+                end
+            catch
+            end
+            try
+                if strcmp(char(string(runs(i).runId)), char(string(runObj.runId)))
+                    tf = true;
+                    return;
+                end
+            catch
+            end
+        end
+    catch
+    end
+end
+
+function name = localClassName(value)
+    name = '<empty>';
+    try
+        if ~isempty(value)
+            name = class(value);
+        end
+    catch
+        name = '<unknown>';
+    end
+end
+
+function out = localRunStage(stageName, fn)
+    try
+        out = fn();
+    catch ME
+        throwAsCaller(localWrapStageError(stageName, ME));
+    end
+end
+
+function localRunStageNoOutput(stageName, fn)
+    try
+        fn();
+    catch ME
+        throwAsCaller(localWrapStageError(stageName, ME));
+    end
+end
+
+function localSavePipelineRun(runObj)
     pipelineRunSave(runObj);
+end
+
+function wrapped = localWrapStageError(stageName, ME)
+    msg = sprintf('Hub submit failed during "%s": %s', char(string(stageName)), ME.message);
+    if ~isempty(ME.identifier)
+        msg = sprintf('%s\nIdentifier: %s', msg, ME.identifier);
+    end
+    if ~isempty(ME.stack)
+        lines = cell(1, min(numel(ME.stack), 6));
+        for i = 1:numel(lines)
+            lines{i} = sprintf('%s:%d', ME.stack(i).name, ME.stack(i).line);
+        end
+        msg = sprintf('%s\nStack:\n%s', msg, strjoin(lines, newline));
+    end
+    wrapped = MException('detecdiv_hub_submit_pipeline_run:StageFailed', '%s', msg);
+    wrapped = addCause(wrapped, ME);
 end
 
 function opts = localParse(varargin)
@@ -75,10 +196,15 @@ function projectRef = localBuildProjectRef(ref)
     projectRef.project_id = ref.project_id;
     projectRef.project_key = ref.project_key;
     projectRef.project_name = ref.project_name;
-    projectRef.local_project_mat_path = ref.project_mat_path;
+    if isfield(ref, 'local_project_mat_path') && ~isempty(ref.local_project_mat_path)
+        projectRef.local_project_mat_path = ref.local_project_mat_path;
+    else
+        projectRef.local_project_mat_path = ref.project_mat_path;
+    end
+    projectRef.project_mat_path = ref.project_mat_path;
 end
 
-function pipelineRef = localBuildPipelineRef(runObj)
+function pipelineRef = localBuildPipelineRef(runObj, ref)
     pipelineRef = struct();
     pipelineRef.pipeline_key = '';
     pipelineRef.pipeline_json_path = '';
@@ -91,23 +217,67 @@ function pipelineRef = localBuildPipelineRef(runObj)
             pipelineRef.pipeline_key = char(string(runObj.pipelineRef.id));
         end
         if isstruct(runObj.pipelineRef) && isfield(runObj.pipelineRef, 'path') && ~isempty(runObj.pipelineRef.path)
-            pipelineRef.pipeline_json_path = localPipelineJsonPath(runObj.pipelineRef.path);
+            pipelineRef.pipeline_json_path = localPipelineJsonPath(runObj.pipelineRef.path, ref);
         end
     catch
     end
     if isempty(pipelineRef.pipeline_json_path)
         try
-            pipelineRef.pipeline_json_path = localPipelineJsonPath(runObj.templatePath);
+            pipelineRef.pipeline_json_path = localPipelineJsonPath(runObj.templatePath, ref);
         catch
         end
     end
 end
 
-function pathOut = localPipelineJsonPath(pathIn)
+function pathOut = localPipelineJsonPath(pathIn, ref)
     pathOut = char(string(pathIn));
     if isfolder(pathOut)
         pathOut = fullfile(pathOut, 'pipeline.json');
     end
+    pathOut = localTranslatePathForServer(pathOut, ref);
+end
+
+function out = localTranslatePathForServer(pathIn, ref)
+    out = char(string(pathIn));
+    if isempty(out)
+        return;
+    end
+
+    localRoots = {};
+    remoteRoots = {};
+    try
+        if isfield(ref, 'local_project_dir_path') && ~isempty(ref.local_project_dir_path)
+            localRoots{end+1} = char(string(ref.local_project_dir_path));
+        end
+        if isfield(ref, 'project_dir_path') && ~isempty(ref.project_dir_path)
+            remoteRoots{end+1} = char(string(ref.project_dir_path));
+        end
+        if isfield(ref, 'local_project_root_path') && ~isempty(ref.local_project_root_path)
+            localRoots{end+1} = char(string(ref.local_project_root_path));
+        end
+        if isfield(ref, 'project_root_path') && ~isempty(ref.project_root_path)
+            remoteRoots{end+1} = char(string(ref.project_root_path));
+        end
+    catch
+    end
+
+    candidateNorm = strrep(out, '/', '\');
+    for i = 1:min(numel(localRoots), numel(remoteRoots))
+        localNorm = regexprep(strrep(localRoots{i}, '/', '\'), '[\\\/]+$', '');
+        remoteNorm = regexprep(strrep(remoteRoots{i}, '\', '/'), '[\\\/]+$', '');
+        if isempty(localNorm) || isempty(remoteNorm)
+            continue;
+        end
+        if startsWith(lower(candidateNorm), lower(localNorm))
+            suffix = candidateNorm(numel(localNorm)+1:end);
+            suffix = strrep(suffix, '\', '/');
+            out = [remoteNorm suffix];
+            break;
+        end
+    end
+
+    % Ensure POSIX separators for server-side worker.
+    out = strrep(out, '\', '/');
 end
 
 function runRequest = localBuildRunRequest(runObj)

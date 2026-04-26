@@ -13,6 +13,7 @@ function hub = detecdiv_hub_settings_get()
         end
     end
 
+    hub = localNormalizeDeploymentDefaults(hub);
     hub.baseUrl = localEnvOrValue('DETECDIV_HUB_BASE_URL', hub.baseUrl);
     hub.userKey = localEnvOrValue('DETECDIV_HUB_USER_KEY', hub.userKey);
     hub.sessionToken = localEnvOrValue('DETECDIV_HUB_SESSION_TOKEN', hub.sessionToken);
@@ -20,13 +21,34 @@ end
 
 function hub = localDefaults()
     hub = struct();
-    hub.baseUrl = 'http://127.0.0.1:8000';
+    hub.baseUrl = 'http://detecdiv-hub.detecdiv.internal';
+    hub.fallbackBaseUrls = {'http://127.0.0.1:8000'};
     hub.userKey = 'localdev';
     hub.sessionToken = '';
     hub.timeout = 20;
     hub.defaultRemoteProjectRoot = '';
     hub.defaultLocalProjectRoot = '';
     hub.pathMappings = struct('remoteRoot', {}, 'localRoot', {});
+end
+
+function hub = localNormalizeDeploymentDefaults(hub)
+    currentDefault = 'http://detecdiv-hub.detecdiv.internal';
+    oldTunnelDefault = 'http://127.0.0.1:8000';
+
+    if ~isfield(hub, 'baseUrl') || isempty(hub.baseUrl)
+        hub.baseUrl = currentDefault;
+    end
+    if ~isfield(hub, 'fallbackBaseUrls') || isempty(hub.fallbackBaseUrls)
+        hub.fallbackBaseUrls = {oldTunnelDefault};
+    end
+
+    if isempty(getenv('DETECDIV_HUB_BASE_URL')) && strcmp(localTrimUrl(hub.baseUrl), localTrimUrl(oldTunnelDefault))
+        hub.baseUrl = currentDefault;
+    end
+end
+
+function out = localTrimUrl(value)
+    out = regexprep(char(string(value)), '/+$', '');
 end
 
 function out = localMergeStruct(out, in)

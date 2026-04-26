@@ -1395,7 +1395,12 @@ function ctx = executeProcessorNode(node, ctx)
         procObj = applyProcessorReference(procObj, refProc);
     end
     if isfield(p,'modulePath') && ~isempty(p.modulePath)
-        procObj.path = char(string(p.modulePath));
+        refInfoForPath = resolveNodeModuleReference(node, p, 'processor', ctx);
+        if isstruct(refInfoForPath) && isfield(refInfoForPath,'modulePath') && ~isempty(refInfoForPath.modulePath)
+            procObj.path = char(string(refInfoForPath.modulePath));
+        else
+            procObj.path = char(string(p.modulePath));
+        end
     end
     if isfield(p,'moduleId') && ~isempty(p.moduleId)
         procObj.strid = char(string(p.moduleId));
@@ -1520,7 +1525,12 @@ function ctx = executeClassifierNode(node, ctx)
         clsObj = applyClassifierReference(clsObj, refClassi);
     end
     if isfield(p,'modulePath') && ~isempty(p.modulePath)
-        clsObj.path = char(string(p.modulePath));
+        refInfoForPath = resolveNodeModuleReference(node, p, 'classifier', ctx);
+        if isstruct(refInfoForPath) && isfield(refInfoForPath,'modulePath') && ~isempty(refInfoForPath.modulePath)
+            clsObj.path = char(string(refInfoForPath.modulePath));
+        else
+            clsObj.path = char(string(p.modulePath));
+        end
     end
     if isfield(p,'moduleId') && ~isempty(p.moduleId)
         clsObj.strid = char(string(p.moduleId));
@@ -1813,8 +1823,34 @@ if ~isstruct(refInfo) || ~isfield(refInfo,'modulePath') || isempty(refInfo.modul
 end
 modulePath = char(string(refInfo.modulePath));
 if isAbsolutePathLocal(modulePath)
-    refInfo.modulePath = modulePath;
-    return;
+    if exist(modulePath, 'dir') == 7 || exist(modulePath, 'file') == 2
+        refInfo.modulePath = modulePath;
+        return;
+    end
+
+    % On Linux workers, module references may still carry absolute Windows paths
+    % from GUI-originated pipeline snapshots. Try to recover a server-visible path.
+    if ~ispc && looksLikeWindowsAbsPath(modulePath)
+        moduleId = '';
+        moduleKind = '';
+        try
+            if isfield(refInfo,'moduleId') && ~isempty(refInfo.moduleId)
+                moduleId = char(string(refInfo.moduleId));
+            end
+        catch
+        end
+        try
+            if isfield(refInfo,'moduleKind') && ~isempty(refInfo.moduleKind)
+                moduleKind = char(string(refInfo.moduleKind));
+            end
+        catch
+        end
+        recovered = recoverServerModulePath(modulePath, moduleId, moduleKind, ctx);
+        if ~isempty(recovered)
+            refInfo.modulePath = recovered;
+            return;
+        end
+    end
 end
 
 bases = {};
@@ -1845,6 +1881,67 @@ for i = 1:numel(bases)
     candidate = fullfile(base, modulePath);
     if exist(candidate, 'dir') == 7 || exist(candidate, 'file') == 2
         refInfo.modulePath = candidate;
+        return;
+    end
+end
+end
+
+function tf = looksLikeWindowsAbsPath(p)
+tf = false;
+if isempty(p)
+    return;
+end
+p = char(string(p));
+tf = ~isempty(regexp(p, '^[A-Za-z]:[\\/]', 'once')) || startsWith(p, '\\');
+end
+
+function recovered = recoverServerModulePath(modulePath, moduleId, moduleKind, ctx)
+recovered = '';
+if nargin < 2 || isempty(moduleId)
+    [~, moduleId] = fileparts(char(string(modulePath)));
+end
+moduleId = char(string(moduleId));
+moduleKind = lower(char(string(moduleKind)));
+
+roots = {};
+try
+    if isfield(ctx,'targetRef') && isstruct(ctx.targetRef) && isfield(ctx.targetRef,'projectPath') && ~isempty(ctx.targetRef.projectPath)
+        projectPath = char(string(ctx.targetRef.projectPath));
+        roots{end+1} = projectPath; %#ok<AGROW>
+        roots{end+1} = fileparts(projectPath); %#ok<AGROW>
+        roots{end+1} = fullfile(fileparts(projectPath), 'tmpProject'); %#ok<AGROW>
+    end
+catch
+end
+try
+    if isfield(ctx,'pipelineRef') && isstruct(ctx.pipelineRef) && isfield(ctx.pipelineRef,'path') && ~isempty(ctx.pipelineRef.path)
+        roots{end+1} = char(string(ctx.pipelineRef.path)); %#ok<AGROW>
+    end
+catch
+end
+roots = unique(roots(~cellfun(@isempty, roots)), 'stable');
+
+candidateDirs = {};
+for i = 1:numel(roots)
+    root = roots{i};
+    if exist(root, 'dir') ~= 7
+        continue;
+    end
+    if strcmp(moduleKind, 'classifier')
+        candidateDirs{end+1} = fullfile(root, moduleId); %#ok<AGROW>
+        candidateDirs{end+1} = fullfile(root, 'classification', moduleId); %#ok<AGROW>
+        candidateDirs{end+1} = fullfile(root, 'assets', 'classification', moduleId); %#ok<AGROW>
+        candidateDirs{end+1} = fullfile(root, 'tmpProject', 'classification', moduleId); %#ok<AGROW>
+    else
+        candidateDirs{end+1} = fullfile(root, moduleId); %#ok<AGROW>
+        candidateDirs{end+1} = fullfile(root, 'processors', moduleId); %#ok<AGROW>
+    end
+end
+
+for i = 1:numel(candidateDirs)
+    cand = candidateDirs{i};
+    if exist(cand, 'dir') == 7 || exist(cand, 'file') == 2
+        recovered = cand;
         return;
     end
 end

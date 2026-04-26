@@ -15,17 +15,21 @@ function [data, info] = detecdiv_hub_request(method, apiPath, payload, hub)
     end
 
     method = upper(char(string(method)));
-    url = localBuildUrl(hub, apiPath);
-    info = struct('ok', false, 'statusCode', NaN, 'url', url, 'message', '');
+    urls = localBuildUrls(hub, apiPath);
+    info = struct('ok', false, 'statusCode', NaN, 'url', urls{1}, 'message', '');
 
-    try
+    lastError = [];
+    for iUrl = 1:numel(urls)
+        url = urls{iUrl};
+        info.url = url;
+        try
         import matlab.net.*
         import matlab.net.http.*
         import matlab.net.http.field.*
 
         headers = [HeaderField('Accept', 'application/json')];
         if isfield(hub, 'sessionToken') && ~isempty(hub.sessionToken)
-            headers(end+1) = AuthorizationField('Bearer', char(string(hub.sessionToken))); %#ok<AGROW>
+            headers(end+1) = HeaderField('Authorization', ['Bearer ' char(string(hub.sessionToken))]); %#ok<AGROW>
         end
         body = [];
         if ~isempty(payload)
@@ -46,14 +50,21 @@ function [data, info] = detecdiv_hub_request(method, apiPath, payload, hub)
             info.message = localResponseMessage(data, resp.StatusLine.ReasonPhrase);
             error('detecdiv_hub_request:HTTP%d', info.statusCode, '%s', info.message);
         end
-    catch ME
-        info.message = ME.message;
-        data = struct();
-        if startsWith(ME.identifier, 'detecdiv_hub_request:HTTP')
-            rethrow(ME);
+            return;
+        catch ME
+            info.message = ME.message;
+            data = struct();
+            if startsWith(ME.identifier, 'detecdiv_hub_request:HTTP')
+                rethrow(ME);
+            end
+            lastError = ME;
         end
-        error('detecdiv_hub_request:Unreachable', 'Hub request failed: %s', ME.message);
     end
+
+    if isempty(lastError)
+        error('detecdiv_hub_request:Unreachable', 'Hub request failed.');
+    end
+    error('detecdiv_hub_request:Unreachable', 'Hub request failed: %s', lastError.message);
 end
 
 function rm = localRequestMethod(method)
@@ -72,18 +83,26 @@ function rm = localRequestMethod(method)
     end
 end
 
-function url = localBuildUrl(hub, apiPath)
-    baseUrl = 'http://127.0.0.1:8000';
+function urls = localBuildUrls(hub, apiPath)
+    baseUrl = 'http://detecdiv-hub.detecdiv.internal';
     if isfield(hub, 'baseUrl') && ~isempty(hub.baseUrl)
         baseUrl = char(string(hub.baseUrl));
     end
-    baseUrl = regexprep(baseUrl, '/+$', '');
 
     apiPath = char(string(apiPath));
     if ~startsWith(apiPath, '/')
         apiPath = ['/' apiPath];
     end
 
+    baseUrls = [{baseUrl} localFallbackBaseUrls(hub)];
+    baseUrls = unique(cellfun(@localTrimUrl, baseUrls, 'UniformOutput', false), 'stable');
+    urls = cell(size(baseUrls));
+    for i = 1:numel(baseUrls)
+        urls{i} = localBuildUrlForBase(baseUrls{i}, apiPath, hub);
+    end
+end
+
+function url = localBuildUrlForBase(baseUrl, apiPath, hub)
     url = [baseUrl apiPath];
     if localUseUserKeyQuery(hub)
         sep = '?';
@@ -92,6 +111,23 @@ function url = localBuildUrl(hub, apiPath)
         end
         url = [url sep 'user_key=' localUrlEncode(hub.userKey)];
     end
+end
+
+function values = localFallbackBaseUrls(hub)
+    values = {};
+    if isfield(hub, 'fallbackBaseUrls') && ~isempty(hub.fallbackBaseUrls)
+        if iscell(hub.fallbackBaseUrls)
+            values = hub.fallbackBaseUrls;
+        elseif isstring(hub.fallbackBaseUrls)
+            values = cellstr(hub.fallbackBaseUrls(:)');
+        elseif ischar(hub.fallbackBaseUrls)
+            values = {hub.fallbackBaseUrls};
+        end
+    end
+end
+
+function out = localTrimUrl(value)
+    out = regexprep(char(string(value)), '/+$', '');
 end
 
 function out = localUrlEncode(value)

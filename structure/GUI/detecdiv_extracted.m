@@ -1199,7 +1199,7 @@ end
                         detecdiv_hub_release_project_open(shallowObj);
                     catch
                     end
-                    [job, runObj] = detecdiv_hub_submit_pipeline_run(runObj, shallowObj);
+                    job = detecdiv_hub_submit_pipeline_run(runObj, shallowObj);
                     shallowObj.processing.pipelineRun(runIdx) = runObj;
                     if isprop(shallowObj, 'runProfiles')
                         if ~isfield(shallowObj.runProfiles, 'hub') || ~isstruct(shallowObj.runProfiles.hub)

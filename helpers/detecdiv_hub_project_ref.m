@@ -14,7 +14,11 @@ function ref = detecdiv_hub_project_ref(shallowObj, hub)
     ref.project_key = '';
     ref.project_name = localProjectName(shallowObj);
     ref.project_mat_path = localProjectMatPath(shallowObj);
+    ref.local_project_mat_path = ref.project_mat_path;
     ref.project_dir_path = fullfile(char(string(shallowObj.io.path)), char(string(shallowObj.io.file)));
+    ref.local_project_dir_path = ref.project_dir_path;
+    ref.local_project_root_path = localPathRoot(ref.local_project_mat_path, ref.local_project_dir_path);
+    ref.project_root_path = ref.local_project_root_path;
     ref.source = '';
 
     hubMeta = localHubMetadata(shallowObj);
@@ -30,13 +34,67 @@ function ref = detecdiv_hub_project_ref(shallowObj, hub)
         ref.source = keySource;
     end
 
-    if ref.hubManaged && isempty(ref.project_id)
+    if isempty(ref.project_id)
         try
-            ref.project_id = localLookupProjectId(ref, hub);
-            if ~isempty(ref.project_id)
+            row = localLookupProject(ref, hub);
+            if ~isempty(row)
+                ref.hubManaged = true;
+                ref.project_id = localFieldText(row, 'id');
+                if isempty(ref.project_key)
+                    ref.project_key = localFieldText(row, 'project_key');
+                end
+                [serverMatPath, serverDirPath] = localServerProjectPathsFromRow(row);
+                if ~isempty(serverMatPath)
+                    ref.project_mat_path = serverMatPath;
+                end
+                if ~isempty(serverDirPath)
+                    ref.project_dir_path = serverDirPath;
+                end
+                ref.project_root_path = localPathRoot(ref.project_mat_path, ref.project_dir_path);
                 ref.source = 'hub lookup';
             end
         catch
+        end
+    end
+end
+
+function [matPath, dirPath] = localServerProjectPathsFromRow(row)
+    matPath = '';
+    dirPath = '';
+    if ~isstruct(row)
+        return;
+    end
+
+    % Prefer preferred location paths from the hub catalog.
+    if isfield(row, 'locations') && ~isempty(row.locations)
+        locs = localAsStructArray(row.locations);
+        if ~isempty(locs)
+            preferredIdx = [];
+            for i = 1:numel(locs)
+                try
+                    if isfield(locs(i), 'is_preferred') && logical(locs(i).is_preferred)
+                        preferredIdx = i;
+                        break;
+                    end
+                catch
+                end
+            end
+            if isempty(preferredIdx)
+                preferredIdx = 1;
+            end
+            matPath = localFieldText(locs(preferredIdx), 'project_mat_path');
+            dirPath = localFieldText(locs(preferredIdx), 'project_dir_path');
+        end
+    end
+
+    % Fallback to metadata paths set by indexer.
+    if (isempty(matPath) || isempty(dirPath)) && isfield(row, 'metadata_json') && isstruct(row.metadata_json)
+        meta = row.metadata_json;
+        if isempty(matPath)
+            matPath = localFieldText(meta, 'project_mat_abs');
+        end
+        if isempty(dirPath)
+            dirPath = localFieldText(meta, 'project_dir_abs');
         end
     end
 end
@@ -75,8 +133,8 @@ function [txt, source] = localFirstText(S, names)
     end
 end
 
-function id = localLookupProjectId(ref, hub)
-    id = '';
+function rowOut = localLookupProject(ref, hub)
+    rowOut = [];
     if isempty(ref.project_key) && isempty(ref.project_name)
         return;
     end
@@ -89,13 +147,23 @@ function id = localLookupProjectId(ref, hub)
     for i = 1:numel(rows)
         row = rows(i);
         if ~isempty(ref.project_key) && isfield(row, 'project_key') && strcmp(char(string(row.project_key)), ref.project_key)
-            id = char(string(row.id));
+            rowOut = row;
             return;
         end
         if isfield(row, 'project_name') && strcmp(char(string(row.project_name)), ref.project_name)
-            id = char(string(row.id));
+            rowOut = row;
             return;
         end
+    end
+end
+
+function txt = localFieldText(S, name)
+    txt = '';
+    try
+        if isstruct(S) && isfield(S, name) && ~isempty(S.(name))
+            txt = char(string(S.(name)));
+        end
+    catch
     end
 end
 
@@ -133,5 +201,24 @@ function path = localProjectMatPath(shallowObj)
             path = fullfile(char(string(shallowObj.io.path)), [char(string(shallowObj.io.file)) '.mat']);
         end
     catch
+    end
+end
+
+function rootPath = localPathRoot(varargin)
+    rootPath = '';
+    for i = 1:nargin
+        candidate = char(string(varargin{i}));
+        if isempty(candidate)
+            continue;
+        end
+        try
+            [parent1, ~] = fileparts(candidate);
+            [parent2, ~] = fileparts(parent1);
+            if ~isempty(parent2)
+                rootPath = parent2;
+                return;
+            end
+        catch
+        end
     end
 end
