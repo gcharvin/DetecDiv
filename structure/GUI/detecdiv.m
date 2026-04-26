@@ -184,8 +184,14 @@ classdef detecdiv < matlab.apps.AppBase
                 if i <= numel(app.Data.ProjectpipelineRun) && ~isempty(app.Data.ProjectpipelineRun{i})
                     for k=1:numel(app.Data.ProjectpipelineRun{i})
                         cm=uicontextmenu(app.DetecDivUIFigure);
-                        m = uimenu(cm,'Text','Run now...');
+                        m = uimenu(cm,'Text','Run locally...');
                         m.MenuSelectedFcn={@contextMenuRunPipelineRunFcn,[i,k],'ProjectpipelineRun'};
+                        m = uimenu(cm,'Text','Run on hub...');
+                        m.MenuSelectedFcn={@contextMenuRunPipelineRunOnHubFcn,[i,k],'ProjectpipelineRun'};
+                        m = uimenu(cm,'Text','Refresh hub status');
+                        m.MenuSelectedFcn={@contextMenuRefreshPipelineRunHubStatusFcn,[i,k],'ProjectpipelineRun'};
+                        m = uimenu(cm,'Text','Cancel hub job');
+                        m.MenuSelectedFcn={@contextMenuCancelPipelineRunHubJobFcn,[i,k],'ProjectpipelineRun'};
                         m = uimenu(cm,'Text','Open run.json...');
                         m.MenuSelectedFcn={@contextMenuOpenPipelineRunFcn,[i,k],'ProjectpipelineRun'};
                         m = uimenu(cm,'Text','Delete run');
@@ -755,6 +761,27 @@ end
                 executeProjectPipelineRun(arg(1), arg(2));
             end
 
+            function contextMenuRunPipelineRunOnHubFcn(src,event,arg,str) %#ok<INUSD>
+                if ~strcmp(str,'ProjectpipelineRun')
+                    return;
+                end
+                submitProjectPipelineRunToHub(arg(1), arg(2));
+            end
+
+            function contextMenuRefreshPipelineRunHubStatusFcn(src,event,arg,str) %#ok<INUSD>
+                if ~strcmp(str,'ProjectpipelineRun')
+                    return;
+                end
+                refreshProjectPipelineRunHubStatus(arg(1), arg(2), true);
+            end
+
+            function contextMenuCancelPipelineRunHubJobFcn(src,event,arg,str) %#ok<INUSD>
+                if ~strcmp(str,'ProjectpipelineRun')
+                    return;
+                end
+                cancelProjectPipelineRunHubJob(arg(1), arg(2));
+            end
+
             function pipe = getPipelineByIndex(idx)
                 pipe = [];
                 if idx > numel(app.Data.Pipeline)
@@ -933,6 +960,12 @@ end
                 end
 
                 runObj = shallowObj.processing.pipelineRun(runIdx);
+                try
+                    detecdiv_hub_assert_project_writable(shallowObj);
+                catch ME
+                    uialert(app.DetecDivUIFigure, ME.message, 'Project is read-only', 'Icon', 'warning');
+                    return;
+                end
                 [pipeObj, msg] = resolvePipelineFromRun(runObj, shallowObj);
                 if isempty(pipeObj)
                     uialert(app.DetecDivUIFigure, msg, 'Run error', 'Icon', 'error');
@@ -986,6 +1019,135 @@ end
                 end
 
                 RefreshtreewindowMenuSelected(app);
+            end
+
+            function submitProjectPipelineRunToHub(projIdx, runIdx)
+                if projIdx > numel(app.Data.Project)
+                    return;
+                end
+                projVar = app.Data.Project{projIdx};
+                shallowObj = evalin('base', projVar);
+                if ~isfield(shallowObj.processing,'pipelineRun') || runIdx > numel(shallowObj.processing.pipelineRun)
+                    return;
+                end
+
+                runObj = shallowObj.processing.pipelineRun(runIdx);
+                choice = uiconfirm(app.DetecDivUIFigure, ...
+                    {'Submit this existing pipeline run to the hub?', ...
+                     'The local project will be considered stale once the hub job writes results.'}, ...
+                    'Run on hub', 'Options', {'Submit','Cancel'}, ...
+                    'DefaultOption', 1, 'CancelOption', 2, 'Icon', 'warning');
+                if ~strcmp(choice, 'Submit')
+                    return;
+                end
+
+                d = uiprogressdlg(app.DetecDivUIFigure, 'Title', 'Please Wait...', ...
+                    'Message', ['Submitting hub job for ' runObj.runId '...'], 'Indeterminate', 'on');
+                try
+                    try
+                        detecdiv_hub_release_project_open(shallowObj);
+                    catch
+                    end
+                    [job, runObj] = detecdiv_hub_submit_pipeline_run(runObj, shallowObj);
+                    shallowObj.processing.pipelineRun(runIdx) = runObj;
+                    if isprop(shallowObj, 'runProfiles')
+                        if ~isfield(shallowObj.runProfiles, 'hub') || ~isstruct(shallowObj.runProfiles.hub)
+                            shallowObj.runProfiles.hub = struct();
+                        end
+                        shallowObj.runProfiles.hub.read_only = true;
+                        shallowObj.runProfiles.hub.reason = 'Hub pipeline job submitted; reload project before further local editing.';
+                    end
+                    assignin('base', projVar, shallowObj);
+                    close(d);
+                    uialert(app.DetecDivUIFigure, ...
+                        sprintf('Hub job submitted: %s\nStatus: %s\nReload the project after the job completes before editing locally.', ...
+                        char(string(job.id)), char(string(job.status))), ...
+                        'Hub job submitted', 'Icon', 'success');
+                catch ME
+                    close(d);
+                    uialert(app.DetecDivUIFigure, ME.message, 'Hub submit failed', 'Icon', 'error');
+                end
+                RefreshtreewindowMenuSelected(app);
+            end
+
+            function refreshProjectPipelineRunHubStatus(projIdx, runIdx, showDialog)
+                if nargin < 4
+                    showDialog = false;
+                end
+                if projIdx > numel(app.Data.Project)
+                    return;
+                end
+                projVar = app.Data.Project{projIdx};
+                shallowObj = evalin('base', projVar);
+                runObj = shallowObj.processing.pipelineRun(runIdx);
+                jobId = localRunHubJobId(runObj);
+                if isempty(jobId)
+                    if showDialog
+                        uialert(app.DetecDivUIFigure, 'This run has no hub_job_id.', 'Hub status', 'Icon', 'warning');
+                    end
+                    return;
+                end
+                try
+                    job = detecdiv_hub_get_pipeline_run(jobId);
+                    if ~isstruct(runObj.ctx), runObj.ctx = struct(); end
+                    if ~isfield(runObj.ctx, 'hub') || ~isstruct(runObj.ctx.hub), runObj.ctx.hub = struct(); end
+                    runObj.ctx.hub.job_id = char(string(job.id));
+                    runObj.ctx.hub.status = char(string(job.status));
+                    runObj.ctx.hub.refreshed_at = char(datetime('now'));
+                    runObj.status = ['hub_' char(string(job.status))];
+                    shallowObj.processing.pipelineRun(runIdx) = runObj;
+                    assignin('base', projVar, shallowObj);
+                    pipelineRunSave(runObj);
+                    if showDialog
+                        msg = sprintf('Hub job: %s\nStatus: %s', char(string(job.id)), char(string(job.status)));
+                        if any(strcmp(char(string(job.status)), {'done','failed','cancelled'}))
+                            msg = sprintf('%s\n\nProject changed on hub/server. Reload before local editing.', msg);
+                        end
+                        uialert(app.DetecDivUIFigure, msg, 'Hub status', 'Icon', 'info');
+                    end
+                catch ME
+                    if showDialog
+                        uialert(app.DetecDivUIFigure, ME.message, 'Hub status failed', 'Icon', 'error');
+                    end
+                end
+            end
+
+            function cancelProjectPipelineRunHubJob(projIdx, runIdx)
+                runObj = getProjectRunByIndex(projIdx, runIdx);
+                jobId = localRunHubJobId(runObj);
+                if isempty(jobId)
+                    uialert(app.DetecDivUIFigure, 'This run has no hub_job_id.', 'Cancel hub job', 'Icon', 'warning');
+                    return;
+                end
+                choice = uiconfirm(app.DetecDivUIFigure, ['Cancel hub job ' jobId '?'], ...
+                    'Cancel hub job', 'Options', {'Cancel job','Keep running'}, ...
+                    'DefaultOption', 2, 'CancelOption', 2, 'Icon', 'warning');
+                if ~strcmp(choice, 'Cancel job')
+                    return;
+                end
+                try
+                    job = detecdiv_hub_cancel_pipeline_run(jobId);
+                    refreshProjectPipelineRunHubStatus(projIdx, runIdx, false);
+                    uialert(app.DetecDivUIFigure, ...
+                        sprintf('Cancellation requested.\nHub status: %s', char(string(job.status))), ...
+                        'Cancel hub job', 'Icon', 'info');
+                catch ME
+                    uialert(app.DetecDivUIFigure, ME.message, 'Cancel hub job failed', 'Icon', 'error');
+                end
+            end
+
+            function jobId = localRunHubJobId(runObj)
+                jobId = '';
+                try
+                    if isstruct(runObj.ctx) && isfield(runObj.ctx, 'hub') && isstruct(runObj.ctx.hub)
+                        if isfield(runObj.ctx.hub, 'job_id') && ~isempty(runObj.ctx.hub.job_id)
+                            jobId = char(string(runObj.ctx.hub.job_id));
+                        elseif isfield(runObj.ctx.hub, 'hub_job_id') && ~isempty(runObj.ctx.hub.hub_job_id)
+                            jobId = char(string(runObj.ctx.hub.hub_job_id));
+                        end
+                    end
+                catch
+                end
             end
 
             function [pipeObj, msg] = resolvePipelineFromRun(runObj, shallowObj)
@@ -3733,6 +3895,8 @@ function openRecentProjectCallback(app, projectPath)
         return;
     end
 
+    [proj, hubAccess] = detecdiv_hub_prepare_project_open(proj);
+
     d.Value = 0.66;
     pause(0.2);
 
@@ -3747,6 +3911,10 @@ function openRecentProjectCallback(app, projectPath)
 
     gatherVarsFromWorkspace(app);
     displayNodes(app);
+
+    if hubAccess.hubManaged && hubAccess.readOnly
+        uialert(app.DetecDivUIFigure, hubAccess.reason, 'Hub project opened read-only', 'Icon', 'warning');
+    end
 
     close(d);
 end
@@ -4866,6 +5034,7 @@ end
                 end
                 return;
             end
+            [proj, hubAccess] = detecdiv_hub_prepare_project_open(proj);
 
             d.Value = 0.66;
             pause(0.2);  % (garde si tu veux forcer l'update graphique)
@@ -4885,6 +5054,9 @@ end
             % mettre à jour l'état interne de l'app
             gatherVarsFromWorkspace(app);
             displayNodes(app);
+            if exist('hubAccess', 'var') && hubAccess.hubManaged && hubAccess.readOnly
+                uialert(app.DetecDivUIFigure, hubAccess.reason, 'Hub project opened read-only', 'Icon', 'warning');
+            end
 
             % éventuellement, vérifier les chemins images (tu l'as commenté)
             % check = checkImagePath(app,proj);
@@ -4999,6 +5171,12 @@ end
                     shallowObj = evalin('base', proj);
                 catch
                 end
+                try
+                    if ~isempty(shallowObj)
+                        detecdiv_hub_release_project_open(shallowObj);
+                    end
+                catch
+                end
 
                 clearVars = {proj};
                 if isfield(app.Data,'Pipeline') && ~isempty(app.Data.Pipeline)
@@ -5084,6 +5262,12 @@ end
 
                 if numel(shallowObj)==0
                     uialert(app.DetecDivUIFigure,'This project does not exist in the worksapce','Error','Icon','warning');
+                end
+                try
+                    detecdiv_hub_assert_project_writable(shallowObj);
+                catch ME
+                    uialert(app.DetecDivUIFigure, ME.message, 'Project is read-only', 'Icon', 'warning');
+                    return;
                 end
 
                 d = uiprogressdlg(app.DetecDivUIFigure,'Title','Please Wait...',...
