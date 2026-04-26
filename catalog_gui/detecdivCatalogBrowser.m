@@ -8,7 +8,7 @@ function varargout = detecdivCatalogBrowser(varargin)
     opts = ip.Results;
 
     catalogSettings = detecdiv_catalog_settings_get();
-    hubSettings = detecdiv_hub_settings_get();
+    hubSettings = localCompleteHubSettings(detecdiv_hub_settings_get());
     if strlength(string(opts.RootPath)) > 0
         catalogSettings.defaultProjectRoot = char(string(opts.RootPath));
     end
@@ -487,15 +487,21 @@ function varargout = detecdivCatalogBrowser(varargin)
         detecdiv_hub_settings_set(state.hubSettings);
 
         setBusyState(true);
-        cleanupObj = onCleanup(@() setBusyState(false)); %#ok<NASGU>
+        cleanupObj = onCleanup(@() setBusyState(false));
         drawnow;
 
         try
             response = detecdiv_hub_request_index(hubRoot, state.hubSettings, ...
                 'HostScope', 'server', 'ClearExistingForRoot', false);
             refreshProjectsTable();
-            setStatus(sprintf('Hub indexed %d project(s) from %s.', ...
-                response.indexed_projects, char(string(response.source_path))));
+            if isstruct(response) && isfield(response, 'job') && isstruct(response.job)
+                setStatus(sprintf('Queued hub indexing job %s for %s.', ...
+                    char(string(localStructField(response.job, 'id'))), ...
+                    char(string(localStructField(response.job, 'source_path')))));
+            else
+                setStatus(sprintf('Hub indexed %d project(s) from %s.', ...
+                    response.indexed_projects, char(string(response.source_path))));
+            end
         catch ME
             uialert(fig, ME.message, 'Hub Indexing Failed');
             setStatus(['Hub indexing failed: ' ME.message]);
@@ -1542,6 +1548,62 @@ function mode = localNormalizeSourceMode(mode)
     mode = lower(strtrim(char(string(mode))));
     if ~ismember(mode, {'local', 'hub'})
         mode = 'local';
+    end
+end
+
+function hubSettings = localCompleteHubSettings(hubSettings)
+    defaults = struct( ...
+        'sourceMode', 'local', ...
+        'baseUrl', 'http://detecdiv-hub.detecdiv.internal', ...
+        'timeoutSeconds', 15, ...
+        'userKey', '', ...
+        'sessionToken', '', ...
+        'authMode', '', ...
+        'defaultRemoteProjectRoot', '', ...
+        'defaultLocalProjectRoot', '', ...
+        'storageRootMap', struct(), ...
+        'pathPrefixMap', struct(), ...
+        'lastProjectId', '');
+
+    if ~isstruct(hubSettings)
+        hubSettings = defaults;
+        return;
+    end
+
+    if isfield(hubSettings, 'timeout') && ~isfield(hubSettings, 'timeoutSeconds')
+        hubSettings.timeoutSeconds = hubSettings.timeout;
+    end
+    if isfield(hubSettings, 'pathMappings') && ~isfield(hubSettings, 'pathPrefixMap')
+        hubSettings.pathPrefixMap = localPathMappingsToPrefixMap(hubSettings.pathMappings);
+    end
+
+    fields = fieldnames(defaults);
+    for i = 1:numel(fields)
+        key = fields{i};
+        if ~isfield(hubSettings, key) || isempty(hubSettings.(key))
+            hubSettings.(key) = defaults.(key);
+        end
+    end
+end
+
+function pathPrefixMap = localPathMappingsToPrefixMap(pathMappings)
+    pathPrefixMap = struct();
+    if ~isstruct(pathMappings)
+        return;
+    end
+    for i = 1:numel(pathMappings)
+        if ~isfield(pathMappings(i), 'remoteRoot') || ~isfield(pathMappings(i), 'localRoot')
+            continue;
+        end
+        remotePrefix = char(string(pathMappings(i).remoteRoot));
+        localPrefix = char(string(pathMappings(i).localRoot));
+        if isempty(remotePrefix) || isempty(localPrefix)
+            continue;
+        end
+        key = matlab.lang.makeValidName(['map_' num2str(i)]);
+        pathPrefixMap.(key) = struct( ...
+            'remotePrefix', remotePrefix, ...
+            'localPrefix', localPrefix);
     end
 end
 

@@ -50,6 +50,9 @@ function addedPaths = detecdiv_setup_path(repoRoot, varargin)
 
     if ~isempty(addedPaths)
         addpath(strjoin(addedPaths, pathsep));
+        if useExternalRuntime
+            localPrioritizeCatalogClientPaths(catalogRoot);
+        end
     end
 
     if opts.Verbose
@@ -61,6 +64,18 @@ function addedPaths = detecdiv_setup_path(repoRoot, varargin)
             fprintf('[path] Runtime mode: embedded catalog fallback\n');
         end
         fprintf('[path] Added %d folder(s).\n', numel(addedPaths));
+    end
+end
+
+function localPrioritizeCatalogClientPaths(catalogRoot)
+    paths = { ...
+        catalogRoot, ...
+        fullfile(catalogRoot, 'helpers'), ...
+        fullfile(catalogRoot, 'catalog_gui')};
+    for i = numel(paths):-1:1
+        if isfolder(paths{i})
+            addpath(paths{i}, '-begin');
+        end
     end
 end
 
