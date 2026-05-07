@@ -14,6 +14,9 @@ output = outputin;
 if ischar(omezarrDirs) || isstring(omezarrDirs)
     omezarrDirs = {char(string(omezarrDirs))};
 end
+if ~isempty(omezarrDirs)
+    [omezarrDirs, ~] = localSortNaturalStrings(omezarrDirs);
+end
 
 if isempty(omezarrDirs)
     output.comments = [output.comments 'No OME-Zarr dataset found.' char(10)];
@@ -59,6 +62,7 @@ end
 function [outPos, cc] = localBuildZarrV3(zarrPath, templatePos, outPos, cc)
 rootJson = localReadJson(fullfile(zarrPath, 'zarr.json'));
 seriesNames = localGetV3SeriesNames(rootJson, zarrPath);
+[seriesNames, ~] = localSortNaturalStrings(seriesNames);
 [~, zarrName] = fileparts(zarrPath);
 
 for s = 1:numel(seriesNames)
@@ -115,6 +119,7 @@ function [outPos, cc] = localBuildZarrV2(zarrPath, templatePos, outPos, cc)
 rootAttrsPath = fullfile(zarrPath, '.zattrs');
 rootAttrs = localReadJson(rootAttrsPath);
 seriesNames = localGetV2SeriesNames(rootAttrs, zarrPath);
+[seriesNames, ~] = localSortNaturalStrings(seriesNames);
 [~, zarrName] = fileparts(zarrPath);
 
 for s = 1:numel(seriesNames)
@@ -430,6 +435,40 @@ for i = 1:size(pairs,1)
         names{i} = base;
     end
 end
+end
+
+function [sortedValues, ix] = localSortNaturalStrings(values)
+if isempty(values)
+    sortedValues = values;
+    ix = [];
+    return;
+end
+
+values = cellstr(string(values(:)));
+keys = cell(size(values));
+for i = 1:numel(values)
+    keys{i} = localNaturalKey(values{i});
+end
+
+[~, ix] = sort(keys);
+sortedValues = values(ix);
+if isrow(values)
+    sortedValues = sortedValues.';
+end
+end
+
+function key = localNaturalKey(value)
+parts = regexp(char(string(value)), '\d+|\D+', 'match');
+buf = cell(1, numel(parts));
+for i = 1:numel(parts)
+    token = parts{i};
+    if all(isstrprop(token, 'digit'))
+        buf{i} = sprintf('%020d', str2double(token));
+    else
+        buf{i} = lower(token);
+    end
+end
+key = strjoin(buf, '');
 end
 
 function [channelIndices, zIndices, names] = localGetV2ChannelZMap(arrayAttrs, nC, nZ)

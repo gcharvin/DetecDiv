@@ -12,6 +12,8 @@ selecteddir=[];
 cc=1;
 dirlist=dirlist([dirlist.isdir]);
 dirlist = dirlist(~ismember({dirlist.name},{'.','..'}));
+[~, ix] = localSortNaturalStrings({dirlist.name});
+dirlist = dirlist(ix);
 for i=1:numel(dirlist)
     
 %     if dirlist(i).isdir==0
@@ -37,27 +39,6 @@ for i=1:numel(dirlist)
 
     cc=cc+1;
 end
-
-cc=1;
-
-res=[];
-for i=selecteddir
-  %  i
-    tmp=regexp(dirlist(i).name, '\d+$','match');
-    
-    if numel(tmp)==0 % there is no trailing number
-        break;
-    end
-    
-    res(cc)= str2double(tmp{1});
-    cc=cc+1;
-end
-
-if numel(res)>0 %positions are terminated by a numer, so sort them
-    [cc ix]=sort(res);
-    output.pos=output.pos(ix);
-end
-
 
 realfolders=cellfun(@(x) fullfile(dirlist(1).folder ,x),{output.pos.name},'UniformOutput',false) ;
 % fullfile folder name
@@ -245,6 +226,31 @@ if numel(x)==0
     out='';
 else
     out=x{1};
+end
+end
+
+function [sortedValues, ix] = localSortNaturalStrings(values)
+values = cellstr(string(values(:)));
+keys = cell(size(values));
+for i = 1:numel(values)
+    keys{i} = localNaturalKey(values{i});
+end
+[~, ix] = sort(keys);
+sortedValues = values(ix);
+end
+
+function key = localNaturalKey(value)
+parts = regexp(char(string(value)), '\d+|\D+', 'match');
+buf = cell(1, numel(parts));
+for i = 1:numel(parts)
+    token = parts{i};
+    if all(isstrprop(token, 'digit'))
+        buf{i} = sprintf('%020d', str2double(token));
+    else
+        buf{i} = lower(token);
+    end
+end
+key = strjoin(buf, '');
 end
     
 

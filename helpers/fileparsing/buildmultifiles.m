@@ -54,14 +54,7 @@ end
 % nposorder=1:numel(npos);
 
 if numel(npos)
-    
-    npostmp=regexp(npos, '\d+$','match');
-    
-    npostmp=cellfun(@(x) str2num(x{1}),npostmp,'UniformOutput',false) ;
-    
-    npostmp=cell2mat(npostmp);
-    [~,ix]=sort(npostmp);
-    npos=npos(ix);
+    [npos, ~] = localSortNaturalStrings(npos);
 end
 
 if numel(npos)==0 % there is ony one position
@@ -260,5 +253,30 @@ if numel(x)==0
     out='';
 else
     out=x{1};
+end
+end
+
+function [sortedValues, ix] = localSortNaturalStrings(values)
+values = cellstr(string(values(:)));
+keys = cell(size(values));
+for i = 1:numel(values)
+    keys{i} = localNaturalKey(values{i});
+end
+[~, ix] = sort(keys);
+sortedValues = values(ix);
+end
+
+function key = localNaturalKey(value)
+parts = regexp(char(string(value)), '\d+|\D+', 'match');
+buf = cell(1, numel(parts));
+for i = 1:numel(parts)
+    token = parts{i};
+    if all(isstrprop(token, 'digit'))
+        buf{i} = sprintf('%020d', str2double(token));
+    else
+        buf{i} = lower(token);
+    end
+end
+key = strjoin(buf, '');
 end
 
