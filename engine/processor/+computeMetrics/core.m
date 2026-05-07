@@ -439,12 +439,13 @@ end
         if numel(chabw{bwn})
 
            % for ch=1:numel(cha)
-            name=[name, ['Mean_' channelsName{i}  '_' paramout.(['mask' num2str(bwn) '_label'])],...
-                ['Tot_' channelsName{i}   '_' paramout.(['mask' num2str(bwn) '_label'])],...
-                ['MeanTop_' channelsName{i}  '_' paramout.(['mask' num2str(bwn) '_label'])],...
-                ['TotTop_' channelsName{i}  '_' paramout.(['mask' num2str(bwn) '_label'])],...
-                ['Mean_Bckg_' channelsName{i}  '_' paramout.(['mask' num2str(bwn) '_label'])],...
-                ['MeanNoBckg_' channelsName{i}  '_' paramout.(['mask' num2str(bwn) '_label'])]];
+            meanName = localMetricVarName('Mean', channelsName{i}, paramout.(['mask' num2str(bwn) '_label']));
+            totName = localMetricVarName('Tot', channelsName{i}, paramout.(['mask' num2str(bwn) '_label']));
+            meanTopName = localMetricVarName('MeanTop', channelsName{i}, paramout.(['mask' num2str(bwn) '_label']));
+            totTopName = localMetricVarName('TotTop', channelsName{i}, paramout.(['mask' num2str(bwn) '_label']));
+            meanBckgName = localMetricVarName('Mean_Bckg', channelsName{i}, paramout.(['mask' num2str(bwn) '_label']));
+            meanNoBckgName = localMetricVarName('MeanNoBckg', channelsName{i}, paramout.(['mask' num2str(bwn) '_label']));
+            name=[name, meanName, totName, meanTopName, totTopName, meanBckgName, meanNoBckgName];
             group=[group {['Mean_' channelsName{i}], ['Total_' channelsName{i}], ['Mean_' channelsName{i}], ['Total_' channelsName{i}], ['Mean_' channelsName{i}], ['Mean_' channelsName{i}]} ];
             defplot=[defplot {false false false false false true}];
           %  end
@@ -466,12 +467,13 @@ end
         if numel(chabw{bwn})
 
             % for ch=1:numel(cha)
-            name=[name, ['Mean_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label'])],...
-                ['Tot_' channelsName{i}  '_' paramout.(['mask' num2str(bwn) '_label'])],...
-                ['MeanTop_' channelsName{i}  '_' paramout.(['mask' num2str(bwn) '_label'])],...
-                ['TotTop_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label'])],...
-                ['Mean_Bckg_' channelsName{i}   '_' paramout.(['mask' num2str(bwn) '_label'])],...
-                ['MeanNoBckg_' channelsName{i} '_' paramout.(['mask' num2str(bwn) '_label'])]];
+            meanName = localMetricVarName('Mean', channelsName{i}, paramout.(['mask' num2str(bwn) '_label']));
+            totName = localMetricVarName('Tot', channelsName{i}, paramout.(['mask' num2str(bwn) '_label']));
+            meanTopName = localMetricVarName('MeanTop', channelsName{i}, paramout.(['mask' num2str(bwn) '_label']));
+            totTopName = localMetricVarName('TotTop', channelsName{i}, paramout.(['mask' num2str(bwn) '_label']));
+            meanBckgName = localMetricVarName('Mean_Bckg', channelsName{i}, paramout.(['mask' num2str(bwn) '_label']));
+            meanNoBckgName = localMetricVarName('MeanNoBckg', channelsName{i}, paramout.(['mask' num2str(bwn) '_label']));
+            name=[name, meanName, totName, meanTopName, totTopName, meanBckgName, meanNoBckgName];
             group=[group {['Mean_' channelsName{i}], ['Total_' channelsName{i}], ['Mean_' channelsName{i}], ['Total_' channelsName{i}], ['Mean_' channelsName{i}], ['Mean_' channelsName{i}]} ];
             defplot=[defplot {false false false false false true}];
            % end
@@ -528,7 +530,7 @@ end
                 ratioMeanNoBckg = mean(difference1(1,cha_i,:),2) ./ mean(difference1(1,cha_j,:),2); % Exemple avec dat1, ajustez pour dat2 et dat3 si nécessaire
 
                 % Mise à jour des noms des métriques
-                ratioName = ['Ratio_Mean_NoBckg_' channelsName{i} '_' channelsName{j} '_' paramout.(['mask' num2str(bwn) '_label'])];
+                ratioName = localRatioMetricVarName(channelsName{i}, channelsName{j}, paramout.(['mask' num2str(bwn) '_label']));
                 name = [name, ratioName];
 
                 % Stockage des valeurs calculées
@@ -557,7 +559,7 @@ end
                 ratioMeanNoBckg = mean(difference2(1,cha_i,:),2) ./ mean(difference2(1,cha_j,:),2); % Exemple avec dat1, ajustez pour dat2 et dat3 si nécessaire
 
                 % Mise à jour des noms des métriques
-                ratioName = ['Ratio_Mean_NoBckg_' channelsName{i} '_' channelsName{j} '_' paramout.(['mask' num2str(bwn) '_label'])];
+                ratioName = localRatioMetricVarName(channelsName{i}, channelsName{j}, paramout.(['mask' num2str(bwn) '_label']));
                 name = [name, ratioName];
 
                 % Stockage des valeurs calculées
@@ -624,20 +626,20 @@ end
             % do not  transpose sizes HERE if the dimension of the first dim is 1
 
 
-          dataout(cc).data.(['Mean_' channelsName{i}  '_' paramout.(['mask' num2str(bwn) '_label'])])=permute(mean(moyennes1(:,cha,:),2),[3 1 2]);
-          dataout(cc).data.(['Tot_' channelsName{i}  '_' paramout.(['mask' num2str(bwn) '_label'])])=permute(mean(sommes1(:,cha,:),2),[3 1 2]);
-          dataout(cc).data.(['MeanTop_' channelsName{i}  '_' paramout.(['mask' num2str(bwn) '_label'])])=permute(mean(moyenne_brillants1(:,cha,:),2),[3 1 2]);
-          dataout(cc).data.(['TotTop_' channelsName{i}  '_' paramout.(['mask' num2str(bwn) '_label'])])=permute(mean(somme_brillants1(:,cha,:),2),[3 1 2]);
-          dataout(cc).data.(['MeanNoBckg_' channelsName{i}  '_' paramout.(['mask' num2str(bwn) '_label'])])=permute(mean(difference1(:,cha,:),2),[3 1 2]);
+          dataout(cc).data.(localMetricVarName('Mean', channelsName{i}, paramout.(['mask' num2str(bwn) '_label'])))=permute(mean(moyennes1(:,cha,:),2),[3 1 2]);
+          dataout(cc).data.(localMetricVarName('Tot', channelsName{i}, paramout.(['mask' num2str(bwn) '_label'])))=permute(mean(sommes1(:,cha,:),2),[3 1 2]);
+          dataout(cc).data.(localMetricVarName('MeanTop', channelsName{i}, paramout.(['mask' num2str(bwn) '_label'])))=permute(mean(moyenne_brillants1(:,cha,:),2),[3 1 2]);
+          dataout(cc).data.(localMetricVarName('TotTop', channelsName{i}, paramout.(['mask' num2str(bwn) '_label'])))=permute(mean(somme_brillants1(:,cha,:),2),[3 1 2]);
+          dataout(cc).data.(localMetricVarName('MeanNoBckg', channelsName{i}, paramout.(['mask' num2str(bwn) '_label'])))=permute(mean(difference1(:,cha,:),2),[3 1 2]);
 
         end
         bwn=2;
         if numel(chabw{bwn})
-         dataout(cc).data.(['Mean_' channelsName{i}  '_' paramout.(['mask' num2str(bwn) '_label'])])=permute(mean(moyennes2(:,cha,:),2),[3 1 2]);
-          dataout(cc).data.(['Tot_' channelsName{i}  '_' paramout.(['mask' num2str(bwn) '_label'])])=permute(mean(sommes2(:,cha,:),2),[3 1 2]);
-          dataout(cc).data.(['MeanTop_' channelsName{i}  '_' paramout.(['mask' num2str(bwn) '_label'])])=permute(mean(moyenne_brillants2(:,cha,:),2),[3 1 2]);
-          dataout(cc).data.(['TotTop_' channelsName{i}  '_' paramout.(['mask' num2str(bwn) '_label'])])=permute(mean(somme_brillants2(:,cha,:),2),[3 1 2]);
-          dataout(cc).data.(['MeanNoBckg_' channelsName{i}  '_' paramout.(['mask' num2str(bwn) '_label'])])=permute(mean(difference2(:,cha,:),2),[3 1 2]);
+         dataout(cc).data.(localMetricVarName('Mean', channelsName{i}, paramout.(['mask' num2str(bwn) '_label'])))=permute(mean(moyennes2(:,cha,:),2),[3 1 2]);
+          dataout(cc).data.(localMetricVarName('Tot', channelsName{i}, paramout.(['mask' num2str(bwn) '_label'])))=permute(mean(sommes2(:,cha,:),2),[3 1 2]);
+          dataout(cc).data.(localMetricVarName('MeanTop', channelsName{i}, paramout.(['mask' num2str(bwn) '_label'])))=permute(mean(moyenne_brillants2(:,cha,:),2),[3 1 2]);
+          dataout(cc).data.(localMetricVarName('TotTop', channelsName{i}, paramout.(['mask' num2str(bwn) '_label'])))=permute(mean(somme_brillants2(:,cha,:),2),[3 1 2]);
+          dataout(cc).data.(localMetricVarName('MeanNoBckg', channelsName{i}, paramout.(['mask' num2str(bwn) '_label'])))=permute(mean(difference2(:,cha,:),2),[3 1 2]);
         end
         
       end
@@ -649,7 +651,7 @@ end
 
                      if numel(chabw{bwn})
                              ratioMeanNoBckg = squeeze(mean(difference1(:,cha_i,:),2) ./ mean(difference1(:,cha_j,:),2)).';
-                             ratioName = ['Ratio_Mean_NoBckg_' channelsName{i} '_' channelsName{j} '_' paramout.(['mask' num2str(bwn) '_label'])];
+                             ratioName = localRatioMetricVarName(channelsName{i}, channelsName{j}, paramout.(['mask' num2str(bwn) '_label']));
                               dataout(cc).data.(ratioName)=ratioMeanNoBckg;
                      end
 
@@ -657,7 +659,7 @@ end
 
                      if numel(chabw{bwn})
                              ratioMeanNoBckg = squeeze(mean(difference2(:,cha_i,:),2) ./ mean(difference2(:,cha_j,:),2)).';
-                             ratioName = ['Ratio_Mean_NoBckg_' channelsName{i} '_' channelsName{j} '_' paramout.(['mask' num2str(bwn) '_label'])];
+                             ratioName = localRatioMetricVarName(channelsName{i}, channelsName{j}, paramout.(['mask' num2str(bwn) '_label']));
                               dataout(cc).data.(ratioName)=ratioMeanNoBckg;
                       end
 
@@ -688,6 +690,12 @@ function topN =meanTopNValues(x, N)
 function topN = sumTopNValues(x, N)
     sortedX = sort(x, 'descend'); % Tri par ordre décroissant
     topN = sum(sortedX(1:min(N,end))); % Sélectionne les N premières valeurs et calcule la moyenne
+
+function out = localMetricVarName(prefix, channelName, maskLabel)
+out = makeSafeVariableName(sprintf('%s_%s_%s', prefix, channelName, maskLabel));
+
+function out = localRatioMetricVarName(channelName1, channelName2, maskLabel)
+out = makeSafeVariableName(sprintf('Ratio_Mean_NoBckg_%s_%s_%s', channelName1, channelName2, maskLabel));
 
 
 
