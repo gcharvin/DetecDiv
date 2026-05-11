@@ -51,6 +51,10 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             'nodeParams', {{}}, ...
             'templateId', 'pipeline', ...
             'templatePath', '' )
+        CurrentRunParamRows struct = struct( ...
+            'section',{},'label',{},'key',{},'templateValue',{},'overrideValue',{}, ...
+            'notes',{},'editable',{},'kind',{},'choiceItems',{},'allowMulti',{}, ...
+            'storageKind',{},'templateRaw',{},'defaultRaw',{})
     end
 
     methods (Access = private)
@@ -101,26 +105,26 @@ classdef pipelineRunGUI < matlab.apps.AppBase
                 app.RunIdEditField.Editable = 'off';
             elseif ~isempty(shallowObj)
                 app.RunIdEditField.Value = suggestRunId(app, shallowObj, templateId);
-                app.RunPolicyDropDown.Value = 'resume';
-                app.ExistingPolicyDropDown.Value = '<module default>';
-                app.CachePolicyDropDown.Value = 'auto';
-                app.GpuPolicyDropDown.Value = '<module default>';
-                app.InputSourceDropDown.Value = 'Pipeline start (dataloader)';
+                app.RunPolicyDropDown.Value = 'Resume previous progress';
+                app.ExistingPolicyDropDown.Value = 'Use each module default';
+                app.CachePolicyDropDown.Value = 'Automatic';
+                app.GpuPolicyDropDown.Value = 'Use each module default';
+                app.InputSourceDropDown.Value = 'Start from raw data (dataloader)';
                 app.FovSelectionEditField.Value = '';
-                app.PythonEnvModeDropDown.Value = 'detecdiv_python';
+                app.PythonEnvModeDropDown.Value = 'Default detecdiv_python';
                 app.PythonEnvNameEditField.Value = '';
-                app.ExecutionModeDropDown.Value = 'Local';
+                app.ExecutionModeDropDown.Value = 'Local MATLAB session';
             else
                 app.RunIdEditField.Value = [templateId '_run'];
-                app.RunPolicyDropDown.Value = 'resume';
-                app.ExistingPolicyDropDown.Value = '<module default>';
-                app.CachePolicyDropDown.Value = 'auto';
-                app.GpuPolicyDropDown.Value = '<module default>';
-                app.InputSourceDropDown.Value = 'Pipeline start (dataloader)';
+                app.RunPolicyDropDown.Value = 'Resume previous progress';
+                app.ExistingPolicyDropDown.Value = 'Use each module default';
+                app.CachePolicyDropDown.Value = 'Automatic';
+                app.GpuPolicyDropDown.Value = 'Use each module default';
+                app.InputSourceDropDown.Value = 'Start from raw data (dataloader)';
                 app.FovSelectionEditField.Value = '';
-                app.PythonEnvModeDropDown.Value = 'detecdiv_python';
+                app.PythonEnvModeDropDown.Value = 'Default detecdiv_python';
                 app.PythonEnvNameEditField.Value = '';
-                app.ExecutionModeDropDown.Value = 'Local';
+                app.ExecutionModeDropDown.Value = 'Local MATLAB session';
             end
             initTooltips(app);
             updateRunSourceSelectionUi(app);
@@ -264,28 +268,27 @@ classdef pipelineRunGUI < matlab.apps.AppBase
         function initNodeTable(app)
             nodes = app.Data.pipelineSpec.nodes;
             n = numel(nodes);
-            data = cell(n,4);
+            data = cell(n,6);
             app.Data.nodeTemplateParams = cell(n,1);
             app.Data.nodeParams = cell(n,1);
 
             for i = 1:n
                 node = nodes(i);
-                pkg = '';
-                if isfield(node,'pkg') && ~isempty(node.pkg)
-                    pkg = char(string(node.pkg));
-                end
+                pkg = resolveNodePackageLocal(app, node);
 
                 data{i,1} = true;
                 data{i,2} = char(string(node.id));
-                data{i,3} = char(string(node.type));
-                data{i,4} = pkg;
+                data{i,3} = describeNodeFamilyLocal(app, node);
+                data{i,4} = describeNodeStageLocal(app, node);
+                data{i,5} = pkg;
+                data{i,6} = describeNodeBindingLocal(app, node);
 
                 tpl = struct();
                 if isfield(node,'params') && isstruct(node.params)
                     tpl = node.params;
                 end
                 app.Data.nodeTemplateParams{i} = tpl;
-                app.Data.nodeParams{i} = getRunDefaults(app, node);
+                app.Data.nodeParams{i} = struct();
             end
 
             app.NodeTable.Data = data;
@@ -321,7 +324,7 @@ classdef pipelineRunGUI < matlab.apps.AppBase
                 if isstruct(runObj.ctx) && isfield(runObj.ctx,'run') && isstruct(runObj.ctx.run)
                     runCfg = runObj.ctx.run;
                     if isfield(runCfg,'runPolicy') && ~isempty(runCfg.runPolicy)
-                        app.RunPolicyDropDown.Value = char(string(runCfg.runPolicy));
+                        app.RunPolicyDropDown.Value = runPolicyToLabel(app, runCfg.runPolicy);
                     end
                     if isfield(runCfg,'gpuPolicy') && ~isempty(runCfg.gpuPolicy)
                         app.GpuPolicyDropDown.Value = gpuPolicyToLabel(app, runCfg.gpuPolicy);
@@ -330,7 +333,7 @@ classdef pipelineRunGUI < matlab.apps.AppBase
                         app.ExecutionModeDropDown.Value = executionModeToLabel(app, runCfg.executionMode);
                     end
                     if isfield(runCfg,'inputSource') && ~isempty(runCfg.inputSource)
-                        app.InputSourceDropDown.Value = char(string(runCfg.inputSource));
+                        app.InputSourceDropDown.Value = inputSourceToLabel(app, runCfg.inputSource);
                     end
                     if isfield(runCfg,'selectedNodes') && ~isempty(runCfg.selectedNodes)
                         selectedIds = cellstr(runCfg.selectedNodes(:));
@@ -353,8 +356,8 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             catch
             end
             try
-                if strcmpi(app.ExecutionModeDropDown.Value, 'Local') && ~isempty(localRunHubJobId(app, runObj))
-                    app.ExecutionModeDropDown.Value = 'Hub';
+                if strcmpi(app.ExecutionModeDropDown.Value, 'Local MATLAB session') && ~isempty(localRunHubJobId(app, runObj))
+                    app.ExecutionModeDropDown.Value = 'Detecdiv hub';
                 end
             catch
             end
@@ -363,13 +366,13 @@ classdef pipelineRunGUI < matlab.apps.AppBase
                 if isstruct(runObj.ctx) && isfield(runObj.ctx,'io') && isstruct(runObj.ctx.io)
                     ioCfg = runObj.ctx.io;
                     if isfield(ioCfg,'existingPolicy') && ~isempty(ioCfg.existingPolicy)
-                        existingLabel = char(string(ioCfg.existingPolicy));
+                        existingLabel = existingPolicyToLabel(app, ioCfg.existingPolicy);
                         if any(strcmp(app.ExistingPolicyDropDown.Items, existingLabel))
                             app.ExistingPolicyDropDown.Value = existingLabel;
                         end
                     end
                     if isfield(ioCfg,'cachePolicy') && ~isempty(ioCfg.cachePolicy)
-                        cacheLabel = char(string(ioCfg.cachePolicy));
+                        cacheLabel = cachePolicyToLabel(app, ioCfg.cachePolicy);
                         if any(strcmp(app.CachePolicyDropDown.Items, cacheLabel))
                             app.CachePolicyDropDown.Value = cacheLabel;
                         end
@@ -391,12 +394,12 @@ classdef pipelineRunGUI < matlab.apps.AppBase
                     execCfg = runObj.ctx.exec;
                     if isfield(execCfg,'python') && isstruct(execCfg.python)
                         py = execCfg.python;
-                        mode = char(string(getfielddefault(py,'mode','default')));
+                        mode = char(string(getfielddefault(app, py,'mode','default')));
                         if strcmpi(mode,'custom')
-                            app.PythonEnvModeDropDown.Value = 'custom conda env';
-                            app.PythonEnvNameEditField.Value = char(string(getfielddefault(py,'envName','')));
+                            app.PythonEnvModeDropDown.Value = 'Custom conda env';
+                            app.PythonEnvNameEditField.Value = char(string(getfielddefault(app, py,'envName','')));
                         else
-                            app.PythonEnvModeDropDown.Value = 'detecdiv_python';
+                            app.PythonEnvModeDropDown.Value = 'Default detecdiv_python';
                             app.PythonEnvNameEditField.Value = '';
                         end
                     end
@@ -469,6 +472,10 @@ classdef pipelineRunGUI < matlab.apps.AppBase
 
         function updateParamTable(app, row)
             if isempty(row) || row < 1 || row > numel(app.Data.nodeParams)
+                app.CurrentRunParamRows = struct( ...
+                    'section',{},'label',{},'key',{},'templateValue',{},'overrideValue',{}, ...
+                    'notes',{},'editable',{},'kind',{},'choiceItems',{},'allowMulti',{}, ...
+                    'storageKind',{},'templateRaw',{},'defaultRaw',{});
                 app.ParamTable.Data = {};
                 return;
             end
@@ -479,33 +486,10 @@ classdef pipelineRunGUI < matlab.apps.AppBase
                 runP = struct();
             end
 
-            fnTpl = fieldnames(tpl);
-            fnRun = fieldnames(runP);
-            inheritedRows = {};
-            inheritedFrames = getInheritedFramesDisplay(app, row);
-            if ~isempty(inheritedFrames)
-                inheritedRows = {'Inherited', 'frames', inheritedFrames};
-            end
-
-            data = cell(numel(fnTpl) + numel(fnRun) + size(inheritedRows,1), 3);
-            c = 1;
-            for i = 1:numel(fnTpl)
-                data{c,1} = 'Template';
-                data{c,2} = fnTpl{i};
-                data{c,3} = valueToDisplay(app, tpl.(fnTpl{i}));
-                c = c + 1;
-            end
-            for i = 1:size(inheritedRows,1)
-                data(c,:) = inheritedRows(i,:);
-                c = c + 1;
-            end
-            for i = 1:numel(fnRun)
-                data{c,1} = 'Run';
-                data{c,2} = fnRun{i};
-                data{c,3} = runOverrideDisplayValue(app, row, fnRun{i}, runP.(fnRun{i}));
-                c = c + 1;
-            end
-            app.ParamTable.Data = data;
+            node = app.Data.pipelineSpec.nodes(row);
+            rows = buildRunParamRows(app, row, node, tpl, runP);
+            app.CurrentRunParamRows = rows;
+            app.ParamTable.Data = runParamRowsToTableData(app, rows);
         end
 
         function out = valueToDisplay(app, v) %#ok<INUSD>
@@ -540,67 +524,67 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             app.ProjectDropDownLabel.Tooltip = projectTip;
 
             runPolicyTip = { ...
-                'Run policy controls how a rerun behaves.', ...
-                'resume: reuse prior progress when possible.', ...
-                'restart: execute the run again from scratch.'};
+                'Rerun mode controls what happens if this run already has progress or outputs.', ...
+                'Resume previous progress: reuse prior work when the runner can do so safely.', ...
+                'Restart from scratch: ignore prior progress and execute the selected nodes again.'};
             app.RunPolicyDropDown.Tooltip = runPolicyTip;
             app.RunPolicyDropDownLabel.Tooltip = runPolicyTip;
 
             existingTip = { ...
-                'Existing data policy controls what to do if outputs already exist.', ...
-                '<module default>: keep the behavior defined by each module.', ...
-                'replace: overwrite existing outputs.', ...
-                'append: add new outputs alongside existing ones.', ...
-                'skip: keep existing outputs and skip the step.', ...
-                'error: stop if outputs already exist.', ...
-                'upsert: update when possible, otherwise create.'};
+                'Existing outputs policy controls what to do when a node would write data that already exists.', ...
+                'Use each module default: keep the node''s own behavior.', ...
+                'Replace existing outputs: overwrite prior outputs.', ...
+                'Append alongside existing outputs: keep prior data and add new outputs.', ...
+                'Skip when outputs exist: do nothing for that step if outputs are already there.', ...
+                'Stop when outputs exist: fail fast instead of modifying data.', ...
+                'Upsert when supported: update in place if the node supports it, otherwise create.'};
             app.ExistingPolicyDropDown.Tooltip = existingTip;
             app.ExistingPolicyDropDownLabel.Tooltip = existingTip;
 
             cacheTip = { ...
-                'ROI cache controls where extracted ROI image data is cached during the run.', ...
-                'auto: let the runner choose.', ...
-                'memory: prefer RAM cache.', ...
-                'disk: prefer on-disk cache.'};
+                'ROI cache mode controls where extracted ROI image data is buffered during the run.', ...
+                'Automatic: let the runner choose.', ...
+                'Prefer memory cache: keep ROI content in RAM when possible.', ...
+                'Prefer disk cache: favor on-disk buffering to reduce RAM pressure.'};
             app.CachePolicyDropDown.Tooltip = cacheTip;
             app.CachePolicyDropDownLabel.Tooltip = cacheTip;
 
             gpuTip = { ...
                 'Global GPU policy for this run.', ...
-                '<module default>: keep each module''s own GPU behavior.', ...
-                'Force GPU: request GPU everywhere a compatible node supports it.', ...
+                'Use each module default: keep each node''s own GPU behavior.', ...
+                'Force GPU where supported: request GPU everywhere a compatible node supports it.', ...
                 'Force CPU: disable GPU even for modules that default to GPU, useful for debug and thermal limits.'};
             app.GpuPolicyDropDown.Tooltip = gpuTip;
             app.GpuPolicyDropDownLabel.Tooltip = gpuTip;
 
             executionTip = { ...
                 'Execution mode for this pipeline run.', ...
-                'Local keeps execution on this MATLAB session.', ...
-                'Hub submits the saved pipelineRun to detecdiv-hub for remote execution.'};
+                'Local MATLAB session keeps execution in the current MATLAB process.', ...
+                'Detecdiv hub submits the saved pipelineRun to detecdiv-hub for remote execution.'};
             app.ExecutionModeDropDown.Tooltip = executionTip;
             app.ExecutionModeDropDownLabel.Tooltip = executionTip;
 
             sourceTip = { ...
-                'Run source defines where execution starts and which existing project data is reused.', ...
-                'Pipeline start (dataloader): start from raw data loading.', ...
-                'Existing project FOVs: start from FOVs already present in the project.', ...
-                'Existing ROIs: reuse ROI already present in the project.', ...
-                'Existing masks: reuse mask-like ROI channels already present.', ...
-                'Existing dataSeries: reuse quantitative data already present.'};
+                'Start from defines where execution begins and which existing project data is reused.', ...
+                'Start from raw data (dataloader): start from raw image loading.', ...
+                'Reuse existing project FOVs: bypass the dataloader and use FOVs already in the project.', ...
+                'Reuse existing ROIs: start from previously created ROIs.', ...
+                'Reuse existing masks: start from ROI data that already contains mask-like channels.', ...
+                'Reuse existing data series: start from ROI quantitative outputs already present.'};
             app.InputSourceDropDown.Tooltip = sourceTip;
             app.InputSourceDropDownLabel.Tooltip = sourceTip;
 
             pythonTip = { ...
                 'Python environment prepared at the very beginning of the run for Python-backed nodes.', ...
-                'detecdiv_python: use the standard Detecdiv conda env with no mid-run prompt.', ...
-                'custom conda env: resolve a specific existing conda env by name.'};
+                'Default detecdiv_python: use the standard Detecdiv conda env with no mid-run prompt.', ...
+                'Custom conda env: resolve a specific existing conda env by name.'};
             app.PythonEnvModeDropDown.Tooltip = pythonTip;
             app.PythonEnvModeDropDownLabel.Tooltip = pythonTip;
 
             pythonNameTip = { ...
                 'Name of the custom conda environment to use for this run.', ...
                 'Example: cellpose_env', ...
-                'Ignored when Python env is set to detecdiv_python.'};
+                'Ignored when Python runtime is set to Default detecdiv_python.'};
             app.PythonEnvNameEditField.Tooltip = pythonNameTip;
             app.PythonEnvNameEditFieldLabel.Tooltip = pythonNameTip;
 
@@ -671,14 +655,6 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             end
         end
 
-        function out = runOverrideDisplayValue(app, row, key, v)
-            if isDefaultRunValue(app, row, key, v)
-                out = '<inherit>';
-                return;
-            end
-            out = valueToDisplay(app, v);
-        end
-
         function tf = isDefaultRunValue(app, row, key, v)
             tf = false;
             if isempty(app.Data.pipelineSpec.nodes) || row < 1 || row > numel(app.Data.pipelineSpec.nodes)
@@ -723,6 +699,246 @@ classdef pipelineRunGUI < matlab.apps.AppBase
                     p = mergeStructLocal(app, p, ov);
                 end
             end
+        end
+
+        function rows = buildRunParamRows(app, row, node, tpl, runP)
+            rows = struct( ...
+                'section',{},'label',{},'key',{},'templateValue',{},'overrideValue',{}, ...
+                'notes',{},'editable',{},'kind',{},'choiceItems',{},'allowMulti',{}, ...
+                'storageKind',{},'templateRaw',{},'defaultRaw',{});
+
+            dflt = getRunDefaults(app, node);
+            tipMap = buildParamTipMapLocal(app, tpl);
+            keys = orderedRunParamKeys(app, tpl, runP, dflt);
+            inheritedFrames = getInheritedFramesDisplay(app, row);
+            rows = appendMissingConfigRunRows(app, node, tpl, runP, dflt, rows);
+
+            for i = 1:numel(keys)
+                key = keys{i};
+                if ~shouldExposeRunParamKey(app, key, tpl, runP, dflt)
+                    continue;
+                end
+
+                tplVal = [];
+                if isfield(tpl, key)
+                    tplVal = tpl.(key);
+                end
+                dfltVal = [];
+                if isfield(dflt, key)
+                    dfltVal = dflt.(key);
+                end
+
+                hasOverride = isfield(runP, key);
+                if hasOverride
+                    overrideVal = runP.(key);
+                else
+                    overrideVal = dfltVal;
+                end
+
+                notes = getfielddefault(app, tipMap, key, '');
+                if strcmpi(key, 'frames') && ~isempty(inheritedFrames)
+                    notes = appendRunNote(app, notes, ['Inherited when empty: ' inheritedFrames]);
+                end
+
+                rowMeta = buildRunParamRow(app, node, key, tplVal, overrideVal, notes, dfltVal, hasOverride);
+                rows(end+1) = rowMeta; %#ok<AGROW>
+            end
+        end
+
+        function rows = appendMissingConfigRunRows(app, node, tpl, runP, dflt, rows)
+            if nargin < 6 || isempty(rows)
+                rows = struct( ...
+                    'section',{},'label',{},'key',{},'templateValue',{},'overrideValue',{}, ...
+                    'notes',{},'editable',{},'kind',{},'choiceItems',{},'allowMulti',{}, ...
+                    'storageKind',{},'templateRaw',{},'defaultRaw',{});
+            end
+            c = pipelineNodeContract(node, resolveNodePackageLocal(app, node));
+            if isempty(c) || ~isstruct(c) || ~isfield(c, 'parameters') || ~isstruct(c.parameters)
+                return;
+            end
+
+            configKeys = {};
+            configKeys = [configKeys normalizeParamNameListLocal(app, getfielddefault(app, c.parameters, 'fixed', {}))]; %#ok<AGROW>
+            configKeys = [configKeys normalizeParamNameListLocal(app, getfielddefault(app, c.parameters, 'design', {}))]; %#ok<AGROW>
+            configKeys = [configKeys normalizeParamNameListLocal(app, getfielddefault(app, c.parameters, 'template', {}))]; %#ok<AGROW>
+            configKeys = unique(configKeys(~cellfun(@isempty, configKeys)), 'stable');
+            if isempty(configKeys)
+                return;
+            end
+
+            existing = lower(strtrim(cellstr(string({rows.key}))));
+            for i = 1:numel(configKeys)
+                key = char(string(configKeys{i}));
+                if any(strcmp(existing, lower(strtrim(key))))
+                    continue;
+                end
+
+                if isfield(runP, key)
+                    overrideVal = runP.(key);
+                    hasOverride = true;
+                elseif isfield(tpl, key)
+                    overrideVal = tpl.(key);
+                    hasOverride = false;
+                elseif isfield(dflt, key)
+                    overrideVal = dflt.(key);
+                    hasOverride = false;
+                else
+                    overrideVal = [];
+                    hasOverride = false;
+                end
+                rows(end+1) = buildRunParamRow(app, node, key, getfielddefault(app, tpl, key, []), overrideVal, configRunNote(app, node, key), getfielddefault(app, dflt, key, []), hasOverride); %#ok<AGROW>
+                rows(end).section = 'Config';
+            end
+        end
+
+        function data = runParamRowsToTableData(app, rows) %#ok<INUSD>
+            if isempty(rows)
+                data = {};
+                return;
+            end
+            data = cell(numel(rows), 5);
+            for i = 1:numel(rows)
+                data{i,1} = rows(i).section;
+                data{i,2} = rows(i).label;
+                data{i,3} = rows(i).templateValue;
+                data{i,4} = rows(i).overrideValue;
+                data{i,5} = rows(i).notes;
+            end
+        end
+
+        function rowMeta = buildRunParamRow(app, node, key, tplVal, overrideVal, notes, dfltVal, hasOverride)
+            section = categorizeRunParamKey(app, node, key);
+            label = friendlyRunParamLabel(app, key);
+            if isChannelSlotBindingKeyLocal(app, node, key)
+                label = strtrim(regexprep(char(string(key)), '^Channel', 'Slot '));
+            end
+            kind = 'text';
+            choiceItems = {};
+            allowMulti = false;
+            storageKind = 'plain';
+
+            refVal = overrideVal;
+            if isempty(refVal)
+                refVal = tplVal;
+            end
+
+            if isChannelSlotBindingKeyLocal(app, node, key)
+                choiceItems = unique([{'none'}, getNodeSelectableChannelsLocal(app, rowFromNode(app, node))], 'stable');
+                storageKind = 'plain';
+                if isChoicePayloadLocal(app, tplVal)
+                    templateText = extractChoiceDisplayLocal(app, tplVal);
+                else
+                    templateText = valueToDisplay(app, tplVal);
+                end
+                if isempty(strtrim(templateText))
+                    templateText = '<pipeline default>';
+                end
+                if hasOverride
+                    if isChoicePayloadLocal(app, overrideVal)
+                        overrideText = extractChoiceDisplayLocal(app, overrideVal);
+                    else
+                        overrideText = valueToDisplay(app, overrideVal);
+                    end
+                else
+                    overrideText = '<inherit>';
+                end
+                notes = appendRunNote(app, notes, 'Binding slot. Pick one dataset channel, or none to leave this slot unused.');
+                if ~isempty(choiceItems)
+                    kind = 'choice';
+                end
+            elseif isChoicePayloadLocal(app, refVal)
+                choiceItems = getChoicePayloadItemsLocal(app, refVal);
+                kind = 'choice';
+                storageKind = 'choicePayload';
+            elseif isChannelSelectorKeyLocal(app, node, key)
+                choiceItems = getNodeSelectableChannelsLocal(app, rowFromNode(app, node));
+                allowMulti = strcmpi(key, 'channels') && ~requiresSingleExplicitChannelLocal(app, node);
+                if ~isempty(choiceItems)
+                    kind = 'choice';
+                end
+            end
+
+            if isChoicePayloadLocal(app, tplVal)
+                templateText = extractChoiceDisplayLocal(app, tplVal);
+            else
+                templateText = valueToDisplay(app, tplVal);
+            end
+            if isempty(strtrim(templateText))
+                templateText = '<pipeline default>';
+            end
+
+            if hasOverride
+                if isChoicePayloadLocal(app, overrideVal)
+                    overrideText = extractChoiceDisplayLocal(app, overrideVal);
+                else
+                    overrideText = valueToDisplay(app, overrideVal);
+                end
+            else
+                overrideText = '<inherit>';
+            end
+
+            if strcmp(kind, 'choice')
+                if hasOverride
+                    overrideText = extractChoiceDisplayLocal(app, overrideVal);
+                else
+                    overrideText = '<inherit>';
+                end
+                if ~isempty(choiceItems)
+                    notes = appendRunNote(app, notes, sprintf('Click the override cell to choose from %d option(s).', numel(choiceItems)));
+                end
+            end
+
+            if islogical(refVal) && isscalar(refVal)
+                notes = appendRunNote(app, notes, 'Type true/false to override this flag.');
+            elseif isstruct(refVal) || (iscell(refVal) && ~isChoicePayloadLocal(app, refVal))
+                notes = appendRunNote(app, notes, 'Structured value. For complex edits, use the node-specific GUI.');
+            end
+
+            rowMeta = struct( ...
+                'section', section, ...
+                'label', label, ...
+                'key', char(string(key)), ...
+                'templateValue', templateText, ...
+                'overrideValue', overrideText, ...
+                'notes', notes, ...
+                'editable', true, ...
+                'kind', kind, ...
+                'choiceItems', {choiceItems}, ...
+                'allowMulti', allowMulti, ...
+                'storageKind', storageKind, ...
+                'templateRaw', {tplVal}, ...
+                'defaultRaw', {dfltVal});
+        end
+
+        function keys = orderedRunParamKeys(app, tpl, runP, dflt) %#ok<INUSD>
+            keys = {};
+            if isstruct(tpl)
+                tplKeys = fieldnames(tpl);
+                tplKeys(strcmp(tplKeys, 'tip')) = [];
+                keys = [keys; tplKeys];
+            end
+            if isstruct(dflt)
+                keys = [keys; fieldnames(dflt)];
+            end
+            if isstruct(runP)
+                keys = [keys; fieldnames(runP)];
+            end
+            keys = unique(keys, 'stable');
+        end
+
+        function tf = shouldExposeRunParamKey(app, key, tpl, runP, dflt) %#ok<INUSD>
+            lowerKey = lower(char(string(key)));
+            if strcmp(lowerKey, 'tip')
+                tf = false;
+                return;
+            end
+            if any(strcmp(lowerKey, {'modulevar','modulepath','moduleid'}))
+                hasValue = (isstruct(runP) && isfield(runP, key) && ~isempty(runP.(key))) || ...
+                    (isstruct(tpl) && isfield(tpl, key) && ~isempty(tpl.(key)));
+                tf = hasValue;
+                return;
+            end
+            tf = true;
         end
 
         function out = getInheritedFramesDisplay(app, row)
@@ -784,28 +1000,33 @@ classdef pipelineRunGUI < matlab.apps.AppBase
         end
 
         function out = extractRunOverrides(app, node, templateParams, mergedParams)
-            out = getRunDefaults(app, node);
-            if ~isstruct(out)
+            out = struct();
+            if ~isstruct(mergedParams)
                 out = struct();
                 return;
             end
-            fn = fieldnames(out);
+            fn = fieldnames(mergedParams);
             for i = 1:numel(fn)
                 k = fn{i};
-                if ~isfield(mergedParams, k)
-                    continue;
-                end
                 newVal = mergedParams.(k);
                 tplVal = [];
                 if isstruct(templateParams) && isfield(templateParams, k)
                     tplVal = templateParams.(k);
                 end
+                sameAsTemplate = false;
+                sameAsDefault = false;
                 try
                     sameAsTemplate = isequaln(newVal, tplVal);
                 catch
-                    sameAsTemplate = false;
                 end
-                if ~sameAsTemplate
+                dflt = getRunDefaults(app, node);
+                if isstruct(dflt) && isfield(dflt, k)
+                    try
+                        sameAsDefault = isequaln(newVal, dflt.(k));
+                    catch
+                    end
+                end
+                if ~sameAsTemplate && ~sameAsDefault
                     out.(k) = newVal;
                 end
             end
@@ -819,7 +1040,19 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             fn = fieldnames(p);
             for i = 1:numel(fn)
                 k = fn{i};
-                if ~isDefaultRunValue(app, row, k, p.(k))
+                if isDefaultRunValue(app, row, k, p.(k))
+                    continue;
+                end
+                tpl = getTemplateParams(app, row);
+                sameAsTemplate = false;
+                if isstruct(tpl) && isfield(tpl, k)
+                    try
+                        sameAsTemplate = isequaln(p.(k), tpl.(k));
+                    catch
+                        sameAsTemplate = false;
+                    end
+                end
+                if ~sameAsTemplate
                     out.(k) = p.(k);
                 end
             end
@@ -880,6 +1113,519 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             end
 
             out = char(string(raw));
+        end
+
+        function tipMap = buildParamTipMapLocal(app, params) %#ok<INUSD>
+            tipMap = struct();
+            if ~isstruct(params) || ~isfield(params, 'tip') || isempty(params.tip)
+                return;
+            end
+            keys = fieldnames(params);
+            keys(strcmp(keys, 'tip')) = [];
+            tips = params.tip;
+            if ischar(tips) || isstring(tips)
+                tips = cellstr(string(tips(:)));
+            end
+            if ~iscell(tips)
+                return;
+            end
+            n = min(numel(keys), numel(tips));
+            for i = 1:n
+                try
+                    tipMap.(keys{i}) = char(string(tips{i}));
+                catch
+                end
+            end
+        end
+
+        function out = appendRunNote(app, base, extra) %#ok<INUSD>
+            base = strtrim(char(string(base)));
+            extra = strtrim(char(string(extra)));
+            if isempty(base)
+                out = extra;
+            elseif isempty(extra)
+                out = base;
+            else
+                out = [base ' ' extra];
+            end
+        end
+
+        function tf = shouldClearRunOverride(app, row, key, newVal, meta)
+            tf = false;
+            if isDefaultRunValue(app, row, key, newVal)
+                tf = true;
+                return;
+            end
+            tpl = getTemplateParams(app, row);
+            if isstruct(tpl) && isfield(tpl, key)
+                try
+                    tf = isequaln(newVal, tpl.(key));
+                catch
+                    tf = false;
+                end
+            elseif nargin >= 5 && isstruct(meta)
+                try
+                    tf = isequaln(newVal, meta.templateRaw);
+                catch
+                    tf = false;
+                end
+            end
+        end
+
+        function [newVal, applied] = chooseRunParamValueForRow(app, nodeRow, node, meta, runOverrides)
+            newVal = [];
+            applied = false;
+            choices = meta.choiceItems;
+            if isempty(choices) && isChannelSelectorKeyLocal(app, node, meta.key)
+                choices = getNodeSelectableChannelsLocal(app, nodeRow);
+            elseif isempty(choices) && isChannelSlotBindingKeyLocal(app, node, meta.key)
+                choices = getNodeSelectableChannelsLocal(app, nodeRow);
+            end
+            if isempty(choices)
+                return;
+            end
+
+            initialNames = {};
+            if isfield(runOverrides, meta.key)
+                currentVal = runOverrides.(meta.key);
+            else
+                currentVal = meta.templateRaw;
+                if isempty(currentVal)
+                    currentVal = meta.defaultRaw;
+                end
+            end
+
+            if isChannelSlotBindingKeyLocal(app, node, meta.key)
+                if isChoicePayloadLocal(app, currentVal)
+                    initialNames = normalizeChannelChoiceListLocal(app, extractChoiceDisplayLocal(app, currentVal));
+                else
+                    initialNames = normalizeChannelChoiceListLocal(app, currentVal);
+                end
+            elseif strcmp(meta.storageKind, 'choicePayload')
+                initialNames = normalizeChannelChoiceListLocal(app, extractChoiceDisplayLocal(app, currentVal));
+            else
+                initialNames = normalizeChannelChoiceListLocal(app, currentVal);
+            end
+            initialIdx = find(ismember(lower(choices), lower(initialNames)));
+            if isempty(initialIdx) && ~isempty(choices)
+                initialIdx = 1;
+            end
+
+            mode = 'single';
+            if logical(meta.allowMulti)
+                mode = 'multiple';
+            end
+
+            [sel, ok] = listdlg( ...
+                'ListString', choices, ...
+                'SelectionMode', mode, ...
+                'InitialValue', initialIdx, ...
+                'PromptString', ['Select ' lower(char(string(meta.label)))], ...
+                'Name', char(string(meta.label)));
+            if ~ok || isempty(sel)
+                return;
+            end
+
+            picked = choices(sel);
+            if isChannelSlotBindingKeyLocal(app, node, meta.key)
+                newVal = picked{1};
+            elseif strcmp(meta.storageKind, 'choicePayload')
+                if meta.allowMulti
+                    newVal = applyChoicePayloadSelectionLocal(app, currentVal, picked(:)');
+                else
+                    newVal = applyChoicePayloadSelectionLocal(app, currentVal, picked{1});
+                end
+            elseif meta.allowMulti
+                newVal = picked(:)';
+            else
+                newVal = picked{1};
+            end
+            applied = true;
+        end
+
+        function section = categorizeRunParamKey(app, node, key) %#ok<INUSD>
+            key = lower(char(string(key)));
+            c = pipelineNodeContract(node, resolveNodePackageLocal(app, node));
+            if isstruct(c) && isfield(c, 'parameters') && isstruct(c.parameters)
+                if any(strcmp(key, normalizeParamNameListLocal(app, getfielddefault(app, c.parameters, 'fixed', {})))) || ...
+                        any(strcmp(key, normalizeParamNameListLocal(app, getfielddefault(app, c.parameters, 'design', {})))) || ...
+                        any(strcmp(key, normalizeParamNameListLocal(app, getfielddefault(app, c.parameters, 'template', {}))))
+                    section = 'Config';
+                    return;
+                end
+                if any(strcmp(key, normalizeParamNameListLocal(app, getfielddefault(app, c.parameters, 'data', {}))))
+                    section = 'Data';
+                    return;
+                end
+            end
+            if any(strcmp(key, {'channel','channels','channelidx','channelindex','extractchannels'})) || startsWith(key, 'channel')
+                section = 'Input';
+            elseif contains(key, 'frame')
+                section = 'Frames';
+            elseif contains(key, 'output')
+                section = 'Output';
+            elseif any(strcmp(key, {'runpolicy','existingpolicy','cachepolicy','gpu','executionmode'}))
+                section = 'Execution';
+            elseif any(strcmp(key, {'path','positionidx','fovindex','roiindex'}))
+                section = 'Scope';
+            else
+                section = 'Parameters';
+            end
+        end
+
+        function label = friendlyRunParamLabel(app, key) %#ok<INUSD>
+            key = char(string(key));
+            switch lower(key)
+                case 'channel'
+                    label = 'Input channel';
+                case 'channels'
+                    label = 'Input channels';
+                case 'extractchannels'
+                    label = 'Extracted channels';
+                case 'referenceframe'
+                    label = 'Reference frame';
+                case 'outputname'
+                    label = 'Output name';
+                case 'outputchannelname'
+                    label = 'Output channel name';
+                case 'cachepolicy'
+                    label = 'ROI cache mode';
+                case 'existingpolicy'
+                    label = 'Existing outputs policy';
+                case 'runpolicy'
+                    label = 'Rerun mode';
+                otherwise
+                    label = strrep(regexprep(key, '([a-z])([A-Z])', '$1 $2'), '_', ' ');
+            end
+        end
+
+        function notes = configRunNote(app, node, key) %#ok<INUSD>
+            notes = '';
+            nodeType = lower(char(string(getfielddefault(app, node, 'type', ''))));
+            key = lower(char(string(key)));
+            if strcmp(nodeType, 'roipattern') && strcmp(key, 'pattern')
+                notes = 'Pattern must be chosen in the ROI editor before run submission.';
+                return;
+            end
+            if strcmp(nodeType, 'roigrid') && strcmp(key, 'gridcount')
+                notes = 'GridCount is a pipeline design choice, not a run override.';
+                return;
+            end
+            if strcmp(nodeType, 'classifier') && strcmp(key, 'classes')
+                notes = 'Class labels are defined by the classifier module.';
+                return;
+            end
+            if strcmp(nodeType, 'classifier') && strcmp(key, 'trainingparam')
+                notes = 'Training parameters belong to the classifier module GUI.';
+                return;
+            end
+            notes = 'Pipeline configuration parameter.';
+        end
+
+        function pkg = resolveNodePackageLocal(app, node) %#ok<INUSD>
+            pkg = '';
+            if isfield(node, 'pkg') && ~isempty(node.pkg)
+                pkg = char(string(node.pkg));
+            elseif isfield(node, 'params') && isstruct(node.params) && isfield(node.params, 'pkg') && ~isempty(node.params.pkg)
+                pkg = char(string(node.params.pkg));
+            elseif isfield(node, 'func') && ~isempty(node.func)
+                token = regexp(char(string(node.func)), '^([A-Za-z]\w*)\.(process|classify)$', 'tokens', 'once');
+                if ~isempty(token)
+                    pkg = token{1};
+                end
+            end
+        end
+
+        function txt = describeNodeFamilyLocal(app, node) %#ok<INUSD>
+            nodeType = lower(char(string(node.type)));
+            pkg = lower(resolveNodePackageLocal(app, node));
+            switch nodeType
+                case 'dataloader'
+                    txt = 'Data source';
+                case {'roiidentify','roipattern'}
+                    txt = 'ROI detection';
+                case 'roimanual'
+                    txt = 'Manual ROI';
+                case 'roigrid'
+                    txt = 'Grid ROI';
+                case 'roitracked'
+                    txt = 'Tracked ROI';
+                case 'roiextract'
+                    txt = 'ROI extraction';
+                case 'processor'
+                    if isempty(pkg)
+                        txt = 'Processor';
+                    else
+                        txt = ['Processor (' pkg ')'];
+                    end
+                case 'classifier'
+                    if isempty(pkg)
+                        txt = 'Classifier';
+                    else
+                        txt = ['Classifier (' pkg ')'];
+                    end
+                otherwise
+                    txt = char(string(node.type));
+            end
+        end
+
+        function txt = describeNodeStageLocal(app, node)
+            c = pipelineNodeContract(node, resolveNodePackageLocal(app, node));
+            if ~isstruct(c) || ~isfield(c, 'parameters') || ~isstruct(c.parameters)
+                txt = 'Run';
+                return;
+            end
+
+            configKeys = normalizeParamNameListLocal(app, getfielddefault(app, c.parameters, 'fixed', {}));
+            configKeys = [configKeys normalizeParamNameListLocal(app, getfielddefault(app, c.parameters, 'design', {}))]; %#ok<AGROW>
+            configKeys = [configKeys normalizeParamNameListLocal(app, getfielddefault(app, c.parameters, 'template', {}))]; %#ok<AGROW>
+            configKeys = unique(configKeys(~cellfun(@isempty, configKeys)), 'stable');
+
+            runKeys = normalizeParamNameListLocal(app, getfielddefault(app, c.parameters, 'run', {}));
+            runKeys = [runKeys normalizeParamNameListLocal(app, getfielddefault(app, c.parameters, 'data', {}))]; %#ok<AGROW>
+            runKeys = unique(runKeys(~cellfun(@isempty, runKeys)), 'stable');
+
+            hasConfig = ~isempty(configKeys);
+            hasRun = ~isempty(runKeys);
+            if hasConfig && hasRun
+                txt = 'Config + Run';
+            elseif hasConfig
+                txt = 'Config';
+            elseif hasRun
+                txt = 'Run';
+            else
+                txt = 'None';
+            end
+        end
+
+        function txt = describeNodeBindingLocal(app, node)
+            c = pipelineNodeContract(node, resolveNodePackageLocal(app, node));
+            txt = char(string(getfielddefault(app, c, 'summary', '')));
+            req = getfielddefault(app, c, 'requirements', struct());
+            if isstruct(req) && isfield(req, 'roi') && isstruct(req.roi)
+                n = double(getfielddefault(app, req.roi, 'channelsMin', 0));
+                if n > 0
+                    txt = sprintf('Needs ROI data with >=%d channel(s)', n);
+                end
+            end
+            if strcmpi(char(string(node.type)), 'roiextract')
+                txt = 'Produces ROI channels from upstream image data';
+            elseif strcmpi(char(string(node.type)), 'dataloader')
+                txt = 'Defines the raw channel inventory';
+            end
+        end
+
+        function tf = isChoicePayloadLocal(app, value) %#ok<INUSD>
+            tf = false;
+            if ~iscell(value) || numel(value) < 3
+                return;
+            end
+            try
+                strs = cellfun(@(x) char(string(x)), value, 'UniformOutput', false);
+            catch
+                return;
+            end
+            if any(cellfun(@(x) isempty(strtrim(x)), strs))
+                return;
+            end
+            selected = strs{end};
+            choices = strs(1:end-1);
+            tf = any(strcmpi(choices, selected)) || any(strcmpi(choices, 'none')) || any(strcmpi(choices, 'n/a'));
+        end
+
+        function items = getChoicePayloadItemsLocal(app, value) %#ok<INUSD>
+            items = {};
+            if ~isChoicePayloadLocal(app, value)
+                return;
+            end
+            items = cellfun(@(x) char(string(x)), value(1:end-1), 'UniformOutput', false);
+            items = unique(items, 'stable');
+        end
+
+        function out = applyChoicePayloadSelectionLocal(app, value, selected) %#ok<INUSD>
+            items = getChoicePayloadItemsLocal(app, value);
+            if iscell(selected)
+                if isempty(selected)
+                    picked = '';
+                else
+                    picked = char(string(selected{1}));
+                end
+            else
+                picked = char(string(selected));
+            end
+            if isempty(items) && iscell(value)
+                items = cellfun(@(x) char(string(x)), value, 'UniformOutput', false);
+            end
+            if ~isempty(picked) && ~any(strcmpi(items, picked))
+                items{end+1} = picked; %#ok<AGROW>
+            end
+            if isempty(picked) && ~isempty(items)
+                picked = items{1};
+            end
+            out = [items(:)' {picked}];
+        end
+
+        function txt = extractChoiceDisplayLocal(app, value) %#ok<INUSD>
+            txt = '';
+            if isChoicePayloadLocal(app, value)
+                txt = char(string(value{end}));
+            elseif iscell(value) && ~isempty(value)
+                txt = char(string(value{1}));
+            else
+                txt = char(string(value));
+            end
+        end
+
+        function tf = isChannelSelectorKeyLocal(app, node, key) %#ok<INUSD>
+            tf = false;
+            key = lower(char(string(key)));
+            if any(strcmp(key, {'channel','channels','extractchannels'}))
+                tf = true;
+                return;
+            end
+            if strcmpi(char(string(node.type)), 'classifier') && any(strcmp(resolveNodePackageLocal(app, node), {'cellposesam','cnn_lstm'}))
+                tf = strcmp(key, 'channel');
+            end
+        end
+
+        function tf = isChannelSlotBindingKeyLocal(app, node, key)
+            tf = false;
+            if nargin < 3 || isempty(key)
+                return;
+            end
+            key = char(string(key));
+            if isempty(regexp(key, '^Channel\d+$', 'once'))
+                return;
+            end
+            c = pipelineNodeContract(node, resolveNodePackageLocal(app, node));
+            binding = getfielddefault(app, c, 'binding', struct());
+            mode = lower(char(string(getfielddefault(app, binding, 'mode', ''))));
+            tf = strcmp(mode, 'channelslots');
+        end
+
+        function tf = requiresSingleExplicitChannelLocal(app, node) %#ok<INUSD>
+            tf = false;
+            if ~strcmpi(char(string(node.type)), 'classifier')
+                return;
+            end
+            pkg = lower(resolveNodePackageLocal(app, node));
+            tf = any(strcmp(pkg, {'cellposesam','cnn_lstm'}));
+        end
+
+        function names = getNodeSelectableChannelsLocal(app, row)
+            names = {};
+            if row < 1 || row > numel(app.Data.pipelineSpec.nodes)
+                return;
+            end
+            ctx = struct();
+            if ~isempty(app.Data.shallowObj)
+                ctx.shallow = app.Data.shallowObj;
+                ctx.shallowObj = app.Data.shallowObj;
+            end
+            try
+                if ~isempty(app.Data.shallowObj) && isprop(app.Data.shallowObj, 'fov') && ~isempty(app.Data.shallowObj.fov)
+                    ctx.channels = app.Data.shallowObj.fov(1).channel;
+                end
+            catch
+            end
+            merged = getMergedNodeParams(app, row);
+            if isstruct(merged) && isfield(merged, 'channels') && ~isempty(merged.channels)
+                names = mergeChannelChoiceListsLocal(app, names, merged.channels);
+            end
+            if isstruct(ctx) && isfield(ctx, 'channels') && ~isempty(ctx.channels)
+                names = mergeChannelChoiceListsLocal(app, names, ctx.channels);
+            end
+            for ii = 1:row-1
+                params = getMergedNodeParams(app, ii);
+                if isstruct(params)
+                    probe = {'channel','channels','extractChannels','channelFilter','channelName'};
+                    for jj = 1:numel(probe)
+                        k = probe{jj};
+                        if isfield(params, k) && ~isempty(params.(k))
+                            names = mergeChannelChoiceListsLocal(app, names, params.(k));
+                        end
+                    end
+                end
+            end
+        end
+
+        function names = mergeChannelChoiceListsLocal(app, a, b) %#ok<INUSD>
+            names = unique([normalizeChannelChoiceListLocal(app, a), normalizeChannelChoiceListLocal(app, b)], 'stable');
+        end
+
+        function names = normalizeChannelChoiceListLocal(app, v) %#ok<INUSD>
+            names = {};
+            if isempty(v)
+                return;
+            end
+            if ischar(v) || (isstring(v) && isscalar(v))
+                s = strtrim(char(string(v)));
+                if isempty(s)
+                    return;
+                end
+                if startsWith(s, '[') && endsWith(s, ']')
+                    try
+                        tmp = jsondecode(s);
+                        names = normalizeChannelChoiceListLocal(app, tmp);
+                        return;
+                    catch
+                    end
+                end
+                if contains(s, ',')
+                    parts = strtrim(strsplit(s, ','));
+                    names = parts(~cellfun(@isempty, parts));
+                else
+                    names = {s};
+                end
+                return;
+            end
+            if isstring(v)
+                names = cellstr(v(:)');
+                return;
+            end
+            if iscell(v)
+                tmp = {};
+                for ii = 1:numel(v)
+                    tmp = [tmp normalizeChannelChoiceListLocal(app, v{ii})]; %#ok<AGROW>
+                end
+                names = unique(tmp, 'stable');
+                return;
+            end
+            if isnumeric(v)
+                vals = double(v(:)');
+                vals = vals(isfinite(vals));
+                for ii = 1:numel(vals)
+                    names{end+1} = num2str(vals(ii)); %#ok<AGROW>
+                end
+            end
+        end
+
+        function list = normalizeParamNameListLocal(app, v) %#ok<INUSD>
+            list = {};
+            if isempty(v)
+                return;
+            end
+            if ischar(v) || isstring(v)
+                list = cellstr(string(v(:)));
+                list = lower(strtrim(list));
+                list = list(~cellfun(@isempty, list));
+                return;
+            end
+            if iscell(v)
+                tmp = cell(1, numel(v));
+                for ii = 1:numel(v)
+                    if isempty(v{ii})
+                        tmp{ii} = '';
+                    else
+                        tmp{ii} = lower(strtrim(char(string(v{ii}))));
+                    end
+                end
+                list = tmp(~cellfun(@isempty, tmp));
+            end
+        end
+
+        function idx = rowFromNode(app, node) %#ok<INUSD>
+            idx = find(strcmp({app.Data.pipelineSpec.nodes.id}, char(string(node.id))), 1, 'first');
         end
 
         function shallowObj = resolveSelectedProject(app)
@@ -1176,6 +1922,7 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             row = sel(1,1);
             app.Data.selectedNode = row;
             updateParamTable(app, row);
+            updateHubStatusUi(app);
         end
 
         function NodeTableCellEdit(app, event)
@@ -1191,6 +1938,7 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             data = app.NodeTable.Data;
             data{row,1} = logical(event.NewData);
             app.NodeTable.Data = data;
+            updateHubStatusUi(app);
             markDirty(app, true);
         end
 
@@ -1201,7 +1949,7 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             end
             row = idx(1);
             col = idx(2);
-            if col ~= 2
+            if col ~= 4
                 return;
             end
             if isempty(app.Data.selectedNode)
@@ -1211,36 +1959,37 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             nodeRow = app.Data.selectedNode;
             p = app.Data.nodeParams{nodeRow};
             if ~isstruct(p)
+                p = struct();
+            end
+
+            if isempty(app.CurrentRunParamRows) || row > numel(app.CurrentRunParamRows)
                 return;
             end
 
-            data = app.ParamTable.Data;
-            if row > size(data,1)
-                return;
-            end
-            scope = char(string(data{row,1}));
-            if strcmpi(scope, 'Inherited')
-                updateParamTable(app, nodeRow);
-                return;
-            end
-
-            key = char(string(data{row,2}));
-            oldVal = [];
-            if isfield(p, key)
-                oldVal = p.(key);
-            end
+            meta = app.CurrentRunParamRows(row);
+            key = meta.key;
             rawStr = strtrim(char(string(event.NewData)));
             if isempty(rawStr) || strcmpi(rawStr, '<inherit>')
-                p.(key) = getRunDefaultValue(app, nodeRow, key);
-            else
-                typeRef = oldVal;
-                if isempty(typeRef)
-                    tpl = getTemplateParams(app, nodeRow);
-                    if isstruct(tpl) && isfield(tpl, key)
-                        typeRef = tpl.(key);
-                    end
+                if isfield(p, key)
+                    p = rmfield(p, key);
                 end
-                p.(key) = parseDisplayValue(app, event.NewData, typeRef);
+            else
+                typeRef = meta.templateRaw;
+                if isempty(typeRef)
+                    typeRef = meta.defaultRaw;
+                end
+                if strcmp(meta.storageKind, 'choicePayload')
+                    newVal = applyChoicePayloadSelectionLocal(app, typeRef, event.NewData);
+                else
+                    newVal = parseDisplayValue(app, event.NewData, typeRef);
+                end
+                if shouldClearRunOverride(app, nodeRow, key, newVal, meta)
+                    if isfield(p, key)
+                        p = rmfield(p, key);
+                    end
+                else
+                    p.(key) = newVal;
+                end
             end
             app.Data.nodeParams{nodeRow} = p;
 
@@ -1248,94 +1997,48 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             markDirty(app, true);
         end
 
-        function commitVisibleParamTable(app)
-            if isempty(app.Data.selectedNode)
+        function ParamTableSelectionChanged(app, event)
+            sel = app.ParamTable.Selection;
+            if isempty(sel) || size(sel,1) ~= 1 || sel(1,2) ~= 4 || isempty(app.Data.selectedNode)
+                return;
+            end
+
+            row = sel(1,1);
+            if isempty(app.CurrentRunParamRows) || row > numel(app.CurrentRunParamRows)
+                return;
+            end
+
+            meta = app.CurrentRunParamRows(row);
+            if ~strcmp(meta.kind, 'choice')
                 return;
             end
 
             nodeRow = app.Data.selectedNode;
-            if nodeRow < 1 || nodeRow > numel(app.Data.nodeParams)
-                return;
-            end
-
-            data = app.ParamTable.Data;
-            if isempty(data) || size(data,2) < 3
-                return;
-            end
-
-            tpl = getTemplateParams(app, nodeRow);
+            node = app.Data.pipelineSpec.nodes(nodeRow);
             p = app.Data.nodeParams{nodeRow};
             if ~isstruct(p)
                 p = struct();
             end
 
-            rowKeys = strings(size(data,1),1);
-            rowScopes = strings(size(data,1),1);
-            rowVals = strings(size(data,1),1);
-            for ii = 1:size(data,1)
-                rowScopes(ii) = string(data{ii,1});
-                rowKeys(ii) = string(data{ii,2});
-                rowVals(ii) = string(data{ii,3});
+            [newVal, applied] = chooseRunParamValueForRow(app, nodeRow, node, meta, p);
+            if ~applied
+                return;
             end
 
-            % First commit explicit Run rows.
-            for ii = 1:size(data,1)
-                if ~strcmpi(rowScopes(ii), "Run")
-                    continue;
+            if shouldClearRunOverride(app, nodeRow, meta.key, newVal, meta)
+                if isfield(p, meta.key)
+                    p = rmfield(p, meta.key);
                 end
-                key = char(rowKeys(ii));
-                rawStr = strtrim(char(rowVals(ii)));
-                if isempty(rawStr) || strcmpi(rawStr, '<inherit>')
-                    p.(key) = getRunDefaultValue(app, nodeRow, key);
-                    continue;
-                end
-
-                typeRef = [];
-                if isfield(p, key) && ~isempty(p.(key))
-                    typeRef = p.(key);
-                elseif isstruct(tpl) && isfield(tpl, key)
-                    typeRef = tpl.(key);
-                end
-                p.(key) = parseDisplayValue(app, rawStr, typeRef);
+            else
+                p.(meta.key) = newVal;
             end
-
-            % If a Template row was edited away from the template value while the
-            % corresponding Run row still shows <inherit>, treat that as an intended
-            % run override.
-            runKeys = rowKeys(strcmpi(rowScopes, "Run"));
-            for ii = 1:size(data,1)
-                if ~strcmpi(rowScopes(ii), "Template")
-                    continue;
-                end
-                key = char(rowKeys(ii));
-                if ~isstruct(tpl) || ~isfield(tpl, key)
-                    continue;
-                end
-
-                runMatch = find(strcmpi(runKeys, key), 1);
-                if isempty(runMatch)
-                    continue;
-                end
-
-                runRow = find(strcmpi(rowScopes, "Run") & strcmpi(rowKeys, key), 1);
-                if isempty(runRow)
-                    continue;
-                end
-                runRaw = strtrim(char(rowVals(runRow)));
-                if ~(isempty(runRaw) || strcmpi(runRaw, '<inherit>'))
-                    continue;
-                end
-
-                tplDisplay = char(string(valueToDisplay(app, tpl.(key))));
-                tplRaw = strtrim(char(rowVals(ii)));
-                if strcmp(tplRaw, tplDisplay)
-                    continue;
-                end
-
-                p.(key) = parseDisplayValue(app, tplRaw, tpl.(key));
-            end
-
             app.Data.nodeParams{nodeRow} = p;
+            updateParamTable(app, nodeRow);
+            markDirty(app, true);
+        end
+
+        function commitVisibleParamTable(app)
+            % Edits are committed immediately by the parameter table callbacks.
         end
 
         function OpenNodeGUIButtonPushed(app, event)
@@ -1391,7 +2094,7 @@ classdef pipelineRunGUI < matlab.apps.AppBase
 
         function updatePythonEnvUi(app)
             mode = char(string(app.PythonEnvModeDropDown.Value));
-            isCustom = strcmpi(mode, 'custom conda env');
+            isCustom = strcmpi(mode, 'Custom conda env');
             if isCustom
                 app.PythonEnvNameEditField.Enable = 'on';
                 app.PythonEnvNameEditFieldLabel.Enable = 'on';
@@ -1399,17 +2102,17 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             else
                 app.PythonEnvNameEditField.Enable = 'off';
                 app.PythonEnvNameEditFieldLabel.Enable = 'off';
-                app.PythonEnvNameEditField.Placeholder = 'Not used with detecdiv_python';
+                app.PythonEnvNameEditField.Placeholder = 'Not used with Default detecdiv_python';
             end
         end
 
         function pyCfg = buildPythonRunConfig(app)
             modeLabel = char(string(app.PythonEnvModeDropDown.Value));
             pyCfg = struct('mode', 'default', 'envName', '', 'preflight', true);
-            if strcmpi(modeLabel, 'custom conda env')
+            if strcmpi(modeLabel, 'Custom conda env')
                 envName = strtrim(char(string(app.PythonEnvNameEditField.Value)));
                 if isempty(envName)
-                    error('Enter a conda environment name or choose detecdiv_python.');
+                    error('Enter a conda environment name or choose Default detecdiv_python.');
                 end
                 pyCfg.mode = 'custom';
                 pyCfg.envName = envName;
@@ -1420,11 +2123,11 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             key = lower(strtrim(char(string(policy))));
             switch key
                 case 'force_gpu'
-                    label = 'Force GPU';
+                    label = 'Force GPU where supported';
                 case 'force_cpu'
                     label = 'Force CPU';
                 otherwise
-                    label = '<module default>';
+                    label = 'Use each module default';
             end
         end
 
@@ -1441,7 +2144,7 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             hasRun = app.Data.editMode && isa(app.Data.runObj, 'pipelineRun') && ~isempty(app.Data.runObj);
             isHubMode = false;
             try
-                isHubMode = strcmpi(char(string(app.ExecutionModeDropDown.Value)), 'Hub');
+                isHubMode = strcmpi(char(string(app.ExecutionModeDropDown.Value)), 'Detecdiv hub');
             catch
             end
             if hasRun && isHubMode
@@ -1474,7 +2177,73 @@ classdef pipelineRunGUI < matlab.apps.AppBase
                 end
             catch
             end
-            app.HubStatusLabel.Text = label;
+            runSummary = buildRunSummaryText(app);
+            if isempty(runSummary)
+                app.HubStatusLabel.Text = label;
+            else
+                app.HubStatusLabel.Text = [runSummary ' | ' label];
+            end
+        end
+
+        function txt = buildRunSummaryText(app)
+            txt = '';
+            try
+                if isempty(app.NodeTable) || isempty(app.NodeTable.Data)
+                    return;
+                end
+                data = app.NodeTable.Data;
+                if size(data,2) < 1 || isempty(data)
+                    return;
+                end
+
+                selected = false(size(data,1), 1);
+                try
+                    selected = cell2mat(data(:,1));
+                catch
+                end
+                selectedCount = nnz(selected);
+                totalCount = numel(selected);
+
+                src = 'raw data';
+                try
+                    src = lower(char(string(app.InputSourceDropDown.Value)));
+                catch
+                end
+                switch src
+                    case 'start from raw data (dataloader)'
+                        src = 'raw data';
+                    case 'reuse existing project fovs'
+                        src = 'existing project FOVs';
+                    case 'reuse existing rois'
+                        src = 'existing ROIs';
+                    case 'reuse existing masks'
+                        src = 'existing masks';
+                    case 'reuse existing data series'
+                        src = 'existing data series';
+                end
+
+                modeTxt = 'local';
+                try
+                    modeTxt = lower(char(string(app.ExecutionModeDropDown.Value)));
+                    if strcmp(modeTxt, 'detecdiv hub')
+                        modeTxt = 'hub';
+                    end
+                catch
+                end
+
+                stateTxt = 'ready';
+                if selectedCount == 0
+                    stateTxt = 'no nodes selected';
+                elseif app.Data.dirty
+                    stateTxt = 'unsaved';
+                elseif isempty(app.Data.runObj) && ~app.Data.editMode
+                    stateTxt = 'new';
+                end
+
+                txt = sprintf('Run: %d/%d nodes, %s, %s, %s', selectedCount, totalCount, src, modeTxt, stateTxt);
+            catch
+                txt = '';
+            end
         end
 
         function RunOnHubButtonPushed(app, event) %#ok<INUSD>
@@ -1662,9 +2431,9 @@ classdef pipelineRunGUI < matlab.apps.AppBase
         function policy = normalizeGpuPolicyLabel(app, value) %#ok<INUSD>
             policy = lower(strtrim(char(string(value))));
             switch policy
-                case {'', '<module default>', 'module default', 'default'}
+                case {'', 'use each module default', 'module default', 'default'}
                     policy = 'module_default';
-                case {'force gpu', 'gpu'}
+                case {'force gpu where supported', 'force gpu', 'gpu'}
                     policy = 'force_gpu';
                 case {'force cpu', 'cpu'}
                     policy = 'force_cpu';
@@ -1676,7 +2445,7 @@ classdef pipelineRunGUI < matlab.apps.AppBase
         function mode = normalizeExecutionModeLabel(app, value) %#ok<INUSD>
             mode = lower(strtrim(char(string(value))));
             switch mode
-                case {'hub', 'remote', 'run on hub'}
+                case {'detecdiv hub', 'hub', 'remote', 'run on hub'}
                     mode = 'hub';
                 otherwise
                     mode = 'local';
@@ -1687,9 +2456,121 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             key = lower(strtrim(char(string(mode))));
             switch key
                 case {'hub', 'remote', 'run on hub'}
-                    label = 'Hub';
+                    label = 'Detecdiv hub';
                 otherwise
-                    label = 'Local';
+                    label = 'Local MATLAB session';
+            end
+        end
+
+        function label = runPolicyToLabel(app, value) %#ok<INUSD>
+            key = lower(strtrim(char(string(value))));
+            switch key
+                case 'restart'
+                    label = 'Restart from scratch';
+                otherwise
+                    label = 'Resume previous progress';
+            end
+        end
+
+        function key = normalizeRunPolicyLabel(app, value) %#ok<INUSD>
+            label = lower(strtrim(char(string(value))));
+            switch label
+                case {'restart from scratch', 'restart'}
+                    key = 'restart';
+                otherwise
+                    key = 'resume';
+            end
+        end
+
+        function label = existingPolicyToLabel(app, value) %#ok<INUSD>
+            key = lower(strtrim(char(string(value))));
+            switch key
+                case 'replace'
+                    label = 'Replace existing outputs';
+                case 'append'
+                    label = 'Append alongside existing outputs';
+                case 'skip'
+                    label = 'Skip when outputs exist';
+                case 'error'
+                    label = 'Stop when outputs exist';
+                case 'upsert'
+                    label = 'Upsert when supported';
+                otherwise
+                    label = 'Use each module default';
+            end
+        end
+
+        function key = normalizeExistingPolicyLabel(app, value) %#ok<INUSD>
+            label = lower(strtrim(char(string(value))));
+            switch label
+                case 'replace existing outputs'
+                    key = 'replace';
+                case 'append alongside existing outputs'
+                    key = 'append';
+                case 'skip when outputs exist'
+                    key = 'skip';
+                case 'stop when outputs exist'
+                    key = 'error';
+                case 'upsert when supported'
+                    key = 'upsert';
+                otherwise
+                    key = 'module_default';
+            end
+        end
+
+        function label = cachePolicyToLabel(app, value) %#ok<INUSD>
+            key = lower(strtrim(char(string(value))));
+            switch key
+                case 'memory'
+                    label = 'Prefer memory cache';
+                case 'disk'
+                    label = 'Prefer disk cache';
+                otherwise
+                    label = 'Automatic';
+            end
+        end
+
+        function key = normalizeCachePolicyLabel(app, value) %#ok<INUSD>
+            label = lower(strtrim(char(string(value))));
+            switch label
+                case 'prefer memory cache'
+                    key = 'memory';
+                case 'prefer disk cache'
+                    key = 'disk';
+                otherwise
+                    key = 'auto';
+            end
+        end
+
+        function label = inputSourceToLabel(app, value) %#ok<INUSD>
+            key = lower(strtrim(char(string(value))));
+            switch key
+                case 'existing project fovs'
+                    label = 'Reuse existing project FOVs';
+                case 'existing rois'
+                    label = 'Reuse existing ROIs';
+                case 'existing masks'
+                    label = 'Reuse existing masks';
+                case 'existing dataseries'
+                    label = 'Reuse existing data series';
+                otherwise
+                    label = 'Start from raw data (dataloader)';
+            end
+        end
+
+        function key = normalizeInputSourceLabel(app, value) %#ok<INUSD>
+            label = lower(strtrim(char(string(value))));
+            switch label
+                case 'reuse existing project fovs'
+                    key = 'Existing project FOVs';
+                case 'reuse existing rois'
+                    key = 'Existing ROIs';
+                case 'reuse existing masks'
+                    key = 'Existing masks';
+                case 'reuse existing data series'
+                    key = 'Existing dataSeries';
+                otherwise
+                    key = 'Pipeline start (dataloader)';
             end
         end
 
@@ -1729,7 +2610,7 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             selectedMask = cell2mat(app.NodeTable.Data(:,1));
             inputSource = char(string(app.InputSourceDropDown.Value));
             selectedFovs = parseIndexSelection(app, app.FovSelectionEditField.Value);
-            if ~strcmpi(inputSource, 'Pipeline start (dataloader)')
+            if ~strcmpi(inputSource, 'Start from raw data (dataloader)')
                 hasSelectedLoader = false;
                 for ii = 1:numel(nodes)
                     if selectedMask(ii) && strcmpi(char(string(nodes(ii).type)), 'dataloader')
@@ -1755,20 +2636,20 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             ctx.shallowObj = shallowObj;
             ctx.run = struct();
             ctx.run.runId = runId;
-            ctx.run.runPolicy = char(string(app.RunPolicyDropDown.Value));
+            ctx.run.runPolicy = normalizeRunPolicyLabel(app, app.RunPolicyDropDown.Value);
             ctx.run.resume = strcmpi(ctx.run.runPolicy, 'resume');
             ctx.run.gpuPolicy = normalizeGpuPolicyLabel(app, app.GpuPolicyDropDown.Value);
             ctx.run.executionMode = normalizeExecutionModeLabel(app, app.ExecutionModeDropDown.Value);
-            ctx.run.inputSource = inputSource;
+            ctx.run.inputSource = normalizeInputSourceLabel(app, inputSource);
             ctx.run.selectedNodes = {};
             ctx.run.nodeParams = struct('id',{},'params',{});
             ctx.executionMode = ctx.run.executionMode;
             ctx.io = struct();
-            existingPolicy = char(string(app.ExistingPolicyDropDown.Value));
-            if ~strcmpi(existingPolicy, '<module default>')
+            existingPolicy = normalizeExistingPolicyLabel(app, app.ExistingPolicyDropDown.Value);
+            if ~strcmpi(existingPolicy, 'module_default')
                 ctx.io.existingPolicy = existingPolicy;
             end
-            ctx.io.cachePolicy = char(string(app.CachePolicyDropDown.Value));
+            ctx.io.cachePolicy = normalizeCachePolicyLabel(app, app.CachePolicyDropDown.Value);
             ctx.store = struct('cacheMode', ctx.io.cachePolicy);
             ctx.sel = struct();
             ctx.sel.fovs = selectedFovs;
@@ -1920,14 +2801,14 @@ classdef pipelineRunGUI < matlab.apps.AppBase
         function updateRunSourceSelectionUi(app)
             src = char(string(app.InputSourceDropDown.Value));
             switch lower(src)
-                case 'pipeline start (dataloader)'
+                case 'start from raw data (dataloader)'
                     app.FovSelectionEditFieldLabel.Text = 'Selection';
-                    app.FovSelectionEditField.Placeholder = 'Not used when starting from the dataloader';
+                    app.FovSelectionEditField.Placeholder = 'Not used when starting from raw data';
                     app.FovSelectionEditField.Enable = 'off';
                     selTip = { ...
                         'Not used for this run source.', ...
                         'When starting from the dataloader, the pipeline decides the FOV set itself.'};
-                case 'existing project fovs'
+                case 'reuse existing project fovs'
                     app.FovSelectionEditFieldLabel.Text = 'Project FOVs';
                     app.FovSelectionEditField.Placeholder = 'empty = all | ex: 1 3 5 or 1:7';
                     app.FovSelectionEditField.Enable = 'on';
@@ -1935,21 +2816,21 @@ classdef pipelineRunGUI < matlab.apps.AppBase
                         'Subset of project FOVs to use as input.', ...
                         'Leave empty to use all FOVs.', ...
                         'Examples: 1:7 or 1 3 5'};
-                case 'existing rois'
+                case 'reuse existing rois'
                     app.FovSelectionEditFieldLabel.Text = 'ROI source';
                     app.FovSelectionEditField.Placeholder = 'FOVs whose existing ROI sets seed the run';
                     app.FovSelectionEditField.Enable = 'on';
                     selTip = { ...
                         'Subset of project FOVs whose existing ROIs will seed the run.', ...
                         'Leave empty to use all project FOVs that already contain ROIs.'};
-                case 'existing masks'
+                case 'reuse existing masks'
                     app.FovSelectionEditFieldLabel.Text = 'Mask source';
                     app.FovSelectionEditField.Placeholder = 'FOVs whose existing masks seed the run';
                     app.FovSelectionEditField.Enable = 'on';
                     selTip = { ...
                         'Subset of project FOVs whose existing masks will seed the run.', ...
                         'Leave empty to use all compatible project FOVs.'};
-                case 'existing dataseries'
+                case 'reuse existing data series'
                     app.FovSelectionEditFieldLabel.Text = 'DataSeries source';
                     app.FovSelectionEditField.Placeholder = 'FOVs whose existing dataseries seed the run';
                     app.FovSelectionEditField.Enable = 'on';
@@ -2000,7 +2881,7 @@ classdef pipelineRunGUI < matlab.apps.AppBase
                 msg = 'No valid project selected.';
                 return;
             end
-            if strcmpi(inputSource, 'Pipeline start (dataloader)')
+            if strcmpi(inputSource, 'Start from raw data (dataloader)')
                 return;
             end
 
@@ -2013,19 +2894,19 @@ classdef pipelineRunGUI < matlab.apps.AppBase
 
             rois = collectProjectRois(app, fovs);
             switch lower(char(string(inputSource)))
-                case 'existing project fovs'
+                case 'reuse existing project fovs'
                     return;
-                case 'existing rois'
+                case 'reuse existing rois'
                     ok = ~isempty(rois);
                     if ~ok
                         msg = 'No ROI found in the selected project FOVs.';
                     end
-                case 'existing masks'
+                case 'reuse existing masks'
                     ok = ~isempty(collectProjectMasks(app, rois));
                     if ~ok
                         msg = 'No mask-like ROI channels found in the selected project FOVs.';
                     end
-                case 'existing dataseries'
+                case 'reuse existing data series'
                     ok = ~isempty(collectProjectDataSeries(app, rois));
                     if ~ok
                         msg = 'No dataseries found in the selected project FOVs.';
@@ -2108,6 +2989,27 @@ classdef pipelineRunGUI < matlab.apps.AppBase
                 ds = unique(ds, 'stable');
             end
         end
+
+        function val = getfielddefault(varargin)
+            if nargin == 4
+                s = varargin{2};
+                f = varargin{3};
+                default = varargin{4};
+            elseif nargin == 3
+                s = varargin{1};
+                f = varargin{2};
+                default = varargin{3};
+            else
+                val = [];
+                return;
+            end
+
+            if isstruct(s) && isfield(s, f)
+                val = s.(f);
+            else
+                val = default;
+            end
+        end
     end
 
     methods (Access = private)
@@ -2149,35 +3051,35 @@ classdef pipelineRunGUI < matlab.apps.AppBase
 
             app.RunPolicyDropDownLabel = uilabel(app.UIFigure);
             app.RunPolicyDropDownLabel.HorizontalAlignment = 'right';
-            app.RunPolicyDropDownLabel.Position = [14 590 68 22];
-            app.RunPolicyDropDownLabel.Text = 'Run policy';
+            app.RunPolicyDropDownLabel.Position = [8 590 74 22];
+            app.RunPolicyDropDownLabel.Text = 'Rerun mode';
 
             app.RunPolicyDropDown = uidropdown(app.UIFigure);
-            app.RunPolicyDropDown.Items = {'resume', 'restart'};
+            app.RunPolicyDropDown.Items = {'Resume previous progress', 'Restart from scratch'};
             app.RunPolicyDropDown.Position = [96 590 120 22];
-            app.RunPolicyDropDown.Value = 'resume';
+            app.RunPolicyDropDown.Value = 'Resume previous progress';
             app.RunPolicyDropDown.ValueChangedFcn = createCallbackFcn(app, @RunPolicyDropDownValueChanged, true);
 
             app.ExistingPolicyDropDownLabel = uilabel(app.UIFigure);
             app.ExistingPolicyDropDownLabel.HorizontalAlignment = 'right';
-            app.ExistingPolicyDropDownLabel.Position = [232 590 82 22];
-            app.ExistingPolicyDropDownLabel.Text = 'Existing data';
+            app.ExistingPolicyDropDownLabel.Position = [216 590 98 22];
+            app.ExistingPolicyDropDownLabel.Text = 'Existing outputs';
 
             app.ExistingPolicyDropDown = uidropdown(app.UIFigure);
-            app.ExistingPolicyDropDown.Items = {'<module default>', 'replace', 'append', 'skip', 'error'};
+            app.ExistingPolicyDropDown.Items = {'Use each module default', 'Replace existing outputs', 'Append alongside existing outputs', 'Skip when outputs exist', 'Stop when outputs exist', 'Upsert when supported'};
             app.ExistingPolicyDropDown.Position = [328 590 135 22];
-            app.ExistingPolicyDropDown.Value = '<module default>';
+            app.ExistingPolicyDropDown.Value = 'Use each module default';
             app.ExistingPolicyDropDown.ValueChangedFcn = createCallbackFcn(app, @ExistingPolicyDropDownValueChanged, true);
 
             app.CachePolicyDropDownLabel = uilabel(app.UIFigure);
             app.CachePolicyDropDownLabel.HorizontalAlignment = 'right';
-            app.CachePolicyDropDownLabel.Position = [479 590 75 22];
-            app.CachePolicyDropDownLabel.Text = 'ROI cache';
+            app.CachePolicyDropDownLabel.Position = [472 590 82 22];
+            app.CachePolicyDropDownLabel.Text = 'ROI cache mode';
 
             app.CachePolicyDropDown = uidropdown(app.UIFigure);
-            app.CachePolicyDropDown.Items = {'auto', 'memory', 'disk'};
+            app.CachePolicyDropDown.Items = {'Automatic', 'Prefer memory cache', 'Prefer disk cache'};
             app.CachePolicyDropDown.Position = [568 590 120 22];
-            app.CachePolicyDropDown.Value = 'auto';
+            app.CachePolicyDropDown.Value = 'Automatic';
             app.CachePolicyDropDown.ValueChangedFcn = createCallbackFcn(app, @CachePolicyDropDownValueChanged, true);
 
             app.GpuPolicyDropDownLabel = uilabel(app.UIFigure);
@@ -2186,36 +3088,36 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             app.GpuPolicyDropDownLabel.Text = 'GPU';
 
             app.GpuPolicyDropDown = uidropdown(app.UIFigure);
-            app.GpuPolicyDropDown.Items = {'<module default>', 'Force GPU', 'Force CPU'};
+            app.GpuPolicyDropDown.Items = {'Use each module default', 'Force GPU where supported', 'Force CPU'};
             app.GpuPolicyDropDown.Position = [774 590 106 22];
-            app.GpuPolicyDropDown.Value = '<module default>';
+            app.GpuPolicyDropDown.Value = 'Use each module default';
             app.GpuPolicyDropDown.ValueChangedFcn = createCallbackFcn(app, @GpuPolicyDropDownValueChanged, true);
 
             app.ExecutionModeDropDownLabel = uilabel(app.UIFigure);
             app.ExecutionModeDropDownLabel.HorizontalAlignment = 'right';
-            app.ExecutionModeDropDownLabel.Position = [700 554 62 22];
+            app.ExecutionModeDropDownLabel.Position = [694 554 68 22];
             app.ExecutionModeDropDownLabel.Text = 'Execution';
 
             app.ExecutionModeDropDown = uidropdown(app.UIFigure);
-            app.ExecutionModeDropDown.Items = {'Local', 'Hub'};
+            app.ExecutionModeDropDown.Items = {'Local MATLAB session', 'Detecdiv hub'};
             app.ExecutionModeDropDown.Position = [774 554 106 22];
-            app.ExecutionModeDropDown.Value = 'Local';
+            app.ExecutionModeDropDown.Value = 'Local MATLAB session';
             app.ExecutionModeDropDown.ValueChangedFcn = createCallbackFcn(app, @ExecutionModeDropDownValueChanged, true);
 
             app.InputSourceDropDownLabel = uilabel(app.UIFigure);
             app.InputSourceDropDownLabel.HorizontalAlignment = 'right';
-            app.InputSourceDropDownLabel.Position = [13 554 72 22];
-            app.InputSourceDropDownLabel.Text = 'Run source';
+            app.InputSourceDropDownLabel.Position = [28 554 57 22];
+            app.InputSourceDropDownLabel.Text = 'Start from';
 
             app.InputSourceDropDown = uidropdown(app.UIFigure);
             app.InputSourceDropDown.Items = { ...
-                'Pipeline start (dataloader)', ...
-                'Existing project FOVs', ...
-                'Existing ROIs', ...
-                'Existing masks', ...
-                'Existing dataSeries'};
+                'Start from raw data (dataloader)', ...
+                'Reuse existing project FOVs', ...
+                'Reuse existing ROIs', ...
+                'Reuse existing masks', ...
+                'Reuse existing data series'};
             app.InputSourceDropDown.Position = [96 554 180 22];
-            app.InputSourceDropDown.Value = 'Pipeline start (dataloader)';
+            app.InputSourceDropDown.Value = 'Start from raw data (dataloader)';
             app.InputSourceDropDown.ValueChangedFcn = createCallbackFcn(app, @InputSourceDropDownValueChanged, true);
 
             app.FovSelectionEditFieldLabel = uilabel(app.UIFigure);
@@ -2230,13 +3132,13 @@ classdef pipelineRunGUI < matlab.apps.AppBase
 
             app.PythonEnvModeDropDownLabel = uilabel(app.UIFigure);
             app.PythonEnvModeDropDownLabel.HorizontalAlignment = 'right';
-            app.PythonEnvModeDropDownLabel.Position = [12 518 73 22];
-            app.PythonEnvModeDropDownLabel.Text = 'Python env';
+            app.PythonEnvModeDropDownLabel.Position = [8 518 77 22];
+            app.PythonEnvModeDropDownLabel.Text = 'Python runtime';
 
             app.PythonEnvModeDropDown = uidropdown(app.UIFigure);
-            app.PythonEnvModeDropDown.Items = {'detecdiv_python', 'custom conda env'};
+            app.PythonEnvModeDropDown.Items = {'Default detecdiv_python', 'Custom conda env'};
             app.PythonEnvModeDropDown.Position = [96 518 180 22];
-            app.PythonEnvModeDropDown.Value = 'detecdiv_python';
+            app.PythonEnvModeDropDown.Value = 'Default detecdiv_python';
             app.PythonEnvModeDropDown.ValueChangedFcn = createCallbackFcn(app, @PythonEnvModeDropDownValueChanged, true);
 
             app.PythonEnvNameEditFieldLabel = uilabel(app.UIFigure);
@@ -2254,22 +3156,25 @@ classdef pipelineRunGUI < matlab.apps.AppBase
             app.NodeTableLabel.Text = 'Pipeline nodes';
 
             app.NodeTable = uitable(app.UIFigure);
-            app.NodeTable.ColumnName = {'Select'; 'Node'; 'Type'; 'Package'};
+            app.NodeTable.ColumnName = {'Select'; 'Node'; 'Family'; 'Stage'; 'Package'; 'Binding'};
             app.NodeTable.RowName = {};
-            app.NodeTable.ColumnEditable = [true false false false];
+            app.NodeTable.ColumnEditable = [true false false false false false];
+            app.NodeTable.ColumnWidth = {56 144 152 96 118 'auto'};
             app.NodeTable.CellEditCallback = createCallbackFcn(app, @NodeTableCellEdit, true);
             app.NodeTable.SelectionChangedFcn = createCallbackFcn(app, @NodeTableSelectionChanged, true);
             app.NodeTable.Position = [20 274 860 205];
 
             app.ParamTableLabel = uilabel(app.UIFigure);
             app.ParamTableLabel.Position = [20 242 220 22];
-            app.ParamTableLabel.Text = 'Template params and run overrides';
+            app.ParamTableLabel.Text = 'Template values and run overrides';
 
             app.ParamTable = uitable(app.UIFigure);
-            app.ParamTable.ColumnName = {'Scope'; 'Parameter'; 'Value'};
+            app.ParamTable.ColumnName = {'Section'; 'Parameter'; 'Template'; 'Run override'; 'Notes'};
             app.ParamTable.RowName = {};
-            app.ParamTable.ColumnEditable = [false false true];
+            app.ParamTable.ColumnEditable = [false false false true false];
+            app.ParamTable.ColumnWidth = {88 156 196 178 'auto'};
             app.ParamTable.CellEditCallback = createCallbackFcn(app, @ParamTableCellEdit, true);
+            app.ParamTable.SelectionChangedFcn = createCallbackFcn(app, @ParamTableSelectionChanged, true);
             app.ParamTable.Position = [20 64 860 170];
 
             app.OpenNodeGUIButton = uibutton(app.UIFigure, 'push');

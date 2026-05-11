@@ -53,6 +53,11 @@ classdef pipelineGUI < matlab.apps.AppBase
         SelectedLibraryRow double = NaN
         Context struct = struct()
         Dirty logical = false
+        LastValidationReport struct = struct()
+        LastSolverIssues struct = struct('issues', [], 'table', {{}}, 'summary', struct(), 'hasBlocking', false)
+        CurrentModuleParamRows struct = struct( ...
+            'section',{},'label',{},'key',{},'value',{},'notes',{}, ...
+            'editable',{},'kind',{},'choiceItems',{},'allowMulti',{},'storageKind',{})
     end
 
     % Callbacks that handle component events
@@ -273,7 +278,7 @@ classdef pipelineGUI < matlab.apps.AppBase
             end
             row = idx(1);
             col = idx(2);
-            if col ~= 2
+            if col ~= 3
                 return;
             end
             if isempty(app.SelectedModules)
@@ -284,14 +289,12 @@ classdef pipelineGUI < matlab.apps.AppBase
             if modIdx > numel(app.Data.nodes)
                 return;
             end
-
-            data = app.UIModuleParametersTable.Data;
-            if isempty(data) || row > size(data,1)
+            if isempty(app.CurrentModuleParamRows) || row > numel(app.CurrentModuleParamRows)
                 return;
             end
 
-            key = char(string(data{row,1}));
-            if isReadOnlyParamKey(app, key)
+            meta = app.CurrentModuleParamRows(row);
+            if ~logical(meta.editable) || isempty(meta.key)
                 updateParamsTable(app, modIdx);
                 return;
             end
@@ -303,10 +306,15 @@ classdef pipelineGUI < matlab.apps.AppBase
             end
 
             oldVal = '';
-            if isfield(node.params, key)
-                oldVal = node.params.(key);
+            if isfield(node.params, meta.key)
+                oldVal = node.params.(meta.key);
             end
-            node.params.(key) = parseParamValueFromTable(app, rawVal, oldVal);
+
+            if strcmp(meta.storageKind, 'choicePayload')
+                node.params.(meta.key) = applyChoicePayloadSelection(app, oldVal, rawVal);
+            else
+                node.params.(meta.key) = parseParamValueFromTable(app, rawVal, oldVal);
+            end
             app.Data.nodes(modIdx) = node;
 
             markDirty(app, true);
@@ -320,7 +328,7 @@ classdef pipelineGUI < matlab.apps.AppBase
             if isempty(selection) || size(selection,1) ~= 1
                 return;
             end
-            if selection(1,2) ~= 2 || isempty(app.SelectedModules)
+            if selection(1,2) ~= 3 || isempty(app.SelectedModules)
                 return;
             end
 
@@ -328,20 +336,18 @@ classdef pipelineGUI < matlab.apps.AppBase
             if modIdx < 1 || modIdx > numel(app.Data.nodes)
                 return;
             end
-
-            data = app.UIModuleParametersTable.Data;
             row = selection(1,1);
-            if isempty(data) || row > size(data,1)
+            if isempty(app.CurrentModuleParamRows) || row > numel(app.CurrentModuleParamRows)
                 return;
             end
 
             node = app.Data.nodes(modIdx);
-            key = char(string(data{row,1}));
-            if ~isChannelSelectorParam(app, node, key)
+            meta = app.CurrentModuleParamRows(row);
+            if ~logical(meta.editable) || ~strcmp(meta.kind, 'choice')
                 return;
             end
 
-            [newVal, applied] = chooseChannelSelectorForNode(app, node, key);
+            [newVal, applied] = chooseParamValueForRow(app, node, meta);
             if ~applied
                 return;
             end
@@ -349,7 +355,7 @@ classdef pipelineGUI < matlab.apps.AppBase
             if ~isfield(node,'params') || isempty(node.params)
                 node.params = struct();
             end
-            node.params.(key) = newVal;
+            node.params.(meta.key) = newVal;
             app.Data.nodes(modIdx) = node;
 
             markDirty(app, true);
@@ -563,7 +569,9 @@ classdef pipelineGUI < matlab.apps.AppBase
                 'char' ...
             };
 
-            app.UIModuleParametersTable.ColumnEditable = [false true];
+            app.UIModuleParametersTable.ColumnName = {'Section'; 'Parameter'; 'Value'; 'Notes'};
+            app.UIModuleParametersTable.ColumnEditable = [false false true false];
+            app.UIModuleParametersTable.ColumnWidth = {92 168 236 'auto'};
             app.UITable.ColumnEditable = [false false false false];
             app.UITable.ColumnName = {'Name'; 'Type'; 'Package'; 'Location'};
             app.UITable.SelectionChangedFcn = createCallbackFcn(app, @UITableSelectionChanged, true);
@@ -867,6 +875,14 @@ classdef pipelineGUI < matlab.apps.AppBase
             node.pkg = '';
             node.importMode = 'blank';
             node.layout = [pos(1) pos(2) 26 16];
+
+            if any(strcmpi(char(string(node.type)), {'processor','classifier'}))
+                node.pkg = promptModulePackageForType(app, char(string(node.type)));
+                if isempty(node.pkg)
+                    node.pkg = '';
+                end
+            end
+
             node.contract = makeNodeContract(app, node.type, node.pkg);
             [node.inputs, node.outputs] = ioFromContract(app, node.contract);
             node = normalizeLibraryNode(app, node);
@@ -1009,15 +1025,49 @@ classdef pipelineGUI < matlab.apps.AppBase
         function badge = buildNodeBadge(app, node)
             typeLabel = getDisplayFromType(app, getfielddefault(app, node, 'type', ''));
             pkg = char(string(getfielddefault(app, node, 'pkg', '')));
+            stageLabel = describeNodeStageLocal(app, node);
             typeLabel = strrep(char(string(typeLabel)), '_', '\_');
             pkg = strrep(pkg, '_', '\_');
+            stageLabel = strrep(char(string(stageLabel)), '_', '\_');
             if isempty(pkg)
                 badge = ['\it ' char(string(typeLabel))];
             else
                 badge = ['\it ' char(string(typeLabel)) ' - ' pkg];
             end
+            if ~isempty(stageLabel)
+                badge = [badge '   \rm[' stageLabel ']'];
+            end
             if nodeHasReference(app, node)
                 badge = [badge '   \bf[ref]'];
+            end
+        end
+
+        function txt = describeNodeStageLocal(app, node)
+            c = getNodeContract(app, node);
+            if ~isstruct(c) || ~isfield(c, 'parameters') || ~isstruct(c.parameters)
+                txt = '';
+                return;
+            end
+
+            configKeys = normalizeParamNameList(app, getfielddefault(app, c.parameters, 'fixed', {}));
+            configKeys = [configKeys normalizeParamNameList(app, getfielddefault(app, c.parameters, 'design', {}))]; %#ok<AGROW>
+            configKeys = [configKeys normalizeParamNameList(app, getfielddefault(app, c.parameters, 'template', {}))]; %#ok<AGROW>
+            configKeys = unique(configKeys(~cellfun(@isempty, configKeys)), 'stable');
+
+            runKeys = normalizeParamNameList(app, getfielddefault(app, c.parameters, 'run', {}));
+            runKeys = [runKeys normalizeParamNameList(app, getfielddefault(app, c.parameters, 'data', {}))]; %#ok<AGROW>
+            runKeys = unique(runKeys(~cellfun(@isempty, runKeys)), 'stable');
+
+            hasConfig = ~isempty(configKeys);
+            hasRun = ~isempty(runKeys);
+            if hasConfig && hasRun
+                txt = 'Config + Run';
+            elseif hasConfig
+                txt = 'Config';
+            elseif hasRun
+                txt = 'Run';
+            else
+                txt = '';
             end
         end
 
@@ -1035,6 +1085,9 @@ classdef pipelineGUI < matlab.apps.AppBase
             inL = gobjects(0);
             for k = 1:numel(c.in)
                 pname = c.in(k).name;
+                if strcmpi(getfielddefault(app, c.in(k), 'source', 'edge'), 'ctx')
+                    continue;
+                end
                 [x,y] = edgeAnchor(app, node, false, pname);
                 meta = struct('moduleIdx',idx,'isOut',false,'portName',char(string(pname)));
                 portColor = getPortDisplayColor(app, idx, false, pname);
@@ -1071,6 +1124,9 @@ classdef pipelineGUI < matlab.apps.AppBase
             outL = gobjects(0);
             for k = 1:numel(c.out)
                 pname = c.out(k).name;
+                if strcmpi(getfielddefault(app, c.out(k), 'source', 'edge'), 'ctx')
+                    continue;
+                end
                 [x,y] = edgeAnchor(app, node, true, pname);
                 meta = struct('moduleIdx',idx,'isOut',true,'portName',char(string(pname)));
                 portColor = getPortDisplayColor(app, idx, true, pname);
@@ -1335,6 +1391,7 @@ classdef pipelineGUI < matlab.apps.AppBase
                 drawModule(app, i);
             end
             redrawEdges(app);
+            fitPipelineSketchAxes(app);
             updateModuleListTable(app);
             refreshStatus(app);
         end
@@ -1372,8 +1429,84 @@ classdef pipelineGUI < matlab.apps.AppBase
                 [x1,y1] = edgeAnchor(app, n1, true,  getEdgeField(app, e,'fromPort',''));
                 [x2,y2] = edgeAnchor(app, n2, false, getEdgeField(app, e,'toPort',''));
 
-                h = plot(app.UIModulesAxes, [x1 x2], [y1 y2], '-', 'Color',[0 0 0], 'HitTest','off');
+                [edgeColor, lineStyle, edgeWidth, edgeLabel] = getEdgeVisualStyle(app, e, n1, n2);
+                h = plot(app.UIModulesAxes, [x1 x2], [y1 y2], '-', ...
+                    'Color',edgeColor, ...
+                    'LineStyle',lineStyle, ...
+                    'LineWidth',edgeWidth, ...
+                    'HitTest','off');
                 app.EdgeHandles(end+1) = h; %#ok<AGROW>
+
+                if ~isempty(edgeLabel)
+                    mx = (x1 + x2) / 2;
+                    my = (y1 + y2) / 2;
+                    ht = text(app.UIModulesAxes, mx, my + 1.2, edgeLabel, ...
+                        'HorizontalAlignment','center', ...
+                        'VerticalAlignment','bottom', ...
+                        'FontSize',9, ...
+                        'Color',edgeColor, ...
+                        'Interpreter','none', ...
+                        'HitTest','off');
+                    app.EdgeLabelHandles(end+1) = ht; %#ok<AGROW>
+                end
+            end
+        end
+
+        function [color, lineStyle, lineWidth, label] = getEdgeVisualStyle(app, edge, fromNode, toNode)
+            fromPort = getEdgeField(app, edge, 'fromPort', '');
+            toPort = getEdgeField(app, edge, 'toPort', '');
+            [okCompat, ~] = arePortsCompatible(app, fromNode, fromPort, toNode, toPort);
+            label = buildEdgeDisplayLabel(app, fromNode, fromPort, toNode, toPort);
+            lineStyle = '-';
+            lineWidth = 1.6;
+
+            if ~okCompat
+                color = [0.86 0.20 0.18];
+                lineWidth = 2.0;
+                return;
+            end
+
+            bindStatus = getNodeBindingStatus(app, toNode);
+            switch bindStatus
+                case {'invalid'}
+                    color = [0.86 0.20 0.18];
+                    lineWidth = 2.0;
+                case {'needs_user_binding','needs_run_binding','auto_resolvable'}
+                    color = [0.90 0.55 0.10];
+                    lineStyle = '-';
+                    lineWidth = 1.9;
+                otherwise
+                    color = [0.12 0.62 0.27];
+            end
+        end
+
+        function label = buildEdgeDisplayLabel(app, fromNode, fromPort, toNode, toPort) %#ok<INUSD>
+            label = buildPortDisplayText(app, fromNode, true, fromPort);
+            toLabel = buildPortDisplayText(app, toNode, false, toPort);
+            if strcmpi(label, toLabel)
+                return;
+            end
+            if contains(lower(label), lower(toLabel)) || contains(lower(toLabel), lower(label))
+                return;
+            end
+            label = [label ' -> ' toLabel];
+        end
+
+        function status = getNodeBindingStatus(app, node)
+            status = '';
+            if isempty(app.LastValidationReport) || ~isstruct(app.LastValidationReport) || ...
+                    ~isfield(app.LastValidationReport, 'binding') || ~isstruct(app.LastValidationReport.binding) || ...
+                    ~isfield(app.LastValidationReport.binding, 'nodes') || ~isstruct(app.LastValidationReport.binding.nodes)
+                return;
+            end
+            nodeId = char(string(getfielddefault(app, node, 'id', '')));
+            key = matlab.lang.makeValidName(nodeId);
+            if ~isfield(app.LastValidationReport.binding.nodes, key)
+                return;
+            end
+            nr = app.LastValidationReport.binding.nodes.(key);
+            if isstruct(nr) && isfield(nr, 'status')
+                status = lower(char(string(nr.status)));
             end
         end
 
@@ -2193,6 +2326,58 @@ classdef pipelineGUI < matlab.apps.AppBase
             end
         end
 
+        function node = applyClassifierObjectToNode(app, node, classObj)
+            if nargin < 3 || isempty(classObj)
+                return;
+            end
+            if ~isfield(node, 'params') || ~isstruct(node.params)
+                node.params = struct();
+            end
+
+            try
+                pkgName = char(string(getObjectFieldDefault(app, classObj, 'classifierPkg', '')));
+                if isempty(pkgName)
+                    pkgName = char(string(getObjectFieldDefault(app, classObj, 'trainingFun', '')));
+                    if contains(pkgName, '.')
+                        pkgName = extractBefore(pkgName, '.');
+                    end
+                end
+                if ~isempty(pkgName)
+                    node.pkg = pkgName;
+                    node.params.pkg = pkgName;
+                end
+            catch
+            end
+
+            try
+                node.func = char(string(getObjectFieldDefault(app, classObj, 'classifyFun', node.func)));
+            catch
+            end
+
+            fields = {'channel','channelName','channelName2','classes','classifierPkg', ...
+                'classifyFun','trainingFun','outputType','outputFun','outputArg','trainingParam','description','category'};
+            for i = 1:numel(fields)
+                fn = fields{i};
+                try
+                    if isprop(classObj, fn)
+                        val = classObj.(fn);
+                        if ~isempty(val)
+                            node.params.(fn) = val;
+                        end
+                    end
+                catch
+                end
+            end
+
+            if isfield(node.params, 'trainingParam') && isstruct(node.params.trainingParam) && ~isempty(fieldnames(node.params.trainingParam))
+                tp = node.params.trainingParam;
+                if isfield(tp, 'pkg') && ~isempty(tp.pkg)
+                    node.params.pkg = tp.pkg;
+                    node.pkg = tp.pkg;
+                end
+            end
+        end
+
         function tmpProc = applyProcessReferenceForGui(app, tmpProc, refProc) %#ok<INUSD>
             props = {'path','strid','description','category','processFun','processArg','runProfiles'};
             for i = 1:numel(props)
@@ -2231,7 +2416,7 @@ classdef pipelineGUI < matlab.apps.AppBase
             entry = struct();
             entry.name = char(string(getfielddefault(app, node, 'name', getfielddefault(app, node, 'id', 'module'))));
             entry.type = char(string(getfielddefault(app, node, 'type', 'module')));
-            entry.pkg = char(string(getfielddefault(app, node, 'pkg', '')));
+            entry.pkg = resolveNodePackage(app, node);
             entry.source = char(string(source));
             entry.node = node;
             entry.signature = '';
@@ -2251,7 +2436,14 @@ classdef pipelineGUI < matlab.apps.AppBase
             node.gui = 'processDataGUI';
             node.guiMode = 'replace';
             node.paramRequired = {'pkg'};
-            pkgName = inferPkgFromFunction(app, node.func, 'process');
+            pkgName = '';
+            arg = getObjectFieldDefault(app, procObj, 'processArg', struct());
+            if isstruct(arg) && isfield(arg,'pkg') && ~isempty(arg.pkg)
+                pkgName = char(string(arg.pkg));
+            end
+            if isempty(pkgName)
+                pkgName = inferPkgFromFunction(app, node.func, 'process');
+            end
             node.pkg = pkgName;
             params = struct();
             arg = getObjectFieldDefault(app, procObj, 'processArg', struct());
@@ -2348,9 +2540,7 @@ classdef pipelineGUI < matlab.apps.AppBase
             if ~isfield(node,'enabled')
                 node.enabled = true;
             end
-            if ~isfield(node,'pkg')
-                node.pkg = '';
-            end
+            node.pkg = resolveNodePackage(app, node);
             if ~isfield(node,'params') || isempty(node.params) || ~isstruct(node.params)
                 node.params = struct();
             end
@@ -2702,8 +2892,8 @@ classdef pipelineGUI < matlab.apps.AppBase
         function layout = normalizeModuleLayout(app, node, layoutIn)
             c = getNodeContract(app, node);
             rowCount = max([numel(c.in), numel(c.out), 1]);
-            minW = 28;
-            minH = 9.5 + 3.0 * rowCount;
+            minW = 34;
+            minH = 14 + 4.0 * rowCount;
 
             if nargin >= 3 && ~isempty(layoutIn)
                 layout = layoutIn;
@@ -2722,9 +2912,125 @@ classdef pipelineGUI < matlab.apps.AppBase
             layout(4) = max(layout(4), minH);
         end
 
+        function tf = shouldAutoArrangePipelineLayout(app, nodes) %#ok<INUSD>
+            tf = false;
+            if isempty(nodes) || numel(nodes) < 2
+                return;
+            end
+
+            layouts = zeros(numel(nodes), 2);
+            for i = 1:numel(nodes)
+                if ~isfield(nodes(i), 'layout') || isempty(nodes(i).layout) || numel(nodes(i).layout) < 4
+                    tf = true;
+                    return;
+                end
+                layouts(i,:) = double(nodes(i).layout(1:2));
+            end
+
+            if numel(unique(layouts, 'rows')) == 1
+                tf = true;
+                return;
+            end
+
+            spreadX = max(layouts(:,1)) - min(layouts(:,1));
+            spreadY = max(layouts(:,2)) - min(layouts(:,2));
+            tf = (spreadX < 30 && spreadY < 30);
+        end
+
+        function nodes = autoArrangePipelineLayout(app, nodes, edges)
+            if nargin < 3
+                edges = struct('from',{},'to',{},'fromPort',{},'toPort',{},'condition',{});
+            end
+            if isempty(nodes)
+                return;
+            end
+
+            ids = arrayfun(@(n) char(string(n.id)), nodes, 'UniformOutput', false);
+            indeg = zeros(1, numel(nodes));
+            children = cell(1, numel(nodes));
+
+            for i = 1:numel(edges)
+                fromId = getEdgeField(app, edges(i), 'from', '');
+                toId = getEdgeField(app, edges(i), 'to', '');
+                fromIdx = find(strcmp(ids, fromId), 1, 'first');
+                toIdx = find(strcmp(ids, toId), 1, 'first');
+                if isempty(fromIdx) || isempty(toIdx)
+                    continue;
+                end
+                indeg(toIdx) = indeg(toIdx) + 1;
+                children{fromIdx}(end+1) = toIdx; %#ok<AGROW>
+            end
+
+            layer = ones(1, numel(nodes));
+            queue = find(indeg == 0);
+            seen = false(1, numel(nodes));
+            while ~isempty(queue)
+                idx = queue(1);
+                queue(1) = [];
+                if seen(idx)
+                    continue;
+                end
+                seen(idx) = true;
+                for child = children{idx}
+                    layer(child) = max(layer(child), layer(idx) + 1);
+                    indeg(child) = indeg(child) - 1;
+                    if indeg(child) <= 0
+                        queue(end+1) = child; %#ok<AGROW>
+                    end
+                end
+            end
+
+            if any(~seen)
+                unresolved = find(~seen);
+                layer(unresolved) = max(layer) + (1:numel(unresolved));
+            end
+
+            cols = unique(layer, 'stable');
+            xGap = 170;
+            yGap = 95;
+            x0 = 20;
+            y0 = 20;
+            for cidx = 1:numel(cols)
+                member = find(layer == cols(cidx));
+                if isempty(member)
+                    continue;
+                end
+                for r = 1:numel(member)
+                    ii = member(r);
+                    sizeHint = normalizeModuleLayout(app, nodes(ii), getfielddefault(app, nodes(ii), 'layout', [0 0 52 34]));
+                    nodes(ii).layout = [x0 + (cols(cidx)-1)*xGap, y0 + (r-1)*yGap, sizeHint(3), sizeHint(4)];
+                end
+            end
+        end
+
+        function fitPipelineSketchAxes(app)
+            if isempty(app.Data.nodes)
+                app.UIModulesAxes.XLim = [0 100];
+                app.UIModulesAxes.YLim = [0 100];
+                return;
+            end
+
+            xs = [];
+            ys = [];
+            for i = 1:numel(app.Data.nodes)
+                if ~isfield(app.Data.nodes(i), 'layout') || isempty(app.Data.nodes(i).layout) || numel(app.Data.nodes(i).layout) < 4
+                    continue;
+                end
+                lay = double(app.Data.nodes(i).layout(1:4));
+                xs(end+1:end+2) = [lay(1), lay(1)+lay(3)+24]; %#ok<AGROW>
+                ys(end+1:end+2) = [lay(2), lay(2)+lay(4)+20]; %#ok<AGROW>
+            end
+            if isempty(xs) || isempty(ys)
+                return;
+            end
+            app.UIModulesAxes.XLim = [min(xs)-20, max(xs)+20];
+            app.UIModulesAxes.YLim = [min(ys)-20, max(ys)+20];
+            axis(app.UIModulesAxes, 'manual');
+        end
+
         function txt = buildPortDisplayText(app, node, isOut, portName)
             c = getNodeContract(app, node);
-            txt = normalizePortDisplayName(app, portName);
+            txt = normalizePortDisplayName(app, portName, node, isOut);
             qualifier = '';
 
             if ~isOut
@@ -2753,6 +3059,12 @@ classdef pipelineGUI < matlab.apps.AppBase
                 switch lower(char(string(portName)))
                     case 'channels'
                         qualifier = inferChannelQualifierFromNode(app, node);
+                        if isempty(qualifier)
+                            pkg = lower(char(string(resolveNodePackage(app, node))));
+                            if strcmp(pkg, 'combinemultiplechannels')
+                                qualifier = inferConfiguredChannelCount(app, node);
+                            end
+                        end
                 end
             end
 
@@ -2761,21 +3073,51 @@ classdef pipelineGUI < matlab.apps.AppBase
             end
         end
 
-        function nameOut = normalizePortDisplayName(app, portName) %#ok<INUSD>
+        function nameOut = normalizePortDisplayName(app, portName, node, isOut)
             key = lower(char(string(portName)));
+            nodeType = '';
+            pkg = '';
+            if nargin >= 4 && isstruct(node)
+                nodeType = lower(char(string(getfielddefault(app, node, 'type', ''))));
+                pkg = lower(char(string(resolveNodePackage(app, node))));
+            end
             switch key
                 case 'images'
-                    nameOut = 'Images';
+                    if any(strcmp(nodeType, {'roipattern','roiidentify','roimanual','roigrid'}))
+                        nameOut = 'FOV images';
+                    else
+                        nameOut = 'FOV images';
+                    end
                 case 'roilist'
-                    nameOut = 'ROI List';
+                    if any(strcmp(nodeType, {'roipattern','roiidentify','roimanual','roigrid'})) && logical(isOut)
+                        nameOut = 'ROI definitions';
+                    elseif strcmp(nodeType, 'roitracked') && ~logical(isOut)
+                        nameOut = 'Seed ROI';
+                    elseif strcmp(nodeType, 'roiextract') && ~logical(isOut)
+                        nameOut = 'ROI definitions';
+                    elseif strcmp(nodeType, 'roiextract') && logical(isOut)
+                        nameOut = 'ROI images';
+                    elseif any(strcmp(nodeType, {'processor','classifier'}))
+                        nameOut = 'ROI images';
+                    else
+                        nameOut = 'ROI list';
+                    end
                 case 'channels'
-                    nameOut = 'Channels';
+                    if strcmp(nodeType, 'dataloader')
+                        nameOut = 'Channel inventory';
+                    elseif strcmp(nodeType, 'roiextract') || strcmp(pkg, 'combinemultiplechannels')
+                        nameOut = 'ROI channels';
+                    else
+                        nameOut = 'Channels';
+                    end
                 case 'dataseries'
-                    nameOut = 'Data Series';
+                    nameOut = 'Data series';
                 case 'fovlist'
                     nameOut = 'FOV List';
                 case 'masks'
                     nameOut = 'Masks';
+                case 'shallow'
+                    nameOut = 'Project';
                 case 'inputchannels'
                     nameOut = 'Channels';
                 otherwise
@@ -2811,6 +3153,46 @@ classdef pipelineGUI < matlab.apps.AppBase
             end
             if isfield(params, 'channel')
                 qualifier = countSelectionValues(app, params.channel);
+            end
+        end
+
+        function qualifier = inferConfiguredChannelCount(app, node)
+            qualifier = '';
+            params = getfielddefault(app, node, 'params', struct());
+            if ~isstruct(params)
+                return;
+            end
+
+            if isfield(params, 'requiredChannelCount') && ~isempty(params.requiredChannelCount)
+                n = double(params.requiredChannelCount);
+                if isfinite(n) && n > 0
+                    qualifier = num2str(round(n));
+                    return;
+                end
+            end
+
+            count = 0;
+            for i = 1:5
+                key = sprintf('Channel%d', i);
+                if ~isfield(params, key)
+                    continue;
+                end
+                val = params.(key);
+                choice = '';
+                if iscell(val) && ~isempty(val)
+                    choice = char(string(val{end}));
+                else
+                    choice = char(string(val));
+                end
+                choice = strtrim(choice);
+                if isempty(choice) || strcmpi(choice, 'none') || strcmpi(choice, 'n/a')
+                    continue;
+                end
+                count = count + 1;
+            end
+
+            if count > 1
+                qualifier = num2str(count);
             end
         end
 
@@ -2875,34 +3257,62 @@ classdef pipelineGUI < matlab.apps.AppBase
             end
         end
 
-        function [newVal, applied] = chooseChannelSelectorForNode(app, node, key)
+        function tf = isChannelSlotBindingParam(app, node, key)
+            tf = false;
+            if nargin < 3 || isempty(key) || ~isstruct(node)
+                return;
+            end
+            key = char(string(key));
+            if isempty(regexp(key, '^Channel\d+$', 'once'))
+                return;
+            end
+            c = getNodeContract(app, node);
+            binding = getfielddefault(app, c, 'binding', struct());
+            mode = lower(char(string(getfielddefault(app, binding, 'mode', ''))));
+            tf = strcmp(mode, 'channelslots');
+        end
+
+        function [newVal, applied] = chooseParamValueForRow(app, node, meta)
             newVal = [];
             applied = false;
 
-            choices = getNodeSelectableChannels(app, node);
+            choices = meta.choiceItems;
+            if isempty(choices) && isfield(meta, 'key') && (isChannelSelectorParam(app, node, meta.key) || isChannelSlotBindingParam(app, node, meta.key))
+                choices = getNodeSelectableChannels(app, node);
+            end
             if isempty(choices)
                 return;
             end
 
-            key = lower(strtrim(char(string(key))));
-            allowMulti = strcmp(key, 'channels') && ~requiresSingleExplicitChannel(app, node);
+            key = char(string(meta.key));
+            keyLower = lower(strtrim(key));
+            allowMulti = logical(getfielddefault(app, meta, 'allowMulti', false));
 
             currentVal = [];
             if isfield(node,'params') && isstruct(node.params) && isfield(node.params, key)
                 currentVal = node.params.(key);
             end
-            initialNames = normalizeChannelChoiceList(app, currentVal);
+            if isChannelSlotBindingParam(app, node, key)
+                if isChoicePayload(app, currentVal)
+                    initialNames = normalizeChannelChoiceList(app, getChoicePayloadSelection(app, currentVal));
+                else
+                    initialNames = normalizeChannelChoiceList(app, currentVal);
+                end
+            elseif strcmp(getfielddefault(app, meta, 'storageKind', ''), 'choicePayload')
+                initialNames = normalizeChannelChoiceList(app, getChoicePayloadSelection(app, currentVal));
+            else
+                initialNames = normalizeChannelChoiceList(app, currentVal);
+            end
             initialIdx = find(ismember(lower(choices), lower(initialNames)));
             if isempty(initialIdx) && ~isempty(choices)
                 initialIdx = 1;
             end
 
-            prompt = 'Select input channel';
-            titleText = 'Choose channel';
+            prompt = ['Select ' lower(char(string(meta.label)))];
+            titleText = char(string(meta.label));
             mode = 'single';
             if allowMulti
-                prompt = 'Select input channels';
-                titleText = 'Choose channels';
+                prompt = ['Select ' lower(char(string(meta.label)))];
                 mode = 'multiple';
             end
 
@@ -2917,12 +3327,95 @@ classdef pipelineGUI < matlab.apps.AppBase
             end
 
             picked = choices(sel);
-            if allowMulti
+            if isChannelSlotBindingParam(app, node, key)
+                newVal = picked{1};
+            elseif strcmp(getfielddefault(app, meta, 'storageKind', ''), 'choicePayload')
+                if allowMulti
+                    selected = picked(:)';
+                else
+                    selected = picked{1};
+                end
+                newVal = applyChoicePayloadSelection(app, currentVal, selected);
+            elseif allowMulti || strcmp(keyLower, 'channels')
                 newVal = picked(:)';
             else
                 newVal = picked{1};
             end
             applied = true;
+        end
+
+        function tf = isChoicePayload(app, value) %#ok<INUSD>
+            tf = false;
+            if ~iscell(value) || numel(value) < 3
+                return;
+            end
+            try
+                strs = cellfun(@(x) char(string(x)), value, 'UniformOutput', false);
+            catch
+                return;
+            end
+            if any(cellfun(@(x) isempty(strtrim(x)), strs))
+                return;
+            end
+            selected = strs{end};
+            choices = strs(1:end-1);
+            tf = any(strcmpi(choices, selected)) || any(strcmpi(choices, 'none')) || any(strcmpi(choices, 'n/a'));
+        end
+
+        function items = getChoicePayloadItems(app, value) %#ok<INUSD>
+            items = {};
+            if ~isChoicePayload(app, value)
+                return;
+            end
+            try
+                items = cellfun(@(x) char(string(x)), value(1:end-1), 'UniformOutput', false);
+                items = unique(items, 'stable');
+            catch
+                items = {};
+            end
+        end
+
+        function selected = getChoicePayloadSelection(app, value) %#ok<INUSD>
+            selected = '';
+            if ~isChoicePayload(app, value)
+                selected = char(string(paramValueToTableCell(app, value)));
+                return;
+            end
+            try
+                selected = char(string(value{end}));
+            catch
+                selected = '';
+            end
+        end
+
+        function out = applyChoicePayloadSelection(app, value, selected) %#ok<INUSD>
+            if nargin < 4
+                selected = '';
+            end
+            items = getChoicePayloadItems(app, value);
+            if iscell(selected)
+                if isempty(selected)
+                    picked = '';
+                else
+                    picked = char(string(selected{1}));
+                end
+            else
+                picked = char(string(selected));
+            end
+            if isempty(items)
+                if iscell(value)
+                    items = cellfun(@(x) char(string(x)), value, 'UniformOutput', false);
+                else
+                    items = {};
+                end
+            end
+            if ~isempty(picked) && ~any(strcmpi(items, picked))
+                items{end+1} = picked; %#ok<AGROW>
+            end
+            if isempty(picked) && ~isempty(items)
+                picked = items{1};
+            end
+            out = [items(:)' {picked}];
         end
 
         function names = getNodeSelectableChannels(app, nodeOrIdx)
@@ -3169,8 +3662,20 @@ classdef pipelineGUI < matlab.apps.AppBase
                 return;
             end
 
+            c = getNodeContract(app, node);
+            ptype = '';
             if isOut
-                col = [0.12 0.78 0.24];
+                p = c.out(strcmp({c.out.name}, char(string(portName))));
+            else
+                p = c.in(strcmp({c.in.name}, char(string(portName))));
+            end
+            if ~isempty(p)
+                ptype = char(string(p(1).type));
+            end
+            base = portTypeColor(app, ptype);
+
+            if isOut
+                col = base;
                 return;
             end
 
@@ -3185,9 +3690,28 @@ classdef pipelineGUI < matlab.apps.AppBase
             end
 
             if tf
-                col = [0.12 0.78 0.24];
+                col = base;
             else
                 col = [0.90 0.12 0.12];
+            end
+        end
+
+        function col = portTypeColor(app, portType) %#ok<INUSD>
+            switch lower(char(string(portType)))
+                case {'imageset'}
+                    col = [0.10 0.45 0.82];
+                case {'fovlist','projecthandle'}
+                    col = [0.36 0.42 0.48];
+                case {'roilist'}
+                    col = [0.12 0.62 0.27];
+                case {'channelset'}
+                    col = [0.00 0.55 0.55];
+                case {'maskset'}
+                    col = [0.62 0.25 0.78];
+                case {'dataseriesset'}
+                    col = [0.75 0.45 0.08];
+                otherwise
+                    col = [0.12 0.62 0.27];
             end
         end
 
@@ -3203,6 +3727,22 @@ classdef pipelineGUI < matlab.apps.AppBase
                 return;
             end
             pkgName = token{1};
+        end
+
+        function pkgName = resolveNodePackage(app, node)
+            pkgName = '';
+            if ~isstruct(node)
+                return;
+            end
+            if isfield(node,'pkg') && ~isempty(node.pkg)
+                pkgName = char(string(node.pkg));
+            end
+            if isempty(pkgName) && isfield(node,'params') && isstruct(node.params) && isfield(node.params,'pkg') && ~isempty(node.params.pkg)
+                pkgName = char(string(node.params.pkg));
+            end
+            if isempty(pkgName) && isfield(node,'func') && ~isempty(node.func)
+                pkgName = inferPkgFromFunction(app, node.func, 'process');
+            end
         end
 
         function val = getObjectFieldDefault(app, obj, name, default) %#ok<INUSD>
@@ -3251,37 +3791,54 @@ classdef pipelineGUI < matlab.apps.AppBase
 
         function updateParamsTable(app, idx)
             if idx > numel(app.Data.nodes)
+                app.CurrentModuleParamRows = struct( ...
+                    'section',{},'label',{},'key',{},'value',{},'notes',{}, ...
+                    'editable',{},'kind',{},'choiceItems',{},'allowMulti',{},'storageKind',{});
                 app.UIModuleParametersTable.Data = {};
                 return;
             end
+
             node = app.Data.nodes(idx);
-            data = {};
-            if isfield(node,'params') && ~isempty(node.params)
-                fn = fieldnames(node.params);
-                data = cell(numel(fn),2);
+            rows = struct( ...
+                'section',{},'label',{},'key',{},'value',{},'notes',{}, ...
+                'editable',{},'kind',{},'choiceItems',{},'allowMulti',{},'storageKind',{});
+
+            params = getfielddefault(app, node, 'params', struct());
+            tipMap = buildParamTipMap(app, params);
+            if isstruct(params) && ~isempty(params)
+                fn = fieldnames(params);
                 for i = 1:numel(fn)
-                    data{i,1} = fn{i};
-                    data{i,2} = toUITableCellValue(app, paramValueToTableCell(app, node.params.(fn{i})));
+                    key = fn{i};
+                    if strcmp(key, 'tip')
+                        continue;
+                    end
+                    rows(end+1) = buildModuleParamRow(app, node, key, params.(key), getfielddefault(app, tipMap, key, '')); %#ok<AGROW>
                 end
             end
-            data = injectExpectedSelectorRows(app, node, data);
+
+            rows = appendMissingConfigParamRows(app, node, rows);
+            rows = injectExpectedSelectorRows(app, node, rows);
             availableChannels = getNodeSelectableChannels(app, node);
             if ~isempty(availableChannels)
-                data(end+1,:) = {'[contract] available channels', strjoin(availableChannels, ', ')}; %#ok<AGROW>
+                rows(end+1) = makeParamInfoRow(app, 'Contract', 'Available channels', '', strjoin(availableChannels, ', ')); %#ok<AGROW>
             elseif requiresSingleExplicitChannel(app, node)
-                data(end+1,:) = {'[contract] available channels', '<unknown until data are loaded>'}; %#ok<AGROW>
+                rows(end+1) = makeParamInfoRow(app, 'Contract', 'Available channels', '', '<unknown until data are loaded>'); %#ok<AGROW>
             end
-            data = [data; buildLinkedModuleRows(app, node); buildContractTableRows(app, node)];
-            app.UIModuleParametersTable.Data = data;
+
+            rows = rows(arrayfun(@(r) shouldShowParamRow(app, r), rows));
+            app.CurrentModuleParamRows = rows;
+            app.UIModuleParametersTable.Data = moduleParamRowsToTableData(app, rows);
         end
 
-        function data = injectExpectedSelectorRows(app, node, data)
-            if nargin < 3 || isempty(data)
-                data = cell(0,2);
+        function rows = injectExpectedSelectorRows(app, node, rows)
+            if nargin < 3 || isempty(rows)
+                rows = struct( ...
+                    'section',{},'label',{},'key',{},'value',{},'notes',{}, ...
+                    'editable',{},'kind',{},'choiceItems',{},'allowMulti',{},'storageKind',{});
             end
 
             if requiresSingleExplicitChannel(app, node)
-                keys = lower(string(data(:,1)));
+                keys = lower(string({rows.key}));
                 if ~any(keys == "channel")
                     defaultVal = '';
                     params = getfielddefault(app, node, 'params', struct());
@@ -3295,63 +3852,454 @@ classdef pipelineGUI < matlab.apps.AppBase
                             end
                         end
                     end
-                    data(end+1,:) = {'channel', toUITableCellValue(app, paramValueToTableCell(app, defaultVal))}; %#ok<AGROW>
+                    rows(end+1) = buildModuleParamRow(app, node, 'channel', defaultVal, 'Pick the ROI channel consumed by this node.'); %#ok<AGROW>
                 end
             end
         end
 
-        function tf = isReadOnlyParamKey(app, key) %#ok<INUSD>
-            key = char(string(key));
-            tf = startsWith(key, '[contract]') || startsWith(key, '[link]');
+        function data = moduleParamRowsToTableData(app, rows) %#ok<INUSD>
+            if isempty(rows)
+                data = {};
+                return;
+            end
+
+            data = cell(numel(rows), 4);
+            for i = 1:numel(rows)
+                data{i,1} = rows(i).section;
+                data{i,2} = rows(i).label;
+                data{i,3} = rows(i).value;
+                data{i,4} = rows(i).notes;
+            end
+        end
+
+        function row = makeParamInfoRow(app, section, label, key, value, notes) %#ok<INUSD>
+            if nargin < 6
+                notes = '';
+            end
+            row = struct( ...
+                'section', char(string(section)), ...
+                'label', char(string(label)), ...
+                'key', char(string(key)), ...
+                'value', char(string(value)), ...
+                'notes', char(string(notes)), ...
+                'editable', false, ...
+                'kind', 'info', ...
+                'choiceItems', {{}}, ...
+                'allowMulti', false, ...
+                'storageKind', 'readonly');
+        end
+
+        function row = buildModuleParamRow(app, node, key, value, tipText)
+            if nargin < 5
+                tipText = '';
+            end
+
+            section = categorizeNodeParam(app, node, key);
+            label = friendlyParamLabel(app, key);
+            c = getNodeContract(app, node);
+            binding = getfielddefault(app, c, 'binding', struct());
+            bindingResolveAt = lower(char(string(getfielddefault(app, binding, 'resolveAt', ''))));
+            if isChannelSlotBindingParam(app, node, key)
+                slotLabel = regexprep(char(string(key)), '^Channel', 'Slot ');
+                label = strtrim(slotLabel);
+            end
+            notes = char(string(tipText));
+            kind = 'text';
+            choiceItems = {};
+            allowMulti = false;
+            storageKind = 'plain';
+            displayValue = paramValueToDisplayText(app, value);
+            editable = true;
+
+            if isChannelSlotBindingParam(app, node, key)
+                choiceItems = unique([{'none'}, getNodeSelectableChannels(app, node)], 'stable');
+                storageKind = 'plain';
+                if isChoicePayload(app, value)
+                    displayValue = getChoicePayloadSelection(app, value);
+                else
+                    displayValue = paramValueToDisplayText(app, value);
+                end
+                if strcmp(bindingResolveAt, 'design')
+                    notes = appendNote(app, notes, 'Binding slot. Pick one dataset channel, or none to leave this slot unused.');
+                else
+                    editable = false;
+                    kind = 'text';
+                    choiceItems = {};
+                    notes = appendNote(app, notes, 'Binding resolved at run preflight once the dataset channel inventory is known.');
+                end
+                if ~isempty(choiceItems)
+                    kind = 'choice';
+                end
+            elseif isChoicePayload(app, value)
+                choiceItems = getChoicePayloadItems(app, value);
+                allowMulti = false;
+                kind = 'choice';
+                storageKind = 'choicePayload';
+                displayValue = getChoicePayloadSelection(app, value);
+                if isempty(notes)
+                    notes = 'Choose one value from the list stored by the module.';
+                end
+            elseif isChannelSelectorParam(app, node, key)
+                choiceItems = getNodeSelectableChannels(app, node);
+                allowMulti = strcmpi(key, 'channels') && ~requiresSingleExplicitChannel(app, node);
+                if ~isempty(choiceItems)
+                    kind = 'choice';
+                end
+            elseif islogical(value) && isscalar(value)
+                notes = appendNote(app, notes, 'Type true/false to toggle this option.');
+            elseif isnumeric(value) && isvector(value) && numel(value) == 3 && startsWith(lower(key), 'rgb_')
+                notes = appendNote(app, notes, 'RGB weight triplet applied to the selected channel.');
+            elseif isstruct(value) || (iscell(value) && ~isChoicePayload(app, value))
+                editable = false;
+                notes = appendNote(app, notes, 'Structured value; use the dedicated module GUI.');
+            end
+
+            if strcmp(kind, 'choice')
+                if isempty(choiceItems)
+                    notes = appendNote(app, notes, 'No candidate list is available yet from the current pipeline context.');
+                else
+                    notes = appendNote(app, notes, sprintf('Click the value cell to choose from %d option(s).', numel(choiceItems)));
+                end
+            end
+
+            row = struct( ...
+                'section', section, ...
+                'label', label, ...
+                'key', char(string(key)), ...
+                'value', displayValue, ...
+                'notes', notes, ...
+                'editable', editable, ...
+                'kind', kind, ...
+                'choiceItems', {choiceItems}, ...
+                'allowMulti', allowMulti, ...
+                'storageKind', storageKind);
+        end
+
+        function tf = shouldShowParamRow(app, row) %#ok<INUSD>
+            tf = true;
+            if ~isstruct(row)
+                return;
+            end
+            key = lower(strtrim(char(string(getfielddefault(app, row, 'key', '')))));
+            section = lower(strtrim(char(string(getfielddefault(app, row, 'section', '')))));
+            if any(strcmp(section, {'contract','link','binding'}))
+                tf = false;
+                return;
+            end
+            if isempty(key)
+                return;
+            end
+            hidden = { ...
+                'tip', ...
+                'pkg', ...
+                'modulepath', ...
+                'moduleid', ...
+                'modulevar', ...
+                'modulekind', ...
+                'linksource', ...
+                'processfun', ...
+                'classifyfun', ...
+                'trainingfun'};
+            if any(strcmp(key, hidden))
+                tf = false;
+            end
         end
 
         function rows = buildLinkedModuleRows(app, node)
-            rows = cell(0,2);
+            rows = struct( ...
+                'section',{},'label',{},'key',{},'value',{},'notes',{}, ...
+                'editable',{},'kind',{},'choiceItems',{},'allowMulti',{},'storageKind',{});
             [refPath, refId, refKind] = extractNodeReference(app, node);
             if isempty(refPath) && isempty(refId)
                 return;
             end
-            rows(end+1,:) = {'[link] mode', 'Reference with local pipeline overrides'}; %#ok<AGROW>
+            rows(end+1) = makeParamInfoRow(app, 'Link', 'Mode', '', 'Reference with local pipeline overrides'); %#ok<AGROW>
             if ~isempty(refKind)
-                rows(end+1,:) = {'[link] kind', refKind}; %#ok<AGROW>
+                rows(end+1) = makeParamInfoRow(app, 'Link', 'Kind', '', refKind); %#ok<AGROW>
             end
             if ~isempty(refId)
-                rows(end+1,:) = {'[link] source id', refId}; %#ok<AGROW>
+                rows(end+1) = makeParamInfoRow(app, 'Link', 'Source id', '', refId); %#ok<AGROW>
             end
             if ~isempty(refPath)
-                rows(end+1,:) = {'[link] source folder', refPath}; %#ok<AGROW>
+                rows(end+1) = makeParamInfoRow(app, 'Link', 'Source folder', '', refPath); %#ok<AGROW>
             end
             if isfield(node, 'params') && isstruct(node.params) && isfield(node.params, 'linkSource') && ~isempty(node.params.linkSource)
                 srcEntry = char(string(node.params.linkSource));
                 if ~contains(lower(srcEntry), 'offline library')
-                    rows(end+1,:) = {'[link] source entry', srcEntry}; %#ok<AGROW>
+                    rows(end+1) = makeParamInfoRow(app, 'Link', 'Source entry', '', srcEntry); %#ok<AGROW>
                 end
             end
         end
 
         function rows = buildContractTableRows(app, node)
-            rows = cell(0,2);
+            rows = struct( ...
+                'section',{},'label',{},'key',{},'value',{},'notes',{}, ...
+                'editable',{},'kind',{},'choiceItems',{},'allowMulti',{},'storageKind',{});
             c = getNodeContract(app, node);
             if isempty(c) || ~isstruct(c)
                 return;
             end
 
-            rows(end+1,:) = {'[contract] summary', summarizeContract(app, c)}; %#ok<AGROW>
-            rows(end+1,:) = {'[contract] support', formatContractSupport(app, c)}; %#ok<AGROW>
+            rows(end+1) = makeParamInfoRow(app, 'Contract', 'Family', '', describeNodeFamily(app, node), describeNodeBindingMode(app, node, c)); %#ok<AGROW>
+            rows(end+1) = makeParamInfoRow(app, 'Contract', 'Summary', '', summarizeContract(app, c)); %#ok<AGROW>
+            rows(end+1) = makeParamInfoRow(app, 'Contract', 'Ports', '', formatContractSupport(app, c)); %#ok<AGROW>
+            paramText = formatContractParameters(app, c);
+            if ~isempty(paramText)
+                rows(end+1) = makeParamInfoRow(app, 'Contract', 'Parameters', '', paramText); %#ok<AGROW>
+            end
 
             reqText = formatContractRequirements(app, c);
             if ~isempty(reqText)
-                rows(end+1,:) = {'[contract] requires', reqText}; %#ok<AGROW>
+                rows(end+1) = makeParamInfoRow(app, 'Contract', 'Requires', '', reqText); %#ok<AGROW>
             end
 
             selText = formatContractSelectors(app, c);
             if ~isempty(selText)
-                rows(end+1,:) = {'[contract] selectors', selText}; %#ok<AGROW>
+                rows(end+1) = makeParamInfoRow(app, 'Contract', 'Selectors', '', selText); %#ok<AGROW>
             end
 
             capText = formatContractCapabilities(app, c);
             if ~isempty(capText)
-                rows(end+1,:) = {'[contract] produces', capText}; %#ok<AGROW>
+                rows(end+1) = makeParamInfoRow(app, 'Contract', 'Produces', '', capText); %#ok<AGROW>
+            end
+        end
+
+        function section = categorizeNodeParam(app, node, key) %#ok<INUSD>
+            key = lower(char(string(key)));
+            c = getNodeContract(app, node);
+            if isstruct(c) && isfield(c, 'parameters') && isstruct(c.parameters)
+                if any(strcmp(key, normalizeParamNameList(app, getfielddefault(app, c.parameters, 'fixed', {})))) || ...
+                        any(strcmp(key, normalizeParamNameList(app, getfielddefault(app, c.parameters, 'design', {})))) || ...
+                        any(strcmp(key, normalizeParamNameList(app, getfielddefault(app, c.parameters, 'template', {}))))
+                    section = 'Config';
+                    return;
+                end
+                if any(strcmp(key, normalizeParamNameList(app, getfielddefault(app, c.parameters, 'run', {}))))
+                    section = 'Run';
+                    return;
+                end
+                if any(strcmp(key, normalizeParamNameList(app, getfielddefault(app, c.parameters, 'data', {}))))
+                    section = 'Data';
+                    return;
+                end
+            end
+            if any(strcmp(key, {'channel','channels'})) || startsWith(key, 'channel')
+                section = 'Input';
+            elseif startsWith(key, 'rgb_')
+                section = 'Input';
+            elseif contains(key, 'frame')
+                section = 'Frames';
+            elseif contains(key, 'output')
+                section = 'Output';
+            elseif any(strcmp(key, {'debug','gpu','cachepolicy','existingpolicy','runpolicy'}))
+                section = 'Execution';
+            elseif any(strcmp(key, {'pkg','modulevar','modulepath','moduleid'}))
+                section = 'Binding';
+            else
+                section = 'Parameters';
+            end
+        end
+
+        function rows = appendMissingConfigParamRows(app, node, rows)
+            if nargin < 3 || isempty(rows)
+                rows = struct( ...
+                    'section',{},'label',{},'key',{},'value',{},'notes',{}, ...
+                    'editable',{},'kind',{},'choiceItems',{},'allowMulti',{},'storageKind',{});
+            end
+
+            c = getNodeContract(app, node);
+            if isempty(c) || ~isstruct(c) || ~isfield(c, 'parameters') || ~isstruct(c.parameters)
+                return;
+            end
+
+            configKeys = {};
+            configKeys = [configKeys normalizeParamNameList(app, getfielddefault(app, c.parameters, 'fixed', {}))]; %#ok<AGROW>
+            configKeys = [configKeys normalizeParamNameList(app, getfielddefault(app, c.parameters, 'design', {}))]; %#ok<AGROW>
+            configKeys = [configKeys normalizeParamNameList(app, getfielddefault(app, c.parameters, 'template', {}))]; %#ok<AGROW>
+            configKeys = unique(configKeys(~cellfun(@isempty, configKeys)), 'stable');
+            if isempty(configKeys)
+                return;
+            end
+
+            existingKeys = lower(strtrim(cellstr(string({rows.key}))));
+            for i = 1:numel(configKeys)
+                key = char(string(configKeys{i}));
+                if any(strcmp(existingKeys, lower(strtrim(key))))
+                    continue;
+                end
+                rows(end+1) = buildMissingConfigParamRow(app, node, c, key); %#ok<AGROW>
+            end
+        end
+
+        function row = buildMissingConfigParamRow(app, node, contract, key)
+            if nargin < 4
+                key = '';
+            end
+            section = 'Config';
+            label = friendlyParamLabel(app, key);
+            editable = ~isStructuredConfigParam(app, node, key);
+            if editable
+                value = '';
+            else
+                value = '<set via module GUI>';
+            end
+            row = struct( ...
+                'section', section, ...
+                'label', label, ...
+                'key', char(string(key)), ...
+                'value', value, ...
+                'notes', configParamNote(app, node, contract, key), ...
+                'editable', editable, ...
+                'kind', 'text', ...
+                'choiceItems', {{}}, ...
+                'allowMulti', false, ...
+                'storageKind', 'plain');
+        end
+
+        function tf = isStructuredConfigParam(app, node, key) %#ok<INUSD>
+            tf = false;
+            nodeType = lower(char(string(getfielddefault(app, node, 'type', ''))));
+            key = lower(char(string(key)));
+            switch nodeType
+                case {'roipattern','roiidentify'}
+                    tf = any(strcmp(key, {'pattern','patternimage','patternlist'}));
+                case 'classifier'
+                    tf = any(strcmp(key, {'trainingparam','classes','description'}));
+                case 'processor'
+                    tf = any(strcmp(key, {'trainingparam'}));
+            end
+        end
+
+        function notes = configParamNote(app, node, contract, key) %#ok<INUSD>
+            notes = '';
+            key = lower(char(string(key)));
+            nodeType = lower(char(string(getfielddefault(app, node, 'type', ''))));
+            if strcmp(nodeType, 'roipattern') && strcmp(key, 'pattern')
+                notes = 'Set the reference pattern with the ROI editor before running the pipeline.';
+                return;
+            end
+            if strcmp(nodeType, 'classifier') && strcmp(key, 'trainingparam')
+                notes = 'Use the classifier GUI to edit training parameters.';
+                return;
+            end
+            if strcmp(nodeType, 'classifier') && strcmp(key, 'classes')
+                notes = 'Use the classifier GUI to define class names.';
+                return;
+            end
+            if strcmp(nodeType, 'classifier') && strcmp(key, 'description')
+                notes = 'Classifier identity and mode are defined in the classifier module.';
+                return;
+            end
+            if strcmp(nodeType, 'roigrid') && strcmp(key, 'gridcount')
+                notes = 'GridCount controls the ROI grid geometry at design time.';
+                return;
+            end
+            if isempty(notes)
+                notes = 'Pipeline design-time parameter.';
+            end
+        end
+
+        function list = normalizeParamNameList(app, v) %#ok<INUSD>
+            list = {};
+            if isempty(v)
+                return;
+            end
+            if ischar(v) || isstring(v)
+                list = cellstr(string(v(:)));
+                list = lower(strtrim(list));
+                list = list(~cellfun(@isempty, list));
+                return;
+            end
+            if iscell(v)
+                tmp = cell(1, numel(v));
+                for ii = 1:numel(v)
+                    if isempty(v{ii})
+                        tmp{ii} = '';
+                    else
+                        tmp{ii} = lower(strtrim(char(string(v{ii}))));
+                    end
+                end
+                list = tmp(~cellfun(@isempty, tmp));
+            end
+        end
+
+        function label = friendlyParamLabel(app, key) %#ok<INUSD>
+            key = char(string(key));
+            lowerKey = lower(key);
+            switch lowerKey
+                case 'outputchannelname'
+                    label = 'Output channel name';
+                case 'outputname'
+                    label = 'Output name';
+                case 'channel'
+                    label = 'Input channel';
+                case 'channels'
+                    label = 'Input channels';
+                case 'debug'
+                    label = 'Debug logs';
+                otherwise
+                    token = regexprep(key, '([a-z])([A-Z])', '$1 $2');
+                    token = strrep(token, '_', ' ');
+                    token = strrep(token, 'RGB ', 'RGB ');
+                    label = token;
+            end
+        end
+
+        function txt = paramValueToDisplayText(app, v)
+            if isChoicePayload(app, v)
+                txt = getChoicePayloadSelection(app, v);
+                return;
+            end
+            if iscell(v) && ~isempty(v) && all(cellfun(@(x) ischar(x) || (isstring(x) && isscalar(x)), v(:)))
+                vals = cellfun(@char, cellfun(@string, v(:), 'UniformOutput', false), 'UniformOutput', false);
+                vals = vals(~cellfun(@isempty, strtrim(vals)));
+                if isempty(vals)
+                    txt = '';
+                elseif numel(vals) <= 3
+                    txt = strjoin(vals, ', ');
+                else
+                    txt = sprintf('%s, %s, ... (%d values)', vals{1}, vals{2}, numel(vals));
+                end
+                return;
+            end
+            txt = toUITableCellValue(app, paramValueToTableCell(app, v));
+            txt = char(string(txt));
+        end
+
+        function tipMap = buildParamTipMap(app, params) %#ok<INUSD>
+            tipMap = struct();
+            if ~isstruct(params) || ~isfield(params, 'tip') || isempty(params.tip)
+                return;
+            end
+
+            keys = fieldnames(params);
+            keys(strcmp(keys, 'tip')) = [];
+            tips = params.tip;
+            if ischar(tips) || isstring(tips)
+                tips = cellstr(string(tips(:)));
+            end
+            if ~iscell(tips)
+                return;
+            end
+
+            n = min(numel(keys), numel(tips));
+            for i = 1:n
+                try
+                    tipMap.(keys{i}) = char(string(tips{i}));
+                catch
+                end
+            end
+        end
+
+        function out = appendNote(app, base, extra) %#ok<INUSD>
+            base = strtrim(char(string(base)));
+            extra = strtrim(char(string(extra)));
+            if isempty(base)
+                out = extra;
+            elseif isempty(extra)
+                out = base;
+            else
+                out = [base ' ' extra];
             end
         end
 
@@ -3469,6 +4417,83 @@ classdef pipelineGUI < matlab.apps.AppBase
             end
 
             txt = strjoin(parts, ', ');
+        end
+
+        function txt = formatContractParameters(app, c) %#ok<INUSD>
+            txt = '';
+            if ~isfield(c,'parameters') || ~isstruct(c.parameters)
+                return;
+            end
+            p = c.parameters;
+            parts = {};
+            if isfield(p,'fixed') && ~isempty(p.fixed)
+                parts{end+1} = ['fixed: ' strjoin(cellstr(string(p.fixed)), ', ')]; %#ok<AGROW>
+            end
+            if isfield(p,'design') && ~isempty(p.design)
+                parts{end+1} = ['config: ' strjoin(cellstr(string(p.design)), ', ')]; %#ok<AGROW>
+            end
+            if isfield(p,'template') && ~isempty(p.template)
+                parts{end+1} = ['template: ' strjoin(cellstr(string(p.template)), ', ')]; %#ok<AGROW>
+            end
+            if isfield(p,'run') && ~isempty(p.run)
+                parts{end+1} = ['run: ' strjoin(cellstr(string(p.run)), ', ')]; %#ok<AGROW>
+            end
+            if isfield(p,'data') && ~isempty(p.data)
+                parts{end+1} = ['data: ' strjoin(cellstr(string(p.data)), ', ')]; %#ok<AGROW>
+            end
+            txt = strjoin(parts, ' | ');
+        end
+
+        function txt = describeNodeFamily(app, node) %#ok<INUSD>
+            nodeType = lower(char(string(getfielddefault(app, node, 'type', ''))));
+            pkg = lower(char(string(resolveNodePackage(app, node))));
+            switch nodeType
+                case 'dataloader'
+                    txt = 'Data source';
+                case {'roiidentify','roipattern'}
+                    txt = 'ROI detection';
+                case 'roimanual'
+                    txt = 'Manual ROI editing';
+                case 'roigrid'
+                    txt = 'Grid ROI generation';
+                case 'roitracked'
+                    txt = 'Tracked ROI generation';
+                case 'roiextract'
+                    txt = 'ROI extraction';
+                case 'processor'
+                    if isempty(pkg)
+                        txt = 'ROI processor';
+                    else
+                        txt = ['ROI processor (' pkg ')'];
+                    end
+                case 'classifier'
+                    if isempty(pkg)
+                        txt = 'ROI classifier';
+                    else
+                        txt = ['ROI classifier (' pkg ')'];
+                    end
+                otherwise
+                    txt = 'Generic node';
+            end
+        end
+
+        function txt = describeNodeBindingMode(app, node, contract) %#ok<INUSD>
+            req = getfielddefault(app, contract, 'requirements', struct());
+            txt = 'Mostly fixed at pipeline design time.';
+            if strcmpi(char(string(getfielddefault(app, node, 'type', ''))), 'roiextract')
+                txt = 'Produces ROI-local channels whose exact names can depend on the upstream data.';
+                return;
+            end
+            if strcmpi(char(string(getfielddefault(app, node, 'type', ''))), 'dataloader')
+                txt = 'Defines the raw channel inventory available to downstream nodes.';
+                return;
+            end
+            if isstruct(req) && isfield(req, 'roi') && isstruct(req.roi)
+                n = double(getfielddefault(app, req.roi, 'channelsMin', 0));
+                if n > 0
+                    txt = sprintf('Consumes ROI content with at least %d channel(s); exact names can stay data-dependent.', n);
+                end
+            end
         end
 
         function out = paramValueToTableCell(app, v) %#ok<INUSD>
@@ -3681,38 +4706,7 @@ classdef pipelineGUI < matlab.apps.AppBase
         end
 
         function commitVisibleParamTable(app)
-            if isempty(app.SelectedModules)
-                return;
-            end
-            modIdx = app.SelectedModules(1);
-            if modIdx < 1 || modIdx > numel(app.Data.nodes)
-                return;
-            end
-
-            data = app.UIModuleParametersTable.Data;
-            if isempty(data)
-                return;
-            end
-
-            node = app.Data.nodes(modIdx);
-            if ~isfield(node,'params') || isempty(node.params) || ~isstruct(node.params)
-                node.params = struct();
-            end
-
-            for row = 1:size(data,1)
-                key = char(string(data{row,1}));
-                if isempty(key) || isReadOnlyParamKey(app, key)
-                    continue;
-                end
-                rawVal = data{row,2};
-                oldVal = '';
-                if isfield(node.params, key)
-                    oldVal = node.params.(key);
-                end
-                node.params.(key) = parseParamValueFromTable(app, rawVal, oldVal);
-            end
-
-            app.Data.nodes(modIdx) = node;
+            % Parameter edits are committed immediately by the table callbacks.
         end
 
         function refreshStatus(app, showAlert)
@@ -3731,10 +4725,23 @@ classdef pipelineGUI < matlab.apps.AppBase
             ctx = app.Context;
             try
                 [ok, report] = runPipelineDry(pipe, ctx, struct('allowGui', false));
+                if applyAutoBindingSuggestions(app, report)
+                    pipe = buildPipelineStruct(app, true);
+                    [ok, report] = runPipelineDry(pipe, ctx, struct('allowGui', false));
+                end
             catch
                 ok = false;
                 report = struct('errors',{{'Validation error'}},'missingParams',[]);
             end
+            if ~isfield(report, 'solver') || ~isstruct(report.solver)
+                try
+                    report.solver = pipelineSolverIssues(report, app.Data.nodes);
+                catch
+                    report.solver = struct('issues', [], 'table', {{}}, 'summary', struct(), 'hasBlocking', false);
+                end
+            end
+            app.LastValidationReport = report;
+            app.LastSolverIssues = report.solver;
 
             [okPorts, portReport] = validatePortContracts(app, pipe, ctx);
 
@@ -3808,6 +4815,17 @@ classdef pipelineGUI < matlab.apps.AppBase
             for ii = 1:numel(app.Data.nodes)
                 redrawModule(app, ii);
             end
+            redrawEdges(app);
+
+            pipelineSummary = buildPipelineSummaryText(app, ok, report, okPorts, customErrors, pipe);
+            if ~isempty(pipelineSummary)
+                app.PipelinesketchLabel.Text = ['Pipeline sketch: ' pipelineSummary];
+            else
+                app.PipelinesketchLabel.Text = 'Pipeline sketch:';
+            end
+            if ~isempty(app.UITable) && ~isempty(app.UITable.Data)
+                app.ModulesinworkspaceLabel.Text = sprintf('Modules in workspace: %d', size(app.UITable.Data,1));
+            end
 
             hasBlockingError = ~(ok && okPorts) || ~isempty(customErrors);
             setCheckPipelineVisualState(app, ~hasBlockingError);
@@ -3828,12 +4846,12 @@ classdef pipelineGUI < matlab.apps.AppBase
                     warns = [warns report.warnings];
                 end
 
+                hasSolverIssues = isstruct(report) && isfield(report,'solver') && isstruct(report.solver) && ...
+                    isfield(report.solver,'issues') && ~isempty(report.solver.issues);
                 if ~isempty(errs)
-                    msg = formatValidationMessage(app, errs, warns, false);
-                    uialert(app.UIFigure, msg, 'Pipeline issues', 'Icon','warning');
-                elseif ~isempty(warns)
-                    msg = formatValidationMessage(app, {}, warns, true);
-                    uialert(app.UIFigure, msg, 'Pipeline warnings', 'Icon','warning');
+                    showSolverIssuesDialog(app, report, portReport, customErrors, errs, warns, false);
+                elseif ~isempty(warns) || hasSolverIssues
+                    showSolverIssuesDialog(app, report, portReport, customErrors, {}, warns, true);
                 else
                     msg = sprintf('Pipeline is valid. %d node(s), %d edge(s).', numel(pipe.nodes), numel(pipe.edges));
                     uialert(app.UIFigure, msg, 'Pipeline check', 'Icon','info');
@@ -3841,8 +4859,290 @@ classdef pipelineGUI < matlab.apps.AppBase
             end
         end
 
+        function txt = buildPipelineSummaryText(app, ok, report, okPorts, customErrors, pipe) %#ok<INUSD>
+            txt = '';
+            try
+                nodeCount = numel(getfielddefault(app, pipe, 'nodes', struct([])));
+                edgeCount = numel(getfielddefault(app, pipe, 'edges', struct([])));
+
+                if ok && okPorts && isempty(customErrors)
+                    txt = sprintf('%d nodes, %d edges, ready', nodeCount, edgeCount);
+                    return;
+                end
+
+                issues = {};
+                if ~ok
+                    if isstruct(report) && isfield(report, 'errors') && ~isempty(report.errors)
+                        issues{end+1} = sprintf('%d validation error(s)', numel(report.errors));
+                    end
+                    if isstruct(report) && isfield(report, 'warnings') && ~isempty(report.warnings)
+                        issues{end+1} = sprintf('%d warning(s)', numel(report.warnings));
+                    end
+                end
+                if ~okPorts
+                    issues{end+1} = 'port conflicts';
+                end
+                if ~isempty(customErrors)
+                    issues{end+1} = sprintf('%d custom issue(s)', numel(customErrors));
+                end
+                if isempty(issues)
+                    issues = {'needs review'};
+                end
+                txt = sprintf('%d nodes, %d edges, %s', nodeCount, edgeCount, strjoin(issues, ', '));
+            catch
+                txt = '';
+            end
+        end
+
+        function showSolverIssuesDialog(app, report, portReport, customErrors, errs, warns, noBlocking)
+            if nargin < 7
+                noBlocking = false;
+            end
+            issues = [];
+            if isstruct(report) && isfield(report,'solver') && isstruct(report.solver) && isfield(report.solver,'issues')
+                issues = report.solver.issues;
+            end
+
+            issues = appendPortIssuesForDialog(app, issues, portReport);
+            issues = appendCustomIssuesForDialog(app, issues, customErrors);
+            tableData = solverIssuesToTableData(app, issues);
+
+            if isempty(tableData)
+                msg = formatValidationMessage(app, errs, warns, noBlocking);
+                uialert(app.UIFigure, msg, 'Pipeline issues', 'Icon','warning');
+                return;
+            end
+
+            fig = uifigure('Name', 'Pipeline issues', 'Position', [160 160 980 420]);
+            titleText = 'Pipeline issues to resolve';
+            if noBlocking
+                titleText = 'Pipeline warnings and residual choices';
+            end
+            uilabel(fig, 'Text', titleText, 'FontWeight', 'bold', 'Position', [16 386 430 22]);
+            uilabel(fig, 'Text', 'Select a row to focus the corresponding node and edit its parameters in the main pipeline window.', ...
+                'Position', [16 360 760 22]);
+
+            tbl = uitable(fig, ...
+                'Data', tableData, ...
+                'ColumnName', {'Severity','Stage','Node','Type','Parameter','Resolve','Message','Action'}, ...
+                'RowName', {}, ...
+                'ColumnEditable', false(1,8), ...
+                'ColumnWidth', {76 72 128 110 140 112 290 130}, ...
+                'Position', [16 64 948 286]);
+            tbl.SelectionChangedFcn = @(src,event)selectSolverIssueFromTable(app, src, issues);
+
+            uibutton(fig, 'Text', 'Open selected', ...
+                'Position', [642 18 150 30], ...
+                'ButtonPushedFcn', @(src,event)openSelectedSolverIssue(app, tbl, issues));
+            uibutton(fig, 'Text', 'Close', ...
+                'Position', [814 18 150 30], ...
+                'ButtonPushedFcn', @(src,event)delete(fig));
+        end
+
+        function issues = appendPortIssuesForDialog(app, issues, portReport)
+            if ~isstruct(portReport) || ~isfield(portReport,'errors') || isempty(portReport.errors)
+                return;
+            end
+            for i = 1:numel(portReport.errors)
+                msg = char(string(portReport.errors{i}));
+                nodeId = inferNodeIdFromDialogMessage(app, msg);
+                issues = appendDialogIssue(app, issues, 'error', 'invalid_link', nodeId, '', msg, 'design', 'select_node');
+            end
+        end
+
+        function issues = appendCustomIssuesForDialog(app, issues, customErrors)
+            if isempty(customErrors)
+                return;
+            end
+            for i = 1:numel(customErrors)
+                msg = char(string(customErrors{i}));
+                nodeId = inferNodeIdFromDialogMessage(app, msg);
+                issues = appendDialogIssue(app, issues, 'error', 'custom_validation', nodeId, '', msg, 'design', 'open_node_params');
+            end
+        end
+
+        function data = solverIssuesToTableData(app, issues) %#ok<INUSD>
+            data = cell(numel(issues), 8);
+            for i = 1:numel(issues)
+                data{i,1} = char(string(getfielddefault(app, issues(i), 'severity', '')));
+                data{i,2} = stageLabelFromResolveAt(app, getfielddefault(app, issues(i), 'resolveAt', ''));
+                data{i,3} = char(string(getfielddefault(app, issues(i), 'nodeName', '')));
+                data{i,4} = char(string(getfielddefault(app, issues(i), 'moduleType', '')));
+                data{i,5} = char(string(getfielddefault(app, issues(i), 'param', '')));
+                data{i,6} = char(string(getfielddefault(app, issues(i), 'resolveAt', '')));
+                data{i,7} = char(string(getfielddefault(app, issues(i), 'message', '')));
+                data{i,8} = char(string(getfielddefault(app, issues(i), 'actionLabel', '')));
+            end
+        end
+
+        function issues = appendDialogIssue(app, issues, severity, status, nodeId, paramName, message, resolveAt, action)
+            nodeName = nodeId;
+            moduleType = '';
+            pkg = '';
+            idx = [];
+            if ~isempty(nodeId)
+                idx = find(strcmp(cellstr(string({app.Data.nodes.id})), nodeId), 1, 'first');
+            end
+            if ~isempty(idx)
+                node = app.Data.nodes(idx);
+                nodeName = char(string(getfielddefault(app, node, 'name', nodeId)));
+                moduleType = char(string(getfielddefault(app, node, 'type', '')));
+                pkg = char(string(getfielddefault(app, node, 'pkg', '')));
+            end
+            issue = struct( ...
+                'id', matlab.lang.makeValidName([char(string(status)) '_' char(string(nodeId)) '_' num2str(numel(issues)+1)]), ...
+                'severity', char(string(severity)), ...
+                'status', char(string(status)), ...
+                'scope', 'node', ...
+                'nodeId', char(string(nodeId)), ...
+                'nodeName', char(string(nodeName)), ...
+                'moduleType', moduleType, ...
+                'package', pkg, ...
+                'param', char(string(paramName)), ...
+                'message', char(string(message)), ...
+                'stage', stageLabelFromResolveAt(app, resolveAt), ...
+                'resolveAt', char(string(resolveAt)), ...
+                'action', char(string(action)), ...
+                'actionLabel', dialogActionLabel(app, action));
+            if isempty(issues)
+                issues = issue;
+            else
+                issues(end+1) = issue; %#ok<AGROW>
+            end
+        end
+
+        function label = dialogActionLabel(app, action) %#ok<INUSD>
+            switch char(string(action))
+                case 'open_node_params'
+                    label = 'Configure node';
+                case 'open_run_params'
+                    label = 'Resolve at run setup';
+                otherwise
+                    label = 'Select node';
+            end
+        end
+
+        function label = stageLabelFromResolveAt(app, resolveAt) %#ok<INUSD>
+            resolveAt = lower(char(string(resolveAt)));
+            switch resolveAt
+                case 'design'
+                    label = 'Config';
+                case 'run_preflight'
+                    label = 'Run';
+                otherwise
+                    label = 'Run';
+            end
+        end
+
+        function nodeId = inferNodeIdFromDialogMessage(app, msg)
+            nodeId = '';
+            if isempty(app.Data.nodes)
+                return;
+            end
+            for i = 1:numel(app.Data.nodes)
+                if isfield(app.Data.nodes(i), 'id')
+                    candidate = char(string(app.Data.nodes(i).id));
+                    if contains(msg, candidate)
+                        nodeId = candidate;
+                        return;
+                    end
+                end
+            end
+        end
+
+        function selectSolverIssueFromTable(app, tbl, issues)
+            sel = tbl.Selection;
+            if isempty(sel) || isempty(issues)
+                return;
+            end
+            row = sel(1,1);
+            if row < 1 || row > numel(issues)
+                return;
+            end
+            focusSolverIssue(app, issues(row));
+        end
+
+        function openSelectedSolverIssue(app, tbl, issues)
+            sel = tbl.Selection;
+            if isempty(sel) || isempty(issues)
+                return;
+            end
+            row = sel(1,1);
+            if row < 1 || row > numel(issues)
+                return;
+            end
+            issue = issues(row);
+            focusSolverIssue(app, issue);
+            if strcmp(issue.action, 'open_run_params')
+                uialert(app.UIFigure, ...
+                    'This value depends on the concrete dataset and must be resolved in the run setup/preflight before server submission.', ...
+                    'Run binding required', 'Icon', 'info');
+            end
+        end
+
+        function focusSolverIssue(app, issue)
+            if ~isstruct(issue) || ~isfield(issue, 'nodeId') || isempty(issue.nodeId)
+                return;
+            end
+            nodeId = char(string(issue.nodeId));
+            idx = find(strcmp(cellstr(string({app.Data.nodes.id})), nodeId), 1, 'first');
+            if isempty(idx)
+                return;
+            end
+            setSelection(app, idx, false);
+            updateParamsTable(app, idx);
+            figure(app.UIFigure);
+        end
+
         function out = extractSemanticHints(app, report) %#ok<INUSD>
             out = containers.Map('KeyType','char','ValueType','char');
+            if isstruct(report) && isfield(report,'binding') && isstruct(report.binding) && isfield(report.binding,'nodes') && isstruct(report.binding.nodes)
+                bindKeys = fieldnames(report.binding.nodes);
+                for i = 1:numel(bindKeys)
+                    nodeReport = report.binding.nodes.(bindKeys{i});
+                    if ~isstruct(nodeReport)
+                        continue;
+                    end
+                    nodeId = char(string(getfielddefault(app, nodeReport, 'nodeId', bindKeys{i})));
+                    status = lower(char(string(getfielddefault(app, nodeReport, 'status', ''))));
+                    msg = char(string(getfielddefault(app, nodeReport, 'message', '')));
+                    switch status
+                        case 'resolved'
+                            label = 'OK';
+                            if ~isempty(msg)
+                                label = ['OK: ' msg];
+                            end
+                        case 'auto_resolvable'
+                            label = 'Binding: auto';
+                            if ~isempty(msg)
+                                label = ['Binding: auto - ' msg];
+                            end
+                        case 'needs_user_binding'
+                            label = 'Binding: choose';
+                            if ~isempty(msg)
+                                label = ['Binding: choose - ' msg];
+                            end
+                        case 'needs_run_binding'
+                            label = 'Binding: run';
+                            if ~isempty(msg)
+                                label = ['Binding: run - ' msg];
+                            end
+                        case 'invalid'
+                            label = 'Binding: invalid';
+                            if ~isempty(msg)
+                                label = ['Binding: invalid - ' msg];
+                            end
+                        otherwise
+                            label = msg;
+                    end
+                    if ~isempty(label)
+                        out(nodeId) = label;
+                    end
+                end
+                if ~isempty(out)
+                    return;
+                end
+            end
             if ~isstruct(report) || ~isfield(report,'semantic') || ~isstruct(report.semantic)
                 return;
             end
@@ -3875,6 +5175,98 @@ classdef pipelineGUI < matlab.apps.AppBase
                     label = 'OK';
                 end
                 out(char(string(keys{i}))) = label;
+            end
+        end
+
+        function changed = applyAutoBindingSuggestions(app, report)
+            changed = false;
+            if ~isstruct(report) || ~isfield(report,'binding') || ~isstruct(report.binding) || ...
+                    ~isfield(report.binding,'nodes') || ~isstruct(report.binding.nodes)
+                return;
+            end
+
+            repKeys = fieldnames(report.binding.nodes);
+            for i = 1:numel(repKeys)
+                nodeReport = report.binding.nodes.(repKeys{i});
+                if ~isstruct(nodeReport)
+                    continue;
+                end
+                if ~strcmpi(char(string(getfielddefault(app, nodeReport, 'status', ''))), 'auto_resolvable')
+                    continue;
+                end
+                nodeId = char(string(getfielddefault(app, nodeReport, 'nodeId', '')));
+                idx = find(strcmp(cellstr(string({app.Data.nodes.id})), nodeId), 1, 'first');
+                if isempty(idx)
+                    continue;
+                end
+                node = app.Data.nodes(idx);
+                [node, applied] = applyAutoBindingToNode(app, node, nodeReport);
+                if applied
+                    app.Data.nodes(idx) = node;
+                    changed = true;
+                end
+            end
+
+            if changed
+                markDirty(app, true);
+            end
+        end
+
+        function [node, applied] = applyAutoBindingToNode(app, node, nodeReport)
+            applied = false;
+            choices = getfielddefault(app, nodeReport, 'autoChoice', {});
+            if isempty(choices)
+                return;
+            end
+            if ~isfield(node,'params') || ~isstruct(node.params) || isempty(node.params)
+                node.params = struct();
+            end
+
+            contract = getNodeContract(app, node);
+            binding = getfielddefault(app, contract, 'binding', struct());
+            selectorKeys = getfielddefault(app, binding, 'selectorKeys', {});
+            mode = lower(char(string(getfielddefault(app, nodeReport, 'mode', ''))));
+
+            if strcmp(mode, 'channelslots') && ~isempty(selectorKeys)
+                selectorKeys = cellstr(string(selectorKeys(:)));
+                for k = 1:numel(selectorKeys)
+                    key = char(string(selectorKeys{k}));
+                    if k <= numel(choices)
+                        node.params.(key) = choices{k};
+                    else
+                        node.params.(key) = 'none';
+                    end
+                end
+                applied = true;
+                return;
+            end
+
+            if strcmp(mode, 'singlechannel')
+                selectorKey = '';
+                if ~isempty(selectorKeys)
+                    selectorKey = char(string(selectorKeys{min(1, numel(selectorKeys))}));
+                elseif isfield(contract,'selectors') && isstruct(contract.selectors) && ~isempty(contract.selectors.channelParam)
+                    selectorKey = char(string(contract.selectors.channelParam));
+                end
+                if ~isempty(selectorKey)
+                    node.params.(selectorKey) = choices{1};
+                    applied = true;
+                end
+                return;
+            end
+
+            if ~isempty(selectorKeys)
+                selectorKey = char(string(selectorKeys{1}));
+                node.params.(selectorKey) = choices(:)';
+                applied = true;
+            elseif isfield(contract,'selectors') && isstruct(contract.selectors)
+                if ~isempty(contract.selectors.channelsParam)
+                    node.params.(char(string(contract.selectors.channelsParam))) = choices(:)';
+                    applied = true;
+                elseif ~isempty(contract.selectors.channelParam) && ~isempty(choices)
+                    node.params.(char(string(contract.selectors.channelParam))) = choices{1};
+                    applied = true;
+                end
             end
         end
 
@@ -4259,10 +5651,7 @@ classdef pipelineGUI < matlab.apps.AppBase
         end
 
         function c = getNodeContract(app, node)
-            pkg = '';
-            if isfield(node,'pkg') && ~isempty(node.pkg)
-                pkg = char(string(node.pkg));
-            end
+            pkg = resolveNodePackage(app, node);
 
             if isfield(node,'contract') && isstruct(node.contract) && isfield(node.contract,'in') && isfield(node.contract,'out')
                 c = node.contract;
@@ -4720,7 +6109,10 @@ classdef pipelineGUI < matlab.apps.AppBase
                     end
 
                     tmpProc = process(tempdir, 'pipeline_module', randi(1e9));
-                    pkgName = char(string(getfielddefault(app,node,'pkg','')));
+                    pkgName = resolveNodePackage(app, node);
+                    if isempty(pkgName) && isfield(node,'func') && ~isempty(node.func)
+                        pkgName = inferPkgFromFunction(app, node.func, 'process');
+                    end
                     if ~isempty(pkgName)
                         tmpProc.processFun = [pkgName '.process'];
                         try
@@ -4786,12 +6178,44 @@ classdef pipelineGUI < matlab.apps.AppBase
                 if strcmpi(node.type,'classifier')
                     originClassi = loadOriginClassifierReference(app, node);
                     if ~isempty(originClassi)
-                        classifierGUI(originClassi);
+                        dlg = classifierGUI(originClassi);
+                        try
+                            uiwait(dlg.ClassifierUIFigure);
+                        catch
+                        end
+                        if isvalid(dlg)
+                            originClassi = dlg.Data.classiObj;
+                            try
+                                delete(dlg);
+                            catch
+                            end
+                        end
+                        node = applyClassifierObjectToNode(app, node, originClassi);
+                        app.Data.nodes(idx) = node;
+                        updateModuleListTable(app);
+                        updateParamsTable(app, idx);
+                        refreshStatus(app);
                         return;
                     end
                     refClassi = loadLinkedClassifierReference(app, node);
                     if ~isempty(refClassi)
-                        classifierGUI(refClassi);
+                        dlg = classifierGUI(refClassi);
+                        try
+                            uiwait(dlg.ClassifierUIFigure);
+                        catch
+                        end
+                        if isvalid(dlg)
+                            refClassi = dlg.Data.classiObj;
+                            try
+                                delete(dlg);
+                            catch
+                            end
+                        end
+                        node = applyClassifierObjectToNode(app, node, refClassi);
+                        app.Data.nodes(idx) = node;
+                        updateModuleListTable(app);
+                        updateParamsTable(app, idx);
+                        refreshStatus(app);
                         return;
                     end
 
@@ -4825,6 +6249,12 @@ classdef pipelineGUI < matlab.apps.AppBase
                         if isfield(node.params,'channel') && ~isempty(node.params.channel)
                             tmpClassi.channelName = char(string(node.params.channel));
                         end
+                        if isfield(node.params,'channelName') && ~isempty(node.params.channelName)
+                            tmpClassi.channelName = char(string(node.params.channelName));
+                        end
+                        if isfield(node.params,'channelName2') && ~isempty(node.params.channelName2)
+                            tmpClassi.channelName2 = char(string(node.params.channelName2));
+                        end
                         if isfield(node.params,'channels') && ~isempty(node.params.channels)
                             ch = node.params.channels;
                             if isstring(ch), ch = cellstr(ch); end
@@ -4842,13 +6272,44 @@ classdef pipelineGUI < matlab.apps.AppBase
                             if ischar(cls), cls = {cls}; end
                             tmpClassi.classes = cls;
                         end
+                        if isfield(node.params,'classifierPkg') && ~isempty(node.params.classifierPkg)
+                            tmpClassi.classifierPkg = char(string(node.params.classifierPkg));
+                        end
                         if isfield(node.params,'outputType') && ~isempty(node.params.outputType)
                             tmpClassi.outputType = node.params.outputType;
+                        end
+                        if isfield(node.params,'outputFun') && ~isempty(node.params.outputFun)
+                            tmpClassi.outputFun = node.params.outputFun;
+                        end
+                        if isfield(node.params,'outputArg') && ~isempty(node.params.outputArg)
+                            tmpClassi.outputArg = node.params.outputArg;
+                        end
+                        if isfield(node.params,'trainingParam') && ~isempty(node.params.trainingParam)
+                            tmpClassi.trainingParam = node.params.trainingParam;
+                        end
+                        if isfield(node.params,'description') && ~isempty(node.params.description)
+                            tmpClassi.description = node.params.description;
                         end
                     end
 
                     tmpClassi.category = classiNormalizeCategory(tmpClassi.category);
-                    classifierGUI(tmpClassi);
+                    dlg = classifierGUI(tmpClassi);
+                    try
+                        uiwait(dlg.ClassifierUIFigure);
+                    catch
+                    end
+                    if isvalid(dlg)
+                        tmpClassi = dlg.Data.classiObj;
+                        try
+                            delete(dlg);
+                        catch
+                        end
+                    end
+                    node = applyClassifierObjectToNode(app, node, tmpClassi);
+                    app.Data.nodes(idx) = node;
+                    updateModuleListTable(app);
+                    updateParamsTable(app, idx);
+                    refreshStatus(app);
                     return;
                 end
 
@@ -5089,7 +6550,7 @@ classdef pipelineGUI < matlab.apps.AppBase
                 forceRefresh = false;
             end
 
-            pkgName = char(string(getfielddefault(app, node, 'pkg', '')));
+            pkgName = resolveNodePackage(app, node);
             if isempty(pkgName)
                 return;
             end
@@ -5187,6 +6648,9 @@ classdef pipelineGUI < matlab.apps.AppBase
             % Normalize edges to id/port form
             normEdges = struct('from',{},'to',{},'fromPort',{},'toPort',{},'condition',{});
             if isempty(edges)
+                if shouldAutoArrangePipelineLayout(app, nodes)
+                    nodes = autoArrangePipelineLayout(app, nodes, normEdges);
+                end
                 edges = normEdges;
                 return;
             end
@@ -5249,6 +6713,14 @@ classdef pipelineGUI < matlab.apps.AppBase
                 end
 
                 normEdges(end+1) = struct('from',fromId,'to',toId,'fromPort',fromPort,'toPort',toPort,'condition',cond); %#ok<AGROW>
+            end
+
+            if shouldAutoArrangePipelineLayout(app, nodes)
+                nodes = autoArrangePipelineLayout(app, nodes, normEdges);
+            else
+                for i = 1:numel(nodes)
+                    nodes(i).layout = normalizeModuleLayout(app, nodes(i), getfielddefault(app, nodes(i), 'layout', [10 10 20 10]));
+                end
             end
 
             edges = normEdges;
@@ -5723,6 +7195,42 @@ classdef pipelineGUI < matlab.apps.AppBase
             end
         end
 
+        function pkgName = promptModulePackageForType(app, nodeType)
+            pkgName = '';
+            nodeType = lower(char(string(nodeType)));
+            switch nodeType
+                case 'processor'
+                    choices = getProcessorPackageList(app);
+                    titleText = 'Select processor package';
+                case 'classifier'
+                    choices = getClassifierPackageList(app);
+                    titleText = 'Select classifier package';
+                otherwise
+                    return;
+            end
+
+            choices = choices(~cellfun(@isempty, choices));
+            choices = unique(choices, 'stable');
+            if isempty(choices)
+                return;
+            end
+
+            if numel(choices) == 1
+                pkgName = choices{1};
+                return;
+            end
+
+            labels = [choices(:)' {choices{1}}];
+            res = myDialog({'Package'}, {labels}, 'CallingApp', app.UIFigure, 'Title', titleText);
+            if isempty(res)
+                return;
+            end
+            val = char(string(res.Package{end}));
+            if any(strcmp(choices, val))
+                pkgName = val;
+            end
+        end
+
         function createDynamicSaveButton(app)
             if isfield(app.Context,'savePipelineButton')
                 hb = app.Context.savePipelineButton;
@@ -6014,10 +7522,11 @@ classdef pipelineGUI < matlab.apps.AppBase
 
             % Create UIModuleParametersTable
             app.UIModuleParametersTable = uitable(app.UIFigure);
-            app.UIModuleParametersTable.ColumnName = {'Parameter'; 'Value'};
+            app.UIModuleParametersTable.ColumnName = {'Section'; 'Parameter'; 'Value'; 'Notes'};
             app.UIModuleParametersTable.RowName = {};
             app.UIModuleParametersTable.CellEditCallback = createCallbackFcn(app, @UIModuleParametersTableCellEdit, true);
             app.UIModuleParametersTable.SelectionChangedFcn = createCallbackFcn(app, @UIModuleParametersTableSelectionChanged, true);
+            app.UIModuleParametersTable.ColumnWidth = {92 168 236 'auto'};
             app.UIModuleParametersTable.Position = [12 22 724 185];
 
             % Create ButtonMoveToCanva
