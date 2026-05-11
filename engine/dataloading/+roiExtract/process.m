@@ -67,6 +67,11 @@ function ctx = process(ctx)
     if isfield(ctx,'channels') && ~isempty(ctx.channels)
         p.channels = ctx.channels;
     end
+    if isfield(p,'roiList') && ~isempty(p.roiList)
+        p.roiList = round(double(p.roiList(:)'));
+        p.roiList = p.roiList(isfinite(p.roiList) & p.roiList >= 1);
+        p.roiList = unique(p.roiList, 'stable');
+    end
 
     existingPolicy = resolveExistingPolicy(ctx, p);
     switch existingPolicy
@@ -111,6 +116,10 @@ function ctx = process(ctx)
             todo = setdiff(1:n, done);
         else
             todo = 1:n;
+        end
+
+        if isfield(p,'roiList') && ~isempty(p.roiList)
+            todo = intersect(todo, p.roiList, 'stable');
         end
 
         [todo, existingTodo] = filterTodoByExistingPolicy(f.roi, todo, existingPolicy);

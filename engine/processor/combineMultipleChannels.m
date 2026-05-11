@@ -3,7 +3,14 @@ function [paramout,dataout,imageout] = combineMultipleChannels(param, roiobj, fr
 environment = 'pc'; %#ok<NASGU>
 
 if nargin==0
-    listChannels = listAvailableChannels;
+    listChannels = {};
+    try
+        listChannels = listAvailableChannels;
+    catch
+    end
+    if isempty(listChannels)
+        listChannels = {'N/A'};
+    end
     paramout = [];
 
     tip = {};
@@ -19,7 +26,7 @@ if nargin==0
     paramout.outputChannelName = 'CombinedChannel';
     tip{end+1} = 'Please enter the name of the output channel';
 
-    paramout.listChannelName = [listChannels listChannels{end}];
+    paramout.listChannelName = [listChannels(:)' listChannels{end}];
     tip{end+1} = 'Do not edit';
 
     % optional (not used by GUI unless you add it)

@@ -88,6 +88,19 @@ function [paramout, dataout, imageout] = process(param, roiobj, ctx)
             'No input channel selected. Please choose at least one channel.');
     end
 
+    requiredCount = 0;
+    if isfield(paramout, 'requiredChannelCount') && ~isempty(paramout.requiredChannelCount)
+        requiredCount = double(paramout.requiredChannelCount);
+        if ~isfinite(requiredCount)
+            requiredCount = 0;
+        end
+        requiredCount = max(0, round(requiredCount));
+    end
+    if requiredCount > 0 && numel(cha) ~= requiredCount
+        error('combineMultipleChannels:WrongChannelCount', ...
+            'Expected exactly %d selected channel(s), but got %d.', requiredCount, numel(cha));
+    end
+
     doDebug = false;
     if isfield(paramout,'debug')
         doDebug = logical(paramout.debug);

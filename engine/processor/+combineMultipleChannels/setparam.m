@@ -7,18 +7,18 @@ function paramout = setparam(ctx)
     end
 
     listChannels = {};
-    if isfield(ctx,'channels')
-        listChannels = ctx.channels;
-    end
-    if isempty(listChannels) && ~(isfield(ctx,'useProvidedChannels') && ctx.useProvidedChannels)
-        listChannels = listAvailableChannels;
+    if isfield(ctx,'channels') && ~isempty(ctx.channels)
+        listChannels = normalizeChannelList(ctx.channels);
+    else
+        try
+            listChannels = listAvailableChannels;
+        catch
+            listChannels = {};
+        end
     end
     if isempty(listChannels)
-        listChannels = {''};
+        listChannels = {'N/A'};
     end
-
-    % dropdown choices (last entry is selected)
-    choices = [{'none'}, listChannels];
 
     paramout = struct();
     tip = {};
@@ -34,8 +34,8 @@ function paramout = setparam(ctx)
 
     for i = 1:maxSlots
         key = sprintf('Channel%d', i);
-        tip{end+1} = 'Select a channel to combine (none = skip)'; %#ok<AGROW>
-        paramout.(key) = [choices {'none'}]; %#ok<AGROW>
+        tip{end+1} = sprintf('Binding slot %d: select one input channel (none = skip).', i); %#ok<AGROW>
+        paramout.(key) = 'none';
 
         rgbKey = sprintf('RGB_Channel%d', i);
         tip{end+1} = 'RGB triplet for this channel eg: [1 0 0]'; %#ok<AGROW>
@@ -46,6 +46,9 @@ function paramout = setparam(ctx)
         end
     end
 
+    paramout.requiredChannelCount = 0;
+    tip{end+1} = 'Optional fixed input count. Set 3 to require exactly 3 selected channels; keep 0 to accept any non-zero count.'; %#ok<AGROW>
+
     paramout.outputChannelName = 'CombinedChannel';
     tip{end+1} = 'Please enter the name of the output channel'; %#ok<AGROW>
 
@@ -53,4 +56,23 @@ function paramout = setparam(ctx)
     tip{end+1} = 'Optional: set debug=true for verbose console logs'; %#ok<AGROW>
 
     paramout.tip = tip;
+end
+
+function out = normalizeChannelList(ch)
+    if ischar(ch) || isstring(ch)
+        ch = cellstr(ch);
+    end
+    if ~iscell(ch)
+        ch = {char(string(ch))};
+    end
+
+    out = {};
+    for i = 1:numel(ch)
+        v = char(string(ch{i}));
+        if ~isempty(v)
+            out{end+1} = v; %#ok<AGROW>
+        end
+    end
+
+    out = unique(out, 'stable');
 end

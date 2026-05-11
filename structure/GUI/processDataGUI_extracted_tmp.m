@@ -1290,6 +1290,18 @@ restoreSelectionFromRunProfile(app, procObj);
 
     % update processor object (handle -> persists)
     procObj.processArg = param;
+    pkgName = '';
+    if isstruct(param) && isfield(param, 'pkg') && ~isempty(param.pkg)
+        pkgName = char(string(param.pkg));
+    elseif isprop(procObj,'processFun') && ~isempty(procObj.processFun)
+        pkgName = char(string(procObj.processFun));
+        if contains(pkgName, '.process')
+            pkgName = extractBefore(pkgName, '.process');
+        end
+    end
+    if ~isempty(pkgName)
+        procObj.processFun = [pkgName '.process'];
+    end
 
 % ---- save selection snapshot (run profile) ----
 data = app.UIROITable.Data;
