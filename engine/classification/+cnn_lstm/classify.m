@@ -233,7 +233,7 @@ end
 
 inputSizeCNN = [];
 if useCNN
-    inputSizeCNN = classifierCNN.Layers(1).InputSize(1:2);
+    inputSizeCNN = inferCNNInputSizeFromNet(classifierCNN, size(vid,[1,2]));
 end
 
 % vidéos redimensionnées
@@ -245,7 +245,7 @@ end
 
 
 if useCNN
-    targetSizeCNN = classifierCNN.Layers(1).InputSize(1:2);
+    targetSizeCNN = inputSizeCNN;
     videoCNN      = resizeTo(vid, inputSizeCNN); %vid % buildCNNVidFromROI(roiobj, classif, frames, ...
                                       % Crop, CropCenter, CropSize, ...
                                       % targetSizeCNN);
@@ -1073,6 +1073,47 @@ function v = getExecOpt(ctx, name, defaultValue)
             return;
         end
     end
+end
+
+function inputSizeHW = inferCNNInputSizeFromNet(netCNN, fallbackSizeHW)
+    inputSizeHW = fallbackSizeHW;
+    if nargin < 2 || isempty(fallbackSizeHW)
+        fallbackSizeHW = [224 224];
+    end
+    try
+        layers = netCNN.Layers;
+    catch
+        inputSizeHW = fallbackSizeHW;
+        return;
+    end
+
+    try
+        isInput = arrayfun(@(L) isa(L,'nnet.cnn.layer.ImageInputLayer'), layers);
+        idx = find(isInput, 1, 'first');
+        if isempty(idx)
+            isInput = arrayfun(@(L) isa(L,'nnet.cnn.layer.SequenceInputLayer'), layers);
+            idx = find(isInput, 1, 'first');
+        end
+        if ~isempty(idx)
+            sz = layers(idx).InputSize;
+            inputSizeHW = sz(1:2);
+            return;
+        end
+    catch
+    end
+
+    try
+        if isprop(netCNN, 'InputSizes') && ~isempty(netCNN.InputSizes)
+            sz = netCNN.InputSizes{1};
+            if numel(sz) >= 2
+                inputSizeHW = sz(1:2);
+                return;
+            end
+        end
+    catch
+    end
+
+    inputSizeHW = fallbackSizeHW;
 end
 
 function ds = cloneDataseries(ds0)

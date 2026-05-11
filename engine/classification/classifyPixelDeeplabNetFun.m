@@ -208,6 +208,17 @@ end
             tmpout= feval(classif.outputFun,features,classif.classes,classif.outputArg{:});
     end
 
+    if isempty(tmpout)
+        warning('classifyPixelDeeplabNetFun:EmptyOutput', ...
+            'Classifier %s returned an empty output; falling back to a zero segmentation.', char(classif.strid));
+        try
+            nOutCh = max(1, numel(pixresults));
+            tmpout = uint16(zeros(size(roiobj.image,1), size(roiobj.image,2), nOutCh, numel(frames)));
+        catch
+            tmpout = uint16(0);
+        end
+    end
+
     %      figure, imshow(tmpout,[]);
 
 

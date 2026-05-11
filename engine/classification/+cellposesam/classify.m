@@ -388,7 +388,7 @@ end
 end
 
 function args = buildPythonSelectionArgsLocal(ctx, classif)
-args = {'classif', classif};
+args = {'mode','default'};
 
 pyCfg = struct();
 try
@@ -546,93 +546,43 @@ end
 end
 
 function [exitCode, runnerOut] = runCellposeRunnerBackground(pythonExe, runnerPath, configPath, classifPath, cancelPath, stdoutPath, stderrPath, liveLogPath)
-pidPath = fullfile(classifPath, 'runner_pid.txt');
 statusPath = fullfile(classifPath, 'runner_status.txt');
-if exist(pidPath, 'file') == 2
-    delete(pidPath);
-end
 if exist(statusPath, 'file') == 2
     delete(statusPath);
 end
+if exist(stdoutPath, 'file') == 2
+    delete(stdoutPath);
+end
+if exist(stderrPath, 'file') == 2
+    delete(stderrPath);
+end
+if exist(liveLogPath, 'file') == 2
+    delete(liveLogPath);
+end
+
+if ~isempty(cancelPath) && exist(cancelPath, 'file') == 2
+    error('runPipeline:Cancelled', 'Pipeline run cancelled by user before CellposeSAM execution.');
+end
 
 if ispc
-    launcherPath = fullfile(classifPath, 'runner_launcher.ps1');
-    localWriteWindowsRunnerLauncher(launcherPath, pythonExe, runnerPath, configPath, classifPath, stdoutPath, stderrPath, pidPath, statusPath);
-    cmd = sprintf('cmd /C start "" /B powershell.exe -NoProfile -ExecutionPolicy Bypass -File %s', ...
-        localCmdQuote(launcherPath));
+    cmd = sprintf('"%s" -u "%s" "%s" > "%s" 2> "%s"', ...
+        pythonExe, runnerPath, configPath, stdoutPath, stderrPath);
 else
-    innerCmd = sprintf('cd %s && %s -u %s %s > %s 2> %s; echo $? > %s', ...
-        localShellQuote(classifPath), ...
-        localShellQuote(pythonExe), ...
-        localShellQuote(runnerPath), ...
-        localShellQuote(configPath), ...
-        localShellQuote(stdoutPath), ...
-        localShellQuote(stderrPath), ...
-        localShellQuote(statusPath));
-    cmd = sprintf('sh -c %s & echo $! > %s', localShellQuote(innerCmd), localShellQuote(pidPath));
+    cmd = sprintf('"%s" -u "%s" "%s" > "%s" 2> "%s"', ...
+        pythonExe, runnerPath, configPath, stdoutPath, stderrPath);
 end
-[launchStatus, runnerOut] = system(cmd);
-if launchStatus ~= 0
-    exitCode = launchStatus;
-    return;
-end
+[exitCode, runnerOut] = system(cmd);
 
-pid = localReadPid(pidPath);
-lastLogBytes = 0;
-while true
-    pause(0.5);
-    drawnow;
-    localFlushRunnerLog(liveLogPath, lastLogBytes);
-    lastLogBytes = localFileBytes(liveLogPath);
-
-    if ~isempty(cancelPath) && exist(cancelPath, 'file') == 2
-        localKillProcess(pid);
-        error('runPipeline:Cancelled', 'Pipeline run cancelled by user during CellposeSAM execution.');
+try
+    fid = fopen(statusPath, 'w');
+    if fid ~= -1
+        fprintf(fid, '%d', exitCode);
+        fclose(fid);
     end
-
-    if exist(statusPath, 'file') == 2
-        break;
-    end
-
-    if ~isempty(pid) && ~localProcessExists(pid)
-        break;
-    end
-end
-localFlushRunnerLog(liveLogPath, lastLogBytes);
-
-exitCode = localReadExitCode(statusPath);
+catch
 end
 
-function localWriteWindowsRunnerLauncher(launcherPath, pythonExe, runnerPath, configPath, classifPath, stdoutPath, stderrPath, pidPath, statusPath)
-script = sprintf([ ...
-    "$ErrorActionPreference = 'Stop'\n" ...
-    "try {\n" ...
-    "    $p = Start-Process -FilePath %s -ArgumentList @('-u', %s, %s) -WorkingDirectory %s -RedirectStandardOutput %s -RedirectStandardError %s -PassThru -WindowStyle Hidden\n" ...
-    "    Set-Content -LiteralPath %s -Value $p.Id\n" ...
-    "    $p.WaitForExit()\n" ...
-    "    Set-Content -LiteralPath %s -Value $p.ExitCode\n" ...
-    "} catch {\n" ...
-    "    $_ | Out-File -LiteralPath %s -Append\n" ...
-    "    Set-Content -LiteralPath %s -Value 1\n" ...
-    "}\n"], ...
-    localPowerShellQuote(pythonExe), ...
-    localPowerShellQuote(runnerPath), ...
-    localPowerShellQuote(configPath), ...
-    localPowerShellQuote(classifPath), ...
-    localPowerShellQuote(stdoutPath), ...
-    localPowerShellQuote(stderrPath), ...
-    localPowerShellQuote(pidPath), ...
-    localPowerShellQuote(statusPath), ...
-    localPowerShellQuote(stderrPath), ...
-    localPowerShellQuote(statusPath));
-
-fid = fopen(launcherPath, 'w');
-if fid < 0
-    error('Unable to create CellposeSAM Windows launcher: %s', launcherPath);
-end
-cleanup = onCleanup(@() fclose(fid));
-fprintf(fid, '%s', script);
-clear cleanup;
+localFlushRunnerLog(liveLogPath, 0);
 end
 
 function out = localShellQuote(value)

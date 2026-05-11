@@ -142,7 +142,7 @@ else
 end
 
 function args = buildPythonSelectionArgsLocal(ctx, classif)
-args = {'classif', classif};
+args = {'mode','default'};
 
 pyCfg = struct();
 try
