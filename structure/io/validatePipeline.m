@@ -2,7 +2,7 @@ function [ok, report] = validatePipeline(pipe, ctx, opts)
 % validatePipeline  Validate pipeline structure and dependencies.
 
     ok = true;
-    report = struct('errors',{{}}, 'warnings',{{}}, 'order', [], 'nodes', [], 'edges', [], 'contracts', struct(), 'semantic', struct());
+    report = struct('errors',{{}}, 'warnings',{{}}, 'order', [], 'nodes', [], 'edges', [], 'contracts', struct(), 'semantic', struct(), 'binding', struct(), 'solver', struct());
 
     if nargin < 2 || isempty(ctx)
         ctx = struct();
@@ -120,8 +120,25 @@ function [ok, report] = validatePipeline(pipe, ctx, opts)
                 available = unique([available(:); out(:)]);
             end
         end
+
+        bindingReport = solvePipelineBindings(nodes, edges, ctx, order);
+        report.binding = bindingReport;
+        if isfield(bindingReport, 'errors') && ~isempty(bindingReport.errors)
+            ok = false;
+            report.errors = [report.errors, bindingReport.errors]; %#ok<AGROW>
+        end
+        if isfield(bindingReport, 'warnings') && ~isempty(bindingReport.warnings)
+            report.warnings = [report.warnings, bindingReport.warnings]; %#ok<AGROW>
+        end
     catch ME
         report.warnings{end+1} = ['Semantic validation skipped: ' ME.message];
+    end
+
+    try
+        report.solver = pipelineSolverIssues(report, nodes);
+    catch ME
+        report.warnings{end+1} = ['Solver issue report skipped: ' ME.message];
+        report.solver = struct('issues', [], 'table', {{}}, 'summary', struct(), 'hasBlocking', false);
     end
 end
 
@@ -319,24 +336,7 @@ function [missing, deferred] = missingParamsForNode(node, ctx, mode)
 end
 
 function scope = paramScopeForNode(node, paramName)
-    scope = 'template';
-    nodeType = lower(char(string(getField(node, 'type', ''))));
-    paramName = lower(char(string(paramName)));
-
-    switch nodeType
-        case 'dataloader'
-            if any(strcmp(paramName, {'path','positionfilter','channelfilter','stackfilter','label'}))
-                scope = 'run';
-            end
-        case {'roipattern','roiidentify','roimanual','roigrid','roiextract','roitracked'}
-            if any(strcmp(paramName, {'fovindex','roiindex','frames','channels','extractframes','extractchannels'}))
-                scope = 'run';
-            end
-        case {'processor','classifier'}
-            if any(strcmp(paramName, {'frames','channels','channel','outputname','out_dataseries_name'}))
-                scope = 'run';
-            end
-    end
+    scope = pipelineParamScope(node, paramName);
 end
 
 function out = buildContractReport(nodes)
@@ -513,6 +513,7 @@ function state = applyNodeSemanticCapabilities(node, state)
     contract = getField(node, 'contract', struct());
     capabilities = getField(contract, 'capabilities', struct());
     selectors = getField(contract, 'selectors', struct());
+    binding = getField(contract, 'binding', struct());
 
     outNames = outputNames(node);
     if any(strcmp(outNames, 'images'))
@@ -542,7 +543,15 @@ function state = applyNodeSemanticCapabilities(node, state)
     end
     if logical(getField(capabilities, 'roiChannels', false))
         state.hasRoiList = true;
-        state.roiChannels = mergeKnownChannels(state.roiChannels, resolveNodeConfiguredChannels(node, selectors));
+        nodeChannels = resolveNodeConfiguredChannels(node, selectors);
+        if isempty(nodeChannels) && strcmpi(char(string(getField(node, 'type', ''))), 'roiextract')
+            nodeChannels = state.imageChannels;
+        end
+        outName = resolveNodeProducedChannelName(node, binding);
+        if ~isempty(outName)
+            nodeChannels = mergeKnownChannels(nodeChannels, outName);
+        end
+        state.roiChannels = mergeKnownChannels(state.roiChannels, nodeChannels);
     end
     if logical(getField(capabilities, 'roiMasks', false))
         state.hasRoiList = true;
@@ -554,6 +563,13 @@ function state = applyNodeSemanticCapabilities(node, state)
     end
     if logical(getField(capabilities, 'outputsChannels', false))
         nodeChannels = resolveNodeConfiguredChannels(node, selectors);
+        if isempty(nodeChannels) && strcmpi(char(string(getField(node, 'type', ''))), 'roiextract')
+            nodeChannels = state.imageChannels;
+        end
+        outName = resolveNodeProducedChannelName(node, binding);
+        if ~isempty(outName)
+            nodeChannels = mergeKnownChannels(nodeChannels, outName);
+        end
         if any(strcmp(outNames, 'roiList')) || logical(getField(capabilities, 'roiChannels', false))
             state.roiChannels = mergeKnownChannels(state.roiChannels, nodeChannels);
         else
@@ -567,6 +583,22 @@ function channels = resolveNodeConfiguredChannels(node, selectors)
     params = getField(node, 'params', struct());
     if ~isstruct(params)
         return;
+    end
+
+    contract = getField(node, 'contract', struct());
+    binding = getField(contract, 'binding', struct());
+    selectorKeys = getField(binding, 'selectorKeys', {});
+    if ~isempty(selectorKeys)
+        selectorKeys = cellstr(string(selectorKeys(:)));
+        for i = 1:numel(selectorKeys)
+            key = char(string(selectorKeys{i}));
+            if isfield(params, key) && ~isempty(params.(key))
+                channels = mergeKnownChannels(channels, normalizeConfiguredSelectionValue(params.(key)));
+            end
+        end
+        if ~isempty(channels)
+            return;
+        end
     end
 
     candidates = { ...
@@ -590,6 +622,496 @@ function channels = resolveNodeConfiguredChannels(node, selectors)
 
     if isstruct(selectors) && isfield(selectors, 'defaultChannels') && ~isempty(selectors.defaultChannels)
         channels = normalizeChannelList(selectors.defaultChannels);
+    end
+end
+
+function name = resolveNodeProducedChannelName(node, binding)
+    name = {};
+    params = getField(node, 'params', struct());
+    if ~isstruct(params) || ~isstruct(binding)
+        return;
+    end
+
+    key = char(string(getField(binding, 'outputChannelNameParam', '')));
+    if isempty(key)
+        return;
+    end
+    if ~isfield(params, key) || isempty(params.(key))
+        return;
+    end
+    raw = char(string(params.(key)));
+    raw = strtrim(raw);
+    if isempty(raw)
+        return;
+    end
+    name = {raw};
+end
+
+function report = solvePipelineBindings(nodes, edges, ctx, order)
+    report = struct('errors', {{}}, 'warnings', {{}}, 'nodes', struct(), ...
+        'needsUserBinding', {{}}, 'needsRunBinding', {{}}, 'autoResolvable', {{}});
+    if isempty(nodes)
+        return;
+    end
+    if nargin < 4 || isempty(order)
+        order = getNodeIds(nodes);
+    end
+
+    state = initialConstraintState(ctx);
+    ids = getNodeIds(nodes);
+    nodeReports = cell(1, numel(order));
+
+    for i = 1:numel(order)
+        idx = find(strcmp(ids, order{i}), 1, 'first');
+        if isempty(idx)
+            continue;
+        end
+        node = nodes(idx);
+        nodeReport = evaluateNodeBinding(node, state);
+        nodeReports{i} = nodeReport;
+        key = matlab.lang.makeValidName(char(string(node.id)));
+        report.nodes.(key) = nodeReport;
+        switch nodeReport.status
+            case 'invalid'
+                report.errors{end+1} = nodeReport.message; %#ok<AGROW>
+            case 'needs_user_binding'
+                report.warnings{end+1} = nodeReport.message; %#ok<AGROW>
+                report.needsUserBinding{end+1} = char(string(node.id)); %#ok<AGROW>
+            case 'needs_run_binding'
+                report.warnings{end+1} = nodeReport.message; %#ok<AGROW>
+                report.needsRunBinding{end+1} = char(string(node.id)); %#ok<AGROW>
+            case 'auto_resolvable'
+                report.warnings{end+1} = nodeReport.message; %#ok<AGROW>
+                report.autoResolvable{end+1} = char(string(node.id)); %#ok<AGROW>
+        end
+        state = applyConstraintOutputs(node, state, nodeReport);
+    end
+
+    report.nodes = annotateDownstreamBindingDemand(nodes, edges, order, report.nodes);
+end
+
+function state = initialConstraintState(ctx)
+    sem = initialSemanticState(ctx);
+    state = struct( ...
+        'hasImages', sem.hasImages, ...
+        'hasRoiList', sem.hasRoiList, ...
+        'hasMasks', sem.hasMasks || sem.roiHasMasks, ...
+        'hasDataSeries', sem.hasDataSeries || sem.roiHasDataSeries, ...
+        'imageChannels', {sem.imageChannels}, ...
+        'roiChannels', {sem.roiChannels});
+end
+
+function nodeReport = evaluateNodeBinding(node, state)
+    contract = getField(node, 'contract', struct());
+    binding = getField(contract, 'binding', struct());
+    selectors = getField(contract, 'selectors', struct());
+    requirements = getField(contract, 'requirements', struct());
+
+    scope = lower(char(string(getBindingScope(binding, requirements))));
+    requiredCount = resolveBindingRequiredCount(node, binding, requirements, selectors);
+    configuredChannels = resolveBindingConfiguredChannels(node, binding, selectors);
+    availableChannels = {};
+    supportAvailable = true;
+
+    switch scope
+        case 'images'
+            availableChannels = state.imageChannels;
+            supportAvailable = state.hasImages;
+        case 'roi'
+            availableChannels = state.roiChannels;
+            supportAvailable = state.hasRoiList;
+    end
+
+    status = 'resolved';
+    message = 'No explicit channel binding requirement.';
+    autoChoice = {};
+    exactCount = getBindingExactCount(node, binding);
+    if isempty(exactCount) || exactCount <= 0
+        exactCount = [];
+    end
+
+    if requiredCount <= 0 && isempty(configuredChannels)
+        nodeReport = makeBindingNodeReport(node, binding, scope, status, message, requiredCount, exactCount, configuredChannels, availableChannels, autoChoice);
+        return;
+    end
+
+    if ~supportAvailable
+        status = 'invalid';
+        if strcmp(scope, 'images')
+            message = ['Node ' char(string(node.id)) ' requires source image channels, but no image-producing upstream path is available.'];
+        else
+            message = ['Node ' char(string(node.id)) ' requires ROI channels, but no ROI-producing upstream path is available.'];
+        end
+        nodeReport = makeBindingNodeReport(node, binding, scope, status, message, requiredCount, exactCount, configuredChannels, availableChannels, autoChoice);
+        return;
+    end
+
+    if ~isempty(configuredChannels)
+        missingChoices = 0;
+        if ~isempty(exactCount)
+            missingChoices = exactCount - numel(configuredChannels);
+            if numel(configuredChannels) > exactCount
+                status = 'invalid';
+                message = ['Node ' char(string(node.id)) ' selects ' num2str(numel(configuredChannels)) ...
+                    ' channel(s), but the contract expects exactly ' num2str(exactCount) '.'];
+            elseif missingChoices > 0
+                if ~isempty(availableChannels) && numel(availableChannels) < exactCount
+                    status = 'invalid';
+                    message = ['Node ' char(string(node.id)) ' expects exactly ' num2str(exactCount) ...
+                        ' channel(s), but only ' num2str(numel(availableChannels)) ' are visible upstream.'];
+                else
+                    status = classifyUnresolvedBinding(binding, availableChannels);
+                    message = ['Node ' char(string(node.id)) ' still needs ' num2str(missingChoices) ...
+                        ' more channel selection(s) to satisfy its exact binding.'];
+                end
+            end
+        elseif numel(configuredChannels) < requiredCount
+            if ~isempty(availableChannels) && numel(availableChannels) < requiredCount
+                status = 'invalid';
+                message = ['Node ' char(string(node.id)) ' requires at least ' num2str(requiredCount) ...
+                    ' channel(s), but only ' num2str(numel(availableChannels)) ' are visible upstream.'];
+            else
+                status = classifyUnresolvedBinding(binding, availableChannels);
+                message = ['Node ' char(string(node.id)) ' needs at least ' num2str(requiredCount) ...
+                    ' selected channel(s), but only ' num2str(numel(configuredChannels)) ' are configured.'];
+            end
+        else
+            unknown = setdiff(lower(configuredChannels), lower(availableChannels));
+            if ~isempty(availableChannels) && ~isempty(unknown)
+                status = 'invalid';
+                message = ['Node ' char(string(node.id)) ' references unknown channel(s): ' strjoin(configuredChannels(ismember(lower(configuredChannels), unknown)), ', ') '.'];
+            else
+                status = 'resolved';
+                message = formatResolvedBindingMessage(node, requiredCount, configuredChannels);
+            end
+        end
+    else
+        if isempty(availableChannels)
+            status = classifyUnresolvedBinding(binding, availableChannels);
+            message = ['Node ' char(string(node.id)) ' depends on channel binding, but the upstream channel inventory is not known statically.'];
+        elseif numel(availableChannels) < requiredCount
+            status = 'invalid';
+            message = ['Node ' char(string(node.id)) ' requires ' num2str(requiredCount) ...
+                ' channel(s), but only ' num2str(numel(availableChannels)) ' are available upstream.'];
+        elseif ~isempty(exactCount) && numel(availableChannels) == exactCount
+            status = 'auto_resolvable';
+            autoChoice = availableChannels(:)';
+            message = ['Node ' char(string(node.id)) ' can be resolved automatically from upstream: ' strjoin(autoChoice, ', ') '.'];
+        elseif requiredCount == 1 && numel(availableChannels) == 1
+            status = 'auto_resolvable';
+            autoChoice = availableChannels(1);
+            message = ['Node ' char(string(node.id)) ' has a single compatible upstream channel: ' char(string(autoChoice{1})) '.'];
+        else
+            status = 'needs_user_binding';
+            if ~isempty(exactCount)
+                message = ['Node ' char(string(node.id)) ' expects exactly ' num2str(exactCount) ...
+                    ' channel(s) and has multiple compatible upstream choices.'];
+            else
+                message = ['Node ' char(string(node.id)) ' needs channel selection from upstream choices.'];
+            end
+        end
+    end
+
+    nodeReport = makeBindingNodeReport(node, binding, scope, status, message, requiredCount, exactCount, configuredChannels, availableChannels, autoChoice);
+end
+
+function nodeReport = makeBindingNodeReport(node, binding, scope, status, message, requiredCount, exactCount, configuredChannels, availableChannels, autoChoice)
+    nodeReport = struct( ...
+        'nodeId', char(string(getField(node, 'id', ''))), ...
+        'scope', char(string(scope)), ...
+        'mode', char(string(getField(binding, 'mode', ''))), ...
+        'resolveAt', char(string(getField(binding, 'resolveAt', 'run'))), ...
+        'status', char(string(status)), ...
+        'message', char(string(message)), ...
+        'requiredCount', double(requiredCount), ...
+        'exactCount', exactCount, ...
+        'configuredChannels', {configuredChannels}, ...
+        'availableChannels', {availableChannels}, ...
+        'autoChoice', {autoChoice}, ...
+        'producedChannelName', {resolveNodeProducedChannelName(node, binding)}, ...
+        'downstreamDemand', []);
+end
+
+function state = applyConstraintOutputs(node, state, nodeReport)
+    contract = getField(node, 'contract', struct());
+    capabilities = getField(contract, 'capabilities', struct());
+    binding = getField(contract, 'binding', struct());
+    nodeType = lower(char(string(getField(node, 'type', ''))));
+
+    if logical(getField(capabilities, 'outputsImages', false))
+        state.hasImages = true;
+    end
+    if logical(getField(capabilities, 'outputsFovList', false))
+        state.hasImages = true;
+    end
+    if any(strcmp(outputNames(node), 'roiList')) || logical(getField(capabilities, 'preservesRoiList', false)) || logical(getField(capabilities, 'createsRoiList', false))
+        state.hasRoiList = true;
+    end
+    if logical(getField(capabilities, 'outputsMasks', false)) || logical(getField(capabilities, 'roiMasks', false))
+        state.hasMasks = true;
+    end
+    if logical(getField(capabilities, 'outputsDataSeries', false)) || logical(getField(capabilities, 'roiDataSeries', false))
+        state.hasDataSeries = true;
+    end
+
+    if strcmp(nodeType, 'dataloader')
+        state.imageChannels = mergeKnownChannels(state.imageChannels, getField(nodeReport, 'configuredChannels', {}));
+        return;
+    end
+
+    producedName = getField(nodeReport, 'producedChannelName', {});
+    if strcmp(nodeType, 'roiextract')
+        chosen = getField(nodeReport, 'configuredChannels', {});
+        if isempty(chosen)
+            chosen = state.imageChannels;
+        end
+        if isempty(chosen)
+            chosen = getField(nodeReport, 'availableChannels', {});
+        end
+        state.roiChannels = mergeKnownChannels(state.roiChannels, mergeKnownChannels(chosen, producedName));
+        return;
+    end
+
+    if logical(getField(capabilities, 'roiChannels', false)) || strcmp(getField(binding, 'outputScope', ''), 'roi')
+        produced = mergeKnownChannels(getField(nodeReport, 'configuredChannels', {}), producedName);
+        state.roiChannels = mergeKnownChannels(state.roiChannels, produced);
+    elseif logical(getField(capabilities, 'outputsChannels', false))
+        produced = mergeKnownChannels(getField(nodeReport, 'configuredChannels', {}), producedName);
+        state.imageChannels = mergeKnownChannels(state.imageChannels, produced);
+    end
+end
+
+function outStruct = annotateDownstreamBindingDemand(nodes, edges, order, reports)
+    outStruct = reports;
+    if isempty(nodes) || isempty(order)
+        return;
+    end
+    ids = getNodeIds(nodes);
+    demandMap = containers.Map('KeyType', 'char', 'ValueType', 'any');
+
+    for i = numel(order):-1:1
+        nodeId = char(string(order{i}));
+        idx = find(strcmp(ids, nodeId), 1, 'first');
+        if isempty(idx)
+            continue;
+        end
+        node = nodes(idx);
+        nodeKey = matlab.lang.makeValidName(nodeId);
+        nodeReport = getField(outStruct, nodeKey, struct());
+        localDemand = max([0 double(getField(nodeReport, 'requiredCount', 0)) double(getDownstreamDemandValue(demandMap, nodeId))]);
+        propagated = propagateNodeDemand(node, localDemand);
+        if propagated > 0
+            preds = incomingNodeIds(edges, nodeId);
+            for j = 1:numel(preds)
+                prev = getDownstreamDemandValue(demandMap, preds{j});
+                demandMap(preds{j}) = max(prev, propagated);
+            end
+        end
+        if ~isempty(fieldnames(nodeReport))
+            nodeReport.downstreamDemand = localDemand;
+            if localDemand > 0 && any(strcmpi(char(string(getField(node, 'type', ''))), {'roiextract','dataloader'}))
+                if strcmpi(char(string(getField(node, 'type', ''))), 'roiextract')
+                    nodeReport.message = [char(string(nodeReport.message)) ' Downstream requires at least ' num2str(localDemand) ' ROI channel(s) from this extraction path.'];
+                elseif strcmpi(char(string(getField(node, 'type', ''))), 'dataloader')
+                    nodeReport.message = [char(string(nodeReport.message)) ' Downstream requires at least ' num2str(localDemand) ' source image channel(s) from the dataloader path.'];
+                end
+            end
+            outStruct.(nodeKey) = nodeReport;
+        end
+    end
+end
+
+function ids = incomingNodeIds(edges, nodeId)
+    ids = {};
+    if isempty(edges)
+        return;
+    end
+    for i = 1:numel(edges)
+        if strcmp(char(string(getField(edges(i), 'to', ''))), nodeId)
+            ids{end+1} = char(string(getField(edges(i), 'from', ''))); %#ok<AGROW>
+        end
+    end
+    ids = unique(ids, 'stable');
+end
+
+function val = getDownstreamDemandValue(demandMap, nodeId)
+    val = 0;
+    if isKey(demandMap, nodeId)
+        val = double(demandMap(nodeId));
+    end
+end
+
+function outDemand = propagateNodeDemand(node, demand)
+    outDemand = 0;
+    if demand <= 0
+        return;
+    end
+    nodeType = lower(char(string(getField(node, 'type', ''))));
+    contract = getField(node, 'contract', struct());
+    binding = getField(contract, 'binding', struct());
+    scope = lower(char(string(getField(binding, 'scope', ''))));
+    switch nodeType
+        case 'roiextract'
+            outDemand = demand;
+        case 'dataloader'
+            outDemand = demand;
+        case {'roipattern','roiidentify','roimanual','roigrid','roitracked','processor','classifier'}
+            if any(strcmp(scope, {'images','roi'}))
+                outDemand = demand;
+            end
+        otherwise
+            outDemand = 0;
+    end
+end
+
+function scope = getBindingScope(binding, requirements)
+    scope = char(string(getField(binding, 'scope', '')));
+    if ~isempty(scope)
+        return;
+    end
+    if isstruct(requirements) && isfield(requirements, 'images') && logical(getField(requirements.images, 'required', false))
+        scope = 'images';
+    elseif isstruct(requirements) && isfield(requirements, 'roi') && logical(getField(requirements.roi, 'required', false))
+        scope = 'roi';
+    else
+        scope = '';
+    end
+end
+
+function exactCount = getBindingExactCount(node, binding)
+    exactCount = [];
+    if ~isstruct(binding)
+        return;
+    end
+    exactCount = getField(binding, 'exactCount', []);
+    paramName = char(string(getField(binding, 'exactCountParam', '')));
+    params = getField(node, 'params', struct());
+    if ~isempty(paramName) && isstruct(params) && isfield(params, paramName) && ~isempty(params.(paramName))
+        try
+            exactCount = double(params.(paramName));
+            if ~isfinite(exactCount) || exactCount <= 0
+                exactCount = [];
+            else
+                exactCount = round(exactCount);
+            end
+        catch
+            exactCount = [];
+        end
+    end
+end
+
+function requiredCount = resolveBindingRequiredCount(node, binding, requirements, selectors)
+    requiredCount = 0;
+    exactCount = getBindingExactCount(node, binding);
+    if ~isempty(exactCount)
+        requiredCount = exactCount;
+        return;
+    end
+
+    minCount = double(getField(binding, 'minCount', 0));
+    if ~isempty(minCount) && isfinite(minCount)
+        requiredCount = max(requiredCount, minCount);
+    end
+    defaultCount = double(getField(binding, 'defaultCount', 0));
+    if ~isempty(defaultCount) && isfinite(defaultCount)
+        requiredCount = max(requiredCount, defaultCount);
+    elseif isstruct(selectors)
+        selectorDefaultCount = double(getField(selectors, 'defaultChannelCount', 0));
+        if ~isempty(selectorDefaultCount) && isfinite(selectorDefaultCount)
+            requiredCount = max(requiredCount, selectorDefaultCount);
+        end
+    end
+    if isstruct(requirements)
+        if isfield(requirements, 'images') && isstruct(requirements.images)
+            requiredCount = max(requiredCount, double(getField(requirements.images, 'channelsMin', 0)));
+        end
+        if isfield(requirements, 'roi') && isstruct(requirements.roi)
+            requiredCount = max(requiredCount, double(getField(requirements.roi, 'channelsMin', 0)));
+        end
+    end
+
+    configured = resolveBindingConfiguredChannels(node, binding, selectors);
+    if requiredCount <= 0 && ~isempty(configured)
+        requiredCount = numel(configured);
+    end
+end
+
+function channels = resolveBindingConfiguredChannels(node, binding, selectors)
+    channels = {};
+    params = getField(node, 'params', struct());
+    if ~isstruct(params)
+        return;
+    end
+
+    selectorKeys = {};
+    if isstruct(binding) && isfield(binding, 'selectorKeys') && ~isempty(binding.selectorKeys)
+        selectorKeys = cellstr(string(binding.selectorKeys(:)));
+    end
+    for i = 1:numel(selectorKeys)
+        key = char(string(selectorKeys{i}));
+        if ~isfield(params, key) || isempty(params.(key))
+            continue;
+        end
+        channels = mergeKnownChannels(channels, normalizeConfiguredSelectionValue(params.(key)));
+    end
+    if ~isempty(channels)
+        return;
+    end
+    channels = resolveNodeConfiguredChannels(node, selectors);
+end
+
+function channels = normalizeConfiguredSelectionValue(value)
+    channels = {};
+    if isempty(value)
+        return;
+    end
+    if iscell(value) && numel(value) >= 2
+        try
+            entries = cellfun(@(x) char(string(x)), value, 'UniformOutput', false);
+            selected = strtrim(entries{end});
+            choices = entries(1:end-1);
+            if ~isempty(selected) && (any(strcmpi(choices, selected)) || any(strcmpi(selected, {'none','n/a'})))
+                if ~any(strcmpi(selected, {'none','n/a'}))
+                    channels = {selected};
+                end
+                return;
+            end
+        catch
+        end
+    end
+    channels = normalizeChannelList(value);
+    low = lower(channels);
+    keep = ~strcmp(low, 'none') & ~strcmp(low, 'n/a');
+    channels = channels(keep);
+end
+
+function status = classifyUnresolvedBinding(binding, availableChannels)
+    resolveAt = lower(char(string(getField(binding, 'resolveAt', 'run'))));
+    if isempty(availableChannels)
+        if strcmp(resolveAt, 'design')
+            status = 'needs_run_binding';
+        else
+            status = 'needs_run_binding';
+        end
+    else
+        if strcmp(resolveAt, 'design')
+            status = 'needs_user_binding';
+        else
+            status = 'needs_run_binding';
+        end
+    end
+end
+
+function msg = formatResolvedBindingMessage(node, requiredCount, configuredChannels)
+    if isempty(configuredChannels)
+        msg = ['Node ' char(string(node.id)) ' has no explicit channel binding requirement.'];
+        return;
+    end
+    if requiredCount > 0
+        msg = ['Node ' char(string(node.id)) ' binds ' num2str(numel(configuredChannels)) ...
+            ' channel(s): ' strjoin(configuredChannels, ', ') '.'];
+    else
+        msg = ['Node ' char(string(node.id)) ' is configured on channels: ' strjoin(configuredChannels, ', ') '.'];
     end
 end
 

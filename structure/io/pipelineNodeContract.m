@@ -34,8 +34,10 @@ function contract = defaultContractForNode(node)
     in = struct('name',{},'type',{},'required',{},'source',{});
     out = struct('name',{},'type',{},'required',{},'source',{});
     selectors = defaultSelectors();
+    parameters = defaultParameters();
     requirements = defaultRequirements();
     capabilities = defaultCapabilities();
+    binding = defaultBinding();
     summary = '';
 
     t = lower(char(string(node.type)));
@@ -51,11 +53,16 @@ function contract = defaultContractForNode(node)
                 portDef('shallow',  'projectHandle', false, 'context') ...
                 ];
             selectors.channelsParam = 'channelFilter';
+            parameters.run = {'path','positionFilter','channelFilter','stackFilter','label'};
             selectors.defaultChannels = {};
             requirements.params.optional = {'path','positionFilter','channelFilter','stackFilter'};
             capabilities.outputsChannels = true;
             capabilities.outputsImages = true;
             capabilities.outputsFovList = true;
+            binding.scope = 'images';
+            binding.mode = 'inventory';
+            binding.resolveAt = 'run';
+            binding.transfer = 'sourceInventory';
             summary = 'Loads positions/FOVs and exposes source image channels.';
 
         case {'roiidentify','roipattern'}
@@ -64,16 +71,23 @@ function contract = defaultContractForNode(node)
             selectors.channelParam = 'channel';
             selectors.channelIndexParam = 'channelIndex';
             selectors.framesParam = 'referenceFrame';
+            parameters.design = {'pattern','patternRect','patternImage','patternList','activePatternIndex'};
+            parameters.run = {'fovIndex','referenceFrame','channel','channelIndex','threshold','keepExisting','fallbackFullFrame'};
             requirements.images.required = true;
             requirements.images.channelsMin = 1;
             requirements.params.optional = {'threshold','referenceFrame','keepExisting','fovIndex'};
             capabilities.createsRoiList = true;
             capabilities.preservesRoiList = true;
+            binding.scope = 'images';
+            binding.mode = 'singleChannel';
+            binding.exactCount = 1;
+            binding.selectorKeys = {'channel'};
             summary = 'Detects ROIs from source images, usually on one selected channel.';
 
         case 'roimanual'
             in = portDef('images', 'imageSet', true, 'edge');
             out = portDef('roiList', 'roiList', true, 'edge');
+            parameters.run = {'fovIndex','keepExisting','skipExisting','errorOnExisting','openFirstOnly'};
             requirements.images.required = true;
             requirements.params.optional = {'fovIndex','keepExisting','skipExisting','errorOnExisting'};
             capabilities.createsRoiList = true;
@@ -83,6 +97,8 @@ function contract = defaultContractForNode(node)
         case 'roigrid'
             in = portDef('images', 'imageSet', true, 'edge');
             out = portDef('roiList', 'roiList', true, 'edge');
+            parameters.design = {'gridCount','mode'};
+            parameters.run = {'fovIndex','keepExisting'};
             requirements.images.required = true;
             requirements.params.optional = {'fovIndex','mode','gridCount','keepExisting'};
             capabilities.createsRoiList = true;
@@ -98,28 +114,38 @@ function contract = defaultContractForNode(node)
             selectors.channelParam = 'channel';
             selectors.channelsParam = 'extractChannels';
             selectors.framesParam = 'extractFrames';
+            parameters.run = {'fovIndex','roiIndex','channel','margin','extract','extractFrames','extractChannels'};
             requirements.roi.required = true;
             requirements.roi.masks = true;
             requirements.params.optional = {'fovIndex','roiIndex','margin','extract','extractFrames','extractChannels'};
             capabilities.createsRoiList = true;
             capabilities.preservesRoiList = true;
             capabilities.roiMasks = true;
+            binding.scope = 'roi';
+            binding.mode = 'channelSet';
+            binding.selectorKeys = {'channel','extractChannels'};
             summary = 'Builds tracked ROIs from existing ROIs and compatible mask outputs.';
 
         case 'roiextract'
             in = portDef('roiList', 'roiList', true, 'edge');
             out = [ ...
                 portDef('roiList',    'roiList',       true,  'edge'), ...
-                portDef('dataSeries', 'dataSeriesSet', false, 'edge'), ...
                 portDef('channels',   'channelSet',    false, 'edge') ...
                 ];
             selectors.channelsParam = 'channels';
             selectors.framesParam = 'frames';
+            parameters.run = {'fovIndex','frames','channels','extend','correctDrift','driftChannel','driftMethod','driftRefMode','driftSubpixel','driftMaxShift','scale','cropDrift','forceChannelNames'};
             requirements.roi.required = true;
             requirements.params.optional = {'fovIndex','frames','channels','extend','correctDrift'};
             capabilities.preservesRoiList = true;
             capabilities.roiChannels = true;
             capabilities.outputsChannels = true;
+            binding.scope = 'images';
+            binding.outputScope = 'roi';
+            binding.mode = 'channelSet';
+            binding.selectorKeys = {'channels'};
+            binding.resolveAt = 'run';
+            binding.transfer = 'imagesToRoi';
             summary = 'Extracts ROI crops and materializes ROI image channels for downstream ROI processing.';
 
         case 'processor'
@@ -128,6 +154,38 @@ function contract = defaultContractForNode(node)
                 portDef('roiList',    'roiList',       true,  'edge'), ...
                 portDef('dataSeries', 'dataSeriesSet', true,  'edge') ...
                 ];
+            parameters.template = {'pkg','moduleVar','modulePath','moduleId','description','category'};
+            parameters.run = {'roiList','channels','channel','frames','outputName'};
+            if strcmp(p, 'computemetrics') || contains(f, 'computemetrics')
+                in = [ ...
+                    portDef('roiList',    'roiList',       true, 'edge'), ...
+                    portDef('masks',      'maskSet',       true, 'edge'), ...
+                    portDef('dataSeries', 'dataSeriesSet',  true, 'edge') ...
+                    ];
+                out = [ ...
+                    portDef('roiList',    'roiList',       true,  'edge'), ...
+                    portDef('dataSeries', 'dataSeriesSet', true,  'edge') ...
+                    ];
+                selectors.channelsParam = 'channels';
+                selectors.channelParam = 'channel';
+                selectors.framesParam = 'frames';
+                selectors.outputNameParam = 'outputName';
+                requirements.roi.required = true;
+                requirements.roi.masks = true;
+                requirements.roi.dataSeries = true;
+                requirements.params.optional = {'pkg','mask1_name','mask2_name','channel1_name','channel2_name','channel3_name','channel4_name','BrightestPixels'};
+                capabilities.preservesRoiList = true;
+                capabilities.roiDataSeries = true;
+                capabilities.outputsDataSeries = true;
+                capabilities.roiMasks = true;
+                capabilities.outputsMasks = true;
+                binding.scope = 'roi';
+                binding.outputScope = 'roi';
+                binding.mode = 'maskAndSeries';
+                binding.selectorKeys = {'masks','dataSeries'};
+                binding.resolveAt = 'run';
+                summary = 'Computes mask-linked fluorescence metrics and consumes both masks and existing dataseries.';
+            else
             selectors.channelsParam = 'channels';
             selectors.channelParam = 'channel';
             selectors.framesParam = 'frames';
@@ -138,7 +196,13 @@ function contract = defaultContractForNode(node)
             capabilities.preservesRoiList = true;
             capabilities.roiDataSeries = true;
             capabilities.outputsDataSeries = true;
+            binding.scope = 'roi';
+            binding.outputScope = 'roi';
+            binding.mode = 'channelSet';
+            binding.selectorKeys = {'channels','channel'};
+            binding.resolveAt = 'run';
             summary = 'Processes ROI content. Requires ROI support and usually at least one ROI image channel.';
+            end
 
         case 'classifier'
             in = portDef('roiList', 'roiList', true, 'edge');
@@ -150,12 +214,19 @@ function contract = defaultContractForNode(node)
             selectors.channelParam = 'channel';
             selectors.framesParam = 'frames';
             selectors.outputNameParam = 'outputName';
+            parameters.template = {'pkg','moduleVar','modulePath','moduleId','description','category','classes','classifyFun','trainingFun','trainingParam','outputType'};
+            parameters.run = {'roiList','channels','channel','frames','outputName'};
             requirements.roi.required = true;
             requirements.roi.channelsMin = 1;
             requirements.params.required = {'pkg'};
             capabilities.preservesRoiList = true;
             capabilities.roiDataSeries = true;
             capabilities.outputsDataSeries = true;
+            binding.scope = 'roi';
+            binding.outputScope = 'roi';
+            binding.mode = 'channelSet';
+            binding.selectorKeys = {'channels','channel'};
+            binding.resolveAt = 'run';
             summary = 'Classifies ROI content from selected ROI channels and writes derived outputs.';
             if classifierProducesMasks(p, f)
                 out = [portDef('roiList', 'roiList', true, 'edge'), portDef('masks', 'maskSet', true, 'edge')];
@@ -186,8 +257,10 @@ function contract = defaultContractForNode(node)
         'in', in, ...
         'out', out, ...
         'selectors', selectors, ...
+        'parameters', parameters, ...
         'requirements', requirements, ...
         'capabilities', capabilities, ...
+        'binding', binding, ...
         'summary', char(string(summary)));
 
     contract = enrichContractFromPackage(contract, node);
@@ -249,6 +322,9 @@ function contract = mergeContracts(defaultContract, existingContract, node)
         end
         if isfield(existingContract, 'capabilities') && isstruct(existingContract.capabilities)
             contract.capabilities = mergeCapabilityStruct(defaultContract.capabilities, existingContract.capabilities);
+        end
+        if isfield(existingContract, 'binding') && isstruct(existingContract.binding)
+            contract.binding = mergeBindingStruct(defaultContract.binding, existingContract.binding);
         end
         if isfield(existingContract, 'summary') && ~isempty(existingContract.summary)
             contract.summary = char(string(existingContract.summary));
@@ -327,6 +403,28 @@ function contract = backfillSelectorsFromNodeParams(contract, node)
     if ~isempty(defaultChannels) && any(strcmp({contract.in.type}, 'roiList'))
         contract.requirements.roi.channelsMin = max(contract.requirements.roi.channelsMin, numel(defaultChannels));
     end
+    if isempty(contract.binding.selectorKeys)
+        selectorKeys = {};
+        if ~isempty(contract.selectors.channelsParam)
+            selectorKeys{end+1} = char(string(contract.selectors.channelsParam)); %#ok<AGROW>
+        end
+        if ~isempty(contract.selectors.channelParam)
+            selectorKeys{end+1} = char(string(contract.selectors.channelParam)); %#ok<AGROW>
+        end
+        if ~isempty(selectorKeys)
+            contract.binding.selectorKeys = unique(selectorKeys, 'stable');
+        end
+    end
+    if isempty(contract.binding.minCount)
+        if any(strcmp({contract.in.type}, 'imageSet'))
+            contract.binding.minCount = contract.requirements.images.channelsMin;
+        elseif any(strcmp({contract.in.type}, 'roiList'))
+            contract.binding.minCount = contract.requirements.roi.channelsMin;
+        end
+    end
+    if isempty(contract.binding.exactCount) && ~isempty(contract.selectors.defaultChannelCount)
+        contract.binding.defaultCount = contract.selectors.defaultChannelCount;
+    end
 
     if isfield(params, 'pkg') && any(strcmp(contract.requirements.params.required, 'pkg'))
         contract.requirements.params.required = setdiff(contract.requirements.params.required, {'pkg'}, 'stable');
@@ -398,21 +496,51 @@ end
 function contract = enrichContractFromPackage(contract, node)
     pkgName = lower(char(string(getField(node, 'pkg', ''))));
     funcName = lower(char(string(getField(node, 'func', ''))));
+    nodeType = lower(char(string(getField(node, 'type', ''))));
 
-    if strcmp(getField(node, 'type', ''), 'classifier')
+    if strcmp(nodeType, 'classifier')
         switch pkgName
             case 'cellposesam'
                 contract.requirements.roi.channelsMin = max(contract.requirements.roi.channelsMin, 1);
                 contract.capabilities.outputsMasks = true;
                 contract.capabilities.outputsChannels = true;
                 contract.capabilities.roiMasks = true;
+                contract.binding.mode = 'singleChannel';
+                contract.binding.exactCount = 1;
+                contract.binding.resolveAt = 'design';
                 contract.summary = 'CellposeSAM-like classifier: segments ROI channels into instance masks and result channels.';
+            case 'cnn_lstm'
+                contract.binding.mode = 'singleChannel';
+                contract.binding.exactCount = 1;
+                contract.binding.resolveAt = 'design';
         end
 
         if classifierProducesMasks(pkgName, funcName)
             contract.capabilities.outputsMasks = true;
             contract.capabilities.outputsChannels = true;
             contract.capabilities.roiMasks = true;
+        end
+    end
+
+    if strcmp(nodeType, 'processor')
+        switch pkgName
+            case 'combinemultiplechannels'
+                contract.out = [ ...
+                    portDef('roiList', 'roiList', true, 'edge'), ...
+                    portDef('channels', 'channelSet', false, 'edge')];
+                contract.capabilities.outputsChannels = true;
+                contract.capabilities.roiChannels = true;
+                contract.capabilities.roiDataSeries = false;
+                contract.capabilities.outputsDataSeries = false;
+                contract.binding.scope = 'roi';
+                contract.binding.outputScope = 'roi';
+                contract.binding.mode = 'channelSlots';
+                contract.binding.selectorKeys = {'Channel1','Channel2','Channel3','Channel4','Channel5'};
+                contract.binding.resolveAt = 'run';
+                contract.binding.exactCountParam = 'requiredChannelCount';
+                contract.binding.outputChannelNameParam = 'outputChannelName';
+                contract.binding.transfer = 'roiChannelsToRoiChannel';
+                contract.summary = 'Combines selected ROI channels into one derived ROI image channel.';
         end
     end
 end
@@ -427,6 +555,16 @@ function s = defaultSelectors()
         'defaultChannels', {{}}, ...
         'defaultChannelCount', [], ...
         'defaultOutputName', '');
+end
+
+function p = defaultParameters()
+    p = struct( ...
+        'fixed', {{}}, ...
+        'design', {{}}, ...
+        'template', {{}}, ...
+        'run', {{}}, ...
+        'data', {{}}, ...
+        'notes', {{}});
 end
 
 function r = defaultRequirements()
@@ -449,6 +587,22 @@ function c = defaultCapabilities()
         'outputsChannels', false, ...
         'outputsMasks', false, ...
         'outputsDataSeries', false, ...
+        'notes', {{}});
+end
+
+function b = defaultBinding()
+    b = struct( ...
+        'scope', '', ...
+        'outputScope', '', ...
+        'mode', '', ...
+        'selectorKeys', {{}}, ...
+        'minCount', [], ...
+        'exactCount', [], ...
+        'exactCountParam', '', ...
+        'defaultCount', [], ...
+        'resolveAt', 'run', ...
+        'outputChannelNameParam', '', ...
+        'transfer', '', ...
         'notes', {{}});
 end
 
@@ -478,6 +632,16 @@ function out = mergeCapabilityStruct(base, override)
     end
 end
 
+function out = mergeBindingStruct(base, override)
+    out = mergeScalarStruct(base, override);
+    if isfield(override, 'selectorKeys') && ~isempty(override.selectorKeys)
+        out.selectorKeys = normalizeCellstr(override.selectorKeys);
+    end
+    if isfield(override, 'notes') && ~isempty(override.notes)
+        out.notes = normalizeCellstr(override.notes);
+    end
+end
+
 function out = mergeScalarStruct(base, override)
     out = base;
     if ~isstruct(override)
@@ -501,6 +665,12 @@ function contract = normalizeContract(contract)
         contract.selectors = mergeScalarStruct(defaultSelectors(), contract.selectors);
     end
 
+    if ~isfield(contract, 'parameters') || ~isstruct(contract.parameters)
+        contract.parameters = defaultParameters();
+    else
+        contract.parameters = mergeParameterStruct(defaultParameters(), contract.parameters);
+    end
+
     if ~isfield(contract, 'requirements') || ~isstruct(contract.requirements)
         contract.requirements = defaultRequirements();
     else
@@ -512,12 +682,25 @@ function contract = normalizeContract(contract)
     else
         contract.capabilities = mergeCapabilityStruct(defaultCapabilities(), contract.capabilities);
     end
+    if ~isfield(contract, 'binding') || ~isstruct(contract.binding)
+        contract.binding = defaultBinding();
+    else
+        contract.binding = mergeBindingStruct(defaultBinding(), contract.binding);
+    end
 
     contract.selectors.defaultChannels = normalizeCellstr(contract.selectors.defaultChannels);
+    contract.parameters.fixed = normalizeCellstr(contract.parameters.fixed);
+    contract.parameters.design = normalizeCellstr(getField(contract.parameters, 'design', {}));
+    contract.parameters.template = normalizeCellstr(contract.parameters.template);
+    contract.parameters.run = normalizeCellstr(contract.parameters.run);
+    contract.parameters.data = normalizeCellstr(contract.parameters.data);
+    contract.parameters.notes = normalizeCellstr(contract.parameters.notes);
     contract.requirements.params.required = normalizeCellstr(contract.requirements.params.required);
     contract.requirements.params.optional = normalizeCellstr(contract.requirements.params.optional);
     contract.requirements.notes = normalizeCellstr(contract.requirements.notes);
     contract.capabilities.notes = normalizeCellstr(contract.capabilities.notes);
+    contract.binding.selectorKeys = normalizeCellstr(contract.binding.selectorKeys);
+    contract.binding.notes = normalizeCellstr(contract.binding.notes);
 
     if isempty(contract.selectors.defaultChannelCount) && ~isempty(contract.selectors.defaultChannels)
         contract.selectors.defaultChannelCount = numel(contract.selectors.defaultChannels);
@@ -527,6 +710,28 @@ function contract = normalizeContract(contract)
         contract.summary = '';
     else
         contract.summary = char(string(contract.summary));
+    end
+end
+
+function out = mergeParameterStruct(base, override)
+    out = mergeScalarStruct(base, override);
+    if isfield(override, 'notes') && ~isempty(override.notes)
+        out.notes = normalizeCellstr(override.notes);
+    end
+    if isfield(override, 'fixed') && ~isempty(override.fixed)
+        out.fixed = normalizeCellstr(override.fixed);
+    end
+    if isfield(override, 'design') && ~isempty(override.design)
+        out.design = normalizeCellstr(override.design);
+    end
+    if isfield(override, 'template') && ~isempty(override.template)
+        out.template = normalizeCellstr(override.template);
+    end
+    if isfield(override, 'run') && ~isempty(override.run)
+        out.run = normalizeCellstr(override.run);
+    end
+    if isfield(override, 'data') && ~isempty(override.data)
+        out.data = normalizeCellstr(override.data);
     end
 end
 

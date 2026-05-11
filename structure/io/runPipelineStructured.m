@@ -203,7 +203,15 @@ if strcmpi(cfg.mode, 'custom')
         args = [args {'envPath', cfg.envPath}]; %#ok<AGROW>
     end
 end
-info = select_and_load_conda_env(args{:});
+try
+    info = select_and_load_conda_env(args{:});
+catch ME
+    if contains(ME.message, 'Unknown option "mode"')
+        info = select_and_load_conda_env('debug', true);
+    else
+        rethrow(ME);
+    end
+end
 if ~isfield(ctx,'exec') || ~isstruct(ctx.exec) || isempty(ctx.exec)
     ctx.exec = struct();
 end
@@ -1216,24 +1224,7 @@ function [missing, deferred] = missingParamsForNode(node, ctx, mode)
 end
 
 function scope = paramScopeForNode(node, paramName)
-    scope = 'template';
-    nodeType = lower(char(string(getfielddefault(node,'type',''))));
-    paramName = lower(char(string(paramName)));
-
-    switch nodeType
-        case 'dataloader'
-            if any(strcmp(paramName, {'path','positionfilter','channelfilter','stackfilter','label'}))
-                scope = 'run';
-            end
-        case {'roipattern','roiidentify','roimanual','roigrid','roiextract','roitracked'}
-            if any(strcmp(paramName, {'fovindex','roiindex','frames','channels','extractframes','extractchannels'}))
-                scope = 'run';
-            end
-        case {'processor','classifier'}
-            if any(strcmp(paramName, {'frames','channels','channel','outputname','out_dataseries_name'}))
-                scope = 'run';
-            end
-    end
+    scope = pipelineParamScope(node, paramName);
 end
 
 function tf = hasNodeGui(node)
@@ -1550,6 +1541,13 @@ function ctx = executeClassifierNode(node, ctx)
 
     if isfield(p,'classes') && ~isempty(p.classes)
         clsObj.classes = p.classes;
+    end
+    if isfield(p,'description') && ~isempty(p.description)
+        desc = p.description;
+        if ischar(desc) || isstring(desc)
+            desc = {char(desc)};
+        end
+        clsObj.description = desc;
     end
     if isfield(p,'category') && ~isempty(p.category)
         clsObj.category = classiNormalizeCategory(p.category);
