@@ -95,6 +95,25 @@ classdef detecdiv < matlab.apps.AppBase
 
             [pth fle ext]= fileparts(which('detecdiv.mlapp'));
 
+            projectPipelineIdx = cell(1, numel(app.Data.Project));
+            pipelineProjectIdx = cell(1, numel(app.Data.Pipeline));
+            for iPipe = 1:numel(app.Data.Pipeline)
+                if isempty(app.Data.Pipeline{iPipe})
+                    continue;
+                end
+                [~, projectIdx] = app.findLinkedProjectIndicesForPipeline(getPipelineByIndex(iPipe));
+                if isempty(projectIdx)
+                    continue;
+                end
+                pipelineProjectIdx{iPipe} = projectIdx;
+                for j = 1:numel(projectIdx)
+                    pIdx = projectIdx(j);
+                    if pIdx >= 1 && pIdx <= numel(projectPipelineIdx)
+                        projectPipelineIdx{pIdx}(end+1) = iPipe; %#ok<AGROW>
+                    end
+                end
+            end
+
             for i=1:numel(app.Data.Project)
                 h1(i)=uitreenode(app.ProjectsNode,'Text',app.Data.Project{i},'Tag','Project','UserData',i,'Icon',fullfile(pth,'detecDiv_logo.png'));
 
@@ -182,23 +201,16 @@ classdef detecdiv < matlab.apps.AppBase
                 end
 
                 if i <= numel(app.Data.ProjectpipelineRun) && ~isempty(app.Data.ProjectpipelineRun{i})
+                    runRoot = uitreenode(h1(i),'Text','Run','Tag','ProjectpipelineRunRoot', ...
+                        'UserData',i,'Icon',fullfile(pth,'pipeline_run.png'));
                     for k=1:numel(app.Data.ProjectpipelineRun{i})
-                        cm=uicontextmenu(app.DetecDivUIFigure);
-                        m = uimenu(cm,'Text','Run locally...');
-                        m.MenuSelectedFcn={@contextMenuRunPipelineRunFcn,[i,k],'ProjectpipelineRun'};
-                        m = uimenu(cm,'Text','Run on hub...');
-                        m.MenuSelectedFcn={@contextMenuRunPipelineRunOnHubFcn,[i,k],'ProjectpipelineRun'};
-                        m = uimenu(cm,'Text','Refresh hub status');
-                        m.MenuSelectedFcn={@contextMenuRefreshPipelineRunHubStatusFcn,[i,k],'ProjectpipelineRun'};
-                        m = uimenu(cm,'Text','Cancel hub job');
-                        m.MenuSelectedFcn={@contextMenuCancelPipelineRunHubJobFcn,[i,k],'ProjectpipelineRun'};
-                        m = uimenu(cm,'Text','Open run.json...');
-                        m.MenuSelectedFcn={@contextMenuOpenPipelineRunFcn,[i,k],'ProjectpipelineRun'};
-                        m = uimenu(cm,'Text','Delete run');
-                        m.MenuSelectedFcn={@contextMenuDeletePipelineRunFcn,[i,k],'ProjectpipelineRun'};
+                        createPipelineRunTreeNode(runRoot, i, k, pth);
+                    end
+                end
 
-                        uitreenode(h1(i),'Text',app.Data.ProjectpipelineRun{i}{k},'Tag','ProjectpipelineRun', ...
-                            'UserData',[i,k],'ContextMenu',cm,'Icon',fullfile(pth,'pipeline_run.png'));
+                if i <= numel(projectPipelineIdx) && ~isempty(projectPipelineIdx{i})
+                    for k = 1:numel(projectPipelineIdx{i})
+                        createPipelineTreeNode(h1(i), projectPipelineIdx{i}(k), pth);
                     end
                 end
             end
@@ -207,43 +219,10 @@ classdef detecdiv < matlab.apps.AppBase
                 if isempty(app.Data.Pipeline{i})
                     continue;
                 end
-                cm=uicontextmenu(app.DetecDivUIFigure);
-                m = uimenu(cm,'Text','Open pipeline...');
-                m.MenuSelectedFcn={@contextMenuPipelineFcn,i,'Pipeline'};
-                m = uimenu(cm,'Text','Add module...');
-                m.MenuSelectedFcn={@contextMenuAddPipelineModuleFcn,i,'Pipeline'};
-                m = uimenu(cm,'Text','Save pipeline');
-                m.MenuSelectedFcn={@contextMenuSavePipelineFcn,i,'Pipeline'};
-                m = uimenu(cm,'Text','Create run...');
-                m.MenuSelectedFcn={@contextMenuCreatePipelineRunFcn,i,'Pipeline'};
-                m = uimenu(cm,'Text','Open pipeline.json...');
-                m.MenuSelectedFcn={@contextMenuOpenPipelineJsonFcn,i,'Pipeline'};
-                m = uimenu(cm,'Text','Close pipeline');
-                m.MenuSelectedFcn={@contextMenuClosePipelineFcn,i,'Pipeline'};
-                m = uimenu(cm,'Text','Delete pipeline folder');
-                m.MenuSelectedFcn={@contextMenuDeletePipelineFcn,i,'Pipeline'};
-
-                pNode=uitreenode(app.PipelinesNode,'Text',app.Data.Pipeline{i},'Tag','Pipeline','UserData',i, ...
-                    'ContextMenu',cm,'Icon',fullfile(pth,'pipeline.png'));
-
-                if i <= numel(app.Data.PipelineModules) && ~isempty(app.Data.PipelineModules{i})
-                    for k=1:numel(app.Data.PipelineModules{i})
-                        cm2=uicontextmenu(app.DetecDivUIFigure);
-                        m = uimenu(cm2,'Text','Open module...');
-                        m.MenuSelectedFcn={@contextMenuOpenPipelineModuleFcn,[i,k],'PipelineModule'};
-                        m = uimenu(cm2,'Text','Delete module');
-                        m.MenuSelectedFcn={@contextMenuDeletePipelineModuleFcn,[i,k],'PipelineModule'};
-
-                        moduleType = '';
-                        if i <= numel(app.Data.PipelineModuleTypes) && ~isempty(app.Data.PipelineModuleTypes{i}) && k <= numel(app.Data.PipelineModuleTypes{i})
-                            moduleType = app.Data.PipelineModuleTypes{i}{k};
-                        end
-                        iconFile = getPipelineModuleIcon(moduleType);
-
-                        uitreenode(pNode,'Text',app.Data.PipelineModules{i}{k},'Tag','PipelineModule','UserData',[i,k], ...
-                            'ContextMenu',cm2,'Icon',fullfile(pth,iconFile));
-                    end
+                if i <= numel(pipelineProjectIdx) && ~isempty(pipelineProjectIdx{i})
+                    continue;
                 end
+                createPipelineTreeNode(app.PipelinesNode, i, pth);
             end
 
             for i=1:numel(app.Data.Classifier)
@@ -276,6 +255,76 @@ classdef detecdiv < matlab.apps.AppBase
             expand(app.ProjectsNode);
             expand(app.IndependentClassifiersNode);
             expand(app.PipelinesNode);
+
+            function pNode = createPipelineTreeNode(parentNode, pipeIdx, pth)
+                pNode = [];
+                if pipeIdx > numel(app.Data.Pipeline) || isempty(app.Data.Pipeline{pipeIdx})
+                    return;
+                end
+
+                cm=uicontextmenu(app.DetecDivUIFigure);
+                m = uimenu(cm,'Text','Open pipeline...');
+                m.MenuSelectedFcn={@contextMenuPipelineFcn,pipeIdx,'Pipeline'};
+                m = uimenu(cm,'Text','Add module...');
+                m.MenuSelectedFcn={@contextMenuAddPipelineModuleFcn,pipeIdx,'Pipeline'};
+                m = uimenu(cm,'Text','Save pipeline');
+                m.MenuSelectedFcn={@contextMenuSavePipelineFcn,pipeIdx,'Pipeline'};
+                m = uimenu(cm,'Text','Create run...');
+                m.MenuSelectedFcn={@contextMenuCreatePipelineRunFcn,pipeIdx,'Pipeline'};
+                m = uimenu(cm,'Text','Open pipeline.json...');
+                m.MenuSelectedFcn={@contextMenuOpenPipelineJsonFcn,pipeIdx,'Pipeline'};
+                m = uimenu(cm,'Text','Close pipeline');
+                m.MenuSelectedFcn={@contextMenuClosePipelineFcn,pipeIdx,'Pipeline'};
+                m = uimenu(cm,'Text','Delete pipeline folder');
+                m.MenuSelectedFcn={@contextMenuDeletePipelineFcn,pipeIdx,'Pipeline'};
+
+                pNode=uitreenode(parentNode,'Text',app.Data.Pipeline{pipeIdx},'Tag','Pipeline','UserData',pipeIdx, ...
+                    'ContextMenu',cm,'Icon',fullfile(pth,'pipeline.png'));
+
+                if pipeIdx <= numel(app.Data.PipelineModules) && ~isempty(app.Data.PipelineModules{pipeIdx})
+                    for k=1:numel(app.Data.PipelineModules{pipeIdx})
+                        cm2=uicontextmenu(app.DetecDivUIFigure);
+                        m = uimenu(cm2,'Text','Open module...');
+                        m.MenuSelectedFcn={@contextMenuOpenPipelineModuleFcn,[pipeIdx,k],'PipelineModule'};
+                        m = uimenu(cm2,'Text','Delete module');
+                        m.MenuSelectedFcn={@contextMenuDeletePipelineModuleFcn,[pipeIdx,k],'PipelineModule'};
+
+                        moduleType = '';
+                        if pipeIdx <= numel(app.Data.PipelineModuleTypes) && ~isempty(app.Data.PipelineModuleTypes{pipeIdx}) && k <= numel(app.Data.PipelineModuleTypes{pipeIdx})
+                            moduleType = app.Data.PipelineModuleTypes{pipeIdx}{k};
+                        end
+                        iconFile = getPipelineModuleIcon(moduleType);
+
+                        uitreenode(pNode,'Text',app.Data.PipelineModules{pipeIdx}{k},'Tag','PipelineModule','UserData',[pipeIdx,k], ...
+                            'ContextMenu',cm2,'Icon',fullfile(pth,iconFile));
+                    end
+                end
+            end
+
+            function runNode = createPipelineRunTreeNode(parentNode, projIdx, runIdx, pth)
+                runNode = [];
+                if projIdx > numel(app.Data.ProjectpipelineRun) || runIdx > numel(app.Data.ProjectpipelineRun{projIdx})
+                    return;
+                end
+
+                cm=uicontextmenu(app.DetecDivUIFigure);
+                m = uimenu(cm,'Text','Run locally...');
+                m.MenuSelectedFcn={@contextMenuRunPipelineRunFcn,[projIdx,runIdx],'ProjectpipelineRun'};
+                m = uimenu(cm,'Text','Run on hub...');
+                m.MenuSelectedFcn={@contextMenuRunPipelineRunOnHubFcn,[projIdx,runIdx],'ProjectpipelineRun'};
+                m = uimenu(cm,'Text','Refresh hub status');
+                m.MenuSelectedFcn={@contextMenuRefreshPipelineRunHubStatusFcn,[projIdx,runIdx],'ProjectpipelineRun'};
+                m = uimenu(cm,'Text','Cancel hub job');
+                m.MenuSelectedFcn={@contextMenuCancelPipelineRunHubJobFcn,[projIdx,runIdx],'ProjectpipelineRun'};
+                m = uimenu(cm,'Text','Open run.json...');
+                m.MenuSelectedFcn={@contextMenuOpenPipelineRunFcn,[projIdx,runIdx],'ProjectpipelineRun'};
+                m = uimenu(cm,'Text','Delete run');
+                m.MenuSelectedFcn={@contextMenuDeletePipelineRunFcn,[projIdx,runIdx],'ProjectpipelineRun'};
+
+                runNode=uitreenode(parentNode,'Text',app.formatPipelineRunLabel(app.getProjectRunByIndex(projIdx, runIdx), runIdx), ...
+                    'Tag','ProjectpipelineRun', ...
+                    'UserData',[projIdx,runIdx],'ContextMenu',cm,'Icon',fullfile(pth,'pipeline_run.png'));
+            end
 
             function contextMenuDeleteProcessFcn(src,event,arg,str)
 
@@ -795,6 +844,55 @@ end
                 end
                 if ~isa(pipe,'pipeline')
                     pipe = [];
+                end
+            end
+
+            function label = formatPipelineRunLabel(runObj, fallbackIdx)
+                label = '';
+                try
+                    if isprop(runObj,'runId') && ~isempty(runObj.runId)
+                        label = char(string(runObj.runId));
+                    end
+                catch
+                end
+                if isempty(label)
+                    label = ['run_' num2str(fallbackIdx)];
+                end
+            end
+
+            function [runMode, runStatus] = summarizePipelineRun(runObj)
+                runMode = 'local';
+                runStatus = 'unknown';
+
+                try
+                    if isprop(runObj,'status') && ~isempty(runObj.status)
+                        runStatus = char(string(runObj.status));
+                    end
+                catch
+                end
+
+                try
+                    if isstruct(runObj.ctx) && isfield(runObj.ctx,'hub') && isstruct(runObj.ctx.hub)
+                        runMode = 'hub';
+                        if isfield(runObj.ctx.hub,'status') && ~isempty(runObj.ctx.hub.status)
+                            runStatus = char(string(runObj.ctx.hub.status));
+                        end
+                    end
+                catch
+                end
+
+                if startsWith(runStatus,'hub_')
+                    runMode = 'hub';
+                    runStatus = extractAfter(runStatus, 4);
+                    if isempty(runStatus)
+                        runStatus = 'unknown';
+                    end
+                elseif any(strcmpi(runStatus, {'new','running','done','failed','cancelled'}))
+                    if strcmp(runMode, 'local')
+                        runMode = 'local';
+                    end
+                elseif isempty(runStatus)
+                    runStatus = 'unknown';
                 end
             end
 
@@ -1775,8 +1873,6 @@ end
 
         end
 
-
-
         function gatherVarsFromWorkspace(app)
             varlist=evalin('base','who');
             st=struct('Project',{{}},'Classifier',{{}},'Pipeline',{{}},'PipelineModules',{{}},'PipelineModuleIds',{{}},'PipelineModuleTypes',{{}},'Projectpos',{{}},'Projectclassi',{{}},'Projectprocess',{{}},'ProjectpipelineRun',{{}},'Projectposrois',{{}},'Projectclassirois',{{}},'Classifierrois',{{}});
@@ -1858,19 +1954,7 @@ end
                     if isfield(tmp.processing,'pipelineRun') && ~isempty(tmp.processing.pipelineRun)
                         for k=1:numel(tmp.processing.pipelineRun)
                             runObj = tmp.processing.pipelineRun(k);
-                            runName = runObj.runId;
-                            if isempty(runName)
-                                runName = ['run_' num2str(k)];
-                            end
-                            runStatus = '';
-                            if isprop(runObj,'status') && ~isempty(runObj.status)
-                                runStatus = char(string(runObj.status));
-                            end
-                            if isempty(runStatus)
-                                tmprun{end+1} = runName; %#ok<AGROW>
-                            else
-                                tmprun{end+1} = [runName ' (' runStatus ')']; %#ok<AGROW>
-                            end
+                            tmprun{end+1} = app.formatPipelineRunLabel(runObj, k); %#ok<AGROW>
                         end
                     end
                     st.ProjectpipelineRun{cc}=tmprun;
@@ -2220,9 +2304,86 @@ end
             end
         end
 
+        function runObj = getProjectRunByIndex(app, projIdx, runIdx)
+            runObj = [];
+            if projIdx > numel(app.Data.Project)
+                return;
+            end
+            projVar = app.Data.Project{projIdx};
+            shallowObj = evalin('base', projVar);
+            if ~isfield(shallowObj.processing,'pipelineRun') || runIdx > numel(shallowObj.processing.pipelineRun)
+                return;
+            end
+            runObj = shallowObj.processing.pipelineRun(runIdx);
+        end
+
+        function label = formatPipelineRunLabel(app, runObj, fallbackIdx) %#ok<INUSD>
+            label = '';
+            try
+                if isprop(runObj,'runId') && ~isempty(runObj.runId)
+                    label = char(string(runObj.runId));
+                end
+            catch
+            end
+            if isempty(label)
+                label = ['run_' num2str(fallbackIdx)];
+            end
+        end
+
+        function [runMode, runStatus] = summarizePipelineRun(app, runObj) %#ok<INUSD>
+            runMode = 'local';
+            runStatus = 'unknown';
+
+            try
+                if isprop(runObj,'status') && ~isempty(runObj.status)
+                    runStatus = char(string(runObj.status));
+                end
+            catch
+            end
+
+            try
+                if isstruct(runObj.ctx) && isfield(runObj.ctx,'hub') && isstruct(runObj.ctx.hub)
+                    runMode = 'hub';
+                    if isfield(runObj.ctx.hub,'status') && ~isempty(runObj.ctx.hub.status)
+                        runStatus = char(string(runObj.ctx.hub.status));
+                    end
+                end
+            catch
+            end
+
+            if startsWith(runStatus,'hub_')
+                runMode = 'hub';
+                runStatus = extractAfter(runStatus, 4);
+                if isempty(runStatus)
+                    runStatus = 'unknown';
+                end
+            elseif isempty(runStatus)
+                runStatus = 'unknown';
+            end
+        end
+
         function [found, shallowObj] = findLinkedProjectForPipeline(app, pipeObj)
             found = false;
             shallowObj = [];
+
+            [found, projectIdx] = app.findLinkedProjectIndicesForPipeline(pipeObj);
+            if ~found || isempty(projectIdx)
+                return;
+            end
+
+            if projectIdx(1) <= numel(app.Data.Project)
+                projVar = app.Data.Project{projectIdx(1)};
+                try
+                    shallowObj = evalin('base', projVar);
+                catch
+                    shallowObj = [];
+                end
+            end
+        end
+
+        function [found, projectIdx] = findLinkedProjectIndicesForPipeline(app, pipeObj)
+            found = false;
+            projectIdx = [];
             if isempty(pipeObj) || ~isa(pipeObj,'pipeline')
                 return;
             end
@@ -2233,15 +2394,10 @@ end
                 return;
             end
 
-            try
-                vars = evalin('base','who');
-            catch
-                return;
-            end
-
-            for iVar = 1:numel(vars)
+            for iProj = 1:numel(app.Data.Project)
+                projVar = app.Data.Project{iProj};
                 try
-                    obj = evalin('base', vars{iVar});
+                    obj = evalin('base', projVar);
                 catch
                     continue;
                 end
@@ -2249,11 +2405,17 @@ end
                     continue;
                 end
 
+                if app.isPipelineInsideProjectFolder(obj, pipeObj)
+                    projectIdx(end+1) = iProj; %#ok<AGROW>
+                    found = true;
+                    continue;
+                end
+
                 projectKey = app.normalizeFsPath(app.getProjectDefaultPipelinePath(obj));
                 if ~isempty(projectKey) && strcmp(projectKey, targetKey)
+                    projectIdx(end+1) = iProj; %#ok<AGROW>
                     found = true;
-                    shallowObj = obj;
-                    return;
+                    continue;
                 end
 
                 try
@@ -2272,12 +2434,43 @@ end
                     catch
                     end
                     if ~isempty(runPath) && strcmp(app.normalizeFsPath(runPath), targetKey)
+                        projectIdx(end+1) = iProj; %#ok<AGROW>
                         found = true;
-                        shallowObj = obj;
-                        return;
+                        break;
                     end
                 end
             end
+
+            if ~isempty(projectIdx)
+                projectIdx = unique(projectIdx, 'stable');
+                found = true;
+            end
+        end
+
+        function tf = isPipelineInsideProjectFolder(app, shallowObj, pipeObj) %#ok<INUSD>
+            tf = false;
+            if isempty(shallowObj) || isempty(pipeObj) || ~isa(shallowObj,'shallow') || ~isa(pipeObj,'pipeline')
+                return;
+            end
+
+            projectRoot = '';
+            try
+                if isprop(shallowObj,'io') && isstruct(shallowObj.io) && isfield(shallowObj.io,'path') && isfield(shallowObj.io,'file')
+                    projectRoot = fullfile(char(string(shallowObj.io.path)), char(string(shallowObj.io.file)));
+                end
+            catch
+            end
+            if isempty(projectRoot) || isempty(pipeObj.path)
+                return;
+            end
+
+            rootKey = app.normalizeFsPath(projectRoot);
+            pipeKey = app.normalizeFsPath(pipeObj.path);
+            if isempty(rootKey) || isempty(pipeKey)
+                return;
+            end
+
+            tf = strcmp(pipeKey, rootKey) || startsWith(pipeKey, [rootKey '/']);
         end
 
 
@@ -4608,17 +4801,27 @@ end
                 t=[t 'Processor path: ' newline];
                 t=[t clas.path newline newline];
 
-                if numel(clas.description)
+                if isprop(clas, 'description') && ~isempty(clas.description)
                     t=[t 'Description: '];
-
-                    %  t=[t clas.description{1}];
+                    if iscell(clas.description)
+                        t=[t char(string(clas.description{1})) newline];
+                    else
+                        t=[t char(string(clas.description)) newline];
+                    end
                 end
 
-                %                 if numel(clas.category)
-                %                 [catCell, ~] = classiNormalizeCategory(clas.category);
-                    t=[t catCell{1} char(13)];
-                %                 end
+                if isprop(clas, 'category') && ~isempty(clas.category)
+                    if iscell(clas.category)
+                        categoryText = clas.category{1};
+                    else
+                        categoryText = clas.category;
+                    end
+                    t=[t 'Category: ' char(string(categoryText)) newline];
+                end
 
+                if isprop(clas, 'processFun') && ~isempty(clas.processFun)
+                    t=[t 'Function: ' char(string(clas.processFun)) newline];
+                end
 
 
                 t=[t  char(13)];
@@ -4880,7 +5083,9 @@ end
                     runObj = shallowObj.processing.pipelineRun(cc(2));
                     t='';
                     t=[t 'Run id: ' runObj.runId newline newline];
-                    t=[t 'Status: ' char(string(runObj.status)) newline newline];
+                    [runMode, runStatus] = app.summarizePipelineRun(runObj);
+                    t=[t 'Execution: ' runMode newline];
+                    t=[t 'Status: ' runStatus newline newline];
                     if isprop(runObj,'pipelineRef') && isstruct(runObj.pipelineRef)
                         if isfield(runObj.pipelineRef,'id')
                             t=[t 'Pipeline id: ' char(string(runObj.pipelineRef.id)) newline];
