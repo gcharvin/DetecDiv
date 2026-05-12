@@ -21,7 +21,6 @@ classdef fov < handle
         crop        = [];
         pattern     = [];
         drift       = [];    % [dx dy] pour correction de dérive
-        parent      = [];
 
         % --- NOUVEAU: support natif du multi-TIFF ---
         % Si true, ce FOV ne correspond pas à une série de fichiers individuels,
@@ -54,6 +53,10 @@ classdef fov < handle
 
     properties (Dependent)
         channels  % nb de canaux, juste un alias pratique
+    end
+
+    properties (Transient)
+        parent = [];
     end
 
     methods

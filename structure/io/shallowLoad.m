@@ -60,6 +60,15 @@ else
 end
 
 % éviter de charger 2x le même projet dans le workspace
+try
+    if exist('loadData_rebuildParsedDataFromProject', 'file') == 2
+        shallowObj.parsedData = loadData_rebuildParsedDataFromProject(shallowObj);
+    end
+catch ME
+    warning('shallowLoad:ParsedDataRebuildFailed', ...
+        'Could not rebuild parsedData from project metadata: %s', ME.message);
+end
+
 normalizePathClean = @(p) regexprep(lower(strrep(p, '\', '/')), '/+$', '');
 expectedPath = normalizePathClean(path);
 expectedFile = lower(file);

@@ -98,12 +98,14 @@ function shallowSave(shallowObj, option, progress)
 
     tmpUuid   = char(java.util.UUID.randomUUID);
     tmpTarget = [projectTarget '.tmp.' tmpUuid];
+    cleanupSaveView = localPrepareLightProjectForMat(shallowObj);
 
     % 4.a) Écriture vers un fichier temporaire
     try
         save(tmpTarget, 'shallowObj', '-v7.3');
         fprintf('[OK]   Temp file written: %s\n', tmpTarget);
     catch ME
+        delete(cleanupSaveView);
         fprintf(2, '[ERR]  Failed to write temp MAT: %s\n', ME.message);
         if exist(tmpTarget, 'file'); delete(tmpTarget); end
         fprintf('--------------------------------------------\n\n');
@@ -111,6 +113,8 @@ function shallowSave(shallowObj, option, progress)
     end
 
     % 4.b) Vérification du .mat temporaire
+    delete(cleanupSaveView);
+
     if ~localVerifyMat(tmpTarget)
         fprintf(2, '[ERR]  Temp MAT verification failed. Aborting.\n');
         if exist(tmpTarget, 'file'); delete(tmpTarget); end
@@ -168,5 +172,166 @@ function ok = localVerifyMat(matPath)
         ok   = ~isempty(vars);
     catch
         ok = false;
+    end
+end
+
+function cleanupObj = localPrepareLightProjectForMat(shallowObj)
+% Temporarily strip cached/heavy runtime data before serializing the project.
+% The onCleanup restores the live handle object immediately after save().
+
+    state = struct();
+
+    state.hasParsedData = isprop(shallowObj, 'parsedData');
+    state.parsedData = [];
+    if state.hasParsedData
+        state.parsedData = shallowObj.parsedData;
+        shallowObj.parsedData = localCompactParsedData(shallowObj.parsedData);
+    end
+
+    state.processing = shallowObj.processing;
+    shallowObj.processing = localCompactProcessing(shallowObj.processing);
+
+    nFov = numel(shallowObj.fov);
+    state.fovParent = cell(1, nFov);
+    state.roiImage = {};
+    state.roiData = {};
+    state.roiResults = {};
+    state.roiTrain = {};
+    state.roiProc = {};
+    state.roiClasses = {};
+
+    for iFov = 1:nFov
+        try
+            state.fovParent{iFov} = shallowObj.fov(iFov).parent;
+            shallowObj.fov(iFov).parent = [];
+        catch
+            state.fovParent{iFov} = [];
+        end
+
+        nRoi = numel(shallowObj.fov(iFov).roi);
+        for iRoi = 1:nRoi
+            r = shallowObj.fov(iFov).roi(iRoi);
+
+            state.roiImage(end+1, :) = {iFov, iRoi, r.image}; %#ok<AGROW>
+            state.roiData(end+1, :) = {iFov, iRoi, r.data}; %#ok<AGROW>
+            r.image = [];
+            r.data = dataseries.empty;
+
+            if isprop(r, 'results')
+                state.roiResults(end+1, :) = {iFov, iRoi, r.results}; %#ok<AGROW>
+                r.results = [];
+            end
+            if isprop(r, 'train')
+                state.roiTrain(end+1, :) = {iFov, iRoi, r.train}; %#ok<AGROW>
+                r.train = [];
+            end
+            if isprop(r, 'proc')
+                state.roiProc(end+1, :) = {iFov, iRoi, r.proc}; %#ok<AGROW>
+                r.proc = [];
+            end
+            if isprop(r, 'classes')
+                state.roiClasses(end+1, :) = {iFov, iRoi, r.classes}; %#ok<AGROW>
+                r.classes = {};
+            end
+        end
+    end
+
+    cleanupObj = onCleanup(@() localRestoreProjectAfterMat(shallowObj, state));
+end
+
+function localRestoreProjectAfterMat(shallowObj, state)
+    if state.hasParsedData
+        shallowObj.parsedData = state.parsedData;
+    end
+    shallowObj.processing = state.processing;
+
+    for iFov = 1:numel(state.fovParent)
+        try
+            shallowObj.fov(iFov).parent = state.fovParent{iFov};
+        catch
+        end
+    end
+
+    localRestoreRoiField(shallowObj, state.roiImage, 'image');
+    localRestoreRoiField(shallowObj, state.roiData, 'data');
+    localRestoreRoiField(shallowObj, state.roiResults, 'results');
+    localRestoreRoiField(shallowObj, state.roiTrain, 'train');
+    localRestoreRoiField(shallowObj, state.roiProc, 'proc');
+    localRestoreRoiField(shallowObj, state.roiClasses, 'classes');
+end
+
+function localRestoreRoiField(shallowObj, rows, fieldName)
+    for k = 1:size(rows, 1)
+        try
+            iFov = rows{k, 1};
+            iRoi = rows{k, 2};
+            shallowObj.fov(iFov).roi(iRoi).(fieldName) = rows{k, 3};
+        catch
+        end
+    end
+end
+
+function processing = localCompactProcessing(processing)
+    if ~isstruct(processing)
+        processing = struct('roi', [], 'classification', [], 'processor', [], 'pipelineRun', []);
+        return;
+    end
+
+    if isfield(processing, 'classification')
+        try
+            processing.classification = classi.empty;
+        catch
+            processing.classification = [];
+        end
+    end
+    if isfield(processing, 'processor')
+        try
+            processing.processor = process.empty;
+        catch
+            processing.processor = [];
+        end
+    end
+    if isfield(processing, 'pipelineRun')
+        try
+            processing.pipelineRun = pipelineRun.empty;
+        catch
+            processing.pipelineRun = [];
+        end
+    end
+end
+
+function parsedData = localCompactParsedData(parsedData)
+    if isempty(parsedData) || ~isstruct(parsedData)
+        return;
+    end
+
+    parsedData = localRemoveFieldsIfPresent(parsedData, ...
+        {'files', 'filelist', 'channelsDir', 'roipattern', 'image', 'preview', 'metadata'});
+
+    if isfield(parsedData, 'positions') && isstruct(parsedData.positions)
+        pos = parsedData.positions;
+        heavyPositionFields = {'channelsDir', 'filelist', 'roipattern', 'image', ...
+            'preview', 'contours', 'metadata', 'metadataText'};
+        for i = 1:numel(heavyPositionFields)
+            if isfield(pos, heavyPositionFields{i})
+                pos = rmfield(pos, heavyPositionFields{i});
+            end
+        end
+        parsedData.positions = pos;
+    end
+
+    if isfield(parsedData, 'files')
+        parsedData.files = {};
+    end
+    if isfield(parsedData, 'roipattern')
+        parsedData.roipattern = [];
+    end
+end
+
+function S = localRemoveFieldsIfPresent(S, names)
+    for i = 1:numel(names)
+        if isfield(S, names{i})
+            S = rmfield(S, names{i});
+        end
     end
 end
