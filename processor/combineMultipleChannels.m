@@ -4,16 +4,37 @@ environment = 'pc'; %#ok<NASGU>
 
 if nargin==0
     listChannels = listAvailableChannels;
-    paramout = [];
+    listChannels = reshape(listChannels, 1, []);
+    if isempty(listChannels)
+        listChannels = {'Channel1'};
+    end
 
+    channelChoices = [{'none'} listChannels];
+    defaultRGB = {
+        [1 0 0]
+        [0 1 0]
+        [0 0 1]
+        [1 1 0]
+        [1 0 1]
+        };
+
+    paramout = [];
     tip = {};
     cc = 1;
-    for i = 1:numel(listChannels)
-        tip{cc} = 'Check this box if this channel should be combined into a new channel'; cc=cc+1;
-        paramout.(listChannels{i}) = false;
 
-        tip{cc} = 'Enter the RGB triplet for this channel in the output channel eg: [1 0 0]; Discard if channel is not selected'; cc=cc+1;
-        paramout.(['RGB_' listChannels{i}]) = [0 0 0];
+    nSlots = max(5, min(numel(listChannels), 8));
+    for i = 1:nSlots
+        if i <= numel(listChannels)
+            defaultChannel = listChannels{i};
+        else
+            defaultChannel = 'none';
+        end
+
+        tip{cc} = 'Select a channel to combine, or none to ignore this slot'; cc=cc+1;
+        paramout.(sprintf('Channel%d', i)) = [channelChoices defaultChannel];
+
+        tip{cc} = 'Enter the RGB triplet for this channel in the output channel eg: [1 0 0]; Discard if channel is none'; cc=cc+1;
+        paramout.(sprintf('RGB_Channel%d', i)) = defaultRGB{min(i, numel(defaultRGB))};
     end
 
     paramout.outputChannelName = 'CombinedChannel';
@@ -22,7 +43,6 @@ if nargin==0
     paramout.listChannelName = [listChannels listChannels{end}];
     tip{end+1} = 'Do not edit';
 
-    % optional (not used by GUI unless you add it)
     paramout.debug = false;
     tip{end+1} = 'Optional: set debug=true for verbose console logs';
 
@@ -37,32 +57,7 @@ imageout = [];
 
 fprintf('[combineMultipleChannels] ---- START output="%s" ----\n', string(param.outputChannelName));
 
-% get listChannels
-listChannels = param.listChannelName(1:end-1);
-fprintf('[combineMultipleChannels] listChannels count=%d\n', numel(listChannels));
-
-% collect selection
-cha = {};
-rgb = {};
-
-for i = 1:numel(listChannels)
-    chName = listChannels{i};
-    flagField = chName;
-    rgbField  = ['RGB_' chName];
-
-    if isfield(param, flagField) && isequal(param.(flagField), true)
-        cha{end+1} = chName; %#ok<AGROW>
-
-        if isfield(param, rgbField)
-            rgb{end+1} = param.(rgbField); %#ok<AGROW>
-        else
-            rgb{end+1} = [1 1 1]; %#ok<AGROW>
-            fprintf('[combineMultipleChannels] WARNING missing field "%s" -> using [1 1 1]\n', rgbField);
-        end
-
-        fprintf('[combineMultipleChannels] SELECT ch="%s" rgb=%s\n', chName, mat2str(rgb{end}));
-    end
-end
+[cha, rgb] = collectSelectedChannels(param);
 
 if isempty(cha)
     fprintf('[combineMultipleChannels] no channel selected -> no-op\n');
@@ -71,7 +66,6 @@ if isempty(cha)
     return
 end
 
-% sanitize rgb
 for k = 1:numel(rgb)
     if isempty(rgb{k}) || ~isnumeric(rgb{k})
         fprintf('[combineMultipleChannels] WARNING rgb{%d} invalid -> [1 1 1]\n', k);
@@ -96,4 +90,75 @@ imageout = roiobj.image;
 
 fprintf('[combineMultipleChannels] ---- DONE output="%s" ----\n', string(param.outputChannelName));
 
+end
+
+function [cha, rgb] = collectSelectedChannels(param)
+cha = {};
+rgb = {};
+
+slotFields = regexp(fieldnames(param), '^Channel\d+$', 'match');
+slotFields = [slotFields{:}];
+
+if ~isempty(slotFields)
+    slotNums = cellfun(@(s) sscanf(s, 'Channel%d'), slotFields);
+    [~, ord] = sort(slotNums);
+    slotFields = slotFields(ord);
+
+    for i = 1:numel(slotFields)
+        chName = selectedChannelValue(param.(slotFields{i}));
+        if isempty(chName) || strcmpi(chName, 'none')
+            continue;
+        end
+
+        rgbField = sprintf('RGB_%s', slotFields{i});
+        cha{end+1} = chName; %#ok<AGROW>
+        if isfield(param, rgbField)
+            rgb{end+1} = param.(rgbField); %#ok<AGROW>
+        else
+            rgb{end+1} = [1 1 1]; %#ok<AGROW>
+            fprintf('[combineMultipleChannels] WARNING missing field "%s" -> using [1 1 1]\n', rgbField);
+        end
+        fprintf('[combineMultipleChannels] SELECT ch="%s" rgb=%s\n', chName, mat2str(rgb{end}));
+    end
+    return;
+end
+
+% Legacy schema: one logical field per channel name. This is kept for old
+% saved processors whose channel names were valid MATLAB struct fields.
+listChannels = {};
+if isfield(param, 'listChannelName') && iscell(param.listChannelName)
+    listChannels = param.listChannelName(1:end-1);
+end
+fprintf('[combineMultipleChannels] legacy listChannels count=%d\n', numel(listChannels));
+
+for i = 1:numel(listChannels)
+    chName = listChannels{i};
+    flagField = chName;
+    rgbField  = ['RGB_' chName];
+
+    if isfield(param, flagField) && isequal(param.(flagField), true)
+        cha{end+1} = chName; %#ok<AGROW>
+
+        if isfield(param, rgbField)
+            rgb{end+1} = param.(rgbField); %#ok<AGROW>
+        else
+            rgb{end+1} = [1 1 1]; %#ok<AGROW>
+            fprintf('[combineMultipleChannels] WARNING missing field "%s" -> using [1 1 1]\n', rgbField);
+        end
+
+        fprintf('[combineMultipleChannels] SELECT ch="%s" rgb=%s\n', chName, mat2str(rgb{end}));
+    end
+end
+end
+
+function chName = selectedChannelValue(value)
+chName = '';
+if iscell(value)
+    if isempty(value)
+        return;
+    end
+    chName = char(string(value{end}));
+elseif ischar(value) || isstring(value)
+    chName = char(string(value));
+end
 end
