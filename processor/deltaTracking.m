@@ -1,9 +1,5 @@
 function paramout=deltaTracking(param,obj,frames)
 
-list=listAvailableChannels();
-
-listproj= gatherVariablesFromWorkspace;
-
 % implements the tracking method as in the lugagne paper Delta 2.0
 % procedure
 % setup processor paramters : "add processor..."
@@ -19,6 +15,8 @@ listproj= gatherVariablesFromWorkspace;
 
 
 if nargin==0
+    list=listAvailableChannels();
+    listproj= gatherVariablesFromWorkspace;
     paramout=[];
 
     list{end+1}=list{1};
@@ -73,6 +71,8 @@ if nargin==0
 else
     paramout=param;
 end
+
+listproj= gatherVariablesFromWorkspace;
 
 display=1;
 
