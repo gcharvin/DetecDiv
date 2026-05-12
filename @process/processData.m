@@ -44,6 +44,8 @@ end
 
 classi=classiobj;
 classifyFun=classi.processFun;
+classifyFun=normalizeKnownProcessorFunction(classifyFun);
+classi.processFun=classifyFun;
 fhandle=eval(['@' classifyFun]);
 param=classi.processArg;
 
@@ -170,5 +172,26 @@ function ROIManagement(roiobj,image,data)
  else
  %   data
 roiobj.save('data');
- end
+end
 %disp('You must save the shallow project to save these classified data !');
+
+function fun = normalizeKnownProcessorFunction(fun)
+if isempty(fun)
+    return;
+end
+
+fun = char(string(fun));
+baseFun = regexprep(fun, '\.process$', '');
+if strcmp(baseFun, fun)
+    return;
+end
+
+try
+    procListFile = fullfile(fileparts(which('shallowNew.m')), 'processor', 'processlist.mat');
+    S = load(procListFile, 'processlist');
+    known = S.processlist{:,5};
+    if any(matches(known, baseFun))
+        fun = baseFun;
+    end
+catch
+end
