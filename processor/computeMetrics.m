@@ -385,7 +385,7 @@ end
                     sommes2(cc,k,i)=sum(vpix(pix));
                     
                     moyenne_brillants2(cc,k,i) =  meanTopNValues(vpix(pix), N);
-                    somme_brillants1(cc,k,i) =  sumTopNValues(vpix(pix), N);
+                    somme_brillants2(cc,k,i) =  sumTopNValues(vpix(pix), N);
                     cc=cc+1;
                      end
             end
@@ -650,7 +650,7 @@ end
                       bwn=1;
 
                      if numel(chabw{bwn})
-                             ratioMeanNoBckg = squeeze(mean(difference1(:,cha_i,:),2) ./ mean(difference1(:,cha_j,:),2)).';
+                             ratioMeanNoBckg = permute(mean(difference1(:,cha_i,:),2) ./ mean(difference1(:,cha_j,:),2), [3 1 2]);
                              ratioName = localRatioMetricVarName(channelsName{i}, channelsName{j}, paramout.(['mask' num2str(bwn) '_label']));
                               dataout(cc).data.(ratioName)=ratioMeanNoBckg;
                      end
@@ -658,7 +658,7 @@ end
                       bwn=2;
 
                      if numel(chabw{bwn})
-                             ratioMeanNoBckg = squeeze(mean(difference2(:,cha_i,:),2) ./ mean(difference2(:,cha_j,:),2)).';
+                             ratioMeanNoBckg = permute(mean(difference2(:,cha_i,:),2) ./ mean(difference2(:,cha_j,:),2), [3 1 2]);
                              ratioName = localRatioMetricVarName(channelsName{i}, channelsName{j}, paramout.(['mask' num2str(bwn) '_label']));
                               dataout(cc).data.(ratioName)=ratioMeanNoBckg;
                       end
