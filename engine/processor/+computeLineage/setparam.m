@@ -6,7 +6,13 @@ if nargin < 1 || isempty(ctx)
 end
 
 listout = {};
-if isfield(ctx,'classification_data') && ~isempty(ctx.classification_data)
+if isfield(ctx,'useProvidedDataSeries') && ctx.useProvidedDataSeries
+    if isfield(ctx,'classification_data')
+        listout = ctx.classification_data;
+    elseif isfield(ctx,'classificationData')
+        listout = ctx.classificationData;
+    end
+elseif isfield(ctx,'classification_data') && ~isempty(ctx.classification_data)
     listout = ctx.classification_data;
 elseif isfield(ctx,'classificationData') && ~isempty(ctx.classificationData)
     listout = ctx.classificationData;

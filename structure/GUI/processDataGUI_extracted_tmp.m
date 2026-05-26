@@ -556,6 +556,12 @@ function channels = collectChannelsFromSelection(app)
         obj = app.Data.storedobj(r).data;
         if isempty(obj) || ~isprop(obj,'roi'), continue; end
 
+        objChannels = getObjectChannelNames(app, obj);
+        if ~isempty(objChannels)
+            channels = [channels, objChannels(:)']; %#ok<AGROW>
+            continue;
+        end
+
         roiStr = app.UIROITable.Data{r,5};
         roiIdx = str2num(roiStr); %#ok<ST2NM>
         if isempty(roiIdx)
@@ -563,21 +569,91 @@ function channels = collectChannelsFromSelection(app)
         end
         roiIdx = roiIdx(roiIdx>=1 & roiIdx<=numel(obj.roi));
 
-        for k = roiIdx(:)'
+        maxRoiMetadataScan = min(numel(roiIdx), 3);
+        for k = roiIdx(1:maxRoiMetadataScan)
+            if k > numel(obj.roi), continue; end
+            ch = getRoiChannelNames(app, obj.roi(k));
+            channels = [channels, ch(:)']; %#ok<AGROW>
+        end
+    end
+
+    channels = unique(channels, 'stable');
+end
+
+function channels = getObjectChannelNames(app, obj) %#ok<INUSD>
+% Return channel names already stored on a FOV/classifier-like object.
+    channels = {};
+    try
+        if isprop(obj,'channel') && ~isempty(obj.channel)
+            ch = obj.channel;
+            if ischar(ch) || isstring(ch), ch = cellstr(ch); end
+            channels = ch(:)';
+        end
+    catch
+        channels = {};
+    end
+end
+
+function dataNames = collectDataSeriesFromSelection(app, dataClass)
+% Collect dataseries names that are already available in ROI headers/memory.
+% This intentionally does not call roi.load('data'), because opening this
+% dialog must not scan every data_<roi>.mat in a large project.
+    if nargin < 2 || isempty(dataClass)
+        dataClass = '';
+    end
+
+    dataNames = {};
+    rows = getActiveRows(app);
+    if isempty(rows)
+        return;
+    end
+
+    for r = rows(:)'
+        if r > numel(app.Data.storedobj), continue; end
+        obj = app.Data.storedobj(r).data;
+        if isempty(obj) || ~isprop(obj,'roi'), continue; end
+
+        roiStr = app.UIROITable.Data{r,5};
+        roiIdx = str2num(roiStr); %#ok<ST2NM>
+        if isempty(roiIdx)
+            roiIdx = 1:numel(obj.roi);
+        end
+        roiIdx = roiIdx(roiIdx>=1 & roiIdx<=numel(obj.roi));
+
+        maxRoiMetadataScan = min(numel(roiIdx), 3);
+        for k = roiIdx(1:maxRoiMetadataScan)
             if k > numel(obj.roi), continue; end
             try
-                dispStruct = obj.roi(k).display;
-                if isfield(dispStruct,'channel')
-                    ch = dispStruct.channel;
-                    if ischar(ch), ch = {ch}; end
-                    channels = [channels, ch(:)']; %#ok<AGROW>
+                d = obj.roi(k).data;
+                if isempty(d), continue; end
+                for ii = 1:numel(d)
+                    if isempty(dataClass) || strcmpi(char(string(d(ii).class)), char(string(dataClass)))
+                        dataNames{end+1} = char(string(d(ii).groupid)); %#ok<AGROW>
+                    end
                 end
             catch
             end
         end
     end
 
-    channels = unique(channels, 'stable');
+    dataNames = unique(dataNames(~cellfun(@isempty, dataNames)), 'stable');
+end
+
+function channels = getRoiChannelNames(app, roiObj) %#ok<INUSD>
+% Return logical channel names without touching ROI image/data files.
+    channels = {};
+
+    try
+        dispStruct = roiObj.display;
+        if isfield(dispStruct,'channel') && ~isempty(dispStruct.channel)
+            ch = dispStruct.channel;
+            if ischar(ch) || isstring(ch), ch = cellstr(ch); end
+            channels = ch(:)';
+            return;
+        end
+    catch
+    end
+
 end
 
 function param = buildProcessorParam(app, processFun, channels)
@@ -587,6 +663,9 @@ function param = buildProcessorParam(app, processFun, channels)
     ctx = struct();
     ctx.channels = channels;
     ctx.useProvidedChannels = true;
+    ctx.classification_data = collectDataSeriesFromSelection(app, 'classification');
+    ctx.classificationData = ctx.classification_data;
+    ctx.useProvidedDataSeries = true;
 
     setparamFun = '';
     if ~isempty(processFun) && ~contains(processFun,'.')
@@ -703,6 +782,46 @@ end
 
 function setRefreshingFalse(app)
     app.isRefreshing = false;
+end
+
+function nFrames = inferFrameCountFromObject(app, obj) %#ok<INUSD>
+    nFrames = 1;
+
+    try
+        if isfield(obj,'frames') && ~isempty(obj.frames)
+            fr = obj.frames;
+            if iscell(fr), fr = fr{1}; end
+            if isnumeric(fr)
+                if isscalar(fr)
+                    nFrames = double(fr);
+                else
+                    nFrames = numel(fr);
+                end
+                nFrames = max(1, nFrames);
+                return;
+            end
+        end
+    catch
+    end
+
+    try
+        if isprop(obj,'frames') && ~isempty(obj.frames)
+            fr = obj.frames;
+            if iscell(fr), fr = fr{1}; end
+            if isnumeric(fr)
+                if isscalar(fr)
+                    nFrames = double(fr);
+                else
+                    nFrames = numel(fr);
+                end
+                nFrames = max(1, nFrames);
+                return;
+            end
+        end
+    catch
+    end
+
+    nFrames = max(1, double(nFrames));
 end
 
 
@@ -864,27 +983,8 @@ end
                 end
 
                 if isempty(fra)
-    fra = 1; % fallback safe
-    if numel(obj.roi) > 0
-        r1 = obj.roi(1);
-
-        % avoid load if ID/path missing
-        if ~isempty(r1.id) && isprop(r1,'path') && ~isempty(r1.path)
-            h5 = fullfile(r1.path, ['im_' r1.id '.h5']);
-            mat = fullfile(r1.path, ['im_' r1.id '.mat']);
-            if exist(h5,'file') || exist(mat,'file')
-                try
-                    r1.load;
-                    if ~isempty(r1.image)
-                        fra = size(r1.image,4);
-                    end
-                catch
-                    fra = 1;
+                    fra = inferFrameCountFromObject(app, obj);
                 end
-            end
-        end
-    end
-end
 
                 roilist=['1:' num2str(numel(obj.roi))];
 
@@ -1299,6 +1399,7 @@ restoreSelectionFromRunProfile(app, procObj);
             pkgName = extractBefore(pkgName, '.process');
         end
     end
+
     if ~isempty(pkgName)
         procObj.processFun = [pkgName '.process'];
     end
