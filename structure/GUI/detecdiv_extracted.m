@@ -2722,7 +2722,7 @@ end
                         if iPath == 1 && ~isempty(pipeObj)
                             if app.setProjectDefaultPipelineRef(shallowObj, pipeObj)
                                 try
-                                    shallowSave(shallowObj);
+                                    app.saveShallowProjectWithProgress(shallowObj, 'Saving project pipeline link...', 'shallowObj');
                                 catch
                                 end
                             end
@@ -3054,7 +3054,7 @@ end
                 catch
                 end
                 try
-                    shallowSave(shallowObj);
+                    app.saveShallowProjectWithProgress(shallowObj, 'Saving default project pipeline...', 'shallowObj');
                 catch
                 end
             end
@@ -5239,7 +5239,7 @@ end
                 end
 
                 t=[t 'Source sample filename: ' newline newline];
-                t=[t position.srclist{1}(1).name newline newline];
+                t=[t app.describeFovSampleSource(position) newline newline];
 
                 t=[t num2str(numel(position.channel)) ' channels: '];
 
@@ -5248,12 +5248,7 @@ end
                 end
 
                 t=[t newline newline];
-                if numel(position.frames)
-                    fr=position.frames;
-                else
-                    fr=numel(position.srclist{1});
-                end
-                t=[t num2str(fr) ' frames' newline newline];
+                t=[t app.describeFovFrames(position) ' frames' newline newline];
 
                 n=numel(position.roi);
                 if n==1 & numel(position.roi(1).id)==0
@@ -6070,6 +6065,104 @@ end
             end
         end
 
+        function saveShallowProjectWithProgress(app, shallowObj, message, option)
+            if nargin < 3 || isempty(message)
+                message = 'Saving project...';
+            end
+            if nargin < 4
+                option = [];
+            end
+
+            if isempty(shallowObj) || ~isa(shallowObj, 'shallow')
+                return;
+            end
+
+            d = [];
+            try
+                d = uiprogressdlg(app.DetecDivUIFigure, ...
+                    'Title', 'Save project', ...
+                    'Message', message, ...
+                    'Value', 0.05);
+                drawnow;
+            catch
+                d = [];
+            end
+            cleanupDlg = onCleanup(@() app.closeProgressDialog(d)); %#ok<NASGU>
+
+            if isempty(d)
+                shallowSave(shallowObj, option);
+            else
+                shallowSave(shallowObj, option, d);
+            end
+        end
+
+        function closeProgressDialog(app, d) %#ok<INUSD>
+            try
+                if ~isempty(d) && isvalid(d)
+                    close(d);
+                end
+            catch
+            end
+        end
+
+        function label = describeFovSampleSource(app, position) %#ok<INUSD>
+            label = '(source metadata only)';
+            try
+                if isprop(position,'srclist') && iscell(position.srclist) && ...
+                        ~isempty(position.srclist) && ~isempty(position.srclist{1}) && ...
+                        isfield(position.srclist{1}, 'name') && ~isempty(position.srclist{1}(1).name)
+                    label = position.srclist{1}(1).name;
+                    return;
+                end
+            catch
+            end
+
+            try
+                if isprop(position,'isOMEZarr') && position.isOMEZarr
+                    seriesName = '';
+                    arrayPath = '';
+                    if isprop(position,'omeZarrSeries'), seriesName = char(string(position.omeZarrSeries)); end
+                    if isprop(position,'omeZarrArrayPath'), arrayPath = char(string(position.omeZarrArrayPath)); end
+                    label = ['OME-Zarr dataset'];
+                    if ~isempty(seriesName) || ~isempty(arrayPath)
+                        label = [label ' (' seriesName '/' arrayPath ')'];
+                    end
+                    return;
+                end
+                if isprop(position,'isNDTiff') && position.isNDTiff
+                    label = 'NDTiff dataset';
+                    return;
+                end
+                if isprop(position,'isMultiTiff') && position.isMultiTiff
+                    label = 'multi-TIFF stack';
+                    try
+                        if ~isempty(position.tiffSource) && ~isempty(position.tiffSource{1})
+                            [~, nm, ext] = fileparts(position.tiffSource{1});
+                            label = [nm ext];
+                        end
+                    catch
+                    end
+                    return;
+                end
+            catch
+            end
+        end
+
+        function txt = describeFovFrames(app, position) %#ok<INUSD>
+            txt = 'unknown';
+            try
+                if isprop(position,'frames') && ~isempty(position.frames)
+                    txt = num2str(position.frames);
+                    return;
+                end
+                if isprop(position,'srclist') && iscell(position.srclist) && ...
+                        ~isempty(position.srclist) && ~isempty(position.srclist{1})
+                    txt = num2str(numel(position.srclist{1}));
+                end
+            catch
+            end
+        end
+
         % Menu selected function: SaveselectedprojectMenu
         function SaveselectedprojectMenuSelected(app, event)
             if numel(app.Tree.SelectedNodes)==0
@@ -6093,12 +6186,7 @@ end
                     return;
                 end
 
-                d = uiprogressdlg(app.DetecDivUIFigure,'Title','Please Wait...',...
-                    'Message','Saving selected project...');
-                d.Value=0.1;
-                pause(0.5)
-                shallowSave(shallowObj,[],d);
-                close(d);
+                app.saveShallowProjectWithProgress(shallowObj, 'Saving selected project...');
             else
                 uialert(app.DetecDivUIFigure,'No project was selected in the window!','Error','Icon','warning');
             end
@@ -7263,7 +7351,7 @@ end
             projectMatPath = app.getProjectMatPathFromObject(projectObj);
             if ~isempty(projectMatPath)
                 try
-                    shallowSave(projectObj);
+                    app.saveShallowProjectWithProgress(projectObj, 'Saving project after pipeline run...', 'shallowObj');
                     savedOk = true;
                 catch
                 end

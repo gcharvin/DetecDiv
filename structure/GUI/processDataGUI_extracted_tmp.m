@@ -31,7 +31,9 @@ classdef processDataGUI < matlab.apps.AppBase
 
     % cache param + channels
     paramChannelsSig = '';
+    paramDataSeriesSig = '';
     processParam = struct();
+    allowDataFileScan logical = false;
     end
 
     methods (Access = private)
@@ -359,7 +361,6 @@ function restoreSelectionFromRunProfile(app, procObj)
             data(rows,1) = {true};
             % Restore ROI array + frames for those rows
             if isfield(sel,'roiArray'), data(rows,5) = sel.roiArray(1:numel(rows)); end
-            if isfield(sel,'frames'),   data(rows,6) = sel.frames(1:numel(rows));   end
             app.UIROITable.Data = data;
             applyRuntimeOptions(app, sel);
             return;
@@ -375,7 +376,6 @@ function restoreSelectionFromRunProfile(app, procObj)
                    strcmp(string(data{i,3}), string(sel.sourceType{k}))
                     data{i,1} = true;
                     if isfield(sel,'roiArray'), data{i,5} = sel.roiArray{k}; end
-                    if isfield(sel,'frames'),   data{i,6} = sel.frames{k};   end
                 end
             end
         end
@@ -639,6 +639,89 @@ function dataNames = collectDataSeriesFromSelection(app, dataClass)
     dataNames = unique(dataNames(~cellfun(@isempty, dataNames)), 'stable');
 end
 
+function dataNames = scanDataSeriesFromSelection(app, dataClass, maxRoisPerRow)
+% Scan selected ROI data_<id>.mat files on demand, bounded per selected row.
+    if nargin < 2 || isempty(dataClass)
+        dataClass = '';
+    end
+    if nargin < 3 || isempty(maxRoisPerRow)
+        maxRoisPerRow = 25;
+    end
+
+    dataNames = {};
+    rows = getActiveRows(app);
+    if isempty(rows)
+        return;
+    end
+
+    for r = rows(:)'
+        if r > numel(app.Data.storedobj), continue; end
+        obj = app.Data.storedobj(r).data;
+        if isempty(obj) || ~isprop(obj,'roi'), continue; end
+
+        roiStr = app.UIROITable.Data{r,5};
+        roiIdx = str2num(roiStr); %#ok<ST2NM>
+        if isempty(roiIdx)
+            roiIdx = 1:numel(obj.roi);
+        end
+        roiIdx = roiIdx(roiIdx>=1 & roiIdx<=numel(obj.roi));
+        roiIdx = roiIdx(1:min(numel(roiIdx), maxRoisPerRow));
+
+        for k = roiIdx(:)'
+            if k > numel(obj.roi), continue; end
+            rr = obj.roi(k);
+            names = getRoiDataSeriesNames(app, rr, dataClass);
+            dataNames = [dataNames, names(:)']; %#ok<AGROW>
+            if ~isempty(dataNames)
+                % Usually the first ROI has the needed processor inputs.
+                break;
+            end
+        end
+        if ~isempty(dataNames)
+            break;
+        end
+    end
+
+    dataNames = unique(dataNames(~cellfun(@isempty, dataNames)), 'stable');
+end
+
+function dataNames = getRoiDataSeriesNames(app, rr, dataClass) %#ok<INUSD>
+    dataNames = {};
+
+    try
+        d = rr.data;
+        dataNames = collectNamesFromDataseriesLocal(app, d, dataClass);
+        if ~isempty(dataNames), return; end
+    catch
+    end
+
+    try
+        if isempty(rr.path) || isempty(rr.id), return; end
+        dataFile = fullfile(rr.path, ['data_' char(string(rr.id)) '.mat']);
+        if ~isfile(dataFile), return; end
+        S = load(dataFile, 'data');
+        if isfield(S, 'data')
+            dataNames = collectNamesFromDataseriesLocal(app, S.data, dataClass);
+        end
+    catch
+        dataNames = {};
+    end
+end
+
+function dataNames = collectNamesFromDataseriesLocal(app, d, dataClass) %#ok<INUSD>
+    dataNames = {};
+    if isempty(d), return; end
+    for ii = 1:numel(d)
+        try
+            if isempty(dataClass) || strcmpi(char(string(d(ii).class)), char(string(dataClass)))
+                dataNames{end+1} = char(string(d(ii).groupid)); %#ok<AGROW>
+            end
+        catch
+        end
+    end
+    dataNames = unique(dataNames(~cellfun(@isempty, dataNames)), 'stable');
+end
+
 function channels = getRoiChannelNames(app, roiObj) %#ok<INUSD>
 % Return logical channel names without touching ROI image/data files.
     channels = {};
@@ -663,7 +746,7 @@ function param = buildProcessorParam(app, processFun, channels)
     ctx = struct();
     ctx.channels = channels;
     ctx.useProvidedChannels = true;
-    ctx.classification_data = collectDataSeriesFromSelection(app, 'classification');
+    ctx.classification_data = getClassificationDataCandidates(app);
     ctx.classificationData = ctx.classification_data;
     ctx.useProvidedDataSeries = true;
 
@@ -694,6 +777,23 @@ function param = buildProcessorParam(app, processFun, channels)
     % inject runtime params into table
     if ~isfield(param,'Parallel'), param.Parallel = false; end
     if ~isfield(param,'ExecutionEnvironment'), param.ExecutionEnvironment = 'CPU'; end
+end
+
+function names = getClassificationDataCandidates(app)
+    names = collectDataSeriesFromSelection(app, 'classification');
+    if isempty(names) && app.allowDataFileScan
+        names = scanDataSeriesFromSelection(app, 'classification', 25);
+    end
+end
+
+function sig = buildParamDependencySignature(app, channels, classData)
+    rowSig = '';
+    try
+        rows = getActiveRows(app);
+        rowSig = mat2str(rows(:)');
+    catch
+    end
+    sig = strjoin([{rowSig}, channels(:)', {'::data::'}, classData(:)'], '|');
 end
 
 function merged = mergeParamStruct(app, oldParam, newParam)
@@ -741,6 +841,7 @@ end
 function refreshParamTable(app)
     if app.isRefreshing, return; end
     app.isRefreshing = true;
+    resetScanFlag = onCleanup(@() resetDataFileScanFlag(app)); %#ok<NASGU>
 
     procObj = getSelectedProcessor(app);
     if isempty(procObj)
@@ -749,7 +850,8 @@ function refreshParamTable(app)
     end
 
     channels = collectChannelsFromSelection(app);
-    sig = strjoin(channels, '|');
+    classData = getClassificationDataCandidates(app);
+    sig = buildParamDependencySignature(app, channels, classData);
 
     % Initial fill only if empty
     if isempty(app.processParam)
@@ -781,6 +883,11 @@ end
 
 
 function setRefreshingFalse(app)
+    app.isRefreshing = false;
+end
+
+function resetDataFileScanFlag(app)
+    app.allowDataFileScan = false;
     app.isRefreshing = false;
 end
 
@@ -1007,7 +1114,7 @@ end
                 end
 
 
-                Data(cc,:)={true projectnames{i} typ id roilist ['1:' num2str(fra)]};
+                Data(cc,:)={true projectnames{i} typ id roilist 'all'};
                 cc=cc+1;
             end
 
@@ -1236,7 +1343,20 @@ restoreSelectionFromRunProfile(app, procObj);
                 if app.ProcessallframesoveridesframestableselectionCheckBox.Value==1
                     frames{cc}=-1;
                 else
-                    frames{cc}=str2num(data{selpos(i),6}); %#ok<ST2NM>
+                    frameSpec = data{selpos(i),6};
+                    frames{cc} = -1;
+                    if ischar(frameSpec) || isstring(frameSpec)
+                        if strcmpi(strtrim(char(string(frameSpec))), 'all')
+                            frames{cc} = -1;
+                        else
+                            parsedFrames = str2num(char(string(frameSpec))); %#ok<ST2NM>
+                            if ~isempty(parsedFrames)
+                                frames{cc}=parsedFrames;
+                            end
+                        end
+                    else
+                        frames{cc}=frameSpec;
+                    end
                 end
                 cc=cc+1;
             end
@@ -1348,7 +1468,8 @@ restoreSelectionFromRunProfile(app, procObj);
 
         % Selection changed function: UIROITable
         function UIROITableSelectionChanged(app, event)
-            % Update params based on current ROI selection
+            % Scan selected ROI data files on demand, then update params.
+    app.allowDataFileScan = true;
     refreshParamTable(app);
         end
 
@@ -1357,6 +1478,7 @@ restoreSelectionFromRunProfile(app, procObj);
            
            col = event.Indices(2);
     if col == 1 || col == 5
+        app.allowDataFileScan = true;
         refreshParamTable(app);
     end
         end

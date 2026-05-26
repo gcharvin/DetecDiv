@@ -48,7 +48,6 @@ param=paramout;
 
 dataout=[];
 mask_data=[];
-dataout=roiobj.data;
 
 roiobj.load('data');
 
@@ -56,6 +55,7 @@ tmp=roiobj.data;
 if numel(tmp)==0
     roiobj.data=dataseries;
 end
+dataout=roiobj.data;
 
 listdata={roiobj.data.groupid};
 pix=find(matches(listdata,param.classification_data{end}));

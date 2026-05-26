@@ -66,8 +66,8 @@ success      = false;
 attempts     = 0;
 max_attempts = 5;
 
-if isempty(imArray) && verbose==true
-    disp('Image was not in memory, hence we don t save')
+if isempty(imArray) && ~onlyData && verbose==true
+    disp('Image was not in memory, hence we don t save image data')
 end
 
 while ~success && attempts < max_attempts
@@ -268,29 +268,45 @@ while ~success && attempts < max_attempts
         %%% ATOMIC WRITE for data .mat
         tmpUuidD = char(java.util.UUID.randomUUID);
         dataTmp  = [dataFile '.tmp.' tmpUuidD '.mat'];
+        localDataTmp = fullfile(tempdir, ['detecdiv_roi_data_' tmpUuidD '.mat']);
 
-        save(dataTmp, 'data', '-v7.3');
+        if exist(localDataTmp,'file'), delete(localDataTmp); end
+        if exist(dataTmp,'file'), delete(dataTmp); end
 
-        for k = 1:5
-    [ok, ME] = localVerifyMat(dataTmp);
-    if ok, break; end
-    pause(0.2);
+        try
+            save(localDataTmp, 'data', '-v7.3');
+            [localOk, localME] = localVerifyMat(localDataTmp);
+            if ~localOk
+                if ~isempty(localME)
+                    disp(getReport(localME,'extended'));
+                end
+                error('roi:save:verifyLocalMAT','Temporary local MAT verification failed.');
+            end
+            localInfo = dir(localDataTmp);
+            localBytes = localInfo.bytes;
+
+            copyfile(localDataTmp, dataTmp, 'f');
+            delete(localDataTmp);
+
+            copied = false;
+            for k = 1:5
+                if exist(dataTmp,'file')
+                    remoteInfo = dir(dataTmp);
+                    copied = ~isempty(remoteInfo) && remoteInfo.bytes == localBytes && remoteInfo.bytes > 0;
+                    if copied, break; end
+                end
+                pause(0.2);
+            end
+            if ~copied
+                error('roi:save:verifyRemoteMATCopy', ...
+                    'Remote MAT temp copy failed or has unexpected size: %s', dataTmp);
+            end
+        catch MEwrite
+            if exist(localDataTmp,'file'), delete(localDataTmp); end
+            if exist(dataTmp,'file'), delete(dataTmp); end
+            error('roi:save:dataMATWriteFailed', ...
+                'Unable to stage ROI data MAT file for "%s": %s', dataFile, MEwrite.message);
         end
-        
-if ~ok
-    if exist(dataTmp,'file')
-        d = dir(dataTmp);
-        warning('MAT tmp: %s (bytes=%d, date=%s)', dataTmp, d.bytes, d.date);
-    else
-        warning('MAT tmp does not exist: %s', dataTmp);
-    end
-    if ~isempty(ME)
-        disp(getReport(ME,'extended'));
-    end
-    if exist(dataTmp,'file'); delete(dataTmp); end
-    error('roi:save:verifyMAT','Temporary MAT verification failed.');
-end
-
 
         if exist(dataFile,'file')
             copyfile(dataFile, dataBak, 'f');

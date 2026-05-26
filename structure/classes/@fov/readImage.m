@@ -16,6 +16,7 @@ end
 
 
 nChan = numel(obj.channel);
+thisEntry = struct('name', '', 'folder', '');
 
 
 % --------- ensure raw path is accessible (just-in-time relink) ---------
@@ -55,19 +56,25 @@ end
 frameEff = max(1, min(frameEff, maxF));
 
 % récupérer métadonnées du frame
-if channel > numel(obj.srclist) || isempty(obj.srclist{channel})
+usesNDTiff = isprop(obj,'isNDTiff') && obj.isNDTiff;
+usesOMEZarr = localShouldUseOMEZarr(obj, thisEntry, channel);
+usesMultiTiff = isprop(obj,'isMultiTiff') && obj.isMultiTiff;
+
+if ~(usesNDTiff || usesOMEZarr || usesMultiTiff) && (channel > numel(obj.srclist) || isempty(obj.srclist{channel}))
     disp('Channel has no srclist entry; quitting !');
     return;
 end
-chanList = obj.srclist{channel};
-if frameEff > numel(chanList)
-    disp('Frame exceeds available images for this channel; quitting !');
-    return;
-end
+if ~(usesNDTiff || usesOMEZarr || usesMultiTiff)
+    chanList = obj.srclist{channel};
+    if frameEff > numel(chanList)
+        disp('Frame exceeds available images for this channel; quitting !');
+        return;
+    end
     thisEntry = chanList(frameEff);  % struct with .name, .folder, etc.
+end
 
 % --------- mode NDTiff ---------
-if isprop(obj,'isNDTiff') && obj.isNDTiff
+if usesNDTiff
     dsPath = obj.ndtiffPath;
     if isempty(dsPath) && ~isempty(obj.srcpath)
         dsPath = obj.srcpath{1};
@@ -165,7 +172,7 @@ if isprop(obj,'isNDTiff') && obj.isNDTiff
 end
 
 % --------- mode OME-Zarr ---------
-if localShouldUseOMEZarr(obj, thisEntry, channel)
+if usesOMEZarr
     try
         fprintf('[readImage] mode=OME-Zarr dataset=%s entry=%s\n', ...
             string(localGetSourcePath(obj, channel)), string(localGetEntryName(thisEntry)));
@@ -184,7 +191,7 @@ if localShouldUseOMEZarr(obj, thisEntry, channel)
 end
 
 % --------- mode multi-TIFF ---------
-if obj.isMultiTiff
+if usesMultiTiff
     % on s'attend à :
     %   obj.tiffSource{ch} = chemin du gros TIFF réel ;
     %   obj.pageMap{ch}(f) = index de page à lire

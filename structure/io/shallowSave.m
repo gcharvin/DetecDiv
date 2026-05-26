@@ -95,6 +95,7 @@ function shallowSave(shallowObj, option, progress)
     % ====== 5) Sauvegarde atomique + v?rif + backup .bak ======
     fprintf('\n--------------------------------------------\n');
     fprintf('[INFO] Writing project MAT (atomic write)...\n');
+    localSetProgress(progress, 0.82, 'Preparing lightweight project view...');
 
     tmpUuid   = char(java.util.UUID.randomUUID);
     tmpTarget = [projectTarget '.tmp.' tmpUuid];
@@ -102,6 +103,7 @@ function shallowSave(shallowObj, option, progress)
 
     % 4.a) Écriture vers un fichier temporaire
     try
+        localSetProgress(progress, 0.86, 'Writing project MAT file...');
         save(tmpTarget, 'shallowObj', '-v7.3');
         fprintf('[OK]   Temp file written: %s\n', tmpTarget);
     catch ME
@@ -115,6 +117,7 @@ function shallowSave(shallowObj, option, progress)
     % 4.b) Vérification du .mat temporaire
     delete(cleanupSaveView);
 
+    localSetProgress(progress, 0.91, 'Verifying project MAT file...');
     if ~localVerifyMat(tmpTarget)
         fprintf(2, '[ERR]  Temp MAT verification failed. Aborting.\n');
         if exist(tmpTarget, 'file'); delete(tmpTarget); end
@@ -126,6 +129,7 @@ function shallowSave(shallowObj, option, progress)
 
     % 4.c) Sauvegarde de l'ancien fichier en .bak
     try
+        localSetProgress(progress, 0.94, 'Backing up previous project file...');
         if exist(projectTarget, 'file')
             copyfile(projectTarget, backupFile, 'f');
             if localVerifyMat(backupFile)
@@ -142,6 +146,7 @@ function shallowSave(shallowObj, option, progress)
 
     % 4.d) Remplacement du fichier principal
     try
+        localSetProgress(progress, 0.97, 'Installing new project file...');
         if exist(projectTarget, 'file'), delete(projectTarget); end
         movefile(tmpTarget, projectTarget, 'f');
         fprintf('[OK]   New MAT moved into place: %s\n', projectTarget);
@@ -153,6 +158,7 @@ function shallowSave(shallowObj, option, progress)
     end
 
     % 4.e) Vérification finale
+    localSetProgress(progress, 0.99, 'Final project verification...');
     if ~localVerifyMat(projectTarget)
         fprintf(2, '[WARN] Final MAT verification failed. File may be corrupted.\n');
     else
@@ -163,6 +169,7 @@ function shallowSave(shallowObj, option, progress)
     fprintf('   -> %s\n', projectTarget);
     fprintf('   .bak -> previous version: %s\n', backupFile);
     fprintf('--------------------------------------------\n\n');
+    localSetProgress(progress, 1.0, 'Project saved.');
 end
 
 function ok = localVerifyMat(matPath)
@@ -172,6 +179,22 @@ function ok = localVerifyMat(matPath)
         ok   = ~isempty(vars);
     catch
         ok = false;
+    end
+end
+
+function localSetProgress(progress, value, message)
+    if nargin < 1 || isempty(progress)
+        return;
+    end
+    try
+        if nargin >= 2 && ~isempty(value)
+            progress.Value = max(0, min(1, value));
+        end
+        if nargin >= 3 && ~isempty(message)
+            progress.Message = message;
+        end
+        drawnow limitrate;
+    catch
     end
 end
 
@@ -193,8 +216,10 @@ function cleanupObj = localPrepareLightProjectForMat(shallowObj)
 
     nFov = numel(shallowObj.fov);
     state.fovParent = cell(1, nFov);
+    state.fovSrclist = {};
     state.roiImage = {};
     state.roiData = {};
+    state.roiHistory = {};
     state.roiResults = {};
     state.roiTrain = {};
     state.roiProc = {};
@@ -208,6 +233,14 @@ function cleanupObj = localPrepareLightProjectForMat(shallowObj)
             state.fovParent{iFov} = [];
         end
 
+        if localCanCompactSrclist(shallowObj.fov(iFov))
+            try
+                state.fovSrclist(end+1, :) = {iFov, shallowObj.fov(iFov).srclist}; %#ok<AGROW>
+                shallowObj.fov(iFov).srclist = {};
+            catch
+            end
+        end
+
         nRoi = numel(shallowObj.fov(iFov).roi);
         for iRoi = 1:nRoi
             r = shallowObj.fov(iFov).roi(iRoi);
@@ -216,6 +249,11 @@ function cleanupObj = localPrepareLightProjectForMat(shallowObj)
             state.roiData(end+1, :) = {iFov, iRoi, r.data}; %#ok<AGROW>
             r.image = [];
             r.data = dataseries.empty;
+
+            if isprop(r, 'history')
+                state.roiHistory(end+1, :) = {iFov, iRoi, r.history}; %#ok<AGROW>
+                r.history = localCompactRoiHistory(r.history);
+            end
 
             if isprop(r, 'results')
                 state.roiResults(end+1, :) = {iFov, iRoi, r.results}; %#ok<AGROW>
@@ -251,9 +289,16 @@ function localRestoreProjectAfterMat(shallowObj, state)
         catch
         end
     end
+    for k = 1:size(state.fovSrclist, 1)
+        try
+            shallowObj.fov(state.fovSrclist{k, 1}).srclist = state.fovSrclist{k, 2};
+        catch
+        end
+    end
 
     localRestoreRoiField(shallowObj, state.roiImage, 'image');
     localRestoreRoiField(shallowObj, state.roiData, 'data');
+    localRestoreRoiField(shallowObj, state.roiHistory, 'history');
     localRestoreRoiField(shallowObj, state.roiResults, 'results');
     localRestoreRoiField(shallowObj, state.roiTrain, 'train');
     localRestoreRoiField(shallowObj, state.roiProc, 'proc');
@@ -268,6 +313,59 @@ function localRestoreRoiField(shallowObj, rows, fieldName)
             shallowObj.fov(iFov).roi(iRoi).(fieldName) = rows{k, 3};
         catch
         end
+    end
+end
+
+function tf = localCanCompactSrclist(f)
+    tf = false;
+    try
+        if isprop(f, 'isOMEZarr') && f.isOMEZarr
+            tf = isprop(f, 'omeZarrPath') && ~isempty(f.omeZarrPath) && ...
+                 isprop(f, 'omeZarrShape') && ~isempty(f.omeZarrShape);
+            return;
+        end
+        if isprop(f, 'isNDTiff') && f.isNDTiff
+            tf = isprop(f, 'ndtiffPath') && ~isempty(f.ndtiffPath);
+            return;
+        end
+        if isprop(f, 'isMultiTiff') && f.isMultiTiff
+            tf = isprop(f, 'tiffSource') && ~isempty(f.tiffSource) && ...
+                 isprop(f, 'pageMap') && ~isempty(f.pageMap);
+        end
+    catch
+        tf = false;
+    end
+end
+
+function h = localCompactRoiHistory(h)
+    maxRows = 20;
+    try
+        emptyHist = table('Size', [0 3], ...
+            'VariableTypes', {'datetime', 'string', 'string'}, ...
+            'VariableNames', {'Date', 'Category', 'Message'});
+        if isempty(h) || ~istable(h)
+            h = emptyHist;
+            return;
+        end
+
+        keep = true(height(h), 1);
+        if any(strcmp(h.Properties.VariableNames, 'Category'))
+            cat = string(h.Category);
+            keep = keep & ~strcmpi(cat, "Saving") & ~ismissing(cat);
+        end
+        if any(strcmp(h.Properties.VariableNames, 'Message'))
+            msg = string(h.Message);
+            keep = keep & ~ismissing(msg);
+        end
+
+        h = h(keep, :);
+        if height(h) > maxRows
+            h = h(end-maxRows+1:end, :);
+        end
+    catch
+        h = table('Size', [0 3], ...
+            'VariableTypes', {'datetime', 'string', 'string'}, ...
+            'VariableNames', {'Date', 'Category', 'Message'});
     end
 end
 

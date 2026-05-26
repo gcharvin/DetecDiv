@@ -195,7 +195,7 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
                 saveChannels = {char(string(paramout.outputChannelName))};
             end
         end
-        ROIManagement(roiobj(i),image,data,saveChannels,cachePolicy,hadImageInMemory,hadDataInMemory);
+        safeROIManagement(roiobj(i),image,data,saveChannels,cachePolicy,hadImageInMemory,hadDataInMemory);
 
     end
 end
@@ -214,7 +214,7 @@ if para % parallel computing
         [idx,param,data,image]=fetchNext(logparf(i));
 
 
-        ROIManagement(roiobj(idx),image,data,{},cachePolicy,hadImageByIdx(idx),hadDataByIdx(idx));
+        safeROIManagement(roiobj(idx),image,data,{},cachePolicy,hadImageByIdx(idx),hadDataByIdx(idx));
         %     roiobj(idx).results=results;
         %
         %     roiobj(idx).image=image;
@@ -289,12 +289,47 @@ end
                 roiobj.clear,
             end
         else
-            roiobj.save('data');
+            didSaveData = roiobj.save('data');
+            if ~didSaveData
+                roiId = '<unknown>';
+                try
+                    roiId = char(string(roiobj.id));
+                catch
+                end
+                warning('processData:NoDataSaved', ...
+                    'Processor returned no savable data for ROI "%s".', roiId);
+            end
             if shouldKeepRoiInMemory(cachePolicyLocal, hadImageBefore, hadDataBefore)
                 roiobj.data = dataCache;
             end
         end
         %disp('You must save the shallow project to save these classified data !');
+    end
+
+    function ok = safeROIManagement(roiobj,image,data,saveChannels,cachePolicyLocal,hadImageBefore,hadDataBefore)
+        ok = true;
+        try
+            ROIManagement(roiobj,image,data,saveChannels,cachePolicyLocal,hadImageBefore,hadDataBefore);
+        catch ME
+            if startsWith(char(string(ME.identifier)), 'roi:save:') || ...
+                    contains(ME.message, 'Unable to write to file')
+                rethrow(ME);
+            end
+            ok = false;
+            roiId = '<unknown>';
+            try
+                roiId = char(string(roiobj.id));
+            catch
+            end
+            warning('processData:SkipROI', ...
+                'Skipping ROI "%s" because saving processor output failed: %s', ...
+                roiId, ME.message);
+            try
+                roiobj.image = [];
+                roiobj.data = dataseries.empty;
+            catch
+            end
+        end
     end
 
     function tf = shouldKeepRoiInMemory(policy, hadImageBefore, hadDataBefore)
