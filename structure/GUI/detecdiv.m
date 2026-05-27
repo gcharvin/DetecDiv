@@ -75,6 +75,7 @@ classdef detecdiv < matlab.apps.AppBase
         RecentClassifiersFile string             % stockage persistant
         RecentPipelines string = strings(0)      % chemins complets vers pipeline.json
         RecentPipelinesFile string               % stockage persistant
+        MainGrid matlab.ui.container.GridLayout
 
     end
 
@@ -4505,6 +4506,8 @@ end
 
         % Code that executes after component creation
         function startupFcn(app)
+            app.applyMainWindowLayout();
+            app.resetMainPanelState();
             checkInstalledToolboxes;
             initUserPreferences;
 
@@ -4513,6 +4516,56 @@ end
 
             gatherVarsFromWorkspace(app)
             displayNodes(app)
+        end
+
+        function applyMainWindowLayout(app)
+            if ~isvalid(app.DetecDivUIFigure)
+                return;
+            end
+
+            figPos = app.DetecDivUIFigure.Position;
+            app.DetecDivUIFigure.Position = [figPos(1) figPos(2) max(figPos(3), 708) max(figPos(4), 646)];
+
+            if ~isempty(app.MainGrid) && isvalid(app.MainGrid)
+                app.MainGrid.Padding = [8 8 8 8];
+                app.MainGrid.ColumnSpacing = 12;
+                app.MainGrid.RowSpacing = 0;
+                app.MainGrid.ColumnWidth = {241, '1x'};
+                app.MainGrid.RowHeight = {'1x'};
+            end
+
+            app.UIAxes.Position = [0 16 417 341];
+            app.ProjectInformationLabel.Position = [8 361 410 240];
+            app.AdddataButton.Position = [20 286 175 40];
+            app.UpdaterawdatapathButton.Position = [249 284 169 45];
+            app.IdentifyROIsinpositionsButton.Position = [20 211 385 46];
+            app.ExtractROIhypervolumesButton.Position = [20 153 389 47];
+            app.AddclassifierButton.Position = [20 74 175 43];
+            app.AddprocessorButton.Position = [232 74 151 43];
+            app.ClassifydataButton.Position = [20 12 175 43];
+            app.ProcessdataButton.Position = [232 12 149 43];
+            app.OpenButton.Position = [283 365 134 37];
+        end
+
+        function resetMainPanelState(app)
+            app.ProjectsPanel.Title = 'Projects';
+            app.ProjectInformationLabel.Text = 'Project Information';
+            app.ProjectInformationLabel.Visible = 'on';
+
+            app.AdddataButton.Visible='off';
+            app.AddclassifierButton.Visible='off';
+            app.UpdaterawdatapathButton.Visible='off';
+            app.IdentifyROIsinpositionsButton.Visible='off';
+            app.ExtractROIhypervolumesButton.Visible='off';
+            app.ClassifydataButton.Visible='off';
+            app.AddprocessorButton.Visible='off';
+            app.ProcessdataButton.Visible='off';
+            app.OpenButton.Visible='off';
+
+            if isvalid(app.UIAxes)
+                cla(app.UIAxes);
+                app.UIAxes.Visible='off';
+            end
         end
 
         % Selection changed function: Tree
@@ -7742,6 +7795,15 @@ end
             app.DetecDivUIFigure.Position = [100 100 708 646];
             app.DetecDivUIFigure.Name = 'DetecDiv';
             app.DetecDivUIFigure.Icon = 'detecDiv_logo.png';
+            app.DetecDivUIFigure.AutoResizeChildren = 'off';
+
+            % Create MainGrid
+            app.MainGrid = uigridlayout(app.DetecDivUIFigure);
+            app.MainGrid.ColumnWidth = {241, '1x'};
+            app.MainGrid.RowHeight = {'1x'};
+            app.MainGrid.Padding = [8 8 8 8];
+            app.MainGrid.ColumnSpacing = 12;
+            app.MainGrid.RowSpacing = 0;
 
             % Create FileMenu
             app.FileMenu = uimenu(app.DetecDivUIFigure);
@@ -7963,10 +8025,11 @@ end
             app.UserpreferencesMenu.Text = 'User preferences...';
 
             % Create Tree
-            app.Tree = uitree(app.DetecDivUIFigure);
+            app.Tree = uitree(app.MainGrid);
             app.Tree.SelectionChangedFcn = createCallbackFcn(app, @TreeSelectionChanged, true);
             app.Tree.Tooltip = {'Use left-click to scroll projects and classifiers; Use right-click to open positions and classifiers'};
-            app.Tree.Position = [13 13 241 622];
+            app.Tree.Layout.Row = 1;
+            app.Tree.Layout.Column = 1;
 
             % Create ProjectsNode
             app.ProjectsNode = uitreenode(app.Tree);
@@ -7982,9 +8045,10 @@ end
             app.PipelinesNode.Text = 'Pipeline';
 
             % Create ProjectsPanel
-            app.ProjectsPanel = uipanel(app.DetecDivUIFigure);
+            app.ProjectsPanel = uipanel(app.MainGrid);
             app.ProjectsPanel.Title = 'Projects';
-            app.ProjectsPanel.Position = [269 13 427 626];
+            app.ProjectsPanel.Layout.Row = 1;
+            app.ProjectsPanel.Layout.Column = 2;
 
             % Create UIAxes
             app.UIAxes = uiaxes(app.ProjectsPanel);
