@@ -80,6 +80,7 @@ classdef detecdiv < matlab.apps.AppBase
         ActivePipelineCancelFile string = ""
         ActivePipelineCancelTimer = []
         ActivePipelineProgressDialog = []
+        MainGrid matlab.ui.container.GridLayout
 
     end
 
@@ -5042,9 +5043,16 @@ end
                 return;
             end
 
-            app.DetecDivUIFigure.Position = [100 100 708 646];
-            app.Tree.Position = [13 13 241 622];
-            app.ProjectsPanel.Position = [269 13 427 626];
+            figPos = app.DetecDivUIFigure.Position;
+            app.DetecDivUIFigure.Position = [figPos(1) figPos(2) max(figPos(3), 708) max(figPos(4), 646)];
+
+            if ~isempty(app.MainGrid) && isvalid(app.MainGrid)
+                app.MainGrid.Padding = [8 8 8 8];
+                app.MainGrid.ColumnSpacing = 12;
+                app.MainGrid.RowSpacing = 0;
+                app.MainGrid.ColumnWidth = {241, '1x'};
+                app.MainGrid.RowHeight = {'1x'};
+            end
 
             app.UIAxes.Position = [0 16 417 341];
             app.ProjectInformationLabel.Position = [8 361 410 240];
@@ -8976,6 +8984,15 @@ end
             app.DetecDivUIFigure.Position = [100 100 708 646];
             app.DetecDivUIFigure.Name = 'DetecDiv';
             app.DetecDivUIFigure.Icon = 'detecDiv_logo.png';
+            app.DetecDivUIFigure.AutoResizeChildren = 'off';
+
+            % Create MainGrid
+            app.MainGrid = uigridlayout(app.DetecDivUIFigure);
+            app.MainGrid.ColumnWidth = {241, '1x'};
+            app.MainGrid.RowHeight = {'1x'};
+            app.MainGrid.Padding = [8 8 8 8];
+            app.MainGrid.ColumnSpacing = 12;
+            app.MainGrid.RowSpacing = 0;
 
             % Create FileMenu
             app.FileMenu = uimenu(app.DetecDivUIFigure);
@@ -9203,10 +9220,11 @@ end
             app.UserpreferencesMenu.Text = 'User preferences...';
 
             % Create Tree
-            app.Tree = uitree(app.DetecDivUIFigure);
+            app.Tree = uitree(app.MainGrid);
             app.Tree.SelectionChangedFcn = createCallbackFcn(app, @TreeSelectionChanged, true);
             app.Tree.Tooltip = {'Use left-click to scroll projects and classifiers; Use right-click to open positions and classifiers'};
-            app.Tree.Position = [13 13 241 622];
+            app.Tree.Layout.Row = 1;
+            app.Tree.Layout.Column = 1;
 
             % Create ProjectsNode
             app.ProjectsNode = uitreenode(app.Tree);
@@ -9222,9 +9240,10 @@ end
             app.PipelinesNode.Text = 'Pipeline';
 
             % Create ProjectsPanel
-            app.ProjectsPanel = uipanel(app.DetecDivUIFigure);
+            app.ProjectsPanel = uipanel(app.MainGrid);
             app.ProjectsPanel.Title = 'Projects';
-            app.ProjectsPanel.Position = [269 13 427 626];
+            app.ProjectsPanel.Layout.Row = 1;
+            app.ProjectsPanel.Layout.Column = 2;
 
             % Create UIAxes
             app.UIAxes = uiaxes(app.ProjectsPanel);
