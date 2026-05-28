@@ -106,6 +106,9 @@ for ch = 1:numel(channel)
     levCh     = levels{ch};
     isIndexed = iscell(levCh);
 
+    if isIndexed
+        bgRGBu8 = [];
+    else
     % ---------------------------------------------------------------------
     % 2a) Flag log-display (ROBUSTE)
     %  - accepte roitmp.display.log scalaire OU vecteur
@@ -199,16 +202,19 @@ for ch = 1:numel(channel)
     end
 
     bgRGBu8 = uint8(bgRGB * 255);
+    end
 
     % ---- stockage ----
-    if overlay
-        if isempty(weights)
-            comp = imlincomb(1, comp, 1, bgRGBu8);
+    if ~isIndexed
+        if overlay
+            if isempty(weights)
+                comp = imlincomb(1, comp, 1, bgRGBu8);
+            else
+                comp = imlincomb(1, comp, weights(ch), bgRGBu8);
+            end
         else
-            comp = imlincomb(1, comp, weights(ch), bgRGBu8);
+            displayImage(:, :, :, ch) = bgRGBu8;
         end
-    else
-        displayImage(:, :, :, ch) = bgRGBu8;
     end
 
     % ------------------------------------------------------------------

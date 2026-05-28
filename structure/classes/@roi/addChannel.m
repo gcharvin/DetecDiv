@@ -8,6 +8,10 @@ function addChannel(obj, matrix, str, rgb, intensity)
     % Defaults
     if nargin < 4 || isempty(rgb),       rgb = [1 1 1];       end
     if nargin < 5 || isempty(intensity), intensity = [1 1 1]; end
+    forceIndexed = isIndexedResultChannel(str);
+    if forceIndexed
+        intensity = [0 0 0];
+    end
 
     % Validation basique du 3e dim (nb sous-canaux)
     if ndims(matrix) < 4
@@ -81,7 +85,7 @@ if isempty(obj.image)
     end
 
     % ---- indexed : bool par channel logique ----
-    idxVal = (sum(intensity) == 0);
+    idxVal = forceIndexed || (sum(intensity) == 0);
     if ~isfield(obj.display, 'indexed') || isempty(obj.display.indexed)
         obj.display.indexed = idxVal;
     else
@@ -98,7 +102,7 @@ if isempty(obj.image)
         obj.display.alpha = 1;
     else
         if numel(obj.display.alpha) < 1
-            obj.display.alpha(1) = 1;
+        obj.display.alpha(1) = 1;
         else
             % on laisse à 1 par défaut pour le premier channel
             obj.display.alpha(1) = 1;
@@ -140,6 +144,13 @@ if isempty(obj.image)
     baseId = 1; % premier channel logique
     obj.channelid = baseId * ones(1, k, 'like', k);
 
+    if forceIndexed
+        obj.display.indexed(1) = 1;
+        obj.display.contour(1) = 1;
+        obj.display.alpha(1) = 0.35;
+        obj.display.width(1) = 1.5;
+    end
+
     obj.log(sprintf('Initialized ROI image and added first channel "%s".', str), 'Processing');
     return;
 end
@@ -160,20 +171,31 @@ end
 
 
     % Métadonnées display (par channel logique, pas par sous-canal)
+    if ~isfield(obj.display,'channel') || isempty(obj.display.channel)
+        obj.display.channel = {};
+    elseif ischar(obj.display.channel) || isstring(obj.display.channel)
+        obj.display.channel = cellstr(obj.display.channel);
+    end
+
+    nExistingLogical = numel(obj.display.channel);
+    obj.display = ensureDisplayVector(obj.display, 'indexed', 0, nExistingLogical);
+    obj.display = ensureDisplayVector(obj.display, 'alpha', 1, nExistingLogical);
+    obj.display = ensureDisplayVector(obj.display, 'contour', 0, nExistingLogical);
+    obj.display = ensureDisplayVector(obj.display, 'width', 0, nExistingLogical);
+    obj.display = ensureDisplayVector(obj.display, 'selectedchannel', 1, nExistingLogical);
+
     obj.display.channel{end+1}   = str;
     obj.display.intensity(end+1,:) = intensity;
     obj.display.rgb(end+1,:)     = rgb;
 
     % S'assure de l'existence des champs
-    if ~isfield(obj.display,'indexed'), obj.display.indexed = zeros(1, numel(obj.display.channel)-1); end
-    if ~isfield(obj.display,'alpha'),   obj.display.alpha   = zeros(1, numel(obj.display.channel)-1); end
-    if ~isfield(obj.display,'contour'), obj.display.contour = zeros(1, numel(obj.display.channel)-1); end
-    if ~isfield(obj.display,'width'),   obj.display.width   = zeros(1, numel(obj.display.channel)-1); end
-    if ~isfield(obj.display,'selectedchannel') || isempty(obj.display.selectedchannel)
-        obj.display.selectedchannel = 1;
-    end
+    obj.display = ensureDisplayVector(obj.display, 'indexed', 0, numel(obj.display.channel)-1);
+    obj.display = ensureDisplayVector(obj.display, 'alpha', 1, numel(obj.display.channel)-1);
+    obj.display = ensureDisplayVector(obj.display, 'contour', 0, numel(obj.display.channel)-1);
+    obj.display = ensureDisplayVector(obj.display, 'width', 0, numel(obj.display.channel)-1);
+    obj.display = ensureDisplayVector(obj.display, 'selectedchannel', 1, numel(obj.display.channel)-1);
 
-    if sum(intensity)==0
+    if forceIndexed || sum(intensity)==0
         obj.display.indexed(end+1) = 1;
     else
         obj.display.indexed(end+1) = 0;
@@ -182,6 +204,11 @@ end
     obj.display.contour(end+1) = 0;
     obj.display.width(end+1)   = 0;
     obj.display.selectedchannel(end+1) = 1;
+    if forceIndexed
+        obj.display.contour(end) = 1;
+        obj.display.alpha(end) = 0.35;
+        obj.display.width(end) = 1.5;
+    end
 
     % channelid : on attribue un nouvel id logique pour ces k sous-canaux
     if isempty(obj.channelid)
@@ -194,4 +221,36 @@ end
     obj.channelid = [obj.channelid, newId * ones(1, k, 'like', k)];
 
     obj.log(sprintf('Added channel %d ("%s") to ROI', numel(obj.display.channel), str), 'Processing');
+end
+
+function displayStruct = ensureDisplayVector(displayStruct, fieldName, defaultValue, n)
+% Ensure per-logical-channel scalar display fields are row vectors.
+    if ~isfield(displayStruct, fieldName) || isempty(displayStruct.(fieldName))
+        displayStruct.(fieldName) = repmat(defaultValue, 1, n);
+        return;
+    end
+
+    value = displayStruct.(fieldName);
+    if islogical(value)
+        value = double(value);
+    end
+    value = value(:).';
+
+    if numel(value) < n
+        value(end+1:n) = defaultValue;
+    elseif numel(value) > n
+        value = value(1:n);
+    end
+
+    displayStruct.(fieldName) = value;
+end
+
+function tf = isIndexedResultChannel(channelName)
+tf = false;
+try
+    name = lower(string(channelName));
+    tf = startsWith(name, "results_") || contains(name, "mask") || contains(name, "track");
+catch
+    tf = false;
+end
 end

@@ -529,17 +529,9 @@ function ROIpreprocessing(roiobj, classif, outputName)
             if isempty(pixproba)
                 matrix = zeros(nY, nX, 1, nF, 'single');
                 roiobj.addChannel(matrix, chNameProba, [1 0 1], [1 1 1]); % magenta continuous
-
-                pixproba  = size(roiobj.image,3);
-                selectid  = roiobj.channelid(pixproba);
-
-                [roiobj.display.rgb, roiobj.display.intensity, roiobj.display.indexed] = ...
-                    ensureDisplayRows(roiobj.display.rgb, roiobj.display.intensity, roiobj.display.indexed, selectid);
-
-                roiobj.display.rgb(selectid,:)       = [1 0 1];
-                roiobj.display.intensity(selectid,:) = [1 1 1];
-                roiobj.display.indexed(selectid,1)   = false;
+                pixproba = size(roiobj.image,3);
             end
+            enforceResultChannelDisplay(roiobj, pixproba, [1 0 1], [1 1 1], false);
         end
 
         return;
@@ -592,25 +584,46 @@ function ensureResultChannel(roiobj, chname, rgb, intensity, indexedFlag, nY, nX
         matrix = uint16(zeros(nY, nX, 1, nF));
         roiobj.addChannel(matrix, chname, rgb, intensity);
         pixid = size(roiobj.image,3);
-
-        selectid = roiobj.channelid(pixid);
-
-        if ~isfield(roiobj.display,'indexed') || isempty(roiobj.display.indexed)
-            roiobj.display.indexed = zeros(0,1);
-        end
-
-        [roiobj.display.rgb, roiobj.display.intensity, roiobj.display.indexed] = ...
-            ensureDisplayRows(roiobj.display.rgb, roiobj.display.intensity, roiobj.display.indexed, selectid);
-
-        roiobj.display.rgb(selectid,:)           = rgb;
-        roiobj.display.intensity(selectid,:)     = intensity;
-        roiobj.display.indexed(selectid,1)       = logical(indexedFlag);
-        roiobj.display.selectedchannel(selectid) = true;
     else
         roiobj.image(:,:,pixid,:) = uint16(zeros(nY, nX, 1, nF));
     end
+    enforceResultChannelDisplay(roiobj, pixid, rgb, intensity, indexedFlag);
 end
 
+function enforceResultChannelDisplay(roiobj, pixid, rgb, intensity, indexedFlag)
+    if isempty(pixid) || ~isprop(roiobj,'channelid') || isempty(roiobj.channelid)
+        return;
+    end
+
+    selectid = roiobj.channelid(pixid(1));
+
+    if ~isfield(roiobj.display,'indexed') || isempty(roiobj.display.indexed)
+        roiobj.display.indexed = zeros(0,1);
+    end
+
+    [roiobj.display.rgb, roiobj.display.intensity, roiobj.display.indexed] = ...
+        ensureDisplayRows(roiobj.display.rgb, roiobj.display.intensity, roiobj.display.indexed, selectid);
+
+    roiobj.display = localEnsureDisplayScalarField(roiobj.display, 'selectedchannel', 1, selectid);
+    roiobj.display = localEnsureDisplayScalarField(roiobj.display, 'contour', 0, selectid);
+    roiobj.display = localEnsureDisplayScalarField(roiobj.display, 'alpha', 1, selectid);
+    roiobj.display = localEnsureDisplayScalarField(roiobj.display, 'width', 0, selectid);
+
+    roiobj.display.rgb(selectid,:)           = rgb;
+    roiobj.display.intensity(selectid,:)     = intensity;
+    roiobj.display.indexed(selectid,1)       = logical(indexedFlag);
+    roiobj.display.selectedchannel(selectid) = true;
+
+    if indexedFlag
+        roiobj.display.contour(selectid) = 1;
+        roiobj.display.alpha(selectid) = 0.35;
+        roiobj.display.width(selectid) = 1.5;
+    else
+        roiobj.display.contour(selectid) = 0;
+        roiobj.display.alpha(selectid) = 1;
+        roiobj.display.width(selectid) = 0;
+    end
+end
 
 function [rgbTab, intTab, indexedTab] = ensureDisplayRows(rgbTab, intTab, indexedTab, idx)
     if isempty(rgbTab),     rgbTab     = ones(0,3); end
@@ -654,7 +667,16 @@ function ROIManagement(roiobj, data, image, outputName, classiobj, cachePolicyLo
         catch
             disp('[DEBUG] ROIManagement: calling roi.save (id unavailable)');
         end
-        roiobj.save;   % sauvegarde tout
+        imageSaveChannels = localClassifierImageOutputChannels(roiobj, outputName, classiobj);
+        if ~isempty(imageSaveChannels) && localRoiH5Exists(roiobj)
+            try
+                disp(['[DEBUG] ROIManagement: saving classifier output channels only: ' strjoin(imageSaveChannels, ', ')]);
+            catch
+            end
+            roiobj.save(imageSaveChannels);
+        else
+            roiobj.save;   % sauvegarde tout
+        end
         if shouldKeepRoiInMemory(cachePolicyLocal, hadImageBefore, hadDataBefore)
             roiobj.image = imageCache;
             roiobj.data = dataCache;
@@ -713,24 +735,91 @@ try
         roiobj.display.width(end+1:nLog) = 1;
     end
 
+    if ~isfield(roiobj.display,'contour') || isempty(roiobj.display.contour)
+        roiobj.display.contour = zeros(1, nLog);
+    elseif numel(roiobj.display.contour) < nLog
+        roiobj.display.contour(end+1:nLog) = 0;
+    end
+
     for iLog = 1:nLog
         chName = lower(string(roiobj.display.channel{iLog}));
         isMaskLike = startsWith(chName, "results_") || contains(chName, "mask") || contains(chName, "track");
         if ~isMaskLike
             continue;
         end
-        row = double(roiobj.display.intensity(iLog,:));
-        if isempty(row) || all(row == 0)
-            roiobj.display.indexed(iLog) = 1;
-            if roiobj.display.alpha(iLog) <= 0
-                roiobj.display.alpha(iLog) = 1;
-            end
-            if roiobj.display.width(iLog) <= 0
-                roiobj.display.width(iLog) = 1;
-            end
+        roiobj.display.intensity(iLog,:) = [0 0 0];
+        roiobj.display.indexed(iLog) = 1;
+        roiobj.display.contour(iLog) = 1;
+        if roiobj.display.alpha(iLog) <= 0 || roiobj.display.alpha(iLog) > 0.5
+            roiobj.display.alpha(iLog) = 0.35;
+        end
+        if roiobj.display.width(iLog) <= 0
+            roiobj.display.width(iLog) = 1.5;
         end
     end
 catch
+end
+end
+
+function displayStruct = localEnsureDisplayScalarField(displayStruct, fieldName, defaultValue, idx)
+if ~isfield(displayStruct, fieldName) || isempty(displayStruct.(fieldName))
+    displayStruct.(fieldName) = repmat(defaultValue, 1, idx);
+else
+    value = displayStruct.(fieldName);
+    value = value(:).';
+    if numel(value) < idx
+        value(end+1:idx) = defaultValue;
+    end
+    displayStruct.(fieldName) = value;
+end
+end
+
+function channels = localClassifierImageOutputChannels(roiobj, outputName, classiobj)
+channels = {};
+try
+    if nargin < 2 || strlength(strtrim(string(outputName))) == 0
+        if nargin >= 3 && isprop(classiobj,'strid')
+            outputName = string(classiobj.strid);
+        else
+            return;
+        end
+    end
+    outputName = char(strtrim(string(outputName)));
+    if isempty(outputName) || ~isprop(roiobj,'display') || ~isstruct(roiobj.display) ...
+            || ~isfield(roiobj.display,'channel') || isempty(roiobj.display.channel)
+        return;
+    end
+
+    names = roiobj.display.channel;
+    if isstring(names), names = cellstr(names); end
+    if ischar(names), names = {names}; end
+
+    prefixes = {['results_' outputName '_'], ['prob_' outputName '_']};
+    exactNames = {['results_' outputName], [outputName '_cellprob']};
+
+    keep = false(1, numel(names));
+    for iName = 1:numel(names)
+        nm = char(string(names{iName}));
+        keep(iName) = any(strcmpi(nm, exactNames));
+        for iPrefix = 1:numel(prefixes)
+            keep(iName) = keep(iName) || startsWith(nm, prefixes{iPrefix}, 'IgnoreCase', true);
+        end
+    end
+    channels = names(keep);
+catch
+    channels = {};
+end
+end
+
+function tf = localRoiH5Exists(roiobj)
+tf = false;
+try
+    if ~isprop(roiobj,'path') || isempty(roiobj.path) || ~isprop(roiobj,'id') || isempty(roiobj.id)
+        return;
+    end
+    tf = exist(fullfile(roiobj.path, ['im_' char(string(roiobj.id)) '.h5']), 'file') == 2;
+catch
+    tf = false;
 end
 end
 

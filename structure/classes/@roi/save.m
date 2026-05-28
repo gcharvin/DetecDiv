@@ -99,6 +99,14 @@ while ~success && attempts < max_attempts
         % fullSave = tous les canaux
         fullSave = (~onlyData) && isempty(requestedChannels);
 
+        if ~fullSave && ~exist(h5File,'file')
+            if verbose
+                disp('Partial save requested but no H5 exists, falling back to full save.');
+            end
+            fullSave = true;
+            requestedChannels = {};
+        end
+
         % If partial save but H5 is inconsistent (or size changed), fallback to full save
         if ~fullSave && exist(h5File,'file')
             if ~localH5DimsConsistent(h5File, [H W T], verbose)
@@ -113,6 +121,10 @@ while ~success && attempts < max_attempts
         %%% ATOMIC WRITE: on prépare un fichier de travail temporaire
         tmpUuid  = char(java.util.UUID.randomUUID);
         h5Tmp    = [h5File '.tmp.' tmpUuid];
+        localH5Tmp = fullfile(tempdir, ['detecdiv_roi_h5_' tmpUuid '.h5']);
+
+        if exist(localH5Tmp,'file'), delete(localH5Tmp); end
+        if exist(h5Tmp,'file'), delete(h5Tmp); end
 
         % Stratégie:
         % - fullSave      : nouveau fichier propre -> on écrit tout dans h5Tmp
@@ -121,7 +133,7 @@ while ~success && attempts < max_attempts
             % rien à copier — création à l'écriture par upsert
         else
             if exist(h5File,'file')
-                copyfile(h5File, h5Tmp, 'f');
+                copyfile(h5File, localH5Tmp, 'f');
             end
         end
 
@@ -154,8 +166,8 @@ while ~success && attempts < max_attempts
             % For partial save, always replace the dataset to avoid appending
             if ~fullSave
                 try
-                    if exist(h5Tmp,'file')
-                        fid = H5F.open(h5Tmp,'H5F_ACC_RDWR','H5P_DEFAULT');
+                    if exist(localH5Tmp,'file')
+                        fid = H5F.open(localH5Tmp,'H5F_ACC_RDWR','H5P_DEFAULT');
                         if H5L.exists(fid, h5Path, 'H5P_DEFAULT') > 0
                             H5L.delete(fid, h5Path, 'H5P_DEFAULT');
                         end
@@ -166,16 +178,16 @@ while ~success && attempts < max_attempts
                 end
             end
 
-            % Ecriture/Upsert dans le FICHIER TEMP (h5Tmp)
-            upsertH5Dataset_frames(h5Tmp, h5Path, chanBlock, [H W k T], thisClass, absStart0);
+            % Ecriture/Upsert dans le FICHIER TEMP local
+            upsertH5Dataset_frames(localH5Tmp, h5Path, chanBlock, [H W k T], thisClass, absStart0);
 
             % Attributs
-            h5writeatt(h5Tmp, h5Path, 'roi_id',          obj.id);
-            h5writeatt(h5Tmp, h5Path, 'bbox',            getBBox(obj));
-            h5writeatt(h5Tmp, h5Path, 'frames',          getFrames(obj,T));
-            h5writeatt(h5Tmp, h5Path, 'channel_name',    chanNameLogical);
-            h5writeatt(h5Tmp, h5Path, 'channel_indices', idxSet);
-            h5writeatt(h5Tmp, h5Path, 'channelid',       obj.channelid);
+            h5writeatt(localH5Tmp, h5Path, 'roi_id',          obj.id);
+            h5writeatt(localH5Tmp, h5Path, 'bbox',            getBBox(obj));
+            h5writeatt(localH5Tmp, h5Path, 'frames',          getFrames(obj,T));
+            h5writeatt(localH5Tmp, h5Path, 'channel_name',    chanNameLogical);
+            h5writeatt(localH5Tmp, h5Path, 'channel_indices', idxSet);
+            h5writeatt(localH5Tmp, h5Path, 'channelid',       obj.channelid);
 
             % Attributs d'affichage
             dispMeta = buildDisplayMetaForChannel(obj, iChan, k);
@@ -186,10 +198,10 @@ while ~success && attempts < max_attempts
                 if isempty(v), continue; end
                 v = to_h5_attr(v);
                 try
-                    h5writeatt(h5Tmp, h5Path, nm, v);
+                    h5writeatt(localH5Tmp, h5Path, nm, v);
                 catch
                     try
-                        h5writeatt(h5Tmp, h5Path, nm, char(string(v)));
+                        h5writeatt(localH5Tmp, h5Path, nm, char(string(v)));
                     catch
                         % silencieux si ~verbose
                         if verbose
@@ -203,13 +215,13 @@ while ~success && attempts < max_attempts
             try
                 if isprop(obj,'extraction') && isstruct(obj.extraction)
                     if isfield(obj.extraction,'status') && ~isempty(obj.extraction.status)
-                        h5writeatt(h5Tmp, h5Path, 'roi_extraction_status', char(string(obj.extraction.status)));
+                        h5writeatt(localH5Tmp, h5Path, 'roi_extraction_status', char(string(obj.extraction.status)));
                     end
                     if isfield(obj.extraction,'updatedAt') && ~isempty(obj.extraction.updatedAt)
-                        h5writeatt(h5Tmp, h5Path, 'roi_extraction_updatedAt', char(string(obj.extraction.updatedAt)));
+                        h5writeatt(localH5Tmp, h5Path, 'roi_extraction_updatedAt', char(string(obj.extraction.updatedAt)));
                     end
                     if isfield(obj.extraction,'runId') && ~isempty(obj.extraction.runId)
-                        h5writeatt(h5Tmp, h5Path, 'roi_extraction_runId', char(string(obj.extraction.runId)));
+                        h5writeatt(localH5Tmp, h5Path, 'roi_extraction_runId', char(string(obj.extraction.runId)));
                     end
                 end
             catch
@@ -227,9 +239,29 @@ while ~success && attempts < max_attempts
 
         % Vérification + bascule atomique
         if imageSaved
-            if ~localVerifyH5(h5Tmp)
+            if ~localVerifyH5(localH5Tmp)
+                if exist(localH5Tmp,'file'); delete(localH5Tmp); end
                 if exist(h5Tmp,'file'); delete(h5Tmp); end
                 error('roi:save:verifyH5','Temporary HDF5 verification failed.');
+            end
+            localInfo = dir(localH5Tmp);
+            localBytes = localInfo.bytes;
+
+            copyfile(localH5Tmp, h5Tmp, 'f');
+            copied = false;
+            for kCopy = 1:5
+                if exist(h5Tmp,'file')
+                    remoteInfo = dir(h5Tmp);
+                    copied = ~isempty(remoteInfo) && remoteInfo.bytes == localBytes && remoteInfo.bytes > 0;
+                    if copied, break; end
+                end
+                pause(0.2);
+            end
+            if ~copied
+                if exist(localH5Tmp,'file'); delete(localH5Tmp); end
+                if exist(h5Tmp,'file'); delete(h5Tmp); end
+                error('roi:save:verifyRemoteH5Copy', ...
+                    'Remote HDF5 temp copy failed or has unexpected size: %s', h5Tmp);
             end
             % backup ancien fichier
             if exist(h5File,'file')
@@ -238,8 +270,23 @@ while ~success && attempts < max_attempts
             % remplacement atomique
             if exist(h5File,'file'), delete(h5File); end
             movefile(h5Tmp, h5File, 'f');
+            finalOk = false;
+            for kMove = 1:5
+                if exist(h5File,'file')
+                    finalInfo = dir(h5File);
+                    finalOk = ~isempty(finalInfo) && finalInfo.bytes == localBytes && finalInfo.bytes > 0;
+                    if finalOk, break; end
+                end
+                pause(0.2);
+            end
+            if ~finalOk
+                error('roi:save:verifyFinalH5Move', ...
+                    'Final HDF5 file was not replaced correctly: %s', h5File);
+            end
+            if exist(localH5Tmp,'file'), delete(localH5Tmp); end
         else
             % Rien écrit -> si un tmp vide a été créé par erreur, on le retire
+            if exist(localH5Tmp,'file'), delete(localH5Tmp); end
             if exist(h5Tmp,'file'), delete(h5Tmp); end
         end
 
@@ -479,6 +526,13 @@ if isfield(d,'width') && ~isempty(d.width)
         dispMeta.display_contourwidth = wVal(1);
     end
 end
+if forceIndexed
+    dispMeta.display_indexed = uint8(1);
+    dispMeta.display_intensity = [0 0 0];
+    dispMeta.display_contour = uint8(1);
+    dispMeta.display_alpha = 0.35;
+    dispMeta.display_contourwidth = 1.5;
+end
 if isfield(d,'frame') && ~isempty(d.frame)
     dispMeta.display_frame=d.frame;
 end
@@ -495,17 +549,7 @@ try
         return;
     end
     name = lower(string(d.channel{ii}));
-    isMaskLikeName = startsWith(name, "results_") || contains(name, "mask") || contains(name, "track");
-    if ~isMaskLikeName
-        return;
-    end
-
-    if isfield(d,'intensity') && ~isempty(d.intensity) && size(d.intensity,1) >= ii
-        row = double(d.intensity(ii,:));
-        tf = all(row == 0);
-    else
-        tf = true;
-    end
+    tf = startsWith(name, "results_") || contains(name, "mask") || contains(name, "track");
 catch
     tf = false;
 end

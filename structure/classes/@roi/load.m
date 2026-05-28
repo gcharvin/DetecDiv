@@ -837,8 +837,12 @@ dispStruct.indexed(logicalId)     = double(att.indexed(1));
 dispStruct.alpha(logicalId)       = double(att.alpha(1));
 dispStruct.contour(logicalId)     = double(att.contour(1));
 dispStruct.width(logicalId)       = double(att.width(1));
-if localShouldForceIndexedChannel(logicalName, dispStruct.intensity(logicalId,:))
+if localShouldForceIndexedChannel(logicalName)
+    dispStruct.intensity(logicalId,:) = [0 0 0];
     dispStruct.indexed(logicalId) = 1;
+    dispStruct.contour(logicalId) = 1;
+    dispStruct.alpha(logicalId) = 0.35;
+    dispStruct.width(logicalId) = 1.5;
 end
 if ~isfield(dispStruct,'frame') || isempty(dispStruct.frame)
     dispStruct.frame = double(att.frame);
@@ -973,8 +977,12 @@ for i = 1:N
     alpha(i)       = double(attrs(i).alpha(1));
     contour(i)     = double(attrs(i).contour(1));
     width(i)       = double(attrs(i).width(1));
-    if localShouldForceIndexedChannel(names{i}, intensity(i,:))
+    if localShouldForceIndexedChannel(names{i})
+        intensity(i,:) = [0 0 0];
         indexed(i) = 1;
+        contour(i) = 1;
+        alpha(i) = 0.35;
+        width(i) = 1.5;
     end
 
     % selectedchannel doit refléter le canal actif (par défaut 1)
@@ -1017,16 +1025,11 @@ dispStruct.log             = zeros(1,N);
 
 end
 
-function tf = localShouldForceIndexedChannel(channelName, intensityRow)
+function tf = localShouldForceIndexedChannel(channelName)
 tf = false;
 try
     name = lower(string(channelName));
-    isMaskLikeName = startsWith(name, "results_") || contains(name, "mask") || contains(name, "track");
-    if ~isMaskLikeName
-        return;
-    end
-    row = double(intensityRow(:).');
-    tf = isempty(row) || all(row == 0);
+    tf = startsWith(name, "results_") || contains(name, "mask") || contains(name, "track");
 catch
     tf = false;
 end
