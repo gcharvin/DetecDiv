@@ -2043,26 +2043,7 @@ end
                     for k=1:numel(tmp.processing.classification)
                         %  k
                         tmpclassi = [tmpclassi tmp.processing.classification(k).strid];
-
-                        if numel(tmp.processing.classification(k).roi)==1 && numel(tmp.processing.classification(k).roi.id)==0
-                            ntot=0;
-                        else
-                            ntot=numel(tmp.processing.classification(k).roi);
-                        end
-
-                        tmproi={};
-
-                        %  ntot
-
-                        for n=1:ntot
-
-                            tmproi=[tmproi [num2str(n) ' - ' tmp.processing.classification(k).roi(n).id]];
-
-                        end
-
-                        % tmproi
-                        st.Projectclassirois{cc}{k}=tmproi;
-
+                        st.Projectclassirois{cc}{k}={};
 
                     end
 
@@ -2123,25 +2104,7 @@ end
                             %  aa=tmp.fov(k).srcpath
                         end
 
-                        if numel(tmp.fov(k).roi)==1 && numel(tmp.fov(k).roi.id)==0
-                            ntot=0;
-                        else
-                            ntot=numel(tmp.fov(k).roi);
-                        end
-
-                        tmproi={};
-
-                        %  ntot
-
-                        for n=1:ntot
-
-                            tmproi=[tmproi [num2str(n) ' - ' tmp.fov(k).roi(n).id]];
-
-                        end
-
-                        % tmproi
-                        st.Projectposrois{cc}{k}=tmproi;
-
+                        st.Projectposrois{cc}{k}={};
 
                     end
 
@@ -2209,24 +2172,7 @@ end
                     cd=cd+1;
                     st.Classifier{cd}=varlist{i};
 
-                    if numel(tmp.roi)==1 && numel(tmp.roi.id)==0
-                        ntot=0;
-                    else
-                        ntot=numel(tmp.roi);
-                    end
-
-                    tmproi={};
-
-                    %  ntot
-
-                    for n=1:ntot
-
-                        tmproi=[tmproi [num2str(n) ' - ' tmp.roi(n).id]];
-
-                    end
-
-                    % tmproi,cc
-                    st.Classifierrois{cd}=tmproi;
+                    st.Classifierrois{cd}={};
 
                 end
 
@@ -2236,6 +2182,29 @@ end
             app.Data=st;
 
             %  st
+        end
+
+        function labels = buildRoiTreeLabels(app, roiList) %#ok<INUSD>
+            labels = {};
+            if isempty(roiList)
+                return;
+            end
+            try
+                if numel(roiList)==1 && isempty(roiList(1).id)
+                    return;
+                end
+            catch
+            end
+
+            labels = cell(1, numel(roiList));
+            for n = 1:numel(roiList)
+                roiId = '';
+                try
+                    roiId = char(string(roiList(n).id));
+                catch
+                end
+                labels{n} = [num2str(n) ' - ' roiId];
+            end
         end
 
 
@@ -5221,16 +5190,17 @@ end
                 % display sub,odes
 
                 if numel(app.Tree.SelectedNodes.Children)==0
-                    if numel(app.Data.Projectposrois{cc(1)})
+                    roiLabels = buildRoiTreeLabels(app, position.roi);
+                    if ~isempty(roiLabels)
 
-                        for n=1:numel(app.Data.Projectposrois{cc(1)}{cc(2)})
+                        for n=1:numel(roiLabels)
 
                             % aa=app.Data.Projectclassirois{i}{k}{n}
                             %   cm=uicontextmenu(app.DetecDivUIFigure);
                             %  m = uimenu(cm,'Text','Open ROI...');
                             %  m.MenuSelectedFcn={@contextMenuROIFcn,[i,k,n],'Projectposrois'};
                             [pth fle ext]= fileparts(which('detecdiv.mlapp'));
-                            uitreenode(app.Tree.SelectedNodes,'Text',app.Data.Projectposrois{cc(1)}{cc(2)}{n},'Tag','Projectposrois','UserData',[cc(1),cc(2),n],'Icon',fullfile(pth,'roi.png'));
+                            uitreenode(app.Tree.SelectedNodes,'Text',roiLabels{n},'Tag','Projectposrois','UserData',[cc(1),cc(2),n],'Icon',fullfile(pth,'roi.png'));
                             % disabled because too heavy with large projects
                         end
                     end
@@ -5287,15 +5257,16 @@ end
                 clas=shallowObj.processing.classification(pos);
 
                 if numel(app.Tree.SelectedNodes.Children)==0
-                    if numel(app.Data.Projectclassirois{cc(1)})
+                    roiLabels = buildRoiTreeLabels(app, clas.roi);
+                    if ~isempty(roiLabels)
                         [pth fle ext]= fileparts(which('detecdiv.mlapp'));
-                        for n=1:numel(app.Data.Projectclassirois{cc(1)}{cc(2)})
+                        for n=1:numel(roiLabels)
                             % aa=app.Data.Projectclassirois{i}{k}{n}
                             cm=uicontextmenu(app.DetecDivUIFigure);
                             m = uimenu(cm,'Text','Open ROI...');
                             m.MenuSelectedFcn={@contextMenuROIFcn,[cc(1),cc(2),n],'Projectclassirois'};
                             %  ''ContextMenu',cm'
-                            uitreenode(app.Tree.SelectedNodes,'Text',app.Data.Projectclassirois{cc(1)}{cc(2)}{n},'Tag','Projectclassirois','UserData',[cc(1),cc(2),n],'Icon',fullfile(pth,'roi.png'));
+                            uitreenode(app.Tree.SelectedNodes,'Text',roiLabels{n},'Tag','Projectclassirois','UserData',[cc(1),cc(2),n],'Icon',fullfile(pth,'roi.png'));
                             % disabled because too heavy with large projects
                         end
                     end
@@ -5418,9 +5389,10 @@ end
 
 
                 if numel(app.Tree.SelectedNodes.Children)==0
-                    if numel(app.Data.Classifierrois{cc})
+                    roiLabels = buildRoiTreeLabels(app, clas.roi);
+                    if ~isempty(roiLabels)
 
-                        for n=1:numel(app.Data.Classifierrois{cc})
+                        for n=1:numel(roiLabels)
                             % aa=app.Data.Projectclassirois{i}{k}{n}
                             cm=uicontextmenu(app.DetecDivUIFigure);
                             m = uimenu(cm,'Text','Open ROI...');
@@ -5428,7 +5400,7 @@ end
                             %  'ContextMenu',cm
                             [pth fle ext]= fileparts(which('detecdiv.mlapp'));
 
-                            uitreenode(app.Tree.SelectedNodes,'Text',app.Data.Classifierrois{cc}{n},'Tag','Classifierrois','UserData',[cc,n],'Icon',fullfile(pth,'roi.png'));
+                            uitreenode(app.Tree.SelectedNodes,'Text',roiLabels{n},'Tag','Classifierrois','UserData',[cc,n],'Icon',fullfile(pth,'roi.png'));
                             % disabled because too heavy with large projects
                         end
                     end

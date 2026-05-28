@@ -357,6 +357,7 @@ if doTracking
 end
 
 image(:,:,pixresults, frames_list) = tmpout;
+localConfigureIndexedAnnotationDisplay(roiobj, roiobj.channelid(pixresults));
 disp('Masques CellposeSAM integres dans image.');
 
 if strcmpi(outputType, 'proba')
@@ -483,14 +484,15 @@ end
 
 roiobj.display.selectedchannel(logIdx) = 1;
 roiobj.display.indexed(logIdx) = 1;
+roiobj.display.contour(logIdx) = 1;
 roiobj.display.intensity(logIdx,:) = [0 0 0];
 roiobj.display.rgb(logIdx,:) = [1 1 1];
 
-if roiobj.display.alpha(logIdx) <= 0
-    roiobj.display.alpha(logIdx) = 1;
+if roiobj.display.alpha(logIdx) <= 0 || roiobj.display.alpha(logIdx) > 0.5
+    roiobj.display.alpha(logIdx) = 0.35;
 end
 if roiobj.display.width(logIdx) <= 0
-    roiobj.display.width(logIdx) = 1;
+    roiobj.display.width(logIdx) = 1.5;
 end
 end
 

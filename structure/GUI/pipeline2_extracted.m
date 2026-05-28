@@ -5,8 +5,10 @@ classdef pipeline2 < matlab.apps.AppBase
         UIFigure                        matlab.ui.Figure
         FileMenu                        matlab.ui.container.Menu
         NewpipelineMenu                 matlab.ui.container.Menu
+        LoadpipelineMenu                matlab.ui.container.Menu
         SavecurrentpipelineMenu         matlab.ui.container.Menu
         SavepipelineasMenu              matlab.ui.container.Menu
+        LoadrunMenu                     matlab.ui.container.Menu
         SaverunMenu                     matlab.ui.container.Menu
         SaverunasMenu                   matlab.ui.container.Menu
         ExportpipelineMenu              matlab.ui.container.Menu
@@ -36,6 +38,8 @@ classdef pipeline2 < matlab.apps.AppBase
         UIFOVTable                      matlab.ui.control.Table
         BuildPanel                      matlab.ui.container.Panel
         UIWorkspacePipelineTable        matlab.ui.control.Table
+        DeleteselectedButton            matlab.ui.control.Button
+        InsertbeforeselectedButton      matlab.ui.control.Button
         MergegraphButton                matlab.ui.control.Button
         ForkgraphButton                 matlab.ui.control.Button
         GraphPanel                      matlab.ui.container.Panel
@@ -61,6 +65,12 @@ classdef pipeline2 < matlab.apps.AppBase
         RuntimeValues struct = struct()
         RuntimeNodeParams struct = struct()
         RuntimeParseInfo struct = struct()
+        CurrentPipeline = []
+        CurrentPipelinePath char = ''
+        CurrentRun = []
+        CurrentRunPath char = ''
+        CurrentProject = []
+        CurrentProjectVarName char = ''
         RoiManualPreviewHandles cell = {}
         RoiManualPreviewListeners cell = {}
         RoiManualSelectedRectangle double = NaN
@@ -108,17 +118,25 @@ classdef pipeline2 < matlab.apps.AppBase
 
             app.ResumeoptionsDropDown.Items = {'Resume previous progress','Restart from scratch'};
             app.ResumeoptionsDropDown.Value = 'Resume previous progress';
+            app.ResumeoptionsDropDown.ValueChangedFcn = createCallbackFcn(app, @ResumeoptionsDropDownValueChanged, true);
             app.ExecutionDropDown.Items = {'Auto','GPU','CPU'};
             app.ExecutionDropDown.Value = 'Auto';
             buildRuntimeControls(app);
 
             app.ForkgraphButton.ButtonPushedFcn = createCallbackFcn(app, @ForkgraphButtonPushed, true);
             app.MergegraphButton.ButtonPushedFcn = createCallbackFcn(app, @MergegraphButtonPushed, true);
+            app.InsertbeforeselectedButton.ButtonPushedFcn = createCallbackFcn(app, @InsertbeforeselectedButtonPushed, true);
+            app.DeleteselectedButton.ButtonPushedFcn = createCallbackFcn(app, @DeleteselectedButtonPushed, true);
             app.CloseappButton.ButtonPushedFcn = createCallbackFcn(app, @CloseappButtonPushed, true);
             app.RunButton.ButtonPushedFcn = createCallbackFcn(app, @RunButtonPushed, true);
             app.CheckpipelineButton.ButtonPushedFcn = createCallbackFcn(app, @CheckpipelineButtonPushed, true);
             app.NewpipelineMenu.MenuSelectedFcn = createCallbackFcn(app, @NewpipelineMenuSelected, true);
+            app.LoadpipelineMenu.MenuSelectedFcn = createCallbackFcn(app, @LoadpipelineMenuSelected, true);
             app.SavecurrentpipelineMenu.MenuSelectedFcn = createCallbackFcn(app, @SavecurrentpipelineMenuSelected, true);
+            app.SavepipelineasMenu.MenuSelectedFcn = createCallbackFcn(app, @SavepipelineasMenuSelected, true);
+            app.LoadrunMenu.MenuSelectedFcn = createCallbackFcn(app, @LoadrunMenuSelected, true);
+            app.SaverunMenu.MenuSelectedFcn = createCallbackFcn(app, @SaverunMenuSelected, true);
+            app.SaverunasMenu.MenuSelectedFcn = createCallbackFcn(app, @SaverunasMenuSelected, true);
 
             app.RuninformationhereLabel.Text = 'Template mode - click the grey block to add a module.';
             app.PipelineandRuncheckreportLabel.Text = 'No pipeline yet.';
@@ -204,6 +222,12 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             app.Data.nodes(app.SelectedNodeIndex).uiAdvanced = logical(app.AdvancedmodeCheckBox.Value);
             rebuildSelectedModuleTab(app);
+        end
+
+        function ResumeoptionsDropDownValueChanged(app, event) %#ok<INUSD>
+            applyRecommendedOutputPolicyForResume(app);
+            updateRuntimeInputStates(app);
+            refreshValidationReport(app);
         end
 
         function TabGroupSelectionChanged(app, event)
@@ -309,6 +333,40 @@ classdef pipeline2 < matlab.apps.AppBase
             app.SelectedNodeIndex = numel(app.Data.nodes);
             rebuildEdgesFromLayout(app);
             refreshAfterModelChange(app);
+        end
+
+        function insertModuleBeforeSelected(app)
+            if isnan(app.SelectedNodeIndex) || app.SelectedNodeIndex < 1 || app.SelectedNodeIndex > numel(app.Data.nodes)
+                uialert(app.UIFigure, 'Select a module before inserting.', 'Insert module', 'Icon', 'info');
+                return;
+            end
+            [nodeType, pkg] = selectedModuleTypeAndPackage(app);
+            targetCol = getLayoutCol(app, app.Data.nodes(app.SelectedNodeIndex));
+            targetRow = getLayoutRow(app, app.Data.nodes(app.SelectedNodeIndex));
+            for i = 1:numel(app.Data.nodes)
+                if getLayoutCol(app, app.Data.nodes(i)) >= targetCol
+                    app.Data.nodes(i).layout(1) = getLayoutCol(app, app.Data.nodes(i)) + 1;
+                end
+            end
+            app.NodeCounter = app.NodeCounter + 1;
+            node = makePipelineNode(app, nodeType, pkg, app.NodeCounter);
+            node.layout = [targetCol targetRow 1 1];
+            app.Data.nodes = appendStruct(app, app.Data.nodes, node);
+            app.SelectedNodeIndex = numel(app.Data.nodes);
+            app.Data.nodes = sortNodesByLayout(app, app.Data.nodes);
+            app.SelectedNodeIndex = find(strcmp({app.Data.nodes.id}, node.id), 1);
+            rebuildEdgesFromLayout(app);
+            refreshAfterModelChange(app);
+        end
+
+        function nodes = sortNodesByLayout(app, nodes)
+            if numel(nodes) < 2
+                return;
+            end
+            cols = arrayfun(@(n)getLayoutCol(app, n), nodes);
+            rows = arrayfun(@(n)getLayoutRow(app, n), nodes);
+            [~, order] = sortrows([cols(:) rows(:)], [1 2]);
+            nodes = nodes(order);
         end
 
         function [nodeType, pkg] = selectedModuleTypeAndPackage(app)
@@ -637,6 +695,14 @@ classdef pipeline2 < matlab.apps.AppBase
             refreshAfterModelChange(app);
         end
 
+        function InsertbeforeselectedButtonPushed(app, event) %#ok<INUSD>
+            insertModuleBeforeSelected(app);
+        end
+
+        function DeleteselectedButtonPushed(app, event) %#ok<INUSD>
+            deleteSelectedModule(app);
+        end
+
         function row = nextFreeRowInColumn(app, col)
             row = 1;
             if isempty(app.Data.nodes)
@@ -767,9 +833,9 @@ classdef pipeline2 < matlab.apps.AppBase
             end
 
             panel = uipanel(app.RuntimeTab, 'Title', 'Run inputs', 'Position', [279 42 417 288]);
-            grid = uigridlayout(panel, [7 3]);
+            grid = uigridlayout(panel, [7 4]);
             grid.RowHeight = {28, 28, 28, 28, 28, 28, 28};
-            grid.ColumnWidth = {110, '1x', 86};
+            grid.ColumnWidth = {80, '1x', 90, 72};
             grid.Padding = [8 8 8 8];
             grid.RowSpacing = 8;
             grid.ColumnSpacing = 8;
@@ -779,7 +845,7 @@ classdef pipeline2 < matlab.apps.AppBase
             app.RuntimeValues = struct();
             app.RuntimeParseInfo = struct();
 
-            addRuntimeRow(app, grid, 1, 'Project', 'projectPath', 'Existing project folder or .mat file', 'Browse...');
+            addRuntimeProjectRow(app, grid, 1);
             addRuntimeRow(app, grid, 2, 'Raw data', 'rawDataPath', 'Raw image/data folder used by dataloader', 'Browse...');
             addRuntimeRow(app, grid, 3, 'FOVs', 'fovs', 'all / 1,3,5 / 1:4', 'Pick...');
             addRuntimeRow(app, grid, 4, 'Frames', 'frames', 'all / 1:50 / 1,5,9', 'Pick...');
@@ -789,6 +855,39 @@ classdef pipeline2 < matlab.apps.AppBase
             updateRuntimeInputStates(app);
         end
 
+        function addRuntimeProjectRow(app, grid, row)
+            label = uilabel(grid, 'Text', 'Project');
+            label.Layout.Row = row;
+            label.Layout.Column = 1;
+
+            field = uieditfield(grid, 'text');
+            field.Layout.Row = row;
+            field.Layout.Column = 2;
+            try
+                field.Placeholder = 'Current shallow project .mat';
+            catch
+            end
+            field.ValueChangedFcn = @(src,~)runtimeFieldChanged(app, 'projectPath', src.Value);
+
+            dd = uidropdown(grid);
+            dd.Layout.Row = row;
+            dd.Layout.Column = 3;
+            dd.Items = projectDropdownItems(app);
+            dd.Value = dd.Items{1};
+            dd.ValueChangedFcn = @(src,~)projectDropdownChanged(app, src.Value);
+
+            btn = uibutton(grid, 'push', 'Text', 'Browse...');
+            btn.Layout.Row = row;
+            btn.Layout.Column = 4;
+            btn.Tooltip = 'Load an existing shallow project .mat file.';
+            btn.ButtonPushedFcn = @(~,~)runtimeButtonPushed(app, 'projectPath');
+
+            app.RuntimeFieldHandles.projectPath = field;
+            app.RuntimeFieldHandles.projectSource = dd;
+            app.RuntimeButtonHandles.projectPath = btn;
+            app.RuntimeValues.projectPath = '';
+        end
+
         function addRuntimeRow(app, grid, row, labelText, key, placeholder, buttonText)
             label = uilabel(grid, 'Text', labelText);
             label.Layout.Row = row;
@@ -796,7 +895,7 @@ classdef pipeline2 < matlab.apps.AppBase
 
             field = uieditfield(grid, 'text');
             field.Layout.Row = row;
-            field.Layout.Column = 2;
+            field.Layout.Column = [2 3];
             try
                 field.Placeholder = placeholder;
             catch
@@ -806,7 +905,7 @@ classdef pipeline2 < matlab.apps.AppBase
 
             btn = uibutton(grid, 'push', 'Text', buttonText);
             btn.Layout.Row = row;
-            btn.Layout.Column = 3;
+            btn.Layout.Column = 4;
             btn.Tooltip = placeholder;
             btn.ButtonPushedFcn = @(~,~)runtimeButtonPushed(app, key);
 
@@ -822,14 +921,14 @@ classdef pipeline2 < matlab.apps.AppBase
 
             dd = uidropdown(grid);
             dd.Layout.Row = row;
-            dd.Layout.Column = 2;
+            dd.Layout.Column = [2 3];
             dd.Items = {'resolved after project/raw data load'};
             dd.Value = dd.Items{1};
             dd.ValueChangedFcn = @(src,~)runtimeFieldChanged(app, 'channels', src.Value);
 
             btn = uibutton(grid, 'push', 'Text', 'Select...');
             btn.Layout.Row = row;
-            btn.Layout.Column = 3;
+            btn.Layout.Column = 4;
             btn.Tooltip = 'Select channel after project/raw data parsing.';
             btn.ButtonPushedFcn = @(~,~)runtimeButtonPushed(app, 'channels');
 
@@ -845,7 +944,7 @@ classdef pipeline2 < matlab.apps.AppBase
 
             dd = uidropdown(grid);
             dd.Layout.Row = row;
-            dd.Layout.Column = 2;
+            dd.Layout.Column = [2 3];
             dd.Items = {'Skip existing outputs','Replace existing outputs','Append/update existing outputs','Error if outputs exist'};
             dd.ItemsData = {'skip','replace','upsert','error'};
             dd.Value = 'skip';
@@ -854,19 +953,26 @@ classdef pipeline2 < matlab.apps.AppBase
 
             btn = uibutton(grid, 'push', 'Text', 'Explain');
             btn.Layout.Row = row;
-            btn.Layout.Column = 3;
+            btn.Layout.Column = 4;
             btn.ButtonPushedFcn = @(~,~)showOutputPolicyHelp(app);
 
             app.RuntimeFieldHandles.outputPolicy = dd;
             app.RuntimeButtonHandles.outputPolicy = btn;
             app.RuntimeValues.outputPolicy = 'skip';
+            app.RuntimeValues.outputPolicyUserChosen = false;
         end
 
         function runtimeFieldChanged(app, key, value)
             app.RuntimeValues.(key) = char(string(value));
+            if strcmp(char(string(key)), 'projectPath')
+                bindProjectFromPath(app, char(string(value)), false);
+            end
             syncRuntimeValueToNodeParams(app, key);
             if strcmp(char(string(key)), 'rawDataPath')
                 parseRuntimeRawDataPath(app, char(string(value)));
+            end
+            if strcmp(char(string(key)), 'outputPolicy')
+                markOutputPolicyUserChosen(app);
             end
             updateRuntimeInputStates(app);
             refreshValidationReport(app);
@@ -875,17 +981,7 @@ classdef pipeline2 < matlab.apps.AppBase
         function runtimeButtonPushed(app, key)
             switch char(string(key))
                 case 'projectPath'
-                    [file, pth] = uigetfile({'*.mat;pipeline.json','Project files (*.mat, pipeline.json)'; '*.*','All files'}, ...
-                        'Select existing DetecDiv project file');
-                    if isequal(file, 0)
-                        pth = uigetdir(pwd, 'Select existing DetecDiv project folder');
-                        if isequal(pth, 0)
-                            return;
-                        end
-                        setRuntimeValue(app, key, pth);
-                    else
-                        setRuntimeValue(app, key, fullfile(pth, file));
-                    end
+                    chooseExistingProject(app);
                 case 'rawDataPath'
                     pth = uigetdir(pwd, 'Select raw data folder');
                     if isequal(pth, 0)
@@ -927,6 +1023,244 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
+        function items = projectDropdownItems(app)
+            items = {'Select project...'};
+            choices = workspaceShallowProjectChoices(app);
+            for i = 1:size(choices, 1)
+                items{end+1} = choices{i,1}; %#ok<AGROW>
+            end
+            items = [items {'Browse existing...','New project...'}];
+        end
+
+        function choices = workspaceShallowProjectChoices(app) %#ok<INUSD>
+            choices = cell(0, 2);
+            try
+                vars = evalin('base', 'who');
+            catch
+                vars = {};
+            end
+            for i = 1:numel(vars)
+                varName = vars{i};
+                try
+                    obj = evalin('base', varName);
+                catch
+                    continue;
+                end
+                if ~isa(obj, 'shallow')
+                    continue;
+                end
+                label = varName;
+                try
+                    [pth, file] = obj.getPath;
+                    if ~isempty(file)
+                        label = sprintf('%s (%s)', varName, file);
+                    end
+                catch
+                end
+                choices(end+1,:) = {label, varName}; %#ok<AGROW>
+            end
+        end
+
+        function refreshProjectDropdown(app)
+            if ~isfield(app.RuntimeFieldHandles, 'projectSource') || ~isvalid(app.RuntimeFieldHandles.projectSource)
+                return;
+            end
+            dd = app.RuntimeFieldHandles.projectSource;
+            old = char(string(dd.Value));
+            dd.Items = projectDropdownItems(app);
+            if any(strcmp(dd.Items, old))
+                dd.Value = old;
+            else
+                dd.Value = dd.Items{1};
+            end
+        end
+
+        function projectDropdownChanged(app, value)
+            value = char(string(value));
+            if strcmp(value, 'Select project...')
+                return;
+            elseif strcmp(value, 'Browse existing...')
+                chooseExistingProject(app);
+                refreshProjectDropdown(app);
+                return;
+            elseif strcmp(value, 'New project...')
+                createNewProjectFromDialog(app);
+                refreshProjectDropdown(app);
+                return;
+            end
+
+            choices = workspaceShallowProjectChoices(app);
+            idx = find(strcmp(choices(:,1), value), 1);
+            if isempty(idx)
+                return;
+            end
+            varName = choices{idx,2};
+            try
+                shallowObj = evalin('base', varName);
+                bindCurrentProject(app, shallowObj, varName);
+            catch ME
+                uialert(app.UIFigure, ME.message, 'Project selection', 'Icon', 'warning');
+            end
+        end
+
+        function chooseExistingProject(app)
+            [file, pth] = uigetfile({'*.mat','DetecDiv project (*.mat)'; '*.*','All files'}, ...
+                'Select existing DetecDiv shallow project');
+            if isequal(file, 0)
+                pth = uigetdir(pwd, 'Select existing DetecDiv project folder');
+                if isequal(pth, 0)
+                    return;
+                end
+                target = pth;
+            else
+                target = fullfile(pth, file);
+            end
+            bindProjectFromPath(app, target, true);
+        end
+
+        function createNewProjectFromDialog(app)
+            [file, pth] = uiputfile('*.mat', 'Create DetecDiv shallow project', fullfile(pwd, 'new_project.mat'));
+            if isequal(file, 0)
+                return;
+            end
+            [~, name, ext] = fileparts(file);
+            if isempty(ext)
+                file = [file '.mat']; %#ok<NASGU>
+            end
+            projectFolder = fullfile(pth, name);
+            if ~exist(projectFolder, 'dir')
+                mkdir(projectFolder);
+            end
+            shallowObj = shallow();
+            shallowObj.setPath(ensureTrailingFilesep(app, pth), name);
+            if ~isfield(shallowObj.processing, 'pipelineRun') || isempty(shallowObj.processing.pipelineRun)
+                shallowObj.processing.pipelineRun = pipelineRun.empty;
+            end
+            shallowSave(shallowObj, 'shallowObj');
+            varName = matlab.lang.makeValidName(name);
+            assignin('base', varName, shallowObj);
+            bindCurrentProject(app, shallowObj, varName);
+        end
+
+        function bindProjectFromPath(app, inputPath, showWarnings)
+            if nargin < 3
+                showWarnings = true;
+            end
+            inputPath = strtrim(char(string(inputPath)));
+            if isempty(inputPath)
+                return;
+            end
+            matPath = resolveProjectMatPath(app, inputPath);
+            if isempty(matPath) || exist(matPath, 'file') ~= 2
+                if showWarnings
+                    uialert(app.UIFigure, ['Project .mat not found: ' inputPath], 'Project', 'Icon', 'warning');
+                end
+                return;
+            end
+            try
+                [shallowObj, msg] = shallowLoad(matPath);
+                if isempty(shallowObj)
+                    error('pipeline2:ProjectLoadFailed', '%s', msg);
+                end
+                [~, name] = fileparts(matPath);
+                varName = matlab.lang.makeValidName(name);
+                assignin('base', varName, shallowObj);
+                bindCurrentProject(app, shallowObj, varName);
+            catch ME
+                if showWarnings
+                    uialert(app.UIFigure, ME.message, 'Project', 'Icon', 'warning');
+                end
+            end
+        end
+
+        function matPath = resolveProjectMatPath(app, inputPath) %#ok<INUSD>
+            matPath = '';
+            inputPath = char(string(inputPath));
+            if exist(inputPath, 'file') == 2
+                [~, ~, ext] = fileparts(inputPath);
+                if strcmpi(ext, '.mat')
+                    matPath = inputPath;
+                end
+                return;
+            end
+            if exist(inputPath, 'dir') ~= 7
+                return;
+            end
+            [parentPath, folderName] = fileparts(inputPath);
+            candidate = fullfile(parentPath, [folderName '.mat']);
+            if exist(candidate, 'file') == 2
+                matPath = candidate;
+                return;
+            end
+            d = dir(fullfile(inputPath, '*.mat'));
+            if numel(d) == 1
+                matPath = fullfile(d(1).folder, d(1).name);
+            end
+        end
+
+        function bindCurrentProject(app, shallowObj, varName)
+            if isempty(shallowObj) || ~isa(shallowObj, 'shallow')
+                return;
+            end
+            app.CurrentProject = shallowObj;
+            app.CurrentProjectVarName = char(string(varName));
+            [pth, file] = shallowObj.getPath;
+            setRuntimeValuePreserveParse(app, 'projectPath', fullfile(pth, [file '.mat']));
+            refreshRuntimeFromProject(app);
+            refreshProjectDropdown(app);
+            updateRuntimeInputStates(app);
+            refreshValidationReport(app);
+        end
+
+        function refreshRuntimeFromProject(app)
+            shallowObj = app.CurrentProject;
+            if isempty(shallowObj) || ~isa(shallowObj, 'shallow')
+                return;
+            end
+            try
+                nFov = numel(shallowObj.fov);
+                if nFov > 0
+                    setRuntimeValuePreserveParse(app, 'fovs', sprintf('1:%d', nFov));
+                end
+            catch
+            end
+            try
+                frames = [];
+                for i = 1:numel(shallowObj.fov)
+                    if ~isempty(shallowObj.fov(i).frames)
+                        frames = [frames double(shallowObj.fov(i).frames(:)')]; %#ok<AGROW>
+                    elseif ~isempty(shallowObj.fov(i).srclist)
+                        for ch = 1:numel(shallowObj.fov(i).srclist)
+                            frames(end+1) = numel(shallowObj.fov(i).srclist{ch}); %#ok<AGROW>
+                        end
+                    end
+                end
+                frames = frames(isfinite(frames) & frames > 0);
+                if ~isempty(frames)
+                    setRuntimeValuePreserveParse(app, 'frames', sprintf('1:%d', max(round(frames))));
+                end
+            catch
+            end
+            channels = {};
+            try
+                if ~isempty(shallowObj.fov) && iscell(shallowObj.fov(1).channel)
+                    channels = shallowObj.fov(1).channel;
+                end
+            catch
+            end
+            updateChannelDropdownItems(app, channels);
+        end
+
+        function out = ensureTrailingFilesep(app, pth) %#ok<INUSD>
+            out = char(string(pth));
+            if isempty(out)
+                return;
+            end
+            if ~endsWith(out, filesep)
+                out = [out filesep];
+            end
+        end
+
         function showOutputPolicyHelp(app)
             msg = [ ...
                 "Resume options control progress checkpoints." newline ...
@@ -939,6 +1273,43 @@ classdef pipeline2 < matlab.apps.AppBase
             uialert(app.UIFigure, msg, 'Run policy', 'Icon', 'info');
         end
 
+        function markOutputPolicyUserChosen(app)
+            app.RuntimeValues.outputPolicyUserChosen = true;
+        end
+
+        function tf = isOutputPolicyUserChosen(app)
+            tf = false;
+            if isfield(app.RuntimeValues, 'outputPolicyUserChosen') && ~isempty(app.RuntimeValues.outputPolicyUserChosen)
+                tf = logical(app.RuntimeValues.outputPolicyUserChosen);
+            end
+        end
+
+        function applyRecommendedOutputPolicyForResume(app)
+            if ~isfield(app.RuntimeFieldHandles, 'outputPolicy') || ~isvalid(app.RuntimeFieldHandles.outputPolicy)
+                return;
+            end
+            resumeMode = char(string(app.ResumeoptionsDropDown.Value));
+            current = getRuntimeValue(app, 'outputPolicy');
+            recommended = recommendedOutputPolicy(app, resumeMode);
+
+            shouldAutoSet = isempty(current) || ...
+                (~isOutputPolicyUserChosen(app) && ~strcmp(current, recommended)) || ...
+                (strcmpi(resumeMode, 'Restart from scratch') && strcmp(current, 'skip')) || ...
+                (strcmpi(resumeMode, 'Resume previous progress') && strcmp(current, 'replace'));
+            if shouldAutoSet
+                app.RuntimeValues.outputPolicyUserChosen = false;
+                setRuntimeValuePreserveParse(app, 'outputPolicy', recommended);
+            end
+        end
+
+        function policy = recommendedOutputPolicy(app, resumeMode) %#ok<INUSD>
+            if strcmpi(char(string(resumeMode)), 'Restart from scratch')
+                policy = 'replace';
+            else
+                policy = 'skip';
+            end
+        end
+
         function setRuntimeValue(app, key, value)
             value = char(string(value));
             app.RuntimeValues.(key) = value;
@@ -948,6 +1319,9 @@ classdef pipeline2 < matlab.apps.AppBase
             syncRuntimeValueToNodeParams(app, key);
             if strcmp(char(string(key)), 'rawDataPath')
                 parseRuntimeRawDataPath(app, value);
+            end
+            if strcmp(char(string(key)), 'outputPolicy')
+                markOutputPolicyUserChosen(app);
             end
             updateRuntimeInputStates(app);
             refreshValidationReport(app);
@@ -1212,6 +1586,11 @@ classdef pipeline2 < matlab.apps.AppBase
             else
                 setRuntimeButtonEnabled(app, 'channels', true);
             end
+
+            [severity, message] = outputPolicyCompatibility(app);
+            if ~strcmp(severity, 'ok')
+                markRuntimeField(app, 'outputPolicy', severity, message);
+            end
         end
 
         function markRuntimeField(app, key, state, tooltip)
@@ -1231,6 +1610,10 @@ classdef pipeline2 < matlab.apps.AppBase
                     field.FontColor = [0.45 0.45 0.45];
                     field.BackgroundColor = [0.94 0.94 0.94];
                     field.Enable = 'off';
+                case 'warning'
+                    field.FontColor = [0.45 0.25 0.00];
+                    field.BackgroundColor = [1.00 0.96 0.82];
+                    field.Enable = 'on';
             end
             try
                 field.Tooltip = tooltip;
@@ -2400,6 +2783,10 @@ classdef pipeline2 < matlab.apps.AppBase
                     markRuntimeField(app, 'rawDataPath', 'missing', 'Raw data must be an existing folder.');
                 end
             end
+            [severity, message] = outputPolicyCompatibility(app);
+            if strcmp(severity, 'warning')
+                issues{end+1} = message; %#ok<AGROW>
+            end
         end
 
         function txt = formatRunPolicySummary(app)
@@ -2436,6 +2823,41 @@ classdef pipeline2 < matlab.apps.AppBase
             txt = ['Run policy:' newline ...
                 '- Resume: ' resumeLabel newline ...
                 '- Existing outputs: ' policyLabel roiExtractMode];
+            [severity, message] = outputPolicyCompatibility(app);
+            if strcmp(severity, 'warning')
+                txt = [txt newline '- Warning: ' message];
+            end
+            txt = [txt newline '- Recommended: ' recommendedPolicySentence(app)];
+        end
+
+        function [severity, message] = outputPolicyCompatibility(app)
+            severity = 'ok';
+            message = '';
+            resumeMode = char(string(app.ResumeoptionsDropDown.Value));
+            outputPolicy = getRuntimeValue(app, 'outputPolicy');
+            if isempty(outputPolicy)
+                outputPolicy = recommendedOutputPolicy(app, resumeMode);
+            end
+
+            if strcmpi(resumeMode, 'Resume previous progress') && strcmp(outputPolicy, 'replace')
+                severity = 'warning';
+                message = 'Resume + replace is unusual: checkpoints are reused while existing outputs may be overwritten.';
+            elseif strcmpi(resumeMode, 'Restart from scratch') && strcmp(outputPolicy, 'skip')
+                severity = 'warning';
+                message = 'Restart + skip is unusual: checkpoints are ignored but existing outputs are preserved.';
+            elseif strcmpi(resumeMode, 'Restart from scratch') && strcmp(outputPolicy, 'upsert')
+                severity = 'warning';
+                message = 'Restart + append/update is only appropriate for controlled partial H5 updates.';
+            end
+        end
+
+        function sentence = recommendedPolicySentence(app)
+            resumeMode = char(string(app.ResumeoptionsDropDown.Value));
+            if strcmpi(resumeMode, 'Restart from scratch')
+                sentence = 'Restart from scratch -> Replace existing outputs for a clean rerun.';
+            else
+                sentence = 'Resume previous progress -> Skip existing outputs for the safest continuation.';
+            end
         end
 
         function nodes = annotateNodeStatus(app, nodes, report) %#ok<INUSD>
@@ -2529,24 +2951,681 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
+        function pipe = buildPipelineTemplateStruct(app)
+            pipe = struct();
+            pipe.name = currentPipelineName(app);
+            pipe.nodes = stripRuntimeParamsFromNodes(app, app.Data.nodes);
+            pipe.edges = app.Data.edges;
+            pipe.branches = struct([]);
+        end
+
+        function nodes = stripRuntimeParamsFromNodes(app, nodes) %#ok<INUSD>
+            for i = 1:numel(nodes)
+                if ~isfield(nodes(i), 'params') || ~isstruct(nodes(i).params)
+                    continue;
+                end
+                nodeType = lower(char(string(getField(app, nodes(i), 'type', ''))));
+                if strcmp(nodeType, 'dataloader') && isfield(nodes(i).params, 'path')
+                    nodes(i).params = rmfield(nodes(i).params, 'path');
+                end
+                if strcmp(nodeType, 'roiextract') && isfield(nodes(i).params, 'extend')
+                    nodes(i).params = rmfield(nodes(i).params, 'extend');
+                end
+            end
+        end
+
+        function pipeObj = buildPipelineObject(app, targetPath)
+            if nargin < 2 || isempty(targetPath)
+                targetPath = app.CurrentPipelinePath;
+            end
+            name = currentPipelineName(app);
+            pipeStruct = buildPipelineTemplateStruct(app);
+            pipeObj = pipeline('', name, 1);
+            pipeObj.setPath(targetPath, name);
+            pipeObj.nodes = pipeStruct.nodes;
+            pipeObj.edges = pipeStruct.edges;
+            pipeObj.branches = pipeStruct.branches;
+            pipeObj.description = 'Created from pipelineGUI2';
+        end
+
+        function pipeObj = buildExecutablePipelineObject(app, targetPath, ctx)
+            pipeObj = buildPipelineObject(app, targetPath);
+            pipeObj.nodes = applyRunNodeParamsToNodes(app, pipeObj.nodes, ctx.run.nodeParams);
+            pipeObj.nodes = applyRuntimeDerivedNodePolicies(app, pipeObj.nodes);
+        end
+
+        function nodes = applyRunNodeParamsToNodes(app, nodes, nodeParams)
+            if ~isstruct(nodeParams)
+                return;
+            end
+            for i = 1:numel(nodes)
+                nodeId = char(string(getField(app, nodes(i), 'id', '')));
+                key = matlab.lang.makeValidName(nodeId);
+                if ~isfield(nodeParams, key) || ~isstruct(nodeParams.(key))
+                    continue;
+                end
+                if ~isfield(nodes(i), 'params') || ~isstruct(nodes(i).params)
+                    nodes(i).params = struct();
+                end
+                nodes(i).params = mergeStructDefaults(app, nodeParams.(key), nodes(i).params);
+            end
+        end
+
+        function name = currentPipelineName(app)
+            name = 'pipelineGUI2';
+            if ~isempty(app.CurrentPipeline) && isa(app.CurrentPipeline, 'pipeline') && ~isempty(app.CurrentPipeline.strid)
+                name = char(string(app.CurrentPipeline.strid));
+            elseif ~isempty(app.CurrentPipelinePath)
+                [~, name] = fileparts(app.CurrentPipelinePath);
+                if isempty(name)
+                    name = 'pipelineGUI2';
+                end
+            end
+        end
+
+        function ok = savePipelineInteractive(app, forceAs)
+            ok = false;
+            if nargin < 2
+                forceAs = false;
+            end
+            targetPath = app.CurrentPipelinePath;
+            if forceAs || isempty(targetPath)
+                [file, pth] = uiputfile('pipeline.json', 'Save pipeline template', fullfile(pwd, 'pipeline.json'));
+                if isequal(file, 0)
+                    return;
+                end
+                targetPath = pth;
+            end
+            try
+                pipeObj = buildPipelineObject(app, targetPath);
+                pipelineSave(pipeObj);
+                app.CurrentPipeline = pipeObj;
+                app.CurrentPipelinePath = pipeObj.path;
+                ok = true;
+                app.RuninformationhereLabel.Text = ['Pipeline saved: ' fullfile(pipeObj.path, 'pipeline.json')];
+            catch ME
+                uialert(app.UIFigure, ME.message, 'Save pipeline', 'Icon', 'error');
+            end
+        end
+
+        function loadPipelineFromObject(app, pipeObj)
+            if isempty(pipeObj) || ~isa(pipeObj, 'pipeline')
+                return;
+            end
+            nodes = pipeObj.nodes;
+            if isempty(nodes)
+                nodes = struct([]);
+            end
+            for i = 1:numel(nodes)
+                if ~isfield(nodes(i), 'layout') || isempty(nodes(i).layout)
+                    nodes(i).layout = [i 1 1 1];
+                end
+                if ~isfield(nodes(i), 'name') || isempty(nodes(i).name)
+                    nodes(i).name = nodes(i).id;
+                end
+                if ~isfield(nodes(i), 'uiAdvanced') || isempty(nodes(i).uiAdvanced)
+                    nodes(i).uiAdvanced = false;
+                end
+                try
+                    nodes(i).contract = pipelineNodeContract(nodes(i));
+                    nodes(i).inputs = portNames(app, nodes(i).contract, 'in');
+                    nodes(i).outputs = portNames(app, nodes(i).contract, 'out');
+                catch
+                end
+            end
+            app.Data.nodes = nodes;
+            app.Data.edges = pipeObj.edges;
+            if isempty(app.Data.edges)
+                rebuildEdgesFromLayout(app);
+            end
+            app.CurrentPipeline = pipeObj;
+            app.CurrentPipelinePath = pipeObj.path;
+            app.CurrentRun = [];
+            app.CurrentRunPath = '';
+            app.RuntimeNodeParams = struct();
+            app.SelectedNodeIndex = ternary(app, isempty(nodes), NaN, 1);
+            app.NodeCounter = inferNodeCounter(app, nodes);
+            refreshAfterModelChange(app);
+        end
+
+        function n = inferNodeCounter(app, nodes) %#ok<INUSD>
+            n = numel(nodes);
+            for i = 1:numel(nodes)
+                toks = regexp(char(string(nodes(i).id)), '_(\d+)$', 'tokens', 'once');
+                if ~isempty(toks)
+                    n = max(n, str2double(toks{1}));
+                end
+            end
+        end
+
+        function ctx = buildRunContext(app)
+            ctx = struct();
+            ctx.allowGUI = false;
+            ctx.interactive = false;
+            ctx.dryRun = false;
+
+            if ~isempty(app.CurrentProject) && isa(app.CurrentProject, 'shallow')
+                ctx.shallow = app.CurrentProject;
+                ctx.shallowObj = app.CurrentProject;
+            end
+
+            ctx.run = struct();
+            ctx.run.selectedNodes = selectedRunNodeIds(app);
+            ctx.run.nodeParams = buildRunNodeParams(app);
+            ctx.run.runPolicy = resumeModeToRunPolicy(app, app.ResumeoptionsDropDown.Value);
+            ctx.run.resume = strcmp(ctx.run.runPolicy, 'resume');
+            ctx.run.gpuPolicy = lower(char(string(app.ExecutionDropDown.Value)));
+            if strcmp(ctx.run.gpuPolicy, 'auto')
+                ctx.run.gpuPolicy = 'module_default';
+            end
+
+            ctx.io = struct();
+            policy = getRuntimeValue(app, 'outputPolicy');
+            if isempty(policy)
+                policy = recommendedOutputPolicy(app, app.ResumeoptionsDropDown.Value);
+            end
+            ctx.io.existingPolicy = policy;
+            ctx.io.globalExistingPolicy = policy;
+            ctx.io.cachePolicy = 'auto';
+            ctx.store = struct('cacheMode', 'auto');
+
+            ctx.sel = struct();
+            ctx.sel.fovs = parseIndexSelection(app, getRuntimeValue(app, 'fovs'));
+            ctx.sel.frames = parseIndexSelection(app, getRuntimeValue(app, 'frames'));
+            ctx.sel.rois = parseLooseSelection(app, getRuntimeValue(app, 'rois'));
+            ctx.run.fovIndex = ctx.sel.fovs;
+            ctx.run.frames = ctx.sel.frames;
+            ctx.run.rois = ctx.sel.rois;
+
+            channelValue = getRuntimeValue(app, 'channels');
+            ctx.run.channels = channelValue;
+            if ~isempty(channelValue) && ~strcmpi(channelValue, 'all') && ~startsWith(channelValue, 'resolved after')
+                ctx.channels = cellstr(string(strsplit(channelValue, ',')));
+            end
+
+            rawDataPath = getRuntimeValue(app, 'rawDataPath');
+            projectPath = getRuntimeValue(app, 'projectPath');
+            ctx.run.rawDataPath = rawDataPath;
+            ctx.run.projectPath = projectPath;
+            ctx.io.rawDataPath = rawDataPath;
+            ctx.io.projectPath = projectPath;
+            ctx.rawDataPath = rawDataPath;
+            ctx.projectPath = projectPath;
+            ctx.dataLoader = struct('path', rawDataPath);
+
+            ctx.pipelineRef = buildPipelineRef(app);
+            ctx.targetRef = buildTargetRef(app);
+        end
+
+        function nodeParams = buildRunNodeParams(app)
+            nodeParams = struct();
+            fn = fieldnames(app.RuntimeNodeParams);
+            for i = 1:numel(fn)
+                params = app.RuntimeNodeParams.(fn{i});
+                if ~isstruct(params)
+                    continue;
+                end
+                nodeId = runtimeKeyToNodeId(app, fn{i});
+                if isempty(nodeId)
+                    continue;
+                end
+                nodeParams.(matlab.lang.makeValidName(nodeId)) = params;
+            end
+
+            rawDataPath = getRuntimeValue(app, 'rawDataPath');
+            if ~isempty(rawDataPath)
+                for i = 1:numel(app.Data.nodes)
+                    if strcmpi(char(string(getField(app, app.Data.nodes(i), 'type', ''))), 'dataLoader')
+                        nodeId = char(string(app.Data.nodes(i).id));
+                        key = matlab.lang.makeValidName(nodeId);
+                        if ~isfield(nodeParams, key) || ~isstruct(nodeParams.(key))
+                            nodeParams.(key) = struct();
+                        end
+                        nodeParams.(key).path = rawDataPath;
+                    end
+                end
+            end
+        end
+
+        function nodeId = runtimeKeyToNodeId(app, key)
+            nodeId = '';
+            prefix = 'node_';
+            key = char(string(key));
+            if startsWith(key, prefix)
+                candidate = key(numel(prefix)+1:end);
+                ids = {};
+                if ~isempty(app.Data.nodes)
+                    ids = cellstr(string({app.Data.nodes.id}));
+                end
+                validIds = cellfun(@(s)matlab.lang.makeValidName(s), ids, 'UniformOutput', false);
+                idx = find(strcmp(validIds, candidate), 1);
+                if ~isempty(idx)
+                    nodeId = ids{idx};
+                end
+            end
+        end
+
+        function ids = selectedRunNodeIds(app)
+            ids = {};
+            data = app.UISelectedModuleTable.Data;
+            if isempty(data)
+                if ~isempty(app.Data.nodes)
+                    ids = cellstr(string({app.Data.nodes.id}));
+                end
+                return;
+            end
+            for i = 1:size(data, 1)
+                include = true;
+                try
+                    include = logical(data{i,1});
+                catch
+                end
+                if include
+                    ids{end+1} = char(string(data{i,2})); %#ok<AGROW>
+                end
+            end
+        end
+
+        function policy = resumeModeToRunPolicy(app, value) %#ok<INUSD>
+            if strcmpi(char(string(value)), 'Restart from scratch')
+                policy = 'restart';
+            else
+                policy = 'resume';
+            end
+        end
+
+        function idx = parseIndexSelection(app, txt) %#ok<INUSD>
+            idx = [];
+            txt = strtrim(char(string(txt)));
+            if isempty(txt) || strcmpi(txt, 'all') || startsWith(lower(txt), 'all ')
+                return;
+            end
+            try
+                idx = str2num(txt); %#ok<ST2NM>
+                idx = idx(:)';
+                idx = idx(isfinite(idx) & idx > 0);
+                idx = unique(round(idx), 'stable');
+            catch
+                idx = [];
+            end
+        end
+
+        function out = parseLooseSelection(app, txt) %#ok<INUSD>
+            out = [];
+            txt = strtrim(char(string(txt)));
+            if isempty(txt) || strcmpi(txt, 'all') || startsWith(lower(txt), 'all ')
+                return;
+            end
+            nums = str2num(txt); %#ok<ST2NM>
+            if ~isempty(nums)
+                out = nums(:)';
+            else
+                out = cellstr(string(strsplit(txt, ',')));
+            end
+        end
+
+        function ref = buildPipelineRef(app)
+            ref = struct('id', currentPipelineName(app), 'path', app.CurrentPipelinePath, 'version', '');
+            if ~isempty(app.CurrentPipeline) && isa(app.CurrentPipeline, 'pipeline')
+                ref.id = app.CurrentPipeline.strid;
+                ref.path = app.CurrentPipeline.path;
+                ref.version = app.CurrentPipeline.version;
+            end
+        end
+
+        function ref = buildTargetRef(app)
+            ref = struct('type', 'shallow', 'projectPath', getRuntimeValue(app, 'projectPath'), ...
+                'projectName', '', 'fovIds', parseIndexSelection(app, getRuntimeValue(app, 'fovs')), ...
+                'roiIds', {{}}, 'classiPath', '', 'notes', '');
+            if ~isempty(app.CurrentProject) && isa(app.CurrentProject, 'shallow')
+                [pth, file] = app.CurrentProject.getPath;
+                ref.projectPath = fullfile(pth, file);
+                ref.projectName = file;
+            end
+        end
+
+        function ok = ensurePipelineSavedForRun(app)
+            ok = true;
+            if isempty(app.CurrentPipelinePath)
+                choice = uiconfirm(app.UIFigure, ...
+                    'This run needs a saved pipeline template reference. Save the pipeline now?', ...
+                    'Save pipeline before run', 'Options', {'Save as...','Cancel'}, ...
+                    'DefaultOption', 1, 'CancelOption', 2);
+                if strcmp(choice, 'Cancel')
+                    ok = false;
+                    return;
+                end
+                ok = savePipelineInteractive(app, true);
+            else
+                ok = savePipelineInteractive(app, false);
+            end
+        end
+
+        function ok = ensureCurrentProjectForRun(app)
+            ok = false;
+            if ~isempty(app.CurrentProject) && isa(app.CurrentProject, 'shallow')
+                ok = true;
+                return;
+            end
+            projectPath = getRuntimeValue(app, 'projectPath');
+            if ~isempty(projectPath)
+                bindProjectFromPath(app, projectPath, false);
+                if ~isempty(app.CurrentProject) && isa(app.CurrentProject, 'shallow')
+                    ok = true;
+                    return;
+                end
+            end
+            choice = uiconfirm(app.UIFigure, ...
+                'A persistent run requires a shallow project. Create or load a project now?', ...
+                'Project required', 'Options', {'New project...','Browse existing...','Cancel'}, ...
+                'DefaultOption', 1, 'CancelOption', 3);
+            switch choice
+                case 'New project...'
+                    createNewProjectFromDialog(app);
+                case 'Browse existing...'
+                    chooseExistingProject(app);
+                otherwise
+                    return;
+            end
+            ok = ~isempty(app.CurrentProject) && isa(app.CurrentProject, 'shallow');
+        end
+
+        function runObj = createOrUpdateCurrentRun(app, ctx, status)
+            if isempty(app.CurrentRun) || ~isa(app.CurrentRun, 'pipelineRun')
+                ref = buildPipelineRef(app);
+                target = buildTargetRef(app);
+                runObj = pipelineRunNew(app.CurrentProject, ref.id, ref.path, ...
+                    'ctx', ctx, 'status', status, 'pipelineRef', ref, 'targetRef', target);
+                app.CurrentRun = runObj;
+                [runPath, ~] = runObj.getPath;
+                app.CurrentRunPath = runPath;
+            else
+                runObj = app.CurrentRun;
+                runObj.ctx = ctx;
+                runObj.status = status;
+                runObj.pipelineRef = buildPipelineRef(app);
+                runObj.targetRef = buildTargetRef(app);
+                runObj.templateId = runObj.pipelineRef.id;
+                runObj.templatePath = runObj.pipelineRef.path;
+            end
+        end
+
+        function ok = saveCurrentRun(app, forceAs)
+            ok = false;
+            if nargin < 2
+                forceAs = false;
+            end
+            if ~ensureCurrentProjectForRun(app)
+                return;
+            end
+            ctx = buildRunContext(app);
+            runObj = createOrUpdateCurrentRun(app, ctx, 'preflight');
+            if forceAs
+                pth = uigetdir(fullfile(app.CurrentProject.io.path, app.CurrentProject.io.file), 'Select run output folder');
+                if isequal(pth, 0)
+                    return;
+                end
+                [~, runId] = fileparts(pth);
+                runObj.setPath(pth, runId);
+                app.CurrentRunPath = pth;
+            end
+            try
+                pipelineRunSave(runObj);
+                shallowSave(app.CurrentProject, 'shallowObj');
+                ok = true;
+                app.RuninformationhereLabel.Text = ['Run saved: ' fullfile(runObj.path, 'run.json')];
+            catch ME
+                uialert(app.UIFigure, ME.message, 'Save run', 'Icon', 'error');
+            end
+        end
+
+        function loadRunIntoUi(app, runObj)
+            if isempty(runObj) || ~isa(runObj, 'pipelineRun')
+                return;
+            end
+            app.CurrentRun = runObj;
+            app.CurrentRunPath = runObj.path;
+            ctx = runObj.ctx;
+            if isstruct(ctx)
+                if isfield(ctx, 'run') && isstruct(ctx.run)
+                    if isfield(ctx.run, 'runPolicy') && strcmpi(char(string(ctx.run.runPolicy)), 'restart')
+                        app.ResumeoptionsDropDown.Value = 'Restart from scratch';
+                    else
+                        app.ResumeoptionsDropDown.Value = 'Resume previous progress';
+                    end
+                    if isfield(ctx.run, 'nodeParams') && isstruct(ctx.run.nodeParams)
+                        app.RuntimeNodeParams = uiRuntimeNodeParamsFromRun(app, ctx.run.nodeParams);
+                    end
+                    if isfield(ctx.run, 'selectedNodes')
+                        applySelectedRunNodes(app, ctx.run.selectedNodes);
+                    end
+                    if isfield(ctx.run, 'rawDataPath')
+                        setRuntimeValuePreserveParse(app, 'rawDataPath', ctx.run.rawDataPath);
+                    end
+                    if isfield(ctx.run, 'projectPath')
+                        setRuntimeValuePreserveParse(app, 'projectPath', ctx.run.projectPath);
+                    end
+                    if isfield(ctx.run, 'channels')
+                        setRuntimeValuePreserveParse(app, 'channels', ctx.run.channels);
+                    end
+                end
+                if isfield(ctx, 'sel') && isstruct(ctx.sel)
+                    if isfield(ctx.sel, 'fovs'), setRuntimeValuePreserveParse(app, 'fovs', selectionToText(app, ctx.sel.fovs)); end
+                    if isfield(ctx.sel, 'frames'), setRuntimeValuePreserveParse(app, 'frames', selectionToText(app, ctx.sel.frames)); end
+                    if isfield(ctx.sel, 'rois'), setRuntimeValuePreserveParse(app, 'rois', selectionToText(app, ctx.sel.rois)); end
+                end
+                if isfield(ctx, 'io') && isstruct(ctx.io) && isfield(ctx.io, 'existingPolicy') && ~isempty(ctx.io.existingPolicy)
+                    setRuntimeValuePreserveParse(app, 'outputPolicy', ctx.io.existingPolicy);
+                end
+            end
+            if ~isempty(runObj.projectPath)
+                bindProjectFromPath(app, [runObj.projectPath '.mat'], false);
+            end
+            refreshModuleTabs(app);
+            refreshValidationReport(app);
+        end
+
+        function params = uiRuntimeNodeParamsFromRun(app, runNodeParams)
+            params = struct();
+            if ~isstruct(runNodeParams)
+                return;
+            end
+            fn = fieldnames(runNodeParams);
+            for i = 1:numel(fn)
+                nodeId = '';
+                for j = 1:numel(app.Data.nodes)
+                    id = char(string(app.Data.nodes(j).id));
+                    if strcmp(matlab.lang.makeValidName(id), fn{i})
+                        nodeId = id;
+                        break;
+                    end
+                end
+                if isempty(nodeId)
+                    nodeId = fn{i};
+                end
+                params.(runtimeNodeKey(app, nodeId)) = runNodeParams.(fn{i});
+            end
+        end
+
+        function applySelectedRunNodes(app, selectedNodes)
+            data = app.UISelectedModuleTable.Data;
+            if isempty(data)
+                return;
+            end
+            selectedNodes = cellstr(string(selectedNodes(:)));
+            for i = 1:size(data, 1)
+                data{i,1} = any(strcmp(selectedNodes, char(string(data{i,2}))));
+            end
+            app.UISelectedModuleTable.Data = data;
+        end
+
+        function txt = selectionToText(app, value) %#ok<INUSD>
+            if isempty(value)
+                txt = 'all';
+            elseif isnumeric(value)
+                txt = mat2str(value);
+                txt = strrep(txt, '[', '');
+                txt = strrep(txt, ']', '');
+            elseif iscell(value)
+                txt = strjoin(cellstr(string(value)), ',');
+            else
+                txt = char(string(value));
+            end
+        end
+
+        function appendRunReport(app, label, report)
+            txt = app.PipelineandRuncheckreportLabel.Text;
+            lines = {txt, '', label};
+            if isstruct(report)
+                if isfield(report, 'okStrict')
+                    lines{end+1} = ['okStrict: ' char(string(report.okStrict))]; %#ok<AGROW>
+                end
+                if isfield(report, 'summary') && isstruct(report.summary)
+                    lines{end+1} = ['summary: ' jsonencode(report.summary)]; %#ok<AGROW>
+                elseif isfield(report, 'order') && ~isempty(report.order)
+                    lines{end+1} = ['order: ' strjoin(cellstr(report.order), ' -> ')]; %#ok<AGROW>
+                end
+                if isfield(report, 'errors') && ~isempty(report.errors)
+                    lines{end+1} = ['errors: ' strjoin(cellstr(string(report.errors)), ' | ')]; %#ok<AGROW>
+                end
+            end
+            app.PipelineandRuncheckreportLabel.Text = strjoin(lines, newline);
+        end
+
         function NewpipelineMenuSelected(app, event) %#ok<INUSD>
             app.Data.nodes = struct([]);
             app.Data.edges = struct('from',{},'to',{},'fromPort',{},'toPort',{},'condition',{});
             app.SelectedNodeIndex = NaN;
             app.NodeCounter = 0;
             app.RuntimeNodeParams = struct();
+            app.CurrentPipeline = [];
+            app.CurrentPipelinePath = '';
+            app.CurrentRun = [];
+            app.CurrentRunPath = '';
             app.RoiManualSelectedRectangle = NaN;
             clearRoiManualPreviewHandles(app);
             refreshAfterModelChange(app);
         end
 
         function SavecurrentpipelineMenuSelected(app, event) %#ok<INUSD>
-            uialert(app.UIFigure, 'Template save will be implemented after the parameter tabs are stable.', 'Save pipeline', 'Icon', 'info');
+            savePipelineInteractive(app, false);
+        end
+
+        function SavepipelineasMenuSelected(app, event) %#ok<INUSD>
+            savePipelineInteractive(app, true);
+        end
+
+        function LoadpipelineMenuSelected(app, event) %#ok<INUSD>
+            [file, pth] = uigetfile({'pipeline.json','pipeline.json'; '*.json','JSON files'}, 'Load pipeline template', pwd);
+            if isequal(file, 0)
+                return;
+            end
+            try
+                [pipeObj, msg] = pipelineLoad(fullfile(pth, file));
+                if isempty(pipeObj)
+                    error('pipeline2:PipelineLoadFailed', '%s', msg);
+                end
+                loadPipelineFromObject(app, pipeObj);
+            catch ME
+                uialert(app.UIFigure, ME.message, 'Load pipeline', 'Icon', 'error');
+            end
+        end
+
+        function SaverunMenuSelected(app, event) %#ok<INUSD>
+            saveCurrentRun(app, false);
+        end
+
+        function SaverunasMenuSelected(app, event) %#ok<INUSD>
+            saveCurrentRun(app, true);
+        end
+
+        function LoadrunMenuSelected(app, event) %#ok<INUSD>
+            [file, pth] = uigetfile({'run.json','run.json'; '*.json','JSON files'}, 'Load pipeline run', pwd);
+            if isequal(file, 0)
+                return;
+            end
+            try
+                [runObj, msg] = pipelineRunLoad(fullfile(pth, file));
+                if isempty(runObj)
+                    error('pipeline2:RunLoadFailed', '%s', msg);
+                end
+                loadRunIntoUi(app, runObj);
+            catch ME
+                uialert(app.UIFigure, ME.message, 'Load run', 'Icon', 'error');
+            end
         end
 
         function RunButtonPushed(app, event) %#ok<INUSD>
-            refreshValidationReport(app);
-            uialert(app.UIFigure, 'Brick 1 validates the template only. Dry-run and local run come next.', 'Run', 'Icon', 'info');
+            if ~ensurePipelineSavedForRun(app)
+                return;
+            end
+            if ~ensureCurrentProjectForRun(app)
+                return;
+            end
+            [okTemplate, reportTemplate] = refreshValidationReportWithOutput(app);
+            runtimeIssues = validateRuntimeInputs(app);
+            if ~okTemplate
+                app.PipelineandRuncheckreportLabel.Text = formatValidationReport(app, okTemplate, reportTemplate);
+                uialert(app.UIFigure, 'Pipeline template is not valid. Fix blocking issues before run.', 'Run', 'Icon', 'error');
+                return;
+            end
+            blockingRuntimeIssues = runtimeIssues(~contains(string(runtimeIssues), "unusual"));
+            if ~isempty(blockingRuntimeIssues)
+                CheckpipelineButtonPushed(app, []);
+                uialert(app.UIFigure, strjoin(blockingRuntimeIssues, newline), 'Runtime inputs', 'Icon', 'error');
+                return;
+            end
+
+            d = [];
+            try
+                d = uiprogressdlg(app.UIFigure, 'Title', 'Pipeline run', ...
+                    'Message', 'Saving preflight run...', 'Indeterminate', 'on');
+            catch
+            end
+            try
+                ctx = buildRunContext(app);
+                pipeObj = buildExecutablePipelineObject(app, app.CurrentPipelinePath, ctx);
+                app.CurrentPipeline = pipeObj;
+                runObj = createOrUpdateCurrentRun(app, ctx, 'preflight');
+                pipelineRunSave(runObj);
+
+                if ~isempty(d), d.Message = 'Dry-run validation...'; end
+                ctxDry = ctx;
+                ctxDry.dryRun = true;
+                [~, dryReport] = runPipeline(pipeObj, ctxDry);
+                runObj.outputs.dryRunReport = dryReport;
+                runObj.status = 'dry_run_ok';
+                runObj.ctx = ctxDry;
+                pipelineRunSave(runObj);
+                appendRunReport(app, 'Dry-run: OK', dryReport);
+
+                if ~isempty(d), d.Message = 'Running local MATLAB pipeline...'; end
+                ctxRun = ctx;
+                ctxRun.dryRun = false;
+                [ctxOut, report] = runPipeline(pipeObj, ctxRun);
+                runObj.ctx = ctxOut;
+                runObj.outputs.report = report;
+                runObj.status = 'done';
+                runObj.progress = getField(app, report, 'summary', struct());
+                pipelineRunSave(runObj);
+                shallowSave(app.CurrentProject, 'shallowObj');
+                appendRunReport(app, 'Local run: OK', report);
+                app.RuninformationhereLabel.Text = ['Run done: ' fullfile(runObj.path, 'run.json')];
+            catch ME
+                try
+                    if exist('runObj', 'var') && ~isempty(runObj)
+                        runObj.status = 'failed';
+                        runObj.outputs.error = struct('identifier', ME.identifier, 'message', ME.message);
+                        runObj.ctx = buildRunContext(app);
+                        pipelineRunSave(runObj);
+                    end
+                catch
+                end
+                app.PipelineandRuncheckreportLabel.Text = [app.PipelineandRuncheckreportLabel.Text newline newline ...
+                    'Run failed:' newline ME.identifier newline ME.message];
+                uialert(app.UIFigure, ME.message, 'Run failed', 'Icon', 'error');
+            end
+            try, close(d); catch, end
         end
 
         function CloseappButtonPushed(app, event) %#ok<INUSD>
@@ -2599,6 +3678,8 @@ classdef pipeline2 < matlab.apps.AppBase
             app.TypeDropDown.Enable = state;
             app.SubtypeDropDown.Enable = state;
             app.AdvancedmodeCheckBox.Enable = state;
+            try, app.InsertbeforeselectedButton.Enable = state; catch, end
+            try, app.DeleteselectedButton.Enable = state; catch, end
             if ~hasNode
                 app.IdEditField.Value = '';
                 app.AdvancedmodeCheckBox.Value = false;
@@ -2667,6 +3748,10 @@ classdef pipeline2 < matlab.apps.AppBase
             app.NewpipelineMenu = uimenu(app.FileMenu);
             app.NewpipelineMenu.Text = 'New pipeline';
 
+            % Create LoadpipelineMenu
+            app.LoadpipelineMenu = uimenu(app.FileMenu);
+            app.LoadpipelineMenu.Text = 'Load pipeline...';
+
             % Create SavecurrentpipelineMenu
             app.SavecurrentpipelineMenu = uimenu(app.FileMenu);
             app.SavecurrentpipelineMenu.Text = 'Save current pipeline';
@@ -2675,9 +3760,13 @@ classdef pipeline2 < matlab.apps.AppBase
             app.SavepipelineasMenu = uimenu(app.FileMenu);
             app.SavepipelineasMenu.Text = 'Save pipeline as...';
 
+            % Create LoadrunMenu
+            app.LoadrunMenu = uimenu(app.FileMenu);
+            app.LoadrunMenu.Separator = 'on';
+            app.LoadrunMenu.Text = 'Load run...';
+
             % Create SaverunMenu
             app.SaverunMenu = uimenu(app.FileMenu);
-            app.SaverunMenu.Separator = 'on';
             app.SaverunMenu.Text = 'Save run';
 
             % Create SaverunasMenu
@@ -2715,6 +3804,16 @@ classdef pipeline2 < matlab.apps.AppBase
             app.MergegraphButton = uibutton(app.BuildPanel, 'push');
             app.MergegraphButton.Position = [9 219 100 23];
             app.MergegraphButton.Text = 'Merge graph';
+
+            % Create InsertbeforeselectedButton
+            app.InsertbeforeselectedButton = uibutton(app.BuildPanel, 'push');
+            app.InsertbeforeselectedButton.Position = [9 187 140 23];
+            app.InsertbeforeselectedButton.Text = 'Insert before selected';
+
+            % Create DeleteselectedButton
+            app.DeleteselectedButton = uibutton(app.BuildPanel, 'push');
+            app.DeleteselectedButton.Position = [9 155 140 23];
+            app.DeleteselectedButton.Text = 'Delete selected';
 
             % Create UIWorkspacePipelineTable
             app.UIWorkspacePipelineTable = uitable(app.BuildPanel);
