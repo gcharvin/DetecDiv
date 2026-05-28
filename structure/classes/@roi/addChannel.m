@@ -102,7 +102,7 @@ if isempty(obj.image)
         obj.display.alpha = 1;
     else
         if numel(obj.display.alpha) < 1
-        obj.display.alpha(1) = 1;
+            obj.display.alpha(1) = 1;
         else
             % on laisse à 1 par défaut pour le premier channel
             obj.display.alpha(1) = 1;
@@ -171,43 +171,31 @@ end
 
 
     % Métadonnées display (par channel logique, pas par sous-canal)
+    if isempty(obj.display)
+        obj.display = struct();
+    end
     if ~isfield(obj.display,'channel') || isempty(obj.display.channel)
         obj.display.channel = {};
     elseif ischar(obj.display.channel) || isstring(obj.display.channel)
         obj.display.channel = cellstr(obj.display.channel);
     end
 
-    nExistingLogical = numel(obj.display.channel);
-    obj.display = ensureDisplayVector(obj.display, 'indexed', 0, nExistingLogical);
-    obj.display = ensureDisplayVector(obj.display, 'alpha', 1, nExistingLogical);
-    obj.display = ensureDisplayVector(obj.display, 'contour', 0, nExistingLogical);
-    obj.display = ensureDisplayVector(obj.display, 'width', 0, nExistingLogical);
-    obj.display = ensureDisplayVector(obj.display, 'selectedchannel', 1, nExistingLogical);
+    nOld = numel(obj.display.channel);
+    obj.display = localEnsureDisplayCapacity(obj.display, nOld);
+    nNew = nOld + 1;
 
-    obj.display.channel{end+1}   = str;
-    obj.display.intensity(end+1,:) = intensity;
-    obj.display.rgb(end+1,:)     = rgb;
-
-    % S'assure de l'existence des champs
-    obj.display = ensureDisplayVector(obj.display, 'indexed', 0, numel(obj.display.channel)-1);
-    obj.display = ensureDisplayVector(obj.display, 'alpha', 1, numel(obj.display.channel)-1);
-    obj.display = ensureDisplayVector(obj.display, 'contour', 0, numel(obj.display.channel)-1);
-    obj.display = ensureDisplayVector(obj.display, 'width', 0, numel(obj.display.channel)-1);
-    obj.display = ensureDisplayVector(obj.display, 'selectedchannel', 1, numel(obj.display.channel)-1);
-
-    if forceIndexed || sum(intensity)==0
-        obj.display.indexed(end+1) = 1;
-    else
-        obj.display.indexed(end+1) = 0;
-    end
-    obj.display.alpha(end+1)   = 1;
-    obj.display.contour(end+1) = 0;
-    obj.display.width(end+1)   = 0;
-    obj.display.selectedchannel(end+1) = 1;
+    obj.display.channel{nNew} = str;
+    obj.display.intensity(nNew,:) = double(intensity(:)).';
+    obj.display.rgb(nNew,:) = double(rgb(:)).';
+    obj.display.indexed(nNew) = forceIndexed || sum(intensity)==0;
+    obj.display.alpha(nNew) = 1;
+    obj.display.contour(nNew) = 0;
+    obj.display.width(nNew) = 0;
+    obj.display.selectedchannel(nNew) = 1;
     if forceIndexed
-        obj.display.contour(end) = 1;
-        obj.display.alpha(end) = 0.35;
-        obj.display.width(end) = 1.5;
+        obj.display.contour(nNew) = 1;
+        obj.display.alpha(nNew) = 0.35;
+        obj.display.width(nNew) = 1.5;
     end
 
     % channelid : on attribue un nouvel id logique pour ces k sous-canaux
@@ -223,26 +211,49 @@ end
     obj.log(sprintf('Added channel %d ("%s") to ROI', numel(obj.display.channel), str), 'Processing');
 end
 
-function displayStruct = ensureDisplayVector(displayStruct, fieldName, defaultValue, n)
-% Ensure per-logical-channel scalar display fields are row vectors.
-    if ~isfield(displayStruct, fieldName) || isempty(displayStruct.(fieldName))
-        displayStruct.(fieldName) = repmat(defaultValue, 1, n);
-        return;
+function display = localEnsureDisplayCapacity(display, nLog)
+    display.intensity = localEnsureRows(display, 'intensity', nLog, [1 1 1]);
+    display.rgb = localEnsureRows(display, 'rgb', nLog, [1 1 1]);
+    display.indexed = localEnsureVector(display, 'indexed', nLog, 0);
+    display.alpha = localEnsureVector(display, 'alpha', nLog, 1);
+    display.contour = localEnsureVector(display, 'contour', nLog, 0);
+    display.width = localEnsureVector(display, 'width', nLog, 0);
+    display.selectedchannel = localEnsureVector(display, 'selectedchannel', nLog, 1);
+end
+
+function value = localEnsureRows(display, fieldName, nLog, defaultRow)
+    if isfield(display, fieldName) && ~isempty(display.(fieldName))
+        value = double(display.(fieldName));
+    else
+        value = zeros(0, numel(defaultRow));
     end
 
-    value = displayStruct.(fieldName);
-    if islogical(value)
-        value = double(value);
+    if isvector(value) && numel(value) == numel(defaultRow)
+        value = reshape(value, 1, []);
     end
-    value = value(:).';
+    if size(value, 2) ~= numel(defaultRow)
+        value = reshape(value, [], numel(defaultRow));
+    end
+    if size(value, 1) < nLog
+        value(end+1:nLog,:) = repmat(defaultRow, nLog - size(value,1), 1);
+    elseif size(value, 1) > nLog
+        value = value(1:nLog,:);
+    end
+end
 
-    if numel(value) < n
-        value(end+1:n) = defaultValue;
-    elseif numel(value) > n
-        value = value(1:n);
+function value = localEnsureVector(display, fieldName, nLog, defaultValue)
+    if isfield(display, fieldName) && ~isempty(display.(fieldName))
+        value = display.(fieldName);
+        value = value(:).';
+    else
+        value = zeros(1, 0);
     end
 
-    displayStruct.(fieldName) = value;
+    if numel(value) < nLog
+        value(end+1:nLog) = defaultValue;
+    elseif numel(value) > nLog
+        value = value(1:nLog);
+    end
 end
 
 function tf = isIndexedResultChannel(channelName)
