@@ -13,6 +13,7 @@ classdef processDataGUI < matlab.apps.AppBase
         SelectallButton               matlab.ui.control.Button
         UIROITable                    matlab.ui.control.Table
         ParametersTab                 matlab.ui.container.Tab
+        RefreshchannelsButton         matlab.ui.control.Button
         UIParametersTable             matlab.ui.control.Table
         CloseButton                   matlab.ui.control.Button
         ProcessselecteddataButton     matlab.ui.control.Button
@@ -577,7 +578,12 @@ function channels = collectChannelsFromSelection(app)
         end
     end
 
-    channels = unique(channels, 'stable');
+    if app.allowDataFileScan
+        scannedChannels = scanChannelNamesFromSelection(app, 25);
+        channels = [channels, scannedChannels(:)']; %#ok<AGROW>
+    end
+
+    channels = normalizeChannelNamesForProcessorGUI(app, channels);
 end
 
 function channels = getObjectChannelNames(app, obj) %#ok<INUSD>
@@ -586,8 +592,7 @@ function channels = getObjectChannelNames(app, obj) %#ok<INUSD>
     try
         if isprop(obj,'channel') && ~isempty(obj.channel)
             ch = obj.channel;
-            if ischar(ch) || isstring(ch), ch = cellstr(ch); end
-            channels = ch(:)';
+            channels = normalizeChannelNamesForProcessorGUI(app, ch);
         end
     catch
         channels = {};
@@ -685,6 +690,84 @@ function dataNames = scanDataSeriesFromSelection(app, dataClass, maxRoisPerRow)
     dataNames = unique(dataNames(~cellfun(@isempty, dataNames)), 'stable');
 end
 
+function channels = scanChannelNamesFromSelection(app, maxRoisPerRow)
+% Scan selected ROI HDF5 headers on demand without loading image volumes.
+    if nargin < 2 || isempty(maxRoisPerRow)
+        maxRoisPerRow = 25;
+    end
+
+    channels = {};
+    rows = getActiveRows(app);
+    if isempty(rows)
+        return;
+    end
+
+    for r = rows(:)'
+        if r > numel(app.Data.storedobj), continue; end
+        obj = app.Data.storedobj(r).data;
+        if isempty(obj) || ~isprop(obj,'roi'), continue; end
+
+        roiStr = app.UIROITable.Data{r,5};
+        roiIdx = str2num(roiStr); %#ok<ST2NM>
+        if isempty(roiIdx)
+            roiIdx = 1:numel(obj.roi);
+        end
+        roiIdx = roiIdx(roiIdx>=1 & roiIdx<=numel(obj.roi));
+        roiIdx = roiIdx(1:min(numel(roiIdx), maxRoisPerRow));
+
+        for k = roiIdx(:)'
+            if k > numel(obj.roi), continue; end
+            ch = getRoiStoredChannelNames(app, obj.roi(k));
+            channels = [channels, ch(:)']; %#ok<AGROW>
+        end
+    end
+
+    channels = normalizeChannelNamesForProcessorGUI(app, channels);
+end
+
+function channels = getRoiStoredChannelNames(app, rr) %#ok<INUSD>
+    channels = {};
+
+    try
+        if isempty(rr.path) || isempty(rr.id)
+            return;
+        end
+        h5File = fullfile(rr.path, ['im_' char(string(rr.id)) '.h5']);
+        if ~isfile(h5File)
+            return;
+        end
+        info = h5info(h5File);
+        channels = collectH5ChannelNamesLocal(app, info);
+    catch
+        channels = {};
+    end
+end
+
+function channels = collectH5ChannelNamesLocal(app, info) %#ok<INUSD>
+    channels = {};
+
+    if isfield(info, 'Attributes')
+        for ii = 1:numel(info.Attributes)
+            attr = info.Attributes(ii);
+            if strcmpi(char(string(attr.Name)), 'channel_name')
+                channels{end+1} = char(string(attr.Value)); %#ok<AGROW>
+            end
+        end
+    end
+
+    if isfield(info, 'Datasets')
+        for ii = 1:numel(info.Datasets)
+            channels = [channels, collectH5ChannelNamesLocal(app, info.Datasets(ii))]; %#ok<AGROW>
+        end
+    end
+
+    if isfield(info, 'Groups')
+        for ii = 1:numel(info.Groups)
+            channels = [channels, collectH5ChannelNamesLocal(app, info.Groups(ii))]; %#ok<AGROW>
+        end
+    end
+end
+
 function dataNames = getRoiDataSeriesNames(app, rr, dataClass) %#ok<INUSD>
     dataNames = {};
 
@@ -730,13 +813,52 @@ function channels = getRoiChannelNames(app, roiObj) %#ok<INUSD>
         dispStruct = roiObj.display;
         if isfield(dispStruct,'channel') && ~isempty(dispStruct.channel)
             ch = dispStruct.channel;
-            if ischar(ch) || isstring(ch), ch = cellstr(ch); end
-            channels = ch(:)';
+            channels = normalizeChannelNamesForProcessorGUI(app, ch);
             return;
         end
     catch
     end
 
+end
+
+function channels = normalizeChannelNamesForProcessorGUI(app, channels) %#ok<INUSD>
+% Normalize mixed channel metadata to a unique cellstr row for UI choices.
+    if isempty(channels)
+        channels = {};
+        return;
+    end
+
+    if ischar(channels)
+        channels = cellstr(channels);
+    elseif isstring(channels) || isnumeric(channels) || islogical(channels) || iscategorical(channels)
+        channels = cellstr(string(channels(:)));
+    elseif iscell(channels)
+        out = {};
+        for ii = 1:numel(channels)
+            item = channels{ii};
+            if isempty(item)
+                continue;
+            end
+            if ischar(item)
+                out{end+1} = item; %#ok<AGROW>
+            elseif isstring(item) || isnumeric(item) || islogical(item) || iscategorical(item)
+                vals = cellstr(string(item(:)));
+                out = [out, vals(:)']; %#ok<AGROW>
+            end
+        end
+        channels = out;
+    else
+        channels = {};
+    end
+
+    if isempty(channels)
+        channels = {};
+        return;
+    end
+
+    channels = cellfun(@(x) char(strtrim(string(x))), channels(:)', 'UniformOutput', false);
+    channels = channels(~cellfun(@isempty, channels));
+    channels = unique(channels, 'stable');
 end
 
 function param = buildProcessorParam(app, processFun, channels)
@@ -842,6 +964,7 @@ function refreshParamTable(app)
     if app.isRefreshing, return; end
     app.isRefreshing = true;
     resetScanFlag = onCleanup(@() resetDataFileScanFlag(app)); %#ok<NASGU>
+    selectedKey = app.paramSelectedKey;
 
     procObj = getSelectedProcessor(app);
     if isempty(procObj)
@@ -873,8 +996,12 @@ function refreshParamTable(app)
     app.UIParametersTable.ColumnEditable = [false true];
 
     if height(app.paramTableData) > 0
-        app.paramSelectedKey = app.paramTableData.Param{1};
-        app.UIParametersTable.Selection = [1 1];
+        row = find(strcmp(app.paramTableData.Param, selectedKey), 1);
+        if isempty(row)
+            row = 1;
+        end
+        app.paramSelectedKey = app.paramTableData.Param{row};
+        app.UIParametersTable.Selection = [row 1];
         showParamEditor(app, app.paramSelectedKey);
     end
 
@@ -1483,6 +1610,13 @@ restoreSelectionFromRunProfile(app, procObj);
     end
         end
 
+        % Button pushed function: RefreshchannelsButton
+        function RefreshchannelsButtonPushed(app, event)
+            app.allowDataFileScan = true;
+            app.paramChannelsSig = '';
+            refreshParamTable(app);
+        end
+
         % Button pushed function: SaveparametersButton
         function SaveparametersButtonPushed(app, event)
      
@@ -1657,6 +1791,12 @@ procObj.runProfiles.selection = selection;
             app.UIParametersTable.CellEditCallback = createCallbackFcn(app, @UIParametersTableCellEdit, true);
             app.UIParametersTable.CellSelectionCallback = createCallbackFcn(app, @UIParametersTableCellSelection, true);
             app.UIParametersTable.Position = [12 17 448 500];
+
+            % Create RefreshchannelsButton
+            app.RefreshchannelsButton = uibutton(app.ParametersTab, 'push');
+            app.RefreshchannelsButton.ButtonPushedFcn = createCallbackFcn(app, @RefreshchannelsButtonPushed, true);
+            app.RefreshchannelsButton.Position = [496 487 250 30];
+            app.RefreshchannelsButton.Text = 'Refresh ROI channels';
 
             % Create SaveparametersButton
             app.SaveparametersButton = uibutton(app.ProcessdataUIFigure, 'push');

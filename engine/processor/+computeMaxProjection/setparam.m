@@ -10,7 +10,7 @@ if isfield(ctx,'channels') && ~isempty(ctx.channels)
     listChannels = normalizeChannelList(ctx.channels);
 else
     try
-        listChannels = listAvailableChannels;
+        listChannels = normalizeChannelList(listAvailableChannels);
     catch
         listChannels = {};
     end
@@ -48,18 +48,39 @@ paramout.tip = tip;
 end
 
 function out = normalizeChannelList(ch)
-    if ischar(ch) || isstring(ch)
-        ch = cellstr(ch);
+    if isempty(ch)
+        out = {};
+        return;
     end
-    if ~iscell(ch)
+
+    if ischar(ch)
+        ch = cellstr(ch);
+    elseif isstring(ch) || isnumeric(ch) || islogical(ch) || iscategorical(ch)
+        ch = cellstr(string(ch(:)));
+    elseif ~iscell(ch)
         ch = {char(string(ch))};
     end
+
     out = {};
     for i = 1:numel(ch)
-        v = char(string(ch{i}));
-        if ~isempty(v)
-            out{end+1} = v; %#ok<AGROW>
+        item = ch{i};
+        if isempty(item)
+            continue;
+        end
+        if ischar(item)
+            out{end+1} = item; %#ok<AGROW>
+        elseif isstring(item) || isnumeric(item) || islogical(item) || iscategorical(item)
+            vals = cellstr(string(item(:)));
+            out = [out vals(:)']; %#ok<AGROW>
         end
     end
+
+    if isempty(out)
+        out = {};
+        return;
+    end
+
+    out = cellfun(@(x) char(strtrim(string(x))), out(:)', 'UniformOutput', false);
+    out = out(~cellfun(@isempty, out));
     out = unique(out, 'stable');
 end

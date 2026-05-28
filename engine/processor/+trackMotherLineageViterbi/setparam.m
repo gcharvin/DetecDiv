@@ -9,12 +9,10 @@ listChannels = {};
 if isfield(ctx, 'channels') && ~isempty(ctx.channels)
     listChannels = ctx.channels;
 end
-if ischar(listChannels) || isstring(listChannels)
-    listChannels = cellstr(listChannels);
-end
+listChannels = normalizeChannelList(listChannels);
 if isempty(listChannels) && ~(isfield(ctx,'useProvidedChannels') && ctx.useProvidedChannels)
     try
-        listChannels = listAvailableChannels;
+        listChannels = normalizeChannelList(listAvailableChannels);
     catch
         listChannels = {};
     end
@@ -79,4 +77,42 @@ paramout.tip = { ...
     'Bottom direction sign for daughter_trap.', ...
     'Minimum bud/mother area ratio for bud-to-mother switches.', ...
     'Bonus for a valid bud-to-mother switch.'};
+end
+
+function out = normalizeChannelList(channels)
+    if isempty(channels)
+        out = {};
+        return;
+    end
+
+    if ischar(channels)
+        out = cellstr(channels);
+    elseif isstring(channels) || isnumeric(channels) || islogical(channels) || iscategorical(channels)
+        out = cellstr(string(channels(:)));
+    elseif iscell(channels)
+        out = {};
+        for ii = 1:numel(channels)
+            item = channels{ii};
+            if isempty(item)
+                continue;
+            end
+            if ischar(item)
+                out{end+1} = item; %#ok<AGROW>
+            elseif isstring(item) || isnumeric(item) || islogical(item) || iscategorical(item)
+                vals = cellstr(string(item(:)));
+                out = [out, vals(:).']; %#ok<AGROW>
+            end
+        end
+    else
+        out = {};
+    end
+
+    if isempty(out)
+        out = {};
+        return;
+    end
+
+    out = cellfun(@(x) char(strtrim(string(x))), out(:).', 'UniformOutput', false);
+    out = out(~cellfun(@isempty, out));
+    out = unique(out, 'stable');
 end

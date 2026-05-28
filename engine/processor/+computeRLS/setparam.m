@@ -24,9 +24,7 @@ else
     end
 end
 
-if ischar(listout) || isstring(listout)
-    listout = cellstr(listout);
-end
+listout = normalizeChoiceList(listout);
 
 if isempty(listout)
     listout = {''};
@@ -55,4 +53,42 @@ paramout.ClogThreshold = 1;
 paramout.EmptyThresholdDiscard = 500;
 paramout.EmptyThresholdNext = 100;
 paramout.tip = tip;
+end
+
+function out = normalizeChoiceList(v)
+    if isempty(v)
+        out = {};
+        return;
+    end
+
+    if ischar(v)
+        v = cellstr(v);
+    elseif isstring(v) || isnumeric(v) || islogical(v) || iscategorical(v)
+        v = cellstr(string(v(:)));
+    elseif ~iscell(v)
+        v = {char(string(v))};
+    end
+
+    out = {};
+    for i = 1:numel(v)
+        item = v{i};
+        if isempty(item)
+            continue;
+        end
+        if ischar(item)
+            out{end+1} = item; %#ok<AGROW>
+        elseif isstring(item) || isnumeric(item) || islogical(item) || iscategorical(item)
+            vals = cellstr(string(item(:)));
+            out = [out vals(:)']; %#ok<AGROW>
+        end
+    end
+
+    if isempty(out)
+        out = {};
+        return;
+    end
+
+    out = cellfun(@(x) char(strtrim(string(x))), out(:)', 'UniformOutput', false);
+    out = out(~cellfun(@isempty, out));
+    out = unique(out, 'stable');
 end
