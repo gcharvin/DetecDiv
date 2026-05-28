@@ -525,7 +525,11 @@ function out = updateDropdownValue(app, dropCell, selected) %#ok<INUSD>
         return;
     end
     out = dropCell;
-    out{end} = char(string(selected));
+    selected = char(string(selected));
+    if ~isempty(selected) && ~any(strcmp(out(1:max(end-1,1)), selected))
+        out = [out(1:end-1), {selected}, out(end)];
+    end
+    out{end} = selected;
 end
 
 function rows = getActiveRows(app)
@@ -941,6 +945,9 @@ function merged = mergeParamStruct(app, oldParam, newParam)
             if any(strcmp(newVal, sel))
                 newVal{end} = sel;
                 merged.(k) = newVal;
+            elseif ~isempty(sel)
+                newVal = [newVal(1:end-1), {sel}, {sel}];
+                merged.(k) = newVal;
             end
         else
             merged.(k) = oldVal;
@@ -1016,6 +1023,64 @@ end
 function resetDataFileScanFlag(app)
     app.allowDataFileScan = false;
     app.isRefreshing = false;
+end
+
+function param = syncProcessParamFromTable(app, param)
+% Persist the values currently displayed in the parameter table.
+    if nargin < 2 || isempty(param)
+        param = struct();
+    end
+    if isempty(app.UIParametersTable.Data)
+        return;
+    end
+
+    d = app.UIParametersTable.Data;
+    if istable(d)
+        keys = d.Param;
+        vals = d.Value;
+    else
+        keys = d(:,1);
+        vals = d(:,2);
+    end
+
+    for ii = 1:numel(keys)
+        key = char(string(keys{ii}));
+        if ~isfield(param, key)
+            continue;
+        end
+        val = vals{ii};
+        if isfield(app.paramSpec, key)
+            typ = app.paramSpec.(key).type;
+        else
+            typ = '';
+        end
+
+        switch typ
+            case 'enum'
+                if iscell(param.(key))
+                    param.(key) = updateDropdownValue(app, param.(key), val);
+                else
+                    param.(key) = char(string(val));
+                end
+            case 'logical'
+                if islogical(val)
+                    param.(key) = logical(val);
+                else
+                    param.(key) = strcmpi(char(string(val)), 'true');
+                end
+            case 'numeric'
+                parsed = str2num(char(string(val))); %#ok<ST2NM>
+                if ~isempty(parsed)
+                    param.(key) = parsed;
+                end
+            otherwise
+                if iscell(param.(key))
+                    param.(key) = updateDropdownValue(app, param.(key), val);
+                else
+                    param.(key) = char(string(val));
+                end
+        end
+    end
 end
 
 function nFrames = inferFrameCountFromObject(app, obj) %#ok<INUSD>
@@ -1495,6 +1560,7 @@ restoreSelectionFromRunProfile(app, procObj);
     d.Value=0.01;
 
     % ---- extract runtime params from table ----
+    app.processParam = syncProcessParamFromTable(app, app.processParam);
     procParam = app.processParam;
     runParallel = false;
     runEnv = 'CPU';
@@ -1630,6 +1696,7 @@ restoreSelectionFromRunProfile(app, procObj);
     % --- get current param struct ---
     param = [];
     if isprop(app,'processParam') && ~isempty(app.processParam)
+        app.processParam = syncProcessParamFromTable(app, app.processParam);
         param = app.processParam;
     elseif isfield(app.Data,'processParam') && ~isempty(app.Data.processParam)
         param = app.Data.processParam;

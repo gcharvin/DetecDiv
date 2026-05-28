@@ -618,54 +618,6 @@ end
     dataout(cc).userData.mask1_class=paramout.(['mask' num2str(1) '_class']);
     dataout(cc).userData.mask2_class=paramout.(['mask' num2str(2) '_class']);
 
-      for i=1:numel(channelsExtract)
-        cha=channelsExtract{i}; % cha has several elements in case of an RGB image
-        bwn=1;
-        if numel(chabw{bwn})
-           
-            % do not  transpose sizes HERE if the dimension of the first dim is 1
-
-
-          dataout(cc).data.(localMetricVarName('Mean', channelsName{i}, paramout.(['mask' num2str(bwn) '_label'])))=permute(mean(moyennes1(:,cha,:),2),[3 1 2]);
-          dataout(cc).data.(localMetricVarName('Tot', channelsName{i}, paramout.(['mask' num2str(bwn) '_label'])))=permute(mean(sommes1(:,cha,:),2),[3 1 2]);
-          dataout(cc).data.(localMetricVarName('MeanTop', channelsName{i}, paramout.(['mask' num2str(bwn) '_label'])))=permute(mean(moyenne_brillants1(:,cha,:),2),[3 1 2]);
-          dataout(cc).data.(localMetricVarName('TotTop', channelsName{i}, paramout.(['mask' num2str(bwn) '_label'])))=permute(mean(somme_brillants1(:,cha,:),2),[3 1 2]);
-          dataout(cc).data.(localMetricVarName('MeanNoBckg', channelsName{i}, paramout.(['mask' num2str(bwn) '_label'])))=permute(mean(difference1(:,cha,:),2),[3 1 2]);
-
-        end
-        bwn=2;
-        if numel(chabw{bwn})
-         dataout(cc).data.(localMetricVarName('Mean', channelsName{i}, paramout.(['mask' num2str(bwn) '_label'])))=permute(mean(moyennes2(:,cha,:),2),[3 1 2]);
-          dataout(cc).data.(localMetricVarName('Tot', channelsName{i}, paramout.(['mask' num2str(bwn) '_label'])))=permute(mean(sommes2(:,cha,:),2),[3 1 2]);
-          dataout(cc).data.(localMetricVarName('MeanTop', channelsName{i}, paramout.(['mask' num2str(bwn) '_label'])))=permute(mean(moyenne_brillants2(:,cha,:),2),[3 1 2]);
-          dataout(cc).data.(localMetricVarName('TotTop', channelsName{i}, paramout.(['mask' num2str(bwn) '_label'])))=permute(mean(somme_brillants2(:,cha,:),2),[3 1 2]);
-          dataout(cc).data.(localMetricVarName('MeanNoBckg', channelsName{i}, paramout.(['mask' num2str(bwn) '_label'])))=permute(mean(difference2(:,cha,:),2),[3 1 2]);
-        end
-        
-      end
-        for i=1:numel(channelsExtract)
-            for j=i+1:numel(channelsExtract) % Assurez-vous de calculer chaque paire une seule fois
-                cha_i = channelsExtract{i};
-                cha_j = channelsExtract{j};
-                      bwn=1;
-
-                     if numel(chabw{bwn})
-                             ratioMeanNoBckg = squeeze(mean(difference1(:,cha_i,:),2) ./ mean(difference1(:,cha_j,:),2)).';
-                             ratioName = localRatioMetricVarName(channelsName{i}, channelsName{j}, paramout.(['mask' num2str(bwn) '_label']));
-                              dataout(cc).data.(ratioName)=ratioMeanNoBckg;
-                     end
-
-                      bwn=2;
-
-                     if numel(chabw{bwn})
-                             ratioMeanNoBckg = squeeze(mean(difference2(:,cha_i,:),2) ./ mean(difference2(:,cha_j,:),2)).';
-                             ratioName = localRatioMetricVarName(channelsName{i}, channelsName{j}, paramout.(['mask' num2str(bwn) '_label']));
-                              dataout(cc).data.(ratioName)=ratioMeanNoBckg;
-                      end
-
-            end
-        end
-
         dataout(cc).plotGroup={[] [] [] [] [] unique(group)};
     %roiobj.data(cc).plotGroup={[] [] [] [] [] unique(group)};
 end
