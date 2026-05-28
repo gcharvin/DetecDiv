@@ -415,7 +415,7 @@ end
 
 switch mode
     case 'custom'
-        args = [args, {'mode','custom'}]; %#ok<AGROW>
+        args = {'mode','custom'};
         try
             if isfield(pyCfg,'envName') && ~isempty(pyCfg.envName)
                 args = [args, {'envName', char(string(pyCfg.envName))}]; %#ok<AGROW>
@@ -429,7 +429,7 @@ switch mode
         catch
         end
     otherwise
-        args = [args, {'mode','default'}]; %#ok<AGROW>
+        args = {'mode','default'};
 end
 end
 

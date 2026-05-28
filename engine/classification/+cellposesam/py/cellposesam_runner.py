@@ -2,6 +2,8 @@ import os
 import json
 import traceback
 import builtins
+import hashlib
+import time
 import numpy as np
 import scipy.io as sio
 import torch
@@ -94,15 +96,90 @@ def to_nhwc(arr, nframes):
     raise ValueError(f"Unsupported gfp ndim={arr.ndim}, shape={arr.shape}")
 
 
+def local_model_cache_path(model_path):
+    if not model_path or model_path == "sam" or not os.path.isfile(model_path):
+        return model_path
+
+    try:
+        st = os.stat(model_path)
+    except OSError:
+        return model_path
+
+    cache_root = os.path.join(
+        os.environ.get("LOCALAPPDATA", os.path.expanduser("~")),
+        "DetecDiv",
+        "cellposesam_model_cache",
+    )
+    os.makedirs(cache_root, exist_ok=True)
+
+    digest = hashlib.sha1(os.path.abspath(model_path).encode("utf-8")).hexdigest()[:16]
+    base = os.path.basename(model_path) or "model"
+    cache_path = os.path.join(cache_root, f"{base}_{digest}.pth")
+    meta_path = cache_path + ".meta"
+    signature = f"{os.path.abspath(model_path)}\n{st.st_size}\n{int(st.st_mtime)}\n"
+
+    if os.path.isfile(cache_path) and os.path.isfile(meta_path):
+        try:
+            with open(meta_path, "r", encoding="utf-8") as f:
+                if f.read() == signature and os.path.getsize(cache_path) == st.st_size:
+                    print(f"[PY] Using cached local model: {cache_path}", flush=True)
+                    return cache_path
+        except OSError:
+            pass
+
+    t0 = time.time()
+    tmp_path = cache_path + ".tmp"
+    print(f"[PY] Caching model locally: {model_path} -> {cache_path}", flush=True)
+    try:
+        copy_file_chunked(model_path, tmp_path, st.st_size)
+        os.replace(tmp_path, cache_path)
+        try:
+            os.utime(cache_path, (st.st_atime, st.st_mtime))
+        except OSError:
+            pass
+        with open(meta_path, "w", encoding="utf-8") as f:
+            f.write(signature)
+        print(f"[PY] Model cache copy finished in {time.time() - t0:.2f}s", flush=True)
+        return cache_path
+    except OSError as exc:
+        print(f"[WARN] Local model cache failed ({exc}); loading from original path.", flush=True)
+        try:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except OSError:
+            pass
+        return model_path
+
+
+def copy_file_chunked(src, dst, total_size, chunk_size=8 * 1024 * 1024):
+    copied = 0
+    last_report = time.time()
+    with open(src, "rb") as fsrc, open(dst, "wb") as fdst:
+        while True:
+            chunk = fsrc.read(chunk_size)
+            if not chunk:
+                break
+            fdst.write(chunk)
+            copied += len(chunk)
+            now = time.time()
+            if now - last_report >= 10:
+                pct = 100.0 * copied / max(total_size, 1)
+                print(f"[PY] Model cache copy progress: {pct:.1f}% ({copied}/{total_size} bytes)", flush=True)
+                last_report = now
+
+
 def get_model(model_path, gpu):
     global MODEL, MODEL_PATH, MODEL_GPU
-    if MODEL is None or MODEL_PATH != model_path or MODEL_GPU != gpu:
-        MODEL = models.CellposeModel(gpu=gpu, pretrained_model=model_path)
-        MODEL_PATH = model_path
+    load_path = local_model_cache_path(model_path)
+    if MODEL is None or MODEL_PATH != load_path or MODEL_GPU != gpu:
+        t0 = time.time()
+        print(f"[PY] Loading CellposeSAM model: {load_path} | gpu={gpu}", flush=True)
+        MODEL = models.CellposeModel(gpu=gpu, pretrained_model=load_path)
+        MODEL_PATH = load_path
         MODEL_GPU = gpu
-        print(f"[PY] Loaded CellposeSAM model: {model_path} | gpu={gpu}")
+        print(f"[PY] Loaded CellposeSAM model in {time.time() - t0:.2f}s | gpu={gpu}", flush=True)
     else:
-        print(f"[PY] Reusing CellposeSAM model: {model_path} | gpu={gpu}")
+        print(f"[PY] Reusing CellposeSAM model: {load_path} | gpu={gpu}", flush=True)
     return MODEL
 
 

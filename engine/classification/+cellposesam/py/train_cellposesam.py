@@ -12,6 +12,34 @@ import matplotlib.pyplot as plt
 from cellpose import io, train, models
 
 
+def cuda_runtime_usable():
+    if not torch.cuda.is_available():
+        return False, "torch.cuda.is_available() is false"
+
+    try:
+        major, minor = torch.cuda.get_device_capability(0)
+        device_sm = f"sm_{major}{minor}"
+        arch_list = list(torch.cuda.get_arch_list())
+        device_name = torch.cuda.get_device_name(0)
+        print(f"[INFO] CUDA device: {device_name} | capability: {device_sm}")
+        print(f"[INFO] PyTorch CUDA arch list: {arch_list}")
+        if arch_list and device_sm not in arch_list:
+            return False, (
+                f"PyTorch was not built for this GPU capability ({device_sm}); "
+                f"supported archs are {arch_list}"
+            )
+    except Exception as exc:
+        return False, f"CUDA capability check failed: {exc}"
+
+    try:
+        x = torch.ones((1,), device="cuda")
+        _ = (x + 1).cpu().numpy()
+    except Exception as exc:
+        return False, f"CUDA runtime test failed: {exc}"
+
+    return True, ""
+
+
 def load_config():
     cfg_path = os.environ.get("CPSAM_CONFIG", "")
     if not cfg_path:
@@ -129,9 +157,15 @@ def train_model():
     use_pretrained = bool(cfg.get("use_pretrained", True))
     verbose = bool(cfg.get("verbose", True))
     gpu = bool(cfg.get("gpu", True))
+    if gpu:
+        cuda_ok, cuda_reason = cuda_runtime_usable()
+        if not cuda_ok:
+            raise RuntimeError(
+                "GPU training was requested but the active PyTorch/CUDA build is not usable. "
+                f"Reason: {cuda_reason}. Install a PyTorch wheel compatible with this GPU."
+            )
     if gpu and not torch.cuda.is_available():
-        print("[WARN] GPU requested but not available. Falling back to CPU.")
-        gpu = False
+        raise RuntimeError("GPU training was requested but torch.cuda.is_available() is false.")
 
     weight_decay = float(cfg.get("weight_decay", 1e-5))
     learning_rate = float(cfg.get("learning_rate", 1e-4))
@@ -159,18 +193,18 @@ def train_model():
 
     pretrained_model = "sam" if use_pretrained else None
 
-    model = models.CellposeModel(
-        gpu=gpu,
-        device=device,
-        pretrained_model=pretrained_model,
-    )
-
     if len(val_imgs) > 0:
         test_data = val_imgs
         test_labels = val_labels
     else:
         test_data = None
         test_labels = None
+
+    model = models.CellposeModel(
+        gpu=gpu,
+        device=device,
+        pretrained_model=pretrained_model,
+    )
 
     model_path, train_losses, test_losses = train.train_seg(
         model.net,

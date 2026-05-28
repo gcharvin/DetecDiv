@@ -32,13 +32,17 @@ if isfield(ctx,'params') && isstruct(ctx.params) && ~isempty(ctx.params)
     classif.trainingParam = cellposesam.utils.applyParamOverrides(classif.trainingParam, ctx.params);
 end
 
-runCellposeTrain(classif);
+runCellposeTrain(classif, ctx);
 
 out.status = "OK";
 end
 
-function runCellposeTrain(classif)
+function runCellposeTrain(classif, ctx)
 % Train a Cellpose/CellposeSAM model from a HDF5 framebank.
+
+if nargin < 2 || isempty(ctx)
+    ctx = struct();
+end
 
 trainingParam = classif.trainingParam;
 if isempty(trainingParam)
@@ -130,7 +134,14 @@ try
     selectArgs = buildPythonSelectionArgsLocal(ctx, classif);
     test = select_and_load_conda_env(selectArgs{:}); %#ok<NASGU>
 catch ME
-    warning('select_and_load_conda_env failed: %s', ME.message);
+    msg = ME.message;
+    if contains(msg, 'CondaToSNonInteractiveError') || contains(msg, 'Terms of Service')
+        msg = [msg newline newline ...
+            'Anaconda requires Terms of Service acceptance before DetecDiv can create the default env.' newline ...
+            'Run the three "conda tos accept" commands shown above, then relaunch training.'];
+    end
+    error('cellposesam:PythonBootstrapFailed', ...
+        'select_and_load_conda_env failed before training could start:%s%s', newline, msg);
 end
 cellposesam.utils.ensurePythonDeps(classif);
 
@@ -168,7 +179,7 @@ end
 
 switch mode
     case 'custom'
-        args = [args, {'mode','custom'}]; %#ok<AGROW>
+        args = {'mode','custom'};
         try
             if isfield(pyCfg,'envName') && ~isempty(pyCfg.envName)
                 args = [args, {'envName', char(string(pyCfg.envName))}]; %#ok<AGROW>
@@ -182,7 +193,7 @@ switch mode
         catch
         end
     otherwise
-        args = [args, {'mode','default'}]; %#ok<AGROW>
+        args = {'mode','default'};
 end
 end
 

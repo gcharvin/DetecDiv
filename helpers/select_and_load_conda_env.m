@@ -88,10 +88,15 @@ function info = select_and_load_conda_env(varargin)
             [ok, sysver, torchInfo] = quickPythonHealthCheck(debug);
             if ok
                 if pyenvMatchesSelection(pe, selection)
-                    fprintf('[Detecdiv] Existing pyenv is healthy and matches selection -> keeping it.\n');
-                    printSummary(pe, sysver, torchInfo);
-                    info = packInfoExisting(pe, sysver, torchInfo, debug);
-                    return;
+                    if selection.mode == "default" && ~existingTorchRuntimeCompatible(torchInfo, debug)
+                        fprintf('[Detecdiv] Existing pyenv matches selection but torch runtime is not suitable -> terminating...\n');
+                        try, terminate(pyenv); catch, end
+                    else
+                        fprintf('[Detecdiv] Existing pyenv is healthy and matches selection -> keeping it.\n');
+                        printSummary(pe, sysver, torchInfo);
+                        info = packInfoExisting(pe, sysver, torchInfo, debug);
+                        return;
+                    end
                 else
                     fprintf('[Detecdiv] Existing pyenv does not match selection -> terminating...\n');
                     try, terminate(pyenv); catch, end
@@ -299,6 +304,19 @@ function [ok, sysver, torchInfo] = quickPythonHealthCheck(debug)
     catch ME
         if debug, fprintf('[DEBUG] quick check: torch inspect failed (non-fatal): %s\n', ME.message); end
     end
+end
+
+function tf = existingTorchRuntimeCompatible(torchInfo, debug)
+tf = true;
+gpuText = lower(string(getNvidiaGPUText()));
+isBlackwell = contains(gpuText, "blackwell") || contains(gpuText, "rtx 50") || contains(gpuText, "rtx pro 500");
+if isBlackwell
+    tf = torchInfo.installed && contains(string(torchInfo.version), "+cu128") && string(torchInfo.cuda) == "12.8";
+end
+if debug
+    fprintf('[DEBUG] existingTorchRuntimeCompatible=%d (version=%s cuda=%s gpu="%s")\n', ...
+        tf, char(string(torchInfo.version)), char(string(torchInfo.cuda)), char(gpuText));
+end
 end
 
 function [okSys, pyVer, okTorch, torchVer, torchCUDA, torchAvail] = matlabTorchChecks(debug)
@@ -1062,21 +1080,36 @@ function ensureDetecdivPackages(condaCmd, debug)
     % --- torch ---
     fprintf('[Detecdiv]   - Checking torch...\n');
     hasTorch = condaRunPyImport(condaCmd, envName, "torch", debug);
-    if ~hasTorch
-        fprintf('[Detecdiv]   - Installing torch (GPU=%d, cuda=12.1 if GPU)... Be patient !\n', useGPU);
-
-        if useGPU
-            sub = "install -y -n detecdiv_python pytorch torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvidia";
+    installTorch = ~hasTorch;
+    if hasTorch
+        [okTorchInitial, outTorchInitial] = verifyTorch(condaCmd, envName, debug);
+        installTorch = ~okTorchInitial;
+        if installTorch
+            fprintf('[Detecdiv]   - Existing torch is not compatible with this GPU/runtime; reinstalling.\n');
+            if debug
+                fprintf('[DEBUG] Initial torch verification failed:\n%s\n', outTorchInitial);
+            end
         else
-            sub = "install -y -n detecdiv_python pytorch torchvision torchaudio cpuonly -c pytorch";
+            fprintf('[Detecdiv]   - torch already installed and verified.\n');
         end
+    end
 
-        [st,out] = runConda(sub, debug, condaCmd);
-        if st ~= 0
-            error('Torch install failed. Output:\n%s', out);
+    if installTorch
+        if useGPU
+            fprintf('[Detecdiv]   - Installing torch GPU build selected for detected NVIDIA architecture...\n');
+            okPipTorch = attemptTorchPipFallback(condaCmd, envName, true, debug);
+            if ~okPipTorch
+                error('Torch GPU install failed or installed build did not pass CUDA verification.');
+            end
+        else
+            fprintf('[Detecdiv]   - Installing torch CPU build...\n');
+            okPipTorch = attemptTorchPipFallback(condaCmd, envName, false, debug);
+            if ~okPipTorch
+                error('Torch CPU install failed or installed build did not verify.');
+            end
         end
     else
-        fprintf('[Detecdiv]   - torch already installed.\n');
+        fprintf('[Detecdiv]   - torch install step skipped.\n');
     end
 
     % --- OME-Zarr I/O ---
@@ -1151,7 +1184,17 @@ function [ok, out] = verifyTorch(condaCmd, envName, debug)
         "import torch;", ...
         "print('torch', torch.__version__);", ...
         "print('cuda_version', getattr(torch.version,'cuda',None));", ...
-        "print('cuda_available', torch.cuda.is_available());"
+        "avail=torch.cuda.is_available();", ...
+        "print('cuda_available', avail);", ...
+        "cap=torch.cuda.get_device_capability(0) if avail else (0,0);", ...
+        "sm=('sm_%%d%%d' %% cap) if avail else '';", ...
+        "arch=list(torch.cuda.get_arch_list()) if avail else [];", ...
+        "print('cuda_device', torch.cuda.get_device_name(0) if avail else '');", ...
+        "print('cuda_capability', sm);", ...
+        "print('cuda_arch_list', arch);", ...
+        "assert (not avail) or (not arch) or (sm in arch), 'PyTorch CUDA build does not support device capability ' + sm;", ...
+        "x=(torch.ones((1,),device='cuda')+1).cpu().numpy()[0] if avail else 2.0;", ...
+        "print('cuda_tensor_ok', x);"
     ];
     code = strjoin(pycode, " ");
     sub  = sprintf('run -n %s python -c "%s"', envName, code);
@@ -1212,7 +1255,7 @@ for i = 1:numel(cleanupCmds)
 end
 
 if useGPU
-    wheelTags = ["cu121", "cu118", "cpu"];
+    wheelTags = preferredTorchWheelTags(debug);
 else
     wheelTags = ["cpu"];
 end
@@ -1223,7 +1266,7 @@ for i = 1:numel(wheelTags)
 
     sub = sprintf([ ...
         'run -n %s python -m pip install --no-cache-dir --force-reinstall ' ...
-        '--index-url https://download.pytorch.org/whl/%s torch torchvision torchaudio'], ...
+        '--index-url https://download.pytorch.org/whl/%s torch==2.7.0 torchvision==0.22.0 torchaudio==2.7.0'], ...
         envName, tag);
     [st,out] = runConda(sub, debug, condaCmd);
     if st ~= 0
@@ -1240,6 +1283,30 @@ for i = 1:numel(wheelTags)
     elseif debug
         fprintf('[DEBUG] pip torch candidate %s did not verify:\n%s\n', char(tag), outTorch);
     end
+end
+end
+
+function wheelTags = preferredTorchWheelTags(debug)
+gpuText = lower(string(getNvidiaGPUText()));
+if contains(gpuText, "blackwell") || contains(gpuText, "rtx 50") || contains(gpuText, "rtx pro 500")
+    wheelTags = ["cu128"];
+else
+    wheelTags = ["cu128", "cu126", "cu118"];
+end
+if debug
+    fprintf('[DEBUG] preferredTorchWheelTags GPU="%s" -> %s\n', char(gpuText), strjoin(wheelTags, ', '));
+end
+end
+
+function txt = getNvidiaGPUText()
+txt = "";
+if ispc
+    [st,out] = system('where nvidia-smi >nul 2>nul && nvidia-smi -L');
+else
+    [st,out] = system('which nvidia-smi >/dev/null 2>/dev/null && nvidia-smi -L');
+end
+if st == 0
+    txt = string(out);
 end
 end
 
