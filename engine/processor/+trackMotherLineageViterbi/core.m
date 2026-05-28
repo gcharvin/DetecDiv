@@ -633,9 +633,7 @@ else
 end
 pixMask = roiobj.findChannelID(cellName);
 if ~isempty(pixMask)
-    chid=mean(roiobj.channelid(pixMask));
-    roiobj.display.rgb(chid,:)=[1 0 0];
-    roiobj.display.alpha(chid)=0.5;
+    localSetIndexedOutputDisplay(roiobj, pixMask, [1 0 0]);
 end
 
 % --- 2) Canal confiance bud ---
@@ -655,9 +653,7 @@ else
 end
 pixConf = roiobj.findChannelID(confName);
 if ~isempty(pixConf)
-    chid=mean(roiobj.channelid(pixConf));
-    roiobj.display.rgb(chid,:)=[0 1 0];
-    roiobj.display.alpha(chid)=0.5;
+    localSetIndexedOutputDisplay(roiobj, pixConf, [0 1 0]);
 end
 
 dataout  = roiobj.data;
@@ -666,6 +662,71 @@ paramout.saveChannels = {cellName, confName};
 
 end % main function
 
+
+%% ========================================================================
+function localSetIndexedOutputDisplay(roiobj, pix, rgb)
+% Keep Viterbi outputs in indexed/overlay mode after both create and update.
+if isempty(pix) || ~isprop(roiobj, 'channelid') || isempty(roiobj.channelid)
+    return;
+end
+
+logicalId = unique(double(roiobj.channelid(pix)));
+logicalId = logicalId(~isnan(logicalId) & logicalId > 0);
+if isempty(logicalId)
+    return;
+end
+logicalId = logicalId(1);
+
+if isempty(roiobj.display) || ~isstruct(roiobj.display)
+    roiobj.display = struct();
+end
+
+roiobj.display.intensity = localEnsureDisplayRows(roiobj.display, 'intensity', logicalId, [1 1 1]);
+roiobj.display.rgb = localEnsureDisplayRows(roiobj.display, 'rgb', logicalId, [1 1 1]);
+roiobj.display.indexed = localEnsureDisplayVector(roiobj.display, 'indexed', logicalId, 0);
+roiobj.display.alpha = localEnsureDisplayVector(roiobj.display, 'alpha', logicalId, 1);
+roiobj.display.contour = localEnsureDisplayVector(roiobj.display, 'contour', logicalId, 0);
+roiobj.display.width = localEnsureDisplayVector(roiobj.display, 'width', logicalId, 0);
+roiobj.display.selectedchannel = localEnsureDisplayVector(roiobj.display, 'selectedchannel', logicalId, 1);
+
+roiobj.display.intensity(logicalId,:) = [0 0 0];
+roiobj.display.rgb(logicalId,:) = double(rgb(:)).';
+roiobj.display.indexed(logicalId) = 1;
+roiobj.display.alpha(logicalId) = 0.5;
+roiobj.display.contour(logicalId) = 1;
+roiobj.display.width(logicalId) = 1.5;
+roiobj.display.selectedchannel(logicalId) = 1;
+end
+
+function value = localEnsureDisplayRows(display, fieldName, nRows, defaultRow)
+if isfield(display, fieldName) && ~isempty(display.(fieldName))
+    value = double(display.(fieldName));
+else
+    value = zeros(0, numel(defaultRow));
+end
+
+if isvector(value) && numel(value) == numel(defaultRow)
+    value = reshape(value, 1, []);
+end
+if size(value, 2) ~= numel(defaultRow)
+    value = reshape(value, [], numel(defaultRow));
+end
+if size(value, 1) < nRows
+    value(end+1:nRows,:) = repmat(defaultRow, nRows - size(value, 1), 1);
+end
+end
+
+function value = localEnsureDisplayVector(display, fieldName, nValues, defaultValue)
+if isfield(display, fieldName) && ~isempty(display.(fieldName))
+    value = display.(fieldName);
+    value = value(:).';
+else
+    value = zeros(1, 0);
+end
+if numel(value) < nValues
+    value(end+1:nValues) = defaultValue;
+end
+end
 
 %% ========================================================================
 function feats = localComputeFeaturesFromLabelSeq(maskSeq)
