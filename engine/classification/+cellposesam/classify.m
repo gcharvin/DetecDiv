@@ -132,7 +132,7 @@ image = roiobj.image;
 
 % Try to auto-select the results channel for display
 try
-    if isfield(roiobj, 'channelid') && ~isempty(roiobj.channelid)
+    if isprop(roiobj, 'channelid') && ~isempty(roiobj.channelid)
         logIdx = roiobj.channelid(pixresults);
         localConfigureIndexedAnnotationDisplay(roiobj, logIdx);
     end
@@ -434,7 +434,7 @@ end
 end
 
 function localConfigureIndexedAnnotationDisplay(roiobj, logIdx)
-if ~isfield(roiobj, 'display') || ~isstruct(roiobj.display)
+if ~isprop(roiobj, 'display') || ~isstruct(roiobj.display)
     return;
 end
 

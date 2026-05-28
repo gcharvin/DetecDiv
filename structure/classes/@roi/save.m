@@ -22,6 +22,7 @@ end
 
 if isempty(verbose), verbose = true; end
 
+obj.normalizeDisplayCache();
 imArray = obj.image;        % [H W C T]
 dsArray = obj.data;
 didSave = false;

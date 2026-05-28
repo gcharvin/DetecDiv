@@ -144,7 +144,8 @@ if isempty(obj.image)
     baseId = 1; % premier channel logique
     obj.channelid = baseId * ones(1, k, 'like', k);
 
-    if forceIndexed
+    if idxVal
+        obj.display.intensity(1,:) = [0 0 0];
         obj.display.indexed(1) = 1;
         obj.display.contour(1) = 1;
         obj.display.alpha(1) = 0.35;
@@ -187,12 +188,14 @@ end
     obj.display.channel{nNew} = str;
     obj.display.intensity(nNew,:) = double(intensity(:)).';
     obj.display.rgb(nNew,:) = double(rgb(:)).';
-    obj.display.indexed(nNew) = forceIndexed || sum(intensity)==0;
+    idxVal = forceIndexed || sum(intensity)==0;
+    obj.display.indexed(nNew) = idxVal;
     obj.display.alpha(nNew) = 1;
     obj.display.contour(nNew) = 0;
     obj.display.width(nNew) = 0;
     obj.display.selectedchannel(nNew) = 1;
-    if forceIndexed
+    if idxVal
+        obj.display.intensity(nNew,:) = [0 0 0];
         obj.display.contour(nNew) = 1;
         obj.display.alpha(nNew) = 0.35;
         obj.display.width(nNew) = 1.5;
@@ -260,7 +263,10 @@ function tf = isIndexedResultChannel(channelName)
 tf = false;
 try
     name = lower(string(channelName));
-    tf = startsWith(name, "results_") || contains(name, "mask") || contains(name, "track");
+    tf = startsWith(name, "results_") || contains(name, "mask") || ...
+        contains(name, "track") || contains(name, "viterbi") || ...
+        contains(name, "lineage") || endsWith(name, "_cell") || ...
+        endsWith(name, "_conf");
 catch
     tf = false;
 end
