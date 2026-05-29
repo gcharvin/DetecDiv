@@ -1083,7 +1083,8 @@ function ensureDetecdivPackages(condaCmd, debug)
     installTorch = ~hasTorch;
     if hasTorch
         [okTorchInitial, outTorchInitial] = verifyTorch(condaCmd, envName, debug);
-        installTorch = ~okTorchInitial;
+        runtimeMatches = okTorchInitial && torchVerificationMatchesRequestedRuntime(outTorchInitial, useGPU);
+        installTorch = ~runtimeMatches;
         if installTorch
             fprintf('[Detecdiv]   - Existing torch is not compatible with this GPU/runtime; reinstalling.\n');
             if debug
@@ -1238,6 +1239,15 @@ for i = 1:numel(repairCmds)
 end
 end
 
+function tf = torchVerificationMatchesRequestedRuntime(outTorch, useGPU)
+if ~useGPU
+    tf = true;
+    return;
+end
+s = lower(string(outTorch));
+tf = contains(s, "cuda_available true");
+end
+
 function ok = attemptTorchPipFallback(condaCmd, envName, useGPU, debug)
 ok = false;
 
@@ -1288,13 +1298,29 @@ end
 
 function wheelTags = preferredTorchWheelTags(debug)
 gpuText = lower(string(getNvidiaGPUText()));
+driverMajor = getNvidiaDriverMajor();
 if contains(gpuText, "blackwell") || contains(gpuText, "rtx 50") || contains(gpuText, "rtx pro 500")
     wheelTags = ["cu128"];
+elseif ~isnan(driverMajor) && driverMajor < 550
+    wheelTags = ["cu118", "cu126", "cu128"];
 else
     wheelTags = ["cu128", "cu126", "cu118"];
 end
 if debug
-    fprintf('[DEBUG] preferredTorchWheelTags GPU="%s" -> %s\n', char(gpuText), strjoin(wheelTags, ', '));
+    fprintf('[DEBUG] preferredTorchWheelTags GPU="%s" driverMajor=%.0f -> %s\n', ...
+        char(gpuText), driverMajor, strjoin(wheelTags, ', '));
+end
+end
+
+function driverMajor = getNvidiaDriverMajor()
+driverMajor = NaN;
+[st,out] = system('nvidia-smi --query-gpu=driver_version --format=csv,noheader');
+if st ~= 0 || isempty(out)
+    return;
+end
+tok = regexp(char(out), '^\s*(\d+)', 'tokens', 'once');
+if ~isempty(tok)
+    driverMajor = str2double(tok{1});
 end
 end
 
