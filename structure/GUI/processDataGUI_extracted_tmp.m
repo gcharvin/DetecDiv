@@ -324,13 +324,6 @@ function applyRuntimeOptions(app, sel)
     if isfield(sel,'processAllFrames')
         app.ProcessallframesoveridesframestableselectionCheckBox.Value = logical(sel.processAllFrames);
     end
-    if isfield(sel,'parallel')
-        % store in params table if you keep Parallel there
-        app.processParam.Parallel = logical(sel.parallel);
-    end
-    if isfield(sel,'executionEnvironment')
-        app.processParam.ExecutionEnvironment = sel.executionEnvironment;
-    end
     refreshParamTable(app);
 end
 
@@ -900,9 +893,6 @@ function param = buildProcessorParam(app, processFun, channels)
         end
     end
 
-    % inject runtime params into table
-    if ~isfield(param,'Parallel'), param.Parallel = false; end
-    if ~isfield(param,'ExecutionEnvironment'), param.ExecutionEnvironment = 'CPU'; end
 end
 
 function names = getClassificationDataCandidates(app)

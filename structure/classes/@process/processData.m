@@ -132,11 +132,15 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
     if fra~=-1
         % fra=intersect(fra,1:size(roiobj(i).image,4));
     else
-        if numel(roiobj(i).image)==0
-            roiobj(i).load;
-        end
+        if processorCanRunWithoutImage(classifyFun)
+            fra=-1;
+        else
+            if numel(roiobj(i).image)==0
+                roiobj(i).load;
+            end
 
-        fra=1:size(roiobj(i).image,4);
+            fra=1:size(roiobj(i).image,4);
+        end
         %    fra=1:size(roiobj(i).image,4);
     end
 
@@ -362,5 +366,18 @@ end
         if ~any(strcmp(policy, {'auto','memory','disk'}))
             policy = 'auto';
         end
+    end
+
+    function tf = processorCanRunWithoutImage(funName)
+        funName = lower(char(string(funName)));
+        dataOnlyProcessors = { ...
+            'computerls', ...
+            'computerls.core', ...
+            'computerls.process', ...
+            'computelineage', ...
+            'computelineage.core', ...
+            'computelineage.process' ...
+            };
+        tf = any(strcmp(funName, dataOnlyProcessors));
     end
 end

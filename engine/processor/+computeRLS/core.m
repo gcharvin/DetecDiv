@@ -1,4 +1,140 @@
 function [paramout, dataout, image]=core(param,roiobj,frames)
+% computeRLS.core  Convert cell-state classifier output into RLS events.
+%
+% Input
+% -----
+% param.classification_data:
+%   Cell array selector for the classifier dataseries to read, typically
+%   {'div_1'}. The selected dataseries must contain an 'id' column and,
+%   when available, 'prob_<class>' columns.
+%
+% param.ArrestThreshold:
+%   Arrest threshold. When ExpectedDivisionPeriod = P is set, this is a
+%   number of expected division periods and the active threshold is
+%   round(ArrestThreshold * P). When ExpectedDivisionPeriod is empty/NaN,
+%   this is interpreted as an absolute frame count.
+%
+% param.DeathThreshold:
+%   Minimum run length of the 'dead' class needed to validate death, except
+%   when death reaches the last frame or is followed by empty.
+%
+% param.ClogThreshold:
+%   Minimum run length of the 'clog' class needed to validate clogging.
+%
+% param.EmptyThresholdDiscard:
+%   Legacy parameter kept for compatibility. It is not currently used by
+%   this core logic.
+%
+% param.EmptyThresholdNext:
+%   If an empty run occurs very early after birth, the code searches after
+%   that empty run for the next possible birth/RLS.
+%
+% State decoding and event validation
+% -----------------------------------
+% param.StateDecoder:
+%   Optional state decoder. 'off' keeps the legacy argmax behavior. 'median'
+%   applies a majority filter to the argmax labels. 'viterbi' decodes the
+%   full class-probability sequence with a constrained HMM/Viterbi pass.
+%   The Viterbi decoder uses probabilities as emissions and biological
+%   transition rules as priors: live states may cycle, live states may enter
+%   death/clog/empty, dead and clog are absorbing, and empty may refill into
+%   a live state to preserve the existing cavity-empty/refill workflow.
+%
+% param.ExpectedDivisionPeriod:
+%   Expected budding/division period P in frames. If set and
+%   MinDivisionInterval is not set, the minimum accepted interval between
+%   consecutive budding events is P * MinDivisionIntervalFactor. It also
+%   makes arrest detection use ArrestThreshold * P.
+%
+% param.MinDivisionInterval:
+%   Explicit minimum accepted interval between consecutive budding events.
+%   Events closer than this are rejected after decoding. Leave NaN to use
+%   ExpectedDivisionPeriod * MinDivisionIntervalFactor, or to disable this
+%   rule when ExpectedDivisionPeriod is also NaN.
+%
+% param.MinDivisionIntervalFactor:
+%   Factor used with ExpectedDivisionPeriod. Default 0.5 implements the
+%   "cannot divide faster than P/2" rule.
+%
+% param.MedianFilterWindow:
+%   Window length for StateDecoder='median'.
+%
+% param.ViterbiLiveSwitchPenalty / ViterbiTerminalPenalty /
+% param.ViterbiUnexpectedTransitionPenalty / ViterbiRefillPenalty:
+%   Log-domain transition penalties used by StateDecoder='viterbi'. They
+%   discourage implausible switches without changing the raw QC evidence.
+%
+% QC parameters
+% -------------
+% The classifier state is assigned by argmax. QC does not reject frames
+% because the max probability is below a fixed threshold. Instead, it
+% measures ambiguity between the two most probable classes:
+%
+%   margin(frame) = top1_probability(frame) - top2_probability(frame)
+%
+% param.QCLowMarginThreshold:
+%   Frame-level ambiguity threshold. A frame is flagged ambiguous when
+%   margin < QCLowMarginThreshold.
+%
+% param.QCMinMeanMargin:
+%   Interval-level threshold. A RLS interval is accepted only when the mean
+%   margin across the interval is at least QCMinMeanMargin.
+%
+% param.QCMaxLowConfidenceFraction:
+%   Interval-level threshold on the fraction of ambiguous frames. Despite
+%   the historical name, this is currently an ambiguity fraction:
+%   mean(margin < QCLowMarginThreshold). A RLS interval is accepted only
+%   when this fraction is <= QCMaxLowConfidenceFraction.
+%
+% Output dataseries
+% -----------------
+% The output dataseries groupid is ['RLS_' classification_data] for
+% predictions and ['RLS_GT_' classification_data] for manual training data.
+% It is always created when classifier labels are available, even if no
+% division is detected.
+%
+% Historical columns:
+%   event       - Birth, Budding, terminal status, or NeverBorn.
+%   divduration - Frame distance between consecutive budding events.
+%   totaltime   - Event frame in the original ROI time axis.
+%   birth       - Generation count from birth.
+%   death       - Reverse generation count toward terminal event.
+%   sep         - Optional senescence entry point alignment if computable.
+%
+% Status/QC columns:
+%   status               - ROI status: stillAlive, noDivision, death,
+%                          arrest, clog, emptied, neverBorn.
+%   usable               - ROI-level logical combining structural status and
+%                          interval QC.
+%   reason               - Human-readable reason for usable=false or status.
+%   nDiv                 - Number of detected budding events, preserving the
+%                          legacy start-after-bud-emergence correction.
+%   frameBirth/frameEnd  - Birth and terminal frames used by RLS detection.
+%   endType              - Terminal condition from the state sequence.
+%   decoder              - State decoder used for event calling.
+%   minDivisionInterval  - Active minimum interval between budding events.
+%   arrestThreshold      - Active arrest threshold in frames. It is
+%                          ArrestThreshold * ExpectedDivisionPeriod
+%                          when ExpectedDivisionPeriod is set, otherwise
+%                          the ArrestThreshold frame count.
+%   nRejectedDivisions   - Number of candidate budding events rejected by
+%                          the minimum-interval rule.
+%   qc_mean_confidence   - Mean top1 probability on the interval; diagnostic
+%                          only, not thresholded.
+%   qc_min_confidence    - Minimum top1 probability on the interval;
+%                          diagnostic only, not thresholded.
+%   qc_mean_margin       - Mean top1-top2 margin on the interval.
+%   qc_low_fraction      - Fraction of ambiguous frames on the interval.
+%   qc_score             - 1 - qc_low_fraction.
+%   qc_interval_usable   - Interval-level logical based on mean margin and
+%                          ambiguous-frame fraction.
+%
+% Additional aggregation:
+%   If channel_quantification or mask_quantification dataseries are present,
+%   their frame-level values are averaged over RLS intervals and appended to
+%   the same RLS dataseries. This preserves the legacy behavior where
+%   computeMetrics computes frame-level metrics and computeRLS aggregates
+%   them by generation.
 
 image=[];
 
@@ -14,27 +150,45 @@ if nargin==0
     paramout=[];
 
     tip={'Classification data output name',...
-        'Use post processing - data cleaning up',...
-        'Error detection',...
-        'Arrest threshold frame number',...
+        'Arrest threshold in expected division periods if ExpectedDivisionPeriod is set; otherwise frames',...
         'Death threshold frame number',...
         'Clog threshold frame number',...
         'Empty Threshold Discard frame number',...
         'EmptyThresholdNext',...
+        'State decoder: off, viterbi, or median',...
+        'Expected division/budding period in frames',...
+        'Minimum division/budding interval in frames',...
+        'Minimum interval factor when using expected period',...
+        'Median decoder/filter window in frames',...
+        'Viterbi live-state switch penalty',...
+        'Viterbi terminal-state transition penalty',...
+        'Viterbi unexpected transition penalty',...
+        'Viterbi empty-to-live refill penalty',...
+        'QC low-margin frame threshold',...
+        'QC minimum mean probability margin',...
+        'QC maximum low-confidence frame fraction',...
         };
 
     paramout.classification_data=listout;
     % paramout.classes='unbud small large dead clog empty';
     %paramout.classiftype='bud';
-    paramout.postProcessing=true;
-    paramout.errorDetection=false;
-    %these paramout must be adjusted by the user, in particular if the experiment
-    %is shorter than 500 frames.
-    paramout.ArrestThreshold=175;
+    paramout.ArrestThreshold=3;
     paramout.DeathThreshold=3;
     paramout.ClogThreshold=1;
     paramout.EmptyThresholdDiscard=500; %discard roi if empty for more than this number of frames
     paramout.EmptyThresholdNext=100; %if encounter an empy after birth but before birth+EmptyThresholdNext, check the new RLS
+    paramout.StateDecoder = {'off','viterbi','median','off'};
+    paramout.ExpectedDivisionPeriod = 60;
+    paramout.MinDivisionInterval = NaN;
+    paramout.MinDivisionIntervalFactor = 0.5;
+    paramout.MedianFilterWindow = 3;
+    paramout.ViterbiLiveSwitchPenalty = 0.10;
+    paramout.ViterbiTerminalPenalty = 0.25;
+    paramout.ViterbiUnexpectedTransitionPenalty = 1.00;
+    paramout.ViterbiRefillPenalty = 0.50;
+    paramout.QCLowMarginThreshold = 0.05;
+    paramout.QCMinMeanMargin = 0.05;
+    paramout.QCMaxLowConfidenceFraction = 0.50;
 
     paramout.tip=tip;
 
@@ -44,7 +198,7 @@ else
 end
 
 disp('computeRLS processing...');
-param=paramout;
+param=localEnsureQCDefaults(paramout);
 
 dataout=[];
 mask_data=[];
@@ -84,6 +238,10 @@ if nargin~=3 %auto bounds
 end
 
 id =data.getData('id');
+
+if ~exist('frames','var') || isempty(frames) || (isnumeric(frames) && all(frames == -1))
+    frames = 1:numel(id);
+end
 
 % class id for classif output
 
@@ -132,23 +290,49 @@ for j=1:2 % loop on training and prediction data
 
         divTimes=computeDivtime(id,proba',classes,param,frames);
 
-        if numel(divTimes.framediv)>0 && ~isnan(divTimes.framediv(1)) && numel(divTimes.duration)
+        if ~isempty(divTimes)
 
-            event="Budding";
+            hasDivision = numel(divTimes.framediv)>0 && ~isnan(divTimes.framediv(1));
 
-            event=repmat(event,[1 1+numel(divTimes.duration)]);
-            event=["Birth" event divTimes.endType];
-            event=categorical(cellstr(event));
+            if hasDivision
+                event="Budding";
+
+                event=repmat(event,[1 1+numel(divTimes.duration)]);
+                event=["Birth" event divTimes.endType];
+                event=categorical(cellstr(event));
+                durationForTable=divTimes.duration;
+                if isempty(divTimes.duration)
+                    divTimes.duration=NaN;
+                end
 
             [syncPoint,~]=findSEP(divTimes.duration,1); %find SEP using classical xhi² fit based on div frequency
 
-            divDuration=[NaN, divTimes.duration, NaN, NaN];
+                divTimes.duration=durationForTable;
+                divDuration=[NaN, divTimes.duration, NaN, NaN];
 
-            count=[0:numel(divTimes.duration) NaN, NaN];
-            death=[-numel(divTimes.duration):0, NaN,NaN];
+                count=[0:numel(divTimes.duration) NaN, NaN];
+                death=[-numel(divTimes.duration):0, NaN,NaN];
 
-            totaltime=[0, divTimes.framediv(1)-divTimes.frameBirth, cumsum(divTimes.duration)+divTimes.framediv(1)-divTimes.frameBirth , divTimes.frameEnd-divTimes.frameBirth];
-            totaltime= totaltime+divTimes.frameBirth;
+                totaltime=[0, divTimes.framediv(1)-divTimes.frameBirth, cumsum(divTimes.duration)+divTimes.framediv(1)-divTimes.frameBirth , divTimes.frameEnd-divTimes.frameBirth];
+                totaltime= totaltime+divTimes.frameBirth;
+            elseif isnan(divTimes.frameBirth)
+                event=categorical(cellstr(string(divTimes.endType)));
+                syncPoint=NaN;
+                divDuration=NaN;
+                count=NaN;
+                death=NaN;
+                totaltime=divTimes.frameEnd;
+                if isnan(totaltime)
+                    totaltime=numel(id);
+                end
+            else
+                event=categorical(cellstr(["Birth" string(divTimes.endType)]));
+                syncPoint=NaN;
+                divDuration=[NaN, NaN];
+                count=[0, NaN];
+                death=[0, NaN];
+                totaltime=[divTimes.frameBirth, divTimes.frameEnd];
+            end
 
             pixdata=find(arrayfun(@(x) strcmp(x.groupid, ['RLS' nme{j} param.classification_data{end}]),dataout)); % find if object exists already
             %
@@ -186,14 +370,14 @@ for j=1:2 % loop on training and prediction data
             dataout(cc).class="processing";
             dataout(cc).type="generation";
             dataout(cc).plotGroup={[] [] [] [] [] unique(plotgroup)};
+            localAddRLSQCData(dataout(cc), t, divTimes, id, proba', classes, param);
 
-            if numel(syncPoint) % sep was found
+            if numel(syncPoint) && ~isnan(syncPoint) % sep was found
                 sep=count-syncPoint;
                 dataout(cc).addData(sep',{'sep'},'plot',false,'groups','count');
-                 disp('Added SEP quantification...');
             end
 
-            if numel(fluo_pixdata)
+            if numel(fluo_pixdata) && localCanQuantifyIntervals(totaltime)
 
                 totaltime_int=uint16(totaltime);
 
@@ -203,6 +387,10 @@ for j=1:2 % loop on training and prediction data
 
                 for k=1:numel(varnames)
                     dat=fluo_data.data.(varnames{k});
+
+                    if totaltime_int(end)-1 > numel(dat)
+                        continue
+                    end
 
                     dat=dat(totaltime_int(1):totaltime_int(end)-1);
                     % here put a condition if still alive 
@@ -214,7 +402,6 @@ for j=1:2 % loop on training and prediction data
                     end
 
                     val=[val; NaN];
-                     disp('Added fluo quantification...');
                     dataout(cc).addData(val,varnames(k),'plot',false,'groups','channel_quant');
 
                 end
@@ -225,6 +412,10 @@ for j=1:2 % loop on training and prediction data
 
                 md=mask_data(l);
 
+                if ~localCanQuantifyIntervals(totaltime)
+                    continue
+                end
+
                 totaltime_int=uint16(totaltime);
                 indices = repelem(2:numel(totaltime_int), diff(totaltime_int))-1;
 
@@ -232,6 +423,11 @@ for j=1:2 % loop on training and prediction data
 
                 for k=1:numel(varnames)
                     dat=md.data.(varnames{k});
+
+                    if totaltime_int(end)-1 > numel(dat)
+                        continue
+                    end
+
                     dat=dat(totaltime_int(1):totaltime_int(end)-1);
 
                     val = accumarray(indices',dat,[],@mean);
@@ -258,9 +454,6 @@ for j=1:2 % loop on training and prediction data
                     end
 
 
-                    disp('Added mask quantification...');
-                    {'Area_Cell' 'LenMinAxis_Cell' 'LenMajAxis_Cell' 'Eccentric_Cell' 'Vol_Cell' 'Surf_Cell'};
-
                     dataout(cc).addData(val,['mask' num2str(l) '_' varnames{k}],'plot',false,'groups',str);
 
                 end
@@ -282,10 +475,17 @@ end
 function [divTimes]=computeDivtime(id,proba,classes,param,frames)
 
 if numel(frames)<=numel(id)
-id=id(frames);
+frameIdx=frames;
+id=id(frameIdx);
 else
 ma=min(frames(end),numel(id));
-id=id(frames(1):ma);
+frameIdx=frames(1):ma;
+id=id(frameIdx);
+end
+
+if ~isempty(proba) && ~(isscalar(proba) && proba == -1)
+    frameIdx=frameIdx(frameIdx<=size(proba,2));
+    proba=proba(:,frameIdx);
 end
 
 divTimes=[];
@@ -305,17 +505,8 @@ smid=find(matches(classes,'small'));
 unbuddedid=find(matches(classes,'unbud'));
 emptyid=find(matches(classes,'empty'));
 
-%% post process
-if (proba~=-1) & (param.postProcessing==1)
-    probaPP=proba;
-    probaPP(smid,:) = movmedian(probaPP(smid,:), 4, 2, 'omitnan');
-    probaPP(lbid,:) = movmedian(probaPP(lbid,:), 4, 2, 'omitnan');
-    % probaPP(smid,:)=medfilt1(probaPP(smid,:),4);
-    % probaPP(lbid,:)=medfilt1(probaPP(lbid,:),4);
-
-    [~,idPP]=max(probaPP,[],1);
-    id=idPP;
-end
+%% post process / optional state decoding
+[id, decoderInfo]=localDecodeStateSequence(id, proba, classes, param);
 
 
 %%
@@ -413,16 +604,17 @@ end
 
 %==find potential division arrest==========
 frameArrest=NaN;
+activeArrestThreshold=localActiveArrestThreshold(param);
 for arrestid=[unbuddedid,smid,lbid]
     bwArrest=(id==arrestid);
     bwArrestLabel=bwlabel(bwArrest);
     for k=1:max(bwArrestLabel)
         bwArrest=(bwArrestLabel==k);
-        if sum(bwArrest)> param.ArrestThreshold
+        if sum(bwArrest)> activeArrestThreshold
             if ~isnan(frameArrest)
-                frameArrest=min(frameArrest,(find(bwArrest,1,'first')+ param.ArrestThreshold));
+                frameArrest=min(frameArrest,(find(bwArrest,1,'first')+ activeArrestThreshold));
             else
-                frameArrest=find(bwArrest,1,'first')+ param.ArrestThreshold;
+                frameArrest=find(bwArrest,1,'first')+ activeArrestThreshold;
             end
             break
         end
@@ -448,50 +640,6 @@ end
 
 
 %===4/ detect divisions===
-%==post-processing
-%         if param.postProcessing==1
-%             stopProcessing=0;
-%             while stopProcessing==0
-%                 bwsmid=(id==smid);
-%                 bwsmidLabel=bwlabel(bwsmid); %find small islets
-%                 for k=1:max(bwsmidLabel)
-%                     bwsmidk(k,:)=(bwsmidLabel==k);
-%                 end
-%
-%                 if max(bwsmidLabel)>2
-%                     for k=2:max(bwsmidLabel)-1
-%                         if sum(bwsmidk(k,:))>=1 %if a smallid islet is of size 1, check the neighbours islets
-%                             idx=find(bwsmidk(k,:),1,'first');
-%                             %idxprev=find(bwsmidk(k-1,:),1,'last');%find previous islet end
-%                             idxnext=find(bwsmidk(k+1,:),1,'first');%find next islet start
-%                             idxprev=find(bwsmidk(k-1,:),1,'last'); %find prev islet start
-%
-%                             if (idx-idxprev<5) %if the potential false small is too close from another small islet -->correct it as the previous class
-%                                 id(idx)=id(idx-1); break
-%                             elseif (idxnext-idx <5) %if the potential false small is too close from another small islet -->correct it as the previous class
-%                                 id(idx)=id(idx-1); break
-%                             end
-%                         end
-%                         stopProcessing=1;
-%                     end
-%                 else
-%                     stopProcessing=1;
-%                 end
-%             end
-%
-%             %small->unbud, can be improved by checking the islets size
-%             bwsmid=(id==smid);
-%             bwsmidLabel=bwlabel(bwsmid); %find small islets
-%
-%             for j=1:numel(id)-1
-%                 if (id(j)==smid && id(j+1)==unbuddedid)
-%
-%                     isletLabel=bwsmidLabel(j);
-%                     idxToCorrect=(bwsmidLabel==isletLabel); %islet to correct
-%                     id(idxToCorrect)=lbid;
-%                 end
-%             end
-%         end
 
 %=====Div counting=====
 %
@@ -515,12 +663,18 @@ end
 if numel(divFrames)==0
     divFrames=NaN;
 end
+[divFrames, rejectedDivFrames, minDivisionInterval]=localApplyDivisionIntervalRule(divFrames,param);
 divTimes.frameBirth=frameBirth;
 divTimes.frameEnd=frameEnd;
 divTimes.endType=endType;
 divTimes.framediv=divFrames;
 divTimes.duration=diff(divFrames); % division times !
 divTimes.ndiv=sum(~isnan([divTimes.framediv]));
+divTimes.decoder=decoderInfo.mode;
+divTimes.decoderChangedFrames=decoderInfo.changedFrames;
+divTimes.rejectedDivFrames=rejectedDivFrames;
+divTimes.minDivisionInterval=minDivisionInterval;
+divTimes.arrestThreshold=activeArrestThreshold;
 %if timelapse started while the cell is small or large
 if startAfterBudEmergence==1
     divTimes.ndiv=divTimes.ndiv+1;
@@ -558,9 +712,463 @@ end
 %         divTimes.duration=diff(divFrames); % division times !
 % end
 
+function [idOut, info]=localDecodeStateSequence(id,proba,classes,param)
+idOut=id(:)';
+mode=lower(localChoiceString(param,'StateDecoder','off'));
+info=struct('mode',mode,'changedFrames',0);
+
+hasProba=~isempty(proba) && ~(isscalar(proba) && proba == -1) && isnumeric(proba);
+if ~hasProba
+    if strcmp(mode,'median')
+        idOut=localModeFilterLabels(idOut,localNumericParam(param,'MedianFilterWindow',3));
+        info.changedFrames=sum(idOut~=id(:)');
+    else
+        info.mode='off';
+    end
+    return
+end
+
+probaWork=double(proba);
+smid=find(matches(classes,'small'));
+lbid=find(matches(classes,'large'));
+if true
+    if ~isempty(smid)
+        probaWork(smid,:) = movmedian(probaWork(smid,:), 4, 2, 'omitnan');
+    end
+    if ~isempty(lbid)
+        probaWork(lbid,:) = movmedian(probaWork(lbid,:), 4, 2, 'omitnan');
+    end
+end
+
+[~,argmaxId]=max(probaWork,[],1);
+
+switch mode
+    case {'off','argmax','legacy'}
+        idOut=argmaxId;
+        info.mode='off';
+    case 'median'
+        idOut=localModeFilterLabels(argmaxId,localNumericParam(param,'MedianFilterWindow',3));
+    case 'viterbi'
+        idOut=localViterbiDecode(probaWork,classes,param);
+    otherwise
+        idOut=argmaxId;
+        info.mode='off';
+end
+
+info.changedFrames=sum(idOut(:)'~=argmaxId(:)');
 
 
+function idOut=localModeFilterLabels(idIn,window)
+idOut=idIn(:)';
+window=max(1,round(double(window)));
+if window<=1 || numel(idOut)<=2
+    return
+end
+if mod(window,2)==0
+    window=window+1;
+end
+half=floor(window/2);
+for t=1:numel(idOut)
+    lo=max(1,t-half);
+    hi=min(numel(idOut),t+half);
+    vals=idOut(lo:hi);
+    vals=vals(~isnan(vals));
+    if isempty(vals)
+        continue
+    end
+    u=unique(vals,'stable');
+    counts=arrayfun(@(x) sum(vals==x),u);
+    [~,ix]=max(counts);
+    idOut(t)=u(ix);
+end
 
+
+function idOut=localViterbiDecode(proba,classes,param)
+[nStates,nFrames]=size(proba);
+if nFrames==0
+    idOut=[];
+    return
+end
+
+p=max(double(proba),eps);
+colsum=sum(p,1,'omitnan');
+bad=colsum<=0 | isnan(colsum);
+colsum(bad)=1;
+p=p./colsum;
+emit=log(max(p,eps));
+
+decodeClasses=localDecodeClassNames(classes,nStates);
+trans=localViterbiTransitionMatrix(decodeClasses,param);
+score=-inf(nStates,nFrames);
+back=ones(nStates,nFrames);
+score(:,1)=emit(:,1);
+
+for t=2:nFrames
+    for s=1:nStates
+        vals=score(:,t-1)+trans(:,s);
+        [best,idx]=max(vals);
+        score(s,t)=best+emit(s,t);
+        back(s,t)=idx;
+    end
+end
+
+[~,last]=max(score(:,end));
+path=zeros(1,nFrames);
+path(end)=last;
+for t=nFrames:-1:2
+    path(t-1)=back(path(t),t);
+end
+idOut=path;
+
+
+function out=localDecodeClassNames(classes,nStates)
+out=cellstr(string(classes(:)'));
+if numel(out)>=nStates
+    out=out(1:nStates);
+else
+    for k=(numel(out)+1):nStates
+        out{k}=['class_' num2str(k)];
+    end
+end
+
+
+function trans=localViterbiTransitionMatrix(classes,param)
+n=numel(classes);
+unexpected=localNumericParam(param,'ViterbiUnexpectedTransitionPenalty',1.0);
+liveSwitch=localNumericParam(param,'ViterbiLiveSwitchPenalty',0.10);
+terminal=localNumericParam(param,'ViterbiTerminalPenalty',0.25);
+refill=localNumericParam(param,'ViterbiRefillPenalty',0.50);
+
+trans=-unexpected*ones(n,n);
+for s=1:n
+    trans(s,s)=0;
+end
+
+deadid=find(matches(classes,'dead'));
+clogid=find(matches(classes,'clog'));
+lbid=find(matches(classes,'large'));
+smid=find(matches(classes,'small'));
+unbuddedid=find(matches(classes,'unbud'));
+emptyid=find(matches(classes,'empty'));
+live=[unbuddedid smid lbid];
+
+if ~isempty(unbuddedid) && ~isempty(smid), trans(unbuddedid,smid)=-liveSwitch; end
+if ~isempty(smid) && ~isempty(lbid), trans(smid,lbid)=-liveSwitch; end
+if ~isempty(lbid) && ~isempty(unbuddedid), trans(lbid,unbuddedid)=-liveSwitch; end
+if ~isempty(lbid) && ~isempty(smid), trans(lbid,smid)=-liveSwitch; end
+
+terminalStates=[deadid clogid emptyid];
+for a=live
+    for b=terminalStates
+        trans(a,b)=-terminal;
+    end
+end
+
+if ~isempty(emptyid)
+    for b=live
+        trans(emptyid,b)=-refill;
+    end
+end
+
+% Death and clog are absorbing: a cell cannot "undie" or unclog.
+if ~isempty(deadid)
+    trans(deadid,:)=-inf;
+    trans(deadid,deadid)=0;
+end
+if ~isempty(clogid)
+    trans(clogid,:)=-inf;
+    trans(clogid,clogid)=0;
+end
+
+
+function [divFramesOut,rejectedDivFrames,minInterval]=localApplyDivisionIntervalRule(divFrames,param)
+divFramesOut=divFrames;
+rejectedDivFrames=[];
+minInterval=localActiveMinDivisionInterval(param);
+
+if isnan(minInterval) || minInterval<=0 || isempty(divFrames) || all(isnan(divFrames))
+    return
+end
+
+candidate=divFrames(~isnan(divFrames));
+if numel(candidate)<=1
+    divFramesOut=candidate;
+    if isempty(divFramesOut)
+        divFramesOut=NaN;
+    end
+    return
+end
+
+keep=true(size(candidate));
+lastKept=candidate(1);
+for k=2:numel(candidate)
+    if candidate(k)-lastKept < minInterval
+        keep(k)=false;
+    else
+        lastKept=candidate(k);
+    end
+end
+
+rejectedDivFrames=candidate(~keep);
+divFramesOut=candidate(keep);
+if isempty(divFramesOut)
+    divFramesOut=NaN;
+end
+
+
+function minInterval=localActiveMinDivisionInterval(param)
+minInterval=localNumericParam(param,'MinDivisionInterval',NaN);
+if isnan(minInterval) || minInterval<=0
+    expected=localNumericParam(param,'ExpectedDivisionPeriod',NaN);
+    factor=localNumericParam(param,'MinDivisionIntervalFactor',0.5);
+    if ~isnan(expected) && expected>0 && ~isnan(factor) && factor>0
+        minInterval=expected*factor;
+    else
+        minInterval=NaN;
+    end
+end
+if ~isnan(minInterval)
+    minInterval=round(minInterval);
+end
+
+
+function threshold=localActiveArrestThreshold(param)
+expected=localNumericParam(param,'ExpectedDivisionPeriod',NaN);
+arrestThreshold=localNumericParam(param,'ArrestThreshold',3);
+if isfield(param,'ArrestThresholdCycles') && ~isempty(param.ArrestThresholdCycles)
+    arrestThreshold=localNumericParam(param,'ArrestThresholdCycles',arrestThreshold);
+end
+if ~isnan(expected) && expected>0 && ~isnan(arrestThreshold) && arrestThreshold>0
+    threshold=round(expected*arrestThreshold);
+else
+    threshold=arrestThreshold;
+end
+threshold=max(1,round(threshold));
+
+
+function out=localChoiceString(param,field,defaultValue)
+out=defaultValue;
+if ~isfield(param,field) || isempty(param.(field))
+    return
+end
+v=param.(field);
+if iscell(v)
+    v=v{end};
+end
+if isstring(v) || ischar(v) || isnumeric(v) || islogical(v) || iscategorical(v)
+    out=char(string(v));
+end
+
+
+function out=localNumericParam(param,field,defaultValue)
+out=defaultValue;
+if ~isfield(param,field) || isempty(param.(field))
+    return
+end
+v=param.(field);
+if iscell(v)
+    v=v{end};
+end
+if isnumeric(v) || islogical(v)
+    out=double(v);
+elseif isstring(v) || ischar(v) || iscategorical(v)
+    out=str2double(char(string(v)));
+end
+if isempty(out) || all(isnan(out(:)))
+    out=defaultValue;
+end
+
+
+function param=localEnsureQCDefaults(param)
+defaults=struct();
+defaults.ArrestThreshold=3;
+defaults.StateDecoder={'off','viterbi','median','off'};
+defaults.ExpectedDivisionPeriod=NaN;
+defaults.MinDivisionInterval=NaN;
+defaults.MinDivisionIntervalFactor=0.5;
+defaults.MedianFilterWindow=3;
+defaults.ViterbiLiveSwitchPenalty=0.10;
+defaults.ViterbiTerminalPenalty=0.25;
+defaults.ViterbiUnexpectedTransitionPenalty=1.00;
+defaults.ViterbiRefillPenalty=0.50;
+defaults.QCLowMarginThreshold=0.05;
+defaults.QCMinMeanMargin=0.05;
+defaults.QCMaxLowConfidenceFraction=0.50;
+
+fields=fieldnames(defaults);
+for k=1:numel(fields)
+    f=fields{k};
+    if ~isfield(param,f) || isempty(param.(f))
+        param.(f)=defaults.(f);
+    end
+end
+
+
+function tf=localCanQuantifyIntervals(totaltime)
+tf=false;
+if isempty(totaltime) || numel(totaltime)<2
+    return
+end
+totaltime=double(totaltime(:)');
+if any(isnan(totaltime)) || any(isinf(totaltime))
+    return
+end
+if totaltime(1)<1 || totaltime(end)<=totaltime(1)
+    return
+end
+tf=true;
+
+
+function localAddRLSQCData(ds,t,divTimes,id,proba,classes,param) %#ok<INUSD>
+n=height(t);
+if n==0
+    return
+end
+
+status=localRLSStatus(divTimes);
+[qcMeanConf,qcMinConf,qcMeanMargin,qcLowFraction,qcScore,qcIntervalUsable]=localIntervalQC(t.totaltime,proba,param);
+
+structuralUsable=localStructuralUsable(status);
+hasQC=any(~isnan(qcScore));
+if hasQC
+    roiQCOk=all(qcIntervalUsable(~isnan(qcScore)));
+else
+    roiQCOk=true;
+end
+roiUsable=structuralUsable && roiQCOk;
+reason=localStatusReason(status,structuralUsable,roiQCOk,divTimes);
+
+ds.addData(repmat(string(status),n,1),{'status'},'plot',false,'groups','qc');
+ds.addData(repmat(logical(roiUsable),n,1),{'usable'},'plot',false,'groups','qc');
+ds.addData(repmat(string(reason),n,1),{'reason'},'plot',false,'groups','qc');
+ds.addData(repmat(double(divTimes.ndiv),n,1),{'nDiv'},'plot',false,'groups','qc');
+ds.addData(repmat(double(divTimes.frameBirth),n,1),{'frameBirth'},'plot',false,'groups','qc');
+ds.addData(repmat(double(divTimes.frameEnd),n,1),{'frameEnd'},'plot',false,'groups','qc');
+ds.addData(repmat(string(divTimes.endType),n,1),{'endType'},'plot',false,'groups','qc');
+ds.addData(repmat(string(divTimes.decoder),n,1),{'decoder'},'plot',false,'groups','qc');
+ds.addData(repmat(double(divTimes.minDivisionInterval),n,1),{'minDivisionInterval'},'plot',false,'groups','qc');
+ds.addData(repmat(double(divTimes.arrestThreshold),n,1),{'arrestThreshold'},'plot',false,'groups','qc');
+ds.addData(repmat(double(numel(divTimes.rejectedDivFrames)),n,1),{'nRejectedDivisions'},'plot',false,'groups','qc');
+ds.addData(repmat(double(divTimes.decoderChangedFrames),n,1),{'decoderChangedFrames'},'plot',false,'groups','qc');
+ds.addData(qcMeanConf,{'qc_mean_confidence'},'plot',false,'groups','qc');
+ds.addData(qcMinConf,{'qc_min_confidence'},'plot',false,'groups','qc');
+ds.addData(qcMeanMargin,{'qc_mean_margin'},'plot',false,'groups','qc');
+ds.addData(qcLowFraction,{'qc_low_fraction'},'plot',false,'groups','qc');
+ds.addData(qcScore,{'qc_score'},'plot',false,'groups','qc');
+ds.addData(qcIntervalUsable,{'qc_interval_usable'},'plot',false,'groups','qc');
+
+
+function status=localRLSStatus(divTimes)
+endType=lower(string(divTimes.endType));
+if endType=="neverborn"
+    status="neverBorn";
+elseif endType=="death"
+    status="death";
+elseif endType=="arrest"
+    status="arrest";
+elseif endType=="clog"
+    status="clog";
+elseif endType=="emptied"
+    status="emptied";
+elseif divTimes.ndiv==0
+    status="noDivision";
+else
+    status="stillAlive";
+end
+
+
+function tf=localStructuralUsable(status)
+bad=["neverBorn","clog","emptied"];
+tf=~any(status==bad);
+
+
+function reason=localStatusReason(status,structuralUsable,roiQCOk,divTimes) %#ok<INUSD>
+if ~structuralUsable
+    switch status
+        case "neverBorn"
+            reason="no cell birth/state detected";
+        case "clog"
+            reason="clog detected";
+        case "emptied"
+            reason="ROI emptied after birth";
+        otherwise
+            reason="structural status not usable";
+    end
+elseif ~roiQCOk
+    reason="ambiguous class probabilities";
+elseif status=="noDivision"
+    reason="no budding transition detected";
+elseif status=="arrest"
+    reason="cell-cycle arrest threshold reached";
+elseif status=="death"
+    reason="death detected";
+else
+    reason="ok";
+end
+
+
+function [meanConf,minConf,meanMargin,lowFraction,qcScore,intervalUsable]=localIntervalQC(totaltime,proba,param)
+n=numel(totaltime);
+meanConf=nan(n,1);
+minConf=nan(n,1);
+meanMargin=nan(n,1);
+lowFraction=nan(n,1);
+qcScore=nan(n,1);
+intervalUsable=true(n,1);
+
+if isempty(proba) || ~isnumeric(proba) || size(proba,2)==0
+    return
+end
+
+p=double(proba);
+nFrames=size(p,2);
+sorted=sort(p,1,'descend');
+conf=sorted(1,:);
+if size(sorted,1)>=2
+    margin=sorted(1,:)-sorted(2,:);
+else
+    margin=nan(1,nFrames);
+end
+
+for r=1:n
+    hi=round(double(totaltime(r)));
+    if isnan(hi) || isinf(hi)
+        intervalUsable(r)=false;
+        continue
+    end
+
+    if r==1
+        lo=max(1,min(hi,nFrames));
+    else
+        lo=round(double(totaltime(r-1)));
+    end
+
+    if isnan(lo) || isinf(lo)
+        intervalUsable(r)=false;
+        continue
+    end
+
+    lo=max(1,min(lo,nFrames));
+    hi=max(1,min(hi,nFrames));
+    if hi<lo
+        tmp=lo;
+        lo=hi;
+        hi=tmp;
+    end
+
+    ix=lo:hi;
+    c=conf(ix);
+    m=margin(ix);
+    low=(m<param.QCLowMarginThreshold);
+
+    meanConf(r)=mean(c,'omitnan');
+    minConf(r)=min(c,[],'omitnan');
+    meanMargin(r)=mean(m,'omitnan');
+    lowFraction(r)=mean(double(low),'omitnan');
+    qcScore(r)=1-lowFraction(r);
+    intervalUsable(r)=meanMargin(r)>=param.QCMinMeanMargin && ...
+        lowFraction(r)<=param.QCMaxLowConfidenceFraction;
+end
 
 
 
