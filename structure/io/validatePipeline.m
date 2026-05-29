@@ -698,7 +698,8 @@ function state = initialConstraintState(ctx)
         'hasMasks', sem.hasMasks || sem.roiHasMasks, ...
         'hasDataSeries', sem.hasDataSeries || sem.roiHasDataSeries, ...
         'imageChannels', {sem.imageChannels}, ...
-        'roiChannels', {sem.roiChannels});
+        'roiChannels', {sem.roiChannels}, ...
+        'resources', initialResourceInventory(ctx, sem));
 end
 
 function nodeReport = evaluateNodeBinding(node, state)
@@ -730,8 +731,15 @@ function nodeReport = evaluateNodeBinding(node, state)
         exactCount = [];
     end
 
+    if ~legacyChannelBindingApplies(binding)
+        nodeReport = makeBindingNodeReport(node, binding, scope, status, message, 0, [], {}, availableChannels, autoChoice);
+        nodeReport = attachResourceBindingReport(nodeReport, node, state);
+        return;
+    end
+
     if requiredCount <= 0 && isempty(configuredChannels)
         nodeReport = makeBindingNodeReport(node, binding, scope, status, message, requiredCount, exactCount, configuredChannels, availableChannels, autoChoice);
+        nodeReport = attachResourceBindingReport(nodeReport, node, state);
         return;
     end
 
@@ -743,6 +751,7 @@ function nodeReport = evaluateNodeBinding(node, state)
             message = ['Node ' char(string(node.id)) ' requires ROI channels, but no ROI-producing upstream path is available.'];
         end
         nodeReport = makeBindingNodeReport(node, binding, scope, status, message, requiredCount, exactCount, configuredChannels, availableChannels, autoChoice);
+        nodeReport = attachResourceBindingReport(nodeReport, node, state);
         return;
     end
 
@@ -813,6 +822,7 @@ function nodeReport = evaluateNodeBinding(node, state)
     end
 
     nodeReport = makeBindingNodeReport(node, binding, scope, status, message, requiredCount, exactCount, configuredChannels, availableChannels, autoChoice);
+    nodeReport = attachResourceBindingReport(nodeReport, node, state);
 end
 
 function nodeReport = makeBindingNodeReport(node, binding, scope, status, message, requiredCount, exactCount, configuredChannels, availableChannels, autoChoice)
@@ -829,7 +839,113 @@ function nodeReport = makeBindingNodeReport(node, binding, scope, status, messag
         'availableChannels', {availableChannels}, ...
         'autoChoice', {autoChoice}, ...
         'producedChannelName', {resolveNodeProducedChannelName(node, binding)}, ...
+        'resources', struct('inputs', {resourceBindingDef()}, 'outputs', {resourceBindingDef()}), ...
         'downstreamDemand', []);
+end
+
+function tf = legacyChannelBindingApplies(binding)
+    mode = lower(char(string(getField(binding, 'mode', ''))));
+    tf = ~any(strcmp(mode, {'inventory','dataseries','data_series','mask','masks','resource','resources','symbolic'}));
+end
+
+function nodeReport = attachResourceBindingReport(nodeReport, node, state)
+    contract = getField(node, 'contract', struct());
+    resources = getField(contract, 'resources', struct());
+    inputs = getField(resources, 'in', resourceSpecDef());
+    outputs = getField(resources, 'out', resourceSpecDef());
+
+    inputReports = resourceBindingDef();
+    worstStatus = nodeReport.status;
+    worstMessage = nodeReport.message;
+    for i = 1:numel(inputs)
+        r = inputs(i);
+        if isempty(getField(r, 'type', ''))
+            continue;
+        end
+        br = evaluateResourceInput(node, r, state.resources);
+        inputReports(end+1) = br; %#ok<AGROW>
+        if resourceStatusRank(br.status) > resourceStatusRank(worstStatus)
+            worstStatus = br.status;
+            worstMessage = br.message;
+        end
+    end
+
+    outputReports = resourceBindingDef();
+    for i = 1:numel(outputs)
+        r = outputs(i);
+        if isempty(getField(r, 'type', ''))
+            continue;
+        end
+        outputReports(end+1) = makeResourceOutput(node, r); %#ok<AGROW>
+    end
+
+    nodeReport.resources = struct('inputs', {inputReports}, 'outputs', {outputReports});
+    if ~strcmp(worstStatus, nodeReport.status)
+        nodeReport.status = worstStatus;
+        nodeReport.message = worstMessage;
+    elseif ~isempty(inputReports) && strcmp(nodeReport.status, 'resolved')
+        unresolved = inputReports(~strcmp({inputReports.status}, 'resolved'));
+        if ~isempty(unresolved)
+            nodeReport.status = unresolved(1).status;
+            nodeReport.message = unresolved(1).message;
+        end
+    end
+end
+
+function br = evaluateResourceInput(node, spec, availableResources)
+    configured = resolveResourceConfiguredValue(node, spec);
+    compatible = findCompatibleResources(availableResources, spec);
+    status = 'resolved';
+    autoChoice = resourceInventoryDef();
+
+    if ~isempty(configured)
+        status = 'resolved';
+        msg = sprintf('Node %s binds %s resource "%s" to %s.', ...
+            char(string(getField(node, 'id', ''))), char(string(spec.type)), configured, char(string(spec.param)));
+    elseif numel(compatible) == 1
+        status = 'auto_resolvable';
+        autoChoice = compatible;
+        msg = sprintf('Node %s can bind %s/%s automatically from %s.', ...
+            char(string(getField(node, 'id', ''))), char(string(spec.type)), char(string(spec.role)), ...
+            resourceSourceLabel(compatible));
+    elseif numel(compatible) > 1
+        status = 'needs_user_binding';
+        msg = sprintf('Node %s needs a %s/%s resource selection; multiple compatible upstream resources exist.', ...
+            char(string(getField(node, 'id', ''))), char(string(spec.type)), char(string(spec.role)));
+    elseif logical(getField(spec, 'required', false))
+        status = 'needs_run_binding';
+        msg = sprintf('Node %s requires %s/%s resource for parameter %s, but none is available upstream yet.', ...
+            char(string(getField(node, 'id', ''))), char(string(spec.type)), char(string(spec.role)), char(string(spec.param)));
+    else
+        msg = sprintf('Node %s has optional %s/%s resource binding.', ...
+            char(string(getField(node, 'id', ''))), char(string(spec.type)), char(string(spec.role)));
+    end
+
+    br = resourceBindingDef('', '', '', '', '', '', '');
+    br.type = char(string(spec.type));
+    br.role = char(string(spec.role));
+    br.symbol = char(string(spec.symbol));
+    br.param = char(string(spec.param));
+    br.status = status;
+    br.message = msg;
+    br.configured = configured;
+    br.available = compatible;
+    br.autoChoice = autoChoice;
+end
+
+function rank = resourceStatusRank(status)
+    switch char(string(status))
+        case 'invalid'
+            rank = 4;
+        case 'needs_user_binding'
+            rank = 3;
+        case 'needs_run_binding'
+            rank = 2;
+        case 'auto_resolvable'
+            rank = 1;
+        otherwise
+            rank = 0;
+    end
 end
 
 function state = applyConstraintOutputs(node, state, nodeReport)
@@ -854,8 +970,14 @@ function state = applyConstraintOutputs(node, state, nodeReport)
         state.hasDataSeries = true;
     end
 
+    if isfield(nodeReport, 'resources') && isstruct(nodeReport.resources) && ...
+            isfield(nodeReport.resources, 'outputs') && ~isempty(nodeReport.resources.outputs)
+        state.resources = mergeResourceInventory(state.resources, nodeReport.resources.outputs);
+    end
+
     if strcmp(nodeType, 'dataloader')
         state.imageChannels = mergeKnownChannels(state.imageChannels, getField(nodeReport, 'configuredChannels', {}));
+        state.imageChannels = mergeKnownChannels(state.imageChannels, resourceConcreteNames(state.resources, 'channel', 'source'));
         return;
     end
 
@@ -869,6 +991,7 @@ function state = applyConstraintOutputs(node, state, nodeReport)
             chosen = getField(nodeReport, 'availableChannels', {});
         end
         state.roiChannels = mergeKnownChannels(state.roiChannels, mergeKnownChannels(chosen, producedName));
+        state.roiChannels = mergeKnownChannels(state.roiChannels, resourceConcreteNames(state.resources, 'channel', 'roi_image'));
         return;
     end
 
@@ -879,6 +1002,7 @@ function state = applyConstraintOutputs(node, state, nodeReport)
         produced = mergeKnownChannels(getField(nodeReport, 'configuredChannels', {}), producedName);
         state.imageChannels = mergeKnownChannels(state.imageChannels, produced);
     end
+
 end
 
 function outStruct = annotateDownstreamBindingDemand(nodes, edges, order, reports)
@@ -1221,6 +1345,301 @@ function names = normalizeChannelList(v)
         for i = 1:numel(vals)
             names{end+1} = num2str(vals(i)); %#ok<AGROW>
         end
+    end
+end
+
+function resources = initialResourceInventory(ctx, sem)
+    resources = resourceInventoryDef();
+    imageChannels = getField(sem, 'imageChannels', {});
+    roiChannels = getField(sem, 'roiChannels', {});
+    for i = 1:numel(imageChannels)
+        resources(end+1) = resourceInventoryDef('channel', 'source', imageChannels{i}, imageChannels{i}, 'ctx', 'images', 'context'); %#ok<AGROW>
+    end
+    for i = 1:numel(roiChannels)
+        resources(end+1) = resourceInventoryDef('channel', 'roi_image', roiChannels{i}, roiChannels{i}, 'ctx', 'channels', 'context'); %#ok<AGROW>
+    end
+
+    dataSeries = {};
+    if isfield(ctx, 'dataSeries') && ~isempty(ctx.dataSeries)
+        dataSeries = normalizeResourceNameList(ctx.dataSeries);
+    elseif isfield(ctx, 'dataSeriesNames') && ~isempty(ctx.dataSeriesNames)
+        dataSeries = normalizeResourceNameList(ctx.dataSeriesNames);
+    elseif isfield(ctx, 'roiList') && ~isempty(ctx.roiList)
+        dataSeries = inferRoiDataSeriesNames(ctx.roiList);
+    end
+    for i = 1:numel(dataSeries)
+        resources(end+1) = resourceInventoryDef('dataSeries', inferDataSeriesRole(dataSeries{i}), dataSeries{i}, dataSeries{i}, 'ctx', 'dataSeries', 'context'); %#ok<AGROW>
+    end
+
+    masks = {};
+    if isfield(ctx, 'masks') && ~isempty(ctx.masks)
+        masks = normalizeResourceNameList(ctx.masks);
+    end
+    for i = 1:numel(masks)
+        resources(end+1) = resourceInventoryDef('mask', 'segmentation', masks{i}, masks{i}, 'ctx', 'masks', 'context'); %#ok<AGROW>
+    end
+
+    resources = mergeResourceInventory(resourceInventoryDef(), resources);
+end
+
+function out = resourceSpecDef()
+    out = struct('type',{},'role',{},'symbol',{},'param',{},'port',{},'nameParam',{},'required',{},'transfer',{});
+end
+
+function out = resourceBindingDef(type, role, symbol, concreteName, sourceNode, sourcePort, sourceKind)
+    if nargin == 0
+        out = struct('type',{},'role',{},'symbol',{},'concreteName',{},'sourceNode',{},'sourcePort',{},'sourceKind',{}, ...
+            'param',{},'status',{},'message',{},'configured',{},'available',{},'autoChoice',{});
+        return;
+    end
+    out = resourceInventoryDef(type, role, symbol, concreteName, sourceNode, sourcePort, sourceKind);
+    out.param = '';
+    out.status = 'resolved';
+    out.message = '';
+    out.configured = '';
+    out.available = resourceInventoryDef();
+    out.autoChoice = resourceInventoryDef();
+end
+
+function out = resourceInventoryDef(type, role, symbol, concreteName, sourceNode, sourcePort, sourceKind)
+    if nargin == 0
+        out = struct('type',{},'role',{},'symbol',{},'concreteName',{},'sourceNode',{},'sourcePort',{},'sourceKind',{});
+        return;
+    end
+    if nargin < 7, sourceKind = ''; end
+    if nargin < 6, sourcePort = ''; end
+    if nargin < 5, sourceNode = ''; end
+    if nargin < 4, concreteName = ''; end
+    if nargin < 3, symbol = ''; end
+    if nargin < 2, role = ''; end
+    out = struct( ...
+        'type', char(string(type)), ...
+        'role', char(string(role)), ...
+        'symbol', char(string(symbol)), ...
+        'concreteName', char(string(concreteName)), ...
+        'sourceNode', char(string(sourceNode)), ...
+        'sourcePort', char(string(sourcePort)), ...
+        'sourceKind', char(string(sourceKind)));
+end
+
+function out = mergeResourceInventory(a, b)
+    raw = [normalizeResourceInventory(a), normalizeResourceInventory(b)];
+    out = resourceInventoryDef();
+    seen = containers.Map('KeyType', 'char', 'ValueType', 'logical');
+    for i = 1:numel(raw)
+        key = lower(strjoin({raw(i).type, raw(i).role, raw(i).symbol, raw(i).concreteName, raw(i).sourceNode, raw(i).sourcePort}, '|'));
+        if isKey(seen, key)
+            continue;
+        end
+        seen(key) = true;
+        out(end+1) = raw(i); %#ok<AGROW>
+    end
+end
+
+function out = normalizeResourceInventory(v)
+    out = resourceInventoryDef();
+    if isempty(v) || ~isstruct(v)
+        return;
+    end
+    defaults = resourceInventoryDef('', '', '', '', '', '', '');
+    for i = 1:numel(v)
+        itemRaw = mergeStructLocal(defaults, v(i));
+        item = resourceInventoryDef( ...
+            char(string(getField(itemRaw, 'type', ''))), ...
+            char(string(getField(itemRaw, 'role', ''))), ...
+            char(string(getField(itemRaw, 'symbol', ''))), ...
+            char(string(getField(itemRaw, 'concreteName', ''))), ...
+            char(string(getField(itemRaw, 'sourceNode', ''))), ...
+            char(string(getField(itemRaw, 'sourcePort', ''))), ...
+            char(string(getField(itemRaw, 'sourceKind', ''))));
+        if isempty(item.type)
+            continue;
+        end
+        out(end+1) = item; %#ok<AGROW>
+    end
+end
+
+function out = makeResourceOutput(node, spec)
+    nodeId = char(string(getField(node, 'id', '')));
+    concreteName = resolveResourceOutputName(node, spec);
+    symbol = char(string(getField(spec, 'symbol', '')));
+    if isempty(symbol)
+        symbol = [nodeId '.' char(string(getField(spec, 'port', 'resource')))];
+    elseif ~contains(symbol, '.')
+        symbol = [nodeId '.' symbol];
+    end
+    out = resourceBindingDef(char(string(spec.type)), char(string(spec.role)), symbol, concreteName, nodeId, char(string(spec.port)), char(string(spec.transfer)));
+    out.param = char(string(getField(spec, 'param', '')));
+    out.message = sprintf('Node %s provides %s/%s resource "%s".', nodeId, out.type, out.role, out.concreteName);
+end
+
+function name = resolveResourceOutputName(node, spec)
+    name = '';
+    params = getField(node, 'params', struct());
+    key = char(string(getField(spec, 'nameParam', '')));
+    if ~isempty(key) && isstruct(params) && isfield(params, key) && ~isempty(params.(key))
+        name = choiceToString(params.(key));
+    end
+    if isempty(name)
+        key = char(string(getField(spec, 'param', '')));
+        if ~isempty(key) && isstruct(params) && isfield(params, key) && ~isempty(params.(key))
+            name = choiceToString(params.(key));
+        end
+    end
+    if isempty(name)
+        name = char(string(getField(node, 'id', '')));
+    end
+end
+
+function value = resolveResourceConfiguredValue(node, spec)
+    value = '';
+    params = getField(node, 'params', struct());
+    key = char(string(getField(spec, 'param', '')));
+    if isempty(key) || ~isstruct(params) || ~isfield(params, key) || isempty(params.(key))
+        return;
+    end
+    value = choiceToString(params.(key));
+end
+
+function out = choiceToString(v)
+    out = '';
+    if isempty(v)
+        return;
+    end
+    if iscell(v)
+        out = char(string(v{end}));
+    elseif ischar(v)
+        out = v;
+    elseif isstring(v) || isnumeric(v) || islogical(v) || iscategorical(v)
+        vals = string(v(:));
+        if ~isempty(vals)
+            out = char(vals(end));
+        end
+    else
+        try
+            out = char(string(v));
+        catch
+            out = '';
+        end
+    end
+    out = strtrim(out);
+end
+
+function compatible = findCompatibleResources(resources, spec)
+    resources = normalizeResourceInventory(resources);
+    compatible = resourceInventoryDef();
+    wantedType = lower(char(string(getField(spec, 'type', ''))));
+    wantedRole = lower(char(string(getField(spec, 'role', ''))));
+    for i = 1:numel(resources)
+        if ~strcmpi(resources(i).type, wantedType)
+            continue;
+        end
+        if ~isempty(wantedRole) && ~isempty(resources(i).role) && ~strcmpi(resources(i).role, wantedRole)
+            continue;
+        end
+        compatible(end+1) = resources(i); %#ok<AGROW>
+    end
+end
+
+function label = resourceSourceLabel(resource)
+    if isempty(resource)
+        label = '';
+        return;
+    end
+    r = resource(1);
+    label = char(string(r.symbol));
+    if isempty(label)
+        label = char(string(r.concreteName));
+    end
+    if ~isempty(r.sourceNode)
+        label = [label ' (' char(string(r.sourceNode)) ')'];
+    end
+end
+
+function names = resourceConcreteNames(resources, type, role)
+    names = {};
+    resources = normalizeResourceInventory(resources);
+    for i = 1:numel(resources)
+        if ~strcmpi(resources(i).type, type)
+            continue;
+        end
+        if nargin >= 3 && ~isempty(role) && ~strcmpi(resources(i).role, role)
+            continue;
+        end
+        nm = char(string(resources(i).concreteName));
+        if isempty(nm)
+            nm = char(string(resources(i).symbol));
+        end
+        if ~isempty(nm)
+            names{end+1} = nm; %#ok<AGROW>
+        end
+    end
+    names = unique(names, 'stable');
+end
+
+function names = normalizeResourceNameList(v)
+    names = normalizeChannelList(v);
+    if isstruct(v) || isobject(v)
+        names = {};
+        probes = {'name','groupid','id','concreteName','symbol'};
+        for i = 1:numel(v)
+            for j = 1:numel(probes)
+                value = [];
+                if isstruct(v) && isfield(v(i), probes{j})
+                    value = v(i).(probes{j});
+                elseif isobject(v) && isprop(v(i), probes{j})
+                    value = v(i).(probes{j});
+                end
+                if ~isempty(value)
+                    names{end+1} = char(string(value)); %#ok<AGROW>
+                    break
+                end
+            end
+        end
+        names = unique(names(~cellfun(@isempty, names)), 'stable');
+    end
+end
+
+function names = inferRoiDataSeriesNames(roiList)
+    names = {};
+    try
+        if isempty(roiList)
+            return;
+        end
+        r0 = roiList(1);
+        ds = [];
+        if isprop(r0, 'data')
+            ds = r0.data;
+        elseif isfield(r0, 'data')
+            ds = r0.data;
+        end
+        names = normalizeResourceNameList(ds);
+    catch
+        names = {};
+    end
+end
+
+function role = inferDataSeriesRole(name)
+    low = lower(char(string(name)));
+    if contains(low, 'rls')
+        role = 'rls';
+    elseif contains(low, 'div') || contains(low, 'class') || contains(low, 'cnn') || contains(low, 'lstm')
+        role = 'classification';
+    elseif contains(low, 'metric') || contains(low, 'quant')
+        role = 'metrics';
+    else
+        role = 'dataSeries';
+    end
+end
+
+function out = mergeStructLocal(base, override)
+    out = base;
+    if ~isstruct(override)
+        return;
+    end
+    fn = fieldnames(override);
+    for i = 1:numel(fn)
+        out.(fn{i}) = override.(fn{i});
     end
 end
 

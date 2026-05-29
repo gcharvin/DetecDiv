@@ -47,10 +47,13 @@ function [ctx, report] = runPipelineStructured(pipe, ctx)
         allowGui = logical(ctx.interactive);
     end
 
+    [pipe, bindingResolution] = pipelineResolveBindings(pipe, ctx, struct('allowGui', allowGui));
+
     [ok, report] = validatePipeline(pipe, ctx, struct('allowGui', allowGui));
     if ~ok
         error('runPipeline:Invalid','Pipeline validation failed: %s', strjoin(report.errors, ' | '));
     end
+    report.bindingResolution = bindingResolution;
     report = initRunReport(report, ctx);
 
     P = pipelineToStructLocal(pipe);

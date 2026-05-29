@@ -13,7 +13,9 @@ function [ok, report] = runPipelineDry(pipe, ctx, opts)
         allowGui = logical(opts.allowGui);
     end
 
-    [okV, report] = validatePipeline(pipe, ctx, struct('allowGui', allowGui));
+    [pipeResolved, bindingResolution] = pipelineResolveBindings(pipe, ctx, struct('allowGui', allowGui));
+    [okV, report] = validatePipeline(pipeResolved, ctx, struct('allowGui', allowGui));
+    report.bindingResolution = bindingResolution;
 
     % strict ok if any missing params (even if GUI could fill them)
     ok = okV;

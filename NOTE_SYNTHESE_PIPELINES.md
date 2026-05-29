@@ -2,6 +2,66 @@
 
 Date de redaction: 2026-04-01
 
+## Point d'etape 2026-05-29: ressources symboliques et auto-binding
+
+### Objectif du chantier
+
+Le chantier en cours vise a rendre les pipelines plus symboliques: un module ne doit pas forcement pointer directement vers un nom concret de channel, masque ou dataseries. Il doit pouvoir declarer qu'il consomme une ressource logique, par exemple `dataSeries/classification` ou `channel/source`, et le pipeline doit verifier si cette ressource est fournie par un module amont ou deja presente dans le projet.
+
+Exemple cible: un classifier CNN/LSTM produit un dataseries de classification, puis `computeRLS` consomme symboliquement ce dataseries. L'utilisateur ne devrait pas avoir a ressaisir partout le nom concret `div_1` si le pipeline peut l'inferer sans ambiguite.
+
+### Ce qui est implemente
+
+- `pipelineNodeContract.m` expose maintenant des ressources logiques d'entree et de sortie, via `contract.resources.in` et `contract.resources.out`.
+- Les ressources couvrent les familles principales: `channel`, `mask`, `dataSeries`, `roiList`.
+- `computeRLS` declare explicitement une entree `dataSeries/classification` liee au parametre runtime `classification_data`, et une sortie `dataSeries/rls`.
+- Les classifiers generiques declarent une sortie `dataSeries/classification`; les classifiers de type Cellpose-like declarent une sortie `mask/segmentation`.
+- Les dataloaders declarent des sorties `channel/source`; les modules ROI consomment ensuite ces channels symboliques.
+- `validatePipeline.m` maintient maintenant un inventaire de ressources disponibles et signale, par noeud, si une ressource est resolue, auto-resoluble, ambigue ou manquante.
+- `pipelineResolveBindings.m` applique les bindings automatiques quand il n'y a qu'une seule ressource compatible.
+- `runPipeline.m`, `runPipelineStructured.m` et `runPipelineDry.m` appellent ce resolver avant la validation finale.
+- `pipeline2.mlapp` et `pipeline2_extracted.m` affichent maintenant les bindings appliques automatiquement dans le rapport de validation, sans modifier destructivement le pipeline pendant un simple refresh.
+
+### Exemple de resolution attendue
+
+Pipeline symbolique:
+
+1. `cnn_lstm_1` produit `dataSeries/classification`, nom concret `div_1`.
+2. `computeRLS_1` demande `dataSeries/classification`.
+3. Le resolver remplit automatiquement `computeRLS_1.params.classification_data = 'div_1'`.
+
+Autre exemple:
+
+1. Un dataloader expose un channel source unique, par exemple `GFP`.
+2. `roiPattern_1` demande un `channel/source`.
+3. Le resolver remplit automatiquement `roiPattern_1.params.channel = 'GFP'`.
+
+### Ce qui reste volontairement limite
+
+- Le resolver n'invente pas de choix si plusieurs ressources compatibles existent: il laisse un statut `needs_user_binding`.
+- Le Display/Test avance n'est pas encore implemente. Il vaut mieux le construire plus tard autour de ce meme contrat de ressources.
+- L'UI fine par module n'est pas encore externalisee cote module. Pour l'instant, `pipeline2` consomme les contrats backend, mais garde encore une partie de la logique de presentation.
+- Les roles de dataseries sont inferees de facon pragmatique quand elles viennent d'un projet existant: `div/class/cnn/lstm` pour classification, `rls` pour RLS, etc. C'est suffisant pour demarrer, mais il faudra a terme stocker le role explicitement dans les sorties de modules.
+
+### Tests deja faits
+
+- Test synthetique `cnn_lstm -> computeRLS`: `classification_data` est auto-rempli avec `div_1`.
+- Test synthetique `dataloader -> roiPattern`: `channel` est auto-rempli avec `GFP`.
+- `runPipelineDry` passe sur les deux cas ci-dessus et inclut le rapport `bindingResolution`.
+- Test sur le projet Abhilasha April 2026: une ROI chargee avec `roi.load('data')` expose `div_1` et `RLS_div_1`; `computeRLS` seul auto-resout `classification_data = 'div_1'`.
+- `checkcode` ne remonte pas d'erreur de syntaxe sur les fichiers modifies.
+
+### Tests utilisateur recommandes
+
+1. Ouvrir `pipeline2`, creer un petit pipeline `classifier cnn_lstm -> processor computeRLS`, avec `outputName = div_1` cote classifier, puis verifier dans le rapport de validation la section `Auto bindings:`. Elle doit indiquer que `computeRLS_1.classification_data = div_1`.
+2. Sur le projet Abhilasha deja processé, tester un pipeline compose uniquement de `computeRLS` sur une ROI qui contient `div_1`. Le pipeline doit proposer ou appliquer `div_1` comme entree classification, sans avoir besoin de relire les `.h5`.
+3. Creer un pipeline `dataloader -> roiPattern` avec un seul channel source selectionne. Le rapport doit auto-binder le channel du module ROI.
+4. Refaire le meme test avec plusieurs channels ou plusieurs dataseries compatibles. Le bon comportement est de ne pas choisir automatiquement et de signaler qu'un binding utilisateur est necessaire.
+
+### Prochaine etape logique
+
+La prochaine etape n'est pas d'ajouter beaucoup de GUI, mais de continuer a deplacer les informations module-dependantes dans les contrats des modules: parametres statiques, parametres runtime, roles d'entree/sortie, valeurs par defaut, aides UI et modes de preview. `pipeline2` pourra alors devenir un frontend generique qui lit ces contrats, au lieu de contenir une logique specifique a chaque module.
+
 ## Objet
 
 Cette note synthetise les derniers commits lies aux pipelines, principalement entre le 2026-02-04 et le 2026-03-09, pour reprendre le developpement avec une vue claire de ce qui est deja en place.

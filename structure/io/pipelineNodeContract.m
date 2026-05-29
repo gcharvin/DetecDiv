@@ -38,6 +38,7 @@ function contract = defaultContractForNode(node)
     requirements = defaultRequirements();
     capabilities = defaultCapabilities();
     binding = defaultBinding();
+    resources = defaultResources();
     summary = '';
 
     t = lower(char(string(node.type)));
@@ -63,6 +64,7 @@ function contract = defaultContractForNode(node)
             binding.mode = 'inventory';
             binding.resolveAt = 'run';
             binding.transfer = 'sourceInventory';
+            resources.out = resourceDef('channel', 'source', 'channels', 'channelFilter', 'channels', 'channelFilter', false, 'sourceInventory');
             summary = 'Loads positions/FOVs and exposes source image channels.';
 
         case {'roiidentify','roipattern'}
@@ -82,6 +84,7 @@ function contract = defaultContractForNode(node)
             binding.mode = 'singleChannel';
             binding.exactCount = 1;
             binding.selectorKeys = {'channel'};
+            resources.in = resourceDef('channel', 'source', 'channel', 'channel', 'images', 'channel', true, '');
             summary = 'Detects ROIs from source images, usually on one selected channel.';
 
         case 'roimanual'
@@ -146,6 +149,8 @@ function contract = defaultContractForNode(node)
             binding.selectorKeys = {'channels'};
             binding.resolveAt = 'run';
             binding.transfer = 'imagesToRoi';
+            resources.in = resourceDef('channel', 'source', 'channels', 'channels', 'images', 'channels', false, '');
+            resources.out = resourceDef('channel', 'roi_image', 'channels', 'channels', 'channels', 'channels', false, 'imagesToRoi');
             summary = 'Extracts ROI crops and materializes ROI image channels for downstream ROI processing.';
 
         case 'processor'
@@ -184,6 +189,11 @@ function contract = defaultContractForNode(node)
                 binding.mode = 'maskAndSeries';
                 binding.selectorKeys = {'masks','dataSeries'};
                 binding.resolveAt = 'run';
+                resources.in = [ ...
+                    resourceDef('mask', 'cell_mask', 'masks', 'masks', 'masks', 'masks', true, ''), ...
+                    resourceDef('dataSeries', 'frame_metrics', 'dataSeries', 'dataSeries', 'dataSeries', 'dataSeries', false, '') ...
+                    ];
+                resources.out = resourceDef('dataSeries', 'metrics', 'dataSeries', 'outputName', 'dataSeries', 'outputName', false, 'roiDataSeries');
                 summary = 'Computes mask-linked fluorescence metrics and consumes both masks and existing dataseries.';
             else
             selectors.channelsParam = 'channels';
@@ -201,6 +211,8 @@ function contract = defaultContractForNode(node)
             binding.mode = 'channelSet';
             binding.selectorKeys = {'channels','channel'};
             binding.resolveAt = 'run';
+            resources.in = resourceDef('channel', 'roi_image', 'channels', 'channels', 'channels', 'channels', false, '');
+            resources.out = resourceDef('dataSeries', 'processor_output', 'dataSeries', 'outputName', 'dataSeries', 'outputName', false, 'roiDataSeries');
             summary = 'Processes ROI content. Requires ROI support and usually at least one ROI image channel.';
             end
 
@@ -227,6 +239,8 @@ function contract = defaultContractForNode(node)
             binding.mode = 'channelSet';
             binding.selectorKeys = {'channels','channel'};
             binding.resolveAt = 'run';
+            resources.in = resourceDef('channel', 'roi_image', 'channels', 'channels', 'channels', 'channels', true, '');
+            resources.out = resourceDef('dataSeries', 'classification', 'dataSeries', 'outputName', 'dataSeries', 'outputName', false, 'roiDataSeries');
             summary = 'Classifies ROI content from selected ROI channels and writes derived outputs.';
             if classifierProducesMasks(p, f)
                 out = [portDef('roiList', 'roiList', true, 'edge'), portDef('masks', 'maskSet', true, 'edge')];
@@ -236,9 +250,14 @@ function contract = defaultContractForNode(node)
                 if strcmp(p, 'cellposesam')
                     capabilities.roiDataSeries = false;
                     capabilities.outputsDataSeries = false;
+                    resources.out = resourceDef('mask', 'segmentation', 'masks', 'outputName', 'masks', 'outputName', false, 'roiMasks');
                     summary = 'Segments ROI content into instance masks and optional result channels.';
                 else
                     out = [out, portDef('dataSeries', 'dataSeriesSet', false, 'edge')];
+                    resources.out = [ ...
+                        resourceDef('mask', 'segmentation', 'masks', 'outputName', 'masks', 'outputName', false, 'roiMasks'), ...
+                        resourceDef('dataSeries', 'classification', 'dataSeries', 'outputName', 'dataSeries', 'outputName', false, 'roiDataSeries') ...
+                        ];
                     summary = 'Segments ROI content and can emit mask outputs plus ROI-linked result channels.';
                 end
             end
@@ -261,6 +280,7 @@ function contract = defaultContractForNode(node)
         'requirements', requirements, ...
         'capabilities', capabilities, ...
         'binding', binding, ...
+        'resources', resources, ...
         'summary', char(string(summary)));
 
     contract = enrichContractFromPackage(contract, node);
@@ -325,6 +345,9 @@ function contract = mergeContracts(defaultContract, existingContract, node)
         end
         if isfield(existingContract, 'binding') && isstruct(existingContract.binding)
             contract.binding = mergeBindingStruct(defaultContract.binding, existingContract.binding);
+        end
+        if isfield(existingContract, 'resources') && isstruct(existingContract.resources)
+            contract.resources = mergeResourceStruct(getField(defaultContract, 'resources', defaultResources()), existingContract.resources);
         end
         if isfield(existingContract, 'summary') && ~isempty(existingContract.summary)
             contract.summary = char(string(existingContract.summary));
@@ -540,7 +563,32 @@ function contract = enrichContractFromPackage(contract, node)
                 contract.binding.exactCountParam = 'requiredChannelCount';
                 contract.binding.outputChannelNameParam = 'outputChannelName';
                 contract.binding.transfer = 'roiChannelsToRoiChannel';
+                contract.resources.in = resourceDef('channel', 'roi_image', 'Channel', 'Channel1', 'channels', 'Channel1', false, '');
+                contract.resources.out = resourceDef('channel', 'derived_roi_image', 'channels', 'outputChannelName', 'channels', 'outputChannelName', false, 'roiChannel');
                 contract.summary = 'Combines selected ROI channels into one derived ROI image channel.';
+            case 'computerls'
+                contract.in = [ ...
+                    portDef('roiList', 'roiList', true, 'edge'), ...
+                    portDef('dataSeries', 'dataSeriesSet', true, 'edge') ...
+                    ];
+                contract.out = [ ...
+                    portDef('roiList', 'roiList', true, 'edge'), ...
+                    portDef('dataSeries', 'dataSeriesSet', true, 'edge') ...
+                    ];
+                contract.parameters.data = unique([contract.parameters.data {'classification_data'}], 'stable');
+                contract.parameters.run = setdiff(contract.parameters.run, {'channels','channel'}, 'stable');
+                contract.requirements.roi.channelsMin = 0;
+                contract.requirements.roi.dataSeries = true;
+                contract.binding.scope = 'roi';
+                contract.binding.outputScope = 'roi';
+                contract.binding.mode = 'dataSeries';
+                contract.binding.selectorKeys = {'classification_data'};
+                contract.binding.resolveAt = 'run';
+                contract.capabilities.roiDataSeries = true;
+                contract.capabilities.outputsDataSeries = true;
+                contract.resources.in = resourceDef('dataSeries', 'classification', 'classification_data', 'classification_data', 'dataSeries', 'classification_data', true, '');
+                contract.resources.out = resourceDef('dataSeries', 'rls', 'dataSeries', 'outputName', 'dataSeries', 'outputName', false, 'roiDataSeries');
+                contract.summary = 'Computes RLS events from an upstream or existing classification dataseries.';
         end
     end
 end
@@ -606,6 +654,35 @@ function b = defaultBinding()
         'notes', {{}});
 end
 
+function r = defaultResources()
+    r = struct( ...
+        'in', resourceDef(), ...
+        'out', resourceDef());
+end
+
+function r = resourceDef(type, role, symbol, param, port, nameParam, required, transfer)
+    if nargin == 0
+        r = struct('type',{},'role',{},'symbol',{},'param',{},'port',{},'nameParam',{},'required',{},'transfer',{});
+        return;
+    end
+    if nargin < 8, transfer = ''; end
+    if nargin < 7 || isempty(required), required = false; end
+    if nargin < 6, nameParam = ''; end
+    if nargin < 5, port = ''; end
+    if nargin < 4, param = ''; end
+    if nargin < 3, symbol = ''; end
+    if nargin < 2, role = ''; end
+    r = struct( ...
+        'type', char(string(type)), ...
+        'role', char(string(role)), ...
+        'symbol', char(string(symbol)), ...
+        'param', char(string(param)), ...
+        'port', char(string(port)), ...
+        'nameParam', char(string(nameParam)), ...
+        'required', logical(required), ...
+        'transfer', char(string(transfer)));
+end
+
 function out = mergeRequirementStruct(base, override)
     out = base;
     if ~isstruct(override)
@@ -639,6 +716,19 @@ function out = mergeBindingStruct(base, override)
     end
     if isfield(override, 'notes') && ~isempty(override.notes)
         out.notes = normalizeCellstr(override.notes);
+    end
+end
+
+function out = mergeResourceStruct(base, override)
+    out = base;
+    if ~isstruct(override)
+        return;
+    end
+    if isfield(override, 'in')
+        out.in = normalizeResourceArray(override.in);
+    end
+    if isfield(override, 'out')
+        out.out = normalizeResourceArray(override.out);
     end
 end
 
@@ -687,6 +777,11 @@ function contract = normalizeContract(contract)
     else
         contract.binding = mergeBindingStruct(defaultBinding(), contract.binding);
     end
+    if ~isfield(contract, 'resources') || ~isstruct(contract.resources)
+        contract.resources = defaultResources();
+    else
+        contract.resources = mergeResourceStruct(defaultResources(), contract.resources);
+    end
 
     contract.selectors.defaultChannels = normalizeCellstr(contract.selectors.defaultChannels);
     contract.parameters.fixed = normalizeCellstr(contract.parameters.fixed);
@@ -701,6 +796,8 @@ function contract = normalizeContract(contract)
     contract.capabilities.notes = normalizeCellstr(contract.capabilities.notes);
     contract.binding.selectorKeys = normalizeCellstr(contract.binding.selectorKeys);
     contract.binding.notes = normalizeCellstr(contract.binding.notes);
+    contract.resources.in = normalizeResourceArray(contract.resources.in);
+    contract.resources.out = normalizeResourceArray(contract.resources.out);
 
     if isempty(contract.selectors.defaultChannelCount) && ~isempty(contract.selectors.defaultChannels)
         contract.selectors.defaultChannelCount = numel(contract.selectors.defaultChannels);
@@ -710,6 +807,29 @@ function contract = normalizeContract(contract)
         contract.summary = '';
     else
         contract.summary = char(string(contract.summary));
+    end
+end
+
+function out = normalizeResourceArray(v)
+    out = resourceDef();
+    if isempty(v) || ~isstruct(v)
+        return;
+    end
+    defaults = resourceDef('', '', '', '', '', '', false, '');
+    for i = 1:numel(v)
+        item = mergeScalarStruct(defaults, v(i));
+        item.type = char(string(getField(item, 'type', '')));
+        item.role = char(string(getField(item, 'role', '')));
+        item.symbol = char(string(getField(item, 'symbol', '')));
+        item.param = char(string(getField(item, 'param', '')));
+        item.port = char(string(getField(item, 'port', '')));
+        item.nameParam = char(string(getField(item, 'nameParam', '')));
+        item.required = logical(getField(item, 'required', false));
+        item.transfer = char(string(getField(item, 'transfer', '')));
+        if isempty(item.type)
+            continue;
+        end
+        out(end+1) = item; %#ok<AGROW>
     end
 end
 

@@ -2708,7 +2708,9 @@ classdef pipeline2 < matlab.apps.AppBase
             end
 
             try
-                [ok, report] = validatePipeline(pipe, ctx, struct('allowGui', false));
+                [pipeResolved, bindingResolution] = pipelineResolveBindings(pipe, ctx, struct('allowGui', false));
+                [ok, report] = validatePipeline(pipeResolved, ctx, struct('allowGui', false));
+                report.bindingResolution = bindingResolution;
             catch ME
                 ok = false;
                 report = struct('errors', {{ME.message}}, 'warnings', {{}}, 'solver', struct());
@@ -2750,7 +2752,9 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
             try
-                [ok, report] = validatePipeline(pipe, ctx, struct('allowGui', false));
+                [pipeResolved, bindingResolution] = pipelineResolveBindings(pipe, ctx, struct('allowGui', false));
+                [ok, report] = validatePipeline(pipeResolved, ctx, struct('allowGui', false));
+                report.bindingResolution = bindingResolution;
             catch ME
                 ok = false;
                 report = struct('errors', {{ME.message}}, 'warnings', {{}}, 'solver', struct());
@@ -2913,6 +2917,18 @@ classdef pipeline2 < matlab.apps.AppBase
                     lines{end+1} = ''; %#ok<AGROW>
                     lines{end+1} = sprintf('Solver issues: %d', numel(report.solver.issues)); %#ok<AGROW>
                 end
+                if isfield(report, 'bindingResolution') && isstruct(report.bindingResolution) && ...
+                        isfield(report.bindingResolution, 'applied') && ~isempty(report.bindingResolution.applied)
+                    lines{end+1} = ''; %#ok<AGROW>
+                    lines{end+1} = 'Auto bindings:'; %#ok<AGROW>
+                    applied = report.bindingResolution.applied;
+                    for i = 1:min(numel(applied), 8)
+                        lines{end+1} = sprintf('- %s.%s = %s', ...
+                            char(string(applied(i).nodeId)), ...
+                            char(string(applied(i).param)), ...
+                            char(string(applied(i).value))); %#ok<AGROW>
+                    end
+                end
             end
             txt = strjoin(lines, newline);
         end
@@ -2992,6 +3008,11 @@ classdef pipeline2 < matlab.apps.AppBase
             pipeObj = buildPipelineObject(app, targetPath);
             pipeObj.nodes = applyRunNodeParamsToNodes(app, pipeObj.nodes, ctx.run.nodeParams);
             pipeObj.nodes = applyRuntimeDerivedNodePolicies(app, pipeObj.nodes);
+            try
+                [pipeObj, bindingResolution] = pipelineResolveBindings(pipeObj, ctx, struct('allowGui', false));
+                app.Data.lastBindingResolution = bindingResolution;
+            catch
+            end
         end
 
         function nodes = applyRunNodeParamsToNodes(app, nodes, nodeParams)
