@@ -1,4 +1,4 @@
-function [p2, ok, how] = detecdiv_paths_rebase_datasetpath(oldDatasetPath, newRoot, debug, maxDepth)
+function [p2, ok, how] = detecdiv_paths_rebase_datasetpath(oldDatasetPath, newRoot, debug, maxDepth, allowDirectDatasetRename)
 % Rebase a dataset folder path such as *.ome.zarr under a new root.
 % Strategy:
 %   1) Accept exact dataset folder selection.
@@ -11,6 +11,8 @@ how = "";
 
 if nargin < 3, debug = false; end
 if nargin < 4 || isempty(maxDepth), maxDepth = 0; end
+if nargin < 5, allowDirectDatasetRename = false; end
+allowDirectDatasetRename = logical(allowDirectDatasetRename);
 
 oldDatasetPath = string(oldDatasetPath);
 newRoot = string(newRoot);
@@ -37,6 +39,13 @@ if isfolder(newRoot)
             how = "pickedDataset";
             return;
         end
+    end
+
+    if allowDirectDatasetRename && localLooksLikeDatasetFolder(newRoot)
+        p2 = newRoot;
+        ok = true;
+        how = "pickedRenamedDataset";
+        return;
     end
 else
     return;

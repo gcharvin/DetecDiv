@@ -6,6 +6,7 @@ function varargout = detecdiv_paths_relink_project(obj, varargin)
 %   report = detecdiv_paths_relink_project(obj) % UI prompt for RAWDATA folder
 %   report = detecdiv_paths_relink_project(obj, rawRoot)
 %   report = detecdiv_paths_relink_project(obj, rawRoot, 'Debug', true)
+%   report = detecdiv_paths_relink_project(obj, rawRoot, 'Force', true)
 %   report = detecdiv_paths_relink_project(obj, 'Debug', true) % UI + options
 %   [obj, report] = detecdiv_paths_relink_project(obj, rawRoot) % legacy-compatible
 
@@ -14,7 +15,7 @@ args = varargin;
 if ~isempty(args)
     first = args{1};
     isNameToken = (ischar(first) || (isstring(first) && isscalar(first))) && ...
-        any(strcmpi(string(first), ["Debug","Channels"]));
+        any(strcmpi(string(first), ["Debug","Channels","Force"]));
     if ~isNameToken
         rawRoot = string(first);
         args = args(2:end);
@@ -24,9 +25,11 @@ end
 ip = inputParser;
 ip.addParameter('Debug', false, @(x)islogical(x) || isnumeric(x));
 ip.addParameter('Channels', [], @(x)isnumeric(x) || isempty(x));
+ip.addParameter('Force', false, @(x)islogical(x) || isnumeric(x));
 ip.parse(args{:});
 
 debug = logical(ip.Results.Debug);
+forceRebase = logical(ip.Results.Force);
 channels = unique(double(ip.Results.Channels(:)'));
 channels = channels(channels >= 1 & mod(channels,1)==0);
 
@@ -112,7 +115,7 @@ for i = 1:nFov
         rec.error = '';
 
         try
-            [f, rec.ok] = detecdiv_paths_ensure_fov_ready(f, ch, debug, false, rawRoot);
+            [f, rec.ok] = detecdiv_paths_ensure_fov_ready(f, ch, debug, false, rawRoot, forceRebase);
             rec.after = char(localGetRawPointer(f, ch));
         catch ME
             rec.ok = false;

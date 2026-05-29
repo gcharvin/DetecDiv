@@ -30,6 +30,7 @@ classdef detecdiv < matlab.apps.AppBase
         MakeROImoviesMenu              matlab.ui.container.Menu
         ProjectMenu                    matlab.ui.container.Menu
         ReloadprojectfromdiskMenu      matlab.ui.container.Menu
+        ForcerawdatapathrebaseMenu     matlab.ui.container.Menu
         PositionsMenu                  matlab.ui.container.Menu
         AddPositionsDataMenu           matlab.ui.container.Menu
         SetFrameOrientationMenu        matlab.ui.container.Menu
@@ -6293,6 +6294,87 @@ end
 
         end
 
+        function ForcerawdatapathrebaseMenuSelected(app, event) %#ok<INUSD>
+            if numel(app.Tree.SelectedNodes)==0
+                uialert(app.DetecDivUIFigure,'First select a project in the tree window!','Error');
+                return;
+            end
+
+            if ~strcmp(app.Tree.SelectedNodes.Tag,'Project')
+                uialert(app.DetecDivUIFigure,'Select a project node before forcing raw-data rebase.','Error','Icon','warning');
+                return;
+            end
+
+            i = app.Tree.SelectedNodes.UserData;
+            proj = app.Data.Project{i};
+            shallowObj = evalin('base',proj);
+
+            if isempty(shallowObj) || ~isa(shallowObj, 'shallow')
+                uialert(app.DetecDivUIFigure,'This project does not exist in the workspace.','Error','Icon','warning');
+                return;
+            end
+
+            selection = uiconfirm(app.DetecDivUIFigure, ...
+                ['Force raw-data path rebase for the selected project?' newline newline ...
+                 'This recalculates FOV source paths from a RAWDATA root even when the current paths are still reachable.'], ...
+                'Force raw-data rebase', ...
+                'Options', {'Rebase','Cancel'}, ...
+                'DefaultOption', 1, ...
+                'CancelOption', 2, ...
+                'Icon', 'warning');
+
+            if ~strcmp(selection, 'Rebase')
+                return;
+            end
+
+            try
+                [~, report] = detecdiv_paths_relink_project(shallowObj, 'Force', true);
+            catch ME
+                uialert(app.DetecDivUIFigure, ME.message, 'Force raw-data rebase failed', 'Icon', 'error');
+                return;
+            end
+
+            if isempty(report)
+                uialert(app.DetecDivUIFigure, 'No FOV/channel entry was rebased.', 'Force raw-data rebase', 'Icon', 'warning');
+                return;
+            end
+
+            okCount = sum([report.ok]);
+            totalCount = numel(report);
+            changed = false;
+            try
+                changed = any(~strcmp({report.before}, {report.after}));
+            catch
+            end
+
+            msg = sprintf('Raw-data rebase done: %d/%d channel entries valid.', okCount, totalCount);
+            if changed
+                saveChoice = uiconfirm(app.DetecDivUIFigure, ...
+                    [msg newline newline 'Save the project file now?'], ...
+                    'Force raw-data rebase', ...
+                    'Options', {'Save project','Do not save'}, ...
+                    'DefaultOption', 1, ...
+                    'CancelOption', 2, ...
+                    'Icon', 'info');
+                if strcmp(saveChoice, 'Save project')
+                    try
+                        detecdiv_hub_assert_project_writable(shallowObj);
+                        app.saveShallowProjectWithProgress(shallowObj, 'Saving rebased project...');
+                    catch ME
+                        uialert(app.DetecDivUIFigure, ME.message, 'Save error', 'Icon', 'error');
+                    end
+                end
+            else
+                uialert(app.DetecDivUIFigure, msg, 'Force raw-data rebase', 'Icon', 'success');
+            end
+
+            checkImagePath(app,shallowObj);
+            TreeSelectionChanged(app, event)
+            gatherVarsFromWorkspace(app);
+            displayNodes(app);
+
+        end
+
         % Callback function
         function CheckrawdatapathButtonPushed(app, event)
             if numel(app.Tree.SelectedNodes)==0
@@ -9097,6 +9179,11 @@ end
             app.ReloadprojectfromdiskMenu = uimenu(app.ProjectMenu);
             app.ReloadprojectfromdiskMenu.MenuSelectedFcn = createCallbackFcn(app, @ReloadprojectfromdiskMenuSelected, true);
             app.ReloadprojectfromdiskMenu.Text = 'Reload project from disk';
+
+            % Create ForcerawdatapathrebaseMenu
+            app.ForcerawdatapathrebaseMenu = uimenu(app.ProjectMenu);
+            app.ForcerawdatapathrebaseMenu.MenuSelectedFcn = createCallbackFcn(app, @ForcerawdatapathrebaseMenuSelected, true);
+            app.ForcerawdatapathrebaseMenu.Text = 'Force raw-data path rebase...';
 
             % Create PositionsMenu
             app.PositionsMenu = uimenu(app.ProjectMenu);

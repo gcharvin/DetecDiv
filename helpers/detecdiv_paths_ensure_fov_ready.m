@@ -1,4 +1,4 @@
-function [obj, ok] = detecdiv_paths_ensure_fov_ready(obj, channel, debug, interactive, rootHint)
+function [obj, ok] = detecdiv_paths_ensure_fov_ready(obj, channel, debug, interactive, rootHint, forceRebase)
 % Ensure raw source exists. If not, ask user to pick a RAWDATA root and try to rebase.
 % Silent by default. Console output only on real problems.
 
@@ -6,6 +6,8 @@ if nargin < 2 || isempty(channel), channel = 1; end
 if nargin < 3, debug = false; end   % <-- SILENT by default
 if nargin < 4, interactive = true; end
 if nargin < 5, rootHint = ""; end
+if nargin < 6, forceRebase = false; end
+forceRebase = logical(forceRebase);
 
 ok = true;
 channel = max(1, min(channel, numel(obj.channel)));
@@ -29,7 +31,7 @@ if isMT
         p0 = string(obj.tiffSource{1});
     end
 
-    if exist(p0,'file')
+    if ~forceRebase && exist(p0,'file')
         return;
     end
 elseif isND
@@ -39,7 +41,7 @@ elseif isND
         p0 = "";
     end
 
-    if strlength(p0) > 0 && isfolder(p0)
+    if ~forceRebase && strlength(p0) > 0 && isfolder(p0)
         return;
     end
 else
@@ -52,19 +54,26 @@ else
     end
 
     p0 = string(obj.srcpath{channel});
-    if isfolder(p0)
+    if ~forceRebase && isfolder(p0)
         return;
     end
 end
 
-% ---- here: RAWDATA really missing ----
-fprintf('[paths] rawdata missing for FOV %s ch=%d\n', localFovLabel(obj), channel);
-fprintf('[paths] expected source: %s\n', p0);
+% ---- here: RAWDATA missing, or caller explicitly requested a rebase ----
+if forceRebase
+    fprintf('[paths] forcing rawdata rebase for FOV %s ch=%d\n', localFovLabel(obj), channel);
+    fprintf('[paths] current source: %s\n', p0);
+else
+    fprintf('[paths] rawdata missing for FOV %s ch=%d\n', localFovLabel(obj), channel);
+    fprintf('[paths] expected source: %s\n', p0);
+end
 
 % --- known roots ---
 roots = localCollectKnownRoots(userprefs);
 rootHint = string(rootHint);
-if strlength(rootHint) > 0
+if forceRebase && strlength(rootHint) > 0
+    roots = rootHint;
+elseif strlength(rootHint) > 0
     roots = unique([rootHint; roots], 'stable');
 end
 fprintf('[paths] trying %d candidate root(s) for FOV %s ch=%d\n', ...
@@ -82,7 +91,7 @@ for r = 1:numel(roots)
     elseif isND
         [p2, ok2] = detecdiv_paths_rebase_ndtiff(p0, root, debug);
     elseif isOZ
-        [p2, ok2] = detecdiv_paths_rebase_datasetpath(p0, root, debug, 4);
+        [p2, ok2] = detecdiv_paths_rebase_datasetpath(p0, root, debug, 4, forceRebase);
     else
         [p2, ok2] = detecdiv_paths_rebase_pospath(p0, root, debug);
     end
@@ -195,7 +204,7 @@ elseif isND
     [p2, ok2] = detecdiv_paths_rebase_ndtiff(p0, root, debug);
     how = "";
 elseif isOZ
-    [p2, ok2, how] = detecdiv_paths_rebase_datasetpath(p0, root, debug, 6);
+    [p2, ok2, how] = detecdiv_paths_rebase_datasetpath(p0, root, debug, 6, forceRebase);
 else
     [p2, ok2, how] = detecdiv_paths_rebase_pospath(p0, root, debug);
 end
