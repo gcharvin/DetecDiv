@@ -130,10 +130,7 @@ end
         function [spec, t] = buildParamTable(app, param)
 % buildParamTable  Build UIParametersTable data + spec from param struct.
 
-    tp = param;
-    if isfield(tp,'tip')
-        tp = rmfield(tp,'tip');
-    end
+    [tp, metadata] = splitParamMetadata(app, param);
 
     keys = fieldnames(tp);
     n = numel(keys);
@@ -154,9 +151,84 @@ end
 
         spec.(k) = struct('type', vType, 'choices', {choices});
         spec.(k).raw = v;
+        spec.(k).tooltip = paramTooltipText(app, metadata, k, i);
     end
 
     t = table(Param, Value);
+end
+
+function [param, metadata] = splitParamMetadata(app, param) %#ok<INUSD>
+% splitParamMetadata  Remove optional UI metadata from processor params.
+    metadata = struct();
+    metadata.tip = {};
+    metadata.tooltip = struct();
+
+    if isempty(param) || ~isstruct(param)
+        return;
+    end
+
+    if isfield(param,'tip')
+        metadata.tip = param.tip;
+    end
+
+    tooltipFields = {'paramTooltip','paramTooltips','tooltip','tooltips'};
+    for ii = 1:numel(tooltipFields)
+        f = tooltipFields{ii};
+        if isfield(param,f) && isstruct(param.(f))
+            metadata.tooltip = param.(f);
+            break;
+        end
+    end
+
+    param = stripParamMetadata(app, param);
+end
+
+function param = stripParamMetadata(app, param) %#ok<INUSD>
+% stripParamMetadata  Keep UI-only metadata out of saved/executed params.
+    if isempty(param) || ~isstruct(param)
+        return;
+    end
+    fields = {'tip','paramTooltip','paramTooltips','tooltip','tooltips','paramInfo'};
+    for ii = 1:numel(fields)
+        if isfield(param, fields{ii})
+            param = rmfield(param, fields{ii});
+        end
+    end
+end
+
+function txt = paramTooltipText(app, metadata, key, idx) %#ok<INUSD>
+% paramTooltipText  Prefer structured tooltip metadata, fallback to legacy tip.
+    txt = '';
+
+    if isfield(metadata,'tooltip') && isstruct(metadata.tooltip) && isfield(metadata.tooltip,key)
+        txt = metadata.tooltip.(key);
+    elseif isfield(metadata,'tip') && numel(metadata.tip) >= idx
+        txt = metadata.tip{idx};
+    end
+
+    txt = normalizeTooltipText(app, txt);
+end
+
+function txt = normalizeTooltipText(app, txt) %#ok<INUSD>
+    if isempty(txt)
+        txt = '';
+        return;
+    end
+    if iscell(txt)
+        txt = strjoin(cellstr(string(txt(:))), newline);
+    elseif isstring(txt)
+        txt = strjoin(cellstr(txt(:)), '');
+    else
+        txt = char(string(txt));
+    end
+end
+
+function value = tooltipTextAreaValue(app, txt) %#ok<INUSD>
+    if isempty(txt)
+        value = {'No parameter description available.'};
+    else
+        value = regexp(char(string(txt)), '\r\n|\n|\r', 'split')';
+    end
 end
 
 function param = paramStructFromTable(app)
@@ -397,6 +469,10 @@ function showParamEditor(app, key)
     type = spec.type;
     choices = {};
     if isfield(spec,'choices'), choices = spec.choices; end
+    tooltipText = '';
+    if isfield(spec,'tooltip')
+        tooltipText = spec.tooltip;
+    end
 
     % Layout area (adjust if needed)
     baseX = 480; baseY = 260; w = 260; h = 200;
@@ -477,6 +553,18 @@ function showParamEditor(app, key)
                 'ValueChangedFcn', @(src,evt)applyParamEdit(app, key, strjoin(src.Value, ' ')));
             app.paramEditorControls(end+1) = ta;
     end
+
+    infoPanel = uipanel(app.ParametersTab, ...
+        'Title', 'Parameter info', ...
+        'Position', [baseX baseY-95 w 195], ...
+        'BorderType', 'line');
+    app.paramEditorControls(end+1) = infoPanel;
+
+    infoText = uitextarea(infoPanel, ...
+        'Position', [6 6 w-12 168], ...
+        'Value', tooltipTextAreaValue(app, tooltipText), ...
+        'Editable', 'off');
+    app.paramEditorControls(end+1) = infoText;
 
 
     % ---- local helper for pick ----
@@ -1551,7 +1639,7 @@ restoreSelectionFromRunProfile(app, procObj);
 
     % ---- extract runtime params from table ----
     app.processParam = syncProcessParamFromTable(app, app.processParam);
-    procParam = app.processParam;
+    procParam = stripParamMetadata(app, app.processParam);
     runParallel = false;
     runEnv = 'CPU';
 
@@ -1687,9 +1775,9 @@ restoreSelectionFromRunProfile(app, procObj);
     param = [];
     if isprop(app,'processParam') && ~isempty(app.processParam)
         app.processParam = syncProcessParamFromTable(app, app.processParam);
-        param = app.processParam;
+        param = stripParamMetadata(app, app.processParam);
     elseif isfield(app.Data,'processParam') && ~isempty(app.Data.processParam)
-        param = app.Data.processParam;
+        param = stripParamMetadata(app, app.Data.processParam);
     else
         % fallback: rebuild from table
         param = paramStructFromTable(app);
