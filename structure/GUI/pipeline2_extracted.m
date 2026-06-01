@@ -57,6 +57,7 @@ classdef pipeline2 < matlab.apps.AppBase
         GhostHandles = gobjects(0)
         EdgeHandles = gobjects(0)
         ModuleContextMenu matlab.ui.container.ContextMenu
+        GraphContextMenu matlab.ui.container.ContextMenu
         DynamicModuleTabs = gobjects(0)
         AvailableModules cell = {}
         IsRefreshingTabs logical = false
@@ -98,12 +99,19 @@ classdef pipeline2 < matlab.apps.AppBase
             xlabel(app.UIGraphAxes, '');
             ylabel(app.UIGraphAxes, '');
             zlabel(app.UIGraphAxes, '');
+            app.GraphPanel.Position = [13 621 985 304];
+            app.UIGraphAxes.Position = [15 9 955 265];
+            app.BuildPanel.Visible = 'off';
 
             app.TypeDropDown.Items = {'dataLoader','ROI definition','roiExtract','processor','classifier'};
             app.TypeDropDown.Value = 'dataLoader';
             app.TypeDropDown.ValueChangedFcn = createCallbackFcn(app, @TypeDropDownValueChanged, true);
             updateSubtypeChoices(app);
             app.SubtypeDropDown.ValueChangedFcn = createCallbackFcn(app, @SubtypeDropDownValueChanged, true);
+            app.TypeDropDown.Visible = 'off';
+            app.TypeDropDownLabel.Visible = 'off';
+            app.SubtypeDropDown.Visible = 'off';
+            app.SubtypeDropDownLabel.Visible = 'off';
             app.AdvancedmodeCheckBox.ValueChangedFcn = createCallbackFcn(app, @AdvancedmodeCheckBoxValueChanged, true);
             app.TabGroup.SelectionChangedFcn = createCallbackFcn(app, @TabGroupSelectionChanged, true);
 
@@ -142,27 +150,133 @@ classdef pipeline2 < matlab.apps.AppBase
             app.PipelineandRuncheckreportLabel.Text = 'No pipeline yet.';
 
             app.ModuleContextMenu = uicontextmenu(app.UIFigure);
+            addModuleLibraryMenu(app, app.ModuleContextMenu, 'Insert module after...', @(nodeType,pkg)addModuleAfterSelected(app, nodeType, pkg));
+            addModuleLibraryMenu(app, app.ModuleContextMenu, 'Insert module before...', @(nodeType,pkg)insertModuleBeforeSelected(app, nodeType, pkg));
+            addModuleLibraryMenu(app, app.ModuleContextMenu, 'Change module type...', @(nodeType,pkg)changeSelectedModuleType(app, nodeType, pkg));
+            uimenu(app.ModuleContextMenu, 'Text', 'Fork graph', ...
+                'MenuSelectedFcn', @(~,~)ForkgraphButtonPushed(app, []));
+            uimenu(app.ModuleContextMenu, 'Text', 'Merge graph', ...
+                'MenuSelectedFcn', @(~,~)MergegraphButtonPushed(app, []));
             uimenu(app.ModuleContextMenu, 'Text', 'Delete module', ...
                 'MenuSelectedFcn', @(~,~)deleteSelectedModule(app));
+
+            app.GraphContextMenu = uicontextmenu(app.UIFigure);
+            addModuleLibraryMenu(app, app.GraphContextMenu, 'Add module...', @(nodeType,pkg)addModuleOfType(app, nodeType, pkg));
+            try
+                app.UIGraphAxes.ContextMenu = app.GraphContextMenu;
+            catch
+                try, app.UIGraphAxes.UIContextMenu = app.GraphContextMenu; catch, end
+            end
 
             app.IdEditField.ValueChangedFcn = createCallbackFcn(app, @IdEditFieldValueChanged, true);
             updateCommonControlsEnableState(app);
         end
 
-        function modules = defaultModuleLibrary(app) %#ok<MANU>
-            modules = { ...
-                'dataLoader',       'dataLoader',     '',                         'Load raw image data'; ...
-                'roiPattern',       'roiPattern',     '',                         'Pattern-based ROI definition'; ...
-                'roiManual',        'roiManual',      '',                         'Manual ROI definition'; ...
-                'roiGrid',          'roiGrid',        '',                         'Grid/full-frame ROI definition'; ...
-                'roiTracked',       'roiTracked',     '',                         'Tracked/mobile ROI definition'; ...
-                'roiExtract',       'roiExtract',     '',                         'Extract ROI H5 image stores'; ...
-                'combineChannels',  'processor',      'combineMultipleChannels',  'Combine ROI channels'; ...
-                'computeMetrics',   'processor',      'computeMetrics',           'Compute ROI metrics'; ...
-                'computeLineage',   'processor',      'computeLineage',           'Compute lineage outputs'; ...
-                'cellposeSAM',      'classifier',     'cellposesam',              'Segment with CellposeSAM'; ...
-                'cnn_lstm',         'classifier',     'cnn_lstm',                 'Sequence classifier' ...
+        function modules = defaultModuleLibrary(app)
+            rootDir = repoRoot(app);
+            modules = {};
+
+            modules = appendModuleRows(app, modules, dataloadingModuleRows(app, rootDir));
+            modules = appendModuleRows(app, modules, packageModuleRows(app, fullfile(rootDir, 'engine', 'processor'), 'processor'));
+            modules = appendModuleRows(app, modules, packageModuleRows(app, fullfile(rootDir, 'engine', 'classification'), 'classifier'));
+
+            if isempty(modules)
+                modules = { ...
+                    'dataLoader', 'dataLoader', '', 'Load raw image data'; ...
+                    'roiPattern', 'roiPattern', '', 'Pattern-based ROI definition'; ...
+                    'roiExtract', 'roiExtract', '', 'Extract ROI H5 image stores' ...
+                    };
+            end
+        end
+
+        function rootDir = repoRoot(app) %#ok<INUSD>
+            rootDir = pwd;
+            try
+                appPath = which('pipeline2');
+                if ~isempty(appPath)
+                    candidate = fileparts(fileparts(fileparts(appPath)));
+                    if isfolder(fullfile(candidate, 'engine')) && isfolder(fullfile(candidate, 'structure'))
+                        rootDir = candidate;
+                    end
+                end
+            catch
+            end
+        end
+
+        function rows = dataloadingModuleRows(app, rootDir) %#ok<INUSD>
+            rows = {};
+            dlDir = fullfile(rootDir, 'engine', 'dataloading');
+            preferred = { ...
+                'dataLoader', 'dataLoader', '', 'Load raw image data'; ...
+                'roiPattern', 'roiPattern', '', 'Pattern-based ROI definition'; ...
+                'roiManual',  'roiManual',  '', 'Manual ROI definition'; ...
+                'roiGrid',    'roiGrid',    '', 'Grid/full-frame ROI definition'; ...
+                'roiTracked', 'roiTracked', '', 'Tracked/mobile ROI definition'; ...
+                'roiExtract', 'roiExtract', '', 'Extract ROI H5 image stores' ...
                 };
+            for i = 1:size(preferred, 1)
+                pkgDir = fullfile(dlDir, ['+' preferred{i,1}]);
+                if isfolder(pkgDir)
+                    rows(end+1,:) = preferred(i,:); %#ok<AGROW>
+                end
+            end
+            if isempty(rows) && isfolder(dlDir)
+                dirs = packageDirs(app, dlDir);
+                for i = 1:numel(dirs)
+                    name = dirs{i};
+                    rows(end+1,:) = {name, name, '', ['Dataloading module: ' name]}; %#ok<AGROW>
+                end
+            end
+        end
+
+        function rows = packageModuleRows(app, parentDir, nodeType)
+            rows = {};
+            dirs = packageDirs(app, parentDir);
+            for i = 1:numel(dirs)
+                pkg = dirs{i};
+                rows(end+1,:) = {pkg, nodeType, pkg, moduleDescription(app, nodeType, pkg)}; %#ok<AGROW>
+            end
+        end
+
+        function names = packageDirs(app, parentDir) %#ok<INUSD>
+            names = {};
+            if ~isfolder(parentDir)
+                return;
+            end
+            d = dir(parentDir);
+            for i = 1:numel(d)
+                if ~d(i).isdir || ~startsWith(d(i).name, '+')
+                    continue;
+                end
+                name = erase(d(i).name, '+');
+                if isempty(name)
+                    continue;
+                end
+                names{end+1} = name; %#ok<AGROW>
+            end
+            names = sort(unique(names, 'stable'));
+        end
+
+        function txt = moduleDescription(app, nodeType, pkg) %#ok<INUSD>
+            switch lower(char(string(nodeType)))
+                case 'processor'
+                    txt = ['Processor package: ' char(string(pkg))];
+                case 'classifier'
+                    txt = ['Classifier package: ' char(string(pkg))];
+                otherwise
+                    txt = ['Pipeline module: ' char(string(pkg))];
+            end
+        end
+
+        function out = appendModuleRows(app, out, rows) %#ok<INUSD>
+            if isempty(rows)
+                return;
+            end
+            if isempty(out)
+                out = rows;
+            else
+                out = [out; rows]; %#ok<AGROW>
+            end
         end
 
         function refreshAvailableModuleTable(app)
@@ -200,9 +314,10 @@ classdef pipeline2 < matlab.apps.AppBase
             app.Data.nodes(app.SelectedNodeIndex).name = newId;
             app.Data.edges = replaceNodeIdInEdges(app, app.Data.edges, oldId, newId);
             renameRuntimeNodeParams(app, oldId, newId);
+            renameSymbolicBindingReferences(app, oldId, newId);
             refreshSelectedModuleTable(app);
-            renameSelectedModuleTab(app, oldId, newId);
             redrawGraph(app);
+            refreshModuleTabs(app);
             refreshValidationReport(app);
             updateCommonControlsEnableState(app);
         end
@@ -260,6 +375,9 @@ classdef pipeline2 < matlab.apps.AppBase
             node.func = defaultNodeFunction(app, nodeType, pkg);
             node.gui = defaultNodeGui(app, nodeType, pkg);
             node.params = applyRuntimeDefaultsToParams(app, nodeType, defaultNodeParams(app, nodeType, pkg));
+            if isfield(node, 'contract')
+                node = rmfield(node, 'contract');
+            end
             node.contract = pipelineNodeContract(node);
             node.inputs = portNames(app, node.contract, 'in');
             node.outputs = portNames(app, node.contract, 'out');
@@ -315,10 +433,44 @@ classdef pipeline2 < matlab.apps.AppBase
                 app.TypeDropDown.Value = moduleType;
                 updateSubtypeChoices(app);
             end
+            app.RuninformationhereLabel.Text = ['Next module to add: ' app.AvailableModules{row,1}];
+        end
+
+        function changeSelectedModuleType(app, nodeType, pkg)
+            if isnan(app.SelectedNodeIndex) || app.SelectedNodeIndex < 1 || app.SelectedNodeIndex > numel(app.Data.nodes)
+                return;
+            end
+            node = app.Data.nodes(app.SelectedNodeIndex);
+            if strcmp(char(string(getField(app, node, 'type', ''))), nodeType) && strcmp(char(string(getField(app, node, 'pkg', ''))), pkg)
+                return;
+            end
+            node.type = nodeType;
+            node.pkg = pkg;
+            node.func = defaultNodeFunction(app, nodeType, pkg);
+            node.gui = defaultNodeGui(app, nodeType, pkg);
+            node.params = applyRuntimeDefaultsToParams(app, nodeType, defaultNodeParams(app, nodeType, pkg));
+            if isfield(node, 'contract')
+                node = rmfield(node, 'contract');
+            end
+            node.contract = pipelineNodeContract(node);
+            node.inputs = portNames(app, node.contract, 'in');
+            node.outputs = portNames(app, node.contract, 'out');
+            app.Data.nodes(app.SelectedNodeIndex) = node;
+            rebuildEdgesFromLayout(app);
+            refreshAfterModelChange(app);
         end
 
         function addModuleFromCurrentSelection(app)
-            [nodeType, pkg] = selectedModuleTypeAndPackage(app);
+            choice = chooseModuleFromLibrary(app, 'Add module');
+            if isempty(choice)
+                return;
+            end
+            nodeType = choice.type;
+            pkg = choice.pkg;
+            addModuleOfType(app, nodeType, pkg);
+        end
+
+        function addModuleOfType(app, nodeType, pkg)
             app.NodeCounter = app.NodeCounter + 1;
             node = makePipelineNode(app, nodeType, pkg, app.NodeCounter);
 
@@ -335,12 +487,42 @@ classdef pipeline2 < matlab.apps.AppBase
             refreshAfterModelChange(app);
         end
 
-        function insertModuleBeforeSelected(app)
+        function addModuleAfterSelected(app, nodeType, pkg)
+            if isnan(app.SelectedNodeIndex) || app.SelectedNodeIndex < 1 || app.SelectedNodeIndex > numel(app.Data.nodes)
+                addModuleOfType(app, nodeType, pkg);
+                return;
+            end
+            targetCol = getLayoutCol(app, app.Data.nodes(app.SelectedNodeIndex)) + 1;
+            targetRow = getLayoutRow(app, app.Data.nodes(app.SelectedNodeIndex));
+            for i = 1:numel(app.Data.nodes)
+                if getLayoutCol(app, app.Data.nodes(i)) >= targetCol
+                    app.Data.nodes(i).layout(1) = getLayoutCol(app, app.Data.nodes(i)) + 1;
+                end
+            end
+            app.NodeCounter = app.NodeCounter + 1;
+            node = makePipelineNode(app, nodeType, pkg, app.NodeCounter);
+            node.layout = [targetCol targetRow 1 1];
+            app.Data.nodes = appendStruct(app, app.Data.nodes, node);
+            app.SelectedNodeIndex = numel(app.Data.nodes);
+            app.Data.nodes = sortNodesByLayout(app, app.Data.nodes);
+            app.SelectedNodeIndex = find(strcmp({app.Data.nodes.id}, node.id), 1);
+            rebuildEdgesFromLayout(app);
+            refreshAfterModelChange(app);
+        end
+
+        function insertModuleBeforeSelected(app, nodeType, pkg)
             if isnan(app.SelectedNodeIndex) || app.SelectedNodeIndex < 1 || app.SelectedNodeIndex > numel(app.Data.nodes)
                 uialert(app.UIFigure, 'Select a module before inserting.', 'Insert module', 'Icon', 'info');
                 return;
             end
-            [nodeType, pkg] = selectedModuleTypeAndPackage(app);
+            if nargin < 2
+                choice = chooseModuleFromLibrary(app, 'Insert module before selected');
+                if isempty(choice)
+                    return;
+                end
+                nodeType = choice.type;
+                pkg = choice.pkg;
+            end
             targetCol = getLayoutCol(app, app.Data.nodes(app.SelectedNodeIndex));
             targetRow = getLayoutRow(app, app.Data.nodes(app.SelectedNodeIndex));
             for i = 1:numel(app.Data.nodes)
@@ -384,6 +566,122 @@ classdef pipeline2 < matlab.apps.AppBase
                     pkg = subtype;
                 otherwise
                     nodeType = typeLabel;
+            end
+        end
+
+        function [nodeType, pkg] = selectedLibraryModuleTypeAndPackage(app)
+            modules = app.AvailableModules;
+            row = [];
+            try
+                sel = app.UIWorkspacePipelineTable.Selection;
+                if ~isempty(sel)
+                    row = sel(1,1);
+                end
+            catch
+                row = [];
+            end
+            if isempty(row) || row < 1 || row > size(modules, 1)
+                row = 1;
+            end
+            nodeType = char(string(modules{row,2}));
+            pkg = char(string(modules{row,3}));
+        end
+
+        function addModuleLibraryMenu(app, parentMenu, titleText, callback)
+            root = uimenu(parentMenu, 'Text', titleText);
+            groups = moduleMenuGroups(app);
+            for g = 1:numel(groups)
+                typeMenu = uimenu(root, 'Text', groups(g).label);
+                for j = 1:numel(groups(g).rows)
+                    idx = groups(g).rows(j);
+                    nodeType = char(string(app.AvailableModules{idx,2}));
+                    pkg = char(string(app.AvailableModules{idx,3}));
+                    label = moduleSubtypeLabel(app, idx);
+                    nt = nodeType;
+                    pk = pkg;
+                    uimenu(typeMenu, 'Text', label, ...
+                        'MenuSelectedFcn', @(~,~)callback(nt, pk));
+                end
+            end
+        end
+
+        function groups = moduleMenuGroups(app)
+            groups = struct('key', {}, 'label', {}, 'rows', {});
+            for i = 1:size(app.AvailableModules, 1)
+                nodeType = char(string(app.AvailableModules{i,2}));
+                [key, label] = moduleTypeMenuGroup(app, nodeType);
+                idx = find(strcmp({groups.key}, key), 1);
+                if isempty(idx)
+                    groups(end+1) = struct('key', key, 'label', label, 'rows', i); %#ok<AGROW>
+                else
+                    groups(idx).rows(end+1) = i;
+                end
+            end
+        end
+
+        function [key, label] = moduleTypeMenuGroup(app, nodeType) %#ok<INUSD>
+            switch lower(char(string(nodeType)))
+                case 'dataloader'
+                    key = 'dataLoader';
+                    label = 'Data loader';
+                case {'roipattern','roimanual','roigrid','roitracked'}
+                    key = 'roi';
+                    label = 'ROI definition';
+                case 'roiextract'
+                    key = 'roiExtract';
+                    label = 'ROI extract';
+                case 'processor'
+                    key = 'processor';
+                    label = 'Processor';
+                case 'classifier'
+                    key = 'classifier';
+                    label = 'Classifier';
+                otherwise
+                    key = char(string(nodeType));
+                    label = char(string(nodeType));
+            end
+        end
+
+        function label = moduleSubtypeLabel(app, idx) %#ok<INUSD>
+            nodeType = char(string(app.AvailableModules{idx,2}));
+            pkg = char(string(app.AvailableModules{idx,3}));
+            name = char(string(app.AvailableModules{idx,1}));
+            if any(strcmpi(nodeType, {'roiPattern','roiManual','roiGrid','roiTracked'}))
+                label = nodeType;
+            elseif isempty(pkg)
+                label = name;
+            else
+                label = pkg;
+            end
+        end
+
+        function choice = chooseModuleFromLibrary(app, titleText)
+            choice = [];
+            labels = cell(size(app.AvailableModules, 1), 1);
+            for i = 1:size(app.AvailableModules, 1)
+                labels{i} = moduleLibraryLabel(app, i);
+            end
+            [idx, ok] = listdlg('PromptString', titleText, ...
+                'SelectionMode', 'single', ...
+                'ListString', labels, ...
+                'ListSize', [260 220], ...
+                'Name', titleText);
+            if ~ok || isempty(idx)
+                return;
+            end
+            choice = struct( ...
+                'type', char(string(app.AvailableModules{idx,2})), ...
+                'pkg', char(string(app.AvailableModules{idx,3})));
+        end
+
+        function label = moduleLibraryLabel(app, idx) %#ok<INUSD>
+            nodeType = char(string(app.AvailableModules{idx,2}));
+            pkg = char(string(app.AvailableModules{idx,3}));
+            name = char(string(app.AvailableModules{idx,1}));
+            if isempty(pkg)
+                label = [name ' (' nodeType ')'];
+            else
+                label = [name ' (' nodeType ' / ' pkg ')'];
             end
         end
 
@@ -487,6 +785,16 @@ classdef pipeline2 < matlab.apps.AppBase
 
             if strcmpi(nodeType, 'processor') || strcmpi(nodeType, 'classifier')
                 p.pkg = pkg;
+                if strcmpi(nodeType, 'classifier')
+                    switch lower(char(string(pkg)))
+                        case 'cnn_lstm'
+                            p.outputName = 'div_1';
+                        case 'cellposesam'
+                            p.outputName = 'cellposeSAM';
+                        otherwise
+                            p.outputName = char(string(pkg));
+                    end
+                end
             end
         end
 
@@ -573,10 +881,12 @@ classdef pipeline2 < matlab.apps.AppBase
                 'Curvature', 0.08, 'FaceColor', [0.92 0.92 0.92], ...
                 'EdgeColor', [0.55 0.55 0.55], 'LineStyle', '--', ...
                 'LineWidth', 1.4, 'ButtonDownFcn', @(~,~)addModuleFromCurrentSelection(app));
+            gh.UIContextMenu = app.GraphContextMenu;
             gt = text(app.UIGraphAxes, gx + blockW/2, gy + blockH/2, '+ module', ...
                 'HorizontalAlignment', 'center', 'Interpreter', 'none', ...
                 'Color', [0.35 0.35 0.35], 'FontWeight', 'bold', ...
                 'ButtonDownFcn', @(~,~)addModuleFromCurrentSelection(app));
+            gt.UIContextMenu = app.GraphContextMenu;
             app.GhostHandles = [gh gt];
 
             maxCol = max(ghostCol, 3);
@@ -834,7 +1144,7 @@ classdef pipeline2 < matlab.apps.AppBase
 
             panel = uipanel(app.RuntimeTab, 'Title', 'Run inputs', 'Position', [279 42 417 288]);
             grid = uigridlayout(panel, [7 4]);
-            grid.RowHeight = {28, 28, 28, 28, 28, 28, 28};
+            grid.RowHeight = {28, 28, 28, 28, 54, 28, 28};
             grid.ColumnWidth = {80, '1x', 90, 72};
             grid.Padding = [8 8 8 8];
             grid.RowSpacing = 8;
@@ -849,7 +1159,7 @@ classdef pipeline2 < matlab.apps.AppBase
             addRuntimeRow(app, grid, 2, 'Raw data', 'rawDataPath', 'Raw image/data folder used by dataloader', 'Browse...');
             addRuntimeRow(app, grid, 3, 'FOVs', 'fovs', 'all / 1,3,5 / 1:4', 'Pick...');
             addRuntimeRow(app, grid, 4, 'Frames', 'frames', 'all / 1:50 / 1,5,9', 'Pick...');
-            addRuntimeChannelRow(app, grid, 5);
+            addRuntimeInventoryRow(app, grid, 5);
             addRuntimeRow(app, grid, 6, 'ROIs', 'rois', 'all / selected ROI ids', 'Pick...');
             addRuntimePolicyRow(app, grid, 7);
             updateRuntimeInputStates(app);
@@ -937,6 +1247,22 @@ classdef pipeline2 < matlab.apps.AppBase
             app.RuntimeValues.channels = '';
         end
 
+        function addRuntimeInventoryRow(app, grid, row)
+            label = uilabel(grid, 'Text', 'Available');
+            label.Layout.Row = row;
+            label.Layout.Column = 1;
+            label.Tooltip = 'Informational inventory exposed to module bindings; not a global run selection.';
+
+            txt = uitextarea(grid);
+            txt.Layout.Row = row;
+            txt.Layout.Column = [2 4];
+            txt.Editable = 'off';
+            txt.Value = {'Channels: resolved after project/raw data load'; 'Data series: resolved after project load'};
+            txt.Tooltip = 'Channels and dataseries discovered from the selected project/raw data. Use module Bindings to select them.';
+
+            app.RuntimeFieldHandles.availableResources = txt;
+        end
+
         function addRuntimePolicyRow(app, grid, row)
             label = uilabel(grid, 'Text', 'Output policy');
             label.Layout.Row = row;
@@ -975,7 +1301,17 @@ classdef pipeline2 < matlab.apps.AppBase
                 markOutputPolicyUserChosen(app);
             end
             updateRuntimeInputStates(app);
+            if any(strcmp(char(string(key)), {'projectPath','rawDataPath','fovs','rois'}))
+                updateRuntimeResourceInventory(app);
+            end
+            if runtimeValueAffectsBindings(app, key)
+                refreshModuleTabs(app);
+            end
             refreshValidationReport(app);
+        end
+
+        function tf = runtimeValueAffectsBindings(app, key) %#ok<INUSD>
+            tf = any(strcmp(char(string(key)), {'projectPath','rawDataPath','fovs','frames','rois'}));
         end
 
         function runtimeButtonPushed(app, key)
@@ -995,29 +1331,6 @@ classdef pipeline2 < matlab.apps.AppBase
                         return;
                     end
                     setRuntimeValue(app, key, strtrim(answer{1}));
-                case 'channels'
-                    channels = {};
-                    if isfield(app.RuntimeParseInfo, 'channels')
-                        channels = app.RuntimeParseInfo.channels;
-                    end
-                    if isempty(channels)
-                        current = getRuntimeValue(app, key);
-                        answer = inputdlg('Channels to use (comma-separated names, or leave empty until data are loaded):', 'Set channels', 1, {current});
-                        if isempty(answer)
-                            return;
-                        end
-                        setRuntimeValue(app, key, strtrim(answer{1}));
-                        return;
-                    end
-                    items = [{'all'}, cellstr(string(channels(:)'))];
-                    current = getRuntimeValue(app, key);
-                    idx = find(strcmp(items, current), 1);
-                    if isempty(idx), idx = 1; end
-                    [sel, ok] = listdlg('PromptString', 'Select source channel:', ...
-                        'SelectionMode', 'single', 'ListString', items, 'InitialValue', idx);
-                    if ok && ~isempty(sel)
-                        setRuntimeValue(app, key, items{sel(1)});
-                    end
                 case 'outputPolicy'
                     showOutputPolicyHelp(app);
             end
@@ -1483,32 +1796,61 @@ classdef pipeline2 < matlab.apps.AppBase
         function setRuntimeValuePreserveParse(app, key, value)
             app.RuntimeValues.(key) = char(string(value));
             setRuntimeControlValue(app, key, value);
+            if any(strcmp(char(string(key)), {'projectPath','rawDataPath','fovs','rois'}))
+                updateRuntimeResourceInventory(app);
+            end
+            if runtimeValueAffectsBindings(app, key)
+                refreshModuleTabs(app);
+            end
         end
 
         function updateChannelDropdownItems(app, channels)
-            if ~isfield(app.RuntimeFieldHandles, 'channels') || ~isvalid(app.RuntimeFieldHandles.channels)
-                return;
-            end
-            dd = app.RuntimeFieldHandles.channels;
             try
+                channels = unique(cellstr(string(channels(:)')), 'stable');
+                channels = channels(~cellfun(@isempty, channels));
                 if isempty(channels)
-                    dd.Items = {'resolved after project/raw data load'};
-                    dd.Value = dd.Items{1};
+                    if isfield(app.RuntimeParseInfo, 'channels')
+                        app.RuntimeParseInfo = rmfield(app.RuntimeParseInfo, 'channels');
+                    end
                     app.RuntimeValues.channels = '';
+                    updateRuntimeResourceInventory(app);
+                    refreshModuleTabs(app);
                     return;
                 end
-                items = [{'all'}, cellstr(string(channels(:)'))];
-                items = unique(items(~cellfun(@isempty, items)), 'stable');
-                dd.Items = items;
-                cur = getRuntimeValue(app, 'channels');
-                if isempty(cur) || ~any(strcmp(items, cur)) || startsWith(cur, 'resolved after')
-                    cur = 'all';
-                end
-                dd.Value = cur;
-                app.RuntimeValues.channels = cur;
-                dd.Tooltip = ['Detected channels: ' strjoin(items(2:end), ', ')];
+                app.RuntimeParseInfo.channels = channels;
+                app.RuntimeValues.channels = '';
+                updateRuntimeResourceInventory(app);
+                refreshModuleTabs(app);
             catch
             end
+        end
+
+        function updateRuntimeResourceInventory(app)
+            if ~isfield(app.RuntimeFieldHandles, 'availableResources') || ~isvalid(app.RuntimeFieldHandles.availableResources)
+                return;
+            end
+            channels = runtimeConcreteChannels(app);
+            dataSeriesNames = {};
+            try
+                dataSeriesNames = runtimeDataSeriesNames(app);
+            catch
+                dataSeriesNames = {};
+            end
+            if isempty(channels)
+                channelText = 'Channels: none detected yet';
+            else
+                channelText = ['Channels: ' strjoin(channels, ', ')];
+            end
+            if isempty(dataSeriesNames)
+                dsText = 'Data series: none detected yet';
+            else
+                maxShown = min(numel(dataSeriesNames), 12);
+                dsText = ['Data series: ' strjoin(dataSeriesNames(1:maxShown), ', ')];
+                if numel(dataSeriesNames) > maxShown
+                    dsText = [dsText sprintf(' ... (+%d)', numel(dataSeriesNames) - maxShown)];
+                end
+            end
+            app.RuntimeFieldHandles.availableResources.Value = {channelText; dsText};
         end
 
         function syncRuntimeValueToNodeParams(app, key)
@@ -1738,12 +2080,14 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
 
+            bindingData = bindingTableData(app, node);
             staticData = paramsToTableData(app, node, 'static');
             runtimeData = paramsToTableData(app, node, 'runtime');
+            showBindings = ~isempty(bindingData);
             showStatic = ~isempty(staticData);
             showRuntime = ~isempty(runtimeData);
 
-            if ~showStatic && ~showRuntime
+            if ~showBindings && ~showStatic && ~showRuntime
                 grid = uigridlayout(parentTab, [1 1]);
                 grid.Padding = [12 10 12 12];
                 uilabel(grid, 'Text', 'No module-specific parameters for this module.', ...
@@ -1751,22 +2095,45 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
 
-            colCount = double(showStatic) + double(showRuntime);
-            grid = uigridlayout(parentTab, [2 colCount]);
-            grid.RowHeight = {24, '1x'};
+            colCount = max(1, double(showStatic) + double(showRuntime));
+            hasParamRows = showStatic || showRuntime;
+            rowCount = 2 * double(showBindings) + 2 * double(hasParamRows);
+            grid = uigridlayout(parentTab, [rowCount colCount]);
+            rowHeights = {};
+            if showBindings
+                rowHeights = [rowHeights {24, min(160, 42 + 34 * size(bindingData, 1))}]; %#ok<AGROW>
+            end
+            if hasParamRows
+                rowHeights = [rowHeights {24, '1x'}]; %#ok<AGROW>
+            end
+            grid.RowHeight = rowHeights;
             grid.ColumnWidth = repmat({'1x'}, 1, colCount);
             grid.Padding = [12 10 12 12];
             grid.ColumnSpacing = 16;
+            grid.RowSpacing = 8;
+
+            row = 1;
+            if showBindings
+                bindingLabel = uilabel(grid, 'Text', 'Bindings');
+                bindingLabel.FontWeight = 'bold';
+                bindingLabel.Layout.Row = row;
+                bindingLabel.Layout.Column = layoutSpan(app, 1, colCount);
+
+                section = buildBindingSection(app, grid, bindingData, node, true);
+                section.Layout.Row = row + 1;
+                section.Layout.Column = layoutSpan(app, 1, colCount);
+                row = row + 2;
+            end
 
             col = 1;
             if showStatic
                 leftLabel = uilabel(grid, 'Text', 'Static parameters');
                 leftLabel.FontWeight = 'bold';
-                leftLabel.Layout.Row = 1;
+                leftLabel.Layout.Row = row;
                 leftLabel.Layout.Column = col;
 
                 section = buildParamSection(app, grid, staticData, node, true);
-                section.Layout.Row = 2;
+                section.Layout.Row = row + 1;
                 section.Layout.Column = col;
                 col = col + 1;
             end
@@ -1774,11 +2141,11 @@ classdef pipeline2 < matlab.apps.AppBase
             if showRuntime
                 rightLabel = uilabel(grid, 'Text', 'Runtime parameters');
                 rightLabel.FontWeight = 'bold';
-                rightLabel.Layout.Row = 1;
+                rightLabel.Layout.Row = row;
                 rightLabel.Layout.Column = col;
 
                 section = buildParamSection(app, grid, runtimeData, node, app.Data.runMode);
-                section.Layout.Row = 2;
+                section.Layout.Row = row + 1;
                 section.Layout.Column = col;
             end
         end
@@ -2088,6 +2455,51 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
+        function renameSymbolicBindingReferences(app, oldId, newId)
+            for i = 1:numel(app.Data.nodes)
+                if isfield(app.Data.nodes(i), 'params') && isstruct(app.Data.nodes(i).params)
+                    app.Data.nodes(i).params = renameSymbolicBindingStruct(app, app.Data.nodes(i).params, oldId, newId);
+                end
+            end
+
+            keys = fieldnames(app.RuntimeNodeParams);
+            for i = 1:numel(keys)
+                key = keys{i};
+                if isstruct(app.RuntimeNodeParams.(key))
+                    app.RuntimeNodeParams.(key) = renameSymbolicBindingStruct(app, app.RuntimeNodeParams.(key), oldId, newId);
+                end
+            end
+        end
+
+        function params = renameSymbolicBindingStruct(app, params, oldId, newId)
+            names = fieldnames(params);
+            for i = 1:numel(names)
+                key = names{i};
+                params.(key) = renameSymbolicBindingValue(app, params.(key), oldId, newId);
+            end
+        end
+
+        function value = renameSymbolicBindingValue(app, value, oldId, newId) %#ok<INUSD>
+            if ischar(value) || (isstring(value) && isscalar(value))
+                txt = char(string(value));
+                if startsWith(strtrim(txt), '@resource:')
+                    parts = strsplit(txt, ':');
+                    if numel(parts) >= 3 && strcmp(parts{3}, oldId)
+                        parts{3} = newId;
+                        value = strjoin(parts, ':');
+                    end
+                elseif startsWith(strtrim(txt), '@')
+                    pattern = ['output\s+from\s+' regexptranslate('escape', oldId) '(\s*/|\s*$)'];
+                    replacement = ['output from ' newId '$1'];
+                    value = regexprep(txt, pattern, replacement);
+                end
+            elseif iscell(value)
+                for j = 1:numel(value)
+                    value{j} = renameSymbolicBindingValue(app, value{j}, oldId, newId);
+                end
+            end
+        end
+
         function removeRuntimeNodeParams(app, nodeId)
             key = runtimeNodeKey(app, nodeId);
             if isfield(app.RuntimeNodeParams, key)
@@ -2327,6 +2739,734 @@ classdef pipeline2 < matlab.apps.AppBase
             refreshValidationReport(app);
         end
 
+        function grid = buildBindingSection(app, parent, data, node, editable)
+            n = max(1, size(data, 1));
+            grid = uigridlayout(parent, [n 3]);
+            grid.RowHeight = repmat({28}, 1, n);
+            grid.ColumnWidth = {96, 170, '1x'};
+            grid.Padding = [0 0 0 0];
+            grid.RowSpacing = 6;
+            grid.ColumnSpacing = 8;
+
+            for i = 1:size(data, 1)
+                direction = char(string(data{i,1}));
+                resourceLabel = char(string(data{i,2}));
+                param = char(string(data{i,3}));
+                value = data{i,4};
+                choices = data{i,5};
+                tooltip = char(string(data{i,6}));
+
+                dirLabel = uilabel(grid, 'Text', direction);
+                dirLabel.Layout.Row = i;
+                dirLabel.Layout.Column = 1;
+                dirLabel.Tooltip = tooltip;
+
+                resLabel = uilabel(grid, 'Text', resourceLabel);
+                resLabel.Layout.Row = i;
+                resLabel.Layout.Column = 2;
+                resLabel.Tooltip = tooltip;
+
+                ctrl = createBindingControl(app, grid, node, param, value, choices, direction, editable);
+                ctrl.Layout.Row = i;
+                ctrl.Layout.Column = 3;
+                ctrl.Tooltip = tooltip;
+            end
+        end
+
+        function ctrl = createBindingControl(app, parent, node, param, value, choices, direction, editable)
+            enableState = ternary(app, editable, 'on', 'off');
+            isInput = strcmpi(char(string(direction)), 'Input');
+            if isInput || ~isempty(choices)
+                if isempty(choices)
+                    choices = {choiceScalarText(app, value)};
+                end
+                choices = flattenChoiceList(app, choices);
+                choices = choices(~cellfun(@isempty, choices));
+                if isempty(choices)
+                    choices = {'<unresolved>'};
+                end
+                displayValue = choiceScalarText(app, value);
+                if isempty(displayValue) || ~any(strcmp(choices, displayValue))
+                    displayValue = choices{1};
+                end
+                ctrl = uidropdown(parent);
+                ctrl.Items = choices;
+                ctrl.Value = displayValue;
+                ctrl.Enable = enableState;
+                ctrl.ValueChangedFcn = @(src,~)bindingControlChanged(app, node, param, direction, src.Value);
+                return;
+            end
+
+            ctrl = uieditfield(parent, 'text');
+            ctrl.Value = choiceScalarText(app, value);
+            ctrl.Enable = enableState;
+            ctrl.ValueChangedFcn = @(src,~)bindingControlChanged(app, node, param, direction, src.Value);
+        end
+
+        function bindingControlChanged(app, node, param, direction, value)
+            nodeId = char(string(getField(app, node, 'id', '')));
+            idx = find(strcmp({app.Data.nodes.id}, nodeId), 1);
+            if isempty(idx) || isempty(param)
+                return;
+            end
+            param = char(string(param));
+            value = strtrim(char(string(value)));
+            isInput = strcmpi(char(string(direction)), 'Input');
+
+            if ~isfield(app.Data.nodes(idx), 'params') || ~isstruct(app.Data.nodes(idx).params)
+                app.Data.nodes(idx).params = struct();
+            end
+
+            if isSymbolicBindingLabel(app, value)
+                symbolicValue = symbolicBindingValueFromLabel(app, value);
+                app.Data.nodes(idx).params.(param) = symbolicValue;
+                if isInput
+                    runtimeParams = getRuntimeNodeParams(app, nodeId);
+                    runtimeParams.(param) = symbolicValue;
+                    setRuntimeNodeParams(app, nodeId, runtimeParams);
+                end
+            elseif isempty(value) || strcmp(value, '<unresolved>')
+                if isfield(app.Data.nodes(idx).params, param)
+                    app.Data.nodes(idx).params = rmfield(app.Data.nodes(idx).params, param);
+                end
+                if isInput
+                    runtimeParams = getRuntimeNodeParams(app, nodeId);
+                    if isstruct(runtimeParams) && isfield(runtimeParams, param)
+                        runtimeParams = rmfield(runtimeParams, param);
+                        setRuntimeNodeParams(app, nodeId, runtimeParams);
+                    end
+                end
+            else
+                app.Data.nodes(idx).params.(param) = value;
+                if isInput
+                    runtimeParams = getRuntimeNodeParams(app, nodeId);
+                    runtimeParams.(param) = value;
+                    setRuntimeNodeParams(app, nodeId, runtimeParams);
+                end
+            end
+
+            refreshModuleTabs(app);
+            refreshValidationReport(app);
+        end
+
+        function data = bindingTableData(app, node)
+            data = cell(0, 6);
+            try
+                contract = pipelineNodeContract(node);
+            catch
+                contract = getField(app, node, 'contract', struct());
+            end
+            resources = getField(app, contract, 'resources', struct());
+            inputs = getField(app, resources, 'in', struct([]));
+            outputs = getField(app, resources, 'out', struct([]));
+
+            for i = 1:numel(inputs)
+                spec = inputs(i);
+                if isempty(char(string(getField(app, spec, 'type', ''))))
+                    continue;
+                end
+                param = char(string(getField(app, spec, 'param', '')));
+                resourceLabel = resourceSpecLabel(app, spec);
+                value = bindingDisplayedValue(app, node, spec, true);
+                choices = bindingInputChoices(app, node, spec, value);
+                tooltip = ['Input binding for ' resourceLabel '. Symbolic choices are resolved from upstream modules at run time.'];
+                data(end+1,:) = {'Input', resourceLabel, param, value, {choices}, tooltip}; %#ok<AGROW>
+            end
+
+            for i = 1:numel(outputs)
+                spec = outputs(i);
+                if isempty(char(string(getField(app, spec, 'type', ''))))
+                    continue;
+                end
+                param = char(string(getField(app, spec, 'nameParam', '')));
+                if isempty(param)
+                    param = char(string(getField(app, spec, 'param', '')));
+                end
+                if isempty(param)
+                    continue;
+                end
+                resourceLabel = resourceSpecLabel(app, spec);
+                value = bindingDisplayedValue(app, node, spec, false);
+                tooltip = ['Output binding for ' resourceLabel '. This names the concrete resource written by the module.'];
+                data(end+1,:) = {'Output', resourceLabel, param, value, {}, tooltip}; %#ok<AGROW>
+            end
+        end
+
+        function value = bindingDisplayedValue(app, node, spec, isInput)
+            value = '';
+            nodeId = char(string(getField(app, node, 'id', '')));
+            param = char(string(getField(app, spec, 'param', '')));
+            if ~isInput
+                nameParam = char(string(getField(app, spec, 'nameParam', '')));
+                if ~isempty(nameParam)
+                    param = nameParam;
+                end
+            end
+
+            p = getField(app, node, 'params', struct());
+            if isInput && isstruct(p) && isfield(p, param) && isSymbolicStoredBinding(app, p.(param))
+                value = bindingValueToDisplay(app, choiceScalarText(app, p.(param)), node, spec);
+                return;
+            end
+
+            runtimeParams = getRuntimeNodeParams(app, nodeId);
+            if isInput && isstruct(runtimeParams) && isfield(runtimeParams, param) && ...
+                    isConfiguredBindingValue(app, runtimeParams.(param))
+                value = bindingValueToDisplay(app, choiceScalarText(app, runtimeParams.(param)), node, spec);
+                return;
+            end
+
+            if isstruct(p) && isfield(p, param) && (~isInput || isConfiguredBindingValue(app, p.(param)))
+                value = bindingValueToDisplay(app, choiceScalarText(app, p.(param)), node, spec);
+            end
+            if ~isInput && isempty(value)
+                value = char(string(getField(app, node, 'id', '')));
+            end
+        end
+
+        function displayValue = bindingValueToDisplay(app, value, node, spec)
+            displayValue = strtrim(char(string(value)));
+            if ~startsWith(displayValue, '@')
+                return;
+            end
+
+            sourceNode = symbolicBindingSourceNode(app, displayValue);
+            if ~isempty(sourceNode)
+                available = upstreamCompatibleResources(app, node, spec);
+                for i = 1:numel(available)
+                    if strcmp(char(string(getField(app, available(i), 'sourceNode', ''))), sourceNode)
+                        label = resourceChoiceLabel(app, available(i), spec);
+                        if ~isempty(label)
+                            displayValue = label;
+                            return;
+                        end
+                    end
+                end
+            end
+
+            displayValue = ['<' displayValue(2:end) '>'];
+        end
+
+        function choices = bindingInputChoices(app, node, spec, currentValue)
+            choices = {};
+            currentValue = choiceScalarText(app, currentValue);
+
+            inputReport = currentResourceInputReport(app, node, spec);
+            available = struct([]);
+            if isstruct(inputReport)
+                if isfield(inputReport, 'available') && ~isempty(inputReport.available)
+                    available = inputReport.available;
+                elseif isfield(inputReport, 'autoChoice') && ~isempty(inputReport.autoChoice)
+                    available = inputReport.autoChoice;
+                end
+            end
+            if isempty(available)
+                available = upstreamCompatibleResources(app, node, spec);
+            end
+            runtimeChoices = runtimeBindingChoices(app, spec);
+            upstreamChoices = {};
+
+            for i = 1:numel(available)
+                label = resourceChoiceLabel(app, available(i), spec);
+                sourceKind = lower(char(string(getField(app, available(i), 'sourceKind', ''))));
+                if ~isempty(label)
+                    if any(strcmp(sourceKind, {'context','ctx','runtime'}))
+                        runtimeChoices{end+1} = label; %#ok<AGROW>
+                    else
+                        upstreamChoices{end+1} = label; %#ok<AGROW>
+                    end
+                end
+                concrete = char(string(getField(app, available(i), 'concreteName', '')));
+                if ~isempty(concrete) && any(strcmp(sourceKind, {'context','ctx','runtime'}))
+                    runtimeChoices{end+1} = concrete; %#ok<AGROW>
+                end
+            end
+            choices = [upstreamChoices runtimeChoices]; %#ok<AGROW>
+
+            if isempty(choices)
+                choices = graphResourceChoiceLabels(app, node, spec);
+            end
+
+            if isempty(choices) && ~isempty(currentValue)
+                choices{end+1} = currentValue; %#ok<AGROW>
+            end
+
+            if isempty(choices)
+                role = char(string(getField(app, spec, 'role', 'resource')));
+                choices = {['<' role ' output>']};
+            end
+            choices = unique(choices(~cellfun(@isempty, choices)), 'stable');
+        end
+
+        function choices = runtimeBindingChoices(app, spec)
+            choices = {};
+            type = lower(char(string(getField(app, spec, 'type', ''))));
+            role = lower(char(string(getField(app, spec, 'role', ''))));
+            if strcmp(type, 'channel') && strcmp(role, 'roi_image')
+                choices = runtimeConcreteChannels(app);
+            elseif strcmp(type, 'channel') && strcmp(role, 'source')
+                choices = runtimeConcreteChannels(app);
+            elseif strcmp(type, 'dataseries') || strcmp(type, 'dataSeries')
+                choices = runtimeDataSeriesChoices(app, role);
+            end
+        end
+
+        function channels = runtimeConcreteChannels(app)
+            channels = {};
+            if isfield(app.RuntimeParseInfo, 'channels') && ~isempty(app.RuntimeParseInfo.channels)
+                channels = cellstr(string(app.RuntimeParseInfo.channels(:)'));
+            end
+            skip = startsWith(lower(string(channels)), 'resolved after') | strcmpi(string(channels), 'all') | strcmpi(string(channels), 'auto');
+            channels = channels(~skip);
+            channels = unique(channels(~cellfun(@isempty, channels)), 'stable');
+        end
+
+        function choices = runtimeDataSeriesChoices(app, role)
+            choices = {};
+            try
+                names = runtimeDataSeriesNames(app);
+                if isempty(names)
+                    return;
+                end
+                if strcmpi(role, 'classification')
+                    keep = contains(lower(string(names)), "div") | contains(lower(string(names)), "class") | contains(lower(string(names)), "cnn") | contains(lower(string(names)), "lstm");
+                    names = names(keep);
+                end
+                choices = unique(names(~cellfun(@isempty, names)), 'stable');
+            catch
+                choices = {};
+            end
+        end
+
+        function names = runtimeDataSeriesNames(app)
+            names = {};
+            try
+                roiList = runtimeSelectedRois(app);
+                if isempty(roiList)
+                    return;
+                end
+                maxRoi = min(numel(roiList), 10);
+                for r = 1:maxRoi
+                    roiObj = roiList(r);
+                    try
+                        roiObj.load('data');
+                    catch
+                    end
+                    if ~isprop(roiObj, 'data') || isempty(roiObj.data)
+                        continue;
+                    end
+                    ds = roiObj.data;
+                    for i = 1:numel(ds)
+                        if isprop(ds(i), 'groupid') && ~isempty(ds(i).groupid)
+                            names{end+1} = char(string(ds(i).groupid)); %#ok<AGROW>
+                        elseif isprop(ds(i), 'id') && ~isempty(ds(i).id)
+                            names{end+1} = char(string(ds(i).id)); %#ok<AGROW>
+                        elseif isprop(ds(i), 'name') && ~isempty(ds(i).name)
+                            names{end+1} = char(string(ds(i).name)); %#ok<AGROW>
+                        end
+                    end
+                end
+                names = unique(names(~cellfun(@isempty, names)), 'stable');
+            catch
+                names = {};
+            end
+        end
+
+        function roiList = runtimeSelectedRois(app)
+            roiList = [];
+            if isempty(app.CurrentProject) || ~isa(app.CurrentProject, 'shallow')
+                return;
+            end
+            try
+                fovIdx = parseIndexSelection(app, getRuntimeValue(app, 'fovs'));
+                if isempty(fovIdx)
+                    fovIdx = 1:numel(app.CurrentProject.fov);
+                end
+                fovIdx = fovIdx(fovIdx >= 1 & fovIdx <= numel(app.CurrentProject.fov));
+                if isempty(fovIdx)
+                    return;
+                end
+                roiSel = parseLooseSelection(app, getRuntimeValue(app, 'rois'));
+                f = app.CurrentProject.fov(fovIdx(1));
+                if isempty(f.roi)
+                    return;
+                end
+                if isempty(roiSel)
+                    roiIdx = 1:numel(f.roi);
+                elseif isnumeric(roiSel)
+                    roiIdx = round(double(roiSel(:)'));
+                    roiIdx = roiIdx(roiIdx >= 1 & roiIdx <= numel(f.roi));
+                else
+                    roiIdx = 1:numel(f.roi);
+                end
+                if isempty(roiIdx)
+                    return;
+                end
+                roiList = f.roi(roiIdx);
+            catch
+                roiList = [];
+            end
+        end
+
+        function labels = graphResourceChoiceLabels(app, node, spec)
+            labels = {};
+            nodeId = char(string(getField(app, node, 'id', '')));
+            wantedType = lower(char(string(getField(app, spec, 'type', ''))));
+            wantedRole = lower(char(string(getField(app, spec, 'role', ''))));
+            if isempty(nodeId) || isempty(app.Data.nodes)
+                return;
+            end
+            for i = 1:numel(app.Data.nodes)
+                srcNode = app.Data.nodes(i);
+                sourceNode = char(string(getField(app, srcNode, 'id', '')));
+                if isempty(sourceNode) || strcmp(sourceNode, nodeId)
+                    continue;
+                end
+                if isfield(srcNode, 'contract')
+                    srcNode = rmfield(srcNode, 'contract');
+                end
+                try
+                    contract = pipelineNodeContract(srcNode);
+                catch
+                    continue;
+                end
+                resources = getField(app, contract, 'resources', struct());
+                outs = getField(app, resources, 'out', struct([]));
+                for j = 1:numel(outs)
+                    outSpec = outs(j);
+                    outType = lower(char(string(getField(app, outSpec, 'type', ''))));
+                    outRole = lower(char(string(getField(app, outSpec, 'role', ''))));
+                    if ~strcmp(outType, wantedType)
+                        continue;
+                    end
+                    if ~isempty(wantedRole) && ~isempty(outRole) && ~strcmp(outRole, wantedRole)
+                        continue;
+                    end
+                    concrete = outputBindingNameForNode(app, srcNode, outSpec);
+                    role = char(string(getField(app, outSpec, 'role', wantedRole)));
+                    if isempty(concrete)
+                        labels{end+1} = ['<' role ' output from ' sourceNode '>']; %#ok<AGROW>
+                    else
+                        labels{end+1} = ['<' role ' output from ' sourceNode ' / ' concrete '>']; %#ok<AGROW>
+                    end
+                end
+            end
+            labels = unique(labels(~cellfun(@isempty, labels)), 'stable');
+        end
+
+        function name = outputBindingNameForNode(app, node, spec)
+            name = '';
+            params = getField(app, node, 'params', struct());
+            nameParam = char(string(getField(app, spec, 'nameParam', '')));
+            if ~isempty(nameParam) && isstruct(params) && isfield(params, nameParam) && ~isempty(params.(nameParam))
+                name = choiceScalarText(app, params.(nameParam));
+                return;
+            end
+            param = char(string(getField(app, spec, 'param', '')));
+            if ~isempty(param) && isstruct(params) && isfield(params, param) && ~isempty(params.(param))
+                name = choiceScalarText(app, params.(param));
+                return;
+            end
+            name = char(string(getField(app, node, 'id', '')));
+        end
+
+        function resources = upstreamCompatibleResources(app, node, spec)
+            resources = struct([]);
+            nodeId = char(string(getField(app, node, 'id', '')));
+            if isempty(nodeId) || isempty(app.Data.nodes)
+                return;
+            end
+
+            sourceIds = {};
+            edges = app.Data.edges;
+            for i = 1:numel(edges)
+                if strcmp(char(string(getField(app, edges(i), 'to', ''))), nodeId)
+                    sourceIds{end+1} = char(string(getField(app, edges(i), 'from', ''))); %#ok<AGROW>
+                end
+            end
+            ids = cellstr(string({app.Data.nodes.id}));
+            idx = find(strcmp(ids, nodeId), 1);
+            if ~isempty(idx) && idx > 1
+                sourceIds = [sourceIds ids(1:idx-1)]; %#ok<AGROW>
+            end
+            sourceIds = unique(sourceIds(~cellfun(@isempty, sourceIds)), 'stable');
+
+            wantedType = lower(char(string(getField(app, spec, 'type', ''))));
+            wantedRole = lower(char(string(getField(app, spec, 'role', ''))));
+            for i = 1:numel(sourceIds)
+                srcIdx = find(strcmp({app.Data.nodes.id}, sourceIds{i}), 1);
+                if isempty(srcIdx)
+                    continue;
+                end
+                srcNode = app.Data.nodes(srcIdx);
+                if isfield(srcNode, 'contract')
+                    srcNode = rmfield(srcNode, 'contract');
+                end
+                try
+                    contract = pipelineNodeContract(srcNode);
+                catch
+                    continue;
+                end
+                outs = getField(app, getField(app, contract, 'resources', struct()), 'out', struct([]));
+                for j = 1:numel(outs)
+                    outSpec = outs(j);
+                    outType = lower(char(string(getField(app, outSpec, 'type', ''))));
+                    outRole = lower(char(string(getField(app, outSpec, 'role', ''))));
+                    if ~strcmp(outType, wantedType)
+                        continue;
+                    end
+                    if ~isempty(wantedRole) && ~isempty(outRole) && ~strcmp(outRole, wantedRole)
+                        continue;
+                    end
+                    resources = appendStruct(app, resources, makeUiResourceChoice(app, srcNode, outSpec)); %#ok<AGROW>
+                end
+            end
+        end
+
+        function resource = makeUiResourceChoice(app, srcNode, outSpec)
+            sourceNode = char(string(getField(app, srcNode, 'id', '')));
+            sourcePort = char(string(getField(app, outSpec, 'port', '')));
+            sourceKind = char(string(getField(app, outSpec, 'transfer', '')));
+            concreteName = '';
+            nameParam = char(string(getField(app, outSpec, 'nameParam', '')));
+            params = getField(app, srcNode, 'params', struct());
+            if ~isempty(nameParam) && isstruct(params) && isfield(params, nameParam) && ~isempty(params.(nameParam))
+                concreteName = choiceScalarText(app, params.(nameParam));
+            end
+            if isempty(concreteName)
+                param = char(string(getField(app, outSpec, 'param', '')));
+                if ~isempty(param) && isstruct(params) && isfield(params, param) && ~isempty(params.(param))
+                    concreteName = choiceScalarText(app, params.(param));
+                end
+            end
+            if isempty(concreteName)
+                concreteName = sourceNode;
+            end
+            symbol = char(string(getField(app, outSpec, 'symbol', '')));
+            if isempty(symbol)
+                symbol = sourcePort;
+            end
+            if ~contains(symbol, '.')
+                symbol = [sourceNode '.' symbol];
+            end
+            resource = struct( ...
+                'type', char(string(getField(app, outSpec, 'type', ''))), ...
+                'role', char(string(getField(app, outSpec, 'role', ''))), ...
+                'symbol', symbol, ...
+                'concreteName', concreteName, ...
+                'sourceNode', sourceNode, ...
+                'sourcePort', sourcePort, ...
+                'sourceKind', sourceKind);
+        end
+
+        function inputReport = currentResourceInputReport(app, node, spec)
+            inputReport = struct();
+            try
+                pipe = buildPipelineStruct(app);
+                ctx = buildBindingValidationContext(app);
+                [~, report] = validatePipeline(pipe, ctx, struct('allowGui', false));
+                nodeId = char(string(getField(app, node, 'id', '')));
+                nodeKey = matlab.lang.makeValidName(nodeId);
+                if ~isfield(report, 'binding') || ~isfield(report.binding, 'nodes') || ~isfield(report.binding.nodes, nodeKey)
+                    return;
+                end
+                br = report.binding.nodes.(nodeKey);
+                if ~isfield(br, 'resources') || ~isfield(br.resources, 'inputs')
+                    return;
+                end
+                inputs = br.resources.inputs;
+                param = char(string(getField(app, spec, 'param', '')));
+                for j = 1:numel(inputs)
+                    if strcmp(char(string(getField(app, inputs(j), 'param', ''))), param)
+                        inputReport = inputs(j);
+                        return;
+                    end
+                end
+            catch
+                inputReport = struct();
+            end
+        end
+
+        function label = resourceChoiceLabel(app, resource, spec)
+            label = '';
+            sourceNode = char(string(getField(app, resource, 'sourceNode', '')));
+            sourceKind = lower(char(string(getField(app, resource, 'sourceKind', ''))));
+            role = char(string(getField(app, resource, 'role', getField(app, spec, 'role', 'resource'))));
+            type = char(string(getField(app, resource, 'type', getField(app, spec, 'type', 'resource'))));
+            concrete = char(string(getField(app, resource, 'concreteName', '')));
+            if ~isempty(sourceNode) && ~any(strcmp(sourceKind, {'context','ctx','runtime'}))
+                if ~isempty(concrete)
+                    label = ['<' role ' output from ' sourceNode ' / ' concrete '>'];
+                else
+                    label = ['<' role ' output from ' sourceNode '>'];
+                end
+            elseif ~isempty(concrete)
+                label = concrete;
+            else
+                label = ['<' type '/' role '>'];
+            end
+        end
+
+        function label = resourceSpecLabel(app, spec) %#ok<INUSD>
+            type = char(string(getField(app, spec, 'type', 'resource')));
+            role = char(string(getField(app, spec, 'role', '')));
+            if isempty(role)
+                label = type;
+            else
+                label = [type '/' role];
+            end
+        end
+
+        function tf = isSymbolicBindingLabel(app, value) %#ok<INUSD>
+            value = strtrim(char(string(value)));
+            tf = startsWith(value, '<') && endsWith(value, '>');
+        end
+
+        function value = symbolicBindingValueFromLabel(app, label)
+            label = strtrim(char(string(label)));
+            value = label;
+            if ~(startsWith(label, '<') && endsWith(label, '>'))
+                return;
+            end
+            inner = strtrim(label(2:end-1));
+            tokens = regexp(inner, '^(.+?)\s+output\s+from\s+([^/\s]+)(?:\s*/\s*.*)?$', 'tokens', 'once');
+            if ~isempty(tokens)
+                role = regexprep(strtrim(tokens{1}), '\s+', '_');
+                sourceNode = strtrim(tokens{2});
+                value = ['@resource:' role ':' sourceNode];
+            else
+                value = ['@' inner];
+            end
+        end
+
+        function sourceNode = symbolicBindingSourceNode(app, value) %#ok<INUSD>
+            sourceNode = '';
+            value = strtrim(char(string(value)));
+            if startsWith(value, '@resource:')
+                parts = strsplit(value, ':');
+                if numel(parts) >= 3
+                    sourceNode = strtrim(parts{3});
+                end
+                return;
+            end
+            if startsWith(value, '@')
+                value = extractAfter(value, 1);
+            end
+            tokens = regexp(value, 'output\s+from\s+([^/\s>]+)', 'tokens', 'once');
+            if ~isempty(tokens)
+                sourceNode = strtrim(tokens{1});
+            end
+        end
+
+        function tf = isConfiguredBindingValue(app, value) %#ok<INUSD>
+            tf = false;
+            if isempty(value)
+                return;
+            end
+            if iscell(value)
+                flat = value(~cellfun(@isempty, value));
+                if isempty(flat)
+                    return;
+                end
+                % setparam often returns cell arrays as choice lists, with the
+                % selected/default value duplicated at the end. Those are not
+                % explicit user bindings and should not hide upstream symbols.
+                if numel(flat) > 1
+                    return;
+                end
+            end
+            tf = true;
+        end
+
+        function tf = isSymbolicStoredBinding(app, value) %#ok<INUSD>
+            tf = startsWith(strtrim(choiceScalarText(app, value)), '@');
+        end
+
+        function ctx = buildBindingValidationContext(app)
+            ctx = struct('allowGUI', false);
+            try
+                ctx = buildRunContext(app);
+            catch
+            end
+            ctx.allowGUI = false;
+            ctx.interactive = false;
+            ctx.dryRun = true;
+            if ~isfield(ctx, 'roiList') || isempty(ctx.roiList)
+                roiList = runtimeSelectedRois(app);
+                if isempty(roiList)
+                    ctx.roiList = 1;
+                else
+                    ctx.roiList = roiList;
+                end
+            end
+            if ~isfield(ctx, 'channels') || isempty(ctx.channels)
+                runtimeChannels = runtimeConcreteChannels(app);
+                if isempty(runtimeChannels)
+                    runtimeChannels = {'<runtime channel>'};
+                end
+                ctx.channels = runtimeChannels;
+            end
+            if ~isfield(ctx, 'roiChannels') || isempty(ctx.roiChannels)
+                runtimeChannels = runtimeConcreteChannels(app);
+                if ~isempty(runtimeChannels)
+                    ctx.roiChannels = runtimeChannels;
+                end
+            end
+        end
+
+        function txt = choiceScalarText(app, v) %#ok<INUSD>
+            txt = '';
+            if isempty(v)
+                return;
+            end
+            if iscell(v)
+                flat = v(~cellfun(@isempty, v));
+                if isempty(flat)
+                    return;
+                end
+                txt = char(string(flat{end}));
+            elseif ischar(v)
+                txt = v;
+            elseif isstring(v) || isnumeric(v) || islogical(v) || iscategorical(v)
+                vals = string(v(:));
+                if ~isempty(vals)
+                    txt = char(vals(end));
+                end
+            else
+                try
+                    txt = char(string(v));
+                catch
+                    txt = '';
+                end
+            end
+            txt = strtrim(txt);
+        end
+
+        function choices = flattenChoiceList(app, value) %#ok<INUSD>
+            choices = {};
+            if isempty(value)
+                return;
+            end
+            if iscell(value)
+                for ii = 1:numel(value)
+                    nested = flattenChoiceList(app, value{ii});
+                    choices = [choices nested]; %#ok<AGROW>
+                end
+            elseif ischar(value)
+                choices = {strtrim(value)};
+            elseif isstring(value) || isnumeric(value) || islogical(value) || iscategorical(value)
+                vals = cellstr(string(value(:)'));
+                choices = cellfun(@(s)strtrim(char(string(s))), vals, 'UniformOutput', false);
+            else
+                try
+                    choices = {strtrim(char(string(value)))};
+                catch
+                    choices = {};
+                end
+            end
+            choices = unique(choices(~cellfun(@isempty, choices)), 'stable');
+        end
+
         function grid = buildParamSection(app, parent, data, node, editable)
             n = max(1, size(data, 1));
             grid = uigridlayout(parent, [n 2]);
@@ -2372,10 +3512,14 @@ classdef pipeline2 < matlab.apps.AppBase
             enableState = ternary(app, editable, 'on', 'off');
 
             choices = paramDropdownChoices(app, node, key);
+            listChoices = valueListChoices(app, value);
+            if isempty(choices) && ~isempty(listChoices)
+                choices = listChoices;
+            end
             if ~isempty(choices)
                 ctrl = uidropdown(parent);
                 ctrl.Items = choices;
-                displayValue = paramValueToDisplay(app, node, key, value);
+                displayValue = choiceScalarText(app, value);
                 if isempty(displayValue) || ~any(strcmp(choices, displayValue))
                     displayValue = choices{1};
                 end
@@ -2428,6 +3572,18 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
+        function choices = valueListChoices(app, value) %#ok<INUSD>
+            choices = {};
+            if ~iscell(value) || numel(value) < 2
+                return;
+            end
+            try
+                choices = flattenChoiceList(app, value);
+            catch
+                choices = {};
+            end
+        end
+
         function choices = runtimeChannelChoices(app, includeEmpty)
             if nargin < 2
                 includeEmpty = false;
@@ -2439,10 +3595,6 @@ classdef pipeline2 < matlab.apps.AppBase
             if isfield(app.RuntimeParseInfo, 'channels') && ~isempty(app.RuntimeParseInfo.channels)
                 parsed = cellstr(string(app.RuntimeParseInfo.channels(:)'));
                 choices = [choices parsed]; %#ok<AGROW>
-            elseif isfield(app.RuntimeFieldHandles, 'channels') && isvalid(app.RuntimeFieldHandles.channels) && isa(app.RuntimeFieldHandles.channels, 'matlab.ui.control.DropDown')
-                items = app.RuntimeFieldHandles.channels.Items;
-                items = items(~startsWith(string(items), 'resolved after'));
-                choices = [choices cellstr(string(items(:)'))]; %#ok<AGROW>
             end
             choices = unique(choices(~cellfun(@isempty, choices)), 'stable');
         end
@@ -2531,7 +3683,7 @@ classdef pipeline2 < matlab.apps.AppBase
                     case 'processor'
                         keys = processorRuntimeKeys(app, pkg);
                     case 'classifier'
-                        keys = {'outputName'};
+                        keys = {};
                     otherwise
                         keys = contractParamKeys(app, node, scope);
                 end
@@ -2560,14 +3712,33 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
-        function keys = processorStaticKeys(app, pkg) %#ok<INUSD>
+        function keys = processorStaticKeys(app, pkg)
             switch pkg
                 case 'combinemultiplechannels'
                     keys = {'outputChannelName','requiredChannelCount'};
                 case 'computemetrics'
                     keys = {'mask1_name','mask1_class','mask1_label','mask1_stat','channel1_name','channel2_name','channel3_name','channel4_name','BrightestPixels'};
+                case 'computerls'
+                    keys = moduleSetparamKeys(app, pkg);
+                    keys = setdiff(keys, {'classification_data','outputName','pkg','paramTooltip','tip'}, 'stable');
                 otherwise
-                    keys = {'outputName'};
+                    keys = moduleSetparamKeys(app, pkg);
+                    keys = setdiff(keys, {'outputName','pkg','paramTooltip','tip'}, 'stable');
+            end
+        end
+
+        function keys = moduleSetparamKeys(app, pkg) %#ok<INUSD>
+            keys = {};
+            if isempty(pkg)
+                return;
+            end
+            try
+                p = feval([char(string(pkg)) '.setparam'], struct());
+                if isstruct(p)
+                    keys = fieldnames(p)';
+                end
+            catch
+                keys = {};
             end
         end
 
@@ -2617,12 +3788,14 @@ classdef pipeline2 < matlab.apps.AppBase
                     if strcmp(pkg, 'combinemultiplechannels')
                         keys = {'Channel1','Channel2','Channel3','Channel4','Channel5','requiredChannelCount','outputChannelName'};
                     elseif strcmp(pkg, 'computemetrics')
-                        keys = {'mask1_name','channel1_name','channel2_name','channel3_name','channel4_name','BrightestPixels','outputName'};
+                        keys = {'mask1_name','channel1_name','channel2_name','channel3_name','channel4_name','BrightestPixels'};
+                    elseif strcmp(pkg, 'computerls')
+                        keys = {'StateDecoder','ExpectedDivisionPeriod','MinDivisionInterval','MinDivisionIntervalFactor','ArrestThreshold','DeathThreshold','ClogThreshold','EmptyThresholdNext','QCMinMeanMargin','QCMaxLowConfidenceFraction'};
                     else
-                        keys = {'channels','channel','frames','outputName'};
+                        keys = {'channels','channel','frames'};
                     end
                 case 'classifier'
-                    keys = {'channel','channels','frames','outputName','pkg'};
+                    keys = {'channel','channels','frames','pkg'};
                 otherwise
                     keys = {};
             end
@@ -2656,7 +3829,11 @@ classdef pipeline2 < matlab.apps.AppBase
         function out = paramValueToDisplay(app, node, key, value)
             nodeType = lower(char(string(getField(app, node, 'type', ''))));
             key = char(string(key));
-            out = valueToDisplay(app, value);
+            if iscell(value)
+                out = choiceScalarText(app, value);
+            else
+                out = valueToDisplay(app, value);
+            end
         end
 
         function label = friendlyParamLabel(app, key) %#ok<INUSD>
@@ -2695,6 +3872,14 @@ classdef pipeline2 < matlab.apps.AppBase
                 out = ifTrue;
             else
                 out = ifFalse;
+            end
+        end
+
+        function out = layoutSpan(app, first, last) %#ok<INUSD>
+            if first == last
+                out = first;
+            else
+                out = [first last];
             end
         end
 
@@ -2987,6 +4172,18 @@ classdef pipeline2 < matlab.apps.AppBase
                 if strcmp(nodeType, 'roiextract') && isfield(nodes(i).params, 'extend')
                     nodes(i).params = rmfield(nodes(i).params, 'extend');
                 end
+                try
+                    contract = pipelineNodeContract(nodes(i));
+                    resources = getField(app, contract, 'resources', struct());
+                    inputs = getField(app, resources, 'in', struct([]));
+                    for j = 1:numel(inputs)
+                        param = char(string(getField(app, inputs(j), 'param', '')));
+                        if ~isempty(param) && isfield(nodes(i).params, param)
+                            nodes(i).params = rmfield(nodes(i).params, param);
+                        end
+                    end
+                catch
+                end
             end
         end
 
@@ -3028,7 +4225,17 @@ classdef pipeline2 < matlab.apps.AppBase
                 if ~isfield(nodes(i), 'params') || ~isstruct(nodes(i).params)
                     nodes(i).params = struct();
                 end
-                nodes(i).params = mergeStructDefaults(app, nodeParams.(key), nodes(i).params);
+                runParams = nodeParams.(key);
+                if isstruct(nodes(i).params)
+                    fields = fieldnames(nodes(i).params);
+                    for f = 1:numel(fields)
+                        pname = fields{f};
+                        if isSymbolicStoredBinding(app, nodes(i).params.(pname)) && isfield(runParams, pname)
+                            runParams.(pname) = nodes(i).params.(pname);
+                        end
+                    end
+                end
+                nodes(i).params = mergeStructDefaults(app, runParams, nodes(i).params);
             end
         end
 
@@ -3158,10 +4365,18 @@ classdef pipeline2 < matlab.apps.AppBase
             ctx.run.frames = ctx.sel.frames;
             ctx.run.rois = ctx.sel.rois;
 
-            channelValue = getRuntimeValue(app, 'channels');
-            ctx.run.channels = channelValue;
-            if ~isempty(channelValue) && ~strcmpi(channelValue, 'all') && ~startsWith(channelValue, 'resolved after')
-                ctx.channels = cellstr(string(strsplit(channelValue, ',')));
+            availableRuntimeChannels = runtimeConcreteChannels(app);
+            ctx.run.availableChannels = availableRuntimeChannels;
+            if ~isempty(availableRuntimeChannels)
+                ctx.roiChannels = availableRuntimeChannels;
+            end
+            if ~isfield(ctx, 'channels') && ~isempty(availableRuntimeChannels)
+                ctx.channels = availableRuntimeChannels;
+            end
+            dataSeriesNames = runtimeDataSeriesNames(app);
+            if ~isempty(dataSeriesNames)
+                ctx.dataSeriesNames = dataSeriesNames;
+                ctx.dataSeries = dataSeriesNames;
             end
 
             rawDataPath = getRuntimeValue(app, 'rawDataPath');
@@ -3425,9 +4640,6 @@ classdef pipeline2 < matlab.apps.AppBase
                     end
                     if isfield(ctx.run, 'projectPath')
                         setRuntimeValuePreserveParse(app, 'projectPath', ctx.run.projectPath);
-                    end
-                    if isfield(ctx.run, 'channels')
-                        setRuntimeValuePreserveParse(app, 'channels', ctx.run.channels);
                     end
                 end
                 if isfield(ctx, 'sel') && isstruct(ctx.sel)
@@ -3864,17 +5076,17 @@ classdef pipeline2 < matlab.apps.AppBase
             % Create IdEditFieldLabel
             app.IdEditFieldLabel = uilabel(app.ParametersPanel);
             app.IdEditFieldLabel.HorizontalAlignment = 'right';
-            app.IdEditFieldLabel.Position = [213 535 16 22];
+            app.IdEditFieldLabel.Position = [24 535 16 22];
             app.IdEditFieldLabel.Text = 'Id';
 
             % Create IdEditField
             app.IdEditField = uieditfield(app.ParametersPanel, 'text');
-            app.IdEditField.Position = [244 535 154 22];
+            app.IdEditField.Position = [55 535 230 22];
 
             % Create AdvancedmodeCheckBox
             app.AdvancedmodeCheckBox = uicheckbox(app.ParametersPanel);
             app.AdvancedmodeCheckBox.Text = 'Advanced mode';
-            app.AdvancedmodeCheckBox.Position = [421 535 109 22];
+            app.AdvancedmodeCheckBox.Position = [306 535 109 22];
 
             % Create SubtypeDropDownLabel
             app.SubtypeDropDownLabel = uilabel(app.ParametersPanel);

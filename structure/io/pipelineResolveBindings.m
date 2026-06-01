@@ -79,7 +79,11 @@ for i = 1:numel(inputs)
         continue;
     end
     param = char(string(getFieldLocal(item, 'param', '')));
-    if isempty(param) || (isfield(node.params, param) && ~isempty(node.params.(param)))
+    if isempty(param)
+        continue;
+    end
+    if isfield(node.params, param) && isConfiguredResourceValueLocal(node.params.(param)) && ...
+            ~isSymbolicResourceBindingLocal(node.params.(param))
         continue;
     end
     choice = getFieldLocal(item, 'autoChoice', struct([]));
@@ -90,6 +94,28 @@ for i = 1:numel(inputs)
     node.params.(param) = value;
     applied(end+1) = appliedRecordLocal(node, param, value, 'resource', item); %#ok<AGROW>
 end
+end
+
+function tf = isSymbolicResourceBindingLocal(v)
+s = valueToCharLocal(v);
+tf = startsWith(strtrim(s), '@');
+end
+
+function tf = isConfiguredResourceValueLocal(v)
+tf = false;
+if isempty(v)
+    return;
+end
+if iscell(v)
+    flat = v(~cellfun(@isempty, v));
+    if isempty(flat)
+        return;
+    end
+    if numel(flat) > 1
+        return;
+    end
+end
+tf = true;
 end
 
 function [node, applied] = applyAutoChannelBindingLocal(node, br)

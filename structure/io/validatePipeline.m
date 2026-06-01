@@ -504,7 +504,9 @@ function state = initialSemanticState(ctx)
     elseif isfield(ctx,'rois') && ~isempty(ctx.rois)
         roiList = ctx.rois;
     end
-    state.roiChannels = inferRoiChannels(roiList);
+    state.roiChannels = mergeKnownChannels( ...
+        inferRoiChannels(roiList), ...
+        normalizeChannelList(getField(ctx, 'roiChannels', [])));
     state.roiHasMasks = state.hasMasks || roiListHasMaskLikeChannels(roiList);
     state.roiHasDataSeries = state.hasDataSeries || roiListHasDataSeries(roiList);
 end
@@ -894,7 +896,9 @@ end
 
 function br = evaluateResourceInput(node, spec, availableResources)
     configured = resolveResourceConfiguredValue(node, spec);
+    symbolic = resolveResourceSymbolicValue(node, spec);
     compatible = findCompatibleResources(availableResources, spec);
+    graphCompatible = nonContextResources(compatible);
     status = 'resolved';
     autoChoice = resourceInventoryDef();
 
@@ -902,6 +906,33 @@ function br = evaluateResourceInput(node, spec, availableResources)
         status = 'resolved';
         msg = sprintf('Node %s binds %s resource "%s" to %s.', ...
             char(string(getField(node, 'id', ''))), char(string(spec.type)), configured, char(string(spec.param)));
+    elseif ~isempty(symbolic)
+        symbolicChoice = findSymbolicResourceChoice(compatible, symbolic);
+        if numel(symbolicChoice) == 1
+            status = 'auto_resolvable';
+            autoChoice = symbolicChoice;
+            msg = sprintf('Node %s keeps symbolic %s/%s binding to %s.', ...
+                char(string(getField(node, 'id', ''))), char(string(spec.type)), char(string(spec.role)), ...
+                resourceSourceLabel(symbolicChoice));
+        elseif numel(symbolicChoice) > 1
+            status = 'needs_user_binding';
+            msg = sprintf('Node %s symbolic %s/%s binding is ambiguous for %s.', ...
+                char(string(getField(node, 'id', ''))), char(string(spec.type)), char(string(spec.role)), symbolic);
+        else
+            status = 'needs_run_binding';
+            msg = sprintf('Node %s symbolic %s/%s binding points to %s, but no matching resource is available upstream.', ...
+                char(string(getField(node, 'id', ''))), char(string(spec.type)), char(string(spec.role)), symbolic);
+        end
+    elseif numel(graphCompatible) == 1
+        status = 'auto_resolvable';
+        autoChoice = graphCompatible;
+        msg = sprintf('Node %s can bind %s/%s automatically from upstream %s.', ...
+            char(string(getField(node, 'id', ''))), char(string(spec.type)), char(string(spec.role)), ...
+            resourceSourceLabel(graphCompatible));
+    elseif numel(graphCompatible) > 1
+        status = 'needs_user_binding';
+        msg = sprintf('Node %s needs a %s/%s resource selection; multiple compatible upstream module resources exist.', ...
+            char(string(getField(node, 'id', ''))), char(string(spec.type)), char(string(spec.role)));
     elseif numel(compatible) == 1
         status = 'auto_resolvable';
         autoChoice = compatible;
@@ -1498,7 +1529,50 @@ function value = resolveResourceConfiguredValue(node, spec)
     if isempty(key) || ~isstruct(params) || ~isfield(params, key) || isempty(params.(key))
         return;
     end
-    value = choiceToString(params.(key));
+    raw = params.(key);
+    if isSymbolicResourceBinding(raw)
+        return;
+    end
+    if ~isConfiguredResourceValue(raw)
+        return;
+    end
+    value = choiceToString(raw);
+end
+
+function value = resolveResourceSymbolicValue(node, spec)
+    value = '';
+    params = getField(node, 'params', struct());
+    key = char(string(getField(spec, 'param', '')));
+    if isempty(key) || ~isstruct(params) || ~isfield(params, key) || isempty(params.(key))
+        return;
+    end
+    raw = params.(key);
+    if ~isSymbolicResourceBinding(raw)
+        return;
+    end
+    value = choiceToString(raw);
+end
+
+function tf = isSymbolicResourceBinding(v)
+    s = choiceToString(v);
+    tf = startsWith(strtrim(s), '@');
+end
+
+function tf = isConfiguredResourceValue(v)
+    tf = false;
+    if isempty(v)
+        return;
+    end
+    if iscell(v)
+        flat = v(~cellfun(@isempty, v));
+        if isempty(flat)
+            return;
+        end
+        if numel(flat) > 1
+            return;
+        end
+    end
+    tf = true;
 end
 
 function out = choiceToString(v)
@@ -1538,6 +1612,51 @@ function compatible = findCompatibleResources(resources, spec)
             continue;
         end
         compatible(end+1) = resources(i); %#ok<AGROW>
+    end
+end
+
+function out = nonContextResources(resources)
+    out = resourceInventoryDef();
+    resources = normalizeResourceInventory(resources);
+    for i = 1:numel(resources)
+        sourceKind = lower(char(string(resources(i).sourceKind)));
+        if any(strcmp(sourceKind, {'context','ctx','runtime'}))
+            continue;
+        end
+        out(end+1) = resources(i); %#ok<AGROW>
+    end
+end
+
+function choice = findSymbolicResourceChoice(resources, symbolicValue)
+    choice = resourceInventoryDef();
+    sourceNode = symbolicResourceSourceNode(symbolicValue);
+    if isempty(sourceNode)
+        return;
+    end
+    resources = normalizeResourceInventory(resources);
+    for i = 1:numel(resources)
+        if strcmp(char(string(resources(i).sourceNode)), sourceNode)
+            choice(end+1) = resources(i); %#ok<AGROW>
+        end
+    end
+end
+
+function sourceNode = symbolicResourceSourceNode(symbolicValue)
+    sourceNode = '';
+    symbolicValue = strtrim(char(string(symbolicValue)));
+    if startsWith(symbolicValue, '@resource:')
+        parts = strsplit(symbolicValue, ':');
+        if numel(parts) >= 3
+            sourceNode = strtrim(parts{3});
+        end
+        return;
+    end
+    if startsWith(symbolicValue, '@')
+        symbolicValue = symbolicValue(2:end);
+    end
+    tokens = regexp(symbolicValue, 'output\s+from\s+([^/\s>]+)', 'tokens', 'once');
+    if ~isempty(tokens)
+        sourceNode = strtrim(tokens{1});
     end
 end
 
