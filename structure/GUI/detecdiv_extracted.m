@@ -325,6 +325,10 @@ classdef detecdiv < matlab.apps.AppBase
                 m.MenuSelectedFcn={@contextMenuCancelPipelineRunHubJobFcn,[projIdx,runIdx],'ProjectpipelineRun'};
                 m = uimenu(cm,'Text','Edit run...');
                 m.MenuSelectedFcn={@contextMenuOpenPipelineRunFcn,[projIdx,runIdx],'ProjectpipelineRun'};
+                m = uimenu(cm,'Text','Open run log');
+                m.MenuSelectedFcn = @(~,~)openPipelineRunLog(app, projIdx, runIdx);
+                m = uimenu(cm,'Text','Open run folder');
+                m.MenuSelectedFcn = @(~,~)openPipelineRunFolder(app, projIdx, runIdx);
                 m = uimenu(cm,'Text','Delete run');
                 m.MenuSelectedFcn={@contextMenuDeletePipelineRunFcn,[projIdx,runIdx],'ProjectpipelineRun'};
 
@@ -7727,6 +7731,122 @@ end
                 RefreshtreewindowMenuSelected(app, []);
             catch ME
                 uialert(app.DetecDivUIFigure, ME.message, 'Pipeline run editor error', 'Icon', 'warning');
+            end
+        end
+
+        function openPipelineRunLog(app, projIdx, runIdx)
+            try
+                [runObj, shallowObj] = getProjectPipelineRun(app, projIdx, runIdx);
+                if isempty(runObj)
+                    return;
+                end
+                [runPath, ~] = runObj.getPath;
+                logFile = fullfile(runPath, 'run_log.txt');
+                if exist(logFile, 'file') ~= 2
+                    pipelineRunSave(runObj);
+                    try
+                        shallowObj.processing.pipelineRun(runIdx) = runObj;
+                    catch
+                    end
+                end
+                showPipelineRunTextFile(app, runObj, logFile, 'Pipeline run log');
+            catch ME
+                uialert(app.DetecDivUIFigure, ME.message, 'Open run log', 'Icon', 'error');
+            end
+        end
+
+        function openPipelineRunFolder(app, projIdx, runIdx)
+            try
+                runObj = getProjectPipelineRun(app, projIdx, runIdx);
+                if isempty(runObj)
+                    return;
+                end
+                [runPath, ~] = runObj.getPath;
+                if isempty(runPath) || exist(runPath, 'dir') ~= 7
+                    uialert(app.DetecDivUIFigure, 'Run folder does not exist yet.', 'Open run folder', 'Icon', 'warning');
+                    return;
+                end
+                openPathInSystem(app, runPath);
+            catch ME
+                uialert(app.DetecDivUIFigure, ME.message, 'Open run folder', 'Icon', 'error');
+            end
+        end
+
+        function [runObj, shallowObj] = getProjectPipelineRun(app, projIdx, runIdx)
+            runObj = [];
+            shallowObj = [];
+            if projIdx > numel(app.Data.Project)
+                return;
+            end
+            projVar = app.Data.Project{projIdx};
+            shallowObj = evalin('base', projVar);
+            if ~isfield(shallowObj.processing,'pipelineRun') || runIdx > numel(shallowObj.processing.pipelineRun)
+                return;
+            end
+            runObj = shallowObj.processing.pipelineRun(runIdx);
+        end
+
+        function showPipelineRunTextFile(app, runObj, filePath, titleText)
+            if nargin < 4 || isempty(titleText)
+                titleText = 'Pipeline run file';
+            end
+            [runPath, ~] = runObj.getPath;
+            lines = {'File not found.'};
+            if exist(filePath, 'file') == 2
+                try
+                    rawText = fileread(filePath);
+                    lines = regexp(rawText, '\r\n|\n|\r', 'split')';
+                catch ME
+                    lines = {['Unable to read file: ' ME.message]};
+                end
+            end
+
+            fig = uifigure('Name', titleText, 'Position', [180 120 920 620]);
+            grid = uigridlayout(fig, [3 4]);
+            grid.RowHeight = {24, '1x', 32};
+            grid.ColumnWidth = {'1x', 120, 120, 120};
+            grid.Padding = [12 12 12 12];
+            grid.RowSpacing = 8;
+            grid.ColumnSpacing = 8;
+
+            label = uilabel(grid, 'Text', filePath, 'Interpreter', 'none');
+            label.Layout.Row = 1;
+            label.Layout.Column = [1 4];
+
+            area = uitextarea(grid, 'Editable', 'off', 'Value', lines);
+            area.Layout.Row = 2;
+            area.Layout.Column = [1 4];
+
+            folderLabel = uilabel(grid, 'Text', runPath, 'Interpreter', 'none', 'FontColor', [0.35 0.35 0.35]);
+            folderLabel.Layout.Row = 3;
+            folderLabel.Layout.Column = 1;
+
+            btnFolder = uibutton(grid, 'push', 'Text', 'Open folder', ...
+                'ButtonPushedFcn', @(~,~)openPathInSystem(app, runPath));
+            btnFolder.Layout.Row = 3;
+            btnFolder.Layout.Column = 2;
+            btnFile = uibutton(grid, 'push', 'Text', 'Open file', ...
+                'ButtonPushedFcn', @(~,~)openPathInSystem(app, filePath));
+            btnFile.Layout.Row = 3;
+            btnFile.Layout.Column = 3;
+            btnClose = uibutton(grid, 'push', 'Text', 'Close', ...
+                'ButtonPushedFcn', @(~,~)delete(fig));
+            btnClose.Layout.Row = 3;
+            btnClose.Layout.Column = 4;
+        end
+
+        function openPathInSystem(app, targetPath) %#ok<INUSD>
+            targetPath = char(string(targetPath));
+            try
+                if ispc
+                    winopen(targetPath);
+                elseif ismac
+                    system(['open "' strrep(targetPath, '"', '\"') '" &']);
+                else
+                    system(['xdg-open "' strrep(targetPath, '"', '\"') '" &']);
+                end
+            catch ME
+                uialert(app.DetecDivUIFigure, ME.message, 'Open path', 'Icon', 'error');
             end
         end
 

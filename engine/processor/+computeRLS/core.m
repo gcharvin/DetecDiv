@@ -4,8 +4,10 @@ function [paramout, dataout, image]=core(param,roiobj,frames)
 % Input
 % -----
 % param.classification_data:
-%   Cell array selector for the classifier dataseries to read, typically
-%   {'div_1'}. The selected dataseries must contain an 'id' column and,
+%   Selector for the classifier dataseries to read, typically 'div_1'.
+%   Legacy GUI calls may provide this as a cell array with the selected
+%   value in the last cell. Pipeline calls may provide it directly as char
+%   or string. The selected dataseries must contain an 'id' column and,
 %   when available, 'prob_<class>' columns.
 %
 % param.ArrestThreshold:
@@ -199,6 +201,7 @@ end
 
 disp('computeRLS processing...');
 param=localEnsureQCDefaults(paramout);
+classificationName=localTextParam(param,'classification_data','');
 
 dataout=[];
 mask_data=[];
@@ -212,14 +215,14 @@ end
 dataout=roiobj.data;
 
 listdata={roiobj.data.groupid};
-pix=find(matches(listdata,param.classification_data{end}));
+pix=find(matches(listdata,classificationName));
 
 if numel(pix)==0
     disp('impossible to find the classified data, trying to reformat dataset...');
     formatInDataSeries.core(roiobj);
     dataout=roiobj.data
     listdata={roiobj.data.groupid};
-    pix=find(matches(listdata,param.classification_data{end}));
+    pix=find(matches(listdata,classificationName));
 
     if numel(pix)==0
         disp('impossible to find the classified data; quitting!');
@@ -334,7 +337,7 @@ for j=1:2 % loop on training and prediction data
                 totaltime=[divTimes.frameBirth, divTimes.frameEnd];
             end
 
-            pixdata=find(arrayfun(@(x) strcmp(x.groupid, ['RLS' nme{j} param.classification_data{end}]),dataout)); % find if object exists already
+            pixdata=find(arrayfun(@(x) strcmp(x.groupid, ['RLS' nme{j} classificationName]),dataout)); % find if object exists already
             %
             if numel(pixdata)
                 cc=pixdata(1); % data to be overwritten
@@ -364,7 +367,7 @@ for j=1:2 % loop on training and prediction data
             t.Properties.VariableNames={'event', 'divduration' 'totaltime' 'birth' 'death'};
 
             temp=dataseries(t,{'event', 'divduration' 'totaltime' 'birth' 'death'},...
-                'groupid',['RLS' nme{j} param.classification_data{end}],'parentid',roiobj.id,'plot',{true true false false false},'groups',plotgroup);
+                'groupid',['RLS' nme{j} classificationName],'parentid',roiobj.id,'plot',{true true false false false},'groups',plotgroup);
 
             dataout(cc)=temp;
             dataout(cc).class="processing";
@@ -1001,6 +1004,25 @@ for k=1:numel(fields)
     if ~isfield(param,f) || isempty(param.(f))
         param.(f)=defaults.(f);
     end
+end
+
+
+function out=localTextParam(param,field,defaultValue)
+out=defaultValue;
+if ~isfield(param,field) || isempty(param.(field))
+    return
+end
+v=param.(field);
+if iscell(v)
+    if isempty(v)
+        return
+    end
+    v=v{end};
+end
+if isstring(v) || ischar(v) || iscategorical(v)
+    out=char(string(v));
+elseif isnumeric(v) || islogical(v)
+    out=num2str(v);
 end
 
 

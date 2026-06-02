@@ -589,6 +589,118 @@ function contract = enrichContractFromPackage(contract, node)
                 contract.resources.in = resourceDef('dataSeries', 'classification', 'classification_data', 'classification_data', 'dataSeries', 'classification_data', true, '');
                 contract.resources.out = resourceDef('dataSeries', 'rls', 'dataSeries', 'outputName', 'dataSeries', 'outputName', false, 'roiDataSeries');
                 contract.summary = 'Computes RLS events from an upstream or existing classification dataseries.';
+            case 'computelineage'
+                contract.in = [ ...
+                    portDef('roiList', 'roiList', true, 'edge'), ...
+                    portDef('dataSeries', 'dataSeriesSet', true, 'edge') ...
+                    ];
+                contract.out = [ ...
+                    portDef('roiList', 'roiList', true, 'edge'), ...
+                    portDef('dataSeries', 'dataSeriesSet', true, 'edge') ...
+                    ];
+                contract.parameters.data = unique([contract.parameters.data {'classification_data'}], 'stable');
+                contract.parameters.run = setdiff(contract.parameters.run, {'channels','channel','outputName'}, 'stable');
+                contract.requirements.roi.channelsMin = 0;
+                contract.requirements.roi.dataSeries = true;
+                contract.binding.scope = 'roi';
+                contract.binding.outputScope = 'roi';
+                contract.binding.mode = 'dataSeries';
+                contract.binding.selectorKeys = {'classification_data'};
+                contract.binding.resolveAt = 'run';
+                contract.capabilities.roiDataSeries = true;
+                contract.capabilities.outputsDataSeries = true;
+                contract.resources.in = resourceDef('dataSeries', 'classification', 'classification_data', 'classification_data', 'dataSeries', 'classification_data', true, '');
+                contract.resources.out = resourceDef('dataSeries', 'lineage', 'dataSeries', 'outputName', 'dataSeries', 'outputName', false, 'roiDataSeries');
+                contract.summary = 'Computes lineage outputs from an upstream or existing classification dataseries.';
+            case 'computemaxprojection'
+                contract.out = [ ...
+                    portDef('roiList', 'roiList', true, 'edge'), ...
+                    portDef('channels', 'channelSet', false, 'edge') ...
+                    ];
+                contract.selectors.channelParam = 'channel';
+                contract.selectors.outputNameParam = 'outputChannelName';
+                contract.parameters.run = {'channel','zstacks','outputChannelName','method'};
+                contract.requirements.roi.required = true;
+                contract.requirements.roi.channelsMin = 1;
+                contract.binding.scope = 'roi';
+                contract.binding.outputScope = 'roi';
+                contract.binding.mode = 'singleChannel';
+                contract.binding.selectorKeys = {'channel'};
+                contract.binding.resolveAt = 'run';
+                contract.binding.exactCount = 1;
+                contract.capabilities.roiChannels = true;
+                contract.capabilities.outputsChannels = true;
+                contract.capabilities.roiDataSeries = false;
+                contract.capabilities.outputsDataSeries = false;
+                contract.resources.in = resourceDef('channel', 'roi_image', 'channel', 'channel', 'channels', 'channel', true, '');
+                contract.resources.out = resourceDef('channel', 'derived_roi_image', 'channels', 'outputChannelName', 'channels', 'outputChannelName', false, 'roiChannel');
+                contract.summary = 'Projects z-stacks from one ROI image channel into a derived ROI channel.';
+            case 'basicobjecttracking'
+                contract.out = [ ...
+                    portDef('roiList', 'roiList', true, 'edge'), ...
+                    portDef('channels', 'channelSet', false, 'edge') ...
+                    ];
+                contract.selectors.channelParam = 'inputChannelName';
+                contract.selectors.outputNameParam = 'outputChannelName';
+                contract.parameters.run = {'inputChannelName','inputMode','outputChannelName','coefDist','coefSize','coefIoU','maxRelativeDistance'};
+                contract.requirements.roi.required = true;
+                contract.requirements.roi.channelsMin = 1;
+                contract.binding.scope = 'roi';
+                contract.binding.outputScope = 'roi';
+                contract.binding.mode = 'singleChannel';
+                contract.binding.selectorKeys = {'inputChannelName'};
+                contract.binding.resolveAt = 'run';
+                contract.binding.exactCount = 1;
+                contract.capabilities.roiChannels = true;
+                contract.capabilities.outputsChannels = true;
+                contract.capabilities.roiDataSeries = false;
+                contract.capabilities.outputsDataSeries = false;
+                contract.resources.in = resourceDef('channel', 'roi_image', 'inputChannelName', 'inputChannelName', 'channels', 'inputChannelName', true, '');
+                contract.resources.out = resourceDef('channel', 'tracking', 'channels', 'outputChannelName', 'channels', 'outputChannelName', false, 'roiChannel');
+                contract.summary = 'Tracks objects from a labeled/binary ROI channel and writes tracking labels.';
+            case 'trackmotherlineageviterbi'
+                contract.out = [ ...
+                    portDef('roiList', 'roiList', true, 'edge'), ...
+                    portDef('channels', 'channelSet', false, 'edge') ...
+                    ];
+                contract.selectors.channelParam = 'instanceChannelName';
+                contract.selectors.outputNameParam = 'outputChannelName';
+                contract.parameters.run = {'instanceChannelName','mode','outputChannelName','existingPolicy','debug'};
+                contract.requirements.roi.required = true;
+                contract.requirements.roi.channelsMin = 1;
+                contract.binding.scope = 'roi';
+                contract.binding.outputScope = 'roi';
+                contract.binding.mode = 'singleChannel';
+                contract.binding.selectorKeys = {'instanceChannelName'};
+                contract.binding.resolveAt = 'run';
+                contract.binding.exactCount = 1;
+                contract.capabilities.roiChannels = true;
+                contract.capabilities.outputsChannels = true;
+                contract.capabilities.roiDataSeries = false;
+                contract.capabilities.outputsDataSeries = false;
+                contract.resources.in = resourceDef('channel', 'roi_image', 'instanceChannelName', 'instanceChannelName', 'channels', 'instanceChannelName', true, '');
+                contract.resources.out = resourceDef('channel', 'lineage_mask', 'channels', 'outputChannelName', 'channels', 'outputChannelName', false, 'roiChannel');
+                contract.summary = 'Tracks mother/bud lineage from an instance-label ROI channel using Viterbi.';
+            case 'formatindataseries'
+                contract.in = [ ...
+                    portDef('roiList', 'roiList', true, 'edge'), ...
+                    portDef('dataSeries', 'dataSeriesSet', false, 'edge') ...
+                    ];
+                contract.out = [ ...
+                    portDef('roiList', 'roiList', true, 'edge'), ...
+                    portDef('dataSeries', 'dataSeriesSet', true, 'edge') ...
+                    ];
+                contract.parameters.run = {};
+                contract.requirements.roi.required = true;
+                contract.requirements.roi.channelsMin = 0;
+                contract.requirements.roi.dataSeries = false;
+                contract.binding.mode = 'none';
+                contract.binding.selectorKeys = {};
+                contract.capabilities.roiDataSeries = true;
+                contract.capabilities.outputsDataSeries = true;
+                contract.resources.in = resourceDef();
+                contract.resources.out = resourceDef('dataSeries', 'formatted', 'dataSeries', 'outputName', 'dataSeries', 'outputName', false, 'roiDataSeries');
+                contract.summary = 'Formats ROI data into dataseries objects without additional user bindings.';
         end
     end
 end

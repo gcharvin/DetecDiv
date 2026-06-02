@@ -16,6 +16,7 @@ function pipelineRunSave(runObj)
     jsonFile = fullfile(path, 'run.json');
 
     runObj.updatedAt = char(datetime('now'));
+    runObj.log(['Pipeline run saved to ' jsonFile], 'Save');
     S = pipelineRunToStruct(runObj);
 
     try
@@ -32,8 +33,9 @@ function pipelineRunSave(runObj)
     fclose(fid);
 
     writeRunSummaryFile(runObj, S, path);
+    writeRunParamsFile(S, path);
+    writeRunLogFile(runObj, S, path);
 
-    runObj.log(['Pipeline run saved to ' jsonFile], 'Save');
     fprintf('Pipeline run saved: %s\n', jsonFile);
 end
 
@@ -78,6 +80,80 @@ function writeRunSummaryFile(runObj, S, runPath)
     fid = fopen(txtFile, 'w');
     if fid < 0
         warning('pipelineRunSave:SummaryIO', 'Unable to write %s', txtFile);
+        return;
+    end
+    fwrite(fid, txt, 'char');
+    fclose(fid);
+end
+
+function writeRunParamsFile(S, runPath)
+    jsonFile = fullfile(runPath, 'run_params.json');
+    P = struct();
+    P.runId = getFieldOrDefault(S, 'runId', '');
+    P.status = getFieldOrDefault(S, 'status', '');
+    P.pipelineRef = getFieldOrDefault(S, 'pipelineRef', struct());
+    P.targetRef = getFieldOrDefault(S, 'targetRef', struct());
+    P.createdAt = getFieldOrDefault(S, 'createdAt', '');
+    P.updatedAt = getFieldOrDefault(S, 'updatedAt', '');
+    ctx = getFieldOrDefault(S, 'ctx', struct());
+    if isstruct(ctx)
+        P.run = getFieldOrDefault(ctx, 'run', struct());
+        P.io = getFieldOrDefault(ctx, 'io', struct());
+        P.sel = getFieldOrDefault(ctx, 'sel', struct());
+        P.store = getFieldOrDefault(ctx, 'store', struct());
+        P.hub = getFieldOrDefault(ctx, 'hub', struct());
+        P.names = getFieldOrDefault(ctx, 'names', struct());
+    end
+    try
+        txt = jsonencode(P, 'PrettyPrint', true);
+    catch
+        txt = jsonencode(P);
+    end
+    fid = fopen(jsonFile, 'w');
+    if fid < 0
+        warning('pipelineRunSave:ParamsIO', 'Unable to write %s', jsonFile);
+        return;
+    end
+    fwrite(fid, txt, 'char');
+    fclose(fid);
+end
+
+function writeRunLogFile(runObj, S, runPath)
+    txtFile = fullfile(runPath, 'run_log.txt');
+    lines = {};
+    lines{end+1} = sprintf('Run ID: %s', char(string(getFieldOrDefault(S, 'runId', '')))); %#ok<AGROW>
+    lines{end+1} = sprintf('Status: %s', char(string(getFieldOrDefault(S, 'status', '')))); %#ok<AGROW>
+    lines{end+1} = sprintf('Pipeline: %s', char(string(getNestedOrDefault(S, {'pipelineRef','path'}, '')))); %#ok<AGROW>
+    lines{end+1} = sprintf('Project: %s', char(string(getFieldOrDefault(S, 'projectPath', '')))); %#ok<AGROW>
+    lines{end+1} = sprintf('Updated: %s', char(string(getFieldOrDefault(S, 'updatedAt', '')))); %#ok<AGROW>
+    lines{end+1} = '';
+
+    outputs = getFieldOrDefault(S, 'outputs', struct());
+    if isstruct(outputs) && isfield(outputs, 'error') && isstruct(outputs.error)
+        lines{end+1} = 'Last error:'; %#ok<AGROW>
+        lines{end+1} = sprintf('  Identifier: %s', valueToChar(getFieldOrDefault(outputs.error, 'identifier', ''))); %#ok<AGROW>
+        lines{end+1} = sprintf('  Message: %s', valueToChar(getFieldOrDefault(outputs.error, 'message', ''))); %#ok<AGROW>
+        detail = valueToChar(getFieldOrDefault(outputs.error, 'report', ''));
+        if ~isempty(strtrim(detail))
+            lines{end+1} = '  Report:'; %#ok<AGROW>
+            lines{end+1} = detail; %#ok<AGROW>
+        end
+        lines{end+1} = '';
+    end
+
+    lines{end+1} = 'History:'; %#ok<AGROW>
+    if isprop(runObj, 'history') && ~isempty(runObj.history)
+        for i = 1:height(runObj.history)
+            line = formatHistoryLine(runObj.history, i);
+            if ~isempty(line)
+                lines{end+1} = line; %#ok<AGROW>
+            end
+        end
+    end
+    txt = [strjoin(lines, newline) newline];
+    fid = fopen(txtFile, 'w');
+    if fid < 0
+        warning('pipelineRunSave:LogIO', 'Unable to write %s', txtFile);
         return;
     end
     fwrite(fid, txt, 'char');
@@ -151,16 +227,18 @@ function txt = buildRunSummaryText(runObj, S)
     end
 
     if isprop(runObj, 'history') && ~isempty(runObj.history)
-        lines{end+1} = '';
-        lines{end+1} = 'History'; %#ok<AGROW>
-        try
-            startIdx = max(1, height(runObj.history) - 20 + 1);
-            for i = startIdx:height(runObj.history)
-                row = runObj.history(i,:);
-                lines{end+1} = sprintf('- %s [%s] %s', ...
-                    char(string(row.Date)), char(string(row.Category)), char(string(row.Message))); %#ok<AGROW>
+        histLines = {};
+        startIdx = max(1, height(runObj.history) - 20 + 1);
+        for i = startIdx:height(runObj.history)
+            line = formatHistoryLine(runObj.history, i);
+            if ~isempty(line)
+                histLines{end+1} = line; %#ok<AGROW>
             end
-        catch
+        end
+        if ~isempty(histLines)
+            lines{end+1} = '';
+            lines{end+1} = 'History'; %#ok<AGROW>
+            lines = [lines histLines]; %#ok<AGROW>
         end
     end
 
@@ -202,6 +280,22 @@ function txt = valueToChar(v)
         catch
             txt = '';
         end
+    end
+end
+
+function line = formatHistoryLine(historyTable, idx)
+    line = '';
+    try
+        category = string(historyTable.Category(idx));
+        message = string(historyTable.Message(idx));
+        if (ismissing(category) || strlength(category) == 0) && ...
+                (ismissing(message) || strlength(message) == 0)
+            return;
+        end
+        dateValue = historyTable.Date(idx);
+        line = sprintf('- %s [%s] %s', ...
+            char(string(dateValue)), char(category), char(message));
+    catch
     end
 end
 

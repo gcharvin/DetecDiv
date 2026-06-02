@@ -6,6 +6,7 @@ classdef pipeline2 < matlab.apps.AppBase
         FileMenu                        matlab.ui.container.Menu
         NewpipelineMenu                 matlab.ui.container.Menu
         LoadpipelineMenu                matlab.ui.container.Menu
+        LoadrecentpipelineMenu          matlab.ui.container.Menu
         SavecurrentpipelineMenu         matlab.ui.container.Menu
         SavepipelineasMenu              matlab.ui.container.Menu
         LoadrunMenu                     matlab.ui.container.Menu
@@ -27,6 +28,7 @@ classdef pipeline2 < matlab.apps.AppBase
         TypeDropDown                    matlab.ui.control.DropDown
         TypeDropDownLabel               matlab.ui.control.Label
         RuntimeTab                      matlab.ui.container.Tab
+        RuntimeInputsTab                matlab.ui.container.Tab
         SelectedmodulesLabel            matlab.ui.control.Label
         UISelectedModuleTable           matlab.ui.control.Table
         ResumeoptionsDropDown           matlab.ui.control.DropDown
@@ -66,8 +68,11 @@ classdef pipeline2 < matlab.apps.AppBase
         RuntimeValues struct = struct()
         RuntimeNodeParams struct = struct()
         RuntimeParseInfo struct = struct()
+        HubFieldHandles struct = struct()
+        RunArtifactButtonHandles struct = struct()
         CurrentPipeline = []
         CurrentPipelinePath char = ''
+        CurrentPipelineWorkspaceVar char = ''
         CurrentRun = []
         CurrentRunPath char = ''
         CurrentProject = []
@@ -99,8 +104,13 @@ classdef pipeline2 < matlab.apps.AppBase
             xlabel(app.UIGraphAxes, '');
             ylabel(app.UIGraphAxes, '');
             zlabel(app.UIGraphAxes, '');
-            app.GraphPanel.Position = [13 621 985 304];
-            app.UIGraphAxes.Position = [15 9 955 265];
+            app.UIFigure.Position = [80 80 1240 960];
+            app.GraphPanel.Position = [13 628 1214 304];
+            app.UIGraphAxes.Position = [15 9 1184 265];
+            app.ParametersPanel.Position = [13 14 1214 598];
+            app.TabGroup.Position = [18 51 820 465];
+            app.RuninformationhereLabel.Position = [214 516 610 22];
+            app.PipelineandRuncheckreportLabel.Position = [862 25 335 485];
             app.BuildPanel.Visible = 'off';
 
             app.TypeDropDown.Items = {'dataLoader','ROI definition','roiExtract','processor','classifier'};
@@ -112,6 +122,7 @@ classdef pipeline2 < matlab.apps.AppBase
             app.TypeDropDownLabel.Visible = 'off';
             app.SubtypeDropDown.Visible = 'off';
             app.SubtypeDropDownLabel.Visible = 'off';
+            configureRuntimeTabs(app);
             app.AdvancedmodeCheckBox.ValueChangedFcn = createCallbackFcn(app, @AdvancedmodeCheckBoxValueChanged, true);
             app.TabGroup.SelectionChangedFcn = createCallbackFcn(app, @TabGroupSelectionChanged, true);
 
@@ -123,12 +134,16 @@ classdef pipeline2 < matlab.apps.AppBase
             app.UISelectedModuleTable.ColumnName = {'Run','Module','Type','Package'};
             app.UISelectedModuleTable.ColumnEditable = [true false false false];
             app.UISelectedModuleTable.ColumnWidth = {42 82 70 'auto'};
+            app.UISelectedModuleTable.CellEditCallback = @(~,~)selectedModuleTableEdited(app);
 
             app.ResumeoptionsDropDown.Items = {'Resume previous progress','Restart from scratch'};
             app.ResumeoptionsDropDown.Value = 'Resume previous progress';
             app.ResumeoptionsDropDown.ValueChangedFcn = createCallbackFcn(app, @ResumeoptionsDropDownValueChanged, true);
             app.ExecutionDropDown.Items = {'Auto','GPU','CPU'};
             app.ExecutionDropDown.Value = 'Auto';
+            layoutRuntimeOptionsTab(app);
+            buildHubRuntimeControls(app);
+            buildRunArtifactControls(app);
             buildRuntimeControls(app);
 
             app.ForkgraphButton.ButtonPushedFcn = createCallbackFcn(app, @ForkgraphButtonPushed, true);
@@ -140,14 +155,25 @@ classdef pipeline2 < matlab.apps.AppBase
             app.CheckpipelineButton.ButtonPushedFcn = createCallbackFcn(app, @CheckpipelineButtonPushed, true);
             app.NewpipelineMenu.MenuSelectedFcn = createCallbackFcn(app, @NewpipelineMenuSelected, true);
             app.LoadpipelineMenu.MenuSelectedFcn = createCallbackFcn(app, @LoadpipelineMenuSelected, true);
+            updateRecentPipelinesMenu(app);
             app.SavecurrentpipelineMenu.MenuSelectedFcn = createCallbackFcn(app, @SavecurrentpipelineMenuSelected, true);
             app.SavepipelineasMenu.MenuSelectedFcn = createCallbackFcn(app, @SavepipelineasMenuSelected, true);
             app.LoadrunMenu.MenuSelectedFcn = createCallbackFcn(app, @LoadrunMenuSelected, true);
             app.SaverunMenu.MenuSelectedFcn = createCallbackFcn(app, @SaverunMenuSelected, true);
             app.SaverunasMenu.MenuSelectedFcn = createCallbackFcn(app, @SaverunasMenuSelected, true);
+            uimenu(app.FileMenu, 'Text', 'Open current run folder', 'Separator', 'on', ...
+                'MenuSelectedFcn', @(~,~)openCurrentRunArtifact(app, 'folder'));
+            uimenu(app.FileMenu, 'Text', 'Open current run log', ...
+                'MenuSelectedFcn', @(~,~)showCurrentRunLog(app));
+            uimenu(app.FileMenu, 'Text', 'Open current run params', ...
+                'MenuSelectedFcn', @(~,~)openCurrentRunArtifact(app, 'params'));
 
             app.RuninformationhereLabel.Text = 'Template mode - click the grey block to add a module.';
             app.PipelineandRuncheckreportLabel.Text = 'No pipeline yet.';
+            try
+                app.PipelineandRuncheckreportLabel.WordWrap = 'on';
+            catch
+            end
 
             app.ModuleContextMenu = uicontextmenu(app.UIFigure);
             addModuleLibraryMenu(app, app.ModuleContextMenu, 'Insert module after...', @(nodeType,pkg)addModuleAfterSelected(app, nodeType, pkg));
@@ -170,6 +196,27 @@ classdef pipeline2 < matlab.apps.AppBase
 
             app.IdEditField.ValueChangedFcn = createCallbackFcn(app, @IdEditFieldValueChanged, true);
             updateCommonControlsEnableState(app);
+        end
+
+        function configureRuntimeTabs(app)
+            app.RuntimeTab.Title = 'Runtime options';
+            if isempty(app.RuntimeInputsTab) || ~isvalid(app.RuntimeInputsTab)
+                app.RuntimeInputsTab = uitab(app.TabGroup);
+                app.RuntimeInputsTab.Title = 'Runtime inputs';
+            else
+                app.RuntimeInputsTab.Title = 'Runtime inputs';
+            end
+        end
+
+        function layoutRuntimeOptionsTab(app)
+            app.SelectedmodulesLabel.Position = [18 410 130 22];
+            app.UISelectedModuleTable.Position = [18 90 320 318];
+            app.UISelectedModuleTable.ColumnWidth = {42 132 78 'auto'};
+
+            app.ExecutionDropDownLabel.Position = [388 404 64 22];
+            app.ExecutionDropDown.Position = [462 404 120 22];
+            app.ResumeoptionsDropDownLabel.Position = [356 368 96 22];
+            app.ResumeoptionsDropDown.Position = [462 368 170 22];
         end
 
         function modules = defaultModuleLibrary(app)
@@ -285,14 +332,46 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function refreshSelectedModuleTable(app)
             nodes = app.Data.nodes;
+            previous = currentSelectedRunMap(app);
             data = cell(numel(nodes), 4);
             for i = 1:numel(nodes)
-                data{i,1} = true;
-                data{i,2} = char(string(getField(app, nodes(i), 'id', '')));
+                nodeId = char(string(getField(app, nodes(i), 'id', '')));
+                if isKey(previous, nodeId)
+                    data{i,1} = previous(nodeId);
+                else
+                    data{i,1} = true;
+                end
+                data{i,2} = nodeId;
                 data{i,3} = char(string(getField(app, nodes(i), 'type', '')));
                 data{i,4} = char(string(getField(app, nodes(i), 'pkg', '')));
             end
             app.UISelectedModuleTable.Data = data;
+        end
+
+        function map = currentSelectedRunMap(app)
+            map = containers.Map('KeyType', 'char', 'ValueType', 'logical');
+            try
+                data = app.UISelectedModuleTable.Data;
+                for i = 1:size(data, 1)
+                    nodeId = char(string(data{i,2}));
+                    if isempty(nodeId)
+                        continue;
+                    end
+                    include = true;
+                    try
+                        include = logical(data{i,1});
+                    catch
+                    end
+                    map(nodeId) = include;
+                end
+            catch
+            end
+        end
+
+        function selectedModuleTableEdited(app)
+            redrawGraph(app);
+            refreshModuleTabs(app);
+            refreshValidationReport(app);
         end
 
         function IdEditFieldValueChanged(app, event) %#ok<INUSD>
@@ -834,6 +913,7 @@ classdef pipeline2 < matlab.apps.AppBase
             app.EdgeHandles = gobjects(0);
 
             nodes = app.Data.nodes;
+            selectedRunIds = selectedRunNodeIds(app);
             blockW = 1.55;
             blockH = 0.75;
             gapX = 0.55;
@@ -847,25 +927,39 @@ classdef pipeline2 < matlab.apps.AppBase
                 x = (col - 1) * (blockW + gapX);
                 y = -(row - 1) * (blockH + gapY);
                 selected = isequal(i, app.SelectedNodeIndex);
+                runSelected = isempty(selectedRunIds) || any(strcmp(selectedRunIds, char(string(getField(app, nodes(i), 'id', '')))));
                 face = [0.90 0.94 0.98];
                 edge = [0.24 0.36 0.50];
+                textColor = [0.14 0.18 0.22];
+                subTextColor = [0.25 0.25 0.25];
+                if ~runSelected
+                    face = [0.88 0.88 0.88];
+                    edge = [0.68 0.68 0.68];
+                    textColor = [0.48 0.48 0.48];
+                    subTextColor = [0.58 0.58 0.58];
+                end
                 if selected
-                    face = [0.78 0.88 1.00];
-                    edge = [0.05 0.32 0.68];
+                    if runSelected
+                        face = [0.78 0.88 1.00];
+                        edge = [0.05 0.32 0.68];
+                    else
+                        face = [0.84 0.88 0.92];
+                        edge = [0.36 0.42 0.48];
+                    end
                 end
                 h = rectangle(app.UIGraphAxes, 'Position', [x y blockW blockH], ...
                     'Curvature', 0.08, 'FaceColor', face, 'EdgeColor', edge, ...
-                    'LineWidth', 1.5, 'ButtonDownFcn', @(~,~)selectNode(app, i));
+                    'LineWidth', ternary(app, selected, 1.8, 1.5), 'ButtonDownFcn', @(~,~)selectNode(app, i));
                 h.UIContextMenu = app.ModuleContextMenu;
                 t1 = text(app.UIGraphAxes, x + blockW/2, y + blockH*0.60, ...
                     char(string(getField(app, nodes(i), 'id', 'module'))), ...
                     'HorizontalAlignment', 'center', 'Interpreter', 'none', ...
-                    'FontWeight', 'bold', 'FontSize', 9, 'ButtonDownFcn', @(~,~)selectNode(app, i));
+                    'FontWeight', 'bold', 'FontSize', 9, 'Color', textColor, 'ButtonDownFcn', @(~,~)selectNode(app, i));
                 t1.UIContextMenu = app.ModuleContextMenu;
                 t2 = text(app.UIGraphAxes, x + blockW/2, y + blockH*0.28, ...
                     blockTypeLabel(app, nodes(i)), ...
                     'HorizontalAlignment', 'center', 'Interpreter', 'none', ...
-                    'FontSize', 8, 'Color', [0.25 0.25 0.25], 'ButtonDownFcn', @(~,~)selectNode(app, i));
+                    'FontSize', 8, 'Color', subTextColor, 'ButtonDownFcn', @(~,~)selectNode(app, i));
                 t2.UIContextMenu = app.ModuleContextMenu;
                 app.BlockHandles(end+1:end+3) = [h t1 t2]; %#ok<AGROW>
             end
@@ -907,6 +1001,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
             ids = {nodes.id};
+            selectedRunIds = selectedRunNodeIds(app);
             for i = 1:numel(edges)
                 srcIdx = find(strcmp(ids, char(string(edges(i).from))), 1);
                 dstIdx = find(strcmp(ids, char(string(edges(i).to))), 1);
@@ -919,13 +1014,65 @@ classdef pipeline2 < matlab.apps.AppBase
                 y1 = -(getLayoutRow(app, src) - 1) * (blockH + gapY) + blockH/2;
                 x2 = (getLayoutCol(app, dst) - 1) * (blockW + gapX);
                 y2 = -(getLayoutRow(app, dst) - 1) * (blockH + gapY) + blockH/2;
+                srcSelected = isempty(selectedRunIds) || any(strcmp(selectedRunIds, char(string(src.id))));
+                dstSelected = isempty(selectedRunIds) || any(strcmp(selectedRunIds, char(string(dst.id))));
+                if ~(srcSelected && dstSelected)
+                    edgeColor = [0.72 0.72 0.72];
+                    edgeWidth = 1.0;
+                elseif edgeContractsCompatible(app, src, dst)
+                    edgeColor = [0.10 0.55 0.28];
+                    edgeWidth = 1.8;
+                else
+                    edgeColor = [0.72 0.48 0.18];
+                    edgeWidth = 1.2;
+                end
                 h = quiver(app.UIGraphAxes, x1, y1, x2 - x1, y2 - y1, 0, ...
-                    'Color', [0.42 0.48 0.55], ...
-                    'LineWidth', 1.2, ...
+                    'Color', edgeColor, ...
+                    'LineWidth', edgeWidth, ...
                     'MaxHeadSize', 0.45, ...
                     'AutoScale', 'off', ...
                     'HitTest', 'off');
                 app.EdgeHandles(end+1) = h; %#ok<AGROW>
+            end
+        end
+
+        function tf = edgeContractsCompatible(app, src, dst)
+            tf = false;
+            try
+                srcContract = pipelineNodeContract(src);
+                dstContract = pipelineNodeContract(dst);
+                srcOut = getField(app, srcContract, 'out', struct([]));
+                dstIn = getField(app, dstContract, 'in', struct([]));
+                for i = 1:numel(srcOut)
+                    for j = 1:numel(dstIn)
+                        if compatiblePortTypes(app, char(string(srcOut(i).type)), char(string(dstIn(j).type)))
+                            tf = true;
+                            return;
+                        end
+                    end
+                end
+            catch
+                tf = false;
+            end
+        end
+
+        function tf = compatiblePortTypes(app, outType, inType) %#ok<INUSD>
+            outType = lower(char(string(outType)));
+            inType = lower(char(string(inType)));
+            tf = strcmp(outType, inType);
+            if tf
+                return;
+            end
+            if strcmp(outType, 'dataseriesset') && strcmp(inType, 'dataseriesset')
+                tf = true;
+            elseif strcmp(outType, 'channelset') && any(strcmp(inType, {'imageset','channelset'}))
+                tf = true;
+            elseif strcmp(outType, 'imageset') && strcmp(inType, 'imageset')
+                tf = true;
+            elseif strcmp(outType, 'roilist') && strcmp(inType, 'roilist')
+                tf = true;
+            elseif strcmp(outType, 'maskset') && strcmp(inType, 'maskset')
+                tf = true;
             end
         end
 
@@ -1091,6 +1238,19 @@ classdef pipeline2 < matlab.apps.AppBase
         function refreshModuleTabs(app)
             app.IsRefreshingTabs = true;
             cleanupObj = onCleanup(@()setRefreshingTabs(app, false)); %#ok<NASGU>
+            previousStaticTab = '';
+            previousNodeId = '';
+            try
+                selectedTab = app.TabGroup.SelectedTab;
+                if isequal(selectedTab, app.RuntimeTab)
+                    previousStaticTab = 'runtimeOptions';
+                elseif isequal(selectedTab, app.RuntimeInputsTab)
+                    previousStaticTab = 'runtimeInputs';
+                elseif isstruct(selectedTab.UserData) && isfield(selectedTab.UserData, 'nodeId')
+                    previousNodeId = char(string(selectedTab.UserData.nodeId));
+                end
+            catch
+            end
             deleteDynamicModuleTabs(app);
             nodes = app.Data.nodes;
             for i = 1:numel(nodes)
@@ -1101,7 +1261,28 @@ classdef pipeline2 < matlab.apps.AppBase
                 app.DynamicModuleTabs(end+1) = t; %#ok<AGROW>
                 buildModuleTab(app, t, node);
             end
-            if ~isnan(app.SelectedNodeIndex) && app.SelectedNodeIndex >= 1 && app.SelectedNodeIndex <= numel(app.DynamicModuleTabs)
+
+            if strcmp(previousStaticTab, 'runtimeOptions') && isvalid(app.RuntimeTab)
+                app.TabGroup.SelectedTab = app.RuntimeTab;
+            elseif strcmp(previousStaticTab, 'runtimeInputs') && isvalid(app.RuntimeInputsTab)
+                app.TabGroup.SelectedTab = app.RuntimeInputsTab;
+            elseif ~isempty(previousNodeId)
+                restored = false;
+                for i = 1:numel(app.DynamicModuleTabs)
+                    try
+                        ud = app.DynamicModuleTabs(i).UserData;
+                        if isstruct(ud) && isfield(ud, 'nodeId') && strcmp(char(string(ud.nodeId)), previousNodeId)
+                            app.TabGroup.SelectedTab = app.DynamicModuleTabs(i);
+                            restored = true;
+                            break;
+                        end
+                    catch
+                    end
+                end
+                if ~restored && ~isnan(app.SelectedNodeIndex) && app.SelectedNodeIndex >= 1 && app.SelectedNodeIndex <= numel(app.DynamicModuleTabs)
+                    app.TabGroup.SelectedTab = app.DynamicModuleTabs(app.SelectedNodeIndex);
+                end
+            elseif ~isnan(app.SelectedNodeIndex) && app.SelectedNodeIndex >= 1 && app.SelectedNodeIndex <= numel(app.DynamicModuleTabs)
                 app.TabGroup.SelectedTab = app.DynamicModuleTabs(app.SelectedNodeIndex);
             end
         end
@@ -1129,26 +1310,17 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function buildRuntimeControls(app)
-            try
-                delete(app.UIFOVTable);
-            catch
-            end
-            try
-                delete(app.PathProjectBox);
-            catch
-            end
-            try
-                delete(app.ListofpathprojectsLabel);
-            catch
-            end
+            try, delete(app.UIFOVTable); catch, end
+            try, delete(app.PathProjectBox); catch, end
+            try, delete(app.ListofpathprojectsLabel); catch, end
 
-            panel = uipanel(app.RuntimeTab, 'Title', 'Run inputs', 'Position', [279 42 417 288]);
-            grid = uigridlayout(panel, [7 4]);
-            grid.RowHeight = {28, 28, 28, 28, 54, 28, 28};
-            grid.ColumnWidth = {80, '1x', 90, 72};
-            grid.Padding = [8 8 8 8];
-            grid.RowSpacing = 8;
-            grid.ColumnSpacing = 8;
+            deleteRuntimeInputChildren(app);
+            grid = uigridlayout(app.RuntimeInputsTab, [7 4]);
+            grid.RowHeight = {32, 32, 32, 32, 96, 32, 32};
+            grid.ColumnWidth = {86, '1x', 115, 88};
+            grid.Padding = [14 14 14 14];
+            grid.RowSpacing = 10;
+            grid.ColumnSpacing = 10;
 
             app.RuntimeFieldHandles = struct();
             app.RuntimeButtonHandles = struct();
@@ -1163,6 +1335,173 @@ classdef pipeline2 < matlab.apps.AppBase
             addRuntimeRow(app, grid, 6, 'ROIs', 'rois', 'all / selected ROI ids', 'Pick...');
             addRuntimePolicyRow(app, grid, 7);
             updateRuntimeInputStates(app);
+        end
+
+        function deleteRuntimeInputChildren(app)
+            try
+                kids = app.RuntimeInputsTab.Children;
+                for k = 1:numel(kids)
+                    delete(kids(k));
+                end
+            catch
+            end
+        end
+
+        function buildHubRuntimeControls(app)
+            deleteHubRuntimeControls(app);
+            hub = defaultHubSettingsForUi(app);
+            app.HubFieldHandles = struct();
+
+            app.HubFieldHandles.executionTargetLabel = uilabel(app.RuntimeTab, ...
+                'Text', 'Run target', 'HorizontalAlignment', 'right', 'Position', [374 330 78 22]);
+            target = uidropdown(app.RuntimeTab, ...
+                'Items', {'Local MATLAB','Hub'}, ...
+                'ItemsData', {'local','hub'}, ...
+                'Value', 'local', ...
+                'Position', [462 330 170 22]);
+            target.ValueChangedFcn = @(src,~)hubRuntimeFieldChanged(app, 'executionTarget', src.Value);
+            app.HubFieldHandles.executionTarget = target;
+            app.RuntimeValues.executionTarget = 'local';
+
+            labels = {'Hub URL','Fallback URLs','User key','Session token','Timeout','Remote root','Local root'};
+            keys = {'baseUrl','fallbackBaseUrls','userKey','sessionToken','timeout','defaultRemoteProjectRoot','defaultLocalProjectRoot'};
+            defaults = { ...
+                getStructText(app, hub, 'baseUrl', 'http://detecdiv-hub.detecdiv.internal'), ...
+                strjoin(normalizeHubStringList(app, getStructValue(app, hub, 'fallbackBaseUrls', {'http://127.0.0.1:8000'})), ', '), ...
+                getStructText(app, hub, 'userKey', 'localdev'), ...
+                getStructText(app, hub, 'sessionToken', ''), ...
+                num2str(double(getStructValue(app, hub, 'timeout', 20))), ...
+                getStructText(app, hub, 'defaultRemoteProjectRoot', ''), ...
+                getStructText(app, hub, 'defaultLocalProjectRoot', '') ...
+                };
+
+            y = 292;
+            for i = 1:numel(keys)
+                lbl = uilabel(app.RuntimeTab, 'Text', labels{i}, 'HorizontalAlignment', 'right', ...
+                    'Position', [348 y 104 22]);
+                if strcmp(keys{i}, 'timeout')
+                    fld = uieditfield(app.RuntimeTab, 'numeric', 'Position', [462 y 170 22], 'Value', str2double(defaults{i}));
+                else
+                    fld = uieditfield(app.RuntimeTab, 'text', 'Position', [462 y 330 22], 'Value', defaults{i});
+                end
+                fld.ValueChangedFcn = @(src,~)hubRuntimeFieldChanged(app, '', []);
+                app.HubFieldHandles.([keys{i} 'Label']) = lbl;
+                app.HubFieldHandles.(keys{i}) = fld;
+                y = y - 34;
+            end
+            updateHubRuntimeControlsVisibility(app);
+        end
+
+        function buildRunArtifactControls(app)
+            deleteRunArtifactControls(app);
+            app.RunArtifactButtonHandles = struct();
+            app.RunArtifactButtonHandles.folder = uibutton(app.RuntimeTab, 'push', ...
+                'Text', 'Open run folder', 'Position', [660 404 130 24], ...
+                'ButtonPushedFcn', @(~,~)openCurrentRunArtifact(app, 'folder'));
+            app.RunArtifactButtonHandles.log = uibutton(app.RuntimeTab, 'push', ...
+                'Text', 'Run log', 'Position', [660 368 130 24], ...
+                'ButtonPushedFcn', @(~,~)showCurrentRunLog(app));
+            app.RunArtifactButtonHandles.params = uibutton(app.RuntimeTab, 'push', ...
+                'Text', 'Run params', 'Position', [660 332 130 24], ...
+                'ButtonPushedFcn', @(~,~)openCurrentRunArtifact(app, 'params'));
+        end
+
+        function deleteRunArtifactControls(app)
+            if ~isstruct(app.RunArtifactButtonHandles) || isempty(fieldnames(app.RunArtifactButtonHandles))
+                return;
+            end
+            fn = fieldnames(app.RunArtifactButtonHandles);
+            for i = 1:numel(fn)
+                h = app.RunArtifactButtonHandles.(fn{i});
+                try
+                    if isvalid(h)
+                        delete(h);
+                    end
+                catch
+                end
+            end
+            app.RunArtifactButtonHandles = struct();
+        end
+
+        function deleteHubRuntimeControls(app)
+            if ~isstruct(app.HubFieldHandles) || isempty(fieldnames(app.HubFieldHandles))
+                return;
+            end
+            fn = fieldnames(app.HubFieldHandles);
+            for i = 1:numel(fn)
+                h = app.HubFieldHandles.(fn{i});
+                try
+                    if isvalid(h)
+                        delete(h);
+                    end
+                catch
+                end
+            end
+            app.HubFieldHandles = struct();
+        end
+
+        function hubRuntimeFieldChanged(app, key, value)
+            if nargin >= 3 && ~isempty(key)
+                app.RuntimeValues.(key) = char(string(value));
+            end
+            updateHubRuntimeControlsVisibility(app);
+            refreshValidationReport(app);
+        end
+
+        function updateHubRuntimeControlsVisibility(app)
+            if ~isstruct(app.HubFieldHandles) || ~isfield(app.HubFieldHandles, 'executionTarget')
+                return;
+            end
+            isHub = strcmp(char(string(app.HubFieldHandles.executionTarget.Value)), 'hub');
+            fn = fieldnames(app.HubFieldHandles);
+            for i = 1:numel(fn)
+                key = fn{i};
+                if any(strcmp(key, {'executionTarget','executionTargetLabel'}))
+                    continue;
+                end
+                try
+                    app.HubFieldHandles.(key).Visible = ternary(app, isHub, 'on', 'off');
+                catch
+                end
+            end
+        end
+
+        function hub = defaultHubSettingsForUi(app) %#ok<INUSD>
+            try
+                hub = detecdiv_hub_settings_get();
+            catch
+                hub = struct('baseUrl', 'http://detecdiv-hub.detecdiv.internal', ...
+                    'fallbackBaseUrls', {{'http://127.0.0.1:8000'}}, ...
+                    'userKey', 'localdev', 'sessionToken', '', 'timeout', 20, ...
+                    'defaultRemoteProjectRoot', '', 'defaultLocalProjectRoot', '');
+            end
+        end
+
+        function value = getStructValue(app, S, key, defaultValue) %#ok<INUSD>
+            value = defaultValue;
+            if isstruct(S) && isfield(S, key) && ~isempty(S.(key))
+                value = S.(key);
+            end
+        end
+
+        function value = getStructText(app, S, key, defaultValue)
+            value = char(string(getStructValue(app, S, key, defaultValue)));
+        end
+
+        function values = normalizeHubStringList(app, value) %#ok<INUSD>
+            if isempty(value)
+                values = {};
+            elseif iscell(value)
+                values = cellstr(string(value(:)'));
+            elseif isstring(value)
+                values = cellstr(value(:)');
+            elseif ischar(value)
+                values = cellstr(strsplit(value, ','));
+            else
+                values = cellstr(string(value(:)'));
+            end
+            values = cellfun(@(s)strtrim(char(string(s))), values, 'UniformOutput', false);
+            values = values(~cellfun(@isempty, values));
         end
 
         function addRuntimeProjectRow(app, grid, row)
@@ -1408,12 +1747,18 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
             varName = choices{idx,2};
+            d = openRuntimeProgress(app, 'Project', 'Loading selected project metadata...');
             try
+                drawnow limitrate;
                 shallowObj = evalin('base', varName);
+                updateRuntimeProgress(app, d, 'Refreshing FOV, ROI, channel and dataseries inventory...');
                 bindCurrentProject(app, shallowObj, varName);
             catch ME
+                closeRuntimeProgress(app, d);
+                d = [];
                 uialert(app.UIFigure, ME.message, 'Project selection', 'Icon', 'warning');
             end
+            closeRuntimeProgress(app, d);
         end
 
         function chooseExistingProject(app)
@@ -1470,7 +1815,9 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
                 return;
             end
+            d = openRuntimeProgress(app, 'Project', 'Loading DetecDiv project...');
             try
+                drawnow limitrate;
                 [shallowObj, msg] = shallowLoad(matPath);
                 if isempty(shallowObj)
                     error('pipeline2:ProjectLoadFailed', '%s', msg);
@@ -1478,11 +1825,46 @@ classdef pipeline2 < matlab.apps.AppBase
                 [~, name] = fileparts(matPath);
                 varName = matlab.lang.makeValidName(name);
                 assignin('base', varName, shallowObj);
+                updateRuntimeProgress(app, d, 'Refreshing FOV, ROI, channel and dataseries inventory...');
                 bindCurrentProject(app, shallowObj, varName);
             catch ME
+                closeRuntimeProgress(app, d);
+                d = [];
                 if showWarnings
                     uialert(app.UIFigure, ME.message, 'Project', 'Icon', 'warning');
                 end
+            end
+            closeRuntimeProgress(app, d);
+        end
+
+        function d = openRuntimeProgress(app, titleText, messageText)
+            d = [];
+            try
+                d = uiprogressdlg(app.UIFigure, ...
+                    'Title', titleText, ...
+                    'Message', messageText, ...
+                    'Indeterminate', 'on');
+            catch
+                d = [];
+            end
+        end
+
+        function updateRuntimeProgress(app, d, messageText) %#ok<INUSD>
+            try
+                if ~isempty(d) && isvalid(d)
+                    d.Message = messageText;
+                    drawnow limitrate;
+                end
+            catch
+            end
+        end
+
+        function closeRuntimeProgress(app, d) %#ok<INUSD>
+            try
+                if ~isempty(d) && isvalid(d)
+                    close(d);
+                end
+            catch
             end
         end
 
@@ -1682,13 +2064,16 @@ classdef pipeline2 < matlab.apps.AppBase
             d = [];
             try
                 d = uiprogressdlg(app.UIFigure, 'Title', 'Raw data parser', ...
-                    'Message', 'Parsing raw data metadata...', 'Indeterminate', 'on');
+                    'Message', 'Loading raw dataset metadata...', 'Indeterminate', 'on');
             catch
             end
             try
+                updateRuntimeProgress(app, d, 'Parsing raw dataset metadata...');
                 out = parseInputData(rawDataPath);
+                updateRuntimeProgress(app, d, 'Refreshing FOV, frame and channel inventory...');
                 info = summarizeParsedRawData(app, out, rawDataPath);
                 app.RuntimeParseInfo = info;
+                updateRuntimeProgress(app, d, 'Updating runtime inputs and module bindings...');
                 applyRuntimeParseInfo(app, info);
             catch ME
                 app.RuntimeParseInfo = struct('path', rawDataPath, 'ok', false, 'message', ME.message);
@@ -2083,11 +2468,12 @@ classdef pipeline2 < matlab.apps.AppBase
             bindingData = bindingTableData(app, node);
             staticData = paramsToTableData(app, node, 'static');
             runtimeData = paramsToTableData(app, node, 'runtime');
+            showClassifierReference = isClassifierNode(app, node);
             showBindings = ~isempty(bindingData);
             showStatic = ~isempty(staticData);
             showRuntime = ~isempty(runtimeData);
 
-            if ~showBindings && ~showStatic && ~showRuntime
+            if ~showClassifierReference && ~showBindings && ~showStatic && ~showRuntime
                 grid = uigridlayout(parentTab, [1 1]);
                 grid.Padding = [12 10 12 12];
                 uilabel(grid, 'Text', 'No module-specific parameters for this module.', ...
@@ -2097,9 +2483,12 @@ classdef pipeline2 < matlab.apps.AppBase
 
             colCount = max(1, double(showStatic) + double(showRuntime));
             hasParamRows = showStatic || showRuntime;
-            rowCount = 2 * double(showBindings) + 2 * double(hasParamRows);
+            rowCount = 2 * double(showClassifierReference) + 2 * double(showBindings) + 2 * double(hasParamRows);
             grid = uigridlayout(parentTab, [rowCount colCount]);
             rowHeights = {};
+            if showClassifierReference
+                rowHeights = [rowHeights {24, 76}]; %#ok<AGROW>
+            end
             if showBindings
                 rowHeights = [rowHeights {24, min(160, 42 + 34 * size(bindingData, 1))}]; %#ok<AGROW>
             end
@@ -2113,6 +2502,18 @@ classdef pipeline2 < matlab.apps.AppBase
             grid.RowSpacing = 8;
 
             row = 1;
+            if showClassifierReference
+                refLabel = uilabel(grid, 'Text', 'Classifier artifact');
+                refLabel.FontWeight = 'bold';
+                refLabel.Layout.Row = row;
+                refLabel.Layout.Column = layoutSpan(app, 1, colCount);
+
+                section = buildClassifierReferenceSection(app, grid, node);
+                section.Layout.Row = row + 1;
+                section.Layout.Column = layoutSpan(app, 1, colCount);
+                row = row + 2;
+            end
+
             if showBindings
                 bindingLabel = uilabel(grid, 'Text', 'Bindings');
                 bindingLabel.FontWeight = 'bold';
@@ -2148,6 +2549,218 @@ classdef pipeline2 < matlab.apps.AppBase
                 section.Layout.Row = row + 1;
                 section.Layout.Column = col;
             end
+        end
+
+        function tf = isClassifierNode(app, node) %#ok<INUSD>
+            tf = strcmpi(char(string(getField(app, node, 'type', ''))), 'classifier');
+        end
+
+        function section = buildClassifierReferenceSection(app, parent, node)
+            section = uigridlayout(parent, [2 4]);
+            section.RowHeight = {24, 28};
+            section.ColumnWidth = {'1x', 150, 170, 110};
+            section.Padding = [0 0 0 0];
+            section.RowSpacing = 6;
+            section.ColumnSpacing = 8;
+
+            status = uilabel(section, 'Text', classifierReferenceSummary(app, node), ...
+                'FontColor', classifierReferenceColor(app, node), 'Interpreter', 'none');
+            status.Layout.Row = 1;
+            status.Layout.Column = [1 4];
+
+            hint = uilabel(section, 'Text', 'Use an existing classi object so training runs, model files, weights and engine metadata are available at run time.', ...
+                'FontColor', [0.35 0.35 0.35], 'Interpreter', 'none');
+            hint.Layout.Row = 2;
+            hint.Layout.Column = 1;
+
+            linkButton = uibutton(section, 'push', 'Text', 'Link classifier...', ...
+                'ButtonPushedFcn', @(~,~)linkClassifierArtifact(app, node));
+            linkButton.Layout.Row = 2;
+            linkButton.Layout.Column = 2;
+
+            openButton = uibutton(section, 'push', 'Text', 'Open linked classifier', ...
+                'ButtonPushedFcn', @(~,~)openLinkedClassifier(app, node));
+            openButton.Layout.Row = 2;
+            openButton.Layout.Column = 3;
+
+            clearButton = uibutton(section, 'push', 'Text', 'Clear link', ...
+                'ButtonPushedFcn', @(~,~)clearClassifierArtifactLink(app, node));
+            clearButton.Layout.Row = 2;
+            clearButton.Layout.Column = 4;
+        end
+
+        function txt = classifierReferenceSummary(app, node)
+            p = getField(app, node, 'params', struct());
+            expected = char(string(getField(app, node, 'pkg', '')));
+            if ~isstruct(p) || ~isfield(p, 'modulePath') || isempty(p.modulePath)
+                txt = ['No linked classifier object. Expected package: ' expected];
+                return;
+            end
+            modulePath = char(string(p.modulePath));
+            moduleId = '';
+            if isfield(p, 'moduleId') && ~isempty(p.moduleId)
+                moduleId = char(string(p.moduleId));
+            end
+            if isempty(moduleId)
+                [~, moduleId] = fileparts(modulePath);
+            end
+            txt = ['Linked: ' moduleId '  |  ' modulePath];
+        end
+
+        function color = classifierReferenceColor(app, node)
+            p = getField(app, node, 'params', struct());
+            if isstruct(p) && isfield(p, 'modulePath') && ~isempty(p.modulePath)
+                color = [0.10 0.42 0.20];
+            else
+                color = [0.62 0.32 0.08];
+            end
+        end
+
+        function linkClassifierArtifact(app, node)
+            nodeId = char(string(getField(app, node, 'id', '')));
+            idx = find(strcmp({app.Data.nodes.id}, nodeId), 1);
+            if isempty(idx)
+                return;
+            end
+            startPath = pwd;
+            try
+                p = getField(app, app.Data.nodes(idx), 'params', struct());
+                if isstruct(p) && isfield(p, 'modulePath') && ~isempty(p.modulePath)
+                    startPath = char(string(p.modulePath));
+                end
+            catch
+            end
+            [file, pth] = uigetfile({'*classification*.mat','Classifier object (*classification*.mat)'; '*.mat','MAT files'}, ...
+                'Link existing classifier object', startPath);
+            if isequal(file, 0)
+                return;
+            end
+            filePath = fullfile(pth, file);
+            try
+                [classiObj, msg] = classiLoad(filePath);
+                if isempty(classiObj) || ~isa(classiObj, 'classi')
+                    if isempty(msg), msg = 'Selected file is not a classi object.'; end
+                    error('pipeline2:BadClassifierLink', '%s', msg);
+                end
+                expectedPkg = char(string(getField(app, app.Data.nodes(idx), 'pkg', '')));
+                actualPkg = classifierPackageName(app, classiObj);
+                if ~isempty(expectedPkg) && ~isempty(actualPkg) && ~strcmpi(expectedPkg, actualPkg)
+                    error('pipeline2:ClassifierPackageMismatch', ...
+                        'This node expects package "%s", but the selected classifier uses "%s".', expectedPkg, actualPkg);
+                end
+                if ~isfield(app.Data.nodes(idx), 'params') || ~isstruct(app.Data.nodes(idx).params)
+                    app.Data.nodes(idx).params = struct();
+                end
+                [classiPath, classiId] = classiObj.getPath;
+                app.Data.nodes(idx).params.modulePath = classiPath;
+                app.Data.nodes(idx).params.moduleId = classiId;
+                if ~isempty(actualPkg)
+                    app.Data.nodes(idx).params.pkg = actualPkg;
+                    app.Data.nodes(idx).pkg = actualPkg;
+                    app.Data.nodes(idx).func = [actualPkg '.classify'];
+                end
+                try
+                    varName = matlab.lang.makeValidName(['classi_' char(string(classiId))]);
+                    assignin('base', varName, classiObj);
+                    app.Data.nodes(idx).params.moduleVar = varName;
+                catch
+                end
+                refreshAfterModelChange(app);
+            catch ME
+                uialert(app.UIFigure, ME.message, 'Link classifier', 'Icon', 'error');
+            end
+        end
+
+        function pkg = classifierPackageName(app, classiObj) %#ok<INUSD>
+            pkg = '';
+            try
+                if isprop(classiObj, 'classifierPkg') && ~isempty(classiObj.classifierPkg)
+                    pkg = char(string(classiObj.classifierPkg));
+                    return;
+                end
+            catch
+            end
+            fun = '';
+            try
+                if isprop(classiObj, 'classifyFun') && ~isempty(classiObj.classifyFun)
+                    fun = char(string(classiObj.classifyFun));
+                end
+            catch
+            end
+            if contains(fun, '.')
+                pkg = extractBefore(fun, '.');
+            elseif strcmpi(fun, 'classifyImageLSTMNetFun')
+                pkg = 'cnn_lstm';
+            elseif contains(lower(fun), 'cellpose')
+                pkg = 'cellposesam';
+            end
+        end
+
+        function openLinkedClassifier(app, node)
+            try
+                classiObj = linkedClassifierObject(app, node);
+                if isempty(classiObj) || ~isa(classiObj, 'classi')
+                    error('pipeline2:NoLinkedClassifier', 'No valid linked classifier object is available for this module.');
+                end
+                classifierGUI(classiObj);
+            catch ME
+                uialert(app.UIFigure, ME.message, 'Open linked classifier', 'Icon', 'error');
+            end
+        end
+
+        function classiObj = linkedClassifierObject(app, node)
+            classiObj = [];
+            p = getField(app, node, 'params', struct());
+            if ~isstruct(p)
+                return;
+            end
+            if isfield(p, 'moduleVar') && ~isempty(p.moduleVar)
+                try
+                    cand = evalin('base', char(string(p.moduleVar)));
+                    if isa(cand, 'classi')
+                        classiObj = cand(1);
+                        return;
+                    end
+                catch
+                end
+            end
+            if ~isfield(p, 'modulePath') || isempty(p.modulePath)
+                return;
+            end
+            modulePath = char(string(p.modulePath));
+            moduleId = '';
+            if isfield(p, 'moduleId') && ~isempty(p.moduleId)
+                moduleId = char(string(p.moduleId));
+            end
+            if isempty(moduleId)
+                [~, moduleId] = fileparts(modulePath);
+            end
+            snap = fullfile(modulePath, [moduleId '_classification.mat']);
+            if exist(snap, 'file') ~= 2
+                error('pipeline2:MissingLinkedClassifierFile', 'Linked classifier file not found: %s', snap);
+            end
+            [classiObj, msg] = classiLoad(snap);
+            if isempty(classiObj) || ~isa(classiObj, 'classi')
+                if isempty(msg)
+                    msg = 'Linked file is not a valid classi object.';
+                end
+                error('pipeline2:BadLinkedClassifier', '%s', msg);
+            end
+        end
+
+        function clearClassifierArtifactLink(app, node)
+            nodeId = char(string(getField(app, node, 'id', '')));
+            idx = find(strcmp({app.Data.nodes.id}, nodeId), 1);
+            if isempty(idx) || ~isfield(app.Data.nodes(idx), 'params') || ~isstruct(app.Data.nodes(idx).params)
+                return;
+            end
+            removeKeys = {'modulePath','moduleId','moduleVar','classes','classifyFun','trainingFun','trainingParam','outputType'};
+            for i = 1:numel(removeKeys)
+                if isfield(app.Data.nodes(idx).params, removeKeys{i})
+                    app.Data.nodes(idx).params = rmfield(app.Data.nodes(idx).params, removeKeys{i});
+                end
+            end
+            refreshAfterModelChange(app);
         end
 
         function buildRoiGridTab(app, parentTab, node)
@@ -2905,23 +3518,39 @@ classdef pipeline2 < matlab.apps.AppBase
 
             p = getField(app, node, 'params', struct());
             if isInput && isstruct(p) && isfield(p, param) && isSymbolicStoredBinding(app, p.(param))
-                value = bindingValueToDisplay(app, choiceScalarText(app, p.(param)), node, spec);
-                return;
+                if symbolicBindingIsActive(app, p.(param))
+                    value = bindingValueToDisplay(app, choiceScalarText(app, p.(param)), node, spec);
+                    return;
+                end
             end
 
             runtimeParams = getRuntimeNodeParams(app, nodeId);
             if isInput && isstruct(runtimeParams) && isfield(runtimeParams, param) && ...
                     isConfiguredBindingValue(app, runtimeParams.(param))
-                value = bindingValueToDisplay(app, choiceScalarText(app, runtimeParams.(param)), node, spec);
-                return;
+                if isSymbolicStoredBinding(app, runtimeParams.(param)) && ~symbolicBindingIsActive(app, runtimeParams.(param))
+                    value = '';
+                else
+                    value = bindingValueToDisplay(app, choiceScalarText(app, runtimeParams.(param)), node, spec);
+                    return;
+                end
             end
 
-            if isstruct(p) && isfield(p, param) && (~isInput || isConfiguredBindingValue(app, p.(param)))
+            if isstruct(p) && isfield(p, param) && (~isInput || isConfiguredBindingValue(app, p.(param))) && ...
+                    (~isInput || ~isSymbolicStoredBinding(app, p.(param)) || symbolicBindingIsActive(app, p.(param)))
                 value = bindingValueToDisplay(app, choiceScalarText(app, p.(param)), node, spec);
             end
             if ~isInput && isempty(value)
                 value = char(string(getField(app, node, 'id', '')));
             end
+        end
+
+        function tf = symbolicBindingIsActive(app, value)
+            tf = true;
+            sourceNode = symbolicBindingSourceNode(app, choiceScalarText(app, value));
+            if isempty(sourceNode)
+                return;
+            end
+            tf = isRunNodeActive(app, sourceNode);
         end
 
         function displayValue = bindingValueToDisplay(app, value, node, spec)
@@ -2942,9 +3571,58 @@ classdef pipeline2 < matlab.apps.AppBase
                         end
                     end
                 end
+                inactiveLabel = inactiveSymbolicBindingLabel(app, displayValue, node, spec);
+                if ~isempty(inactiveLabel)
+                    displayValue = inactiveLabel;
+                    return;
+                end
             end
 
             displayValue = ['<' displayValue(2:end) '>'];
+        end
+
+        function label = inactiveSymbolicBindingLabel(app, value, node, spec)
+            label = '';
+            sourceNode = symbolicBindingSourceNode(app, value);
+            if isempty(sourceNode)
+                return;
+            end
+            activeIds = selectedRunNodeIds(app);
+            if isempty(activeIds) || any(strcmp(activeIds, sourceNode))
+                return;
+            end
+            ids = {};
+            if ~isempty(app.Data.nodes)
+                ids = cellstr(string({app.Data.nodes.id}));
+            end
+            srcIdx = find(strcmp(ids, sourceNode), 1);
+            if isempty(srcIdx)
+                return;
+            end
+            srcNode = app.Data.nodes(srcIdx);
+            role = char(string(getField(app, spec, 'role', 'resource')));
+            concrete = '';
+            try
+                contract = pipelineNodeContract(srcNode);
+                outs = getField(app, getField(app, contract, 'resources', struct()), 'out', struct([]));
+                wantedType = lower(char(string(getField(app, spec, 'type', ''))));
+                wantedRole = lower(char(string(getField(app, spec, 'role', ''))));
+                for i = 1:numel(outs)
+                    outType = lower(char(string(getField(app, outs(i), 'type', ''))));
+                    outRole = lower(char(string(getField(app, outs(i), 'role', ''))));
+                    if strcmp(outType, wantedType) && (isempty(wantedRole) || isempty(outRole) || strcmp(outRole, wantedRole))
+                        concrete = outputBindingNameForNode(app, srcNode, outs(i));
+                        role = char(string(getField(app, outs(i), 'role', role)));
+                        break;
+                    end
+                end
+            catch
+            end
+            if isempty(concrete)
+                label = ['<' role ' output from ' sourceNode ' (inactive)>'];
+            else
+                label = ['<' role ' output from ' sourceNode ' / ' concrete ' (inactive)>'];
+            end
         end
 
         function choices = bindingInputChoices(app, node, spec, currentValue)
@@ -3122,6 +3800,9 @@ classdef pipeline2 < matlab.apps.AppBase
                 if isempty(sourceNode) || strcmp(sourceNode, nodeId)
                     continue;
                 end
+                if ~isRunNodeActive(app, sourceNode)
+                    continue;
+                end
                 if isfield(srcNode, 'contract')
                     srcNode = rmfield(srcNode, 'contract');
                 end
@@ -3194,6 +3875,9 @@ classdef pipeline2 < matlab.apps.AppBase
             wantedType = lower(char(string(getField(app, spec, 'type', ''))));
             wantedRole = lower(char(string(getField(app, spec, 'role', ''))));
             for i = 1:numel(sourceIds)
+                if ~isRunNodeActive(app, sourceIds{i})
+                    continue;
+                end
                 srcIdx = find(strcmp({app.Data.nodes.id}, sourceIds{i}), 1);
                 if isempty(srcIdx)
                     continue;
@@ -3257,6 +3941,15 @@ classdef pipeline2 < matlab.apps.AppBase
                 'sourceNode', sourceNode, ...
                 'sourcePort', sourcePort, ...
                 'sourceKind', sourceKind);
+        end
+
+        function tf = isRunNodeActive(app, nodeId)
+            tf = true;
+            selectedIds = selectedRunNodeIds(app);
+            if isempty(selectedIds)
+                return;
+            end
+            tf = any(strcmp(selectedIds, char(string(nodeId))));
         end
 
         function inputReport = currentResourceInputReport(app, node, spec)
@@ -3885,7 +4578,8 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function refreshValidationReport(app)
             pipe = buildPipelineStruct(app);
-            ctx = struct('allowGUI', false);
+            pipeForCheck = selectedPipelineStructForRun(app, pipe);
+            ctx = buildBindingValidationContext(app);
             if isempty(pipe.nodes)
                 app.RuninformationhereLabel.Text = 'Template mode - no module yet.';
                 app.PipelineandRuncheckreportLabel.Text = 'Click the grey block to add the first module.';
@@ -3893,7 +4587,7 @@ classdef pipeline2 < matlab.apps.AppBase
             end
 
             try
-                [pipeResolved, bindingResolution] = pipelineResolveBindings(pipe, ctx, struct('allowGui', false));
+                [pipeResolved, bindingResolution] = pipelineResolveBindings(pipeForCheck, ctx, struct('allowGui', false));
                 [ok, report] = validatePipeline(pipeResolved, ctx, struct('allowGui', false));
                 report.bindingResolution = bindingResolution;
             catch ME
@@ -3929,7 +4623,8 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function [ok, report] = refreshValidationReportWithOutput(app)
             pipe = buildPipelineStruct(app);
-            ctx = struct('allowGUI', false);
+            pipeForCheck = selectedPipelineStructForRun(app, pipe);
+            ctx = buildBindingValidationContext(app);
             if isempty(pipe.nodes)
                 ok = false;
                 report = struct('errors', {{'No module in pipeline.'}}, 'warnings', {{}}, 'solver', struct());
@@ -3937,7 +4632,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
             try
-                [pipeResolved, bindingResolution] = pipelineResolveBindings(pipe, ctx, struct('allowGui', false));
+                [pipeResolved, bindingResolution] = pipelineResolveBindings(pipeForCheck, ctx, struct('allowGui', false));
                 [ok, report] = validatePipeline(pipeResolved, ctx, struct('allowGui', false));
                 report.bindingResolution = bindingResolution;
             catch ME
@@ -3970,6 +4665,17 @@ classdef pipeline2 < matlab.apps.AppBase
                 elseif ~isempty(rawDataPath) && ~rawOk
                     issues{end+1} = ['Raw data folder does not exist: ' rawDataPath]; %#ok<AGROW>
                     markRuntimeField(app, 'rawDataPath', 'missing', 'Raw data must be an existing folder.');
+                end
+            end
+            if strcmp(runtimeExecutionTarget(app), 'hub')
+                hub = hubSettingsFromUi(app);
+                if ~isfield(hub, 'baseUrl') || isempty(strtrim(char(string(hub.baseUrl))))
+                    issues{end+1} = 'Hub URL is required when run target is Hub.'; %#ok<AGROW>
+                end
+                hasUserKey = isfield(hub, 'userKey') && ~isempty(strtrim(char(string(hub.userKey))));
+                hasToken = isfield(hub, 'sessionToken') && ~isempty(strtrim(char(string(hub.sessionToken))));
+                if ~(hasUserKey || hasToken)
+                    issues{end+1} = 'Hub user key or session token is required when run target is Hub.'; %#ok<AGROW>
                 end
             end
             [severity, message] = outputPolicyCompatibility(app);
@@ -4010,6 +4716,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
             end
             txt = ['Run policy:' newline ...
+                '- Target: ' runTargetLabel(app) newline ...
                 '- Resume: ' resumeLabel newline ...
                 '- Existing outputs: ' policyLabel roiExtractMode];
             [severity, message] = outputPolicyCompatibility(app);
@@ -4118,6 +4825,14 @@ classdef pipeline2 < matlab.apps.AppBase
             txt = strjoin(lines, newline);
         end
 
+        function label = runTargetLabel(app)
+            if strcmp(runtimeExecutionTarget(app), 'hub')
+                label = 'Hub';
+            else
+                label = 'Local MATLAB';
+            end
+        end
+
         function pipe = buildPipelineStruct(app)
             pipe = struct();
             pipe.name = 'pipelineGUI2';
@@ -4125,6 +4840,27 @@ classdef pipeline2 < matlab.apps.AppBase
             pipe.nodes = applyRuntimeDerivedNodePolicies(app, pipe.nodes);
             pipe.edges = app.Data.edges;
             pipe.branches = struct([]);
+        end
+
+        function pipe = selectedPipelineStructForRun(app, pipe)
+            selectedIds = selectedRunNodeIds(app);
+            if isempty(selectedIds) || ~isfield(pipe, 'nodes') || isempty(pipe.nodes)
+                return;
+            end
+            nodeIds = cellstr(string({pipe.nodes.id}));
+            keep = ismember(nodeIds, selectedIds);
+            if ~any(keep)
+                return;
+            end
+            pipe.nodes = pipe.nodes(keep);
+            if isfield(pipe, 'edges') && ~isempty(pipe.edges)
+                edgeKeep = false(size(pipe.edges));
+                for i = 1:numel(pipe.edges)
+                    edgeKeep(i) = any(strcmp(selectedIds, char(string(pipe.edges(i).from)))) && ...
+                        any(strcmp(selectedIds, char(string(pipe.edges(i).to))));
+                end
+                pipe.edges = pipe.edges(edgeKeep);
+            end
         end
 
         function nodes = applyRuntimeDerivedNodePolicies(app, nodes)
@@ -4203,6 +4939,12 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function pipeObj = buildExecutablePipelineObject(app, targetPath, ctx)
             pipeObj = buildPipelineObject(app, targetPath);
+            pipeStruct = selectedPipelineStructForRun(app, struct('nodes', pipeObj.nodes, 'edges', pipeObj.edges, 'branches', pipeObj.branches));
+            pipeObj.nodes = pipeStruct.nodes;
+            pipeObj.edges = pipeStruct.edges;
+            if isfield(pipeStruct, 'branches')
+                pipeObj.branches = pipeStruct.branches;
+            end
             pipeObj.nodes = applyRunNodeParamsToNodes(app, pipeObj.nodes, ctx.run.nodeParams);
             pipeObj.nodes = applyRuntimeDerivedNodePolicies(app, pipeObj.nodes);
             try
@@ -4269,11 +5011,180 @@ classdef pipeline2 < matlab.apps.AppBase
                 pipelineSave(pipeObj);
                 app.CurrentPipeline = pipeObj;
                 app.CurrentPipelinePath = pipeObj.path;
+                assignCurrentPipelineToWorkspace(app, pipeObj);
+                addRecentPipelinePath(app, fullfile(pipeObj.path, 'pipeline.json'));
                 ok = true;
-                app.RuninformationhereLabel.Text = ['Pipeline saved: ' fullfile(pipeObj.path, 'pipeline.json')];
+                suffix = '';
+                if ~isempty(app.CurrentPipelineWorkspaceVar)
+                    suffix = [' | workspace: ' app.CurrentPipelineWorkspaceVar];
+                end
+                app.RuninformationhereLabel.Text = ['Pipeline saved: ' fullfile(pipeObj.path, 'pipeline.json') suffix];
             catch ME
                 uialert(app.UIFigure, ME.message, 'Save pipeline', 'Icon', 'error');
             end
+        end
+
+        function assignCurrentPipelineToWorkspace(app, pipeObj)
+            if isempty(pipeObj) || ~isa(pipeObj, 'pipeline')
+                return;
+            end
+            varName = '';
+            try
+                varName = char(string(pipeObj.strid));
+            catch
+            end
+            if isempty(strtrim(varName))
+                try
+                    [~, varName] = fileparts(pipeObj.path);
+                catch
+                end
+            end
+            if isempty(strtrim(varName))
+                varName = 'pipelineObj';
+            end
+            varName = matlab.lang.makeValidName(varName);
+            try
+                assignin('base', varName, pipeObj);
+                app.CurrentPipelineWorkspaceVar = varName;
+            catch
+            end
+        end
+
+        function addRecentPipelinePath(app, pipelineFile)
+            pipelineFile = normalizeRecentPipelinePath(app, pipelineFile);
+            if isempty(pipelineFile)
+                return;
+            end
+            paths = recentPipelinePaths(app, true);
+            paths = paths(~strcmpi(paths, pipelineFile));
+            paths = [{pipelineFile} paths];
+            maxCount = 10;
+            if numel(paths) > maxCount
+                paths = paths(1:maxCount);
+            end
+            try
+                setpref('DetecDiv', 'pipeline2RecentPipelines', paths);
+            catch
+            end
+            updateRecentPipelinesMenu(app);
+        end
+
+        function paths = recentPipelinePaths(app, keepMissing) %#ok<INUSD>
+            if nargin < 2
+                keepMissing = false;
+            end
+            paths = {};
+            try
+                paths = getpref('DetecDiv', 'pipeline2RecentPipelines', {});
+            catch
+                paths = {};
+            end
+            if ischar(paths) || (isstring(paths) && isscalar(paths))
+                paths = {char(string(paths))};
+            elseif isstring(paths)
+                paths = cellstr(paths(:))';
+            elseif ~iscell(paths)
+                paths = {};
+            end
+            normalized = {};
+            for i = 1:numel(paths)
+                p = normalizeRecentPipelinePath(app, paths{i});
+                if isempty(p)
+                    continue;
+                end
+                if keepMissing || exist(p, 'file') == 2
+                    normalized{end+1} = p; %#ok<AGROW>
+                end
+            end
+            paths = unique(normalized, 'stable');
+            if ~keepMissing
+                try
+                    setpref('DetecDiv', 'pipeline2RecentPipelines', paths);
+                catch
+                end
+            end
+        end
+
+        function pipelineFile = normalizeRecentPipelinePath(app, pipelineFile) %#ok<INUSD>
+            pipelineFile = strtrim(char(string(pipelineFile)));
+            if isempty(pipelineFile)
+                return;
+            end
+            try
+                if exist(pipelineFile, 'dir') == 7
+                    pipelineFile = fullfile(pipelineFile, 'pipeline.json');
+                end
+                if exist(pipelineFile, 'file') == 2
+                    pipelineFile = char(java.io.File(pipelineFile).getCanonicalPath());
+                end
+            catch
+            end
+        end
+
+        function updateRecentPipelinesMenu(app)
+            if isempty(app.LoadrecentpipelineMenu) || ~isvalid(app.LoadrecentpipelineMenu)
+                return;
+            end
+            try
+                delete(app.LoadrecentpipelineMenu.Children);
+            catch
+            end
+            paths = recentPipelinePaths(app, false);
+            if isempty(paths)
+                item = uimenu(app.LoadrecentpipelineMenu, 'Text', '(No recent pipelines)');
+                item.Enable = 'off';
+                app.LoadrecentpipelineMenu.Enable = 'off';
+                return;
+            end
+            app.LoadrecentpipelineMenu.Enable = 'on';
+            for i = 1:numel(paths)
+                label = recentPipelineMenuLabel(app, paths{i});
+                uimenu(app.LoadrecentpipelineMenu, 'Text', label, ...
+                    'MenuSelectedFcn', @(~,~)loadRecentPipeline(app, paths{i}));
+            end
+            uimenu(app.LoadrecentpipelineMenu, 'Text', 'Clear recent pipelines', ...
+                'Separator', 'on', 'MenuSelectedFcn', @(~,~)clearRecentPipelines(app));
+        end
+
+        function label = recentPipelineMenuLabel(app, pipelineFile) %#ok<INUSD>
+            pipelineFile = char(string(pipelineFile));
+            [folder, file, ext] = fileparts(pipelineFile);
+            [parent, folderName] = fileparts(folder);
+            [~, parentName] = fileparts(parent);
+            label = [folderName filesep file ext];
+            if ~isempty(parentName)
+                label = [parentName filesep label];
+            end
+        end
+
+        function loadRecentPipeline(app, pipelineFile)
+            pipelineFile = normalizeRecentPipelinePath(app, pipelineFile);
+            if isempty(pipelineFile) || exist(pipelineFile, 'file') ~= 2
+                updateRecentPipelinesMenu(app);
+                uialert(app.UIFigure, 'This recent pipeline file no longer exists.', 'Load recent pipeline', 'Icon', 'warning');
+                return;
+            end
+            try
+                [pipeObj, msg] = pipelineLoad(pipelineFile);
+                if isempty(pipeObj)
+                    error('pipeline2:PipelineLoadFailed', '%s', msg);
+                end
+                loadPipelineFromObject(app, pipeObj);
+                addRecentPipelinePath(app, pipelineFile);
+                if ~isempty(app.CurrentPipelineWorkspaceVar)
+                    app.RuninformationhereLabel.Text = ['Pipeline loaded in workspace: ' app.CurrentPipelineWorkspaceVar];
+                end
+            catch ME
+                uialert(app.UIFigure, ME.message, 'Load recent pipeline', 'Icon', 'error');
+            end
+        end
+
+        function clearRecentPipelines(app)
+            try
+                setpref('DetecDiv', 'pipeline2RecentPipelines', {});
+            catch
+            end
+            updateRecentPipelinesMenu(app);
         end
 
         function loadPipelineFromObject(app, pipeObj)
@@ -4308,6 +5219,7 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             app.CurrentPipeline = pipeObj;
             app.CurrentPipelinePath = pipeObj.path;
+            assignCurrentPipelineToWorkspace(app, pipeObj);
             app.CurrentRun = [];
             app.CurrentRunPath = '';
             app.RuntimeNodeParams = struct();
@@ -4345,6 +5257,11 @@ classdef pipeline2 < matlab.apps.AppBase
             ctx.run.gpuPolicy = lower(char(string(app.ExecutionDropDown.Value)));
             if strcmp(ctx.run.gpuPolicy, 'auto')
                 ctx.run.gpuPolicy = 'module_default';
+            end
+            ctx.run.executionTarget = runtimeExecutionTarget(app);
+            ctx.run.inputSource = inferRuntimeInputSource(app);
+            if strcmp(ctx.run.executionTarget, 'hub')
+                ctx.hub = hubSettingsFromUi(app);
             end
 
             ctx.io = struct();
@@ -4393,6 +5310,42 @@ classdef pipeline2 < matlab.apps.AppBase
             ctx.targetRef = buildTargetRef(app);
         end
 
+        function source = inferRuntimeInputSource(app)
+            source = 'pipeline start (dataloader)';
+            if isempty(app.CurrentProject) || ~isa(app.CurrentProject, 'shallow')
+                return;
+            end
+            try
+                dataSeriesNames = runtimeDataSeriesNames(app);
+                if ~isempty(dataSeriesNames)
+                    source = 'existing dataseries';
+                    return;
+                end
+            catch
+            end
+            try
+                if projectHasAnyRoi(app, app.CurrentProject)
+                    source = 'existing rois';
+                    return;
+                end
+            catch
+            end
+            source = 'existing project fovs';
+        end
+
+        function tf = projectHasAnyRoi(app, shallowObj) %#ok<INUSD>
+            tf = false;
+            try
+                for i = 1:numel(shallowObj.fov)
+                    if isprop(shallowObj.fov(i), 'roi') && ~isempty(shallowObj.fov(i).roi)
+                        tf = true;
+                        return;
+                    end
+                end
+            catch
+            end
+        end
+
         function nodeParams = buildRunNodeParams(app)
             nodeParams = struct();
             fn = fieldnames(app.RuntimeNodeParams);
@@ -4420,6 +5373,62 @@ classdef pipeline2 < matlab.apps.AppBase
                         nodeParams.(key).path = rawDataPath;
                     end
                 end
+            end
+        end
+
+        function target = runtimeExecutionTarget(app)
+            target = 'local';
+            try
+                if isstruct(app.HubFieldHandles) && isfield(app.HubFieldHandles, 'executionTarget') && ...
+                        isvalid(app.HubFieldHandles.executionTarget)
+                    target = char(string(app.HubFieldHandles.executionTarget.Value));
+                elseif isfield(app.RuntimeValues, 'executionTarget') && ~isempty(app.RuntimeValues.executionTarget)
+                    target = char(string(app.RuntimeValues.executionTarget));
+                end
+            catch
+                target = 'local';
+            end
+            if isempty(target)
+                target = 'local';
+            end
+        end
+
+        function hub = hubSettingsFromUi(app)
+            hub = defaultHubSettingsForUi(app);
+            if ~isstruct(app.HubFieldHandles)
+                return;
+            end
+            textKeys = {'baseUrl','userKey','sessionToken','defaultRemoteProjectRoot','defaultLocalProjectRoot'};
+            for i = 1:numel(textKeys)
+                key = textKeys{i};
+                if isfield(app.HubFieldHandles, key) && isvalid(app.HubFieldHandles.(key))
+                    hub.(key) = char(string(app.HubFieldHandles.(key).Value));
+                end
+            end
+            if isfield(app.HubFieldHandles, 'fallbackBaseUrls') && isvalid(app.HubFieldHandles.fallbackBaseUrls)
+                hub.fallbackBaseUrls = normalizeHubStringList(app, app.HubFieldHandles.fallbackBaseUrls.Value);
+            end
+            if isfield(app.HubFieldHandles, 'timeout') && isvalid(app.HubFieldHandles.timeout)
+                hub.timeout = double(app.HubFieldHandles.timeout.Value);
+            end
+        end
+
+        function applyHubSettingsToUi(app, hub)
+            if ~isstruct(hub) || ~isstruct(app.HubFieldHandles)
+                return;
+            end
+            textKeys = {'baseUrl','userKey','sessionToken','defaultRemoteProjectRoot','defaultLocalProjectRoot'};
+            for i = 1:numel(textKeys)
+                key = textKeys{i};
+                if isfield(hub, key) && isfield(app.HubFieldHandles, key) && isvalid(app.HubFieldHandles.(key))
+                    app.HubFieldHandles.(key).Value = char(string(hub.(key)));
+                end
+            end
+            if isfield(hub, 'fallbackBaseUrls') && isfield(app.HubFieldHandles, 'fallbackBaseUrls') && isvalid(app.HubFieldHandles.fallbackBaseUrls)
+                app.HubFieldHandles.fallbackBaseUrls.Value = strjoin(normalizeHubStringList(app, hub.fallbackBaseUrls), ', ');
+            end
+            if isfield(hub, 'timeout') && isfield(app.HubFieldHandles, 'timeout') && isvalid(app.HubFieldHandles.timeout)
+                app.HubFieldHandles.timeout.Value = double(hub.timeout);
             end
         end
 
@@ -4606,12 +5615,147 @@ classdef pipeline2 < matlab.apps.AppBase
                 app.CurrentRunPath = pth;
             end
             try
+                logRunEvent(app, runObj, 'Run parameters saved from pipeline2.', 'pipeline2');
                 pipelineRunSave(runObj);
                 shallowSave(app.CurrentProject, 'shallowObj');
                 ok = true;
                 app.RuninformationhereLabel.Text = ['Run saved: ' fullfile(runObj.path, 'run.json')];
             catch ME
                 uialert(app.UIFigure, ME.message, 'Save run', 'Icon', 'error');
+            end
+        end
+
+        function openCurrentRunArtifact(app, kind)
+            if nargin < 2 || isempty(kind)
+                kind = 'folder';
+            end
+            runObj = app.CurrentRun;
+            if isempty(runObj) || ~isa(runObj, 'pipelineRun')
+                if ~saveCurrentRun(app, false)
+                    return;
+                end
+                runObj = app.CurrentRun;
+            else
+                try
+                    pipelineRunSave(runObj);
+                catch
+                end
+            end
+            [runPath, ~] = runObj.getPath;
+            if isempty(runPath) || ~exist(runPath, 'dir')
+                uialert(app.UIFigure, 'No current run folder is available yet.', 'Open run artifact', 'Icon', 'warning');
+                return;
+            end
+            switch lower(char(string(kind)))
+                case 'log'
+                    target = fullfile(runPath, 'run_log.txt');
+                case 'params'
+                    target = fullfile(runPath, 'run_params.json');
+                case 'summary'
+                    target = fullfile(runPath, 'run_summary.txt');
+                otherwise
+                    target = runPath;
+            end
+            if ~exist(target, 'file') && ~exist(target, 'dir')
+                try
+                    pipelineRunSave(runObj);
+                catch ME
+                    uialert(app.UIFigure, ME.message, 'Open run artifact', 'Icon', 'error');
+                    return;
+                end
+            end
+            openPathInSystem(app, target);
+        end
+
+        function showCurrentRunLog(app)
+            runObj = app.CurrentRun;
+            if isempty(runObj) || ~isa(runObj, 'pipelineRun')
+                if ~saveCurrentRun(app, false)
+                    return;
+                end
+                runObj = app.CurrentRun;
+            else
+                try
+                    pipelineRunSave(runObj);
+                catch
+                end
+            end
+            [runPath, ~] = runObj.getPath;
+            logFile = fullfile(runPath, 'run_log.txt');
+            if exist(logFile, 'file') ~= 2
+                try
+                    pipelineRunSave(runObj);
+                catch
+                end
+            end
+            txt = {'No run log available yet.'};
+            if exist(logFile, 'file') == 2
+                try
+                    txt = splitlines(fileread(logFile));
+                    txt = cellstr(txt(:));
+                catch ME
+                    txt = {['Unable to read run log: ' ME.message]};
+                end
+            end
+
+            fig = uifigure('Name', 'Pipeline run log', 'Position', [160 120 920 620]);
+            grid = uigridlayout(fig, [3 4]);
+            grid.RowHeight = {24, '1x', 32};
+            grid.ColumnWidth = {'1x', 120, 120, 120};
+            grid.Padding = [12 12 12 12];
+            grid.RowSpacing = 8;
+            grid.ColumnSpacing = 8;
+
+            titleLabel = uilabel(grid, 'Text', ['Run log: ' logFile], 'Interpreter', 'none');
+            titleLabel.Layout.Row = 1;
+            titleLabel.Layout.Column = [1 4];
+
+            area = uitextarea(grid, 'Editable', 'off', 'Value', txt);
+            area.Layout.Row = 2;
+            area.Layout.Column = [1 4];
+
+            runFileLabel = uilabel(grid, 'Text', fullfile(runPath, 'run.json'), 'Interpreter', 'none', 'FontColor', [0.35 0.35 0.35]);
+            runFileLabel.Layout.Row = 3;
+            runFileLabel.Layout.Column = 1;
+            btnFolder = uibutton(grid, 'push', 'Text', 'Open folder', ...
+                'ButtonPushedFcn', @(~,~)openPathInSystem(app, runPath));
+            btnFolder.Layout.Row = 3;
+            btnFolder.Layout.Column = 2;
+            btnFile = uibutton(grid, 'push', 'Text', 'Open log file', ...
+                'ButtonPushedFcn', @(~,~)openPathInSystem(app, logFile));
+            btnFile.Layout.Row = 3;
+            btnFile.Layout.Column = 3;
+            btnClose = uibutton(grid, 'push', 'Text', 'Close', ...
+                'ButtonPushedFcn', @(~,~)delete(fig));
+            btnClose.Layout.Row = 3;
+            btnClose.Layout.Column = 4;
+        end
+
+        function openPathInSystem(app, targetPath) %#ok<INUSD>
+            targetPath = char(string(targetPath));
+            try
+                if ispc
+                    winopen(targetPath);
+                elseif ismac
+                    system(['open "' strrep(targetPath, '"', '\"') '" &']);
+                else
+                    system(['xdg-open "' strrep(targetPath, '"', '\"') '" &']);
+                end
+            catch ME
+                uialert(app.UIFigure, ME.message, 'Open path', 'Icon', 'error');
+            end
+        end
+
+        function logRunEvent(app, runObj, message, category) %#ok<INUSD>
+            if nargin < 4 || isempty(category)
+                category = 'pipeline2';
+            end
+            if isempty(runObj) || ~isa(runObj, 'pipelineRun')
+                return;
+            end
+            try
+                runObj.log(message, category);
+            catch
             end
         end
 
@@ -4641,6 +5785,18 @@ classdef pipeline2 < matlab.apps.AppBase
                     if isfield(ctx.run, 'projectPath')
                         setRuntimeValuePreserveParse(app, 'projectPath', ctx.run.projectPath);
                     end
+                    if isfield(ctx.run, 'executionTarget') && isstruct(app.HubFieldHandles) && ...
+                            isfield(app.HubFieldHandles, 'executionTarget') && isvalid(app.HubFieldHandles.executionTarget)
+                        target = char(string(ctx.run.executionTarget));
+                        if any(strcmp(app.HubFieldHandles.executionTarget.ItemsData, target))
+                            app.HubFieldHandles.executionTarget.Value = target;
+                            app.RuntimeValues.executionTarget = target;
+                        end
+                    end
+                end
+                if isfield(ctx, 'hub') && isstruct(ctx.hub)
+                    applyHubSettingsToUi(app, ctx.hub);
+                    updateHubRuntimeControlsVisibility(app);
                 end
                 if isfield(ctx, 'sel') && isstruct(ctx.sel)
                     if isfield(ctx.sel, 'fovs'), setRuntimeValuePreserveParse(app, 'fovs', selectionToText(app, ctx.sel.fovs)); end
@@ -4725,6 +5881,23 @@ classdef pipeline2 < matlab.apps.AppBase
             app.PipelineandRuncheckreportLabel.Text = strjoin(lines, newline);
         end
 
+        function reportText = printExceptionToConsole(app, titleText, ME) %#ok<INUSD>
+            if nargin < 2 || isempty(titleText)
+                titleText = 'Pipeline error';
+            end
+            try
+                reportText = getReport(ME, 'extended', 'hyperlinks', 'off');
+            catch
+                reportText = ME.message;
+            end
+            try
+                fprintf(2, '\n==================== %s ====================\n', char(string(titleText)));
+                fprintf(2, '%s\n', reportText);
+                fprintf(2, '==================== end %s ====================\n\n', char(string(titleText)));
+            catch
+            end
+        end
+
         function NewpipelineMenuSelected(app, event) %#ok<INUSD>
             app.Data.nodes = struct([]);
             app.Data.edges = struct('from',{},'to',{},'fromPort',{},'toPort',{},'condition',{});
@@ -4733,6 +5906,7 @@ classdef pipeline2 < matlab.apps.AppBase
             app.RuntimeNodeParams = struct();
             app.CurrentPipeline = [];
             app.CurrentPipelinePath = '';
+            app.CurrentPipelineWorkspaceVar = '';
             app.CurrentRun = [];
             app.CurrentRunPath = '';
             app.RoiManualSelectedRectangle = NaN;
@@ -4759,6 +5933,10 @@ classdef pipeline2 < matlab.apps.AppBase
                     error('pipeline2:PipelineLoadFailed', '%s', msg);
                 end
                 loadPipelineFromObject(app, pipeObj);
+                addRecentPipelinePath(app, fullfile(pth, file));
+                if ~isempty(app.CurrentPipelineWorkspaceVar)
+                    app.RuninformationhereLabel.Text = ['Pipeline loaded in workspace: ' app.CurrentPipelineWorkspaceVar];
+                end
             catch ME
                 uialert(app.UIFigure, ME.message, 'Load pipeline', 'Icon', 'error');
             end
@@ -4795,16 +5973,36 @@ classdef pipeline2 < matlab.apps.AppBase
             if ~ensureCurrentProjectForRun(app)
                 return;
             end
+            runObj = [];
+            try
+                ctxPreflight = buildRunContext(app);
+                runObj = createOrUpdateCurrentRun(app, ctxPreflight, 'preflight');
+                logRunEvent(app, runObj, 'Run requested from pipeline2.', 'pipeline2');
+                pipelineRunSave(runObj);
+                shallowSave(app.CurrentProject, 'shallowObj');
+            catch ME
+                printExceptionToConsole(app, 'Pipeline prepare failed', ME);
+                uialert(app.UIFigure, ME.message, 'Prepare run', 'Icon', 'error');
+                return;
+            end
             [okTemplate, reportTemplate] = refreshValidationReportWithOutput(app);
             runtimeIssues = validateRuntimeInputs(app);
             if ~okTemplate
                 app.PipelineandRuncheckreportLabel.Text = formatValidationReport(app, okTemplate, reportTemplate);
+                runObj.status = 'failed';
+                runObj.outputs.validationReport = reportTemplate;
+                logRunEvent(app, runObj, 'Run blocked by pipeline template validation.', 'pipeline2');
+                pipelineRunSave(runObj);
                 uialert(app.UIFigure, 'Pipeline template is not valid. Fix blocking issues before run.', 'Run', 'Icon', 'error');
                 return;
             end
             blockingRuntimeIssues = runtimeIssues(~contains(string(runtimeIssues), "unusual"));
             if ~isempty(blockingRuntimeIssues)
                 CheckpipelineButtonPushed(app, []);
+                runObj.status = 'failed';
+                runObj.outputs.runtimeIssues = cellstr(string(blockingRuntimeIssues(:)));
+                logRunEvent(app, runObj, ['Run blocked by runtime inputs: ' strjoin(cellstr(string(blockingRuntimeIssues(:))), ' | ')], 'pipeline2');
+                pipelineRunSave(runObj);
                 uialert(app.UIFigure, strjoin(blockingRuntimeIssues, newline), 'Runtime inputs', 'Icon', 'error');
                 return;
             end
@@ -4819,7 +6017,9 @@ classdef pipeline2 < matlab.apps.AppBase
                 ctx = buildRunContext(app);
                 pipeObj = buildExecutablePipelineObject(app, app.CurrentPipelinePath, ctx);
                 app.CurrentPipeline = pipeObj;
+                assignCurrentPipelineToWorkspace(app, pipeObj);
                 runObj = createOrUpdateCurrentRun(app, ctx, 'preflight');
+                logRunEvent(app, runObj, 'Preflight run context saved.', 'pipeline2');
                 pipelineRunSave(runObj);
 
                 if ~isempty(d), d.Message = 'Dry-run validation...'; end
@@ -4829,33 +6029,62 @@ classdef pipeline2 < matlab.apps.AppBase
                 runObj.outputs.dryRunReport = dryReport;
                 runObj.status = 'dry_run_ok';
                 runObj.ctx = ctxDry;
+                logRunEvent(app, runObj, 'Dry-run validation completed.', 'pipeline2');
                 pipelineRunSave(runObj);
                 appendRunReport(app, 'Dry-run: OK', dryReport);
 
-                if ~isempty(d), d.Message = 'Running local MATLAB pipeline...'; end
-                ctxRun = ctx;
-                ctxRun.dryRun = false;
-                [ctxOut, report] = runPipeline(pipeObj, ctxRun);
-                runObj.ctx = ctxOut;
-                runObj.outputs.report = report;
-                runObj.status = 'done';
-                runObj.progress = getField(app, report, 'summary', struct());
-                pipelineRunSave(runObj);
-                shallowSave(app.CurrentProject, 'shallowObj');
-                appendRunReport(app, 'Local run: OK', report);
-                app.RuninformationhereLabel.Text = ['Run done: ' fullfile(runObj.path, 'run.json')];
+                if strcmp(runtimeExecutionTarget(app), 'hub')
+                    if ~isempty(d), d.Message = 'Submitting run to DetecDiv Hub...'; end
+                    hub = hubSettingsFromUi(app);
+                    try
+                        detecdiv_hub_settings_set(hub);
+                    catch
+                    end
+                    runObj.ctx = ctx;
+                    runObj.ctx.hub = hub;
+                    logRunEvent(app, runObj, 'Submitting run to DetecDiv Hub.', 'pipeline2');
+                    pipelineRunSave(runObj);
+                    [job, runObj] = detecdiv_hub_submit_pipeline_run(runObj, app.CurrentProject, 'hub', hub);
+                    logRunEvent(app, runObj, 'Hub submission completed.', 'pipeline2');
+                    pipelineRunSave(runObj);
+                    shallowSave(app.CurrentProject, 'shallowObj');
+                    appendRunReport(app, ['Hub submit: ' char(string(getField(app, job, 'status', 'submitted')))], job);
+                    app.RuninformationhereLabel.Text = ['Hub run submitted: ' fullfile(runObj.path, 'run.json')];
+                else
+                    if ~isempty(d), d.Message = 'Running local MATLAB pipeline...'; end
+                    ctxRun = ctx;
+                    ctxRun.dryRun = false;
+                    runObj.status = 'running';
+                    runObj.ctx = ctxRun;
+                    logRunEvent(app, runObj, 'Local MATLAB run started.', 'pipeline2');
+                    pipelineRunSave(runObj);
+                    [ctxOut, report] = runPipeline(pipeObj, ctxRun);
+                    runObj.ctx = ctxOut;
+                    runObj.outputs.report = report;
+                    runObj.status = 'done';
+                    runObj.progress = getField(app, report, 'summary', struct());
+                    logRunEvent(app, runObj, 'Local MATLAB run completed.', 'pipeline2');
+                    pipelineRunSave(runObj);
+                    shallowSave(app.CurrentProject, 'shallowObj');
+                    appendRunReport(app, 'Local run: OK', report);
+                    app.RuninformationhereLabel.Text = ['Run done: ' fullfile(runObj.path, 'run.json')];
+                end
             catch ME
+                fullReport = printExceptionToConsole(app, 'Pipeline run failed', ME);
                 try
                     if exist('runObj', 'var') && ~isempty(runObj)
                         runObj.status = 'failed';
-                        runObj.outputs.error = struct('identifier', ME.identifier, 'message', ME.message);
+                        runObj.outputs.error = struct('identifier', ME.identifier, ...
+                            'message', ME.message, 'report', fullReport);
                         runObj.ctx = buildRunContext(app);
+                        logRunEvent(app, runObj, ['Run failed: ' ME.message], 'pipeline2');
                         pipelineRunSave(runObj);
                     end
                 catch
                 end
                 app.PipelineandRuncheckreportLabel.Text = [app.PipelineandRuncheckreportLabel.Text newline newline ...
-                    'Run failed:' newline ME.identifier newline ME.message];
+                    'Run failed:' newline ME.identifier newline ME.message newline newline ...
+                    getReport(ME, 'basic', 'hyperlinks', 'off')];
                 uialert(app.UIFigure, ME.message, 'Run failed', 'Icon', 'error');
             end
             try, close(d); catch, end
@@ -4970,7 +6199,7 @@ classdef pipeline2 < matlab.apps.AppBase
 
             % Create UIFigure and hide until all components are created
             app.UIFigure = uifigure('Visible', 'off');
-            app.UIFigure.Position = [100 100 1011 943];
+            app.UIFigure.Position = [80 80 1240 960];
             app.UIFigure.Name = 'MATLAB App';
 
             % Create FileMenu
@@ -4984,6 +6213,10 @@ classdef pipeline2 < matlab.apps.AppBase
             % Create LoadpipelineMenu
             app.LoadpipelineMenu = uimenu(app.FileMenu);
             app.LoadpipelineMenu.Text = 'Load pipeline...';
+
+            % Create LoadrecentpipelineMenu
+            app.LoadrecentpipelineMenu = uimenu(app.FileMenu);
+            app.LoadrecentpipelineMenu.Text = 'Load recent pipeline';
 
             % Create SavecurrentpipelineMenu
             app.SavecurrentpipelineMenu = uimenu(app.FileMenu);
@@ -5013,7 +6246,7 @@ classdef pipeline2 < matlab.apps.AppBase
             % Create GraphPanel
             app.GraphPanel = uipanel(app.UIFigure);
             app.GraphPanel.Title = 'Graph';
-            app.GraphPanel.Position = [272 621 726 304];
+            app.GraphPanel.Position = [13 628 1214 304];
 
             % Create UIGraphAxes
             app.UIGraphAxes = uiaxes(app.GraphPanel);
@@ -5021,7 +6254,7 @@ classdef pipeline2 < matlab.apps.AppBase
             xlabel(app.UIGraphAxes, 'X')
             ylabel(app.UIGraphAxes, 'Y')
             zlabel(app.UIGraphAxes, 'Z')
-            app.UIGraphAxes.Position = [15 9 694 265];
+            app.UIGraphAxes.Position = [15 9 1184 265];
 
             % Create BuildPanel
             app.BuildPanel = uipanel(app.UIFigure);
@@ -5057,11 +6290,11 @@ classdef pipeline2 < matlab.apps.AppBase
             % Create ParametersPanel
             app.ParametersPanel = uipanel(app.UIFigure);
             app.ParametersPanel.Title = 'Parameters';
-            app.ParametersPanel.Position = [13 14 985 592];
+            app.ParametersPanel.Position = [13 14 1214 598];
 
             % Create TabGroup
             app.TabGroup = uitabgroup(app.ParametersPanel);
-            app.TabGroup.Position = [18 51 700 459];
+            app.TabGroup.Position = [18 51 820 465];
 
             % Create TypeDropDownLabel
             app.TypeDropDownLabel = uilabel(app.ParametersPanel);
@@ -5153,12 +6386,12 @@ classdef pipeline2 < matlab.apps.AppBase
 
             % Create RuninformationhereLabel
             app.RuninformationhereLabel = uilabel(app.ParametersPanel);
-            app.RuninformationhereLabel.Position = [214 510 470 22];
+            app.RuninformationhereLabel.Position = [214 516 610 22];
             app.RuninformationhereLabel.Text = 'Run information here';
 
             % Create PipelineandRuncheckreportLabel
             app.PipelineandRuncheckreportLabel = uilabel(app.ParametersPanel);
-            app.PipelineandRuncheckreportLabel.Position = [742 25 226 479];
+            app.PipelineandRuncheckreportLabel.Position = [862 25 335 485];
             app.PipelineandRuncheckreportLabel.Text = 'Pipeline and Run check report';
 
             % Create CloseappButton

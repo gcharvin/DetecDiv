@@ -1,4 +1,10 @@
 function shallowSave(shallowObj, option, progress)
+    if nargin < 2 || isempty(option)
+        option = '';
+    end
+    if nargin < 3
+        progress = [];
+    end
 % Sauvegarde le projet shallowObj et ses dépendances.
 % - Sauve ROIs, classifieurs, processors (sauf si option 'shallowObj')
 % - Écriture atomique du .mat avec vérification
@@ -25,11 +31,7 @@ function shallowSave(shallowObj, option, progress)
     % ====== 1) Sauvegarde FOV / ROI ======
     if ~shallowObjOnly
         for i = 1:nFovTotal
-            if nargin == 3
-                progress.Message = sprintf('Saving position %d / %d ...', i, nFovTotal);
-                progress.Value   = i ./ nFovTotal;
-                pause(0.01);
-            end
+            localSetProgress(progress, i ./ max(1, nFovTotal), sprintf('Saving position %d / %d ...', i, nFovTotal));
 
             nRoiTotal = numel(shallowObj.fov(i).roi);
             nRoiSaved = 0;
@@ -55,11 +57,7 @@ function shallowSave(shallowObj, option, progress)
         nClassif = numel(shallowObj.processing.classification);
         if nClassif > 0, fprintf('\nSaving %d classifier(s)...\n', nClassif); end
         for i = 1:nClassif
-            if nargin == 3
-                progress.Message = sprintf('Saving classifier %d / %d ...', i, nClassif);
-                progress.Value   = i ./ nClassif;
-                pause(0.01);
-            end
+            localSetProgress(progress, i ./ max(1, nClassif), sprintf('Saving classifier %d / %d ...', i, nClassif));
             classiSave(shallowObj.processing.classification(i));
         end
 
@@ -67,11 +65,7 @@ function shallowSave(shallowObj, option, progress)
         nProc = numel(shallowObj.processing.processor);
         if nProc > 0, fprintf('Saving %d processor(s)...\n', nProc); end
         for i = 1:nProc
-            if nargin == 3
-                progress.Message = sprintf('Saving processor %d / %d ...', i, nProc);
-                progress.Value   = i ./ nProc;
-                pause(0.01);
-            end
+            localSetProgress(progress, i ./ max(1, nProc), sprintf('Saving processor %d / %d ...', i, nProc));
             processSave(shallowObj.processing.processor(i));
         end
     end

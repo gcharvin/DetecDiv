@@ -784,54 +784,54 @@ function ctx = executeNode(node, ctx)
             try
                 ctx = dataLoader.process(ctx);
             catch ME
-                error('runPipeline:NodeFailed','Node %s failed: %s', node.id, formatNodeError(ME));
+                throwNodeFailed(node, ME);
             end
         case 'roiidentify'
             try
                 ctx = roiIdentify.process(ctx);
             catch ME
-                error('runPipeline:NodeFailed','Node %s failed: %s', node.id, formatNodeError(ME));
+                throwNodeFailed(node, ME);
             end
         case 'roipattern'
             try
                 ctx = roiPattern.process(ctx);
             catch ME
-                error('runPipeline:NodeFailed','Node %s failed: %s', node.id, formatNodeError(ME));
+                throwNodeFailed(node, ME);
             end
         case 'roimanual'
             try
                 ctx = roiManual.process(ctx);
             catch ME
-                error('runPipeline:NodeFailed','Node %s failed: %s', node.id, formatNodeError(ME));
+                throwNodeFailed(node, ME);
             end
         case 'roigrid'
             try
                 ctx = roiGrid.process(ctx);
             catch ME
-                error('runPipeline:NodeFailed','Node %s failed: %s', node.id, formatNodeError(ME));
+                throwNodeFailed(node, ME);
             end
         case 'roitracked'
             try
                 ctx = roiTracked.process(ctx);
             catch ME
-                error('runPipeline:NodeFailed','Node %s failed: %s', node.id, formatNodeError(ME));
+                throwNodeFailed(node, ME);
             end
         case 'roiextract'
             try
                 ctx = roiExtract.process(ctx);
             catch ME
-                error('runPipeline:NodeFailed','Node %s failed: %s', node.id, formatNodeError(ME));
+                throwNodeFailed(node, ME);
             end
         case 'processor'
             ctx = executeProcessorNode(node, ctx);
         case 'classifier'
             ctx = executeClassifierNode(node, ctx);
         otherwise
-            fun = resolveNodeFunc(node);
             try
+                fun = resolveNodeFunc(node);
                 ctx = feval(fun, ctx);
             catch ME
-                error('runPipeline:NodeFailed','Node %s failed: %s', node.id, formatNodeError(ME));
+                throwNodeFailed(node, ME);
             end
     end
 
@@ -851,6 +851,14 @@ function msg = formatNodeError(ME)
         end
     catch
     end
+end
+
+function throwNodeFailed(node, ME)
+    nodeId = char(string(getfielddefault(node, 'id', '<unknown>')));
+    wrapped = MException('runPipeline:NodeFailed', ...
+        'Node %s failed: %s', nodeId, formatNodeError(ME));
+    wrapped = addCause(wrapped, ME);
+    throw(wrapped);
 end
 
 function fun = resolveNodeFunc(node)
@@ -1399,7 +1407,7 @@ function ctx = executeProcessorNode(node, ctx)
     try
         processData(procObj, rois, args{:});
     catch ME
-        error('runPipeline:NodeFailed','Node %s failed: %s', node.id, ME.message);
+        throwNodeFailed(node, ME);
     end
 
     ctx.roiList = rois;
@@ -1541,7 +1549,7 @@ function ctx = executeClassifierNode(node, ctx)
     try
         classifyData(clsObj, rois, args{:});
     catch ME
-        error('runPipeline:NodeFailed','Node %s failed: %s', node.id, ME.message);
+        throwNodeFailed(node, ME);
     end
 
     ctx.roiList = rois;

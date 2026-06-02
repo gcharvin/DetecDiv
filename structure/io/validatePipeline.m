@@ -19,6 +19,7 @@ function [ok, report] = validatePipeline(pipe, ctx, opts)
     P = pipelineToStructLocal(pipe);
     nodes = normalizeNodesWithContracts(P.nodes);
     edges = normalizeEdges(P, nodes);
+    [nodes, edges] = filterGraphForRunSelection(nodes, edges, ctx);
 
     report.nodes = nodes;
     report.edges = edges;
@@ -105,6 +106,10 @@ function [ok, report] = validatePipeline(pipe, ctx, opts)
                     report.errors{end+1} = ['Missing params for node ' node.id ': ' strjoin(missParams, ', ')];
                 end
             end
+            artifactWarnings = classifierArtifactWarnings(node);
+            if ~isempty(artifactWarnings)
+                report.warnings = [report.warnings, artifactWarnings]; %#ok<AGROW>
+            end
             [semOk, semErrors, semWarnings, semReport] = validateNodeSemanticRequirements(node, semanticState);
             report.semantic.(matlab.lang.makeValidName(char(string(node.id)))) = semReport;
             if ~semOk
@@ -151,6 +156,41 @@ function P = pipelineToStructLocal(pipe)
         if isprop(pipe,'inputs'), P.inputs = pipe.inputs; end
     else
         P = pipe;
+    end
+end
+
+function [nodes, edges] = filterGraphForRunSelection(nodes, edges, ctx)
+    selectedIds = selectedNodeIdsFromContext(ctx);
+    if isempty(selectedIds) || isempty(nodes)
+        return;
+    end
+    nodeIds = getNodeIds(nodes);
+    keep = ismember(nodeIds, selectedIds);
+    if ~any(keep)
+        return;
+    end
+    nodes = nodes(keep);
+    if isempty(edges)
+        return;
+    end
+    edgeKeep = false(size(edges));
+    for i = 1:numel(edges)
+        edgeKeep(i) = any(strcmp(selectedIds, char(string(getField(edges(i), 'from', ''))))) && ...
+            any(strcmp(selectedIds, char(string(getField(edges(i), 'to', '')))));
+    end
+    edges = edges(edgeKeep);
+end
+
+function ids = selectedNodeIdsFromContext(ctx)
+    ids = {};
+    try
+        if isstruct(ctx) && isfield(ctx, 'run') && isstruct(ctx.run) && ...
+                isfield(ctx.run, 'selectedNodes') && ~isempty(ctx.run.selectedNodes)
+            ids = cellstr(string(ctx.run.selectedNodes(:)))';
+            ids = unique(ids(~cellfun(@isempty, ids)), 'stable');
+        end
+    catch
+        ids = {};
     end
 end
 
@@ -492,7 +532,8 @@ function state = initialSemanticState(ctx)
                        (isfield(ctx,'rois') && ~isempty(ctx.rois));
     state.hasMasks = isfield(ctx,'masks') && ~isempty(ctx.masks);
     state.hasDataSeries = (isfield(ctx,'dataSeries') && ~isempty(ctx.dataSeries)) || ...
-                          (isfield(ctx,'dataseries') && ~isempty(ctx.dataseries));
+                          (isfield(ctx,'dataseries') && ~isempty(ctx.dataseries)) || ...
+                          (isfield(ctx,'dataSeriesNames') && ~isempty(ctx.dataSeriesNames));
 
     state.imageChannels = unique([ ...
         normalizeChannelList(getField(ctx, 'channels', [])), ...
@@ -919,7 +960,7 @@ function br = evaluateResourceInput(node, spec, availableResources)
             msg = sprintf('Node %s symbolic %s/%s binding is ambiguous for %s.', ...
                 char(string(getField(node, 'id', ''))), char(string(spec.type)), char(string(spec.role)), symbolic);
         else
-            status = 'needs_run_binding';
+            status = 'invalid';
             msg = sprintf('Node %s symbolic %s/%s binding points to %s, but no matching resource is available upstream.', ...
                 char(string(getField(node, 'id', ''))), char(string(spec.type)), char(string(spec.role)), symbolic);
         end
@@ -1116,6 +1157,21 @@ function outDemand = propagateNodeDemand(node, demand)
             end
         otherwise
             outDemand = 0;
+    end
+end
+
+function warnings = classifierArtifactWarnings(node)
+    warnings = {};
+    if ~strcmpi(char(string(getField(node, 'type', ''))), 'classifier')
+        return;
+    end
+    p = getField(node, 'params', struct());
+    hasLinkedPath = isstruct(p) && isfield(p, 'modulePath') && ~isempty(p.modulePath) && ...
+        isfield(p, 'moduleId') && ~isempty(p.moduleId);
+    hasLinkedVar = isstruct(p) && isfield(p, 'moduleVar') && ~isempty(p.moduleVar);
+    if ~(hasLinkedPath || hasLinkedVar)
+        warnings{end+1} = ['Classifier node ' char(string(getField(node, 'id', ''))) ...
+            ' is not linked to an existing classi object; model weights/training artifacts may be unavailable at run time.']; %#ok<AGROW>
     end
 end
 
@@ -1828,6 +1884,12 @@ function available = initialAvailablePorts(ctx)
         available{end+1} = 'shallow'; %#ok<AGROW>
     elseif any(strcmp(available, 'shallow')) && ~any(strcmp(available, 'shallowObj'))
         available{end+1} = 'shallowObj'; %#ok<AGROW>
+    end
+    if any(strcmp(available, 'dataSeriesNames')) && ~any(strcmp(available, 'dataSeries'))
+        available{end+1} = 'dataSeries'; %#ok<AGROW>
+    end
+    if any(strcmp(available, 'roiChannels')) && ~any(strcmp(available, 'channels'))
+        available{end+1} = 'channels'; %#ok<AGROW>
     end
     available = unique(available(:));
 end
