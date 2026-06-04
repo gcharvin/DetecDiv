@@ -65,9 +65,7 @@ function node = representativeNode(typeName, pkgName)
     node.params = representativeParams(typeName, pkgName);
     node.func = representativeFunction(typeName, pkgName);
     node.enabled = true;
-    node.contract = pipelineNodeContract(node);
-    node.inputs = {node.contract.in.name};
-    node.outputs = {node.contract.out.name};
+    node = pipelineNormalizeNodes(node, 'persist');
 end
 
 function params = representativeParams(typeName, pkgName)

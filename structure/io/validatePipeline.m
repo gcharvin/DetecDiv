@@ -209,15 +209,10 @@ function nodes = normalizeNodesWithContracts(nodes)
     if isempty(nodes)
         return;
     end
+    nodes = pipelineNormalizeNodes(nodes, 'runtime');
     for i = 1:numel(nodes)
         nodes(i).contract = pipelineNodeContract(nodes(i));
-        [inNames, outNames] = contractIoNames(nodes(i).contract);
-        if ~isfield(nodes(i), 'inputs') || isempty(nodes(i).inputs)
-            nodes(i).inputs = inNames;
-        end
-        if ~isfield(nodes(i), 'outputs') || isempty(nodes(i).outputs)
-            nodes(i).outputs = outNames;
-        end
+        [nodes(i).inputs, nodes(i).outputs] = pipelineContractPortNames(nodes(i).contract);
     end
 end
 
@@ -855,7 +850,9 @@ function nodeReport = evaluateNodeBinding(node, state)
             supportAvailable = state.hasRoiList;
     end
 
-    allChannelsSelected = isAllChannelSelection(configuredChannels);
+    symbolicChannelCollectionSelected = hasSymbolicChannelCollectionSelection(node, binding, selectors);
+    configuredChannels = configuredChannels(~isSymbolicChannelSelectionCell(configuredChannels));
+    allChannelsSelected = isAllChannelSelection(configuredChannels) || symbolicChannelCollectionSelected;
     if allChannelsSelected
         if ~isempty(availableChannels)
             configuredChannels = availableChannels;
@@ -1132,9 +1129,14 @@ function br = evaluateResourceInput(node, spec, availableResources)
             msg = sprintf('Node %s symbolic %s/%s binding is ambiguous for %s.', ...
                 char(string(getField(node, 'id', ''))), char(string(spec.type)), char(string(spec.role)), symbolic);
         else
-            status = 'invalid';
-            msg = sprintf('Node %s symbolic %s/%s binding points to %s, but no matching resource is available upstream.', ...
-                char(string(getField(node, 'id', ''))), char(string(spec.type)), char(string(spec.role)), symbolic);
+            if isOptionalSourceChannelSpec(spec)
+                msg = sprintf('Node %s keeps source channel binding symbolic; source channels will be resolved at run time.', ...
+                    char(string(getField(node, 'id', ''))));
+            else
+                status = 'invalid';
+                msg = sprintf('Node %s symbolic %s/%s binding points to %s, but no matching resource is available upstream.', ...
+                    char(string(getField(node, 'id', ''))), char(string(spec.type)), char(string(spec.role)), symbolic);
+            end
         end
     elseif ~logical(getField(spec, 'required', false))
         msg = sprintf('Node %s has optional %s/%s resource binding.', ...
@@ -1229,6 +1231,15 @@ function state = applyConstraintOutputs(node, state, nodeReport)
     end
 
     producedName = getField(nodeReport, 'producedChannelName', {});
+    producedResourceChannels = {};
+    try
+        if isfield(nodeReport, 'resources') && isstruct(nodeReport.resources) && ...
+                isfield(nodeReport.resources, 'outputs') && ~isempty(nodeReport.resources.outputs)
+            producedResourceChannels = resourceConcreteNames(nodeReport.resources.outputs, 'channel', '');
+        end
+    catch
+        producedResourceChannels = {};
+    end
     if strcmp(nodeType, 'roiextract')
         chosen = getField(nodeReport, 'configuredChannels', {});
         if isempty(chosen)
@@ -1237,16 +1248,16 @@ function state = applyConstraintOutputs(node, state, nodeReport)
         if isempty(chosen)
             chosen = getField(nodeReport, 'availableChannels', {});
         end
-        state.roiChannels = mergeKnownChannels(state.roiChannels, mergeKnownChannels(chosen, producedName));
+        state.roiChannels = mergeKnownChannels(state.roiChannels, mergeKnownChannels(chosen, mergeKnownChannels(producedName, producedResourceChannels)));
         state.roiChannels = mergeKnownChannels(state.roiChannels, resourceConcreteNames(state.resources, 'channel', 'roi_image'));
         return;
     end
 
     if logical(getField(capabilities, 'roiChannels', false)) || strcmp(getField(binding, 'outputScope', ''), 'roi')
-        produced = mergeKnownChannels(getField(nodeReport, 'configuredChannels', {}), producedName);
+        produced = mergeKnownChannels(getField(nodeReport, 'configuredChannels', {}), mergeKnownChannels(producedName, producedResourceChannels));
         state.roiChannels = mergeKnownChannels(state.roiChannels, produced);
     elseif logical(getField(capabilities, 'outputsChannels', false))
-        produced = mergeKnownChannels(getField(nodeReport, 'configuredChannels', {}), producedName);
+        produced = mergeKnownChannels(getField(nodeReport, 'configuredChannels', {}), mergeKnownChannels(producedName, producedResourceChannels));
         state.imageChannels = mergeKnownChannels(state.imageChannels, produced);
     end
 
@@ -1436,12 +1447,9 @@ function errors = requiredDesignAssetErrors(node, ctx)
             break;
         end
     end
-    if ~hasPattern && hasProjectRoiPatternProfile(ctx)
-        hasPattern = true;
-    end
     if ~hasPattern
         errors{end+1} = ['Node ' char(string(getField(node, 'id', ''))) ...
-            ' requires a saved ROI pattern definition in the node or in the selected project profile before it can run.']; %#ok<AGROW>
+            ' requires a saved ROI pattern definition in the node before it can run. Please generate pattern first.']; %#ok<AGROW>
     end
 end
 
@@ -1509,8 +1517,16 @@ function exactCount = getBindingExactCount(node, binding)
     if ~isstruct(binding)
         return;
     end
-    exactCount = getField(binding, 'exactCount', []);
+    contract = getField(node, 'contract', struct());
+    resources = getField(contract, 'resources', struct());
+    inResources = getField(resources, 'in', []);
+    mode = lower(char(string(getField(binding, 'mode', ''))));
     paramName = char(string(getField(binding, 'exactCountParam', '')));
+    if strcmp(mode, 'channelslots') && ~isempty(paramName) && isstruct(inResources) && ~isempty(inResources)
+        exactCount = numel(inResources);
+        return;
+    end
+    exactCount = getField(binding, 'exactCount', []);
     params = getField(node, 'params', struct());
     if ~isempty(paramName) && isstruct(params) && isfield(params, paramName) && ~isempty(params.(paramName))
         try
@@ -1586,6 +1602,40 @@ function channels = resolveBindingConfiguredChannels(node, binding, selectors)
     channels = resolveNodeConfiguredChannels(node, selectors);
 end
 
+function tf = hasSymbolicChannelCollectionSelection(node, binding, selectors)
+    tf = false;
+    if ~isstruct(binding) || ~strcmpi(char(string(getField(binding, 'mode', ''))), 'channelSet')
+        return;
+    end
+    params = getField(node, 'params', struct());
+    if ~isstruct(params)
+        return;
+    end
+    keys = {};
+    if isfield(binding, 'selectorKeys') && ~isempty(binding.selectorKeys)
+        keys = cellstr(string(binding.selectorKeys(:)));
+    end
+    keys = [keys, { ...
+        char(string(getField(selectors, 'channelsParam', ''))), ...
+        char(string(getField(selectors, 'channelParam', '')))}];
+    keys = unique(keys(~cellfun(@isempty, keys)), 'stable');
+    for i = 1:numel(keys)
+        key = char(string(keys{i}));
+        if isfield(params, key) && isSymbolicChannelCollectionValue(params.(key))
+            tf = true;
+            return;
+        end
+    end
+end
+
+function tf = isSymbolicChannelCollectionValue(value)
+    txt = lower(strtrim(choiceToString(value)));
+    tf = startsWith(txt, '@') && ( ...
+        endsWith(txt, '.channels') || ...
+        any(strcmp(txt, {'@source','@sources','@all_channels'})) || ...
+        startsWith(txt, '@resource:source:'));
+end
+
 function channels = normalizeConfiguredSelectionValue(value)
     channels = {};
     if isempty(value)
@@ -1607,7 +1657,7 @@ function channels = normalizeConfiguredSelectionValue(value)
     end
     channels = normalizeChannelList(value);
     low = lower(channels);
-    keep = ~strcmp(low, 'none') & ~strcmp(low, 'n/a');
+    keep = ~strcmp(low, 'none') & ~strcmp(low, 'n/a') & ~isSymbolicChannelSelectionCell(channels);
     channels = channels(keep);
 end
 
@@ -1627,6 +1677,16 @@ function tf = isAllChannelSelectionCell(channels)
     end
     vals = lower(strtrim(cellstr(string(channels(:)))));
     tf = strcmp(vals, 'all') | strcmp(vals, '*') | strcmp(vals, ':') | strcmp(vals, '<all>');
+    tf = reshape(tf, size(channels));
+end
+
+function tf = isSymbolicChannelSelectionCell(channels)
+    if isempty(channels)
+        tf = false(size(channels));
+        return;
+    end
+    vals = strtrim(cellstr(string(channels(:))));
+    tf = startsWith(vals, '@') | startsWith(vals, '<');
     tf = reshape(tf, size(channels));
 end
 
@@ -1951,6 +2011,9 @@ function value = resolveResourceSymbolicValue(node, spec)
         return;
     end
     raw = params.(key);
+    if isGenericSourceSymbolicBinding(raw)
+        return;
+    end
     if ~isSymbolicResourceBinding(raw)
         return;
     end
@@ -1960,6 +2023,17 @@ end
 function tf = isSymbolicResourceBinding(v)
     s = choiceToString(v);
     tf = startsWith(strtrim(s), '@');
+end
+
+function tf = isOptionalSourceChannelSpec(spec)
+    tf = strcmpi(char(string(getField(spec, 'type', ''))), 'channel') && ...
+        strcmpi(char(string(getField(spec, 'role', ''))), 'source') && ...
+        ~logical(getField(spec, 'required', false));
+end
+
+function tf = isGenericSourceSymbolicBinding(v)
+    s = lower(strtrim(choiceToString(v)));
+    tf = any(strcmp(s, {'@source','@sources','<source output>','<all source channels>'}));
 end
 
 function tf = isConfiguredResourceValue(v)

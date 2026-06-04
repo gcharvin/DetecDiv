@@ -24,10 +24,22 @@ function contract = pipelineNodeContract(nodeOrType, pkg)
 
     defaultContract = defaultContractForNode(node);
     existing = struct();
-    if isfield(node, 'contract') && isstruct(node.contract)
+    if shouldMergeSavedContract(node) && isfield(node, 'contract') && isstruct(node.contract)
         existing = node.contract;
     end
     contract = mergeContracts(defaultContract, existing, node);
+end
+
+function tf = shouldMergeSavedContract(node)
+% Saved contracts are compatibility metadata. Known DetecDiv modules are
+% parameter-driven and must be recalculated from type/pkg/params every time.
+nodeType = lower(char(string(getField(node, 'type', ''))));
+pkgName = lower(char(string(getField(node, 'pkg', ''))));
+knownTypes = {'dataloader','roiidentify','roipattern','roimanual','roigrid','roitracked','roiextract','processor','classifier'};
+tf = ~any(strcmp(nodeType, knownTypes));
+if strcmp(nodeType, 'processor') || strcmp(nodeType, 'classifier')
+    tf = isempty(pkgName);
+end
 end
 
 function contract = defaultContractForNode(node)
@@ -367,11 +379,81 @@ function contract = mergeContracts(defaultContract, existingContract, node)
     contract = backfillFromNodeFields(contract, node);
     contract = backfillSelectorsFromNodeParams(contract, node);
     contract = applyContractPostRules(contract, node);
+    contract = applyResourceDerivedState(contract);
     contract = normalizeContract(contract);
+end
+
+function contract = applyResourceDerivedState(contract)
+resources = getField(contract, 'resources', defaultResources());
+inputs = getField(resources, 'in', resourceDef());
+outputs = getField(resources, 'out', resourceDef());
+
+for i = 1:numel(inputs)
+    r = inputs(i);
+    type = lower(char(string(getField(r, 'type', ''))));
+    role = lower(char(string(getField(r, 'role', ''))));
+    if isempty(type)
+        continue;
+    end
+    switch type
+        case 'channel'
+            if strcmp(role, 'source')
+                contract.requirements.images.required = contract.requirements.images.required || logical(getField(r, 'required', false));
+                if logical(getField(r, 'required', false))
+                    contract.requirements.images.channelsMin = max(contract.requirements.images.channelsMin, 1);
+                end
+            else
+                contract.requirements.roi.required = true;
+                if logical(getField(r, 'required', false))
+                    contract.requirements.roi.channelsMin = max(contract.requirements.roi.channelsMin, 1);
+                end
+            end
+        case 'mask'
+            contract.requirements.roi.required = true;
+            if logical(getField(r, 'required', false))
+                contract.requirements.roi.masks = true;
+            end
+        case {'dataseries','dataSeries'}
+            contract.requirements.roi.required = true;
+            if logical(getField(r, 'required', false))
+                contract.requirements.roi.dataSeries = true;
+            end
+    end
+end
+
+for i = 1:numel(outputs)
+    r = outputs(i);
+    type = lower(char(string(getField(r, 'type', ''))));
+    role = lower(char(string(getField(r, 'role', ''))));
+    if isempty(type)
+        continue;
+    end
+    switch type
+        case 'channel'
+            contract.capabilities.outputsChannels = true;
+            if ~strcmp(role, 'source')
+                contract.capabilities.roiChannels = true;
+            end
+        case 'mask'
+            contract.capabilities.outputsMasks = true;
+            contract.capabilities.roiMasks = true;
+        case {'dataseries','dataSeries'}
+            contract.capabilities.outputsDataSeries = true;
+            contract.capabilities.roiDataSeries = true;
+    end
+end
 end
 
 function contract = applyContractPostRules(contract, node)
     nodeType = lower(char(string(getField(node, 'type', ''))));
+    pkgName = lower(char(string(getField(node, 'pkg', ''))));
+    if strcmp(nodeType, 'classifier') && strcmp(pkgName, 'cellposesam')
+        % CellposeSAM outputs are controlled by node.params.outputType. Some
+        % saved templates carry an older node.contract; regenerate this
+        % package-owned contract after merge so stale resources cannot mask
+        % the current static parameter selection.
+        contract = enrichContractFromPackage(contract, node);
+    end
     if strcmp(nodeType, 'roiextract')
         % roiExtract materializes ROI-local H5 channels, but the concrete
         % channel names are selected by its input channel binding. It does
@@ -550,7 +632,8 @@ function contract = enrichContractFromPackage(contract, node)
                 if strcmp(outputType, 'probability')
                     outputType = 'proba';
                 end
-                contract.parameters.static = unique([contract.parameters.static {'outputType'}], 'stable');
+                contract.parameters.static = unique([contract.parameters.static ...
+                    {'outputType','diameter','min_size','flow_threshold','cell_prob_threshold'}], 'stable');
                 contract.requirements.roi.channelsMin = max(contract.requirements.roi.channelsMin, 1);
                 contract.capabilities.outputsMasks = any(strcmp(outputType, {'segmentation','both'}));
                 contract.capabilities.outputsChannels = any(strcmp(outputType, {'proba','both'}));
@@ -565,7 +648,7 @@ function contract = enrichContractFromPackage(contract, node)
                 outs = resourceDef();
                 if any(strcmp(outputType, {'segmentation','both'}))
                     contract.out(end+1) = portDef('masks', 'maskSet', true, 'edge');
-                    outs(end+1) = resourceDef('mask', 'segmentation', 'masks', 'outputName', 'masks', 'outputName', false, 'roiMasks'); %#ok<AGROW>
+                    outs(end+1) = resourceDef('mask', 'segmentation', 'segmentation', 'outputName', 'masks', 'outputName', false, 'roiMasks'); %#ok<AGROW>
                 end
                 if any(strcmp(outputType, {'proba','both'}))
                     contract.out(end+1) = portDef('channels', 'channelSet', false, 'edge');
@@ -614,6 +697,10 @@ function contract = enrichContractFromPackage(contract, node)
     if strcmp(nodeType, 'processor')
         switch pkgName
             case 'combinemultiplechannels'
+                maxChannelSlots = 5;
+                channelSlotCount = combineMultipleChannelsSlotCount(node, maxChannelSlots);
+                channelSlotKeys = combineMultipleChannelsSlotKeys('Channel', channelSlotCount);
+                rgbSlotKeys = combineMultipleChannelsSlotKeys('RGB_Channel', channelSlotCount);
                 contract.out = [ ...
                     portDef('roiList', 'roiList', true, 'edge'), ...
                     portDef('channels', 'channelSet', false, 'edge')];
@@ -624,20 +711,14 @@ function contract = enrichContractFromPackage(contract, node)
                 contract.binding.scope = 'roi';
                 contract.binding.outputScope = 'roi';
                 contract.binding.mode = 'channelSlots';
-                contract.binding.selectorKeys = {'Channel1','Channel2','Channel3','Channel4','Channel5'};
+                contract.binding.selectorKeys = channelSlotKeys;
                 contract.binding.resolveAt = 'run';
                 contract.binding.exactCountParam = 'requiredChannelCount';
                 contract.binding.outputChannelNameParam = 'outputChannelName';
                 contract.binding.transfer = 'roiChannelsToRoiChannel';
                 contract.parameters.run = {};
-                contract.parameters.static = {'RGB_Channel1','RGB_Channel2','RGB_Channel3','RGB_Channel4','RGB_Channel5','requiredChannelCount','debug'};
-                contract.resources.in = [ ...
-                    resourceDef('channel', 'roi_image', 'Channel1', 'Channel1', 'channels', 'Channel1', false, ''), ...
-                    resourceDef('channel', 'roi_image', 'Channel2', 'Channel2', 'channels', 'Channel2', false, ''), ...
-                    resourceDef('channel', 'roi_image', 'Channel3', 'Channel3', 'channels', 'Channel3', false, ''), ...
-                    resourceDef('channel', 'roi_image', 'Channel4', 'Channel4', 'channels', 'Channel4', false, ''), ...
-                    resourceDef('channel', 'roi_image', 'Channel5', 'Channel5', 'channels', 'Channel5', false, '') ...
-                    ];
+                contract.parameters.static = [{'requiredChannelCount'}, rgbSlotKeys, {'debug'}];
+                contract.resources.in = combineMultipleChannelsInputResources(channelSlotCount);
                 contract.resources.out = resourceDef('channel', 'derived_roi_image', 'channels', 'outputChannelName', 'channels', 'outputChannelName', false, 'roiChannel');
                 contract.summary = 'Combines selected ROI channels into one derived ROI image channel.';
             case 'computerls'
@@ -887,6 +968,41 @@ function r = resourceDef(type, role, symbol, param, port, nameParam, required, t
         'nameParam', char(string(nameParam)), ...
         'required', logical(required), ...
         'transfer', char(string(transfer)));
+end
+
+function n = combineMultipleChannelsSlotCount(node, maxSlots)
+    if nargin < 2 || isempty(maxSlots)
+        maxSlots = 5;
+    end
+    n = maxSlots;
+    params = getField(node, 'params', struct());
+    if ~isstruct(params) || ~isfield(params, 'requiredChannelCount') || isempty(params.requiredChannelCount)
+        return;
+    end
+    try
+        requested = double(params.requiredChannelCount);
+    catch
+        requested = 0;
+    end
+    if ~isscalar(requested) || ~isfinite(requested) || requested <= 0
+        return;
+    end
+    n = min(maxSlots, max(1, round(requested)));
+end
+
+function keys = combineMultipleChannelsSlotKeys(prefix, n)
+    keys = cell(1, n);
+    for i = 1:n
+        keys{i} = sprintf('%s%d', char(string(prefix)), i);
+    end
+end
+
+function resources = combineMultipleChannelsInputResources(n)
+    resources = resourceDef();
+    for i = 1:n
+        key = sprintf('Channel%d', i);
+        resources(end+1) = resourceDef('channel', 'roi_image', key, key, 'channels', key, false, ''); %#ok<AGROW>
+    end
 end
 
 function out = mergeRequirementStruct(base, override)

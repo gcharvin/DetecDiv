@@ -69,6 +69,7 @@ function S = pipelineToStruct(pipe)
 end
 
 function nodes = sanitizePipelineNodes(nodes)
+    nodes = pipelineNormalizeNodes(nodes, 'persist');
     for i = 1:numel(nodes)
         if ~isfield(nodes(i), 'params') || ~isstruct(nodes(i).params)
             continue;
