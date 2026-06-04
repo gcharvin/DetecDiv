@@ -179,9 +179,14 @@ function contract = defaultContractForNode(node)
             parameters.template = {'pkg','moduleVar','modulePath','moduleId','description','category'};
             parameters.run = {'roiList','channels','channel','frames','outputName'};
             if strcmp(p, 'computemetrics') || contains(f, 'computemetrics')
+                maskSlotCount = computeMetricsMaskSlotCount(node);
+                scoreSlotCount = computeMetricsScoreSlotCount(node);
+                maskNameKeys = computeMetricsSlotKeys('mask', '_name', maskSlotCount);
+                scoreNameKeys = computeMetricsSlotKeys('channel', '_name', scoreSlotCount);
+                maskStaticKeys = computeMetricsMaskStaticKeys(maskSlotCount);
                 in = [ ...
                     portDef('roiList',    'roiList',       true, 'edge'), ...
-                    portDef('masks',      'maskSet',       true, 'edge') ...
+                    portDef('channels',   'channelSet',    true, 'edge') ...
                     ];
                 out = [ ...
                     portDef('roiList',    'roiList',       true,  'edge'), ...
@@ -192,29 +197,21 @@ function contract = defaultContractForNode(node)
                 selectors.framesParam = 'frames';
                 selectors.outputNameParam = 'outputName';
                 parameters.run = {};
-                parameters.static = {'mask1_class','mask1_label','mask1_stat','mask2_class','mask2_label','mask2_stat','BrightestPixels'};
+                parameters.static = [{'maskChannelCount','scoreChannelCount'}, maskStaticKeys, {'BrightestPixels'}];
                 requirements.roi.required = true;
-                requirements.roi.masks = true;
                 requirements.roi.dataSeries = false;
-                requirements.params.optional = {'pkg','mask1_name','mask2_name','channel1_name','channel2_name','channel3_name','channel4_name','BrightestPixels'};
+                requirements.params.optional = [{'pkg','maskChannelCount','scoreChannelCount'}, maskNameKeys, scoreNameKeys, maskStaticKeys, {'BrightestPixels'}];
                 capabilities.preservesRoiList = true;
                 capabilities.roiDataSeries = true;
                 capabilities.outputsDataSeries = true;
-                capabilities.roiMasks = true;
-                capabilities.outputsMasks = true;
+                capabilities.roiMasks = false;
+                capabilities.outputsMasks = false;
                 binding.scope = 'roi';
                 binding.outputScope = 'roi';
                 binding.mode = 'channelSlots';
-                binding.selectorKeys = {'mask1_name','mask2_name','channel1_name','channel2_name','channel3_name','channel4_name'};
+                binding.selectorKeys = [maskNameKeys, scoreNameKeys];
                 binding.resolveAt = 'run';
-                resources.in = [ ...
-                    resourceDef('channel', 'roi_image', 'mask1_name', 'mask1_name', 'channels', 'mask1_name', true, ''), ...
-                    resourceDef('channel', 'roi_image', 'mask2_name', 'mask2_name', 'channels', 'mask2_name', false, ''), ...
-                    resourceDef('channel', 'roi_image', 'channel1_name', 'channel1_name', 'channels', 'channel1_name', false, ''), ...
-                    resourceDef('channel', 'roi_image', 'channel2_name', 'channel2_name', 'channels', 'channel2_name', false, ''), ...
-                    resourceDef('channel', 'roi_image', 'channel3_name', 'channel3_name', 'channels', 'channel3_name', false, ''), ...
-                    resourceDef('channel', 'roi_image', 'channel4_name', 'channel4_name', 'channels', 'channel4_name', false, '') ...
-                    ];
+                resources.in = computeMetricsInputResources(maskSlotCount, scoreSlotCount);
                 resources.out = resourceDef('dataSeries', 'metrics', 'dataSeries', 'outputName', 'dataSeries', 'outputName', false, 'roiDataSeries');
                 summary = 'Computes mask-linked fluorescence metrics from selected ROI image or mask channels.';
             else
@@ -1002,6 +999,65 @@ function resources = combineMultipleChannelsInputResources(n)
     for i = 1:n
         key = sprintf('Channel%d', i);
         resources(end+1) = resourceDef('channel', 'roi_image', key, key, 'channels', key, false, ''); %#ok<AGROW>
+    end
+end
+
+function n = computeMetricsMaskSlotCount(node)
+    n = dynamicSlotCount(node, {'maskChannelCount','maskCount'}, 2, 1, 8);
+end
+
+function n = computeMetricsScoreSlotCount(node)
+    n = dynamicSlotCount(node, {'scoreChannelCount','channelCount'}, 4, 0, 12);
+end
+
+function n = dynamicSlotCount(node, names, defaultValue, minValue, maxValue)
+    n = defaultValue;
+    params = getField(node, 'params', struct());
+    if isstruct(params)
+        for i = 1:numel(names)
+            key = char(string(names{i}));
+            if isfield(params, key) && ~isempty(params.(key))
+                try
+                    requested = double(params.(key));
+                catch
+                    requested = NaN;
+                end
+                if isscalar(requested) && isfinite(requested)
+                    n = requested;
+                    break;
+                end
+            end
+        end
+    end
+    n = min(maxValue, max(minValue, round(n)));
+end
+
+function keys = computeMetricsSlotKeys(prefix, suffix, n)
+    keys = cell(1, n);
+    for i = 1:n
+        keys{i} = sprintf('%s%d%s', char(string(prefix)), i, char(string(suffix)));
+    end
+end
+
+function keys = computeMetricsMaskStaticKeys(n)
+    keys = {};
+    for i = 1:n
+        keys = [keys, { ...
+            sprintf('mask%d_class', i), ...
+            sprintf('mask%d_label', i), ...
+            sprintf('mask%d_stat', i)}]; %#ok<AGROW>
+    end
+end
+
+function resources = computeMetricsInputResources(maskCount, scoreCount)
+    resources = resourceDef();
+    for i = 1:maskCount
+        key = sprintf('mask%d_name', i);
+        resources(end+1) = resourceDef('channel', 'roi_image', key, key, 'channels', key, true, ''); %#ok<AGROW>
+    end
+    for i = 1:scoreCount
+        key = sprintf('channel%d_name', i);
+        resources(end+1) = resourceDef('channel', 'roi_image', key, key, 'channels', key, true, ''); %#ok<AGROW>
     end
 end
 

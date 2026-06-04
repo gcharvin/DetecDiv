@@ -1202,6 +1202,9 @@ classdef pipeline2 < matlab.apps.AppBase
                         otherwise
                             if ~isfield(p, 'outputName') || isempty(p.outputName), p.outputName = char(string(pkg)); end
                     end
+                elseif strcmpi(nodeType, 'processor') && strcmpi(char(string(pkg)), 'computeMetrics')
+                    if ~isfield(p, 'maskChannelCount') || isempty(p.maskChannelCount), p.maskChannelCount = 2; end
+                    if ~isfield(p, 'scoreChannelCount') || isempty(p.scoreChannelCount), p.scoreChannelCount = 4; end
                 end
             end
         end
@@ -5894,9 +5897,10 @@ classdef pipeline2 < matlab.apps.AppBase
             end
 
             required = logical(getField(app, spec, 'required', false));
-            singularParams = {'channel','inputchannelname','instancechannelname','mask1_name','mask2_name', ...
-                'channel1_name','channel2_name','channel3_name','channel4_name','channel5_name'};
-            tf = required || any(strcmp(specParam, singularParams));
+            singularParams = {'channel','inputchannelname','instancechannelname'};
+            tf = required || any(strcmp(specParam, singularParams)) || ...
+                ~isempty(regexp(specParam, '^mask\d+_name$', 'once')) || ...
+                ~isempty(regexp(specParam, '^channel\d+_name$', 'once'));
         end
 
         function tf = resourceChoiceIsAmbiguousForSpec(app, resource, spec)
@@ -6832,6 +6836,13 @@ classdef pipeline2 < matlab.apps.AppBase
             if strcmpi(scope, 'static') && strcmpi(nodeType, 'processor') && ...
                     strcmp(pkg, 'combinemultiplechannels') && strcmpi(keyText, 'requiredChannelCount')
                 value = normalizeCombineChannelCount(app, value);
+            elseif strcmpi(scope, 'static') && strcmpi(nodeType, 'processor') && ...
+                    strcmp(pkg, 'computemetrics') && any(strcmpi(keyText, {'maskChannelCount','scoreChannelCount'}))
+                if strcmpi(keyText, 'maskChannelCount')
+                    value = normalizeCountValue(app, value, 1, 8);
+                else
+                    value = normalizeCountValue(app, value, 0, 12);
+                end
             end
 
             if strcmpi(scope, 'runtime')
@@ -6855,6 +6866,10 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function value = normalizeCombineChannelCount(app, value) %#ok<INUSD>
+            value = normalizeCountValue(app, value, 0, 5);
+        end
+
+        function value = normalizeCountValue(app, value, minValue, maxValue) %#ok<INUSD>
             try
                 value = double(value);
             catch
@@ -6863,7 +6878,7 @@ classdef pipeline2 < matlab.apps.AppBase
             if isempty(value) || ~isscalar(value) || ~isfinite(value)
                 value = 0;
             end
-            value = min(5, max(0, round(value)));
+            value = min(maxValue, max(minValue, round(value)));
         end
 
         function tf = staticParamAffectsBindings(app, node, key) %#ok<INUSD>
@@ -6873,6 +6888,9 @@ classdef pipeline2 < matlab.apps.AppBase
             tf = (strcmpi(nodeType, 'processor') && ...
                 strcmpi(pkg, 'combinemultiplechannels') && ...
                 strcmpi(keyText, 'requiredChannelCount')) || ...
+                (strcmpi(nodeType, 'processor') && ...
+                strcmpi(pkg, 'computemetrics') && ...
+                any(strcmpi(keyText, {'maskChannelCount','scoreChannelCount'}))) || ...
                 (strcmpi(nodeType, 'classifier') && ...
                 strcmpi(pkg, 'cellposesam') && ...
                 strcmpi(keyText, 'outputType'));
@@ -6982,7 +7000,7 @@ classdef pipeline2 < matlab.apps.AppBase
                     rgbKeys = arrayfun(@(i)sprintf('RGB_Channel%d', i), 1:slotCount, 'UniformOutput', false);
                     keys = [{'requiredChannelCount'}, rgbKeys, {'debug'}];
                 case 'computemetrics'
-                    keys = {'mask1_class','mask1_label','mask1_stat','mask2_class','mask2_label','mask2_stat','BrightestPixels'};
+                    keys = computeMetricsStaticKeysForNode(app, node);
                 case 'computerls'
                     keys = moduleSetparamKeys(app, pkg);
                     keys = setdiff(keys, {'classification_data','outputName','pkg','paramTooltip','tip'}, 'stable');
@@ -7021,6 +7039,48 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
             n = min(maxSlots, max(1, round(requested)));
+        end
+
+        function keys = computeMetricsStaticKeysForNode(app, node)
+            maskCount = computeMetricsMaskSlotCountForNode(app, node);
+            keys = {'maskChannelCount','scoreChannelCount'};
+            for i = 1:maskCount
+                keys = [keys, { ...
+                    sprintf('mask%d_class', i), ...
+                    sprintf('mask%d_label', i), ...
+                    sprintf('mask%d_stat', i)}]; %#ok<AGROW>
+            end
+            keys = [keys, {'BrightestPixels'}];
+        end
+
+        function n = computeMetricsMaskSlotCountForNode(app, node)
+            n = computeMetricsCountForNode(app, node, {'maskChannelCount','maskCount'}, 2, 1, 8);
+        end
+
+        function n = computeMetricsScoreSlotCountForNode(app, node)
+            n = computeMetricsCountForNode(app, node, {'scoreChannelCount','channelCount'}, 4, 0, 12);
+        end
+
+        function n = computeMetricsCountForNode(app, node, names, defaultValue, minValue, maxValue) %#ok<INUSD>
+            n = defaultValue;
+            p = getField(app, node, 'params', struct());
+            if isstruct(p)
+                for i = 1:numel(names)
+                    key = char(string(names{i}));
+                    if isfield(p, key) && ~isempty(p.(key))
+                        try
+                            requested = double(p.(key));
+                        catch
+                            requested = NaN;
+                        end
+                        if isscalar(requested) && isfinite(requested)
+                            n = requested;
+                            break;
+                        end
+                    end
+                end
+            end
+            n = min(maxValue, max(minValue, round(n)));
         end
 
         function keys = classifierStaticKeys(app, pkg)
@@ -7194,7 +7254,7 @@ classdef pipeline2 < matlab.apps.AppBase
                         rgbKeys = arrayfun(@(i)sprintf('RGB_Channel%d', i), 1:slotCount, 'UniformOutput', false);
                         keys = [{'requiredChannelCount'}, rgbKeys];
                     elseif strcmp(pkg, 'computemetrics')
-                        keys = {'mask1_class','mask1_label','mask1_stat','mask2_class','mask2_label','mask2_stat','BrightestPixels'};
+                        keys = computeMetricsStaticKeysForNode(app, node);
                     elseif strcmp(pkg, 'computerls')
                         keys = {'StateDecoder','ExpectedDivisionPeriod','MinDivisionInterval','MinDivisionIntervalFactor','ArrestThreshold','DeathThreshold','ClogThreshold','EmptyThresholdNext','QCMinMeanMargin','QCMaxLowConfidenceFraction'};
                     elseif strcmp(pkg, 'computelineage')

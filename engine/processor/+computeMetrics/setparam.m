@@ -5,6 +5,14 @@ if nargin < 1 || isempty(ctx)
     ctx = struct();
 end
 
+ctxParam = struct();
+if isstruct(ctx) && isfield(ctx, 'params') && isstruct(ctx.params)
+    ctxParam = ctx.params;
+end
+
+maskChannelCount = localCountParam(ctxParam, {'maskChannelCount','maskCount'}, 2, 1, 8);
+scoreChannelCount = localCountParam(ctxParam, {'scoreChannelCount','channelCount'}, 4, 0, 12);
+
 listChannels = {};
 if isfield(ctx,'channels') && ~isempty(ctx.channels)
     listChannels = normalizeChannelList(ctx.channels);
@@ -22,39 +30,67 @@ else
     listChannels = [{'N/A'}, listChannels(:)'];
 end
 
-tip = { ...
-    'Name of Mask channel  #1', ...
-    'Compute detailed Mask #1 statistics (area, etc)', ...
-    'Class number used to identify (cell) contours for Mask #1 (default:2); Put 0 to score all mask values', ...
-    'Label of Mask channel  #1 (optional, eg cytoplasm, nucleus, foci, etc...)', ...
-    'Name of Mask channel  #2', ...
-    'Class number used to identify (subcellular) contours for Mask #2 (default:2)', ...
-    'Label of Mask channel  #2 (optional, eg cytoplasm, nucleus, foci, etc...)', ...
-    'Compute detailed Mask #2 statistics (area, etc)', ...
-    'Channel name #1 to score', ...
-    'Channel name #2 to score', ...
-    'Channel name #3 to score', ...
-    'Channel name #4 to score', ...
-    'Number of pixels to consider to calculate mean brightest pixels (default 20)' ...
-    };
-
 paramout = struct();
-paramout.mask1_name   = [listChannels listChannels{1}];
-paramout.mask1_stat   = true;
-paramout.mask1_class  = 2;
-paramout.mask1_label  = 'cyto';
-paramout.mask2_name   = [listChannels listChannels{1}];
-paramout.mask2_stat   = true;
-paramout.mask2_class  = 2;
-paramout.mask2_label  = 'nucl';
-
-paramout.channel1_name = [listChannels listChannels{1}];
-paramout.channel2_name = [listChannels listChannels{1}];
-paramout.channel3_name = [listChannels listChannels{1}];
-paramout.channel4_name = [listChannels listChannels{1}];
-
+paramout.maskChannelCount = maskChannelCount;
+paramout.scoreChannelCount = scoreChannelCount;
+for i = 1:maskChannelCount
+    paramout.(sprintf('mask%d_name', i)) = [listChannels listChannels{1}];
+    paramout.(sprintf('mask%d_stat', i)) = true;
+    paramout.(sprintf('mask%d_class', i)) = 2;
+    paramout.(sprintf('mask%d_label', i)) = defaultMaskLabel(i);
+end
+for i = 1:scoreChannelCount
+    paramout.(sprintf('channel%d_name', i)) = [listChannels listChannels{1}];
+end
 paramout.BrightestPixels = 20;
-paramout.tip = tip;
+paramout.tip = buildTips(maskChannelCount, scoreChannelCount);
+end
+
+function n = localCountParam(params, keys, defaultValue, minValue, maxValue)
+    n = defaultValue;
+    for i = 1:numel(keys)
+        key = keys{i};
+        if isstruct(params) && isfield(params, key) && ~isempty(params.(key))
+            try
+                n = double(params.(key));
+                break;
+            catch
+                n = defaultValue;
+            end
+        end
+    end
+    if isempty(n) || ~isscalar(n) || ~isfinite(n)
+        n = defaultValue;
+    end
+    n = min(maxValue, max(minValue, round(n)));
+end
+
+function label = defaultMaskLabel(i)
+    defaults = {'cyto','nucleus'};
+    if i <= numel(defaults)
+        label = defaults{i};
+    else
+        label = sprintf('mask%d', i);
+    end
+end
+
+function tip = buildTips(maskChannelCount, scoreChannelCount)
+    tip = { ...
+        'Number of mask channels used for measurements', ...
+        'Number of image channels scored inside each selected mask' ...
+        };
+    for i = 1:maskChannelCount
+        tip = [tip, { ...
+            sprintf('Name of Mask channel #%d', i), ...
+            sprintf('Compute detailed Mask #%d statistics (area, etc)', i), ...
+            sprintf('Class number used to identify contours for Mask #%d; put 0 to score all non-zero mask values', i), ...
+            sprintf('Label of Mask channel #%d', i) ...
+            }]; %#ok<AGROW>
+    end
+    for i = 1:scoreChannelCount
+        tip{end+1} = sprintf('Channel name #%d to score', i); %#ok<AGROW>
+    end
+    tip{end+1} = 'Number of brightest pixels used for top-pixel intensity metrics';
 end
 
 function out = normalizeChannelList(ch)

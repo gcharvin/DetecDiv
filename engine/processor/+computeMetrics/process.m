@@ -14,7 +14,11 @@ if nargin == 0 || isempty(param)
     return;
 end
 
-paramout = param;
+ctxWithParams = ctx;
+if isstruct(ctxWithParams)
+    ctxWithParams.params = param;
+end
+paramout = mergeComputeMetricsDefaults(computeMetrics.setparam(ctxWithParams), param);
 dataout = [];
 imageout = [];
 
@@ -27,5 +31,20 @@ if isempty(frames) || (isnumeric(frames) && all(frames == -1))
     [paramout, dataout, imageout] = computeMetrics.core(paramout, roiobj);
 else
     [paramout, dataout, imageout] = computeMetrics.core(paramout, roiobj, frames);
+end
+end
+
+function out = mergeComputeMetricsDefaults(defaults, override)
+out = defaults;
+if isempty(override)
+    return;
+end
+if ~isstruct(override)
+    out = override;
+    return;
+end
+names = fieldnames(override);
+for i = 1:numel(names)
+    out.(names{i}) = override.(names{i});
 end
 end

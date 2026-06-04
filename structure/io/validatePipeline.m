@@ -1073,9 +1073,10 @@ function tf = isSingleChannelResourceSpec(spec)
     end
     param = lower(char(string(getField(spec, 'param', ''))));
     required = logical(getField(spec, 'required', false));
-    singularParams = {'channel','inputchannelname','instancechannelname','mask1_name','mask2_name', ...
-        'channel1_name','channel2_name','channel3_name','channel4_name','channel5_name'};
-    tf = required || any(strcmp(param, singularParams));
+    singularParams = {'channel','inputchannelname','instancechannelname'};
+    tf = required || any(strcmp(param, singularParams)) || ...
+        ~isempty(regexp(param, '^mask\d+_name$', 'once')) || ...
+        ~isempty(regexp(param, '^channel\d+_name$', 'once'));
 end
 
 function tf = isAmbiguousCollectionResource(resource, spec)
@@ -2001,6 +2002,9 @@ function value = resolveResourceConfiguredValue(node, spec)
         return;
     end
     value = choiceToString(raw);
+    if any(strcmpi(value, {'none','n/a','N/A'}))
+        value = '';
+    end
 end
 
 function value = resolveResourceSymbolicValue(node, spec)

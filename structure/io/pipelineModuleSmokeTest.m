@@ -124,7 +124,10 @@ function params = representativeParams(typeName, pkgName)
                     params.outputChannelName = 'CombinedChannel';
                     params.requiredChannelCount = 0;
                 case 'computemetrics'
+                    params.maskChannelCount = 1;
+                    params.scoreChannelCount = 1;
                     params.mask1_name = 'seg';
+                    params.mask1_label = 'cyto';
                     params.mask2_name = 'N/A';
                     params.channel1_name = 'GFP';
                     params.channel2_name = 'N/A';

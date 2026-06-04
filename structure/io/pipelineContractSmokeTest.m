@@ -9,6 +9,7 @@ tests{end+1} = @testAllKnownModuleContracts; %#ok<AGROW>
 tests{end+1} = @testDynamicCellposeSamContract; %#ok<AGROW>
 tests{end+1} = @testDynamicCnnLstmContract; %#ok<AGROW>
 tests{end+1} = @testDynamicCombineMultipleChannelsContract; %#ok<AGROW>
+tests{end+1} = @testDynamicComputeMetricsContract; %#ok<AGROW>
 tests{end+1} = @testStaleSavedContractIgnored; %#ok<AGROW>
 tests{end+1} = @testRoiExtractStaleSymbolicSourceDoesNotBlockValidation; %#ok<AGROW>
 tests{end+1} = @testCombineMultipleChannelsThreeSlotValidation; %#ok<AGROW>
@@ -106,6 +107,39 @@ node = makeNode('processor', 'combineMultipleChannels', struct( ...
 contract = pipelineNodeContract(node);
 assert(numel(contract.resources.in) == 2, 'combineMultipleChannels should expose exactly two input slots.');
 assert(numel(contract.binding.selectorKeys) == 2, 'combineMultipleChannels selectorKeys should match slot count.');
+end
+
+function testDynamicComputeMetricsContract()
+node = makeNode('processor', 'computeMetrics', struct( ...
+    'pkg', 'computeMetrics', ...
+    'maskChannelCount', 3, ...
+    'scoreChannelCount', 2, ...
+    'mask1_name', 'cellposeSAM', ...
+    'mask2_name', 'nucleusMask', ...
+    'mask3_name', 'budMask', ...
+    'channel1_name', 'TL_z1', ...
+    'channel2_name', 'GFP', ...
+    'BrightestPixels', 20));
+contract = pipelineNodeContract(node);
+assert(numel(contract.resources.in) == 5, 'computeMetrics should expose mask + score channel slots.');
+assert(numel(contract.binding.selectorKeys) == 5, 'computeMetrics selectorKeys should match dynamic slot count.');
+assert(any(strcmp(contract.parameters.static, 'maskChannelCount')), 'Missing maskChannelCount static parameter.');
+assert(any(strcmp(contract.parameters.static, 'scoreChannelCount')), 'Missing scoreChannelCount static parameter.');
+
+n1 = makeNode('roiExtract', 'roiExtract', struct('extractChannels', {{'TL_z1','GFP','cellposeSAM','nucleusMask','budMask'}}));
+n1.id = 'roiextract_1';
+node.id = 'computeMetrics_1';
+pipe = struct( ...
+    'nodes', [n1 node], ...
+    'edges', makeEdges({'roiextract_1','computeMetrics_1'}), ...
+    'branches', struct([]));
+ctx = struct('images', 1, 'roiList', 1, 'channels', {{'TL_z1','GFP','cellposeSAM','nucleusMask','budMask'}});
+[pipe, ~] = pipelineResolveBindings(pipe, ctx, struct('allowGui', false));
+[ok, validation] = validatePipeline(pipe, ctx, struct('allowGui', false));
+assert(ok, 'Dynamic computeMetrics validation failed: %s', strjoin(validation.errors, ' | '));
+key = matlab.lang.makeValidName('computeMetrics_1');
+assert(strcmp(validation.binding.nodes.(key).status, 'resolved'), ...
+    'computeMetrics binding should be resolved with all dynamic slots filled.');
 end
 
 function testStaleSavedContractIgnored()
