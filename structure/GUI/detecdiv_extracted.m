@@ -2514,8 +2514,7 @@ end
                 return;
             end
 
-            pipeJson = fullfile(pipeObj.path, 'pipeline.json');
-            targetKey = app.normalizeFsPath(pipeJson);
+            targetKey = app.normalizePipelineRootPath(pipeObj.path);
             if isempty(targetKey)
                 return;
             end
@@ -2537,7 +2536,7 @@ end
                     continue;
                 end
 
-                projectKey = app.normalizeFsPath(app.getProjectDefaultPipelinePath(obj));
+                projectKey = app.normalizePipelineRootPath(app.getProjectDefaultPipelinePath(obj));
                 if ~isempty(projectKey) && strcmp(projectKey, targetKey)
                     projectIdx(end+1) = iProj; %#ok<AGROW>
                     found = true;
@@ -2559,7 +2558,7 @@ end
                         end
                     catch
                     end
-                    if ~isempty(runPath) && strcmp(app.normalizeFsPath(runPath), targetKey)
+                    if ~isempty(runPath) && strcmp(app.normalizePipelineRootPath(runPath), targetKey)
                         projectIdx(end+1) = iProj; %#ok<AGROW>
                         found = true;
                         break;
@@ -2637,7 +2636,7 @@ end
 
                     runObj = app.backfillRunPipelineRef(runObj, pipeObj, shallowObj);
                     shallowObj.processing.pipelineRun(iRun) = runObj;
-                    if ~strcmp(app.normalizeFsPath(prevPath), app.normalizeFsPath(runObj.pipelineRef.path))
+                    if ~strcmp(app.normalizePipelineRootPath(prevPath), app.normalizePipelineRootPath(runObj.pipelineRef.path))
                         runsChanged = true;
                     end
 
@@ -2666,7 +2665,7 @@ end
                         continue;
                     end
 
-                    key = app.normalizeFsPath(loadablePipe.path);
+                    key = app.normalizePipelineRootPath(loadablePipe.path);
                     if isempty(key)
                         continue;
                     end
@@ -2704,6 +2703,13 @@ end
                 end
             end
 
+            if runsChanged
+                try
+                    app.saveShallowProjectWithProgress(shallowObj, 'Saving project pipeline links...', 'shallowObj');
+                catch
+                end
+            end
+
         end
 
         function [pipeObj, existingPaths, loaded] = loadPipelineTemplateIfNeeded(app, pipePath, existingPaths, loaded, sourceLabel)
@@ -2715,7 +2721,7 @@ end
                 return;
             end
 
-            key = app.normalizeFsPath(pipePath);
+            key = app.normalizePipelineRootPath(pipePath);
             if isempty(key)
                 return;
             end
@@ -2771,7 +2777,7 @@ end
                 if ~isprop(obj,'path') || isempty(obj.path)
                     continue;
                 end
-                key = app.normalizeFsPath(obj.path);
+                key = app.normalizePipelineRootPath(obj.path);
                 if ~isempty(key)
                     paths(key) = true;
                 end
@@ -2791,7 +2797,7 @@ end
                 try
                     obj = evalin('base', varName);
                     if isa(obj,'pipeline') && isprop(obj,'path') && isprop(pipeObj,'path')
-                        if strcmp(app.normalizeFsPath(obj.path), app.normalizeFsPath(pipeObj.path))
+                        if strcmp(app.normalizePipelineRootPath(obj.path), app.normalizePipelineRootPath(pipeObj.path))
                             return;
                         end
                     end
@@ -2816,6 +2822,23 @@ end
             p = lower(p);
             p = regexprep(p,'/+$','');
             key = p;
+        end
+
+        function key = normalizePipelineRootPath(app, inPath)
+            key = '';
+            if isempty(inPath)
+                return;
+            end
+            try
+                p = char(string(inPath));
+            catch
+                return;
+            end
+            [~, name, ext] = fileparts(p);
+            if strcmpi([name ext], 'pipeline.json')
+                p = fileparts(p);
+            end
+            key = app.normalizeFsPath(p);
         end
 
         function [pipeObj, msg] = resolvePipelineFromRun(app, runObj, shallowObj)
@@ -3179,7 +3202,7 @@ end
             if isempty(jsonPath)
                 return;
             end
-            targetKey = app.normalizeFsPath(jsonPath);
+            targetKey = app.normalizePipelineRootPath(jsonPath);
 
             try
                 vars = evalin('base', 'who');
@@ -3196,7 +3219,7 @@ end
                 if ~isa(obj, 'pipeline')
                     continue;
                 end
-                thisKey = app.normalizeFsPath(fullfile(obj.path, 'pipeline.json'));
+                thisKey = app.normalizePipelineRootPath(obj.path);
                 if ~isempty(thisKey) && strcmp(thisKey, targetKey)
                     found = true;
                     pipeObj = obj;
@@ -4132,7 +4155,7 @@ end
                 curId = char(string(pipeInfo.defaultTemplateId));
             end
 
-            if ~strcmp(app.normalizeFsPath(curPath), app.normalizeFsPath(jsonPath))
+            if ~strcmp(app.normalizePipelineRootPath(curPath), app.normalizePipelineRootPath(jsonPath))
                 pipeInfo.defaultTemplatePath = jsonPath;
                 changed = true;
             end
@@ -5997,11 +6020,43 @@ end
             end
 
             projectRoot = "";
+            linkedPipelineRoots = strings(0);
             if ~isempty(shallowObj)
                 try
                     projectRoot = localNormalizeFsPath(fullfile(shallowObj.io.path, shallowObj.io.file));
                 catch
                 end
+                try
+                    defaultRoot = string(app.normalizePipelineRootPath(app.getProjectDefaultPipelinePath(shallowObj)));
+                    if strlength(defaultRoot) > 0
+                        linkedPipelineRoots(end+1) = defaultRoot; %#ok<AGROW>
+                    end
+                catch
+                end
+                try
+                    runs = shallowObj.processing.pipelineRun;
+                catch
+                    runs = [];
+                end
+                for iRun = 1:numel(runs)
+                    runPath = '';
+                    try
+                        if isprop(runs(iRun),'pipelineRef') && isstruct(runs(iRun).pipelineRef) ...
+                                && isfield(runs(iRun).pipelineRef,'path') && ~isempty(runs(iRun).pipelineRef.path)
+                            runPath = char(string(runs(iRun).pipelineRef.path));
+                        end
+                        if isempty(runPath) && isprop(runs(iRun),'templatePath') && ~isempty(runs(iRun).templatePath)
+                            runPath = char(string(runs(iRun).templatePath));
+                        end
+                    catch
+                        runPath = '';
+                    end
+                    root = string(app.normalizePipelineRootPath(runPath));
+                    if strlength(root) > 0
+                        linkedPipelineRoots(end+1) = root; %#ok<AGROW>
+                    end
+                end
+                linkedPipelineRoots = unique(linkedPipelineRoots, 'stable');
             end
 
             prefix = [char(string(projVar)) '_pipeline'];
@@ -6025,12 +6080,19 @@ end
 
                 try
                     pipePath = localNormalizeFsPath(pipeObj.path);
+                    pipeRoot = string(app.normalizePipelineRootPath(pipeObj.path));
                 catch
                     pipePath = "";
+                    pipeRoot = "";
                 end
 
                 if strlength(projectRoot) > 0 && strlength(pipePath) > 0 && ...
                         startsWith(pipePath, projectRoot, 'IgnoreCase', true)
+                    vars{end+1} = pipeVarChar; %#ok<AGROW>
+                    continue;
+                end
+
+                if strlength(pipeRoot) > 0 && any(strcmp(linkedPipelineRoots, pipeRoot))
                     vars{end+1} = pipeVarChar; %#ok<AGROW>
                 end
             end
