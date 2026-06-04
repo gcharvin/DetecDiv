@@ -21,6 +21,7 @@ function [ok, report] = validatePipeline(pipe, ctx, opts)
     edges = normalizeEdges(P, nodes);
     [nodes, edges] = filterGraphForRunSelection(nodes, edges, ctx);
     nodes = injectContextResolvedNodeBindings(nodes, ctx);
+    edges = addResourceBindingDependencyEdges(nodes, edges);
 
     report.nodes = nodes;
     report.edges = edges;
@@ -51,13 +52,15 @@ function [ok, report] = validatePipeline(pipe, ctx, opts)
             ok = false;
             report.errors{end+1} = ['Edge to unknown node: ' edges(i).to];
         end
-        [edgeOk, edgeErrors, edgeWarnings] = validateEdgePorts(edges(i), nodes, ids);
-        if ~edgeOk
-            ok = false;
-            report.errors = [report.errors, edgeErrors]; %#ok<AGROW>
-        end
-        if ~isempty(edgeWarnings)
-            report.warnings = [report.warnings, edgeWarnings]; %#ok<AGROW>
+        if ~strcmpi(char(string(getField(edges(i), 'condition', ''))), 'resourceBinding')
+            [edgeOk, edgeErrors, edgeWarnings] = validateEdgePorts(edges(i), nodes, ids);
+            if ~edgeOk
+                ok = false;
+                report.errors = [report.errors, edgeErrors]; %#ok<AGROW>
+            end
+            if ~isempty(edgeWarnings)
+                report.warnings = [report.warnings, edgeWarnings]; %#ok<AGROW>
+            end
         end
     end
 
@@ -147,7 +150,11 @@ function [ok, report] = validatePipeline(pipe, ctx, opts)
             report.warnings = [report.warnings, bindingReport.warnings]; %#ok<AGROW>
         end
     catch ME
-        report.warnings{end+1} = ['Semantic validation skipped: ' ME.message];
+        where = '';
+        if ~isempty(ME.stack)
+            where = sprintf(' (%s:%d)', ME.stack(1).name, ME.stack(1).line);
+        end
+        report.warnings{end+1} = ['Semantic validation skipped: ' ME.message where];
     end
 
     try
@@ -267,6 +274,127 @@ function edges = normalizeEdges(P, nodes)
             edges(i).condition = char(string(edges(i).condition));
         end
     end
+end
+
+function edges = addResourceBindingDependencyEdges(nodes, edges)
+    if isempty(nodes)
+        return;
+    end
+    ids = getNodeIds(nodes);
+    declaredOutputs = collectDeclaredResourceOutputs(nodes);
+    for i = 1:numel(nodes)
+        targetId = char(string(getField(nodes(i), 'id', '')));
+        contract = getField(nodes(i), 'contract', struct());
+        resources = getField(contract, 'resources', struct());
+        inputs = getField(resources, 'in', resourceSpecDef());
+        if isempty(inputs)
+            continue;
+        end
+        for j = 1:numel(inputs)
+            spec = inputs(j);
+            if isempty(getField(spec, 'type', ''))
+                continue;
+            end
+            producers = resourceBindingProducerIds(nodes(i), spec, declaredOutputs, ids);
+            for k = 1:numel(producers)
+                producerId = char(string(producers{k}));
+                if isempty(producerId) || strcmp(producerId, targetId)
+                    continue;
+                end
+                edges = appendImplicitResourceEdge(edges, producerId, targetId, spec);
+            end
+        end
+    end
+end
+
+function resources = collectDeclaredResourceOutputs(nodes)
+    resources = resourceInventoryDef();
+    for i = 1:numel(nodes)
+        contract = getField(nodes(i), 'contract', struct());
+        r = getField(contract, 'resources', struct());
+        outputs = getField(r, 'out', resourceSpecDef());
+        if isempty(outputs)
+            continue;
+        end
+        for j = 1:numel(outputs)
+            spec = outputs(j);
+            if isempty(getField(spec, 'type', ''))
+                continue;
+            end
+            resources = mergeResourceInventory(resources, makeResourceOutput(nodes(i), spec));
+        end
+    end
+end
+
+function producers = resourceBindingProducerIds(node, spec, declaredOutputs, ids)
+    producers = {};
+    [hasRaw, raw] = resolveResourceRawValue(node, spec);
+    if ~hasRaw
+        return;
+    end
+
+    if isGenericSourceSymbolicBinding(raw)
+        return;
+    end
+    rawText = choiceToString(raw);
+    if isempty(rawText)
+        return;
+    end
+
+    if isSymbolicResourceBinding(rawText)
+        sourceNode = symbolicResourceSourceNode(rawText);
+        if ~isempty(sourceNode) && any(strcmp(ids, sourceNode))
+            producers = {sourceNode};
+        end
+        return;
+    end
+
+    value = resolveResourceConfiguredValue(node, spec);
+    if isempty(value)
+        return;
+    end
+    matches = producerIdsForConcreteResource(value, spec, declaredOutputs);
+    if numel(matches) == 1
+        producers = matches;
+    end
+end
+
+function producers = producerIdsForConcreteResource(value, spec, resources)
+    producers = {};
+    resources = normalizeResourceInventory(resources);
+    value = strtrim(char(string(value)));
+    if isempty(value)
+        return;
+    end
+    wantedType = lower(char(string(getField(spec, 'type', ''))));
+    wantedRole = lower(char(string(getField(spec, 'role', ''))));
+    for i = 1:numel(resources)
+        if ~resourceSpecCompatible(wantedType, wantedRole, resources(i).type, resources(i).role)
+            continue;
+        end
+        names = {char(string(resources(i).concreteName)), char(string(resources(i).symbol))};
+        if any(strcmpi(value, names(~cellfun(@isempty, names))))
+            producers{end+1} = char(string(resources(i).sourceNode)); %#ok<AGROW>
+        end
+    end
+    producers = unique(producers(~cellfun(@isempty, producers)), 'stable');
+end
+
+function edges = appendImplicitResourceEdge(edges, fromId, toId, spec)
+    for i = 1:numel(edges)
+        if strcmp(char(string(getField(edges(i), 'from', ''))), fromId) && ...
+                strcmp(char(string(getField(edges(i), 'to', ''))), toId)
+            return;
+        end
+    end
+    if isempty(edges)
+        edges = struct('from',{},'to',{},'fromPort',{},'toPort',{},'condition',{});
+    end
+    edges(end+1).from = fromId; %#ok<AGROW>
+    edges(end).to = toId;
+    edges(end).fromPort = char(string(getField(spec, 'port', 'resource')));
+    edges(end).toPort = char(string(getField(spec, 'param', 'resource')));
+    edges(end).condition = 'resourceBinding';
 end
 
 function ids = getNodeIds(nodes)
@@ -849,8 +977,10 @@ function nodeReport = evaluateNodeBinding(node, state)
             availableChannels = state.roiChannels;
             supportAvailable = state.hasRoiList;
     end
+    availableChannels = mergeKnownChannels(availableChannels, compatibleResourceConcreteNamesForBinding(node, state.resources));
 
     symbolicChannelCollectionSelected = hasSymbolicChannelCollectionSelection(node, binding, selectors);
+    symbolicResourceSelected = hasSymbolicResourceSelection(node, binding, selectors);
     configuredChannels = configuredChannels(~isSymbolicChannelSelectionCell(configuredChannels));
     allChannelsSelected = isAllChannelSelection(configuredChannels) || symbolicChannelCollectionSelected;
     if allChannelsSelected
@@ -876,6 +1006,13 @@ function nodeReport = evaluateNodeBinding(node, state)
     end
 
     if requiredCount <= 0 && isempty(configuredChannels)
+        nodeReport = makeBindingNodeReport(node, binding, scope, status, message, requiredCount, exactCount, configuredChannels, availableChannels, autoChoice);
+        nodeReport = attachResourceBindingReport(nodeReport, node, state);
+        return;
+    end
+
+    if symbolicResourceSelected && isempty(configuredChannels)
+        message = ['Node ' char(string(node.id)) ' uses a symbolic resource binding for its channel selection.'];
         nodeReport = makeBindingNodeReport(node, binding, scope, status, message, requiredCount, exactCount, configuredChannels, availableChannels, autoChoice);
         nodeReport = attachResourceBindingReport(nodeReport, node, state);
         return;
@@ -1603,6 +1740,63 @@ function channels = resolveBindingConfiguredChannels(node, binding, selectors)
     channels = resolveNodeConfiguredChannels(node, selectors);
 end
 
+function names = compatibleResourceConcreteNamesForBinding(node, resources)
+    names = {};
+    contract = getField(node, 'contract', struct());
+    res = getField(contract, 'resources', struct());
+    inputs = getField(res, 'in', struct([]));
+    if isempty(inputs)
+        return;
+    end
+    for i = 1:numel(inputs)
+        spec = inputs(i);
+        if ~strcmpi(char(string(getField(spec, 'type', ''))), 'channel')
+            continue;
+        end
+        compatible = findCompatibleResources(resources, spec);
+        names = mergeKnownChannels(names, allResourceConcreteNames(compatible));
+    end
+end
+
+function tf = hasSymbolicResourceSelection(node, binding, selectors)
+    tf = false;
+    params = getField(node, 'params', struct());
+    if ~isstruct(params)
+        return;
+    end
+    keys = {};
+    if isstruct(binding) && isfield(binding, 'selectorKeys') && ~isempty(binding.selectorKeys)
+        keys = cellstr(string(binding.selectorKeys(:)));
+    end
+    keys = [keys(:)', { ...
+        char(string(getField(selectors, 'channelsParam', ''))), ...
+        char(string(getField(selectors, 'channelParam', '')))}];
+    keys = unique(keys(~cellfun(@isempty, keys)), 'stable');
+    for i = 1:numel(keys)
+        key = char(string(keys{i}));
+        if isfield(params, key) && isSymbolicResourceBinding(params.(key)) && ...
+                ~isGenericSourceSymbolicBinding(params.(key))
+            tf = true;
+            return;
+        end
+    end
+end
+
+function names = allResourceConcreteNames(resources)
+    names = {};
+    resources = normalizeResourceInventory(resources);
+    for i = 1:numel(resources)
+        nm = char(string(resources(i).concreteName));
+        if isempty(nm)
+            nm = char(string(resources(i).symbol));
+        end
+        if ~isempty(nm)
+            names{end+1} = nm; %#ok<AGROW>
+        end
+    end
+    names = unique(names, 'stable');
+end
+
 function tf = hasSymbolicChannelCollectionSelection(node, binding, selectors)
     tf = false;
     if ~isstruct(binding) || ~strcmpi(char(string(getField(binding, 'mode', ''))), 'channelSet')
@@ -1616,7 +1810,7 @@ function tf = hasSymbolicChannelCollectionSelection(node, binding, selectors)
     if isfield(binding, 'selectorKeys') && ~isempty(binding.selectorKeys)
         keys = cellstr(string(binding.selectorKeys(:)));
     end
-    keys = [keys, { ...
+    keys = [keys(:)', { ...
         char(string(getField(selectors, 'channelsParam', ''))), ...
         char(string(getField(selectors, 'channelParam', '')))}];
     keys = unique(keys(~cellfun(@isempty, keys)), 'stable');
@@ -1787,7 +1981,9 @@ function tf = roiListHasDataSeries(roiList)
 end
 
 function out = mergeKnownChannels(a, b)
-    out = unique([normalizeChannelList(a), normalizeChannelList(b)], 'stable');
+    aa = normalizeChannelList(a);
+    bb = normalizeChannelList(b);
+    out = unique([aa(:); bb(:)]', 'stable');
 end
 
 function names = normalizeChannelList(v)
@@ -1982,9 +2178,8 @@ end
 
 function value = resolveResourceConfiguredValue(node, spec)
     value = '';
-    params = getField(node, 'params', struct());
-    key = char(string(getField(spec, 'param', '')));
-    if isempty(key) || ~isstruct(params) || ~isfield(params, key) || isempty(params.(key))
+    [hasRaw, raw, key] = resolveResourceRawValue(node, spec);
+    if ~hasRaw
         if strcmpi(char(string(getField(node, 'type', ''))), 'classifier') && ...
                 any(strcmpi(key, {'channel','channels','channelName'}))
             linkedChannels = resolveLinkedClassifierChannels(node);
@@ -1994,7 +2189,6 @@ function value = resolveResourceConfiguredValue(node, spec)
         end
         return;
     end
-    raw = params.(key);
     if isSymbolicResourceBinding(raw)
         return;
     end
@@ -2009,12 +2203,10 @@ end
 
 function value = resolveResourceSymbolicValue(node, spec)
     value = '';
-    params = getField(node, 'params', struct());
-    key = char(string(getField(spec, 'param', '')));
-    if isempty(key) || ~isstruct(params) || ~isfield(params, key) || isempty(params.(key))
+    [hasRaw, raw] = resolveResourceRawValue(node, spec);
+    if ~hasRaw
         return;
     end
-    raw = params.(key);
     if isGenericSourceSymbolicBinding(raw)
         return;
     end
@@ -2022,6 +2214,42 @@ function value = resolveResourceSymbolicValue(node, spec)
         return;
     end
     value = choiceToString(raw);
+end
+
+function [hasRaw, raw, key] = resolveResourceRawValue(node, spec)
+    hasRaw = false;
+    raw = [];
+    key = '';
+    params = getField(node, 'params', struct());
+    if ~isstruct(params)
+        return;
+    end
+    keys = resourceSpecParamKeys(node, spec);
+    for i = 1:numel(keys)
+        candidate = char(string(keys{i}));
+        if isempty(candidate) || ~isfield(params, candidate) || isempty(params.(candidate))
+            continue;
+        end
+        key = candidate;
+        raw = params.(candidate);
+        hasRaw = true;
+        return;
+    end
+    if ~isempty(keys)
+        key = char(string(keys{1}));
+    end
+end
+
+function keys = resourceSpecParamKeys(node, spec)
+    keys = { ...
+        char(string(getField(spec, 'param', ''))), ...
+        char(string(getField(spec, 'nameParam', '')))};
+    contract = getField(node, 'contract', struct());
+    binding = getField(contract, 'binding', struct());
+    if isstruct(binding) && isfield(binding, 'selectorKeys') && ~isempty(binding.selectorKeys)
+        keys = [keys, cellstr(string(binding.selectorKeys(:)))']; %#ok<AGROW>
+    end
+    keys = unique(keys(~cellfun(@isempty, keys)), 'stable');
 end
 
 function tf = isSymbolicResourceBinding(v)
@@ -2087,10 +2315,7 @@ function compatible = findCompatibleResources(resources, spec)
     wantedType = lower(char(string(getField(spec, 'type', ''))));
     wantedRole = lower(char(string(getField(spec, 'role', ''))));
     for i = 1:numel(resources)
-        if ~strcmpi(resources(i).type, wantedType)
-            continue;
-        end
-        if ~isempty(wantedRole) && ~isempty(resources(i).role) && ~strcmpi(resources(i).role, wantedRole)
+        if ~resourceSpecCompatible(wantedType, wantedRole, resources(i).type, resources(i).role)
             continue;
         end
         if isAmbiguousCollectionResource(resources(i), spec)
@@ -2098,6 +2323,45 @@ function compatible = findCompatibleResources(resources, spec)
         end
         compatible(end+1) = resources(i); %#ok<AGROW>
     end
+end
+
+function tf = resourceSpecCompatible(wantedType, wantedRole, availableType, availableRole)
+    wantedType = lower(char(string(wantedType)));
+    wantedRole = lower(char(string(wantedRole)));
+    availableType = lower(char(string(availableType)));
+    availableRole = lower(char(string(availableRole)));
+    tf = strcmp(wantedType, availableType) && resourceRolesCompatible(wantedRole, availableRole);
+    if tf
+        return;
+    end
+    tf = strcmp(wantedType, 'channel') && strcmp(wantedRole, 'mask_roi_image') && ...
+        strcmp(availableType, 'mask') && strcmp(availableRole, 'segmentation');
+end
+
+function tf = resourceRolesCompatible(wantedRole, availableRole)
+    wantedRole = lower(char(string(wantedRole)));
+    availableRole = lower(char(string(availableRole)));
+    tf = isempty(wantedRole) || isempty(availableRole) || strcmp(wantedRole, availableRole);
+    if tf
+        return;
+    end
+    if strcmp(wantedRole, 'score_roi_image')
+        tf = any(strcmp(availableRole, roiScorableChannelRoles()));
+        return;
+    end
+    if strcmp(wantedRole, 'mask_roi_image')
+        tf = any(strcmp(availableRole, {'roi_image','mask_roi_image','derived_roi_image','tracking','lineage_mask'}));
+        return;
+    end
+    if strcmp(wantedRole, 'roi_image')
+        tf = any(strcmp(availableRole, roiScorableChannelRoles()));
+        return;
+    end
+    tf = false;
+end
+
+function roles = roiScorableChannelRoles()
+    roles = {'roi_image','score_roi_image','derived_roi_image','probability','tracking','lineage_mask'};
 end
 
 function out = nonContextResources(resources)
@@ -2138,6 +2402,11 @@ function sourceNode = symbolicResourceSourceNode(symbolicValue)
     end
     if startsWith(symbolicValue, '@')
         symbolicValue = symbolicValue(2:end);
+    end
+    if contains(symbolicValue, '.')
+        parts = strsplit(symbolicValue, '.');
+        sourceNode = strtrim(parts{1});
+        return;
     end
     tokens = regexp(symbolicValue, 'output\s+from\s+([^/\s>]+)', 'tokens', 'once');
     if ~isempty(tokens)
@@ -2189,7 +2458,7 @@ function names = normalizeResourceNameList(v)
     names = normalizeChannelList(v);
     if isstruct(v) || isobject(v)
         names = {};
-        probes = {'name','groupid','id','concreteName','symbol'};
+        probes = {'groupid','name','id','concreteName','symbol'};
         for i = 1:numel(v)
             for j = 1:numel(probes)
                 value = [];

@@ -732,6 +732,7 @@ function contract = enrichContractFromPackage(contract, node)
                 contract.parameters.static = { ...
                     'ArrestThreshold','DeathThreshold','ClogThreshold', ...
                     'EmptyThresholdDiscard','EmptyThresholdNext', ...
+                    'AverageFluoByDivision', ...
                     'StateDecoder','ExpectedDivisionPeriod','MinDivisionInterval', ...
                     'MinDivisionIntervalFactor','MedianFilterWindow', ...
                     'ViterbiLiveSwitchPenalty','ViterbiTerminalPenalty', ...
@@ -742,13 +743,16 @@ function contract = enrichContractFromPackage(contract, node)
                 contract.binding.scope = 'roi';
                 contract.binding.outputScope = 'roi';
                 contract.binding.mode = 'dataSeries';
-                contract.binding.selectorKeys = {'classification_data'};
+                contract.binding.selectorKeys = {'classification_data','metrics_data'};
                 contract.binding.resolveAt = 'run';
                 contract.capabilities.roiDataSeries = true;
                 contract.capabilities.outputsDataSeries = true;
-                contract.resources.in = resourceDef('dataSeries', 'classification', 'classification_data', 'classification_data', 'dataSeries', 'classification_data', true, '');
+                contract.resources.in = [ ...
+                    resourceDef('dataSeries', 'classification', 'classification_data', 'classification_data', 'dataSeries', 'classification_data', true, ''), ...
+                    resourceDef('dataSeries', 'metrics', 'metrics_data', 'metrics_data', 'dataSeries', 'metrics_data', false, '') ...
+                    ];
                 contract.resources.out = resourceDef('dataSeries', 'rls', 'dataSeries', 'outputName', 'dataSeries', 'outputName', false, 'roiDataSeries');
-                contract.summary = 'Computes RLS events from an upstream or existing classification dataseries.';
+                contract.summary = 'Computes RLS events from classification dataseries, with optional computeMetrics aggregation by division.';
             case 'computelineage'
                 contract.in = [ ...
                     portDef('roiList', 'roiList', true, 'edge'), ...
@@ -1043,7 +1047,6 @@ function keys = computeMetricsMaskStaticKeys(n)
     keys = {};
     for i = 1:n
         keys = [keys, { ...
-            sprintf('mask%d_class', i), ...
             sprintf('mask%d_label', i), ...
             sprintf('mask%d_stat', i)}]; %#ok<AGROW>
     end
@@ -1053,11 +1056,11 @@ function resources = computeMetricsInputResources(maskCount, scoreCount)
     resources = resourceDef();
     for i = 1:maskCount
         key = sprintf('mask%d_name', i);
-        resources(end+1) = resourceDef('channel', 'roi_image', key, key, 'channels', key, true, ''); %#ok<AGROW>
+        resources(end+1) = resourceDef('channel', 'mask_roi_image', key, key, 'channels', key, true, ''); %#ok<AGROW>
     end
     for i = 1:scoreCount
         key = sprintf('channel%d_name', i);
-        resources(end+1) = resourceDef('channel', 'roi_image', key, key, 'channels', key, true, ''); %#ok<AGROW>
+        resources(end+1) = resourceDef('channel', 'score_roi_image', key, key, 'channels', key, true, ''); %#ok<AGROW>
     end
 end
 
