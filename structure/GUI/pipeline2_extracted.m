@@ -1433,6 +1433,11 @@ classdef pipeline2 < matlab.apps.AppBase
                 y1 = -(getLayoutRow(app, src) - 1) * (blockH + gapY) + blockH/2;
                 x2 = (getLayoutCol(app, dst) - 1) * (blockW + gapX);
                 y2 = -(getLayoutRow(app, dst) - 1) * (blockH + gapY) + blockH/2;
+                if explicitGraphEdgeExists(app, char(string(edges(i).from)), char(string(edges(i).to)))
+                    yOffset = blockH * 0.23;
+                    y1 = y1 + yOffset;
+                    y2 = y2 + yOffset;
+                end
                 srcSelected = isempty(selectedRunIds) || any(strcmp(selectedRunIds, char(string(src.id))));
                 dstSelected = isempty(selectedRunIds) || any(strcmp(selectedRunIds, char(string(dst.id))));
                 if srcSelected && dstSelected
@@ -1475,6 +1480,22 @@ classdef pipeline2 < matlab.apps.AppBase
                 edges = reportEdges;
             catch
                 edges = struct('from',{},'to',{},'fromPort',{},'toPort',{},'condition',{});
+            end
+        end
+
+        function tf = explicitGraphEdgeExists(app, fromId, toId)
+            tf = false;
+            try
+                explicitEdges = app.Data.edges;
+                for i = 1:numel(explicitEdges)
+                    if strcmp(char(string(getField(app, explicitEdges(i), 'from', ''))), fromId) && ...
+                            strcmp(char(string(getField(app, explicitEdges(i), 'to', ''))), toId)
+                        tf = true;
+                        return;
+                    end
+                end
+            catch
+                tf = false;
             end
         end
 
