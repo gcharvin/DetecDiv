@@ -5786,17 +5786,26 @@ classdef pipeline2 < matlab.apps.AppBase
             enableState = ternary(app, editable, 'on', 'off');
             isInput = strcmpi(char(string(direction)), 'Input');
             if isInput || ~isempty(choices)
+                displayValue = choiceScalarText(app, value);
+                placeholder = '<unconfigured>';
                 if isempty(choices)
-                    choices = {choiceScalarText(app, value)};
+                    choices = {displayValue};
                 end
                 choices = flattenChoiceList(app, choices);
                 choices = choices(~cellfun(@isempty, choices));
+                if isInput && isempty(displayValue)
+                    choices = [{placeholder} choices]; %#ok<AGROW>
+                    displayValue = placeholder;
+                end
                 if isempty(choices)
                     choices = {'<unresolved>'};
                 end
-                displayValue = choiceScalarText(app, value);
                 if isempty(displayValue) || ~any(strcmp(choices, displayValue))
-                    displayValue = choices{1};
+                    if isInput && any(strcmp(choices, placeholder))
+                        displayValue = placeholder;
+                    else
+                        displayValue = choices{1};
+                    end
                 end
                 ctrl = uidropdown(parent);
                 ctrl.Items = choices;
@@ -5836,7 +5845,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 symbolicValue = symbolicBindingValueFromLabel(app, value);
                 app.Data.nodes(idx).params.(param) = symbolicValue;
                 clearRuntimeNodeParam(app, nodeId, param);
-            elseif isempty(value) || strcmp(value, '<unresolved>')
+            elseif isempty(value) || any(strcmp(value, {'<unresolved>','<unconfigured>'}))
                 if isfield(app.Data.nodes(idx).params, param)
                     app.Data.nodes(idx).params = rmfield(app.Data.nodes(idx).params, param);
                 end
