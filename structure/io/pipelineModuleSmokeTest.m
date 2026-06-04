@@ -128,7 +128,6 @@ function params = representativeParams(typeName, pkgName)
                     params.scoreChannelCount = 1;
                     params.mask1_name = 'seg';
                     params.mask1_label = 'cyto';
-                    params.mask2_name = 'N/A';
                     params.channel1_name = 'GFP';
                     params.channel2_name = 'N/A';
                     params.channel3_name = 'N/A';

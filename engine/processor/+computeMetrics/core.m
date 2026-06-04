@@ -37,7 +37,7 @@ for i = 1:maskCount
         continue;
     end
 
-    dataout = computeMaskGeometry(dataout, roiobj, paramout, i, cha);
+    dataout = computeMaskGeometry(dataout, roiobj, paramout, i, cha(1));
 end
 
 channelsExtract = {};
@@ -61,7 +61,7 @@ if isempty(channelsExtract)
     return;
 end
 
-[dataout] = computeChannelQuantification(dataout, roiobj, paramout, channelsExtract, channelsName);
+dataout = computeChannelQuantification(dataout, roiobj, paramout, channelsExtract, channelsName);
 end
 
 function paramout = normalizeComputeMetricsParams(param)
@@ -76,7 +76,6 @@ paramout.scoreChannelCount = countParam(paramout, {'scoreChannelCount','channelC
 for i = 1:paramout.maskChannelCount
     nameKey = sprintf('mask%d_name', i);
     statKey = sprintf('mask%d_stat', i);
-    classKey = sprintf('mask%d_class', i);
     labelKey = sprintf('mask%d_label', i);
     if ~isfield(paramout, nameKey) || isempty(paramout.(nameKey))
         paramout.(nameKey) = 'N/A';
@@ -86,10 +85,6 @@ for i = 1:paramout.maskChannelCount
         paramout.(statKey) = true;
     end
     paramout.(statKey) = logical(paramout.(statKey));
-    if ~isfield(paramout, classKey) || isempty(paramout.(classKey))
-        paramout.(classKey) = 2;
-    end
-    paramout.(classKey) = numericScalar(paramout.(classKey), 2);
     if ~isfield(paramout, labelKey) || isempty(paramout.(labelKey))
         paramout.(labelKey) = defaultMaskLabel(i);
     end
@@ -112,12 +107,12 @@ end
 
 function dataout = computeMaskGeometry(dataout, roiobj, paramout, maskIndex, cha)
 maskName = paramout.(sprintf('mask%d_name', maskIndex));
-maskClass = paramout.(sprintf('mask%d_class', maskIndex));
 maskLabel = paramout.(sprintf('mask%d_label', maskIndex));
+maskImage = roiobj.image(:,:,cha,:);
+maskLabelSafe = makeSafeVariableName(maskLabel);
+groupId = ['mask_quantification_' maskLabelSafe];
 
-BW_3D = roiobj.image(:,:,cha,:);
 roiobj.data = roiobj.data(isvalid(roiobj.data));
-groupId = ['mask_quantification_' makeSafeVariableName(maskLabel)];
 pixdata = find(arrayfun(@(x) strcmp(x.groupid, groupId), roiobj.data));
 if ~isempty(pixdata)
     cc = pixdata(1);
@@ -129,52 +124,39 @@ else
     end
 end
 
-nb_temps = size(BW_3D, 4);
-if maskClass == 0
-    liste_valeurs = unique(BW_3D(:));
-    liste_valeurs = setxor(liste_valeurs, 0);
-else
-    liste_valeurs = maskClass;
+nFrames = size(maskImage, 4);
+idxCol = cell(nFrames, 1);
+areaCol = cell(nFrames, 1);
+minorCol = cell(nFrames, 1);
+majorCol = cell(nFrames, 1);
+eccCol = cell(nFrames, 1);
+volCol = cell(nFrames, 1);
+surfCol = cell(nFrames, 1);
+
+for t = 1:nFrames
+    frame = maskImage(:,:,1,t);
+    labels = maskInstanceLabels(frame);
+    idxCol{t} = labels(:)';
+    [areaCol{t}, minorCol{t}, majorCol{t}, eccCol{t}] = geometryForLabels(frame, labels);
+    r = minorCol{t};
+    h = majorCol{t} - r;
+    volCol{t} = 4*pi*r.^3/3 + pi*r.^2.*h;
+    surfCol{t} = 4*pi*r.^2 + 2*pi.*r.*h;
 end
 
-surface = zeros(length(liste_valeurs), nb_temps);
-axe_majeur = zeros(length(liste_valeurs), nb_temps);
-axe_mineur = zeros(length(liste_valeurs), nb_temps);
-eccentricity = zeros(length(liste_valeurs), nb_temps);
-cellvolume = zeros(length(liste_valeurs), nb_temps);
-cellsurface = zeros(length(liste_valeurs), nb_temps);
+varNames = { ...
+    ['MaskIdx_' maskLabelSafe], ...
+    'Area_Cell', ...
+    'LenMinAxis_Cell', ...
+    'LenMajAxis_Cell', ...
+    'Eccentric_Cell', ...
+    'Vol_Cell', ...
+    'Surf_Cell'};
+tbl = table(idxCol, areaCol, minorCol, majorCol, eccCol, volCol, surfCol, 'VariableNames', varNames);
+plotgroup = {'id','Area','Length','Length','Number','Volume','Area'};
+defplot = {false,false,false,false,false,false,false};
 
-BW_3D = permute(BW_3D, [1 2 4 3]);
-BW_big = zeros(size(BW_3D));
-BW_big = repmat(BW_big, [1 1 1 length(liste_valeurs)]);
-for v = 1:length(liste_valeurs)
-    BW_big(:,:,:,v) = BW_3D == liste_valeurs(v);
-end
-
-BWcell = mat2cell(BW_big, size(BW_big,1), size(BW_big,2), ones(1,size(BW_big,3)), ones(1,size(BW_big,4)));
-stats = cellfun(@(BW) regionprops(BW, 'Area', 'MajorAxisLength', 'MinorAxisLength', 'Eccentricity'), BWcell, 'UniformOutput', false);
-stats = permute(stats, [3 4 1 2]);
-output = cellfun(@getra, stats, 'UniformOutput', false);
-if ~isempty(output)
-    output = cell2mat(output);
-    output = output';
-    surface = output(1:4:end,:);
-    axe_majeur = output(2:4:end,:);
-    axe_mineur = output(3:4:end,:);
-    eccentricity = output(4:4:end,:);
-end
-
-r = axe_mineur;
-h = axe_majeur - r;
-cellvolume = 4*pi*r.^3/3 + pi*r.^2.*h;
-cellsurface = 4*pi*r.^2 + 2*pi.*r.*h;
-
-cell_data = [surface(1,:); axe_mineur(1,:); axe_majeur(1,:); eccentricity(1,:); cellvolume(1,:); cellsurface(1,:)];
-cell_name = {'Area_Cell','LenMinAxis_Cell','LenMajAxis_Cell','Eccentric_Cell','Vol_Cell','Surf_Cell'};
-plotgroup = {'Area','Length','Length','Number','Volume','Area'};
-defplot = {true,true,true,true,true,true};
-
-temp = dataseries(cell_data', cell_name, ...
+temp = dataseries(tbl, varNames, ...
     'groupid', groupId, 'parentid', roiobj.id, 'plot', defplot, 'groups', plotgroup);
 dataout(cc) = temp;
 dataout(cc).class = "processing";
@@ -183,29 +165,20 @@ if ~isstruct(dataout(cc).userData)
 end
 dataout(cc).userData.mask_channel = maskName;
 dataout(cc).userData.mask_label = maskLabel;
-dataout(cc).userData.mask_class = maskClass;
+dataout(cc).userData.mask_index_variable = varNames{1};
 dataout(cc).plotGroup = {[] [] [] [] [] unique(plotgroup)};
-
-if numel(liste_valeurs) > 1
-    dataout(cc).data.Area_Cell = surface';
-    dataout(cc).data.LenMinAxis_Cell = axe_mineur';
-    dataout(cc).data.LenMajAxis_Cell = axe_majeur';
-    dataout(cc).data.Eccentric_Cell = eccentricity';
-    dataout(cc).data.Vol_Cell = cellvolume';
-    dataout(cc).data.Surf_Cell = cellsurface';
-end
 end
 
 function dataout = computeChannelQuantification(dataout, roiobj, paramout, channelsExtract, channelsName)
 im = roiobj.image;
-pixels = reshape(im, [], size(im,3), size(im,4));
-N = paramout.BrightestPixels;
+nFrames = size(im, 4);
 maskCount = paramout.maskChannelCount;
+N = paramout.BrightestPixels;
 
-name = {};
-group = {};
+varNames = {};
+columns = {};
+plotgroup = {};
 defplot = {};
-datRaw = [];
 
 for m = 1:maskCount
     maskName = paramout.(sprintf('mask%d_name', m));
@@ -216,58 +189,65 @@ for m = 1:maskCount
     if isempty(maskChannel)
         continue;
     end
-
-    metrics = computeMaskFluorescenceMetrics(im, pixels, roiobj.image(:,:,maskChannel,:), ...
-        paramout.(sprintf('mask%d_class', m)), N);
-    if isempty(metrics)
-        continue;
-    end
-
+    maskChannel = maskChannel(1);
     maskLabel = paramout.(sprintf('mask%d_label', m));
+    maskLabelSafe = makeSafeVariableName(maskLabel);
+
+    idxCol = cell(nFrames, 1);
+    for t = 1:nFrames
+        idxCol{t} = maskInstanceLabels(roiobj.image(:,:,maskChannel,t));
+    end
+    varNames{end+1} = ['MaskIdx_' maskLabelSafe]; %#ok<AGROW>
+    columns{end+1} = idxCol; %#ok<AGROW>
+    plotgroup{end+1} = 'id'; %#ok<AGROW>
+    defplot{end+1} = false; %#ok<AGROW>
+
+    metricByChannel = cell(1, numel(channelsExtract));
     for i = 1:numel(channelsExtract)
-        cha = channelsExtract{i};
+        metricByChannel{i} = fluorescenceForMask(roiobj.image, maskChannel, channelsExtract{i}, N);
         channelName = channelsName{i};
-        metricNames = { ...
-            localMetricVarName('Mean', channelName, maskLabel), ...
-            localMetricVarName('Tot', channelName, maskLabel), ...
-            localMetricVarName('MeanTop', channelName, maskLabel), ...
-            localMetricVarName('TotTop', channelName, maskLabel), ...
-            localMetricVarName('Mean_Bckg', channelName, maskLabel), ...
-            localMetricVarName('MeanNoBckg', channelName, maskLabel)};
-        name = [name, metricNames]; %#ok<AGROW>
-        group = [group, {['Mean_' channelName], ['Total_' channelName], ['Mean_' channelName], ...
-            ['Total_' channelName], ['Mean_' channelName], ['Mean_' channelName]}]; %#ok<AGROW>
-        defplot = [defplot, {false,false,false,false,false,true}]; %#ok<AGROW>
-        datRaw = [datRaw, ...
-            mean(metrics.moyennes(1,cha,:), 2), ...
-            mean(metrics.sommes(1,cha,:), 2), ...
-            mean(metrics.moyenne_brillants(1,cha,:), 2), ...
-            mean(metrics.somme_brillants(1,cha,:), 2), ...
-            mean(metrics.moyenne_exterieur(1,cha,:), 2), ...
-            mean(metrics.difference(1,cha,:), 2)]; %#ok<AGROW>
+        metricSpecs = { ...
+            'Mean', 'Mean', false; ...
+            'Tot', 'Total', false; ...
+            'MeanTop', 'Mean', false; ...
+            'TotTop', 'Total', false; ...
+            'Mean_Bckg', 'Mean', false; ...
+            'MeanNoBckg', 'Mean', true};
+        for s = 1:size(metricSpecs, 1)
+            prefix = metricSpecs{s, 1};
+            groupPrefix = metricSpecs{s, 2};
+            shouldPlot = false;
+            varNames{end+1} = localMetricVarName(prefix, channelName, maskLabel); %#ok<AGROW>
+            columns{end+1} = metricByChannel{i}.(metricFieldName(prefix)); %#ok<AGROW>
+            plotgroup{end+1} = [groupPrefix '_' channelName]; %#ok<AGROW>
+            defplot{end+1} = shouldPlot; %#ok<AGROW>
+        end
     end
 
     for i = 1:numel(channelsExtract)
         for j = i+1:numel(channelsExtract)
-            cha_i = channelsExtract{i};
-            cha_j = channelsExtract{j};
-            ratioMeanNoBckg = mean(metrics.difference(1,cha_i,:), 2) ./ mean(metrics.difference(1,cha_j,:), 2);
+            ratioCol = cell(nFrames, 1);
+            for t = 1:nFrames
+                denom = metricByChannel{j}.MeanNoBckg{t};
+                numer = metricByChannel{i}.MeanNoBckg{t};
+                ratioCol{t} = numer ./ denom;
+            end
             ratioName = localRatioMetricVarName(channelsName{i}, channelsName{j}, maskLabel);
-            name = [name, ratioName]; %#ok<AGROW>
-            group = [group, {ratioName}]; %#ok<AGROW>
-            defplot = [defplot, {false}]; %#ok<AGROW>
-            datRaw = [datRaw, ratioMeanNoBckg]; %#ok<AGROW>
+            varNames{end+1} = ratioName; %#ok<AGROW>
+            columns{end+1} = ratioCol; %#ok<AGROW>
+            plotgroup{end+1} = ratioName; %#ok<AGROW>
+            defplot{end+1} = false; %#ok<AGROW>
         end
     end
 end
 
-if isempty(datRaw)
+if isempty(varNames)
     return;
 end
 
-dat = permute(datRaw, [3 2 1]);
-temp = dataseries(dat, name, ...
-    'groupid', 'channel_quantification', 'parentid', roiobj.id, 'plot', defplot, 'groups', group);
+tbl = table(columns{:}, 'VariableNames', varNames);
+temp = dataseries(tbl, varNames, ...
+    'groupid', 'channel_quantification', 'parentid', roiobj.id, 'plot', defplot, 'groups', plotgroup);
 
 pixdata = find(arrayfun(@(x) strcmp(x.groupid, 'channel_quantification'), dataout));
 if ~isempty(pixdata)
@@ -285,65 +265,92 @@ dataout(cc).class = "processing";
 if ~isstruct(dataout(cc).userData)
     dataout(cc).userData = struct();
 end
-for m = 1:maskCount
-    dataout(cc).userData.(sprintf('mask%d_class', m)) = paramout.(sprintf('mask%d_class', m));
-end
-dataout(cc).plotGroup = {[] [] [] [] [] unique(group)};
+dataout(cc).userData.mask_vector_semantics = 'Each table cell contains one value per non-zero mask index listed in the corresponding MaskIdx_* cell.';
+dataout(cc).plotGroup = {[] [] [] [] [] unique(plotgroup)};
 end
 
-function metrics = computeMaskFluorescenceMetrics(im, pixels, maskImage, maskClass, N)
-if maskClass == 0
-    liste_valeurs = unique(maskImage(:));
-    liste_valeurs = setxor(liste_valeurs, 0);
-else
-    liste_valeurs = maskClass;
+function metrics = fluorescenceForMask(im, maskChannel, scoreChannels, N)
+nFrames = size(im, 4);
+fields = {'Mean','Tot','MeanTop','TotTop','Mean_Bckg','MeanNoBckg'};
+for f = 1:numel(fields)
+    metrics.(fields{f}) = cell(nFrames, 1);
 end
 
-if isempty(liste_valeurs)
-    metrics = [];
-    return;
-end
+for t = 1:nFrames
+    maskFrame = im(:,:,maskChannel,t);
+    labels = maskInstanceLabels(maskFrame);
+    backgroundPix = maskFrame == 0;
+    backgroundValues = pixelValuesForChannels(im, scoreChannels, t, backgroundPix);
+    backgroundMean = mean(backgroundValues(:), 'omitnan');
 
-bw = maskImage .* uint16(ismember(maskImage, liste_valeurs));
-bw = repmat(bw, [1 1 1 1 size(im,3)]);
-bw = permute(bw, [1 2 5 4 3]);
-bw = reshape(bw, [], size(bw,3), size(bw,4));
+    meanVals = NaN(1, numel(labels));
+    totalVals = NaN(1, numel(labels));
+    meanTopVals = NaN(1, numel(labels));
+    totalTopVals = NaN(1, numel(labels));
+    bckgVals = repmat(backgroundMean, 1, numel(labels));
+    diffVals = NaN(1, numel(labels));
 
-vals = unique(bw);
-matsize = max(1, length(vals) - 1);
-moyennes = NaN * ones(matsize, size(bw,2), size(bw,3));
-sommes = moyennes;
-moyenne_brillants = moyennes;
-somme_brillants = moyennes;
-moyenne_exterieur = NaN * ones(1, size(bw,2), size(bw,3));
-
-for t = 1:size(bw,3)
-    for k = 1:size(bw,2)
-        cc = 1;
-        for j = 1:numel(vals)
-            vpix = pixels(:,k,t);
-            tmp = bw(:,k,t);
-            pix = tmp == vals(j);
-            if vals(j) == min(vals)
-                moyenne_exterieur(1,k,t) = mean(vpix(pix));
-            else
-                moyennes(cc,k,t) = mean(vpix(pix));
-                sommes(cc,k,t) = sum(vpix(pix));
-                moyenne_brillants(cc,k,t) = meanTopNValues(vpix(pix), N);
-                somme_brillants(cc,k,t) = sumTopNValues(vpix(pix), N);
-                cc = cc + 1;
-            end
-        end
+    for i = 1:numel(labels)
+        pix = maskFrame == labels(i);
+        values = pixelValuesForChannels(im, scoreChannels, t, pix);
+        values = values(:);
+        meanVals(i) = mean(values, 'omitnan');
+        totalVals(i) = sum(values, 'omitnan');
+        meanTopVals(i) = meanTopNValues(values, N);
+        totalTopVals(i) = sumTopNValues(values, N);
+        diffVals(i) = meanVals(i) - backgroundMean;
     end
+
+    metrics.Mean{t} = meanVals;
+    metrics.Tot{t} = totalVals;
+    metrics.MeanTop{t} = meanTopVals;
+    metrics.TotTop{t} = totalTopVals;
+    metrics.Mean_Bckg{t} = bckgVals;
+    metrics.MeanNoBckg{t} = diffVals;
+end
 end
 
-metrics = struct( ...
-    'moyennes', moyennes, ...
-    'sommes', sommes, ...
-    'moyenne_brillants', moyenne_brillants, ...
-    'somme_brillants', somme_brillants, ...
-    'moyenne_exterieur', moyenne_exterieur, ...
-    'difference', moyennes - moyenne_exterieur);
+function values = pixelValuesForChannels(im, scoreChannels, t, pix)
+values = [];
+for c = 1:numel(scoreChannels)
+    frame = im(:,:,scoreChannels(c),t);
+    values = [values; frame(pix)]; %#ok<AGROW>
+end
+values = double(values);
+end
+
+function labels = maskInstanceLabels(maskFrame)
+labels = unique(maskFrame(:));
+labels = labels(labels ~= 0);
+labels = double(labels(:)');
+end
+
+function [area, minorAxis, majorAxis, eccentricity] = geometryForLabels(maskFrame, labels)
+area = NaN(1, numel(labels));
+minorAxis = NaN(1, numel(labels));
+majorAxis = NaN(1, numel(labels));
+eccentricity = NaN(1, numel(labels));
+for i = 1:numel(labels)
+    stats = regionprops(maskFrame == labels(i), 'Area', 'MajorAxisLength', 'MinorAxisLength', 'Eccentricity');
+    if isempty(stats)
+        continue;
+    end
+    area(i) = sum([stats.Area]);
+    majorAxis(i) = max([stats.MajorAxisLength]);
+    minorAxis(i) = max([stats.MinorAxisLength]);
+    eccentricity(i) = mean([stats.Eccentricity]);
+end
+end
+
+function field = metricFieldName(prefix)
+switch prefix
+    case 'Mean_Bckg'
+        field = 'Mean_Bckg';
+    case 'MeanNoBckg'
+        field = 'MeanNoBckg';
+    otherwise
+        field = prefix;
+end
 end
 
 function n = countParam(params, keys, defaultValue, minValue, maxValue)
@@ -420,15 +427,8 @@ catch
 end
 end
 
-function y = getra(x)
-if numel(x) == 0
-    y = [NaN NaN NaN NaN];
-else
-    y = [x.Area x.MajorAxisLength x.MinorAxisLength x.Eccentricity];
-end
-end
-
 function topN = meanTopNValues(x, N)
+x = x(~isnan(x));
 if isempty(x)
     topN = NaN;
     return;
@@ -438,6 +438,7 @@ topN = mean(sortedX(1:min(N,end)));
 end
 
 function topN = sumTopNValues(x, N)
+x = x(~isnan(x));
 if isempty(x)
     topN = NaN;
     return;

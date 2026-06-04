@@ -10,6 +10,17 @@ function [paramout, dataout, image]=core(param,roiobj,frames)
 %   or string. The selected dataseries must contain an 'id' column and,
 %   when available, 'prob_<class>' columns.
 %
+% param.AverageFluoByDivision:
+%   Optional logical flag. When true, computeRLS averages frame-level
+%   computeMetrics dataseries over each RLS division/generation interval.
+%   When false, only RLS event/status/QC columns are generated.
+%
+% param.metrics_data:
+%   Optional selector for computeMetrics dataseries to aggregate. '<auto>'
+%   uses the standard computeMetrics outputs: 'channel_quantification' and
+%   all dataseries whose groupid contains 'mask_quantification'. A concrete
+%   dataseries name can be used to aggregate only that metric source.
+%
 % param.ArrestThreshold:
 %   Arrest threshold. When ExpectedDivisionPeriod = P is set, this is a
 %   number of expected division periods and the active threshold is
@@ -131,12 +142,10 @@ function [paramout, dataout, image]=core(param,roiobj,frames)
 %   qc_interval_usable   - Interval-level logical based on mean margin and
 %                          ambiguous-frame fraction.
 %
-% Additional aggregation:
-%   If channel_quantification or mask_quantification dataseries are present,
-%   their frame-level values are averaged over RLS intervals and appended to
-%   the same RLS dataseries. This preserves the legacy behavior where
-%   computeMetrics computes frame-level metrics and computeRLS aggregates
-%   them by generation.
+% Optional fluo/metric aggregation:
+%   If AverageFluoByDivision is true, channel_quantification and/or
+%   mask_quantification dataseries from computeMetrics are averaged over RLS
+%   intervals and appended to the same RLS dataseries.
 
 image=[];
 
@@ -152,6 +161,8 @@ if nargin==0
     paramout=[];
 
     tip={'Classification data output name',...
+        'Optional computeMetrics dataseries to average by generation', ...
+        'Average computeMetrics fluorescence/metric values by generation', ...
         'Arrest threshold in expected division periods if ExpectedDivisionPeriod is set; otherwise frames',...
         'Death threshold frame number',...
         'Clog threshold frame number',...
@@ -172,6 +183,8 @@ if nargin==0
         };
 
     paramout.classification_data=listout;
+    paramout.metrics_data={'<auto>','<auto>'};
+    paramout.AverageFluoByDivision=false;
     % paramout.classes='unbud small large dead clog empty';
     %paramout.classiftype='bud';
     paramout.ArrestThreshold=3;
@@ -208,6 +221,7 @@ if isempty(strtrim(classificationName))
 end
 
 dataout=[];
+fluo_data=[];
 mask_data=[];
 
 if localNeedsDataLoad(roiobj)
@@ -272,16 +286,8 @@ grou={id, id_training};
 nme={'_','_GT_'};
 %id_rls=[];
 
-fluo_pixdata=find(arrayfun(@(x) strcmp(x.groupid, 'channel_quantification'),roiobj.data)); % find if object exists already
-if numel(fluo_pixdata)
-    fluo_data=roiobj.data(fluo_pixdata);
-end
-
-mask_pixdata=arrayfun(@(x) find(contains(x.groupid, 'mask_quantification')),roiobj.data,'UniformOutput',false);% find if object exists already
-mask_pixdata=find(cellfun(@(x) ~isempty(x), mask_pixdata));
-
-if numel(mask_pixdata)
-    mask_data=roiobj.data(mask_pixdata);
+if localBoolParam(param,'AverageFluoByDivision',false)
+    [fluo_data, mask_data]=localSelectMetricDataSeries(roiobj.data, localMetricDataSelection(param));
 end
 
 for j=1:2 % loop on training and prediction data
@@ -396,7 +402,7 @@ for j=1:2 % loop on training and prediction data
                 dataout(cc).addData(sep',{'sep'},'plot',false,'groups','count');
             end
 
-            if numel(fluo_pixdata) && localCanQuantifyIntervals(totaltime)
+            if ~isempty(fluo_data) && localCanQuantifyIntervals(totaltime)
 
                 totaltime_int=uint16(totaltime);
 
@@ -1001,6 +1007,8 @@ end
 function param=localEnsureQCDefaults(param)
 defaults=struct();
 defaults.ArrestThreshold=3;
+defaults.AverageFluoByDivision=false;
+defaults.metrics_data={'<auto>','<auto>'};
 defaults.StateDecoder={'off','viterbi','median','off'};
 defaults.ExpectedDivisionPeriod=NaN;
 defaults.MinDivisionInterval=NaN;
@@ -1023,6 +1031,28 @@ for k=1:numel(fields)
 end
 
 
+function out=localBoolParam(param,field,defaultValue)
+out=defaultValue;
+if ~isfield(param,field) || isempty(param.(field))
+    return
+end
+v=param.(field);
+if iscell(v)
+    if isempty(v)
+        return
+    end
+    v=v{end};
+end
+if islogical(v)
+    out=logical(v);
+elseif isnumeric(v)
+    out=logical(v);
+elseif isstring(v) || ischar(v) || iscategorical(v)
+    txt=lower(strtrim(char(string(v))));
+    out=any(strcmp(txt,{'true','1','yes','on'}));
+end
+
+
 function out=localTextParam(param,field,defaultValue)
 out=defaultValue;
 if ~isfield(param,field) || isempty(param.(field))
@@ -1040,6 +1070,96 @@ if isstring(v) || ischar(v) || iscategorical(v)
 elseif isnumeric(v) || islogical(v)
     out=num2str(v);
 end
+
+
+function names=localMetricDataSelection(param)
+names={};
+if ~isfield(param,'metrics_data') || isempty(param.metrics_data)
+    return
+end
+v=param.metrics_data;
+if ischar(v)
+    names=cellstr(v);
+elseif isstring(v) || isnumeric(v) || islogical(v) || iscategorical(v)
+    names=cellstr(string(v(:)));
+elseif iscell(v)
+    for i=1:numel(v)
+        item=v{i};
+        if isempty(item)
+            continue
+        end
+        if ischar(item)
+            names=[names cellstr(item)]; %#ok<AGROW>
+        elseif isstring(item) || isnumeric(item) || islogical(item) || iscategorical(item)
+            names=[names cellstr(string(item(:)))']; %#ok<AGROW>
+        end
+    end
+end
+names=cellfun(@(x) char(strtrim(string(x))), names(:)', 'UniformOutput', false);
+names=names(~cellfun(@isempty,names));
+names=unique(names,'stable');
+
+
+function [fluo_data,mask_data]=localSelectMetricDataSeries(dataSeries,selection)
+fluo_data=[];
+mask_data=[];
+if isempty(dataSeries)
+    return
+end
+
+ids=cell(1,numel(dataSeries));
+for i=1:numel(dataSeries)
+    ids{i}='';
+    try
+        ids{i}=char(string(dataSeries(i).groupid));
+    catch
+    end
+end
+
+if localUseAutoMetrics(selection)
+    fluoIdx=find(strcmp(ids,'channel_quantification'));
+    maskIdx=find(contains(ids,'mask_quantification'));
+else
+    fluoIdx=[];
+    maskIdx=[];
+    for k=1:numel(selection)
+        name=char(string(selection{k}));
+        if isempty(name)
+            continue
+        end
+        if strcmpi(name,'mask_quantification')
+            maskIdx=[maskIdx find(contains(ids,'mask_quantification'))]; %#ok<AGROW>
+            continue
+        end
+        idx=find(strcmp(ids,name));
+        if isempty(idx)
+            continue
+        end
+        if contains(lower(name),'mask_quantification')
+            maskIdx=[maskIdx idx]; %#ok<AGROW>
+        else
+            fluoIdx=[fluoIdx idx]; %#ok<AGROW>
+        end
+    end
+end
+
+fluoIdx=unique(fluoIdx,'stable');
+maskIdx=unique(maskIdx,'stable');
+if ~isempty(fluoIdx)
+    fluo_data=dataSeries(fluoIdx(1));
+end
+if ~isempty(maskIdx)
+    mask_data=dataSeries(maskIdx);
+end
+
+
+function tf=localUseAutoMetrics(selection)
+tf=isempty(selection);
+if tf
+    return
+end
+tokens=lower(strtrim(string(selection(:))));
+tf=any(tokens=="<auto>" | tokens=="auto" | tokens=="all" | tokens=="<all>");
 
 
 function tf=localCanQuantifyIntervals(totaltime)

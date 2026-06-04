@@ -45,8 +45,12 @@ end
 
 listout{end+1} = listout{end};
 
+metricsList = metricDataChoiceList(ctx, ctxParam);
+
 tip = { ...
     'Classification data output name', ...
+    'Optional computeMetrics dataseries to average by generation', ...
+    'Average computeMetrics fluorescence/metric values by generation', ...
     'Arrest threshold in expected division periods if ExpectedDivisionPeriod is set; otherwise frames', ...
     'Death threshold frame number', ...
     'Clog threshold frame number', ...
@@ -68,6 +72,8 @@ tip = { ...
 
 paramout = struct();
 paramout.classification_data = listout;
+paramout.metrics_data = metricsList;
+paramout.AverageFluoByDivision = false;
 paramout.ArrestThreshold = 3;
 paramout.DeathThreshold = 3;
 paramout.ClogThreshold = 1;
@@ -96,6 +102,16 @@ tips.classification_data = tooltipLines({ ...
     'Default: first available classification dataseries / div_1 when available.', ...
     'Typical values: div_1, GT_div_1.', ...
     'Unit: dataseries group id.'});
+tips.metrics_data = tooltipLines({ ...
+    'Optional computeMetrics dataseries averaged over each RLS generation interval.', ...
+    'Default: <auto>, which uses channel_quantification and all mask_quantification dataseries when available.', ...
+    'Typical values: <auto>, channel_quantification, mask_quantification_cell.', ...
+    'Unit: dataseries group id.'});
+tips.AverageFluoByDivision = tooltipLines({ ...
+    'Enable generation-level averaging of frame-level computeMetrics outputs.', ...
+    'Default: false.', ...
+    'Typical values: false for RLS-only output, true when computeMetrics has already generated fluorescence or mask metrics.', ...
+    'Unit: logical checkbox.'});
 tips.ArrestThreshold = tooltipLines({ ...
     'Long live interval without budding required to call cell-cycle arrest.', ...
     'Default: 3.', ...
@@ -181,6 +197,50 @@ tips.QCMaxLowConfidenceFraction = tooltipLines({ ...
     'Default: 0.50.', ...
     'Typical range: 0.20-0.50.', ...
     'Unit: fraction of frames.'});
+end
+
+function choices = metricDataChoiceList(ctx, ctxParam)
+names = {};
+fields = {'metrics_data','metricsData','dataSeriesNames','dataSeries','roiDataSeries'};
+for i = 1:numel(fields)
+    f = fields{i};
+    if isstruct(ctx) && isfield(ctx, f) && ~isempty(ctx.(f))
+        names = [names normalizeChoiceList(ctx.(f))]; %#ok<AGROW>
+    end
+    if isstruct(ctxParam) && isfield(ctxParam, f) && ~isempty(ctxParam.(f))
+        names = [names normalizeChoiceList(ctxParam.(f))]; %#ok<AGROW>
+    end
+end
+
+names = unique(names, 'stable');
+metricLike = names(contains(lower(string(names)), "quant") | contains(lower(string(names)), "metric"));
+choices = [{'<auto>'} metricLike];
+choices = unique(choices, 'stable');
+
+selected = selectedText(ctxParam, 'metrics_data', '<auto>');
+if isempty(selected)
+    selected = '<auto>';
+end
+if ~any(strcmp(choices, selected))
+    choices{end+1} = selected;
+end
+choices{end+1} = selected;
+end
+
+function out = selectedText(s, field, defaultValue)
+out = defaultValue;
+if ~isstruct(s) || ~isfield(s, field) || isempty(s.(field))
+    return;
+end
+v = s.(field);
+if iscell(v)
+    v = v{end};
+end
+try
+    out = char(strtrim(string(v)));
+catch
+    out = defaultValue;
+end
 end
 
 function txt = tooltipLines(lines)
