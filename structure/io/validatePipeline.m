@@ -383,7 +383,8 @@ end
 function edges = appendImplicitResourceEdge(edges, fromId, toId, spec)
     for i = 1:numel(edges)
         if strcmp(char(string(getField(edges(i), 'from', ''))), fromId) && ...
-                strcmp(char(string(getField(edges(i), 'to', ''))), toId)
+                strcmp(char(string(getField(edges(i), 'to', ''))), toId) && ...
+                strcmpi(char(string(getField(edges(i), 'condition', ''))), 'resourceBinding')
             return;
         end
     end
