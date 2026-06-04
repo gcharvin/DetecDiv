@@ -23,6 +23,8 @@ function [ctx, report] = runPipeline(pipe, ctx)
     ctx = normalizeExecutionContext(ctx);
     ctx = preparePythonEnvironmentIfNeeded(pipe, ctx);
     ctx = seedContextFromProject(ctx);
+    ctx = normalizeCancellationContext(ctx);
+    checkPipelineCancelled(ctx, 'before pipeline validation');
 
     if (~isfield(ctx,'masks') || isempty(ctx.masks))
         try
@@ -54,6 +56,8 @@ function [ctx, report] = runPipeline(pipe, ctx)
     end
     report.bindingResolution = bindingResolution;
     report = initRunReport(report, ctx);
+    ctx = initializePipelineProgress(ctx, report);
+    checkPipelineCancelled(ctx, 'before pipeline run');
 
     P = pipelineToStructLocal(pipe);
     nodes = report.nodes;
@@ -71,11 +75,19 @@ function [ctx, report] = runPipeline(pipe, ctx)
             'progress',0,'errors',{{}});
     end
 
+    if shouldUseRoiMajorExecution(report, nodeMap, ctx)
+        [ctx, report] = executeRoiMajorPipeline(pipe, ctx, report, nodeMap, edges, allowGui);
+        return;
+    end
+
     executed = containers.Map();
     total = numel(report.order);
     for i = 1:numel(report.order)
         nodeId = report.order{i};
         node = nodeMap(nodeId);
+        ctx = updatePipelineProgress(ctx, nodeId, i, total, 0, 1, ...
+            sprintf('Node %d/%d: %s', i, total, nodeId));
+        checkPipelineCancelled(ctx, ['before node ' nodeId]);
 
         % run-level parameter override (optional)
         node = applyRunNodeOverride(node, ctx, nodeId);
@@ -128,6 +140,10 @@ function [ctx, report] = runPipeline(pipe, ctx)
 
         ctx.pipeline = struct('currentNode', nodeId, 'nodeType', node.type);
         ctx = applyNodeParams(ctx, node);
+        ctx.progress.currentNodeId = nodeId;
+        ctx.progress.currentNodeIndex = i;
+        ctx.progress.totalNodes = total;
+        ctx.progress.nodeStartTic = tic;
 
         if isa(pipe,'pipeline')
             pipe.runState.currentNode = nodeId;
@@ -138,6 +154,7 @@ function [ctx, report] = runPipeline(pipe, ctx)
         tNode = tic;
         try
             ctx = applyPolicyToContext(ctx, node, policy);
+            checkPipelineCancelled(ctx, ['before executing node ' nodeId]);
             ctx = executeNode(node, ctx);
             afterStats = captureContextStats(ctx);
             [nodeStatus, nodeMessage, ctx] = consumeNodeStatusOverride(ctx);
@@ -145,13 +162,17 @@ function [ctx, report] = runPipeline(pipe, ctx)
                 beforeStats, afterStats, toc(tNode), nodeMessage);
         catch ME
             afterStats = captureContextStats(ctx);
-            report = appendNodeRun(report, node, policy, 'failed', ...
+            failedStatus = 'failed';
+            if isPipelineCancelledException(ME)
+                failedStatus = 'cancelled';
+            end
+            report = appendNodeRun(report, node, policy, failedStatus, ...
                 beforeStats, afterStats, toc(tNode), formatNodeError(ME));
             report.endedAt = char(datetime('now'));
             report.summary = buildRunSummary(report);
             stashRunReport(report);
             if isa(pipe,'pipeline')
-                pipe.runState.status = 'failed';
+                pipe.runState.status = failedStatus;
                 pipe.runState.currentNode = nodeId;
                 pipe.runState.errors = [pipe.runState.errors {formatNodeError(ME)}];
             end
@@ -159,6 +180,8 @@ function [ctx, report] = runPipeline(pipe, ctx)
         end
 
         executed(nodeId) = true;
+        ctx = updatePipelineProgress(ctx, nodeId, i, total, 1, 1, ...
+            sprintf('Completed node %d/%d: %s', i, total, nodeId));
         if isa(pipe,'pipeline')
             pipe.runState.progress = i / max(1,total);
         end
@@ -172,6 +195,7 @@ function [ctx, report] = runPipeline(pipe, ctx)
     report.endedAt = char(datetime('now'));
     report.summary = buildRunSummary(report);
     stashRunReport(report);
+    ctx = updatePipelineProgress(ctx, '', total, total, 1, 1, 'Pipeline completed.');
 end
 
 function ctx = preparePythonEnvironmentIfNeeded(pipe, ctx)
@@ -364,6 +388,18 @@ function ctx = normalizeExecutionContext(ctx)
     end
     ctx.io.cachePolicy = normalizeCachePolicy(ctx.io.cachePolicy);
     ctx.store.cacheMode = ctx.io.cachePolicy;
+    if ~isfield(ctx.io,'saveMode') || isempty(ctx.io.saveMode)
+        ctx.io.saveMode = 'immediate';
+    end
+    ctx.io.saveMode = normalizeSaveMode(ctx.io.saveMode);
+    if ~isfield(ctx.io,'deferredSave') || isempty(ctx.io.deferredSave)
+        ctx.io.deferredSave = strcmp(ctx.io.saveMode, 'defer');
+    else
+        ctx.io.deferredSave = logical(ctx.io.deferredSave);
+        if ctx.io.deferredSave
+            ctx.io.saveMode = 'defer';
+        end
+    end
 
     if ~isfield(ctx,'resume') || isempty(ctx.resume)
         ctx.resume = ctx.run.resume;
@@ -646,12 +682,131 @@ function summary = buildRunSummary(report)
     summary.doneNodes = sum(strcmp(statusList, 'done'));
     summary.skippedNodes = sum(startsWith(string(statusList), "skipped"));
     summary.failedNodes = sum(strcmp(statusList, 'failed'));
+    summary.cancelledNodes = sum(strcmp(statusList, 'cancelled'));
 end
 
 function stashRunReport(report)
     try
         setappdata(0, 'DetecDivLastPipelineReport', report);
     catch
+    end
+end
+
+function tf = isPipelineCancelledException(ME)
+    tf = false;
+    try
+        ids = string(ME.identifier);
+        for iCause = 1:numel(ME.cause)
+            ids(end+1) = string(ME.cause{iCause}.identifier); %#ok<AGROW>
+        end
+        tf = any(strcmp(ids, "runPipeline:Cancelled")) || contains(string(ME.message), "cancelled by user", 'IgnoreCase', true);
+    catch
+        tf = strcmp(ME.identifier, 'runPipeline:Cancelled');
+    end
+end
+
+function ctx = normalizeCancellationContext(ctx)
+    if ~isfield(ctx,'cancel') || ~isstruct(ctx.cancel) || isempty(ctx.cancel)
+        ctx.cancel = struct();
+    end
+    if ~isfield(ctx.cancel,'tokenFile')
+        ctx.cancel.tokenFile = '';
+    end
+end
+
+function ctx = initializePipelineProgress(ctx, report)
+    if ~isfield(ctx,'progress') || ~isstruct(ctx.progress) || isempty(ctx.progress)
+        ctx.progress = struct();
+    end
+    ctx.progress.startedTic = tic;
+    ctx.progress.totalNodes = numel(report.order);
+    ctx.progress.currentNodeIndex = 0;
+    ctx.progress.currentNodeId = '';
+end
+
+function checkPipelineCancelled(ctx, where)
+    if nargin < 2
+        where = 'pipeline run';
+    end
+    requested = false;
+    tokenFile = '';
+    try
+        if isfield(ctx,'cancel') && isstruct(ctx.cancel) && isfield(ctx.cancel,'tokenFile') && ~isempty(ctx.cancel.tokenFile)
+            tokenFile = char(string(ctx.cancel.tokenFile));
+            requested = exist(tokenFile, 'file') == 2;
+        end
+    catch
+        requested = false;
+    end
+    try
+        if isfield(ctx,'progressDlg') && ~isempty(ctx.progressDlg) && isvalid(ctx.progressDlg) ...
+                && isprop(ctx.progressDlg, 'CancelRequested') && ctx.progressDlg.CancelRequested
+            requested = true;
+            if ~isempty(tokenFile) && exist(tokenFile, 'file') ~= 2
+                fid = fopen(tokenFile, 'w');
+                if fid > 0
+                    fprintf(fid, 'cancel requested at %s\n', char(datetime('now')));
+                    fclose(fid);
+                end
+            end
+        end
+    catch
+    end
+    if requested
+        error('runPipeline:Cancelled', 'Pipeline run cancelled by user at %s.', char(string(where)));
+    end
+end
+
+function ctx = updatePipelineProgress(ctx, nodeId, nodeIndex, totalNodes, subIndex, subTotal, message)
+    if nargin < 7 || isempty(message)
+        message = 'Pipeline running...';
+    end
+    if nargin < 6 || isempty(subTotal) || subTotal <= 0
+        subTotal = 1;
+    end
+    if nargin < 5 || isempty(subIndex)
+        subIndex = 0;
+    end
+    totalNodes = max(1, totalNodes);
+    frac = max(0, min(1, (max(0, nodeIndex - 1) + max(0, min(1, subIndex ./ subTotal))) ./ totalNodes));
+    etaText = '';
+    try
+        if isfield(ctx,'progress') && isstruct(ctx.progress) && isfield(ctx.progress,'startedTic')
+            elapsed = toc(ctx.progress.startedTic);
+            if frac > 0.02
+                eta = elapsed * (1 - frac) / frac;
+                etaText = sprintf(' | ETA %s', formatDurationShort(eta));
+            end
+        end
+    catch
+    end
+    try
+        if isfield(ctx,'progressDlg') && ~isempty(ctx.progressDlg) && isvalid(ctx.progressDlg)
+            ctx.progressDlg.Indeterminate = 'off';
+            ctx.progressDlg.Value = frac;
+            ctx.progressDlg.Message = sprintf('%s%s', char(string(message)), etaText);
+            drawnow limitrate;
+        end
+    catch
+    end
+    try
+        ctx.progress.currentNodeId = char(string(nodeId));
+        ctx.progress.currentNodeIndex = nodeIndex;
+        ctx.progress.totalNodes = totalNodes;
+        ctx.progress.value = frac;
+        ctx.progress.message = char(string(message));
+    catch
+    end
+end
+
+function txt = formatDurationShort(secondsValue)
+    secondsValue = max(0, double(secondsValue));
+    if secondsValue < 60
+        txt = sprintf('%ds', round(secondsValue));
+    elseif secondsValue < 3600
+        txt = sprintf('%dm%02ds', floor(secondsValue/60), round(mod(secondsValue,60)));
+    else
+        txt = sprintf('%dh%02dm', floor(secondsValue/3600), floor(mod(secondsValue,3600)/60));
     end
 end
 
@@ -728,6 +883,16 @@ function policy = normalizeCachePolicy(policy)
             policy = 'disk';
         otherwise
             policy = 'auto';
+    end
+end
+
+function mode = normalizeSaveMode(mode)
+    mode = lower(strtrim(char(string(mode))));
+    switch mode
+        case {'defer','deferred','roi','roi_final','roi_finalized','final','finalized','memory'}
+            mode = 'defer';
+        otherwise
+            mode = 'immediate';
     end
 end
 
@@ -868,6 +1033,311 @@ function ctx = executeNode(node, ctx)
 
     % optional output coherence check
     ctx = ensureOutputs(node, ctx);
+end
+
+function tf = shouldUseRoiMajorExecution(report, nodeMap, ctx)
+    tf = false;
+    try
+        if isfield(ctx,'run') && isstruct(ctx.run) && isfield(ctx.run,'executionMode') && ~isempty(ctx.run.executionMode)
+            mode = lower(strtrim(char(string(ctx.run.executionMode))));
+            if any(strcmp(mode, {'node','node_major','node-major','legacy'}))
+                return;
+            end
+            if any(strcmp(mode, {'roi','roi_major','roi-major','roi_finalized','roi-finalized'}))
+                tf = true;
+            end
+        end
+        ids = report.order;
+        if isempty(ids)
+            tf = false;
+            return;
+        end
+        activeTypes = {};
+        for i = 1:numel(ids)
+            node = nodeMap(ids{i});
+            if shouldSkipByRunSelection(ctx, ids{i})
+                continue;
+            end
+            if isfield(node,'enabled') && ~isempty(node.enabled) && ~logical(node.enabled)
+                continue;
+            end
+            activeTypes{end+1} = lower(char(string(getfielddefault(node,'type','')))); %#ok<AGROW>
+        end
+        if isempty(activeTypes)
+            tf = false;
+            return;
+        end
+        tf = all(ismember(activeTypes, {'classifier','processor'}));
+    catch
+        tf = false;
+    end
+end
+
+function [ctx, report] = executeRoiMajorPipeline(pipe, ctx, report, nodeMap, edges, allowGui)
+    ids = report.order;
+    ids = ids(:)';
+    totalNodes = numel(ids);
+
+    firstNode = [];
+    for i = 1:totalNodes
+        if isKey(nodeMap, ids{i})
+            candidate = nodeMap(ids{i});
+            if shouldSkipByRunSelection(ctx, ids{i})
+                continue;
+            end
+            if isfield(candidate,'enabled') && ~isempty(candidate.enabled) && ~logical(candidate.enabled)
+                continue;
+            end
+            firstNode = candidate;
+            break;
+        end
+    end
+    if isempty(firstNode)
+        error('runPipeline:RoiMajorNoActiveNode', 'ROI-major execution has no active classifier/processor node.');
+    end
+
+    rois = selectRoisForNode(ctx, firstNode);
+    if isempty(rois)
+        error('runPipeline:RoiMajorNoROI', 'ROI-major execution requires at least one selected ROI.');
+    end
+
+    nRoi = numel(rois);
+    nodeStats = repmat(struct( ...
+        'node', [], 'policy', [], 'durationSec', 0, ...
+        'done', 0, 'skipped', 0, 'message', '', ...
+        'before', [], 'after', []), 1, totalNodes);
+
+    for i = 1:totalNodes
+        node = nodeMap(ids{i});
+        node = applyRunNodeOverride(node, ctx, ids{i});
+        [node, policy] = applyNodeExecutionPolicy(node, ctx);
+        nodeStats(i).node = node;
+        nodeStats(i).policy = policy;
+        nodeStats(i).before = captureContextStats(ctx);
+    end
+
+    disp(sprintf('[runPipeline] ROI-major execution enabled: %d node(s), %d ROI(s).', totalNodes, nRoi));
+    for r = 1:nRoi
+        checkPipelineCancelled(ctx, sprintf('before ROI %d/%d', r, nRoi));
+        roiCtx = ctx;
+        roiCtx.roiList = rois(r);
+        roiCtx.io.saveMode = 'defer';
+        roiCtx.io.deferredSave = true;
+        roiCtx.io.cachePolicy = 'memory';
+        roiCtx.store.cacheMode = 'memory';
+        roiCtx.run.executionMode = 'roi_major';
+
+        executed = containers.Map();
+        for i = 1:totalNodes
+            nodeId = ids{i};
+            node = nodeStats(i).node;
+            policy = nodeStats(i).policy;
+            roiCtx = updatePipelineProgress(roiCtx, nodeId, i, totalNodes, r-1, nRoi, ...
+                sprintf('ROI %d/%d, node %d/%d: %s', r, nRoi, i, totalNodes, nodeId));
+            checkPipelineCancelled(roiCtx, sprintf('before ROI %d node %s', r, nodeId));
+
+            if shouldSkipByRunSelection(roiCtx, nodeId)
+                nodeStats(i).skipped = nodeStats(i).skipped + 1;
+                executed(nodeId) = true;
+                continue;
+            end
+            if isfield(node,'enabled') && ~isempty(node.enabled) && ~logical(node.enabled)
+                nodeStats(i).skipped = nodeStats(i).skipped + 1;
+                executed(nodeId) = true;
+                continue;
+            end
+            if shouldSkipNode(node, roiCtx, edges, executed)
+                nodeStats(i).skipped = nodeStats(i).skipped + 1;
+                executed(nodeId) = true;
+                continue;
+            end
+
+            [missing, ~] = missingParamsForNode(node, roiCtx, 'run');
+            if ~isempty(missing)
+                if allowGui && hasNodeGui(node)
+                    error('runPipeline:RoiMajorGuiRequired', ...
+                        'Node %s still requires GUI parameters during ROI-major execution: %s', ...
+                        nodeId, strjoin(missing, ', '));
+                end
+                error('runPipeline:MissingParams', ...
+                    'Node %s missing params: %s', nodeId, strjoin(missing, ', '));
+            end
+
+            roiCtx.pipeline = struct('currentNode', nodeId, 'nodeType', node.type);
+            roiCtx = applyNodeParams(roiCtx, node);
+            roiCtx.progress.currentNodeId = nodeId;
+            roiCtx.progress.currentNodeIndex = i;
+            roiCtx.progress.totalNodes = totalNodes;
+            roiCtx.progress.roiIndex = r;
+            roiCtx.progress.totalRois = nRoi;
+            roiCtx.progress.nodeStartTic = tic;
+
+            if isa(pipe,'pipeline')
+                pipe.runState.currentNode = sprintf('%s ROI %d/%d', nodeId, r, nRoi);
+                pipe.runState.progress = ((r-1) + (i-1)/max(1,totalNodes)) / max(1,nRoi);
+            end
+
+            tNode = tic;
+            try
+                roiCtx = applyPolicyToContext(roiCtx, node, policy);
+                roiCtx.io.saveMode = 'defer';
+                roiCtx.io.deferredSave = true;
+                roiCtx.io.cachePolicy = 'memory';
+                roiCtx.store.cacheMode = 'memory';
+                roiCtx = executeNode(node, roiCtx);
+                [nodeStatus, nodeMessage, roiCtx] = consumeNodeStatusOverride(roiCtx);
+                nodeStats(i).durationSec = nodeStats(i).durationSec + toc(tNode);
+                if startsWith(string(nodeStatus), "skipped")
+                    nodeStats(i).skipped = nodeStats(i).skipped + 1;
+                else
+                    nodeStats(i).done = nodeStats(i).done + 1;
+                end
+                if ~isempty(nodeMessage)
+                    nodeStats(i).message = nodeMessage;
+                end
+            catch ME
+                nodeStats(i).durationSec = nodeStats(i).durationSec + toc(tNode);
+                nodeStats(i).after = captureContextStats(roiCtx);
+                status = 'failed';
+                if isPipelineCancelledException(ME)
+                    status = 'cancelled';
+                end
+                report = appendNodeRun(report, node, policy, status, ...
+                    nodeStats(i).before, nodeStats(i).after, nodeStats(i).durationSec, formatNodeError(ME));
+                report.endedAt = char(datetime('now'));
+                report.summary = buildRunSummary(report);
+                stashRunReport(report);
+                if isa(pipe,'pipeline')
+                    pipe.runState.status = status;
+                    pipe.runState.currentNode = nodeId;
+                    pipe.runState.errors = [pipe.runState.errors {formatNodeError(ME)}];
+                end
+                rethrow(ME);
+            end
+
+            executed(nodeId) = true;
+        end
+
+        saveFinalizedRoiLocal(rois(r), roiCtx);
+        try
+            ctx.store = roiCtx.store;
+        catch
+        end
+        ctx = updatePipelineProgress(ctx, '', totalNodes, totalNodes, r, nRoi, ...
+            sprintf('Finalized ROI %d/%d', r, nRoi));
+    end
+
+    ctx.roiList = rois;
+    ctx.dataSeries = collectDataSeriesFromRois(rois);
+    ctx.channels = inferChannelsFromRois(rois, ctx);
+    ctx.masks = inferMaskChannelsFromRois(rois);
+    for i = 1:totalNodes
+        nodeStats(i).after = captureContextStats(ctx);
+        status = 'done';
+        if nodeStats(i).done == 0 && nodeStats(i).skipped > 0
+            status = 'skipped_existing';
+        end
+        msg = sprintf('ROI-major: %d ROI(s) finalized; %d executed, %d skipped. Save is deferred until each ROI is complete.', ...
+            nRoi, nodeStats(i).done, nodeStats(i).skipped);
+        if ~isempty(nodeStats(i).message)
+            msg = sprintf('%s Last node message: %s', msg, nodeStats(i).message);
+        end
+        report = appendNodeRun(report, nodeStats(i).node, nodeStats(i).policy, status, ...
+            nodeStats(i).before, nodeStats(i).after, nodeStats(i).durationSec, msg);
+    end
+
+    if isa(pipe,'pipeline')
+        pipe.runState.status = 'done';
+        pipe.runState.currentNode = '';
+        pipe.runState.progress = 1;
+        pipe.log('Pipeline completed in ROI-major mode','Run');
+    end
+    report.endedAt = char(datetime('now'));
+    report.summary = buildRunSummary(report);
+    stashRunReport(report);
+    ctx = updatePipelineProgress(ctx, '', totalNodes, totalNodes, 1, 1, 'Pipeline completed.');
+end
+
+function saveFinalizedRoiLocal(roiobj, ctx)
+    dirty = struct('data', false, 'image', false);
+    try
+        if isstruct(roiobj.results) && isfield(roiobj.results, 'pipelineDeferredDirty') && isstruct(roiobj.results.pipelineDeferredDirty)
+            dirty = roiobj.results.pipelineDeferredDirty;
+            if isfield(roiobj.results, 'pipelineDeferredDirty')
+                roiobj.results = rmfield(roiobj.results, 'pipelineDeferredDirty');
+            end
+        end
+    catch
+    end
+
+    if ~isfield(dirty,'data'), dirty.data = false; end
+    if ~isfield(dirty,'image'), dirty.image = false; end
+    if ~dirty.data && roiHasSavableDataseriesLocal(roiobj)
+        dirty.data = true;
+    end
+
+    if dirty.image
+        try
+            roiobj.save;
+            disp(sprintf('[runPipeline] Final ROI save: image+data for ROI %s.', safeRoiIdForRunLocal(roiobj)));
+        catch ME
+            error('runPipeline:RoiFinalSaveFailed', ...
+                'Final save failed for ROI %s: %s', safeRoiIdForRunLocal(roiobj), ME.message);
+        end
+    elseif dirty.data
+        try
+            didSave = roiobj.save('data');
+            if ~didSave
+                error('runPipeline:NoDataSaved', 'No savable dataseries was found.');
+            end
+            disp(sprintf('[runPipeline] Final ROI save: data for ROI %s.', safeRoiIdForRunLocal(roiobj)));
+        catch ME
+            error('runPipeline:RoiFinalSaveFailed', ...
+                'Final data save failed for ROI %s: %s', safeRoiIdForRunLocal(roiobj), ME.message);
+        end
+    else
+        disp(sprintf('[runPipeline] Final ROI save skipped: no deferred output for ROI %s.', safeRoiIdForRunLocal(roiobj)));
+    end
+
+    try
+        if isfield(ctx,'io') && isstruct(ctx.io) && isfield(ctx.io,'cachePolicy') && strcmp(ctx.io.cachePolicy, 'disk')
+            roiobj.clear;
+        end
+    catch
+    end
+end
+
+function tf = roiHasSavableDataseriesLocal(roiobj)
+    tf = false;
+    try
+        d = roiobj.data;
+        if isempty(d)
+            return;
+        end
+        if isa(d,'dataseries')
+            for k = 1:numel(d)
+                try
+                    if ~isempty(d(k).groupid)
+                        tf = true;
+                        return;
+                    end
+                catch
+                end
+            end
+        else
+            tf = true;
+        end
+    catch
+        tf = false;
+    end
+end
+
+function roiId = safeRoiIdForRunLocal(roiobj)
+    roiId = '<unknown>';
+    try
+        roiId = char(string(roiobj.id));
+    catch
+    end
 end
 
 function msg = formatNodeError(ME)
@@ -1275,15 +1745,13 @@ function ctx = seedContextFromProject(ctx)
     srcLevel = getProjectInputSourceLevel(ctx);
     hasExplicitRois = isfield(ctx,'roiList') && ~isempty(ctx.roiList);
     if srcLevel >= 2 && ~hasExplicitRois
-        ctx.roiList = collectRoisFromFovList(getfielddefault(ctx,'fovList',[]));
+        ctx.roiList = collectRoisForContextSelection(ctx, getfielddefault(ctx,'fovList',[]));
     elseif (~isfield(ctx,'roiList') || isempty(ctx.roiList)) && shouldSeedFromProjectInputSource(ctx)
-        ctx.roiList = collectRoisFromFovList(getfielddefault(ctx,'fovList',[]));
+        ctx.roiList = collectRoisForContextSelection(ctx, getfielddefault(ctx,'fovList',[]));
     end
-    if isfield(ctx,'roiList') && ~isempty(ctx.roiList) && ...
+    if hasExplicitRois && isfield(ctx,'roiList') && ~isempty(ctx.roiList) && ...
             isfield(ctx,'sel') && isstruct(ctx.sel) && isfield(ctx.sel,'rois') && ~isempty(ctx.sel.rois)
-        idx = normalizeIndexVectorLocal(ctx.sel.rois);
-        idx = idx(idx >= 1 & idx <= numel(ctx.roiList));
-        ctx.roiList = ctx.roiList(idx);
+        ctx.roiList = filterRoisBySelectionVector(ctx.roiList, ctx.sel.rois);
     end
 
     if srcLevel >= 3 && (~isfield(ctx,'masks') || isempty(ctx.masks))
@@ -1400,6 +1868,11 @@ function ctx = executeProcessorNode(node, ctx)
     procCtx.io = getfielddefault(ctx, 'io', struct());
     procCtx.store = getfielddefault(ctx, 'store', struct());
     procCtx.executionPolicy = getfielddefault(ctx, 'executionPolicy', struct());
+    procCtx.cancel = getfielddefault(ctx, 'cancel', struct());
+    procCtx.progress = getfielddefault(ctx, 'progress', struct());
+    if isfield(ctx,'progressDlg') && ~isempty(ctx.progressDlg)
+        procCtx.progressDlg = ctx.progressDlg;
+    end
     if isfield(ctx,'names') && isstruct(ctx.names) && isfield(ctx.names,'outputName') && ~isempty(ctx.names.outputName)
         procCtx.outputName = ctx.names.outputName;
     elseif isfield(p,'outputName') && ~isempty(p.outputName)
@@ -1430,6 +1903,9 @@ function ctx = executeProcessorNode(node, ctx)
     end
 
     args = {'Ctx', procCtx};
+    if isfield(ctx,'progressDlg') && ~isempty(ctx.progressDlg)
+        args = [args {'Progress', ctx.progressDlg}]; %#ok<AGROW>
+    end
     if isfield(p,'frames') && ~isempty(p.frames)
         args = [args {'Frames', p.frames}]; %#ok<AGROW>
     end
@@ -1442,6 +1918,7 @@ function ctx = executeProcessorNode(node, ctx)
     end
 
     try
+        checkPipelineCancelled(ctx, ['before processor ' char(string(node.id))]);
         processData(procObj, rois, args{:});
     catch ME
         throwNodeFailed(node, ME);
@@ -1518,7 +1995,9 @@ function ctx = executeClassifierNode(node, ctx)
     try
         clsObj.runProfiles.classify = struct( ...
             'io', getfielddefault(ctx, 'io', struct()), ...
-            'store', getfielddefault(ctx, 'store', struct()));
+            'store', getfielddefault(ctx, 'store', struct()), ...
+            'cancel', getfielddefault(ctx, 'cancel', struct()), ...
+            'progress', getfielddefault(ctx, 'progress', struct()));
     catch
     end
 
@@ -1553,7 +2032,15 @@ function ctx = executeClassifierNode(node, ctx)
             char(string(node.id)), outputName);
     end
 
+    [ctx, classifierForRun] = resolveRuntimeClassifierCache(ctx, clsObj, node);
+
     args = {'OutputName', outputName, 'Ctx', ctx};
+    if ~isempty(classifierForRun)
+        args = [args {'Classifier', classifierForRun}]; %#ok<AGROW>
+    end
+    if isfield(ctx,'progressDlg') && ~isempty(ctx.progressDlg)
+        args = [args {'Progress', ctx.progressDlg}]; %#ok<AGROW>
+    end
     if isfield(p,'frames') && ~isempty(p.frames)
         args = [args {'Frames', p.frames}]; %#ok<AGROW>
     end
@@ -1587,6 +2074,7 @@ function ctx = executeClassifierNode(node, ctx)
     end
 
     try
+        checkPipelineCancelled(ctx, ['before classifier ' char(string(node.id))]);
         classifyData(clsObj, rois, args{:});
     catch ME
         throwNodeFailed(node, ME);
@@ -1641,6 +2129,38 @@ for i = 1:numel(props)
         end
     catch
     end
+end
+end
+
+function [ctx, classifierForRun] = resolveRuntimeClassifierCache(ctx, clsObj, node)
+classifierForRun = [];
+try
+    nodeId = char(string(getfielddefault(node,'id',clsObj.strid)));
+    key = matlab.lang.makeValidName(nodeId);
+    if ~isfield(ctx,'store') || ~isstruct(ctx.store) || isempty(ctx.store)
+        ctx.store = struct();
+    end
+    if ~isfield(ctx.store,'classifierRuntime') || ~isstruct(ctx.store.classifierRuntime)
+        ctx.store.classifierRuntime = struct();
+    end
+    if isfield(ctx.store.classifierRuntime, key) && ~isempty(ctx.store.classifierRuntime.(key))
+        classifierForRun = ctx.store.classifierRuntime.(key);
+        return;
+    end
+    if isprop(clsObj,'classifier') && ~isempty(clsObj.classifier)
+        classifierForRun = clsObj.classifier;
+    else
+        try
+            classifierForRun = clsObj.loadClassifier('force');
+        catch
+            classifierForRun = [];
+        end
+    end
+    if ~isempty(classifierForRun)
+        ctx.store.classifierRuntime.(key) = classifierForRun;
+    end
+catch
+    classifierForRun = [];
 end
 end
 
@@ -1910,19 +2430,26 @@ end
 
 function rois = selectRoisForNode(ctx, node)
     rois = [];
+    fromCtxRoiList = false;
     if isfield(ctx,'roiList') && ~isempty(ctx.roiList)
         rois = ctx.roiList;
+        fromCtxRoiList = true;
     end
 
     if isempty(rois)
+        fromCtxRoiList = false;
         if isfield(ctx,'fovList') && ~isempty(ctx.fovList)
-            rois = collectRoisFromFovList(ctx.fovList);
+            rois = collectRoisForContextSelection(ctx, ctx.fovList);
         else
             shallowObj = getShallowObject(ctx);
             if ~isempty(shallowObj)
-                rois = collectRoisFromProject(shallowObj);
+                rois = collectRoisForContextSelection(ctx, shallowObj.fov);
             end
         end
+    end
+    if ~fromCtxRoiList && ~isempty(rois) && isfield(ctx,'sel') && isstruct(ctx.sel) && ...
+            isfield(ctx.sel,'rois') && ~isempty(ctx.sel.rois)
+        rois = filterRoisBySelectionVector(rois, ctx.sel.rois);
     end
 
     p = getfielddefault(node, 'params', struct());
@@ -1936,6 +2463,47 @@ function rois = selectRoisForNode(ctx, node)
         else
             rois = rois([]);
         end
+    end
+end
+
+function rois = collectRoisForContextSelection(ctx, fovList)
+    rois = [];
+    if isempty(fovList)
+        return;
+    end
+    roiSel = [];
+    if isfield(ctx,'sel') && isstruct(ctx.sel) && isfield(ctx.sel,'rois') && ~isempty(ctx.sel.rois)
+        roiSel = normalizeIndexVectorLocal(ctx.sel.rois);
+    end
+    for i = 1:numel(fovList)
+        try
+            r = fovList(i).roi;
+            if isempty(r)
+                continue;
+            end
+            if ~isempty(roiSel)
+                idx = roiSel(roiSel >= 1 & roiSel <= numel(r));
+                r = r(idx);
+            end
+            if ~isempty(r)
+                rois = [rois r(:)']; %#ok<AGROW>
+            end
+        catch
+        end
+    end
+    rois = filterValidRoiHandles(rois);
+end
+
+function rois = filterRoisBySelectionVector(rois, roiSel)
+    if isempty(rois) || isempty(roiSel)
+        return;
+    end
+    idx = normalizeIndexVectorLocal(roiSel);
+    idx = idx(idx >= 1 & idx <= numel(rois));
+    if isempty(idx)
+        rois = rois([]);
+    else
+        rois = rois(idx);
     end
 end
 

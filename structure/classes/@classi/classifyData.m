@@ -38,6 +38,7 @@ ctxBase       = struct();
 
 outputName    = "";   % NEW
 cachePolicy   = 'auto';
+saveMode      = 'immediate';
 
 for i = 1:numel(varargin)
     key = varargin{i};
@@ -93,6 +94,7 @@ end
 
 classifierStore = classifier;
 cachePolicy = resolveCachePolicyLocal(classiobj);
+saveMode = resolveSaveModeLocal(ctxBase, classiobj);
 
 classi     = classiobj;
 [classifyFun, usesPkg] = resolveClassifyFun(classi);
@@ -174,7 +176,8 @@ end
 % Main loop
 % -----------------------------
 for i = 1:numel(roiobj)
-    checkClassifyCancellation(classiobj);
+    checkClassifyCancellation(classiobj, ctxBase, p);
+    updateClassifyProgress(ctxBase, p, i-1, numel(roiobj), 'Classifying');
 
     goclassif = 1;
     roiIdStr = '';
@@ -319,10 +322,9 @@ for i = 1:numel(roiobj)
     end
 
     if ~isempty(p)
-        p.Value   = 0.9 * double(i) / numel(roiobj);
-        p.Message = ['Classifying ROI  ' roiobj(i).id];
+        updateClassifyProgress(ctxBase, p, i-1, numel(roiobj), 'Classifying');
     end
-    checkClassifyCancellation(classiobj);
+    checkClassifyCancellation(classiobj, ctxBase, p);
 
     % ---------------------------------------------------------
     % Dispatch
@@ -364,7 +366,7 @@ for i = 1:numel(roiobj)
                 catch
                     disp('[DEBUG] classifyData: using roiApplyPatch for ROI (id unavailable)');
                 end
-                roiApplyPatch(roiobj(i), out.patch, ctx);
+                applyAndPersistClassifierPatch(roiobj(i), out.patch, ctx, outputName, cachePolicy, hadImageInMemory, hadDataInMemory, saveMode);
             else
                 if exist('roiApplyPatch','file') ~= 2
                     warning('roiApplyPatch not found on path; falling back to ROIManagement.');
@@ -377,7 +379,7 @@ for i = 1:numel(roiobj)
                 catch
                     disp('[DEBUG] classifyData: using ROIManagement for ROI (id unavailable)');
                 end
-                    ROIManagement(roiobj(i), out.data, out.image, outputName, classiobj, cachePolicy, hadImageInMemory, hadDataInMemory);
+                    ROIManagement(roiobj(i), out.data, out.image, outputName, classiobj, cachePolicy, hadImageInMemory, hadDataInMemory, saveMode);
                 end
             end
             disp(['Classified (pipeline) ' num2str(roiobj(i).id)]);
@@ -397,8 +399,9 @@ for i = 1:numel(roiobj)
                 disp(['Classified ' num2str(roiobj(i).id)]);
             end
 
-            ROIManagement(roiobj(i),data,image, outputName, classiobj, cachePolicy, hadImageInMemory, hadDataInMemory)
+            ROIManagement(roiobj(i),data,image, outputName, classiobj, cachePolicy, hadImageInMemory, hadDataInMemory, saveMode)
         end
+        updateClassifyProgress(ctxBase, p, i, numel(roiobj), 'Classified');
     end
 end
 
@@ -412,6 +415,7 @@ if para
     end
 
     for i = 1:numel(logparf)
+        checkClassifyCancellation(classiobj, ctxBase, p);
         if isPipelineFun
             [idx, out] = fetchNext(logparf(i));
             ctx = ctxByIdx{idx};
@@ -421,7 +425,7 @@ if para
                 catch
                     disp('[DEBUG] classifyData: using roiApplyPatch for ROI (id unavailable)');
                 end
-                roiApplyPatch(roiobj(idx), out.patch, ctx);
+                applyAndPersistClassifierPatch(roiobj(idx), out.patch, ctx, outputName, cachePolicy, hadImageByIdx(idx), hadDataByIdx(idx), saveMode);
             else
                 if exist('roiApplyPatch','file') ~= 2
                     warning('roiApplyPatch not found on path; falling back to ROIManagement.');
@@ -434,13 +438,14 @@ if para
                     catch
                         disp('[DEBUG] classifyData: using ROIManagement for ROI (id unavailable)');
                     end
-                    ROIManagement(roiobj(idx), out.data, out.image, outputName, classiobj, cachePolicy, hadImageByIdx(idx), hadDataByIdx(idx));
+                    ROIManagement(roiobj(idx), out.data, out.image, outputName, classiobj, cachePolicy, hadImageByIdx(idx), hadDataByIdx(idx), saveMode);
                 end
             end
         else
             [idx, data, image] = fetchNext(logparf(i));
             ROIManagement(roiobj(idx),data,image, outputName, classiobj, cachePolicy, hadImageByIdx(idx), hadDataByIdx(idx));
         end
+        updateClassifyProgress(ctxBase, p, i, numel(logparf), 'Classified');
 
     end
 end
@@ -452,7 +457,13 @@ end
 
 end % classifyData
 
-function checkClassifyCancellation(classiobj)
+function checkClassifyCancellation(classiobj, ctxBase, progressDlg)
+if nargin < 2 || isempty(ctxBase)
+    ctxBase = struct();
+end
+if nargin < 3
+    progressDlg = [];
+end
 try
     cancelInfo = [];
     if isprop(classiobj, 'runProfiles') && isstruct(classiobj.runProfiles) ...
@@ -460,21 +471,103 @@ try
             && isfield(classiobj.runProfiles.classify, 'cancel')
         cancelInfo = classiobj.runProfiles.classify.cancel;
     end
+    if (~isstruct(cancelInfo) || isempty(fieldnames(cancelInfo))) && isstruct(ctxBase) ...
+            && isfield(ctxBase,'cancel') && isstruct(ctxBase.cancel)
+        cancelInfo = ctxBase.cancel;
+    end
+    requested = false;
+    tokenFile = '';
     if isstruct(cancelInfo) && isfield(cancelInfo, 'tokenFile') && ~isempty(cancelInfo.tokenFile)
         tokenFile = char(string(cancelInfo.tokenFile));
-        if exist(tokenFile, 'file') == 2
-            try
-                pe = pyenv;
-                if pe.Status == "Loaded"
-                    terminate(pyenv);
+        requested = exist(tokenFile, 'file') == 2;
+    end
+    try
+        if ~isempty(progressDlg) && isvalid(progressDlg) && isprop(progressDlg,'CancelRequested') && progressDlg.CancelRequested
+            requested = true;
+            if ~isempty(tokenFile) && exist(tokenFile, 'file') ~= 2
+                fid = fopen(tokenFile, 'w');
+                if fid > 0
+                    fprintf(fid, 'cancel requested at %s\n', char(datetime('now')));
+                    fclose(fid);
                 end
-            catch
             end
-            error('runPipeline:Cancelled', 'Pipeline run cancelled by user.');
         end
+    catch
+    end
+    if requested
+        try
+            pe = pyenv;
+            if pe.Status == "Loaded"
+                terminate(pyenv);
+            end
+        catch
+        end
+        error('runPipeline:Cancelled', 'Pipeline run cancelled by user between classifier ROIs.');
     end
 catch ME
     rethrow(ME);
+end
+end
+
+function updateClassifyProgress(ctx, progressDlg, roiIndex, totalRois, verb)
+if isempty(progressDlg) || ~isvalid(progressDlg)
+    return;
+end
+if nargin < 5 || isempty(verb)
+    verb = 'Classifying';
+end
+totalRois = max(1, totalRois);
+roiFrac = max(0, min(1, double(roiIndex) ./ totalRois));
+nodeIndex = 1;
+totalNodes = 1;
+startedTic = [];
+nodeId = '';
+try
+    if isstruct(ctx) && isfield(ctx,'progress') && isstruct(ctx.progress)
+        if isfield(ctx.progress,'currentNodeIndex'), nodeIndex = max(1, double(ctx.progress.currentNodeIndex)); end
+        if isfield(ctx.progress,'totalNodes'), totalNodes = max(1, double(ctx.progress.totalNodes)); end
+        if isfield(ctx.progress,'startedTic'), startedTic = ctx.progress.startedTic; end
+        if isfield(ctx.progress,'currentNodeId'), nodeId = char(string(ctx.progress.currentNodeId)); end
+    end
+catch
+end
+value = max(0, min(1, (nodeIndex - 1 + roiFrac) ./ totalNodes));
+etaText = '';
+try
+    if ~isempty(startedTic) && value > 0.02
+        elapsed = toc(startedTic);
+        eta = elapsed * (1 - value) / value;
+        etaText = [' | ETA ' formatDurationShortLocal(eta)];
+    end
+catch
+end
+try
+    progressDlg.Indeterminate = 'off';
+    progressDlg.Value = value;
+    displayIndex = max(1, min(totalRois, roiIndex));
+    progressDlg.Message = sprintf('%s ROI %d/%d%s%s', char(string(verb)), displayIndex, totalRois, ...
+        ternaryLocal(~isempty(nodeId), [' | ' nodeId], ''), etaText);
+    drawnow limitrate;
+catch
+end
+end
+
+function txt = formatDurationShortLocal(secondsValue)
+secondsValue = max(0, double(secondsValue));
+if secondsValue < 60
+    txt = sprintf('%ds', round(secondsValue));
+elseif secondsValue < 3600
+    txt = sprintf('%dm%02ds', floor(secondsValue/60), round(mod(secondsValue,60)));
+else
+    txt = sprintf('%dh%02dm', floor(secondsValue/3600), floor(mod(secondsValue,3600)/60));
+end
+end
+
+function out = ternaryLocal(cond, a, b)
+if cond
+    out = a;
+else
+    out = b;
 end
 end
 
@@ -643,7 +736,7 @@ end
 % ROI management + saving
 %   NEW: apply outputName to dataseries.groupid (NO HEURISTICS)
 % ========================================================================
-function ROIManagement(roiobj, data, image, outputName, classiobj, cachePolicyLocal, hadImageBefore, hadDataBefore)
+function ROIManagement(roiobj, data, image, outputName, classiobj, cachePolicyLocal, hadImageBefore, hadDataBefore, saveMode)
 
     % --- Only re-group classification outputs that belong to this classifier ---
     if nargin >= 5 && ~isempty(outputName) && isa(data,'dataseries')
@@ -654,12 +747,19 @@ function ROIManagement(roiobj, data, image, outputName, classiobj, cachePolicyLo
     end
     if nargin < 7, hadImageBefore = false; end
     if nargin < 8, hadDataBefore = false; end
+    if nargin < 9 || isempty(saveMode), saveMode = 'immediate'; end
 
     imageCache = image;
     dataCache = data;
     roiobj.data  = data;
     roiobj.image = image;
     localNormalizeIndexedResultChannels(roiobj);
+
+    if shouldDeferSaveLocal(saveMode)
+        markDeferredDirtyLocal(roiobj, true, numel(image) > 0);
+        disp('[DEBUG] ROIManagement: defer save requested, ROI kept in memory.');
+        return;
+    end
 
     if numel(image)
         try
@@ -698,6 +798,145 @@ function ROIManagement(roiobj, data, image, outputName, classiobj, cachePolicyLo
         else
             disp('[DEBUG] ROIManagement: roi.save(''data'') done.');
         end
+    end
+end
+
+function applyAndPersistClassifierPatch(roiobj, patch, ctx, outputName, cachePolicyLocal, hadImageBefore, hadDataBefore, saveMode)
+    if nargin < 5 || isempty(cachePolicyLocal)
+        cachePolicyLocal = 'auto';
+    end
+    if nargin < 6, hadImageBefore = false; end
+    if nargin < 7, hadDataBefore = false; end
+    if nargin < 8 || isempty(saveMode), saveMode = 'immediate'; end
+
+    imageCache = roiobj.image;
+    dataCacheBefore = roiobj.data;
+    roiApplyPatch(roiobj, patch, ctx);
+
+    hasDataPatch = patchHasDataseries(patch);
+    hasImagePatch = patchHasImageWrite(patch);
+    expectedOutput = char(string(outputName));
+
+    if hasDataPatch && ~roiHasDataseries(roiobj, expectedOutput)
+        error('classifyData:MissingPatchOutput', ...
+            'Classifier patch did not create expected dataseries "%s" for ROI "%s".', ...
+            expectedOutput, safeRoiIdLocal(roiobj));
+    end
+
+    if shouldDeferSaveLocal(saveMode)
+        if ~hasImagePatch && ~hasDataPatch
+            error('classifyData:EmptyPatchOutput', ...
+                'Classifier patch contained no image or dataseries output for ROI "%s".', ...
+                safeRoiIdLocal(roiobj));
+        end
+        markDeferredDirtyLocal(roiobj, hasDataPatch, hasImagePatch);
+        disp('[DEBUG] classifyData: defer save requested, classifier patch kept in memory.');
+        return;
+    end
+
+    if hasImagePatch
+        channelsToSave = patchImageChannels(patch);
+        if ~isempty(channelsToSave) && localRoiH5Exists(roiobj)
+            roiobj.save(channelsToSave);
+        else
+            roiobj.save;
+        end
+    elseif hasDataPatch
+        roiobj.save('data');
+    else
+        error('classifyData:EmptyPatchOutput', ...
+            'Classifier patch contained no image or dataseries output for ROI "%s".', ...
+            safeRoiIdLocal(roiobj));
+    end
+
+    if shouldKeepRoiInMemory(cachePolicyLocal, hadImageBefore, hadDataBefore)
+        if isempty(roiobj.image) && ~isempty(imageCache)
+            roiobj.image = imageCache;
+        end
+    else
+        roiobj.clear;
+    end
+
+    if shouldKeepRoiInMemory(cachePolicyLocal, hadImageBefore, hadDataBefore)
+        if hasDataPatch
+            % roi.save('data') clears data; keep the patched data in memory
+            % when the caller had already loaded ROI data.
+            try
+                roiobj.load('data','Silent');
+            catch
+                roiobj.data = dataCacheBefore;
+            end
+        end
+    end
+end
+
+function tf = patchHasDataseries(patch)
+    tf = false;
+    try
+        if isfield(patch,'roi')
+            patch = patch.roi;
+        end
+        tf = isfield(patch,'dataseries') && isfield(patch.dataseries,'upsert') && ~isempty(patch.dataseries.upsert);
+    catch
+        tf = false;
+    end
+end
+
+function tf = patchHasImageWrite(patch)
+    tf = false;
+    try
+        if isfield(patch,'roi')
+            patch = patch.roi;
+        end
+        tf = isfield(patch,'image') && isfield(patch.image,'write') && ~isempty(patch.image.write);
+    catch
+        tf = false;
+    end
+end
+
+function channels = patchImageChannels(patch)
+    channels = {};
+    try
+        if isfield(patch,'roi')
+            patch = patch.roi;
+        end
+        if ~isfield(patch,'image') || ~isfield(patch.image,'write')
+            return;
+        end
+        writes = patch.image.write;
+        if isstruct(writes), writes = num2cell(writes); end
+        for iWrite = 1:numel(writes)
+            w = writes{iWrite};
+            if isfield(w,'channel') && (ischar(w.channel) || isstring(w.channel))
+                channels{end+1} = char(string(w.channel)); %#ok<AGROW>
+            end
+        end
+        channels = unique(channels, 'stable');
+    catch
+        channels = {};
+    end
+end
+
+function tf = roiHasDataseries(roiobj, groupid)
+    tf = false;
+    if isempty(groupid)
+        return;
+    end
+    try
+        if isempty(roiobj.data)
+            return;
+        end
+        tf = any(arrayfun(@(ds) isprop(ds,'groupid') && strcmp(char(string(ds.groupid)), groupid), roiobj.data));
+    catch
+        tf = false;
+    end
+end
+
+function roiId = safeRoiIdLocal(roiobj)
+    roiId = '<unknown>';
+    try
+        roiId = char(string(roiobj.id));
+    catch
     end
 end
 
@@ -854,6 +1093,71 @@ function policy = resolveCachePolicyLocal(classiobj)
     end
     if ~any(strcmp(policy, {'auto','memory','disk'}))
         policy = 'auto';
+    end
+end
+
+function mode = resolveSaveModeLocal(ctxBase, classiobj)
+    mode = 'immediate';
+    try
+        if isstruct(ctxBase) && isfield(ctxBase,'io') && isstruct(ctxBase.io)
+            if isfield(ctxBase.io,'deferredSave') && ~isempty(ctxBase.io.deferredSave) && logical(ctxBase.io.deferredSave)
+                mode = 'defer';
+                return;
+            end
+            if isfield(ctxBase.io,'saveMode') && ~isempty(ctxBase.io.saveMode)
+                mode = normalizeSaveModeLocal(ctxBase.io.saveMode);
+                return;
+            end
+        end
+    catch
+    end
+    try
+        if isprop(classiobj,'runProfiles') && isstruct(classiobj.runProfiles) && isfield(classiobj.runProfiles,'classify')
+            rp = classiobj.runProfiles.classify;
+            if isstruct(rp) && isfield(rp,'io') && isstruct(rp.io)
+                if isfield(rp.io,'deferredSave') && ~isempty(rp.io.deferredSave) && logical(rp.io.deferredSave)
+                    mode = 'defer';
+                    return;
+                end
+                if isfield(rp.io,'saveMode') && ~isempty(rp.io.saveMode)
+                    mode = normalizeSaveModeLocal(rp.io.saveMode);
+                end
+            end
+        end
+    catch
+        mode = 'immediate';
+    end
+end
+
+function mode = normalizeSaveModeLocal(mode)
+    mode = lower(strtrim(char(string(mode))));
+    switch mode
+        case {'defer','deferred','roi','roi_final','roi_finalized','final','finalized','memory'}
+            mode = 'defer';
+        otherwise
+            mode = 'immediate';
+    end
+end
+
+function tf = shouldDeferSaveLocal(mode)
+    tf = strcmp(normalizeSaveModeLocal(mode), 'defer');
+end
+
+function markDeferredDirtyLocal(roiobj, hasData, hasImage)
+    try
+        if ~isstruct(roiobj.results)
+            roiobj.results = struct();
+        end
+        dirty = struct('data', false, 'image', false);
+        if isfield(roiobj.results, 'pipelineDeferredDirty') && isstruct(roiobj.results.pipelineDeferredDirty)
+            dirty = roiobj.results.pipelineDeferredDirty;
+            if ~isfield(dirty,'data'), dirty.data = false; end
+            if ~isfield(dirty,'image'), dirty.image = false; end
+        end
+        dirty.data = logical(dirty.data || hasData);
+        dirty.image = logical(dirty.image || hasImage);
+        roiobj.results.pipelineDeferredDirty = dirty;
+    catch
     end
 end
 

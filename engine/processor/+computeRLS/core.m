@@ -202,11 +202,17 @@ end
 disp('computeRLS processing...');
 param=localEnsureQCDefaults(paramout);
 classificationName=localTextParam(param,'classification_data','');
+if isempty(strtrim(classificationName))
+    error('computeRLS:MissingClassificationParameter', ...
+        'computeRLS requires param.classification_data to name the classifier dataseries input.');
+end
 
 dataout=[];
 mask_data=[];
 
-roiobj.load('data');
+if localNeedsDataLoad(roiobj)
+    roiobj.load('data');
+end
 
 tmp=roiobj.data;
 if numel(tmp)==0
@@ -220,13 +226,23 @@ pix=find(matches(listdata,classificationName));
 if numel(pix)==0
     disp('impossible to find the classified data, trying to reformat dataset...');
     formatInDataSeries.core(roiobj);
-    dataout=roiobj.data
+    dataout=roiobj.data;
     listdata={roiobj.data.groupid};
     pix=find(matches(listdata,classificationName));
 
     if numel(pix)==0
-        disp('impossible to find the classified data; quitting!');
-        return;
+        roiId = '<unknown>';
+        try
+            roiId = char(string(roiobj.id));
+        catch
+        end
+        available = '<none>';
+        if ~isempty(listdata)
+            available = strjoin(cellfun(@(x) char(string(x)), listdata, 'UniformOutput', false), ', ');
+        end
+        error('computeRLS:MissingClassificationData', ...
+            'computeRLS could not find classification dataseries "%s" in ROI "%s". Available dataseries: %s.', ...
+            classificationName, roiId, available);
     end
 end
 
@@ -1192,5 +1208,36 @@ for r=1:n
         lowFraction(r)<=param.QCMaxLowConfidenceFraction;
 end
 
+
+function tf=localNeedsDataLoad(roiobj)
+tf=true;
+try
+    if isempty(roiobj.data)
+        return
+    end
+    d=roiobj.data;
+    if isa(d,'dataseries')
+        for k=1:numel(d)
+            try
+                if ~isempty(d(k).groupid)
+                    tf=false;
+                    return
+                end
+            catch
+            end
+            try
+                if ~isempty(d(k).data)
+                    tf=false;
+                    return
+                end
+            catch
+            end
+        end
+    else
+        tf=false;
+    end
+catch
+    tf=true;
+end
 
 

@@ -255,7 +255,11 @@ function ctx = localBuildExecutionContext(payload, shallowObj, pipeObj)
             ctx.sel = struct();
             ctx.sel.fovs = localNormalizeSelectionVector(localGetField(rr.selection, 'fovs', []));
             ctx.sel.frames = localNormalizeSelectionVector(localGetField(rr.selection, 'frames', []));
+            ctx.sel.rois = localNormalizeSelectionVector(localGetField(rr.selection, 'rois', []));
             ctx.sel.channels = localNormalizeStringSelection(localGetField(rr.selection, 'channels', {}));
+        end
+        if isfield(rr, 'control') && isstruct(rr.control)
+            ctx.run.control = rr.control;
         end
 
         if isfield(rr, 'python') && isstruct(rr.python)

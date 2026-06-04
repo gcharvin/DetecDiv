@@ -177,29 +177,11 @@ try
 catch
 end
 
-% Parameters
-if isfield(classif.trainingParam, 'diameter')
-    diameter = classif.trainingParam.diameter;
-else
-    diameter = NaN;
-end
-
-if isfield(classif.trainingParam, 'flow_threshold')
-    flow_threshold = classif.trainingParam.flow_threshold;
-else
-    flow_threshold = 0.4;
-end
-
-if isfield(classif.trainingParam, 'min_size') && ~isempty(classif.trainingParam.min_size)
-    min_size = classif.trainingParam.min_size;
-else
-    min_size = 10;
-end
-if isfield(classif.trainingParam, 'cell_prob_threshold') && ~isempty(classif.trainingParam.cell_prob_threshold)
-    cellprob_threshold = classif.trainingParam.cell_prob_threshold;
-else
-    cellprob_threshold = 0;
-end
+% Parameters. Pipeline static params override the linked classifier defaults.
+diameter = getCellposeParamLocal(ctx, classif, 'diameter', NaN);
+flow_threshold = getCellposeParamLocal(ctx, classif, 'flow_threshold', 0.4);
+min_size = getCellposeParamLocal(ctx, classif, 'min_size', 10);
+cellprob_threshold = getCellposeParamLocal(ctx, classif, 'cell_prob_threshold', 0);
 
 % Model selection
 model_dir          = fullfile(classif.path, 'models');
@@ -406,6 +388,27 @@ if wantProbability
     end
 
     disp('? Carte de probabilite CellposeSAM integree (channel *_cellprob).');
+end
+end
+
+function value = getCellposeParamLocal(ctx, classif, name, defaultValue)
+value = defaultValue;
+try
+    if isobject(classif) && isprop(classif, 'trainingParam') && isstruct(classif.trainingParam) && ...
+            isfield(classif.trainingParam, name) && ~isempty(classif.trainingParam.(name))
+        value = classif.trainingParam.(name);
+    elseif isstruct(classif) && isfield(classif, 'trainingParam') && isstruct(classif.trainingParam) && ...
+            isfield(classif.trainingParam, name) && ~isempty(classif.trainingParam.(name))
+        value = classif.trainingParam.(name);
+    end
+catch
+    value = defaultValue;
+end
+try
+    if isfield(ctx, 'params') && isstruct(ctx.params) && isfield(ctx.params, name) && ~isempty(ctx.params.(name))
+        value = ctx.params.(name);
+    end
+catch
 end
 end
 

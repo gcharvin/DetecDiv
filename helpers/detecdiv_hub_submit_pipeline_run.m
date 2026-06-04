@@ -300,9 +300,21 @@ function runRequest = localBuildRunRequest(runObj)
     runRequest.selection = struct( ...
         'fovs', localNested(ctx, {'sel','fovs'}, []), ...
         'frames', localNested(ctx, {'sel','frames'}, []), ...
+        'rois', localNested(ctx, {'sel','rois'}, []), ...
         'channels', {localCellText(localNested(ctx, {'sel','channels'}, {}))});
+    runRequest.control = localBuildRunControl(ctx);
     runRequest.python = localNested(ctx, {'exec','python'}, struct());
     runRequest.gpu = struct('mode', localText(localNested(ctx, {'run','gpuPolicy'}, localNested(ctx, {'exec','gpuPolicy'}, 'module_default'))));
+end
+
+function control = localBuildRunControl(ctx)
+    control = struct();
+    control.resume_policy = localText(localNested(ctx, {'run','runPolicy'}, 'resume'));
+    control.cancel_policy = 'cooperative';
+    control.progress_granularity = 'roi';
+    control.local_cancel_mode = 'file_token';
+    control.hub_cancel_mode = 'hub_job_cancel';
+    control.hub_cancel_endpoint = '/pipeline-runs/{job_id}/cancel';
 end
 
 function execution = localBuildExecution(opts)

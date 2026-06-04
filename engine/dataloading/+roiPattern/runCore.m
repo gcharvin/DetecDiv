@@ -291,17 +291,6 @@ if isfield(p,'patternList') && isstruct(p.patternList) && ~isempty(p.patternList
     return;
 end
 
-if ~isempty(shallowObj)
-    try
-        stored = loadPatternLocal(shallowObj);
-        if isstruct(stored) && ~isempty(stored)
-            patternList = stored;
-            return;
-        end
-    catch
-    end
-end
-
 try
     if isprop(fovList(1), 'pattern') && ~isempty(fovList(1).pattern)
         pat.rect = fovList(1).pattern;

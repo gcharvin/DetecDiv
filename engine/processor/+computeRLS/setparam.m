@@ -6,16 +6,29 @@ if nargin < 1 || isempty(ctx)
 end
 
 listout = {};
+ctxParam = struct();
+if isstruct(ctx) && isfield(ctx,'params') && isstruct(ctx.params)
+    ctxParam = ctx.params;
+end
+
 if isfield(ctx,'useProvidedDataSeries') && ctx.useProvidedDataSeries
     if isfield(ctx,'classification_data')
         listout = ctx.classification_data;
     elseif isfield(ctx,'classificationData')
         listout = ctx.classificationData;
+    elseif isfield(ctxParam,'classification_data')
+        listout = ctxParam.classification_data;
+    elseif isfield(ctxParam,'classificationData')
+        listout = ctxParam.classificationData;
     end
 elseif isfield(ctx,'classification_data') && ~isempty(ctx.classification_data)
     listout = ctx.classification_data;
 elseif isfield(ctx,'classificationData') && ~isempty(ctx.classificationData)
     listout = ctx.classificationData;
+elseif isfield(ctxParam,'classification_data') && ~isempty(ctxParam.classification_data)
+    listout = ctxParam.classification_data;
+elseif isfield(ctxParam,'classificationData') && ~isempty(ctxParam.classificationData)
+    listout = ctxParam.classificationData;
 else
     try
         listout = listROIDataID("classification");

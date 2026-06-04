@@ -35,6 +35,16 @@ function [paramout, dataout, imageout] = process(param, roiobj, ctx)
     fprintf('[combineMultipleChannels] ---- START output="%s" ----\n', string(paramout.outputChannelName));
 
     maxSlots = 5;
+    if isfield(paramout, 'requiredChannelCount') && ~isempty(paramout.requiredChannelCount)
+        try
+            requestedSlots = double(paramout.requiredChannelCount);
+        catch
+            requestedSlots = 0;
+        end
+        if isscalar(requestedSlots) && isfinite(requestedSlots) && requestedSlots > 0
+            maxSlots = min(maxSlots, max(1, round(requestedSlots)));
+        end
+    end
     cha = {};
     rgb = {};
 

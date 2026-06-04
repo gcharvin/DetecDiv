@@ -77,7 +77,17 @@ function ctx = seedDryRunContextFromProject(ctx)
     end
 
     if (~isfield(ctx,'roiList') || isempty(ctx.roiList)) && isfield(ctx,'fovList') && ~isempty(ctx.fovList)
-        ctx.roiList = collectDryRoisFromFovs(ctx.fovList);
+        roiSel = [];
+        try
+            if isfield(ctx,'sel') && isstruct(ctx.sel) && isfield(ctx.sel,'rois') && ~isempty(ctx.sel.rois)
+                roiSel = normalizeDryIndexVector(ctx.sel.rois);
+            elseif isfield(ctx,'run') && isstruct(ctx.run) && isfield(ctx.run,'rois') && ~isempty(ctx.run.rois)
+                roiSel = normalizeDryIndexVector(ctx.run.rois);
+            end
+        catch
+            roiSel = [];
+        end
+        ctx.roiList = collectDryRoisFromFovs(ctx.fovList, roiSel);
         ctx.rois = ctx.roiList;
     end
 
@@ -100,13 +110,20 @@ function idx = normalizeDryIndexVector(v)
     end
 end
 
-function rois = collectDryRoisFromFovs(fovList)
+function rois = collectDryRoisFromFovs(fovList, roiSel)
+    if nargin < 2
+        roiSel = [];
+    end
     rois = [];
     for i = 1:numel(fovList)
         try
             r = fovList(i).roi;
             if isempty(r)
                 continue;
+            end
+            if ~isempty(roiSel)
+                idx = roiSel(roiSel >= 1 & roiSel <= numel(r));
+                r = r(idx);
             end
             if isempty(rois)
                 rois = r;

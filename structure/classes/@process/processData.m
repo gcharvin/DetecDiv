@@ -22,6 +22,7 @@ p=[];
 gpu=0;
 ctxBase=struct();
 cachePolicy='auto';
+saveMode='immediate';
 
 for i=1:numel(varargin)
     key=varargin{i};
@@ -55,6 +56,7 @@ for i=1:numel(varargin)
 end
 
 cachePolicy = resolveCachePolicyLocal(ctxBase);
+saveMode = resolveSaveModeLocal(ctxBase);
 
 classi=classiobj;
 classifyFun=normalizeProcessFun(classi.processFun);
@@ -104,6 +106,8 @@ end
 
 for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel computing
 
+    checkProcessCancellation(ctxBase, p);
+    updateProcessProgress(ctxBase, p, i-1, numel(roiobj), 'Processing');
 
 
     if numel(frames)>0
@@ -145,9 +149,7 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
     end
 
     if numel(p)
-        p.Value=0.9* double(i)./numel(roiobj);
-
-        p.Message=['Processing ROI  ' roiobj(i).id];
+        updateProcessProgress(ctxBase, p, i-1, numel(roiobj), 'Processing');
     end
 
     % roiobj(i).classes=classi.classes;
@@ -184,6 +186,18 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
         else
             [paramout,data,image]=feval(fhandle,paramEff,roiobj(i),fra);
         end
+        if isEmptyProcessorOutput(image, data)
+            roiId = safeRoiId(roiobj(i));
+            msg = sprintf('Processor "%s" returned no image or dataseries output for ROI "%s"; ROI file was not saved.', ...
+                char(string(classifyFun)), roiId);
+            if useCtx
+                error('processData:NoProcessorOutput', '%s', msg);
+            else
+                warning('processData:NoProcessorOutput', '%s', msg);
+                updateProcessProgress(ctxBase, p, i, numel(roiobj), 'No output');
+                continue;
+            end
+        end
         disp(['Processed ' num2str(roiobj(i).id)]);
 
         % bb=       roiobj(i)
@@ -199,7 +213,8 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
                 saveChannels = {char(string(paramout.outputChannelName))};
             end
         end
-        safeROIManagement(roiobj(i),image,data,saveChannels,cachePolicy,hadImageInMemory,hadDataInMemory);
+        safeROIManagement(roiobj(i),image,data,saveChannels,cachePolicy,hadImageInMemory,hadDataInMemory,saveMode);
+        updateProcessProgress(ctxBase, p, i, numel(roiobj), 'Processed');
 
     end
 end
@@ -213,12 +228,27 @@ if para % parallel computing
     %wait(logparf);
 
     for i=1:numel(logparf)
+        checkProcessCancellation(ctxBase, p);
         %   [results,image]=fetchOutputs(logparf(i));
 
         [idx,param,data,image]=fetchNext(logparf(i));
 
 
-        safeROIManagement(roiobj(idx),image,data,{},cachePolicy,hadImageByIdx(idx),hadDataByIdx(idx));
+        if isEmptyProcessorOutput(image, data)
+            roiId = safeRoiId(roiobj(idx));
+            msg = sprintf('Processor "%s" returned no image or dataseries output for ROI "%s"; ROI file was not saved.', ...
+                char(string(classifyFun)), roiId);
+            if useCtx
+                error('processData:NoProcessorOutput', '%s', msg);
+            else
+                warning('processData:NoProcessorOutput', '%s', msg);
+                updateProcessProgress(ctxBase, p, i, numel(logparf), 'No output');
+                continue;
+            end
+        end
+
+        safeROIManagement(roiobj(idx),image,data,{},cachePolicy,hadImageByIdx(idx),hadDataByIdx(idx),saveMode);
+        updateProcessProgress(ctxBase, p, i, numel(logparf), 'Processed');
         %     roiobj(idx).results=results;
         %
         %     roiobj(idx).image=image;
@@ -265,7 +295,7 @@ end
         end
     end
 
-    function ROIManagement(roiobj,image,data,saveChannels,cachePolicyLocal,hadImageBefore,hadDataBefore)
+    function ROIManagement(roiobj,image,data,saveChannels,cachePolicyLocal,hadImageBefore,hadDataBefore,saveModeLocal)
 
         if nargin < 4
             saveChannels = {};
@@ -275,11 +305,24 @@ end
         end
         if nargin < 6, hadImageBefore = false; end
         if nargin < 7, hadDataBefore = false; end
+        if nargin < 8 || isempty(saveModeLocal), saveModeLocal = 'immediate'; end
+
+        if isEmptyProcessorOutput(image, data)
+            warning('processData:NoProcessorOutput', ...
+                'Processor returned no image or dataseries output for ROI "%s"; ROI file was not saved.', ...
+                safeRoiId(roiobj));
+            return;
+        end
 
         imageCache = image;
         dataCache = data;
         roiobj.data=data;
         roiobj.image=image;
+        if shouldDeferSaveLocal(saveModeLocal)
+            markDeferredDirtyLocal(roiobj, hasSavableDataseries(data), numel(image) > 0);
+            disp('[processData] Defer save requested; processor output kept in ROI memory.');
+            return;
+        end
         if numel(image)
             if ~isempty(saveChannels)
                 roiobj.save(saveChannels);
@@ -310,10 +353,41 @@ end
         %disp('You must save the shallow project to save these classified data !');
     end
 
-    function ok = safeROIManagement(roiobj,image,data,saveChannels,cachePolicyLocal,hadImageBefore,hadDataBefore)
-        ok = true;
+    function tf = isEmptyProcessorOutput(image, data)
+        tf = isempty(image) && ~hasSavableDataseries(data);
+    end
+
+    function tf = hasSavableDataseries(data)
+        tf = false;
+        if isempty(data)
+            return;
+        end
+        if isa(data,'dataseries')
+            try
+                tf = any(arrayfun(@(ds) isprop(ds,'groupid') && ~isempty(ds.groupid), data));
+            catch
+                tf = numel(data) > 0;
+            end
+        elseif isstruct(data)
+            tf = isfield(data,'groupid') && ~isempty(data.groupid);
+        else
+            tf = true;
+        end
+    end
+
+    function roiId = safeRoiId(roiobjLocal)
+        roiId = '<unknown>';
         try
-            ROIManagement(roiobj,image,data,saveChannels,cachePolicyLocal,hadImageBefore,hadDataBefore);
+            roiId = char(string(roiobjLocal.id));
+        catch
+        end
+    end
+
+    function ok = safeROIManagement(roiobj,image,data,saveChannels,cachePolicyLocal,hadImageBefore,hadDataBefore,saveModeLocal)
+        ok = true;
+        if nargin < 8 || isempty(saveModeLocal), saveModeLocal = 'immediate'; end
+        try
+            ROIManagement(roiobj,image,data,saveChannels,cachePolicyLocal,hadImageBefore,hadDataBefore,saveModeLocal);
         catch ME
             if startsWith(char(string(ME.identifier)), 'roi:save:') || ...
                     contains(ME.message, 'Unable to write to file')
@@ -365,6 +439,151 @@ end
         end
         if ~any(strcmp(policy, {'auto','memory','disk'}))
             policy = 'auto';
+        end
+    end
+
+    function mode = resolveSaveModeLocal(ctx)
+        mode = 'immediate';
+        if ~isstruct(ctx) || isempty(fieldnames(ctx))
+            return;
+        end
+        try
+            if isfield(ctx,'io') && isstruct(ctx.io)
+                if isfield(ctx.io,'deferredSave') && ~isempty(ctx.io.deferredSave) && logical(ctx.io.deferredSave)
+                    mode = 'defer';
+                    return;
+                end
+                if isfield(ctx.io,'saveMode') && ~isempty(ctx.io.saveMode)
+                    mode = normalizeSaveModeLocal(ctx.io.saveMode);
+                    return;
+                end
+            end
+        catch
+            mode = 'immediate';
+        end
+    end
+
+    function mode = normalizeSaveModeLocal(mode)
+        mode = lower(strtrim(char(string(mode))));
+        switch mode
+            case {'defer','deferred','roi','roi_final','roi_finalized','final','finalized','memory'}
+                mode = 'defer';
+            otherwise
+                mode = 'immediate';
+        end
+    end
+
+    function tf = shouldDeferSaveLocal(mode)
+        tf = strcmp(normalizeSaveModeLocal(mode), 'defer');
+    end
+
+    function markDeferredDirtyLocal(roiobjLocal, hasData, hasImage)
+        try
+            if ~isstruct(roiobjLocal.results)
+                roiobjLocal.results = struct();
+            end
+            dirty = struct('data', false, 'image', false);
+            if isfield(roiobjLocal.results, 'pipelineDeferredDirty') && isstruct(roiobjLocal.results.pipelineDeferredDirty)
+                dirty = roiobjLocal.results.pipelineDeferredDirty;
+                if ~isfield(dirty,'data'), dirty.data = false; end
+                if ~isfield(dirty,'image'), dirty.image = false; end
+            end
+            dirty.data = logical(dirty.data || hasData);
+            dirty.image = logical(dirty.image || hasImage);
+            roiobjLocal.results.pipelineDeferredDirty = dirty;
+        catch
+        end
+    end
+
+    function checkProcessCancellation(ctx, progressDlg)
+        requested = false;
+        tokenFile = '';
+        try
+            if isstruct(ctx) && isfield(ctx,'cancel') && isstruct(ctx.cancel) ...
+                    && isfield(ctx.cancel,'tokenFile') && ~isempty(ctx.cancel.tokenFile)
+                tokenFile = char(string(ctx.cancel.tokenFile));
+                requested = exist(tokenFile, 'file') == 2;
+            end
+        catch
+            requested = false;
+        end
+        try
+            if ~isempty(progressDlg) && isvalid(progressDlg) && isprop(progressDlg,'CancelRequested') && progressDlg.CancelRequested
+                requested = true;
+                if ~isempty(tokenFile) && exist(tokenFile, 'file') ~= 2
+                    fid = fopen(tokenFile, 'w');
+                    if fid > 0
+                        fprintf(fid, 'cancel requested at %s\n', char(datetime('now')));
+                        fclose(fid);
+                    end
+                end
+            end
+        catch
+        end
+        if requested
+            error('runPipeline:Cancelled', 'Pipeline run cancelled by user between processor ROIs.');
+        end
+    end
+
+    function updateProcessProgress(ctx, progressDlg, roiIndex, totalRois, verb)
+        if isempty(progressDlg) || ~isvalid(progressDlg)
+            return;
+        end
+        if nargin < 5 || isempty(verb)
+            verb = 'Processing';
+        end
+        totalRois = max(1, totalRois);
+        roiFrac = max(0, min(1, double(roiIndex) ./ totalRois));
+        nodeIndex = 1;
+        totalNodes = 1;
+        startedTic = [];
+        nodeId = '';
+        try
+            if isstruct(ctx) && isfield(ctx,'progress') && isstruct(ctx.progress)
+                if isfield(ctx.progress,'currentNodeIndex'), nodeIndex = max(1, double(ctx.progress.currentNodeIndex)); end
+                if isfield(ctx.progress,'totalNodes'), totalNodes = max(1, double(ctx.progress.totalNodes)); end
+                if isfield(ctx.progress,'startedTic'), startedTic = ctx.progress.startedTic; end
+                if isfield(ctx.progress,'currentNodeId'), nodeId = char(string(ctx.progress.currentNodeId)); end
+            end
+        catch
+        end
+        value = max(0, min(1, (nodeIndex - 1 + roiFrac) ./ totalNodes));
+        etaText = '';
+        try
+            if ~isempty(startedTic) && value > 0.02
+                elapsed = toc(startedTic);
+                eta = elapsed * (1 - value) / value;
+                etaText = [' | ETA ' formatDurationShortLocal(eta)];
+            end
+        catch
+        end
+        try
+            progressDlg.Indeterminate = 'off';
+            progressDlg.Value = value;
+            displayIndex = max(1, min(totalRois, roiIndex));
+            progressDlg.Message = sprintf('%s ROI %d/%d%s%s', char(string(verb)), displayIndex, totalRois, ...
+                ternaryLocal(~isempty(nodeId), [' | ' nodeId], ''), etaText);
+            drawnow limitrate;
+        catch
+        end
+    end
+
+    function txt = formatDurationShortLocal(secondsValue)
+        secondsValue = max(0, double(secondsValue));
+        if secondsValue < 60
+            txt = sprintf('%ds', round(secondsValue));
+        elseif secondsValue < 3600
+            txt = sprintf('%dm%02ds', floor(secondsValue/60), round(mod(secondsValue,60)));
+        else
+            txt = sprintf('%dh%02dm', floor(secondsValue/3600), floor(mod(secondsValue,3600)/60));
+        end
+    end
+
+    function out = ternaryLocal(cond, a, b)
+        if cond
+            out = a;
+        else
+            out = b;
         end
     end
 
