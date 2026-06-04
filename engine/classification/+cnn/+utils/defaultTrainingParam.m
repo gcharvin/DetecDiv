@@ -72,7 +72,7 @@ function tp = parseParamYaml(yamlFile)
             % flush previous
             if ~isempty(cur.name)
                 items{end+1} = cur; %#ok<AGROW>
-                cur = struct('name','','value',[],'tip','');
+                cur = struct('name','','value',[],'tip','', 'default','');
             end
             line = strtrim(line(3:end));
         end

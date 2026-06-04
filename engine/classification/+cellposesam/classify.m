@@ -102,11 +102,21 @@ if isobject(classif) && isprop(classif, 'outputType') && ~isempty(classif.output
 elseif isstruct(classif) && isfield(classif, 'outputType') && ~isempty(classif.outputType)
     outputType = classif.outputType;
 end
+if isfield(ctx, 'params') && isstruct(ctx.params)
+    if isfield(ctx.params, 'outputType') && ~isempty(ctx.params.outputType)
+        outputType = ctx.params.outputType;
+    elseif isfield(ctx.params, 'outputMode') && ~isempty(ctx.params.outputMode)
+        outputType = ctx.params.outputMode;
+    end
+end
+outputType = lower(strrep(strrep(strtrim(char(string(outputType))), 'probability', 'proba'), ' ', '_'));
 
-if ~any(strcmpi(outputType, {'proba','segmentation','postprocessing'}))
+if ~any(strcmpi(outputType, {'proba','segmentation','both','postprocessing'}))
     warning('cellposesam.classify: outputType="%s" inconnu -> fallback segmentation', outputType);
     outputType = 'segmentation';
 end
+wantSegmentation = any(strcmpi(outputType, {'segmentation','both','postprocessing'}));
+wantProbability = any(strcmpi(outputType, {'proba','both'}));
 
 % --- Channels results (instance mask) ---
 pixresults = [];
@@ -211,7 +221,7 @@ else
 end
 
 % Output mode
-if strcmpi(outputType, 'proba')
+if wantProbability
     mode_str = 'proba';
 else
     mode_str = 'segmentation';
@@ -356,19 +366,30 @@ if doTracking
     tmpout = trackMasksHungarian(tmpout);
 end
 
-image(:,:,pixresults, frames_list) = tmpout;
-localConfigureIndexedAnnotationDisplay(roiobj, roiobj.channelid(pixresults));
-disp('Masques CellposeSAM integres dans image.');
+if wantSegmentation
+    image(:,:,pixresults, frames_list) = tmpout;
+    localConfigureIndexedAnnotationDisplay(roiobj, roiobj.channelid(pixresults));
+    disp('Masques CellposeSAM integres dans image.');
+end
 
-if strcmpi(outputType, 'proba')
+if wantProbability
     if ~isfield(res, 'cellprob_all')
-        error('cellposesam.classify: outputType=proba mais results.mat ne contient pas cellprob_all.');
+        error('cellposesam.classify: outputType=%s mais results.mat ne contient pas cellprob_all.', outputType);
     end
 
     chNameProba = [outputName '_cellprob'];
+    if isfield(ctx, 'params') && isstruct(ctx.params) && isfield(ctx.params, 'probabilityOutputName') && ~isempty(ctx.params.probabilityOutputName)
+        chNameProba = char(string(ctx.params.probabilityOutputName));
+    end
     pixproba = findChannelID(roiobj, chNameProba);
     if isempty(pixproba)
-        error('cellposesam.classify: channel proba "%s" attendu (cree en ROIpreprocessing).', chNameProba);
+        matrix = zeros(size(image,1), size(image,2), 1, size(image,4), 'like', image);
+        roiobj.addChannel(matrix, chNameProba, [1 1 1], [0 0 65535]);
+        image = roiobj.image;
+        pixproba = findChannelID(roiobj, chNameProba);
+        if isempty(pixproba)
+            error('cellposesam.classify: impossible de creer le channel proba "%s".', chNameProba);
+        end
     end
 
     tmpproba = res.cellprob_all;

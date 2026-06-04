@@ -38,6 +38,7 @@ function ctx = runCore(ctx)
         p = mergeStructOverride(p, ctx.params);
     end
     p = roiGrid.setparam(p);
+    p = applyExistingPolicyToGridParams(p, ctx);
 
     if isfield(ctx, 'fovIndex') && ~isempty(ctx.fovIndex)
         fovIdx = reshape(double(ctx.fovIndex), 1, []);
@@ -79,7 +80,10 @@ function ctx = runCore(ctx)
             target = fovList(idx);
         end
 
-        if strcmpi(p.mode, 'grid') && p.gridCount > 1
+        explicitRects = explicitGridRectsLocal(p);
+        if ~isempty(explicitRects)
+            addExplicitRois(target, explicitRects);
+        elseif strcmpi(p.mode, 'grid') && p.gridCount > 1
             addGridRois(target, img, p.gridCount);
         else
             roival = uint16([1 1 size(img,2) size(img,1)]);
@@ -110,27 +114,99 @@ function ctx = runCore(ctx)
     ctx.roiList = collectROIsLocal(fovList(fovIdx));
 end
 
-function addGridRois(fovObj, img, gridCount)
-rows = sqrt(gridCount);
-cols = rows;
-if abs(rows - round(rows)) > eps
-    error('roiGrid.runCore:InvalidGrid', 'Grid count must be a perfect square.');
+function p = applyExistingPolicyToGridParams(p, ctx)
+policy = resolveExistingPolicy(ctx, p, 'replace');
+switch lower(policy)
+    case 'skip'
+        p.keepExisting = true;
+        p.skipExisting = true;
+        p.errorOnExisting = false;
+    case {'upsert','append'}
+        p.keepExisting = true;
+        p.skipExisting = false;
+        p.errorOnExisting = false;
+    case 'error'
+        p.keepExisting = true;
+        p.skipExisting = false;
+        p.errorOnExisting = true;
+    otherwise
+        p.keepExisting = false;
+        p.skipExisting = false;
+        p.errorOnExisting = false;
 end
-rows = round(rows);
-cols = round(cols);
+end
+
+function policy = resolveExistingPolicy(ctx, p, fallback)
+policy = '';
+try
+    if isfield(ctx,'executionPolicy') && isstruct(ctx.executionPolicy) && ...
+            isfield(ctx.executionPolicy,'existingPolicy') && ~isempty(ctx.executionPolicy.existingPolicy)
+        policy = char(string(ctx.executionPolicy.existingPolicy));
+    elseif isfield(ctx,'io') && isstruct(ctx.io) && isfield(ctx.io,'effectiveExistingPolicy') && ~isempty(ctx.io.effectiveExistingPolicy)
+        policy = char(string(ctx.io.effectiveExistingPolicy));
+    elseif isfield(ctx,'io') && isstruct(ctx.io) && isfield(ctx.io,'existingPolicy') && ~isempty(ctx.io.existingPolicy)
+        policy = char(string(ctx.io.existingPolicy));
+    elseif isstruct(p) && isfield(p,'existingPolicy') && ~isempty(p.existingPolicy)
+        policy = char(string(p.existingPolicy));
+    end
+catch
+    policy = '';
+end
+if isempty(policy)
+    policy = fallback;
+end
+policy = lower(strtrim(policy));
+if strcmp(policy, 'update')
+    policy = 'upsert';
+elseif strcmp(policy, 'replace_existing')
+    policy = 'replace';
+end
+if ~any(strcmp(policy, {'replace','skip','upsert','append','error'}))
+    policy = fallback;
+end
+end
+
+function addGridRois(fovObj, img, gridCount)
 N = size(img,1);
 M = size(img,2);
+gridCount = max(1, round(double(gridCount)));
+cols = ceil(sqrt(gridCount));
+rows = ceil(gridCount / cols);
 squareSizeRows = N / rows;
 squareSizeCols = M / cols;
 for ii = 1:gridCount
     rowIdx = ceil(ii / cols);
     colIdx = mod(ii - 1, cols) + 1;
-    topLeftRow = (rowIdx - 1) * squareSizeRows + 1;
-    topLeftCol = (colIdx - 1) * squareSizeCols + 1;
-    bottomRightRow = min(rowIdx * squareSizeRows, N);
-    bottomRightCol = min(colIdx * squareSizeCols, M);
+    topLeftRow = round((rowIdx - 1) * squareSizeRows) + 1;
+    topLeftCol = round((colIdx - 1) * squareSizeCols) + 1;
+    bottomRightRow = round(min(rowIdx * squareSizeRows, N));
+    bottomRightCol = round(min(colIdx * squareSizeCols, M));
     roival = [topLeftCol, topLeftRow, bottomRightCol-topLeftCol+1, bottomRightRow-topLeftRow+1];
     fovObj.addROI(uint16(roival), fovObj.id);
+end
+end
+
+function addExplicitRois(fovObj, rects)
+rects = round(double(rects));
+for ii = 1:size(rects,1)
+    roival = rects(ii,1:4);
+    if any(~isfinite(roival)) || roival(3) <= 0 || roival(4) <= 0
+        continue;
+    end
+    fovObj.addROI(uint16(roival), fovObj.id);
+end
+end
+
+function rects = explicitGridRectsLocal(p)
+rects = [];
+keys = {'gridRects','candidateRects','previewRects'};
+for i = 1:numel(keys)
+    k = keys{i};
+    if isfield(p, k) && isnumeric(p.(k)) && ~isempty(p.(k)) && size(p.(k),2) >= 4
+        rects = round(double(p.(k)(:,1:4)));
+        rects = rects(all(isfinite(rects),2) & rects(:,3) > 0 & rects(:,4) > 0, :);
+        return;
+    end
 end
 end
 

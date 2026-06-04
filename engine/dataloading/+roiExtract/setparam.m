@@ -5,6 +5,7 @@ function param = setparam(ctx)
     param.fovIndex = [];
     param.frames = [];
     param.channels = {};
+    param.extractChannels = '@source';
     param.roiList = [];
     param.extend = false;
     param.forceChannelNames = true;

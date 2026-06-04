@@ -140,8 +140,9 @@ function [ctx, report] = runPipeline(pipe, ctx)
             ctx = applyPolicyToContext(ctx, node, policy);
             ctx = executeNode(node, ctx);
             afterStats = captureContextStats(ctx);
-            report = appendNodeRun(report, node, policy, 'done', ...
-                beforeStats, afterStats, toc(tNode), '');
+            [nodeStatus, nodeMessage, ctx] = consumeNodeStatusOverride(ctx);
+            report = appendNodeRun(report, node, policy, nodeStatus, ...
+                beforeStats, afterStats, toc(tNode), nodeMessage);
         catch ME
             afterStats = captureContextStats(ctx);
             report = appendNodeRun(report, node, policy, 'failed', ...
@@ -394,6 +395,16 @@ function ctx = normalizeExecutionContext(ctx)
     else
         ctx.sel.frames = normalizeIndexVectorLocal(ctx.sel.frames);
     end
+
+    if ~isfield(ctx.sel,'rois') || isempty(ctx.sel.rois)
+        if isfield(ctx.run,'rois') && ~isempty(ctx.run.rois)
+            ctx.sel.rois = normalizeIndexVectorLocal(ctx.run.rois);
+        else
+            ctx.sel.rois = [];
+        end
+    else
+        ctx.sel.rois = normalizeIndexVectorLocal(ctx.sel.rois);
+    end
 end
 
 function report = initRunReport(report, ctx)
@@ -535,6 +546,26 @@ function report = appendNodeRun(report, node, policy, status, beforeStats, after
         'after', afterStats, ...
         'message', char(string(message)));
     report.nodeRuns(end+1) = row; %#ok<AGROW>
+end
+
+function [status, message, ctx] = consumeNodeStatusOverride(ctx)
+    status = 'done';
+    message = '';
+    try
+        if isfield(ctx, 'pipeline') && isstruct(ctx.pipeline)
+            if isfield(ctx.pipeline, 'nodeStatusOverride') && ~isempty(ctx.pipeline.nodeStatusOverride)
+                status = char(string(ctx.pipeline.nodeStatusOverride));
+                ctx.pipeline = rmfield(ctx.pipeline, 'nodeStatusOverride');
+            end
+            if isfield(ctx.pipeline, 'nodeMessage') && ~isempty(ctx.pipeline.nodeMessage)
+                message = char(string(ctx.pipeline.nodeMessage));
+                ctx.pipeline = rmfield(ctx.pipeline, 'nodeMessage');
+            end
+        end
+    catch
+        status = 'done';
+        message = '';
+    end
 end
 
 function stats = captureContextStats(ctx)
@@ -1242,10 +1273,17 @@ function ctx = seedContextFromProject(ctx)
     end
 
     srcLevel = getProjectInputSourceLevel(ctx);
-    if srcLevel >= 2
+    hasExplicitRois = isfield(ctx,'roiList') && ~isempty(ctx.roiList);
+    if srcLevel >= 2 && ~hasExplicitRois
         ctx.roiList = collectRoisFromFovList(getfielddefault(ctx,'fovList',[]));
     elseif (~isfield(ctx,'roiList') || isempty(ctx.roiList)) && shouldSeedFromProjectInputSource(ctx)
         ctx.roiList = collectRoisFromFovList(getfielddefault(ctx,'fovList',[]));
+    end
+    if isfield(ctx,'roiList') && ~isempty(ctx.roiList) && ...
+            isfield(ctx,'sel') && isstruct(ctx.sel) && isfield(ctx.sel,'rois') && ~isempty(ctx.sel.rois)
+        idx = normalizeIndexVectorLocal(ctx.sel.rois);
+        idx = idx(idx >= 1 & idx <= numel(ctx.roiList));
+        ctx.roiList = ctx.roiList(idx);
     end
 
     if srcLevel >= 3 && (~isfield(ctx,'masks') || isempty(ctx.masks))
@@ -1307,7 +1345,7 @@ function ctx = executeProcessorNode(node, ctx)
     pkgName = resolveNodePackage(node);
     p = getfielddefault(node, 'params', struct());
     refProc = resolveProcessorReference(node, p, ctx);
-    procObj = process(tempdir, 'pipeline_processor', randi(1e9));
+    procObj = process('', 'pipeline_processor', randi(1e9));
     if ~isempty(refProc)
         procObj = applyProcessorReference(procObj, refProc);
     end
@@ -1376,12 +1414,11 @@ function ctx = executeProcessorNode(node, ctx)
                     'Processor node %s output %s already exists.', ...
                     char(string(node.id)), char(string(procCtx.outputName)));
             end
-            warning('runPipeline:ProcessorSkippedExisting', ...
-                'Processor node %s skipped because output %s already exists.', ...
-                char(string(node.id)), char(string(procCtx.outputName)));
             ctx.roiList = rois;
             ctx.dataSeries = collectDataSeriesFromRois(rois);
             ctx.channels = inferChannelsFromRois(rois, ctx);
+            ctx.pipeline.nodeStatusOverride = 'skipped_existing';
+            ctx.pipeline.nodeMessage = sprintf('Output %s already exists.', char(string(procCtx.outputName)));
             return;
         end
         if strcmp(existingPolicy, 'append') && roiOutputsExist(rois, char(string(procCtx.outputName)))
@@ -1432,7 +1469,7 @@ function ctx = executeClassifierNode(node, ctx)
     pkgName = resolveNodePackage(node);
     p = getfielddefault(node, 'params', struct());
     refClassi = resolveClassifierReference(node, p, ctx);
-    clsObj = classi(tempdir, 'pipeline_classifier', randi(1e9), 'InitTraining', false);
+    clsObj = classi('', 'pipeline_classifier', randi(1e9), 'InitTraining', false);
     clsObj.strid = char(string(node.id));
 
     if ~isempty(refClassi)
@@ -1501,13 +1538,12 @@ function ctx = executeClassifierNode(node, ctx)
                 'Classifier node %s output %s already exists.', ...
                 char(string(node.id)), outputName);
         end
-        warning('runPipeline:ClassifierSkippedExisting', ...
-            'Classifier node %s skipped because output %s already exists.', ...
-            char(string(node.id)), outputName);
         ctx.roiList = rois;
         ctx.dataSeries = collectDataSeriesFromRois(rois);
         ctx.channels = inferChannelsFromRois(rois, ctx);
         ctx.masks = inferMaskChannelsFromRois(rois);
+        ctx.pipeline.nodeStatusOverride = 'skipped_existing';
+        ctx.pipeline.nodeMessage = sprintf('Output %s already exists.', outputName);
         return;
     end
     if strcmp(existingPolicy, 'append') && roiOutputsExist(rois, outputName)
@@ -1526,6 +1562,10 @@ function ctx = executeClassifierNode(node, ctx)
         selectedChannels = p.channel;
     elseif isfield(p,'channels') && ~isempty(p.channels)
         selectedChannels = p.channels;
+    elseif isfield(p,'channelName') && ~isempty(p.channelName)
+        selectedChannels = p.channelName;
+    elseif isprop(clsObj, 'channelName') && ~isempty(clsObj.channelName)
+        selectedChannels = clsObj.channelName;
     end
     if ~isempty(selectedChannels)
         ch = normalizeClassifierChannels(selectedChannels);
@@ -1654,9 +1694,70 @@ if isempty(snap) || exist(snap, 'file') ~= 2
     return;
 end
 try
-    [refClassi, ~] = classiLoad(snap);
+    refClassi = loadClassifierSnapshotStrictLocal(snap);
 catch
     refClassi = [];
+end
+end
+
+function classiObj = loadClassifierSnapshotStrictLocal(filePath)
+classiObj = [];
+if isempty(filePath) || exist(filePath, 'file') ~= 2
+    return;
+end
+S = load(filePath);
+if isfield(S, 'classiObj') && isa(S.classiObj, 'classi')
+    classiObj = S.classiObj;
+else
+    names = fieldnames(S);
+    for ii = 1:numel(names)
+        cand = S.(names{ii});
+        if isa(cand, 'classi')
+            classiObj = cand;
+            break;
+        end
+    end
+end
+if isempty(classiObj) || ~isa(classiObj, 'classi')
+    classiObj = [];
+    return;
+end
+if numel(classiObj) > 1
+    [~, expectedId] = fileparts(filePath);
+    expectedId = regexprep(expectedId, '_classification$', '');
+    ids = arrayfun(@(x) char(string(x.strid)), classiObj, 'UniformOutput', false);
+    match = find(strcmp(ids, expectedId), 1, 'first');
+    if isempty(match)
+        match = 1;
+    end
+    classiObj = classiObj(match);
+end
+try
+    [pth, file] = fileparts(filePath);
+    file = regexprep(file, '_classification$', '');
+    if ispc
+        pth = [pth '\'];
+    else
+        pth = [pth '/'];
+    end
+    classiObj.setPath(pth, file);
+catch
+end
+try
+    classiObj.category = classiNormalizeCategory(classiObj.category);
+catch
+end
+try
+    if isprop(classiObj, 'run') && isstruct(classiObj.run) && isfield(classiObj.run, 'active')
+        classiObj.run.active = false;
+    end
+    classiObj.runNormalizePaths();
+catch
+end
+try
+    classiObj.syncDatasetFromLegacy();
+    classiObj.syncLegacyFromDataset();
+catch
 end
 end
 
@@ -1852,6 +1953,7 @@ function rois = collectRoisFromFovList(fovList)
         catch
         end
     end
+    rois = filterValidRoiHandles(rois);
 end
 
 function rois = collectRoisFromProject(shallowObj)
@@ -1868,16 +1970,47 @@ function rois = collectRoisFromProject(shallowObj)
         catch
         end
     end
+    rois = filterValidRoiHandles(rois);
+end
+
+function rois = filterValidRoiHandles(rois)
+    if isempty(rois)
+        return;
+    end
+    keep = true(1, numel(rois));
+    for i = 1:numel(rois)
+        try
+            r = rois(i);
+            rid = '';
+            rpath = '';
+            if isprop(r, 'id') && ~isempty(r.id)
+                rid = char(string(r.id));
+            end
+            if isprop(r, 'path') && ~isempty(r.path)
+                rpath = char(string(r.path));
+            end
+            keep(i) = ~(isempty(strtrim(rid)) && isempty(strtrim(rpath)));
+        catch
+            keep(i) = false;
+        end
+    end
+    rois = rois(keep);
 end
 
 function pkgName = resolveNodePackage(node)
     pkgName = '';
+    nodeType = '';
+    if isfield(node,'type') && ~isempty(node.type)
+        nodeType = char(string(node.type));
+    end
     if isfield(node,'pkg') && ~isempty(node.pkg)
         pkgName = char(string(node.pkg));
+        pkgName = canonicalPackageNameForNode(nodeType, pkgName);
         return;
     end
     if isfield(node,'params') && isstruct(node.params) && isfield(node.params,'pkg') && ~isempty(node.params.pkg)
         pkgName = char(string(node.params.pkg));
+        pkgName = canonicalPackageNameForNode(nodeType, pkgName);
         return;
     end
     if isfield(node,'func') && ~isempty(node.func)
@@ -1885,7 +2018,60 @@ function pkgName = resolveNodePackage(node)
         dot = strfind(f, '.');
         if ~isempty(dot)
             pkgName = f(1:dot(1)-1);
+            pkgName = canonicalPackageNameForNode(nodeType, pkgName);
         end
+    end
+end
+
+function pkgName = canonicalPackageNameForNode(nodeType, pkgName)
+    if isempty(pkgName)
+        return;
+    end
+    raw = char(string(pkgName));
+    switch lower(strtrim(raw))
+        case 'dataloader'
+            pkgName = 'dataLoader';
+        case {'roipattern','roiidentify'}
+            pkgName = 'roiPattern';
+        case 'roimanual'
+            pkgName = 'roiManual';
+        case 'roigrid'
+            pkgName = 'roiGrid';
+        case 'roitracked'
+            pkgName = 'roiTracked';
+        case 'roiextract'
+            pkgName = 'roiExtract';
+        case 'combinemultiplechannels'
+            pkgName = 'combineMultipleChannels';
+        case 'computemetrics'
+            pkgName = 'computeMetrics';
+        case 'computerls'
+            pkgName = 'computeRLS';
+        case 'computelineage'
+            pkgName = 'computeLineage';
+        case 'computemaxprojection'
+            pkgName = 'computeMaxProjection';
+        case 'basicobjecttracking'
+            pkgName = 'basicObjectTracking';
+        case 'formatindataseries'
+            pkgName = 'formatInDataSeries';
+        case 'trackmotherlineageviterbi'
+            pkgName = 'trackMotherLineageViterbi';
+        otherwise
+            if strcmpi(char(string(nodeType)), 'classifier')
+                switch lower(strtrim(raw))
+                    case 'cellposesam'
+                        pkgName = 'cellposesam';
+                    case 'cnn_lstm'
+                        pkgName = 'cnn_lstm';
+                    case 'cnn'
+                        pkgName = 'cnn';
+                    otherwise
+                        pkgName = raw;
+                end
+            else
+                pkgName = raw;
+            end
     end
 end
 

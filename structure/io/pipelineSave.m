@@ -32,7 +32,7 @@ function pipelineSave(pipe)
 
     % Keep one folder per node with a lightweight manifest/params.
     try
-        syncModuleArtifacts(path, pipe.nodes);
+        syncModuleArtifacts(path, S.nodes);
     catch ME
         warning('pipelineSave:Artifacts','Could not sync module artifacts: %s', ME.message);
     end
@@ -55,7 +55,7 @@ function S = pipelineToStruct(pipe)
     S.version = pipe.version;
     S.description = pipe.description;
 
-    S.nodes = pipe.nodes;
+    S.nodes = sanitizePipelineNodes(pipe.nodes);
     S.edges = pipe.edges;
     if ~isempty(pipe.branches)
         S.branches = pipe.branches;
@@ -66,6 +66,49 @@ function S = pipelineToStruct(pipe)
 
     S.createdAt = '';
     S.updatedAt = char(datetime('now'));
+end
+
+function nodes = sanitizePipelineNodes(nodes)
+    for i = 1:numel(nodes)
+        if ~isfield(nodes(i), 'params') || ~isstruct(nodes(i).params)
+            continue;
+        end
+        nodeType = lower(char(string(getField(nodes(i), 'type', ''))));
+        pkg = lower(char(string(getField(nodes(i), 'pkg', ''))));
+        if strcmp(nodeType, 'processor') && strcmp(pkg, 'computerls') && isfield(nodes(i).params, 'StateDecoder')
+            nodes(i).params.StateDecoder = scalarChoiceValue(nodes(i).params.StateDecoder, 'off');
+        end
+    end
+end
+
+function value = scalarChoiceValue(value, fallback)
+    if nargin < 2
+        fallback = '';
+    end
+    if iscell(value)
+        if isempty(value)
+            value = fallback;
+        else
+            value = char(string(value{end}));
+        end
+    elseif isstring(value) || isnumeric(value) || islogical(value) || iscategorical(value)
+        vals = string(value(:));
+        if isempty(vals)
+            value = fallback;
+        else
+            value = char(vals(end));
+        end
+    elseif ~ischar(value)
+        try
+            value = char(string(value));
+        catch
+            value = fallback;
+        end
+    end
+    value = strtrim(char(string(value)));
+    if isempty(value)
+        value = fallback;
+    end
 end
 
 function syncModuleArtifacts(pipePath, nodes)

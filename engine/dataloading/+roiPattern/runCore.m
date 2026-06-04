@@ -50,6 +50,7 @@ function ctx = runCore(ctx)
     if ~isfield(p,'errorOnExisting')
         p.errorOnExisting = false;
     end
+    p = applyExistingPolicyToPatternParams(p, ctx);
 
     if isfield(ctx,'fovIndex') && ~isempty(ctx.fovIndex)
         fovIdx = ctx.fovIndex(:)';
@@ -189,6 +190,58 @@ function ctx = runCore(ctx)
             storePatternLocal(shallowObj, patternList(patIdx));
         end
     end
+end
+
+function p = applyExistingPolicyToPatternParams(p, ctx)
+policy = resolveExistingPolicy(ctx, p, 'replace');
+switch lower(policy)
+    case 'skip'
+        p.keepExisting = true;
+        p.skipExisting = true;
+        p.errorOnExisting = false;
+    case {'upsert','append'}
+        p.keepExisting = true;
+        p.skipExisting = false;
+        p.errorOnExisting = false;
+    case 'error'
+        p.keepExisting = true;
+        p.skipExisting = false;
+        p.errorOnExisting = true;
+    otherwise
+        p.keepExisting = false;
+        p.skipExisting = false;
+        p.errorOnExisting = false;
+end
+end
+
+function policy = resolveExistingPolicy(ctx, p, fallback)
+policy = '';
+try
+    if isfield(ctx,'executionPolicy') && isstruct(ctx.executionPolicy) && ...
+            isfield(ctx.executionPolicy,'existingPolicy') && ~isempty(ctx.executionPolicy.existingPolicy)
+        policy = char(string(ctx.executionPolicy.existingPolicy));
+    elseif isfield(ctx,'io') && isstruct(ctx.io) && isfield(ctx.io,'effectiveExistingPolicy') && ~isempty(ctx.io.effectiveExistingPolicy)
+        policy = char(string(ctx.io.effectiveExistingPolicy));
+    elseif isfield(ctx,'io') && isstruct(ctx.io) && isfield(ctx.io,'existingPolicy') && ~isempty(ctx.io.existingPolicy)
+        policy = char(string(ctx.io.existingPolicy));
+    elseif isstruct(p) && isfield(p,'existingPolicy') && ~isempty(p.existingPolicy)
+        policy = char(string(p.existingPolicy));
+    end
+catch
+    policy = '';
+end
+if isempty(policy)
+    policy = fallback;
+end
+policy = lower(strtrim(policy));
+if strcmp(policy, 'update')
+    policy = 'upsert';
+elseif strcmp(policy, 'replace_existing')
+    policy = 'replace';
+end
+if ~any(strcmp(policy, {'replace','skip','upsert','append','error'}))
+    policy = fallback;
+end
 end
 
 function tf = shouldSkipExistingFov(fovObj, p)
@@ -662,6 +715,9 @@ function out = mergeStructOverride(base, override)
     end
     fn = fieldnames(override);
     for i = 1:numel(fn)
+        if isempty(override.(fn{i}))
+            continue;
+        end
         out.(fn{i}) = override.(fn{i});
     end
 end

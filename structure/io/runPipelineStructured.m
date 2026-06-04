@@ -149,8 +149,9 @@ function [ctx, report] = runPipelineStructured(pipe, ctx)
             fprintf('DETECDIV_PIPELINE_PROGRESS node_done id=%s type=%s index=%d total=%d elapsed=%.3f\n', ...
                 char(string(nodeId)), char(string(node.type)), i, total, toc(tNode));
             afterStats = captureContextStats(ctx);
-            report = appendNodeRun(report, node, policy, 'done', ...
-                beforeStats, afterStats, toc(tNode), '');
+            [nodeStatus, nodeMessage, ctx] = consumeNodeStatusOverride(ctx);
+            report = appendNodeRun(report, node, policy, nodeStatus, ...
+                beforeStats, afterStats, toc(tNode), nodeMessage);
         catch ME
             fprintf('DETECDIV_PIPELINE_PROGRESS node_failed id=%s type=%s index=%d total=%d elapsed=%.3f\n', ...
                 char(string(nodeId)), char(string(node.type)), i, total, toc(tNode));
@@ -620,6 +621,26 @@ function report = appendNodeRun(report, node, policy, status, beforeStats, after
         'after', afterStats, ...
         'message', char(string(message)));
     report.nodeRuns(end+1) = row; %#ok<AGROW>
+end
+
+function [status, message, ctx] = consumeNodeStatusOverride(ctx)
+    status = 'done';
+    message = '';
+    try
+        if isfield(ctx, 'pipeline') && isstruct(ctx.pipeline)
+            if isfield(ctx.pipeline, 'nodeStatusOverride') && ~isempty(ctx.pipeline.nodeStatusOverride)
+                status = char(string(ctx.pipeline.nodeStatusOverride));
+                ctx.pipeline = rmfield(ctx.pipeline, 'nodeStatusOverride');
+            end
+            if isfield(ctx.pipeline, 'nodeMessage') && ~isempty(ctx.pipeline.nodeMessage)
+                message = char(string(ctx.pipeline.nodeMessage));
+                ctx.pipeline = rmfield(ctx.pipeline, 'nodeMessage');
+            end
+        end
+    catch
+        status = 'done';
+        message = '';
+    end
 end
 
 function stats = captureContextStats(ctx)
@@ -1392,7 +1413,7 @@ function ctx = executeProcessorNode(node, ctx)
     pkgName = resolveNodePackage(node);
     p = getfielddefault(node, 'params', struct());
     refProc = resolveProcessorReference(node, p, ctx);
-    procObj = process(tempdir, 'pipeline_processor', randi(1e9));
+    procObj = process('', 'pipeline_processor', randi(1e9));
     if ~isempty(refProc)
         procObj = applyProcessorReference(procObj, refProc);
     end
@@ -1461,12 +1482,11 @@ function ctx = executeProcessorNode(node, ctx)
                     'Processor node %s output %s already exists.', ...
                     char(string(node.id)), char(string(procCtx.outputName)));
             end
-            warning('runPipeline:ProcessorSkippedExisting', ...
-                'Processor node %s skipped because output %s already exists.', ...
-                char(string(node.id)), char(string(procCtx.outputName)));
             ctx.roiList = rois;
             ctx.dataSeries = collectDataSeriesFromRois(rois);
             ctx.channels = inferChannelsFromRois(rois, ctx);
+            ctx.pipeline.nodeStatusOverride = 'skipped_existing';
+            ctx.pipeline.nodeMessage = sprintf('Output %s already exists.', char(string(procCtx.outputName)));
             return;
         end
         if strcmp(existingPolicy, 'append') && roiOutputsExist(rois, char(string(procCtx.outputName)))
@@ -1520,7 +1540,7 @@ function ctx = executeClassifierNode(node, ctx)
     pkgName = resolveNodePackage(node);
     p = getfielddefault(node, 'params', struct());
     refClassi = resolveClassifierReference(node, p, ctx);
-    clsObj = classi(tempdir, 'pipeline_classifier', randi(1e9), 'InitTraining', false);
+    clsObj = classi('', 'pipeline_classifier', randi(1e9), 'InitTraining', false);
     clsObj.strid = char(string(node.id));
 
     if ~isempty(refClassi)
@@ -1590,13 +1610,12 @@ function ctx = executeClassifierNode(node, ctx)
                 'Classifier node %s output %s already exists.', ...
                 char(string(node.id)), outputName);
         end
-        warning('runPipeline:ClassifierSkippedExisting', ...
-            'Classifier node %s skipped because output %s already exists.', ...
-            char(string(node.id)), outputName);
         ctx.roiList = rois;
         ctx.dataSeries = collectDataSeriesFromRois(rois);
         ctx.channels = inferChannelsFromRois(rois, ctx);
         ctx.masks = inferMaskChannelsFromRois(rois);
+        ctx.pipeline.nodeStatusOverride = 'skipped_existing';
+        ctx.pipeline.nodeMessage = sprintf('Output %s already exists.', outputName);
         return;
     end
     if strcmp(existingPolicy, 'append') && roiOutputsExist(rois, outputName)
@@ -2033,6 +2052,7 @@ function rois = collectRoisFromFovList(fovList)
         catch
         end
     end
+    rois = filterValidRoiHandles(rois);
 end
 
 function rois = collectRoisFromProject(shallowObj)
@@ -2049,16 +2069,47 @@ function rois = collectRoisFromProject(shallowObj)
         catch
         end
     end
+    rois = filterValidRoiHandles(rois);
+end
+
+function rois = filterValidRoiHandles(rois)
+    if isempty(rois)
+        return;
+    end
+    keep = true(1, numel(rois));
+    for i = 1:numel(rois)
+        try
+            r = rois(i);
+            rid = '';
+            rpath = '';
+            if isprop(r, 'id') && ~isempty(r.id)
+                rid = char(string(r.id));
+            end
+            if isprop(r, 'path') && ~isempty(r.path)
+                rpath = char(string(r.path));
+            end
+            keep(i) = ~(isempty(strtrim(rid)) && isempty(strtrim(rpath)));
+        catch
+            keep(i) = false;
+        end
+    end
+    rois = rois(keep);
 end
 
 function pkgName = resolveNodePackage(node)
     pkgName = '';
+    nodeType = '';
+    if isfield(node,'type') && ~isempty(node.type)
+        nodeType = char(string(node.type));
+    end
     if isfield(node,'pkg') && ~isempty(node.pkg)
         pkgName = char(string(node.pkg));
+        pkgName = canonicalPackageNameForNode(nodeType, pkgName);
         return;
     end
     if isfield(node,'params') && isstruct(node.params) && isfield(node.params,'pkg') && ~isempty(node.params.pkg)
         pkgName = char(string(node.params.pkg));
+        pkgName = canonicalPackageNameForNode(nodeType, pkgName);
         return;
     end
     if isfield(node,'func') && ~isempty(node.func)
@@ -2066,7 +2117,60 @@ function pkgName = resolveNodePackage(node)
         dot = strfind(f, '.');
         if ~isempty(dot)
             pkgName = f(1:dot(1)-1);
+            pkgName = canonicalPackageNameForNode(nodeType, pkgName);
         end
+    end
+end
+
+function pkgName = canonicalPackageNameForNode(nodeType, pkgName)
+    if isempty(pkgName)
+        return;
+    end
+    raw = char(string(pkgName));
+    switch lower(strtrim(raw))
+        case 'dataloader'
+            pkgName = 'dataLoader';
+        case {'roipattern','roiidentify'}
+            pkgName = 'roiPattern';
+        case 'roimanual'
+            pkgName = 'roiManual';
+        case 'roigrid'
+            pkgName = 'roiGrid';
+        case 'roitracked'
+            pkgName = 'roiTracked';
+        case 'roiextract'
+            pkgName = 'roiExtract';
+        case 'combinemultiplechannels'
+            pkgName = 'combineMultipleChannels';
+        case 'computemetrics'
+            pkgName = 'computeMetrics';
+        case 'computerls'
+            pkgName = 'computeRLS';
+        case 'computelineage'
+            pkgName = 'computeLineage';
+        case 'computemaxprojection'
+            pkgName = 'computeMaxProjection';
+        case 'basicobjecttracking'
+            pkgName = 'basicObjectTracking';
+        case 'formatindataseries'
+            pkgName = 'formatInDataSeries';
+        case 'trackmotherlineageviterbi'
+            pkgName = 'trackMotherLineageViterbi';
+        otherwise
+            if strcmpi(char(string(nodeType)), 'classifier')
+                switch lower(strtrim(raw))
+                    case 'cellposesam'
+                        pkgName = 'cellposesam';
+                    case 'cnn_lstm'
+                        pkgName = 'cnn_lstm';
+                    case 'cnn'
+                        pkgName = 'cnn';
+                    otherwise
+                        pkgName = raw;
+                end
+            else
+                pkgName = raw;
+            end
     end
 end
 

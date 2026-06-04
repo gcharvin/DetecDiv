@@ -20,6 +20,7 @@ function [ok, report] = validatePipeline(pipe, ctx, opts)
     nodes = normalizeNodesWithContracts(P.nodes);
     edges = normalizeEdges(P, nodes);
     [nodes, edges] = filterGraphForRunSelection(nodes, edges, ctx);
+    nodes = injectContextResolvedNodeBindings(nodes, ctx);
 
     report.nodes = nodes;
     report.edges = edges;
@@ -109,6 +110,16 @@ function [ok, report] = validatePipeline(pipe, ctx, opts)
             artifactWarnings = classifierArtifactWarnings(node);
             if ~isempty(artifactWarnings)
                 report.warnings = [report.warnings, artifactWarnings]; %#ok<AGROW>
+            end
+            designErrors = requiredDesignAssetErrors(node, ctx);
+            if ~isempty(designErrors)
+                if hasNodeGui(node) && allowGui
+                    report.needsGui{end+1} = char(string(node.id)); %#ok<AGROW>
+                    report.warnings = [report.warnings, designErrors]; %#ok<AGROW>
+                else
+                    ok = false;
+                    report.errors = [report.errors, designErrors]; %#ok<AGROW>
+                end
             end
             [semOk, semErrors, semWarnings, semReport] = validateNodeSemanticRequirements(node, semanticState);
             report.semantic.(matlab.lang.makeValidName(char(string(node.id)))) = semReport;
@@ -663,8 +674,82 @@ function channels = resolveNodeConfiguredChannels(node, selectors)
         end
     end
 
+    if strcmpi(char(string(getField(node, 'type', ''))), 'classifier')
+        channels = resolveLinkedClassifierChannels(node);
+        if ~isempty(channels)
+            return;
+        end
+    end
+
     if isstruct(selectors) && isfield(selectors, 'defaultChannels') && ~isempty(selectors.defaultChannels)
         channels = normalizeChannelList(selectors.defaultChannels);
+    end
+end
+
+function channels = resolveLinkedClassifierChannels(node)
+    channels = {};
+    p = getField(node, 'params', struct());
+    if ~isstruct(p)
+        return;
+    end
+    snap = '';
+    try
+        base = '';
+        if isfield(p, 'modulePath') && ~isempty(p.modulePath)
+            base = char(string(p.modulePath));
+        end
+        moduleId = '';
+        if isfield(p, 'moduleId') && ~isempty(p.moduleId)
+            moduleId = char(string(p.moduleId));
+        elseif isfield(p, 'outputName') && ~isempty(p.outputName)
+            moduleId = char(string(p.outputName));
+        end
+        if isempty(base) || exist(base, 'dir') ~= 7
+            return;
+        end
+        candidates = {};
+        if ~isempty(moduleId)
+            candidates = { ...
+                fullfile(base, [moduleId '_classification.mat']), ...
+                fullfile(base, [moduleId '.mat'])};
+        end
+        files = dir(fullfile(base, '*_classification.mat'));
+        for i = 1:numel(files)
+            candidates{end+1} = fullfile(files(i).folder, files(i).name); %#ok<AGROW>
+        end
+        for i = 1:numel(candidates)
+            if exist(candidates{i}, 'file') == 2
+                snap = candidates{i};
+                break;
+            end
+        end
+        if isempty(snap)
+            return;
+        end
+        S = load(snap);
+        clsObj = [];
+        if isfield(S, 'classiObj') && isa(S.classiObj, 'classi')
+            clsObj = S.classiObj;
+        else
+            fn = fieldnames(S);
+            for i = 1:numel(fn)
+                if isa(S.(fn{i}), 'classi')
+                    clsObj = S.(fn{i});
+                    break;
+                end
+            end
+        end
+        if isempty(clsObj)
+            return;
+        end
+        if numel(clsObj) > 1
+            clsObj = clsObj(1);
+        end
+        if isprop(clsObj, 'channelName') && ~isempty(clsObj.channelName)
+            channels = normalizeChannelList(clsObj.channelName);
+        end
+    catch
+        channels = {};
     end
 end
 
@@ -718,7 +803,11 @@ function report = solvePipelineBindings(nodes, edges, ctx, order)
             case 'invalid'
                 report.errors{end+1} = nodeReport.message; %#ok<AGROW>
             case 'needs_user_binding'
-                report.warnings{end+1} = nodeReport.message; %#ok<AGROW>
+                if strcmpi(char(string(getField(nodeReport, 'resolveAt', 'run'))), 'design')
+                    report.errors{end+1} = nodeReport.message; %#ok<AGROW>
+                else
+                    report.warnings{end+1} = nodeReport.message; %#ok<AGROW>
+                end
                 report.needsUserBinding{end+1} = char(string(node.id)); %#ok<AGROW>
             case 'needs_run_binding'
                 report.warnings{end+1} = nodeReport.message; %#ok<AGROW>
@@ -764,6 +853,15 @@ function nodeReport = evaluateNodeBinding(node, state)
         case 'roi'
             availableChannels = state.roiChannels;
             supportAvailable = state.hasRoiList;
+    end
+
+    allChannelsSelected = isAllChannelSelection(configuredChannels);
+    if allChannelsSelected
+        if ~isempty(availableChannels)
+            configuredChannels = availableChannels;
+        else
+            configuredChannels = {};
+        end
     end
 
     status = 'resolved';
@@ -840,7 +938,11 @@ function nodeReport = evaluateNodeBinding(node, state)
     else
         if isempty(availableChannels)
             status = classifyUnresolvedBinding(binding, availableChannels);
-            message = ['Node ' char(string(node.id)) ' depends on channel binding, but the upstream channel inventory is not known statically.'];
+            if allChannelsSelected
+                message = ['Node ' char(string(node.id)) ' requests all available channels, but the upstream channel inventory is not known statically.'];
+            else
+                message = ['Node ' char(string(node.id)) ' depends on channel binding, but the upstream channel inventory is not known statically.'];
+            end
         elseif numel(availableChannels) < requiredCount
             status = 'invalid';
             message = ['Node ' char(string(node.id)) ' requires ' num2str(requiredCount) ...
@@ -921,6 +1023,7 @@ function nodeReport = attachResourceBindingReport(nodeReport, node, state)
         end
         outputReports(end+1) = makeResourceOutput(node, r); %#ok<AGROW>
     end
+    outputReports = expandAllRoiExtractChannelOutputs(node, nodeReport, state, outputReports);
 
     nodeReport.resources = struct('inputs', {inputReports}, 'outputs', {outputReports});
     if ~strcmp(worstStatus, nodeReport.status)
@@ -933,6 +1036,75 @@ function nodeReport = attachResourceBindingReport(nodeReport, node, state)
             nodeReport.message = unresolved(1).message;
         end
     end
+end
+
+function outputs = expandAllRoiExtractChannelOutputs(node, nodeReport, state, outputs)
+    if ~strcmpi(char(string(getField(node, 'type', ''))), 'roiExtract') || isempty(outputs)
+        return;
+    end
+    channels = getField(nodeReport, 'configuredChannels', {});
+    if isempty(channels)
+        channels = getField(state, 'imageChannels', {});
+    end
+    channels = normalizeChannelList(channels);
+    channels = channels(~isAllChannelSelectionCell(channels));
+    if isempty(channels)
+        return;
+    end
+    keep = true(size(outputs));
+    for i = 1:numel(outputs)
+        if strcmpi(outputs(i).type, 'channel') && strcmpi(outputs(i).role, 'roi_image') && ...
+                isAllChannelSelection({outputs(i).concreteName})
+            keep(i) = false;
+        end
+    end
+    outputs = outputs(keep);
+    for i = 1:numel(channels)
+        item = resourceBindingDef('channel', 'roi_image', channels{i}, channels{i}, ...
+            char(string(getField(node, 'id', ''))), 'channels', 'imagesToRoi');
+        item.param = 'channels';
+        item.message = sprintf('Node %s provides channel/roi_image resource "%s".', ...
+            char(string(getField(node, 'id', ''))), channels{i});
+        outputs(end+1) = item; %#ok<AGROW>
+    end
+end
+
+function tf = isSingleChannelResourceSpec(spec)
+    tf = false;
+    if ~strcmpi(char(string(getField(spec, 'type', ''))), 'channel')
+        return;
+    end
+    param = lower(char(string(getField(spec, 'param', ''))));
+    required = logical(getField(spec, 'required', false));
+    singularParams = {'channel','inputchannelname','instancechannelname','mask1_name','mask2_name', ...
+        'channel1_name','channel2_name','channel3_name','channel4_name','channel5_name'};
+    tf = required || any(strcmp(param, singularParams));
+end
+
+function tf = isAmbiguousCollectionResource(resource, spec)
+    tf = false;
+    if ~isSingleChannelResourceSpec(spec)
+        return;
+    end
+    sourceKind = lower(char(string(getField(resource, 'sourceKind', ''))));
+    if any(strcmp(sourceKind, {'context','ctx','runtime'}))
+        return;
+    end
+    sourceNode = lower(char(string(getField(resource, 'sourceNode', ''))));
+    sourcePort = lower(char(string(getField(resource, 'sourcePort', ''))));
+    symbol = lower(char(string(getField(resource, 'symbol', ''))));
+    concrete = lower(strtrim(char(string(getField(resource, 'concreteName', '')))));
+
+    hasConcreteSingle = ~isempty(concrete) && ...
+        ~startsWith(concrete, '@') && ...
+        ~any(strcmp(concrete, {'channels','all','*',':',sourceNode}));
+    if hasConcreteSingle
+        return;
+    end
+
+    tf = any(strcmp(sourceKind, {'sourceinventory','imagestoroi'})) || ...
+        strcmp(sourcePort, 'channels') || ...
+        endsWith(symbol, '.channels');
 end
 
 function br = evaluateResourceInput(node, spec, availableResources)
@@ -964,6 +1136,9 @@ function br = evaluateResourceInput(node, spec, availableResources)
             msg = sprintf('Node %s symbolic %s/%s binding points to %s, but no matching resource is available upstream.', ...
                 char(string(getField(node, 'id', ''))), char(string(spec.type)), char(string(spec.role)), symbolic);
         end
+    elseif ~logical(getField(spec, 'required', false))
+        msg = sprintf('Node %s has optional %s/%s resource binding.', ...
+            char(string(getField(node, 'id', ''))), char(string(spec.type)), char(string(spec.role)));
     elseif numel(graphCompatible) == 1
         status = 'auto_resolvable';
         autoChoice = graphCompatible;
@@ -1175,6 +1350,146 @@ function warnings = classifierArtifactWarnings(node)
     end
 end
 
+function nodes = injectContextResolvedNodeBindings(nodes, ctx)
+    for i = 1:numel(nodes)
+        nodeType = lower(char(string(getField(nodes(i), 'type', ''))));
+        if ~isfield(nodes(i), 'params') || ~isstruct(nodes(i).params)
+            nodes(i).params = struct();
+        end
+        switch nodeType
+            case 'roipattern'
+                if ~hasAnyFieldValue(nodes(i).params, {'channel','channels','channelName'})
+                    ch = projectRoiPatternProfileChannel(ctx);
+                    if ~isempty(ch)
+                        nodes(i).params.channel = ch;
+                    end
+                end
+            case 'classifier'
+                if ~hasAnyFieldValue(nodes(i).params, {'channel','channels','channelName'})
+                    ch = resolveLinkedClassifierChannels(nodes(i));
+                    if ~isempty(ch)
+                        nodes(i).params.channelName = ch;
+                    end
+                end
+        end
+    end
+end
+
+function tf = hasAnyFieldValue(S, names)
+    tf = false;
+    if ~isstruct(S)
+        return;
+    end
+    for i = 1:numel(names)
+        if isfield(S, names{i}) && ~isempty(S.(names{i}))
+            tf = true;
+            return;
+        end
+    end
+end
+
+function ch = projectRoiPatternProfileChannel(ctx)
+    ch = {};
+    shallowObj = [];
+    if isstruct(ctx)
+        if isfield(ctx, 'shallow') && isa(ctx.shallow, 'shallow')
+            shallowObj = ctx.shallow;
+        elseif isfield(ctx, 'shallowObj') && isa(ctx.shallowObj, 'shallow')
+            shallowObj = ctx.shallowObj;
+        end
+    end
+    if isempty(shallowObj) || ~isprop(shallowObj, 'runProfiles')
+        return;
+    end
+    try
+        rp = shallowObj.runProfiles;
+        if isstruct(rp) && isfield(rp, 'dataloading') && isstruct(rp.dataloading) && ...
+                isfield(rp.dataloading, 'roiPattern') && isstruct(rp.dataloading.roiPattern) && ...
+                isfield(rp.dataloading.roiPattern, 'channel') && ~isempty(rp.dataloading.roiPattern.channel)
+            ch = normalizeChannelList(rp.dataloading.roiPattern.channel);
+        end
+    catch
+        ch = {};
+    end
+end
+
+function errors = requiredDesignAssetErrors(node, ctx)
+    errors = {};
+    if nargin < 2 || isempty(ctx)
+        ctx = struct();
+    end
+    nodeType = lower(char(string(getField(node, 'type', ''))));
+    if ~any(strcmp(nodeType, {'roipattern','roiidentify'}))
+        return;
+    end
+    params = getField(node, 'params', struct());
+    if ~isstruct(params)
+        params = struct();
+    end
+
+    hasPattern = false;
+    patternKeys = {'pattern','patternImage','patternList'};
+    for i = 1:numel(patternKeys)
+        key = patternKeys{i};
+        if isfield(params, key) && ~isempty(params.(key))
+            hasPattern = true;
+            break;
+        end
+    end
+    if ~hasPattern && hasProjectRoiPatternProfile(ctx)
+        hasPattern = true;
+    end
+    if ~hasPattern
+        errors{end+1} = ['Node ' char(string(getField(node, 'id', ''))) ...
+            ' requires a saved ROI pattern definition in the node or in the selected project profile before it can run.']; %#ok<AGROW>
+    end
+end
+
+function tf = hasProjectRoiPatternProfile(ctx)
+    tf = false;
+    shallowObj = [];
+    if isstruct(ctx)
+        if isfield(ctx, 'shallow') && isa(ctx.shallow, 'shallow')
+            shallowObj = ctx.shallow;
+        elseif isfield(ctx, 'shallowObj') && isa(ctx.shallowObj, 'shallow')
+            shallowObj = ctx.shallowObj;
+        end
+    end
+    if isempty(shallowObj) || ~isprop(shallowObj, 'runProfiles')
+        return;
+    end
+    try
+        rp = shallowObj.runProfiles;
+        if ~isstruct(rp) || ~isfield(rp, 'dataloading') || ~isstruct(rp.dataloading)
+            return;
+        end
+        dl = rp.dataloading;
+        keys = {'roiPattern','roiIdentify'};
+        for i = 1:numel(keys)
+            if isfield(dl, keys{i}) && hasRoiPatternAsset(dl.(keys{i}))
+                tf = true;
+                return;
+            end
+        end
+    catch
+        tf = false;
+    end
+end
+
+function tf = hasRoiPatternAsset(params)
+    tf = false;
+    if ~isstruct(params) || isempty(params)
+        return;
+    end
+    keys = {'pattern','patternImage','patternList'};
+    for i = 1:numel(keys)
+        if isfield(params, keys{i}) && ~isempty(params.(keys{i}))
+            tf = true;
+            return;
+        end
+    end
+end
+
 function scope = getBindingScope(binding, requirements)
     scope = char(string(getField(binding, 'scope', '')));
     if ~isempty(scope)
@@ -1296,11 +1611,30 @@ function channels = normalizeConfiguredSelectionValue(value)
     channels = channels(keep);
 end
 
+function tf = isAllChannelSelection(channels)
+    tf = false;
+    if isempty(channels)
+        return;
+    end
+    vals = lower(strtrim(cellstr(string(channels(:)))));
+    tf = any(strcmp(vals, 'all') | strcmp(vals, '*') | strcmp(vals, ':') | strcmp(vals, '<all>'));
+end
+
+function tf = isAllChannelSelectionCell(channels)
+    if isempty(channels)
+        tf = false(size(channels));
+        return;
+    end
+    vals = lower(strtrim(cellstr(string(channels(:)))));
+    tf = strcmp(vals, 'all') | strcmp(vals, '*') | strcmp(vals, ':') | strcmp(vals, '<all>');
+    tf = reshape(tf, size(channels));
+end
+
 function status = classifyUnresolvedBinding(binding, availableChannels)
     resolveAt = lower(char(string(getField(binding, 'resolveAt', 'run'))));
     if isempty(availableChannels)
         if strcmp(resolveAt, 'design')
-            status = 'needs_run_binding';
+            status = 'needs_user_binding';
         else
             status = 'needs_run_binding';
         end
@@ -1574,7 +1908,14 @@ function name = resolveResourceOutputName(node, spec)
         end
     end
     if isempty(name)
-        name = char(string(getField(node, 'id', '')));
+        type = lower(char(string(getField(spec, 'type', ''))));
+        port = lower(char(string(getField(spec, 'port', ''))));
+        transfer = lower(char(string(getField(spec, 'transfer', ''))));
+        if strcmp(type, 'channel') && strcmp(port, 'channels') && any(strcmp(transfer, {'sourceinventory','imagestoroi'}))
+            name = '';
+        else
+            name = char(string(getField(node, 'id', '')));
+        end
     end
 end
 
@@ -1583,6 +1924,13 @@ function value = resolveResourceConfiguredValue(node, spec)
     params = getField(node, 'params', struct());
     key = char(string(getField(spec, 'param', '')));
     if isempty(key) || ~isstruct(params) || ~isfield(params, key) || isempty(params.(key))
+        if strcmpi(char(string(getField(node, 'type', ''))), 'classifier') && ...
+                any(strcmpi(key, {'channel','channels','channelName'}))
+            linkedChannels = resolveLinkedClassifierChannels(node);
+            if numel(linkedChannels) == 1
+                value = linkedChannels{1};
+            end
+        end
         return;
     end
     raw = params.(key);
@@ -1667,6 +2015,9 @@ function compatible = findCompatibleResources(resources, spec)
         if ~isempty(wantedRole) && ~isempty(resources(i).role) && ~strcmpi(resources(i).role, wantedRole)
             continue;
         end
+        if isAmbiguousCollectionResource(resources(i), spec)
+            continue;
+        end
         compatible(end+1) = resources(i); %#ok<AGROW>
     end
 end
@@ -1743,6 +2094,10 @@ function names = resourceConcreteNames(resources, type, role)
         end
         nm = char(string(resources(i).concreteName));
         if isempty(nm)
+            if strcmpi(resources(i).type, 'channel') && strcmpi(resources(i).sourcePort, 'channels') && ...
+                    any(strcmpi(resources(i).sourceKind, {'sourceInventory','imagesToRoi'}))
+                continue;
+            end
             nm = char(string(resources(i).symbol));
         end
         if ~isempty(nm)

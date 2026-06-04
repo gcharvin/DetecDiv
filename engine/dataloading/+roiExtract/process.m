@@ -67,6 +67,9 @@ function ctx = process(ctx)
     if isfield(ctx,'channels') && ~isempty(ctx.channels)
         p.channels = ctx.channels;
     end
+    if isfield(p,'extractChannels') && ~isempty(p.extractChannels)
+        p.channels = normalizeExtractChannelsParam(p.extractChannels);
+    end
     if isfield(p,'roiList') && ~isempty(p.roiList)
         p.roiList = round(double(p.roiList(:)'));
         p.roiList = p.roiList(isfinite(p.roiList) & p.roiList >= 1);
@@ -459,7 +462,8 @@ function tf = isAllChannelSelector(spec)
 
     if ischar(spec) || (isstring(spec) && isscalar(spec))
         token = lower(strtrim(char(string(spec))));
-        tf = any(strcmp(token, {'all', '*', ':'}));
+        tf = any(strcmp(token, {'all', '*', ':', '<all>', '<source output>'})) || ...
+            startsWith(token, '@') || startsWith(token, '<source output');
         return;
     end
 
@@ -478,6 +482,51 @@ function tf = isAllChannelSelector(spec)
             tf = isAllChannelSelector(vals{1});
         end
     end
+end
+
+function channels = normalizeExtractChannelsParam(spec)
+    channels = spec;
+    if isempty(spec)
+        return;
+    end
+
+    if ischar(spec) || (isstring(spec) && isscalar(spec))
+        token = strtrim(char(string(spec)));
+        if isempty(token)
+            channels = {};
+        elseif isAllChannelSelector(token)
+            channels = 'all';
+        else
+            channels = token;
+        end
+        return;
+    end
+
+    if isstring(spec)
+        vals = cellstr(spec(:))';
+    elseif iscell(spec)
+        vals = {};
+        for i = 1:numel(spec)
+            if isempty(spec{i})
+                continue;
+            end
+            vals{end+1} = strtrim(char(string(spec{i}))); %#ok<AGROW>
+        end
+    else
+        return;
+    end
+
+    vals = vals(~cellfun(@isempty, vals));
+    vals = vals(~strcmp(vals, '<no channel inventory>'));
+    if isempty(vals)
+        channels = 'all';
+        return;
+    end
+    if numel(vals) == 1 && isAllChannelSelector(vals{1})
+        channels = 'all';
+        return;
+    end
+    channels = unique(vals, 'stable');
 end
 
 function ch = inferFovChannels(fovList)

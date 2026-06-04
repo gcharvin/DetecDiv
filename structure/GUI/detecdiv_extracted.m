@@ -551,9 +551,9 @@ end
                     return;
                 end
                 try
-                    pipelineGUI([], pipe);
+                    app.openPipelineWithContext(pipe);
                 catch ME
-                    uialert(app.DetecDivUIFigure, ME.message, 'Pipeline GUI error', 'Icon', 'error');
+                    uialert(app.DetecDivUIFigure, ME.message, 'Pipeline2 error', 'Icon', 'error');
                 end
             end
 
@@ -1193,9 +1193,7 @@ end
                     return;
                 end
                 try
-                    dlg = pipelineRunGUI(runObj, shallowObj);
-                    dlg.UIFigure.WindowStyle = 'modal';
-                    uiwait(dlg.UIFigure);
+                    pipeline2(shallowObj, runObj);
                     RefreshtreewindowMenuSelected(app, []);
                 catch ME
                     uialert(app.DetecDivUIFigure, ME.message, 'Pipeline run editor error', 'Icon', 'warning');
@@ -2426,9 +2424,9 @@ end
             projectObj = [];
             [found, projectObj] = app.findLinkedProjectForPipeline(pipeObj);
             if found
-                pipelineGUI(projectObj, pipeObj);
+                pipeline2(projectObj, pipeObj);
             else
-                pipelineGUI([], pipeObj);
+                pipeline2([], pipeObj);
             end
         end
 
@@ -7725,9 +7723,7 @@ end
             end
             runObj = shallowObj.processing.pipelineRun(runIdx);
             try
-                dlg = pipelineRunGUI(runObj, shallowObj);
-                dlg.UIFigure.WindowStyle = 'modal';
-                uiwait(dlg.UIFigure);
+                pipeline2(shallowObj, runObj);
                 RefreshtreewindowMenuSelected(app, []);
             catch ME
                 uialert(app.DetecDivUIFigure, ME.message, 'Pipeline run editor error', 'Icon', 'warning');

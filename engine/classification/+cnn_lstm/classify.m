@@ -69,6 +69,20 @@ else
     outputName = strtrim(outputName);
 end
 
+outputMode = lower(strrep(strtrim(string(getOpt(params, 'outputMode', 'lstm_only'))), " ", "_"));
+if ~any(outputMode == ["lstm_only","cnn_only","both"])
+    outputMode = "lstm_only";
+end
+cnnOutputName = string(getOpt(params, 'cnnOutputName', ""));
+if strlength(strtrim(cnnOutputName)) == 0
+    cnnOutputName = "cnn_" + outputName;
+else
+    cnnOutputName = strtrim(cnnOutputName);
+end
+if outputMode == "cnn_only"
+    outputName = cnnOutputName;
+end
+
 % --------- DEBUG FLAG CNN ----------
 debugCNN = false;
 
@@ -432,7 +446,12 @@ end
 
 % Choisir le "primaire"
 primaryIsLSTM = useLSTM; % si LSTM absent -> primaire = CNN
-if ~useLSTM && useCNN
+if outputMode == "cnn_only"
+    if ~useCNN
+        error('classifyImageLSTMNetFun:NoCNN', 'outputMode=cnn_only requires a CNN classifier.');
+    end
+    primaryIsLSTM = false;
+elseif ~useLSTM && useCNN
     primaryIsLSTM = false;
 end
 
@@ -656,7 +675,15 @@ out.provides = {'ClassificationScores'};
 out.refs.classes = classesTarget;
 out.metrics.nFrames = n;
 out.metrics.frames = frames;
-out.patch.roi.dataseries.upsert = {struct('groupid', groupid, 'dataseries', datatmp, 'mode', 'replace')};
+upserts = {struct('groupid', groupid, 'dataseries', datatmp, 'mode', 'replace')};
+if outputMode == "both"
+    if ~useCNN
+        error('classifyImageLSTMNetFun:NoCNN', 'outputMode=both requires a CNN classifier.');
+    end
+    datacnn = makeCnnOnlyDataseries(datatmp, char(cnnOutputName), probCNNAligned, labelCNNCat, idxCNNAligned, classesTarget, catsLabels, frames);
+    upserts{end+1} = struct('groupid', char(cnnOutputName), 'dataseries', datacnn, 'mode', 'replace'); %#ok<AGROW>
+end
+out.patch.roi.dataseries.upsert = upserts;
 
 % ----------------- Helpers locaux -----------------
     % function out = resizeTo(V, inSize)
@@ -916,6 +943,64 @@ function debugCNNInference(classifierCNN, classesTarget, probCNNAligned, labelCN
         end
     end
     fprintf('===========================\n');
+end
+
+function ds = makeCnnOnlyDataseries(baseDs, groupid, probCNNAligned, labelCNNCat, idxCNNAligned, classesTarget, catsLabels, frames)
+    ds = cloneDataseries(baseDs);
+    ds.groupid = groupid;
+    ds.class = "classification";
+
+    if isempty(ds.data) || ~istable(ds.data)
+        return;
+    end
+
+    vars = string(ds.data.Properties.VariableNames);
+    cnnVars = vars(ismember(vars, ["idCNN","labelsCNN"]) | startsWith(vars, "probCNN_"));
+    if ~isempty(cnnVars)
+        ds.data = removevars(ds.data, cellstr(cnnVars));
+    end
+
+    nRows = height(ds.data);
+    if ~ismember("id", string(ds.data.Properties.VariableNames))
+        ds.addData(zeros(nRows,1), 'id', 'groups', 'id');
+    else
+        ds.data.id = zeros(nRows,1);
+    end
+
+    if ~ismember("labels", string(ds.data.Properties.VariableNames))
+        ds.addData(categorical(repmat("undefined", nRows, 1), catsLabels), 'labels', 'groups', 'labels');
+    else
+        ds.data.labels = categorical(repmat("undefined", nRows, 1), catsLabels);
+    end
+
+    for kk = 1:numel(classesTarget)
+        colName = "prob_" + classesTarget(kk);
+        if ~ismember(colName, string(ds.data.Properties.VariableNames))
+            ds.addData(zeros(nRows,1), char(colName), 'groups', 'prob');
+        else
+            ds.data.(char(colName)) = zeros(nRows,1);
+        end
+        v = ds.data.(char(colName));
+        v(frames) = probCNNAligned(:, kk);
+        ds.data.(char(colName)) = v;
+    end
+
+    ds.data.id(frames) = idxCNNAligned;
+    ds.data.labels(frames) = labelCNNCat;
+
+    pp = [];
+    if isprop(ds, 'plotProperties') && ~isempty(ds.plotProperties)
+        pp = ds.plotProperties;
+    end
+    pp = ensurePlotProperties(pp, string(classesTarget), false, 'Prune', true);
+    pp = syncPlotPropsToTable(pp, ds.data);
+    ds.plotProperties = pp;
+
+    classesUI = classesTarget(:).';
+    if ~any(classesUI == "unclassified")
+        classesUI(end+1) = "unclassified";
+    end
+    ds = ensureUserDataClasses(ds, classesUI);
 end
 
 end
