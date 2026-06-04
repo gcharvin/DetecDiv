@@ -1472,18 +1472,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 if isempty(reportEdges)
                     return;
                 end
-                explicitEdges = app.Data.edges;
-                keep = true(size(reportEdges));
-                for i = 1:numel(reportEdges)
-                    for j = 1:numel(explicitEdges)
-                        if strcmp(char(string(getField(app, explicitEdges(j), 'from', ''))), char(string(reportEdges(i).from))) && ...
-                                strcmp(char(string(getField(app, explicitEdges(j), 'to', ''))), char(string(reportEdges(i).to)))
-                            keep(i) = false;
-                            break;
-                        end
-                    end
-                end
-                edges = reportEdges(keep);
+                edges = reportEdges;
             catch
                 edges = struct('from',{},'to',{},'fromPort',{},'toPort',{},'condition',{});
             end
