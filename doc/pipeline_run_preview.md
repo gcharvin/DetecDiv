@@ -45,6 +45,23 @@ This feature could reuse a smoke-test execution mode, but it should remain conce
 
 A preview may run on a tiny subset of data, for example one FOV, a few frames, and a few ROIs. It must not silently perform a full expensive run.
 
+## Execution granularity
+
+The preview and smoke-test design must respect the natural execution granularity of the pipeline.
+
+ROI-by-ROI execution is only a good default after ROI extraction has produced ROI-local image stores. From that point onward, most classifiers and processors can operate on independent ROI `.h5` files, so sampling one or a few ROIs is meaningful and cheap.
+
+Before ROI extraction, execution should generally stay batched at the FOV/frame/channel level. Data loading, ROI identification, and ROI extraction are usually more efficient when they process a position and its frames together, because this minimizes repeated disk I/O and avoids reopening the same raw data for each candidate ROI.
+
+For smoke tests this implies:
+
+- pre-extraction smoke tests should use a small batch, for example one FOV and a short frame range
+- ROI identification should still operate on the batch needed by the method, then report a limited number of representative ROIs
+- ROI extraction should extract a small selected subset if supported, but should avoid per-ROI raw-data reload loops
+- post-extraction classifier and processor smoke tests may run ROI-by-ROI on one or a few extracted ROIs
+
+The preview runner should therefore treat ROI extraction as the boundary between batch-oriented raw-data work and ROI-oriented downstream work.
+
 ## Proposed backend contract
 
 The GUI should not implement the business logic. It should call a backend helper such as:
