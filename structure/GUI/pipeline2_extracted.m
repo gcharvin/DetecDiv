@@ -1537,7 +1537,6 @@ classdef pipeline2 < matlab.apps.AppBase
             selectTypeControlsForNode(app, node);
             redrawGraph(app);
             selectExistingModuleTab(app, node);
-            refreshValidationReport(app);
             updateCommonControlsEnableState(app);
         end
 
@@ -2530,10 +2529,16 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             refreshProjectDropdown(app);
             updateRuntimeInputStates(app);
+            latestRunApplied = applyLatestRunForCurrentPipeline(app, false);
             redrawGraph(app);
             refreshModuleTabs(app);
             refreshValidationReport(app);
-            applyLatestRunForCurrentPipeline(app);
+            if latestRunApplied && ~isempty(app.CurrentRun) && isa(app.CurrentRun, 'pipelineRun')
+                try
+                    app.RuninformationhereLabel.Text = ['Pipeline loaded with latest run: ' char(string(app.CurrentRun.runId))];
+                catch
+                end
+            end
         end
 
         function setRuntimeInventoryRefreshSuspended(app, value)
@@ -8449,13 +8454,24 @@ classdef pipeline2 < matlab.apps.AppBase
             app.RuntimeNodeParams = struct();
             app.SelectedNodeIndex = ternary(app, isempty(nodes), NaN, 1);
             app.NodeCounter = inferNodeCounter(app, nodes);
-            refreshAfterModelChange(app);
+            refreshSelectedModuleTable(app);
+            latestRunApplied = false;
             if logical(restoreLatestRun)
-                applyLatestRunForCurrentPipeline(app);
+                latestRunApplied = applyLatestRunForCurrentPipeline(app, false);
+            end
+            refreshAfterModelChange(app);
+            if latestRunApplied && ~isempty(app.CurrentRun) && isa(app.CurrentRun, 'pipelineRun')
+                try
+                    app.RuninformationhereLabel.Text = ['Pipeline loaded with latest run: ' char(string(app.CurrentRun.runId))];
+                catch
+                end
             end
         end
 
-        function applied = applyLatestRunForCurrentPipeline(app)
+        function applied = applyLatestRunForCurrentPipeline(app, refreshUi)
+            if nargin < 2 || isempty(refreshUi)
+                refreshUi = true;
+            end
             applied = false;
             if ~isempty(app.CurrentRun) || isempty(app.CurrentPipeline) || ~isa(app.CurrentPipeline, 'pipeline') || ...
                     isempty(app.CurrentProject) || ~isa(app.CurrentProject, 'shallow')
@@ -8470,11 +8486,13 @@ classdef pipeline2 < matlab.apps.AppBase
             if isempty(runObj)
                 return;
             end
-            loadRunIntoUi(app, runObj);
+            loadRunIntoUi(app, runObj, refreshUi);
             applied = true;
-            try
-                app.RuninformationhereLabel.Text = ['Pipeline loaded with latest run: ' char(string(runObj.runId))];
-            catch
+            if logical(refreshUi)
+                try
+                    app.RuninformationhereLabel.Text = ['Pipeline loaded with latest run: ' char(string(runObj.runId))];
+                catch
+                end
             end
         end
 
@@ -9335,7 +9353,10 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
-        function loadRunIntoUi(app, runObj)
+        function loadRunIntoUi(app, runObj, refreshUi)
+            if nargin < 3 || isempty(refreshUi)
+                refreshUi = true;
+            end
             if isempty(runObj) || ~isa(runObj, 'pipelineRun')
                 return;
             end
@@ -9397,8 +9418,10 @@ classdef pipeline2 < matlab.apps.AppBase
             if isempty(app.CurrentProject) && ~isempty(runObj.projectPath)
                 bindProjectFromPath(app, [runObj.projectPath '.mat'], false);
             end
-            refreshModuleTabs(app);
-            refreshValidationReport(app);
+            if logical(refreshUi)
+                refreshModuleTabs(app);
+                refreshValidationReport(app);
+            end
             try
                 if strcmpi(char(string(runObj.status)), 'cancelled')
                     app.RunButton.Text = 'Resume run';
