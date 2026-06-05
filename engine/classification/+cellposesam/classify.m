@@ -132,7 +132,7 @@ wantProbability = any(strcmpi(outputType, {'proba','both'}));
 % --- Channels results (instance mask) ---
 pixresults = [];
 for i = 1:numel(classNames)
-    chName = ['results_' outputName '_' classNames{i}];
+    chName = [outputName '_' classNames{i}];
     pixresultstmp = findChannelID(roiobj, chName);
     if isempty(pixresultstmp)
         matrix = uint16(zeros(size(image,1), size(image,2), 1, size(image,4)));
@@ -144,7 +144,7 @@ for i = 1:numel(classNames)
     pixresults = [pixresults pixresultstmp]; %#ok<AGROW>
 end
 if isempty(pixresults)
-    error('cellposesam.classify: impossible de determiner/ajouter un channel results_* pour %s', safeClassifierIdLocal(classif));
+    error('cellposesam.classify: impossible de determiner/ajouter un channel %s_* pour %s', outputName, safeClassifierIdLocal(classif));
 end
 pixresults = pixresults(1);
 

@@ -1029,7 +1029,8 @@ function tf = localShouldForceIndexedChannel(channelName)
 tf = false;
 try
     name = lower(string(channelName));
-    tf = startsWith(name, "results_") || contains(name, "mask") || contains(name, "track");
+    tf = startsWith(name, "results_") || contains(name, "mask") || ...
+        contains(name, "track") || endsWith(name, "_cell");
 catch
     tf = false;
 end

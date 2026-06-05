@@ -240,8 +240,8 @@ ctx = struct('images', 1, 'roiList', 1, 'channels', {{'ch1','ch2'}});
 [pipe, resolution] = pipelineResolveBindings(pipe, ctx, struct('allowGui', false));
 idxTracked = find(strcmp({pipe.nodes.id}, 'roitracked_5'), 1);
 assert(~isempty(idxTracked), 'Missing roiTracked node after binding resolution.');
-assert(strcmp(pipe.nodes(idxTracked).params.channel, 'cellposeSAM'), ...
-    'roiTracked symbolic mask binding should resolve to the CellposeSAM output name.');
+assert(strcmp(pipe.nodes(idxTracked).params.channel, 'cellposeSAM_cell'), ...
+    'roiTracked symbolic mask binding should resolve to the physical CellposeSAM mask channel.');
 assert(any(strcmp({resolution.applied.nodeId}, 'roitracked_5') & strcmp({resolution.applied.param}, 'channel')), ...
     'Binding resolution should report the roiTracked.channel auto binding.');
 

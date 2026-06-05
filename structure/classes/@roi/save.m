@@ -550,7 +550,8 @@ try
         return;
     end
     name = lower(string(d.channel{ii}));
-    tf = startsWith(name, "results_") || contains(name, "mask") || contains(name, "track");
+    tf = startsWith(name, "results_") || contains(name, "mask") || ...
+        contains(name, "track") || endsWith(name, "_cell");
 catch
     tf = false;
 end

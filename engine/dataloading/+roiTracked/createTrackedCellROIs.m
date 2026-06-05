@@ -741,6 +741,9 @@ function pixCandidates = resolveChannelIndices(roiObj, channelOption)
 if ~isempty(channelOption)
     if ischar(channelOption) || isstring(channelOption)
         pixCandidates = roiObj.findChannelID(char(channelOption));
+        if isempty(pixCandidates)
+            pixCandidates = resolveDerivedMaskChannelAlias(roiObj, char(channelOption));
+        end
     elseif isnumeric(channelOption)
         vals = channelOption(:)';
         for v = vals
@@ -772,6 +775,42 @@ if isfield(roiObj.display, 'indexed') && ~isempty(roiObj.display.indexed)
     end
 end
 
+end
+
+function pixCandidates = resolveDerivedMaskChannelAlias(roiObj, channelName)
+pixCandidates = [];
+channelName = strtrim(char(string(channelName)));
+if isempty(channelName)
+    return;
+end
+try
+    pixCandidates = roiObj.findChannelID(channelName, 'contains');
+catch
+    pixCandidates = [];
+end
+if isempty(pixCandidates)
+    return;
+end
+try
+    names = roiObj.display.channel;
+    logicalIdx = unique(roiObj.channelid(pixCandidates), 'stable');
+    keepLogical = false(size(logicalIdx));
+    for i = 1:numel(logicalIdx)
+        idx = logicalIdx(i);
+        if idx < 1 || idx > numel(names)
+            continue;
+        end
+        nm = char(string(names{idx}));
+        keepLogical(i) = startsWith(nm, 'results_', 'IgnoreCase', true) || ...
+            contains(lower(nm), 'mask') || contains(lower(nm), 'track') || ...
+            endsWith(lower(nm), '_cell');
+    end
+    logicalIdx = logicalIdx(keepLogical);
+    keepPix = ismember(roiObj.channelid(pixCandidates), logicalIdx);
+    pixCandidates = pixCandidates(keepPix);
+catch
+end
+pixCandidates = unique(pixCandidates, 'stable');
 end
 
 function pixCandidates = findLineageChannelFromData(roiObj)

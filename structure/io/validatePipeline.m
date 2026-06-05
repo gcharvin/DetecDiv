@@ -2257,6 +2257,65 @@ function name = resolveResourceOutputName(node, spec)
             name = char(string(getField(node, 'id', '')));
         end
     end
+    name = normalizePhysicalResourceOutputName(node, spec, name);
+end
+
+function name = normalizePhysicalResourceOutputName(node, spec, name)
+    if isempty(name)
+        return;
+    end
+    nodeType = lower(char(string(getField(node, 'type', ''))));
+    pkgName = lower(char(string(getField(node, 'pkg', ''))));
+    if isempty(pkgName)
+        params = getField(node, 'params', struct());
+        if isstruct(params) && isfield(params, 'pkg') && ~isempty(params.pkg)
+            pkgName = lower(char(string(params.pkg)));
+        end
+    end
+    resourceType = lower(char(string(getField(spec, 'type', ''))));
+    role = lower(char(string(getField(spec, 'role', ''))));
+    if strcmp(nodeType, 'classifier') && strcmp(pkgName, 'cellposesam') && ...
+            strcmp(resourceType, 'mask') && strcmp(role, 'segmentation')
+        name = cellposeSegmentationChannelNameLocal(node, name);
+    end
+end
+
+function name = cellposeSegmentationChannelNameLocal(node, outputName)
+    outputName = char(string(outputName));
+    if startsWith(outputName, 'results_', 'IgnoreCase', true)
+        name = outputName;
+        return;
+    end
+    className = 'cell';
+    params = getField(node, 'params', struct());
+    if isstruct(params)
+        keys = {'classes','classNames','className','labels'};
+        for i = 1:numel(keys)
+            key = keys{i};
+            if isfield(params, key) && ~isempty(params.(key))
+                className = firstTextValueLocal(params.(key), 'cell');
+                break;
+            end
+        end
+    end
+    name = [outputName '_' className];
+end
+
+function txt = firstTextValueLocal(value, fallback)
+    txt = fallback;
+    try
+        if iscell(value)
+            value = value{find(~cellfun(@isempty, value), 1, 'first')};
+        elseif isstring(value) && ~isscalar(value)
+            value = value(find(strlength(value) > 0, 1, 'first'));
+        end
+        candidate = strtrim(char(string(value)));
+        if ~isempty(candidate)
+            txt = candidate;
+        end
+    catch
+        txt = fallback;
+    end
 end
 
 function value = resolveResourceConfiguredValue(node, spec)
