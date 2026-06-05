@@ -2298,7 +2298,7 @@ function name = cellposeSegmentationChannelNameLocal(node, outputName)
             end
         end
     end
-    name = [outputName '_' className];
+    name = ['results_' outputName '_' className];
 end
 
 function txt = firstTextValueLocal(value, fallback)
