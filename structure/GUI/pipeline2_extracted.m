@@ -74,6 +74,7 @@ classdef pipeline2 < matlab.apps.AppBase
         CurrentPipeline = []
         CurrentPipelinePath char = ''
         CurrentPipelineWorkspaceVar char = ''
+        IsPipelineDirty logical = false
         CurrentRun = []
         CurrentRunPath char = ''
         CurrentProject = []
@@ -100,6 +101,7 @@ classdef pipeline2 < matlab.apps.AppBase
             refreshSelectedModuleTable(app);
             redrawGraph(app);
             refreshValidationReport(app);
+            markPipelineDirty(app, isempty(app.CurrentPipelinePath));
         end
 
         function applyStartupArguments(app, varargin)
@@ -357,6 +359,8 @@ classdef pipeline2 < matlab.apps.AppBase
                 'MenuSelectedFcn', @(~,~)openCurrentRunArtifact(app, 'folder'));
             uimenu(app.FileMenu, 'Text', 'Open current run log', ...
                 'MenuSelectedFcn', @(~,~)showCurrentRunLog(app));
+            uimenu(app.FileMenu, 'Text', 'Review current run', ...
+                'MenuSelectedFcn', @(~,~)showCurrentRunReview(app));
             uimenu(app.FileMenu, 'Text', 'Open current run params', ...
                 'MenuSelectedFcn', @(~,~)openCurrentRunArtifact(app, 'params'));
 
@@ -644,6 +648,7 @@ classdef pipeline2 < matlab.apps.AppBase
             refreshModuleTabs(app);
             refreshValidationReport(app);
             updateCommonControlsEnableState(app);
+            markPipelineDirty(app, true);
         end
 
         function TypeDropDownValueChanged(app, event) %#ok<INUSD>
@@ -1192,17 +1197,9 @@ classdef pipeline2 < matlab.apps.AppBase
                 if strcmpi(nodeType, 'classifier')
                     switch lower(char(string(pkg)))
                         case 'cnn_lstm'
-                            if ~isfield(p, 'outputName') || isempty(p.outputName), p.outputName = 'div_1'; end
-                            if ~isfield(p, 'outputMode') || isempty(p.outputMode), p.outputMode = 'lstm_only'; end
-                            if ~isfield(p, 'cnnOutputName') || isempty(p.cnnOutputName), p.cnnOutputName = 'cnn_div_1'; end
+                            p = applyCnnLstmExecutionDefaults(app, p, struct(), 'missing');
                         case 'cellposesam'
-                            if ~isfield(p, 'outputName') || isempty(p.outputName), p.outputName = 'cellposeSAM'; end
-                            if ~isfield(p, 'outputType') || isempty(p.outputType), p.outputType = 'segmentation'; end
-                            if ~isfield(p, 'probabilityOutputName') || isempty(p.probabilityOutputName), p.probabilityOutputName = 'cellposeSAM_prob'; end
-                            if ~isfield(p, 'diameter') || isempty(p.diameter), p.diameter = NaN; end
-                            if ~isfield(p, 'min_size') || isempty(p.min_size), p.min_size = 10; end
-                            if ~isfield(p, 'flow_threshold') || isempty(p.flow_threshold), p.flow_threshold = 0.4; end
-                            if ~isfield(p, 'cell_prob_threshold') || isempty(p.cell_prob_threshold), p.cell_prob_threshold = 0; end
+                            p = applyCellposeExecutionDefaults(app, p, struct(), 'missing');
                         otherwise
                             if ~isfield(p, 'outputName') || isempty(p.outputName), p.outputName = char(string(pkg)); end
                     end
@@ -1772,7 +1769,10 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
-        function refreshAfterModelChange(app)
+        function refreshAfterModelChange(app, markDirty)
+            if nargin < 2
+                markDirty = true;
+            end
             refreshSelectedModuleTable(app);
             refreshCommonControlsFromSelection(app);
             refreshGlobalRuntimeTable(app);
@@ -1780,6 +1780,11 @@ classdef pipeline2 < matlab.apps.AppBase
             refreshModuleTabs(app);
             refreshValidationReport(app);
             updateCommonControlsEnableState(app);
+            if markDirty
+                markPipelineDirty(app, true);
+            else
+                updatePipelineWindowTitle(app);
+            end
         end
 
         function refreshModuleTabs(app)
@@ -2031,6 +2036,9 @@ classdef pipeline2 < matlab.apps.AppBase
             app.RunArtifactButtonHandles.params = uibutton(app.RuntimeTab, 'push', ...
                 'Text', 'Run params', 'Position', [660 332 130 24], ...
                 'ButtonPushedFcn', @(~,~)openCurrentRunArtifact(app, 'params'));
+            app.RunArtifactButtonHandles.review = uibutton(app.RuntimeTab, 'push', ...
+                'Text', 'Review run', 'Position', [660 296 130 24], ...
+                'ButtonPushedFcn', @(~,~)showCurrentRunReview(app));
         end
 
         function deleteRunArtifactControls(app)
@@ -3500,17 +3508,17 @@ classdef pipeline2 < matlab.apps.AppBase
                 staticPanel.Layout.Row = row;
                 staticPanel.Layout.Column = 1;
 
-                label = uilabel(staticPanel, 'Text', 'Static parameters');
+                label = uilabel(staticPanel, 'Text', staticParamSectionTitle(app, node));
                 label.FontWeight = 'bold';
                 label.Layout.Row = 1;
                 label.Layout.Column = 1;
 
-                summary = uilabel(staticPanel, 'Text', staticParamSummary(app, staticData), ...
+                summary = uilabel(staticPanel, 'Text', staticParamSummary(app, node, staticData), ...
                     'FontColor', [0.35 0.35 0.35], 'Interpreter', 'none');
                 summary.Layout.Row = 1;
                 summary.Layout.Column = 2;
 
-                btn = uibutton(staticPanel, 'push', 'Text', 'Static parameters...', ...
+                btn = uibutton(staticPanel, 'push', 'Text', staticParamButtonText(app, node), ...
                     'ButtonPushedFcn', @(~,~)app.openStaticParametersDialog(node));
                 btn.Layout.Row = 1;
                 btn.Layout.Column = 3;
@@ -3638,8 +3646,34 @@ classdef pipeline2 < matlab.apps.AppBase
             tf = strcmpi(char(string(getField(app, node, 'type', ''))), 'classifier');
         end
 
-        function txt = staticParamSummary(app, staticData) %#ok<INUSD>
+        function txt = staticParamSectionTitle(app, node) %#ok<INUSD>
+            if strcmpi(char(string(getField(app, node, 'type', ''))), 'classifier')
+                txt = 'Execution parameters';
+            else
+                txt = 'Static parameters';
+            end
+        end
+
+        function txt = staticParamButtonText(app, node) %#ok<INUSD>
+            if strcmpi(char(string(getField(app, node, 'type', ''))), 'classifier')
+                txt = 'Execution parameters...';
+            else
+                txt = 'Static parameters...';
+            end
+        end
+
+        function txt = staticParamSummary(app, node, staticData) %#ok<INUSD>
             n = size(staticData, 1);
+            if strcmpi(char(string(getField(app, node, 'type', ''))), 'classifier')
+                if n == 0
+                    txt = 'No execution parameter.';
+                elseif n == 1
+                    txt = '1 pipeline execution override';
+                else
+                    txt = sprintf('%d pipeline execution overrides', n);
+                end
+                return;
+            end
             if n == 0
                 txt = 'No static parameter.';
             elseif n == 1
@@ -3651,7 +3685,8 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function openStaticParametersDialog(app, node)
             nodeId = char(string(getField(app, node, 'id', 'module')));
-            fig = uifigure('Name', ['Static parameters - ' nodeId], ...
+            titleText = staticParamSectionTitle(app, node);
+            fig = uifigure('Name', [titleText ' - ' nodeId], ...
                 'Position', staticParametersDialogPosition(app, node));
             grid = uigridlayout(fig, [3 1]);
             grid.RowHeight = {34, '1x', 24};
@@ -3665,7 +3700,7 @@ classdef pipeline2 < matlab.apps.AppBase
             headerBar.ColumnSpacing = 8;
             headerBar.Layout.Row = 1;
 
-            header = uilabel(headerBar, 'Text', ['Static/template parameters for ' nodeId], 'Interpreter', 'none');
+            header = uilabel(headerBar, 'Text', staticParametersDialogHeader(app, node), 'Interpreter', 'none');
             header.FontWeight = 'bold';
             header.Layout.Row = 1;
             header.Layout.Column = 1;
@@ -3689,9 +3724,27 @@ classdef pipeline2 < matlab.apps.AppBase
             fig.UserData = struct('nodeId', nodeId, 'bodyPanel', bodyPanel, 'refreshButton', refreshBtn);
             populateStaticParametersDialogBody(app, bodyPanel, nodeId);
 
-            hint = uilabel(grid, 'Text', 'Changes are saved in the pipeline template.', ...
+            hint = uilabel(grid, 'Text', staticParametersDialogHint(app, node), ...
                 'FontColor', [0.35 0.35 0.35], 'Interpreter', 'none');
             hint.Layout.Row = 3;
+        end
+
+        function txt = staticParametersDialogHeader(app, node)
+            nodeId = char(string(getField(app, node, 'id', 'module')));
+            if strcmpi(char(string(getField(app, node, 'type', ''))), 'classifier')
+                txt = ['Pipeline execution parameters for ' nodeId];
+            else
+                txt = ['Static/template parameters for ' nodeId];
+            end
+        end
+
+        function txt = staticParametersDialogHint(app, node)
+            if strcmpi(char(string(getField(app, node, 'type', ''))), 'classifier')
+                txt = ['These values are the effective run-time settings saved in the pipeline. ' ...
+                    'The linked classifier GUI remains the place for training data, training defaults and model artifacts.'];
+            else
+                txt = 'Changes are saved in the pipeline template.';
+            end
         end
 
         function refreshStaticParametersDialog(app, fig, nodeId)
@@ -3830,9 +3883,9 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function section = buildClassifierReferenceSection(app, parent, node)
-            section = uigridlayout(parent, [2 4]);
+            section = uigridlayout(parent, [2 5]);
             section.RowHeight = {24, 28};
-            section.ColumnWidth = {'1x', 150, 170, 110};
+            section.ColumnWidth = {'1x', 150, 150, 170, 110};
             section.Padding = [0 0 0 0];
             section.RowSpacing = 6;
             section.ColumnSpacing = 8;
@@ -3840,9 +3893,10 @@ classdef pipeline2 < matlab.apps.AppBase
             status = uilabel(section, 'Text', classifierReferenceSummary(app, node), ...
                 'FontColor', classifierReferenceColor(app, node), 'Interpreter', 'none');
             status.Layout.Row = 1;
-            status.Layout.Column = [1 4];
+            status.Layout.Column = [1 5];
 
-            hint = uilabel(section, 'Text', 'Use an existing classi object so training runs, model files, weights and engine metadata are available at run time.', ...
+            hint = uilabel(section, 'Text', ['Linked classifier = artifact/defaults/training GUI. ' ...
+                'Pipeline execution parameters below are the values used by runs.'], ...
                 'FontColor', [0.35 0.35 0.35], 'Interpreter', 'none');
             hint.Layout.Row = 2;
             hint.Layout.Column = 1;
@@ -3852,15 +3906,21 @@ classdef pipeline2 < matlab.apps.AppBase
             linkButton.Layout.Row = 2;
             linkButton.Layout.Column = 2;
 
+            importButton = uibutton(section, 'push', 'Text', 'Import defaults...', ...
+                'ButtonPushedFcn', @(~,~)importClassifierDefaults(app, node));
+            importButton.Tooltip = 'Copy execution defaults from the linked classifier into this pipeline node.';
+            importButton.Layout.Row = 2;
+            importButton.Layout.Column = 3;
+
             openButton = uibutton(section, 'push', 'Text', 'Open linked classifier', ...
                 'ButtonPushedFcn', @(~,~)openLinkedClassifier(app, node));
             openButton.Layout.Row = 2;
-            openButton.Layout.Column = 3;
+            openButton.Layout.Column = 4;
 
             clearButton = uibutton(section, 'push', 'Text', 'Clear link', ...
                 'ButtonPushedFcn', @(~,~)clearClassifierArtifactLink(app, node));
             clearButton.Layout.Row = 2;
-            clearButton.Layout.Column = 4;
+            clearButton.Layout.Column = 5;
         end
 
         function txt = classifierReferenceSummary(app, node)
@@ -3941,6 +4001,8 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
                 if strcmpi(actualPkg, 'cellposesam')
                     app.Data.nodes(idx).params = copyCellposeStaticParamsFromClassi(app, app.Data.nodes(idx).params, classiObj);
+                elseif strcmpi(actualPkg, 'cnn_lstm')
+                    app.Data.nodes(idx).params = copyCnnLstmStaticParamsFromClassi(app, app.Data.nodes(idx).params, classiObj);
                 end
                 try
                     varName = matlab.lang.makeValidName(['classi_' char(string(classiId))]);
@@ -3979,32 +4041,199 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
-        function params = copyCellposeStaticParamsFromClassi(app, params, classiObj) %#ok<INUSD>
+        function params = copyCellposeStaticParamsFromClassi(app, params, classiObj)
+            params = applyCellposeExecutionDefaults(app, params, classiObj, 'missing');
+        end
+
+        function params = copyCnnLstmStaticParamsFromClassi(app, params, classiObj)
+            params = applyCnnLstmExecutionDefaults(app, params, classiObj, 'missing');
+        end
+
+        function importClassifierDefaults(app, node)
+            nodeId = char(string(getField(app, node, 'id', '')));
+            idx = find(strcmp({app.Data.nodes.id}, nodeId), 1);
+            if isempty(idx)
+                return;
+            end
+            try
+                classiObj = linkedClassifierObject(app, app.Data.nodes(idx));
+                if isempty(classiObj) || ~isa(classiObj, 'classi')
+                    error('pipeline2:NoLinkedClassifier', 'No valid linked classifier object is available for this module.');
+                end
+                pkg = classifierPackageName(app, classiObj);
+                if ~any(strcmpi(pkg, {'cellposesam','cnn_lstm'}))
+                    error('pipeline2:UnsupportedClassifierDefaults', ...
+                        'Execution-default import is currently implemented for CellposeSAM and CNN/LSTM classifiers.');
+                end
+
+                choice = uiconfirm(app.UIFigure, ...
+                    ['Import execution defaults from the linked classifier into this pipeline node?' newline newline ...
+                     'Overwrite replaces current pipeline execution parameters. Missing only keeps existing pipeline values.'], ...
+                    'Import classifier defaults', ...
+                    'Options', {'Overwrite','Missing only','Cancel'}, ...
+                    'DefaultOption', 'Missing only', ...
+                    'CancelOption', 'Cancel');
+                if strcmp(choice, 'Cancel')
+                    return;
+                end
+
+                if ~isfield(app.Data.nodes(idx), 'params') || ~isstruct(app.Data.nodes(idx).params)
+                    app.Data.nodes(idx).params = struct();
+                end
+                mode = 'missing';
+                if strcmp(choice, 'Overwrite')
+                    mode = 'overwrite';
+                end
+                switch lower(char(string(pkg)))
+                    case 'cellposesam'
+                        app.Data.nodes(idx).params = applyCellposeExecutionDefaults(app, app.Data.nodes(idx).params, classiObj, mode);
+                    case 'cnn_lstm'
+                        app.Data.nodes(idx).params = applyCnnLstmExecutionDefaults(app, app.Data.nodes(idx).params, classiObj, mode);
+                end
+                refreshAfterModelChange(app);
+            catch ME
+                uialert(app.UIFigure, ME.message, 'Import classifier defaults', 'Icon', 'error');
+            end
+        end
+
+        function params = applyCnnLstmExecutionDefaults(app, params, classiObj, mode) %#ok<INUSD>
+            if nargin < 4 || isempty(mode)
+                mode = 'missing';
+            end
             if ~isstruct(params)
                 params = struct();
             end
-            tp = struct();
-            try
-                if isobject(classiObj) && isprop(classiObj, 'trainingParam') && isstruct(classiObj.trainingParam)
-                    tp = classiObj.trainingParam;
-                elseif isstruct(classiObj) && isfield(classiObj, 'trainingParam') && isstruct(classiObj.trainingParam)
-                    tp = classiObj.trainingParam;
-                end
-            catch
-                tp = struct();
-            end
-            keys = {'diameter','min_size','flow_threshold','cell_prob_threshold'};
-            defaults = {NaN, 10, 0.4, 0};
+            spec = cnnLstmExecutionSpec(app, classiObj);
+            defaults = spec.defaults;
+            keys = unique([spec.staticKeys spec.outputKeys], 'stable');
+            overwrite = strcmpi(char(string(mode)), 'overwrite');
             for i = 1:numel(keys)
                 key = keys{i};
-                if isfield(params, key) && ~isempty(params.(key))
+                if ~overwrite && isfield(params, key) && ~isempty(params.(key))
                     continue;
                 end
-                if isfield(tp, key) && ~isempty(tp.(key))
-                    params.(key) = tp.(key);
-                else
-                    params.(key) = defaults{i};
+                if isfield(defaults, key)
+                    params.(key) = defaults.(key);
                 end
+            end
+            if isfield(params, 'outputMode')
+                params.outputMode = normalizeCnnLstmOutputModeForPipeline(app, params.outputMode);
+            end
+            if isfield(params, 'executionEnvironment')
+                params.executionEnvironment = normalizeExecutionEnvironmentForPipeline(app, params.executionEnvironment);
+            end
+        end
+
+        function spec = cnnLstmExecutionSpec(app, classiObj) %#ok<INUSD>
+            if nargin < 2
+                classiObj = [];
+            end
+            try
+                spec = cnn_lstm.executionSpec(classiObj);
+            catch
+                spec = struct();
+                spec.staticKeys = {'outputMode','executionEnvironment'};
+                spec.outputKeys = {'outputName','cnnOutputName'};
+                spec.defaultImportKeys = spec.staticKeys;
+                spec.defaults = struct('outputMode','lstm_only','outputName','div_1', ...
+                    'cnnOutputName','cnn_div_1','executionEnvironment','module_default');
+                spec.labels = struct();
+                spec.tips = struct();
+                spec.choices = struct('outputMode', {{'lstm_only','cnn_only','both'}}, ...
+                    'executionEnvironment', {{'module_default','cpu','gpu'}});
+            end
+        end
+
+        function outputMode = normalizeCnnLstmOutputModeForPipeline(app, outputMode) %#ok<INUSD>
+            outputMode = lower(strtrim(char(string(outputMode))));
+            outputMode = strrep(outputMode, '-', '_');
+            outputMode = strrep(outputMode, ' ', '_');
+            switch outputMode
+                case {'lstm','lstm_only','primary'}
+                    outputMode = 'lstm_only';
+                case {'cnn','cnn_only'}
+                    outputMode = 'cnn_only';
+                case {'both','all','lstm_and_cnn','cnn_and_lstm'}
+                    outputMode = 'both';
+                otherwise
+                    if isempty(outputMode)
+                        outputMode = 'lstm_only';
+                    end
+            end
+        end
+
+        function env = normalizeExecutionEnvironmentForPipeline(app, env) %#ok<INUSD>
+            env = lower(strtrim(char(string(env))));
+            env = strrep(env, '-', '_');
+            env = strrep(env, ' ', '_');
+            switch env
+                case {'gpu','multi_gpu','force_gpu'}
+                    env = 'gpu';
+                case {'cpu','force_cpu'}
+                    env = 'cpu';
+                otherwise
+                    env = 'module_default';
+            end
+        end
+
+        function params = applyCellposeExecutionDefaults(app, params, classiObj, mode) %#ok<INUSD>
+            if nargin < 4 || isempty(mode)
+                mode = 'missing';
+            end
+            if ~isstruct(params)
+                params = struct();
+            end
+            spec = cellposeExecutionSpec(app, classiObj);
+            defaults = spec.defaults;
+            keys = unique([spec.staticKeys spec.outputKeys], 'stable');
+            overwrite = strcmpi(char(string(mode)), 'overwrite');
+            for i = 1:numel(keys)
+                key = keys{i};
+                if ~overwrite && isfield(params, key) && ~isempty(params.(key))
+                    continue;
+                end
+                if isfield(defaults, key)
+                    params.(key) = defaults.(key);
+                end
+            end
+            if isfield(params, 'outputType')
+                params.outputType = normalizeCellposeOutputTypeForPipeline(app, params.outputType);
+            end
+        end
+
+        function spec = cellposeExecutionSpec(app, classiObj) %#ok<INUSD>
+            if nargin < 2
+                classiObj = [];
+            end
+            try
+                spec = cellposesam.executionSpec(classiObj);
+            catch
+                spec = struct();
+                spec.staticKeys = {'outputType','diameter','min_size','flow_threshold','cell_prob_threshold'};
+                spec.outputKeys = {'outputName','probabilityOutputName'};
+                spec.defaultImportKeys = spec.staticKeys;
+                spec.defaults = struct('outputType','segmentation','outputName','cellposeSAM', ...
+                    'probabilityOutputName','cellposeSAM_prob','diameter',NaN,'min_size',10, ...
+                    'flow_threshold',0.4,'cell_prob_threshold',0);
+                spec.labels = struct();
+                spec.tips = struct();
+                spec.choices = struct('outputType', {{'segmentation','probability','both'}});
+            end
+        end
+
+        function outputType = normalizeCellposeOutputTypeForPipeline(app, outputType) %#ok<INUSD>
+            outputType = lower(strtrim(char(string(outputType))));
+            switch outputType
+                case {'proba','probabilities','probability_map'}
+                    outputType = 'probability';
+                case {'postprocessing','seg','mask','masks','semantic','semantic_segmentation'}
+                    outputType = 'segmentation';
+                case {'both','probability','segmentation'}
+                    % already normalized
+                otherwise
+                    if isempty(outputType)
+                        outputType = 'segmentation';
+                    end
             end
         end
 
@@ -5865,6 +6094,7 @@ classdef pipeline2 < matlab.apps.AppBase
                     app.Data.nodes(idx).params.extractChannels = '@source';
                     runtimeParams.extractChannels = '@source';
                     setRuntimeNodeParams(app, nodeId, runtimeParams);
+                    markPipelineDirty(app, true);
                     refreshModuleTabs(app);
                     refreshValidationReport(app);
                     return;
@@ -5873,6 +6103,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 runtimeParams.extractChannels = channels;
             end
             setRuntimeNodeParams(app, nodeId, runtimeParams);
+            markPipelineDirty(app, true);
             refreshModuleTabs(app);
             refreshValidationReport(app);
         end
@@ -5905,6 +6136,7 @@ classdef pipeline2 < matlab.apps.AppBase
             runtimeParams = getRuntimeNodeParams(app, nodeId);
             runtimeParams.extractChannels = selected;
             setRuntimeNodeParams(app, nodeId, runtimeParams);
+            markPipelineDirty(app, true);
             refreshValidationReport(app);
         end
 
@@ -5986,6 +6218,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 refreshModuleTabs(app);
             end
             updateRuntimeProgress(app, d, 'Checking pipeline bindings...');
+            markPipelineDirty(app, true);
             refreshValidationReport(app);
         end
 
@@ -7028,15 +7261,26 @@ classdef pipeline2 < matlab.apps.AppBase
 
             for i = 1:size(data, 1)
                 key = char(string(data{i,1}));
+                tooltip = paramTooltip(app, node, key, scope);
                 label = uilabel(grid, 'Text', friendlyParamLabel(app, key));
                 label.Layout.Row = i;
                 label.Layout.Column = 1;
-                label.Tooltip = key;
+                if isempty(tooltip)
+                    label.Tooltip = key;
+                else
+                    label.Tooltip = tooltip;
+                end
 
                 value = resolveDisplayedParamValue(app, node, key, data{i,2}, scope);
                 ctrl = createParamControl(app, grid, node, key, value, editable, scope);
                 ctrl.Layout.Row = i;
                 ctrl.Layout.Column = 2;
+                if ~isempty(tooltip)
+                    try
+                        ctrl.Tooltip = tooltip;
+                    catch
+                    end
+                end
             end
         end
 
@@ -7073,6 +7317,10 @@ classdef pipeline2 < matlab.apps.AppBase
                     case 'outputmode'
                         if isempty(strtrim(char(string(value))))
                             value = 'lstm_only';
+                        end
+                    case 'executionenvironment'
+                        if isempty(strtrim(char(string(value))))
+                            value = 'module_default';
                         end
                     case 'outputtype'
                         if isempty(strtrim(char(string(value))))
@@ -7175,9 +7423,39 @@ classdef pipeline2 < matlab.apps.AppBase
                 case 'classifier'
                     switch keyLower
                         case 'outputmode'
-                            choices = {'lstm_only','cnn_only','both'};
+                            pkg = lower(char(string(getField(app, node, 'pkg', ''))));
+                            if strcmp(pkg, 'cnn_lstm')
+                                spec = cnnLstmExecutionSpec(app);
+                                if isfield(spec, 'choices') && isfield(spec.choices, 'outputMode')
+                                    choices = spec.choices.outputMode;
+                                else
+                                    choices = {'lstm_only','cnn_only','both'};
+                                end
+                            else
+                                choices = {'lstm_only','cnn_only','both'};
+                            end
                         case 'outputtype'
-                            choices = {'segmentation','probability','both'};
+                            pkg = lower(char(string(getField(app, node, 'pkg', ''))));
+                            if strcmp(pkg, 'cellposesam')
+                                spec = cellposeExecutionSpec(app);
+                                if isfield(spec, 'choices') && isfield(spec.choices, 'outputType')
+                                    choices = spec.choices.outputType;
+                                else
+                                    choices = {'segmentation','probability','both'};
+                                end
+                            else
+                                choices = {'segmentation','probability','both'};
+                            end
+                        case 'executionenvironment'
+                            pkg = lower(char(string(getField(app, node, 'pkg', ''))));
+                            if strcmp(pkg, 'cnn_lstm')
+                                spec = cnnLstmExecutionSpec(app);
+                                if isfield(spec, 'choices') && isfield(spec.choices, 'executionEnvironment')
+                                    choices = spec.choices.executionEnvironment;
+                                else
+                                    choices = {'module_default','cpu','gpu'};
+                                end
+                            end
                     end
                 case 'roiextract'
                     switch keyLower
@@ -7242,6 +7520,16 @@ classdef pipeline2 < matlab.apps.AppBase
             nodeType = char(string(getField(app, app.Data.nodes(idx), 'type', '')));
             pkg = lower(char(string(getField(app, app.Data.nodes(idx), 'pkg', ''))));
             keyText = char(string(key));
+            if strcmpi(scope, 'static') && strcmpi(nodeType, 'classifier') && ...
+                    strcmp(pkg, 'cellposesam') && strcmpi(keyText, 'outputType')
+                value = normalizeCellposeOutputTypeForPipeline(app, value);
+            elseif strcmpi(scope, 'static') && strcmpi(nodeType, 'classifier') && ...
+                    strcmp(pkg, 'cnn_lstm') && strcmpi(keyText, 'outputMode')
+                value = normalizeCnnLstmOutputModeForPipeline(app, value);
+            elseif strcmpi(scope, 'static') && strcmpi(nodeType, 'classifier') && ...
+                    strcmp(pkg, 'cnn_lstm') && strcmpi(keyText, 'executionEnvironment')
+                value = normalizeExecutionEnvironmentForPipeline(app, value);
+            end
             if strcmpi(scope, 'static') && strcmpi(nodeType, 'processor') && ...
                     strcmp(pkg, 'combinemultiplechannels') && strcmpi(keyText, 'requiredChannelCount')
                 value = normalizeCombineChannelCount(app, value);
@@ -7266,6 +7554,7 @@ classdef pipeline2 < matlab.apps.AppBase
                     app.Data.nodes(idx).params = struct();
                 end
                 app.Data.nodes(idx).params.(keyText) = value;
+                markPipelineDirty(app, true);
             end
             needsBindingRefresh = ~strcmpi(scope, 'runtime') && ...
                 (any(strcmpi(keyText, {'outputMode','outputType'})) || ...
@@ -7498,9 +7787,11 @@ classdef pipeline2 < matlab.apps.AppBase
         function keys = classifierStaticKeys(app, pkg)
             switch pkg
                 case 'cnn_lstm'
-                    keys = {'outputMode'};
+                    spec = cnnLstmExecutionSpec(app);
+                    keys = spec.staticKeys;
                 case 'cellposesam'
-                    keys = {'outputType','diameter','min_size','flow_threshold','cell_prob_threshold'};
+                    spec = cellposeExecutionSpec(app);
+                    keys = spec.staticKeys;
                 otherwise
                     keys = {};
             end
@@ -7813,8 +8104,59 @@ classdef pipeline2 < matlab.apps.AppBase
                     label = 'Force channel names';
                 case 'scale'
                     label = 'Output scale';
+                case 'outputtype'
+                    label = 'Output resource';
+                case 'outputname'
+                    label = 'Segmentation output name';
+                case 'probabilityoutputname'
+                    label = 'Probability output name';
+                case 'diameter'
+                    label = 'Cell diameter';
+                case 'min_size'
+                    label = 'Minimum object size';
+                case 'flow_threshold'
+                    label = 'Flow threshold';
+                case 'cell_prob_threshold'
+                    label = 'Cell probability threshold';
+                case 'outputmode'
+                    label = 'Output resource';
+                case 'cnnoutputname'
+                    label = 'CNN output name';
+                case 'executionenvironment'
+                    label = 'Execution environment';
                 otherwise
                     label = char(string(key));
+            end
+        end
+
+        function txt = paramTooltip(app, node, key, scope) %#ok<INUSD>
+            txt = '';
+            if nargin < 4 || isempty(scope)
+                scope = 'static';
+            end
+            nodeType = lower(char(string(getField(app, node, 'type', ''))));
+            pkg = lower(char(string(getField(app, node, 'pkg', ''))));
+            if strcmpi(scope, 'static') && strcmp(nodeType, 'classifier') && strcmp(pkg, 'cellposesam')
+                try
+                    spec = cellposeExecutionSpec(app);
+                    if isfield(spec, 'tips') && isfield(spec.tips, key)
+                        txt = spec.tips.(key);
+                    end
+                catch
+                    txt = '';
+                end
+                return;
+            end
+            if strcmpi(scope, 'static') && strcmp(nodeType, 'classifier') && strcmp(pkg, 'cnn_lstm')
+                try
+                    spec = cnnLstmExecutionSpec(app);
+                    if isfield(spec, 'tips') && isfield(spec.tips, key)
+                        txt = spec.tips.(key);
+                    end
+                catch
+                    txt = '';
+                end
+                return;
             end
         end
 
@@ -8249,7 +8591,20 @@ classdef pipeline2 < matlab.apps.AppBase
                 if isfield(nodes(i).params, 'trainingParam')
                     nodes(i).params = rmfield(nodes(i).params, 'trainingParam');
                 end
+                if strcmp(pkg, 'cellposesam')
+                    nodes(i).params = applyCellposeExecutionDefaults(app, nodes(i).params, struct(), 'missing');
+                    if isfield(nodes(i).params, 'outputType')
+                        nodes(i).params.outputType = normalizeCellposeOutputTypeForPipeline(app, nodes(i).params.outputType);
+                    end
+                end
                 if strcmp(pkg, 'cnn_lstm')
+                    nodes(i).params = applyCnnLstmExecutionDefaults(app, nodes(i).params, struct(), 'missing');
+                    if isfield(nodes(i).params, 'outputMode')
+                        nodes(i).params.outputMode = normalizeCnnLstmOutputModeForPipeline(app, nodes(i).params.outputMode);
+                    end
+                    if isfield(nodes(i).params, 'executionEnvironment')
+                        nodes(i).params.executionEnvironment = normalizeExecutionEnvironmentForPipeline(app, nodes(i).params.executionEnvironment);
+                    end
                     keys = fieldnames(nodes(i).params);
                     drop = false(size(keys));
                     exact = {'train_CNN_classifier','compute_CNN_activations','train_LSTM_network', ...
@@ -8354,6 +8709,26 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
+        function markPipelineDirty(app, isDirty)
+            if nargin < 2
+                isDirty = true;
+            end
+            app.IsPipelineDirty = logical(isDirty);
+            updatePipelineWindowTitle(app);
+        end
+
+        function updatePipelineWindowTitle(app)
+            pipeName = strtrim(currentPipelineName(app));
+            if isempty(pipeName)
+                pipeName = defaultPipelineTemplateName(app);
+            end
+            suffix = '';
+            if app.IsPipelineDirty
+                suffix = ' *';
+            end
+            app.UIFigure.Name = [guiAppName(app) ' - ' pipeName suffix];
+        end
+
         function name = guiAppName(app) %#ok<INUSD>
             name = 'pipelineGUI2';
         end
@@ -8383,6 +8758,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 assignCurrentPipelineToWorkspace(app, pipeObj);
                 [runSaved, runJsonPath] = saveCurrentRunSnapshotIfProjectAvailable(app);
                 addRecentPipelinePath(app, fullfile(pipeObj.path, 'pipeline.json'));
+                markPipelineDirty(app, false);
                 ok = true;
                 suffix = '';
                 if ~isempty(app.CurrentPipelineWorkspaceVar)
@@ -8611,7 +8987,7 @@ classdef pipeline2 < matlab.apps.AppBase
             if logical(restoreLatestRun)
                 latestRunApplied = applyLatestRunForCurrentPipeline(app, false);
             end
-            refreshAfterModelChange(app);
+            refreshAfterModelChange(app, false);
             if latestRunApplied && ~isempty(app.CurrentRun) && isa(app.CurrentRun, 'pipelineRun')
                 try
                     app.RuninformationhereLabel.Text = ['Pipeline loaded with latest run: ' char(string(app.CurrentRun.runId))];
@@ -9943,6 +10319,16 @@ classdef pipeline2 < matlab.apps.AppBase
                     target = fullfile(runPath, 'run_params.json');
                 case 'summary'
                     target = fullfile(runPath, 'run_summary.txt');
+                case 'review'
+                    target = fullfile(runPath, 'run_review.txt');
+                    if exist(target, 'file') ~= 2
+                        try
+                            pipelineRunReview(runObj, 'Write', true);
+                        catch
+                        end
+                    end
+                case 'events'
+                    target = fullfile(runPath, 'run_events.jsonl');
                 otherwise
                     target = runPath;
             end
@@ -9955,6 +10341,30 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
             end
             openPathInSystem(app, target);
+        end
+
+        function showCurrentRunReview(app)
+            runObj = app.CurrentRun;
+            if isempty(runObj) || ~isa(runObj, 'pipelineRun')
+                if ~saveCurrentRun(app, false)
+                    return;
+                end
+                runObj = app.CurrentRun;
+            else
+                try
+                    pipelineRunSave(runObj);
+                catch
+                end
+            end
+            try
+                pipelineRunReview(runObj, 'Write', true);
+            catch
+            end
+            try
+                pipelineRunInspector(runObj, app.CurrentProject);
+            catch ME
+                uialert(app.UIFigure, ME.message, 'Review run', 'Icon', 'error');
+            end
         end
 
         function showCurrentRunLog(app)
