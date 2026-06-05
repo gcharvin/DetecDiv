@@ -12,6 +12,9 @@ from cellpose import models
 MODEL = None
 MODEL_PATH = None
 MODEL_GPU = None
+BASE_PRINT = builtins.print
+TEE_LOG_PATH = None
+TEE_LOG_HANDLE = None
 
 
 def check_cancel(cancel_path, where="run"):
@@ -29,18 +32,30 @@ def load_config(cfg_path=None):
 
 
 def install_log_tee(log_path):
+    global TEE_LOG_PATH, TEE_LOG_HANDLE
     if not log_path:
         return
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
-    log_handle = open(log_path, "a", encoding="utf-8", buffering=1)
-    base_print = builtins.print
+    log_path = os.path.abspath(log_path)
+
+    if TEE_LOG_PATH == log_path and TEE_LOG_HANDLE is not None:
+        return
+
+    if TEE_LOG_HANDLE is not None:
+        try:
+            TEE_LOG_HANDLE.close()
+        except OSError:
+            pass
+
+    TEE_LOG_HANDLE = open(log_path, "a", encoding="utf-8", buffering=1)
+    TEE_LOG_PATH = log_path
 
     def tee_print(*args, **kwargs):
-        base_print(*args, **kwargs)
+        BASE_PRINT(*args, **kwargs)
         file_kwargs = dict(kwargs)
-        file_kwargs["file"] = log_handle
+        file_kwargs["file"] = TEE_LOG_HANDLE
         file_kwargs.setdefault("flush", True)
-        base_print(*args, **file_kwargs)
+        BASE_PRINT(*args, **file_kwargs)
 
     builtins.print = tee_print
 

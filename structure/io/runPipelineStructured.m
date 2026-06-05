@@ -361,6 +361,12 @@ function ctx = stripEphemeralExecutionFields(ctx)
         end
     catch
     end
+    try
+        if isfield(ctx,'store') && isstruct(ctx.store) && isfield(ctx.store,'classifierRuntime')
+            ctx.store = rmfield(ctx.store, 'classifierRuntime');
+        end
+    catch
+    end
 end
 
 function ctx = normalizeRunId(ctx)
@@ -1625,7 +1631,15 @@ function ctx = executeClassifierNode(node, ctx)
             char(string(node.id)), outputName);
     end
 
+    [ctx, classifierForRun, classifierCNNForRun] = resolveRuntimeClassifierCache(ctx, clsObj, node);
+
     args = {'OutputName', outputName, 'Ctx', ctx};
+    if ~isempty(classifierForRun)
+        args = [args {'Classifier', classifierForRun}]; %#ok<AGROW>
+    end
+    if ~isempty(classifierCNNForRun)
+        args = [args {'ClassifierCNN', classifierCNNForRun}]; %#ok<AGROW>
+    end
     if isfield(p,'frames') && ~isempty(p.frames)
         args = [args {'Frames', p.frames}]; %#ok<AGROW>
     end
@@ -1714,6 +1728,92 @@ for i = 1:numel(props)
         end
     catch
     end
+end
+end
+
+function [ctx, classifierForRun, classifierCNNForRun] = resolveRuntimeClassifierCache(ctx, clsObj, node)
+classifierForRun = [];
+classifierCNNForRun = [];
+try
+    nodeId = char(string(getfielddefault(node,'id',clsObj.strid)));
+    key = matlab.lang.makeValidName(nodeId);
+    auxKey = matlab.lang.makeValidName([nodeId '_classifierCNN']);
+    if ~isfield(ctx,'store') || ~isstruct(ctx.store) || isempty(ctx.store)
+        ctx.store = struct();
+    end
+    if ~isfield(ctx.store,'classifierRuntime') || ~isstruct(ctx.store.classifierRuntime)
+        ctx.store.classifierRuntime = struct();
+    end
+    if isfield(ctx.store.classifierRuntime, key) && ~isempty(ctx.store.classifierRuntime.(key))
+        classifierForRun = ctx.store.classifierRuntime.(key);
+    else
+        if isprop(clsObj,'classifier') && ~isempty(clsObj.classifier)
+            classifierForRun = clsObj.classifier;
+        else
+            try
+                classifierForRun = clsObj.loadClassifier('force');
+            catch
+                classifierForRun = [];
+            end
+        end
+        if ~isempty(classifierForRun)
+            ctx.store.classifierRuntime.(key) = classifierForRun;
+        end
+    end
+    if isfield(ctx.store.classifierRuntime, auxKey) && ~isempty(ctx.store.classifierRuntime.(auxKey))
+        classifierCNNForRun = ctx.store.classifierRuntime.(auxKey);
+    elseif shouldCacheAuxiliaryClassifierCNN(clsObj, node)
+        classifierCNNForRun = loadAuxiliaryClassifierCNN(clsObj);
+        if ~isempty(classifierCNNForRun)
+            ctx.store.classifierRuntime.(auxKey) = classifierCNNForRun;
+        end
+    end
+catch
+    classifierForRun = [];
+    classifierCNNForRun = [];
+end
+end
+
+function tf = shouldCacheAuxiliaryClassifierCNN(clsObj, node)
+tf = false;
+try
+    pkg = lower(strtrim(char(string(resolveNodePackage(node)))));
+    fun = '';
+    if isprop(clsObj,'classifyFun') && ~isempty(clsObj.classifyFun)
+        fun = lower(strtrim(char(string(clsObj.classifyFun))));
+    elseif isfield(node,'func') && ~isempty(node.func)
+        fun = lower(strtrim(char(string(node.func))));
+    end
+    tf = strcmp(pkg, 'cnn_lstm') || contains(fun, 'cnn_lstm') || contains(fun, 'lstm');
+catch
+    tf = false;
+end
+end
+
+function classifierCNN = loadAuxiliaryClassifierCNN(clsObj)
+classifierCNN = [];
+try
+    if ~isprop(clsObj,'path') || isempty(clsObj.path) || ~isprop(clsObj,'strid') || isempty(clsObj.strid)
+        return;
+    end
+    filePath = fullfile(char(string(clsObj.path)), ['netCNN_' char(string(clsObj.strid)) '.mat']);
+    if exist(filePath, 'file') ~= 2
+        return;
+    end
+    S = load(filePath);
+    fields = {'classifier','netCNN','net'};
+    for i = 1:numel(fields)
+        if isfield(S, fields{i}) && ~isempty(S.(fields{i}))
+            classifierCNN = S.(fields{i});
+            return;
+        end
+    end
+    names = fieldnames(S);
+    if ~isempty(names)
+        classifierCNN = S.(names{1});
+    end
+catch
+    classifierCNN = [];
 end
 end
 

@@ -6,7 +6,6 @@ if nargin < 3 || isempty(ctx)
 end
 
 out = cellposesam.utils.outInitSafe('cellposesam.classify');
-persistent runnerMod runnerPathCached
 
 frames = [];
 channels = [];
@@ -258,16 +257,19 @@ selectArgs = buildPythonSelectionArgsLocal(ctx, classif);
 test = select_and_load_conda_env(selectArgs{:}); %#ok<NASGU>
 cellposesam.utils.ensurePythonDeps(classif);
 
-% run python routine as an external process so MATLAB stays responsive and
-% can cancel the job, including killing the Python process.
+% Run the Python routine either in the current pyenv session, so the Python
+% module can keep its model cache alive across ROI calls, or as the legacy
+% external process when requested/fallback is needed.
 pe = pyenv;
 pythonExe = char(pe.Executable);
 stdoutPath = fullfile(classif.path, 'runner_stdout.txt');
 stderrPath = fullfile(classif.path, 'runner_stderr.txt');
 liveLogPath = fullfile(classif.path, 'runner_live.log');
-disp('[DEBUG] cellposesam: using external python runner');
+runnerMode = resolveCellposeRunnerModeLocal(ctx);
+runnerFallback = resolveCellposeRunnerFallbackLocal(ctx, runnerMode);
+disp(['[DEBUG] cellposesam: runner mode=' runnerMode]);
 tRun = tic;
-runCellposeRunnerProcess(pythonExe, runnerPath, configPath, classif.path, cancelPath, stdoutPath, stderrPath, liveLogPath);
+runCellposeRunnerSelected(runnerMode, runnerFallback, pythonExe, runnerPath, configPath, classif.path, cancelPath, stdoutPath, stderrPath, liveLogPath);
 runSec = toc(tRun);
 disp(['[DEBUG] cellposesam.classify: runner time=' num2str(runSec, '%.3f') 's']);
 
@@ -281,7 +283,7 @@ if exist(resultsPath, 'file') ~= 2
     disp('[WARN] cellposesam.classify: results.mat missing after runner; retrying once...');
     try
         tRun = tic;
-        runCellposeRunnerProcess(pythonExe, runnerPath, configPath, classif.path, cancelPath, stdoutPath, stderrPath, liveLogPath);
+        runCellposeRunnerSelected(runnerMode, runnerFallback, pythonExe, runnerPath, configPath, classif.path, cancelPath, stdoutPath, stderrPath, liveLogPath);
         runSec = toc(tRun);
         disp(['[DEBUG] cellposesam.classify: retry runner time=' num2str(runSec, '%.3f') 's']);
     catch ME
@@ -517,6 +519,119 @@ if roiobj.display.alpha(logIdx) <= 0 || roiobj.display.alpha(logIdx) > 0.5
 end
 if roiobj.display.width(logIdx) <= 0
     roiobj.display.width(logIdx) = 1.5;
+end
+end
+
+function mode = resolveCellposeRunnerModeLocal(ctx)
+mode = 'external';
+explicitMode = false;
+try
+    if isstruct(ctx) && isfield(ctx,'exec') && isstruct(ctx.exec) && ...
+            isfield(ctx.exec,'python') && isstruct(ctx.exec.python)
+        pyCfg = ctx.exec.python;
+        if isfield(pyCfg,'cellposesamRunner') && ~isempty(pyCfg.cellposesamRunner)
+            mode = lower(strtrim(char(string(pyCfg.cellposesamRunner))));
+            explicitMode = true;
+        elseif isfield(pyCfg,'modelCache') && ~isempty(pyCfg.modelCache)
+            cacheMode = lower(strtrim(char(string(pyCfg.modelCache))));
+            if any(strcmp(cacheMode, {'session','persistent','pyenv'}))
+                mode = 'session';
+            end
+        end
+    end
+    if ~explicitMode && isstruct(ctx) && isfield(ctx,'pipeline') && isstruct(ctx.pipeline)
+        mode = 'session';
+    end
+catch
+    mode = 'external';
+end
+if any(strcmp(mode, {'inprocess','in_process','pyenv','persistent'}))
+    mode = 'session';
+elseif any(strcmp(mode, {'session_strict','strict_session'}))
+    mode = 'session';
+elseif ~strcmp(mode, 'session')
+    mode = 'external';
+end
+end
+
+function fallback = resolveCellposeRunnerFallbackLocal(ctx, runnerMode)
+fallback = strcmpi(runnerMode, 'session');
+try
+    if ~(isstruct(ctx) && isfield(ctx,'exec') && isstruct(ctx.exec) && ...
+            isfield(ctx.exec,'python') && isstruct(ctx.exec.python))
+        return;
+    end
+    pyCfg = ctx.exec.python;
+    if isfield(pyCfg,'cellposesamRunner') && ~isempty(pyCfg.cellposesamRunner)
+        rawMode = lower(strtrim(char(string(pyCfg.cellposesamRunner))));
+        if any(strcmp(rawMode, {'session_strict','strict_session'}))
+            fallback = false;
+            return;
+        end
+    end
+    if isfield(pyCfg,'cellposesamFallbackExternal') && ~isempty(pyCfg.cellposesamFallbackExternal)
+        fallback = parseLogicalScalarLocal(pyCfg.cellposesamFallbackExternal, fallback);
+    elseif isfield(pyCfg,'fallbackExternal') && ~isempty(pyCfg.fallbackExternal)
+        fallback = parseLogicalScalarLocal(pyCfg.fallbackExternal, fallback);
+    end
+catch
+    fallback = strcmpi(runnerMode, 'session');
+end
+end
+
+function value = parseLogicalScalarLocal(rawValue, defaultValue)
+value = defaultValue;
+try
+    if islogical(rawValue) || isnumeric(rawValue)
+        value = logical(rawValue(1));
+        return;
+    end
+    text = lower(strtrim(char(string(rawValue))));
+    if any(strcmp(text, {'true','1','yes','y','on'}))
+        value = true;
+    elseif any(strcmp(text, {'false','0','no','n','off'}))
+        value = false;
+    end
+catch
+    value = defaultValue;
+end
+end
+
+function runCellposeRunnerSelected(mode, fallbackExternal, pythonExe, runnerPath, configPath, classifPath, cancelPath, stdoutPath, stderrPath, liveLogPath)
+if strcmpi(mode, 'session')
+    try
+        runCellposeRunnerInProcess(runnerPath, configPath, cancelPath);
+    catch ME
+        if strcmp(ME.identifier, 'runPipeline:Cancelled') || ~fallbackExternal
+            rethrow(ME);
+        end
+        disp(['[WARN] cellposesam: session runner failed, falling back to external process: ' ME.message]);
+        runCellposeRunnerProcess(pythonExe, runnerPath, configPath, classifPath, cancelPath, stdoutPath, stderrPath, liveLogPath);
+    end
+else
+    runCellposeRunnerProcess(pythonExe, runnerPath, configPath, classifPath, cancelPath, stdoutPath, stderrPath, liveLogPath);
+end
+end
+
+function runCellposeRunnerInProcess(runnerPath, configPath, cancelPath)
+persistent runnerMod runnerPathCached
+if ~isempty(cancelPath) && exist(cancelPath, 'file') == 2
+    error('runPipeline:Cancelled', 'Pipeline run cancelled by user before CellposeSAM execution.');
+end
+try
+    runnerDir = fileparts(runnerPath);
+    if isempty(runnerMod) || isempty(runnerPathCached) || ~strcmp(runnerPathCached, runnerPath)
+        py.importlib.import_module('sys');
+        py.sys.path.insert(int32(0), runnerDir);
+        runnerMod = py.importlib.import_module('cellposesam_runner');
+        runnerPathCached = runnerPath;
+    end
+    runnerMod.run(configPath);
+catch ME
+    if ~isempty(cancelPath) && exist(cancelPath, 'file') == 2
+        error('runPipeline:Cancelled', 'Pipeline run cancelled by user during CellposeSAM execution.');
+    end
+    rethrow(ME);
 end
 end
 

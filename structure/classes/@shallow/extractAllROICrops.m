@@ -26,6 +26,7 @@ RequestedChans = {};         % {} => tous
 ROISelect      = [];         % [] => toutes (par FOV), numeric ou cell array
 
 PadExtraChannels = false;    % append zeros for extra ROI channels (seg masks, etc.)
+MemoryOnly        = false;   % keep extracted ROI images in memory; do not touch H5/MAT files
 
 % --- OPTIONS DIVERSES ---
 ForceChannelNames = true;    % impose les noms de canaux des ROI = chanSelNames
@@ -162,6 +163,8 @@ for i = 1:2:numel(varargin)
             hprogressbar = varargin{i+1};
         case "padextrachannels"
             PadExtraChannels = logical(varargin{i+1});
+        case "memoryonly"
+            MemoryOnly = logical(varargin{i+1});
     end
 end
 
@@ -421,6 +424,9 @@ for kF = 1:numel(FOVIndex)
     fprintf('\n▶ FOV %d/%d (%s) — %d frame(s) × %d channel(s) [selected %d]\n', ...
         kF, numel(FOVIndex), fovId, nFramesThisRun, nChannels, Csel);
     fprintf('   Output dir: %s\n', fovOutDir);
+    if MemoryOnly
+        fprintf('   MemoryOnly: extracted ROI images stay in memory; H5/MAT files are not modified.\n');
+    end
 
     % UI PB update
     pbUpdateUI(hprogressbar, (kF-1)/max(1,numel(FOVIndex)), sprintf('FOV %d/%d', kF, numel(FOVIndex)));
@@ -498,7 +504,15 @@ for kF = 1:numel(FOVIndex)
         if isprop(r,'h5path'),  r.h5path  = fullfile(fovOutDir, sprintf('im_%s.h5',  r.id)); end
         if isprop(r,'matpath'), r.matpath = fullfile(fovOutDir, sprintf('data_%s.mat',r.id)); end
 
-        if ~Extend
+        if MemoryOnly
+            r.image     = [];
+            r.channelid = 1:Csel;
+            if ForceChannelNames || ~isstruct(r.display) || ~isfield(r.display,'channel') || isempty(r.display.channel)
+                r.display = defaultDisplay(Csel, Csel);
+                r.display.channel = chanSelNames(:)';
+            end
+            ROI(rIdx).didInit = true;
+        elseif ~Extend
             hardResetROIh5(r);
             r.image     = [];
             r.channelid = 1:Csel;
@@ -880,11 +894,26 @@ for kF = 1:numel(FOVIndex)
             r.display.write_frame_ids = frameBatch(:)';   % absolute frame ids for this block
             r.display.write_local_ids = (loc0 : (loc0 + Tblock - 1)); % local indices in framesToDo
 
-            % --- Do the write ---
-            didSave = r.save(chanSelNames, false);
+            % --- Do the write, or keep the full requested extraction in memory ---
+            if MemoryOnly
+                previousImage = [];
+                try
+                    previousImage = ROI(rIdx).obj.image;
+                catch
+                    previousImage = [];
+                end
+                if isempty(previousImage)
+                    r.image = roiBlock;
+                else
+                    r.image = cat(4, previousImage, roiBlock);
+                end
+                didSave = true;
+            else
+                didSave = r.save(chanSelNames, false);
+            end
 
             % --- Optional: pad extra channels (segmentation masks, etc.) ---
-            if Extend && PadExtraChannels && didSave
+            if ~MemoryOnly && Extend && PadExtraChannels && didSave
                 try
                     h5File = fullfile(fovOutDir, sprintf('im_%s.h5', r.id));
                     extraNames = listH5Channels(h5File);
@@ -906,7 +935,13 @@ for kF = 1:numel(FOVIndex)
 
            % didSave = r.save(chanSelNames, false);
 
-            if ~didSave
+            if MemoryOnly
+                fprintf('.');
+                try
+                    r.setExtractionStatus('memory');
+                catch
+                end
+            elseif ~didSave
                 fprintf('        ? nothing written for ROI %s\n', ROI(rIdx).id);
                 try
                     r.setExtractionStatus('stale');
@@ -920,7 +955,9 @@ for kF = 1:numel(FOVIndex)
                 end
             end
 
-            r.image = [];
+            if ~MemoryOnly
+                r.image = [];
+            end
             r.display.write_abs_start = [];
             ROI(rIdx).obj = r;
         end

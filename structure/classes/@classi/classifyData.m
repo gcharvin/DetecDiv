@@ -52,6 +52,12 @@ for i = 1:numel(varargin)
     end
     if strcmp(key,'ClassifierCNN')
         CNNflag = 1;
+        if i < numel(varargin)
+            nextValue = varargin{i+1};
+            if ~(ischar(nextValue) || (isstring(nextValue) && isscalar(nextValue)))
+                classifierCNN = nextValue;
+            end
+        end
     end
     if strcmp(key,'Frames')
         frames = varargin{i+1};
@@ -126,16 +132,21 @@ end
 mustload = isempty(classifier);
 
 if CNNflag==1
-    str = fullfile(classi.path, ['netCNN_' classi.strid '.mat']);
-    if exist(str,'file')
-        load(str); %#ok<LOAD>
-        disp(['Loading CNN classifier: ' str]);
-        classifierCNN = classifier;
+    if isempty(classifierCNN)
+        [classifierCNN, loadedPath] = loadAuxiliaryClassifierCNNLocal(classi);
+        if ~isempty(classifierCNN)
+            disp(['Loading CNN classifier: ' loadedPath]);
+        end
+    end
+else
+    if isempty(classifierCNN) && shouldPreloadAuxiliaryClassifierCNNLocal(classifyFun)
+        [classifierCNN, loadedPath] = loadAuxiliaryClassifierCNNLocal(classi);
+        if ~isempty(classifierCNN)
+            disp(['Preloaded auxiliary CNN classifier: ' loadedPath]);
+        end
     else
         classifierCNN = [];
     end
-else
-    classifierCNN = [];
 end
 
 if mustload
@@ -1163,6 +1174,41 @@ end
 
 function io = buildCacheIoStruct(cachePolicy)
     io = struct('cachePolicy', cachePolicy);
+end
+
+function tf = shouldPreloadAuxiliaryClassifierCNNLocal(classifyFun)
+tf = false;
+try
+    fun = lower(strtrim(char(string(classifyFun))));
+    tf = contains(fun, 'cnn_lstm') || contains(fun, 'lstm');
+catch
+    tf = false;
+end
+end
+
+function [classifierCNN, filePath] = loadAuxiliaryClassifierCNNLocal(classi)
+classifierCNN = [];
+filePath = '';
+try
+    filePath = fullfile(char(string(classi.path)), ['netCNN_' char(string(classi.strid)) '.mat']);
+    if exist(filePath, 'file') ~= 2
+        return;
+    end
+    S = load(filePath);
+    fields = {'classifier','netCNN','net'};
+    for i = 1:numel(fields)
+        if isfield(S, fields{i}) && ~isempty(S.(fields{i}))
+            classifierCNN = S.(fields{i});
+            return;
+        end
+    end
+    names = fieldnames(S);
+    if ~isempty(names)
+        classifierCNN = S.(names{1});
+    end
+catch
+    classifierCNN = [];
+end
 end
 
 function ctx = buildPipelineClassifyCtx(ctxBase, fra, cha, gpu, classifierStore, classifierCNN, outputName, cachePolicy)

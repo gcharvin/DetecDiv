@@ -56,11 +56,35 @@ function S = pipelineRunToStruct(runObj)
 
     S.description = runObj.description;
     S.status = runObj.status;
-    S.ctx = sanitizeForJson(runObj.ctx);
+    S.ctx = sanitizeForJson(stripRuntimeOnlyContext(runObj.ctx));
     S.outputs = sanitizeForJson(runObj.outputs);
     S.progress = sanitizeForJson(runObj.progress);
     S.createdAt = runObj.createdAt;
     S.updatedAt = char(datetime('now'));
+end
+
+function ctx = stripRuntimeOnlyContext(ctx)
+    if ~isstruct(ctx)
+        return;
+    end
+    try
+        if isfield(ctx,'store') && isstruct(ctx.store) && isfield(ctx.store,'classifierRuntime')
+            ctx.store = rmfield(ctx.store, 'classifierRuntime');
+        end
+    catch
+    end
+    try
+        if isfield(ctx,'cancel')
+            ctx = rmfield(ctx, 'cancel');
+        end
+    catch
+    end
+    try
+        if isfield(ctx,'progressDlg')
+            ctx = rmfield(ctx, 'progressDlg');
+        end
+    catch
+    end
 end
 
 function S = getOrDefaultStruct(obj, fieldName, defaultValue)

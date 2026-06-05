@@ -88,6 +88,14 @@ function ctx = process(ctx)
     if isfield(ctx,'resume'), resume = logical(ctx.resume); end
     saveProgress = true;
     if isfield(ctx,'saveProgress'), saveProgress = logical(ctx.saveProgress); end
+    persistOutputs = true;
+    try
+        if isfield(ctx,'io') && isstruct(ctx.io) && isfield(ctx.io,'persistOutputs') && ~isempty(ctx.io.persistOutputs)
+            persistOutputs = logical(ctx.io.persistOutputs);
+        end
+    catch
+        persistOutputs = true;
+    end
 
     prog = progressLoad(shallowObj, ctx, 'roiExtract');
     if isempty(prog) || ~resume
@@ -148,6 +156,9 @@ function ctx = process(ctx)
 
         args = buildExtractArgs(p, progressDlg);
         args = [args {'FOVIndex'} {i} {'ROISelect'} {todo}];
+        if ~persistOutputs
+            args = [args {'MemoryOnly'} {true}]; %#ok<AGROW>
+        end
 
         try
             if ~isempty(shallowObj)
@@ -159,7 +170,7 @@ function ctx = process(ctx)
                 extractAllROICrops(tmp, args{:});
             end
             prog = progressMark(shallowObj, ctx, 'roiExtract', i, todo);
-            if saveProgress && ~isempty(shallowObj)
+            if persistOutputs && saveProgress && ~isempty(shallowObj)
                 try, shallowSave(shallowObj); catch, end
             end
         catch ME
