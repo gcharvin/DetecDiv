@@ -48,7 +48,7 @@ function [data, info] = detecdiv_hub_request(method, apiPath, payload, hub)
         end
         if ~info.ok
             info.message = localResponseMessage(data, resp.StatusLine.ReasonPhrase);
-            error('detecdiv_hub_request:HTTP%d', info.statusCode, '%s', info.message);
+            error(sprintf('detecdiv_hub_request:HTTP%d', info.statusCode), '%s', info.message);
         end
             return;
         catch ME

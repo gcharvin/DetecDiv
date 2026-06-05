@@ -15,6 +15,7 @@ classdef pipeline2 < matlab.apps.AppBase
         ExportpipelineMenu              matlab.ui.container.Menu
         ParametersPanel                 matlab.ui.container.Panel
         RunButton                       matlab.ui.control.Button
+        SmokeTestButton                 matlab.ui.control.Button
         CheckpipelineButton             matlab.ui.control.Button
         CloseappButton                  matlab.ui.control.Button
         PipelineandRuncheckreportLabel  matlab.ui.control.Label
@@ -91,7 +92,7 @@ classdef pipeline2 < matlab.apps.AppBase
     methods (Access = private)
 
         function startupFcn(app)
-            app.UIFigure.Name = 'pipelineGUI2';
+            app.UIFigure.Name = guiAppName(app);
             app.AvailableModules = defaultModuleLibrary(app);
 
             configureControls(app);
@@ -186,7 +187,7 @@ classdef pipeline2 < matlab.apps.AppBase
             try
                 spec = runObj.ctx.pipelineSpec;
                 if isstruct(spec) && isfield(spec, 'nodes') && ~isempty(spec.nodes)
-                    pipeObj = pipeline('', char(string(getNestedRunField(app, runObj, {'pipelineRef','id'}, 'pipelineGUI2'))), 1);
+                    pipeObj = pipeline('', char(string(getNestedRunField(app, runObj, {'pipelineRef','id'}, defaultPipelineTemplateName(app)))), 1);
                     pipeObj.nodes = spec.nodes;
                     if isfield(spec, 'edges')
                         pipeObj.edges = spec.edges;
@@ -343,6 +344,7 @@ classdef pipeline2 < matlab.apps.AppBase
             app.CloseappButton.ButtonPushedFcn = createCallbackFcn(app, @CloseappButtonPushed, true);
             app.RunButton.ButtonPushedFcn = createCallbackFcn(app, @RunButtonPushed, true);
             app.CheckpipelineButton.ButtonPushedFcn = createCallbackFcn(app, @CheckpipelineButtonPushed, true);
+            app.SmokeTestButton.ButtonPushedFcn = createCallbackFcn(app, @SmokeTestButtonPushed, true);
             app.NewpipelineMenu.MenuSelectedFcn = createCallbackFcn(app, @NewpipelineMenuSelected, true);
             app.LoadpipelineMenu.MenuSelectedFcn = createCallbackFcn(app, @LoadpipelineMenuSelected, true);
             updateRecentPipelinesMenu(app);
@@ -1331,6 +1333,7 @@ classdef pipeline2 < matlab.apps.AppBase
             if ~isempty(nodes)
                 maxRow = max(arrayfun(@(n) getLayoutRow(app, n), nodes));
             end
+            drawRuntimeGraphButtons(app, blockW, blockH, gapX, gapY, maxRow);
             xlim(app.UIGraphAxes, [-0.3 maxCol * (blockW + gapX)]);
             ylim(app.UIGraphAxes, [-(maxRow) * (blockH + gapY) blockH + 0.35]);
             axis(app.UIGraphAxes, 'manual');
@@ -1353,6 +1356,24 @@ classdef pipeline2 < matlab.apps.AppBase
             addModuleFromCurrentSelection(app);
         end
 
+        function GraphRuntimeNavButtonDown(app, event)
+            src = getCallbackSource(app, event);
+            if isempty(src) || ~isvalid(src) || ~isstruct(src.UserData) || ~isfield(src.UserData, 'runtimeTab')
+                return;
+            end
+            target = char(string(src.UserData.runtimeTab));
+            try
+                switch target
+                    case 'inputs'
+                        app.TabGroup.SelectedTab = app.RuntimeInputsTab;
+                    case 'options'
+                        app.TabGroup.SelectedTab = app.RuntimeTab;
+                end
+            catch
+            end
+            redrawGraph(app);
+        end
+
         function src = getCallbackSource(app, event) %#ok<INUSD>
             src = [];
             try
@@ -1369,6 +1390,51 @@ classdef pipeline2 < matlab.apps.AppBase
             catch
                 src = [];
             end
+        end
+
+        function drawRuntimeGraphButtons(app, blockW, blockH, gapX, gapY, maxRow)
+            btnW = 1.45;
+            btnH = 0.30;
+            btnGap = 0.14;
+            x0 = 0;
+            y0 = -(maxRow) * (blockH + gapY) + 0.13;
+            drawRuntimeGraphButton(app, x0, y0, btnW, btnH, 'Runtime inputs', 'inputs');
+            drawRuntimeGraphButton(app, x0 + btnW + btnGap, y0, btnW, btnH, 'Runtime options', 'options');
+        end
+
+        function drawRuntimeGraphButton(app, x, y, w, h, label, target)
+            selected = false;
+            try
+                if strcmp(target, 'inputs')
+                    selected = isequal(app.TabGroup.SelectedTab, app.RuntimeInputsTab);
+                elseif strcmp(target, 'options')
+                    selected = isequal(app.TabGroup.SelectedTab, app.RuntimeTab);
+                end
+            catch
+                selected = false;
+            end
+            face = [0.94 0.96 0.98];
+            edge = [0.40 0.48 0.58];
+            textColor = [0.18 0.22 0.28];
+            lineWidth = 1.0;
+            if selected
+                face = [0.78 0.88 1.00];
+                edge = [0.05 0.32 0.68];
+                lineWidth = 1.6;
+            end
+            ud = struct('runtimeTab', char(string(target)));
+            hRect = rectangle(app.UIGraphAxes, 'Position', [x y w h], ...
+                'Curvature', 0.10, 'FaceColor', face, 'EdgeColor', edge, ...
+                'LineWidth', lineWidth, ...
+                'ButtonDownFcn', createCallbackFcn(app, @GraphRuntimeNavButtonDown, true));
+            hRect.UserData = ud;
+            hText = text(app.UIGraphAxes, x + w/2, y + h/2, char(string(label)), ...
+                'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
+                'Interpreter', 'none', 'FontSize', 8, 'FontWeight', 'bold', ...
+                'Color', textColor, ...
+                'ButtonDownFcn', createCallbackFcn(app, @GraphRuntimeNavButtonDown, true));
+            hText.UserData = ud;
+            app.GhostHandles(end+1:end+2) = [hRect hText]; %#ok<AGROW>
         end
 
         function drawImplicitEdges(app, blockW, blockH, gapX, gapY)
@@ -1933,16 +1999,19 @@ classdef pipeline2 < matlab.apps.AppBase
                     'Position', [348 y 104 22]);
                 if strcmp(keys{i}, 'timeout')
                     fld = uieditfield(app.RuntimeTab, 'numeric', 'Position', [462 y 170 22], 'Value', str2double(defaults{i}));
+                elseif strcmp(keys{i}, 'password')
+                    fld = createHubPasswordControl(app, app.RuntimeTab, [462 y 190 22]);
+                    app.HubFieldHandles.connectButton = uibutton(app.RuntimeTab, 'push', ...
+                        'Text', 'Connect', 'Position', [660 y-1 130 24], ...
+                        'ButtonPushedFcn', @(~,~)connectHubButtonPushed(app));
                 else
                     fld = uieditfield(app.RuntimeTab, 'text', 'Position', [462 y 330 22], 'Value', defaults{i});
-                    if strcmp(keys{i}, 'password')
-                        try
-                            fld.InputType = 'password';
-                        catch
-                        end
-                    end
                 end
-                fld.ValueChangedFcn = @(src,~)hubRuntimeFieldChanged(app, '', []);
+                if strcmp(keys{i}, 'password') && isprop(fld, 'DataChangedFcn')
+                    fld.DataChangedFcn = @(src,~)hubRuntimeFieldChanged(app, 'hubPassword', src.Data);
+                else
+                    fld.ValueChangedFcn = @(src,~)hubRuntimeFieldChanged(app, '', []);
+                end
                 app.HubFieldHandles.([keys{i} 'Label']) = lbl;
                 app.HubFieldHandles.(keys{i}) = fld;
                 y = y - 34;
@@ -2000,8 +2069,12 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function hubRuntimeFieldChanged(app, key, value)
             if nargin >= 3 && ~isempty(key)
+                if strcmp(char(string(key)), 'hubPassword') && isstruct(value)
+                    return;
+                end
                 app.RuntimeValues.(key) = char(string(value));
             end
+            persistHubSettingsFromUi(app);
             updateHubRuntimeControlsVisibility(app);
             refreshValidationReport(app);
         end
@@ -2044,6 +2117,44 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function value = getStructText(app, S, key, defaultValue)
             value = char(string(getStructValue(app, S, key, defaultValue)));
+        end
+
+        function ctrl = createHubPasswordControl(app, parent, position) %#ok<INUSD>
+            try
+                ctrl = uihtml(parent, ...
+                    'HTMLSource', hubPasswordHtml(app), ...
+                    'Position', position, ...
+                    'Data', '');
+            catch
+                ctrl = uieditfield(parent, 'text', 'Position', position, 'Value', '');
+            end
+        end
+
+        function html = hubPasswordHtml(app) %#ok<INUSD>
+            html = [ ...
+                '<!doctype html><html><head><meta charset="utf-8">' ...
+                '<style>' ...
+                'html,body{margin:0;padding:0;background:transparent;overflow:hidden;}' ...
+                'input{box-sizing:border-box;width:100%;height:22px;border:1px solid #8f8f8f;' ...
+                'font:12px Arial,Helvetica,sans-serif;padding:1px 4px;background:white;color:#111;}' ...
+                'input:focus{outline:1px solid #0072bd;border-color:#0072bd;}' ...
+                '</style></head><body>' ...
+                '<input id="hubPassword" type="password" autocomplete="off" spellcheck="false">' ...
+                '<script>' ...
+                'const input=document.getElementById("hubPassword");' ...
+                'function push(){htmlComponent.Data=input.value;}' ...
+                'input.addEventListener("input",push);' ...
+                'input.addEventListener("change",push);' ...
+                'input.addEventListener("blur",push);' ...
+                'input.addEventListener("keyup",push);' ...
+                'htmlComponent.addEventListener("DataChanged",function(){' ...
+                'const d=htmlComponent.Data;' ...
+                'if(d&&typeof d==="object"&&d.command==="flush"){push();return;}' ...
+                'const v=(typeof d==="string")?d:"";' ...
+                'if(input.value!==v){input.value=v;}' ...
+                '});' ...
+                '</script></body></html>' ...
+                ];
         end
 
         function values = normalizeHubStringList(app, value) %#ok<INUSD>
@@ -7842,6 +7953,12 @@ classdef pipeline2 < matlab.apps.AppBase
                 if ~(hasToken || hasUserKey || hasPassword)
                     issues{end+1} = 'Hub user key, password login, or session token is required when run target is Hub.'; %#ok<AGROW>
                 end
+                pathReport = hubPathPreflight(app, hub);
+                if ~pathReport.ok
+                    for i = 1:numel(pathReport.errors)
+                        issues{end+1} = pathReport.errors{i}; %#ok<AGROW>
+                    end
+                end
             end
             [severity, message] = outputPolicyCompatibility(app);
             if strcmp(severity, 'warning')
@@ -8028,7 +8145,7 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function pipe = buildPipelineStruct(app)
             pipe = struct();
-            pipe.name = 'pipelineGUI2';
+            pipe.name = currentPipelineName(app);
             pipe.nodes = sanitizeNodeParamsForPipeline(app, app.Data.nodes);
             pipe.nodes = applyRuntimeDerivedNodePolicies(app, pipe.nodes);
             pipe.edges = app.Data.edges;
@@ -8174,7 +8291,7 @@ classdef pipeline2 < matlab.apps.AppBase
             pipeObj.nodes = pipeStruct.nodes;
             pipeObj.edges = pipeStruct.edges;
             pipeObj.branches = pipeStruct.branches;
-            pipeObj.description = 'Created from pipelineGUI2';
+            pipeObj.description = ['Created from ' guiAppName(app)];
         end
 
         function pipeObj = buildExecutablePipelineObject(app, targetPath, ctx)
@@ -8223,15 +8340,26 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function name = currentPipelineName(app)
-            name = 'pipelineGUI2';
+            name = defaultPipelineTemplateName(app);
             if ~isempty(app.CurrentPipeline) && isa(app.CurrentPipeline, 'pipeline') && ~isempty(app.CurrentPipeline.strid)
                 name = char(string(app.CurrentPipeline.strid));
+                if strcmp(name, guiAppName(app))
+                    name = defaultPipelineTemplateName(app);
+                end
             elseif ~isempty(app.CurrentPipelinePath)
                 [~, name] = fileparts(app.CurrentPipelinePath);
-                if isempty(name)
-                    name = 'pipelineGUI2';
+                if isempty(name) || strcmp(name, guiAppName(app))
+                    name = defaultPipelineTemplateName(app);
                 end
             end
+        end
+
+        function name = guiAppName(app) %#ok<INUSD>
+            name = 'pipelineGUI2';
+        end
+
+        function name = defaultPipelineTemplateName(app) %#ok<INUSD>
+            name = 'pipelineTemplate';
         end
 
         function ok = savePipelineInteractive(app, forceAs)
@@ -8278,6 +8406,9 @@ classdef pipeline2 < matlab.apps.AppBase
             try
                 varName = char(string(pipeObj.strid));
             catch
+            end
+            if strcmp(varName, guiAppName(app))
+                varName = defaultPipelineTemplateName(app);
             end
             if isempty(strtrim(varName))
                 try
@@ -8684,6 +8815,12 @@ classdef pipeline2 < matlab.apps.AppBase
             ctx.projectPath = projectPath;
             ctx.dataLoader = struct('path', rawDataPath);
 
+            if strcmp(ctx.run.executionTarget, 'hub')
+                pathReport = hubPathPreflight(app, ctx.hub);
+                ctx.hub.pathPreflight = pathReport;
+                ctx = applyHubPathPreflightToContext(app, ctx, pathReport);
+            end
+
             ctx.pipelineRef = buildPipelineRef(app);
             ctx.targetRef = buildTargetRef(app);
         end
@@ -8836,22 +8973,593 @@ classdef pipeline2 < matlab.apps.AppBase
             if isfield(app.HubFieldHandles, 'timeout') && isvalid(app.HubFieldHandles.timeout)
                 hub.timeout = double(app.HubFieldHandles.timeout.Value);
             end
+            hub = addUiPathMappingToHub(app, hub);
+        end
+
+        function hub = addUiPathMappingToHub(app, hub)
+            remoteRoot = strtrim(char(string(getStructText(app, hub, 'defaultRemoteProjectRoot', ''))));
+            localRoot = strtrim(char(string(getStructText(app, hub, 'defaultLocalProjectRoot', ''))));
+            if isempty(remoteRoot) || isempty(localRoot)
+                return;
+            end
+            try
+                hub = detecdiv_hub_upsert_path_mapping(hub, remoteRoot, localRoot);
+            catch
+                if ~isfield(hub, 'pathMappings') || isempty(hub.pathMappings)
+                    hub.pathMappings = struct('remoteRoot', {}, 'localRoot', {});
+                end
+                hub.pathMappings(end+1).remoteRoot = regexprep(strrep(remoteRoot, '\', '/'), '[\/]+$', '');
+                hub.pathMappings(end).localRoot = regexprep(strrep(localRoot, '/', filesep), '[\\\/]+$', '');
+            end
+        end
+
+        function report = hubPathPreflight(app, hub)
+            report = struct('ok', true, 'errors', {{}}, 'warnings', {{}}, ...
+                'paths', struct('label', {}, 'localPath', {}, 'remotePath', {}, 'status', {}, 'message', {}));
+            checks = collectHubPathChecks(app);
+            seen = containers.Map('KeyType', 'char', 'ValueType', 'logical');
+            for i = 1:numel(checks)
+                localPath = strtrim(char(string(checks(i).path)));
+                if isempty(localPath)
+                    continue;
+                end
+                key = lower(strrep(localPath, '/', '\'));
+                if isKey(seen, key)
+                    continue;
+                end
+                seen(key) = true;
+                [remotePath, ok, message, status] = translateHubPathForServer(app, localPath, hub);
+                item = struct('label', checks(i).label, 'localPath', localPath, ...
+                    'remotePath', remotePath, 'status', status, 'message', message);
+                report.paths(end+1) = item; %#ok<AGROW>
+                if ~ok
+                    report.ok = false;
+                    report.errors{end+1} = sprintf('%s is local-only for Hub: %s. %s', ...
+                        checks(i).label, localPath, message); %#ok<AGROW>
+                elseif ~isempty(message)
+                    report.warnings{end+1} = sprintf('%s: %s', checks(i).label, message); %#ok<AGROW>
+                end
+            end
+        end
+
+        function checks = collectHubPathChecks(app)
+            checks = struct('label', {}, 'path', {});
+            checks = addHubPathCheck(app, checks, 'Project path', getRuntimeValue(app, 'projectPath'));
+            checks = addHubPathCheck(app, checks, 'Raw data path', getRuntimeValue(app, 'rawDataPath'));
+            if ~isempty(app.CurrentProject) && isa(app.CurrentProject, 'shallow')
+                try
+                    if isfield(app.CurrentProject.io, 'path') && isfield(app.CurrentProject.io, 'file') && ...
+                            ~isempty(app.CurrentProject.io.path) && ~isempty(app.CurrentProject.io.file)
+                        checks = addHubPathCheck(app, checks, 'Project data folder', ...
+                            fullfile(char(string(app.CurrentProject.io.path)), char(string(app.CurrentProject.io.file))));
+                    end
+                catch
+                end
+                checks = collectProjectFovSourceChecks(app, checks, app.CurrentProject);
+            end
+        end
+
+        function checks = collectProjectFovSourceChecks(app, checks, shallowObj)
+            maxSources = 30;
+            sourceCount = 0;
+            try
+                fovs = shallowObj.fov;
+            catch
+                return;
+            end
+            for i = 1:numel(fovs)
+                sourceValues = {};
+                sourceValues = appendCellTextValues(app, sourceValues, getObjectFieldSafe(app, fovs(i), 'srcpath'));
+                sourceValues = appendCellTextValues(app, sourceValues, getObjectFieldSafe(app, fovs(i), 'tiffSource'));
+                sourceValues = appendCellTextValues(app, sourceValues, getObjectFieldSafe(app, fovs(i), 'ndtiffPath'));
+                sourceValues = appendCellTextValues(app, sourceValues, getObjectFieldSafe(app, fovs(i), 'omeZarrPath'));
+                for j = 1:numel(sourceValues)
+                    sourceCount = sourceCount + 1;
+                    checks = addHubPathCheck(app, checks, sprintf('FOV source %d', i), sourceValues{j}); %#ok<AGROW>
+                    if sourceCount >= maxSources
+                        return;
+                    end
+                end
+            end
+        end
+
+        function value = getObjectFieldSafe(app, obj, fieldName) %#ok<INUSD>
+            value = [];
+            try
+                if isprop(obj, fieldName) || isfield(obj, fieldName)
+                    value = obj.(fieldName);
+                end
+            catch
+            end
+        end
+
+        function values = appendCellTextValues(app, values, inputValue) %#ok<INUSD>
+            if isempty(inputValue)
+                return;
+            end
+            if iscell(inputValue)
+                for i = 1:numel(inputValue)
+                    values = appendCellTextValues(app, values, inputValue{i}); %#ok<AGROW>
+                end
+                return;
+            end
+            if isstring(inputValue)
+                for i = 1:numel(inputValue)
+                    values{end+1} = char(inputValue(i)); %#ok<AGROW>
+                end
+                return;
+            end
+            if ischar(inputValue)
+                values{end+1} = inputValue; %#ok<AGROW>
+            end
+        end
+
+        function checks = addHubPathCheck(app, checks, label, pathValue) %#ok<INUSD>
+            pathValue = strtrim(char(string(pathValue)));
+            if isempty(pathValue) || strcmpi(pathValue, 'Project source path not resolved')
+                return;
+            end
+            checks(end+1) = struct('label', char(string(label)), 'path', pathValue); %#ok<AGROW>
+        end
+
+        function ctx = applyHubPathPreflightToContext(app, ctx, report) %#ok<INUSD>
+            if ~isfield(ctx, 'hub') || ~isstruct(ctx.hub)
+                ctx.hub = struct();
+            end
+            for i = 1:numel(report.paths)
+                item = report.paths(i);
+                if ~strcmp(item.status, 'error') && ~isempty(item.remotePath)
+                    label = lower(strrep(item.label, ' ', ''));
+                    if strcmp(label, 'rawdatapath')
+                        ctx.run.serverRawDataPath = item.remotePath;
+                        ctx.io.serverRawDataPath = item.remotePath;
+                        ctx.dataLoader.serverPath = item.remotePath;
+                    elseif strcmp(label, 'projectpath')
+                        ctx.run.serverProjectPath = item.remotePath;
+                        ctx.io.serverProjectPath = item.remotePath;
+                    elseif strcmp(label, 'projectdatafolder')
+                        ctx.run.serverProjectDataFolder = item.remotePath;
+                        ctx.io.serverProjectDataFolder = item.remotePath;
+                    end
+                end
+            end
+        end
+
+        function [remotePath, ok, message, status] = translateHubPathForServer(app, localPath, hub)
+            ok = true;
+            message = '';
+            status = 'server';
+            remotePath = strrep(char(string(localPath)), '\', '/');
+            if isempty(strtrim(localPath))
+                status = 'empty';
+                return;
+            end
+            if isHubServerPath(app, localPath, hub)
+                status = 'server';
+                return;
+            end
+            [mappedPath, mapped] = hubMappedServerPath(app, localPath, hub);
+            if mapped
+                remotePath = mappedPath;
+                status = 'mapped';
+                return;
+            end
+            if isWindowsLocalPath(app, localPath)
+                ok = false;
+                status = 'error';
+                message = 'Set Local root and Remote root so the worker can map this Windows path to the server mount, for example Local root X:/ and Remote root /data.';
+                return;
+            end
+            if ~isAbsoluteServerLikePath(app, localPath)
+                ok = false;
+                status = 'error';
+                message = 'Hub runs need absolute paths visible from the worker, not relative paths.';
+                return;
+            end
+        end
+
+        function tf = isHubServerPath(app, pathValue, hub)
+            tf = false;
+            pathValue = strrep(char(string(pathValue)), '\', '/');
+            if startsWith(pathValue, '/') && ~startsWith(pathValue, '//')
+                tf = true;
+                return;
+            end
+            mappings = getHubPathMappings(app, hub);
+            for i = 1:numel(mappings)
+                remoteRoot = regexprep(strrep(mappings(i).remoteRoot, '\', '/'), '[\/]+$', '');
+                if ~isempty(remoteRoot) && hubPathStartsWithRoot(app, pathValue, remoteRoot, false)
+                    tf = true;
+                    return;
+                end
+            end
+        end
+
+        function tf = isAbsoluteServerLikePath(app, pathValue) %#ok<INUSD>
+            pathValue = char(string(pathValue));
+            tf = startsWith(pathValue, '/') && ~startsWith(pathValue, '//');
+        end
+
+        function tf = isWindowsLocalPath(app, pathValue) %#ok<INUSD>
+            pathValue = char(string(pathValue));
+            tf = ~isempty(regexp(pathValue, '^[A-Za-z]:[\\/]*', 'once')) || ...
+                startsWith(pathValue, '\\') || startsWith(pathValue, '//');
+        end
+
+        function [remotePath, mapped] = hubMappedServerPath(app, localPath, hub)
+            mapped = false;
+            remotePath = strrep(char(string(localPath)), '\', '/');
+            localComparable = strrep(char(string(localPath)), '/', '\');
+            mappings = getHubPathMappings(app, hub);
+            bestLen = -1;
+            bestRemote = '';
+            bestSuffix = '';
+            for i = 1:numel(mappings)
+                localRoot = regexprep(strrep(char(string(mappings(i).localRoot)), '/', '\'), '[\\\/]+$', '');
+                remoteRoot = regexprep(strrep(char(string(mappings(i).remoteRoot)), '\', '/'), '[\/]+$', '');
+                if isempty(localRoot) || isempty(remoteRoot)
+                    continue;
+                end
+                if hubPathStartsWithRoot(app, localComparable, localRoot, true) && numel(localRoot) > bestLen
+                    suffix = localComparable(numel(localRoot)+1:end);
+                    suffix = strrep(suffix, '\', '/');
+                    bestLen = numel(localRoot);
+                    bestRemote = remoteRoot;
+                    bestSuffix = suffix;
+                end
+            end
+            if bestLen >= 0
+                remotePath = [bestRemote bestSuffix];
+                mapped = true;
+            end
+        end
+
+        function tf = hubPathStartsWithRoot(app, pathValue, rootValue, ignoreCase) %#ok<INUSD>
+            pathValue = char(string(pathValue));
+            rootValue = char(string(rootValue));
+            if ignoreCase
+                pathCmp = lower(pathValue);
+                rootCmp = lower(rootValue);
+            else
+                pathCmp = pathValue;
+                rootCmp = rootValue;
+            end
+            tf = startsWith(pathCmp, rootCmp);
+            if ~tf
+                return;
+            end
+            if numel(pathCmp) == numel(rootCmp)
+                return;
+            end
+            if endsWith(rootCmp, ':')
+                return;
+            end
+            nextChar = pathCmp(numel(rootCmp)+1);
+            tf = any(nextChar == ['\' '/']);
+        end
+
+        function mappings = getHubPathMappings(app, hub) %#ok<INUSD>
+            mappings = struct('remoteRoot', {}, 'localRoot', {});
+            try
+                if isfield(hub, 'pathMappings') && ~isempty(hub.pathMappings)
+                    mappings = hub.pathMappings;
+                end
+            catch
+                mappings = struct('remoteRoot', {}, 'localRoot', {});
+            end
         end
 
         function password = hubPasswordFromUi(app)
             password = '';
+            flushHubPasswordControl(app);
             try
                 if isstruct(app.HubFieldHandles) && isfield(app.HubFieldHandles, 'password') && ...
                         isvalid(app.HubFieldHandles.password)
-                    password = char(string(app.HubFieldHandles.password.Value));
+                    if isprop(app.HubFieldHandles.password, 'Data')
+                        password = char(string(app.HubFieldHandles.password.Data));
+                    else
+                        password = char(string(app.HubFieldHandles.password.Value));
+                    end
                 end
             catch
                 password = '';
             end
+            if isempty(password)
+                try
+                    if isfield(app.RuntimeValues, 'hubPassword')
+                        password = char(string(app.RuntimeValues.hubPassword));
+                    end
+                catch
+                end
+            end
+        end
+
+        function flushHubPasswordControl(app)
+            try
+                if isstruct(app.HubFieldHandles) && isfield(app.HubFieldHandles, 'password') && ...
+                        isvalid(app.HubFieldHandles.password) && isprop(app.HubFieldHandles.password, 'Data')
+                    app.HubFieldHandles.password.Data = struct('command', 'flush', 'nonce', char(string(datetime('now'))));
+                    drawnow;
+                    pause(0.05);
+                    drawnow;
+                end
+            catch
+            end
+        end
+
+        function setHubPasswordValue(app, value)
+            try
+                if isstruct(app.HubFieldHandles) && isfield(app.HubFieldHandles, 'password') && ...
+                        isvalid(app.HubFieldHandles.password)
+                    if isprop(app.HubFieldHandles.password, 'Data')
+                        app.HubFieldHandles.password.Data = char(string(value));
+                    else
+                        app.HubFieldHandles.password.Value = char(string(value));
+                    end
+                    app.RuntimeValues.hubPassword = char(string(value));
+                end
+            catch
+            end
+        end
+
+        function persistHubSettingsFromUi(app)
+            try
+                if ~isstruct(app.HubFieldHandles) || isempty(fieldnames(app.HubFieldHandles))
+                    return;
+                end
+                hub = hubSettingsFromUi(app);
+                detecdiv_hub_settings_set(hub);
+            catch
+            end
+        end
+
+        function connectHubButtonPushed(app)
+            d = openRuntimeProgress(app, 'DetecDiv Hub', 'Connecting to hub...');
+            try
+                hub = hubSettingsFromUi(app);
+                if ~isfield(hub, 'baseUrl') || isempty(strtrim(char(string(hub.baseUrl))))
+                    error('pipeline2:HubMissingUrl', 'Hub URL is required.');
+                end
+                hub = ensureHubSessionFromUi(app, hub);
+                hub = requireHubSessionForStatus(app, hub);
+                updateRuntimeProgress(app, d, 'Checking hub status...');
+                [hubStatus, info] = queryHubStatus(app, hub);
+                detecdiv_hub_settings_set(hub);
+                applyHubSettingsToUi(app, hub);
+                setHubPasswordValue(app, '');
+                closeRuntimeProgress(app, d);
+                summaryText = formatHubStatusSummary(app, hubStatus);
+                app.RuninformationhereLabel.Text = ['Hub connected: ' summaryText];
+                appendRunReport(app, 'Hub status: OK', struct('summary', hubStatus.summary));
+                try
+                    uialert(app.UIFigure, ['Connected to DetecDiv Hub.' newline summaryText newline char(string(info.url))], ...
+                        'Hub connection', 'Icon', 'success');
+                catch
+                end
+            catch ME
+                closeRuntimeProgress(app, d);
+                try
+                    uialert(app.UIFigure, ME.message, 'Hub connection failed', 'Icon', 'error');
+                catch
+                end
+            end
+            refreshValidationReport(app);
+        end
+
+        function [status, info] = queryHubStatus(app, hub)
+            [health, info] = detecdiv_hub_request('GET', '/health', [], hub);
+            auth = struct();
+            targets = struct([]);
+            jobs = struct([]);
+            targetError = '';
+            jobError = '';
+            try
+                auth = detecdiv_hub_request('GET', '/auth/session', [], hub);
+            catch ME
+                targetError = ['Authentication unavailable: ' ME.message];
+            end
+            try
+                if isempty(targetError)
+                    targets = detecdiv_hub_request('GET', '/execution-targets', [], hub);
+                end
+            catch ME
+                targetError = ME.message;
+            end
+            try
+                jobs = detecdiv_hub_request('GET', '/jobs', [], hub);
+            catch ME
+                jobError = ME.message;
+            end
+            worker = summarizeHubWorkers(app, targets);
+            queue = summarizeHubJobs(app, jobs);
+            summary = struct( ...
+                'database', char(string(getField(app, health, 'database_status', 'unknown'))), ...
+                'hostname', char(string(getField(app, health, 'hostname', ''))), ...
+                'auth_mode', char(string(getField(app, auth, 'auth_mode', 'unknown'))), ...
+                'worker_available', worker.availableWorkers, ...
+                'worker_active', worker.activeWorkers, ...
+                'worker_busy', worker.busyWorkers, ...
+                'worker_stale', worker.staleWorkers, ...
+                'worker_error', worker.errorWorkers, ...
+                'queued_jobs', queue.queued, ...
+                'queued_pipeline_runs', queue.queuedPipelineRuns, ...
+                'running_jobs', queue.running);
+            if ~isempty(targetError)
+                summary.execution_targets_error = targetError;
+            end
+            if ~isempty(jobError)
+                summary.jobs_error = jobError;
+            end
+            status = struct('health', health, 'auth', auth, 'worker', worker, 'queue', queue, ...
+                'summary', summary, 'executionTargetsError', targetError, 'jobsError', jobError);
+        end
+
+        function worker = summarizeHubWorkers(app, targets)
+            worker = struct('targetCount', 0, 'activeWorkers', 0, 'registeredWorkers', 0, ...
+                'availableWorkers', 0, 'busyWorkers', 0, 'onlineWorkers', 0, ...
+                'staleWorkers', 0, 'errorWorkers', 0, 'capacity', 0, 'details', {{}});
+            if isempty(targets)
+                return;
+            end
+            useMatlabOnly = false;
+            for i = 1:numel(targets)
+                target = localListItem(app, targets, i);
+                if isstruct(target) && isfield(target, 'supports_matlab') && logical(target.supports_matlab)
+                    useMatlabOnly = true;
+                    break;
+                end
+            end
+            for i = 1:numel(targets)
+                target = localListItem(app, targets, i);
+                if ~isstruct(target)
+                    continue;
+                end
+                if useMatlabOnly && isfield(target, 'supports_matlab') && ~logical(target.supports_matlab)
+                    continue;
+                end
+                metadata = getField(app, target, 'metadata_json', struct());
+                wh = getField(app, metadata, 'worker_health_summary', struct());
+                if isempty(fieldnamesOrEmpty(app, wh))
+                    wh = getField(app, metadata, 'worker_health', struct());
+                end
+                active = numericField(app, wh, 'worker_count', 0);
+                registered = numericField(app, wh, 'registered_workers', active);
+                busy = numericField(app, wh, 'busy_workers', 0);
+                online = numericField(app, wh, 'online_workers', active);
+                stale = numericField(app, wh, 'stale_workers', max(0, registered - active));
+                errors = numericField(app, wh, 'error_workers', 0);
+                capacity = numericField(app, wh, 'max_concurrent_jobs', 0);
+                if capacity <= 0
+                    capacity = numericField(app, metadata, 'max_concurrent_jobs', active);
+                end
+                if capacity <= 0
+                    capacity = active;
+                end
+                available = max(0, capacity - busy);
+                worker.targetCount = worker.targetCount + 1;
+                worker.activeWorkers = worker.activeWorkers + active;
+                worker.registeredWorkers = worker.registeredWorkers + registered;
+                worker.availableWorkers = worker.availableWorkers + available;
+                worker.busyWorkers = worker.busyWorkers + busy;
+                worker.onlineWorkers = worker.onlineWorkers + online;
+                worker.staleWorkers = worker.staleWorkers + stale;
+                worker.errorWorkers = worker.errorWorkers + errors;
+                worker.capacity = worker.capacity + capacity;
+                worker.details{end+1} = sprintf('%s: %d/%d available, %d busy, %d stale', ...
+                    char(string(getField(app, target, 'display_name', getField(app, target, 'target_key', 'target')))), ...
+                    available, capacity, busy, stale); %#ok<AGROW>
+            end
+        end
+
+        function queue = summarizeHubJobs(app, jobs)
+            queue = struct('total', 0, 'queued', 0, 'running', 0, 'cancelling', 0, ...
+                'queuedPipelineRuns', 0, 'runningPipelineRuns', 0);
+            if isempty(jobs)
+                return;
+            end
+            queue.total = numel(jobs);
+            for i = 1:numel(jobs)
+                job = localListItem(app, jobs, i);
+                if ~isstruct(job)
+                    continue;
+                end
+                st = lower(strtrim(char(string(getField(app, job, 'status', '')))));
+                params = getField(app, job, 'params_json', struct());
+                kind = lower(strtrim(char(string(getField(app, params, 'job_kind', '')))));
+                switch st
+                    case 'queued'
+                        queue.queued = queue.queued + 1;
+                        if strcmp(kind, 'pipeline_run')
+                            queue.queuedPipelineRuns = queue.queuedPipelineRuns + 1;
+                        end
+                    case 'running'
+                        queue.running = queue.running + 1;
+                        if strcmp(kind, 'pipeline_run')
+                            queue.runningPipelineRuns = queue.runningPipelineRuns + 1;
+                        end
+                    case 'cancelling'
+                        queue.cancelling = queue.cancelling + 1;
+                end
+            end
+        end
+
+        function text = formatHubStatusSummary(app, status)
+            worker = status.worker;
+            queue = status.queue;
+            db = char(string(getField(app, status.summary, 'database', 'unknown')));
+            authMode = char(string(getField(app, status.summary, 'auth_mode', 'unknown')));
+            if isempty(status.executionTargetsError)
+                workerText = sprintf('workers %d/%d available (%d active, %d busy, %d stale, %d error)', ...
+                    worker.availableWorkers, worker.capacity, worker.activeWorkers, worker.busyWorkers, ...
+                    worker.staleWorkers, worker.errorWorkers);
+            else
+                workerText = ['workers unavailable: ' compactStatusMessage(app, status.executionTargetsError)];
+            end
+            text = sprintf('DB %s, auth %s, %s, queue %d queued (%d pipeline), %d running', ...
+                db, authMode, workerText, queue.queued, queue.queuedPipelineRuns, queue.running);
+            if ~isempty(status.jobsError)
+                text = [text ', jobs unavailable: ' compactStatusMessage(app, status.jobsError)];
+            end
+        end
+
+        function msg = compactStatusMessage(app, msg) %#ok<INUSD>
+            msg = strtrim(char(string(msg)));
+            msg = regexprep(msg, '\s+', ' ');
+            maxLen = 160;
+            if strlength(string(msg)) > maxLen
+                msg = [char(extractBefore(string(msg), maxLen)) '...'];
+            end
+        end
+
+        function value = localListItem(app, values, idx) %#ok<INUSD>
+            if iscell(values)
+                value = values{idx};
+            else
+                value = values(idx);
+            end
+        end
+
+        function names = fieldnamesOrEmpty(app, value) %#ok<INUSD>
+            if isstruct(value)
+                names = fieldnames(value);
+            else
+                names = {};
+            end
+        end
+
+        function value = numericField(app, S, key, defaultValue)
+            value = defaultValue;
+            try
+                if isstruct(S) && isfield(S, key) && ~isempty(S.(key))
+                    value = double(S.(key));
+                end
+            catch
+                value = defaultValue;
+            end
+        end
+
+        function hub = requireHubSessionForStatus(app, hub)
+            if isfield(hub, 'sessionToken') && ~isempty(strtrim(char(string(hub.sessionToken))))
+                try
+                    detecdiv_hub_request('GET', '/auth/session', [], hub);
+                    return;
+                catch ME
+                    error('pipeline2:HubSessionInvalid', ...
+                        ['Hub session token is not valid for status endpoints: ' ME.message ...
+                         newline 'Reconnect with your password or paste a valid session token.']);
+                end
+            end
+            error('pipeline2:HubAuthenticationRequired', ...
+                ['Hub is reachable, but worker status requires an authenticated session.' newline ...
+                 'Enter your password and click Connect, or paste a valid session token.']);
         end
 
         function hub = ensureHubSessionFromUi(app, hub)
             password = hubPasswordFromUi(app);
+            hasToken = isfield(hub, 'sessionToken') && ~isempty(strtrim(char(string(hub.sessionToken))));
+            if isempty(strtrim(password)) && ~hasToken
+                password = promptHubPassword(app, hub);
+            end
             if isempty(strtrim(password))
                 return;
             end
@@ -8867,8 +9575,41 @@ classdef pipeline2 < matlab.apps.AppBase
                     isfield(hub, 'sessionToken')
                 app.HubFieldHandles.sessionToken.Value = char(string(hub.sessionToken));
             end
-            if isfield(app.HubFieldHandles, 'password') && isvalid(app.HubFieldHandles.password)
-                app.HubFieldHandles.password.Value = '';
+            setHubPasswordValue(app, '');
+        end
+
+        function password = promptHubPassword(app, hub)
+            password = '';
+            userKey = '';
+            try
+                if isfield(hub, 'userKey')
+                    userKey = strtrim(char(string(hub.userKey)));
+                end
+            catch
+                userKey = '';
+            end
+            try
+                import javax.swing.*
+                panel = javaObjectEDT('javax.swing.JPanel');
+                panel.setLayout(javaObjectEDT('java.awt.GridLayout', 0, 1));
+                label = javaObjectEDT('javax.swing.JLabel', ['Password for Hub user ' userKey ':']);
+                field = javaObjectEDT('javax.swing.JPasswordField', 24);
+                panel.add(label);
+                panel.add(field);
+                option = JOptionPane.showConfirmDialog([], panel, 'DetecDiv Hub login', ...
+                    JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+                if option == JOptionPane.OK_OPTION
+                    password = char(field.getPassword())';
+                end
+            catch
+                try
+                    answer = inputdlg({['Password for Hub user ' userKey ':']}, 'DetecDiv Hub login', 1, {''});
+                    if ~isempty(answer)
+                        password = char(string(answer{1}));
+                    end
+                catch
+                    password = '';
+                end
             end
         end
 
@@ -9015,7 +9756,7 @@ classdef pipeline2 < matlab.apps.AppBase
         function ref = buildPipelineRef(app)
             ref = struct('id', currentPipelineName(app), 'path', app.CurrentPipelinePath, 'version', '');
             if ~isempty(app.CurrentPipeline) && isa(app.CurrentPipeline, 'pipeline')
-                ref.id = app.CurrentPipeline.strid;
+                ref.id = currentPipelineName(app);
                 ref.path = app.CurrentPipeline.path;
                 ref.version = app.CurrentPipeline.version;
             end
@@ -9334,6 +10075,12 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
             catch
             end
+            try
+                if isfield(ctx,'store') && isstruct(ctx.store) && isfield(ctx.store,'classifierRuntime')
+                    ctx.store = rmfield(ctx.store, 'classifierRuntime');
+                end
+            catch
+            end
         end
 
         function tf = isPipelineCancelException(app, ME) %#ok<INUSD>
@@ -9533,6 +10280,169 @@ classdef pipeline2 < matlab.apps.AppBase
             app.PipelineandRuncheckreportLabel.Text = strjoin(lines, newline);
         end
 
+        function reportFile = writeSmokeTestReport(app, runObj, smokeInfo, dryReport, runReport, ME)
+            reportFile = '';
+            if nargin < 6
+                ME = [];
+            end
+            if isempty(runObj) || ~isa(runObj, 'pipelineRun')
+                return;
+            end
+            try
+                [runPath, ~] = runObj.getPath;
+                if isempty(runPath)
+                    return;
+                end
+                if exist(runPath, 'dir') ~= 7
+                    mkdir(runPath);
+                end
+                reportFile = fullfile(runPath, 'smoke_report.txt');
+
+                lines = {};
+                lines{end+1} = 'Pipeline smoke test report'; %#ok<AGROW>
+                lines{end+1} = ['Generated: ' char(datetime('now'))]; %#ok<AGROW>
+                lines{end+1} = ['Status: ' char(string(runObj.status))]; %#ok<AGROW>
+                lines{end+1} = ['Run ID: ' char(string(runObj.runId))]; %#ok<AGROW>
+                lines{end+1} = ['Run folder: ' runPath]; %#ok<AGROW>
+                lines{end+1} = ['Run JSON: ' fullfile(runPath, 'run.json')]; %#ok<AGROW>
+                lines{end+1} = '';
+
+                lines{end+1} = 'Scope'; %#ok<AGROW>
+                lines{end+1} = ['- Pipeline: ' smokeFieldText(app, runObj.pipelineRef, 'id', currentPipelineName(app))]; %#ok<AGROW>
+                lines{end+1} = ['- Pipeline path: ' smokeFieldText(app, runObj.pipelineRef, 'path', app.CurrentPipelinePath)]; %#ok<AGROW>
+                lines{end+1} = ['- Project: ' char(string(runObj.projectPath))]; %#ok<AGROW>
+                if isstruct(smokeInfo) && isfield(smokeInfo, 'label') && ~isempty(smokeInfo.label)
+                    lines{end+1} = ['- Test ROI: ' char(string(smokeInfo.label))]; %#ok<AGROW>
+                end
+                if isstruct(smokeInfo) && isfield(smokeInfo, 'fovIndex')
+                    lines{end+1} = ['- FOV index: ' smokeValueText(app, smokeInfo.fovIndex)]; %#ok<AGROW>
+                end
+                if isstruct(smokeInfo) && isfield(smokeInfo, 'roiIndex')
+                    lines{end+1} = ['- ROI index: ' smokeValueText(app, smokeInfo.roiIndex)]; %#ok<AGROW>
+                end
+                if isstruct(smokeInfo) && isfield(smokeInfo, 'roiId')
+                    lines{end+1} = ['- ROI id: ' char(string(smokeInfo.roiId))]; %#ok<AGROW>
+                end
+                lines{end+1} = '- Output persistence: memory only, no ROI/H5/dataseries save'; %#ok<AGROW>
+                lines{end+1} = '';
+
+                ctx = struct();
+                try
+                    ctx = runObj.ctx;
+                catch
+                end
+                if isstruct(ctx)
+                    lines{end+1} = 'Runtime'; %#ok<AGROW>
+                    if isfield(ctx, 'run') && isstruct(ctx.run)
+                        lines{end+1} = ['- Selected nodes: ' smokeValueText(app, getField(app, ctx.run, 'selectedNodes', {}))]; %#ok<AGROW>
+                        lines{end+1} = ['- Run policy: ' smokeValueText(app, getField(app, ctx.run, 'runPolicy', ''))]; %#ok<AGROW>
+                        lines{end+1} = ['- Execution target: ' smokeValueText(app, getField(app, ctx.run, 'executionTarget', 'local'))]; %#ok<AGROW>
+                    end
+                    if isfield(ctx, 'io') && isstruct(ctx.io)
+                        lines{end+1} = ['- Existing output policy: ' smokeValueText(app, getField(app, ctx.io, 'existingPolicy', ''))]; %#ok<AGROW>
+                        lines{end+1} = ['- persistOutputs: ' smokeValueText(app, getField(app, ctx.io, 'persistOutputs', false))]; %#ok<AGROW>
+                        lines{end+1} = ['- saveMode: ' smokeValueText(app, getField(app, ctx.io, 'saveMode', 'defer'))]; %#ok<AGROW>
+                    end
+                    lines{end+1} = '';
+                end
+
+                lines = [lines formatSmokeReportBlock(app, 'Dry-run', dryReport)]; %#ok<AGROW>
+                lines{end+1} = ''; %#ok<AGROW>
+                lines = [lines formatSmokeReportBlock(app, 'Execution', runReport)]; %#ok<AGROW>
+
+                if ~isempty(ME)
+                    lines{end+1} = ''; %#ok<AGROW>
+                    lines{end+1} = 'Error'; %#ok<AGROW>
+                    lines{end+1} = ['- Identifier: ' char(string(ME.identifier))]; %#ok<AGROW>
+                    lines{end+1} = ['- Message: ' char(string(ME.message))]; %#ok<AGROW>
+                    try
+                        if ~isempty(ME.stack)
+                            top = ME.stack(1);
+                            lines{end+1} = sprintf('- Location: %s:%d', char(string(top.name)), top.line); %#ok<AGROW>
+                        end
+                    catch
+                    end
+                end
+
+                fid = fopen(reportFile, 'w');
+                if fid < 0
+                    error('pipeline2:SmokeReportWrite', 'Cannot write %s.', reportFile);
+                end
+                cleaner = onCleanup(@()fclose(fid)); %#ok<NASGU>
+                fwrite(fid, [strjoin(lines, newline) newline], 'char');
+                logRunEvent(app, runObj, ['Smoke report written: ' reportFile], 'pipeline2');
+            catch MEwrite
+                try
+                    warning('pipeline2:SmokeReportWrite', 'Unable to write smoke report: %s', MEwrite.message);
+                catch
+                end
+            end
+        end
+
+        function lines = formatSmokeReportBlock(app, titleText, report)
+            lines = {char(string(titleText))};
+            if ~isstruct(report) || isempty(fieldnames(report))
+                lines{end+1} = '- Not available'; %#ok<AGROW>
+                return;
+            end
+            if isfield(report, 'summary') && isstruct(report.summary) && ~isempty(fieldnames(report.summary))
+                lines{end+1} = ['- Summary: ' smokeValueText(app, report.summary)]; %#ok<AGROW>
+            end
+            if isfield(report, 'order') && ~isempty(report.order)
+                lines{end+1} = ['- Order: ' strjoin(cellstr(string(report.order)), ' -> ')]; %#ok<AGROW>
+            end
+            if isfield(report, 'nodeRuns') && isstruct(report.nodeRuns) && ~isempty(report.nodeRuns)
+                lines{end+1} = '- Nodes:'; %#ok<AGROW>
+                for i = 1:numel(report.nodeRuns)
+                    row = report.nodeRuns(i);
+                    nodeId = smokeFieldText(app, row, 'nodeId', '');
+                    nodeType = smokeFieldText(app, row, 'nodeType', '');
+                    status = smokeFieldText(app, row, 'status', '');
+                    duration = smokeValueText(app, getField(app, row, 'durationSec', 0));
+                    msg = smokeFieldText(app, row, 'message', '');
+                    line = sprintf('  - %s [%s] status=%s duration=%ss', nodeId, nodeType, status, duration);
+                    if ~isempty(strtrim(msg))
+                        line = [line ' message=' msg];
+                    end
+                    lines{end+1} = line; %#ok<AGROW>
+                end
+            end
+            if isfield(report, 'errors') && ~isempty(report.errors)
+                lines{end+1} = ['- Errors: ' strjoin(cellstr(string(report.errors)), ' | ')]; %#ok<AGROW>
+            end
+            if isfield(report, 'warnings') && ~isempty(report.warnings)
+                lines{end+1} = ['- Warnings: ' strjoin(cellstr(string(report.warnings)), ' | ')]; %#ok<AGROW>
+            end
+        end
+
+        function txt = smokeFieldText(app, S, fieldName, defaultValue)
+            txt = smokeValueText(app, getField(app, S, fieldName, defaultValue));
+        end
+
+        function txt = smokeValueText(app, value) %#ok<INUSD>
+            if isempty(value)
+                txt = '';
+                return;
+            end
+            try
+                if ischar(value)
+                    txt = value;
+                elseif isstring(value)
+                    txt = char(strjoin(value(:)', ', '));
+                elseif isnumeric(value) || islogical(value)
+                    txt = mat2str(value);
+                elseif iscell(value)
+                    txt = char(strjoin(string(value(:)'), ', '));
+                elseif isstruct(value)
+                    txt = jsonencode(value);
+                else
+                    txt = char(string(value));
+                end
+            catch
+                txt = '<unprintable>';
+            end
+        end
+
         function reportText = printExceptionToConsole(app, titleText, ME) %#ok<INUSD>
             if nargin < 2 || isempty(titleText)
                 titleText = 'Pipeline error';
@@ -9618,6 +10528,350 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
+        function SmokeTestButtonPushed(app, event) %#ok<INUSD>
+            oldText = app.SmokeTestButton.Text;
+            app.SmokeTestButton.Text = 'Smoke running...';
+            app.SmokeTestButton.Enable = 'off';
+            cleanupObj = onCleanup(@()restoreSmokeTestButton(app, oldText)); %#ok<NASGU>
+            drawnow;
+
+            runObj = [];
+            d = [];
+            smokeInfo = struct();
+            dryReport = struct();
+            report = struct();
+            try
+                if ~ensurePipelineSavedForRun(app)
+                    return;
+                end
+                if ~ensureCurrentProjectForRun(app)
+                    return;
+                end
+
+                [okTemplate, reportTemplate] = refreshValidationReportWithOutput(app);
+                runtimeIssues = validateRuntimeInputs(app);
+                blockingRuntimeIssues = runtimeIssues(~contains(string(runtimeIssues), "unusual"));
+                if ~okTemplate
+                    app.PipelineandRuncheckreportLabel.Text = formatValidationReport(app, okTemplate, reportTemplate);
+                    uialert(app.UIFigure, 'Pipeline template is not valid. Fix blocking issues before smoke test.', ...
+                        'Smoke test', 'Icon', 'error');
+                    return;
+                end
+                if ~isempty(blockingRuntimeIssues)
+                    CheckpipelineButtonPushed(app, []);
+                    uialert(app.UIFigure, strjoin(blockingRuntimeIssues, newline), 'Runtime inputs', 'Icon', 'error');
+                    return;
+                end
+
+                ctx = buildRunContext(app);
+                [ctxSmoke, smokeInfo] = buildSmokeRunContext(app, ctx);
+                pipeObj = buildExecutablePipelineObject(app, app.CurrentPipelinePath, ctxSmoke);
+                app.CurrentPipeline = pipeObj;
+                assignCurrentPipelineToWorkspace(app, pipeObj);
+
+                runObj = createSmokePipelineRun(app, ctxSmoke, smokeInfo, 'preflight');
+                logRunEvent(app, runObj, ['Smoke test requested: ' smokeInfo.label], 'pipeline2');
+                pipelineRunSave(runObj);
+                shallowSave(app.CurrentProject, 'shallowObj');
+
+                try
+                    d = uiprogressdlg(app.UIFigure, 'Title', 'Pipeline smoke test', ...
+                        'Message', ['Preparing single-ROI smoke test: ' smokeInfo.label], ...
+                        'Indeterminate', 'on', 'Cancelable', 'on');
+                    try
+                        if isprop(d, 'CancelText')
+                            d.CancelText = 'Stop smoke test';
+                        end
+                    catch
+                    end
+                catch
+                    d = [];
+                end
+
+                if ~isempty(d), d.Message = 'Dry-run validation...'; end
+                ctxDry = ctxSmoke;
+                ctxDry.dryRun = true;
+                [~, dryReport] = runPipeline(pipeObj, ctxDry);
+                runObj.outputs.dryRunReport = dryReport;
+                runObj.status = 'dry_run_ok';
+                runObj.ctx = ctxDry;
+                logRunEvent(app, runObj, 'Smoke dry-run validation completed.', 'pipeline2');
+                pipelineRunSave(runObj);
+                appendRunReport(app, ['Smoke dry-run OK: ' smokeInfo.label], dryReport);
+
+                if ~isempty(d), d.Message = ['Running local smoke test: ' smokeInfo.label]; end
+                ctxRun = ctxSmoke;
+                ctxRun.dryRun = false;
+                ctxRun = attachRunCancellationAndProgress(app, ctxRun, runObj, d);
+                runObj.status = 'running';
+                runObj.ctx = stripTransientRunContext(app, ctxRun);
+                logRunEvent(app, runObj, 'Local smoke test started.', 'pipeline2');
+                pipelineRunSave(runObj);
+
+                [ctxOut, report] = runPipeline(pipeObj, ctxRun);
+                runObj.ctx = stripTransientRunContext(app, ctxOut);
+                runObj.outputs.report = report;
+                runObj.outputs.smokeTest = smokeInfo;
+                runObj.status = 'done';
+                runObj.progress = getField(app, report, 'summary', struct());
+                logRunEvent(app, runObj, 'Local smoke test completed.', 'pipeline2');
+                smokeReportFile = writeSmokeTestReport(app, runObj, smokeInfo, dryReport, report, []);
+                runObj.outputs.smokeReportFile = smokeReportFile;
+                pipelineRunSave(runObj);
+                clearRuntimeDataSeriesCache(app);
+                updateRuntimeResourceInventory(app);
+                appendRunReport(app, ['Smoke test OK: ' smokeInfo.label], report);
+                app.RuninformationhereLabel.Text = ['Smoke test done: ' smokeReportFile];
+            catch ME
+                fullReport = printExceptionToConsole(app, 'Pipeline smoke test failed', ME);
+                try
+                    if exist('runObj', 'var') && ~isempty(runObj)
+                        if isPipelineCancelException(app, ME)
+                            runObj.status = 'cancelled';
+                        else
+                            runObj.status = 'failed';
+                        end
+                        runObj.outputs.error = struct('identifier', ME.identifier, ...
+                            'message', ME.message, 'report', fullReport);
+                        try
+                            runObj.ctx = stripTransientRunContext(app, ctxRun);
+                        catch
+                            try
+                                runObj.ctx = ctxSmoke;
+                            catch
+                            end
+                        end
+                        if isPipelineCancelException(app, ME)
+                            logRunEvent(app, runObj, ['Smoke test cancelled: ' ME.message], 'pipeline2');
+                        else
+                            logRunEvent(app, runObj, ['Smoke test failed: ' ME.message], 'pipeline2');
+                        end
+                        smokeReportFile = writeSmokeTestReport(app, runObj, smokeInfo, dryReport, report, ME);
+                        runObj.outputs.smokeReportFile = smokeReportFile;
+                        pipelineRunSave(runObj);
+                    end
+                catch
+                end
+                app.PipelineandRuncheckreportLabel.Text = [app.PipelineandRuncheckreportLabel.Text newline newline ...
+                    'Smoke test failed:' newline ME.identifier newline ME.message newline newline ...
+                    getReport(ME, 'basic', 'hyperlinks', 'off')];
+                if isPipelineCancelException(app, ME)
+                    uialert(app.UIFigure, 'Smoke test stopped. Existing outputs and run log were kept.', ...
+                        'Smoke test stopped', 'Icon', 'warning');
+                else
+                    uialert(app.UIFigure, ME.message, 'Smoke test failed', 'Icon', 'error');
+                end
+            end
+            try, close(d); catch, end
+        end
+
+        function restoreSmokeTestButton(app, oldText)
+            try
+                if ~isempty(app.SmokeTestButton) && isvalid(app.SmokeTestButton)
+                    app.SmokeTestButton.Text = oldText;
+                    app.SmokeTestButton.Enable = 'on';
+                end
+            catch
+            end
+        end
+
+        function [ctxSmoke, smokeInfo] = buildSmokeRunContext(app, ctx)
+            [roiObj, smokeInfo] = resolveSmokeTestRoi(app);
+            if isempty(roiObj)
+                error('pipeline2:SmokeNoROI', ...
+                    'Smoke test requires at least one existing ROI in the selected FOV/ROI runtime scope.');
+            end
+
+            ctxSmoke = ctx;
+            ctxSmoke.allowGUI = false;
+            ctxSmoke.interactive = false;
+            ctxSmoke.dryRun = false;
+            ctxSmoke.saveProgress = false;
+            ctxSmoke.runId = uniqueSmokeRunId(app);
+            ctxSmoke.resume = false;
+
+            if ~isfield(ctxSmoke, 'run') || ~isstruct(ctxSmoke.run)
+                ctxSmoke.run = struct();
+            end
+            ctxSmoke.run.runPolicy = 'restart';
+            ctxSmoke.run.resume = false;
+            ctxSmoke.run.executionTarget = 'local';
+            ctxSmoke.run.control = buildRunControlPolicy(app, 'local');
+            ctxSmoke.run.control.resumePolicy = 'restart';
+            ctxSmoke.run.smokeTest = smokeInfo;
+            ctxSmoke.run.rois = [];
+            ctxSmoke.run.fovIndex = smokeInfo.fovIndex;
+            if ~isfield(ctxSmoke.run, 'nodeParams') || ~isstruct(ctxSmoke.run.nodeParams)
+                ctxSmoke.run.nodeParams = struct();
+            end
+
+            if isfield(ctxSmoke, 'hub')
+                ctxSmoke = rmfield(ctxSmoke, 'hub');
+            end
+            if ~isfield(ctxSmoke, 'sel') || ~isstruct(ctxSmoke.sel)
+                ctxSmoke.sel = struct();
+            end
+            ctxSmoke.sel.fovs = smokeInfo.fovIndex;
+            ctxSmoke.sel.rois = [];
+            ctxSmoke.fovIndex = smokeInfo.fovIndex;
+            ctxSmoke.fovList = app.CurrentProject.fov(smokeInfo.fovIndex);
+            ctxSmoke.roiList = roiObj;
+            ctxSmoke.rois = roiObj;
+            ctxSmoke.smokeTest = smokeInfo;
+
+            if ~isfield(ctxSmoke, 'io') || ~isstruct(ctxSmoke.io)
+                ctxSmoke.io = struct();
+            end
+            ctxSmoke.io.persistOutputs = false;
+            ctxSmoke.io.saveMode = 'defer';
+            ctxSmoke.io.deferredSave = true;
+            ctxSmoke.io.cachePolicy = 'memory';
+            if ~isfield(ctxSmoke, 'store') || ~isstruct(ctxSmoke.store)
+                ctxSmoke.store = struct();
+            end
+            ctxSmoke.store.cacheMode = 'memory';
+            ctxSmoke.run.nodeParams = addSmokeNodeParamOverrides(app, ctxSmoke.run.nodeParams, smokeInfo);
+        end
+
+        function [roiObj, info] = resolveSmokeTestRoi(app)
+            roiObj = [];
+            info = struct('enabled', true, 'scope', 'single_roi', ...
+                'fovIndex', [], 'roiIndex', [], 'roiId', '', 'label', '', ...
+                'createdAt', char(datetime('now')));
+            if isempty(app.CurrentProject) || ~isa(app.CurrentProject, 'shallow')
+                return;
+            end
+            try
+                fovIdx = parseIndexSelection(app, getRuntimeValue(app, 'fovs'));
+                if isempty(fovIdx)
+                    fovIdx = 1:numel(app.CurrentProject.fov);
+                end
+                fovIdx = fovIdx(fovIdx >= 1 & fovIdx <= numel(app.CurrentProject.fov));
+                roiSel = parseLooseSelection(app, getRuntimeValue(app, 'rois'));
+                for i = 1:numel(fovIdx)
+                    f = app.CurrentProject.fov(fovIdx(i));
+                    if isempty(f.roi)
+                        continue;
+                    end
+                    roiIdx = smokeCandidateRoiIndices(app, f.roi, roiSel);
+                    if isempty(roiIdx)
+                        continue;
+                    end
+                    roiObj = f.roi(roiIdx(1));
+                    info.fovIndex = fovIdx(i);
+                    info.roiIndex = roiIdx(1);
+                    info.roiId = safeRoiLabel(app, roiObj, roiIdx(1));
+                    info.label = sprintf('FOV %d, ROI %d (%s)', info.fovIndex, info.roiIndex, info.roiId);
+                    return;
+                end
+            catch
+                roiObj = [];
+            end
+        end
+
+        function idx = smokeCandidateRoiIndices(app, rois, roiSel)
+            idx = [];
+            if isempty(rois)
+                return;
+            end
+            if isempty(roiSel)
+                idx = 1:numel(rois);
+            elseif isnumeric(roiSel)
+                idx = round(double(roiSel(:)'));
+                idx = idx(isfinite(idx) & idx >= 1 & idx <= numel(rois));
+            else
+                wanted = cellstr(string(roiSel(:)));
+                ids = cell(1, numel(rois));
+                for i = 1:numel(rois)
+                    ids{i} = safeRoiLabel(app, rois(i), i);
+                end
+                for i = 1:numel(wanted)
+                    match = find(strcmp(ids, wanted{i}), 1);
+                    if ~isempty(match)
+                        idx(end+1) = match; %#ok<AGROW>
+                    end
+                end
+            end
+            idx = unique(idx, 'stable');
+        end
+
+        function label = safeRoiLabel(app, roiObj, fallbackIndex) %#ok<INUSD>
+            label = '';
+            try
+                if isprop(roiObj, 'id') && ~isempty(roiObj.id)
+                    label = char(string(roiObj.id));
+                end
+            catch
+                label = '';
+            end
+            if isempty(strtrim(label))
+                label = sprintf('#%d', fallbackIndex);
+            end
+        end
+
+        function nodeParams = addSmokeNodeParamOverrides(app, nodeParams, smokeInfo)
+            if ~isstruct(nodeParams) || isempty(nodeParams)
+                nodeParams = struct();
+            end
+            activeIds = selectedRunNodeIds(app);
+            for i = 1:numel(app.Data.nodes)
+                node = app.Data.nodes(i);
+                nodeId = char(string(getField(app, node, 'id', '')));
+                if isempty(nodeId) || (~isempty(activeIds) && ~any(strcmp(activeIds, nodeId)))
+                    continue;
+                end
+                nodeType = lower(char(string(getField(app, node, 'type', ''))));
+                patch = struct();
+                if any(strcmp(nodeType, {'roiidentify','roipattern','roimanual','roigrid','roitracked','roiextract'}))
+                    patch.fovIndex = smokeInfo.fovIndex;
+                end
+                if any(strcmp(nodeType, {'roiextract','processor','classifier'}))
+                    patch.roiList = smokeInfo.roiIndex;
+                    if any(strcmp(nodeType, {'processor','classifier'}))
+                        patch.roiList = 1;
+                    end
+                end
+                if isempty(fieldnames(patch))
+                    continue;
+                end
+                key = matlab.lang.makeValidName(nodeId);
+                if ~isfield(nodeParams, key) || ~isstruct(nodeParams.(key))
+                    nodeParams.(key) = struct();
+                end
+                nodeParams.(key) = mergeStructOverride(app, nodeParams.(key), patch);
+            end
+        end
+
+        function runId = uniqueSmokeRunId(app)
+            base = [matlab.lang.makeValidName(currentPipelineName(app)) '_smoke_' datestr(now, 'yyyymmdd_HHMMSS')];
+            runId = base;
+            try
+                existing = app.CurrentProject.processing.pipelineRun;
+                names = {};
+                if ~isempty(existing)
+                    names = arrayfun(@(p) char(string(p.runId)), existing, 'UniformOutput', false);
+                end
+                n = 1;
+                while any(strcmp(names, runId))
+                    n = n + 1;
+                    runId = sprintf('%s_%d', base, n);
+                end
+            catch
+            end
+        end
+
+        function runObj = createSmokePipelineRun(app, ctx, smokeInfo, status)
+            ref = buildPipelineRef(app);
+            target = buildTargetRef(app);
+            target.fovIds = smokeInfo.fovIndex;
+            target.roiIds = {smokeInfo.roiId};
+            target.notes = ['Smoke test: ' smokeInfo.label];
+            runObj = pipelineRunNew(app.CurrentProject, ref.id, ref.path, ...
+                'runId', ctx.runId, 'ctx', ctx, 'status', status, ...
+                'pipelineRef', ref, 'targetRef', target, ...
+                'description', ['Single-ROI smoke test: ' smokeInfo.label]);
+        end
+
         function RunButtonPushed(app, event) %#ok<INUSD>
             app.RunButton.Text = 'Run !';
             if ~ensurePipelineSavedForRun(app)
@@ -9697,12 +10951,22 @@ classdef pipeline2 < matlab.apps.AppBase
                     if ~isempty(d), d.Message = 'Submitting run to DetecDiv Hub...'; end
                     hub = hubSettingsFromUi(app);
                     hub = ensureHubSessionFromUi(app, hub);
+                    pathReport = hubPathPreflight(app, hub);
+                    if ~pathReport.ok
+                        runObj.status = 'failed';
+                        runObj.outputs.hubPathPreflight = pathReport;
+                        logRunEvent(app, runObj, ['Run blocked by Hub path preflight: ' strjoin(pathReport.errors, ' | ')], 'pipeline2');
+                        pipelineRunSave(runObj);
+                        error('pipeline2:HubPathPreflightFailed', '%s', strjoin(pathReport.errors, newline));
+                    end
                     try
                         detecdiv_hub_settings_set(hub);
                     catch
                     end
                     runObj.ctx = ctx;
                     runObj.ctx.hub = hub;
+                    runObj.ctx.hub.pathPreflight = pathReport;
+                    runObj.ctx = applyHubPathPreflightToContext(app, runObj.ctx, pathReport);
                     logRunEvent(app, runObj, 'Submitting run to DetecDiv Hub.', 'pipeline2');
                     pipelineRunSave(runObj);
                     [job, runObj] = detecdiv_hub_submit_pipeline_run(runObj, app.CurrentProject, 'hub', hub);
@@ -10109,8 +11373,13 @@ classdef pipeline2 < matlab.apps.AppBase
 
             % Create RunButton
             app.RunButton = uibutton(app.ParametersPanel, 'push');
-            app.RunButton.Position = [276 11 100 23];
+            app.RunButton.Position = [416 11 100 23];
             app.RunButton.Text = 'Run !';
+
+            % Create SmokeTestButton
+            app.SmokeTestButton = uibutton(app.ParametersPanel, 'push');
+            app.SmokeTestButton.Position = [276 11 130 23];
+            app.SmokeTestButton.Text = 'Smoke test (1 ROI)';
 
             % Create CheckpipelineButton
             app.CheckpipelineButton = uibutton(app.ParametersPanel, 'push');

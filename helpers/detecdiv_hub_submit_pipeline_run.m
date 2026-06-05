@@ -28,8 +28,8 @@ function [job, runObj] = detecdiv_hub_submit_pipeline_run(runObj, shallowObj, va
     payload.requested_by = opts.requestedBy;
     payload.requested_from_host = localRunStage('resolve local host name', @() localHostName());
     payload.project_ref = localRunStage('build project reference payload', @() localBuildProjectRef(ref));
-    payload.pipeline_ref = localRunStage('build pipeline reference payload', @() localBuildPipelineRef(runObj, ref));
-    payload.run_request = localRunStage('build run request payload', @() localBuildRunRequest(runObj));
+    payload.pipeline_ref = localRunStage('build pipeline reference payload', @() localBuildPipelineRef(runObj, ref, opts.hub));
+    payload.run_request = localRunStage('build run request payload', @() localBuildRunRequest(runObj, opts.hub, ref));
     payload.execution = localRunStage('build execution payload', @() localBuildExecution(opts));
 
     job = localRunStage('POST /pipeline-runs', @() detecdiv_hub_request('POST', '/pipeline-runs', payload, opts.hub));
@@ -204,7 +204,7 @@ function projectRef = localBuildProjectRef(ref)
     projectRef.project_mat_path = ref.project_mat_path;
 end
 
-function pipelineRef = localBuildPipelineRef(runObj, ref)
+function pipelineRef = localBuildPipelineRef(runObj, ref, hub)
     pipelineRef = struct();
     pipelineRef.pipeline_key = '';
     pipelineRef.pipeline_json_path = '';
@@ -217,28 +217,29 @@ function pipelineRef = localBuildPipelineRef(runObj, ref)
             pipelineRef.pipeline_key = char(string(runObj.pipelineRef.id));
         end
         if isstruct(runObj.pipelineRef) && isfield(runObj.pipelineRef, 'path') && ~isempty(runObj.pipelineRef.path)
-            pipelineRef.pipeline_json_path = localPipelineJsonPath(runObj.pipelineRef.path, ref);
+            pipelineRef.pipeline_json_path = localPipelineJsonPath(runObj.pipelineRef.path, ref, hub);
         end
     catch
     end
     if isempty(pipelineRef.pipeline_json_path)
         try
-            pipelineRef.pipeline_json_path = localPipelineJsonPath(runObj.templatePath, ref);
+            pipelineRef.pipeline_json_path = localPipelineJsonPath(runObj.templatePath, ref, hub);
         catch
         end
     end
 end
 
-function pathOut = localPipelineJsonPath(pathIn, ref)
+function pathOut = localPipelineJsonPath(pathIn, ref, hub)
     pathOut = char(string(pathIn));
     if isfolder(pathOut)
         pathOut = fullfile(pathOut, 'pipeline.json');
     end
-    pathOut = localTranslatePathForServer(pathOut, ref);
+    pathOut = localTranslatePathForServer(pathOut, ref, hub);
 end
 
-function out = localTranslatePathForServer(pathIn, ref)
+function [out, translated] = localTranslatePathForServer(pathIn, ref, hub)
     out = char(string(pathIn));
+    translated = false;
     if isempty(out)
         return;
     end
@@ -260,27 +261,68 @@ function out = localTranslatePathForServer(pathIn, ref)
         end
     catch
     end
+    try
+        if nargin >= 3 && isstruct(hub)
+            if isfield(hub, 'pathMappings') && ~isempty(hub.pathMappings)
+                for i = 1:numel(hub.pathMappings)
+                    if isfield(hub.pathMappings(i), 'localRoot') && isfield(hub.pathMappings(i), 'remoteRoot')
+                        localRoots{end+1} = char(string(hub.pathMappings(i).localRoot)); %#ok<AGROW>
+                        remoteRoots{end+1} = char(string(hub.pathMappings(i).remoteRoot)); %#ok<AGROW>
+                    end
+                end
+            end
+            if isfield(hub, 'defaultLocalProjectRoot') && isfield(hub, 'defaultRemoteProjectRoot') && ...
+                    ~isempty(hub.defaultLocalProjectRoot) && ~isempty(hub.defaultRemoteProjectRoot)
+                localRoots{end+1} = char(string(hub.defaultLocalProjectRoot)); %#ok<AGROW>
+                remoteRoots{end+1} = char(string(hub.defaultRemoteProjectRoot)); %#ok<AGROW>
+            end
+        end
+    catch
+    end
 
     candidateNorm = strrep(out, '/', '\');
+    bestLen = -1;
+    bestOut = out;
     for i = 1:min(numel(localRoots), numel(remoteRoots))
         localNorm = regexprep(strrep(localRoots{i}, '/', '\'), '[\\\/]+$', '');
         remoteNorm = regexprep(strrep(remoteRoots{i}, '\', '/'), '[\\\/]+$', '');
         if isempty(localNorm) || isempty(remoteNorm)
             continue;
         end
-        if startsWith(lower(candidateNorm), lower(localNorm))
+        if localPathStartsWithRoot(candidateNorm, localNorm) && numel(localNorm) > bestLen
             suffix = candidateNorm(numel(localNorm)+1:end);
             suffix = strrep(suffix, '\', '/');
-            out = [remoteNorm suffix];
-            break;
+            bestLen = numel(localNorm);
+            bestOut = [remoteNorm suffix];
         end
+    end
+    if bestLen >= 0
+        out = bestOut;
+        translated = true;
     end
 
     % Ensure POSIX separators for server-side worker.
     out = strrep(out, '\', '/');
 end
 
-function runRequest = localBuildRunRequest(runObj)
+function tf = localPathStartsWithRoot(pathValue, rootValue)
+    pathCmp = lower(char(string(pathValue)));
+    rootCmp = lower(char(string(rootValue)));
+    tf = startsWith(pathCmp, rootCmp);
+    if ~tf
+        return;
+    end
+    if numel(pathCmp) == numel(rootCmp)
+        return;
+    end
+    if endsWith(rootCmp, ':')
+        return;
+    end
+    nextChar = pathCmp(numel(rootCmp)+1);
+    tf = any(nextChar == ['\' '/']);
+end
+
+function runRequest = localBuildRunRequest(runObj, hub, ref)
     ctx = struct();
     try
         if isstruct(runObj.ctx)
@@ -293,10 +335,12 @@ function runRequest = localBuildRunRequest(runObj)
     runRequest.run_id = char(string(runObj.runId));
     runRequest.description = char(string(runObj.description));
     runRequest.selected_nodes = localCellText(localNested(ctx, {'run','selectedNodes'}, {}));
-    runRequest.node_params = localNested(ctx, {'run','nodeParams'}, struct('id', {}, 'params', {}));
+    runRequest.node_params = localTranslateValuePathsForServer( ...
+        localNested(ctx, {'run','nodeParams'}, struct('id', {}, 'params', {})), ref, hub);
     runRequest.run_policy = localText(localNested(ctx, {'run','runPolicy'}, 'resume'));
     runRequest.existing_data_policy = localText(localNested(ctx, {'io','existingPolicy'}, ''));
     runRequest.roi_cache_policy = localText(localNested(ctx, {'io','cachePolicy'}, 'auto'));
+    runRequest.paths = localBuildRunPaths(ctx, ref, hub);
     runRequest.selection = struct( ...
         'fovs', localNested(ctx, {'sel','fovs'}, []), ...
         'frames', localNested(ctx, {'sel','frames'}, []), ...
@@ -305,6 +349,68 @@ function runRequest = localBuildRunRequest(runObj)
     runRequest.control = localBuildRunControl(ctx);
     runRequest.python = localNested(ctx, {'exec','python'}, struct());
     runRequest.gpu = struct('mode', localText(localNested(ctx, {'run','gpuPolicy'}, localNested(ctx, {'exec','gpuPolicy'}, 'module_default'))));
+end
+
+function paths = localBuildRunPaths(ctx, ref, hub)
+    rawDataPath = localText(localNested(ctx, {'run','rawDataPath'}, localNested(ctx, {'io','rawDataPath'}, localNested(ctx, {'rawDataPath'}, ''))));
+    projectPath = localText(localNested(ctx, {'run','projectPath'}, localNested(ctx, {'io','projectPath'}, localNested(ctx, {'projectPath'}, ''))));
+    paths = struct();
+    paths.raw_data_path = rawDataPath;
+    paths.project_path = projectPath;
+    paths.server_raw_data_path = localText(localNested(ctx, {'run','serverRawDataPath'}, localNested(ctx, {'io','serverRawDataPath'}, '')));
+    paths.server_project_path = localText(localNested(ctx, {'run','serverProjectPath'}, localNested(ctx, {'io','serverProjectPath'}, '')));
+    if isempty(paths.server_raw_data_path) && ~isempty(rawDataPath)
+        paths.server_raw_data_path = localTranslatePathForServer(rawDataPath, ref, hub);
+    end
+    if isempty(paths.server_project_path) && ~isempty(projectPath)
+        paths.server_project_path = localTranslatePathForServer(projectPath, ref, hub);
+    end
+    paths.server_project_data_folder = localText(localNested(ctx, {'run','serverProjectDataFolder'}, localNested(ctx, {'io','serverProjectDataFolder'}, '')));
+    paths.path_mappings = localHubPathMappings(hub);
+end
+
+function value = localTranslateValuePathsForServer(value, ref, hub)
+    if isstruct(value)
+        for i = 1:numel(value)
+            names = fieldnames(value(i));
+            for j = 1:numel(names)
+                value(i).(names{j}) = localTranslateValuePathsForServer(value(i).(names{j}), ref, hub);
+            end
+        end
+    elseif iscell(value)
+        for i = 1:numel(value)
+            value{i} = localTranslateValuePathsForServer(value{i}, ref, hub);
+        end
+    elseif isstring(value)
+        for i = 1:numel(value)
+            textValue = char(value(i));
+            if localLooksLikePathText(textValue)
+                value(i) = string(localTranslatePathForServer(textValue, ref, hub));
+            end
+        end
+    elseif ischar(value)
+        if localLooksLikePathText(value)
+            value = localTranslatePathForServer(value, ref, hub);
+        end
+    end
+end
+
+function tf = localLooksLikePathText(value)
+    value = char(string(value));
+    tf = ~isempty(regexp(value, '^[A-Za-z]:[\\/]', 'once')) || ...
+        startsWith(value, '\') || startsWith(value, '/') || ...
+        contains(value, '\') || contains(value, '/');
+end
+
+function mappings = localHubPathMappings(hub)
+    mappings = struct('remoteRoot', {}, 'localRoot', {});
+    try
+        if isstruct(hub) && isfield(hub, 'pathMappings') && ~isempty(hub.pathMappings)
+            mappings = hub.pathMappings;
+        end
+    catch
+        mappings = struct('remoteRoot', {}, 'localRoot', {});
+    end
 end
 
 function control = localBuildRunControl(ctx)
