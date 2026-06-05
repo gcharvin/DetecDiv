@@ -56,6 +56,7 @@ function result = detecdiv_run_pipeline_job(jobInput)
         runObj.status = 'running';
         runObj.ctx = ctx;
         pipelineRunSave(runObj);
+        ctx = runObj.ctx;
 
         [ctxOut, report] = runPipelineDetecDiv(pipeObj, ctx);
         runObj.ctx = ctxOut;
@@ -473,6 +474,16 @@ function artifacts = localBuildArtifacts(runJsonPath)
         if exist(summaryPath, 'file') == 2
             artifacts(2).kind = 'run_summary';
             artifacts(2).path = summaryPath;
+        end
+        logPath = fullfile(runDir, 'run_log.txt');
+        if exist(logPath, 'file') == 2
+            artifacts(end+1).kind = 'run_log';
+            artifacts(end).path = logPath;
+        end
+        eventPath = fullfile(runDir, 'run_events.jsonl');
+        if exist(eventPath, 'file') == 2
+            artifacts(end+1).kind = 'run_events';
+            artifacts(end).path = eventPath;
         end
     end
 end

@@ -21,6 +21,10 @@ function [ctx, report] = runPipelineStructured(pipe, ctx)
     % previous runs do not silently skip nodes.
     ctx = normalizeRunId(ctx);
     ctx = normalizeExecutionContext(ctx);
+    ctx = normalizeRunEventLedger(ctx);
+    pipelineRunEvent(ctx, 'run_start', 'Runner', 'runPipelineStructured', ...
+        'RunPolicy', getfielddefault(ctx.run, 'runPolicy', ''), ...
+        'ExistingPolicy', getfielddefault(ctx.io, 'globalExistingPolicy', ''));
     ctx = preparePythonEnvironmentIfNeeded(pipe, ctx);
     ctx = seedContextFromProject(ctx);
     checkPipelineCancellation(ctx, 'initialize', '');
@@ -87,6 +91,8 @@ function [ctx, report] = runPipelineStructured(pipe, ctx)
         if shouldSkipByRunSelection(ctx, nodeId)
             report = appendNodeRun(report, node, policy, 'skipped_selection', ...
                 captureContextStats(ctx), captureContextStats(ctx), 0, '');
+            pipelineRunEvent(ctx, 'node_skipped', 'NodeId', nodeId, ...
+                'NodeType', getfielddefault(node,'type',''), 'Status', 'skipped_selection');
             executed(nodeId) = true;
             continue;
         end
@@ -95,6 +101,8 @@ function [ctx, report] = runPipelineStructured(pipe, ctx)
         if isfield(node,'enabled') && ~isempty(node.enabled) && ~logical(node.enabled)
             report = appendNodeRun(report, node, policy, 'skipped_disabled', ...
                 captureContextStats(ctx), captureContextStats(ctx), 0, '');
+            pipelineRunEvent(ctx, 'node_skipped', 'NodeId', nodeId, ...
+                'NodeType', getfielddefault(node,'type',''), 'Status', 'skipped_disabled');
             executed(nodeId) = true;
             continue;
         end
@@ -102,6 +110,8 @@ function [ctx, report] = runPipelineStructured(pipe, ctx)
         if shouldSkipNode(node, ctx, edges, executed)
             report = appendNodeRun(report, node, policy, 'skipped_condition', ...
                 captureContextStats(ctx), captureContextStats(ctx), 0, '');
+            pipelineRunEvent(ctx, 'node_skipped', 'NodeId', nodeId, ...
+                'NodeType', getfielddefault(node,'type',''), 'Status', 'skipped_condition');
             executed(nodeId) = true;
             continue;
         end
@@ -142,6 +152,10 @@ function [ctx, report] = runPipelineStructured(pipe, ctx)
         try
             ctx = applyPolicyToContext(ctx, node, policy);
             checkPipelineCancellation(ctx, 'before_execute', nodeId);
+            pipelineRunEvent(ctx, 'node_start', 'NodeId', nodeId, ...
+                'NodeType', getfielddefault(node,'type',''), 'NodeIndex', i, ...
+                'TotalNodes', total, 'RunPolicy', policy.runPolicy, ...
+                'ExistingPolicy', policy.existingPolicy, 'OutputName', policy.outputName);
             fprintf('DETECDIV_PIPELINE_PROGRESS node_start id=%s type=%s index=%d total=%d\n', ...
                 char(string(nodeId)), char(string(node.type)), i, total);
             ctx = executeNode(node, ctx);
@@ -152,6 +166,11 @@ function [ctx, report] = runPipelineStructured(pipe, ctx)
             [nodeStatus, nodeMessage, ctx] = consumeNodeStatusOverride(ctx);
             report = appendNodeRun(report, node, policy, nodeStatus, ...
                 beforeStats, afterStats, toc(tNode), nodeMessage);
+            pipelineRunEvent(ctx, 'node_done', 'NodeId', nodeId, ...
+                'NodeType', getfielddefault(node,'type',''), 'NodeIndex', i, ...
+                'TotalNodes', total, 'Status', nodeStatus, ...
+                'DurationSec', toc(tNode), 'Message', nodeMessage, ...
+                'Before', beforeStats, 'After', afterStats);
         catch ME
             fprintf('DETECDIV_PIPELINE_PROGRESS node_failed id=%s type=%s index=%d total=%d elapsed=%.3f\n', ...
                 char(string(nodeId)), char(string(node.type)), i, total, toc(tNode));
@@ -163,9 +182,22 @@ function [ctx, report] = runPipelineStructured(pipe, ctx)
             end
             report = appendNodeRun(report, node, policy, nodeStatus, ...
                 beforeStats, afterStats, toc(tNode), formatNodeError(ME));
+            pipelineRunEvent(ctx, ['node_' nodeStatus], 'NodeId', nodeId, ...
+                'NodeType', getfielddefault(node,'type',''), 'NodeIndex', i, ...
+                'TotalNodes', total, 'Status', nodeStatus, ...
+                'DurationSec', toc(tNode), 'Message', formatNodeError(ME));
             report.endedAt = char(datetime('now'));
             report.summary = buildRunSummary(report);
             stashRunReport(report);
+            if strcmp(nodeStatus, 'cancelled')
+                pipelineRunEvent(ctx, 'run_cancelled', 'Summary', report.summary, ...
+                    'StartedAt', report.startedAt, 'EndedAt', report.endedAt, ...
+                    'Message', formatNodeError(ME));
+            else
+                pipelineRunEvent(ctx, 'run_failed', 'Summary', report.summary, ...
+                    'StartedAt', report.startedAt, 'EndedAt', report.endedAt, ...
+                    'Message', formatNodeError(ME));
+            end
             if isa(pipe,'pipeline')
                 if wasCancelled
                     pipe.runState.status = 'cancelled';
@@ -193,6 +225,8 @@ function [ctx, report] = runPipelineStructured(pipe, ctx)
     report.endedAt = char(datetime('now'));
     report.summary = buildRunSummary(report);
     stashRunReport(report);
+    pipelineRunEvent(ctx, 'run_done', 'Summary', report.summary, ...
+        'StartedAt', report.startedAt, 'EndedAt', report.endedAt);
 end
 
 function ctx = preparePythonEnvironmentIfNeeded(pipe, ctx)
@@ -485,6 +519,39 @@ function ctx = normalizeExecutionContext(ctx)
         end
     else
         ctx.sel.frames = normalizeIndexVectorLocal(ctx.sel.frames);
+    end
+end
+
+function ctx = normalizeRunEventLedger(ctx)
+    if ~isstruct(ctx)
+        ctx = struct();
+    end
+    if ~isfield(ctx,'run') || ~isstruct(ctx.run)
+        ctx.run = struct();
+    end
+    if ~isfield(ctx,'io') || ~isstruct(ctx.io)
+        ctx.io = struct();
+    end
+    if ~isfield(ctx,'store') || ~isstruct(ctx.store)
+        ctx.store = struct();
+    end
+    eventLogPath = getFirstNonEmpty( ...
+        getfielddefault(ctx.run,'eventLogPath',''), ...
+        getfielddefault(ctx.io,'eventLogPath',''), ...
+        getfielddefault(ctx.store,'eventLogPath',''));
+    if isempty(eventLogPath)
+        runPath = getFirstNonEmpty( ...
+            getfielddefault(ctx.run,'path',''), ...
+            getfielddefault(ctx.run,'runPath',''), ...
+            getfielddefault(ctx.store,'runPath',''));
+        if ~isempty(runPath)
+            eventLogPath = fullfile(char(string(runPath)), 'run_events.jsonl');
+        end
+    end
+    if ~isempty(eventLogPath)
+        ctx.run.eventLogPath = char(string(eventLogPath));
+        ctx.io.eventLogPath = char(string(eventLogPath));
+        ctx.store.eventLogPath = char(string(eventLogPath));
     end
 end
 

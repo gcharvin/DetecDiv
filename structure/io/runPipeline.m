@@ -21,6 +21,10 @@ function [ctx, report] = runPipeline(pipe, ctx)
     % previous runs do not silently skip nodes.
     ctx = normalizeRunId(ctx);
     ctx = normalizeExecutionContext(ctx);
+    ctx = normalizeRunEventLedger(ctx);
+    pipelineRunEvent(ctx, 'run_start', 'Runner', 'runPipeline', ...
+        'RunPolicy', getfielddefault(ctx.run, 'runPolicy', ''), ...
+        'ExistingPolicy', getfielddefault(ctx.io, 'globalExistingPolicy', ''));
     ctx = preparePythonEnvironmentIfNeeded(pipe, ctx);
     ctx = seedContextFromProject(ctx);
     ctx = normalizeCancellationContext(ctx);
@@ -97,6 +101,8 @@ function [ctx, report] = runPipeline(pipe, ctx)
         if shouldSkipByRunSelection(ctx, nodeId)
             report = appendNodeRun(report, node, policy, 'skipped_selection', ...
                 captureContextStats(ctx), captureContextStats(ctx), 0, '');
+            pipelineRunEvent(ctx, 'node_skipped', 'NodeId', nodeId, ...
+                'NodeType', getfielddefault(node,'type',''), 'Status', 'skipped_selection');
             executed(nodeId) = true;
             continue;
         end
@@ -105,6 +111,8 @@ function [ctx, report] = runPipeline(pipe, ctx)
         if isfield(node,'enabled') && ~isempty(node.enabled) && ~logical(node.enabled)
             report = appendNodeRun(report, node, policy, 'skipped_disabled', ...
                 captureContextStats(ctx), captureContextStats(ctx), 0, '');
+            pipelineRunEvent(ctx, 'node_skipped', 'NodeId', nodeId, ...
+                'NodeType', getfielddefault(node,'type',''), 'Status', 'skipped_disabled');
             executed(nodeId) = true;
             continue;
         end
@@ -112,6 +120,8 @@ function [ctx, report] = runPipeline(pipe, ctx)
         if shouldSkipNode(node, ctx, edges, executed)
             report = appendNodeRun(report, node, policy, 'skipped_condition', ...
                 captureContextStats(ctx), captureContextStats(ctx), 0, '');
+            pipelineRunEvent(ctx, 'node_skipped', 'NodeId', nodeId, ...
+                'NodeType', getfielddefault(node,'type',''), 'Status', 'skipped_condition');
             executed(nodeId) = true;
             continue;
         end
@@ -155,11 +165,20 @@ function [ctx, report] = runPipeline(pipe, ctx)
         try
             ctx = applyPolicyToContext(ctx, node, policy);
             checkPipelineCancelled(ctx, ['before executing node ' nodeId]);
+            pipelineRunEvent(ctx, 'node_start', 'NodeId', nodeId, ...
+                'NodeType', getfielddefault(node,'type',''), 'NodeIndex', i, ...
+                'TotalNodes', total, 'RunPolicy', policy.runPolicy, ...
+                'ExistingPolicy', policy.existingPolicy, 'OutputName', policy.outputName);
             ctx = executeNode(node, ctx);
             afterStats = captureContextStats(ctx);
             [nodeStatus, nodeMessage, ctx] = consumeNodeStatusOverride(ctx);
             report = appendNodeRun(report, node, policy, nodeStatus, ...
                 beforeStats, afterStats, toc(tNode), nodeMessage);
+            pipelineRunEvent(ctx, 'node_done', 'NodeId', nodeId, ...
+                'NodeType', getfielddefault(node,'type',''), 'NodeIndex', i, ...
+                'TotalNodes', total, 'Status', nodeStatus, ...
+                'DurationSec', toc(tNode), 'Message', nodeMessage, ...
+                'Before', beforeStats, 'After', afterStats);
         catch ME
             afterStats = captureContextStats(ctx);
             failedStatus = 'failed';
@@ -168,9 +187,22 @@ function [ctx, report] = runPipeline(pipe, ctx)
             end
             report = appendNodeRun(report, node, policy, failedStatus, ...
                 beforeStats, afterStats, toc(tNode), formatNodeError(ME));
+            pipelineRunEvent(ctx, ['node_' failedStatus], 'NodeId', nodeId, ...
+                'NodeType', getfielddefault(node,'type',''), 'NodeIndex', i, ...
+                'TotalNodes', total, 'Status', failedStatus, ...
+                'DurationSec', toc(tNode), 'Message', formatNodeError(ME));
             report.endedAt = char(datetime('now'));
             report.summary = buildRunSummary(report);
             stashRunReport(report);
+            if strcmp(failedStatus, 'cancelled')
+                pipelineRunEvent(ctx, 'run_cancelled', 'Summary', report.summary, ...
+                    'StartedAt', report.startedAt, 'EndedAt', report.endedAt, ...
+                    'Message', formatNodeError(ME));
+            else
+                pipelineRunEvent(ctx, 'run_failed', 'Summary', report.summary, ...
+                    'StartedAt', report.startedAt, 'EndedAt', report.endedAt, ...
+                    'Message', formatNodeError(ME));
+            end
             if isa(pipe,'pipeline')
                 pipe.runState.status = failedStatus;
                 pipe.runState.currentNode = nodeId;
@@ -196,6 +228,8 @@ function [ctx, report] = runPipeline(pipe, ctx)
     report.summary = buildRunSummary(report);
     stashRunReport(report);
     ctx = updatePipelineProgress(ctx, '', total, total, 1, 1, 'Pipeline completed.');
+    pipelineRunEvent(ctx, 'run_done', 'Summary', report.summary, ...
+        'StartedAt', report.startedAt, 'EndedAt', report.endedAt);
 end
 
 function ctx = preparePythonEnvironmentIfNeeded(pipe, ctx)
@@ -445,6 +479,39 @@ function ctx = normalizeExecutionContext(ctx)
         end
     else
         ctx.sel.rois = normalizeIndexVectorLocal(ctx.sel.rois);
+    end
+end
+
+function ctx = normalizeRunEventLedger(ctx)
+    if ~isstruct(ctx)
+        ctx = struct();
+    end
+    if ~isfield(ctx,'run') || ~isstruct(ctx.run)
+        ctx.run = struct();
+    end
+    if ~isfield(ctx,'io') || ~isstruct(ctx.io)
+        ctx.io = struct();
+    end
+    if ~isfield(ctx,'store') || ~isstruct(ctx.store)
+        ctx.store = struct();
+    end
+    eventLogPath = getFirstNonEmpty( ...
+        getfielddefault(ctx.run,'eventLogPath',''), ...
+        getfielddefault(ctx.io,'eventLogPath',''), ...
+        getfielddefault(ctx.store,'eventLogPath',''));
+    if isempty(eventLogPath)
+        runPath = getFirstNonEmpty( ...
+            getfielddefault(ctx.run,'path',''), ...
+            getfielddefault(ctx.run,'runPath',''), ...
+            getfielddefault(ctx.store,'runPath',''));
+        if ~isempty(runPath)
+            eventLogPath = fullfile(char(string(runPath)), 'run_events.jsonl');
+        end
+    end
+    if ~isempty(eventLogPath)
+        ctx.run.eventLogPath = char(string(eventLogPath));
+        ctx.io.eventLogPath = char(string(eventLogPath));
+        ctx.store.eventLogPath = char(string(eventLogPath));
     end
 end
 
@@ -1122,6 +1189,8 @@ function [ctx, report] = executeRoiMajorPipeline(pipe, ctx, report, nodeMap, edg
     end
 
     disp(sprintf('[runPipeline] ROI-major execution enabled: %d node(s), %d ROI(s).', totalNodes, nRoi));
+    pipelineRunEvent(ctx, 'run_mode', 'ExecutionMode', 'roi_major', ...
+        'TotalNodes', totalNodes, 'TotalRois', nRoi);
     for r = 1:nRoi
         checkPipelineCancelled(ctx, sprintf('before ROI %d/%d', r, nRoi));
         roiCtx = ctx;
@@ -1189,6 +1258,13 @@ function [ctx, report] = executeRoiMajorPipeline(pipe, ctx, report, nodeMap, edg
                 roiCtx.io.deferredSave = true;
                 roiCtx.io.cachePolicy = 'memory';
                 roiCtx.store.cacheMode = 'memory';
+                if r == 1
+                    pipelineRunEvent(roiCtx, 'node_start', 'NodeId', nodeId, ...
+                        'NodeType', getfielddefault(node,'type',''), 'NodeIndex', i, ...
+                        'TotalNodes', totalNodes, 'RunPolicy', policy.runPolicy, ...
+                        'ExistingPolicy', policy.existingPolicy, 'OutputName', policy.outputName, ...
+                        'ExecutionMode', 'roi_major', 'TotalRois', nRoi);
+                end
                 roiCtx = executeNode(node, roiCtx);
                 [nodeStatus, nodeMessage, roiCtx] = consumeNodeStatusOverride(roiCtx);
                 nodeStats(i).durationSec = nodeStats(i).durationSec + toc(tNode);
@@ -1209,9 +1285,23 @@ function [ctx, report] = executeRoiMajorPipeline(pipe, ctx, report, nodeMap, edg
                 end
                 report = appendNodeRun(report, node, policy, status, ...
                     nodeStats(i).before, nodeStats(i).after, nodeStats(i).durationSec, formatNodeError(ME));
+                pipelineRunEvent(roiCtx, ['node_' status], 'NodeId', nodeId, ...
+                    'NodeType', getfielddefault(node,'type',''), 'NodeIndex', i, ...
+                    'TotalNodes', totalNodes, 'Status', status, ...
+                    'ExecutionMode', 'roi_major', 'RoiIndex', r, 'TotalRois', nRoi, ...
+                    'DurationSec', nodeStats(i).durationSec, 'Message', formatNodeError(ME));
                 report.endedAt = char(datetime('now'));
                 report.summary = buildRunSummary(report);
                 stashRunReport(report);
+                if strcmp(status, 'cancelled')
+                    pipelineRunEvent(roiCtx, 'run_cancelled', 'Summary', report.summary, ...
+                        'StartedAt', report.startedAt, 'EndedAt', report.endedAt, ...
+                        'Message', formatNodeError(ME));
+                else
+                    pipelineRunEvent(roiCtx, 'run_failed', 'Summary', report.summary, ...
+                        'StartedAt', report.startedAt, 'EndedAt', report.endedAt, ...
+                        'Message', formatNodeError(ME));
+                end
                 if isa(pipe,'pipeline')
                     pipe.runState.status = status;
                     pipe.runState.currentNode = nodeId;
@@ -1249,6 +1339,11 @@ function [ctx, report] = executeRoiMajorPipeline(pipe, ctx, report, nodeMap, edg
         end
         report = appendNodeRun(report, nodeStats(i).node, nodeStats(i).policy, status, ...
             nodeStats(i).before, nodeStats(i).after, nodeStats(i).durationSec, msg);
+        pipelineRunEvent(ctx, 'node_done', 'NodeId', getfielddefault(nodeStats(i).node,'id',''), ...
+            'NodeType', getfielddefault(nodeStats(i).node,'type',''), 'NodeIndex', i, ...
+            'TotalNodes', totalNodes, 'Status', status, 'ExecutionMode', 'roi_major', ...
+            'TotalRois', nRoi, 'DurationSec', nodeStats(i).durationSec, ...
+            'Message', msg, 'Before', nodeStats(i).before, 'After', nodeStats(i).after);
     end
 
     if isa(pipe,'pipeline')
@@ -1261,6 +1356,9 @@ function [ctx, report] = executeRoiMajorPipeline(pipe, ctx, report, nodeMap, edg
     report.summary = buildRunSummary(report);
     stashRunReport(report);
     ctx = updatePipelineProgress(ctx, '', totalNodes, totalNodes, 1, 1, 'Pipeline completed.');
+    pipelineRunEvent(ctx, 'run_done', 'Summary', report.summary, ...
+        'StartedAt', report.startedAt, 'EndedAt', report.endedAt, ...
+        'ExecutionMode', 'roi_major');
 end
 
 function saveFinalizedRoiLocal(roiobj, ctx)

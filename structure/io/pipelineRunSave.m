@@ -14,6 +14,7 @@ function pipelineRunSave(runObj)
     end
 
     jsonFile = fullfile(path, 'run.json');
+    runObj.ctx = attachRunPathsToContext(runObj.ctx, path, runObj.runId);
 
     runObj.updatedAt = char(datetime('now'));
     runObj.log(['Pipeline run saved to ' jsonFile], 'Save');
@@ -37,6 +38,35 @@ function pipelineRunSave(runObj)
     writeRunLogFile(runObj, S, path);
 
     fprintf('Pipeline run saved: %s\n', jsonFile);
+end
+
+function ctx = attachRunPathsToContext(ctx, runPath, runId)
+    if ~isstruct(ctx)
+        ctx = struct();
+    end
+    if ~isfield(ctx,'run') || ~isstruct(ctx.run)
+        ctx.run = struct();
+    end
+    if ~isfield(ctx,'io') || ~isstruct(ctx.io)
+        ctx.io = struct();
+    end
+    if ~isfield(ctx,'store') || ~isstruct(ctx.store)
+        ctx.store = struct();
+    end
+    if isempty(runPath)
+        return;
+    end
+    eventLogPath = fullfile(runPath, 'run_events.jsonl');
+    if nargin >= 3 && ~isempty(runId)
+        ctx.runId = char(string(runId));
+        ctx.run.runId = char(string(runId));
+    end
+    ctx.run.path = runPath;
+    ctx.run.runPath = runPath;
+    ctx.run.eventLogPath = eventLogPath;
+    ctx.io.eventLogPath = eventLogPath;
+    ctx.store.runPath = runPath;
+    ctx.store.eventLogPath = eventLogPath;
 end
 
 function S = pipelineRunToStruct(runObj)
@@ -192,6 +222,10 @@ function txt = buildRunSummaryText(runObj, S)
     lines{end+1} = sprintf('Pipeline: %s', char(string(getNestedOrDefault(S, {'pipelineRef','id'}, '')))); %#ok<AGROW>
     lines{end+1} = sprintf('Created: %s', char(string(getFieldOrDefault(S, 'createdAt', '')))); %#ok<AGROW>
     lines{end+1} = sprintf('Updated: %s', char(string(getFieldOrDefault(S, 'updatedAt', '')))); %#ok<AGROW>
+    eventLogPath = getNestedOrDefault(S, {'ctx','run','eventLogPath'}, '');
+    if ~isempty(eventLogPath)
+        lines{end+1} = sprintf('Event log: %s', char(string(eventLogPath))); %#ok<AGROW>
+    end
 
     report = struct();
     outputs = getFieldOrDefault(S, 'outputs', struct());

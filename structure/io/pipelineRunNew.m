@@ -80,6 +80,7 @@ function runObj = pipelineRunNew(shallowObj, templateId, templatePath, varargin)
     runObj.description = description;
     runObj.ctx = ctx;
     runObj.status = status;
+    runObj.ctx = attachRunPathsToContext(runObj.ctx, runObj);
 
     if ~isfield(runObj.ctx,'pipelineRef') || ~isstruct(runObj.ctx.pipelineRef)
         runObj.ctx.pipelineRef = runObj.pipelineRef;
@@ -90,6 +91,39 @@ function runObj = pipelineRunNew(shallowObj, templateId, templatePath, varargin)
 
     % attach to project
     shallowObj.processing.pipelineRun(end+1) = runObj;
+end
+
+function ctx = attachRunPathsToContext(ctx, runObj)
+    if ~isstruct(ctx)
+        ctx = struct();
+    end
+    if ~isfield(ctx,'run') || ~isstruct(ctx.run)
+        ctx.run = struct();
+    end
+    if ~isfield(ctx,'io') || ~isstruct(ctx.io)
+        ctx.io = struct();
+    end
+    if ~isfield(ctx,'store') || ~isstruct(ctx.store)
+        ctx.store = struct();
+    end
+    runPath = '';
+    try
+        [runPath, ~] = runObj.getPath;
+    catch
+        runPath = '';
+    end
+    if isempty(runPath)
+        return;
+    end
+    eventLogPath = fullfile(runPath, 'run_events.jsonl');
+    ctx.runId = char(string(runObj.runId));
+    ctx.run.runId = char(string(runObj.runId));
+    ctx.run.path = runPath;
+    ctx.run.runPath = runPath;
+    ctx.run.eventLogPath = eventLogPath;
+    ctx.io.eventLogPath = eventLogPath;
+    ctx.store.runPath = runPath;
+    ctx.store.eventLogPath = eventLogPath;
 end
 
 function ensurePipelineRunField(shallowObj)
