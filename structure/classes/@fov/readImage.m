@@ -6,7 +6,7 @@ function im = readImage(obj, frame, channel)
 %   - mode multi-TIFF          : images empilées dans tiffSource{ch}, accès par pageMap{ch}(f)
 
 im = [];
-fprintf('[readImage] request FOV=%s frame=%d channel=%d\n', localFovLabel(obj), frame, channel);
+localSafeFprintf('[readImage] request FOV=%s frame=%d channel=%d\n', localFovLabel(obj), frame, channel);
 
 % --------- sécurité indices ---------
 if channel > numel(obj.channel) || channel < 1
@@ -23,7 +23,7 @@ thisEntry = struct('name', '', 'folder', '');
 try
     [obj, ok] = detecdiv_paths_ensure_fov_ready(obj, channel, false, false);
     if ~ok
-        fprintf('[readImage] rawdata unavailable for FOV=%s channel=%d\n', localFovLabel(obj), channel);
+        localSafeFprintf('[readImage] rawdata unavailable for FOV=%s channel=%d\n', localFovLabel(obj), channel);
         return;
     end
 catch ME
@@ -85,7 +85,7 @@ if usesNDTiff
     end
 
     try
-        fprintf('[readImage] mode=NDTiff source=%s\n', string(dsPath));
+        localSafeFprintf('[readImage] mode=NDTiff source=%s\n', string(dsPath));
         % cache dataset objects per path
         persistent ndtiffCache
         if isempty(ndtiffCache)
@@ -174,7 +174,7 @@ end
 % --------- mode OME-Zarr ---------
 if usesOMEZarr
     try
-        fprintf('[readImage] mode=OME-Zarr dataset=%s entry=%s\n', ...
+        localSafeFprintf('[readImage] mode=OME-Zarr dataset=%s entry=%s\n', ...
             string(localGetSourcePath(obj, channel)), string(localGetEntryName(thisEntry)));
         im = localReadOMEZarrPlane(obj, frameEff, channel);
     catch ME
@@ -219,7 +219,7 @@ if usesMultiTiff
     end
 
     try
-        fprintf('[readImage] mode=Multi-TIFF source=%s page=%d\n', string(bigTiffPath), pageToRead);
+        localSafeFprintf('[readImage] mode=Multi-TIFF source=%s page=%d\n', string(bigTiffPath), pageToRead);
         im = imread(bigTiffPath, pageToRead);
     catch ME
         warning('Failed to read multi-TIFF page %d from %s: %s', ...
@@ -276,7 +276,7 @@ else
     end
 
     try
-        fprintf('[readImage] mode=File source=%s\n', string(imstr));
+        localSafeFprintf('[readImage] mode=File source=%s\n', string(imstr));
         im = imread(imstr);
     catch ME
         warning('Could not read image file %s: %s', imstr, ME.message);
@@ -293,12 +293,19 @@ end
 
 function localLogLoadedImage(obj, channel, frameEff, im, modeName, sourcePath)
 if isempty(im)
-    fprintf('[readImage] loaded empty image FOV=%s channel=%d frame=%d mode=%s source=%s\n', ...
+    localSafeFprintf('[readImage] loaded empty image FOV=%s channel=%d frame=%d mode=%s source=%s\n', ...
         localFovLabel(obj), channel, frameEff, string(modeName), string(sourcePath));
     return;
 end
-fprintf('[readImage] loaded FOV=%s channel=%d frame=%d mode=%s size=%s class=%s source=%s\n', ...
+localSafeFprintf('[readImage] loaded FOV=%s channel=%d frame=%d mode=%s size=%s class=%s source=%s\n', ...
     localFovLabel(obj), channel, frameEff, string(modeName), mat2str(size(im)), class(im), string(sourcePath));
+end
+
+function localSafeFprintf(varargin)
+try
+    fprintf(varargin{:});
+catch
+end
 end
 
 function s = localGetSourcePath(obj, channel)
@@ -395,6 +402,16 @@ if isempty(shape) || numel(shape) < max([tDim cDim yDim xDim])
     arrayJson = jsondecode(fileread(fullfile(zarrPath, seriesName, arrayPath, 'zarr.json')));
     shape = double(arrayJson.shape(:))';
     chunks = double(arrayJson.chunk_grid.configuration.chunk_shape(:))';
+else
+    arrayJson = struct();
+    jsonPath = fullfile(zarrPath, seriesName, arrayPath, 'zarr.json');
+    if exist(jsonPath, 'file') == 2
+        try
+            arrayJson = jsondecode(fileread(jsonPath));
+        catch
+            arrayJson = struct();
+        end
+    end
 end
 
 if isempty(chunks) || chunks(yDim) ~= shape(yDim) || chunks(xDim) ~= shape(xDim)
@@ -428,8 +445,8 @@ for i = 1:numel(coord)
 end
 
 if exist(chunkPath, 'file') ~= 2
-    warning('OME-Zarr chunk not found: %s', chunkPath);
-    im = [];
+    warning('OME-Zarr chunk not found, using fill value: %s', chunkPath);
+    im = localOMEZarrFillPlane(shape, yDim, xDim, char(string(obj.omeZarrDtype)), arrayJson);
     return;
 end
 
@@ -465,6 +482,29 @@ if numel(raw) ~= nPix
 end
 
 im = reshape(raw, [shape(xDim), shape(yDim)])';
+end
+
+function im = localOMEZarrFillPlane(shape, yDim, xDim, dtype, arrayJson)
+fillValue = 0;
+try
+    if isstruct(arrayJson) && isfield(arrayJson, 'fill_value') && ~isempty(arrayJson.fill_value)
+        fillValue = double(arrayJson.fill_value);
+    end
+catch
+    fillValue = 0;
+end
+
+sz = [shape(yDim), shape(xDim)];
+switch lower(char(string(dtype)))
+    case {'uint16','<u2','|u2','>u2',''}
+        im = uint16(fillValue) .* ones(sz, 'uint16');
+    case {'uint8','<u1','|u1','>u1'}
+        im = uint8(fillValue) .* ones(sz, 'uint8');
+    case {'int16','<i2','|i2','>i2'}
+        im = int16(fillValue) .* ones(sz, 'int16');
+    otherwise
+        im = zeros(sz, 'uint16');
+end
 end
 
 function im = localReadOMEZarrPlanePython(zarrPath, seriesName, arrayPath, coord, shape, dimNames, dtype)
