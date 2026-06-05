@@ -62,6 +62,18 @@ if isempty(outputName)
     end
 end
 outputName = char(string(outputName));
+classNames = resolveClassNamesLocal(classif, ctx);
+if isempty(classNames)
+    classNames = {'cell'};
+end
+try
+    if isobject(classif) && isprop(classif, 'classes')
+        classif.classes = classNames;
+    elseif isstruct(classif)
+        classif.classes = classNames;
+    end
+catch
+end
 
 doTracking = true;
 
@@ -119,8 +131,8 @@ wantProbability = any(strcmpi(outputType, {'proba','both'}));
 
 % --- Channels results (instance mask) ---
 pixresults = [];
-for i = 1:numel(classif.classes)
-    chName = ['results_' outputName '_' classif.classes{i}];
+for i = 1:numel(classNames)
+    chName = ['results_' outputName '_' classNames{i}];
     pixresultstmp = findChannelID(roiobj, chName);
     if isempty(pixresultstmp)
         matrix = uint16(zeros(size(image,1), size(image,2), 1, size(image,4)));
@@ -132,7 +144,7 @@ for i = 1:numel(classif.classes)
     pixresults = [pixresults pixresultstmp]; %#ok<AGROW>
 end
 if isempty(pixresults)
-    error('cellposesam.classify: impossible de determiner/ajouter un channel results_* pour %s', classif.strid);
+    error('cellposesam.classify: impossible de determiner/ajouter un channel results_* pour %s', safeClassifierIdLocal(classif));
 end
 pixresults = pixresults(1);
 
@@ -622,7 +634,7 @@ try
     runnerDir = fileparts(runnerPath);
     if isempty(runnerMod) || isempty(runnerPathCached) || ~strcmp(runnerPathCached, runnerPath)
         py.importlib.import_module('sys');
-        py.sys.path.insert(int32(0), runnerDir);
+        py.sys.path().insert(int32(0), runnerDir);
         runnerMod = py.importlib.import_module('cellposesam_runner');
         runnerPathCached = runnerPath;
     end
@@ -833,6 +845,65 @@ try
         n = info.bytes;
     end
 catch
+end
+end
+
+function names = resolveClassNamesLocal(classif, ctx)
+names = {};
+raw = {};
+try
+    if isobject(classif) && isprop(classif, 'classes') && ~isempty(classif.classes)
+        raw = classif.classes;
+    elseif isstruct(classif) && isfield(classif, 'classes') && ~isempty(classif.classes)
+        raw = classif.classes;
+    end
+catch
+    raw = {};
+end
+if isempty(raw) && isfield(ctx, 'params') && isstruct(ctx.params)
+    keys = {'classes','classNames','className','labels'};
+    for k = 1:numel(keys)
+        key = keys{k};
+        if isfield(ctx.params, key) && ~isempty(ctx.params.(key))
+            raw = ctx.params.(key);
+            break;
+        end
+    end
+end
+
+if isstring(raw)
+    raw = cellstr(raw);
+elseif ischar(raw)
+    raw = {raw};
+elseif ~iscell(raw)
+    raw = {};
+end
+
+for i = 1:numel(raw)
+    try
+        value = strtrim(char(string(raw{i})));
+        if ~isempty(value)
+            names{end+1} = value; %#ok<AGROW>
+        end
+    catch
+    end
+end
+names = unique(names, 'stable');
+end
+
+function id = safeClassifierIdLocal(classif)
+id = '';
+try
+    if isobject(classif) && isprop(classif, 'strid') && ~isempty(classif.strid)
+        id = char(string(classif.strid));
+    elseif isstruct(classif) && isfield(classif, 'strid') && ~isempty(classif.strid)
+        id = char(string(classif.strid));
+    end
+catch
+    id = '';
+end
+if isempty(id)
+    id = '<classifier>';
 end
 end
 
