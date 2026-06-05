@@ -76,6 +76,9 @@ function nodes = sanitizePipelineNodes(nodes)
         end
         nodeType = lower(char(string(getField(nodes(i), 'type', ''))));
         pkg = lower(char(string(getField(nodes(i), 'pkg', ''))));
+        if any(strcmp(nodeType, {'classifier','processor'})) && isfield(nodes(i).params, 'roiList')
+            nodes(i).params = rmfield(nodes(i).params, 'roiList');
+        end
         if strcmp(nodeType, 'processor') && strcmp(pkg, 'computerls') && isfield(nodes(i).params, 'StateDecoder')
             nodes(i).params.StateDecoder = scalarChoiceValue(nodes(i).params.StateDecoder, 'off');
         end

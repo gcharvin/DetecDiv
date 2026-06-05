@@ -656,6 +656,7 @@ function contract = enrichContractFromPackage(contract, node)
     pkgName = lower(char(string(getField(node, 'pkg', ''))));
     funcName = lower(char(string(getField(node, 'func', ''))));
     nodeType = lower(char(string(getField(node, 'type', ''))));
+    ensureCustomPackagePath(node);
 
     if strcmp(nodeType, 'classifier')
         switch pkgName
@@ -665,8 +666,7 @@ function contract = enrichContractFromPackage(contract, node)
                 if strcmp(outputType, 'probability')
                     outputType = 'proba';
                 end
-                contract.parameters.static = unique([contract.parameters.static ...
-                    {'outputType','diameter','min_size','flow_threshold','cell_prob_threshold'}], 'stable');
+                contract.parameters.static = unique([contract.parameters.static cellposeExecutionStaticKeys()], 'stable');
                 contract.requirements.roi.channelsMin = max(contract.requirements.roi.channelsMin, 1);
                 contract.capabilities.outputsMasks = any(strcmp(outputType, {'segmentation','both'}));
                 contract.capabilities.outputsChannels = any(strcmp(outputType, {'proba','both'}));
@@ -692,7 +692,7 @@ function contract = enrichContractFromPackage(contract, node)
             case 'cnn_lstm'
                 outputMode = normalizeOutputMode(getNestedParam(node, {'outputMode'}, 'lstm_only'), ...
                     {'lstm_only','cnn_only','both'}, 'lstm_only');
-                contract.parameters.static = unique([contract.parameters.static {'outputMode'}], 'stable');
+                contract.parameters.static = unique([contract.parameters.static cnnLstmExecutionStaticKeys()], 'stable');
                 contract.binding.mode = 'singleChannel';
                 contract.binding.exactCount = 1;
                 contract.binding.resolveAt = 'design';
@@ -914,6 +914,94 @@ function contract = enrichContractFromPackage(contract, node)
                 contract.summary = 'Formats ROI data into dataseries objects without additional user bindings.';
         end
     end
+
+    contract = applyExecutionSpecContract(contract, node);
+end
+
+function ensureCustomPackagePath(node)
+params = getField(node, 'params', struct());
+if ~isstruct(params)
+    return;
+end
+root = '';
+if isfield(params, 'customPackageRoot') && ~isempty(params.customPackageRoot)
+    root = char(string(params.customPackageRoot));
+end
+if isempty(root) || exist(root, 'dir') ~= 7
+    return;
+end
+try
+    if ~contains(path, root)
+        addpath(root);
+        rehash;
+    end
+catch
+end
+end
+
+function contract = applyExecutionSpecContract(contract, node)
+pkgName = char(string(getField(node, 'pkg', '')));
+if isempty(pkgName)
+    return;
+end
+specFun = [pkgName '.executionSpec'];
+if isempty(which(specFun))
+    return;
+end
+
+try
+    spec = feval(specFun);
+catch
+    return;
+end
+if ~isstruct(spec)
+    return;
+end
+
+specContract = struct();
+if isfield(spec, 'contract') && isstruct(spec.contract)
+    specContract = spec.contract;
+elseif isfield(spec, 'pipelineContract') && isstruct(spec.pipelineContract)
+    specContract = spec.pipelineContract;
+end
+if isempty(fieldnames(specContract))
+    return;
+end
+
+contract = mergeExecutionSpecContract(contract, specContract);
+if isfield(spec, 'summary') && ~isempty(spec.summary)
+    contract.summary = char(string(spec.summary));
+end
+end
+
+function contract = mergeExecutionSpecContract(contract, override)
+if isfield(override, 'in') && isstruct(override.in)
+    contract.in = mergePortArrays(contract.in, override.in, true);
+end
+if isfield(override, 'out') && isstruct(override.out)
+    contract.out = mergePortArrays(contract.out, override.out, false);
+end
+if isfield(override, 'selectors') && isstruct(override.selectors)
+    contract.selectors = mergeScalarStruct(contract.selectors, override.selectors);
+end
+if isfield(override, 'parameters') && isstruct(override.parameters)
+    contract.parameters = mergeParameterStruct(contract.parameters, override.parameters);
+end
+if isfield(override, 'requirements') && isstruct(override.requirements)
+    contract.requirements = mergeRequirementStruct(contract.requirements, override.requirements);
+end
+if isfield(override, 'capabilities') && isstruct(override.capabilities)
+    contract.capabilities = mergeCapabilityStruct(contract.capabilities, override.capabilities);
+end
+if isfield(override, 'binding') && isstruct(override.binding)
+    contract.binding = mergeBindingStruct(contract.binding, override.binding);
+end
+if isfield(override, 'resources') && isstruct(override.resources)
+    contract.resources = mergeResourceStruct(contract.resources, override.resources);
+end
+if isfield(override, 'summary') && ~isempty(override.summary)
+    contract.summary = char(string(override.summary));
+end
 end
 
 function s = defaultSelectors()
@@ -1366,6 +1454,24 @@ function mode = normalizeOutputMode(value, allowed, defaultValue)
     mode = strrep(mode, ' ', '_');
     if isempty(mode) || ~any(strcmp(mode, allowed))
         mode = defaultValue;
+    end
+end
+
+function keys = cellposeExecutionStaticKeys()
+    try
+        spec = cellposesam.executionSpec();
+        keys = spec.staticKeys;
+    catch
+        keys = {'outputType','diameter','min_size','flow_threshold','cell_prob_threshold'};
+    end
+end
+
+function keys = cnnLstmExecutionStaticKeys()
+    try
+        spec = cnn_lstm.executionSpec();
+        keys = spec.staticKeys;
+    catch
+        keys = {'outputMode','executionEnvironment'};
     end
 end
 

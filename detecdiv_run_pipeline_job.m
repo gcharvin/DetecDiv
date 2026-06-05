@@ -195,13 +195,39 @@ function payload = localNormalizePayload(payload)
 end
 
 function projectMatPath = localResolveProjectMatPath(payload)
-    projectMatPath = localGetText(payload, {'project_ref','project_mat_path'}, '');
-    if isempty(projectMatPath)
+    candidates = localProjectMatPathCandidates(payload);
+    projectMatPath = localFirstExistingPath(candidates);
+    if ~isempty(projectMatPath)
+        return;
+    end
+    firstCandidate = '';
+    if ~isempty(candidates)
+        firstCandidate = candidates{1};
+    end
+    if isempty(firstCandidate)
         error('detecdiv_run_pipeline_job:MissingProjectPath', ...
             'project_ref.project_mat_path is required for batch execution.');
     end
-    if exist(projectMatPath, 'file') ~= 2
-        error('detecdiv_run_pipeline_job:ProjectMissing', 'Project MAT not found: %s', projectMatPath);
+    error('detecdiv_run_pipeline_job:ProjectMissing', 'Project MAT not found: %s', firstCandidate);
+end
+
+function candidates = localProjectMatPathCandidates(payload)
+    candidates = {};
+    serverProjectPath = localGetText(payload, {'run_request','paths','server_project_path'}, '');
+    candidates = localAppendPathCandidate(candidates, serverProjectPath, payload);
+    candidates = localAppendPathCandidate(candidates, localGetText(payload, {'project_ref','project_mat_path'}, ''), payload);
+    candidates = localAppendPathCandidate(candidates, localGetText(payload, {'run_request','paths','project_path'}, ''), payload);
+    candidates = unique(candidates, 'stable');
+end
+
+function pathOut = localFirstExistingPath(candidates)
+    pathOut = '';
+    for i = 1:numel(candidates)
+        candidate = char(string(candidates{i}));
+        if exist(candidate, 'file') == 2
+            pathOut = candidate;
+            return;
+        end
     end
 end
 
@@ -211,16 +237,106 @@ function pipelineInputPath = localResolvePipelineInputPath(payload)
         {'pipeline_ref','pipeline_bundle_uri'}; ...
         {'pipeline_ref','pipeline_json_path'} ...
     };
-    pipelineInputPath = '';
+    candidates = {};
     for i = 1:numel(keys)
-        pipelineInputPath = localGetText(payload, keys{i}, '');
-        if ~isempty(pipelineInputPath)
-            break;
-        end
+        candidates = localAppendPathCandidate(candidates, localGetText(payload, keys{i}, ''), payload);
     end
+    candidates = localAppendPipelineSiblingCandidates(candidates, payload);
+    pipelineInputPath = localFirstExistingPath(unique(candidates, 'stable'));
     if isempty(pipelineInputPath)
         error('detecdiv_run_pipeline_job:MissingPipelinePath', ...
             'pipeline_ref.export_manifest_uri, pipeline_bundle_uri, or pipeline_json_path is required.');
+    end
+end
+
+function candidates = localAppendPipelineSiblingCandidates(candidates, payload)
+    projectMatPath = localResolveProjectMatPath(payload);
+    projectDir = regexprep(projectMatPath, '\.mat$', '');
+    keys = { ...
+        {'pipeline_ref','export_manifest_uri'}; ...
+        {'pipeline_ref','pipeline_bundle_uri'}; ...
+        {'pipeline_ref','pipeline_json_path'} ...
+    };
+    for i = 1:numel(keys)
+        sourcePath = localGetText(payload, keys{i}, '');
+        if isempty(sourcePath)
+            continue;
+        end
+        leaf = localPathLeaf(sourcePath);
+        if isempty(leaf)
+            continue;
+        end
+        candidates = localAppendPathCandidate(candidates, fullfile(fileparts(projectDir), leaf), payload);
+        candidates = localAppendPathCandidate(candidates, fullfile(projectDir, leaf), payload);
+    end
+end
+
+function candidates = localAppendPathCandidate(candidates, pathText, payload)
+    if nargin < 1 || isempty(candidates)
+        candidates = {};
+    end
+    pathText = char(string(pathText));
+    if isempty(pathText)
+        return;
+    end
+    candidates{end+1} = pathText; %#ok<AGROW>
+    mapped = localApplyPathMappings(pathText, payload);
+    if ~isempty(mapped) && ~strcmp(mapped, pathText)
+        candidates{end+1} = mapped; %#ok<AGROW>
+    end
+end
+
+function pathOut = localApplyPathMappings(pathIn, payload)
+    pathOut = char(string(pathIn));
+    mappings = localGetField(localGetField(localGetField(payload, 'run_request', struct()), 'paths', struct()), 'path_mappings', []);
+    if isempty(mappings)
+        return;
+    end
+    if isstruct(mappings)
+        mappings = mappings(:)';
+    elseif iscell(mappings)
+        mappings = [mappings{:}];
+    else
+        return;
+    end
+    candidateNorm = strrep(pathOut, '/', '\');
+    bestLen = -1;
+    bestOut = pathOut;
+    for i = 1:numel(mappings)
+        localRoot = localGetText(mappings(i), {'localRoot'}, localGetText(mappings(i), {'local_root'}, ''));
+        remoteRoot = localGetText(mappings(i), {'remoteRoot'}, localGetText(mappings(i), {'remote_root'}, ''));
+        localNorm = regexprep(strrep(localRoot, '/', '\'), '[\\\/]+$', '');
+        remoteNorm = regexprep(strrep(remoteRoot, '\', '/'), '[\\\/]+$', '');
+        if isempty(localNorm) || isempty(remoteNorm)
+            continue;
+        end
+        if localPathStartsWithRoot(candidateNorm, localNorm) && numel(localNorm) > bestLen
+            suffix = candidateNorm(numel(localNorm)+1:end);
+            suffix = strrep(suffix, '\', '/');
+            bestLen = numel(localNorm);
+            bestOut = [remoteNorm suffix];
+        end
+    end
+    pathOut = bestOut;
+end
+
+function tf = localPathStartsWithRoot(pathValue, rootValue)
+    pathCmp = lower(char(string(pathValue)));
+    rootCmp = lower(char(string(rootValue)));
+    tf = startsWith(pathCmp, rootCmp);
+    if ~tf || numel(pathCmp) == numel(rootCmp) || endsWith(rootCmp, ':')
+        return;
+    end
+    nextChar = pathCmp(numel(rootCmp)+1);
+    tf = any(nextChar == ['\' '/']);
+end
+
+function leaf = localPathLeaf(pathText)
+    parts = regexp(strrep(char(string(pathText)), '\', '/'), '/', 'split');
+    if isempty(parts)
+        leaf = '';
+    else
+        leaf = parts{end};
     end
 end
 
@@ -244,7 +360,7 @@ function ctx = localBuildExecutionContext(payload, shallowObj, pipeObj)
         rr = payload.run_request;
         ctx.run = struct();
         ctx.run.selectedNodes = localNormalizeSelectedNodes(localGetField(rr, 'selected_nodes', {}));
-        ctx.run.nodeParams = localNormalizeNodeParams(localGetField(rr, 'node_params', struct('id', {}, 'params', {})));
+        ctx.run.nodeParams = localNormalizeNodeParams(localGetField(rr, 'node_params', struct('id', {}, 'params', {})), payload);
         ctx.run.runPolicy = localGetText(rr, {'run_policy'}, 'resume');
 
         ctx.io = struct();
@@ -258,6 +374,26 @@ function ctx = localBuildExecutionContext(payload, shallowObj, pipeObj)
             ctx.sel.frames = localNormalizeSelectionVector(localGetField(rr.selection, 'frames', []));
             ctx.sel.rois = localNormalizeSelectionVector(localGetField(rr.selection, 'rois', []));
             ctx.sel.channels = localNormalizeStringSelection(localGetField(rr.selection, 'channels', {}));
+        end
+        availableChannels = localNormalizeStringSelection(localGetField(rr, 'available_channels', {}));
+        if ~isempty(availableChannels)
+            ctx.channels = availableChannels;
+            ctx.run.availableChannels = availableChannels;
+        end
+        roiChannels = localNormalizeStringSelection(localGetField(rr, 'roi_channels', {}));
+        if ~isempty(roiChannels)
+            ctx.roiChannels = roiChannels;
+        elseif ~isempty(availableChannels)
+            ctx.roiChannels = availableChannels;
+        end
+        masks = localNormalizeStringSelection(localGetField(rr, 'masks', {}));
+        if ~isempty(masks)
+            ctx.masks = masks;
+        end
+        dataSeries = localNormalizeStringSelection(localGetField(rr, 'data_series', {}));
+        if ~isempty(dataSeries)
+            ctx.dataSeries = dataSeries;
+            ctx.dataSeriesNames = dataSeries;
         end
         if isfield(rr, 'control') && isstruct(rr.control)
             ctx.run.control = rr.control;
@@ -386,6 +522,9 @@ function rawRoots = localRawRootCandidates(payload)
     rawRoots = localAppendStringList(rawRoots, localGetField(localGetField(payload, 'project_ref', struct()), 'raw_root', {}));
     rawRoots = localAppendStringList(rawRoots, localGetField(localGetField(payload, 'execution', struct()), 'raw_root_candidates', {}));
     rawRoots = localAppendStringList(rawRoots, localGetField(localGetField(payload, 'execution', struct()), 'raw_root', {}));
+    paths = localGetField(localGetField(payload, 'run_request', struct()), 'paths', struct());
+    rawRoots = localAppendStringList(rawRoots, localGetField(paths, 'server_raw_data_path', {}));
+    rawRoots = localAppendStringList(rawRoots, localGetField(paths, 'raw_data_path', {}));
     projectMatPath = localGetText(payload, {'project_ref','project_mat_path'}, '');
     if ~isempty(projectMatPath) && exist('detecdiv_paths_infer_raw_roots', 'file') == 2
         try
@@ -519,8 +658,11 @@ function selectedNodes = localNormalizeSelectedNodes(value)
     selectedNodes = {};
 end
 
-function nodeParams = localNormalizeNodeParams(value)
+function nodeParams = localNormalizeNodeParams(value, payload)
     nodeParams = struct('id', {}, 'params', {});
+    if nargin < 2
+        payload = struct();
+    end
     if isempty(value)
         return;
     end
@@ -533,7 +675,63 @@ function nodeParams = localNormalizeNodeParams(value)
         if isempty(params) || ~isstruct(params)
             params = struct();
         end
-        nodeParams(end).params = params;
+        nodeParams(end).params = localTranslateValuePathsForWorker(params, payload);
+    end
+end
+
+function value = localTranslateValuePathsForWorker(value, payload)
+    if isstruct(value)
+        for i = 1:numel(value)
+            names = fieldnames(value(i));
+            for j = 1:numel(names)
+                value(i).(names{j}) = localTranslateValuePathsForWorker(value(i).(names{j}), payload);
+            end
+        end
+    elseif iscell(value)
+        for i = 1:numel(value)
+            value{i} = localTranslateValuePathsForWorker(value{i}, payload);
+        end
+    elseif isstring(value)
+        for i = 1:numel(value)
+            textValue = char(value(i));
+            if localLooksLikePathText(textValue)
+                value(i) = string(localTranslatePathForWorker(textValue, payload));
+            end
+        end
+    elseif ischar(value)
+        if localLooksLikePathText(value)
+            value = localTranslatePathForWorker(value, payload);
+        end
+    end
+end
+
+function tf = localLooksLikePathText(value)
+    value = char(string(value));
+    tf = ~isempty(regexp(value, '^[A-Za-z]:[\\/]', 'once')) || ...
+        startsWith(value, '\') || startsWith(value, '/') || ...
+        contains(value, '\') || contains(value, '/');
+end
+
+function pathOut = localTranslatePathForWorker(pathIn, payload)
+    pathOut = localApplyPathMappings(pathIn, payload);
+    if ~strcmp(pathOut, char(string(pathIn)))
+        return;
+    end
+
+    rawRoots = localRawRootCandidates(payload);
+    leaf = localPathLeaf(pathIn);
+    if isempty(leaf)
+        return;
+    end
+    for i = 1:numel(rawRoots)
+        candidate = char(string(rawRoots{i}));
+        if isempty(candidate) || exist(candidate, 'dir') ~= 7
+            continue;
+        end
+        if strcmpi(localPathLeaf(candidate), leaf)
+            pathOut = candidate;
+            return;
+        end
     end
 end
 
@@ -648,7 +846,7 @@ function localAddRepoPaths(repoRoot)
         keep{end+1} = p; %#ok<AGROW>
     end
     if ~isempty(keep)
-        addpath(keep{:});
+        addpath(keep{:}, '-begin');
     end
     done = true;
 end

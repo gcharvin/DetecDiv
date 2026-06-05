@@ -2025,6 +2025,7 @@ end
             cd=0;
             cp=0;
             app.Data={};
+            pipelineSeen = containers.Map('KeyType','char','ValueType','logical');
 
             for i=1:numel(varlist)
 
@@ -2115,6 +2116,16 @@ end
                 end
 
                 if isa(tmp,'pipeline')
+                    if app.isInternalPipelineGuiAlias(tmp, varlist{i})
+                        continue;
+                    end
+                    pipelineKey = app.workspacePipelineDedupKey(tmp, varlist{i});
+                    if ~isempty(pipelineKey) && isKey(pipelineSeen, pipelineKey)
+                        continue;
+                    end
+                    if ~isempty(pipelineKey)
+                        pipelineSeen(pipelineKey) = true;
+                    end
                     if ~isfield(st,'Pipeline') || isempty(st.Pipeline)
                         st.Pipeline = {};
                         st.PipelineModules = {};
@@ -2185,6 +2196,46 @@ end
             app.Data=st;
 
             %  st
+        end
+
+        function tf = isInternalPipelineGuiAlias(app, pipeObj, varName) %#ok<INUSD>
+            tf = strcmp(char(string(varName)), 'pipelineGUI2');
+            if tf
+                return;
+            end
+            try
+                tf = strcmp(char(string(pipeObj.strid)), 'pipelineGUI2');
+            catch
+                tf = false;
+            end
+        end
+
+        function key = workspacePipelineDedupKey(app, pipeObj, varName) %#ok<INUSD>
+            key = '';
+            if isempty(pipeObj) || ~isa(pipeObj, 'pipeline')
+                return;
+            end
+            p = '';
+            try
+                p = char(string(pipeObj.path));
+            catch
+                p = '';
+            end
+            if ~isempty(strtrim(p))
+                key = ['path:' lower(strrep(p, '/', filesep))];
+                return;
+            end
+            name = '';
+            try
+                name = char(string(pipeObj.strid));
+            catch
+                name = '';
+            end
+            if ~isempty(strtrim(name))
+                key = ['name:' lower(name)];
+            else
+                key = ['var:' lower(char(string(varName)))];
+            end
         end
 
         function labels = buildRoiTreeLabels(app, roiList) %#ok<INUSD>
@@ -2421,12 +2472,45 @@ end
         end
 
         function openPipelineWithContext(app, pipeObj)
+            pipeObj = app.reloadPipelineTemplateFromDiskIfAvailable(pipeObj);
             projectObj = [];
             [found, projectObj] = app.findLinkedProjectForPipeline(pipeObj);
             if found
                 pipeline2(projectObj, pipeObj);
             else
                 pipeline2([], pipeObj);
+            end
+        end
+
+        function pipeObj = reloadPipelineTemplateFromDiskIfAvailable(app, pipeObj) %#ok<INUSD>
+            if isempty(pipeObj) || ~isa(pipeObj, 'pipeline')
+                return;
+            end
+            pipePath = '';
+            try
+                pipePath = char(string(pipeObj.path));
+            catch
+                pipePath = '';
+            end
+            if isempty(strtrim(pipePath))
+                return;
+            end
+            jsonPath = pipePath;
+            if exist(jsonPath, 'dir') == 7
+                jsonPath = fullfile(jsonPath, 'pipeline.json');
+            end
+            if exist(jsonPath, 'file') ~= 2
+                return;
+            end
+            try
+                [freshPipe, msg] = pipelineLoad(jsonPath);
+                if ~isempty(freshPipe)
+                    pipeObj = freshPipe;
+                elseif ~isempty(msg)
+                    warning('detecdiv:PipelineReloadFailed', '%s', msg);
+                end
+            catch ME
+                warning('detecdiv:PipelineReloadFailed', '%s', ME.message);
             end
         end
 
@@ -5487,6 +5571,11 @@ end
                 if idx <= numel(app.Data.Pipeline)
                     pipeVar = app.Data.Pipeline{idx};
                     pipeObj = evalin('base', pipeVar);
+                    pipeObj = app.reloadPipelineTemplateFromDiskIfAvailable(pipeObj);
+                    try
+                        assignin('base', pipeVar, pipeObj);
+                    catch
+                    end
 
                     nNodes = 0;
                     nEdges = 0;

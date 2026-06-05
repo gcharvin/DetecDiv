@@ -70,10 +70,12 @@ function ctx = process(ctx)
     if isfield(p,'extractChannels') && ~isempty(p.extractChannels)
         p.channels = normalizeExtractChannelsParam(p.extractChannels);
     end
+    if (~isfield(p,'roiList') || isempty(p.roiList)) && ...
+            isfield(ctx,'sel') && isstruct(ctx.sel) && isfield(ctx.sel,'rois') && ~isempty(ctx.sel.rois)
+        p.roiList = ctx.sel.rois;
+    end
     if isfield(p,'roiList') && ~isempty(p.roiList)
-        p.roiList = round(double(p.roiList(:)'));
-        p.roiList = p.roiList(isfinite(p.roiList) & p.roiList >= 1);
-        p.roiList = unique(p.roiList, 'stable');
+        p.roiList = normalizeRoiSelectionParam(p.roiList);
     end
 
     existingPolicy = resolveExistingPolicy(ctx, p);
@@ -163,29 +165,55 @@ function ctx = process(ctx)
         try
             if ~isempty(shallowObj)
                 extractAllROICrops(shallowObj, args{:});
+                try
+                    fovList = shallowObj.fov;
+                catch
+                end
             else
                 % fallback: call on a temporary shallow
                 tmp = shallow();
                 tmp.fov = f;
                 extractAllROICrops(tmp, args{:});
+                try
+                    fovList(i) = tmp.fov(1);
+                catch
+                end
             end
+            validateExtractedRoisForFov(fovList, i, todo);
             prog = progressMark(shallowObj, ctx, 'roiExtract', i, todo);
             if persistOutputs && saveProgress && ~isempty(shallowObj)
                 try, shallowSave(shallowObj); catch, end
             end
         catch ME
+            prog = ensureProgressErrorsField(prog);
             prog.errors{end+1} = ME.message; %#ok<AGROW>
             ctx.errors{end+1} = ME.message; %#ok<AGROW>
             if ~isempty(shallowObj)
-                rp = shallowObj.runProfiles;
-                rp.dataloading.runs.(getRunId(ctx)) = prog;
-                shallowObj.runProfiles = rp;
+                try
+                    rp = shallowObj.runProfiles;
+                    if ~isfield(rp, 'dataloading') || ~isstruct(rp.dataloading)
+                        rp.dataloading = struct();
+                    end
+                    if ~isfield(rp.dataloading, 'runs') || ~isstruct(rp.dataloading.runs)
+                        rp.dataloading.runs = struct();
+                    end
+                    rp.dataloading.runs.(getRunId(ctx)) = prog;
+                    shallowObj.runProfiles = rp;
+                catch
+                end
             end
+            rethrow(ME);
         end
     end
 
+    if ~isempty(shallowObj)
+        try
+            fovList = shallowObj.fov;
+        catch
+        end
+    end
     ctx.fovList = fovList;
-    ctx.roiList = collectROIs(fovList);
+    ctx.roiList = collectROIs(fovList, fovIdx, getfieldlocal(p, 'roiList', []), persistOutputs);
     ctx = maybeWarmRoiCache(ctx, p);
     ctx.dataSeries = collectDataSeries(ctx.roiList);
     if ~isfield(ctx,'channels') || isempty(ctx.channels) || isAllChannelSelector(getfieldlocal(p, 'channels', []))
@@ -347,9 +375,12 @@ function tf = roiExtractOutputExists(r)
 
     try
         if isprop(r,'path') && ~isempty(r.path) && isprop(r,'id') && ~isempty(r.id)
-            tf = isfile(fullfile(r.path, ['im_' char(string(r.id)) '.h5']));
-            if tf
-                return;
+            candidates = roiExtractOutputPathCandidates(char(string(r.path)), char(string(r.id)));
+            for i = 1:numel(candidates)
+                tf = isfile(candidates{i});
+                if tf
+                    return;
+                end
             end
         end
     catch
@@ -361,6 +392,79 @@ function tf = roiExtractOutputExists(r)
             tf = true;
         end
     catch
+    end
+end
+
+function candidates = roiExtractOutputPathCandidates(roiPath, roiId)
+    candidates = {};
+    if isempty(roiPath) || isempty(roiId)
+        return;
+    end
+    fileName = ['im_' roiId '.h5'];
+    candidates{end+1} = fullfile(roiPath, fileName); %#ok<AGROW>
+    localPath = translateHubRemotePathToLocal(roiPath);
+    if ~isempty(localPath) && ~strcmp(localPath, roiPath)
+        candidates{end+1} = fullfile(localPath, fileName); %#ok<AGROW>
+    end
+    candidates = unique(candidates, 'stable');
+end
+
+function localPath = translateHubRemotePathToLocal(remotePath)
+    localPath = '';
+    remotePath = char(string(remotePath));
+    if isempty(strtrim(remotePath))
+        return;
+    end
+    try
+        hub = detecdiv_hub_settings_get();
+    catch
+        hub = struct();
+    end
+    mappings = struct('remoteRoot', {}, 'localRoot', {});
+    try
+        if isfield(hub, 'pathMappings') && ~isempty(hub.pathMappings)
+            mappings = hub.pathMappings;
+        end
+    catch
+    end
+    try
+        if isfield(hub, 'defaultRemoteProjectRoot') && isfield(hub, 'defaultLocalProjectRoot') && ...
+                ~isempty(hub.defaultRemoteProjectRoot) && ~isempty(hub.defaultLocalProjectRoot)
+            mappings(end+1).remoteRoot = char(string(hub.defaultRemoteProjectRoot)); %#ok<AGROW>
+            mappings(end).localRoot = char(string(hub.defaultLocalProjectRoot));
+        end
+    catch
+    end
+    remoteComparable = regexprep(strrep(remotePath, '\', '/'), '[\/]+$', '');
+    bestLen = 0;
+    bestLocalRoot = '';
+    bestSuffix = '';
+    for i = 1:numel(mappings)
+        try
+            remoteRoot = regexprep(strrep(char(string(mappings(i).remoteRoot)), '\', '/'), '[\/]+$', '');
+            localRoot = regexprep(strrep(char(string(mappings(i).localRoot)), '/', filesep), '[\\\/]+$', '');
+            if isempty(remoteRoot) || isempty(localRoot)
+                continue;
+            end
+            if startsWith(remoteComparable, remoteRoot) && ...
+                    (numel(remoteComparable) == numel(remoteRoot) || any(remoteComparable(numel(remoteRoot)+1) == ['/' '\']))
+                if numel(remoteRoot) > bestLen
+                    bestLen = numel(remoteRoot);
+                    bestLocalRoot = localRoot;
+                    bestSuffix = remoteComparable(numel(remoteRoot)+1:end);
+                end
+            end
+        catch
+        end
+    end
+    if bestLen == 0
+        return;
+    end
+    bestSuffix = regexprep(bestSuffix, '^[\/\\]+', '');
+    if isempty(bestSuffix)
+        localPath = bestLocalRoot;
+    else
+        localPath = fullfile(bestLocalRoot, strrep(bestSuffix, '/', filesep));
     end
 end
 
@@ -378,13 +482,89 @@ function done = getDoneForFov(prog, fovIdx)
     end
 end
 
-function roiList = collectROIs(fovList)
+function validateExtractedRoisForFov(fovList, fovIdx, roiSel)
+    if isempty(fovList) || fovIdx < 1 || fovIdx > numel(fovList) || isempty(roiSel)
+        return;
+    end
+    missing = [];
+    rois = fovList(fovIdx).roi;
+    for k = 1:numel(roiSel)
+        idx = roiSel(k);
+        if idx < 1 || idx > numel(rois) || ~roiExtractOutputExists(rois(idx))
+            missing(end+1) = idx; %#ok<AGROW>
+        end
+    end
+    if ~isempty(missing)
+        error('roiExtract.process:MissingExtractedOutputs', ...
+            'ROI extraction did not materialize H5 outputs for FOV %d ROI(s) %s.', ...
+            fovIdx, mat2str(missing));
+    end
+end
+
+function roiList = collectROIs(fovList, fovIdx, roiSel, requireExtracted)
+    if nargin < 2 || isempty(fovIdx)
+        fovIdx = 1:numel(fovList);
+    end
+    if nargin < 3
+        roiSel = [];
+    end
+    if nargin < 4
+        requireExtracted = false;
+    end
+    roiSel = normalizeRoiSelectionParam(roiSel);
+
     roiList = [];
-    for i = 1:numel(fovList)
+    for i = fovIdx
+        if i < 1 || i > numel(fovList)
+            continue;
+        end
         r = fovList(i).roi;
         if ~isempty(r)
+            if ~isempty(roiSel)
+                idx = roiSel(roiSel >= 1 & roiSel <= numel(r));
+                r = r(idx);
+            end
+            if requireExtracted && ~isempty(r)
+                keep = false(1, numel(r));
+                for k = 1:numel(r)
+                    keep(k) = roiExtractOutputExists(r(k));
+                end
+                r = r(keep);
+            end
             roiList = [roiList r(:)']; %#ok<AGROW>
         end
+    end
+end
+
+function idx = normalizeRoiSelectionParam(v)
+    idx = [];
+    if nargin < 1 || isempty(v)
+        return;
+    end
+    if ischar(v) || (isstring(v) && isscalar(v))
+        s = strtrim(char(string(v)));
+        if isempty(s) || strcmpi(s, 'all') || strcmp(s, ':')
+            return;
+        end
+        try
+            v = str2num(s); %#ok<ST2NM>
+        catch
+            v = [];
+        end
+    end
+    if iscell(v)
+        try
+            v = [v{:}];
+        catch
+            v = [];
+        end
+    end
+    try
+        idx = round(double(v(:)'));
+        idx = idx(isfinite(idx) & idx >= 1);
+        idx = unique(idx, 'stable');
+    catch
+        idx = [];
     end
 end
 
@@ -451,6 +631,17 @@ function args = buildExtractArgs(p, progressDlg)
     end
     if nargin >= 2 && ~isempty(progressDlg)
         args = [args {'hprogressbar'} {progressDlg}];
+    end
+end
+
+function prog = ensureProgressErrorsField(prog)
+    if isempty(prog) || ~isstruct(prog)
+        prog = struct();
+    end
+    if ~isfield(prog, 'errors') || isempty(prog.errors)
+        prog.errors = {};
+    elseif ~iscell(prog.errors)
+        prog.errors = {prog.errors};
     end
 end
 

@@ -520,6 +520,16 @@ function ctx = normalizeExecutionContext(ctx)
     else
         ctx.sel.frames = normalizeIndexVectorLocal(ctx.sel.frames);
     end
+
+    if ~isfield(ctx.sel,'rois') || isempty(ctx.sel.rois)
+        if isfield(ctx.run,'rois') && ~isempty(ctx.run.rois)
+            ctx.sel.rois = normalizeIndexVectorLocal(ctx.run.rois);
+        else
+            ctx.sel.rois = [];
+        end
+    else
+        ctx.sel.rois = normalizeIndexVectorLocal(ctx.sel.rois);
+    end
 end
 
 function ctx = normalizeRunEventLedger(ctx)
@@ -1192,15 +1202,61 @@ switch runPolicy
 end
 
 if isstruct(p) && isfield(p,'gpu') && ~isempty(p.gpu)
-    gpuDecision = logicalizeGpuValue(p.gpu);
-    hasGpuDecision = true;
-    return;
+    [gpuDecision, hasGpuDecision] = gpuDecisionFromExecutionValue(p.gpu);
+    if hasGpuDecision
+        return;
+    end
+end
+
+if isstruct(p) && isfield(p,'executionEnvironment') && ~isempty(p.executionEnvironment)
+    [gpuDecision, hasGpuDecision] = gpuDecisionFromExecutionValue(p.executionEnvironment);
+    if hasGpuDecision
+        return;
+    end
+end
+
+if isstruct(p) && isfield(p,'execution_environment') && ~isempty(p.execution_environment)
+    [gpuDecision, hasGpuDecision] = gpuDecisionFromExecutionValue(p.execution_environment);
+    if hasGpuDecision
+        return;
+    end
 end
 
 pkgName = lower(strtrim(char(string(pkgName))));
 if strcmp(pkgName, 'cellposesam')
     gpuDecision = true;
     hasGpuDecision = true;
+end
+end
+
+function [gpuDecision, hasGpuDecision] = gpuDecisionFromExecutionValue(v)
+hasGpuDecision = false;
+gpuDecision = false;
+if islogical(v)
+    gpuDecision = logical(v);
+    hasGpuDecision = true;
+    return;
+end
+if isnumeric(v)
+    if isempty(v) || ~isscalar(v) || ~isfinite(double(v))
+        return;
+    end
+    gpuDecision = logical(v ~= 0);
+    hasGpuDecision = true;
+    return;
+end
+s = lower(strtrim(char(string(v))));
+s = strrep(s, '-', '_');
+s = strrep(s, ' ', '_');
+switch s
+    case {'gpu','force_gpu','multi_gpu'}
+        gpuDecision = true;
+        hasGpuDecision = true;
+    case {'cpu','force_cpu'}
+        gpuDecision = false;
+        hasGpuDecision = true;
+    otherwise
+        hasGpuDecision = false;
 end
 end
 
@@ -1234,6 +1290,7 @@ function tf = shouldSkipNode(node, ctx, edges, executed)
     end
     incoming = edges(strcmp({edges.to}, node.id));
     condEdges = incoming(~cellfun(@isempty, {incoming.condition}));
+    condEdges = condEdges(arrayfun(@(e)isExecutionEdgeCondition(e.condition), condEdges));
     if isempty(condEdges)
         return;
     end
@@ -1248,6 +1305,19 @@ function tf = shouldSkipNode(node, ctx, edges, executed)
         end
     end
     tf = ~runOK;
+end
+
+function tf = isExecutionEdgeCondition(condition)
+tf = false;
+try
+    condition = lower(strtrim(char(string(condition))));
+catch
+    return;
+end
+if isempty(condition)
+    return;
+end
+tf = ~any(strcmp(condition, {'resourcebinding','binding','symbolicbinding'}));
 end
 
 function ok = evalCondition(expr, ctx)
@@ -1413,9 +1483,12 @@ function ctx = seedContextFromProject(ctx)
         end
     end
 
-    if isfield(ctx,'fovList') && ~isempty(ctx.fovList)
+    if isfield(ctx,'fovList') && ~isempty(ctx.fovList) && (~isfield(ctx,'channels') || isempty(ctx.channels))
         try
-            ctx.channels = ctx.fovList(1).channel;
+            fovChannels = ctx.fovList(1).channel;
+            if ~isempty(fovChannels)
+                ctx.channels = fovChannels;
+            end
         catch
         end
     end
@@ -1523,6 +1596,7 @@ function ctx = executeProcessorNode(node, ctx)
         end
     catch
     end
+    p = injectPipelineRuntimeParams(p, ctx);
     procObj.processArg = mergeStruct(baseArg, p);
     procObj.strid = char(string(node.id));
     try
@@ -1594,6 +1668,42 @@ function ctx = executeProcessorNode(node, ctx)
     ctx.roiList = rois;
     ctx.dataSeries = collectDataSeriesFromRois(rois);
     ctx.channels = inferChannelsFromRois(rois, ctx);
+end
+
+function p = injectPipelineRuntimeParams(p, ctx)
+    if ~isstruct(p)
+        return;
+    end
+    runId = getfielddefault(ctx, 'runId', '');
+    if isempty(runId) && isfield(ctx, 'run') && isstruct(ctx.run)
+        runId = getfielddefault(ctx.run, 'runId', '');
+    end
+    if ~isempty(runId) && (~isfield(p, 'runId') || isempty(p.runId))
+        p.runId = char(string(runId));
+    end
+
+    runPath = '';
+    if isfield(ctx, 'store') && isstruct(ctx.store)
+        runPath = getfielddefault(ctx.store, 'runPath', '');
+    end
+    if isempty(runPath) && isfield(ctx, 'run') && isstruct(ctx.run)
+        runPath = getfielddefault(ctx.run, 'runPath', '');
+        if isempty(runPath), runPath = getfielddefault(ctx.run, 'path', ''); end
+    end
+    if ~isempty(runPath) && (~isfield(p, 'runPath') || isempty(p.runPath))
+        p.runPath = char(string(runPath));
+    end
+
+    projectPath = getfielddefault(ctx, 'projectPath', '');
+    if isempty(projectPath) && isfield(ctx, 'run') && isstruct(ctx.run)
+        projectPath = getfielddefault(ctx.run, 'projectPath', '');
+    end
+    if isempty(projectPath) && isfield(ctx, 'io') && isstruct(ctx.io)
+        projectPath = getfielddefault(ctx.io, 'projectPath', '');
+    end
+    if ~isempty(projectPath) && (~isfield(p, 'projectPath') || isempty(p.projectPath))
+        p.projectPath = char(string(projectPath));
+    end
 end
 
 function ctx = executeClassifierNode(node, ctx)
@@ -1844,6 +1954,13 @@ end
 function tf = shouldCacheAuxiliaryClassifierCNN(clsObj, node)
 tf = false;
 try
+    if isfield(node, 'params') && isstruct(node.params) && isfield(node.params, 'outputMode') && ~isempty(node.params.outputMode)
+        outputMode = lower(strrep(strtrim(char(string(node.params.outputMode))), '-', '_'));
+        outputMode = strrep(outputMode, ' ', '_');
+        if any(strcmp(outputMode, {'lstm','lstm_only','primary'}))
+            return;
+        end
+    end
     pkg = lower(strtrim(char(string(resolveNodePackage(node)))));
     fun = '';
     if isprop(clsObj,'classifyFun') && ~isempty(clsObj.classifyFun)
@@ -2176,26 +2293,31 @@ end
 
 function rois = selectRoisForNode(ctx, node)
     rois = [];
+    fromCtxRoiList = false;
     if isfield(ctx,'roiList') && ~isempty(ctx.roiList)
         rois = ctx.roiList;
+        fromCtxRoiList = true;
     end
 
     if isempty(rois)
+        fromCtxRoiList = false;
         if isfield(ctx,'fovList') && ~isempty(ctx.fovList)
-            rois = collectRoisFromFovList(ctx.fovList);
+            rois = collectRoisForContextSelection(ctx, ctx.fovList);
         else
             shallowObj = getShallowObject(ctx);
             if ~isempty(shallowObj)
-                rois = collectRoisFromProject(shallowObj);
+                rois = collectRoisForContextSelection(ctx, shallowObj.fov);
             end
         end
+    end
+    if ~fromCtxRoiList && ~isempty(rois) && isfield(ctx,'sel') && isstruct(ctx.sel) && ...
+            isfield(ctx.sel,'rois') && ~isempty(ctx.sel.rois)
+        rois = filterRoisBySelectionVector(rois, ctx.sel.rois);
     end
 
     p = getfielddefault(node, 'params', struct());
     if isstruct(p) && isfield(p,'roiList') && ~isempty(p.roiList) && ~isempty(rois)
-        idx = double(p.roiList(:)');
-        idx = idx(isfinite(idx));
-        idx = round(idx);
+        idx = resolveIndexSelectionLocal(p.roiList, numel(rois));
         idx = idx(idx >= 1 & idx <= numel(rois));
         if ~isempty(idx)
             rois = rois(idx);
@@ -2289,6 +2411,48 @@ function pkgName = resolveNodePackage(node)
     end
 end
 
+function rois = collectRoisForContextSelection(ctx, fovList)
+    rois = [];
+    if isempty(fovList)
+        return;
+    end
+    roiSel = [];
+    if isfield(ctx,'sel') && isstruct(ctx.sel) && isfield(ctx.sel,'rois') && ~isempty(ctx.sel.rois)
+        roiSel = ctx.sel.rois;
+    end
+    for i = 1:numel(fovList)
+        try
+            r = fovList(i).roi;
+            if isempty(r)
+                continue;
+            end
+            if ~isempty(roiSel)
+                idx = resolveIndexSelectionLocal(roiSel, numel(r));
+                idx = idx(idx >= 1 & idx <= numel(r));
+                r = r(idx);
+            end
+            if ~isempty(r)
+                rois = [rois r(:)']; %#ok<AGROW>
+            end
+        catch
+        end
+    end
+    rois = filterValidRoiHandles(rois);
+end
+
+function rois = filterRoisBySelectionVector(rois, roiSel)
+    if isempty(rois) || isempty(roiSel)
+        return;
+    end
+    idx = resolveIndexSelectionLocal(roiSel, numel(rois));
+    idx = idx(idx >= 1 & idx <= numel(rois));
+    if isempty(idx)
+        rois = rois([]);
+    else
+        rois = rois(idx);
+    end
+end
+
 function pkgName = canonicalPackageNameForNode(nodeType, pkgName)
     if isempty(pkgName)
         return;
@@ -2342,10 +2506,192 @@ function pkgName = canonicalPackageNameForNode(nodeType, pkgName)
 end
 
 function vals = normalizeIndexVectorLocal(vals)
-vals = double(vals(:)');
+if isempty(vals)
+    vals = [];
+    return;
+end
+if containsEndSelectorLocal(vals)
+    return;
+end
+if iscell(vals)
+    parts = {};
+    for i = 1:numel(vals)
+        cur = vals{i};
+        if isempty(cur)
+            continue;
+        elseif isnumeric(cur) || islogical(cur)
+            parts{end+1} = double(cur(:)'); %#ok<AGROW>
+        else
+            parsed = parseIndexTextLocal(cur);
+            if isempty(parsed) && any(strcmpi(strtrim(char(string(cur))), {'all','*'}))
+                vals = [];
+                return;
+            end
+            parts{end+1} = parsed; %#ok<AGROW>
+        end
+    end
+    if isempty(parts)
+        vals = [];
+        return;
+    end
+    vals = [parts{:}];
+elseif ischar(vals) || isstring(vals)
+    txt = strtrim(char(string(vals)));
+    if isempty(txt) || any(strcmpi(txt, {'all','*'}))
+        vals = [];
+        return;
+    end
+    vals = parseIndexTextLocal(txt);
+else
+    vals = double(vals(:)');
+end
 vals = vals(isfinite(vals));
 vals = unique(round(vals), 'stable');
 vals = vals(vals >= 1);
+end
+
+function idx = resolveIndexSelectionLocal(sel, maxIndex)
+if nargin < 2 || isempty(maxIndex) || ~isfinite(double(maxIndex))
+    maxIndex = Inf;
+end
+if isempty(sel)
+    idx = [];
+    return;
+end
+if containsEndSelectorLocal(sel)
+    idx = parseIndexSelectionWithEndLocal(sel, maxIndex);
+else
+    idx = normalizeIndexVectorLocal(sel);
+end
+idx = idx(isfinite(idx));
+idx = unique(round(idx), 'stable');
+idx = idx(idx >= 1);
+if isfinite(double(maxIndex))
+    idx = idx(idx <= maxIndex);
+end
+end
+
+function tf = containsEndSelectorLocal(value)
+tf = false;
+try
+    if iscell(value)
+        for i = 1:numel(value)
+            if containsEndSelectorLocal(value{i})
+                tf = true;
+                return;
+            end
+        end
+    elseif ischar(value) || isstring(value)
+        tf = contains(lower(char(string(value))), 'end');
+    end
+catch
+    tf = false;
+end
+end
+
+function vals = parseIndexSelectionWithEndLocal(sel, maxIndex)
+vals = [];
+if iscell(sel)
+    parts = {};
+    for i = 1:numel(sel)
+        parts{end+1} = parseIndexSelectionWithEndLocal(sel{i}, maxIndex); %#ok<AGROW>
+    end
+    if ~isempty(parts)
+        vals = [parts{:}];
+    end
+    return;
+end
+if isnumeric(sel) || islogical(sel)
+    vals = double(sel(:)');
+    return;
+end
+txt = strtrim(char(string(sel)));
+if isempty(txt) || any(strcmpi(txt, {'all','*'}))
+    vals = [];
+    return;
+end
+txt = strrep(txt, ';', ',');
+txt = strrep(txt, ' ', ',');
+tokens = regexp(txt, '[,]+', 'split');
+out = {};
+for i = 1:numel(tokens)
+    tok = strtrim(tokens{i});
+    if isempty(tok)
+        continue;
+    end
+    if contains(tok, ':')
+        bits = regexp(tok, ':', 'split');
+        nums = nan(1, numel(bits));
+        for j = 1:numel(bits)
+            nums(j) = parseIndexTermLocal(bits{j}, maxIndex);
+        end
+        if numel(nums) == 2 && all(isfinite(nums))
+            out{end+1} = nums(1):nums(2); %#ok<AGROW>
+        elseif numel(nums) >= 3 && all(isfinite(nums(1:3))) && nums(2) ~= 0
+            out{end+1} = nums(1):nums(2):nums(3); %#ok<AGROW>
+        end
+    else
+        n = parseIndexTermLocal(tok, maxIndex);
+        if isfinite(n)
+            out{end+1} = n; %#ok<AGROW>
+        end
+    end
+end
+if ~isempty(out)
+    vals = [out{:}];
+end
+end
+
+function n = parseIndexTermLocal(tok, maxIndex)
+tok = strtrim(lower(char(string(tok))));
+if strcmp(tok, 'end')
+    n = double(maxIndex);
+    return;
+end
+m = regexp(tok, '^end([+-]\d+)$', 'tokens', 'once');
+if ~isempty(m)
+    n = double(maxIndex) + str2double(m{1});
+    return;
+end
+n = str2double(tok);
+end
+
+function vals = parseIndexTextLocal(txt)
+vals = [];
+try
+    txt = strtrim(char(string(txt)));
+    if isempty(txt)
+        return;
+    end
+    txt = strrep(txt, ';', ',');
+    txt = strrep(txt, ' ', ',');
+    tokens = regexp(txt, '[,]+', 'split');
+    out = {};
+    for i = 1:numel(tokens)
+        tok = strtrim(tokens{i});
+        if isempty(tok)
+            continue;
+        end
+        if contains(tok, ':')
+            nums = sscanf(tok, '%f:%f:%f');
+            if numel(nums) == 2
+                out{end+1} = nums(1):nums(2); %#ok<AGROW>
+            elseif numel(nums) >= 3
+                out{end+1} = nums(1):nums(2):nums(3); %#ok<AGROW>
+            end
+        else
+            n = str2double(tok);
+            if isfinite(n)
+                out{end+1} = n; %#ok<AGROW>
+            end
+        end
+    end
+    if ~isempty(out)
+        vals = [out{:}];
+    end
+catch
+    vals = [];
+end
 end
 
 function ds = collectDataSeriesFromRois(rois)
@@ -2446,7 +2792,9 @@ function masks = inferMaskChannelsFromRois(rois)
             keep = false(1, numel(names));
             for i = 1:numel(names)
                 nm = lower(char(string(names{i})));
-                keep(i) = contains(nm, 'mask') || contains(nm, 'result') || contains(nm, 'track');
+                keep(i) = contains(nm, 'mask') || contains(nm, 'seg') || ...
+                    contains(nm, 'result') || contains(nm, 'cellpose') || ...
+                    contains(nm, 'sam') || contains(nm, 'track');
             end
             masks = names(keep);
         end

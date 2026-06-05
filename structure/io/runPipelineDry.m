@@ -94,6 +94,9 @@ function ctx = seedDryRunContextFromProject(ctx)
     if (~isfield(ctx,'dataSeries') || isempty(ctx.dataSeries)) && isfield(ctx,'roiList') && ~isempty(ctx.roiList)
         ctx.dataSeries = inferDryDataSeriesNames(ctx.roiList);
     end
+    if (~isfield(ctx,'masks') || isempty(ctx.masks)) && isfield(ctx,'roiList') && ~isempty(ctx.roiList)
+        ctx.masks = inferDryMaskChannels(ctx.roiList);
+    end
 end
 
 function idx = normalizeDryIndexVector(v)
@@ -154,5 +157,26 @@ function names = inferDryDataSeriesNames(roiList)
         names = unique(names, 'stable');
     catch
         names = {};
+    end
+end
+
+function masks = inferDryMaskChannels(roiList)
+    masks = {};
+    try
+        if isempty(roiList) || isempty(roiList(1).display) || ...
+                ~isfield(roiList(1).display, 'channel') || isempty(roiList(1).display.channel)
+            return;
+        end
+        names = roiList(1).display.channel;
+        keep = false(1, numel(names));
+        for i = 1:numel(names)
+            nm = lower(char(string(names{i})));
+            keep(i) = contains(nm, 'mask') || contains(nm, 'seg') || ...
+                contains(nm, 'result') || contains(nm, 'cellpose') || ...
+                contains(nm, 'sam') || contains(nm, 'track');
+        end
+        masks = unique(names(keep), 'stable');
+    catch
+        masks = {};
     end
 end

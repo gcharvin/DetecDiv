@@ -186,23 +186,6 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
 
-            try
-                spec = runObj.ctx.pipelineSpec;
-                if isstruct(spec) && isfield(spec, 'nodes') && ~isempty(spec.nodes)
-                    pipeObj = pipeline('', char(string(getNestedRunField(app, runObj, {'pipelineRef','id'}, defaultPipelineTemplateName(app)))), 1);
-                    pipeObj.nodes = spec.nodes;
-                    if isfield(spec, 'edges')
-                        pipeObj.edges = spec.edges;
-                    end
-                    if isfield(spec, 'branches')
-                        pipeObj.branches = spec.branches;
-                    end
-                    msg = '';
-                    return;
-                end
-            catch
-            end
-
             candidatePaths = {};
             try
                 if isstruct(runObj.pipelineRef) && isfield(runObj.pipelineRef, 'path') && ~isempty(runObj.pipelineRef.path)
@@ -223,7 +206,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
             catch
             end
-            candidatePaths = unique(candidatePaths(~cellfun(@isempty, candidatePaths)), 'stable');
+            candidatePaths = expandRunPipelineTemplatePaths(app, candidatePaths);
             for i = 1:numel(candidatePaths)
                 [pipeObj, loadMsg] = pipelineLoad(candidatePaths{i});
                 if ~isempty(pipeObj)
@@ -233,6 +216,100 @@ classdef pipeline2 < matlab.apps.AppBase
                 if ~isempty(loadMsg)
                     msg = loadMsg;
                 end
+            end
+
+            try
+                spec = runObj.ctx.pipelineSpec;
+                if isstruct(spec) && isfield(spec, 'nodes') && ~isempty(spec.nodes)
+                    pipeObj = pipeline('', char(string(getNestedRunField(app, runObj, {'pipelineRef','id'}, defaultPipelineTemplateName(app)))), 1);
+                    pipeObj.nodes = spec.nodes;
+                    if isfield(spec, 'edges')
+                        pipeObj.edges = spec.edges;
+                    end
+                    if isfield(spec, 'branches')
+                        pipeObj.branches = spec.branches;
+                    end
+                    msg = '';
+                    return;
+                end
+            catch
+            end
+        end
+
+        function candidatePaths = expandRunPipelineTemplatePaths(app, candidatePaths)
+            if isempty(candidatePaths)
+                candidatePaths = {};
+                return;
+            end
+            out = {};
+            for i = 1:numel(candidatePaths)
+                p = char(string(candidatePaths{i}));
+                if isempty(strtrim(p))
+                    continue;
+                end
+                out{end+1} = p; %#ok<AGROW>
+                localPath = hubRemotePathToLocalPath(app, p);
+                if ~isempty(localPath) && ~strcmp(localPath, p)
+                    out{end+1} = localPath; %#ok<AGROW>
+                end
+            end
+            candidatePaths = unique(out(~cellfun(@isempty, out)), 'stable');
+        end
+
+        function localPath = hubRemotePathToLocalPath(app, remotePath)
+            localPath = '';
+            remotePath = char(string(remotePath));
+            if isempty(strtrim(remotePath))
+                return;
+            end
+            try
+                hub = detecdiv_hub_settings_get();
+            catch
+                hub = struct();
+            end
+            mappings = struct('remoteRoot', {}, 'localRoot', {});
+            try
+                mappings = getHubPathMappings(app, hub);
+            catch
+            end
+            try
+                if isfield(hub, 'defaultRemoteProjectRoot') && isfield(hub, 'defaultLocalProjectRoot') && ...
+                        ~isempty(hub.defaultRemoteProjectRoot) && ~isempty(hub.defaultLocalProjectRoot)
+                    mappings(end+1).remoteRoot = char(string(hub.defaultRemoteProjectRoot)); %#ok<AGROW>
+                    mappings(end).localRoot = char(string(hub.defaultLocalProjectRoot));
+                end
+            catch
+            end
+            remoteComparable = regexprep(strrep(remotePath, '\', '/'), '[\/]+$', '');
+            bestLen = 0;
+            bestLocalRoot = '';
+            bestSuffix = '';
+            for i = 1:numel(mappings)
+                try
+                    remoteRoot = regexprep(strrep(char(string(mappings(i).remoteRoot)), '\', '/'), '[\/]+$', '');
+                    localRoot = regexprep(strrep(char(string(mappings(i).localRoot)), '/', filesep), '[\\\/]+$', '');
+                    if isempty(remoteRoot) || isempty(localRoot)
+                        continue;
+                    end
+                    if startsWith(remoteComparable, remoteRoot) && ...
+                            (numel(remoteComparable) == numel(remoteRoot) || any(remoteComparable(numel(remoteRoot)+1) == ['/' '\']))
+                        if numel(remoteRoot) > bestLen
+                            bestLen = numel(remoteRoot);
+                            bestLocalRoot = localRoot;
+                            bestSuffix = remoteComparable(numel(remoteRoot)+1:end);
+                        end
+                    end
+                catch
+                end
+            end
+            if bestLen == 0
+                return;
+            end
+            bestSuffix = regexprep(bestSuffix, '^[\/\\]+', '');
+            if isempty(bestSuffix)
+                localPath = bestLocalRoot;
+            else
+                localPath = fullfile(bestLocalRoot, strrep(bestSuffix, '/', filesep));
             end
         end
 
@@ -448,6 +525,7 @@ classdef pipeline2 < matlab.apps.AppBase
             modules = appendModuleRows(app, modules, dataloadingModuleRows(app, rootDir));
             modules = appendModuleRows(app, modules, packageModuleRows(app, fullfile(rootDir, 'engine', 'processor'), 'processor'));
             modules = appendModuleRows(app, modules, packageModuleRows(app, fullfile(rootDir, 'engine', 'classification'), 'classifier'));
+            modules = appendModuleRows(app, modules, customPackageModuleRow(app));
 
             if isempty(modules)
                 modules = { ...
@@ -456,6 +534,10 @@ classdef pipeline2 < matlab.apps.AppBase
                     'roiExtract', 'roiExtract', '', 'Extract ROI H5 image stores' ...
                     };
             end
+        end
+
+        function rows = customPackageModuleRow(app) %#ok<INUSD>
+            rows = {'<custom pkg>', 'custom', '', 'Load an external processor/classifier package'};
         end
 
         function rootDir = repoRoot(app) %#ok<INUSD>
@@ -786,7 +868,10 @@ classdef pipeline2 < matlab.apps.AppBase
             app.RuninformationhereLabel.Text = ['Next module to add: ' app.AvailableModules{row,1}];
         end
 
-        function changeSelectedModuleType(app, nodeType, pkg)
+        function changeSelectedModuleType(app, nodeType, pkg, paramsPatch)
+            if nargin < 4
+                paramsPatch = struct();
+            end
             if isnan(app.SelectedNodeIndex) || app.SelectedNodeIndex < 1 || app.SelectedNodeIndex > numel(app.Data.nodes)
                 return;
             end
@@ -799,6 +884,7 @@ classdef pipeline2 < matlab.apps.AppBase
             node.func = defaultNodeFunction(app, nodeType, pkg);
             node.gui = defaultNodeGui(app, nodeType, pkg);
             node.params = applyRuntimeDefaultsToParams(app, nodeType, defaultNodeParams(app, nodeType, pkg));
+            node.params = mergeStructOverride(app, node.params, paramsPatch);
             node = pipelineNormalizeNodes(node, 'persist');
             [nodesAligned, node] = alignStructFieldsForAppend(app, app.Data.nodes, node);
             nodesAligned(app.SelectedNodeIndex) = node;
@@ -814,12 +900,17 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             nodeType = choice.type;
             pkg = choice.pkg;
-            addModuleOfType(app, nodeType, pkg);
+            paramsPatch = getField(app, choice, 'paramsPatch', struct());
+            addModuleOfType(app, nodeType, pkg, paramsPatch);
         end
 
-        function addModuleOfType(app, nodeType, pkg)
+        function addModuleOfType(app, nodeType, pkg, paramsPatch)
+            if nargin < 4
+                paramsPatch = struct();
+            end
             app.NodeCounter = app.NodeCounter + 1;
             node = makePipelineNode(app, nodeType, pkg, app.NodeCounter);
+            node.params = mergeStructOverride(app, node.params, paramsPatch);
 
             if isempty(app.Data.nodes)
                 node.layout = [1 1 1 1];
@@ -834,9 +925,12 @@ classdef pipeline2 < matlab.apps.AppBase
             refreshAfterModelChange(app);
         end
 
-        function addModuleAfterSelected(app, nodeType, pkg)
+        function addModuleAfterSelected(app, nodeType, pkg, paramsPatch)
+            if nargin < 4
+                paramsPatch = struct();
+            end
             if isnan(app.SelectedNodeIndex) || app.SelectedNodeIndex < 1 || app.SelectedNodeIndex > numel(app.Data.nodes)
-                addModuleOfType(app, nodeType, pkg);
+                addModuleOfType(app, nodeType, pkg, paramsPatch);
                 return;
             end
             targetCol = getLayoutCol(app, app.Data.nodes(app.SelectedNodeIndex)) + 1;
@@ -844,6 +938,7 @@ classdef pipeline2 < matlab.apps.AppBase
             shiftLayoutRowFromColumn(app, targetRow, targetCol);
             app.NodeCounter = app.NodeCounter + 1;
             node = makePipelineNode(app, nodeType, pkg, app.NodeCounter);
+            node.params = mergeStructOverride(app, node.params, paramsPatch);
             node.layout = [targetCol targetRow 1 1];
             app.Data.nodes = appendStruct(app, app.Data.nodes, node);
             app.SelectedNodeIndex = numel(app.Data.nodes);
@@ -853,7 +948,10 @@ classdef pipeline2 < matlab.apps.AppBase
             refreshAfterModelChange(app);
         end
 
-        function insertModuleBeforeSelected(app, nodeType, pkg)
+        function insertModuleBeforeSelected(app, nodeType, pkg, paramsPatch)
+            if nargin < 4
+                paramsPatch = struct();
+            end
             if isnan(app.SelectedNodeIndex) || app.SelectedNodeIndex < 1 || app.SelectedNodeIndex > numel(app.Data.nodes)
                 uialert(app.UIFigure, 'Select a module before inserting.', 'Insert module', 'Icon', 'info');
                 return;
@@ -865,12 +963,14 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
                 nodeType = choice.type;
                 pkg = choice.pkg;
+                paramsPatch = getField(app, choice, 'paramsPatch', struct());
             end
             targetCol = getLayoutCol(app, app.Data.nodes(app.SelectedNodeIndex));
             targetRow = getLayoutRow(app, app.Data.nodes(app.SelectedNodeIndex));
             shiftLayoutRowFromColumn(app, targetRow, targetCol);
             app.NodeCounter = app.NodeCounter + 1;
             node = makePipelineNode(app, nodeType, pkg, app.NodeCounter);
+            node.params = mergeStructOverride(app, node.params, paramsPatch);
             node.layout = [targetCol targetRow 1 1];
             app.Data.nodes = appendStruct(app, app.Data.nodes, node);
             app.SelectedNodeIndex = numel(app.Data.nodes);
@@ -954,6 +1054,16 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             nodeType = char(string(modules{row,2}));
             pkg = char(string(modules{row,3}));
+            if strcmpi(nodeType, 'custom')
+                choice = resolveCustomPackageChoice(app, 'Select custom package');
+                if isempty(choice)
+                    nodeType = '';
+                    pkg = '';
+                else
+                    nodeType = choice.type;
+                    pkg = choice.pkg;
+                end
+            end
         end
 
         function addModuleLibraryMenu(app, parentMenu, titleText, action)
@@ -983,15 +1093,25 @@ classdef pipeline2 < matlab.apps.AppBase
             action = char(string(getField(app, data, 'action', '')));
             nodeType = char(string(getField(app, data, 'nodeType', '')));
             pkg = char(string(getField(app, data, 'pkg', '')));
+            paramsPatch = struct();
+            if strcmpi(nodeType, 'custom')
+                choice = resolveCustomPackageChoice(app, 'Select custom package');
+                if isempty(choice)
+                    return;
+                end
+                nodeType = choice.type;
+                pkg = choice.pkg;
+                paramsPatch = getField(app, choice, 'paramsPatch', struct());
+            end
             switch action
                 case 'insert_after'
-                    addModuleAfterSelected(app, nodeType, pkg);
+                    addModuleAfterSelected(app, nodeType, pkg, paramsPatch);
                 case 'insert_before'
-                    insertModuleBeforeSelected(app, nodeType, pkg);
+                    insertModuleBeforeSelected(app, nodeType, pkg, paramsPatch);
                 case 'change_type'
-                    changeSelectedModuleType(app, nodeType, pkg);
+                    changeSelectedModuleType(app, nodeType, pkg, paramsPatch);
                 case 'add'
-                    addModuleOfType(app, nodeType, pkg);
+                    addModuleOfType(app, nodeType, pkg, paramsPatch);
             end
         end
 
@@ -1038,6 +1158,9 @@ classdef pipeline2 < matlab.apps.AppBase
                 case 'classifier'
                     key = 'classifier';
                     label = 'Classifier';
+                case 'custom'
+                    key = 'custom';
+                    label = 'Custom';
                 otherwise
                     key = char(string(nodeType));
                     label = char(string(nodeType));
@@ -1048,7 +1171,9 @@ classdef pipeline2 < matlab.apps.AppBase
             nodeType = char(string(app.AvailableModules{idx,2}));
             pkg = char(string(app.AvailableModules{idx,3}));
             name = char(string(app.AvailableModules{idx,1}));
-            if any(strcmpi(nodeType, {'roiPattern','roiManual','roiGrid','roiTracked'}))
+            if strcmpi(nodeType, 'custom')
+                label = name;
+            elseif any(strcmpi(nodeType, {'roiPattern','roiManual','roiGrid','roiTracked'}))
                 label = nodeType;
             elseif isempty(pkg)
                 label = name;
@@ -1071,6 +1196,10 @@ classdef pipeline2 < matlab.apps.AppBase
             if ~ok || isempty(idx)
                 return;
             end
+            if strcmpi(char(string(app.AvailableModules{idx,2})), 'custom')
+                choice = resolveCustomPackageChoice(app, titleText);
+                return;
+            end
             choice = struct( ...
                 'type', char(string(app.AvailableModules{idx,2})), ...
                 'pkg', char(string(app.AvailableModules{idx,3})));
@@ -1080,10 +1209,154 @@ classdef pipeline2 < matlab.apps.AppBase
             nodeType = char(string(app.AvailableModules{idx,2}));
             pkg = char(string(app.AvailableModules{idx,3}));
             name = char(string(app.AvailableModules{idx,1}));
-            if isempty(pkg)
+            if strcmpi(nodeType, 'custom')
+                label = name;
+            elseif isempty(pkg)
                 label = [name ' (' nodeType ')'];
             else
                 label = [name ' (' nodeType ' / ' pkg ')'];
+            end
+        end
+
+        function choice = resolveCustomPackageChoice(app, titleText)
+            choice = [];
+            startDir = pwd;
+            try
+                if ~isempty(app.CurrentProject) && isprop(app.CurrentProject, 'io') && ...
+                        isstruct(app.CurrentProject.io) && isfield(app.CurrentProject.io, 'path') && ...
+                        ~isempty(app.CurrentProject.io.path) && isfolder(app.CurrentProject.io.path)
+                    startDir = app.CurrentProject.io.path;
+                end
+            catch
+            end
+
+            selectedDir = uigetdir(startDir, 'Select custom package folder (+pkg)');
+            if isequal(selectedDir, 0)
+                return;
+            end
+
+            info = inspectCustomPackageFolder(app, selectedDir);
+            if isempty(info)
+                uialert(app.UIFigure, ...
+                    ['Select a MATLAB package folder named +pkg that contains process.m or classify.m, ' ...
+                     'or select a folder containing one or more +pkg folders.'], ...
+                    titleText, 'Icon', 'warning');
+                return;
+            end
+
+            if numel(info) > 1
+                labels = arrayfun(@(x) sprintf('%s (%s)', x.pkg, x.type), info, 'UniformOutput', false);
+                [idx, ok] = listdlg('PromptString', 'Choose package', ...
+                    'SelectionMode', 'single', ...
+                    'ListString', labels, ...
+                    'ListSize', [260 180], ...
+                    'Name', titleText);
+                if ~ok || isempty(idx)
+                    return;
+                end
+                info = info(idx);
+            end
+
+            if numel(info.types) > 1
+                [idx, ok] = listdlg('PromptString', ['Package ' info.pkg ' exposes multiple entry points.'], ...
+                    'SelectionMode', 'single', ...
+                    'ListString', info.types, ...
+                    'ListSize', [240 120], ...
+                    'Name', titleText);
+                if ~ok || isempty(idx)
+                    return;
+                end
+                info.type = info.types{idx};
+            else
+                info.type = info.types{1};
+            end
+
+            if ~contains(path, info.root)
+                addpath(info.root);
+            end
+            rehash;
+
+            app.AvailableModules = appendCustomModuleIfMissing(app, app.AvailableModules, info);
+            refreshAvailableModuleTable(app);
+
+            paramsPatch = struct( ...
+                'customPackageRoot', info.root, ...
+                'customPackageDir', info.packageDir, ...
+                'customPackageLoadedAt', char(datetime('now')));
+            choice = struct('type', info.type, 'pkg', info.pkg, 'paramsPatch', paramsPatch);
+        end
+
+        function info = inspectCustomPackageFolder(app, selectedDir) %#ok<INUSD>
+            info = struct('pkg', {}, 'root', {}, 'packageDir', {}, 'types', {}, 'type', {});
+            selectedDir = char(string(selectedDir));
+            if ~isfolder(selectedDir)
+                return;
+            end
+
+            [parentDir, folderName] = fileparts(selectedDir);
+            if startsWith(folderName, '+')
+                candidate = customPackageInfo(app, parentDir, selectedDir);
+                if ~isempty(candidate)
+                    info = candidate;
+                end
+                return;
+            end
+
+            dirs = dir(fullfile(selectedDir, '+*'));
+            dirs = dirs([dirs.isdir]);
+            for i = 1:numel(dirs)
+                candidateDir = fullfile(selectedDir, dirs(i).name);
+                candidate = customPackageInfo(app, selectedDir, candidateDir);
+                if ~isempty(candidate)
+                    info(end+1) = candidate; %#ok<AGROW>
+                end
+            end
+        end
+
+        function info = customPackageInfo(app, rootDir, packageDir) %#ok<INUSD>
+            info = [];
+            [~, folderName] = fileparts(packageDir);
+            if ~startsWith(folderName, '+')
+                return;
+            end
+            pkg = extractAfter(folderName, 1);
+            types = {};
+            if isfile(fullfile(packageDir, 'process.m'))
+                types{end+1} = 'processor'; %#ok<AGROW>
+            end
+            if isfile(fullfile(packageDir, 'classify.m'))
+                types{end+1} = 'classifier'; %#ok<AGROW>
+            end
+            if isempty(types)
+                return;
+            end
+            info = struct( ...
+                'pkg', char(string(pkg)), ...
+                'root', char(string(rootDir)), ...
+                'packageDir', char(string(packageDir)), ...
+                'types', {types}, ...
+                'type', types{1});
+        end
+
+        function modules = appendCustomModuleIfMissing(app, modules, info) %#ok<INUSD>
+            if isempty(modules)
+                modules = {};
+            end
+            exists = false;
+            try
+                for i = 1:size(modules, 1)
+                    nodeType = char(string(modules{i,2}));
+                    pkg = char(string(modules{i,3}));
+                    if strcmpi(nodeType, info.type) && strcmp(pkg, info.pkg)
+                        exists = true;
+                        break;
+                    end
+                end
+            catch
+            end
+            if ~exists
+                modules(end+1,:) = {info.pkg, info.type, info.pkg, ...
+                    ['Custom ' info.type ' package: ' info.packageDir]};
             end
         end
 
@@ -1346,7 +1619,34 @@ classdef pipeline2 < matlab.apps.AppBase
             if isempty(idx) || ~isscalar(idx)
                 return;
             end
-            selectNode(app, round(double(idx)));
+            idx = round(double(idx));
+            if graphShiftModifierActive(app) && ~isnan(app.SelectedNodeIndex) && ...
+                    app.SelectedNodeIndex >= 1 && app.SelectedNodeIndex <= numel(app.Data.nodes) && ...
+                    app.SelectedNodeIndex ~= idx
+                reconnectGraphNodes(app, app.SelectedNodeIndex, idx);
+                return;
+            end
+            selectNode(app, idx);
+        end
+
+        function tf = graphShiftModifierActive(app)
+            tf = false;
+            try
+                modifiers = app.UIFigure.CurrentModifier;
+                if ischar(modifiers) || isstring(modifiers)
+                    modifiers = cellstr(string(modifiers));
+                end
+                if iscell(modifiers) && any(strcmpi(modifiers, 'shift'))
+                    tf = true;
+                    return;
+                end
+            catch
+            end
+            try
+                tf = strcmpi(char(string(app.UIFigure.SelectionType)), 'extend');
+            catch
+                tf = false;
+            end
         end
 
         function GraphAddModuleButtonDown(app, event) %#ok<INUSD>
@@ -1622,6 +1922,205 @@ classdef pipeline2 < matlab.apps.AppBase
             redrawGraph(app);
             selectExistingModuleTab(app, node);
             updateCommonControlsEnableState(app);
+        end
+
+        function reconnectGraphNodes(app, srcIdx, dstIdx)
+            if srcIdx < 1 || srcIdx > numel(app.Data.nodes) || dstIdx < 1 || dstIdx > numel(app.Data.nodes)
+                return;
+            end
+            if srcIdx == dstIdx
+                selectNode(app, dstIdx);
+                return;
+            end
+
+            srcNode = app.Data.nodes(srcIdx);
+            dstNode = app.Data.nodes(dstIdx);
+            srcId = char(string(getField(app, srcNode, 'id', '')));
+            dstId = char(string(getField(app, dstNode, 'id', '')));
+            [edge, ok, msg] = preferredGraphEdge(app, srcNode, dstNode);
+            if ~ok
+                uialert(app.UIFigure, msg, 'Reconnect modules', 'Icon', 'warning');
+                return;
+            end
+
+            app.Data.edges = replaceTargetInputEdge(app, app.Data.edges, edge);
+            app.Data.edges = appendStruct(app, app.Data.edges, edge);
+            bindingCount = applyResourceBindingsFromSource(app, srcId, dstId);
+            alignTargetNodeAfterSource(app, srcId, dstId);
+
+            targetIdx = find(strcmp({app.Data.nodes.id}, dstId), 1);
+            if isempty(targetIdx)
+                targetIdx = min(dstIdx, numel(app.Data.nodes));
+            end
+            app.SelectedNodeIndex = targetIdx;
+            refreshAfterModelChange(app);
+
+            detail = sprintf('Reconnected %s -> %s', srcId, dstId);
+            if bindingCount > 0
+                detail = sprintf('%s (%d symbolic binding(s) updated)', detail, bindingCount);
+            end
+            app.RuninformationhereLabel.Text = detail;
+        end
+
+        function [edge, ok, msg] = preferredGraphEdge(app, srcNode, dstNode)
+            edge = struct('from','','to','','fromPort','','toPort','','condition','');
+            ok = false;
+            msg = '';
+            srcId = char(string(getField(app, srcNode, 'id', '')));
+            dstId = char(string(getField(app, dstNode, 'id', '')));
+            try
+                srcContract = pipelineNodeContract(srcNode);
+                dstContract = pipelineNodeContract(dstNode);
+                srcOut = getField(app, srcContract, 'out', struct([]));
+                dstIn = getField(app, dstContract, 'in', struct([]));
+            catch ME
+                msg = ['Cannot inspect module contracts: ' ME.message];
+                return;
+            end
+            [fromPort, toPort] = preferredCompatiblePortPair(app, srcOut, dstIn);
+            if isempty(fromPort) || isempty(toPort)
+                msg = sprintf('No compatible graph port from %s to %s.', srcId, dstId);
+                return;
+            end
+            edge = struct( ...
+                'from', srcId, ...
+                'to', dstId, ...
+                'fromPort', fromPort, ...
+                'toPort', toPort, ...
+                'condition', '');
+            ok = true;
+        end
+
+        function [fromPort, toPort] = preferredCompatiblePortPair(app, srcOut, dstIn)
+            fromPort = '';
+            toPort = '';
+            bestScore = -Inf;
+            for i = 1:numel(srcOut)
+                outType = char(string(getField(app, srcOut(i), 'type', '')));
+                outName = char(string(getField(app, srcOut(i), 'name', '')));
+                for j = 1:numel(dstIn)
+                    inType = char(string(getField(app, dstIn(j), 'type', '')));
+                    inName = char(string(getField(app, dstIn(j), 'name', '')));
+                    if ~compatiblePortTypes(app, outType, inType)
+                        continue;
+                    end
+                    score = 1;
+                    if strcmpi(outType, inType)
+                        score = score + 10;
+                    end
+                    if strcmpi(outName, inName)
+                        score = score + 5;
+                    end
+                    if ~strcmpi(outType, 'roiList') && ~strcmpi(inType, 'roiList')
+                        score = score + 20;
+                    end
+                    if logical(getField(app, dstIn(j), 'required', false))
+                        score = score + 1;
+                    end
+                    if score > bestScore
+                        bestScore = score;
+                        fromPort = outName;
+                        toPort = inName;
+                    end
+                end
+            end
+        end
+
+        function edges = replaceTargetInputEdge(app, edges, edge)
+            if isempty(edges)
+                edges = struct('from',{},'to',{},'fromPort',{},'toPort',{},'condition',{});
+                return;
+            end
+            dstId = char(string(edge.to));
+            toPort = char(string(edge.toPort));
+            keep = true(size(edges));
+            for i = 1:numel(edges)
+                if strcmpi(char(string(getField(app, edges(i), 'condition', ''))), 'resourceBinding')
+                    continue;
+                end
+                sameTargetPort = strcmp(char(string(getField(app, edges(i), 'to', ''))), dstId) && ...
+                    strcmp(char(string(getField(app, edges(i), 'toPort', ''))), toPort);
+                sameExplicitEdge = sameTargetPort && ...
+                    strcmp(char(string(getField(app, edges(i), 'from', ''))), char(string(edge.from))) && ...
+                    strcmp(char(string(getField(app, edges(i), 'fromPort', ''))), char(string(edge.fromPort)));
+                if sameTargetPort || sameExplicitEdge
+                    keep(i) = false;
+                end
+            end
+            edges = edges(keep);
+        end
+
+        function count = applyResourceBindingsFromSource(app, srcId, dstId)
+            count = 0;
+            srcIdx = find(strcmp({app.Data.nodes.id}, srcId), 1);
+            dstIdx = find(strcmp({app.Data.nodes.id}, dstId), 1);
+            if isempty(srcIdx) || isempty(dstIdx)
+                return;
+            end
+            try
+                srcContract = pipelineNodeContract(app.Data.nodes(srcIdx));
+                dstContract = pipelineNodeContract(app.Data.nodes(dstIdx));
+            catch
+                return;
+            end
+            srcSpecs = getField(app, getField(app, srcContract, 'resources', struct()), 'out', struct([]));
+            dstSpecs = getField(app, getField(app, dstContract, 'resources', struct()), 'in', struct([]));
+            if isempty(srcSpecs) || isempty(dstSpecs)
+                return;
+            end
+            for i = 1:numel(dstSpecs)
+                param = char(string(getField(app, dstSpecs(i), 'param', '')));
+                if isempty(param)
+                    continue;
+                end
+                [value, ok] = symbolicBindingFromSourceResource(app, srcId, srcSpecs, dstSpecs(i));
+                if ~ok
+                    continue;
+                end
+                setNodeInputBindingValue(app, dstId, param, value);
+                count = count + 1;
+            end
+        end
+
+        function [value, ok] = symbolicBindingFromSourceResource(app, srcId, srcSpecs, dstSpec)
+            value = '';
+            ok = false;
+            wantedType = lower(char(string(getField(app, dstSpec, 'type', ''))));
+            wantedRole = lower(char(string(getField(app, dstSpec, 'role', ''))));
+            for i = 1:numel(srcSpecs)
+                outType = lower(char(string(getField(app, srcSpecs(i), 'type', ''))));
+                outRole = lower(char(string(getField(app, srcSpecs(i), 'role', ''))));
+                if ~resourceSpecCompatibleForUi(app, wantedType, wantedRole, outType, outRole)
+                    continue;
+                end
+                if isempty(outRole)
+                    outRole = wantedRole;
+                end
+                value = ['@resource:' char(string(outRole)) ':' char(string(srcId))];
+                ok = true;
+                return;
+            end
+        end
+
+        function alignTargetNodeAfterSource(app, srcId, dstId)
+            srcIdx = find(strcmp({app.Data.nodes.id}, srcId), 1);
+            dstIdx = find(strcmp({app.Data.nodes.id}, dstId), 1);
+            if isempty(srcIdx) || isempty(dstIdx)
+                return;
+            end
+            srcCol = getLayoutCol(app, app.Data.nodes(srcIdx));
+            srcRow = getLayoutRow(app, app.Data.nodes(srcIdx));
+            dstCol = getLayoutCol(app, app.Data.nodes(dstIdx));
+            desiredCol = max(srcCol + 1, dstCol);
+            if desiredCol ~= dstCol || getLayoutRow(app, app.Data.nodes(dstIdx)) ~= srcRow
+                shiftLayoutRowFromColumn(app, srcRow, desiredCol);
+                dstIdx = find(strcmp({app.Data.nodes.id}, dstId), 1);
+                if isempty(dstIdx)
+                    return;
+                end
+                app.Data.nodes(dstIdx).layout = [desiredCol srcRow 1 1];
+            end
+            app.Data.nodes = sortNodesByLayout(app, app.Data.nodes);
         end
 
         function selectTypeControlsForNode(app, node)
@@ -2182,7 +2681,8 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function addRuntimeProjectRow(app, grid, row)
-            label = uilabel(grid, 'Text', 'Project');
+            label = uilabel(grid, 'Text', 'Project / target');
+            label.Tooltip = 'Existing project mode: source project. Raw data mode: target project that receives loaded FOVs, ROIs and outputs.';
             label.Layout.Row = row;
             label.Layout.Column = 1;
 
@@ -2190,7 +2690,7 @@ classdef pipeline2 < matlab.apps.AppBase
             field.Layout.Row = row;
             field.Layout.Column = 2;
             try
-                field.Placeholder = 'Current shallow project .mat';
+                field.Placeholder = 'Existing project source or raw-run target .mat';
             catch
             end
             field.ValueChangedFcn = @(src,~)runtimeFieldChanged(app, 'projectPath', src.Value);
@@ -2223,11 +2723,11 @@ classdef pipeline2 < matlab.apps.AppBase
             dd = uidropdown(grid);
             dd.Layout.Row = row;
             dd.Layout.Column = [2 4];
-            dd.Items = {'Existing project ROIs','Raw data via dataloader'};
+            dd.Items = {'Existing project ROIs','Raw data -> target project'};
             dd.ItemsData = {'existing_rois','raw_dataloader'};
             dd.Value = 'existing_rois';
             dd.Tooltip = ['Existing project ROIs uses channels/dataseries already present in the shallow project. ' ...
-                'Raw data via dataloader enables dataloader, ROI definition and roiExtract modules.'];
+                'Raw data -> target project uses the raw parser as the authority for FOV/frame/channel inventory, then writes into the selected project.'];
             dd.ValueChangedFcn = @(src,~)runtimeFieldChanged(app, 'inputSourceMode', src.Value);
 
             app.RuntimeFieldHandles.inputSourceMode = dd;
@@ -2661,11 +3161,17 @@ classdef pipeline2 < matlab.apps.AppBase
             cleanupObj = onCleanup(@()setRuntimeInventoryRefreshSuspended(app, false)); %#ok<NASGU>
             [pth, file] = shallowObj.getPath;
             setRuntimeValuePreserveParse(app, 'projectPath', fullfile(pth, [file '.mat']));
-            refreshRuntimeFromProject(app);
+            if runtimeStartsFromExistingProject(app)
+                refreshRuntimeFromProject(app);
+            else
+                refreshRawRuntimeAfterProjectBind(app);
+            end
             app.RuntimeInventoryRefreshSuspended = false;
             updateRuntimeResourceInventory(app);
             if runtimeStartsFromExistingProject(app)
                 disableRawPrepNodesInRunTable(app);
+            else
+                enableRawPrepNodesInRunTable(app);
             end
             refreshProjectDropdown(app);
             updateRuntimeInputStates(app);
@@ -2678,6 +3184,25 @@ classdef pipeline2 < matlab.apps.AppBase
                     app.RuninformationhereLabel.Text = ['Pipeline loaded with latest run: ' char(string(app.CurrentRun.runId))];
                 catch
                 end
+            end
+        end
+
+        function refreshRawRuntimeAfterProjectBind(app)
+            rawPath = strtrim(getRuntimeValue(app, 'rawDataPath'));
+            if isempty(rawPath) && isfield(app.RuntimeValues, 'rawDataPathActive')
+                rawPath = strtrim(char(string(app.RuntimeValues.rawDataPathActive)));
+            end
+            if isempty(rawPath)
+                return;
+            end
+            setRuntimeControlValue(app, 'rawDataPath', rawPath);
+            app.RuntimeValues.rawDataPath = rawPath;
+            app.RuntimeValues.rawDataPathActive = rawPath;
+            if isfield(app.RuntimeParseInfo, 'path') && strcmp(char(string(app.RuntimeParseInfo.path)), rawPath) && ...
+                    isfield(app.RuntimeParseInfo, 'ok') && app.RuntimeParseInfo.ok
+                applyRuntimeParseInfo(app, app.RuntimeParseInfo);
+            else
+                parseRuntimeRawDataPath(app, rawPath);
             end
         end
 
@@ -2750,37 +3275,111 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
             sourcePath = candidates{1};
-            if numel(candidates) > 1
-                sourcePath = [sourcePath sprintf('  (+%d other source paths)', numel(candidates)-1)];
-            end
         end
 
-        function candidates = fovSourcePathCandidates(app, f) %#ok<INUSD>
+        function candidates = fovSourcePathCandidates(app, f)
             candidates = {};
-            propNames = {'omeZarrPath','ndtiffPath','srcpath','tiffSource'};
-            for i = 1:numel(propNames)
-                p = propNames{i};
-                try
-                    if isprop(f, p) && ~isempty(f.(p))
-                        candidates{end+1} = char(string(f.(p))); %#ok<AGROW>
-                    end
-                catch
-                end
-            end
+            candidates = [candidates sourcePathCandidatesFromProperty(app, f, 'omeZarrPath', false)]; %#ok<AGROW>
+            candidates = [candidates sourcePathCandidatesFromProperty(app, f, 'ndtiffPath', false)]; %#ok<AGROW>
+            candidates = [candidates sourcePathCandidatesFromProperty(app, f, 'srcpath', false)]; %#ok<AGROW>
+            candidates = [candidates sourcePathCandidatesFromProperty(app, f, 'tiffSource', true)]; %#ok<AGROW>
             try
                 if isprop(f, 'srclist') && iscell(f.srclist) && ~isempty(f.srclist)
                     for ch = 1:numel(f.srclist)
                         if isempty(f.srclist{ch})
                             continue;
                         end
-                        first = f.srclist{ch}{1};
-                        if ischar(first) || isstring(first)
-                            [pth, ~, ~] = fileparts(char(string(first)));
-                            candidates{end+1} = pth; %#ok<AGROW>
-                        end
+                        candidates = [candidates sourcePathCandidatesFromValue(app, f.srclist{ch}, true)]; %#ok<AGROW>
                     end
                 end
             catch
+            end
+        end
+
+        function candidates = sourcePathCandidatesFromProperty(app, obj, propName, valueIsFile)
+            candidates = {};
+            try
+                if ~isprop(obj, propName) || isempty(obj.(propName))
+                    return;
+                end
+                candidates = sourcePathCandidatesFromValue(app, obj.(propName), valueIsFile);
+            catch
+                candidates = {};
+            end
+        end
+
+        function candidates = sourcePathCandidatesFromValue(app, value, valueIsFile) %#ok<INUSD>
+            candidates = {};
+            if isempty(value)
+                return;
+            end
+            if iscell(value)
+                for i = 1:numel(value)
+                    candidates = [candidates sourcePathCandidatesFromValue(app, value{i}, valueIsFile)]; %#ok<AGROW>
+                end
+                return;
+            end
+            if ischar(value)
+                if isrow(value)
+                    values = {value};
+                else
+                    values = cellstr(value);
+                end
+                for i = 1:numel(values)
+                    item = strtrim(values{i});
+                    if isempty(item)
+                        continue;
+                    end
+                    candidates{end+1} = normalizeSourcePathValue(app, item, valueIsFile); %#ok<AGROW>
+                end
+                return;
+            end
+            if isstring(value)
+                values = cellstr(value(:));
+                for i = 1:numel(values)
+                    item = strtrim(values{i});
+                    if isempty(item)
+                        continue;
+                    end
+                    candidates{end+1} = normalizeSourcePathValue(app, item, valueIsFile); %#ok<AGROW>
+                end
+                return;
+            end
+            if isstruct(value)
+                for i = 1:numel(value)
+                    if isfield(value, 'folder') && isfield(value, 'name') && ~isempty(value(i).folder)
+                        item = fullfile(char(string(value(i).folder)), char(string(value(i).name)));
+                    elseif isfield(value, 'name') && ~isempty(value(i).name)
+                        item = char(string(value(i).name));
+                    else
+                        continue;
+                    end
+                    candidates{end+1} = normalizeSourcePathValue(app, item, true); %#ok<AGROW>
+                end
+                return;
+            end
+            try
+                item = strtrim(char(string(value)));
+                if ~isempty(item)
+                    candidates{end+1} = normalizeSourcePathValue(app, item, valueIsFile); %#ok<AGROW>
+                end
+            catch
+            end
+        end
+
+        function item = normalizeSourcePathValue(app, item, valueIsFile) %#ok<INUSD>
+            item = strtrim(char(string(item)));
+            if isempty(item)
+                return;
+            end
+            if valueIsFile
+                if exist(item, 'dir') == 7
+                    return;
+                end
+                [pth, ~, ~] = fileparts(item);
+                if ~isempty(pth)
+                    item = pth;
+                end
             end
         end
 
@@ -3100,17 +3699,23 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
             if ~runtimeStartsFromExistingProject(app)
-                lines = {'Raw data parser inventory:'};
+                lines = {'Authority: raw data parser'};
+                projectPath = getRuntimeValue(app, 'projectPath');
+                if isempty(strtrim(projectPath))
+                    lines{end+1} = 'Target project: not selected yet';
+                else
+                    lines{end+1} = ['Target project: ' projectPath];
+                end
                 rawPath = getRuntimeValue(app, 'rawDataPath');
                 if isempty(strtrim(rawPath))
-                    lines{end+1} = 'Raw data: not selected';
+                    lines{end+1} = 'Raw data source: not selected';
                     lines{end+1} = 'FOVs: unresolved';
                     lines{end+1} = 'Frames: unresolved';
                     lines{end+1} = 'Channels: unresolved';
                     app.RuntimeFieldHandles.availableResources.Value = lines;
                     return;
                 end
-                lines{end+1} = ['Raw data: ' rawPath];
+                lines{end+1} = ['Raw data source: ' rawPath];
                 if isfield(app.RuntimeParseInfo, 'ok') && ~app.RuntimeParseInfo.ok
                     msg = '';
                     if isfield(app.RuntimeParseInfo, 'message')
@@ -3132,7 +3737,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
                 channels = runtimeConcreteChannels(app);
                 if isempty(channels)
-                    lines{end+1} = 'Channels: none detected yet';
+                    lines{end+1} = 'Channels: none detected by raw parser';
                 else
                     lines{end+1} = ['Channels: ' strjoin(channels, ', ')];
                 end
@@ -3141,16 +3746,27 @@ classdef pipeline2 < matlab.apps.AppBase
             end
 
             channels = runtimeConcreteChannels(app);
+            maskNames = runtimeMaskChoices(app);
             dataSeriesNames = {};
             try
                 dataSeriesNames = runtimeDataSeriesNames(app);
             catch
                 dataSeriesNames = {};
             end
+            lines = {'Authority: selected project'};
+            projectPath = getRuntimeValue(app, 'projectPath');
+            if ~isempty(strtrim(projectPath))
+                lines{end+1} = ['Project source: ' projectPath];
+            end
             if isempty(channels)
                 channelText = 'Channels: none detected yet';
             else
                 channelText = ['Channels: ' strjoin(channels, ', ')];
+            end
+            if isempty(maskNames)
+                maskText = 'Masks: none detected yet';
+            else
+                maskText = ['Masks: ' strjoin(maskNames, ', ')];
             end
             if isempty(dataSeriesNames)
                 dsText = 'Data series: none detected yet';
@@ -3166,7 +3782,7 @@ classdef pipeline2 < matlab.apps.AppBase
                         max(1, app.RuntimeDataSeriesCache.sampledFovCount))];
                 end
             end
-            app.RuntimeFieldHandles.availableResources.Value = {channelText; dsText};
+            app.RuntimeFieldHandles.availableResources.Value = [lines(:); {channelText; maskText; dsText}];
         end
 
         function syncRuntimeValueToNodeParams(app, key)
@@ -3230,6 +3846,17 @@ classdef pipeline2 < matlab.apps.AppBase
             rawDataPath = strtrim(getRuntimeValue(app, 'rawDataPath'));
             rawOk = ~isempty(rawDataPath) && exist(rawDataPath, 'dir') == 7;
             startsFromProject = runtimeStartsFromExistingProject(app);
+
+            try
+                if startsFromProject
+                    app.RuntimeFieldHandles.projectPath.Tooltip = 'Authority: this project supplies existing FOVs, ROIs, channels and dataseries.';
+                    app.RuntimeFieldHandles.rawDataPath.Tooltip = 'Read-only source path inferred from the selected project when available.';
+                else
+                    app.RuntimeFieldHandles.projectPath.Tooltip = 'Target project: dataloader/ROI extraction/write outputs here.';
+                    app.RuntimeFieldHandles.rawDataPath.Tooltip = 'Authority: raw parser supplies FOV/frame/channel inventory for this run.';
+                end
+            catch
+            end
 
             if ~isempty(projectPath) && ~projectOk
                 markRuntimeField(app, 'projectPath', 'missing', 'Project must be an existing folder or project .mat file.');
@@ -3313,6 +3940,40 @@ classdef pipeline2 < matlab.apps.AppBase
                     return;
                 end
             end
+        end
+
+        function tf = selectedRunHasNodeType(app, nodeType)
+            tf = false;
+            ids = selectedRunNodeIds(app);
+            for i = 1:numel(ids)
+                idx = find(strcmp({app.Data.nodes.id}, ids{i}), 1);
+                if isempty(idx)
+                    continue;
+                end
+                if strcmpi(char(string(getField(app, app.Data.nodes(idx), 'type', ''))), nodeType)
+                    tf = true;
+                    return;
+                end
+            end
+        end
+
+        function tf = selectedRunNeedsChannels(app)
+            tf = selectedRunHasNodeType(app, 'roiExtract') || ...
+                selectedRunHasNodeType(app, 'classifier') || ...
+                selectedRunHasNodeType(app, 'processor');
+        end
+
+        function tf = rawParserIsCurrent(app, rawDataPath)
+            tf = false;
+            if ~isfield(app.RuntimeParseInfo, 'path') || isempty(app.RuntimeParseInfo.path)
+                return;
+            end
+            tf = strcmp(char(string(app.RuntimeParseInfo.path)), char(string(rawDataPath))) && ...
+                isfield(app.RuntimeParseInfo, 'ok') && logical(app.RuntimeParseInfo.ok);
+        end
+
+        function tf = rawParserHasNoChannels(app)
+            tf = isempty(runtimeConcreteChannels(app));
         end
 
         function setRefreshingTabs(app, value)
@@ -3532,6 +4193,11 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function buildRoiDefinitionModuleTab(app, parentTab, node)
             bindingData = bindingTableData(app, node);
+            nodeType = lower(char(string(getField(app, node, 'type', ''))));
+            if strcmp(nodeType, 'roitracked') && ~isempty(bindingData)
+                keep = ~strcmp(cellstr(string(bindingData(:,3))), 'extractChannels');
+                bindingData = bindingData(keep, :);
+            end
             showBindings = ~isempty(bindingData);
             rowCount = 2 * double(showBindings) + 2;
             grid = uigridlayout(parentTab, [rowCount 1]);
@@ -3561,7 +4227,7 @@ classdef pipeline2 < matlab.apps.AppBase
 
             body = uipanel(grid, 'BorderType', 'none');
             body.Layout.Row = row + 1;
-            switch lower(char(string(getField(app, node, 'type', ''))))
+            switch nodeType
                 case {'roipattern','roiidentify'}
                     buildRoiPatternTab(app, body, node);
                 case 'roigrid'
@@ -3693,8 +4359,8 @@ classdef pipeline2 < matlab.apps.AppBase
             grid.Padding = [12 12 12 12];
             grid.RowSpacing = 10;
 
-            headerBar = uigridlayout(grid, [1 3]);
-            headerBar.ColumnWidth = {'1x', 110, 90};
+            headerBar = uigridlayout(grid, [1 4]);
+            headerBar.ColumnWidth = {'1x', 130, 100, 90};
             headerBar.RowHeight = {28};
             headerBar.Padding = [0 0 0 0];
             headerBar.ColumnSpacing = 8;
@@ -3705,15 +4371,20 @@ classdef pipeline2 < matlab.apps.AppBase
             header.Layout.Row = 1;
             header.Layout.Column = 1;
 
-            refreshBtn = uibutton(headerBar, 'push', 'Text', 'Refresh', ...
+            defaultsBtn = uibutton(headerBar, 'push', 'Text', 'Refresh defaults', ...
+                'ButtonPushedFcn', @(~,~)app.refreshModuleDefaultsAndDialog(fig, nodeId));
+            defaultsBtn.Layout.Row = 1;
+            defaultsBtn.Layout.Column = 2;
+
+            refreshBtn = uibutton(headerBar, 'push', 'Text', 'Refresh UI', ...
                 'ButtonPushedFcn', @(~,~)app.refreshStaticParametersDialog(fig, nodeId));
             refreshBtn.Layout.Row = 1;
-            refreshBtn.Layout.Column = 2;
+            refreshBtn.Layout.Column = 3;
 
             closeBtn = uibutton(headerBar, 'push', 'Text', 'Close', ...
                 'ButtonPushedFcn', @(~,~)delete(fig));
             closeBtn.Layout.Row = 1;
-            closeBtn.Layout.Column = 3;
+            closeBtn.Layout.Column = 4;
 
             bodyPanel = uipanel(grid, 'BorderType', 'none');
             bodyPanel.Layout.Row = 2;
@@ -3721,7 +4392,8 @@ classdef pipeline2 < matlab.apps.AppBase
                 bodyPanel.Scrollable = 'on';
             catch
             end
-            fig.UserData = struct('nodeId', nodeId, 'bodyPanel', bodyPanel, 'refreshButton', refreshBtn);
+            fig.UserData = struct('nodeId', nodeId, 'bodyPanel', bodyPanel, ...
+                'refreshButton', refreshBtn, 'defaultsButton', defaultsBtn);
             populateStaticParametersDialogBody(app, bodyPanel, nodeId);
 
             hint = uilabel(grid, 'Text', staticParametersDialogHint(app, node), ...
@@ -3789,6 +4461,99 @@ classdef pipeline2 < matlab.apps.AppBase
             populateStaticParametersDialogBody(app, bodyPanel, nodeId);
             resizeStaticParametersDialog(app, fig, app.Data.nodes(idx));
             drawnow limitrate;
+        end
+
+        function refreshModuleDefaultsAndDialog(app, fig, nodeId)
+            if isempty(fig) || ~isvalid(fig)
+                return;
+            end
+            idx = find(strcmp({app.Data.nodes.id}, nodeId), 1);
+            if isempty(idx)
+                return;
+            end
+            d = openRuntimeProgress(app, 'Static parameters', 'Refreshing module defaults...');
+            btn = [];
+            try
+                if isstruct(fig.UserData) && isfield(fig.UserData, 'defaultsButton') && isvalid(fig.UserData.defaultsButton)
+                    btn = fig.UserData.defaultsButton;
+                    btn.Enable = 'off';
+                end
+            catch
+                btn = [];
+            end
+            cleanupObj = onCleanup(@()finishStaticParameterRefresh(app, d, btn, captureTabFocus(app))); %#ok<NASGU>
+            try
+                [added, updated] = refreshNodeDefaultsFromModule(app, idx);
+                markPipelineDirty(app, true);
+                updateRuntimeProgress(app, d, sprintf('Added %d missing default(s).', added));
+                refreshModuleTabs(app);
+                refreshValidationReport(app);
+                populateStaticParametersDialogBody(app, fig.UserData.bodyPanel, nodeId);
+                resizeStaticParametersDialog(app, fig, app.Data.nodes(idx));
+                if added == 0 && updated == 0
+                    app.RuninformationhereLabel.Text = ['Module defaults already current: ' nodeId];
+                else
+                    app.RuninformationhereLabel.Text = sprintf('Module defaults refreshed for %s: %d field(s) added.', nodeId, added);
+                end
+            catch ME
+                uialert(app.UIFigure, ME.message, 'Refresh module defaults', 'Icon', 'error');
+            end
+            drawnow limitrate;
+        end
+
+        function [added, updated] = refreshNodeDefaultsFromModule(app, idx)
+            added = 0;
+            updated = 0;
+            if idx < 1 || idx > numel(app.Data.nodes)
+                return;
+            end
+            node = app.Data.nodes(idx);
+            nodeType = char(string(getField(app, node, 'type', '')));
+            pkg = char(string(getField(app, node, 'pkg', '')));
+            if ~isfield(node, 'params') || ~isstruct(node.params)
+                node.params = struct();
+            end
+            app.ensureCustomPackagePathForNode(node);
+            defaults = defaultNodeParams(app, nodeType, pkg);
+            if ~isstruct(defaults) || isempty(fieldnames(defaults))
+                return;
+            end
+            before = fieldnames(node.params);
+            node.params = mergeStructDefaults(app, node.params, defaults);
+            after = fieldnames(node.params);
+            added = numel(setdiff(after, before));
+            app.Data.nodes(idx) = alignNodeForAssignment(app, app.Data.nodes(idx), node);
+            updated = added;
+        end
+
+        function ensureCustomPackagePathForNode(app, node) %#ok<INUSD>
+            try
+                p = getField(app, node, 'params', struct());
+                if isstruct(p) && isfield(p, 'customPackageRoot') && ~isempty(p.customPackageRoot)
+                    root = char(string(p.customPackageRoot));
+                    if isfolder(root) && ~contains(path, root)
+                        addpath(root);
+                        rehash;
+                    end
+                end
+            catch
+            end
+        end
+
+        function node = alignNodeForAssignment(app, oldNode, node) %#ok<INUSD>
+            oldFields = fieldnames(oldNode);
+            newFields = fieldnames(node);
+            for i = 1:numel(oldFields)
+                if ~isfield(node, oldFields{i})
+                    node.(oldFields{i}) = oldNode.(oldFields{i});
+                end
+            end
+            for i = 1:numel(newFields)
+                if ~isfield(oldNode, newFields{i})
+                    oldNode.(newFields{i}) = node.(newFields{i});
+                end
+            end
+            node = orderfields(node, oldNode);
         end
 
         function finishStaticParameterRefresh(app, progressDlg, refreshBtn, focus)
@@ -3928,6 +4693,9 @@ classdef pipeline2 < matlab.apps.AppBase
             expected = char(string(getField(app, node, 'pkg', '')));
             if ~isstruct(p) || ~isfield(p, 'modulePath') || isempty(p.modulePath)
                 txt = ['No linked classifier object. Expected package: ' expected];
+                if strcmpi(expected, 'cellposesam')
+                    txt = [txt '. Default model will be used.'];
+                end
                 return;
             end
             modulePath = char(string(p.modulePath));
@@ -4443,8 +5211,8 @@ classdef pipeline2 < matlab.apps.AppBase
             nodeId = char(string(getField(app, node, 'id', '')));
             runtimeData = paramsToTableData(app, node, 'runtime');
 
-            grid = uigridlayout(parentTab, [4 1]);
-            grid.RowHeight = {52, 32, 24, '1x'};
+            grid = uigridlayout(parentTab, [6 1]);
+            grid.RowHeight = {64, 32, 24, 190, 24, '1x'};
             grid.ColumnWidth = {'1x'};
             grid.Padding = [12 10 12 12];
             grid.RowSpacing = 8;
@@ -4457,40 +5225,179 @@ classdef pipeline2 < matlab.apps.AppBase
             catch
             end
 
-            actions = uigridlayout(grid, [1 3]);
+            actions = uigridlayout(grid, [1 2]);
             actions.RowHeight = {28};
-            actions.ColumnWidth = {180, 120, '1x'};
+            actions.ColumnWidth = {120, '1x'};
             actions.Padding = [0 0 0 0];
             actions.ColumnSpacing = 8;
             actions.Layout.Row = 2;
 
-            editBtn = uibutton(actions, 'push', 'Text', 'Open tracked ROI editor...', ...
-                'ButtonPushedFcn', @(~,~)openRoiDefinitionEditor(app, nodeId));
-            editBtn.Layout.Row = 1;
-            editBtn.Layout.Column = 1;
-
             resetBtn = uibutton(actions, 'push', 'Text', 'Reset defaults', ...
                 'ButtonPushedFcn', @(~,~)resetRoiDefinitionParams(app, nodeId));
             resetBtn.Layout.Row = 1;
-            resetBtn.Layout.Column = 2;
+            resetBtn.Layout.Column = 1;
 
-            hint = uilabel(actions, 'Text', 'This module remains validated by bindings; the editor only completes module-specific settings.', ...
+            hint = uilabel(actions, 'Text', 'Tracked ROIs are generated from the bound mask; no manual ROI drawing step is required.', ...
                 'FontColor', [0.35 0.35 0.35], 'Interpreter', 'none');
             hint.Layout.Row = 1;
-            hint.Layout.Column = 3;
+            hint.Layout.Column = 2;
+
+            extractLabel = uilabel(grid, 'Text', 'ROI crop extraction channels');
+            extractLabel.FontWeight = 'bold';
+            extractLabel.Layout.Row = 3;
+
+            extractSection = buildRoiTrackedExtractChannelSection(app, grid, node);
+            extractSection.Layout.Row = 4;
 
             runtimeLabel = uilabel(grid, 'Text', 'Runtime parameters');
             runtimeLabel.FontWeight = 'bold';
-            runtimeLabel.Layout.Row = 3;
+            runtimeLabel.Layout.Row = 5;
 
             if isempty(runtimeData)
                 msg = uilabel(grid, 'Text', 'No runtime parameter is declared for this tracked ROI module.', ...
                     'FontAngle', 'italic', 'FontColor', [0.35 0.35 0.35]);
-                msg.Layout.Row = 4;
+                msg.Layout.Row = 6;
             else
                 section = buildParamSection(app, grid, runtimeData, node, app.Data.runMode, 'runtime');
-                section.Layout.Row = 4;
+                section.Layout.Row = 6;
             end
+        end
+
+        function grid = buildRoiTrackedExtractChannelSection(app, parent, node)
+            nodeId = char(string(getField(app, node, 'id', '')));
+            channels = roiExtractAvailableChannels(app);
+            useAllChannels = roiTrackedUsesAllExtractChannels(app, node);
+            hasInventory = ~isempty(channels);
+            if ~hasInventory
+                channels = {'<no channel inventory>'};
+                useAllChannels = true;
+            end
+
+            grid = uigridlayout(parent, [3 3]);
+            grid.RowHeight = {28, 132, 22};
+            grid.ColumnWidth = {96, 170, '1x'};
+            grid.Padding = [0 0 0 0];
+            grid.RowSpacing = 6;
+            grid.ColumnSpacing = 8;
+
+            dirLabel = uilabel(grid, 'Text', 'Output crops');
+            dirLabel.Layout.Row = 1;
+            dirLabel.Layout.Column = 1;
+
+            resLabel = uilabel(grid, 'Text', 'channels');
+            resLabel.Layout.Row = 1;
+            resLabel.Layout.Column = 2;
+
+            mode = uidropdown(grid);
+            mode.Items = {'All available channels', 'Select channels manually'};
+            mode.ItemsData = {'all', 'manual'};
+            mode.Value = ternary(app, useAllChannels, 'all', 'manual');
+            mode.Tooltip = ['All available channels leaves extractChannels unset, so roiTracked extracts every channel found for the source ROI. ' ...
+                'Manual mode stores a concrete extractChannels list.'];
+            mode.ValueChangedFcn = @(src,~)roiTrackedExtractModeChanged(app, nodeId, src.Value);
+            mode.Layout.Row = 1;
+            mode.Layout.Column = 3;
+
+            table = uitable(grid);
+            table.ColumnName = {'Use','Channel'};
+            table.ColumnEditable = [true false];
+            table.ColumnWidth = {52, 'auto'};
+            table.RowName = {};
+            table.Data = roiExtractChannelTableData(app, node, channels, useAllChannels);
+            table.Enable = ternary(app, useAllChannels, 'off', 'on');
+            table.Tooltip = 'Select one or more channels to extract into the newly generated tracked ROI H5 files.';
+            table.CellEditCallback = @(src,event)roiTrackedExtractChannelTableEdited(app, nodeId, src, event);
+            table.Layout.Row = 2;
+            table.Layout.Column = [2 3];
+
+            hint = uilabel(grid, 'Text', ternary(app, useAllChannels, ...
+                ternary(app, hasInventory, ...
+                    'Default: every available source ROI channel is extracted, including the mask channel used to generate tracked ROIs.', ...
+                    'No concrete channel inventory is available yet; all source ROI channels will be resolved at run time.'), ...
+                'Manual mode: checked channels are stored in extractChannels for the tracked ROI extraction step.'), ...
+                'FontColor', [0.35 0.35 0.35], 'Interpreter', 'none');
+            hint.Layout.Row = 3;
+            hint.Layout.Column = [2 3];
+        end
+
+        function tf = roiTrackedUsesAllExtractChannels(app, node)
+            nodeId = char(string(getField(app, node, 'id', '')));
+            value = [];
+            runtimeParams = getRuntimeNodeParams(app, nodeId);
+            if isstruct(runtimeParams) && isfield(runtimeParams, 'extractChannels')
+                value = runtimeParams.extractChannels;
+            else
+                p = getField(app, node, 'params', struct());
+                if isstruct(p) && isfield(p, 'extractChannels')
+                    value = p.extractChannels;
+                end
+            end
+            txt = strtrim(choiceScalarText(app, value));
+            tf = isempty(txt) || isSymbolicStoredBinding(app, txt) || startsWith(txt, '<') || any(strcmpi(txt, {'all','<all>','*',':'}));
+        end
+
+        function roiTrackedExtractModeChanged(app, nodeId, modeValue)
+            idx = find(strcmp({app.Data.nodes.id}, char(string(nodeId))), 1);
+            if isempty(idx)
+                return;
+            end
+            if ~isfield(app.Data.nodes(idx), 'params') || ~isstruct(app.Data.nodes(idx).params)
+                app.Data.nodes(idx).params = struct();
+            end
+            runtimeParams = getRuntimeNodeParams(app, nodeId);
+            if strcmpi(char(string(modeValue)), 'all')
+                if isfield(app.Data.nodes(idx).params, 'extractChannels')
+                    app.Data.nodes(idx).params = rmfield(app.Data.nodes(idx).params, 'extractChannels');
+                end
+                clearRuntimeNodeParam(app, nodeId, 'extractChannels');
+            else
+                channels = roiExtractAvailableChannels(app);
+                if isempty(channels)
+                    if isfield(app.Data.nodes(idx).params, 'extractChannels')
+                        app.Data.nodes(idx).params = rmfield(app.Data.nodes(idx).params, 'extractChannels');
+                    end
+                    clearRuntimeNodeParam(app, nodeId, 'extractChannels');
+                else
+                    app.Data.nodes(idx).params.extractChannels = channels;
+                    runtimeParams.extractChannels = channels;
+                    setRuntimeNodeParams(app, nodeId, runtimeParams);
+                end
+            end
+            markPipelineDirty(app, true);
+            refreshModuleTabs(app);
+            refreshValidationReport(app);
+        end
+
+        function roiTrackedExtractChannelTableEdited(app, nodeId, table, event)
+            if isempty(event.Indices) || event.Indices(2) ~= 1
+                return;
+            end
+            data = table.Data;
+            if isempty(data)
+                return;
+            end
+            selected = {};
+            for i = 1:size(data,1)
+                try
+                    if logical(data{i,1})
+                        selected{end+1} = char(string(data{i,2})); %#ok<AGROW>
+                    end
+                catch
+                end
+            end
+            idx = find(strcmp({app.Data.nodes.id}, char(string(nodeId))), 1);
+            if isempty(idx)
+                return;
+            end
+            if ~isfield(app.Data.nodes(idx), 'params') || ~isstruct(app.Data.nodes(idx).params)
+                app.Data.nodes(idx).params = struct();
+            end
+            app.Data.nodes(idx).params.extractChannels = selected;
+            runtimeParams = getRuntimeNodeParams(app, nodeId);
+            runtimeParams.extractChannels = selected;
+            setRuntimeNodeParams(app, nodeId, runtimeParams);
+            markPipelineDirty(app, true);
+            refreshValidationReport(app);
         end
 
         function buildGenericRoiDefinitionTab(app, parentTab, node)
@@ -5174,9 +6081,9 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             marginText = valueToDisplay(app, getField(app, params, 'margin', 0));
             lines = { ...
-                ['Tracked ROI recipe: mask/source channel = ' source], ...
+                ['Tracked ROI recipe: mask channel = ' source], ...
                 ['Margin: ' marginText ' px | ' extractState], ...
-                'Requires an upstream ROI list and a compatible mask/segmentation binding.'};
+                'Creates tracked child ROIs after the full-frame/source ROI and extracts their H5 crops.'};
             if ~isempty(profile)
                 lines{end+1} = 'A saved project profile is available and is used automatically unless this node overrides it.';
                 color = [0.10 0.42 0.20];
@@ -6533,9 +7440,37 @@ classdef pipeline2 < matlab.apps.AppBase
             if isfield(app.RuntimeParseInfo, 'channels') && ~isempty(app.RuntimeParseInfo.channels)
                 channels = cellstr(string(app.RuntimeParseInfo.channels(:)'));
             end
+            roiChannels = runtimeRoiDisplayChannels(app);
+            if ~isempty(roiChannels)
+                channels = [channels roiChannels]; %#ok<AGROW>
+            end
             skip = startsWith(lower(string(channels)), 'resolved after') | strcmpi(string(channels), 'all') | strcmpi(string(channels), 'auto');
             channels = channels(~skip);
             channels = unique(channels(~cellfun(@isempty, channels)), 'stable');
+        end
+
+        function channels = runtimeRoiDisplayChannels(app)
+            channels = {};
+            if ~runtimeStartsFromExistingProject(app)
+                return;
+            end
+            try
+                [roiList, ~] = runtimeSampledRoisForDataSeries(app);
+                if isempty(roiList)
+                    return;
+                end
+                maxRoi = min(numel(roiList), 12);
+                for r = 1:maxRoi
+                    roiObj = roiList(r);
+                    if isprop(roiObj, 'display') && ~isempty(roiObj.display) && ...
+                            isfield(roiObj.display, 'channel') && ~isempty(roiObj.display.channel)
+                        channels = [channels cellstr(string(roiObj.display.channel(:)'))]; %#ok<AGROW>
+                    end
+                end
+                channels = unique(channels(~cellfun(@isempty, channels)), 'stable');
+            catch
+                channels = {};
+            end
         end
 
         function masks = runtimeMaskChoices(app)
@@ -7409,10 +8344,86 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
 
+            if paramUsesFolderBrowser(app, node, key, value, scope)
+                ctrl = uigridlayout(parent, [1 2]);
+                ctrl.ColumnWidth = {'1x', 90};
+                ctrl.RowHeight = {22};
+                ctrl.Padding = [0 0 0 0];
+                ctrl.ColumnSpacing = 6;
+
+                edit = uieditfield(ctrl, 'text');
+                edit.Layout.Row = 1;
+                edit.Layout.Column = 1;
+                edit.Value = paramValueToDisplay(app, node, key, value);
+                edit.Enable = enableState;
+                edit.ValueChangedFcn = @(src,~)paramControlChanged(app, node, key, src.Value, scope);
+
+                btn = uibutton(ctrl, 'push', 'Text', 'Browse...');
+                btn.Layout.Row = 1;
+                btn.Layout.Column = 2;
+                btn.Enable = enableState;
+                btn.ButtonPushedFcn = @(~,~)browseParamFolder(app, node, key, edit, scope);
+                return;
+            end
+
             ctrl = uieditfield(parent, 'text');
             ctrl.Value = paramValueToDisplay(app, node, key, value);
             ctrl.Enable = enableState;
             ctrl.ValueChangedFcn = @(src,~)paramControlChanged(app, node, key, src.Value, scope);
+        end
+
+        function tf = paramUsesFolderBrowser(app, node, key, value, scope) %#ok<INUSD>
+            if ~strcmpi(char(string(scope)), 'static')
+                tf = false;
+                return;
+            end
+            keyLower = lower(char(string(key)));
+            tf = any(strcmp(keyLower, {'outputdir','outputfolder','outputpath','folder','directory'})) || ...
+                endsWith(keyLower, 'dir') || endsWith(keyLower, 'folder');
+            if tf && isnumeric(value)
+                tf = false;
+            end
+        end
+
+        function browseParamFolder(app, node, key, editField, scope)
+            startDir = '';
+            try
+                startDir = char(string(editField.Value));
+            catch
+                startDir = '';
+            end
+            if isempty(startDir) || exist(startDir, 'dir') ~= 7
+                startDir = currentProjectFolder(app);
+            end
+            if isempty(startDir) || exist(startDir, 'dir') ~= 7
+                startDir = pwd;
+            end
+            pth = uigetdir(startDir, ['Select folder for ' char(string(key))]);
+            if isequal(pth, 0)
+                return;
+            end
+            try
+                editField.Value = pth;
+            catch
+            end
+            paramControlChanged(app, node, key, pth, scope);
+        end
+
+        function folder = currentProjectFolder(app)
+            folder = '';
+            try
+                if ~isempty(app.CurrentProject) && isa(app.CurrentProject, 'shallow')
+                    [pth, name] = app.CurrentProject.getPath;
+                    candidate = fullfile(pth, name);
+                    if exist(candidate, 'dir') == 7
+                        folder = candidate;
+                    elseif exist(pth, 'dir') == 7
+                        folder = pth;
+                    end
+                end
+            catch
+                folder = '';
+            end
         end
 
         function choices = paramDropdownChoices(app, node, key) %#ok<INUSD>
@@ -7696,6 +8707,7 @@ classdef pipeline2 < matlab.apps.AppBase
             if nargin < 3
                 node = struct();
             end
+            app.ensureCustomPackagePathForNode(node);
             switch pkg
                 case 'combinemultiplechannels'
                     slotCount = combineMultipleChannelsSlotCountForNode(app, node);
@@ -7869,6 +8881,8 @@ classdef pipeline2 < matlab.apps.AppBase
                     pkg = 'basicObjectTracking';
                 case 'formatindataseries'
                     pkg = 'formatInDataSeries';
+                case 'fociburststats'
+                    pkg = 'fociBurstStats';
                 case 'trackmotherlineageviterbi'
                     pkg = 'trackMotherLineageViterbi';
                 otherwise
@@ -8282,6 +9296,9 @@ classdef pipeline2 < matlab.apps.AppBase
                 elseif ~isempty(rawDataPath) && ~rawOk
                     issues{end+1} = ['Raw data folder does not exist: ' rawDataPath]; %#ok<AGROW>
                     markRuntimeField(app, 'rawDataPath', 'missing', 'Raw data must be an existing folder.');
+                elseif rawOk && rawParserIsCurrent(app, rawDataPath) && rawParserHasNoChannels(app) && selectedRunNeedsChannels(app)
+                    issues{end+1} = 'Raw parser did not detect any channel, but selected modules need image/ROI channels.'; %#ok<AGROW>
+                    markRuntimeField(app, 'rawDataPath', 'warning', 'The raw parser is the channel authority in raw data mode. Check parser filters or raw metadata before running channel-dependent modules.');
                 end
             end
             if strcmp(runtimeExecutionTarget(app), 'hub')
@@ -8567,9 +9584,14 @@ classdef pipeline2 < matlab.apps.AppBase
         function nodes = sanitizeProcessorNodeParams(app, nodes) %#ok<INUSD>
             for i = 1:numel(nodes)
                 nodeType = lower(char(string(getField(app, nodes(i), 'type', ''))));
+                if ~strcmp(nodeType, 'processor') || ~isfield(nodes(i), 'params') || ~isstruct(nodes(i).params)
+                    continue;
+                end
+                if isfield(nodes(i).params, 'roiList')
+                    nodes(i).params = rmfield(nodes(i).params, 'roiList');
+                end
                 pkg = lower(char(string(getField(app, nodes(i), 'pkg', ''))));
-                if ~strcmp(nodeType, 'processor') || ~strcmp(pkg, 'computerls') || ...
-                        ~isfield(nodes(i), 'params') || ~isstruct(nodes(i).params)
+                if ~strcmp(pkg, 'computerls')
                     continue;
                 end
                 if isfield(nodes(i).params, 'StateDecoder')
@@ -8588,6 +9610,9 @@ classdef pipeline2 < matlab.apps.AppBase
                     continue;
                 end
                 pkg = lower(char(string(getField(app, nodes(i), 'pkg', ''))));
+                if isfield(nodes(i).params, 'roiList')
+                    nodes(i).params = rmfield(nodes(i).params, 'roiList');
+                end
                 if isfield(nodes(i).params, 'trainingParam')
                     nodes(i).params = rmfield(nodes(i).params, 'trainingParam');
                 end
@@ -8799,6 +9824,22 @@ classdef pipeline2 < matlab.apps.AppBase
             try
                 assignin('base', varName, pipeObj);
                 app.CurrentPipelineWorkspaceVar = varName;
+                clearInternalPipelineAlias(app, varName);
+            catch
+            end
+        end
+
+        function clearInternalPipelineAlias(app, canonicalVarName) %#ok<INUSD>
+            if strcmp(char(string(canonicalVarName)), guiAppName(app))
+                return;
+            end
+            try
+                if evalin('base', ['exist(''' guiAppName(app) ''',''var'')'])
+                    isPipe = evalin('base', ['isa(' guiAppName(app) ',''pipeline'')']);
+                    if isPipe
+                        evalin('base', ['clear ' guiAppName(app)]);
+                    end
+                end
             catch
             end
         end
@@ -9176,6 +10217,11 @@ classdef pipeline2 < matlab.apps.AppBase
                 ctx.dataSeriesNames = dataSeriesNames;
                 ctx.dataSeries = dataSeriesNames;
             end
+            roiList = runtimeSelectedRois(app);
+            if ~isempty(roiList)
+                ctx.roiList = roiList;
+                ctx.rois = roiList;
+            end
             runtimeMasks = runtimeMaskChoices(app);
             if ~isempty(runtimeMasks)
                 ctx.masks = runtimeMasks;
@@ -9214,6 +10260,13 @@ classdef pipeline2 < matlab.apps.AppBase
                 dataSeriesNames = runtimeDataSeriesNames(app);
                 if ~isempty(dataSeriesNames)
                     source = 'existing dataseries';
+                    return;
+                end
+            catch
+            end
+            try
+                if ~isempty(runtimeMaskChoices(app))
+                    source = 'existing masks';
                     return;
                 end
             catch
@@ -9303,6 +10356,12 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
             nodeType = lower(char(string(getField(app, app.Data.nodes(idx), 'type', ''))));
+            if any(strcmp(nodeType, {'processor','classifier'}))
+                if isfield(params, 'roiList')
+                    params = rmfield(params, 'roiList');
+                end
+                return;
+            end
             if ~any(strcmp(nodeType, {'roipattern','roiidentify','roimanual','roigrid','roitracked','roiextract'}))
                 return;
             end
@@ -10056,6 +11115,9 @@ classdef pipeline2 < matlab.apps.AppBase
             if isempty(ids)
                 return;
             end
+            if ~runtimeStartsFromExistingProject(app)
+                return;
+            end
             originalIds = ids;
             keep = true(1, numel(ids));
             for i = 1:numel(ids)
@@ -10529,6 +11591,36 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
+        function tf = isHubProjectIndexQueuedException(app, ME) %#ok<INUSD>
+            tf = false;
+            try
+                ids = string(ME.identifier);
+                for iCause = 1:numel(ME.cause)
+                    ids(end+1) = string(ME.cause{iCause}.identifier); %#ok<AGROW>
+                end
+                tf = any(strcmp(ids, "detecdiv_hub_submit_pipeline_run:ProjectIndexQueued")) || ...
+                    any(strcmp(ids, "detecdiv_hub_ensure_project:IndexQueued")) || ...
+                    contains(string(ME.message), "queued for Hub indexing", 'IgnoreCase', true);
+            catch
+                tf = strcmp(ME.identifier, 'detecdiv_hub_submit_pipeline_run:ProjectIndexQueued');
+            end
+        end
+
+        function tf = isHubProjectLockedException(app, ME) %#ok<INUSD>
+            tf = false;
+            try
+                ids = string(ME.identifier);
+                for iCause = 1:numel(ME.cause)
+                    ids(end+1) = string(ME.cause{iCause}.identifier); %#ok<AGROW>
+                end
+                tf = any(strcmp(ids, "detecdiv_hub_submit_pipeline_run:ProjectLocked")) || ...
+                    (any(strcmp(ids, "detecdiv_hub_request:HTTP409")) && ...
+                    contains(string(ME.message), "project is locked", 'IgnoreCase', true));
+            catch
+                tf = strcmp(ME.identifier, 'detecdiv_hub_submit_pipeline_run:ProjectLocked');
+            end
+        end
+
         function runObj = annotateHubRunControl(app, runObj, job) %#ok<INUSD>
             try
                 if ~isstruct(runObj.ctx)
@@ -10619,6 +11711,12 @@ classdef pipeline2 < matlab.apps.AppBase
             if isempty(app.CurrentProject) && ~isempty(runObj.projectPath)
                 bindProjectFromPath(app, [runObj.projectPath '.mat'], false);
             end
+            if runtimeStartsFromExistingProject(app) && ~isempty(app.CurrentProject) && isa(app.CurrentProject, 'shallow')
+                sourcePath = projectSourcePath(app, app.CurrentProject);
+                if ~isempty(sourcePath)
+                    setRuntimeValuePreserveParse(app, 'rawDataPath', sourcePath);
+                end
+            end
             if logical(refreshUi)
                 refreshModuleTabs(app);
                 refreshValidationReport(app);
@@ -10684,14 +11782,65 @@ classdef pipeline2 < matlab.apps.AppBase
             if isempty(value)
                 txt = 'all';
             elseif isnumeric(value)
-                txt = mat2str(value);
-                txt = strrep(txt, '[', '');
-                txt = strrep(txt, ']', '');
+                txt = compactNumericSelectionText(app, value);
             elseif iscell(value)
                 txt = strjoin(cellstr(string(value)), ',');
             else
                 txt = char(string(value));
             end
+        end
+
+        function txt = compactNumericSelectionText(app, value) %#ok<INUSD>
+            nums = [];
+            try
+                nums = double(value(:)');
+                nums = nums(isfinite(nums));
+                if all(abs(nums - round(nums)) < eps(max(1, max(abs(nums)))))
+                    nums = round(nums);
+                end
+                nums = unique(nums, 'stable');
+            catch
+                nums = [];
+            end
+            if isempty(nums)
+                txt = 'all';
+                return;
+            end
+            if any(abs(nums - round(nums)) > eps(max(1, max(abs(nums)))))
+                txt = mat2str(nums);
+                txt = strrep(strrep(txt, '[', ''), ']', '');
+                return;
+            end
+
+            parts = {};
+            i = 1;
+            while i <= numel(nums)
+                startVal = nums(i);
+                stopVal = startVal;
+                step = [];
+                if i < numel(nums)
+                    step = nums(i+1) - nums(i);
+                end
+                j = i;
+                if ~isempty(step) && step ~= 0
+                    while j < numel(nums) && nums(j+1) - nums(j) == step
+                        j = j + 1;
+                    end
+                end
+                runLen = j - i + 1;
+                stopVal = nums(j);
+                if runLen >= 3 && step == 1
+                    parts{end+1} = sprintf('%d:%d', startVal, stopVal); %#ok<AGROW>
+                elseif runLen >= 4 && ~isempty(step) && step ~= 0
+                    parts{end+1} = sprintf('%d:%d:%d', startVal, step, stopVal); %#ok<AGROW>
+                else
+                    for k = i:j
+                        parts{end+1} = sprintf('%d', nums(k)); %#ok<AGROW>
+                    end
+                end
+                i = j + 1;
+            end
+            txt = strjoin(parts, ',');
         end
 
         function appendRunReport(app, label, report)
@@ -11004,8 +12153,6 @@ classdef pipeline2 < matlab.apps.AppBase
                 ctx = buildRunContext(app);
                 [ctxSmoke, smokeInfo] = buildSmokeRunContext(app, ctx);
                 pipeObj = buildExecutablePipelineObject(app, app.CurrentPipelinePath, ctxSmoke);
-                app.CurrentPipeline = pipeObj;
-                assignCurrentPipelineToWorkspace(app, pipeObj);
 
                 runObj = createSmokePipelineRun(app, ctxSmoke, smokeInfo, 'preflight');
                 logRunEvent(app, runObj, ['Smoke test requested: ' smokeInfo.label], 'pipeline2');
@@ -11288,11 +12435,8 @@ classdef pipeline2 < matlab.apps.AppBase
                 if any(strcmp(nodeType, {'roiidentify','roipattern','roimanual','roigrid','roitracked','roiextract'}))
                     patch.fovIndex = smokeInfo.fovIndex;
                 end
-                if any(strcmp(nodeType, {'roiextract','processor','classifier'}))
+                if strcmp(nodeType, 'roiextract')
                     patch.roiList = smokeInfo.roiIndex;
-                    if any(strcmp(nodeType, {'processor','classifier'}))
-                        patch.roiList = 1;
-                    end
                 end
                 if isempty(fieldnames(patch))
                     continue;
@@ -11393,8 +12537,6 @@ classdef pipeline2 < matlab.apps.AppBase
             try
                 ctx = buildRunContext(app);
                 pipeObj = buildExecutablePipelineObject(app, app.CurrentPipelinePath, ctx);
-                app.CurrentPipeline = pipeObj;
-                assignCurrentPipelineToWorkspace(app, pipeObj);
                 runObj = createOrUpdateCurrentRun(app, ctx, 'preflight');
                 logRunEvent(app, runObj, 'Preflight run context saved.', 'pipeline2');
                 pipelineRunSave(runObj);
@@ -11466,9 +12608,17 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
             catch ME
                 wasCancelled = isPipelineCancelException(app, ME);
+                wasHubIndexQueued = isHubProjectIndexQueuedException(app, ME);
+                wasHubProjectLocked = isHubProjectLockedException(app, ME);
                 if wasCancelled
                     fullReport = ['Pipeline run stopped by user: ' ME.message];
                     fprintf('\n==================== Pipeline run stopped ====================\n%s\n==================== end Pipeline run stopped ====================\n\n', fullReport);
+                elseif wasHubIndexQueued
+                    fullReport = ['Hub project registration queued: ' ME.message];
+                    fprintf('\n==================== Hub project registration queued ====================\n%s\n==================== end Hub project registration queued ====================\n\n', fullReport);
+                elseif wasHubProjectLocked
+                    fullReport = ['Hub project locked: ' ME.message];
+                    fprintf('\n==================== Hub project locked ====================\n%s\n==================== end Hub project locked ====================\n\n', fullReport);
                 else
                     fullReport = printExceptionToConsole(app, 'Pipeline run failed', ME);
                 end
@@ -11476,11 +12626,21 @@ classdef pipeline2 < matlab.apps.AppBase
                     if exist('runObj', 'var') && ~isempty(runObj)
                         if wasCancelled
                             runObj.status = 'cancelled';
+                        elseif wasHubIndexQueued
+                            runObj.status = 'hub_project_indexing';
+                        elseif wasHubProjectLocked
+                            runObj.status = 'blocked';
                         else
                             runObj.status = 'failed';
                         end
                         if wasCancelled
                             runObj.outputs.cancellation = struct('identifier', ME.identifier, ...
+                                'message', ME.message, 'report', fullReport);
+                        elseif wasHubIndexQueued
+                            runObj.outputs.hubProjectRegistration = struct('identifier', ME.identifier, ...
+                                'message', ME.message, 'report', fullReport);
+                        elseif wasHubProjectLocked
+                            runObj.outputs.hubProjectLock = struct('identifier', ME.identifier, ...
                                 'message', ME.message, 'report', fullReport);
                         else
                             runObj.outputs.error = struct('identifier', ME.identifier, ...
@@ -11493,6 +12653,10 @@ classdef pipeline2 < matlab.apps.AppBase
                         end
                         if wasCancelled
                             logRunEvent(app, runObj, ['Run cancelled: ' ME.message], 'pipeline2');
+                        elseif wasHubIndexQueued
+                            logRunEvent(app, runObj, ['Hub project registration queued: ' ME.message], 'pipeline2');
+                        elseif wasHubProjectLocked
+                            logRunEvent(app, runObj, ['Hub project locked: ' ME.message], 'pipeline2');
                         else
                             logRunEvent(app, runObj, ['Run failed: ' ME.message], 'pipeline2');
                         end
@@ -11513,6 +12677,32 @@ classdef pipeline2 < matlab.apps.AppBase
                         'Resume with "Resume previous progress" and an output policy that skips existing outputs.'];
                     uialert(app.UIFigure, 'Run stopped. Existing outputs and run log were kept; resume can continue from saved progress.', ...
                         'Run stopped', 'Icon', 'warning');
+                elseif wasHubIndexQueued
+                    runJson = '';
+                    try
+                        runJson = fullfile(runObj.path, 'run.json');
+                    catch
+                    end
+                    app.RuninformationhereLabel.Text = ['Hub project indexing queued: ' runJson];
+                    app.PipelineandRuncheckreportLabel.Text = [app.PipelineandRuncheckreportLabel.Text newline newline ...
+                        'Hub project registration queued.' newline ...
+                        ME.message newline newline ...
+                        'Retry Hub run submission after the indexing job completes.'];
+                    uialert(app.UIFigure, ['The project is being registered in the Hub catalogue.' newline ...
+                        'Retry Hub run submission after indexing completes.'], ...
+                        'Hub project registration queued', 'Icon', 'warning');
+                elseif wasHubProjectLocked
+                    runJson = '';
+                    try
+                        runJson = fullfile(runObj.path, 'run.json');
+                    catch
+                    end
+                    app.RuninformationhereLabel.Text = ['Hub project locked: ' runJson];
+                    app.PipelineandRuncheckreportLabel.Text = [app.PipelineandRuncheckreportLabel.Text newline newline ...
+                        'Hub project locked.' newline ...
+                        ME.message newline newline ...
+                        'Open the Run Monitor to follow or cancel the active job, then retry submission.'];
+                    uialert(app.UIFigure, ME.message, 'Hub project locked', 'Icon', 'warning');
                 else
                     app.PipelineandRuncheckreportLabel.Text = [app.PipelineandRuncheckreportLabel.Text newline newline ...
                         'Run failed:' newline ME.identifier newline ME.message newline newline ...

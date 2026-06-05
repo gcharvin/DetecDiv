@@ -36,6 +36,7 @@ function pipelineRunSave(runObj)
     writeRunSummaryFile(runObj, S, path);
     writeRunParamsFile(S, path);
     writeRunLogFile(runObj, S, path);
+    writeRunReviewFile(runObj, path);
 
     fprintf('Pipeline run saved: %s\n', jsonFile);
 end
@@ -212,6 +213,18 @@ function writeRunLogFile(runObj, S, runPath)
     end
     fwrite(fid, txt, 'char');
     fclose(fid);
+end
+
+function writeRunReviewFile(runObj, runPath)
+    eventFile = fullfile(runPath, 'run_events.jsonl');
+    if exist(eventFile, 'file') ~= 2
+        return;
+    end
+    try
+        pipelineRunReview(runObj, 'Write', true);
+    catch ME
+        warning('pipelineRunSave:ReviewIO', 'Unable to write run review: %s', ME.message);
+    end
 end
 
 function txt = buildRunSummaryText(runObj, S)
