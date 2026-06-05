@@ -770,6 +770,9 @@ function channels = resolveNodeConfiguredChannels(node, selectors)
         selectorKeys = cellstr(string(selectorKeys(:)));
         for i = 1:numel(selectorKeys)
             key = char(string(selectorKeys{i}));
+            if ~legacyChannelSelectorKeyApplies(node, key)
+                continue;
+            end
             if isfield(params, key) && ~isempty(params.(key))
                 channels = mergeKnownChannels(channels, normalizeConfiguredSelectionValue(params.(key)));
             end
@@ -788,6 +791,9 @@ function channels = resolveNodeConfiguredChannels(node, selectors)
     for i = 1:numel(candidates)
         key = char(string(candidates{i}));
         if isempty(key)
+            continue;
+        end
+        if ~legacyChannelSelectorKeyApplies(node, key)
             continue;
         end
         if isfield(params, key) && ~isempty(params.(key))
@@ -967,6 +973,7 @@ function nodeReport = evaluateNodeBinding(node, state)
     scope = lower(char(string(getBindingScope(binding, requirements))));
     requiredCount = resolveBindingRequiredCount(node, binding, requirements, selectors);
     configuredChannels = resolveBindingConfiguredChannels(node, binding, selectors);
+    configuredChannels = removeResourceOnlyConfiguredChannelValues(node, configuredChannels);
     availableChannels = {};
     supportAvailable = true;
 
@@ -1712,6 +1719,7 @@ function requiredCount = resolveBindingRequiredCount(node, binding, requirements
     end
 
     configured = resolveBindingConfiguredChannels(node, binding, selectors);
+    configured = removeResourceOnlyConfiguredChannelValues(node, configured);
     if requiredCount <= 0 && ~isempty(configured)
         requiredCount = numel(configured);
     end
@@ -1730,6 +1738,9 @@ function channels = resolveBindingConfiguredChannels(node, binding, selectors)
     end
     for i = 1:numel(selectorKeys)
         key = char(string(selectorKeys{i}));
+        if ~legacyChannelSelectorKeyApplies(node, key)
+            continue;
+        end
         if ~isfield(params, key) || isempty(params.(key))
             continue;
         end
@@ -1739,6 +1750,77 @@ function channels = resolveBindingConfiguredChannels(node, binding, selectors)
         return;
     end
     channels = resolveNodeConfiguredChannels(node, selectors);
+end
+
+function tf = legacyChannelSelectorKeyApplies(node, key)
+    tf = true;
+    key = char(string(key));
+    if isempty(key)
+        return;
+    end
+    if strcmpi(char(string(getField(node, 'type', ''))), 'roiTracked') && strcmpi(key, 'channel')
+        tf = false;
+        return;
+    end
+    contract = getField(node, 'contract', struct());
+    resources = getField(contract, 'resources', struct());
+    inputs = getField(resources, 'in', resourceSpecDef());
+    matched = false;
+    hasChannelSpec = false;
+    for i = 1:numel(inputs)
+        if isempty(getField(inputs(i), 'type', ''))
+            continue;
+        end
+        param = char(string(getField(inputs(i), 'param', '')));
+        nameParam = char(string(getField(inputs(i), 'nameParam', '')));
+        if ~strcmp(param, key) && ~strcmp(nameParam, key)
+            continue;
+        end
+        matched = true;
+        if strcmpi(char(string(getField(inputs(i), 'type', ''))), 'channel')
+            hasChannelSpec = true;
+        end
+    end
+    if matched && ~hasChannelSpec
+        tf = false;
+    end
+end
+
+function channels = removeResourceOnlyConfiguredChannelValues(node, channels)
+    if isempty(channels)
+        return;
+    end
+    params = getField(node, 'params', struct());
+    if ~isstruct(params)
+        return;
+    end
+    contract = getField(node, 'contract', struct());
+    resources = getField(contract, 'resources', struct());
+    inputs = getField(resources, 'in', resourceSpecDef());
+    removeValues = {};
+    for i = 1:numel(inputs)
+        if isempty(getField(inputs(i), 'type', '')) || strcmpi(char(string(getField(inputs(i), 'type', ''))), 'channel')
+            continue;
+        end
+        keys = unique({ ...
+            char(string(getField(inputs(i), 'param', ''))), ...
+            char(string(getField(inputs(i), 'nameParam', '')))}, 'stable');
+        for j = 1:numel(keys)
+            key = char(string(keys{j}));
+            if isempty(key) || ~isfield(params, key) || isempty(params.(key))
+                continue;
+            end
+            removeValues = mergeKnownChannels(removeValues, normalizeConfiguredSelectionValue(params.(key)));
+        end
+    end
+    if isempty(removeValues)
+        return;
+    end
+    keep = true(size(channels));
+    for i = 1:numel(channels)
+        keep(i) = ~any(strcmpi(char(string(channels{i})), removeValues));
+    end
+    channels = channels(keep);
 end
 
 function names = compatibleResourceConcreteNamesForBinding(node, resources)

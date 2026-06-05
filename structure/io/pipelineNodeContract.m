@@ -503,7 +503,7 @@ function contract = backfillSelectorsFromNodeParams(contract, node)
         return;
     end
 
-    defaultChannels = extractChannelDefaults(params, contract.selectors);
+    defaultChannels = extractChannelDefaults(params, contract.selectors, contract.resources.in);
     if isempty(contract.selectors.defaultChannels) && ~isempty(defaultChannels)
         contract.selectors.defaultChannels = defaultChannels;
     end
@@ -555,14 +555,20 @@ function contract = backfillSelectorsFromNodeParams(contract, node)
     end
 end
 
-function defaults = extractChannelDefaults(params, selectors)
+function defaults = extractChannelDefaults(params, selectors, inputResources)
     defaults = {};
     candidates = {};
 
-    if ~isempty(selectors.channelsParam) && isfield(params, selectors.channelsParam)
+    if nargin < 3
+        inputResources = resourceDef();
+    end
+
+    if ~isempty(selectors.channelsParam) && isfield(params, selectors.channelsParam) && ...
+            channelDefaultParamApplies(inputResources, selectors.channelsParam)
         candidates = normalizeChannelSpec(params.(selectors.channelsParam));
     end
-    if isempty(candidates) && ~isempty(selectors.channelParam) && isfield(params, selectors.channelParam)
+    if isempty(candidates) && ~isempty(selectors.channelParam) && isfield(params, selectors.channelParam) && ...
+            channelDefaultParamApplies(inputResources, selectors.channelParam)
         candidates = normalizeChannelSpec(params.(selectors.channelParam));
     end
     if isempty(candidates) && isfield(params, 'channelName')
@@ -573,6 +579,36 @@ function defaults = extractChannelDefaults(params, selectors)
     end
 
     defaults = candidates;
+end
+
+function tf = channelDefaultParamApplies(inputResources, key)
+    tf = true;
+    key = char(string(key));
+    if isempty(key)
+        return;
+    end
+    if isempty(inputResources) || ~isstruct(inputResources)
+        return;
+    end
+    matched = false;
+    hasChannelSpec = false;
+    for i = 1:numel(inputResources)
+        if isempty(getField(inputResources(i), 'type', ''))
+            continue;
+        end
+        param = char(string(getField(inputResources(i), 'param', '')));
+        nameParam = char(string(getField(inputResources(i), 'nameParam', '')));
+        if ~strcmp(param, key) && ~strcmp(nameParam, key)
+            continue;
+        end
+        matched = true;
+        if strcmpi(char(string(getField(inputResources(i), 'type', ''))), 'channel')
+            hasChannelSpec = true;
+        end
+    end
+    if matched && ~hasChannelSpec
+        tf = false;
+    end
 end
 
 function spec = normalizeChannelSpec(v)

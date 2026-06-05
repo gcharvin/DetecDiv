@@ -12,6 +12,7 @@ tests{end+1} = @testDynamicCombineMultipleChannelsContract; %#ok<AGROW>
 tests{end+1} = @testDynamicComputeMetricsContract; %#ok<AGROW>
 tests{end+1} = @testComputeMetricsAcceptsSymbolicCellposeMask; %#ok<AGROW>
 tests{end+1} = @testComputeMetricsAcceptsSymbolicGeneratedScoreChannel; %#ok<AGROW>
+tests{end+1} = @testRoiTrackedAcceptsSymbolicCellposeMask; %#ok<AGROW>
 tests{end+1} = @testResourceBindingAddsExecutionDependency; %#ok<AGROW>
 tests{end+1} = @testResourceBindingVisibleWhenExecutionEdgeExists; %#ok<AGROW>
 tests{end+1} = @testPipelineSaveLoadPreservesSymbolicBindings; %#ok<AGROW>
@@ -215,6 +216,39 @@ inputs = validation.binding.nodes.(key).resources.inputs;
 scoreInput = inputs(strcmp({inputs.param}, 'channel1_name'));
 assert(~isempty(scoreInput), 'Missing channel1_name resource report.');
 assert(any(strcmp({scoreInput.available.role}, 'probability')), 'CellposeSAM probability channel was not available to computeMetrics score input.');
+end
+
+function testRoiTrackedAcceptsSymbolicCellposeMask()
+n1 = makeNode('roiExtract', 'roiExtract', struct('extractChannels', {{'ch1','ch2'}}));
+n1.id = 'roiextract_1';
+n2 = makeNode('classifier', 'cellposesam', struct( ...
+    'pkg', 'cellposesam', ...
+    'channel', 'ch2', ...
+    'outputType', 'segmentation', ...
+    'outputName', 'cellposeSAM'));
+n2.id = 'classifier_cellposesam_4';
+n3 = makeNode('roiTracked', 'roiTracked', struct( ...
+    'channel', '@resource:segmentation:classifier_cellposesam_4', ...
+    'extract', true, ...
+    'extractChannels', []));
+n3.id = 'roitracked_5';
+pipe = struct( ...
+    'nodes', [n1 n2 n3], ...
+    'edges', makeEdges({'roiextract_1','classifier_cellposesam_4'; 'classifier_cellposesam_4','roitracked_5'}), ...
+    'branches', struct([]));
+ctx = struct('images', 1, 'roiList', 1, 'channels', {{'ch1','ch2'}});
+[pipe, resolution] = pipelineResolveBindings(pipe, ctx, struct('allowGui', false));
+idxTracked = find(strcmp({pipe.nodes.id}, 'roitracked_5'), 1);
+assert(~isempty(idxTracked), 'Missing roiTracked node after binding resolution.');
+assert(strcmp(pipe.nodes(idxTracked).params.channel, 'cellposeSAM'), ...
+    'roiTracked symbolic mask binding should resolve to the CellposeSAM output name.');
+assert(any(strcmp({resolution.applied.nodeId}, 'roitracked_5') & strcmp({resolution.applied.param}, 'channel')), ...
+    'Binding resolution should report the roiTracked.channel auto binding.');
+
+[ok, validation] = validatePipeline(pipe, ctx, struct('allowGui', false));
+assert(ok, 'roiTracked should accept resolved CellposeSAM mask binding: %s', strjoin(validation.errors, ' | '));
+assert(~any(contains(validation.errors, 'references unknown channel')), ...
+    'Resolved CellposeSAM mask should not be revalidated as an unknown ROI image channel.');
 end
 
 function testResourceBindingAddsExecutionDependency()
