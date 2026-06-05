@@ -61,11 +61,6 @@ function ctx = runCore(ctx)
         if p.skipExisting && fovHasValidRois(fovList(idx))
             continue;
         end
-        img = readImage(fovList(idx), 1, 1);
-        if isempty(img)
-            error('roiGrid.runCore:ReadImageFailed', 'Cannot read reference image for FOV %d.', idx);
-        end
-
         if ~p.keepExisting
             if ~isempty(shallowObj)
                 shallowObj.fov(idx).roi = roi;
@@ -83,9 +78,21 @@ function ctx = runCore(ctx)
         explicitRects = explicitGridRectsLocal(p);
         if ~isempty(explicitRects)
             addExplicitRois(target, explicitRects);
-        elseif strcmpi(p.mode, 'grid') && p.gridCount > 1
-            addGridRois(target, img, p.gridCount);
         else
+            refFrame = resolveReferenceFrameLocal(p);
+            refChannel = resolveReferenceChannelLocal(p, fovList(idx), ctx);
+            img = readImage(fovList(idx), refFrame, refChannel);
+            if isempty(img)
+                error('roiGrid.runCore:ReadImageFailed', ...
+                    'Cannot read reference image for FOV %d at frame %d, channel %d.', idx, refFrame, refChannel);
+            end
+            if strcmpi(p.mode, 'grid') && p.gridCount > 1
+                addGridRois(target, img, p.gridCount);
+                if isempty(shallowObj)
+                    fovList(idx) = target;
+                end
+                continue;
+            end
             roival = uint16([1 1 size(img,2) size(img,1)]);
             target.addROI(roival, target.id);
         end
@@ -210,6 +217,88 @@ for i = 1:numel(keys)
 end
 end
 
+function frame = resolveReferenceFrameLocal(p)
+frame = 1;
+keys = {'referenceFrame','frame','sourceFrame','patternSourceFrame'};
+for i = 1:numel(keys)
+    k = keys{i};
+    if isfield(p, k) && ~isempty(p.(k))
+        try
+            value = round(double(p.(k)(1)));
+            if isfinite(value) && value >= 1
+                frame = value;
+                return;
+            end
+        catch
+        end
+    end
+end
+end
+
+function channel = resolveReferenceChannelLocal(p, fovObj, ctx)
+channel = [];
+if isfield(p, 'channelIndex') && ~isempty(p.channelIndex)
+    channel = numericChannelLocal(p.channelIndex);
+end
+if isempty(channel) && isfield(p, 'channel') && ~isempty(p.channel)
+    channel = channelNameToIndexLocal(p.channel, fovObj);
+end
+if isempty(channel) && isfield(ctx, 'channelIdx') && ~isempty(ctx.channelIdx)
+    channel = numericChannelLocal(ctx.channelIdx);
+end
+if isempty(channel)
+    channel = firstAvailableChannelLocal(fovObj);
+end
+if isempty(channel)
+    channel = 1;
+end
+end
+
+function idx = numericChannelLocal(value)
+idx = [];
+try
+    idx = round(double(value(1)));
+    if ~isfinite(idx) || idx < 1
+        idx = [];
+    end
+catch
+    idx = [];
+end
+end
+
+function idx = channelNameToIndexLocal(value, fovObj)
+idx = [];
+txt = char(string(value));
+if isempty(strtrim(txt))
+    return;
+end
+num = str2double(txt);
+if isfinite(num)
+    idx = numericChannelLocal(num);
+    return;
+end
+try
+    names = fovObj.channel;
+    if iscell(names) && ~isempty(names)
+        hit = find(strcmpi(names, txt), 1, 'first');
+        if ~isempty(hit)
+            idx = hit;
+        end
+    end
+catch
+end
+end
+
+function idx = firstAvailableChannelLocal(fovObj)
+idx = [];
+try
+    if ~isempty(fovObj.channel)
+        idx = 1;
+    end
+catch
+end
+end
+
 function out = mergeStructOverride(base, override)
 out = base;
 if isempty(override)
@@ -232,6 +321,7 @@ for i = 1:numel(fovList)
     catch
     end
 end
+end
 
 function tf = fovHasValidRois(fovObj)
 tf = false;
@@ -243,6 +333,5 @@ try
     tf = ~(numel(r) == 1 && isempty(r(1).id));
 catch
     tf = false;
-end
 end
 end

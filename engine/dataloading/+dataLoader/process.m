@@ -89,8 +89,8 @@ function ctx = process(ctx)
         ctx.shallow = shallow();
     end
 
+    ctx.shallow.addData(out);
     if p.write
-        ctx.shallow.addData(out);
         try
             shallowSave(ctx.shallow);
         catch
@@ -102,7 +102,12 @@ function ctx = process(ctx)
     ctx.images = ctx.fovList;
     if ~isempty(ctx.fovList)
         try
-            ctx.channels = ctx.fovList(1).channel;
+            fovChannels = ctx.fovList(1).channel;
+            if ~isempty(fovChannels)
+                ctx.channels = fovChannels;
+            elseif ~isfield(ctx,'channels') || isempty(ctx.channels)
+                ctx.channels = {};
+            end
         catch
         end
     end
