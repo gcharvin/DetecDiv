@@ -10375,11 +10375,16 @@ classdef pipeline2 < matlab.apps.AppBase
 
                 if ~isempty(ME)
                     lines{end+1} = ''; %#ok<AGROW>
-                    lines{end+1} = 'Error'; %#ok<AGROW>
+                    isCancelled = isPipelineCancelException(app, ME);
+                    if isCancelled
+                        lines{end+1} = 'Cancellation'; %#ok<AGROW>
+                    else
+                        lines{end+1} = 'Error'; %#ok<AGROW>
+                    end
                     lines{end+1} = ['- Identifier: ' char(string(ME.identifier))]; %#ok<AGROW>
                     lines{end+1} = ['- Message: ' char(string(ME.message))]; %#ok<AGROW>
                     try
-                        if ~isempty(ME.stack)
+                        if ~isCancelled && ~isempty(ME.stack)
                             top = ME.stack(1);
                             lines{end+1} = sprintf('- Location: %s:%d', char(string(top.name)), top.line); %#ok<AGROW>
                         end
@@ -10646,16 +10651,27 @@ classdef pipeline2 < matlab.apps.AppBase
                 appendRunReport(app, ['Smoke test OK: ' smokeInfo.label], report);
                 app.RuninformationhereLabel.Text = ['Smoke test done: ' smokeReportFile];
             catch ME
-                fullReport = printExceptionToConsole(app, 'Pipeline smoke test failed', ME);
+                wasCancelled = isPipelineCancelException(app, ME);
+                if wasCancelled
+                    fullReport = ['Pipeline smoke test stopped by user: ' ME.message];
+                    fprintf('\n==================== Pipeline smoke test stopped ====================\n%s\n==================== end Pipeline smoke test stopped ====================\n\n', fullReport);
+                else
+                    fullReport = printExceptionToConsole(app, 'Pipeline smoke test failed', ME);
+                end
                 try
                     if exist('runObj', 'var') && ~isempty(runObj)
-                        if isPipelineCancelException(app, ME)
+                        if wasCancelled
                             runObj.status = 'cancelled';
                         else
                             runObj.status = 'failed';
                         end
-                        runObj.outputs.error = struct('identifier', ME.identifier, ...
-                            'message', ME.message, 'report', fullReport);
+                        if wasCancelled
+                            runObj.outputs.cancellation = struct('identifier', ME.identifier, ...
+                                'message', ME.message, 'report', fullReport);
+                        else
+                            runObj.outputs.error = struct('identifier', ME.identifier, ...
+                                'message', ME.message, 'report', fullReport);
+                        end
                         try
                             runObj.ctx = stripTransientRunContext(app, ctxRun);
                         catch
@@ -10664,7 +10680,7 @@ classdef pipeline2 < matlab.apps.AppBase
                             catch
                             end
                         end
-                        if isPipelineCancelException(app, ME)
+                        if wasCancelled
                             logRunEvent(app, runObj, ['Smoke test cancelled: ' ME.message], 'pipeline2');
                         else
                             logRunEvent(app, runObj, ['Smoke test failed: ' ME.message], 'pipeline2');
@@ -10675,13 +10691,21 @@ classdef pipeline2 < matlab.apps.AppBase
                     end
                 catch
                 end
-                app.PipelineandRuncheckreportLabel.Text = [app.PipelineandRuncheckreportLabel.Text newline newline ...
-                    'Smoke test failed:' newline ME.identifier newline ME.message newline newline ...
-                    getReport(ME, 'basic', 'hyperlinks', 'off')];
-                if isPipelineCancelException(app, ME)
+                if wasCancelled
+                    runJson = '';
+                    try
+                        runJson = fullfile(runObj.path, 'run.json');
+                    catch
+                    end
+                    app.PipelineandRuncheckreportLabel.Text = [app.PipelineandRuncheckreportLabel.Text newline newline ...
+                        'Smoke test stopped by user.' newline ...
+                        'Run state kept: ' runJson];
                     uialert(app.UIFigure, 'Smoke test stopped. Existing outputs and run log were kept.', ...
                         'Smoke test stopped', 'Icon', 'warning');
                 else
+                    app.PipelineandRuncheckreportLabel.Text = [app.PipelineandRuncheckreportLabel.Text newline newline ...
+                        'Smoke test failed:' newline ME.identifier newline ME.message newline newline ...
+                        getReport(ME, 'basic', 'hyperlinks', 'off')];
                     uialert(app.UIFigure, ME.message, 'Smoke test failed', 'Icon', 'error');
                 end
             end
@@ -11031,22 +11055,33 @@ classdef pipeline2 < matlab.apps.AppBase
                     app.RunButton.Text = 'Run !';
                 end
             catch ME
-                fullReport = printExceptionToConsole(app, 'Pipeline run failed', ME);
+                wasCancelled = isPipelineCancelException(app, ME);
+                if wasCancelled
+                    fullReport = ['Pipeline run stopped by user: ' ME.message];
+                    fprintf('\n==================== Pipeline run stopped ====================\n%s\n==================== end Pipeline run stopped ====================\n\n', fullReport);
+                else
+                    fullReport = printExceptionToConsole(app, 'Pipeline run failed', ME);
+                end
                 try
                     if exist('runObj', 'var') && ~isempty(runObj)
-                        if isPipelineCancelException(app, ME)
+                        if wasCancelled
                             runObj.status = 'cancelled';
                         else
                             runObj.status = 'failed';
                         end
-                        runObj.outputs.error = struct('identifier', ME.identifier, ...
-                            'message', ME.message, 'report', fullReport);
+                        if wasCancelled
+                            runObj.outputs.cancellation = struct('identifier', ME.identifier, ...
+                                'message', ME.message, 'report', fullReport);
+                        else
+                            runObj.outputs.error = struct('identifier', ME.identifier, ...
+                                'message', ME.message, 'report', fullReport);
+                        end
                         try
                             runObj.ctx = stripTransientRunContext(app, ctxRun);
                         catch
                             runObj.ctx = buildRunContext(app);
                         end
-                        if isPipelineCancelException(app, ME)
+                        if wasCancelled
                             logRunEvent(app, runObj, ['Run cancelled: ' ME.message], 'pipeline2');
                         else
                             logRunEvent(app, runObj, ['Run failed: ' ME.message], 'pipeline2');
@@ -11055,8 +11090,13 @@ classdef pipeline2 < matlab.apps.AppBase
                     end
                 catch
                 end
-                if isPipelineCancelException(app, ME)
-                    app.RuninformationhereLabel.Text = ['Run stopped: ' fullfile(runObj.path, 'run.json')];
+                if wasCancelled
+                    runJson = '';
+                    try
+                        runJson = fullfile(runObj.path, 'run.json');
+                    catch
+                    end
+                    app.RuninformationhereLabel.Text = ['Run stopped: ' runJson];
                     app.RunButton.Text = 'Resume run';
                     app.PipelineandRuncheckreportLabel.Text = [app.PipelineandRuncheckreportLabel.Text newline newline ...
                         'Run stopped by user.' newline ...
