@@ -17,6 +17,13 @@ function ctx = process(ctx)
     end
     if ~isfield(p,'write'), p.write = true; end
     if ~isfield(p,'interactive'), p.interactive = false; end
+    try
+        if isfield(ctx,'io') && isstruct(ctx.io) && isfield(ctx.io,'persistOutputs') && ...
+                ~isempty(ctx.io.persistOutputs) && ~logical(ctx.io.persistOutputs)
+            p.write = false;
+        end
+    catch
+    end
     if isfield(ctx,'interactive') && ctx.interactive
         p.interactive = true;
     end

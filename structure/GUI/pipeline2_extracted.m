@@ -9675,6 +9675,29 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
+        function ids = smokeRunSelectedNodeIds(app)
+            ids = selectedRunNodeIds(app);
+            if isempty(ids)
+                return;
+            end
+            originalIds = ids;
+            keep = true(1, numel(ids));
+            for i = 1:numel(ids)
+                idx = find(strcmp({app.Data.nodes.id}, ids{i}), 1);
+                if isempty(idx)
+                    continue;
+                end
+                nodeType = lower(char(string(getField(app, app.Data.nodes(idx), 'type', ''))));
+                if strcmp(nodeType, 'dataloader')
+                    keep(i) = false;
+                end
+            end
+            ids = ids(keep);
+            if isempty(ids) && ~isempty(originalIds)
+                ids = {'__detecdiv_smoke_no_executable_nodes__'};
+            end
+        end
+
         function tf = runtimeRunSelectionAllowsNode(app, nodeId)
             tf = true;
         end
@@ -10730,6 +10753,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 ctxSmoke.store = struct();
             end
             ctxSmoke.store.cacheMode = 'memory';
+            ctxSmoke.run.selectedNodes = smokeRunSelectedNodeIds(app);
             ctxSmoke.run.nodeParams = addSmokeNodeParamOverrides(app, ctxSmoke.run.nodeParams, smokeInfo);
         end
 
@@ -10822,6 +10846,11 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
                 nodeType = lower(char(string(getField(app, node, 'type', ''))));
                 patch = struct();
+                if strcmp(nodeType, 'dataloader')
+                    patch.write = false;
+                    patch.positionIdx = smokeInfo.fovIndex;
+                    patch.existingPolicy = 'skip';
+                end
                 if any(strcmp(nodeType, {'roiidentify','roipattern','roimanual','roigrid','roitracked','roiextract'}))
                     patch.fovIndex = smokeInfo.fovIndex;
                 end
