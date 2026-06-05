@@ -19,6 +19,7 @@ function paramout = setparam(ctx)
     if isempty(listChannels)
         listChannels = {'N/A'};
     end
+    channelChoices = [{'none'}, listChannels(:)'];
 
     paramout = struct();
     tip = {};
@@ -35,7 +36,7 @@ function paramout = setparam(ctx)
     for i = 1:maxSlots
         key = sprintf('Channel%d', i);
         tip{end+1} = sprintf('Binding slot %d: select one input channel (none = skip).', i); %#ok<AGROW>
-        paramout.(key) = 'none';
+        paramout.(key) = [channelChoices {'none'}];
 
         rgbKey = sprintf('RGB_Channel%d', i);
         tip{end+1} = 'RGB triplet for this channel eg: [1 0 0]'; %#ok<AGROW>
