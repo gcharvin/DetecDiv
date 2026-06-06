@@ -2137,39 +2137,36 @@ if ~isstruct(refInfo) || ~isfield(refInfo,'modulePath') || isempty(refInfo.modul
     return;
 end
 modulePath = char(string(refInfo.modulePath));
+if ~ispc && looksLikeWindowsAbsPath(modulePath)
+    [mappedPath, mapped] = mapModulePathToServerPath(modulePath, ctx);
+    if mapped && (exist(mappedPath, 'dir') == 7 || exist(mappedPath, 'file') == 2)
+        refInfo.modulePath = mappedPath;
+        return;
+    end
+    moduleId = '';
+    moduleKind = '';
+    try
+        if isfield(refInfo,'moduleId') && ~isempty(refInfo.moduleId)
+            moduleId = char(string(refInfo.moduleId));
+        end
+    catch
+    end
+    try
+        if isfield(refInfo,'moduleKind') && ~isempty(refInfo.moduleKind)
+            moduleKind = char(string(refInfo.moduleKind));
+        end
+    catch
+    end
+    recovered = recoverServerModulePath(modulePath, moduleId, moduleKind, ctx);
+    if ~isempty(recovered)
+        refInfo.modulePath = recovered;
+        return;
+    end
+end
 if isAbsolutePathLocal(modulePath)
     if exist(modulePath, 'dir') == 7 || exist(modulePath, 'file') == 2
         refInfo.modulePath = modulePath;
         return;
-    end
-
-    % On Linux workers, module references may still carry absolute Windows paths
-    % from GUI-originated pipeline snapshots. Try to recover a server-visible path.
-    if ~ispc && looksLikeWindowsAbsPath(modulePath)
-        [mappedPath, mapped] = mapModulePathToServerPath(modulePath, ctx);
-        if mapped && (exist(mappedPath, 'dir') == 7 || exist(mappedPath, 'file') == 2)
-            refInfo.modulePath = mappedPath;
-            return;
-        end
-        moduleId = '';
-        moduleKind = '';
-        try
-            if isfield(refInfo,'moduleId') && ~isempty(refInfo.moduleId)
-                moduleId = char(string(refInfo.moduleId));
-            end
-        catch
-        end
-        try
-            if isfield(refInfo,'moduleKind') && ~isempty(refInfo.moduleKind)
-                moduleKind = char(string(refInfo.moduleKind));
-            end
-        catch
-        end
-        recovered = recoverServerModulePath(modulePath, moduleId, moduleKind, ctx);
-        if ~isempty(recovered)
-            refInfo.modulePath = recovered;
-            return;
-        end
     end
 end
 
