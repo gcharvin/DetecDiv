@@ -83,6 +83,11 @@ if outputMode == "cnn_only"
     outputName = cnnOutputName;
 end
 
+wantCNNOutput = any(outputMode == ["cnn_only","both"]);
+if outputMode == "lstm_only"
+    classifierCNN = [];
+end
+
 % --------- DEBUG FLAG CNN ----------
 debugCNN = false;
 
@@ -123,7 +128,7 @@ if isempty(classifierCNN) && ~classifierCNNProvided
 end
 
 useLSTM = ~isempty(classifier);
-useCNN  = ~isempty(classifierCNN);
+useCNN  = wantCNNOutput && ~isempty(classifierCNN);
 
 % tolère struct wrapper .net
 if isstruct(classifier) && isfield(classifier,'net'); classifier = classifier.net; end
@@ -142,6 +147,15 @@ if useCNN && ~(isa(classifierCNN,'DAGNetwork') || ...
         'Classifier CNN type not supported: %s', class(classifierCNN));
 end
 
+if outputMode == "lstm_only" && ~useLSTM
+    error('classifyImageLSTMNetFun:NoLSTM', 'outputMode=lstm_only requires an LSTM classifier.');
+end
+if outputMode == "cnn_only" && ~useCNN
+    error('classifyImageLSTMNetFun:NoCNN', 'outputMode=cnn_only requires a CNN classifier.');
+end
+if outputMode == "both" && (~useLSTM || ~useCNN)
+    error('classifyImageLSTMNetFun:MissingModel', 'outputMode=both requires both LSTM and CNN classifiers.');
+end
 if ~useLSTM && ~useCNN
     error('classifyImageLSTMNetFun:NoModel', 'Aucun classifieur fourni (ni LSTM, ni CNN).');
 end
@@ -567,7 +581,7 @@ if ~any(classesUI == "unclassified")
 end
 catsLabels = ["undefined", classesUI];
 
-datatmp = resetInferenceOutputs(datatmp, classesTarget, useCNN, catsLabels, n);
+datatmp = resetInferenceOutputs(datatmp, classesTarget, outputMode == "both", catsLabels, n);
 
 
 
@@ -612,7 +626,7 @@ datatmp.data.id = idv;
 
 
 % Champs CNN additionnels
-if useCNN
+if outputMode == "both"
     ensureNumericCol('idCNN');
     for ii = 1:numel(classesTarget)
         ensureNumericCol("probCNN_" + classesTarget(ii));
@@ -645,7 +659,7 @@ pp = [];
 if isprop(datatmp,'plotProperties') && ~isempty(datatmp.plotProperties)
     pp = datatmp.plotProperties;
 end
-pp = ensurePlotProperties(pp, string(classif.classes), useCNN, 'Prune', true);
+pp = ensurePlotProperties(pp, string(classif.classes), outputMode == "both", 'Prune', true);
 pp = syncPlotPropsToTable(pp, datatmp.data);
 datatmp.plotProperties = pp;
 
