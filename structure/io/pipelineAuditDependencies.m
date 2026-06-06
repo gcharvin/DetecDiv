@@ -469,13 +469,21 @@ function contract = getNodeExportContractLocal(node)
             contract.supports.trainingAssets = true;
             contract.supports.trainingRois = true;
             if strcmp(pkg, 'cellposesam')
-                % CellposeSAM runs from the configured Python environment and
-                % package defaults. A linked classi/modulePath is useful as a
-                % local UI/defaults trace, but it is not a required portable
-                % artifact bundle for Hub execution.
-                contract.supports.inferenceAssets = false;
+                % CellposeSAM can run from Python package defaults ("sam") or
+                % from package-local fine-tuned weights under modulePath/models.
+                % Only the latter is a required portable artifact bundle.
+                hasLocalModel = cellposeHasLocalModelAssetLocal(node);
+                contract.supports.inferenceAssets = hasLocalModel;
                 contract.supports.trainingAssets = false;
                 contract.supports.trainingRois = false;
+                contract.inference.include = { ...
+                    'file:%ID%_classification.mat', ...
+                    'dir:models', ...
+                    'glob:**/*.pth', ...
+                    'glob:**/*.pt', ...
+                    'glob:**/*.onnx', ...
+                    'glob:**/*.yaml', ...
+                    'glob:**/*.yml'};
             elseif strcmp(pkg, 'cnn_lstm')
                 contract.inference.include = { ...
                     'file:%ID%_classification.mat', ...
@@ -523,6 +531,37 @@ function contract = getNodeExportContractLocal(node)
                 'file:%ID%.mat', ...
                 'dir:models', ...
                 'dir:weights'};
+    end
+end
+
+function tf = cellposeHasLocalModelAssetLocal(node)
+    tf = false;
+    params = getFieldOrDefault(node, 'params', struct());
+    if ~isstruct(params) || ~isfield(params, 'modulePath') || isempty(params.modulePath)
+        return;
+    end
+    modulePath = char(string(params.modulePath));
+    if exist(modulePath, 'dir') ~= 7
+        return;
+    end
+    moduleId = char(string(getFieldOrDefault(params, 'moduleId', '')));
+    modelDir = fullfile(modulePath, 'models');
+    candidates = {};
+    if ~isempty(moduleId)
+        candidates{end+1} = fullfile(modelDir, moduleId); %#ok<AGROW>
+        candidates{end+1} = fullfile(modelDir, [moduleId '.pth']); %#ok<AGROW>
+        candidates{end+1} = fullfile(modelDir, [moduleId '.pt']); %#ok<AGROW>
+        candidates{end+1} = fullfile(modelDir, [moduleId '.onnx']); %#ok<AGROW>
+    end
+    for i = 1:numel(candidates)
+        if exist(candidates{i}, 'file') == 2
+            tf = true;
+            return;
+        end
+    end
+    if exist(modelDir, 'dir') == 7
+        files = [dir(fullfile(modelDir, '*.pth')); dir(fullfile(modelDir, '*.pt')); dir(fullfile(modelDir, '*.onnx'))];
+        tf = ~isempty(files);
     end
 end
 
@@ -626,11 +665,7 @@ function tf = isAbsolutePathLocal(p)
     if isempty(p)
         return;
     end
-    if ispc
-        tf = ~isempty(regexp(p, '^[A-Za-z]:[\\/]', 'once')) || startsWith(p, '\\');
-    else
-        tf = startsWith(p, '/');
-    end
+    tf = startsWith(p, '/') || ~isempty(regexp(p, '^[A-Za-z]:[\\/]', 'once')) || startsWith(p, '\\');
 end
 
 function out = getFieldOrDefault(S, name, default)
