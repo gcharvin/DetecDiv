@@ -108,9 +108,19 @@ while ~success && attempts < max_attempts
             requestedChannels = {};
         end
 
-        % If partial save but H5 is inconsistent (or size changed), fallback to full save
+        frameUpsertMode = ~isempty(absStart0);
+
+        % If partial save but H5 is inconsistent (or size changed), fallback to full save.
+        % During streaming ROI extraction, each call contains one time block.
+        % In that mode T is expected to differ from the existing H5 length;
+        % only spatial dimensions must match so previous blocks are preserved.
         if ~fullSave && exist(h5File,'file')
-            if ~localH5DimsConsistent(h5File, [H W T], verbose)
+            if frameUpsertMode
+                h5DimsOk = localH5SpatialDimsConsistent(h5File, [H W], verbose);
+            else
+                h5DimsOk = localH5DimsConsistent(h5File, [H W T], verbose);
+            end
+            if ~h5DimsOk
                 if verbose
                     disp('Partial save disabled: H5 dimensions inconsistent, falling back to full save.');
                 end
@@ -164,8 +174,11 @@ while ~success && attempts < max_attempts
             dsetNameSanitized = sanitizeDatasetName(chanNameLogical);
             h5Path = ['/' dsetNameSanitized];
 
-            % For partial save, always replace the dataset to avoid appending
-            if ~fullSave
+            % For ordinary partial save, replace the full logical dataset.
+            % For frameUpsertMode, keep it and overwrite only the requested
+            % temporal hyperslab; deleting here would create black holes for
+            % all previously extracted blocks.
+            if ~fullSave && ~frameUpsertMode
                 try
                     if exist(localH5Tmp,'file')
                         fid = H5F.open(localH5Tmp,'H5F_ACC_RDWR','H5P_DEFAULT');
@@ -623,6 +636,56 @@ try
             if verbose
                 fprintf('H5 dims [%d %d %d] do not match current image [%d %d %d]\n', ...
                     H0, W0, T0, curHWT(1), curHWT(2), curHWT(3));
+            end
+            ok = false;
+            return;
+        end
+    end
+
+    ok = true;
+catch
+    ok = false;
+end
+end
+
+function ok = localH5SpatialDimsConsistent(h5File, curHW, verbose)
+% Verify that H/W match current image while allowing T to grow blockwise.
+ok = false;
+try
+    info = h5info(h5File);
+    dsets = info.Datasets;
+    if isempty(dsets)
+        ok = false;
+        return;
+    end
+
+    H0 = []; W0 = [];
+    for i = 1:numel(dsets)
+        sz = dsets(i).Dataspace.Size;
+        if isempty(sz), continue; end
+        if numel(sz) < 4
+            sz(end+1:4) = 1;
+        end
+        H = sz(1); W = sz(2);
+        if isempty(H0)
+            H0 = H; W0 = W;
+        else
+            if H ~= H0 || W ~= W0
+                if verbose
+                    fprintf('H5 spatial dim mismatch: %s has [%d %d] vs [%d %d]\n', ...
+                        dsets(i).Name, H, W, H0, W0);
+                end
+                ok = false;
+                return;
+            end
+        end
+    end
+
+    if ~isempty(curHW)
+        if H0 ~= curHW(1) || W0 ~= curHW(2)
+            if verbose
+                fprintf('H5 spatial dims [%d %d] do not match current image [%d %d]\n', ...
+                    H0, W0, curHW(1), curHW(2));
             end
             ok = false;
             return;
