@@ -178,7 +178,8 @@ try
 catch
 end
 
-tmp_mat_path = fullfile(classif.path, 'tmp.mat');
+workDir = resolveCellposeWorkDirLocal(ctx, classif, roiobj);
+tmp_mat_path = fullfile(workDir, 'tmp.mat');
 save(tmp_mat_path, 'gfp', 'frames');
 try
     infoTmp = dir(tmp_mat_path);
@@ -195,7 +196,8 @@ min_size = getCellposeParamLocal(ctx, classif, 'min_size', 10);
 cellprob_threshold = getCellposeParamLocal(ctx, classif, 'cell_prob_threshold', 0);
 
 % Model selection
-model_dir          = fullfile(classif.path, 'models');
+classifPath = getClassifierPathLocal(classif);
+model_dir          = fullfile(classifPath, 'models');
 model_path_to_use  = 'sam';
 if exist(model_dir, 'dir')
     candidate1 = fullfile(model_dir, classif.strid);
@@ -228,7 +230,7 @@ runnerPath = fullfile(fileparts(mfilename('fullpath')), 'py', 'cellposesam_runne
 
 cfg = struct();
 cfg.tmp_mat_path = strrep(tmp_mat_path, '\\', '/');
-cfg.classif_path = strrep(classif.path, '\\', '/');
+cfg.classif_path = strrep(workDir, '\\', '/');
 cfg.model_path   = strrep(model_path_to_use, '\\', '/');
 cfg.gpu          = logical(gpu);
 cfg.diameter     = diameter;
@@ -237,9 +239,9 @@ cfg.cell_prob_threshold = cellprob_threshold;
 cfg.min_size     = round(min_size);
 cfg.mode         = mode_str;
 cfg.cancel_path  = char(string(cancelPath));
-cfg.log_path     = strrep(fullfile(classif.path, 'runner_live.log'), '\\', '/');
+cfg.log_path     = strrep(fullfile(workDir, 'runner_live.log'), '\\', '/');
 
-configPath = fullfile(classif.path, 'classify_cellposesam_config.json');
+configPath = fullfile(workDir, 'classify_cellposesam_config.json');
 fid = fopen(configPath, 'w');
 if fid == -1
     error('Unable to create Python config: %s', configPath);
@@ -274,19 +276,19 @@ cellposesam.utils.ensurePythonDeps(classif);
 % external process when requested/fallback is needed.
 pe = pyenv;
 pythonExe = char(pe.Executable);
-stdoutPath = fullfile(classif.path, 'runner_stdout.txt');
-stderrPath = fullfile(classif.path, 'runner_stderr.txt');
-liveLogPath = fullfile(classif.path, 'runner_live.log');
+stdoutPath = fullfile(workDir, 'runner_stdout.txt');
+stderrPath = fullfile(workDir, 'runner_stderr.txt');
+liveLogPath = fullfile(workDir, 'runner_live.log');
 runnerMode = resolveCellposeRunnerModeLocal(ctx);
 runnerFallback = resolveCellposeRunnerFallbackLocal(ctx, runnerMode);
 disp(['[DEBUG] cellposesam: runner mode=' runnerMode]);
 tRun = tic;
-runCellposeRunnerSelected(runnerMode, runnerFallback, pythonExe, runnerPath, configPath, classif.path, cancelPath, stdoutPath, stderrPath, liveLogPath);
+runCellposeRunnerSelected(runnerMode, runnerFallback, pythonExe, runnerPath, configPath, workDir, cancelPath, stdoutPath, stderrPath, liveLogPath);
 runSec = toc(tRun);
 disp(['[DEBUG] cellposesam.classify: runner time=' num2str(runSec, '%.3f') 's']);
 
 % If results.mat missing, force reload + retry once
-resultsPath = fullfile(classif.path, 'results.mat');
+resultsPath = fullfile(workDir, 'results.mat');
 try
     disp(['[DEBUG] cellposesam.classify: results.mat exists after runner? ' num2str(exist(resultsPath,'file'))]);
 catch
@@ -295,7 +297,7 @@ if exist(resultsPath, 'file') ~= 2
     disp('[WARN] cellposesam.classify: results.mat missing after runner; retrying once...');
     try
         tRun = tic;
-        runCellposeRunnerSelected(runnerMode, runnerFallback, pythonExe, runnerPath, configPath, classif.path, cancelPath, stdoutPath, stderrPath, liveLogPath);
+        runCellposeRunnerSelected(runnerMode, runnerFallback, pythonExe, runnerPath, configPath, workDir, cancelPath, stdoutPath, stderrPath, liveLogPath);
         runSec = toc(tRun);
         disp(['[DEBUG] cellposesam.classify: retry runner time=' num2str(runSec, '%.3f') 's']);
     catch ME
@@ -303,24 +305,24 @@ if exist(resultsPath, 'file') ~= 2
     end
 end
 try
-    infoRes = dir(fullfile(classif.path, 'results.mat'));
+    infoRes = dir(resultsPath);
     if ~isempty(infoRes)
         disp(['[DEBUG] cellposesam.classify: results.mat bytes=' num2str(infoRes.bytes) ' date=' infoRes.date]);
     end
 catch
 end
-if exist(fullfile(classif.path, 'results.mat'), 'file') ~= 2
+if exist(resultsPath, 'file') ~= 2
     try
-        stampPath = fullfile(classif.path, 'runner_stamp.txt');
+        stampPath = fullfile(workDir, 'runner_stamp.txt');
         if exist(stampPath, 'file') == 2
             disp('[DEBUG] cellposesam.classify: runner_stamp.txt exists');
             disp(fileread(stampPath));
         else
             disp('[DEBUG] cellposesam.classify: runner_stamp.txt missing');
         end
-        d = dir(fullfile(classif.path, '*results*'));
+        d = dir(fullfile(workDir, '*results*'));
         if ~isempty(d)
-            disp('[DEBUG] cellposesam.classify: files matching *results* in classif.path:');
+            disp('[DEBUG] cellposesam.classify: files matching *results* in workDir:');
             for k = 1:numel(d)
                 disp(['  ' d(k).name]);
             end
@@ -330,7 +332,7 @@ if exist(fullfile(classif.path, 'results.mat'), 'file') ~= 2
 end
 
 % Read results
-res = load(fullfile(classif.path, 'results.mat'));
+res = load(resultsPath);
 frames_list = res.frames_list;
 try
     disp(['[DEBUG] cellposesam.classify: results loaded frames=' num2str(numel(frames_list))]);
@@ -423,6 +425,133 @@ try
         value = ctx.params.(name);
     end
 catch
+end
+end
+
+function workDir = resolveCellposeWorkDirLocal(ctx, classif, roiobj)
+baseDir = '';
+try
+    baseDir = firstTextLocal( ...
+        nestedTextLocal(ctx, {'run','runPath'}, ''), ...
+        nestedTextLocal(ctx, {'run','path'}, ''), ...
+        nestedTextLocal(ctx, {'store','runPath'}, ''), ...
+        nestedTextLocal(ctx, {'params','runPath'}, ''));
+catch
+    baseDir = '';
+end
+
+nodeId = nestedTextLocal(ctx, {'pipeline','currentNode'}, safeClassifierIdLocal(classif));
+roiId = safeRoiIdLocal(roiobj);
+if ~isempty(baseDir)
+    workDir = fullfile(baseDir, 'work', 'cellposesam', safePathPartLocal(nodeId), safePathPartLocal(roiId));
+else
+    classifPath = getClassifierPathLocal(classif);
+    if isWritableDirLocal(classifPath)
+        workDir = fullfile(classifPath, 'work', safePathPartLocal(roiId));
+    else
+        workDir = fullfile(tempdir, 'detecdiv_cellposesam', safePathPartLocal(nodeId), safePathPartLocal(roiId));
+    end
+end
+
+if exist(workDir, 'dir') ~= 7
+    [ok, msg] = mkdir(workDir);
+    if ~ok
+        error('cellposesam:WorkDirCreateFailed', 'Unable to create CellposeSAM work directory "%s": %s', workDir, msg);
+    end
+end
+if ~isWritableDirLocal(workDir)
+    error('cellposesam:WorkDirNotWritable', 'CellposeSAM work directory is not writable: %s', workDir);
+end
+end
+
+function pathText = getClassifierPathLocal(classif)
+pathText = '';
+try
+    if isobject(classif) && isprop(classif, 'path') && ~isempty(classif.path)
+        pathText = char(string(classif.path));
+    elseif isstruct(classif) && isfield(classif, 'path') && ~isempty(classif.path)
+        pathText = char(string(classif.path));
+    end
+catch
+    pathText = '';
+end
+end
+
+function text = nestedTextLocal(S, keys, defaultValue)
+text = defaultValue;
+try
+    v = S;
+    for i = 1:numel(keys)
+        if ~isstruct(v) || ~isfield(v, keys{i})
+            return;
+        end
+        v = v.(keys{i});
+    end
+    if ~isempty(v)
+        text = char(string(v));
+    end
+catch
+    text = defaultValue;
+end
+end
+
+function out = firstTextLocal(varargin)
+out = '';
+for i = 1:nargin
+    try
+        txt = strtrim(char(string(varargin{i})));
+        if ~isempty(txt)
+            out = txt;
+            return;
+        end
+    catch
+    end
+end
+end
+
+function tf = isWritableDirLocal(pathText)
+tf = false;
+try
+    if isempty(pathText) || exist(pathText, 'dir') ~= 7
+        return;
+    end
+    [~, tmpName] = fileparts(tempname);
+    testPath = fullfile(pathText, ['.detecdiv_write_test_' tmpName '.tmp']);
+    fid = fopen(testPath, 'w');
+    if fid < 0
+        return;
+    end
+    fclose(fid);
+    delete(testPath);
+    tf = true;
+catch
+    tf = false;
+end
+end
+
+function part = safePathPartLocal(value)
+part = char(string(value));
+if isempty(strtrim(part))
+    part = 'unnamed';
+end
+part = regexprep(part, '[^\w\-.]+', '_');
+part = regexprep(part, '_+', '_');
+part = regexprep(part, '^_+|_+$', '');
+if isempty(part)
+    part = 'unnamed';
+end
+end
+
+function roiId = safeRoiIdLocal(roiobj)
+roiId = 'roi';
+try
+    if isobject(roiobj) && isprop(roiobj, 'id') && ~isempty(roiobj.id)
+        roiId = char(string(roiobj.id));
+    elseif isstruct(roiobj) && isfield(roiobj, 'id') && ~isempty(roiobj.id)
+        roiId = char(string(roiobj.id));
+    end
+catch
+    roiId = 'roi';
 end
 end
 
