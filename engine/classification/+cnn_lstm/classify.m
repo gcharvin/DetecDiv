@@ -104,6 +104,10 @@ if isempty(classifier) && ~classifierProvided
     catch
         classifier = [];
     end
+    if isempty(classifier)
+        classifier = loadNetworkArtifact(classif, {'classifier','net','netLSTM_dag','netLSTM'}, ...
+            {[char(string(classif.strid)) '.mat'], ['netLSTM_' char(string(classif.strid)) '.mat']});
+    end
 end
 
 if isempty(classifierCNN) && ~classifierCNNProvided
@@ -124,6 +128,10 @@ if isempty(classifierCNN) && ~classifierCNNProvided
         end
     catch
         classifierCNN = [];
+    end
+    if isempty(classifierCNN)
+        classifierCNN = loadNetworkArtifact(classif, {'classifier','netCNN','net'}, ...
+            {['netCNN_' char(string(classif.strid)) '.mat']});
     end
 end
 
@@ -1171,6 +1179,40 @@ function v = getExecOpt(ctx, name, defaultValue)
             v = ctx.exec.(fn{hit});
             return;
         end
+    end
+end
+
+function net = loadNetworkArtifact(classif, candidateFields, fileNames)
+    net = [];
+    try
+        basePath = char(string(classif.path));
+        if isempty(basePath)
+            return;
+        end
+        for i = 1:numel(fileNames)
+            filePath = fullfile(basePath, char(string(fileNames{i})));
+            if exist(filePath, 'file') ~= 2
+                continue;
+            end
+            S = load(filePath);
+            for k = 1:numel(candidateFields)
+                fieldName = candidateFields{k};
+                if isfield(S, fieldName) && ~isempty(S.(fieldName))
+                    net = S.(fieldName);
+                    return;
+                end
+            end
+            names = fieldnames(S);
+            for k = 1:numel(names)
+                candidate = S.(names{k});
+                if isa(candidate, 'DAGNetwork') || isa(candidate, 'SeriesNetwork') || isa(candidate, 'dlnetwork')
+                    net = candidate;
+                    return;
+                end
+            end
+        end
+    catch
+        net = [];
     end
 end
 
