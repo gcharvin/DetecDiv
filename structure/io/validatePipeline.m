@@ -2,7 +2,7 @@ function [ok, report] = validatePipeline(pipe, ctx, opts)
 % validatePipeline  Validate pipeline structure and dependencies.
 
     ok = true;
-    report = struct('errors',{{}}, 'warnings',{{}}, 'order', [], 'nodes', [], 'edges', [], 'contracts', struct(), 'semantic', struct(), 'binding', struct(), 'solver', struct());
+    report = struct('errors',{{}}, 'warnings',{{}}, 'order', [], 'nodes', [], 'edges', [], 'contracts', struct(), 'semantic', struct(), 'binding', struct(), 'classifierArtifacts', [], 'solver', struct());
 
     if nargin < 2 || isempty(ctx)
         ctx = struct();
@@ -18,6 +18,7 @@ function [ok, report] = validatePipeline(pipe, ctx, opts)
 
     P = pipelineToStructLocal(pipe);
     nodes = normalizeNodesWithContracts(P.nodes);
+    nodes = applyValidationRunNodeOverrides(nodes, ctx);
     edges = normalizeEdges(P, nodes);
     [nodes, edges] = filterGraphForRunSelection(nodes, edges, ctx);
     nodes = injectContextResolvedNodeBindings(nodes, ctx);
@@ -110,7 +111,14 @@ function [ok, report] = validatePipeline(pipe, ctx, opts)
                     report.errors{end+1} = ['Missing params for node ' node.id ': ' strjoin(missParams, ', ')];
                 end
             end
-            artifactWarnings = classifierArtifactWarnings(node);
+            [artifactErrors, artifactWarnings, artifactReport] = classifierArtifactIssues(node, ctx);
+            if ~isempty(artifactReport)
+                report.classifierArtifacts = appendStructArray(report.classifierArtifacts, artifactReport);
+            end
+            if ~isempty(artifactErrors)
+                ok = false;
+                report.errors = [report.errors, artifactErrors]; %#ok<AGROW>
+            end
             if ~isempty(artifactWarnings)
                 report.warnings = [report.warnings, artifactWarnings]; %#ok<AGROW>
             end
@@ -174,6 +182,102 @@ function P = pipelineToStructLocal(pipe)
         if isprop(pipe,'inputs'), P.inputs = pipe.inputs; end
     else
         P = pipe;
+    end
+end
+
+function nodes = applyValidationRunNodeOverrides(nodes, ctx)
+    if isempty(nodes) || ~isstruct(ctx) || ~isfield(ctx, 'run') || ~isstruct(ctx.run) || ...
+            ~isfield(ctx.run, 'nodeParams') || isempty(ctx.run.nodeParams)
+        return;
+    end
+    np = ctx.run.nodeParams;
+    for i = 1:numel(nodes)
+        nodeId = char(string(getField(nodes(i), 'id', '')));
+        patch = findRunNodeParamPatch(np, nodeId);
+        if isempty(patch)
+            continue;
+        end
+        if ~isfield(nodes(i), 'params') || ~isstruct(nodes(i).params)
+            nodes(i).params = struct();
+        end
+        if isstruct(patch) && isfield(patch, 'params') && isstruct(patch.params)
+            nodes(i).params = mergeStructLocal(nodes(i).params, patch.params);
+        elseif isstruct(patch)
+            nodes(i).params = mergeStructLocal(nodes(i).params, rmfieldIfPresentLocal(patch, {'id','nodeId'}));
+        end
+    end
+end
+
+function patch = findRunNodeParamPatch(nodeParams, nodeId)
+    patch = [];
+    if isempty(nodeParams) || isempty(nodeId)
+        return;
+    end
+    try
+        if iscell(nodeParams)
+            for i = 1:numel(nodeParams)
+                item = nodeParams{i};
+                if isstruct(item) && nodeParamIdMatches(item, nodeId)
+                    patch = item;
+                    return;
+                end
+            end
+        elseif isstruct(nodeParams) && numel(nodeParams) > 1
+            for i = 1:numel(nodeParams)
+                if nodeParamIdMatches(nodeParams(i), nodeId)
+                    patch = nodeParams(i);
+                    return;
+                end
+            end
+        elseif isstruct(nodeParams)
+            if nodeParamIdMatches(nodeParams, nodeId)
+                patch = nodeParams;
+                return;
+            end
+            f = matlab.lang.makeValidName(nodeId);
+            if isfield(nodeParams, f)
+                patch = nodeParams.(f);
+            elseif isfield(nodeParams, nodeId)
+                patch = nodeParams.(nodeId);
+            end
+        end
+    catch
+        patch = [];
+    end
+end
+
+function tf = nodeParamIdMatches(item, nodeId)
+    tf = false;
+    try
+        if isfield(item, 'id') && strcmp(char(string(item.id)), nodeId)
+            tf = true;
+        elseif isfield(item, 'nodeId') && strcmp(char(string(item.nodeId)), nodeId)
+            tf = true;
+        end
+    catch
+        tf = false;
+    end
+end
+
+function S = rmfieldIfPresentLocal(S, names)
+    if ~isstruct(S)
+        return;
+    end
+    for i = 1:numel(names)
+        if isfield(S, names{i})
+            S = rmfield(S, names{i});
+        end
+    end
+end
+
+function arr = appendStructArray(arr, item)
+    if isempty(item)
+        return;
+    end
+    if isempty(arr)
+        arr = item;
+    else
+        arr(end+1) = item; %#ok<AGROW>
     end
 end
 
@@ -1492,18 +1596,489 @@ function outDemand = propagateNodeDemand(node, demand)
     end
 end
 
-function warnings = classifierArtifactWarnings(node)
+function [errors, warnings, artifactReport] = classifierArtifactIssues(node, ctx)
+    errors = {};
     warnings = {};
+    artifactReport = struct([]);
     if ~strcmpi(char(string(getField(node, 'type', ''))), 'classifier')
         return;
     end
+
+    nodeId = char(string(getField(node, 'id', '')));
+    pkgName = lower(char(string(getField(node, 'pkg', ''))));
     p = getField(node, 'params', struct());
-    hasLinkedPath = isstruct(p) && isfield(p, 'modulePath') && ~isempty(p.modulePath) && ...
-        isfield(p, 'moduleId') && ~isempty(p.moduleId);
+    if isstruct(p) && isfield(p, 'pkg') && ~isempty(p.pkg)
+        pkgName = lower(char(string(p.pkg)));
+    end
+
+    hasLinkedPath = isstruct(p) && isfield(p, 'modulePath') && ~isempty(p.modulePath);
     hasLinkedVar = isstruct(p) && isfield(p, 'moduleVar') && ~isempty(p.moduleVar);
+    requiresLocalArtifacts = classifierRequiresLocalArtifacts(pkgName);
     if ~(hasLinkedPath || hasLinkedVar)
-        warnings{end+1} = ['Classifier node ' char(string(getField(node, 'id', ''))) ...
+        warnings{end+1} = ['Classifier node ' nodeId ...
             ' is not linked to an existing classi object; model weights/training artifacts may be unavailable at run time.']; %#ok<AGROW>
+        artifactReport = classifierArtifactReport(node, '', '', '', 'unlinked', '', '', false);
+        return;
+    end
+    if ~hasLinkedPath
+        warnings{end+1} = ['Classifier node ' nodeId ...
+            ' is linked only by workspace variable; smoke/preflight cannot prove that model artifacts will be available in a batch or Hub run.']; %#ok<AGROW>
+        artifactReport = classifierArtifactReport(node, '', '', '', 'workspace_only', '', '', false);
+        return;
+    end
+
+    configuredPath = char(string(p.modulePath));
+    moduleId = classifierModuleIdFromParams(p, configuredPath, nodeId);
+    [modulePath, pathStatus, targetLabel] = resolveClassifierModulePathForValidation(configuredPath, moduleId, ctx);
+
+    artifactReport = classifierArtifactReport(node, configuredPath, modulePath, moduleId, pathStatus, '', targetLabel, false);
+    if isempty(modulePath) || exist(modulePath, 'dir') ~= 7
+        msg = classifierRelinkMessage(nodeId, configuredPath, targetLabel, ...
+            ['Linked classifier folder is not accessible for ' targetLabel '.']);
+        if requiresLocalArtifacts
+            errors{end+1} = msg;
+        else
+            warnings{end+1} = msg;
+        end
+        artifactReport.status = 'missing_module_path';
+        return;
+    end
+
+    snapPath = classifierSnapshotPath(modulePath, moduleId);
+    artifactReport.snapshotPath = snapPath;
+    if isempty(snapPath) || exist(snapPath, 'file') ~= 2
+        msg = classifierRelinkMessage(nodeId, configuredPath, targetLabel, ...
+            sprintf('Linked classifier snapshot is missing under "%s" (expected %s_classification.mat).', modulePath, moduleId));
+        if requiresLocalArtifacts
+            errors{end+1} = msg;
+        else
+            warnings{end+1} = msg;
+        end
+        artifactReport.status = 'missing_snapshot';
+        return;
+    end
+
+    switch pkgName
+        case 'cnn_lstm'
+            [modelOk, modelMessage, modelPath] = validateCnnLstmArtifacts(modulePath, moduleId, p);
+            artifactReport.modelPath = modelPath;
+            if ~modelOk
+                errors{end+1} = classifierRelinkMessage(nodeId, configuredPath, targetLabel, modelMessage); %#ok<AGROW>
+                artifactReport.status = 'missing_model';
+                return;
+            end
+        case 'cellposesam'
+            % CellposeSAM may intentionally use the default SAM model when no
+            % package-local model file exists. The linked classi snapshot is
+            % sufficient for execution defaults.
+        otherwise
+            modelPath = fullfile(modulePath, [moduleId '.mat']);
+            artifactReport.modelPath = modelPath;
+            if exist(modelPath, 'file') ~= 2
+                warnings{end+1} = sprintf(['Classifier node %s is linked, but no default model file was found at %s. ' ...
+                    'This may be valid for package "%s" if it uses external/default weights.'], nodeId, modelPath, pkgName); %#ok<AGROW>
+            end
+    end
+
+    artifactReport.status = 'ok';
+    artifactReport.accessible = true;
+end
+
+function tf = classifierRequiresLocalArtifacts(pkgName)
+    pkgName = lower(char(string(pkgName)));
+    tf = ~any(strcmp(pkgName, {'cellposesam'}));
+end
+
+function msg = classifierRelinkMessage(nodeId, configuredPath, targetLabel, reason)
+    msg = sprintf(['Classifier node %s linked classifier is not runnable. %s ' ...
+        'Configured modulePath: %s. For %s, relink the classifier to an accessible folder, ' ...
+        'export/copy the classifier module with its *_classification.mat and model .mat files, ' ...
+        'or set a run override modulePath to the server-visible classifier folder.'], ...
+        nodeId, reason, configuredPath, targetLabel);
+end
+
+function rep = classifierArtifactReport(node, configuredPath, resolvedPath, moduleId, status, snapshotPath, targetLabel, accessible)
+    rep = struct( ...
+        'nodeId', char(string(getField(node, 'id', ''))), ...
+        'package', char(string(getField(node, 'pkg', ''))), ...
+        'configuredPath', char(string(configuredPath)), ...
+        'resolvedPath', char(string(resolvedPath)), ...
+        'moduleId', char(string(moduleId)), ...
+        'target', char(string(targetLabel)), ...
+        'status', char(string(status)), ...
+        'accessible', logical(accessible), ...
+        'snapshotPath', char(string(snapshotPath)), ...
+        'modelPath', '');
+end
+
+function moduleId = classifierModuleIdFromParams(p, configuredPath, nodeId)
+    moduleId = '';
+    try
+        if isstruct(p) && isfield(p, 'moduleId') && ~isempty(p.moduleId)
+            moduleId = char(string(p.moduleId));
+        elseif isstruct(p) && isfield(p, 'outputName') && ~isempty(p.outputName)
+            moduleId = char(string(p.outputName));
+        end
+    catch
+        moduleId = '';
+    end
+    if isempty(moduleId)
+        [~, moduleId] = fileparts(configuredPath);
+    end
+    if isempty(moduleId)
+        moduleId = nodeId;
+    end
+end
+
+function [modulePath, status, targetLabel] = resolveClassifierModulePathForValidation(configuredPath, moduleId, ctx)
+    targetLabel = validationExecutionTargetLabel(ctx);
+    status = 'configured';
+    modulePath = '';
+
+    if isempty(configuredPath)
+        status = 'missing';
+        return;
+    end
+
+    if isHubValidationTarget(ctx)
+        if ispc
+            [checkPath, mapped] = mapHubClassifierPathToLocalCheckPath(configuredPath, ctx);
+            if mapped
+                modulePath = checkPath;
+                status = 'hub_local_mirror';
+            elseif looksLikeWindowsAbsPathLocal(configuredPath)
+                status = 'unmapped_windows_path';
+                return;
+            elseif startsWith(strrep(configuredPath, '\', '/'), '/')
+                status = 'unmapped_server_path';
+                return;
+            else
+                modulePath = configuredPath;
+            end
+        else
+            [mappedPath, mapped] = mapLocalPathToHubServerPath(configuredPath, ctx);
+            if mapped
+                modulePath = mappedPath;
+                status = 'mapped';
+            elseif startsWith(strrep(configuredPath, '\', '/'), '/')
+                modulePath = configuredPath;
+                status = 'server';
+            elseif looksLikeWindowsAbsPathLocal(configuredPath)
+                status = 'unmapped_windows_path';
+                return;
+            else
+                modulePath = configuredPath;
+            end
+        end
+    else
+        modulePath = configuredPath;
+    end
+
+    if exist(modulePath, 'dir') ~= 7
+        recovered = recoverClassifierModulePathForValidation(configuredPath, moduleId, ctx);
+        if ~isempty(recovered)
+            modulePath = recovered;
+            status = 'recovered';
+        end
+    end
+end
+
+function [checkPath, mapped] = mapHubClassifierPathToLocalCheckPath(pathIn, ctx)
+    checkPath = char(string(pathIn));
+    mapped = false;
+    pathText = char(string(pathIn));
+    if looksLikeWindowsAbsPathLocal(pathText)
+        [~, mapped] = mapLocalPathToHubServerPath(pathText, ctx);
+        if mapped
+            checkPath = pathText;
+        end
+        return;
+    end
+
+    [localPath, reverseMapped] = mapHubServerPathToLocalPath(pathText, ctx);
+    if reverseMapped
+        checkPath = localPath;
+        mapped = true;
+    end
+end
+
+function tf = isHubValidationTarget(ctx)
+    tf = false;
+    try
+        vals = { ...
+            nestedFieldTextLocal(ctx, {'run','executionTarget'}, ''), ...
+            nestedFieldTextLocal(ctx, {'execution','requested_mode'}, ''), ...
+            nestedFieldTextLocal(ctx, {'run','control','backend'}, '')};
+        txt = lower(strjoin(vals, ' '));
+        tf = contains(txt, 'hub') || contains(txt, 'server');
+    catch
+        tf = false;
+    end
+end
+
+function label = validationExecutionTargetLabel(ctx)
+    if isHubValidationTarget(ctx)
+        label = 'Hub/server execution';
+    else
+        label = 'local MATLAB execution';
+    end
+end
+
+function [mappedPath, mapped] = mapHubServerPathToLocalPath(pathIn, ctx)
+    mappedPath = char(string(pathIn));
+    mapped = false;
+    mappings = validationPathMappings(ctx);
+    if isempty(mappings)
+        return;
+    end
+    serverComparable = regexprep(strrep(char(string(pathIn)), '\', '/'), '[\/]+$', '');
+    bestLen = 0;
+    bestLocal = '';
+    bestSuffix = '';
+    for i = 1:numel(mappings)
+        if ~isfield(mappings(i), 'localRoot') || ~isfield(mappings(i), 'remoteRoot')
+            continue;
+        end
+        localRoot = regexprep(strrep(char(string(mappings(i).localRoot)), '/', '\'), '[\\\/]+$', '');
+        remoteRoot = regexprep(strrep(char(string(mappings(i).remoteRoot)), '\', '/'), '[\/]+$', '');
+        if isempty(localRoot) || isempty(remoteRoot)
+            continue;
+        end
+        if startsWith(lower(serverComparable), lower(remoteRoot)) && ...
+                (numel(serverComparable) == numel(remoteRoot) || serverComparable(numel(remoteRoot)+1) == '/')
+            if numel(remoteRoot) > bestLen
+                bestLen = numel(remoteRoot);
+                bestLocal = localRoot;
+                bestSuffix = serverComparable(numel(remoteRoot)+1:end);
+            end
+        end
+    end
+    if bestLen > 0
+        mappedPath = [bestLocal strrep(bestSuffix, '/', filesep)];
+        mapped = true;
+    end
+end
+
+function [mappedPath, mapped] = mapLocalPathToHubServerPath(pathIn, ctx)
+    mappedPath = char(string(pathIn));
+    mapped = false;
+    mappings = validationPathMappings(ctx);
+    if isempty(mappings)
+        return;
+    end
+    localComparable = regexprep(strrep(char(string(pathIn)), '/', '\'), '[\\\/]+$', '');
+    bestLen = 0;
+    bestRemote = '';
+    bestSuffix = '';
+    for i = 1:numel(mappings)
+        if ~isfield(mappings(i), 'localRoot') || ~isfield(mappings(i), 'remoteRoot')
+            continue;
+        end
+        localRoot = regexprep(strrep(char(string(mappings(i).localRoot)), '/', '\'), '[\\\/]+$', '');
+        remoteRoot = regexprep(strrep(char(string(mappings(i).remoteRoot)), '\', '/'), '[\/]+$', '');
+        if isempty(localRoot) || isempty(remoteRoot)
+            continue;
+        end
+        if startsWith(lower(localComparable), lower(localRoot)) && ...
+                (numel(localComparable) == numel(localRoot) || any(localComparable(numel(localRoot)+1) == ['\' '/']))
+            if numel(localRoot) > bestLen
+                bestLen = numel(localRoot);
+                bestRemote = remoteRoot;
+                bestSuffix = localComparable(numel(localRoot)+1:end);
+            end
+        end
+    end
+    if bestLen > 0
+        mappedPath = [bestRemote strrep(bestSuffix, '\', '/')];
+        mapped = true;
+    end
+end
+
+function mappings = validationPathMappings(ctx)
+    mappings = struct('remoteRoot', {}, 'localRoot', {});
+    try
+        if isfield(ctx, 'hub') && isstruct(ctx.hub) && isfield(ctx.hub, 'pathMappings') && ~isempty(ctx.hub.pathMappings)
+            mappings = ctx.hub.pathMappings;
+        end
+    catch
+    end
+    try
+        paths = nestedFieldLocal(ctx, {'run','paths'}, struct());
+        if isstruct(paths) && isfield(paths, 'path_mappings') && ~isempty(paths.path_mappings)
+            mappings = [mappings paths.path_mappings]; %#ok<AGROW>
+        end
+    catch
+    end
+    try
+        if isfield(ctx, 'hub') && isstruct(ctx.hub) && ...
+                isfield(ctx.hub, 'defaultLocalProjectRoot') && isfield(ctx.hub, 'defaultRemoteProjectRoot') && ...
+                ~isempty(ctx.hub.defaultLocalProjectRoot) && ~isempty(ctx.hub.defaultRemoteProjectRoot)
+            mappings(end+1).localRoot = ctx.hub.defaultLocalProjectRoot; %#ok<AGROW>
+            mappings(end).remoteRoot = ctx.hub.defaultRemoteProjectRoot;
+        end
+    catch
+    end
+    try
+        if exist('detecdiv_hub_settings_get', 'file') == 2
+            hub = detecdiv_hub_settings_get();
+            if isstruct(hub) && isfield(hub, 'pathMappings') && ~isempty(hub.pathMappings)
+                mappings = [mappings hub.pathMappings]; %#ok<AGROW>
+            end
+            if isstruct(hub) && isfield(hub, 'defaultLocalProjectRoot') && isfield(hub, 'defaultRemoteProjectRoot') && ...
+                    ~isempty(hub.defaultLocalProjectRoot) && ~isempty(hub.defaultRemoteProjectRoot)
+                mappings(end+1).localRoot = hub.defaultLocalProjectRoot; %#ok<AGROW>
+                mappings(end).remoteRoot = hub.defaultRemoteProjectRoot;
+            end
+        end
+    catch
+    end
+    try
+        if ispc && isfolder('X:\')
+            mappings(end+1).localRoot = 'X:\'; %#ok<AGROW>
+            mappings(end).remoteRoot = '/data';
+        end
+    catch
+    end
+    mappings = uniquePathMappingsLocal(mappings);
+end
+
+function recovered = recoverClassifierModulePathForValidation(configuredPath, moduleId, ctx)
+    recovered = '';
+    roots = {};
+    try
+        roots{end+1} = nestedFieldTextLocal(ctx, {'run','serverProjectDataFolder'}, ''); %#ok<AGROW>
+        roots{end+1} = nestedFieldTextLocal(ctx, {'io','serverProjectDataFolder'}, ''); %#ok<AGROW>
+        roots{end+1} = nestedFieldTextLocal(ctx, {'run','projectPath'}, ''); %#ok<AGROW>
+        roots{end+1} = nestedFieldTextLocal(ctx, {'io','projectPath'}, ''); %#ok<AGROW>
+    catch
+    end
+    roots = roots(~cellfun(@isempty, roots));
+    leaf = moduleId;
+    if isempty(leaf)
+        [~, leaf] = fileparts(configuredPath);
+    end
+    candidates = {};
+    for i = 1:numel(roots)
+        root = roots{i};
+        if exist(root, 'file') == 2
+            root = fileparts(root);
+        end
+        candidates{end+1} = fullfile(root, 'classifiers', leaf); %#ok<AGROW>
+        candidates{end+1} = fullfile(root, 'classifier', leaf); %#ok<AGROW>
+        candidates{end+1} = fullfile(root, leaf); %#ok<AGROW>
+    end
+    for i = 1:numel(candidates)
+        if exist(candidates{i}, 'dir') == 7
+            recovered = candidates{i};
+            return;
+        end
+    end
+end
+
+function mappings = uniquePathMappingsLocal(mappings)
+    if isempty(mappings)
+        return;
+    end
+    keep = true(1, numel(mappings));
+    seen = {};
+    for i = 1:numel(mappings)
+        if ~isfield(mappings(i), 'localRoot') || ~isfield(mappings(i), 'remoteRoot')
+            keep(i) = false;
+            continue;
+        end
+        localRoot = lower(regexprep(strrep(char(string(mappings(i).localRoot)), '/', '\'), '[\\\/]+$', ''));
+        remoteRoot = lower(regexprep(strrep(char(string(mappings(i).remoteRoot)), '\', '/'), '[\/]+$', ''));
+        key = [localRoot '|' remoteRoot];
+        if isempty(localRoot) || isempty(remoteRoot) || any(strcmp(seen, key))
+            keep(i) = false;
+        else
+            seen{end+1} = key; %#ok<AGROW>
+        end
+    end
+    mappings = mappings(keep);
+end
+
+function snapPath = classifierSnapshotPath(modulePath, moduleId)
+    snapPath = '';
+    candidates = {};
+    if ~isempty(moduleId)
+        candidates{end+1} = fullfile(modulePath, [moduleId '_classification.mat']); %#ok<AGROW>
+    end
+    files = dir(fullfile(modulePath, '*_classification.mat'));
+    for i = 1:numel(files)
+        candidates{end+1} = fullfile(files(i).folder, files(i).name); %#ok<AGROW>
+    end
+    for i = 1:numel(candidates)
+        if exist(candidates{i}, 'file') == 2
+            snapPath = candidates{i};
+            return;
+        end
+    end
+end
+
+function [ok, msg, modelPath] = validateCnnLstmArtifacts(modulePath, moduleId, p)
+    ok = true;
+    msg = '';
+    modelPath = '';
+    outputMode = 'lstm_only';
+    try
+        if isstruct(p) && isfield(p, 'outputMode') && ~isempty(p.outputMode)
+            outputMode = lower(strrep(strtrim(char(string(p.outputMode))), ' ', '_'));
+        end
+    catch
+    end
+    mainModel = fullfile(modulePath, [moduleId '.mat']);
+    cnnModel = fullfile(modulePath, ['netCNN_' moduleId '.mat']);
+    lstmModel = fullfile(modulePath, ['netLSTM_' moduleId '.mat']);
+    modelPath = mainModel;
+    switch outputMode
+        case 'cnn_only'
+            modelPath = cnnModel;
+            if exist(cnnModel, 'file') ~= 2
+                ok = false;
+                msg = sprintf('outputMode=cnn_only requires %s.', cnnModel);
+            end
+        otherwise
+            if exist(mainModel, 'file') ~= 2
+                ok = false;
+                msg = sprintf('CNN/LSTM inference requires assembled model file %s.', mainModel);
+                if exist(cnnModel, 'file') == 2 && exist(lstmModel, 'file') == 2
+                    msg = [msg ' CNN/LSTM parts exist, but the current loader expects the assembled model file for inference preflight.']; %#ok<AGROW>
+                end
+            end
+    end
+end
+
+function tf = looksLikeWindowsAbsPathLocal(pathText)
+    s = char(string(pathText));
+    tf = ~isempty(regexp(s, '^[A-Za-z]:[\\/]', 'once')) || startsWith(s, '\\');
+end
+
+function value = nestedFieldLocal(S, pathParts, defaultValue)
+    value = defaultValue;
+    try
+        value = S;
+        for i = 1:numel(pathParts)
+            if ~isstruct(value) || ~isfield(value, pathParts{i})
+                value = defaultValue;
+                return;
+            end
+            value = value.(pathParts{i});
+        end
+    catch
+        value = defaultValue;
+    end
+end
+
+function text = nestedFieldTextLocal(S, pathParts, defaultValue)
+    text = defaultValue;
+    try
+        value = nestedFieldLocal(S, pathParts, defaultValue);
+        if ~isempty(value)
+            text = char(string(value));
+        end
+    catch
+        text = defaultValue;
     end
 end
 
