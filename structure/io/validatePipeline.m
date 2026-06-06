@@ -1833,116 +1833,15 @@ function label = validationExecutionTargetLabel(ctx)
 end
 
 function [mappedPath, mapped] = mapHubServerPathToLocalPath(pathIn, ctx)
-    mappedPath = char(string(pathIn));
-    mapped = false;
-    mappings = validationPathMappings(ctx);
-    if isempty(mappings)
-        return;
-    end
-    serverComparable = regexprep(strrep(char(string(pathIn)), '\', '/'), '[\/]+$', '');
-    bestLen = 0;
-    bestLocal = '';
-    bestSuffix = '';
-    for i = 1:numel(mappings)
-        if ~isfield(mappings(i), 'localRoot') || ~isfield(mappings(i), 'remoteRoot')
-            continue;
-        end
-        localRoot = regexprep(strrep(char(string(mappings(i).localRoot)), '/', '\'), '[\\\/]+$', '');
-        remoteRoot = regexprep(strrep(char(string(mappings(i).remoteRoot)), '\', '/'), '[\/]+$', '');
-        if isempty(localRoot) || isempty(remoteRoot)
-            continue;
-        end
-        if startsWith(lower(serverComparable), lower(remoteRoot)) && ...
-                (numel(serverComparable) == numel(remoteRoot) || serverComparable(numel(remoteRoot)+1) == '/')
-            if numel(remoteRoot) > bestLen
-                bestLen = numel(remoteRoot);
-                bestLocal = localRoot;
-                bestSuffix = serverComparable(numel(remoteRoot)+1:end);
-            end
-        end
-    end
-    if bestLen > 0
-        mappedPath = [bestLocal strrep(bestSuffix, '/', filesep)];
-        mapped = true;
-    end
+    [mappedPath, mapped] = detecdiv_paths_map_module_path(pathIn, ctx, 'local');
 end
 
 function [mappedPath, mapped] = mapLocalPathToHubServerPath(pathIn, ctx)
-    mappedPath = char(string(pathIn));
-    mapped = false;
-    mappings = validationPathMappings(ctx);
-    if isempty(mappings)
-        return;
-    end
-    localComparable = regexprep(strrep(char(string(pathIn)), '/', '\'), '[\\\/]+$', '');
-    bestLen = 0;
-    bestRemote = '';
-    bestSuffix = '';
-    for i = 1:numel(mappings)
-        if ~isfield(mappings(i), 'localRoot') || ~isfield(mappings(i), 'remoteRoot')
-            continue;
-        end
-        localRoot = regexprep(strrep(char(string(mappings(i).localRoot)), '/', '\'), '[\\\/]+$', '');
-        remoteRoot = regexprep(strrep(char(string(mappings(i).remoteRoot)), '\', '/'), '[\/]+$', '');
-        if isempty(localRoot) || isempty(remoteRoot)
-            continue;
-        end
-        if startsWith(lower(localComparable), lower(localRoot)) && ...
-                (numel(localComparable) == numel(localRoot) || any(localComparable(numel(localRoot)+1) == ['\' '/']))
-            if numel(localRoot) > bestLen
-                bestLen = numel(localRoot);
-                bestRemote = remoteRoot;
-                bestSuffix = localComparable(numel(localRoot)+1:end);
-            end
-        end
-    end
-    if bestLen > 0
-        mappedPath = [bestRemote strrep(bestSuffix, '\', '/')];
-        mapped = true;
-    end
+    [mappedPath, mapped] = detecdiv_paths_map_module_path(pathIn, ctx, 'server');
 end
 
 function mappings = validationPathMappings(ctx)
-    mappings = struct('remoteRoot', {}, 'localRoot', {});
-    try
-        if isfield(ctx, 'hub') && isstruct(ctx.hub) && isfield(ctx.hub, 'pathMappings') && ~isempty(ctx.hub.pathMappings)
-            mappings = ctx.hub.pathMappings;
-        end
-    catch
-    end
-    try
-        paths = nestedFieldLocal(ctx, {'run','paths'}, struct());
-        if isstruct(paths) && isfield(paths, 'path_mappings') && ~isempty(paths.path_mappings)
-            mappings = [mappings paths.path_mappings]; %#ok<AGROW>
-        end
-    catch
-    end
-    try
-        if isfield(ctx, 'hub') && isstruct(ctx.hub) && ...
-                isfield(ctx.hub, 'defaultLocalProjectRoot') && isfield(ctx.hub, 'defaultRemoteProjectRoot') && ...
-                ~isempty(ctx.hub.defaultLocalProjectRoot) && ~isempty(ctx.hub.defaultRemoteProjectRoot)
-            mappings(end+1).localRoot = ctx.hub.defaultLocalProjectRoot; %#ok<AGROW>
-            mappings(end).remoteRoot = ctx.hub.defaultRemoteProjectRoot;
-        end
-    catch
-    end
-    try
-        if exist('detecdiv_hub_settings_get', 'file') == 2
-            hub = detecdiv_hub_settings_get();
-            if isstruct(hub) && isfield(hub, 'pathMappings') && ~isempty(hub.pathMappings)
-                mappings = [mappings hub.pathMappings]; %#ok<AGROW>
-            end
-            if isstruct(hub) && isfield(hub, 'defaultLocalProjectRoot') && isfield(hub, 'defaultRemoteProjectRoot') && ...
-                    ~isempty(hub.defaultLocalProjectRoot) && ~isempty(hub.defaultRemoteProjectRoot)
-                mappings(end+1).localRoot = hub.defaultLocalProjectRoot; %#ok<AGROW>
-                mappings(end).remoteRoot = hub.defaultRemoteProjectRoot;
-            end
-        end
-    catch
-    end
-    mappings(end+1).localRoot = 'X:\'; %#ok<AGROW>
-    mappings(end).remoteRoot = '/data';
-    mappings = uniquePathMappingsLocal(mappings);
+    mappings = detecdiv_paths_module_mappings(ctx);
 end
 
 function recovered = recoverClassifierModulePathForValidation(configuredPath, moduleId, ctx)
@@ -2050,7 +1949,6 @@ function [ok, msg, modelPath] = validateCnnLstmArtifacts(modulePath, moduleId, p
     end
     mainModel = fullfile(modulePath, [moduleId '.mat']);
     cnnModel = fullfile(modulePath, ['netCNN_' moduleId '.mat']);
-    lstmModel = fullfile(modulePath, ['netLSTM_' moduleId '.mat']);
     modelPath = mainModel;
     switch outputMode
         case 'cnn_only'
@@ -2059,13 +1957,24 @@ function [ok, msg, modelPath] = validateCnnLstmArtifacts(modulePath, moduleId, p
                 ok = false;
                 msg = sprintf('outputMode=cnn_only requires %s.', cnnModel);
             end
+        case 'both'
+            modelPath = mainModel;
+            missing = {};
+            if exist(mainModel, 'file') ~= 2
+                missing{end+1} = mainModel; %#ok<AGROW>
+            end
+            if exist(cnnModel, 'file') ~= 2
+                missing{end+1} = cnnModel; %#ok<AGROW>
+            end
+            if ~isempty(missing)
+                ok = false;
+                msg = sprintf('outputMode=both requires assembled LSTM model and CNN model: %s.', strjoin(missing, ', '));
+            end
         otherwise
             if exist(mainModel, 'file') ~= 2
                 ok = false;
-                msg = sprintf('CNN/LSTM inference requires assembled model file %s.', mainModel);
-                if exist(cnnModel, 'file') == 2 && exist(lstmModel, 'file') == 2
-                    msg = [msg ' CNN/LSTM parts exist, but the current loader expects the assembled model file for inference preflight.']; %#ok<AGROW>
-                end
+                msg = sprintf(['CNN/LSTM inference requires assembled model file %s. ' ...
+                    'netLSTM_%s.mat is a training/assembly artifact, not a standalone inference model.'], mainModel, moduleId);
             end
     end
 end

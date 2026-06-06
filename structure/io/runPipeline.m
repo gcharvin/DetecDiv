@@ -2726,81 +2726,11 @@ tf = ~isempty(regexp(p, '^[A-Za-z]:[\\/]', 'once')) || startsWith(p, '\\');
 end
 
 function [mappedPath, mapped] = mapModulePathToServerPath(pathIn, ctx)
-mappedPath = char(string(pathIn));
-mapped = false;
-mappings = modulePathMappings(ctx);
-if isempty(mappings)
-    return;
-end
-localComparable = regexprep(strrep(char(string(pathIn)), '/', '\'), '[\\\/]+$', '');
-bestLen = 0;
-bestRemote = '';
-bestSuffix = '';
-for i = 1:numel(mappings)
-    if ~isfield(mappings(i), 'localRoot') || ~isfield(mappings(i), 'remoteRoot')
-        continue;
-    end
-    localRoot = regexprep(strrep(char(string(mappings(i).localRoot)), '/', '\'), '[\\\/]+$', '');
-    remoteRoot = regexprep(strrep(char(string(mappings(i).remoteRoot)), '\', '/'), '[\/]+$', '');
-    if isempty(localRoot) || isempty(remoteRoot)
-        continue;
-    end
-    if startsWith(lower(localComparable), lower(localRoot)) && ...
-            (numel(localComparable) == numel(localRoot) || any(localComparable(numel(localRoot)+1) == ['\' '/']))
-        if numel(localRoot) > bestLen
-            bestLen = numel(localRoot);
-            bestRemote = remoteRoot;
-            bestSuffix = localComparable(numel(localRoot)+1:end);
-        end
-    end
-end
-if bestLen > 0
-    mappedPath = [bestRemote strrep(bestSuffix, '\', '/')];
-    mapped = true;
-end
+    [mappedPath, mapped] = detecdiv_paths_map_module_path(pathIn, ctx, 'server');
 end
 
 function mappings = modulePathMappings(ctx)
-mappings = struct('remoteRoot', {}, 'localRoot', {});
-try
-    if isfield(ctx, 'hub') && isstruct(ctx.hub) && isfield(ctx.hub, 'pathMappings') && ~isempty(ctx.hub.pathMappings)
-        mappings = ctx.hub.pathMappings;
-    end
-catch
-end
-try
-    if isfield(ctx, 'run') && isstruct(ctx.run) && isfield(ctx.run, 'paths') && ...
-            isstruct(ctx.run.paths) && isfield(ctx.run.paths, 'path_mappings') && ~isempty(ctx.run.paths.path_mappings)
-        mappings = [mappings ctx.run.paths.path_mappings]; %#ok<AGROW>
-    end
-catch
-end
-try
-    if isfield(ctx, 'hub') && isstruct(ctx.hub) && ...
-            isfield(ctx.hub, 'defaultLocalProjectRoot') && isfield(ctx.hub, 'defaultRemoteProjectRoot') && ...
-            ~isempty(ctx.hub.defaultLocalProjectRoot) && ~isempty(ctx.hub.defaultRemoteProjectRoot)
-        mappings(end+1).localRoot = ctx.hub.defaultLocalProjectRoot; %#ok<AGROW>
-        mappings(end).remoteRoot = ctx.hub.defaultRemoteProjectRoot;
-    end
-catch
-end
-try
-    if exist('detecdiv_hub_settings_get', 'file') == 2
-        hub = detecdiv_hub_settings_get();
-        if isstruct(hub) && isfield(hub, 'pathMappings') && ~isempty(hub.pathMappings)
-            mappings = [mappings hub.pathMappings]; %#ok<AGROW>
-        end
-        if isstruct(hub) && isfield(hub, 'defaultLocalProjectRoot') && isfield(hub, 'defaultRemoteProjectRoot') && ...
-                ~isempty(hub.defaultLocalProjectRoot) && ~isempty(hub.defaultRemoteProjectRoot)
-            mappings(end+1).localRoot = hub.defaultLocalProjectRoot; %#ok<AGROW>
-            mappings(end).remoteRoot = hub.defaultRemoteProjectRoot;
-        end
-    end
-catch
-end
-mappings(end+1).localRoot = 'X:\'; %#ok<AGROW>
-mappings(end).remoteRoot = '/data';
-mappings = uniqueModulePathMappings(mappings);
+    mappings = detecdiv_paths_module_mappings(ctx);
 end
 
 function mappings = uniqueModulePathMappings(mappings)

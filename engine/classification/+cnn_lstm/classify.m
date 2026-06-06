@@ -105,8 +105,8 @@ if isempty(classifier) && ~classifierProvided
         classifier = [];
     end
     if isempty(classifier)
-        classifier = loadNetworkArtifact(classif, {'classifier','net','netLSTM_dag','netLSTM'}, ...
-            {[char(string(classif.strid)) '.mat'], ['netLSTM_' char(string(classif.strid)) '.mat']});
+        classifier = loadNetworkArtifact(classif, {'classifier','net','netLSTM_dag'}, ...
+            {[char(string(classif.strid)) '.mat']});
     end
 end
 

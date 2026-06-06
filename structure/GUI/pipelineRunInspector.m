@@ -111,7 +111,7 @@ end
 function txt = buildHeaderText(runObj, shallowObj)
     lines = {};
     lines{end+1} = ['Run ID: ' char(string(getPropOr(runObj, 'runId', '')))];
-    lines{end+1} = ['Status: ' char(string(getPropOr(runObj, 'status', '')))];
+    lines{end+1} = ['Status: ' effectiveRunStatus(runObj)];
     lines{end+1} = ['Pipeline ID: ' char(string(getNestedOr(runObj, {'pipelineRef','id'}, '')))];
     [pipePath, pipePathSource] = resolvePipelinePath(runObj, shallowObj);
     lines{end+1} = ['Pipeline path: ' pipePath];
@@ -154,7 +154,7 @@ end
 function txt = buildFallbackSummary(runObj)
     lines = {};
     lines{end+1} = ['Run ID: ' char(string(getPropOr(runObj, 'runId', '')))];
-    lines{end+1} = ['Status: ' char(string(getPropOr(runObj, 'status', '')))];
+    lines{end+1} = ['Status: ' effectiveRunStatus(runObj)];
     try
         report = runObj.outputs.report;
     catch
@@ -172,6 +172,17 @@ function txt = buildFallbackSummary(runObj)
         end
     end
     txt = strjoin(lines, newline);
+end
+
+function status = effectiveRunStatus(runObj)
+    status = char(string(getPropOr(runObj, 'status', '')));
+    try
+        review = pipelineRunReview(runObj, 'Write', false);
+        if isstruct(review) && isfield(review, 'status') && ~isempty(review.status)
+            status = char(string(review.status));
+        end
+    catch
+    end
 end
 
 function rows = buildParamRows(runObj)

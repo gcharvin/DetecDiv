@@ -201,53 +201,8 @@ function pathOut = localTranslatePathForServer(pathIn, hub)
     if isempty(pathOut)
         return;
     end
-    localRoots = {};
-    remoteRoots = {};
-    try
-        if isfield(hub, 'pathMappings') && ~isempty(hub.pathMappings)
-            for i = 1:numel(hub.pathMappings)
-                localRoots{end+1} = char(string(hub.pathMappings(i).localRoot)); %#ok<AGROW>
-                remoteRoots{end+1} = char(string(hub.pathMappings(i).remoteRoot)); %#ok<AGROW>
-            end
-        end
-        if isfield(hub, 'defaultLocalProjectRoot') && isfield(hub, 'defaultRemoteProjectRoot') && ...
-                ~isempty(hub.defaultLocalProjectRoot) && ~isempty(hub.defaultRemoteProjectRoot)
-            localRoots{end+1} = char(string(hub.defaultLocalProjectRoot)); %#ok<AGROW>
-            remoteRoots{end+1} = char(string(hub.defaultRemoteProjectRoot)); %#ok<AGROW>
-        end
-    catch
-    end
-    candidateNorm = regexprep(strrep(pathOut, '/', '\'), '[\\\/]+$', '');
-    bestLen = -1;
-    bestOut = pathOut;
-    for i = 1:min(numel(localRoots), numel(remoteRoots))
-        localNorm = regexprep(strrep(localRoots{i}, '/', '\'), '[\\\/]+$', '');
-        remoteNorm = regexprep(strrep(remoteRoots{i}, '\', '/'), '[\\\/]+$', '');
-        if isempty(localNorm) || isempty(remoteNorm)
-            continue;
-        end
-        if localPathStartsWithRoot(candidateNorm, localNorm) && numel(localNorm) > bestLen
-            suffix = candidateNorm(numel(localNorm)+1:end);
-            suffix = strrep(suffix, '\', '/');
-            bestLen = numel(localNorm);
-            bestOut = [remoteNorm suffix];
-        end
-    end
-    pathOut = strrep(bestOut, '\', '/');
-end
-
-function tf = localPathStartsWithRoot(pathValue, rootValue)
-    pathCmp = lower(char(string(pathValue)));
-    rootCmp = lower(char(string(rootValue)));
-    tf = startsWith(pathCmp, rootCmp);
-    if ~tf || numel(pathCmp) == numel(rootCmp)
-        return;
-    end
-    if endsWith(rootCmp, ':')
-        return;
-    end
-    nextChar = pathCmp(numel(rootCmp)+1);
-    tf = any(nextChar == ['\' '/']);
+    pathOut = detecdiv_paths_map_module_path(pathOut, struct('hub', hub), 'server');
+    pathOut = strrep(pathOut, '\', '/');
 end
 
 function rootName = localStorageRootNameForPath(serverPath)

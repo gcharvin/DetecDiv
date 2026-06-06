@@ -110,24 +110,83 @@ function runId = readRunId(runObj, events)
 end
 
 function status = readRunStatus(runObj, events)
-    status = '';
+    status = readHubRunStatus(runObj);
+    if ~isempty(status)
+        return;
+    end
+    status = readEventRunStatus(events);
+    if ~isempty(status)
+        return;
+    end
     try
         if ~isempty(runObj)
             status = char(string(runObj.status));
         end
     catch
     end
-    if isempty(status) && ~isempty(events) && isfield(events, 'type')
-        types = string({events.type});
-        if any(types == "run_done")
-            status = 'done';
-        elseif any(types == "run_cancelled")
-            status = 'cancelled';
-        elseif any(types == "run_failed")
-            status = 'failed';
-        elseif any(types == "node_start")
-            status = 'running_or_interrupted';
+end
+
+function status = readHubRunStatus(runObj)
+    status = '';
+    jobId = readHubJobId(runObj);
+    if isempty(jobId) || exist('detecdiv_hub_get_pipeline_run', 'file') ~= 2
+        return;
+    end
+    try
+        hub = readRunHubSettings(runObj);
+        if isempty(hub)
+            job = detecdiv_hub_get_pipeline_run(jobId);
+        else
+            job = detecdiv_hub_get_pipeline_run(jobId, hub);
         end
+        if isstruct(job) && isfield(job, 'status') && ~isempty(job.status)
+            status = ['hub_' char(string(job.status))];
+        end
+    catch
+        status = '';
+    end
+end
+
+function status = readEventRunStatus(events)
+    status = '';
+    if isempty(events) || ~isfield(events, 'type')
+        return;
+    end
+    types = string({events.type});
+    if any(types == "run_done")
+        status = 'done';
+    elseif any(types == "run_cancelled")
+        status = 'cancelled';
+    elseif any(types == "run_failed")
+        status = 'failed';
+    elseif any(types == "node_start")
+        status = 'running_or_interrupted';
+    end
+end
+
+function jobId = readHubJobId(runObj)
+    jobId = '';
+    candidates = { ...
+        {'ctx','hub','job_id'}, ...
+        {'ctx','hub','hub_job_id'}, ...
+        {'ctx','run','control','jobId'}};
+    for i = 1:numel(candidates)
+        jobId = valueText(getNestedRunValue(runObj, candidates{i}, ''));
+        if ~isempty(strtrim(jobId))
+            return;
+        end
+    end
+end
+
+function hub = readRunHubSettings(runObj)
+    hub = [];
+    try
+        hub = getNestedRunValue(runObj, {'ctx','hub'}, []);
+        if ~isstruct(hub)
+            hub = [];
+        end
+    catch
+        hub = [];
     end
 end
 
@@ -404,6 +463,34 @@ function v = getPropOr(obj, fieldName, defaultValue)
             v = obj.(fieldName);
         end
     catch
+    end
+end
+
+function value = getNestedRunValue(runObj, pathParts, defaultValue)
+    value = defaultValue;
+    try
+        cur = runObj;
+        for i = 1:numel(pathParts)
+            key = pathParts{i};
+            if isstruct(cur)
+                if ~isfield(cur, key)
+                    value = defaultValue;
+                    return;
+                end
+                cur = cur.(key);
+            else
+                if ~isprop(cur, key)
+                    value = defaultValue;
+                    return;
+                end
+                cur = cur.(key);
+            end
+        end
+        if ~isempty(cur)
+            value = cur;
+        end
+    catch
+        value = defaultValue;
     end
 end
 

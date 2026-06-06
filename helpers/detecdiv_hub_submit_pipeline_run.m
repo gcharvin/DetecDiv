@@ -21,7 +21,7 @@ function [job, runObj] = detecdiv_hub_submit_pipeline_run(runObj, shallowObj, va
             @() detecdiv_hub_ensure_project(shallowObj, 'Hub', opts.hub, ...
                 'ErrorIfQueued', false, 'ResolveAttempts', 6, 'ResolveIntervalSec', 2));
         if ~isempty(ref.project_id)
-            localRunStageNoOutput('save project after hub registration check', @() localSaveProject(shallowObj));
+            localRunStageNoOutput('save project after hub registration check', @() localSaveProject(shallowObj, opts.hub));
         end
         if isempty(ref.project_id)
             msg = ['This project is not yet registered in the Hub project catalogue.' newline ...
@@ -38,7 +38,7 @@ function [job, runObj] = detecdiv_hub_submit_pipeline_run(runObj, shallowObj, va
     else
         [shallowObj, ref] = localRunStage('store resolved hub project reference', ...
             @() detecdiv_hub_ensure_project(shallowObj, 'Hub', opts.hub, 'ResolveAttempts', 1));
-        localRunStageNoOutput('save project after hub project resolution', @() localSaveProject(shallowObj));
+        localRunStageNoOutput('save project after hub project resolution', @() localSaveProject(shallowObj, opts.hub));
     end
 
     payload = struct();
@@ -157,9 +157,26 @@ function localSavePipelineRun(runObj)
     pipelineRunSave(runObj);
 end
 
-function localSaveProject(shallowObj)
+function localSaveProject(shallowObj, hub)
+    localEnsureProjectSavePathIsLocal(shallowObj, hub);
     try
         shallowSave(shallowObj, 'shallowObj');
+    catch
+    end
+end
+
+function localEnsureProjectSavePathIsLocal(shallowObj, hub)
+    try
+        if isempty(shallowObj) || ~isprop(shallowObj, 'io') || ~isstruct(shallowObj.io) || ...
+                ~isfield(shallowObj.io, 'path') || isempty(shallowObj.io.path)
+            return;
+        end
+        ctx = struct();
+        ctx.hub = hub;
+        [localPath, mapped] = detecdiv_paths_map_module_path(shallowObj.io.path, ctx, 'local');
+        if mapped && ~isempty(localPath)
+            shallowObj.io.path = localPath;
+        end
     catch
     end
 end
@@ -377,83 +394,9 @@ function [out, translated] = localTranslatePathForServer(pathIn, ref, hub)
     if isempty(out)
         return;
     end
-
-    localRoots = {};
-    remoteRoots = {};
-    try
-        if isfield(ref, 'local_project_dir_path') && ~isempty(ref.local_project_dir_path)
-            localRoots{end+1} = char(string(ref.local_project_dir_path));
-        end
-        if isfield(ref, 'project_dir_path') && ~isempty(ref.project_dir_path)
-            remoteRoots{end+1} = char(string(ref.project_dir_path));
-        end
-        if isfield(ref, 'local_project_root_path') && ~isempty(ref.local_project_root_path)
-            localRoots{end+1} = char(string(ref.local_project_root_path));
-        end
-        if isfield(ref, 'project_root_path') && ~isempty(ref.project_root_path)
-            remoteRoots{end+1} = char(string(ref.project_root_path));
-        end
-    catch
-    end
-    try
-        if nargin >= 3 && isstruct(hub)
-            if isfield(hub, 'pathMappings') && ~isempty(hub.pathMappings)
-                for i = 1:numel(hub.pathMappings)
-                    if isfield(hub.pathMappings(i), 'localRoot') && isfield(hub.pathMappings(i), 'remoteRoot')
-                        localRoots{end+1} = char(string(hub.pathMappings(i).localRoot)); %#ok<AGROW>
-                        remoteRoots{end+1} = char(string(hub.pathMappings(i).remoteRoot)); %#ok<AGROW>
-                    end
-                end
-            end
-            if isfield(hub, 'defaultLocalProjectRoot') && isfield(hub, 'defaultRemoteProjectRoot') && ...
-                    ~isempty(hub.defaultLocalProjectRoot) && ~isempty(hub.defaultRemoteProjectRoot)
-                localRoots{end+1} = char(string(hub.defaultLocalProjectRoot)); %#ok<AGROW>
-                remoteRoots{end+1} = char(string(hub.defaultRemoteProjectRoot)); %#ok<AGROW>
-            end
-        end
-    catch
-    end
-
-    candidateNorm = strrep(out, '/', '\');
-    bestLen = -1;
-    bestOut = out;
-    for i = 1:min(numel(localRoots), numel(remoteRoots))
-        localNorm = regexprep(strrep(localRoots{i}, '/', '\'), '[\\\/]+$', '');
-        remoteNorm = regexprep(strrep(remoteRoots{i}, '\', '/'), '[\\\/]+$', '');
-        if isempty(localNorm) || isempty(remoteNorm)
-            continue;
-        end
-        if localPathStartsWithRoot(candidateNorm, localNorm) && numel(localNorm) > bestLen
-            suffix = candidateNorm(numel(localNorm)+1:end);
-            suffix = strrep(suffix, '\', '/');
-            bestLen = numel(localNorm);
-            bestOut = [remoteNorm suffix];
-        end
-    end
-    if bestLen >= 0
-        out = bestOut;
-        translated = true;
-    end
-
+    [out, translated] = detecdiv_paths_map_module_path(out, localPathMappingCtx(ref, hub), 'server');
     % Ensure POSIX separators for server-side worker.
     out = strrep(out, '\', '/');
-end
-
-function tf = localPathStartsWithRoot(pathValue, rootValue)
-    pathCmp = lower(char(string(pathValue)));
-    rootCmp = lower(char(string(rootValue)));
-    tf = startsWith(pathCmp, rootCmp);
-    if ~tf
-        return;
-    end
-    if numel(pathCmp) == numel(rootCmp)
-        return;
-    end
-    if endsWith(rootCmp, ':')
-        return;
-    end
-    nextChar = pathCmp(numel(rootCmp)+1);
-    tf = any(nextChar == ['\' '/']);
 end
 
 function runRequest = localBuildRunRequest(runObj, hub, ref)
@@ -629,13 +572,39 @@ function tf = localLooksLikePathText(value)
 end
 
 function mappings = localHubPathMappings(hub)
-    mappings = struct('remoteRoot', {}, 'localRoot', {});
+    mappings = detecdiv_paths_module_mappings(localPathMappingCtx(struct(), hub));
+end
+
+function ctx = localPathMappingCtx(ref, hub)
+    ctx = struct();
+    if nargin >= 2 && isstruct(hub)
+        ctx.hub = hub;
+    else
+        ctx.hub = struct();
+    end
+    extra = struct('localRoot', {}, 'remoteRoot', {});
     try
-        if isstruct(hub) && isfield(hub, 'pathMappings') && ~isempty(hub.pathMappings)
-            mappings = hub.pathMappings;
+        if isstruct(ref) && isfield(ref, 'local_project_dir_path') && isfield(ref, 'project_dir_path') && ...
+                ~isempty(ref.local_project_dir_path) && ~isempty(ref.project_dir_path)
+            extra(end+1).localRoot = char(string(ref.local_project_dir_path)); %#ok<AGROW>
+            extra(end).remoteRoot = char(string(ref.project_dir_path));
+        end
+        if isstruct(ref) && isfield(ref, 'local_project_root_path') && isfield(ref, 'project_root_path') && ...
+                ~isempty(ref.local_project_root_path) && ~isempty(ref.project_root_path)
+            extra(end+1).localRoot = char(string(ref.local_project_root_path)); %#ok<AGROW>
+            extra(end).remoteRoot = char(string(ref.project_root_path));
         end
     catch
-        mappings = struct('remoteRoot', {}, 'localRoot', {});
+    end
+    if ~isempty(extra)
+        existing = struct('localRoot', {}, 'remoteRoot', {});
+        try
+            if isfield(ctx.hub, 'pathMappings') && isstruct(ctx.hub.pathMappings)
+                existing = ctx.hub.pathMappings;
+            end
+        catch
+        end
+        ctx.hub.pathMappings = [extra existing];
     end
 end
 
