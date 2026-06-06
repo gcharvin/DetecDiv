@@ -22,6 +22,8 @@ function fig = pipelineRunInspector(runObj, shallowObj)
 
     tabs = uitabgroup(grid);
     summaryTab = uitab(tabs, 'Title', 'Summary');
+    reviewTab = uitab(tabs, 'Title', 'Review');
+    eventsTab = uitab(tabs, 'Title', 'Events');
     paramsTab = uitab(tabs, 'Title', 'Parameters');
     nodesTab = uitab(tabs, 'Title', 'Nodes');
 
@@ -29,6 +31,17 @@ function fig = pipelineRunInspector(runObj, shallowObj)
         'Position', [10 10 930 510]);
     summaryArea.FontName = 'Consolas';
     summaryArea.Value = splitLinesLocal(readSummaryText(runObj));
+
+    reviewArea = uitextarea(reviewTab, 'Editable', 'off', ...
+        'Position', [10 10 930 510]);
+    reviewArea.FontName = 'Consolas';
+    reviewArea.Value = splitLinesLocal(readReviewText(runObj, false));
+
+    eventTable = uitable(eventsTab, ...
+        'ColumnName', {'Time', 'Type', 'Node', 'Status', 'Message'}, ...
+        'RowName', {}, ...
+        'Position', [10 10 930 510]);
+    eventTable.Data = buildEventRows(runObj);
 
     paramTable = uitable(paramsTab, ...
         'ColumnName', {'Scope', 'Parameter', 'Value'}, ...
@@ -42,29 +55,57 @@ function fig = pipelineRunInspector(runObj, shallowObj)
         'Position', [10 10 930 510]);
     nodeTable.Data = buildNodeRows(runObj);
 
-    btnGrid = uigridlayout(grid, [1 4]);
-    btnGrid.ColumnWidth = {130, 130, 130, '1x'};
+    btnGrid = uigridlayout(grid, [1 8]);
+    btnGrid.ColumnWidth = {110, 100, 110, 120, 120, 130, 130, '1x'};
     btnGrid.Padding = [0 0 0 0];
+
+    refreshTimer = timer('ExecutionMode', 'fixedSpacing', 'Period', 2, ...
+        'TimerFcn', @(~,~)safeRefreshInspector(runObj, shallowObj, ...
+        headerArea, summaryArea, reviewArea, eventTable, paramTable, nodeTable));
+    fig.CloseRequestFcn = @(~,~)closeInspector(fig, refreshTimer);
+
+    autoRefreshBtn = uibutton(btnGrid, 'state', 'Text', 'Auto refresh');
+    autoRefreshBtn.Layout.Row = 1;
+    autoRefreshBtn.Layout.Column = 1;
+    autoRefreshBtn.ValueChangedFcn = @(src,~)toggleAutoRefresh(src, refreshTimer, runObj, shallowObj, ...
+        headerArea, summaryArea, reviewArea, eventTable, paramTable, nodeTable);
+
+    refreshBtn = uibutton(btnGrid, 'push', 'Text', 'Refresh');
+    refreshBtn.Layout.Row = 1;
+    refreshBtn.Layout.Column = 2;
+    refreshBtn.ButtonPushedFcn = @(~,~)refreshInspector(runObj, shallowObj, ...
+        headerArea, summaryArea, reviewArea, eventTable, paramTable, nodeTable);
+
+    writeReviewBtn = uibutton(btnGrid, 'push', 'Text', 'Write review');
+    writeReviewBtn.Layout.Row = 1;
+    writeReviewBtn.Layout.Column = 3;
+    writeReviewBtn.ButtonPushedFcn = @(~,~)writeReviewAndRefresh(runObj, shallowObj, ...
+        headerArea, summaryArea, reviewArea, eventTable, paramTable, nodeTable);
+
+    openReviewBtn = uibutton(btnGrid, 'push', 'Text', 'Open review');
+    openReviewBtn.Layout.Row = 1;
+    openReviewBtn.Layout.Column = 4;
+    openReviewBtn.ButtonPushedFcn = @(~,~)openReviewFile(runObj);
 
     openJsonBtn = uibutton(btnGrid, 'push', 'Text', 'Open run.json');
     openJsonBtn.Layout.Row = 1;
-    openJsonBtn.Layout.Column = 1;
+    openJsonBtn.Layout.Column = 5;
     openJsonBtn.ButtonPushedFcn = @(~,~)openRunJson(runObj);
 
     openSummaryBtn = uibutton(btnGrid, 'push', 'Text', 'Open summary');
     openSummaryBtn.Layout.Row = 1;
-    openSummaryBtn.Layout.Column = 2;
+    openSummaryBtn.Layout.Column = 6;
     openSummaryBtn.ButtonPushedFcn = @(~,~)openSummaryFile(runObj);
 
     openFolderBtn = uibutton(btnGrid, 'push', 'Text', 'Open folder');
     openFolderBtn.Layout.Row = 1;
-    openFolderBtn.Layout.Column = 3;
+    openFolderBtn.Layout.Column = 7;
     openFolderBtn.ButtonPushedFcn = @(~,~)openRunFolder(runObj);
 
     closeBtn = uibutton(btnGrid, 'push', 'Text', 'Close');
     closeBtn.Layout.Row = 1;
-    closeBtn.Layout.Column = 4;
-    closeBtn.ButtonPushedFcn = @(~,~)delete(fig);
+    closeBtn.Layout.Column = 8;
+    closeBtn.ButtonPushedFcn = @(~,~)closeInspector(fig, refreshTimer);
 end
 
 function txt = buildHeaderText(runObj, shallowObj)
@@ -96,6 +137,18 @@ function txt = readSummaryText(runObj)
     catch
     end
     txt = buildFallbackSummary(runObj);
+end
+
+function txt = readReviewText(runObj, writeFile)
+    if nargin < 2
+        writeFile = false;
+    end
+    try
+        [~, txt] = pipelineRunReview(runObj, 'Write', writeFile);
+        return;
+    catch ME
+        txt = ['No structured run review available yet.' newline ME.message];
+    end
 end
 
 function txt = buildFallbackSummary(runObj)
@@ -182,6 +235,90 @@ function rows = buildNodeRows(runObj)
             valueToDisplay(getFieldOr(nr, 'durationSec', '')), ...
             char(string(getFieldOr(nr, 'message', ''))) ...
             };
+    end
+end
+
+function rows = buildEventRows(runObj)
+    rows = cell(0, 5);
+    try
+        events = pipelineRunEventsRead(runObj);
+    catch
+        events = struct([]);
+    end
+    for i = 1:numel(events)
+        rows(end+1,:) = { ... %#ok<AGROW>
+            eventField(events(i), 'ts'), ...
+            eventField(events(i), 'type'), ...
+            eventField(events(i), 'NodeId'), ...
+            eventField(events(i), 'Status'), ...
+            eventField(events(i), 'Message')};
+    end
+end
+
+function refreshInspector(runObj, shallowObj, headerArea, summaryArea, reviewArea, eventTable, paramTable, nodeTable)
+    runObj = reloadRunObject(runObj);
+    headerArea.Value = splitLinesLocal(buildHeaderText(runObj, shallowObj));
+    summaryArea.Value = splitLinesLocal(readSummaryText(runObj));
+    reviewArea.Value = splitLinesLocal(readReviewText(runObj, false));
+    eventTable.Data = buildEventRows(runObj);
+    paramTable.Data = buildParamRows(runObj);
+    nodeTable.Data = buildNodeRows(runObj);
+end
+
+function safeRefreshInspector(runObj, shallowObj, headerArea, summaryArea, reviewArea, eventTable, paramTable, nodeTable)
+    try
+        if isempty(headerArea) || ~isvalid(headerArea)
+            return;
+        end
+        refreshInspector(runObj, shallowObj, headerArea, summaryArea, reviewArea, eventTable, paramTable, nodeTable);
+    catch
+    end
+end
+
+function toggleAutoRefresh(src, refreshTimer, runObj, shallowObj, headerArea, summaryArea, reviewArea, eventTable, paramTable, nodeTable)
+    try
+        if logical(src.Value)
+            safeRefreshInspector(runObj, shallowObj, headerArea, summaryArea, reviewArea, eventTable, paramTable, nodeTable);
+            start(refreshTimer);
+        else
+            stop(refreshTimer);
+        end
+    catch
+    end
+end
+
+function closeInspector(fig, refreshTimer)
+    try
+        stop(refreshTimer);
+    catch
+    end
+    try
+        delete(refreshTimer);
+    catch
+    end
+    try
+        delete(fig);
+    catch
+    end
+end
+
+function writeReviewAndRefresh(runObj, shallowObj, headerArea, summaryArea, reviewArea, eventTable, paramTable, nodeTable)
+    runObj = reloadRunObject(runObj);
+    reviewArea.Value = splitLinesLocal(readReviewText(runObj, true));
+    refreshInspector(runObj, shallowObj, headerArea, summaryArea, reviewArea, eventTable, paramTable, nodeTable);
+end
+
+function runObj = reloadRunObject(runObj)
+    try
+        runPath = char(string(getPropOr(runObj, 'path', '')));
+        runJson = fullfile(runPath, 'run.json');
+        if isfile(runJson)
+            [loaded, ~] = pipelineRunLoad(runJson);
+            if ~isempty(loaded) && isa(loaded, 'pipelineRun')
+                runObj = loaded;
+            end
+        end
+    catch
     end
 end
 
@@ -296,6 +433,20 @@ function openSummaryFile(runObj)
     end
 end
 
+function openReviewFile(runObj)
+    runPath = char(string(getPropOr(runObj, 'path', '')));
+    reviewFile = fullfile(runPath, 'run_review.txt');
+    if ~isfile(reviewFile)
+        try
+            pipelineRunReview(runObj, 'Write', true);
+        catch
+        end
+    end
+    if isfile(reviewFile)
+        edit(reviewFile);
+    end
+end
+
 function openRunFolder(runObj)
     runPath = char(string(getPropOr(runObj, 'path', '')));
     if isempty(runPath) || ~isfolder(runPath)
@@ -349,6 +500,17 @@ function v = getFieldOr(S, fieldName, defaultValue)
     v = defaultValue;
     if isstruct(S) && isfield(S, fieldName) && ~isempty(S.(fieldName))
         v = S.(fieldName);
+    end
+end
+
+function txt = eventField(evt, fieldName)
+    txt = '';
+    try
+        if isstruct(evt) && isfield(evt, fieldName) && ~isempty(evt.(fieldName))
+            txt = valueToDisplay(evt.(fieldName));
+        end
+    catch
+        txt = '';
     end
 end
 

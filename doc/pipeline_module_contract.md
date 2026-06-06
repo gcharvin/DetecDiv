@@ -171,6 +171,7 @@ A completed run should be reviewable from:
 - `run.json`
 - `run_params.json`
 - `run_summary.txt`
+- `run_review.txt`
 - `run_log.txt`
 - `run_events.jsonl`
 - stdout/stderr or module-specific logs when available
@@ -179,3 +180,8 @@ A completed run should be reviewable from:
 
 Modules should register output paths in `ctx.outputs`, `ctx.artifacts`, or the
 run report when they produce standalone files.
+
+`run_review.txt` is generated from `run_events.jsonl` and the saved run object.
+It is meant for quick post-run triage: timeline, node statuses, failures or
+cancellations, and relevant artifacts. A module that only prints to the console
+will not appear clearly in this review.
