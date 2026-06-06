@@ -39,9 +39,8 @@ function result = detecdiv_run_pipeline_job(jobInput)
         if isempty(pipeObj)
             error('detecdiv_run_pipeline_job:PipelineLoadFailed', '%s', msg);
         end
-        dependencyAudit = pipelineAuditDependencies(pipeObj, 'Mode', 'run');
-
         ctx = localBuildExecutionContext(payload, shallowObj, pipeObj);
+        dependencyAudit = pipelineAuditDependencies(pipeObj, 'Mode', 'run', 'Context', ctx);
         runId = char(string(localGetText(payload, {'run_request','run_id'}, '')));
         if isempty(runId)
             runId = localSuggestRunId(shallowObj, pipeObj.strid);
@@ -362,6 +361,9 @@ function ctx = localBuildExecutionContext(payload, shallowObj, pipeObj)
         ctx.run.selectedNodes = localNormalizeSelectedNodes(localGetField(rr, 'selected_nodes', {}));
         ctx.run.nodeParams = localNormalizeNodeParams(localGetField(rr, 'node_params', struct('id', {}, 'params', {})), payload);
         ctx.run.runPolicy = localGetText(rr, {'run_policy'}, 'resume');
+        if isfield(rr, 'paths') && isstruct(rr.paths)
+            ctx.run.paths = rr.paths;
+        end
 
         ctx.io = struct();
         ctx.io.globalExistingPolicy = localGetText(rr, {'existing_data_policy'}, '');

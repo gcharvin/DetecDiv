@@ -14,6 +14,8 @@ function report = pipelineAuditDependencies(pipeIn, varargin)
 %   'TargetHost'       optional target host label for diagnostics
 %   'Strict'           logical flag, currently informational
 %   'IncludeDerived'   logical, default true
+%   'Context'          optional pipeline execution context for path mappings
+%   'Hub'              optional Hub settings struct for path mappings
 %
 % The function is intentionally read-only. It classifies module references as
 % embedded, linked, derived, or ephemeral and reports whether required
@@ -75,15 +77,16 @@ function report = pipelineAuditDependencies(pipeIn, varargin)
 end
 
 function dep = auditSingleNode(node, idx, templateRoot, opts, pipeObj) %#ok<INUSD>
-    contract = getNodeExportContractLocal(node);
-    source = resolveNodeSourceLocal(node, templateRoot);
+    contract = getNodeExportContractLocal(node, opts);
+    source = resolveNodeSourceLocal(node, templateRoot, opts);
     nodeId = char(string(getFieldOrDefault(node, 'id', sprintf('node_%d', idx))));
     nodeType = lower(char(string(getFieldOrDefault(node, 'type', ''))));
     referenceConfigured = ~isempty(source.configuredPath) || ~isempty(source.configuredId);
     pathExists = ~isempty(source.path) && exist(source.path, 'dir') == 7;
     pathIsRelative = ~isempty(source.configuredPath) && ~isAbsolutePathLocal(source.configuredPath);
     pathUnderPipeline = pathExists && ~isempty(templateRoot) && isSubPathLocal(source.path, templateRoot);
-    requiredForRun = contract.supports.inferenceAssets || contract.supports.definitionAssets;
+    requiredForRun = contract.supports.definitionAssets || ...
+        (contract.supports.inferenceAssets && referenceConfigured);
     malformed = false;
     issues = {};
     warnings = {};
@@ -101,7 +104,7 @@ function dep = auditSingleNode(node, idx, templateRoot, opts, pipeObj) %#ok<INUS
         trainingAssets = summarizeFiles(files);
     end
     if contract.supports.definitionAssets
-        definitionAssets = inspectDefinitionAssetsLocal(node, templateRoot);
+        definitionAssets = inspectDefinitionAssetsLocal(node, templateRoot, opts);
     end
 
     if referenceConfigured && isempty(source.configuredId)
@@ -178,7 +181,9 @@ function opts = parseOptions(varargin)
         'Mode', 'inspect', ...
         'TargetHost', '', ...
         'Strict', false, ...
-        'IncludeDerived', true);
+        'IncludeDerived', true, ...
+        'Context', struct(), ...
+        'Hub', struct());
 
     if mod(numel(varargin), 2) ~= 0
         error('pipelineAuditDependencies:Args', 'Arguments must be Name/Value pairs.');
@@ -197,6 +202,14 @@ function opts = parseOptions(varargin)
                 opts.Strict = logical(value);
             case 'includederived'
                 opts.IncludeDerived = logical(value);
+            case 'context'
+                if isstruct(value)
+                    opts.Context = value;
+                end
+            case 'hub'
+                if isstruct(value)
+                    opts.Hub = value;
+                end
             otherwise
                 error('pipelineAuditDependencies:UnknownOption', 'Unknown option "%s".', name);
         end
@@ -357,20 +370,27 @@ function locatorKind = inferLocatorKindLocal(source)
     end
 end
 
-function summary = inspectDefinitionAssetsLocal(node, templateRoot)
+function summary = inspectDefinitionAssetsLocal(node, templateRoot, opts)
     summary = struct('count', 0, 'sample', {{}});
     params = getFieldOrDefault(node, 'params', struct());
     files = {};
+    embedded = {};
 
     if isstruct(params)
         if isfield(params, 'pattern') && isstruct(params.pattern)
-            files = [files, extractPatchFilesLocal(params.pattern, templateRoot)]; %#ok<AGROW>
+            files = [files, extractPatchFilesLocal(params.pattern, templateRoot, opts)]; %#ok<AGROW>
+            if hasEmbeddedDefinitionLocal(params.pattern)
+                embedded{end+1} = 'embedded:pattern'; %#ok<AGROW>
+            end
         end
         if isfield(params, 'patternList')
             list = params.patternList;
             if isstruct(list)
                 for i = 1:numel(list)
-                    files = [files, extractPatchFilesLocal(list(i), templateRoot)]; %#ok<AGROW>
+                    files = [files, extractPatchFilesLocal(list(i), templateRoot, opts)]; %#ok<AGROW>
+                    if hasEmbeddedDefinitionLocal(list(i))
+                        embedded{end+1} = sprintf('embedded:patternList(%d)', i); %#ok<AGROW>
+                    end
                 end
             end
         end
@@ -378,9 +398,14 @@ function summary = inspectDefinitionAssetsLocal(node, templateRoot)
 
     files = files(cellfun(@(p) exist(p, 'file') == 2, files));
     summary = summarizeFiles(unique(files, 'stable'));
+    if ~isempty(embedded)
+        sample = [summary.sample unique(embedded, 'stable')]; %#ok<AGROW>
+        summary.count = summary.count + numel(unique(embedded, 'stable'));
+        summary.sample = sample(1:min(numel(sample), 5));
+    end
 end
 
-function files = extractPatchFilesLocal(pat, templateRoot)
+function files = extractPatchFilesLocal(pat, templateRoot, opts)
     files = {};
     if ~isstruct(pat)
         return;
@@ -393,9 +418,20 @@ function files = extractPatchFilesLocal(pat, templateRoot)
             if ~isAbsolutePathLocal(fullp) && ~isempty(templateRoot)
                 fullp = fullfile(templateRoot, fullp);
             end
+            fullp = mapPathForAuditLocal(fullp, opts, 'server');
             files{end+1} = fullp; %#ok<AGROW>
         end
     end
+end
+
+function tf = hasEmbeddedDefinitionLocal(value)
+    tf = false;
+    if ~isstruct(value) || isempty(fieldnames(value))
+        return;
+    end
+    fileKeys = {'patchFile', 'patchPreviewFile'};
+    names = fieldnames(value);
+    tf = any(~ismember(names, fileKeys));
 end
 
 function out = summarizeFiles(files)
@@ -408,7 +444,7 @@ function out = summarizeFiles(files)
     out.sample = files(1:min(numel(files), 5));
 end
 
-function source = resolveNodeSourceLocal(node, templateRoot)
+function source = resolveNodeSourceLocal(node, templateRoot, opts)
     source = struct('path', '', 'configuredPath', '', 'configuredId', '', 'id', '', 'kind', lower(char(string(getFieldOrDefault(node, 'type', '')))));
     params = getFieldOrDefault(node, 'params', struct());
     if isstruct(params)
@@ -446,9 +482,12 @@ function source = resolveNodeSourceLocal(node, templateRoot)
     if ~isempty(source.path) && ~isAbsolutePathLocal(source.path) && ~isempty(templateRoot)
         source.path = fullfile(templateRoot, source.path);
     end
+    if ~isempty(source.path)
+        source.path = mapPathForAuditLocal(source.path, opts, 'server');
+    end
 end
 
-function contract = getNodeExportContractLocal(node)
+function contract = getNodeExportContractLocal(node, opts)
     nodeType = lower(char(string(getFieldOrDefault(node, 'type', ''))));
     pkg = lower(char(string(getFieldOrDefault(node, 'pkg', ''))));
 
@@ -472,7 +511,7 @@ function contract = getNodeExportContractLocal(node)
                 % CellposeSAM can run from Python package defaults ("sam") or
                 % from package-local fine-tuned weights under modulePath/models.
                 % Only the latter is a required portable artifact bundle.
-                hasLocalModel = cellposeHasLocalModelAssetLocal(node);
+                hasLocalModel = cellposeHasLocalModelAssetLocal(node, opts);
                 contract.supports.inferenceAssets = hasLocalModel;
                 contract.supports.trainingAssets = false;
                 contract.supports.trainingRois = false;
@@ -534,13 +573,13 @@ function contract = getNodeExportContractLocal(node)
     end
 end
 
-function tf = cellposeHasLocalModelAssetLocal(node)
+function tf = cellposeHasLocalModelAssetLocal(node, opts)
     tf = false;
     params = getFieldOrDefault(node, 'params', struct());
     if ~isstruct(params) || ~isfield(params, 'modulePath') || isempty(params.modulePath)
         return;
     end
-    modulePath = char(string(params.modulePath));
+    modulePath = mapPathForAuditLocal(char(string(params.modulePath)), opts, 'server');
     if exist(modulePath, 'dir') ~= 7
         return;
     end
@@ -633,6 +672,69 @@ function tf = isSubPathLocal(candidatePath, rootPath)
         return;
     end
     tf = strcmp(candidate, root) || startsWith(candidate, [root filesep]) || startsWith(candidate, [strrep(root, '\', '/') '/']);
+end
+
+function pathOut = mapPathForAuditLocal(pathIn, opts, preferredDirection)
+    pathOut = char(string(pathIn));
+    if isempty(pathOut) || exist('detecdiv_paths_map_module_path', 'file') ~= 2
+        return;
+    end
+
+    ctx = auditMappingContextLocal(opts);
+    candidates = {pathOut};
+    try
+        [serverPath, serverMapped] = detecdiv_paths_map_module_path(pathOut, ctx, 'server');
+        if serverMapped
+            candidates{end+1} = serverPath; %#ok<AGROW>
+        end
+    catch
+        serverPath = '';
+        serverMapped = false;
+    end
+    try
+        [localPath, localMapped] = detecdiv_paths_map_module_path(pathOut, ctx, 'local');
+        if localMapped
+            candidates{end+1} = localPath; %#ok<AGROW>
+        end
+    catch
+        localPath = '';
+        localMapped = false;
+    end
+
+    for i = 1:numel(candidates)
+        candidate = char(string(candidates{i}));
+        if exist(candidate, 'dir') == 7 || exist(candidate, 'file') == 2
+            pathOut = candidate;
+            return;
+        end
+    end
+
+    if nargin >= 3 && any(strcmpi(preferredDirection, {'server','remote'})) && serverMapped
+        pathOut = serverPath;
+    elseif nargin >= 3 && any(strcmpi(preferredDirection, {'local','client'})) && localMapped
+        pathOut = localPath;
+    elseif ~ispc && serverMapped
+        pathOut = serverPath;
+    elseif ispc && localMapped
+        pathOut = localPath;
+    end
+end
+
+function ctx = auditMappingContextLocal(opts)
+    ctx = struct();
+    try
+        if isfield(opts, 'Context') && isstruct(opts.Context)
+            ctx = opts.Context;
+        end
+    catch
+        ctx = struct();
+    end
+    try
+        if isfield(opts, 'Hub') && isstruct(opts.Hub) && ~isempty(fieldnames(opts.Hub))
+            ctx.hub = opts.Hub;
+        end
+    catch
+    end
 end
 
 function out = normalizePathLocal(pathText)
