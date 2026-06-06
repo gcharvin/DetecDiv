@@ -17,8 +17,28 @@ function [job, runObj] = detecdiv_hub_submit_pipeline_run(runObj, shallowObj, va
     opts = localRunStage('parse options', @() localParse(varargin{:}));
     ref = localRunStage('resolve hub project reference', @() detecdiv_hub_project_ref(shallowObj, opts.hub));
     if isempty(ref.project_id)
-        error('detecdiv_hub_submit_pipeline_run:MissingProjectId', ...
-            'This project has no hub project id. Store it in shallowObj.runProfiles.hub.hub_project_id.');
+        [shallowObj, ref, ensureStatus] = localRunStage('ensure hub project registration', ...
+            @() detecdiv_hub_ensure_project(shallowObj, 'Hub', opts.hub, ...
+                'ErrorIfQueued', false, 'ResolveAttempts', 6, 'ResolveIntervalSec', 2));
+        if ~isempty(ref.project_id)
+            localRunStageNoOutput('save project after hub registration check', @() localSaveProject(shallowObj));
+        end
+        if isempty(ref.project_id)
+            msg = ['This project is not yet registered in the Hub project catalogue.' newline ...
+                char(string(ensureStatus.message)) newline ...
+                'Project indexing path: ' char(string(ensureStatus.attemptedPath)) newline ...
+                'Retry Hub submission after the Hub indexing job completes.'];
+            if isfield(ensureStatus, 'job') && isstruct(ensureStatus.job) && isfield(ensureStatus.job, 'job_id')
+                msg = [msg newline 'Hub indexing job id: ' char(string(ensureStatus.job.job_id))]; %#ok<AGROW>
+            elseif isfield(ensureStatus, 'job') && isstruct(ensureStatus.job) && isfield(ensureStatus.job, 'id')
+                msg = [msg newline 'Hub indexing job id: ' char(string(ensureStatus.job.id))]; %#ok<AGROW>
+            end
+            error('detecdiv_hub_submit_pipeline_run:ProjectIndexQueued', '%s', msg);
+        end
+    else
+        [shallowObj, ref] = localRunStage('store resolved hub project reference', ...
+            @() detecdiv_hub_ensure_project(shallowObj, 'Hub', opts.hub, 'ResolveAttempts', 1));
+        localRunStageNoOutput('save project after hub project resolution', @() localSaveProject(shallowObj));
     end
 
     payload = struct();
@@ -27,11 +47,12 @@ function [job, runObj] = detecdiv_hub_submit_pipeline_run(runObj, shallowObj, va
     payload.priority = opts.priority;
     payload.requested_by = opts.requestedBy;
     payload.requested_from_host = localRunStage('resolve local host name', @() localHostName());
-    payload.project_ref = localRunStage('build project reference payload', @() localBuildProjectRef(ref));
+    payload.project_ref = localRunStage('build project reference payload', @() localBuildProjectRef(ref, opts.hub));
     payload.pipeline_ref = localRunStage('build pipeline reference payload', @() localBuildPipelineRef(runObj, ref, opts.hub));
     payload.run_request = localRunStage('build run request payload', @() localBuildRunRequest(runObj, opts.hub, ref));
     payload.execution = localRunStage('build execution payload', @() localBuildExecution(opts));
 
+    localRunStageNoOutput('release local hub edit lease', @() detecdiv_hub_release_project_open(shallowObj, opts.hub));
     job = localRunStage('POST /pipeline-runs', @() detecdiv_hub_request('POST', '/pipeline-runs', payload, opts.hub));
     runObj = localRunStage('attach hub job to pipelineRun', @() localAttachHubJob(runObj, job, ref));
     localRunStageNoOutput('save pipelineRun after hub submit', @() localSavePipelineRun(runObj));
@@ -116,9 +137,9 @@ function name = localClassName(value)
     end
 end
 
-function out = localRunStage(stageName, fn)
+function varargout = localRunStage(stageName, fn)
     try
-        out = fn();
+        [varargout{1:nargout}] = fn();
     catch ME
         throwAsCaller(localWrapStageError(stageName, ME));
     end
@@ -136,7 +157,20 @@ function localSavePipelineRun(runObj)
     pipelineRunSave(runObj);
 end
 
+function localSaveProject(shallowObj)
+    try
+        shallowSave(shallowObj, 'shallowObj');
+    catch
+    end
+end
+
 function wrapped = localWrapStageError(stageName, ME)
+    locked = localProjectLockedStageError(stageName, ME);
+    if ~isempty(locked)
+        wrapped = locked;
+        return;
+    end
+
     msg = sprintf('Hub submit failed during "%s": %s', char(string(stageName)), ME.message);
     if ~isempty(ME.identifier)
         msg = sprintf('%s\nIdentifier: %s', msg, ME.identifier);
@@ -150,6 +184,106 @@ function wrapped = localWrapStageError(stageName, ME)
     end
     wrapped = MException('detecdiv_hub_submit_pipeline_run:StageFailed', '%s', msg);
     wrapped = addCause(wrapped, ME);
+end
+
+function wrapped = localProjectLockedStageError(stageName, ME)
+    wrapped = [];
+    if ~strcmp(ME.identifier, 'detecdiv_hub_request:HTTP409')
+        return;
+    end
+
+    lockInfo = localDecodeHubLockMessage(ME.message);
+    if isempty(lockInfo)
+        return;
+    end
+
+    lines = {
+        'This project is locked on DetecDiv Hub.'
+        localLockHumanSummary(lockInfo)
+        ''
+        'A new Hub run cannot be submitted until the active job finishes, is cancelled, or the lock is released.'
+        'Use the Run Monitor to follow or cancel the active run, then retry submission.'
+        };
+    msg = strjoin(lines, newline);
+    if ~isempty(stageName)
+        msg = sprintf('%s\n\nHub stage: %s', msg, char(string(stageName)));
+    end
+
+    wrapped = MException('detecdiv_hub_submit_pipeline_run:ProjectLocked', '%s', msg);
+    wrapped = addCause(wrapped, ME);
+end
+
+function lockInfo = localDecodeHubLockMessage(messageText)
+    lockInfo = [];
+    raw = char(string(messageText));
+    try
+        payload = jsondecode(raw);
+    catch
+        return;
+    end
+    if ~isstruct(payload) || ~isfield(payload, 'locks')
+        return;
+    end
+    msg = localTextField(payload, 'message', '');
+    if ~contains(lower(msg), 'locked')
+        return;
+    end
+
+    locks = payload.locks;
+    if isempty(locks)
+        return;
+    end
+    if numel(locks) > 1
+        locks = locks(1);
+    end
+
+    lockInfo = struct();
+    lockInfo.message = msg;
+    lockInfo.lockKind = localTextField(locks, 'lock_kind', '');
+    lockInfo.jobId = localTextField(locks, 'job_id', '');
+    lockInfo.holderKey = localTextField(locks, 'holder_key', '');
+    lockInfo.holderHost = localTextField(locks, 'holder_host', '');
+    lockInfo.reason = localTextField(locks, 'reason', '');
+    lockInfo.expiresAt = localTextField(locks, 'expires_at', '');
+end
+
+function value = localTextField(s, fieldName, fallback)
+    value = fallback;
+    try
+        if isstruct(s) && isfield(s, fieldName) && ~isempty(s.(fieldName))
+            value = char(string(s.(fieldName)));
+        end
+    catch
+        value = fallback;
+    end
+end
+
+function msg = localLockHumanSummary(lockInfo)
+    if strcmpi(lockInfo.lockKind, 'server_job')
+        msg = 'Another Hub pipeline run is currently using this project.';
+    elseif strcmpi(lockInfo.lockKind, 'client_edit_lease')
+        msg = 'This project is currently open for editing in a DetecDiv client.';
+    else
+        msg = 'Hub has an active project lock.';
+    end
+
+    details = {};
+    if ~isempty(lockInfo.jobId)
+        details{end+1} = ['Job id: ' lockInfo.jobId]; %#ok<AGROW>
+    end
+    if ~isempty(lockInfo.reason)
+        details{end+1} = ['Reason: ' lockInfo.reason]; %#ok<AGROW>
+    end
+    if ~isempty(lockInfo.holderHost)
+        details{end+1} = ['Host: ' lockInfo.holderHost]; %#ok<AGROW>
+    end
+    if ~isempty(lockInfo.expiresAt)
+        details{end+1} = ['Expires: ' lockInfo.expiresAt]; %#ok<AGROW>
+    end
+
+    if ~isempty(details)
+        msg = [msg newline strjoin(details, newline)];
+    end
 end
 
 function opts = localParse(varargin)
@@ -191,7 +325,7 @@ function opts = localParse(varargin)
     end
 end
 
-function projectRef = localBuildProjectRef(ref)
+function projectRef = localBuildProjectRef(ref, hub)
     projectRef = struct();
     projectRef.project_id = ref.project_id;
     projectRef.project_key = ref.project_key;
@@ -201,7 +335,7 @@ function projectRef = localBuildProjectRef(ref)
     else
         projectRef.local_project_mat_path = ref.project_mat_path;
     end
-    projectRef.project_mat_path = ref.project_mat_path;
+    projectRef.project_mat_path = localTranslatePathForServer(ref.project_mat_path, ref, hub);
 end
 
 function pipelineRef = localBuildPipelineRef(runObj, ref, hub)
@@ -335,8 +469,8 @@ function runRequest = localBuildRunRequest(runObj, hub, ref)
     runRequest.run_id = char(string(runObj.runId));
     runRequest.description = char(string(runObj.description));
     runRequest.selected_nodes = localCellText(localNested(ctx, {'run','selectedNodes'}, {}));
-    runRequest.node_params = localTranslateValuePathsForServer( ...
-        localNested(ctx, {'run','nodeParams'}, struct('id', {}, 'params', {})), ref, hub);
+    runRequest.node_params = localBuildNodeParamsList( ...
+        localNested(ctx, {'run','nodeParams'}, struct()), runRequest.selected_nodes, ref, hub);
     runRequest.run_policy = localText(localNested(ctx, {'run','runPolicy'}, 'resume'));
     runRequest.existing_data_policy = localText(localNested(ctx, {'io','existingPolicy'}, ''));
     runRequest.roi_cache_policy = localText(localNested(ctx, {'io','cachePolicy'}, 'auto'));
@@ -346,9 +480,101 @@ function runRequest = localBuildRunRequest(runObj, hub, ref)
         'frames', localNested(ctx, {'sel','frames'}, []), ...
         'rois', localNested(ctx, {'sel','rois'}, []), ...
         'channels', {localCellText(localNested(ctx, {'sel','channels'}, {}))});
+    runRequest.available_channels = localCellText(localNested(ctx, {'run','availableChannels'}, localNested(ctx, {'channels'}, {})));
+    runRequest.roi_channels = localCellText(localNested(ctx, {'roiChannels'}, localNested(ctx, {'run','availableChannels'}, {})));
+    runRequest.masks = localCellText(localNested(ctx, {'masks'}, {}));
+    runRequest.data_series = localCellText(localNested(ctx, {'dataSeriesNames'}, localNested(ctx, {'dataSeries'}, {})));
     runRequest.control = localBuildRunControl(ctx);
     runRequest.python = localNested(ctx, {'exec','python'}, struct());
     runRequest.gpu = struct('mode', localText(localNested(ctx, {'run','gpuPolicy'}, localNested(ctx, {'exec','gpuPolicy'}, 'module_default'))));
+end
+
+function items = localBuildNodeParamsList(nodeParams, selectedNodes, ref, hub)
+    items = {};
+    if isempty(nodeParams)
+        return;
+    end
+
+    if iscell(nodeParams)
+        for i = 1:numel(nodeParams)
+            item = localNormalizeNodeParamEntry(nodeParams{i}, '', ref, hub);
+            if ~isempty(item)
+                items{end+1} = item; %#ok<AGROW>
+            end
+        end
+        return;
+    end
+
+    if ~isstruct(nodeParams)
+        return;
+    end
+
+    if isfield(nodeParams, 'id') && isfield(nodeParams, 'params')
+        for i = 1:numel(nodeParams)
+            item = localNormalizeNodeParamEntry(nodeParams(i), '', ref, hub);
+            if ~isempty(item)
+                items{end+1} = item; %#ok<AGROW>
+            end
+        end
+        return;
+    end
+
+    keys = fieldnames(nodeParams);
+    used = false(size(keys));
+    selectedNodes = localCellText(selectedNodes);
+    for i = 1:numel(selectedNodes)
+        nodeId = char(string(selectedNodes{i}));
+        key = localNodeParamsKey(nodeParams, nodeId);
+        if isempty(key)
+            continue;
+        end
+        item = localNormalizeNodeParamEntry(nodeParams.(key), nodeId, ref, hub);
+        if ~isempty(item)
+            items{end+1} = item; %#ok<AGROW>
+        end
+        used(strcmp(keys, key)) = true;
+    end
+
+    for i = 1:numel(keys)
+        if used(i)
+            continue;
+        end
+        key = keys{i};
+        item = localNormalizeNodeParamEntry(nodeParams.(key), key, ref, hub);
+        if ~isempty(item)
+            items{end+1} = item; %#ok<AGROW>
+        end
+    end
+end
+
+function key = localNodeParamsKey(nodeParams, nodeId)
+    key = '';
+    if isfield(nodeParams, nodeId)
+        key = nodeId;
+        return;
+    end
+    validKey = matlab.lang.makeValidName(nodeId);
+    if isfield(nodeParams, validKey)
+        key = validKey;
+    end
+end
+
+function item = localNormalizeNodeParamEntry(value, fallbackId, ref, hub)
+    item = [];
+    nodeId = fallbackId;
+    params = value;
+    if isstruct(value) && isfield(value, 'id') && isfield(value, 'params')
+        nodeId = localText(value.id);
+        params = value.params;
+    end
+    if isempty(nodeId)
+        return;
+    end
+    if isempty(params)
+        params = struct();
+    end
+    item = struct('id', char(string(nodeId)), ...
+        'params', localTranslateValuePathsForServer(params, ref, hub));
 end
 
 function paths = localBuildRunPaths(ctx, ref, hub)
