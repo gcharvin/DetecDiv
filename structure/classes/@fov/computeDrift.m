@@ -121,6 +121,10 @@ if legacyMode
     list = zeros(H, W, 1, numel(framesid), class(testIm));
 else
     list = images; % H W C T
+    if isempty(list) || ndims(list) < 4 || size(list,1) == 0 || size(list,2) == 0 || size(list,4) == 0
+        error('computeDrift:EmptyImageBlock', ...
+            'Drift correction received an empty image block.');
+    end
     if isempty(framesid)
         framesid = 1:size(list,4);
     end
@@ -172,6 +176,10 @@ if isempty(refimage)
     else
         refimage = list(:,:,channel,1);
     end
+end
+if isempty(refimage)
+    error('computeDrift:EmptyReferenceImage', ...
+        'Drift correction reference image is empty.');
 end
 refGray0 = toGray(refimage);
 tPrepRef = toc(tPrepRef);
@@ -226,8 +234,16 @@ for j = framesid
         imFull = list(:,:,channel,cc);
     end
     if doTiming, TT.load = TT.load + toc(tLoad); end
+    if isempty(imFull)
+        error('computeDrift:EmptyFrameImage', ...
+            'Drift correction received an empty image at frame index %d.', j);
+    end
 
     imGray = toGray(imFull);
+    if isempty(imGray)
+        error('computeDrift:EmptyFrameImage', ...
+            'Drift correction image is empty after grayscale conversion at frame index %d.', j);
+    end
 
     % -------- build estimation image in a stable reference frame --------
     % Pre-align current raw frame by previous cumulative drift (global space).

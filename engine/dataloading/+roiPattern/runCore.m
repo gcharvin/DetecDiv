@@ -431,14 +431,17 @@ function [pattimg, chanIdx, refFrame, crop] = buildPatternPatch(fovList, targetF
     end
 
     chanIdx = resolveChannelIndex(refFov, p);
-    if isfield(pattern,'channelIndex') && ~isempty(pattern.channelIndex)
-        chanIdx = round(double(pattern.channelIndex(1)));
-    elseif isfield(pattern,'channel') && ~isempty(pattern.channel)
+    if isfield(pattern,'channel') && ~isempty(pattern.channel)
         chanIdx = resolveChannelIndex(refFov, pattern);
+    elseif isfield(pattern,'channelIndex') && ~isempty(pattern.channelIndex)
+        chanIdx = round(double(pattern.channelIndex(1)));
     end
     chanIdx = max(1, round(double(chanIdx)));
 
-    [pattimg, ok] = tryLoadExportedPatternPatch(pattern, ctx);
+    [pattimg, ok] = tryLoadEmbeddedPatternPatch(pattern);
+    if ~ok
+        [pattimg, ok] = tryLoadExportedPatternPatch(pattern, ctx);
+    end
     if ~ok
         tmp = readImage(refFov, refFrame, chanIdx);
         if isempty(tmp)
@@ -477,6 +480,21 @@ function [pattimg, chanIdx, refFrame, crop] = buildPatternPatch(fovList, targetF
         end
     end
 
+end
+
+function [pattimg, ok] = tryLoadEmbeddedPatternPatch(pattern)
+pattimg = [];
+ok = false;
+
+keys = {'image', 'patternImage', 'pattimg', 'patch'};
+for k = 1:numel(keys)
+    key = keys{k};
+    if isfield(pattern, key) && ~isempty(pattern.(key))
+        pattimg = pattern.(key);
+        ok = true;
+        return;
+    end
+end
 end
 
 function [pattimg, ok] = tryLoadExportedPatternPatch(pattern, ctx)
@@ -557,6 +575,17 @@ end
 
 function idx = resolveChannelIndex(fov, p)
     idx = 1;
+    if isfield(p,'channel') && ~isempty(p.channel)
+        q = char(string(p.channel));
+        try
+            pix = find(matches(fov.channel, q), 1);
+            if ~isempty(pix)
+                idx = pix;
+                return;
+            end
+        catch
+        end
+    end
     if isfield(p,'channelIndex') && ~isempty(p.channelIndex)
         try
             if ischar(p.channelIndex) || isstring(p.channelIndex)
@@ -567,16 +596,6 @@ function idx = resolveChannelIndex(fov, p)
             if isfinite(v) && v >= 1
                 idx = round(v);
                 return;
-            end
-        catch
-        end
-    end
-    if isfield(p,'channel') && ~isempty(p.channel)
-        q = char(string(p.channel));
-        try
-            pix = find(matches(fov.channel, q), 1);
-            if ~isempty(pix)
-                idx = pix;
             end
         catch
         end

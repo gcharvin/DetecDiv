@@ -1308,8 +1308,23 @@ if nargin < 4, progressFcn = []; end
 frameIdxVec   = frameIdxVec(:)';
 channelIdxVec = channelIdxVec(:)';
 
-testIm = fovObj.readImage(frameIdxVec(1), channelIdxVec(1));
+if isempty(frameIdxVec) || isempty(channelIdxVec)
+    error('extractAllROICrops:EmptyBlockRequest', ...
+        'Cannot load FOV block: frame or channel selection is empty.');
+end
+
+[testIm, sampleFrame, sampleChannel] = firstReadableBlockImage(fovObj, frameIdxVec, channelIdxVec);
+if isempty(testIm)
+    error('extractAllROICrops:EmptySourceBlock', ...
+        'Cannot load any source image for FOV %s, frames %s, channels %s.', ...
+        safeStr(getprop(fovObj,'id','<unnamed>')), mat2str(frameIdxVec), mat2str(channelIdxVec));
+end
 testIm = forceGray(testIm); % NEW
+if isempty(testIm)
+    error('extractAllROICrops:EmptySourceImage', ...
+        'First readable source image became empty after grayscale conversion for FOV %s, frame %d, channel %d.', ...
+        safeStr(getprop(fovObj,'id','<unnamed>')), sampleFrame, sampleChannel);
+end
 [H, W] = size(testIm);
 C = numel(channelIdxVec);
 T = numel(frameIdxVec);
@@ -1321,8 +1336,17 @@ for ic = 1:C
     for it = 1:T
         t = frameIdxVec(it);
         im = fovObj.readImage(t, c);
-        if isempty(im), continue; end
+        if isempty(im)
+            error('extractAllROICrops:EmptySourceImage', ...
+                'Unable to read source image for FOV %s, frame %d, channel %d.', ...
+                safeStr(getprop(fovObj,'id','<unnamed>')), t, c);
+        end
         im = forceGray(im); % NEW
+        if isempty(im)
+            error('extractAllROICrops:EmptySourceImage', ...
+                'Source image is empty after grayscale conversion for FOV %s, frame %d, channel %d.', ...
+                safeStr(getprop(fovObj,'id','<unnamed>')), t, c);
+        end
         if size(im,1)~=H || size(im,2)~=W
             im = safeResizeTo(im, H, W);
         end
@@ -1332,6 +1356,29 @@ for ic = 1:C
             idx = (ic-1)*T + it;
             msg = sprintf('ch%d frame %d/%d', c, it, T);
             progressFcn(idx, [], msg);
+        end
+    end
+end
+end
+
+function [im, frameId, channelId] = firstReadableBlockImage(fovObj, frameIdxVec, channelIdxVec)
+im = [];
+frameId = NaN;
+channelId = NaN;
+for ic = 1:numel(channelIdxVec)
+    c = channelIdxVec(ic);
+    for it = 1:numel(frameIdxVec)
+        t = frameIdxVec(it);
+        try
+            candidate = fovObj.readImage(t, c);
+        catch
+            candidate = [];
+        end
+        if ~isempty(candidate)
+            im = candidate;
+            frameId = t;
+            channelId = c;
+            return;
         end
     end
 end
