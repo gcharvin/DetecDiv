@@ -889,7 +889,7 @@ function contract = enrichContractFromPackage(contract, node)
                 contract.capabilities.outputsChannels = true;
                 contract.capabilities.roiDataSeries = false;
                 contract.capabilities.outputsDataSeries = false;
-                contract.resources.in = resourceDef('channel', 'roi_image', 'instanceChannelName', 'instanceChannelName', 'channels', 'instanceChannelName', true, '');
+                contract.resources.in = resourceDef('channel', 'mask_roi_image', 'instanceChannelName', 'instanceChannelName', 'channels', 'instanceChannelName', true, '');
                 contract.resources.out = resourceDef('channel', 'lineage_mask', 'channels', 'outputChannelName', 'channels', 'outputChannelName', false, 'roiChannel');
                 contract.summary = 'Tracks mother/bud lineage from an instance-label ROI channel using Viterbi.';
             case 'formatindataseries'

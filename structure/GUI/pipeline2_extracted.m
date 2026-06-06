@@ -8717,10 +8717,12 @@ classdef pipeline2 < matlab.apps.AppBase
                     keys = computeMetricsStaticKeysForNode(app, node);
                 case 'computerls'
                     keys = moduleSetparamKeys(app, pkg);
-                    keys = setdiff(keys, {'classification_data','outputName','pkg','paramTooltip','tip'}, 'stable');
+                    keys = removeBindingSelectorKeys(app, keys, node);
+                    keys = setdiff(keys, {'outputName','pkg','paramTooltip','tip'}, 'stable');
                 case 'computelineage'
                     keys = moduleSetparamKeys(app, pkg);
-                    keys = setdiff(keys, {'classification_data','outputName','pkg','tip'}, 'stable');
+                    keys = removeBindingSelectorKeys(app, keys, node);
+                    keys = setdiff(keys, {'outputName','pkg','tip'}, 'stable');
                 case 'computemaxprojection'
                     keys = {'method','zstacks'};
                 case 'basicobjecttracking'
@@ -8733,7 +8735,28 @@ classdef pipeline2 < matlab.apps.AppBase
                         'tempConf','bottomSign','ratioMin','bonusSwitch'};
                 otherwise
                     keys = moduleSetparamKeys(app, pkg);
+                    keys = removeBindingSelectorKeys(app, keys, node);
                     keys = setdiff(keys, {'outputName','outputChannelName','existingPolicy','pkg','paramTooltip','tip'}, 'stable');
+            end
+        end
+
+        function keys = removeBindingSelectorKeys(app, keys, node) %#ok<INUSD>
+            try
+                contract = pipelineNodeContract(node);
+            catch
+                contract = struct();
+            end
+            selectorKeys = {};
+            try
+                if isstruct(contract) && isfield(contract, 'binding') && isstruct(contract.binding) ...
+                        && isfield(contract.binding, 'selectorKeys') && ~isempty(contract.binding.selectorKeys)
+                    selectorKeys = cellstr(string(contract.binding.selectorKeys(:)));
+                end
+            catch
+                selectorKeys = {};
+            end
+            if ~isempty(selectorKeys)
+                keys = setdiff(keys, selectorKeys, 'stable');
             end
         end
 

@@ -13,6 +13,7 @@ tests{end+1} = @testDynamicComputeMetricsContract; %#ok<AGROW>
 tests{end+1} = @testComputeMetricsAcceptsSymbolicCellposeMask; %#ok<AGROW>
 tests{end+1} = @testComputeMetricsAcceptsSymbolicGeneratedScoreChannel; %#ok<AGROW>
 tests{end+1} = @testRoiTrackedAcceptsSymbolicCellposeMask; %#ok<AGROW>
+tests{end+1} = @testTrackMotherLineageAcceptsSymbolicCellposeMask; %#ok<AGROW>
 tests{end+1} = @testResourceBindingAddsExecutionDependency; %#ok<AGROW>
 tests{end+1} = @testResourceBindingVisibleWhenExecutionEdgeExists; %#ok<AGROW>
 tests{end+1} = @testPipelineSaveLoadPreservesSymbolicBindings; %#ok<AGROW>
@@ -249,6 +250,37 @@ assert(any(strcmp({resolution.applied.nodeId}, 'roitracked_5') & strcmp({resolut
 assert(ok, 'roiTracked should accept resolved CellposeSAM mask binding: %s', strjoin(validation.errors, ' | '));
 assert(~any(contains(validation.errors, 'references unknown channel')), ...
     'Resolved CellposeSAM mask should not be revalidated as an unknown ROI image channel.');
+end
+
+function testTrackMotherLineageAcceptsSymbolicCellposeMask()
+n1 = makeNode('roiExtract', 'roiExtract', struct('extractChannels', {{'ch1','ch2'}}));
+n1.id = 'roiextract_1';
+n2 = makeNode('classifier', 'cellposesam', struct( ...
+    'pkg', 'cellposesam', ...
+    'channel', 'ch2', ...
+    'outputType', 'segmentation', ...
+    'outputName', 'cellposeSAM'));
+n2.id = 'classifier_cellposesam_4';
+n3 = makeNode('processor', 'trackMotherLineageViterbi', struct( ...
+    'pkg', 'trackMotherLineageViterbi', ...
+    'instanceChannelName', '@resource:segmentation:classifier_cellposesam_4', ...
+    'outputChannelName', 'MotherLineageViterbi'));
+n3.id = 'processor_trackmotherlineageviterbi_9';
+pipe = struct( ...
+    'nodes', [n1 n2 n3], ...
+    'edges', makeEdges({'roiextract_1','classifier_cellposesam_4'; 'classifier_cellposesam_4','processor_trackmotherlineageviterbi_9'}), ...
+    'branches', struct([]));
+ctx = struct('images', 1, 'roiList', 1, 'channels', {{'ch1','ch2'}});
+[pipe, resolution] = pipelineResolveBindings(pipe, ctx, struct('allowGui', false));
+idxTracker = find(strcmp({pipe.nodes.id}, 'processor_trackmotherlineageviterbi_9'), 1);
+assert(~isempty(idxTracker), 'Missing trackMotherLineageViterbi node after binding resolution.');
+assert(strcmp(pipe.nodes(idxTracker).params.instanceChannelName, 'results_cellposeSAM_cell'), ...
+    'trackMotherLineageViterbi symbolic mask binding should resolve to the physical CellposeSAM mask channel.');
+assert(any(strcmp({resolution.applied.nodeId}, 'processor_trackmotherlineageviterbi_9') & strcmp({resolution.applied.param}, 'instanceChannelName')), ...
+    'Binding resolution should report trackMotherLineageViterbi.instanceChannelName auto binding.');
+
+[ok, validation] = validatePipeline(pipe, ctx, struct('allowGui', false));
+assert(ok, 'trackMotherLineageViterbi should accept resolved CellposeSAM mask binding: %s', strjoin(validation.errors, ' | '));
 end
 
 function testResourceBindingAddsExecutionDependency()
