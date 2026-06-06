@@ -1740,6 +1740,14 @@ function [modulePath, status, targetLabel] = resolveClassifierModulePathForValid
         return;
     end
 
+    if ~ispc && looksLikeWindowsAbsPathLocal(configuredPath)
+        [mappedPath, mapped] = mapLocalPathToHubServerPath(configuredPath, ctx);
+        if mapped
+            modulePath = mappedPath;
+            status = 'mapped';
+        end
+    end
+
     if isHubValidationTarget(ctx)
         if ispc
             [checkPath, mapped] = mapHubClassifierPathToLocalCheckPath(configuredPath, ctx);
@@ -1770,7 +1778,7 @@ function [modulePath, status, targetLabel] = resolveClassifierModulePathForValid
                 modulePath = configuredPath;
             end
         end
-    else
+    elseif isempty(modulePath)
         modulePath = configuredPath;
     end
 
@@ -1932,13 +1940,8 @@ function mappings = validationPathMappings(ctx)
         end
     catch
     end
-    try
-        if ispc && isfolder('X:\')
-            mappings(end+1).localRoot = 'X:\'; %#ok<AGROW>
-            mappings(end).remoteRoot = '/data';
-        end
-    catch
-    end
+    mappings(end+1).localRoot = 'X:\'; %#ok<AGROW>
+    mappings(end).remoteRoot = '/data';
     mappings = uniquePathMappingsLocal(mappings);
 end
 
@@ -1950,9 +1953,13 @@ function recovered = recoverClassifierModulePathForValidation(configuredPath, mo
         roots{end+1} = nestedFieldTextLocal(ctx, {'io','serverProjectDataFolder'}, ''); %#ok<AGROW>
         roots{end+1} = nestedFieldTextLocal(ctx, {'run','projectPath'}, ''); %#ok<AGROW>
         roots{end+1} = nestedFieldTextLocal(ctx, {'io','projectPath'}, ''); %#ok<AGROW>
+        roots{end+1} = nestedFieldTextLocal(ctx, {'targetRef','projectPath'}, ''); %#ok<AGROW>
+        roots{end+1} = nestedFieldTextLocal(ctx, {'pipelineRef','path'}, ''); %#ok<AGROW>
     catch
     end
     roots = roots(~cellfun(@isempty, roots));
+    mappedRoots = classifierMappedPathRootsForValidation(configuredPath, ctx);
+    roots = [roots mappedRoots]; %#ok<AGROW>
     leaf = moduleId;
     if isempty(leaf)
         [~, leaf] = fileparts(configuredPath);
@@ -1965,6 +1972,7 @@ function recovered = recoverClassifierModulePathForValidation(configuredPath, mo
         end
         candidates{end+1} = fullfile(root, 'classifiers', leaf); %#ok<AGROW>
         candidates{end+1} = fullfile(root, 'classifier', leaf); %#ok<AGROW>
+        candidates{end+1} = fullfile(root, 'ClassiRepository', leaf); %#ok<AGROW>
         candidates{end+1} = fullfile(root, leaf); %#ok<AGROW>
     end
     for i = 1:numel(candidates)
@@ -1972,6 +1980,19 @@ function recovered = recoverClassifierModulePathForValidation(configuredPath, mo
             recovered = candidates{i};
             return;
         end
+    end
+end
+
+function roots = classifierMappedPathRootsForValidation(configuredPath, ctx)
+    roots = {};
+    try
+        [mappedPath, mapped] = mapLocalPathToHubServerPath(configuredPath, ctx);
+        if mapped && ~isempty(mappedPath)
+            roots{end+1} = mappedPath; %#ok<AGROW>
+            roots{end+1} = fileparts(mappedPath); %#ok<AGROW>
+            roots{end+1} = fileparts(fileparts(mappedPath)); %#ok<AGROW>
+        end
+    catch
     end
 end
 

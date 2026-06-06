@@ -2143,6 +2143,11 @@ if isAbsolutePathLocal(modulePath)
     % On Linux workers, module references may still carry absolute Windows paths
     % from GUI-originated pipeline snapshots. Try to recover a server-visible path.
     if ~ispc && looksLikeWindowsAbsPath(modulePath)
+        [mappedPath, mapped] = mapModulePathToServerPath(modulePath, ctx);
+        if mapped && (exist(mappedPath, 'dir') == 7 || exist(mappedPath, 'file') == 2)
+            refInfo.modulePath = mappedPath;
+            return;
+        end
         moduleId = '';
         moduleKind = '';
         try
@@ -2207,6 +2212,107 @@ p = char(string(p));
 tf = ~isempty(regexp(p, '^[A-Za-z]:[\\/]', 'once')) || startsWith(p, '\\');
 end
 
+function [mappedPath, mapped] = mapModulePathToServerPath(pathIn, ctx)
+mappedPath = char(string(pathIn));
+mapped = false;
+mappings = modulePathMappings(ctx);
+if isempty(mappings)
+    return;
+end
+localComparable = regexprep(strrep(char(string(pathIn)), '/', '\'), '[\\\/]+$', '');
+bestLen = 0;
+bestRemote = '';
+bestSuffix = '';
+for i = 1:numel(mappings)
+    if ~isfield(mappings(i), 'localRoot') || ~isfield(mappings(i), 'remoteRoot')
+        continue;
+    end
+    localRoot = regexprep(strrep(char(string(mappings(i).localRoot)), '/', '\'), '[\\\/]+$', '');
+    remoteRoot = regexprep(strrep(char(string(mappings(i).remoteRoot)), '\', '/'), '[\/]+$', '');
+    if isempty(localRoot) || isempty(remoteRoot)
+        continue;
+    end
+    if startsWith(lower(localComparable), lower(localRoot)) && ...
+            (numel(localComparable) == numel(localRoot) || any(localComparable(numel(localRoot)+1) == ['\' '/']))
+        if numel(localRoot) > bestLen
+            bestLen = numel(localRoot);
+            bestRemote = remoteRoot;
+            bestSuffix = localComparable(numel(localRoot)+1:end);
+        end
+    end
+end
+if bestLen > 0
+    mappedPath = [bestRemote strrep(bestSuffix, '\', '/')];
+    mapped = true;
+end
+end
+
+function mappings = modulePathMappings(ctx)
+mappings = struct('remoteRoot', {}, 'localRoot', {});
+try
+    if isfield(ctx, 'hub') && isstruct(ctx.hub) && isfield(ctx.hub, 'pathMappings') && ~isempty(ctx.hub.pathMappings)
+        mappings = ctx.hub.pathMappings;
+    end
+catch
+end
+try
+    if isfield(ctx, 'run') && isstruct(ctx.run) && isfield(ctx.run, 'paths') && ...
+            isstruct(ctx.run.paths) && isfield(ctx.run.paths, 'path_mappings') && ~isempty(ctx.run.paths.path_mappings)
+        mappings = [mappings ctx.run.paths.path_mappings]; %#ok<AGROW>
+    end
+catch
+end
+try
+    if isfield(ctx, 'hub') && isstruct(ctx.hub) && ...
+            isfield(ctx.hub, 'defaultLocalProjectRoot') && isfield(ctx.hub, 'defaultRemoteProjectRoot') && ...
+            ~isempty(ctx.hub.defaultLocalProjectRoot) && ~isempty(ctx.hub.defaultRemoteProjectRoot)
+        mappings(end+1).localRoot = ctx.hub.defaultLocalProjectRoot; %#ok<AGROW>
+        mappings(end).remoteRoot = ctx.hub.defaultRemoteProjectRoot;
+    end
+catch
+end
+try
+    if exist('detecdiv_hub_settings_get', 'file') == 2
+        hub = detecdiv_hub_settings_get();
+        if isstruct(hub) && isfield(hub, 'pathMappings') && ~isempty(hub.pathMappings)
+            mappings = [mappings hub.pathMappings]; %#ok<AGROW>
+        end
+        if isstruct(hub) && isfield(hub, 'defaultLocalProjectRoot') && isfield(hub, 'defaultRemoteProjectRoot') && ...
+                ~isempty(hub.defaultLocalProjectRoot) && ~isempty(hub.defaultRemoteProjectRoot)
+            mappings(end+1).localRoot = hub.defaultLocalProjectRoot; %#ok<AGROW>
+            mappings(end).remoteRoot = hub.defaultRemoteProjectRoot;
+        end
+    end
+catch
+end
+mappings(end+1).localRoot = 'X:\'; %#ok<AGROW>
+mappings(end).remoteRoot = '/data';
+mappings = uniqueModulePathMappings(mappings);
+end
+
+function mappings = uniqueModulePathMappings(mappings)
+if isempty(mappings)
+    return;
+end
+keep = true(1, numel(mappings));
+seen = {};
+for i = 1:numel(mappings)
+    if ~isfield(mappings(i), 'localRoot') || ~isfield(mappings(i), 'remoteRoot')
+        keep(i) = false;
+        continue;
+    end
+    localRoot = lower(regexprep(strrep(char(string(mappings(i).localRoot)), '/', '\'), '[\\\/]+$', ''));
+    remoteRoot = lower(regexprep(strrep(char(string(mappings(i).remoteRoot)), '\', '/'), '[\/]+$', ''));
+    key = [localRoot '|' remoteRoot];
+    if isempty(localRoot) || isempty(remoteRoot) || any(strcmp(seen, key))
+        keep(i) = false;
+    else
+        seen{end+1} = key; %#ok<AGROW>
+    end
+end
+mappings = mappings(keep);
+end
+
 function recovered = recoverServerModulePath(modulePath, moduleId, moduleKind, ctx)
 recovered = '';
 if nargin < 2 || isempty(moduleId)
@@ -2231,6 +2337,15 @@ try
     end
 catch
 end
+try
+    [mappedPath, mapped] = mapModulePathToServerPath(modulePath, ctx);
+    if mapped && ~isempty(mappedPath)
+        roots{end+1} = mappedPath; %#ok<AGROW>
+        roots{end+1} = fileparts(mappedPath); %#ok<AGROW>
+        roots{end+1} = fileparts(fileparts(mappedPath)); %#ok<AGROW>
+    end
+catch
+end
 roots = unique(roots(~cellfun(@isempty, roots)), 'stable');
 
 candidateDirs = {};
@@ -2241,7 +2356,9 @@ for i = 1:numel(roots)
     end
     if strcmp(moduleKind, 'classifier')
         candidateDirs{end+1} = fullfile(root, moduleId); %#ok<AGROW>
+        candidateDirs{end+1} = fullfile(root, 'classifiers', moduleId); %#ok<AGROW>
         candidateDirs{end+1} = fullfile(root, 'classification', moduleId); %#ok<AGROW>
+        candidateDirs{end+1} = fullfile(root, 'ClassiRepository', moduleId); %#ok<AGROW>
         candidateDirs{end+1} = fullfile(root, 'assets', 'classification', moduleId); %#ok<AGROW>
         candidateDirs{end+1} = fullfile(root, 'tmpProject', 'classification', moduleId); %#ok<AGROW>
     else
