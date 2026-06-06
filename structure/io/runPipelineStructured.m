@@ -1871,6 +1871,14 @@ if nargin < 3 || ~isstruct(ctx)
     ctx = struct();
 end
 
+refInfo = resolveNodeModuleReference(node, p, 'classifier', ctx);
+if ~isempty(refInfo)
+    refClassi = loadClassifierReferenceFromPath(refInfo);
+    if ~isempty(refClassi)
+        return;
+    end
+end
+
 if isfield(p,'moduleVar') && ~isempty(p.moduleVar)
     varName = char(string(p.moduleVar));
     try
@@ -1883,11 +1891,6 @@ if isfield(p,'moduleVar') && ~isempty(p.moduleVar)
         end
     catch
     end
-end
-
-refInfo = resolveNodeModuleReference(node, p, 'classifier', ctx);
-if ~isempty(refInfo)
-    refClassi = loadClassifierReferenceFromPath(refInfo);
 end
 end
 
