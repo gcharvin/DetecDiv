@@ -415,6 +415,7 @@ function runRequest = localBuildRunRequest(runObj, hub, ref)
     runRequest.node_params = localBuildNodeParamsList( ...
         localNested(ctx, {'run','nodeParams'}, struct()), runRequest.selected_nodes, ref, hub);
     runRequest.run_policy = localText(localNested(ctx, {'run','runPolicy'}, 'resume'));
+    runRequest.input_source = localText(localNested(ctx, {'run','inputSource'}, ''));
     runRequest.existing_data_policy = localText(localNested(ctx, {'io','existingPolicy'}, ''));
     runRequest.roi_cache_policy = localText(localNested(ctx, {'io','cachePolicy'}, 'auto'));
     runRequest.paths = localBuildRunPaths(ctx, ref, hub);

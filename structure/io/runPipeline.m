@@ -1929,15 +1929,10 @@ function ctx = seedContextFromProject(ctx)
     end
 
     srcLevel = getProjectInputSourceLevel(ctx);
-    hasExplicitRois = isfield(ctx,'roiList') && ~isempty(ctx.roiList);
-    if srcLevel >= 2 && ~hasExplicitRois
+    if srcLevel >= 2
         ctx.roiList = collectRoisForContextSelection(ctx, getfielddefault(ctx,'fovList',[]));
     elseif (~isfield(ctx,'roiList') || isempty(ctx.roiList)) && shouldSeedFromProjectInputSource(ctx)
         ctx.roiList = collectRoisForContextSelection(ctx, getfielddefault(ctx,'fovList',[]));
-    end
-    if hasExplicitRois && isfield(ctx,'roiList') && ~isempty(ctx.roiList) && ...
-            isfield(ctx,'sel') && isstruct(ctx.sel) && isfield(ctx.sel,'rois') && ~isempty(ctx.sel.rois)
-        ctx.roiList = filterRoisBySelectionVector(ctx.roiList, ctx.sel.rois);
     end
 
     if srcLevel >= 3 && (~isfield(ctx,'masks') || isempty(ctx.masks))
@@ -1969,11 +1964,11 @@ switch src
         level = 0;
     case 'existing project fovs'
         level = 1;
-    case 'existing rois'
+    case {'existing rois', 'existing project rois'}
         level = 2;
-    case 'existing masks'
+    case {'existing masks', 'existing project masks'}
         level = 3;
-    case 'existing dataseries'
+    case {'existing dataseries', 'existing project dataseries'}
         level = 4;
     otherwise
         if contains(src, 'existing project')
@@ -1998,6 +1993,7 @@ function ctx = executeProcessorNode(node, ctx)
 
     pkgName = resolveNodePackage(node);
     p = getfielddefault(node, 'params', struct());
+    ensureProcessorPackagePath(node, p, ctx);
     refProc = resolveProcessorReference(node, p, ctx);
     procObj = process('', 'pipeline_processor', randi(1e9));
     if ~isempty(refProc)
@@ -2037,6 +2033,7 @@ function ctx = executeProcessorNode(node, ctx)
     catch
     end
     p = injectPipelineRuntimeParams(p, ctx);
+    p = mapNodeRuntimePathParams(p, ctx);
     procObj.processArg = mergeStruct(baseArg, p);
     procObj.strid = char(string(node.id));
     try
@@ -2114,6 +2111,82 @@ function ctx = executeProcessorNode(node, ctx)
     ctx.roiList = rois;
     ctx.dataSeries = collectDataSeriesFromRois(rois);
     ctx.channels = inferChannelsFromRois(rois, ctx);
+end
+
+function ensureProcessorPackagePath(node, p, ctx)
+    roots = {};
+    if isstruct(p)
+        if isfield(p, 'customPackageRoot') && ~isempty(p.customPackageRoot)
+            roots{end+1} = char(string(p.customPackageRoot)); %#ok<AGROW>
+        end
+        if isfield(p, 'customPackageDir') && ~isempty(p.customPackageDir)
+            packageDir = char(string(p.customPackageDir));
+            if exist(packageDir, 'dir') == 7
+                roots{end+1} = fileparts(packageDir); %#ok<AGROW>
+            else
+                [mappedPackageDir, mapped] = mapModulePathToServerPath(packageDir, ctx);
+                if mapped || exist(mappedPackageDir, 'dir') == 7
+                    roots{end+1} = fileparts(mappedPackageDir); %#ok<AGROW>
+                end
+            end
+        end
+    end
+    roots = unique(roots, 'stable');
+    for i = 1:numel(roots)
+        root = roots{i};
+        if isempty(root)
+            continue;
+        end
+        [mappedRoot, mapped] = mapModulePathToServerPath(root, ctx);
+        if mapped || exist(mappedRoot, 'dir') == 7
+            root = mappedRoot;
+        end
+        if exist(root, 'dir') ~= 7
+            continue;
+        end
+        try
+            if ~contains(path, root)
+                addpath(root);
+                rehash;
+            end
+        catch ME
+            warning('runPipeline:ProcessorPackagePath', ...
+                'Could not add custom package root for processor node %s: %s', ...
+                char(string(getfielddefault(node, 'id', ''))), ME.message);
+        end
+    end
+end
+
+function p = mapNodeRuntimePathParams(p, ctx)
+    if ~isstruct(p)
+        return;
+    end
+    fields = fieldnames(p);
+    for i = 1:numel(fields)
+        name = fields{i};
+        if ~isPathLikeParamName(name)
+            continue;
+        end
+        value = p.(name);
+        if ~(ischar(value) || (isstring(value) && isscalar(value)))
+            continue;
+        end
+        text = char(string(value));
+        if isempty(strtrim(text))
+            continue;
+        end
+        [mappedText, mapped] = mapModulePathToServerPath(text, ctx);
+        if mapped
+            p.(name) = mappedText;
+        end
+    end
+end
+
+function tf = isPathLikeParamName(name)
+    key = lower(char(string(name)));
+    tf = contains(key, 'path') || contains(key, 'folder') || ...
+        strcmp(key, 'outputdir') || strcmp(key, 'custompackagedir') || ...
+        strcmp(key, 'custompackageroot') || endsWith(key, 'dir') || endsWith(key, 'root');
 end
 
 function p = injectPipelineRuntimeParams(p, ctx)

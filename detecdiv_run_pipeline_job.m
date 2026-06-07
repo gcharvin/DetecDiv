@@ -361,6 +361,7 @@ function ctx = localBuildExecutionContext(payload, shallowObj, pipeObj)
         ctx.run.selectedNodes = localNormalizeSelectedNodes(localGetField(rr, 'selected_nodes', {}));
         ctx.run.nodeParams = localNormalizeNodeParams(localGetField(rr, 'node_params', struct('id', {}, 'params', {})), payload);
         ctx.run.runPolicy = localGetText(rr, {'run_policy'}, 'resume');
+        inputSource = localGetText(rr, {'input_source'}, localGetText(rr, {'inputSource'}, ''));
         if isfield(rr, 'paths') && isstruct(rr.paths)
             ctx.run.paths = rr.paths;
         end
@@ -376,6 +377,12 @@ function ctx = localBuildExecutionContext(payload, shallowObj, pipeObj)
             ctx.sel.frames = localNormalizeSelectionVector(localGetField(rr.selection, 'frames', []));
             ctx.sel.rois = localNormalizeSelectionVector(localGetField(rr.selection, 'rois', []));
             ctx.sel.channels = localNormalizeStringSelection(localGetField(rr.selection, 'channels', {}));
+        end
+        if isempty(inputSource) && localShouldUseExistingRoisForPartial(pipeObj, ctx.run.selectedNodes, localGetField(ctx, 'sel', struct()))
+            inputSource = 'Existing project ROIs';
+        end
+        if ~isempty(inputSource)
+            ctx.run.inputSource = inputSource;
         end
         availableChannels = localNormalizeStringSelection(localGetField(rr, 'available_channels', {}));
         if ~isempty(availableChannels)
@@ -432,6 +439,41 @@ function ctx = localBuildExecutionContext(payload, shallowObj, pipeObj)
             ctx.cancel = struct('tokenFile', cancelTokenFile);
         end
     end
+end
+
+function tf = localShouldUseExistingRoisForPartial(pipeObj, selectedNodes, selection)
+    tf = false;
+    if isempty(selectedNodes) || ~isstruct(selection) || ~isfield(selection, 'rois') || isempty(selection.rois)
+        return;
+    end
+    sourceTypes = {'dataloader','roigrid','roipattern','roimanual','roiidentify','roiextract','roitracked'};
+    selectedTypes = localSelectedNodeTypes(pipeObj, selectedNodes);
+    if isempty(selectedTypes)
+        return;
+    end
+    tf = ~any(ismember(selectedTypes, sourceTypes));
+end
+
+function nodeTypes = localSelectedNodeTypes(pipeObj, selectedNodes)
+    nodeTypes = {};
+    try
+        nodes = pipeObj.nodes;
+    catch
+        nodes = struct([]);
+    end
+    if isempty(nodes)
+        return;
+    end
+    for i = 1:numel(selectedNodes)
+        nodeId = char(string(selectedNodes{i}));
+        for j = 1:numel(nodes)
+            if strcmp(char(string(localGetField(nodes(j), 'id', ''))), nodeId)
+                nodeTypes{end+1} = lower(char(string(localGetField(nodes(j), 'type', '')))); %#ok<AGROW>
+                break;
+            end
+        end
+    end
+    nodeTypes = unique(nodeTypes, 'stable');
 end
 
 function runObj = localEnsureRunObject(shallowObj, pipeObj, ctx, payload, runId)
