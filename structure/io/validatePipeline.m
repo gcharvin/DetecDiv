@@ -2,7 +2,7 @@ function [ok, report] = validatePipeline(pipe, ctx, opts)
 % validatePipeline  Validate pipeline structure and dependencies.
 
     ok = true;
-    report = struct('errors',{{}}, 'warnings',{{}}, 'order', [], 'nodes', [], 'edges', [], 'contracts', struct(), 'semantic', struct(), 'binding', struct(), 'classifierArtifacts', [], 'solver', struct());
+    report = struct('errors',{{}}, 'warnings',{{}}, 'order', [], 'nodes', [], 'edges', [], 'contracts', struct(), 'semantic', struct(), 'binding', struct(), 'classifierArtifacts', [], 'pathChecks', [], 'solver', struct());
 
     if nargin < 2 || isempty(ctx)
         ctx = struct();
@@ -121,6 +121,17 @@ function [ok, report] = validatePipeline(pipe, ctx, opts)
             end
             if ~isempty(artifactWarnings)
                 report.warnings = [report.warnings, artifactWarnings]; %#ok<AGROW>
+            end
+            [pathErrors, pathWarnings, pathReports] = nodePathIssues(node, ctx);
+            if ~isempty(pathReports)
+                report.pathChecks = appendStructArray(report.pathChecks, pathReports);
+            end
+            if ~isempty(pathErrors)
+                ok = false;
+                report.errors = [report.errors, pathErrors]; %#ok<AGROW>
+            end
+            if ~isempty(pathWarnings)
+                report.warnings = [report.warnings, pathWarnings]; %#ok<AGROW>
             end
             designErrors = requiredDesignAssetErrors(node, ctx);
             if ~isempty(designErrors)
@@ -1684,6 +1695,99 @@ function [errors, warnings, artifactReport] = classifierArtifactIssues(node, ctx
     artifactReport.accessible = true;
 end
 
+function [errors, warnings, reports] = nodePathIssues(node, ctx)
+errors = {};
+warnings = {};
+reports = struct([]);
+
+nodeType = lower(char(string(getField(node, 'type', ''))));
+if ~strcmp(nodeType, 'processor')
+    return;
+end
+
+p = getField(node, 'params', struct());
+if ~isstruct(p)
+    return;
+end
+
+outputKeys = {'outputDir','outputPath','outputFolder'};
+for i = 1:numel(outputKeys)
+    key = outputKeys{i};
+    if ~isfield(p, key) || isempty(p.(key))
+        continue;
+    end
+    [pathErrors, pathWarnings, rep] = validateProcessorOutputPath(node, key, p.(key), ctx);
+    if ~isempty(rep)
+        reports = appendStructArray(reports, rep);
+    end
+    if ~isempty(pathErrors)
+        errors = [errors, pathErrors]; %#ok<AGROW>
+    end
+    if ~isempty(pathWarnings)
+        warnings = [warnings, pathWarnings]; %#ok<AGROW>
+    end
+end
+end
+
+function [errors, warnings, rep] = validateProcessorOutputPath(node, key, value, ctx)
+errors = {};
+warnings = {};
+rep = struct([]);
+
+if ~(ischar(value) || (isstring(value) && isscalar(value)))
+    return;
+end
+configuredPath = char(string(value));
+if isempty(strtrim(configuredPath))
+    return;
+end
+
+[checkPath, status, targetLabel, serverPath] = resolveNodePathForValidation(configuredPath, ctx);
+rep = struct( ...
+    'nodeId', char(string(getField(node, 'id', ''))), ...
+    'key', char(string(key)), ...
+    'configuredPath', configuredPath, ...
+    'resolvedPath', char(string(checkPath)), ...
+    'serverPath', char(string(serverPath)), ...
+    'target', char(string(targetLabel)), ...
+    'status', char(string(status)));
+
+nodeId = char(string(getField(node, 'id', '')));
+if strcmp(status, 'unmapped_windows_path')
+    errors{end+1} = sprintf(['Processor node %s output path %s is not runnable for %s. ' ...
+        'Configured path %s cannot be mapped to a server-visible path.'], ...
+        nodeId, key, targetLabel, configuredPath); %#ok<AGROW>
+    return;
+end
+
+if strcmp(status, 'unmapped_server_path')
+    warnings{end+1} = sprintf(['Processor node %s output path %s is configured as a server path (%s), ' ...
+        'but this workstation cannot map it back to a local mirror for preflight verification.'], ...
+        nodeId, key, configuredPath); %#ok<AGROW>
+    return;
+end
+
+if isempty(checkPath)
+    warnings{end+1} = sprintf('Processor node %s output path %s could not be resolved during validation.', nodeId, key); %#ok<AGROW>
+    return;
+end
+
+if exist(checkPath, 'dir') == 7
+    return;
+end
+
+parentDir = fileparts(checkPath);
+if ~isempty(parentDir) && exist(parentDir, 'dir') == 7
+    warnings{end+1} = sprintf(['Processor node %s output path %s does not exist yet (%s). ' ...
+        'Its parent folder exists, so runtime may create it if the processor supports that.'], ...
+        nodeId, key, checkPath); %#ok<AGROW>
+else
+    errors{end+1} = sprintf(['Processor node %s output path %s is not accessible for %s. ' ...
+        'Configured path: %s. Checked path: %s.'], ...
+        nodeId, key, targetLabel, configuredPath, checkPath); %#ok<AGROW>
+end
+end
+
 function tf = classifierRequiresLocalArtifacts(pkgName)
     pkgName = lower(char(string(pkgName)));
     tf = ~any(strcmp(pkgName, {'cellposesam'}));
@@ -1789,6 +1893,65 @@ function [modulePath, status, targetLabel] = resolveClassifierModulePathForValid
             status = 'recovered';
         end
     end
+end
+
+function [checkPath, status, targetLabel, serverPath] = resolveNodePathForValidation(configuredPath, ctx)
+targetLabel = validationExecutionTargetLabel(ctx);
+status = 'configured';
+serverPath = '';
+checkPath = '';
+
+if isempty(configuredPath)
+    status = 'missing';
+    return;
+end
+
+pathText = char(string(configuredPath));
+if isHubValidationTarget(ctx)
+    if ispc
+        if looksLikeWindowsAbsPathLocal(pathText)
+            [serverPath, mapped] = mapLocalPathToHubServerPath(pathText, ctx);
+            if ~mapped
+                status = 'unmapped_windows_path';
+                return;
+            end
+            checkPath = pathText;
+            status = 'hub_local_mirror';
+            return;
+        end
+        [localPath, mapped] = mapHubServerPathToLocalPath(pathText, ctx);
+        if mapped
+            checkPath = localPath;
+            serverPath = pathText;
+            status = 'hub_server_mirror';
+            return;
+        end
+        if startsWith(strrep(pathText, '\', '/'), '/')
+            status = 'unmapped_server_path';
+            serverPath = pathText;
+            return;
+        end
+    else
+        if looksLikeWindowsAbsPathLocal(pathText)
+            [serverPath, mapped] = mapLocalPathToHubServerPath(pathText, ctx);
+            if ~mapped
+                status = 'unmapped_windows_path';
+                return;
+            end
+            checkPath = serverPath;
+            status = 'mapped';
+            return;
+        end
+        if startsWith(strrep(pathText, '\', '/'), '/')
+            checkPath = pathText;
+            serverPath = pathText;
+            status = 'server';
+            return;
+        end
+    end
+end
+
+checkPath = pathText;
 end
 
 function [checkPath, mapped] = mapHubClassifierPathToLocalCheckPath(pathIn, ctx)

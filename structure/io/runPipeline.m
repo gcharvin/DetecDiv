@@ -2033,7 +2033,7 @@ function ctx = executeProcessorNode(node, ctx)
     catch
     end
     p = injectPipelineRuntimeParams(p, ctx);
-    p = mapNodeRuntimePathParams(p, ctx);
+    p = mapNodeRuntimePathParams(node, p, ctx);
     procObj.processArg = mergeStruct(baseArg, p);
     procObj.strid = char(string(node.id));
     try
@@ -2157,14 +2157,15 @@ function ensureProcessorPackagePath(node, p, ctx)
     end
 end
 
-function p = mapNodeRuntimePathParams(p, ctx)
+function p = mapNodeRuntimePathParams(node, p, ctx)
     if ~isstruct(p)
         return;
     end
     fields = fieldnames(p);
+    explicitKeys = explicitPathParamKeys(node);
     for i = 1:numel(fields)
         name = fields{i};
-        if ~isPathLikeParamName(name)
+        if ~any(strcmp(explicitKeys, name)) && ~isPathLikeParamName(name)
             continue;
         end
         value = p.(name);
@@ -2180,6 +2181,20 @@ function p = mapNodeRuntimePathParams(p, ctx)
             p.(name) = mappedText;
         end
     end
+end
+
+function keys = explicitPathParamKeys(node)
+keys = {};
+try
+    contract = pipelineNodeContract(node);
+catch
+    contract = struct();
+end
+if isstruct(contract) && isfield(contract, 'parameters') && isstruct(contract.parameters) ...
+        && isfield(contract.parameters, 'paths') && ~isempty(contract.parameters.paths)
+    keys = cellstr(string(contract.parameters.paths(:)));
+end
+keys = unique(keys, 'stable');
 end
 
 function tf = isPathLikeParamName(name)

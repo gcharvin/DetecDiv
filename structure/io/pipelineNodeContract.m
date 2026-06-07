@@ -67,6 +67,7 @@ function contract = defaultContractForNode(node)
                 ];
             selectors.channelsParam = 'channelFilter';
             parameters.run = {};
+            parameters.paths = {'path'};
             selectors.defaultChannels = {};
             requirements.params.optional = {'path','positionFilter','channelFilter','stackFilter'};
             capabilities.outputsChannels = true;
@@ -177,6 +178,7 @@ function contract = defaultContractForNode(node)
                 portDef('dataSeries', 'dataSeriesSet', true,  'edge') ...
                 ];
             parameters.template = {'pkg','moduleVar','modulePath','moduleId','description','category'};
+            parameters.paths = {'modulePath'};
             parameters.run = {'roiList','channels','channel','frames','outputName'};
             if strcmp(p, 'computemetrics') || contains(f, 'computemetrics')
                 maskSlotCount = computeMetricsMaskSlotCount(node);
@@ -246,6 +248,7 @@ function contract = defaultContractForNode(node)
             selectors.framesParam = 'frames';
             selectors.outputNameParam = 'outputName';
             parameters.template = {'pkg','moduleVar','modulePath','moduleId','description','category','classes','classifyFun','trainingFun','trainingParam','outputType'};
+            parameters.paths = {'modulePath'};
             parameters.run = {};
             requirements.roi.required = true;
             requirements.roi.channelsMin = 1;
@@ -916,6 +919,7 @@ function contract = enrichContractFromPackage(contract, node)
     end
 
     contract = applyExecutionSpecContract(contract, node);
+    contract.parameters.paths = unique([contract.parameters.paths inferPathKeysFromNodeParams(node)], 'stable');
 end
 
 function ensureCustomPackagePath(node)
@@ -964,13 +968,15 @@ if isfield(spec, 'contract') && isstruct(spec.contract)
 elseif isfield(spec, 'pipelineContract') && isstruct(spec.pipelineContract)
     specContract = spec.pipelineContract;
 end
-if isempty(fieldnames(specContract))
-    return;
-end
 
-contract = mergeExecutionSpecContract(contract, specContract);
+if ~isempty(fieldnames(specContract))
+    contract = mergeExecutionSpecContract(contract, specContract);
+end
 if isfield(spec, 'summary') && ~isempty(spec.summary)
     contract.summary = char(string(spec.summary));
+end
+if isfield(spec, 'pathKeys') && ~isempty(spec.pathKeys)
+    contract.parameters.paths = unique([contract.parameters.paths normalizeCellstr(spec.pathKeys)], 'stable');
 end
 end
 
@@ -1024,6 +1030,7 @@ function p = defaultParameters()
         'static', {{}}, ...
         'run', {{}}, ...
         'data', {{}}, ...
+        'paths', {{}}, ...
         'notes', {{}});
 end
 
@@ -1295,6 +1302,7 @@ function contract = normalizeContract(contract)
     contract.parameters.static = normalizeCellstr(getField(contract.parameters, 'static', {}));
     contract.parameters.run = normalizeCellstr(contract.parameters.run);
     contract.parameters.data = normalizeCellstr(contract.parameters.data);
+    contract.parameters.paths = normalizeCellstr(getField(contract.parameters, 'paths', {}));
     contract.parameters.notes = normalizeCellstr(contract.parameters.notes);
     contract.requirements.params.required = normalizeCellstr(contract.requirements.params.required);
     contract.requirements.params.optional = normalizeCellstr(contract.requirements.params.optional);
@@ -1362,6 +1370,34 @@ function out = mergeParameterStruct(base, override)
     if isfield(override, 'data') && ~isempty(override.data)
         out.data = normalizeCellstr(override.data);
     end
+    if isfield(override, 'paths') && ~isempty(override.paths)
+        out.paths = normalizeCellstr(override.paths);
+    end
+end
+
+function keys = inferPathKeysFromNodeParams(node)
+keys = {};
+params = getField(node, 'params', struct());
+if ~isstruct(params)
+    return;
+end
+
+fields = fieldnames(params);
+for i = 1:numel(fields)
+    key = char(string(fields{i}));
+    if isKnownPathParamName(key)
+        keys{end+1} = key; %#ok<AGROW>
+    end
+end
+keys = unique(keys, 'stable');
+end
+
+function tf = isKnownPathParamName(name)
+key = lower(strtrim(char(string(name))));
+tf = any(strcmp(key, { ...
+    'path', 'modulepath', 'projectpath', 'runpath', ...
+    'outputdir', 'outputpath', 'outputfolder', ...
+    'custompackagedir', 'custompackageroot'}));
 end
 
 function list = normalizeCellstr(v)

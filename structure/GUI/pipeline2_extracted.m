@@ -8377,6 +8377,19 @@ classdef pipeline2 < matlab.apps.AppBase
                 tf = false;
                 return;
             end
+            try
+                contract = pipelineNodeContract(node);
+            catch
+                contract = struct();
+            end
+            if isstruct(contract) && isfield(contract, 'parameters') && isstruct(contract.parameters) ...
+                    && isfield(contract.parameters, 'paths') && ~isempty(contract.parameters.paths)
+                pathKeys = cellstr(string(contract.parameters.paths(:)));
+                if any(strcmp(pathKeys, char(string(key))))
+                    tf = ~isnumeric(value);
+                    return;
+                end
+            end
             keyLower = lower(char(string(key)));
             tf = any(strcmp(keyLower, {'outputdir','outputfolder','outputpath','folder','directory'})) || ...
                 endsWith(keyLower, 'dir') || endsWith(keyLower, 'folder');
