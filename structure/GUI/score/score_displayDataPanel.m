@@ -22,70 +22,10 @@ scalingFactor = layoutOptions.scalingFactor;
 dataIndices = layoutOptions.plotidx{groupIdx};
 data = roiobj.data(layoutOptions.dataidx{groupIdx});
 
-% --- Extraction robuste de ydata (sans concat table variables incompatibles) ---
-Tsel_raw = data.data(:, dataIndices);
-nRow = height(Tsel_raw);
-nCol = width(Tsel_raw);
+% --- Extraction robuste de ydata.
+% Une variable cellulaire numerique/vectorielle est etendue en une courbe par element.
+[ydata, varname, yTickInfo, sourceIndex] = score_extractYData(data.data, dataIndices);
 
-ydata = nan(nRow, nCol);
-
-% On garde une référence categorical (si dispo) pour afficher les noms sur Y
-refCat = [];
-refCats = {};
-hasUndefined = false;
-
-for k = 1:nCol
-    vraw = Tsel_raw{:, k};
-
-    if isnumeric(vraw) || islogical(vraw)
-        ydata(:, k) = double(vraw);
-
-    elseif iscategorical(vraw)
-        % Codes 1..K, et 0 pour <undefined>
-        ydata(:, k) = double(vraw);
-
-        if isempty(refCat)
-            refCat = vraw;
-            refCats = categories(refCat);
-            % <undefined> présent ?
-            try
-                hasUndefined = any(isundefined(refCat));
-            catch
-                hasUndefined = any(double(refCat)==0);
-            end
-        end
-
-    elseif isstring(vraw)
-        c = categorical(vraw);
-        ydata(:, k) = double(c);
-
-        if isempty(refCat)
-            refCat = c;
-            refCats = categories(refCat);
-            hasUndefined = any(double(refCat)==0);
-        end
-
-    elseif iscellstr(vraw) || ischar(vraw)
-        c = categorical(string(vraw));
-        ydata(:, k) = double(c);
-
-        if isempty(refCat)
-            refCat = c;
-            refCats = categories(refCat);
-            hasUndefined = any(double(refCat)==0);
-        end
-
-    else
-        % dernier recours
-        try
-            ydata(:, k) = double(vraw);
-        catch
-            ydata(:, k) = nan(nRow, 1);
-        end
-    end
-end
-
-% --- Métadonnées panel ---
 groupname = layoutOptions.plotidxgroup{groupIdx};
 pix = find(matches(data.groupProperties(:,1), groupname));
 plottype = data.groupProperties{pix,2};
@@ -107,7 +47,6 @@ else
 end
 
 % --- Légendes (noms de colonnes) ---
-varname = Tsel_raw.Properties.VariableNames;
 str = cell(1, size(ydata,2));
 for i = 1:size(ydata,2)
     str{i} = varname{i};
@@ -125,8 +64,8 @@ if plottype=="Plot"
     hLine = gobjects(1, size(ydata,2));
 
     for i = 1:size(ydata,2)
-        wid = data.plotProperties{dataIndices(i),5};
-        col = data.plotProperties{dataIndices(i),4};
+        wid = data.plotProperties{sourceIndex(i),5};
+        col = data.plotProperties{sourceIndex(i),4};
         rgb = parseRGBstring(col);
 
         if col=="k" || col=="auto"
@@ -230,23 +169,10 @@ if plottype=="Plot"
     xlim(ax, [amin amax]);
 
     % --- Y: si on a une référence categorical => ticks/labels stables ---
-    if ~isempty(refCat) && ~isempty(refCats)
-        % ticks 1..K (+0 si undefined présent)
-        K = numel(refCats);
-
-        % Si <undefined> présent OU codes 0 présents dans ydata, on ajoute le tick 0
-        has0 = any(ydata(:)==0);
-        if hasUndefined || has0
-            ticksY = [0, 1:K];
-            labelsY = [{'undefined'}; refCats(:)];
-        else
-            ticksY = 1:K;
-            labelsY = refCats(:);
-        end
-
-        yticks(ax, ticksY);
-        yticklabels(ax, labelsY);
-        ylim(ax, [min(ticksY)-0.5, max(ticksY)+0.5]);
+    if ~isempty(yTickInfo) && ~isempty(yTickInfo.isLabel) && any(yTickInfo.isLabel) && ~isempty(yTickInfo.ticks)
+        yticks(ax, yTickInfo.ticks);
+        yticklabels(ax, yTickInfo.labels);
+        ylim(ax, [min(yTickInfo.ticks)-0.5, max(yTickInfo.ticks)+0.5]);
 
         set(ax, 'YTickMode', 'manual', 'YTickLabelMode', 'manual');
         ax.UserData.ylim = 'labels';
@@ -306,7 +232,7 @@ else
 
     hold(ax, 'on');
 
-    [rgbImage, alphaImage, color] = render_ydata_as_image(ydata, amin, amax, layoutOptions, data, dataIndices);
+    [rgbImage, alphaImage, color] = render_ydata_as_image(ydata, amin, amax, layoutOptions, data, sourceIndex);
 
     hLine = imagesc(ax, rgbImage, 'AlphaData', alphaImage);
     axis(ax, 'normal');
