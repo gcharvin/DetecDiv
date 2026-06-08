@@ -604,6 +604,20 @@ function [node, policy] = applyNodeExecutionPolicy(node, ctx)
                 node.params.outputName = policy.outputName;
                 if strcmpi(char(string(getfielddefault(node,'type',''))), 'classifier')
                     node.params.out_dataSeries_name = policy.outputName;
+                else
+                    try
+                        contract = pipelineNodeContract(node);
+                    catch
+                        contract = struct();
+                    end
+                    selectors = getfielddefault(contract, 'selectors', struct());
+                    binding = getfielddefault(contract, 'binding', struct());
+                    outputParam = getFirstNonEmpty( ...
+                        getfielddefault(selectors, 'outputNameParam', ''), ...
+                        getfielddefault(binding, 'outputChannelNameParam', ''));
+                    if ~isempty(outputParam)
+                        node.params.(char(string(outputParam))) = policy.outputName;
+                    end
                 end
             end
     end
@@ -626,10 +640,7 @@ function policy = resolveNodeExecutionPolicy(node, ctx)
             getfielddefault(getfielddefault(ctx,'io',struct()),'existingPolicy','')), ...
         defaultExistingPolicyForNode(nodeType)), defaultExistingPolicyForNode(nodeType));
 
-    explicitOutputName = getFirstNonEmpty( ...
-        getfielddefault(p,'outputName',''), ...
-        getfielddefault(p,'out_dataSeries_name',''), ...
-        getfielddefault(getfielddefault(ctx,'names',struct()),'outputName',''));
+    explicitOutputName = resolveExplicitNodeOutputName(node, p);
 
     if isempty(explicitOutputName) && any(strcmp(nodeType, {'processor','classifier'}))
         if strcmpi(policy.existingPolicy, 'append')
@@ -828,6 +839,56 @@ function out = getFirstNonEmpty(varargin)
         elseif ~isempty(v)
             out = v;
             return;
+        end
+    end
+end
+
+function out = resolveExplicitNodeOutputName(node, p)
+    out = '';
+    if ~isstruct(p)
+        p = struct();
+    end
+
+    keyCandidates = {};
+
+    try
+        contract = pipelineNodeContract(node);
+    catch
+        contract = struct();
+    end
+
+    if isstruct(contract)
+        try
+            selectors = getfielddefault(contract, 'selectors', struct());
+            outputParam = getfielddefault(selectors, 'outputNameParam', '');
+            if ~isempty(outputParam)
+                keyCandidates{end+1} = char(string(outputParam)); %#ok<AGROW>
+            end
+        catch
+        end
+        try
+            binding = getfielddefault(contract, 'binding', struct());
+            outputParam = getfielddefault(binding, 'outputChannelNameParam', '');
+            if ~isempty(outputParam)
+                keyCandidates{end+1} = char(string(outputParam)); %#ok<AGROW>
+            end
+        catch
+        end
+    end
+
+    keyCandidates = [keyCandidates, { ...
+        'outputChannelName', ...
+        'outputName', ...
+        'out_dataSeries_name'}];
+
+    keyCandidates = unique(keyCandidates, 'stable');
+    for i = 1:numel(keyCandidates)
+        key = keyCandidates{i};
+        if isfield(p, key)
+            out = getFirstNonEmpty(out, getfielddefault(p, key, ''));
+            if ~isempty(out)
+                return;
+            end
         end
     end
 end
@@ -1617,7 +1678,10 @@ function ctx = executeProcessorNode(node, ctx)
     procCtx.io = getfielddefault(ctx, 'io', struct());
     procCtx.store = getfielddefault(ctx, 'store', struct());
     procCtx.executionPolicy = getfielddefault(ctx, 'executionPolicy', struct());
-    if isfield(ctx,'names') && isstruct(ctx.names) && isfield(ctx.names,'outputName') && ~isempty(ctx.names.outputName)
+    explicitProcessorOutputName = resolveExplicitNodeOutputName(node, p);
+    if ~isempty(explicitProcessorOutputName)
+        procCtx.outputName = explicitProcessorOutputName;
+    elseif isfield(ctx,'names') && isstruct(ctx.names) && isfield(ctx.names,'outputName') && ~isempty(ctx.names.outputName)
         procCtx.outputName = ctx.names.outputName;
     elseif isfield(p,'outputName') && ~isempty(p.outputName)
         procCtx.outputName = p.outputName;

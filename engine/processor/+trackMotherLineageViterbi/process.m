@@ -15,6 +15,10 @@ if nargin == 0 || isempty(param)
 end
 
 paramout = trackMotherLineageViterbi.normalizeParam(param);
+explicitOutputChannelName = '';
+if isfield(paramout, 'outputChannelName') && ~isempty(paramout.outputChannelName)
+    explicitOutputChannelName = char(string(paramout.outputChannelName));
+end
 
 if isfield(ctx, 'channels') && ~isempty(ctx.channels) && ...
         (~isfield(paramout, 'instanceChannelName') || isempty(readChoiceLocal(paramout.instanceChannelName)))
@@ -27,9 +31,9 @@ if isfield(ctx, 'channels') && ~isempty(ctx.channels) && ...
     end
 end
 
-if isfield(ctx, 'outputName') && ~isempty(ctx.outputName)
+if isempty(strtrim(explicitOutputChannelName)) && isfield(ctx, 'outputName') && ~isempty(ctx.outputName)
     paramout.outputChannelName = char(string(ctx.outputName));
-elseif isfield(ctx, 'names') && isstruct(ctx.names) && ...
+elseif isempty(strtrim(explicitOutputChannelName)) && isfield(ctx, 'names') && isstruct(ctx.names) && ...
         isfield(ctx.names, 'outputName') && ~isempty(ctx.names.outputName)
     paramout.outputChannelName = char(string(ctx.names.outputName));
 end
