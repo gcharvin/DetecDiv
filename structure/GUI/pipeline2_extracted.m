@@ -88,6 +88,11 @@ classdef pipeline2 < matlab.apps.AppBase
         RoiManualPreviewHandles cell = {}
         RoiManualPreviewListeners cell = {}
         RoiManualSelectedRectangle double = NaN
+        ActiveRunMode char = ''
+        ActiveRunCancelRequested logical = false
+        HubRunMonitorTimer = []
+        HubRunMonitorJobId char = ''
+        HubRunMonitorLastStatus char = ''
     end
 
     methods (Access = private)
@@ -11877,6 +11882,333 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
+        function tf = isRunCancellationButtonActive(app)
+            tf = ~isempty(strtrim(app.ActiveRunMode));
+        end
+
+        function startLocalRunControl(app, runObj) %#ok<INUSD>
+            app.ActiveRunMode = 'local';
+            app.ActiveRunCancelRequested = false;
+            app.RunButton.Text = 'Stop run';
+            app.RunButton.Enable = 'on';
+            drawnow limitrate;
+        end
+
+        function stopActiveRunControl(app, buttonText)
+            if nargin < 2 || isempty(buttonText)
+                buttonText = 'Run !';
+            end
+            stopHubRunMonitor(app);
+            app.ActiveRunMode = '';
+            app.ActiveRunCancelRequested = false;
+            app.RunButton.Text = char(string(buttonText));
+            app.RunButton.Enable = 'on';
+            drawnow limitrate;
+        end
+
+        function requestActiveRunCancellation(app)
+            mode = lower(strtrim(app.ActiveRunMode));
+            if isempty(mode)
+                return;
+            end
+            if app.ActiveRunCancelRequested
+                return;
+            end
+            app.ActiveRunCancelRequested = true;
+            app.RunButton.Text = 'Cancelling...';
+            drawnow limitrate;
+            switch mode
+                case 'local'
+                    requestLocalRunCancellation(app);
+                case 'hub'
+                    requestHubRunCancellation(app);
+                otherwise
+                    app.ActiveRunCancelRequested = false;
+                    app.RunButton.Text = 'Run !';
+            end
+        end
+
+        function requestLocalRunCancellation(app)
+            tokenFile = '';
+            try
+                if ~isempty(app.CurrentRun) && isa(app.CurrentRun, 'pipelineRun') && isstruct(app.CurrentRun.ctx) && ...
+                        isfield(app.CurrentRun.ctx, 'cancel') && isstruct(app.CurrentRun.ctx.cancel) && ...
+                        isfield(app.CurrentRun.ctx.cancel, 'tokenFile') && ~isempty(app.CurrentRun.ctx.cancel.tokenFile)
+                    tokenFile = char(string(app.CurrentRun.ctx.cancel.tokenFile));
+                end
+            catch
+                tokenFile = '';
+            end
+            if isempty(tokenFile)
+                try
+                    [runPath, ~] = app.CurrentRun.getPath;
+                    tokenFile = fullfile(runPath, 'cancel.request');
+                catch
+                    tokenFile = '';
+                end
+            end
+            try
+                if ~isempty(tokenFile)
+                    tokenDir = fileparts(tokenFile);
+                    if ~isempty(tokenDir) && exist(tokenDir, 'dir') ~= 7
+                        mkdir(tokenDir);
+                    end
+                    fid = fopen(tokenFile, 'w');
+                    if fid > 0
+                        fprintf(fid, 'cancel requested at %s\n', char(datetime('now')));
+                        fclose(fid);
+                    end
+                end
+                app.RuninformationhereLabel.Text = 'Stop requested. Waiting for the current safe point...';
+                try
+                    logRunEvent(app, app.CurrentRun, 'Local run cancellation requested from Run button.', 'pipeline2');
+                catch
+                end
+            catch ME
+                app.ActiveRunCancelRequested = false;
+                app.RunButton.Text = 'Stop run';
+                uialert(app.UIFigure, ME.message, 'Stop run failed', 'Icon', 'error');
+            end
+        end
+
+        function requestHubRunCancellation(app)
+            jobId = currentHubRunJobId(app);
+            if isempty(jobId)
+                app.ActiveRunCancelRequested = false;
+                app.RunButton.Text = 'Cancel run';
+                uialert(app.UIFigure, 'This run has no hub job id.', 'Cancel hub run', 'Icon', 'warning');
+                return;
+            end
+            try
+                job = detecdiv_hub_cancel_pipeline_run(jobId);
+                updateCurrentRunFromHubJob(app, job);
+                app.RuninformationhereLabel.Text = formatHubRunStatusText(app, job, app.CurrentRun);
+                appendRunReport(app, ['Hub cancel requested: ' char(string(getField(app, job, 'status', 'cancelling')))], job);
+                try
+                    logRunEvent(app, app.CurrentRun, ['Hub run cancellation requested for job ' jobId '.'], 'pipeline2');
+                    pipelineRunSave(app.CurrentRun);
+                catch
+                end
+                statusText = char(string(getField(app, job, 'status', 'cancelling')));
+                if any(strcmpi(statusText, {'done','failed','cancelled'}))
+                    stopActiveRunControl(app, terminalButtonText(app, statusText));
+                    app.RuninformationhereLabel.Text = formatHubRunStatusText(app, job, app.CurrentRun);
+                end
+            catch ME
+                app.ActiveRunCancelRequested = false;
+                app.RunButton.Text = 'Cancel run';
+                uialert(app.UIFigure, ME.message, 'Cancel hub run failed', 'Icon', 'error');
+            end
+        end
+
+        function startHubRunMonitor(app, runObj, job)
+            jobId = hubJobIdFromRunOrJob(app, runObj, job);
+            if isempty(jobId)
+                return;
+            end
+            stopHubRunMonitor(app);
+            app.ActiveRunMode = 'hub';
+            app.ActiveRunCancelRequested = false;
+            app.HubRunMonitorJobId = jobId;
+            app.HubRunMonitorLastStatus = char(string(getField(app, job, 'status', 'submitted')));
+            app.RunButton.Text = 'Cancel run';
+            app.RunButton.Enable = 'on';
+            app.HubRunMonitorTimer = timer( ...
+                'ExecutionMode', 'fixedSpacing', ...
+                'Period', 6, ...
+                'BusyMode', 'drop', ...
+                'Name', ['DetecDivHubRunMonitor_' jobId], ...
+                'TimerFcn', @(~,~)pollHubRunStatus(app, false), ...
+                'ErrorFcn', @(~,evt)handleHubRunMonitorTimerError(app, evt));
+            try
+                start(app.HubRunMonitorTimer);
+            catch ME
+                stopHubRunMonitor(app);
+                uialert(app.UIFigure, ME.message, 'Hub monitor failed', 'Icon', 'warning');
+            end
+        end
+
+        function stopHubRunMonitor(app)
+            t = app.HubRunMonitorTimer;
+            app.HubRunMonitorTimer = [];
+            app.HubRunMonitorJobId = '';
+            app.HubRunMonitorLastStatus = '';
+            try
+                if ~isempty(t) && isvalid(t)
+                    stop(t);
+                    delete(t);
+                end
+            catch
+            end
+        end
+
+        function pollHubRunStatus(app, showErrors)
+            if nargin < 2
+                showErrors = false;
+            end
+            jobId = currentHubRunJobId(app);
+            if isempty(jobId)
+                stopActiveRunControl(app, 'Run !');
+                return;
+            end
+            try
+                job = detecdiv_hub_get_pipeline_run(jobId);
+                updateCurrentRunFromHubJob(app, job);
+                statusText = char(string(getField(app, job, 'status', 'unknown')));
+                app.RuninformationhereLabel.Text = formatHubRunStatusText(app, job, app.CurrentRun);
+                if app.ActiveRunCancelRequested && any(strcmpi(statusText, {'queued','running'}))
+                    app.RunButton.Text = 'Cancelling...';
+                elseif any(strcmpi(statusText, {'queued','running','cancelling'}))
+                    app.RunButton.Text = 'Cancel run';
+                end
+                if any(strcmpi(statusText, {'done','failed','cancelled'}))
+                    terminalStatus = statusText;
+                    stopActiveRunControl(app, terminalButtonText(app, terminalStatus));
+                    app.RuninformationhereLabel.Text = formatHubRunStatusText(app, job, app.CurrentRun);
+                    appendRunReport(app, ['Hub run finished: ' terminalStatus], job);
+                    uialert(app.UIFigure, sprintf('Hub run %s finished with status: %s', jobId, terminalStatus), ...
+                        'Hub run finished', 'Icon', terminalAlertIcon(app, terminalStatus));
+                end
+            catch ME
+                if showErrors
+                    uialert(app.UIFigure, ME.message, 'Hub status failed', 'Icon', 'error');
+                else
+                    app.RuninformationhereLabel.Text = ['Hub status refresh failed: ' ME.message];
+                end
+            end
+        end
+
+        function handleHubRunMonitorTimerError(app, evt)
+            try
+                if isprop(evt, 'Data') && isa(evt.Data, 'MException')
+                    app.RuninformationhereLabel.Text = ['Hub monitor error: ' evt.Data.message];
+                else
+                    app.RuninformationhereLabel.Text = 'Hub monitor error.';
+                end
+            catch
+            end
+        end
+
+        function updateCurrentRunFromHubJob(app, job)
+            if isempty(app.CurrentRun) || ~isa(app.CurrentRun, 'pipelineRun') || ~isstruct(job)
+                return;
+            end
+            try
+                if ~isstruct(app.CurrentRun.ctx)
+                    app.CurrentRun.ctx = struct();
+                end
+                if ~isfield(app.CurrentRun.ctx, 'hub') || ~isstruct(app.CurrentRun.ctx.hub)
+                    app.CurrentRun.ctx.hub = struct();
+                end
+                app.CurrentRun.ctx.hub.job_id = char(string(getField(app, job, 'id', currentHubRunJobId(app))));
+                app.CurrentRun.ctx.hub.status = char(string(getField(app, job, 'status', 'unknown')));
+                app.CurrentRun.ctx.hub.refreshed_at = char(datetime('now'));
+                app.CurrentRun.status = ['hub_' app.CurrentRun.ctx.hub.status];
+                try
+                    pipelineRunSave(app.CurrentRun);
+                catch
+                end
+            catch
+            end
+        end
+
+        function txt = formatHubRunStatusText(app, job, runObj)
+            jobId = hubJobIdFromRunOrJob(app, runObj, job);
+            statusText = char(string(getField(app, job, 'status', 'unknown')));
+            runPath = '';
+            try
+                if ~isempty(runObj) && isa(runObj, 'pipelineRun')
+                    runPath = fullfile(runObj.path, 'run.json');
+                end
+            catch
+                runPath = '';
+            end
+            detail = hubJobProgressDetail(app, job);
+            parts = {sprintf('Hub run %s: %s', jobId, statusText)};
+            if ~isempty(detail)
+                parts{end+1} = detail; %#ok<AGROW>
+            end
+            parts{end+1} = ['Last refresh: ' char(datetime('now', 'Format', 'HH:mm:ss'))]; %#ok<AGROW>
+            if ~isempty(runPath)
+                parts{end+1} = runPath; %#ok<AGROW>
+            end
+            txt = strjoin(parts, ' | ');
+        end
+
+        function detail = hubJobProgressDetail(app, job) %#ok<INUSD>
+            detail = '';
+            try
+                result = getField(app, job, 'result_json', struct());
+                if ~isstruct(result) || ~isfield(result, 'progress') || ~isstruct(result.progress)
+                    return;
+                end
+                progress = result.progress;
+                currentStep = char(string(getField(app, progress, 'current_step', '')));
+                lastMessage = char(string(getField(app, progress, 'last_message', '')));
+                if ~isempty(currentStep)
+                    detail = ['Step: ' currentStep];
+                end
+                if ~isempty(lastMessage) && ~strcmp(lastMessage, currentStep)
+                    if isempty(detail)
+                        detail = lastMessage;
+                    else
+                        detail = [detail ' - ' lastMessage];
+                    end
+                end
+            catch
+                detail = '';
+            end
+        end
+
+        function jobId = currentHubRunJobId(app)
+            jobId = app.HubRunMonitorJobId;
+            if ~isempty(jobId)
+                return;
+            end
+            jobId = hubJobIdFromRunOrJob(app, app.CurrentRun, struct());
+        end
+
+        function jobId = hubJobIdFromRunOrJob(app, runObj, job) %#ok<INUSD>
+            jobId = '';
+            try
+                if isstruct(job) && isfield(job, 'id') && ~isempty(job.id)
+                    jobId = char(string(job.id));
+                    return;
+                end
+            catch
+            end
+            try
+                if ~isempty(runObj) && isa(runObj, 'pipelineRun') && isstruct(runObj.ctx) && ...
+                        isfield(runObj.ctx, 'hub') && isstruct(runObj.ctx.hub)
+                    if isfield(runObj.ctx.hub, 'job_id') && ~isempty(runObj.ctx.hub.job_id)
+                        jobId = char(string(runObj.ctx.hub.job_id));
+                    elseif isfield(runObj.ctx.hub, 'hub_job_id') && ~isempty(runObj.ctx.hub.hub_job_id)
+                        jobId = char(string(runObj.ctx.hub.hub_job_id));
+                    end
+                end
+            catch
+                jobId = '';
+            end
+        end
+
+        function text = terminalButtonText(app, statusText) %#ok<INUSD>
+            if strcmpi(statusText, 'cancelled')
+                text = 'Resume run';
+            else
+                text = 'Run !';
+            end
+        end
+
+        function icon = terminalAlertIcon(app, statusText) %#ok<INUSD>
+            if strcmpi(statusText, 'done')
+                icon = 'success';
+            elseif strcmpi(statusText, 'cancelled')
+                icon = 'warning';
+            else
+                icon = 'error';
+            end
+        end
+
         function loadRunIntoUi(app, runObj, refreshUi)
             if nargin < 3 || isempty(refreshUi)
                 refreshUi = true;
@@ -11960,7 +12292,19 @@ classdef pipeline2 < matlab.apps.AppBase
                 refreshValidationReport(app);
             end
             try
-                if strcmpi(char(string(runObj.status)), 'cancelled')
+                runStatus = char(string(runObj.status));
+                hubStatus = '';
+                if isstruct(runObj.ctx) && isfield(runObj.ctx, 'hub') && isstruct(runObj.ctx.hub) && ...
+                        isfield(runObj.ctx.hub, 'status') && ~isempty(runObj.ctx.hub.status)
+                    hubStatus = char(string(runObj.ctx.hub.status));
+                elseif startsWith(lower(runStatus), 'hub_')
+                    hubStatus = extractAfter(runStatus, 4);
+                    hubStatus = char(string(hubStatus));
+                end
+                if any(strcmpi(hubStatus, {'queued','running','cancelling'})) && ~isempty(hubJobIdFromRunOrJob(app, runObj, struct()))
+                    startHubRunMonitor(app, runObj, struct('status', hubStatus));
+                    app.RuninformationhereLabel.Text = formatHubRunStatusText(app, struct('status', hubStatus), runObj);
+                elseif strcmpi(runStatus, 'cancelled') || strcmpi(hubStatus, 'cancelled')
                     app.RunButton.Text = 'Resume run';
                 else
                     app.RunButton.Text = 'Run !';
@@ -12718,6 +13062,10 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function RunButtonPushed(app, event) %#ok<INUSD>
+            if isRunCancellationButtonActive(app)
+                requestActiveRunCancellation(app);
+                return;
+            end
             app.RunButton.Text = 'Run !';
             if ~ensurePipelineSavedForRun(app)
                 return;
@@ -12820,12 +13168,14 @@ classdef pipeline2 < matlab.apps.AppBase
                     clearRuntimeDataSeriesCache(app);
                     updateRuntimeResourceInventory(app);
                     appendRunReport(app, ['Hub submit: ' char(string(getField(app, job, 'status', 'submitted')))], job);
-                    app.RuninformationhereLabel.Text = ['Hub run submitted: ' fullfile(runObj.path, 'run.json')];
+                    app.RuninformationhereLabel.Text = formatHubRunStatusText(app, job, runObj);
+                    startHubRunMonitor(app, runObj, job);
                 else
                     if ~isempty(d), d.Message = 'Running local MATLAB pipeline...'; end
                     ctxRun = ctx;
                     ctxRun.dryRun = false;
                     ctxRun = attachRunCancellationAndProgress(app, ctxRun, runObj, d);
+                    startLocalRunControl(app, runObj);
                     runObj.status = 'running';
                     runObj.ctx = stripTransientRunContext(app, ctxRun);
                     logRunEvent(app, runObj, 'Local MATLAB run started.', 'pipeline2');
@@ -12842,7 +13192,7 @@ classdef pipeline2 < matlab.apps.AppBase
                     updateRuntimeResourceInventory(app);
                     appendRunReport(app, 'Local run: OK', report);
                     app.RuninformationhereLabel.Text = ['Run done: ' fullfile(runObj.path, 'run.json')];
-                    app.RunButton.Text = 'Run !';
+                    stopActiveRunControl(app, 'Run !');
                 end
             catch ME
                 wasCancelled = isPipelineCancelException(app, ME);
@@ -12909,7 +13259,7 @@ classdef pipeline2 < matlab.apps.AppBase
                     catch
                     end
                     app.RuninformationhereLabel.Text = ['Run stopped: ' runJson];
-                    app.RunButton.Text = 'Resume run';
+                    stopActiveRunControl(app, 'Resume run');
                     app.PipelineandRuncheckreportLabel.Text = [app.PipelineandRuncheckreportLabel.Text newline newline ...
                         'Run stopped by user.' newline ...
                         'Resume with "Resume previous progress" and an output policy that skips existing outputs.'];
@@ -12942,6 +13292,7 @@ classdef pipeline2 < matlab.apps.AppBase
                         'Open the Run Monitor to follow or cancel the active job, then retry submission.'];
                     uialert(app.UIFigure, ME.message, 'Hub project locked', 'Icon', 'warning');
                 else
+                    stopActiveRunControl(app, 'Run !');
                     app.PipelineandRuncheckreportLabel.Text = [app.PipelineandRuncheckreportLabel.Text newline newline ...
                         'Run failed:' newline ME.identifier newline ME.message newline newline ...
                         getReport(ME, 'basic', 'hyperlinks', 'off')];
@@ -13324,6 +13675,8 @@ classdef pipeline2 < matlab.apps.AppBase
 
         % Code that executes before app deletion
         function delete(app)
+
+            stopActiveRunControl(app, 'Run !');
 
             % Delete UIFigure when app is deleted
             delete(app.UIFigure)
