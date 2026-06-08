@@ -284,12 +284,6 @@ classdef detecdiv < matlab.apps.AppBase
 
                 if pipeIdx <= numel(app.Data.PipelineModules) && ~isempty(app.Data.PipelineModules{pipeIdx})
                     for k=1:numel(app.Data.PipelineModules{pipeIdx})
-                        cm2=uicontextmenu(app.DetecDivUIFigure);
-                        m = uimenu(cm2,'Text','Open module...');
-                        m.MenuSelectedFcn={@contextMenuOpenPipelineModuleFcn,[pipeIdx,k],'PipelineModule'};
-                        m = uimenu(cm2,'Text','Delete module');
-                        m.MenuSelectedFcn={@contextMenuDeletePipelineModuleFcn,[pipeIdx,k],'PipelineModule'};
-
                         moduleType = '';
                         if pipeIdx <= numel(app.Data.PipelineModuleTypes) && ~isempty(app.Data.PipelineModuleTypes{pipeIdx}) && k <= numel(app.Data.PipelineModuleTypes{pipeIdx})
                             moduleType = app.Data.PipelineModuleTypes{pipeIdx}{k};
@@ -297,7 +291,7 @@ classdef detecdiv < matlab.apps.AppBase
                         iconFile = getPipelineModuleIcon(moduleType);
 
                         uitreenode(pNode,'Text',app.Data.PipelineModules{pipeIdx}{k},'Tag','PipelineModule','UserData',[pipeIdx,k], ...
-                            'ContextMenu',cm2,'Icon',fullfile(pth,iconFile));
+                            'Icon',fullfile(pth,iconFile));
                     end
                 end
             end
@@ -3084,6 +3078,238 @@ end
             end
         end
 
+        function [isLoaded, pipeObj, pipeVar] = getLoadedPipelineForNode(app, node)
+            isLoaded = false;
+            pipeObj = [];
+            pipeVar = '';
+            if nargin < 2 || isempty(node) || ~isprop(node,'Tag') || ~strcmp(node.Tag,'Pipeline')
+                return;
+            end
+
+            idx = [];
+            try
+                ud = node.UserData;
+                if isnumeric(ud) && ~isempty(ud)
+                    idx = ud(1);
+                elseif isstruct(ud)
+                    if isfield(ud,'pipeIdx') && ~isempty(ud.pipeIdx)
+                        idx = ud.pipeIdx;
+                    elseif isfield(ud,'idx') && ~isempty(ud.idx)
+                        idx = ud.idx;
+                    end
+                    if isfield(ud,'varName') && ~isempty(ud.varName)
+                        pipeVar = char(string(ud.varName));
+                    elseif isfield(ud,'workspaceVar') && ~isempty(ud.workspaceVar)
+                        pipeVar = char(string(ud.workspaceVar));
+                    end
+                end
+            catch
+                idx = [];
+            end
+
+            if isempty(pipeVar) && ~isempty(idx) && idx >= 1 && idx <= numel(app.Data.Pipeline)
+                pipeVar = app.Data.Pipeline{idx};
+            end
+            if isempty(pipeVar)
+                return;
+            end
+
+            try
+                candidate = evalin('base', pipeVar);
+                if isa(candidate,'pipeline')
+                    pipeObj = candidate;
+                    isLoaded = true;
+                end
+            catch
+                pipeObj = [];
+                isLoaded = false;
+            end
+        end
+
+        function jsonPath = resolvePipelineJsonPathForNode(app, node)
+            jsonPath = '';
+            if nargin < 2 || isempty(node) || ~isprop(node,'Tag') || ~strcmp(node.Tag,'Pipeline')
+                return;
+            end
+
+            [isLoaded, pipeObj] = app.getLoadedPipelineForNode(node);
+            if isLoaded && isa(pipeObj,'pipeline') && isprop(pipeObj,'path') && ~isempty(pipeObj.path)
+                jsonPath = fullfile(char(string(pipeObj.path)), 'pipeline.json');
+                return;
+            end
+
+            try
+                ud = node.UserData;
+                if isstruct(ud)
+                    if isfield(ud,'jsonPath') && ~isempty(ud.jsonPath)
+                        jsonPath = char(string(ud.jsonPath));
+                        return;
+                    end
+                    if isfield(ud,'pipelineJsonPath') && ~isempty(ud.pipelineJsonPath)
+                        jsonPath = char(string(ud.pipelineJsonPath));
+                        return;
+                    end
+                    if isfield(ud,'path') && ~isempty(ud.path)
+                        candidatePath = char(string(ud.path));
+                        if isfolder(candidatePath)
+                            jsonPath = fullfile(candidatePath, 'pipeline.json');
+                        else
+                            jsonPath = candidatePath;
+                        end
+                        return;
+                    end
+                end
+            catch
+            end
+
+            projectNode = [];
+            try
+                parentNode = node.Parent;
+                if ~isempty(parentNode) && isprop(parentNode,'Tag') && strcmp(parentNode.Tag,'Project')
+                    projectNode = parentNode;
+                end
+            catch
+                projectNode = [];
+            end
+            if isempty(projectNode)
+                return;
+            end
+
+            projIdx = [];
+            try
+                projIdx = projectNode.UserData;
+            catch
+                projIdx = [];
+            end
+            if isempty(projIdx) || projIdx < 1 || projIdx > numel(app.Data.Project)
+                return;
+            end
+
+            try
+                shallowObj = evalin('base', app.Data.Project{projIdx});
+            catch
+                shallowObj = [];
+            end
+            if isempty(shallowObj) || ~isa(shallowObj,'shallow')
+                return;
+            end
+
+            preferred = app.getProjectDefaultPipelinePath(shallowObj);
+            candidates = app.resolveProjectPipelineJsonCandidates(shallowObj);
+            nodeLabel = char(string(node.Text));
+
+            if ~isempty(preferred)
+                try
+                    [prefParent,~,~] = fileparts(preferred);
+                    [~,prefFolder] = fileparts(prefParent);
+                    if strcmp(prefFolder, nodeLabel)
+                        jsonPath = preferred;
+                        return;
+                    end
+                catch
+                end
+            end
+
+            for iCand = 1:numel(candidates)
+                candPath = char(string(candidates{iCand}));
+                try
+                    [candParent,~,~] = fileparts(candPath);
+                    [~,candFolder] = fileparts(candParent);
+                    if strcmp(candFolder, nodeLabel)
+                        jsonPath = candPath;
+                        return;
+                    end
+                catch
+                end
+            end
+
+            if numel(candidates) == 1
+                jsonPath = char(string(candidates{1}));
+            elseif ~isempty(preferred)
+                jsonPath = preferred;
+            end
+        end
+
+        function [loaded, pipeObj, varName, jsonPath, msg] = loadPipelineForNode(app, node)
+            loaded = false;
+            pipeObj = [];
+            varName = '';
+            msg = '';
+            jsonPath = app.resolvePipelineJsonPathForNode(node);
+
+            if isempty(jsonPath)
+                msg = 'Unable to resolve pipeline.json for the selected pipeline.';
+                return;
+            end
+            if ~isfile(jsonPath)
+                msg = sprintf('Pipeline not found:\n%s', jsonPath);
+                return;
+            end
+
+            [pipeObj, msg] = pipelineLoad(jsonPath);
+            if isempty(pipeObj)
+                return;
+            end
+
+            varName = app.nextPipelineVarName(pipeObj);
+            assignin('base', varName, pipeObj);
+            loaded = true;
+
+            try
+                app.registerRecentPipeline(string(jsonPath));
+            catch
+            end
+        end
+
+        function selectPipelineNodeByJsonPath(app, jsonPath)
+            if isempty(jsonPath)
+                return;
+            end
+
+            targetKey = app.normalizeFsPath(jsonPath);
+            if isempty(targetKey)
+                return;
+            end
+
+            node = findNodeRecursive(app.Tree);
+            if isempty(node)
+                return;
+            end
+
+            try
+                app.Tree.SelectedNodes = node;
+            catch
+            end
+
+            function hit = findNodeRecursive(parentNode)
+                hit = [];
+                try
+                    children = parentNode.Children;
+                catch
+                    children = [];
+                end
+
+                for iChild = 1:numel(children)
+                    child = children(iChild);
+                    try
+                        if isprop(child,'Tag') && strcmp(child.Tag,'Pipeline')
+                            childPath = app.resolvePipelineJsonPathForNode(child);
+                            if strcmp(app.normalizeFsPath(childPath), targetKey)
+                                hit = child;
+                                return;
+                            end
+                        end
+                    catch
+                    end
+
+                    hit = findNodeRecursive(child);
+                    if ~isempty(hit)
+                        return;
+                    end
+                end
+            end
+        end
+
         function changed = ensureProjectDefaultPipelineNode(app, shallowObj, nodeType, params)
             changed = false;
             if nargin < 4 || isempty(params) || ~isstruct(params)
@@ -4588,6 +4814,7 @@ end
             app.AddprocessorButton.Visible='off';
             app.ProcessdataButton.Visible='off';
             app.OpenButton.Visible='off';
+            app.OpenButton.Enable='on';
             cla( app.UIAxes);
             app.UIAxes.Visible='off';
 
@@ -4963,30 +5190,47 @@ end
             if strcmp(selectedNodes.Tag,'Pipeline')
                 app.ProjectsPanel.Title='Pipeline';
                 app.OpenButton.Visible='on';
-                app.OpenButton.Text='Open Pipeline...';
+                [isLoaded, pipeObj, pipeVar] = app.getLoadedPipelineForNode(selectedNodes);
+                pipelineJsonPath = app.resolvePipelineJsonPathForNode(selectedNodes);
+                if isLoaded
+                    app.OpenButton.Text='Open Pipeline...';
+                else
+                    app.OpenButton.Text='Load pipeline in workspace';
+                end
                 app.ProcessdataButton.Visible='on';
                 app.ProcessdataButton.Text='Create run...';
 
-                idx=app.Tree.SelectedNodes.UserData;
-                if idx <= numel(app.Data.Pipeline)
-                    pipeVar = app.Data.Pipeline{idx};
-                    pipeObj = evalin('base', pipeVar);
-
-                    nNodes = 0;
-                    nEdges = 0;
+                nNodes = 0;
+                nEdges = 0;
+                pipePathText = pipelineJsonPath;
+                if isLoaded && isa(pipeObj,'pipeline')
                     if isprop(pipeObj,'nodes') && ~isempty(pipeObj.nodes)
                         nNodes = numel(pipeObj.nodes);
                     end
                     if isprop(pipeObj,'edges') && ~isempty(pipeObj.edges)
                         nEdges = numel(pipeObj.edges);
                     end
+                    if isprop(pipeObj,'path') && ~isempty(pipeObj.path)
+                        pipePathText = char(string(pipeObj.path));
+                    end
+                end
 
-                    t='';
+                t='';
+                if isLoaded
                     t=[t 'Pipeline variable: ' pipeVar newline newline];
-                    t=[t 'Pipeline path: ' newline pipeObj.path newline newline];
-                    t=[t 'Nodes: ' num2str(nNodes) newline];
-                    t=[t 'Connections: ' num2str(nEdges) newline];
-                    app.ProjectInformationLabel.Text=t;
+                else
+                    t=[t 'Pipeline variable: (not loaded in workspace)' newline newline];
+                end
+                if ~isempty(pipePathText)
+                    t=[t 'Pipeline path: ' newline pipePathText newline newline];
+                end
+                t=[t 'Nodes: ' num2str(nNodes) newline];
+                t=[t 'Connections: ' num2str(nEdges) newline];
+                app.ProjectInformationLabel.Text=t;
+                if ~isLoaded && isempty(pipelineJsonPath)
+                    app.OpenButton.Enable = 'off';
+                else
+                    app.OpenButton.Enable = 'on';
                 end
             end
 
@@ -6364,7 +6608,10 @@ end
 
         arg = selectedNodes.UserData;
         str = selectedNodes.Tag;
-        cc  = arg(1);
+        cc  = [];
+        if isnumeric(arg) && ~isempty(arg)
+            cc = arg(1);
+        end
 
         if strcmp(str,'Classifier')
             d.Message = 'Opening classifier...';
@@ -6418,12 +6665,22 @@ end
         end
 
         if strcmp(str,'Pipeline')
-            d.Message = 'Opening pipeline GUI...';
-            if cc <= numel(app.Data.Pipeline)
-                pipeVar = app.Data.Pipeline{cc};
-                pipeObj = evalin('base', pipeVar);
-                app.openPipelineWithContext(pipeObj);
+            [isLoaded, pipeObj] = app.getLoadedPipelineForNode(selectedNodes);
+            if ~isLoaded
+                d.Message = 'Loading pipeline in workspace...';
+                [loaded, pipeObj, ~, jsonPath, msg] = app.loadPipelineForNode(selectedNodes);
+                if ~loaded
+                    error(msg);
+                end
+                gatherVarsFromWorkspace(app);
+                displayNodes(app);
+                app.selectPipelineNodeByJsonPath(jsonPath);
+                close(d);
+                return;
             end
+
+            d.Message = 'Opening pipeline GUI...';
+            app.openPipelineWithContext(pipeObj);
         end
 
         if strcmp(str,'PipelineModule')

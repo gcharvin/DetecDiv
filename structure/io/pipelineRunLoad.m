@@ -75,6 +75,7 @@ function [runObj, msg] = pipelineRunLoad(inputPath)
         runObj.createdAt = getField(S,'createdAt','');
         runObj.updatedAt = getField(S,'updatedAt','');
         runObj.path = inputPath;
+        runObj = reconcileRunFromEventLog(runObj);
     catch ME
         msg = ME.message;
         runObj = [];
@@ -89,5 +90,106 @@ function v = getField(S, name, default)
         v = S.(name);
     else
         v = default;
+    end
+end
+
+function runObj = reconcileRunFromEventLog(runObj)
+    try
+        events = pipelineRunEventsRead(runObj);
+        events = latestRunAttemptEvents(events);
+        if isempty(events)
+            return;
+        end
+        status = eventRunStatus(events);
+        if ~isempty(status)
+            runObj.status = status;
+        end
+        lastTs = eventText(events(end), 'ts');
+        if ~isempty(lastTs)
+            runObj.updatedAt = lastTs;
+        end
+        summary = summarizeLatestEvents(events);
+        if ~isstruct(runObj.progress)
+            runObj.progress = struct();
+        end
+        runObj.progress = summary;
+        if ~isstruct(runObj.outputs)
+            runObj.outputs = struct();
+        end
+        if ~isfield(runObj.outputs, 'eventSummary') || isempty(runObj.outputs.eventSummary)
+            runObj.outputs.eventSummary = summary;
+        end
+    catch
+    end
+end
+
+function events = latestRunAttemptEvents(events)
+    if isempty(events) || ~isfield(events, 'type')
+        return;
+    end
+    types = string({events.type});
+    starts = find(types == "run_start");
+    if isempty(starts)
+        return;
+    end
+    events = events(starts(end):end);
+end
+
+function status = eventRunStatus(events)
+    status = '';
+    if isempty(events) || ~isfield(events, 'type')
+        return;
+    end
+    types = string({events.type});
+    if any(types == "run_done")
+        status = 'done';
+    elseif any(types == "run_cancelled")
+        status = 'cancelled';
+    elseif any(types == "run_failed")
+        status = 'failed';
+    elseif any(types == "node_start")
+        status = 'running_or_interrupted';
+    end
+end
+
+function summary = summarizeLatestEvents(events)
+    summary = struct('totalNodes', 0, 'doneNodes', 0, 'skippedNodes', 0, ...
+        'failedNodes', 0, 'cancelledNodes', 0, 'startedAt', '', 'endedAt', '');
+    if isempty(events)
+        return;
+    end
+    if isfield(events, 'type')
+        types = string({events.type});
+        summary.doneNodes = sum(types == "node_done");
+        summary.skippedNodes = sum(types == "node_skipped");
+        summary.failedNodes = sum(types == "node_failed");
+        summary.cancelledNodes = sum(types == "node_cancelled");
+    end
+    if isfield(events, 'NodeId')
+        ids = {};
+        for i = 1:numel(events)
+            id = eventText(events(i), 'NodeId');
+            if ~isempty(strtrim(id))
+                ids{end+1} = id; %#ok<AGROW>
+            end
+        end
+        summary.totalNodes = numel(unique(ids, 'stable'));
+    else
+        summary.totalNodes = summary.doneNodes + summary.skippedNodes + summary.failedNodes + summary.cancelledNodes;
+    end
+    if isfield(events, 'ts')
+        summary.startedAt = eventText(events(1), 'ts');
+        summary.endedAt = eventText(events(end), 'ts');
+    end
+end
+
+function txt = eventText(evt, fieldName)
+    txt = '';
+    try
+        if isfield(evt, fieldName) && ~isempty(evt.(fieldName))
+            txt = char(string(evt.(fieldName)));
+        end
+    catch
+        txt = '';
     end
 end

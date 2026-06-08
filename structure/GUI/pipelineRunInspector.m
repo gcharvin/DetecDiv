@@ -126,14 +126,10 @@ function txt = buildHeaderText(runObj, shallowObj)
 end
 
 function txt = readSummaryText(runObj)
-    txt = '';
     try
-        runPath = char(string(getPropOr(runObj, 'path', '')));
-        summaryFile = fullfile(runPath, 'run_summary.txt');
-        if isfile(summaryFile)
-            txt = fileread(summaryFile);
-            return;
-        end
+        review = pipelineRunReview(runObj, 'Write', false);
+        txt = buildSummaryFromReview(review);
+        return;
     catch
     end
     txt = buildFallbackSummary(runObj);
@@ -227,6 +223,25 @@ end
 
 function rows = buildNodeRows(runObj)
     rows = cell(0, 7);
+    try
+        review = pipelineRunReview(runObj, 'Write', false);
+        if isstruct(review) && isfield(review, 'nodes') && ~isempty(review.nodes)
+            for i = 1:numel(review.nodes)
+                nr = review.nodes(i);
+                rows(end+1,:) = { ... %#ok<AGROW>
+                    char(string(getFieldOr(nr, 'nodeId', ''))), ...
+                    char(string(getFieldOr(nr, 'nodeType', ''))), ...
+                    char(string(getFieldOr(nr, 'status', ''))), ...
+                    '', ...
+                    '', ...
+                    valueToDisplay(getFieldOr(nr, 'durationSec', '')), ...
+                    char(string(getFieldOr(nr, 'message', ''))) ...
+                    };
+            end
+            return;
+        end
+    catch
+    end
     report = struct();
     try
         report = runObj.outputs.report;
@@ -253,6 +268,7 @@ function rows = buildEventRows(runObj)
     rows = cell(0, 5);
     try
         events = pipelineRunEventsRead(runObj);
+        events = latestRunAttemptEventsLocal(events);
     catch
         events = struct([]);
     end
@@ -264,6 +280,64 @@ function rows = buildEventRows(runObj)
             eventField(events(i), 'Status'), ...
             eventField(events(i), 'Message')};
     end
+end
+
+function txt = buildSummaryFromReview(review)
+    lines = {};
+    lines{end+1} = ['Run ID: ' char(string(getFieldOr(review, 'runId', '')))]; %#ok<AGROW>
+    lines{end+1} = ['Status: ' char(string(getFieldOr(review, 'status', '')))]; %#ok<AGROW>
+    lines{end+1} = ['Run folder: ' char(string(getFieldOr(review, 'runPath', '')))]; %#ok<AGROW>
+    lines{end+1} = ['Event log: ' char(string(getFieldOr(review, 'eventLogPath', '')))]; %#ok<AGROW>
+    if isfield(review, 'eventCount') && isfield(review, 'totalEventCount') && review.eventCount ~= review.totalEventCount
+        lines{end+1} = sprintf('Events: %d latest attempt / %d total', review.eventCount, review.totalEventCount); %#ok<AGROW>
+    end
+    lines{end+1} = ''; %#ok<AGROW>
+    lines{end+1} = 'Summary'; %#ok<AGROW>
+    summary = getFieldOr(review, 'summary', struct());
+    totalNodes = 0;
+    try
+        totalNodes = numel(review.nodes);
+    catch
+    end
+    lines{end+1} = sprintf('  totalNodes: %d', totalNodes); %#ok<AGROW>
+    lines{end+1} = sprintf('  doneNodes: %s', valueToDisplay(getFieldOr(summary, 'doneNodes', 0))); %#ok<AGROW>
+    lines{end+1} = sprintf('  skippedNodes: %s', valueToDisplay(getFieldOr(summary, 'skippedNodes', 0))); %#ok<AGROW>
+    lines{end+1} = sprintf('  failedNodes: %s', valueToDisplay(getFieldOr(summary, 'failedNodes', 0))); %#ok<AGROW>
+    lines{end+1} = sprintf('  cancelledNodes: %s', valueToDisplay(getFieldOr(summary, 'cancelledNodes', 0))); %#ok<AGROW>
+    lines{end+1} = sprintf('  startedAt: %s', char(string(getFieldOr(summary, 'startedAt', '')))); %#ok<AGROW>
+    lines{end+1} = sprintf('  endedAt: %s', char(string(getFieldOr(summary, 'endedAt', '')))); %#ok<AGROW>
+    lines{end+1} = ''; %#ok<AGROW>
+    lines{end+1} = 'Nodes'; %#ok<AGROW>
+    nodes = getFieldOr(review, 'nodes', struct([]));
+    if isempty(nodes)
+        lines{end+1} = '- No node execution data found.'; %#ok<AGROW>
+    else
+        for i = 1:numel(nodes)
+            nr = nodes(i);
+            lines{end+1} = sprintf('- %s [%s] status=%s duration=%s', ...
+                char(string(getFieldOr(nr, 'nodeId', ''))), ...
+                char(string(getFieldOr(nr, 'nodeType', ''))), ...
+                char(string(getFieldOr(nr, 'status', ''))), ...
+                valueToDisplay(getFieldOr(nr, 'durationSec', ''))); %#ok<AGROW>
+            msg = char(string(getFieldOr(nr, 'message', '')));
+            if ~isempty(strtrim(msg))
+                lines{end+1} = ['  message: ' msg]; %#ok<AGROW>
+            end
+        end
+    end
+    txt = strjoin(lines, newline);
+end
+
+function events = latestRunAttemptEventsLocal(events)
+    if isempty(events) || ~isfield(events, 'type')
+        return;
+    end
+    types = string({events.type});
+    starts = find(types == "run_start");
+    if isempty(starts)
+        return;
+    end
+    events = events(starts(end):end);
 end
 
 function refreshInspector(runObj, shallowObj, headerArea, summaryArea, reviewArea, eventTable, paramTable, nodeTable)

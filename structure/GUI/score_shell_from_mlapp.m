@@ -166,7 +166,7 @@ classdef score < matlab.apps.AppBase
     end
 
     properties (Access = private)
-
+        IsUpdatingPanelsLayout logical = false
     end
 
     methods (Access = private)
@@ -179,6 +179,12 @@ classdef score < matlab.apps.AppBase
             else
                 menuItem.Checked = 'on';
                 newVisibility = 'on';
+            end
+        end
+
+        function releasePanelsLayoutGuard(app)
+            if isvalid(app)
+                app.IsUpdatingPanelsLayout = false;
             end
         end
 
@@ -2056,9 +2062,29 @@ end
     end
 end
 
-        function updatePanelsLayout(app)
+        function updatePanelsLayout(app, autoFitWindow)
+            if nargin < 2
+                autoFitWindow = true;
+            end
+
+            if app.IsUpdatingPanelsLayout || ~isvalid(app) || isempty(app.ScoreAppUIFigure) || ~isvalid(app.ScoreAppUIFigure)
+                return;
+            end
+
+            app.IsUpdatingPanelsLayout = true;
+            cleanupObj = onCleanup(@() app.releasePanelsLayoutGuard()); %#ok<NASGU>
+
             % Liste des panels potentiellement affichables
-            panels = {app.ROisPanel, app.DisplaysettingsPanel, app.DataSettingsPanel, app.AnnotationPanel, app.IntensityQuantificationPanel,app.MoviePanel};
+            panelNames = {'ROisPanel', 'DisplaysettingsPanel', 'DataSettingsPanel', 'AnnotationPanel', 'IntensityQuantificationPanel', 'MoviePanel'};
+            panels = {};
+            for k = 1:numel(panelNames)
+                if isprop(app, panelNames{k})
+                    panelObj = app.(panelNames{k});
+                    if ~isempty(panelObj) && isvalid(panelObj)
+                        panels{end+1} = panelObj; %#ok<AGROW>
+                    end
+                end
+            end
 
             % Filtrer les panels visibles
             visiblePanels = panels(cellfun(@(p) strcmp(p.Visible, 'on'), panels));
@@ -2072,10 +2098,12 @@ end
 
             % Paramètres de mise en page
             margin = 10;           % marge entre panels
-            maxColumnHeight = 800; % hauteur maximum d'une colonne
+            figPos = app.ScoreAppUIFigure.Position;
+            maxColumnHeight = max(200, figPos(4) - 2 * margin);
 
-            currentColumn = 1;
-            currentY = maxColumnHeight; % départ en haut de la colonne
+            currentX = margin;
+            currentY = margin + maxColumnHeight; % départ en haut de la colonne
+            currentColumnWidth = 0;
             newPositions = cell(size(visiblePanels));
 
             for i = 1:numel(visiblePanels)
@@ -2084,18 +2112,20 @@ end
                 panelHeight = pos(4);
 
                 % Passage à une nouvelle colonne si nécessaire
-                if currentY - panelHeight - margin < 0
-                    currentColumn = currentColumn + 1;
-                    currentY = maxColumnHeight;
+                if currentY - panelHeight < margin && currentColumnWidth > 0
+                    currentX = currentX + currentColumnWidth + margin;
+                    currentY = margin + maxColumnHeight;
+                    currentColumnWidth = 0;
                 end
 
                 % Calcul de la nouvelle position pour le panel courant
-                newX = (currentColumn - 1) * (panelWidth + margin) + margin;
+                newX = currentX;
                 newY = currentY - panelHeight;
                 newPositions{i} = [newX, newY, panelWidth, panelHeight];
 
                 % Mettre à jour la position verticale pour le panel suivant
                 currentY = newY - margin;
+                currentColumnWidth = max(currentColumnWidth, panelWidth);
             end
 
             % Appliquer les nouvelles positions aux panels visibles
@@ -2103,17 +2133,24 @@ end
                 visiblePanels{i}.Position = newPositions{i};
             end
 
-            % Calculer la largeur totale nécessaire pour la fenêtre principale
-            totalWidth = currentColumn * (max(cellfun(@(p) p.Position(3), visiblePanels)) + margin) + margin;
-            newMainHeight = maxColumnHeight + 2*margin;
+            % Calculer l'encombrement total du layout
+            totalWidth = currentX + currentColumnWidth + margin;
+            totalHeight = maxColumnHeight + 2 * margin;
 
-            % Ajuster la taille de la fenêtre principale
-            app.ScoreAppUIFigure.Position(3:4) = [totalWidth, newMainHeight];
+            % Ajuster la taille de la fenêtre principale si le contenu dépasse
+            if autoFitWindow
+                newMainWidth = max(figPos(3), totalWidth);
+                newMainHeight = max(figPos(4), totalHeight);
+                if newMainWidth ~= figPos(3) || newMainHeight ~= figPos(4)
+                    app.ScoreAppUIFigure.Position(3:4) = [newMainWidth, newMainHeight];
+                    figPos = app.ScoreAppUIFigure.Position;
+                end
+            end
 
             % Si l'image figure existe, l'ajuster pour qu'elle se positionne à droite
             if  isprop(app, 'ImageFigure') && ~isempty(app.ImageFigure) && ishandle(app.ImageFigure)
                 % Récupérer la position de la fenêtre principale
-                mainPos = app.ScoreAppUIFigure.Position;
+                mainPos = figPos;
                 % Conserver la largeur et hauteur actuelles de l'image figure
                 imageFigWidth = app.ImageFigure.Position(3);
                 imageFigHeight = app.ImageFigure.Position(4);
@@ -2122,6 +2159,12 @@ end
                 newY = mainPos(2);
                 app.ImageFigure.Position = [newX, newY, imageFigWidth, imageFigHeight];
             end
+        end
+
+        function ScoreAppUIFigureSizeChanged(app, event)
+            if nargin < 2 %#ok<INUSD>
+            end
+            app.updatePanelsLayout(false);
         end
 
 
@@ -4896,10 +4939,12 @@ app.MovieoutputfilenameEditField.Value=fullfile(pth, [fle '.pdf']);
 
             % Create ScoreAppUIFigure and hide until all components are created
             app.ScoreAppUIFigure = uifigure('Visible', 'off');
+            app.ScoreAppUIFigure.AutoResizeChildren = 'off';
             app.ScoreAppUIFigure.Position = [100 100 1406 980];
             app.ScoreAppUIFigure.Name = 'ScoreApp';
             app.ScoreAppUIFigure.CloseRequestFcn = createCallbackFcn(app, @ScoreAppUIFigureCloseRequest, true);
             app.ScoreAppUIFigure.KeyPressFcn = createCallbackFcn(app, @ScoreAppUIFigureKeyPress, true);
+            app.ScoreAppUIFigure.SizeChangedFcn = createCallbackFcn(app, @ScoreAppUIFigureSizeChanged, true);
 
             % Create FileMenu
             app.FileMenu = uimenu(app.ScoreAppUIFigure);

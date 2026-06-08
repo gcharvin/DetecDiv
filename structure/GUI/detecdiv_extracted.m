@@ -102,25 +102,6 @@ classdef detecdiv < matlab.apps.AppBase
 
             [pth fle ext]= fileparts(which('detecdiv.mlapp'));
 
-            projectPipelineIdx = cell(1, numel(app.Data.Project));
-            pipelineProjectIdx = cell(1, numel(app.Data.Pipeline));
-            for iPipe = 1:numel(app.Data.Pipeline)
-                if isempty(app.Data.Pipeline{iPipe})
-                    continue;
-                end
-                [~, projectIdx] = app.findLinkedProjectIndicesForPipeline(getPipelineByIndex(iPipe));
-                if isempty(projectIdx)
-                    continue;
-                end
-                pipelineProjectIdx{iPipe} = projectIdx;
-                for j = 1:numel(projectIdx)
-                    pIdx = projectIdx(j);
-                    if pIdx >= 1 && pIdx <= numel(projectPipelineIdx)
-                        projectPipelineIdx{pIdx}(end+1) = iPipe; %#ok<AGROW>
-                    end
-                end
-            end
-
             for i=1:numel(app.Data.Project)
                 h1(i)=uitreenode(app.ProjectsNode,'Text',app.Data.Project{i},'Tag','Project','UserData',i,'Icon',fullfile(pth,'detecDiv_logo.png'));
 
@@ -215,21 +196,31 @@ classdef detecdiv < matlab.apps.AppBase
                     end
                 end
 
-                if i <= numel(projectPipelineIdx) && ~isempty(projectPipelineIdx{i})
-                    for k = 1:numel(projectPipelineIdx{i})
-                        createPipelineTreeNode(h1(i), projectPipelineIdx{i}(k), pth);
-                    end
-                end
             end
 
+            loadedPipelineKeys = containers.Map('KeyType','char','ValueType','logical');
             for i=1:numel(app.Data.Pipeline)
                 if isempty(app.Data.Pipeline{i})
                     continue;
                 end
-                if i <= numel(pipelineProjectIdx) && ~isempty(pipelineProjectIdx{i})
+                createPipelineTreeNode(app.PipelinesNode, i, pth);
+                try
+                    pipeObj = getPipelineByIndex(i);
+                    key = app.normalizePipelineRootPath(pipeObj.path);
+                    if ~isempty(key)
+                        loadedPipelineKeys(key) = true;
+                    end
+                catch
+                end
+            end
+
+            for iRecent = 1:numel(app.RecentPipelines)
+                pipelineJson = char(string(app.RecentPipelines(iRecent)));
+                key = app.normalizePipelineRootPath(pipelineJson);
+                if isempty(key) || isKey(loadedPipelineKeys, key)
                     continue;
                 end
-                createPipelineTreeNode(app.PipelinesNode, i, pth);
+                createRecentPipelineTreeNode(app.PipelinesNode, pipelineJson, pth);
             end
 
             for i=1:numel(app.Data.Classifier)
@@ -323,7 +314,9 @@ classdef detecdiv < matlab.apps.AppBase
                 m.MenuSelectedFcn={@contextMenuRefreshPipelineRunHubStatusFcn,[projIdx,runIdx],'ProjectpipelineRun'};
                 m = uimenu(cm,'Text','Cancel hub job');
                 m.MenuSelectedFcn={@contextMenuCancelPipelineRunHubJobFcn,[projIdx,runIdx],'ProjectpipelineRun'};
-                m = uimenu(cm,'Text','Edit run...');
+                m = uimenu(cm,'Text','Review run...');
+                m.MenuSelectedFcn = @(~,~)openProjectPipelineRunInspector(projIdx, runIdx);
+                m = uimenu(cm,'Text','New run from this...');
                 m.MenuSelectedFcn={@contextMenuOpenPipelineRunFcn,[projIdx,runIdx],'ProjectpipelineRun'};
                 m = uimenu(cm,'Text','Open run log');
                 m.MenuSelectedFcn = @(~,~)openPipelineRunLog(app, projIdx, runIdx);
@@ -555,6 +548,24 @@ end
                 catch ME
                     uialert(app.DetecDivUIFigure, ME.message, 'Pipeline2 error', 'Icon', 'error');
                 end
+            end
+
+            function pNode = createRecentPipelineTreeNode(parentNode, pipelineJson, pth)
+                pNode = [];
+                if isempty(pipelineJson)
+                    return;
+                end
+                [folder, ~, ~] = fileparts(pipelineJson);
+                [~, label] = fileparts(folder);
+                if isempty(label)
+                    [~, label] = fileparts(pipelineJson);
+                end
+
+                cm=uicontextmenu(app.DetecDivUIFigure);
+                m = uimenu(cm,'Text','Open pipeline...');
+                m.MenuSelectedFcn = @(~,~)app.openRecentPipelineCallback(pipelineJson);
+                pNode=uitreenode(parentNode,'Text',label,'Tag','PipelineRecent','UserData',pipelineJson, ...
+                    'ContextMenu',cm,'Icon',fullfile(pth,'pipeline.png'));
             end
 
             function contextMenuOpenPipelineModuleFcn(src,event,arg,str) %#ok<INUSD>
@@ -972,7 +983,15 @@ end
                 runStatus = 'unknown';
 
                 try
-                    if isprop(runObj,'status') && ~isempty(runObj.status)
+                    review = pipelineRunReview(runObj, 'Write', false);
+                    if isstruct(review) && isfield(review, 'status') && ~isempty(review.status)
+                        runStatus = char(string(review.status));
+                    end
+                catch
+                end
+
+                try
+                    if strcmp(runStatus, 'unknown') && isprop(runObj,'status') && ~isempty(runObj.status)
                         runStatus = char(string(runObj.status));
                     end
                 catch
@@ -981,7 +1000,7 @@ end
                 try
                     if isstruct(runObj.ctx) && isfield(runObj.ctx,'hub') && isstruct(runObj.ctx.hub)
                         runMode = 'hub';
-                        if isfield(runObj.ctx.hub,'status') && ~isempty(runObj.ctx.hub.status)
+                        if strcmp(runStatus, 'unknown') && isfield(runObj.ctx.hub,'status') && ~isempty(runObj.ctx.hub.status)
                             runStatus = char(string(runObj.ctx.hub.status));
                         end
                     end
@@ -1397,6 +1416,11 @@ end
                         elseif isfield(runObj.ctx.hub, 'hub_job_id') && ~isempty(runObj.ctx.hub.hub_job_id)
                             jobId = char(string(runObj.ctx.hub.hub_job_id));
                         end
+                    end
+                    if isempty(jobId) && isstruct(runObj.ctx) && isfield(runObj.ctx, 'run') && isstruct(runObj.ctx.run) && ...
+                            isfield(runObj.ctx.run, 'control') && isstruct(runObj.ctx.run.control) && ...
+                            isfield(runObj.ctx.run.control, 'jobId') && ~isempty(runObj.ctx.run.control.jobId)
+                        jobId = char(string(runObj.ctx.run.control.jobId));
                     end
                 catch
                 end
@@ -2482,6 +2506,38 @@ end
             end
         end
 
+        function text = describePipelineTemplate(app, pipeObj) %#ok<INUSD>
+            text = '';
+            if isempty(pipeObj) || ~isa(pipeObj, 'pipeline')
+                return;
+            end
+            nodes = pipeObj.nodes;
+            if isempty(nodes)
+                text = 'Modules: none';
+                return;
+            end
+            text = ['Modules:' newline];
+            for iNode = 1:numel(nodes)
+                node = nodes(iNode);
+                nodeId = '';
+                nodeType = '';
+                nodePkg = '';
+                try
+                    if isfield(node,'id') && ~isempty(node.id), nodeId = char(string(node.id)); end
+                    if isfield(node,'type') && ~isempty(node.type), nodeType = char(string(node.type)); end
+                    if isfield(node,'pkg') && ~isempty(node.pkg), nodePkg = char(string(node.pkg)); end
+                catch
+                end
+                if isempty(nodeId)
+                    nodeId = ['node_' num2str(iNode)];
+                end
+                parts = {nodeId};
+                if ~isempty(nodeType), parts{end+1} = ['[' nodeType ']']; end %#ok<AGROW>
+                if ~isempty(nodePkg), parts{end+1} = ['package=' nodePkg]; end %#ok<AGROW>
+                text = [text '- ' strjoin(parts, ' ') newline]; %#ok<AGROW>
+            end
+        end
+
         function pipeObj = reloadPipelineTemplateFromDiskIfAvailable(app, pipeObj) %#ok<INUSD>
             if isempty(pipeObj) || ~isa(pipeObj, 'pipeline')
                 return;
@@ -3151,6 +3207,119 @@ end
             try
                 app.registerRecentPipeline(string(fullfile(pipeObj.path,'pipeline.json')));
             catch
+            end
+        end
+
+        function openProjectPipelineTemplate(app, shallowObj)
+            if isempty(shallowObj) || ~isa(shallowObj, 'shallow')
+                return;
+            end
+            pipeObj = app.ensureDefaultPipelineForProject(shallowObj);
+            if isempty(pipeObj) || ~isa(pipeObj, 'pipeline')
+                [found, pipeObj] = app.getProjectDefaultPipelineObject(shallowObj);
+                if ~found
+                    uialert(app.DetecDivUIFigure, 'No pipeline template could be resolved for this project.', 'Open project pipeline', 'Icon', 'warning');
+                    return;
+                end
+            end
+            app.openPipelineWithContext(pipeObj);
+        end
+
+        function createProjectPipelineTemplate(app, shallowObj)
+            if isempty(shallowObj) || ~isa(shallowObj, 'shallow')
+                return;
+            end
+            projectRoot = fullfile(char(string(shallowObj.io.path)), char(string(shallowObj.io.file)));
+            if isempty(projectRoot) || exist(projectRoot, 'dir') ~= 7
+                uialert(app.DetecDivUIFigure, 'Project folder is not available; cannot create a project pipeline template.', 'New pipeline template', 'Icon', 'warning');
+                return;
+            end
+
+            defaultName = [char(string(shallowObj.io.file)) '_pipeline'];
+            answer = inputdlg({'Pipeline template name:'}, 'New pipeline template', [1 60], {defaultName});
+            if isempty(answer)
+                return;
+            end
+            pipeName = strtrim(answer{1});
+            if isempty(pipeName)
+                pipeName = defaultName;
+            end
+
+            try
+                pipeObj = pipelineNew('path', projectRoot, 'name', pipeName, 'workspace', true);
+            catch ME
+                uialert(app.DetecDivUIFigure, ME.message, 'New pipeline template', 'Icon', 'error');
+                return;
+            end
+            if isempty(pipeObj)
+                return;
+            end
+
+            try
+                rawPath = app.deriveRawDataPathFromProject(shallowObj);
+                if ~isempty(rawPath)
+                    app.populateDefaultDataLoaderPath(pipeObj, rawPath);
+                end
+                app.setProjectDefaultPipelineRef(shallowObj, pipeObj);
+                pipelineSave(pipeObj);
+                app.publishPipelineObjectToWorkspace(pipeObj);
+                app.saveShallowProjectWithProgress(shallowObj, 'Saving project pipeline template...', 'shallowObj');
+            catch ME
+                warning('detecdiv:ProjectPipelineTemplate', '%s', ME.message);
+            end
+
+            app.registerRecentPipeline(string(fullfile(pipeObj.path, 'pipeline.json')));
+            app.openPipelineWithContext(pipeObj);
+        end
+
+        function openLatestProjectRunOrPipeline(app, shallowObj)
+            if isempty(shallowObj) || ~isa(shallowObj, 'shallow')
+                return;
+            end
+            runObj = app.latestProjectPipelineRun(shallowObj);
+            if ~isempty(runObj) && isa(runObj, 'pipelineRun')
+                pipeline2(shallowObj, runObj);
+                return;
+            end
+            app.openProjectPipelineTemplate(shallowObj);
+        end
+
+        function runObj = latestProjectPipelineRun(app, shallowObj) %#ok<INUSD>
+            runObj = [];
+            try
+                runs = shallowObj.processing.pipelineRun;
+            catch
+                runs = pipelineRun.empty;
+            end
+            if isempty(runs)
+                return;
+            end
+            bestScore = -inf;
+            bestIdx = 0;
+            for i = 1:numel(runs)
+                score = i;
+                try
+                    txt = '';
+                    if isprop(runs(i), 'updatedAt') && ~isempty(runs(i).updatedAt)
+                        txt = char(string(runs(i).updatedAt));
+                    elseif isprop(runs(i), 'createdAt') && ~isempty(runs(i).createdAt)
+                        txt = char(string(runs(i).createdAt));
+                    end
+                    if ~isempty(txt)
+                        dt = datetime(txt);
+                        if ~isnat(dt)
+                            score = datenum(dt);
+                        end
+                    end
+                catch
+                end
+                if score >= bestScore
+                    bestScore = score;
+                    bestIdx = i;
+                end
+            end
+            if bestIdx > 0
+                runObj = runs(bestIdx);
             end
         end
 
@@ -4678,8 +4847,6 @@ function openRecentProjectCallback(app, projectPath)
     name = proj.io.file;
     assignin('base', name, proj);
 
-    % Auto-load pipeline templates referenced by existing project runs
-    app.autoLoadPipelinesForProjectRuns(proj);
 
     % on réenregistre le chemin propre (pas le tableau chelou)
     app.registerRecentProject(string(projectPathChar));
@@ -5135,16 +5302,34 @@ end
 
             app.UIAxes.Position = [0 16 417 341];
             app.ProjectInformationLabel.Position = [8 361 410 240];
-            app.AdddataButton.Position = [20 286 175 40];
-            app.UpdaterawdatapathButton.Position = [249 284 169 45];
+            app.AdddataButton.Position = [20 60 185 43];
+            app.UpdaterawdatapathButton.Position = [232 60 185 43];
             app.IdentifyROIsinpositionsButton.Position = [20 211 385 46];
             app.ExtractROIhypervolumesButton.Position = [20 153 389 47];
-            app.AddclassifierButton.Position = [20 74 175 43];
-            app.AddprocessorButton.Position = [232 74 151 43];
-            app.ClassifydataButton.Position = [20 12 175 43];
-            app.ProcessdataButton.Position = [232 12 149 43];
-            app.OpenButton.Position = [283 365 134 37];
-            app.InspectRunButton.Position = [283 320 134 37];
+            app.AddclassifierButton.Position = [20 12 185 43];
+            app.AddprocessorButton.Position = [232 12 185 43];
+            app.ClassifydataButton.Position = [20 12 185 43];
+            app.ProcessdataButton.Position = [232 12 185 43];
+            app.OpenButton.Position = [282 12 136 40];
+            app.InspectRunButton.Position = [282 60 136 40];
+        end
+
+        function applyTextOnlyMainPanelLayout(app)
+            app.ProjectInformationLabel.Position = [8 112 420 489];
+            app.AdddataButton.Position = [20 60 185 43];
+            app.UpdaterawdatapathButton.Position = [232 60 185 43];
+            app.AddclassifierButton.Position = [20 12 185 43];
+            app.AddprocessorButton.Position = [232 12 185 43];
+            app.ClassifydataButton.Position = [20 12 185 43];
+            app.ProcessdataButton.Position = [232 12 185 43];
+            app.OpenButton.Position = [282 12 136 40];
+            app.InspectRunButton.Position = [282 60 136 40];
+        end
+
+        function applyImageMainPanelLayout(app)
+            app.ProjectInformationLabel.Position = [8 361 410 240];
+            app.OpenButton.Position = [282 12 136 40];
+            app.InspectRunButton.Position = [282 60 136 40];
         end
 
         function resetMainPanelState(app)
@@ -5167,6 +5352,7 @@ end
                 cla(app.UIAxes);
                 app.UIAxes.Visible='off';
             end
+            app.applyTextOnlyMainPanelLayout();
         end
 
         % Selection changed function: Tree
@@ -5192,6 +5378,7 @@ end
             app.OpenButton.Visible='off';
             cla( app.UIAxes);
             app.UIAxes.Visible='off';
+            app.applyTextOnlyMainPanelLayout();
 
             % HERE
 
@@ -5203,7 +5390,7 @@ end
                 app.ProjectsPanel.Title='';
                 app.ProjectInformationLabel.Text='';
             end
-            if numel(selectedNodes.Tag)==0 & strcmp(selectedNodes.Text,'Independent Classifiers')
+            if numel(selectedNodes.Tag)==0 & any(strcmp(selectedNodes.Text, {'Independent Classifiers','Classifiers'}))
                 app.ProjectsPanel.Title='';
                 app.ProjectInformationLabel.Text='';
             end
@@ -5259,26 +5446,47 @@ end
                 if isfield(shallowObj.processing,'pipelineRun')
                     t=[t 'Number of pipeline runs in project: ' num2str(numel(shallowObj.processing.pipelineRun)) newline newline];
                 end
+                try
+                    runTemplates = {};
+                    if isfield(shallowObj.processing,'pipelineRun') && ~isempty(shallowObj.processing.pipelineRun)
+                        runs = shallowObj.processing.pipelineRun;
+                        for ir = 1:numel(runs)
+                            if isprop(runs(ir),'pipelineRef') && isstruct(runs(ir).pipelineRef)
+                                if isfield(runs(ir).pipelineRef,'id') && ~isempty(runs(ir).pipelineRef.id)
+                                    runTemplates{end+1} = char(string(runs(ir).pipelineRef.id)); %#ok<AGROW>
+                                elseif isfield(runs(ir).pipelineRef,'path') && ~isempty(runs(ir).pipelineRef.path)
+                                    [~, nm] = fileparts(char(string(runs(ir).pipelineRef.path)));
+                                    runTemplates{end+1} = nm; %#ok<AGROW>
+                                end
+                            end
+                        end
+                    end
+                    runTemplates = unique(runTemplates, 'stable');
+                    if ~isempty(runTemplates)
+                        t=[t 'Pipeline templates used in project: ' num2str(numel(runTemplates)) newline];
+                        t=[t strjoin(runTemplates, ', ') newline newline];
+                    end
+                catch
+                end
+                t=[t 'Open a project run to inspect or edit the exact pipeline instance used for that run.' newline];
+                t=[t 'Use the Pipeline section for standalone templates.' newline];
                 app.ProjectInformationLabel.Text=t;
 
-                app.AdddataButton.Visible='on';
-                app.AdddataButton.Text='Open workflow...';
-                app.AdddataButton.Tooltip={'Open the workflow frontend for data loading, ROI definition and ROI extraction'};
+                app.AdddataButton.Visible='off';
                 app.AddclassifierButton.Visible='on';
-                %                app.CheckrawdatapathButton.Visible='on';
+                app.AddclassifierButton.Text='Open latest run...';
+                app.AddclassifierButton.Tooltip={'Open the most recent pipeline run for this project in edit mode.'};
+                app.AddclassifierButton.Position = [232 12 185 43];
                 app.UpdaterawdatapathButton.Visible='on';
+                app.UpdaterawdatapathButton.Text='New pipeline template...';
+                app.UpdaterawdatapathButton.Tooltip={'Create a new pipeline template inside this project folder and open it with this project context.'};
+                app.UpdaterawdatapathButton.Position = [20 12 185 43];
                 app.IdentifyROIsinpositionsButton.Visible='off';
                 app.ExtractROIhypervolumesButton.Visible='off';
 
-                app.ClassifydataButton.Visible='on';
-                %   app.ClassifyprocessdataLabel.Visible='on';
-                %     app.CreateorimportaclassifierprocessorLabel.Visible='on';
-                %     app.IdentfyandextractregionsofinterestROIsindataLabel.Visible='on';
-                %     app.AdddataintheprojectiepositionLabel.Visible='on';
-                % app.ProjectInformationLabel.Visible='on';
-                app.AddprocessorButton.Visible='on';
-                app.ProcessdataButton.Text='Process data...';
-                app.ProcessdataButton.Visible='on';
+                app.ClassifydataButton.Visible='off';
+                app.AddprocessorButton.Visible='off';
+                app.ProcessdataButton.Visible='off';
 
             else
 
@@ -5354,6 +5562,7 @@ end
 
             if strcmp(selectedNodes.Tag,'Projectclassi')
                 app.ProjectsPanel.Title='Classifier';
+                app.applyImageMainPanelLayout();
 
                 app.OpenButton.Visible='on';
                 app.OpenButton.Text='Open Classifier...';
@@ -5487,6 +5696,7 @@ end
 
             if strcmp(selectedNodes.Tag,'Classifier')
                 app.ProjectsPanel.Title='Classifier';
+                app.applyImageMainPanelLayout();
                 app.OpenButton.Visible='on';
                 app.OpenButton.Text='Open Classifier...';
 
@@ -5564,8 +5774,7 @@ end
                 app.ProjectsPanel.Title='Pipeline';
                 app.OpenButton.Visible='on';
                 app.OpenButton.Text='Open Pipeline...';
-                app.ProcessdataButton.Visible='on';
-                app.ProcessdataButton.Text='Create run...';
+                app.ProcessdataButton.Visible='off';
 
                 idx=app.Tree.SelectedNodes.UserData;
                 if idx <= numel(app.Data.Pipeline)
@@ -5590,9 +5799,39 @@ end
                     t=[t 'Pipeline variable: ' pipeVar newline newline];
                     t=[t 'Pipeline path: ' newline pipeObj.path newline newline];
                     t=[t 'Nodes: ' num2str(nNodes) newline];
-                    t=[t 'Connections: ' num2str(nEdges) newline];
+                    t=[t 'Connections: ' num2str(nEdges) newline newline];
+                    t=[t app.describePipelineTemplate(pipeObj)];
                     app.ProjectInformationLabel.Text=t;
                 end
+            end
+
+            if strcmp(selectedNodes.Tag,'PipelineRecent')
+                app.ProjectsPanel.Title='Recent pipeline';
+                app.OpenButton.Visible='on';
+                app.OpenButton.Text='Open Pipeline...';
+                app.ProcessdataButton.Visible='off';
+
+                pipelineJson = char(string(selectedNodes.UserData));
+                t='';
+                t=[t 'Pipeline path: ' newline pipelineJson newline newline];
+                if exist(pipelineJson, 'file') ~= 2
+                    t=[t 'Status: missing file' newline];
+                else
+                    try
+                        [pipeObj, msg] = pipelineLoad(pipelineJson);
+                        if isempty(pipeObj)
+                            t=[t 'Status: cannot load pipeline' newline char(string(msg)) newline];
+                        else
+                            t=[t 'Name: ' char(string(pipeObj.strid)) newline];
+                            t=[t 'Nodes: ' num2str(numel(pipeObj.nodes)) newline];
+                            t=[t 'Connections: ' num2str(numel(pipeObj.edges)) newline newline];
+                            t=[t app.describePipelineTemplate(pipeObj)];
+                        end
+                    catch ME
+                        t=[t 'Status: cannot inspect pipeline' newline ME.message newline];
+                    end
+                end
+                app.ProjectInformationLabel.Text=t;
             end
 
             if strcmp(selectedNodes.Tag,'PipelineModule')
@@ -5612,6 +5851,7 @@ end
 
                 if strcmp(nodeType,'classifier')
                     app.ProjectsPanel.Title='Classifier';
+                    app.applyImageMainPanelLayout();
                     app.OpenButton.Text='Open Classifier...';
                     app.UIAxes.Visible='on';
 
@@ -5732,9 +5972,9 @@ end
             if strcmp(selectedNodes.Tag,'ProjectpipelineRun')
                 app.ProjectsPanel.Title='Pipeline run';
                 app.InspectRunButton.Visible='on';
-                app.InspectRunButton.Text='Edit Pipeline Run...';
+                app.InspectRunButton.Text='Review run...';
                 app.OpenButton.Visible='on';
-                app.OpenButton.Text='Run Pipeline Run...';
+                app.OpenButton.Text='New run from this...';
 
                 cc=app.Tree.SelectedNodes.UserData;
                 proj=app.Data.Project{cc(1)};
@@ -5746,6 +5986,8 @@ end
                     [runMode, runStatus] = app.summarizePipelineRun(runObj);
                     t=[t 'Execution: ' runMode newline];
                     t=[t 'Status: ' runStatus newline newline];
+                    t=[t 'Review run opens the immutable execution record and artifacts.' newline];
+                    t=[t 'New run from this opens the pipeline editor with these parameters as a starting point.' newline newline];
                     if isprop(runObj,'description') && ~isempty(runObj.description)
                         t=[t 'Description: ' char(string(runObj.description)) newline newline];
                     end
@@ -5772,6 +6014,31 @@ end
                         if isfield(runObj.targetRef,'type')
                             t=[t newline 'Target type: ' char(string(runObj.targetRef.type)) newline];
                         end
+                    end
+                    try
+                        if isprop(runObj,'createdAt') && ~isempty(runObj.createdAt)
+                            t=[t 'Created: ' char(string(runObj.createdAt)) newline];
+                        end
+                        if isprop(runObj,'updatedAt') && ~isempty(runObj.updatedAt)
+                            t=[t 'Updated: ' char(string(runObj.updatedAt)) newline];
+                        end
+                    catch
+                    end
+                    try
+                        review = pipelineRunReview(runObj, 'Write', false);
+                        if isstruct(review) && isfield(review,'summary') && isstruct(review.summary)
+                            sumrep = review.summary;
+                            t=[t newline 'Stored review summary:' newline];
+                            t=[t '- totalNodes: ' char(string(numel(review.nodes))) newline];
+                            sumFields = {'doneNodes','skippedNodes','failedNodes','cancelledNodes','startedAt','endedAt'};
+                            for isf = 1:numel(sumFields)
+                                key = sumFields{isf};
+                                if isfield(sumrep, key) && ~isempty(sumrep.(key))
+                                    t=[t '- ' key ': ' char(string(sumrep.(key))) newline]; %#ok<AGROW>
+                                end
+                            end
+                        end
+                    catch
                     end
                     app.ProjectInformationLabel.Text=t;
                 end
@@ -5955,9 +6222,6 @@ end
             % mettre l'objet dans le workspace base sous son nom
             name = proj.io.file;
             assignin('base', name, proj);
-
-    % Auto-load pipeline templates referenced by existing project runs
-    app.autoLoadPipelinesForProjectRuns(proj);
 
             % chemin absolu du .mat du projet
 
@@ -6386,12 +6650,8 @@ end
                 proj=app.Data.Project{i};
 
                 shallowObj=evalin('base',proj);
-
-                classifierImporterGUI(app,shallowObj)
-                uiwait(app.DetecDivUIFigure)
-                TreeSelectionChanged(app, event)
-                gatherVarsFromWorkspace(app);
-                displayNodes(app);
+                app.openLatestProjectRunOrPipeline(shallowObj);
+                return;
             end
         end
 
@@ -6405,9 +6665,7 @@ end
             i=app.Tree.SelectedNodes.UserData;
             proj=app.Data.Project{i};
             shallowObj=evalin('base',proj);
-
-            app.ensureDefaultPipelineForProject(shallowObj);
-            workflow(shallowObj);
+            app.openProjectPipelineTemplate(shallowObj);
 
             TreeSelectionChanged(app, event)
             gatherVarsFromWorkspace(app);
@@ -6425,22 +6683,7 @@ end
             i=app.Tree.SelectedNodes.UserData;
             proj=app.Data.Project{i};
             shallowObj=evalin('base',proj);
-
-            try
-                [~, report] = detecdiv_paths_relink_project(shallowObj);
-                if ~isempty(report)
-                    okCount = sum([report.ok]);
-                    totalCount = numel(report);
-                    msg = sprintf('Raw path relink done: %d/%d channel entries valid.', okCount, totalCount);
-                    uialert(app.DetecDivUIFigure, msg, 'Relink raw data path', 'Icon', 'success');
-                end
-            catch ME
-                % Fallback to legacy relink dialog if helper fails for any reason.
-                warning('Raw path relink helper failed: %s', ME.message);
-                shallowObj.setSrcPath;
-            end
-
-            checkImagePath(app,shallowObj);
+            app.createProjectPipelineTemplate(shallowObj);
             TreeSelectionChanged(app, event)
             gatherVarsFromWorkspace(app);
             displayNodes(app);
@@ -6887,8 +7130,10 @@ end
             % store=app.Tree.SelectedNodes;
             proj=app.Data.Project{i};
             shallowObj=evalin('base',proj);
-
-            classifyDataGUI(shallowObj);
+            uialert(app.DetecDivUIFigure, ...
+                ['Project-level classification now goes through pipeline templates.' newline ...
+                 'Open the project pipeline, adjust the run parameters, then run it from pipeline2.'], ...
+                'Use pipelines', 'Icon', 'info');
         end
 
         % Callback function
@@ -6955,19 +7200,11 @@ end
             end
 
             if strcmp(app.Tree.SelectedNodes.Tag,'Project')
-                i=app.Tree.SelectedNodes.UserData;
-                proj=app.Data.Project{i};
-
-                shallowObj=evalin('base',proj);
-
-                ProcessorImporterGUI(app,shallowObj)
-                uiwait(app.DetecDivUIFigure)
-
-
-
-                TreeSelectionChanged(app, event)
-                gatherVarsFromWorkspace(app);
-                displayNodes(app);
+                uialert(app.DetecDivUIFigure, ...
+                    ['Project-level processors are now expected to be configured inside a pipeline template.' newline ...
+                     'Create or open the project pipeline and add the processor there.'], ...
+                    'Use pipelines', 'Icon', 'info');
+                return;
             end
         end
 
@@ -6984,7 +7221,7 @@ end
                 i=app.Tree.SelectedNodes.UserData;
                 proj=app.Data.Project{i};
                 shallowObj=evalin('base',proj);
-                processDataGUI(shallowObj);
+                app.openProjectPipelineTemplate(shallowObj);
                 return;
             end
 
@@ -7364,6 +7601,17 @@ end
             end
         end
 
+        if strcmp(str,'PipelineRecent')
+            d.Message = 'Loading recent pipeline...';
+            pipelineJson = char(string(arg));
+            try
+                close(d);
+            catch
+            end
+            app.openRecentPipelineCallback(pipelineJson);
+            return;
+        end
+
         if strcmp(str,'PipelineModule')
             d.Message = 'Opening pipeline module...';
             pipeIdx = arg(1);
@@ -7380,6 +7628,13 @@ end
             end
 
             runObj = shallowObj.processing.pipelineRun(runIdx);
+            try
+                close(d);
+            catch
+            end
+            pipeline2(shallowObj, runObj);
+            return;
+
             try
                 close(d);
             catch
@@ -7577,10 +7832,6 @@ end
                     reloadedObj = app.loadProjectMatRaw(projectMatPath);
                     if isa(reloadedObj, 'shallow')
                         assignin('base', projectVarName, reloadedObj);
-                        try
-                            app.autoLoadPipelinesForProjectRuns(reloadedObj);
-                        catch
-                        end
                     end
                 catch
                 end
@@ -7874,10 +8125,9 @@ end
             end
             runObj = shallowObj.processing.pipelineRun(runIdx);
             try
-                pipeline2(shallowObj, runObj);
-                RefreshtreewindowMenuSelected(app, []);
+                pipelineRunInspector(runObj, shallowObj);
             catch ME
-                uialert(app.DetecDivUIFigure, ME.message, 'Pipeline run editor error', 'Icon', 'warning');
+                uialert(app.DetecDivUIFigure, ME.message, 'Pipeline run review error', 'Icon', 'warning');
             end
         end
 
@@ -9381,26 +9631,26 @@ end
             app.NewprojectindependentclassiiferMenu = uimenu(app.FileMenu);
             app.NewprojectindependentclassiiferMenu.MenuSelectedFcn = createCallbackFcn(app, @NewprojectindependentclassiiferMenuSelected, true);
             app.NewprojectindependentclassiiferMenu.Separator = 'on';
-            app.NewprojectindependentclassiiferMenu.Text = 'New project-independent classiifer...';
+            app.NewprojectindependentclassiiferMenu.Text = 'New classifier...';
 
             % Create OpenprojectindependentclassifierMenu
             app.OpenprojectindependentclassifierMenu = uimenu(app.FileMenu);
             app.OpenprojectindependentclassifierMenu.MenuSelectedFcn = createCallbackFcn(app, @OpenprojectindependentclassifierMenuSelected, true);
-            app.OpenprojectindependentclassifierMenu.Text = 'Open project-independent classifier...';
+            app.OpenprojectindependentclassifierMenu.Text = 'Open classifier...';
 
             % Create OpenrecentClassiMenu
             app.OpenrecentClassiMenu = uimenu(app.FileMenu);
-            app.OpenrecentClassiMenu.Text = 'Open recent independent classifier';
+            app.OpenrecentClassiMenu.Text = 'Open recent classifier';
 
             % Create SaveprojectindependentclassifierMenu
             app.SaveprojectindependentclassifierMenu = uimenu(app.FileMenu);
             app.SaveprojectindependentclassifierMenu.MenuSelectedFcn = createCallbackFcn(app, @SaveprojectindependentclassifierMenuSelected, true);
-            app.SaveprojectindependentclassifierMenu.Text = 'Save project-independent classifier';
+            app.SaveprojectindependentclassifierMenu.Text = 'Save classifier';
 
             % Create CloseprojectindependentclassifierMenu
             app.CloseprojectindependentclassifierMenu = uimenu(app.FileMenu);
             app.CloseprojectindependentclassifierMenu.MenuSelectedFcn = createCallbackFcn(app, @CloseprojectindependentclassifierMenuSelected, true);
-            app.CloseprojectindependentclassifierMenu.Text = 'Close project-independent classifier';
+            app.CloseprojectindependentclassifierMenu.Text = 'Close classifier';
 
             % Create ClassifierRepositoryMenu
             app.ClassifierRepositoryMenu = uimenu(app.FileMenu);
@@ -9558,7 +9808,7 @@ end
 
             % Create IndependentClassifiersNode
             app.IndependentClassifiersNode = uitreenode(app.Tree);
-            app.IndependentClassifiersNode.Text = 'Independent Classifiers';
+            app.IndependentClassifiersNode.Text = 'Classifiers';
 
             % Create PipelinesNode
             app.PipelinesNode = uitreenode(app.Tree);
@@ -9584,7 +9834,7 @@ end
             app.AdddataButton.Icon = 'data.png';
             app.AdddataButton.Visible = 'off';
             app.AdddataButton.Tooltip = {'Open the workflow frontend for data loading, ROI definition and ROI extraction'};
-            app.AdddataButton.Position = [20 286 175 40];
+            app.AdddataButton.Position = [20 60 185 43];
             app.AdddataButton.Text = 'Open workflow...';
 
             % Create AddclassifierButton
@@ -9593,7 +9843,7 @@ end
             app.AddclassifierButton.Icon = 'brain.png';
             app.AddclassifierButton.Visible = 'off';
             app.AddclassifierButton.Tooltip = {'Creates a new classifier or imports an existing classifier to the project'};
-            app.AddclassifierButton.Position = [20 74 175 43];
+            app.AddclassifierButton.Position = [20 12 185 43];
             app.AddclassifierButton.Text = 'Add classifier...';
 
             % Create ProjectInformationLabel
@@ -9624,7 +9874,7 @@ end
             app.UpdaterawdatapathButton.ButtonPushedFcn = createCallbackFcn(app, @UpdaterawdatapathButtonPushed, true);
             app.UpdaterawdatapathButton.Visible = 'off';
             app.UpdaterawdatapathButton.Tooltip = {'Please select the directory that contains  a list of images in your project'};
-            app.UpdaterawdatapathButton.Position = [249 284 169 45];
+            app.UpdaterawdatapathButton.Position = [232 60 185 43];
             app.UpdaterawdatapathButton.Text = 'Update raw data path...';
 
             % Create ClassifydataButton
@@ -9633,7 +9883,7 @@ end
             app.ClassifydataButton.Icon = 'gears.png';
             app.ClassifydataButton.Visible = 'off';
             app.ClassifydataButton.Tooltip = {'Classifies defined ROIs using a given classifier '};
-            app.ClassifydataButton.Position = [20 12 175 43];
+            app.ClassifydataButton.Position = [20 12 185 43];
             app.ClassifydataButton.Text = 'Classify data...';
 
             % Create AddprocessorButton
@@ -9641,7 +9891,7 @@ end
             app.AddprocessorButton.ButtonPushedFcn = createCallbackFcn(app, @AddprocessorButtonPushed, true);
             app.AddprocessorButton.Icon = 'processor.png';
             app.AddprocessorButton.Visible = 'off';
-            app.AddprocessorButton.Position = [232 74 151 43];
+            app.AddprocessorButton.Position = [232 12 185 43];
             app.AddprocessorButton.Text = 'Add processor...';
 
             % Create ProcessdataButton
@@ -9649,21 +9899,21 @@ end
             app.ProcessdataButton.ButtonPushedFcn = createCallbackFcn(app, @ProcessdataButtonPushed, true);
             app.ProcessdataButton.Icon = 'gears.png';
             app.ProcessdataButton.Visible = 'off';
-            app.ProcessdataButton.Position = [232 12 149 43];
+            app.ProcessdataButton.Position = [232 12 185 43];
             app.ProcessdataButton.Text = 'Process data...';
 
             % Create OpenButton
             app.OpenButton = uibutton(app.ProjectsPanel, 'push');
             app.OpenButton.ButtonPushedFcn = createCallbackFcn(app, @OpenButtonPushed, true);
             app.OpenButton.Visible = 'off';
-            app.OpenButton.Position = [283 365 134 37];
+            app.OpenButton.Position = [282 12 136 40];
             app.OpenButton.Text = 'Open';
 
             % Create InspectRunButton
             app.InspectRunButton = uibutton(app.ProjectsPanel, 'push');
             app.InspectRunButton.ButtonPushedFcn = createCallbackFcn(app, @InspectRunButtonPushed, true);
             app.InspectRunButton.Visible = 'off';
-            app.InspectRunButton.Position = [283 320 134 37];
+            app.InspectRunButton.Position = [282 60 136 40];
             app.InspectRunButton.Text = 'Open Pipeline Run...';
 
             % Show the figure after all components are created

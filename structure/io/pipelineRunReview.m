@@ -14,6 +14,8 @@ function [review, text] = pipelineRunReview(runOrPath, varargin)
     else
         events = pipelineRunEventsRead(runPath);
     end
+    totalEventCount = numel(events);
+    events = latestRunAttemptEvents(events);
 
     review = struct();
     review.generatedAt = char(datetime('now'));
@@ -21,6 +23,7 @@ function [review, text] = pipelineRunReview(runOrPath, varargin)
     review.runId = readRunId(runObj, events);
     review.status = readRunStatus(runObj, events);
     review.eventCount = numel(events);
+    review.totalEventCount = totalEventCount;
     review.eventLogPath = fullfile(runPath, 'run_events.jsonl');
     review.summary = summarizeEvents(events);
     review.nodes = summarizeNodes(events, runObj);
@@ -110,11 +113,11 @@ function runId = readRunId(runObj, events)
 end
 
 function status = readRunStatus(runObj, events)
-    status = readHubRunStatus(runObj);
+    status = readEventRunStatus(events);
     if ~isempty(status)
         return;
     end
-    status = readEventRunStatus(events);
+    status = readHubRunStatus(runObj);
     if ~isempty(status)
         return;
     end
@@ -124,6 +127,18 @@ function status = readRunStatus(runObj, events)
         end
     catch
     end
+end
+
+function events = latestRunAttemptEvents(events)
+    if isempty(events) || ~isfield(events, 'type')
+        return;
+    end
+    types = string({events.type});
+    starts = find(types == "run_start");
+    if isempty(starts)
+        return;
+    end
+    events = events(starts(end):end);
 end
 
 function status = readHubRunStatus(runObj)
@@ -317,7 +332,11 @@ function text = formatReviewText(review)
     lines{end+1} = ['Run ID: ' review.runId]; %#ok<AGROW>
     lines{end+1} = ['Status: ' review.status]; %#ok<AGROW>
     lines{end+1} = ['Run folder: ' review.runPath]; %#ok<AGROW>
-    lines{end+1} = ['Event count: ' num2str(review.eventCount)]; %#ok<AGROW>
+    if isfield(review, 'totalEventCount') && review.totalEventCount ~= review.eventCount
+        lines{end+1} = sprintf('Event count: %d latest attempt / %d total', review.eventCount, review.totalEventCount); %#ok<AGROW>
+    else
+        lines{end+1} = ['Event count: ' num2str(review.eventCount)]; %#ok<AGROW>
+    end
     lines{end+1} = ''; %#ok<AGROW>
     lines{end+1} = 'Timeline'; %#ok<AGROW>
     lines{end+1} = ['- Started: ' review.summary.startedAt]; %#ok<AGROW>

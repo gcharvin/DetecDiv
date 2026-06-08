@@ -228,6 +228,16 @@ function writeRunReviewFile(runObj, runPath)
 end
 
 function txt = buildRunSummaryText(runObj, S)
+    try
+        eventFile = fullfile(runObj.path, 'run_events.jsonl');
+        if isfile(eventFile)
+            review = pipelineRunReview(runObj, 'Write', false);
+            txt = buildRunSummaryTextFromReview(review);
+            return;
+        end
+    catch
+    end
+
     lines = {};
     lines{end+1} = sprintf('Run ID: %s', char(string(runObj.runId))); %#ok<AGROW>
     lines{end+1} = sprintf('Status: %s', char(string(runObj.status))); %#ok<AGROW>
@@ -315,6 +325,49 @@ function txt = buildRunSummaryText(runObj, S)
 
     txt = strjoin(lines, newline);
     txt = [txt newline];
+end
+
+function txt = buildRunSummaryTextFromReview(review)
+    lines = {};
+    lines{end+1} = sprintf('Run ID: %s', valueToChar(getFieldOrDefault(review, 'runId', ''))); %#ok<AGROW>
+    lines{end+1} = sprintf('Status: %s', valueToChar(getFieldOrDefault(review, 'status', ''))); %#ok<AGROW>
+    lines{end+1} = sprintf('Run folder: %s', valueToChar(getFieldOrDefault(review, 'runPath', ''))); %#ok<AGROW>
+    lines{end+1} = sprintf('Event log: %s', valueToChar(getFieldOrDefault(review, 'eventLogPath', ''))); %#ok<AGROW>
+    if isfield(review, 'eventCount') && isfield(review, 'totalEventCount') && review.eventCount ~= review.totalEventCount
+        lines{end+1} = sprintf('Events: %d latest attempt / %d total', review.eventCount, review.totalEventCount); %#ok<AGROW>
+    end
+
+    summary = getFieldOrDefault(review, 'summary', struct());
+    nodes = getFieldOrDefault(review, 'nodes', struct([]));
+    lines{end+1} = ''; %#ok<AGROW>
+    lines{end+1} = 'Summary'; %#ok<AGROW>
+    lines{end+1} = sprintf('  totalNodes: %d', numel(nodes)); %#ok<AGROW>
+    lines{end+1} = sprintf('  doneNodes: %s', valueToChar(getFieldOrDefault(summary, 'doneNodes', 0))); %#ok<AGROW>
+    lines{end+1} = sprintf('  skippedNodes: %s', valueToChar(getFieldOrDefault(summary, 'skippedNodes', 0))); %#ok<AGROW>
+    lines{end+1} = sprintf('  failedNodes: %s', valueToChar(getFieldOrDefault(summary, 'failedNodes', 0))); %#ok<AGROW>
+    lines{end+1} = sprintf('  cancelledNodes: %s', valueToChar(getFieldOrDefault(summary, 'cancelledNodes', 0))); %#ok<AGROW>
+    lines{end+1} = sprintf('  startedAt: %s', valueToChar(getFieldOrDefault(summary, 'startedAt', ''))); %#ok<AGROW>
+    lines{end+1} = sprintf('  endedAt: %s', valueToChar(getFieldOrDefault(summary, 'endedAt', ''))); %#ok<AGROW>
+
+    lines{end+1} = ''; %#ok<AGROW>
+    lines{end+1} = 'Nodes'; %#ok<AGROW>
+    if isempty(nodes)
+        lines{end+1} = '- No node execution data found.'; %#ok<AGROW>
+    else
+        for i = 1:numel(nodes)
+            row = nodes(i);
+            lines{end+1} = sprintf('- %s [%s] status=%s duration=%s', ...
+                valueToChar(getFieldOrDefault(row, 'nodeId', '')), ...
+                valueToChar(getFieldOrDefault(row, 'nodeType', '')), ...
+                valueToChar(getFieldOrDefault(row, 'status', '')), ...
+                valueToChar(getFieldOrDefault(row, 'durationSec', ''))); %#ok<AGROW>
+            msg = valueToChar(getFieldOrDefault(row, 'message', ''));
+            if ~isempty(strtrim(msg))
+                lines{end+1} = ['  message: ' msg]; %#ok<AGROW>
+            end
+        end
+    end
+    txt = [strjoin(lines, newline) newline];
 end
 
 function v = getFieldOrDefault(S, name, defaultVal)
