@@ -31,10 +31,13 @@ function [paramout,dataout,imageout] = core(param, roiobj, frames)
 %          - 2–254 : bud, intensité ∝ aire du bud (normalisée sur toutes
 %                    les frames traitées)
 %
-%       2) Channel [baseName '_conf'] (H×W×1×Tfull, uint8) :
-%          - 0   : pas de bud / confiance nulle
-%          - 1–255 : confiance Viterbi sur le bud, par pixel bud
-%                    (constante à l'intérieur du bud)
+%       2) Channel [baseName '_bud'] (H×W×1×Tfull, uint8) :
+%          - 0   : fond / pas de bud
+%          - 1   : masque bud
+%
+% NOTE IMPLEMENTATION: despite older '_conf' comments and legacy
+% comments above, the active code currently writes a binary bud mask to
+% [baseName '_bud']; it does not write the internally computed confidence.
 %
 % INPUTS
 %   param   : struct de paramètres (géré par le GUI) contenant au minimum :
@@ -47,7 +50,7 @@ function [paramout,dataout,imageout] = core(param, roiobj, frames)
 %       - param.outputChannelName : char
 %           Nom de base des canaux de sortie :
 %             * [baseName '_cell']  : mask mère+bud encodé taille (0,2–254,255)
-%             * [baseName '_conf']  : map de confiance bud.
+%             * [baseName '_bud']   : masque bud.
 %
 %   roiobj  : objet ROI, supposé contenir au moins :
 %       - roiobj.image : tableau [H x W x C x Tfull]
@@ -106,7 +109,7 @@ if nargin == 0
     paramout.tip = { ...
         'Sélectionnez le canal contenant les labels d''instance (ex: CellposeSAM).', ...
         'Mode de suivi (mother_trap ou daughter_trap).', ...
-        'Nom de base des canaux de sortie : baseName_cell (mask mère+bud), baseName_conf (confiance bud).'};
+        'Nom de base des canaux de sortie : baseName_cell (masque mere), baseName_bud (masque bud).'};
     dataout  = [];
     imageout = [];
     return;
@@ -564,7 +567,7 @@ end
 
 %% ---- Construction des deux sorties : MBmask et BconfMap ----
 motherBudMask = zeros(H,W,1,nF,'uint8');   % 0=fond, 255=mère, 2–254=bud (taille)
-budConfMap    = zeros(H,W,1,nF,'uint8');   % 0=fond, 1–255=confiance bud
+budConfMap    = zeros(H,W,1,nF,'uint8');   % legacy prealloc; active output is a bud mask
 
 %% ---- Construction des deux sorties : motherMask et budMask ----
 % motherBudMask : masque binaire (0/1) de la mère uniquement
@@ -605,7 +608,7 @@ end
 %% ---- Sauvegarde dans roiobj.image ----
 baseName   = paramout.outputChannelName;
 cellName   = [baseName '_cell'];
-confName   = [baseName '_conf'];
+budName    = [baseName '_bud'];
 
 [Hfull,Wfull,~,Tfull] = size(roiobj.image);
 
@@ -636,12 +639,12 @@ if ~isempty(pixMask)
     localSetIndexedOutputDisplay(roiobj, pixMask, [1 0 0]);
 end
 
-% --- 2) Canal confiance bud ---
-pixConf = roiobj.findChannelID(confName);
-if ~isempty(pixConf)
-    disp('[trackMotherLineageViterbi] Canal de confiance bud existe déjà, mise à jour des frames sélectionnées.');
+% --- 2) Canal masque bud ---
+pixBud = roiobj.findChannelID(budName);
+if ~isempty(pixBud)
+    disp('[trackMotherLineageViterbi] Masque bud existe deja, mise a jour des frames selectionnees.');
     for k = 1:nF
-        roiobj.image(:,:,pixConf, frameIdx(k)) = budConfMap(:,:,1,k);
+        roiobj.image(:,:,pixBud, frameIdx(k)) = budConfMap(:,:,1,k);
     end
 else
     budConfFull = zeros(Hfull,Wfull,1,Tfull,'uint8');
@@ -649,16 +652,16 @@ else
     for k = 1:nFill
         budConfFull(:,:,1, frameIdx(k)) = budConfMap(:,:,1,k);
     end
-    roiobj.addChannel(budConfFull, confName, [0 1 0], [0 0 0]);
+    roiobj.addChannel(budConfFull, budName, [0 1 0], [0 0 0]);
 end
-pixConf = roiobj.findChannelID(confName);
-if ~isempty(pixConf)
-    localSetIndexedOutputDisplay(roiobj, pixConf, [0 1 0]);
+pixBud = roiobj.findChannelID(budName);
+if ~isempty(pixBud)
+    localSetIndexedOutputDisplay(roiobj, pixBud, [0 1 0]);
 end
 
 dataout  = roiobj.data;
 imageout = roiobj.image;
-paramout.saveChannels = {cellName, confName};
+paramout.saveChannels = {cellName, budName};
 
 end % main function
 

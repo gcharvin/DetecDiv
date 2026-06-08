@@ -2953,8 +2953,8 @@ function name = normalizePhysicalResourceOutputName(node, spec, name)
             strcmp(resourceType, 'mask') && strcmp(role, 'segmentation')
         name = cellposeSegmentationChannelNameLocal(node, name);
     elseif strcmp(nodeType, 'processor') && strcmp(pkgName, 'trackmotherlineageviterbi') && ...
-            strcmp(resourceType, 'channel') && strcmp(role, 'lineage_mask')
-        name = trackMotherLineageMaskChannelNameLocal(name);
+            strcmp(resourceType, 'channel') && any(strcmp(role, {'lineage_mask','lineage_cell_mask','lineage_confidence','lineage_mother_mask','lineage_bud_mask'}))
+        name = trackMotherLineageChannelNameLocal(name, role);
     end
 end
 
@@ -2979,13 +2979,17 @@ function name = cellposeSegmentationChannelNameLocal(node, outputName)
     name = ['results_' outputName '_' className];
 end
 
-function name = trackMotherLineageMaskChannelNameLocal(outputName)
+function name = trackMotherLineageChannelNameLocal(outputName, role)
     outputName = char(string(outputName));
-    if endsWith(outputName, '_cell', 'IgnoreCase', true) || endsWith(outputName, '_conf', 'IgnoreCase', true)
+    if endsWith(outputName, '_cell', 'IgnoreCase', true) || endsWith(outputName, '_bud', 'IgnoreCase', true) || endsWith(outputName, '_conf', 'IgnoreCase', true)
         name = outputName;
         return;
     end
-    name = [outputName '_cell'];
+    if any(strcmpi(char(string(role)), {'lineage_confidence','lineage_bud_mask'}))
+        name = [outputName '_bud'];
+    else
+        name = [outputName '_cell'];
+    end
 end
 
 function txt = firstTextValueLocal(value, fallback)
@@ -3179,7 +3183,7 @@ function tf = resourceRolesCompatible(wantedRole, availableRole)
         return;
     end
     if strcmp(wantedRole, 'mask_roi_image')
-        tf = any(strcmp(availableRole, {'roi_image','mask_roi_image','derived_roi_image','tracking','lineage_mask'}));
+        tf = any(strcmp(availableRole, {'roi_image','mask_roi_image','derived_roi_image','tracking','lineage_mask','lineage_cell_mask','lineage_mother_mask','lineage_bud_mask'}));
         return;
     end
     if strcmp(wantedRole, 'roi_image')
@@ -3190,7 +3194,7 @@ function tf = resourceRolesCompatible(wantedRole, availableRole)
 end
 
 function roles = roiScorableChannelRoles()
-    roles = {'roi_image','score_roi_image','derived_roi_image','probability','tracking','lineage_mask'};
+    roles = {'roi_image','score_roi_image','derived_roi_image','probability','tracking','lineage_mask','lineage_cell_mask','lineage_confidence','lineage_mother_mask','lineage_bud_mask'};
 end
 
 function out = nonContextResources(resources)
@@ -3211,9 +3215,13 @@ function choice = findSymbolicResourceChoice(resources, symbolicValue)
     if isempty(sourceNode)
         return;
     end
+    requestedRole = symbolicResourceRole(symbolicValue);
     resources = normalizeResourceInventory(resources);
     for i = 1:numel(resources)
-        if strcmp(char(string(resources(i).sourceNode)), sourceNode)
+        resourceRole = char(string(resources(i).role));
+        resourceSymbol = char(string(resources(i).symbol));
+        if strcmp(char(string(resources(i).sourceNode)), sourceNode) && ...
+                (isempty(requestedRole) || strcmpi(resourceRole, requestedRole) || strcmpi(resourceSymbol, requestedRole) || endsWith(resourceSymbol, ['.' requestedRole], 'IgnoreCase', true))
             choice(end+1) = resources(i); %#ok<AGROW>
         end
     end
@@ -3402,6 +3410,28 @@ function sourceNode = symbolicResourceSourceNode(symbolicValue)
     tokens = regexp(symbolicValue, 'output\s+from\s+([^/\s>]+)', 'tokens', 'once');
     if ~isempty(tokens)
         sourceNode = strtrim(tokens{1});
+    end
+end
+
+function role = symbolicResourceRole(symbolicValue)
+    role = '';
+    symbolicValue = strtrim(char(string(symbolicValue)));
+    if startsWith(symbolicValue, '@resource:')
+        parts = strsplit(symbolicValue, ':');
+        if numel(parts) >= 2
+            role = strtrim(parts{2});
+        end
+    end
+    role = canonicalSymbolicResourceRole(role);
+end
+
+function role = canonicalSymbolicResourceRole(role)
+    role = char(string(role));
+    switch lower(strtrim(role))
+        case {'lineage_cell','lineage_cell_mask','lineage_mask'}
+            role = 'lineage_mother';
+        case {'lineage_conf','lineage_confidence'}
+            role = 'lineage_bud';
     end
 end
 

@@ -14,6 +14,7 @@ tests{end+1} = @testComputeMetricsAcceptsSymbolicCellposeMask; %#ok<AGROW>
 tests{end+1} = @testComputeMetricsAcceptsSymbolicGeneratedScoreChannel; %#ok<AGROW>
 tests{end+1} = @testRoiTrackedAcceptsSymbolicCellposeMask; %#ok<AGROW>
 tests{end+1} = @testTrackMotherLineageAcceptsSymbolicCellposeMask; %#ok<AGROW>
+tests{end+1} = @testTrackMotherLineageViterbiOutputsAreExplicit; %#ok<AGROW>
 tests{end+1} = @testResourceBindingAddsExecutionDependency; %#ok<AGROW>
 tests{end+1} = @testResourceBindingVisibleWhenExecutionEdgeExists; %#ok<AGROW>
 tests{end+1} = @testPipelineSaveLoadPreservesSymbolicBindings; %#ok<AGROW>
@@ -281,6 +282,43 @@ assert(any(strcmp({resolution.applied.nodeId}, 'processor_trackmotherlineagevite
 
 [ok, validation] = validatePipeline(pipe, ctx, struct('allowGui', false));
 assert(ok, 'trackMotherLineageViterbi should accept resolved CellposeSAM mask binding: %s', strjoin(validation.errors, ' | '));
+end
+
+function testTrackMotherLineageViterbiOutputsAreExplicit()
+n1 = makeNode('roiExtract', 'roiExtract', struct('extractChannels', {{'ch1','cellposeSAM'}}));
+n1.id = 'roiextract_1';
+n2 = makeNode('processor', 'trackMotherLineageViterbi', struct( ...
+    'pkg', 'trackMotherLineageViterbi', ...
+    'instanceChannelName', 'cellposeSAM', ...
+    'outputChannelName', 'MotherLineageViterbi'));
+n2.id = 'track_viterbi_1';
+n3 = makeNode('processor', 'computeMaxProjection', struct( ...
+    'pkg', 'computeMaxProjection', ...
+    'channel', '@resource:lineage_bud:track_viterbi_1', ...
+    'outputChannelName', 'max_viterbi_bud'));
+n3.id = 'max_bud_1';
+pipe = struct( ...
+    'nodes', [n1 n2 n3], ...
+    'edges', makeEdges({'roiextract_1','track_viterbi_1'; 'track_viterbi_1','max_bud_1'}), ...
+    'branches', struct([]));
+ctx = struct('images', 1, 'roiList', 1, 'channels', {{'ch1','cellposeSAM'}});
+[pipe, resolution] = pipelineResolveBindings(pipe, ctx, struct('allowGui', false));
+idxMax = find(strcmp({pipe.nodes.id}, 'max_bud_1'), 1);
+assert(~isempty(idxMax), 'Missing downstream max projection node.');
+assert(strcmp(pipe.nodes(idxMax).params.channel, 'MotherLineageViterbi_bud'), ...
+    'Symbolic lineage_bud binding should resolve to MotherLineageViterbi_bud.');
+assert(any(strcmp({resolution.applied.nodeId}, 'max_bud_1') & strcmp({resolution.applied.param}, 'channel')), ...
+    'Binding resolution should report the lineage bud-mask auto binding.');
+
+[ok, validation] = validatePipeline(pipe, ctx, struct('allowGui', false));
+assert(ok, 'Explicit Viterbi output validation failed: %s', strjoin(validation.errors, ' | '));
+key = matlab.lang.makeValidName('track_viterbi_1');
+outputs = validation.binding.nodes.(key).resources.outputs;
+assert(numel(outputs) == 2, 'trackMotherLineageViterbi should expose two output resources.');
+assert(any(strcmp({outputs.role}, 'lineage_mother_mask') & strcmp({outputs.concreteName}, 'MotherLineageViterbi_cell')), ...
+    'Missing explicit Viterbi mother mask output.');
+assert(any(strcmp({outputs.role}, 'lineage_bud_mask') & strcmp({outputs.concreteName}, 'MotherLineageViterbi_bud')), ...
+    'Missing explicit Viterbi bud mask output.');
 end
 
 function testResourceBindingAddsExecutionDependency()
