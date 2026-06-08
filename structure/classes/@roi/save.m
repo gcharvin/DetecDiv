@@ -281,9 +281,9 @@ while ~success && attempts < max_attempts
             if exist(h5File,'file')
                 copyfile(h5File, h5BakFile, 'f'); %#ok<*NASGU>
             end
-            % remplacement atomique
-            if exist(h5File,'file'), delete(h5File); end
-            movefile(h5Tmp, h5File, 'f');
+            % CIFS/SMB can transiently reject delete/rename with
+            % "device or resource busy"; install with retries and copy fallback.
+            localInstallStagedFile(h5Tmp, h5File, localBytes, 'HDF5');
             finalOk = false;
             for kMove = 1:5
                 if exist(h5File,'file')
@@ -372,8 +372,7 @@ while ~success && attempts < max_attempts
         if exist(dataFile,'file')
             copyfile(dataFile, dataBak, 'f');
         end
-        if exist(dataFile,'file'), delete(dataFile); end
-        movefile(dataTmp, dataFile, 'f');
+        localInstallStagedFile(dataTmp, dataFile, localBytes, 'MAT');
 
         dataSaved = true;
 
@@ -593,6 +592,67 @@ ok = false;
 try
     info = h5info(h5Path); %#ok<NASGU>
     ok = true;
+catch
+    ok = false;
+end
+end
+
+function localInstallStagedFile(tmpFile, finalFile, expectedBytes, label)
+if nargin < 4 || isempty(label)
+    label = 'file';
+end
+lastMessage = '';
+for attempt = 1:8
+    try
+        if exist(finalFile,'file')
+            try
+                delete(finalFile);
+            catch MEdelete
+                lastMessage = MEdelete.message;
+                pause(min(0.25 * attempt, 2));
+                continue;
+            end
+        end
+
+        installed = false;
+        try
+            movefile(tmpFile, finalFile, 'f');
+            installed = true;
+        catch MEmove
+            lastMessage = MEmove.message;
+            if exist(tmpFile,'file') && exist(finalFile,'file') ~= 2
+                try
+                    copyfile(tmpFile, finalFile, 'f');
+                    installed = true;
+                catch MEcopy
+                    lastMessage = [lastMessage ' | copy fallback: ' MEcopy.message];
+                end
+            end
+        end
+
+        if installed && localFileHasExpectedSize(finalFile, expectedBytes)
+            if exist(tmpFile,'file')
+                try, delete(tmpFile); catch, end
+            end
+            return;
+        end
+    catch ME
+        lastMessage = ME.message;
+    end
+    pause(min(0.25 * attempt, 2));
+end
+error('roi:save:installStagedFileFailed', ...
+    'Failed to install staged %s file "%s": %s', char(string(label)), finalFile, lastMessage);
+end
+
+function ok = localFileHasExpectedSize(filePath, expectedBytes)
+ok = false;
+try
+    if exist(filePath,'file') ~= 2
+        return;
+    end
+    info = dir(filePath);
+    ok = ~isempty(info) && info.bytes == expectedBytes && info.bytes > 0;
 catch
     ok = false;
 end

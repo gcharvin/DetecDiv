@@ -141,14 +141,14 @@ function shallowSave(shallowObj, option, progress)
     % 4.d) Remplacement du fichier principal
     try
         localSetProgress(progress, 0.97, 'Installing new project file...');
-        if exist(projectTarget, 'file'), delete(projectTarget); end
-        movefile(tmpTarget, projectTarget, 'f');
+        localInstallProjectMat(tmpTarget, projectTarget);
         fprintf('[OK]   New MAT moved into place: %s\n', projectTarget);
     catch ME
         fprintf(2, '[ERR]  Failed to move new MAT into place: %s\n', ME.message);
         if exist(tmpTarget, 'file'); delete(tmpTarget); end
         fprintf('--------------------------------------------\n\n');
-        return;
+        error('shallowSave:installProjectMatFailed', ...
+            'Failed to install project MAT "%s": %s', projectTarget, ME.message);
     end
 
     % 4.e) Vérification finale
@@ -174,6 +174,51 @@ function ok = localVerifyMat(matPath)
     catch
         ok = false;
     end
+end
+
+function localInstallProjectMat(tmpTarget, projectTarget)
+    lastMessage = '';
+    for attempt = 1:8
+        try
+            if exist(projectTarget, 'file')
+                try
+                    delete(projectTarget);
+                catch MEdelete
+                    lastMessage = MEdelete.message;
+                    pause(min(0.25 * attempt, 2));
+                    continue;
+                end
+            end
+
+            installed = false;
+            try
+                movefile(tmpTarget, projectTarget, 'f');
+                installed = true;
+            catch MEmove
+                lastMessage = MEmove.message;
+                if exist(tmpTarget, 'file') && exist(projectTarget, 'file') ~= 2
+                    try
+                        copyfile(tmpTarget, projectTarget, 'f');
+                        installed = true;
+                    catch MEcopy
+                        lastMessage = [lastMessage ' | copy fallback: ' MEcopy.message];
+                    end
+                end
+            end
+
+            if installed && localVerifyMat(projectTarget)
+                if exist(tmpTarget, 'file')
+                    try, delete(tmpTarget); catch, end
+                end
+                return;
+            end
+        catch ME
+            lastMessage = ME.message;
+        end
+        pause(min(0.25 * attempt, 2));
+    end
+    error('shallowSave:installProjectMatRetriesFailed', ...
+        'Could not install project MAT after retries: %s', lastMessage);
 end
 
 function localSetProgress(progress, value, message)
