@@ -521,16 +521,37 @@ function runId = localSuggestRunId(shallowObj, templateId)
     end
 end
 
-function localMaybeSaveProject(shallowObj, payload)
+function [ok, msg] = localMaybeSaveProject(shallowObj, payload)
+    ok = true;
+    msg = '';
     saveProject = true;
+    saveMode = 'shallowObj';
     try
         if isfield(payload, 'execution') && isstruct(payload.execution) && isfield(payload.execution, 'save_project')
             saveProject = logical(payload.execution.save_project);
         end
+        if isfield(payload, 'execution') && isstruct(payload.execution)
+            if isfield(payload.execution, 'save_project_mode') && ~isempty(payload.execution.save_project_mode)
+                saveMode = char(string(payload.execution.save_project_mode));
+            elseif isfield(payload.execution, 'saveProjectMode') && ~isempty(payload.execution.saveProjectMode)
+                saveMode = char(string(payload.execution.saveProjectMode));
+            end
+        end
     catch
     end
     if saveProject
-        shallowSave(shallowObj);
+        try
+            if any(strcmpi(saveMode, {'full','fullProject','projectAndRois'}))
+                shallowSave(shallowObj);
+            else
+                shallowSave(shallowObj, 'shallowObj');
+            end
+        catch ME
+            ok = false;
+            msg = ME.message;
+            warning('detecdiv_run_pipeline_job:ProjectSaveFailed', ...
+                'Final project save failed after pipeline execution: %s', ME.message);
+        end
     end
 end
 
