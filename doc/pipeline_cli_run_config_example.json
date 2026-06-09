@@ -1,0 +1,42 @@
+{
+  "project": "C:/path/to/project.mat",
+  "pipeline": "C:/path/to/pipeline/pipeline.json",
+  "runId": "example_run_01",
+  "description": "Example non-interactive pipeline run",
+  "ctx": {
+    "sel": {
+      "frames": [1, 2, 3]
+    }
+  },
+  "run": {
+    "runPolicy": "restart",
+    "selectedNodes": [
+      "load_data",
+      "identify_rois",
+      "extract_rois"
+    ]
+  },
+  "io": {
+    "existingPolicy": "replace",
+    "globalExistingPolicy": "replace"
+  },
+  "nodeParams": {
+    "load_data": {
+      "path": "D:/path/to/raw_data",
+      "interactive": false,
+      "write": true
+    },
+    "identify_rois": {
+      "outputName": "rois"
+    },
+    "extract_rois": {
+      "outputName": "roi_crops"
+    }
+  },
+  "execution": {
+    "dryRun": false,
+    "allowGUI": false,
+    "saveProject": true,
+    "saveMode": "shallowObj"
+  }
+}
