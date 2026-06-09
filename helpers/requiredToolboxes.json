@@ -75,6 +75,14 @@
     ]
   },
   {
+    "name": "Database Toolbox",
+    "count": 2,
+    "files": [
+      "C:\\Users\\charvin\\Documents\\MATLAB\\DetecDiv\\helpers\\detecdiv_catalog_init.m",
+      "C:\\Users\\charvin\\Documents\\MATLAB\\DetecDiv\\helpers\\detecdiv_catalog_list_projects.m"
+    ]
+  },
+  {
     "name": "Image Processing Toolbox",
     "count": 102,
     "files": [

@@ -10,6 +10,8 @@ function [conn, dbFile] = detecdiv_catalog_init(dbFile)
         dbFile = localDefaultDbFile();
     end
 
+    detecdiv_require_toolbox('Database Toolbox', 'sqlite');
+
     dbFile = localNormalizePath(dbFile);
     parentDir = fileparts(dbFile);
     if ~isempty(parentDir) && ~isfolder(parentDir)

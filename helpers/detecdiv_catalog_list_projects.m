@@ -10,6 +10,8 @@ function projects = detecdiv_catalog_list_projects(dbFile, varargin)
         dbFile = fullfile(prefdir, 'detecdiv_catalog.sqlite');
     end
 
+    detecdiv_require_toolbox('Database Toolbox', 'sqlite');
+
     ip = inputParser;
     ip.addParameter('HealthStatus', '', @(x)ischar(x) || isstring(x));
     ip.addParameter('RootPath', '', @(x)ischar(x) || isstring(x));

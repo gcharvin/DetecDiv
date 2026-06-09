@@ -71,6 +71,8 @@ We recommend using Matlab >= R2021a to ensure the compatibility of the software.
 
 -Deep Learning Toolbox                                 Version 14.2        (R2021a)
 
+-Database Toolbox                                      Version 10.1        (R2021a)
+
 -Image Processing Toolbox                              Version 11.3        (R2021a)
 
 -Statistics and Machine Learning Toolbox               Version 12.1        (R2021a)
