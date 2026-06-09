@@ -2,38 +2,22 @@ function checkInstalledToolboxes(filePath)
 % Check whether the required toolboxes and pretrained models (GoogLeNet, ResNet50) are installed.
 
     if nargin < 1
-        % Default to searching for 'requiredToolboxes.mat' or 'requiredToolboxes.json'
+        % Merge both sources when available so a stale MAT file cannot mask a newer JSON export.
         scriptDir = fileparts(mfilename('fullpath'));
         matFile = fullfile(scriptDir, 'requiredToolboxes.mat');
         jsonFile = fullfile(scriptDir, 'requiredToolboxes.json');
 
-        if isfile(matFile)
-            filePath = matFile;
+        if isfile(matFile) && isfile(jsonFile)
+            toolboxList = unique([localLoadToolboxNames(matFile), localLoadToolboxNames(jsonFile)], 'stable');
+        elseif isfile(matFile)
+            toolboxList = localLoadToolboxNames(matFile);
         elseif isfile(jsonFile)
-            filePath = jsonFile;
+            toolboxList = localLoadToolboxNames(jsonFile);
         else
             error('No requiredToolboxes.mat or requiredToolboxes.json found in script directory.');
         end
-    end
-
-    % Load toolbox names
-    if endsWith(filePath, '.mat')
-        data = load(filePath);
-        if isfield(data, 'requiredToolboxes')
-            toolboxList = data.requiredToolboxes;
-        elseif isfield(data, 'toolboxStats')
-            toolboxList = {data.toolboxStats.name};
-        else
-            error('MAT file does not contain a recognized toolbox list.');
-        end
-    elseif endsWith(filePath, '.json')
-        fid = fopen(filePath, 'r');
-        raw = fread(fid, inf, 'char=>char')';
-        fclose(fid);
-        toolboxStats = jsondecode(raw);
-        toolboxList = {toolboxStats.name};
     else
-        error('Unsupported file type: %s', filePath);
+        toolboxList = localLoadToolboxNames(filePath);
     end
 
     % Get list of installed products
@@ -82,4 +66,27 @@ function checkInstalledToolboxes(filePath)
             fprintf('  - %s\n', missing{i});
         end
     end
+end
+
+function toolboxList = localLoadToolboxNames(filePath)
+    if endsWith(filePath, '.mat')
+        data = load(filePath);
+        if isfield(data, 'requiredToolboxes')
+            toolboxList = cellstr(string(data.requiredToolboxes(:)'));
+        elseif isfield(data, 'toolboxStats')
+            toolboxList = cellstr(string({data.toolboxStats.name}));
+        else
+            error('MAT file does not contain a recognized toolbox list.');
+        end
+    elseif endsWith(filePath, '.json')
+        fid = fopen(filePath, 'r');
+        raw = fread(fid, inf, 'char=>char')';
+        fclose(fid);
+        toolboxStats = jsondecode(raw);
+        toolboxList = cellstr(string({toolboxStats.name}));
+    else
+        error('Unsupported file type: %s', filePath);
+    end
+
+    toolboxList = unique(toolboxList, 'stable');
 end
