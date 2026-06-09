@@ -2117,10 +2117,10 @@ function ensureProcessorPackagePath(node, p, ctx)
     roots = {};
     if isstruct(p)
         if isfield(p, 'customPackageRoot') && ~isempty(p.customPackageRoot)
-            roots{end+1} = char(string(p.customPackageRoot)); %#ok<AGROW>
+            roots{end+1} = resolveNodeRelativeRuntimePath(char(string(p.customPackageRoot)), ctx); %#ok<AGROW>
         end
         if isfield(p, 'customPackageDir') && ~isempty(p.customPackageDir)
-            packageDir = char(string(p.customPackageDir));
+            packageDir = resolveNodeRelativeRuntimePath(char(string(p.customPackageDir)), ctx);
             if exist(packageDir, 'dir') == 7
                 roots{end+1} = fileparts(packageDir); %#ok<AGROW>
             else
@@ -2176,11 +2176,70 @@ function p = mapNodeRuntimePathParams(node, p, ctx)
         if isempty(strtrim(text))
             continue;
         end
+        text = resolveNodeRelativeRuntimePath(text, ctx);
         [mappedText, mapped] = mapModulePathToServerPath(text, ctx);
         if mapped
             p.(name) = mappedText;
+        else
+            p.(name) = text;
         end
     end
+end
+
+function pathOut = resolveNodeRelativeRuntimePath(pathIn, ctx)
+pathOut = char(string(pathIn));
+if isempty(pathOut) || isAbsolutePathLocal(pathOut)
+    return;
+end
+if ~contains(pathOut, '/') && ~contains(pathOut, '\')
+    return;
+end
+bases = {};
+try
+    if isfield(ctx,'pipelineRef') && isstruct(ctx.pipelineRef) && isfield(ctx.pipelineRef,'path') && ~isempty(ctx.pipelineRef.path)
+        bases{end+1} = char(string(ctx.pipelineRef.path)); %#ok<AGROW>
+    end
+catch
+end
+try
+    if isfield(ctx,'templatePath') && ~isempty(ctx.templatePath)
+        bases{end+1} = char(string(ctx.templatePath)); %#ok<AGROW>
+    end
+catch
+end
+try
+    if isfield(ctx,'run') && isstruct(ctx.run)
+        runPath = getfielddefault(ctx.run, 'runPath', getfielddefault(ctx.run, 'path', ''));
+        if ~isempty(runPath)
+            bases{end+1} = char(string(runPath)); %#ok<AGROW>
+        end
+    end
+catch
+end
+for i = 1:numel(bases)
+    base = bases{i};
+    if exist(base, 'file') == 2
+        base = fileparts(base);
+    end
+    if exist(base, 'dir') ~= 7
+        continue;
+    end
+    candidate = fullfile(base, pathOut);
+    if exist(candidate, 'dir') == 7 || exist(candidate, 'file') == 2 || canCreateParentPath(candidate)
+        pathOut = candidate;
+        return;
+    end
+end
+end
+
+function tf = canCreateParentPath(pathIn)
+tf = false;
+try
+    parent = fileparts(char(string(pathIn)));
+    tf = ~isempty(parent) && (exist(parent, 'dir') == 7 || mkdir(parent));
+catch
+    tf = false;
+end
 end
 
 function keys = explicitPathParamKeys(node)

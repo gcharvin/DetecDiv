@@ -12,6 +12,8 @@ function [bundlePath, manifest] = pipelineExport(pipeIn, bundlePath, varargin)
 %   'includeTrainingData'  logical (default false)
 %   'includeTrainingRois'  logical (default false)
 %   'includeRunResults'    logical (default false)
+%   'includePlugins'       logical (default true)
+%   'rebaseOutputPaths'    logical (default true)
 %   'runObjects'           pipelineRun array/cell (default [])
 %   'projectObj'           shallow project object used to materialize ROI-pattern assets
 %   'overwrite'            logical (default false)
@@ -29,6 +31,8 @@ function [bundlePath, manifest] = pipelineExport(pipeIn, bundlePath, varargin)
         'includeTrainingData', false, ...
         'includeTrainingRois', false, ...
         'includeRunResults', false, ...
+        'includePlugins', true, ...
+        'rebaseOutputPaths', true, ...
         'runObjects', [], ...
         'projectObj', [], ...
         'overwrite', false, ...
@@ -49,6 +53,10 @@ function [bundlePath, manifest] = pipelineExport(pipeIn, bundlePath, varargin)
                 opts.includeTrainingRois = logical(value);
             case 'includerunresults'
                 opts.includeRunResults = logical(value);
+            case 'includeplugins'
+                opts.includePlugins = logical(value);
+            case 'rebaseoutputpaths'
+                opts.rebaseOutputPaths = logical(value);
             case 'runobjects'
                 opts.runObjects = value;
             case {'projectobj','shallowobj'}
@@ -220,7 +228,14 @@ function [summary, nodeOut] = exportNodeBundle(node, opts, bundleRoot, pipelineD
     summary.pkg = char(string(getFieldOrDefault(node, 'pkg', '')));
     summary.contract = contract;
     summary.source = source;
-    summary.exported = struct('definition', true, 'definitionAssets', {{}}, 'inferenceAssets', {{}}, 'trainingAssets', {{}}, 'trainingRois', {{}});
+    summary.exported = struct( ...
+        'definition', true, ...
+        'definitionAssets', {{}}, ...
+        'inferenceAssets', {{}}, ...
+        'trainingAssets', {{}}, ...
+        'trainingRois', {{}}, ...
+        'plugins', {{}}, ...
+        'pathRewrites', {{}});
     summary.warnings = {};
     exportFolderName = exportNodeFolderName(summary, source);
 
@@ -231,6 +246,17 @@ function [summary, nodeOut] = exportNodeBundle(node, opts, bundleRoot, pipelineD
         [nodeOut, defCopied, defWarnings] = exportDefinitionAssets(nodeOut, opts, contract, targetDir, pipelineDir, templatePath);
         summary.exported.definitionAssets = defCopied;
         summary.warnings = [summary.warnings, defWarnings];
+    end
+
+    if opts.includePlugins
+        [nodeOut, pluginCopied, pluginWarnings] = exportNodePlugins(nodeOut, assetsDir, pipelineDir, opts);
+        summary.exported.plugins = pluginCopied;
+        summary.warnings = [summary.warnings, pluginWarnings];
+    end
+
+    if opts.rebaseOutputPaths
+        [nodeOut, pathRewrites] = rebaseNodeOutputPaths(nodeOut, pipelineDir);
+        summary.exported.pathRewrites = pathRewrites;
     end
 
     if isempty(source.path) || exist(source.path, 'dir') ~= 7
@@ -261,6 +287,113 @@ function [summary, nodeOut] = exportNodeBundle(node, opts, bundleRoot, pipelineD
     if ~isempty(relModulePath)
         nodeOut = rewriteNodeReferenceForBundle(nodeOut, source, relModulePath);
     end
+end
+
+function [nodeOut, copied, warningsOut] = exportNodePlugins(nodeOut, assetsDir, pipelineDir, opts)
+    copied = {};
+    warningsOut = {};
+    params = getFieldOrDefault(nodeOut, 'params', struct());
+    if ~isstruct(params)
+        return;
+    end
+
+    packageDir = '';
+    packageRoot = '';
+    if isfield(params, 'customPackageDir') && ~isempty(params.customPackageDir)
+        packageDir = char(string(params.customPackageDir));
+    end
+    if isfield(params, 'customPackageRoot') && ~isempty(params.customPackageRoot)
+        packageRoot = char(string(params.customPackageRoot));
+    end
+    if isempty(packageDir) && ~isempty(packageRoot) && isfield(nodeOut, 'pkg') && ~isempty(nodeOut.pkg)
+        packageDir = fullfile(packageRoot, ['+' char(string(nodeOut.pkg))]);
+    end
+    if isempty(packageDir) || exist(packageDir, 'dir') ~= 7
+        if ~isempty(packageDir)
+            warningsOut{end+1} = sprintf('Custom package folder was not found: %s', packageDir);
+        end
+        return;
+    end
+
+    if isempty(packageRoot)
+        packageRoot = fileparts(packageDir);
+    end
+    if exist(packageRoot, 'dir') ~= 7
+        packageRoot = fileparts(packageDir);
+    end
+
+    packageLeaf = getLeafNameLocal(packageDir);
+    pluginKind = lower(char(string(getFieldOrDefault(nodeOut, 'type', 'plugin'))));
+    if strcmp(pluginKind, 'processor')
+        pluginKind = 'processor';
+    elseif strcmp(pluginKind, 'classifier')
+        pluginKind = 'classifier';
+    else
+        pluginKind = 'module';
+    end
+    targetRoot = fullfile(assetsDir, 'plugins', pluginKind);
+    targetDir = fullfile(targetRoot, packageLeaf);
+    ensureDir(targetRoot);
+    if exist(targetDir, 'dir') == 7
+        rmdir(targetDir, 's');
+    end
+    [ok, msg] = copyfile(packageDir, targetDir);
+    if ~ok
+        warningsOut{end+1} = sprintf('Could not copy custom package %s: %s', packageDir, msg);
+        return;
+    end
+
+    copied = listFilesRelativeToBundle(targetDir, fileparts(assetsDir));
+    notifyProgress(opts, 'file', struct( ...
+        'sourcePath', packageDir, ...
+        'targetPath', targetDir, ...
+        'message', sprintf('Copying plugin package: %s', packageLeaf)));
+
+    params.customPackageRoot = relativePathFromTo(pipelineDir, targetRoot);
+    params.customPackageDir = relativePathFromTo(pipelineDir, targetDir);
+    if isfield(params, 'customPackageLoadedAt')
+        params.customPackageLoadedAt = '';
+    end
+    nodeOut.params = params;
+end
+
+function [nodeOut, rewrites] = rebaseNodeOutputPaths(nodeOut, pipelineDir)
+    rewrites = {};
+    params = getFieldOrDefault(nodeOut, 'params', struct());
+    if ~isstruct(params)
+        return;
+    end
+    keys = fieldnames(params);
+    nodeId = sanitizeName(getFieldOrDefault(nodeOut, 'id', 'node'));
+    for i = 1:numel(keys)
+        key = keys{i};
+        if ~isOutputPathKey(key)
+            continue;
+        end
+        value = params.(key);
+        if ~(ischar(value) || (isstring(value) && isscalar(value)))
+            continue;
+        end
+        oldPath = char(string(value));
+        if isempty(strtrim(oldPath))
+            continue;
+        end
+        leaf = getLeafNameLocal(oldPath);
+        if isempty(leaf)
+            leaf = sanitizeName(key);
+        end
+        newPath = fullfile('..', 'outputs', nodeId, leaf);
+        params.(key) = newPath;
+        rewrites{end+1} = struct( ...
+            'param', key, ...
+            'kind', 'output', ...
+            'originalPath', oldPath, ...
+            'bundlePath', newPath); %#ok<AGROW>
+
+        outputDir = fullfile(fileparts(pipelineDir), 'outputs', nodeId, leaf);
+        ensureDir(outputDir);
+    end
+    nodeOut.params = params;
 end
 
 function copied = exportInferenceAssets(source, contract, targetDir, opts)
@@ -910,6 +1043,31 @@ function copied = copySpecificFiles(files, targetRoot, opts)
             warning('pipelineExport:CopyRoi', 'Could not copy %s: %s', src, msg);
         end
     end
+end
+
+function files = listFilesRelativeToBundle(rootPath, bundleRoot)
+    files = {};
+    if isempty(rootPath) || exist(rootPath, 'dir') ~= 7
+        return;
+    end
+    d = dir(fullfile(rootPath, '**', '*'));
+    d = d(~[d.isdir]);
+    for i = 1:numel(d)
+        rel = relativePathFromTo(bundleRoot, fullfile(d(i).folder, d(i).name));
+        files{end+1} = strrep(rel, '\', '/'); %#ok<AGROW>
+    end
+end
+
+function tf = isOutputPathKey(key)
+    key = lower(char(string(key)));
+    tf = strcmp(key, 'outputdir') || strcmp(key, 'outputfolder') || ...
+        strcmp(key, 'exportdir') || strcmp(key, 'exportfolder') || ...
+        strcmp(key, 'resultsdir') || strcmp(key, 'resultsfolder') || ...
+        strcmp(key, 'figuresdir') || strcmp(key, 'figuresfolder') || ...
+        strcmp(key, 'workbookdir') || strcmp(key, 'reportdir') || ...
+        endsWith(key, 'outputdir') || endsWith(key, 'outputfolder') || ...
+        endsWith(key, 'exportdir') || endsWith(key, 'exportfolder') || ...
+        endsWith(key, 'resultsdir') || endsWith(key, 'resultsfolder');
 end
 
 function tf = isExcludedAsset(p, excludeRules)
