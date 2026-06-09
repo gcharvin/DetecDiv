@@ -52,10 +52,21 @@ function ctx = runCore(ctx)
     end
     p = applyExistingPolicyToPatternParams(p, ctx);
 
-    if isfield(ctx,'fovIndex') && ~isempty(ctx.fovIndex)
+    hasRuntimeFovSelection = isfield(ctx,'sel') && isstruct(ctx.sel) && isfield(ctx.sel,'fovs');
+    if hasRuntimeFovSelection
+        if isempty(ctx.sel.fovs)
+            fovIdx = 1:numel(fovList);
+        else
+            fovIdx = normalizeFovSelection(ctx.sel.fovs, numel(fovList));
+        end
+    elseif isfield(ctx,'fovIndex') && ~isempty(ctx.fovIndex)
         fovIdx = ctx.fovIndex(:)';
     else
         fovIdx = 1:numel(fovList);
+    end
+    fovIdx = normalizeFovSelection(fovIdx, numel(fovList));
+    if isempty(fovIdx)
+        return;
     end
 
     resume = true;
@@ -399,6 +410,27 @@ function roiList = collectROIs(fovList)
             roiList = [roiList r(:)']; %#ok<AGROW>
         end
     end
+end
+
+function fovIdx = normalizeFovSelection(selection, nFov)
+    if isempty(selection)
+        fovIdx = [];
+        return;
+    end
+    if isnumeric(selection) || islogical(selection)
+        fovIdx = reshape(double(selection), 1, []);
+    elseif iscell(selection)
+        fovIdx = [];
+        for i = 1:numel(selection)
+            fovIdx = [fovIdx normalizeFovSelection(selection{i}, nFov)]; %#ok<AGROW>
+        end
+    elseif ischar(selection) || (isstring(selection) && isscalar(selection))
+        nums = regexp(char(selection), '\d+', 'match');
+        fovIdx = str2double(nums);
+    else
+        fovIdx = [];
+    end
+    fovIdx = unique(round(fovIdx(isfinite(fovIdx) & fovIdx >= 1 & fovIdx <= nFov)), 'stable');
 end
 
 function [pattimg, chanIdx, refFrame, crop] = buildPatternPatch(fovList, targetFov, pattern, p, ctx)

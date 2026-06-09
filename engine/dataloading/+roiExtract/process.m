@@ -51,21 +51,27 @@ function ctx = process(ctx)
         p = mergeStructOverride(p, ctx.params);
     end
 
+    hasRuntimeFovSelection = isfield(ctx,'sel') && isstruct(ctx.sel) && isfield(ctx.sel,'fovs');
     runtimeFovSelection = [];
-    if isfield(ctx,'sel') && isstruct(ctx.sel) && isfield(ctx.sel,'fovs') && ~isempty(ctx.sel.fovs)
+    if hasRuntimeFovSelection && ~isempty(ctx.sel.fovs)
         runtimeFovSelection = ctx.sel.fovs;
     end
+    hasRuntimeRoiSelection = isfield(ctx,'sel') && isstruct(ctx.sel) && isfield(ctx.sel,'rois');
     runtimeRoiSelection = [];
-    if isfield(ctx,'sel') && isstruct(ctx.sel) && isfield(ctx.sel,'rois') && ~isempty(ctx.sel.rois)
+    if hasRuntimeRoiSelection && ~isempty(ctx.sel.rois)
         runtimeRoiSelection = ctx.sel.rois;
     end
 
     % fov selection. Runtime run selections must win over saved dataloading
     % profiles so a stale template cannot silently narrow a submitted run.
-    if isfield(ctx,'fovIndex') && ~isempty(ctx.fovIndex)
+    if hasRuntimeFovSelection
+        if isempty(runtimeFovSelection)
+            fovIdx = 1:numel(fovList);
+        else
+            fovIdx = normalizeRoiSelectionParam(runtimeFovSelection);
+        end
+    elseif isfield(ctx,'fovIndex') && ~isempty(ctx.fovIndex)
         fovIdx = ctx.fovIndex(:)';
-    elseif ~isempty(runtimeFovSelection)
-        fovIdx = normalizeRoiSelectionParam(runtimeFovSelection);
     elseif isfield(p,'fovIndex') && ~isempty(p.fovIndex)
         fovIdx = p.fovIndex(:)';
     else
@@ -82,7 +88,7 @@ function ctx = process(ctx)
     if isfield(p,'extractChannels') && ~isempty(p.extractChannels)
         p.channels = normalizeExtractChannelsParam(p.extractChannels);
     end
-    if ~isempty(runtimeRoiSelection)
+    if hasRuntimeRoiSelection
         p.roiList = runtimeRoiSelection;
     end
     if isfield(p,'roiList') && ~isempty(p.roiList)
