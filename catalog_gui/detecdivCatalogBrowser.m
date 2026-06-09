@@ -319,6 +319,11 @@ function varargout = detecdivCatalogBrowser(varargin)
     aclButton.Layout.Row = 3;
     aclButton.Layout.Column = 1;
 
+    batchNewButton = uibutton(actionGrid, 'push', 'Text', 'Batch New...', ...
+        'ButtonPushedFcn', @onBatchNewProjects);
+    batchNewButton.Layout.Row = 3;
+    batchNewButton.Layout.Column = 2;
+
     footerGrid = uigridlayout(mainGrid, [1 5]);
     footerGrid.Layout.Row = 4;
     footerGrid.ColumnWidth = {'1x', 90, 180, 90, 100};
@@ -762,6 +767,10 @@ function varargout = detecdivCatalogBrowser(varargin)
                 varName = 'project';
             end
             assignin('base', varName, shallowObj);
+            localEmitWorkspaceChanged('projectLoaded', struct( ...
+                'projectVar', varName, ...
+                'projectMatPath', projectMatPath, ...
+                'sourceMode', state.sourceMode));
             refreshLoadedIndicators();
             setStatus(sprintf('Project loaded into workspace as "%s".', varName));
         catch ME
@@ -871,6 +880,67 @@ function varargout = detecdivCatalogBrowser(varargin)
         catch ME
             uialert(fig, ME.message, 'Pipeline2 Failed');
             setStatus(['Pipeline2 failed: ' ME.message]);
+        end
+    end
+
+    function onBatchNewProjects(~, ~)
+        try
+            syncHubSettingsFromControls();
+            spec = localPromptBatchNewProjects(fig, state.sourceMode, state.catalogSettings, state.hubSettings);
+            if isempty(spec)
+                return;
+            end
+
+            setBusyState(true);
+            cleanupBusy = onCleanup(@() setBusyState(false)); %#ok<NASGU>
+            progressDlg = uiprogressdlg(fig, ...
+                'Title', 'Creating Catalog Projects', ...
+                'Message', 'Preparing projects...', ...
+                'Indeterminate', 'off', ...
+                'Value', 0);
+            cleanupProgress = onCleanup(@() closeProgressDialog(progressDlg)); %#ok<NASGU>
+            drawnow;
+
+            created = repmat(struct('project', [], 'matPath', '', 'varName', ''), 0, 1);
+            for i = 1:numel(spec.rawPaths)
+                progressDlg.Value = (i - 1) / max(1, numel(spec.rawPaths));
+                progressDlg.Message = sprintf('Creating project %d / %d...', i, numel(spec.rawPaths));
+                drawnow;
+
+                [shallowObj, matPath] = localCreateCatalogProjectFromRaw( ...
+                    spec.outputDir, spec.projectNames{i}, spec.rawPaths{i}, spec.pipelineTemplatePath);
+                varName = matlab.lang.makeValidName(char(string(shallowObj.io.file)));
+                assignin('base', varName, shallowObj);
+                created(end + 1) = struct('project', shallowObj, 'matPath', matPath, 'varName', varName); %#ok<AGROW>
+            end
+            localEmitWorkspaceChanged('projectsCreated', struct( ...
+                'projectVars', {cellstr(string({created.varName}))}, ...
+                'projectMatPaths', {cellstr(string({created.matPath}))}, ...
+                'sourceMode', state.sourceMode));
+
+            if strcmp(state.sourceMode, 'local')
+                progressDlg.Message = 'Indexing local catalog...';
+                progressDlg.Value = 0.92;
+                drawnow;
+                detecdiv_catalog_index_projects(spec.outputDir, state.catalogSettings.dbFile, 'Verbose', false);
+                refreshProjectsTable();
+                setStatus(sprintf('Created, loaded, and indexed %d local project(s).', numel(created)));
+            else
+                progressDlg.Message = 'Queueing Hub indexing...';
+                progressDlg.Value = 0.92;
+                drawnow;
+                serverOutputDir = localMapCatalogOutputDirForHub(spec.outputDir, state.hubSettings);
+                detecdiv_hub_request_index(serverOutputDir, state.hubSettings, ...
+                    'HostScope', 'server', 'ClearExistingForRoot', false);
+                refreshProjectsTable('PreserveStatus', true);
+                setStatus(sprintf(['Created and loaded %d project(s). Hub indexing queued for %s; ' ...
+                    'refresh after the worker completes.'], numel(created), serverOutputDir));
+            end
+
+            refreshLoadedIndicators();
+        catch ME
+            uialert(fig, localErrorMessage(ME), 'Batch Project Creation Failed');
+            setStatus(['Batch project creation failed: ' localErrorMessage(ME)]);
         end
     end
 
@@ -2999,6 +3069,401 @@ function [pipeObj, jsonPath] = localLoadPipelineTemplate(jsonPath)
     [pipeObj, msg] = pipelineLoad(jsonPath);
     if isempty(pipeObj)
         error('detecdivCatalogBrowser:PipelineLoadFailed', '%s', msg);
+    end
+end
+
+function localEmitWorkspaceChanged(action, payload)
+    if nargin < 2 || isempty(payload) || ~isstruct(payload)
+        payload = struct();
+    end
+    payload.source = 'catalog';
+    payload.action = char(string(action));
+    payload.timestamp = char(datetime('now'));
+    try
+        detecdiv_event('emit', 'workspaceChanged', payload);
+    catch ME
+        warning('detecdivCatalogBrowser:WorkspaceEventFailed', ...
+            'Could not emit workspaceChanged event: %s', ME.message);
+    end
+end
+
+function spec = localPromptBatchNewProjects(parentFig, sourceMode, catalogSettings, hubSettings)
+    spec = [];
+    outputDefault = '';
+    if strcmp(sourceMode, 'hub')
+        outputDefault = char(string(hubSettings.defaultLocalProjectRoot));
+    end
+    if isempty(outputDefault)
+        outputDefault = char(string(catalogSettings.defaultProjectRoot));
+    end
+    if isempty(outputDefault) || ~isfolder(outputDefault)
+        outputDefault = pwd;
+    end
+
+    pipelineChoices = localCatalogPipelineTemplateChoices();
+
+    dlg = uifigure( ...
+        'Name', 'Create Catalog Projects', ...
+        'Position', [220 180 900 520], ...
+        'WindowStyle', 'modal', ...
+        'Color', [0.98 0.98 0.98]);
+    dlg.UserData = [];
+    if ~isempty(parentFig)
+        try
+            dlg.Icon = parentFig.Icon;
+        catch
+        end
+    end
+
+    grid = uigridlayout(dlg, [6 4]);
+    grid.RowHeight = {26, 32, 32, '1x', 34, 38};
+    grid.ColumnWidth = {105, '1x', 110, 110};
+    grid.Padding = [14 14 14 14];
+    grid.RowSpacing = 8;
+    grid.ColumnSpacing = 8;
+
+    modeLabel = uilabel(grid, ...
+        'Text', ['Mode: ' upper(char(string(sourceMode)))], ...
+        'FontWeight', 'bold');
+    modeLabel.Layout.Row = 1;
+    modeLabel.Layout.Column = [1 4];
+
+    outputLabel = uilabel(grid, 'Text', 'Output dir', 'FontWeight', 'bold');
+    outputLabel.Layout.Row = 2;
+    outputLabel.Layout.Column = 1;
+
+    outputEdit = uieditfield(grid, 'text', 'Value', outputDefault);
+    outputEdit.Layout.Row = 2;
+    outputEdit.Layout.Column = 2;
+
+    browseOutputButton = uibutton(grid, 'push', 'Text', 'Browse...', ...
+        'ButtonPushedFcn', @browseOutput);
+    browseOutputButton.Layout.Row = 2;
+    browseOutputButton.Layout.Column = 3;
+
+    pipelineLabel = uilabel(grid, 'Text', 'Template', 'FontWeight', 'bold');
+    pipelineLabel.Layout.Row = 3;
+    pipelineLabel.Layout.Column = 1;
+
+    pipelineDrop = uidropdown(grid, ...
+        'Items', pipelineChoices.labels, ...
+        'ItemsData', pipelineChoices.paths, ...
+        'Value', pipelineChoices.paths{1}, ...
+        'ValueChangedFcn', @onPipelineChoiceChanged);
+    pipelineDrop.Layout.Row = 3;
+    pipelineDrop.Layout.Column = [2 3];
+
+    browsePipelineButton = uibutton(grid, 'push', 'Text', 'Browse...', ...
+        'ButtonPushedFcn', @browsePipeline);
+    browsePipelineButton.Layout.Row = 3;
+    browsePipelineButton.Layout.Column = 4;
+
+    data = cell(0, 2);
+    rawTable = uitable(grid, ...
+        'Data', data, ...
+        'ColumnName', {'Raw dataset path', 'Project name'}, ...
+        'ColumnEditable', [true true], ...
+        'ColumnWidth', {560, 210});
+    rawTable.Layout.Row = 4;
+    rawTable.Layout.Column = [1 4];
+
+    addRowButton = uibutton(grid, 'push', 'Text', 'Add Row', ...
+        'ButtonPushedFcn', @addRow);
+    addRowButton.Layout.Row = 5;
+    addRowButton.Layout.Column = 1;
+
+    addPathButton = uibutton(grid, 'push', 'Text', 'Add Path...', ...
+        'ButtonPushedFcn', @addPath);
+    addPathButton.Layout.Row = 5;
+    addPathButton.Layout.Column = 2;
+
+    removeRowButton = uibutton(grid, 'push', 'Text', 'Remove Empty', ...
+        'ButtonPushedFcn', @removeEmptyRows);
+    removeRowButton.Layout.Row = 5;
+    removeRowButton.Layout.Column = 3;
+
+    cancelButton = uibutton(grid, 'push', 'Text', 'Cancel', ...
+        'ButtonPushedFcn', @cancelDialog);
+    cancelButton.Layout.Row = 6;
+    cancelButton.Layout.Column = 3;
+
+    okButton = uibutton(grid, 'push', 'Text', 'OK', ...
+        'ButtonPushedFcn', @okDialog);
+    okButton.Layout.Row = 6;
+    okButton.Layout.Column = 4;
+
+    waitfor(dlg, 'UserData');
+    if isvalid(dlg)
+        spec = dlg.UserData;
+        if isstruct(spec) && isfield(spec, 'cancelled') && spec.cancelled
+            spec = [];
+        end
+        delete(dlg);
+    end
+
+    function browseOutput(varargin)
+        startDir = char(string(outputEdit.Value));
+        if isempty(startDir) || ~isfolder(startDir)
+            startDir = pwd;
+        end
+        picked = uigetdir(startDir, 'Select project output folder');
+        if isequal(picked, 0)
+            return;
+        end
+        outputEdit.Value = picked;
+    end
+
+    function browsePipeline(varargin)
+        [fileName, folderName] = uigetfile({'*.json', 'Pipeline JSON (*.json)'}, ...
+            'Select pipeline template', pwd);
+        if isequal(fileName, 0)
+            return;
+        end
+        jsonPath = fullfile(folderName, fileName);
+        pipelineDrop.Items = [{'None'}, {localPipelineChoiceLabel(jsonPath)}];
+        pipelineDrop.ItemsData = {'', jsonPath};
+        pipelineDrop.Value = jsonPath;
+    end
+
+    function onPipelineChoiceChanged(~, ~)
+        if strcmp(char(string(pipelineDrop.Value)), '__browse__')
+            browsePipeline();
+        end
+    end
+
+    function addRow(~, ~)
+        dataNow = rawTable.Data;
+        dataNow(end + 1, :) = {'', ''};
+        rawTable.Data = dataNow;
+    end
+
+    function addPath(~, ~)
+        startDir = char(string(outputEdit.Value));
+        if isempty(startDir) || ~isfolder(startDir)
+            startDir = pwd;
+        end
+        picked = uigetdir(startDir, 'Select raw dataset folder');
+        if isequal(picked, 0)
+            return;
+        end
+        dataNow = rawTable.Data;
+        dataNow(end + 1, :) = {picked, localProjectNameFromRawPath(picked)};
+        rawTable.Data = dataNow;
+    end
+
+    function removeEmptyRows(~, ~)
+        dataNow = rawTable.Data;
+        if isempty(dataNow)
+            return;
+        end
+        keep = false(size(dataNow, 1), 1);
+        for ii = 1:size(dataNow, 1)
+            keep(ii) = ~isempty(strtrim(char(string(dataNow{ii, 1})))) || ...
+                ~isempty(strtrim(char(string(dataNow{ii, 2}))));
+        end
+        rawTable.Data = dataNow(keep, :);
+    end
+
+    function cancelDialog(~, ~)
+        dlg.UserData = struct('cancelled', true);
+    end
+
+    function okDialog(~, ~)
+        try
+            outDir = strtrim(char(string(outputEdit.Value)));
+            if isempty(outDir)
+                error('Output dir is required.');
+            end
+            if ~isfolder(outDir)
+                mkdir(outDir);
+            end
+
+            dataNow = rawTable.Data;
+            rawPaths = {};
+            projectNames = {};
+            for ii = 1:size(dataNow, 1)
+                rawPath = strtrim(char(string(dataNow{ii, 1})));
+                projectName = strtrim(char(string(dataNow{ii, 2})));
+                if isempty(rawPath)
+                    continue;
+                end
+                if ~isfolder(rawPath) && ~isfile(rawPath)
+                    error('Raw dataset path does not exist: %s', rawPath);
+                end
+                if isempty(projectName)
+                    projectName = localProjectNameFromRawPath(rawPath);
+                end
+                rawPaths{end + 1} = rawPath; %#ok<AGROW>
+                projectNames{end + 1} = matlab.lang.makeValidName(projectName); %#ok<AGROW>
+            end
+            if isempty(rawPaths)
+                error('Add at least one raw dataset path.');
+            end
+            if numel(unique(string(projectNames))) ~= numel(projectNames)
+                error('Project names must be unique within the batch.');
+            end
+
+            templatePath = char(string(pipelineDrop.Value));
+            if strcmp(templatePath, '__browse__')
+                templatePath = '';
+            end
+            dlg.UserData = struct( ...
+                'outputDir', outDir, ...
+                'rawPaths', {rawPaths}, ...
+                'projectNames', {projectNames}, ...
+                'pipelineTemplatePath', templatePath);
+        catch ME
+            uialert(dlg, ME.message, 'Invalid Batch Project Definition');
+        end
+    end
+end
+
+function choices = localCatalogPipelineTemplateChoices()
+    labels = {'None'};
+    paths = {''};
+
+    repoDir = fileparts(fileparts(mfilename('fullpath')));
+    candidates = {};
+    recentFile = fullfile(repoDir, 'recentPipelines.mat');
+    if exist(recentFile, 'file') == 2
+        try
+            S = load(recentFile);
+            names = fieldnames(S);
+            for i = 1:numel(names)
+                value = S.(names{i});
+                if iscell(value) || isstring(value)
+                    candidates = [candidates; cellstr(string(value(:)))]; %#ok<AGROW>
+                end
+            end
+        catch
+        end
+    end
+    candidates = [candidates; cellstr(string(localFindPipelineJsonCandidates(repoDir)))]; %#ok<AGROW>
+    candidates = unique(string(candidates), 'stable');
+    candidates(candidates == "") = [];
+
+    for i = 1:numel(candidates)
+        p = char(candidates(i));
+        if exist(p, 'file') ~= 2
+            continue;
+        end
+        labels{end + 1} = localPipelineChoiceLabel(p); %#ok<AGROW>
+        paths{end + 1} = p; %#ok<AGROW>
+        if numel(paths) >= 12
+            break;
+        end
+    end
+    labels{end + 1} = 'Browse...';
+    paths{end + 1} = '__browse__';
+    choices = struct('labels', {labels}, 'paths', {paths});
+end
+
+function paths = localFindPipelineJsonCandidates(repoDir)
+    paths = strings(0, 1);
+    roots = [ ...
+        string(fullfile(repoDir, 'pipeline_templates'))
+        string(fullfile(repoDir, 'pipelines'))
+        string(fullfile(repoDir, 'catalog'))];
+    for i = 1:numel(roots)
+        if ~isfolder(roots(i))
+            continue;
+        end
+        listing = dir(fullfile(char(roots(i)), '**', 'pipeline.json'));
+        for j = 1:numel(listing)
+            paths(end + 1, 1) = string(fullfile(listing(j).folder, listing(j).name)); %#ok<AGROW>
+        end
+    end
+end
+
+function label = localPipelineChoiceLabel(jsonPath)
+    [folderName, fileName, ext] = fileparts(char(string(jsonPath)));
+    [~, parentName] = fileparts(folderName);
+    if isempty(parentName)
+        label = [fileName ext];
+    else
+        label = sprintf('%s/%s%s', parentName, fileName, ext);
+    end
+end
+
+function [shallowObj, matPath] = localCreateCatalogProjectFromRaw(outputDir, projectName, rawPath, pipelineTemplatePath)
+    outputDir = char(string(outputDir));
+    projectName = matlab.lang.makeValidName(char(string(projectName)));
+    rawPath = char(string(rawPath));
+    if isempty(projectName)
+        projectName = localProjectNameFromRawPath(rawPath);
+    end
+
+    matPath = fullfile(outputDir, [projectName '.mat']);
+    if exist(matPath, 'file') == 2
+        error('Project MAT already exists: %s', matPath);
+    end
+
+    projectDir = fullfile(outputDir, projectName);
+    if ~isfolder(projectDir)
+        mkdir(projectDir);
+    end
+
+    shallowObj = shallow();
+    shallowObj.setPath(outputDir, projectName);
+    shallowObj.tag = 'shallow project';
+    shallowObj.runProfiles.catalog = struct( ...
+        'createdFromCatalog', true, ...
+        'rawDataPath', rawPath, ...
+        'createdAt', char(datetime('now')));
+    shallowObj.addData(rawPath);
+    if localProjectHasNoParsedFov(shallowObj)
+        error('Raw dataset could not be parsed into any FOV: %s', rawPath);
+    end
+
+    if ~isempty(pipelineTemplatePath)
+        [pipeObj, jsonPath] = localLoadPipelineTemplate(pipelineTemplatePath);
+        shallowObj.runProfiles.pipeline = struct( ...
+            'defaultTemplatePath', jsonPath, ...
+            'defaultTemplateId', char(string(pipeObj.strid)), ...
+            'assignedFromCatalog', true, ...
+            'assignedAt', char(datetime('now')));
+    end
+
+    shallowSave(shallowObj, 'shallowObj');
+    matPath = fullfile(outputDir, [projectName '.mat']);
+end
+
+function tf = localProjectHasNoParsedFov(shallowObj)
+    tf = true;
+    try
+        if isempty(shallowObj) || ~isa(shallowObj, 'shallow') || isempty(shallowObj.fov)
+            return;
+        end
+        if numel(shallowObj.fov) == 1
+            f = shallowObj.fov(1);
+            hasSrcList = isprop(f, 'srclist') && ~isempty(f.srclist);
+            hasSrcPath = isprop(f, 'srcpath') && ~isempty(f.srcpath);
+            if ~hasSrcList && ~hasSrcPath
+                return;
+            end
+        end
+        tf = false;
+    catch
+        tf = true;
+    end
+end
+
+function projectName = localProjectNameFromRawPath(rawPath)
+    rawPath = regexprep(char(string(rawPath)), '[\\\/]+$', '');
+    [~, projectName] = fileparts(rawPath);
+    if isempty(projectName)
+        projectName = 'project';
+    end
+    projectName = matlab.lang.makeValidName(projectName);
+end
+
+function serverOutputDir = localMapCatalogOutputDirForHub(outputDir, hubSettings)
+    ctx = struct('hub', hubSettings);
+    [serverOutputDir, mapped] = detecdiv_paths_map_module_path(outputDir, ctx, 'server');
+    if ~mapped
+        error('detecdivCatalogBrowser:HubOutputNotMapped', ...
+            ['Could not map output dir to a server path for Hub indexing: %s\n' ...
+             'Set Remote Root / Local Mount in the catalog header first.'], char(string(outputDir)));
     end
 end
 

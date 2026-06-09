@@ -76,6 +76,7 @@ classdef detecdiv < matlab.apps.AppBase
         RecentPipelines string = strings(0)      % chemins complets vers pipeline.json
         RecentPipelinesFile string               % stockage persistant
         MainGrid matlab.ui.container.GridLayout
+        WorkspaceEventListenerId string = ""
 
     end
 
@@ -4738,10 +4739,20 @@ end
             initUserPreferences;
 
             initRecentProjectsSystem(app);
+            app.WorkspaceEventListenerId = detecdiv_event('subscribe', ...
+                'workspaceChanged', @(payload, eventName) app.onExternalWorkspaceChanged(payload, eventName));
 
 
             gatherVarsFromWorkspace(app)
             displayNodes(app)
+        end
+
+        function onExternalWorkspaceChanged(app, payload, eventName) %#ok<INUSD>
+            if isempty(app) || ~isvalid(app) || isempty(app.DetecDivUIFigure) || ~isvalid(app.DetecDivUIFigure)
+                return;
+            end
+            RefreshtreewindowMenuSelected(app, []);
+            drawnow limitrate;
         end
 
         function applyMainWindowLayout(app)
@@ -8452,6 +8463,10 @@ end
 
         % Code that executes before app deletion
         function delete(app)
+            if strlength(app.WorkspaceEventListenerId) > 0
+                detecdiv_event('unsubscribe', app.WorkspaceEventListenerId);
+                app.WorkspaceEventListenerId = "";
+            end
 
             % Delete UIFigure when app is deleted
             delete(app.DetecDivUIFigure)
