@@ -15,6 +15,8 @@ function [projectMatPath, info] = detecdiv_hub_resolve_project_location(projectD
         'storageRootName', '', ...
         'storageRootPathPrefix', '', ...
         'resolutionMethod', '', ...
+        'projectDirPath', '', ...
+        'missingProjectFolders', {{}}, ...
         'candidatePaths', {{}});
     projectMatPath = '';
 
@@ -30,6 +32,9 @@ function [projectMatPath, info] = detecdiv_hub_resolve_project_location(projectD
                     info.storageRootName = localGetStorageRootField(locations(i), 'name');
                     info.storageRootPathPrefix = localGetStorageRootField(locations(i), 'path_prefix');
                     info.resolutionMethod = methods{j};
+                    [info.projectDirPath, missingFolders] = localResolveProjectDirPath( ...
+                        projectDetail, locations(i), projectMatPath, hubSettings);
+                    info.missingProjectFolders = [info.missingProjectFolders missingFolders];
                     return;
                 end
             end
@@ -42,8 +47,91 @@ function [projectMatPath, info] = detecdiv_hub_resolve_project_location(projectD
         if isfile(metadataCandidate)
             projectMatPath = metadataCandidate;
             info.resolutionMethod = metadataMethod;
+            [info.projectDirPath, missingFolders] = localResolveProjectDirPath( ...
+                projectDetail, struct(), projectMatPath, hubSettings);
+            info.missingProjectFolders = [info.missingProjectFolders missingFolders];
             return;
         end
+    end
+end
+
+function [projectDirPath, missingFolders] = localResolveProjectDirPath(projectDetail, location, projectMatPath, hubSettings)
+    projectDirPath = '';
+    missingFolders = {};
+    candidates = localProjectDirCandidates(projectDetail, location, projectMatPath, hubSettings);
+    for i = 1:numel(candidates)
+        candidate = candidates{i};
+        if isempty(candidate)
+            continue;
+        end
+        if isfolder(candidate)
+            projectDirPath = candidate;
+            return;
+        end
+        missingFolders{end+1} = candidate; %#ok<AGROW>
+    end
+end
+
+function candidates = localProjectDirCandidates(projectDetail, location, projectMatPath, hubSettings)
+    candidates = {};
+
+    metadataProjectDir = localMetadataProjectDirCandidate(projectDetail, hubSettings);
+    if ~isempty(metadataProjectDir)
+        candidates{end+1} = metadataProjectDir; %#ok<AGROW>
+    end
+
+    if isstruct(location) && ~isempty(fieldnames(location))
+        locationProjectDir = localLocationProjectDirCandidate(location, hubSettings);
+        if ~isempty(locationProjectDir)
+            candidates{end+1} = locationProjectDir; %#ok<AGROW>
+        end
+    end
+
+    [parentPath, projectName] = fileparts(char(string(projectMatPath)));
+    if ~isempty(parentPath) && ~isempty(projectName)
+        candidates{end+1} = fullfile(parentPath, projectName); %#ok<AGROW>
+    end
+
+    candidates = unique(candidates, 'stable');
+end
+
+function candidatePath = localMetadataProjectDirCandidate(projectDetail, hubSettings)
+    candidatePath = '';
+    if ~isstruct(projectDetail) || ~isfield(projectDetail, 'metadata_json') || ...
+            ~isstruct(projectDetail.metadata_json)
+        return;
+    end
+
+    metadata = projectDetail.metadata_json;
+    if ~isfield(metadata, 'project_dir_abs') || isempty(metadata.project_dir_abs)
+        return;
+    end
+
+    candidatePath = localNormalizeCandidatePath(metadata.project_dir_abs);
+    if ~isfolder(candidatePath)
+        [mappedPath, ~] = detecdiv_hub_apply_path_mapping(candidatePath, hubSettings);
+        if ~isempty(mappedPath)
+            candidatePath = mappedPath;
+        end
+    end
+end
+
+function candidatePath = localLocationProjectDirCandidate(location, hubSettings)
+    candidatePath = '';
+    prefix = char(string(localGetStorageRootField(location, 'path_prefix')));
+    relativePath = localNormalizeRelativePath(localGetFieldOr(location, 'relative_path', ''));
+    if isempty(prefix)
+        return;
+    end
+    if isempty(relativePath)
+        candidatePath = localNormalizeCandidatePath(prefix);
+    else
+        candidatePath = localNormalizeCandidatePath(fullfile(prefix, relativePath));
+    end
+
+    [mappedPath, ~] = detecdiv_hub_apply_path_mapping(candidatePath, hubSettings);
+    if ~isempty(mappedPath)
+        candidatePath = mappedPath;
     end
 end
 

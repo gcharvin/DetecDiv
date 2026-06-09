@@ -1,4 +1,12 @@
-function [shallowObj, msg] = shallowLoad(filename)
+function [shallowObj, msg] = shallowLoad(filename, varargin)
+
+projectDirOverride = '';
+if ~isempty(varargin)
+    ip = inputParser;
+    ip.addParameter('ProjectDir', '', @(x)ischar(x) || isstring(x));
+    ip.parse(varargin{:});
+    projectDirOverride = char(string(ip.Results.ProjectDir));
+end
 
 if nargin == 0
     [file, path] = uigetfile('*.mat', 'Select a shallow project', pwd);
@@ -27,9 +35,15 @@ if ~isfile(filename)
 end
 file = namestr;
 path = pathstr;
+if isempty(projectDirOverride)
+    effectivePath = path;
+    effectiveFile = file;
+else
+    [effectivePath, effectiveFile] = fileparts(projectDirOverride);
+end
 
 % Vérifier que le dossier associé au projet existe
-projectFolder = fullfile(path, file);
+projectFolder = fullfile(effectivePath, effectiveFile);
 if ~isfolder(projectFolder)
     msg = ['The folder "' projectFolder '" does not exsit. The project is incomplete... Quitting!'];
     disp(msg);
@@ -38,6 +52,21 @@ if ~isfolder(projectFolder)
 end
 
 load(filename);
+
+if ~exist('shallowObj', 'var') && exist('timeLapse', 'var')
+    disp('File contains a legacy timeLapse project; converting to shallow object in memory.');
+    shallowObj = shallow();
+    try
+        parsedLegacy = parseInputData(projectFolder);
+        shallowObj.parsedData = parsedLegacy;
+        shallowObj.addData(parsedLegacy);
+    catch ME
+        msg = ['Legacy timeLapse conversion failed: ' ME.message];
+        disp(msg);
+        shallowObj = [];
+        return;
+    end
+end
 
 if ~exist('shallowObj', 'var')
     disp('this is not a shallow object ! Quitting....');
@@ -54,9 +83,9 @@ if ~isfield(shallowObj.processing, 'pipelineRun')
 end
 
 if isunix || ismac
-    shallowObj.setPath([path '/'], file);
+    shallowObj.setPath([effectivePath '/'], effectiveFile);
 else
-    shallowObj.setPath([path '\'], file);
+    shallowObj.setPath([effectivePath '\'], effectiveFile);
 end
 
 % éviter de charger 2x le même projet dans le workspace
@@ -70,8 +99,8 @@ catch ME
 end
 
 normalizePathClean = @(p) regexprep(lower(strrep(p, '\', '/')), '/+$', '');
-expectedPath = normalizePathClean(path);
-expectedFile = lower(file);
+expectedPath = normalizePathClean(effectivePath);
+expectedFile = lower(effectiveFile);
 
 varlist = evalin('base', 'who');
 for i = 1:numel(varlist)
@@ -103,7 +132,7 @@ disp('');
 
 %% Chargement des classifieurs
 
-listclassi = dir(fullfile(path, file, 'classification'));
+listclassi = dir(fullfile(effectivePath, effectiveFile, 'classification'));
 listclassi = listclassi(~contains({listclassi.name}, {'.', '..'}));
 listclassi = listclassi(arrayfun(@(x) x.isdir, listclassi));
 
@@ -129,7 +158,7 @@ if ~isempty(listclassi)
 
     for j = 1:numel(listclassi)
         name = listclassi(j).name;
-        str  = fullfile(path, file, 'classification', name, [name '_classification.mat']);
+        str  = fullfile(effectivePath, effectiveFile, 'classification', name, [name '_classification.mat']);
         if exist(str, 'file') == 2
             [classiObj, ~] = classiLoad(str); %#ok<NASGU>
             if isa(classiObj, 'classi')
@@ -145,7 +174,7 @@ end
 
 %% Chargement des processeurs
 
-listproc = dir(fullfile(path, file, 'processor'));
+listproc = dir(fullfile(effectivePath, effectiveFile, 'processor'));
 listproc = listproc(~contains({listproc.name}, {'.', '..'}));
 listproc = listproc(arrayfun(@(x) x.isdir, listproc));
 
@@ -163,7 +192,7 @@ if ~isempty(listproc)
     procList = process.empty;
     for j = 1:numel(listproc)
         name = listproc(j).name;
-        str = fullfile(path, file, 'processor', name, [name '_processor.mat']);
+        str = fullfile(effectivePath, effectiveFile, 'processor', name, [name '_processor.mat']);
         if exist(str, 'file') == 2
             try
                 [procObj, ~] = processLoad(str); %#ok<NASGU>
@@ -178,7 +207,7 @@ end
 
 %% Chargement des pipelines (runs)
 
-listpipe = dir(fullfile(path, file, 'pipeline'));
+listpipe = dir(fullfile(effectivePath, effectiveFile, 'pipeline'));
 listpipe = listpipe(~contains({listpipe.name}, {'.', '..'}));
 listpipe = listpipe(arrayfun(@(x) x.isdir, listpipe));
 
@@ -199,7 +228,7 @@ if ~isempty(listpipe)
 
     pipeList = pipelineRun.empty;
     for j = 1:numel(listpipe)
-        pth = fullfile(path, file, 'pipeline', listpipe(j).name);
+        pth = fullfile(effectivePath, effectiveFile, 'pipeline', listpipe(j).name);
         try
             [runObj, msg] = pipelineRunLoad(pth);
             if isempty(runObj)

@@ -22,6 +22,7 @@ function ref = detecdiv_hub_project_ref(shallowObj, hub)
     ref.source = '';
 
     hubMeta = localHubMetadata(shallowObj);
+    ref = localApplyHubMetadataPaths(ref, hubMeta);
     [ref.project_id, idSource] = localFirstText(hubMeta, {'hub_project_id','hubProjectId','project_id','projectId','id'});
     [ref.project_key, keySource] = localFirstText(hubMeta, {'project_key','projectKey','hub_project_key','hubProjectKey'});
     if ~isempty(ref.project_id)
@@ -54,6 +55,38 @@ function ref = detecdiv_hub_project_ref(shallowObj, hub)
                 ref.source = 'hub lookup';
             end
         catch
+        end
+    end
+end
+
+function ref = localApplyHubMetadataPaths(ref, hubMeta)
+    if ~isstruct(hubMeta)
+        return;
+    end
+    matPath = localFirstExistingText(hubMeta, {'project_mat_path','local_project_mat_path','projectMatPath','localProjectMatPath'});
+    dirPath = localFirstExistingText(hubMeta, {'project_dir_path','local_project_dir_path','projectDirPath','localProjectDirPath'});
+    if ~isempty(matPath)
+        ref.project_mat_path = matPath;
+        ref.local_project_mat_path = matPath;
+    end
+    if ~isempty(dirPath)
+        ref.project_dir_path = dirPath;
+        ref.local_project_dir_path = dirPath;
+    end
+    ref.local_project_root_path = localPathRoot(ref.local_project_mat_path, ref.local_project_dir_path);
+    ref.project_root_path = localPathRoot(ref.project_mat_path, ref.project_dir_path);
+end
+
+function txt = localFirstExistingText(S, names)
+    txt = '';
+    if ~isstruct(S)
+        return;
+    end
+    for i = 1:numel(names)
+        name = names{i};
+        if isfield(S, name) && ~isempty(S.(name))
+            txt = char(string(S.(name)));
+            return;
         end
     end
 end

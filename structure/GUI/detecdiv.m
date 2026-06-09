@@ -5574,6 +5574,19 @@ end
 
         end
 
+        % Menu selected function: Catalog Browser
+        function CatalogBrowserMenuSelected(app, event) %#ok<INUSD>
+            try
+                if exist('launch_catalog_browser', 'file') == 2
+                    launch_catalog_browser;
+                else
+                    detecdivCatalogBrowser;
+                end
+            catch ME
+                uialert(app.DetecDivUIFigure, ME.message, 'Catalog Browser', 'Icon', 'error');
+            end
+        end
+
         % Menu selected function: NewpipelinetemplateMenu
         function NewpipelinetemplateMenuSelected(app, event) %#ok<INUSD>
             parentDir = uigetdir(pwd, 'Select parent folder where pipeline folder will be created');
@@ -8083,6 +8096,11 @@ end
             % Create Item1Menu
             app.Item1Menu = uimenu(app.OpenrecentMenu);
             app.Item1Menu.Text = 'Item1';
+
+            uimenu(app.FileMenu, ...
+                'Text', 'Catalog browser...', ...
+                'Separator', 'on', ...
+                'MenuSelectedFcn', createCallbackFcn(app, @CatalogBrowserMenuSelected, true));
 
             % Create SaveselectedprojectMenu
             app.SaveselectedprojectMenu = uimenu(app.FileMenu);

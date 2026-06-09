@@ -25,7 +25,12 @@ function varargout = detecdivCatalogBrowser(varargin)
     state.sourceMode = localNormalizeSourceMode(hubSettings.sourceMode);
     state.projects = table();
     state.visibleProjects = table();
+    state.displayProjects = table();
     state.searchText = '';
+    state.pageSize = 100;
+    state.currentPage = 1;
+    state.sortVariable = 'name';
+    state.sortAscending = true;
     state.selectedRow = [];
     state.job = [];
     state.pollTimer = [];
@@ -223,6 +228,20 @@ function varargout = detecdivCatalogBrowser(varargin)
     clearSearchButton.Layout.Row = 5;
     clearSearchButton.Layout.Column = 9;
 
+    sortDropDown = uidropdown(controlGrid, ...
+        'Items', {'Name', 'Modified Date', 'Imported Date', 'Health', 'FOV', 'ROI', 'Runs', 'Missing Raw'}, ...
+        'ItemsData', {'name', 'project_mtime', 'created_at', 'health_status', 'fov_count', 'roi_count', 'pipeline_run_count', 'missing_raw_count'}, ...
+        'Value', state.sortVariable, ...
+        'ValueChangedFcn', @onSortChanged);
+    sortDropDown.Layout.Row = 5;
+    sortDropDown.Layout.Column = 10;
+
+    sortDirectionButton = uibutton(controlGrid, 'push', ...
+        'Text', 'Asc', ...
+        'ButtonPushedFcn', @onSortDirectionToggled);
+    sortDirectionButton.Layout.Row = 5;
+    sortDirectionButton.Layout.Column = 11;
+
     statusLabel = uilabel(mainGrid, ...
         'Text', 'Ready.', ...
         'HorizontalAlignment', 'left', ...
@@ -237,7 +256,7 @@ function varargout = detecdivCatalogBrowser(varargin)
 
     projectTable = uitable(bodyGrid, ...
         'Data', table(), ...
-        'ColumnSortable', true, ...
+        'ColumnSortable', false, ...
         'RowStriping', 'on', ...
         'CellSelectionCallback', @onProjectSelected);
     projectTable.Layout.Row = 1;
@@ -300,12 +319,45 @@ function varargout = detecdivCatalogBrowser(varargin)
     aclButton.Layout.Row = 3;
     aclButton.Layout.Column = 1;
 
-    footerLabel = uilabel(mainGrid, ...
+    footerGrid = uigridlayout(mainGrid, [1 5]);
+    footerGrid.Layout.Row = 4;
+    footerGrid.ColumnWidth = {'1x', 90, 180, 90, 100};
+    footerGrid.ColumnSpacing = 8;
+    footerGrid.Padding = [0 0 0 0];
+
+    footerLabel = uilabel(footerGrid, ...
         'Text', 'Local mode uses SQLite. Hub mode uses the API and maps server roots to local mounts when needed.', ...
         'HorizontalAlignment', 'left', ...
         'FontAngle', 'italic', ...
         'FontColor', [0.35 0.35 0.35]);
-    footerLabel.Layout.Row = 4;
+    footerLabel.Layout.Row = 1;
+    footerLabel.Layout.Column = 1;
+
+    prevPageButton = uibutton(footerGrid, 'push', ...
+        'Text', 'Previous', ...
+        'ButtonPushedFcn', @onPreviousPage);
+    prevPageButton.Layout.Row = 1;
+    prevPageButton.Layout.Column = 2;
+
+    pageLabel = uilabel(footerGrid, ...
+        'Text', 'Page 0 / 0', ...
+        'HorizontalAlignment', 'center');
+    pageLabel.Layout.Row = 1;
+    pageLabel.Layout.Column = 3;
+
+    nextPageButton = uibutton(footerGrid, 'push', ...
+        'Text', 'Next', ...
+        'ButtonPushedFcn', @onNextPage);
+    nextPageButton.Layout.Row = 1;
+    nextPageButton.Layout.Column = 4;
+
+    pageSizeDropDown = uidropdown(footerGrid, ...
+        'Items', {'50', '100', '200'}, ...
+        'ItemsData', [50 100 200], ...
+        'Value', state.pageSize, ...
+        'ValueChangedFcn', @onPageSizeChanged);
+    pageSizeDropDown.Layout.Row = 1;
+    pageSizeDropDown.Layout.Column = 5;
 
     syncUiFromState();
     refreshProjectsTable();
@@ -313,6 +365,8 @@ function varargout = detecdivCatalogBrowser(varargin)
     function onSourceModeChanged(~, ~)
         state.sourceMode = localNormalizeSourceMode(sourceDropDown.Value);
         state.hubSettings.sourceMode = state.sourceMode;
+        state.currentPage = 1;
+        state.selectedRow = [];
         detecdiv_hub_settings_set(state.hubSettings);
         syncUiFromState();
         refreshProjectsTable();
@@ -364,11 +418,15 @@ function varargout = detecdivCatalogBrowser(varargin)
 
     function onGroupFilterChanged(~, ~)
         [state.hubSelectedGroupId, state.hubSelectedOwnerKey] = localParseHubFilterValue(groupDropDown.Value);
+        state.currentPage = 1;
+        state.selectedRow = [];
         refreshProjectsTable('PreserveStatus', true);
     end
 
     function onOwnedOnlyChanged(~, ~)
         state.hubOwnedOnly = logical(ownedOnlyCheck.Value);
+        state.currentPage = 1;
+        state.selectedRow = [];
         refreshProjectsTable('PreserveStatus', true);
     end
 
@@ -549,6 +607,11 @@ function varargout = detecdivCatalogBrowser(varargin)
 
     function onSearchChanged(~, ~)
         state.searchText = char(string(searchEdit.Value));
+        state.currentPage = 1;
+        if strcmp(state.sourceMode, 'hub')
+            refreshProjectsTable();
+            return;
+        end
         updateProjectTableFromState();
         restorePreviousSelection();
         updateSelectionState();
@@ -556,6 +619,10 @@ function varargout = detecdivCatalogBrowser(varargin)
 
     function onSearchChanging(~, event)
         state.searchText = char(string(event.Value));
+        state.currentPage = 1;
+        if strcmp(state.sourceMode, 'hub')
+            return;
+        end
         updateProjectTableFromState();
         restorePreviousSelection();
         updateSelectionState();
@@ -564,8 +631,59 @@ function varargout = detecdivCatalogBrowser(varargin)
     function onClearSearch(~, ~)
         state.searchText = '';
         searchEdit.Value = '';
+        state.currentPage = 1;
+        if strcmp(state.sourceMode, 'hub')
+            refreshProjectsTable();
+            return;
+        end
         updateProjectTableFromState();
         restorePreviousSelection();
+        updateSelectionState();
+    end
+
+    function onSortChanged(~, ~)
+        state.sortVariable = char(string(sortDropDown.Value));
+        state.currentPage = 1;
+        updateProjectTableFromState();
+        restorePreviousSelection();
+        updateSelectionState();
+    end
+
+    function onSortDirectionToggled(~, ~)
+        state.sortAscending = ~state.sortAscending;
+        syncSortControls();
+        state.currentPage = 1;
+        updateProjectTableFromState();
+        restorePreviousSelection();
+        updateSelectionState();
+    end
+
+    function onPreviousPage(~, ~)
+        if state.currentPage <= 1
+            return;
+        end
+        state.currentPage = state.currentPage - 1;
+        updateProjectDisplayPage();
+        applyProjectTableStyles();
+        updateSelectionState();
+    end
+
+    function onNextPage(~, ~)
+        totalPages = max(1, ceil(height(state.visibleProjects) / state.pageSize));
+        if state.currentPage >= totalPages
+            return;
+        end
+        state.currentPage = state.currentPage + 1;
+        updateProjectDisplayPage();
+        applyProjectTableStyles();
+        updateSelectionState();
+    end
+
+    function onPageSizeChanged(~, ~)
+        state.pageSize = double(pageSizeDropDown.Value);
+        syncPageToSelection();
+        updateProjectDisplayPage();
+        applyProjectTableStyles();
         updateSelectionState();
     end
 
@@ -576,7 +694,7 @@ function varargout = detecdivCatalogBrowser(varargin)
             return;
         end
 
-        state.selectedRow = event.Indices(1, 1);
+        state.selectedRow = localPageStartIndex() + event.Indices(1, 1) - 1;
         if isempty(state.visibleProjects) || height(state.visibleProjects) < state.selectedRow
             updateSelectionState();
             return;
@@ -602,11 +720,15 @@ function varargout = detecdivCatalogBrowser(varargin)
             if strcmp(state.sourceMode, 'local')
                 projectMatPath = char(string(row.project_mat_abs));
             else
-                [~, projectMatPath] = resolveSelectedHubProject();
+                [~, projectMatPath, resolutionInfo] = resolveSelectedHubProject();
             end
 
             if isempty(projectMatPath)
-                error('Could not resolve the project MAT path.');
+                if strcmp(state.sourceMode, 'hub')
+                    error('%s', localHubResolutionMessage(char(string(row.name)), resolutionInfo));
+                else
+                    error('Could not resolve the project MAT path.');
+                end
             end
 
             [shallowObj, loadedVarName] = localFindLoadedProjectByMatPath(projectMatPath);
@@ -618,13 +740,21 @@ function varargout = detecdivCatalogBrowser(varargin)
 
             progressDlg = showLoadProgress(projectMatPath);
             cleanupProgress = onCleanup(@() closeProgressDialog(progressDlg)); %#ok<NASGU>
-            [shallowObj, msg] = shallowLoad(projectMatPath);
+            if strcmp(state.sourceMode, 'hub')
+                [shallowObj, msg] = localShallowLoadResolved(projectMatPath, resolutionInfo);
+            else
+                [shallowObj, msg] = shallowLoad(projectMatPath);
+            end
             if isempty(msg)
                 msg = 'shallowLoad returned an empty project.';
             end
             if isempty(shallowObj)
                 setStatus(msg);
                 return;
+            end
+            if strcmp(state.sourceMode, 'hub')
+                shallowObj = localApplyHubLoadMetadata(shallowObj, row, projectMatPath, resolutionInfo);
+                shallowObj = detecdiv_hub_prepare_project_open(shallowObj, 'Hub', state.hubSettings);
             end
 
             varName = matlab.lang.makeValidName(char(string(row.name)));
@@ -646,7 +776,7 @@ function varargout = detecdivCatalogBrowser(varargin)
             if isempty(state.projects)
                 return;
             end
-            projectTable.Data = localBuildDisplayTable(state.projects, state.sourceMode, state.hubSettings);
+            updateProjectTableFromState();
             applyProjectTableStyles();
             updateSelectionState();
         catch
@@ -1092,7 +1222,8 @@ function varargout = detecdivCatalogBrowser(varargin)
                 state.hubSettings, ...
                 'GroupId', state.hubSelectedGroupId, ...
                 'OwnerKey', state.hubSelectedOwnerKey, ...
-                'OwnedOnly', state.hubOwnedOnly));
+                'OwnedOnly', state.hubOwnedOnly, ...
+                'Search', state.searchText));
             state.projects = projects;
             updateProjectTableFromState();
             applyProjectTableStyles();
@@ -1109,6 +1240,7 @@ function varargout = detecdivCatalogBrowser(varargin)
         catch ME
             state.projects = table();
             state.visibleProjects = table();
+            state.displayProjects = table();
             projectTable.Data = table();
             applyProjectTableStyles();
             state.selectedRow = [];
@@ -1120,16 +1252,30 @@ function varargout = detecdivCatalogBrowser(varargin)
     end
 
     function updateProjectTableFromState()
-        state.visibleProjects = localFilterProjects(state.projects, state.searchText);
+        filteredProjects = localFilterProjects(state.projects, state.searchText);
+        state.visibleProjects = localSortProjects(filteredProjects, state.sortVariable, state.sortAscending);
         state.lastVisibleProjectCount = height(state.visibleProjects);
-        projectTable.Data = localBuildDisplayTable(state.visibleProjects, state.sourceMode, state.hubSettings);
-        applyProjectTableStyles();
+        clampCurrentPage();
+        updateProjectDisplayPage();
+        syncSortControls();
+    end
+
+    function updateProjectDisplayPage()
+        if isempty(state.visibleProjects) || height(state.visibleProjects) == 0
+            state.displayProjects = table();
+        else
+            startIdx = localPageStartIndex();
+            endIdx = min(height(state.visibleProjects), startIdx + state.pageSize - 1);
+            state.displayProjects = state.visibleProjects(startIdx:endIdx, :);
+        end
+        projectTable.Data = localBuildDisplayTable(state.displayProjects, state.sourceMode, state.hubSettings);
+        syncPageControls();
     end
 
     function applyProjectTableStyles()
         try
             removeStyle(projectTable);
-            loadedRows = localLoadedRows(state.visibleProjects, state.sourceMode, state.hubSettings);
+            loadedRows = localLoadedRows(state.displayProjects, state.sourceMode, state.hubSettings);
             if ~isempty(loadedRows)
                 loadedStyle = uistyle('BackgroundColor', [0.83 0.94 0.86]);
                 addStyle(projectTable, loadedStyle, 'row', loadedRows);
@@ -1159,6 +1305,55 @@ function varargout = detecdivCatalogBrowser(varargin)
         end
         if ~isempty(matchIdx)
             state.selectedRow = matchIdx;
+            syncPageToSelection();
+            updateProjectDisplayPage();
+            applyProjectTableStyles();
+        end
+    end
+
+    function clampCurrentPage()
+        totalPages = max(1, ceil(height(state.visibleProjects) / state.pageSize));
+        state.currentPage = max(1, min(state.currentPage, totalPages));
+    end
+
+    function syncPageToSelection()
+        if isempty(state.selectedRow) || state.selectedRow < 1
+            clampCurrentPage();
+            return;
+        end
+        state.currentPage = max(1, ceil(double(state.selectedRow) / state.pageSize));
+        clampCurrentPage();
+    end
+
+    function startIdx = localPageStartIndex()
+        clampCurrentPage();
+        startIdx = (state.currentPage - 1) * state.pageSize + 1;
+    end
+
+    function syncPageControls()
+        totalRows = height(state.visibleProjects);
+        totalPages = max(1, ceil(totalRows / state.pageSize));
+        if totalRows == 0
+            pageLabel.Text = 'Page 0 / 0 - 0 projects';
+        else
+            startIdx = localPageStartIndex();
+            endIdx = min(totalRows, startIdx + state.pageSize - 1);
+            pageLabel.Text = sprintf('Page %d / %d - %d-%d of %d', ...
+                state.currentPage, totalPages, startIdx, endIdx, totalRows);
+        end
+        prevPageButton.Enable = onOff(totalRows > 0 && state.currentPage > 1);
+        nextPageButton.Enable = onOff(totalRows > 0 && state.currentPage < totalPages);
+        pageSizeDropDown.Value = state.pageSize;
+    end
+
+    function syncSortControls()
+        if ~strcmp(char(string(sortDropDown.Value)), state.sortVariable)
+            sortDropDown.Value = state.sortVariable;
+        end
+        if state.sortAscending
+            sortDirectionButton.Text = 'Asc';
+        else
+            sortDirectionButton.Text = 'Desc';
         end
     end
 
@@ -1230,7 +1425,9 @@ function varargout = detecdivCatalogBrowser(varargin)
                 ['Groups         : ' localJoinedNames(groups, 'display_name')]
                 ['Locations      : ' num2str(locationCount)]
                 ['Resolved MAT   : ' localTextOr(projectMatPath, '<not resolved>')]
+                ['Project dir    : ' localTextOr(localStructField(resolutionInfo, 'projectDirPath'), '<not resolved>')]
                 ['Resolution     : ' localTextOr(localStructField(resolutionInfo, 'resolutionMethod'), '<none>')]
+                ['Missing folder : ' localTextOr(localJoinTextList(localStructField(resolutionInfo, 'missingProjectFolders')), '<none>')]
                 ' '
                 ['Metadata MAT   : ' localTextOr(localHubMetadataField(projectDetail, 'project_mat_abs'), '<none>')]
                 ['Metadata Dir   : ' localTextOr(localHubMetadataField(projectDetail, 'project_dir_abs'), '<none>')]
@@ -1290,17 +1487,29 @@ function varargout = detecdivCatalogBrowser(varargin)
         if strcmp(state.sourceMode, 'local')
             projectMatPath = char(string(row.project_mat_abs));
         else
-            [~, projectMatPath] = resolveSelectedHubProject();
+            [~, projectMatPath, resolutionInfo] = resolveSelectedHubProject();
         end
         if isempty(projectMatPath)
-            error('Could not resolve the project MAT path.');
+            if strcmp(state.sourceMode, 'hub')
+                error('%s', localHubResolutionMessage(char(string(row.name)), resolutionInfo));
+            else
+                error('Could not resolve the project MAT path.');
+            end
         end
 
         shallowObj = localFindLoadedProjectByMatPath(projectMatPath);
         if isempty(shallowObj)
-            [shallowObj, msg] = shallowLoad(projectMatPath);
+            if strcmp(state.sourceMode, 'hub')
+                [shallowObj, msg] = localShallowLoadResolved(projectMatPath, resolutionInfo);
+            else
+                [shallowObj, msg] = shallowLoad(projectMatPath);
+            end
             if isempty(shallowObj)
                 error('%s', msg);
+            end
+            if strcmp(state.sourceMode, 'hub')
+                shallowObj = localApplyHubLoadMetadata(shallowObj, row, projectMatPath, resolutionInfo);
+                shallowObj = detecdiv_hub_prepare_project_open(shallowObj, 'Hub', state.hubSettings);
             end
             try
                 assignin('base', matlab.lang.makeValidName(char(string(shallowObj.io.file))), shallowObj);
@@ -1325,6 +1534,37 @@ function varargout = detecdivCatalogBrowser(varargin)
         if isempty(pipeObj)
             error('%s', msg);
         end
+    end
+
+    function [shallowObj, msg] = localShallowLoadResolved(projectMatPath, resolutionInfo)
+        projectDirPath = char(string(localStructField(resolutionInfo, 'projectDirPath')));
+        if ~isempty(projectDirPath)
+            [shallowObj, msg] = shallowLoad(projectMatPath, 'ProjectDir', projectDirPath);
+        else
+            [shallowObj, msg] = shallowLoad(projectMatPath);
+        end
+    end
+
+    function shallowObj = localApplyHubLoadMetadata(shallowObj, row, projectMatPath, resolutionInfo)
+        if isempty(shallowObj) || ~isa(shallowObj, 'shallow')
+            return;
+        end
+        if ~isprop(shallowObj, 'runProfiles') || ~isstruct(shallowObj.runProfiles)
+            shallowObj.runProfiles = struct();
+        end
+        if ~isfield(shallowObj.runProfiles, 'hub') || ~isstruct(shallowObj.runProfiles.hub)
+            shallowObj.runProfiles.hub = struct();
+        end
+        shallowObj.runProfiles.hub.hubManaged = true;
+        shallowObj.runProfiles.hub.hub_project_id = char(string(row.project_id));
+        shallowObj.runProfiles.hub.project_id = char(string(row.project_id));
+        shallowObj.runProfiles.hub.project_name = char(string(row.name));
+        shallowObj.runProfiles.hub.project_mat_path = char(string(projectMatPath));
+        shallowObj.runProfiles.hub.local_project_mat_path = char(string(projectMatPath));
+        shallowObj.runProfiles.hub.project_dir_path = char(string(localStructField(resolutionInfo, 'projectDirPath')));
+        shallowObj.runProfiles.hub.local_project_dir_path = shallowObj.runProfiles.hub.project_dir_path;
+        shallowObj.runProfiles.hub.storage_is_shared_with_raw_dataset = true;
+        shallowObj.runProfiles.hub.loaded_from_catalog_at = char(datetime('now'));
     end
 
     function launchSpec = choosePipeline2LaunchSpec(shallowObj, projectMatPath)
@@ -1989,6 +2229,55 @@ function out = localFilterProjects(projects, searchText)
     out = projects(keep, :);
 end
 
+function out = localSortProjects(projects, sortVariable, sortAscending)
+    out = projects;
+    if isempty(projects) || height(projects) == 0
+        return;
+    end
+
+    sortVariable = char(string(sortVariable));
+    if isempty(sortVariable) || ~ismember(sortVariable, projects.Properties.VariableNames)
+        sortVariable = 'name';
+    end
+    if ~ismember(sortVariable, projects.Properties.VariableNames)
+        return;
+    end
+
+    direction = 'ascend';
+    if ~logical(sortAscending)
+        direction = 'descend';
+    end
+
+    values = projects.(sortVariable);
+    tempName = '__detecdiv_sort_key__';
+    while ismember(tempName, projects.Properties.VariableNames)
+        tempName = [tempName '_'];
+    end
+
+    try
+        if iscell(values)
+            values = string(values);
+        end
+        if isstring(values) || ischar(values) || iscategorical(values)
+            sortValues = lower(string(values));
+        elseif isdatetime(values) || isnumeric(values) || islogical(values)
+            sortValues = values;
+        else
+            sortValues = string(values);
+        end
+        out = projects;
+        out.(tempName) = sortValues;
+        out = sortrows(out, tempName, direction);
+        out.(tempName) = [];
+    catch
+        try
+            out = sortrows(projects, sortVariable, direction);
+        catch
+            out = projects;
+        end
+    end
+end
+
 function value = localStructField(in, fieldName)
     value = '';
     if isstruct(in) && isfield(in, fieldName)
@@ -2018,6 +2307,43 @@ function out = localTextOr(in, fallback)
         out = fallback;
     else
         out = txt;
+    end
+end
+
+function msg = localHubResolutionMessage(projectLabel, resolutionInfo)
+    projectLabel = char(string(projectLabel));
+    if isempty(projectLabel)
+        projectLabel = 'selected hub project';
+    end
+    msg = sprintf('Could not resolve a complete local project for "%s".', projectLabel);
+    candidates = localJoinTextList(localStructField(resolutionInfo, 'candidatePaths'));
+    missingFolders = localJoinTextList(localStructField(resolutionInfo, 'missingProjectFolders'));
+    if ~isempty(missingFolders)
+        msg = sprintf('%s Found .mat file(s), but missing project folder(s): %s', msg, missingFolders);
+    elseif ~isempty(candidates)
+        msg = sprintf('%s Candidate .mat path(s): %s', msg, candidates);
+    end
+end
+
+function out = localJoinTextList(values)
+    out = '';
+    if isempty(values)
+        return;
+    end
+    try
+        if iscell(values)
+            values = string(values);
+        else
+            values = string(values);
+        end
+        values = values(:);
+        values(values == "") = [];
+        if isempty(values)
+            return;
+        end
+        out = strjoin(cellstr(values), ' | ');
+    catch
+        out = char(string(values));
     end
 end
 
