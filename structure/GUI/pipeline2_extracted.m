@@ -77,6 +77,8 @@ classdef pipeline2 < matlab.apps.AppBase
         IsPipelineDirty logical = false
         CurrentRun = []
         CurrentRunPath char = ''
+        CurrentRunIsSeed logical = false
+        CurrentRunSourceId char = ''
         CurrentProject = []
         CurrentProjectVarName char = ''
         RuntimeDataSeriesCache struct = struct('key', '', 'names', {{}}, 'sampledRoiCount', 0, 'sampledFovCount', 0);
@@ -176,6 +178,7 @@ classdef pipeline2 < matlab.apps.AppBase
                     end
                 end
                 loadRunIntoUi(app, runObj);
+                markCurrentRunAsSeed(app, runObj);
             end
         end
 
@@ -11516,15 +11519,30 @@ classdef pipeline2 < matlab.apps.AppBase
             ok = ~isempty(app.CurrentProject) && isa(app.CurrentProject, 'shallow');
         end
 
-        function runObj = createOrUpdateCurrentRun(app, ctx, status)
-            if isempty(app.CurrentRun) || ~isa(app.CurrentRun, 'pipelineRun')
+        function runObj = createOrUpdateCurrentRun(app, ctx, status, forceNew, requestedRunId)
+            if nargin < 4 || isempty(forceNew)
+                forceNew = false;
+            end
+            if nargin < 5
+                requestedRunId = '';
+            end
+            createNewRun = logical(forceNew) || app.CurrentRunIsSeed || isempty(app.CurrentRun) || ~isa(app.CurrentRun, 'pipelineRun');
+            if createNewRun
                 ref = buildPipelineRef(app);
                 target = buildTargetRef(app);
-                runObj = pipelineRunNew(app.CurrentProject, ref.id, ref.path, ...
-                    'ctx', ctx, 'status', status, 'pipelineRef', ref, 'targetRef', target);
+                args = {'ctx', ctx, 'status', status, 'pipelineRef', ref, 'targetRef', target};
+                if ~isempty(strtrim(char(string(requestedRunId))))
+                    args = [{'runId', char(string(requestedRunId))} args]; %#ok<AGROW>
+                end
+                runObj = pipelineRunNew(app.CurrentProject, ref.id, ref.path, args{:});
+                if app.CurrentRunIsSeed && ~isempty(app.CurrentRunSourceId)
+                    logRunEvent(app, runObj, ['New run created from existing run ' app.CurrentRunSourceId '.'], 'pipeline2');
+                end
                 app.CurrentRun = runObj;
                 [runPath, ~] = runObj.getPath;
                 app.CurrentRunPath = runPath;
+                app.CurrentRunIsSeed = false;
+                app.CurrentRunSourceId = '';
             else
                 runObj = app.CurrentRun;
                 runObj.ctx = ctx;
@@ -11533,6 +11551,43 @@ classdef pipeline2 < matlab.apps.AppBase
                 runObj.targetRef = buildTargetRef(app);
                 runObj.templateId = runObj.pipelineRef.id;
                 runObj.templatePath = runObj.pipelineRef.path;
+            end
+        end
+
+        function markCurrentRunAsSeed(app, runObj)
+            app.CurrentRunIsSeed = true;
+            app.CurrentRunSourceId = '';
+            try
+                app.CurrentRunSourceId = char(string(runObj.runId));
+            catch
+            end
+            if ~isempty(app.CurrentRunSourceId)
+                app.RuninformationhereLabel.Text = ['New run from existing run: ' app.CurrentRunSourceId ...
+                    ' - parameters copied; next Run/Save creates a distinct run.'];
+            end
+            app.RunButton.Text = 'Run !';
+        end
+
+        function runId = suggestNextRunIdForUi(app)
+            ref = buildPipelineRef(app);
+            templateId = char(string(getField(app, ref, 'id', 'pipeline')));
+            if isempty(strtrim(templateId))
+                templateId = 'pipeline';
+            end
+            names = {};
+            try
+                if ~isempty(app.CurrentProject) && isa(app.CurrentProject, 'shallow') && ...
+                        isfield(app.CurrentProject.processing, 'pipelineRun') && ~isempty(app.CurrentProject.processing.pipelineRun)
+                    names = arrayfun(@(r) char(string(r.runId)), app.CurrentProject.processing.pipelineRun, 'UniformOutput', false);
+                end
+            catch
+                names = {};
+            end
+            n = 1;
+            runId = sprintf('%s_%d', templateId, n);
+            while any(strcmp(names, runId))
+                n = n + 1;
+                runId = sprintf('%s_%d', templateId, n);
             end
         end
 
@@ -11545,16 +11600,19 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
             ctx = buildRunContext(app);
-            runObj = createOrUpdateCurrentRun(app, ctx, 'preflight');
+            requestedRunId = '';
             if forceAs
-                pth = uigetdir(fullfile(app.CurrentProject.io.path, app.CurrentProject.io.file), 'Select run output folder');
-                if isequal(pth, 0)
+                defaultRunId = suggestNextRunIdForUi(app);
+                answer = inputdlg({'New run id:'}, 'Save run as', [1 48], {defaultRunId});
+                if isempty(answer)
                     return;
                 end
-                [~, runId] = fileparts(pth);
-                runObj.setPath(pth, runId);
-                app.CurrentRunPath = pth;
+                requestedRunId = strtrim(char(string(answer{1})));
+                if isempty(requestedRunId)
+                    return;
+                end
             end
+            runObj = createOrUpdateCurrentRun(app, ctx, 'preflight', forceAs, requestedRunId);
             try
                 logRunEvent(app, runObj, 'Run parameters saved from pipeline2.', 'pipeline2');
                 pipelineRunSave(runObj);
