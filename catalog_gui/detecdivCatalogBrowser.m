@@ -37,7 +37,7 @@ function varargout = detecdivCatalogBrowser(varargin)
 
     fig = uifigure( ...
         'Name', 'DetecDiv Catalog Browser', ...
-        'Position', [100 100 1320 800], ...
+        'Position', [80 80 1540 860], ...
         'Color', [0.98 0.98 0.98], ...
         'CloseRequestFcn', @onCloseFigure);
 
@@ -196,7 +196,7 @@ function varargout = detecdivCatalogBrowser(varargin)
 
     bodyGrid = uigridlayout(mainGrid, [1 2]);
     bodyGrid.Layout.Row = 3;
-    bodyGrid.ColumnWidth = {'2.6x', '1x'};
+    bodyGrid.ColumnWidth = {'3.3x', '1x'};
     bodyGrid.ColumnSpacing = 12;
     bodyGrid.Padding = [0 0 0 0];
 
@@ -1115,12 +1115,13 @@ function varargout = detecdivCatalogBrowser(varargin)
                 ['Processor cnt  : ' num2str(row.processor_count)]
                 ['Pipeline runs  : ' num2str(row.pipeline_run_count)]
                 ['Missing raw    : ' num2str(row.missing_raw_count)]
+                ['Modified date  : ' localTextOr(localDisplayDate(row.project_mtime), '<unknown>')]
+                ['Imported date  : ' localTextOr(localDisplayDate(row.created_at), '<unknown>')]
                 ['Last scan      : ' char(string(row.last_scan_at))]
                 ' '
                 ['Project MAT    : ' char(string(row.project_mat_abs))]
                 ['Project folder : ' char(string(row.project_dir_abs))]
                 ['Root folder    : ' char(string(row.root_abs_path))]
-                ['Relative path  : ' char(string(row.project_rel_from_root))]
                 };
             return;
         end
@@ -1302,7 +1303,7 @@ function varargout = detecdivCatalogBrowser(varargin)
     function syncUiFromState()
         isLocal = strcmp(state.sourceMode, 'local');
         if isLocal
-            rootLabel.Text = 'Project Root';
+            rootLabel.Text = 'Projects Root';
             rootEdit.Value = char(string(state.catalogSettings.defaultProjectRoot));
             sourceInfoLabel.Text = ['DB: ' char(string(state.catalogSettings.dbFile))];
             footerLabel.Text = 'Local SQLite mode uses only the local DB and local project paths.';
@@ -1705,17 +1706,50 @@ function displayTable = localBuildDisplayTable(projects, sourceMode, hubSettings
         displayTable.Owner = string(projects.owner_user_key);
     end
     displayTable.Health = string(projects.health_status);
-    displayTable.Status = string(projects.status);
     if strcmp(sourceMode, 'local')
         displayTable.FOV = projects.fov_count;
         displayTable.ROI = projects.roi_count;
         displayTable.Runs = projects.pipeline_run_count;
         displayTable.MissingRaw = projects.missing_raw_count;
+        displayTable.ModifiedDate = localDisplayDateColumn(projects.project_mtime);
+        displayTable.ImportedDate = localDisplayDateColumn(projects.created_at);
     else
         displayTable.Visibility = string(projects.visibility);
         displayTable.SizeGB = round(double(projects.total_bytes) ./ 1e9, 2);
     end
-    displayTable.RelativePath = string(projects.project_rel_from_root);
+end
+
+function out = localDisplayDateColumn(values)
+    values = string(values);
+    out = strings(size(values));
+    for i = 1:numel(values)
+        out(i) = string(localDisplayDate(values(i)));
+    end
+end
+
+function txt = localDisplayDate(value)
+    txt = '';
+    raw = strtrim(char(string(value)));
+    if isempty(raw)
+        return;
+    end
+
+    try
+        dt = datetime(raw, 'InputFormat', 'dd-MMM-yyyy HH:mm:ss');
+    catch
+        try
+            dt = datetime(raw, 'InputFormat', 'yyyy-MM-dd HH:mm:ss');
+        catch
+            try
+                dt = datetime(raw);
+            catch
+                txt = raw;
+                return;
+            end
+        end
+    end
+
+    txt = char(string(dt, 'yyyy-MM-dd HH:mm'));
 end
 
 function value = localStructField(in, fieldName)

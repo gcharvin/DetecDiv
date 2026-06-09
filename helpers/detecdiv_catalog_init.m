@@ -48,6 +48,7 @@ function [conn, dbFile] = detecdiv_catalog_init(dbFile)
         'format_tag TEXT, ' ...
         'health_status TEXT NOT NULL DEFAULT ''ok'', ' ...
         'health_message TEXT, ' ...
+        'created_at TEXT, ' ...
         'last_seen_at TEXT NOT NULL, ' ...
         'last_scan_at TEXT NOT NULL, ' ...
         'project_mtime TEXT, ' ...
@@ -95,8 +96,9 @@ function [conn, dbFile] = detecdiv_catalog_init(dbFile)
     localExec(conn, 'CREATE INDEX IF NOT EXISTS idx_catalog_raw_sources_project ON catalog_project_raw_sources(project_id)');
     localExec(conn, 'CREATE INDEX IF NOT EXISTS idx_catalog_pipeline_runs_project ON catalog_pipeline_runs(project_id)');
     localExec(conn, 'CREATE INDEX IF NOT EXISTS idx_catalog_pipeline_runs_status ON catalog_pipeline_runs(status)');
+    localEnsureProjectCreatedAt(conn);
 
-    localSetMeta(conn, 'schema_version', '1');
+    localSetMeta(conn, 'schema_version', '2');
     localSetMeta(conn, 'schema_name', 'detecdiv_catalog');
 end
 
@@ -114,6 +116,29 @@ end
 
 function localExec(conn, sql)
     exec(conn, sql);
+end
+
+function localEnsureProjectCreatedAt(conn)
+    columns = fetch(conn, 'SELECT name FROM pragma_table_info(''catalog_projects'')');
+    if isempty(columns)
+        return;
+    end
+
+    if iscell(columns)
+        columnNames = string(columns(:, 1));
+    elseif istable(columns)
+        columnNames = string(columns.name);
+    else
+        columnNames = string.empty(0, 1);
+    end
+
+    if any(strcmpi(columnNames, "created_at"))
+        return;
+    end
+
+    localExec(conn, 'ALTER TABLE catalog_projects ADD COLUMN created_at TEXT');
+    localExec(conn, ['UPDATE catalog_projects SET created_at = ' ...
+        'COALESCE(created_at, last_seen_at, last_scan_at, project_mtime)']);
 end
 
 function out = localNormalizePath(pathIn)
