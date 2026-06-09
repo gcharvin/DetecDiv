@@ -280,6 +280,11 @@ function varargout = detecdivCatalogBrowser(varargin)
     pipeline2Button.Layout.Row = 1;
     pipeline2Button.Layout.Column = 3;
 
+    newProjectButton = uibutton(actionGrid, 'push', 'Text', 'New Project...', ...
+        'ButtonPushedFcn', @onNewProjectInPipeline2);
+    newProjectButton.Layout.Row = 2;
+    newProjectButton.Layout.Column = 1;
+
     notesButton = uibutton(actionGrid, 'push', 'Text', 'Notes...', ...
         'Enable', 'off', 'ButtonPushedFcn', @onManageNotes);
     notesButton.Layout.Row = 2;
@@ -723,6 +728,16 @@ function varargout = detecdivCatalogBrowser(varargin)
                 pipeline2(shallowObj);
             end
             setStatus(sprintf('Opened pipeline2 for "%s".', char(string(row.name))));
+        catch ME
+            uialert(fig, ME.message, 'Pipeline2 Failed');
+            setStatus(['Pipeline2 failed: ' ME.message]);
+        end
+    end
+
+    function onNewProjectInPipeline2(~, ~)
+        try
+            pipeline2();
+            setStatus('Opened pipeline2 for a new project / raw data run.');
         catch ME
             uialert(fig, ME.message, 'Pipeline2 Failed');
             setStatus(['Pipeline2 failed: ' ME.message]);
