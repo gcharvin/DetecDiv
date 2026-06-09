@@ -275,15 +275,10 @@ function varargout = detecdivCatalogBrowser(varargin)
     openFolderButton.Layout.Row = 1;
     openFolderButton.Layout.Column = 2;
 
-    runLocalButton = uibutton(actionGrid, 'push', 'Text', 'Run locally...', ...
-        'Enable', 'off', 'ButtonPushedFcn', @onRunLocally);
-    runLocalButton.Layout.Row = 1;
-    runLocalButton.Layout.Column = 3;
-
-    submitRunButton = uibutton(actionGrid, 'push', 'Text', 'Submit to hub...', ...
-        'Enable', 'off', 'ButtonPushedFcn', @onSubmitRunToHub);
-    submitRunButton.Layout.Row = 2;
-    submitRunButton.Layout.Column = 1;
+    pipeline2Button = uibutton(actionGrid, 'push', 'Text', 'Pipeline2...', ...
+        'Enable', 'off', 'ButtonPushedFcn', @onOpenPipeline2);
+    pipeline2Button.Layout.Row = 1;
+    pipeline2Button.Layout.Column = 3;
 
     notesButton = uibutton(actionGrid, 'push', 'Text', 'Notes...', ...
         'Enable', 'off', 'ButtonPushedFcn', @onManageNotes);
@@ -707,24 +702,30 @@ function varargout = detecdivCatalogBrowser(varargin)
         end
     end
 
-    function onRunLocally(~, ~)
+    function onOpenPipeline2(~, ~)
         row = getSelectedProjectRow();
         if isempty(row)
             return;
         end
 
         try
-            [shallowObj, projectMatPath] = ensureProjectLoadedForRun(row); %#ok<ASGLU>
-            [pipeObj, jsonPath] = resolvePipelineForRun(shallowObj); %#ok<ASGLU>
-            if isempty(pipeObj)
-                uialert(fig, 'No pipeline could be resolved for this project.', 'Run Failed');
+            [shallowObj, projectMatPath] = ensureProjectLoadedForRun(row);
+            launchSpec = choosePipeline2LaunchSpec(shallowObj, projectMatPath);
+            if isempty(launchSpec)
                 return;
             end
-            pipelineRunGUI(pipeObj, shallowObj);
-            setStatus(sprintf('Opened local run builder for "%s".', char(string(row.name))));
+
+            if isfield(launchSpec, 'runObj') && ~isempty(launchSpec.runObj) && isa(launchSpec.runObj, 'pipelineRun')
+                pipeline2(shallowObj, launchSpec.runObj);
+            elseif isfield(launchSpec, 'pipeObj') && ~isempty(launchSpec.pipeObj) && isa(launchSpec.pipeObj, 'pipeline')
+                pipeline2(shallowObj, launchSpec.pipeObj);
+            else
+                pipeline2(shallowObj);
+            end
+            setStatus(sprintf('Opened pipeline2 for "%s".', char(string(row.name))));
         catch ME
-            uialert(fig, ME.message, 'Run Failed');
-            setStatus(['Local run failed: ' ME.message]);
+            uialert(fig, ME.message, 'Pipeline2 Failed');
+            setStatus(['Pipeline2 failed: ' ME.message]);
         end
     end
 
@@ -1152,8 +1153,7 @@ function varargout = detecdivCatalogBrowser(varargin)
 
         loadButton.Enable = onOff(hasRow);
         openFolderButton.Enable = onOff(hasRow);
-        runLocalButton.Enable = onOff(hasRow);
-        submitRunButton.Enable = onOff(hasRow && strcmp(state.sourceMode, 'hub'));
+        pipeline2Button.Enable = onOff(hasRow);
         notesButton.Enable = onOff(hasRow && strcmp(state.sourceMode, 'hub'));
         groupButton.Enable = onOff(hasRow && strcmp(state.sourceMode, 'hub'));
         aclButton.Enable = onOff(hasRow && strcmp(state.sourceMode, 'hub'));
@@ -1310,6 +1310,90 @@ function varargout = detecdivCatalogBrowser(varargin)
         if isempty(pipeObj)
             error('%s', msg);
         end
+    end
+
+    function launchSpec = choosePipeline2LaunchSpec(shallowObj, projectMatPath)
+        launchSpec = struct();
+        runs = localProjectPipelineRuns(shallowObj);
+        hasRuns = ~isempty(runs);
+        defaultPipelinePath = localProjectDefaultPipelinePath(shallowObj);
+        hasDefaultPipeline = ~isempty(defaultPipelinePath);
+
+        choices = {'Open project in pipeline2'};
+        choiceKeys = {'project'};
+        if hasDefaultPipeline
+            choices{end + 1} = 'Open project with default pipeline template'; %#ok<AGROW>
+            choiceKeys{end + 1} = 'defaultTemplate'; %#ok<AGROW>
+        end
+        choices{end + 1} = 'Choose pipeline template...';
+        choiceKeys{end + 1} = 'chooseTemplate';
+        if hasRuns
+            choices{end + 1} = 'Reproduce existing run...'; %#ok<AGROW>
+            choiceKeys{end + 1} = 'existingRun'; %#ok<AGROW>
+        end
+
+        [selectedIdx, ok] = listdlg( ...
+            'PromptString', localPipeline2Prompt(projectMatPath), ...
+            'SelectionMode', 'single', ...
+            'ListString', choices, ...
+            'ListSize', [430 180]);
+        if ~ok || isempty(selectedIdx)
+            launchSpec = [];
+            return;
+        end
+
+        switch choiceKeys{selectedIdx}
+            case 'project'
+                return;
+            case 'defaultTemplate'
+                [pipeObj, jsonPath] = localLoadPipelineTemplate(defaultPipelinePath);
+                launchSpec.pipeObj = pipeObj;
+                launchSpec.pipelinePath = jsonPath;
+            case 'chooseTemplate'
+                [pipeObj, jsonPath] = choosePipelineTemplateForPipeline2(projectMatPath);
+                if isempty(pipeObj)
+                    launchSpec = [];
+                    return;
+                end
+                launchSpec.pipeObj = pipeObj;
+                launchSpec.pipelinePath = jsonPath;
+            case 'existingRun'
+                runObj = choosePipelineRunForPipeline2(runs);
+                if isempty(runObj)
+                    launchSpec = [];
+                    return;
+                end
+                launchSpec.runObj = runObj;
+        end
+    end
+
+    function [pipeObj, jsonPath] = choosePipelineTemplateForPipeline2(projectMatPath)
+        pipeObj = [];
+        jsonPath = '';
+        startDir = fileparts(char(string(projectMatPath)));
+        if isempty(startDir) || ~isfolder(startDir)
+            startDir = pwd;
+        end
+        [fileName, folderName] = uigetfile({'*.json', 'Pipeline JSON (*.json)'}, ...
+            'Select a pipeline template for pipeline2', startDir);
+        if isequal(fileName, 0)
+            return;
+        end
+        [pipeObj, jsonPath] = localLoadPipelineTemplate(fullfile(folderName, fileName));
+    end
+
+    function runObj = choosePipelineRunForPipeline2(runs)
+        runObj = [];
+        labels = localPipelineRunLabels(runs);
+        [selectedIdx, ok] = listdlg( ...
+            'PromptString', 'Select the existing run to use as a pipeline2 seed', ...
+            'SelectionMode', 'single', ...
+            'ListString', labels, ...
+            'ListSize', [560 260]);
+        if ~ok || isempty(selectedIdx)
+            return;
+        end
+        runObj = runs(selectedIdx);
     end
 
     function refreshHubContext()
@@ -2551,6 +2635,106 @@ function jsonPath = localProjectDefaultPipelinePath(shallowObj)
         end
     catch
         jsonPath = '';
+    end
+end
+
+function prompt = localPipeline2Prompt(projectMatPath)
+    projectMatPath = char(string(projectMatPath));
+    if isempty(projectMatPath)
+        prompt = 'Choose how pipeline2 should open this catalog project';
+    else
+        prompt = sprintf('Choose how pipeline2 should open this catalog project:\n%s', projectMatPath);
+    end
+end
+
+function [pipeObj, jsonPath] = localLoadPipelineTemplate(jsonPath)
+    pipeObj = [];
+    jsonPath = char(string(jsonPath));
+    if isempty(jsonPath) || exist(jsonPath, 'file') ~= 2
+        error('detecdivCatalogBrowser:MissingPipelineTemplate', ...
+            'Pipeline template not found: %s', jsonPath);
+    end
+
+    [pipeObj, msg] = pipelineLoad(jsonPath);
+    if isempty(pipeObj)
+        error('detecdivCatalogBrowser:PipelineLoadFailed', '%s', msg);
+    end
+end
+
+function runs = localProjectPipelineRuns(shallowObj)
+    runs = [];
+    try
+        if isempty(shallowObj) || ~isa(shallowObj, 'shallow') || ...
+                ~isprop(shallowObj, 'processing') || ~isstruct(shallowObj.processing) || ...
+                ~isfield(shallowObj.processing, 'pipelineRun') || isempty(shallowObj.processing.pipelineRun)
+            return;
+        end
+
+        rawRuns = shallowObj.processing.pipelineRun;
+        if isa(rawRuns, 'pipelineRun')
+            runs = rawRuns;
+            return;
+        end
+        if iscell(rawRuns)
+            keep = cellfun(@(x) isa(x, 'pipelineRun'), rawRuns);
+            rawRuns = rawRuns(keep);
+            if isempty(rawRuns)
+                return;
+            end
+            runs = [rawRuns{:}];
+        end
+    catch
+        runs = [];
+    end
+end
+
+function labels = localPipelineRunLabels(runs)
+    if isempty(runs)
+        labels = {};
+        return;
+    end
+
+    labels = cell(numel(runs), 1);
+    for i = 1:numel(runs)
+        runObj = runs(i);
+        runId = localObjectTextProperty(runObj, 'runId', sprintf('run_%d', i));
+        status = localObjectTextProperty(runObj, 'status', '');
+        createdAt = localObjectTextProperty(runObj, 'createdAt', '');
+        templateId = localObjectTextProperty(runObj, 'templateId', '');
+        if isempty(templateId)
+            try
+                if isstruct(runObj.pipelineRef) && isfield(runObj.pipelineRef, 'id')
+                    templateId = char(string(runObj.pipelineRef.id));
+                end
+            catch
+            end
+        end
+
+        parts = {runId};
+        if ~isempty(status)
+            parts{end + 1} = ['status=' status]; %#ok<AGROW>
+        end
+        if ~isempty(templateId)
+            parts{end + 1} = ['template=' templateId]; %#ok<AGROW>
+        end
+        if ~isempty(createdAt)
+            parts{end + 1} = ['created=' createdAt]; %#ok<AGROW>
+        end
+        labels{i} = strjoin(parts, ' | ');
+    end
+end
+
+function value = localObjectTextProperty(obj, propName, defaultValue)
+    value = defaultValue;
+    try
+        if isprop(obj, propName)
+            raw = obj.(propName);
+            if ~isempty(raw)
+                value = char(string(raw));
+            end
+        end
+    catch
+        value = defaultValue;
     end
 end
 
