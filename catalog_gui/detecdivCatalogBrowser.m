@@ -24,6 +24,8 @@ function varargout = detecdivCatalogBrowser(varargin)
     state.hubSettings = hubSettings;
     state.sourceMode = localNormalizeSourceMode(hubSettings.sourceMode);
     state.projects = table();
+    state.visibleProjects = table();
+    state.searchText = '';
     state.selectedRow = [];
     state.job = [];
     state.pollTimer = [];
@@ -37,20 +39,20 @@ function varargout = detecdivCatalogBrowser(varargin)
 
     fig = uifigure( ...
         'Name', 'DetecDiv Catalog Browser', ...
-        'Position', [80 80 1540 860], ...
+        'Position', [60 60 1640 900], ...
         'Color', [0.98 0.98 0.98], ...
         'CloseRequestFcn', @onCloseFigure);
 
     mainGrid = uigridlayout(fig, [4 1]);
-    mainGrid.RowHeight = {154, 28, '1x', 38};
+    mainGrid.RowHeight = {190, 28, '1x', 38};
     mainGrid.ColumnWidth = {'1x'};
     mainGrid.Padding = [14 14 14 14];
     mainGrid.RowSpacing = 10;
 
-    controlGrid = uigridlayout(mainGrid, [4 11]);
+    controlGrid = uigridlayout(mainGrid, [5 11]);
     controlGrid.Layout.Row = 1;
-    controlGrid.RowHeight = {24, 32, 32, 32};
-    controlGrid.ColumnWidth = {78, 120, 65, '1x', 70, '1x', 85, 110, 95, 95, 105};
+    controlGrid.RowHeight = {24, 32, 32, 32, 32};
+    controlGrid.ColumnWidth = {78, 120, 65, '1x', 72, '1x', 70, '1x', 95, 95, 105};
     controlGrid.ColumnSpacing = 8;
     controlGrid.Padding = [0 0 0 0];
 
@@ -74,16 +76,29 @@ function varargout = detecdivCatalogBrowser(varargin)
     userKeyEdit.Layout.Row = 1;
     userKeyEdit.Layout.Column = 4;
 
+    passwordLabel = uilabel(controlGrid, 'Text', 'Password', 'FontWeight', 'bold');
+    passwordLabel.Layout.Row = 1;
+    passwordLabel.Layout.Column = 5;
+
+    try
+        passwordEdit = uieditfield(controlGrid, 'password');
+    catch
+        passwordEdit = uieditfield(controlGrid, 'text');
+    end
+    passwordEdit.Value = '';
+    passwordEdit.Layout.Row = 1;
+    passwordEdit.Layout.Column = 6;
+
     currentUserTitleLabel = uilabel(controlGrid, 'Text', 'Current', 'FontWeight', 'bold');
     currentUserTitleLabel.Layout.Row = 1;
-    currentUserTitleLabel.Layout.Column = 5;
+    currentUserTitleLabel.Layout.Column = 7;
 
     currentUserLabel = uilabel(controlGrid, ...
         'Text', '', ...
         'HorizontalAlignment', 'left', ...
         'FontAngle', 'italic');
     currentUserLabel.Layout.Row = 1;
-    currentUserLabel.Layout.Column = [6 8];
+    currentUserLabel.Layout.Column = 8;
 
     loginButton = uibutton(controlGrid, 'push', 'Text', 'Login...', ...
         'ButtonPushedFcn', @onHubLogin);
@@ -186,7 +201,27 @@ function varargout = detecdivCatalogBrowser(varargin)
         'HorizontalAlignment', 'left', ...
         'FontAngle', 'italic');
     sourceInfoLabel.Layout.Row = 4;
-    sourceInfoLabel.Layout.Column = 10;
+    sourceInfoLabel.Layout.Column = [10 11];
+
+    searchLabel = uilabel(controlGrid, 'Text', 'Search', 'FontWeight', 'bold');
+    searchLabel.Layout.Row = 5;
+    searchLabel.Layout.Column = 1;
+
+    searchEdit = uieditfield(controlGrid, 'text', ...
+        'Value', state.searchText, ...
+        'ValueChangedFcn', @onSearchChanged);
+    try
+        searchEdit.ValueChangingFcn = @onSearchChanging;
+    catch
+    end
+    searchEdit.Layout.Row = 5;
+    searchEdit.Layout.Column = [2 8];
+
+    clearSearchButton = uibutton(controlGrid, 'push', ...
+        'Text', 'Clear', ...
+        'ButtonPushedFcn', @onClearSearch);
+    clearSearchButton.Layout.Row = 5;
+    clearSearchButton.Layout.Column = 9;
 
     statusLabel = uilabel(mainGrid, ...
         'Text', 'Ready.', ...
@@ -265,11 +300,6 @@ function varargout = detecdivCatalogBrowser(varargin)
     aclButton.Layout.Row = 3;
     aclButton.Layout.Column = 1;
 
-    deleteButton = uibutton(actionGrid, 'push', 'Text', 'Delete...', ...
-        'Enable', 'off', 'ButtonPushedFcn', @onPreviewDelete);
-    deleteButton.Layout.Row = 3;
-    deleteButton.Layout.Column = 2;
-
     footerLabel = uilabel(mainGrid, ...
         'Text', 'Local mode uses SQLite. Hub mode uses the API and maps server roots to local mounts when needed.', ...
         'HorizontalAlignment', 'left', ...
@@ -293,8 +323,10 @@ function varargout = detecdivCatalogBrowser(varargin)
             return;
         end
 
-        [userKey, password] = localPromptHubCredentials(userKeyEdit.Value);
+        userKey = strtrim(char(string(userKeyEdit.Value)));
+        password = char(string(passwordEdit.Value));
         if isempty(userKey) || isempty(password)
+            uialert(fig, 'User and password are required to open a Hub session.', 'Missing Hub Credentials');
             return;
         end
 
@@ -302,6 +334,8 @@ function varargout = detecdivCatalogBrowser(varargin)
         try
             [sessionInfo, state.hubSettings] = detecdiv_hub_login(userKey, password, state.hubSettings); %#ok<NASGU>
             userKeyEdit.Value = state.hubSettings.userKey;
+            passwordEdit.Value = '';
+            syncUiFromState();
             refreshProjectsTable();
             setStatus(sprintf('Hub session opened for %s.', state.hubSettings.userKey));
         catch ME
@@ -318,6 +352,7 @@ function varargout = detecdivCatalogBrowser(varargin)
         try
             state.hubSettings = detecdiv_hub_logout(state.hubSettings);
             state.currentUser = struct();
+            passwordEdit.Value = '';
             syncUiFromState();
             refreshProjectsTable('PreserveStatus', true);
             setStatus('Hub session cleared.');
@@ -512,6 +547,28 @@ function varargout = detecdivCatalogBrowser(varargin)
         refreshProjectsTable();
     end
 
+    function onSearchChanged(~, ~)
+        state.searchText = char(string(searchEdit.Value));
+        updateProjectTableFromState();
+        restorePreviousSelection();
+        updateSelectionState();
+    end
+
+    function onSearchChanging(~, event)
+        state.searchText = char(string(event.Value));
+        updateProjectTableFromState();
+        restorePreviousSelection();
+        updateSelectionState();
+    end
+
+    function onClearSearch(~, ~)
+        state.searchText = '';
+        searchEdit.Value = '';
+        updateProjectTableFromState();
+        restorePreviousSelection();
+        updateSelectionState();
+    end
+
     function onProjectSelected(~, event)
         if isempty(event.Indices)
             state.selectedRow = [];
@@ -520,16 +577,16 @@ function varargout = detecdivCatalogBrowser(varargin)
         end
 
         state.selectedRow = event.Indices(1, 1);
-        if isempty(state.projects) || height(state.projects) < state.selectedRow
+        if isempty(state.visibleProjects) || height(state.visibleProjects) < state.selectedRow
             updateSelectionState();
             return;
         end
 
         if strcmp(state.sourceMode, 'local')
-            state.catalogSettings.lastSelectedProjectMat = char(string(state.projects.project_mat_abs(state.selectedRow)));
+            state.catalogSettings.lastSelectedProjectMat = char(string(state.visibleProjects.project_mat_abs(state.selectedRow)));
             detecdiv_catalog_settings_set(state.catalogSettings);
         else
-            state.hubSettings.lastProjectId = char(string(state.projects.project_id(state.selectedRow)));
+            state.hubSettings.lastProjectId = char(string(state.visibleProjects.project_id(state.selectedRow)));
             detecdiv_hub_settings_set(state.hubSettings);
         end
         updateSelectionState();
@@ -997,8 +1054,7 @@ function varargout = detecdivCatalogBrowser(varargin)
                 projects = localNormalizeLocalProjects( ...
                     detecdiv_catalog_list_projects(state.catalogSettings.dbFile));
                 state.projects = projects;
-                state.lastVisibleProjectCount = height(projects);
-                projectTable.Data = localBuildDisplayTable(projects, 'local', state.hubSettings);
+                updateProjectTableFromState();
                 applyProjectTableStyles();
                 restorePreviousSelection();
                 updateSelectionState();
@@ -1022,8 +1078,7 @@ function varargout = detecdivCatalogBrowser(varargin)
                 'OwnerKey', state.hubSelectedOwnerKey, ...
                 'OwnedOnly', state.hubOwnedOnly));
             state.projects = projects;
-            state.lastVisibleProjectCount = height(projects);
-            projectTable.Data = localBuildDisplayTable(projects, 'hub', state.hubSettings);
+            updateProjectTableFromState();
             applyProjectTableStyles();
             restorePreviousSelection();
             updateSelectionState();
@@ -1037,6 +1092,7 @@ function varargout = detecdivCatalogBrowser(varargin)
             end
         catch ME
             state.projects = table();
+            state.visibleProjects = table();
             projectTable.Data = table();
             applyProjectTableStyles();
             state.selectedRow = [];
@@ -1047,10 +1103,17 @@ function varargout = detecdivCatalogBrowser(varargin)
         end
     end
 
+    function updateProjectTableFromState()
+        state.visibleProjects = localFilterProjects(state.projects, state.searchText);
+        state.lastVisibleProjectCount = height(state.visibleProjects);
+        projectTable.Data = localBuildDisplayTable(state.visibleProjects, state.sourceMode, state.hubSettings);
+        applyProjectTableStyles();
+    end
+
     function applyProjectTableStyles()
         try
             removeStyle(projectTable);
-            loadedRows = localLoadedRows(state.projects, state.sourceMode, state.hubSettings);
+            loadedRows = localLoadedRows(state.visibleProjects, state.sourceMode, state.hubSettings);
             if ~isempty(loadedRows)
                 loadedStyle = uistyle('BackgroundColor', [0.83 0.94 0.86]);
                 addStyle(projectTable, loadedStyle, 'row', loadedRows);
@@ -1061,7 +1124,7 @@ function varargout = detecdivCatalogBrowser(varargin)
 
     function restorePreviousSelection()
         state.selectedRow = [];
-        if isempty(state.projects) || height(state.projects) == 0
+        if isempty(state.visibleProjects) || height(state.visibleProjects) == 0
             return;
         end
 
@@ -1070,13 +1133,13 @@ function varargout = detecdivCatalogBrowser(varargin)
             if isempty(wantedKey)
                 return;
             end
-            matchIdx = find(strcmp(string(state.projects.project_mat_abs), string(wantedKey)), 1, 'first');
+            matchIdx = find(strcmp(string(state.visibleProjects.project_mat_abs), string(wantedKey)), 1, 'first');
         else
             wantedKey = char(string(state.hubSettings.lastProjectId));
             if isempty(wantedKey)
                 return;
             end
-            matchIdx = find(strcmp(string(state.projects.project_id), string(wantedKey)), 1, 'first');
+            matchIdx = find(strcmp(string(state.visibleProjects.project_id), string(wantedKey)), 1, 'first');
         end
         if ~isempty(matchIdx)
             state.selectedRow = matchIdx;
@@ -1094,7 +1157,6 @@ function varargout = detecdivCatalogBrowser(varargin)
         notesButton.Enable = onOff(hasRow && strcmp(state.sourceMode, 'hub'));
         groupButton.Enable = onOff(hasRow && strcmp(state.sourceMode, 'hub'));
         aclButton.Enable = onOff(hasRow && strcmp(state.sourceMode, 'hub'));
-        deleteButton.Enable = onOff(hasRow && strcmp(state.sourceMode, 'hub'));
         addToGroupButton.Enable = onOff(hasRow && strcmp(state.sourceMode, 'hub'));
 
         if ~hasRow
@@ -1175,10 +1237,10 @@ function varargout = detecdivCatalogBrowser(varargin)
         if isempty(state.selectedRow)
             return;
         end
-        if isempty(state.projects) || height(state.projects) < state.selectedRow
+        if isempty(state.visibleProjects) || height(state.visibleProjects) < state.selectedRow
             return;
         end
-        row = state.projects(state.selectedRow, :);
+        row = state.visibleProjects(state.selectedRow, :);
     end
 
     function [projectDetail, projectMatPath, resolutionInfo] = resolveSelectedHubProject()
@@ -1325,11 +1387,13 @@ function varargout = detecdivCatalogBrowser(varargin)
         userKeyEdit.Value = char(string(state.hubSettings.userKey));
         localMountEdit.Value = char(string(state.hubSettings.defaultLocalProjectRoot));
         sourceDropDown.Value = state.sourceMode;
+        searchEdit.Value = state.searchText;
         backgroundCheck.Value = logical(state.catalogSettings.backgroundIndexing);
         backgroundCheck.Enable = onOff(isLocal);
         baseUrlEdit.Editable = onOff(~isLocal);
         localMountEdit.Editable = onOff(~isLocal);
         userKeyEdit.Editable = onOff(~isLocal);
+        passwordEdit.Editable = onOff(~isLocal);
         loginButton.Enable = onOff(~isLocal);
         logoutButton.Enable = onOff(~isLocal);
         groupDropDown.Enable = onOff(~isLocal);
@@ -1344,6 +1408,8 @@ function varargout = detecdivCatalogBrowser(varargin)
         localSetVisible(localMountEdit, ~isLocal);
         localSetVisible(userKeyLabel, ~isLocal);
         localSetVisible(userKeyEdit, ~isLocal);
+        localSetVisible(passwordLabel, ~isLocal);
+        localSetVisible(passwordEdit, ~isLocal);
         localSetVisible(currentUserTitleLabel, ~isLocal);
         localSetVisible(currentUserLabel, ~isLocal);
         localSetVisible(loginButton, ~isLocal);
@@ -1354,6 +1420,7 @@ function varargout = detecdivCatalogBrowser(varargin)
         localSetVisible(refreshGroupsButton, ~isLocal);
         localSetVisible(addToGroupButton, ~isLocal);
         localSetVisible(newGroupButton, ~isLocal);
+        localSetVisible(indexButton, isLocal);
 
         browseButton.Text = ternaryText(isLocal, 'Browse...', 'Map...');
         sourceLabel.Text = 'Source';
@@ -1361,7 +1428,7 @@ function varargout = detecdivCatalogBrowser(varargin)
     end
 
     function setBusyState(tf)
-        indexButton.Enable = onOff(~tf);
+        indexButton.Enable = onOff(~tf && strcmp(state.sourceMode, 'local'));
         refreshButton.Enable = 'on';
         browseButton.Enable = onOff(~tf);
         saveRootButton.Enable = onOff(~tf);
@@ -1371,6 +1438,7 @@ function varargout = detecdivCatalogBrowser(varargin)
         baseUrlEdit.Editable = onOff(~tf && strcmp(state.sourceMode, 'hub'));
         localMountEdit.Editable = onOff(~tf && strcmp(state.sourceMode, 'hub'));
         userKeyEdit.Editable = onOff(~tf && strcmp(state.sourceMode, 'hub'));
+        passwordEdit.Editable = onOff(~tf && strcmp(state.sourceMode, 'hub'));
         loginButton.Enable = onOff(~tf && strcmp(state.sourceMode, 'hub'));
         logoutButton.Enable = onOff(~tf && strcmp(state.sourceMode, 'hub'));
         groupDropDown.Enable = onOff(~tf && strcmp(state.sourceMode, 'hub'));
@@ -1392,8 +1460,13 @@ function varargout = detecdivCatalogBrowser(varargin)
             return;
         end
 
+        tokenLabel = localTokenLabel(state.hubSettings);
         if isempty(fieldnames(state.currentUser))
-            label = '<not resolved>';
+            if isempty(tokenLabel)
+                label = 'Disconnected';
+            else
+                label = ['Connected, token ' tokenLabel];
+            end
             return;
         end
 
@@ -1409,6 +1482,11 @@ function varargout = detecdivCatalogBrowser(varargin)
         authMode = char(string(state.hubSettings.authMode));
         if ~isempty(authMode)
             label = sprintf('%s [%s]', label, authMode);
+        end
+        if isempty(tokenLabel)
+            label = [label ' - no token'];
+        else
+            label = [label ' - token ' tokenLabel];
         end
     end
 
@@ -1524,9 +1602,9 @@ end
 
 function heights = localHeaderRowHeights(isLocal)
     if isLocal
-        heights = {24, 0, 32, 0};
+        heights = {24, 0, 32, 0, 32};
     else
-        heights = {24, 32, 32, 32};
+        heights = {24, 32, 32, 32, 32};
     end
 end
 
@@ -1549,6 +1627,24 @@ function mode = localNormalizeSourceMode(mode)
     mode = lower(strtrim(char(string(mode))));
     if ~ismember(mode, {'local', 'hub'})
         mode = 'local';
+    end
+end
+
+function label = localTokenLabel(hubSettings)
+    label = '';
+    if ~isstruct(hubSettings) || ~isfield(hubSettings, 'sessionToken')
+        return;
+    end
+
+    token = strtrim(char(string(hubSettings.sessionToken)));
+    if isempty(token)
+        return;
+    end
+
+    if numel(token) <= 18
+        label = token;
+    else
+        label = [token(1:10) '...' token(end-5:end)];
     end
 end
 
@@ -1640,6 +1736,14 @@ function projects = localNormalizeHubProjects(items)
     totalBytes = zeros(n, 1);
     visibility = strings(n, 1);
     ownerKeys = strings(n, 1);
+    fovCounts = nan(n, 1);
+    roiCounts = nan(n, 1);
+    classifierCounts = nan(n, 1);
+    processorCounts = nan(n, 1);
+    pipelineRunCounts = nan(n, 1);
+    missingRawCounts = nan(n, 1);
+    createdAt = strings(n, 1);
+    updatedAt = strings(n, 1);
 
     for i = 1:n
         item = items{i};
@@ -1664,6 +1768,14 @@ function projects = localNormalizeHubProjects(items)
         matBytes(i) = localNumericField(item, 'project_mat_bytes');
         dirBytes(i) = localNumericField(item, 'project_dir_bytes');
         totalBytes(i) = localNumericField(item, 'total_bytes');
+        fovCounts(i) = localNumericField(item, 'fov_count');
+        roiCounts(i) = localNumericField(item, 'roi_count');
+        classifierCounts(i) = localNumericField(item, 'classifier_count');
+        processorCounts(i) = localNumericField(item, 'processor_count');
+        pipelineRunCounts(i) = localNumericField(item, 'pipeline_run_count');
+        missingRawCounts(i) = localNumericField(item, 'missing_raw_count');
+        createdAt(i) = string(localStructField(item, 'created_at'));
+        updatedAt(i) = string(localStructField(item, 'updated_at'));
     end
 
     projects = table();
@@ -1672,13 +1784,15 @@ function projects = localNormalizeHubProjects(items)
     projects.status = statuses;
     projects.health_status = health;
     projects.raw_status = repmat("unknown", n, 1);
-    projects.fov_count = nan(n, 1);
-    projects.roi_count = nan(n, 1);
-    projects.classifier_count = nan(n, 1);
-    projects.processor_count = nan(n, 1);
-    projects.pipeline_run_count = nan(n, 1);
-    projects.missing_raw_count = nan(n, 1);
-    projects.last_scan_at = repmat("", n, 1);
+    projects.fov_count = fovCounts;
+    projects.roi_count = roiCounts;
+    projects.classifier_count = classifierCounts;
+    projects.processor_count = processorCounts;
+    projects.pipeline_run_count = pipelineRunCounts;
+    projects.missing_raw_count = missingRawCounts;
+    projects.last_scan_at = updatedAt;
+    projects.project_mtime = updatedAt;
+    projects.created_at = createdAt;
     projects.project_mat_abs = mats;
     projects.project_dir_abs = dirs;
     projects.root_abs_path = repmat("", n, 1);
@@ -1702,21 +1816,13 @@ function displayTable = localBuildDisplayTable(projects, sourceMode, hubSettings
     displayTable = table();
     displayTable.Name = string(projects.name);
     displayTable.Loaded = localLoadedLabels(projects, sourceMode, hubSettings);
-    if ismember('owner_user_key', projects.Properties.VariableNames)
-        displayTable.Owner = string(projects.owner_user_key);
-    end
     displayTable.Health = string(projects.health_status);
-    if strcmp(sourceMode, 'local')
-        displayTable.FOV = projects.fov_count;
-        displayTable.ROI = projects.roi_count;
-        displayTable.Runs = projects.pipeline_run_count;
-        displayTable.MissingRaw = projects.missing_raw_count;
-        displayTable.ModifiedDate = localDisplayDateColumn(projects.project_mtime);
-        displayTable.ImportedDate = localDisplayDateColumn(projects.created_at);
-    else
-        displayTable.Visibility = string(projects.visibility);
-        displayTable.SizeGB = round(double(projects.total_bytes) ./ 1e9, 2);
-    end
+    displayTable.FOV = projects.fov_count;
+    displayTable.ROI = projects.roi_count;
+    displayTable.Runs = projects.pipeline_run_count;
+    displayTable.MissingRaw = projects.missing_raw_count;
+    displayTable.ModifiedDate = localDisplayDateColumn(projects.project_mtime);
+    displayTable.ImportedDate = localDisplayDateColumn(projects.created_at);
 end
 
 function out = localDisplayDateColumn(values)
@@ -1750,6 +1856,38 @@ function txt = localDisplayDate(value)
     end
 
     txt = char(string(dt, 'yyyy-MM-dd HH:mm'));
+end
+
+function out = localFilterProjects(projects, searchText)
+    out = projects;
+    if isempty(projects) || height(projects) == 0
+        return;
+    end
+
+    query = lower(strtrim(char(string(searchText))));
+    if isempty(query)
+        return;
+    end
+
+    keep = false(height(projects), 1);
+    varNames = projects.Properties.VariableNames;
+    for i = 1:height(projects)
+        rowText = "";
+        for j = 1:numel(varNames)
+            value = projects.(varNames{j});
+            try
+                rowText = rowText + " " + string(value(i));
+            catch
+                try
+                    rowText = rowText + " " + string(value{i});
+                catch
+                end
+            end
+        end
+        keep(i) = contains(lower(rowText), query);
+    end
+
+    out = projects(keep, :);
 end
 
 function value = localStructField(in, fieldName)
