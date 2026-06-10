@@ -1200,10 +1200,10 @@ function node = injectGlobalSelectionIntoNode(node, ctx)
     if isempty(fovs)
     else
         nodeType = lower(char(string(getfielddefault(node,'type',''))));
-        if any(strcmp(nodeType, {'roiidentify','roipattern','roimanual','roigrid','roiextract','roitracked'}))
-            if ~isfield(node.params,'fovIndex') || isempty(node.params.fovIndex)
-                node.params.fovIndex = fovs;
-            end
+        if strcmp(nodeType, 'dataloader')
+            node.params.positionIdx = fovs;
+        elseif any(strcmp(nodeType, {'roiidentify','roipattern','roimanual','roigrid','roiextract','roitracked'}))
+            node.params.fovIndex = fovs;
         end
     end
 
@@ -1214,9 +1214,7 @@ function node = injectGlobalSelectionIntoNode(node, ctx)
     if ~isempty(frames)
         nodeType = lower(char(string(getfielddefault(node,'type',''))));
         if supportsInheritedFrames(nodeType)
-            if ~isfield(node.params,'frames') || isempty(node.params.frames)
-                node.params.frames = frames;
-            end
+            node.params.frames = frames;
         end
     end
 end
