@@ -9,6 +9,7 @@ function param = setparam(ctx)
     param.label          = '';
     param.write          = true;
     param.interactive    = false;
+    param.useExistingProjectSources = false;
 
     if nargin < 1 || isempty(ctx)
         return;

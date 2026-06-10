@@ -38,6 +38,35 @@ function ctx = process(ctx)
         end
     end
 
+    if isfield(p, 'useExistingProjectSources') && ~isempty(p.useExistingProjectSources) && logical(p.useExistingProjectSources)
+        if ~isfield(ctx, 'shallow') || isempty(ctx.shallow) || ~isa(ctx.shallow, 'shallow')
+            error('dataLoader.process:NoProject', ...
+                'useExistingProjectSources requires ctx.shallow to be a loaded shallow project.');
+        end
+        ctx.fovList = ctx.shallow.fov;
+        ctx.images = ctx.fovList;
+        if ~isempty(ctx.fovList)
+            try
+                fovChannels = ctx.fovList(1).channel;
+                if ~isempty(fovChannels)
+                    ctx.channels = fovChannels;
+                elseif ~isfield(ctx,'channels') || isempty(ctx.channels)
+                    ctx.channels = {};
+                end
+            catch
+            end
+        end
+        if isprop(ctx.shallow,'runProfiles')
+            rp = ctx.shallow.runProfiles;
+            if ~isfield(rp,'dataloading') || isempty(rp.dataloading)
+                rp.dataloading = struct();
+            end
+            rp.dataloading.dataLoader = p;
+            ctx.shallow.runProfiles = rp;
+        end
+        return;
+    end
+
     out = [];
     if isfield(ctx,'dataOutput') && ~isempty(ctx.dataOutput)
         out = ctx.dataOutput;
