@@ -91,6 +91,51 @@ function runObj = pipelineRunNew(shallowObj, templateId, templatePath, varargin)
 
     % attach to project
     shallowObj.processing.pipelineRun(end+1) = runObj;
+    emitPipelineRunCreated(shallowObj, runObj);
+end
+
+function emitPipelineRunCreated(shallowObj, runObj)
+    if exist('detecdiv_event', 'file') ~= 2
+        return;
+    end
+
+    payload = struct();
+    payload.kind = 'pipelineRun';
+    payload.action = 'created';
+    payload.source = 'pipelineRunNew';
+    try
+        payload.runId = char(string(runObj.runId));
+    catch
+        payload.runId = '';
+    end
+    try
+        payload.runIndex = numel(shallowObj.processing.pipelineRun);
+    catch
+        payload.runIndex = [];
+    end
+    try
+        payload.runPath = char(string(runObj.path));
+    catch
+        payload.runPath = '';
+    end
+    try
+        payload.projectPath = fullfile(shallowObj.io.path, shallowObj.io.file);
+    catch
+        payload.projectPath = '';
+    end
+    try
+        payload.projectName = char(string(shallowObj.id));
+    catch
+        payload.projectName = '';
+    end
+
+    try
+        detecdiv_event('emit', 'pipelineRunCreated', payload);
+        detecdiv_event('emit', 'workspaceChanged', payload);
+    catch ME
+        warning('pipelineRunNew:EventEmitFailed', ...
+            'Unable to broadcast pipeline run creation: %s', ME.message);
+    end
 end
 
 function ctx = attachRunPathsToContext(ctx, runObj)
