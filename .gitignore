@@ -32,6 +32,7 @@ backups/pipelineGUI_layout_sync/
 backups/*_layout_sync/
 backups/pipeline2_*/
 backups/mlapp_model_patch/
+backups/workflow2_*_sync/
 
 # Local analysis and pipeline run artifacts
 analysis_outputs/
