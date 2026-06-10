@@ -23,6 +23,11 @@ function ref = detecdiv_hub_project_ref(shallowObj, hub)
 
     hubMeta = localHubMetadata(shallowObj);
     ref = localApplyHubMetadataPaths(ref, hubMeta);
+    [hubManagedFlag, hasHubManagedFlag] = localFirstLogical(hubMeta, {'hubManaged','hub_managed'});
+    if hasHubManagedFlag && hubManagedFlag
+        ref.hubManaged = true;
+        ref.source = 'runProfiles.hub.hubManaged';
+    end
     [ref.project_id, idSource] = localFirstText(hubMeta, {'hub_project_id','hubProjectId','project_id','projectId','id'});
     [ref.project_key, keySource] = localFirstText(hubMeta, {'project_key','projectKey','hub_project_key','hubProjectKey'});
     if ~isempty(ref.project_id)
@@ -35,7 +40,7 @@ function ref = detecdiv_hub_project_ref(shallowObj, hub)
         ref.source = keySource;
     end
 
-    if isempty(ref.project_id)
+    if ref.hubManaged && isempty(ref.project_id)
         try
             row = localLookupProject(ref, hub);
             if ~isempty(row)
@@ -163,6 +168,35 @@ function [txt, source] = localFirstText(S, names)
             source = ['runProfiles.hub.' name];
             return;
         end
+    end
+end
+
+function [value, found] = localFirstLogical(S, names)
+    value = false;
+    found = false;
+    if ~isstruct(S)
+        return;
+    end
+    for i = 1:numel(names)
+        name = names{i};
+        if ~isfield(S, name) || isempty(S.(name))
+            continue;
+        end
+        found = true;
+        raw = S.(name);
+        try
+            if islogical(raw)
+                value = logical(raw(1));
+            elseif isnumeric(raw)
+                value = logical(raw(1));
+            else
+                txt = lower(strtrim(char(string(raw))));
+                value = any(strcmp(txt, {'1','true','yes','on'}));
+            end
+        catch
+            value = false;
+        end
+        return;
     end
 end
 
