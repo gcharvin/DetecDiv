@@ -203,8 +203,11 @@ classdef detecdiv < matlab.apps.AppBase
                 end
 
                 if i <= numel(app.Data.ProjectpipelineRun) && ~isempty(app.Data.ProjectpipelineRun{i})
+                    cmRunRoot = uicontextmenu(app.DetecDivUIFigure);
+                    m = uimenu(cmRunRoot,'Text','Delete all runs...');
+                    m.MenuSelectedFcn={@contextMenuDeleteAllPipelineRunsFcn,i,'ProjectpipelineRunRoot'};
                     runRoot = uitreenode(h1(i),'Text','Run','Tag','ProjectpipelineRunRoot', ...
-                        'UserData',i,'Icon',fullfile(pth,'pipeline_run.png'));
+                        'UserData',i,'ContextMenu',cmRunRoot,'Icon',fullfile(pth,'pipeline_run.png'));
                     for k=1:numel(app.Data.ProjectpipelineRun{i})
                         createPipelineRunTreeNode(runRoot, i, k, pth);
                     end
@@ -280,7 +283,13 @@ classdef detecdiv < matlab.apps.AppBase
                 m = uimenu(cm,'Text','Delete pipeline folder');
                 m.MenuSelectedFcn={@contextMenuDeletePipelineFcn,pipeIdx,'Pipeline'};
 
-                pNode=uitreenode(parentNode,'Text',app.Data.Pipeline{pipeIdx},'Tag','Pipeline','UserData',pipeIdx, ...
+                label = app.Data.Pipeline{pipeIdx};
+                if isfield(app.Data,'PipelineDisplay') && pipeIdx <= numel(app.Data.PipelineDisplay) && ...
+                        ~isempty(app.Data.PipelineDisplay{pipeIdx})
+                    label = app.Data.PipelineDisplay{pipeIdx};
+                end
+
+                pNode=uitreenode(parentNode,'Text',label,'Tag','Pipeline','UserData',pipeIdx, ...
                     'ContextMenu',cm,'Icon',fullfile(pth,'pipeline.png'));
 
                 if pipeIdx <= numel(app.Data.PipelineModules) && ~isempty(app.Data.PipelineModules{pipeIdx})
@@ -537,9 +546,9 @@ end
                     return;
                 end
                 try
-                    pipelineGUI([], pipe);
+                    app.openPipelineWithContext(pipe);
                 catch ME
-                    uialert(app.DetecDivUIFigure, ME.message, 'Pipeline GUI error', 'Icon', 'error');
+                    uialert(app.DetecDivUIFigure, ME.message, 'Pipeline2 error', 'Icon', 'error');
                 end
             end
 
@@ -796,7 +805,20 @@ end
                 else
                     shallowObj.processing.pipelineRun = shallowObj.processing.pipelineRun(keep);
                 end
+                assignin('base', projVar, shallowObj);
+                try
+                    shallowSave(shallowObj);
+                catch ME
+                    uialert(app.DetecDivUIFigure, ME.message, 'Project save error', 'Icon', 'warning');
+                end
                 RefreshtreewindowMenuSelected(app);
+            end
+
+            function contextMenuDeleteAllPipelineRunsFcn(src,event,arg,str) %#ok<INUSD>
+                if ~strcmp(str,'ProjectpipelineRunRoot')
+                    return;
+                end
+                deleteAllProjectPipelineRuns(arg);
             end
 
             function contextMenuRunPipelineRunFcn(src,event,arg,str) %#ok<INUSD>
@@ -825,6 +847,63 @@ end
                     return;
                 end
                 cancelProjectPipelineRunHubJob(arg(1), arg(2));
+            end
+
+            function deleteAllProjectPipelineRuns(projIdx)
+                if projIdx > numel(app.Data.Project)
+                    return;
+                end
+
+                projVar = app.Data.Project{projIdx};
+                shallowObj = evalin('base', projVar);
+                if ~isfield(shallowObj.processing,'pipelineRun') || isempty(shallowObj.processing.pipelineRun)
+                    return;
+                end
+
+                nRuns = numel(shallowObj.processing.pipelineRun);
+                choice = uiconfirm(app.DetecDivUIFigure, ...
+                    sprintf('Delete all %d pipeline run(s) from this project and disk?', nRuns), ...
+                    'Delete all runs', ...
+                    'Options', {'Delete all','Cancel'}, ...
+                    'DefaultOption', 'Cancel', ...
+                    'CancelOption', 'Cancel', ...
+                    'Icon', 'warning');
+                if ~strcmp(choice,'Delete all')
+                    return;
+                end
+
+                runPaths = strings(0,1);
+                for runIdx = 1:nRuns
+                    runObj = shallowObj.processing.pipelineRun(runIdx);
+                    hasPath = (isobject(runObj) && isprop(runObj,'path')) || (isstruct(runObj) && isfield(runObj,'path'));
+                    if hasPath && ~isempty(runObj.path)
+                        runPaths(end+1,1) = string(runObj.path); %#ok<AGROW>
+                    end
+                end
+                runPaths = unique(runPaths(runPaths ~= ""), 'stable');
+
+                for pathIdx = 1:numel(runPaths)
+                    runPath = char(runPaths(pathIdx));
+                    try
+                        if isfolder(runPath)
+                            rmdir(runPath, 's');
+                        end
+                    catch ME
+                        uialert(app.DetecDivUIFigure, ...
+                            sprintf('Could not delete run folder:\n%s\n\n%s', runPath, ME.message), ...
+                            'Delete error', 'Icon', 'error');
+                        return;
+                    end
+                end
+
+                shallowObj.processing.pipelineRun = pipelineRun.empty;
+                assignin('base', projVar, shallowObj);
+                try
+                    shallowSave(shallowObj);
+                catch ME
+                    uialert(app.DetecDivUIFigure, ME.message, 'Project save error', 'Icon', 'warning');
+                end
+                RefreshtreewindowMenuSelected(app);
             end
 
             function pipe = getPipelineByIndex(idx)
@@ -1871,7 +1950,7 @@ end
 
         function gatherVarsFromWorkspace(app)
             varlist=evalin('base','who');
-            st=struct('Project',{{}},'Classifier',{{}},'Pipeline',{{}},'PipelineModules',{{}},'PipelineModuleIds',{{}},'PipelineModuleTypes',{{}},'Projectpos',{{}},'Projectclassi',{{}},'Projectprocess',{{}},'ProjectpipelineRun',{{}},'Projectposrois',{{}},'Projectclassirois',{{}},'Classifierrois',{{}});
+            st=struct('Project',{{}},'Classifier',{{}},'Pipeline',{{}},'PipelineDisplay',{{}},'PipelineModules',{{}},'PipelineModuleIds',{{}},'PipelineModuleTypes',{{}},'Projectpos',{{}},'Projectclassi',{{}},'Projectprocess',{{}},'ProjectpipelineRun',{{}},'Projectposrois',{{}},'Projectclassirois',{{}},'Classifierrois',{{}});
             cc=0;
             cd=0;
             cp=0;
@@ -1993,6 +2072,7 @@ end
                 if isa(tmp,'pipeline')
                     if ~isfield(st,'Pipeline') || isempty(st.Pipeline)
                         st.Pipeline = {};
+                        st.PipelineDisplay = {};
                         st.PipelineModules = {};
                         st.PipelineModuleIds = {};
                         st.PipelineModuleTypes = {};
@@ -2000,6 +2080,7 @@ end
 
                     cp = cp + 1;
                     st.Pipeline{cp} = varlist{i};
+                    st.PipelineDisplay{cp} = app.pipelineTreeLabelFromObject(tmp, varlist{i});
 
                     modLabels = {};
                     modIds = {};
@@ -2714,6 +2795,61 @@ end
                 end
                 idx = idx + 1;
                 varName = sprintf('%s_%d', baseName, idx);
+            end
+        end
+
+        function label = pipelineTreeLabelFromObject(app, pipeObj, fallbackVarName) %#ok<INUSD>
+            label = '';
+            if nargin < 3
+                fallbackVarName = '';
+            end
+            try
+                if ~isempty(pipeObj) && isa(pipeObj,'pipeline') && isprop(pipeObj,'strid') && ~isempty(pipeObj.strid)
+                    label = strtrim(char(string(pipeObj.strid)));
+                end
+            catch
+            end
+            if isempty(label)
+                try
+                    if ~isempty(pipeObj) && isa(pipeObj,'pipeline') && isprop(pipeObj,'path') && ~isempty(pipeObj.path)
+                        label = app.pipelineTreeLabelFromJson(fullfile(char(string(pipeObj.path)), 'pipeline.json'));
+                    end
+                catch
+                end
+            end
+            if isempty(label)
+                label = char(string(fallbackVarName));
+            end
+        end
+
+        function label = pipelineTreeLabelFromJson(app, pipelineJson)
+            label = '';
+            if isempty(pipelineJson)
+                return;
+            end
+            try
+                if isfile(pipelineJson)
+                    [pipeObj, msg] = pipelineLoad(pipelineJson); %#ok<ASGLU>
+                    if ~isempty(pipeObj) && isa(pipeObj,'pipeline') && isprop(pipeObj,'strid') && ~isempty(pipeObj.strid)
+                        label = strtrim(char(string(pipeObj.strid)));
+                    end
+                end
+            catch
+            end
+            if ~isempty(label)
+                return;
+            end
+            [folder, ~, ~] = fileparts(char(string(pipelineJson)));
+            [parentFolder, folderName] = fileparts(folder);
+            label = folderName;
+            if strcmpi(folderName, 'pipeline')
+                [~, parentName] = fileparts(parentFolder);
+                if ~isempty(parentName)
+                    label = parentName;
+                end
+            end
+            if isempty(label)
+                [~, label] = fileparts(char(string(pipelineJson)));
             end
         end
 
@@ -4273,23 +4409,20 @@ function openRecentPipelineCallback(app, pipelineJsonPath)
     d.Value = 0.66;
     pause(0.2);
 
-    varBase = matlab.lang.makeValidName(pipeObj.strid);
-    varName = varBase;
-    used = evalin('base','who');
-    n = 1;
-    while any(strcmp(used, varName))
-        n = n + 1;
-        varName = [varBase '_' num2str(n)];
-    end
-
+    varName = app.nextPipelineVarName(pipeObj);
     assignin('base', varName, pipeObj);
 
     app.registerRecentPipeline(string(pipelineJsonPath));
 
     gatherVarsFromWorkspace(app);
     displayNodes(app);
+    try
+        app.selectPipelineNodeByJsonPath(pipelineJsonPath);
+    catch
+    end
 
     close(d);
+    app.openPipelineWithContext(pipeObj);
 end
 
 
@@ -4591,6 +4724,11 @@ end
         end
 
         app.refreshRecentPipelinesMenu();
+        try
+            gatherVarsFromWorkspace(app);
+            displayNodes(app);
+        catch
+        end
     end
 end
 
@@ -4950,11 +5088,7 @@ end
                 t=[t 'Project path: ' newline newline];
                 t=[t shallowObj.io.path shallowObj.io.file '.mat' newline newline];
 
-                if numel(shallowObj.fov)==1 & numel(shallowObj.fov(1).srcpath{1})==0
-                    n=0;
-                else
-                    n= numel(shallowObj.fov);
-                end
+                n = getProjectFovCount(app, shallowObj);
 
                 t=[t 'Number of positions: ' num2str(n) newline newline];
 
@@ -5725,20 +5859,17 @@ end
                 return;
             end
 
-            varBase = matlab.lang.makeValidName(pipeObj.strid);
-            varName = varBase;
-            used = evalin('base','who');
-            n = 1;
-            while any(strcmp(used, varName))
-                n = n + 1;
-                varName = [varBase '_' num2str(n)];
-            end
-
-            assignin('base', varName, pipeObj);
-            app.registerRecentPipeline(string(fullfile(pipeObj.path, 'pipeline.json')));
+            pipelineJsonPath = fullfile(pipeObj.path, 'pipeline.json');
+            assignin('base', app.nextPipelineVarName(pipeObj), pipeObj);
+            app.registerRecentPipeline(string(pipelineJsonPath));
 
             gatherVarsFromWorkspace(app);
             displayNodes(app);
+            try
+                app.selectPipelineNodeByJsonPath(pipelineJsonPath);
+            catch
+            end
+            app.openPipelineWithContext(pipeObj);
         end
 
         % Menu selected function: ClosepipelinetemplateMenu
@@ -6773,6 +6904,11 @@ end
         end
 
         if strcmp(str,'Pipeline')
+            jsonPath = '';
+            try
+                jsonPath = app.resolvePipelineJsonPathForNode(selectedNodes);
+            catch
+            end
             [isLoaded, pipeObj] = app.getLoadedPipelineForNode(selectedNodes);
             if ~isLoaded
                 d.Message = 'Loading pipeline in workspace...';
@@ -6780,15 +6916,18 @@ end
                 if ~loaded
                     error(msg);
                 end
-                gatherVarsFromWorkspace(app);
-                displayNodes(app);
-                app.selectPipelineNodeByJsonPath(jsonPath);
             end
 
             d.Message = 'Opening pipeline editor...';
             drawnow;
             app.safeCloseProgressDialog(d);
             app.openPipelineWithContext(pipeObj);
+            try
+                gatherVarsFromWorkspace(app);
+                displayNodes(app);
+                app.selectPipelineNodeByJsonPath(jsonPath);
+            catch
+            end
             return;
         end
 
@@ -8232,6 +8371,11 @@ end
             % Create OpenrecentPipelineMenu
             app.OpenrecentPipelineMenu = uimenu(app.PipelineTemplatesMenu);
             app.OpenrecentPipelineMenu.Text = 'Open recent';
+
+            uimenu(app.PipelineTemplatesMenu, ...
+                'Separator', 'on', ...
+                'Text', 'Clear recent pipeline list', ...
+                'MenuSelectedFcn', @(src,evt)app.clearRecentPipelines());
 
             % Create ClosepipelinetemplateMenu
             app.ClosepipelinetemplateMenu = uimenu(app.PipelineTemplatesMenu);
