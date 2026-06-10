@@ -220,6 +220,8 @@ for i=1:numel(output.pos) % extract channels from string names, treat different 
       output.pos(i).stackfilter2=stackfilter2;
 end
 
+end
+
 function out=testx(x)
 
 if numel(x)==0
