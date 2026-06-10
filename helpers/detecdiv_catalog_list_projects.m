@@ -7,7 +7,7 @@ function projects = detecdiv_catalog_list_projects(dbFile, varargin)
 %   projects = detecdiv_catalog_list_projects(dbFile, 'HealthStatus', 'ok')
 
     if nargin < 1 || isempty(dbFile)
-        dbFile = fullfile(prefdir, 'detecdiv_catalog.sqlite');
+        dbFile = detecdiv_catalog_user_dbfile();
     end
 
     detecdiv_require_toolbox('Database Toolbox', 'sqlite');

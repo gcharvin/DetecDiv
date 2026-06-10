@@ -103,7 +103,7 @@ function [conn, dbFile] = detecdiv_catalog_init(dbFile)
 end
 
 function dbFile = localDefaultDbFile()
-    dbFile = fullfile(prefdir, 'detecdiv_catalog.sqlite');
+    dbFile = detecdiv_catalog_user_dbfile();
 end
 
 function localSetMeta(conn, key, value)

@@ -48,18 +48,34 @@ function varargout = detecdivCatalogBrowser(varargin)
         'Color', [0.98 0.98 0.98], ...
         'CloseRequestFcn', @onCloseFigure);
 
+    fileMenu = uimenu(fig, 'Text', 'File');
+    uimenu(fileMenu, 'Text', 'New Project...', 'MenuSelectedFcn', @onNewProjectInPipeline2);
+    uimenu(fileMenu, 'Text', 'Batch New...', 'MenuSelectedFcn', @onBatchNewProjects);
+    uimenu(fileMenu, 'Text', 'Connection Settings...', 'Separator', 'on', ...
+        'MenuSelectedFcn', @onOpenConnectionSettings);
+    uimenu(fileMenu, 'Text', 'Index Projects...', 'MenuSelectedFcn', @onOpenIndexDialog);
+    uimenu(fileMenu, 'Text', 'Refresh', 'MenuSelectedFcn', @onRefreshProjects);
+    uimenu(fileMenu, 'Text', 'Close', 'Separator', 'on', ...
+        'MenuSelectedFcn', @(src, event) onCloseFigure(src, event));
+
     mainGrid = uigridlayout(fig, [4 1]);
-    mainGrid.RowHeight = {190, 28, '1x', 38};
+    mainGrid.RowHeight = {116, 28, '1x', 38};
     mainGrid.ColumnWidth = {'1x'};
     mainGrid.Padding = [14 14 14 14];
     mainGrid.RowSpacing = 10;
 
     controlGrid = uigridlayout(mainGrid, [5 11]);
     controlGrid.Layout.Row = 1;
-    controlGrid.RowHeight = {24, 32, 32, 32, 32};
-    controlGrid.ColumnWidth = {78, 120, 65, '1x', 72, '1x', 70, '1x', 95, 95, 105};
+    controlGrid.RowHeight = {32, 32, 32, 0, 0};
+    controlGrid.ColumnWidth = {78, 140, 110, 110, '1x', 110, 110, 150, 95, 120, 90};
     controlGrid.ColumnSpacing = 8;
     controlGrid.Padding = [0 0 0 0];
+
+    backingPanel = uipanel(fig, 'Visible', 'off', 'Position', [0 0 1 1]);
+    backingGrid = uigridlayout(backingPanel, [5 11]);
+    backingGrid.RowHeight = {24, 32, 32, 32, 32};
+    backingGrid.ColumnWidth = {78, 120, 65, '1x', 72, '1x', 70, '1x', 95, 95, 105};
+    backingGrid.Padding = [0 0 0 0];
 
     sourceLabel = uilabel(controlGrid, 'Text', 'Source', 'FontWeight', 'bold');
     sourceLabel.Layout.Row = 1;
@@ -73,101 +89,107 @@ function varargout = detecdivCatalogBrowser(varargin)
     sourceDropDown.Layout.Row = 1;
     sourceDropDown.Layout.Column = 2;
 
-    userKeyLabel = uilabel(controlGrid, 'Text', 'User', 'FontWeight', 'bold');
+    connectionSettingsButton = uibutton(controlGrid, 'push', ...
+        'Text', 'Connection Settings...', ...
+        'ButtonPushedFcn', @onOpenConnectionSettings);
+    connectionSettingsButton.Layout.Row = 1;
+    connectionSettingsButton.Layout.Column = [8 10];
+
+    userKeyLabel = uilabel(backingGrid, 'Text', 'User', 'FontWeight', 'bold');
     userKeyLabel.Layout.Row = 1;
     userKeyLabel.Layout.Column = 3;
 
-    userKeyEdit = uieditfield(controlGrid, 'text', 'Value', state.hubSettings.userKey);
+    userKeyEdit = uieditfield(backingGrid, 'text', 'Value', state.hubSettings.userKey);
     userKeyEdit.Layout.Row = 1;
     userKeyEdit.Layout.Column = 4;
 
-    passwordLabel = uilabel(controlGrid, 'Text', 'Password', 'FontWeight', 'bold');
+    passwordLabel = uilabel(backingGrid, 'Text', 'Password', 'FontWeight', 'bold');
     passwordLabel.Layout.Row = 1;
     passwordLabel.Layout.Column = 5;
 
     try
-        passwordEdit = uieditfield(controlGrid, 'password');
+        passwordEdit = uieditfield(backingGrid, 'password');
     catch
-        passwordEdit = uieditfield(controlGrid, 'text');
+        passwordEdit = uieditfield(backingGrid, 'text');
     end
     passwordEdit.Value = '';
     passwordEdit.Layout.Row = 1;
     passwordEdit.Layout.Column = 6;
 
-    currentUserTitleLabel = uilabel(controlGrid, 'Text', 'Current', 'FontWeight', 'bold');
+    currentUserTitleLabel = uilabel(backingGrid, 'Text', 'Current', 'FontWeight', 'bold');
     currentUserTitleLabel.Layout.Row = 1;
     currentUserTitleLabel.Layout.Column = 7;
 
-    currentUserLabel = uilabel(controlGrid, ...
+    currentUserLabel = uilabel(backingGrid, ...
         'Text', '', ...
         'HorizontalAlignment', 'left', ...
         'FontAngle', 'italic');
     currentUserLabel.Layout.Row = 1;
     currentUserLabel.Layout.Column = 8;
 
-    loginButton = uibutton(controlGrid, 'push', 'Text', 'Login...', ...
+    loginButton = uibutton(backingGrid, 'push', 'Text', 'Login...', ...
         'ButtonPushedFcn', @onHubLogin);
     loginButton.Layout.Row = 1;
     loginButton.Layout.Column = 9;
 
-    logoutButton = uibutton(controlGrid, 'push', 'Text', 'Logout', ...
+    logoutButton = uibutton(backingGrid, 'push', 'Text', 'Logout', ...
         'ButtonPushedFcn', @onHubLogout);
     logoutButton.Layout.Row = 1;
     logoutButton.Layout.Column = 10;
 
-    backgroundCheck = uicheckbox(controlGrid, ...
+    backgroundCheck = uicheckbox(backingGrid, ...
         'Text', 'BG index', ...
         'Value', logical(state.catalogSettings.backgroundIndexing));
     backgroundCheck.Layout.Row = 1;
     backgroundCheck.Layout.Column = 11;
 
-    baseUrlLabel = uilabel(controlGrid, 'Text', 'Hub URL', 'FontWeight', 'bold');
+    baseUrlLabel = uilabel(backingGrid, 'Text', 'Hub URL', 'FontWeight', 'bold');
     baseUrlLabel.Layout.Row = 2;
     baseUrlLabel.Layout.Column = 1;
 
-    baseUrlEdit = uieditfield(controlGrid, 'text', 'Value', state.hubSettings.baseUrl);
+    baseUrlEdit = uieditfield(backingGrid, 'text', 'Value', state.hubSettings.baseUrl);
     baseUrlEdit.Layout.Row = 2;
     baseUrlEdit.Layout.Column = [2 6];
 
-    localMountLabel = uilabel(controlGrid, 'Text', 'Local Mount', 'FontWeight', 'bold');
+    localMountLabel = uilabel(backingGrid, 'Text', 'Local Mount', 'FontWeight', 'bold');
     localMountLabel.Layout.Row = 2;
     localMountLabel.Layout.Column = 7;
 
-    localMountEdit = uieditfield(controlGrid, 'text', 'Value', state.hubSettings.defaultLocalProjectRoot);
+    localMountEdit = uieditfield(backingGrid, 'text', 'Value', state.hubSettings.defaultLocalProjectRoot);
     localMountEdit.Layout.Row = 2;
     localMountEdit.Layout.Column = [8 11];
 
-    rootLabel = uilabel(controlGrid, 'Text', '', 'FontWeight', 'bold', ...
+    rootLabel = uilabel(backingGrid, 'Text', '', 'FontWeight', 'bold', ...
         'HorizontalAlignment', 'left');
     rootLabel.Layout.Row = 3;
     rootLabel.Layout.Column = 1;
 
-    rootEdit = uieditfield(controlGrid, 'text');
+    rootEdit = uieditfield(backingGrid, 'text');
     rootEdit.Layout.Row = 3;
     rootEdit.Layout.Column = [2 6];
 
-    browseButton = uibutton(controlGrid, 'push', 'Text', 'Browse...', ...
+    browseButton = uibutton(backingGrid, 'push', 'Text', 'Browse...', ...
         'ButtonPushedFcn', @onBrowseRoot);
     browseButton.Layout.Row = 3;
     browseButton.Layout.Column = 7;
 
-    saveRootButton = uibutton(controlGrid, 'push', 'Text', 'Save Config', ...
+    saveRootButton = uibutton(backingGrid, 'push', 'Text', 'Save Config', ...
         'ButtonPushedFcn', @onSaveConfiguration);
     saveRootButton.Layout.Row = 3;
     saveRootButton.Layout.Column = 8;
 
-    indexButton = uibutton(controlGrid, 'push', 'Text', 'Index Root', ...
+    indexButton = uibutton(backingGrid, 'push', 'Text', 'Index Root', ...
         'ButtonPushedFcn', @onIndexRoot);
     indexButton.Layout.Row = 3;
     indexButton.Layout.Column = 9;
 
     refreshButton = uibutton(controlGrid, 'push', 'Text', 'Refresh', ...
         'ButtonPushedFcn', @onRefreshProjects);
-    refreshButton.Layout.Row = 3;
-    refreshButton.Layout.Column = 10;
+    refreshButton.Layout.Row = 1;
+    refreshButton.Layout.Column = 11;
 
     groupLabel = uilabel(controlGrid, 'Text', 'Owner/Group', 'FontWeight', 'bold');
-    groupLabel.Layout.Row = 4;
+    groupLabel.Layout.Row = 2;
     groupLabel.Layout.Column = 1;
 
     groupDropDown = uidropdown(controlGrid, ...
@@ -175,41 +197,42 @@ function varargout = detecdivCatalogBrowser(varargin)
         'ItemsData', {''}, ...
         'Value', '', ...
         'ValueChangedFcn', @onGroupFilterChanged);
-    groupDropDown.Layout.Row = 4;
+    groupDropDown.Layout.Row = 2;
     groupDropDown.Layout.Column = [2 5];
 
     ownedOnlyCheck = uicheckbox(controlGrid, ...
         'Text', 'Owned only', ...
         'Value', false, ...
         'ValueChangedFcn', @onOwnedOnlyChanged);
-    ownedOnlyCheck.Layout.Row = 4;
+    ownedOnlyCheck.Layout.Row = 2;
     ownedOnlyCheck.Layout.Column = 6;
 
     refreshGroupsButton = uibutton(controlGrid, 'push', 'Text', 'Refresh', ...
         'ButtonPushedFcn', @onRefreshGroups);
-    refreshGroupsButton.Layout.Row = 4;
+    refreshGroupsButton.Layout.Row = 2;
     refreshGroupsButton.Layout.Column = 7;
 
     addToGroupButton = uibutton(controlGrid, 'push', 'Text', 'Add To Group', ...
         'Enable', 'off', ...
         'ButtonPushedFcn', @onAddToGroup);
-    addToGroupButton.Layout.Row = 4;
+    addToGroupButton.Layout.Row = 2;
     addToGroupButton.Layout.Column = 8;
 
     newGroupButton = uibutton(controlGrid, 'push', 'Text', 'New Group', ...
         'ButtonPushedFcn', @onCreateGroup);
-    newGroupButton.Layout.Row = 4;
+    newGroupButton.Layout.Row = 2;
     newGroupButton.Layout.Column = 9;
 
     sourceInfoLabel = uilabel(controlGrid, ...
         'Text', '', ...
         'HorizontalAlignment', 'left', ...
-        'FontAngle', 'italic');
-    sourceInfoLabel.Layout.Row = 4;
-    sourceInfoLabel.Layout.Column = [10 11];
+        'FontAngle', 'italic', ...
+        'WordWrap', 'on');
+    sourceInfoLabel.Layout.Row = 1;
+    sourceInfoLabel.Layout.Column = [3 7];
 
     searchLabel = uilabel(controlGrid, 'Text', 'Search', 'FontWeight', 'bold');
-    searchLabel.Layout.Row = 5;
+    searchLabel.Layout.Row = 3;
     searchLabel.Layout.Column = 1;
 
     searchEdit = uieditfield(controlGrid, 'text', ...
@@ -219,13 +242,13 @@ function varargout = detecdivCatalogBrowser(varargin)
         searchEdit.ValueChangingFcn = @onSearchChanging;
     catch
     end
-    searchEdit.Layout.Row = 5;
+    searchEdit.Layout.Row = 3;
     searchEdit.Layout.Column = [2 8];
 
     clearSearchButton = uibutton(controlGrid, 'push', ...
         'Text', 'Clear', ...
         'ButtonPushedFcn', @onClearSearch);
-    clearSearchButton.Layout.Row = 5;
+    clearSearchButton.Layout.Row = 3;
     clearSearchButton.Layout.Column = 9;
 
     sortDropDown = uidropdown(controlGrid, ...
@@ -233,13 +256,13 @@ function varargout = detecdivCatalogBrowser(varargin)
         'ItemsData', {'name', 'project_mtime', 'created_at', 'health_status', 'fov_count', 'roi_count', 'pipeline_run_count', 'missing_raw_count'}, ...
         'Value', state.sortVariable, ...
         'ValueChangedFcn', @onSortChanged);
-    sortDropDown.Layout.Row = 5;
+    sortDropDown.Layout.Row = 3;
     sortDropDown.Layout.Column = 10;
 
     sortDirectionButton = uibutton(controlGrid, 'push', ...
         'Text', 'Asc', ...
         'ButtonPushedFcn', @onSortDirectionToggled);
-    sortDirectionButton.Layout.Row = 5;
+    sortDirectionButton.Layout.Row = 3;
     sortDirectionButton.Layout.Column = 11;
 
     statusLabel = uilabel(mainGrid, ...
@@ -280,7 +303,7 @@ function varargout = detecdivCatalogBrowser(varargin)
     actionGrid = uigridlayout(sideGrid, [3 3]);
     actionGrid.Layout.Row = 3;
     actionGrid.ColumnWidth = {'1x', '1x', '1x'};
-    actionGrid.RowHeight = {32, 32, 32};
+    actionGrid.RowHeight = {32, 32, 0};
     actionGrid.ColumnSpacing = 8;
     actionGrid.Padding = [0 0 0 0];
 
@@ -294,7 +317,7 @@ function varargout = detecdivCatalogBrowser(varargin)
     openFolderButton.Layout.Row = 1;
     openFolderButton.Layout.Column = 2;
 
-    pipeline2Button = uibutton(actionGrid, 'push', 'Text', 'Pipeline2...', ...
+    pipeline2Button = uibutton(actionGrid, 'push', 'Text', 'Run Pipeline...', ...
         'Enable', 'off', 'ButtonPushedFcn', @onOpenPipeline2);
     pipeline2Button.Layout.Row = 1;
     pipeline2Button.Layout.Column = 3;
@@ -316,7 +339,7 @@ function varargout = detecdivCatalogBrowser(varargin)
 
     aclButton = uibutton(actionGrid, 'push', 'Text', 'Share...', ...
         'Enable', 'off', 'ButtonPushedFcn', @onManageAcl);
-    aclButton.Layout.Row = 3;
+    aclButton.Layout.Row = 2;
     aclButton.Layout.Column = 1;
 
     batchNewButton = uibutton(actionGrid, 'push', 'Text', 'Batch New...', ...
@@ -382,17 +405,18 @@ function varargout = detecdivCatalogBrowser(varargin)
             return;
         end
 
-        userKey = strtrim(char(string(userKeyEdit.Value)));
-        password = char(string(passwordEdit.Value));
-        if isempty(userKey) || isempty(password)
-            uialert(fig, 'User and password are required to open a Hub session.', 'Missing Hub Credentials');
+        if isempty(strtrim(char(string(state.hubSettings.baseUrl))))
+            uialert(fig, 'Configure the Hub URL first in Connection Settings.', 'Missing Hub Settings');
             return;
         end
 
-        state.hubSettings.baseUrl = strtrim(baseUrlEdit.Value);
+        [userKey, password] = localPromptHubCredentials(state.hubSettings.userKey);
+        if isempty(userKey) || isempty(password)
+            return;
+        end
+
         try
             [sessionInfo, state.hubSettings] = detecdiv_hub_login(userKey, password, state.hubSettings); %#ok<NASGU>
-            userKeyEdit.Value = state.hubSettings.userKey;
             passwordEdit.Value = '';
             syncUiFromState();
             refreshProjectsTable();
@@ -608,6 +632,392 @@ function varargout = detecdivCatalogBrowser(varargin)
 
     function onRefreshProjects(~, ~)
         refreshProjectsTable();
+    end
+
+    function onOpenConnectionSettings(~, ~)
+        dlg = uifigure( ...
+            'Name', 'Connection Settings', ...
+            'Position', [180 180 760 340], ...
+            'WindowStyle', 'modal', ...
+            'Resize', 'off');
+
+        isLocalDialog = strcmp(state.sourceMode, 'local');
+        grid = uigridlayout(dlg, [8 4]);
+        grid.ColumnWidth = {120, '1x', 120, '1x'};
+        grid.RowHeight = {24, 24, 30, 30, 30, 30, '1x', 40};
+        grid.Padding = [12 12 12 12];
+        grid.RowSpacing = 8;
+        grid.ColumnSpacing = 10;
+
+        connectionStatusLabel = uilabel(grid, 'Text', '', 'FontAngle', 'italic');
+        connectionStatusLabel.Layout.Row = 1;
+        connectionStatusLabel.Layout.Column = [1 4];
+
+        tokenLabel = uilabel(grid, 'Text', '', 'FontName', 'Consolas');
+        tokenLabel.Layout.Row = 2;
+        tokenLabel.Layout.Column = [1 4];
+
+        localRootLabel = uilabel(grid, 'Text', 'Projects Root', 'FontWeight', 'bold');
+        localRootLabel.Layout.Row = 3;
+        localRootLabel.Layout.Column = 1;
+        localRootEdit = uieditfield(grid, 'text', ...
+            'Value', char(string(state.catalogSettings.defaultProjectRoot)));
+        localRootEdit.Layout.Row = 3;
+        localRootEdit.Layout.Column = [2 3];
+        localBrowseButton = uibutton(grid, 'push', 'Text', 'Browse...', ...
+            'ButtonPushedFcn', @onDialogBrowseLocalRoot);
+        localBrowseButton.Layout.Row = 3;
+        localBrowseButton.Layout.Column = 4;
+
+        backgroundDialogCheck = uicheckbox(grid, ...
+            'Text', 'Background indexing', ...
+            'Value', logical(state.catalogSettings.backgroundIndexing));
+        backgroundDialogCheck.Layout.Row = 4;
+        backgroundDialogCheck.Layout.Column = [2 4];
+
+        baseUrlDialogLabel = uilabel(grid, 'Text', 'Hub URL', 'FontWeight', 'bold');
+        baseUrlDialogLabel.Layout.Row = 3;
+        baseUrlDialogLabel.Layout.Column = 1;
+        baseUrlDialogEdit = uieditfield(grid, 'text', ...
+            'Value', char(string(state.hubSettings.baseUrl)));
+        baseUrlDialogEdit.Layout.Row = 3;
+        baseUrlDialogEdit.Layout.Column = [2 4];
+
+        userDialogLabel = uilabel(grid, 'Text', 'User', 'FontWeight', 'bold');
+        userDialogLabel.Layout.Row = 4;
+        userDialogLabel.Layout.Column = 1;
+        userDialogEdit = uieditfield(grid, 'text', ...
+            'Value', char(string(state.hubSettings.userKey)));
+        userDialogEdit.Layout.Row = 4;
+        userDialogEdit.Layout.Column = 2;
+
+        passwordDialogLabel = uilabel(grid, 'Text', 'Password', 'FontWeight', 'bold');
+        passwordDialogLabel.Layout.Row = 4;
+        passwordDialogLabel.Layout.Column = 3;
+        try
+            passwordDialogEdit = uieditfield(grid, 'password');
+        catch
+            passwordDialogEdit = uieditfield(grid, 'text');
+        end
+        passwordDialogEdit.Layout.Row = 4;
+        passwordDialogEdit.Layout.Column = 4;
+        passwordDialogEdit.Value = '';
+
+        remoteRootDialogLabel = uilabel(grid, 'Text', 'Remote Root', 'FontWeight', 'bold');
+        remoteRootDialogLabel.Layout.Row = 5;
+        remoteRootDialogLabel.Layout.Column = 1;
+        remoteRootDialogEdit = uieditfield(grid, 'text', ...
+            'Value', char(string(state.hubSettings.defaultRemoteProjectRoot)));
+        remoteRootDialogEdit.Layout.Row = 5;
+        remoteRootDialogEdit.Layout.Column = [2 4];
+
+        localMountDialogLabel = uilabel(grid, 'Text', 'Local Mount', 'FontWeight', 'bold');
+        localMountDialogLabel.Layout.Row = 6;
+        localMountDialogLabel.Layout.Column = 1;
+        localMountDialogEdit = uieditfield(grid, 'text', ...
+            'Value', char(string(state.hubSettings.defaultLocalProjectRoot)));
+        localMountDialogEdit.Layout.Row = 6;
+        localMountDialogEdit.Layout.Column = [2 3];
+        localMountBrowseButton = uibutton(grid, 'push', 'Text', 'Browse...', ...
+            'ButtonPushedFcn', @onDialogBrowseLocalMount);
+        localMountBrowseButton.Layout.Row = 6;
+        localMountBrowseButton.Layout.Column = 4;
+
+        buttonGrid = uigridlayout(grid, [1 5]);
+        buttonGrid.Layout.Row = 8;
+        buttonGrid.Layout.Column = [1 4];
+        buttonGrid.ColumnWidth = {'1x', '1x', '1x', '1x', '1x'};
+        buttonGrid.Padding = [0 0 0 0];
+        buttonGrid.ColumnSpacing = 8;
+
+        saveDialogButton = uibutton(buttonGrid, 'push', 'Text', 'Save', ...
+            'ButtonPushedFcn', @onDialogSave);
+        sessionButton = uibutton(buttonGrid, 'push', 'Text', 'Login', ...
+            'ButtonPushedFcn', @onDialogSessionToggle);
+        spacer2 = uilabel(buttonGrid, 'Text', '');
+        spacer3 = uilabel(buttonGrid, 'Text', '');
+        closeDialogButton = uibutton(buttonGrid, 'push', 'Text', 'Close', ...
+            'ButtonPushedFcn', @(~, ~) delete(dlg));
+
+        saveDialogButton.Layout.Row = 1;
+        saveDialogButton.Layout.Column = 1;
+        sessionButton.Layout.Row = 1;
+        sessionButton.Layout.Column = 2;
+        spacer2.Layout.Row = 1;
+        spacer2.Layout.Column = 3;
+        spacer3.Layout.Row = 1;
+        spacer3.Layout.Column = 4;
+        closeDialogButton.Layout.Row = 1;
+        closeDialogButton.Layout.Column = 5;
+
+        pullDialogValuesFromState();
+
+        function syncDialogMode()
+            localSetVisible(localRootLabel, isLocalDialog);
+            localSetVisible(localRootEdit, isLocalDialog);
+            localSetVisible(localBrowseButton, isLocalDialog);
+            localSetVisible(backgroundDialogCheck, isLocalDialog);
+
+            localSetVisible(baseUrlDialogLabel, ~isLocalDialog);
+            localSetVisible(baseUrlDialogEdit, ~isLocalDialog);
+            localSetVisible(userDialogLabel, ~isLocalDialog);
+            localSetVisible(userDialogEdit, ~isLocalDialog);
+            localSetVisible(passwordDialogLabel, ~isLocalDialog);
+            localSetVisible(passwordDialogEdit, ~isLocalDialog);
+            localSetVisible(remoteRootDialogLabel, ~isLocalDialog);
+            localSetVisible(remoteRootDialogEdit, ~isLocalDialog);
+            localSetVisible(localMountDialogLabel, ~isLocalDialog);
+            localSetVisible(localMountDialogEdit, ~isLocalDialog);
+            localSetVisible(localMountBrowseButton, ~isLocalDialog);
+            localSetVisible(sessionButton, ~isLocalDialog);
+
+            if isLocalDialog
+                connectionStatusLabel.Text = 'Local catalog mode. No Hub session is used.';
+                tokenLabel.Text = ['DB: ' char(string(state.catalogSettings.dbFile))];
+            else
+                connectionStatusLabel.Text = ['Hub status: ' localCurrentUserLabel()];
+                tokenText = localTokenLabel(state.hubSettings);
+                if isempty(tokenText)
+                    tokenLabel.Text = 'Token: <none>';
+                    sessionButton.Text = 'Login';
+                else
+                    tokenLabel.Text = ['Token: ' tokenText];
+                    sessionButton.Text = 'Logout';
+                end
+            end
+        end
+
+        function ok = applyDialogValues()
+            ok = false;
+            if isLocalDialog
+                rootPath = sanitizeRoot(localRootEdit.Value, 'RequireExisting', true);
+                if isempty(rootPath)
+                    uialert(dlg, 'Please choose a valid local project root folder.', 'Invalid Folder');
+                    return;
+                end
+                state.catalogSettings.defaultProjectRoot = rootPath;
+                state.catalogSettings.recentProjectRoots = updateRecentRoots( ...
+                    state.catalogSettings.recentProjectRoots, rootPath);
+                state.catalogSettings.backgroundIndexing = logical(backgroundDialogCheck.Value);
+                rootEdit.Value = rootPath;
+                backgroundCheck.Value = logical(backgroundDialogCheck.Value);
+                detecdiv_catalog_settings_set(state.catalogSettings);
+                ok = true;
+                return;
+            end
+
+            hubRoot = sanitizeRoot(remoteRootDialogEdit.Value, 'RequireExisting', false);
+            localMount = sanitizeRoot(localMountDialogEdit.Value, 'RequireExisting', false);
+            state.hubSettings.baseUrl = strtrim(char(string(baseUrlDialogEdit.Value)));
+            state.hubSettings.userKey = strtrim(char(string(userDialogEdit.Value)));
+            state.hubSettings.defaultRemoteProjectRoot = hubRoot;
+            state.hubSettings.defaultLocalProjectRoot = localMount;
+            state.hubSettings.sourceMode = state.sourceMode;
+            if ~isempty(hubRoot) && ~isempty(localMount)
+                state.hubSettings = detecdiv_hub_upsert_path_mapping(state.hubSettings, hubRoot, localMount);
+            end
+            baseUrlEdit.Value = char(string(state.hubSettings.baseUrl));
+            userKeyEdit.Value = char(string(state.hubSettings.userKey));
+            rootEdit.Value = char(string(state.hubSettings.defaultRemoteProjectRoot));
+            localMountEdit.Value = char(string(state.hubSettings.defaultLocalProjectRoot));
+            detecdiv_hub_settings_set(state.hubSettings);
+            ok = true;
+        end
+
+        function pullDialogValuesFromState()
+            localRootEdit.Value = char(string(state.catalogSettings.defaultProjectRoot));
+            backgroundDialogCheck.Value = logical(state.catalogSettings.backgroundIndexing);
+            baseUrlDialogEdit.Value = char(string(state.hubSettings.baseUrl));
+            userDialogEdit.Value = char(string(state.hubSettings.userKey));
+            remoteRootDialogEdit.Value = char(string(state.hubSettings.defaultRemoteProjectRoot));
+            localMountDialogEdit.Value = char(string(state.hubSettings.defaultLocalProjectRoot));
+            passwordDialogEdit.Value = '';
+            syncDialogMode();
+        end
+
+        function onDialogBrowseLocalRoot(~, ~)
+            currentRoot = char(string(localRootEdit.Value));
+            if isempty(currentRoot) || ~isfolder(currentRoot)
+                currentRoot = pwd;
+            end
+            selectedRoot = uigetdir(currentRoot, 'Select project root');
+            if isequal(selectedRoot, 0)
+                return;
+            end
+            localRootEdit.Value = char(selectedRoot);
+        end
+
+        function onDialogBrowseLocalMount(~, ~)
+            currentRoot = char(string(localMountDialogEdit.Value));
+            if isempty(currentRoot) || ~isfolder(currentRoot)
+                currentRoot = pwd;
+            end
+            selectedRoot = uigetdir(currentRoot, 'Select local mount');
+            if isequal(selectedRoot, 0)
+                return;
+            end
+            localMountDialogEdit.Value = char(selectedRoot);
+        end
+
+        function onDialogSave(~, ~)
+            if ~applyDialogValues()
+                return;
+            end
+            pullDialogValuesFromState();
+            syncUiFromState();
+            setStatus('Connection settings saved.');
+        end
+
+        function onDialogSessionToggle(~, ~)
+            if isLocalDialog
+                return;
+            end
+            if ~applyDialogValues()
+                return;
+            end
+
+            if isempty(localTokenLabel(state.hubSettings))
+                userKey = strtrim(char(string(userDialogEdit.Value)));
+                password = char(string(passwordDialogEdit.Value));
+                if isempty(userKey) || isempty(password)
+                    uialert(dlg, 'User and password are required to open a Hub session.', 'Missing Hub Credentials');
+                    return;
+                end
+                try
+                    [~, state.hubSettings] = detecdiv_hub_login(userKey, password, state.hubSettings);
+                    passwordDialogEdit.Value = '';
+                    passwordEdit.Value = '';
+                    refreshProjectsTable('PreserveStatus', true);
+                    setStatus(sprintf('Hub session opened for %s.', state.hubSettings.userKey));
+                catch ME
+                    uialert(dlg, ME.message, 'Hub Login Failed');
+                    setStatus(['Hub login failed: ' ME.message]);
+                end
+            else
+                try
+                    state.hubSettings = detecdiv_hub_logout(state.hubSettings);
+                    state.currentUser = struct();
+                    passwordDialogEdit.Value = '';
+                    passwordEdit.Value = '';
+                    refreshProjectsTable('PreserveStatus', true);
+                    setStatus('Hub session cleared.');
+                catch ME
+                    uialert(dlg, ME.message, 'Hub Logout Failed');
+                    setStatus(['Hub logout failed: ' ME.message]);
+                end
+            end
+            detecdiv_hub_settings_set(state.hubSettings);
+            pullDialogValuesFromState();
+            syncUiFromState();
+        end
+    end
+
+    function onOpenIndexDialog(~, ~)
+        dlg = uifigure( ...
+            'Name', 'Index Projects', ...
+            'Position', [220 220 760 220], ...
+            'WindowStyle', 'modal', ...
+            'Resize', 'off');
+
+        grid = uigridlayout(dlg, [4 4]);
+        grid.ColumnWidth = {110, '1x', 110, 110};
+        grid.RowHeight = {30, 30, '1x', 40};
+        grid.Padding = [12 12 12 12];
+        grid.RowSpacing = 8;
+        grid.ColumnSpacing = 10;
+
+        pathLabel = uilabel(grid, 'Text', ternaryText(strcmp(state.sourceMode, 'local'), 'Projects Root', 'Remote Root'), ...
+            'FontWeight', 'bold');
+        pathLabel.Layout.Row = 1;
+        pathLabel.Layout.Column = 1;
+
+        defaultPath = char(string(ternaryText(strcmp(state.sourceMode, 'local'), ...
+            state.catalogSettings.defaultProjectRoot, state.hubSettings.defaultRemoteProjectRoot)));
+        pathEdit = uieditfield(grid, 'text', 'Value', defaultPath);
+        pathEdit.Layout.Row = 1;
+        pathEdit.Layout.Column = 2;
+
+        browseIndexButton = uibutton(grid, 'push', 'Text', 'Browse...', ...
+            'ButtonPushedFcn', @onDialogBrowseIndexPath);
+        browseIndexButton.Layout.Row = 1;
+        browseIndexButton.Layout.Column = 3;
+
+        runIndexButton = uibutton(grid, 'push', 'Text', 'Run Index', ...
+            'ButtonPushedFcn', @onDialogRunIndex);
+        runIndexButton.Layout.Row = 1;
+        runIndexButton.Layout.Column = 4;
+
+        bgIndexDialogCheck = uicheckbox(grid, ...
+            'Text', 'Background indexing', ...
+            'Value', logical(state.catalogSettings.backgroundIndexing), ...
+            'Visible', onOff(strcmp(state.sourceMode, 'local')));
+        bgIndexDialogCheck.Layout.Row = 2;
+        bgIndexDialogCheck.Layout.Column = [2 4];
+
+        statusArea = uitextarea(grid, ...
+            'Editable', 'off', ...
+            'Value', {char(string(statusLabel.Text))});
+        statusArea.Layout.Row = 3;
+        statusArea.Layout.Column = [1 4];
+
+        closeButton = uibutton(grid, 'push', 'Text', 'Close', ...
+            'ButtonPushedFcn', @(~, ~) delete(dlg));
+        closeButton.Layout.Row = 4;
+        closeButton.Layout.Column = 4;
+
+        mirrorTimer = timer( ...
+            'ExecutionMode', 'fixedSpacing', ...
+            'Period', 0.5, ...
+            'BusyMode', 'drop', ...
+            'TimerFcn', @(~, ~) syncIndexStatus());
+        start(mirrorTimer);
+        dlg.CloseRequestFcn = @onCloseIndexDialog;
+
+        function onDialogBrowseIndexPath(~, ~)
+            currentRoot = char(string(pathEdit.Value));
+            if isempty(currentRoot) || ~isfolder(currentRoot)
+                currentRoot = pwd;
+            end
+            selectedRoot = uigetdir(currentRoot, 'Select project root to index');
+            if isequal(selectedRoot, 0)
+                return;
+            end
+            pathEdit.Value = char(selectedRoot);
+        end
+
+        function onDialogRunIndex(~, ~)
+            if strcmp(state.sourceMode, 'local')
+                rootEdit.Value = char(string(pathEdit.Value));
+                backgroundCheck.Value = logical(bgIndexDialogCheck.Value);
+            else
+                rootEdit.Value = char(string(pathEdit.Value));
+            end
+            onIndexRoot([], []);
+            syncIndexStatus();
+        end
+
+        function syncIndexStatus()
+            if ~isvalid(dlg) || ~isvalid(statusArea) || ~isvalid(fig)
+                return;
+            end
+            msg = char(string(statusLabel.Text));
+            if isempty(msg)
+                msg = 'Ready.';
+            end
+            statusArea.Value = {msg};
+        end
+
+        function onCloseIndexDialog(~, ~)
+            try
+                stop(mirrorTimer);
+            catch
+            end
+            try
+                delete(mirrorTimer);
+            catch
+            end
+            delete(dlg);
+        end
     end
 
     function onSearchChanged(~, ~)
@@ -853,23 +1263,12 @@ function varargout = detecdivCatalogBrowser(varargin)
         end
 
         try
-            [shallowObj, projectMatPath] = ensureProjectLoadedForRun(row);
-            launchSpec = choosePipeline2LaunchSpec(shallowObj, projectMatPath);
-            if isempty(launchSpec)
-                return;
-            end
-
-            if isfield(launchSpec, 'runObj') && ~isempty(launchSpec.runObj) && isa(launchSpec.runObj, 'pipelineRun')
-                pipeline2(shallowObj, launchSpec.runObj);
-            elseif isfield(launchSpec, 'pipeObj') && ~isempty(launchSpec.pipeObj) && isa(launchSpec.pipeObj, 'pipeline')
-                pipeline2(shallowObj, launchSpec.pipeObj);
-            else
-                pipeline2(shallowObj);
-            end
-            setStatus(sprintf('Opened pipeline2 for "%s".', char(string(row.name))));
+            [shallowObj, ~] = ensureProjectLoadedForRun(row);
+            pipeline2(shallowObj);
+            setStatus(sprintf('Opened Run Pipeline for "%s" in existing project mode.', char(string(row.name))));
         catch ME
-            uialert(fig, ME.message, 'Pipeline2 Failed');
-            setStatus(['Pipeline2 failed: ' ME.message]);
+            uialert(fig, ME.message, 'Run Pipeline Failed');
+            setStatus(['Run Pipeline failed: ' ME.message]);
         end
     end
 
@@ -1776,18 +2175,12 @@ function varargout = detecdivCatalogBrowser(varargin)
         if isLocal
             rootLabel.Text = 'Projects Root';
             rootEdit.Value = char(string(state.catalogSettings.defaultProjectRoot));
-            sourceInfoLabel.Text = ['DB: ' char(string(state.catalogSettings.dbFile))];
+            sourceInfoLabel.Text = ['Local catalog. DB: ' char(string(state.catalogSettings.dbFile))];
             footerLabel.Text = 'Local SQLite mode uses only the local DB and local project paths.';
         else
             rootLabel.Text = 'Remote Root';
             rootEdit.Value = char(string(state.hubSettings.defaultRemoteProjectRoot));
-            if isempty(state.hubSelectedGroupId) && isempty(state.hubSelectedOwnerKey)
-                sourceInfoLabel.Text = 'Hub listing: all visible projects';
-            elseif ~isempty(state.hubSelectedOwnerKey)
-                sourceInfoLabel.Text = 'Hub listing: owner filter active';
-            else
-                sourceInfoLabel.Text = 'Hub listing: group filter active';
-            end
+            sourceInfoLabel.Text = ['Hub connection: ' localCurrentUserLabel()];
             footerLabel.Text = ['Hub API mode uses server paths plus local mount mapping for loading .mat files.' ...
                 ' Local SQLite mode remains available in the same browser.'];
         end
@@ -1811,25 +2204,35 @@ function varargout = detecdivCatalogBrowser(varargin)
         newGroupButton.Enable = onOff(~isLocal);
 
         controlGrid.RowHeight = localHeaderRowHeights(isLocal);
-        localSetVisible(baseUrlLabel, ~isLocal);
-        localSetVisible(baseUrlEdit, ~isLocal);
-        localSetVisible(localMountLabel, ~isLocal);
-        localSetVisible(localMountEdit, ~isLocal);
-        localSetVisible(userKeyLabel, ~isLocal);
-        localSetVisible(userKeyEdit, ~isLocal);
-        localSetVisible(passwordLabel, ~isLocal);
-        localSetVisible(passwordEdit, ~isLocal);
-        localSetVisible(currentUserTitleLabel, ~isLocal);
-        localSetVisible(currentUserLabel, ~isLocal);
-        localSetVisible(loginButton, ~isLocal);
-        localSetVisible(logoutButton, ~isLocal);
+        newProjectButton.Visible = 'off';
+        batchNewButton.Visible = 'off';
+        localSetVisible(baseUrlLabel, false);
+        localSetVisible(baseUrlEdit, false);
+        localSetVisible(localMountLabel, false);
+        localSetVisible(localMountEdit, false);
+        localSetVisible(userKeyLabel, false);
+        localSetVisible(userKeyEdit, false);
+        localSetVisible(passwordLabel, false);
+        localSetVisible(passwordEdit, false);
+        localSetVisible(currentUserTitleLabel, false);
+        localSetVisible(currentUserLabel, false);
+        localSetVisible(loginButton, false);
+        localSetVisible(logoutButton, false);
         localSetVisible(groupLabel, ~isLocal);
         localSetVisible(groupDropDown, ~isLocal);
         localSetVisible(ownedOnlyCheck, ~isLocal);
         localSetVisible(refreshGroupsButton, ~isLocal);
         localSetVisible(addToGroupButton, ~isLocal);
         localSetVisible(newGroupButton, ~isLocal);
-        localSetVisible(indexButton, isLocal);
+        localSetVisible(backgroundCheck, false);
+        localSetVisible(indexButton, false);
+        localSetVisible(rootLabel, false);
+        localSetVisible(rootEdit, false);
+        localSetVisible(browseButton, false);
+        localSetVisible(saveRootButton, false);
+        localSetVisible(sourceInfoLabel, true);
+        localSetVisible(connectionSettingsButton, true);
+        localSetVisible(refreshButton, true);
 
         browseButton.Text = ternaryText(isLocal, 'Browse...', 'Map...');
         sourceLabel.Text = 'Source';
@@ -2011,15 +2414,19 @@ end
 
 function heights = localHeaderRowHeights(isLocal)
     if isLocal
-        heights = {24, 0, 32, 0, 32};
+        heights = {32, 0, 32, 0, 0};
     else
-        heights = {24, 32, 32, 32, 32};
+        heights = {32, 32, 32, 0, 0};
     end
 end
 
 function localSetVisible(component, tf)
     try
-        component.Visible = onOff(tf);
+        if tf
+            component.Visible = 'on';
+        else
+            component.Visible = 'off';
+        end
     catch
     end
 end

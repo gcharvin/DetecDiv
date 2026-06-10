@@ -40,7 +40,7 @@ Index one or several roots:
 report = detecdiv_catalog_index_projects('D:\DetecDivProjects');
 report = detecdiv_catalog_index_projects( ...
     {'D:\DetecDivProjects', 'E:\Archive\DetecDiv'}, ...
-    fullfile(prefdir, 'detecdiv_catalog.sqlite'));
+    detecdiv_catalog_user_dbfile());
 ```
 
 List indexed projects:
