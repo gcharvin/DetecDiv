@@ -387,6 +387,7 @@ idxRaw   = cell(1,N);         % channel_indices lus tels quels (peut être vide/
 kList    = zeros(1,N);        % k réel après normalisation
 sizes    = zeros(N,4);        % tailles normalisées [H W k T] par dataset
 blocks   = cell(1,N);         % blocs normalisés [H W k T]
+frameLists = cell(1,N);
 attrs    = repmat(struct('intensity',[], 'rgb',[], 'indexed',[], ...
     'alpha',[], 'contour',[], 'width',[], 'k',[], ...
     'selectedchannel',[]), 1, N);
@@ -436,6 +437,7 @@ for i = 1:N
     szN(end+1:4) = 1;
 
     Hblk = szN(1); Wblk = szN(2); k = szN(3); Tblk = szN(4); %#ok<NASGU>
+    frameList = normalizeH5FrameList(frameAttr, Tblk);
 
     % Debug tailles
     debugPrintf('[DEBUG] "%s" raw=%s, normalized=[%d %d %d %d], expected_subchannels=%d\n', ...
@@ -450,6 +452,7 @@ for i = 1:N
 
     % Stocker bloc normalisé
     blocks{i} = blk;
+    frameLists{i} = frameList;
     kList(i)  = k;
     sizes(i,:)= szN;
 
@@ -482,21 +485,22 @@ kList  = kList(ord);
 sizes  = sizes(ord,:);
 blocks = blocks(ord);
 attrs  = attrs(ord);
+frameLists = frameLists(ord);
 
 % --- Stratégie d'indexation globale ---
-% Consistance H/W/T
-H = sizes(1,1); W = sizes(1,2); T = sizes(1,4);
-if any(sizes(:,1) ~= H) || any(sizes(:,2) ~= W) || any(sizes(:,4) ~= T)
-    % Best-effort: drop datasets with mismatched H/W/T
-    good = (sizes(:,1) == H) & (sizes(:,2) == W) & (sizes(:,4) == T);
+% Consistance H/W. T can differ when a channel is missing frames; keep the
+% channel and leave absent frames as zero instead of shifting channel ids.
+H = sizes(1,1); W = sizes(1,2);
+if any(sizes(:,1) ~= H) || any(sizes(:,2) ~= W)
+    good = (sizes(:,1) == H) & (sizes(:,2) == W);
     if ~any(good)
-        error('loadFromH5_full:DimMismatch', 'H/W/T not consistent across datasets.');
+        error('loadFromH5_full:DimMismatch', 'H/W not consistent across datasets.');
     end
 
     badNames = names(~good);
     if ~isempty(badNames)
         warning('loadFromH5_full:DimMismatch', ...
-            'Dropping %d dataset(s) with inconsistent H/W/T: %s', ...
+            'Dropping %d dataset(s) with inconsistent H/W: %s', ...
             numel(badNames), strjoin(badNames, ', '));
     end
 
@@ -506,7 +510,16 @@ if any(sizes(:,1) ~= H) || any(sizes(:,2) ~= W) || any(sizes(:,4) ~= T)
     sizes  = sizes(good,:);
     blocks = blocks(good);
     attrs  = attrs(good);
+    frameLists = frameLists(good);
     N      = numel(names);
+end
+
+T = max(cellfun(@(x) max(x(:)), frameLists));
+if any(sizes(:,4) ~= T)
+    shortNames = names(sizes(:,4) ~= T);
+    warning('loadFromH5_full:FrameMismatch', ...
+        'Padding %d channel dataset(s) with missing frames in %s: %s', ...
+        numel(shortNames), h5File, strjoin(shortNames, ', '));
 end
 
 if hasBadIdx
@@ -549,7 +562,7 @@ for i = 1:N
     end
 
     debugPrintf('[DEBUG] -> place "%s" into C-indices %s\n', names{i}, mat2str(destIdx));
-    img(:,:,destIdx,:) = blk;
+    img(:,:,destIdx,frameLists{i}) = blk;
 end
 
 % --- channelid (longueur C ; valeurs 1..N) ---
@@ -615,6 +628,11 @@ end
 pTarget = ['/' target.Name];
 
 % --- Lire le bloc + normaliser [H W k T]
+frameAttr = readAttOrDefault(h5File, pTarget, 'frames', []);
+expT = numel(frameAttr);
+if isempty(expT) || expT < 1
+    expT = 1;
+end
 blkRaw = h5read(h5File, pTarget);
 szR = size(blkRaw);
 % on suppose déjà rangé [H W k T] (comme ton full loader). Sinon, adapter ici.
@@ -625,6 +643,7 @@ switch numel(szR)
 end
 H = sz(1); W = sz(2); k = sz(3); T = sz(4);
 blk = reshape(blkRaw, H, W, k, T);  % normalisation simple
+frameList = normalizeH5FrameList(frameAttr, T);
 
 % --- Lire/estimer les indices globaux pour ce canal
 % Essai 1 : utiliser channel_indices s'il existe
@@ -712,20 +731,23 @@ end
 
 % --- Construire/étendre l'image globale
 if isempty(img0)
-    img = zeros(H, W, C0, T, 'like', blk);
+    img = zeros(H, W, C0, max(frameList), 'like', blk);
 else
     img = img0;
     % agrandir si nécessaire
-    if size(img,1) ~= H || size(img,2) ~= W || size(img,4) ~= T
-        error('loadFromH5_single:DimMismatch', 'Existing image dims do not match target dataset dims.');
+    if size(img,1) ~= H || size(img,2) ~= W
+        error('loadFromH5_single:DimMismatch', 'Existing image spatial dims do not match target dataset dims.');
     end
     if size(img,3) < max(destIdx)
         img(:,:,end+1:max(destIdx),:) = 0;
     end
+    if size(img,4) < max(frameList)
+        img(:,:,:,end+1:max(frameList)) = 0;
+    end
 end
 
 % Place le bloc
-img(:,:,destIdx,:) = blk;
+img(:,:,destIdx,frameList) = blk;
 
 % --- Mettre à jour channelid
 if isempty(chId0)
@@ -767,6 +789,11 @@ if isempty(disp0) || ~isstruct(disp0) || ~isfield(disp0,'channel')
     dispStruct = defaultDisplay(L, C);
 else
     dispStruct = disp0;
+    if isfield(dispStruct,'channel')
+        if ischar(dispStruct.channel) || isstring(dispStruct.channel)
+            dispStruct.channel = cellstr(string(dispStruct.channel));
+        end
+    end
     % Ajuster tailles C si l'image a grandi
     C = size(img,3);
     if ~isfield(dispStruct,'displaylim') || size(dispStruct.displaylim,2) ~= C
@@ -935,6 +962,34 @@ catch ME
     error('loadFromH5_full:BadDatasetShape', ...
         'Cannot reshape dataset %s from raw size %s to [H W k T]=[%d %d %d %d]: %s', ...
         char(string(datasetName)), mat2str(rawSz), sz(1), sz(2), sz(3), sz(4), ME.message);
+end
+end
+
+function frameList = normalizeH5FrameList(frameAttr, T)
+if nargin < 2 || isempty(T) || ~isfinite(T) || T < 1
+    T = 1;
+end
+
+frameList = [];
+try
+    if ~isempty(frameAttr)
+        frameList = double(frameAttr(:).');
+        frameList = frameList(isfinite(frameList));
+    end
+catch
+    frameList = [];
+end
+
+if numel(frameList) ~= T
+    frameList = 1:T;
+else
+    frameList = round(frameList);
+    if any(frameList == 0) && ~any(frameList < 0)
+        frameList = frameList + 1;
+    end
+    if any(frameList < 1) || numel(unique(frameList)) ~= numel(frameList)
+        frameList = 1:T;
+    end
 end
 end
 

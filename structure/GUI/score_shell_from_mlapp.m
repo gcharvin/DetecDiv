@@ -1981,6 +1981,10 @@ end
         return;
     end
 
+    while iscell(val) && isscalar(val)
+        val = val{1};
+    end
+
 % ==========================================================
 % CLASSES (seulement si la valeur est une classe/categorical)
 % ==========================================================
@@ -2048,6 +2052,12 @@ end
             v = char(val);
         elseif ischar(val)
             v = val;
+        elseif iscell(val)
+            try
+                v = strjoin(cellstr(string(val(:))), ', ');
+            catch
+                v = '<cell>';
+            end
         else
             v = char(string(val));             % dernier recours
         end
