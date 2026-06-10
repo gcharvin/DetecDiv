@@ -2291,12 +2291,67 @@ end
         end
 
         function openPipelineWithContext(app, pipeObj)
+            pipeObj = app.reloadPipelineTemplateFromDiskIfAvailable(pipeObj);
             projectObj = [];
             [found, projectObj] = app.findLinkedProjectForPipeline(pipeObj);
             if found
-                pipelineGUI(projectObj, pipeObj);
+                app.openPipelineEditorWithProgress(projectObj, pipeObj, 'Opening pipeline editor...');
             else
-                pipelineGUI([], pipeObj);
+                app.openPipelineEditorWithProgress([], pipeObj, 'Opening pipeline editor...');
+            end
+        end
+
+        function openPipelineEditorWithProgress(app, projectObj, targetObj, message)
+            if nargin < 4 || isempty(message)
+                message = 'Opening pipeline editor...';
+            end
+            d = uiprogressdlg(app.DetecDivUIFigure, ...
+                'Title', 'Please wait', ...
+                'Message', message, ...
+                'Indeterminate', 'on');
+            cleanupObj = onCleanup(@() app.safeCloseProgressDialog(d)); %#ok<NASGU>
+            drawnow;
+            pipeline2(projectObj, targetObj);
+        end
+
+        function safeCloseProgressDialog(app, dlg) %#ok<INUSD>
+            try
+                if ~isempty(dlg) && isvalid(dlg)
+                    close(dlg);
+                end
+            catch
+            end
+        end
+
+        function pipeObj = reloadPipelineTemplateFromDiskIfAvailable(app, pipeObj) %#ok<INUSD>
+            if isempty(pipeObj) || ~isa(pipeObj, 'pipeline')
+                return;
+            end
+            pipePath = '';
+            try
+                pipePath = char(string(pipeObj.path));
+            catch
+                pipePath = '';
+            end
+            if isempty(strtrim(pipePath))
+                return;
+            end
+            jsonPath = pipePath;
+            if exist(jsonPath, 'dir') == 7
+                jsonPath = fullfile(jsonPath, 'pipeline.json');
+            end
+            if exist(jsonPath, 'file') ~= 2
+                return;
+            end
+            try
+                [freshPipe, msg] = pipelineLoad(jsonPath);
+                if ~isempty(freshPipe)
+                    pipeObj = freshPipe;
+                elseif ~isempty(msg)
+                    warning('detecdiv:PipelineReloadFailed', '%s', msg);
+                end
+            catch ME
+                warning('detecdiv:PipelineReloadFailed', '%s', ME.message);
             end
         end
 
@@ -3375,12 +3430,8 @@ end
                 end
             end
 
-            if insertIdx > numel(nodes)
-                nodes(end+1) = node; %#ok<AGROW>
-            else
-                nodes = [nodes(1:insertIdx-1) node nodes(insertIdx:end)]; %#ok<AGROW>
-            end
-            pipeObj.nodes = nodes;
+            nodes = app.insertNodeWithAlignedFields(nodes, node, insertIdx);
+            pipeObj.nodes = pipelineNormalizeNodes(nodes, 'persist');
 
             roiId = '';
             for iNode = 1:numel(nodes)
@@ -3497,26 +3548,22 @@ end
                         break;
                     end
                 end
-                if insertIdx > numel(nodes)
-                    nodes(end+1) = newNode; %#ok<AGROW>
-                else
-                    nodes = [nodes(1:insertIdx-1) newNode nodes(insertIdx:end)]; %#ok<AGROW>
-                end
+                nodes = app.insertNodeWithAlignedFields(nodes, newNode, insertIdx);
             else
                 insertIdx = roiIdx(1);
                 keepMask = true(1, numel(nodes));
                 keepMask(roiIdx) = false;
                 keptNodes = nodes(keepMask);
                 if insertIdx <= 1
-                    nodes = [newNode keptNodes]; %#ok<AGROW>
+                    nodes = app.insertNodeWithAlignedFields(keptNodes, newNode, 1);
                 elseif insertIdx > numel(keptNodes)
-                    nodes = [keptNodes newNode]; %#ok<AGROW>
+                    nodes = app.insertNodeWithAlignedFields(keptNodes, newNode, numel(keptNodes) + 1);
                 else
-                    nodes = [keptNodes(1:insertIdx-1) newNode keptNodes(insertIdx:end)]; %#ok<AGROW>
+                    nodes = app.insertNodeWithAlignedFields(keptNodes, newNode, insertIdx);
                 end
             end
 
-            pipeObj.nodes = nodes;
+            pipeObj.nodes = pipelineNormalizeNodes(nodes, 'persist');
 
             normEdges = struct('from',{},'to',{},'fromPort',{},'toPort',{},'condition',{});
             roiIds = {newNode.id};
@@ -3594,6 +3641,47 @@ end
             catch ME
                 warning('detecdiv:PipelineSave', '%s', ME.message);
             end
+        end
+
+        function nodes = insertNodeWithAlignedFields(app, nodes, node, insertIdx) %#ok<INUSD>
+            if nargin < 4 || isempty(insertIdx)
+                insertIdx = numel(nodes) + 1;
+            end
+            node = pipelineNormalizeNodes(node, 'persist');
+            if isempty(nodes)
+                nodes = node;
+                return;
+            end
+
+            [nodes, node] = alignStructFieldsForNodeInsert(app, nodes, node);
+            insertIdx = max(1, min(double(insertIdx), numel(nodes) + 1));
+            if insertIdx > numel(nodes)
+                nodes(end+1) = node; %#ok<AGROW>
+            else
+                tail = nodes(insertIdx:end);
+                nodes = nodes(1:insertIdx-1);
+                nodes(end+1) = node; %#ok<AGROW>
+                for iTail = 1:numel(tail)
+                    nodes(end+1) = tail(iTail); %#ok<AGROW>
+                end
+            end
+        end
+
+        function [nodes, node] = alignStructFieldsForNodeInsert(app, nodes, node) %#ok<INUSD>
+            nodeFields = fieldnames(node);
+            nodeArrayFields = fieldnames(nodes);
+            allFields = unique([nodeArrayFields; nodeFields], 'stable');
+            for i = 1:numel(allFields)
+                key = allFields{i};
+                if ~isfield(nodes, key)
+                    [nodes.(key)] = deal([]);
+                end
+                if ~isfield(node, key)
+                    node.(key) = [];
+                end
+            end
+            nodes = orderfields(nodes, allFields);
+            node = orderfields(node, allFields);
         end
 
         function node = buildDefaultRoiProducerNode(app, nodeType, params, layout) %#ok<INUSD>
@@ -5203,11 +5291,7 @@ end
                 app.OpenButton.Visible='on';
                 [isLoaded, pipeObj, pipeVar] = app.getLoadedPipelineForNode(selectedNodes);
                 pipelineJsonPath = app.resolvePipelineJsonPathForNode(selectedNodes);
-                if isLoaded
-                    app.OpenButton.Text='Open Pipeline...';
-                else
-                    app.OpenButton.Text='Load pipeline in workspace';
-                end
+                app.OpenButton.Text='Open Pipeline...';
                 app.ProcessdataButton.Visible='on';
                 app.ProcessdataButton.Text='Create run...';
 
@@ -6699,12 +6783,13 @@ end
                 gatherVarsFromWorkspace(app);
                 displayNodes(app);
                 app.selectPipelineNodeByJsonPath(jsonPath);
-                close(d);
-                return;
             end
 
-            d.Message = 'Opening pipeline GUI...';
+            d.Message = 'Opening pipeline editor...';
+            drawnow;
+            app.safeCloseProgressDialog(d);
             app.openPipelineWithContext(pipeObj);
+            return;
         end
 
         if strcmp(str,'PipelineModule')
