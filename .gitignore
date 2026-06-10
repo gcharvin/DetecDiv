@@ -29,3 +29,16 @@ structure/cache/
 # Auto-generated GUI sync snapshots
 backups/mlapp_sync/
 backups/pipelineGUI_layout_sync/
+backups/*_layout_sync/
+backups/pipeline2_*/
+backups/mlapp_model_patch/
+
+# Local analysis and pipeline run artifacts
+analysis_outputs/
+pipeline_classifier_*/
+_tmp_*/
+_tmp_*.zip
+structure/GUI/*.patched.mlapp
+structure/GUI/*_tmp.m
+structure/GUI/pipeline2_layouttest*.mlapp
+structure/GUI/pipeline2_layouttest*_extracted.m
