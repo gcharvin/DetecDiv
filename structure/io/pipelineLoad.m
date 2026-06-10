@@ -13,7 +13,7 @@ function [pipe, msg] = pipelineLoad(inputPath)
         inputPath = fullfile(path, file);
     end
 
-    [jsonFile, inputPath, msg] = resolvePipelineJsonTarget(inputPath);
+    [jsonFile, inputPath, msg, bundleRoot] = resolvePipelineJsonTarget(inputPath);
     if ~isempty(msg)
         return;
     end
@@ -25,6 +25,9 @@ function [pipe, msg] = pipelineLoad(inputPath)
 
     txt = fileread(jsonFile);
     S = jsondecode(txt);
+    if ~isempty(bundleRoot)
+        S = relinkBundlePipelineStruct(S, fileparts(jsonFile), bundleRoot);
+    end
 
     pipe = pipelineConstruct('', '', 1);
     try
@@ -55,10 +58,11 @@ function v = getField(S, name, default)
     end
 end
 
-function [jsonFile, basePath, msg] = resolvePipelineJsonTarget(inputPath)
+function [jsonFile, basePath, msg, bundleRoot] = resolvePipelineJsonTarget(inputPath)
     msg = '';
     jsonFile = '';
     basePath = '';
+    bundleRoot = '';
 
     inputPath = char(string(inputPath));
     if exist(inputPath, 'dir')
@@ -74,6 +78,7 @@ function [jsonFile, basePath, msg] = resolvePipelineJsonTarget(inputPath)
             [jsonFile, msg] = resolvePipelineJsonFromManifest(manifestPath, basePath);
             if isempty(msg)
                 basePath = fileparts(jsonFile);
+                bundleRoot = fileparts(manifestPath);
             end
             return;
         end
@@ -82,6 +87,9 @@ function [jsonFile, basePath, msg] = resolvePipelineJsonTarget(inputPath)
         if exist(pipelineSub, 'file') == 2
             jsonFile = pipelineSub;
             basePath = fileparts(jsonFile);
+            if exist(fullfile(inputPath, 'export_manifest.json'), 'file') == 2
+                bundleRoot = inputPath;
+            end
             return;
         end
 
@@ -96,7 +104,14 @@ function [jsonFile, basePath, msg] = resolvePipelineJsonTarget(inputPath)
     if strcmpi(ext, '.json') && strcmpi(fname, 'export_manifest')
         [jsonFile, msg] = resolvePipelineJsonFromManifest(jsonFile, basePath);
         if isempty(msg)
+            bundleRoot = basePath;
             basePath = fileparts(jsonFile);
+        end
+    else
+        parent = fileparts(basePath);
+        manifestPath = fullfile(parent, 'export_manifest.json');
+        if exist(manifestPath, 'file') == 2 && manifestPointsToJson(manifestPath, parent, jsonFile)
+            bundleRoot = parent;
         end
     end
 end
@@ -129,6 +144,123 @@ function [jsonFile, msg] = resolvePipelineJsonFromManifest(manifestPath, basePat
         return;
     end
     jsonFile = candidate;
+end
+
+function tf = manifestPointsToJson(manifestPath, bundleRoot, jsonFile)
+    tf = false;
+    try
+        S = jsondecode(fileread(manifestPath));
+        relPath = char(string(S.pipeline.bundlePipelinePath));
+        if isAbsolutePathLocal(relPath)
+            candidate = relPath;
+        else
+            candidate = fullfile(bundleRoot, relPath);
+        end
+        tf = strcmpi(canonicalPathLocal(candidate), canonicalPathLocal(jsonFile));
+    catch
+        tf = false;
+    end
+end
+
+function S = relinkBundlePipelineStruct(S, pipelineRoot, bundleRoot)
+    if ~isstruct(S) || ~isfield(S, 'nodes') || isempty(S.nodes)
+        return;
+    end
+    for i = 1:numel(S.nodes)
+        if ~isfield(S.nodes(i), 'params') || ~isstruct(S.nodes(i).params)
+            continue;
+        end
+        S.nodes(i).params = relinkBundleParams(S.nodes(i).params, pipelineRoot, bundleRoot);
+    end
+    if ~isfield(S, 'runProfiles') || ~isstruct(S.runProfiles)
+        S.runProfiles = struct();
+    end
+    S.runProfiles.bundle = struct( ...
+        'bundleRoot', char(string(bundleRoot)), ...
+        'pipelineRoot', char(string(pipelineRoot)), ...
+        'loadedAt', char(datetime('now')));
+end
+
+function params = relinkBundleParams(params, pipelineRoot, bundleRoot)
+    names = fieldnames(params);
+    for i = 1:numel(names)
+        name = names{i};
+        value = params.(name);
+        if isstruct(value)
+            params.(name) = relinkBundleNestedStruct(value, pipelineRoot, bundleRoot);
+            continue;
+        end
+        if ~(ischar(value) || (isstring(value) && isscalar(value)))
+            continue;
+        end
+        text = char(string(value));
+        if isempty(text) || isAbsolutePathLocal(text) || ~looksLikeBundlePathParam(name, text)
+            continue;
+        end
+        params.(name) = resolveBundleRelativePath(text, pipelineRoot, bundleRoot, shouldCreatePathForParam(name));
+    end
+end
+
+function value = relinkBundleNestedStruct(value, pipelineRoot, bundleRoot)
+    for k = 1:numel(value)
+        names = fieldnames(value(k));
+        for i = 1:numel(names)
+            name = names{i};
+            item = value(k).(name);
+            if isstruct(item)
+                value(k).(name) = relinkBundleNestedStruct(item, pipelineRoot, bundleRoot);
+            elseif ischar(item) || (isstring(item) && isscalar(item))
+                text = char(string(item));
+                if ~isempty(text) && ~isAbsolutePathLocal(text) && looksLikeBundlePathParam(name, text)
+                    value(k).(name) = resolveBundleRelativePath(text, pipelineRoot, bundleRoot, shouldCreatePathForParam(name));
+                end
+            end
+        end
+    end
+end
+
+function out = resolveBundleRelativePath(pathText, pipelineRoot, bundleRoot, createParent)
+    out = char(string(pathText));
+    candidates = {fullfile(pipelineRoot, out), fullfile(bundleRoot, out)};
+    for i = 1:numel(candidates)
+        candidate = canonicalPathLocal(candidates{i});
+        if exist(candidate, 'dir') == 7 || exist(candidate, 'file') == 2
+            out = candidate;
+            return;
+        end
+    end
+    candidate = canonicalPathLocal(candidates{1});
+    if createParent
+        try
+            if exist(candidate, 'dir') ~= 7
+                mkdir(candidate);
+            end
+        catch
+        end
+    end
+    out = candidate;
+end
+
+function tf = looksLikeBundlePathParam(name, value)
+    key = lower(char(string(name)));
+    value = char(string(value));
+    tf = contains(value, '/') || contains(value, '\') || ...
+        contains(key, 'path') || contains(key, 'dir') || contains(key, 'folder') || contains(key, 'root') || ...
+        any(strcmp(key, {'patchfile','patchpreviewfile'}));
+end
+
+function tf = shouldCreatePathForParam(name)
+    key = lower(char(string(name)));
+    tf = contains(key, 'output') || contains(key, 'export') || contains(key, 'result') || ...
+        contains(key, 'figure') || contains(key, 'report') || contains(key, 'workbook');
+end
+
+function out = canonicalPathLocal(pathText)
+    out = char(string(pathText));
+    try
+        out = char(java.io.File(out).getCanonicalPath());
+    catch
+    end
 end
 
 function tf = isAbsolutePathLocal(p)

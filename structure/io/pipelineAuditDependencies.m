@@ -122,7 +122,7 @@ function dep = auditSingleNode(node, idx, templateRoot, opts, pipeObj) %#ok<INUS
     end
 
     dependencyMode = inferDependencyModeLocal(contract, referenceConfigured, pathUnderPipeline, pathExists);
-    locatorKind = inferLocatorKindLocal(source);
+    locatorKind = inferLocatorKindLocal(source, pathUnderPipeline);
     isResolved = true;
     if requiredForRun
         if contract.supports.inferenceAssets
@@ -134,7 +134,8 @@ function dep = auditSingleNode(node, idx, templateRoot, opts, pipeObj) %#ok<INUS
 
     normalizationAction = '';
     normalizedRef = char(string(source.configuredPath));
-    if strcmp(dependencyMode, 'embedded') && ~isempty(source.configuredPath) && isAbsolutePathLocal(source.configuredPath) && pathUnderPipeline
+    if strcmp(dependencyMode, 'embedded') && ~isempty(source.configuredPath) && isAbsolutePathLocal(source.configuredPath) && ...
+            pathUnderPipeline && ~strcmp(locatorKind, 'bundle_local_path')
         normalizedRef = relativePathFromToLocal(templateRoot, source.path);
         if ~strcmp(normalizedRef, source.configuredPath)
             normalizationAction = 'rewrite_relative_module_path';
@@ -233,6 +234,14 @@ function [pipeObj, spec, templateRoot, sourceLabel] = normalizePipelineInputLoca
         spec.runProfiles = pipeIn.runProfiles;
         spec.runState = pipeIn.runState;
         templateRoot = char(string(pipeIn.path));
+        try
+            if isstruct(pipeIn.runProfiles) && isfield(pipeIn.runProfiles, 'bundle') && ...
+                    isstruct(pipeIn.runProfiles.bundle) && isfield(pipeIn.runProfiles.bundle, 'bundleRoot') && ...
+                    ~isempty(pipeIn.runProfiles.bundle.bundleRoot)
+                templateRoot = char(string(pipeIn.runProfiles.bundle.bundleRoot));
+            end
+        catch
+        end
         sourceLabel = templateRoot;
         return;
     end
@@ -358,12 +367,14 @@ function mode = inferDependencyModeLocal(contract, referenceConfigured, pathUnde
     end
 end
 
-function locatorKind = inferLocatorKindLocal(source)
+function locatorKind = inferLocatorKindLocal(source, pathUnderPipeline)
     if isempty(source.configuredPath)
         locatorKind = '';
         return;
     end
-    if isAbsolutePathLocal(source.configuredPath)
+    if nargin >= 2 && pathUnderPipeline && isAbsolutePathLocal(source.configuredPath)
+        locatorKind = 'bundle_local_path';
+    elseif isAbsolutePathLocal(source.configuredPath)
         locatorKind = 'external_path';
     else
         locatorKind = 'anchored_path';
@@ -755,10 +766,46 @@ function out = normalizePathLocal(pathText)
 end
 
 function rel = relativePathFromToLocal(basePath, targetPath)
-    base = string(java.io.File(char(string(basePath))).getCanonicalPath());
-    target = string(java.io.File(char(string(targetPath))).getCanonicalPath());
-    rel = char(java.nio.file.Paths.get(char(base)).relativize(java.nio.file.Paths.get(char(target))).toString());
-    rel = strrep(rel, '\', '/');
+    base = normalizePathPreserveCaseLocal(basePath);
+    target = normalizePathPreserveCaseLocal(targetPath);
+    if exist(base, 'file') == 2
+        base = fileparts(base);
+    end
+    baseParts = splitPathPartsLocal(base);
+    targetParts = splitPathPartsLocal(target);
+    n = min(numel(baseParts), numel(targetParts));
+    common = 0;
+    for i = 1:n
+        if strcmpi(baseParts{i}, targetParts{i})
+            common = i;
+        else
+            break;
+        end
+    end
+    up = repmat({'..'}, 1, numel(baseParts) - common);
+    down = targetParts(common+1:end);
+    parts = [up down];
+    if isempty(parts)
+        rel = '.';
+    else
+        rel = strrep(fullfile(parts{:}), '\', '/');
+    end
+end
+
+function parts = splitPathPartsLocal(pathText)
+    pathText = strrep(char(string(pathText)), '\', '/');
+    parts = regexp(pathText, '/', 'split');
+    parts = parts(~cellfun(@isempty, parts));
+end
+
+function out = normalizePathPreserveCaseLocal(pathText)
+    out = char(string(pathText));
+    try
+        out = char(java.io.File(out).getCanonicalPath());
+    catch
+    end
+    out = strrep(out, '/', filesep);
+    out = regexprep(out, [regexptranslate('escape', filesep) '+$'], '');
 end
 
 function tf = isAbsolutePathLocal(p)

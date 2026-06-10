@@ -299,10 +299,14 @@ function [nodeOut, copied, warningsOut] = exportNodePlugins(nodeOut, assetsDir, 
 
     packageDir = '';
     packageRoot = '';
-    if isfield(params, 'customPackageDir') && ~isempty(params.customPackageDir)
+    if isfield(nodeOut, 'customPackageDir') && ~isempty(nodeOut.customPackageDir)
+        packageDir = char(string(nodeOut.customPackageDir));
+    elseif isfield(params, 'customPackageDir') && ~isempty(params.customPackageDir)
         packageDir = char(string(params.customPackageDir));
     end
-    if isfield(params, 'customPackageRoot') && ~isempty(params.customPackageRoot)
+    if isfield(nodeOut, 'customPackageRoot') && ~isempty(nodeOut.customPackageRoot)
+        packageRoot = char(string(nodeOut.customPackageRoot));
+    elseif isfield(params, 'customPackageRoot') && ~isempty(params.customPackageRoot)
         packageRoot = char(string(params.customPackageRoot));
     end
     if isempty(packageDir) && ~isempty(packageRoot) && isfield(nodeOut, 'pkg') && ~isempty(nodeOut.pkg)
@@ -349,12 +353,27 @@ function [nodeOut, copied, warningsOut] = exportNodePlugins(nodeOut, assetsDir, 
         'targetPath', targetDir, ...
         'message', sprintf('Copying plugin package: %s', packageLeaf)));
 
-    params.customPackageRoot = relativePathFromTo(pipelineDir, targetRoot);
-    params.customPackageDir = relativePathFromTo(pipelineDir, targetDir);
-    if isfield(params, 'customPackageLoadedAt')
-        params.customPackageLoadedAt = '';
-    end
+    nodeOut.customPackageRoot = relativePathFromTo(pipelineDir, targetRoot);
+    nodeOut.customPackageDir = relativePathFromTo(pipelineDir, targetDir);
+    nodeOut.customPackageLoadedAt = '';
+    params = removeLegacyCustomPackageParams(params);
     nodeOut.params = params;
+end
+
+function params = removeLegacyCustomPackageParams(params)
+if ~isstruct(params)
+    return;
+end
+rm = {};
+keys = {'customPackageRoot','customPackageDir','customPackageLoadedAt'};
+for i = 1:numel(keys)
+    if isfield(params, keys{i})
+        rm{end+1} = keys{i}; %#ok<AGROW>
+    end
+end
+if ~isempty(rm)
+    params = rmfield(params, rm);
+end
 end
 
 function [nodeOut, rewrites] = rebaseNodeOutputPaths(nodeOut, pipelineDir)

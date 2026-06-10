@@ -928,10 +928,12 @@ end
 function ensureCustomPackagePath(node)
 params = getField(node, 'params', struct());
 if ~isstruct(params)
-    return;
+    params = struct();
 end
 root = '';
-if isfield(params, 'customPackageRoot') && ~isempty(params.customPackageRoot)
+if isfield(node, 'customPackageRoot') && ~isempty(node.customPackageRoot)
+    root = char(string(node.customPackageRoot));
+elseif isfield(params, 'customPackageRoot') && ~isempty(params.customPackageRoot)
     root = char(string(params.customPackageRoot));
 end
 if isempty(root) || exist(root, 'dir') ~= 7

@@ -1736,19 +1736,19 @@ end
 
 function ensureProcessorPackagePath(node, p, ctx)
     roots = {};
-    if isstruct(p)
-        if isfield(p, 'customPackageRoot') && ~isempty(p.customPackageRoot)
-            roots{end+1} = char(string(p.customPackageRoot)); %#ok<AGROW>
-        end
-        if isfield(p, 'customPackageDir') && ~isempty(p.customPackageDir)
-            packageDir = char(string(p.customPackageDir));
-            if exist(packageDir, 'dir') == 7
-                roots{end+1} = fileparts(packageDir); %#ok<AGROW>
-            else
-                [mappedPackageDir, mapped] = mapModulePathToServerPath(packageDir, ctx);
-                if mapped || exist(mappedPackageDir, 'dir') == 7
-                    roots{end+1} = fileparts(mappedPackageDir); %#ok<AGROW>
-                end
+    customPackageRoot = getNodeCustomPackageField(node, p, 'customPackageRoot');
+    customPackageDir = getNodeCustomPackageField(node, p, 'customPackageDir');
+    if ~isempty(customPackageRoot)
+        roots{end+1} = char(string(customPackageRoot)); %#ok<AGROW>
+    end
+    if ~isempty(customPackageDir)
+        packageDir = char(string(customPackageDir));
+        if exist(packageDir, 'dir') == 7
+            roots{end+1} = fileparts(packageDir); %#ok<AGROW>
+        else
+            [mappedPackageDir, mapped] = mapModulePathToServerPath(packageDir, ctx);
+            if mapped || exist(mappedPackageDir, 'dir') == 7
+                roots{end+1} = fileparts(mappedPackageDir); %#ok<AGROW>
             end
         end
     end
@@ -1776,6 +1776,15 @@ function ensureProcessorPackagePath(node, p, ctx)
                 char(string(getfielddefault(node, 'id', ''))), ME.message);
         end
     end
+end
+
+function value = getNodeCustomPackageField(node, p, fieldName)
+value = '';
+if isstruct(node) && isfield(node, fieldName) && ~isempty(node.(fieldName))
+    value = char(string(node.(fieldName)));
+elseif isstruct(p) && isfield(p, fieldName) && ~isempty(p.(fieldName))
+    value = char(string(p.(fieldName)));
+end
 end
 
 function p = mapNodeRuntimePathParams(node, p, ctx)
@@ -1859,6 +1868,62 @@ function p = injectPipelineRuntimeParams(p, ctx)
     if ~isempty(projectPath) && (~isfield(p, 'projectPath') || isempty(p.projectPath))
         p.projectPath = char(string(projectPath));
     end
+
+    projectFolder = projectFolderFromRuntimeContext(ctx);
+    if isempty(projectFolder)
+        return;
+    end
+    if isfield(p, 'outputDir') && isEmptyPathValue(p.outputDir)
+        p.outputDir = projectFolder;
+    end
+    if isfield(p, 'outputFolder') && isEmptyPathValue(p.outputFolder)
+        p.outputFolder = projectFolder;
+    end
+end
+
+function tf = isEmptyPathValue(value)
+tf = false;
+if ischar(value) || (isstring(value) && isscalar(value))
+    tf = isempty(strtrim(char(string(value))));
+end
+end
+
+function folder = projectFolderFromRuntimeContext(ctx)
+folder = '';
+projectPath = getfielddefault(ctx, 'projectPath', '');
+if isempty(projectPath) && isfield(ctx, 'run') && isstruct(ctx.run)
+    projectPath = getfielddefault(ctx.run, 'projectPath', '');
+end
+if isempty(projectPath) && isfield(ctx, 'io') && isstruct(ctx.io)
+    projectPath = getfielddefault(ctx.io, 'projectPath', '');
+end
+if isempty(projectPath) && isfield(ctx, 'targetRef') && isstruct(ctx.targetRef)
+    projectPath = getfielddefault(ctx.targetRef, 'projectPath', '');
+end
+folder = projectFolderFromProjectPath(projectPath);
+end
+
+function folder = projectFolderFromProjectPath(projectPath)
+folder = '';
+if isempty(projectPath)
+    return;
+end
+projectPath = char(string(projectPath));
+if exist(projectPath, 'dir') == 7
+    folder = projectPath;
+    return;
+end
+[pth, name, ext] = fileparts(projectPath);
+if strcmpi(ext, '.mat')
+    candidate = fullfile(pth, name);
+    if exist(candidate, 'dir') == 7
+        folder = candidate;
+    elseif exist(pth, 'dir') == 7
+        folder = pth;
+    end
+elseif exist(pth, 'dir') == 7
+    folder = pth;
+end
 end
 
 function ctx = executeClassifierNode(node, ctx)
