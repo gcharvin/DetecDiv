@@ -11906,7 +11906,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 status = 'server';
                 return;
             end
-            [mappedPath, mapped] = hubMappedServerPath(app, localPath, hub);
+            [mappedPath, mapped] = mapHubPathForServer(app, localPath, hub);
             if mapped
                 remotePath = mappedPath;
                 status = 'mapped';
@@ -11915,7 +11915,7 @@ classdef pipeline2 < matlab.apps.AppBase
             if isWindowsLocalPath(app, localPath)
                 ok = false;
                 status = 'error';
-                message = 'Set Local root and Remote root so the worker can map this Windows path to the server mount, for example Local root X:/ and Remote root /data.';
+                message = hubPathMappingHelpMessage(app, localPath, hub);
                 return;
             end
             if ~isAbsoluteServerLikePath(app, localPath)
@@ -11941,6 +11941,45 @@ classdef pipeline2 < matlab.apps.AppBase
                     return;
                 end
             end
+        end
+
+        function [remotePath, mapped] = mapHubPathForServer(app, localPath, hub) %#ok<INUSD>
+            remotePath = strrep(char(string(localPath)), '\', '/');
+            mapped = false;
+            try
+                ctx = struct();
+                ctx.hub = hub;
+                [remotePath, mapped] = detecdiv_paths_map_module_path(localPath, ctx, 'server');
+                if mapped
+                    remotePath = strrep(char(string(remotePath)), '\', '/');
+                end
+            catch
+                [remotePath, mapped] = hubMappedServerPath(app, localPath, hub);
+            end
+        end
+
+        function message = hubPathMappingHelpMessage(app, localPath, hub)
+            mappings = getHubPathMappings(app, hub);
+            active = {};
+            for i = 1:numel(mappings)
+                try
+                    localRoot = char(string(mappings(i).localRoot));
+                    remoteRoot = char(string(mappings(i).remoteRoot));
+                    if ~isempty(localRoot) && ~isempty(remoteRoot)
+                        active{end+1} = sprintf('%s -> %s', localRoot, remoteRoot); %#ok<AGROW>
+                    end
+                catch
+                end
+            end
+            if isempty(active)
+                activeText = 'none';
+            else
+                activeText = strjoin(active, '; ');
+            end
+            message = sprintf(['No active Hub path mapping covers this local path: %s.' newline ...
+                'Active mapping(s): %s.' newline ...
+                'Move/copy the project and raw data under a mapped local root, or set Local root to the Windows folder that contains them and Remote root to the matching server mount.'], ...
+                char(string(localPath)), activeText);
         end
 
         function tf = isAbsoluteServerLikePath(app, pathValue) %#ok<INUSD>
@@ -12009,11 +12048,21 @@ classdef pipeline2 < matlab.apps.AppBase
         function mappings = getHubPathMappings(app, hub) %#ok<INUSD>
             mappings = struct('remoteRoot', {}, 'localRoot', {});
             try
-                if isfield(hub, 'pathMappings') && ~isempty(hub.pathMappings)
-                    mappings = hub.pathMappings;
+                ctx = struct();
+                if nargin >= 2 && isstruct(hub)
+                    ctx.hub = hub;
+                else
+                    ctx.hub = struct();
                 end
+                mappings = detecdiv_paths_module_mappings(ctx);
             catch
-                mappings = struct('remoteRoot', {}, 'localRoot', {});
+                try
+                    if isfield(hub, 'pathMappings') && ~isempty(hub.pathMappings)
+                        mappings = hub.pathMappings;
+                    end
+                catch
+                    mappings = struct('remoteRoot', {}, 'localRoot', {});
+                end
             end
         end
 
