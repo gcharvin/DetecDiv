@@ -23,6 +23,7 @@ function varargout = detecdivCatalogBrowser(varargin)
     state.catalogSettings = catalogSettings;
     state.hubSettings = hubSettings;
     state.sourceMode = localNormalizeSourceMode(hubSettings.sourceMode);
+    state.entityMode = 'projects';
     state.projects = table();
     state.visibleProjects = table();
     state.displayProjects = table();
@@ -88,6 +89,18 @@ function varargout = detecdivCatalogBrowser(varargin)
         'ValueChangedFcn', @onSourceModeChanged);
     sourceDropDown.Layout.Row = 1;
     sourceDropDown.Layout.Column = 2;
+
+    entityLabel = uilabel(controlGrid, 'Text', 'View', 'FontWeight', 'bold');
+    entityLabel.Layout.Row = 1;
+    entityLabel.Layout.Column = 3;
+
+    entityDropDown = uidropdown(controlGrid, ...
+        'Items', {'Projects', 'Raw datasets'}, ...
+        'ItemsData', {'projects', 'raw_datasets'}, ...
+        'Value', state.entityMode, ...
+        'ValueChangedFcn', @onEntityModeChanged);
+    entityDropDown.Layout.Row = 1;
+    entityDropDown.Layout.Column = [4 5];
 
     connectionSettingsButton = uibutton(controlGrid, 'push', ...
         'Text', 'Connection Settings...', ...
@@ -229,7 +242,7 @@ function varargout = detecdivCatalogBrowser(varargin)
         'FontAngle', 'italic', ...
         'WordWrap', 'on');
     sourceInfoLabel.Layout.Row = 1;
-    sourceInfoLabel.Layout.Column = [3 7];
+    sourceInfoLabel.Layout.Column = [6 7];
 
     searchLabel = uilabel(controlGrid, 'Text', 'Search', 'FontWeight', 'bold');
     searchLabel.Layout.Row = 3;
@@ -292,7 +305,7 @@ function varargout = detecdivCatalogBrowser(varargin)
     sideGrid.RowSpacing = 8;
     sideGrid.Padding = [0 0 0 0];
 
-    uilabel(sideGrid, 'Text', 'Project Details', 'FontWeight', 'bold');
+    detailsTitleLabel = uilabel(sideGrid, 'Text', 'Project Details', 'FontWeight', 'bold');
 
     detailsArea = uitextarea(sideGrid, ...
         'Editable', 'off', ...
@@ -393,9 +406,20 @@ function varargout = detecdivCatalogBrowser(varargin)
     function onSourceModeChanged(~, ~)
         state.sourceMode = localNormalizeSourceMode(sourceDropDown.Value);
         state.hubSettings.sourceMode = state.sourceMode;
+        if strcmp(state.sourceMode, 'local') && strcmp(state.entityMode, 'raw_datasets')
+            state.entityMode = 'raw_datasets';
+        end
         state.currentPage = 1;
         state.selectedRow = [];
         detecdiv_hub_settings_set(state.hubSettings);
+        syncUiFromState();
+        refreshProjectsTable();
+    end
+
+    function onEntityModeChanged(~, ~)
+        state.entityMode = localNormalizeEntityMode(entityDropDown.Value);
+        state.currentPage = 1;
+        state.selectedRow = [];
         syncUiFromState();
         refreshProjectsTable();
     end
@@ -548,8 +572,9 @@ function varargout = detecdivCatalogBrowser(varargin)
                 state.catalogSettings.recentProjectRoots, rootPath);
             state.catalogSettings.backgroundIndexing = logical(backgroundCheck.Value);
             detecdiv_catalog_settings_set(state.catalogSettings);
-            setStatus(['Local catalog configuration saved: ' rootPath]);
             syncUiFromState();
+            refreshProjectsTable();
+            setStatus(['Local catalog configuration saved: ' rootPath]);
             return;
         end
 
@@ -565,8 +590,9 @@ function varargout = detecdivCatalogBrowser(varargin)
             state.hubSettings = detecdiv_hub_upsert_path_mapping(state.hubSettings, hubRoot, localMount);
         end
         detecdiv_hub_settings_set(state.hubSettings);
-        setStatus('Hub configuration saved.');
         syncUiFromState();
+        refreshProjectsTable();
+        setStatus('Hub configuration saved.');
     end
 
     function onIndexRoot(~, ~)
@@ -865,6 +891,7 @@ function varargout = detecdivCatalogBrowser(varargin)
             end
             pullDialogValuesFromState();
             syncUiFromState();
+            refreshProjectsTable();
             setStatus('Connection settings saved.');
         end
 
@@ -1115,10 +1142,10 @@ function varargout = detecdivCatalogBrowser(varargin)
             return;
         end
 
-        if strcmp(state.sourceMode, 'local')
+        if strcmp(state.entityMode, 'projects') && strcmp(state.sourceMode, 'local')
             state.catalogSettings.lastSelectedProjectMat = char(string(state.visibleProjects.project_mat_abs(state.selectedRow)));
             detecdiv_catalog_settings_set(state.catalogSettings);
-        else
+        elseif strcmp(state.entityMode, 'projects')
             state.hubSettings.lastProjectId = char(string(state.visibleProjects.project_id(state.selectedRow)));
             detecdiv_hub_settings_set(state.hubSettings);
         end
@@ -1661,11 +1688,37 @@ function varargout = detecdivCatalogBrowser(varargin)
     function refreshProjectsTable(varargin)
         ipLocal = inputParser;
         ipLocal.addParameter('PreserveStatus', false, @(x)islogical(x) || isnumeric(x));
+        ipLocal.addParameter('ShowProgress', [], @(x)islogical(x) || isnumeric(x) || isempty(x));
+        ipLocal.addParameter('ProgressMessage', '', @(x)ischar(x) || isstring(x));
         ipLocal.parse(varargin{:});
         preserveStatus = logical(ipLocal.Results.PreserveStatus);
+        showProgress = ipLocal.Results.ShowProgress;
+        if isempty(showProgress)
+            showProgress = ~preserveStatus;
+        else
+            showProgress = logical(showProgress);
+        end
+
+        progressDlg = [];
+        if showProgress
+            progressDlg = showCatalogProgress(ipLocal.Results.ProgressMessage);
+        end
+        cleanupProgress = onCleanup(@() closeProgressDialog(progressDlg)); %#ok<NASGU>
 
         try
             if strcmp(state.sourceMode, 'local')
+                if strcmp(state.entityMode, 'raw_datasets')
+                    state.projects = localNormalizeLocalRawDatasets(table());
+                    updateProjectTableFromState();
+                    applyProjectTableStyles();
+                    restorePreviousSelection();
+                    updateSelectionState();
+                    if ~preserveStatus
+                        setStatus('Local raw dataset catalog is not implemented yet.');
+                    end
+                    return;
+                end
+
                 projects = localNormalizeLocalProjects( ...
                     detecdiv_catalog_list_projects(state.catalogSettings.dbFile));
                 state.projects = projects;
@@ -1687,12 +1740,20 @@ function varargout = detecdivCatalogBrowser(varargin)
             syncHubSettingsFromControls();
             detecdiv_hub_settings_set(state.hubSettings);
             refreshHubContext();
-            projects = localNormalizeHubProjects(detecdiv_hub_list_projects( ...
-                state.hubSettings, ...
-                'GroupId', state.hubSelectedGroupId, ...
-                'OwnerKey', state.hubSelectedOwnerKey, ...
-                'OwnedOnly', state.hubOwnedOnly, ...
-                'Search', state.searchText));
+            if strcmp(state.entityMode, 'raw_datasets')
+                projects = localNormalizeHubRawDatasets(detecdiv_hub_list_raw_datasets( ...
+                    state.hubSettings, ...
+                    'OwnerKey', state.hubSelectedOwnerKey, ...
+                    'OwnedOnly', state.hubOwnedOnly, ...
+                    'Search', state.searchText));
+            else
+                projects = localNormalizeHubProjects(detecdiv_hub_list_projects( ...
+                    state.hubSettings, ...
+                    'GroupId', state.hubSelectedGroupId, ...
+                    'OwnerKey', state.hubSelectedOwnerKey, ...
+                    'OwnedOnly', state.hubOwnedOnly, ...
+                    'Search', state.searchText));
+            end
             state.projects = projects;
             updateProjectTableFromState();
             applyProjectTableStyles();
@@ -1700,10 +1761,10 @@ function varargout = detecdivCatalogBrowser(varargin)
             updateSelectionState();
             if ~preserveStatus
                 if isempty(projects)
-                    setStatus(sprintf('No projects returned by %s.', state.hubSettings.baseUrl));
+                    setStatus(sprintf('No %s returned by %s.', localEntityPluralLabel(state.entityMode), state.hubSettings.baseUrl));
                 else
-                    setStatus(sprintf('%d hub project(s) loaded from %s.', ...
-                        height(projects), state.hubSettings.baseUrl));
+                    setStatus(sprintf('%d hub %s loaded from %s.', ...
+                        height(projects), localEntityPluralLabel(state.entityMode), state.hubSettings.baseUrl));
                 end
             end
         catch ME
@@ -1717,6 +1778,34 @@ function varargout = detecdivCatalogBrowser(varargin)
             if ~preserveStatus
                 setStatus(['Refresh failed: ' ME.message]);
             end
+        end
+    end
+
+    function progressDlg = showCatalogProgress(message)
+        progressDlg = [];
+        message = char(string(message));
+        if isempty(strtrim(message))
+            if strcmp(state.sourceMode, 'hub')
+                if strcmp(state.entityMode, 'raw_datasets')
+                    message = 'Loading Hub raw dataset catalog database...';
+                else
+                    message = 'Loading Hub project catalog database...';
+                end
+            elseif strcmp(state.entityMode, 'raw_datasets')
+                message = 'Loading local raw dataset catalog database...';
+            else
+                message = 'Loading local project catalog database...';
+            end
+        end
+        try
+            progressDlg = uiprogressdlg(fig, ...
+                'Title', 'Loading catalog', ...
+                'Message', message, ...
+                'Indeterminate', 'on', ...
+                'Cancelable', 'off');
+            drawnow;
+        catch
+            progressDlg = [];
         end
     end
 
@@ -1737,13 +1826,18 @@ function varargout = detecdivCatalogBrowser(varargin)
             endIdx = min(height(state.visibleProjects), startIdx + state.pageSize - 1);
             state.displayProjects = state.visibleProjects(startIdx:endIdx, :);
         end
-        projectTable.Data = localBuildDisplayTable(state.displayProjects, state.sourceMode, state.hubSettings);
+        displayTable = localBuildDisplayTable(state.displayProjects, state.sourceMode, state.hubSettings, state.entityMode);
+        projectTable.Data = displayTable;
+        projectTable.ColumnName = localDisplayColumnNames(displayTable);
         syncPageControls();
     end
 
     function applyProjectTableStyles()
         try
             removeStyle(projectTable);
+            if ~strcmp(state.entityMode, 'projects')
+                return;
+            end
             loadedRows = localLoadedRows(state.displayProjects, state.sourceMode, state.hubSettings);
             if ~isempty(loadedRows)
                 loadedStyle = uistyle('BackgroundColor', [0.83 0.94 0.86]);
@@ -1759,7 +1853,9 @@ function varargout = detecdivCatalogBrowser(varargin)
             return;
         end
 
-        if strcmp(state.sourceMode, 'local')
+        if ~strcmp(state.entityMode, 'projects')
+            return;
+        elseif strcmp(state.sourceMode, 'local')
             wantedKey = char(string(state.catalogSettings.lastSelectedProjectMat));
             if isempty(wantedKey)
                 return;
@@ -1803,7 +1899,7 @@ function varargout = detecdivCatalogBrowser(varargin)
         totalRows = height(state.visibleProjects);
         totalPages = max(1, ceil(totalRows / state.pageSize));
         if totalRows == 0
-            pageLabel.Text = 'Page 0 / 0 - 0 projects';
+            pageLabel.Text = ['Page 0 / 0 - 0 ' localEntityPluralLabel(state.entityMode)];
         else
             startIdx = localPageStartIndex();
             endIdx = min(totalRows, startIdx + state.pageSize - 1);
@@ -1816,6 +1912,7 @@ function varargout = detecdivCatalogBrowser(varargin)
     end
 
     function syncSortControls()
+        syncEntitySortOptions();
         if ~strcmp(char(string(sortDropDown.Value)), state.sortVariable)
             sortDropDown.Value = state.sortVariable;
         end
@@ -1826,20 +1923,43 @@ function varargout = detecdivCatalogBrowser(varargin)
         end
     end
 
+    function syncEntitySortOptions()
+        if strcmp(state.entityMode, 'raw_datasets')
+            sortDropDown.Items = {'Name', 'Created Date', 'Updated Date', 'Status', 'Completeness', 'Kind', 'Positions', 'Size', 'Owner'};
+            sortDropDown.ItemsData = {'name', 'created_at', 'updated_at', 'status', 'completeness_status', 'dataset_kind', 'position_count', 'total_bytes', 'owner_user_key'};
+            if ~ismember(state.sortVariable, sortDropDown.ItemsData)
+                state.sortVariable = 'name';
+            end
+            return;
+        end
+
+        sortDropDown.Items = {'Name', 'Modified Date', 'Imported Date', 'Health', 'FOV', 'ROI', 'Runs', 'Missing Raw'};
+        sortDropDown.ItemsData = {'name', 'project_mtime', 'created_at', 'health_status', 'fov_count', 'roi_count', 'pipeline_run_count', 'missing_raw_count'};
+        if ~ismember(state.sortVariable, sortDropDown.ItemsData)
+            state.sortVariable = 'name';
+        end
+    end
+
     function updateSelectionState()
         row = getSelectedProjectRow();
         hasRow = ~isempty(row);
+        isProjectView = strcmp(state.entityMode, 'projects');
 
-        loadButton.Enable = onOff(hasRow);
-        openFolderButton.Enable = onOff(hasRow);
-        pipeline2Button.Enable = onOff(hasRow);
-        notesButton.Enable = onOff(hasRow && strcmp(state.sourceMode, 'hub'));
-        groupButton.Enable = onOff(hasRow && strcmp(state.sourceMode, 'hub'));
-        aclButton.Enable = onOff(hasRow && strcmp(state.sourceMode, 'hub'));
-        addToGroupButton.Enable = onOff(hasRow && strcmp(state.sourceMode, 'hub'));
+        loadButton.Enable = onOff(hasRow && isProjectView);
+        openFolderButton.Enable = onOff(hasRow && isProjectView);
+        pipeline2Button.Enable = onOff(hasRow && isProjectView);
+        notesButton.Enable = onOff(hasRow && isProjectView && strcmp(state.sourceMode, 'hub'));
+        groupButton.Enable = onOff(hasRow && isProjectView && strcmp(state.sourceMode, 'hub'));
+        aclButton.Enable = onOff(hasRow && isProjectView && strcmp(state.sourceMode, 'hub'));
+        addToGroupButton.Enable = onOff(hasRow && isProjectView && strcmp(state.sourceMode, 'hub'));
 
         if ~hasRow
-            detailsArea.Value = {'No project selected.'};
+            detailsArea.Value = {['No ' localEntitySingularLabel(state.entityMode) ' selected.']};
+            return;
+        end
+
+        if ~isProjectView
+            detailsArea.Value = localRawDatasetDetails(row, state.sourceMode);
             return;
         end
 
@@ -2144,7 +2264,11 @@ function varargout = detecdivCatalogBrowser(varargin)
     end
 
     function syncGroupDropDown()
-        items = {'All projects'};
+        if strcmp(state.entityMode, 'raw_datasets')
+            items = {'All raw datasets'};
+        else
+            items = {'All projects'};
+        end
         itemsData = {''};
         for i = 1:numel(state.hubUsers)
             userKey = char(string(localStructField(state.hubUsers(i), 'user_key')));
@@ -2154,9 +2278,11 @@ function varargout = detecdivCatalogBrowser(varargin)
             items{end + 1} = ['Owner: ' localUserOptionLabel(state.hubUsers(i))]; %#ok<AGROW>
             itemsData{end + 1} = localOwnerFilterValue(userKey); %#ok<AGROW>
         end
-        for i = 1:numel(state.hubGroups)
-            items{end + 1} = ['Group: ' char(string(state.hubGroups(i).display_name))]; %#ok<AGROW>
-            itemsData{end + 1} = localGroupFilterValue(state.hubGroups(i).id); %#ok<AGROW>
+        if strcmp(state.entityMode, 'projects')
+            for i = 1:numel(state.hubGroups)
+                items{end + 1} = ['Group: ' char(string(state.hubGroups(i).display_name))]; %#ok<AGROW>
+                itemsData{end + 1} = localGroupFilterValue(state.hubGroups(i).id); %#ok<AGROW>
+            end
         end
         groupDropDown.Items = items;
         groupDropDown.ItemsData = itemsData;
@@ -2172,23 +2298,34 @@ function varargout = detecdivCatalogBrowser(varargin)
 
     function syncUiFromState()
         isLocal = strcmp(state.sourceMode, 'local');
+        isProjectView = strcmp(state.entityMode, 'projects');
         if isLocal
             rootLabel.Text = 'Projects Root';
             rootEdit.Value = char(string(state.catalogSettings.defaultProjectRoot));
-            sourceInfoLabel.Text = ['Local catalog. DB: ' char(string(state.catalogSettings.dbFile))];
-            footerLabel.Text = 'Local SQLite mode uses only the local DB and local project paths.';
+            if isProjectView
+                sourceInfoLabel.Text = ['Local catalog. DB: ' char(string(state.catalogSettings.dbFile))];
+                footerLabel.Text = 'Local SQLite mode uses only the local DB and local project paths.';
+            else
+                sourceInfoLabel.Text = 'Local raw dataset catalog is not implemented yet.';
+                footerLabel.Text = 'Raw dataset browsing currently uses Hub data; local indexing will be added later.';
+            end
         else
             rootLabel.Text = 'Remote Root';
             rootEdit.Value = char(string(state.hubSettings.defaultRemoteProjectRoot));
             sourceInfoLabel.Text = ['Hub connection: ' localCurrentUserLabel()];
-            footerLabel.Text = ['Hub API mode uses server paths plus local mount mapping for loading .mat files.' ...
-                ' Local SQLite mode remains available in the same browser.'];
+            if isProjectView
+                footerLabel.Text = ['Hub API mode uses server paths plus local mount mapping for loading .mat files.' ...
+                    ' Local SQLite mode remains available in the same browser.'];
+            else
+                footerLabel.Text = 'Hub raw dataset mode lists catalogued raw datasets. Project creation and local dataset indexing will be added later.';
+            end
         end
 
         baseUrlEdit.Value = char(string(state.hubSettings.baseUrl));
         userKeyEdit.Value = char(string(state.hubSettings.userKey));
         localMountEdit.Value = char(string(state.hubSettings.defaultLocalProjectRoot));
         sourceDropDown.Value = state.sourceMode;
+        entityDropDown.Value = state.entityMode;
         searchEdit.Value = state.searchText;
         backgroundCheck.Value = logical(state.catalogSettings.backgroundIndexing);
         backgroundCheck.Enable = onOff(isLocal);
@@ -2236,6 +2373,9 @@ function varargout = detecdivCatalogBrowser(varargin)
 
         browseButton.Text = ternaryText(isLocal, 'Browse...', 'Map...');
         sourceLabel.Text = 'Source';
+        groupLabel.Text = ternaryText(isProjectView, 'Owner/Group', 'Owner');
+        detailsTitleLabel.Text = [localEntityTitleLabel(state.entityMode) ' Details'];
+        syncEntitySortOptions();
         currentUserLabel.Text = localCurrentUserLabel();
     end
 
@@ -2253,6 +2393,7 @@ function varargout = detecdivCatalogBrowser(varargin)
         passwordEdit.Editable = onOff(~tf && strcmp(state.sourceMode, 'hub'));
         loginButton.Enable = onOff(~tf && strcmp(state.sourceMode, 'hub'));
         logoutButton.Enable = onOff(~tf && strcmp(state.sourceMode, 'hub'));
+        entityDropDown.Enable = onOff(~tf);
         groupDropDown.Enable = onOff(~tf && strcmp(state.sourceMode, 'hub'));
         ownedOnlyCheck.Enable = onOff(~tf && strcmp(state.sourceMode, 'hub'));
         refreshGroupsButton.Enable = onOff(~tf && strcmp(state.sourceMode, 'hub'));
@@ -2529,6 +2670,125 @@ function projects = localNormalizeLocalProjects(projects)
     projects.status = repmat("indexed", height(projects), 1);
 end
 
+function datasets = localNormalizeLocalRawDatasets(items)
+    %#ok<INUSD>
+    datasets = table();
+end
+
+function datasets = localNormalizeHubRawDatasets(items)
+    if isempty(items)
+        datasets = table();
+        return;
+    end
+
+    items = localUnwrapHubRawDatasetList(items);
+    if isstruct(items)
+        items = num2cell(items);
+    end
+
+    n = numel(items);
+    datasetIds = strings(n, 1);
+    externalKeys = strings(n, 1);
+    names = strings(n, 1);
+    statuses = strings(n, 1);
+    completeness = strings(n, 1);
+    kinds = strings(n, 1);
+    microscopes = strings(n, 1);
+    rawRoots = strings(n, 1);
+    storageUris = strings(n, 1);
+    localHints = strings(n, 1);
+    projectCounts = nan(n, 1);
+    positionCounts = nan(n, 1);
+    totalBytes = zeros(n, 1);
+    visibility = strings(n, 1);
+    ownerKeys = strings(n, 1);
+    createdAt = strings(n, 1);
+    updatedAt = strings(n, 1);
+
+    for i = 1:n
+        item = items{i};
+        metadata = struct();
+        if isfield(item, 'metadata_json') && isstruct(item.metadata_json)
+            metadata = item.metadata_json;
+        elseif isfield(item, 'metadata') && isstruct(item.metadata)
+            metadata = item.metadata;
+        end
+        owner = struct();
+        if isfield(item, 'owner') && isstruct(item.owner)
+            owner = item.owner;
+        end
+
+        datasetIds(i) = string(localStructFirstField(item, {'id', 'dataset_id', 'raw_dataset_id'}));
+        externalKeys(i) = string(localStructFirstField(item, {'external_key', 'key'}));
+        names(i) = string(localFirstNonEmpty( ...
+            localStructFirstField(item, {'dataset_name', 'name', 'display_name', 'acquisition_label', 'external_key'}), ...
+            localStructFirstField(metadata, {'dataset_name', 'name', 'display_name'})));
+        statuses(i) = string(localStructFirstField(item, {'status', 'health_status'}));
+        completeness(i) = string(localStructFirstField(item, {'completeness_status'}));
+        kinds(i) = string(localFirstNonEmpty( ...
+            localStructFirstField(item, {'dataset_kind', 'kind', 'type', 'modality', 'data_format'}), ...
+            localStructFirstField(metadata, {'dataset_kind', 'kind', 'type', 'modality'})));
+        microscopes(i) = string(localStructFirstField(item, {'microscope_name'}));
+        rawRoots(i) = string(localFirstNonEmpty( ...
+            localStructFirstField(item, {'raw_root', 'root_path', 'path', 'dataset_path'}), ...
+            localStructFirstField(metadata, {'raw_root', 'root_path', 'path', 'dataset_path'})));
+        storageUris(i) = string(localFirstNonEmpty( ...
+            localStructFirstField(item, {'storage_uri', 'uri', 'archive_uri'}), ...
+            localStructFirstField(metadata, {'storage_uri', 'uri'})));
+        localHints(i) = string(localFirstNonEmpty( ...
+            localStructFirstField(item, {'local_path_hint'}), ...
+            localStructFirstField(metadata, {'local_path_hint', 'local_path'})));
+        projectCounts(i) = localNumericFirstField(item, {'project_count', 'linked_project_count', 'projects_count'});
+        positionCounts(i) = localNumericFirstField(item, {'position_count', 'positions_count'});
+        totalBytes(i) = localNumericFirstField(item, {'total_bytes', 'size_bytes', 'bytes'});
+        visibility(i) = string(localStructFirstField(item, {'visibility'}));
+        ownerKeys(i) = string(localFirstNonEmpty( ...
+            localStructFirstField(owner, {'user_key'}), ...
+            localStructFirstField(item, {'owner_user_key', 'user_key'})));
+        createdAt(i) = string(localStructFirstField(item, {'created_at', 'imported_at'}));
+        updatedAt(i) = string(localStructFirstField(item, {'updated_at', 'last_scan_at'}));
+
+        if strlength(names(i)) == 0
+            [~, leaf] = fileparts(char(rawRoots(i)));
+            names(i) = string(localTextOr(leaf, char(datasetIds(i))));
+        end
+    end
+
+    datasets = table();
+    datasets.dataset_id = datasetIds;
+    datasets.external_key = externalKeys;
+    datasets.name = names;
+    datasets.status = statuses;
+    datasets.completeness_status = completeness;
+    datasets.dataset_kind = kinds;
+    datasets.microscope_name = microscopes;
+    datasets.raw_root = rawRoots;
+    datasets.storage_uri = storageUris;
+    datasets.local_path_hint = localHints;
+    datasets.project_count = projectCounts;
+    datasets.position_count = positionCounts;
+    datasets.total_bytes = totalBytes;
+    datasets.visibility = visibility;
+    datasets.owner_user_key = ownerKeys;
+    datasets.created_at = createdAt;
+    datasets.updated_at = updatedAt;
+end
+
+function items = localUnwrapHubRawDatasetList(items)
+    if ~isstruct(items) || numel(items) ~= 1
+        return;
+    end
+
+    candidateFields = {'raw_datasets', 'datasets', 'items', 'results', 'data'};
+    for i = 1:numel(candidateFields)
+        fieldName = candidateFields{i};
+        if isfield(items, fieldName) && ~isempty(items.(fieldName))
+            items = items.(fieldName);
+            return;
+        end
+    end
+end
+
 function projects = localNormalizeHubProjects(items)
     if isempty(items)
         projects = table();
@@ -2620,13 +2880,32 @@ function projects = localNormalizeHubProjects(items)
     projects.owner_user_key = ownerKeys;
 end
 
-function displayTable = localBuildDisplayTable(projects, sourceMode, hubSettings)
+function displayTable = localBuildDisplayTable(projects, sourceMode, hubSettings, entityMode)
     if isempty(projects)
         displayTable = table();
         return;
     end
     if nargin < 3
         hubSettings = struct();
+    end
+    if nargin < 4
+        entityMode = 'projects';
+    end
+
+    if strcmp(entityMode, 'raw_datasets')
+        displayTable = table();
+        displayTable.Name = string(projects.name);
+        displayTable.Status = string(projects.status);
+        displayTable.Completeness = string(projects.completeness_status);
+        displayTable.Kind = string(projects.dataset_kind);
+        displayTable.Microscope = string(projects.microscope_name);
+        displayTable.Positions = projects.position_count;
+        displayTable.LinkedProjects = projects.project_count;
+        displayTable.Size = localHumanBytesColumn(projects.total_bytes);
+        displayTable.Owner = string(projects.owner_user_key);
+        displayTable.UpdatedDate = localDisplayDateColumn(projects.updated_at);
+        displayTable.ExternalKey = string(projects.external_key);
+        return;
     end
 
     displayTable = table();
@@ -2639,6 +2918,21 @@ function displayTable = localBuildDisplayTable(projects, sourceMode, hubSettings
     displayTable.MissingRaw = projects.missing_raw_count;
     displayTable.ModifiedDate = localDisplayDateColumn(projects.project_mtime);
     displayTable.ImportedDate = localDisplayDateColumn(projects.created_at);
+end
+
+function names = localDisplayColumnNames(displayTable)
+    if isempty(displayTable) || ~istable(displayTable)
+        names = {};
+        return;
+    end
+    names = displayTable.Properties.VariableNames;
+end
+
+function out = localHumanBytesColumn(values)
+    out = strings(size(values));
+    for i = 1:numel(values)
+        out(i) = string(localHumanBytes(values(i)));
+    end
 end
 
 function out = localDisplayDateColumn(values)
@@ -2762,10 +3056,143 @@ function value = localStructField(in, fieldName)
     end
 end
 
+function value = localStructFirstField(in, fieldNames)
+    value = '';
+    if ~isstruct(in)
+        return;
+    end
+    for i = 1:numel(fieldNames)
+        fieldName = char(string(fieldNames{i}));
+        if isfield(in, fieldName) && ~isempty(in.(fieldName))
+            value = in.(fieldName);
+            return;
+        end
+    end
+end
+
+function value = localFirstNonEmpty(varargin)
+    value = '';
+    for i = 1:nargin
+        candidate = varargin{i};
+        if isempty(candidate)
+            continue;
+        end
+        if strlength(string(candidate)) > 0
+            value = candidate;
+            return;
+        end
+    end
+end
+
 function value = localNumericField(in, fieldName)
     value = 0;
     if isstruct(in) && isfield(in, fieldName) && ~isempty(in.(fieldName))
         value = double(in.(fieldName));
+    end
+end
+
+function value = localNumericFirstField(in, fieldNames)
+    value = 0;
+    if ~isstruct(in)
+        return;
+    end
+    for i = 1:numel(fieldNames)
+        fieldName = char(string(fieldNames{i}));
+        if isfield(in, fieldName) && ~isempty(in.(fieldName))
+            try
+                value = double(in.(fieldName));
+                return;
+            catch
+            end
+        end
+    end
+end
+
+function mode = localNormalizeEntityMode(mode)
+    mode = char(lower(strtrim(string(mode))));
+    switch mode
+        case {'raw_datasets', 'raw-datasets', 'datasets', 'dataset', 'raw dataset', 'raw datasets'}
+            mode = 'raw_datasets';
+        otherwise
+            mode = 'projects';
+    end
+end
+
+function label = localEntityPluralLabel(entityMode)
+    if strcmp(localNormalizeEntityMode(entityMode), 'raw_datasets')
+        label = 'raw dataset(s)';
+    else
+        label = 'project(s)';
+    end
+end
+
+function label = localEntitySingularLabel(entityMode)
+    if strcmp(localNormalizeEntityMode(entityMode), 'raw_datasets')
+        label = 'raw dataset';
+    else
+        label = 'project';
+    end
+end
+
+function label = localEntityTitleLabel(entityMode)
+    if strcmp(localNormalizeEntityMode(entityMode), 'raw_datasets')
+        label = 'Raw Dataset';
+    else
+        label = 'Project';
+    end
+end
+
+function lines = localRawDatasetDetails(row, sourceMode)
+    sourceLabel = 'local catalog';
+    if strcmp(sourceMode, 'hub')
+        sourceLabel = 'hub API';
+    end
+    lines = {
+        ['Source         : ' sourceLabel]
+        ['Dataset id     : ' char(string(localTableField(row, 'dataset_id')))]
+        ['Name           : ' char(string(localTableField(row, 'name')))]
+        ['External key   : ' char(string(localTableField(row, 'external_key')))]
+        ['Status         : ' char(string(localTableField(row, 'status')))]
+        ['Completeness   : ' char(string(localTableField(row, 'completeness_status')))]
+        ['Kind           : ' char(string(localTableField(row, 'dataset_kind')))]
+        ['Microscope     : ' char(string(localTableField(row, 'microscope_name')))]
+        ['Visibility     : ' char(string(localTableField(row, 'visibility')))]
+        ['Owner          : ' char(string(localTableField(row, 'owner_user_key')))]
+        ['Positions      : ' char(string(localTableField(row, 'position_count')))]
+        ['Linked projects: ' char(string(localTableField(row, 'project_count')))]
+        ['Total size     : ' localHumanBytes(localTableNumericField(row, 'total_bytes'))]
+        ['Created date   : ' localTextOr(localDisplayDate(localTableField(row, 'created_at')), '<unknown>')]
+        ['Updated date   : ' localTextOr(localDisplayDate(localTableField(row, 'updated_at')), '<unknown>')]
+        ' '
+        ['Raw root       : ' char(string(localTableField(row, 'raw_root')))]
+        ['Storage URI    : ' char(string(localTableField(row, 'storage_uri')))]
+        ['Local hint     : ' char(string(localTableField(row, 'local_path_hint')))]
+        };
+end
+
+function value = localTableField(row, fieldName)
+    value = '';
+    fieldName = char(string(fieldName));
+    if istable(row) && ismember(fieldName, row.Properties.VariableNames)
+        column = row.(fieldName);
+        try
+            value = column(1);
+        catch
+            try
+                value = column{1};
+            catch
+            end
+        end
+    end
+end
+
+function value = localTableNumericField(row, fieldName)
+    value = 0;
+    raw = localTableField(row, fieldName);
+    try
+        value = double(raw);
+    catch
+        value = 0;
     end
 end
 
