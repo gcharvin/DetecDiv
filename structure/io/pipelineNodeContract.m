@@ -21,6 +21,15 @@ function contract = pipelineNodeContract(nodeOrType, pkg)
     if ~isfield(node, 'func') || isempty(node.func)
         node.func = '';
     end
+    if strcmpi(char(string(node.type)), 'classifier') && ~isempty(node.pkg)
+        rawPkg = lower(strtrim(char(string(node.pkg))));
+        if any(strcmp(rawPkg, {'deeplab_pixel_classification','deeplab pixel classification','deeplab-pixel-classification'}))
+            node.pkg = 'deeplab_pixel_classification';
+            if isempty(node.func)
+                node.func = 'deeplab_pixel_classification.classify';
+            end
+        end
+    end
 
     defaultContract = defaultContractForNode(node);
     existing = struct();

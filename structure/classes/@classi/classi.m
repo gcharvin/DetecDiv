@@ -120,7 +120,7 @@ classdef classi < handle
             % 5) Sinon → enrichissement via classlist.mat
             % ----------------------------
             try
-                row = classi.getClasslistRow(className, classIDReq);
+                row = obj.getClasslistRow(className, classIDReq);
 
                 obj.typeid      = row.ID;
                 obj.description = row.Description{1};
@@ -1152,15 +1152,25 @@ end
         function row = getClasslistRow(~, className, classIDReq)
             % getClasslistRow  Renvoie la ligne correspondante de classlist.mat
 
-            % On part du principe que @classi est dans .../classification/@classi
             thisFile   = mfilename('fullpath');
-            thisFolder = fileparts(thisFile);         % .../@classi
-            classDir   = fileparts(thisFolder);       % .../classification
-            clFile     = fullfile(classDir, ['classification/','classlist.mat']);
+            thisFolder = fileparts(thisFile);
+            classDir   = fileparts(thisFolder);
+            repoRoot   = fileparts(fileparts(fileparts(thisFolder)));
+            candidates = { ...
+                fullfile(classDir, 'classification', 'classlist.mat'), ...
+                fullfile(repoRoot, 'engine', 'classification', 'classlist.mat'), ...
+                fullfile(repoRoot, 'classification', 'classlist.mat')};
+            clFile = '';
+            for ci = 1:numel(candidates)
+                if exist(candidates{ci}, 'file') == 2
+                    clFile = candidates{ci};
+                    break;
+                end
+            end
 
-            if ~exist(clFile, 'file')
+            if isempty(clFile)
                 error('classi:getClasslistRow:NoClasslist', ...
-                    'classlist.mat not found at %s', clFile);
+                    'classlist.mat not found. Checked: %s', strjoin(candidates, '; '));
             end
 
             S = load(clFile, 'classlist');

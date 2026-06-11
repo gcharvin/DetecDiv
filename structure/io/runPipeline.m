@@ -3266,6 +3266,8 @@ function pkgName = canonicalPackageNameForNode(nodeType, pkgName)
                         pkgName = 'cnn_lstm';
                     case 'cnn'
                         pkgName = 'cnn';
+                    case {'deeplab_pixel_classification','deeplab pixel classification','deeplab-pixel-classification'}
+                        pkgName = 'deeplab_pixel_classification';
                     otherwise
                         pkgName = raw;
                 end
