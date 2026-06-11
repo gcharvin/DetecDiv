@@ -616,6 +616,8 @@ classdef pipeline2 < matlab.apps.AppBase
                 'MenuSelectedFcn', @(~,~)showCurrentRunReview(app));
             uimenu(app.FileMenu, 'Text', 'Open current run params', ...
                 'MenuSelectedFcn', @(~,~)openCurrentRunArtifact(app, 'params'));
+            uimenu(app.FileMenu, 'Text', 'Plugin browser...', 'Separator', 'on', ...
+                'MenuSelectedFcn', @(~,~)openPluginBrowser(app));
 
             setRuntimeStatus(app, sprintf('Template mode: runtime locked.\nClick New Run to configure execution.'));
             app.PipelineandRuncheckreportLabel.Text = 'No pipeline error.';
@@ -700,6 +702,7 @@ classdef pipeline2 < matlab.apps.AppBase
             modules = appendModuleRows(app, modules, dataloadingModuleRows(app, rootDir));
             modules = appendModuleRows(app, modules, packageModuleRows(app, fullfile(rootDir, 'engine', 'processor'), 'processor'));
             modules = appendModuleRows(app, modules, packageModuleRows(app, fullfile(rootDir, 'engine', 'classification'), 'classifier'));
+            modules = appendModuleRows(app, modules, pluginModuleRows(app));
             modules = appendModuleRows(app, modules, customPackageModuleRow(app));
 
             if isempty(modules)
@@ -713,6 +716,32 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function rows = customPackageModuleRow(app) %#ok<INUSD>
             rows = {'<custom pkg>', 'custom', '', 'Load an external processor/classifier package'};
+        end
+
+        function rows = pluginModuleRows(app) %#ok<INUSD>
+            rows = {};
+            if exist('detecdiv_plugins_addpath', 'file') == 2
+                try
+                    detecdiv_plugins_addpath();
+                catch
+                end
+            end
+            if exist('detecdiv_plugins_list', 'file') ~= 2
+                return;
+            end
+            try
+                plugins = detecdiv_plugins_list();
+            catch
+                plugins = struct([]);
+            end
+            for i = 1:numel(plugins)
+                pluginType = char(string(plugins(i).type));
+                if ~any(strcmpi(pluginType, {'processor','classifier'}))
+                    continue;
+                end
+                pkg = char(string(plugins(i).name));
+                rows(end+1,:) = {['plugin:' pkg], pluginType, pkg, char(string(plugins(i).summary))}; %#ok<AGROW>
+            end
         end
 
         function rootDir = repoRoot(app) %#ok<INUSD>
@@ -1320,11 +1349,29 @@ classdef pipeline2 < matlab.apps.AppBase
             deleteSelectedModule(app);
         end
 
+        function openPluginBrowser(app)
+            try
+                if exist('detecdiv_plugins_addpath', 'file') == 2
+                    detecdiv_plugins_addpath();
+                end
+                if exist('detecdiv_plugins_browser', 'file') ~= 2
+                    uialert(app.UIFigure, ...
+                        'No plugin browser was found. Register or place DetecDiv-plugins next to DetecDiv.', ...
+                        'Plugin browser', 'Icon', 'warning');
+                    return;
+                end
+                detecdiv_plugins_browser();
+            catch ME
+                uialert(app.UIFigure, ME.message, 'Plugin browser', 'Icon', 'error');
+            end
+        end
+
         function groups = moduleMenuGroups(app)
             groups = struct('key', {}, 'label', {}, 'rows', {});
             for i = 1:size(app.AvailableModules, 1)
                 nodeType = char(string(app.AvailableModules{i,2}));
-                [key, label] = moduleTypeMenuGroup(app, nodeType);
+                isPlugin = moduleLibraryRowIsPlugin(app, i);
+                [key, label] = moduleTypeMenuGroup(app, nodeType, isPlugin);
                 idx = find(strcmp({groups.key}, key), 1);
                 if isempty(idx)
                     groups(end+1) = struct('key', key, 'label', label, 'rows', i); %#ok<AGROW>
@@ -1334,7 +1381,10 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
-        function [key, label] = moduleTypeMenuGroup(app, nodeType) %#ok<INUSD>
+        function [key, label] = moduleTypeMenuGroup(app, nodeType, isPlugin) %#ok<INUSD>
+            if nargin < 3
+                isPlugin = false;
+            end
             switch lower(char(string(nodeType)))
                 case 'dataloader'
                     key = 'dataLoader';
@@ -1346,17 +1396,36 @@ classdef pipeline2 < matlab.apps.AppBase
                     key = 'roiExtract';
                     label = 'ROI extract';
                 case 'processor'
-                    key = 'processor';
-                    label = 'Processor';
+                    if isPlugin
+                        key = 'plugin_processor';
+                        label = 'Plugin / Processor';
+                    else
+                        key = 'processor';
+                        label = 'Builtin / Processor';
+                    end
                 case 'classifier'
-                    key = 'classifier';
-                    label = 'Classifier';
+                    if isPlugin
+                        key = 'plugin_classifier';
+                        label = 'Plugin / Classifier';
+                    else
+                        key = 'classifier';
+                        label = 'Builtin / Classifier';
+                    end
                 case 'custom'
                     key = 'custom';
                     label = 'Custom';
                 otherwise
                     key = char(string(nodeType));
                     label = char(string(nodeType));
+            end
+        end
+
+        function tf = moduleLibraryRowIsPlugin(app, idx) %#ok<INUSD>
+            tf = false;
+            try
+                name = char(string(app.AvailableModules{idx,1}));
+                tf = startsWith(lower(name), 'plugin:');
+            catch
             end
         end
 
@@ -1368,6 +1437,8 @@ classdef pipeline2 < matlab.apps.AppBase
                 label = name;
             elseif any(strcmpi(nodeType, {'roiPattern','roiManual','roiGrid','roiTracked'}))
                 label = nodeType;
+            elseif startsWith(lower(name), 'plugin:')
+                label = name;
             elseif isempty(pkg)
                 label = name;
             else
@@ -1404,6 +1475,8 @@ classdef pipeline2 < matlab.apps.AppBase
             name = char(string(app.AvailableModules{idx,1}));
             if strcmpi(nodeType, 'custom')
                 label = name;
+            elseif startsWith(lower(name), 'plugin:')
+                label = [name ' (' nodeType ' / ' pkg ')'];
             elseif isempty(pkg)
                 label = [name ' (' nodeType ')'];
             else
@@ -1468,6 +1541,12 @@ classdef pipeline2 < matlab.apps.AppBase
                 addpath(info.root);
             end
             rehash;
+            if exist('detecdiv_plugins_register_root', 'file') == 2
+                try
+                    detecdiv_plugins_register_root(info.packageDir);
+                catch
+                end
+            end
 
             app.AvailableModules = appendCustomModuleIfMissing(app, app.AvailableModules, info);
             refreshAvailableModuleTable(app);

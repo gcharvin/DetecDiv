@@ -14,14 +14,16 @@ function userprefs = detecdiv_prefs_migrate(userprefs)
         'maxCandidates',  50, ...
         'maxScanDepth',   4, ...
         'enableAutoFix',  true );
+    defaults.plugins = struct( ...
+        'roots', {{}}, ...
+        'autoAddPath', true );
 
     if ~isfield(userprefs,'paths') || ~isstruct(userprefs.paths)
         userprefs.paths = defaults.paths;
-        return;
     end
 
     % merge non-destructif
-    userprefs.paths = localMergeStruct(userprefs.paths, defaults.paths);
+    userprefs = localMergeStruct(userprefs, defaults);
 end
 
 function out = localMergeStruct(in, defaults)
