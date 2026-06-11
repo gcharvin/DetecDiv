@@ -4,6 +4,7 @@ classdef pipeline2 < matlab.apps.AppBase
     properties (Access = public)
         UIFigure                        matlab.ui.Figure
         FileMenu                        matlab.ui.container.Menu
+        ModulesMenu                     matlab.ui.container.Menu
         NewpipelineMenu                 matlab.ui.container.Menu
         LoadpipelineMenu                matlab.ui.container.Menu
         LoadrecentpipelineMenu          matlab.ui.container.Menu
@@ -616,8 +617,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 'MenuSelectedFcn', @(~,~)showCurrentRunReview(app));
             uimenu(app.FileMenu, 'Text', 'Open current run params', ...
                 'MenuSelectedFcn', @(~,~)openCurrentRunArtifact(app, 'params'));
-            uimenu(app.FileMenu, 'Text', 'Plugin browser...', 'Separator', 'on', ...
-                'MenuSelectedFcn', @(~,~)openPluginBrowser(app));
+            rebuildModulesMenu(app);
 
             setRuntimeStatus(app, sprintf('Template mode: runtime locked.\nClick New Run to configure execution.'));
             app.PipelineandRuncheckreportLabel.Text = 'No pipeline error.';
@@ -1366,6 +1366,104 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
+        function openBuiltinModuleBrowser(app)
+            try
+                if exist('detecdiv_modules_browser', 'file') ~= 2
+                    uialert(app.UIFigure, ...
+                        'No built-in module browser was found on the DetecDiv path.', ...
+                        'Module browser', 'Icon', 'warning');
+                    return;
+                end
+                detecdiv_modules_browser('Root', repoRoot(app));
+            catch ME
+                uialert(app.UIFigure, ME.message, 'Module browser', 'Icon', 'error');
+            end
+        end
+
+        function rebuildModulesMenu(app)
+            if isempty(app.ModulesMenu) || ~isvalid(app.ModulesMenu)
+                return;
+            end
+            try
+                delete(app.ModulesMenu.Children);
+            catch
+            end
+
+            addModuleLibraryMenuFiltered(app, app.ModulesMenu, 'Add built-in module', 'add', false);
+            addModuleLibraryMenuFiltered(app, app.ModulesMenu, 'Add plugin module', 'add', true);
+            uimenu(app.ModulesMenu, 'Text', 'Add custom package...', 'Separator', 'on', ...
+                'MenuSelectedFcn', @(~,~)addCustomPackageFromModulesMenu(app));
+            uimenu(app.ModulesMenu, 'Text', 'Built-in module browser...', 'Separator', 'on', ...
+                'MenuSelectedFcn', @(~,~)openBuiltinModuleBrowser(app));
+
+            pluginItem = uimenu(app.ModulesMenu, 'Text', 'External plugin browser...', ...
+                'MenuSelectedFcn', @(~,~)openPluginBrowser(app));
+            if ~any(moduleLibraryPluginMask(app)) && exist('detecdiv_plugins_browser', 'file') ~= 2
+                pluginItem.Enable = 'off';
+            end
+        end
+
+        function addCustomPackageFromModulesMenu(app)
+            choice = resolveCustomPackageChoice(app, 'Select custom package');
+            if isempty(choice)
+                return;
+            end
+            paramsPatch = getField(app, choice, 'paramsPatch', struct());
+            addModuleOfType(app, choice.type, choice.pkg, paramsPatch);
+            rebuildModulesMenu(app);
+        end
+
+        function addModuleLibraryMenuFiltered(app, parentMenu, titleText, action, pluginsOnly)
+            root = uimenu(parentMenu, 'Text', titleText);
+            groups = moduleMenuGroupsFiltered(app, logical(pluginsOnly));
+            if isempty(groups)
+                item = uimenu(root, 'Text', '(none)');
+                item.Enable = 'off';
+                return;
+            end
+            for g = 1:numel(groups)
+                typeMenu = uimenu(root, 'Text', groups(g).label);
+                for j = 1:numel(groups(g).rows)
+                    idx = groups(g).rows(j);
+                    nodeType = char(string(app.AvailableModules{idx,2}));
+                    pkg = char(string(app.AvailableModules{idx,3}));
+                    label = moduleSubtypeLabel(app, idx);
+                    item = uimenu(typeMenu, 'Text', label, ...
+                        'MenuSelectedFcn', createCallbackFcn(app, @ModuleLibraryMenuSelected, true));
+                    item.UserData = struct('action', char(string(action)), ...
+                        'nodeType', nodeType, 'pkg', pkg);
+                end
+            end
+        end
+
+        function groups = moduleMenuGroupsFiltered(app, pluginsOnly)
+            groups = struct('key', {}, 'label', {}, 'rows', {});
+            pluginMask = moduleLibraryPluginMask(app);
+            for i = 1:size(app.AvailableModules, 1)
+                if pluginMask(i) ~= logical(pluginsOnly)
+                    continue;
+                end
+                nodeType = char(string(app.AvailableModules{i,2}));
+                if strcmpi(nodeType, 'custom')
+                    continue;
+                end
+                [key, label] = moduleTypeMenuGroup(app, nodeType, pluginMask(i));
+                idx = find(strcmp({groups.key}, key), 1);
+                if isempty(idx)
+                    groups(end+1) = struct('key', key, 'label', label, 'rows', i); %#ok<AGROW>
+                else
+                    groups(idx).rows(end+1) = i;
+                end
+            end
+        end
+
+        function mask = moduleLibraryPluginMask(app)
+            mask = false(size(app.AvailableModules, 1), 1);
+            for i = 1:size(app.AvailableModules, 1)
+                mask(i) = moduleLibraryRowIsPlugin(app, i);
+            end
+        end
+
         function groups = moduleMenuGroups(app)
             groups = struct('key', {}, 'label', {}, 'rows', {});
             for i = 1:size(app.AvailableModules, 1)
@@ -1550,6 +1648,7 @@ classdef pipeline2 < matlab.apps.AppBase
 
             app.AvailableModules = appendCustomModuleIfMissing(app, app.AvailableModules, info);
             refreshAvailableModuleTable(app);
+            rebuildModulesMenu(app);
 
             paramsPatch = struct( ...
                 'customPackageRoot', info.root, ...
@@ -14965,6 +15064,10 @@ classdef pipeline2 < matlab.apps.AppBase
             % Create FileMenu
             app.FileMenu = uimenu(app.UIFigure);
             app.FileMenu.Text = 'File';
+
+            % Create ModulesMenu
+            app.ModulesMenu = uimenu(app.UIFigure);
+            app.ModulesMenu.Text = 'Modules';
 
             % Create NewpipelineMenu
             app.NewpipelineMenu = uimenu(app.FileMenu);
