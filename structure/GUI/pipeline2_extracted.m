@@ -11109,11 +11109,14 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
-        function pipeObj = buildPipelineObject(app, targetPath)
+        function pipeObj = buildPipelineObject(app, targetPath, pipelineName)
             if nargin < 2 || isempty(targetPath)
                 targetPath = app.CurrentPipelinePath;
             end
-            name = currentPipelineName(app);
+            if nargin < 3 || isempty(pipelineName)
+                pipelineName = currentPipelineName(app);
+            end
+            name = normalizePipelineTemplateName(app, pipelineName, targetPath);
             pipeStruct = buildPipelineTemplateStruct(app);
             pipeObj = pipeline('', name, 1);
             pipeObj.setPath(targetPath, name);
@@ -11183,6 +11186,32 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
+        function name = normalizePipelineTemplateName(app, name, targetPath)
+            name = strtrim(char(string(name)));
+            [~, baseName, extName] = fileparts(name);
+            if ~isempty(extName)
+                name = baseName;
+            end
+            if isempty(name) || strcmpi(name, 'pipeline') || strcmp(name, guiAppName(app))
+                if nargin >= 3 && ~isempty(targetPath)
+                    [~, folderName] = fileparts(stripTrailingFilesep(app, targetPath));
+                    if ~isempty(folderName)
+                        name = folderName;
+                    end
+                end
+            end
+            if isempty(name) || strcmp(name, guiAppName(app))
+                name = defaultPipelineTemplateName(app);
+            end
+        end
+
+        function out = stripTrailingFilesep(app, in) %#ok<INUSD>
+            out = char(string(in));
+            while numel(out) > 1 && (endsWith(out, filesep) || endsWith(out, '/') || endsWith(out, '\'))
+                out = out(1:end-1);
+            end
+        end
+
         function markPipelineDirty(app, isDirty)
             if nargin < 2
                 isDirty = true;
@@ -11217,19 +11246,21 @@ classdef pipeline2 < matlab.apps.AppBase
                 forceAs = false;
             end
             targetPath = app.CurrentPipelinePath;
+            targetName = currentPipelineName(app);
             if forceAs || isempty(targetPath)
-                [file, pth] = uiputfile('pipeline.json', 'Save pipeline template', fullfile(pwd, 'pipeline.json'));
+                [file, pth] = uiputfile('*.json', 'Save pipeline template', defaultSavePipelineDialogPath(app));
                 if isequal(file, 0)
                     return;
                 end
-                targetPath = pth;
+                [targetPath, targetName] = resolvePipelineSaveTarget(app, file, pth);
             end
             try
-                pipeObj = buildPipelineObject(app, targetPath);
+                oldWorkspaceVar = app.CurrentPipelineWorkspaceVar;
+                pipeObj = buildPipelineObject(app, targetPath, targetName);
                 pipelineSave(pipeObj);
                 app.CurrentPipeline = pipeObj;
                 app.CurrentPipelinePath = pipeObj.path;
-                assignCurrentPipelineToWorkspace(app, pipeObj);
+                assignCurrentPipelineToWorkspace(app, pipeObj, oldWorkspaceVar);
                 [runSaved, runJsonPath] = saveCurrentRunSnapshotIfProjectAvailable(app);
                 addRecentPipelinePath(app, fullfile(pipeObj.path, 'pipeline.json'));
                 markPipelineDirty(app, false);
@@ -11248,9 +11279,51 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
-        function assignCurrentPipelineToWorkspace(app, pipeObj)
+        function dialogPath = defaultSavePipelineDialogPath(app)
+            baseDir = pwd;
+            baseName = currentPipelineName(app);
+            if ~isempty(app.CurrentPipelinePath)
+                if isfolder(app.CurrentPipelinePath)
+                    baseDir = fileparts(stripTrailingFilesep(app, app.CurrentPipelinePath));
+                    if isempty(baseDir)
+                        baseDir = app.CurrentPipelinePath;
+                    end
+                    [~, folderName] = fileparts(stripTrailingFilesep(app, app.CurrentPipelinePath));
+                    if ~isempty(folderName)
+                        baseName = folderName;
+                    end
+                else
+                    baseDir = fileparts(app.CurrentPipelinePath);
+                end
+            end
+            baseName = normalizePipelineTemplateName(app, baseName, app.CurrentPipelinePath);
+            dialogPath = fullfile(baseDir, [baseName '.json']);
+        end
+
+        function [targetPath, targetName] = resolvePipelineSaveTarget(app, file, pth)
+            file = char(string(file));
+            pth = char(string(pth));
+            [~, baseName, extName] = fileparts(file);
+            if isempty(baseName)
+                baseName = file;
+            end
+
+            if strcmpi(extName, '.json') && strcmpi(baseName, 'pipeline')
+                targetPath = pth;
+                [~, targetName] = fileparts(stripTrailingFilesep(app, pth));
+            else
+                targetName = baseName;
+                targetPath = fullfile(pth, targetName);
+            end
+            targetName = normalizePipelineTemplateName(app, targetName, targetPath);
+        end
+
+        function assignCurrentPipelineToWorkspace(app, pipeObj, oldWorkspaceVar)
             if isempty(pipeObj) || ~isa(pipeObj, 'pipeline')
                 return;
+            end
+            if nargin < 3
+                oldWorkspaceVar = '';
             end
             varName = '';
             try
@@ -11271,10 +11344,47 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             varName = matlab.lang.makeValidName(varName);
             try
+                clearReplacedPipelineWorkspaceVar(app, oldWorkspaceVar, varName);
                 assignin('base', varName, pipeObj);
                 app.CurrentPipelineWorkspaceVar = varName;
+                clearGenericPipelineWorkspaceAliases(app, varName);
                 clearInternalPipelineAlias(app, varName);
             catch
+            end
+        end
+
+        function clearReplacedPipelineWorkspaceVar(app, oldWorkspaceVar, newWorkspaceVar) %#ok<INUSD>
+            oldWorkspaceVar = char(string(oldWorkspaceVar));
+            newWorkspaceVar = char(string(newWorkspaceVar));
+            if isempty(oldWorkspaceVar) || strcmp(oldWorkspaceVar, newWorkspaceVar)
+                return;
+            end
+            if ~isvarname(oldWorkspaceVar)
+                return;
+            end
+            try
+                if evalin('base', ['exist(''' oldWorkspaceVar ''',''var'')']) && ...
+                        evalin('base', ['isa(' oldWorkspaceVar ',''pipeline'')'])
+                    evalin('base', ['clear ' oldWorkspaceVar]);
+                end
+            catch
+            end
+        end
+
+        function clearGenericPipelineWorkspaceAliases(app, canonicalVarName)
+            genericNames = {guiAppName(app), defaultPipelineTemplateName(app), 'pipelineObj'};
+            for i = 1:numel(genericNames)
+                varName = char(string(genericNames{i}));
+                if isempty(varName) || strcmp(varName, canonicalVarName) || ~isvarname(varName)
+                    continue;
+                end
+                try
+                    if evalin('base', ['exist(''' varName ''',''var'')']) && ...
+                            evalin('base', ['isa(' varName ',''pipeline'')'])
+                        evalin('base', ['clear ' varName]);
+                    end
+                catch
+                end
             end
         end
 
