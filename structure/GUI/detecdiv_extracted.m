@@ -2579,14 +2579,27 @@ end
             end
         end
 
-        function openPipelineWithContext(app, pipeObj)
+        function openPipelineWithContext(app, pipeObj, progressDlg)
+            if nargin < 3
+                progressDlg = [];
+            end
+            if isempty(progressDlg) || ~isvalid(progressDlg)
+                progressDlg = uiprogressdlg(app.DetecDivUIFigure, ...
+                    'Title', 'Please wait', ...
+                    'Message', 'Opening pipeline editor...', ...
+                    'Indeterminate', 'on');
+            end
+            cleanupObj = onCleanup(@() app.safeCloseProgressDialog(progressDlg)); %#ok<NASGU>
+            app.updatePipelineOpenProgress(progressDlg, 'Reloading pipeline template...');
             pipeObj = app.reloadPipelineTemplateFromDiskIfAvailable(pipeObj);
             projectObj = [];
+            app.updatePipelineOpenProgress(progressDlg, 'Looking for linked project...');
             [found, projectObj] = app.findLinkedProjectForPipeline(pipeObj);
+            app.updatePipelineOpenProgress(progressDlg, 'Launching pipeline editor...');
             if found
-                app.openPipelineEditorWithProgress(projectObj, pipeObj, 'Opening pipeline editor...');
+                pipeline2(projectObj, pipeObj);
             else
-                app.openPipelineEditorWithProgress([], pipeObj, 'Opening pipeline editor...');
+                pipeline2([], pipeObj);
             end
         end
 
@@ -2601,6 +2614,16 @@ end
             cleanupObj = onCleanup(@() app.safeCloseProgressDialog(d)); %#ok<NASGU>
             drawnow;
             pipeline2(projectObj, targetObj);
+        end
+
+        function updatePipelineOpenProgress(app, dlg, message) %#ok<INUSD>
+            try
+                if ~isempty(dlg) && isvalid(dlg)
+                    dlg.Message = message;
+                    drawnow limitrate nocallbacks;
+                end
+            catch
+            end
         end
 
         function safeCloseProgressDialog(app, dlg) %#ok<INUSD>
@@ -5116,8 +5139,9 @@ function openRecentPipelineCallback(app, pipelineJsonPath)
     catch
     end
 
-    close(d);
-    app.openPipelineWithContext(pipeObj);
+    d.Message = 'Opening pipeline editor...';
+    drawnow limitrate nocallbacks;
+    app.openPipelineWithContext(pipeObj, d);
 end
 
 
@@ -8106,9 +8130,8 @@ end
             end
 
             d.Message = 'Opening pipeline editor...';
-            drawnow;
-            app.safeCloseProgressDialog(d);
-            app.openPipelineWithContext(pipeObj);
+            drawnow limitrate nocallbacks;
+            app.openPipelineWithContext(pipeObj, d);
             try
                 gatherVarsFromWorkspace(app);
                 displayNodes(app);

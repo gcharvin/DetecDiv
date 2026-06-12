@@ -78,6 +78,10 @@ classdef pipeline2 < matlab.apps.AppBase
         ForkgraphButton                 matlab.ui.control.Button
         GraphPanel                      matlab.ui.container.Panel
         UIGraphAxes                     matlab.ui.control.UIAxes
+        PrototypeRuntimeConfig struct = struct()
+        PrototypePipelineRef struct = struct()
+        PrototypeRunPath char = ''
+        PrototypeAccepted logical = false
     end
 
     properties (Access = private)
@@ -95,11 +99,13 @@ classdef pipeline2 < matlab.apps.AppBase
         DynamicModuleTabs = gobjects(0)
         AvailableModules cell = {}
         IsRefreshingTabs logical = false
+        IsRedrawingGraph logical = false
         RuntimeFieldHandles struct = struct()
         RuntimeButtonHandles struct = struct()
         RuntimeValues struct = struct()
         RuntimeNodeParams struct = struct()
         RuntimeParseInfo struct = struct()
+        RuntimeProgressDialog = []
         HubFieldHandles struct = struct()
         RunArtifactButtonHandles struct = struct()
         CurrentPipeline = []
@@ -129,6 +135,8 @@ classdef pipeline2 < matlab.apps.AppBase
         HubRunMonitorTimer = []
         HubRunMonitorJobId char = ''
         HubRunMonitorLastStatus char = ''
+        BatchPrototypeMode logical = false
+        BatchPrototypeModal logical = false
     end
 
     methods (Access = private)
@@ -141,7 +149,7 @@ classdef pipeline2 < matlab.apps.AppBase
             refreshAvailableModuleTable(app);
             refreshSelectedModuleTable(app);
             redrawGraph(app);
-            refreshValidationReport(app);
+            refreshValidationReport(app, false);
             markPipelineDirty(app, isempty(app.CurrentPipelinePath));
         end
 
@@ -229,7 +237,8 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function [opts, positionalArgs] = parseStartupRuntimeOptions(app, varargin) %#ok<INUSD>
             opts = struct('inputMode', '', 'lockInputMode', false, 'lockReason', '', ...
-                'projectPath', '', 'rawDataPath', '', 'unlockRuntime', false);
+                'projectPath', '', 'rawDataPath', '', 'unlockRuntime', false, ...
+                'batchPrototype', false, 'modal', false);
             positionalArgs = {};
             i = 1;
             while i <= numel(varargin)
@@ -263,6 +272,11 @@ classdef pipeline2 < matlab.apps.AppBase
                             end
                         case {'unlockruntime','newrun','runtimeunlocked'}
                             opts.unlockRuntime = logicalStartupOption(app, value);
+                        case {'batchprototype','prototype','prototypeconfig','configureprototype'}
+                            opts.batchPrototype = logicalStartupOption(app, value);
+                            opts.unlockRuntime = opts.unlockRuntime || opts.batchPrototype;
+                        case {'modal','windowmodal'}
+                            opts.modal = logicalStartupOption(app, value);
                         otherwise
                             consumed = false;
                     end
@@ -339,6 +353,33 @@ classdef pipeline2 < matlab.apps.AppBase
                 else
                     app.RuntimeInputModeLockReason = 'Input mode was fixed by the app launch context.';
                 end
+            end
+            if isfield(opts, 'batchPrototype') && opts.batchPrototype
+                app.BatchPrototypeMode = true;
+                app.BatchPrototypeModal = isfield(opts, 'modal') && logical(opts.modal);
+                setRuntimeModeUnlocked(app, true);
+                if isempty(app.CurrentRun) || ~isa(app.CurrentRun, 'pipelineRun')
+                    app.CurrentRunIsSeed = true;
+                    try
+                        runId = suggestNextRunIdForUi(app);
+                        app.TemplateidEditField.Value = runId;
+                        app.RuntimeValues.runId = runId;
+                    catch
+                    end
+                end
+                try
+                    app.CloseappButton.Text = 'Use Prototype';
+                catch
+                end
+                try
+                    app.UIFigure.Name = [guiAppName(app) ' - Batch prototype'];
+                catch
+                end
+                try
+                    app.TabGroup.SelectedTab = app.RuntimeInputsTab;
+                catch
+                end
+                setRuntimeStatus(app, sprintf('Batch prototype mode.\nSet runtime parameters and target, then click Use Prototype.'));
             end
             updateRuntimeInputStates(app);
         end
@@ -889,7 +930,7 @@ classdef pipeline2 < matlab.apps.AppBase
                     data = table.Data;
                     data{event.Indices(1), event.Indices(2)} = logical(event.NewData);
                     table.Data = data;
-                    drawnow limitrate;
+                    drawnow limitrate nocallbacks;
                 end
             catch
             end
@@ -900,7 +941,8 @@ classdef pipeline2 < matlab.apps.AppBase
             updateRuntimeProgress(app, d, 'Refreshing module tabs...');
             refreshModuleTabs(app);
             updateRuntimeProgress(app, d, 'Checking pipeline...');
-            refreshValidationReport(app);
+            refreshValidationReport(app, false);
+            redrawGraph(app);
         end
 
         function tf = isRawPrepNode(app, node) %#ok<INUSD>
@@ -941,9 +983,9 @@ classdef pipeline2 < matlab.apps.AppBase
             renameRuntimeNodeParams(app, oldId, newId);
             renameSymbolicBindingReferences(app, oldId, newId);
             refreshSelectedModuleTable(app);
-            redrawGraph(app);
             refreshModuleTabs(app);
-            refreshValidationReport(app);
+            refreshValidationReport(app, false);
+            redrawGraph(app);
             updateCommonControlsEnableState(app);
             markPipelineDirty(app, true);
         end
@@ -1907,6 +1949,15 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function redrawGraph(app)
+            if app.IsRedrawingGraph
+                return;
+            end
+            app.IsRedrawingGraph = true;
+            d = openRuntimeProgress(app, 'Pipeline graph', 'Redrawing pipeline graph...');
+            cleanupObj = onCleanup(@()setRedrawingGraph(app, false)); %#ok<NASGU>
+            progressCleanupObj = onCleanup(@()closeRuntimeProgress(app, d)); %#ok<NASGU>
+
+            updateRuntimeProgress(app, d, 'Clearing pipeline graph...');
             cla(app.UIGraphAxes);
             hold(app.UIGraphAxes, 'on');
             app.BlockHandles = gobjects(0);
@@ -1920,9 +1971,13 @@ classdef pipeline2 < matlab.apps.AppBase
             gapX = 0.55;
             gapY = 0.28;
 
+            updateRuntimeProgress(app, d, 'Drawing pipeline dependencies...');
             drawImplicitEdges(app, blockW, blockH, gapX, gapY);
 
             for i = 1:numel(nodes)
+                if i == 1 || i == numel(nodes) || mod(i, 5) == 0
+                    updateRuntimeProgress(app, d, sprintf('Drawing module %d/%d...', i, numel(nodes)));
+                end
                 col = getLayoutCol(app, nodes(i));
                 row = getLayoutRow(app, nodes(i));
                 x = (col - 1) * (blockW + gapX);
@@ -1995,6 +2050,7 @@ classdef pipeline2 < matlab.apps.AppBase
             gt.UIContextMenu = app.GraphContextMenu;
             app.GhostHandles = [gh gt];
 
+            updateRuntimeProgress(app, d, 'Drawing resource bindings...');
             drawResourceBindingEdges(app, blockW, blockH, gapX, gapY);
 
             maxCol = max(ghostCol, 3);
@@ -2007,6 +2063,7 @@ classdef pipeline2 < matlab.apps.AppBase
             ylim(app.UIGraphAxes, [-(maxRow) * (blockH + gapY) blockH + 0.35]);
             axis(app.UIGraphAxes, 'manual');
             hold(app.UIGraphAxes, 'off');
+            updateRuntimeProgress(app, d, 'Pipeline graph ready.');
         end
 
         function GraphNodeButtonDown(app, event)
@@ -2696,12 +2753,19 @@ classdef pipeline2 < matlab.apps.AppBase
             if nargin < 2
                 markDirty = true;
             end
+            d = openRuntimeProgress(app, 'Pipeline UI', 'Refreshing pipeline UI...');
+            cleanupObj = onCleanup(@()closeRuntimeProgress(app, d)); %#ok<NASGU>
+            updateRuntimeProgress(app, d, 'Refreshing module list...');
             refreshSelectedModuleTable(app);
             refreshCommonControlsFromSelection(app);
             refreshGlobalRuntimeTable(app);
+            updateRuntimeProgress(app, d, 'Redrawing pipeline graph...');
             redrawGraph(app);
+            updateRuntimeProgress(app, d, 'Rebuilding module tabs...');
             refreshModuleTabs(app);
-            refreshValidationReport(app);
+            updateRuntimeProgress(app, d, 'Checking pipeline...');
+            refreshValidationReport(app, false);
+            updateRuntimeProgress(app, d, 'Updating controls...');
             updateCommonControlsEnableState(app);
             if markDirty
                 markPipelineDirty(app, true);
@@ -2711,14 +2775,19 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function refreshModuleTabs(app)
+            d = openRuntimeProgress(app, 'Pipeline modules', 'Refreshing module tabs...');
+            cleanupObj = onCleanup(@()closeRuntimeProgress(app, d)); %#ok<NASGU>
             app.IsRefreshingTabs = true;
-            cleanupObj = onCleanup(@()setRefreshingTabs(app, false)); %#ok<NASGU>
+            tabCleanupObj = onCleanup(@()setRefreshingTabs(app, false)); %#ok<NASGU>
             previousFocus = captureTabFocus(app);
+            updateRuntimeProgress(app, d, 'Clearing old module tabs...');
             deleteDynamicModuleTabs(app);
             nodes = app.Data.nodes;
             activeIds = selectedRunNodeIds(app);
             for i = 1:numel(nodes)
                 node = nodes(i);
+                updateRuntimeProgress(app, d, sprintf('Building module tab %d/%d: %s', ...
+                    i, numel(nodes), char(string(getField(app, node, 'id', 'module')))));
                 tabTitle = truncateTabTitle(app, getField(app, node, 'id', 'module'));
                 t = uitab(app.TabGroup, 'Title', tabTitle);
                 t.UserData = struct('nodeId', char(string(node.id)), 'dynamic', true);
@@ -2726,6 +2795,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 app.DynamicModuleTabs(end+1) = t; %#ok<AGROW>
                 buildModuleTab(app, t, node);
             end
+            updateRuntimeProgress(app, d, 'Restoring module tab focus...');
             reorderRuntimeTabs(app);
             restored = restoreTabFocus(app, previousFocus);
             if ~restored && ~isnan(app.SelectedNodeIndex) && app.SelectedNodeIndex >= 1 && app.SelectedNodeIndex <= numel(app.DynamicModuleTabs)
@@ -3417,7 +3487,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 redrawGraph(app);
                 refreshModuleTabs(app);
             end
-            refreshValidationReport(app);
+            refreshValidationReport(app, ~runtimeValueAffectsBindings(app, key));
         end
 
         function applyRuntimeInputSourceMode(app, value, d)
@@ -3463,7 +3533,7 @@ classdef pipeline2 < matlab.apps.AppBase
             updateRuntimeProgress(app, d, 'Refreshing module tabs...');
             refreshModuleTabs(app);
             updateRuntimeProgress(app, d, 'Checking pipeline...');
-            refreshValidationReport(app);
+            refreshValidationReport(app, false);
         end
 
         function tf = runtimeValueAffectsBindings(app, key) %#ok<INUSD>
@@ -3671,11 +3741,25 @@ classdef pipeline2 < matlab.apps.AppBase
         function d = openRuntimeProgress(app, titleText, messageText)
             d = [];
             try
+                active = [];
+                try
+                    active = app.RuntimeProgressDialog;
+                catch
+                    active = [];
+                end
+                if ~isempty(active) && isvalid(active)
+                    active.Message = messageText;
+                    setRuntimeStatus(app, messageText);
+                    drawnow limitrate nocallbacks;
+                    return;
+                end
                 d = uiprogressdlg(app.UIFigure, ...
                     'Title', titleText, ...
                     'Message', messageText, ...
                     'Indeterminate', 'on');
-                drawnow limitrate;
+                app.RuntimeProgressDialog = d;
+                setRuntimeStatus(app, messageText);
+                drawnow limitrate nocallbacks;
             catch
                 d = [];
             end
@@ -3684,9 +3768,13 @@ classdef pipeline2 < matlab.apps.AppBase
         function updateRuntimeProgress(app, d, messageText) %#ok<INUSD>
             setRuntimeStatus(app, messageText);
             try
-                if ~isempty(d) && isvalid(d)
-                    d.Message = messageText;
-                    drawnow limitrate;
+                target = d;
+                if isempty(target) || ~isvalid(target)
+                    target = app.RuntimeProgressDialog;
+                end
+                if ~isempty(target) && isvalid(target)
+                    target.Message = messageText;
+                    drawnow limitrate nocallbacks;
                 end
             catch
             end
@@ -3696,6 +3784,13 @@ classdef pipeline2 < matlab.apps.AppBase
             try
                 if ~isempty(d) && isvalid(d)
                     close(d);
+                    try
+                        if isequal(app.RuntimeProgressDialog, d)
+                            app.RuntimeProgressDialog = [];
+                        end
+                    catch
+                        app.RuntimeProgressDialog = [];
+                    end
                 end
             catch
             end
@@ -3748,7 +3843,7 @@ classdef pipeline2 < matlab.apps.AppBase
             updateRuntimeInputStates(app);
             redrawGraph(app);
             refreshModuleTabs(app);
-            refreshValidationReport(app);
+            refreshValidationReport(app, false);
         end
 
         function refreshRawRuntimeAfterProjectBind(app)
@@ -4056,7 +4151,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 markOutputPolicyUserChosen(app);
             end
             updateRuntimeInputStates(app);
-            refreshValidationReport(app);
+            refreshValidationReport(app, false);
         end
 
         function runtimeRunIdChanged(app, value)
@@ -4842,6 +4937,10 @@ classdef pipeline2 < matlab.apps.AppBase
             app.IsRefreshingTabs = logical(value);
         end
 
+        function setRedrawingGraph(app, value)
+            app.IsRedrawingGraph = logical(value);
+        end
+
         function selectExistingModuleTab(app, node)
             if isempty(app.DynamicModuleTabs)
                 return;
@@ -5297,7 +5396,7 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             focus = captureTabFocus(app);
             d = openRuntimeProgress(app, 'Static parameters', 'Refreshing pipeline tabs...');
-            drawnow limitrate;
+            drawnow limitrate nocallbacks;
             idx = find(strcmp({app.Data.nodes.id}, nodeId), 1);
             if isempty(idx)
                 closeRuntimeProgress(app, d);
@@ -5332,7 +5431,7 @@ classdef pipeline2 < matlab.apps.AppBase
             updateRuntimeProgress(app, d, 'Refreshing static parameter editor...');
             populateStaticParametersDialogBody(app, bodyPanel, nodeId);
             resizeStaticParametersDialog(app, fig, app.Data.nodes(idx));
-            drawnow limitrate;
+            drawnow limitrate nocallbacks;
         end
 
         function refreshModuleDefaultsAndDialog(app, fig, nodeId)
@@ -5370,7 +5469,7 @@ classdef pipeline2 < matlab.apps.AppBase
             catch ME
                 uialert(app.UIFigure, ME.message, 'Refresh module defaults', 'Icon', 'error');
             end
-            drawnow limitrate;
+            drawnow limitrate nocallbacks;
         end
 
         function [added, updated] = refreshNodeDefaultsFromModule(app, idx)
@@ -6373,7 +6472,7 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             markPipelineDirty(app, true);
             refreshModuleTabs(app);
-            refreshValidationReport(app);
+            refreshValidationReport(app, false);
         end
 
         function roiTrackedExtractChannelTableEdited(app, nodeId, table, event)
@@ -6405,7 +6504,7 @@ classdef pipeline2 < matlab.apps.AppBase
             runtimeParams.extractChannels = selected;
             setRuntimeNodeParams(app, nodeId, runtimeParams);
             markPipelineDirty(app, true);
-            refreshValidationReport(app);
+            refreshValidationReport(app, false);
         end
 
         function buildGenericRoiDefinitionTab(app, parentTab, node)
@@ -7302,7 +7401,7 @@ classdef pipeline2 < matlab.apps.AppBase
             if ~isempty(ax)
                 drawRoiGridPreview(app, ax, tiling);
             end
-            refreshValidationReport(app);
+            refreshValidationReport(app, false);
         end
 
         function idx = roiGridNodeIndexForControl(app, src)
@@ -7406,7 +7505,7 @@ classdef pipeline2 < matlab.apps.AppBase
                     'FontWeight', 'bold', 'Color', [0.18 0.24 0.30]);
             end
             hold(ax, 'off');
-            drawnow limitrate;
+            drawnow limitrate nocallbacks;
         end
 
         function buildRoiManualTab(app, parentTab, node)
@@ -7661,7 +7760,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
             end
             hold(ax, 'off');
-            drawnow limitrate;
+            drawnow limitrate nocallbacks;
         end
 
         function clearRoiManualPreviewHandles(app)
@@ -7685,7 +7784,7 @@ classdef pipeline2 < matlab.apps.AppBase
             params = mergeStructDefaults(app, params, roiManual.setparam(struct()));
             params.(char(string(key))) = logical(value);
             setRuntimeNodeParams(app, nodeId, params);
-            refreshValidationReport(app);
+            refreshValidationReport(app, false);
         end
 
         function roiManualAddRectangle(app, nodeId, table, ax)
@@ -7698,7 +7797,7 @@ classdef pipeline2 < matlab.apps.AppBase
             setRoiManualRectangles(app, nodeId, rects);
             table.Data = roiManualRectanglesToTable(app, rects);
             drawRoiManualPreview(app, ax, nodeId, table, rects);
-            refreshValidationReport(app);
+            refreshValidationReport(app, false);
         end
 
         function roiManualClearSelectedRectangle(app, nodeId, table, ax)
@@ -7721,7 +7820,7 @@ classdef pipeline2 < matlab.apps.AppBase
             setRoiManualRectangles(app, nodeId, rects);
             table.Data = roiManualRectanglesToTable(app, rects);
             drawRoiManualPreview(app, ax, nodeId, table, rects);
-            refreshValidationReport(app);
+            refreshValidationReport(app, false);
         end
 
         function roiManualClearAllRectangles(app, nodeId, table, ax)
@@ -7730,7 +7829,7 @@ classdef pipeline2 < matlab.apps.AppBase
             setRoiManualRectangles(app, nodeId, rects);
             table.Data = roiManualRectanglesToTable(app, rects);
             drawRoiManualPreview(app, ax, nodeId, table, rects);
-            refreshValidationReport(app);
+            refreshValidationReport(app, false);
         end
 
         function roiManualRectangleTableEdited(app, nodeId, table, event)
@@ -7747,7 +7846,7 @@ classdef pipeline2 < matlab.apps.AppBase
             if ~isempty(ax)
                 drawRoiManualPreview(app, ax(1), nodeId, table, rects);
             end
-            refreshValidationReport(app);
+            refreshValidationReport(app, false);
         end
 
         function roiManualRectangleSelectionChanged(app, event)
@@ -7777,7 +7876,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 table.Data = roiManualRectanglesToTable(app, rects);
             end
             drawRoiManualPreview(app, ax, nodeId, table, rects);
-            refreshValidationReport(app);
+            refreshValidationReport(app, false);
         end
 
         function grid = buildBindingSection(app, parent, data, node, editable)
@@ -8012,7 +8111,8 @@ classdef pipeline2 < matlab.apps.AppBase
                     setRuntimeNodeParams(app, nodeId, runtimeParams);
                     markPipelineDirty(app, true);
                     refreshModuleTabs(app);
-                    refreshValidationReport(app);
+                    refreshValidationReport(app, false);
+                    redrawGraph(app);
                     return;
                 end
                 app.Data.nodes(idx).params.extractChannels = channels;
@@ -8021,7 +8121,8 @@ classdef pipeline2 < matlab.apps.AppBase
             setRuntimeNodeParams(app, nodeId, runtimeParams);
             markPipelineDirty(app, true);
             refreshModuleTabs(app);
-            refreshValidationReport(app);
+            refreshValidationReport(app, false);
+            redrawGraph(app);
         end
 
         function roiExtractChannelTableEdited(app, nodeId, table, event)
@@ -8053,7 +8154,7 @@ classdef pipeline2 < matlab.apps.AppBase
             runtimeParams.extractChannels = selected;
             setRuntimeNodeParams(app, nodeId, runtimeParams);
             markPipelineDirty(app, true);
-            refreshValidationReport(app);
+            refreshValidationReport(app, false);
         end
 
         function ctrl = createBindingControl(app, parent, node, param, value, choices, direction, editable)
@@ -9677,7 +9778,7 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             focus = captureTabFocus(app);
             d = openRuntimeProgress(app, 'Pipeline parameters', 'Applying parameter change...');
-            drawnow limitrate;
+            drawnow limitrate nocallbacks;
             cleanupObj = onCleanup(@()finishStaticParameterRefresh(app, d, [], focus)); %#ok<NASGU>
             if strcmpi(char(string(key)), 'driftChannel') && strcmpi(char(string(value)), 'auto')
                 value = [];
@@ -9732,7 +9833,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 refreshModuleTabs(app);
             end
             updateRuntimeProgress(app, d, 'Checking pipeline bindings...');
-            refreshValidationReport(app);
+            refreshValidationReport(app, needsBindingRefresh);
         end
 
         function value = normalizeCombineChannelCount(app, value) %#ok<INUSD>
@@ -10394,9 +10495,16 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
-        function refreshValidationReport(app)
+        function refreshValidationReport(app, redraw)
+            if nargin < 2 || isempty(redraw)
+                redraw = true;
+            end
+            d = openRuntimeProgress(app, 'Pipeline check', 'Checking pipeline...');
+            cleanupObj = onCleanup(@()closeRuntimeProgress(app, d)); %#ok<NASGU>
+            updateRuntimeProgress(app, d, 'Building pipeline check model...');
             pipe = buildPipelineStruct(app);
             pipeForCheck = selectedPipelineStructForRun(app, pipe);
+            updateRuntimeProgress(app, d, 'Collecting runtime binding context...');
             ctx = buildBindingValidationContext(app);
             if isempty(pipe.nodes)
                 app.LastValidationOk = false;
@@ -10407,12 +10515,16 @@ classdef pipeline2 < matlab.apps.AppBase
                     setRuntimeStatus(app, sprintf('Template mode: runtime locked.\nClick New Run to configure execution.'));
                 end
                 app.PipelineandRuncheckreportLabel.Text = 'Click the grey block to add the first module.';
-                redrawGraph(app);
+                if redraw
+                    redrawGraph(app);
+                end
                 return;
             end
 
             try
+                updateRuntimeProgress(app, d, 'Resolving pipeline bindings...');
                 [pipeResolved, bindingResolution] = pipelineResolveBindings(pipeForCheck, ctx, struct('allowGui', false));
+                updateRuntimeProgress(app, d, 'Validating pipeline...');
                 [ok, report] = validatePipeline(pipeResolved, ctx, struct('allowGui', false));
                 report.bindingResolution = bindingResolution;
             catch ME
@@ -10422,6 +10534,7 @@ classdef pipeline2 < matlab.apps.AppBase
             app.LastValidationOk = logical(ok);
             app.LastValidationReport = report;
 
+            updateRuntimeProgress(app, d, 'Updating validation state...');
             app.Data.nodes = annotateNodeStatus(app, app.Data.nodes, report);
             refreshSelectedModuleTable(app);
 
@@ -10431,7 +10544,10 @@ classdef pipeline2 < matlab.apps.AppBase
             else
                 setRuntimeStatus(app, sprintf('Template mode: runtime locked.\nClick New Run to configure execution.'));
             end
-            redrawGraph(app);
+            if redraw
+                updateRuntimeProgress(app, d, 'Redrawing pipeline graph...');
+                redrawGraph(app);
+            end
         end
 
         function CheckpipelineButtonPushed(app, event) %#ok<INUSD>
@@ -15159,7 +15275,51 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function CloseappButtonPushed(app, event) %#ok<INUSD>
+            if app.BatchPrototypeMode
+                capturePrototypeRuntimeConfig(app);
+                try
+                    uiresume(app.UIFigure);
+                catch
+                end
+                if ~app.BatchPrototypeModal
+                    delete(app);
+                end
+                return;
+            end
             delete(app);
+        end
+
+        function capturePrototypeRuntimeConfig(app)
+            app.PrototypeAccepted = false;
+            app.PrototypeRuntimeConfig = struct();
+            app.PrototypePipelineRef = struct();
+            app.PrototypeRunPath = '';
+            try
+                ctx = buildRunContext(app);
+                ref = buildPipelineRef(app);
+                ctx.pipelineRef = ref;
+                if ~isempty(app.CurrentProject) && isa(app.CurrentProject, 'shallow')
+                    try
+                        ctx.targetRef = buildTargetRef(app);
+                        ctx.targetRef.notes = 'batch prototype';
+                    catch
+                    end
+                end
+                app.PrototypeRuntimeConfig = ctx;
+                app.PrototypePipelineRef = ref;
+                if ~isempty(app.CurrentRun) && isa(app.CurrentRun, 'pipelineRun')
+                    try
+                        app.PrototypeRunPath = fullfile(app.CurrentRun.path, 'run.json');
+                    catch
+                    end
+                end
+                app.PrototypeAccepted = true;
+            catch ME
+                app.PrototypeRuntimeConfig = struct();
+                app.PrototypePipelineRef = struct();
+                app.PrototypeAccepted = false;
+                uialert(app.UIFigure, ME.message, 'Prototype runtime', 'Icon', 'error');
+            end
         end
 
         function deleteSelectedModule(app)
@@ -15704,6 +15864,17 @@ classdef pipeline2 < matlab.apps.AppBase
             runStartupFcn(app, @startupFcn)
 
             applyStartupArguments(app, varargin{:});
+
+            if app.BatchPrototypeMode && app.BatchPrototypeModal
+                try
+                    app.UIFigure.WindowStyle = 'modal';
+                    app.UIFigure.CloseRequestFcn = @(~,~)CloseappButtonPushed(app, []);
+                    uiwait(app.UIFigure);
+                catch ME
+                    warning('pipeline2:PrototypeModalFailed', ...
+                        'Unable to run prototype modal mode: %s', ME.message);
+                end
+            end
 
             if nargout == 0
                 clear app

@@ -33,6 +33,7 @@ function varargout = detecdivCatalogBrowser(varargin)
     state.sortVariable = 'name';
     state.sortAscending = true;
     state.selectedRow = [];
+    state.batchSelectionChangeCount = 0;
     state.job = [];
     state.pollTimer = [];
     state.lastVisibleProjectCount = 0;
@@ -294,7 +295,8 @@ function varargout = detecdivCatalogBrowser(varargin)
         'Data', table(), ...
         'ColumnSortable', false, ...
         'RowStriping', 'on', ...
-        'CellSelectionCallback', @onProjectSelected);
+        'CellSelectionCallback', @onProjectSelected, ...
+        'CellEditCallback', @onProjectSelectionEdited);
     projectTable.Layout.Row = 1;
     projectTable.Layout.Column = 1;
 
@@ -359,6 +361,21 @@ function varargout = detecdivCatalogBrowser(varargin)
         'ButtonPushedFcn', @onBatchNewProjects);
     batchNewButton.Layout.Row = 3;
     batchNewButton.Layout.Column = 2;
+
+    sendToBatchButton = uibutton(actionGrid, 'push', 'Text', 'Send to Batch...', ...
+        'Enable', 'off', 'ButtonPushedFcn', @onSendToBatch);
+    sendToBatchButton.Layout.Row = 3;
+    sendToBatchButton.Layout.Column = 1;
+
+    selectVisibleButton = uibutton(actionGrid, 'push', 'Text', 'Select All Visible', ...
+        'Enable', 'off', 'ButtonPushedFcn', @onSelectAllVisible);
+    selectVisibleButton.Layout.Row = 3;
+    selectVisibleButton.Layout.Column = 3;
+
+    deselectVisibleButton = uibutton(actionGrid, 'push', 'Text', 'Deselect All Visible', ...
+        'Enable', 'off', 'ButtonPushedFcn', @onDeselectAllVisible);
+    deselectVisibleButton.Layout.Row = 3;
+    deselectVisibleButton.Layout.Column = 4;
 
     footerGrid = uigridlayout(mainGrid, [1 5]);
     footerGrid.Layout.Row = 4;
@@ -1164,6 +1181,84 @@ function varargout = detecdivCatalogBrowser(varargin)
         updateSelectionState();
     end
 
+    function onProjectSelectionEdited(~, event)
+        if isempty(event.Indices)
+            return;
+        end
+
+        displayRow = event.Indices(1, 1);
+        if isempty(displayRow)
+            return;
+        end
+
+        rowIdx = localPageStartIndex() + displayRow - 1;
+        if isempty(state.displayProjects) || height(state.displayProjects) < displayRow
+            return;
+        end
+        if isempty(state.visibleProjects) || height(state.visibleProjects) < rowIdx
+            return;
+        end
+
+        newValue = logical(event.NewData);
+        keyField = localBatchKeyField(state.entityMode);
+        keyValue = localTableTextField(state.visibleProjects(rowIdx, :), keyField);
+        if isempty(keyValue)
+            return;
+        end
+
+        state.projects = localSetBatchSelectionByKey(state.projects, keyField, keyValue, newValue);
+        state.visibleProjects = localSetBatchSelectionByKey(state.visibleProjects, keyField, keyValue, newValue);
+        state.displayProjects = localSetBatchSelectionByKey(state.displayProjects, keyField, keyValue, newValue);
+        state.batchSelectionChangeCount = state.batchSelectionChangeCount + 1;
+        state.selectedRow = rowIdx;
+        updateProjectDisplayPage();
+        applyProjectTableStyles();
+        updateSelectionState();
+    end
+
+    function onSendToBatch(~, ~)
+        refs = localBuildBatchRefsFromSelection(state.projects, state.sourceMode, state.entityMode, state.catalogSettings, state.hubSettings);
+        if isempty(refs)
+            uialert(fig, 'Select at least one project or raw dataset first.', 'Batch Selection Required');
+            return;
+        end
+
+        try
+            detecdiv_batch_builder(refs, ...
+                'SourceMode', state.sourceMode, ...
+                'EntityMode', state.entityMode, ...
+                'CatalogSettings', state.catalogSettings, ...
+                'HubSettings', state.hubSettings);
+            setStatus(sprintf('Sent %d selected item(s) to the batch builder.', numel(refs)));
+        catch ME
+            uialert(fig, ME.message, 'Batch Builder Failed');
+            setStatus(['Batch builder failed: ' ME.message]);
+        end
+    end
+
+    function onSelectAllVisible(~, ~)
+        setVisibleSelection(true);
+    end
+
+    function onDeselectAllVisible(~, ~)
+        setVisibleSelection(false);
+    end
+
+    function setVisibleSelection(newValue)
+        if isempty(state.displayProjects) || ~istable(state.displayProjects) || height(state.displayProjects) == 0
+            return;
+        end
+
+        keyField = localBatchKeyField(state.entityMode);
+        state.projects = localSetBatchSelectionForRows(state.projects, state.displayProjects, keyField, newValue);
+        state.visibleProjects = localSetBatchSelectionForRows(state.visibleProjects, state.displayProjects, keyField, newValue);
+        state.displayProjects = localSetBatchSelectionForRows(state.displayProjects, state.displayProjects, keyField, newValue);
+        state.batchSelectionChangeCount = state.batchSelectionChangeCount + 1;
+        updateProjectDisplayPage();
+        applyProjectTableStyles();
+        updateSelectionState();
+    end
+
     function onLoadProject(~, ~)
         row = getSelectedProjectRow();
         if isempty(row)
@@ -1739,8 +1834,10 @@ function varargout = detecdivCatalogBrowser(varargin)
         try
             if strcmp(state.sourceMode, 'local')
                 if strcmp(state.entityMode, 'raw_datasets')
-                    state.projects = localNormalizeLocalRawDatasets( ...
-                        detecdiv_catalog_list_raw_datasets(state.catalogSettings.dbFile));
+                    previousProjects = state.projects;
+                    state.projects = localCarryBatchSelection(previousProjects, ...
+                        localNormalizeLocalRawDatasets(detecdiv_catalog_list_raw_datasets(state.catalogSettings.dbFile)), ...
+                        state.sourceMode, state.entityMode);
                     updateProjectTableFromState();
                     applyProjectTableStyles();
                     restorePreviousSelection();
@@ -1756,8 +1853,10 @@ function varargout = detecdivCatalogBrowser(varargin)
                     return;
                 end
 
-                projects = localNormalizeLocalProjects( ...
-                    detecdiv_catalog_list_projects(state.catalogSettings.dbFile));
+                previousProjects = state.projects;
+                projects = localCarryBatchSelection(previousProjects, ...
+                    localNormalizeLocalProjects(detecdiv_catalog_list_projects(state.catalogSettings.dbFile)), ...
+                    state.sourceMode, state.entityMode);
                 state.projects = projects;
                 updateProjectTableFromState();
                 applyProjectTableStyles();
@@ -1778,18 +1877,20 @@ function varargout = detecdivCatalogBrowser(varargin)
             detecdiv_hub_settings_set(state.hubSettings);
             refreshHubContext();
             if strcmp(state.entityMode, 'raw_datasets')
-                projects = localNormalizeHubRawDatasets(detecdiv_hub_list_raw_datasets( ...
+                previousProjects = state.projects;
+                projects = localCarryBatchSelection(previousProjects, localNormalizeHubRawDatasets(detecdiv_hub_list_raw_datasets( ...
                     state.hubSettings, ...
                     'OwnerKey', state.hubSelectedOwnerKey, ...
                     'OwnedOnly', state.hubOwnedOnly, ...
-                    'Search', state.searchText));
+                    'Search', state.searchText)), state.sourceMode, state.entityMode);
             else
-                projects = localNormalizeHubProjects(detecdiv_hub_list_projects( ...
+                previousProjects = state.projects;
+                projects = localCarryBatchSelection(previousProjects, localNormalizeHubProjects(detecdiv_hub_list_projects( ...
                     state.hubSettings, ...
                     'GroupId', state.hubSelectedGroupId, ...
                     'OwnerKey', state.hubSelectedOwnerKey, ...
                     'OwnedOnly', state.hubOwnedOnly, ...
-                    'Search', state.searchText));
+                    'Search', state.searchText)), state.sourceMode, state.entityMode);
             end
             state.projects = projects;
             updateProjectTableFromState();
@@ -1870,6 +1971,7 @@ function varargout = detecdivCatalogBrowser(varargin)
         displayTable = localBuildDisplayTable(state.displayProjects, state.sourceMode, state.hubSettings, state.entityMode);
         projectTable.Data = displayTable;
         projectTable.ColumnName = localDisplayColumnNames(displayTable);
+        projectTable.ColumnEditable = localDisplayColumnEditable(displayTable);
         syncPageControls();
     end
 
@@ -1993,6 +2095,10 @@ function varargout = detecdivCatalogBrowser(varargin)
         groupButton.Enable = onOff(hasRow && isProjectView && strcmp(state.sourceMode, 'hub'));
         aclButton.Enable = onOff(hasRow && isProjectView && strcmp(state.sourceMode, 'hub'));
         addToGroupButton.Enable = onOff(hasRow && isProjectView && strcmp(state.sourceMode, 'hub'));
+        sendToBatchButton.Enable = onOff(localHasBatchSelection(state.projects));
+        hasVisibleRows = ~isempty(state.displayProjects) && istable(state.displayProjects) && height(state.displayProjects) > 0;
+        selectVisibleButton.Enable = onOff(hasVisibleRows);
+        deselectVisibleButton.Enable = onOff(hasVisibleRows);
 
         if ~hasRow
             detailsArea.Value = {['No ' localEntitySingularLabel(state.entityMode) ' selected.']};
@@ -2744,6 +2850,7 @@ function projects = localNormalizeLocalProjects(projects)
     else
         projects.project_id = repmat("", height(projects), 1);
     end
+    projects = localEnsureTableColumn(projects, 'batch_selected', false(height(projects), 1));
     projects.status = repmat("indexed", height(projects), 1);
 end
 
@@ -2771,6 +2878,7 @@ function datasets = localNormalizeLocalRawDatasets(items)
     datasets = localEnsureTableColumn(datasets, 'owner_user_key', strings(n, 1));
     datasets = localEnsureTableColumn(datasets, 'created_at', strings(n, 1));
     datasets = localEnsureTableColumn(datasets, 'updated_at', strings(n, 1));
+    datasets = localEnsureTableColumn(datasets, 'batch_selected', false(n, 1));
 end
 
 function datasets = localNormalizeHubRawDatasets(items)
@@ -2870,6 +2978,7 @@ function datasets = localNormalizeHubRawDatasets(items)
     datasets.owner_user_key = ownerKeys;
     datasets.created_at = createdAt;
     datasets.updated_at = updatedAt;
+    datasets.batch_selected = false(n, 1);
 end
 
 function items = localUnwrapHubRawDatasetList(items)
@@ -2976,6 +3085,7 @@ function projects = localNormalizeHubProjects(items)
     projects.total_bytes = totalBytes;
     projects.visibility = visibility;
     projects.owner_user_key = ownerKeys;
+    projects.batch_selected = false(n, 1);
 end
 
 function displayTable = localBuildDisplayTable(projects, sourceMode, hubSettings, entityMode)
@@ -2992,6 +3102,7 @@ function displayTable = localBuildDisplayTable(projects, sourceMode, hubSettings
 
     if strcmp(entityMode, 'raw_datasets')
         displayTable = table();
+        displayTable.Selected = logical(projects.batch_selected);
         displayTable.Name = string(projects.name);
         displayTable.Status = string(projects.status);
         displayTable.Completeness = string(projects.completeness_status);
@@ -3007,6 +3118,7 @@ function displayTable = localBuildDisplayTable(projects, sourceMode, hubSettings
     end
 
     displayTable = table();
+    displayTable.Selected = logical(projects.batch_selected);
     displayTable.Name = string(projects.name);
     displayTable.Loaded = localLoadedLabels(projects, sourceMode, hubSettings);
     displayTable.Health = string(projects.health_status);
@@ -3026,6 +3138,17 @@ function names = localDisplayColumnNames(displayTable)
     names = displayTable.Properties.VariableNames;
 end
 
+function editable = localDisplayColumnEditable(displayTable)
+    if isempty(displayTable) || ~istable(displayTable)
+        editable = false(1, 0);
+        return;
+    end
+    editable = false(1, width(displayTable));
+    if ismember('Selected', displayTable.Properties.VariableNames)
+        editable(1) = true;
+    end
+end
+
 function out = localHumanBytesColumn(values)
     out = strings(size(values));
     for i = 1:numel(values)
@@ -3038,6 +3161,155 @@ function out = localDisplayDateColumn(values)
     out = strings(size(values));
     for i = 1:numel(values)
         out(i) = string(localDisplayDate(values(i)));
+    end
+end
+
+function tf = localHasBatchSelection(projects)
+    tf = false;
+    if isempty(projects) || ~istable(projects) || ~ismember('batch_selected', projects.Properties.VariableNames)
+        return;
+    end
+    try
+        tf = any(logical(projects.batch_selected));
+    catch
+        tf = false;
+    end
+end
+
+function keyField = localBatchKeyField(entityMode)
+    if strcmp(localNormalizeEntityMode(entityMode), 'raw_datasets')
+        keyField = 'dataset_id';
+    else
+        keyField = 'project_id';
+    end
+end
+
+function projects = localCarryBatchSelection(previousProjects, projects, sourceMode, entityMode)
+    if isempty(projects) || ~istable(projects)
+        return;
+    end
+    keyField = localBatchKeyField(entityMode);
+    if isempty(previousProjects) || ~istable(previousProjects) || ~ismember('batch_selected', previousProjects.Properties.VariableNames) || ...
+            ~ismember(keyField, previousProjects.Properties.VariableNames) || ~ismember(keyField, projects.Properties.VariableNames)
+        projects = localEnsureTableColumn(projects, 'batch_selected', false(height(projects), 1));
+        return;
+    end
+
+    projects = localEnsureTableColumn(projects, 'batch_selected', false(height(projects), 1));
+    prevKeys = string(previousProjects.(keyField));
+    prevSelected = logical(previousProjects.batch_selected);
+    currentKeys = string(projects.(keyField));
+    for i = 1:height(projects)
+        matchIdx = find(prevKeys == currentKeys(i), 1, 'first');
+        if ~isempty(matchIdx)
+            projects.batch_selected(i) = prevSelected(matchIdx);
+        end
+    end
+end
+
+function projects = localSetBatchSelectionByKey(projects, keyField, keyValue, newValue)
+    if isempty(projects) || ~istable(projects) || ~ismember(keyField, projects.Properties.VariableNames)
+        return;
+    end
+    projects = localEnsureTableColumn(projects, 'batch_selected', false(height(projects), 1));
+    try
+        values = string(projects.(keyField));
+        match = strcmp(values, string(keyValue));
+        if any(match)
+            projects.batch_selected(match) = logical(newValue);
+        end
+    catch
+    end
+end
+
+function projects = localSetBatchSelectionForRows(projects, rowsTable, keyField, newValue)
+    if isempty(projects) || ~istable(projects) || isempty(rowsTable) || ~istable(rowsTable) || ...
+            ~ismember(keyField, projects.Properties.VariableNames) || ~ismember(keyField, rowsTable.Properties.VariableNames)
+        return;
+    end
+
+    projects = localEnsureTableColumn(projects, 'batch_selected', false(height(projects), 1));
+    try
+        rowKeys = string(rowsTable.(keyField));
+        rowKeys = rowKeys(strlength(strtrim(rowKeys)) > 0);
+        if isempty(rowKeys)
+            return;
+        end
+
+        projectKeys = string(projects.(keyField));
+        for i = 1:numel(rowKeys)
+            match = strcmp(projectKeys, rowKeys(i));
+            if any(match)
+                projects.batch_selected(match) = logical(newValue);
+            end
+        end
+    catch
+    end
+end
+
+function refs = localBuildBatchRefsFromSelection(projects, sourceMode, entityMode, catalogSettings, hubSettings)
+    refs = struct('kind', {}, 'displayName', {}, 'projectMatPath', {}, 'hubProjectId', {}, ...
+        'datasetId', {}, 'rootPath', {}, 'localPathHint', {}, 'catalogId', {}, 'sourceMode', {}, 'entityMode', {});
+    if isempty(projects) || ~istable(projects) || ~ismember('batch_selected', projects.Properties.VariableNames)
+        return;
+    end
+
+    selectedRows = find(logical(projects.batch_selected));
+    for i = 1:numel(selectedRows)
+        row = projects(selectedRows(i), :);
+        refs(end + 1, 1) = localBuildBatchRef(row, sourceMode, entityMode, catalogSettings, hubSettings); %#ok<AGROW>
+    end
+end
+
+function ref = localBuildBatchRef(row, sourceMode, entityMode, catalogSettings, hubSettings)
+    ref = struct( ...
+        'kind', '', ...
+        'displayName', '', ...
+        'projectMatPath', '', ...
+        'hubProjectId', '', ...
+        'datasetId', '', ...
+        'rootPath', '', ...
+        'localPathHint', '', ...
+        'catalogId', '', ...
+        'sourceMode', char(string(sourceMode)), ...
+        'entityMode', char(string(entityMode)));
+
+    if strcmp(localNormalizeEntityMode(entityMode), 'raw_datasets')
+        ref.kind = ternaryText(strcmp(sourceMode, 'hub'), 'hub_dataset', 'local_dataset');
+        ref.datasetId = localTableTextField(row, 'dataset_id');
+        ref.displayName = localTableTextField(row, 'name');
+        ref.rootPath = localTableTextField(row, 'raw_root');
+        ref.localPathHint = localTableTextField(row, 'local_path_hint');
+        ref.catalogId = ref.datasetId;
+        return;
+    end
+
+    ref.kind = ternaryText(strcmp(sourceMode, 'hub'), 'hub_project', 'local_project');
+    ref.displayName = localTableTextField(row, 'name');
+    ref.projectMatPath = localProjectMatPathFromRow(row, sourceMode, hubSettings);
+    ref.hubProjectId = localTableTextField(row, 'project_id');
+    ref.catalogId = localProjectCatalogIdFromRow(row, sourceMode);
+end
+
+function catalogId = localProjectCatalogIdFromRow(row, sourceMode)
+    catalogId = '';
+    if strcmp(sourceMode, 'local')
+        catalogId = localTableTextField(row, 'id');
+        if isempty(catalogId)
+            catalogId = localTableTextField(row, 'project_id');
+        end
+    else
+        catalogId = localTableTextField(row, 'project_id');
+    end
+end
+
+function projectMatPath = localProjectMatPathFromRow(row, sourceMode, hubSettings)
+    projectMatPath = localTableTextField(row, 'project_mat_abs');
+    if strcmp(sourceMode, 'hub') && ~isempty(projectMatPath)
+        [mappedPath, ~] = detecdiv_hub_apply_path_mapping(projectMatPath, hubSettings);
+        if ~isempty(mappedPath)
+            projectMatPath = mappedPath;
+        end
     end
 end
 
