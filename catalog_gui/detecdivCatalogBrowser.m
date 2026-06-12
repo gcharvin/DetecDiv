@@ -1312,10 +1312,7 @@ function varargout = detecdivCatalogBrowser(varargin)
                 shallowObj = detecdiv_hub_prepare_project_open(shallowObj, 'Hub', state.hubSettings);
             end
 
-            varName = matlab.lang.makeValidName(char(string(row.name)));
-            if isempty(varName)
-                varName = 'project';
-            end
+            varName = projectWorkspaceVarName(projectMatPath, row);
             assignin('base', varName, shallowObj);
             localEmitWorkspaceChanged('projectLoaded', struct( ...
                 'projectVar', varName, ...
@@ -1403,8 +1400,8 @@ function varargout = detecdivCatalogBrowser(varargin)
         end
 
         try
-            [shallowObj, ~] = ensureProjectLoadedForRun(row);
-            pipeline2(shallowObj);
+            [shallowObj, projectMatPath] = ensureProjectLoadedForRun(row);
+            pipeline2(shallowObj, 'ProjectVarName', projectWorkspaceVarName(projectMatPath, row));
             setStatus(sprintf('Opened Run Pipeline for "%s" in existing project mode.', char(string(row.name))));
         catch ME
             uialert(fig, ME.message, 'Run Pipeline Failed');
@@ -2286,7 +2283,7 @@ function varargout = detecdivCatalogBrowser(varargin)
                 shallowObj = detecdiv_hub_prepare_project_open(shallowObj, 'Hub', state.hubSettings);
             end
             try
-                assignin('base', matlab.lang.makeValidName(char(string(shallowObj.io.file))), shallowObj);
+                assignin('base', projectWorkspaceVarName(projectMatPath, row), shallowObj);
             catch
             end
         end
@@ -2731,6 +2728,26 @@ function varargout = detecdivCatalogBrowser(varargin)
         else
             value = 'off';
         end
+    end
+
+    function varName = projectWorkspaceVarName(projectMatPath, row)
+        candidate = '';
+        try
+            [~, candidate] = fileparts(char(string(projectMatPath)));
+        catch
+            candidate = '';
+        end
+        if isempty(strtrim(candidate))
+            try
+                candidate = char(string(localTableTextField(row, 'name')));
+            catch
+                candidate = '';
+            end
+        end
+        if isempty(strtrim(candidate))
+            candidate = 'project';
+        end
+        varName = matlab.lang.makeValidName(candidate);
     end
 
     if nargout > 0
