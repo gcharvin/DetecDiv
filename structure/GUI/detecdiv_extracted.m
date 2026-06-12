@@ -6813,7 +6813,20 @@ end
 
         % Menu selected function: OpenpipelinetemplateMenu
         function OpenpipelinetemplateMenuSelected(app, event) %#ok<INUSD>
-            [pipeObj, msg] = pipelineLoad;
+            [file, path] = uigetfile('*.json', 'Select pipeline.json', pwd);
+            if isequal(file, 0)
+                return;
+            end
+            pipelineJsonPath = fullfile(path, file);
+
+            d = uiprogressdlg(app.DetecDivUIFigure, ...
+                'Title', 'Please wait', ...
+                'Message', 'Loading pipeline template...', ...
+                'Indeterminate', 'on');
+            cleanupObj = onCleanup(@()app.safeCloseProgressDialog(d)); %#ok<NASGU>
+            drawnow limitrate nocallbacks;
+
+            [pipeObj, msg] = pipelineLoad(pipelineJsonPath);
             if isempty(pipeObj)
                 if ~isempty(msg)
                     uialert(app.DetecDivUIFigure, msg, 'Warning', 'Icon', 'warning');
@@ -6821,17 +6834,19 @@ end
                 return;
             end
 
-            pipelineJsonPath = fullfile(pipeObj.path, 'pipeline.json');
+            app.updatePipelineOpenProgress(d, 'Registering pipeline in workspace...');
             assignin('base', app.nextPipelineVarName(pipeObj), pipeObj);
             app.registerRecentPipeline(string(pipelineJsonPath));
 
+            app.updatePipelineOpenProgress(d, 'Refreshing project tree...');
             gatherVarsFromWorkspace(app);
             displayNodes(app);
             try
                 app.selectPipelineNodeByJsonPath(pipelineJsonPath);
             catch
             end
-            app.openPipelineWithContext(pipeObj);
+            app.updatePipelineOpenProgress(d, 'Opening pipeline editor...');
+            app.openPipelineWithContext(pipeObj, d);
         end
 
         % Menu selected function: ClosepipelinetemplateMenu
