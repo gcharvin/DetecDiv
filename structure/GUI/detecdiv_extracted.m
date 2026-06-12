@@ -5890,7 +5890,7 @@ end
             app.AddprocessorButton.Visible='off';
             app.ProcessdataButton.Visible='off';
             app.InspectRunButton.Visible='off';
-            app.EditRunButton.Visible='off';
+            app.setComponentVisible('EditRunButton', 'off');
             app.OpenButton.Visible='off';
             cla( app.UIAxes);
             app.UIAxes.Visible='off';
@@ -6485,8 +6485,8 @@ end
                 app.ProjectsPanel.Title='Pipeline run';
                 app.InspectRunButton.Visible='on';
                 app.InspectRunButton.Text='Review run...';
-                app.EditRunButton.Visible='on';
-                app.EditRunButton.Text='Edit run...';
+                app.setComponentVisible('EditRunButton', 'on');
+                app.setComponentText('EditRunButton', 'Edit run...');
                 app.OpenButton.Visible='on';
                 app.OpenButton.Text='New run from this...';
 
