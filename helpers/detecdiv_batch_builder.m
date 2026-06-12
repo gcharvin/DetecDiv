@@ -24,6 +24,8 @@ function batchSpec = detecdiv_batch_builder(selectedRefs, varargin)
     validationReport = struct();
     runReport = struct();
     batchRootText = localDefaultBatchRoot(batchSpec);
+    updatingRecentPipelineList = false;
+    recentPipelinePathsCache = {};
 
     fig = uifigure( ...
         'Name', 'DetecDiv Batch Builder', ...
@@ -32,15 +34,16 @@ function batchSpec = detecdiv_batch_builder(selectedRefs, varargin)
         'CloseRequestFcn', @onClose);
 
     mainGrid = uigridlayout(fig, [4 1]);
-    mainGrid.RowHeight = {90, '1x', 220, 54};
+    mainGrid.RowHeight = {150, '1x', 220, 54};
     mainGrid.Padding = [12 12 12 12];
     mainGrid.RowSpacing = 10;
 
-    headerGrid = uigridlayout(mainGrid, [3 6]);
+    headerGrid = uigridlayout(mainGrid, [4 6]);
     headerGrid.Layout.Row = 1;
     headerGrid.ColumnWidth = {120, '1x', 120, '1x', 120, '1x'};
-    headerGrid.RowHeight = {28, 28, 28};
+    headerGrid.RowHeight = {28, 28, 28, 28};
     headerGrid.Padding = [0 0 0 0];
+    headerGrid.RowSpacing = 6;
     headerGrid.ColumnSpacing = 10;
 
     batchNameLabel = uilabel(headerGrid, 'Text', 'Batch name', 'FontWeight', 'bold');
@@ -74,6 +77,13 @@ function batchSpec = detecdiv_batch_builder(selectedRefs, varargin)
     prototypeLabel = uilabel(headerGrid, 'Text', localPrototypeText(batchSpec), 'Interpreter', 'none');
     prototypeLabel.Layout.Row = 3;
     prototypeLabel.Layout.Column = [2 5];
+
+    runtimeTitleLabel = uilabel(headerGrid, 'Text', 'Runtime config', 'FontWeight', 'bold');
+    runtimeTitleLabel.Layout.Row = 4;
+    runtimeTitleLabel.Layout.Column = 1;
+    runtimeLabel = uilabel(headerGrid, 'Text', localRuntimeConfigText(batchSpec), 'Interpreter', 'none');
+    runtimeLabel.Layout.Row = 4;
+    runtimeLabel.Layout.Column = [2 6];
 
     centerGrid = uigridlayout(mainGrid, [1 2]);
     centerGrid.Layout.Row = 2;
@@ -110,15 +120,15 @@ function batchSpec = detecdiv_batch_builder(selectedRefs, varargin)
         'RowStriping', 'on');
     validationTable.Layout.Row = 2;
 
-    footerGrid = uigridlayout(mainGrid, [2 6]);
+    footerGrid = uigridlayout(mainGrid, [3 6]);
     footerGrid.Layout.Row = 3;
     footerGrid.ColumnWidth = {160, 160, 160, 160, '1x', 180};
-    footerGrid.RowHeight = {28, 28};
+    footerGrid.RowHeight = {28, 28, 88};
     footerGrid.ColumnSpacing = 8;
     footerGrid.Padding = [0 0 0 0];
 
     choosePipelineButton = uibutton(footerGrid, 'push', ...
-        'Text', 'Choose Pipeline...', ...
+        'Text', 'Load from Disk...', ...
         'ButtonPushedFcn', @onChoosePipeline);
     choosePipelineButton.Layout.Row = 1;
     choosePipelineButton.Layout.Column = 1;
@@ -159,12 +169,35 @@ function batchSpec = detecdiv_batch_builder(selectedRefs, varargin)
     progressText.Layout.Row = 2;
     progressText.Layout.Column = [2 5];
 
-    if isempty(batchSpec.items)
-        openPrototypeButton.Enable = 'off';
-        loadPrototypeButton.Enable = 'off';
-        validateButton.Enable = 'off';
-        runButton.Enable = 'off';
-    end
+    recentGrid = uigridlayout(footerGrid, [2 6]);
+    recentGrid.Layout.Row = 3;
+    recentGrid.Layout.Column = [1 6];
+    recentGrid.RowHeight = {18, 120};
+    recentGrid.ColumnWidth = {260, '1x', '1x', '1x', '1x', 80};
+    recentGrid.RowSpacing = 4;
+    recentGrid.ColumnSpacing = 8;
+    recentGrid.Padding = [0 0 0 0];
+
+    recentLabel = uilabel(recentGrid, ...
+        'Text', 'Recent pipelines', ...
+        'FontWeight', 'bold');
+    recentLabel.Layout.Row = 1;
+    recentLabel.Layout.Column = 1;
+
+    recentInfoLabel = uilabel(recentGrid, ...
+        'Text', 'Select a recent pipeline to load it.', ...
+        'FontAngle', 'italic', ...
+        'HorizontalAlignment', 'left');
+    recentInfoLabel.Layout.Row = 1;
+    recentInfoLabel.Layout.Column = [2 4];
+
+    recentPipelineListBox = uilistbox(recentGrid, ...
+        'Items', {'(No recent pipelines)'}, ...
+        'Value', '(No recent pipelines)', ...
+        'ValueChangedFcn', @onRecentPipelineSelected);
+    recentPipelineListBox.Layout.Row = 2;
+    recentPipelineListBox.Layout.Column = [1 4];
+
     refreshAll();
 
     uiwait(fig);
@@ -183,11 +216,80 @@ function batchSpec = detecdiv_batch_builder(selectedRefs, varargin)
         itemTable.Data = batchSpec.itemsTable;
         itemTable.ColumnEditable = localItemTableEditable(batchSpec.items);
         itemTable.ColumnName = batchSpec.itemsTable.Properties.VariableNames;
+        pipelineLabel.Text = localPipelineText(batchSpec);
         prototypeLabel.Text = localPrototypeText(batchSpec);
+        runtimeLabel.Text = localRuntimeConfigText(batchSpec);
         detailsArea.Value = localItemDetails(batchSpec, batchSpec.prototypeIndex);
         progressText.Text = localProgressSummary(batchSpec, validationReport, runReport);
         validationTable.Data = localValidationTable(validationReport);
         runButton.Text = sprintf('Run Batch (%s)', upper(batchSpec.execution.target));
+        refreshRecentPipelineList();
+        refreshControlStates();
+    end
+
+    function refreshRecentPipelineList()
+        if updatingRecentPipelineList || ~isvalid(fig)
+            return;
+        end
+        updatingRecentPipelineList = true;
+        cleanupObj = onCleanup(@()setRecentPipelineListUpdating(false)); %#ok<NASGU>
+        try
+            recentPaths = localRecentPipelinePaths(true);
+            recentPipelinePathsCache = recentPaths;
+            if isempty(recentPaths)
+                recentPipelineListBox.Items = {'(No recent pipelines)'};
+                recentPipelineListBox.Value = '(No recent pipelines)';
+                recentInfoLabel.Text = 'No recent pipelines are available yet.';
+                return;
+            end
+            recentPipelineListBox.Items = [{'Select a recent pipeline...'} cellfun(@localRecentPipelineLabel, recentPaths, 'UniformOutput', false)];
+            recentInfoLabel.Text = 'Select a recent pipeline to load it.';
+            currentPath = localFieldText(batchSpec.pipelineRef, 'path');
+            if ~isempty(currentPath)
+                match = find(strcmpi(recentPipelinePathsCache, localNormalizeRecentPipelinePath(currentPath)), 1, 'first');
+                if ~isempty(match)
+                    recentPipelineListBox.Value = recentPipelineListBox.Items{match + 1};
+                else
+                    recentPipelineListBox.Value = recentPipelineListBox.Items{1};
+                end
+            else
+                recentPipelineListBox.Value = recentPipelineListBox.Items{1};
+            end
+        catch
+            try
+                recentPipelineListBox.Items = {'(No recent pipelines)'};
+                recentPipelineListBox.Value = '(No recent pipelines)';
+            catch
+            end
+        end
+    end
+
+    function refreshControlStates()
+        hasItems = localHasSelectedItems(batchSpec);
+        hasPipeline = localHasPipeline(batchSpec);
+        hasRuntime = localHasPrototypeRuntime(batchSpec);
+        hasValidBatch = localValidationPassed(validationReport);
+
+        choosePipelineButton.Enable = ternaryEnable(hasItems);
+        loadPrototypeButton.Enable = ternaryEnable(hasItems && hasPipeline);
+        openPrototypeButton.Enable = ternaryEnable(hasItems && hasPipeline);
+        validateButton.Enable = ternaryEnable(hasItems && hasPipeline && hasRuntime);
+        runButton.Enable = ternaryEnable(hasItems && hasPipeline && hasRuntime && hasValidBatch);
+        if ~hasPipeline
+            openPrototypeButton.Enable = 'off';
+        end
+
+        if ~hasItems
+            progressText.Text = 'Select at least one item in the batch table.';
+        elseif ~hasPipeline
+            progressText.Text = 'Step 1: choose the pipeline template to apply to this batch.';
+        elseif ~hasRuntime
+            progressText.Text = 'Step 2: configure a prototype runtime with pipeline2, then click Use Prototype.';
+        elseif ~hasValidBatch
+            progressText.Text = 'Step 3: validate compatibility before launching the batch.';
+        elseif isempty(fieldnames(runReport))
+            progressText.Text = sprintf('Ready to run %d item(s) on %s.', nnz([batchSpec.items.batchSelected]), upper(batchSpec.execution.target));
+        end
     end
 
     function onItemSelected(~, event)
@@ -201,6 +303,8 @@ function batchSpec = detecdiv_batch_builder(selectedRefs, varargin)
         batchSpec.prototypeIndex = row;
         batchSpec.prototypeItemId = localFieldText(batchSpec.items(row), 'id');
         batchSpec = pipelineBatchSetPrototypeRuntime(batchSpec, batchSpec.prototypeRuntimeConfig);
+        validationReport = struct();
+        runReport = struct();
         refreshAll();
     end
 
@@ -223,6 +327,8 @@ function batchSpec = detecdiv_batch_builder(selectedRefs, varargin)
         elseif batchSpec.prototypeIndex < 1 || batchSpec.prototypeIndex > numel(batchSpec.items) || ~batchSpec.items(batchSpec.prototypeIndex).batchSelected
             batchSpec.prototypeIndex = find([batchSpec.items.batchSelected], 1, 'first');
         end
+        validationReport = struct();
+        runReport = struct();
         refreshAll();
     end
 
@@ -234,23 +340,17 @@ function batchSpec = detecdiv_batch_builder(selectedRefs, varargin)
                 return;
             end
             candidate = fullfile(path, file);
-            [pipe, msg] = pipelineLoad(candidate);
-            if isempty(pipe)
-                uialert(fig, msg, 'Pipeline Load Failed');
-                return;
-            end
-            batchSpec = pipelineBatchSetPipeline(batchSpec, struct( ...
-                'id', localPipelineId(pipe), ...
-                'path', candidate, ...
-                'version', localPipelineVersion(pipe)), pipe);
-            progressText.Text = ['Pipeline loaded: ' candidate];
-            refreshAll();
+            localLoadPipelineFromPath(candidate, 'disk');
         catch ME
             uialert(fig, ME.message, 'Pipeline Load Failed');
         end
     end
 
     function onLoadPrototypeRun(~, ~)
+        if ~localHasPipeline(batchSpec)
+            uialert(fig, 'Choose a pipeline before loading prototype runtime parameters.', 'Pipeline Required');
+            return;
+        end
         try
             [runObj, msg] = pipelineRunLoad();
             if isempty(runObj)
@@ -259,22 +359,25 @@ function batchSpec = detecdiv_batch_builder(selectedRefs, varargin)
                 end
                 return;
             end
+            runPipelinePath = localPipelinePathFromRun(runObj);
+            selectedPipelinePath = localFieldText(batchSpec.pipelineRef, 'path');
+            if ~isempty(runPipelinePath) && ~isempty(selectedPipelinePath) && ...
+                    ~strcmpi(localNormalizePathText(runPipelinePath), localNormalizePathText(selectedPipelinePath))
+                uialert(fig, sprintf(['This prototype run belongs to a different pipeline.\n\n' ...
+                    'Selected pipeline:\n%s\n\nPrototype run pipeline:\n%s'], selectedPipelinePath, runPipelinePath), ...
+                    'Prototype Pipeline Mismatch');
+                return;
+            end
             if isprop(runObj, 'ctx') && isstruct(runObj.ctx)
                 batchSpec = pipelineBatchSetPrototypeRuntime(batchSpec, runObj.ctx);
             else
                 batchSpec = pipelineBatchSetPrototypeRuntime(batchSpec, struct());
             end
-            if isprop(runObj, 'pipelineRef') && isstruct(runObj.pipelineRef)
-                [pipe, msg2] = pipelineLoad(localPipelinePathFromRun(runObj));
-                if ~isempty(pipe)
-                    batchSpec = pipelineBatchSetPipeline(batchSpec, runObj.pipelineRef, pipe);
-                elseif isempty(batchSpec.pipelineTemplate)
-                    progressText.Text = ['Prototype loaded, pipeline unresolved: ' msg2];
-                end
-            end
             if isprop(runObj, 'runId') && ~isempty(runObj.runId)
                 batchSpec.prototypeItemId = char(string(runObj.runId));
             end
+            validationReport = struct();
+            runReport = struct();
             progressText.Text = 'Prototype runtime loaded from run.json.';
             refreshAll();
         catch ME
@@ -282,7 +385,29 @@ function batchSpec = detecdiv_batch_builder(selectedRefs, varargin)
         end
     end
 
+    function onRecentPipelineSelected(src, ~)
+        if updatingRecentPipelineList
+            return;
+        end
+        if isempty(src) || ~isvalid(src)
+            return;
+        end
+        selected = char(string(src.Value));
+        if isempty(selected) || strcmp(selected, '(No recent pipelines)') || strcmp(selected, 'Select a recent pipeline...')
+            return;
+        end
+        match = find(strcmp(recentPipelineListBox.Items, selected), 1, 'first');
+        if isempty(match) || match < 2 || (match - 1) > numel(recentPipelinePathsCache)
+            return;
+        end
+        localLoadPipelineFromPath(recentPipelinePathsCache{match - 1}, 'recent');
+    end
+
     function onConfigurePrototype(~, ~)
+        if ~localHasPipeline(batchSpec)
+            uialert(fig, 'Choose a pipeline before configuring the prototype runtime.', 'Pipeline Required');
+            return;
+        end
         if isempty(batchSpec.items) || batchSpec.prototypeIndex < 1 || batchSpec.prototypeIndex > numel(batchSpec.items)
             uialert(fig, 'Select one project row to use as the prototype.', 'Prototype Required');
             return;
@@ -302,7 +427,8 @@ function batchSpec = detecdiv_batch_builder(selectedRefs, varargin)
                 uialert(fig, msg, 'Prototype Load Failed');
                 return;
             end
-            protoArgs = {shallowObj};
+            [~, prototypeProjectName] = fileparts(char(string(item.projectMatPath)));
+            protoArgs = {shallowObj, 'ProjectVarName', matlab.lang.makeValidName(prototypeProjectName)};
             if isfield(batchSpec, 'pipelineTemplate') && ~isempty(batchSpec.pipelineTemplate) && ...
                     (isobject(batchSpec.pipelineTemplate) || (isstruct(batchSpec.pipelineTemplate) && ~isempty(fieldnames(batchSpec.pipelineTemplate))))
                 protoArgs{end+1} = batchSpec.pipelineTemplate; %#ok<AGROW>
@@ -326,6 +452,8 @@ function batchSpec = detecdiv_batch_builder(selectedRefs, varargin)
                 batchSpec = pipelineBatchSetPipeline(batchSpec, protoApp.PrototypePipelineRef, pipeObj);
             end
             batchSpec.execution.target = localExecutionTargetFromRuntime(batchSpec);
+            validationReport = struct();
+            runReport = struct();
             try
                 delete(protoApp);
             catch
@@ -338,6 +466,14 @@ function batchSpec = detecdiv_batch_builder(selectedRefs, varargin)
     end
 
     function onValidate(~, ~)
+        if ~localHasPipeline(batchSpec)
+            uialert(fig, 'Choose a pipeline before validating the batch.', 'Pipeline Required');
+            return;
+        end
+        if ~localHasPrototypeRuntime(batchSpec)
+            uialert(fig, 'Configure a prototype runtime before validating the batch.', 'Runtime Required');
+            return;
+        end
         try
             batchSpec.name = char(string(batchNameEdit.Value));
             batchSpec.execution.target = localExecutionTargetFromRuntime(batchSpec);
@@ -356,6 +492,18 @@ function batchSpec = detecdiv_batch_builder(selectedRefs, varargin)
     end
 
     function onRunBatch(~, ~)
+        if ~localHasPipeline(batchSpec)
+            uialert(fig, 'Choose a pipeline before running the batch.', 'Pipeline Required');
+            return;
+        end
+        if ~localHasPrototypeRuntime(batchSpec)
+            uialert(fig, 'Configure a prototype runtime before running the batch.', 'Runtime Required');
+            return;
+        end
+        if ~localValidationPassed(validationReport)
+            uialert(fig, 'Validate the batch successfully before launching runs.', 'Validation Required');
+            return;
+        end
         try
             batchSpec.name = char(string(batchNameEdit.Value));
             batchSpec.execution.target = localExecutionTargetFromRuntime(batchSpec);
@@ -390,7 +538,8 @@ function batchSpec = detecdiv_batch_builder(selectedRefs, varargin)
             try
                 d.Indeterminate = false;
                 d.Value = max(0, min(1, payload.progress));
-                d.Message = sprintf('%s item %d/%d: %s', upper(payload.state), payload.index, payload.total, localItemProgressLabel(payload.item));
+                d.Message = localBatchProgressMessage(payload);
+                progressText.Text = d.Message;
                 drawnow limitrate;
             catch
             end
@@ -411,6 +560,54 @@ function batchSpec = detecdiv_batch_builder(selectedRefs, varargin)
             uiresume(fig);
         catch
         end
+    end
+
+    function localLoadPipelineFromPath(pipelinePath, sourceLabel)
+        pipelinePath = localNormalizeRecentPipelinePath(pipelinePath);
+        if isempty(pipelinePath) || exist(pipelinePath, 'file') ~= 2
+            uialert(fig, 'Pipeline file not found.', 'Pipeline Load Failed');
+            return;
+        end
+        try
+            [pipe, msg] = pipelineLoad(pipelinePath);
+            if isempty(pipe)
+                uialert(fig, msg, 'Pipeline Load Failed');
+                return;
+            end
+            batchSpec = pipelineBatchSetPipeline(batchSpec, struct( ...
+                'id', localPipelineId(pipe), ...
+                'path', pipelinePath, ...
+                'version', localPipelineVersion(pipe)), pipe);
+            batchSpec = pipelineBatchSetPrototypeRuntime(batchSpec, struct());
+            localAddRecentPipelinePath(pipelinePath);
+            validationReport = struct();
+            runReport = struct();
+            progressText.Text = sprintf('Pipeline loaded from %s: %s', sourceLabel, pipelinePath);
+            refreshAll();
+        catch ME
+            uialert(fig, ME.message, 'Pipeline Load Failed');
+        end
+    end
+
+    function localAddRecentPipelinePath(pipelinePath)
+        pipelinePath = localNormalizeRecentPipelinePath(pipelinePath);
+        if isempty(pipelinePath)
+            return;
+        end
+        paths = localRecentPipelinePaths(true);
+        paths = paths(~strcmpi(paths, pipelinePath));
+        paths = [{pipelinePath} paths];
+        if numel(paths) > 10
+            paths = paths(1:10);
+        end
+        try
+            setpref('DetecDiv', 'pipeline2RecentPipelines', paths);
+        catch
+        end
+    end
+
+    function setRecentPipelineListUpdating(tf)
+        updatingRecentPipelineList = logical(tf);
     end
 end
 
@@ -441,10 +638,26 @@ function owner = localBatchOwner(opts)
 end
 
 function text = localPipelineText(batchSpec)
-    if isfield(batchSpec, 'pipelineRef') && isstruct(batchSpec.pipelineRef) && ~isempty(fieldnames(batchSpec.pipelineRef))
-        text = sprintf('%s | %s', localFieldText(batchSpec.pipelineRef, 'id'), localFieldText(batchSpec.pipelineRef, 'path'));
-    else
+    if ~localHasPipeline(batchSpec)
         text = 'No pipeline selected yet.';
+    else
+        pipelineId = localFieldText(batchSpec.pipelineRef, 'id');
+        pipelinePath = localFieldText(batchSpec.pipelineRef, 'path');
+        if isempty(pipelineId)
+            pipelineId = '<unnamed>';
+        end
+        text = sprintf('Loaded: %s | %s', pipelineId, pipelinePath);
+    end
+end
+
+function text = localRecentPipelineLabel(pipelinePath)
+    pipelinePath = char(string(pipelinePath));
+    [folder, file, ext] = fileparts(pipelinePath);
+    [parent, folderName] = fileparts(folder);
+    [~, parentName] = fileparts(parent);
+    text = [folderName filesep file ext];
+    if ~isempty(parentName)
+        text = [parentName filesep text];
     end
 end
 
@@ -454,6 +667,171 @@ function text = localPrototypeText(batchSpec)
     else
         item = batchSpec.items(batchSpec.prototypeIndex);
         text = sprintf('%s | %s', localFieldText(item, 'kind'), localFieldText(item, 'displayName'));
+    end
+end
+
+function text = localRuntimeConfigText(batchSpec)
+    if ~localHasPrototypeRuntime(batchSpec)
+        text = 'Not configured. Click Configure Prototype... and finish with Use Prototype.';
+        return;
+    end
+    ctx = batchSpec.prototypeRuntimeConfig;
+    target = upper(localExecutionTargetFromRuntime(batchSpec));
+    runId = localNestedFieldText(ctx, {'runId'});
+    if isempty(runId)
+        runId = localNestedFieldText(ctx, {'run', 'runId'});
+    end
+    if isempty(runId)
+        runId = '<auto>';
+    end
+    inputSource = localNestedFieldText(ctx, {'run', 'inputSource'});
+    if isempty(inputSource)
+        inputSource = '<default>';
+    end
+    text = sprintf('Configured: target=%s | run=%s | input=%s', target, runId, inputSource);
+end
+
+function tf = localHasPipeline(batchSpec)
+    tf = false;
+    try
+        tf = isfield(batchSpec, 'pipelineRef') && isstruct(batchSpec.pipelineRef) && ...
+            isfield(batchSpec.pipelineRef, 'path') && ~isempty(strtrim(char(string(batchSpec.pipelineRef.path))));
+    catch
+        tf = false;
+    end
+end
+
+function tf = localHasSelectedItems(batchSpec)
+    tf = false;
+    try
+        tf = isfield(batchSpec, 'items') && ~isempty(batchSpec.items) && ...
+            isfield(batchSpec.items, 'batchSelected') && any([batchSpec.items.batchSelected]);
+    catch
+        tf = false;
+    end
+end
+
+function tf = localHasPrototypeRuntime(batchSpec)
+    tf = false;
+    try
+        tf = isfield(batchSpec, 'prototypeRuntimeConfig') && isstruct(batchSpec.prototypeRuntimeConfig) && ...
+            ~isempty(fieldnames(batchSpec.prototypeRuntimeConfig));
+    catch
+        tf = false;
+    end
+end
+
+function tf = localValidationPassed(report)
+    tf = false;
+    try
+        if isempty(report) || ~isstruct(report) || ~isfield(report, 'summary') || ~isstruct(report.summary)
+            return;
+        end
+        s = report.summary;
+        if isfield(s, 'errorItems') && double(s.errorItems) > 0
+            return;
+        end
+        if isfield(s, 'validItems') && double(s.validItems) > 0
+            tf = true;
+            return;
+        end
+        if isfield(s, 'ok')
+            tf = logical(s.ok);
+        end
+    catch
+        tf = false;
+    end
+end
+
+function paths = localRecentPipelinePaths(keepMissing)
+    if nargin < 1
+        keepMissing = false;
+    end
+    paths = {};
+    try
+        paths = getpref('DetecDiv', 'pipeline2RecentPipelines', {});
+    catch
+        paths = {};
+    end
+    if ischar(paths) || (isstring(paths) && isscalar(paths))
+        paths = {char(string(paths))};
+    elseif isstring(paths)
+        paths = cellstr(paths(:))';
+    elseif ~iscell(paths)
+        paths = {};
+    end
+    normalized = {};
+    for i = 1:numel(paths)
+        p = localNormalizeRecentPipelinePath(paths{i});
+        if isempty(p)
+            continue;
+        end
+        if keepMissing || exist(p, 'file') == 2
+            normalized{end+1} = p; %#ok<AGROW>
+        end
+    end
+    paths = unique(normalized, 'stable');
+    if ~keepMissing
+        try
+            setpref('DetecDiv', 'pipeline2RecentPipelines', paths);
+        catch
+        end
+    end
+end
+
+function pipelineFile = localNormalizeRecentPipelinePath(pipelineFile)
+    pipelineFile = strtrim(char(string(pipelineFile)));
+    if isempty(pipelineFile)
+        return;
+    end
+    try
+        if exist(pipelineFile, 'dir') == 7
+            pipelineFile = fullfile(pipelineFile, 'pipeline.json');
+        end
+        if exist(pipelineFile, 'file') == 2
+            pipelineFile = char(java.io.File(pipelineFile).getCanonicalPath());
+        end
+    catch
+    end
+end
+
+function value = ternaryEnable(tf)
+    if tf
+        value = 'on';
+    else
+        value = 'off';
+    end
+end
+
+function text = localNestedFieldText(S, path)
+    text = '';
+    try
+        value = S;
+        for i = 1:numel(path)
+            key = path{i};
+            if isstruct(value) && isfield(value, key)
+                value = value.(key);
+            else
+                return;
+            end
+        end
+        if ~isempty(value)
+            text = char(string(value));
+        end
+    catch
+        text = '';
+    end
+end
+
+function text = localNormalizePathText(pathValue)
+    text = strtrim(char(string(pathValue)));
+    if isempty(text)
+        return;
+    end
+    try
+        text = char(java.io.File(text).getCanonicalPath());
+    catch
+        text = char(java.io.File(text).getAbsolutePath());
     end
 end
 
@@ -554,6 +932,29 @@ function text = localItemProgressLabel(item)
     if isempty(text)
         text = localFieldText(item, 'kind');
     end
+end
+
+function text = localBatchProgressMessage(payload)
+    idx = localGetStructField(payload, 'index', 0);
+    total = localGetStructField(payload, 'total', 0);
+    state = upper(char(string(localGetStructField(payload, 'state', 'running'))));
+    itemText = localItemProgressLabel(localGetStructField(payload, 'item', struct()));
+    if isempty(itemText)
+        itemText = '<item>';
+    end
+    pct = round(100 * max(0, min(1, double(localGetStructField(payload, 'progress', 0)))));
+    if isstruct(payload) && isfield(payload, 'node') && isstruct(payload.node)
+        nodeId = localGetStructField(payload.node, 'nodeId', '');
+        nodeIndex = localGetStructField(payload.node, 'nodeIndex', 0);
+        totalNodes = localGetStructField(payload.node, 'totalNodes', 0);
+        nodeMsg = localGetStructField(payload.node, 'message', '');
+        if isempty(nodeMsg)
+            nodeMsg = sprintf('Module %d/%d: %s', nodeIndex, totalNodes, char(string(nodeId)));
+        end
+        text = sprintf('Batch %d%% | item %d/%d: %s | %s', pct, idx, total, itemText, char(string(nodeMsg)));
+        return;
+    end
+    text = sprintf('Batch %d%% | %s item %d/%d: %s', pct, state, idx, total, itemText);
 end
 
 function text = localProgressSummary(batchSpec, validationReport, runReport)

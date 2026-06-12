@@ -88,6 +88,9 @@ function report = runPipelineBatch(batchSpec, varargin)
             if ~isempty(ctx) && isfield(ctx, 'run') && isstruct(ctx.run)
                 ctx.run.batchItemFolder = itemDir;
             end
+            if ~isempty(opts.ProgressCallback)
+                ctx.progressCallback = @(nodePayload)callNodeProgress(opts.ProgressCallback, i, total, itemReport, nodePayload);
+            end
             t0 = tic;
             if strcmp(executionTarget, 'hub')
                 [job, runObj] = submitBatchItemToHub(batchSpec, ctx, opts.HubSettings);
@@ -114,7 +117,7 @@ function report = runPipelineBatch(batchSpec, varargin)
                 itemReport.itemInfo = itemInfo;
                 if logical(opts.SaveProjects) && isfield(ctx, 'shallow') && isa(ctx.shallow, 'shallow')
                     try
-                        shallowSave(ctx.shallow, 'shallowObj');
+                        saveBatchProject(ctx.shallow, itemInfo);
                     catch ME
                         itemReport.warnings{end+1} = ['Project save failed: ' ME.message]; %#ok<AGROW>
                     end
@@ -186,6 +189,48 @@ function [job, runObj] = submitBatchItemToHub(batchSpec, ctx, hubSettings)
         [job, runObj] = detecdiv_hub_submit_pipeline_run(runObj, ctx.shallow, ...
             'hub', hub, 'ExecutionTargetId', executionTargetId);
     end
+end
+
+function saveBatchProject(shallowObj, itemInfo)
+    projectMatPath = localStringField(itemInfo, 'projectMatPath');
+    if ~isempty(projectMatPath)
+        [expectedPath, expectedName] = fileparts(projectMatPath);
+        expectedPath = localEnsureTrailingFilesep(expectedPath);
+        try
+            [currentPath, currentName] = shallowObj.getPath();
+        catch
+            currentPath = '';
+            currentName = '';
+        end
+        if isempty(currentName) || ~strcmp(char(string(currentName)), expectedName) || ...
+                isempty(currentPath) || ~strcmpi(localNormalizePath(currentPath), localNormalizePath(expectedPath))
+            shallowObj.setPath(expectedPath, expectedName);
+        end
+    end
+    shallowSave(shallowObj);
+end
+
+function pathOut = localEnsureTrailingFilesep(pathIn)
+    pathOut = char(string(pathIn));
+    if isempty(pathOut)
+        return;
+    end
+    if ~endsWith(pathOut, filesep) && ~endsWith(pathOut, '/') && ~endsWith(pathOut, '\')
+        pathOut = [pathOut filesep];
+    end
+end
+
+function pathOut = localNormalizePath(pathIn)
+    pathOut = char(string(pathIn));
+    if isempty(pathOut)
+        return;
+    end
+    try
+        pathOut = char(java.io.File(pathOut).getCanonicalPath());
+    catch
+        pathOut = char(java.io.File(pathOut).getAbsolutePath());
+    end
+    pathOut = regexprep(strrep(pathOut, '\', '/'), '/+$', '');
 end
 
 function target = localExecutionTarget(batchSpec)
@@ -284,6 +329,35 @@ function callProgress(cb, idx, total, state, itemReport)
     try
         cb(payload);
     catch
+    end
+end
+
+function callNodeProgress(cb, idx, total, itemReport, nodePayload)
+    if isempty(cb)
+        return;
+    end
+    payload = struct();
+    payload.index = idx;
+    payload.total = total;
+    payload.state = 'module';
+    payload.item = itemReport;
+    payload.node = nodePayload;
+    nodeProgress = localStructDouble(nodePayload, 'nodeProgress', 0);
+    payload.progress = (max(0, idx - 1) + max(0, min(1, nodeProgress))) / max(1, total);
+    try
+        cb(payload);
+    catch
+    end
+end
+
+function value = localStructDouble(S, fieldName, defaultValue)
+    value = defaultValue;
+    try
+        if isstruct(S) && isfield(S, fieldName) && ~isempty(S.(fieldName))
+            value = double(S.(fieldName));
+        end
+    catch
+        value = defaultValue;
     end
 end
 

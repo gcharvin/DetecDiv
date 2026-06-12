@@ -207,7 +207,11 @@ classdef pipeline2 < matlab.apps.AppBase
                 (~hasPipelineContext || hasExplicitRuntimeContext);
 
             if shouldBindStartupProject
-                varName = findWorkspaceVarForObject(app, projectObj, 'shallowObj');
+                projectVarFallback = 'shallowObj';
+                if isfield(opts, 'projectVarName') && ~isempty(strtrim(opts.projectVarName))
+                    projectVarFallback = opts.projectVarName;
+                end
+                varName = findWorkspaceVarForObject(app, projectObj, projectVarFallback);
                 bindCurrentProject(app, projectObj, varName);
             end
             if ~isempty(pipeObj) && isa(pipeObj, 'pipeline')
@@ -246,7 +250,8 @@ classdef pipeline2 < matlab.apps.AppBase
         function [opts, positionalArgs] = parseStartupRuntimeOptions(app, varargin) %#ok<INUSD>
             opts = struct('inputMode', '', 'lockInputMode', false, 'lockReason', '', ...
                 'projectPath', '', 'rawDataPath', '', 'unlockRuntime', false, ...
-                'batchPrototype', false, 'modal', false, 'editExistingRun', false);
+                'batchPrototype', false, 'modal', false, 'editExistingRun', false, ...
+                'projectVarName', '');
             positionalArgs = {};
             i = 1;
             while i <= numel(varargin)
@@ -268,6 +273,12 @@ classdef pipeline2 < matlab.apps.AppBase
                             if ischar(value) || isstring(value)
                                 opts.projectPath = char(string(value));
                                 opts.unlockRuntime = true;
+                            else
+                                consumed = false;
+                            end
+                        case {'projectvarname','projectvar','workspaceprojectvar','workspacevar'}
+                            if ischar(value) || isstring(value)
+                                opts.projectVarName = matlab.lang.makeValidName(char(string(value)));
                             else
                                 consumed = false;
                             end
@@ -391,6 +402,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 catch
                 end
                 setRuntimeStatus(app, sprintf('Batch prototype mode.\nSet runtime parameters and target, then click Use Prototype.'));
+                applyBatchPrototypeUiRestrictions(app);
             end
             updateRuntimeInputStates(app);
         end
@@ -4796,6 +4808,7 @@ classdef pipeline2 < matlab.apps.AppBase
             if ~strcmp(severity, 'ok')
                 markRuntimeField(app, 'outputPolicy', severity, message);
             end
+            applyBatchPrototypeUiRestrictions(app);
         end
 
         function markRuntimeField(app, key, state, tooltip)
@@ -4850,11 +4863,50 @@ classdef pipeline2 < matlab.apps.AppBase
             setRuntimeControlTreeEnabled(app, app.RuntimeInputsTab, tf);
             setRuntimeControlTreeEnabled(app, app.RuntimeTab, tf);
             updateRuntimeInputStates(app);
-            if tf
+            if app.BatchPrototypeMode
+                setRuntimeStatus(app, sprintf('Batch prototype mode.\nSet runtime parameters and target, then click Use Prototype.'));
+            elseif tf
                 setRuntimeStatus(app, sprintf('Runtime mode enabled.\nEdit run inputs, then launch Run.'));
             else
                 setRuntimeStatus(app, sprintf('Template mode: runtime locked.\nClick New Run to configure execution.'));
             end
+        end
+
+        function applyBatchPrototypeUiRestrictions(app)
+            if ~app.BatchPrototypeMode
+                return;
+            end
+            disabledControls = {'RunButton','SmokeTestButton','NewRunButton', ...
+                'OpenRunFolderButton','RunLogButton','RunParamsButton','ReviewRunButton', ...
+                'ForkgraphButton','MergegraphButton','InsertbeforeselectedButton','DeleteselectedButton'};
+            for i = 1:numel(disabledControls)
+                try
+                    h = app.(disabledControls{i});
+                    if ~isempty(h) && isvalid(h)
+                        h.Enable = 'off';
+                    end
+                catch
+                end
+            end
+            disabledMenus = {'NewpipelineMenu','LoadpipelineMenu','SavecurrentpipelineMenu', ...
+                'SavepipelineasMenu','LoadrunMenu','SaverunMenu','SaverunasMenu','ModulesMenu'};
+            for i = 1:numel(disabledMenus)
+                try
+                    h = app.(disabledMenus{i});
+                    if ~isempty(h) && isvalid(h)
+                        h.Enable = 'off';
+                    end
+                catch
+                end
+            end
+            try, app.RunButton.Text = 'Run disabled'; catch, end
+            try, app.SmokeTestButton.Text = 'Smoke disabled'; catch, end
+            try, app.NewRunButton.Text = 'Prototype only'; catch, end
+            try, app.CloseappButton.Text = 'Use Prototype'; catch, end
+            try, app.UISelectedModuleTable.ColumnEditable = [false false false false]; catch, end
+            try, app.IdEditField.Enable = 'off'; catch, end
+            try, app.TypeDropDown.Enable = 'off'; catch, end
+            try, app.SubtypeDropDown.Enable = 'off'; catch, end
         end
 
         function setRuntimeControlTreeEnabled(app, parent, tf) %#ok<INUSD>
@@ -14689,6 +14741,11 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function NewpipelineMenuSelected(app, event) %#ok<INUSD>
+            if app.BatchPrototypeMode
+                uialert(app.UIFigure, 'Pipeline template editing is disabled in batch prototype mode. Configure runtime parameters only.', ...
+                    'Batch prototype', 'Icon', 'info');
+                return;
+            end
             app.Data.nodes = struct([]);
             app.Data.edges = struct('from',{},'to',{},'fromPort',{},'toPort',{},'condition',{});
             app.SelectedNodeIndex = NaN;
@@ -14709,10 +14766,20 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function SavecurrentpipelineMenuSelected(app, event) %#ok<INUSD>
+            if app.BatchPrototypeMode
+                uialert(app.UIFigure, 'Saving pipeline templates is disabled in batch prototype mode. Configure runtime parameters only.', ...
+                    'Batch prototype', 'Icon', 'info');
+                return;
+            end
             savePipelineInteractive(app, false);
         end
 
         function SavepipelineasMenuSelected(app, event) %#ok<INUSD>
+            if app.BatchPrototypeMode
+                uialert(app.UIFigure, 'Saving pipeline templates is disabled in batch prototype mode. Configure runtime parameters only.', ...
+                    'Batch prototype', 'Icon', 'info');
+                return;
+            end
             savePipelineInteractive(app, true);
         end
 
@@ -14721,6 +14788,11 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function LoadpipelineMenuSelected(app, event) %#ok<INUSD>
+            if app.BatchPrototypeMode
+                uialert(app.UIFigure, 'Loading another pipeline is disabled in batch prototype mode. Return to the Batch Builder to choose a different pipeline.', ...
+                    'Batch prototype', 'Icon', 'info');
+                return;
+            end
             [file, pth] = uigetfile({'pipeline.json','pipeline.json'; '*.json','JSON files'}, 'Load pipeline template', pwd);
             if isequal(file, 0)
                 return;
@@ -14741,14 +14813,29 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function SaverunMenuSelected(app, event) %#ok<INUSD>
+            if app.BatchPrototypeMode
+                uialert(app.UIFigure, 'Batch prototype mode only exports runtime parameters. Saving a standalone run is disabled here.', ...
+                    'Batch prototype', 'Icon', 'info');
+                return;
+            end
             saveCurrentRun(app, false);
         end
 
         function SaverunasMenuSelected(app, event) %#ok<INUSD>
+            if app.BatchPrototypeMode
+                uialert(app.UIFigure, 'Batch prototype mode only exports runtime parameters. Saving a standalone run is disabled here.', ...
+                    'Batch prototype', 'Icon', 'info');
+                return;
+            end
             saveCurrentRun(app, true);
         end
 
         function LoadrunMenuSelected(app, event) %#ok<INUSD>
+            if app.BatchPrototypeMode
+                uialert(app.UIFigure, 'Loading another run is disabled in batch prototype mode. Configure the current prototype runtime instead.', ...
+                    'Batch prototype', 'Icon', 'info');
+                return;
+            end
             [file, pth] = uigetfile({'run.json','run.json'; '*.json','JSON files'}, 'Load pipeline run', pwd);
             if isequal(file, 0)
                 return;
@@ -14765,6 +14852,11 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function SmokeTestButtonPushed(app, event) %#ok<INUSD>
+            if app.BatchPrototypeMode
+                uialert(app.UIFigure, 'Smoke test execution is disabled in batch prototype mode. Use this window only to configure runtime parameters.', ...
+                    'Batch prototype', 'Icon', 'info');
+                return;
+            end
             if ~ensureRuntimeModeUnlocked(app)
                 return;
             end
@@ -15263,6 +15355,11 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function RunButtonPushed(app, event) %#ok<INUSD>
+            if app.BatchPrototypeMode
+                uialert(app.UIFigure, 'Direct run execution is disabled in batch prototype mode. Click Use Prototype to return parameters to the Batch Builder.', ...
+                    'Batch prototype', 'Icon', 'info');
+                return;
+            end
             if isRunCancellationButtonActive(app)
                 requestActiveRunCancellation(app);
                 return;
@@ -15540,6 +15637,11 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function NewRunButtonPushed(app, event) %#ok<INUSD>
+            if app.BatchPrototypeMode
+                uialert(app.UIFigure, 'New Run is disabled in batch prototype mode. Edit the current prototype runtime parameters instead.', ...
+                    'Batch prototype', 'Icon', 'info');
+                return;
+            end
             setRuntimeModeUnlocked(app, true);
             app.CurrentRun = [];
             app.CurrentRunPath = '';
@@ -15699,6 +15801,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 app.IdEditField.Value = '';
                 app.AdvancedmodeCheckBox.Value = false;
             end
+            applyBatchPrototypeUiRestrictions(app);
         end
 
         function refreshCommonControlsFromSelection(app)

@@ -869,6 +869,18 @@ function ctx = updatePipelineProgress(ctx, nodeId, nodeIndex, totalNodes, subInd
         ctx.progress.message = char(string(message));
     catch
     end
+    try
+        if isfield(ctx, 'progressCallback') && isa(ctx.progressCallback, 'function_handle')
+            payload = struct( ...
+                'nodeId', char(string(nodeId)), ...
+                'nodeIndex', nodeIndex, ...
+                'totalNodes', totalNodes, ...
+                'nodeProgress', frac, ...
+                'message', char(string(message)));
+            ctx.progressCallback(payload);
+        end
+    catch
+    end
 end
 
 function txt = formatDurationShort(secondsValue)
