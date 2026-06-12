@@ -53,6 +53,7 @@ classdef detecdiv < matlab.apps.AppBase
         UserpreferencesMenu            matlab.ui.container.Menu
         ProjectsPanel                  matlab.ui.container.Panel
         InspectRunButton               matlab.ui.control.Button
+        EditRunButton                  matlab.ui.control.Button
         OpenButton                     matlab.ui.control.Button
         ProcessdataButton              matlab.ui.control.Button
         AddprocessorButton             matlab.ui.control.Button
@@ -332,6 +333,8 @@ classdef detecdiv < matlab.apps.AppBase
                 m.MenuSelectedFcn={@contextMenuCancelPipelineRunHubJobFcn,[projIdx,runIdx],'ProjectpipelineRun'};
                 m = uimenu(cm,'Text','Review run...');
                 m.MenuSelectedFcn = @(~,~)openProjectPipelineRunInspector(projIdx, runIdx);
+                m = uimenu(cm,'Text','Edit run...');
+                m.MenuSelectedFcn = @(~,~)openProjectPipelineRunEditor(projIdx, runIdx, true);
                 m = uimenu(cm,'Text','New run from this...');
                 m.MenuSelectedFcn={@contextMenuOpenPipelineRunFcn,[projIdx,runIdx],'ProjectpipelineRun'};
                 m = uimenu(cm,'Text','Open run log');
@@ -1287,14 +1290,21 @@ end
                 end
             end
 
-            function openProjectPipelineRunEditor(projIdx, runIdx)
+            function openProjectPipelineRunEditor(projIdx, runIdx, editExisting)
+                if nargin < 3
+                    editExisting = false;
+                end
                 shallowObj = getProjectByIndex(projIdx);
                 runObj = getProjectRunByIndex(projIdx, runIdx);
                 if isempty(runObj)
                     return;
                 end
                 try
-                    app.openPipelineEditorWithProgress(shallowObj, runObj, 'Opening pipeline run editor...');
+                    if logical(editExisting)
+                        app.openPipelineEditorWithProgress(shallowObj, runObj, 'Opening run for editing...', 'EditExistingRun', true);
+                    else
+                        app.openPipelineEditorWithProgress(shallowObj, runObj, 'Opening pipeline run editor...');
+                    end
                     RefreshtreewindowMenuSelected(app, []);
                 catch ME
                     uialert(app.DetecDivUIFigure, ME.message, 'Pipeline run editor error', 'Icon', 'warning');
@@ -2603,7 +2613,7 @@ end
             end
         end
 
-        function openPipelineEditorWithProgress(app, projectObj, targetObj, message)
+        function openPipelineEditorWithProgress(app, projectObj, targetObj, message, varargin)
             if nargin < 4 || isempty(message)
                 message = 'Opening pipeline editor...';
             end
@@ -2613,7 +2623,7 @@ end
                 'Indeterminate', 'on');
             cleanupObj = onCleanup(@() app.safeCloseProgressDialog(d)); %#ok<NASGU>
             drawnow;
-            pipeline2(projectObj, targetObj);
+            pipeline2(projectObj, targetObj, varargin{:});
         end
 
         function updatePipelineOpenProgress(app, dlg, message) %#ok<INUSD>
@@ -5815,6 +5825,7 @@ end
             app.setComponentPosition('ProcessdataButton', [232 12 185 43]);
             app.setComponentPosition('OpenButton', [282 12 136 40]);
             app.setComponentPosition('InspectRunButton', [282 60 136 40]);
+            app.setComponentPosition('EditRunButton', [282 108 136 40]);
         end
 
         function applyTextOnlyMainPanelLayout(app)
@@ -5827,12 +5838,14 @@ end
             app.setComponentPosition('ProcessdataButton', [232 12 185 43]);
             app.setComponentPosition('OpenButton', [282 12 136 40]);
             app.setComponentPosition('InspectRunButton', [282 60 136 40]);
+            app.setComponentPosition('EditRunButton', [282 108 136 40]);
         end
 
         function applyImageMainPanelLayout(app)
             app.setComponentPosition('ProjectInformationLabel', [8 361 410 240]);
             app.setComponentPosition('OpenButton', [282 12 136 40]);
             app.setComponentPosition('InspectRunButton', [282 60 136 40]);
+            app.setComponentPosition('EditRunButton', [282 108 136 40]);
         end
 
         function resetMainPanelState(app)
@@ -5849,6 +5862,7 @@ end
             app.setComponentVisible('AddprocessorButton', 'off');
             app.setComponentVisible('ProcessdataButton', 'off');
             app.setComponentVisible('InspectRunButton', 'off');
+            app.setComponentVisible('EditRunButton', 'off');
             app.setComponentVisible('OpenButton', 'off');
 
             app.clearAxesIfPresent('UIAxes');
@@ -5876,6 +5890,7 @@ end
             app.AddprocessorButton.Visible='off';
             app.ProcessdataButton.Visible='off';
             app.InspectRunButton.Visible='off';
+            app.EditRunButton.Visible='off';
             app.OpenButton.Visible='off';
             cla( app.UIAxes);
             app.UIAxes.Visible='off';
@@ -6470,6 +6485,8 @@ end
                 app.ProjectsPanel.Title='Pipeline run';
                 app.InspectRunButton.Visible='on';
                 app.InspectRunButton.Text='Review run...';
+                app.EditRunButton.Visible='on';
+                app.EditRunButton.Text='Edit run...';
                 app.OpenButton.Visible='on';
                 app.OpenButton.Text='New run from this...';
 
@@ -6484,6 +6501,7 @@ end
                     t=[t 'Execution: ' runMode newline];
                     t=[t 'Status: ' runStatus newline newline];
                     t=[t 'Review run opens the immutable execution record and artifacts.' newline];
+                    t=[t 'Edit run reopens this run configuration for rerun/update.' newline];
                     t=[t 'New run from this opens the pipeline editor with these parameters as a starting point.' newline newline];
                     if isprop(runObj,'description') && ~isempty(runObj.description)
                         t=[t 'Description: ' char(string(runObj.description)) newline newline];
@@ -8693,6 +8711,32 @@ end
             end
         end
 
+        % Button pushed function: EditRunButton
+        function EditRunButtonPushed(app, event) %#ok<INUSD>
+            if numel(app.Tree.SelectedNodes)==0
+                return;
+            end
+            if ~strcmp(app.Tree.SelectedNodes.Tag,'ProjectpipelineRun')
+                return;
+            end
+            arg = app.Tree.SelectedNodes.UserData;
+            projIdx = arg(1);
+            runIdx = arg(2);
+
+            projVar = app.Data.Project{projIdx};
+            shallowObj = evalin('base', projVar);
+            if ~isfield(shallowObj.processing,'pipelineRun') || runIdx > numel(shallowObj.processing.pipelineRun)
+                return;
+            end
+            runObj = shallowObj.processing.pipelineRun(runIdx);
+            try
+                app.openPipelineEditorWithProgress(shallowObj, runObj, 'Opening run for editing...', 'EditExistingRun', true);
+                RefreshtreewindowMenuSelected(app, []);
+            catch ME
+                uialert(app.DetecDivUIFigure, ME.message, 'Pipeline run editor error', 'Icon', 'warning');
+            end
+        end
+
         function openPipelineRunLog(app, projIdx, runIdx)
             try
                 [runObj, shallowObj] = getProjectPipelineRun(app, projIdx, runIdx);
@@ -10468,6 +10512,13 @@ end
             app.InspectRunButton.Visible = 'off';
             app.InspectRunButton.Position = [283 321 134 37];
             app.InspectRunButton.Text = 'Review run';
+
+            % Create EditRunButton
+            app.EditRunButton = uibutton(app.ProjectsPanel, 'push');
+            app.EditRunButton.ButtonPushedFcn = createCallbackFcn(app, @EditRunButtonPushed, true);
+            app.EditRunButton.Visible = 'off';
+            app.EditRunButton.Position = [283 277 134 37];
+            app.EditRunButton.Text = 'Edit run';
 
             % Create OpenButton
             app.OpenButton = uibutton(app.ProjectsPanel, 'push');

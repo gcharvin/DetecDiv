@@ -231,7 +231,13 @@ classdef pipeline2 < matlab.apps.AppBase
                     end
                 end
                 loadRunIntoUi(app, runObj);
-                markCurrentRunAsSeed(app, runObj);
+                if ~isfield(opts, 'editExistingRun') || ~logical(opts.editExistingRun)
+                    markCurrentRunAsSeed(app, runObj);
+                else
+                    app.CurrentRunIsSeed = false;
+                    app.CurrentRunSourceId = '';
+                    setRuntimeStatus(app, sprintf('Editing existing run: %s\nRun/Save updates this run configuration.', char(string(runObj.runId))));
+                end
             end
             applyStartupRuntimeOptions(app, opts);
             setRuntimeModeUnlocked(app, (~isempty(runObj) && isa(runObj, 'pipelineRun')) || opts.unlockRuntime);
@@ -240,7 +246,7 @@ classdef pipeline2 < matlab.apps.AppBase
         function [opts, positionalArgs] = parseStartupRuntimeOptions(app, varargin) %#ok<INUSD>
             opts = struct('inputMode', '', 'lockInputMode', false, 'lockReason', '', ...
                 'projectPath', '', 'rawDataPath', '', 'unlockRuntime', false, ...
-                'batchPrototype', false, 'modal', false);
+                'batchPrototype', false, 'modal', false, 'editExistingRun', false);
             positionalArgs = {};
             i = 1;
             while i <= numel(varargin)
@@ -274,6 +280,9 @@ classdef pipeline2 < matlab.apps.AppBase
                             end
                         case {'unlockruntime','newrun','runtimeunlocked'}
                             opts.unlockRuntime = logicalStartupOption(app, value);
+                        case {'editexistingrun','editrun','updaterun'}
+                            opts.editExistingRun = logicalStartupOption(app, value);
+                            opts.unlockRuntime = opts.unlockRuntime || opts.editExistingRun;
                         case {'batchprototype','prototype','prototypeconfig','configureprototype'}
                             opts.batchPrototype = logicalStartupOption(app, value);
                             opts.unlockRuntime = opts.unlockRuntime || opts.batchPrototype;
@@ -14246,6 +14255,10 @@ classdef pipeline2 < matlab.apps.AppBase
                     if isfield(ctx.run, 'projectPath')
                         setRuntimeValuePreserveParse(app, 'projectPath', ctx.run.projectPath);
                     end
+                    inputMode = runtimeInputModeFromRunContext(app, ctx);
+                    if ~isempty(inputMode)
+                        setRuntimeValuePreserveParse(app, 'inputSourceMode', inputMode);
+                    end
                     if isfield(ctx.run, 'executionTarget') && isstruct(app.HubFieldHandles) && ...
                             isfield(app.HubFieldHandles, 'executionTarget') && isvalid(app.HubFieldHandles.executionTarget)
                         target = char(string(ctx.run.executionTarget));
@@ -14275,6 +14288,7 @@ classdef pipeline2 < matlab.apps.AppBase
             if ~wasSuspended
                 updateRuntimeResourceInventory(app);
             end
+            updateRuntimeInputStates(app);
             if logical(refreshUi)
                 refreshModuleTabs(app);
                 refreshValidationReport(app);
@@ -14300,6 +14314,50 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
             catch
                 app.RunButton.Text = 'Run !';
+            end
+        end
+
+        function mode = runtimeInputModeFromRunContext(app, ctx)
+            mode = '';
+            if ~isstruct(ctx) || ~isfield(ctx, 'run') || ~isstruct(ctx.run)
+                return;
+            end
+            if isfield(ctx.run, 'inputSourceMode') && ~isempty(ctx.run.inputSourceMode)
+                mode = normalizeStartupInputMode(app, ctx.run.inputSourceMode);
+                return;
+            end
+            if isfield(ctx.run, 'inputMode') && ~isempty(ctx.run.inputMode)
+                mode = normalizeStartupInputMode(app, ctx.run.inputMode);
+                return;
+            end
+            if isfield(ctx.run, 'inputSource') && ~isempty(ctx.run.inputSource)
+                mode = runtimeInputModeFromInputSource(app, ctx.run.inputSource);
+                if ~isempty(mode)
+                    return;
+                end
+            end
+            if isfield(ctx.run, 'useExistingProjectSources') && logicalStartupOption(app, ctx.run.useExistingProjectSources)
+                mode = 'existing_rois';
+                return;
+            end
+            if isfield(ctx.run, 'rawDataPath') && ~isempty(strtrim(char(string(ctx.run.rawDataPath))))
+                mode = 'raw_dataloader';
+            end
+        end
+
+        function mode = runtimeInputModeFromInputSource(app, value) %#ok<INUSD>
+            mode = '';
+            txt = lower(strtrim(char(string(value))));
+            if isempty(txt)
+                return;
+            end
+            if any(strcmp(txt, {'raw','raw_data','raw_dataloader'})) || ...
+                    contains(txt, 'dataloader') || contains(txt, 'raw') || contains(txt, 'pipeline start')
+                mode = 'raw_dataloader';
+                return;
+            end
+            if any(strcmp(txt, {'project','existing','existing_rois'})) || contains(txt, 'existing')
+                mode = 'existing_rois';
             end
         end
 
