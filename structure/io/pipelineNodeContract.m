@@ -701,6 +701,35 @@ function contract = enrichContractFromPackage(contract, node)
                 end
                 contract.resources.out = outs;
                 contract.summary = 'CellposeSAM-like classifier: outputs segmentation masks, probability channels, or both.';
+            case 'deeplab_pixel_classification'
+                outputType = normalizeOutputMode(getNestedParam(node, {'outputType','outputMode'}, 'segmentation'), ...
+                    {'segmentation','proba','probability','both'}, 'segmentation');
+                if strcmp(outputType, 'probability')
+                    outputType = 'proba';
+                end
+                contract.parameters.static = unique([contract.parameters.static deeplabPixelExecutionStaticKeys()], 'stable');
+                contract.requirements.roi.channelsMin = max(contract.requirements.roi.channelsMin, 1);
+                contract.capabilities.outputsMasks = any(strcmp(outputType, {'segmentation','both'}));
+                contract.capabilities.outputsChannels = any(strcmp(outputType, {'proba','both'}));
+                contract.capabilities.roiMasks = contract.capabilities.outputsMasks;
+                contract.capabilities.roiChannels = contract.capabilities.outputsChannels;
+                contract.capabilities.roiDataSeries = false;
+                contract.capabilities.outputsDataSeries = false;
+                contract.binding.mode = 'singleChannel';
+                contract.binding.exactCount = 1;
+                contract.binding.resolveAt = 'design';
+                contract.out = portDef('roiList', 'roiList', true, 'edge');
+                outs = resourceDef();
+                if any(strcmp(outputType, {'segmentation','both'}))
+                    contract.out(end+1) = portDef('masks', 'maskSet', true, 'edge');
+                    outs(end+1) = resourceDef('mask', 'segmentation', 'segmentation', 'outputName', 'masks', 'outputName', false, 'roiMasks'); %#ok<AGROW>
+                end
+                if any(strcmp(outputType, {'proba','both'}))
+                    contract.out(end+1) = portDef('channels', 'channelSet', false, 'edge');
+                    outs(end+1) = resourceDef('channel', 'probability', 'probability', 'probabilityOutputName', 'channels', 'probabilityOutputName', false, 'roiChannel'); %#ok<AGROW>
+                end
+                contract.resources.out = outs;
+                contract.summary = 'DeepLab v3+ pixel classifier: outputs segmentation masks, probability channels, or both.';
             case 'cnn_lstm'
                 outputMode = normalizeOutputMode(getNestedParam(node, {'outputMode'}, 'lstm_only'), ...
                     {'lstm_only','cnn_only','both'}, 'lstm_only');
@@ -732,7 +761,7 @@ function contract = enrichContractFromPackage(contract, node)
                 contract.summary = 'CNN/LSTM classifier: outputs LSTM classification, CNN-only classification, or both depending on outputMode.';
         end
 
-        if classifierProducesMasks(pkgName, funcName) && ~strcmp(pkgName, 'cellposesam')
+        if classifierProducesMasks(pkgName, funcName) && ~any(strcmp(pkgName, {'cellposesam','deeplab_pixel_classification'}))
             contract.capabilities.outputsMasks = true;
             contract.capabilities.outputsChannels = true;
             contract.capabilities.roiMasks = true;
@@ -1522,6 +1551,15 @@ function keys = cnnLstmExecutionStaticKeys()
         keys = spec.staticKeys;
     catch
         keys = {'outputMode','executionEnvironment'};
+    end
+end
+
+function keys = deeplabPixelExecutionStaticKeys()
+    try
+        spec = deeplab_pixel_classification.executionSpec();
+        keys = spec.staticKeys;
+    catch
+        keys = {'outputType','executionEnvironment'};
     end
 end
 

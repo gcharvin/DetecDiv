@@ -17,6 +17,7 @@ frames = [];
 channels = [];
 gpu = false;
 outputName = '';
+probabilityOutputName = '';
 
 if isfield(ctx, 'sel') && isstruct(ctx.sel)
     if isfield(ctx.sel, 'frames'), frames = ctx.sel.frames; end
@@ -30,28 +31,207 @@ if isfield(ctx, 'names') && isstruct(ctx.names) && isfield(ctx.names, 'outputNam
 elseif isfield(ctx, 'params') && isstruct(ctx.params) && isfield(ctx.params, 'outputName') && ~isempty(ctx.params.outputName)
     outputName = char(string(ctx.params.outputName));
 end
+if isfield(ctx, 'params') && isstruct(ctx.params) && ...
+        isfield(ctx.params, 'probabilityOutputName') && ~isempty(ctx.params.probabilityOutputName)
+    probabilityOutputName = char(string(ctx.params.probabilityOutputName));
+end
 
 classif = applyExecutionParams(classif, ctx, outputName);
-
-args = {};
-if ~isempty(frames)
-    args = [args, {'Frames', frames}]; %#ok<AGROW>
-end
-if ~isempty(channels)
-    args = [args, {'Channel', normalizeChannelArg(channels)}]; %#ok<AGROW>
-end
-args = [args, {'Exec', double(gpu)}];
 
 if isempty(classifier)
     classifier = classif.loadClassifier('force');
 end
 
-[data, image] = classifyPixelDeeplabNetFun(roiobj, classif, classifier, args{:});
+[data, image] = classifyDeepLabPixel(roiobj, classif, classifier, frames, channels, gpu, outputName, probabilityOutputName);
 
 out.data = data;
 out.image = image;
 out.patch = struct();
 out.status = "OK";
+end
+
+function [data, image] = classifyDeepLabPixel(roiobj, classif, classifier, frames, channels, gpu, outputName, probabilityOutputName)
+if isempty(classifier)
+    error('deeplab_pixel_classification:MissingClassifier', 'No DeepLab classifier network is available.');
+end
+if isempty(outputName)
+    outputName = char(string(classif.strid));
+end
+if isempty(probabilityOutputName)
+    probabilityOutputName = [outputName '_prob'];
+end
+
+if isempty(roiobj.image)
+    roiobj.load;
+end
+image = roiobj.image;
+if isempty(image)
+    error('deeplab_pixel_classification:EmptyROI', 'ROI image is empty.');
+end
+
+data = roiobj.data;
+if isempty(data)
+    roiobj.data = dataseries;
+    data = roiobj.data;
+end
+
+pix = roiobj.findChannelID(normalizeChannelArg(channels));
+if iscell(pix)
+    pix = cell2mat(pix);
+end
+if isempty(pix)
+    error('deeplab_pixel_classification:InputChannelNotFound', 'Input channel not found.');
+end
+
+if isempty(frames)
+    frames = 1:size(image, 4);
+else
+    frames = intersect(double(frames(:))', 1:size(image, 4));
+end
+if isempty(frames)
+    return;
+end
+
+outputType = 'segmentation';
+try
+    if isprop(classif, 'outputType') && ~isempty(classif.outputType)
+        outputType = normalizeOutputType(classif.outputType);
+    end
+catch
+end
+wantSegmentation = any(strcmp(outputType, {'segmentation','both'}));
+wantProbability = any(strcmp(outputType, {'proba','probability','both'}));
+
+net = classifier;
+inputSize = [];
+try
+    inputSize = net.Layers(1).InputSize(1:2);
+catch
+end
+
+nY = size(image, 1);
+nX = size(image, 2);
+nF = numel(frames);
+inputStack = zeros(nY, nX, 3, nF, 'uint8');
+for i = 1:nF
+    frameIdx = frames(i);
+    tmp = roiobj.preProcessROIData(pix, frameIdx, []);
+    if size(tmp, 3) == 1
+        tmp = repmat(tmp, [1 1 3]);
+    elseif size(tmp, 3) > 3
+        tmp = tmp(:, :, 1:3);
+    end
+    inputStack(:, :, :, i) = uint8(max(0, min(255, round(255 * mat2gray(tmp)))));
+end
+if ~isempty(inputSize) && (size(inputStack, 1) ~= inputSize(1) || size(inputStack, 2) ~= inputSize(2))
+    inputForNet = imresize(inputStack, inputSize);
+else
+    inputForNet = inputStack;
+end
+
+execEnv = "cpu";
+if gpu
+    execEnv = "gpu";
+end
+[~, scores] = semanticseg(inputForNet, net, 'ExecutionEnvironment', execEnv);
+
+if size(scores, 1) ~= nY || size(scores, 2) ~= nX
+    scores = resizeScoreStack(scores, [nY nX]);
+end
+
+if wantSegmentation
+    segChannel = ensureChannel(roiobj, ['results_' outputName], 'uint16', [1 1 1], [0 0 0], true);
+    image = roiobj.image;
+    [~, maxIdx] = max(scores, [], 3);
+    image(:, :, segChannel, frames) = uint16(maxIdx);
+end
+
+if wantProbability
+    probChannel = ensureChannel(roiobj, probabilityOutputName, 'uint16', [1 1 1], [1 1 1], false);
+    image = roiobj.image;
+    if size(scores, 3) >= 2
+        prob = max(scores(:, :, 2:end, :), [], 3);
+    else
+        prob = scores(:, :, 1, :);
+    end
+    prob = min(max(prob, 0), 1);
+    image(:, :, probChannel, frames) = uint16(round(65535 * prob));
+end
+end
+
+function scoresOut = resizeScoreStack(scores, targetSize)
+nC = size(scores, 3);
+nF = size(scores, 4);
+scoresOut = zeros(targetSize(1), targetSize(2), nC, nF, 'like', scores);
+for f = 1:nF
+    for c = 1:nC
+        scoresOut(:, :, c, f) = imresize(scores(:, :, c, f), targetSize);
+    end
+end
+end
+
+function pixid = ensureChannel(roiobj, channelName, typeName, rgb, intensity, indexedFlag)
+pixid = roiobj.findChannelID(channelName);
+if iscell(pixid)
+    pixid = cell2mat(pixid);
+end
+if isempty(pixid)
+    base = zeros(size(roiobj.image, 1), size(roiobj.image, 2), 1, size(roiobj.image, 4), typeName);
+    roiobj.addChannel(base, channelName, rgb, intensity);
+    pixid = roiobj.findChannelID(channelName);
+    if iscell(pixid)
+        pixid = cell2mat(pixid);
+    end
+end
+if isempty(pixid)
+    error('deeplab_pixel_classification:OutputChannelCreateFailed', ...
+        'Unable to create output channel "%s".', channelName);
+end
+configureDisplay(roiobj, pixid(1), rgb, intensity, indexedFlag);
+pixid = pixid(1);
+end
+
+function configureDisplay(roiobj, pixid, rgb, intensity, indexedFlag)
+try
+    if ~isprop(roiobj, 'channelid') || isempty(roiobj.channelid) || ~isprop(roiobj, 'display') || ~isstruct(roiobj.display)
+        return;
+    end
+    logIdx = roiobj.channelid(pixid);
+    nLog = max(double(logIdx), numel(roiobj.display.channel));
+    roiobj.display = ensureDisplayVector(roiobj.display, 'selectedchannel', nLog, 0);
+    roiobj.display = ensureDisplayVector(roiobj.display, 'indexed', nLog, 0);
+    roiobj.display = ensureDisplayVector(roiobj.display, 'alpha', nLog, 1);
+    roiobj.display = ensureDisplayVector(roiobj.display, 'contour', nLog, 0);
+    roiobj.display = ensureDisplayVector(roiobj.display, 'width', nLog, 0);
+    roiobj.display = ensureDisplayMatrix(roiobj.display, 'rgb', nLog, [1 1 1]);
+    roiobj.display = ensureDisplayMatrix(roiobj.display, 'intensity', nLog, [1 1 1]);
+    roiobj.display.selectedchannel(logIdx) = true;
+    roiobj.display.indexed(logIdx) = logical(indexedFlag);
+    roiobj.display.rgb(logIdx, :) = rgb;
+    roiobj.display.intensity(logIdx, :) = intensity;
+    if indexedFlag
+        roiobj.display.contour(logIdx) = 1;
+        roiobj.display.alpha(logIdx) = 0.35;
+        roiobj.display.width(logIdx) = 1.5;
+    end
+catch
+end
+end
+
+function display = ensureDisplayVector(display, fieldName, nRows, defaultValue)
+if ~isfield(display, fieldName) || isempty(display.(fieldName))
+    display.(fieldName) = repmat(defaultValue, 1, nRows);
+elseif numel(display.(fieldName)) < nRows
+    display.(fieldName)(end+1:nRows) = defaultValue;
+end
+end
+
+function display = ensureDisplayMatrix(display, fieldName, nRows, defaultRow)
+if ~isfield(display, fieldName) || isempty(display.(fieldName))
+    display.(fieldName) = repmat(defaultRow, nRows, 1);
+elseif size(display.(fieldName), 1) < nRows
+    display.(fieldName)(end+1:nRows, :) = repmat(defaultRow, nRows - size(display.(fieldName), 1), 1);
+end
 end
 
 function classif = applyExecutionParams(classif, ctx, outputName)
@@ -110,11 +290,11 @@ outputType = strrep(outputType, '-', '_');
 outputType = strrep(outputType, ' ', '_');
 switch outputType
     case {'probability','probabilities','probability_map','proba'}
-        outputType = 'proba';
+        outputType = 'probability';
     case {'seg','mask','masks','semantic','semantic_segmentation'}
         outputType = 'segmentation';
-    case {'post','postprocess','postprocessing'}
-        outputType = 'postprocessing';
+    case {'both','segmentation_and_probability','all'}
+        outputType = 'both';
     otherwise
         if isempty(outputType)
             outputType = 'segmentation';

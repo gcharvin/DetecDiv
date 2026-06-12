@@ -600,6 +600,13 @@ function ROIpreprocessing(roiobj, classif, outputName)
         return;
     end
 
+    try
+        if isprop(classif, 'classifierPkg') && strcmpi(char(string(classif.classifierPkg)), 'deeplab_pixel_classification')
+            return;
+        end
+    catch
+    end
+
     gfp = roiobj.image;
     nY  = size(gfp,1);
     nX  = size(gfp,2);
