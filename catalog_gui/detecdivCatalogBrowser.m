@@ -60,8 +60,8 @@ function varargout = detecdivCatalogBrowser(varargin)
     uimenu(fileMenu, 'Text', 'Close', 'Separator', 'on', ...
         'MenuSelectedFcn', @(src, event) onCloseFigure(src, event));
 
-    mainGrid = uigridlayout(fig, [4 1]);
-    mainGrid.RowHeight = {116, 28, '1x', 38};
+    mainGrid = uigridlayout(fig, [5 1]);
+    mainGrid.RowHeight = {116, 28, 32, '1x', 38};
     mainGrid.ColumnWidth = {'1x'};
     mainGrid.Padding = [14 14 14 14];
     mainGrid.RowSpacing = 10;
@@ -285,8 +285,29 @@ function varargout = detecdivCatalogBrowser(varargin)
         'FontColor', [0.15 0.15 0.15]);
     statusLabel.Layout.Row = 2;
 
+    tableActionGrid = uigridlayout(mainGrid, [1 7]);
+    tableActionGrid.Layout.Row = 3;
+    tableActionGrid.ColumnWidth = {140, 120, 130, '1x', 100, 100, 100};
+    tableActionGrid.ColumnSpacing = 8;
+    tableActionGrid.Padding = [0 0 0 0];
+
+    sendToBatchButton = uibutton(tableActionGrid, 'push', 'Text', 'Send to Batch...', ...
+        'Enable', 'off', 'ButtonPushedFcn', @onSendToBatch);
+    sendToBatchButton.Layout.Row = 1;
+    sendToBatchButton.Layout.Column = 1;
+
+    selectVisibleButton = uibutton(tableActionGrid, 'push', 'Text', 'Select Visible', ...
+        'Enable', 'off', 'ButtonPushedFcn', @onSelectAllVisible);
+    selectVisibleButton.Layout.Row = 1;
+    selectVisibleButton.Layout.Column = 2;
+
+    deselectVisibleButton = uibutton(tableActionGrid, 'push', 'Text', 'Deselect Visible', ...
+        'Enable', 'off', 'ButtonPushedFcn', @onDeselectAllVisible);
+    deselectVisibleButton.Layout.Row = 1;
+    deselectVisibleButton.Layout.Column = 3;
+
     bodyGrid = uigridlayout(mainGrid, [1 2]);
-    bodyGrid.Layout.Row = 3;
+    bodyGrid.Layout.Row = 4;
     bodyGrid.ColumnWidth = {'3.3x', '1x'};
     bodyGrid.ColumnSpacing = 12;
     bodyGrid.Padding = [0 0 0 0];
@@ -303,7 +324,7 @@ function varargout = detecdivCatalogBrowser(varargin)
     sideGrid = uigridlayout(bodyGrid, [3 1]);
     sideGrid.Layout.Row = 1;
     sideGrid.Layout.Column = 2;
-    sideGrid.RowHeight = {24, '1x', 128};
+    sideGrid.RowHeight = {24, '1x', 84};
     sideGrid.RowSpacing = 8;
     sideGrid.Padding = [0 0 0 0];
 
@@ -315,11 +336,10 @@ function varargout = detecdivCatalogBrowser(varargin)
         'FontName', 'Consolas');
     detailsArea.Layout.Row = 2;
 
-    actionGrid = uigridlayout(sideGrid, [4 3]);
+    actionGrid = uigridlayout(sideGrid, [3 3]);
     actionGrid.Layout.Row = 3;
     actionGrid.ColumnWidth = {'1x', '1x', '1x'};
-    actionGrid.RowHeight = {32, 32, 32, 0};
-    actionGrid.RowSpacing = 8;
+    actionGrid.RowHeight = {32, 32, 0};
     actionGrid.ColumnSpacing = 8;
     actionGrid.Padding = [0 0 0 0];
 
@@ -360,26 +380,11 @@ function varargout = detecdivCatalogBrowser(varargin)
 
     batchNewButton = uibutton(actionGrid, 'push', 'Text', 'Batch New...', ...
         'ButtonPushedFcn', @onBatchNewProjects);
-    batchNewButton.Layout.Row = 4;
+    batchNewButton.Layout.Row = 3;
     batchNewButton.Layout.Column = 2;
 
-    sendToBatchButton = uibutton(actionGrid, 'push', 'Text', 'Send to Batch...', ...
-        'Enable', 'off', 'ButtonPushedFcn', @onSendToBatch);
-    sendToBatchButton.Layout.Row = 3;
-    sendToBatchButton.Layout.Column = 1;
-
-    selectVisibleButton = uibutton(actionGrid, 'push', 'Text', 'Select Visible', ...
-        'Enable', 'off', 'ButtonPushedFcn', @onSelectAllVisible);
-    selectVisibleButton.Layout.Row = 3;
-    selectVisibleButton.Layout.Column = 2;
-
-    deselectVisibleButton = uibutton(actionGrid, 'push', 'Text', 'Deselect Visible', ...
-        'Enable', 'off', 'ButtonPushedFcn', @onDeselectAllVisible);
-    deselectVisibleButton.Layout.Row = 3;
-    deselectVisibleButton.Layout.Column = 3;
-
     footerGrid = uigridlayout(mainGrid, [1 5]);
-    footerGrid.Layout.Row = 4;
+    footerGrid.Layout.Row = 5;
     footerGrid.ColumnWidth = {'1x', 90, 180, 90, 100};
     footerGrid.ColumnSpacing = 8;
     footerGrid.Padding = [0 0 0 0];
@@ -3250,7 +3255,8 @@ end
 
 function refs = localBuildBatchRefsFromSelection(projects, sourceMode, entityMode, catalogSettings, hubSettings)
     refs = struct('kind', {}, 'displayName', {}, 'projectMatPath', {}, 'hubProjectId', {}, ...
-        'datasetId', {}, 'rootPath', {}, 'localPathHint', {}, 'catalogId', {}, 'sourceMode', {}, 'entityMode', {});
+        'datasetId', {}, 'rootPath', {}, 'localPathHint', {}, 'catalogId', {}, 'sourceMode', {}, 'entityMode', {}, ...
+        'batchSelected', {});
     if isempty(projects) || ~istable(projects) || ~ismember('batch_selected', projects.Properties.VariableNames)
         return;
     end
@@ -3273,7 +3279,8 @@ function ref = localBuildBatchRef(row, sourceMode, entityMode, catalogSettings, 
         'localPathHint', '', ...
         'catalogId', '', ...
         'sourceMode', char(string(sourceMode)), ...
-        'entityMode', char(string(entityMode)));
+        'entityMode', char(string(entityMode)), ...
+        'batchSelected', true);
 
     if strcmp(localNormalizeEntityMode(entityMode), 'raw_datasets')
         ref.kind = ternaryText(strcmp(sourceMode, 'hub'), 'hub_dataset', 'local_dataset');

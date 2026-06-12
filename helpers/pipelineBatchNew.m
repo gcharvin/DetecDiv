@@ -52,6 +52,14 @@ function refs = localNormalizeRefs(refs)
     if ~isstruct(refs)
         error('pipelineBatchNew:InvalidRefs', 'Selected refs must be a struct array.');
     end
+    refs = refs(:);
+    for i = 1:numel(refs)
+        if ~isfield(refs, 'batchSelected') || isempty(refs(i).batchSelected)
+            refs(i).batchSelected = true;
+        else
+            refs(i).batchSelected = logical(refs(i).batchSelected);
+        end
+    end
 end
 
 function ref = localNormalizePipelineRef(ref)
@@ -113,14 +121,21 @@ function tbl = localRefsToTable(items)
         ref(i) = string(localStructField(items(i), 'catalogId'));
         projectMatPath(i) = string(localStructField(items(i), 'projectMatPath'));
         datasetId(i) = string(localStructField(items(i), 'datasetId'));
-        selected(i) = logical(localStructField(items(i), 'batchSelected'));
+        selectedValue = localStructField(items(i), 'batchSelected', true);
+        if isempty(selectedValue)
+            selectedValue = true;
+        end
+        selected(i) = logical(selectedValue);
     end
     tbl = table(selected, kind, name, source, ref, projectMatPath, datasetId, ...
         'VariableNames', {'Selected', 'Kind', 'Name', 'Source', 'Ref', 'ProjectMatPath', 'DatasetId'});
 end
 
-function value = localStructField(in, fieldName)
-    value = '';
+function value = localStructField(in, fieldName, defaultValue)
+    if nargin < 3
+        defaultValue = '';
+    end
+    value = defaultValue;
     if isstruct(in) && isfield(in, fieldName) && ~isempty(in.(fieldName))
         value = in.(fieldName);
     end

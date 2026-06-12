@@ -1927,7 +1927,8 @@ function ctx = seedContextFromProject(ctx)
     end
 
     srcLevel = getProjectInputSourceLevel(ctx);
-    if srcLevel >= 2
+    keepExplicitSmokeRois = hasExplicitSmokeRoiList(ctx);
+    if srcLevel >= 2 && ~keepExplicitSmokeRois
         ctx.roiList = collectRoisForContextSelection(ctx, getfielddefault(ctx,'fovList',[]));
     elseif (~isfield(ctx,'roiList') || isempty(ctx.roiList)) && shouldSeedFromProjectInputSource(ctx)
         ctx.roiList = collectRoisForContextSelection(ctx, getfielddefault(ctx,'fovList',[]));
@@ -1940,6 +1941,26 @@ function ctx = seedContextFromProject(ctx)
     if srcLevel >= 4 && (~isfield(ctx,'dataSeries') || isempty(ctx.dataSeries))
         ctx.dataSeries = collectDataSeriesFromRois(getfielddefault(ctx,'roiList',[]));
     end
+end
+
+function tf = hasExplicitSmokeRoiList(ctx)
+tf = false;
+try
+    if ~isfield(ctx,'roiList') || isempty(ctx.roiList) || ~isa(ctx.roiList, 'roi')
+        return;
+    end
+    if isfield(ctx,'smokeTest') && isstruct(ctx.smokeTest) && ...
+            isfield(ctx.smokeTest,'enabled') && logical(ctx.smokeTest.enabled)
+        tf = true;
+        return;
+    end
+    if isfield(ctx,'run') && isstruct(ctx.run) && isfield(ctx.run,'smokeTest') && ...
+            isstruct(ctx.run.smokeTest) && isfield(ctx.run.smokeTest,'enabled') && logical(ctx.run.smokeTest.enabled)
+        tf = true;
+    end
+catch
+    tf = false;
+end
 end
 
 function tf = shouldSeedFromProjectInputSource(ctx)

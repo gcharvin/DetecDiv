@@ -43,26 +43,34 @@ function batchSpec = detecdiv_batch_builder(selectedRefs, varargin)
     headerGrid.Padding = [0 0 0 0];
     headerGrid.ColumnSpacing = 10;
 
-    uilabel(headerGrid, 'Text', 'Batch name', 'FontWeight', 'bold').Layout.Row = 1;
+    batchNameLabel = uilabel(headerGrid, 'Text', 'Batch name', 'FontWeight', 'bold');
+    batchNameLabel.Layout.Row = 1;
+    batchNameLabel.Layout.Column = 1;
     batchNameEdit = uieditfield(headerGrid, 'text', 'Value', batchSpec.name);
     batchNameEdit.Layout.Row = 1;
     batchNameEdit.Layout.Column = [2 3];
 
-    uilabel(headerGrid, 'Text', 'Execution', 'FontWeight', 'bold').Layout.Row = 1;
+    executionLabel = uilabel(headerGrid, 'Text', 'Execution', 'FontWeight', 'bold');
+    executionLabel.Layout.Row = 1;
+    executionLabel.Layout.Column = 4;
     executionDropDown = uidropdown(headerGrid, ...
         'Items', {'Local', 'Hub'}, ...
         'ItemsData', {'local', 'hub'}, ...
         'Value', batchSpec.execution.target, ...
         'Enable', 'off');
     executionDropDown.Layout.Row = 1;
-    executionDropDown.Layout.Column = [4 5];
+    executionDropDown.Layout.Column = [5 6];
 
-    uilabel(headerGrid, 'Text', 'Pipeline', 'FontWeight', 'bold').Layout.Row = 2;
+    pipelineTitleLabel = uilabel(headerGrid, 'Text', 'Pipeline', 'FontWeight', 'bold');
+    pipelineTitleLabel.Layout.Row = 2;
+    pipelineTitleLabel.Layout.Column = 1;
     pipelineLabel = uilabel(headerGrid, 'Text', localPipelineText(batchSpec), 'Interpreter', 'none');
     pipelineLabel.Layout.Row = 2;
     pipelineLabel.Layout.Column = [2 5];
 
-    uilabel(headerGrid, 'Text', 'Prototype', 'FontWeight', 'bold').Layout.Row = 3;
+    prototypeTitleLabel = uilabel(headerGrid, 'Text', 'Prototype', 'FontWeight', 'bold');
+    prototypeTitleLabel.Layout.Row = 3;
+    prototypeTitleLabel.Layout.Column = 1;
     prototypeLabel = uilabel(headerGrid, 'Text', localPrototypeText(batchSpec), 'Interpreter', 'none');
     prototypeLabel.Layout.Row = 3;
     prototypeLabel.Layout.Column = [2 5];

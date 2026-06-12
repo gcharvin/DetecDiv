@@ -14,6 +14,11 @@ function out = mergePipelineRuntimeConfig(baseConfig, overrideConfig)
         return;
     end
 
+    if ~isscalar(baseConfig) || ~isscalar(overrideConfig)
+        out = overrideConfig;
+        return;
+    end
+
     out = baseConfig;
     overrideFields = fieldnames(overrideConfig);
     for i = 1:numel(overrideFields)
@@ -22,7 +27,7 @@ function out = mergePipelineRuntimeConfig(baseConfig, overrideConfig)
         if isempty(value)
             continue;
         end
-        if isfield(out, name) && isstruct(out.(name)) && isstruct(value)
+        if isfield(out, name) && isstruct(out.(name)) && isstruct(value) && isscalar(out.(name)) && isscalar(value)
             out.(name) = mergePipelineRuntimeConfig(out.(name), value);
         else
             out.(name) = value;
