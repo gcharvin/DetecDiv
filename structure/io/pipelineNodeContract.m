@@ -223,7 +223,7 @@ function contract = defaultContractForNode(node)
                 binding.selectorKeys = [maskNameKeys, scoreNameKeys];
                 binding.resolveAt = 'run';
                 resources.in = computeMetricsInputResources(maskSlotCount, scoreSlotCount);
-                resources.out = resourceDef('dataSeries', 'metrics', 'dataSeries', 'outputName', 'dataSeries', 'outputName', false, 'roiDataSeries');
+                resources.out = resourceDef('dataSeries', 'metrics', 'channel_quantification', '', 'dataSeries', '', false, 'roiDataSeries');
                 summary = 'Computes mask-linked fluorescence metrics from selected ROI image or mask channels.';
             else
             selectors.channelsParam = 'channels';
@@ -1234,7 +1234,7 @@ function resources = computeMetricsInputResources(maskCount, scoreCount)
     end
     for i = 1:scoreCount
         key = sprintf('channel%d_name', i);
-        resources(end+1) = resourceDef('channel', 'score_roi_image', key, key, 'channels', key, true, ''); %#ok<AGROW>
+        resources(end+1) = resourceDef('channel', 'score_roi_image', key, key, 'channels', key, false, ''); %#ok<AGROW>
     end
 end
 

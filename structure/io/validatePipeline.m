@@ -2924,6 +2924,13 @@ function name = resolveResourceOutputName(node, spec)
     end
     if isempty(name)
         type = lower(char(string(getField(spec, 'type', ''))));
+        symbol = char(string(getField(spec, 'symbol', '')));
+        if strcmp(type, 'dataseries') && ~isempty(symbol) && ~strcmpi(symbol, 'dataSeries') && ~contains(symbol, '.')
+            name = symbol;
+        end
+    end
+    if isempty(name)
+        type = lower(char(string(getField(spec, 'type', ''))));
         port = lower(char(string(getField(spec, 'port', ''))));
         transfer = lower(char(string(getField(spec, 'transfer', ''))));
         if strcmp(type, 'channel') && strcmp(port, 'channels') && any(strcmp(transfer, {'sourceinventory','imagestoroi'}))
