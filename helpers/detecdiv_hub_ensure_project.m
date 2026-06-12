@@ -12,13 +12,20 @@ function [shallowObj, ref, status] = detecdiv_hub_ensure_project(shallowObj, var
 
     opts = localParse(varargin{:});
     status = struct('ok', false, 'createdOrQueued', false, 'message', '', ...
-        'job', struct(), 'attemptedPath', '', 'refreshedAt', char(datetime('now')));
+        'job', struct(), 'attemptedPath', '', 'registration', struct(), ...
+        'registrationError', '', 'refreshedAt', char(datetime('now')));
 
     ref = detecdiv_hub_project_ref(shallowObj, opts.hub);
     if ~isempty(ref.project_id)
         shallowObj = localStoreHubRef(shallowObj, ref, status);
         status.ok = true;
         status.message = 'Hub project id already resolved.';
+        return;
+    end
+
+    [registered, ref, status] = localTryDirectRegistration(ref, opts, status);
+    if registered
+        shallowObj = localStoreHubRef(shallowObj, ref, status);
         return;
     end
 
@@ -177,15 +184,84 @@ function opts = localParse(varargin)
     end
 end
 
+function [registered, ref, status] = localTryDirectRegistration(ref, opts, status)
+    registered = false;
+    try
+        [project, info] = detecdiv_hub_register_project_path(ref, 'Hub', opts.hub, 'Visibility', opts.Visibility);
+        status.registration = info;
+        if isstruct(project) && isfield(project, 'id') && ~isempty(project.id)
+            ref = localApplyProjectDetail(ref, project);
+            status.ok = true;
+            status.createdOrQueued = true;
+            status.message = 'Hub project registered directly.';
+            registered = true;
+        end
+    catch ME
+        status.registrationError = ME.message;
+    end
+end
+
+function ref = localApplyProjectDetail(ref, project)
+    ref.project_id = localFieldText(project, 'id');
+    key = localFieldText(project, 'project_key');
+    if ~isempty(key)
+        ref.project_key = key;
+    end
+    name = localFieldText(project, 'project_name');
+    if ~isempty(name)
+        ref.project_name = name;
+    end
+    [serverMatPath, serverDirPath] = localServerProjectPathsFromDetail(project);
+    if ~isempty(serverMatPath)
+        ref.project_mat_path = serverMatPath;
+    end
+    if ~isempty(serverDirPath)
+        ref.project_dir_path = serverDirPath;
+    end
+    ref.project_root_path = localPathRoot(ref.project_mat_path, ref.project_dir_path);
+    ref.hubManaged = true;
+    ref.source = 'hub direct registration';
+end
+
+function [matPath, dirPath] = localServerProjectPathsFromDetail(project)
+    matPath = '';
+    dirPath = '';
+    if ~isstruct(project) || ~isfield(project, 'locations') || isempty(project.locations)
+        return;
+    end
+    locs = localAsStructArray(project.locations);
+    if isempty(locs)
+        return;
+    end
+    idx = 1;
+    for i = 1:numel(locs)
+        try
+            if isfield(locs(i), 'is_preferred') && logical(locs(i).is_preferred)
+                idx = i;
+                break;
+            end
+        catch
+        end
+    end
+    matPath = localFieldText(locs(idx), 'project_mat_path');
+    dirPath = localFieldText(locs(idx), 'project_dir_path');
+end
+
 function serverPath = localProjectIndexPath(ref, hub)
     serverPath = '';
     candidates = {};
+    % The fallback indexer needs the folder that contains the .mat project
+    % file. In DetecDiv projects the data folder is often a sibling of the
+    % .mat file, so indexing only the project folder can miss the project.
     if isfield(ref, 'local_project_mat_path') && ~isempty(ref.local_project_mat_path)
         [parentPath, ~, ~] = fileparts(char(string(ref.local_project_mat_path)));
-        candidates{end+1} = parentPath; %#ok<AGROW>
+        candidates{end+1} = parentPath;
     end
     if isfield(ref, 'local_project_root_path') && ~isempty(ref.local_project_root_path)
-        candidates{end+1} = ref.local_project_root_path; %#ok<AGROW>
+        candidates{end+1} = ref.local_project_root_path;
+    end
+    if isfield(ref, 'local_project_dir_path') && ~isempty(ref.local_project_dir_path)
+        candidates{end+1} = ref.local_project_dir_path;
     end
     for i = 1:numel(candidates)
         translated = localTranslatePathForServer(candidates{i}, hub);
@@ -220,6 +296,45 @@ function user = localHubUser(hub)
             user = char(string(hub.userKey));
         end
     catch
+    end
+end
+
+function txt = localFieldText(S, name)
+    txt = '';
+    try
+        if isstruct(S) && isfield(S, name) && ~isempty(S.(name))
+            txt = char(string(S.(name)));
+        end
+    catch
+    end
+end
+
+function rows = localAsStructArray(data)
+    if isstruct(data)
+        rows = data;
+    elseif iscell(data)
+        rows = [data{:}];
+    else
+        rows = struct([]);
+    end
+end
+
+function rootPath = localPathRoot(varargin)
+    rootPath = '';
+    for i = 1:nargin
+        candidate = char(string(varargin{i}));
+        if isempty(candidate)
+            continue;
+        end
+        try
+            [parent1, ~] = fileparts(candidate);
+            [parent2, ~] = fileparts(parent1);
+            if ~isempty(parent2)
+                rootPath = parent2;
+                return;
+            end
+        catch
+        end
     end
 end
 

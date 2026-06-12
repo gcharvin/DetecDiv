@@ -51,7 +51,7 @@ function [job, runObj] = detecdiv_hub_submit_pipeline_run(runObj, shallowObj, va
     payload.requested_by = opts.requestedBy;
     payload.requested_from_host = localRunStage('resolve local host name', @() localHostName());
     payload.project_ref = localRunStage('build project reference payload', @() localBuildProjectRef(ref, opts.hub));
-    payload.pipeline_ref = localRunStage('build pipeline reference payload', @() localBuildPipelineRef(runObj, ref, opts.hub));
+    payload.pipeline_ref = localRunStage('build pipeline reference payload', @() localBuildPipelineRef(runObj, ref, opts.hub, shallowObj));
     payload.run_request = localRunStage('build run request payload', @() localBuildRunRequest(runObj, opts.hub, ref));
     payload.execution = localRunStage('build execution payload', @() localBuildExecution(opts));
 
@@ -367,9 +367,11 @@ function projectRef = localBuildProjectRef(ref, hub)
     projectRef.project_mat_path = localTranslatePathForServer(ref.project_mat_path, ref, hub);
 end
 
-function pipelineRef = localBuildPipelineRef(runObj, ref, hub)
+function pipelineRef = localBuildPipelineRef(runObj, ref, hub, shallowObj)
     pipelineRef = struct();
     pipelineRef.pipeline_key = '';
+    pipelineRef.pipeline_bundle_uri = '';
+    pipelineRef.export_manifest_uri = '';
     pipelineRef.pipeline_json_path = '';
     try
         pipelineRef.pipeline_key = char(string(runObj.templateId));
@@ -389,6 +391,109 @@ function pipelineRef = localBuildPipelineRef(runObj, ref, hub)
             pipelineRef.pipeline_json_path = localPipelineJsonPath(runObj.templatePath, ref, hub);
         catch
         end
+    end
+    try
+        bundleRef = localExportRunPipelineBundle(runObj, ref, hub, shallowObj);
+        if ~isempty(bundleRef.pipeline_json_path)
+            pipelineRef.pipeline_bundle_uri = bundleRef.pipeline_bundle_uri;
+            pipelineRef.export_manifest_uri = bundleRef.export_manifest_uri;
+            pipelineRef.pipeline_json_path = bundleRef.pipeline_json_path;
+        end
+    catch ME
+        warning('detecdiv_hub_submit_pipeline_run:PipelineBundleExport', ...
+            'Unable to export server-visible pipeline bundle; falling back to template path: %s', ME.message);
+    end
+end
+
+function bundleRef = localExportRunPipelineBundle(runObj, ref, hub, shallowObj)
+    bundleRef = struct('pipeline_bundle_uri', '', 'export_manifest_uri', '', 'pipeline_json_path', '');
+    runPath = char(string(runObj.path));
+    if isempty(runPath)
+        return;
+    end
+    bundlePath = fullfile(runPath, 'hub_pipeline_bundle');
+    manifestPath = fullfile(bundlePath, 'export_manifest.json');
+    pipelineJsonPath = fullfile(bundlePath, 'pipeline', 'pipeline.json');
+    if exist(manifestPath, 'file') == 2 && exist(pipelineJsonPath, 'file') == 2
+        bundleRef.pipeline_bundle_uri = localTranslatePathForServer(bundlePath, ref, hub);
+        bundleRef.export_manifest_uri = localTranslatePathForServer(manifestPath, ref, hub);
+        bundleRef.pipeline_json_path = localTranslatePathForServer(pipelineJsonPath, ref, hub);
+        return;
+    end
+    sourcePath = localRunPipelineSourcePath(runObj, ref, hub);
+    if isempty(sourcePath)
+        return;
+    end
+    pipelineExport(sourcePath, bundlePath, ...
+        'projectObj', shallowObj, ...
+        'overwrite', true);
+    bundleRef.pipeline_bundle_uri = localTranslatePathForServer(bundlePath, ref, hub);
+    bundleRef.export_manifest_uri = localTranslatePathForServer(manifestPath, ref, hub);
+    bundleRef.pipeline_json_path = localTranslatePathForServer(pipelineJsonPath, ref, hub);
+end
+
+function sourcePath = localRunPipelineSourcePath(runObj, ref, hub)
+    sourcePath = '';
+    candidates = {};
+    try
+        if isstruct(runObj.pipelineRef) && isfield(runObj.pipelineRef, 'path') && ~isempty(runObj.pipelineRef.path)
+            candidates{end+1} = char(string(runObj.pipelineRef.path)); %#ok<AGROW>
+        end
+    catch
+    end
+    try
+        if ~isempty(runObj.templatePath)
+            candidates{end+1} = char(string(runObj.templatePath)); %#ok<AGROW>
+        end
+    catch
+    end
+    try
+        if isstruct(runObj.ctx) && isfield(runObj.ctx, 'pipelineRef') && isstruct(runObj.ctx.pipelineRef) && ...
+                isfield(runObj.ctx.pipelineRef, 'path') && ~isempty(runObj.ctx.pipelineRef.path)
+            candidates{end+1} = char(string(runObj.ctx.pipelineRef.path)); %#ok<AGROW>
+        end
+    catch
+    end
+    for i = 1:numel(candidates)
+        sourcePath = localReadablePipelinePath(candidates{i}, ref, hub);
+        if ~isempty(sourcePath)
+            return;
+        end
+    end
+    sourcePath = '';
+end
+
+function pathOut = localReadablePipelinePath(pathIn, ref, hub)
+    pathOut = char(string(pathIn));
+    if isempty(pathOut)
+        return;
+    end
+    if exist(pathOut, 'dir') == 7 || exist(pathOut, 'file') == 2
+        return;
+    end
+    try
+        [mappedPath, mapped] = detecdiv_paths_map_module_path(pathOut, localPathMappingCtx(ref, hub), 'local');
+        if mapped && (exist(mappedPath, 'dir') == 7 || exist(mappedPath, 'file') == 2)
+            pathOut = mappedPath;
+            return;
+        end
+    catch
+    end
+    pathOut = '';
+end
+
+function tf = localPathInside(pathValue, folderValue)
+    tf = false;
+    try
+        pathValue = char(java.io.File(char(string(pathValue))).getCanonicalPath());
+        folderValue = char(java.io.File(char(string(folderValue))).getCanonicalPath());
+        pathValue = lower(strrep(pathValue, '/', filesep));
+        folderValue = lower(strrep(folderValue, '/', filesep));
+        if ~endsWith(folderValue, filesep)
+            folderValue = [folderValue filesep];
+        end
+        tf = startsWith(pathValue, folderValue);
+    catch
     end
 end
 

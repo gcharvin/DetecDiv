@@ -40,7 +40,7 @@ function ref = detecdiv_hub_project_ref(shallowObj, hub)
         ref.source = keySource;
     end
 
-    if ref.hubManaged && isempty(ref.project_id)
+    if isempty(ref.project_id) && (~isempty(ref.project_key) || ~isempty(ref.project_name))
         try
             row = localLookupProject(ref, hub);
             if ~isempty(row)
