@@ -2,6 +2,10 @@ function [paramout, dataout, image]=core(param,roiobj,frames)
 
 image=[];
 
+if nargin < 3
+    frames = [];
+end
+
 if nargin==0
     listout=listROIDataID("classification"); % lists all data that were generated using a classifier
 

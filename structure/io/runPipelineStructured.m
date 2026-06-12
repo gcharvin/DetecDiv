@@ -1148,6 +1148,11 @@ function ctx = applyNodeParams(ctx, node)
     % attach node params to ctx
     ctx.params = node.params;
     ctx = updateGlobalSelectionFromNodeParams(ctx, node);
+    if supportsInheritedFrames(lower(char(string(getfielddefault(node,'type',''))))) ...
+            && isfield(node.params,'frames') && ~isempty(node.params.frames) ...
+            && ~(isnumeric(node.params.frames) && isequal(node.params.frames, -1))
+        ctx.frames = normalizeIndexVectorLocal(node.params.frames);
+    end
 
     % map known dataloading nodes to ctx fields
     switch lower(char(string(node.type)))
@@ -1221,6 +1226,19 @@ end
 
 function tf = supportsInheritedFrames(nodeType)
 tf = any(strcmp(nodeType, {'dataloader','roiidentify','roipattern','roimanual','roigrid','roitracked','roiextract','processor','classifier'}));
+end
+
+function p = getRuntimeNodeParams(ctx, node, paramField)
+p = getfielddefault(node, 'params', struct());
+try
+    if isstruct(ctx) && isfield(ctx, paramField) && isstruct(ctx.(paramField))
+        p = ctx.(paramField);
+    elseif isstruct(ctx) && isfield(ctx, 'params') && isstruct(ctx.params)
+        p = ctx.params;
+    end
+catch
+    p = getfielddefault(node, 'params', struct());
+end
 end
 
 function policy = normalizeGpuPolicy(policy)
@@ -1616,7 +1634,7 @@ function ctx = executeProcessorNode(node, ctx)
     end
 
     pkgName = resolveNodePackage(node);
-    p = getfielddefault(node, 'params', struct());
+    p = getRuntimeNodeParams(ctx, node, 'processor');
     ensureProcessorPackagePath(node, p, ctx);
     refProc = resolveProcessorReference(node, p, ctx);
     procObj = process('', 'pipeline_processor', randi(1e9));
@@ -1941,7 +1959,7 @@ function ctx = executeClassifierNode(node, ctx)
     end
 
     pkgName = resolveNodePackage(node);
-    p = getfielddefault(node, 'params', struct());
+    p = getRuntimeNodeParams(ctx, node, 'classifier');
     refClassi = resolveClassifierReference(node, p, ctx);
     clsObj = classi('', 'pipeline_classifier', randi(1e9), 'InitTraining', false);
     clsObj.strid = char(string(node.id));

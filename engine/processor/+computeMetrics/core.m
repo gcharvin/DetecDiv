@@ -3,6 +3,10 @@ function [paramout, dataout, imageout] = core(param, roiobj, frames) %#ok<INUSD>
 
 imageout = [];
 
+if nargin < 3
+    frames = [];
+end
+
 if nargin == 0
     paramout = computeMetrics.setparam(struct());
     dataout = [];
@@ -14,6 +18,15 @@ disp('computeMetrics processing...');
 
 if numel(roiobj.image) == 0
     roiobj.load;
+end
+
+requestedFrames = frames;
+frames = normalizeFramesSelection(frames, size(roiobj.image, 4));
+fprintf('computeMetrics frames: roi=%s requested=%s applied=%s count=%d/%d\n', ...
+    roiIdText(roiobj), frameSelectionText(requestedFrames), frameSelectionText(frames), numel(frames), size(roiobj.image, 4));
+if isfield(paramout, 'debugFrames') && ~isempty(paramout.debugFrames) && logical(paramout.debugFrames)
+    fprintf('[computeMetrics.core] file=%s roi=%s normalizedFrames=%s count=%d imageFrames=%d\n', ...
+        which('computeMetrics.core'), roiIdText(roiobj), mat2str(frames), numel(frames), size(roiobj.image, 4));
 end
 
 dataout = roiobj.data;
@@ -37,7 +50,7 @@ for i = 1:maskCount
         continue;
     end
 
-    dataout = computeMaskGeometry(dataout, roiobj, paramout, i, cha(1));
+    dataout = computeMaskGeometry(dataout, roiobj, paramout, i, cha(1), frames);
 end
 
 channelsExtract = {};
@@ -61,7 +74,70 @@ if isempty(channelsExtract)
     return;
 end
 
-dataout = computeChannelQuantification(dataout, roiobj, paramout, channelsExtract, channelsName);
+dataout = computeChannelQuantification(dataout, roiobj, paramout, channelsExtract, channelsName, frames);
+end
+
+function frames = normalizeFramesSelection(frames, nFrames)
+if nargin < 2 || isempty(nFrames) || ~isfinite(nFrames) || nFrames < 1
+    nFrames = 1;
+end
+
+if isempty(frames) || (isnumeric(frames) && all(frames == -1))
+    frames = 1:nFrames;
+    return;
+end
+
+if islogical(frames)
+    frames = find(frames);
+elseif iscell(frames)
+    try
+        frames = double(cell2mat(frames(:)));
+    catch
+        frames = [];
+    end
+elseif ~isnumeric(frames)
+    try
+        frames = double(frames(:));
+    catch
+        frames = [];
+    end
+end
+
+frames = double(frames(:).');
+frames = frames(isfinite(frames) & frames >= 1 & frames <= nFrames);
+frames = unique(round(frames), 'stable');
+if isempty(frames)
+    frames = 1:nFrames;
+end
+end
+
+function txt = frameSelectionText(frames)
+if isempty(frames)
+    txt = 'all';
+    return;
+end
+if isnumeric(frames) || islogical(frames)
+    frames = double(frames(:).');
+    if isempty(frames)
+        txt = 'all';
+    elseif numel(frames) <= 12
+        txt = mat2str(frames);
+    elseif isContiguousFrames(frames)
+        txt = sprintf('%g:%g', frames(1), frames(end));
+    else
+        txt = sprintf('[%g %g ... %g %g] (%d frames)', frames(1), frames(2), frames(end-1), frames(end), numel(frames));
+    end
+else
+    try
+        txt = frameSelectionText(double(frames(:).'));
+    catch
+        txt = char(string(frames));
+    end
+end
+end
+
+function tf = isContiguousFrames(frames)
+tf = numel(frames) > 1 && all(diff(frames) == 1);
 end
 
 function paramout = normalizeComputeMetricsParams(param)
@@ -105,10 +181,10 @@ end
 paramout.BrightestPixels = max(1, round(numericScalar(paramout.BrightestPixels, 20)));
 end
 
-function dataout = computeMaskGeometry(dataout, roiobj, paramout, maskIndex, cha)
+function dataout = computeMaskGeometry(dataout, roiobj, paramout, maskIndex, cha, frames)
 maskName = paramout.(sprintf('mask%d_name', maskIndex));
 maskLabel = paramout.(sprintf('mask%d_label', maskIndex));
-maskImage = roiobj.image(:,:,cha,:);
+maskImage = roiobj.image(:,:,cha,frames);
 maskLabelSafe = makeSafeVariableName(maskLabel);
 groupId = ['mask_quantification_' maskLabelSafe];
 
@@ -169,8 +245,8 @@ dataout(cc).userData.mask_index_variable = varNames{1};
 dataout(cc).plotGroup = {[] [] [] [] [] unique(plotgroup)};
 end
 
-function dataout = computeChannelQuantification(dataout, roiobj, paramout, channelsExtract, channelsName)
-im = roiobj.image;
+function dataout = computeChannelQuantification(dataout, roiobj, paramout, channelsExtract, channelsName, frames)
+im = roiobj.image(:,:,:,frames);
 nFrames = size(im, 4);
 maskCount = paramout.maskChannelCount;
 N = paramout.BrightestPixels;
@@ -195,7 +271,7 @@ for m = 1:maskCount
 
     idxCol = cell(nFrames, 1);
     for t = 1:nFrames
-        idxCol{t} = maskInstanceLabels(roiobj.image(:,:,maskChannel,t));
+        idxCol{t} = maskInstanceLabels(im(:,:,maskChannel,t));
     end
     varNames{end+1} = ['MaskIdx_' maskLabelSafe]; %#ok<AGROW>
     columns{end+1} = idxCol; %#ok<AGROW>
@@ -204,7 +280,7 @@ for m = 1:maskCount
 
     metricByChannel = cell(1, numel(channelsExtract));
     for i = 1:numel(channelsExtract)
-        metricByChannel{i} = fluorescenceForMask(roiobj.image, maskChannel, channelsExtract{i}, N);
+        metricByChannel{i} = fluorescenceForMask(im, maskChannel, channelsExtract{i}, N);
         channelName = channelsName{i};
         metricSpecs = { ...
             'Mean', 'Mean', false; ...
