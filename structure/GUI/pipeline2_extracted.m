@@ -114,8 +114,10 @@ classdef pipeline2 < matlab.apps.AppBase
         IsPipelineDirty logical = false
         CurrentRun = []
         CurrentRunPath char = ''
+        IsRunDirty logical = false
         CurrentRunIsSeed logical = false
         CurrentRunSourceId char = ''
+        LastStatusDetail char = ''
         CurrentProject = []
         CurrentProjectVarName char = ''
         RuntimeDataSeriesCache struct = struct('key', '', 'names', {{}}, 'sampledRoiCount', 0, 'sampledFovCount', 0);
@@ -934,6 +936,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
             catch
             end
+            markRunDirty(app, true);
             d = openRuntimeProgress(app, 'Runtime modules', 'Updating selected modules...');
             cleanupObj = onCleanup(@()closeRuntimeProgress(app, d)); %#ok<NASGU>
             updateRuntimeProgress(app, d, 'Redrawing pipeline graph...');
@@ -1122,7 +1125,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 app.TypeDropDown.Value = moduleType;
                 updateSubtypeChoices(app);
             end
-            app.RuninformationhereLabel.Text = ['Next module to add: ' app.AvailableModules{row,1}];
+            setRuntimeStatus(app, ['Next module to add: ' app.AvailableModules{row,1}]);
         end
 
         function changeSelectedModuleType(app, nodeType, pkg, paramsPatch)
@@ -2436,7 +2439,7 @@ classdef pipeline2 < matlab.apps.AppBase
             if bindingCount > 0
                 detail = sprintf('%s (%d symbolic binding(s) updated)', detail, bindingCount);
             end
-            app.RuninformationhereLabel.Text = detail;
+            setRuntimeStatus(app, detail);
         end
 
         function [edge, ok, msg] = preferredGraphEdge(app, srcNode, dstNode)
@@ -3463,6 +3466,7 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function runtimeFieldChanged(app, key, value)
             app.RuntimeValues.(key) = char(string(value));
+            markRunDirty(app, true);
             if strcmp(char(string(key)), 'inputSourceMode')
                 d = openRuntimeProgress(app, 'Runtime source', 'Switching runtime source...');
                 cleanupObj = onCleanup(@()closeRuntimeProgress(app, d)); %#ok<NASGU>
@@ -4157,6 +4161,7 @@ classdef pipeline2 < matlab.apps.AppBase
         function runtimeRunIdChanged(app, value)
             runId = matlab.lang.makeValidName(strtrim(char(string(value))));
             app.RuntimeValues.runId = runId;
+            markRunDirty(app, true);
             try
                 app.TemplateidEditField.Value = runId;
             catch
@@ -4873,7 +4878,7 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function setRuntimeStatus(app, textValue)
             try
-                app.RuninformationhereLabel.Text = char(string(textValue));
+                updatePipelineRunStatusBar(app, char(string(textValue)));
             catch
             end
         end
@@ -5462,9 +5467,9 @@ classdef pipeline2 < matlab.apps.AppBase
                 populateStaticParametersDialogBody(app, fig.UserData.bodyPanel, nodeId);
                 resizeStaticParametersDialog(app, fig, app.Data.nodes(idx));
                 if added == 0 && updated == 0
-                    app.RuninformationhereLabel.Text = ['Module defaults already current: ' nodeId];
+                    setRuntimeStatus(app, ['Module defaults already current: ' nodeId]);
                 else
-                    app.RuninformationhereLabel.Text = sprintf('Module defaults refreshed for %s: %d field(s) added.', nodeId, added);
+                    setRuntimeStatus(app, sprintf('Module defaults refreshed for %s: %d field(s) added.', nodeId, added));
                 end
             catch ME
                 uialert(app.UIFigure, ME.message, 'Refresh module defaults', 'Icon', 'error');
@@ -7572,6 +7577,7 @@ classdef pipeline2 < matlab.apps.AppBase
         function setRuntimeNodeParams(app, nodeId, params)
             key = runtimeNodeKey(app, nodeId);
             app.RuntimeNodeParams.(key) = params;
+            markRunDirty(app, true);
         end
 
         function clearRuntimeNodeParam(app, nodeId, param)
@@ -10867,6 +10873,42 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
+        function [confirmed, ctx] = confirmSmokeTestLaunch(app, ctx, smokeInfo)
+            confirmed = false;
+            if nargin < 2 || ~isstruct(ctx) || isempty(ctx)
+                ctx = struct();
+            end
+            if nargin < 3 || ~isstruct(smokeInfo)
+                smokeInfo = struct();
+            end
+            d = [];
+            try
+                d = uiprogressdlg(app.UIFigure, 'Title', 'Preparing smoke test confirmation', ...
+                    'Message', 'Collecting effective smoke test parameters...', ...
+                    'Indeterminate', 'on', 'Cancelable', 'off');
+            catch
+            end
+            try
+                summaryText = formatSmokeTestConfirmationText(app, ctx, smokeInfo);
+            catch ME
+                try, close(d); catch, end
+                rethrow(ME);
+            end
+            try, close(d); catch, end
+
+            try
+                choice = uiconfirm(app.UIFigure, summaryText, 'Confirm smoke test', ...
+                    'Options', {'Run smoke test', 'Cancel'}, ...
+                    'DefaultOption', 'Cancel', ...
+                    'CancelOption', 'Cancel', ...
+                    'Icon', 'question');
+                confirmed = strcmp(choice, 'Run smoke test');
+            catch
+                answer = questdlg(summaryText, 'Confirm smoke test', 'Run smoke test', 'Cancel', 'Cancel');
+                confirmed = strcmp(answer, 'Run smoke test');
+            end
+        end
+
         function txt = formatRunConfirmationText(app, ctx)
             lines = {};
             lines{end+1} = 'Verify the effective run parameters before launching.';
@@ -10884,6 +10926,34 @@ classdef pipeline2 < matlab.apps.AppBase
             lines{end+1} = ['FOVs: ' formatSelectionForConfirm(app, getNestedFieldLocal(app, ctx, {'sel','fovs'}, []))];
             lines{end+1} = ['Frames: ' formatSelectionForConfirm(app, getNestedFieldLocal(app, ctx, {'sel','frames'}, []))];
             lines{end+1} = ['ROIs: ' formatSelectionForConfirm(app, getNestedFieldLocal(app, ctx, {'sel','rois'}, []))];
+            lines{end+1} = '';
+            lines{end+1} = ['Nodes: ' formatRunNodeListForConfirm(app, getNestedFieldLocal(app, ctx, {'run','selectedNodes'}, {}))];
+            nodeConstraints = formatNodeConstraintSummary(app, getNestedFieldLocal(app, ctx, {'run','nodeParams'}, struct()));
+            lines = [lines nodeConstraints]; %#ok<AGROW>
+            txt = strjoin(lines, newline);
+        end
+
+        function txt = formatSmokeTestConfirmationText(app, ctx, smokeInfo)
+            lines = {};
+            lines{end+1} = 'Verify the effective smoke test parameters before launching.';
+            lines{end+1} = '';
+            lines{end+1} = ['Smoke ROI: ' safeTextLocal(app, getField(app, smokeInfo, 'label', ''), '(unresolved)')];
+            lines{end+1} = ['Smoke FOV: ' formatSelectionForConfirm(app, getNestedFieldLocal(app, ctx, {'sel','fovs'}, []))];
+            lines{end+1} = ['Smoke frames: ' formatSelectionForConfirm(app, getNestedFieldLocal(app, ctx, {'sel','frames'}, []))];
+            lines{end+1} = ['Smoke ROIs: ' formatSelectionForConfirm(app, getNestedFieldLocal(app, ctx, {'sel','rois'}, []))];
+            roiId = safeTextLocal(app, getField(app, smokeInfo, 'roiId', ''), '');
+            if ~isempty(strtrim(roiId))
+                lines{end+1} = ['Smoke ROI id: ' roiId]; %#ok<AGROW>
+            end
+            lines{end+1} = '';
+            lines{end+1} = 'Smoke output persistence: memory only; final ROI/H5/dataseries saves are disabled.';
+            lines{end+1} = '';
+            lines{end+1} = ['Run id: ' safeTextLocal(app, getField(app, ctx, 'runId', getRuntimeValue(app, 'runId')), '(auto)')];
+            lines{end+1} = ['Input source: ' safeTextLocal(app, getNestedFieldLocal(app, ctx, {'run','inputSource'}, inferRuntimeInputSource(app)), '')];
+            lines{end+1} = ['Input mode: ' runtimeInputModeLabel(app)];
+            lines{end+1} = ['Raw images: ' safeTextLocal(app, getNestedFieldLocal(app, ctx, {'run','rawDataPath'}, getRuntimeValue(app, 'rawDataPath')), '(none)')];
+            lines{end+1} = ['Project: ' safeTextLocal(app, getNestedFieldLocal(app, ctx, {'run','projectPath'}, getRuntimeValue(app, 'projectPath')), '(none)')];
+            lines{end+1} = ['Available FOVs: ' runtimeAvailableFovSummary(app)];
             lines{end+1} = '';
             lines{end+1} = ['Nodes: ' formatRunNodeListForConfirm(app, getNestedFieldLocal(app, ctx, {'run','selectedNodes'}, {}))];
             nodeConstraints = formatNodeConstraintSummary(app, getNestedFieldLocal(app, ctx, {'run','nodeParams'}, struct()));
@@ -11453,6 +11523,16 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             app.IsPipelineDirty = logical(isDirty);
             updatePipelineWindowTitle(app);
+            updatePipelineRunStatusBar(app);
+        end
+
+        function markRunDirty(app, isDirty)
+            if nargin < 2
+                isDirty = true;
+            end
+            app.IsRunDirty = logical(isDirty);
+            updatePipelineWindowTitle(app);
+            updatePipelineRunStatusBar(app);
         end
 
         function updatePipelineWindowTitle(app)
@@ -11460,11 +11540,68 @@ classdef pipeline2 < matlab.apps.AppBase
             if isempty(pipeName)
                 pipeName = defaultPipelineTemplateName(app);
             end
-            suffix = '';
+            pipeSuffix = '';
             if app.IsPipelineDirty
-                suffix = ' *';
+                pipeSuffix = '*';
             end
-            app.UIFigure.Name = [guiAppName(app) ' - ' pipeName suffix];
+            runName = currentRunDisplayName(app);
+            runSuffix = '';
+            if app.IsRunDirty || app.CurrentRunIsSeed
+                runSuffix = '*';
+            end
+            app.UIFigure.Name = sprintf('%s - Pipeline %s%s | Run %s%s', ...
+                guiAppName(app), pipeName, pipeSuffix, runName, runSuffix);
+        end
+
+        function updatePipelineRunStatusBar(app, detail)
+            if nargin >= 2 && ~isempty(detail)
+                app.LastStatusDetail = char(string(detail));
+            end
+            try
+                txt = formatPipelineRunStatusBar(app);
+                app.RuninformationhereLabel.Text = txt;
+            catch
+            end
+        end
+
+        function txt = formatPipelineRunStatusBar(app)
+            pipeName = strtrim(currentPipelineName(app));
+            if isempty(pipeName)
+                pipeName = defaultPipelineTemplateName(app);
+            end
+            pipeSuffix = '';
+            if app.IsPipelineDirty
+                pipeSuffix = '*';
+            end
+            runName = currentRunDisplayName(app);
+            runSuffix = '';
+            if app.IsRunDirty || app.CurrentRunIsSeed
+                runSuffix = '*';
+            end
+            txt = sprintf('Pipeline: %s%s | Run: %s%s', pipeName, pipeSuffix, runName, runSuffix);
+            detail = strtrim(char(string(app.LastStatusDetail)));
+            if ~isempty(detail)
+                txt = [txt newline detail];
+            end
+        end
+
+        function runName = currentRunDisplayName(app)
+            runName = '(none)';
+            try
+                if ~isempty(app.CurrentRun) && isa(app.CurrentRun, 'pipelineRun') && ...
+                        ~isempty(app.CurrentRun.runId)
+                    runName = char(string(app.CurrentRun.runId));
+                    return;
+                end
+            catch
+            end
+            try
+                runId = runtimeRunIdFromUi(app);
+                if ~isempty(strtrim(runId))
+                    runName = runId;
+                end
+            catch
+            end
         end
 
         function name = guiAppName(app) %#ok<INUSD>
@@ -11489,14 +11626,46 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
                 [targetPath, targetName] = resolvePipelineSaveTarget(app, file, pth);
             end
+            d = [];
             try
+                try
+                    d = uiprogressdlg(app.UIFigure, 'Title', 'Save pipeline', ...
+                        'Message', 'Preparing pipeline template save...', ...
+                        'Value', 0.05, 'Cancelable', 'off');
+                    drawnow limitrate nocallbacks;
+                catch
+                    d = [];
+                end
                 oldWorkspaceVar = app.CurrentPipelineWorkspaceVar;
+                try
+                    if ~isempty(d) && isvalid(d)
+                        d.Message = 'Building pipeline template object...';
+                        d.Value = 0.25;
+                        drawnow limitrate nocallbacks;
+                    end
+                catch
+                end
                 pipeObj = buildPipelineObject(app, targetPath, targetName);
+                try
+                    if ~isempty(d) && isvalid(d)
+                        d.Message = 'Writing pipeline JSON and module artifacts...';
+                        d.Value = 0.55;
+                        drawnow limitrate nocallbacks;
+                    end
+                catch
+                end
                 pipelineSave(pipeObj);
+                try
+                    if ~isempty(d) && isvalid(d)
+                        d.Message = 'Updating pipeline state...';
+                        d.Value = 0.85;
+                        drawnow limitrate nocallbacks;
+                    end
+                catch
+                end
                 app.CurrentPipeline = pipeObj;
                 app.CurrentPipelinePath = pipeObj.path;
                 assignCurrentPipelineToWorkspace(app, pipeObj, oldWorkspaceVar);
-                [runSaved, runJsonPath] = saveCurrentRunSnapshotIfProjectAvailable(app);
                 addRecentPipelinePath(app, fullfile(pipeObj.path, 'pipeline.json'));
                 markPipelineDirty(app, false);
                 ok = true;
@@ -11504,14 +11673,22 @@ classdef pipeline2 < matlab.apps.AppBase
                 if ~isempty(app.CurrentPipelineWorkspaceVar)
                     suffix = [' | workspace: ' app.CurrentPipelineWorkspaceVar];
                 end
-                msg = ['Pipeline saved: ' fullfile(pipeObj.path, 'pipeline.json') suffix];
-                if runSaved
-                    msg = [msg ' | run saved: ' runJsonPath];
+                msg = ['Pipeline saved: ' fullfile(pipeObj.path, 'pipeline.json') suffix ' | template only'];
+                try
+                    if ~isempty(d) && isvalid(d)
+                        d.Message = 'Pipeline template saved.';
+                        d.Value = 1;
+                        drawnow limitrate nocallbacks;
+                    end
+                catch
                 end
-                app.RuninformationhereLabel.Text = msg;
+                setRuntimeStatus(app, msg);
             catch ME
+                try, closeProgressDialog(app, d); catch, end
                 uialert(app.UIFigure, ME.message, 'Save pipeline', 'Icon', 'error');
+                return;
             end
+            try, closeProgressDialog(app, d); catch, end
         end
 
         function dialogPath = defaultSavePipelineDialogPath(app)
@@ -11760,7 +11937,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 loadPipelineFromObject(app, pipeObj);
                 addRecentPipelinePath(app, pipelineFile);
                 if ~isempty(app.CurrentPipelineWorkspaceVar)
-                    app.RuninformationhereLabel.Text = ['Pipeline loaded in workspace: ' app.CurrentPipelineWorkspaceVar];
+                    setRuntimeStatus(app, ['Pipeline loaded in workspace: ' app.CurrentPipelineWorkspaceVar]);
                 end
             catch ME
                 uialert(app.UIFigure, ME.message, 'Load recent pipeline', 'Icon', 'error');
@@ -11814,7 +11991,11 @@ classdef pipeline2 < matlab.apps.AppBase
             assignCurrentPipelineToWorkspace(app, pipeObj);
             app.CurrentRun = [];
             app.CurrentRunPath = '';
+            app.CurrentRunIsSeed = false;
+            app.CurrentRunSourceId = '';
             app.RuntimeNodeParams = struct();
+            markPipelineDirty(app, false);
+            markRunDirty(app, false);
             if ~logical(restoreLatestRun)
                 setRuntimeExecutionTarget(app, 'local');
             end
@@ -11858,7 +12039,7 @@ classdef pipeline2 < matlab.apps.AppBase
             applied = true;
             if logical(refreshUi)
                 try
-                    app.RuninformationhereLabel.Text = pipelineSessionStatusText(app, app.LastValidationOk, buildPipelineStruct(app));
+                    setRuntimeStatus(app, pipelineSessionStatusText(app, app.LastValidationOk, buildPipelineStruct(app)));
                 catch
                 end
             end
@@ -12669,7 +12850,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 setHubPasswordValue(app, '');
                 closeRuntimeProgress(app, d);
                 summaryText = formatHubStatusSummary(app, hubStatus);
-                app.RuninformationhereLabel.Text = ['Hub connected: ' summaryText];
+                setRuntimeStatus(app, ['Hub connected: ' summaryText]);
                 appendRunReport(app, 'Hub status: OK', struct('summary', hubStatus.summary));
                 try
                     uialert(app.UIFigure, ['Connected to DetecDiv Hub.' newline summaryText newline char(string(info.url))], ...
@@ -13240,10 +13421,36 @@ classdef pipeline2 < matlab.apps.AppBase
             ctx.store.eventLogPath = eventLogPath;
         end
 
-        function savePipelineRunAndProject(app, runObj)
+        function savePipelineRunAndProject(app, runObj, progressDlg, message, saveProject)
+            if nargin < 3
+                progressDlg = [];
+            end
+            if nargin < 4 || isempty(message)
+                message = 'Saving pipeline run...';
+            end
+            if nargin < 5 || isempty(saveProject)
+                saveProject = true;
+            end
+            updateRunSaveProgress(app, progressDlg, message);
             pipelineRunSave(runObj);
-            if ~isempty(app.CurrentProject) && isa(app.CurrentProject, 'shallow')
+            markRunDirty(app, false);
+            if logical(saveProject) && ~isempty(app.CurrentProject) && isa(app.CurrentProject, 'shallow')
+                updateRunSaveProgress(app, progressDlg, 'Saving project state...');
                 shallowSave(app.CurrentProject, 'shallowObj');
+            end
+        end
+
+        function updateRunSaveProgress(app, progressDlg, message) %#ok<INUSD>
+            try
+                if ~isempty(progressDlg) && isvalid(progressDlg)
+                    progressDlg.Message = char(string(message));
+                    drawnow limitrate nocallbacks;
+                end
+            catch
+            end
+            try
+                setRuntimeStatus(app, char(string(message)));
+            catch
             end
         end
 
@@ -13329,9 +13536,9 @@ classdef pipeline2 < matlab.apps.AppBase
             runObj = createOrUpdateCurrentRun(app, ctx, 'preflight', forceAs, requestedRunId);
             try
                 logRunEvent(app, runObj, 'Run parameters saved from pipeline2.', 'pipeline2');
-                savePipelineRunAndProject(app, runObj);
+                savePipelineRunAndProject(app, runObj, [], 'Saving run JSON...', false);
                 ok = true;
-                app.RuninformationhereLabel.Text = ['Run saved: ' fullfile(runObj.path, 'run.json')];
+                setRuntimeStatus(app, ['Run saved: ' fullfile(runObj.path, 'run.json') ' | run only']);
             catch ME
                 uialert(app.UIFigure, ME.message, 'Save run', 'Icon', 'error');
             end
@@ -13347,7 +13554,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 ctx = buildRunContext(app);
                 runObj = createOrUpdateCurrentRun(app, ctx, 'preflight');
                 logRunEvent(app, runObj, 'Run parameters saved with pipeline template.', 'pipeline2');
-                savePipelineRunAndProject(app, runObj);
+                savePipelineRunAndProject(app, runObj, [], 'Saving run JSON snapshot...', false);
                 runJsonPath = fullfile(runObj.path, 'run.json');
                 ok = true;
             catch ME
@@ -13729,7 +13936,7 @@ classdef pipeline2 < matlab.apps.AppBase
                         fclose(fid);
                     end
                 end
-                app.RuninformationhereLabel.Text = 'Stop requested. Waiting for the current safe point...';
+                setRuntimeStatus(app, 'Stop requested. Waiting for the current safe point...');
                 try
                     logRunEvent(app, app.CurrentRun, 'Local run cancellation requested from Run button.', 'pipeline2');
                 catch
@@ -13752,7 +13959,7 @@ classdef pipeline2 < matlab.apps.AppBase
             try
                 job = detecdiv_hub_cancel_pipeline_run(jobId);
                 updateCurrentRunFromHubJob(app, job);
-                app.RuninformationhereLabel.Text = formatHubRunStatusText(app, job, app.CurrentRun);
+                setRuntimeStatus(app, formatHubRunStatusText(app, job, app.CurrentRun));
                 appendRunReport(app, ['Hub cancel requested: ' char(string(getField(app, job, 'status', 'cancelling')))], job);
                 try
                     logRunEvent(app, app.CurrentRun, ['Hub run cancellation requested for job ' jobId '.'], 'pipeline2');
@@ -13762,7 +13969,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 statusText = char(string(getField(app, job, 'status', 'cancelling')));
                 if any(strcmpi(statusText, {'done','failed','cancelled'}))
                     stopActiveRunControl(app, terminalButtonText(app, statusText));
-                    app.RuninformationhereLabel.Text = formatHubRunStatusText(app, job, app.CurrentRun);
+                    setRuntimeStatus(app, formatHubRunStatusText(app, job, app.CurrentRun));
                 end
             catch ME
                 app.ActiveRunCancelRequested = false;
@@ -13825,7 +14032,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 job = detecdiv_hub_get_pipeline_run(jobId);
                 updateCurrentRunFromHubJob(app, job);
                 statusText = char(string(getField(app, job, 'status', 'unknown')));
-                app.RuninformationhereLabel.Text = formatHubRunStatusText(app, job, app.CurrentRun);
+                setRuntimeStatus(app, formatHubRunStatusText(app, job, app.CurrentRun));
                 if app.ActiveRunCancelRequested && any(strcmpi(statusText, {'queued','running'}))
                     app.RunButton.Text = 'Cancelling...';
                 elseif any(strcmpi(statusText, {'queued','running','cancelling'}))
@@ -13834,16 +14041,20 @@ classdef pipeline2 < matlab.apps.AppBase
                 if any(strcmpi(statusText, {'done','failed','cancelled'}))
                     terminalStatus = statusText;
                     stopActiveRunControl(app, terminalButtonText(app, terminalStatus));
-                    app.RuninformationhereLabel.Text = formatHubRunStatusText(app, job, app.CurrentRun);
+                    setRuntimeStatus(app, formatHubRunStatusText(app, job, app.CurrentRun));
                     appendRunReport(app, ['Hub run finished: ' terminalStatus], job);
-                    uialert(app.UIFigure, sprintf('Hub run %s finished with status: %s', jobId, terminalStatus), ...
-                        'Hub run finished', 'Icon', terminalAlertIcon(app, terminalStatus));
+                    if strcmpi(terminalStatus, 'done')
+                        showRunCompletedMessage(app);
+                    else
+                        uialert(app.UIFigure, sprintf('Hub run %s finished with status: %s', jobId, terminalStatus), ...
+                            'Hub run finished', 'Icon', terminalAlertIcon(app, terminalStatus));
+                    end
                 end
             catch ME
                 if showErrors
                     uialert(app.UIFigure, ME.message, 'Hub status failed', 'Icon', 'error');
                 else
-                    app.RuninformationhereLabel.Text = ['Hub status refresh failed: ' ME.message];
+                    setRuntimeStatus(app, ['Hub status refresh failed: ' ME.message]);
                 end
             end
         end
@@ -13851,9 +14062,9 @@ classdef pipeline2 < matlab.apps.AppBase
         function handleHubRunMonitorTimerError(app, evt)
             try
                 if isprop(evt, 'Data') && isa(evt.Data, 'MException')
-                    app.RuninformationhereLabel.Text = ['Hub monitor error: ' evt.Data.message];
+                    setRuntimeStatus(app, ['Hub monitor error: ' evt.Data.message]);
                 else
-                    app.RuninformationhereLabel.Text = 'Hub monitor error.';
+                    setRuntimeStatus(app, 'Hub monitor error.');
                 end
             catch
             end
@@ -13979,6 +14190,13 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
+        function showRunCompletedMessage(app)
+            try
+                uialert(app.UIFigure, 'Run completed sucessufully', 'Run completed', 'Icon', 'success');
+            catch
+            end
+        end
+
         function loadRunIntoUi(app, runObj, refreshUi)
             if nargin < 3 || isempty(refreshUi)
                 refreshUi = true;
@@ -14061,6 +14279,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 refreshModuleTabs(app);
                 refreshValidationReport(app);
             end
+            markRunDirty(app, false);
             try
                 runStatus = char(string(runObj.status));
                 hubStatus = '';
@@ -14073,7 +14292,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
                 if any(strcmpi(hubStatus, {'queued','running','cancelling'})) && ~isempty(hubJobIdFromRunOrJob(app, runObj, struct()))
                     startHubRunMonitor(app, runObj, struct('status', hubStatus));
-                    app.RuninformationhereLabel.Text = formatHubRunStatusText(app, struct('status', hubStatus), runObj);
+                    setRuntimeStatus(app, formatHubRunStatusText(app, struct('status', hubStatus), runObj));
                 elseif strcmpi(runStatus, 'cancelled') || strcmpi(hubStatus, 'cancelled')
                     app.RunButton.Text = 'Resume run';
                 else
@@ -14422,10 +14641,13 @@ classdef pipeline2 < matlab.apps.AppBase
             app.CurrentPipelineWorkspaceVar = '';
             app.CurrentRun = [];
             app.CurrentRunPath = '';
+            app.IsRunDirty = false;
             app.RoiManualSelectedRectangle = NaN;
             clearRoiManualPreviewHandles(app);
             setRuntimeModeUnlocked(app, false);
             refreshAfterModelChange(app);
+            markPipelineDirty(app, true);
+            markRunDirty(app, false);
         end
 
         function SavecurrentpipelineMenuSelected(app, event) %#ok<INUSD>
@@ -14524,15 +14746,19 @@ classdef pipeline2 < matlab.apps.AppBase
 
                 ctx = buildRunContext(app);
                 [ctxSmoke, smokeInfo] = buildSmokeRunContext(app, ctx);
+                [confirmedSmoke, ctxSmoke] = confirmSmokeTestLaunch(app, ctxSmoke, smokeInfo);
+                if ~confirmedSmoke
+                    setRuntimeStatus(app, 'Smoke test cancelled before launch.');
+                    return;
+                end
                 pipeObj = buildExecutablePipelineObject(app, app.CurrentPipelinePath, ctxSmoke);
 
                 runObj = createSmokePipelineRun(app, ctxSmoke, smokeInfo, 'preflight');
                 logRunEvent(app, runObj, ['Smoke test requested: ' smokeInfo.label], 'pipeline2');
-                savePipelineRunAndProject(app, runObj);
 
                 try
                     d = uiprogressdlg(app.UIFigure, 'Title', 'Pipeline smoke test', ...
-                        'Message', ['Preparing single-ROI smoke test: ' smokeInfo.label], ...
+                        'Message', ['Saving smoke test run state: ' smokeInfo.label], ...
                         'Indeterminate', 'on', 'Cancelable', 'on');
                     try
                         if isprop(d, 'CancelText')
@@ -14543,6 +14769,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 catch
                     d = [];
                 end
+                savePipelineRunAndProject(app, runObj, d, 'Saving smoke test run state...', false);
 
                 if ~isempty(d), d.Message = 'Dry-run validation...'; end
                 ctxDry = ctxSmoke;
@@ -14552,7 +14779,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 runObj.status = 'dry_run_ok';
                 runObj.ctx = ctxDry;
                 logRunEvent(app, runObj, 'Smoke dry-run validation completed.', 'pipeline2');
-                savePipelineRunAndProject(app, runObj);
+                savePipelineRunAndProject(app, runObj, d, 'Saving smoke dry-run state...', false);
                 appendRunReport(app, ['Smoke dry-run OK: ' smokeInfo.label], dryReport);
 
                 if ~isempty(d), d.Message = ['Running local smoke test: ' smokeInfo.label]; end
@@ -14562,7 +14789,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 runObj.status = 'running';
                 runObj.ctx = stripTransientRunContext(app, ctxRun);
                 logRunEvent(app, runObj, 'Local smoke test started.', 'pipeline2');
-                savePipelineRunAndProject(app, runObj);
+                savePipelineRunAndProject(app, runObj, d, 'Saving smoke run start state...', false);
 
                 [ctxOut, report] = runPipeline(pipeObj, ctxRun);
                 runObj.ctx = stripTransientRunContext(app, ctxOut);
@@ -14573,11 +14800,11 @@ classdef pipeline2 < matlab.apps.AppBase
                 logRunEvent(app, runObj, 'Local smoke test completed.', 'pipeline2');
                 smokeReportFile = writeSmokeTestReport(app, runObj, smokeInfo, dryReport, report, []);
                 runObj.outputs.smokeReportFile = smokeReportFile;
-                savePipelineRunAndProject(app, runObj);
+                savePipelineRunAndProject(app, runObj, d, 'Saving smoke test result and project...', true);
                 clearRuntimeDataSeriesCache(app);
                 updateRuntimeResourceInventory(app);
                 appendRunReport(app, ['Smoke test OK: ' smokeInfo.label], report);
-                app.RuninformationhereLabel.Text = ['Smoke test done: ' smokeReportFile];
+                setRuntimeStatus(app, ['Smoke test done: ' smokeReportFile]);
             catch ME
                 wasCancelled = isPipelineCancelException(app, ME);
                 if wasCancelled
@@ -14615,7 +14842,7 @@ classdef pipeline2 < matlab.apps.AppBase
                         end
                         smokeReportFile = writeSmokeTestReport(app, runObj, smokeInfo, dryReport, report, ME);
                         runObj.outputs.smokeReportFile = smokeReportFile;
-                        savePipelineRunAndProject(app, runObj);
+                        savePipelineRunAndProject(app, runObj, d, 'Saving smoke test failure state...', true);
                     end
                 catch
                 end
@@ -14694,7 +14921,7 @@ classdef pipeline2 < matlab.apps.AppBase
                     'projectObj', projectObj, ...
                     'progressFcn', progressFcn); %#ok<ASGLU>
                 ok = true;
-                app.RuninformationhereLabel.Text = ['Pipeline bundle exported: ' exportedPath];
+                setRuntimeStatus(app, ['Pipeline bundle exported: ' exportedPath]);
                 try
                     uialert(app.UIFigure, ['Pipeline bundle exported:' newline exportedPath], ...
                         'Export pipeline', 'Icon', 'success');
@@ -14799,7 +15026,7 @@ classdef pipeline2 < matlab.apps.AppBase
             ctxSmoke.run.control = buildRunControlPolicy(app, 'local');
             ctxSmoke.run.control.resumePolicy = 'restart';
             ctxSmoke.run.smokeTest = smokeInfo;
-            ctxSmoke.run.rois = [];
+            ctxSmoke.run.rois = smokeInfo.roiIndex;
             ctxSmoke.run.fovIndex = smokeInfo.fovIndex;
             if ~isfield(ctxSmoke.run, 'nodeParams') || ~isstruct(ctxSmoke.run.nodeParams)
                 ctxSmoke.run.nodeParams = struct();
@@ -14812,7 +15039,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 ctxSmoke.sel = struct();
             end
             ctxSmoke.sel.fovs = smokeInfo.fovIndex;
-            ctxSmoke.sel.rois = [];
+            ctxSmoke.sel.rois = smokeInfo.roiIndex;
             ctxSmoke.fovIndex = smokeInfo.fovIndex;
             ctxSmoke.fovList = app.CurrentProject.fov(smokeInfo.fovIndex);
             ctxSmoke.roiList = roiObj;
@@ -14993,11 +15220,21 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
             runObj = [];
+            dPrep = [];
+            prepCleanupObj = [];
+            try
+                dPrep = uiprogressdlg(app.UIFigure, 'Title', 'Pipeline run', ...
+                    'Message', 'Preparing run state...', 'Indeterminate', 'on');
+                prepCleanupObj = onCleanup(@()closeProgressDialog(app, dPrep)); %#ok<NASGU>
+                drawnow limitrate nocallbacks;
+            catch
+                dPrep = [];
+            end
             try
                 ctxPreflight = buildRunContext(app);
                 runObj = createOrUpdateCurrentRun(app, ctxPreflight, 'preflight');
                 logRunEvent(app, runObj, 'Run requested from pipeline2.', 'pipeline2');
-                savePipelineRunAndProject(app, runObj);
+                savePipelineRunAndProject(app, runObj, dPrep, 'Saving preflight run state...', false);
             catch ME
                 printExceptionToConsole(app, 'Pipeline prepare failed', ME);
                 uialert(app.UIFigure, ME.message, 'Prepare run', 'Icon', 'error');
@@ -15010,7 +15247,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 runObj.status = 'failed';
                 runObj.outputs.validationReport = reportTemplate;
                 logRunEvent(app, runObj, 'Run blocked by pipeline template validation.', 'pipeline2');
-                savePipelineRunAndProject(app, runObj);
+                savePipelineRunAndProject(app, runObj, dPrep, 'Saving validation failure state...', false);
                 uialert(app.UIFigure, 'Pipeline template is not valid. Fix blocking issues before run.', 'Run', 'Icon', 'error');
                 return;
             end
@@ -15020,10 +15257,13 @@ classdef pipeline2 < matlab.apps.AppBase
                 runObj.status = 'failed';
                 runObj.outputs.runtimeIssues = cellstr(string(blockingRuntimeIssues(:)));
                 logRunEvent(app, runObj, ['Run blocked by runtime inputs: ' strjoin(cellstr(string(blockingRuntimeIssues(:))), ' | ')], 'pipeline2');
-                savePipelineRunAndProject(app, runObj);
+                savePipelineRunAndProject(app, runObj, dPrep, 'Saving runtime input failure state...', false);
                 uialert(app.UIFigure, strjoin(blockingRuntimeIssues, newline), 'Runtime inputs', 'Icon', 'error');
                 return;
             end
+
+            try, closeProgressDialog(app, dPrep); catch, end
+            dPrep = [];
 
             try
                 [confirmed, ctxConfirmed] = confirmRunLaunch(app, ctxPreflight);
@@ -15035,8 +15275,8 @@ classdef pipeline2 < matlab.apps.AppBase
             if ~confirmed
                 runObj.status = 'cancelled';
                 logRunEvent(app, runObj, 'Run cancelled by user at confirmation.', 'pipeline2');
-                savePipelineRunAndProject(app, runObj);
-                app.RuninformationhereLabel.Text = 'Run cancelled before launch.';
+                savePipelineRunAndProject(app, runObj, [], 'Saving run cancellation state...', false);
+                setRuntimeStatus(app, 'Run cancelled before launch.');
                 return;
             end
 
@@ -15058,7 +15298,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 pipeObj = buildExecutablePipelineObject(app, app.CurrentPipelinePath, ctx);
                 runObj = createOrUpdateCurrentRun(app, ctx, 'preflight');
                 logRunEvent(app, runObj, 'Preflight run context saved.', 'pipeline2');
-                savePipelineRunAndProject(app, runObj);
+                savePipelineRunAndProject(app, runObj, d, 'Saving confirmed preflight run...', false);
 
                 if ~isempty(d), d.Message = 'Dry-run validation...'; end
                 ctxDry = ctx;
@@ -15068,7 +15308,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 runObj.status = 'dry_run_ok';
                 runObj.ctx = ctxDry;
                 logRunEvent(app, runObj, 'Dry-run validation completed.', 'pipeline2');
-                savePipelineRunAndProject(app, runObj);
+                savePipelineRunAndProject(app, runObj, d, 'Saving dry-run state...', false);
                 appendRunReport(app, 'Dry-run: OK', dryReport);
 
                 if strcmp(runtimeExecutionTarget(app), 'hub')
@@ -15080,7 +15320,7 @@ classdef pipeline2 < matlab.apps.AppBase
                         runObj.status = 'failed';
                         runObj.outputs.hubPathPreflight = pathReport;
                         logRunEvent(app, runObj, ['Run blocked by Hub path preflight: ' strjoin(pathReport.errors, ' | ')], 'pipeline2');
-                        savePipelineRunAndProject(app, runObj);
+                        savePipelineRunAndProject(app, runObj, d, 'Saving Hub path preflight failure...', false);
                         error('pipeline2:HubPathPreflightFailed', '%s', strjoin(pathReport.errors, newline));
                     end
                     try
@@ -15092,15 +15332,20 @@ classdef pipeline2 < matlab.apps.AppBase
                     runObj.ctx.hub.pathPreflight = pathReport;
                     runObj.ctx = applyHubPathPreflightToContext(app, runObj.ctx, pathReport);
                     logRunEvent(app, runObj, 'Submitting run to DetecDiv Hub.', 'pipeline2');
-                    savePipelineRunAndProject(app, runObj);
-                    [job, runObj] = detecdiv_hub_submit_pipeline_run(runObj, app.CurrentProject, 'hub', hub);
+                    savePipelineRunAndProject(app, runObj, d, 'Saving Hub submission state...', false);
+                    if ~isempty(d)
+                        d.Message = 'Registering project on Hub if needed, then submitting run...';
+                        drawnow limitrate nocallbacks;
+                    end
+                    [job, runObj] = detecdiv_hub_submit_pipeline_run(runObj, app.CurrentProject, 'hub', hub, ...
+                        'ProjectResolveAttempts', 60, 'ProjectResolveIntervalSec', 3);
                     runObj = annotateHubRunControl(app, runObj, job);
                     logRunEvent(app, runObj, 'Hub submission completed.', 'pipeline2');
-                    savePipelineRunAndProject(app, runObj);
+                    savePipelineRunAndProject(app, runObj, d, 'Saving Hub job and project state...', true);
                     clearRuntimeDataSeriesCache(app);
                     updateRuntimeResourceInventory(app);
                     appendRunReport(app, ['Hub submit: ' char(string(getField(app, job, 'status', 'submitted')))], job);
-                    app.RuninformationhereLabel.Text = formatHubRunStatusText(app, job, runObj);
+                    setRuntimeStatus(app, formatHubRunStatusText(app, job, runObj));
                     startHubRunMonitor(app, runObj, job);
                 else
                     if ~isempty(d), d.Message = 'Running local MATLAB pipeline...'; end
@@ -15111,19 +15356,22 @@ classdef pipeline2 < matlab.apps.AppBase
                     runObj.status = 'running';
                     runObj.ctx = stripTransientRunContext(app, ctxRun);
                     logRunEvent(app, runObj, 'Local MATLAB run started.', 'pipeline2');
-                    savePipelineRunAndProject(app, runObj);
+                    savePipelineRunAndProject(app, runObj, d, 'Saving local run start state...', false);
                     [ctxOut, report] = runPipeline(pipeObj, ctxRun);
                     runObj.ctx = stripTransientRunContext(app, ctxOut);
                     runObj.outputs.report = report;
                     runObj.status = 'done';
                     runObj.progress = getField(app, report, 'summary', struct());
                     logRunEvent(app, runObj, 'Local MATLAB run completed.', 'pipeline2');
-                    savePipelineRunAndProject(app, runObj);
+                    savePipelineRunAndProject(app, runObj, d, 'Saving local run result and project...', true);
                     clearRuntimeDataSeriesCache(app);
                     updateRuntimeResourceInventory(app);
                     appendRunReport(app, 'Local run: OK', report);
-                    app.RuninformationhereLabel.Text = ['Run done: ' fullfile(runObj.path, 'run.json')];
+                    setRuntimeStatus(app, ['Run done: ' fullfile(runObj.path, 'run.json')]);
                     stopActiveRunControl(app, 'Run !');
+                    try, close(d); catch, end
+                    d = [];
+                    showRunCompletedMessage(app);
                 end
             catch ME
                 wasCancelled = isPipelineCancelException(app, ME);
@@ -15179,7 +15427,7 @@ classdef pipeline2 < matlab.apps.AppBase
                         else
                             logRunEvent(app, runObj, ['Run failed: ' ME.message], 'pipeline2');
                         end
-                        savePipelineRunAndProject(app, runObj);
+                        savePipelineRunAndProject(app, runObj, d, 'Saving run failure state...', true);
                     end
                 catch
                 end
@@ -15189,7 +15437,7 @@ classdef pipeline2 < matlab.apps.AppBase
                         runJson = fullfile(runObj.path, 'run.json');
                     catch
                     end
-                    app.RuninformationhereLabel.Text = ['Run stopped: ' runJson];
+                    setRuntimeStatus(app, ['Run stopped: ' runJson]);
                     stopActiveRunControl(app, 'Resume run');
                     app.PipelineandRuncheckreportLabel.Text = [app.PipelineandRuncheckreportLabel.Text newline newline ...
                         'Run stopped by user.' newline ...
@@ -15202,7 +15450,7 @@ classdef pipeline2 < matlab.apps.AppBase
                         runJson = fullfile(runObj.path, 'run.json');
                     catch
                     end
-                    app.RuninformationhereLabel.Text = ['Hub project indexing queued: ' runJson];
+                    setRuntimeStatus(app, ['Hub project indexing queued: ' runJson]);
                     app.PipelineandRuncheckreportLabel.Text = [app.PipelineandRuncheckreportLabel.Text newline newline ...
                         'Hub project registration queued.' newline ...
                         ME.message newline newline ...
@@ -15216,7 +15464,7 @@ classdef pipeline2 < matlab.apps.AppBase
                         runJson = fullfile(runObj.path, 'run.json');
                     catch
                     end
-                    app.RuninformationhereLabel.Text = ['Hub project locked: ' runJson];
+                    setRuntimeStatus(app, ['Hub project locked: ' runJson]);
                     app.PipelineandRuncheckreportLabel.Text = [app.PipelineandRuncheckreportLabel.Text newline newline ...
                         'Hub project locked.' newline ...
                         ME.message newline newline ...
@@ -15258,6 +15506,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 app.RuntimeValues.runId = runId;
             catch
             end
+            markRunDirty(app, true);
             setRuntimeStatus(app, sprintf('New run draft: %s\nRuntime parameters are editable.', runId));
             try
                 app.TabGroup.SelectedTab = app.RuntimeInputsTab;

@@ -19,7 +19,10 @@ function [job, runObj] = detecdiv_hub_submit_pipeline_run(runObj, shallowObj, va
     if isempty(ref.project_id)
         [shallowObj, ref, ensureStatus] = localRunStage('ensure hub project registration', ...
             @() detecdiv_hub_ensure_project(shallowObj, 'Hub', opts.hub, ...
-                'ErrorIfQueued', false, 'ResolveAttempts', 6, 'ResolveIntervalSec', 2));
+                'ErrorIfQueued', false, ...
+                'InitialWaitSec', opts.projectResolveInitialWaitSec, ...
+                'ResolveAttempts', opts.projectResolveAttempts, ...
+                'ResolveIntervalSec', opts.projectResolveIntervalSec));
         if ~isempty(ref.project_id)
             localRunStageNoOutput('save project after hub registration check', @() localSaveProject(shallowObj, opts.hub));
         end
@@ -312,6 +315,9 @@ function opts = localParse(varargin)
     opts.executionTargetId = '';
     opts.saveProject = true;
     opts.writeScope = 'project_update';
+    opts.projectResolveInitialWaitSec = 1;
+    opts.projectResolveAttempts = 60;
+    opts.projectResolveIntervalSec = 3;
     i = 1;
     while i <= numel(varargin)
         key = lower(char(string(varargin{i})));
@@ -334,6 +340,12 @@ function opts = localParse(varargin)
                 opts.saveProject = logical(value);
             case 'writescope'
                 opts.writeScope = char(string(value));
+            case {'projectresolveinitialwaitsec','initialwaitsec'}
+                opts.projectResolveInitialWaitSec = double(value);
+            case {'projectresolveattempts','resolveattempts'}
+                opts.projectResolveAttempts = double(value);
+            case {'projectresolveintervalsec','resolveintervalsec'}
+                opts.projectResolveIntervalSec = double(value);
         end
         i = i + 2;
     end
