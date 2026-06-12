@@ -59,6 +59,10 @@ for i = 1:numel(newdata.pos)
     if isfield(posStruct,'isOMEZarr') && posStruct.isOMEZarr
         mtInfo.isOMEZarr = true;
     end
+    if isfield(posStruct,'isStackSeries') && posStruct.isStackSeries
+        mtInfo.isStackSeries = true;
+        mtInfo.stackPageMap = posStruct.stackPageMap;
+    end
 
     % Appeler setpathlist avec ou sans mtInfo
     if ~isempty(fieldnames(mtInfo))
@@ -184,6 +188,13 @@ if isprop(f,'isMultiTiff') && f.isMultiTiff
     return;
 end
 
+if isprop(f,'isStackSeries') && f.isStackSeries
+    src = firstNonEmptyCell(f.srcpath);
+    sample = firstFileFromFov(f);
+    key = lower(sprintf('stackseries|%s|%s|%s|%s', normPath(src), normPath(sample), chanSig, pageMapSignature(f.stackPageMap)));
+    return;
+end
+
 if isprop(f,'isOMEZarr') && f.isOMEZarr
     src = normPath(getMaybe(f,'omeZarrPath',''));
     seriesName = char(string(getMaybe(f,'omeZarrSeries','')));
@@ -215,6 +226,13 @@ if isfield(pos,'isMultiTiff') && pos.isMultiTiff
         src = firstNonEmptyCell(getField(pos,'pathlist',{}));
     end
     key = lower(sprintf('multitiff|%s|%s|%s', normPath(src), chanSig, pageMapSignature(getField(pos,'pageMap',{}))));
+    return;
+end
+
+if isfield(pos,'isStackSeries') && pos.isStackSeries
+    src = firstNonEmptyCell(getField(pos,'pathlist',{}));
+    sample = firstFileFromParsedPos(pos);
+    key = lower(sprintf('stackseries|%s|%s|%s|%s', normPath(src), normPath(sample), chanSig, pageMapSignature(getField(pos,'stackPageMap',{}))));
     return;
 end
 

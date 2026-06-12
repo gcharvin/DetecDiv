@@ -150,6 +150,21 @@ elseif ~inputIsFile
     end
 end
 
+% --- detect time series stored as one stack file per timepoint ---
+stkFiles = [];
+if inputIsFile
+    [~, ~, selectedExt] = fileparts(inputFileName);
+    if strcmpi(selectedExt, '.stk')
+        stkFiles = list;
+    end
+else
+    stkFiles = list(~[list.isdir]);
+    if ~isempty(stkFiles)
+        [~, ~, exts] = cellfun(@fileparts, {stkFiles.name}, 'UniformOutput', false);
+        stkFiles = stkFiles(strcmpi(exts, '.stk'));
+    end
+end
+
 % If user selected a subfolder inside an NDTiff dataset, check parent
 if isempty(ndtiffDirs) && ~inputIsFile
     [parentDir, ~, ~] = fileparts(pathdir);
@@ -178,6 +193,10 @@ elseif ~isempty(omezarrDirs)
     disp('OME-Zarr dataset(s) detected');
     typ='omezarr';
     info='Processing OME-Zarr dataset(s)...';
+elseif ~isempty(stkFiles)
+    disp('STK stack time series detected');
+    typ='stkseries';
+    info='Processing STK stack time series...';
 elseif ~inputIsFile && sum(pix)>2 % there are folders available (. and .. are not real folders)
     % check if there is a phyloCell project
     phyloproj=list((contains({list.name},{'-project.mat'})) & (~contains({list.name},{'BK-project.mat'})) &  (~contains({list.name},{'-project.mat.bk'})));
@@ -281,6 +300,10 @@ switch typ
     case 'omezarr'
         output.comments=['The folder contains one or more OME-Zarr datasets' char(10)];
         output=buildomezarr(omezarrDirs,output,progress);
+
+    case 'stkseries'
+        output.comments=['The folder contains a time series of stack files' char(10)];
+        output=buildstkseries(stkFiles,output,progress);
 end
 
 output.datatype=typ;

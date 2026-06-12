@@ -59,8 +59,9 @@ frameEff = max(1, min(frameEff, maxF));
 usesNDTiff = isprop(obj,'isNDTiff') && obj.isNDTiff;
 usesOMEZarr = localShouldUseOMEZarr(obj, thisEntry, channel);
 usesMultiTiff = isprop(obj,'isMultiTiff') && obj.isMultiTiff;
+usesStackSeries = isprop(obj,'isStackSeries') && obj.isStackSeries;
 
-if ~(usesNDTiff || usesOMEZarr || usesMultiTiff) && (channel > numel(obj.srclist) || isempty(obj.srclist{channel}))
+if ~(usesNDTiff || usesOMEZarr || usesMultiTiff || usesStackSeries) && (channel > numel(obj.srclist) || isempty(obj.srclist{channel}))
     disp('Channel has no srclist entry; quitting !');
     return;
 end
@@ -227,6 +228,52 @@ if usesMultiTiff
         return;
     end
 
+elseif usesStackSeries
+    foldert = '';
+    fileName = '';
+    if isfield(thisEntry,'name') && ~isempty(thisEntry.name)
+        fileName = thisEntry.name;
+    end
+    if isfield(thisEntry,'folder')
+        foldert = thisEntry.folder;
+    end
+    if isempty(foldert) && iscell(obj.srcpath) && channel <= numel(obj.srcpath) && ~isempty(obj.srcpath{channel})
+        foldert = obj.srcpath{channel};
+    end
+
+    stackPath = fileName;
+    if exist(stackPath,'file') ~= 2
+        [fp, ~, ~] = fileparts(stackPath);
+        if isempty(fp)
+            stackPath = fullfile(foldert, stackPath);
+        end
+    end
+    if exist(stackPath,'file') ~= 2
+        warning('Stack-series source not found on disk: %s', stackPath);
+        return;
+    end
+
+    pageToRead = channel;
+    if channel <= numel(obj.stackPageMap) && ~isempty(obj.stackPageMap{channel}) ...
+            && numel(obj.stackPageMap{channel}) >= frameEff
+        pageToRead = obj.stackPageMap{channel}(frameEff);
+    end
+
+    try
+        localSafeFprintf('[readImage] mode=StackSeries source=%s page=%d\n', string(stackPath), pageToRead);
+        im = localReadStackSeriesPlane(stackPath, pageToRead);
+    catch ME
+        warning('Failed to read stack-series page %d from %s: %s', ...
+            pageToRead, stackPath, ME.message);
+        return;
+    end
+
+    if ~isempty(obj.orientation) && obj.orientation ~= 0
+        im = imrotate(im, obj.orientation);
+    end
+    localLogLoadedImage(obj, channel, frameEff, im, "StackSeries", string(stackPath));
+    return;
+
 else
     % --------- mode fichiers classiques ---------
     foldert = '';
@@ -289,6 +336,61 @@ if ~isempty(obj.orientation) && obj.orientation ~= 0
     im = imrotate(im, obj.orientation);
 end
 localLogLoadedImage(obj, channel, frameEff, im, "File", string(localGetSourcePath(obj, channel)));
+end
+
+function im = localReadStackSeriesPlane(stackPath, pageToRead)
+info = imfinfo(stackPath);
+if numel(info) >= pageToRead
+    im = imread(stackPath, pageToRead);
+    return;
+end
+
+if isempty(info)
+    error('Stack file has no readable TIFF metadata.');
+end
+
+width = double(info(1).Width);
+height = double(info(1).Height);
+bitDepth = double(info(1).BitDepth);
+if bitDepth ~= 16
+    error('Raw STK fallback currently supports 16-bit grayscale stacks only, got BitDepth=%g.', bitDepth);
+end
+
+bytesPerPlane = width * height * 2;
+try
+    firstOffset = double(info(1).StripOffsets(1));
+catch
+    firstOffset = 8;
+end
+planeOffset = firstOffset + (double(pageToRead) - 1) * bytesPerPlane;
+
+d = dir(stackPath);
+if isempty(d) || planeOffset + bytesPerPlane > double(d.bytes)
+    error('Requested stack plane %d exceeds file size.', pageToRead);
+end
+
+machineFmt = 'ieee-le';
+try
+    if isfield(info(1), 'ByteOrder') && strcmpi(info(1).ByteOrder, 'big-endian')
+        machineFmt = 'ieee-be';
+    end
+catch
+end
+
+fid = fopen(stackPath, 'r', machineFmt);
+if fid < 0
+    error('Could not open stack file.');
+end
+cleaner = onCleanup(@() fclose(fid));
+status = fseek(fid, planeOffset, 'bof');
+if status ~= 0
+    error('Could not seek to stack plane offset.');
+end
+raw = fread(fid, [width height], 'uint16=>uint16');
+if numel(raw) ~= width * height
+    error('Could not read a complete stack plane.');
+end
+im = raw';
 end
 
 function localLogLoadedImage(obj, channel, frameEff, im, modeName, sourcePath)

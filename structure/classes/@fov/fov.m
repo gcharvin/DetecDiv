@@ -31,6 +31,13 @@ classdef fov < handle
         pageMap     = {};        % cell{ch}: pageMap{ch}(f) = index de page TIFF à lire via imread(tiffSource{ch}, page)
                                  % longueur(pageMap{ch}) == frames(ch)
 
+        % --- Time series of stack files ---
+        % Used for acquisitions stored as one multi-page stack file per
+        % timepoint, e.g. pn1_1_DIC_s1_t1.stk, pn1_1_DIC_s1_t2.stk, ...
+        % Each Z plane is exposed as a DetecDiv display channel.
+        isStackSeries = false;
+        stackPageMap  = {};
+
         % --- NDTiff support ---
         isNDTiff       = false;  % bool
         ndtiffPath     = '';     % dataset folder (contains NDTiff.index)
@@ -97,6 +104,8 @@ classdef fov < handle
                 if isfield(mtInfo,'tiffSource'),  obj.tiffSource  = mtInfo.tiffSource;          end
                 if isfield(mtInfo,'pageMap'),     obj.pageMap     = mtInfo.pageMap;             end
                 if isfield(mtInfo,'isOMEZarr'),   obj.isOMEZarr   = logical(mtInfo.isOMEZarr);  end
+                if isfield(mtInfo,'isStackSeries'), obj.isStackSeries = logical(mtInfo.isStackSeries); end
+                if isfield(mtInfo,'stackPageMap'),  obj.stackPageMap  = mtInfo.stackPageMap;           end
             end
 
             % sécurité: toujours avoir une taille cohérente
@@ -105,6 +114,9 @@ classdef fov < handle
             end
             if isempty(obj.pageMap)
                 obj.pageMap = cell(1, numel(pathname));
+            end
+            if isempty(obj.stackPageMap)
+                obj.stackPageMap = cell(1, numel(pathname));
             end
         end
 
