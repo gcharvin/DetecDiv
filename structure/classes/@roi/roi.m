@@ -59,7 +59,7 @@ classdef roi < handle
                 status = 'unknown';
             end
             st = lower(char(string(status)));
-            if ~any(strcmp(st, {'unknown','not_extracted','extracted','stale'}))
+            if ~any(strcmp(st, {'unknown','not_extracted','extracted','memory','stale'}))
                 st = 'unknown';
             end
 
@@ -90,13 +90,13 @@ classdef roi < handle
             catch
                 st = 'unknown';
             end
-            if ~any(strcmp(st, {'unknown','not_extracted','extracted','stale'}))
+            if ~any(strcmp(st, {'unknown','not_extracted','extracted','memory','stale'}))
                 st = 'unknown';
             end
         end
 
         function tf = isExtracted(obj)
-            tf = strcmp(obj.getExtractionStatus(), 'extracted');
+            tf = any(strcmp(obj.getExtractionStatus(), {'extracted','memory'}));
         end
 
         function didSave = saveDisplayedChannels(obj, verbose)

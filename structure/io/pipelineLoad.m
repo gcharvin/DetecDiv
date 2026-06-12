@@ -25,9 +25,7 @@ function [pipe, msg] = pipelineLoad(inputPath)
 
     txt = fileread(jsonFile);
     S = jsondecode(txt);
-    if ~isempty(bundleRoot)
-        S = relinkBundlePipelineStruct(S, fileparts(jsonFile), bundleRoot);
-    end
+    S = relinkPipelineRelativePaths(S, fileparts(jsonFile), bundleRoot);
 
     pipe = pipelineConstruct('', '', 1);
     try
@@ -162,32 +160,53 @@ function tf = manifestPointsToJson(manifestPath, bundleRoot, jsonFile)
     end
 end
 
-function S = relinkBundlePipelineStruct(S, pipelineRoot, bundleRoot)
+function S = relinkPipelineRelativePaths(S, pipelineRoot, bundleRoot)
     if ~isstruct(S) || ~isfield(S, 'nodes') || isempty(S.nodes)
         return;
     end
     for i = 1:numel(S.nodes)
-        if ~isfield(S.nodes(i), 'params') || ~isstruct(S.nodes(i).params)
-            continue;
+        S.nodes(i) = relinkNodeRelativePaths(S.nodes(i), pipelineRoot, bundleRoot);
+        if isfield(S.nodes(i), 'params') && isstruct(S.nodes(i).params)
+            S.nodes(i).params = relinkRelativePathParams(S.nodes(i).params, pipelineRoot, bundleRoot);
         end
-        S.nodes(i).params = relinkBundleParams(S.nodes(i).params, pipelineRoot, bundleRoot);
     end
-    if ~isfield(S, 'runProfiles') || ~isstruct(S.runProfiles)
-        S.runProfiles = struct();
+    if ~isempty(bundleRoot)
+        if ~isfield(S, 'runProfiles') || ~isstruct(S.runProfiles)
+            S.runProfiles = struct();
+        end
+        S.runProfiles.bundle = struct( ...
+            'bundleRoot', char(string(bundleRoot)), ...
+            'pipelineRoot', char(string(pipelineRoot)), ...
+            'loadedAt', char(datetime('now')));
     end
-    S.runProfiles.bundle = struct( ...
-        'bundleRoot', char(string(bundleRoot)), ...
-        'pipelineRoot', char(string(pipelineRoot)), ...
-        'loadedAt', char(datetime('now')));
 end
 
-function params = relinkBundleParams(params, pipelineRoot, bundleRoot)
+function node = relinkNodeRelativePaths(node, pipelineRoot, bundleRoot)
+    names = fieldnames(node);
+    for i = 1:numel(names)
+        name = names{i};
+        if any(strcmp(name, {'params','origin','runState'}))
+            continue;
+        end
+        value = node.(name);
+        if ~(ischar(value) || (isstring(value) && isscalar(value)))
+            continue;
+        end
+        text = char(string(value));
+        if isempty(text) || isAbsolutePathLocal(text) || ~looksLikeBundlePathParam(name, text)
+            continue;
+        end
+        node.(name) = resolveBundleRelativePath(text, pipelineRoot, bundleRoot, shouldCreatePathForParam(name));
+    end
+end
+
+function params = relinkRelativePathParams(params, pipelineRoot, bundleRoot)
     names = fieldnames(params);
     for i = 1:numel(names)
         name = names{i};
         value = params.(name);
         if isstruct(value)
-            params.(name) = relinkBundleNestedStruct(value, pipelineRoot, bundleRoot);
+            params.(name) = relinkNestedRelativePathStruct(value, pipelineRoot, bundleRoot);
             continue;
         end
         if ~(ischar(value) || (isstring(value) && isscalar(value)))
@@ -201,14 +220,14 @@ function params = relinkBundleParams(params, pipelineRoot, bundleRoot)
     end
 end
 
-function value = relinkBundleNestedStruct(value, pipelineRoot, bundleRoot)
+function value = relinkNestedRelativePathStruct(value, pipelineRoot, bundleRoot)
     for k = 1:numel(value)
         names = fieldnames(value(k));
         for i = 1:numel(names)
             name = names{i};
             item = value(k).(name);
             if isstruct(item)
-                value(k).(name) = relinkBundleNestedStruct(item, pipelineRoot, bundleRoot);
+                value(k).(name) = relinkNestedRelativePathStruct(item, pipelineRoot, bundleRoot);
             elseif ischar(item) || (isstring(item) && isscalar(item))
                 text = char(string(item));
                 if ~isempty(text) && ~isAbsolutePathLocal(text) && looksLikeBundlePathParam(name, text)
@@ -221,13 +240,22 @@ end
 
 function out = resolveBundleRelativePath(pathText, pipelineRoot, bundleRoot, createParent)
     out = char(string(pathText));
-    candidates = {fullfile(pipelineRoot, out), fullfile(bundleRoot, out)};
+    candidates = {};
+    if ~isempty(pipelineRoot)
+        candidates{end+1} = fullfile(pipelineRoot, out); %#ok<AGROW>
+    end
+    if ~isempty(bundleRoot)
+        candidates{end+1} = fullfile(bundleRoot, out); %#ok<AGROW>
+    end
     for i = 1:numel(candidates)
         candidate = canonicalPathLocal(candidates{i});
         if exist(candidate, 'dir') == 7 || exist(candidate, 'file') == 2
             out = candidate;
             return;
         end
+    end
+    if isempty(candidates)
+        return;
     end
     candidate = canonicalPathLocal(candidates{1});
     if createParent
@@ -270,7 +298,7 @@ function tf = isAbsolutePathLocal(p)
         return;
     end
     if ispc
-        tf = ~isempty(regexp(p, '^[A-Za-z]:[\\/]', 'once')) || startsWith(p, '\\');
+        tf = startsWith(p, '/') || ~isempty(regexp(p, '^[A-Za-z]:[\\/]', 'once')) || startsWith(p, '\\');
     else
         tf = startsWith(p, '/');
     end

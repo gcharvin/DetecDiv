@@ -196,7 +196,7 @@ function ctx = process(ctx)
                 catch
                 end
             end
-            validateExtractedRoisForFov(fovList, i, todo);
+            validateExtractedRoisForFov(fovList, i, todo, persistOutputs);
             prog = progressMark(shallowObj, ctx, 'roiExtract', i, todo);
             if persistOutputs && saveProgress && ~isempty(shallowObj)
                 try, shallowSave(shallowObj); catch, end
@@ -499,7 +499,10 @@ function done = getDoneForFov(prog, fovIdx)
     end
 end
 
-function validateExtractedRoisForFov(fovList, fovIdx, roiSel)
+function validateExtractedRoisForFov(fovList, fovIdx, roiSel, requirePersistedOutput)
+    if nargin < 4 || isempty(requirePersistedOutput)
+        requirePersistedOutput = true;
+    end
     if isempty(fovList) || fovIdx < 1 || fovIdx > numel(fovList) || isempty(roiSel)
         return;
     end
@@ -507,14 +510,43 @@ function validateExtractedRoisForFov(fovList, fovIdx, roiSel)
     rois = fovList(fovIdx).roi;
     for k = 1:numel(roiSel)
         idx = roiSel(k);
-        if idx < 1 || idx > numel(rois) || ~roiExtractOutputExists(rois(idx))
+        if idx < 1 || idx > numel(rois) || ~roiExtractionMaterialized(rois(idx), requirePersistedOutput)
             missing(end+1) = idx; %#ok<AGROW>
         end
     end
     if ~isempty(missing)
-        error('roiExtract.process:MissingExtractedOutputs', ...
-            'ROI extraction did not materialize H5 outputs for FOV %d ROI(s) %s.', ...
-            fovIdx, mat2str(missing));
+        if requirePersistedOutput
+            error('roiExtract.process:MissingExtractedOutputs', ...
+                'ROI extraction did not materialize H5 outputs for FOV %d ROI(s) %s.', ...
+                fovIdx, mat2str(missing));
+        else
+            error('roiExtract.process:MissingExtractedOutputs', ...
+                'ROI extraction did not materialize in-memory outputs for FOV %d ROI(s) %s.', ...
+                fovIdx, mat2str(missing));
+        end
+    end
+end
+
+function tf = roiExtractionMaterialized(r, requirePersistedOutput)
+    if requirePersistedOutput
+        tf = roiExtractOutputExists(r);
+        return;
+    end
+
+    tf = false;
+    try
+        tf = isprop(r, 'image') && ~isempty(r.image);
+        if tf
+            return;
+        end
+    catch
+    end
+
+    try
+        tf = isprop(r,'extraction') && isstruct(r.extraction) && isfield(r.extraction,'status') && ...
+            any(strcmpi(char(string(r.extraction.status)), {'extracted','memory'}));
+    catch
+        tf = false;
     end
 end
 

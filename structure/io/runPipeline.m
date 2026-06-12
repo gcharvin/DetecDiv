@@ -3036,7 +3036,7 @@ if isempty(p)
 end
 p = char(string(p));
 if ispc
-    tf = ~isempty(regexp(p, '^[A-Za-z]:[\\/]', 'once')) || startsWith(p, '\\');
+    tf = startsWith(p, '/') || ~isempty(regexp(p, '^[A-Za-z]:[\\/]', 'once')) || startsWith(p, '\\');
 else
     tf = startsWith(p, '/');
 end

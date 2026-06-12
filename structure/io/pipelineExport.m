@@ -112,7 +112,7 @@ function [bundlePath, manifest] = pipelineExport(pipeIn, bundlePath, varargin)
     manifest.pipeline = struct( ...
         'name', char(string(templateName)), ...
         'sourcePath', char(string(templatePath)), ...
-        'bundlePipelinePath', fullfile('pipeline', 'pipeline.json'));
+        'bundlePipelinePath', './pipeline/pipeline.json');
     manifest.options = rmfield(opts, {'runObjects', 'projectObj'});
     manifest.nodes = struct([]);
     manifest.runs = struct([]);
@@ -401,7 +401,8 @@ function [nodeOut, rewrites] = rebaseNodeOutputPaths(nodeOut, pipelineDir)
         if isempty(leaf)
             leaf = sanitizeName(key);
         end
-        newPath = fullfile('..', 'outputs', nodeId, leaf);
+        newPath = '../outputs';
+        newPath = [newPath '/' nodeId '/' leaf];
         params.(key) = newPath;
         rewrites{end+1} = struct( ...
             'param', key, ...
@@ -1134,6 +1135,23 @@ function rel = relativePathFromTo(fromPath, toPath)
     else
         rel = fullfile(parts{:});
     end
+    rel = formatRelativeJsonPath(rel);
+end
+
+function rel = formatRelativeJsonPath(rel)
+    rel = strrep(char(string(rel)), '\', '/');
+    if isempty(rel) || strcmp(rel, '.')
+        rel = './';
+        return;
+    end
+    if startsWith(rel, '../') || startsWith(rel, './')
+        return;
+    end
+    if strcmp(rel, '..')
+        rel = '../';
+        return;
+    end
+    rel = ['./' rel];
 end
 
 function parts = splitPathLocal(p)
