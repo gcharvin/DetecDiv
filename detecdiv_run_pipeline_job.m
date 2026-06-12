@@ -63,7 +63,13 @@ function result = detecdiv_run_pipeline_job(jobInput)
         runObj.progress = struct();
         runObj.status = 'done';
         pipelineRunSave(runObj);
-        localMaybeSaveProject(shallowObj, payload);
+        [saveOk, saveMsg] = localMaybeSaveProject(shallowObj, payload);
+        if ~saveOk
+            runObj.status = 'failed';
+            pipelineRunSave(runObj);
+            error('detecdiv_run_pipeline_job:ProjectSaveFailed', ...
+                'Pipeline execution completed, but final project save failed: %s', saveMsg);
+        end
 
         result.status = 'done';
         result.run_id = runObj.runId;

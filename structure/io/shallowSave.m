@@ -178,30 +178,53 @@ end
 
 function localInstallProjectMat(tmpTarget, projectTarget)
     lastMessage = '';
-    for attempt = 1:8
+    for attempt = 1:12
         try
-            if exist(projectTarget, 'file')
-                try
-                    delete(projectTarget);
-                catch MEdelete
-                    lastMessage = MEdelete.message;
-                    pause(min(0.25 * attempt, 2));
-                    continue;
-                end
-            end
-
             installed = false;
+
             try
                 movefile(tmpTarget, projectTarget, 'f');
                 installed = true;
             catch MEmove
                 lastMessage = MEmove.message;
-                if exist(tmpTarget, 'file') && exist(projectTarget, 'file') ~= 2
+            end
+
+            if ~installed
+                try
+                    copyfile(tmpTarget, projectTarget, 'f');
+                    installed = true;
+                catch MEcopy
+                    lastMessage = [lastMessage ' | copy fallback: ' MEcopy.message];
+                end
+            end
+
+            if ~installed && exist(projectTarget, 'file')
+                try
+                    delete(projectTarget);
+                    movefile(tmpTarget, projectTarget, 'f');
+                    installed = true;
+                catch MEdeleteMove
+                    lastMessage = [lastMessage ' | delete+move fallback: ' MEdeleteMove.message];
+                    if exist(tmpTarget, 'file') && exist(projectTarget, 'file') ~= 2
+                        try
+                            copyfile(tmpTarget, projectTarget, 'f');
+                            installed = true;
+                        catch MEcopyAfterDelete
+                            lastMessage = [lastMessage ' | copy after delete fallback: ' MEcopyAfterDelete.message];
+                        end
+                    end
+                end
+            elseif ~installed
+                try
+                    movefile(tmpTarget, projectTarget, 'f');
+                    installed = true;
+                catch MEmoveMissing
+                    lastMessage = [lastMessage ' | move missing-target fallback: ' MEmoveMissing.message];
                     try
                         copyfile(tmpTarget, projectTarget, 'f');
                         installed = true;
-                    catch MEcopy
-                        lastMessage = [lastMessage ' | copy fallback: ' MEcopy.message];
+                    catch MEcopyMissing
+                        lastMessage = [lastMessage ' | copy missing-target fallback: ' MEcopyMissing.message];
                     end
                 end
             end
@@ -215,7 +238,7 @@ function localInstallProjectMat(tmpTarget, projectTarget)
         catch ME
             lastMessage = ME.message;
         end
-        pause(min(0.25 * attempt, 2));
+        pause(min(0.5 * attempt, 5));
     end
     error('shallowSave:installProjectMatRetriesFailed', ...
         'Could not install project MAT after retries: %s', lastMessage);
