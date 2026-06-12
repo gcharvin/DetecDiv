@@ -163,10 +163,13 @@ function contract = defaultContractForNode(node)
                 ];
             selectors.channelsParam = 'extractChannels';
             selectors.framesParam = 'frames';
+            selectors.outputNameParam = 'focusOutputChannel';
             parameters.run = {};
-            parameters.static = {'correctDrift','driftChannel','driftMethod','driftRefMode','driftSubpixel','driftMaxShift','scale','cropDrift','forceChannelNames'};
+            parameters.static = {'correctDrift','driftChannel','driftMethod','driftRefMode','driftSubpixel','driftMaxShift','scale','cropDrift','forceChannelNames', ...
+                'focusTreatChannelsAsStack','focusDiscardInputChannels','focusSmoothZ','focusProjectionRadius','focusCenterCrop'};
             requirements.roi.required = true;
-            requirements.params.optional = {'fovIndex','frames','extractChannels','extend','correctDrift'};
+            requirements.params.optional = {'fovIndex','frames','extractChannels','extend','correctDrift', ...
+                'focusTreatChannelsAsStack','focusDiscardInputChannels','focusSmoothZ','focusProjectionRadius','focusCenterCrop','focusOutputChannel'};
             capabilities.preservesRoiList = true;
             capabilities.roiChannels = true;
             capabilities.outputsChannels = true;
@@ -177,7 +180,14 @@ function contract = defaultContractForNode(node)
             binding.resolveAt = 'run';
             binding.transfer = 'imagesToRoi';
             resources.in = resourceDef('channel', 'source', 'extractChannels', 'extractChannels', 'images', 'extractChannels', false, '');
-            resources.out = resourceDef();
+            if roiExtractFocusEnabled(node)
+                resources.out = resourceDef('channel', 'roi_image', 'focus', 'focusOutputChannel', 'channels', 'focusOutputChannel', false, 'roiChannel');
+                if roiExtractFocusDiscardsInputs(node)
+                    binding.transfer = 'roiChannelReplace';
+                else
+                    binding.transfer = 'imagesToRoiPlus';
+                end
+            end
             summary = 'Extracts ROI crops and materializes ROI image channels for downstream ROI processing.';
 
         case 'processor'
@@ -463,12 +473,59 @@ function contract = applyContractPostRules(contract, node)
         % the current static parameter selection.
         contract = enrichContractFromPackage(contract, node);
     end
-    if strcmp(nodeType, 'roiextract')
+    if strcmp(nodeType, 'roiextract') && ~roiExtractFocusEnabled(node)
         % roiExtract materializes ROI-local H5 channels, but the concrete
         % channel names are selected by its input channel binding. It does
         % not expose a separate user-editable output binding.
         contract.resources.out = resourceDef();
     end
+end
+
+function tf = roiExtractFocusEnabled(node)
+tf = false;
+try
+    p = getField(node, 'params', struct());
+    tf = isstruct(p) && isfield(p, 'focusTreatChannelsAsStack') && ...
+        parseLogicalScalarLocal(p.focusTreatChannelsAsStack, false);
+catch
+    tf = false;
+end
+end
+
+function tf = roiExtractFocusDiscardsInputs(node)
+tf = false;
+try
+    p = getField(node, 'params', struct());
+    tf = isstruct(p) && isfield(p, 'focusDiscardInputChannels') && ...
+        parseLogicalScalarLocal(p.focusDiscardInputChannels, false);
+catch
+    tf = false;
+end
+end
+
+function tf = parseLogicalScalarLocal(v, defaultValue)
+tf = defaultValue;
+try
+    if isempty(v)
+        return;
+    end
+    if islogical(v)
+        tf = any(v(:));
+        return;
+    end
+    if isnumeric(v)
+        tf = any(v(:) ~= 0);
+        return;
+    end
+    s = lower(strtrim(char(string(v))));
+    if any(strcmp(s, {'true','t','yes','y','on','1'}))
+        tf = true;
+    elseif any(strcmp(s, {'false','f','no','n','off','0'}))
+        tf = false;
+    end
+catch
+    tf = defaultValue;
+end
 end
 
 function ports = mergePortArrays(defaultPorts, existingPorts, inputsAreRequired)

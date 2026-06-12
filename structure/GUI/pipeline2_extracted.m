@@ -8611,7 +8611,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
 
-            tf = any(strcmp(sourceKind, {'sourceinventory','imagestoroi'})) || ...
+            tf = any(strcmp(sourceKind, {'sourceinventory','imagestoroi','imagestoroiplus','roichannelreplace'})) || ...
                 strcmp(sourcePort, 'channels') || ...
                 endsWith(symbol, '.channels');
         end
@@ -8630,7 +8630,7 @@ classdef pipeline2 < matlab.apps.AppBase
             type = lower(char(string(getField(app, spec, 'type', ''))));
             role = lower(char(string(getField(app, spec, 'role', ''))));
             if strcmp(type, 'channel') && strcmp(role, 'roi_image')
-                choices = runtimeConcreteChannels(app);
+                choices = runtimeRoiImageChannelsForBindings(app);
             elseif strcmp(type, 'channel') && strcmp(role, 'source')
                 choices = runtimeConcreteChannels(app);
             elseif strcmp(type, 'mask')
@@ -8652,6 +8652,71 @@ classdef pipeline2 < matlab.apps.AppBase
             skip = startsWith(lower(string(channels)), 'resolved after') | strcmpi(string(channels), 'all') | strcmpi(string(channels), 'auto');
             channels = channels(~skip);
             channels = unique(channels(~cellfun(@isempty, channels)), 'stable');
+        end
+
+        function channels = runtimeRoiImageChannelsForBindings(app)
+            channels = runtimeConcreteChannels(app);
+            try
+                nodes = app.Data.nodes;
+            catch
+                nodes = struct([]);
+            end
+            for i = 1:numel(nodes)
+                try
+                    if ~strcmpi(char(string(getField(app, nodes(i), 'type', ''))), 'roiExtract')
+                        continue;
+                    end
+                    if ~isRunNodeActive(app, char(string(getField(app, nodes(i), 'id', ''))))
+                        continue;
+                    end
+                    p = getField(app, nodes(i), 'params', struct());
+                    if ~isstruct(p) || ~isfield(p, 'focusTreatChannelsAsStack') || ...
+                            ~parseLogicalScalarForUi(app, p.focusTreatChannelsAsStack, false)
+                        continue;
+                    end
+                    focusName = 'DIC_focus';
+                    if isfield(p, 'focusOutputChannel') && ~isempty(p.focusOutputChannel)
+                        focusName = strtrim(char(string(p.focusOutputChannel)));
+                    end
+                    if isempty(focusName)
+                        focusName = 'DIC_focus';
+                    end
+                    discardInput = isfield(p, 'focusDiscardInputChannels') && ...
+                        parseLogicalScalarForUi(app, p.focusDiscardInputChannels, false);
+                    if discardInput
+                        channels = {focusName};
+                    else
+                        channels = unique([channels(:)' {focusName}], 'stable');
+                    end
+                catch
+                end
+            end
+            channels = unique(channels(~cellfun(@isempty, channels)), 'stable');
+        end
+
+        function tf = parseLogicalScalarForUi(app, value, defaultValue) %#ok<INUSD>
+            tf = defaultValue;
+            try
+                if isempty(value)
+                    return;
+                end
+                if islogical(value)
+                    tf = any(value(:));
+                    return;
+                end
+                if isnumeric(value)
+                    tf = any(value(:) ~= 0);
+                    return;
+                end
+                s = lower(strtrim(char(string(value))));
+                if any(strcmp(s, {'true','t','yes','y','on','1'}))
+                    tf = true;
+                elseif any(strcmp(s, {'false','f','no','n','off','0'}))
+                    tf = false;
+                end
+            catch
+                tf = defaultValue;
+            end
         end
 
         function channels = runtimeRoiDisplayChannels(app)
@@ -9976,7 +10041,8 @@ classdef pipeline2 < matlab.apps.AppBase
                     case 'roimanual'
                         keys = {};
                     case 'roiextract'
-                        keys = {'correctDrift','driftChannel','driftMethod','driftRefMode','driftSubpixel','driftMaxShift','scale','cropDrift','forceChannelNames'};
+                        keys = {'correctDrift','driftChannel','driftMethod','driftRefMode','driftSubpixel','driftMaxShift','scale','cropDrift','forceChannelNames', ...
+                            'focusTreatChannelsAsStack','focusDiscardInputChannels','focusSmoothZ','focusProjectionRadius','focusCenterCrop'};
                     case 'processor'
                         keys = processorStaticKeys(app, pkg, node);
                     case 'classifier'
@@ -10325,7 +10391,8 @@ classdef pipeline2 < matlab.apps.AppBase
                     keys = {'fovIndex','roiIndex','channel','extractChannels'};
                 case 'roiextract'
                     keys = {'correctDrift','driftChannel','driftMethod','driftRefMode', ...
-                        'driftSubpixel','driftMaxShift','scale','cropDrift','forceChannelNames'};
+                        'driftSubpixel','driftMaxShift','scale','cropDrift','forceChannelNames', ...
+                        'focusTreatChannelsAsStack','focusDiscardInputChannels','focusSmoothZ','focusProjectionRadius','focusCenterCrop'};
                 case 'processor'
                     if strcmp(pkg, 'combinemultiplechannels')
                         slotCount = combineMultipleChannelsSlotCountForNode(app, node);

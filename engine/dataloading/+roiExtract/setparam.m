@@ -17,6 +17,12 @@ function param = setparam(ctx)
     param.driftMaxShift = 20;
     param.scale = 1;
     param.cropDrift = 1.0;
+    param.focusTreatChannelsAsStack = false;
+    param.focusDiscardInputChannels = false;
+    param.focusSmoothZ = 5;
+    param.focusProjectionRadius = 0;
+    param.focusCenterCrop = 1.0;
+    param.focusOutputChannel = 'DIC_focus';
 
     if nargin < 1 || isempty(ctx)
         return;

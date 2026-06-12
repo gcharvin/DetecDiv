@@ -233,7 +233,10 @@ function ctx = process(ctx)
     ctx.roiList = collectROIs(fovList, fovIdx, getfieldlocal(p, 'roiList', []), persistOutputs);
     ctx = maybeWarmRoiCache(ctx, p);
     ctx.dataSeries = collectDataSeries(ctx.roiList);
-    if ~isfield(ctx,'channels') || isempty(ctx.channels) || isAllChannelSelector(getfieldlocal(p, 'channels', []))
+    outputChannels = inferRoiExtractOutputChannels(p, fovList);
+    if ~isempty(outputChannels)
+        ctx.channels = outputChannels;
+    elseif ~isfield(ctx,'channels') || isempty(ctx.channels) || isAllChannelSelector(getfieldlocal(p, 'channels', []))
         if ~isempty(fovList)
             ctx.channels = inferFovChannels(fovList);
         elseif isfield(p,'channels') && ~isempty(p.channels) && ~isAllChannelSelector(p.channels)
@@ -678,6 +681,24 @@ function args = buildExtractArgs(p, progressDlg)
     if isfield(p,'cropDrift') && ~isempty(p.cropDrift)
         args = [args {'CropDrift'} {p.cropDrift}];
     end
+    if isfield(p,'focusTreatChannelsAsStack')
+        args = [args {'FocusTreatChannelsAsStack'} {p.focusTreatChannelsAsStack}];
+    end
+    if isfield(p,'focusDiscardInputChannels')
+        args = [args {'FocusDiscardInputChannels'} {p.focusDiscardInputChannels}];
+    end
+    if isfield(p,'focusSmoothZ') && ~isempty(p.focusSmoothZ)
+        args = [args {'FocusSmoothZ'} {p.focusSmoothZ}];
+    end
+    if isfield(p,'focusProjectionRadius') && ~isempty(p.focusProjectionRadius)
+        args = [args {'FocusProjectionRadius'} {p.focusProjectionRadius}];
+    end
+    if isfield(p,'focusCenterCrop') && ~isempty(p.focusCenterCrop)
+        args = [args {'FocusCenterCrop'} {p.focusCenterCrop}];
+    end
+    if isfield(p,'focusOutputChannel') && ~isempty(p.focusOutputChannel)
+        args = [args {'FocusOutputChannel'} {p.focusOutputChannel}];
+    end
     if nargin >= 2 && ~isempty(progressDlg)
         args = [args {'hprogressbar'} {progressDlg}];
     end
@@ -800,6 +821,44 @@ function ch = inferFovChannels(fovList)
     end
 end
 
+function ch = inferRoiExtractOutputChannels(p, fovList)
+    ch = {};
+    inputChannels = {};
+    try
+        if isfield(p,'channels') && ~isempty(p.channels) && ~isAllChannelSelector(p.channels)
+            inputChannels = normalizeChannelListLocal(p.channels);
+        elseif isfield(p,'extractChannels') && ~isempty(p.extractChannels) && ~isAllChannelSelector(p.extractChannels)
+            inputChannels = normalizeChannelListLocal(p.extractChannels);
+        end
+    catch
+        inputChannels = {};
+    end
+    if isempty(inputChannels)
+        inputChannels = inferFovChannels(fovList);
+    end
+
+    focusEnabled = isfield(p,'focusTreatChannelsAsStack') && parseLogicalScalarLocal(p.focusTreatChannelsAsStack, false);
+    if ~focusEnabled
+        ch = inputChannels;
+        return;
+    end
+
+    focusName = 'DIC_focus';
+    if isfield(p,'focusOutputChannel') && ~isempty(p.focusOutputChannel)
+        focusName = strtrim(char(string(p.focusOutputChannel)));
+    end
+    if isempty(focusName)
+        focusName = 'DIC_focus';
+    end
+
+    discardInput = isfield(p,'focusDiscardInputChannels') && parseLogicalScalarLocal(p.focusDiscardInputChannels, false);
+    if discardInput
+        ch = {focusName};
+    else
+        ch = unique([inputChannels(:)' {focusName}], 'stable');
+    end
+end
+
 function names = normalizeChannelListLocal(v)
     names = {};
     if isempty(v)
@@ -839,5 +898,30 @@ function v = getfieldlocal(S, name, defaultVal)
     v = defaultVal;
     if isstruct(S) && isfield(S, name) && ~isempty(S.(name))
         v = S.(name);
+    end
+end
+
+function tf = parseLogicalScalarLocal(v, defaultValue)
+    tf = defaultValue;
+    try
+        if isempty(v)
+            return;
+        end
+        if islogical(v)
+            tf = any(v(:));
+            return;
+        end
+        if isnumeric(v)
+            tf = any(v(:) ~= 0);
+            return;
+        end
+        s = lower(strtrim(char(string(v))));
+        if any(strcmp(s, {'true','t','yes','y','on','1'}))
+            tf = true;
+        elseif any(strcmp(s, {'false','f','no','n','off','0'}))
+            tf = false;
+        end
+    catch
+        tf = defaultValue;
     end
 end
