@@ -6724,13 +6724,32 @@ end
 
         % Menu selected function: Catalog Browser
         function CatalogBrowserMenuSelected(app, event) %#ok<INUSD>
+            progressDlg = [];
             try
+                progressDlg = uiprogressdlg(app.DetecDivUIFigure, ...
+                    'Title', 'Opening Catalog Browser', ...
+                    'Message', 'Preparing catalog browser...', ...
+                    'Indeterminate', 'on', ...
+                    'Cancelable', 'off');
+                drawnow;
                 if exist('launch_catalog_browser', 'file') == 2
                     launch_catalog_browser;
                 else
                     detecdivCatalogBrowser;
                 end
+                try
+                    if ~isempty(progressDlg) && isvalid(progressDlg)
+                        close(progressDlg);
+                    end
+                catch
+                end
             catch ME
+                try
+                    if ~isempty(progressDlg) && isvalid(progressDlg)
+                        close(progressDlg);
+                    end
+                catch
+                end
                 uialert(app.DetecDivUIFigure, ME.message, 'Catalog Browser', 'Icon', 'error');
             end
         end

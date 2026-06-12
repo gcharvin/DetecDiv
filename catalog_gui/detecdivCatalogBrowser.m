@@ -599,7 +599,7 @@ function varargout = detecdivCatalogBrowser(varargin)
         if strcmp(state.sourceMode, 'local')
             rootPath = sanitizeRoot(rootEdit.Value, 'RequireExisting', true);
             if isempty(rootPath)
-                uialert(fig, 'Please choose a valid project root folder.', 'Invalid Folder');
+                uialert(fig, ['Please choose a valid ' localEntitySingularLabel(state.entityMode) ' root folder.'], 'Invalid Folder');
                 return;
             end
 
@@ -609,7 +609,9 @@ function varargout = detecdivCatalogBrowser(varargin)
             state.catalogSettings.backgroundIndexing = logical(backgroundCheck.Value);
             detecdiv_catalog_settings_set(state.catalogSettings);
 
-            if logical(backgroundCheck.Value)
+            if strcmp(state.entityMode, 'raw_datasets')
+                runSynchronousRawIndex(rootPath);
+            elseif logical(backgroundCheck.Value)
                 launchBackgroundIndex(rootPath);
             else
                 runSynchronousIndex(rootPath);
@@ -640,15 +642,24 @@ function varargout = detecdivCatalogBrowser(varargin)
 
         try
             response = detecdiv_hub_request_index(hubRoot, state.hubSettings, ...
-                'HostScope', 'server', 'ClearExistingForRoot', false);
+                'HostScope', 'server', ...
+                'RootType', ternaryText(strcmp(state.entityMode, 'raw_datasets'), 'raw_root', 'project_root'), ...
+                'ClearExistingForRoot', false, ...
+                'ScanOrphanRaw', strcmp(state.entityMode, 'raw_datasets'));
             refreshProjectsTable();
             if isstruct(response) && isfield(response, 'job') && isstruct(response.job)
                 setStatus(sprintf('Queued hub indexing job %s for %s.', ...
                     char(string(localStructField(response.job, 'id'))), ...
                     char(string(localStructField(response.job, 'source_path')))));
             else
-                setStatus(sprintf('Hub indexed %d project(s) from %s.', ...
-                    response.indexed_projects, char(string(response.source_path))));
+                rawCount = localNumericField(response, 'indexed_raw_datasets');
+                if strcmp(state.entityMode, 'raw_datasets')
+                    setStatus(sprintf('Hub indexed %d raw dataset(s) from %s.', ...
+                        rawCount, char(string(response.source_path))));
+                else
+                    setStatus(sprintf('Hub indexed %d project(s), %d raw dataset(s) from %s.', ...
+                        response.indexed_projects, rawCount, char(string(response.source_path))));
+                end
             end
         catch ME
             uialert(fig, ME.message, 'Hub Indexing Failed');
@@ -941,7 +952,7 @@ function varargout = detecdivCatalogBrowser(varargin)
 
     function onOpenIndexDialog(~, ~)
         dlg = uifigure( ...
-            'Name', 'Index Projects', ...
+            'Name', ['Index ' localEntityTitleLabel(state.entityMode) 's'], ...
             'Position', [220 220 760 220], ...
             'WindowStyle', 'modal', ...
             'Resize', 'off');
@@ -953,7 +964,8 @@ function varargout = detecdivCatalogBrowser(varargin)
         grid.RowSpacing = 8;
         grid.ColumnSpacing = 10;
 
-        pathLabel = uilabel(grid, 'Text', ternaryText(strcmp(state.sourceMode, 'local'), 'Projects Root', 'Remote Root'), ...
+        pathLabel = uilabel(grid, 'Text', ternaryText(strcmp(state.sourceMode, 'local'), ...
+            [localEntityTitleLabel(state.entityMode) ' Root'], 'Remote Root'), ...
             'FontWeight', 'bold');
         pathLabel.Layout.Row = 1;
         pathLabel.Layout.Column = 1;
@@ -1005,7 +1017,7 @@ function varargout = detecdivCatalogBrowser(varargin)
             if isempty(currentRoot) || ~isfolder(currentRoot)
                 currentRoot = pwd;
             end
-            selectedRoot = uigetdir(currentRoot, 'Select project root to index');
+            selectedRoot = uigetdir(currentRoot, ['Select ' localEntitySingularLabel(state.entityMode) ' root to index']);
             if isequal(selectedRoot, 0)
                 return;
             end
@@ -1643,6 +1655,25 @@ function varargout = detecdivCatalogBrowser(varargin)
         end
     end
 
+    function runSynchronousRawIndex(rootPath)
+        setBusyState(true);
+        cleanupObj = onCleanup(@() setBusyState(false)); %#ok<NASGU>
+        drawnow;
+
+        try
+            report = detecdiv_catalog_index_raw_datasets(rootPath, state.catalogSettings.dbFile, 'Verbose', false);
+            refreshProjectsTable();
+            indexedCount = 0;
+            if isfield(report, 'roots') && ~isempty(report.roots)
+                indexedCount = sum([report.roots.indexedCount]);
+            end
+            setStatus(sprintf('Raw dataset indexing completed for %s (%d dataset(s)).', rootPath, indexedCount));
+        catch ME
+            uialert(fig, ME.message, 'Raw Dataset Indexing Failed');
+            setStatus(['Raw dataset indexing failed: ' ME.message]);
+        end
+    end
+
     function pollFutureState()
         if ~isvalid(fig)
             stopPollingTimer();
@@ -1708,13 +1739,19 @@ function varargout = detecdivCatalogBrowser(varargin)
         try
             if strcmp(state.sourceMode, 'local')
                 if strcmp(state.entityMode, 'raw_datasets')
-                    state.projects = localNormalizeLocalRawDatasets(table());
+                    state.projects = localNormalizeLocalRawDatasets( ...
+                        detecdiv_catalog_list_raw_datasets(state.catalogSettings.dbFile));
                     updateProjectTableFromState();
                     applyProjectTableStyles();
                     restorePreviousSelection();
                     updateSelectionState();
                     if ~preserveStatus
-                        setStatus('Local raw dataset catalog is not implemented yet.');
+                        if isempty(state.projects)
+                            setStatus('No indexed raw datasets found in the local catalog DB.');
+                        else
+                            setStatus(sprintf('%d indexed raw dataset(s) loaded from %s.', ...
+                                height(state.projects), state.catalogSettings.dbFile));
+                        end
                     end
                     return;
                 end
@@ -1810,7 +1847,11 @@ function varargout = detecdivCatalogBrowser(varargin)
     end
 
     function updateProjectTableFromState()
-        filteredProjects = localFilterProjects(state.projects, state.searchText);
+        if strcmp(state.entityMode, 'raw_datasets')
+            filteredProjects = localFilterRawDatasets(state.projects, state.searchText);
+        else
+            filteredProjects = localFilterProjects(state.projects, state.searchText);
+        end
         state.visibleProjects = localSortProjects(filteredProjects, state.sortVariable, state.sortAscending);
         state.lastVisibleProjectCount = height(state.visibleProjects);
         clampCurrentPage();
@@ -1959,17 +2000,28 @@ function varargout = detecdivCatalogBrowser(varargin)
         end
 
         if ~isProjectView
-            detailsArea.Value = localRawDatasetDetails(row, state.sourceMode);
+            rawDetail = struct();
+            if strcmp(state.sourceMode, 'hub')
+                try
+                    [rawDetail, ~] = resolveSelectedHubRawDataset();
+                catch
+                    rawDetail = struct();
+                end
+            end
+            detailsArea.Value = localRawDatasetDetails( ...
+                row, state.sourceMode, state.catalogSettings.dbFile, state.hubSettings, rawDetail);
             return;
         end
 
         if strcmp(state.sourceMode, 'local')
+            linkedRawDatasets = localLinkedRawDatasetsText(row, state.catalogSettings.dbFile);
             detailsArea.Value = {
                 'Source         : local SQLite'
                 ['Name           : ' char(string(row.name))]
                 ['Loaded         : ' localYesNo(localProjectLoadedPath(char(string(row.project_mat_abs))))]
                 ['Health         : ' char(string(row.health_status))]
                 ['Raw status     : ' char(string(row.raw_status))]
+                ['Linked raw datasets: ' linkedRawDatasets]
                 ['FOV count      : ' num2str(row.fov_count)]
                 ['ROI count      : ' num2str(row.roi_count)]
                 ['Classifier cnt : ' num2str(row.classifier_count)]
@@ -1992,6 +2044,8 @@ function varargout = detecdivCatalogBrowser(varargin)
             notes = detecdiv_hub_list_project_notes(char(string(row.project_id)), state.hubSettings);
             aclEntries = detecdiv_hub_list_project_acl(char(string(row.project_id)), state.hubSettings);
             groups = detecdiv_hub_list_project_groups_for_project(char(string(row.project_id)), state.hubSettings);
+            linkedRawDatasets = localLinkedRawDatasetsText( ...
+                row, state.catalogSettings.dbFile, state.hubSettings, projectDetail);
             locationCount = 0;
             if isstruct(projectDetail) && isfield(projectDetail, 'locations')
                 locationCount = numel(projectDetail.locations);
@@ -2009,6 +2063,7 @@ function varargout = detecdivCatalogBrowser(varargin)
                 ['Total size     : ' localHumanBytes(row.total_bytes)]
                 ['Project MAT sz : ' localHumanBytes(row.project_mat_bytes)]
                 ['Project Dir sz : ' localHumanBytes(row.project_dir_bytes)]
+                ['Linked raw datasets: ' linkedRawDatasets]
                 ['Notes          : ' num2str(numel(localEnsureStructArray(notes)))]
                 ['ACL entries     : ' num2str(numel(localEnsureStructArray(aclEntries)))]
                 ['Groups         : ' localJoinedNames(groups, 'display_name')]
@@ -2052,6 +2107,24 @@ function varargout = detecdivCatalogBrowser(varargin)
         syncHubSettingsFromControls();
         projectDetail = detecdiv_hub_get_project(char(string(row.project_id)), state.hubSettings);
         [projectMatPath, resolutionInfo] = detecdiv_hub_resolve_project_location(projectDetail, state.hubSettings);
+    end
+
+    function [rawDetail, rawDatasetId] = resolveSelectedHubRawDataset()
+        row = getSelectedProjectRow();
+        if isempty(row)
+            error('No raw dataset selected.');
+        end
+        syncHubSettingsFromControls();
+        rawDatasetId = char(string(localTableTextField(row, 'dataset_id')));
+        if isempty(rawDatasetId)
+            error('The selected raw dataset has no identifier.');
+        end
+
+        try
+            rawDetail = detecdiv_hub_request_json(['/raw-datasets/' rawDatasetId], state.hubSettings);
+        catch
+            rawDetail = detecdiv_hub_request_json(['/datasets/' rawDatasetId], state.hubSettings);
+        end
     end
 
     function syncHubSettingsFromControls()
@@ -2666,13 +2739,38 @@ function projects = localNormalizeLocalProjects(projects)
         projects = table();
         return;
     end
-    projects.project_id = repmat("", height(projects), 1);
+    if ismember('id', projects.Properties.VariableNames)
+        projects.project_id = string(projects.id);
+    else
+        projects.project_id = repmat("", height(projects), 1);
+    end
     projects.status = repmat("indexed", height(projects), 1);
 end
 
 function datasets = localNormalizeLocalRawDatasets(items)
-    %#ok<INUSD>
-    datasets = table();
+    if isempty(items)
+        datasets = table();
+        return;
+    end
+    datasets = items;
+    n = height(datasets);
+    datasets = localEnsureTableColumn(datasets, 'dataset_id', strings(n, 1));
+    datasets = localEnsureTableColumn(datasets, 'external_key', strings(n, 1));
+    datasets = localEnsureTableColumn(datasets, 'name', strings(n, 1));
+    datasets = localEnsureTableColumn(datasets, 'status', repmat("indexed", n, 1));
+    datasets = localEnsureTableColumn(datasets, 'completeness_status', repmat("complete", n, 1));
+    datasets = localEnsureTableColumn(datasets, 'dataset_kind', repmat("unknown", n, 1));
+    datasets = localEnsureTableColumn(datasets, 'microscope_name', strings(n, 1));
+    datasets = localEnsureTableColumn(datasets, 'raw_root', strings(n, 1));
+    datasets = localEnsureTableColumn(datasets, 'storage_uri', strings(n, 1));
+    datasets = localEnsureTableColumn(datasets, 'local_path_hint', strings(n, 1));
+    datasets = localEnsureTableColumn(datasets, 'project_count', zeros(n, 1));
+    datasets = localEnsureTableColumn(datasets, 'position_count', zeros(n, 1));
+    datasets = localEnsureTableColumn(datasets, 'total_bytes', zeros(n, 1));
+    datasets = localEnsureTableColumn(datasets, 'visibility', repmat("private", n, 1));
+    datasets = localEnsureTableColumn(datasets, 'owner_user_key', strings(n, 1));
+    datasets = localEnsureTableColumn(datasets, 'created_at', strings(n, 1));
+    datasets = localEnsureTableColumn(datasets, 'updated_at', strings(n, 1));
 end
 
 function datasets = localNormalizeHubRawDatasets(items)
@@ -3000,6 +3098,76 @@ function out = localFilterProjects(projects, searchText)
     out = projects(keep, :);
 end
 
+function out = localFilterRawDatasets(datasets, searchText)
+    out = datasets;
+    if isempty(datasets) || height(datasets) == 0
+        return;
+    end
+
+    queryTokens = localSearchTokens(searchText);
+    if isempty(queryTokens)
+        return;
+    end
+
+    candidateFields = {'dataset_id', 'external_key', 'name', 'status', 'completeness_status', ...
+        'dataset_kind', 'microscope_name', 'visibility', 'owner_user_key', 'project_count', ...
+        'position_count', 'total_bytes', 'raw_root', 'raw_rel_from_root', 'root_abs_path', ...
+        'storage_uri', 'archive_uri', 'local_path_hint'};
+
+    keep = false(height(datasets), 1);
+    for i = 1:height(datasets)
+        rowText = "";
+        for j = 1:numel(candidateFields)
+            fieldName = candidateFields{j};
+            if ~ismember(fieldName, datasets.Properties.VariableNames)
+                continue;
+            end
+            rowText = rowText + " " + localSearchableFieldText(datasets(i, :), fieldName);
+        end
+        keep(i) = localSearchTokensMatch(rowText, queryTokens);
+    end
+
+    out = datasets(keep, :);
+end
+
+function tokens = localSearchTokens(searchText)
+    raw = lower(strtrim(char(string(searchText))));
+    if isempty(raw)
+        tokens = strings(0, 1);
+        return;
+    end
+    raw = regexprep(raw, '[^a-z0-9]+', ' ');
+    tokens = split(string(raw));
+    tokens(tokens == "") = [];
+end
+
+function tf = localSearchTokensMatch(rowText, queryTokens)
+    rowText = lower(regexprep(char(string(rowText)), '[^a-z0-9]+', ' '));
+    tf = true;
+    for i = 1:numel(queryTokens)
+        token = char(string(queryTokens(i)));
+        if isempty(token)
+            continue;
+        end
+        if ~contains(rowText, token)
+            tf = false;
+            return;
+        end
+    end
+end
+
+function text = localSearchableFieldText(row, fieldName)
+    text = '';
+    try
+        value = localTableField(row, fieldName);
+        if ismissing(value)
+            return;
+        end
+        text = char(string(value));
+    catch
+    end
+end
+
 function out = localSortProjects(projects, sortVariable, sortAscending)
     out = projects;
     if isempty(projects) || height(projects) == 0
@@ -3068,6 +3236,345 @@ function value = localStructFirstField(in, fieldNames)
             return;
         end
     end
+end
+
+function text = localLinkedRawDatasetsText(projectRow, dbFile, hubSettings, projectDetail)
+    text = '<none>';
+    if nargin < 3
+        hubSettings = struct();
+    end
+    if nargin < 4
+        projectDetail = struct();
+    end
+
+    projectId = localProjectIdText(projectRow);
+    if ~isempty(projectId) && ~isempty(dbFile)
+        try
+            text = localCatalogLinkedRawDatasetsText(projectId, dbFile);
+            if ~isempty(text) && ~strcmp(text, '<none>')
+                return;
+            end
+        catch
+        end
+    end
+
+    try
+        text = localHubLinkedRawDatasetsText(projectDetail, hubSettings);
+    catch
+        text = '<none>';
+    end
+end
+
+function text = localLinkedProjectsText(row, sourceMode, dbFile, hubSettings, rawDetail)
+    text = '<none>';
+    if nargin < 4
+        hubSettings = struct();
+    end
+    if nargin < 5
+        rawDetail = struct();
+    end
+
+    datasetId = localTableTextField(row, 'dataset_id');
+    if strcmp(sourceMode, 'local') && ~isempty(datasetId) && ~isempty(dbFile)
+        try
+            text = localCatalogLinkedProjectsText(datasetId, dbFile);
+            if ~isempty(text) && ~strcmp(text, '<none>')
+                return;
+            end
+        catch
+        end
+    end
+
+    try
+        text = localHubLinkedProjectsText(rawDetail, hubSettings);
+    catch
+        text = '<none>';
+    end
+end
+
+function text = localCatalogLinkedRawDatasetsText(projectId, dbFile)
+    text = '<none>';
+    try
+        projectIdValue = double(str2double(char(string(projectId))));
+    catch
+        projectIdValue = NaN;
+    end
+    if isnan(projectIdValue)
+        return;
+    end
+
+    conn = localOpenCatalogConnection(dbFile);
+    cleanupObj = onCleanup(@() close(conn)); %#ok<NASGU>
+    sql = sprintf(['SELECT d.id AS dataset_id, COALESCE(d.name, '''') AS name, ' ...
+        'COALESCE(d.external_key, '''') AS external_key ' ...
+        'FROM catalog_project_raw_links l ' ...
+        'INNER JOIN catalog_raw_datasets d ON d.id = l.raw_dataset_id ' ...
+        'WHERE l.project_id = %d ' ...
+        'ORDER BY d.name ASC, d.external_key ASC'], projectIdValue);
+    rows = fetch(conn, sql);
+    text = localFormatLinkedTable(rows, 'dataset_id', 'name', 'external_key');
+end
+
+function projectId = localProjectIdText(row)
+    projectId = '';
+    if istable(row)
+        projectId = localTableTextField(row, 'project_id');
+        if isempty(projectId)
+            projectId = localTableTextField(row, 'id');
+        end
+        return;
+    end
+    if isstruct(row)
+        projectId = char(string(localStructFirstField(row, {'project_id', 'id'})));
+    end
+end
+
+function text = localCatalogLinkedProjectsText(datasetId, dbFile)
+    text = '<none>';
+    datasetIdValue = NaN;
+    try
+        datasetIdValue = double(str2double(char(string(datasetId))));
+    catch
+    end
+    if isnan(datasetIdValue)
+        return;
+    end
+
+    conn = localOpenCatalogConnection(dbFile);
+    cleanupObj = onCleanup(@() close(conn)); %#ok<NASGU>
+    sql = sprintf(['SELECT p.id AS project_id, COALESCE(p.name, '''') AS name, ' ...
+        'COALESCE(p.project_mat_abs, '''') AS project_mat_abs ' ...
+        'FROM catalog_project_raw_links l ' ...
+        'INNER JOIN catalog_projects p ON p.id = l.project_id ' ...
+        'WHERE l.raw_dataset_id = %d ' ...
+        'ORDER BY p.name ASC, p.project_mat_abs ASC'], datasetIdValue);
+    rows = fetch(conn, sql);
+    text = localFormatLinkedTable(rows, 'project_id', 'name', 'project_mat_abs');
+end
+
+function text = localHubLinkedRawDatasetsText(projectDetail, hubSettings)
+    entries = localExtractLinkedEntries(projectDetail, {'raw_datasets', 'raw_dataset_links', 'raw_dataset_ids', 'raw_sources', 'linked_raw_datasets'}, ...
+        {'id', 'dataset_id', 'raw_dataset_id'}, {'name', 'dataset_name', 'display_name', 'external_key', 'raw_abs_path', 'raw_root', 'path'});
+    if isempty(entries)
+        text = '<none>';
+        return;
+    end
+    if all(localLinkEntriesHaveLabels(entries))
+        text = localFormatLinkedEntries(entries);
+        return;
+    end
+
+    lookup = localNormalizeHubRawDatasets(detecdiv_hub_list_raw_datasets(hubSettings, 'Limit', 5000));
+    entries = localResolveLinkedEntries(entries, lookup, 'dataset_id', 'name', 'external_key');
+    text = localFormatLinkedEntries(entries);
+end
+
+function text = localHubLinkedProjectsText(rawDetail, hubSettings)
+    entries = localExtractLinkedEntries(rawDetail, {'projects', 'project_links', 'project_ids', 'linked_projects'}, ...
+        {'id', 'project_id'}, {'name', 'project_name', 'display_name', 'external_key', 'project_mat_abs', 'project_dir_abs'});
+    if isempty(entries)
+        text = '<none>';
+        return;
+    end
+    if all(localLinkEntriesHaveLabels(entries))
+        text = localFormatLinkedEntries(entries);
+        return;
+    end
+
+    lookup = localNormalizeHubProjects(detecdiv_hub_list_projects(hubSettings, 'Limit', 5000));
+    entries = localResolveLinkedEntries(entries, lookup, 'project_id', 'name', 'external_key');
+    text = localFormatLinkedEntries(entries);
+end
+
+function conn = localOpenCatalogConnection(dbFile)
+    if nargin < 1 || isempty(dbFile)
+        dbFile = detecdiv_catalog_user_dbfile();
+    end
+    detecdiv_require_toolbox('Database Toolbox', 'sqlite');
+    initConn = detecdiv_catalog_init(dbFile);
+    close(initConn);
+    conn = sqlite(dbFile, 'connect');
+end
+
+function text = localFormatLinkedTable(rows, idField, nameField, extraField)
+    text = '<none>';
+    if isempty(rows) || ~istable(rows)
+        return;
+    end
+
+    labels = strings(height(rows), 1);
+    keep = false(height(rows), 1);
+    for i = 1:height(rows)
+        idText = localTableTextField(rows(i, :), idField);
+        nameText = localTableTextField(rows(i, :), nameField);
+        extraText = localTableTextField(rows(i, :), extraField);
+        labels(i) = string(localLinkedLabel(idText, nameText, extraText));
+        keep(i) = strlength(labels(i)) > 0;
+    end
+    labels = labels(keep);
+    if isempty(labels)
+        return;
+    end
+    text = strjoin(cellstr(labels), ', ');
+end
+
+function label = localLinkedLabel(idText, nameText, extraText)
+    idText = char(string(idText));
+    nameText = char(string(nameText));
+    extraText = char(string(extraText));
+    if isempty(nameText)
+        if isempty(extraText)
+            label = localTextOr(idText, '<unknown>');
+        else
+            label = sprintf('%s [%s]', extraText, localTextOr(idText, '?'));
+        end
+        return;
+    end
+    if ~isempty(extraText) && ~strcmp(nameText, extraText)
+        label = sprintf('%s [%s]', nameText, extraText);
+    elseif ~isempty(idText) && ~strcmp(nameText, idText)
+        label = sprintf('%s (#%s)', nameText, idText);
+    else
+        label = nameText;
+    end
+end
+
+function entries = localExtractLinkedEntries(detail, fieldCandidates, idFields, nameFields)
+    entries = struct('id', {}, 'label', {});
+    if isempty(detail) || ~isstruct(detail)
+        return;
+    end
+
+    for i = 1:numel(fieldCandidates)
+        fieldName = char(string(fieldCandidates{i}));
+        if isfield(detail, fieldName) && ~isempty(detail.(fieldName))
+            entries = [entries; localCollectLinkedEntries(detail.(fieldName), idFields, nameFields)]; %#ok<AGROW>
+        end
+        if isfield(detail, 'metadata_json') && isstruct(detail.metadata_json) && ...
+                isfield(detail.metadata_json, fieldName) && ~isempty(detail.metadata_json.(fieldName))
+            entries = [entries; localCollectLinkedEntries(detail.metadata_json.(fieldName), idFields, nameFields)]; %#ok<AGROW>
+        end
+    end
+    entries = localUniqueLinkedEntries(entries);
+end
+
+function entries = localCollectLinkedEntries(value, idFields, nameFields)
+    entries = struct('id', {}, 'label', {});
+    if isempty(value)
+        return;
+    end
+
+    if iscell(value)
+        for i = 1:numel(value)
+            entries = [entries; localCollectLinkedEntries(value{i}, idFields, nameFields)]; %#ok<AGROW>
+        end
+        return;
+    end
+
+    if isstruct(value)
+        for i = 1:numel(value)
+            entries = [entries; localOneLinkedEntry(value(i), idFields, nameFields)]; %#ok<AGROW>
+        end
+        return;
+    end
+
+    entries(end + 1, 1) = struct('id', char(string(value)), 'label', ''); %#ok<AGROW>
+end
+
+function entry = localOneLinkedEntry(item, idFields, nameFields)
+    entry = struct('id', '', 'label', '');
+    if ~isstruct(item)
+        entry.id = char(string(item));
+        return;
+    end
+
+    entry.id = char(string(localStructFirstField(item, idFields)));
+    entry.label = char(string(localFirstNonEmpty( ...
+        localStructFirstField(item, nameFields), ...
+        localStructFirstField(item, {'external_key'}), ...
+        localStructFirstField(item, {'raw_abs_path', 'raw_root', 'path', 'project_mat_abs'}))));
+end
+
+function entries = localResolveLinkedEntries(entries, lookupTable, idField, nameField, extraField)
+    if isempty(entries) || isempty(lookupTable) || ~istable(lookupTable) || ...
+            isempty(idField) || ~ismember(idField, lookupTable.Properties.VariableNames)
+        return;
+    end
+    if nargin < 4
+        nameField = 'name';
+    end
+    if nargin < 5
+        extraField = '';
+    end
+
+    for i = 1:numel(entries)
+        if ~isempty(entries(i).label)
+            continue;
+        end
+        idx = localFindMatchingLookupRow(lookupTable, idField, entries(i).id);
+        if idx <= 0
+            continue;
+        end
+        label = localTableTextField(lookupTable(idx, :), nameField);
+        if isempty(label) && ~isempty(extraField) && ismember(extraField, lookupTable.Properties.VariableNames)
+            label = localTableTextField(lookupTable(idx, :), extraField);
+        end
+        entries(i).label = label;
+    end
+end
+
+function idx = localFindMatchingLookupRow(tbl, idField, idText)
+    idx = 0;
+    if isempty(tbl) || ~istable(tbl) || isempty(idText) || ~ismember(idField, tbl.Properties.VariableNames)
+        return;
+    end
+    values = string(tbl.(idField));
+    match = find(values == string(idText), 1, 'first');
+    if ~isempty(match)
+        idx = match;
+    end
+end
+
+function entries = localUniqueLinkedEntries(entries)
+    if isempty(entries)
+        return;
+    end
+    keys = strings(numel(entries), 1);
+    for i = 1:numel(entries)
+        keys(i) = string(entries(i).id) + "|" + string(entries(i).label);
+    end
+    [~, keepIdx] = unique(keys, 'stable');
+    entries = entries(keepIdx);
+end
+
+function tf = localLinkEntriesHaveLabels(entries)
+    tf = true;
+    if isempty(entries)
+        tf = false;
+        return;
+    end
+    for i = 1:numel(entries)
+        if isempty(strtrim(char(string(entries(i).label))))
+            tf = false;
+            return;
+        end
+    end
+end
+
+function text = localFormatLinkedEntries(entries)
+    text = '<none>';
+    if isempty(entries)
+        return;
+    end
+    labels = strings(numel(entries), 1);
+    for i = 1:numel(entries)
+        labels(i) = string(localLinkedLabel(entries(i).id, entries(i).label, ''));
+    end
+    labels(labels == "") = [];
+    if isempty(labels)
+        return;
+    end
+    text = strjoin(cellstr(labels), ', ');
 end
 
 function value = localFirstNonEmpty(varargin)
@@ -3142,31 +3649,30 @@ function label = localEntityTitleLabel(entityMode)
     end
 end
 
-function lines = localRawDatasetDetails(row, sourceMode)
+function lines = localRawDatasetDetails(row, sourceMode, dbFile, hubSettings, rawDetail)
     sourceLabel = 'local catalog';
     if strcmp(sourceMode, 'hub')
         sourceLabel = 'hub API';
     end
+    linkedProjects = localLinkedProjectsText(row, sourceMode, dbFile, hubSettings, rawDetail);
     lines = {
         ['Source         : ' sourceLabel]
-        ['Dataset id     : ' char(string(localTableField(row, 'dataset_id')))]
-        ['Name           : ' char(string(localTableField(row, 'name')))]
-        ['External key   : ' char(string(localTableField(row, 'external_key')))]
-        ['Status         : ' char(string(localTableField(row, 'status')))]
-        ['Completeness   : ' char(string(localTableField(row, 'completeness_status')))]
-        ['Kind           : ' char(string(localTableField(row, 'dataset_kind')))]
-        ['Microscope     : ' char(string(localTableField(row, 'microscope_name')))]
-        ['Visibility     : ' char(string(localTableField(row, 'visibility')))]
-        ['Owner          : ' char(string(localTableField(row, 'owner_user_key')))]
-        ['Positions      : ' char(string(localTableField(row, 'position_count')))]
-        ['Linked projects: ' char(string(localTableField(row, 'project_count')))]
+        ['Dataset id     : ' localTableTextField(row, 'dataset_id')]
+        ['Name           : ' localTableTextField(row, 'name')]
+        ['External key   : ' localTableTextField(row, 'external_key')]
+        ['Status         : ' localTableTextField(row, 'status')]
+        ['Completeness   : ' localTableTextField(row, 'completeness_status')]
+        ['Kind           : ' localTableTextField(row, 'dataset_kind')]
+        ['Microscope     : ' localTableTextField(row, 'microscope_name')]
+        ['Visibility     : ' localTableTextField(row, 'visibility')]
+        ['Owner          : ' localTableTextField(row, 'owner_user_key')]
+        ['Positions      : ' localTableTextField(row, 'position_count')]
+        ['Linked projects: ' linkedProjects]
         ['Total size     : ' localHumanBytes(localTableNumericField(row, 'total_bytes'))]
-        ['Created date   : ' localTextOr(localDisplayDate(localTableField(row, 'created_at')), '<unknown>')]
-        ['Updated date   : ' localTextOr(localDisplayDate(localTableField(row, 'updated_at')), '<unknown>')]
+        ['Created date   : ' localTextOr(localDisplayDate(localTableTextField(row, 'created_at')), '<unknown>')]
+        ['Updated date   : ' localTextOr(localDisplayDate(localTableTextField(row, 'updated_at')), '<unknown>')]
         ' '
-        ['Raw root       : ' char(string(localTableField(row, 'raw_root')))]
-        ['Storage URI    : ' char(string(localTableField(row, 'storage_uri')))]
-        ['Local hint     : ' char(string(localTableField(row, 'local_path_hint')))]
+        ['Raw root       : ' localTableTextField(row, 'raw_root')]
         };
 end
 
@@ -3186,14 +3692,38 @@ function value = localTableField(row, fieldName)
     end
 end
 
+function text = localTableTextField(row, fieldName)
+    value = localTableField(row, fieldName);
+    if ismissing(value)
+        text = '';
+        return;
+    end
+    try
+        text = char(string(value));
+    catch
+        text = '';
+    end
+end
+
 function value = localTableNumericField(row, fieldName)
     value = 0;
     raw = localTableField(row, fieldName);
+    if ismissing(raw)
+        return;
+    end
     try
         value = double(raw);
     catch
         value = 0;
     end
+end
+
+function tbl = localEnsureTableColumn(tbl, columnName, defaultValue)
+    columnName = char(string(columnName));
+    if ~istable(tbl) || ismember(columnName, tbl.Properties.VariableNames)
+        return;
+    end
+    tbl.(columnName) = defaultValue;
 end
 
 function value = localHubMetadataField(projectDetail, fieldName)

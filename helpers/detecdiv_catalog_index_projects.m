@@ -67,6 +67,7 @@ function report = detecdiv_catalog_index_projects(projectRoots, dbFile, varargin
                     projectInfo = localInspectProject(proj, rootPath, opts.LoadProjectMetadata);
                     projectId = localUpsertProject(conn, rootId, projectInfo);
                     localReplaceRawSources(conn, projectId, projectInfo.rawSources);
+                    localReplaceRawDatasetLinks(conn, projectId, projectInfo.rawSources, projectInfo.scanTime);
                     localReplacePipelineRuns(conn, projectId, projectInfo.pipelineRuns, projectInfo.scanTime);
 
                     rootReport.indexedCount = rootReport.indexedCount + 1;
@@ -467,6 +468,44 @@ function localReplaceRawSources(conn, projectId, rawSources)
             '%d, %s, %d, %s, %s, %d)'], ...
             double(projectId), localSqlQuote(row.rawKind), round(row.channelIndex), ...
             localSqlQuote(row.rawAbsPath), localSqlQuote(row.rawRelFromRoot), round(row.existsFlag)));
+    end
+end
+
+function localReplaceRawDatasetLinks(conn, projectId, rawSources, scanTime)
+    exec(conn, sprintf('DELETE FROM catalog_project_raw_links WHERE project_id = %d', double(projectId)));
+    seen = containers.Map('KeyType', 'char', 'ValueType', 'logical');
+    linkedIds = [];
+
+    for i = 1:numel(rawSources)
+        row = rawSources(i);
+        if isempty(row.rawAbsPath) || ~logical(row.existsFlag)
+            continue;
+        end
+        try
+            [rawDatasetId, ~] = detecdiv_catalog_upsert_raw_dataset_record( ...
+                conn, '', row.rawAbsPath, 'ScanTime', scanTime);
+        catch
+            continue;
+        end
+        key = char(string(rawDatasetId));
+        if isKey(seen, key)
+            continue;
+        end
+        seen(key) = true;
+        linkedIds(end+1) = double(rawDatasetId); %#ok<AGROW>
+        exec(conn, sprintf(['INSERT INTO catalog_project_raw_links(project_id, raw_dataset_id, link_type, created_at) ' ...
+            'VALUES (%d, %d, %s, %s)'], ...
+            double(projectId), double(rawDatasetId), localSqlQuote('source'), localSqlQuote(scanTime)));
+    end
+
+    for i = 1:numel(linkedIds)
+        projectCount = localFetchScalar(conn, sprintf( ...
+            'SELECT COUNT(*) FROM catalog_project_raw_links WHERE raw_dataset_id = %d', linkedIds(i)));
+        if isempty(projectCount)
+            projectCount = 0;
+        end
+        exec(conn, sprintf('UPDATE catalog_raw_datasets SET project_count = %d WHERE id = %d', ...
+            round(projectCount), linkedIds(i)));
     end
 end
 
