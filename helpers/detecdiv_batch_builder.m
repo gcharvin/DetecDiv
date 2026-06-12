@@ -29,12 +29,12 @@ function batchSpec = detecdiv_batch_builder(selectedRefs, varargin)
 
     fig = uifigure( ...
         'Name', 'DetecDiv Batch Builder', ...
-        'Position', [180 120 1340 800], ...
+        'Position', [180 80 1340 900], ...
         'WindowStyle', 'modal', ...
         'CloseRequestFcn', @onClose);
 
     mainGrid = uigridlayout(fig, [4 1]);
-    mainGrid.RowHeight = {150, '1x', 220, 54};
+    mainGrid.RowHeight = {150, '1x', 320, 54};
     mainGrid.Padding = [12 12 12 12];
     mainGrid.RowSpacing = 10;
 
@@ -123,7 +123,7 @@ function batchSpec = detecdiv_batch_builder(selectedRefs, varargin)
     footerGrid = uigridlayout(mainGrid, [3 6]);
     footerGrid.Layout.Row = 3;
     footerGrid.ColumnWidth = {160, 160, 160, 160, '1x', 180};
-    footerGrid.RowHeight = {28, 28, 88};
+    footerGrid.RowHeight = {28, 28, 188};
     footerGrid.ColumnSpacing = 8;
     footerGrid.Padding = [0 0 0 0];
 
@@ -172,7 +172,7 @@ function batchSpec = detecdiv_batch_builder(selectedRefs, varargin)
     recentGrid = uigridlayout(footerGrid, [2 6]);
     recentGrid.Layout.Row = 3;
     recentGrid.Layout.Column = [1 6];
-    recentGrid.RowHeight = {18, 120};
+    recentGrid.RowHeight = {18, 164};
     recentGrid.ColumnWidth = {260, '1x', '1x', '1x', '1x', 80};
     recentGrid.RowSpacing = 4;
     recentGrid.ColumnSpacing = 8;
