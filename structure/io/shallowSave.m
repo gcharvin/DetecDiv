@@ -145,10 +145,13 @@ function shallowSave(shallowObj, option, progress)
         fprintf('[OK]   New MAT moved into place: %s\n', projectTarget);
     catch ME
         fprintf(2, '[ERR]  Failed to move new MAT into place: %s\n', ME.message);
-        if exist(tmpTarget, 'file'); delete(tmpTarget); end
+        if exist(tmpTarget, 'file')
+            fprintf(2, '[ERR]  Verified project MAT was kept for recovery: %s\n', tmpTarget);
+        end
         fprintf('--------------------------------------------\n\n');
         error('shallowSave:installProjectMatFailed', ...
-            'Failed to install project MAT "%s": %s', projectTarget, ME.message);
+            'Failed to install project MAT "%s": %s. Verified temp MAT kept at "%s".', ...
+            projectTarget, ME.message, tmpTarget);
     end
 
     % 4.e) Vérification finale
