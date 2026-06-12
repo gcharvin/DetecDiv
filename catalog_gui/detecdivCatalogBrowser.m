@@ -303,7 +303,7 @@ function varargout = detecdivCatalogBrowser(varargin)
     sideGrid = uigridlayout(bodyGrid, [3 1]);
     sideGrid.Layout.Row = 1;
     sideGrid.Layout.Column = 2;
-    sideGrid.RowHeight = {24, '1x', 116};
+    sideGrid.RowHeight = {24, '1x', 128};
     sideGrid.RowSpacing = 8;
     sideGrid.Padding = [0 0 0 0];
 
@@ -315,10 +315,11 @@ function varargout = detecdivCatalogBrowser(varargin)
         'FontName', 'Consolas');
     detailsArea.Layout.Row = 2;
 
-    actionGrid = uigridlayout(sideGrid, [3 3]);
+    actionGrid = uigridlayout(sideGrid, [4 3]);
     actionGrid.Layout.Row = 3;
     actionGrid.ColumnWidth = {'1x', '1x', '1x'};
-    actionGrid.RowHeight = {32, 32, 0};
+    actionGrid.RowHeight = {32, 32, 32, 0};
+    actionGrid.RowSpacing = 8;
     actionGrid.ColumnSpacing = 8;
     actionGrid.Padding = [0 0 0 0];
 
@@ -359,7 +360,7 @@ function varargout = detecdivCatalogBrowser(varargin)
 
     batchNewButton = uibutton(actionGrid, 'push', 'Text', 'Batch New...', ...
         'ButtonPushedFcn', @onBatchNewProjects);
-    batchNewButton.Layout.Row = 3;
+    batchNewButton.Layout.Row = 4;
     batchNewButton.Layout.Column = 2;
 
     sendToBatchButton = uibutton(actionGrid, 'push', 'Text', 'Send to Batch...', ...
@@ -367,15 +368,15 @@ function varargout = detecdivCatalogBrowser(varargin)
     sendToBatchButton.Layout.Row = 3;
     sendToBatchButton.Layout.Column = 1;
 
-    selectVisibleButton = uibutton(actionGrid, 'push', 'Text', 'Select All Visible', ...
+    selectVisibleButton = uibutton(actionGrid, 'push', 'Text', 'Select Visible', ...
         'Enable', 'off', 'ButtonPushedFcn', @onSelectAllVisible);
     selectVisibleButton.Layout.Row = 3;
-    selectVisibleButton.Layout.Column = 3;
+    selectVisibleButton.Layout.Column = 2;
 
-    deselectVisibleButton = uibutton(actionGrid, 'push', 'Text', 'Deselect All Visible', ...
+    deselectVisibleButton = uibutton(actionGrid, 'push', 'Text', 'Deselect Visible', ...
         'Enable', 'off', 'ButtonPushedFcn', @onDeselectAllVisible);
     deselectVisibleButton.Layout.Row = 3;
-    deselectVisibleButton.Layout.Column = 4;
+    deselectVisibleButton.Layout.Column = 3;
 
     footerGrid = uigridlayout(mainGrid, [1 5]);
     footerGrid.Layout.Row = 4;
