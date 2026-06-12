@@ -1846,6 +1846,8 @@ classdef pipeline2 < matlab.apps.AppBase
                             p = applyCnnLstmExecutionDefaults(app, p, struct(), 'missing');
                         case 'cellposesam'
                             p = applyCellposeExecutionDefaults(app, p, struct(), 'missing');
+                        case 'deeplab_pixel_classification'
+                            p = applyDeeplabPixelExecutionDefaults(app, p, struct(), 'missing');
                         otherwise
                             if ~isfield(p, 'outputName') || isempty(p.outputName), p.outputName = char(string(pkg)); end
                     end
@@ -5701,6 +5703,8 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
                 if strcmpi(actualPkg, 'cellposesam')
                     app.Data.nodes(idx).params = copyCellposeStaticParamsFromClassi(app, app.Data.nodes(idx).params, classiObj);
+                elseif strcmpi(actualPkg, 'deeplab_pixel_classification')
+                    app.Data.nodes(idx).params = copyDeeplabPixelStaticParamsFromClassi(app, app.Data.nodes(idx).params, classiObj);
                 elseif strcmpi(actualPkg, 'cnn_lstm')
                     app.Data.nodes(idx).params = copyCnnLstmStaticParamsFromClassi(app, app.Data.nodes(idx).params, classiObj);
                 end
@@ -5738,11 +5742,17 @@ classdef pipeline2 < matlab.apps.AppBase
                 pkg = 'cnn_lstm';
             elseif contains(lower(fun), 'cellpose')
                 pkg = 'cellposesam';
+            elseif contains(lower(fun), 'deeplab')
+                pkg = 'deeplab_pixel_classification';
             end
         end
 
         function params = copyCellposeStaticParamsFromClassi(app, params, classiObj)
             params = applyCellposeExecutionDefaults(app, params, classiObj, 'missing');
+        end
+
+        function params = copyDeeplabPixelStaticParamsFromClassi(app, params, classiObj)
+            params = applyDeeplabPixelExecutionDefaults(app, params, classiObj, 'missing');
         end
 
         function params = copyCnnLstmStaticParamsFromClassi(app, params, classiObj)
@@ -5761,9 +5771,9 @@ classdef pipeline2 < matlab.apps.AppBase
                     error('pipeline2:NoLinkedClassifier', 'No valid linked classifier object is available for this module.');
                 end
                 pkg = classifierPackageName(app, classiObj);
-                if ~any(strcmpi(pkg, {'cellposesam','cnn_lstm'}))
+                if ~any(strcmpi(pkg, {'cellposesam','deeplab_pixel_classification','cnn_lstm'}))
                     error('pipeline2:UnsupportedClassifierDefaults', ...
-                        'Execution-default import is currently implemented for CellposeSAM and CNN/LSTM classifiers.');
+                        'Execution-default import is currently implemented for CellposeSAM, DeepLab pixel, and CNN/LSTM classifiers.');
                 end
 
                 choice = uiconfirm(app.UIFigure, ...
@@ -5787,6 +5797,8 @@ classdef pipeline2 < matlab.apps.AppBase
                 switch lower(char(string(pkg)))
                     case 'cellposesam'
                         app.Data.nodes(idx).params = applyCellposeExecutionDefaults(app, app.Data.nodes(idx).params, classiObj, mode);
+                    case 'deeplab_pixel_classification'
+                        app.Data.nodes(idx).params = applyDeeplabPixelExecutionDefaults(app, app.Data.nodes(idx).params, classiObj, mode);
                     case 'cnn_lstm'
                         app.Data.nodes(idx).params = applyCnnLstmExecutionDefaults(app, app.Data.nodes(idx).params, classiObj, mode);
                 end
@@ -5921,7 +5933,71 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
+        function params = applyDeeplabPixelExecutionDefaults(app, params, classiObj, mode) %#ok<INUSD>
+            if nargin < 4 || isempty(mode)
+                mode = 'missing';
+            end
+            if ~isstruct(params)
+                params = struct();
+            end
+            spec = deeplabPixelExecutionSpec(app, classiObj);
+            defaults = spec.defaults;
+            keys = unique([spec.staticKeys spec.outputKeys], 'stable');
+            overwrite = strcmpi(char(string(mode)), 'overwrite');
+            for i = 1:numel(keys)
+                key = keys{i};
+                if ~overwrite && isfield(params, key) && ~isempty(params.(key))
+                    continue;
+                end
+                if isfield(defaults, key)
+                    params.(key) = defaults.(key);
+                end
+            end
+            if isfield(params, 'outputType')
+                params.outputType = normalizeDeeplabPixelOutputTypeForPipeline(app, params.outputType);
+            end
+            if isfield(params, 'executionEnvironment')
+                params.executionEnvironment = normalizeExecutionEnvironmentForPipeline(app, params.executionEnvironment);
+            end
+        end
+
+        function spec = deeplabPixelExecutionSpec(app, classiObj) %#ok<INUSD>
+            if nargin < 2
+                classiObj = [];
+            end
+            try
+                spec = deeplab_pixel_classification.executionSpec(classiObj);
+            catch
+                spec = struct();
+                spec.staticKeys = {'outputType','executionEnvironment'};
+                spec.outputKeys = {'outputName','probabilityOutputName'};
+                spec.defaultImportKeys = spec.staticKeys;
+                spec.defaults = struct('outputType','segmentation','outputName','deeplab_pixels', ...
+                    'probabilityOutputName','deeplab_pixels_prob','executionEnvironment','module_default');
+                spec.labels = struct();
+                spec.tips = struct();
+                spec.choices = struct('outputType', {{'segmentation','probability','both'}}, ...
+                    'executionEnvironment', {{'module_default','cpu','gpu'}});
+            end
+        end
+
         function outputType = normalizeCellposeOutputTypeForPipeline(app, outputType) %#ok<INUSD>
+            outputType = lower(strtrim(char(string(outputType))));
+            switch outputType
+                case {'proba','probabilities','probability_map'}
+                    outputType = 'probability';
+                case {'postprocessing','seg','mask','masks','semantic','semantic_segmentation'}
+                    outputType = 'segmentation';
+                case {'both','probability','segmentation'}
+                    % already normalized
+                otherwise
+                    if isempty(outputType)
+                        outputType = 'segmentation';
+                    end
+            end
+        end
+
+        function outputType = normalizeDeeplabPixelOutputTypeForPipeline(app, outputType) %#ok<INUSD>
             outputType = lower(strtrim(char(string(outputType))));
             switch outputType
                 case {'proba','probabilities','probability_map'}
@@ -9518,6 +9594,13 @@ classdef pipeline2 < matlab.apps.AppBase
                                 else
                                     choices = {'segmentation','probability','both'};
                                 end
+                            elseif strcmp(pkg, 'deeplab_pixel_classification')
+                                spec = deeplabPixelExecutionSpec(app);
+                                if isfield(spec, 'choices') && isfield(spec.choices, 'outputType')
+                                    choices = spec.choices.outputType;
+                                else
+                                    choices = {'segmentation','probability','both'};
+                                end
                             else
                                 choices = {'segmentation','probability','both'};
                             end
@@ -9525,6 +9608,13 @@ classdef pipeline2 < matlab.apps.AppBase
                             pkg = lower(char(string(getField(app, node, 'pkg', ''))));
                             if strcmp(pkg, 'cnn_lstm')
                                 spec = cnnLstmExecutionSpec(app);
+                                if isfield(spec, 'choices') && isfield(spec.choices, 'executionEnvironment')
+                                    choices = spec.choices.executionEnvironment;
+                                else
+                                    choices = {'module_default','cpu','gpu'};
+                                end
+                            elseif strcmp(pkg, 'deeplab_pixel_classification')
+                                spec = deeplabPixelExecutionSpec(app);
                                 if isfield(spec, 'choices') && isfield(spec.choices, 'executionEnvironment')
                                     choices = spec.choices.executionEnvironment;
                                 else
@@ -9599,10 +9689,13 @@ classdef pipeline2 < matlab.apps.AppBase
                     strcmp(pkg, 'cellposesam') && strcmpi(keyText, 'outputType')
                 value = normalizeCellposeOutputTypeForPipeline(app, value);
             elseif strcmpi(scope, 'static') && strcmpi(nodeType, 'classifier') && ...
+                    strcmp(pkg, 'deeplab_pixel_classification') && strcmpi(keyText, 'outputType')
+                value = normalizeDeeplabPixelOutputTypeForPipeline(app, value);
+            elseif strcmpi(scope, 'static') && strcmpi(nodeType, 'classifier') && ...
                     strcmp(pkg, 'cnn_lstm') && strcmpi(keyText, 'outputMode')
                 value = normalizeCnnLstmOutputModeForPipeline(app, value);
             elseif strcmpi(scope, 'static') && strcmpi(nodeType, 'classifier') && ...
-                    strcmp(pkg, 'cnn_lstm') && strcmpi(keyText, 'executionEnvironment')
+                    any(strcmp(pkg, {'cnn_lstm','deeplab_pixel_classification'})) && strcmpi(keyText, 'executionEnvironment')
                 value = normalizeExecutionEnvironmentForPipeline(app, value);
             end
             if strcmpi(scope, 'static') && strcmpi(nodeType, 'processor') && ...
@@ -9670,6 +9763,9 @@ classdef pipeline2 < matlab.apps.AppBase
                 any(strcmpi(keyText, {'maskChannelCount','scoreChannelCount'}))) || ...
                 (strcmpi(nodeType, 'classifier') && ...
                 strcmpi(pkg, 'cellposesam') && ...
+                strcmpi(keyText, 'outputType')) || ...
+                (strcmpi(nodeType, 'classifier') && ...
+                strcmpi(pkg, 'deeplab_pixel_classification') && ...
                 strcmpi(keyText, 'outputType'));
         end
 
@@ -9890,6 +9986,9 @@ classdef pipeline2 < matlab.apps.AppBase
                     keys = spec.staticKeys;
                 case 'cellposesam'
                     spec = cellposeExecutionSpec(app);
+                    keys = spec.staticKeys;
+                case 'deeplab_pixel_classification'
+                    spec = deeplabPixelExecutionSpec(app);
                     keys = spec.staticKeys;
                 otherwise
                     keys = {};
@@ -10247,6 +10346,17 @@ classdef pipeline2 < matlab.apps.AppBase
             if strcmpi(scope, 'static') && strcmp(nodeType, 'classifier') && strcmp(pkg, 'cellposesam')
                 try
                     spec = cellposeExecutionSpec(app);
+                    if isfield(spec, 'tips') && isfield(spec.tips, key)
+                        txt = spec.tips.(key);
+                    end
+                catch
+                    txt = '';
+                end
+                return;
+            end
+            if strcmpi(scope, 'static') && strcmp(nodeType, 'classifier') && strcmp(pkg, 'deeplab_pixel_classification')
+                try
+                    spec = deeplabPixelExecutionSpec(app);
                     if isfield(spec, 'tips') && isfield(spec.tips, key)
                         txt = spec.tips.(key);
                     end
@@ -11055,6 +11165,15 @@ classdef pipeline2 < matlab.apps.AppBase
                     nodes(i).params = applyCellposeExecutionDefaults(app, nodes(i).params, struct(), 'missing');
                     if isfield(nodes(i).params, 'outputType')
                         nodes(i).params.outputType = normalizeCellposeOutputTypeForPipeline(app, nodes(i).params.outputType);
+                    end
+                end
+                if strcmp(pkg, 'deeplab_pixel_classification')
+                    nodes(i).params = applyDeeplabPixelExecutionDefaults(app, nodes(i).params, struct(), 'missing');
+                    if isfield(nodes(i).params, 'outputType')
+                        nodes(i).params.outputType = normalizeDeeplabPixelOutputTypeForPipeline(app, nodes(i).params.outputType);
+                    end
+                    if isfield(nodes(i).params, 'executionEnvironment')
+                        nodes(i).params.executionEnvironment = normalizeExecutionEnvironmentForPipeline(app, nodes(i).params.executionEnvironment);
                     end
                 end
                 if strcmp(pkg, 'cnn_lstm')
