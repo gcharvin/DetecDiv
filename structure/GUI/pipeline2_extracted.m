@@ -962,8 +962,8 @@ classdef pipeline2 < matlab.apps.AppBase
             cleanupObj = onCleanup(@()closeRuntimeProgress(app, d)); %#ok<NASGU>
             updateRuntimeProgress(app, d, 'Redrawing pipeline graph...');
             redrawGraph(app);
-            updateRuntimeProgress(app, d, 'Refreshing module tabs...');
-            refreshModuleTabs(app);
+            updateRuntimeProgress(app, d, 'Updating module tab states...');
+            refreshModuleTabActiveStates(app);
             updateRuntimeProgress(app, d, 'Checking pipeline...');
             refreshValidationReport(app, false);
             redrawGraph(app);
@@ -5044,16 +5044,56 @@ classdef pipeline2 < matlab.apps.AppBase
             if isnan(app.SelectedNodeIndex) || app.SelectedNodeIndex < 1 || app.SelectedNodeIndex > numel(app.Data.nodes)
                 return;
             end
-            node = app.Data.nodes(app.SelectedNodeIndex);
+            rebuildModuleTabForNode(app, app.SelectedNodeIndex);
+        end
+
+        function rebuildModuleTabForNode(app, nodeIdx)
+            if nodeIdx < 1 || nodeIdx > numel(app.Data.nodes)
+                return;
+            end
+            if isempty(app.DynamicModuleTabs)
+                refreshModuleTabs(app);
+                return;
+            end
+            previousFocus = captureTabFocus(app);
+            node = app.Data.nodes(nodeIdx);
             nodeId = char(string(getField(app, node, 'id', '')));
             for i = 1:numel(app.DynamicModuleTabs)
                 try
                     t = app.DynamicModuleTabs(i);
                     if isvalid(t) && isstruct(t.UserData) && isfield(t.UserData, 'nodeId') && strcmp(char(string(t.UserData.nodeId)), nodeId)
+                        app.IsRefreshingTabs = true;
+                        cleanupObj = onCleanup(@()setRefreshingTabs(app, false)); %#ok<NASGU>
                         delete(t.Children);
                         buildModuleTab(app, t, node);
+                        activeIds = selectedRunNodeIds(app);
+                        configureModuleTabActiveState(app, t, node, activeIds);
+                        restoreTabFocus(app, previousFocus);
                         return;
                     end
+                catch
+                end
+            end
+            refreshModuleTabs(app);
+        end
+
+        function refreshModuleTabActiveStates(app)
+            if isempty(app.DynamicModuleTabs)
+                return;
+            end
+            activeIds = selectedRunNodeIds(app);
+            for i = 1:numel(app.DynamicModuleTabs)
+                try
+                    t = app.DynamicModuleTabs(i);
+                    if ~isvalid(t) || ~isstruct(t.UserData) || ~isfield(t.UserData, 'nodeId')
+                        continue;
+                    end
+                    nodeId = char(string(t.UserData.nodeId));
+                    idx = find(strcmp({app.Data.nodes.id}, nodeId), 1);
+                    if isempty(idx)
+                        continue;
+                    end
+                    configureModuleTabActiveState(app, t, app.Data.nodes(idx), activeIds);
                 catch
                 end
             end
@@ -9903,8 +9943,8 @@ classdef pipeline2 < matlab.apps.AppBase
                 (any(strcmpi(keyText, {'outputMode','outputType'})) || ...
                 staticParamAffectsBindings(app, app.Data.nodes(idx), keyText));
             if needsBindingRefresh
-                updateRuntimeProgress(app, d, 'Rebuilding pipeline module tabs...');
-                refreshModuleTabs(app);
+                updateRuntimeProgress(app, d, 'Rebuilding changed module tab...');
+                rebuildModuleTabForNode(app, idx);
             end
             updateRuntimeProgress(app, d, 'Checking pipeline bindings...');
             refreshValidationReport(app, needsBindingRefresh);
