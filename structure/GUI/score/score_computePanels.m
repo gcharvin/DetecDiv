@@ -135,16 +135,16 @@ for cc = 1:numROI
                 % Traitement des canaux indexés
                 listofindexedcha = find(roitmp.display.indexed);
                 tmpcha = roitmp.channelid(currentCha{ii});
-                currentIndx = find(listofindexedcha == tmpcha);
+                currentIndx = find(listofindexedcha == tmpcha, 1, 'first');
                 if isempty(indices) || (numel(indices)==1 && indices==-1)
-                    if defaultClass && (paintChannel ~= currentIndx)
+                    if defaultClass && ~any(paintChannel == currentIndx)
                         indices = 2:max(imtmp2(:));
                     else
                         indices = 1:max(imtmp2(:));
                     end
                 end
 
-                if paintChannel == currentIndx
+                if any(paintChannel == currentIndx)
                     uni = unique(totim(:));
                     uni(uni==0) = [];
                     nuni = numel(uni);

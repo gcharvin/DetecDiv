@@ -265,8 +265,8 @@ for ch = 1:numel(channel)
             continue;
         end
     else
-        if paintChannel ~= 0
-            if isempty(currentIndx) || paintChannel ~= currentIndx
+        if any(paintChannel ~= 0)
+            if isempty(currentIndx) || ~any(paintChannel == currentIndx)
                 continue;
             end
         end
@@ -274,7 +274,7 @@ for ch = 1:numel(channel)
 
     % indices par défaut
     if isempty(indices) || (numel(indices)==1 && indices==-1)
-        if defaultClass && ~isempty(currentIndx) && ~(paintChannel == currentIndx)
+        if defaultClass && ~isempty(currentIndx) && ~any(paintChannel == currentIndx)
             indices = 2:max(L(:));
         else
             indices = 1:max(L(:));
@@ -285,7 +285,7 @@ for ch = 1:numel(channel)
     if ischar(paintChannel) || isstring(paintChannel)
         isPaintThis = (strlength(string(paintChannel)) > 0) && strcmpi(thisName, string(paintChannel));
     else
-        isPaintThis = (paintChannel ~= 0) && ~isempty(currentIndx) && (paintChannel == currentIndx);
+        isPaintThis = any(paintChannel ~= 0) && ~isempty(currentIndx) && any(paintChannel == currentIndx);
     end
 
     % couleurs
