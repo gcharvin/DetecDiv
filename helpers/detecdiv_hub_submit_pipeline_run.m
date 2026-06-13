@@ -24,7 +24,9 @@ function [job, runObj] = detecdiv_hub_submit_pipeline_run(runObj, shallowObj, va
                 'ResolveAttempts', opts.projectResolveAttempts, ...
                 'ResolveIntervalSec', opts.projectResolveIntervalSec));
         if ~isempty(ref.project_id)
-            localRunStageNoOutput('save project after hub registration check', @() localSaveProject(shallowObj, opts.hub));
+            if opts.saveProject
+                localRunStageNoOutput('save project after hub registration check', @() localSaveProject(shallowObj, opts.hub));
+            end
         end
         if isempty(ref.project_id)
             msg = ['This project is not yet registered in the Hub project catalogue.' newline ...
@@ -41,7 +43,9 @@ function [job, runObj] = detecdiv_hub_submit_pipeline_run(runObj, shallowObj, va
     else
         [shallowObj, ref] = localRunStage('store resolved hub project reference', ...
             @() detecdiv_hub_ensure_project(shallowObj, 'Hub', opts.hub, 'ResolveAttempts', 1));
-        localRunStageNoOutput('save project after hub project resolution', @() localSaveProject(shallowObj, opts.hub));
+        if opts.saveProject
+            localRunStageNoOutput('save project after hub project resolution', @() localSaveProject(shallowObj, opts.hub));
+        end
     end
 
     payload = struct();
