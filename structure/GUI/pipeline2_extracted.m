@@ -5151,11 +5151,16 @@ classdef pipeline2 < matlab.apps.AppBase
                 buildDataLoaderTab(app, parentTab, node);
                 return;
             end
-            bindingData = bindingTableData(app, node);
+            isRoiExtractNode = strcmpi(char(string(getField(app, node, 'type', ''))), 'roiExtract');
+            if isRoiExtractNode
+                bindingData = cell(0, 6);
+            else
+                bindingData = bindingTableData(app, node);
+            end
             staticData = paramsToTableData(app, node, 'static');
             runtimeData = paramsToTableData(app, node, 'runtime');
             showClassifierReference = isClassifierNode(app, node);
-            showBindings = ~isempty(bindingData);
+            showBindings = isRoiExtractNode || ~isempty(bindingData);
             showStatic = ~isempty(staticData);
             showRuntime = ~isempty(runtimeData);
 
@@ -5176,7 +5181,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 rowHeights = [rowHeights {24, 76}]; %#ok<AGROW>
             end
             if showBindings
-                if strcmpi(char(string(getField(app, node, 'type', ''))), 'roiExtract')
+                if isRoiExtractNode
                     rowHeights = [rowHeights {24, 210}]; %#ok<AGROW>
                 else
                     rowHeights = [rowHeights {24, min(160, 42 + 34 * size(bindingData, 1))}]; %#ok<AGROW>
@@ -5213,7 +5218,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 bindingLabel.Layout.Row = row;
                 bindingLabel.Layout.Column = layoutSpan(app, 1, colCount);
 
-                if strcmpi(char(string(getField(app, node, 'type', ''))), 'roiExtract')
+                if isRoiExtractNode
                     section = buildRoiExtractBindingSection(app, grid, node);
                 else
                     section = buildBindingSection(app, grid, bindingData, node, true);
@@ -9256,9 +9261,10 @@ classdef pipeline2 < matlab.apps.AppBase
         function inputReport = currentResourceInputReport(app, node, spec)
             inputReport = struct();
             try
-                pipe = buildPipelineStruct(app);
-                ctx = buildBindingValidationContext(app);
-                [~, report] = validatePipeline(pipe, ctx, struct('allowGui', false));
+                report = app.LastValidationReport;
+                if ~isstruct(report) || isempty(fieldnames(report))
+                    return;
+                end
                 nodeId = char(string(getField(app, node, 'id', '')));
                 nodeKey = matlab.lang.makeValidName(nodeId);
                 if ~isfield(report, 'binding') || ~isfield(report.binding, 'nodes') || ~isfield(report.binding.nodes, nodeKey)
