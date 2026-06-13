@@ -99,6 +99,7 @@ classdef pipeline2 < matlab.apps.AppBase
         DynamicModuleTabs = gobjects(0)
         AvailableModules cell = {}
         IsRefreshingTabs logical = false
+        ModuleTabRefreshSuspended logical = false
         IsRedrawingGraph logical = false
         RuntimeFieldHandles struct = struct()
         RuntimeButtonHandles struct = struct()
@@ -2799,6 +2800,9 @@ classdef pipeline2 < matlab.apps.AppBase
         end
 
         function refreshModuleTabs(app)
+            if app.ModuleTabRefreshSuspended
+                return;
+            end
             d = openRuntimeProgress(app, 'Pipeline modules', 'Refreshing module tabs...');
             cleanupObj = onCleanup(@()closeRuntimeProgress(app, d)); %#ok<NASGU>
             app.IsRefreshingTabs = true;
@@ -5001,6 +5005,10 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function setRefreshingTabs(app, value)
             app.IsRefreshingTabs = logical(value);
+        end
+
+        function setModuleTabRefreshSuspended(app, value)
+            app.ModuleTabRefreshSuspended = logical(value);
         end
 
         function setRedrawingGraph(app, value)
@@ -15696,6 +15704,8 @@ classdef pipeline2 < matlab.apps.AppBase
             app.CurrentRunSourceId = '';
             app.RuntimeNodeParams = struct();
             refreshSelectedModuleTable(app, false);
+            app.ModuleTabRefreshSuspended = true;
+            tabRefreshCleanup = onCleanup(@()setModuleTabRefreshSuspended(app, false)); %#ok<NASGU>
             if any([ ...
                     pipelineHasNodeType(app, 'dataLoader'), ...
                     pipelineHasNodeType(app, 'roiGrid'), ...
@@ -15707,6 +15717,8 @@ classdef pipeline2 < matlab.apps.AppBase
             else
                 applyRuntimeInputSourceMode(app, 'existing_rois');
             end
+            delete(tabRefreshCleanup);
+            refreshModuleTabs(app);
             runId = suggestNextRunIdForUi(app);
             try
                 app.TemplateidEditField.Value = runId;
