@@ -30,7 +30,7 @@ dsC = roitmp.display;
 % HERE
 % On ne considère que les channels sélectionnés
 
-dsC.selectedchannel=dsC.selectedchannel(1:numel(dsC.channel)); % remove this line ? 
+dsC = normalizeChannelSelectionForScore(dsC);
 
 selCh = find(dsC.selectedchannel);
 cmap=layoutOptions.colormap;
@@ -189,3 +189,23 @@ layoutOptions.tileH = basesize(1);
 layoutOptions.tileW = basesize(2);
 layoutOptions.Nchannel=nChannel;
 layoutOut=layoutOptions;
+end
+
+function dsC = normalizeChannelSelectionForScore(dsC)
+if ~isstruct(dsC) || ~isfield(dsC, 'channel') || isempty(dsC.channel)
+    return;
+end
+
+nCh = numel(dsC.channel);
+if ~isfield(dsC, 'selectedchannel') || isempty(dsC.selectedchannel)
+    dsC.selectedchannel = true(1, nCh);
+else
+    sel = logical(dsC.selectedchannel(:)');
+    sel = sel(1:min(numel(sel), nCh));
+    if numel(sel) < nCh
+        sel(end+1:nCh) = true;
+    end
+    dsC.selectedchannel = sel;
+end
+
+end

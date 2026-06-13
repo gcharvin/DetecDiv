@@ -21,6 +21,10 @@ try
     if isfield(selectedROI.display,'channel') && isfield(selectedROI.display,'selectedchannel')
         allNames = selectedROI.display.channel;
         selMask = logical(selectedROI.display.selectedchannel(:)');
+        selMask = selMask(1:min(numel(selMask), numel(allNames)));
+        if numel(selMask) < numel(allNames)
+            selMask(end+1:numel(allNames)) = true;
+        end
 
         % Prefer current UI channel checkboxes when available.
         try
@@ -246,4 +250,5 @@ end
 
 %profile viewer
 end
+
 

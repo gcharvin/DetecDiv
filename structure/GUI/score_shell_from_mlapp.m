@@ -431,6 +431,8 @@ end
 
 
             % Préparer les colonnes pour la table : Display, Name, Levels, RGB, Weight, Auto
+            app.initializeSelectedChannelsForScore(selectedROI);
+
             tableData = cell(numel(colorChannels), 6);
 
 
@@ -834,6 +836,8 @@ case 3
             end
 
             % Trouver les canaux à afficher (colorChannels)
+            app.initializeSelectedChannelsForScore(selectedROI);
+
             numChannels = size(selectedROI.display.rgb, 1);
             colorChannels = [];
 
@@ -888,6 +892,7 @@ case 3
                 chanIndex = colorChannels(i); % Indice réel du canal dans `selectedROI.display`
 
                 % Mettre à jour la colonne "Levels" (conversion en 65535)
+                tableData{i, 1} = logical(selectedROI.display.selectedchannel(chanIndex));
                 tableData{i, 3} = sprintf('%.2f %.2f', ...
                     round(65535 * selectedROI.display.displaylim(1, chanIndex)), ...
                     round(65535 * selectedROI.display.displaylim(2, chanIndex)));
@@ -909,6 +914,29 @@ case 3
             % Mettre à jour les données de la table
             app.UIChannelTable.Data = tableData;
             score_display(app, 'refresh');
+        end
+
+        function initializeSelectedChannelsForScore(app, selectedROI) %#ok<INUSD>
+            nCh = numel(selectedROI.display.channel);
+            if ~isfield(selectedROI.display, 'selectedchannel') || isempty(selectedROI.display.selectedchannel)
+                sel = true(1, nCh);
+            else
+                sel = logical(selectedROI.display.selectedchannel(:)');
+                sel = sel(1:min(numel(sel), nCh));
+                if numel(sel) < nCh
+                    sel(end+1:nCh) = true;
+                end
+            end
+
+            if nCh > 10 && ...
+                    (~isfield(selectedROI.display, 'scoreDefaultChannelSelectionApplied') || ...
+                     ~selectedROI.display.scoreDefaultChannelSelectionApplied)
+                sel = false(1, nCh);
+                sel(1) = true;
+                selectedROI.display.scoreDefaultChannelSelectionApplied = true;
+            end
+
+            selectedROI.display.selectedchannel = sel;
         end
 
     function handleIndexedChannelTableEdit(app, event, selectedROI, indexedChannels)
@@ -4339,6 +4367,7 @@ end
                     end
                 end
                 % Sauvegarder les mises à jour dans la ROI et rafraîchir la table des channels
+                app.initializeSelectedChannelsForScore(roi);
                 app.content.ROIList{selectedROIIndex} = roi;
                 app.DisplaySettings=presets;
                 applyMovieDisplaySettings(app);
