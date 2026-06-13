@@ -13616,10 +13616,16 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
-        function updateRunSaveProgress(app, progressDlg, message) %#ok<INUSD>
+        function updateRunSaveProgress(app, progressDlg, message, value) %#ok<INUSD>
+            if nargin < 4
+                value = [];
+            end
             try
                 if ~isempty(progressDlg) && isvalid(progressDlg)
                     progressDlg.Message = char(string(message));
+                    if ~isempty(value)
+                        progressDlg.Value = double(value);
+                    end
                     drawnow limitrate nocallbacks;
                 end
             catch
@@ -13696,7 +13702,6 @@ classdef pipeline2 < matlab.apps.AppBase
             if ~ensureCurrentProjectForRun(app)
                 return;
             end
-            ctx = buildRunContext(app);
             requestedRunId = '';
             if forceAs
                 defaultRunId = suggestNextRunIdForUi(app);
@@ -13709,10 +13714,25 @@ classdef pipeline2 < matlab.apps.AppBase
                     return;
                 end
             end
-            runObj = createOrUpdateCurrentRun(app, ctx, 'preflight', forceAs, requestedRunId);
+            d = [];
             try
+                d = uiprogressdlg(app.UIFigure, 'Title', 'Save run', ...
+                    'Message', 'Preparing run save...', ...
+                    'Value', 0.05, 'Cancelable', 'off');
+                drawnow limitrate nocallbacks;
+            catch
+                d = [];
+            end
+            cleanupObj = onCleanup(@()closeProgressDialog(app, d)); %#ok<NASGU>
+            try
+                updateRunSaveProgress(app, d, 'Collecting runtime context...', 0.15);
+                ctx = buildRunContext(app);
+                updateRunSaveProgress(app, d, 'Creating pipeline run object...', 0.25);
+                runObj = createOrUpdateCurrentRun(app, ctx, 'preflight', forceAs, requestedRunId);
+                updateRunSaveProgress(app, d, 'Writing run JSON...', 0.55);
                 logRunEvent(app, runObj, 'Run parameters saved from pipeline2.', 'pipeline2');
-                savePipelineRunAndProject(app, runObj, [], 'Saving run JSON...', false);
+                savePipelineRunAndProject(app, runObj, d, 'Saving run JSON...', false);
+                updateRunSaveProgress(app, d, 'Run saved.', 1);
                 ok = true;
                 setRuntimeStatus(app, ['Run saved: ' fullfile(runObj.path, 'run.json') ' | run only']);
             catch ME
