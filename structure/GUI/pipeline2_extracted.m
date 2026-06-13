@@ -3514,9 +3514,11 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             if runtimeValueAffectsBindings(app, key)
                 redrawGraph(app);
+                refreshValidationReport(app, false);
                 refreshModuleTabs(app);
+            else
+                refreshValidationReport(app, true);
             end
-            refreshValidationReport(app, ~runtimeValueAffectsBindings(app, key));
         end
 
         function applyRuntimeInputSourceMode(app, value, d)
@@ -3559,10 +3561,10 @@ classdef pipeline2 < matlab.apps.AppBase
             updateRuntimeInputStates(app);
             updateRuntimeProgress(app, d, 'Redrawing pipeline graph...');
             redrawGraph(app);
-            updateRuntimeProgress(app, d, 'Refreshing module tabs...');
-            refreshModuleTabs(app);
             updateRuntimeProgress(app, d, 'Checking pipeline...');
             refreshValidationReport(app, false);
+            updateRuntimeProgress(app, d, 'Refreshing module tabs...');
+            refreshModuleTabs(app);
         end
 
         function tf = runtimeValueAffectsBindings(app, key) %#ok<INUSD>
@@ -8689,13 +8691,16 @@ classdef pipeline2 < matlab.apps.AppBase
             choices = {};
             type = lower(char(string(getField(app, spec, 'type', ''))));
             role = lower(char(string(getField(app, spec, 'role', ''))));
-            if strcmp(type, 'channel') && strcmp(role, 'roi_image')
+            if strcmp(type, 'channel') && any(strcmp(role, {'roi_image','score_roi_image','derived_roi_image','source'}))
                 choices = runtimeConcreteChannels(app);
-            elseif strcmp(type, 'channel') && strcmp(role, 'source')
-                choices = runtimeConcreteChannels(app);
+            elseif strcmp(type, 'channel') && strcmp(role, 'mask_roi_image')
+                choices = runtimeMaskChoices(app);
+                if isempty(choices)
+                    choices = runtimeConcreteChannels(app);
+                end
             elseif strcmp(type, 'mask')
                 choices = runtimeMaskChoices(app);
-            elseif strcmp(type, 'dataseries') || strcmp(type, 'dataSeries')
+            elseif strcmp(type, 'dataseries')
                 choices = runtimeDataSeriesChoices(app, role);
             end
         end
