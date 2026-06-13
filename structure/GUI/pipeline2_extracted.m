@@ -8714,6 +8714,20 @@ classdef pipeline2 < matlab.apps.AppBase
             channels = unique(channels(~cellfun(@isempty, channels)), 'stable');
         end
 
+        function channels = runtimeParsedChannelsOnly(app)
+            channels = {};
+            try
+                if isfield(app.RuntimeParseInfo, 'channels') && ~isempty(app.RuntimeParseInfo.channels)
+                    channels = cellstr(string(app.RuntimeParseInfo.channels(:)'));
+                end
+                skip = startsWith(lower(string(channels)), 'resolved after') | strcmpi(string(channels), 'all') | strcmpi(string(channels), 'auto');
+                channels = channels(~skip);
+                channels = unique(channels(~cellfun(@isempty, channels)), 'stable');
+            catch
+                channels = {};
+            end
+        end
+
         function channels = runtimeRoiDisplayChannels(app)
             channels = {};
             if ~runtimeStartsFromExistingProject(app)
@@ -12282,7 +12296,12 @@ classdef pipeline2 < matlab.apps.AppBase
                 ctx.run.gpuPolicy = 'module_default';
             end
             ctx.run.executionTarget = runtimeExecutionTarget(app);
-            ctx.run.inputSource = inferRuntimeInputSource(app);
+            hubExecution = strcmpi(ctx.run.executionTarget, 'hub');
+            if hubExecution
+                ctx.run.inputSource = inferRuntimeInputSourceFast(app);
+            else
+                ctx.run.inputSource = inferRuntimeInputSource(app);
+            end
             ctx.run.control = buildRunControlPolicy(app, ctx.run.executionTarget);
             if strcmp(ctx.run.executionTarget, 'hub')
                 ctx.hub = hubSettingsFromUi(app);
@@ -12306,7 +12325,11 @@ classdef pipeline2 < matlab.apps.AppBase
             ctx.run.frames = ctx.sel.frames;
             ctx.run.rois = ctx.sel.rois;
 
-            availableRuntimeChannels = runtimeConcreteChannels(app);
+            if hubExecution
+                availableRuntimeChannels = runtimeParsedChannelsOnly(app);
+            else
+                availableRuntimeChannels = runtimeConcreteChannels(app);
+            end
             ctx.run.availableChannels = availableRuntimeChannels;
             if ~isempty(availableRuntimeChannels)
                 ctx.roiChannels = availableRuntimeChannels;
@@ -12314,19 +12337,23 @@ classdef pipeline2 < matlab.apps.AppBase
             if ~isfield(ctx, 'channels') && ~isempty(availableRuntimeChannels)
                 ctx.channels = availableRuntimeChannels;
             end
-            dataSeriesNames = runtimeDataSeriesNames(app);
-            if ~isempty(dataSeriesNames)
-                ctx.dataSeriesNames = dataSeriesNames;
-                ctx.dataSeries = dataSeriesNames;
-            end
-            roiList = runtimeSelectedRois(app);
-            if ~isempty(roiList)
-                ctx.roiList = roiList;
-                ctx.rois = roiList;
-            end
-            runtimeMasks = runtimeMaskChoices(app);
-            if ~isempty(runtimeMasks)
-                ctx.masks = runtimeMasks;
+            if hubExecution
+                ctx.run.runtimeInventoryMode = 'server_resolved';
+            else
+                dataSeriesNames = runtimeDataSeriesNames(app);
+                if ~isempty(dataSeriesNames)
+                    ctx.dataSeriesNames = dataSeriesNames;
+                    ctx.dataSeries = dataSeriesNames;
+                end
+                roiList = runtimeSelectedRois(app);
+                if ~isempty(roiList)
+                    ctx.roiList = roiList;
+                    ctx.rois = roiList;
+                end
+                runtimeMasks = runtimeMaskChoices(app);
+                if ~isempty(runtimeMasks)
+                    ctx.masks = runtimeMasks;
+                end
             end
 
             rawDataPath = effectiveRuntimeRawDataPath(app);
@@ -12413,6 +12440,28 @@ classdef pipeline2 < matlab.apps.AppBase
             catch
             end
             source = 'existing project fovs';
+        end
+
+        function source = inferRuntimeInputSourceFast(app)
+            rawStartNodeIds = selectedRunNodeIdsByType(app, {'dataloader','roigrid','roiidentify','roimanual','roipattern','roiextract'});
+            if ~runtimeStartsFromExistingProject(app)
+                source = 'pipeline start (dataloader)';
+                return;
+            end
+            if ~isempty(rawStartNodeIds) && ~runtimeShouldUseExistingProjectSources(app)
+                source = 'pipeline start (dataloader)';
+                return;
+            end
+            source = 'existing project fovs';
+            if isempty(app.CurrentProject) || ~isa(app.CurrentProject, 'shallow')
+                return;
+            end
+            try
+                if projectHasAnyRoi(app, app.CurrentProject)
+                    source = 'existing rois';
+                end
+            catch
+            end
         end
 
         function control = buildRunControlPolicy(app, executionTarget) %#ok<INUSD>
@@ -15554,7 +15603,9 @@ classdef pipeline2 < matlab.apps.AppBase
                         drawnow limitrate nocallbacks;
                     end
                     [job, runObj] = detecdiv_hub_submit_pipeline_run(runObj, app.CurrentProject, 'hub', hub, ...
-                        'ProjectResolveAttempts', 60, 'ProjectResolveIntervalSec', 3);
+                        'ProjectResolveInitialWaitSec', 0, ...
+                        'ProjectResolveAttempts', 1, ...
+                        'ProjectResolveIntervalSec', 0.5);
                     runObj = annotateHubRunControl(app, runObj, job);
                     logRunEvent(app, runObj, 'Hub submission completed.', 'pipeline2');
                     savePipelineRunAndProject(app, runObj, d, 'Saving Hub job and project state...', true);

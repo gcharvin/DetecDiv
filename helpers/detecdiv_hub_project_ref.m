@@ -213,6 +213,13 @@ function rowOut = localLookupProject(ref, hub)
     rows = localAsStructArray(data);
     for i = 1:numel(rows)
         row = rows(i);
+        if localRowMatchesProjectPath(row, ref, hub)
+            rowOut = row;
+            return;
+        end
+    end
+    for i = 1:numel(rows)
+        row = rows(i);
         if ~isempty(ref.project_key) && isfield(row, 'project_key') && strcmp(char(string(row.project_key)), ref.project_key)
             rowOut = row;
             return;
@@ -222,6 +229,44 @@ function rowOut = localLookupProject(ref, hub)
             return;
         end
     end
+end
+
+function tf = localRowMatchesProjectPath(row, ref, hub)
+    tf = false;
+    wanted = localProjectPathCandidates(ref, hub);
+    if isempty(wanted) || ~isstruct(row) || ~isfield(row, 'locations') || isempty(row.locations)
+        return;
+    end
+    locs = localAsStructArray(row.locations);
+    for i = 1:numel(locs)
+        candidate = localNormalizeServerPath(localFieldText(locs(i), 'project_mat_path'));
+        if ~isempty(candidate) && any(strcmp(candidate, wanted))
+            tf = true;
+            return;
+        end
+    end
+end
+
+function paths = localProjectPathCandidates(ref, hub)
+    raw = {};
+    names = {'project_mat_path','local_project_mat_path'};
+    for i = 1:numel(names)
+        value = localFirstExistingText(ref, names(i));
+        if ~isempty(value)
+            raw{end+1} = value; %#ok<AGROW>
+            try
+                mapped = detecdiv_paths_map_module_path(value, struct('hub', hub), 'server');
+                raw{end+1} = mapped; %#ok<AGROW>
+            catch
+            end
+        end
+    end
+    paths = cellfun(@localNormalizeServerPath, raw, 'UniformOutput', false);
+    paths = unique(paths(~cellfun(@isempty, paths)), 'stable');
+end
+
+function pathOut = localNormalizeServerPath(pathIn)
+    pathOut = regexprep(strrep(char(string(pathIn)), '\', '/'), '/+$', '');
 end
 
 function txt = localFieldText(S, name)
