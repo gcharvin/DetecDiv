@@ -15622,7 +15622,7 @@ classdef pipeline2 < matlab.apps.AppBase
                     runObj.ctx.hub.pathPreflight = pathReport;
                     runObj.ctx = applyHubPathPreflightToContext(app, runObj.ctx, pathReport);
                     logRunEvent(app, runObj, 'Submitting run to DetecDiv Hub.', 'pipeline2');
-                    savePipelineRunAndProject(app, runObj, d, 'Saving Hub submission state...', false);
+                    savePipelineRunAndProject(app, runObj, d, 'Saving project before Hub submit...', true);
                     if ~isempty(d)
                         d.Message = 'Resolving Hub project id and submitting run...';
                         drawnow limitrate nocallbacks;
