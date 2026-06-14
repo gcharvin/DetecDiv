@@ -419,6 +419,13 @@ function bundleRef = localExportRunPipelineBundle(runObj, ref, hub, shallowObj)
     manifestPath = fullfile(bundlePath, 'export_manifest.json');
     pipelineJsonPath = fullfile(bundlePath, 'pipeline', 'pipeline.json');
     if exist(manifestPath, 'file') == 2 && exist(pipelineJsonPath, 'file') == 2
+        sourcePath = localRunPipelineSourcePath(runObj, ref, hub);
+        if ~isempty(sourcePath) && ~localPathInside(sourcePath, bundlePath)
+            pipelineExport(sourcePath, bundlePath, ...
+                'projectObj', shallowObj, ...
+                'overwrite', true);
+        end
+        localRepairHubPipelineBundlePaths(bundlePath, pipelineJsonPath, ref, hub);
         bundleRef.pipeline_bundle_uri = localTranslatePathForServer(bundlePath, ref, hub);
         bundleRef.export_manifest_uri = localTranslatePathForServer(manifestPath, ref, hub);
         bundleRef.pipeline_json_path = localTranslatePathForServer(pipelineJsonPath, ref, hub);
@@ -431,9 +438,209 @@ function bundleRef = localExportRunPipelineBundle(runObj, ref, hub, shallowObj)
     pipelineExport(sourcePath, bundlePath, ...
         'projectObj', shallowObj, ...
         'overwrite', true);
+    localRepairHubPipelineBundlePaths(bundlePath, pipelineJsonPath, ref, hub);
     bundleRef.pipeline_bundle_uri = localTranslatePathForServer(bundlePath, ref, hub);
     bundleRef.export_manifest_uri = localTranslatePathForServer(manifestPath, ref, hub);
     bundleRef.pipeline_json_path = localTranslatePathForServer(pipelineJsonPath, ref, hub);
+end
+
+function report = localRepairHubPipelineBundlePaths(bundlePath, pipelineJsonPath, ref, hub)
+    report = struct('changed', false, 'rewrites', {{}}, 'warnings', {{}});
+    if exist(pipelineJsonPath, 'file') ~= 2
+        return;
+    end
+    try
+        spec = jsondecode(fileread(pipelineJsonPath));
+    catch ME
+        report.warnings{end+1} = ['Could not read bundle pipeline JSON: ' ME.message];
+        warning('detecdiv_hub_submit_pipeline_run:BundlePathRepair', '%s', report.warnings{end});
+        return;
+    end
+    if ~isstruct(spec) || ~isfield(spec, 'nodes') || isempty(spec.nodes)
+        return;
+    end
+
+    pipelineDir = fileparts(pipelineJsonPath);
+    for i = 1:numel(spec.nodes)
+        [nodeOut, nodeReport] = localRepairHubBundleNodePaths(spec.nodes(i), bundlePath, pipelineDir, ref, hub);
+        spec.nodes(i) = nodeOut;
+        if nodeReport.changed
+            report.changed = true;
+            report.rewrites = [report.rewrites nodeReport.rewrites]; %#ok<AGROW>
+        end
+    end
+
+    if report.changed
+        localWriteJsonFile(pipelineJsonPath, spec);
+        fprintf('[hub-submit] Rewrote %d bundle module path(s) relative to %s.\n', ...
+            numel(report.rewrites), pipelineJsonPath);
+    end
+end
+
+function [node, report] = localRepairHubBundleNodePaths(node, bundlePath, pipelineDir, ref, hub)
+    report = struct('changed', false, 'rewrites', {{}});
+    if ~isstruct(node)
+        return;
+    end
+    nodeId = localText(localGetField(node, 'id', ''));
+    moduleId = localText(localNested(node, {'params','moduleId'}, ''));
+    moduleKind = localText(localNested(node, {'params','moduleKind'}, localGetField(node, 'type', '')));
+    if isempty(moduleId)
+        moduleId = localText(localNested(node, {'origin','id'}, ''));
+    end
+    if isempty(moduleKind)
+        moduleKind = localText(localNested(node, {'origin','kind'}, ''));
+    end
+
+    if isfield(node, 'params') && isstruct(node.params) && isfield(node.params, 'modulePath')
+        [node.params.modulePath, changed, rewrite] = localRepairBundlePathValue( ...
+            node.params.modulePath, bundlePath, pipelineDir, moduleKind, moduleId, ref, hub, ...
+            [nodeId '.params.modulePath']);
+        if changed
+            report.changed = true;
+            report.rewrites{end+1} = rewrite; %#ok<AGROW>
+        end
+    end
+
+    if isfield(node, 'origin') && isstruct(node.origin) && isfield(node.origin, 'path')
+        [node.origin.path, changed, rewrite] = localRepairBundlePathValue( ...
+            node.origin.path, bundlePath, pipelineDir, moduleKind, moduleId, ref, hub, ...
+            [nodeId '.origin.path']);
+        if changed
+            report.changed = true;
+            report.rewrites{end+1} = rewrite; %#ok<AGROW>
+        end
+    end
+end
+
+function [valueOut, changed, rewrite] = localRepairBundlePathValue(valueIn, bundlePath, pipelineDir, moduleKind, moduleId, ref, hub, label)
+    valueOut = valueIn;
+    changed = false;
+    rewrite = struct('field', label, 'from', '', 'to', '');
+    if isempty(valueIn) || ~(ischar(valueIn) || (isstring(valueIn) && isscalar(valueIn)))
+        return;
+    end
+
+    pathText = char(string(valueIn));
+    bundleAssetPath = localResolveBundleAssetPath(pathText, bundlePath, moduleKind, moduleId, ref, hub);
+    if isempty(bundleAssetPath)
+        return;
+    end
+
+    relPath = localRelativeJsonPath(pipelineDir, bundleAssetPath);
+    if strcmp(char(string(valueIn)), relPath)
+        return;
+    end
+    valueOut = relPath;
+    changed = true;
+    rewrite.from = pathText;
+    rewrite.to = relPath;
+end
+
+function assetPath = localResolveBundleAssetPath(pathText, bundlePath, moduleKind, moduleId, ref, hub)
+    assetPath = '';
+    candidates = {};
+    candidates{end+1} = char(string(pathText)); %#ok<AGROW>
+    try
+        [mappedPath, mapped] = detecdiv_paths_map_module_path(pathText, localPathMappingCtx(ref, hub), 'local');
+        if mapped
+            candidates{end+1} = mappedPath; %#ok<AGROW>
+        end
+    catch
+    end
+    try
+        [mappedPath, mapped] = detecdiv_paths_map_module_path(pathText, localPathMappingCtx(ref, hub), 'server');
+        if mapped
+            [localPath, localMapped] = detecdiv_paths_map_module_path(mappedPath, localPathMappingCtx(ref, hub), 'local');
+            if localMapped
+                candidates{end+1} = localPath; %#ok<AGROW>
+            end
+        end
+    catch
+    end
+
+    if ~isempty(moduleId)
+        candidates{end+1} = fullfile(bundlePath, 'assets', localBundleAssetSubdir(moduleKind), moduleId); %#ok<AGROW>
+    end
+
+    for i = 1:numel(candidates)
+        candidate = char(string(candidates{i}));
+        if isempty(candidate)
+            continue;
+        end
+        if localPathInside(candidate, bundlePath) && (exist(candidate, 'dir') == 7 || exist(candidate, 'file') == 2)
+            assetPath = candidate;
+            return;
+        end
+    end
+end
+
+function subdir = localBundleAssetSubdir(moduleKind)
+    switch lower(char(string(moduleKind)))
+        case 'classifier'
+            subdir = 'classification';
+        case 'processor'
+            subdir = 'processing';
+        otherwise
+            subdir = 'modules';
+    end
+end
+
+function rel = localRelativeJsonPath(fromPath, toPath)
+    fromPath = localNormalizePathForRelative(fromPath);
+    toPath = localNormalizePathForRelative(toPath);
+    if exist(fromPath, 'file') == 2
+        fromPath = fileparts(fromPath);
+    end
+    fromParts = localSplitPathParts(fromPath);
+    toParts = localSplitPathParts(toPath);
+    n = min(numel(fromParts), numel(toParts));
+    common = 0;
+    for i = 1:n
+        if strcmpi(fromParts{i}, toParts{i})
+            common = i;
+        else
+            break;
+        end
+    end
+    parts = [repmat({'..'}, 1, numel(fromParts) - common), toParts(common+1:end)];
+    if isempty(parts)
+        rel = './';
+    else
+        rel = strrep(fullfile(parts{:}), '\', '/');
+        if ~startsWith(rel, '../') && ~startsWith(rel, './')
+            rel = ['./' rel];
+        end
+    end
+end
+
+function parts = localSplitPathParts(pathText)
+    pathText = strrep(char(string(pathText)), '\', '/');
+    parts = regexp(pathText, '/', 'split');
+    parts = parts(~cellfun(@isempty, parts));
+end
+
+function pathOut = localNormalizePathForRelative(pathIn)
+    pathOut = char(string(pathIn));
+    pathOut = strrep(pathOut, '/', filesep);
+    pathOut = strrep(pathOut, '\', filesep);
+    pathOut = regexprep(pathOut, [regexptranslate('escape', filesep) '+$'], '');
+end
+
+function localWriteJsonFile(filename, value)
+    try
+        txt = jsonencode(value, 'PrettyPrint', true);
+    catch
+        txt = jsonencode(value);
+    end
+    fid = fopen(filename, 'w');
+    if fid < 0
+        error('detecdiv_hub_submit_pipeline_run:WriteBundleJson', ...
+            'Unable to write repaired bundle pipeline JSON: %s', filename);
+    end
+    cleaner = onCleanup(@() fclose(fid));
+    fwrite(fid, txt, 'char');
+    clear cleaner;
 end
 
 function sourcePath = localRunPipelineSourcePath(runObj, ref, hub)

@@ -297,9 +297,5 @@ function tf = isAbsolutePathLocal(p)
     if isempty(p)
         return;
     end
-    if ispc
-        tf = startsWith(p, '/') || ~isempty(regexp(p, '^[A-Za-z]:[\\/]', 'once')) || startsWith(p, '\\');
-    else
-        tf = startsWith(p, '/');
-    end
+    tf = startsWith(p, '/') || ~isempty(regexp(p, '^[A-Za-z]:[\\/]', 'once')) || startsWith(p, '\\');
 end

@@ -3086,11 +3086,7 @@ if isempty(p)
     return;
 end
 p = char(string(p));
-if ispc
-    tf = startsWith(p, '/') || ~isempty(regexp(p, '^[A-Za-z]:[\\/]', 'once')) || startsWith(p, '\\');
-else
-    tf = startsWith(p, '/');
-end
+tf = startsWith(p, '/') || ~isempty(regexp(p, '^[A-Za-z]:[\\/]', 'once')) || startsWith(p, '\\');
 end
 
 function v = getfielddefault(S, key, defaultVal)
