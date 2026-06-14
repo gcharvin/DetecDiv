@@ -57,10 +57,13 @@ function timerObj = detecdiv_hub_start_lease_heartbeat(project, lockId, varargin
     [hub, ttlSeconds] = localTimerParse(varargin{:});
     ref = localProjectRef(project, hub);
     key = localTimerKey(ref, lockId);
-    detecdiv_hub_stop_lease_heartbeat(ref, lockId);
+    localStopProjectHeartbeats(ref);
     period = max(15, floor(double(ttlSeconds) / 3));
     timerObj = timer('ExecutionMode', 'fixedSpacing', 'Period', period, ...
+        'BusyMode', 'drop', ...
         'Name', ['DetecDivHubLease_' char(string(lockId))], ...
+        'UserData', struct('project_id', char(string(ref.project_id)), ...
+                           'lock_id', char(string(lockId))), ...
         'TimerFcn', @(~,~)localHeartbeat(ref, lockId, hub, ttlSeconds));
     timers = localGetTimers();
     timers.(key) = timerObj;
@@ -82,6 +85,34 @@ function detecdiv_hub_stop_lease_heartbeat(project, lockId)
         catch
         end
         timers = rmfield(timers, key);
+        setappdata(0, 'DetecDivHubLeaseTimers', timers);
+    end
+end
+
+function localStopProjectHeartbeats(ref)
+    timers = localGetTimers();
+    names = fieldnames(timers);
+    if isempty(names)
+        return;
+    end
+
+    prefix = matlab.lang.makeValidName(['k_' regexprep([char(string(ref.project_id)) '_'], '[^a-zA-Z0-9_]', '_')]);
+    changed = false;
+    for i = 1:numel(names)
+        name = names{i};
+        if ~startsWith(name, prefix)
+            continue;
+        end
+        t = timers.(name);
+        try
+            stop(t);
+            delete(t);
+        catch
+        end
+        timers = rmfield(timers, name);
+        changed = true;
+    end
+    if changed
         setappdata(0, 'DetecDivHubLeaseTimers', timers);
     end
 end

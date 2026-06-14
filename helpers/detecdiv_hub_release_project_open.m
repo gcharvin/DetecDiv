@@ -9,6 +9,7 @@ function released = detecdiv_hub_release_project_open(shallowObj, hub)
     if isempty(ref.project_id)
         return;
     end
+    localStopProjectHeartbeats(ref);
 
     state = localHubState(shallowObj);
     storedLockId = '';
@@ -36,6 +37,37 @@ function released = detecdiv_hub_release_project_open(shallowObj, hub)
 
     if released
         localClearLeaseState(shallowObj);
+    end
+end
+
+function localStopProjectHeartbeats(ref)
+    prefix = matlab.lang.makeValidName(['k_' regexprep([char(string(ref.project_id)) '_'], '[^a-zA-Z0-9_]', '_')]);
+    timers = struct();
+    try
+        existing = getappdata(0, 'DetecDivHubLeaseTimers');
+        if isstruct(existing)
+            timers = existing;
+        end
+    catch
+    end
+    names = fieldnames(timers);
+    changed = false;
+    for i = 1:numel(names)
+        name = names{i};
+        if ~startsWith(name, prefix)
+            continue;
+        end
+        t = timers.(name);
+        try
+            stop(t);
+            delete(t);
+        catch
+        end
+        timers = rmfield(timers, name);
+        changed = true;
+    end
+    if changed
+        setappdata(0, 'DetecDivHubLeaseTimers', timers);
     end
 end
 

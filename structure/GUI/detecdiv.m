@@ -5031,6 +5031,97 @@ end
             end
         end
 
+        function txt = formatProjectHubStatusText(app, shallowObj)
+            txt = 'Hub project status: not Hub-managed';
+            try
+                if isempty(shallowObj) || ~isa(shallowObj, 'shallow') || ...
+                        ~isprop(shallowObj, 'runProfiles') || ~isstruct(shallowObj.runProfiles) || ...
+                        ~isfield(shallowObj.runProfiles, 'hub') || ~isstruct(shallowObj.runProfiles.hub)
+                    return;
+                end
+
+                hub = shallowObj.runProfiles.hub;
+                projectId = app.hubTextField(hub, {'hub_project_id','project_id','id'});
+                hubManaged = app.hubLogicalField(hub, {'hubManaged','hub_managed'}, ~isempty(projectId));
+                if ~hubManaged && isempty(projectId)
+                    return;
+                end
+
+                isReadOnly = app.hubLogicalField(hub, {'read_only','readOnly'}, false);
+                mode = app.hubTextField(hub, {'mode'});
+                if isReadOnly
+                    state = 'locked/read-only';
+                elseif strcmpi(mode, 'lease_active')
+                    state = 'editable (local lease active)';
+                elseif strcmpi(mode, 'write_granted')
+                    state = 'editable';
+                else
+                    state = 'Hub-managed';
+                end
+
+                parts = cell(1, 4);
+                nParts = 1;
+                parts{nParts} = ['Hub project status: ' state];
+                if ~isempty(projectId)
+                    nParts = nParts + 1;
+                    parts{nParts} = ['Hub project id: ' projectId];
+                end
+                checkedAt = app.hubTextField(hub, {'checked_at','loaded_from_hub_at','loaded_from_catalog_at'});
+                if ~isempty(checkedAt)
+                    nParts = nParts + 1;
+                    parts{nParts} = ['Last Hub check: ' checkedAt];
+                end
+                reason = app.hubTextField(hub, {'reason'});
+                if ~isempty(reason)
+                    nParts = nParts + 1;
+                    parts{nParts} = ['Hub note: ' reason];
+                end
+                txt = strjoin(parts(1:nParts), newline);
+            catch
+                txt = 'Hub project status: unavailable';
+            end
+        end
+
+        function txt = hubTextField(~, S, names)
+            txt = '';
+            if ~isstruct(S)
+                return;
+            end
+            for k = 1:numel(names)
+                name = names{k};
+                try
+                    if isfield(S, name) && ~isempty(S.(name))
+                        txt = char(string(S.(name)));
+                        return;
+                    end
+                catch
+                end
+            end
+        end
+
+        function value = hubLogicalField(~, S, names, defaultValue)
+            value = defaultValue;
+            if ~isstruct(S)
+                return;
+            end
+            for k = 1:numel(names)
+                name = names{k};
+                try
+                    if ~isfield(S, name) || isempty(S.(name))
+                        continue;
+                    end
+                    raw = S.(name);
+                    if islogical(raw) || isnumeric(raw)
+                        value = logical(raw(1));
+                    else
+                        value = any(strcmpi(strtrim(char(string(raw))), {'1','true','yes','on'}));
+                    end
+                    return;
+                catch
+                end
+            end
+        end
+
         % Selection changed function: Tree
         function TreeSelectionChanged(app, event)
             selectedNodes = app.Tree.SelectedNodes;
@@ -5076,7 +5167,6 @@ end
 
             if strcmp(selectedNodes.Tag,'Project')
 
-                gatherVarsFromWorkspace(app);
                 % displayNodes(app)
 
                 app.ProjectsPanel.Title='Project';
@@ -5085,6 +5175,7 @@ end
                 shallowObj=evalin('base',proj);
 
                 t='';
+                t=[t app.formatProjectHubStatusText(shallowObj) newline newline];
                 t=[t 'Project path: ' newline newline];
                 t=[t shallowObj.io.path shallowObj.io.file '.mat' newline newline];
 
@@ -5177,6 +5268,7 @@ end
                 % display text
 
                 t='';
+                t=[t app.formatProjectHubStatusText(shallowObj) newline newline];
                 t=[t 'Source files path: ' newline newline];
 
                 for i=1%:numel(position.srcpath)
