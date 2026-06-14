@@ -48,7 +48,7 @@ if isempty(labels) && isempty(signal)
     return;
 end
 
-n = max(numel(labels), numel(signal));
+n = max(numel(labels), size(signal, 1));
 if n == 0
     n = 1;
 end
@@ -62,14 +62,14 @@ if isempty(frameIdx)
     frameIdx = 1:n;
 end
 
+baselineFull = localComputeBaseline(signal, paramout.baselineMethod, paramout.baselineWindow, paramout.baselineEndpoints);
 labels = labels(frameIdx);
-signal = signal(frameIdx);
+signal = signal(frameIdx, :);
+baseline = baselineFull(frameIdx, :);
 time = (double(frameIdx(:)) - double(frameIdx(1))) .* double(paramout.framePeriod);
-baseline = localComputeBaseline(signal, paramout.baselineMethod, paramout.baselineWindow, paramout.baselineEndpoints);
 detrended = signal - baseline;
 
-traceTbl = table(frameIdx(:), time(:), categorical(string(labels(:))), signal(:), baseline(:), detrended(:), ...
-    'VariableNames', {'frame','time','label','signal','baseline','detrended'});
+traceTbl = localBuildTraceTable(frameIdx, time, labels, signal, baseline, detrended);
 
 cycles = localBuildCycles(frameIdx, labels, paramout);
 metaTbl = localBuildCycleMetadata(cycles, labels, signal, detrended, time);
@@ -77,7 +77,7 @@ normTbl = localBuildNormalizedCycles(cycles, signal, detrended, paramout);
 
 dataout = roiobj.data;
 dataout = localUpsertSeries(dataout, buildSeries(traceTbl, paramout.traceOutputName, roiobj.id, ...
-    {'frame','time','label','signal','signal','signal'}, {false,false,true,true,true,true}, {'frame','time','label','signal','signal','signal'}, "temporal"));
+    localTraceGroups(width(traceTbl)), localTracePlotFlags(width(traceTbl)), localTraceRoles(traceTbl), "temporal"));
 dataout = localUpsertSeries(dataout, buildSeries(normTbl, paramout.normalizedCyclesOutputName, roiobj.id, ...
     repmat({'cycle'}, 1, width(normTbl)), localPlotFlags(width(normTbl)), repmat({'cycle'}, 1, width(normTbl)), "generation"));
 dataout = localUpsertSeries(dataout, buildSeries(metaTbl, paramout.cycleMetadataOutputName, roiobj.id, ...
@@ -168,6 +168,53 @@ elseif n >= 1
 end
 end
 
+function tbl = localBuildTraceTable(frameIdx, time, labels, signal, baseline, detrended)
+nFrames = numel(frameIdx);
+nValues = size(signal, 2);
+if nValues <= 1
+    tbl = table(frameIdx(:), time(:), categorical(string(labels(:))), signal(:), baseline(:), detrended(:), ...
+        'VariableNames', {'frame','time','label','signal','baseline','detrended'});
+    return;
+end
+
+frameCol = repmat(frameIdx(:), nValues, 1);
+timeCol = repmat(time(:), nValues, 1);
+labelCol = repmat(categorical(string(labels(:))), nValues, 1);
+valueIndex = repelem((1:nValues).', nFrames, 1);
+tbl = table(frameCol, timeCol, labelCol, valueIndex, signal(:), baseline(:), detrended(:), ...
+    'VariableNames', {'frame','time','label','valueIndex','signal','baseline','detrended'});
+end
+
+function groups = localTraceGroups(n)
+base = {'frame','time','label','id','signal','signal','signal'};
+groups = base(1:min(n, numel(base)));
+if numel(groups) < n
+    groups(end+1:n) = {'signal'};
+end
+end
+
+function roles = localTraceRoles(tbl)
+roles = tbl.Properties.VariableNames;
+for i = 1:numel(roles)
+    if any(strcmp(roles{i}, {'signal','baseline','detrended'}))
+        roles{i} = 'signal';
+    elseif strcmp(roles{i}, 'valueIndex')
+        roles{i} = 'id';
+    end
+end
+end
+
+function flags = localTracePlotFlags(n)
+flags = repmat({false}, 1, n);
+if n >= 6
+    flags{n-2} = true;
+    flags{n-1} = true;
+    flags{n} = true;
+elseif n >= 1
+    flags{end} = true;
+end
+end
+
 function out = localSelectionCell(value)
 if ischar(value) || isstring(value)
     out = {char(string(value))};
@@ -199,11 +246,15 @@ if isempty(signal)
     signal = nan(n, 1);
     return;
 end
-signal = double(signal(:));
-if numel(signal) < n
-    signal(end+1:n, 1) = signal(end);
-elseif numel(signal) > n
-    signal = signal(1:n);
+signal = double(signal);
+if isvector(signal)
+    signal = signal(:);
+end
+if size(signal, 1) < n
+    lastRow = signal(end, :);
+    signal(end+1:n, :) = repmat(lastRow, n - size(signal, 1), 1);
+elseif size(signal, 1) > n
+    signal = signal(1:n, :);
 end
 end
 
@@ -305,10 +356,18 @@ if isempty(columnName) || ~ismember(columnName, tbl.Properties.VariableNames)
 end
 
 signal = localFlattenSignal(tbl.(columnName), reducerName);
-signal = double(signal(:));
+signal = double(signal);
+if isvector(signal)
+    signal = signal(:);
+end
 end
 
 function signal = localFlattenSignal(value, reducerName)
+if strcmpi(char(string(reducerName)), 'all') || strcmpi(char(string(reducerName)), 'per_index')
+    signal = localValueCellsToMatrix(value);
+    return;
+end
+
 if isnumeric(value) || islogical(value)
     if isvector(value)
         signal = double(value(:));
@@ -324,6 +383,54 @@ else
         signal = double(value(:));
     catch
         signal = [];
+    end
+end
+end
+
+function mat = localValueCellsToMatrix(value)
+if isnumeric(value) || islogical(value)
+    mat = double(value);
+    if isvector(mat)
+        mat = mat(:);
+    elseif size(mat, 1) < size(mat, 2)
+        mat = mat.';
+    end
+    return;
+end
+
+if ~iscell(value)
+    try
+        mat = double(value);
+        if isvector(mat)
+            mat = mat(:);
+        end
+    catch
+        mat = [];
+    end
+    return;
+end
+
+value = value(:);
+nFrames = numel(value);
+widths = zeros(nFrames, 1);
+for i = 1:nFrames
+    widths(i) = numel(value{i});
+end
+nValues = max(widths);
+if isempty(nValues) || nValues < 1
+    mat = nan(nFrames, 1);
+    return;
+end
+
+mat = nan(nFrames, nValues);
+for i = 1:nFrames
+    if isempty(value{i})
+        continue;
+    end
+    try
+        row = double(value{i}(:)).';
+        mat(i, 1:numel(row)) = row;
+    catch
     end
 end
 end
@@ -418,11 +525,15 @@ out = frames;
 end
 
 function baseline = localComputeBaseline(signal, methodName, window, endpoints)
-signal = double(signal(:));
+signal = double(signal);
+if isvector(signal)
+    signal = signal(:);
+end
 if isempty(signal)
     baseline = [];
     return;
 end
+discardMode = any(strcmpi(char(string(endpoints)), {'discard','antoine'}));
 switch lower(methodName)
     case {'none','off','identity'}
         baseline = zeros(size(signal));
@@ -431,16 +542,25 @@ switch lower(methodName)
     otherwise
         baseline = movmean(signal, window, 'Endpoints', localEndpoints(endpoints));
 end
-if numel(baseline) ~= numel(signal)
+if discardMode
+    padded = nan(size(signal));
+    startIdx = max(1, ceil(double(window) / 2));
+    stopIdx = min(size(signal, 1), startIdx + size(baseline, 1) - 1);
+    if stopIdx >= startIdx
+        padded(startIdx:stopIdx, :) = baseline(1:(stopIdx - startIdx + 1), :);
+    end
+    baseline = padded;
+elseif ~isequal(size(baseline), size(signal))
     baseline = zeros(size(signal));
 end
-baseline(isnan(baseline)) = 0;
 end
 
 function endpoint = localEndpoints(endpoints)
 switch lower(char(string(endpoints)))
-    case {'fill','legacy_discard'}
+    case {'fill'}
         endpoint = 'fill';
+    case {'discard','antoine','legacy_discard'}
+        endpoint = 'discard';
     otherwise
         endpoint = 'shrink';
 end
@@ -494,35 +614,44 @@ if isempty(cycles)
 end
 
 n = numel(cycles);
-cycleIndex = (1:n).';
-startFrame = zeros(n,1);
-endFrame = zeros(n,1);
-startTime = zeros(n,1);
-endTime = zeros(n,1);
-lengthFrames = zeros(n,1);
-startLabel = strings(n,1);
-endLabel = strings(n,1);
-meanSignal = zeros(n,1);
-meanDetrended = zeros(n,1);
-minDetrended = zeros(n,1);
-maxDetrended = zeros(n,1);
+nValues = size(signal, 2);
+nRows = n * nValues;
+cycleIndex = zeros(nRows,1);
+valueIndex = zeros(nRows,1);
+startFrame = zeros(nRows,1);
+endFrame = zeros(nRows,1);
+startTime = zeros(nRows,1);
+endTime = zeros(nRows,1);
+lengthFrames = zeros(nRows,1);
+startLabel = strings(nRows,1);
+endLabel = strings(nRows,1);
+meanSignal = zeros(nRows,1);
+meanDetrended = zeros(nRows,1);
+minDetrended = zeros(nRows,1);
+maxDetrended = zeros(nRows,1);
 
+row = 0;
 for i = 1:n
     idx = cycles(i).startPos:cycles(i).endPos;
-    startFrame(i) = cycles(i).startFrame;
-    endFrame(i) = cycles(i).endFrame;
-    startTime(i) = time(idx(1));
-    endTime(i) = time(idx(end));
-    lengthFrames(i) = numel(idx);
-    startLabel(i) = string(cycles(i).startLabel);
-    endLabel(i) = string(cycles(i).endLabel);
-    meanSignal(i) = mean(signal(idx), 'omitnan');
-    meanDetrended(i) = mean(detrended(idx), 'omitnan');
-    minDetrended(i) = min(detrended(idx), [], 'omitnan');
-    maxDetrended(i) = max(detrended(idx), [], 'omitnan');
+    for v = 1:nValues
+        row = row + 1;
+        cycleIndex(row) = i;
+        valueIndex(row) = v;
+        startFrame(row) = cycles(i).startFrame;
+        endFrame(row) = cycles(i).endFrame;
+        startTime(row) = time(idx(1));
+        endTime(row) = time(idx(end));
+        lengthFrames(row) = numel(idx);
+        startLabel(row) = string(cycles(i).startLabel);
+        endLabel(row) = string(cycles(i).endLabel);
+        meanSignal(row) = mean(signal(idx, v), 'omitnan');
+        meanDetrended(row) = mean(detrended(idx, v), 'omitnan');
+        minDetrended(row) = min(detrended(idx, v), [], 'omitnan');
+        maxDetrended(row) = max(detrended(idx, v), [], 'omitnan');
+    end
 end
 
-metaTbl = table(cycleIndex, startFrame, endFrame, startTime, endTime, lengthFrames, startLabel, endLabel, ...
+metaTbl = table(cycleIndex, valueIndex, startFrame, endFrame, startTime, endTime, lengthFrames, startLabel, endLabel, ...
     meanSignal, meanDetrended, minDetrended, maxDetrended);
 end
 
@@ -535,43 +664,52 @@ end
 nCycles = numel(cycles);
 nPoints = param.normFrames;
 sampleNames = arrayfun(@(k) sprintf('sample_%03d', k), 1:nPoints, 'UniformOutput', false);
-normMatrix = nan(nCycles, nPoints);
-cycleIndex = (1:nCycles).';
-startFrame = zeros(nCycles,1);
-endFrame = zeros(nCycles,1);
-startLabel = strings(nCycles,1);
-endLabel = strings(nCycles,1);
+nValues = size(detrended, 2);
+nRows = nCycles * nValues;
+normMatrix = nan(nRows, nPoints);
+cycleIndex = zeros(nRows,1);
+valueIndex = zeros(nRows,1);
+startFrame = zeros(nRows,1);
+endFrame = zeros(nRows,1);
+startLabel = strings(nRows,1);
+endLabel = strings(nRows,1);
 
+row = 0;
 for i = 1:nCycles
     idx = cycles(i).startPos:cycles(i).endPos;
-    seg = detrended(idx);
-    if isempty(seg)
-        continue;
-    end
-    x = linspace(1, numel(seg), numel(seg));
-    xi = linspace(1, numel(seg), nPoints);
-    try
-        if param.allowExtrapolation
-            normMatrix(i,:) = interp1(x, seg, xi, param.interpolationMethod, 'extrap');
-        else
-            normMatrix(i,:) = interp1(x, seg, xi, param.interpolationMethod, NaN);
+    for v = 1:nValues
+        row = row + 1;
+        seg = detrended(idx, v);
+        if ~isempty(seg)
+            x = linspace(1, numel(seg), numel(seg));
+            xi = linspace(1, numel(seg), nPoints);
+            try
+                if param.allowExtrapolation
+                    normMatrix(row,:) = interp1(x, seg, xi, param.interpolationMethod, 'extrap');
+                else
+                    normMatrix(row,:) = interp1(x, seg, xi, param.interpolationMethod, NaN);
+                end
+            catch
+                normMatrix(row,:) = interp1(x, seg, xi, 'linear', 'extrap');
+            end
         end
-    catch
-        normMatrix(i,:) = interp1(x, seg, xi, 'linear', 'extrap');
+        cycleIndex(row) = i;
+        valueIndex(row) = v;
+        startFrame(row) = cycles(i).startFrame;
+        endFrame(row) = cycles(i).endFrame;
+        startLabel(row) = string(cycles(i).startLabel);
+        endLabel(row) = string(cycles(i).endLabel);
     end
-    startFrame(i) = cycles(i).startFrame;
-    endFrame(i) = cycles(i).endFrame;
-    startLabel(i) = string(cycles(i).startLabel);
-    endLabel(i) = string(cycles(i).endLabel);
 end
 
 normTbl = array2table(normMatrix, 'VariableNames', sampleNames);
 normTbl.cycleIndex = cycleIndex;
+normTbl.valueIndex = valueIndex;
 normTbl.startFrame = startFrame;
 normTbl.endFrame = endFrame;
 normTbl.startLabel = startLabel;
 normTbl.endLabel = endLabel;
-normTbl = movevars(normTbl, {'cycleIndex','startFrame','endFrame','startLabel','endLabel'}, 'Before', 1);
+normTbl = movevars(normTbl, {'cycleIndex','valueIndex','startFrame','endFrame','startLabel','endLabel'}, 'Before', 1);
 end
 
 function dataout = localUpsertSeries(dataout, series)
