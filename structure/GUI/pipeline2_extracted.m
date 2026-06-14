@@ -5451,8 +5451,8 @@ classdef pipeline2 < matlab.apps.AppBase
             grid.Padding = [12 12 12 12];
             grid.RowSpacing = 10;
 
-            headerBar = uigridlayout(grid, [1 4]);
-            headerBar.ColumnWidth = {'1x', 130, 100, 90};
+            headerBar = uigridlayout(grid, [1 5]);
+            headerBar.ColumnWidth = {'1x', 110, 110, 100, 90};
             headerBar.RowHeight = {28};
             headerBar.Padding = [0 0 0 0];
             headerBar.ColumnSpacing = 8;
@@ -5463,20 +5463,25 @@ classdef pipeline2 < matlab.apps.AppBase
             header.Layout.Row = 1;
             header.Layout.Column = 1;
 
-            defaultsBtn = uibutton(headerBar, 'push', 'Text', 'Refresh defaults', ...
+            defaultsBtn = uibutton(headerBar, 'push', 'Text', 'Fill missing', ...
                 'ButtonPushedFcn', @(~,~)app.refreshModuleDefaultsAndDialog(fig, nodeId));
             defaultsBtn.Layout.Row = 1;
             defaultsBtn.Layout.Column = 2;
 
+            resetBtn = uibutton(headerBar, 'push', 'Text', 'Reset defaults', ...
+                'ButtonPushedFcn', @(~,~)app.resetModuleDefaultsAndDialog(fig, nodeId));
+            resetBtn.Layout.Row = 1;
+            resetBtn.Layout.Column = 3;
+
             refreshBtn = uibutton(headerBar, 'push', 'Text', 'Refresh UI', ...
                 'ButtonPushedFcn', @(~,~)app.refreshStaticParametersDialog(fig, nodeId));
             refreshBtn.Layout.Row = 1;
-            refreshBtn.Layout.Column = 3;
+            refreshBtn.Layout.Column = 4;
 
             closeBtn = uibutton(headerBar, 'push', 'Text', 'Close', ...
                 'ButtonPushedFcn', @(~,~)delete(fig));
             closeBtn.Layout.Row = 1;
-            closeBtn.Layout.Column = 4;
+            closeBtn.Layout.Column = 5;
 
             bodyPanel = uipanel(grid, 'BorderType', 'none');
             bodyPanel.Layout.Row = 2;
@@ -5485,7 +5490,7 @@ classdef pipeline2 < matlab.apps.AppBase
             catch
             end
             fig.UserData = struct('nodeId', nodeId, 'bodyPanel', bodyPanel, ...
-                'refreshButton', refreshBtn, 'defaultsButton', defaultsBtn);
+                'refreshButton', refreshBtn, 'defaultsButton', defaultsBtn, 'resetButton', resetBtn);
             populateStaticParametersDialogBody(app, bodyPanel, nodeId);
 
             hint = uilabel(grid, 'Text', staticParametersDialogHint(app, node), ...
@@ -5593,6 +5598,44 @@ classdef pipeline2 < matlab.apps.AppBase
             drawnow limitrate nocallbacks;
         end
 
+        function resetModuleDefaultsAndDialog(app, fig, nodeId)
+            if isempty(fig) || ~isvalid(fig)
+                return;
+            end
+            idx = find(strcmp({app.Data.nodes.id}, nodeId), 1);
+            if isempty(idx)
+                return;
+            end
+            d = openRuntimeProgress(app, 'Static parameters', 'Resetting module defaults...');
+            btn = [];
+            try
+                if isstruct(fig.UserData) && isfield(fig.UserData, 'resetButton') && isvalid(fig.UserData.resetButton)
+                    btn = fig.UserData.resetButton;
+                    btn.Enable = 'off';
+                end
+            catch
+                btn = [];
+            end
+            cleanupObj = onCleanup(@()finishStaticParameterRefresh(app, d, btn, captureTabFocus(app))); %#ok<NASGU>
+            try
+                [changed, total] = resetNodeDefaultsFromModule(app, idx);
+                markPipelineDirty(app, true);
+                updateRuntimeProgress(app, d, sprintf('Reset %d/%d default parameter(s).', changed, total));
+                refreshModuleTabs(app);
+                refreshValidationReport(app);
+                populateStaticParametersDialogBody(app, fig.UserData.bodyPanel, nodeId);
+                resizeStaticParametersDialog(app, fig, app.Data.nodes(idx));
+                if changed == 0
+                    setRuntimeStatus(app, ['Module static parameters already at defaults: ' nodeId]);
+                else
+                    setRuntimeStatus(app, sprintf('Module static parameters reset for %s: %d field(s) updated.', nodeId, changed));
+                end
+            catch ME
+                uialert(app.UIFigure, ME.message, 'Reset module defaults', 'Icon', 'error');
+            end
+            drawnow limitrate nocallbacks;
+        end
+
         function [added, updated] = refreshNodeDefaultsFromModule(app, idx)
             added = 0;
             updated = 0;
@@ -5610,12 +5653,53 @@ classdef pipeline2 < matlab.apps.AppBase
             if ~isstruct(defaults) || isempty(fieldnames(defaults))
                 return;
             end
-            before = fieldnames(node.params);
-            node.params = mergeStructDefaults(app, node.params, defaults);
-            after = fieldnames(node.params);
-            added = numel(setdiff(after, before));
+            keys = moduleParamKeys(app, node, 'static');
+            keys = keys(ismember(keys, fieldnames(defaults)));
+            before = node.params;
+            for i = 1:numel(keys)
+                key = keys{i};
+                if ~isfield(node.params, key) || isempty(node.params.(key))
+                    node.params.(key) = defaults.(key);
+                    added = added + 1;
+                end
+            end
             app.Data.nodes(idx) = alignNodeForAssignment(app, app.Data.nodes(idx), node);
-            updated = added;
+            updated = double(~isequaln(before, node.params));
+        end
+
+        function [changed, total] = resetNodeDefaultsFromModule(app, idx)
+            changed = 0;
+            total = 0;
+            if idx < 1 || idx > numel(app.Data.nodes)
+                return;
+            end
+            node = app.Data.nodes(idx);
+            nodeType = char(string(getField(app, node, 'type', '')));
+            pkg = char(string(getField(app, node, 'pkg', '')));
+            if ~isfield(node, 'params') || ~isstruct(node.params)
+                node.params = struct();
+            end
+            app.ensureCustomPackagePathForNode(node);
+            defaults = defaultNodeParams(app, nodeType, pkg);
+            if ~isstruct(defaults) || isempty(fieldnames(defaults))
+                return;
+            end
+            keys = moduleParamKeys(app, node, 'static');
+            keys = keys(ismember(keys, fieldnames(defaults)));
+            total = numel(keys);
+            for i = 1:numel(keys)
+                key = keys{i};
+                oldValue = [];
+                hadOldValue = isfield(node.params, key);
+                if hadOldValue
+                    oldValue = node.params.(key);
+                end
+                node.params.(key) = defaults.(key);
+                if ~hadOldValue || ~isequaln(oldValue, defaults.(key))
+                    changed = changed + 1;
+                end
+            end
+            app.Data.nodes(idx) = alignNodeForAssignment(app, app.Data.nodes(idx), node);
         end
 
         function ensureCustomPackagePathForNode(app, node) %#ok<INUSD>
@@ -10326,6 +10410,8 @@ classdef pipeline2 < matlab.apps.AppBase
                     pkg = 'fociBurstStats';
                 case 'trackmotherlineageviterbi'
                     pkg = 'trackMotherLineageViterbi';
+                case 'singlecelloscillations'
+                    pkg = 'singleCellOscillations';
                 otherwise
                     pkg = raw;
             end
