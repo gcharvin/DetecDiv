@@ -371,7 +371,7 @@ for i = 1:numel(roiobj)
             catch
             end
             out = feval(fhandle, roiobj(i), classi, ctx);
-            if isstruct(out) && isfield(out,'patch') && ~isempty(out.patch) && exist('roiApplyPatch','file') == 2
+            if isstruct(out) && isfield(out,'patch') && patchHasPersistableOutput(out.patch) && exist('roiApplyPatch','file') == 2
                 try
                     disp(['[DEBUG] classifyData: using roiApplyPatch for ROI ' num2str(roiobj(i).id)]);
                 catch
@@ -430,7 +430,7 @@ if para
         if isPipelineFun
             [idx, out] = fetchNext(logparf(i));
             ctx = ctxByIdx{idx};
-            if isstruct(out) && isfield(out,'patch') && ~isempty(out.patch) && exist('roiApplyPatch','file') == 2
+            if isstruct(out) && isfield(out,'patch') && patchHasPersistableOutput(out.patch) && exist('roiApplyPatch','file') == 2
                 try
                     disp(['[DEBUG] classifyData: using roiApplyPatch for ROI ' num2str(roiobj(idx).id)]);
                 catch
@@ -898,6 +898,10 @@ function tf = patchHasDataseries(patch)
     catch
         tf = false;
     end
+end
+
+function tf = patchHasPersistableOutput(patch)
+    tf = patchHasDataseries(patch) || patchHasImageWrite(patch);
 end
 
 function tf = patchHasImageWrite(patch)

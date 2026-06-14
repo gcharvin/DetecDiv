@@ -46,7 +46,7 @@ end
 
 out.data = data;
 out.image = image;
-out.patch = struct();
+out.patch = [];
 out.status = "OK";
 end
 
