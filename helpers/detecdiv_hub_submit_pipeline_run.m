@@ -419,12 +419,11 @@ function bundleRef = localExportRunPipelineBundle(runObj, ref, hub, shallowObj)
     manifestPath = fullfile(bundlePath, 'export_manifest.json');
     pipelineJsonPath = fullfile(bundlePath, 'pipeline', 'pipeline.json');
     if exist(manifestPath, 'file') == 2 && exist(pipelineJsonPath, 'file') == 2
-        sourcePath = localRunPipelineSourcePath(runObj, ref, hub);
-        if ~isempty(sourcePath) && ~localPathInside(sourcePath, bundlePath)
-            pipelineExport(sourcePath, bundlePath, ...
-                'projectObj', shallowObj, ...
-                'overwrite', true);
-        end
+        % A persisted Hub run owns its bundle. Re-exporting here can force
+        % definition asset materialization (for example roiPattern patches)
+        % and therefore raw-image reads before the Hub job has even been
+        % submitted. Keep submission lightweight: repair paths in place and
+        % let an explicit pipeline export/create path rebuild missing bundles.
         localRepairHubPipelineBundlePaths(bundlePath, pipelineJsonPath, ref, hub);
         bundleRef.pipeline_bundle_uri = localTranslatePathForServer(bundlePath, ref, hub);
         bundleRef.export_manifest_uri = localTranslatePathForServer(manifestPath, ref, hub);
