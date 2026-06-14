@@ -66,15 +66,6 @@ DriftDebugEvery   = 1;
 DriftChannel = [];
 DriftRejectMode = 'hold';
 
-% Focus selection across requested channels. When enabled, the channel
-% dimension is treated as a z-stack independently for each ROI and frame.
-FocusTreatChannelsAsStack = false;
-FocusDiscardInputChannels = false;
-FocusSmoothZ = 5;
-FocusProjectionRadius = 0;
-FocusCenterCrop = 1.0;
-FocusOutputChannel = 'DIC_focus';
-
 
 
 % ----------------- PARSING -----------------
@@ -174,18 +165,6 @@ for i = 1:2:numel(varargin)
             PadExtraChannels = logical(varargin{i+1});
         case "memoryonly"
             MemoryOnly = logical(varargin{i+1});
-        case "focustreatchannelsasstack"
-            FocusTreatChannelsAsStack = parseLogicalScalarLocal(varargin{i+1}, FocusTreatChannelsAsStack);
-        case "focusdiscardinputchannels"
-            FocusDiscardInputChannels = parseLogicalScalarLocal(varargin{i+1}, FocusDiscardInputChannels);
-        case "focussmoothz"
-            FocusSmoothZ = varargin{i+1};
-        case "focusprojectionradius"
-            FocusProjectionRadius = varargin{i+1};
-        case "focuscentercrop"
-            FocusCenterCrop = varargin{i+1};
-        case "focusoutputchannel"
-            FocusOutputChannel = char(string(varargin{i+1}));
     end
 end
 
@@ -206,13 +185,6 @@ if ~exist('DriftSmoothWin','var')    || isempty(DriftSmoothWin),    DriftSmoothW
 if ~exist('DriftSmoothMethod','var') || isempty(DriftSmoothMethod), DriftSmoothMethod = 'median'; end
 if ~exist('DriftDebug','var')        || isempty(DriftDebug),        DriftDebug = false; end
 if ~exist('DriftDebugEvery','var')   || isempty(DriftDebugEvery),   DriftDebugEvery = 10; end
-
-FocusSmoothZ = normalizePositiveIntegerLocal(FocusSmoothZ, 5);
-FocusProjectionRadius = normalizeNonnegativeIntegerLocal(FocusProjectionRadius, 0);
-FocusCenterCrop = normalizeFractionLocal(FocusCenterCrop, 1.0);
-if isempty(strtrim(FocusOutputChannel))
-    FocusOutputChannel = 'DIC_focus';
-end
 
 
 
@@ -885,28 +857,9 @@ for kF = 1:numel(FOVIndex)
 
             r = normalizeROIChannels(r, chanSelNames);
 
-            writeBlock = roiBlock;
-            writeChannelNames = chanSelNames;
-            if FocusTreatChannelsAsStack && Csel >= 1
-                focusOpts = struct( ...
-                    'smoothZ', FocusSmoothZ, ...
-                    'projectionRadius', FocusProjectionRadius, ...
-                    'centerCrop', FocusCenterCrop);
-                [focusBlock, focusInfo] = buildBestFocusBlockLocal(roiBlock, focusOpts);
-                if FocusDiscardInputChannels
-                    writeBlock = focusBlock;
-                    writeChannelNames = {FocusOutputChannel};
-                else
-                    writeBlock = cat(3, roiBlock, focusBlock);
-                    writeChannelNames = [chanSelNames(:)' {FocusOutputChannel}];
-                end
-                r = upsertFocusDataseriesLocal(r, focusInfo, FocusOutputChannel, frameBatch, loc0ForBlock(framesToDo, frameBatch, fs));
-            end
-
-            r.image     = writeBlock;
-            r.channelid = 1:numel(writeChannelNames);
+            r.image     = roiBlock;
+            r.channelid = 1:Csel;
             r.path      = fovOutDir;
-            r = normalizeROIChannels(r, writeChannelNames);
 
             if isprop(r,'h5path');  r.h5path  = fullfile(fovOutDir, sprintf('im_%s.h5',  r.id)); end
             if isprop(r,'matpath'); r.matpath = fullfile(fovOutDir, sprintf('data_%s.mat', r.id)); end
@@ -950,13 +903,13 @@ for kF = 1:numel(FOVIndex)
                     previousImage = [];
                 end
                 if isempty(previousImage)
-                    r.image = writeBlock;
+                    r.image = roiBlock;
                 else
-                    r.image = cat(4, previousImage, writeBlock);
+                    r.image = cat(4, previousImage, roiBlock);
                 end
                 didSave = true;
             else
-                didSave = r.save(writeChannelNames, false);
+                didSave = r.save(chanSelNames, false);
             end
 
             % --- Optional: pad extra channels (segmentation masks, etc.) ---
@@ -964,10 +917,10 @@ for kF = 1:numel(FOVIndex)
                 try
                     h5File = fullfile(fovOutDir, sprintf('im_%s.h5', r.id));
                     extraNames = listH5Channels(h5File);
-                    extraNames = extraNames(~ismember(extraNames, string(writeChannelNames)));
+                    extraNames = extraNames(~ismember(extraNames, string(chanSelNames)));
                     if ~isempty(extraNames)
-                        padExtraH5Channels(h5File, extraNames, size(writeBlock,1), size(writeBlock,2), ...
-                            Tblock, write0, class(writeBlock));
+                        padExtraH5Channels(h5File, extraNames, size(roiBlock,1), size(roiBlock,2), ...
+                            Tblock, write0, class(roiBlock));
                     end
                 catch ME
                     warning('PadExtraChannels failed for ROI %s: %s', r.id, ME.message);
@@ -1531,226 +1484,6 @@ d.alpha           = ones(1,N);
 d.contour         = zeros(1,N);
 d.width           = ones(1,N);
 d.log             = zeros(1,N);
-end
-
-function [focusBlock, info] = buildBestFocusBlockLocal(roiBlock, opts)
-[H,W,C,T] = size(roiBlock);
-focusBlock = zeros(H, W, 1, T, class(roiBlock));
-rawScores = zeros(C, T);
-smoothScores = zeros(C, T);
-zBest = ones(T, 1);
-peakScore = zeros(T, 1);
-medianScore = zeros(T, 1);
-peakRatio = zeros(T, 1);
-
-for it = 1:T
-    for iz = 1:C
-        rawScores(iz,it) = focusScoreLaplacianLocal(roiBlock(:,:,iz,it), opts.centerCrop);
-    end
-    smoothScores(:,it) = smoothFocusVectorLocal(rawScores(:,it), opts.smoothZ);
-    [peakScore(it), zBest(it)] = max(smoothScores(:,it));
-    finiteScores = smoothScores(isfinite(smoothScores(:,it)),it);
-    if isempty(finiteScores)
-        medianScore(it) = NaN;
-    else
-        medianScore(it) = median(finiteScores);
-    end
-    denom = max(abs(medianScore(it)), eps);
-    peakRatio(it) = peakScore(it) ./ denom;
-    focusBlock(:,:,1,it) = selectFocusedPlaneLocal(roiBlock(:,:,:,it), zBest(it), opts.projectionRadius);
-end
-
-info = struct();
-info.rawScores = rawScores;
-info.smoothScores = smoothScores;
-info.zBest = zBest;
-info.peakScore = peakScore;
-info.medianScore = medianScore;
-info.peakRatio = peakRatio;
-end
-
-function score = focusScoreLaplacianLocal(im, centerCrop)
-im = double(cropCenter(im, centerCrop));
-if isempty(im)
-    score = NaN;
-    return;
-end
-finiteIm = im(isfinite(im));
-if isempty(finiteIm)
-    score = NaN;
-    return;
-end
-im = im - median(finiteIm);
-kernel = [0 1 0; 1 -4 1; 0 1 0];
-lap = conv2(im, kernel, 'same');
-finiteLap = lap(isfinite(lap));
-if isempty(finiteLap)
-    score = NaN;
-else
-    score = var(finiteLap(:), 0);
-end
-end
-
-function y = smoothFocusVectorLocal(x, win)
-x = double(x(:));
-win = normalizePositiveIntegerLocal(win, 1);
-if win <= 1 || numel(x) <= 2
-    y = x;
-    return;
-end
-win = min(win, numel(x));
-try
-    y = smoothdata(x, 'movmean', win, 'omitnan');
-catch
-    kernel = ones(win, 1) ./ win;
-    valid = isfinite(x);
-    x0 = x;
-    x0(~valid) = 0;
-    num = conv(x0, kernel, 'same');
-    den = conv(double(valid), kernel, 'same');
-    y = num ./ max(den, eps);
-end
-end
-
-function plane = selectFocusedPlaneLocal(stack, zBest, radius)
-radius = normalizeNonnegativeIntegerLocal(radius, 0);
-C = size(stack, 3);
-zBest = min(max(1, round(zBest)), C);
-if radius <= 0
-    plane = stack(:,:,zBest);
-    return;
-end
-idx = max(1, zBest-radius):min(C, zBest+radius);
-avg = mean(double(stack(:,:,idx)), 3);
-plane = castImageLikeLocal(avg, class(stack));
-end
-
-function out = castImageLikeLocal(im, className)
-if isinteger(cast(0, className))
-    lo = double(intmin(className));
-    hi = double(intmax(className));
-    im = min(max(round(im), lo), hi);
-elseif strcmp(className, 'logical')
-    im = im > 0;
-end
-out = cast(im, className);
-end
-
-function r = upsertFocusDataseriesLocal(r, focusInfo, focusOutputChannel, frameBatch, loc0)
-if isempty(focusInfo)
-    return;
-end
-T = numel(focusInfo.zBest);
-localFrame = (loc0:(loc0 + T - 1))';
-tbl = table( ...
-    frameBatch(:), ...
-    localFrame, ...
-    double(focusInfo.zBest(:)), ...
-    double(focusInfo.peakScore(:)), ...
-    double(focusInfo.medianScore(:)), ...
-    double(focusInfo.peakRatio(:)), ...
-    'VariableNames', {'frame','localFrame','zBest','focusPeak','focusMedian','focusPeakRatio'});
-groupid = [char(string(focusOutputChannel)) '_best_z'];
-
-try
-    if isempty(r.data) || (numel(r.data)==1 && isempty(r.data(1).groupid) && isempty(r.data(1).data))
-        try
-            r.load('data', 'Silent');
-        catch
-        end
-    end
-catch
-end
-
-if isempty(r.data) || ~isa(r.data, 'dataseries')
-    r.data = dataseries.empty;
-end
-
-idx = [];
-try
-    idx = find(arrayfun(@(x) isprop(x,'groupid') && strcmp(char(string(x.groupid)), groupid), r.data), 1, 'first');
-catch
-    idx = [];
-end
-
-if isempty(idx)
-    ds = dataseries(tbl, tbl.Properties.VariableNames, ...
-        'groupid', groupid, 'class', 'processing', 'type', 'temporal');
-    try, ds.parentid = r.id; catch, end
-    if isempty(r.data)
-        r.data = ds;
-    else
-        r.data(end+1) = ds;
-    end
-else
-    oldTbl = r.data(idx).data;
-    if istable(oldTbl) && ~isempty(oldTbl) && any(strcmp(oldTbl.Properties.VariableNames, 'localFrame'))
-        oldTbl(ismember(oldTbl.localFrame, tbl.localFrame), :) = [];
-        tbl = sortrows([oldTbl; tbl], 'localFrame');
-    end
-    r.data(idx).data = tbl;
-end
-end
-
-function loc0 = loc0ForBlock(framesToDo, frameBatch, fallbackLoc0)
-loc0 = find(framesToDo == frameBatch(1), 1, 'first');
-if isempty(loc0)
-    loc0 = fallbackLoc0;
-end
-end
-
-function n = normalizePositiveIntegerLocal(v, defaultValue)
-n = defaultValue;
-try
-    v = double(v);
-    if isscalar(v) && isfinite(v) && v >= 1
-        n = round(v);
-    end
-catch
-end
-end
-
-function n = normalizeNonnegativeIntegerLocal(v, defaultValue)
-n = defaultValue;
-try
-    v = double(v);
-    if isscalar(v) && isfinite(v) && v >= 0
-        n = round(v);
-    end
-catch
-end
-end
-
-function f = normalizeFractionLocal(v, defaultValue)
-f = defaultValue;
-try
-    v = double(v);
-    if isscalar(v) && isfinite(v) && v > 0 && v <= 1
-        f = v;
-    end
-catch
-end
-end
-
-function tf = parseLogicalScalarLocal(v, defaultValue)
-tf = defaultValue;
-try
-    if islogical(v)
-        tf = any(v(:));
-        return;
-    end
-    if isnumeric(v)
-        tf = any(v(:) ~= 0);
-        return;
-    end
-    s = lower(strtrim(char(string(v))));
-    if any(strcmp(s, {'true','t','yes','y','on','1'}))
-        tf = true;
-    elseif any(strcmp(s, {'false','f','no','n','off','0'}))
-        tf = false;
-    end
-catch
-end
 end
 
 function r = normalizeROIChannels(r, chanSelNames)
