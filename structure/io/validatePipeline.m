@@ -2959,9 +2959,21 @@ function name = normalizePhysicalResourceOutputName(node, spec, name)
     if strcmp(nodeType, 'classifier') && strcmp(pkgName, 'cellposesam') && ...
             strcmp(resourceType, 'mask') && strcmp(role, 'segmentation')
         name = cellposeSegmentationChannelNameLocal(node, name);
+    elseif strcmp(nodeType, 'classifier') && strcmp(pkgName, 'deeplab_pixel_classification') && ...
+            strcmp(resourceType, 'mask') && strcmp(role, 'segmentation')
+        name = prefixedResultsChannelNameLocal(name);
     elseif strcmp(nodeType, 'processor') && strcmp(pkgName, 'trackmotherlineageviterbi') && ...
             strcmp(resourceType, 'channel') && any(strcmp(role, {'lineage_mask','lineage_cell_mask','lineage_confidence','lineage_mother_mask','lineage_bud_mask'}))
         name = trackMotherLineageChannelNameLocal(name, role);
+    end
+end
+
+function name = prefixedResultsChannelNameLocal(outputName)
+    outputName = char(string(outputName));
+    if startsWith(outputName, 'results_', 'IgnoreCase', true)
+        name = outputName;
+    else
+        name = ['results_' outputName];
     end
 end
 

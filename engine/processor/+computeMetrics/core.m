@@ -71,6 +71,9 @@ for i = 1:scoreCount
 end
 
 if isempty(channelsExtract)
+    warnOnceLocal('computeMetrics:NoValidScoreChannel', ...
+        ['score|' strjoin(cellstr(string(channelsName)), '|')], ...
+        'No valid score channel is available for ROI %s; channel_quantification will not be created.', roiIdText(roiobj));
     return;
 end
 
@@ -318,6 +321,15 @@ for m = 1:maskCount
 end
 
 if isempty(varNames)
+    maskNames = cell(1, maskCount);
+    for m = 1:maskCount
+        maskNames{m} = char(string(paramout.(sprintf('mask%d_name', m))));
+    end
+    warnOnceLocal('computeMetrics:NoValidQuantificationMask', ...
+        ['mask|' strjoin(maskNames, '|')], ...
+        ['No valid quantification mask is available for ROI %s. ' ...
+         'Requested masks: %s. channel_quantification will not be created.'], ...
+        roiIdText(roiobj), strjoin(maskNames, ', '));
     return;
 end
 
@@ -343,6 +355,19 @@ if ~isstruct(dataout(cc).userData)
 end
 dataout(cc).userData.mask_vector_semantics = 'Each table cell contains one value per non-zero mask index listed in the corresponding MaskIdx_* cell.';
 dataout(cc).plotGroup = {[] [] [] [] [] unique(plotgroup)};
+end
+
+function warnOnceLocal(id, key, varargin)
+persistent warned
+if isempty(warned)
+    warned = containers.Map('KeyType', 'char', 'ValueType', 'logical');
+end
+mapKey = [char(string(id)) '|' char(string(key))];
+if isKey(warned, mapKey)
+    return;
+end
+warned(mapKey) = true;
+warning(id, varargin{:});
 end
 
 function metrics = fluorescenceForMask(im, maskChannel, scoreChannels, N)
