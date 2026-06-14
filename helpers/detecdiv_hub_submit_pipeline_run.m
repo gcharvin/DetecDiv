@@ -434,6 +434,16 @@ function bundleRef = localExportRunPipelineBundle(runObj, ref, hub, shallowObj)
     if isempty(sourcePath)
         return;
     end
+    sourceBundlePath = localExistingHubBundleFromPipelineSource(sourcePath);
+    if ~isempty(sourceBundlePath)
+        sourceManifestPath = fullfile(sourceBundlePath, 'export_manifest.json');
+        sourcePipelineJsonPath = fullfile(sourceBundlePath, 'pipeline', 'pipeline.json');
+        localRepairHubPipelineBundlePaths(sourceBundlePath, sourcePipelineJsonPath, ref, hub);
+        bundleRef.pipeline_bundle_uri = localTranslatePathForServer(sourceBundlePath, ref, hub);
+        bundleRef.export_manifest_uri = localTranslatePathForServer(sourceManifestPath, ref, hub);
+        bundleRef.pipeline_json_path = localTranslatePathForServer(sourcePipelineJsonPath, ref, hub);
+        return;
+    end
     pipelineExport(sourcePath, bundlePath, ...
         'projectObj', shallowObj, ...
         'overwrite', true);
@@ -671,6 +681,43 @@ function sourcePath = localRunPipelineSourcePath(runObj, ref, hub)
         end
     end
     sourcePath = '';
+end
+
+function bundlePath = localExistingHubBundleFromPipelineSource(sourcePath)
+    bundlePath = '';
+    sourcePath = char(string(sourcePath));
+    if isempty(sourcePath)
+        return;
+    end
+    candidates = {sourcePath};
+    if isfolder(sourcePath)
+        [parentDir, leafName] = fileparts(sourcePath);
+        if strcmpi(leafName, 'pipeline')
+            candidates{end+1} = parentDir; %#ok<AGROW>
+        end
+    else
+        [parentDir, fileName, fileExt] = fileparts(sourcePath);
+        if strcmpi([fileName fileExt], 'pipeline.json')
+            candidates{end+1} = fileparts(parentDir); %#ok<AGROW>
+        end
+    end
+    for i = 1:numel(candidates)
+        root = candidates{i};
+        if localLooksLikeHubBundle(root)
+            bundlePath = root;
+            return;
+        end
+    end
+end
+
+function tf = localLooksLikeHubBundle(bundlePath)
+    tf = false;
+    bundlePath = char(string(bundlePath));
+    if isempty(bundlePath) || exist(bundlePath, 'dir') ~= 7
+        return;
+    end
+    tf = exist(fullfile(bundlePath, 'export_manifest.json'), 'file') == 2 && ...
+        exist(fullfile(bundlePath, 'pipeline', 'pipeline.json'), 'file') == 2;
 end
 
 function pathOut = localReadablePipelinePath(pathIn, ref, hub)
