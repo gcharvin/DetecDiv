@@ -123,21 +123,11 @@ for i = 1:nF
     end
     inputStack(:, :, :, i) = uint8(max(0, min(255, round(255 * mat2gray(tmp)))));
 end
-if ~isempty(inputSize) && (size(inputStack, 1) ~= inputSize(1) || size(inputStack, 2) ~= inputSize(2))
-    inputForNet = imresize(inputStack, inputSize);
-else
-    inputForNet = inputStack;
-end
-
 execEnv = "cpu";
 if gpu
     execEnv = "gpu";
 end
-[~, scores] = semanticseg(inputForNet, net, 'ExecutionEnvironment', execEnv);
-
-if size(scores, 1) ~= nY || size(scores, 2) ~= nX
-    scores = resizeScoreStack(scores, [nY nX]);
-end
+scores = segmentDeepLabFrames(inputStack, net, execEnv, inputSize, [nY nX]);
 
 if wantSegmentation
     segChannel = ensureChannel(roiobj, ['results_' outputName], 'uint16', [1 1 1], [0 0 0], true);
@@ -156,6 +146,63 @@ if wantProbability
     end
     prob = min(max(prob, 0), 1);
     image(:, :, probChannel, frames) = uint16(round(65535 * prob));
+end
+end
+
+function scores = segmentDeepLabFrames(inputStack, net, execEnv, inputSize, targetSize)
+nF = size(inputStack, 4);
+scores = tryBatchDeepLabFrames(inputStack, net, execEnv, inputSize, targetSize, nF);
+if ~isempty(scores)
+    return;
+end
+
+scores = [];
+for i = 1:nF
+    frameInput = inputStack(:, :, :, i);
+    if ~isempty(inputSize) && (size(frameInput, 1) ~= inputSize(1) || size(frameInput, 2) ~= inputSize(2))
+        frameInput = imresize(frameInput, inputSize);
+    end
+    [~, frameScores] = semanticseg(frameInput, net, 'ExecutionEnvironment', execEnv);
+    frameScores = normalizeScoreFrame(frameScores, targetSize);
+    if isempty(scores)
+        scores = zeros(targetSize(1), targetSize(2), size(frameScores, 3), nF, 'like', frameScores);
+    end
+    scores(:, :, :, i) = frameScores;
+end
+end
+
+function scores = tryBatchDeepLabFrames(inputStack, net, execEnv, inputSize, targetSize, nF)
+scores = [];
+if nF <= 1
+    return;
+end
+try
+    if ~isempty(inputSize) && (size(inputStack, 1) ~= inputSize(1) || size(inputStack, 2) ~= inputSize(2))
+        inputForNet = imresize(inputStack, inputSize);
+    else
+        inputForNet = inputStack;
+    end
+    [~, batchScores] = semanticseg(inputForNet, net, 'ExecutionEnvironment', execEnv);
+    if ndims(batchScores) < 4 || size(batchScores, 4) ~= nF
+        return;
+    end
+    if size(batchScores, 1) ~= targetSize(1) || size(batchScores, 2) ~= targetSize(2)
+        batchScores = resizeScoreStack(batchScores, targetSize);
+    end
+    scores = batchScores;
+catch
+    scores = [];
+end
+end
+
+function frameScores = normalizeScoreFrame(frameScores, targetSize)
+if ndims(frameScores) < 3
+    frameScores = reshape(frameScores, size(frameScores, 1), size(frameScores, 2), 1);
+elseif ndims(frameScores) > 3
+    frameScores = frameScores(:, :, :, 1);
+end
+if size(frameScores, 1) ~= targetSize(1) || size(frameScores, 2) ~= targetSize(2)
+    frameScores = resizeScoreStack(frameScores, targetSize);
 end
 end
 
