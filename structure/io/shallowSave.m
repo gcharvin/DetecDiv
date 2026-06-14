@@ -71,16 +71,21 @@ function shallowSave(shallowObj, option, progress)
     end
 
         % ====== 4) Pipeline runs ======
-        nRun = 0;
-        if isfield(shallowObj.processing,'pipelineRun')
-            nRun = numel(shallowObj.processing.pipelineRun);
-        end
-        if nRun > 0, fprintf('Saving %d pipeline run(s)...\n', nRun); end
-        for i = 1:nRun
-            try
-                pipelineRunSave(shallowObj.processing.pipelineRun(i));
-            catch ME
-                warning('pipeline run save failed: %s', ME.message);
+        % In shallowObj-only mode the caller is saving the project MAT only.
+        % Pipeline runs live in their own run folders and are often saved
+        % explicitly by pipeline2 immediately before this call.
+        if ~shallowObjOnly
+            nRun = 0;
+            if isfield(shallowObj.processing,'pipelineRun')
+                nRun = numel(shallowObj.processing.pipelineRun);
+            end
+            if nRun > 0, fprintf('Saving %d pipeline run(s)...\n', nRun); end
+            for i = 1:nRun
+                try
+                    pipelineRunSave(shallowObj.processing.pipelineRun(i));
+                catch ME
+                    warning('pipeline run save failed: %s', ME.message);
+                end
             end
         end
         % Pipeline templates are independent objects and are not persisted in shallowObj.

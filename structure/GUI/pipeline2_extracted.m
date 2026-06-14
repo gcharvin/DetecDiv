@@ -15634,7 +15634,7 @@ classdef pipeline2 < matlab.apps.AppBase
                         'ProjectResolveIntervalSec', 0.5);
                     runObj = annotateHubRunControl(app, runObj, job);
                     logRunEvent(app, runObj, 'Hub submission completed.', 'pipeline2');
-                    savePipelineRunAndProject(app, runObj, d, 'Saving Hub job and project state...', true);
+                    savePipelineRunAndProject(app, runObj, d, 'Saving Hub job state...', false);
                     clearRuntimeDataSeriesCache(app);
                     updateRuntimeResourceInventory(app);
                     appendRunReport(app, ['Hub submit: ' char(string(getField(app, job, 'status', 'submitted')))], job);
