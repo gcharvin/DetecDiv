@@ -8,35 +8,44 @@ end
 
 spec = struct();
 spec.summary = 'DeepLab v3+ pixel classifier: writes segmentation masks, probability channels, or both.';
-spec.staticKeys = {'outputType','executionEnvironment'};
+spec.staticKeys = {'outputType','segmentationMode','probabilityThreshold','executionEnvironment'};
 spec.outputKeys = {'outputName','probabilityOutputName'};
 spec.defaultImportKeys = {'outputType','executionEnvironment'};
 spec.pathKeys = {};
 
 spec.defaults = struct( ...
     'outputType', 'segmentation', ...
+    'segmentationMode', 'max_probability', ...
+    'probabilityThreshold', 0.9, ...
     'outputName', 'deeplab_pixels', ...
     'probabilityOutputName', 'deeplab_pixels_prob', ...
     'executionEnvironment', 'module_default');
 
 spec.labels = struct( ...
     'outputType', 'Output resource', ...
+    'segmentationMode', 'Segmentation decision', ...
+    'probabilityThreshold', 'Probability threshold', ...
     'outputName', 'Segmentation output name', ...
     'probabilityOutputName', 'Probability output name', ...
     'executionEnvironment', 'Execution environment');
 
 spec.tips = struct( ...
     'outputType', 'Controls whether this node writes a segmentation mask, a grayscale probability map, or both.', ...
+    'segmentationMode', 'max_probability writes the class selected by semanticseg; threshold_foreground keeps non-background labels only when the foreground probability/confidence is above threshold.', ...
+    'probabilityThreshold', 'Threshold used when segmentationMode is threshold_foreground.', ...
     'outputName', 'Name used for the segmentation mask resource and ROI result channel.', ...
     'probabilityOutputName', 'Name used for the grayscale DeepLab probability ROI image channel.', ...
     'executionEnvironment', 'Optional node-local CPU/GPU choice; module_default keeps the run-level policy.');
 
 spec.choices = struct();
 spec.choices.outputType = {'segmentation','probability','both'};
+spec.choices.segmentationMode = {'max_probability','threshold_foreground'};
 spec.choices.executionEnvironment = {'module_default','cpu','gpu'};
 
 spec.defaults = mergeDefaultsFromClassi(spec.defaults, classif);
 spec.defaults.outputType = normalizeOutputType(spec.defaults.outputType);
+spec.defaults.segmentationMode = normalizeSegmentationMode(spec.defaults.segmentationMode);
+spec.defaults.probabilityThreshold = normalizeProbabilityThreshold(spec.defaults.probabilityThreshold);
 spec.defaults.executionEnvironment = normalizeExecutionEnvironment(spec.defaults.executionEnvironment);
 end
 
@@ -112,6 +121,31 @@ switch outputType
             outputType = 'segmentation';
         end
 end
+end
+
+function mode = normalizeSegmentationMode(value)
+mode = lower(strtrim(choiceToChar(value)));
+mode = strrep(mode, '-', '_');
+mode = strrep(mode, ' ', '_');
+switch mode
+    case {'threshold','thresholded','threshold_foreground','probability_threshold','proba_threshold'}
+        mode = 'threshold_foreground';
+    otherwise
+        mode = 'max_probability';
+end
+end
+
+function threshold = normalizeProbabilityThreshold(value)
+threshold = 0.9;
+try
+    threshold = double(value);
+    threshold = threshold(1);
+catch
+end
+if ~isfinite(threshold)
+    threshold = 0.9;
+end
+threshold = max(0, min(1, threshold));
 end
 
 function env = normalizeExecutionEnvironment(value)

@@ -60,6 +60,7 @@ end
 if isempty(probabilityOutputName)
     probabilityOutputName = [outputName '_prob'];
 end
+[segmentationMode, probabilityThreshold] = resolveSegmentationParams(classif);
 
 if isempty(roiobj.image)
     roiobj.load;
@@ -128,24 +129,55 @@ if gpu
     execEnv = "gpu";
 end
 [labelIdx, scores] = segmentDeepLabFrames(inputStack, net, execEnv, inputSize, [nY nX]);
+foregroundProbability = foregroundProbabilityFromScores(scores, labelIdx);
+if strcmp(segmentationMode, 'threshold_foreground')
+    labelIdx = applyForegroundThreshold(labelIdx, foregroundProbability, probabilityThreshold);
+end
 
 if wantSegmentation
     segChannel = ensureChannel(roiobj, ['results_' outputName], 'uint16', [1 1 1], [0 0 0], true);
     image = roiobj.image;
     image(:, :, segChannel, frames) = uint16(labelIdx);
+    roiobj.image = image;
 end
 
 if wantProbability
     probChannel = ensureChannel(roiobj, probabilityOutputName, 'uint16', [1 1 1], [1 1 1], false);
     image = roiobj.image;
-    if ndims(scores) >= 4 && size(scores, 3) >= 2
-        prob = max(scores(:, :, 2:end, :), [], 3);
-    else
-        prob = reshape(scores, size(scores, 1), size(scores, 2), 1, size(scores, 4));
-    end
+    prob = foregroundProbability;
     prob = min(max(prob, 0), 1);
     image(:, :, probChannel, frames) = uint16(round(65535 * prob));
 end
+end
+
+function [segmentationMode, probabilityThreshold] = resolveSegmentationParams(classif)
+segmentationMode = 'max_probability';
+probabilityThreshold = 0.9;
+try
+    if isprop(classif, 'executionParam') && isstruct(classif.executionParam)
+        p = classif.executionParam;
+        if isfield(p, 'segmentationMode') && ~isempty(p.segmentationMode)
+            segmentationMode = normalizeSegmentationMode(p.segmentationMode);
+        end
+        if isfield(p, 'probabilityThreshold') && ~isempty(p.probabilityThreshold)
+            probabilityThreshold = normalizeProbabilityThreshold(p.probabilityThreshold);
+        end
+    end
+catch
+end
+end
+
+function prob = foregroundProbabilityFromScores(scores, labelIdx)
+if ndims(scores) >= 4 && size(scores, 3) >= 2
+    prob = max(scores(:, :, 2:end, :), [], 3);
+else
+    prob = reshape(scores, size(scores, 1), size(scores, 2), 1, size(scores, 4));
+    prob(labelIdx <= 1) = 0;
+end
+end
+
+function labelIdx = applyForegroundThreshold(labelIdx, foregroundProbability, threshold)
+labelIdx(foregroundProbability < threshold) = 1;
 end
 
 function [labelIdx, scores] = segmentDeepLabFrames(inputStack, net, execEnv, inputSize, targetSize)
@@ -370,7 +402,44 @@ if isfield(ctx, 'params') && isstruct(ctx.params)
         catch
         end
     end
+    if isfield(ctx.params, 'segmentationMode') && ~isempty(ctx.params.segmentationMode)
+        try
+            classif.executionParam.segmentationMode = normalizeSegmentationMode(ctx.params.segmentationMode);
+        catch
+        end
+    end
+    if isfield(ctx.params, 'probabilityThreshold') && ~isempty(ctx.params.probabilityThreshold)
+        try
+            classif.executionParam.probabilityThreshold = normalizeProbabilityThreshold(ctx.params.probabilityThreshold);
+        catch
+        end
+    end
 end
+end
+
+function mode = normalizeSegmentationMode(value)
+mode = lower(strtrim(char(string(value))));
+mode = strrep(mode, '-', '_');
+mode = strrep(mode, ' ', '_');
+switch mode
+    case {'threshold','thresholded','threshold_foreground','probability_threshold','proba_threshold'}
+        mode = 'threshold_foreground';
+    otherwise
+        mode = 'max_probability';
+end
+end
+
+function threshold = normalizeProbabilityThreshold(value)
+threshold = 0.9;
+try
+    threshold = double(value);
+    threshold = threshold(1);
+catch
+end
+if ~isfinite(threshold)
+    threshold = 0.9;
+end
+threshold = max(0, min(1, threshold));
 end
 
 function outputType = normalizeOutputType(value)
