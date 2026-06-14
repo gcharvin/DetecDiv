@@ -127,42 +127,43 @@ execEnv = "cpu";
 if gpu
     execEnv = "gpu";
 end
-scores = segmentDeepLabFrames(inputStack, net, execEnv, inputSize, [nY nX]);
+[labelIdx, scores] = segmentDeepLabFrames(inputStack, net, execEnv, inputSize, [nY nX]);
 
 if wantSegmentation
     segChannel = ensureChannel(roiobj, ['results_' outputName], 'uint16', [1 1 1], [0 0 0], true);
     image = roiobj.image;
-    [~, maxIdx] = max(scores, [], 3);
-    image(:, :, segChannel, frames) = uint16(maxIdx);
+    image(:, :, segChannel, frames) = uint16(labelIdx);
 end
 
 if wantProbability
     probChannel = ensureChannel(roiobj, probabilityOutputName, 'uint16', [1 1 1], [1 1 1], false);
     image = roiobj.image;
-    if size(scores, 3) >= 2
+    if ndims(scores) >= 4 && size(scores, 3) >= 2
         prob = max(scores(:, :, 2:end, :), [], 3);
     else
-        prob = scores(:, :, 1, :);
+        prob = reshape(scores, size(scores, 1), size(scores, 2), 1, size(scores, 4));
     end
     prob = min(max(prob, 0), 1);
     image(:, :, probChannel, frames) = uint16(round(65535 * prob));
 end
 end
 
-function scores = segmentDeepLabFrames(inputStack, net, execEnv, inputSize, targetSize)
+function [labelIdx, scores] = segmentDeepLabFrames(inputStack, net, execEnv, inputSize, targetSize)
 nF = size(inputStack, 4);
-scores = tryBatchDeepLabFrames(inputStack, net, execEnv, inputSize, targetSize, nF);
-if ~isempty(scores)
+[labelIdx, scores] = tryBatchDeepLabFrames(inputStack, net, execEnv, inputSize, targetSize, nF);
+if ~isempty(labelIdx)
     return;
 end
 
+labelIdx = zeros(targetSize(1), targetSize(2), 1, nF, 'uint16');
 scores = [];
 for i = 1:nF
     frameInput = inputStack(:, :, :, i);
     if ~isempty(inputSize) && (size(frameInput, 1) ~= inputSize(1) || size(frameInput, 2) ~= inputSize(2))
         frameInput = imresize(frameInput, inputSize);
     end
-    [~, frameScores] = semanticseg(frameInput, net, 'ExecutionEnvironment', execEnv);
+    [frameLabels, frameScores] = semanticseg(frameInput, net, 'ExecutionEnvironment', execEnv);
+    labelIdx(:, :, 1, i) = labelsToIndex(frameLabels, net, targetSize);
     frameScores = normalizeScoreFrame(frameScores, targetSize);
     if isempty(scores)
         scores = zeros(targetSize(1), targetSize(2), size(frameScores, 3), nF, 'like', frameScores);
@@ -171,7 +172,8 @@ for i = 1:nF
 end
 end
 
-function scores = tryBatchDeepLabFrames(inputStack, net, execEnv, inputSize, targetSize, nF)
+function [labelIdx, scores] = tryBatchDeepLabFrames(inputStack, net, execEnv, inputSize, targetSize, nF)
+labelIdx = [];
 scores = [];
 if nF <= 1
     return;
@@ -182,16 +184,56 @@ try
     else
         inputForNet = inputStack;
     end
-    [~, batchScores] = semanticseg(inputForNet, net, 'ExecutionEnvironment', execEnv);
-    if ndims(batchScores) < 4 || size(batchScores, 4) ~= nF
+    [batchLabels, batchScores] = semanticseg(inputForNet, net, 'ExecutionEnvironment', execEnv);
+    if ndims(batchLabels) < 3 || size(batchLabels, 3) ~= nF
         return;
     end
-    if size(batchScores, 1) ~= targetSize(1) || size(batchScores, 2) ~= targetSize(2)
-        batchScores = resizeScoreStack(batchScores, targetSize);
+    labelIdx = zeros(targetSize(1), targetSize(2), 1, nF, 'uint16');
+    for i = 1:nF
+        labelIdx(:, :, 1, i) = labelsToIndex(batchLabels(:, :, i), net, targetSize);
     end
-    scores = batchScores;
+    scores = normalizeBatchScores(batchScores, targetSize, nF);
 catch
+    labelIdx = [];
     scores = [];
+end
+end
+
+function scores = normalizeBatchScores(batchScores, targetSize, nF)
+if ndims(batchScores) < 4 && size(batchScores, 3) == nF
+    scores = zeros(targetSize(1), targetSize(2), 1, nF, 'like', batchScores);
+    for i = 1:nF
+        frameScore = batchScores(:, :, i);
+        if size(frameScore, 1) ~= targetSize(1) || size(frameScore, 2) ~= targetSize(2)
+            frameScore = imresize(frameScore, targetSize);
+        end
+        scores(:, :, 1, i) = frameScore;
+    end
+    return;
+end
+if size(batchScores, 1) ~= targetSize(1) || size(batchScores, 2) ~= targetSize(2)
+    batchScores = resizeScoreStack(batchScores, targetSize);
+end
+scores = batchScores;
+end
+
+function idx = labelsToIndex(labels, net, targetSize)
+classNames = [];
+try
+    classNames = string(net.Layers(end).Classes);
+catch
+end
+if isempty(classNames)
+    classNames = string(categories(labels));
+end
+labelNames = string(labels);
+idx = zeros(size(labelNames), 'uint16');
+for k = 1:numel(classNames)
+    idx(labelNames == classNames(k)) = uint16(k);
+end
+idx(idx == 0) = 1;
+if size(idx, 1) ~= targetSize(1) || size(idx, 2) ~= targetSize(2)
+    idx = uint16(imresize(idx, targetSize, 'nearest'));
 end
 end
 
