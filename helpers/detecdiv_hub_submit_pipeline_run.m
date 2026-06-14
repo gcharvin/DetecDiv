@@ -418,35 +418,37 @@ function bundleRef = localExportRunPipelineBundle(runObj, ref, hub, shallowObj)
     bundlePath = fullfile(runPath, 'hub_pipeline_bundle');
     manifestPath = fullfile(bundlePath, 'export_manifest.json');
     pipelineJsonPath = fullfile(bundlePath, 'pipeline', 'pipeline.json');
-    if exist(manifestPath, 'file') == 2 && exist(pipelineJsonPath, 'file') == 2
-        % A persisted Hub run owns its bundle. Re-exporting here can force
-        % definition asset materialization (for example roiPattern patches)
-        % and therefore raw-image reads before the Hub job has even been
-        % submitted. Keep submission lightweight: repair paths in place and
-        % let an explicit pipeline export/create path rebuild missing bundles.
+    sourcePath = localRunPipelineSourcePath(runObj, ref, hub);
+    sourceBundlePath = localExistingHubBundleFromPipelineSource(sourcePath);
+    if ~isempty(sourceBundlePath) && ~localSamePath(sourceBundlePath, bundlePath)
+        localCopyExistingHubBundle(sourceBundlePath, bundlePath, runPath);
+        localPruneHubBundleForRun(bundlePath, runObj);
         localRepairHubPipelineBundlePaths(bundlePath, pipelineJsonPath, ref, hub);
         bundleRef.pipeline_bundle_uri = localTranslatePathForServer(bundlePath, ref, hub);
         bundleRef.export_manifest_uri = localTranslatePathForServer(manifestPath, ref, hub);
         bundleRef.pipeline_json_path = localTranslatePathForServer(pipelineJsonPath, ref, hub);
         return;
     end
-    sourcePath = localRunPipelineSourcePath(runObj, ref, hub);
-    if isempty(sourcePath)
+    if exist(manifestPath, 'file') == 2 && exist(pipelineJsonPath, 'file') == 2
+        % A persisted Hub run owns its bundle. Re-exporting here can force
+        % definition asset materialization (for example roiPattern patches)
+        % and therefore raw-image reads before the Hub job has even been
+        % submitted. Keep submission lightweight: repair paths in place and
+        % let an explicit pipeline export/create path rebuild missing bundles.
+        localPruneHubBundleForRun(bundlePath, runObj);
+        localRepairHubPipelineBundlePaths(bundlePath, pipelineJsonPath, ref, hub);
+        bundleRef.pipeline_bundle_uri = localTranslatePathForServer(bundlePath, ref, hub);
+        bundleRef.export_manifest_uri = localTranslatePathForServer(manifestPath, ref, hub);
+        bundleRef.pipeline_json_path = localTranslatePathForServer(pipelineJsonPath, ref, hub);
         return;
     end
-    sourceBundlePath = localExistingHubBundleFromPipelineSource(sourcePath);
-    if ~isempty(sourceBundlePath)
-        sourceManifestPath = fullfile(sourceBundlePath, 'export_manifest.json');
-        sourcePipelineJsonPath = fullfile(sourceBundlePath, 'pipeline', 'pipeline.json');
-        localRepairHubPipelineBundlePaths(sourceBundlePath, sourcePipelineJsonPath, ref, hub);
-        bundleRef.pipeline_bundle_uri = localTranslatePathForServer(sourceBundlePath, ref, hub);
-        bundleRef.export_manifest_uri = localTranslatePathForServer(sourceManifestPath, ref, hub);
-        bundleRef.pipeline_json_path = localTranslatePathForServer(sourcePipelineJsonPath, ref, hub);
+    if isempty(sourcePath)
         return;
     end
     pipelineExport(sourcePath, bundlePath, ...
         'projectObj', shallowObj, ...
         'overwrite', true);
+    localPruneHubBundleForRun(bundlePath, runObj);
     localRepairHubPipelineBundlePaths(bundlePath, pipelineJsonPath, ref, hub);
     bundleRef.pipeline_bundle_uri = localTranslatePathForServer(bundlePath, ref, hub);
     bundleRef.export_manifest_uri = localTranslatePathForServer(manifestPath, ref, hub);
@@ -718,6 +720,225 @@ function tf = localLooksLikeHubBundle(bundlePath)
     end
     tf = exist(fullfile(bundlePath, 'export_manifest.json'), 'file') == 2 && ...
         exist(fullfile(bundlePath, 'pipeline', 'pipeline.json'), 'file') == 2;
+end
+
+function localPruneHubBundleForRun(bundlePath, runObj)
+    selectedIds = localSelectedRunNodeIds(runObj);
+    if isempty(selectedIds)
+        return;
+    end
+    pipelineJsonPath = fullfile(bundlePath, 'pipeline', 'pipeline.json');
+    if exist(pipelineJsonPath, 'file') ~= 2
+        return;
+    end
+    try
+        spec = jsondecode(fileread(pipelineJsonPath));
+    catch
+        return;
+    end
+    if ~isstruct(spec) || ~isfield(spec, 'nodes') || isempty(spec.nodes)
+        return;
+    end
+
+    keepPaths = {};
+    for i = 1:numel(spec.nodes)
+        node = spec.nodes(i);
+        nodeId = localText(localGetField(node, 'id', ''));
+        if isempty(nodeId) || ~any(strcmp(selectedIds, nodeId))
+            continue;
+        end
+        nodeType = localText(localGetField(node, 'type', ''));
+        moduleKind = localText(localNested(node, {'params','moduleKind'}, localNested(node, {'origin','kind'}, nodeType)));
+        moduleId = localText(localNested(node, {'params','moduleId'}, localNested(node, {'origin','id'}, '')));
+        if isempty(moduleId)
+            moduleId = nodeId;
+        end
+        assetSubdir = localRunBundleAssetSubdir(moduleKind, nodeType);
+        if ~isempty(assetSubdir) && ~isempty(moduleId)
+            keepPaths{end+1} = fullfile(bundlePath, 'assets', assetSubdir, moduleId); %#ok<AGROW>
+        end
+    end
+    keepPaths = unique(keepPaths, 'stable');
+    localPruneBundleAssets(bundlePath, keepPaths);
+    localPruneBundleManifest(bundlePath, selectedIds);
+end
+
+function selectedIds = localSelectedRunNodeIds(runObj)
+    selectedIds = {};
+    candidates = {};
+    try
+        candidates{end+1} = runObj.ctx.run.selectedNodes; %#ok<AGROW>
+    catch
+    end
+    try
+        candidates{end+1} = runObj.run.selectedNodes; %#ok<AGROW>
+    catch
+    end
+    for i = 1:numel(candidates)
+        ids = localStringList(candidates{i});
+        if ~isempty(ids)
+            selectedIds = ids;
+            return;
+        end
+    end
+end
+
+function values = localStringList(value)
+    values = {};
+    if isempty(value)
+        return;
+    end
+    if ischar(value) || isstring(value)
+        arr = cellstr(string(value(:)));
+    elseif iscell(value)
+        arr = cellfun(@(x) char(string(x)), value(:), 'UniformOutput', false);
+    else
+        return;
+    end
+    arr = arr(~cellfun(@isempty, arr));
+    values = unique(arr(:)', 'stable');
+end
+
+function subdir = localRunBundleAssetSubdir(moduleKind, nodeType)
+    key = lower(char(string(moduleKind)));
+    if isempty(key)
+        key = lower(char(string(nodeType)));
+    end
+    switch key
+        case {'classifier','classification'}
+            subdir = 'classification';
+        case {'processor','processing'}
+            subdir = 'processing';
+        case {'roipattern','roi_pattern'}
+            subdir = 'roipatterns';
+        otherwise
+            subdir = '';
+    end
+end
+
+function localPruneBundleAssets(bundlePath, keepPaths)
+    assetsDir = fullfile(bundlePath, 'assets');
+    if exist(assetsDir, 'dir') ~= 7
+        return;
+    end
+    listing = dir(assetsDir);
+    listing = listing([listing.isdir]);
+    listing = listing(~ismember({listing.name}, {'.','..'}));
+    for i = 1:numel(listing)
+        categoryDir = fullfile(assetsDir, listing(i).name);
+        children = dir(categoryDir);
+        children = children(~ismember({children.name}, {'.','..'}));
+        for j = 1:numel(children)
+            childPath = fullfile(categoryDir, children(j).name);
+            if localShouldKeepBundleAsset(childPath, keepPaths)
+                continue;
+            end
+            if ~localPathInside(childPath, assetsDir)
+                continue;
+            end
+            if children(j).isdir
+                [ok, msg, msgId] = rmdir(childPath, 's');
+            else
+                ok = true; msg = ''; msgId = '';
+                try
+                    delete(childPath);
+                catch ME
+                    ok = false; msg = ME.message; msgId = ME.identifier;
+                end
+            end
+            if ~ok
+                warning('detecdiv_hub_submit_pipeline_run:PruneBundleAssetFailed', ...
+                    'Unable to remove unused Hub bundle asset %s (%s): %s', childPath, msgId, msg);
+            end
+        end
+    end
+end
+
+function tf = localShouldKeepBundleAsset(assetPath, keepPaths)
+    tf = false;
+    for i = 1:numel(keepPaths)
+        keepPath = keepPaths{i};
+        if localSamePath(assetPath, keepPath) || localPathInside(assetPath, keepPath)
+            tf = true;
+            return;
+        end
+    end
+end
+
+function localPruneBundleManifest(bundlePath, selectedIds)
+    manifestPath = fullfile(bundlePath, 'export_manifest.json');
+    if exist(manifestPath, 'file') ~= 2
+        return;
+    end
+    try
+        manifest = jsondecode(fileread(manifestPath));
+    catch
+        return;
+    end
+    if ~isstruct(manifest) || ~isfield(manifest, 'nodes') || isempty(manifest.nodes)
+        return;
+    end
+    keep = false(size(manifest.nodes));
+    for i = 1:numel(manifest.nodes)
+        nodeId = localText(localGetField(manifest.nodes(i), 'id', ''));
+        keep(i) = any(strcmp(selectedIds, nodeId));
+    end
+    manifest.nodes = manifest.nodes(keep);
+    localWriteJsonFile(manifestPath, manifest);
+end
+
+function localCopyExistingHubBundle(sourceBundlePath, bundlePath, runPath)
+    sourceBundlePath = char(string(sourceBundlePath));
+    bundlePath = char(string(bundlePath));
+    runPath = char(string(runPath));
+    if localSamePath(sourceBundlePath, bundlePath)
+        return;
+    end
+    [~, leafName] = fileparts(bundlePath);
+    if ~strcmpi(leafName, 'hub_pipeline_bundle') || ~localPathInside(bundlePath, runPath)
+        error('detecdiv_hub_submit_pipeline_run:UnsafeBundleCopy', ...
+            'Refusing to replace unexpected Hub bundle path: %s', bundlePath);
+    end
+    if ~localLooksLikeHubBundle(sourceBundlePath)
+        error('detecdiv_hub_submit_pipeline_run:InvalidSourceBundle', ...
+            'Source Hub bundle is incomplete: %s', sourceBundlePath);
+    end
+    if exist(bundlePath, 'dir') == 7
+        [ok, msg, msgId] = rmdir(bundlePath, 's');
+        if ~ok
+            error('detecdiv_hub_submit_pipeline_run:RemoveBundleFailed', ...
+                'Unable to remove incomplete Hub bundle %s (%s): %s', bundlePath, msgId, msg);
+        end
+    end
+    parentDir = fileparts(bundlePath);
+    if exist(parentDir, 'dir') ~= 7
+        [ok, msg, msgId] = mkdir(parentDir);
+        if ~ok
+            error('detecdiv_hub_submit_pipeline_run:CreateBundleParentFailed', ...
+                'Unable to create Hub bundle parent %s (%s): %s', parentDir, msgId, msg);
+        end
+    end
+    [ok, msg, msgId] = copyfile(sourceBundlePath, bundlePath, 'f');
+    if ~ok
+        error('detecdiv_hub_submit_pipeline_run:CopyBundleFailed', ...
+            'Unable to copy Hub bundle from %s to %s (%s): %s', ...
+            sourceBundlePath, bundlePath, msgId, msg);
+    end
+    if ~localLooksLikeHubBundle(bundlePath)
+        error('detecdiv_hub_submit_pipeline_run:CopiedBundleIncomplete', ...
+            'Copied Hub bundle is incomplete: %s', bundlePath);
+    end
+end
+
+function tf = localSamePath(pathA, pathB)
+    tf = false;
+    try
+        a = char(java.io.File(char(string(pathA))).getCanonicalPath());
+        b = char(java.io.File(char(string(pathB))).getCanonicalPath());
+        tf = strcmpi(strrep(a, '/', filesep), strrep(b, '/', filesep));
+    catch
+        tf = strcmpi(char(string(pathA)), char(string(pathB)));
+    end
 end
 
 function pathOut = localReadablePipelinePath(pathIn, ref, hub)
