@@ -57,6 +57,10 @@ end
 
 cachePolicy = resolveCachePolicyLocal(ctxBase);
 saveMode = resolveSaveModeLocal(ctxBase);
+if isempty(frames) && isfield(ctxBase,'sel') && isstruct(ctxBase.sel) && ...
+        isfield(ctxBase.sel,'frames') && ~isempty(ctxBase.sel.frames)
+    frames = ctxBase.sel.frames;
+end
 
 classi=classiobj;
 classifyFun=normalizeProcessFun(classi.processFun);

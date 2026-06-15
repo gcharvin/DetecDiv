@@ -21,6 +21,8 @@ imageout = [];
 frames = [];
 if isfield(ctx,'frames') && ~isempty(ctx.frames)
     frames = ctx.frames;
+elseif isfield(ctx,'sel') && isstruct(ctx.sel) && isfield(ctx.sel,'frames') && ~isempty(ctx.sel.frames)
+    frames = ctx.sel.frames;
 end
 
 if isempty(frames) || (isnumeric(frames) && all(frames == -1))

@@ -163,11 +163,35 @@ function ctx = makeScenarioContext(shallowObj, runObj, sc)
 
     if contains(lower(sc.inputMode), 'existing')
         ctx.roiList = selectScenarioRois(shallowObj, sc.fovs, sc.rois);
+        if contains(lower(sc.inputMode), 'dataseries') && isempty(inferScenarioDataSeries(ctx.roiList))
+            [fallbackRois, fallbackFovs, fallbackRoiIdx] = selectScenarioRoisWithData(shallowObj);
+            if ~isempty(fallbackRois)
+                ctx.roiList = fallbackRois;
+                ctx.run.fovIndex = fallbackFovs;
+                ctx.run.rois = fallbackRoiIdx;
+                ctx.sel.fovs = fallbackFovs;
+                ctx.sel.rois = fallbackRoiIdx;
+            end
+        end
         ctx.rois = ctx.roiList;
         ctx.dataSeries = inferScenarioDataSeries(ctx.roiList);
         ctx.dataSeriesNames = ctx.dataSeries;
     else
         ctx = rmfieldIfPresent(ctx, {'roiList','rois','dataSeries','dataSeriesNames','masks'});
+        if scenarioNeedsRoiInventory(sc)
+            [inventoryRois, inventoryFovs, inventoryRoiIdx] = selectScenarioRoisWithData(shallowObj);
+            if isempty(inventoryRois)
+                [inventoryRois, inventoryFovs, inventoryRoiIdx] = selectFirstScenarioRoi(shallowObj);
+            end
+            if ~isempty(inventoryRois)
+                ctx.roiList = inventoryRois;
+                ctx.rois = inventoryRois;
+                ctx.dataSeries = inferScenarioDataSeries(inventoryRois);
+                ctx.dataSeriesNames = ctx.dataSeries;
+                ctx.sel.fovs = inventoryFovs;
+                ctx.sel.rois = inventoryRoiIdx;
+            end
+        end
         if ~isempty(sc.rawPath)
             ctx.path = sc.rawPath;
             ctx.params = struct('path', sc.rawPath, 'write', false, 'interactive', false);
@@ -267,10 +291,13 @@ function printResult(verbose, row)
 end
 
 function [shallowObj, runObj, pipe] = loadInputs(projectPath, pipelinePath)
+    projectPath = resolveHistoricalPath(projectPath);
+    pipelinePath = resolveHistoricalPath(pipelinePath);
     if ~exist(projectPath, 'file')
         error('pipelineScenarioSmokeTest:ProjectMissing', 'Project not found: %s', projectPath);
     end
     [shallowObj, ~] = shallowLoad(projectPath);
+    shallowObj = relinkScenarioProjectStorage(shallowObj, projectPath);
     runObj = [];
     try
         runs = shallowObj.processing.pipelineRun;
@@ -288,9 +315,13 @@ function [shallowObj, runObj, pipe] = loadInputs(projectPath, pipelinePath)
         end
     end
     if ~exist(pipelinePath, 'file')
+        pipelinePath = resolveHistoricalPath(pipelinePath);
+    end
+    if ~exist(pipelinePath, 'file')
         error('pipelineScenarioSmokeTest:PipelineMissing', 'Pipeline not found: %s', pipelinePath);
     end
     [pipe, ~] = pipelineLoad(pipelinePath);
+    pipe = relinkScenarioPipelinePaths(pipe, projectPath, pipelinePath);
 end
 
 function ctx = baseCtxFromRun(runObj)
@@ -343,6 +374,13 @@ end
 function names = inferScenarioDataSeries(rois)
     names = {};
     if isempty(rois)
+        return;
+    end
+    try
+        if isempty(rois(1).path) || exist(fullfile(rois(1).path, ['data_' rois(1).id '.mat']), 'file') ~= 2
+            return;
+        end
+    catch
         return;
     end
     try
@@ -436,13 +474,169 @@ function txt = vectorText(v)
 end
 
 function path = defaultProjectPath()
-    path = 'C:\Users\Gilles Charvin\SynologyDrive\abhilasha\Abhilasha_Analysis_April2026.mat';
+    path = firstExistingPath({ ...
+        'C:\Users\Gilles\SynologyDrive\Data\abhilasha\Abhilasha_Analysis_April2026.mat', ...
+        'C:\Users\Gilles Charvin\SynologyDrive\abhilasha\Abhilasha_Analysis_April2026.mat'});
 end
 
 function path = defaultRawPath()
-    path = 'C:\Users\Gilles Charvin\SynologyDrive\abhilasha\raw\2026_04_09Yam740Yak108_18_004.ome.zarr';
+    path = firstExistingPath({ ...
+        'C:\Users\Gilles\SynologyDrive\Data\abhilasha\raw\2026_04_09Yam740Yak108_18_004.ome.zarr', ...
+        'C:\Users\Gilles Charvin\SynologyDrive\abhilasha\raw\2026_04_09Yam740Yak108_18_004.ome.zarr'});
 end
 
 function path = defaultPipelinePath()
-    path = 'C:\Users\Gilles Charvin\SynologyDrive\abhilasha\pipeline\pipeline.json';
+    path = firstExistingPath({ ...
+        'C:\Users\Gilles\SynologyDrive\Data\abhilasha\pipeline\pipeline.json', ...
+        'C:\Users\Gilles Charvin\SynologyDrive\abhilasha\pipeline\pipeline.json'});
+end
+
+function path = firstExistingPath(candidates)
+    path = char(string(candidates{end}));
+    for i = 1:numel(candidates)
+        candidate = char(string(candidates{i}));
+        if exist(candidate, 'file') == 2 || exist(candidate, 'dir') == 7
+            path = candidate;
+            return;
+        end
+    end
+    path = resolveHistoricalPath(path);
+end
+
+function out = resolveHistoricalPath(pathIn)
+    out = char(string(pathIn));
+    if isempty(out) || exist(out, 'file') == 2 || exist(out, 'dir') == 7
+        return;
+    end
+    replacements = historicalPathReplacements();
+    for i = 1:size(replacements, 1)
+        candidate = strrep(out, replacements{i,1}, replacements{i,2});
+        if exist(candidate, 'file') == 2 || exist(candidate, 'dir') == 7
+            out = candidate;
+            return;
+        end
+    end
+end
+
+function replacements = historicalPathReplacements()
+    replacements = { ...
+        'C:\Users\Gilles Charvin\SynologyDrive\abhilasha', ...
+        'C:\Users\Gilles\SynologyDrive\Data\abhilasha'; ...
+        'C:\Users\Gilles Charvin\SynologyDrive\DetecDivProjects', ...
+        'C:\Users\Gilles\SynologyDrive\Data\DetecDivProjects'};
+end
+
+function shallowObj = relinkScenarioProjectStorage(shallowObj, projectPath)
+    [projectFolder, projectName] = fileparts(projectPath);
+    projectDataRoot = fullfile(projectFolder, projectName);
+    if exist(projectDataRoot, 'dir') ~= 7
+        return;
+    end
+    for fi = 1:numel(shallowObj.fov)
+        fovFolder = fullfile(projectDataRoot, shallowObj.fov(fi).id);
+        if exist(fovFolder, 'dir') ~= 7
+            continue;
+        end
+        for ri = 1:numel(shallowObj.fov(fi).roi)
+            r = shallowObj.fov(fi).roi(ri);
+            if isempty(r.path) || exist(r.path, 'dir') ~= 7
+                r.path = fovFolder;
+                shallowObj.fov(fi).roi(ri) = r;
+            end
+        end
+    end
+end
+
+function pipe = relinkScenarioPipelinePaths(pipe, projectPath, pipelinePath)
+    if isempty(pipe) || ~isprop(pipe, 'nodes') || isempty(pipe.nodes)
+        return;
+    end
+    for i = 1:numel(pipe.nodes)
+        pipe.nodes(i) = relinkScenarioStructPaths(pipe.nodes(i));
+        if isfield(pipe.nodes(i), 'params') && isstruct(pipe.nodes(i).params)
+            pipe.nodes(i).params = relinkScenarioStructPaths(pipe.nodes(i).params);
+        end
+    end
+    try
+        pipe.path = fileparts(pipelinePath);
+    catch
+    end
+    try
+        pipe.runProfiles.scenarioRelink = struct( ...
+            'projectPath', projectPath, ...
+            'pipelinePath', pipelinePath, ...
+            'updatedAt', char(datetime('now')));
+    catch
+    end
+end
+
+function s = relinkScenarioStructPaths(s)
+    if ~isstruct(s)
+        return;
+    end
+    for k = 1:numel(s)
+        names = fieldnames(s(k));
+        for i = 1:numel(names)
+            name = names{i};
+            value = s(k).(name);
+            if isstruct(value)
+                s(k).(name) = relinkScenarioStructPaths(value);
+            elseif ischar(value) || (isstring(value) && isscalar(value))
+                mapped = resolveHistoricalPath(value);
+                if ~strcmp(mapped, char(string(value)))
+                    s(k).(name) = mapped;
+                end
+            end
+        end
+    end
+end
+
+function [rois, fovs, roiIdx] = selectScenarioRoisWithData(shallowObj)
+    rois = [];
+    fovs = [];
+    roiIdx = [];
+    for fi = 1:numel(shallowObj.fov)
+        for ri = 1:numel(shallowObj.fov(fi).roi)
+            r = shallowObj.fov(fi).roi(ri);
+            if isempty(r.path)
+                continue;
+            end
+            dataFile = fullfile(r.path, ['data_' r.id '.mat']);
+            if exist(dataFile, 'file') == 2
+                rois = r;
+                fovs = fi;
+                roiIdx = ri;
+                return;
+            end
+        end
+    end
+end
+
+function [rois, fovs, roiIdx] = selectFirstScenarioRoi(shallowObj)
+    rois = [];
+    fovs = [];
+    roiIdx = [];
+    for fi = 1:numel(shallowObj.fov)
+        if isempty(shallowObj.fov(fi).roi)
+            continue;
+        end
+        rois = shallowObj.fov(fi).roi(1);
+        fovs = fi;
+        roiIdx = 1;
+        return;
+    end
+end
+
+function tf = scenarioNeedsRoiInventory(sc)
+    tf = false;
+    if isempty(sc.nodes)
+        return;
+    end
+    for i = 1:numel(sc.nodes)
+        nodeId = lower(char(string(sc.nodes{i})));
+        if contains(nodeId, 'classifier') || contains(nodeId, 'processor')
+            tf = true;
+            return;
+        end
+    end
 end

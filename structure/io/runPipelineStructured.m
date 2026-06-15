@@ -1690,6 +1690,7 @@ function ctx = executeProcessorNode(node, ctx)
     p = procObj.processArg;
     procCtx.params = p;
     procCtx.run = getfielddefault(ctx, 'run', struct());
+    procCtx.sel = getfielddefault(ctx, 'sel', struct());
     procCtx.pipeline = getfielddefault(ctx, 'pipeline', struct());
     procCtx.io = getfielddefault(ctx, 'io', struct());
     procCtx.store = getfielddefault(ctx, 'store', struct());
@@ -1727,8 +1728,14 @@ function ctx = executeProcessorNode(node, ctx)
     end
 
     args = {'Ctx', procCtx};
+    framesArg = [];
     if isfield(p,'frames') && ~isempty(p.frames)
-        args = [args {'Frames', p.frames}]; %#ok<AGROW>
+        framesArg = p.frames;
+    elseif isfield(procCtx,'sel') && isstruct(procCtx.sel) && isfield(procCtx.sel,'frames') && ~isempty(procCtx.sel.frames)
+        framesArg = procCtx.sel.frames;
+    end
+    if ~isempty(framesArg)
+        args = [args {'Frames', framesArg}]; %#ok<AGROW>
     end
     if isfield(p,'parallel') && ~isempty(p.parallel) && logical(p.parallel)
         args = [args {'Parallel'}]; %#ok<AGROW>

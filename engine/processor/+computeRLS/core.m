@@ -499,17 +499,17 @@ end
 %% =========================================DIVTIMES=================================================
 function [divTimes]=computeDivtime(id,proba,classes,param,frames)
 
-if numel(frames)<=numel(id)
-frameIdx=frames;
-id=id(frameIdx);
-else
-ma=min(frames(end),numel(id));
-frameIdx=frames(1):ma;
-id=id(frameIdx);
+frameIdx = localNormalizeRLSFrames(frames, numel(id));
+if ~isempty(proba) && ~(isscalar(proba) && proba == -1)
+    maxFrame = min(numel(id), size(proba,2));
+    frameIdx = frameIdx(frameIdx <= maxFrame);
+    if isempty(frameIdx)
+        frameIdx = 1:maxFrame;
+    end
 end
+id = id(frameIdx);
 
 if ~isempty(proba) && ~(isscalar(proba) && proba == -1)
-    frameIdx=frameIdx(frameIdx<=size(proba,2));
     proba=proba(:,frameIdx);
 end
 
@@ -689,15 +689,15 @@ if numel(divFrames)==0
     divFrames=NaN;
 end
 [divFrames, rejectedDivFrames, minDivisionInterval]=localApplyDivisionIntervalRule(divFrames,param);
-divTimes.frameBirth=frameBirth;
-divTimes.frameEnd=frameEnd;
+divTimes.frameBirth=localMapRLSFrame(frameBirth,frameIdx);
+divTimes.frameEnd=localMapRLSFrame(frameEnd,frameIdx);
 divTimes.endType=endType;
-divTimes.framediv=divFrames;
-divTimes.duration=diff(divFrames); % division times !
+divTimes.framediv=localMapRLSFrame(divFrames,frameIdx);
+divTimes.duration=diff(divTimes.framediv); % division times on original ROI frame axis
 divTimes.ndiv=sum(~isnan([divTimes.framediv]));
 divTimes.decoder=decoderInfo.mode;
 divTimes.decoderChangedFrames=decoderInfo.changedFrames;
-divTimes.rejectedDivFrames=rejectedDivFrames;
+divTimes.rejectedDivFrames=localMapRLSFrame(rejectedDivFrames,frameIdx);
 divTimes.minDivisionInterval=minDivisionInterval;
 divTimes.arrestThreshold=activeArrestThreshold;
 %if timelapse started while the cell is small or large
@@ -736,6 +736,47 @@ end
 %         divTimes.framediv=divFrames;
 %         divTimes.duration=diff(divFrames); % division times !
 % end
+
+function frameIdx=localNormalizeRLSFrames(frames,nFrames)
+if nargin<2 || isempty(nFrames) || ~isfinite(nFrames) || nFrames<1
+    frameIdx=[];
+    return;
+end
+if nargin<1 || isempty(frames) || (isnumeric(frames) && all(frames == -1))
+    frameIdx=1:nFrames;
+    return;
+end
+if islogical(frames)
+    frames=find(frames);
+elseif iscell(frames)
+    try
+        frames=cell2mat(frames(:));
+    catch
+        frames=[];
+    end
+elseif ~isnumeric(frames)
+    try
+        frames=double(frames(:));
+    catch
+        frames=[];
+    end
+end
+frames=double(frames(:)');
+frames=unique(round(frames(isfinite(frames) & frames>=1 & frames<=nFrames)),'stable');
+if isempty(frames)
+    frames=1:nFrames;
+end
+frameIdx=frames;
+end
+
+function out=localMapRLSFrame(frameLocal,frameIdx)
+out=frameLocal;
+if isempty(frameLocal) || isempty(frameIdx)
+    return;
+end
+mask=isfinite(double(frameLocal)) & frameLocal>=1 & frameLocal<=numel(frameIdx);
+out(mask)=frameIdx(round(frameLocal(mask)));
+end
 
 function [idOut, info]=localDecodeStateSequence(id,proba,classes,param)
 idOut=id(:)';

@@ -76,6 +76,8 @@ function [paramout, dataout, imageout] = process(param, roiobj, ctx)
     frames = [];
     if isfield(ctx,'frames')
         frames = ctx.frames;
+    elseif isfield(ctx,'sel') && isstruct(ctx.sel) && isfield(ctx.sel,'frames')
+        frames = ctx.sel.frames;
     end
     if isempty(frames) || isequal(frames, -1)
         frames = 1:T;
