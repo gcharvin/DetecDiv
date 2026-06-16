@@ -132,13 +132,14 @@ function tf = localIsOwnClientEditLease(lock, hub)
     if ~localIsEmptyField(lock, 'job_id')
         return;
     end
-    holderKey = localFieldText(lock, 'holder_key', '');
-    if isempty(holderKey) || ~strcmp(holderKey, localHolderKey(hub))
-        return;
-    end
     holderHost = localFieldText(lock, 'holder_host', '');
     localHost = localHostName();
-    if ~isempty(holderHost) && ~isempty(localHost) && ~strcmpi(holderHost, localHost)
+    if ~isempty(holderHost) && ~isempty(localHost) && strcmpi(holderHost, localHost)
+        tf = true;
+        return;
+    end
+    holderKey = localFieldText(lock, 'holder_key', '');
+    if isempty(holderKey) || ~strcmp(holderKey, localHolderKey(hub))
         return;
     end
     tf = true;
