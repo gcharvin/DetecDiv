@@ -220,8 +220,7 @@ function wrapped = localProjectLockedStageError(stageName, ME)
         'This project is locked on DetecDiv Hub.'
         localLockHumanSummary(lockInfo)
         ''
-        'A new Hub run cannot be submitted until the active job finishes, is cancelled, or the lock is released.'
-        'Use the Run Monitor to follow or cancel the active run, then retry submission.'
+        localLockResolutionHint(lockInfo)
         };
     msg = strjoin(lines, newline);
     if ~isempty(stageName)
@@ -302,6 +301,18 @@ function msg = localLockHumanSummary(lockInfo)
 
     if ~isempty(details)
         msg = [msg newline strjoin(details, newline)];
+    end
+end
+
+function msg = localLockResolutionHint(lockInfo)
+    if strcmpi(lockInfo.lockKind, 'client_edit_lease')
+        msg = ['A new Hub run cannot be submitted while a DetecDiv client holds an edit lease on this project.' newline ...
+               'Close or release the project in that client, wait for the lease to expire, then retry submission.'];
+    elseif strcmpi(lockInfo.lockKind, 'server_job')
+        msg = ['A new Hub run cannot be submitted until the active job finishes, is cancelled, or the lock is released.' newline ...
+               'Use the Run Monitor to follow or cancel the active run, then retry submission.'];
+    else
+        msg = 'Release the active Hub project lock, then retry submission.';
     end
 end
 
@@ -444,18 +455,36 @@ function localAssertServerVisiblePipelineRef(pipelineRef)
     end
 end
 
-function exportSource = localRunPipelineExportSource(runObj, sourcePath)
-    exportSource = [];
-    try
-        if isstruct(runObj.ctx) && isfield(runObj.ctx, 'pipelineSpec') && isstruct(runObj.ctx.pipelineSpec) && ...
-                isfield(runObj.ctx.pipelineSpec, 'nodes') && ~isempty(runObj.ctx.pipelineSpec.nodes)
-            exportSource = runObj.ctx.pipelineSpec;
-            return;
-        end
-    catch
+function exportSource = localRunPipelineExportSource(runObj)
+    if isstruct(runObj.ctx) && isfield(runObj.ctx, 'pipelineSpec') && isstruct(runObj.ctx.pipelineSpec) && ...
+            isfield(runObj.ctx.pipelineSpec, 'nodes') && ~isempty(runObj.ctx.pipelineSpec.nodes)
+        exportSource = localPipelineSpecForSelectedRunNodes(runObj.ctx.pipelineSpec, localSelectedRunNodeIds(runObj));
+        return;
     end
-    if nargin >= 2 && ~isempty(sourcePath)
-        exportSource = sourcePath;
+    error('detecdiv_hub_submit_pipeline_run:MissingRunPipelineSpec', ...
+        ['Hub submission requires the effective pipeline spec stored on the pipelineRun. ' ...
+         'Rebuild or save the run before submitting so the Hub bundle can be created from the run-specific node parameters.']);
+end
+
+function spec = localPipelineSpecForSelectedRunNodes(spec, selectedIds)
+    if isempty(selectedIds) || ~isstruct(spec) || ~isfield(spec, 'nodes') || isempty(spec.nodes)
+        return;
+    end
+    keepNodes = false(size(spec.nodes));
+    for i = 1:numel(spec.nodes)
+        nodeId = localText(localGetField(spec.nodes(i), 'id', ''));
+        keepNodes(i) = any(strcmp(selectedIds, nodeId));
+    end
+    spec.nodes = spec.nodes(keepNodes);
+
+    if isfield(spec, 'edges') && isstruct(spec.edges) && ~isempty(spec.edges)
+        keepEdges = false(size(spec.edges));
+        for i = 1:numel(spec.edges)
+            fromId = localText(localGetField(spec.edges(i), 'from', ''));
+            toId = localText(localGetField(spec.edges(i), 'to', ''));
+            keepEdges(i) = any(strcmp(selectedIds, fromId)) && any(strcmp(selectedIds, toId));
+        end
+        spec.edges = spec.edges(keepEdges);
     end
 end
 
@@ -584,8 +613,7 @@ function bundleRef = localExportRunPipelineBundle(runObj, ref, hub, shallowObj)
     bundlePath = fullfile(runPath, 'hub_pipeline_bundle');
     manifestPath = fullfile(bundlePath, 'export_manifest.json');
     pipelineJsonPath = fullfile(bundlePath, 'pipeline', 'pipeline.json');
-    sourcePath = localRunPipelineSourcePath(runObj, ref, hub);
-    exportSource = localRunPipelineExportSource(runObj, sourcePath);
+    exportSource = localRunPipelineExportSource(runObj);
     if isempty(exportSource)
         return;
     end
@@ -908,6 +936,7 @@ function localPruneHubBundleForRun(bundlePath, runObj)
     keepPaths = unique(keepPaths, 'stable');
     localPruneBundleAssets(bundlePath, keepPaths);
     localPruneBundleManifest(bundlePath, selectedIds);
+    localPruneBundlePipeline(pipelineJsonPath, selectedIds);
 end
 
 function selectedIds = localSelectedRunNodeIds(runObj)
@@ -1032,6 +1061,36 @@ function localPruneBundleManifest(bundlePath, selectedIds)
     end
     manifest.nodes = manifest.nodes(keep);
     localWriteJsonFile(manifestPath, manifest);
+end
+
+function localPruneBundlePipeline(pipelineJsonPath, selectedIds)
+    if exist(pipelineJsonPath, 'file') ~= 2
+        return;
+    end
+    try
+        spec = jsondecode(fileread(pipelineJsonPath));
+    catch
+        return;
+    end
+    if ~isstruct(spec) || ~isfield(spec, 'nodes') || isempty(spec.nodes)
+        return;
+    end
+    keep = false(size(spec.nodes));
+    for i = 1:numel(spec.nodes)
+        nodeId = localText(localGetField(spec.nodes(i), 'id', ''));
+        keep(i) = any(strcmp(selectedIds, nodeId));
+    end
+    spec.nodes = spec.nodes(keep);
+    if isfield(spec, 'edges') && isstruct(spec.edges) && ~isempty(spec.edges)
+        keepEdges = false(size(spec.edges));
+        for i = 1:numel(spec.edges)
+            fromId = localText(localGetField(spec.edges(i), 'from', ''));
+            toId = localText(localGetField(spec.edges(i), 'to', ''));
+            keepEdges(i) = any(strcmp(selectedIds, fromId)) && any(strcmp(selectedIds, toId));
+        end
+        spec.edges = spec.edges(keepEdges);
+    end
+    localWriteJsonFile(pipelineJsonPath, spec);
 end
 
 function localCopyExistingHubBundle(sourceBundlePath, bundlePath, runPath)
