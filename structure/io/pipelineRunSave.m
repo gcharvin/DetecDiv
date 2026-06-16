@@ -1,8 +1,19 @@
-function pipelineRunSave(runObj)
+function pipelineRunSave(runObj, opts)
 % pipelineRunSave  Save pipeline run to JSON in its folder.
 
     if nargin < 1 || isempty(runObj)
         return;
+    end
+    if nargin < 2 || isempty(opts)
+        opts = struct();
+    end
+    verbose = true;
+    try
+        if isstruct(opts) && isfield(opts, 'verbose') && ~isempty(opts.verbose)
+            verbose = logical(opts.verbose);
+        end
+    catch
+        verbose = true;
     end
 
     [path, ~] = runObj.getPath;
@@ -38,7 +49,9 @@ function pipelineRunSave(runObj)
     writeRunLogFile(runObj, S, path);
     writeRunReviewFile(runObj, path);
 
-    fprintf('Pipeline run saved: %s\n', jsonFile);
+    if verbose
+        fprintf('Pipeline run saved: %s\n', jsonFile);
+    end
 end
 
 function ctx = attachRunPathsToContext(ctx, runPath, runId)
