@@ -497,6 +497,7 @@ end
 % to do : compute fluo, sync trajectories
 
 %% =========================================DIVTIMES=================================================
+end
 function [divTimes]=computeDivtime(id,proba,classes,param,frames)
 
 frameIdx = localNormalizeRLSFrames(frames, numel(id));
@@ -737,6 +738,7 @@ end
 %         divTimes.duration=diff(divFrames); % division times !
 % end
 
+end
 function frameIdx=localNormalizeRLSFrames(frames,nFrames)
 if nargin<2 || isempty(nFrames) || ~isfinite(nFrames) || nFrames<1
     frameIdx=[];
@@ -824,6 +826,7 @@ end
 info.changedFrames=sum(idOut(:)'~=argmaxId(:)');
 
 
+end
 function idOut=localModeFilterLabels(idIn,window)
 idOut=idIn(:)';
 window=max(1,round(double(window)));
@@ -849,6 +852,7 @@ for t=1:numel(idOut)
 end
 
 
+end
 function idOut=localViterbiDecode(proba,classes,param)
 [nStates,nFrames]=size(proba);
 if nFrames==0
@@ -887,6 +891,7 @@ end
 idOut=path;
 
 
+end
 function out=localDecodeClassNames(classes,nStates)
 out=cellstr(string(classes(:)'));
 if numel(out)>=nStates
@@ -898,6 +903,7 @@ else
 end
 
 
+end
 function trans=localViterbiTransitionMatrix(classes,param)
 n=numel(classes);
 unexpected=localNumericParam(param,'ViterbiUnexpectedTransitionPenalty',1.0);
@@ -947,6 +953,7 @@ if ~isempty(clogid)
 end
 
 
+end
 function [divFramesOut,rejectedDivFrames,minInterval]=localApplyDivisionIntervalRule(divFrames,param)
 divFramesOut=divFrames;
 rejectedDivFrames=[];
@@ -982,6 +989,7 @@ if isempty(divFramesOut)
 end
 
 
+end
 function minInterval=localActiveMinDivisionInterval(param)
 minInterval=localNumericParam(param,'MinDivisionInterval',NaN);
 if isnan(minInterval) || minInterval<=0
@@ -998,6 +1006,7 @@ if ~isnan(minInterval)
 end
 
 
+end
 function threshold=localActiveArrestThreshold(param)
 expected=localNumericParam(param,'ExpectedDivisionPeriod',NaN);
 arrestThreshold=localNumericParam(param,'ArrestThreshold',3);
@@ -1012,6 +1021,7 @@ end
 threshold=max(1,round(threshold));
 
 
+end
 function out=localChoiceString(param,field,defaultValue)
 out=defaultValue;
 if ~isfield(param,field) || isempty(param.(field))
@@ -1026,6 +1036,7 @@ if isstring(v) || ischar(v) || isnumeric(v) || islogical(v) || iscategorical(v)
 end
 
 
+end
 function out=localNumericParam(param,field,defaultValue)
 out=defaultValue;
 if ~isfield(param,field) || isempty(param.(field))
@@ -1045,6 +1056,7 @@ if isempty(out) || all(isnan(out(:)))
 end
 
 
+end
 function param=localEnsureQCDefaults(param)
 defaults=struct();
 defaults.ArrestThreshold=3;
@@ -1072,6 +1084,7 @@ for k=1:numel(fields)
 end
 
 
+end
 function out=localBoolParam(param,field,defaultValue)
 out=defaultValue;
 if ~isfield(param,field) || isempty(param.(field))
@@ -1094,6 +1107,7 @@ elseif isstring(v) || ischar(v) || iscategorical(v)
 end
 
 
+end
 function out=localTextParam(param,field,defaultValue)
 out=defaultValue;
 if ~isfield(param,field) || isempty(param.(field))
@@ -1113,6 +1127,7 @@ elseif isnumeric(v) || islogical(v)
 end
 
 
+end
 function names=localMetricDataSelection(param)
 names={};
 if ~isfield(param,'metrics_data') || isempty(param.metrics_data)
@@ -1141,6 +1156,7 @@ names=names(~cellfun(@isempty,names));
 names=unique(names,'stable');
 
 
+end
 function [fluo_data,mask_data]=localSelectMetricDataSeries(dataSeries,selection)
 fluo_data=[];
 mask_data=[];
@@ -1192,8 +1208,8 @@ end
 if ~isempty(maskIdx)
     mask_data=dataSeries(maskIdx);
 end
-
-
+ 
+end
 function tf=localUseAutoMetrics(selection)
 tf=isempty(selection);
 if tf
@@ -1201,7 +1217,7 @@ if tf
 end
 tokens=lower(strtrim(string(selection(:))));
 tf=any(tokens=="<auto>" | tokens=="auto" | tokens=="all" | tokens=="<all>");
-
+end
 
 function tf=localCanQuantifyIntervals(totaltime)
 tf=false;
@@ -1216,7 +1232,7 @@ if totaltime(1)<1 || totaltime(end)<=totaltime(1)
     return
 end
 tf=true;
-
+end
 
 function localAddRLSQCData(ds,t,divTimes,id,proba,classes,param) %#ok<INUSD>
 n=height(t);
@@ -1256,7 +1272,7 @@ ds.addData(qcLowFraction,{'qc_low_fraction'},'plot',false,'groups','qc');
 ds.addData(qcScore,{'qc_score'},'plot',false,'groups','qc');
 ds.addData(qcIntervalUsable,{'qc_interval_usable'},'plot',false,'groups','qc');
 
-
+end
 function status=localRLSStatus(divTimes)
 endType=lower(string(divTimes.endType));
 if endType=="neverborn"
@@ -1275,12 +1291,12 @@ else
     status="stillAlive";
 end
 
-
+end
 function tf=localStructuralUsable(status)
 bad=["neverBorn","clog","emptied"];
 tf=~any(status==bad);
 
-
+end
 function reason=localStatusReason(status,structuralUsable,roiQCOk,divTimes) %#ok<INUSD>
 if ~structuralUsable
     switch status
@@ -1305,7 +1321,7 @@ else
     reason="ok";
 end
 
-
+end
 function [meanConf,minConf,meanMargin,lowFraction,qcScore,intervalUsable]=localIntervalQC(totaltime,proba,param)
 n=numel(totaltime);
 meanConf=nan(n,1);
@@ -1369,7 +1385,7 @@ for r=1:n
         lowFraction(r)<=param.QCMaxLowConfidenceFraction;
 end
 
-
+end
 function tf=localNeedsDataLoad(roiobj)
 tf=true;
 try
@@ -1400,5 +1416,4 @@ try
 catch
     tf=true;
 end
-
-
+end
