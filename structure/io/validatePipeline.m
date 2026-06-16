@@ -1172,6 +1172,8 @@ function nodeReport = evaluateNodeBinding(node, state)
                     message = ['Node ' char(string(node.id)) ' still needs ' num2str(missingChoices) ...
                         ' more channel selection(s) to satisfy its exact binding.'];
                 end
+            else
+                [status, message] = validateConfiguredChannelSelection(node, scope, requiredCount, configuredChannels, availableChannels, state);
             end
         elseif numel(configuredChannels) < requiredCount
             if ~isempty(availableChannels) && numel(availableChannels) < requiredCount
@@ -1184,14 +1186,7 @@ function nodeReport = evaluateNodeBinding(node, state)
                     ' selected channel(s), but only ' num2str(numel(configuredChannels)) ' are configured.'];
             end
         else
-            unknown = setdiff(lower(configuredChannels), lower(availableChannels));
-            if ~isempty(availableChannels) && ~isempty(unknown)
-                status = 'invalid';
-                message = ['Node ' char(string(node.id)) ' references unknown channel(s): ' strjoin(configuredChannels(ismember(lower(configuredChannels), unknown)), ', ') '.'];
-            else
-                status = 'resolved';
-                message = formatResolvedBindingMessage(node, requiredCount, configuredChannels);
-            end
+            [status, message] = validateConfiguredChannelSelection(node, scope, requiredCount, configuredChannels, availableChannels, state);
         end
     else
         if isempty(availableChannels)
@@ -1226,6 +1221,55 @@ function nodeReport = evaluateNodeBinding(node, state)
 
     nodeReport = makeBindingNodeReport(node, binding, scope, status, message, requiredCount, exactCount, configuredChannels, availableChannels, autoChoice);
     nodeReport = attachResourceBindingReport(nodeReport, node, state);
+end
+
+function [status, message] = validateConfiguredChannelSelection(node, scope, requiredCount, configuredChannels, availableChannels, state)
+    if nargin < 6 || ~isstruct(state)
+        state = struct();
+    end
+    if isempty(configuredChannels)
+        status = 'resolved';
+        message = formatResolvedBindingMessage(node, requiredCount, configuredChannels);
+        return;
+    end
+
+    configuredLower = normalizedLowerNameList(configuredChannels);
+    availableLower = normalizedLowerNameList(availableChannels);
+    unknown = {};
+    if ~isempty(availableChannels)
+        unknown = setdiff(configuredLower, availableLower, 'stable');
+    end
+    if isempty(unknown)
+        status = 'resolved';
+        message = formatResolvedBindingMessage(node, requiredCount, configuredChannels);
+        return;
+    end
+
+    unknownDisplay = configuredChannels(ismember(configuredLower, unknown));
+    unknownDisplay = unique(unknownDisplay, 'stable');
+    status = 'invalid';
+
+    sourceHints = {};
+    if strcmp(scope, 'roi')
+        sourceLower = normalizedLowerNameList(getField(state, 'imageChannels', {}));
+        if ~isempty(sourceLower)
+            sourceHints = configuredChannels(ismember(configuredLower, sourceLower));
+            sourceHints = unique(sourceHints, 'stable');
+        end
+    end
+
+    if strcmp(scope, 'roi') && ~isempty(sourceHints)
+        message = ['Node ' char(string(node.id)) ' references ROI channel(s) that are not available in the current project: ' ...
+            strjoin(unknownDisplay, ', ') '. These values look like source/raw channel names.'];
+        if ~isempty(availableChannels)
+            message = [message ' Visible ROI channels: ' strjoin(availableChannels, ', ') '.'];
+        end
+    else
+        message = ['Node ' char(string(node.id)) ' references unknown channel(s): ' strjoin(unknownDisplay, ', ') '.'];
+        if ~isempty(availableChannels)
+            message = [message ' Visible channels: ' strjoin(availableChannels, ', ') '.'];
+        end
+    end
 end
 
 function nodeReport = makeBindingNodeReport(node, binding, scope, status, message, requiredCount, exactCount, configuredChannels, availableChannels, autoChoice)
@@ -1300,10 +1344,7 @@ function outputs = expandAllRoiExtractChannelOutputs(node, nodeReport, state, ou
     if ~strcmpi(char(string(getField(node, 'type', ''))), 'roiExtract') || isempty(outputs)
         return;
     end
-    channels = getField(nodeReport, 'configuredChannels', {});
-    if isempty(channels)
-        channels = getField(state, 'imageChannels', {});
-    end
+    channels = projectedRoiExtractChannels(node, nodeReport, state);
     channels = normalizeChannelList(channels);
     channels = channels(~isAllChannelSelectionCell(channels));
     if isempty(channels)
@@ -1509,10 +1550,7 @@ function state = applyConstraintOutputs(node, state, nodeReport)
         producedResourceChannels = {};
     end
     if strcmp(nodeType, 'roiextract')
-        chosen = getField(nodeReport, 'configuredChannels', {});
-        if isempty(chosen)
-            chosen = state.imageChannels;
-        end
+        chosen = projectedRoiExtractChannels(node, nodeReport, state);
         if isempty(chosen)
             chosen = getField(nodeReport, 'availableChannels', {});
         end
@@ -1529,6 +1567,56 @@ function state = applyConstraintOutputs(node, state, nodeReport)
         state.imageChannels = mergeKnownChannels(state.imageChannels, produced);
     end
 
+end
+
+function channels = projectedRoiExtractChannels(node, nodeReport, state)
+    channels = {};
+    if validationStartsFromExistingProject(getField(state, 'ctx', struct())) && ...
+            roiExtractUsesProjectRoiChannelInventory(node)
+        channels = normalizeChannelList(getField(state, 'roiChannels', {}));
+        channels = channels(~isAllChannelSelectionCell(channels));
+        if ~isempty(channels)
+            return;
+        end
+    end
+
+    channels = getField(nodeReport, 'configuredChannels', {});
+    channels = normalizeChannelList(channels);
+    channels = channels(~isAllChannelSelectionCell(channels));
+    if ~isempty(channels)
+        return;
+    end
+
+    channels = normalizeChannelList(getField(state, 'imageChannels', {}));
+    channels = channels(~isAllChannelSelectionCell(channels));
+end
+
+function tf = validationStartsFromExistingProject(ctx)
+    tf = false;
+    try
+        inputSource = lower(strtrim(char(string(getField(getField(ctx, 'run', struct()), 'inputSource', '')))));
+        inputMode = lower(strtrim(char(string(getField(getField(ctx, 'run', struct()), 'inputSourceMode', '')))));
+        tf = contains(inputSource, 'existing') || strcmp(inputMode, 'existing_rois');
+    catch
+        tf = false;
+    end
+end
+
+function tf = roiExtractUsesProjectRoiChannelInventory(node)
+    tf = false;
+    try
+        params = getField(node, 'params', struct());
+        extractChannels = getField(params, 'extractChannels', []);
+        configured = normalizeConfiguredSelectionValue(extractChannels);
+        if isempty(configured)
+            tf = true;
+            return;
+        end
+        txt = lower(strtrim(choiceToString(extractChannels)));
+        tf = startsWith(txt, '@') || isAllChannelSelection(configured);
+    catch
+        tf = false;
+    end
 end
 
 function outStruct = annotateDownstreamBindingDemand(nodes, edges, order, reports)
@@ -2631,6 +2719,15 @@ function tf = isAllChannelSelectionCell(channels)
     vals = lower(strtrim(cellstr(string(channels(:)))));
     tf = strcmp(vals, 'all') | strcmp(vals, '*') | strcmp(vals, ':') | strcmp(vals, '<all>');
     tf = reshape(tf, size(channels));
+end
+
+function out = normalizedLowerNameList(values)
+    if isempty(values)
+        out = {};
+        return;
+    end
+    out = cellstr(string(values(:)));
+    out = lower(strtrim(out));
 end
 
 function tf = isSymbolicChannelSelectionCell(channels)

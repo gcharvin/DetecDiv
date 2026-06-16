@@ -8868,12 +8868,14 @@ classdef pipeline2 < matlab.apps.AppBase
             choices = {};
             type = lower(char(string(getField(app, spec, 'type', ''))));
             role = lower(char(string(getField(app, spec, 'role', ''))));
-            if strcmp(type, 'channel') && any(strcmp(role, {'roi_image','score_roi_image','derived_roi_image','source'}))
-                choices = runtimeConcreteChannels(app);
+            if strcmp(type, 'channel') && strcmp(role, 'source')
+                choices = runtimeSourceChannels(app);
+            elseif strcmp(type, 'channel') && any(strcmp(role, {'roi_image','score_roi_image','derived_roi_image'}))
+                choices = runtimeValidationRoiChannels(app);
             elseif strcmp(type, 'channel') && strcmp(role, 'mask_roi_image')
                 choices = runtimeMaskChoices(app);
                 if isempty(choices)
-                    choices = runtimeConcreteChannels(app);
+                    choices = runtimeValidationRoiChannels(app);
                 end
             elseif strcmp(type, 'mask')
                 choices = runtimeMaskChoices(app);
@@ -8884,12 +8886,32 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function channels = runtimeConcreteChannels(app)
             channels = {};
-            if isfield(app.RuntimeParseInfo, 'channels') && ~isempty(app.RuntimeParseInfo.channels)
-                channels = cellstr(string(app.RuntimeParseInfo.channels(:)'));
+            sourceChannels = runtimeSourceChannels(app);
+            if ~isempty(sourceChannels)
+                channels = [channels sourceChannels]; %#ok<AGROW>
             end
-            roiChannels = runtimeRoiDisplayChannels(app);
+            roiChannels = runtimeValidationRoiChannels(app);
             if ~isempty(roiChannels)
                 channels = [channels roiChannels]; %#ok<AGROW>
+            end
+            skip = startsWith(lower(string(channels)), 'resolved after') | strcmpi(string(channels), 'all') | strcmpi(string(channels), 'auto');
+            channels = channels(~skip);
+            channels = unique(channels(~cellfun(@isempty, channels)), 'stable');
+        end
+
+        function channels = runtimeSourceChannels(app)
+            channels = runtimeParsedChannelsOnly(app);
+        end
+
+        function channels = runtimeValidationRoiChannels(app)
+            channels = {};
+            if runtimeStartsFromExistingProject(app)
+                channels = runtimeRoiDisplayChannels(app);
+                if isempty(channels)
+                    channels = runtimeSourceChannels(app);
+                end
+            else
+                channels = runtimeSourceChannels(app);
             end
             skip = startsWith(lower(string(channels)), 'resolved after') | strcmpi(string(channels), 'all') | strcmpi(string(channels), 'auto');
             channels = channels(~skip);
@@ -12516,17 +12538,18 @@ classdef pipeline2 < matlab.apps.AppBase
             ctx.run.frames = ctx.sel.frames;
             ctx.run.rois = ctx.sel.rois;
 
-            if hubExecution
-                availableRuntimeChannels = runtimeParsedChannelsOnly(app);
-            else
-                availableRuntimeChannels = runtimeConcreteChannels(app);
+            sourceRuntimeChannels = runtimeSourceChannels(app);
+            roiRuntimeChannels = runtimeValidationRoiChannels(app);
+            availableRuntimeChannels = roiRuntimeChannels;
+            if isempty(availableRuntimeChannels)
+                availableRuntimeChannels = sourceRuntimeChannels;
             end
             ctx.run.availableChannels = availableRuntimeChannels;
-            if ~isempty(availableRuntimeChannels)
-                ctx.roiChannels = availableRuntimeChannels;
+            if ~isempty(roiRuntimeChannels)
+                ctx.roiChannels = roiRuntimeChannels;
             end
-            if ~isfield(ctx, 'channels') && ~isempty(availableRuntimeChannels)
-                ctx.channels = availableRuntimeChannels;
+            if ~isfield(ctx, 'channels') && ~isempty(sourceRuntimeChannels)
+                ctx.channels = sourceRuntimeChannels;
             end
             if hubExecution
                 ctx.run.runtimeInventoryMode = 'server_resolved';
@@ -12819,10 +12842,14 @@ classdef pipeline2 < matlab.apps.AppBase
             try
                 hub = detecdiv_hub_upsert_path_mapping(hub, remoteRoot, localRoot);
             catch
+                remoteRoot = regexprep(strrep(remoteRoot, '\', '/'), '[\/]+$', '');
+                if ~startsWith(remoteRoot, '/')
+                    return;
+                end
                 if ~isfield(hub, 'pathMappings') || isempty(hub.pathMappings)
                     hub.pathMappings = struct('remoteRoot', {}, 'localRoot', {});
                 end
-                hub.pathMappings(end+1).remoteRoot = regexprep(strrep(remoteRoot, '\', '/'), '[\/]+$', '');
+                hub.pathMappings(end+1).remoteRoot = remoteRoot;
                 hub.pathMappings(end).localRoot = regexprep(strrep(localRoot, '/', filesep), '[\\\/]+$', '');
             end
         end
@@ -14451,6 +14478,7 @@ classdef pipeline2 < matlab.apps.AppBase
                     setRuntimeStatus(app, formatHubRunStatusText(app, job, app.CurrentRun));
                     appendRunReport(app, ['Hub run finished: ' terminalStatus], job);
                     if strcmpi(terminalStatus, 'done')
+                        emitLocalWorkspaceRefreshForHubRun(app, job);
                         showRunCompletedMessage(app);
                     else
                         uialert(app.UIFigure, sprintf('Hub run %s finished with status: %s', jobId, terminalStatus), ...
@@ -14472,6 +14500,56 @@ classdef pipeline2 < matlab.apps.AppBase
                 else
                     setRuntimeStatus(app, ['Hub status refresh failed: ' msg]);
                 end
+            end
+        end
+
+        function emitLocalWorkspaceRefreshForHubRun(app, job)
+            payload = struct();
+            payload.kind = 'pipelineRun';
+            payload.action = 'completed';
+            payload.source = 'pipeline2_hub';
+            payload.status = char(string(getField(app, job, 'status', 'done')));
+            payload.projectObj = [];
+            payload.projectMatPath = '';
+            payload.projectPath = '';
+            payload.projectName = '';
+            payload.projectVarName = '';
+            payload.runId = currentHubRunJobId(app);
+            payload.summary = struct();
+
+            if ~isempty(app.CurrentProjectVarName)
+                payload.projectVarName = char(string(app.CurrentProjectVarName));
+            end
+            if ~isempty(app.CurrentProject) && isa(app.CurrentProject, 'shallow')
+                try
+                    [pth, file] = app.CurrentProject.getPath;
+                    payload.projectMatPath = fullfile(pth, [file '.mat']);
+                    payload.projectPath = fullfile(pth, file);
+                    payload.projectName = char(string(file));
+                catch
+                end
+            end
+            if isempty(payload.projectMatPath)
+                try
+                    projectPath = strtrim(getRuntimeValue(app, 'projectPath'));
+                    if ~isempty(projectPath)
+                        payload.projectMatPath = projectPath;
+                        if endsWith(lower(projectPath), '.mat')
+                            payload.projectPath = erase(projectPath, '.mat');
+                            [~, nm] = fileparts(payload.projectPath);
+                        else
+                            payload.projectPath = projectPath;
+                            [~, nm] = fileparts(projectPath);
+                        end
+                        payload.projectName = char(string(nm));
+                    end
+                catch
+                end
+            end
+            try
+                detecdiv_event('emit', 'pipelineRunCompleted', payload);
+                detecdiv_event('emit', 'workspaceChanged', payload);
+            catch
             end
         end
 
