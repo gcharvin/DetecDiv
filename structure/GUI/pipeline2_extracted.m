@@ -14436,7 +14436,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
             try
-                job = detecdiv_hub_get_pipeline_run(jobId);
+                job = detecdiv_hub_get_pipeline_run(jobId, hubSettingsFromUi(app));
                 updateCurrentRunFromHubJob(app, job);
                 statusText = char(string(getField(app, job, 'status', 'unknown')));
                 setRuntimeStatus(app, formatHubRunStatusText(app, job, app.CurrentRun));
@@ -14458,12 +14458,48 @@ classdef pipeline2 < matlab.apps.AppBase
                     end
                 end
             catch ME
+                msg = compactHubStatusError(app, ME);
+                if isTransientHubStatusError(app, ME)
+                    if showErrors
+                        uialert(app.UIFigure, msg, 'Hub status temporarily unavailable', 'Icon', 'warning');
+                    else
+                        setRuntimeStatus(app, msg);
+                    end
+                    return;
+                end
                 if showErrors
-                    uialert(app.UIFigure, ME.message, 'Hub status failed', 'Icon', 'error');
+                    uialert(app.UIFigure, msg, 'Hub status failed', 'Icon', 'error');
                 else
-                    setRuntimeStatus(app, ['Hub status refresh failed: ' ME.message]);
+                    setRuntimeStatus(app, ['Hub status refresh failed: ' msg]);
                 end
             end
+        end
+
+        function tf = isTransientHubStatusError(app, ME) %#ok<INUSD>
+            msg = lower(char(string(ME.message)));
+            tf = contains(msg, '502') || contains(msg, 'bad gateway') || ...
+                contains(msg, '503') || contains(msg, '504') || ...
+                contains(msg, 'gateway timeout') || ...
+                contains(msg, 'temporarily unavailable');
+        end
+
+        function msg = compactHubStatusError(app, ME) %#ok<INUSD>
+            raw = char(string(ME.message));
+            lowerRaw = lower(raw);
+            if contains(lowerRaw, '<html')
+                if contains(lowerRaw, '502') || contains(lowerRaw, 'bad gateway')
+                    msg = 'Hub status temporarily unavailable (502 Bad Gateway). The run monitor will retry.';
+                    return;
+                end
+                raw = regexprep(raw, '<[^>]*>', ' ');
+            end
+            raw = regexprep(raw, '\s+', ' ');
+            maxLen = 240;
+            if strlength(string(raw)) > maxLen
+                raw = char(extractBefore(string(raw), maxLen + 1));
+                raw = [raw '...'];
+            end
+            msg = raw;
         end
 
         function handleHubRunMonitorTimerError(app, evt)

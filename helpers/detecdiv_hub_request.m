@@ -161,7 +161,30 @@ function msg = localResponseMessage(data, fallback)
             else
                 msg = jsonencode(detail);
             end
+        elseif ischar(data) || isstring(data)
+            msg = localCompactTextMessage(data, fallback);
         end
     catch
+    end
+end
+
+function msg = localCompactTextMessage(data, fallback)
+    msg = char(string(data));
+    lowerMsg = lower(msg);
+    if contains(lowerMsg, '<html')
+        if contains(lowerMsg, '502') || contains(lowerMsg, 'bad gateway')
+            msg = 'Hub temporarily unavailable (502 Bad Gateway).';
+            return;
+        end
+        msg = regexprep(msg, '<[^>]*>', ' ');
+    end
+    msg = regexprep(msg, '\s+', ' ');
+    if isempty(strtrim(msg))
+        msg = char(string(fallback));
+    end
+    maxLen = 240;
+    if strlength(string(msg)) > maxLen
+        msg = char(extractBefore(string(msg), maxLen + 1));
+        msg = [msg '...'];
     end
 end
