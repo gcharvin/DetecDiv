@@ -298,12 +298,6 @@ classdef detecdiv < matlab.apps.AppBase
 
                 if pipeIdx <= numel(app.Data.PipelineModules) && ~isempty(app.Data.PipelineModules{pipeIdx})
                     for k=1:numel(app.Data.PipelineModules{pipeIdx})
-                        cm2=uicontextmenu(app.DetecDivUIFigure);
-                        m = uimenu(cm2,'Text','Open module...');
-                        m.MenuSelectedFcn={@contextMenuOpenPipelineModuleFcn,[pipeIdx,k],'PipelineModule'};
-                        m = uimenu(cm2,'Text','Delete module');
-                        m.MenuSelectedFcn={@contextMenuDeletePipelineModuleFcn,[pipeIdx,k],'PipelineModule'};
-
                         moduleType = '';
                         if pipeIdx <= numel(app.Data.PipelineModuleTypes) && ~isempty(app.Data.PipelineModuleTypes{pipeIdx}) && k <= numel(app.Data.PipelineModuleTypes{pipeIdx})
                             moduleType = app.Data.PipelineModuleTypes{pipeIdx}{k};
@@ -311,7 +305,7 @@ classdef detecdiv < matlab.apps.AppBase
                         iconFile = getPipelineModuleIcon(moduleType);
 
                         uitreenode(pNode,'Text',app.Data.PipelineModules{pipeIdx}{k},'Tag','PipelineModule','UserData',[pipeIdx,k], ...
-                            'ContextMenu',cm2,'Icon',fullfile(pth,iconFile));
+                            'Icon',fullfile(pth,iconFile));
                     end
                 end
             end

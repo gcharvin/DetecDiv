@@ -138,6 +138,7 @@ classdef pipeline2 < matlab.apps.AppBase
         HubRunMonitorTimer = []
         HubRunMonitorJobId char = ''
         HubRunMonitorLastStatus char = ''
+        HubRunUiLocked logical = false
         BatchPrototypeMode logical = false
         BatchPrototypeModal logical = false
     end
@@ -4961,6 +4962,9 @@ classdef pipeline2 < matlab.apps.AppBase
             try, app.RuntimeTab.Enable = ternary(app, tf, 'on', 'off'); catch, end
             setRuntimeControlTreeEnabled(app, app.RuntimeInputsTab, tf);
             setRuntimeControlTreeEnabled(app, app.RuntimeTab, tf);
+            if app.HubRunUiLocked
+                applyHubRunUiLock(app, true);
+            end
             updateRuntimeInputStates(app);
             if app.BatchPrototypeMode
                 setRuntimeStatus(app, sprintf('Batch prototype mode.\nSet runtime parameters and target, then click Use Prototype.'));
@@ -5034,6 +5038,34 @@ classdef pipeline2 < matlab.apps.AppBase
                 catch
                 end
             end
+        end
+
+        function applyHubRunUiLock(app, tf)
+            app.HubRunUiLocked = logical(tf);
+            if ~app.RuntimeModeUnlocked
+                return;
+            end
+            try, setRuntimeControlTreeEnabled(app, app.RuntimeInputsTab, ~tf); catch, end
+            try, setRuntimeControlTreeEnabled(app, app.RuntimeTab, ~tf); catch, end
+            try, app.UISelectedModuleTable.ColumnEditable = ternary(app, ~tf, [true false false false], [false false false false]); catch, end
+            names = {'NewRunButton','SmokeTestButton','CheckpipelineButton'};
+            for i = 1:numel(names)
+                try
+                    h = app.(names{i});
+                    if ~isempty(h) && isvalid(h)
+                        h.Enable = ternary(app, ~tf, 'on', 'off');
+                    end
+                catch
+                end
+            end
+            try
+                app.RunButton.Enable = 'on';
+                if tf
+                    app.RunButton.Text = 'Cancel run';
+                end
+            catch
+            end
+            setRuntimeArtifactButtonsEnabled(app, true);
         end
 
         function setRuntimeStatus(app, textValue)
@@ -8606,6 +8638,15 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
             end
 
+            runtimeParams = getRuntimeNodeParams(app, nodeId);
+            if app.RuntimeModeUnlocked && isstruct(runtimeParams) && isfield(runtimeParams, param) && ...
+                    isConfiguredBindingValue(app, runtimeParams.(param))
+                if ~(isInput && isSymbolicStoredBinding(app, runtimeParams.(param)) && ~symbolicBindingIsActive(app, runtimeParams.(param)))
+                    value = bindingValueToDisplay(app, choiceScalarText(app, runtimeParams.(param)), node, spec);
+                    return;
+                end
+            end
+
             p = getField(app, node, 'params', struct());
             if isInput && isstruct(p) && isfield(p, param) && isSymbolicStoredBinding(app, p.(param))
                 if symbolicBindingIsActive(app, p.(param))
@@ -8620,7 +8661,6 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
 
-            runtimeParams = getRuntimeNodeParams(app, nodeId);
             if isInput && isstruct(runtimeParams) && isfield(runtimeParams, param) && ...
                     isConfiguredBindingValue(app, runtimeParams.(param))
                 if isSymbolicStoredBinding(app, runtimeParams.(param)) && ~symbolicBindingIsActive(app, runtimeParams.(param))
@@ -8868,12 +8908,14 @@ classdef pipeline2 < matlab.apps.AppBase
             choices = {};
             type = lower(char(string(getField(app, spec, 'type', ''))));
             role = lower(char(string(getField(app, spec, 'role', ''))));
-            if strcmp(type, 'channel') && any(strcmp(role, {'roi_image','score_roi_image','derived_roi_image','source'}))
-                choices = runtimeConcreteChannels(app);
+            if strcmp(type, 'channel') && strcmp(role, 'source')
+                choices = runtimeSourceChannels(app);
+            elseif strcmp(type, 'channel') && any(strcmp(role, {'roi_image','score_roi_image','derived_roi_image'}))
+                choices = runtimeValidationRoiChannels(app);
             elseif strcmp(type, 'channel') && strcmp(role, 'mask_roi_image')
                 choices = runtimeMaskChoices(app);
                 if isempty(choices)
-                    choices = runtimeConcreteChannels(app);
+                    choices = runtimeValidationRoiChannels(app);
                 end
             elseif strcmp(type, 'mask')
                 choices = runtimeMaskChoices(app);
@@ -8884,12 +8926,32 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function channels = runtimeConcreteChannels(app)
             channels = {};
-            if isfield(app.RuntimeParseInfo, 'channels') && ~isempty(app.RuntimeParseInfo.channels)
-                channels = cellstr(string(app.RuntimeParseInfo.channels(:)'));
+            sourceChannels = runtimeSourceChannels(app);
+            if ~isempty(sourceChannels)
+                channels = [channels sourceChannels]; %#ok<AGROW>
             end
-            roiChannels = runtimeRoiDisplayChannels(app);
+            roiChannels = runtimeValidationRoiChannels(app);
             if ~isempty(roiChannels)
                 channels = [channels roiChannels]; %#ok<AGROW>
+            end
+            skip = startsWith(lower(string(channels)), 'resolved after') | strcmpi(string(channels), 'all') | strcmpi(string(channels), 'auto');
+            channels = channels(~skip);
+            channels = unique(channels(~cellfun(@isempty, channels)), 'stable');
+        end
+
+        function channels = runtimeSourceChannels(app)
+            channels = runtimeParsedChannelsOnly(app);
+        end
+
+        function channels = runtimeValidationRoiChannels(app)
+            channels = {};
+            if runtimeStartsFromExistingProject(app)
+                channels = runtimeRoiDisplayChannels(app);
+                if isempty(channels)
+                    channels = runtimeSourceChannels(app);
+                end
+            else
+                channels = runtimeSourceChannels(app);
             end
             skip = startsWith(lower(string(channels)), 'resolved after') | strcmpi(string(channels), 'all') | strcmpi(string(channels), 'auto');
             channels = channels(~skip);
@@ -12516,17 +12578,18 @@ classdef pipeline2 < matlab.apps.AppBase
             ctx.run.frames = ctx.sel.frames;
             ctx.run.rois = ctx.sel.rois;
 
-            if hubExecution
-                availableRuntimeChannels = runtimeParsedChannelsOnly(app);
-            else
-                availableRuntimeChannels = runtimeConcreteChannels(app);
+            sourceRuntimeChannels = runtimeSourceChannels(app);
+            roiRuntimeChannels = runtimeValidationRoiChannels(app);
+            availableRuntimeChannels = roiRuntimeChannels;
+            if isempty(availableRuntimeChannels)
+                availableRuntimeChannels = sourceRuntimeChannels;
             end
             ctx.run.availableChannels = availableRuntimeChannels;
-            if ~isempty(availableRuntimeChannels)
-                ctx.roiChannels = availableRuntimeChannels;
+            if ~isempty(roiRuntimeChannels)
+                ctx.roiChannels = roiRuntimeChannels;
             end
-            if ~isfield(ctx, 'channels') && ~isempty(availableRuntimeChannels)
-                ctx.channels = availableRuntimeChannels;
+            if ~isfield(ctx, 'channels') && ~isempty(sourceRuntimeChannels)
+                ctx.channels = sourceRuntimeChannels;
             end
             if hubExecution
                 ctx.run.runtimeInventoryMode = 'server_resolved';
@@ -12819,10 +12882,14 @@ classdef pipeline2 < matlab.apps.AppBase
             try
                 hub = detecdiv_hub_upsert_path_mapping(hub, remoteRoot, localRoot);
             catch
+                remoteRoot = regexprep(strrep(remoteRoot, '\', '/'), '[\/]+$', '');
+                if ~startsWith(remoteRoot, '/')
+                    return;
+                end
                 if ~isfield(hub, 'pathMappings') || isempty(hub.pathMappings)
                     hub.pathMappings = struct('remoteRoot', {}, 'localRoot', {});
                 end
-                hub.pathMappings(end+1).remoteRoot = regexprep(strrep(remoteRoot, '\', '/'), '[\/]+$', '');
+                hub.pathMappings(end+1).remoteRoot = remoteRoot;
                 hub.pathMappings(end).localRoot = regexprep(strrep(localRoot, '/', filesep), '[\\\/]+$', '');
             end
         end
@@ -14399,11 +14466,12 @@ classdef pipeline2 < matlab.apps.AppBase
             app.RunButton.Enable = 'on';
             app.HubRunMonitorTimer = timer( ...
                 'ExecutionMode', 'fixedSpacing', ...
-                'Period', 6, ...
+                'Period', 15, ...
                 'BusyMode', 'drop', ...
                 'Name', ['DetecDivHubRunMonitor_' jobId], ...
                 'TimerFcn', @(~,~)pollHubRunStatus(app, false), ...
                 'ErrorFcn', @(~,evt)handleHubRunMonitorTimerError(app, evt));
+            applyHubRunUiLock(app, true);
             try
                 start(app.HubRunMonitorTimer);
             catch ME
@@ -14417,6 +14485,7 @@ classdef pipeline2 < matlab.apps.AppBase
             app.HubRunMonitorTimer = [];
             app.HubRunMonitorJobId = '';
             app.HubRunMonitorLastStatus = '';
+            applyHubRunUiLock(app, false);
             try
                 if ~isempty(t) && isvalid(t)
                     stop(t);
@@ -14436,7 +14505,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
             try
-                job = detecdiv_hub_get_pipeline_run(jobId);
+                job = detecdiv_hub_get_pipeline_run(jobId, hubSettingsFromUi(app));
                 updateCurrentRunFromHubJob(app, job);
                 statusText = char(string(getField(app, job, 'status', 'unknown')));
                 setRuntimeStatus(app, formatHubRunStatusText(app, job, app.CurrentRun));
@@ -14451,6 +14520,7 @@ classdef pipeline2 < matlab.apps.AppBase
                     setRuntimeStatus(app, formatHubRunStatusText(app, job, app.CurrentRun));
                     appendRunReport(app, ['Hub run finished: ' terminalStatus], job);
                     if strcmpi(terminalStatus, 'done')
+                        emitLocalWorkspaceRefreshForHubRun(app, job);
                         showRunCompletedMessage(app);
                     else
                         uialert(app.UIFigure, sprintf('Hub run %s finished with status: %s', jobId, terminalStatus), ...
@@ -14458,12 +14528,98 @@ classdef pipeline2 < matlab.apps.AppBase
                     end
                 end
             catch ME
+                msg = compactHubStatusError(app, ME);
+                if isTransientHubStatusError(app, ME)
+                    if showErrors
+                        uialert(app.UIFigure, msg, 'Hub status temporarily unavailable', 'Icon', 'warning');
+                    else
+                        setRuntimeStatus(app, msg);
+                    end
+                    return;
+                end
                 if showErrors
-                    uialert(app.UIFigure, ME.message, 'Hub status failed', 'Icon', 'error');
+                    uialert(app.UIFigure, msg, 'Hub status failed', 'Icon', 'error');
                 else
-                    setRuntimeStatus(app, ['Hub status refresh failed: ' ME.message]);
+                    setRuntimeStatus(app, ['Hub status refresh failed: ' msg]);
                 end
             end
+        end
+
+        function emitLocalWorkspaceRefreshForHubRun(app, job)
+            payload = struct();
+            payload.kind = 'pipelineRun';
+            payload.action = 'completed';
+            payload.source = 'pipeline2_hub';
+            payload.status = char(string(getField(app, job, 'status', 'done')));
+            payload.projectObj = [];
+            payload.projectMatPath = '';
+            payload.projectPath = '';
+            payload.projectName = '';
+            payload.projectVarName = '';
+            payload.runId = currentHubRunJobId(app);
+            payload.summary = struct();
+
+            if ~isempty(app.CurrentProjectVarName)
+                payload.projectVarName = char(string(app.CurrentProjectVarName));
+            end
+            if ~isempty(app.CurrentProject) && isa(app.CurrentProject, 'shallow')
+                try
+                    [pth, file] = app.CurrentProject.getPath;
+                    payload.projectMatPath = fullfile(pth, [file '.mat']);
+                    payload.projectPath = fullfile(pth, file);
+                    payload.projectName = char(string(file));
+                catch
+                end
+            end
+            if isempty(payload.projectMatPath)
+                try
+                    projectPath = strtrim(getRuntimeValue(app, 'projectPath'));
+                    if ~isempty(projectPath)
+                        payload.projectMatPath = projectPath;
+                        if endsWith(lower(projectPath), '.mat')
+                            payload.projectPath = erase(projectPath, '.mat');
+                            [~, nm] = fileparts(payload.projectPath);
+                        else
+                            payload.projectPath = projectPath;
+                            [~, nm] = fileparts(projectPath);
+                        end
+                        payload.projectName = char(string(nm));
+                    end
+                catch
+                end
+            end
+            try
+                detecdiv_event('emit', 'pipelineRunCompleted', payload);
+                detecdiv_event('emit', 'workspaceChanged', payload);
+            catch
+            end
+        end
+
+        function tf = isTransientHubStatusError(app, ME) %#ok<INUSD>
+            msg = lower(char(string(ME.message)));
+            tf = contains(msg, '502') || contains(msg, 'bad gateway') || ...
+                contains(msg, '503') || contains(msg, '504') || ...
+                contains(msg, 'gateway timeout') || ...
+                contains(msg, 'temporarily unavailable');
+        end
+
+        function msg = compactHubStatusError(app, ME) %#ok<INUSD>
+            raw = char(string(ME.message));
+            lowerRaw = lower(raw);
+            if contains(lowerRaw, '<html')
+                if contains(lowerRaw, '502') || contains(lowerRaw, 'bad gateway')
+                    msg = 'Hub status temporarily unavailable (502 Bad Gateway). The run monitor will retry.';
+                    return;
+                end
+                raw = regexprep(raw, '<[^>]*>', ' ');
+            end
+            raw = regexprep(raw, '\s+', ' ');
+            maxLen = 240;
+            if strlength(string(raw)) > maxLen
+                raw = char(extractBefore(string(raw), maxLen + 1));
+                raw = [raw '...'];
+            end
+            msg = raw;
         end
 
         function handleHubRunMonitorTimerError(app, evt)
@@ -14482,18 +14638,29 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
             try
+                previousJobId = '';
+                previousStatus = '';
                 if ~isstruct(app.CurrentRun.ctx)
                     app.CurrentRun.ctx = struct();
                 end
                 if ~isfield(app.CurrentRun.ctx, 'hub') || ~isstruct(app.CurrentRun.ctx.hub)
                     app.CurrentRun.ctx.hub = struct();
+                else
+                    previousJobId = char(string(getField(app.CurrentRun.ctx.hub, 'job_id', '')));
+                    previousStatus = char(string(getField(app.CurrentRun.ctx.hub, 'status', '')));
                 end
-                app.CurrentRun.ctx.hub.job_id = char(string(getField(app, job, 'id', currentHubRunJobId(app))));
-                app.CurrentRun.ctx.hub.status = char(string(getField(app, job, 'status', 'unknown')));
+                nextJobId = char(string(getField(app, job, 'id', currentHubRunJobId(app))));
+                nextStatus = char(string(getField(app, job, 'status', 'unknown')));
+                app.CurrentRun.ctx.hub.job_id = nextJobId;
+                app.CurrentRun.ctx.hub.status = nextStatus;
                 app.CurrentRun.ctx.hub.refreshed_at = char(datetime('now'));
                 app.CurrentRun.status = ['hub_' app.CurrentRun.ctx.hub.status];
+                app.HubRunMonitorLastStatus = nextStatus;
+                applyHubRunUiLock(app, any(strcmpi(nextStatus, {'queued','running','cancelling'})));
                 try
-                    pipelineRunSave(app.CurrentRun);
+                    if ~strcmp(previousJobId, nextJobId) || ~strcmp(previousStatus, nextStatus)
+                        pipelineRunSave(app.CurrentRun, struct('verbose', false));
+                    end
                 catch
                 end
             catch

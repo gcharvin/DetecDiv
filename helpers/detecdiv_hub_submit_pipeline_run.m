@@ -444,6 +444,127 @@ function localAssertServerVisiblePipelineRef(pipelineRef)
     end
 end
 
+function exportSource = localRunPipelineExportSource(runObj, sourcePath)
+    exportSource = [];
+    try
+        if isstruct(runObj.ctx) && isfield(runObj.ctx, 'pipelineSpec') && isstruct(runObj.ctx.pipelineSpec) && ...
+                isfield(runObj.ctx.pipelineSpec, 'nodes') && ~isempty(runObj.ctx.pipelineSpec.nodes)
+            exportSource = runObj.ctx.pipelineSpec;
+            return;
+        end
+    catch
+    end
+    if nargin >= 2 && ~isempty(sourcePath)
+        exportSource = sourcePath;
+    end
+end
+
+function tf = localExistingHubBundleUsableForRun(bundlePath, pipelineJsonPath, runObj)
+    tf = false;
+    if exist(pipelineJsonPath, 'file') ~= 2
+        return;
+    end
+    try
+        spec = jsondecode(fileread(pipelineJsonPath));
+    catch
+        return;
+    end
+    if ~isstruct(spec) || ~isfield(spec, 'nodes') || isempty(spec.nodes)
+        return;
+    end
+
+    selectedIds = localSelectedRunNodeIds(runObj);
+    if ~isempty(selectedIds)
+        bundleIds = cell(1, numel(spec.nodes));
+        for i = 1:numel(spec.nodes)
+            bundleIds{i} = localText(localGetField(spec.nodes(i), 'id', ''));
+        end
+        missing = setdiff(selectedIds, bundleIds, 'stable');
+        if ~isempty(missing)
+            return;
+        end
+        if ~localBundleManifestContainsSelectedNodes(bundlePath, selectedIds)
+            return;
+        end
+    end
+
+    for i = 1:numel(spec.nodes)
+        node = spec.nodes(i);
+        nodeType = lower(localText(localGetField(node, 'type', '')));
+        if ~any(strcmp(nodeType, {'classifier','processor'}))
+            continue;
+        end
+        modulePath = localText(localNested(node, {'params','modulePath'}, ''));
+        if isempty(modulePath)
+            continue;
+        end
+        if ~localModulePathInsideBundle(modulePath, bundlePath, pipelineJsonPath)
+            continue;
+        end
+        absPath = localResolveBundleRelativePath(modulePath, fileparts(pipelineJsonPath));
+        if exist(absPath, 'dir') ~= 7 && exist(absPath, 'file') ~= 2
+            return;
+        end
+    end
+    tf = true;
+end
+
+function tf = localBundleManifestContainsSelectedNodes(bundlePath, selectedIds)
+    tf = false;
+    manifestPath = fullfile(bundlePath, 'export_manifest.json');
+    if exist(manifestPath, 'file') ~= 2
+        return;
+    end
+    try
+        manifest = jsondecode(fileread(manifestPath));
+    catch
+        return;
+    end
+    if ~isstruct(manifest) || ~isfield(manifest, 'nodes') || isempty(manifest.nodes)
+        return;
+    end
+    manifestIds = cell(1, numel(manifest.nodes));
+    for i = 1:numel(manifest.nodes)
+        manifestIds{i} = localText(localGetField(manifest.nodes(i), 'id', ''));
+    end
+    tf = isempty(setdiff(selectedIds, manifestIds, 'stable'));
+end
+
+function localAssertHubBundleUsableForRun(bundlePath, pipelineJsonPath, runObj)
+    if localExistingHubBundleUsableForRun(bundlePath, pipelineJsonPath, runObj)
+        return;
+    end
+    error('detecdiv_hub_submit_pipeline_run:IncompleteHubPipelineBundle', ...
+        ['Hub pipeline bundle is incomplete or stale for this run: %s\n' ...
+         'Rebuild the bundle from the current pipeline run before submitting to the Hub.'], ...
+        bundlePath);
+end
+
+function tf = localModulePathInsideBundle(modulePath, bundlePath, pipelineJsonPath)
+    tf = false;
+    absPath = localResolveBundleRelativePath(modulePath, fileparts(pipelineJsonPath));
+    if isempty(absPath)
+        return;
+    end
+    tf = localPathInside(absPath, bundlePath) || localSamePath(absPath, bundlePath);
+end
+
+function absPath = localResolveBundleRelativePath(pathText, baseDir)
+    absPath = char(string(pathText));
+    if isempty(absPath)
+        return;
+    end
+    absPath = strrep(absPath, '/', filesep);
+    if localLooksLikeLocalClientPath(absPath) || localLooksLikeServerPath(absPath)
+        return;
+    end
+    if startsWith(absPath, './')
+        absPath = extractAfter(absPath, 2);
+        absPath = char(string(absPath));
+    end
+    absPath = fullfile(baseDir, absPath);
+end
+
 function tf = localLooksLikeLocalClientPath(pathValue)
     txt = char(string(pathValue));
     tf = ~isempty(regexp(txt, '^[A-Za-z]:[\\/]', 'once')) || startsWith(txt, '\\');
@@ -464,37 +585,18 @@ function bundleRef = localExportRunPipelineBundle(runObj, ref, hub, shallowObj)
     manifestPath = fullfile(bundlePath, 'export_manifest.json');
     pipelineJsonPath = fullfile(bundlePath, 'pipeline', 'pipeline.json');
     sourcePath = localRunPipelineSourcePath(runObj, ref, hub);
-    sourceBundlePath = localExistingHubBundleFromPipelineSource(sourcePath);
-    if ~isempty(sourceBundlePath) && ~localSamePath(sourceBundlePath, bundlePath)
-        localCopyExistingHubBundle(sourceBundlePath, bundlePath, runPath);
-        localPruneHubBundleForRun(bundlePath, runObj);
-        localRepairHubPipelineBundlePaths(bundlePath, pipelineJsonPath, ref, hub);
-        bundleRef.pipeline_bundle_uri = localTranslatePathForServer(bundlePath, ref, hub);
-        bundleRef.export_manifest_uri = localTranslatePathForServer(manifestPath, ref, hub);
-        bundleRef.pipeline_json_path = localTranslatePathForServer(pipelineJsonPath, ref, hub);
+    exportSource = localRunPipelineExportSource(runObj, sourcePath);
+    if isempty(exportSource)
         return;
     end
-    if exist(manifestPath, 'file') == 2 && exist(pipelineJsonPath, 'file') == 2
-        % A persisted Hub run owns its bundle. Re-exporting here can force
-        % definition asset materialization (for example roiPattern patches)
-        % and therefore raw-image reads before the Hub job has even been
-        % submitted. Keep submission lightweight: repair paths in place and
-        % let an explicit pipeline export/create path rebuild missing bundles.
-        localPruneHubBundleForRun(bundlePath, runObj);
-        localRepairHubPipelineBundlePaths(bundlePath, pipelineJsonPath, ref, hub);
-        bundleRef.pipeline_bundle_uri = localTranslatePathForServer(bundlePath, ref, hub);
-        bundleRef.export_manifest_uri = localTranslatePathForServer(manifestPath, ref, hub);
-        bundleRef.pipeline_json_path = localTranslatePathForServer(pipelineJsonPath, ref, hub);
-        return;
-    end
-    if isempty(sourcePath)
-        return;
-    end
-    pipelineExport(sourcePath, bundlePath, ...
+    % Rebuild on every Hub submission. A previous bundle can have the same
+    % node ids but stale classifier/processor module contents or paths.
+    pipelineExport(exportSource, bundlePath, ...
         'projectObj', shallowObj, ...
         'overwrite', true);
     localPruneHubBundleForRun(bundlePath, runObj);
     localRepairHubPipelineBundlePaths(bundlePath, pipelineJsonPath, ref, hub);
+    localAssertHubBundleUsableForRun(bundlePath, pipelineJsonPath, runObj);
     bundleRef.pipeline_bundle_uri = localTranslatePathForServer(bundlePath, ref, hub);
     bundleRef.export_manifest_uri = localTranslatePathForServer(manifestPath, ref, hub);
     bundleRef.pipeline_json_path = localTranslatePathForServer(pipelineJsonPath, ref, hub);
@@ -1329,13 +1431,11 @@ function ctx = localPathMappingCtx(ref, hub)
     try
         if isstruct(ref) && isfield(ref, 'local_project_dir_path') && isfield(ref, 'project_dir_path') && ...
                 ~isempty(ref.local_project_dir_path) && ~isempty(ref.project_dir_path)
-            extra(end+1).localRoot = char(string(ref.local_project_dir_path)); %#ok<AGROW>
-            extra(end).remoteRoot = char(string(ref.project_dir_path));
+            extra = localAppendServerPathMapping(extra, ref.local_project_dir_path, ref.project_dir_path);
         end
         if isstruct(ref) && isfield(ref, 'local_project_root_path') && isfield(ref, 'project_root_path') && ...
                 ~isempty(ref.local_project_root_path) && ~isempty(ref.project_root_path)
-            extra(end+1).localRoot = char(string(ref.local_project_root_path)); %#ok<AGROW>
-            extra(end).remoteRoot = char(string(ref.project_root_path));
+            extra = localAppendServerPathMapping(extra, ref.local_project_root_path, ref.project_root_path);
         end
     catch
     end
@@ -1349,6 +1449,16 @@ function ctx = localPathMappingCtx(ref, hub)
         end
         ctx.hub.pathMappings = [extra existing];
     end
+end
+
+function mappings = localAppendServerPathMapping(mappings, localRoot, remoteRoot)
+    localRoot = char(string(localRoot));
+    remoteRoot = char(string(remoteRoot));
+    if isempty(localRoot) || isempty(remoteRoot) || ~localLooksLikeServerPath(remoteRoot)
+        return;
+    end
+    mappings(end+1).localRoot = localRoot; %#ok<AGROW>
+    mappings(end).remoteRoot = remoteRoot;
 end
 
 function control = localBuildRunControl(ctx)
