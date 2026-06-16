@@ -837,6 +837,7 @@ function contract = enrichContractFromPackage(contract, node)
                 contract.resources.out = resourceDef('channel', 'derived_roi_image', 'channels', 'outputChannelName', 'channels', 'outputChannelName', false, 'roiChannel');
                 contract.summary = 'Combines selected ROI channels into one derived ROI image channel.';
             case 'computerls'
+                averageFluoByDivision = computeRLSAverageFluoByDivisionEnabled(node);
                 contract.in = [ ...
                     portDef('roiList', 'roiList', true, 'edge'), ...
                     portDef('dataSeries', 'dataSeriesSet', true, 'edge') ...
@@ -861,14 +862,15 @@ function contract = enrichContractFromPackage(contract, node)
                 contract.binding.scope = 'roi';
                 contract.binding.outputScope = 'roi';
                 contract.binding.mode = 'dataSeries';
-                contract.binding.selectorKeys = {'classification_data','metrics_data'};
+                contract.binding.selectorKeys = {'classification_data'};
                 contract.binding.resolveAt = 'run';
                 contract.capabilities.roiDataSeries = true;
                 contract.capabilities.outputsDataSeries = true;
-                contract.resources.in = [ ...
-                    resourceDef('dataSeries', 'classification', 'classification_data', 'classification_data', 'dataSeries', 'classification_data', true, ''), ...
-                    resourceDef('dataSeries', 'metrics', 'metrics_data', 'metrics_data', 'dataSeries', 'metrics_data', false, '') ...
-                    ];
+                contract.resources.in = resourceDef('dataSeries', 'classification', 'classification_data', 'classification_data', 'dataSeries', 'classification_data', true, '');
+                if averageFluoByDivision
+                    contract.binding.selectorKeys{end+1} = 'metrics_data';
+                    contract.resources.in(end+1) = resourceDef('dataSeries', 'metrics', 'metrics_data', 'metrics_data', 'dataSeries', 'metrics_data', true, ''); %#ok<AGROW>
+                end
                 contract.resources.out = resourceDef('dataSeries', 'rls', 'dataSeries', 'outputName', 'dataSeries', 'outputName', false, 'roiDataSeries');
                 contract.summary = 'Computes RLS events from classification dataseries, with optional computeMetrics aggregation by division.';
             case 'computelineage'
@@ -1277,6 +1279,21 @@ function resources = computeMetricsInputResources(maskCount, scoreCount)
         key = sprintf('channel%d_name', i);
         resources(end+1) = resourceDef('channel', 'score_roi_image', key, key, 'channels', key, false, ''); %#ok<AGROW>
     end
+end
+
+function tf = computeRLSAverageFluoByDivisionEnabled(node)
+    tf = false;
+    params = getField(node, 'params', struct());
+    if ~isstruct(params) || ~isfield(params, 'AverageFluoByDivision')
+        return;
+    end
+    value = params.AverageFluoByDivision;
+    if islogical(value) || isnumeric(value)
+        tf = isscalar(value) && logical(value);
+        return;
+    end
+    txt = lower(strtrim(char(string(value))));
+    tf = any(strcmp(txt, {'true','1','yes','on'}));
 end
 
 function out = mergeRequirementStruct(base, override)

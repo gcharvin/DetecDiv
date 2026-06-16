@@ -10,6 +10,7 @@ tests{end+1} = @testDynamicCellposeSamContract; %#ok<AGROW>
 tests{end+1} = @testDynamicCnnLstmContract; %#ok<AGROW>
 tests{end+1} = @testDynamicCombineMultipleChannelsContract; %#ok<AGROW>
 tests{end+1} = @testDynamicComputeMetricsContract; %#ok<AGROW>
+tests{end+1} = @testDynamicComputeRLSMetricsInputContract; %#ok<AGROW>
 tests{end+1} = @testComputeMetricsAcceptsSymbolicCellposeMask; %#ok<AGROW>
 tests{end+1} = @testComputeMetricsResolvesSymbolicDeepLabMaskToResultsChannel; %#ok<AGROW>
 tests{end+1} = @testComputeMetricsAcceptsSymbolicGeneratedScoreChannel; %#ok<AGROW>
@@ -152,6 +153,29 @@ assert(ok, 'Dynamic computeMetrics validation failed: %s', strjoin(validation.er
 key = matlab.lang.makeValidName('computeMetrics_1');
 assert(strcmp(validation.binding.nodes.(key).status, 'resolved'), ...
     'computeMetrics binding should be resolved with all dynamic slots filled.');
+end
+
+function testDynamicComputeRLSMetricsInputContract()
+node = makeNode('processor', 'computeRLS', struct( ...
+    'pkg', 'computeRLS', ...
+    'classification_data', 'div_1', ...
+    'AverageFluoByDivision', false));
+contract = pipelineNodeContract(node);
+assert(numel(contract.resources.in) == 1, 'computeRLS without fluorescence averaging should expose only classification input.');
+assert(any(strcmp({contract.resources.in.role}, 'classification')), 'computeRLS is missing classification input.');
+assert(~any(strcmp({contract.resources.in.role}, 'metrics')), 'computeRLS should not expose metrics input when AverageFluoByDivision is false.');
+assert(isequal(contract.binding.selectorKeys, {'classification_data'}), ...
+    'computeRLS selectorKeys should only include classification_data when fluorescence averaging is false.');
+
+node.params.AverageFluoByDivision = true;
+node.params.metrics_data = 'channel_quantification';
+contract = pipelineNodeContract(node);
+assert(numel(contract.resources.in) == 2, 'computeRLS with fluorescence averaging should expose classification and metrics inputs.');
+assert(any(strcmp({contract.resources.in.role}, 'metrics')), 'computeRLS is missing metrics input when AverageFluoByDivision is true.');
+assert(any(strcmp(contract.binding.selectorKeys, 'metrics_data')), ...
+    'computeRLS selectorKeys should include metrics_data when fluorescence averaging is true.');
+metricsSpec = contract.resources.in(strcmp({contract.resources.in.role}, 'metrics'));
+assert(logical(metricsSpec.required), 'computeRLS metrics input should be required when fluorescence averaging is true.');
 end
 
 function testComputeMetricsAcceptsSymbolicCellposeMask()
