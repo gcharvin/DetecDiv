@@ -384,9 +384,7 @@ function ctx = localBuildExecutionContext(payload, shallowObj, pipeObj)
             ctx.sel.rois = localNormalizeSelectionVector(localGetField(rr.selection, 'rois', []));
             ctx.sel.channels = localNormalizeStringSelection(localGetField(rr.selection, 'channels', {}));
         end
-        if isempty(inputSource) && localShouldUseExistingRoisForPartial(pipeObj, ctx.run.selectedNodes, localGetField(ctx, 'sel', struct()))
-            inputSource = 'Existing project ROIs';
-        end
+        localValidateInputSourceForSelectedNodes(inputSource, pipeObj, ctx.run.selectedNodes);
         if ~isempty(inputSource)
             ctx.run.inputSource = inputSource;
         end
@@ -447,17 +445,24 @@ function ctx = localBuildExecutionContext(payload, shallowObj, pipeObj)
     end
 end
 
-function tf = localShouldUseExistingRoisForPartial(pipeObj, selectedNodes, selection)
-    tf = false;
-    if isempty(selectedNodes) || ~isstruct(selection) || ~isfield(selection, 'rois') || isempty(selection.rois)
+function localValidateInputSourceForSelectedNodes(inputSource, pipeObj, selectedNodes)
+    if isempty(selectedNodes) || ~localIsRawInputSource(inputSource)
         return;
     end
-    sourceTypes = {'dataloader','roigrid','roipattern','roimanual','roiidentify','roiextract','roitracked'};
     selectedTypes = localSelectedNodeTypes(pipeObj, selectedNodes);
     if isempty(selectedTypes)
         return;
     end
-    tf = ~any(ismember(selectedTypes, sourceTypes));
+    if ~any(strcmp(selectedTypes, 'dataloader'))
+        error('detecdiv_run_pipeline_job:RawModeWithoutDataloader', ...
+            ['Input mode is raw-data/dataloader, but the selected pipeline run does not include a dataloader node. ' ...
+             'Switch Input mode to "Read from existing project", or include a dataloader in the selected run.']);
+    end
+end
+
+function tf = localIsRawInputSource(inputSource)
+    txt = lower(strtrim(char(string(inputSource))));
+    tf = contains(txt, 'dataloader') || contains(txt, 'raw') || contains(txt, 'pipeline start');
 end
 
 function nodeTypes = localSelectedNodeTypes(pipeObj, selectedNodes)
