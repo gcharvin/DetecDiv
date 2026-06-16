@@ -1,10 +1,11 @@
 function [shallowObj, ref, status] = detecdiv_hub_ensure_project(shallowObj, varargin)
-% detecdiv_hub_ensure_project  Resolve or queue Hub registration for a project.
+% detecdiv_hub_ensure_project  Resolve or directly register a Hub project.
 %
 % The Hub executes pipeline runs against catalogued projects. New local
 % projects may not have a hub_project_id yet; this helper attempts to resolve
-% one, queue a server-side index job when needed, then persist the resolved id
-% in shallowObj.runProfiles.hub.
+% one, directly register the exact project path when needed, then persist the
+% resolved id in shallowObj.runProfiles.hub. It deliberately does not launch
+% broad project-root indexing as a fallback.
 
     if nargin < 1 || isempty(shallowObj) || ~isa(shallowObj, 'shallow')
         error('detecdiv_hub_ensure_project:MissingProject', 'A shallow project is required.');
@@ -29,125 +30,10 @@ function [shallowObj, ref, status] = detecdiv_hub_ensure_project(shallowObj, var
         return;
     end
 
-    serverPath = localProjectIndexPath(ref, opts.hub);
-    status.attemptedPath = serverPath;
-    if isempty(serverPath)
-        status.message = 'Unable to resolve a server-visible project path for Hub indexing.';
-        if opts.ErrorIfQueued
-            error('detecdiv_hub_ensure_project:NoServerPath', '%s', status.message);
-        end
-        return;
-    end
-
-    [hasPendingJob, pendingStatus] = localExistingPendingJob(shallowObj, opts.hub);
-    if hasPendingJob
-        status = pendingStatus;
-        status.message = 'Hub project indexing is already queued or running.';
-        pause(max(0, opts.InitialWaitSec));
-        for i = 1:max(1, opts.ResolveAttempts)
-            ref = detecdiv_hub_project_ref(shallowObj, opts.hub);
-            if ~isempty(ref.project_id)
-                status.ok = true;
-                status.message = 'Hub project id resolved after pending indexing job.';
-                shallowObj = localStoreHubRef(shallowObj, ref, status);
-                return;
-            end
-            pause(max(0, opts.ResolveIntervalSec));
-        end
-        if opts.ErrorIfQueued
-            error('detecdiv_hub_ensure_project:IndexQueued', ...
-                ['Project is already queued for Hub indexing, but no hub_project_id is available yet.' newline ...
-                 'Retry Hub run submission after the indexing job completes.' newline ...
-                 'Indexed path: %s'], status.attemptedPath);
-        end
-        return;
-    end
-
-    payload = struct();
-    payload.source_path = serverPath;
-    payload.source_kind = 'project_root';
-    payload.storage_root_name = localStorageRootNameForPath(serverPath);
-    payload.host_scope = 'server';
-    payload.root_type = 'project_root';
-    payload.owner_user_key = localHubUser(opts.hub);
-    payload.visibility = opts.Visibility;
-    payload.clear_existing_for_root = false;
-    payload.scan_orphan_raw = true;
-    payload.queue_previews = false;
-    payload.requested_by = localHubUser(opts.hub);
-    payload.metadata_json = struct( ...
-        'requested_by', 'DetecDiv MATLAB', ...
-        'reason', 'pipeline run hub submission', ...
-        'project_name', ref.project_name, ...
-        'local_project_mat_path', ref.local_project_mat_path, ...
-        'local_project_dir_path', ref.local_project_dir_path, ...
-        'server_project_path', serverPath);
-
-    try
-        status.job = detecdiv_hub_request('POST', '/indexing/jobs', payload, opts.hub);
-        status.createdOrQueued = true;
-        status.message = 'Hub project indexing job queued.';
-    catch ME
-        status.message = ['Unable to queue Hub project indexing: ' ME.message];
-        if opts.ErrorIfQueued
-            error('detecdiv_hub_ensure_project:IndexQueueFailed', '%s', status.message);
-        end
-        return;
-    end
-
-    pause(max(0, opts.InitialWaitSec));
-    for i = 1:max(1, opts.ResolveAttempts)
-        ref = detecdiv_hub_project_ref(shallowObj, opts.hub);
-        if ~isempty(ref.project_id)
-            status.ok = true;
-            status.message = 'Hub project id resolved after indexing.';
-            shallowObj = localStoreHubRef(shallowObj, ref, status);
-            return;
-        end
-        pause(max(0, opts.ResolveIntervalSec));
-    end
-
+    status.message = ['Hub direct project registration failed: ' status.registrationError];
     shallowObj = localStoreHubState(shallowObj, status);
     if opts.ErrorIfQueued
-        error('detecdiv_hub_ensure_project:IndexQueued', ...
-            ['Project was queued for Hub indexing, but no hub_project_id is available yet.' newline ...
-             'Retry Hub run submission after the indexing job completes.' newline ...
-             'Indexed path: %s'], serverPath);
-    end
-end
-
-function [tf, status] = localExistingPendingJob(shallowObj, hub)
-    tf = false;
-    status = struct('ok', false, 'createdOrQueued', true, 'message', '', ...
-        'job', struct(), 'attemptedPath', '', 'refreshedAt', char(datetime('now')));
-    try
-        hubState = shallowObj.runProfiles.hub;
-        prev = hubState.last_ensure_status;
-        if ~isstruct(prev) || ~isfield(prev, 'job') || ~isstruct(prev.job)
-            return;
-        end
-        jobId = '';
-        if isfield(prev.job, 'job_id') && ~isempty(prev.job.job_id)
-            jobId = char(string(prev.job.job_id));
-        elseif isfield(prev.job, 'id') && ~isempty(prev.job.id)
-            jobId = char(string(prev.job.id));
-        end
-        if isempty(jobId)
-            return;
-        end
-        job = detecdiv_hub_request('GET', ['/jobs/' jobId], [], hub);
-        jobStatus = '';
-        if isstruct(job) && isfield(job, 'status') && ~isempty(job.status)
-            jobStatus = lower(char(string(job.status)));
-        end
-        if any(strcmp(jobStatus, {'queued','running','submitted'}))
-            tf = true;
-            status = prev;
-            status.job = job;
-            status.refreshedAt = char(datetime('now'));
-        end
-    catch
-        tf = false;
+        error('detecdiv_hub_ensure_project:DirectRegistrationFailed', '%s', status.message);
     end
 end
 
@@ -245,58 +131,6 @@ function [matPath, dirPath] = localServerProjectPathsFromDetail(project)
     end
     matPath = localFieldText(locs(idx), 'project_mat_path');
     dirPath = localFieldText(locs(idx), 'project_dir_path');
-end
-
-function serverPath = localProjectIndexPath(ref, hub)
-    serverPath = '';
-    candidates = {};
-    % The fallback indexer needs the folder that contains the .mat project
-    % file. In DetecDiv projects the data folder is often a sibling of the
-    % .mat file, so indexing only the project folder can miss the project.
-    if isfield(ref, 'local_project_mat_path') && ~isempty(ref.local_project_mat_path)
-        [parentPath, ~, ~] = fileparts(char(string(ref.local_project_mat_path)));
-        candidates{end+1} = parentPath;
-    end
-    if isfield(ref, 'local_project_root_path') && ~isempty(ref.local_project_root_path)
-        candidates{end+1} = ref.local_project_root_path;
-    end
-    if isfield(ref, 'local_project_dir_path') && ~isempty(ref.local_project_dir_path)
-        candidates{end+1} = ref.local_project_dir_path;
-    end
-    for i = 1:numel(candidates)
-        translated = localTranslatePathForServer(candidates{i}, hub);
-        if ~isempty(translated)
-            serverPath = translated;
-            return;
-        end
-    end
-end
-
-function pathOut = localTranslatePathForServer(pathIn, hub)
-    pathOut = char(string(pathIn));
-    if isempty(pathOut)
-        return;
-    end
-    pathOut = detecdiv_paths_map_module_path(pathOut, struct('hub', hub), 'server');
-    pathOut = strrep(pathOut, '\', '/');
-end
-
-function rootName = localStorageRootNameForPath(serverPath)
-    rootName = '';
-    parts = split(string(regexprep(serverPath, '^/+', '')), '/');
-    if numel(parts) >= 2 && strcmp(parts(1), "data")
-        rootName = char(parts(2));
-    end
-end
-
-function user = localHubUser(hub)
-    user = '';
-    try
-        if isfield(hub, 'userKey') && ~isempty(hub.userKey)
-            user = char(string(hub.userKey));
-        end
-    catch
-    end
 end
 
 function txt = localFieldText(S, name)

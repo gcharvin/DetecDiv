@@ -115,6 +115,9 @@ end
 function user = localHubUser(hub)
     user = '';
     try
+        if isfield(hub, 'sessionToken') && ~isempty(hub.sessionToken)
+            return;
+        end
         if isfield(hub, 'userKey') && ~isempty(hub.userKey)
             user = char(string(hub.userKey));
         end

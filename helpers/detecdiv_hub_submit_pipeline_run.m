@@ -29,16 +29,11 @@ function [job, runObj] = detecdiv_hub_submit_pipeline_run(runObj, shallowObj, va
             end
         end
         if isempty(ref.project_id)
-            msg = ['This project is not yet registered in the Hub project catalogue.' newline ...
+            msg = ['This project is not registered in the Hub project catalogue, ' ...
+                'and direct project registration failed.' newline ...
                 char(string(ensureStatus.message)) newline ...
-                'Project indexing path: ' char(string(ensureStatus.attemptedPath)) newline ...
-                'Retry Hub submission after the Hub indexing job completes.'];
-            if isfield(ensureStatus, 'job') && isstruct(ensureStatus.job) && isfield(ensureStatus.job, 'job_id')
-                msg = [msg newline 'Hub indexing job id: ' char(string(ensureStatus.job.job_id))]; %#ok<AGROW>
-            elseif isfield(ensureStatus, 'job') && isstruct(ensureStatus.job) && isfield(ensureStatus.job, 'id')
-                msg = [msg newline 'Hub indexing job id: ' char(string(ensureStatus.job.id))]; %#ok<AGROW>
-            end
-            error('detecdiv_hub_submit_pipeline_run:ProjectIndexQueued', '%s', msg);
+                'No broad project-root indexing job was queued.'];
+            error('detecdiv_hub_submit_pipeline_run:ProjectRegistrationFailed', '%s', msg);
         end
     else
         [shallowObj, ref] = localRunStage('store resolved hub project reference', ...
@@ -353,8 +348,20 @@ function opts = localParse(varargin)
         end
         i = i + 2;
     end
-    if isempty(opts.requestedBy) && isfield(opts.hub, 'userKey')
+    if isempty(opts.requestedBy) && localCanUseHubUserKey(opts.hub)
         opts.requestedBy = char(string(opts.hub.userKey));
+    end
+end
+
+function tf = localCanUseHubUserKey(hub)
+    tf = false;
+    try
+        if isfield(hub, 'sessionToken') && ~isempty(hub.sessionToken)
+            return;
+        end
+        tf = isfield(hub, 'userKey') && ~isempty(hub.userKey);
+    catch
+        tf = false;
     end
 end
 
@@ -404,9 +411,47 @@ function pipelineRef = localBuildPipelineRef(runObj, ref, hub, shallowObj)
             pipelineRef.pipeline_json_path = bundleRef.pipeline_json_path;
         end
     catch ME
-        warning('detecdiv_hub_submit_pipeline_run:PipelineBundleExport', ...
-            'Unable to export server-visible pipeline bundle; falling back to template path: %s', ME.message);
+        error('detecdiv_hub_submit_pipeline_run:PipelineBundleExportFailed', ...
+            ['Unable to export a server-visible Hub pipeline bundle. ' ...
+             'Hub submission was stopped before sending a local pipeline path to the worker: %s'], ME.message);
     end
+    localAssertServerVisiblePipelineRef(pipelineRef);
+end
+
+function localAssertServerVisiblePipelineRef(pipelineRef)
+    pipelinePath = localText(localGetField(pipelineRef, 'pipeline_json_path', ''));
+    bundlePath = localText(localGetField(pipelineRef, 'pipeline_bundle_uri', ''));
+    manifestPath = localText(localGetField(pipelineRef, 'export_manifest_uri', ''));
+
+    if isempty(pipelinePath)
+        error('detecdiv_hub_submit_pipeline_run:MissingServerPipelineRef', ...
+            ['Hub submission requires a server-visible pipeline JSON path. ' ...
+             'Export a Hub pipeline bundle before submitting the run.']);
+    end
+    if localLooksLikeLocalClientPath(pipelinePath)
+        error('detecdiv_hub_submit_pipeline_run:LocalPipelinePathForHub', ...
+            ['Hub submission would send a local client pipeline path to the worker: %s\n' ...
+             'The pipeline must be exported to the run hub_pipeline_bundle first.'], pipelinePath);
+    end
+    if ~localLooksLikeServerPath(pipelinePath)
+        error('detecdiv_hub_submit_pipeline_run:NonServerPipelinePathForHub', ...
+            'Hub pipeline path is not server-visible: %s', pipelinePath);
+    end
+    if (~isempty(bundlePath) && ~localLooksLikeServerPath(bundlePath)) || ...
+            (~isempty(manifestPath) && ~localLooksLikeServerPath(manifestPath))
+        error('detecdiv_hub_submit_pipeline_run:NonServerPipelineBundleForHub', ...
+            'Hub pipeline bundle paths must be server-visible.');
+    end
+end
+
+function tf = localLooksLikeLocalClientPath(pathValue)
+    txt = char(string(pathValue));
+    tf = ~isempty(regexp(txt, '^[A-Za-z]:[\\/]', 'once')) || startsWith(txt, '\\');
+end
+
+function tf = localLooksLikeServerPath(pathValue)
+    txt = strrep(char(string(pathValue)), '\', '/');
+    tf = startsWith(txt, '/');
 end
 
 function bundleRef = localExportRunPipelineBundle(runObj, ref, hub, shallowObj)
@@ -1011,6 +1056,7 @@ function runRequest = localBuildRunRequest(runObj, hub, ref)
         localNested(ctx, {'run','nodeParams'}, struct()), runRequest.selected_nodes, ref, hub);
     runRequest.run_policy = localText(localNested(ctx, {'run','runPolicy'}, 'resume'));
     runRequest.input_source = localText(localNested(ctx, {'run','inputSource'}, ''));
+    localValidateInputSourceForSelectedNodes(runRequest.input_source, runRequest.selected_nodes, ctx, runObj);
     runRequest.existing_data_policy = localText(localNested(ctx, {'io','existingPolicy'}, ''));
     runRequest.roi_cache_policy = localText(localNested(ctx, {'io','cachePolicy'}, 'auto'));
     runRequest.paths = localBuildRunPaths(ctx, ref, hub);
@@ -1026,6 +1072,107 @@ function runRequest = localBuildRunRequest(runObj, hub, ref)
     runRequest.control = localBuildRunControl(ctx);
     runRequest.python = localNested(ctx, {'exec','python'}, struct());
     runRequest.gpu = struct('mode', localText(localNested(ctx, {'run','gpuPolicy'}, localNested(ctx, {'exec','gpuPolicy'}, 'module_default'))));
+end
+
+function localValidateInputSourceForSelectedNodes(inputSource, selectedNodes, ctx, runObj)
+    if isempty(selectedNodes) || ~localIsRawInputSource(inputSource)
+        return;
+    end
+    selectedTypes = localSelectedNodeTypesForSubmit(selectedNodes, ctx, runObj);
+    if isempty(selectedTypes)
+        return;
+    end
+    if ~any(strcmp(selectedTypes, 'dataloader'))
+        error('detecdiv_hub_submit_pipeline_run:RawModeWithoutDataloader', ...
+            ['Input mode is raw-data/dataloader, but the selected pipeline run does not include a dataloader node. ' ...
+             'Switch Input mode to "Read from existing project", or include a dataloader in the selected run.']);
+    end
+end
+
+function tf = localIsRawInputSource(inputSource)
+    txt = lower(strtrim(char(string(inputSource))));
+    tf = contains(txt, 'dataloader') || contains(txt, 'raw') || contains(txt, 'pipeline start');
+end
+
+function nodeTypes = localSelectedNodeTypesForSubmit(selectedNodes, ctx, runObj)
+    nodeTypes = {};
+    nodes = localPipelineSpecNodesForSubmit(ctx, runObj);
+    if isempty(nodes)
+        return;
+    end
+    for i = 1:numel(selectedNodes)
+        nodeId = char(string(selectedNodes{i}));
+        for j = 1:numel(nodes)
+            if strcmp(char(string(localGetFieldForSubmit(nodes(j), 'id', ''))), nodeId)
+                nodeTypes{end+1} = lower(char(string(localGetFieldForSubmit(nodes(j), 'type', '')))); %#ok<AGROW>
+                break;
+            end
+        end
+    end
+    nodeTypes = unique(nodeTypes, 'stable');
+end
+
+function nodes = localPipelineSpecNodesForSubmit(ctx, runObj)
+    nodes = [];
+    try
+        spec = localNested(ctx, {'pipelineSpec'}, struct());
+        if isstruct(spec) && isfield(spec, 'nodes') && ~isempty(spec.nodes)
+            nodes = spec.nodes;
+            return;
+        end
+    catch
+    end
+    paths = {};
+    try
+        if isstruct(runObj.pipelineRef) && isfield(runObj.pipelineRef, 'path') && ~isempty(runObj.pipelineRef.path)
+            paths{end+1} = char(string(runObj.pipelineRef.path)); %#ok<AGROW>
+        end
+    catch
+    end
+    try
+        if ~isempty(runObj.templatePath)
+            paths{end+1} = char(string(runObj.templatePath)); %#ok<AGROW>
+        end
+    catch
+    end
+    for i = 1:numel(paths)
+        p = paths{i};
+        if exist(p, 'dir') == 7
+            p = fullfile(p, 'pipeline.json');
+        end
+        if exist(p, 'file') ~= 2
+            continue;
+        end
+        try
+            spec = jsondecode(fileread(p));
+            if isstruct(spec) && isfield(spec, 'nodes') && ~isempty(spec.nodes)
+                nodes = spec.nodes;
+                return;
+            end
+        catch
+        end
+    end
+end
+
+function value = localGetFieldForSubmit(S, fieldName, defaultValue)
+    value = defaultValue;
+    try
+        if isstruct(S) && isfield(S, fieldName) && ~isempty(S.(fieldName))
+            value = S.(fieldName);
+        end
+    catch
+    end
+end
+
+function value = localGetField(S, fieldName, defaultValue)
+    value = defaultValue;
+    try
+        if isstruct(S) && isfield(S, fieldName) && ~isempty(S.(fieldName))
+            value = S.(fieldName);
+        end
+    catch
+        value = defaultValue;
+    end
 end
 
 function items = localBuildNodeParamsList(nodeParams, selectedNodes, ref, hub)

@@ -3580,6 +3580,10 @@ classdef pipeline2 < matlab.apps.AppBase
                         createNewProjectFromDialog(app);
                     end
                 case 'rawDataPath'
+                    if runtimeStartsFromExistingProject(app)
+                        relinkProjectRawDataPaths(app);
+                        return;
+                    end
                     pth = uigetdir(pwd, 'Select raw data folder');
                     if isequal(pth, 0)
                         return;
@@ -3595,6 +3599,72 @@ classdef pipeline2 < matlab.apps.AppBase
                 case 'outputPolicy'
                     showOutputPolicyHelp(app);
             end
+        end
+
+        function relinkProjectRawDataPaths(app)
+            if isempty(app.CurrentProject) || ~isa(app.CurrentProject, 'shallow')
+                uialert(app.UIFigure, 'Load an existing shallow project before relinking raw data paths.', ...
+                    'Relink raw data', 'Icon', 'warning');
+                return;
+            end
+            startDir = pwd;
+            try
+                rawPath = strtrim(getRuntimeValue(app, 'rawDataPath'));
+                if ~isempty(rawPath) && exist(rawPath, 'dir') == 7
+                    startDir = rawPath;
+                else
+                    [pth, ~] = app.CurrentProject.getPath;
+                    if ~isempty(pth) && exist(pth, 'dir') == 7
+                        startDir = pth;
+                    end
+                end
+            catch
+            end
+            root = uigetdir(startDir, 'Select raw data root or dataset folder for relink');
+            if isequal(root, 0)
+                return;
+            end
+
+            d = [];
+            try
+                d = uiprogressdlg(app.UIFigure, 'Title', 'Relink raw data', ...
+                    'Message', 'Rebasing project FOV source paths...', 'Indeterminate', 'on');
+            catch
+            end
+            try
+                [app.CurrentProject, report] = detecdiv_paths_relink_project(app.CurrentProject, root, ...
+                    'Force', true, 'Debug', false);
+                okCount = 0;
+                changedCount = 0;
+                try
+                    okCount = sum([report.ok]);
+                    changedCount = sum(~strcmp({report.before}, {report.after}));
+                catch
+                end
+                if ~isempty(d), d.Message = 'Saving project after relink...'; end
+                shallowSave(app.CurrentProject, 'shallowObj');
+                rawPath = projectSourcePath(app, app.CurrentProject);
+                if isempty(rawPath)
+                    rawPath = char(string(root));
+                end
+                setRuntimeControlValue(app, 'rawDataPath', rawPath);
+                app.RuntimeValues.rawDataPath = rawPath;
+                app.RuntimeValues.rawDataPathActive = rawPath;
+                clearRuntimeDataSeriesCache(app);
+                updateRuntimeResourceInventory(app);
+                refreshValidationReport(app, false);
+                setRuntimeStatus(app, sprintf('Raw paths relinked: %d/%d entries ready, %d changed.', ...
+                    okCount, numel(report), changedCount));
+                try
+                    uialert(app.UIFigure, sprintf('Raw data paths relinked.\n\nReady entries: %d/%d\nChanged entries: %d', ...
+                        okCount, numel(report), changedCount), 'Relink raw data', 'Icon', 'success');
+                catch
+                end
+            catch ME
+                printExceptionToConsole(app, 'Raw data relink failed', ME);
+                uialert(app.UIFigure, ME.message, 'Relink raw data', 'Icon', 'error');
+            end
+            try, close(d); catch, end
         end
 
         function items = projectDropdownItems(app)
@@ -4787,12 +4857,35 @@ classdef pipeline2 < matlab.apps.AppBase
                     app.RuntimeFieldHandles.rawDataPath.Tooltip = tip;
                 catch
                 end
+                try
+                    app.RuntimeButtonHandles.rawDataPath.Text = 'Relink...';
+                    app.RuntimeButtonHandles.rawDataPath.Tooltip = 'Rebase saved project FOV raw-data paths without changing the pipeline input mode.';
+                catch
+                end
                 markRuntimeField(app, 'rawDataPath', 'blocked', tip);
+                setRuntimeButtonEnabled(app, 'rawDataPath', true);
+            elseif ~selectedRunHasNodeType(app, 'dataLoader')
+                markRuntimeField(app, 'rawDataPath', 'blocked', 'Raw-data mode requires a selected dataloader node.');
+                try
+                    app.RuntimeButtonHandles.rawDataPath.Text = 'Browse...';
+                    app.RuntimeButtonHandles.rawDataPath.Tooltip = 'Select a raw image/data folder. Available only for dataloader runs.';
+                catch
+                end
                 setRuntimeButtonEnabled(app, 'rawDataPath', false);
             elseif pipelineHasNodeType(app, 'dataLoader') && ~rawOk
                 markRuntimeField(app, 'rawDataPath', 'missing', 'Required when a dataloader run has no existing project input.');
+                try
+                    app.RuntimeButtonHandles.rawDataPath.Text = 'Browse...';
+                    app.RuntimeButtonHandles.rawDataPath.Tooltip = 'Select a raw image/data folder parsed by the dataloader.';
+                catch
+                end
                 setRuntimeButtonEnabled(app, 'rawDataPath', true);
             else
+                try
+                    app.RuntimeButtonHandles.rawDataPath.Text = 'Browse...';
+                    app.RuntimeButtonHandles.rawDataPath.Tooltip = 'Select a raw image/data folder parsed by the dataloader.';
+                catch
+                end
                 setRuntimeButtonEnabled(app, 'rawDataPath', true);
             end
 
@@ -10093,6 +10186,9 @@ classdef pipeline2 < matlab.apps.AppBase
                 (strcmpi(nodeType, 'processor') && ...
                 strcmpi(pkg, 'computemetrics') && ...
                 any(strcmpi(keyText, {'maskChannelCount','scoreChannelCount'}))) || ...
+                (strcmpi(nodeType, 'processor') && ...
+                strcmpi(pkg, 'computeRLS') && ...
+                strcmpi(keyText, 'AverageFluoByDivision')) || ...
                 (strcmpi(nodeType, 'classifier') && ...
                 strcmpi(pkg, 'cellposesam') && ...
                 strcmpi(keyText, 'outputType')) || ...
@@ -10210,7 +10306,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 case 'computerls'
                     keys = moduleSetparamKeys(app, pkg);
                     keys = removeBindingSelectorKeys(app, keys, node);
-                    keys = setdiff(keys, {'outputName','pkg','paramTooltip','tip'}, 'stable');
+                    keys = setdiff(keys, {'metrics_data','outputName','pkg','paramTooltip','tip'}, 'stable');
                 case 'computelineage'
                     keys = moduleSetparamKeys(app, pkg);
                     keys = removeBindingSelectorKeys(app, keys, node);
@@ -10959,7 +11055,11 @@ classdef pipeline2 < matlab.apps.AppBase
                         strjoin(rawStartNodeIds, ', ') '. Relink/save the project raw data or switch Input mode to "Parse raw images into project".']; %#ok<AGROW>
                     markRuntimeField(app, 'rawDataPath', 'missing', 'Raw-start nodes will use the selected project raw data link; none was found.');
                 end
-            elseif pipelineHasNodeType(app, 'dataLoader')
+            elseif ~selectedRunHasNodeType(app, 'dataLoader')
+                issues{end+1} = ['Input mode is "Parse raw images into project", but the selected run does not include a dataloader node. ' ...
+                    'Switch Input mode to "Read from existing project", or include a dataloader in the selected pipeline run.']; %#ok<AGROW>
+                markRuntimeField(app, 'rawDataPath', 'blocked', 'Raw-data mode requires a selected dataloader node.');
+            elseif selectedRunHasNodeType(app, 'dataLoader')
                 if isempty(rawDataPath)
                     issues{end+1} = 'Raw image folder is required when Input mode is Parse raw images into project.'; %#ok<AGROW>
                     markRuntimeField(app, 'rawDataPath', 'missing', 'Required when a dataloader run has no existing project input.');
@@ -13340,15 +13440,27 @@ classdef pipeline2 < matlab.apps.AppBase
         function hub = ensureHubSessionFromUi(app, hub)
             password = hubPasswordFromUi(app);
             hasToken = isfield(hub, 'sessionToken') && ~isempty(strtrim(char(string(hub.sessionToken))));
+            userKey = '';
+            if isfield(hub, 'userKey')
+                userKey = strtrim(char(string(hub.userKey)));
+            end
+            if hasToken
+                tokenUserKey = hubSessionUserKey(app, hub);
+                if isempty(userKey) || strcmpi(tokenUserKey, userKey)
+                    return;
+                end
+                hub.sessionToken = '';
+                hasToken = false;
+                if isfield(app.HubFieldHandles, 'sessionToken') && isvalid(app.HubFieldHandles.sessionToken)
+                    app.HubFieldHandles.sessionToken.Value = '';
+                end
+                setRuntimeStatus(app, sprintf('Hub session token belonged to %s; reconnect as %s.', tokenUserKey, userKey));
+            end
             if isempty(strtrim(password)) && ~hasToken
                 password = promptHubPassword(app, hub);
             end
             if isempty(strtrim(password))
                 return;
-            end
-            userKey = '';
-            if isfield(hub, 'userKey')
-                userKey = strtrim(char(string(hub.userKey)));
             end
             if isempty(userKey)
                 error('pipeline2:HubMissingUserKey', 'Hub user key is required for password login.');
@@ -13359,6 +13471,19 @@ classdef pipeline2 < matlab.apps.AppBase
                 app.HubFieldHandles.sessionToken.Value = char(string(hub.sessionToken));
             end
             setHubPasswordValue(app, '');
+        end
+
+        function userKey = hubSessionUserKey(app, hub) %#ok<INUSD>
+            userKey = '';
+            session = detecdiv_hub_request('GET', '/auth/session', [], hub);
+            try
+                if isstruct(session) && isfield(session, 'user') && isstruct(session.user) && ...
+                        isfield(session.user, 'user_key') && ~isempty(session.user.user_key)
+                    userKey = char(string(session.user.user_key));
+                end
+            catch
+                userKey = '';
+            end
         end
 
         function password = promptHubPassword(app, hub)
