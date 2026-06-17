@@ -118,9 +118,8 @@ if strcmp(seltype,'normal') & isgraphics(app.SelectedObjectRectangle)
     end
 end
 
-%% --- Peinture (seulement pour 'normal' ou 'extend') ---
-if ~(strcmp(seltype,'normal') || strcmp(seltype,'extend'))
-    % pas de peinture pour 'alt' (clic droit) ou autres
+%% --- Peinture (left / middle / right, shift+left erases) ---
+if ~(strcmp(seltype,'normal') || strcmp(seltype,'extend') || strcmp(seltype,'alt'))
     return;
 end
 
@@ -144,16 +143,18 @@ src.WindowButtonUpFcn     = @wbucb;
         % Modifiers robustes
         mods = get(src,'CurrentModifier');         % {} ou cellstr
         isShift   = iscell(mods) && any(strcmp(mods,'shift'));
-        isControl = iscell(mods) && any(strcmp(mods,'control'));
 
 
+        brushSettings = getBrushSettings(app);
         % Taille/Mode pinceau
-        if strcmp(seltype,'extend') || isShift
-            brushRadius = 4;   % pinceau large
-        elseif isControl
-            brushRadius = 1;   % fin
+        if isShift
+            brushRadius = brushSettings.eraserRadius;
+        elseif strcmp(seltype,'extend')
+            brushRadius = brushSettings.middleRadius;
+        elseif strcmp(seltype,'alt')
+            brushRadius = brushSettings.rightRadius;
         else
-            brushRadius = 2;   % défaut
+            brushRadius = brushSettings.leftRadius;
         end
 
         brushMask = createDiskBrush(brushRadius);
@@ -179,7 +180,7 @@ src.WindowButtonUpFcn     = @wbucb;
 
  % ================== init du trait ==================
 if isempty(paintValue_locked)
-    if isShift || isControl
+    if isShift
         paintValue_locked = 0;            % gomme
         paintColor_locked = [0 0 0];
     else
@@ -202,8 +203,8 @@ end
 paintValue = paintValue_locked;
 paintColor = paintColor_locked;
 
-% gomme temporaire si Shift/Ctrl maintenu
-if isShift || isControl
+% gomme temporaire si Shift+left maintenu
+if isShift
     paintValue = 0;
     paintColor = [0 0 0];
 end
@@ -275,6 +276,93 @@ sz = 2*radius + 1;
 [X,Y] = meshgrid(1:sz,1:sz);
 center = radius + 1;
 brush = ( (X-center).^2 + (Y-center).^2 ) <= radius^2;
+end
+
+function brushSettings = getBrushSettings(app)
+brushSettings = struct('leftRadius', 7, 'middleRadius', 13, 'rightRadius', 4, 'eraserRadius', 7);
+
+try
+    if isprop(app, 'DisplaySettings') && isstruct(app.DisplaySettings) && ...
+            isfield(app.DisplaySettings, 'Paint') && isstruct(app.DisplaySettings.Paint)
+        brushSettings = localMergeBrushSettings(brushSettings, app.DisplaySettings.Paint);
+        return;
+    end
+catch
+end
+
+try
+    userprefs = detecdiv_prefs_load();
+    if isfield(userprefs, 'painting_left_brush_radius')
+        brushSettings.leftRadius = userprefs.painting_left_brush_radius;
+    elseif isfield(userprefs, 'painting_normal_brush_radius')
+        brushSettings.leftRadius = userprefs.painting_normal_brush_radius;
+    elseif isfield(userprefs, 'painting_large_brush_size')
+        brushSettings.leftRadius = sqrt(double(userprefs.painting_large_brush_size));
+    end
+
+    if isfield(userprefs, 'painting_middle_brush_radius')
+        brushSettings.middleRadius = userprefs.painting_middle_brush_radius;
+    elseif isfield(userprefs, 'painting_huge_brush_radius')
+        brushSettings.middleRadius = userprefs.painting_huge_brush_radius;
+    elseif isfield(userprefs, 'painting_huge_brush_size')
+        brushSettings.middleRadius = sqrt(double(userprefs.painting_huge_brush_size));
+    end
+
+    if isfield(userprefs, 'painting_right_brush_radius')
+        brushSettings.rightRadius = userprefs.painting_right_brush_radius;
+    elseif isfield(userprefs, 'painting_large_brush_radius')
+        brushSettings.rightRadius = userprefs.painting_large_brush_radius;
+    end
+
+    if isfield(userprefs, 'painting_eraser_brush_radius')
+        brushSettings.eraserRadius = userprefs.painting_eraser_brush_radius;
+    elseif isfield(userprefs, 'painting_fine_brush_radius')
+        brushSettings.eraserRadius = userprefs.painting_fine_brush_radius;
+    elseif isfield(userprefs, 'painting_small_brush_size')
+        brushSettings.eraserRadius = sqrt(double(userprefs.painting_small_brush_size));
+    end
+catch
+end
+
+brushSettings = localSanitizeBrushSettings(brushSettings);
+end
+
+function out = localMergeBrushSettings(out, in)
+keys = {'leftRadius', 'middleRadius', 'rightRadius', 'eraserRadius', ...
+    'normalRadius', 'fineRadius', 'largeRadius'};
+for k = 1:numel(keys)
+    if isfield(in, keys{k}) && ~isempty(in.(keys{k}))
+        switch keys{k}
+            case 'normalRadius'
+                out.leftRadius = in.(keys{k});
+            case 'fineRadius'
+                out.eraserRadius = in.(keys{k});
+            case 'largeRadius'
+                out.rightRadius = in.(keys{k});
+            otherwise
+                out.(keys{k}) = in.(keys{k});
+        end
+    end
+end
+out = localSanitizeBrushSettings(out);
+end
+
+function out = localSanitizeBrushSettings(out)
+out.leftRadius = localBrushRadius(out.leftRadius, 7);
+out.middleRadius = localBrushRadius(out.middleRadius, 13);
+out.rightRadius = localBrushRadius(out.rightRadius, 4);
+out.eraserRadius = localBrushRadius(out.eraserRadius, 7);
+end
+
+function r = localBrushRadius(value, fallback)
+r = fallback;
+try
+    value = double(value);
+    if isfinite(value) && value > 0
+        r = min(50, max(1, round(value)));
+    end
+catch
+end
 end
 
 function displaySelectedObject(app, roi, channelIdx, pix, frm, axOverlay, hOverlayImg, xinit, yinit)
