@@ -8676,6 +8676,11 @@ classdef pipeline2 < matlab.apps.AppBase
                 return;
             end
 
+            if isInput && isempty(value) && strcmpi(char(string(getField(app, spec, 'type', ''))), 'dataSeriesVariable')
+                value = 'auto';
+                return;
+            end
+
             if ~isInput && isempty(value)
                 value = char(string(getField(app, node, 'id', '')));
             end
@@ -8921,6 +8926,8 @@ classdef pipeline2 < matlab.apps.AppBase
                 choices = runtimeMaskChoices(app);
             elseif strcmp(type, 'dataseries')
                 choices = runtimeDataSeriesChoices(app, role);
+            elseif strcmp(type, 'dataseriesvariable')
+                choices = runtimeDataSeriesVariableChoices(app);
             end
         end
 
@@ -9101,6 +9108,119 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
             catch
                 names = {};
+            end
+        end
+
+        function names = runtimeDataSeriesVariableNames(app, dataSeriesSelector)
+            names = {};
+            selectorText = strtrim(char(string(dataSeriesSelector)));
+            try
+                [roiList, ~] = runtimeSampledRoisForDataSeries(app);
+                if isempty(roiList)
+                    return;
+                end
+                maxRoi = min(numel(roiList), 12);
+                for r = 1:maxRoi
+                    roiObj = roiList(r);
+                    try
+                        roiObj.load('data', 'silent');
+                    catch
+                    end
+                    if ~isprop(roiObj, 'data') || isempty(roiObj.data)
+                        continue;
+                    end
+                    ds = roiObj.data;
+                    for i = 1:numel(ds)
+                        dsName = dataSeriesDisplayName(app, ds(i));
+                        if ~dataSeriesSelectorMatches(app, dsName, selectorText)
+                            continue;
+                        end
+                        try
+                            tbl = ds(i).data;
+                        catch
+                            tbl = [];
+                        end
+                        if ~istable(tbl) || isempty(tbl.Properties.VariableNames)
+                            continue;
+                        end
+                        vars = tbl.Properties.VariableNames;
+                        keep = false(1, numel(vars));
+                        for k = 1:numel(vars)
+                            col = tbl.(vars{k});
+                            keep(k) = isnumeric(col) || islogical(col) || iscell(col);
+                        end
+                        names = [names vars(keep)]; %#ok<AGROW>
+                    end
+                    names = unique(names(~cellfun(@isempty, names)), 'stable');
+                    if ~isempty(names)
+                        return;
+                    end
+                end
+            catch
+                names = {};
+            end
+        end
+
+        function tf = dataSeriesSelectorMatches(app, dsName, selectorText) %#ok<INUSD>
+            dsName = strtrim(char(string(dsName)));
+            selectorText = strtrim(char(string(selectorText)));
+            if isempty(dsName)
+                tf = false;
+                return;
+            end
+            if isempty(selectorText) || any(strcmp(selectorText, {'<unconfigured>','<unresolved>'}))
+                tf = true;
+                return;
+            end
+            tf = strcmp(dsName, selectorText) || contains(selectorText, ['/' dsName]) || contains(selectorText, [' ' dsName]) || contains(selectorText, dsName);
+        end
+
+        function choices = runtimeDataSeriesVariableChoices(app)
+            choices = {'auto'};
+            try
+                [roiList, ~] = runtimeSampledRoisForDataSeries(app);
+                if isempty(roiList)
+                    return;
+                end
+                maxRoi = min(numel(roiList), 12);
+                for r = 1:maxRoi
+                    roiObj = roiList(r);
+                    try
+                        roiObj.load('data', 'silent');
+                    catch
+                    end
+                    if ~isprop(roiObj, 'data') || isempty(roiObj.data)
+                        continue;
+                    end
+                    ds = roiObj.data;
+                    for i = 1:numel(ds)
+                        dsName = dataSeriesDisplayName(app, ds(i));
+                        if isempty(dsName)
+                            continue;
+                        end
+                        try
+                            tbl = ds(i).data;
+                        catch
+                            tbl = [];
+                        end
+                        if ~istable(tbl) || isempty(tbl.Properties.VariableNames)
+                            continue;
+                        end
+                        vars = tbl.Properties.VariableNames;
+                        for k = 1:numel(vars)
+                            col = tbl.(vars{k});
+                            if isnumeric(col) || islogical(col) || iscell(col)
+                                choices{end+1} = [dsName ' / ' vars{k}]; %#ok<AGROW>
+                            end
+                        end
+                    end
+                    choices = unique(choices(~cellfun(@isempty, choices)), 'stable');
+                    if numel(choices) > 1
+                        return;
+                    end
+                end
+            catch
+                choices = {'auto'};
             end
         end
 
@@ -10122,6 +10242,23 @@ classdef pipeline2 < matlab.apps.AppBase
                     pkg = lower(char(string(getField(app, node, 'pkg', ''))));
                     if strcmp(pkg, 'computerls') && strcmp(keyLower, 'statedecoder')
                         choices = {'off','viterbi','median'};
+                    elseif strcmp(pkg, 'singlecelloscillations')
+                        switch keyLower
+                            case 'baselinemethod'
+                                choices = {'moving_mean','moving_median','none'};
+                            case 'baselineendpoints'
+                                choices = {'discard','shrink','fill'};
+                            case 'fluorescencevariable'
+                                p = getField(app, node, 'params', struct());
+                                selector = '';
+                                if isstruct(p) && isfield(p, 'fluorescence_data') && ~isempty(p.fluorescence_data)
+                                    selector = choiceScalarText(app, p.fluorescence_data);
+                                end
+                                vars = runtimeDataSeriesVariableNames(app, selector);
+                                if ~isempty(vars)
+                                    choices = [{'auto'} vars];
+                                end
+                        end
                     end
             end
         end
@@ -10264,11 +10401,14 @@ classdef pipeline2 < matlab.apps.AppBase
             keys = unique(keys(~cellfun(@isempty, keys)), 'stable');
             keys = filterParamsByAdvancedMode(app, node, keys);
             p = getField(app, node, 'params', struct());
+            defaults = defaultNodeParams(app, getField(app, node, 'type', ''), getField(app, node, 'pkg', ''));
             data = cell(numel(keys), 2);
             for i = 1:numel(keys)
                 data{i,1} = keys{i};
                 if isstruct(p) && isfield(p, keys{i})
                     data{i,2} = paramValueToDisplay(app, node, keys{i}, p.(keys{i}));
+                elseif isstruct(defaults) && isfield(defaults, keys{i})
+                    data{i,2} = paramValueToDisplay(app, node, keys{i}, defaults.(keys{i}));
                 else
                     data{i,2} = '';
                 end

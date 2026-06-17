@@ -41,7 +41,7 @@ end
 signalDs = localPickDataSeries(roiobj.data, paramout.fluorescence_data);
 
 labels = localExtractLabels(classDs, paramout.labelColumn);
-signal = localExtractSignal(signalDs, paramout.fluorescenceColumn, paramout.cellValueReducer);
+signal = localExtractSignal(signalDs, paramout.fluorescenceVariable, paramout.cellIndex);
 
 if isempty(labels) && isempty(signal)
     dataout = buildFallbackOutput(roiobj, paramout);
@@ -110,31 +110,58 @@ if isempty(paramout.classification_data), paramout.classification_data = {'div_1
 if isempty(paramout.fluorescence_data), paramout.fluorescence_data = {'channel_quantification'}; end
 paramout.classification_data = localSelectionCell(paramout.classification_data);
 paramout.fluorescence_data = localSelectionCell(paramout.fluorescence_data);
-paramout.labelColumn = char(string(paramout.labelColumn));
-paramout.fluorescenceColumn = char(string(paramout.fluorescenceColumn));
-paramout.cellValueReducer = lower(char(string(paramout.cellValueReducer)));
+paramout.labelColumn = localLegacyText(paramout, 'labelColumn', 'labels');
+paramout.fluorescenceVariable = localFluorescenceVariableParam(paramout);
+paramout.cellIndex = max(1, round(localNumericScalar(localLegacyValue(paramout, 'cellIndex', 1), 1)));
 paramout.baselineMethod = lower(char(string(paramout.baselineMethod)));
 paramout.baselineEndpoints = lower(char(string(paramout.baselineEndpoints)));
-paramout.cycleBoundaryMode = lower(char(string(paramout.cycleBoundaryMode)));
-paramout.transitionFrom = char(string(paramout.transitionFrom));
-paramout.transitionTo = char(string(paramout.transitionTo));
-paramout.interpolationMethod = char(string(paramout.interpolationMethod));
 paramout.traceOutputName = char(string(paramout.traceOutputName));
 paramout.normalizedCyclesOutputName = char(string(paramout.normalizedCyclesOutputName));
 paramout.cycleMetadataOutputName = char(string(paramout.cycleMetadataOutputName));
 paramout.workbookName = char(string(paramout.workbookName));
 paramout.outputDir = char(string(paramout.outputDir));
-paramout.runId = char(string(paramout.runId));
-paramout.verbose = logical(paramout.verbose);
 paramout.writeArtifacts = logical(paramout.writeArtifacts);
 paramout.allowExtrapolation = logical(paramout.allowExtrapolation);
 paramout.framePeriod = localNumericScalar(paramout.framePeriod, 1);
 paramout.baselineWindow = max(1, round(localNumericScalar(paramout.baselineWindow, 50)));
 paramout.minCycleLength = max(1, round(localNumericScalar(paramout.minCycleLength, 1)));
-paramout.maxCycleLength = max(paramout.minCycleLength, round(localNumericScalar(paramout.maxCycleLength, 200)));
 paramout.normFrames = max(2, round(localNumericScalar(paramout.normFrames, 100)));
 paramout.frameStart = localOptionalFrame(paramout.frameStart);
 paramout.frameEnd = localOptionalFrame(paramout.frameEnd);
+end
+
+function value = localFluorescenceVariableParam(paramout)
+value = localLegacyText(paramout, 'fluorescenceVariable', '');
+if isempty(strtrim(value))
+    value = localLegacyText(paramout, 'fluorescenceColumn', '');
+end
+value = localVariableNameFromBindingLabel(value);
+end
+
+function value = localVariableNameFromBindingLabel(value)
+value = strtrim(char(string(value)));
+if isempty(value) || strcmpi(value, 'auto')
+    value = '';
+    return;
+end
+parts = regexp(value, '\s*/\s*', 'split');
+if numel(parts) >= 2
+    value = strtrim(parts{end});
+end
+end
+
+function value = localLegacyText(s, fieldName, fallback)
+value = fallback;
+if isstruct(s) && isfield(s, fieldName) && ~isempty(s.(fieldName))
+    value = char(string(s.(fieldName)));
+end
+end
+
+function value = localLegacyValue(s, fieldName, fallback)
+value = fallback;
+if isstruct(s) && isfield(s, fieldName) && ~isempty(s.(fieldName))
+    value = s.(fieldName);
+end
 end
 
 function series = buildSeries(tbl, groupid, parentid, groups, plotFlags, roleNames, typeName)
@@ -331,7 +358,7 @@ end
 labels = labels(:);
 end
 
-function signal = localExtractSignal(ds, columnName, reducerName)
+function signal = localExtractSignal(ds, variableName, cellIndex)
 signal = [];
 if isempty(ds) || isempty(ds.data)
     return;
@@ -342,7 +369,8 @@ if ~istable(tbl) || isempty(tbl.Properties.VariableNames)
     return;
 end
 
-if isempty(columnName) || ~ismember(columnName, tbl.Properties.VariableNames)
+variableName = char(string(variableName));
+if isempty(variableName) || ~ismember(variableName, tbl.Properties.VariableNames)
     numericVars = false(1, width(tbl));
     for i = 1:width(tbl)
         col = tbl.(tbl.Properties.VariableNames{i});
@@ -352,32 +380,30 @@ if isempty(columnName) || ~ismember(columnName, tbl.Properties.VariableNames)
     if isempty(idx)
         return;
     end
-    columnName = tbl.Properties.VariableNames{idx};
+    variableName = tbl.Properties.VariableNames{idx};
 end
 
-signal = localFlattenSignal(tbl.(columnName), reducerName);
+signal = localSelectSignalIndex(tbl.(variableName), cellIndex);
 signal = double(signal);
 if isvector(signal)
     signal = signal(:);
 end
 end
 
-function signal = localFlattenSignal(value, reducerName)
-if strcmpi(char(string(reducerName)), 'all') || strcmpi(char(string(reducerName)), 'per_index')
-    signal = localValueCellsToMatrix(value);
-    return;
-end
-
+function signal = localSelectSignalIndex(value, cellIndex)
+cellIndex = max(1, round(localNumericScalar(cellIndex, 1)));
 if isnumeric(value) || islogical(value)
     if isvector(value)
         signal = double(value(:));
     elseif size(value, 1) >= size(value, 2)
-        signal = localReduceMatrix(double(value), reducerName);
+        mat = double(value);
+        signal = mat(:, min(cellIndex, size(mat, 2)));
     else
-        signal = localReduceMatrix(double(value).', reducerName);
+        mat = double(value).';
+        signal = mat(:, min(cellIndex, size(mat, 2)));
     end
 elseif iscell(value)
-    signal = cellfun(@(x) localReduceScalarLike(x, reducerName), value(:));
+    signal = cellfun(@(x) localSelectScalarLike(x, cellIndex), value(:));
 else
     try
         signal = double(value(:));
@@ -387,78 +413,7 @@ else
 end
 end
 
-function mat = localValueCellsToMatrix(value)
-if isnumeric(value) || islogical(value)
-    mat = double(value);
-    if isvector(mat)
-        mat = mat(:);
-    elseif size(mat, 1) < size(mat, 2)
-        mat = mat.';
-    end
-    return;
-end
-
-if ~iscell(value)
-    try
-        mat = double(value);
-        if isvector(mat)
-            mat = mat(:);
-        end
-    catch
-        mat = [];
-    end
-    return;
-end
-
-value = value(:);
-nFrames = numel(value);
-widths = zeros(nFrames, 1);
-for i = 1:nFrames
-    widths(i) = numel(value{i});
-end
-nValues = max(widths);
-if isempty(nValues) || nValues < 1
-    mat = nan(nFrames, 1);
-    return;
-end
-
-mat = nan(nFrames, nValues);
-for i = 1:nFrames
-    if isempty(value{i})
-        continue;
-    end
-    try
-        row = double(value{i}(:)).';
-        mat(i, 1:numel(row)) = row;
-    catch
-    end
-end
-end
-
-function out = localReduceMatrix(mat, reducerName)
-if isempty(mat)
-    out = [];
-    return;
-end
-if size(mat, 2) == 1
-    out = mat(:);
-    return;
-end
-switch lower(reducerName)
-    case {'median','med'}
-        out = median(mat, 2, 'omitnan');
-    case {'first'}
-        out = mat(:,1);
-    case {'max'}
-        out = max(mat, [], 2, 'omitnan');
-    case {'min'}
-        out = min(mat, [], 2, 'omitnan');
-    otherwise
-        out = mean(mat, 2, 'omitnan');
-end
-end
-
-function out = localReduceScalarLike(value, reducerName)
+function out = localSelectScalarLike(value, cellIndex)
 if isempty(value)
     out = NaN;
     return;
@@ -469,21 +424,10 @@ if isnumeric(value) || islogical(value)
         out = NaN;
         return;
     end
-    switch lower(reducerName)
-        case {'median','med'}
-            out = median(vec, 'omitnan');
-        case {'first'}
-            out = vec(1);
-        case {'max'}
-            out = max(vec, [], 'omitnan');
-        case {'min'}
-            out = min(vec, [], 'omitnan');
-        otherwise
-            out = mean(vec, 'omitnan');
-    end
+    out = vec(min(cellIndex, numel(vec)));
 else
     try
-        out = localReduceScalarLike(double(value), reducerName);
+        out = localSelectScalarLike(double(value), cellIndex);
     catch
         out = NaN;
     end
@@ -573,13 +517,10 @@ if numel(labels) <= 1
     return;
 end
 
-boundaryPos = [];
-if strcmpi(param.cycleBoundaryMode, 'label_transition')
-    fromLab = lower(string(param.transitionFrom));
-    toLab = lower(string(param.transitionTo));
-    isBoundary = lower(labels(1:end-1)) == fromLab & lower(labels(2:end)) == toLab;
-    boundaryPos = find(isBoundary);
-end
+previousLabels = lower(labels(1:end-1));
+nextLabels = lower(labels(2:end));
+isBoundary = ismember(previousLabels, ["large","unbud","unbudded"]) & nextLabels == "small";
+boundaryPos = find(isBoundary);
 
 if isempty(boundaryPos)
     cycles = struct('startPos',1,'endPos',numel(labels),'startFrame',frameIdx(1),'endFrame',frameIdx(end),'startLabel',labels(1),'endLabel',labels(end));
@@ -685,9 +626,9 @@ for i = 1:nCycles
             xi = linspace(1, numel(seg), nPoints);
             try
                 if param.allowExtrapolation
-                    normMatrix(row,:) = interp1(x, seg, xi, param.interpolationMethod, 'extrap');
+                    normMatrix(row,:) = interp1(x, seg, xi, 'linear', 'extrap');
                 else
-                    normMatrix(row,:) = interp1(x, seg, xi, param.interpolationMethod, NaN);
+                    normMatrix(row,:) = interp1(x, seg, xi, 'linear', NaN);
                 end
             catch
                 normMatrix(row,:) = interp1(x, seg, xi, 'linear', 'extrap');
