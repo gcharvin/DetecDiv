@@ -5311,14 +5311,14 @@ classdef pipeline2 < matlab.apps.AppBase
                 if isRoiExtractNode
                     rowHeights = [rowHeights {24, 210}]; %#ok<AGROW>
                 else
-                    rowHeights = [rowHeights {24, min(160, 42 + 34 * size(bindingData, 1))}]; %#ok<AGROW>
+                    rowHeights = [rowHeights {24, min(280, 36 + 34 * size(bindingData, 1))}]; %#ok<AGROW>
                 end
             end
             if showRuntime
                 rowHeights = [rowHeights {24, '1x'}]; %#ok<AGROW>
             end
             if showStatic
-                rowHeights = [rowHeights {34}]; %#ok<AGROW>
+                rowHeights = [rowHeights {26}]; %#ok<AGROW>
             end
             grid.RowHeight = rowHeights;
             grid.ColumnWidth = {'1x'};
@@ -5369,8 +5369,8 @@ classdef pipeline2 < matlab.apps.AppBase
 
             if showStatic
                 staticPanel = uigridlayout(grid, [1 3]);
-                staticPanel.ColumnWidth = {160, '1x', 180};
-                staticPanel.RowHeight = {28};
+                staticPanel.ColumnWidth = {150, '1x', 170};
+                staticPanel.RowHeight = {24};
                 staticPanel.Padding = [0 0 0 0];
                 staticPanel.ColumnSpacing = 8;
                 staticPanel.Layout.Row = row;
@@ -9144,12 +9144,7 @@ classdef pipeline2 < matlab.apps.AppBase
                             continue;
                         end
                         vars = tbl.Properties.VariableNames;
-                        keep = false(1, numel(vars));
-                        for k = 1:numel(vars)
-                            col = tbl.(vars{k});
-                            keep(k) = isnumeric(col) || islogical(col) || iscell(col);
-                        end
-                        names = [names vars(keep)]; %#ok<AGROW>
+                        names = [names vars]; %#ok<AGROW>
                     end
                     names = unique(names(~cellfun(@isempty, names)), 'stable');
                     if ~isempty(names)
@@ -9208,10 +9203,7 @@ classdef pipeline2 < matlab.apps.AppBase
                         end
                         vars = tbl.Properties.VariableNames;
                         for k = 1:numel(vars)
-                            col = tbl.(vars{k});
-                            if isnumeric(col) || islogical(col) || iscell(col)
-                                choices{end+1} = [dsName ' / ' vars{k}]; %#ok<AGROW>
-                            end
+                            choices{end+1} = [dsName ' / ' vars{k}]; %#ok<AGROW>
                         end
                     end
                     choices = unique(choices(~cellfun(@isempty, choices)), 'stable');
@@ -10526,6 +10518,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 otherwise
                     keys = moduleSetparamKeys(app, pkg);
                     keys = removeBindingSelectorKeys(app, keys, node);
+                    keys = removeResourceOutputNameKeys(app, keys, node);
                     keys = setdiff(keys, {'outputName','outputChannelName','existingPolicy','pkg','paramTooltip','tip'}, 'stable');
             end
         end
@@ -10547,6 +10540,33 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             if ~isempty(selectorKeys)
                 keys = setdiff(keys, selectorKeys, 'stable');
+            end
+        end
+
+        function keys = removeResourceOutputNameKeys(app, keys, node) %#ok<INUSD>
+            try
+                contract = pipelineNodeContract(node);
+            catch
+                contract = struct();
+            end
+            outputKeys = {};
+            try
+                resources = getField(app, contract, 'resources', struct());
+                outputs = getField(app, resources, 'out', struct([]));
+                for i = 1:numel(outputs)
+                    nameParam = char(string(getField(app, outputs(i), 'nameParam', '')));
+                    param = char(string(getField(app, outputs(i), 'param', '')));
+                    if ~isempty(nameParam)
+                        outputKeys{end+1} = nameParam; %#ok<AGROW>
+                    elseif ~isempty(param)
+                        outputKeys{end+1} = param; %#ok<AGROW>
+                    end
+                end
+            catch
+                outputKeys = {};
+            end
+            if ~isempty(outputKeys)
+                keys = setdiff(keys, unique(outputKeys, 'stable'), 'stable');
             end
         end
 
