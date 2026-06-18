@@ -809,26 +809,38 @@ end
                 %   aa=classiObj.outputFun
                 %   class(aa)
                 app.PostprocessingDropDown.Enable='on';
-                if numel(classiObj.outputType)
-                    outputstr=classiObj.outputType;
+                if usesExecutionSpecOutputType(app, classiObj)
+                    app.PostprocessingDropDownLabel.Text = 'Output resource';
+                    app.PostprocessingDropDown.Items = getExecutionSpecOutputChoices(app, classiObj);
+                    outputstr = normalizeExecutionSpecOutputType(app, classiObj.outputType);
+                    if isempty(outputstr)
+                        outputstr = getExecutionSpecDefaultOutputType(app, classiObj);
+                        classiObj.outputType = outputstr;
+                    end
                 else
-                    outputstr='proba';
-                end
-                %  outputstr
+                    app.PostprocessingDropDownLabel.Text = 'Post-processing';
+                    app.PostprocessingDropDown.Items = {'plain output / probabilities for each class', 'plain output / semantic segmentation', 'postprocessing', 'custom function (see below)'};
+                    if numel(classiObj.outputType)
+                        outputstr=classiObj.outputType;
+                    else
+                        outputstr='proba';
+                    end
+                    %  outputstr
 
-                switch outputstr
-                    case 'proba'
-                        outputstr='plain output / probabilities for each class';
-                    case 'segmentation'
-                        outputstr='plain output / semantic segmentation';
-                    case 'postprocessing'
-                        if ischar(classiObj.outputFun)
-                            if strcmp(classiObj.outputFun,'post')
-                                outputstr='postprocessing';
-                            else
-                                outputstr='custom function (see below)';
+                    switch outputstr
+                        case 'proba'
+                            outputstr='plain output / probabilities for each class';
+                        case 'segmentation'
+                            outputstr='plain output / semantic segmentation';
+                        case 'postprocessing'
+                            if ischar(classiObj.outputFun)
+                                if strcmp(classiObj.outputFun,'post')
+                                    outputstr='postprocessing';
+                                else
+                                    outputstr='custom function (see below)';
+                                end
                             end
-                        end
+                    end
                 end
 
                 app.PostprocessingDropDown.Value=outputstr;
@@ -1329,6 +1341,123 @@ app.NumberofannotatedROIsEditField.Value='Not available'; % need to load every s
  
         end
         end
+
+        function tf = isCellposeSAMClassifier(app, classiObj) %#ok<INUSD>
+            tf = false;
+            try
+                if isprop(classiObj, 'classifierPkg') && ...
+                        strcmpi(char(string(classiObj.classifierPkg)), 'cellposesam')
+                    tf = true;
+                    return;
+                end
+            catch
+            end
+            try
+                if isprop(classiObj, 'classifyFun') && ...
+                        any(strcmpi(char(string(classiObj.classifyFun)), {'classifyCPSAMFun','cellposesam.classify'}))
+                    tf = true;
+                    return;
+                end
+            catch
+            end
+            try
+                if isprop(classiObj, 'description') && ~isempty(classiObj.description)
+                    desc = lower(string(classiObj.description));
+                    tf = any(contains(desc, 'cellpose'));
+                end
+            catch
+                tf = false;
+            end
+        end
+
+        function tf = usesExecutionSpecOutputType(app, classiObj) %#ok<INUSD>
+            pkg = resolveClassifierPackageForOutput(app, classiObj);
+            tf = any(strcmp(pkg, {'cellposesam','deeplab_pixel_classification'}));
+        end
+
+        function pkg = resolveClassifierPackageForOutput(app, classiObj) %#ok<INUSD>
+            pkg = '';
+            try
+                if isprop(classiObj, 'classifierPkg') && ~isempty(classiObj.classifierPkg)
+                    pkg = lower(strtrim(char(string(classiObj.classifierPkg))));
+                    return;
+                end
+            catch
+            end
+            try
+                if isprop(classiObj, 'classifyFun') && ~isempty(classiObj.classifyFun)
+                    f = char(string(classiObj.classifyFun));
+                    dot = strfind(f, '.');
+                    if ~isempty(dot)
+                        pkg = lower(strtrim(f(1:dot(1)-1)));
+                        return;
+                    elseif strcmpi(f, 'classifyCPSAMFun')
+                        pkg = 'cellposesam';
+                        return;
+                    end
+                end
+            catch
+            end
+            try
+                if isprop(classiObj, 'description') && ~isempty(classiObj.description)
+                    desc = lower(string(classiObj.description));
+                    if any(contains(desc, 'cellpose'))
+                        pkg = 'cellposesam';
+                    elseif any(contains(desc, 'deeplab'))
+                        pkg = 'deeplab_pixel_classification';
+                    end
+                end
+            catch
+                pkg = '';
+            end
+        end
+
+        function choices = getExecutionSpecOutputChoices(app, classiObj)
+            choices = {'segmentation','probability','both'};
+            pkg = resolveClassifierPackageForOutput(app, classiObj);
+            try
+                spec = feval([pkg '.executionSpec'], classiObj);
+                if isfield(spec, 'choices') && isfield(spec.choices, 'outputType') && ~isempty(spec.choices.outputType)
+                    choices = spec.choices.outputType;
+                end
+            catch
+            end
+        end
+
+        function outputType = getExecutionSpecDefaultOutputType(app, classiObj)
+            outputType = 'segmentation';
+            pkg = resolveClassifierPackageForOutput(app, classiObj);
+            try
+                spec = feval([pkg '.executionSpec'], classiObj);
+                if isfield(spec, 'defaults') && isfield(spec.defaults, 'outputType') && ~isempty(spec.defaults.outputType)
+                    outputType = normalizeExecutionSpecOutputType(app, spec.defaults.outputType);
+                end
+            catch
+            end
+            if isempty(outputType)
+                outputType = 'segmentation';
+            end
+        end
+
+        function outputType = normalizeExecutionSpecOutputType(app, value) %#ok<INUSD>
+            outputType = lower(strtrim(char(string(value))));
+            outputType = strrep(outputType, '-', '_');
+            outputType = strrep(outputType, ' ', '_');
+            switch outputType
+                case {'proba','probabilities','probability_map'}
+                    outputType = 'probability';
+                case {'seg','mask','masks','semantic','semantic_segmentation','postprocessing'}
+                    outputType = 'segmentation';
+                case {'segmentation','probability','both'}
+                    % already normalized
+                otherwise
+                    if isempty(outputType)
+                        outputType = '';
+                    else
+                        outputType = 'segmentation';
+                    end
+            end
+        end
     end
 
 
@@ -1701,6 +1830,17 @@ end
             if app.isRefreshing, return; end
 
             value = app.PostprocessingDropDown.Value;
+            if usesExecutionSpecOutputType(app, app.Data.classiObj)
+                app.Data.classiObj.outputType = normalizeExecutionSpecOutputType(app, value);
+                app.Data.classiObj.outputFun='';
+                app.Data.classiObj.outputArg={};
+                app.PostprocessingcustomfunctionhandleEditField.Enable='off';
+                app.PostprocessingcustomfunctionhandleEditField.Value='';
+                checkStatus(app,false)
+                displayClassi(app);
+                return;
+            end
+
             pix=find(contains(app.PostprocessingDropDown.Items,value));
 
             switch pix

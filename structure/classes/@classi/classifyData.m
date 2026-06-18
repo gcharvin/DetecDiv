@@ -615,10 +615,12 @@ function ROIpreprocessing(roiobj, classif, outputName)
     % --- Detect instance segmentation types
     isCPSAM = false;
 
-    if isprop(classif,'classifyFun') && strcmp(classif.classifyFun,'classifyCPSAMFun')
+    if isprop(classif,'classifierPkg') && strcmpi(char(string(classif.classifierPkg)), 'cellposesam')
+        isCPSAM = true;
+    elseif isprop(classif,'classifyFun') && any(strcmpi(char(string(classif.classifyFun)), {'classifyCPSAMFun','cellposesam.classify'}))
         isCPSAM = true;
     elseif isprop(classif,'description') && ~isempty(classif.description)
-        isCPSAM = any(strcmp(classif.description, 'CellposeSAM'));
+        isCPSAM = any(contains(lower(string(classif.description)), 'cellpose'));
     end
 
     isInstanceSeg = (strcmp(classif.description{1}, 'YOLO instance segmentation') || ...
@@ -634,7 +636,7 @@ function ROIpreprocessing(roiobj, classif, outputName)
             ensureResultChannel(roiobj, chname, rgb, intensity, indexedFlag, nY, nX, nF);
         end
 
-        if isCPSAM && isprop(classif,'outputType') && strcmp(classif.outputType, 'proba')
+        if isCPSAM && localClassiWantsProbabilityOutput(classif)
             chNameProba = [char(outputName) '_cellprob'];
             pixproba = findChannelID(roiobj, chNameProba);
             if isempty(pixproba)
@@ -643,6 +645,12 @@ function ROIpreprocessing(roiobj, classif, outputName)
                 pixproba = size(roiobj.image,3);
             end
             enforceResultChannelDisplay(roiobj, pixproba, [1 0 1], [1 1 1], false);
+        elseif isCPSAM
+            localDropChannelIfPresent(roiobj, ['results_' char(outputName)]);
+            localDropChannelIfPresent(roiobj, [char(outputName) '_cellprob']);
+            for c = 1:numel(classif.classes)
+                localDropChannelIfPresent(roiobj, ['prob_' char(outputName) '_' classif.classes{c}]);
+            end
         end
 
         return;
@@ -687,6 +695,17 @@ function ROIpreprocessing(roiobj, classif, outputName)
     end
 end
 
+
+function localDropChannelIfPresent(roiobj, channelName)
+try
+    if ~isempty(findChannelID(roiobj, channelName))
+        roiobj.removeChannel(channelName);
+    end
+catch ME
+    warning('classifyData:DropProbabilityChannelFailed', ...
+        'Could not drop stale probability channel "%s": %s', channelName, ME.message);
+end
+end
 
 function ensureResultChannel(roiobj, chname, rgb, intensity, indexedFlag, nY, nX, nF)
     pixid = findChannelID(roiobj, chname);
@@ -1055,8 +1074,12 @@ try
     if isstring(names), names = cellstr(names); end
     if ischar(names), names = {names}; end
 
-    prefixes = {['results_' outputName '_'], ['prob_' outputName '_']};
-    exactNames = {['results_' outputName], [outputName '_cellprob']};
+    prefixes = {['results_' outputName '_']};
+    exactNames = {['results_' outputName]};
+    if localClassiWantsProbabilityOutput(classiobj)
+        prefixes{end+1} = ['prob_' outputName '_']; %#ok<AGROW>
+        exactNames{end+1} = [outputName '_cellprob']; %#ok<AGROW>
+    end
 
     keep = false(1, numel(names));
     for iName = 1:numel(names)
@@ -1069,6 +1092,20 @@ try
     channels = names(keep);
 catch
     channels = {};
+end
+end
+
+function tf = localClassiWantsProbabilityOutput(classif)
+tf = false;
+try
+    if ~(isprop(classif,'outputType') && ~isempty(classif.outputType))
+        return;
+    end
+    outType = lower(strtrim(char(string(classif.outputType))));
+    outType = strrep(outType, 'probability', 'proba');
+    tf = any(strcmp(outType, {'proba','both'}));
+catch
+    tf = false;
 end
 end
 

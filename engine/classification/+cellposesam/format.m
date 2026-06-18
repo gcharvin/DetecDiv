@@ -72,7 +72,7 @@ framebankPath = fullfile(base, fnameBase);  % pourra devenir *_framebank_001.h5,
 % 2) Seuils depuis classif.trainingParam (optionnel)
 % -------------------------------------------------------------------------
 
-min_train_masks  = 1;
+min_train_masks  = 0;
 min_train_pixels = 0;
 
 tp = [];
@@ -81,7 +81,7 @@ try
             && ~isempty(classif.trainingParam)
         tp = classif.trainingParam;
         if isfield(tp, 'min_train_masks')  && ~isempty(tp.min_train_masks)
-            min_train_masks = tp.min_train_masks;
+            min_train_masks = max(0, round(double(tp.min_train_masks)));
         end
         if isfield(tp, 'min_train_pixels') && ~isempty(tp.min_train_pixels)
             min_train_pixels = tp.min_train_pixels;
@@ -245,7 +245,7 @@ for ii = 1:numel(all_rois)
         n_masks  = double(max(instMask(:)));
         n_pixels = nnz(instMask);
 
-        if n_masks < min_train_masks || n_pixels < min_train_pixels
+        if n_masks == 0 || n_masks < min_train_masks || n_pixels < min_train_pixels
             excludedCount = excludedCount + 1;
             fprintf('  [exclude] %s (id=%d), frame %d: masks=%d, pixels=%d\n', ...
                 roiName, roi_id, jj, n_masks, n_pixels);
@@ -596,14 +596,8 @@ for ii = 1:numel(all_rois)
 
         % --- gestion des frames sans masque ---
         if max(instMask(:)) == 0
-            if min_train_masks > 0
-                % On *rejette* ces frames seulement si min_train_masks > 0
-                warning('[warn] ROI %d frame %d had empty instMask in 2nd pass, skipping', roi_id, jj);
-                continue;
-            else
-                % min_train_masks == 0 : on garde les frames totalement négatifs
-                % (instMask tout à 0 = fond)
-            end
+            warning('[warn] ROI %d frame %d had empty instMask in 2nd pass, skipping', roi_id, jj);
+            continue;
         end
 
         % ---- image locale ----

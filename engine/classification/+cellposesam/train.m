@@ -112,8 +112,10 @@ cfg.learning_rate  = trainingParam.learning_rate;
 cfg.n_epochs       = trainingParam.n_epochs;
 cfg.batch_size     = trainingParam.batch_size;
 
-% Keep legacy behavior (min_train_masks forced to 0 in training)
 cfg.min_train_masks = 0;
+if isfield(trainingParam, 'min_train_masks') && ~isempty(trainingParam.min_train_masks)
+    cfg.min_train_masks = max(0, round(double(trainingParam.min_train_masks)));
+end
 
 configPath = fullfile(classif.path, 'train_cellposesam_config.json');
 fid = fopen(configPath, 'w');

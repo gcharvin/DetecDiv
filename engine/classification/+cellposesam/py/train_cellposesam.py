@@ -48,6 +48,22 @@ def load_config():
         return json.load(f)
 
 
+def setup_cellpose_logger(model_name, verbose):
+    if not verbose:
+        return None
+
+    # Cellpose's default logger always unlinks ~/.cellpose/run.log. On
+    # Windows this fails if another MATLAB/Python Cellpose session still has
+    # that shared file open, so use a per-run log file instead.
+    safe_model = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in str(model_name))
+    log_name = f"run_{safe_model}_{datetime.datetime.now():%Y%m%d_%H%M%S}_{os.getpid()}.log"
+    try:
+        return io.logger_setup(logfile_name=log_name)
+    except PermissionError as exc:
+        print(f"[WARN] Cellpose logger setup failed ({exc}); continuing without Cellpose file logger.")
+        return None
+
+
 def load_from_framebank(framebank_path, seed=None):
     # Load images/masks from framebank and use /split (0=test,1=train,2=val)
     if not os.path.exists(framebank_path):
@@ -173,8 +189,7 @@ def train_model():
     batch_size = int(cfg.get("batch_size", 1))
     min_train_masks = int(cfg.get("min_train_masks", 0))
 
-    if verbose:
-        io.logger_setup()
+    setup_cellpose_logger(model_name, verbose)
 
     os.environ["PYTHONHASHSEED"] = str(seed)
     random.seed(seed)
