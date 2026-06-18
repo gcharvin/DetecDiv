@@ -204,6 +204,7 @@ for i = 1:numel(roiobj)
     disp(['[DEBUG] classifyData: ROI ' num2str(i) '/' num2str(numel(roiobj)) ' id=' roiIdStr]);
     hadImageInMemory = ~isempty(roiobj(i).image);
     hadDataInMemory = ~isempty(roiobj(i).data);
+    ensureRequiredChannelsLoadedLocal(roiobj(i), ctxBase, channelForRoiLocal(channel, i));
     if para
         hadImageByIdx(i) = hadImageInMemory;
         hadDataByIdx(i) = hadDataInMemory;
@@ -264,7 +265,12 @@ for i = 1:numel(roiobj)
     % ---------------------------------------------------------
     if isempty(roiobj(i).image)
         disp(['[DEBUG] classifyData: ROI ' roiIdStr ' has empty image -> loading']);
-        roiobj(i).load;
+        requiredChannels = requiredChannelsFromContextLocal(ctxBase, channelForRoiLocal(channel, i));
+        if ~isempty(requiredChannels)
+            roiobj(i).load('Channel', requiredChannels, 'Silent');
+        else
+            roiobj(i).load;
+        end
     end
     if isempty(roiobj(i).image)
         warning(['ROI is empty; skipping... (ROI ' roiIdStr ')']);
@@ -1428,6 +1434,77 @@ end
 if isprop(classif,'classifyFun')
     fun = classif.classifyFun;
 end
+end
+
+function ensureRequiredChannelsLoadedLocal(roiobjLocal, ctx, fallbackChannels)
+channels = requiredChannelsFromContextLocal(ctx, fallbackChannels);
+if isempty(channels)
+    return;
+end
+try
+    roiobjLocal.load('Channel', channels, 'Silent');
+catch ME
+    warning('classifyData:RequiredChannelLoadFailed', ...
+        'Could not preload required ROI channel(s) %s for ROI "%s": %s', ...
+        strjoin(channels, ', '), safeRoiIdLocal(roiobjLocal), ME.message);
+end
+end
+
+function channels = requiredChannelsFromContextLocal(ctx, fallbackChannels)
+if nargin < 2
+    fallbackChannels = {};
+end
+channels = {};
+try
+    if isstruct(ctx) && isfield(ctx, 'io') && isstruct(ctx.io) && ...
+            isfield(ctx.io, 'requiredChannels') && ~isempty(ctx.io.requiredChannels)
+        channels = normalizeChannelListLocal(ctx.io.requiredChannels);
+    end
+catch
+    channels = {};
+end
+if isempty(channels)
+    channels = normalizeChannelListLocal(fallbackChannels);
+end
+end
+
+function channels = channelForRoiLocal(channelArg, idx)
+channels = {};
+try
+    if isempty(channelArg)
+        return;
+    end
+    if iscell(channelArg) && numel(channelArg) >= idx
+        channels = channelArg{idx};
+    else
+        channels = channelArg;
+    end
+catch
+    channels = {};
+end
+end
+
+function channels = normalizeChannelListLocal(value)
+channels = {};
+if isempty(value)
+    return;
+end
+if iscell(value)
+    for i = 1:numel(value)
+        channels = [channels normalizeChannelListLocal(value{i})]; %#ok<AGROW>
+    end
+    channels = unique(channels(~cellfun(@isempty, channels)), 'stable');
+    return;
+end
+vals = cellstr(string(value(:)));
+for i = 1:numel(vals)
+    s = strtrim(char(string(vals{i})));
+    if isempty(s) || startsWith(s, '<') || any(strcmpi(s, {'none','auto','n/a','<all>'}))
+        continue;
+    end
+    channels{end+1} = s; %#ok<AGROW>
+end
+channels = unique(channels(~cellfun(@isempty, channels)), 'stable');
 end
 
 function pkg = localInferPkg(funSpec)

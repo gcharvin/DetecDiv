@@ -2112,6 +2112,7 @@ function ctx = executeProcessorNode(node, ctx)
     procCtx.sel = getfielddefault(ctx, 'sel', struct());
     procCtx.pipeline = getfielddefault(ctx, 'pipeline', struct());
     procCtx.io = getfielddefault(ctx, 'io', struct());
+    procCtx.io.requiredChannels = requiredInputChannelsForNode(node, p);
     procCtx.store = getfielddefault(ctx, 'store', struct());
     procCtx.executionPolicy = getfielddefault(ctx, 'executionPolicy', struct());
     procCtx.cancel = getfielddefault(ctx, 'cancel', struct());
@@ -2223,6 +2224,71 @@ function ensureProcessorPackagePath(node, p, ctx)
                 char(string(getfielddefault(node, 'id', ''))), ME.message);
         end
     end
+end
+
+function channels = requiredInputChannelsForNode(node, params)
+channels = {};
+if nargin < 2 || ~isstruct(params)
+    params = struct();
+end
+try
+    contract = pipelineNodeContract(node);
+catch
+    contract = struct();
+end
+if ~isstruct(contract) || ~isfield(contract, 'resources') || ~isstruct(contract.resources) || ...
+        ~isfield(contract.resources, 'in')
+    return;
+end
+resources = contract.resources.in;
+for i = 1:numel(resources)
+    try
+        if ~isfield(resources(i), 'type') || ~strcmpi(char(string(resources(i).type)), 'channel')
+            continue;
+        end
+        key = '';
+        if isfield(resources(i), 'nameParam') && ~isempty(resources(i).nameParam)
+            key = char(string(resources(i).nameParam));
+        elseif isfield(resources(i), 'param') && ~isempty(resources(i).param)
+            key = char(string(resources(i).param));
+        elseif isfield(resources(i), 'symbol') && ~isempty(resources(i).symbol)
+            key = char(string(resources(i).symbol));
+        end
+        if isempty(key) || ~isfield(params, key)
+            continue;
+        end
+        channels = [channels normalizeChannelNameListLocal(params.(key))]; %#ok<AGROW>
+    catch
+    end
+end
+channels = unique(channels(~cellfun(@isempty, channels)), 'stable');
+end
+
+function channels = normalizeChannelNameListLocal(value)
+channels = {};
+if isempty(value)
+    return;
+end
+if iscell(value)
+    for i = 1:numel(value)
+        channels = [channels normalizeChannelNameListLocal(value{i})]; %#ok<AGROW>
+    end
+    return;
+end
+if isstring(value) || ischar(value)
+    vals = cellstr(string(value(:)));
+elseif isnumeric(value) || islogical(value) || iscategorical(value)
+    vals = cellstr(string(value(:)));
+else
+    vals = {char(string(value))};
+end
+for i = 1:numel(vals)
+    s = strtrim(char(string(vals{i})));
+    if isempty(s) || startsWith(s, '<') || any(strcmpi(s, {'none','auto','n/a','<all>'}))
+        continue;
+    end
+    channels{end+1} = s; %#ok<AGROW>
+end
 end
 
 function value = getNodeCustomPackageField(node, p, fieldName)
@@ -2537,19 +2603,6 @@ function ctx = executeClassifierNode(node, ctx)
 
     [ctx, classifierForRun, classifierCNNForRun] = resolveRuntimeClassifierCache(ctx, clsObj, node);
 
-    args = {'OutputName', outputName, 'Ctx', ctx};
-    if ~isempty(classifierForRun)
-        args = [args {'Classifier', classifierForRun}]; %#ok<AGROW>
-    end
-    if ~isempty(classifierCNNForRun)
-        args = [args {'ClassifierCNN', classifierCNNForRun}]; %#ok<AGROW>
-    end
-    if isfield(ctx,'progressDlg') && ~isempty(ctx.progressDlg)
-        args = [args {'Progress', ctx.progressDlg}]; %#ok<AGROW>
-    end
-    if isfield(p,'frames') && ~isempty(p.frames)
-        args = [args {'Frames', p.frames}]; %#ok<AGROW>
-    end
     selectedChannels = [];
     if isfield(p,'channel') && ~isempty(p.channel)
         selectedChannels = p.channel;
@@ -2562,6 +2615,32 @@ function ctx = executeClassifierNode(node, ctx)
     end
     if ~isempty(selectedChannels)
         ch = normalizeClassifierChannels(selectedChannels);
+    else
+        ch = {};
+    end
+    classCtx = ctx;
+    if ~isfield(classCtx, 'io') || ~isstruct(classCtx.io)
+        classCtx.io = struct();
+    end
+    classCtx.io.requiredChannels = requiredInputChannelsForNode(node, p);
+    if isempty(classCtx.io.requiredChannels) && ~isempty(ch)
+        classCtx.io.requiredChannels = ch;
+    end
+
+    args = {'OutputName', outputName, 'Ctx', classCtx};
+    if ~isempty(classifierForRun)
+        args = [args {'Classifier', classifierForRun}]; %#ok<AGROW>
+    end
+    if ~isempty(classifierCNNForRun)
+        args = [args {'ClassifierCNN', classifierCNNForRun}]; %#ok<AGROW>
+    end
+    if isfield(ctx,'progressDlg') && ~isempty(ctx.progressDlg)
+        args = [args {'Progress', ctx.progressDlg}]; %#ok<AGROW>
+    end
+    if isfield(p,'frames') && ~isempty(p.frames)
+        args = [args {'Frames', p.frames}]; %#ok<AGROW>
+    end
+    if ~isempty(ch)
         args = [args {'Channel', ch}]; %#ok<AGROW>
     end
     if isfield(p,'parallel') && ~isempty(p.parallel) && logical(p.parallel)

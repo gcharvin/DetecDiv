@@ -128,6 +128,7 @@ for i=1:numel(roiobj) %size(roilist,2) % loop on all ROIs using parrallel comput
 
     hadImageInMemory = ~isempty(roiobj(i).image);
     hadDataInMemory = ~isempty(roiobj(i).data);
+    ensureRequiredChannelsLoadedLocal(roiobj(i), ctxBase);
     if para
         hadImageByIdx(i) = hadImageInMemory;
         hadDataByIdx(i) = hadDataInMemory;
@@ -600,6 +601,55 @@ end
         else
             txt = sprintf('%dh%02dm', floor(secondsValue/3600), floor(mod(secondsValue,3600)/60));
         end
+    end
+
+    function ensureRequiredChannelsLoadedLocal(roiobjLocal, ctx)
+        channels = requiredChannelsFromContextLocal(ctx);
+        if isempty(channels)
+            return;
+        end
+        try
+            roiobjLocal.load('Channel', channels, 'Silent');
+        catch ME
+            warning('processData:RequiredChannelLoadFailed', ...
+                'Could not preload required ROI channel(s) %s for ROI "%s": %s', ...
+                strjoin(channels, ', '), safeRoiId(roiobjLocal), ME.message);
+        end
+    end
+
+    function channels = requiredChannelsFromContextLocal(ctx)
+        channels = {};
+        try
+            if isstruct(ctx) && isfield(ctx, 'io') && isstruct(ctx.io) && ...
+                    isfield(ctx.io, 'requiredChannels') && ~isempty(ctx.io.requiredChannels)
+                channels = normalizeChannelListLocal(ctx.io.requiredChannels);
+            end
+        catch
+            channels = {};
+        end
+    end
+
+    function channels = normalizeChannelListLocal(value)
+        channels = {};
+        if isempty(value)
+            return;
+        end
+        if iscell(value)
+            for ii = 1:numel(value)
+                channels = [channels normalizeChannelListLocal(value{ii})]; %#ok<AGROW>
+            end
+            channels = unique(channels(~cellfun(@isempty, channels)), 'stable');
+            return;
+        end
+        vals = cellstr(string(value(:)));
+        for ii = 1:numel(vals)
+            s = strtrim(char(string(vals{ii})));
+            if isempty(s) || startsWith(s, '<') || any(strcmpi(s, {'none','auto','n/a','<all>'}))
+                continue;
+            end
+            channels{end+1} = s; %#ok<AGROW>
+        end
+        channels = unique(channels(~cellfun(@isempty, channels)), 'stable');
     end
 
     function out = ternaryLocal(cond, a, b)
