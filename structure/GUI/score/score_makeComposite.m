@@ -137,7 +137,7 @@ for ch = 1:numel(channel)
     % ------------------------------------------------------------------
     % 2b) IMAGE DE FOND pour ce canal
     % ------------------------------------------------------------------
-    bg = double(imraw);
+    bg = normalizeIntensityImageForDisplay(imraw);
 
     if logdisplay
         bg = log1p(bg);
@@ -147,14 +147,14 @@ for ch = 1:numel(channel)
             lmin = log1p(double(levCh(1))) / log1p(65535);
             lmax = log1p(double(levCh(2))) / log1p(65535);
             if lmin >= lmax, lmin = lmax - 1e-3; end
-            bg = imadjust(bg, [lmin lmax]);
+            bg = adjustIntensityImage(bg, [lmin lmax]);
         end
     else
         if ~iscell(levCh) && ~isequal(levCh, [-1 -1])
             lo = levCh(1); hi = levCh(2);
             if lo >= hi, lo = hi - 1; end
-            bg16 = uint16(bg);
-            bg16 = imadjust(bg16, [lo/65535 hi/65535]);
+            bg16 = uint16(max(0, min(65535, bg)));
+            bg16 = adjustIntensityImage(bg16, [lo/65535 hi/65535]);
             bg   = double(bg16) / 65535;
         else
             maxv = max(bg(:));
@@ -366,8 +366,38 @@ end
 end % score_makeComposite
 
 % -------------------------------------------------------------------------
-% Helper: map tmpcha (ID canal) -> dispIdx (index sûr pour roitmp.display.*)
+% Helpers
 % -------------------------------------------------------------------------
+function img = normalizeIntensityImageForDisplay(img)
+img = double(img);
+
+if ndims(img) <= 2
+    return;
+end
+
+if size(img, 3) == 1
+    img = img(:, :, 1);
+elseif size(img, 3) ~= 3
+    img = max(img, [], 3);
+end
+end
+
+function img = adjustIntensityImage(img, lims)
+if ndims(img) <= 2 || size(img, 3) == 1
+    img = imadjust(img(:, :, 1), lims);
+    return;
+end
+
+if size(img, 3) ~= 3
+    img = imadjust(max(img, [], 3), lims);
+    return;
+end
+
+for k = 1:3
+    img(:, :, k) = imadjust(img(:, :, k), lims);
+end
+end
+
 function dispIdx = getDisplayIndex(roitmp, tmpcha, channel, ch)
 
 dispIdx = tmpcha; % cas simple si aligné
