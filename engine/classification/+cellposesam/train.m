@@ -118,6 +118,11 @@ if isfield(trainingParam, 'min_train_masks') && ~isempty(trainingParam.min_train
 end
 
 configPath = fullfile(classif.path, 'train_cellposesam_config.json');
+statusPath = fullfile(classif.path, 'train_cellposesam_status.json');
+if exist(statusPath, 'file') == 2
+    delete(statusPath);
+end
+cfg.status_path = strrep(statusPath, '\\', '/');
 fid = fopen(configPath, 'w');
 if fid == -1
     error('Unable to create Python config: %s', configPath);
@@ -200,7 +205,7 @@ end
 end
 
 try
-    runPythonTrainingWithCudaRecovery(scriptPath, selectArgs, classif);
+    runPythonTrainingWithCudaRecovery(scriptPath, selectArgs, classif, statusPath);
     disp('[OK] CellposeSAM training finished successfully.');
 catch ME
     disp('[ERROR] during Python script execution.');
@@ -209,13 +214,23 @@ catch ME
 end
 end
 
-function runPythonTrainingWithCudaRecovery(scriptPath, selectArgs, classif)
+function runPythonTrainingWithCudaRecovery(scriptPath, selectArgs, classif, statusPath)
 % Retry once after stale MATLAB/Python CUDA contexts have been released.
 for attempt = 1:2
     try
         pyrunfile(scriptPath);
         return;
     catch ME
+        if isPythonTerminatedAfterCompletedTraining(ME, statusPath)
+            disp('[WARN] MATLAB Python host terminated after CellposeSAM saved the trained model.');
+            disp('[WARN] Training is considered complete; the Python host will be restarted on the next Python call.');
+            releaseMatlabGpuState();
+            try
+                terminate(pyenv);
+            catch
+            end
+            return;
+        end
         if attempt == 1 && isRecoverableCudaPyenvFailure(ME)
             disp('[WARN] CUDA memory failure detected during CellposeSAM training.');
             disp('[WARN] Releasing MATLAB GPU state and restarting MATLAB Python host, then retrying once...');
@@ -224,6 +239,47 @@ for attempt = 1:2
             continue;
         end
         rethrow(ME);
+    end
+end
+end
+
+function tf = isPythonTerminatedAfterCompletedTraining(ME, statusPath)
+msg = lower(string(ME.message));
+id = lower(string(ME.identifier));
+tf = contains(id, "pythonterminated") || contains(msg, "python process terminated unexpectedly");
+if tf
+    tf = trainingStatusShowsSuccess(statusPath);
+end
+end
+
+function tf = trainingStatusShowsSuccess(statusPath)
+tf = false;
+if isempty(statusPath) || exist(statusPath, 'file') ~= 2
+    return;
+end
+
+try
+    status = jsondecode(fileread(statusPath));
+catch
+    return;
+end
+
+if ~isfield(status, 'status') || ~strcmpi(char(string(status.status)), 'OK')
+    return;
+end
+
+paths = {};
+if isfield(status, 'model_path') && ~isempty(status.model_path)
+    paths{end+1} = char(string(status.model_path));
+end
+if isfield(status, 'best_model_path') && ~isempty(status.best_model_path)
+    paths{end+1} = char(string(status.best_model_path));
+end
+
+for iPath = 1:numel(paths)
+    if exist(paths{iPath}, 'file') == 2
+        tf = true;
+        return;
     end
 end
 end

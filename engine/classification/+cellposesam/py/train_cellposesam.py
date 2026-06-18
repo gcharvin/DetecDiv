@@ -103,6 +103,19 @@ def setup_cellpose_logger(model_name, verbose):
         return None
 
 
+def write_status(status_path, payload):
+    if not status_path:
+        return
+    try:
+        tmp_path = f"{status_path}.tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2)
+        os.replace(tmp_path, status_path)
+        print("[INFO] training status saved to:", status_path)
+    except Exception as exc:
+        print("[WARN] could not save training status:", exc)
+
+
 def load_from_framebank(framebank_path, seed=None):
     # Load images/masks from framebank and use /split (0=test,1=train,2=val)
     if not os.path.exists(framebank_path):
@@ -208,6 +221,7 @@ def train_model():
     framebank_path = cfg["framebank_path"]
     save_path = cfg["save_path"]
     model_name = cfg["model_name"]
+    status_path = cfg.get("status_path", "")
     seed = int(cfg.get("seed", 12345))
     use_pretrained = bool(cfg.get("use_pretrained", True))
     verbose = bool(cfg.get("verbose", True))
@@ -305,6 +319,20 @@ def train_model():
         print(f"[INFO] Best model path: {best_path}")
     else:
         print("[WARN] Could not determine best model (no losses).")
+
+    write_status(
+        status_path,
+        {
+            "status": "OK",
+            "model_path": str(model_path),
+            "best_model_path": str(best_path) if best_epoch is not None else "",
+            "best_epoch": int(best_epoch + 1) if best_epoch is not None else None,
+            "best_metric": float(best_metric) if best_metric is not None else None,
+            "metric_name": metric_name or "",
+            "n_train": len(imgs),
+            "n_val": len(val_imgs),
+        },
+    )
 
     if train_losses is not None and len(train_losses) > 0:
         epochs = np.arange(1, len(train_losses) + 1)
