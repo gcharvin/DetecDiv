@@ -17,13 +17,7 @@ end
 
 if strcmpi(mode, "init") || strcmpi(mode, "setparam") || strcmpi(mode, "param")
     classif.trainingParam = deeplab_pixel_classification.utils.defaultTrainingParam();
-    classif.classifierPkg = 'deeplab_pixel_classification';
-    classif.trainingFun = 'deeplab_pixel_classification.train';
-    classif.classifyFun = 'deeplab_pixel_classification.classify';
-    classif.category = {'Pixel'};
-    if isempty(classif.outputType)
-        classif.outputType = 'segmentation';
-    end
+    deeplab_pixel_classification.ensureClassMetadata(classif);
     out.refs.trainingParam = classif.trainingParam;
     out.status = "OK";
     return;
@@ -37,13 +31,7 @@ if isfield(ctx, 'params') && isstruct(ctx.params) && ~isempty(ctx.params)
     classif.trainingParam = deeplab_pixel_classification.utils.applyParamOverrides(classif.trainingParam, ctx.params);
 end
 
-classif.classifierPkg = 'deeplab_pixel_classification';
-classif.trainingFun = 'deeplab_pixel_classification.train';
-classif.classifyFun = 'deeplab_pixel_classification.classify';
-classif.category = {'Pixel'};
-if isempty(classif.outputType)
-    classif.outputType = 'segmentation';
-end
+deeplab_pixel_classification.ensureClassMetadata(classif);
 
 trainPixelDeeplabNetFun(classif);
 

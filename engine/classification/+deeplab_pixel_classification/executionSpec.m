@@ -8,6 +8,10 @@ end
 
 spec = struct();
 spec.category = 'Pixel';
+spec.defaultClasses = {'background', 'structure'};
+spec.annotationChannel = 'classif.strid';
+spec.segmentationKind = 'semantic';
+spec.instanceSegmentation = false;
 spec.summary = 'DeepLab v3+ pixel classifier: writes segmentation masks, probability channels, or both.';
 spec.staticKeys = {'outputType','segmentationMode','probabilityThreshold','executionEnvironment'};
 spec.outputKeys = {'outputName','probabilityOutputName'};

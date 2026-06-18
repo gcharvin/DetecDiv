@@ -10,6 +10,7 @@ for i=1:numel(varargin)
     end
 end
 
+applyPackageClassMetadata(classif);
 [~, category] = classiNormalizeCategory(classif.category);
 category = string(category);
 
@@ -82,10 +83,12 @@ else % image based classification and regression
     options = '';
     isPixelAnnotation = isPixelAnnotationClassifier(classif, category);
     classstr = {};
+    annotationChannelName = '';
 
    if isPixelAnnotation
 
         options= 'pixelAnnotation';
+        annotationChannelName = ensureAnnotationChannelForClassifier(roiObj, classif);
 
          for i = 1:numel(roiObj.data)
             data=roiObj.data(i);
@@ -135,7 +138,7 @@ for i = 1:min(numel(roiObj.display.selectedchannel), nch)
     end
 
     if isPixelAnnotation
-         if any(strcmp(channel_names{i}, classstr))
+         if any(strcmp(channel_names{i}, classstr)) || strcmp(channel_names{i}, annotationChannelName)
         selected(i) = true;
          end 
     end
@@ -447,6 +450,151 @@ tf = any(contains(signals, "deeplab_pixel_classification")) || ...
      any(contains(signals, "trainpixeldeeplabnetfun")) || ...
      any(contains(signals, "classifypixeldeeplabnetfun")) || ...
      any(contains(signals, "pixel"));
+end
+
+function channelName = ensureAnnotationChannelForClassifier(roiObj, classif)
+channelName = '';
+try
+    channelName = annotationChannelNameForClassifier(classif);
+    if isempty(channelName)
+        return;
+    end
+
+    pix = roiObj.findChannelID(channelName);
+    created = false;
+    if iscell(pix)
+        pix = cell2mat(pix);
+    end
+    if isempty(pix)
+        if isempty(roiObj.image)
+            roiObj.load;
+        end
+        if isempty(roiObj.image)
+            return;
+        end
+        matrix = uint16(zeros(size(roiObj.image, 1), size(roiObj.image, 2), 1, size(roiObj.image, 4)));
+        roiObj.addChannel(matrix, channelName, [1 1 1], [0 0 0]);
+        created = true;
+        pix = roiObj.findChannelID(channelName);
+        if iscell(pix)
+            pix = cell2mat(pix);
+        end
+    end
+
+    if ~isempty(pix)
+        configureAnnotationDisplay(roiObj, pix(1));
+        if created
+            try
+                roiObj.save({channelName}, false);
+            catch
+            end
+        end
+    end
+catch
+end
+end
+
+function channelName = annotationChannelNameForClassifier(classif)
+channelName = '';
+try
+    pkg = '';
+    if isprop(classif, 'classifierPkg') && ~isempty(classif.classifierPkg)
+        pkg = char(string(classif.classifierPkg));
+    end
+    if ~isempty(pkg)
+        fun = [pkg '.annotationChannelName'];
+        if ~isempty(which(fun))
+            channelName = char(string(feval(fun, classif)));
+        end
+    end
+catch
+    channelName = '';
+end
+
+if isempty(channelName)
+    if isempty(classif.classes)
+        channelName = [classif.strid '_cell'];
+    else
+        channelName = [classif.strid '_' classif.classes{1}];
+    end
+end
+end
+
+function configureAnnotationDisplay(roiObj, pix)
+try
+    logIdx = roiObj.channelid(pix);
+    nLog = max(double(logIdx), numel(roiObj.display.channel));
+    roiObj.display = ensureDisplayVector(roiObj.display, 'selectedchannel', nLog, 0);
+    roiObj.display = ensureDisplayVector(roiObj.display, 'indexed', nLog, 0);
+    roiObj.display = ensureDisplayVector(roiObj.display, 'alpha', nLog, 1);
+    roiObj.display = ensureDisplayVector(roiObj.display, 'contour', nLog, 0);
+    roiObj.display = ensureDisplayVector(roiObj.display, 'width', nLog, 0);
+    roiObj.display = ensureDisplayMatrix(roiObj.display, 'rgb', nLog, [1 1 1]);
+    roiObj.display = ensureDisplayMatrix(roiObj.display, 'intensity', nLog, [1 1 1]);
+    roiObj.display.selectedchannel(logIdx) = true;
+    roiObj.display.indexed(logIdx) = true;
+    roiObj.display.rgb(logIdx, :) = [1 1 1];
+    roiObj.display.intensity(logIdx, :) = [0 0 0];
+    roiObj.display.contour(logIdx) = 1;
+    roiObj.display.alpha(logIdx) = 0.35;
+    roiObj.display.width(logIdx) = 1.5;
+catch
+end
+end
+
+function display = ensureDisplayVector(display, fieldName, nRows, defaultValue)
+if ~isfield(display, fieldName) || isempty(display.(fieldName))
+    display.(fieldName) = repmat(defaultValue, 1, nRows);
+else
+    value = display.(fieldName);
+    value = value(:).';
+    if numel(value) < nRows
+        value(end+1:nRows) = defaultValue;
+    elseif numel(value) > nRows
+        value = value(1:nRows);
+    end
+    display.(fieldName) = value;
+end
+end
+
+function display = ensureDisplayMatrix(display, fieldName, nRows, defaultRow)
+if ~isfield(display, fieldName) || isempty(display.(fieldName))
+    display.(fieldName) = repmat(defaultRow, nRows, 1);
+else
+    value = double(display.(fieldName));
+    if isvector(value) && numel(value) == numel(defaultRow)
+        value = reshape(value, 1, []);
+    end
+    if size(value, 1) < nRows
+        value(end+1:nRows, :) = repmat(defaultRow, nRows - size(value, 1), 1);
+    elseif size(value, 1) > nRows
+        value = value(1:nRows, :);
+    end
+    display.(fieldName) = value;
+end
+end
+
+function applyPackageClassMetadata(classif)
+try
+    pkg = '';
+    if isprop(classif, 'classifierPkg') && ~isempty(classif.classifierPkg)
+        pkg = char(string(classif.classifierPkg));
+    elseif isprop(classif, 'trainingFun') && ~isempty(classif.trainingFun)
+        f = char(string(classif.trainingFun));
+        dot = strfind(f, '.');
+        if ~isempty(dot)
+            pkg = f(1:dot(1)-1);
+        end
+    end
+    if isempty(pkg)
+        return;
+    end
+    fun = [pkg '.ensureClassMetadata'];
+    if ~isempty(which(fun))
+        feval(fun, classif);
+    end
+catch
+end
 end
 
 

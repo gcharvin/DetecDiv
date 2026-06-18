@@ -13,6 +13,9 @@ end
 
 spec = struct();
 spec.category = 'Pixel';
+spec.defaultClasses = {'cell'};
+spec.segmentationKind = 'instance';
+spec.instanceSegmentation = true;
 spec.summary = 'CellposeSAM execution parameters used by pipeline nodes.';
 spec.staticKeys = {'outputType','diameter','min_size','flow_threshold','cell_prob_threshold'};
 spec.outputKeys = {'outputName','probabilityOutputName'};

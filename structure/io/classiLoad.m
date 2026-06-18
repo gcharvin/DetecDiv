@@ -189,6 +189,7 @@ try
 
     if isprop(classiObj,'classifierPkg') && ~isempty(classiObj.classifierPkg)
         classiObj.category = localCategoryFromPackage(classiObj.classifierPkg, classiObj.category);
+        localApplyPackageClassMetadata(classiObj);
         disp('===============================================================');
         disp(['[CLASSI LOAD] NEW PACKAGE FRAMEWORK: ' classiObj.classifierPkg]);
         if ~isempty(idStr)
@@ -247,6 +248,19 @@ end
             spec = feval(specFun);
             if isstruct(spec) && isfield(spec, 'category') && ~isempty(spec.category)
                 category = classiNormalizeCategory(spec.category);
+            end
+        catch
+        end
+    end
+
+    function localApplyPackageClassMetadata(classiObjLocal)
+        try
+            if ~isprop(classiObjLocal, 'classifierPkg') || isempty(classiObjLocal.classifierPkg)
+                return;
+            end
+            fun = [char(string(classiObjLocal.classifierPkg)) '.ensureClassMetadata'];
+            if ~isempty(which(fun))
+                feval(fun, classiObjLocal);
             end
         catch
         end

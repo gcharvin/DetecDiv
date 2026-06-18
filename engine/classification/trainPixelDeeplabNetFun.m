@@ -37,6 +37,19 @@ if nargin==2 % basic parameter initialization
             'execution_environment',{{'auto','parallel','cpu','gpu','multi-gpu','auto'}},...
             'transfer_learning',{{'ImageNet','ImageNet'}},...
             'tip',{tip});
+        try
+            classif.category = {'Pixel'};
+            if isempty(classif.classes)
+                classif.classes = {'background', 'structure'};
+            end
+            if isempty(classif.colormap) || size(classif.colormap, 1) < numel(classif.classes) + 1
+                classif.colormap = shallowColormap(numel(classif.classes));
+            end
+            if isempty(classif.outputType)
+                classif.outputType = 'segmentation';
+            end
+        catch
+        end
         
         return;
         %   end

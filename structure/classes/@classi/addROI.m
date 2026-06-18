@@ -72,6 +72,7 @@ disp('==== addROI ====');
 disp('rois = '), disp(rois);
 disp('adjustChannel = '), disp(adjustChannel);
 disp('adjustName = '), disp(adjustName);
+applyPackageClassMetadata(classif);
 
 % ---------- Source type ----------
 if isa(obj,'fov')
@@ -318,12 +319,7 @@ for ii = 1:length(rois)
 
         im = classif.roi(cc+1).image;
 
-        % Determine final annotation channel name (output)
-        if isempty(classif.classes)
-            outName = [classif.strid '_cell'];
-        else
-            outName = [classif.strid '_' classif.classes{1}];
-        end
+        outName = annotationChannelNameForClassifier(classif);
 
         % Special case: Pixel output channel may already exist in imported ROI and should be reused.
         if strcmp(classif.category{1},'Pixel') && ~isempty(ioMap) && isstruct(ioMap)
@@ -332,21 +328,12 @@ for ii = 1:length(rois)
             reuseGT = false; %#ok<NASGU>
         end
 
-        % If output channel does not exist, create blank ones (one per class)
+        % If output channel does not exist, create a blank indexed annotation channel.
         pixOut = classif.roi(cc+1).findChannelID(outName);
         if isempty(pixOut)
             matrix = uint16(zeros(size(im,1), size(im,2), 1, size(im,4)));
-
-            if ~isempty(classif.classes)
-                for k = 1:numel(classif.classes)
-                    newName = [classif.strid '_' classif.classes{k}];
-                    classif.roi(cc+1).addChannel(matrix, newName, [1 1 1], [0 0 0]);
-                    classif.roi(cc+1).display.selectedchannel(end) = 1;
-                end
-            else
-                classif.roi(cc+1).addChannel(matrix, outName, [1 1 1], [0 0 0]);
-                classif.roi(cc+1).display.selectedchannel(end) = 1;
-            end
+            classif.roi(cc+1).addChannel(matrix, outName, [1 1 1], [0 0 0]);
+            classif.roi(cc+1).display.selectedchannel(end) = 1;
         end
 
         % If importing from another classi, and both have a channel named by their strid,
@@ -758,6 +745,55 @@ end
                 roiObj.display.channel{idxGT} = outName;
                 reuseGT = true;
                 break
+            end
+        end
+    end
+
+    function applyPackageClassMetadata(classifObj)
+        try
+            pkg = '';
+            if isprop(classifObj, 'classifierPkg') && ~isempty(classifObj.classifierPkg)
+                pkg = char(string(classifObj.classifierPkg));
+            elseif isprop(classifObj, 'trainingFun') && ~isempty(classifObj.trainingFun)
+                f = char(string(classifObj.trainingFun));
+                dot = strfind(f, '.');
+                if ~isempty(dot)
+                    pkg = f(1:dot(1)-1);
+                end
+            end
+            if isempty(pkg)
+                return;
+            end
+            fun = [pkg '.ensureClassMetadata'];
+            if ~isempty(which(fun))
+                feval(fun, classifObj);
+            end
+        catch
+        end
+    end
+
+    function outName = annotationChannelNameForClassifier(classifObj)
+        outName = '';
+        try
+            pkg = '';
+            if isprop(classifObj, 'classifierPkg') && ~isempty(classifObj.classifierPkg)
+                pkg = char(string(classifObj.classifierPkg));
+            end
+            if ~isempty(pkg)
+                fun = [pkg '.annotationChannelName'];
+                if ~isempty(which(fun))
+                    outName = char(string(feval(fun, classifObj)));
+                end
+            end
+        catch
+            outName = '';
+        end
+
+        if isempty(outName)
+            if isempty(classifObj.classes)
+                outName = [classifObj.strid '_cell'];
+            else
+                outName = [classifObj.strid '_' classifObj.classes{1}];
             end
         end
     end
