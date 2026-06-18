@@ -133,7 +133,7 @@ disp(['[INFO] CellposeSAM config: ' configPath]);
 % Python environment & execution
 % -------------------------------------------------------------------------
 try
-    selectArgs = buildPythonSelectionArgsLocal(ctx, classif);
+    selectArgs = buildPythonSelectionArgsLocal(ctx);
     test = select_and_load_conda_env(selectArgs{:}); %#ok<NASGU>
 catch ME
     msg = ME.message;
@@ -154,7 +154,7 @@ else
     disp(['[INFO] Active Python env: ' python_env.Executable]);
 end
 
-function args = buildPythonSelectionArgsLocal(ctx, classif)
+function args = buildPythonSelectionArgsLocal(ctx)
 args = {'mode','default'};
 
 pyCfg = struct();
@@ -184,13 +184,13 @@ switch mode
         args = {'mode','custom'};
         try
             if isfield(pyCfg,'envName') && ~isempty(pyCfg.envName)
-                args = [args, {'envName', char(string(pyCfg.envName))}]; %#ok<AGROW>
+                args = [args, {'envName', char(string(pyCfg.envName))}];
             end
         catch
         end
         try
             if isfield(pyCfg,'envPath') && ~isempty(pyCfg.envPath)
-                args = [args, {'envPath', char(string(pyCfg.envPath))}]; %#ok<AGROW>
+                args = [args, {'envPath', char(string(pyCfg.envPath))}];
             end
         catch
         end
@@ -200,10 +200,77 @@ end
 end
 
 try
-    pyrunfile(scriptPath);
+    runPythonTrainingWithCudaRecovery(scriptPath, selectArgs, classif);
     disp('[OK] CellposeSAM training finished successfully.');
 catch ME
     disp('[ERROR] during Python script execution.');
     disp(ME.message);
+    rethrow(ME);
 end
+end
+
+function runPythonTrainingWithCudaRecovery(scriptPath, selectArgs, classif)
+% Retry once after stale MATLAB/Python CUDA contexts have been released.
+for attempt = 1:2
+    try
+        pyrunfile(scriptPath);
+        return;
+    catch ME
+        if attempt == 1 && isRecoverableCudaPyenvFailure(ME)
+            disp('[WARN] CUDA memory failure detected during CellposeSAM training.');
+            disp('[WARN] Releasing MATLAB GPU state and restarting MATLAB Python host, then retrying once...');
+            releaseMatlabGpuState();
+            restartPythonHost(selectArgs, classif);
+            continue;
+        end
+        rethrow(ME);
+    end
+end
+end
+
+function tf = isRecoverableCudaPyenvFailure(ME)
+msg = lower(string(ME.message));
+tf = contains(msg, "out of memory") || ...
+     contains(msg, "persistent matlab/python cuda context") || ...
+     contains(msg, "free gpu memory before relaunching training") || ...
+     contains(msg, "cuda runtime test failed");
+end
+
+function releaseMatlabGpuState()
+try
+    g = gpuDevice();
+    reset(g);
+    disp('[INFO] MATLAB GPU device reset completed.');
+catch ME
+    fprintf('[WARN] MATLAB GPU reset failed or unavailable: %s\n', ME.message);
+end
+end
+
+function restartPythonHost(selectArgs, classif)
+try
+    terminate(pyenv);
+    disp('[INFO] MATLAB Python host terminated.');
+catch ME
+    fprintf('[WARN] terminate(pyenv) failed or was unnecessary: %s\n', ME.message);
+end
+
+try
+    pause(1);
+catch
+end
+
+try
+    test = select_and_load_conda_env(selectArgs{:}); %#ok<NASGU>
+catch ME
+    error('cellposesam:PythonBootstrapFailedAfterCudaRecovery', ...
+        'Unable to reload Python after CUDA recovery:%s%s', newline, ME.message);
+end
+
+cellposesam.utils.ensurePythonDeps(classif);
+python_env = pyenv();
+if strcmp(python_env.Status, 'NotLoaded')
+    error('cellposesam:PythonNotLoadedAfterCudaRecovery', ...
+        'Python environment was not loaded after CUDA recovery.');
+end
+disp(['[INFO] Active Python env after recovery: ' python_env.Executable]);
 end

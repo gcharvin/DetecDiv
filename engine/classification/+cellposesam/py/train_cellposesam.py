@@ -2,6 +2,7 @@ import os
 import json
 import random
 import datetime
+import gc
 import numpy as np
 import h5py
 import torch
@@ -10,6 +11,28 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from cellpose import io, train, models
+
+
+def cuda_memory_info():
+    try:
+        free_bytes, total_bytes = torch.cuda.mem_get_info()
+        mib = 1024 ** 2
+        return f"free={free_bytes / mib:.0f} MiB, total={total_bytes / mib:.0f} MiB"
+    except Exception as exc:
+        return f"unavailable ({exc})"
+
+
+def cuda_reason_is_arch_mismatch(reason):
+    text = str(reason).lower()
+    return (
+        "not built for this gpu capability" in text
+        or "supported archs" in text
+        or "capability check failed" in text
+    )
+
+
+def cuda_reason_is_oom(reason):
+    return "out of memory" in str(reason).lower()
 
 
 def cuda_runtime_usable():
@@ -32,10 +55,26 @@ def cuda_runtime_usable():
         return False, f"CUDA capability check failed: {exc}"
 
     try:
+        gc.collect()
+        torch.cuda.empty_cache()
+        if hasattr(torch.cuda, "ipc_collect"):
+            torch.cuda.ipc_collect()
+    except Exception as exc:
+        print(f"[WARN] CUDA cache cleanup before runtime test failed: {exc}")
+
+    print(f"[INFO] PyTorch CUDA memory before runtime test: {cuda_memory_info()}")
+    try:
         x = torch.ones((1,), device="cuda")
         _ = (x + 1).cpu().numpy()
     except Exception as exc:
-        return False, f"CUDA runtime test failed: {exc}"
+        reason = f"CUDA runtime test failed: {exc}"
+        if cuda_reason_is_oom(reason):
+            reason = (
+                f"{reason}. PyTorch CUDA memory after failure: {cuda_memory_info()}. "
+                "This usually means GPU memory is already occupied by another process "
+                "or by a persistent MATLAB/Python CUDA context."
+            )
+        return False, reason
 
     return True, ""
 
@@ -176,9 +215,18 @@ def train_model():
     if gpu:
         cuda_ok, cuda_reason = cuda_runtime_usable()
         if not cuda_ok:
+            if cuda_reason_is_arch_mismatch(cuda_reason):
+                advice = "Install a PyTorch wheel compatible with this GPU."
+            elif cuda_reason_is_oom(cuda_reason):
+                advice = (
+                    "Free GPU memory before relaunching training: close other GPU users, "
+                    "terminate the MATLAB Python session, reset MATLAB's GPU device, or run training on CPU."
+                )
+            else:
+                advice = "Check the active Python/PyTorch/CUDA runtime."
             raise RuntimeError(
-                "GPU training was requested but the active PyTorch/CUDA build is not usable. "
-                f"Reason: {cuda_reason}. Install a PyTorch wheel compatible with this GPU."
+                "GPU training was requested but CUDA is not usable. "
+                f"Reason: {cuda_reason}. {advice}"
             )
     if gpu and not torch.cuda.is_available():
         raise RuntimeError("GPU training was requested but torch.cuda.is_available() is false.")

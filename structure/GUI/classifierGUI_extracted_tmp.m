@@ -234,6 +234,36 @@ function s = logicalToString(app, v) %#ok<INUSD>
     end
 end
 
+function msg = localGuiErrorMessage(app, ME) %#ok<INUSD>
+% localGuiErrorMessage  Compact error text suitable for uialert.
+    parts = {};
+    if ~isempty(ME.identifier)
+        parts{end+1} = ['Identifier: ' ME.identifier]; %#ok<AGROW>
+    end
+    if ~isempty(ME.message)
+        parts{end+1} = ME.message; %#ok<AGROW>
+    end
+
+    causeList = ME.cause;
+    for k = 1:min(numel(causeList), 2)
+        if ~isempty(causeList{k}.message)
+            parts{end+1} = ['Cause: ' causeList{k}.message]; %#ok<AGROW>
+        end
+    end
+
+    if isempty(parts)
+        msg = 'Training failed, but MATLAB did not provide an error message.';
+    else
+        msg = strjoin(parts, sprintf('\n\n'));
+    end
+
+    maxLen = 1800;
+    if strlength(string(msg)) > maxLen
+        msg = char(extractBefore(string(msg), maxLen));
+        msg = [msg newline newline '...'];
+    end
+end
+
 
 
 
@@ -2230,23 +2260,32 @@ end
                 'Message','Training network; Please wait...');
             d.Value=0.5;
 
-            [~, check]=classiObj.loadClassifier('check');
-            if check==1
-                evalin('base',['clear ' classiObj.strid]);
+            try
+                [~, check]=classiObj.loadClassifier('check');
+                if check==1
+                    evalin('base',['clear ' classiObj.strid]);
+                end
+
+                checkStatus(app);
+
+                classiObj.trainClassifier;
+
+                d.Value=1;
+                d.Message='Training completed successfully.';
+                pause(1);
+                close(d)
+
+                uialert(app.ClassifierUIFigure,'Training is complete!','Success','Icon','success');
+            catch ME
+                try
+                    if isvalid(d)
+                        close(d);
+                    end
+                catch
+                end
+                msg = localGuiErrorMessage(app, ME);
+                uialert(app.ClassifierUIFigure, msg, 'Training failed', 'Icon','error');
             end
-
-            checkStatus(app);
-
-
-
-            classiObj.trainClassifier;
-
-            d.Value=1;
-
-            pause(1);
-            close(d)
-
-           uialert(app.ClassifierUIFigure,'Training is complete!','Success','Icon','success');
         end
 
         % Menu selected function: SaveclassifierMenu
