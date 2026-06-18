@@ -641,7 +641,11 @@ end
             channels = unique(channels(~cellfun(@isempty, channels)), 'stable');
             return;
         end
-        vals = cellstr(string(value(:)));
+        if ischar(value) || (isstring(value) && isscalar(value))
+            vals = regexp(char(string(value)), '[,;]', 'split');
+        else
+            vals = cellstr(string(value(:)));
+        end
         for ii = 1:numel(vals)
             s = strtrim(char(string(vals{ii})));
             if isempty(s) || startsWith(s, '<') || any(strcmpi(s, {'none','auto','n/a','<all>'}))

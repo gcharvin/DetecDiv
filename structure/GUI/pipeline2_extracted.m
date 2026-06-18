@@ -8491,6 +8491,24 @@ classdef pipeline2 < matlab.apps.AppBase
         function ctrl = createBindingControl(app, parent, node, param, value, choices, direction, editable)
             enableState = ternary(app, editable, 'on', 'off');
             isInput = strcmpi(char(string(direction)), 'Input');
+            if isInput && strcmpi(char(string(param)), 'zStackChannelNames')
+                ctrl = uieditfield(parent, 'text');
+                ctrl.Value = bindingMultiValueToDisplay(app, value);
+                if isempty(ctrl.Value)
+                    defaults = defaultNodeParams(app, getField(app, node, 'type', ''), getField(app, node, 'pkg', ''));
+                    if isstruct(defaults) && isfield(defaults, 'zStackChannelNames') && ~isempty(defaults.zStackChannelNames)
+                        ctrl.Value = bindingMultiValueToDisplay(app, defaults.zStackChannelNames);
+                        persistMissingBindingDefault(app, node, 'zStackChannelNames', defaults.zStackChannelNames);
+                    end
+                end
+                if isempty(ctrl.Value)
+                    ctrl.Value = '<all>';
+                end
+                ctrl.Enable = enableState;
+                ctrl.Tooltip = 'Comma-separated z-stack channel list. By default DetecDiv preselects ROI channels whose name contains z and a number.';
+                ctrl.ValueChangedFcn = @(src,~)bindingControlChanged(app, node, param, direction, src.Value);
+                return;
+            end
             if isInput || ~isempty(choices)
                 displayValue = choiceScalarText(app, value);
                 placeholder = '<unconfigured>';
@@ -8571,6 +8589,23 @@ classdef pipeline2 < matlab.apps.AppBase
             updateRuntimeProgress(app, d, 'Checking pipeline bindings...');
             markPipelineDirty(app, true);
             refreshValidationReport(app);
+        end
+
+        function persistMissingBindingDefault(app, node, param, value)
+            nodeId = char(string(getField(app, node, 'id', '')));
+            idx = find(strcmp({app.Data.nodes.id}, nodeId), 1);
+            if isempty(idx) || isempty(param) || isempty(value)
+                return;
+            end
+            param = char(string(param));
+            if ~isfield(app.Data.nodes(idx), 'params') || ~isstruct(app.Data.nodes(idx).params)
+                app.Data.nodes(idx).params = struct();
+            end
+            if isfield(app.Data.nodes(idx).params, param) && ~isempty(app.Data.nodes(idx).params.(param))
+                return;
+            end
+            app.Data.nodes(idx).params.(param) = value;
+            markPipelineDirty(app, true);
         end
 
         function value = normalizeOutputBindingEditValue(app, node, param, value) %#ok<INUSD>
@@ -8844,8 +8879,9 @@ classdef pipeline2 < matlab.apps.AppBase
             specType = lower(char(string(getField(app, spec, 'type', ''))));
             specRole = lower(char(string(getField(app, spec, 'role', ''))));
             specParam = lower(char(string(getField(app, spec, 'param', ''))));
-            tf = strcmp(specType, 'channel') && strcmp(specParam, 'channels') && ...
-                any(strcmp(specRole, {'source','roi_image'}));
+            tf = strcmp(specType, 'channel') && ...
+                (strcmp(specParam, 'channels') || strcmp(specParam, 'zstackchannelnames')) && ...
+                any(strcmp(specRole, {'source','roi_image','z_stack'}));
         end
 
         function tf = isSingularChannelBindingSpec(app, spec)
@@ -8915,7 +8951,7 @@ classdef pipeline2 < matlab.apps.AppBase
             role = lower(char(string(getField(app, spec, 'role', ''))));
             if strcmp(type, 'channel') && strcmp(role, 'source')
                 choices = runtimeSourceChannels(app);
-            elseif strcmp(type, 'channel') && any(strcmp(role, {'roi_image','score_roi_image','derived_roi_image'}))
+            elseif strcmp(type, 'channel') && any(strcmp(role, {'roi_image','score_roi_image','derived_roi_image','z_stack'}))
                 choices = runtimeValidationRoiChannels(app);
             elseif strcmp(type, 'channel') && strcmp(role, 'mask_roi_image')
                 choices = runtimeMaskChoices(app);
@@ -9684,6 +9720,9 @@ classdef pipeline2 < matlab.apps.AppBase
             if strcmpi(type, 'channel') && strcmpi(role, 'probability')
                 label = 'channel/probability';
                 return;
+            elseif strcmpi(type, 'channel') && strcmpi(role, 'z_stack')
+                label = 'channel/z-stack (DIC/BF)';
+                return;
             elseif strcmpi(type, 'channel') && strcmpi(role, 'lineage_mother_mask')
                 label = 'channel/lineage mother mask';
                 return;
@@ -9873,6 +9912,34 @@ classdef pipeline2 < matlab.apps.AppBase
                 if ~isempty(vals)
                     txt = char(vals(end));
                 end
+            else
+                try
+                    txt = char(string(v));
+                catch
+                    txt = '';
+                end
+            end
+            txt = strtrim(txt);
+        end
+
+        function txt = bindingMultiValueToDisplay(app, v) %#ok<INUSD>
+            txt = '';
+            if isempty(v) || isMissingValue(app, v)
+                return;
+            end
+            if iscell(v)
+                flat = v(~cellfun(@isempty, v));
+                flat = flat(~cellfun(@(x)isMissingValue(app, x), flat));
+                if isempty(flat)
+                    return;
+                end
+                txt = strjoin(cellstr(string(flat(:)')), ',');
+            elseif isstring(v)
+                txt = strjoin(cellstr(v(:)'), ',');
+            elseif ischar(v)
+                txt = v;
+            elseif isnumeric(v) || islogical(v) || iscategorical(v)
+                txt = strjoin(cellstr(string(v(:)')), ',');
             else
                 try
                     txt = char(string(v));
@@ -10516,7 +10583,10 @@ classdef pipeline2 < matlab.apps.AppBase
                         'lambdaB_jump','lambdaB_area','lambdaB_appear','lambdaB_disapp', ...
                         'tempConf','bottomSign','ratioMin','bonusSwitch'};
                 otherwise
-                    keys = moduleSetparamKeys(app, pkg);
+                    keys = contractParamKeys(app, node, 'static');
+                    if isempty(keys)
+                        keys = moduleSetparamKeys(app, pkg);
+                    end
                     keys = removeBindingSelectorKeys(app, keys, node);
                     keys = removeResourceOutputNameKeys(app, keys, node);
                     keys = setdiff(keys, {'outputName','outputChannelName','existingPolicy','pkg','paramTooltip','tip'}, 'stable');
@@ -10704,6 +10774,12 @@ classdef pipeline2 < matlab.apps.AppBase
                         ctx.classification_data = {''};
                         ctx.classificationData = {''};
                     end
+                case 'detecdivpomegranate'
+                    roiChannels = runtimeValidationRoiChannels(app);
+                    if ~isempty(roiChannels)
+                        ctx.channels = roiChannels;
+                        ctx.roiChannels = roiChannels;
+                    end
             end
         end
 
@@ -10728,6 +10804,8 @@ classdef pipeline2 < matlab.apps.AppBase
                     pkg = 'fociBurstStats';
                 case 'detectviterbipombedivisionframe'
                     pkg = 'detectViterbiPombeDivisionFrame';
+                case 'detecdivpomegranate'
+                    pkg = 'detecdivPomegranate';
                 case 'trackmotherlineageviterbi'
                     pkg = 'trackMotherLineageViterbi';
                 case 'singlecelloscillations'

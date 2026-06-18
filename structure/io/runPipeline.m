@@ -2276,7 +2276,11 @@ if iscell(value)
     return;
 end
 if isstring(value) || ischar(value)
-    vals = cellstr(string(value(:)));
+    if ischar(value) || (isstring(value) && isscalar(value))
+        vals = regexp(char(string(value)), '[,;]', 'split');
+    else
+        vals = cellstr(string(value(:)));
+    end
 elseif isnumeric(value) || islogical(value) || iscategorical(value)
     vals = cellstr(string(value(:)));
 else

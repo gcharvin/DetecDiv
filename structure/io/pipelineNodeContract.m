@@ -1063,6 +1063,10 @@ pkgName = char(string(getField(node, 'pkg', '')));
 if isempty(pkgName)
     return;
 end
+switch lower(strtrim(pkgName))
+    case 'detecdivpomegranate'
+        pkgName = 'detecdivPomegranate';
+end
 specFun = [pkgName '.executionSpec'];
 if isempty(which(specFun))
     return;
