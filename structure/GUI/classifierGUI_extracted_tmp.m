@@ -487,6 +487,19 @@ function classlist = buildPackageClasslist(app, rootPath) %#ok<INUSD>
 end
 
 function cat = inferPkgCategory(app,pkgName)
+    cat = '';
+    try
+        specFun = [pkgName '.executionSpec'];
+        if ~isempty(which(specFun))
+            spec = feval(specFun);
+            if isstruct(spec) && isfield(spec, 'category') && ~isempty(spec.category)
+                cat = char(string(spec.category));
+                return;
+            end
+        end
+    catch
+    end
+
     switch lower(pkgName)
         case 'cnn_lstm'
             cat = 'LSTM';

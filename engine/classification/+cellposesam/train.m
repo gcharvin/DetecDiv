@@ -18,6 +18,10 @@ end
 
 if strcmpi(mode,"init") || strcmpi(mode,"setparam") || strcmpi(mode,"param")
     classif.trainingParam = cellposesam.utils.defaultTrainingParam();
+    classif.classifierPkg = 'cellposesam';
+    classif.trainingFun = 'cellposesam.train';
+    classif.classifyFun = 'cellposesam.classify';
+    classif.category = {'Pixel'};
     out.refs.trainingParam = classif.trainingParam;
     out.status = "OK";
     return;
@@ -26,6 +30,10 @@ end
 if isempty(classif.trainingParam)
     classif.trainingParam = cellposesam.utils.defaultTrainingParam();
 end
+classif.classifierPkg = 'cellposesam';
+classif.trainingFun = 'cellposesam.train';
+classif.classifyFun = 'cellposesam.classify';
+classif.category = {'Pixel'};
 
 % Optional overrides from ctx.params
 if isfield(ctx,'params') && isstruct(ctx.params) && ~isempty(ctx.params)

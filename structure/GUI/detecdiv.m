@@ -1057,12 +1057,18 @@ end
                             tmpClassi.trainingFun = [pkgName '.train'];
                         end
 
-                        if strcmpi(pkgName,'cellposesam')
-                            tmpClassi.category = {'Pixel'};
-                        elseif strcmpi(pkgName,'cnn_lstm')
-                            tmpClassi.category = {'LSTM'};
-                        else
-                            tmpClassi.category = {'Image'};
+                        tmpClassi.category = {'Image'};
+                        try
+                            spec = feval([pkgName '.executionSpec'], tmpClassi);
+                            if isstruct(spec) && isfield(spec,'category') && ~isempty(spec.category)
+                                tmpClassi.category = classiNormalizeCategory(spec.category);
+                            elseif strcmpi(pkgName,'cnn_lstm')
+                                tmpClassi.category = {'LSTM'};
+                            end
+                        catch
+                            if strcmpi(pkgName,'cnn_lstm')
+                                tmpClassi.category = {'LSTM'};
+                            end
                         end
                     else
                         tmpClassi.category = {'Image'};
@@ -2324,12 +2330,18 @@ end
                         tmpClassi.trainingFun = [pkgName '.train'];
                     end
 
-                    if strcmpi(pkgName,'cellposesam')
-                        tmpClassi.category = {'Pixel'};
-                    elseif strcmpi(pkgName,'cnn_lstm')
-                        tmpClassi.category = {'LSTM'};
-                    else
-                        tmpClassi.category = {'Image'};
+                    tmpClassi.category = {'Image'};
+                    try
+                        spec = feval([pkgName '.executionSpec'], tmpClassi);
+                        if isstruct(spec) && isfield(spec,'category') && ~isempty(spec.category)
+                            tmpClassi.category = classiNormalizeCategory(spec.category);
+                        elseif strcmpi(pkgName,'cnn_lstm')
+                            tmpClassi.category = {'LSTM'};
+                        end
+                    catch
+                        if strcmpi(pkgName,'cnn_lstm')
+                            tmpClassi.category = {'LSTM'};
+                        end
                     end
                 else
                     tmpClassi.category = {'Image'};
@@ -4900,12 +4912,18 @@ end
                         tmpClassi.trainingFun = [pkgName '.train'];
                     end
 
-                    if strcmpi(pkgName,'cellposesam')
-                        tmpClassi.category = {'Pixel'};
-                    elseif strcmpi(pkgName,'cnn_lstm')
-                        tmpClassi.category = {'LSTM'};
-                    else
-                        tmpClassi.category = {'Image'};
+                    tmpClassi.category = {'Image'};
+                    try
+                        spec = feval([pkgName '.executionSpec'], tmpClassi);
+                        if isstruct(spec) && isfield(spec,'category') && ~isempty(spec.category)
+                            tmpClassi.category = classiNormalizeCategory(spec.category);
+                        elseif strcmpi(pkgName,'cnn_lstm')
+                            tmpClassi.category = {'LSTM'};
+                        end
+                    catch
+                        if strcmpi(pkgName,'cnn_lstm')
+                            tmpClassi.category = {'LSTM'};
+                        end
                     end
                 else
                     tmpClassi.category = {'Image'};

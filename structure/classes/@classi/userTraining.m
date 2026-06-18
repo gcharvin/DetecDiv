@@ -10,7 +10,8 @@ for i=1:numel(varargin)
     end
 end
 
-category=classif.category{1};
+[~, category] = classiNormalizeCategory(classif.category);
+category = string(category);
 
 % disp(['Number of classes defined by user: ' num2str(numel(classif.classes))]);
 %     for j=1:numel(classif.classes)
@@ -25,7 +26,7 @@ category=classif.category{1};
 %     end
 
 
-if strcmp(classif.category,'Timeseries') % time series classification and regression
+if strcmpi(category, "Timeseries") % time series classification and regression
 
     rois=1:numel(classif.roi);
     prompt='Please enter the ROIs list in which to do training; Tyoe 0 to screen all rois; Default:0';
@@ -78,7 +79,11 @@ else % image based classification and regression
 
     normalizeDisplay(roiObj);
 
-   if category=="Pixel"
+    options = '';
+    isPixelAnnotation = isPixelAnnotationClassifier(classif, category);
+    classstr = {};
+
+   if isPixelAnnotation
 
         options= 'pixelAnnotation';
 
@@ -87,13 +92,13 @@ else % image based classification and regression
             data.show=false;
          end
 
-         classstr={};
+         classstr=cell(1, numel(classif.classes));
          for i=1:numel(classif.classes)
             classstr{i}=[classif.strid '_' classif.classes{i}];
          end
    end
 
-    if category=="LSTM"
+    if strcmpi(category, "LSTM")
        options=  'dataAnnotation';
        pix=[];
 
@@ -124,12 +129,12 @@ end
 nch = numel(channel_names);
 selected = false(1, nch);
 
-for i = 1:numel(roiObj.display.selectedchannel)
+for i = 1:min(numel(roiObj.display.selectedchannel), nch)
     if any(strcmp(channel_names{i}, classif.channelName))
         selected(i) = true;
     end
 
-    if category=="Pixel"
+    if isPixelAnnotation
          if any(strcmp(channel_names{i}, classstr))
         selected(i) = true;
          end 
@@ -145,10 +150,18 @@ ensureCellInformationDataseries(roiObj);
     figures=findall(0,'Type','figure');
     appFigure=findobj(figures,'Name','ScoreApp');
     if isprop(appFigure,'RunningAppInstance')
-        appFigure.RunningAppInstance.addROI(roiObj,options);
+        if strlength(string(options)) > 0
+            appFigure.RunningAppInstance.addROI(roiObj,options);
+        else
+            appFigure.RunningAppInstance.addROI(roiObj);
+        end
         app=appFigure.RunningAppInstance;
     else
-        app=score(roiObj,options);
+        if strlength(string(options)) > 0
+            app=score(roiObj,options);
+        else
+            app=score(roiObj);
+        end
     end
 
         % app.updatePanelsLayout();
@@ -413,6 +426,27 @@ end
 % end
 
 roiObj.display = d;
+end
+
+function tf = isPixelAnnotationClassifier(classif, category)
+pixelCategories = ["Pixel", "Object", "Delta", "Pedigree"];
+tf = any(strcmpi(category, pixelCategories));
+
+if tf
+    return;
+end
+
+signals = strings(1, 0);
+try, signals(end+1) = string(classif.classifierPkg); end %#ok<AGROW>
+try, signals(end+1) = string(classif.trainingFun); end %#ok<AGROW>
+try, signals(end+1) = string(classif.classifyFun); end %#ok<AGROW>
+try, signals(end+1) = string(classif.description); end %#ok<AGROW>
+
+signals = lower(signals);
+tf = any(contains(signals, "deeplab_pixel_classification")) || ...
+     any(contains(signals, "trainpixeldeeplabnetfun")) || ...
+     any(contains(signals, "classifypixeldeeplabnetfun")) || ...
+     any(contains(signals, "pixel"));
 end
 
 

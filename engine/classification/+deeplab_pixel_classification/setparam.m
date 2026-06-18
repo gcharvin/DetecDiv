@@ -10,6 +10,7 @@ try
     classif.classifierPkg = 'deeplab_pixel_classification';
     classif.trainingFun = 'deeplab_pixel_classification.train';
     classif.classifyFun = 'deeplab_pixel_classification.classify';
+    classif.category = {'Pixel'};
     if isempty(classif.outputType)
         classif.outputType = 'segmentation';
     end

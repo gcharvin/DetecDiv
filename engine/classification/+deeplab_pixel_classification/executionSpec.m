@@ -7,6 +7,7 @@ if nargin < 1
 end
 
 spec = struct();
+spec.category = 'Pixel';
 spec.summary = 'DeepLab v3+ pixel classifier: writes segmentation masks, probability channels, or both.';
 spec.staticKeys = {'outputType','segmentationMode','probabilityThreshold','executionEnvironment'};
 spec.outputKeys = {'outputName','probabilityOutputName'};
