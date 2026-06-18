@@ -179,7 +179,7 @@ else
 end
 
 % Channel list expansion if user forced "classify all ROIs"
-if numel(channel) < numel(roiobj) && numel(channel) > 0
+if iscell(channel) && numel(channel) < numel(roiobj) && numel(channel) > 0
     channel(numel(channel)+1:numel(roiobj)) = {channel{end}};
 end
 
@@ -324,8 +324,12 @@ for i = 1:numel(roiobj)
             cha = classiobj.channelName;
         end
     else
-        cha = channel{i};
+        cha = channelForRoiLocal(channel, i);
+        if iscell(cha) && numel(cha) == 1
+            cha = cha{1};
+        end
     end
+    ensureChannelIndicesAddressableLocal(roiobj(i), cha);
     try
         if iscell(cha)
             chaStr = strjoin(cha, ',');
@@ -1489,6 +1493,26 @@ channels = {};
 if isempty(value)
     return;
 end
+if ischar(value)
+    s = strtrim(value);
+    if isempty(s) || startsWith(s, '<') || any(strcmpi(s, {'none','auto','n/a','<all>'}))
+        return;
+    end
+    channels = {s};
+    return;
+end
+if isstring(value)
+    vals = cellstr(value(:));
+    for i = 1:numel(vals)
+        s = strtrim(char(vals{i}));
+        if isempty(s) || startsWith(s, '<') || any(strcmpi(s, {'none','auto','n/a','<all>'}))
+            continue;
+        end
+        channels{end+1} = s; %#ok<AGROW>
+    end
+    channels = unique(channels(~cellfun(@isempty, channels)), 'stable');
+    return;
+end
 if iscell(value)
     for i = 1:numel(value)
         channels = [channels normalizeChannelListLocal(value{i})]; %#ok<AGROW>
@@ -1505,6 +1529,35 @@ for i = 1:numel(vals)
     channels{end+1} = s; %#ok<AGROW>
 end
 channels = unique(channels(~cellfun(@isempty, channels)), 'stable');
+end
+
+function ensureChannelIndicesAddressableLocal(roiobjLocal, channels)
+if isempty(roiobjLocal.image)
+    return;
+end
+channelNames = normalizeChannelListLocal(channels);
+if isempty(channelNames)
+    return;
+end
+try
+    pix = [];
+    for i = 1:numel(channelNames)
+        pix = [pix roiobjLocal.findChannelID(channelNames{i})]; %#ok<AGROW>
+    end
+    pix = pix(~isnan(pix) & pix > 0);
+    if isempty(pix)
+        return;
+    end
+    if max(pix) > size(roiobjLocal.image, 3)
+        disp(['[DEBUG] classifyData: ROI ' safeRoiIdLocal(roiobjLocal) ...
+            ' has partially loaded channels but classifier needs global channel indices -> reloading full ROI']);
+        roiobjLocal.load('Silent');
+    end
+catch ME
+    warning('classifyData:ChannelAddressabilityCheckFailed', ...
+        'Could not verify loaded channel indices for ROI "%s": %s', ...
+        safeRoiIdLocal(roiobjLocal), ME.message);
+end
 end
 
 function pkg = localInferPkg(funSpec)

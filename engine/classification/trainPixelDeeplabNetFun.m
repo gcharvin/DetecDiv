@@ -172,8 +172,7 @@ else
 end
 end
 
-%pximdsVal = pixelLabelImageDatastore(imdsVal,pxdsVal);
-pximdsVal = pixelLabelImageDatastore(imdsVal,pxdsVal,'OutputSize',imageSize(1:2),'OutputSizeMode','resize');
+pximdsVal = localPixelLabelTrainingDatastore(imdsVal, pxdsVal, imageSize(1:2), false, trainingParam);
 
 % L2regularisation = 0.005;
 
@@ -196,14 +195,7 @@ options = trainingOptions(trainingParam.CNN_training_method{end}, ...
 %  'ValidationFrequency', 10,...
 
 
-augmenter = imageDataAugmenter('RandXReflection',true,'RandYReflection',true,...
-    'RandXScale',[0.5 2],'RandYScale',[0.5 2],...
-    'RandRotation',trainingParam.CNN_rotation_augmentation,'RandXTranslation',trainingParam.CNN_translation_augmentation,'RandYTranslation',trainingParam.CNN_translation_augmentation);
-
-%   'RandXScale',[0.9 1.1],'RandYScale',[0.9 1.1],...
-
-pximds = pixelLabelImageDatastore(imdsTrain,pxdsTrain, ...
-    'DataAugmentation',augmenter,'OutputSize',imageSize(1:2),'OutputSizeMode','resize'); % default input size imga for training
+pximds = localPixelLabelTrainingDatastore(imdsTrain, pxdsTrain, imageSize(1:2), true, trainingParam);
 
 %if doTraining
 [classifier, info] = trainNetwork(pximds,lgraph,options);
@@ -301,4 +293,86 @@ trainingLabels = pxds.Files(pix);
 
 pxdsTrain = pixelLabelDatastore(trainingLabels, classes, labelIDs);
 
+
+function ds = localPixelLabelTrainingDatastore(imds, pxds, outputSize, doAugment, trainingParam)
+% Modern replacement for pixelLabelImageDatastore.
+ds = combine(imds, pxds);
+ds = transform(ds, @(data)localPreparePixelLabelBatch(data, outputSize, doAugment, trainingParam));
+
+
+function dataOut = localPreparePixelLabelBatch(data, outputSize, doAugment, trainingParam)
+I = data{1};
+C = data{2};
+
+if iscell(I)
+    I = I{1};
+end
+if iscell(C)
+    C = C{1};
+end
+
+cats = categories(C);
+labelIndex = localCategoricalToIndex(C, cats);
+
+if doAugment
+    [I, labelIndex] = localAugmentPixelLabelPair(I, labelIndex, trainingParam);
+end
+
+I = imresize(I, outputSize);
+labelIndex = imresize(labelIndex, outputSize, 'nearest');
+C = localIndexToCategorical(labelIndex, cats);
+
+dataOut = {I, C};
+
+
+function [I, labelIndex] = localAugmentPixelLabelPair(I, labelIndex, trainingParam)
+rotation = localRangeValue(trainingParam.CNN_rotation_augmentation, [0 0]);
+translation = localRangeValue(trainingParam.CNN_translation_augmentation, [0 0]);
+
+tform = randomAffine2d( ...
+    'XReflection', true, ...
+    'YReflection', true, ...
+    'Scale', [0.5 2], ...
+    'Rotation', rotation, ...
+    'XTranslation', translation, ...
+    'YTranslation', translation);
+
+outputView = affineOutputView([size(I, 1) size(I, 2)], tform, 'BoundsStyle', 'same');
+I = imwarp(I, tform, 'OutputView', outputView);
+labelIndex = imwarp(labelIndex, tform, ...
+    'OutputView', outputView, ...
+    'Interp', 'nearest', ...
+    'FillValues', uint16(1));
+
+
+function labelIndex = localCategoricalToIndex(C, cats)
+labelIndex = zeros(size(C), 'uint16');
+for i = 1:numel(cats)
+    labelIndex(C == cats{i}) = uint16(i);
+end
+labelIndex(labelIndex == 0) = uint16(1);
+
+
+function C = localIndexToCategorical(labelIndex, cats)
+labelIndex = double(labelIndex);
+labelIndex(labelIndex < 1 | labelIndex > numel(cats) | isnan(labelIndex)) = 1;
+C = categorical(labelIndex, 1:numel(cats), cats);
+
+
+function rangeValue = localRangeValue(value, defaultValue)
+if nargin < 2
+    defaultValue = [0 0];
+end
+
+if isempty(value)
+    rangeValue = defaultValue;
+    return;
+end
+
+value = double(value);
+if isscalar(value)
+    rangeValue = [-abs(value) abs(value)];
+else
+    rangeValue = value(1:2);
+end
 
