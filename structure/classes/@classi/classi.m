@@ -555,6 +555,8 @@ end
             end
             if ~isfield(obj.dataset.split,'train') || isempty(obj.dataset.split.train)
                 obj.dataset.split.train = obj.trainingset;
+            elseif obj.localLooksLikeDefaultTrainSplit(obj.dataset.split, obj.trainingset)
+                obj.dataset.split.train = obj.trainingset;
             end
             if ~isfield(obj.dataset.split,'val')
                 obj.dataset.split.val = [];
@@ -581,6 +583,26 @@ end
                     obj.trainingset = obj.dataset.split.train;
                 end
             end
+        end
+
+        function rois = getTrainingROIIndices(obj)
+            % getTrainingROIIndices  Authoritative ROI list for training export.
+            rois = [];
+            try
+                if isprop(obj,'dataset') && isstruct(obj.dataset) && ...
+                        isfield(obj.dataset,'split') && isstruct(obj.dataset.split) && ...
+                        isfield(obj.dataset.split,'train') && ~isempty(obj.dataset.split.train)
+                    rois = obj.dataset.split.train;
+                end
+            catch
+                rois = [];
+            end
+
+            if isempty(rois)
+                rois = obj.trainingset;
+            end
+
+            rois = obj.localNormalizeROIList(rois);
         end
 
         function ch = getInputChannels(obj)
@@ -1085,12 +1107,46 @@ end
         end
     end
 end
-  
-  
+
     end
   
 
     methods (Access = private)
+
+        function rois = localNormalizeROIList(~, rois)
+            if isempty(rois)
+                rois = [];
+                return;
+            end
+            if iscell(rois)
+                try
+                    rois = cell2mat(rois);
+                catch
+                    rois = str2double(string(rois));
+                end
+            elseif isstring(rois)
+                rois = str2double(rois);
+            end
+            rois = double(rois(:)');
+            rois = rois(isfinite(rois) & rois >= 1);
+            rois = unique(round(rois), 'stable');
+        end
+
+        function tf = localLooksLikeDefaultTrainSplit(obj, split, legacyTrain)
+            tf = false;
+            if isempty(legacyTrain) || numel(legacyTrain) <= 1
+                return;
+            end
+            try
+                modernTrain = obj.localNormalizeROIList(split.train);
+                legacyTrain = obj.localNormalizeROIList(legacyTrain);
+                hasVal = isfield(split,'val') && ~isempty(split.val);
+                hasTest = isfield(split,'test') && ~isempty(split.test);
+                tf = isequal(modernTrain, 1) && ~hasVal && ~hasTest && numel(legacyTrain) > 1;
+            catch
+                tf = false;
+            end
+        end
 
         function out = localMergeStruct(~, base, override)
             % Recursive struct merge: override wins, but merges nested structs.

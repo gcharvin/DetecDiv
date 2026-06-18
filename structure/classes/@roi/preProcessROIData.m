@@ -130,22 +130,34 @@ function im = preProcessROIData(obj, ch, fr, dorepmat)
                 strchlm = stretchlim(plane, satur);
             end
 
-            if strchlm(1) >= strchlm(2)
-                im = [];
-                return;
+            if numel(strchlm) < 2 || any(~isfinite(strchlm(:))) || strchlm(1) >= strchlm(2)
+                strchlm = stretchlim(plane, satur);
             end
 
-            planeAdj = imadjust(plane, strchlm);
+            if numel(strchlm) < 2 || any(~isfinite(strchlm(:))) || strchlm(1) >= strchlm(2)
+                planeAdj = plane;
+            else
+                planeAdj = imadjust(plane, strchlm);
+            end
+
+            if isempty(planeAdj)
+                planeAdj = plane;
+            end
 
             if isa(plane, 'uint16')
                 planeN = double(planeAdj) / double(intmax('uint16')); % 65535
             else
                 % fallback générique
-                maxVal = double(max(planeAdj(:)));
+                maxVal = max(double(planeAdj(:)), [], 'omitnan');
+                if isempty(maxVal) || ~isfinite(maxVal)
+                    maxVal = 0;
+                else
+                    maxVal = maxVal(1);
+                end
                 if maxVal <= 0
                     planeN = zeros(size(planeAdj));
                 else
-                    planeN = double(planeAdj) / maxVal;
+                    planeN = double(planeAdj) ./ maxVal;
                 end
             end
         end

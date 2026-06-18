@@ -35,6 +35,12 @@ cltmp=classif.roi;
 warning off all
 
 channel=classif.channelName;
+isDeepLabSemantic = false;
+try
+    isDeepLabSemantic = isprop(classif, 'classifierPkg') && ...
+        strcmpi(char(string(classif.classifierPkg)), 'deeplab_pixel_classification');
+catch
+end
 
 for i=1:numel(rois)
 
@@ -108,6 +114,16 @@ for i=1:numel(rois)
 
         if strcmp(classif.description{1},'Image pixel regression')
          %   labels=repmat(lab,1,1,3,1);
+        elseif isDeepLabSemantic
+            labels = double(zeros(size(lab,1), size(lab,2), 3, size(lab,4)));
+            bgColor = classif.colormap(2,:);
+            fgColor = classif.colormap(min(3, size(classif.colormap,1)),:);
+            fg = lab(:,:,1,:) > 0;
+            bg = ~fg;
+            for k = 1:3
+                labels(:,:,k,:) = labels(:,:,k,:) + double(bg) * bgColor(k);
+                labels(:,:,k,:) = labels(:,:,k,:) + double(fg) * fgColor(k);
+            end
         else
             labels= double(zeros(size(lab,1),size(lab,2),3,size(lab,4)));
 
@@ -186,7 +202,12 @@ for i=1:numel(rois)
             if ~strcmp(classif.description{3},'Solov2') % classical labeled image
 
                 %max(tmplab(:))
-                if max(tmplab(:))>1 | strcmp(classif.description{1},'Image pixel regression') % image has labeled pixels or is a regression
+                hasLabeledPixels = max(tmplab(:)) > 1;
+                if isDeepLabSemantic
+                    hasLabeledPixels = any(tmplab(:) > 0);
+                end
+
+                if hasLabeledPixels | strcmp(classif.description{1},'Image pixel regression') % image has labeled pixels or is a regression
 
                     if numel(pix)<=3
                        
@@ -201,9 +222,9 @@ for i=1:numel(rois)
                     else
                     imwrite(labels(:,:,:,j),[classif.path '/' foldername '/labels/' cltmp(rois(i)).id '_frame_' tr '.tif']); % labeled image
                     end
+                    output=output+1;
 
                 end
-                output=output+1;
 
             else % solov2 model + data augmentation
 

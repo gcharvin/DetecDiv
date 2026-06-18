@@ -101,15 +101,8 @@ end
 
 % ---- ROIs d'entraînement / validation ----
 if numel(rois) == 0
-    % Prefer dataset split if available
     try
-        if isprop(classif,'dataset') && isstruct(classif.dataset) && ...
-                isfield(classif.dataset,'split') && isfield(classif.dataset.split,'train') && ...
-                ~isempty(classif.dataset.split.train)
-            rois = classif.dataset.split.train;
-        else
-            rois = classif.trainingset;
-        end
+        rois = classif.getTrainingROIIndices();
     catch
         rois = classif.trainingset;
     end
