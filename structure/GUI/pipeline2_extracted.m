@@ -10726,6 +10726,8 @@ classdef pipeline2 < matlab.apps.AppBase
                     pkg = 'formatInDataSeries';
                 case 'fociburststats'
                     pkg = 'fociBurstStats';
+                case 'detectviterbipombedivisionframe'
+                    pkg = 'detectViterbiPombeDivisionFrame';
                 case 'trackmotherlineageviterbi'
                     pkg = 'trackMotherLineageViterbi';
                 case 'singlecelloscillations'
