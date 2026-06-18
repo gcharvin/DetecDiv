@@ -652,6 +652,7 @@ function ROIpreprocessing(roiobj, classif, outputName)
             end
             enforceResultChannelDisplay(roiobj, pixproba, [1 0 1], [1 1 1], false);
         elseif isCPSAM
+            localDropChannelIfPresent(roiobj, 'results');
             localDropChannelIfPresent(roiobj, ['results_' char(outputName)]);
             localDropChannelIfPresent(roiobj, [char(outputName) '_cellprob']);
             for c = 1:numel(classif.classes)
