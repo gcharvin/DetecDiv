@@ -414,10 +414,10 @@ imageSize=param.imageSize;
 flip=param.flip;
 
 if isempty(roitmp.image)
-    roitmp.load;
+    score_loadChannelsForDisplay(roitmp, channel);
 elseif ~isempty(roitmp.channelid)
     if size(roitmp.image,3) ~= numel(roitmp.channelid) || max(roitmp.channelid) > size(roitmp.image,3)
-        roitmp.load;
+        score_loadChannelsForDisplay(roitmp, channel);
     end
 end
 

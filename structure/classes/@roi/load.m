@@ -606,7 +606,7 @@ end
 
 % --- Trouver le dataset par "channel_name" (attribut) ou par nom
 target = [];
-target_idx = [];
+targetIdx = [];
 for i = 1:numel(dsets)
     p = ['/' dsets(i).Name];
     nm = dsets(i).Name;
@@ -617,7 +617,7 @@ for i = 1:numel(dsets)
     end
     if strcmpi(chn, chanName) || strcmpi(nm, chanName)
         target = dsets(i);
-        target_idx = i; %#ok<NASGU>
+        targetIdx = i;
         break;
     end
 end
@@ -647,24 +647,11 @@ frameList = normalizeH5FrameList(frameAttr, T);
 
 % --- Lire/estimer les indices globaux pour ce canal
 % Essai 1 : utiliser channel_indices s'il existe
-try
-    idxProvided = h5readatt(h5File, pTarget, 'channel_indices'); idxProvided = idxProvided(:).';
-catch
-    idxProvided = [];
-end
+% channel_indices is intentionally ignored for partial loads: score keeps a
+% compact in-memory image and uses channelid for logical-channel mapping.
 
 % Pour connaître le C total et les indices occupés par les autres canaux,
 % on scanne vite fait les attributs des autres datasets (pas besoin des data)
-allIdx = {};
-for i = 1:numel(dsets)
-    p = ['/' dsets(i).Name];
-    try
-        ci = h5readatt(h5File, p, 'channel_indices'); ci = ci(:).';
-    catch
-        ci = [];
-    end
-    allIdx{i} = ci;
-end
 
 % Stratégie d'indexation:
 % - Si idxProvided cohérent -> on s'en sert
@@ -673,8 +660,15 @@ end
 %   mais comme on ne charge qu'un canal, on place au début.
 
 destIdx = [];
-if ~isempty(idxProvided) && numel(idxProvided) == k
-    destIdx = idxProvided;
+logicalIdWanted = targetIdx;
+if isstruct(disp0) && isfield(disp0,'channel') && ~isempty(disp0.channel)
+    logicalNames = disp0.channel;
+    if isstring(logicalNames), logicalNames = cellstr(logicalNames); end
+    if ~iscell(logicalNames), logicalNames = {char(string(logicalNames))}; end
+    hit = find(strcmpi(logicalNames, chanName), 1);
+    if ~isempty(hit)
+        logicalIdWanted = hit;
+    end
 end
 
 % Taille C existante si img0 fourni
@@ -682,19 +676,13 @@ if ~isempty(img0)
     C0 = size(img0,3);
 else
     % sinon, déduire un C théorique à partir des attributs si disponibles
-    C0 = 0;
-    for i = 1:numel(allIdx)
-        if ~isempty(allIdx{i})
-            C0 = max(C0, max(allIdx{i}));
-        end
-    end
-    if C0 == 0
-        % fallback minimal
-        C0 = k;
-    end
+    C0 = k;
 end
 
 % Décide où placer ce bloc:
+if isempty(img0)
+    destIdx = 1:k;
+end
 if isempty(destIdx)
     % Pas d'indices fournis -> on essaye de réutiliser un slot existant
     % si le canal existe déjà dans disp0.channel (par son nom)
@@ -753,7 +741,7 @@ img(:,:,destIdx,frameList) = blk;
 if isempty(chId0)
     % On doit reconstruire un id logique minimal: 1 logique unique
     channelid = zeros(1, size(img,3));
-    channelid(destIdx) = 1;
+    channelid(destIdx) = logicalIdWanted;
 else
     channelid = chId0;
     if numel(channelid) < size(img,3)
@@ -761,10 +749,7 @@ else
     end
     % Si le canal existe déjà (cas reuse), on garde l'id existant.
     % Sinon, on crée un nouveau "logique" à la fin.
-    if all(channelid(destIdx) == 0)
-        nextLogical = max(channelid) + 1;
-        channelid(destIdx) = nextLogical;
-    end
+    channelid(destIdx) = logicalIdWanted;
 end
 
 % --- Lire les attributs display pour ce canal

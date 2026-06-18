@@ -15,6 +15,7 @@ end
 
 selectedROI = app.content.ROIList{selectedROIIndex};
 roiId = string(selectedROI.id);
+score_applyDefaultChannelSelection(selectedROI);
 
 chanToLoad = {};
 try
@@ -52,42 +53,11 @@ end
 
 if isempty(chanToLoad)
     if isempty(selectedROI.image)
-        fprintf('[score] ROI %s: loading full image (no channel filter).\n', char(roiId));
-        selectedROI.load();
+        fprintf('[score] ROI %s: no selected image channel to load.\n', char(roiId));
     end
 else
-    missing = chanToLoad;
-    if ~isempty(selectedROI.image)
-        missing = {};
-        cLoaded = size(selectedROI.image,3);
-        for ii = 1:numel(chanToLoad)
-            name = chanToLoad{ii};
-            pix = [];
-            try
-                pix = selectedROI.findChannelID(name,'exact');
-            catch
-                try
-                    pix = selectedROI.findChannelID(name);
-                catch
-                    pix = [];
-                end
-            end
-            if isempty(pix) || any(pix > cLoaded)
-                missing{end+1} = name; %#ok<AGROW>
-            end
-        end
-    end
-
-    if ~isempty(missing)
-        try
-            fprintf('[score] ROI %s: loading channel(s): %s\n', char(roiId), strjoin(string(missing), ', '));
-            selectedROI.load('Channel', missing, 'Data', false, 'Silent');
-        catch
-            selectedROI.load('Channel', missing);
-        end
-    elseif isempty(selectedROI.image)
-        fprintf('[score] ROI %s: loading selected channel(s): %s\n', char(roiId), strjoin(string(chanToLoad), ', '));
-        selectedROI.load('Channel', chanToLoad);
+    if score_loadChannelsForDisplay(selectedROI, chanToLoad)
+        fprintf('[score] ROI %s: loaded selected channel(s): %s\n', char(roiId), strjoin(string(chanToLoad), ', '));
     end
 end
 

@@ -1,8 +1,9 @@
 function layoutOut=score_updateLayout(layoutOptions,roiobj)
 
  roitmp = roiobj(1);
+score_applyDefaultChannelSelection(roitmp);
 if numel(roitmp.image) == 0
-    roitmp.load;
+    score_loadChannelsForDisplay(roitmp, []);
 end
 
 
