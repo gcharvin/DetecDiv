@@ -50,7 +50,7 @@ end
 function mappings = appendMapping(mappings, localRoot, remoteRoot)
     localRoot = char(string(localRoot));
     remoteRoot = char(string(remoteRoot));
-    if isempty(localRoot) || isempty(remoteRoot)
+    if isempty(localRoot) || isempty(remoteRoot) || ~looksLikeServerRoot(remoteRoot)
         return;
     end
     mappings(end+1).localRoot = localRoot; %#ok<AGROW>
@@ -96,4 +96,9 @@ end
 
 function out = normalizeRemoteRoot(value)
     out = regexprep(strrep(char(string(value)), '\', '/'), '[\/]+$', '');
+end
+
+function tf = looksLikeServerRoot(value)
+    txt = regexprep(strrep(char(string(value)), '\', '/'), '[\/]+$', '');
+    tf = startsWith(txt, '/');
 end

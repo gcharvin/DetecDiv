@@ -10,6 +10,10 @@ function hub = detecdiv_hub_upsert_path_mapping(hub, remoteRoot, localRoot)
 
     remoteRoot = localNormalizeRoot(remoteRoot, '/');
     localRoot = localNormalizeRoot(localRoot, filesep);
+    if ~localLooksLikeServerRoot(remoteRoot)
+        error('detecdiv_hub_upsert_path_mapping:InvalidRemoteRoot', ...
+            'remoteRoot must be a server-visible path, got: %s', remoteRoot);
+    end
     if ~isfield(hub, 'pathMappings') || isempty(hub.pathMappings)
         hub.pathMappings = struct('remoteRoot', {}, 'localRoot', {});
     end
@@ -40,4 +44,9 @@ function out = localNormalizeRoot(value, sep)
     while numel(out) > 1 && endsWith(out, sep)
         out(end) = [];
     end
+end
+
+function tf = localLooksLikeServerRoot(value)
+    txt = regexprep(strrep(char(string(value)), '\', '/'), '[\/]+$', '');
+    tf = startsWith(txt, '/');
 end

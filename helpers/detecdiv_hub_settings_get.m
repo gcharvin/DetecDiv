@@ -45,6 +45,7 @@ function hub = localNormalizeDeploymentDefaults(hub)
     if isempty(getenv('DETECDIV_HUB_BASE_URL')) && strcmp(localTrimUrl(hub.baseUrl), localTrimUrl(oldTunnelDefault))
         hub.baseUrl = currentDefault;
     end
+    hub = localSanitizePathMappings(hub);
 end
 
 function out = localTrimUrl(value)
@@ -62,5 +63,29 @@ function value = localEnvOrValue(name, value)
     envValue = getenv(name);
     if ~isempty(envValue)
         value = envValue;
+    end
+end
+
+function hub = localSanitizePathMappings(hub)
+    if ~isfield(hub, 'pathMappings') || ~isstruct(hub.pathMappings)
+        hub.pathMappings = struct('remoteRoot', {}, 'localRoot', {});
+        return;
+    end
+    keep = false(1, numel(hub.pathMappings));
+    for i = 1:numel(hub.pathMappings)
+        try
+            remoteRoot = regexprep(strrep(char(string(hub.pathMappings(i).remoteRoot)), '\', '/'), '[\/]+$', '');
+            localRoot = regexprep(strrep(char(string(hub.pathMappings(i).localRoot)), '/', filesep), '[\\\/]+$', '');
+            keep(i) = ~isempty(localRoot) && startsWith(remoteRoot, '/');
+        catch
+            keep(i) = false;
+        end
+    end
+    hub.pathMappings = hub.pathMappings(keep);
+    if isfield(hub, 'defaultRemoteProjectRoot') && ~isempty(hub.defaultRemoteProjectRoot)
+        remoteRoot = regexprep(strrep(char(string(hub.defaultRemoteProjectRoot)), '\', '/'), '[\/]+$', '');
+        if ~startsWith(remoteRoot, '/')
+            hub.defaultRemoteProjectRoot = '';
+        end
     end
 end
