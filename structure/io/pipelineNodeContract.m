@@ -923,6 +923,35 @@ function contract = enrichContractFromPackage(contract, node)
                 contract.resources.in = resourceDef('channel', 'roi_image', 'channel', 'channel', 'channels', 'channel', true, '');
                 contract.resources.out = resourceDef('channel', 'derived_roi_image', 'channels', 'outputChannelName', 'channels', 'outputChannelName', false, 'roiChannel');
                 contract.summary = 'Projects z-stacks from one ROI image channel into a derived ROI channel.';
+            case 'bestfocusplane'
+                contract.out = [ ...
+                    portDef('roiList', 'roiList', true, 'edge'), ...
+                    portDef('channels', 'channelSet', false, 'edge'), ...
+                    portDef('dataSeries', 'dataSeriesSet', false, 'edge') ...
+                    ];
+                contract.selectors.channelsParam = 'channels';
+                contract.selectors.channelParam = 'channel';
+                contract.selectors.outputNameParam = 'outputChannelName';
+                contract.parameters.run = {};
+                contract.parameters.static = {'focusSmoothZ','focusProjectionRadius','focusCenterCrop','overwrite','verbose','debug'};
+                contract.requirements.roi.required = true;
+                contract.requirements.roi.channelsMin = 1;
+                contract.binding.scope = 'roi';
+                contract.binding.outputScope = 'roi';
+                contract.binding.mode = 'channelSet';
+                contract.binding.selectorKeys = {'channels','channel'};
+                contract.binding.resolveAt = 'run';
+                contract.binding.outputChannelNameParam = 'outputChannelName';
+                contract.capabilities.roiChannels = true;
+                contract.capabilities.outputsChannels = true;
+                contract.capabilities.roiDataSeries = true;
+                contract.capabilities.outputsDataSeries = true;
+                contract.resources.in = resourceDef('channel', 'roi_image', 'channels', 'channels', 'channels', 'channels', false, '');
+                contract.resources.out = [ ...
+                    resourceDef('channel', 'best_focus_roi_image', 'focus', 'outputChannelName', 'channels', 'outputChannelName', false, 'roiChannel'), ...
+                    resourceDef('dataSeries', 'focus_z', 'dataSeries', 'zBestOutputName', 'dataSeries', 'zBestOutputName', false, 'roiDataSeries') ...
+                    ];
+                contract.summary = 'Selects or computes the best-focus ROI image plane and writes the derived ROI channel plus best-z dataseries.';
             case 'basicobjecttracking'
                 contract.out = [ ...
                     portDef('roiList', 'roiList', true, 'edge'), ...
