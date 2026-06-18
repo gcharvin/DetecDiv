@@ -227,6 +227,7 @@ function [ctx, report] = runPipelineStructured(pipe, ctx)
     stashRunReport(report);
     pipelineRunEvent(ctx, 'run_done', 'Summary', report.summary, ...
         'StartedAt', report.startedAt, 'EndedAt', report.endedAt);
+    detecdiv_emit_workspace_changed(ctx, report, 'done', 'runPipelineStructured');
 end
 
 function ctx = preparePythonEnvironmentIfNeeded(pipe, ctx)

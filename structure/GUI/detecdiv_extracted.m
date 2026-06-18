@@ -5787,8 +5787,160 @@ end
             if isempty(app) || ~isvalid(app) || isempty(app.DetecDivUIFigure) || ~isvalid(app.DetecDivUIFigure)
                 return;
             end
+            app.syncProjectFromWorkspaceEvent(payload);
             RefreshtreewindowMenuSelected(app, []);
             drawnow limitrate;
+        end
+
+        function syncProjectFromWorkspaceEvent(app, payload) %#ok<INUSD>
+            if nargin < 2 || ~isstruct(payload)
+                return;
+            end
+
+            projectObj = [];
+            if isfield(payload, 'projectObj') && isa(payload.projectObj, 'shallow')
+                projectObj = payload.projectObj;
+            elseif isfield(payload, 'shallowObj') && isa(payload.shallowObj, 'shallow')
+                projectObj = payload.shallowObj;
+            elseif isfield(payload, 'shallow') && isa(payload.shallow, 'shallow')
+                projectObj = payload.shallow;
+            end
+
+            projectMatPath = '';
+            if isfield(payload, 'projectMatPath') && ~isempty(payload.projectMatPath)
+                projectMatPath = char(string(payload.projectMatPath));
+            elseif isfield(payload, 'projectPath') && ~isempty(payload.projectPath)
+                projectMatPath = app.projectMatPathFromEventPath(payload.projectPath);
+            end
+
+            if isempty(projectObj) && ~isempty(projectMatPath) && exist(projectMatPath, 'file') == 2
+                try
+                    projectObj = app.loadProjectMatRaw(projectMatPath);
+                catch ME
+                    warning('detecdiv:WorkspaceEventLoadFailed', ...
+                        'Unable to load project from event path "%s": %s', projectMatPath, ME.message);
+                end
+            end
+
+            if isempty(projectObj) || ~isa(projectObj, 'shallow')
+                return;
+            end
+
+            varName = app.projectWorkspaceVarNameFromEvent(payload, projectObj);
+            if isempty(varName)
+                return;
+            end
+
+            try
+                assignin('base', varName, projectObj);
+            catch ME
+                warning('detecdiv:WorkspaceEventAssignFailed', ...
+                    'Unable to publish project "%s" to base workspace: %s', varName, ME.message);
+            end
+        end
+
+        function matPath = projectMatPathFromEventPath(app, projectPath) %#ok<INUSD>
+            matPath = '';
+            if isempty(projectPath)
+                return;
+            end
+            p = char(string(projectPath));
+            if exist(p, 'file') == 2
+                matPath = p;
+                return;
+            end
+            if exist([p '.mat'], 'file') == 2
+                matPath = [p '.mat'];
+                return;
+            end
+            if exist(p, 'dir') == 7
+                [parentDir, projectName] = fileparts(p);
+                candidate = fullfile(parentDir, [projectName '.mat']);
+                if exist(candidate, 'file') == 2
+                    matPath = candidate;
+                end
+            end
+        end
+
+        function varName = projectWorkspaceVarNameFromEvent(app, payload, projectObj) %#ok<INUSD>
+            varName = '';
+            if isfield(payload, 'projectVarName') && ~isempty(payload.projectVarName)
+                varName = char(string(payload.projectVarName));
+            end
+            if isempty(varName) && isfield(payload, 'workspaceVar') && ~isempty(payload.workspaceVar)
+                varName = char(string(payload.workspaceVar));
+            end
+            if isempty(varName)
+                varName = app.findExistingProjectWorkspaceVar(projectObj);
+            end
+            if isempty(varName)
+                try
+                    varName = char(string(projectObj.id));
+                catch
+                    varName = '';
+                end
+            end
+            if isempty(varName)
+                try
+                    [~, file] = projectObj.getPath;
+                    varName = char(string(file));
+                catch
+                    varName = '';
+                end
+            end
+            varName = matlab.lang.makeValidName(varName);
+            if isempty(varName)
+                varName = 'shallowObj';
+            end
+        end
+
+        function varName = findExistingProjectWorkspaceVar(app, projectObj) %#ok<INUSD>
+            varName = '';
+            if isempty(projectObj) || ~isa(projectObj, 'shallow')
+                return;
+            end
+            targetPath = '';
+            targetFile = '';
+            try
+                [targetPath, targetFile] = projectObj.getPath;
+            catch
+            end
+            targetId = '';
+            try
+                targetId = char(string(projectObj.id));
+            catch
+            end
+
+            try
+                vars = evalin('base', 'who');
+            catch
+                vars = {};
+            end
+            for iVar = 1:numel(vars)
+                try
+                    candidate = evalin('base', vars{iVar});
+                catch
+                    continue;
+                end
+                if ~isa(candidate, 'shallow')
+                    continue;
+                end
+                try
+                    [candidatePath, candidateFile] = candidate.getPath;
+                    if ~isempty(targetPath) && strcmp(candidatePath, targetPath) && strcmp(candidateFile, targetFile)
+                        varName = vars{iVar};
+                        return;
+                    end
+                catch
+                end
+                try
+                    if ~isempty(targetId) && strcmp(char(string(candidate.id)), targetId)
+                        varName = vars{iVar};
+                        return;
+                    end
+                catch
+                end
+            end
         end
 
         function applyMainWindowLayout(app)

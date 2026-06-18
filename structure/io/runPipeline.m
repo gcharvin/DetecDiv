@@ -230,6 +230,7 @@ function [ctx, report] = runPipeline(pipe, ctx)
     ctx = updatePipelineProgress(ctx, '', total, total, 1, 1, 'Pipeline completed.');
     pipelineRunEvent(ctx, 'run_done', 'Summary', report.summary, ...
         'StartedAt', report.startedAt, 'EndedAt', report.endedAt);
+    detecdiv_emit_workspace_changed(ctx, report, 'done', 'runPipeline');
 end
 
 function ctx = preparePythonEnvironmentIfNeeded(pipe, ctx)
@@ -1371,6 +1372,7 @@ function [ctx, report] = executeRoiMajorPipeline(pipe, ctx, report, nodeMap, edg
     pipelineRunEvent(ctx, 'run_done', 'Summary', report.summary, ...
         'StartedAt', report.startedAt, 'EndedAt', report.endedAt, ...
         'ExecutionMode', 'roi_major');
+    detecdiv_emit_workspace_changed(ctx, report, 'done', 'runPipeline');
 end
 
 function saveFinalizedRoiLocal(roiobj, ctx)
