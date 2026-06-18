@@ -265,12 +265,7 @@ for i = 1:numel(roiobj)
     % ---------------------------------------------------------
     if isempty(roiobj(i).image)
         disp(['[DEBUG] classifyData: ROI ' roiIdStr ' has empty image -> loading']);
-        requiredChannels = requiredChannelsFromContextLocal(ctxBase, channelForRoiLocal(channel, i));
-        if ~isempty(requiredChannels)
-            roiobj(i).load('Channel', requiredChannels, 'Silent');
-        else
-            roiobj(i).load;
-        end
+        loadRoiImageForClassificationLocal(roiobj(i), ctxBase, channelForRoiLocal(channel, i));
     end
     if isempty(roiobj(i).image)
         warning(['ROI is empty; skipping... (ROI ' roiIdStr ')']);
@@ -329,6 +324,7 @@ for i = 1:numel(roiobj)
             cha = cha{1};
         end
     end
+    cha = resolveClassificationChannelsLocal(roiobj(i), classiobj, cha);
     ensureChannelIndicesAddressableLocal(roiobj(i), cha);
     try
         if iscell(cha)
@@ -1445,12 +1441,35 @@ channels = requiredChannelsFromContextLocal(ctx, fallbackChannels);
 if isempty(channels)
     return;
 end
+channels = filterExistingChannelNamesLocal(roiobjLocal, channels);
+if isempty(channels)
+    return;
+end
 try
     roiobjLocal.load('Channel', channels, 'Silent');
 catch ME
     warning('classifyData:RequiredChannelLoadFailed', ...
         'Could not preload required ROI channel(s) %s for ROI "%s": %s', ...
         strjoin(channels, ', '), safeRoiIdLocal(roiobjLocal), ME.message);
+end
+end
+
+function loadRoiImageForClassificationLocal(roiobjLocal, ctx, fallbackChannels)
+requiredChannels = requiredChannelsFromContextLocal(ctx, fallbackChannels);
+requiredChannels = filterExistingChannelNamesLocal(roiobjLocal, requiredChannels);
+
+if isempty(requiredChannels)
+    roiobjLocal.load;
+    return;
+end
+
+try
+    roiobjLocal.load('Channel', requiredChannels, 'Silent');
+catch ME
+    warning('classifyData:RequiredChannelLoadFailed', ...
+        'Could not load required ROI channel(s) %s for ROI "%s": %s. Falling back to full ROI load.', ...
+        strjoin(requiredChannels, ', '), safeRoiIdLocal(roiobjLocal), ME.message);
+    roiobjLocal.load;
 end
 end
 
@@ -1529,6 +1548,53 @@ for i = 1:numel(vals)
     channels{end+1} = s; %#ok<AGROW>
 end
 channels = unique(channels(~cellfun(@isempty, channels)), 'stable');
+end
+
+function channels = filterExistingChannelNamesLocal(roiobjLocal, channels)
+channels = normalizeChannelListLocal(channels);
+if isempty(channels)
+    return;
+end
+keep = true(size(channels));
+for i = 1:numel(channels)
+    try
+        keep(i) = ~isempty(roiobjLocal.findChannelID(channels{i}));
+    catch
+        keep(i) = false;
+    end
+end
+channels = channels(keep);
+end
+
+function channels = resolveClassificationChannelsLocal(roiobjLocal, classiobjLocal, channels)
+requested = normalizeChannelListLocal(channels);
+existing = filterExistingChannelNamesLocal(roiobjLocal, requested);
+if ~isempty(existing)
+    if numel(existing) == 1
+        channels = existing{1};
+    else
+        channels = existing;
+    end
+    return;
+end
+
+if ~isempty(requested)
+    warning('classifyData:InvalidInputChannel', ...
+        'Requested input channel(s) %s not found for ROI "%s"; using classifier input channel(s).', ...
+        strjoin(requested, ', '), safeRoiIdLocal(roiobjLocal));
+end
+
+try
+    fallback = classiobjLocal.getInputChannels();
+catch
+    fallback = classiobjLocal.channelName;
+end
+fallback = filterExistingChannelNamesLocal(roiobjLocal, fallback);
+if numel(fallback) == 1
+    channels = fallback{1};
+else
+    channels = fallback;
+end
 end
 
 function ensureChannelIndicesAddressableLocal(roiobjLocal, channels)
