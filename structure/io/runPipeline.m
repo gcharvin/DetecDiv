@@ -1376,7 +1376,7 @@ function [ctx, report] = executeRoiMajorPipeline(pipe, ctx, report, nodeMap, edg
 end
 
 function saveFinalizedRoiLocal(roiobj, ctx)
-    dirty = struct('data', false, 'image', false);
+    dirty = struct('data', false, 'image', false, 'fullImage', false, 'channels', {{}});
     try
         if isstruct(roiobj.results) && isfield(roiobj.results, 'pipelineDeferredDirty') && isstruct(roiobj.results.pipelineDeferredDirty)
             dirty = roiobj.results.pipelineDeferredDirty;
@@ -1389,6 +1389,8 @@ function saveFinalizedRoiLocal(roiobj, ctx)
 
     if ~isfield(dirty,'data'), dirty.data = false; end
     if ~isfield(dirty,'image'), dirty.image = false; end
+    if ~isfield(dirty,'fullImage'), dirty.fullImage = false; end
+    if ~isfield(dirty,'channels'), dirty.channels = {}; end
     if ~dirty.data && roiHasSavableDataseriesLocal(roiobj)
         dirty.data = true;
     end
@@ -1400,8 +1402,16 @@ function saveFinalizedRoiLocal(roiobj, ctx)
 
     if dirty.image
         try
-            roiobj.save;
-            disp(sprintf('[runPipeline] Final ROI save: image+data for ROI %s.', safeRoiIdForRunLocal(roiobj)));
+            saveChannels = cellstr(string(dirty.channels(:)))';
+            saveChannels = saveChannels(~cellfun(@isempty, saveChannels));
+            if ~dirty.fullImage && ~isempty(saveChannels)
+                roiobj.save(saveChannels);
+                disp(sprintf('[runPipeline] Final ROI save: %d image channel(s)+data for ROI %s.', ...
+                    numel(saveChannels), safeRoiIdForRunLocal(roiobj)));
+            else
+                roiobj.save;
+                disp(sprintf('[runPipeline] Final ROI save: image+data for ROI %s.', safeRoiIdForRunLocal(roiobj)));
+            end
         catch ME
             error('runPipeline:RoiFinalSaveFailed', ...
                 'Final save failed for ROI %s: %s', safeRoiIdForRunLocal(roiobj), ME.message);

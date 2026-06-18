@@ -14049,10 +14049,83 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             updateRunSaveProgress(app, progressDlg, message);
             pipelineRunSave(runObj);
+            attachCurrentRunToProject(app, runObj);
+            publishCurrentProjectForTreeRefresh(app, runObj);
             markRunDirty(app, false);
             if logical(saveProject) && ~isempty(app.CurrentProject) && isa(app.CurrentProject, 'shallow')
                 updateRunSaveProgress(app, progressDlg, 'Saving project state...');
                 shallowSave(app.CurrentProject, 'shallowObj');
+            end
+        end
+
+        function attachCurrentRunToProject(app, runObj)
+            if isempty(runObj) || ~isa(runObj, 'pipelineRun') || isempty(app.CurrentProject) || ~isa(app.CurrentProject, 'shallow')
+                return;
+            end
+            shallowObj = app.CurrentProject;
+            if ~isfield(shallowObj.processing, 'pipelineRun') || isempty(shallowObj.processing.pipelineRun)
+                shallowObj.processing.pipelineRun = pipelineRun.empty;
+            end
+            runId = char(string(runObj.runId));
+            idx = [];
+            try
+                ids = arrayfun(@(r)char(string(r.runId)), shallowObj.processing.pipelineRun, 'UniformOutput', false);
+                idx = find(strcmp(ids, runId), 1);
+            catch
+                idx = [];
+            end
+            if isempty(idx)
+                try
+                    paths = arrayfun(@(r)char(string(r.path)), shallowObj.processing.pipelineRun, 'UniformOutput', false);
+                    idx = find(strcmp(paths, char(string(runObj.path))), 1);
+                catch
+                    idx = [];
+                end
+            end
+            if isempty(idx)
+                shallowObj.processing.pipelineRun(end+1) = runObj;
+            else
+                shallowObj.processing.pipelineRun(idx) = runObj;
+            end
+            app.CurrentProject = shallowObj;
+            if ~isempty(app.CurrentProjectVarName)
+                try
+                    assignin('base', char(string(app.CurrentProjectVarName)), shallowObj);
+                catch
+                end
+            end
+        end
+
+        function publishCurrentProjectForTreeRefresh(app, runObj)
+            if isempty(app.CurrentProject) || ~isa(app.CurrentProject, 'shallow') || exist('detecdiv_event', 'file') ~= 2
+                return;
+            end
+            payload = struct();
+            payload.kind = 'pipelineRun';
+            payload.action = 'saved';
+            payload.source = 'pipeline2';
+            payload.projectObj = app.CurrentProject;
+            payload.projectVarName = char(string(app.CurrentProjectVarName));
+            payload.runId = '';
+            payload.runPath = '';
+            payload.projectMatPath = '';
+            payload.projectPath = '';
+            payload.projectName = '';
+            if ~isempty(runObj) && isa(runObj, 'pipelineRun')
+                payload.runId = char(string(runObj.runId));
+                payload.runPath = char(string(runObj.path));
+            end
+            try
+                [pth, file] = app.CurrentProject.getPath;
+                payload.projectMatPath = fullfile(pth, [file '.mat']);
+                payload.projectPath = fullfile(pth, file);
+                payload.projectName = char(string(file));
+            catch
+            end
+            try
+                detecdiv_event('emit', 'pipelineRunSaved', payload);
+                detecdiv_event('emit', 'workspaceChanged', payload);
+            catch
             end
         end
 
@@ -14171,10 +14244,10 @@ classdef pipeline2 < matlab.apps.AppBase
                 runObj = createOrUpdateCurrentRun(app, ctx, 'preflight', forceAs, requestedRunId);
                 updateRunSaveProgress(app, d, 'Writing run JSON...', 0.55);
                 logRunEvent(app, runObj, 'Run parameters saved from pipeline2.', 'pipeline2');
-                savePipelineRunAndProject(app, runObj, d, 'Saving run JSON...', false);
+                savePipelineRunAndProject(app, runObj, d, 'Saving run and project link...', true);
                 updateRunSaveProgress(app, d, 'Run saved.', 1);
                 ok = true;
-                setRuntimeStatus(app, ['Run saved: ' fullfile(runObj.path, 'run.json') ' | run only']);
+                setRuntimeStatus(app, ['Run saved and attached to project: ' fullfile(runObj.path, 'run.json')]);
             catch ME
                 uialert(app.UIFigure, ME.message, 'Save run', 'Icon', 'error');
             end

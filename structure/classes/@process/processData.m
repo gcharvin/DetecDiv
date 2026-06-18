@@ -251,7 +251,15 @@ if para % parallel computing
             end
         end
 
-        safeROIManagement(roiobj(idx),image,data,{},cachePolicy,hadImageByIdx(idx),hadDataByIdx(idx),saveMode);
+        saveChannels = {};
+        if isstruct(param)
+            if isfield(param,'saveChannels') && ~isempty(param.saveChannels)
+                saveChannels = param.saveChannels;
+            elseif isfield(param,'outputChannelName') && ~isempty(param.outputChannelName)
+                saveChannels = {char(string(param.outputChannelName))};
+            end
+        end
+        safeROIManagement(roiobj(idx),image,data,saveChannels,cachePolicy,hadImageByIdx(idx),hadDataByIdx(idx),saveMode);
         updateProcessProgress(ctxBase, p, i, numel(logparf), 'Processed');
         %     roiobj(idx).results=results;
         %
@@ -323,7 +331,7 @@ end
         roiobj.data=data;
         roiobj.image=image;
         if shouldDeferSaveLocal(saveModeLocal)
-            markDeferredDirtyLocal(roiobj, hasSavableDataseries(data), numel(image) > 0);
+            markDeferredDirtyLocal(roiobj, hasSavableDataseries(data), numel(image) > 0, saveChannels);
             disp('[processData] Defer save requested; processor output kept in ROI memory.');
             return;
         end
@@ -481,19 +489,30 @@ end
         tf = strcmp(normalizeSaveModeLocal(mode), 'defer');
     end
 
-    function markDeferredDirtyLocal(roiobjLocal, hasData, hasImage)
+    function markDeferredDirtyLocal(roiobjLocal, hasData, hasImage, saveChannels)
+        if nargin < 4
+            saveChannels = {};
+        end
         try
             if ~isstruct(roiobjLocal.results)
                 roiobjLocal.results = struct();
             end
-            dirty = struct('data', false, 'image', false);
+            dirty = struct('data', false, 'image', false, 'fullImage', false, 'channels', {{}});
             if isfield(roiobjLocal.results, 'pipelineDeferredDirty') && isstruct(roiobjLocal.results.pipelineDeferredDirty)
                 dirty = roiobjLocal.results.pipelineDeferredDirty;
                 if ~isfield(dirty,'data'), dirty.data = false; end
                 if ~isfield(dirty,'image'), dirty.image = false; end
+                if ~isfield(dirty,'fullImage'), dirty.fullImage = false; end
+                if ~isfield(dirty,'channels'), dirty.channels = {}; end
             end
             dirty.data = logical(dirty.data || hasData);
             dirty.image = logical(dirty.image || hasImage);
+            if hasImage && isempty(saveChannels)
+                dirty.fullImage = true;
+                dirty.channels = {};
+            elseif hasImage && ~dirty.fullImage
+                dirty.channels = unique([cellstr(string(dirty.channels(:)))' cellstr(string(saveChannels(:)))'], 'stable');
+            end
             roiobjLocal.results.pipelineDeferredDirty = dirty;
         catch
         end
