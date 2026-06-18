@@ -2188,7 +2188,29 @@ end
         function FormattrainingsetMenuSelected(app, event)
   
     classiObj = app.Data.classiObj;
-    nrois = classiObj.trainingset;
+    if ~isempty(app.UITableData.Data)
+        selectedfortraining = cellfun(@(x) x==1, app.UITableData.Data(:,1));
+        selectedfortest = cellfun(@(x) x==1, app.UITableData.Data(:,2));
+        nrois = find(selectedfortraining');
+        testrois = find(selectedfortest');
+        classiObj.trainingset = nrois;
+        try
+            if ~isprop(classiObj,'dataset') || ~isstruct(classiObj.dataset)
+                classiObj.dataset = struct('classes', {{}}, 'channels', {{}}, ...
+                    'split', struct('train', [], 'val', [], 'test', []));
+            end
+            if ~isfield(classiObj.dataset,'split') || ~isstruct(classiObj.dataset.split)
+                classiObj.dataset.split = struct('train', [], 'val', [], 'test', []);
+            end
+            classiObj.dataset.split.train = nrois;
+            classiObj.dataset.split.val = [];
+            classiObj.dataset.split.test = testrois;
+        catch
+        end
+        app.Data.classiObj = classiObj;
+    else
+        nrois = classiObj.getTrainingROIIndices();
+    end
 
     if numel(nrois) == 0
         uialert(app.ClassifierUIFigure, ...
@@ -2220,7 +2242,7 @@ end
         'Message','Exporting trainingset to files; Please wait...');
     d.Value = 0.33;
 
-    args = {'Frames', framesToProcess};
+    args = {'Frames', framesToProcess, 'Rois', nrois};
 
     % Call
     output = app.Data.classiObj.formatDataForTraining(args{:});
