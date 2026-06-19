@@ -320,6 +320,12 @@ for ii = 1:length(rois)
         im = classif.roi(cc+1).image;
 
         outName = annotationChannelNameForClassifier(classif);
+        try
+            if isprop(classif, 'classifierPkg') && strcmpi(char(string(classif.classifierPkg)), 'deeplab_pixel_classification')
+                deeplab_pixel_classification.migrateAnnotationChannels(classif.roi(cc+1), classif, 'RemoveLegacy', true);
+            end
+        catch
+        end
 
         % Special case: Pixel output channel may already exist in imported ROI and should be reused.
         if strcmp(classif.category{1},'Pixel') && ~isempty(ioMap) && isstruct(ioMap)
@@ -340,7 +346,7 @@ for ii = 1:length(rois)
         % copy pixels from source annotation channel to new annotation channel (legacy behavior)
         if isa(obj,'classi')
             pixid    = roitocopy.findChannelID(obj.strid);
-            pixidnew = classif.roi(cc+1).findChannelID(classif.strid);
+            pixidnew = classif.roi(cc+1).findChannelID(outName);
 
             if ~isempty(pixid) && ~isempty(pixidnew)
                 classif.roi(cc+1).image(:,:,pixidnew,:) = roitocopy.image(:,:,pixid,:);

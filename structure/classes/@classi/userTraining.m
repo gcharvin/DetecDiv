@@ -455,6 +455,15 @@ end
 function channelName = ensureAnnotationChannelForClassifier(roiObj, classif)
 channelName = '';
 try
+    if isprop(classif, 'classifierPkg') && strcmpi(char(string(classif.classifierPkg)), 'deeplab_pixel_classification')
+        didMigrate = deeplab_pixel_classification.migrateAnnotationChannels(roiObj, classif, 'RemoveLegacy', true);
+        if didMigrate
+            try
+                roiObj.save;
+            catch
+            end
+        end
+    end
     channelName = annotationChannelNameForClassifier(classif);
     if isempty(channelName)
         return;

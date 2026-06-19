@@ -49,6 +49,16 @@ for i=1:numel(rois)
     % find image channel associated with training
     %pixe = strfind(cltmp(i).display.channel, classif.strid);
 
+    if isDeepLabSemantic
+        try
+            deeplab_pixel_classification.migrateAnnotationChannels(cltmp(rois(i)), classif, 'RemoveLegacy', false);
+        catch ME
+            warning('formatPixelTrainingSet:DeepLabAnnotationMigration', ...
+                'Could not migrate legacy DeepLab annotation channels for ROI %s: %s', ...
+                char(string(cltmp(rois(i)).id)), ME.message);
+        end
+    end
+
     if strcmp(classif.description{1},'Image pixel regression')
     cc=cltmp(rois(i)).findChannelID(channel{2}); % second channel is used as output
     else
@@ -146,13 +156,27 @@ for i=1:numel(rois)
          %   labels=repmat(lab,1,1,3,1);
         elseif isDeepLabSemantic
             labels = double(zeros(size(lab,1), size(lab,2), 3, size(lab,4)));
-            bgColor = classif.colormap(2,:);
-            fgColor = classif.colormap(min(3, size(classif.colormap,1)),:);
-            fg = lab(:,:,1,:) > 0;
-            bg = ~fg;
-            for k = 1:3
-                labels(:,:,k,:) = labels(:,:,k,:) + double(bg) * bgColor(k);
-                labels(:,:,k,:) = labels(:,:,k,:) + double(fg) * fgColor(k);
+            nClasses = numel(classif.classes);
+            maxLabel = double(max(lab(:)));
+            if nClasses == 2 && maxLabel > nClasses
+                classMask = cell(1, nClasses);
+                classMask{1} = lab(:,:,1,:) == 0;
+                classMask{2} = lab(:,:,1,:) > 0;
+            else
+                classMask = cell(1, nClasses);
+                for jj = 1:nClasses
+                    if jj == 1
+                        classMask{jj} = lab(:,:,1,:) == 0 | lab(:,:,1,:) == 1;
+                    else
+                        classMask{jj} = lab(:,:,1,:) == jj;
+                    end
+                end
+            end
+            for jj = 1:nClasses
+                colorRow = min(jj + 1, size(classif.colormap, 1));
+                for k = 1:3
+                    labels(:,:,k,:) = labels(:,:,k,:) + double(classMask{jj}) * classif.colormap(colorRow,k);
+                end
             end
         else
             labels= double(zeros(size(lab,1),size(lab,2),3,size(lab,4)));
