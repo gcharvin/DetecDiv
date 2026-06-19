@@ -2,7 +2,7 @@ function [ok, report] = validatePipeline(pipe, ctx, opts)
 % validatePipeline  Validate pipeline structure and dependencies.
 
     ok = true;
-    report = struct('errors',{{}}, 'warnings',{{}}, 'order', [], 'nodes', [], 'edges', [], 'contracts', struct(), 'semantic', struct(), 'binding', struct(), 'classifierArtifacts', [], 'pathChecks', [], 'solver', struct());
+    report = struct('errors',{{}}, 'warnings',{{}}, 'order', [], 'nodes', [], 'edges', [], 'contracts', struct(), 'semantic', struct(), 'binding', struct(), 'classifierArtifacts', [], 'pluginPackages', [], 'pathChecks', [], 'solver', struct());
 
     if nargin < 2 || isempty(ctx)
         ctx = struct();
@@ -121,6 +121,17 @@ function [ok, report] = validatePipeline(pipe, ctx, opts)
             end
             if ~isempty(artifactWarnings)
                 report.warnings = [report.warnings, artifactWarnings]; %#ok<AGROW>
+            end
+            [pluginErrors, pluginWarnings, pluginReport] = pluginPackageIssues(node, ctx);
+            if ~isempty(pluginReport)
+                report.pluginPackages = appendStructArray(report.pluginPackages, pluginReport);
+            end
+            if ~isempty(pluginErrors)
+                ok = false;
+                report.errors = [report.errors, pluginErrors]; %#ok<AGROW>
+            end
+            if ~isempty(pluginWarnings)
+                report.warnings = [report.warnings, pluginWarnings]; %#ok<AGROW>
             end
             [pathErrors, pathWarnings, pathReports] = nodePathIssues(node, ctx);
             if ~isempty(pathReports)
@@ -1841,6 +1852,145 @@ for i = 1:numel(outputKeys)
     if ~isempty(pathWarnings)
         warnings = [warnings, pathWarnings]; %#ok<AGROW>
     end
+end
+end
+
+function [errors, warnings, report] = pluginPackageIssues(node, ctx)
+errors = {};
+warnings = {};
+report = struct([]);
+
+nodeType = lower(char(string(getField(node, 'type', ''))));
+if ~any(strcmp(nodeType, {'processor','classifier'}))
+    return;
+end
+
+pkgName = char(string(getField(node, 'pkg', '')));
+p = getField(node, 'params', struct());
+if isempty(pkgName) && isstruct(p) && isfield(p, 'pkg') && ~isempty(p.pkg)
+    pkgName = char(string(p.pkg));
+end
+if isempty(pkgName)
+    return;
+end
+
+[customRoot, customDir] = customPackagePathsForValidation(node, p, pkgName);
+hasCustomLink = ~isempty(customRoot) || ~isempty(customDir);
+registeredDir = registeredPluginPackageDirForValidation(pkgName, nodeType);
+nodeId = char(string(getField(node, 'id', '')));
+
+if isempty(customDir) && ~isempty(customRoot)
+    customDir = fullfile(customRoot, ['+' pkgName]);
+end
+
+if hasCustomLink
+    configuredPath = customDir;
+    if isempty(configuredPath)
+        configuredPath = customRoot;
+    end
+    [checkPath, status, targetLabel, serverPath] = resolveNodePathForValidation(configuredPath, ctx);
+    accessible = ~isempty(checkPath) && exist(checkPath, 'dir') == 7;
+    report = pluginPackageReport(node, customRoot, customDir, checkPath, serverPath, status, targetLabel, registeredDir, accessible);
+
+    if accessible && ~packageFolderNameMatches(checkPath, pkgName)
+        errors{end+1} = sprintf('Plugin package for node %s points to "%s", but expected a folder named +%s.', ...
+            nodeId, checkPath, pkgName); %#ok<AGROW>
+        return;
+    end
+    if accessible
+        return;
+    end
+
+    msg = sprintf(['Plugin package for node %s is not accessible for %s. ' ...
+        'Configured package path: %s.'], nodeId, targetLabel, configuredPath);
+    if ~isempty(registeredDir)
+        msg = sprintf('%s A registered copy exists at %s; relink the plugin in pipeline2 so runs and exports use the portable path.', ...
+            msg, registeredDir);
+    else
+        msg = sprintf('%s Relink the plugin in pipeline2 or register/install the external plugin package.', msg);
+    end
+    errors{end+1} = msg; %#ok<AGROW>
+    return;
+end
+
+if ~isempty(registeredDir)
+    report = pluginPackageReport(node, customRoot, customDir, registeredDir, '', 'registered_unlinked', validationExecutionTargetLabel(ctx), registeredDir, true);
+    warnings{end+1} = sprintf(['Plugin package "%s" for node %s is available in the plugin registry (%s), ' ...
+        'but this pipeline node does not store a customPackageDir/customPackageRoot link. Relink it in pipeline2 before exporting a portable bundle.'], ...
+        pkgName, nodeId, registeredDir); %#ok<AGROW>
+end
+end
+
+function [customRoot, customDir] = customPackagePathsForValidation(node, params, pkgName)
+customRoot = '';
+customDir = '';
+if isfield(node, 'customPackageRoot') && ~isempty(node.customPackageRoot)
+    customRoot = char(string(node.customPackageRoot));
+end
+if isfield(node, 'customPackageDir') && ~isempty(node.customPackageDir)
+    customDir = char(string(node.customPackageDir));
+end
+if isstruct(params)
+    if isempty(customRoot) && isfield(params, 'customPackageRoot') && ~isempty(params.customPackageRoot)
+        customRoot = char(string(params.customPackageRoot));
+    end
+    if isempty(customDir) && isfield(params, 'customPackageDir') && ~isempty(params.customPackageDir)
+        customDir = char(string(params.customPackageDir));
+    end
+end
+if isempty(customDir) && ~isempty(customRoot) && ~isempty(pkgName)
+    customDir = fullfile(customRoot, ['+' pkgName]);
+end
+end
+
+function report = pluginPackageReport(node, configuredRoot, configuredDir, resolvedDir, serverPath, status, targetLabel, registeredDir, accessible)
+report = struct( ...
+    'nodeId', char(string(getField(node, 'id', ''))), ...
+    'type', char(string(getField(node, 'type', ''))), ...
+    'package', char(string(getField(node, 'pkg', ''))), ...
+    'configuredRoot', char(string(configuredRoot)), ...
+    'configuredDir', char(string(configuredDir)), ...
+    'resolvedDir', char(string(resolvedDir)), ...
+    'serverPath', char(string(serverPath)), ...
+    'registeredDir', char(string(registeredDir)), ...
+    'target', char(string(targetLabel)), ...
+    'status', char(string(status)), ...
+    'accessible', logical(accessible));
+end
+
+function tf = packageFolderNameMatches(folderPath, pkgName)
+tf = true;
+try
+    [~, leaf] = fileparts(char(string(folderPath)));
+    expected = ['+' char(string(pkgName))];
+    tf = strcmp(leaf, expected);
+catch
+    tf = true;
+end
+end
+
+function packageDir = registeredPluginPackageDirForValidation(pkgName, nodeType)
+packageDir = '';
+try
+    if exist('detecdiv_plugins_addpath', 'file') == 2
+        detecdiv_plugins_addpath();
+    end
+    if exist('detecdiv_plugins_list', 'file') ~= 2
+        return;
+    end
+    plugins = detecdiv_plugins_list();
+    for i = 1:numel(plugins)
+        if strcmp(char(string(plugins(i).name)), char(string(pkgName))) && ...
+                strcmpi(char(string(plugins(i).type)), char(string(nodeType)))
+            candidate = char(string(plugins(i).path));
+            if exist(candidate, 'dir') == 7
+                packageDir = candidate;
+                return;
+            end
+        end
+    end
+catch
+    packageDir = '';
 end
 end
 

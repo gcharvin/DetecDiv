@@ -5369,11 +5369,12 @@ classdef pipeline2 < matlab.apps.AppBase
             staticData = paramsToTableData(app, node, 'static');
             runtimeData = paramsToTableData(app, node, 'runtime');
             showClassifierReference = isClassifierNode(app, node);
+            showPluginReference = isPluginPackageNode(app, node);
             showBindings = isRoiExtractNode || ~isempty(bindingData);
             showStatic = ~isempty(staticData);
             showRuntime = ~isempty(runtimeData);
 
-            if ~showClassifierReference && ~showBindings && ~showStatic && ~showRuntime
+            if ~showClassifierReference && ~showPluginReference && ~showBindings && ~showStatic && ~showRuntime
                 grid = uigridlayout(parentTab, [1 1]);
                 grid.Padding = [12 10 12 12];
                 uilabel(grid, 'Text', 'No module-specific parameters for this module.', ...
@@ -5382,11 +5383,14 @@ classdef pipeline2 < matlab.apps.AppBase
             end
 
             colCount = 1;
-            rowCount = 2 * double(showClassifierReference) + 2 * double(showBindings) + ...
+            rowCount = 2 * double(showClassifierReference) + 2 * double(showPluginReference) + 2 * double(showBindings) + ...
                 2 * double(showRuntime) + double(showStatic);
             grid = uigridlayout(parentTab, [rowCount colCount]);
             rowHeights = {};
             if showClassifierReference
+                rowHeights = [rowHeights {24, 76}]; %#ok<AGROW>
+            end
+            if showPluginReference
                 rowHeights = [rowHeights {24, 76}]; %#ok<AGROW>
             end
             if showBindings
@@ -5416,6 +5420,18 @@ classdef pipeline2 < matlab.apps.AppBase
                 refLabel.Layout.Column = layoutSpan(app, 1, colCount);
 
                 section = buildClassifierReferenceSection(app, grid, node);
+                section.Layout.Row = row + 1;
+                section.Layout.Column = layoutSpan(app, 1, colCount);
+                row = row + 2;
+            end
+
+            if showPluginReference
+                pluginLabel = uilabel(grid, 'Text', 'Plugin package');
+                pluginLabel.FontWeight = 'bold';
+                pluginLabel.Layout.Row = row;
+                pluginLabel.Layout.Column = layoutSpan(app, 1, colCount);
+
+                section = buildPluginReferenceSection(app, grid, node);
                 section.Layout.Row = row + 1;
                 section.Layout.Column = layoutSpan(app, 1, colCount);
                 row = row + 2;
@@ -5609,6 +5625,64 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function tf = isClassifierNode(app, node) %#ok<INUSD>
             tf = strcmpi(char(string(getField(app, node, 'type', ''))), 'classifier');
+        end
+
+        function tf = isPluginPackageNode(app, node)
+            tf = false;
+            nodeType = lower(char(string(getField(app, node, 'type', ''))));
+            if ~any(strcmp(nodeType, {'processor','classifier'}))
+                return;
+            end
+            if hasCustomPackageReference(app, node)
+                tf = true;
+                return;
+            end
+            pkg = char(string(getField(app, node, 'pkg', '')));
+            if isempty(pkg)
+                return;
+            end
+            tf = pluginPackageExists(app, pkg, nodeType);
+        end
+
+        function tf = hasCustomPackageReference(app, node) %#ok<INUSD>
+            tf = false;
+            try
+                if isfield(node, 'customPackageRoot') && ~isempty(node.customPackageRoot)
+                    tf = true;
+                    return;
+                end
+                if isfield(node, 'customPackageDir') && ~isempty(node.customPackageDir)
+                    tf = true;
+                    return;
+                end
+                p = getField(app, node, 'params', struct());
+                tf = isstruct(p) && ((isfield(p, 'customPackageRoot') && ~isempty(p.customPackageRoot)) || ...
+                    (isfield(p, 'customPackageDir') && ~isempty(p.customPackageDir)));
+            catch
+                tf = false;
+            end
+        end
+
+        function tf = pluginPackageExists(app, pkg, nodeType) %#ok<INUSD>
+            tf = false;
+            try
+                if exist('detecdiv_plugins_addpath', 'file') == 2
+                    detecdiv_plugins_addpath();
+                end
+                if exist('detecdiv_plugins_list', 'file') ~= 2
+                    return;
+                end
+                plugins = detecdiv_plugins_list();
+                for i = 1:numel(plugins)
+                    if strcmp(char(string(plugins(i).name)), char(string(pkg))) && ...
+                            strcmpi(char(string(plugins(i).type)), char(string(nodeType)))
+                        tf = true;
+                        return;
+                    end
+                end
+            catch
+                tf = false;
+            end
         end
 
         function txt = staticParamSectionTitle(app, node) %#ok<INUSD>
@@ -6082,6 +6156,198 @@ classdef pipeline2 < matlab.apps.AppBase
                 'ButtonPushedFcn', @(~,~)clearClassifierArtifactLink(app, node));
             clearButton.Layout.Row = 2;
             clearButton.Layout.Column = 5;
+        end
+
+        function section = buildPluginReferenceSection(app, parent, node)
+            section = uigridlayout(parent, [2 4]);
+            section.RowHeight = {24, 28};
+            section.ColumnWidth = {'1x', 150, 130, 110};
+            section.Padding = [0 0 0 0];
+            section.RowSpacing = 6;
+            section.ColumnSpacing = 8;
+
+            status = uilabel(section, 'Text', pluginReferenceSummary(app, node), ...
+                'FontColor', pluginReferenceColor(app, node), 'Interpreter', 'none');
+            status.Layout.Row = 1;
+            status.Layout.Column = [1 4];
+
+            hint = uilabel(section, 'Text', ...
+                'External package used for this module. It is copied into exported bundles when the link is valid.', ...
+                'FontColor', [0.35 0.35 0.35], 'Interpreter', 'none');
+            hint.Layout.Row = 2;
+            hint.Layout.Column = 1;
+
+            relinkButton = uibutton(section, 'push', 'Text', 'Relink plugin...', ...
+                'ButtonPushedFcn', @(~,~)relinkPluginPackage(app, node));
+            relinkButton.Layout.Row = 2;
+            relinkButton.Layout.Column = 2;
+
+            browseButton = uibutton(section, 'push', 'Text', 'Browse plugins...', ...
+                'ButtonPushedFcn', @(~,~)openPluginBrowser(app));
+            browseButton.Layout.Row = 2;
+            browseButton.Layout.Column = 3;
+
+            clearButton = uibutton(section, 'push', 'Text', 'Clear link', ...
+                'ButtonPushedFcn', @(~,~)clearPluginPackageLink(app, node));
+            clearButton.Layout.Row = 2;
+            clearButton.Layout.Column = 4;
+        end
+
+        function txt = pluginReferenceSummary(app, node)
+            info = pluginReferenceInfo(app, node);
+            txt = info.summary;
+        end
+
+        function color = pluginReferenceColor(app, node)
+            info = pluginReferenceInfo(app, node);
+            color = info.color;
+        end
+
+        function info = pluginReferenceInfo(app, node)
+            pkg = char(string(getField(app, node, 'pkg', '')));
+            nodeType = char(string(getField(app, node, 'type', '')));
+            info = struct('summary', '', 'color', [0.62 0.32 0.08]);
+            [packageRoot, packageDir] = customPackagePathsForNode(app, node);
+            if ~isempty(packageDir)
+                if exist(packageDir, 'dir') == 7
+                    info.summary = ['Linked plugin: ' pkg '  |  ' packageDir];
+                    info.color = [0.10 0.42 0.20];
+                else
+                    recovered = registeredPluginPackageDir(app, pkg, nodeType);
+                    if ~isempty(recovered)
+                        info.summary = ['Stored plugin path is unavailable; registered copy found: ' recovered];
+                        info.color = [0.72 0.38 0.08];
+                    else
+                        info.summary = ['Linked plugin folder not accessible: ' packageDir];
+                        info.color = [0.75 0.18 0.18];
+                    end
+                end
+                return;
+            end
+            recovered = registeredPluginPackageDir(app, pkg, nodeType);
+            if ~isempty(recovered)
+                info.summary = ['Plugin available from registry but not linked in this node: ' recovered];
+                info.color = [0.72 0.38 0.08];
+            else
+                info.summary = ['No linked plugin package. Expected package: ' pkg];
+                info.color = [0.75 0.18 0.18];
+            end
+            if ~isempty(packageRoot) && isempty(packageDir)
+                info.summary = [info.summary '  |  root: ' packageRoot];
+            end
+        end
+
+        function [packageRoot, packageDir] = customPackagePathsForNode(app, node)
+            packageRoot = '';
+            packageDir = '';
+            try
+                if isfield(node, 'customPackageRoot') && ~isempty(node.customPackageRoot)
+                    packageRoot = char(string(node.customPackageRoot));
+                end
+                if isfield(node, 'customPackageDir') && ~isempty(node.customPackageDir)
+                    packageDir = char(string(node.customPackageDir));
+                end
+                p = getField(app, node, 'params', struct());
+                if isstruct(p)
+                    if isempty(packageRoot) && isfield(p, 'customPackageRoot') && ~isempty(p.customPackageRoot)
+                        packageRoot = char(string(p.customPackageRoot));
+                    end
+                    if isempty(packageDir) && isfield(p, 'customPackageDir') && ~isempty(p.customPackageDir)
+                        packageDir = char(string(p.customPackageDir));
+                    end
+                end
+                if isempty(packageDir) && ~isempty(packageRoot)
+                    pkg = char(string(getField(app, node, 'pkg', '')));
+                    if ~isempty(pkg)
+                        packageDir = fullfile(packageRoot, ['+' pkg]);
+                    end
+                end
+            catch
+                packageRoot = '';
+                packageDir = '';
+            end
+        end
+
+        function packageDir = registeredPluginPackageDir(app, pkg, nodeType) %#ok<INUSD>
+            packageDir = '';
+            if isempty(pkg)
+                return;
+            end
+            try
+                if exist('detecdiv_plugins_addpath', 'file') == 2
+                    detecdiv_plugins_addpath();
+                end
+                if exist('detecdiv_plugins_list', 'file') ~= 2
+                    return;
+                end
+                plugins = detecdiv_plugins_list();
+                for i = 1:numel(plugins)
+                    if strcmp(char(string(plugins(i).name)), char(string(pkg))) && ...
+                            strcmpi(char(string(plugins(i).type)), char(string(nodeType)))
+                        candidate = char(string(plugins(i).path));
+                        if exist(candidate, 'dir') == 7
+                            packageDir = candidate;
+                            return;
+                        end
+                    end
+                end
+            catch
+                packageDir = '';
+            end
+        end
+
+        function relinkPluginPackage(app, node)
+            nodeId = char(string(getField(app, node, 'id', '')));
+            idx = find(strcmp({app.Data.nodes.id}, nodeId), 1);
+            if isempty(idx)
+                return;
+            end
+            choice = resolveCustomPackageChoice(app, 'Relink plugin package');
+            if isempty(choice) || ~isstruct(choice)
+                return;
+            end
+            expectedType = char(string(getField(app, app.Data.nodes(idx), 'type', '')));
+            expectedPkg = char(string(getField(app, app.Data.nodes(idx), 'pkg', '')));
+            if ~strcmpi(choice.type, expectedType)
+                uialert(app.UIFigure, sprintf('This node expects a %s package, but the selected package is %s.', ...
+                    expectedType, choice.type), 'Relink plugin package', 'Icon', 'warning');
+                return;
+            end
+            if ~isempty(expectedPkg) && ~strcmp(choice.pkg, expectedPkg)
+                answer = questdlg(sprintf('This node currently uses package "%s". Replace it with "%s"?', ...
+                    expectedPkg, choice.pkg), 'Relink plugin package', 'Replace', 'Cancel', 'Cancel');
+                if ~strcmp(answer, 'Replace')
+                    return;
+                end
+            end
+            updatedNode = app.Data.nodes(idx);
+            updatedNode.pkg = choice.pkg;
+            updatedNode.func = defaultNodeFunction(app, choice.type, choice.pkg);
+            updatedNode.gui = defaultNodeGui(app, choice.type, choice.pkg);
+            updatedNode = applyCustomPackagePatchToNode(app, updatedNode, choice.paramsPatch);
+            updatedNode = pipelineNormalizeNodes(updatedNode, 'persist');
+            app.Data.nodes(idx) = alignNodeForAssignment(app, app.Data.nodes(idx), updatedNode);
+            refreshAfterModelChange(app);
+            setRuntimeStatus(app, ['Plugin package relinked: ' choice.pkg]);
+        end
+
+        function clearPluginPackageLink(app, node)
+            nodeId = char(string(getField(app, node, 'id', '')));
+            idx = find(strcmp({app.Data.nodes.id}, nodeId), 1);
+            if isempty(idx)
+                return;
+            end
+            keys = {'customPackageRoot','customPackageDir','customPackageLoadedAt'};
+            for i = 1:numel(keys)
+                if isfield(app.Data.nodes(idx), keys{i})
+                    app.Data.nodes(idx).(keys{i}) = [];
+                end
+                if isfield(app.Data.nodes(idx), 'params') && isstruct(app.Data.nodes(idx).params) && ...
+                        isfield(app.Data.nodes(idx).params, keys{i})
+                    app.Data.nodes(idx).params = rmfield(app.Data.nodes(idx).params, keys{i});
+                end
+            end
+            refreshAfterModelChange(app);
         end
 
         function txt = classifierReferenceSummary(app, node)

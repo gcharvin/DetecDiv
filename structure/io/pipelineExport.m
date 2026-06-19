@@ -313,10 +313,17 @@ function [nodeOut, copied, warningsOut] = exportNodePlugins(nodeOut, assetsDir, 
         packageDir = fullfile(packageRoot, ['+' char(string(nodeOut.pkg))]);
     end
     if isempty(packageDir) || exist(packageDir, 'dir') ~= 7
-        if ~isempty(packageDir)
-            warningsOut{end+1} = sprintf('Custom package folder was not found: %s', packageDir);
+        originalPackageDir = packageDir;
+        [packageDir, packageRoot, recoveredMsg] = recoverPluginPackageForExport(nodeOut, params, packageDir, packageRoot);
+        if isempty(packageDir) || exist(packageDir, 'dir') ~= 7
+            if ~isempty(originalPackageDir)
+                warningsOut{end+1} = sprintf('Custom package folder was not found: %s', originalPackageDir);
+            end
+            return;
         end
-        return;
+        if ~isempty(recoveredMsg)
+            warningsOut{end+1} = recoveredMsg;
+        end
     end
 
     if isempty(packageRoot)
@@ -358,6 +365,65 @@ function [nodeOut, copied, warningsOut] = exportNodePlugins(nodeOut, assetsDir, 
     nodeOut.customPackageLoadedAt = '';
     params = removeLegacyCustomPackageParams(params);
     nodeOut.params = params;
+end
+
+function [packageDir, packageRoot, msg] = recoverPluginPackageForExport(node, params, packageDir, packageRoot)
+    msg = '';
+    pkg = char(string(getFieldOrDefault(node, 'pkg', '')));
+    if isempty(pkg) && isstruct(params) && isfield(params, 'pkg') && ~isempty(params.pkg)
+        pkg = char(string(params.pkg));
+    end
+    if isempty(pkg)
+        return;
+    end
+
+    nodeType = lower(char(string(getFieldOrDefault(node, 'type', ''))));
+    if strcmp(nodeType, 'processor')
+        wantedType = 'processor';
+    elseif strcmp(nodeType, 'classifier')
+        wantedType = 'classifier';
+    else
+        wantedType = '';
+    end
+
+    try
+        if exist('detecdiv_plugins_addpath', 'file') == 2
+            detecdiv_plugins_addpath();
+        end
+        if exist('detecdiv_plugins_list', 'file') ~= 2
+            return;
+        end
+        plugins = detecdiv_plugins_list();
+    catch
+        return;
+    end
+    if isempty(plugins)
+        return;
+    end
+
+    for i = 1:numel(plugins)
+        try
+            if ~strcmp(char(string(plugins(i).name)), pkg)
+                continue;
+            end
+            if ~isempty(wantedType) && ~strcmpi(char(string(plugins(i).type)), wantedType)
+                continue;
+            end
+            candidateDir = char(string(plugins(i).path));
+            if exist(candidateDir, 'dir') ~= 7
+                continue;
+            end
+            packageDir = candidateDir;
+            if isfield(plugins(i), 'root') && ~isempty(plugins(i).root)
+                packageRoot = char(string(plugins(i).root));
+            else
+                packageRoot = fileparts(candidateDir);
+            end
+            msg = sprintf('Recovered custom package "%s" from registered plugin root after stored path was unavailable.', pkg);
+            return;
+        catch
+        end
+    end
 end
 
 function params = removeLegacyCustomPackageParams(params)
