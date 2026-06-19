@@ -6026,6 +6026,27 @@ classdef pipeline2 < matlab.apps.AppBase
             node = orderfields(node, oldNode);
         end
 
+        function assignNodeForAssignment(app, idx, node)
+            if isempty(idx) || idx < 1 || idx > numel(app.Data.nodes)
+                return;
+            end
+            nodes = app.Data.nodes;
+            oldNode = nodes(idx);
+            allFields = unique([fieldnames(nodes); fieldnames(node)], 'stable');
+            for i = 1:numel(allFields)
+                f = allFields{i};
+                if ~isfield(nodes, f)
+                    [nodes.(f)] = deal([]);
+                end
+                if ~isfield(node, f)
+                    node.(f) = [];
+                end
+            end
+            node = alignNodeForAssignment(app, oldNode, node);
+            nodes(idx) = node;
+            app.Data.nodes = nodes;
+        end
+
         function finishStaticParameterRefresh(app, progressDlg, refreshBtn, focus)
             try
                 closeRuntimeProgress(app, progressDlg);
@@ -6326,7 +6347,7 @@ classdef pipeline2 < matlab.apps.AppBase
             updatedNode.gui = defaultNodeGui(app, choice.type, choice.pkg);
             updatedNode = applyCustomPackagePatchToNode(app, updatedNode, choice.paramsPatch);
             updatedNode = pipelineNormalizeNodes(updatedNode, 'persist');
-            app.Data.nodes(idx) = alignNodeForAssignment(app, app.Data.nodes(idx), updatedNode);
+            assignNodeForAssignment(app, idx, updatedNode);
             refreshAfterModelChange(app);
             setRuntimeStatus(app, ['Plugin package relinked: ' choice.pkg]);
         end
@@ -8849,6 +8870,13 @@ classdef pipeline2 < matlab.apps.AppBase
                         persistMissingOrPlaceholderBindingDefault(app, node, 'zStackChannelNames', defaults.zStackChannelNames);
                     end
                 end
+                if isempty(ctrl.Value) || isZStackPlaceholderBinding(app, ctrl.Value)
+                    zDefaults = defaultZStackBindingChannels(app);
+                    if ~isempty(zDefaults)
+                        ctrl.Value = bindingMultiValueToDisplay(app, zDefaults);
+                        persistMissingOrPlaceholderBindingDefault(app, node, 'zStackChannelNames', zDefaults);
+                    end
+                end
                 if isempty(ctrl.Value)
                     ctrl.Value = '<all>';
                 end
@@ -8899,6 +8927,47 @@ classdef pipeline2 < matlab.apps.AppBase
                 '@z_stack','@z-stack','@z_stack output','@z-stack output'}));
         end
 
+        function channels = defaultZStackBindingChannels(app)
+            channels = {};
+            try
+                channels = runtimeValidationRoiChannels(app);
+            catch
+                channels = {};
+            end
+            channels = normalizeChannelSelectionValue(app, channels);
+            if isempty(channels)
+                return;
+            end
+            keep = false(1, numel(channels));
+            for i = 1:numel(channels)
+                nm = lower(char(string(channels{i})));
+                hasZNumber = ~isempty(regexp(nm, 'z[^a-z0-9]*\d+|\d+[^a-z0-9]*z', 'once')) || ...
+                    ~isempty(regexp(nm, '(^|_)dic[_-]?z?\d+$|(^|_)z\d+$|dic_z\d+', 'once'));
+                isBad = startsWith(nm, 'results_') || contains(nm, 'prob') || ...
+                    contains(nm, 'mask') || contains(nm, 'focus') || contains(nm, 'cell_of_interest');
+                keep(i) = hasZNumber && ~isBad;
+            end
+            channels = channels(keep);
+            channels = sortZStackBindingChannels(app, channels);
+        end
+
+        function channels = sortZStackBindingChannels(app, channels) %#ok<INUSD>
+            if numel(channels) < 2
+                return;
+            end
+            z = nan(1, numel(channels));
+            for i = 1:numel(channels)
+                tok = regexp(char(string(channels{i})), '(\d+)$', 'tokens', 'once');
+                if ~isempty(tok)
+                    z(i) = str2double(tok{1});
+                end
+            end
+            if all(isfinite(z))
+                [~, ord] = sort(z);
+                channels = channels(ord);
+            end
+        end
+
         function bindingControlChanged(app, node, param, direction, value)
             nodeId = char(string(getField(app, node, 'id', '')));
             idx = find(strcmp({app.Data.nodes.id}, nodeId), 1);
@@ -8916,7 +8985,10 @@ classdef pipeline2 < matlab.apps.AppBase
                 app.Data.nodes(idx).params = struct();
             end
 
-            if isAllChannelBindingLabel(app, value)
+            if isInput && strcmpi(param, 'zStackChannelNames') && isAllChannelSelectorText(app, value)
+                app.Data.nodes(idx).params.(param) = 'all';
+                clearRuntimeNodeParam(app, nodeId, param);
+            elseif isAllChannelBindingLabel(app, value)
                 app.Data.nodes(idx).params.(param) = 'all';
                 clearRuntimeNodeParam(app, nodeId, param);
             elseif isSymbolicBindingLabel(app, value)
@@ -8931,6 +9003,11 @@ classdef pipeline2 < matlab.apps.AppBase
             else
                 if ~isInput
                     value = normalizeOutputBindingEditValue(app, app.Data.nodes(idx), param, value);
+                elseif strcmpi(param, 'zStackChannelNames')
+                    parsedChannels = normalizeChannelSelectionValue(app, value);
+                    if ~isempty(parsedChannels)
+                        value = parsedChannels;
+                    end
                 end
                 app.Data.nodes(idx).params.(param) = value;
                 clearRuntimeNodeParam(app, nodeId, param);
