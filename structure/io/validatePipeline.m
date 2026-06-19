@@ -212,9 +212,29 @@ function nodes = applyValidationRunNodeOverrides(nodes, ctx)
             nodes(i).params = struct();
         end
         if isstruct(patch) && isfield(patch, 'params') && isstruct(patch.params)
-            nodes(i).params = mergeStructLocal(nodes(i).params, patch.params);
+            nodes(i).params = mergeStructLocal(nodes(i).params, sanitizeRunNodeParamPatch(nodes(i).params, patch.params));
         elseif isstruct(patch)
-            nodes(i).params = mergeStructLocal(nodes(i).params, rmfieldIfPresentLocal(patch, {'id','nodeId'}));
+            patchParams = rmfieldIfPresentLocal(patch, {'id','nodeId'});
+            nodes(i).params = mergeStructLocal(nodes(i).params, sanitizeRunNodeParamPatch(nodes(i).params, patchParams));
+        end
+    end
+end
+
+function patch = sanitizeRunNodeParamPatch(baseParams, patch)
+    if ~isstruct(patch)
+        return;
+    end
+    if ~isstruct(baseParams)
+        baseParams = struct();
+    end
+    names = fieldnames(patch);
+    for i = 1:numel(names)
+        key = names{i};
+        if ~isfield(baseParams, key) || isempty(baseParams.(key))
+            continue;
+        end
+        if isGenericSourceSymbolicBinding(patch.(key)) && ~isSymbolicResourceBinding(baseParams.(key))
+            patch = rmfield(patch, key);
         end
     end
 end
@@ -889,7 +909,7 @@ function channels = resolveNodeConfiguredChannels(node, selectors)
                 continue;
             end
             if isfield(params, key) && ~isempty(params.(key))
-                channels = mergeKnownChannels(channels, normalizeConfiguredSelectionValue(params.(key)));
+                channels = mergeKnownChannels(channels, normalizeConfiguredOrSymbolicSelectionValue(params.(key)));
             end
         end
         if ~isempty(channels)
@@ -912,7 +932,7 @@ function channels = resolveNodeConfiguredChannels(node, selectors)
             continue;
         end
         if isfield(params, key) && ~isempty(params.(key))
-            channels = normalizeChannelList(params.(key));
+            channels = normalizeConfiguredOrSymbolicSelectionValue(params.(key));
             if ~isempty(channels)
                 return;
             end
@@ -2507,7 +2527,7 @@ function channels = resolveBindingConfiguredChannels(node, binding, selectors)
         if ~isfield(params, key) || isempty(params.(key))
             continue;
         end
-        channels = mergeKnownChannels(channels, normalizeConfiguredSelectionValue(params.(key)));
+        channels = mergeKnownChannels(channels, normalizeConfiguredOrSymbolicSelectionValue(params.(key)));
     end
     if ~isempty(channels)
         return;
@@ -2702,6 +2722,16 @@ function channels = normalizeConfiguredSelectionValue(value)
     channels = channels(keep);
 end
 
+function channels = normalizeConfiguredOrSymbolicSelectionValue(value)
+    channels = normalizeConfiguredSelectionValue(value);
+    if ~isempty(channels)
+        return;
+    end
+    if isSymbolicResourceBinding(value) && ~isGenericSourceSymbolicBinding(value)
+        channels = {choiceToString(value)};
+    end
+end
+
 function tf = isAllChannelSelection(channels)
     tf = false;
     if isempty(channels)
@@ -2849,7 +2879,7 @@ function names = normalizeChannelList(v)
     if ischar(v) || (isstring(v) && isscalar(v))
         s = char(string(v));
         if ~isempty(strtrim(s))
-            names = {s};
+            names = splitDelimitedNameList(s);
         end
         return;
     end
@@ -2865,7 +2895,7 @@ function names = normalizeChannelList(v)
                 continue;
             end
             try
-                tmp{end+1} = char(string(v{i})); %#ok<AGROW>
+                tmp = [tmp splitDelimitedNameList(char(string(v{i})))]; %#ok<AGROW>
             catch
             end
         end
@@ -2879,6 +2909,17 @@ function names = normalizeChannelList(v)
             names{end+1} = num2str(vals(i)); %#ok<AGROW>
         end
     end
+end
+
+function names = splitDelimitedNameList(s)
+    s = strtrim(char(string(s)));
+    if isempty(s)
+        names = {};
+        return;
+    end
+    parts = regexp(s, '[,;]+', 'split');
+    names = strtrim(parts);
+    names = names(~cellfun(@isempty, names));
 end
 
 function resources = initialResourceInventory(ctx, sem)
@@ -3214,7 +3255,9 @@ end
 
 function tf = isGenericSourceSymbolicBinding(v)
     s = lower(strtrim(choiceToString(v)));
-    tf = any(strcmp(s, {'@source','@sources','<source output>','<all source channels>'}));
+    tf = any(strcmp(s, {'@source','@sources','@z_stack','@z-stack', ...
+        '@z_stack output','@z-stack output', ...
+        '<source output>','<all source channels>','<z_stack output>','<z-stack output>'}));
 end
 
 function tf = isConfiguredResourceValue(v)

@@ -2195,6 +2195,43 @@ end
 
                     tmprun={};
                     if isfield(tmp.processing,'pipelineRun') && ~isempty(tmp.processing.pipelineRun)
+                        runs = tmp.processing.pipelineRun;
+                        keep = true(1, numel(runs));
+                        seenRuns = containers.Map('KeyType','char','ValueType','logical');
+                        for k=1:numel(runs)
+                            runObj = runs(k);
+                            runKey = '';
+                            try
+                                if isprop(runObj,'path') && ~isempty(runObj.path)
+                                    runKey = app.normalizeFsPath(runObj.path);
+                                end
+                            catch
+                            end
+                            if isempty(runKey)
+                                parts = {};
+                                try, parts{end+1} = char(string(runObj.runId)); catch, parts{end+1} = ['run_' num2str(k)]; end %#ok<AGROW>
+                                try, parts{end+1} = app.normalizePipelineRootPath(runObj.templatePath); catch, parts{end+1} = ''; end %#ok<AGROW>
+                                try
+                                    if isprop(runObj,'pipelineRef') && isstruct(runObj.pipelineRef) && isfield(runObj.pipelineRef,'path')
+                                        parts{end+1} = app.normalizePipelineRootPath(runObj.pipelineRef.path); %#ok<AGROW>
+                                    end
+                                catch
+                                end
+                                runKey = strjoin(parts, '|');
+                            end
+                            if isempty(runKey)
+                                runKey = ['run_index_' num2str(k)];
+                            end
+                            if isKey(seenRuns, runKey)
+                                keep(k) = false;
+                            else
+                                seenRuns(runKey) = true;
+                            end
+                        end
+                        if any(~keep)
+                            runs = runs(keep);
+                            tmp.processing.pipelineRun = runs;
+                        end
                         for k=1:numel(tmp.processing.pipelineRun)
                             runObj = tmp.processing.pipelineRun(k);
                             runName = runObj.runId;

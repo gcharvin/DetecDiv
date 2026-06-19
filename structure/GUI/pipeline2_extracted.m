@@ -2010,8 +2010,7 @@ classdef pipeline2 < matlab.apps.AppBase
                 y = -(row - 1) * (blockH + gapY);
                 selected = isequal(i, app.SelectedNodeIndex);
                 runSelected = isempty(selectedRunIds) || any(strcmp(selectedRunIds, char(string(getField(app, nodes(i), 'id', '')))));
-                face = [0.90 0.94 0.98];
-                edge = [0.24 0.36 0.50];
+                [face, edge] = graphNodeColors(app, nodes(i));
                 textColor = [0.14 0.18 0.22];
                 subTextColor = [0.25 0.25 0.25];
                 if ~runSelected
@@ -2022,8 +2021,8 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
                 if selected
                     if runSelected
-                        face = [0.60 0.82 1.00];
-                        edge = [0.00 0.24 0.78];
+                        edge = darkenColor(app, edge, 0.55);
+                        face = lightenColor(app, face, 0.18);
                         textColor = [0.02 0.14 0.36];
                         subTextColor = [0.07 0.20 0.43];
                     else
@@ -2042,14 +2041,14 @@ classdef pipeline2 < matlab.apps.AppBase
                 t1 = text(app.UIGraphAxes, x + blockW/2, y + blockH*0.60, ...
                     char(string(getField(app, nodes(i), 'id', 'module'))), ...
                     'HorizontalAlignment', 'center', 'Interpreter', 'none', ...
-                    'FontWeight', 'bold', 'FontSize', 9, 'Color', textColor, ...
+                    'FontWeight', 'bold', 'FontSize', 8, 'Color', textColor, ...
                     'ButtonDownFcn', createCallbackFcn(app, @GraphNodeButtonDown, true));
                 t1.UserData = struct('nodeIndex', i);
                 t1.UIContextMenu = app.ModuleContextMenu;
-                t2 = text(app.UIGraphAxes, x + blockW/2, y + blockH*0.28, ...
+                t2 = text(app.UIGraphAxes, x + blockW/2, y + blockH*0.24, ...
                     blockTypeLabel(app, nodes(i)), ...
                     'HorizontalAlignment', 'center', 'Interpreter', 'none', ...
-                    'FontSize', 8, 'Color', subTextColor, ...
+                    'FontSize', 7, 'Color', subTextColor, ...
                     'ButtonDownFcn', createCallbackFcn(app, @GraphNodeButtonDown, true));
                 t2.UserData = struct('nodeIndex', i);
                 t2.UIContextMenu = app.ModuleContextMenu;
@@ -2242,14 +2241,13 @@ classdef pipeline2 < matlab.apps.AppBase
                 y2 = -(getLayoutRow(app, dst) - 1) * (blockH + gapY) + blockH/2;
                 srcSelected = isempty(selectedRunIds) || any(strcmp(selectedRunIds, char(string(src.id))));
                 dstSelected = isempty(selectedRunIds) || any(strcmp(selectedRunIds, char(string(dst.id))));
+                edgeColor = [0.52 0.56 0.60];
+                edgeWidth = 1.4;
                 if ~(srcSelected && dstSelected)
-                    edgeColor = [0.72 0.72 0.72];
+                    edgeColor = [0.74 0.74 0.74];
                     edgeWidth = 1.0;
-                elseif edgeContractsCompatible(app, src, dst)
-                    edgeColor = [0.10 0.55 0.28];
-                    edgeWidth = 1.8;
-                else
-                    edgeColor = [0.72 0.48 0.18];
+                elseif ~edgeContractsCompatible(app, src, dst)
+                    edgeColor = [0.62 0.57 0.50];
                     edgeWidth = 1.2;
                 end
                 h = quiver(app.UIGraphAxes, x1, y1, x2 - x1, y2 - y1, 0, ...
@@ -2289,24 +2287,28 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
                 srcSelected = isempty(selectedRunIds) || any(strcmp(selectedRunIds, char(string(src.id))));
                 dstSelected = isempty(selectedRunIds) || any(strcmp(selectedRunIds, char(string(dst.id))));
-                if srcSelected && dstSelected
-                    edgeColor = [0.16 0.38 0.72];
-                    edgeWidth = 1.35;
-                else
+                [~, srcAccent] = graphNodeColors(app, src);
+                edgeColor = srcAccent;
+                edgeWidth = 1.35;
+                if ~(srcSelected && dstSelected)
                     edgeColor = [0.70 0.70 0.70];
                     edgeWidth = 1.0;
                 end
-                h = quiver(app.UIGraphAxes, x1, y1, x2 - x1, y2 - y1, 0, ...
+                lane = resourceBindingLaneForSource(app, edges, i);
+                y = y1 + graphBindingLaneOffset(app, lane, blockH);
+                headPad = min(max((x2 - x1) * 0.10, 0.12), 0.24);
+                hLine = plot(app.UIGraphAxes, [x1 x2 - headPad], [y y], '--', ...
                     'Color', edgeColor, ...
                     'LineWidth', edgeWidth, ...
-                    'MaxHeadSize', 0.40, ...
+                    'HitTest', 'off');
+                hHead = quiver(app.UIGraphAxes, x2 - headPad, y, headPad, 0, 0, ...
+                    'Color', edgeColor, ...
+                    'LineWidth', edgeWidth, ...
+                    'MaxHeadSize', 0.65, ...
                     'AutoScale', 'off', ...
                     'HitTest', 'off');
-                try
-                    h.LineStyle = '--';
-                catch
-                end
-                app.EdgeHandles(end+1) = h; %#ok<AGROW>
+                app.EdgeHandles(end+1) = hLine; %#ok<AGROW>
+                app.EdgeHandles(end+1) = hHead; %#ok<AGROW>
             end
         end
 
@@ -2388,11 +2390,91 @@ classdef pipeline2 < matlab.apps.AppBase
             end
         end
 
+        function [face, edge] = graphNodeColors(app, node) %#ok<INUSD>
+            nodeType = lower(char(string(getField(app, node, 'type', ''))));
+            pkg = lower(char(string(getField(app, node, 'pkg', ''))));
+            switch nodeType
+                case 'dataloader'
+                    edge = [0.26 0.45 0.68];
+                    face = [0.88 0.94 0.99];
+                case {'roipattern','roiidentify','roigrid','roimanual','roitracked'}
+                    edge = [0.22 0.55 0.42];
+                    face = [0.88 0.96 0.92];
+                case 'roiextract'
+                    edge = [0.49 0.42 0.72];
+                    face = [0.93 0.91 0.98];
+                case 'classifier'
+                    palette = [ ...
+                        0.78 0.46 0.20; ...
+                        0.67 0.36 0.62; ...
+                        0.74 0.31 0.35; ...
+                        0.58 0.42 0.18];
+                    edge = palette(stablePaletteIndex(app, pkg, size(palette, 1)), :);
+                    face = lightenColor(app, edge, 0.78);
+                case 'processor'
+                    palette = [ ...
+                        0.18 0.45 0.74; ...
+                        0.10 0.58 0.62; ...
+                        0.52 0.43 0.74; ...
+                        0.66 0.44 0.22; ...
+                        0.36 0.55 0.24; ...
+                        0.70 0.33 0.48; ...
+                        0.28 0.50 0.50];
+                    edge = palette(stablePaletteIndex(app, pkg, size(palette, 1)), :);
+                    face = lightenColor(app, edge, 0.80);
+                otherwise
+                    edge = [0.34 0.42 0.52];
+                    face = [0.91 0.94 0.97];
+            end
+        end
+
+        function idx = stablePaletteIndex(app, text, n) %#ok<INUSD>
+            if nargin < 3 || n < 1
+                idx = 1;
+                return;
+            end
+            text = char(string(text));
+            if isempty(text)
+                idx = 1;
+                return;
+            end
+            vals = double(char(text));
+            idx = mod(sum(vals .* (1:numel(vals))), n) + 1;
+        end
+
+        function color = lightenColor(app, color, amount) %#ok<INUSD>
+            color = min(1, color + (1 - color) * amount);
+        end
+
+        function color = darkenColor(app, color, amount) %#ok<INUSD>
+            color = max(0, color * amount);
+        end
+
+        function lane = resourceBindingLaneForSource(app, edges, idx) %#ok<INUSD>
+            lane = 1;
+            if idx < 1 || idx > numel(edges)
+                return;
+            end
+            fromId = char(string(getField(app, edges(idx), 'from', '')));
+            for k = 1:idx
+                if strcmp(char(string(getField(app, edges(k), 'from', ''))), fromId)
+                    lane = lane + 1;
+                end
+            end
+            lane = mod(lane - 2, 5) + 1;
+        end
+
+        function offset = graphBindingLaneOffset(app, lane, blockH) %#ok<INUSD>
+            offsets = [-0.26 -0.13 0 0.13 0.26] * blockH;
+            lane = max(1, min(numel(offsets), round(double(lane))));
+            offset = offsets(lane);
+        end
+
         function label = blockTypeLabel(app, node) %#ok<INUSD>
             label = char(string(getField(app, node, 'type', '')));
             pkg = char(string(getField(app, node, 'pkg', '')));
             if ~isempty(pkg)
-                label = [label ' / ' pkg];
+                label = sprintf('%s\n%s', label, pkg);
             end
         end
 
@@ -8494,11 +8576,11 @@ classdef pipeline2 < matlab.apps.AppBase
             if isInput && strcmpi(char(string(param)), 'zStackChannelNames')
                 ctrl = uieditfield(parent, 'text');
                 ctrl.Value = bindingMultiValueToDisplay(app, value);
-                if isempty(ctrl.Value)
+                if isempty(ctrl.Value) || isZStackPlaceholderBinding(app, ctrl.Value)
                     defaults = defaultNodeParams(app, getField(app, node, 'type', ''), getField(app, node, 'pkg', ''));
                     if isstruct(defaults) && isfield(defaults, 'zStackChannelNames') && ~isempty(defaults.zStackChannelNames)
                         ctrl.Value = bindingMultiValueToDisplay(app, defaults.zStackChannelNames);
-                        persistMissingBindingDefault(app, node, 'zStackChannelNames', defaults.zStackChannelNames);
+                        persistMissingOrPlaceholderBindingDefault(app, node, 'zStackChannelNames', defaults.zStackChannelNames);
                     end
                 end
                 if isempty(ctrl.Value)
@@ -8543,6 +8625,12 @@ classdef pipeline2 < matlab.apps.AppBase
             ctrl.Value = choiceScalarText(app, value);
             ctrl.Enable = enableState;
             ctrl.ValueChangedFcn = @(src,~)bindingControlChanged(app, node, param, direction, src.Value);
+        end
+
+        function tf = isZStackPlaceholderBinding(app, value) %#ok<INUSD>
+            value = lower(strtrim(char(string(value))));
+            tf = isempty(value) || any(strcmp(value, {'<z_stack output>','<z-stack output>', ...
+                '@z_stack','@z-stack','@z_stack output','@z-stack output'}));
         end
 
         function bindingControlChanged(app, node, param, direction, value)
@@ -8608,6 +8696,25 @@ classdef pipeline2 < matlab.apps.AppBase
             markPipelineDirty(app, true);
         end
 
+        function persistMissingOrPlaceholderBindingDefault(app, node, param, value)
+            nodeId = char(string(getField(app, node, 'id', '')));
+            idx = find(strcmp({app.Data.nodes.id}, nodeId), 1);
+            if isempty(idx) || isempty(param) || isempty(value)
+                return;
+            end
+            param = char(string(param));
+            if ~isfield(app.Data.nodes(idx), 'params') || ~isstruct(app.Data.nodes(idx).params)
+                app.Data.nodes(idx).params = struct();
+            end
+            if isfield(app.Data.nodes(idx).params, param) && ~isempty(app.Data.nodes(idx).params.(param)) && ...
+                    ~isZStackPlaceholderBinding(app, app.Data.nodes(idx).params.(param))
+                return;
+            end
+            app.Data.nodes(idx).params.(param) = value;
+            clearRuntimeNodeParam(app, nodeId, param);
+            markPipelineDirty(app, true);
+        end
+
         function value = normalizeOutputBindingEditValue(app, node, param, value) %#ok<INUSD>
             value = strtrim(char(string(value)));
             pkg = lower(char(string(getField(app, node, 'pkg', ''))));
@@ -8618,6 +8725,7 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function data = bindingTableData(app, node)
             data = cell(0, 6);
+            app.ensureCustomPackagePathForNode(node);
             try
                 contract = pipelineNodeContract(node);
             catch
@@ -10589,7 +10697,9 @@ classdef pipeline2 < matlab.apps.AppBase
                     end
                     keys = removeBindingSelectorKeys(app, keys, node);
                     keys = removeResourceOutputNameKeys(app, keys, node);
-                    keys = setdiff(keys, {'outputName','outputChannelName','existingPolicy','pkg','paramTooltip','tip'}, 'stable');
+                    keys = setdiff(keys, {'outputName','outputChannelName','existingPolicy','pkg','paramTooltip','tip', ...
+                        'moduleVar','modulePath','moduleId','description','category','customPackageRoot', ...
+                        'customPackageDir','customPackageLoadedAt'}, 'stable');
             end
         end
 
@@ -13006,6 +13116,7 @@ classdef pipeline2 < matlab.apps.AppBase
                     continue;
                 end
                 params = stripGlobalRoiPolicyParams(app, nodeId, params);
+                params = stripTemplatePlaceholderRuntimeParams(app, nodeId, params);
                 nodeParams.(matlab.lang.makeValidName(nodeId)) = params;
             end
 
@@ -13022,6 +13133,27 @@ classdef pipeline2 < matlab.apps.AppBase
                     if ~isempty(rawDataPath)
                         nodeParams.(key).path = rawDataPath;
                     end
+                end
+            end
+        end
+
+        function params = stripTemplatePlaceholderRuntimeParams(app, nodeId, params)
+            if ~isstruct(params)
+                return;
+            end
+            idx = find(strcmp({app.Data.nodes.id}, char(string(nodeId))), 1);
+            if isempty(idx) || ~isfield(app.Data.nodes(idx), 'params') || ~isstruct(app.Data.nodes(idx).params)
+                return;
+            end
+            templateParams = app.Data.nodes(idx).params;
+            keys = fieldnames(params);
+            for i = 1:numel(keys)
+                key = keys{i};
+                if ~isfield(templateParams, key) || isempty(templateParams.(key))
+                    continue;
+                end
+                if isZStackPlaceholderBinding(app, params.(key)) && ~isSymbolicStoredBinding(app, templateParams.(key))
+                    params = rmfield(params, key);
                 end
             end
         end
