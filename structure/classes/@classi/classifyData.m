@@ -800,7 +800,11 @@ function ROIManagement(roiobj, data, image, outputName, classiobj, cachePolicyLo
     localNormalizeIndexedResultChannels(roiobj);
 
     if shouldDeferSaveLocal(saveMode)
-        markDeferredDirtyLocal(roiobj, true, numel(image) > 0);
+        imageSaveChannels = {};
+        if numel(image)
+            imageSaveChannels = localClassifierImageOutputChannels(roiobj, outputName, classiobj);
+        end
+        markDeferredDirtyLocal(roiobj, true, numel(image) > 0, imageSaveChannels);
         disp('[DEBUG] ROIManagement: defer save requested, ROI kept in memory.');
         return;
     end
@@ -873,7 +877,11 @@ function applyAndPersistClassifierPatch(roiobj, patch, ctx, outputName, cachePol
                 'Classifier patch contained no image or dataseries output for ROI "%s".', ...
                 safeRoiIdLocal(roiobj));
         end
-        markDeferredDirtyLocal(roiobj, hasDataPatch, hasImagePatch);
+        channelsToSave = {};
+        if hasImagePatch
+            channelsToSave = patchImageChannels(patch);
+        end
+        markDeferredDirtyLocal(roiobj, hasDataPatch, hasImagePatch, channelsToSave);
         disp('[DEBUG] classifyData: defer save requested, classifier patch kept in memory.');
         return;
     end
@@ -1209,19 +1217,30 @@ function tf = shouldDeferSaveLocal(mode)
     tf = strcmp(normalizeSaveModeLocal(mode), 'defer');
 end
 
-function markDeferredDirtyLocal(roiobj, hasData, hasImage)
+function markDeferredDirtyLocal(roiobj, hasData, hasImage, saveChannels)
+    if nargin < 4
+        saveChannels = {};
+    end
     try
         if ~isstruct(roiobj.results)
             roiobj.results = struct();
         end
-        dirty = struct('data', false, 'image', false);
+        dirty = struct('data', false, 'image', false, 'fullImage', false, 'channels', {{}});
         if isfield(roiobj.results, 'pipelineDeferredDirty') && isstruct(roiobj.results.pipelineDeferredDirty)
             dirty = roiobj.results.pipelineDeferredDirty;
             if ~isfield(dirty,'data'), dirty.data = false; end
             if ~isfield(dirty,'image'), dirty.image = false; end
+            if ~isfield(dirty,'fullImage'), dirty.fullImage = false; end
+            if ~isfield(dirty,'channels'), dirty.channels = {}; end
         end
         dirty.data = logical(dirty.data || hasData);
         dirty.image = logical(dirty.image || hasImage);
+        if hasImage && isempty(saveChannels)
+            dirty.fullImage = true;
+            dirty.channels = {};
+        elseif hasImage && ~dirty.fullImage
+            dirty.channels = unique([cellstr(string(dirty.channels(:)))' cellstr(string(saveChannels(:)))'], 'stable');
+        end
         roiobj.results.pipelineDeferredDirty = dirty;
     catch
     end

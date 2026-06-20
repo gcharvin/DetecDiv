@@ -1089,7 +1089,6 @@ function report = solvePipelineBindings(nodes, edges, ctx, order)
                 report.warnings{end+1} = nodeReport.message; %#ok<AGROW>
                 report.needsRunBinding{end+1} = char(string(node.id)); %#ok<AGROW>
             case 'auto_resolvable'
-                report.warnings{end+1} = nodeReport.message; %#ok<AGROW>
                 report.autoResolvable{end+1} = char(string(node.id)); %#ok<AGROW>
         end
         state = applyConstraintOutputs(node, state, nodeReport);
@@ -1137,6 +1136,7 @@ function nodeReport = evaluateNodeBinding(node, state)
     symbolicChannelCollectionSelected = hasSymbolicChannelCollectionSelection(node, binding, selectors);
     symbolicResourceSelected = hasSymbolicResourceSelection(node, binding, selectors);
     configuredChannels = configuredChannels(~isSymbolicChannelSelectionCell(configuredChannels));
+    configuredChannels = expandChannelPatternSelections(configuredChannels, availableChannels);
     allChannelsSelected = isAllChannelSelection(configuredChannels) || symbolicChannelCollectionSelected;
     if allChannelsSelected
         if ~isempty(availableChannels)
@@ -1369,6 +1369,44 @@ function nodeReport = attachResourceBindingReport(nodeReport, node, state)
             nodeReport.message = unresolved(1).message;
         end
     end
+    nodeReport = reconcileLegacyChannelReportWithResources(nodeReport, inputReports);
+end
+
+function nodeReport = reconcileLegacyChannelReportWithResources(nodeReport, inputReports)
+    if ~strcmpi(char(string(getField(nodeReport, 'status', ''))), 'invalid') || isempty(inputReports)
+        return;
+    end
+
+    configured = normalizeChannelList(getField(nodeReport, 'configuredChannels', {}));
+    available = normalizeChannelList(getField(nodeReport, 'availableChannels', {}));
+    if isempty(configured)
+        return;
+    end
+
+    configuredLower = normalizedLowerNameList(configured);
+    availableLower = normalizedLowerNameList(available);
+    missingLower = setdiff(configuredLower, availableLower, 'stable');
+    if isempty(missingLower)
+        return;
+    end
+
+    covered = {};
+    for i = 1:numel(inputReports)
+        status = lower(char(string(getField(inputReports(i), 'status', ''))));
+        if ~any(strcmp(status, {'resolved', 'auto_resolvable'}))
+            continue;
+        end
+        covered = mergeKnownChannels(covered, normalizeChannelList(getField(inputReports(i), 'configured', ''))); %#ok<AGROW>
+        covered = mergeKnownChannels(covered, normalizeChannelList(getField(inputReports(i), 'concreteName', ''))); %#ok<AGROW>
+        covered = mergeKnownChannels(covered, normalizeChannelList(getField(inputReports(i), 'symbol', ''))); %#ok<AGROW>
+    end
+    coveredLower = normalizedLowerNameList(covered);
+    if isempty(setdiff(missingLower, coveredLower, 'stable'))
+        nodeReport.status = 'resolved';
+        nodeReport.message = ['Node ' char(string(getField(nodeReport, 'nodeId', ''))) ...
+            ' binds configured channel input(s) through upstream resources.'];
+        nodeReport.availableChannels = mergeKnownChannels(available, covered);
+    end
 end
 
 function outputs = expandAllRoiExtractChannelOutputs(node, nodeReport, state, outputs)
@@ -1442,17 +1480,42 @@ function br = evaluateResourceInput(node, spec, availableResources, ctx)
     if nargin < 4 || isempty(ctx)
         ctx = struct();
     end
+    [hasConfiguredRaw, configuredRaw] = resolveResourceRawValue(node, spec);
     configured = resolveResourceConfiguredValue(node, spec);
     symbolic = resolveResourceSymbolicValue(node, spec);
     compatible = findCompatibleResources(availableResources, spec);
     graphCompatible = nonContextResources(compatible);
+    configuredPatternMatches = resourcePatternMatchesConfiguredValue(configured, compatible, spec);
+    [configuredChannelSet, configuredChannelSetMatches, configuredChannelSetMissing] = ...
+        resourceConfiguredChannelSetMatches(hasConfiguredRaw, configuredRaw, compatible, spec);
     status = 'resolved';
     autoChoice = resourceInventoryDef();
 
-    if ~isempty(configured)
-        status = 'resolved';
-        msg = sprintf('Node %s binds %s resource "%s" to %s.', ...
-            char(string(getField(node, 'id', ''))), char(string(spec.type)), configured, char(string(spec.param)));
+    if ~isempty(configuredChannelSet)
+        autoChoice = configuredChannelSetMatches;
+        if isempty(configuredChannelSetMissing)
+            msg = sprintf('Node %s binds %d channel resource(s) to %s.', ...
+                char(string(getField(node, 'id', ''))), numel(configuredChannelSet), char(string(spec.param)));
+        else
+            status = 'invalid';
+            msg = sprintf('Node %s binds channel resources to %s, but these value(s) are not available upstream: %s.', ...
+                char(string(getField(node, 'id', ''))), char(string(spec.param)), strjoin(configuredChannelSetMissing, ', '));
+        end
+    elseif ~isempty(configured)
+        if isChannelPatternSelector(configured)
+            if isempty(configuredPatternMatches)
+                status = 'invalid';
+                msg = sprintf('Node %s binds %s resource pattern "%s" to %s, but it matches no compatible upstream resource.', ...
+                    char(string(getField(node, 'id', ''))), char(string(spec.type)), configured, char(string(spec.param)));
+            else
+                autoChoice = configuredPatternMatches;
+                msg = sprintf('Node %s binds %s resource pattern "%s" to %s (%d match(es)).', ...
+                    char(string(getField(node, 'id', ''))), char(string(spec.type)), configured, char(string(spec.param)), numel(configuredPatternMatches));
+            end
+        else
+            msg = sprintf('Node %s binds %s resource "%s" to %s.', ...
+                char(string(getField(node, 'id', ''))), char(string(spec.type)), configured, char(string(spec.param)));
+        end
     elseif ~isempty(symbolic)
         symbolicChoice = findSymbolicResourceChoice(compatible, symbolic);
         if isempty(symbolicChoice)
@@ -1520,6 +1583,86 @@ function br = evaluateResourceInput(node, spec, availableResources, ctx)
     br.configured = configured;
     br.available = compatible;
     br.autoChoice = autoChoice;
+end
+
+function [names, matches, missing] = resourceConfiguredChannelSetMatches(hasRaw, raw, compatibleResources, spec)
+    names = {};
+    matches = resourceInventoryDef();
+    missing = {};
+    if ~hasRaw || ~strcmpi(char(string(getField(spec, 'type', ''))), 'channel')
+        return;
+    end
+    if isSymbolicResourceBinding(raw)
+        return;
+    end
+    names = normalizeChannelList(raw);
+    names = names(~isAllChannelSelectionCell(names));
+    if numel(names) <= 1
+        names = {};
+        return;
+    end
+
+    compatibleResources = normalizeResourceInventory(compatibleResources);
+    for i = 1:numel(names)
+        name = strtrim(char(string(names{i})));
+        if isempty(name)
+            continue;
+        end
+        one = findCompatibleResourceByConfiguredChannelName(name, compatibleResources);
+        if isempty(one)
+            missing{end+1} = name; %#ok<AGROW>
+        else
+            matches = mergeResourceInventory(matches, one); %#ok<AGROW>
+        end
+    end
+    missing = unique(missing, 'stable');
+end
+
+function match = findCompatibleResourceByConfiguredChannelName(name, compatibleResources)
+    match = resourceInventoryDef();
+    if isempty(name)
+        return;
+    end
+    if isChannelPatternSelector(name)
+        rx = channelPatternToRegexp(name);
+        for i = 1:numel(compatibleResources)
+            concreteName = strtrim(char(string(getField(compatibleResources(i), 'concreteName', ''))));
+            symbol = strtrim(char(string(getField(compatibleResources(i), 'symbol', ''))));
+            if (~isempty(concreteName) && ~isempty(regexp(concreteName, rx, 'once'))) || ...
+                    (~isempty(symbol) && ~isempty(regexp(symbol, rx, 'once')))
+                match(end+1) = compatibleResources(i); %#ok<AGROW>
+            end
+        end
+        return;
+    end
+    for i = 1:numel(compatibleResources)
+        concreteName = strtrim(char(string(getField(compatibleResources(i), 'concreteName', ''))));
+        symbol = strtrim(char(string(getField(compatibleResources(i), 'symbol', ''))));
+        if strcmpi(concreteName, name) || strcmpi(symbol, name)
+            match(end+1) = compatibleResources(i); %#ok<AGROW>
+        end
+    end
+end
+
+function matches = resourcePatternMatchesConfiguredValue(configured, compatibleResources, spec)
+    matches = resourceInventoryDef();
+    if isempty(configured) || ~strcmpi(char(string(getField(spec, 'type', ''))), 'channel')
+        return;
+    end
+    configured = strtrim(char(string(configured)));
+    if ~isChannelPatternSelector(configured)
+        return;
+    end
+    rx = channelPatternToRegexp(configured);
+    compatibleResources = normalizeResourceInventory(compatibleResources);
+    for i = 1:numel(compatibleResources)
+        concreteName = strtrim(char(string(getField(compatibleResources(i), 'concreteName', ''))));
+        symbol = strtrim(char(string(getField(compatibleResources(i), 'symbol', ''))));
+        if (~isempty(concreteName) && ~isempty(regexp(concreteName, rx, 'once'))) || ...
+                (~isempty(symbol) && ~isempty(regexp(symbol, rx, 'once')))
+            matches(end+1) = compatibleResources(i); %#ok<AGROW>
+        end
+    end
 end
 
 function rank = resourceStatusRank(status)
@@ -2771,6 +2914,28 @@ function names = compatibleResourceConcreteNamesForBinding(node, resources)
         end
         compatible = findCompatibleResources(resources, spec);
         names = mergeKnownChannels(names, allResourceConcreteNames(compatible));
+        names = mergeKnownChannels(names, configuredCompatibleResourceNames(node, spec, compatible));
+    end
+end
+
+function names = configuredCompatibleResourceNames(node, spec, compatible)
+    names = {};
+    [hasRaw, raw] = resolveResourceRawValue(node, spec);
+    if ~hasRaw || isempty(raw) || isSymbolicResourceBinding(raw)
+        return;
+    end
+
+    rawNames = normalizeChannelList(raw);
+    rawNames = rawNames(~isAllChannelSelectionCell(rawNames));
+    for i = 1:numel(rawNames)
+        name = strtrim(char(string(rawNames{i})));
+        if isempty(name)
+            continue;
+        end
+        match = findCompatibleResourceByConfiguredChannelName(name, compatible);
+        if ~isempty(match)
+            names = mergeKnownChannels(names, {name}); %#ok<AGROW>
+        end
     end
 end
 
@@ -3072,6 +3237,70 @@ function names = splitDelimitedNameList(s)
     names = names(~cellfun(@isempty, names));
 end
 
+function names = expandChannelPatternSelections(names, availableChannels)
+    names = normalizeChannelList(names);
+    availableChannels = normalizeChannelList(availableChannels);
+    if isempty(names) || isempty(availableChannels)
+        return;
+    end
+
+    expanded = {};
+    for i = 1:numel(names)
+        item = strtrim(char(string(names{i})));
+        if isChannelPatternSelector(item)
+            rx = channelPatternToRegexp(item);
+            matches = {};
+            for j = 1:numel(availableChannels)
+                candidate = char(string(availableChannels{j}));
+                if ~isempty(regexp(candidate, rx, 'once'))
+                    matches{end+1} = candidate; %#ok<AGROW>
+                end
+            end
+            if ~isempty(matches)
+                expanded = [expanded matches]; %#ok<AGROW>
+            else
+                expanded{end+1} = item; %#ok<AGROW>
+            end
+        else
+            expanded{end+1} = item; %#ok<AGROW>
+        end
+    end
+    names = unique(expanded, 'stable');
+end
+
+function tf = isChannelPatternSelector(value)
+    value = strtrim(char(string(value)));
+    if isempty(value) || any(strcmpi(value, {'all','*',':','<all>','@source','@roi','@all_channels'}))
+        tf = false;
+        return;
+    end
+    tf = contains(value, '$') || contains(value, '#') || contains(value, '*');
+end
+
+function rx = channelPatternToRegexp(pat)
+    pat = char(string(pat));
+    rx = '^';
+    i = 1;
+    while i <= numel(pat)
+        ch = pat(i);
+        if ch == '$' || ch == '#'
+            j = i;
+            while j <= numel(pat) && (pat(j) == '$' || pat(j) == '#')
+                j = j + 1;
+            end
+            rx = [rx '\d{' num2str(j - i) '}']; %#ok<AGROW>
+            i = j;
+        elseif ch == '*'
+            rx = [rx '.*']; %#ok<AGROW>
+            i = i + 1;
+        else
+            rx = [rx regexptranslate('escape', ch)]; %#ok<AGROW>
+            i = i + 1;
+        end
+    end
+    rx = [rx '$'];
+end
+
 function resources = initialResourceInventory(ctx, sem)
     resources = resourceInventoryDef();
     imageChannels = getField(sem, 'imageChannels', {});
@@ -3332,6 +3561,10 @@ function value = resolveResourceConfiguredValue(node, spec)
     if isSymbolicResourceBinding(raw)
         return;
     end
+    if strcmpi(char(string(getField(spec, 'type', ''))), 'channel') && isChannelPatternSelector(choiceToString(raw))
+        value = choiceToString(raw);
+        return;
+    end
     if ~isConfiguredResourceValue(raw)
         return;
     end
@@ -3496,6 +3729,10 @@ function tf = resourceRolesCompatible(wantedRole, availableRole)
         return;
     end
     if strcmp(wantedRole, 'roi_image')
+        tf = any(strcmp(availableRole, roiScorableChannelRoles()));
+        return;
+    end
+    if strcmp(wantedRole, 'z_stack')
         tf = any(strcmp(availableRole, roiScorableChannelRoles()));
         return;
     end

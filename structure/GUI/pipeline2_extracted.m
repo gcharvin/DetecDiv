@@ -1939,9 +1939,10 @@ classdef pipeline2 < matlab.apps.AppBase
                 key = keys{i};
                 if isfield(paramsPatch, key)
                     node.(key) = paramsPatch.(key);
-                end
-                if isfield(node, 'params') && isstruct(node.params) && isfield(node.params, key)
-                    node.params = rmfield(node.params, key);
+                    if ~isfield(node, 'params') || ~isstruct(node.params)
+                        node.params = struct();
+                    end
+                    node.params.(key) = paramsPatch.(key);
                 end
             end
         end
@@ -4355,6 +4356,15 @@ classdef pipeline2 < matlab.apps.AppBase
                 catch
                 end
             end
+            if isempty(runId)
+                setRuntimeStatus(app, sprintf('Run draft renamed.\nEnter a run id before saving or launching.'));
+            elseif app.CurrentRunIsSeed
+                setRuntimeStatus(app, sprintf('Run draft renamed: %s\nRun/Save will create a distinct run with this id.', runId));
+            else
+                setRuntimeStatus(app, sprintf('Run id: %s\nRun/Save will use this id.', runId));
+            end
+            updatePipelineWindowTitle(app);
+            updatePipelineRunStatusBar(app);
         end
 
         function value = getRuntimeValue(app, key)
@@ -8862,26 +8872,30 @@ classdef pipeline2 < matlab.apps.AppBase
             isInput = strcmpi(char(string(direction)), 'Input');
             if isInput && strcmpi(char(string(param)), 'zStackChannelNames')
                 ctrl = uieditfield(parent, 'text');
-                ctrl.Value = bindingMultiValueToDisplay(app, value);
-                if isempty(ctrl.Value) || isZStackPlaceholderBinding(app, ctrl.Value)
+                zValue = normalizeZStackBindingValue(app, value);
+                if isempty(zValue)
+                    zValue = normalizeZStackBindingValue(app, getField(app, getField(app, node, 'params', struct()), 'zStackChannelNames', []));
+                end
+                if isempty(zValue)
                     defaults = defaultNodeParams(app, getField(app, node, 'type', ''), getField(app, node, 'pkg', ''));
-                    if isstruct(defaults) && isfield(defaults, 'zStackChannelNames') && ~isempty(defaults.zStackChannelNames)
-                        ctrl.Value = bindingMultiValueToDisplay(app, defaults.zStackChannelNames);
-                        persistMissingOrPlaceholderBindingDefault(app, node, 'zStackChannelNames', defaults.zStackChannelNames);
+                    if isstruct(defaults) && isfield(defaults, 'zStackChannelNames')
+                        zValue = normalizeZStackBindingValue(app, defaults.zStackChannelNames);
                     end
                 end
-                if isempty(ctrl.Value) || isZStackPlaceholderBinding(app, ctrl.Value)
-                    zDefaults = defaultZStackBindingChannels(app);
-                    if ~isempty(zDefaults)
-                        ctrl.Value = bindingMultiValueToDisplay(app, zDefaults);
-                        persistMissingOrPlaceholderBindingDefault(app, node, 'zStackChannelNames', zDefaults);
-                    end
+                if isempty(zValue)
+                    zValue = defaultZStackBindingValue(app);
+                end
+                if ~isempty(zValue)
+                    ctrl.Value = bindingMultiValueToDisplay(app, zValue);
+                    persistZStackBindingDefault(app, node, zValue);
+                else
+                    ctrl.Value = bindingMultiValueToDisplay(app, value);
                 end
                 if isempty(ctrl.Value)
                     ctrl.Value = '<all>';
                 end
                 ctrl.Enable = enableState;
-                ctrl.Tooltip = 'Comma-separated z-stack channel list. By default DetecDiv preselects ROI channels whose name contains z and a number.';
+                ctrl.Tooltip = 'Comma-separated z-stack channel list or pattern, e.g. DIC_Z$$$ for DIC_Z001...DIC_Z100.';
                 ctrl.ValueChangedFcn = @(src,~)bindingControlChanged(app, node, param, direction, src.Value);
                 return;
             end
@@ -8927,6 +8941,182 @@ classdef pipeline2 < matlab.apps.AppBase
                 '@z_stack','@z-stack','@z_stack output','@z-stack output'}));
         end
 
+        function valueOut = normalizeZStackBindingValue(app, value)
+            valueOut = {};
+            if isZStackPatternValue(app, value)
+                valueOut = strtrim(char(string(value)));
+                return;
+            end
+            channels = normalizeZStackBindingChannels(app, value);
+            if numel(channels) >= 2
+                pattern = inferZStackPatternFromChannels(app, channels);
+                if ~isempty(pattern)
+                    valueOut = pattern;
+                else
+                    valueOut = channels;
+                end
+            end
+        end
+
+        function channels = normalizeZStackBindingChannels(app, value)
+            channels = expandZStackPatternChannels(app, value);
+            if numel(channels) >= 2
+                channels = sortZStackBindingChannels(app, channels);
+                return;
+            end
+            channels = normalizeChannelSelectionValue(app, value);
+            channels = filterConcreteZStackChannels(app, channels);
+            if numel(channels) >= 2
+                channels = sortZStackBindingChannels(app, channels);
+                return;
+            end
+            if isZStackNonConcreteValue(app, value)
+                channels = defaultZStackBindingChannels(app);
+            else
+                channels = {};
+            end
+        end
+
+        function channels = expandZStackPatternChannels(app, value)
+            channels = {};
+            patterns = normalizeChannelSelectionValue(app, value);
+            if isempty(patterns)
+                return;
+            end
+            available = {};
+            try
+                available = runtimeValidationRoiChannels(app);
+            catch
+                available = {};
+            end
+            if isempty(available)
+                return;
+            end
+            available = cellstr(string(available(:)'));
+            for i = 1:numel(patterns)
+                pat = strtrim(char(string(patterns{i})));
+                if isempty(pat) || ~(contains(pat, '$') || contains(pat, '#') || contains(pat, '*'))
+                    continue;
+                end
+                rx = zStackPatternToRegexp(app, pat);
+                for j = 1:numel(available)
+                    name = char(string(available{j}));
+                    if ~isempty(regexp(name, rx, 'once'))
+                        channels{end+1} = name; %#ok<AGROW>
+                    end
+                end
+            end
+            channels = filterConcreteZStackChannels(app, unique(channels, 'stable'));
+            channels = sortZStackBindingChannels(app, channels);
+        end
+
+        function rx = zStackPatternToRegexp(app, pat) %#ok<INUSD>
+            pat = char(string(pat));
+            rx = '^';
+            i = 1;
+            while i <= numel(pat)
+                ch = pat(i);
+                if ch == '$' || ch == '#'
+                    j = i;
+                    while j <= numel(pat) && (pat(j) == '$' || pat(j) == '#')
+                        j = j + 1;
+                    end
+                    rx = [rx '\d{' num2str(j - i) '}']; %#ok<AGROW>
+                    i = j;
+                elseif ch == '*'
+                    rx = [rx '.*']; %#ok<AGROW>
+                    i = i + 1;
+                else
+                    rx = [rx regexptranslate('escape', ch)]; %#ok<AGROW>
+                    i = i + 1;
+                end
+            end
+            rx = [rx '$'];
+        end
+
+        function tf = isZStackPatternValue(app, value)
+            tf = false;
+            if isempty(value)
+                return;
+            end
+            try
+                if iscell(value) || (isstring(value) && ~isscalar(value))
+                    return;
+                end
+                txt = strtrim(char(string(value)));
+            catch
+                return;
+            end
+            if isempty(txt) || isAllChannelSelectorText(app, txt) || startsWith(txt, '<') || startsWith(txt, '@')
+                return;
+            end
+            tf = contains(txt, '$') || contains(txt, '#') || contains(txt, '*');
+        end
+
+        function pattern = inferZStackPatternFromChannels(app, channels)
+            pattern = '';
+            channels = sortZStackBindingChannels(app, filterConcreteZStackChannels(app, normalizeChannelSelectionValue(app, channels)));
+            if numel(channels) < 2
+                return;
+            end
+            tokens = cell(1, numel(channels));
+            for i = 1:numel(channels)
+                tokens{i} = regexp(char(string(channels{i})), '^(.*?)(\d+)$', 'tokens', 'once');
+                if isempty(tokens{i})
+                    pattern = '';
+                    return;
+                end
+            end
+            prefix = tokens{1}{1};
+            width = numel(tokens{1}{2});
+            for i = 2:numel(tokens)
+                if ~strcmp(tokens{i}{1}, prefix) || numel(tokens{i}{2}) ~= width
+                    pattern = '';
+                    return;
+                end
+            end
+            pattern = [prefix repmat('$', 1, width)];
+        end
+
+        function channels = filterConcreteZStackChannels(app, channels) %#ok<INUSD>
+            if isempty(channels)
+                channels = {};
+                return;
+            end
+            channels = cellstr(string(channels(:)'));
+            keep = false(1, numel(channels));
+            for i = 1:numel(channels)
+                txt = strtrim(char(string(channels{i})));
+                low = lower(txt);
+                if isempty(txt) || startsWith(txt, '<') || startsWith(txt, '@') || ...
+                        any(strcmpi(txt, {'all','*',':','<all>','auto','none','n/a'}))
+                    continue;
+                end
+                hasZNumber = ~isempty(regexp(low, 'z[^a-z0-9]*\d+|\d+[^a-z0-9]*z', 'once')) || ...
+                    ~isempty(regexp(low, '(^|_)dic[_-]?z?\d+$|(^|_)z\d+$|dic_z\d+', 'once'));
+                isBad = startsWith(low, 'results_') || contains(low, 'prob') || ...
+                    contains(low, 'mask') || contains(low, 'focus') || contains(low, 'cell_of_interest');
+                keep(i) = hasZNumber && ~isBad;
+            end
+            channels = unique(channels(keep), 'stable');
+        end
+
+        function tf = isZStackNonConcreteValue(app, value)
+            tf = true;
+            if isempty(value)
+                return;
+            end
+            try
+                txt = strtrim(char(string(value)));
+                if isempty(txt) || isZStackPlaceholderBinding(app, txt) || isAllChannelSelectorText(app, txt) || ...
+                        startsWith(txt, '@') || startsWith(txt, '<')
+                    return;
+                end
+            catch
+            end
+            tf = isempty(filterConcreteZStackChannels(app, normalizeChannelSelectionValue(app, value)));
+        end
+
         function channels = defaultZStackBindingChannels(app)
             channels = {};
             try
@@ -8934,21 +9124,47 @@ classdef pipeline2 < matlab.apps.AppBase
             catch
                 channels = {};
             end
-            channels = normalizeChannelSelectionValue(app, channels);
+            channels = filterConcreteZStackChannels(app, normalizeChannelSelectionValue(app, channels));
             if isempty(channels)
                 return;
             end
-            keep = false(1, numel(channels));
-            for i = 1:numel(channels)
-                nm = lower(char(string(channels{i})));
-                hasZNumber = ~isempty(regexp(nm, 'z[^a-z0-9]*\d+|\d+[^a-z0-9]*z', 'once')) || ...
-                    ~isempty(regexp(nm, '(^|_)dic[_-]?z?\d+$|(^|_)z\d+$|dic_z\d+', 'once'));
-                isBad = startsWith(nm, 'results_') || contains(nm, 'prob') || ...
-                    contains(nm, 'mask') || contains(nm, 'focus') || contains(nm, 'cell_of_interest');
-                keep(i) = hasZNumber && ~isBad;
-            end
-            channels = channels(keep);
             channels = sortZStackBindingChannels(app, channels);
+        end
+
+        function valueOut = defaultZStackBindingValue(app)
+            valueOut = {};
+            channels = defaultZStackBindingChannels(app);
+            if isempty(channels)
+                return;
+            end
+            pattern = inferZStackPatternFromChannels(app, channels);
+            if ~isempty(pattern)
+                valueOut = pattern;
+            else
+                valueOut = channels;
+            end
+        end
+
+        function persistZStackBindingDefault(app, node, valueOut)
+            if isempty(valueOut)
+                return;
+            end
+            nodeId = char(string(getField(app, node, 'id', '')));
+            idx = find(strcmp({app.Data.nodes.id}, nodeId), 1);
+            if isempty(idx)
+                return;
+            end
+            if ~isfield(app.Data.nodes(idx), 'params') || ~isstruct(app.Data.nodes(idx).params)
+                app.Data.nodes(idx).params = struct();
+            end
+            current = getField(app, app.Data.nodes(idx).params, 'zStackChannelNames', []);
+            currentConcrete = filterConcreteZStackChannels(app, normalizeChannelSelectionValue(app, current));
+            if isZStackPatternValue(app, current) || numel(currentConcrete) >= 2
+                return;
+            end
+            app.Data.nodes(idx).params.zStackChannelNames = valueOut;
+            clearRuntimeNodeParam(app, nodeId, 'zStackChannelNames');
+            markPipelineDirty(app, true);
         end
 
         function channels = sortZStackBindingChannels(app, channels) %#ok<INUSD>
@@ -8985,8 +9201,16 @@ classdef pipeline2 < matlab.apps.AppBase
                 app.Data.nodes(idx).params = struct();
             end
 
-            if isInput && strcmpi(param, 'zStackChannelNames') && isAllChannelSelectorText(app, value)
-                app.Data.nodes(idx).params.(param) = 'all';
+            if isInput && strcmpi(param, 'zStackChannelNames')
+                zValue = normalizeZStackBindingValue(app, value);
+                if isempty(zValue)
+                    zValue = defaultZStackBindingValue(app);
+                end
+                if ~isempty(zValue)
+                    app.Data.nodes(idx).params.(param) = zValue;
+                else
+                    app.Data.nodes(idx).params.(param) = value;
+                end
                 clearRuntimeNodeParam(app, nodeId, param);
             elseif isAllChannelBindingLabel(app, value)
                 app.Data.nodes(idx).params.(param) = 'all';
@@ -9003,11 +9227,6 @@ classdef pipeline2 < matlab.apps.AppBase
             else
                 if ~isInput
                     value = normalizeOutputBindingEditValue(app, app.Data.nodes(idx), param, value);
-                elseif strcmpi(param, 'zStackChannelNames')
-                    parsedChannels = normalizeChannelSelectionValue(app, value);
-                    if ~isempty(parsedChannels)
-                        value = parsedChannels;
-                    end
                 end
                 app.Data.nodes(idx).params.(param) = value;
                 clearRuntimeNodeParam(app, nodeId, param);
@@ -9049,8 +9268,12 @@ classdef pipeline2 < matlab.apps.AppBase
             if ~isfield(app.Data.nodes(idx), 'params') || ~isstruct(app.Data.nodes(idx).params)
                 app.Data.nodes(idx).params = struct();
             end
-            if isfield(app.Data.nodes(idx).params, param) && ~isempty(app.Data.nodes(idx).params.(param)) && ...
-                    ~isZStackPlaceholderBinding(app, app.Data.nodes(idx).params.(param))
+            currentValueIsConcrete = isfield(app.Data.nodes(idx).params, param) && ~isempty(app.Data.nodes(idx).params.(param)) && ...
+                    ~isZStackPlaceholderBinding(app, app.Data.nodes(idx).params.(param));
+            if currentValueIsConcrete && strcmpi(param, 'zStackChannelNames')
+                currentValueIsConcrete = ~isAllChannelSelectorText(app, app.Data.nodes(idx).params.(param));
+            end
+            if currentValueIsConcrete
                 return;
             end
             app.Data.nodes(idx).params.(param) = value;
@@ -12275,8 +12498,12 @@ classdef pipeline2 < matlab.apps.AppBase
                     end
                 end
                 if isfield(report, 'solver') && isstruct(report.solver) && isfield(report.solver, 'issues') && ~isempty(report.solver.issues)
-                    lines{end+1} = ''; %#ok<AGROW>
-                    lines{end+1} = sprintf('Solver issues: %d', numel(report.solver.issues)); %#ok<AGROW>
+                    severities = lower(string({report.solver.issues.severity}));
+                    visibleIssues = report.solver.issues(severities ~= "info");
+                    if ~isempty(visibleIssues)
+                        lines{end+1} = ''; %#ok<AGROW>
+                        lines{end+1} = sprintf('Solver issues: %d', numel(visibleIssues)); %#ok<AGROW>
+                    end
                 end
             end
             if isempty(lines)
@@ -12555,6 +12782,7 @@ classdef pipeline2 < matlab.apps.AppBase
                     end
                 end
                 nodes(i).params = mergeStructDefaults(app, runParams, nodes(i).params);
+                nodes(i) = applyCustomPackagePatchToNode(app, nodes(i), runParams);
             end
         end
 
@@ -12669,6 +12897,16 @@ classdef pipeline2 < matlab.apps.AppBase
 
         function runName = currentRunDisplayName(app)
             runName = '(none)';
+            try
+                if app.CurrentRunIsSeed || app.IsRunDirty
+                    runId = runtimeRunIdFromUi(app);
+                    if ~isempty(strtrim(runId))
+                        runName = runId;
+                        return;
+                    end
+                end
+            catch
+            end
             try
                 if ~isempty(app.CurrentRun) && isa(app.CurrentRun, 'pipelineRun') && ...
                         ~isempty(app.CurrentRun.runId)
@@ -13475,6 +13713,42 @@ classdef pipeline2 < matlab.apps.AppBase
                     nodeParams.(key).useExistingProjectSources = useProjectSources;
                     if ~isempty(rawDataPath)
                         nodeParams.(key).path = rawDataPath;
+                    end
+                end
+            end
+            for i = 1:numel(app.Data.nodes)
+                node = app.Data.nodes(i);
+                nodeId = char(string(getField(app, node, 'id', '')));
+                if isempty(nodeId)
+                    continue;
+                end
+                key = matlab.lang.makeValidName(nodeId);
+                patch = customPackagePatchFromNode(app, node);
+                if isempty(fieldnames(patch))
+                    continue;
+                end
+                if ~isfield(nodeParams, key) || ~isstruct(nodeParams.(key))
+                    nodeParams.(key) = struct();
+                end
+                nodeParams.(key) = mergeStructOverride(app, nodeParams.(key), patch);
+            end
+        end
+
+        function patch = customPackagePatchFromNode(app, node) %#ok<INUSD>
+            patch = struct();
+            keys = {'customPackageRoot','customPackageDir','customPackageLoadedAt'};
+            for i = 1:numel(keys)
+                key = keys{i};
+                if isstruct(node) && isfield(node, key) && ~isempty(node.(key))
+                    patch.(key) = node.(key);
+                end
+            end
+            p = getField(app, node, 'params', struct());
+            if isstruct(p)
+                for i = 1:numel(keys)
+                    key = keys{i};
+                    if ~isfield(patch, key) && isfield(p, key) && ~isempty(p.(key))
+                        patch.(key) = p.(key);
                     end
                 end
             end

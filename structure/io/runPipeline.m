@@ -1271,13 +1271,11 @@ function [ctx, report] = executeRoiMajorPipeline(pipe, ctx, report, nodeMap, edg
                 roiCtx.io.deferredSave = true;
                 roiCtx.io.cachePolicy = 'memory';
                 roiCtx.store.cacheMode = 'memory';
-                if r == 1
-                    pipelineRunEvent(roiCtx, 'node_start', 'NodeId', nodeId, ...
-                        'NodeType', getfielddefault(node,'type',''), 'NodeIndex', i, ...
-                        'TotalNodes', totalNodes, 'RunPolicy', policy.runPolicy, ...
-                        'ExistingPolicy', policy.existingPolicy, 'OutputName', policy.outputName, ...
-                        'ExecutionMode', 'roi_major', 'TotalRois', nRoi);
-                end
+                pipelineRunEvent(roiCtx, 'node_start', 'NodeId', nodeId, ...
+                    'NodeType', getfielddefault(node,'type',''), 'NodeIndex', i, ...
+                    'TotalNodes', totalNodes, 'RunPolicy', policy.runPolicy, ...
+                    'ExistingPolicy', policy.existingPolicy, 'OutputName', policy.outputName, ...
+                    'ExecutionMode', 'roi_major', 'RoiIndex', r, 'TotalRois', nRoi);
                 roiCtx = executeNode(node, roiCtx);
                 [nodeStatus, nodeMessage, roiCtx] = consumeNodeStatusOverride(roiCtx);
                 nodeStats(i).durationSec = nodeStats(i).durationSec + toc(tNode);
@@ -1289,6 +1287,11 @@ function [ctx, report] = executeRoiMajorPipeline(pipe, ctx, report, nodeMap, edg
                 if ~isempty(nodeMessage)
                     nodeStats(i).message = nodeMessage;
                 end
+                pipelineRunEvent(roiCtx, 'node_done', 'NodeId', nodeId, ...
+                    'NodeType', getfielddefault(node,'type',''), 'NodeIndex', i, ...
+                    'TotalNodes', totalNodes, 'Status', nodeStatus, ...
+                    'ExecutionMode', 'roi_major', 'RoiIndex', r, 'TotalRois', nRoi, ...
+                    'DurationSec', toc(tNode), 'Message', nodeMessage);
             catch ME
                 nodeStats(i).durationSec = nodeStats(i).durationSec + toc(tNode);
                 nodeStats(i).after = captureContextStats(roiCtx);
@@ -1376,6 +1379,7 @@ function [ctx, report] = executeRoiMajorPipeline(pipe, ctx, report, nodeMap, edg
 end
 
 function saveFinalizedRoiLocal(roiobj, ctx)
+    roiId = safeRoiIdForRunLocal(roiobj);
     dirty = struct('data', false, 'image', false, 'fullImage', false, 'channels', {{}});
     try
         if isstruct(roiobj.results) && isfield(roiobj.results, 'pipelineDeferredDirty') && isstruct(roiobj.results.pipelineDeferredDirty)
@@ -1396,10 +1400,13 @@ function saveFinalizedRoiLocal(roiobj, ctx)
     end
 
     if isMemoryOnlyOutputRunLocal(ctx)
-        disp(sprintf('[runPipeline] Final ROI save skipped for ROI %s: memory-only output mode.', safeRoiIdForRunLocal(roiobj)));
+        disp(sprintf('[runPipeline] Final ROI save skipped for ROI %s: memory-only output mode.', roiId));
         return;
     end
 
+    pipelineRunEvent(ctx, 'roi_final_save_start', 'RoiId', roiId, ...
+        'SaveData', logical(dirty.data), 'SaveImage', logical(dirty.image), ...
+        'FullImage', logical(dirty.fullImage), 'Channels', dirty.channels);
     if dirty.image
         try
             saveChannels = cellstr(string(dirty.channels(:)))';
@@ -1407,14 +1414,14 @@ function saveFinalizedRoiLocal(roiobj, ctx)
             if ~dirty.fullImage && ~isempty(saveChannels)
                 roiobj.save(saveChannels);
                 disp(sprintf('[runPipeline] Final ROI save: %d image channel(s)+data for ROI %s.', ...
-                    numel(saveChannels), safeRoiIdForRunLocal(roiobj)));
+                    numel(saveChannels), roiId));
             else
                 roiobj.save;
-                disp(sprintf('[runPipeline] Final ROI save: image+data for ROI %s.', safeRoiIdForRunLocal(roiobj)));
+                disp(sprintf('[runPipeline] Final ROI save: image+data for ROI %s.', roiId));
             end
         catch ME
             error('runPipeline:RoiFinalSaveFailed', ...
-                'Final save failed for ROI %s: %s', safeRoiIdForRunLocal(roiobj), ME.message);
+                'Final save failed for ROI %s: %s', roiId, ME.message);
         end
     elseif dirty.data
         try
@@ -1422,14 +1429,17 @@ function saveFinalizedRoiLocal(roiobj, ctx)
             if ~didSave
                 error('runPipeline:NoDataSaved', 'No savable dataseries was found.');
             end
-            disp(sprintf('[runPipeline] Final ROI save: data for ROI %s.', safeRoiIdForRunLocal(roiobj)));
+            disp(sprintf('[runPipeline] Final ROI save: data for ROI %s.', roiId));
         catch ME
             error('runPipeline:RoiFinalSaveFailed', ...
-                'Final data save failed for ROI %s: %s', safeRoiIdForRunLocal(roiobj), ME.message);
+                'Final data save failed for ROI %s: %s', roiId, ME.message);
         end
     else
-        disp(sprintf('[runPipeline] Final ROI save skipped: no deferred output for ROI %s.', safeRoiIdForRunLocal(roiobj)));
+        disp(sprintf('[runPipeline] Final ROI save skipped: no deferred output for ROI %s.', roiId));
     end
+    pipelineRunEvent(ctx, 'roi_final_save_done', 'RoiId', roiId, ...
+        'SaveData', logical(dirty.data), 'SaveImage', logical(dirty.image), ...
+        'FullImage', logical(dirty.fullImage), 'Channels', dirty.channels);
 
     try
         if isfield(ctx,'io') && isstruct(ctx.io) && isfield(ctx.io,'cachePolicy') && strcmp(ctx.io.cachePolicy, 'disk')

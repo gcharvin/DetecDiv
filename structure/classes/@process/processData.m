@@ -330,7 +330,9 @@ end
         imageCache = image;
         dataCache = data;
         roiobj.data=data;
-        roiobj.image=image;
+        if numel(image)
+            roiobj.image=image;
+        end
         if shouldDeferSaveLocal(saveModeLocal)
             markDeferredDirtyLocal(roiobj, hasSavableDataseries(data), numel(image) > 0, saveChannels);
             disp('[processData] Defer save requested; processor output kept in ROI memory.');
@@ -608,12 +610,29 @@ end
         if isempty(channels)
             return;
         end
+        channelsToLoad = channels(~cellfun(@(ch) isChannelLoadedInMemoryLocal(roiobjLocal, ch), channels));
+        if isempty(channelsToLoad)
+            return;
+        end
         try
-            roiobjLocal.load('Channel', channels, 'Silent');
+            roiobjLocal.load('Channel', channelsToLoad, 'Silent');
         catch ME
             warning('processData:RequiredChannelLoadFailed', ...
                 'Could not preload required ROI channel(s) %s for ROI "%s": %s', ...
-                strjoin(channels, ', '), safeRoiId(roiobjLocal), ME.message);
+                strjoin(channelsToLoad, ', '), safeRoiId(roiobjLocal), ME.message);
+        end
+    end
+
+    function tf = isChannelLoadedInMemoryLocal(roiobjLocal, channelName)
+        tf = false;
+        try
+            if isempty(channelName) || isempty(roiobjLocal.image)
+                return;
+            end
+            idx = roiobjLocal.findChannelID(char(string(channelName)), 'exact');
+            tf = ~isempty(idx) && all(idx >= 1) && all(idx <= size(roiobjLocal.image, 3));
+        catch
+            tf = false;
         end
     end
 
