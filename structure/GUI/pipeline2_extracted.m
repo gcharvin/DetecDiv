@@ -5952,10 +5952,42 @@ classdef pipeline2 < matlab.apps.AppBase
                 if ~isfield(node.params, key) || isempty(node.params.(key))
                     node.params.(key) = defaults.(key);
                     added = added + 1;
+                elseif isChoiceListValue(app, node.params.(key)) && isChoiceListValue(app, defaults.(key))
+                    refreshed = refreshChoiceListKeepingSelection(app, node.params.(key), defaults.(key));
+                    if ~isequaln(refreshed, node.params.(key))
+                        node.params.(key) = refreshed;
+                    end
                 end
             end
             app.Data.nodes(idx) = alignNodeForAssignment(app, app.Data.nodes(idx), node);
             updated = double(~isequaln(before, node.params));
+        end
+
+        function tf = isChoiceListValue(app, value) %#ok<INUSD>
+            tf = iscell(value) && numel(value) > 1;
+        end
+
+        function value = refreshChoiceListKeepingSelection(app, currentValue, defaultValue)
+            selected = choiceScalarText(app, currentValue);
+            choices = defaultValue(:)';
+            choices = choices(~cellfun(@isempty, choices));
+            if isempty(choices)
+                value = currentValue;
+                return;
+            end
+            defaultSelected = choiceScalarText(app, defaultValue);
+            choiceLabels = choices;
+            if ~isempty(defaultSelected) && numel(choiceLabels) > 1 && strcmp(char(string(choiceLabels{end})), defaultSelected)
+                choiceLabels = choiceLabels(1:end-1);
+            end
+            if isempty(selected) || ~any(strcmp(cellstr(string(choiceLabels)), selected))
+                selected = defaultSelected;
+            end
+            if isempty(selected)
+                value = defaultValue;
+            else
+                value = [choiceLabels {selected}];
+            end
         end
 
         function [changed, total] = resetNodeDefaultsFromModule(app, idx)
