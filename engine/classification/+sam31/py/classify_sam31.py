@@ -1,0 +1,153 @@
+from __future__ import annotations
+
+import argparse
+import json
+import platform
+import shutil
+import sys
+from pathlib import Path
+
+import numpy as np
+from PIL import Image
+from scipy.io import loadmat, savemat
+
+
+def as_local_path(value: str | Path | None) -> Path | None:
+    if value is None:
+        return None
+    text = str(value)
+    if not text:
+        return None
+    if platform.system() == "Linux" and len(text) >= 3 and text[1:3] in {":\\", ":/"}:
+        drive = text[0].lower()
+        rest = text[2:].replace("\\", "/")
+        return Path(f"/mnt/{drive}{rest}")
+    return Path(text).expanduser()
+
+
+def optional_path(value: str | None) -> Path | None:
+    path = as_local_path(value)
+    if path is None or not str(path):
+        return None
+    return path
+
+
+def robust_u8(image: np.ndarray) -> np.ndarray:
+    arr = np.asarray(image, dtype=np.float32)
+    lo, hi = np.percentile(arr, [1.0, 99.8])
+    if not np.isfinite(lo) or not np.isfinite(hi) or hi <= lo:
+        lo, hi = float(arr.min()), float(arr.max())
+    if hi <= lo:
+        return np.zeros(arr.shape, dtype=np.uint8)
+    arr = np.clip((arr - lo) / (hi - lo), 0.0, 1.0)
+    return np.round(arr * 255).astype(np.uint8)
+
+
+def load_raw_stack(path: Path) -> tuple[np.ndarray, np.ndarray]:
+    mat = loadmat(path)
+    if "raw" not in mat:
+        raise ValueError(f"{path} has no raw variable")
+    raw = np.asarray(mat["raw"])
+    frames = np.asarray(mat.get("frames", np.arange(1, raw.shape[-1] + 1))).reshape(-1)
+    raw = np.squeeze(raw)
+    if raw.ndim == 2:
+        raw = raw[:, :, None]
+    if raw.ndim == 3:
+        raw = raw[:, :, None, :]
+    if raw.ndim != 4:
+        raise ValueError(f"Expected raw as [H,W,C,T], got {raw.shape}")
+    return raw, frames.astype(np.int64)
+
+
+def write_image_sequence(raw: np.ndarray, image_dir: Path) -> None:
+    if image_dir.exists():
+        shutil.rmtree(image_dir)
+    image_dir.mkdir(parents=True, exist_ok=True)
+    for frame_idx in range(raw.shape[3]):
+        plane = raw[:, :, 0, frame_idx]
+        gray = robust_u8(plane)
+        rgb = np.repeat(gray[:, :, None], 3, axis=2)
+        Image.fromarray(rgb).save(image_dir / f"{frame_idx:05d}.png")
+
+
+def resize_labels_nearest(labels: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
+    if tuple(labels.shape) == tuple(shape):
+        return labels.astype(np.uint16, copy=False)
+    image = Image.fromarray(labels.astype(np.uint16))
+    image = image.resize((shape[1], shape[0]), resample=Image.Resampling.NEAREST)
+    return np.asarray(image, dtype=np.uint16)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="DetecDiv bridge for SAM31 ROI inference.")
+    parser.add_argument("--config", type=Path, required=True)
+    args = parser.parse_args()
+
+    cfg = json.loads(args.config.read_text(encoding="utf-8"))
+    repo_root = as_local_path(cfg["repo_root"])
+    sam3_repo = as_local_path(cfg["sam3_repo"])
+    input_mat_path = as_local_path(cfg["input_mat_path"])
+    output_dir = as_local_path(cfg["output_dir"])
+    if repo_root is None or sam3_repo is None or input_mat_path is None or output_dir is None:
+        raise SystemExit("Missing repo_root, sam3_repo, input_mat_path, or output_dir")
+
+    sys.path.insert(0, str(repo_root))
+    sys.path.insert(0, str(repo_root / "scripts"))
+    sys.path.insert(0, str(sam3_repo))
+
+    from render_sam31_tracking_movies import run_sam31_movie_chunked  # noqa: WPS433
+    from sam31_ctc_benchmark.sam31_runner import build_predictor  # noqa: WPS433
+
+    raw, frames = load_raw_stack(input_mat_path)
+    image_dir = output_dir / "sam31_images"
+    write_image_sequence(raw, image_dir)
+
+    video_kwargs = {
+        "score_threshold_detection": cfg.get("video_score_threshold"),
+        "new_det_thresh": cfg.get("video_new_det_threshold"),
+        "det_nms_thresh": cfg.get("video_det_nms_threshold"),
+        "assoc_iou_thresh": cfg.get("video_assoc_iou_threshold"),
+        "max_num_objects": cfg.get("max_num_objects"),
+    }
+    video_kwargs = {k: v for k, v in video_kwargs.items() if v is not None}
+    predictor = build_predictor(
+        detector_checkpoint_path=optional_path(cfg.get("detector_checkpoint_path")),
+        tracker_checkpoint_path=optional_path(cfg.get("tracker_checkpoint_path")),
+        image_size=int(cfg.get("image_size", 280)),
+        video_kwargs=video_kwargs,
+    )
+    file_names = [f"{idx:05d}.png" for idx in range(raw.shape[3])]
+    labels_by_frame, stats_by_frame = run_sam31_movie_chunked(
+        predictor=predictor,
+        image_dir=image_dir,
+        file_names=file_names,
+        prompt=str(cfg.get("prompt", "cell")),
+        prompt_mode=str(cfg.get("prompt_mode", "text")),
+        seed_labels_by_frame=[],
+        min_score=float(cfg.get("min_score", 0.0)),
+        chunk_size=int(cfg.get("chunk_size", 0)),
+        chunk_overlap=int(cfg.get("chunk_overlap", 0)),
+    )
+
+    height, width = raw.shape[0], raw.shape[1]
+    masks = np.zeros((height, width, 1, len(labels_by_frame)), dtype=np.uint16)
+    for idx, labels in enumerate(labels_by_frame):
+        masks[:, :, 0, idx] = resize_labels_nearest(labels, (height, width))
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    savemat(
+        output_dir / "results.mat",
+        {
+            "masks_all": masks,
+            "frames_list": frames.reshape(1, -1),
+        },
+        do_compression=True,
+    )
+    (output_dir / "sam31_stats.json").write_text(
+        json.dumps({"frames": len(labels_by_frame), "stats_by_frame": stats_by_frame}, indent=2, default=str),
+        encoding="utf-8",
+    )
+
+
+if __name__ == "__main__":
+    main()

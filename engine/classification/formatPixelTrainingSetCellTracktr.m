@@ -27,6 +27,7 @@ p.addParameter('runQA', true, @(x)islogical(x) && isscalar(x));
 p.addParameter('qa_write_png', true, @(x)islogical(x) && isscalar(x));
 p.addParameter('qa_png_max_frames', 50, @(x)isnumeric(x) && isscalar(x));
 p.addParameter('qa_out_subdir', "_QA", @(s)ischar(s) || isstring(s));
+p.addParameter('runCocoConversion', true, @(x)islogical(x) && isscalar(x));
 
 p.parse(varargin{:});
 %mergeBudN = uint32(p.Results.mergeBudN);
@@ -39,6 +40,7 @@ runQA          = p.Results.runQA;
 qa_write_png   = p.Results.qa_write_png;
 qa_png_max     = p.Results.qa_png_max_frames;
 qa_out_subdir  = string(p.Results.qa_out_subdir);
+runCocoConversion = p.Results.runCocoConversion;
 
 
 if ~ismember(layoutMode, ["ctc_root","split_root"])
@@ -547,6 +549,10 @@ fprintf('🧬 TOTAL budding events (tous ROIs) : %d\n', totalBuds);
 % end
 
 % === Conversion COCO (optionnelle)
+if ~runCocoConversion
+    return;
+end
+
 % WARNING: depending on how create_coco_dataset_from_CTC.py discovers train/val,
 % the new layout may require adapting that script. I keep datapath=momaRoot.
 dataRoot = momaRoot;
