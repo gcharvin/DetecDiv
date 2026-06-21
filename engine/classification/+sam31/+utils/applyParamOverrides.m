@@ -12,6 +12,8 @@ for i = 1:numel(f)
     hit = find(strcmpi(tpf, key), 1, 'first');
     if ~isempty(hit)
         tp.(tpf{hit}) = params.(key);
+    else
+        tp.(key) = params.(key);
     end
 end
 end

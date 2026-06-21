@@ -43,7 +43,11 @@ artifactsRoot = char(string(tp.artifactsRoot));
 if isempty(artifactsRoot)
     artifactsRoot = fullfile(base, 'sam31_artifacts');
 end
-datasetRoot = fullfile(base, 'trainingdataset', 'moma');
+trainingFolderName = 'trainingdataset';
+if isfield(tp, 'trainingFolderName') && ~isempty(tp.trainingFolderName)
+    trainingFolderName = char(string(tp.trainingFolderName));
+end
+datasetRoot = fullfile(base, trainingFolderName, 'moma');
 if exist(datasetRoot, 'dir') ~= 7
     error('sam31:MissingCTCExport', 'CTC dataset not found: %s. Run sam31.format first.', datasetRoot);
 end
@@ -57,6 +61,8 @@ cfg.python = char(string(tp.pythonExecutable));
 cfg.resolution = double(tp.resolution);
 cfg.num_gpus = double(tp.numGpus);
 cfg.prepare_before_train = logical(tp.prepareBeforeTrain);
+cfg.prepare_only = logical(getStructField(tp, 'prepareOnly', false));
+cfg.dry_run = logical(getStructField(tp, 'dryRun', false));
 cfg.modules = splitWords(tp.trainModules);
 cfg.splits = splitWords(tp.splits);
 cfg.image_dataset_name = char(string(tp.imageDatasetName));
@@ -95,4 +101,11 @@ if fid == -1
 end
 cleanup = onCleanup(@() fclose(fid));
 fwrite(fid, jsonencode(cfg), 'char');
+end
+
+function value = getStructField(s, name, defaultValue)
+value = defaultValue;
+if isstruct(s) && isfield(s, name) && ~isempty(s.(name))
+    value = s.(name);
+end
 end

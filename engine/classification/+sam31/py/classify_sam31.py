@@ -78,6 +78,42 @@ def resize_labels_nearest(labels: np.ndarray, shape: tuple[int, int]) -> np.ndar
     return np.asarray(image, dtype=np.uint16)
 
 
+def run_sam31_text_movie(predictor, image_dir: Path, num_frames: int, prompt: str, min_score: float, fallback_shape: tuple[int, int]):
+    from sam31_ctc_benchmark.sam31_runner import output_to_label_mask, propagate_in_video
+
+    response = predictor.handle_request(request={"type": "start_session", "resource_path": str(image_dir)})
+    session_id = response["session_id"]
+    try:
+        predictor.handle_request(request={"type": "reset_session", "session_id": session_id})
+        predictor.handle_request(
+            request={
+                "type": "add_prompt",
+                "session_id": session_id,
+                "frame_index": 0,
+                "text": prompt,
+                "output_prob_thresh": min_score,
+            }
+        )
+        outputs = propagate_in_video(predictor, session_id, output_prob_thresh=min_score)
+        labels_by_frame: list[np.ndarray] = []
+        stats_by_frame: list[dict] = []
+        for frame_idx in range(num_frames):
+            output = outputs.get(frame_idx)
+            if output is None:
+                labels_by_frame.append(np.zeros(fallback_shape, dtype=np.uint16))
+                stats_by_frame.append({"frame_index": frame_idx, "missing_output": True})
+                continue
+            labels = output_to_label_mask(output, min_score=min_score)
+            labels_by_frame.append(labels)
+            stats = dict(output.get("frame_stats") or {})
+            stats["frame_index"] = frame_idx
+            stats["num_output_objects"] = int(labels.max())
+            stats_by_frame.append(stats)
+        return labels_by_frame, stats_by_frame
+    finally:
+        predictor.handle_request(request={"type": "close_session", "session_id": session_id})
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="DetecDiv bridge for SAM31 ROI inference.")
     parser.add_argument("--config", type=Path, required=True)
@@ -95,12 +131,29 @@ def main() -> None:
     sys.path.insert(0, str(repo_root / "scripts"))
     sys.path.insert(0, str(sam3_repo))
 
-    from render_sam31_tracking_movies import run_sam31_movie_chunked  # noqa: WPS433
     from sam31_ctc_benchmark.sam31_runner import build_predictor  # noqa: WPS433
 
     raw, frames = load_raw_stack(input_mat_path)
     image_dir = output_dir / "sam31_images"
     write_image_sequence(raw, image_dir)
+
+    if bool(cfg.get("smoke_only", False)):
+        height, width = raw.shape[0], raw.shape[1]
+        masks = np.zeros((height, width, 1, raw.shape[3]), dtype=np.uint16)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        savemat(
+            output_dir / "results.mat",
+            {
+                "masks_all": masks,
+                "frames_list": frames.reshape(1, -1),
+            },
+            do_compression=True,
+        )
+        (output_dir / "sam31_stats.json").write_text(
+            json.dumps({"smoke_only": True, "frames": int(raw.shape[3])}, indent=2),
+            encoding="utf-8",
+        )
+        return
 
     video_kwargs = {
         "score_threshold_detection": cfg.get("video_score_threshold"),
@@ -116,17 +169,15 @@ def main() -> None:
         image_size=int(cfg.get("image_size", 280)),
         video_kwargs=video_kwargs,
     )
-    file_names = [f"{idx:05d}.png" for idx in range(raw.shape[3])]
-    labels_by_frame, stats_by_frame = run_sam31_movie_chunked(
+    if int(cfg.get("chunk_size", 0)) > 0:
+        raise ValueError("DetecDiv SAM31 classify runner currently supports full-session inference only; set chunkSize=0.")
+    labels_by_frame, stats_by_frame = run_sam31_text_movie(
         predictor=predictor,
         image_dir=image_dir,
-        file_names=file_names,
+        num_frames=raw.shape[3],
         prompt=str(cfg.get("prompt", "cell")),
-        prompt_mode=str(cfg.get("prompt_mode", "text")),
-        seed_labels_by_frame=[],
         min_score=float(cfg.get("min_score", 0.0)),
-        chunk_size=int(cfg.get("chunk_size", 0)),
-        chunk_overlap=int(cfg.get("chunk_overlap", 0)),
+        fallback_shape=(raw.shape[0], raw.shape[1]),
     )
 
     height, width = raw.shape[0], raw.shape[1]

@@ -28,6 +28,7 @@ p.addParameter('qa_write_png', true, @(x)islogical(x) && isscalar(x));
 p.addParameter('qa_png_max_frames', 50, @(x)isnumeric(x) && isscalar(x));
 p.addParameter('qa_out_subdir', "_QA", @(s)ischar(s) || isstring(s));
 p.addParameter('runCocoConversion', true, @(x)islogical(x) && isscalar(x));
+p.addParameter('writeOverlayMovies', true, @(x)islogical(x) && isscalar(x));
 
 p.parse(varargin{:});
 %mergeBudN = uint32(p.Results.mergeBudN);
@@ -41,6 +42,7 @@ qa_write_png   = p.Results.qa_write_png;
 qa_png_max     = p.Results.qa_png_max_frames;
 qa_out_subdir  = string(p.Results.qa_out_subdir);
 runCocoConversion = p.Results.runCocoConversion;
+writeOverlayMovies = p.Results.writeOverlayMovies;
 
 
 if ~ismember(layoutMode, ["ctc_root","split_root"])
@@ -501,11 +503,13 @@ totalBuds = totalBuds + nBuds;
         end
 
         % === Movie overlay (optionnel) : raw channel + overlay IDs (TRA)
-try
-    outMp4 = fullfile(splitBase, sprintf('%s_overlay.mp4', seqName));
-    makeOverlayMovieFromCTC(imgDir, traDir, outMp4, trackTable);
-catch ME
-    warning('Overlay movie failed for %s/%s: %s', splitName, seqName, ME.message);
+if writeOverlayMovies
+    try
+        outMp4 = fullfile(splitBase, sprintf('%s_overlay.mp4', seqName));
+        makeOverlayMovieFromCTC(imgDir, traDir, outMp4, trackTable);
+    catch ME
+        warning('Overlay movie failed for %s/%s: %s', splitName, seqName, ME.message);
+    end
 end
 
 

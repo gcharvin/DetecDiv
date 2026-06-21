@@ -80,8 +80,9 @@ def main() -> None:
         resolution,
         "--num-gpus",
         num_gpus,
-        "--run",
     ]
+    if not bool(cfg.get("dry_run", False)):
+        common.append("--run")
 
     if bool(cfg.get("prepare_before_train", True)):
         run(
@@ -110,6 +111,10 @@ def main() -> None:
             cwd=repo_root,
             log_path=log_path,
         )
+
+    if bool(cfg.get("prepare_only", False)):
+        print("prepare_only=true: stopping before SAM31 training.", flush=True)
+        return
 
     run(
         [

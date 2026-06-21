@@ -102,6 +102,7 @@ cfg.repo_root = strrep(char(string(tp.repoRoot)), '\', '/');
 cfg.sam3_repo = strrep(char(string(tp.sam3Repo)), '\', '/');
 cfg.detector_checkpoint_path = strrep(char(string(tp.detectorCheckpointPath)), '\', '/');
 cfg.tracker_checkpoint_path = strrep(char(string(tp.trackerCheckpointPath)), '\', '/');
+cfg.smoke_only = logical(getStructField(tp, 'smokeOnly', false));
 cfg.image_size = double(tp.resolution);
 cfg.max_num_objects = double(tp.maxNumObjects);
 cfg.chunk_size = double(tp.chunkSize);
@@ -180,4 +181,11 @@ if fid == -1
 end
 cleanup = onCleanup(@() fclose(fid));
 fwrite(fid, jsonencode(cfg), 'char');
+end
+
+function value = getStructField(s, name, defaultValue)
+value = defaultValue;
+if isstruct(s) && isfield(s, name) && ~isempty(s.(name))
+    value = s.(name);
+end
 end
