@@ -23,6 +23,8 @@ function addROI(classif, obj, varargin)
 %          - classif.strid (OUTPUT annotation mapping).
 %        If ioChannel matches an INPUT, we FORCE rename source channel to that INPUT name.
 %        If ioChannel == classif.strid, we treat it as output mapping (handled later).
+%        Imported cell_information lineage metadata is then retargeted to the
+%        destination annotation channel so lineage overlays keep following it.
 %
 % Parameters (varargin pairs):
 %   'rois'         : vector of ROI indices to import (default all)
@@ -331,7 +333,7 @@ for ii = 1:length(rois)
         if strcmp(classif.category{1},'Pixel') && ~isempty(ioMap) && isstruct(ioMap)
             reuseGT = reuseOutputAnnotationIfMapped(classif.roi(cc+1), classif, ioMap, outName);
         else
-            reuseGT = false; %#ok<NASGU>
+            reuseGT = false;
         end
 
         % If output channel does not exist, create a blank indexed annotation channel.
@@ -351,6 +353,10 @@ for ii = 1:length(rois)
             if ~isempty(pixid) && ~isempty(pixidnew)
                 classif.roi(cc+1).image(:,:,pixidnew,:) = roitocopy.image(:,:,pixid,:);
             end
+        end
+
+        if reuseGT && ~isempty(ioMap) && isstruct(ioMap)
+            syncCellInformationLineageChannel(classif.roi(cc+1), classif, ioMap, outName);
         end
     end
 
@@ -713,7 +719,7 @@ end
         if ~iscell(chNames), chNames = {}; end
 
         for mm = 1:numel(ioMapLocal)
-            if ~isfield(ioMapLocal,'import') || ~logical(ioMapLocal(mm).import)
+            if ~isImportMapEntryEnabled(ioMapLocal, mm)
                 continue
             end
 
@@ -723,7 +729,7 @@ end
             if ~ischar(ioCh), ioCh = ''; end
             ioCh = strtrim(ioCh);
 
-            if ~strcmp(ioCh, classifObj.strid)
+            if ~isOutputAnnotationMapping(ioCh, classifObj)
                 continue
             end
 
@@ -752,6 +758,88 @@ end
                 reuseGT = true;
                 break
             end
+        end
+    end
+
+    function syncCellInformationLineageChannel(roiObj, classifObj, ioMapLocal, outName)
+        % The lineage maps are copied with the dataseries, but their mask channel
+        % metadata still points to the source classifier. When the user maps that
+        % source mask as the destination annotation channel, retarget the metadata.
+        if isempty(outName) || ~hasOutputAnnotationMapping(ioMapLocal, classifObj)
+            return
+        end
+
+        if isempty(roiObj.data)
+            return
+        end
+
+        pixOut = roiObj.findChannelID(outName);
+        if iscell(pixOut)
+            pixOut = cell2mat(pixOut);
+        end
+        if isempty(pixOut)
+            return
+        end
+
+        dsIdx = find(arrayfun(@(x) isprop(x,'groupid') && strcmp(x.groupid,'cell_information'), roiObj.data));
+        if isempty(dsIdx)
+            return
+        end
+
+        for kk = dsIdx(:).'
+            ds = roiObj.data(kk);
+            if isempty(ds.userData) || ~isstruct(ds.userData)
+                ds.userData = struct();
+            end
+            ds.userData.lineageChannelName = string(outName);
+            ds.userData.lineageChannelPix  = double(pixOut(1));
+            roiObj.data(kk) = ds;
+        end
+    end
+
+    function tf = hasOutputAnnotationMapping(ioMapLocal, classifObj)
+        tf = false;
+        for mm = 1:numel(ioMapLocal)
+            if ~isImportMapEntryEnabled(ioMapLocal, mm)
+                continue
+            end
+            ioCh = '';
+            if isfield(ioMapLocal,'ioChannel'), ioCh = ioMapLocal(mm).ioChannel; end
+            if isstring(ioCh), ioCh = char(ioCh); end
+            if ~ischar(ioCh), ioCh = ''; end
+            if isOutputAnnotationMapping(ioCh, classifObj)
+                tf = true;
+                return
+            end
+        end
+    end
+
+    function tf = isOutputAnnotationMapping(ioCh, classifObj)
+        ioCh = strtrim(char(string(ioCh)));
+        target = '';
+        try
+            target = char(string(classifObj.strid));
+        catch
+        end
+        tf = (~isempty(target) && strcmp(ioCh, target)) || strcmpi(ioCh, 'Classifier annotation');
+    end
+
+    function tf = isImportMapEntryEnabled(ioMapLocal, idx)
+        tf = true;
+        if ~isfield(ioMapLocal, 'import')
+            return
+        end
+        val = ioMapLocal(idx).import;
+        if isempty(val)
+            tf = false;
+        elseif islogical(val) && isscalar(val)
+            tf = val;
+        elseif isnumeric(val) && isscalar(val)
+            tf = (val ~= 0);
+        elseif ischar(val) || (isstring(val) && isscalar(val))
+            tf = any(strcmpi(strtrim(char(string(val))), {'true','1','yes','on'}));
+        else
+            tf = false;
         end
     end
 
