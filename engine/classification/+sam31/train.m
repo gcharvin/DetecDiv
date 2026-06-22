@@ -25,29 +25,28 @@ end
 sam31.ensureClassMetadata(classif);
 if isfield(ctx,'params') && isstruct(ctx.params)
     classif.trainingParam = sam31.utils.applyParamOverrides(classif.trainingParam, ctx.params);
+    classif.trainingParam = sam31.utils.normalizeTrainingParam(classif.trainingParam);
 end
 
-runSam31Train(classif);
+runSam31Train(classif, ctx);
 out.status = "OK";
 end
 
-function runSam31Train(classif)
+function runSam31Train(classif, ~)
 tp = classif.trainingParam;
+internal = sam31.utils.internalDefaults();
 base = classif.path;
 workDir = fullfile(base, 'sam31_train');
 if ~exist(workDir, 'dir'), mkdir(workDir); end
 
-repoRoot = char(string(tp.repoRoot));
-sam3Repo = char(string(tp.sam3Repo));
-artifactsRoot = char(string(tp.artifactsRoot));
+repoRoot = char(string(runtimeParam(tp, internal, 'repoRoot')));
+sam3Repo = char(string(runtimeParam(tp, internal, 'sam3Repo')));
+artifactsRoot = char(string(runtimeParam(tp, internal, 'artifactsRoot')));
 if isempty(artifactsRoot)
     artifactsRoot = fullfile(base, 'sam31_artifacts');
 end
-trainingFolderName = 'trainingdataset';
-if isfield(tp, 'trainingFolderName') && ~isempty(tp.trainingFolderName)
-    trainingFolderName = char(string(tp.trainingFolderName));
-end
-ctcSubfolder = char(string(getStructField(tp, 'ctcSubfolder', '')));
+trainingFolderName = char(string(runtimeParam(tp, internal, 'trainingFolderName')));
+ctcSubfolder = char(string(runtimeParam(tp, internal, 'ctcSubfolder')));
 if isempty(strtrim(ctcSubfolder)) || strcmp(strtrim(ctcSubfolder), '.')
     datasetRoot = fullfile(base, trainingFolderName);
 else
@@ -72,25 +71,24 @@ cfg.repo_root = strrep(repoRoot, '\', '/');
 cfg.sam3_repo = strrep(sam3Repo, '\', '/');
 cfg.artifacts_root = strrep(artifactsRoot, '\', '/');
 cfg.dataset_root = strrep(datasetRoot, '\', '/');
-cfg.python = char(string(tp.pythonExecutable));
-cfg.resolution = double(tp.resolution);
-cfg.num_gpus = double(tp.numGpus);
-cfg.prepare_before_train = logical(tp.prepareBeforeTrain);
-cfg.prepare_only = logical(getStructField(tp, 'prepareOnly', false));
-cfg.dry_run = logical(getStructField(tp, 'dryRun', false));
-cfg.modules = splitWords(tp.trainModules);
-cfg.splits = splitWords(tp.splits);
-cfg.image_dataset_name = char(string(tp.imageDatasetName));
-cfg.video_dataset_name = char(string(tp.videoDatasetName));
-cfg.tracklet_dataset_name = char(string(tp.trackletDatasetName));
+cfg.resolution = double(str2double(string(sam31.utils.paramValue(tp, 'resolution', 280))));
+cfg.num_gpus = double(runtimeParam(tp, internal, 'numGpus'));
+cfg.prepare_before_train = logical(runtimeParam(tp, internal, 'prepareBeforeTrain'));
+cfg.prepare_only = logical(runtimeParam(tp, internal, 'prepareOnly'));
+cfg.dry_run = logical(runtimeParam(tp, internal, 'dryRun'));
+cfg.modules = trainModuleList(sam31.utils.paramValue(tp, 'trainModules', 'instance + video memory'));
+cfg.splits = splitWords(runtimeParam(tp, internal, 'splits'));
+cfg.image_dataset_name = char(string(runtimeParam(tp, internal, 'imageDatasetName')));
+cfg.video_dataset_name = char(string(runtimeParam(tp, internal, 'videoDatasetName')));
+cfg.tracklet_dataset_name = char(string(runtimeParam(tp, internal, 'trackletDatasetName')));
 cfg.epochs = double(tp.epochs);
 cfg.save_freq = double(tp.saveFreq);
 cfg.clip_length = double(tp.clipLength);
 cfg.clip_stride = double(tp.clipStride);
 cfg.max_tracks_per_clip = double(tp.maxTracksPerClip);
 cfg.min_visible_frames = double(tp.minVisibleFrames);
-cfg.stage_stride_max = double(tp.stageStrideMax);
-cfg.max_tracks_per_datapoint = double(tp.maxTracksPerDatapoint);
+cfg.stage_stride_max = double(runtimeParam(tp, internal, 'stageStrideMax'));
+cfg.max_tracks_per_datapoint = double(runtimeParam(tp, internal, 'maxTracksPerDatapoint'));
 
 configPath = fullfile(workDir, 'train_sam31_config.json');
 writeJson(configPath, cfg);
@@ -101,12 +99,32 @@ end
 
 function parts = splitWords(value)
 if iscell(value)
-    parts = value;
+    parts = value(end);
 else
     txt = strtrim(char(string(value)));
     parts = regexp(txt, '\s+', 'split');
 end
 parts = parts(~cellfun(@isempty, parts));
+end
+
+function modules = trainModuleList(value)
+txt = lower(strtrim(char(string(value))));
+txt = strrep(txt, '_', ' ');
+txt = strrep(txt, '-', ' ');
+txt = regexprep(txt, '\s+', ' ');
+if strcmp(txt, 'all')
+    modules = {'all'};
+elseif contains(txt, 'semantic')
+    modules = {'semantic'};
+elseif contains(txt, 'instance') && (contains(txt, 'video') || contains(txt, 'memory'))
+    modules = {'instance', 'video-memory'};
+elseif contains(txt, 'video') || contains(txt, 'memory')
+    modules = {'video-memory'};
+elseif contains(txt, 'instance')
+    modules = {'instance'};
+else
+    modules = splitWords(value);
+end
 end
 
 function writeJson(path, cfg)
@@ -118,10 +136,13 @@ cleanup = onCleanup(@() fclose(fid));
 fwrite(fid, jsonencode(cfg), 'char');
 end
 
-function value = getStructField(s, name, defaultValue)
-value = defaultValue;
-if isstruct(s) && isfield(s, name) && ~isempty(s.(name))
-    value = s.(name);
+function value = runtimeParam(tp, internal, name)
+value = [];
+if isstruct(internal) && isfield(internal, name)
+    value = internal.(name);
+end
+if isstruct(tp) && isfield(tp, name) && ~isempty(tp.(name))
+    value = sam31.utils.paramValue(tp, name, value);
 end
 end
 

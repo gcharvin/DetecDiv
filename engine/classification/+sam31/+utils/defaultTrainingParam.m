@@ -1,50 +1,27 @@
 function tp = defaultTrainingParam()
 % sam31.utils.defaultTrainingParam
-% Defaults for the DetecDiv -> SAM3.1 bridge.
-
-defaultRepo = fullfile(getenv('USERPROFILE'), 'Documents', 'MATLAB', 'SAM31_zero_shot_ctc_benchmark');
-defaultSam3 = fullfile(defaultRepo, 'artifacts', 'sam3_official');
+% User-facing defaults for the DetecDiv -> SAM3.1 bridge.
+%
+% Repository paths, Python executable details, dataset artifact names and
+% other plumbing live in sam31.utils.internalDefaults. They are deliberately
+% not exposed in classifierGUI.
 
 spec = {
-    'backend',                       'wsl',       'Execution backend: wsl or local'
-    'pythonExecutable',              '/home/gilles/venvs/sam3/bin/python', 'Python executable used by the selected backend'
-    'repoRoot',                      defaultRepo, 'Generic SAM31 benchmark repository root'
-    'sam3Repo',                      defaultSam3, 'Official SAM3.1 checkout'
-    'artifactsRoot',                 '',          'SAM31 artifacts root; empty means <classifier path>/sam31_artifacts'
-    'trainingFolderName',            'trainingdataset', 'DetecDiv/SAM31 training dataset folder under classifier path'
-    'ctcSubfolder',                  '',          'CTC source subfolder below trainingFolderName; empty means trainingdataset/train/CTC'
-    'resolution',                    280,         'SAM3.1 image/video resolution'
-    'numGpus',                       1,           'Number of GPUs for training'
-    'trainModules',                  'instance video-memory', 'Modules to train: semantic, instance, video-memory, or all'
-    'prepareBeforeTrain',            true,        'Convert DetecDiv CTC export to SAM31 datasets before training'
-    'prepareOnly',                   false,       'Stop after SAM31 dataset preparation; useful for integration tests'
-    'dryRun',                        false,       'Print SAM31 commands without executing them'
-    'splits',                        'train val', 'Dataset splits exported to SAM31'
-    'imageDatasetName',              'moma_sam31_image_coco', 'SAM31 image dataset artifact name'
-    'videoDatasetName',              'moma_sam31_video', 'SAM31 full-video dataset artifact name'
-    'trackletDatasetName',           'moma_sam31_tracklet_clips_len8_ref', 'SAM31 tracklet dataset artifact name'
-    'epochs',                        20,          'Training epochs for image modules; video-memory uses this when provided'
-    'saveFreq',                      100000,      'Checkpoint save frequency'
-    'clipLength',                    8,           'Tracklet clip length for video-memory training'
-    'clipStride',                    4,           'Tracklet clip stride'
-    'maxTracksPerClip',              8,           'Maximum GT tracks per tracklet clip'
-    'minVisibleFrames',              4,           'Minimum visible frames per retained track'
-    'stageStrideMax',                4,           'SAM31 video training stage stride max'
-    'maxTracksPerDatapoint',         8,           'SAM31 video training max tracks per datapoint'
-    'detectorCheckpointPath',        '',          'SAM31 detector checkpoint used for inference'
-    'trackerCheckpointPath',         '',          'SAM31 tracker/memory checkpoint used for inference'
-    'smokeOnly',                     false,       'Inference integration smoke test: skip model and return empty masks'
-    'maxNumObjects',                 40,          'SAM31 video object-slot budget'
-    'chunkSize',                     0,           'Inference chunk size; 0 means full ROI in one SAM31 session'
-    'chunkOverlap',                  0,           'Inference chunk overlap'
-    'prompt',                        'cell',      'Text prompt for SAM31 full model inference'
-    'promptMode',                    'text',      'Prompt mode'
-    'minScore',                      0.0,         'Minimum output probability score'
-    'videoScoreThreshold',           0.40,        'SAM31 video detection score threshold'
-    'videoNewDetThreshold',          0.40,        'SAM31 threshold for accepting new detections'
-    'videoDetNmsThreshold',          0.10,        'SAM31 detection NMS threshold'
-    'videoAssocIouThreshold',        0.50,        'SAM31 association IoU threshold'
-    'outputName',                    'sam31',     'DetecDiv output channel name suffix'
+    'resolution',                    {'280','1008','280'}, 'SAM3.1 working resolution. 280 is the yeast-friendly mode; 1008 is the original heavy SAM3.1 size.'
+    'trainModules',                  {'semantic segmentation','instance segmentation','video memory','instance + video memory','all','instance + video memory'}, 'Training module preset.'
+    'epochs',                        20,          'Training epochs.'
+    'saveFreq',                      100000,      'Checkpoint save frequency in optimizer steps.'
+    'clipLength',                    8,           'Number of frames per video-memory training clip.'
+    'clipStride',                    4,           'Stride, in frames, between exported training clips.'
+    'maxTracksPerClip',              8,           'Maximum GT tracks per training clip.'
+    'minVisibleFrames',              4,           'Minimum number of visible frames required to keep a track in a clip.'
+    'maxNumObjects',                 40,          'Maximum number of simultaneously tracked object slots during inference.'
+    'detectorCheckpointPath',        '',          'SAM3.1 detector checkpoint used for inference; empty uses package defaults.'
+    'trackerCheckpointPath',         '',          'SAM3.1 tracker/memory checkpoint used for inference; empty uses package defaults.'
+    'videoScoreThreshold',           0.40,        'Per-frame detection score threshold.'
+    'videoNewDetThreshold',          0.40,        'Threshold for accepting new detections.'
+    'videoDetNmsThreshold',          0.10,        'Detection NMS threshold.'
+    'videoAssocIouThreshold',        0.50,        'Temporal association IoU threshold.'
     };
 
 tp = struct();

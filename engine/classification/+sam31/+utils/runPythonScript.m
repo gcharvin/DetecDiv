@@ -1,6 +1,6 @@
-function [status, cmdout, cmd] = runPythonScript(scriptPath, configPath, params, workDir)
+function [status, cmdout, cmd] = runPythonScript(scriptPath, configPath, ~, workDir)
 % sam31.utils.runPythonScript
-% Run a SAM31 Python bridge through either local Python or WSL.
+% Run a SAM31 Python bridge through the DetecDiv-selected conda Python.
 
 if nargin < 4 || isempty(workDir)
     workDir = pwd;
@@ -9,21 +9,24 @@ if ~exist(workDir, 'dir')
     mkdir(workDir);
 end
 
-backend = sam31.utils.getParam(params, 'backend', 'local');
-backend = lower(strtrim(char(string(backend))));
-pythonExe = sam31.utils.getParam(params, {'pythonExecutable','python'}, '');
-pythonExe = char(string(pythonExe));
-if isempty(pythonExe)
+try
     pe = pyenv;
+    if pe.Status == "NotLoaded"
+        select_and_load_conda_env('debug', true);
+        pe = pyenv;
+    end
     pythonExe = char(pe.Executable);
+catch ME
+    error('sam31:PythonBootstrapFailed', ...
+        'Unable to resolve the SAM3.1 Python environment through select_and_load_conda_env:%s%s', ...
+        newline, ME.message);
 end
 
-if strcmp(backend, 'wsl')
-    cmd = sprintf('wsl.exe "%s" "%s" --config "%s"', ...
-        pythonExe, toWslPath(scriptPath), toWslPath(configPath));
-else
-    cmd = sprintf('"%s" "%s" --config "%s"', pythonExe, scriptPath, configPath);
+if isempty(pythonExe)
+    error('sam31:PythonBootstrapFailed', 'MATLAB pyenv did not provide a Python executable.');
 end
+
+cmd = sprintf('"%s" "%s" --config "%s"', pythonExe, scriptPath, configPath);
 
 disp(['[SAM31] ' cmd]);
 [status, cmdout] = system(cmd);
@@ -39,16 +42,5 @@ end
 
 if status ~= 0
     error('sam31:PythonRunnerFailed', 'SAM31 Python runner failed (%d):\n%s', status, cmdout);
-end
-end
-
-function out = toWslPath(pathIn)
-pathIn = char(string(pathIn));
-if numel(pathIn) >= 3 && pathIn(2) == ':' && (pathIn(3) == '\' || pathIn(3) == '/')
-    drive = lower(pathIn(1));
-    rest = strrep(pathIn(3:end), '\', '/');
-    out = ['/mnt/' drive rest];
-else
-    out = strrep(pathIn, '\', '/');
 end
 end

@@ -4,6 +4,7 @@ import argparse
 import json
 import platform
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -55,7 +56,7 @@ def main() -> None:
     sam3_repo = as_local_path(cfg["sam3_repo"])
     artifacts_root = as_local_path(cfg["artifacts_root"])
     dataset_root = as_local_path(cfg["dataset_root"])
-    python = cfg.get("python") or "python"
+    python = cfg.get("python") or sys.executable
     resolution = int(cfg.get("resolution", 280))
     num_gpus = int(cfg.get("num_gpus", 1))
     modules = split_list(cfg.get("modules")) or ["instance"]

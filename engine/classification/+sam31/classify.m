@@ -28,11 +28,13 @@ function [data, image] = classifySam31Internal(roiobj, classif, frames, channel,
 if isempty(classif.trainingParam)
     classif.trainingParam = sam31.utils.defaultTrainingParam();
 end
+sam31.ensureClassMetadata(classif);
 if isfield(ctx,'params') && isstruct(ctx.params)
     classif.trainingParam = sam31.utils.applyParamOverrides(classif.trainingParam, ctx.params);
+    classif.trainingParam = sam31.utils.normalizeTrainingParam(classif.trainingParam);
 end
 tp = classif.trainingParam;
-sam31.ensureClassMetadata(classif);
+internal = sam31.utils.internalDefaults();
 
 if isempty(frames)
     frames = 1:size(roiobj.image, 4);
@@ -45,7 +47,7 @@ if isempty(channel)
     end
 end
 if isempty(outputName)
-    outputName = sam31.utils.getParam(tp, 'outputName', '');
+    outputName = char(string(runtimeParam(tp, internal, 'outputName')));
     if isempty(outputName)
         try
             outputName = classif.strid;
@@ -91,25 +93,25 @@ end
 pixresults = pixresults(1);
 
 workDir = resolveWorkDir(ctx, classif, roiobj);
-raw = roiobj.image(:, :, pix, frames); %#ok<NASGU>
+raw = roiobj.image(:, :, pix, frames);
 inputMatPath = fullfile(workDir, 'sam31_input.mat');
 save(inputMatPath, 'raw', 'frames', '-v7');
 
 cfg = struct();
 cfg.input_mat_path = strrep(inputMatPath, '\', '/');
 cfg.output_dir = strrep(workDir, '\', '/');
-cfg.repo_root = strrep(char(string(tp.repoRoot)), '\', '/');
-cfg.sam3_repo = strrep(char(string(tp.sam3Repo)), '\', '/');
+cfg.repo_root = strrep(char(string(runtimeParam(tp, internal, 'repoRoot'))), '\', '/');
+cfg.sam3_repo = strrep(char(string(runtimeParam(tp, internal, 'sam3Repo'))), '\', '/');
 cfg.detector_checkpoint_path = strrep(char(string(tp.detectorCheckpointPath)), '\', '/');
 cfg.tracker_checkpoint_path = strrep(char(string(tp.trackerCheckpointPath)), '\', '/');
-cfg.smoke_only = logical(getStructField(tp, 'smokeOnly', false));
-cfg.image_size = double(tp.resolution);
+cfg.smoke_only = logical(runtimeParam(tp, internal, 'smokeOnly'));
+cfg.image_size = double(str2double(string(sam31.utils.paramValue(tp, 'resolution', 280))));
 cfg.max_num_objects = double(tp.maxNumObjects);
-cfg.chunk_size = double(tp.chunkSize);
-cfg.chunk_overlap = double(tp.chunkOverlap);
-cfg.prompt = char(string(tp.prompt));
-cfg.prompt_mode = char(string(tp.promptMode));
-cfg.min_score = double(tp.minScore);
+cfg.chunk_size = double(runtimeParam(tp, internal, 'chunkSize'));
+cfg.chunk_overlap = double(runtimeParam(tp, internal, 'chunkOverlap'));
+cfg.prompt = char(string(runtimeParam(tp, internal, 'prompt')));
+cfg.prompt_mode = char(string(runtimeParam(tp, internal, 'promptMode')));
+cfg.min_score = double(runtimeParam(tp, internal, 'minScore'));
 cfg.video_score_threshold = double(tp.videoScoreThreshold);
 cfg.video_new_det_threshold = double(tp.videoNewDetThreshold);
 cfg.video_det_nms_threshold = double(tp.videoDetNmsThreshold);
@@ -183,9 +185,12 @@ cleanup = onCleanup(@() fclose(fid));
 fwrite(fid, jsonencode(cfg), 'char');
 end
 
-function value = getStructField(s, name, defaultValue)
-value = defaultValue;
-if isstruct(s) && isfield(s, name) && ~isempty(s.(name))
-    value = s.(name);
+function value = runtimeParam(tp, internal, name)
+value = [];
+if isstruct(internal) && isfield(internal, name)
+    value = internal.(name);
+end
+if isstruct(tp) && isfield(tp, name) && ~isempty(tp.(name))
+    value = sam31.utils.paramValue(tp, name, value);
 end
 end

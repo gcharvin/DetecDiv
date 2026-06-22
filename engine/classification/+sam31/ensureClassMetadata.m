@@ -20,6 +20,9 @@ try
     if isempty(classif.outputType)
         classif.outputType = 'segmentation';
     end
+    if isprop(classif, 'trainingParam') && isstruct(classif.trainingParam)
+        classif.trainingParam = sam31.utils.normalizeTrainingParam(classif.trainingParam);
+    end
 catch
 end
 end

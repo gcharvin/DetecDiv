@@ -264,6 +264,30 @@ function msg = localGuiErrorMessage(app, ME) %#ok<INUSD>
     end
 end
 
+function tf = isSam31Classifier(app, classiObj) %#ok<INUSD>
+    tf = false;
+    try
+        if isprop(classiObj, 'classifierPkg') && strcmpi(char(string(classiObj.classifierPkg)), 'sam31')
+            tf = true;
+            return;
+        end
+    catch
+    end
+    try
+        if isprop(classiObj, 'trainingFun') && startsWith(char(string(classiObj.trainingFun)), 'sam31.', 'IgnoreCase', true)
+            tf = true;
+            return;
+        end
+    catch
+    end
+    try
+        if isprop(classiObj, 'classifyFun') && startsWith(char(string(classiObj.classifyFun)), 'sam31.', 'IgnoreCase', true)
+            tf = true;
+        end
+    catch
+    end
+end
+
 
 
 
@@ -1554,28 +1578,35 @@ end
         classiObj.trainClassifier('setparam');
     end
 
-    % Ensure transfer_learning list
-    if ~isfield(classiObj.trainingParam,'transfer_learning')
-        [t,~] = classiObj.version;
-        if numel(t{1,1})==0
-            str={};
-        else
-            str=t(:,4);
+    if isSam31Classifier(app, classiObj)
+        try
+            sam31.ensureClassMetadata(classiObj);
+        catch
         end
-        str=['ImageNet', str', 'ImageNet'];
-        classiObj.trainingParam.transfer_learning=str;
-        classiObj.trainingParam.tip{end+1}='Select version of the classifier to be used';
-        checkStatus(app,false);
     else
-        [t,~]=classiObj.version;
-        if numel(t{1,1})==0
-            str={};
+        % Ensure transfer_learning list for legacy MATLAB/CNN classifiers.
+        if ~isfield(classiObj.trainingParam,'transfer_learning')
+            [t,~] = classiObj.version;
+            if numel(t{1,1})==0
+                str={};
+            else
+                str=t(:,4);
+            end
+            str=['ImageNet', str', 'ImageNet'];
+            classiObj.trainingParam.transfer_learning=str;
+            classiObj.trainingParam.tip{end+1}='Select version of the classifier to be used';
+            checkStatus(app,false);
         else
-            str=t(:,4);
+            [t,~]=classiObj.version;
+            if numel(t{1,1})==0
+                str={};
+            else
+                str=t(:,4);
+            end
+            str=['ImageNet', str', classiObj.trainingParam.transfer_learning{end}];
+            classiObj.trainingParam.transfer_learning=str;
+            checkStatus(app,true);
         end
-        str=['ImageNet', str', classiObj.trainingParam.transfer_learning{end}];
-        classiObj.trainingParam.transfer_learning=str;
-        checkStatus(app,true);
     end
 
     % Build table-based editor
@@ -1765,19 +1796,26 @@ end
     classiObj = app.Data.classiObj;
 
     % set parameter menu:
-    if ~isfield(classiObj.trainingParam,'transfer_learning')
-        [t,~]=classiObj.version;
-        if numel(t{1,1})==0, str={}; else, str=t(:,4); end
-        str=['ImageNet', str', 'ImageNet'];
-        classiObj.trainingParam.transfer_learning=str;
-        classiObj.trainingParam.tip{end+1}='Select version of the classifier to be used';
-        checkStatus(app,false);
+    if isSam31Classifier(app, classiObj)
+        try
+            sam31.ensureClassMetadata(classiObj);
+        catch
+        end
     else
-        [t,~]=classiObj.version;
-        if numel(t{1,1})==0, str={}; else, str=t(:,4); end
-        str=['ImageNet', str', classiObj.trainingParam.transfer_learning{end}];
-        classiObj.trainingParam.transfer_learning=str;
-        checkStatus(app,true);
+        if ~isfield(classiObj.trainingParam,'transfer_learning')
+            [t,~]=classiObj.version;
+            if numel(t{1,1})==0, str={}; else, str=t(:,4); end
+            str=['ImageNet', str', 'ImageNet'];
+            classiObj.trainingParam.transfer_learning=str;
+            classiObj.trainingParam.tip{end+1}='Select version of the classifier to be used';
+            checkStatus(app,false);
+        else
+            [t,~]=classiObj.version;
+            if numel(t{1,1})==0, str={}; else, str=t(:,4); end
+            str=['ImageNet', str', classiObj.trainingParam.transfer_learning{end}];
+            classiObj.trainingParam.transfer_learning=str;
+            checkStatus(app,true);
+        end
     end
 
     % Rebuild table-based editor
