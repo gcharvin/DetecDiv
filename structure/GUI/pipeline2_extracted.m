@@ -141,6 +141,7 @@ classdef pipeline2 < matlab.apps.AppBase
         HubRunUiLocked logical = false
         BatchPrototypeMode logical = false
         BatchPrototypeModal logical = false
+        ExplicitRuntimeRoiList = []
     end
 
     methods (Access = private)
@@ -252,6 +253,8 @@ classdef pipeline2 < matlab.apps.AppBase
         function [opts, positionalArgs] = parseStartupRuntimeOptions(app, varargin) %#ok<INUSD>
             opts = struct('inputMode', '', 'lockInputMode', false, 'lockReason', '', ...
                 'projectPath', '', 'rawDataPath', '', 'unlockRuntime', false, ...
+                'fovs', '', 'frames', '', 'rois', '', 'channels', '', 'roiObjects', [], ...
+                'outputPolicy', '', 'executionTarget', '', 'gpuPolicy', '', 'runId', '', ...
                 'batchPrototype', false, 'modal', false, 'editExistingRun', false, ...
                 'projectVarName', '');
             positionalArgs = {};
@@ -291,6 +294,40 @@ classdef pipeline2 < matlab.apps.AppBase
                             else
                                 consumed = false;
                             end
+                        case {'fovs','fov','positions','position'}
+                            opts.fovs = startupSelectionText(app, value);
+                            opts.unlockRuntime = true;
+                        case {'frames','frame'}
+                            opts.frames = startupSelectionText(app, value);
+                            opts.unlockRuntime = true;
+                        case {'rois','roi','roilist'}
+                            opts.rois = startupSelectionText(app, value);
+                            opts.unlockRuntime = true;
+                        case {'roiobjects','explicitrois','roihandles'}
+                            opts.roiObjects = value;
+                            if isempty(opts.rois)
+                                try
+                                    opts.rois = sprintf('1:%d', numel(value));
+                                catch
+                                    opts.rois = '';
+                                end
+                            end
+                            opts.unlockRuntime = true;
+                        case {'channels','channel'}
+                            opts.channels = startupSelectionText(app, value);
+                            opts.unlockRuntime = true;
+                        case {'outputpolicy','existingpolicy','writepolicy'}
+                            opts.outputPolicy = char(string(value));
+                            opts.unlockRuntime = true;
+                        case {'executiontarget','runtarget','target'}
+                            opts.executionTarget = char(string(value));
+                            opts.unlockRuntime = true;
+                        case {'gpupolicy','execution','compute'}
+                            opts.gpuPolicy = char(string(value));
+                            opts.unlockRuntime = true;
+                        case {'runid','runname'}
+                            opts.runId = char(string(value));
+                            opts.unlockRuntime = true;
                         case {'unlockruntime','newrun','runtimeunlocked'}
                             opts.unlockRuntime = logicalStartupOption(app, value);
                         case {'editexistingrun','editrun','updaterun'}
@@ -324,6 +361,29 @@ classdef pipeline2 < matlab.apps.AppBase
                 end
                 positionalArgs{end+1} = arg; %#ok<AGROW>
                 i = i + 1;
+            end
+        end
+
+        function txt = startupSelectionText(app, value) %#ok<INUSD>
+            if isempty(value)
+                txt = '';
+            elseif ischar(value) || isstring(value)
+                txt = char(string(value));
+            elseif isnumeric(value) || islogical(value)
+                values = double(value(:)');
+                if isempty(values)
+                    txt = '';
+                else
+                    txt = strjoin(arrayfun(@(x)sprintf('%g', x), values, 'UniformOutput', false), ',');
+                end
+            elseif iscell(value)
+                txt = strjoin(cellstr(string(value(:)')), ',');
+            else
+                try
+                    txt = char(string(value));
+                catch
+                    txt = '';
+                end
             end
         end
 
@@ -366,6 +426,57 @@ classdef pipeline2 < matlab.apps.AppBase
             end
             if isfield(opts, 'rawDataPath') && ~isempty(strtrim(opts.rawDataPath))
                 setRuntimeValuePreserveParse(app, 'rawDataPath', opts.rawDataPath);
+            end
+            if isfield(opts, 'fovs') && ~isempty(strtrim(opts.fovs))
+                setRuntimeValuePreserveParse(app, 'fovs', opts.fovs);
+            end
+            if isfield(opts, 'frames') && ~isempty(strtrim(opts.frames))
+                setRuntimeValuePreserveParse(app, 'frames', opts.frames);
+            end
+            if isfield(opts, 'rois') && ~isempty(strtrim(opts.rois))
+                setRuntimeValuePreserveParse(app, 'rois', opts.rois);
+            end
+            if isfield(opts, 'roiObjects') && ~isempty(opts.roiObjects)
+                app.ExplicitRuntimeRoiList = opts.roiObjects;
+                if ~isfield(opts, 'rois') || isempty(strtrim(opts.rois))
+                    try
+                        setRuntimeValuePreserveParse(app, 'rois', sprintf('1:%d', numel(opts.roiObjects)));
+                    catch
+                    end
+                end
+            end
+            if isfield(opts, 'channels') && ~isempty(strtrim(opts.channels))
+                setRuntimeValuePreserveParse(app, 'channels', opts.channels);
+            end
+            if isfield(opts, 'outputPolicy') && ~isempty(strtrim(opts.outputPolicy))
+                setRuntimeValuePreserveParse(app, 'outputPolicy', opts.outputPolicy);
+                app.RuntimeValues.outputPolicyUserChosen = true;
+            end
+            if isfield(opts, 'executionTarget') && ~isempty(strtrim(opts.executionTarget))
+                setRuntimeExecutionTarget(app, opts.executionTarget);
+            end
+            if isfield(opts, 'gpuPolicy') && ~isempty(strtrim(opts.gpuPolicy))
+                gpuPolicy = char(string(opts.gpuPolicy));
+                try
+                    if any(strcmp(app.ExecutionDropDown.ItemsData, gpuPolicy))
+                        app.ExecutionDropDown.Value = gpuPolicy;
+                    elseif any(strcmp(app.ExecutionDropDown.Items, gpuPolicy))
+                        app.ExecutionDropDown.Value = gpuPolicy;
+                    else
+                        switch lower(strtrim(gpuPolicy))
+                            case 'gpu'
+                                app.ExecutionDropDown.Value = 'GPU';
+                            case 'cpu'
+                                app.ExecutionDropDown.Value = 'CPU';
+                            otherwise
+                                app.ExecutionDropDown.Value = 'Auto';
+                        end
+                    end
+                catch
+                end
+            end
+            if isfield(opts, 'runId') && ~isempty(strtrim(opts.runId))
+                runtimeRunIdChanged(app, opts.runId);
             end
             if isfield(opts, 'inputMode') && ~isempty(strtrim(opts.inputMode))
                 applyRuntimeInputSourceMode(app, opts.inputMode);
@@ -13563,6 +13674,19 @@ classdef pipeline2 < matlab.apps.AppBase
                     ctx.dataSeries = dataSeriesNames;
                 end
                 roiList = runtimeSelectedRois(app);
+                if isempty(roiList) && ~isempty(app.ExplicitRuntimeRoiList)
+                    roiList = app.ExplicitRuntimeRoiList;
+                    if isfield(ctx, 'sel') && isstruct(ctx.sel) && isfield(ctx.sel, 'rois') && ~isempty(ctx.sel.rois)
+                        try
+                            idx = ctx.sel.rois;
+                            if isnumeric(idx)
+                                idx = idx(idx >= 1 & idx <= numel(roiList));
+                                roiList = roiList(idx);
+                            end
+                        catch
+                        end
+                    end
+                end
                 if ~isempty(roiList)
                     ctx.roiList = roiList;
                     ctx.rois = roiList;
@@ -14770,6 +14894,15 @@ classdef pipeline2 < matlab.apps.AppBase
                 [pth, file] = app.CurrentProject.getPath;
                 ref.projectPath = fullfile(pth, file);
                 ref.projectName = file;
+            elseif ~isempty(app.ExplicitRuntimeRoiList)
+                classiPath = classifierScopedRunRoot(app, false);
+                if ~isempty(classiPath)
+                    ref.type = 'classi';
+                    ref.projectPath = '';
+                    ref.projectName = '';
+                    ref.classiPath = classiPath;
+                    ref.notes = 'Classifier-scoped run using explicit classifier.roi runtime handles.';
+                end
             end
         end
 
@@ -14803,6 +14936,10 @@ classdef pipeline2 < matlab.apps.AppBase
                     ok = true;
                     return;
                 end
+            end
+            if ~isempty(app.ExplicitRuntimeRoiList) && ~isempty(classifierScopedRunRoot(app, false))
+                ok = true;
+                return;
             end
             choice = uiconfirm(app.UIFigure, ...
                 'A persistent run requires a shallow project. Create or load a project now?', ...
@@ -14843,7 +14980,11 @@ classdef pipeline2 < matlab.apps.AppBase
                 if ~isempty(strtrim(char(string(requestedRunId))))
                     args = [{'runId', char(string(requestedRunId))} args]; %#ok<AGROW>
                 end
-                runObj = pipelineRunNew(app.CurrentProject, ref.id, ref.path, args{:});
+                if ~isempty(app.CurrentProject) && isa(app.CurrentProject, 'shallow')
+                    runObj = pipelineRunNew(app.CurrentProject, ref.id, ref.path, args{:});
+                else
+                    runObj = createClassifierScopedPipelineRun(app, ref, target, ctx, status, requestedRunId);
+                end
                 if app.CurrentRunIsSeed && ~isempty(app.CurrentRunSourceId)
                     logRunEvent(app, runObj, ['New run created from existing run ' app.CurrentRunSourceId '.'], 'pipeline2');
                 end
@@ -14861,6 +15002,77 @@ classdef pipeline2 < matlab.apps.AppBase
                 runObj.templateId = runObj.pipelineRef.id;
                 runObj.templatePath = runObj.pipelineRef.path;
             end
+        end
+
+        function runObj = createClassifierScopedPipelineRun(app, ref, target, ctx, status, requestedRunId)
+            classiPath = classifierScopedRunRoot(app, true);
+            if isempty(classiPath)
+                error('pipeline2:ClassifierRunNoRoot', ...
+                    'Cannot create a classifier-scoped run because the classifier path is unavailable.');
+            end
+            runId = char(string(requestedRunId));
+            if isempty(strtrim(runId))
+                runId = suggestNextClassifierRunId(app, classiPath, ref.id);
+            end
+            runObj = pipelineRun('', runId, 1);
+            runRoot = fullfile(classiPath, 'pipeline_runs', runId);
+            if exist(runRoot, 'dir') ~= 7
+                mkdir(runRoot);
+            end
+            runObj.path = runRoot;
+            runObj.pipelineRef = ref;
+            runObj.targetRef = target;
+            runObj.templateId = ref.id;
+            runObj.templatePath = ref.path;
+            runObj.projectPath = '';
+            runObj.projectName = '';
+            runObj.description = 'Classifier-scoped pipeline run.';
+            runObj.status = status;
+            runObj.ctx = attachRunArtifactPathsToContext(app, ctx, runObj);
+            runObj.ctx.targetRef = target;
+            runObj.ctx.pipelineRef = ref;
+        end
+
+        function root = classifierScopedRunRoot(app, requireExists)
+            if nargin < 2
+                requireExists = false;
+            end
+            root = '';
+            try
+                nodes = app.Data.nodes;
+                for i = 1:numel(nodes)
+                    if ~strcmpi(char(string(getField(app, nodes(i), 'type', ''))), 'classifier')
+                        continue;
+                    end
+                    p = getField(app, nodes(i), 'params', struct());
+                    if isstruct(p) && isfield(p, 'modulePath') && ~isempty(p.modulePath)
+                        root = char(string(p.modulePath));
+                        break;
+                    end
+                end
+            catch
+                root = '';
+            end
+            if ~isempty(root) && logical(requireExists) && exist(root, 'dir') ~= 7
+                mkdir(root);
+            end
+        end
+
+        function runId = suggestNextClassifierRunId(app, classiPath, templateId) %#ok<INUSD>
+            base = matlab.lang.makeValidName(char(string(templateId)));
+            if isempty(base)
+                base = 'classifier_validation';
+            end
+            runParent = fullfile(classiPath, 'pipeline_runs');
+            if exist(runParent, 'dir') ~= 7
+                runId = [base '_1'];
+                return;
+            end
+            n = 1;
+            while exist(fullfile(runParent, [base '_' num2str(n)]), 'dir') == 7
+                n = n + 1;
+            end
+            runId = [base '_' num2str(n)];
         end
 
         function ctx = attachRunArtifactPathsToContext(app, ctx, runObj) %#ok<INUSD>

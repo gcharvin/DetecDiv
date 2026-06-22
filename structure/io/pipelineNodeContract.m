@@ -361,7 +361,7 @@ end
 
 function tf = classifierProducesMasks(pkgName, funcName)
     tf = false;
-    if any(strcmp(pkgName, {'cellposesam'}))
+    if any(strcmp(pkgName, {'cellposesam','sam31'}))
         tf = true;
         return;
     end

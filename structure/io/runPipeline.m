@@ -2514,7 +2514,8 @@ end
 
 function ctx = executeClassifierNode(node, ctx)
     shallowObj = getShallowObject(ctx);
-    if isempty(shallowObj)
+    hasExplicitRois = isfield(ctx, 'roiList') && ~isempty(ctx.roiList);
+    if isempty(shallowObj) && ~hasExplicitRois
         error('runPipeline:ClassifierNoProject', ...
             'Classifier node %s requires a shallow project context.', char(string(node.id)));
     end

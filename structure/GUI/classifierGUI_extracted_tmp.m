@@ -2103,8 +2103,24 @@ end
 
             classiObj=app.Data.classiObj;
 
+            testRois = [];
+            try
+                if ~isempty(app.UITableData.Data)
+                    testRois = find(cellfun(@(x) isequal(x, 1) || isequal(x, true), app.UITableData.Data(:,2)));
+                end
+            catch
+                testRois = [];
+            end
 
-            classifyDataGUI(classiObj,"Validation");
+            try
+                classifierOpenValidationPipeline(classiObj, ...
+                    'Rois', testRois, ...
+                    'OutputPolicy', 'replace', ...
+                    'Execution', 'Auto');
+            catch ME
+                uialert(app.ClassifierUIFigure, ME.message, ...
+                    'Validation pipeline failed', 'Icon', 'error');
+            end
             return;
 %             
 % 
